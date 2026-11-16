@@ -1,4 +1,4 @@
-"""``tools/praca_w_toku.py`` pokazuje sesji pracę w toku z innych worktree tego samego repozytorium."""
+"""``tools/praca_w_toku.py`` odpowiada sesji, czy ktoś zajmuje jej zgłoszenie, czy aktywna praca zmienia jej pliki i czy aktualizować z main."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import itertools
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -18,9 +19,14 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import TOOLS, built_once, commit, git, with_imports
 
+import potomne
 from wplyw_zmiany import Repository
 
 TOOL = Path(__file__).resolve().parents[1] / "tools" / "praca_w_toku.py"
+# Trzy doby temu: linia pracy bez znaku życia w ostatniej dobie (AKTYWNA_S w docstringu narzędzia).
+STALE_S = 3 * 24 * 3600 + 60
+LOCAL = " | bez GitHuba: --lokalnie"
+ASK = "ZGŁOSZENIE | nie podano; przed startem zgłoszenia N: tools/praca_w_toku.py --issue N"
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -44,13 +50,19 @@ def _commit(cwd: Path, path: str, content: str, message: str) -> None:
     _git(cwd, "commit", "-m", message)
 
 
-def _fake_gh(directory: Path, answer: str, code: int = 0) -> str:
-    """``PATH`` z ``gh``, który na każde wywołanie wypisuje ``answer`` i kończy się kodem ``code``."""
+def _fake_gh(directory: Path, answer: str, code: int = 0, issue: str | None = None) -> str:
+    """``PATH`` z ``gh``, który wypisuje ``answer`` (na ``gh issue`` ``issue``, gdy podane) i kończy się kodem ``code``."""
 
     fake = directory / "gh-na-niby"
     fake.mkdir(exist_ok=True)
     (fake / "odpowiedz.json").write_text(answer, encoding="utf-8")
-    fake_cli(fake, "gh", f"import pathlib, sys\nsys.stdout.buffer.write(pathlib.Path({str(fake / 'odpowiedz.json')!r}).read_bytes())\nsys.exit({code})\n")
+    (fake / "zgloszenie.json").write_text(answer if issue is None else issue, encoding="utf-8")
+    script = (
+        "import pathlib, sys\n"
+        "name = 'zgloszenie.json' if sys.argv[1:2] == ['issue'] else 'odpowiedz.json'\n"
+        f"sys.stdout.buffer.write((pathlib.Path({str(fake)!r}) / name).read_bytes())\nsys.exit({code})\n"
+    )
+    fake_cli(fake, "gh", script)
     return f"{fake}{os.pathsep}{os.environ['PATH']}"
 
 
@@ -96,9 +108,89 @@ def _checkouts(directory: Path) -> None:
     (current / "inny.py").write_text("b = 2\n", encoding="utf-8")
 
 
+def _age_tree(path: Path) -> None:
+    """Pliki i katalogi worktree oraz indeks i HEAD jego katalogu gita bez zmiany od ``STALE_S``."""
+
+    stale = time.time() - STALE_S
+    git_dir = Path(git(path, "rev-parse", "--absolute-git-dir"))
+    for place in [path, *path.rglob("*"), git_dir / "index", git_dir / "HEAD"]:
+        os.utime(place, (stale, stale))
+
+
+def _stale_commits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Commity i wpisy reflogu z datą sprzed ``STALE_S``, jak w pracy porzuconej trzy doby temu."""
+
+    monkeypatch.setenv("GIT_COMMITTER_DATE", f"@{int(time.time() - STALE_S)} +0000")
+
+
 def test_issue_znajduje_galaz_ktorej_commit_odwoluje_sie_do_zgloszenia(checkouts: dict[str, Path]) -> None:
-    assert "fix/opiekun" in _report(checkouts["current"], "--issue", "7")
-    assert "fix/opiekun" not in _report(checkouts["current"], "--issue", "8")
+    taken = _report(checkouts["current"], "--issue", "7").splitlines()
+    free = _report(checkouts["current"], "--issue", "8").splitlines()
+
+    assert taken[-3] == f"ZGŁOSZENIE #7 | zajęte: fix/opiekun; poprawka należy do właściciela tej gałęzi{LOCAL}"
+    assert f"- fix/opiekun | {checkouts['other']} | ruch <1 h temu | commit odwołuje się do #7" in taken
+    assert free[-3] == f"ZGŁOSZENIE #8 | wolne{LOCAL}"
+
+
+def test_issue_nazywa_nieaktywna_prace_nad_zgloszeniem_z_jej_wiekiem(checkouts: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
+    forgotten = checkouts["other"].parent / "zapomniany"
+    with monkeypatch.context() as stale:
+        _stale_commits(stale)
+        _git(checkouts["other"], "worktree", "add", "-b", "fix/zapomniany", str(forgotten), "main")
+        _commit(forgotten, "inny.py", "b = 4\n", "fix: zapomniane (#8)")
+    _age_tree(forgotten)
+
+    lines = _report(checkouts["current"], "--issue", "8").splitlines()
+
+    assert lines[-3] == f"ZGŁOSZENIE #8 | zajęte: fix/zapomniany (3 d, nieaktywna); poprawka należy do właściciela tej gałęzi{LOCAL}"
+    assert f"- fix/zapomniany | {forgotten.resolve()} | ruch 3 d temu | commit odwołuje się do #8" in lines
+
+
+def test_issue_znajduje_pr_ktory_odwoluje_sie_do_zgloszenia_i_pr_wskazany_w_tresci_zgloszenia(checkouts: dict[str, Path]) -> None:
+    pulls = [
+        {"number": 5, "headRefName": "fix/opiekun", "title": "fix: opiekun", "body": "Część #42", "files": []},
+        {"number": 6, "headRefName": "fix/zdalna", "title": "", "body": "", "files": []},
+        {"number": 11, "headRefName": "fix/obok", "title": "", "body": "Część #420", "files": []},
+    ]
+    path = _fake_gh(checkouts["current"].parent, json.dumps(pulls), issue=json.dumps({"body": "Robi to PR #6."}))
+
+    lines = _report(checkouts["current"], "--issue", "42", path=path).splitlines()
+
+    assert lines[-3] == "ZGŁOSZENIE #42 | zajęte: fix/opiekun (PR #5), fix/zdalna (PR #6); poprawka należy do właściciela tej gałęzi"
+    assert f"- fix/opiekun (PR #5) | {checkouts['other']} | ruch <1 h temu | PR odwołuje się do #42" in lines
+    assert "- fix/zdalna (PR #6) | tylko na GitHubie | ruch nieznany | #42 wskazuje PR #6" in lines
+
+
+def test_issue_znajduje_galaz_z_numerem_zgloszenia_jako_osobnym_czlonem_nazwy(checkouts: dict[str, Path]) -> None:
+    named = ["feat/legenda-1940-ostrzezenia", "feat/krok-ukryc-1940", "1940_poprawka", "fix/1940"]
+    unnamed = ["feat/legenda-19401", "feat/x1940", "fix/1940a", "fix/v1940-2"]
+    for branch in named + unnamed:
+        _git(checkouts["other"], "branch", branch, "fix/opiekun")
+
+    lines = _report(checkouts["current"], "--issue", "1940").splitlines()
+
+    assert sorted(line.split(" | ")[0].removeprefix("- ") for line in lines if line.endswith("| nazwa gałęzi")) == sorted(named)
+
+
+def test_worktree_w_trakcie_git_worktree_add_nie_zmienia_raportu(checkouts: dict[str, Path]) -> None:
+    before = _report(checkouts["current"], "--issue", "7")
+    creating = checkouts["other"].parent / "tworzony"
+    _git(checkouts["other"], "worktree", "add", "--detach", str(creating), "main")
+    # Tak zostawia HEAD git worktree add, zanim ustawi go na commit.
+    (Path(git(creating, "rev-parse", "--absolute-git-dir")) / "HEAD").write_text("0" * 40 + "\n", encoding="utf-8")
+
+    assert _report(checkouts["current"], "--issue", "7") == before
+
+
+def test_checkout_bez_zmian_i_bez_zgloszenia_dostaje_trzy_odpowiedzi_bez_githuba(tmp_path: Path) -> None:
+    _, branch = _branch_from_main(tmp_path)
+    fake = tmp_path / "gh-wolany"
+    fake_cli(fake, "gh", "import pathlib\nimport sys\npathlib.Path(__file__).with_name('wolany').touch()\nsys.exit(4)\n")
+
+    report = _report(branch, path=f"{fake}{os.pathsep}{os.environ['PATH']}").splitlines()
+
+    assert report == [ASK, "NAKŁADANIA | brak: ten checkout jeszcze niczego nie zmienia", f"{NIEPOTRZEBNA}{_compared(branch)} bez śladu fetch, odśwież: git fetch origin"]
+    assert not (fake / "wolany").exists()
 
 
 def test_galaz_zbudowana_na_innej_naklada_sie_tylko_wlasnymi_commitami(checkouts: dict[str, Path]) -> None:
@@ -125,17 +217,18 @@ def test_przeniesienie_naklada_sie_stara_sciezka(checkouts: dict[str, Path]) -> 
     lines = _report(moving, "--nakladania", path=_fake_gh(moving.parent, github_only)).splitlines()
 
     assert "wspolny.py" in next(line for line in lines if line.startswith("- fix/opiekun"))
-    assert "- fix/zdalna (PR #9): wspolny.py" in lines
+    assert "- fix/zdalna (PR #9) | tylko na GitHubie | ruch nieznany | wspolny.py" in lines
     mine = next(line for line in lines if line.startswith("- feat/moje"))
     assert "wspolny.py" in mine  # przeniesiony w commicie tutaj, zmieniony w commicie tam
     assert "inny.py" in mine  # przeniesiony tutaj bez commita, zmieniony tam bez commita
 
 
 def test_zly_ksztalt_odpowiedzi_gh_to_raport_bez_githuba(checkouts: dict[str, Path]) -> None:
-    report = _report(checkouts["current"], "--issue", "7", path=_fake_gh(checkouts["current"].parent, "[{}]"))
+    report = _report(checkouts["current"], "--issue", "7", path=_fake_gh(checkouts["current"].parent, "[{}]")).splitlines()
 
-    assert "GITHUB POMINIĘTY" in report
-    assert "fix/opiekun" in report  # praca lokalna nadal w raporcie
+    skipped = " | bez GitHuba: gh pr list: nieoczekiwana odpowiedź (KeyError('number'))"
+    assert report[-3] == f"ZGŁOSZENIE #7 | zajęte: fix/opiekun; poprawka należy do właściciela tej gałęzi{skipped}"
+    assert report[-2].endswith(skipped)
 
 
 @pytest.mark.parametrize("gh", ["brak", "pada"])
@@ -152,17 +245,18 @@ def test_bez_odpowiedzi_gh_raport_jak_lokalnie(checkouts: dict[str, Path], gh: s
     else:
         path = _fake_gh(current.parent, "[]", code=4)
 
-    skipped, *report = _report(current, path=path).splitlines()
+    reason = "brak gh" if gh == "brak" else "gh: kod 4"
 
-    assert skipped == ("GITHUB POMINIĘTY | brak gh" if gh == "brak" else "GITHUB POMINIĘTY | gh: kod 4")
-    assert report == _report(current).splitlines()[1:]
+    assert _report(current, path=path) == _report(current).replace(LOCAL, f" | bez GitHuba: {reason}")
+    assert f" | bez GitHuba: {reason}" in _report(current, path=path).splitlines()[-2]
 
 
 def test_zly_ksztalt_tresci_zgloszenia_to_raport_bez_githuba(checkouts: dict[str, Path]) -> None:
-    report = _report(checkouts["current"], "--issue", "7", path=_fake_gh(checkouts["current"].parent, "[]"))
+    report = _report(checkouts["current"], "--issue", "7", path=_fake_gh(checkouts["current"].parent, "[]")).splitlines()
 
-    assert report.count("GITHUB POMINIĘTY") == 1
-    assert "fix/opiekun" in report  # praca lokalna nadal w raporcie
+    skipped = " | bez GitHuba: gh issue view: nieoczekiwana odpowiedź (TypeError('list indices must be integers or slices, not str'))"
+    assert report[-3] == f"ZGŁOSZENIE #7 | zajęte: fix/opiekun; poprawka należy do właściciela tej gałęzi{skipped}"
+    assert "bez GitHuba" not in report[-2]  # nakładania pytają tylko o PR-y, a te GitHub dał
 
 
 WSPOLNY = "a = 1\nb = 1\nc = 1\nd = 1\ne = 1\n"
@@ -338,6 +432,7 @@ class _Commit:
     files: frozenset[str]
     merge: bool = False
     on_remote: bool = False
+    issues: frozenset[int] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -350,6 +445,9 @@ class _Checkout:
     dirty: frozenset[str] = frozenset()
     pr: int | None = None
     pr_files: frozenset[str] = frozenset()
+    # Commity, reflog, worktree i jego niezacommitowane pliki bez zmiany od STALE_S, oprócz plików ``fresh``.
+    stale: bool = False
+    fresh: frozenset[str] = frozenset()
 
     def changed(self, other: _Checkout) -> frozenset[str]:
         """Pliki zmieniane we własnych commitach (bez wspólnych z ``other``) albo niezacommitowane."""
@@ -367,51 +465,87 @@ _GITHUB_ONLY = (
     _Checkout("zdalna", None, frozenset({_REMOTE, _REMOTE_LATER}), pr=9, pr_files=_REMOTE.files | _REMOTE_LATER.files),
     _Checkout("niepobrana", None, frozenset({_UNFETCHED}), pr=10, pr_files=_UNFETCHED.files),
 )
+# Zgłoszenie, o które pyta każde uruchomienie w świecie testu: zajmują je commity, opis PR #8 i PR #10 z treści zgłoszenia.
+_ISSUE = 77
+_CLAIMED = frozenset({_ISSUE})
+_PR_BODIES = {"inny-g-wlasny-czysty": f"Część #{_ISSUE}"}
+_POINTED_PR = 10
+_ISSUE_BODY = f"Zrobi to PR #{_POINTED_PR}."
 _PULL_REQUESTS = {
     "inny-g-wlasny-czysty": (8, {"wspolny.py", "tylko-w-pr.py"}),
     "ja": (7, {"wspolny.py"}),
+    "stary-g-pr": (11, {"wspolny.py"}),
     **{side.branch or "": (side.pr, side.pr_files) for side in _GITHUB_ONLY},
 }
 
 
-def _expected_report(me: _Checkout, world: list[_Checkout], github: bool, compared: str) -> list[str]:
-    """Raport ze specyfikacji w docstringu narzędzia, wyliczony z modelu świata, nie z Gita."""
+def _expected_report(me: _Checkout, world: list[_Checkout], github: bool, compared: str, everything: bool) -> tuple[list[str], list[str]]:
+    """Szczegóły (posortowane) i trzy odpowiedzi ze specyfikacji w docstringu narzędzia, z modelu świata, nie z Gita."""
 
     on_branches = {commit for side in world if side.branch is not None for commit in side.commits}
 
-    def in_progress(side: _Checkout) -> bool:
-        if side.dirty or (side.branch is not None and side.commits):
+    def in_progress(side: _Checkout, dirty: frozenset[str]) -> bool:
+        if side in _GITHUB_ONLY or dirty or (side.branch is not None and side.commits):
             return True
         own = [c for c in side.commits if not (c.merge or c.on_remote or c in on_branches)]
         return side.branch is None and bool(own)
 
-    others = [side for side in world if side is not me and in_progress(side)] + (list(_GITHUB_ONLY) if github else [])
-    lines = ["GITHUB POMINIĘTY | --lokalnie"] if not github else []
-    lines.append(f"PRACA W TOKU | inne: {len(others)} | odniesienie: {me.path} ({me.branch or 'odłączony HEAD'})")
-    overlaps = []
-    for side in others:
-        parts = [side.branch or "odłączony HEAD"]
-        parts += [f"PR #{side.pr}"] if github and side.pr is not None else []
-        files = frozenset().union(*(commit.files for commit in side.commits)) | side.dirty
-        if side in _GITHUB_ONLY:
-            parts += ["tylko na GitHubie", f"niezacommitowane 0, pliki {len(side.pr_files)}"]
+    mine = frozenset().union(*(commit.files for commit in me.commits)) | me.dirty
+    details, claimants, active, inactive = [], [], 0, 0
+    for side in [side for side in world if side is not me] + (list(_GITHUB_ONLY) if github else []):
+        with_pr = github and side.pr is not None
+        # Świeża zmiana pliku, którego checkout nie zmienia, nie jest znakiem życia dla żadnej odpowiedzi.
+        stale = side.stale and not side.fresh & mine
+        place = "tylko na GitHubie" if side in _GITHUB_ONLY else str(side.path) if side.path else "bez worktree"
+        name = f"{side.branch or 'odłączony HEAD'}{f' (PR #{side.pr})' if with_pr else ''}"
+        fetched = side not in _GITHUB_ONLY or all(commit.on_remote for commit in side.commits)
+        moved = f"ruch {'3 d' if stale else '<1 h'} temu" if fetched else "ruch nieznany"
+        alive = with_pr or not stale
+
+        reasons = [f"commit odwołuje się do #{_ISSUE}"] if any(_ISSUE in commit.issues for commit in side.commits) else []
+        if with_pr and side.branch in _PR_BODIES:
+            reasons.append(f"PR odwołuje się do #{_ISSUE}")
+        if with_pr and side.pr == _POINTED_PR:
+            reasons.append(f"#{_ISSUE} wskazuje PR #{side.pr}")
+        # Zgłoszenie zajmuje linia pracy aktywna czy nie, a jej niezacommitowane pliki narzędzie czyta wtedy zawsze.
+        if reasons and in_progress(side, side.dirty):
+            details.append(f"- {name} | {place} | {moved} | {', '.join(reasons)}")
+            claimants.append(name if alive else f"{name} (3 d, nieaktywna)")
+
+        # Niezacommitowanych plików nieaktywnego worktree narzędzie nie czyta bez --wszystkie.
+        dirty = side.dirty if everything or not stale else frozenset()
+        theirs = frozenset().union(*(commit.files for commit in side.commits - me.commits)) | dirty
+        shared = me.changed(side) & theirs
+        if not shared or not in_progress(side, dirty):
+            continue
+        line = f"- {name} | {place} | {moved} | {', '.join(sorted(shared))}"
+        if alive:
+            active += 1
+            details.append(line)
         else:
-            ahead, unpushed = len(side.commits), len([c for c in side.commits if not c.on_remote])
-            files |= side.pr_files if github else frozenset()
-            parts += [str(side.path) if side.path else "bez worktree"]
-            parts += [f"przed origin/main {ahead}, niewypchnięte {unpushed}, niezacommitowane {len(side.dirty)}, pliki {len(files)}"]
-            parts += ["praca"] if any(not c.merge for c in side.commits) else []
-        lines.append("- " + " | ".join(parts))
-        shared = me.changed(side) & side.changed(me)
-        if shared:
-            name = side.branch or f"odłączony HEAD {side.path}"
-            pr = f" (PR #{side.pr})" if github and side.pr is not None else ""
-            overlaps.append(f"- {name}{pr}: {', '.join(sorted(shared))}")
-    lines += ["NAKŁADANIA | pliki zmieniane tu i w innej pracy w toku", *overlaps] if overlaps else ["NAKŁADANIA | brak"]
+            inactive += 1
+            details += [line] if everything else []
+    claim = f"zajęte: {', '.join(claimants)}; poprawka należy do właściciela tej gałęzi" if claimants else "wolne"
+    overlaps = f"aktywne prace na twoich plikach: {active} (wyżej)" if active else "brak"
+    if inactive:
+        overlaps += f"; nieaktywne: {inactive} (wyżej)" if everything else f"; nieaktywne: {inactive}, pokaż: --wszystkie"
     clash = sorted(frozenset().union(*(commit.files for commit in me.commits)) & _MAIN_LATER.files)
     verdict = f"potrzebna (konflikt w: {', '.join(clash)})" if clash else "niepotrzebna (bez konfliktu, bez wspólnych plików)"
-    lines.append(f"AKTUALIZACJA: {verdict}{compared} bez śladu fetch, odśwież: git fetch origin")
-    return sorted(lines)
+    answers = [
+        f"ZGŁOSZENIE #{_ISSUE} | {claim}{'' if github else LOCAL}",
+        f"NAKŁADANIA | {overlaps}{'' if github else LOCAL}",
+        f"AKTUALIZACJA: {verdict}{compared} bez śladu fetch, odśwież: git fetch origin",
+    ]
+    return sorted(details), answers
+
+
+def _in_any_order(answers: list[str]) -> list[object]:
+    """Odpowiedzi z liniami pracy ``zajęte:`` jako zbiorem: narzędzie szereguje je po ruchu, którego model nie zna."""
+
+    head, taken, rest = answers[0].partition("zajęte: ")
+    names, _, tail = rest.partition("; poprawka")
+    claimants = sorted(re.split(r", (?![^(]*\))", names)) if taken else []
+    return [head, claimants, tail, *answers[1:]]
 
 
 def _world(tmp_path: Path) -> list[_Checkout]:
@@ -453,9 +587,9 @@ def _world(tmp_path: Path) -> list[_Checkout]:
         made: frozenset[_Commit] = frozenset()
         moved = "przenoszony.py"
         if commits == "wlasny":
-            own = _Commit(name, frozenset({"wspolny.py"}))
+            own = _Commit(name, frozenset({"wspolny.py"}), issues=_CLAIMED if dirty == "zmiana" else frozenset())
             write(path, own.files)
-            commit(path, "praca")
+            commit(path, f"praca (#{_ISSUE})" if own.issues else "praca")
             made = frozenset({own})
         elif commits == "przeniesienie":
             moved = f"{name}.py"
@@ -476,6 +610,48 @@ def _world(tmp_path: Path) -> list[_Checkout]:
             (path / moved).rename(path / f"{name}-brudny.py")
         pr, pr_files = _PULL_REQUESTS.get(name, (None, set()))
         world.append(_Checkout(name if attached else None, path, made, changed, pr, frozenset(pr_files)))
+
+    # Każdy rodzaj linii pracy bez znaku życia od trzech dób, z szkic.py niezacommitowanym od trzech dób („stary”)
+    # albo zmienionym już po postarzeniu worktree („świeży”).
+    aged, fresh_edits = [], []
+    with pytest.MonkeyPatch.context() as stale:
+        _stale_commits(stale)
+        for name, attached, committed, dirty in (
+            ("stary-g-wlasny", True, True, "czysty"),
+            ("stary-g-zmiana", True, False, "stary"),
+            ("stary-o-wlasny", False, True, "czysty"),
+            ("stary-o-zmiana", False, False, "stary"),
+            ("stary-g-pr", True, True, "czysty"),
+            ("stary-swiezy-plik", True, True, "świeży"),
+            ("stary-bez-worktree", True, True, "czysty"),
+        ):
+            path = worktree(name, attached)
+            made = frozenset({_Commit(name, frozenset({"wspolny.py"}), issues=_CLAIMED)}) if committed else frozenset()
+            if committed:
+                write(path, frozenset({"wspolny.py"}))
+                commit(path, f"praca (#{_ISSUE})")
+            changed = frozenset({"szkic.py"}) if dirty != "czysty" else frozenset()
+            if dirty == "stary":
+                write(path, changed)
+            elif dirty == "świeży":
+                fresh_edits.append(path)
+            pr, pr_files = _PULL_REQUESTS.get(name, (None, set()))
+            kept = name != "stary-bez-worktree"
+            fresh = changed if dirty == "świeży" else frozenset()
+            world.append(_Checkout(name if attached else None, path if kept else None, made, changed, pr, frozenset(pr_files), True, fresh))
+            if kept:
+                aged.append(path)
+            else:
+                git(main, "worktree", "remove", str(path))
+
+    # Gałąź założona teraz na commicie sprzed trzech dób: świeży wpis reflogu to znak życia.
+    git(main, "branch", "swieza-na-starym", "stary-bez-worktree")
+    world.append(_Checkout("swieza-na-starym", None, next(side.commits for side in world if side.branch == "stary-bez-worktree")))
+
+    # Piaskownica na commicie gałęzi zdalnej z niezacommitowanym plikiem spoza plików checkoutu to praca.
+    beside = worktree("obok", False, "origin/zdalna")
+    write(beside, frozenset({"obok.py"}))
+    world.append(_Checkout(None, beside, frozenset({_REMOTE}), frozenset({"obok.py"})))
 
     pushed = worktree("tylko-na-remote", False, "origin/zdalna-druga")
     world.append(_Checkout(None, pushed, frozenset({_Commit("zdalna-druga", frozenset({"zdalny.py"}), on_remote=True)})))
@@ -546,12 +722,16 @@ def _world(tmp_path: Path) -> list[_Checkout]:
     for path, backend in ((rebasing, "--merge"), (rebasing_detached, "--merge"), (rebasing_apply, "--apply")):
         with pytest.raises(subprocess.CalledProcessError):
             git(path, "rebase", backend, "origin/main")  # konflikt w rebasowany.py zatrzymuje rebase
+    for path in aged:
+        _age_tree(path)
+    for path in fresh_edits:
+        write(path, frozenset({"szkic.py"}))
     return world
 
 
 # Każdy stan „ja” stoi w tym samym świecie jako osobny worktree, a dla pozostałych stanów jest zwykłą stroną modelu.
-# Uruchomienia narzędzia biegną naraz: każde to ok. 400 gitów, głównie start procesu (25–37 ms na Windows), i pięć po kolei
-# przekroczyło tam limit czasu testu (#1133). Jeden test buduje świat raz, a nie raz na worker xdist.
+# Uruchomienia narzędzia biegną naraz, bo na Windows każdy git to 25–37 ms startu procesu, a jeden test buduje świat
+# raz, a nie raz na worker xdist.
 _STATES = (("ja", True), ("ja-odlaczony", False), ("ja-na-zdalnej", True), ("rebasuje", False), ("szuka", False))
 
 
@@ -560,22 +740,33 @@ def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Pa
     world = _world(tmp_path)
     answer = json.dumps(
         [
-            {"number": pr, "headRefName": branch, "title": "", "body": "", "files": [{"path": p} for p in sorted(files)]}
+            {"number": pr, "headRefName": branch, "title": "", "body": _PR_BODIES.get(branch, ""), "files": [{"path": p} for p in sorted(files)]}
             for branch, (pr, files) in _PULL_REQUESTS.items()
         ]
     )
-    with_github, compared = _fake_gh(tmp_path, answer), _compared(tmp_path / "main")
+    with_github = _fake_gh(tmp_path, answer, issue=json.dumps({"body": _ISSUE_BODY}))
+    compared = _compared(tmp_path / "main")
 
-    def report(name: str, github: bool) -> list[str]:
-        return sorted(_report(tmp_path / name, path=with_github if github else None).splitlines())
+    def report(name: str, github: bool, everything: bool) -> list[str]:
+        asked = ["--issue", str(_ISSUE), *(["--wszystkie"] if everything else [])]
+        return _report(tmp_path / name, *asked, path=with_github if github else None).splitlines()
 
-    with ThreadPoolExecutor(len(_STATES)) as pool:
-        reports = [pool.submit(report, name, github) for name, github in _STATES]
+    runs = [(name, github, everything) for name, github in _STATES for everything in (False, True)]
+    # Kopia commitu narzędzia z własnym commitem i plikami checkoutu nie jest linią pracy, choć wygląda jak praca.
+    with potomne.commit_copy(tmp_path / "main", "origin/main") as copy:
+        (copy / "wspolny.py").write_text("x = 'kopia'\n", encoding="utf-8")
+        commit(copy, "praca")
+        (copy / "szkic.py").write_text("x = 'kopia'\n", encoding="utf-8")
+        with ThreadPoolExecutor(len(runs)) as pool:
+            reports = [pool.submit(report, *run) for run in runs]
+            results = [future.result() for future in reports]
 
     mismatches = []
-    for (name, github), future in zip(_STATES, reports, strict=True):
+    for (name, github, everything), actual in zip(runs, results, strict=True):
         [me] = [side for side in world if side.path == (tmp_path / name).resolve()]
-        expected, actual = _expected_report(me, world, github=github, compared=compared), future.result()
-        mismatches += [f"{name}: brak {line}" for line in expected if line not in actual]
-        mismatches += [f"{name}: nadmiar {line}" for line in actual if line not in expected]
+        details, answers = _expected_report(me, world, github=github, compared=compared, everything=everything)
+        run = f"{name}{' --wszystkie' if everything else ''}"
+        mismatches += [f"{run}: brak {line}" for line in details if line not in actual[:-3]]
+        mismatches += [f"{run}: nadmiar {line}" for line in actual[:-3] if line not in details]
+        mismatches += [f"{run}: odpowiedzi {actual[-3:]} zamiast {answers}"] if _in_any_order(actual[-3:]) != _in_any_order(answers) else []
     assert not mismatches, "\n".join(mismatches)
