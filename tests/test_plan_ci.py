@@ -484,6 +484,25 @@ def test_plan_zmieniony_po_digest_nie_wykonuje_sie_a_required_nie_bierze_zapisow
     assert len(werdykt_required.werdykt(plan, {"plan": "success"}, other)) == len(plan.zadania)
 
 
+@pytest.mark.parametrize(("bez", "blad"), [("--plan", "one of the arguments --plan --kroki-skilli is required"), ("--zadanie", "--plan wymaga --zadanie")])
+def test_wykonanie_bez_planu_albo_bez_zadania_to_blad_uzycia_zanim_cokolwiek_uruchomi(
+    bez: str, blad: str, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Zadanie wykonuje się tylko z planem i jego zadaniem (albo z ``--kroki-skilli``): bez jednego z nich narzędzie
+    kończy się błędem użycia (kod 2), który mówi, czego brakuje, a nie porażką kroku ani wyjątkiem."""
+
+    plan = _plan(_times(), FILES)
+    (tmp_path / "plan.json").write_text(plan.do_json(), encoding="utf-8")
+    arguments = {"--plan": str(tmp_path / "plan.json"), "--zadanie": plan.zadania[0].id}
+    del arguments[bez]
+
+    with pytest.raises(SystemExit) as stop:
+        wykonaj_zadanie.main([word for pair in arguments.items() for word in pair], root=tmp_path)
+
+    assert stop.value.code == 2
+    assert blad in capsys.readouterr().err
+
+
 def test_plan_z_polem_zadania_spoza_planu_konczy_zadanie_i_required_linia_fail_z_przyczyna(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -791,6 +810,33 @@ def test_push_nie_ponawia_testu_ktory_padl(mini_repo: Path) -> None:
 
     assert wykonaj_zadanie.wykonaj(plan_runu.Plan(Zdarzenie.PUSH, plan_ci.CEL_S, (), (job,)), job.id, root=mini_repo) == 1
     assert not niestabilne_testy.FLAKY_TESTY.exists()
+
+
+JUNIT_Z_PORAZKA = '<testsuites><testsuite><testcase classname="tests.test_a" name="test_x" file="tests/test_a.py"><failure message="x"/></testcase></testsuite></testsuites>'
+# Junit urwany w połowie zapisu, jak po pytest zabitym w trakcie pisania pliku.
+JUNIT_NIE_XML = '<testsuites><testsuite><testcase classname="tests.test_a"'
+
+
+@pytest.mark.parametrize(("junit", "ponowienie"), [(JUNIT_NIE_XML, None), (JUNIT_Z_PORAZKA, JUNIT_NIE_XML)], ids=["junit zadania", "junit ponowienia"])
+def test_junit_ktory_nie_jest_xml_to_brak_wynikow_bez_flaky_testu_i_bez_wynikow_kwarantanny_a_nie_wyjatek(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, junit: str, ponowienie: str | None
+) -> None:
+    """Junit zadania, który nie jest XML, nie daje czego ponowić ani wyników kwarantanny, a junit ponowienia, który nie
+    jest XML, nie robi z porażki flaky testu; zadanie kończy się wtedy swoją porażką i zapisem, a nie wyjątkiem."""
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "junit.xml").write_text(junit, encoding="utf-8")
+    uruchomione: list[tuple[str, ...]] = []
+
+    def uruchom(testy: tuple[str, ...]) -> bool:
+        uruchomione.append(testy)
+        (tmp_path / "ponowienie.xml").write_text(str(ponowienie), encoding="utf-8")
+        return True
+
+    assert not niestabilne_testy.ponow(tmp_path / "junit.xml", tmp_path / "ponowienie.xml", "pytest (Python 3.14, Linux, 1/1)", uruchom)
+    assert uruchomione == ([] if ponowienie is None else [("tests/test_a.py::test_x",)])
+    assert not niestabilne_testy.FLAKY_TESTY.exists()
+    assert niestabilne_testy.wyniki_kwarantanny(tmp_path / "junit.xml") == {}
 
 
 def test_zadanie_zapisuje_wynik_testow_z_kwarantanny_xfail_to_porazka_a_xpass_przejscie(mini_repo: Path) -> None:
