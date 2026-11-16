@@ -12,6 +12,7 @@ pilnuje:
   - tools/lib/atrapy/scenariusz_rozliczen.py
   - tools/lib/atrapy/efenix.py
   - tools/lib/atrapy/atrapa_efenix.py
+  - tools/lib/atrapy/serwer_http.py
   - tools/lib/atrapy/intermax.py
   - tools/lib/atrapy/model_efenix.py
   - tools/lib/atrapy/pliki_taty.py

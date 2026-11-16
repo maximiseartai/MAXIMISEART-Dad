@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from datetime import datetime, timezone
 from email.message import Message
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 from pathlib import Path
 import re
@@ -25,6 +25,7 @@ import urllib.parse
 
 import pytest
 
+from atrapy.serwer_http import serwer_http
 from rozliczenia.centrum import tool_update
 from rozliczenia.centrum.github import TOOL_API
 from rozliczenia.centrum.opener import opener
@@ -269,12 +270,8 @@ class _GitHub(BaseHTTPRequestHandler):
 def github() -> Iterator[str]:
     _ASKED.clear()
     _ASKED_HEADERS.clear()
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _GitHub)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    yield f"http://127.0.0.1:{server.server_address[1]}"
-    server.shutdown()
-    server.server_close()
+    with serwer_http(_GitHub, name="atrapa-api-github") as server:
+        yield server.url
 
 
 def test_najnowsze_wydanie_to_najwyzszy_numer_a_nie_ostatni_tag_alfabetycznie(github: str) -> None:
@@ -326,16 +323,8 @@ def test_health_centrum_na_tym_komputerze_idzie_wprost_mimo_proxy_w_ustawieniach
         def log_message(self, format: str, *args: object) -> None:
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _Health)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    try:
-        with system_proxy(monkeypatch) as proxied:
-            running = running_centrum(server.server_address[1], timeout_s=30)
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
+    with serwer_http(_Health, name="atrapa-health-centrum") as server, system_proxy(monkeypatch) as proxied:
+        running = running_centrum(server.server_address[1], timeout_s=30)
 
     assert (running, proxied) == (RunningCentrum("a" * 40), [])
 

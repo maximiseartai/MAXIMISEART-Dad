@@ -5,12 +5,14 @@ Testy czytają pliki z katalogu Logów obok dziennika Centrum, tak jak Maks dost
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Iterator, Sequence
 from contextlib import ExitStack, contextmanager, suppress
 from dataclasses import dataclass, field, replace
 from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
 import errno
+import gc
 import hashlib
 from http import HTTPStatus
 from importlib.metadata import version
@@ -25,6 +27,7 @@ import sys
 import threading
 import time
 from typing import Any, Final, NoReturn, cast
+import warnings
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
@@ -2335,11 +2338,23 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
         monkeypatch.setenv("PLAYWRIGHT_NODEJS_PATH", str(tmp_path / "bez-sterownika" / "node"))
     if path.profile_file:
         (tmp_path / "przegladarka-efenix").write_text("", encoding="utf-8")
+    loops_before = _event_loops()
     with atrapa_efenix([PRICED[0].in_efenix("611")], outage_from=path.outage, error_answer=path.error_answer) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
         assert _start_pricing(centrum).status_code == 200
         finished_view(centrum.client)
     monkeypatch.delenv("PLAYWRIGHT_NODEJS_PATH", raising=False)
+    if path.driver:
+        # Playwright, którego sterownik nie wystartował, nie zamyka swojej pętli zdarzeń (błąd startu sterownika wychodzi
+        # z PlaywrightContextManager.__enter__ przed jego __exit__), a na Linuksie trzyma ją jeszcze greenlet wątku
+        # Uruchomienia, który już się skończył. Test zamyka więc pętle, które powstały w nim, zamiast zostawić ich
+        # deskryptory sąsiadowi (tests/fixtures/stan_procesu.py).
+        for loop in _event_loops() - loops_before:
+            if not loop.is_running():
+                loop.close()
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ResourceWarning)
+            gc.collect()
     [record] = records(centrum)
     stop, trace = record["efenix_stop"], record["trace"]
     cause = {key: value for key, value in stop["cause"].items() if value is not None}
@@ -2365,6 +2380,12 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
     details += [] if logged["status"] is None else [f"HTTP {logged['status']}"]
     assert shown.split("; wyjątki ")[0] == f"Przyczyna w Logach: okno efenix przy starcie okna: {logged['what']} ({', '.join(details)})"
     assert f"; wyjątki {' ← '.join(chain)}" in shown and shown.endswith(f" w {path.raised}"), shown
+
+
+def _event_loops() -> set[asyncio.AbstractEventLoop]:
+    """Pętle zdarzeń procesu, które jeszcze nie są zamknięte, także te w śmieciach."""
+
+    return {obj for obj in gc.get_objects() if isinstance(obj, asyncio.AbstractEventLoop) and not obj.is_closed()}
 
 
 def _replay_report(capsys: pytest.CaptureFixture[str], logs: Path) -> list[str]:

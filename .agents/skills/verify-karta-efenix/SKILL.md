@@ -8,6 +8,7 @@ pilnuje:
   - src/rozliczenia/efenix_pricing.py
   - src/rozliczenia/efenix_window.py
   - tools/lib/atrapy/atrapa_efenix.py
+  - tools/lib/atrapy/serwer_http.py
   - tools/lib/atrapy/model_efenix.py
   - tools/lib/atrapy/efenix.py
   - tools/lib/eksplorator.py

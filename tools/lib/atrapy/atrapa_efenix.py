@@ -75,15 +75,16 @@ from decimal import Decimal
 import enum
 from html import escape
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 import socket
 import struct
 import threading
 import time
-from typing import Any, Final
+from typing import Final
 from urllib.parse import parse_qs, urlparse
 
+from atrapy.serwer_http import serwer_http
 from atrapy.model_efenix import (
     CATALOG as CATALOG,
     PRICES as PRICES,
@@ -628,57 +629,18 @@ def atrapa_efenix(
             self.send_header("Content-Length", "0")
             self.end_headers()
 
-    server = _Server(Handler)
-    thread = threading.Thread(target=server.serve_forever, args=(POLL_S,), name="atrapa-efenix")
-    thread.start()
-    atrapa.url = f"http://127.0.0.1:{server.server_address[1]}/{LIST_PAGE}"
-    try:
-        yield atrapa
-    finally:
-        closing.set()
-        server.shutdown()
-        server.close_connections()
-        server.server_close()
-        thread.join()
+    with serwer_http(Handler, name="atrapa-efenix", poll_s=POLL_S) as server:
+        atrapa.url = f"{server.url}/{LIST_PAGE}"
+        try:
+            yield atrapa
+        finally:
+            closing.set()
 
 
 def _atrapa_order(order: EfenixOrder) -> AtrapaOrder:
     if isinstance(order, AtrapaOrder):
         return order
     return AtrapaOrder(**{each.name: getattr(order, each.name) for each in fields(order)})
-
-
-class _Server(ThreadingHTTPServer):
-    daemon_threads = True
-    # Kolejka ``listen`` dłuższa niż domyślne 5: Windows odrzuca połączenie ponad kolejkę, a macOS i Linux je trzymają.
-    request_queue_size = 128
-
-    def __init__(self, handler: type[BaseHTTPRequestHandler]) -> None:
-        self._connections: set[socket.socket] = set()
-        self._connections_lock = threading.Lock()
-        super().__init__(("127.0.0.1", 0), handler)
-
-    def get_request(self) -> tuple[socket.socket, Any]:
-        # Pętla serwera przyjmuje połączenie przed końcem ``shutdown``, więc po nim zbiór ma każde przyjęte połączenie.
-        connection, address = super().get_request()
-        with self._connections_lock:
-            self._connections.add(connection)
-        return connection, address
-
-    def shutdown_request(self, request: socket.socket | tuple[bytes, socket.socket]) -> None:
-        if isinstance(request, socket.socket):
-            with self._connections_lock:
-                self._connections.discard(request)
-        super().shutdown_request(request)
-
-    def close_connections(self) -> None:
-        """Po ``shutdown`` zamyka w obie strony połączenia, które są jeszcze otwarte, więc wątek, który na nim czyta
-        następne żądanie albo pisze odpowiedź, kończy obsługę, a przeglądarka nie dostaje już odpowiedzi."""
-
-        with self._connections_lock:
-            for connection in self._connections:
-                with suppress(OSError):
-                    connection.shutdown(socket.SHUT_RDWR)
 
 
 # Żądania, które są działaniem serwera efenix, i pole, w którym przychodzi identyfikator zlecenia (szukanie bez niego).

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import io
 import json
 import os
@@ -34,6 +34,7 @@ from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.sen import sleep_in_test_thread
 
+from atrapy.serwer_http import serwer_http
 import czasy_ci
 from github import BladApi, GhApi
 import niestabilne_testy
@@ -135,12 +136,6 @@ class _Api:
         *self.earlier, self.body = (json.dumps(_api(steps)) for steps in readings)
 
 
-class _ApiServer(ThreadingHTTPServer):
-    """Wątki obsługi nie są demonami, więc ``server_close`` czeka na ich koniec (``block_on_close``)."""
-
-    daemon_threads = False
-
-
 @contextmanager
 def _api_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Api]:
     """API zadań runu czynne w bloku pod ``GITHUB_API_URL``.
@@ -165,18 +160,13 @@ def _api_server(monkeypatch: pytest.MonkeyPatch) -> Iterator[_Api]:
         def log_message(self, *_: object) -> None:
             pass
 
-    server = _ApiServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
-    thread.start()
-    for name, value in {**ENV, "GITHUB_API_URL": f"http://127.0.0.1:{server.server_port}", "NO_PROXY": "127.0.0.1"}.items():
-        monkeypatch.setenv(name, value)
-    try:
-        yield state
-    finally:
-        state.closing.set()
-        server.shutdown()
-        server.server_close()
-        thread.join()
+    with serwer_http(Handler, name="atrapa-api-zadan", poll_s=0.01) as server:
+        for name, value in {**ENV, "GITHUB_API_URL": server.url, "NO_PROXY": "127.0.0.1"}.items():
+            monkeypatch.setenv(name, value)
+        try:
+            yield state
+        finally:
+            state.closing.set()
 
 
 @pytest.fixture

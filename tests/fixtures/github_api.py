@@ -6,11 +6,12 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 import threading
 from typing import Final, Literal
 
+from atrapy.serwer_http import serwer_http
 from rozliczenia.centrum.tool_freshness import PUBLISHED_PAGE
 
 # Tyle pytań bez tokenu zostało w tej godzinie: odmowa tokenu nie jest odmową z powodu limitu.
@@ -103,17 +104,12 @@ def github_api(
         def log_message(self, format: str, *args: object) -> None:
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    api.url = f"http://127.0.0.1:{server.server_address[1]}"
-    try:
-        yield api
-    finally:
-        api.closing.set()
-        server.shutdown()
-        server.server_close()
-        thread.join()
+    with serwer_http(Handler, name="atrapa-api-github") as server:
+        api.url = server.url
+        try:
+            yield api
+        finally:
+            api.closing.set()
 
 
 def newest_on_main(repository: str, tag: str, commit: str) -> dict[str, Answer]:

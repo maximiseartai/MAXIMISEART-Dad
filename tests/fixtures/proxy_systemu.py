@@ -5,10 +5,11 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import threading
+from http.server import BaseHTTPRequestHandler
 
 import pytest
+
+from atrapy.serwer_http import serwer_http
 
 
 @contextmanager
@@ -30,16 +31,9 @@ def system_proxy(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
         def log_message(self, format: str, *args: object) -> None:
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _Proxy)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    proxy_of_system(monkeypatch, f"http://127.0.0.1:{server.server_address[1]}")
-    try:
+    with serwer_http(_Proxy, name="proxy-systemu") as server:
+        proxy_of_system(monkeypatch, server.url)
         yield requests
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
 
 
 def proxy_of_system(monkeypatch: pytest.MonkeyPatch, address: str) -> None:
