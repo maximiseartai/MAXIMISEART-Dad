@@ -314,8 +314,8 @@ Three of them break a rule their `harm` does not name: with a Kopia that overwri
 same second stops with it rewritten (ZATRZYMANIE_BEZ_SLADU) or, after its replace, fails on `made[0]` (BEZ_WYJATKU); the
 same with a taken name that does not stop the run breaks KOPIE_NAJNOWSZE; Wpisanie raportów without `check_cells`
 breaks DOKLADNIE_WPISANE.
-Since #716 both processes share one Kopia and one cleanup, so the first two mutations break both at once and the list
-has no separate restore mutations; „the Kopia made before the write check” is not a mutation either, because the one
+Since #716 both processes share one Kopia and one cleanup, so the first two mutations break both at once, and „a restore without the Kopia of the current
+state” and „the Kopia of the current state left after a failed restore” are no longer mutations of their own; „the Kopia made before the write check” is not a mutation either, because the one
 cleanup removes such a Kopia after a mismatch and only `tests/test_podmiana_intermax.py` sees the order.
 
 A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its
