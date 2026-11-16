@@ -183,7 +183,10 @@ class GhApi:
         return self._api(sciezka, "--allow-escape-sequences")
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
-        return json.loads(self._api("--method", metoda, sciezka, "--input", "-", wejscie=json.dumps(tresc).encode("utf-8")))
+        """Treść odpowiedzi JSON, a None przy odpowiedzi bez treści (204, np. dispatch workflow)."""
+
+        odpowiedz = self._api("--method", metoda, sciezka, "--input", "-", wejscie=json.dumps(tresc).encode("utf-8"))
+        return json.loads(odpowiedz) if odpowiedz.strip() else None
 
 
 def strony(github: GitHub, sciezka: str) -> Iterator[dict[str, Any]]:
