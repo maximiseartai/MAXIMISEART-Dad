@@ -58,6 +58,8 @@ OLD_REGISTER_SPELLINGS = {"ADRES": "adres", "NUMER ZL.": "nr zlecenia", "NUMER U
 OLD_REGISTER_ONLY_VALUES: dict[str, object] = {"STATUS APLIKACJI": "zamknięte"}
 # Początki wartości kolumn nowego Rejestru, które nie trafiają do plików okresu.
 NOT_TRANSFERRED_PREFIXES: dict[str, str] = {"AKCJE": "akcja SYN-", "ZWROT": "zwrot SYN-", "UWAGI": "uwaga SYN-"}
+# Stawka Wzorca pliku zbiorczego w N1 i w arkuszu ``Rates``.
+COLLECTIVE_TEMPLATE_RATE = 17.5
 # Wiersze Wzorca pliku zbiorczego przygotowane zerami w N:AP.
 COLLECTIVE_TEMPLATE_ZERO_ROWS = 6
 # Formatowanie przygotowanych wierszy Wzorca pliku zbiorczego: A:K i kolumny ilości.
@@ -337,14 +339,27 @@ def write_internal_template(
     return path
 
 
-def write_collective_template(path: Path, *, row_style: bool = False, view: View = TEMPLATE_VIEW) -> Path:
-    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, zera i formuły, link zewnętrzny."""
+def write_collective_template(
+    path: Path,
+    *,
+    row_style: bool = False,
+    view: View = TEMPLATE_VIEW,
+    rate: float = COLLECTIVE_TEMPLATE_RATE,
+    zero_rows: int = COLLECTIVE_TEMPLATE_ZERO_ROWS,
+) -> Path:
+    """Wzorzec pliku zbiorczego: stawki w wierszach 1–16, nagłówki w 17, ``zero_rows`` wierszy zer i formuł, link
+    zewnętrzny.
+
+    Ten sam układ z inną stawką ``rate`` (N1 i arkusz ``Rates``) to Wzorzec rozliczenia pracownika łańcucha skilla
+    verify-rozliczenia: zera w N:AP każą Przebiegowi opróżnić Ilości tylko dla INEA, a własna stawka pokazuje stawkę
+    przeniesioną z Pliku zbiorczego.
+    """
 
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"
     sheet["A1"] = "STAWKI"
-    sheet["N1"] = 17.5
+    sheet["N1"] = rate
     sheet["O1"] = 30
     sheet["N16"] = "=SUM(N18:N40)"
     sheet.cell(HEADER_ROW, 1).fill = PatternFill(fill_type="solid", fgColor="00AA55")
@@ -354,7 +369,7 @@ def write_collective_template(path: Path, *, row_style: bool = False, view: View
     sheet.cell(HEADER_ROW, QUANTITY_COLUMNS[-1]).value = "demontaż"
     _apply_template_layout(sheet, HEADER_ROW, len(COLLECTIVE_HEADERS), row_style=row_style, view=view)
     styled_data_columns = 0 if row_style else len(COLLECTIVE_HEADERS)
-    for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + COLLECTIVE_TEMPLATE_ZERO_ROWS):
+    for row in range(FIRST_DATA_ROW, FIRST_DATA_ROW + zero_rows):
         for column in range(1, styled_data_columns + 1):  # A:K, przygotowane we wzorcu
             cell = sheet.cell(row, column)
             cell.font = Font(name=TEMPLATE_FONT_NAME, size=TEMPLATE_FONT_SIZE)
@@ -367,7 +382,7 @@ def write_collective_template(path: Path, *, row_style: bool = False, view: View
         sheet.cell(row, AMOUNT_COLUMN).value = f"=N{row}*$N$1"
     rates = workbook.create_sheet("Rates")
     rates["A1"] = "synthetic rate"
-    rates["B1"] = 17.5
+    rates["B1"] = rate
     workbook.save(path)
     add_external_link_fixture(path)
     return path
