@@ -35,7 +35,7 @@ from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 import czasy_ci
-from github import BladApi
+from github import BladApi, GhApi
 from jednostka import Czesc
 import mutacje_nocne
 import mutacje_zmiany
@@ -118,7 +118,8 @@ class GitHubWPamieci:
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
         self.wyslane.append((metoda, sciezka, tresc))
         if (metoda, sciezka) == URUCHOMIENIE_NOCY[:2]:
-            return {"workflow_run_id": 9001, "run_url": f"https://api.github.com/{REPO}/actions/runs/9001", "html_url": RUN}
+            # GitHub odpowiada na dispatch 204 bez treści (run 43803216192), a ``GhApi.wyslij`` daje wtedy None.
+            return None
         if (metoda, sciezka) == ("POST", f"{REPO}/issues"):
             numer = 900 + len(self.issues)
             self.issues.append({"number": numer, "state": "open", "comments": [], **tresc})
@@ -1813,3 +1814,15 @@ def test_noc_planuje_skrypty_skilli_od_bazy_a_ich_zadanie_wgrywa_zapis_pod_nazwa
 
 def test_zadanie_skryptow_skilli_przygotowuje_runner_jak_mutation_checks_w_ci() -> None:
     assert _kroki_do_planu(_nocne()["jobs"]["skill-mutations"]) == _kroki_do_planu(jobs()["mutations"])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="atrapa gh po samej nazwie tylko na POSIX")
+@pytest.mark.parametrize(("odpowiedz", "wynik"), [("", None), ('{"number": 7}', {"number": 7})], ids=["204-bez-tresci", "json"])
+def test_wyslanie_przez_gh_api_przyjmuje_odpowiedz_bez_tresci(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, odpowiedz: str, wynik: object) -> None:
+    """Dispatch workflow dostaje od GitHuba 204 bez treści, a start nocy padał na niej po udanym dispatchu (run 43803216192)."""
+
+    fake_cli(tmp_path, "gh", f"import sys\nsys.stdin.read()\nsys.stdout.write({odpowiedz!r})\n")
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+
+    assert GhApi().wyslij("POST", f"{REPO}/actions/workflows/mutacje-nocne.yml/dispatches", {"ref": "main"}) == wynik
+
