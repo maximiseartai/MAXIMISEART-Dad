@@ -30,7 +30,7 @@ The scenarios are Dad's own paths: opening Centrum on a page, clicking through t
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wydajnosc`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wydajnosc`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/wydajnosc-*.json`, `wydajnosc/raport.txt` and `wydajnosc/raport.json` (every scenario and profile with median, baseline, budget and verdict, then the API requests, the bundle, the CPU traces and the failures), `wydajnosc/baseline-kandydat.json` and the CPU traces `wydajnosc/slad-*.json` (open them in Chrome DevTools → Performance).
 
 ## Gotchas

@@ -70,7 +70,7 @@ Printed by `scripts/sub_features.py --feature uzupelnienie` from the drive's ste
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uzupelnienie`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uzupelnienie`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/uzupelnienie-*.json`.
 
 The run does not wait a minute for the Komunikat after a failed read:

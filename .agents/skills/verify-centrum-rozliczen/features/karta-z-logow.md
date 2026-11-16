@@ -29,7 +29,7 @@ Dad starts Centrum with the shortcut and opens Uruchomienia: the last Uruchomien
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature karta-z-logow`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature karta-z-logow`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/karta-*.json` and `state/` (the Logi and the Centrum log).
 
 ## Gotchas

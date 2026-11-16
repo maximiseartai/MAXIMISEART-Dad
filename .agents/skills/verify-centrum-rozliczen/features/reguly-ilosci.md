@@ -25,7 +25,7 @@ a bookmark of `#/ustawienia/reguly-ilosci` or `#/ustawienia/urzadzenia` opens th
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature reguly-ilosci`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature reguly-ilosci`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/reguly-ilosci.json`.
 
 ## Gotchas

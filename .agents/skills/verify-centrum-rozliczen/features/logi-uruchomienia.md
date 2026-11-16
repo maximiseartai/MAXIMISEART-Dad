@@ -47,7 +47,7 @@ Dad does nothing for it: he starts Uruchomienia procesu as always, on Uruchomien
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature logi-uruchomienia`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature logi-uruchomienia`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/logi-*.json`, `api/logi-komentarz.md` and `state/uruchomienia/` (every file of Logi of the run, also checked by the self-test's evidence hygiene).
 
 ## Gotchas

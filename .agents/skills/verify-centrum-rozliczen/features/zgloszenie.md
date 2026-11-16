@@ -51,7 +51,7 @@ Printed by `scripts/sub_features.py --feature zgloszenie` from the drive's steps
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature zgloszenie`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature zgloszenie`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/zgloszenie-*.json`.
 
 ## Gotchas

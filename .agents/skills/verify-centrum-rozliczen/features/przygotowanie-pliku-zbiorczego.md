@@ -40,7 +40,7 @@ procesu`; the tabs `Uruchomienie` and `Historia` show the live run and the past 
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature przygotowanie-pliku-zbiorczego`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature przygotowanie-pliku-zbiorczego`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/przygotowanie-*.json`.
 
 ## Gotchas

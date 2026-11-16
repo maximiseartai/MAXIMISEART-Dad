@@ -41,7 +41,7 @@ Dad opens Ustawienia with the gear in the menu's footer and chooses the section 
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wykonawcy`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wykonawcy`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/wykonawcy-*.json`.
 
 ## Gotchas

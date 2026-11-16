@@ -37,7 +37,7 @@ Dad clicks the desktop shortcut „Centrum rozliczeń” to start Centrum or to 
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature start-i-zamykanie`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature start-i-zamykanie`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/start-health.json`, `api/start-*.txt` and `state/centrum-rozliczen.log`.
 
 ## Gotchas

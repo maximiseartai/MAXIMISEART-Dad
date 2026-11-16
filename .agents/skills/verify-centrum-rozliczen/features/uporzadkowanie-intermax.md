@@ -29,7 +29,7 @@ clicks `Nowe Uruchomienie procesu` first. He points INTERMAX in Ustawienia, sect
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uporzadkowanie-intermax`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uporzadkowanie-intermax`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/intermax-*.json` and `state/` (the Logi, `opened.jsonl`).
 
 ## Gotchas

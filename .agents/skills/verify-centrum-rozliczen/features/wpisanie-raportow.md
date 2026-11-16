@@ -46,7 +46,7 @@ Printed by `scripts/sub_features.py --feature wpisanie-raportow` from the drive'
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wpisanie-raportow`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wpisanie-raportow`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/raporty-*.json` and `state/` (the Logi of Wpisanie raportów).
 
 The days, holidays and Przypomnienia of `mapa-zakresu` and `przypomnienia` come from a routed window.

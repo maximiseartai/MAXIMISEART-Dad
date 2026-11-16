@@ -38,7 +38,7 @@ Returning to the Centrum tab, or reloading it, reads the board again.
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature tablica-okresow`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature tablica-okresow`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/tablica-*.json`, `api/odmowa-obcy-*.json` and `state/opened.jsonl`.
 
 ## Gotchas
