@@ -29,10 +29,9 @@ Biegnie każde cofnięcie fragmentu i najwyżej jedna inna mutacja na linię (``
 drzewa składni linii, czyli ostatnia, którą daje przejście drzewa wszerz (``ast.walk``), a z kilku na tym samym węźle
 ostatnia z nich. Psuje ona najmniejszy kawałek linii, więc przeżywa test, który sprawdza tylko ogólny skutek linii;
 ogólny skutek fragmentu sprawdza już jego cofnięcie. Samo cofnięcie fragmentu (``Revert.HUNK``) biegnie po innych
-mutacjach części, a nie biegnie (linia ``ZDOMINOWANA``, ich liczba w linii ``CZAS``), gdy każdą
-inną mutację części, która psuje jego linię, wykrył test (``WYKRYTA`` albo ``ZAWIESZENIE``, nie sama brama typów).
-Predykat napisu biegnie tylko na linii bez innej mutacji: przy
-zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
+mutacjach części, a nie biegnie (linia ``ZDOMINOWANA``, ich liczba w linii ``CZAS``), gdy każdą inną mutację części,
+która psuje jego linię, wykrył test (``WYKRYTA`` albo ``ZAWIESZENIE``, nie sama brama typów). Predykat napisu biegnie
+tylko na linii bez innej mutacji: przy zbiorze albo słowniku po prawej ``startswith`` tylko rzuca ``AttributeError``. Cofnięcie, które daje ten sam kod co
 inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
 jej wyjątku (``Mutant.line``).
 
@@ -203,7 +202,7 @@ class Revert(enum.Enum):
 
     NONE = enum.auto()
     MERGED = enum.auto()  # kod innej mutacji, który cofa też fragment: biegnie zawsze, pod jej opisem
-    HUNK = enum.auto()  # samo cofnięcie fragmentu: biegnie, gdy żadna biegnąca mutacja nie psuje jego linii
+    HUNK = enum.auto()  # samo cofnięcie fragmentu: biegnie po innych mutacjach części, gdy nie jest ``_dominated``
 
 
 @dataclass(frozen=True)
@@ -1057,9 +1056,8 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     # Pokrycie tylko przyspiesza: mutacja, która przeżyła testy swoich linii, biegnie z coraz większym zbiorem testów.
     # Przebieg przed ostatnim biegnie po kilka mutacji naraz jak pierwszy. Ostatni ma testy pliku, często tysiące, a
     # takich mutacji jest kilka, więc biegną po jednej, każda z workerami xdist.
-    # Samo cofnięcie fragmentu biegnie po innych mutacjach części i nie biegnie, gdy każdą z nich, która psuje jego linię,
-    # wykrył test (WYKRYTA albo ZAWIESZENIE): 12 nocy 9–15.11 takie cofnięcie przeżyło 102 razy na 1219, zawsze przy
-    # zmianie, która nic nie zmieniała, a kosztowało 8,6% czasu mutacji nocy.
+    # Samo cofnięcie fragmentu biegnie po innych mutacjach części, bo dopiero ich werdykty testów mówią, czy jest
+    # ``_dominated`` (ADR 0021: 1219 takich cofnięć w 12 nocach dało tylko szum, a kosztowało 8,6% czasu mutacji).
     others = [entry for entry in narrow if entry[0].revert is not Revert.HUNK]
     reverts = [entry for entry in narrow if entry[0].revert is Revert.HUNK]
     killed: set[Mutant] = set()  # wykryte przez test, nie przez bramę typów
