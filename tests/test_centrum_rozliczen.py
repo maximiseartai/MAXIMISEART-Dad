@@ -3747,6 +3747,7 @@ SETTINGS_WRITES: dict[str, SettingsRequest] = {
     "addActivityCode": lambda w: ("POST", LEGEND_URL, WORLD_CODE),
     "changeActivityCode": lambda w: ("PUT", code_url("spawez"), WORLD_CODE),
     "removeActivityCode": lambda w: ("DELETE", code_url("spawez"), None),
+    "previewActivityLegend": lambda w: ("POST", f"{LEGEND_URL}/preview", {"kind": "change", "code_id": "spawez", "code": WORLD_CODE}),
     "chooseRegister": lambda w: ("POST", "/api/settings/register/choose", None),
     "openRegister": lambda w: ("POST", "/api/settings/register/open", None),
     "changeReminders": lambda w: ("PUT", "/api/settings/reminders", SIGNED_REMINDERS),

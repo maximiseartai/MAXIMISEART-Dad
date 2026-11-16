@@ -136,6 +136,15 @@ def _capture(run: Run, page: Page, name: str, answer: dict[str, Any]) -> None:
     snapshot.write_text(text, encoding="utf-8")
 
 
+def _spawpg(run: Run, name: str) -> dict[str, Any]:
+    """The form of spawpg in the server's legend."""
+
+    codes = run.api(URL, name)["codes"]
+    assert isinstance(codes, list)
+    form: dict[str, Any] = next(code["code"] for code in codes if code["id"] == "spawpg")
+    return form
+
+
 def _spellings(run: Run, name: str) -> dict[str, str]:
     codes = run.api(URL, name)["codes"]
     assert isinstance(codes, list)
@@ -299,7 +308,7 @@ def _preview_and_save(run: Run, page: Page, legend: Path, count: int) -> None:
         preview = form.get_by_role("list", name="Podgląd")
         run.check(preview.count() == 0, "an unchanged form of a code has no preview")
         form.get_by_role("spinbutton", name="Kwota w AS", exact=True).fill("80")
-        spawpg = next(code["code"] for code in run.api(URL, "legenda-czynnosci-przed-podgladem")["codes"] if code["id"] == "spawpg")
+        spawpg = _spawpg(run, "legenda-czynnosci-przed-podgladem")
         answer = _preview(run, {"kind": "change", "code_id": "spawpg", "code": {**spawpg, "amount": 80}})
         [row] = [row for row in answer["rows"] if row["row"] == SPAWPG_ROW]
         run.check(
@@ -324,7 +333,7 @@ def _preview_and_save(run: Run, page: Page, legend: Path, count: int) -> None:
         run.step(FEATURE, "legenda-zapis-przy-roznicach")
         form.get_by_role("button", name="Zapisz", exact=True).click()
         expect(_codes(window).filter(has_text="spawpg:")).to_contain_text("80 w Uwagi - kwota AS")
-        saved = next(code["code"] for code in run.api(URL, "legenda-czynnosci-zapis-przy-roznicach")["codes"] if code["id"] == "spawpg")
+        saved = _spawpg(run, "legenda-czynnosci-zapis-przy-roznicach")
         run.check(saved["amount"] == 80, "„Zapisz” saves the change although the preview shows a difference from Dad")
         run.capture(page, "431-legenda-czynnosci-zapis-przy-roznicach", full_page=False)
         _close_saved(page)
