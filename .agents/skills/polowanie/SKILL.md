@@ -42,9 +42,13 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
      ```
 
    - Przeżyte mutanty nocy: wystąpienie to PR z tytułu issue i rodzaj linii, której zmiany żaden test nie widzi, a jeden PR to jedno wystąpienie, ile by miał mutantów.
+     Linię nocy bez odpowiedzi `wykryta` albo `nie warto` daje `tools/mutacje_nocne.py wystapienia`: rozpoznaje linie nocy każdego rodzaju i odpowiedzi agentów tym samym rdzeniem, po którym noc nie zgłasza linii drugi raz, a liczy się ostatnia odpowiedź.
+     Issue bez linii `WYSTĄPIENIE` w tym wyniku nie daje wystąpienia, a rodzaj linii wystąpienia bierzesz z jego linii `WYSTĄPIENIE`.
+     W polowaniu 2026-11-09 to 38 z 88 issues bez wystąpienia, a 14 issues z liniami Atrapy efenix daje 4 wystąpienia (#784, #914, #1027, #1084).
 
      ```bash
-     gh issue list --label przezyte-mutacje --state all --search 'created:<poniedziałek>..<niedziela>' --limit 200 --json number,title,body > <bieg>/mutanty.json
+     gh issue list --label przezyte-mutacje --state all --search 'created:<poniedziałek>..<niedziela>' --limit 200 --json number,title,body,state,comments > <bieg>/mutanty.json
+     .venv/bin/python tools/mutacje_nocne.py wystapienia <bieg>/mutanty.json > <bieg>/mutanty-wystapienia.txt
      ```
 
    - Czerwony `main` z prawdziwej zmiany: wystąpienie to issue, którego PR naprawy (`cross-referenced` w osi czasu issue) ma blok `### Czerwony main #N` w `## Korzeń`; porażka niestabilna (issue `Flaky test:`, `zderzenie` zdjęte z komentarzem) nim nie jest.

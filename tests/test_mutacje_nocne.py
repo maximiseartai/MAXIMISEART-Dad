@@ -1886,3 +1886,144 @@ def test_wyslanie_przez_gh_api_przyjmuje_odpowiedz_bez_tresci(tmp_path: Path, mo
 
     assert GhApi().wyslij("POST", f"{REPO}/actions/workflows/mutacje-nocne.yml/dispatches", {"ref": "main"}) == wynik
 
+
+
+# --- wystąpienia polowania ---
+
+NOC_AUTOR = {"login": "github-actions"}
+AGENT = {"login": "agent-testu"}
+SKRYPT_A_PLIK = ".agents/skills/verify-a/scripts/check_a_mutations.py"
+
+
+def _jak_gh_issue_list(github: GitHubWPamieci, odpowiedzi: Mapping[str, list[str]]) -> list[dict[str, Any]]:
+    """Issues, które założyła noc, w postaci ``gh issue list --json number,title,body,state,comments``: treść i komentarze
+    nocy z autorem ``github-actions``, a po nich komentarze agenta z ``odpowiedzi`` (tytuł → treści komentarzy)."""
+
+    return [
+        {
+            "number": issue["number"],
+            "title": issue["title"],
+            "body": issue["body"],
+            "state": issue["state"].upper(),
+            "comments": [
+                *({"author": NOC_AUTOR, "body": komentarz["body"]} for komentarz in issue["comments"]),
+                *({"author": AGENT, "body": tresc} for tresc in odpowiedzi.get(issue["title"], [])),
+            ],
+        }
+        for issue in github.issues
+    ]
+
+
+def _wystapienia(tmp_path: Path, issues: list[dict[str, Any]], capsys: pytest.CaptureFixture[str]) -> tuple[int, list[str]]:
+    plik = tmp_path / "mutanty.json"
+    plik.write_text(json.dumps(issues, ensure_ascii=False), encoding="utf-8")
+    kod = mutacje_nocne.main(["wystapienia", str(plik)])
+    return kod, capsys.readouterr().out.splitlines()
+
+
+@pytest.mark.parametrize(
+    ("odpowiedzi", "otwarte"),
+    [
+        pytest.param(
+            [f"SKRYPT {SKRYPT_A_PLIK} | nie warto, bo podstawa padła na znanej awarii runnera",
+             f"CZAS BLISKO LIMITU {SKRYPT_A_PLIK} | podmiana → bez odczytu | nie warto, bo czas stoi od tygodnia"],
+            [],
+            id="obie-wedlug-rady-nocy",
+        ),
+        pytest.param(
+            [f"```\nSKRYPT {SKRYPT_A_PLIK} | wykryta, sprawdzenie skilla łapie ją po poprawce kotwicy\n```",
+             f"CZAS BLISKO LIMITU {SKRYPT_A_PLIK} | podmiana → bez odczytu | 308 s z limitu --limit-s 600 s (MUTACJE_CZESC=2/2) | nie warto, bo stały czas"],
+            [],
+            id="w-bloku-kodu-i-z-cala-linia-nocy",
+        ),
+        pytest.param(
+            [f"SKRYPT {SKRYPT_A_PLIK} | nie warto, bo podstawa padła na znanej awarii runnera"],
+            [f"CZAS BLISKO LIMITU {SKRYPT_A_PLIK} | podmiana → bez odczytu"],
+            id="ostrzezenie-czasu-bez-odpowiedzi",
+        ),
+        pytest.param(
+            [f"SKRYPT {SKRYPT_A_PLIK} | nie warto, bo podstawa padła na znanej awarii runnera",
+             f"CZAS BLISKO LIMITU {SKRYPT_A_PLIK} | podmiana → bez odczytu | nie warto, bo stały czas",
+             f"Sprostowanie:\nSKRYPT {SKRYPT_A_PLIK} | poprawka tabeli mutacji w #31"],
+            [f"SKRYPT {SKRYPT_A_PLIK}"],
+            id="pozniejsza-odpowiedz-odwoluje-nie-warto",
+        ),
+        pytest.param(
+            ["Skrypt padł na awarii runnera, więc nie warto, a czas blisko limitu jest stały.", f"```\nSKRYPT {SKRYPT_A_PLIK}\n```"],
+            [f"SKRYPT {SKRYPT_A_PLIK}", f"CZAS BLISKO LIMITU {SKRYPT_A_PLIK} | podmiana → bez odczytu"],
+            id="proza-i-sam-cytat-linii-nie-odpowiadaja",
+        ),
+    ],
+)
+def test_linia_skryptu_skilla_i_ostrzezenie_czasu_z_odpowiedzia_wedlug_rady_nocy_nie_sa_wystapieniem_polowania(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], odpowiedzi: list[str], otwarte: list[str]
+) -> None:
+    """Noc sama zakłada issue z linią ``SKRYPT`` i ostrzeżeniem ``CZAS BLISKO LIMITU`` (z czasem, który zmienia się co
+    noc), a agent odpowiada w postaci z rady nocy, bez czasu; ``wystapienia`` drukuje tylko linie bez ostatniej
+    odpowiedzi ``wykryta`` albo ``nie warto``."""
+
+    repo, baza = _historia_skilli(tmp_path)
+    github = GitHubWPamieci()
+    wolna = NearLimit(SKRYPT_A_PLIK, "2/2", "podmiana → bez odczytu", 308, 600)
+    zapisy = _wykonania(
+        tmp_path / "zapisy",
+        {"mutacje-1": (PLAN_SKILLI.digest, {SKRYPT_A: "ok"}), "mutacje-2": (PLAN_SKILLI.digest, {SKRYPT_A: "fail", SKRYPT_B: "ok"})},
+        {"mutacje-2": [(SKRYPT_A, wolna)]},
+    )
+    assert mutacje_nocne.zglos(github, repo, baza, zapisy, 0, RUN, PLAN_SKILLI) == 0
+    capsys.readouterr()
+    [tytul] = [issue["title"] for issue in github.issues]
+
+    kod, wyjscie = _wystapienia(tmp_path, _jak_gh_issue_list(github, {tytul: odpowiedzi}), capsys)
+
+    bez = 0 if otwarte else 1
+    assert kod == 0
+    assert wyjscie == [
+        *(f"WYSTĄPIENIE #{github.issues[0]['number']} {tytul} | {linia}" for linia in otwarte),
+        f"MUTACJE NOCNE WYSTĄPIENIA | issues z wystąpieniem {1 - bez} | bez wystąpienia {bez} | z 1",
+    ]
+
+
+def test_mutacja_z_odpowiedzia_wykryta_albo_nie_warto_nie_jest_wystapieniem_a_mutacja_bez_niej_jest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Linie ``MUTACJA`` z kluczem i dopiskiem bez werdyktu pisze noc, także w komentarzu drugiej nocy; odpowiedź
+    agenta powtarza nazwę mutacji bez klucza, jak w radzie nocy, a ``wykryta (teraz linia …)`` też jest odpowiedzią."""
+
+    repo, baza = _historia(tmp_path)
+    c, d = git(repo, "rev-parse", "HEAD^"), git(repo, "rev-parse", "HEAD")
+    github = GitHubWPamieci(pr_commitow={c: [{"number": 14, "merged_at": "2026-10-28T10:00:00Z"}], d: [{"number": 15, "merged_at": None}]})
+    pierwsza = _zapisy(tmp_path / "pierwsza", {1: (PRZEZYLO, [_przezyta("src/a.py:2 stała")]), 2: (OK, [])}, bez_werdyktu={2: [_przezyta("src/a.py:2 `20` → `0`")]})
+    druga = _zapisy(tmp_path / "druga", {1: (PRZEZYLO, [_przezyta("src/a.py:2 inna")])})
+    assert mutacje_nocne.zglos(github, repo, baza, pierwsza, 2, RUN) == 0
+    assert mutacje_nocne.zglos(github, repo, baza, druga, 1, RUN) == 0
+    capsys.readouterr()
+    [issue] = github.issues
+    odpowiedzi = [
+        "MUTACJA src/a.py:2 stała | nie warto, bo stała czyta tylko log",
+        "MUTACJA src/a.py:2 `20` → `0` | wykryta (teraz linia 3), `tools/mutacje.py` → WYKRYTA",
+    ]
+
+    kod, wyjscie = _wystapienia(tmp_path, _jak_gh_issue_list(github, {issue["title"]: odpowiedzi}), capsys)
+
+    assert (kod, len(issue["comments"])) == (0, 1)
+    assert wyjscie == [
+        f"WYSTĄPIENIE #{issue['number']} {issue['title']} | MUTACJA src/a.py:2 inna",
+        "MUTACJE NOCNE WYSTĄPIENIA | issues z wystąpieniem 1 | bez wystąpienia 0 | z 1",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("issues", "przyczyna"),
+    [
+        pytest.param([{"number": 3, "title": "Przeżyte mutacje z #1", "body": "MUTACJA src/a.py:1 stała | klucz abcdef123456"}], "--json number,title,body,comments", id="bez-komentarzy"),
+        pytest.param([{"number": 3, "title": "Przeżyte mutacje z #1", "body": "Nowa postać linii nocy", "comments": []}], "#3", id="bez-linii-nocy"),
+    ],
+)
+def test_wystapienia_z_pliku_bez_komentarzy_albo_bez_linii_nocy_koncza_sie_porazka(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], issues: list[dict[str, Any]], przyczyna: str
+) -> None:
+    kod, wyjscie = _wystapienia(tmp_path, issues, capsys)
+
+    assert kod == 1
+    assert wyjscie[-1].startswith("MUTACJE NOCNE FAIL | ") and przyczyna in wyjscie[-1]
