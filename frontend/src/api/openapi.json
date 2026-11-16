@@ -4402,13 +4402,6 @@
             "const": "ready",
             "title": "State"
           },
-          "files": {
-            "items": {
-              "$ref": "#/components/schemas/PreviewFile"
-            },
-            "type": "array",
-            "title": "Files"
-          },
           "unread": {
             "items": {
               "type": "string"
@@ -4446,7 +4439,6 @@
         "type": "object",
         "required": [
           "state",
-          "files",
           "unread",
           "differences",
           "more",
@@ -6467,30 +6459,6 @@
             "type": "string",
             "title": "Period"
           },
-          "result": {
-            "type": "string",
-            "enum": [
-              "OK",
-              "WYMAGA_SPRAWDZENIA",
-              "BLAD_KRYTYCZNY"
-            ],
-            "title": "Result"
-          },
-          "stop_kind": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "for_tata",
-                  "for_maks"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Stop Kind"
-          },
           "mode_word": {
             "type": "string",
             "title": "Mode Word",
@@ -6518,13 +6486,11 @@
           "started_at",
           "mode",
           "period",
-          "result",
-          "stop_kind",
           "mode_word",
           "tone"
         ],
         "title": "PinnableRun",
-        "description": "Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.\n\nPola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć."
+        "description": "Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.\n\nPola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.\n``result`` i ``stop_kind`` liczą ``tone`` i nie idą w odpowiedzi: okno Uwagi i stopka pokazują sam ton."
       },
       "PreviewCell": {
         "properties": {
@@ -8015,10 +7981,6 @@
       },
       "ReportEnteringSetup": {
         "properties": {
-          "title": {
-            "type": "string",
-            "title": "Title"
-          },
           "reminder": {
             "type": "string",
             "title": "Reminder"
@@ -8055,14 +8017,13 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "title",
           "reminder",
           "blocker",
           "open_in_excel",
           "last"
         ],
         "title": "ReportEnteringSetup",
-        "description": "Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia (``None``: żadnego albo jego Logów nie da się odczytać)."
+        "description": "Przycisk „Wpisz raporty z maili” na ekranie Raporty, poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum.\n\n``reminder`` to przypomnienie przed kliknięciem, ``blocker`` mówi, czego brakuje w Ustawieniach Centrum albo w\n``config`` (plik dostępu do skrzynki raportów, plik adresów Wykonawców), albo jaka kopia konfliktu OneDrive leży\nobok INTERMAX, ``open_in_excel`` to zdanie o INTERMAX otwartym w Excelu, a ``last`` to karta ostatniego Wpisania\nraportów z jego Logów Uruchomienia, linia „Ostatnio …” pod przyciskiem (``None``: żadnego albo jego Logów nie da się\nodczytać)."
       },
       "ReportNotQueued": {
         "properties": {
