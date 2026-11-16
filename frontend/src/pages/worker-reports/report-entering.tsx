@@ -12,6 +12,7 @@ import { WarningSentences } from "@/components/warning-sentences"
 import { href } from "@/lib/address"
 import { isActive, runOf, useRuns } from "@/lib/runs"
 import { type Resource, useResource } from "@/lib/use-resource"
+import { LastRun } from "@/pages/runs/last-run"
 
 const REQUEST = { process: "report_entering" } as const
 
@@ -101,8 +102,9 @@ function blocked(setup: ReportEnteringSetup): boolean {
 }
 
 /**
- * Zdania pod nagłówkiem: czemu przycisk jest wyłączony (z serwera) i Zatrzymanie Wpisania raportów z tej pracy
- * Centrum, którego Komunikat stoi w Uruchomieniach. Bez blokady i bez Zatrzymania nic tu nie stoi.
+ * Zdania pod nagłówkiem: czemu przycisk jest wyłączony (z serwera), linia „Ostatnio …” ostatniego Wpisania raportów
+ * z jego Logów (jak przy Uporządkowaniu INTERMAX) i Zatrzymanie Wpisania raportów z tej pracy Centrum, którego
+ * Komunikat stoi w Uruchomieniach. Bez blokady, bez Wpisania w Logach i bez Zatrzymania nic tu nie stoi.
  */
 export function EnteringNotes({ entering }: { entering: ReportEntering }) {
   const { setup, reload, run } = entering
@@ -115,6 +117,7 @@ export function EnteringNotes({ entering }: { entering: ReportEntering }) {
           sentences={setup.data.blocker === null ? setup.data.open_in_excel : [setup.data.blocker, ...setup.data.open_in_excel]}
         />
       ) : null}
+      {setup.state === "ready" && setup.data.last !== null ? <LastRun last={setup.data.last} /> : null}
       {run?.state === "finished" && run.result.ending !== "finished" ? <Stopped headline={run.result.headline} /> : null}
     </>
   )

@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import date, timedelta
 import json
 from pathlib import Path
+import re
 from typing import Any
 
 from playwright.sync_api import Locator, Page, Route, ViewportSize, expect
@@ -765,6 +766,15 @@ def drive(run: Run, page: Page) -> None:
     _tiles_match(page, _view(run, "raporty-po-kliknieciu"), TILES)
     expect(_button(page)).to_be_enabled()
     run.check(True, "Raporty show the result of the click without a reload, and the button is on again")
+    last = run.api("/api/report-entering", "raporty-ostatnio")["last"]
+    line = page.get_by_role("main").get_by_text(re.compile(r"^Ostatnio .* · " + re.escape(result["headline"]) + "$"))
+    expect(line).to_be_visible()
+    expect(line.locator("xpath=..").get_by_role("button")).to_have_count(1)
+    run.check(
+        isinstance(last, dict) and last["result"]["headline"] == result["headline"],
+        "under the button, without a reload, „Ostatnio …” shows the click from its Logi with the button of its card",
+    )
+    run.capture(page, "419-raporty-ostatnio")
     page.get_by_role("list", name="Sekcje Centrum rozliczeń").get_by_role("link", name="Uruchomienia", exact=True).click()
     live = page.get_by_role("region", name="Podgląd na żywo")
     live.get_by_role("button", name="Otwórz Raporty", exact=True).click()

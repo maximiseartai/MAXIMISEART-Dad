@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated
 
-from pydantic import StringConstraints, computed_field
+from pydantic import Field, StringConstraints, computed_field
 
 from rozliczenia import domain
 from rozliczenia.centrum.contract.common import Model
@@ -18,6 +18,7 @@ class PinnableRun(Model):
     """Uruchomienie z Centrum, do którego tata może przypiąć Uwagę: to, co o nim mówi wiersz okna Uwagi i stopka.
 
     Pola jak w ``ProcessRun``, z którego powstaje; identyfikator jest zawsze, bo bez niego nie ma czego przypiąć.
+    ``result`` i ``stop_kind`` liczą ``tone`` i nie idą w odpowiedzi: okno Uwagi i stopka pokazują sam ton.
     """
 
     run_id: str
@@ -25,8 +26,8 @@ class PinnableRun(Model):
     started_at: datetime
     mode: RunMode
     period: str
-    result: RunResult
-    stop_kind: domain.StopKind | None
+    result: RunResult = Field(exclude=True)
+    stop_kind: domain.StopKind | None = Field(exclude=True)
 
     @computed_field  # type: ignore[prop-decorator]
     @property
