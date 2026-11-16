@@ -1,6 +1,6 @@
 ---
 name: verify-urwane-uruchomienie
-description: Model-check with TLA+ (TLC) the trail of a Wycena w efenix that a switched-off Centrum cut short, across the next starts of Centrum, through the Dziennik Wyceny, the Logi Urwanego Uruchomienia, the progress comment of the Wycena and the end of a Wycena, up to the Kolejka wysyłki (`Outbox.post`). Use when `tools/skille_dla_zmiany.py` names it, when a change touches a definition in its `model/definicje.json` (`RunComments` and `RecordMaker` in `run_comments.py`, `Journal` and `LogsOnDisk` in `logs_disk.py`, `comment_versions.py`, `guard_logs`, `Rank` and `Version` in `outbox.py`, `create_app` in `app.py`, `Run.work` and `RunHost` in `runs.py`, `save` in `efenix_pricing.py`, `run_process`), or when the check of this skill fails.
+description: Model-check with TLA+ (TLC) the trail of a Wycena w efenix that a switched-off Centrum cut short, across the next starts of Centrum, through the Dziennik Wyceny, the Logi Urwanego Uruchomienia, the progress comment and the end of a Wycena, up to the Kolejka wysyłki (`Outbox.post`) - that Maks learns of every cut Wycena and its order in progress, that its Logi pass the guard and match the file at Dad's, never replace the Logi with the result, and that the journals get cleared. Use when `tools/skille_dla_zmiany.py` names it, or when `sprawdz_urwane_uruchomienie.py` fails.
 pilnuje:
   - src/rozliczenia/centrum/run_logs.py
   - src/rozliczenia/centrum/run_logs_guard.py
@@ -113,7 +113,6 @@ git diff $(git log -1 --format=%h -- .agents/skills/verify-urwane-uruchomienie/m
 py -3 .agents\skills\verify-urwane-uruchomienie\scripts\sprawdz_urwane_uruchomienie.py
 ```
 
-`--config NAME` runs one configuration of `model/konfiguracje.json`, `--strict` fails also on known findings.
 The whole check takes 2–3 min on Maks's Mac (2 min 23 s on 2026-11-05, 23 TLC runs).
 
 The last line is the verdict (`tools/lib/model_tlc.py` defines each):

@@ -1,10 +1,7 @@
 # Centrum rozliczeń verification map
 
-This directory is the maintained source for verifying what Dad can do in
-Centrum rozliczeń. Read these conventions before driving, then use the
-feature's own file as the recipe: the feature `<feature>` of `--feature` lives
-in `<feature>.md` next to this file, driven by the skill's
-`scripts/drive/<feature>.py`, whose module name has `_` for `-`.
+This directory is the maintained source for verifying what Dad can do in Centrum rozliczeń.
+The feature `<feature>` of `--feature` lives in `<feature>.md` next to this file, driven by the skill's `scripts/drive/<feature>.py`, whose module name has `_` for `-`.
 
 ## Baseline preconditions
 
@@ -143,7 +140,6 @@ The mode is a manual proof and runs neither in CI nor at night.
   left out with `--feature` is a skip; report it as one.
 - `VERIFY FAIL` keeps `screenshots/zz-failure.png` and the evidence of every
   step before the failure.
-- Evidence contains synthetic paths only; workbook content never appears.
 
 ## Feature entry contract
 
@@ -167,10 +163,9 @@ behaviour, then exactly these H2s in order:
    alone is a step without its own `run.check`: what it waits for (`until`,
    `expect`) stands in the drive, and the file's opening paragraph says it for Dad.
 2. `How to get to it (user POV)`: every entry point Dad has.
-3. `Driving it with Playwright for Python`: the one command that drives the
-   feature and where its proof stands in the evidence. It names the screenshots as the `screenshots` of the
-   feature's `Feature` in `scripts/drive/__init__.py`, which the run takes exactly (`Run.capture` refuses another,
-   and the run fails on a missing one), never by their numbers.
+3. `Driving it with Playwright for Python`: the one command that drives the feature and the files its proof adds.
+   Every command runs from the repository root (Windows: `py -3`), and the proof stands in the evidence folder that `VERIFY OK` names: the lines under `STEP <feature>` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and the files the section adds.
+   The section never names a screenshot by its number: the run takes exactly the `screenshots` of the `Feature` (`Run.capture` refuses another, and the run fails on a missing one).
 4. `Gotchas`: traps that waste or invalidate a run.
 
 When a slice adds a feature, add its file in this directory, its module in

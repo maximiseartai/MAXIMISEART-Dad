@@ -1,6 +1,6 @@
 ---
 name: verify-sprawy-taty
-description: Model-check with TLA+ (TLC) the Sprawy taty (`DadCases` in `dad_cases.py`), the Zgłoszenie of one problem from „Wyślij do Maksa” to Maks's answer (`ReportHandle` and `Reports` in `reports.py`), the Uwaga taty (`send` in `dad_notes.py`) and what a delivery of the Kolejka wysyłki means for them (`_CaseDelivery` in `case_delivery.py`), under every order of the HTTP request, the queue thread `skrzynka-kolejka`, the thread `zgloszenie-skrzynka` of the Diagnoza, the Powiadomienia, failures of the Skrzynka, of `config/sprawy-taty.json` and of `Outbox.post`, and a Centrum that switches off at any step. It checks that every case that waits has its file in the queue, that a card never says „czeka w kolejce” about a Zgłoszenie whose text the Skrzynka rejected, and that once failures stop the card says what the Sprawy taty and the Skrzynka know. Use when a change touches `DadCases` (`add`, `withdraw`, `forget`, `numbered`, `rejected`, `queued`, `state`, `ask_box`, `_change`, `_load`), `ReportHandle` or `Reports` in `reports.py` (`send`, `prepare`, `_ask`, `_queue`, `_pending`, `_heard`, `_state_of`, `_ask_box`), `send` in `dad_notes.py`, `_CaseDelivery` or `case_outbox` in `case_delivery.py`, `Outbox.post`, `wait_delivered`, `resume` or `_send_all` in `outbox.py`, `StateFile` in `atomic_file.py`, `Notifications.view` or `_ask_box` in `notifications.py`, or when the check of this skill fails.
+description: Model-check with TLA+ (TLC) the Sprawy taty, the Zgłoszenie of one problem from „Wyślij do Maksa” to Maks's answer, the Uwaga taty and what a delivery of the Kolejka wysyłki means for them, under every order of the HTTP request, the queue thread `skrzynka-kolejka`, the thread `zgloszenie-skrzynka` of the Diagnoza, the Powiadomienia, failures of the Skrzynka, of `config/sprawy-taty.json` and of `Outbox.post`, and a Centrum that switches off at any step. It checks that every case that waits has its file in the queue, that a card never says „czeka w kolejce” about a Zgłoszenie whose text the Skrzynka rejected, and that once failures stop the card says what the Sprawy taty and the Skrzynka know. Use when `tools/skille_dla_zmiany.py` names it, when a change adds a caller of `DadCases.add`, `withdraw`, `forget` or `numbered` or a second handle of one problem in one Centrum work, or when `sprawdz_sprawy_taty.py` fails.
 pilnuje:
   - src/rozliczenia/centrum/dad_cases.py
   - src/rozliczenia/centrum/reports.py
@@ -21,13 +21,12 @@ ci: .agents/skills/verify-sprawy-taty/scripts/sprawdz_sprawy_taty.py
 
 CI runs `sprawdz_sprawy_taty.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's `pilnuje:`
 or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks step.
-In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
-`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
+CI and `tools/szybko.py` catch drift: covered code that differs from its digests in `model/definicje.json`
+(`ROZJAZD MODELU Z KODEM | <skill>: …`); they cannot tell whether your change to the model is right.
 `check_model_spraw_mutations.py` runs on a pull request that changes a file in `model/`, the script itself,
 `sprawdz_sprawy_taty.py` or a module that check imports (`tools/lib/model_tlc.py` and its imports), and in full CI and
 nightly on `main` after a change of this skill's folder.
-What stays with you on every change to the covered code is „Bring the model in line”: read the diff against the table,
-change the model, break the new path in it, replay each new counterexample on the code, and recompute the digests.
+What stays with you on every change to the covered code is „Bring the model in line”.
 A change whose model nobody brought in line is not verified, whatever CI says.
 
 ## The promises
@@ -97,13 +96,7 @@ keep the two in step. Each model action is one indivisible step of this code (`s
 | `MaksZamyka` | Maks closes an issue in the Skrzynka |
 | `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again: memory is gone (`DadCases._rejected`, `Outbox._rejected`, `_first_comments` of this work, the handle), `DadCases._load` reads `config/sprawy-taty.json`, `Outbox.resume`, and the card of a Zatrzymanie of this problem gets a new handle with `Reports._state_of`. No code reconciles the cases with the queue files after a start |
 
-`model/definicje.json` holds the digests of the definitions the table names: `CaseKind`, `Case`, `DadCases.add`,
-`withdraw`, `forget`, `find`, `numbered`, `rejected`, `_tell`, `queued`, `state`, `ask_box`, `_close`, `_change` and
-`_load` in `dad_cases.py`; `ReportHandle.__init__`, `prepare`, `_ask`, `send`, `_rejected`, `_delivered`, `_done`,
-`_show`, `Reports.__init__`, `handle`, `_heard`, `_queue`, `_pending`, `_ask_box` and `_state_of` in `reports.py`; `send`
-in `dad_notes.py`; `case_outbox`, `_CaseDelivery.delivered`, `_CaseDelivery.rejected` and `_case` in `case_delivery.py`;
-`Outbox.resume`, `post`, `wait_delivered`, `_send_all` and `_mark_delivered` in `outbox.py`; `StateFile` in
-`atomic_file.py`; `Notifications.view` and `_ask_box` in `notifications.py`. Left out on purpose: the text of a
+`model/definicje.json` holds the digests of the definitions the table names. Left out on purpose: the text of a
 Zgłoszenie and of an Uwaga (`_preview`, `note_issue`, the guard), `_CaseDelivery.prepare` (the line of the Logs in a
 pinned Uwaga, which changes no case), `KeyedBox.judge` (which of „na internet” and „na Token” the waiting case shows),
 and `Reports._find_open` (one call of the Skrzynka). Two changes move the model without changing a definition, so look for
@@ -123,8 +116,7 @@ changed since: `git diff $(git log -1 --format=%h -- .agents/skills/verify-spraw
 py -3 .agents\skills\verify-sprawy-taty\scripts\sprawdz_sprawy_taty.py
 ```
 
-`--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
-known findings are `tools/lib/model_tlc.py`; Java and `tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`. The whole
+The run of TLC, the verdict and the known findings are `tools/lib/model_tlc.py`; Java and `tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`. The whole
 check took 32 s on Maks's Mac on 2026-11-12 (16 known findings in 22 TLC runs).
 
 The last line is the verdict:
@@ -300,11 +292,3 @@ the Logs line of a pinned Uwaga (`_CaseDelivery.prepare` and the comment after r
 cases at all: their files are delivered and number nothing), the old files before one store (`OLD_REPORTS_FILE`,
 `OLD_NOTES_FILE`), an exception other than `OSError` from `Outbox.post` in `dad_notes.send` (no `finally` there; no
 known path raises one), and Maks reopening an issue.
-
-## Files
-
-- `model/SprawyTaty.tla`: the model, with the code each action describes.
-- `model/konfiguracje.json`: the configurations (description, constants and known findings; the script writes each
-  `.cfg` with `TypeOK` and every promise), `model/definicje.json`: the definitions of the code the model describes.
-- `scripts/sprawdz_sprawy_taty.py`: runs TLC on every configuration and tells each counterexample.
-- `scripts/check_model_spraw_mutations.py`: proves the check fails when the model loses a guard the code has.

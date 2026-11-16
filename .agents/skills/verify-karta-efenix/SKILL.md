@@ -1,6 +1,6 @@
 ---
 name: verify-karta-efenix
-description: Interleave Dad's clicks in the tool's efenix tab (he opens another order, goes back to the list, reloads the page) with every write of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix) and check that each write (execution date, „Załaduj do zlecenia”, quantity, Przekazanie do akceptacji) reaches efenix with the order the process read (`_order_id`) and that no other order changes. Use when a change touches `open_order`, `set_execution_date`, `load_emmett`, `enter_quantity`, `forward_to_accept`, `guard`, `_blocked_cause`, `_go` or `_reloaded` in `src/rozliczenia/efenix_browser.py`, the pauses in `src/rozliczenia/efenix_pace.py`, the order of writes in `src/rozliczenia/efenix_pricing.py`, how the Atrapa efenix page script picks the order of a request, or when a write of Wycena w efenix landed in an order the tool never read.
+description: Interleave Dad's clicks in the tool's efenix tab (another order, the list, a reload) with every write of a real Wycena w efenix on the Atrapa efenix and check that each write (execution date, „Załaduj do zlecenia”, quantity, Przekazanie do akceptacji) reaches the order the process read and that no other order changes. Use when `tools/skille_dla_zmiany.py` names it, when `explore_karta_efenix.py` fails, or when a write of Wycena w efenix landed in an order the tool never read.
 pilnuje:
   - src/rozliczenia/efenix_browser.py
   - src/rozliczenia/efenix_page.py
@@ -74,8 +74,7 @@ if its request is in `WRITES` of the explorer: add it there with the field that 
 py -3 .agents\skills\verify-karta-efenix\scripts\explore_karta_efenix.py
 ```
 
-`--lista` prints the cases, `--przypadek NAME` runs the two runs without Dad and one case, `--strict` counts the known
-finding as a violation, `--przegladarki N` sets how many Chromium browsers run at once (default up to 4). The whole run,
+`--przypadek NAME` runs the two runs without Dad too; the other options are in `--help`. The whole run,
 2 runs without Dad and 18 cases, took 12.4 s on Maks's Mac with 4 browsers (2026-11-12). It needs Playwright's
 Chromium (`playwright install chromium`).
 
@@ -194,15 +193,6 @@ Run it locally only to reproduce a red step or the night's issue, or after you r
 .venv/bin/python .agents/skills/verify-karta-efenix/scripts/check_karta_efenix_mutations.py
 ```
 
-It must end with `MUTACJE OK` (30 s on Maks's Mac, 2026-11-12): the guard without the order comparison and the Atrapa
-script with a quantity for an order nobody opened give `NOWE NARUSZENIE` (`BOUNDARIES`), a Wycena that enters no
-quantity gives `NOWE NARUSZENIE` (PRZEBIEG_WZORCOWY), a quantity saved without its pause gives `LUKA MODELU`, and a
-window that checks the order of its tab before the date, Emmett, after the reload and before each quantity gives
-`ZNALEZISKO ZNIKNĘŁO`. A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its anchor against the
-new code so it breaks the same thing again.
-
-## Files
-
-- `scripts/explore_karta_efenix.py`: the explorer (scenario, Dad, rules, known finding, report).
-- `scripts/check_karta_efenix_mutations.py`: the broken variants and `BOUNDARIES`.
-- `model/definicje.json`: the definitions of the code the hand-made parts describe.
+It must end with `MUTACJE OK` (30 s on Maks's Mac, 2026-11-12); each variant in `MUTATIONS` and `BOUNDARIES` of the
+script names what it breaks and the last line it expects. A mutation reported as `NIEAKTUALNA` no longer matches its
+file: rewrite its anchor against the new code so it breaks the same thing again.

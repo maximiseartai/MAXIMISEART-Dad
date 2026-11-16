@@ -1,6 +1,6 @@
 ---
 name: verify-kolejka-skrzynki
-description: Exhaustively check, on the real code and in a TLA+ model (TLC), that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka and the file of the Logi in the Archiwum Logów okresu exactly once, lets a newer version of a wysyłka replace an older one and an older one that arrives later change nothing, keeps one issue per problem and per period, and empties the queue, under every order of network failures, lost answers, file errors, a killed Centrum and GitHub's lagging lists. Use when `tools/skille_dla_zmiany.py` names it, when a change touches `outbox.py`, the box calls in `keyed_box.py`, `newest_with_line` or `GitHubReportBox` in `report_box.py`, `replace_atomically` in `atomic_file.py`, a definition in its `model/definicje.json`, or adds a new `Target`, or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails.
+description: Exhaustively check, on the real code and in a TLA+ model (TLC), that the Kolejka Skrzynki Zgłoszeń (`Outbox` in `src/rozliczenia/centrum/outbox.py`) delivers every part of every wysyłka and the file of the Logi in the Archiwum Logów okresu exactly once, lets a newer version of a wysyłka replace an older one and an older one that arrives later change nothing, keeps one issue per problem and per period, and empties the queue, under every order of network failures, lost answers, file errors, a killed Centrum and GitHub's lagging lists. Use when `tools/skille_dla_zmiany.py` names it, when a change adds a new way to the Skrzynka (a new `Target`, a second writer of queue files, a box call outside `KeyedBox`), or when `explore_outbox.py` or `sprawdz_model_kolejki.py` fails.
 pilnuje:
   - src/rozliczenia/centrum/outbox.py
   - src/rozliczenia/centrum/keyed_box.py
@@ -148,8 +148,7 @@ both checks and their mutations pass on it.
 .venv/bin/python .agents/skills/verify-kolejka-skrzynki/scripts/explore_outbox.py
 ```
 
-On Windows use `py -3` instead of `.venv/bin/python`. It takes about 30 to 80 s, depending on the machine; `--help`
-lists `--scope`, `--strict` and `--stop-at-new`.
+On Windows use `py -3` instead of `.venv/bin/python`. It takes about 30 to 80 s, depending on the machine.
 
 | Last line | Exit | Meaning |
 | --- | --- | --- |

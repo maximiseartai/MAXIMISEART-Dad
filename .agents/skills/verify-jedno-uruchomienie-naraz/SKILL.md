@@ -1,6 +1,6 @@
 ---
 name: verify-jedno-uruchomienie-naraz
-description: Exhaustively check that Centrum rozliczeń runs one Uruchomienie procesu, Aktualizacja narzędzia or przywrócenie Kopii INTERMAX at a time and never closes during one (also while it waits for Dad's Decyzja), under every interleaving of browser tabs, Dad and the server. Use when a change touches `RunHost` or `Run` in `src/rozliczenia/centrum/runs.py`, `Shutdown` in `shutdown.py`, `stop_when_asked` in `server.py`, the `refuse_while` wiring in `app.py`, `ToolUpdates.start` or `_update` in `tool_updates.py`, adds another action that must wait for a running Uruchomienie, or `test_jedno_uruchomienie_naraz` fails.
+description: Exhaustively check, on the real code, that Centrum rozliczeń runs one Uruchomienie procesu, Aktualizacja narzędzia or przywrócenie Kopii INTERMAX at a time, never closes during one (also while it waits for Dad's Decyzja) or before the actions after its result, and that every result reaches the card, under every interleaving of browser tabs, Dad and the server. Use when `tools/skille_dla_zmiany.py` names it, when a change adds another action that must wait for a running Uruchomienie, or when `explore_runs.py` or `test_jedno_uruchomienie_naraz` fails.
 pilnuje:
   - src/rozliczenia/centrum/runs.py
   - src/rozliczenia/centrum/shutdown.py
@@ -23,10 +23,9 @@ ci: .agents/skills/verify-jedno-uruchomienie-naraz/scripts/explore_runs.py
 CI runs `explore_runs.py` whole (the `ci:` key) and `tests/test_jedno_uruchomienie_naraz.py` whenever
 a change touches this skill, and `check_runs_mutations.py` in full CI on `main` and nightly on `main`
 (`mutacje-nocne.yml`). Run them locally only to reproduce a red CI step or the night's issue, or one
-`--scope` while you work on it. When a part modelled by hand (`model/definicje.json`) differs from its digest there,
-the Mutation checks step fails before it explores (line `ROZJAZD MODELU Z KODEM | verify-jedno-uruchomienie-naraz: …`),
-and `explore_runs.py` run by hand prints the drift as an `UWAGA:` line above the verdict. `tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`), and
-one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both. What stays with you on every change
+`--scope` while you work on it. CI and `tools/szybko.py` fail when a part modelled by hand differs from its digest in
+`model/definicje.json` (`ROZJAZD MODELU Z KODEM | verify-jedno-uruchomienie-naraz: …`), and `explore_runs.py` run by
+hand prints the drift as an `UWAGA:` line above the verdict. What stays with you on every change
 to the covered code is „Does the change touch it?”: read the diff since the digests against the
 table, above all the parts modelled by hand, whose change the check cannot see.
 
@@ -120,8 +119,7 @@ py -3 .agents\skills\verify-jedno-uruchomienie-naraz\scripts\explore_runs.py
 ```
 
 On macOS or Linux use `.venv/bin/python` instead of `py -3`. It takes about 5 s on a
-Mac and runs in CI as `tests/test_jedno_uruchomienie_naraz.py`. In a worktree the
-script checks the worktree's own `src`.
+Mac. In a worktree the script checks the worktree's own `src`.
 
 | Last line | Exit | Meaning |
 | --- | --- | --- |
@@ -136,8 +134,7 @@ A modelled thread that waits on a real lock or Event, or on `time.sleep`, outsid
 `LUKA MODELU: karta Uruchom 2: po kroku „żądanie POST /api/runs dociera do serwera” wątek modelu przez 10 s nie doszedł do kolejnego i stoi w runs.py:350 start (with _REAL, self._lock:), …`
 and the schedule up to that step.
 
-`--scope zamknij-w-trakcie`, `--scope dwie-karty`, `--scope aktualizacja` or `--scope przywracanie` runs one scope. `--strict`
-counts known findings as violations too: use it to confirm a fix.
+Confirm a fix with `--strict`.
 
 ## How it works and what it covers
 
@@ -212,11 +209,8 @@ None. The two earlier ones (a „Uruchom” between the refusal check and the
 accepted shutdown, and a „Uruchom” after it) went away when `shutdown_refusal`
 started closing `RunHost` to new Uruchomienia and Aktualizacje under its lock.
 A finding the user accepts goes into `KNOWN_FINDINGS` in `explore_runs.py` and
-here, as an `Excuse` of `tools/lib/eksplorator.py`: its `name`, the rule, one
-line naming the decision, a `shape` (a dataclass whose fields are the parts of
-its story and whose `holds` judges the violation's signature) and in `after` the
-scopes after which it always shows; a scope of `after` that runs to the end
-without it ends the check with `ZNALEZISKO ZNIKNĘŁO`. The mutation script then
+here, as an `Excuse` of `tools/lib/eksplorator.py` (its docstring names each field)
+whose `shape` is a dataclass of the parts of its story. The mutation script then
 needs `BOUNDARIES` with a broken variant just outside each part
 (`tests/test_mutacje_skilli.py`, #920).
 
@@ -246,8 +240,7 @@ requests, `wątek Uruchomienie n` is the thread `RunHost.start` spawned,
 
 ## After changing the checker or an intended change to the covered code
 
-CI proves the check can still fail: the night on `main` runs the script below after a
-change of this skill's folder. Run it locally only to reproduce a red Mutation checks step
+The script below proves the check can still fail. Run it locally only to reproduce a red Mutation checks step
 or the night's issue, or after you rewrite a mutation. It applies broken variants to a temporary copy
 of `src`, never to the checkout, each in the one scope that catches it (about
 45 s on a Mac):
@@ -268,6 +261,6 @@ without the updating check, `begin_restore` without the running check,
 and so do a `RunHost` lock from `threading` beside the `threads` seam, the Uruchomienie thread from `threading` beside
 it, a real lock outside `threading` held across a step of `start`, and a `PreparedRun.conduct` that waits on a real Event
 before the engine.
-CI runs this in the `mutations` job. A mutation reported as `NIEAKTUALNA` no longer matches its file.
+A mutation reported as `NIEAKTUALNA` no longer matches its file.
 Rewrite its `anchor` and `replacement` in `check_runs_mutations.py` so it breaks
 the same rule again in the new code.
