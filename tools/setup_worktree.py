@@ -107,10 +107,10 @@ def _imported_package_directory() -> Path:
 
 
 def _print_work_in_progress() -> None:
-    """Raport ``tools/praca_w_toku.py``: każda sesja zaczyna od tego skryptu, więc widzi inne sesje."""
+    """Odpowiedzi ``tools/praca_w_toku.py``: każda sesja zaczyna od tego skryptu, więc dostaje podpowiedź ``--issue``."""
 
     try:
-        potomne.run([str(_venv_python()), str(ROOT / "tools" / "praca_w_toku.py")], cwd=ROOT, timeout=120, echo=True)
+        potomne.run([str(_venv_python()), str(ROOT / "tools" / "praca_w_toku.py")], cwd=ROOT, timeout=30, echo=True)
     except (OSError, subprocess.TimeoutExpired) as error:
         print(f"PRACA W TOKU POMINIĘTA | {error}")
 
