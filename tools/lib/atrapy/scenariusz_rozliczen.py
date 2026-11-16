@@ -7,8 +7,9 @@ wartości wejścia. Okres, konfiguracja wykonawców, nazwy plików okresu i nag�
 ``COLLECTIVE_FILE_NAME`` z ``tools/lib/atrapy/preparation.py``), a nazwy Rejestru, Wzorców, folderu ``config`` i
 plików okresu oraz nagłówki Wzorców z kopii świata taty w ``tools/lib/atrapy/pliki_taty.py``.
 
-Tu stoją fakty wejścia i dwa oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
-wyliczone z ``ORDERS``: Ilości usług z Reguł ilości taty (``QUANTITIES``) i Wiersze danych Rozliczenia pracownika
+Tu stoją fakty wejścia i trzy oczekiwania, które wyrocznie obu skilli sprawdzają tak samo, napisane ręcznie, a nie
+wyliczone z ``ORDERS``: Ilości usług z Reguł ilości taty (``QUANTITIES``), wynik Legendy czynności z Wydania
+(``CODE_QUANTITIES``, ``CODE_AMOUNTS``, ``CODE_FILLS``) i Wiersze danych Rozliczenia pracownika
 każdego Wykonawcy w ich kolejności (``WORKER_ORDERS``); generatory ich nie czytają. To, które zlecenia trafiają do
 Rozliczenia wewnętrznego i Pliku zbiorczego i w jakiej kolejności, wyrocznie piszą jawnie same, żeby błąd procesu w
 wyborze albo kolejności nie przeszedł razem z danymi.
@@ -117,10 +118,16 @@ def order_devices(number: int) -> str:
     return ORDER_CONTENT.get(number, ("", "nokia"))[1]
 
 
+# Numer zlecenia -> CZYNNOŚCI ZREALIZOWANE z samych Kodów czynności Legendy czynności z Wydania (ADR 0038), więc
+# Przygotowanie wpisuje ich Ilości usług, kwotę w AS i wypełnienia: spawpg daje AB, 70 w AS i czerwone AS, a rt2 daje AM
+# z czerwonym AM i zielone AF bez wartości.
+ACTIVITY_CODES: dict[int, str] = {8: "spawpg rt2"}
+
+
 def completed_activities(number: int) -> str:
     """CZYNNOŚCI ZREALIZOWANE; order 2 has two lines, so its Wiersz danych wraps and Excel makes it taller."""
 
-    return "montaż\ndemontaż" if number == 2 else "montaż"
+    return ACTIVITY_CODES.get(number, "montaż\ndemontaż" if number == 2 else "montaż")
 
 
 # The only order of the hidden ARCHIWUM sheet, a year before the period.
@@ -157,6 +164,17 @@ QUANTITIES: dict[int, dict[str, int]] = {
     8: {"V": 1, "AE": 1, "AP": 1},
     9: {"O": 1, "P": 1, "Q": 2, "S": 4, "V": 1, "Z": 1, "AK": 1},
 }
+# Ilości usług, kwota w AS i wypełnienia (kolumna -> ARGB), które Legenda czynności z Wydania wpisuje dla ACTIVITY_CODES.
+CODE_QUANTITIES: dict[int, dict[str, int]] = {8: {"AB": 1, "AM": 1}}
+CODE_AMOUNTS: dict[int, int] = {8: 70}
+CODE_FILLS: dict[int, dict[str, str]] = {8: {"AF": "FF92D050", "AM": "FFFF0000", "AS": "FFFF0000"}}
+
+
+def written_quantities(number: int) -> dict[str, int]:
+    """N:AP zlecenia ``number`` w Pliku zbiorczym: Reguły ilości i Legenda czynności sumują się w każdej kolumnie."""
+
+    rules, codes = QUANTITIES.get(number, {}), CODE_QUANTITIES.get(number, {})
+    return {column: rules.get(column, 0) + codes.get(column, 0) for column in {**rules, **codes}}
 
 # Zlecenia skuteczne okresu każdego Wykonawcy w kolejności Rejestru, czyli Wiersze danych jego Rozliczenia
 # pracownika; zlecenia Adriana rozdziela zlecenie Kamila.

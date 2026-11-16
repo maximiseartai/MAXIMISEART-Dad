@@ -37,6 +37,8 @@ import repo
 from skrypt_skilla import SKIPPED, Parser, child_environment, create_run_root, new_run
 from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
 from atrapy.scenariusz_rozliczen import (
+    CODE_AMOUNTS,
+    CODE_FILLS,
     COLLECTIVE_TEMPLATE_NAME,
     FILLED_ORDERS,
     INTERNAL_TEMPLATE_NAME,
@@ -49,6 +51,7 @@ from atrapy.scenariusz_rozliczen import (
     WORKER_TEMPLATE_NAME,
     order_number,
     worker_settlement_name,
+    written_quantities,
 )
 from atrapy.scenariusz_rozliczen import QUANTITIES as ORDER_QUANTITIES
 from atrapy.pliki_taty import WORKER_LIST_NAME
@@ -79,8 +82,16 @@ HIGHLIGHTS = {
     (order_number(7), "adres"): (0xFFFFFF, 0x000000, False, False),
     (order_number(6), "adres"): (0xFFFFFF, 0x000000, False, False),
 }
-# Ilości usług Przygotowanie writes from the Reguły ilości for the fixture's URZĄDZENIA and UMOWA.
-QUANTITIES = {order_number(number): quantities for number, quantities in ORDER_QUANTITIES.items()}
+# Ilości usług Przygotowanie writes from the Reguły ilości for the fixture's URZĄDZENIA and UMOWA and from the Legenda
+# czynności for its CZYNNOŚCI ZREALIZOWANE.
+QUANTITIES = {order_number(number): written_quantities(number) for number in ORDER_QUANTITIES}
+# What the Kody czynności write besides Ilości usług: the amount in AS and fills as Excel's interior colour. A deliberate
+# copy (docs/agents/skille.md, „Co wyrocznia bierze z src”): AS (Uwagi - kwota) is a header of Dad's Wzorzec.
+CODE_AMOUNT_COLUMN = "AS"
+CODE_CELLS = {
+    order_number(number): (CODE_AMOUNTS.get(number), {letter: int(argb[2:], 16) for letter, argb in fills.items()})
+    for number, fills in CODE_FILLS.items()
+}
 # Ilości tylko dla INEA (ADR 0018): AP of the gniazdo order and AK of the technicolor one stay empty in the
 # Rozliczenie pracownika, while the Plik zbiorczy keeps them.
 INEA_ONLY = {order_number(8): "AP", order_number(9): "AK"}
@@ -371,6 +382,21 @@ def _check_quantities(path: Path, rows: dict[str, int], *, label: str) -> int:
     return sum(len(quantities) for quantities in QUANTITIES.values())
 
 
+def _check_codes(path: Path, rows: dict[str, int], *, label: str) -> int:
+    """Excel shows the AS amount and the fills of the Kody czynności in every row of their order; returns the cells."""
+
+    checked = 0
+    for order, (amount, fills) in CODE_CELLS.items():
+        if order not in rows:
+            continue
+        cell = excel.read(path, f"{CODE_AMOUNT_COLUMN}{rows[order]}")[0][0]
+        expect(cell.kind == "n" and cell.number == amount, f"{label}: {CODE_AMOUNT_COLUMN}{rows[order]} lacks the amount of the Kody czynności")
+        wrong = [f"{letter}{rows[order]}" for letter, colour in fills.items() if excel.fill(path, f"{letter}{rows[order]}")[0] != colour]
+        expect(not wrong, f"{label}: {', '.join(wrong)} lack the fill of the Kody czynności")
+        checked += 1 + len(fills)
+    return checked
+
+
 def period_files_open(
     run: Run, collective_reference: tuple[list[str], list[str]]
 ) -> tuple[Path, Layout, dict[str, str]]:
@@ -399,6 +425,9 @@ def period_files_open(
     run.step(feature, "plik-zbiorczy-ilosci", f"cells={quantities} | sums_row={QUANTITY_SUMS_ROW}")
     highlights = _check_highlights(collective, rows, layout, label="Plik zbiorczy")
     run.step(feature, "plik-zbiorczy-wyroznienia", f"cells={highlights}")
+    codes = _check_codes(collective, rows, label="Plik zbiorczy")
+    expect(codes > 0, "Plik zbiorczy lacks the order with Kody czynności")
+    run.step(feature, "plik-zbiorczy-kody-czynnosci", f"cells={codes}")
     standard, dates = _check_row_look(collective, rows, layout, label="Plik zbiorczy")
     run.step(feature, "plik-zbiorczy-wyglad-wiersza", f"rows={len(rows)} | one_line_pt={standard}")
     run.observe("otwarcie:plik-zbiorczy", {"open_seconds": seconds, "links": len(links), "rows": len(rows)})
@@ -517,6 +546,8 @@ def worker_files(
             run.step(feature, "formuly", worker)
             highlights = _check_highlights(path, rows, layout, label=label)
             run.step(feature, "wyroznienia", f"{worker} | cells={highlights}")
+            codes = _check_codes(path, rows, label=label)
+            run.step(feature, "kody-czynnosci", f"{worker} | cells={codes}")
             standard, dates = _check_row_look(path, rows, layout, label=label)
             differing_dates = [str(rows[order]) for order in rows if dates[order] != collective_dates[order]]
             expect(not differing_dates, f"{label}: DATA in rows {', '.join(differing_dates)} shows otherwise than in the Plik zbiorczy")

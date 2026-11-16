@@ -225,6 +225,12 @@ def quantity_rules_problem(file: str, problem: str) -> str:
     return f"Plik {file} w folderze config: {problem}"
 
 
+def activity_legend_problem(file: str, problem: str) -> str:
+    """Zły plik Legendy czynności: ``problem`` to zdanie silnika legendy o pierwszym złym polu."""
+
+    return f"Plik {file} w folderze config: {problem}"
+
+
 def rule_without_action() -> str:
     """Reguła z edytora Reguł ilości bez działania."""
 
