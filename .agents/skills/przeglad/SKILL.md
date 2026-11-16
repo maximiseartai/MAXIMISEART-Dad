@@ -8,6 +8,7 @@ description: Przegląd PR - co jest porażką, korzeń i szczebel, dowody, posta
 Oba tryby, autora i recenzenta, czytają wspólne reguły przeglądu, a różnią się tylko krokami końcowymi na dole.
 `PASS` mówi też, że skille `verify-*` z linii `SKILLE VERIFY` przeszły na tym SHA (gotowość w `tools/scal_pr.py --help`).
 Zlecenie przeglądu i brief koordynatora dodają tylko cel i punkty do sprawdzenia, a co jest Ważne, jakie dowody i jak opublikować werdykt, ustala ten skill.
+Punkt do sprawdzenia może być tezą koordynatora („sprawdź, czy X nie daje wycieku”), bo Ważne z tezy stoi na tym samym powtarzalnym dowodzie co każde inne, więc werdykt nie oddziela znalezisk z tez od własnych (#950).
 
 ## Co jest porażką
 
@@ -137,6 +138,7 @@ Po trzeciej rundzie z `FAIL` bez zmiany podejścia czwartej rundy nie ma: `tools
 Podejście zmienia się w tym samym PR, a nie w nowym, bo bramka korzenia i bramka idiomu czytają tylko werdykty własnego PR, więc nowy PR gubi Ważne rund poprzednika (#1990); część, której przegląd nie przyjął, usuwasz z PR, a jej Ważne dostają w `## Korzeń` szczebel (a) z usuniętym kodem.
 Recenzent rundy po zmianie podejścia sprawdza najpierw, czy diff od ostatniego `FAIL` robi to, co mówi to zdanie; gdy nie robi, to Ważne.
 Każdą rundę robi nowy recenzent, który nie pisał kodu, z linkiem do poprzednich werdyktów.
+Werdykt dla SHA, który ma już werdykt w tym PR (linia `RUNDA` z `--przeglad` kończy się `czyli dla tego HEAD`), ma w `## Sprawdzone` punkt `Ponowny przegląd: <czemu kolejny przegląd tego SHA i punkty „Do sprawdzenia” ze zlecenia>`, więc ślad na PR mówi, skąd zmiana zgody bez zmiany kodu (#875 r3: `FAIL` po `PASS` po tezie koordynatora); bez niego `--werdykt` i merge odmawiają (`tools/lib/ponowny_przeglad.py`).
 
 ## Tryb autora: przed zleceniem przeglądu
 

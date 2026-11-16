@@ -30,6 +30,7 @@ import czasy_ci
 import github as klient_github
 import limit_rund
 import naprawia
+import ponowny_przeglad
 import rejestr_korzeni
 import stan_pr
 import szablon_werdyktu
@@ -2060,6 +2061,66 @@ def test_przeglad_z_checkoutu_innego_niz_baza_odmawia_limitem_rund_z_kodu_bazy(t
     assert reviewed.returncode == 1, reviewed.stdout + reviewed.stderr
     assert _last_line(reviewed).startswith(f"PRZEGLĄD ODMOWA | #1 {head[:7]} | limit rund: rund z FAIL 3 "), reviewed.stdout
 
+
+
+@pytest.mark.parametrize(("text", "passes"), werdykty_szablonu.PONOWNE.values(), ids=werdykty_szablonu.PONOWNE)
+def test_werdykt_ponownego_przegladu_przechodzi_tylko_z_punktem_ponowny_przeglad_w_sprawdzone(text: str, passes: bool) -> None:
+    assert (ponowny_przeglad.problem(szablon_werdyktu.items(werdykty_szablonu.html(text))) is None) == passes
+
+
+def _repeat(text: str, decision: str = "PASS") -> str:
+    findings = "Znaleziska: 0 (Ważne 0, Drobne 0)" if decision == "PASS" else "Znaleziska: 1 (Ważne 1, Drobne 0)"
+    return f"WERDYKT: {decision} {{head}}\n{findings}\n{werdykty_szablonu.PONOWNE[text][0]}\n"
+
+
+# #875 r3: PASS, a po tezie koordynatora FAIL na tym samym SHA, bez śladu na PR, skąd się wziął (#950).
+@pytest.mark.parametrize(
+    ("deployed_before", "earlier_on_head", "verdict", "published"),
+    [
+        (True, True, SPRAWDZONE_PASS, False),
+        (True, True, _repeat("z-punktem"), True),
+        (True, False, SPRAWDZONE_PASS, True),
+        (True, True, _repeat("punkt-w-bloku-kodu-dowodu", "FAIL"), False),
+        (True, True, _repeat("wazne-z-punktem", "FAIL"), True),
+        (False, True, SPRAWDZONE_PASS, True),
+    ],
+    ids=[
+        "pass-po-pass-tego-head-bez-punktu",
+        "pass-po-pass-tego-head-z-punktem",
+        "pass-po-werdykcie-starszego-commitu",
+        "fail-po-pass-tego-head-z-punktem-tylko-w-bloku-kodu",
+        "fail-po-pass-tego-head-z-punktem",
+        "watek-sprzed-wdrozenia-konczy-po-staremu",
+    ],
+)
+def test_ponowny_przeglad_tego_samego_head_publikuje_i_scala_tylko_z_punktem_ponowny_przeglad(
+    tmp_path: Path, deployed_before: bool, earlier_on_head: bool, verdict: str, published: bool
+) -> None:
+    """Ta sama reguła rozstrzyga publikację i zgodę na merge, więc ``PASS`` opublikowany bez ``--werdykt`` na HEAD,
+    który miał już werdykt, też nie scala PR bez punktu. Moduł reguły stoi w commicie ``start``, więc ``started``
+    przed werdyktami atrapy to wdrożenie przed wątkiem, a domyślne po nich to wątek sprzed wdrożenia."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, **({"started": GATE_BEFORE_VERDICTS} if deployed_before else {}))
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 0\n"})
+    github.comment(1, SPRAWDZONE_PASS.format(head=head))
+    if not earlier_on_head:
+        head = github.push_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    path = tmp_path / "runda-2.md"
+    path.write_text(verdict.format(head=head), encoding="utf-8")
+
+    answered = github.run("1", "--werdykt", str(path))
+    github.reload()
+    if not published:
+        github.comment(1, verdict.format(head=head))
+    checked = github.run("1", "--bez-merge")
+
+    assert answered.returncode == int(not published), answered.stdout + answered.stderr
+    assert len(github.published()) == int(published)
+    assert ("dopisz w „## Sprawdzone” punkt „- Ponowny przegląd: " in _last_line(answered)) == (not published), answered.stdout
+    if verdict.startswith("WERDYKT: PASS"):
+        assert (checked.returncode == 0) == published, checked.stdout + checked.stderr
+        assert ("ponowny przegląd tego samego SHA" in _last_line(checked)) == (not published), checked.stdout
 
 # Reguły werdyktu w checkoucie, który nie jest ``origin/main``: gałąź sprzed wdrożenia szablonu (#1489) go nie zna,
 # a gałąź, która zaostrza regułę, odrzuca każdy werdykt.
