@@ -22,7 +22,7 @@ import sys
 import threading
 import time
 from types import ModuleType
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
 import pytest
 
@@ -52,14 +52,16 @@ straznik = _load(HOOK)
 
 
 class Seen(NamedTuple):
-    """Stan wątku w scenariuszu testu: status i wiek ruchu w chwili pytania; ``_at`` robi z niego ``updatedAt``."""
+    """Stan wątku w scenariuszu testu: status, wiek ruchu w chwili pytania i bieg T3 (``latestRunId``); ``_at`` robi z
+    wieku ``updatedAt``."""
 
     status: str
     age_s: float
+    run: str = ""
 
 
 def _at(now: float, state: Seen | None) -> object:
-    return None if state is None else straznik.Seen(state.status, now - state.age_s)
+    return None if state is None else straznik.Seen(state.status, now - state.age_s, state.run)
 
 
 def decide(parent: Seen, children: Mapping[str, Seen | None], now: float, memory: object) -> list[str]:
@@ -153,33 +155,55 @@ def test_dziecko_skonczone_bez_budzenia_koordynatora_przez_t3_budzi_go_strażnik
 
     (reason,) = decide(Seen("completed", 37 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 35 * MIN, memory)
 
-    assert CHILD in reason and "16 min temu" in reason and "nie dotarło" in reason
+    assert CHILD in reason and "16 min temu" in reason and "nie ruszył" in reason
+
+
+def _run(child: str, ordinal: int) -> str:
+    """``latestRunId`` biegu dziecka w postaci, którą daje T3."""
+
+    return f"run:thread:{child}:ordinal:{ordinal}"
+
+
+R1, R2, R3 = (_run(CHILD, n) for n in (1, 2, 3))
+TASK1 = "node:delegated-task:dziecko-wymyslone-1"
+SIBLING = "thread:delegated-task:dziecko-wymyslone-2"
+# Węzeł biegu po t3_thread_send w postaci provider-continuation: identyfikator dziecka podwójnie zakodowany.
+CONTINUED = "node:delegated-task:provider-continuation%3Athread%253Adelegated-task%253Adziecko-wymyslone-1%3Aordinal%3A1%3Aaa"
+SENT = "node:delegated-task:command%3Amcp%3Awymyslone%3Athread-send%3A0b1e2c3d"
+
+
+def _known(**tasks: str) -> Any:
+    """Pamięć strażnika z transkryptem, w którym odpowiedzi startu dały biegom ``taskId`` (``R1="..."``)."""
+
+    runs = {globals()[name]: task for name, task in tasks.items()}
+    return straznik.Memory(heard=set(), tasks=runs, latest={CHILD: max(runs)} if runs else {})
 
 
 def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dostaje_budzenie() -> None:
     # Przegląd PR skończył się w 19. minucie, T3 zgubiło powiadomienie, a koordynator pracował dalej przy innych
     # dzieciach (ruch w 33. minucie) i uważał przegląd za trwający; w transkrypcie jest tylko start dziecka.
-    memory = straznik.Memory(heard=set(), runs={CHILD: "node:przeglad"})
-    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
+    memory = _known(R1=TASK1)
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN, R1)}, 0.0, memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R1)}, 20 * MIN, memory)
     # Strażnik dalej pilnuje, choć koordynator ruszył po końcu dziecka.
-    assert pending(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 11 * MIN)}, 30 * MIN, memory)
+    assert pending(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 11 * MIN, R1)}, 30 * MIN, memory)
 
-    (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 35 * MIN, memory)
+    (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN, R1)}, 35 * MIN, memory)
 
     assert CHILD in reason and "nie dotarło" in reason and "duplikat" in reason
 
 
-def test_dziecko_bez_startu_w_transkryptach_czeka_jak_bez_transkryptu_na_ruch_watku() -> None:
-    # Transkrypt jest, ale nie ma w nim odpowiedzi startu tego dziecka (zlecenie z sesji sprzed hooka).
+def test_bieg_bez_taskid_w_transkryptach_czeka_jak_bez_transkryptu_na_ruch_watku() -> None:
+    # Transkrypt jest, ale nie ma w nim odpowiedzi startu tego biegu (zlecenie z sesji sprzed hooka).
     def reasons(parent_min: float) -> list[str]:
-        memory = straznik.Memory(heard={"node:rodzenstwo"}, runs={SIBLING: "node:rodzenstwo"})
-        decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-        decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
-        return decide(Seen("completed", parent_min * MIN), {CHILD: Seen("completed", 16 * MIN)}, 35 * MIN, memory)
+        memory = straznik.Memory(heard={"node:rodzenstwo"}, tasks={_run(SIBLING, 1): "node:rodzenstwo"})
+        decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN, R1)}, 0.0, memory)
+        decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R1)}, 20 * MIN, memory)
+        return decide(Seen("completed", parent_min * MIN), {CHILD: Seen("completed", 16 * MIN, R1)}, 35 * MIN, memory)
 
     assert reasons(2) == []
-    assert len(reasons(17)) == 1
+    (reason,) = reasons(17)
+    assert "nie ruszył" in reason
 
 
 def _stamp(minute: float) -> str:
@@ -203,9 +227,15 @@ def _call(tool: str, use: str, stamp: str, body: Mapping[str, object], arguments
 
 
 def _delegated_at(child: str, stamp: str) -> str:
-    """Zlecenie ``delegate_task`` z odpowiedzią o dziecku w toku, jak w transkrypcie sesji T3."""
+    """Zlecenie ``delegate_task`` z odpowiedzią o dziecku w toku, jak w transkrypcie sesji T3 (bieg ``ordinal:1``)."""
 
-    body = {"taskId": child.replace("thread:", "node:", 1), "childThreadId": child, "status": "running", "workState": "working"}
+    body = {
+        "taskId": child.replace("thread:", "node:", 1),
+        "childThreadId": child,
+        "childRunId": _run(child, 1),
+        "status": "running",
+        "workState": "working",
+    }
     return _call(straznik.DELEGATE, f"toolu_{child[-1]}", stamp, body)
 
 
@@ -213,35 +243,39 @@ def _started(child: str, minute: float) -> str:
     return _delegated_at(child, _stamp(minute))
 
 
-SIBLING = "thread:delegated-task:dziecko-wymyslone-2"
-# Węzeł biegu po t3_thread_send w postaci provider-continuation: identyfikator dziecka podwójnie zakodowany.
-CONTINUED = "node:delegated-task:provider-continuation%3Athread%253Adelegated-task%253Adziecko-wymyslone-1%3Aordinal%3A1%3Aaa"
-SENT = "node:delegated-task:command%3Amcp%3Awymyslone%3Athread-send%3A0b1e2c3d"
+def _sent(child: str, use: str, minute: float, run: str, task: str | None) -> str:
+    """Wiadomość ``t3_thread_send`` do dziecka z odpowiedzią o biegu (``runId``) i, gdy T3 go daje, ``taskId``."""
+
+    body = {"threadId": child, "runId": run, "messageId": "message:mcp:wymyslone", **({"taskId": task} if task else {})}
+    return _call("mcp__t3-code__t3_thread_send", use, _stamp(minute), body, {"threadId": child})
 
 
 def test_powiadomienie_po_starcie_dziecka_liczy_sie_choc_t3_przesunelo_potem_jego_koniec(tmp_path: Path) -> None:
     # Nowy pilnujący (wznowiona sesja) w 50. minucie: dziecko skończyło się w 18., koordynator dostał powiadomienie w
-    # 19., a T3 przy końcu rodzeństwa w 34. przesunęło updatedAt dziecka, więc koniec wygląda na późniejszy.
+    # 19., a T3 przy końcu rodzeństwa w 34. przesunęło updatedAt dziecka; latestRunId się nie zmienił.
     transcript = tmp_path / "sesja.jsonl"
-    lines = [_started(CHILD, 0), _entry("user", 19, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd) [completed]: PASS")]
+    lines = [_started(CHILD, 0), _entry("user", 19, f"Delegated task {TASK1} (Przegląd) [completed]: PASS")]
     transcript.write_text("\n".join([*lines, _entry("user", 48, "scal PR")]) + "\n", encoding="utf-8")
     memory = straznik.Memory()
     straznik.hear(transcript, 0, [CHILD], memory)
 
-    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 50 * MIN, memory) == []
-    assert not pending(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 50 * MIN, memory)
+    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN, R1)}, 50 * MIN, memory) == []
+    assert not pending(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN, R1)}, 50 * MIN, memory)
 
 
-def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu(tmp_path: Path) -> None:
+def test_transkrypt_czytany_od_miejsca_konca_wiaze_bieg_t3_z_taskid_odpowiedzi_startu(tmp_path: Path) -> None:
     transcript = tmp_path / "sesja.jsonl"
+    sibling_run = _run(SIBLING, 2)
     first = [
         _started(CHILD, 0),
         _started(SIBLING, 1),
-        _entry("user", 5, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR runda 1) [completed]: FAIL"),
+        _entry("user", 5, f"Delegated task {TASK1} (Przegląd wymyślonego PR runda 1) [completed]: FAIL"),
         # Wznowienie: T3 nazywa nowy bieg węzłem, który nie zawiera identyfikatora dziecka w postaci z odpowiedzi.
-        _call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(6), {"threadId": CHILD, "taskId": CONTINUED, "link": "[Delegated task 2]"}),
+        _sent(CHILD, "toolu_send", 6, R2, CONTINUED),
+        # Sterowanie trwającym biegiem: ten sam runId bez taskId nie zmienia powiązania.
+        _sent(CHILD, "toolu_steer", 6.5, R2, None),
         _entry("user", 7, "Delegated task node:delegated-task:dziecko-wymyslone-2 (Przegląd wymyślonego PR runda 2) [completed]: OK"),
-        _call("mcp__t3-code__t3_thread_send", "toolu_send2", _stamp(7.5), {"threadId": SIBLING, "taskId": SENT}),
+        _sent(SIBLING, "toolu_send2", 7.5, sibling_run, SENT),
         # Cytat powiadomienia w środku linii wiadomości (koordynator albo Maks je przytacza) nie jest powiadomieniem.
         _entry("user", 7.8, f"Wcześniej przyszło: Delegated task {SENT} (Bieg) [completed]"),
         # Wynik Basha, który cytuje powiadomienie od początku linii, to nie wiadomość od T3.
@@ -258,8 +292,9 @@ def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu
 
     offset = straznik.hear(transcript, 0, [CHILD, SIBLING], memory)
 
-    assert memory.runs == {CHILD: CONTINUED, SIBLING: SENT}
-    assert memory.heard == {"node:delegated-task:dziecko-wymyslone-1", "node:delegated-task:dziecko-wymyslone-2"}
+    assert memory.tasks == {R1: TASK1, _run(SIBLING, 1): "node:delegated-task:dziecko-wymyslone-2", R2: CONTINUED, sibling_run: SENT}
+    assert memory.latest == {CHILD: R2, SIBLING: sibling_run}
+    assert memory.heard == {TASK1, "node:delegated-task:dziecko-wymyslone-2"}
     # Dalsza część niepełnej linii: powiadomienie o biegu 2 dziecka w jednej wiadomości z powiadomieniem o innym biegu.
     rest = f"Delegated task node:inne (Inne) [completed]: OK\n\nDelegated task {CONTINUED} (Przegląd wymyślonego PR runda 1) [completed]: PASS"
     with transcript.open("a", encoding="utf-8") as handle:
@@ -276,9 +311,9 @@ def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu
         ("mcp__t3-code__task_cancel", {"taskId": SENT, "status": "cancel_requested"}),
         ("mcp__t3-code__t3_thread_interrupt", {"threadId": CHILD, "status": "interrupted"}),
         ("mcp__t3-code__t3_thread_read", {"thread": {"threadId": CHILD, "status": "completed"}}),
-        ("mcp__t3-code__task_status", {"taskId": "node:delegated-task:dziecko-wymyslone-1", "childThreadId": CHILD, "status": "completed"}),
-        # Odpowiedź narzędzia spoza STARTS z wątkiem dziecka i taskId biegu 1 nie jest startem.
-        ("mcp__t3-code__t3_thread_wait", {"threadId": CHILD, "taskId": "node:delegated-task:dziecko-wymyslone-1", "status": "completed"}),
+        ("mcp__t3-code__task_status", {"taskId": TASK1, "childThreadId": CHILD, "childRunId": R1, "status": "completed"}),
+        # Odpowiedź narzędzia spoza STARTS z wątkiem dziecka i biegiem 1 nie jest startem.
+        ("mcp__t3-code__t3_thread_wait", {"threadId": CHILD, "runId": R2, "taskId": TASK1, "status": "completed"}),
     ],
     ids=[
         "odczyt-po-koncu",
@@ -298,17 +333,17 @@ def test_zadna_odpowiedz_na_wywolanie_koordynatora_nie_zastepuje_powiadomienia(
     transcript = tmp_path / "sesja.jsonl"
     lines = [
         _started(CHILD, 0),
-        _entry("user", 0.5, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd r1) [completed]: FAIL"),
-        _call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(1), {"threadId": CHILD, "taskId": SENT}),
+        _entry("user", 0.5, f"Delegated task {TASK1} (Przegląd r1) [completed]: FAIL"),
+        _sent(CHILD, "toolu_send", 1, R2, SENT),
         _call(tool, "toolu_kontakt", _stamp(5), reply, {"threadId": CHILD}),
     ]
     transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
     memory = straznik.Memory()
     straznik.hear(transcript, 0, [CHILD], memory)
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 10 * MIN, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN, R2)}, 0.0, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R2)}, 10 * MIN, memory)
 
-    (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 26 * MIN, memory)
+    (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 17 * MIN, R2)}, 26 * MIN, memory)
 
     assert "nie dotarło" in reason and "duplikat" in reason
 
@@ -551,13 +586,14 @@ def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(
 @POSIX_ONLY
 @pytest.mark.parametrize(
     ("delivered", "old_session"),
-    [(False, False), (True, False), (True, True), ("anulowanie", False), ("czeka", False)],
+    [(False, False), (True, False), (True, True), ("anulowanie", False), ("czeka", False), ("kontynuacja", False)],
     ids=[
         "powiadomienie-zgubione",
         "powiadomienie-przed-przesunietym-koncem",
         "powiadomienie-w-starej-sesji",
         "dziecko-anulowane-przez-koordynatora",
         "odczyt-dziecka-czekajacego-na-dzieci-potem-zgubione",
+        "kontynuacja-t3-bez-startu-po-powiadomieniu",
     ],
 )
 def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_dziecka(
@@ -570,18 +606,22 @@ def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_d
     # Wpis .dzieci z chwilą teraz: krótki limit życia strażnika w teście liczy się od niego.
     straznik.record(straznik._files(PARENT), [CHILD], time.time())
     # Przy starej sesji koordynator nie ruszył po końcu dziecka, więc reguła bez transkryptu starej sesji by budziła.
+    # Kontynuacja: T3 wznowiło dziecko samo po powiadomieniu biegu 1 (nowy latestRunId bez startu w transkrypcie), a
+    # koordynator stoi po turze od 20 min; jej powiadomienie zginęło.
+    continued = delivered == "kontynuacja"
     threads = {
-        PARENT: {"status": "completed", "updatedAt": _ago(20 if old_session else 1)},
-        CHILD: {"status": "completed", "updatedAt": _ago(17)},
+        PARENT: {"status": "completed", "updatedAt": _ago(20 if old_session or continued else 1)},
+        CHILD: {"status": "completed", "updatedAt": _ago(17), "latestRunId": R2 if continued else R1},
     }
     (folder / "bin" / "watki.json").write_text(json.dumps(threads), encoding="utf-8")
     notice = "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR r1) [completed]: FAIL, jedno Ważne"
     # Koordynator sam anuluje przegląd (nowy HEAD), a T3 kończy dziecko bez powiadomienia.
     cancel = {"taskId": "node:delegated-task:dziecko-wymyslone-1", "status": "cancel_requested"}
     # Koordynator odczytał dziecko czekające na własne dzieci; potem bieg się skończył, a powiadomienie zginęło.
-    waiting = {"taskId": cancel["taskId"], "childThreadId": CHILD, "status": "running", "workState": "waiting_for_children"}
+    waiting = {"taskId": cancel["taskId"], "childThreadId": CHILD, "childRunId": R1, "status": "running", "workState": "waiting_for_children"}
     ending = {
         True: [_row("user", _ago(32), notice)],
+        "kontynuacja": [_row("user", _ago(32), notice)],
         "czeka": [_call("mcp__t3-code__task_status", "toolu_status", _ago(30), waiting, {"taskId": cancel["taskId"]})],
         "anulowanie": [_call("mcp__t3-code__task_cancel", "toolu_cancel", _ago(32), cancel, {"taskId": cancel["taskId"]})],
     }
@@ -602,7 +642,8 @@ def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_d
     sent = folder / "bin" / "wyslane.txt"
     nudges = sent.read_text(encoding="utf-8").splitlines() if sent.exists() else []
     # Koniec biegu bez powiadomienia budzi raz, także gdy koordynator sam anulował dziecko (koszt granicy).
-    assert [CHILD in nudge and "nie dotarło" in nudge for nudge in nudges] == ([True] if delivered in (False, "czeka", "anulowanie") else [])
+    expected = {False: "nie dotarło", "czeka": "nie dotarło", "anulowanie": "nie dotarło", "kontynuacja": "nie ruszył"}.get(delivered)
+    assert [CHILD in nudge and str(expected) in nudge for nudge in nudges] == ([True] if expected else [])
 
 
 @POSIX_ONLY
@@ -844,17 +885,16 @@ def test_dziecko_zlecone_w_trakcie_pilnowania_dostaje_budzenie_od_pilnujacego(
 
 def test_dwa_biegi_jednego_dziecka_bez_powiadomienia_daja_dwa_budzenia() -> None:
     # Bieg 1 kończy się w 5. minucie, koordynator się rusza, a powiadomienie nie przychodzi; w 26. koordynator wznawia
-    # dziecko (t3_thread_send, nowy taskId), bieg 2 kończy się w 40., a jego powiadomienie też ginie.
-    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 5 * MIN)}, 10 * MIN, memory)
-    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 25 * MIN, memory)
-    memory.runs[CHILD] = "node:bieg-2"
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 30 * MIN, memory)
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 41 * MIN, memory)
-    assert pending(Seen("completed", 33 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 60 * MIN, memory)
+    # dziecko (t3_thread_send, nowy bieg T3 z taskId), bieg 2 kończy się w 40., a jego powiadomienie też ginie.
+    memory = _known(R1="node:bieg-1", R2="node:bieg-2")
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN, R1)}, 0.0, memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 5 * MIN, R1)}, 10 * MIN, memory)
+    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 20 * MIN, R1)}, 25 * MIN, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN, R2)}, 30 * MIN, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R2)}, 41 * MIN, memory)
+    assert pending(Seen("completed", 33 * MIN), {CHILD: Seen("completed", 20 * MIN, R2)}, 60 * MIN, memory)
 
-    (reason,) = decide(Seen("completed", 33 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 60 * MIN, memory)
+    (reason,) = decide(Seen("completed", 33 * MIN), {CHILD: Seen("completed", 20 * MIN, R2)}, 60 * MIN, memory)
 
     assert CHILD in reason and "nie dotarło" in reason
 
@@ -890,7 +930,7 @@ class _T3Runs:
             if thread == PARENT:
                 return self.parent
             if thread == SIBLING:
-                return straznik.Seen("running", time.time())
+                return straznik.Seen("running", time.time(), _run(SIBLING, 1))
             return self.child.pop(0) if len(self.child) > 1 else self.child[0]
 
     def send(self, cli: str, thread: str, text: str) -> int:
@@ -921,16 +961,16 @@ def test_jeden_straznik_budzi_przy_kazdym_z_dwoch_biegow_jednego_dziecka_bez_pow
     files.transcript.write_text(f"{transcript}\n", encoding="utf-8")
     straznik.record(files, [CHILD, SIBLING], time.time())
     first_end = time.time()
-    t3.set(straznik.Seen("completed", first_end), straznik.Seen("completed", first_end))
+    t3.set(straznik.Seen("completed", first_end), straznik.Seen("completed", first_end, R1))
     guard = threading.Thread(target=straznik.serve, args=(PARENT, "t3"))
     guard.start()
     assert wait_for(lambda: len(t3.sent) == 1, 5)
 
-    # Bieg 2 startuje w transkrypcie, a T3 jeszcze pokazuje koniec biegu 1: ten koniec nie należy do biegu 2.
-    second = {"threadId": CHILD, "taskId": SENT, "status": "starting"}
+    # Bieg 2 startuje w transkrypcie, a T3 jeszcze pokazuje bieg 1; potem bieg 2 kończy się bez powiadomienia.
     with transcript.open("a", encoding="utf-8") as handle:
-        handle.write(_call("mcp__t3-code__t3_thread_send", "toolu_send", _ago(0), second, {"threadId": CHILD}) + "\n")
-    t3.set(straznik.Seen("completed", time.time()), straznik.Seen("completed", first_end), straznik.Seen("completed", first_end + 1))
+        handle.write(_sent(CHILD, "toolu_send", 1, R2, SENT) + "\n")
+    later = straznik.Seen("completed", first_end + 1, R2)
+    t3.set(straznik.Seen("completed", time.time()), straznik.Seen("completed", first_end, R1), later)
 
     assert wait_for(lambda: len(t3.sent) == 2, 5)
     assert all(CHILD in text and "nie dotarło" in text for text in t3.sent)
@@ -943,112 +983,132 @@ def test_jeden_straznik_budzi_przy_kazdym_z_dwoch_biegow_jednego_dziecka_bez_pow
 def test_dziecko_czekajace_na_prace_w_tle_w_dzisiejszym_t3_nie_jest_skonczone() -> None:
     # Dzisiejszy T3 pokazuje wątek dziecka, które po turze czeka na pracę w tle, jako waiting (spoza FINISHED), a T3
     # z października pokazywał go jako completed; ostatni kontakt koordynatora to task_status waiting_for_children.
-    memory = straznik.Memory(heard=set(), runs={CHILD: SENT})
-    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    memory = _known(R1=SENT)
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN, R1)}, 0.0, memory)
 
-    assert decide(Seen("completed", 30 * MIN), {CHILD: Seen("waiting", 20 * MIN)}, 30 * MIN, memory) == []
-    assert decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 31 * MIN, memory)
+    assert decide(Seen("completed", 30 * MIN), {CHILD: Seen("waiting", 20 * MIN, R1)}, 30 * MIN, memory) == []
+    assert decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 20 * MIN, R1)}, 31 * MIN, memory)
 
 
 def test_drugi_bieg_tego_samego_dziecka_ktory_stoi_budzi_choc_pierwszy_juz_budzil() -> None:
-    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
-    assert decide(Seen("completed", 50 * MIN), {CHILD: Seen("running", 46 * MIN)}, 0.0, memory)
-    # Koordynator przerwał bieg 1 i wznowił dziecko (nowy taskId); bieg 2 też staje.
-    memory.runs[CHILD] = "node:bieg-2"
+    memory = _known(R1="node:bieg-1", R2="node:bieg-2")
+    assert decide(Seen("completed", 50 * MIN), {CHILD: Seen("running", 46 * MIN, R1)}, 0.0, memory)
+    # Koordynator przerwał bieg 1 i wznowił dziecko (nowy bieg T3); bieg 2 też staje.
 
-    (reason,) = decide(Seen("completed", 50 * MIN), {CHILD: Seen("running", 47 * MIN)}, 60 * MIN, memory)
+    (reason,) = decide(Seen("completed", 50 * MIN), {CHILD: Seen("running", 47 * MIN, R2)}, 60 * MIN, memory)
 
     assert "bez ruchu od 47 min" in reason
 
 
 def test_bieg_ktory_zaczal_sie_i_skonczyl_miedzy_pytaniami_nie_dziedziczy_konca_poprzedniego() -> None:
     # Bieg 1 kończy się w 5. minucie (budzenie w 21.); bieg 2 startuje w 60. i kończy się w 62., zanim strażnik zapyta.
-    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 6 * MIN, memory)
-    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 21 * MIN, memory)
-    memory.runs[CHILD] = "node:bieg-2"
-    # T3 jeszcze pokazuje koniec biegu 1: bieg 2 nie ma końca, więc nie budzi wiekiem biegu 1.
-    assert decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 56 * MIN)}, 61 * MIN, memory) == []
-    assert decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 2 * MIN)}, 64 * MIN, memory) == []
-    assert decide(Seen("completed", 6 * MIN), {CHILD: Seen("completed", 8 * MIN)}, 70 * MIN, memory) == []
+    memory = _known(R1="node:bieg-1", R2="node:bieg-2")
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN, R1)}, 0.0, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R1)}, 6 * MIN, memory)
+    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN, R1)}, 21 * MIN, memory)
+    # T3 utworzyło bieg 2, a status i updatedAt są jeszcze z końca biegu 1: bieg 2 nie ma końca.
+    assert decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 56 * MIN, R2)}, 61 * MIN, memory) == []
+    assert pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 56 * MIN, R2)}, 61 * MIN, memory)
+    # Bez transkryptu też: strażnik czeka na koniec bieżącego biegu, którego T3 jeszcze nie pokazuje.
+    bare = straznik.Memory()
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 56 * MIN, R1)}, 61 * MIN, bare)
+    assert not pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 56 * MIN, R1)}, 61 * MIN, bare)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 57 * MIN, R2)}, 62 * MIN, bare)
+    assert pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 57 * MIN, R2)}, 62 * MIN, bare)
+    assert decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 2 * MIN, R2)}, 64 * MIN, memory) == []
+    assert decide(Seen("completed", 6 * MIN), {CHILD: Seen("completed", 8 * MIN, R2)}, 70 * MIN, memory) == []
     # Powiadomienie biegu 2 przychodzi w 75.: nic nie budzi ani przed nim, ani po nim.
     memory.heard.add("node:bieg-2")
-    assert decide(Seen("completed", 16 * MIN), {CHILD: Seen("completed", 18 * MIN)}, 80 * MIN, memory) == []
-    assert not pending(Seen("completed", 16 * MIN), {CHILD: Seen("completed", 18 * MIN)}, 80 * MIN, memory)
+    assert decide(Seen("completed", 16 * MIN), {CHILD: Seen("completed", 18 * MIN, R2)}, 80 * MIN, memory) == []
+    assert not pending(Seen("completed", 16 * MIN), {CHILD: Seen("completed", 18 * MIN, R2)}, 80 * MIN, memory)
 
 
 def test_bieg_2_bez_powiadomienia_budzi_z_wiekiem_wlasnego_konca() -> None:
-    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 0.0, memory)
-    assert decide(Seen("completed", 20 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 16 * MIN, memory)
-    memory.runs[CHILD] = "node:bieg-2"
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 2 * MIN)}, 40 * MIN, memory)
+    memory = _known(R1="node:bieg-1", R2="node:bieg-2")
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R1)}, 0.0, memory)
+    assert decide(Seen("completed", 20 * MIN), {CHILD: Seen("completed", 17 * MIN, R1)}, 16 * MIN, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 2 * MIN, R2)}, 40 * MIN, memory)
 
-    (reason,) = decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 18 * MIN)}, 56 * MIN, memory)
+    (reason,) = decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 18 * MIN, R2)}, 56 * MIN, memory)
 
     assert "18 min temu" in reason
 
 
-@pytest.mark.parametrize("between", ["waiting", "completed"], ids=["dzisiejszy-t3-waiting", "completed-miedzy-turami"])
-def test_bieg_wznowiony_przez_t3_bez_startu_idzie_regula_ruchu_watku(between: str) -> None:
-    # Bieg X kończy się w 5. minucie z powiadomieniem; T3 wznawia dziecko samo w 20. (provider-continuation, bez
-    # odpowiedzi startu w transkrypcie), kontynuacja kończy się w 30., a jej powiadomienie ginie.
+@pytest.mark.parametrize(
+    "seen_running",
+    [True, False],
+    ids=["kontynuacja-widziana-w-toku", "kontynuacja-miedzy-pytaniami"],
+)
+def test_bieg_wznowiony_przez_t3_bez_startu_idzie_regula_ruchu_watku(seen_running: bool) -> None:
+    # Bieg 1 kończy się w 5. minucie z powiadomieniem; T3 wznawia dziecko samo w 20. (provider-continuation, nowy
+    # latestRunId bez odpowiedzi startu w transkrypcie), kontynuacja kończy się w 22., a jej powiadomienie ginie.
     def run(parent_moved_at: float) -> list[list[str]]:
-        memory = straznik.Memory(heard={"node:bieg-x"}, runs={CHILD: "node:bieg-x"})
-        decide(Seen("completed", 1 * MIN), {CHILD: Seen(between, 1 * MIN)}, 6 * MIN, memory)
-        decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 21 * MIN, memory)
-        decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 31 * MIN, memory)
-        parent = Seen("completed", (50 - parent_moved_at) * MIN)
-        return [decide(parent, {CHILD: Seen("completed", 20 * MIN)}, 50 * MIN, memory)]
+        memory = _known(R1=TASK1)
+        memory.heard.add(TASK1)
+        decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R1)}, 6 * MIN, memory)
+        if seen_running:
+            decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN, R2)}, 21 * MIN, memory)
+        decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 3 * MIN, R2)}, 25 * MIN, memory)
+        parent = Seen("completed", (45 - parent_moved_at) * MIN)
+        return [decide(parent, {CHILD: Seen("completed", 23 * MIN, R2)}, 45 * MIN, memory)]
 
     (woken,) = run(parent_moved_at=7)
     (reason,) = woken
     assert CHILD in reason and "nie ruszył" in reason
-    # Powiadomienie kontynuacji przyszło w 31. minucie jako wpis rodzica: ruch wątku zamyka bieg.
-    assert run(parent_moved_at=31) == [[]]
+    # Powiadomienie kontynuacji przyszło w 23. minucie jako wpis rodzica: ruch wątku zamyka bieg.
+    assert run(parent_moved_at=23) == [[]]
 
 
-def test_przesuniety_koniec_watku_po_powiadomieniu_nie_jest_biegiem_wznowionym() -> None:
-    # Bieg X skończył się z powiadomieniem; T3 przesuwa potem updatedAt skończonego wątku (rozliczenie, restart),
-    # a dziecko ani razu nie trwało: świeży i stary pilnujący nie budzą (W1 r1).
-    memory = straznik.Memory(heard={"node:bieg-x"}, runs={CHILD: "node:bieg-x"})
-    decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 0.0, memory)
+def test_przesuniety_koniec_watku_po_powiadomieniu_nie_jest_nowym_biegiem() -> None:
+    # Bieg 1 skończył się z powiadomieniem; T3 przesuwa potem updatedAt skończonego wątku (rozliczenie, restart),
+    # a latestRunId zostaje: świeży i stary pilnujący nie budzą (W1 r1).
+    memory = _known(R1=TASK1)
+    memory.heard.add(TASK1)
+    decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 20 * MIN, R1)}, 0.0, memory)
     for minute in (20, 40, 60):
-        assert decide(Seen("completed", 60 * MIN), {CHILD: Seen("completed", 1 * MIN)}, minute * MIN, memory) == []
-    assert not pending(Seen("completed", 60 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 60 * MIN, memory)
+        assert decide(Seen("completed", 60 * MIN), {CHILD: Seen("completed", 1 * MIN, R1)}, minute * MIN, memory) == []
+    assert not pending(Seen("completed", 60 * MIN), {CHILD: Seen("completed", 1 * MIN, R1)}, 60 * MIN, memory)
 
 
-def test_strażnik_pilnuje_biegu_2_ze_startem_choc_t3_pokazuje_jeszcze_koniec_biegu_1() -> None:
-    memory = straznik.Memory(heard={"node:bieg-1"}, runs={CHILD: "node:bieg-1"})
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 5 * MIN)}, 0.0, memory)
-    assert not pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 5 * MIN)}, 0.0, memory)
-    # Start biegu 2 stoi w transkrypcie, a T3 jeszcze nie pokazuje dziecka w toku.
-    memory.runs[CHILD] = "node:bieg-2"
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 1 * MIN, memory)
-    assert pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 1 * MIN, memory)
+def test_strażnik_pilnuje_biegu_2_ze_startem_choc_t3_pokazuje_jeszcze_bieg_1() -> None:
+    memory = _known(R1="node:bieg-1")
+    memory.heard.add("node:bieg-1")
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 5 * MIN, R1)}, 0.0, memory)
+    assert not pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 5 * MIN, R1)}, 0.0, memory)
+    # Start biegu 2 stoi w transkrypcie, a T3 jeszcze pokazuje bieg 1 i jego koniec.
+    memory.tasks[R2], memory.latest[CHILD] = "node:bieg-2", R2
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN, R1)}, 1 * MIN, memory)
+    assert pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN, R1)}, 1 * MIN, memory)
     memory.heard.add("node:bieg-2")
-    assert not pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 1 * MIN, memory)
+    assert not pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN, R1)}, 1 * MIN, memory)
 
 
 def test_start_po_wznowieniu_przez_t3_wraca_do_reguly_powiadomienia(tmp_path: Path) -> None:
-    # Bieg 1 z powiadomieniem, potem T3 wznawia dziecko samo; koordynator wysyła mu t3_thread_send (bieg 2), bieg 2
-    # kończy się bez powiadomienia, a koordynator pracuje dalej przy innych dzieciach.
+    # Bieg 1 z powiadomieniem, potem T3 wznawia dziecko samo (bieg 2 bez startu); koordynator wysyła mu
+    # t3_thread_send (bieg 3 z taskId), bieg 3 kończy się bez powiadomienia, a koordynator pracuje dalej.
     transcript = tmp_path / "sesja.jsonl"
-    transcript.write_text(
-        _started(CHILD, 0) + "\n" + _entry("user", 3, "Delegated task node:delegated-task:dziecko-wymyslone-1 (P) [completed]") + "\n",
-        encoding="utf-8",
-    )
+    transcript.write_text(_started(CHILD, 0) + "\n" + _entry("user", 3, f"Delegated task {TASK1} (P) [completed]") + "\n", encoding="utf-8")
     memory = straznik.Memory()
     offset = straznik.hear(transcript, 0, [CHILD], memory)
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 10 * MIN, memory)
-    assert CHILD in memory.resumed
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN, R2)}, 10 * MIN, memory)
     with transcript.open("a", encoding="utf-8") as handle:
-        handle.write(_call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(20), {"threadId": CHILD, "taskId": SENT}) + "\n")
+        handle.write(_sent(CHILD, "toolu_send", 20, R3, SENT) + "\n")
     straznik.hear(transcript, offset, [CHILD], memory)
-    decide(Seen("running", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 25 * MIN, memory)
-    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 31 * MIN, memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("running", 1 * MIN, R3)}, 25 * MIN, memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN, R3)}, 31 * MIN, memory)
 
-    (reason,) = decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 47 * MIN, memory)
+    (reason,) = decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 17 * MIN, R3)}, 47 * MIN, memory)
 
     assert "nie dotarło" in reason and "duplikat" in reason
+
+
+def test_bez_latestrunid_z_t3_biegiem_jest_ostatni_start_z_transkryptu() -> None:
+    # T3 bez latestRunId (starsza wersja albo atrapa): bieg to ostatnia odpowiedź startu, więc zgubione powiadomienie
+    # budzi, choć koordynator rusza się przy innych dzieciach.
+    memory = _known(R1=TASK1)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 10 * MIN, memory)
+
+    (reason,) = decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 26 * MIN, memory)
+
+    assert "nie dotarło" in reason
