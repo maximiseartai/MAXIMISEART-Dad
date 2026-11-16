@@ -139,6 +139,16 @@ def test_issue_nazywa_nieaktywna_prace_nad_zgloszeniem_z_jej_wiekiem(checkouts: 
     assert f"- fix/zapomniany | {forgotten.resolve()} | ruch 3 d temu | commit odwołuje się do #8" in lines
 
 
+def test_worktree_w_trakcie_git_worktree_add_nie_zmienia_raportu(checkouts: dict[str, Path]) -> None:
+    before = _report(checkouts["current"], "--issue", "7")
+    creating = checkouts["other"].parent / "tworzony"
+    _git(checkouts["other"], "worktree", "add", "--detach", str(creating), "main")
+    # Tak zostawia HEAD git worktree add, zanim ustawi go na commit.
+    (Path(git(creating, "rev-parse", "--absolute-git-dir")) / "HEAD").write_text("0" * 40 + "\n", encoding="utf-8")
+
+    assert _report(checkouts["current"], "--issue", "7") == before
+
+
 def test_checkout_bez_zmian_i_bez_zgloszenia_dostaje_trzy_odpowiedzi_bez_githuba(tmp_path: Path) -> None:
     _, branch = _branch_from_main(tmp_path)
     fake = tmp_path / "gh-wolany"

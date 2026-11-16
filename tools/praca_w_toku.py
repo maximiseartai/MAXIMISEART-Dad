@@ -9,7 +9,8 @@ Linia pracy to inna lokalna gałąź z własnymi commitami spoza ``origin/main``
 HEAD innego worktree albo otwarty PR (z lokalną gałęzią albo bez niej). Odłączony HEAD liczy się z niezacommitowanymi
 plikami albo z commitem innym niż merge, którego nie ma żadna gałąź ani remote (inaczej to piaskownica albo przegląd).
 Worktree w trakcie rebase albo bisect gałęzi pracuje na tej gałęzi, tak jak uznaje git. Kopia commitu narzędzia
-(``potomne.commit_copy``) nie jest linią pracy, a bieżący checkout i jego gałąź nie są inną pracą.
+(``potomne.commit_copy``) ani worktree w trakcie ``git worktree add`` (HEAD bez commitu) nie jest linią pracy, a
+bieżący checkout i jego gałąź nie są inną pracą.
 
 Linia pracy jest aktywna, gdy ma otwarty PR albo dała znak życia w ostatnich ``AKTYWNA_S`` sekundach (doba): commit
 na jej czubku (data commitera), wpis reflogu jej gałęzi, zapis indeksu albo HEAD jej worktree, zmiana jej
@@ -174,7 +175,7 @@ class Tree:
 
     @classmethod
     def read(cls, found: repo.Worktree, root: Path, branches: Mapping[str, str]) -> Tree | None:
-        if found.missing or found.path == root or potomne.is_commit_copy(found.path):
+        if found.missing or found.head is None or found.path == root or potomne.is_commit_copy(found.path):
             return None
         git_dir = _git_dir(found.path)
         if git_dir is None:

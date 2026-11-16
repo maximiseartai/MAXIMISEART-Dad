@@ -14,7 +14,8 @@ gałąź), gdy naraz:
 - nie należy do aktywnego wątku T3 (``running`` albo jeszcze nie zamknięty przez Maksa);
 - nie jest świeżym worktree bez własnej pracy: HEAD stoi tam, gdzie go utworzono, a utworzono go w ostatniej dobie
   (sesja właśnie go założyła, a kopia commitu narzędzia jeszcze go używa);
-- nie jest zablokowany (``git worktree lock``) ani pozbawiony katalogu.
+- nie jest zablokowany (``git worktree lock``), pozbawiony katalogu ani w trakcie ``git worktree add`` (HEAD bez
+  commitu).
 
 Gałąź bez worktree usuwa przy tych samych warunkach HEAD, wątku T3 i świeżości. Główny checkout i gałąź ``main``
 zostają zawsze. Gdy nie da się sprawdzić procesów (brak ``lsof``, jego pusta odpowiedź, Windows), zostaje każdy
@@ -69,7 +70,7 @@ FRESH = "nowe, bez własnych commitów"
 class _Verdict:
     worktree: Worktree | None
     branch: str | None
-    head: str
+    head: str | None
     reasons: tuple[str, ...]
 
     def name(self) -> str:
@@ -159,6 +160,9 @@ def _tree_reasons(root: Path, tree: Worktree, here: Path, busy: frozenset[str] |
         return
     if tree.missing:
         yield "brak katalogu (git worktree prune)"
+        return
+    if tree.head is None:
+        yield "w trakcie tworzenia (HEAD bez commitu)"
         return
     if tree.locked:
         yield "zablokowany"
@@ -280,11 +284,11 @@ def _remove(root: Path, verdict: _Verdict, here: Path, threads: _Threads | None)
     return None
 
 
-def _head(tree: Worktree) -> str:
+def _head(tree: Worktree) -> str | None:
     try:
         return repo.git(tree.path, "rev-parse", "HEAD").strip()
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return ""
+        return None
 
 
 def _busy() -> frozenset[str] | None:
