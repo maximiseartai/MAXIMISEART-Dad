@@ -37,7 +37,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Change mutations nie biegną na PR.
   `ci.yml` nie ma ich zadania, plan CI ich nie liczy, a `tools/scal_pr.py` nie sprawdza ich ani linii `MUTACJA` w `PASS`.
 - Workflow `mutacje-nocne.yml` biegnie raz na dobę na `main` i ręcznie z opcjonalnym `od`.
-  Mutuje linie `src/` i jednostek z podtabeli `przepuszcza` listy dwóch szop (`tools/lib/szopa.toml`) w `tools/` zmienione od bazy tym samym `tools/mutacje_zmiany.py`: jedna mutacja na linię, cofnięcie fragmentu, wyjątki `# mutacje-zmiany:`.
+  Mutuje linie `src/` i jednostek z podtabeli `przepuszcza` listy dwóch szop (`tools/lib/szopa.toml`) w `tools/` zmienione od bazy tym samym `tools/mutacje_zmiany.py`: jedna mutacja na linię, cofnięcie fragmentu tylko wtedy, gdy żadna z tych mutacji nie psuje jego linii, wyjątki `# mutacje-zmiany:`.
   Skryptów skilli `verify-*` nie mutuje, także tych z oznaczeniem `przepuszcza` (`CODE` w `tools/mutacje_zmiany.py`): większość ich zmienionych linii to napęd Centrum, którego zachowanie sprawdza tylko jego bieg w przeglądarce, a nie testy, które noc wybiera, a generator nie ma operatorów strukturalnych, na których padały braki testu skryptów skilli w przeglądach; te braki łapie przegląd przez `tools/mutacje.py` i własny bieg skilla.
   Skrypty mutacji skilli (`check_*_mutations.py`) biegną nocą bez zmian.
   Bazą jest commit, do którego doszedł ostatni udany przebieg (`do` z jego artefaktu `zakres-nocy`, a w runie bez niego jego commit), a bez udanego przebiegu commit sprzed 24 h.
