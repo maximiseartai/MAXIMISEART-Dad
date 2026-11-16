@@ -135,7 +135,9 @@ class LegendRefused(ValueError):
 
 @dataclass(frozen=True)
 class _Pattern:
-    code: ActivityCode
+    """Zapis ``spelling`` kodu ``owner``."""
+
+    owner: ActivityCode
     spelling: str
 
 
@@ -174,12 +176,12 @@ class ActivityLegend:
             index = _index(match)
             pattern = self._patterns[index]
             number = int(match[f"{_NUMBER_GROUP}{index}"]) if NUMBER in pattern.spelling else None
-            column = _column(pattern.code.column, number)
-            if isinstance(pattern.code.column, ColumnByNumber) and column is None:
+            column = _column(pattern.owner.column, number)
+            if isinstance(pattern.owner.column, ColumnByNumber) and column is None:
                 assert number is not None, "kod z przedziałami ma w każdym zapisie miejsce na liczbę"
-                problems.append(NumberOutOfRange(pattern.code.id, pattern.spelling, number))
+                problems.append(NumberOutOfRange(pattern.owner.id, pattern.spelling, number))
                 continue
-            found.append((FoundCode(pattern.code.id, pattern.spelling, number, column), pattern.code))
+            found.append((FoundCode(pattern.owner.id, pattern.spelling, number, column), pattern.owner))
         hits = [(written.column, code) for written, code in found if written.column is not None]
         fills = [(fill, code.id) for _, code in found for fill in code.fills]
         problems.extend(
@@ -417,10 +419,10 @@ def _shared_word(before: _Pattern, pattern: _Pattern, word: str) -> str:
     """Zdanie odmowy dla taty: zapis ``pattern`` i wcześniejszy zapis ``before`` pasują do słowa ``word``."""
 
     spelling, other = shown_spelling(pattern.spelling), shown_spelling(before.spelling)
-    owner = shown_spelling(before.code.spellings[0])
+    name = shown_spelling(before.owner.spellings[0])
     if before.spelling == pattern.spelling:
-        return f"Zapis „{spelling}” jest w tym kodzie dwa razy." if before.code is pattern.code else f"Zapis „{spelling}” ma już kod „{owner}”."
-    whose = "tego kodu" if before.code is pattern.code else f"kodu „{owner}”"
+        return f"Zapis „{spelling}” jest w tym kodzie dwa razy." if before.owner is pattern.owner else f"Zapis „{spelling}” ma już kod „{name}”."
+    whose = "tego kodu" if before.owner is pattern.owner else f"kodu „{name}”"
     return (
         f"Zapis „{spelling}” i zapis „{other}” {whose} pasują do tego samego słowa „{word}”, a słowo w opisie może "
         "pasować tylko do jednego zapisu."

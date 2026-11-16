@@ -37,6 +37,7 @@ from rozliczenia.settlement_period import parse_period_token
 from atrapy.pliki_taty import INTERNAL_HEADERS
 from atrapy.preparation import (
     COLLECTIVE_FILE_NAME,
+    COMPLETED_WITHOUT_CODES,
     COLLECTIVE_TEMPLATE_ZERO_ROWS,
     INTERNAL_SETTLEMENT_NAME,
     NOT_TRANSFERRED_PREFIXES,
@@ -1488,7 +1489,7 @@ def test_formula_glowna_wspolnej_formuly_w_wierszu_okresu_daje_jedno_zlecenie_te
     summary = run_preparation(fixture)
 
     assert summary.period_order_count == 3
-    assert [row[10] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == ["=N5", "=N6", "tak"]
+    assert [row[10] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == ["=N5", "=N6", COMPLETED_WITHOUT_CODES]
 
 
 _SECOND_PERIOD_ORDER = internal_row(3, datetime(2026, 9, 10, 8, 0), "NIE", "dariusz.fikcyjny2")
