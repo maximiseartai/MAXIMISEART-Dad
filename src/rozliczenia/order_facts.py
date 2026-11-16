@@ -1,25 +1,33 @@
-"""Treść Wiersza danych, która może opuścić komputer taty: reguła prywatności Kontroli ilości (ADR 0013, ADR 0015).
+"""Treść Wiersza danych, która może opuścić komputer taty: reguła prywatności Kontroli ilości (ADR 0013, ADR 0015,
+ADR 0038).
 
 To jedyny typ z treścią komórek Pliku zbiorczego, który przeżywa silnik Przebiegu rozliczeń, i jedyne miejsce,
-które wylicza dozwolone kolumny: UMOWA, URZĄDZENIA i CZYNNOŚCI (po nagłówku z wiersza 17, pod którym zapisuje je
-Przygotowanie), dzień tygodnia i godzina z DATA oraz N:AP (po literze kolumny). Treść zlecenia
+które wylicza dozwolone kolumny: UMOWA, URZĄDZENIA, CZYNNOŚCI i CZYNNOŚCI ZREALIZOWANE (po nagłówku z wiersza 17, pod
+którym zapisuje je Przygotowanie), dzień tygodnia i godzina z DATA, N:AP i ``AS`` (po literze kolumny) oraz kolor
+legendy w wypełnieniu kolumn, które może wypełnić Legenda czynności. Treść zlecenia
 robią z komórek Reguły ilości (``OrderContent.of``), tak samo jak z Rejestru zleceń w Przygotowaniu; tę samą treść,
 także bez daty w DATA, czytają Ilości tylko dla INEA Przebiegu (``order_contents``). Adres, numery
-zlecenia i umowy, Wykonawca, data dzienna, CZYNNOŚCI ZREALIZOWANE i reszta A:AT nie mają pola, więc nie da się ich
-wysłać przez ten typ. Tekst wpisany przez tatę w komórce ilości też nie przechodzi: zostaje z niego „nieliczbowa”.
+zlecenia i umowy, Wykonawca, data dzienna i reszta A:AT nie mają pola, więc nie da się ich wysłać przez ten typ. Tekst
+wpisany przez tatę w komórce ilości i w ``AS`` też nie przechodzi: zostaje z niego „nieliczbowa”. Opis technika
+(``completed``) wychodzi w Kontroli ilości tylko w wierszach, które wskazuje ``quantity_check.legend_row_check``.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import Decimal
+from types import MappingProxyType
 from typing import Final, Literal
 
-from openpyxl.utils import get_column_letter
+from openpyxl.styles.colors import COLOR_INDEX, Color
+from openpyxl.styles.fills import Fill, PatternFill
+from openpyxl.utils import column_index_from_string, get_column_letter
 
+from .activity_legend import AMOUNT_COLUMN, FILL_COLUMNS, FillColour
+from .client_data import shown
 from .collective_layout import QUANTITY_LETTERS
-from .register_columns import ACTIVITIES, CONTRACT, DATE, DEVICES, Column
+from .register_columns import ACTIVITIES, COMPLETED, CONTRACT, DATE, DEVICES, Column
 from .quantity_engine import OrderContent
 from .workbook_files import DataRow, cell_datetime, is_blank
 from .text import normalize_text
@@ -29,6 +37,7 @@ TataValue = int | Literal["nieliczbowa"]
 """Ilość taty: liczba (pusta komórka, 0 i ``"0"`` to 0; ``"2"`` i ``2.0`` to 2) albo „nieliczbowa” (formuła, słowo, 1.5)."""
 
 _INPUTS: Final[tuple[Column, ...]] = (CONTRACT, DEVICES, ACTIVITIES, DATE)
+_NO_FILLS: Final[Mapping[str, FillColour]] = MappingProxyType({})
 
 
 @dataclass(frozen=True)
@@ -39,6 +48,14 @@ class OrderFacts:
     """Treść zlecenia dla Reguł ilości, zawsze z datą; ``None``, gdy ``DATA`` nie jest datą."""
     quantities: Mapping[str, TataValue]
     """Litera kolumny N:AP → ilość taty, tylko różna od 0."""
+    completed: str = ""
+    """Opis technika: tekst ``CZYNNOŚCI ZREALIZOWANE`` tak, jak go pokazuje Excel; pusta komórka albo brak nagłówka to
+    ``""``."""
+    amount: TataValue = 0
+    """Kwota taty w ``AS`` (Uwagi - kwota), czytana jak ilość taty."""
+    fills: Mapping[str, FillColour] = field(default=_NO_FILLS)
+    """Kolumna, którą może wypełnić Legenda czynności (``FILL_COLUMNS``) → kolor legendy jej wypełnienia, tylko z
+    wypełnieniem w kolorze legendy (``_colour``)."""
 
     def quantity(self, column: str) -> TataValue:
         return self.quantities.get(column, 0)
@@ -63,8 +80,16 @@ def collective_orders(header: Mapping[str, int], rows: Sequence[DataRow]) -> Col
     contents = order_contents(header, rows)
     if isinstance(contents, MissingHeaders):
         return contents
+    completed_index = header.get(normalize_text(COMPLETED.target_header))
+    completed = None if completed_index is None else get_column_letter(completed_index)
     return tuple(
-        OrderFacts(None if content.started is None else content, _quantities(row))
+        OrderFacts(
+            None if content.started is None else content,
+            _quantities(row),
+            _completed(_value(row, completed)),
+            tata_value(row.value(AMOUNT_COLUMN)),
+            _fills(row),
+        )
         for content, row in zip(contents, rows, strict=True)
     )
 
@@ -128,3 +153,38 @@ def _number_text(text: str) -> TataValue:
 def _quantities(row: DataRow) -> dict[str, TataValue]:
     values = {letter: tata_value(row.value(letter)) for letter in QUANTITY_LETTERS}
     return {letter: value for letter, value in values.items() if value != 0}
+
+
+def _completed(cell: object) -> str:
+    return "" if is_blank(cell) else shown(cell)
+
+
+def _fills(row: DataRow) -> Mapping[str, FillColour]:
+    colours = {column: _colour(row.cells[column_index_from_string(column) - 1].highlights.fill) for column in FILL_COLUMNS}
+    return MappingProxyType({column: colour for column, colour in colours.items() if colour is not None})
+
+
+def _colour(fill: Fill | None) -> FillColour | None:
+    """Kolor legendy wypełnienia komórki: jednolite wypełnienie koloru Legendy czynności (po RGB albo indeksie palety);
+    każde inne wypełnienie i brak wypełnienia to ``None``. To jedyny odczyt koloru komórki taty pod kątem legendy:
+    Kontrola ilości i brama Legendy czynności biorą go z ``OrderFacts.fills``.
+
+    To lustro zapisu: w kolumnach za danymi wejściowymi Przygotowanie zostawia wygląd komórki Wzorca i kładzie na nim
+    tylko wypełnienie legendy (``highlights.solid_fill``). Wypełnienie spoza palety legendy, np. białe tło motywu, które
+    Wzorzec pliku zbiorczego taty ma w N–V i X każdego Wiersza danych, albo ręczne zaznaczenie, nie jest kolorem, który
+    legenda mogłaby wpisać, więc Kontrola czyta je jak brak koloru."""
+
+    if not isinstance(fill, PatternFill) or fill.patternType != "solid":
+        return None
+    rgb = _rgb(fill.fgColor)
+    return next((colour for colour in FillColour if rgb is not None and rgb == colour.argb[-6:]), None)
+
+
+def _rgb(color: Color | None) -> str | None:
+    if color is None:
+        return None
+    if color.type == "rgb" and isinstance(color.rgb, str):
+        return color.rgb[-6:].upper()
+    if color.type == "indexed" and isinstance(color.indexed, int) and color.indexed < len(COLOR_INDEX):
+        return COLOR_INDEX[color.indexed][-6:].upper()
+    return None

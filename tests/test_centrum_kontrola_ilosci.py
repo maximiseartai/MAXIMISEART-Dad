@@ -12,11 +12,16 @@ import json
 from pathlib import Path
 import shutil
 import threading
+from dataclasses import replace
 from typing import Any, Final
 
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill
 import pytest
 
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum import refusal
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.worker_periods import InRegister
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
@@ -103,6 +108,7 @@ def expected_body(run_id: str) -> str:
         "\n"
         "- Wiersze danych: 14 (porównane 10, rozliczane z opisu 1, bez reguły 2, bez daty i godziny w DATA 1)\n"
         "- Różnice w kolumnach Reguł ilości: 7\n"
+        "- Wiersze z Kodem czynności: 0 (zgodne z legendą 0), różnice legendy: 0\n"
         "\n"
         "## Różnice\n"
         "\n"
@@ -138,6 +144,14 @@ def expected_body(run_id: str) -> str:
         "| --- | --- | --- |\n"
         "| O | 1 | 1 |\n"
         "| AM | nieliczbowa | 1 |\n"
+        "\n"
+        "## Wiersze bez kodu z wpisem taty\n"
+        "\n"
+        "| Opis | Wpis taty | Wiersze |\n"
+        "| --- | --- | --- |\n"
+        "| (puste) | AB 2 | 1 |\n"
+        "| (puste) | AM nieliczbowa | 1 |\n"
+        "| (puste) | Y 1, AK 1 | 1 |\n"
         "\n"
         "## Kolumny z opisu technika: wiersze wypełnione przez tatę\n"
         "\n"
@@ -255,8 +269,11 @@ ALLOWED = ("ZNACZNIK-UMOWA", "ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI")
 CLOCK_START = datetime.combine(TODAY, time(12, 7), timezone.utc)
 
 
-def test_kontrola_ilosci_nie_ma_adresu_numerow_wykonawcy_daty_ani_czynnosci_zrealizowanych(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, [MARKED])
+def test_kontrola_ilosci_nie_ma_adresu_numerow_wykonawcy_daty_ani_opisu_technika_wiersza_bez_wpisu_taty(
+    tmp_path: Path,
+) -> None:
+    # Wiersz bez kodu i bez wpisu taty w kolumnie z opisu technika ani w AS: CZYNNOŚCI ZREALIZOWANE nie wychodzą.
+    centrum = centrum_with(tmp_path, [{**MARKED, "AS": None}])
 
     view = run_to_end(centrum, dry_run=False)
 
@@ -388,6 +405,131 @@ def test_wysylka_w_tle_nie_trzyma_miejsca_uruchomienia_ani_zamkniecia_centrum(tm
     assert centrum.client.post("/api/shutdown").status_code == 202
     hold.set()
     sent_check(centrum)
+
+
+# Zlecenie zgodne z Regułami ilości z Wydania (TATA_ROWS[0]); wiersze legendy różnią się tylko opisem technika (K),
+# wpisami taty w kolumnach legendy i AS oraz kolorami. Oczekiwania z maila taty (ADR 0038): spawpg daje 1 w AB, 70 w AS
+# i AS na czerwono, rt2 daje 1 w AM, AM na czerwono i AF na zielono, instutp wybiera kolumnę liczbą 1–30.
+RULED: dict[str, CellValue] = {"C": "u", "D": "nokia zte", "E": "instalacja", "G": TUE.replace(hour=10, minute=15),
+                               "V": 1, "T": 1, "O": 1, "Z": 1, "S": 1}
+LEGEND_ROWS: list[dict[str, CellValue]] = [
+    # zgodny z legendą: opis nie wychodzi
+    {**RULED, "K": "inst20m ZNACZNIKZGODNY", "Y": 1},
+    # spawpg z wartościami legendy, ale bez czerwonego AS
+    {**RULED, "K": "spawpg listwy", "AB": 1, "AS": 70},
+    # rt2 dwa razy: tata wpisał AK zamiast AM i dał tylko zielone AF
+    {**RULED, "K": "rt2", "AK": 1},
+    {**RULED, "K": "rt2", "AK": 1},
+    # liczba spoza przedziałów instutp: legenda nic nie wpisuje, tata wpisał AJ
+    {**RULED, "K": "instutp40m", "AJ": 1},
+    # bez kodu z kwotą taty w AS
+    {**RULED, "K": "listwy 11 metrów", "AS": 220},
+    # bez kodu z tekstem w AS: wychodzi jako „nieliczbowa”, nie jako tekst
+    {**RULED, "K": "kwota tekstem", "AS": "ZNACZNIK-KWOTA"},
+    # bez kodu i bez wpisu taty: opis nie wychodzi
+    {**RULED, "K": "ZNACZNIKBEZWPISU"},
+]
+GREEN, RED = "FF92D050", "FFFF0000"
+
+
+def fill_cells(path: Path, cells: dict[str, str]) -> None:
+    """Jednolite wypełnienie komórek Pliku zbiorczego (adres → kolor ARGB), tak jak koloruje je tata w Excelu."""
+
+    workbook = load_workbook(path)
+    try:
+        sheet = workbook.active
+        assert sheet is not None
+        for address, argb in cells.items():
+            sheet[address].fill = PatternFill(patternType="solid", fgColor=argb)
+        workbook.save(path)
+    finally:
+        workbook.close()
+
+
+def legend_centrum(tmp_path: Path, rows: list[dict[str, CellValue]]) -> SettlingCentrum:
+    centrum = centrum_with(tmp_path, rows)
+    fill_cells(centrum.collective_file, {"AF20": GREEN, "AF21": GREEN})
+    return centrum
+
+
+def test_kontrola_ilosci_grupuje_roznice_legendy_po_kodzie_z_opisem_technika_kwota_i_kolorem(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+
+    run_to_end(centrum, dry_run=False)
+
+    issue = sent_check(centrum)
+    sent = issue.title + issue.body + "".join(issue.comments)
+    assert issue.title == f"Kontrola ilości {PERIOD}: 8 różnic"
+    assert "- Wiersze z Kodem czynności: 5 (zgodne z legendą 1), różnice legendy: 8\n" in sent
+    assert (
+        "\n## Różnice legendy\n"
+        "\n### Kody `instutp`\n\n"
+        "| Kolumna | Legenda | Tata | Wiersze | Opisy |\n| --- | --- | --- | --- | --- |\n"
+        "| AJ | 0 | 1 | 1 | `instutp40m` |\n"
+        "\n### Kody `rt2`\n\n"
+        "| Kolumna | Legenda | Tata | Wiersze | Opisy |\n| --- | --- | --- | --- | --- |\n"
+        "| AK | 0 | 1 | 2 | `rt2` (2) |\n"
+        "| AM | 1 | 0 | 2 | `rt2` (2) |\n"
+        "| AM kolor | czerwony | brak | 2 | `rt2` (2) |\n"
+        "\n### Kody `spawpg`\n\n"
+        "| Kolumna | Legenda | Tata | Wiersze | Opisy |\n| --- | --- | --- | --- | --- |\n"
+        "| AS kolor | czerwony | brak | 1 | `spawpg listwy` |\n"
+        "\n## Wiersze bez kodu z wpisem taty\n\n"
+        "| Opis | Wpis taty | Wiersze |\n| --- | --- | --- |\n"
+        "| `kwota tekstem` | AS nieliczbowa | 1 |\n"
+        "| `listwy 11 metrów` | AS 220 | 1 |\n"
+        "\n## Kody spoza przedziałów\n\n"
+        "| Kod | Liczba | Wiersze |\n| --- | --- | --- |\n"
+        "| `instutp` | 40 | 1 |\n"
+    ) in sent
+    assert "- Różnice w kolumnach Reguł ilości: 0\n" in sent
+    assert [marker for marker in ("ZNACZNIKZGODNY", "ZNACZNIKBEZWPISU", "ZNACZNIK-KWOTA") if marker in sent] == []
+    assert "listwy" not in centrum.log_path.read_text(encoding="utf-8")
+
+
+def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_przebieg(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, [{**RULED, "K": "spawpg", "AB": 1, "AS": 70}])
+    fill_cells(centrum.collective_file, {"AS18": RED})
+    own = tuple(replace(code, amount=80) if code.id == "spawpg" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
+    (centrum.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(own))
+
+    run_to_end(centrum, dry_run=False)
+
+    body = sent_check(centrum).body
+    assert "- Wiersze z Kodem czynności: 1 (zgodne z legendą 0), różnice legendy: 1\n" in body
+    assert "| AS | 80 | 70 | 1 | `spawpg` |\n" in body
+
+
+def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy(tmp_path: Path) -> None:
+    # Reguły ilości z Wydania dają przy samym technicolor 1 w AK, a instwewrg6 z liczbą 1–10 też 1 w AK: Przygotowanie
+    # wpisuje 2, więc 2 taty jest zgodne, a 1 to różnica legendy, nie różnica Reguł ilości.
+    technicolor: dict[str, CellValue] = {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1, "K": "instwewrg65m"}
+    centrum = centrum_with(tmp_path, [{**technicolor, "AK": 2}, {**technicolor, "AK": 1}])
+
+    run_to_end(centrum, dry_run=False)
+
+    body = sent_check(centrum).body
+    assert "- Różnice w kolumnach Reguł ilości: 0\n" in body
+    assert "- Wiersze z Kodem czynności: 2 (zgodne z legendą 1), różnice legendy: 1\n" in body
+    assert "| AK | 2 | 1 | 1 | `instwewrg65m` |\n" in body
+
+
+def test_adres_numer_orange_telefon_i_ulica_w_opisie_technika_wychodza_zamaskowane_z_uwaga(tmp_path: Path) -> None:
+    address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
+    described = {**RULED, "K": f"rt2 klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5"}
+    centrum = centrum_with(tmp_path, [{**RULED, "B": address, "I": orange}, described])
+
+    run_to_end(centrum, dry_run=False)
+
+    issue = sent_check(centrum)
+    sent = issue.title + issue.body + "".join(issue.comments)
+    assert [value for value in (address, orange, "600-123-456", "Kwiatowa") if value in sent] == []
+    assert "| AM | 1 | 0 | 1 | `rt2 klient [adres] umowa [numer Orange] tel. [telefon] [ulica]` |\n" in sent
+    assert sent.endswith(
+        "## Uwagi techniczne\n\n"
+        "- Reguła danych: zamaskowano wartość kolumny ADRES w: treść Kontroli ilości.\n"
+        "- Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: treść Kontroli ilości.\n"
+    )
 
 
 def test_podglad_i_zatrzymanie_nie_tworza_kontroli_ilosci(tmp_path: Path) -> None:
