@@ -92,7 +92,8 @@ Aktualizacja narzędzia waits that many milliseconds before it looks for Git.
 Fetching from the local "origin" takes milliseconds, so without it the progress
 and the refusals during an update could not be observed. Results are unchanged.
 Likewise, while ``Pace.INSTALL`` is on, each installation of
-libraries waits that many milliseconds before it starts.
+libraries waits that many milliseconds before it starts, and in the mode
+„wolny runner” ``INSTALL_DELAY_S`` more.
 
 Libraries are installed by the production installer (``pip_install``: this
 Python's ``-m pip``), but pip is offline: ``PIP_NO_INDEX`` is set for this
@@ -215,6 +216,9 @@ from atrapy.skrzynka_raportow import AtrapaImap, FolderInbox
 EFENIX_SEARCH_DELAY_S = 1.0
 # The mode „wolny runner” (SLOW_RUNNER): Centrum takes each request of its API this late.
 API_DELAY_S = 0.3
+# The mode „wolny runner” (SLOW_RUNNER): each installation of libraries waits this long before pip starts, as long as pip
+# took on a cold Windows runner of CI (past 18 s in run 43807617660) with the pacing on top.
+INSTALL_DELAY_S = 25.0
 # How long a file the drive is putting in place is tried again (``_read_put_in_place``).
 READ_RETRY_S = 10.0
 
@@ -661,6 +665,8 @@ def _paced_git(root: Path) -> Callable[[], Path | None]:
 def _paced_install(root: Path) -> Callable[[Path], bool]:
     def install(requirements: Path) -> bool:
         Pace.INSTALL.wait(root)
+        if SLOW_RUNNER in os.environ:
+            time.sleep(INSTALL_DELAY_S)
         return pip_install(requirements)
 
     return install
