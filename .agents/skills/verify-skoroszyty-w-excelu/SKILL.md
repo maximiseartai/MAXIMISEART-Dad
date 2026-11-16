@@ -24,6 +24,7 @@ pilnuje:
   - src/rozliczenia/lista_urzadzen_domyslna.yaml
   - src/rozliczenia/engine.py
   - src/rozliczenia/inea_only_quantities.py
+  - src/rozliczenia/coloured_fields.py
   - src/rozliczenia/period_folder.py
   - tools/lib/atrapy/scenariusz_rozliczen.py
   - tools/syntetyczne_wzorce.py

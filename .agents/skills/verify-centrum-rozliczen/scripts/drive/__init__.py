@@ -357,6 +357,7 @@ FEATURES = (
             "424-legenda-czynnosci-dopisany-zapis",
             "425-legenda-czynnosci-kolumny",
             "426-legenda-czynnosci-odmowa",
+            "426-legenda-czynnosci-odmowa-slowa",
             "427-legenda-czynnosci-nowy-kod",
             "428-legenda-czynnosci-historia-edytora",
             "429-legenda-czynnosci-waski-formularz",

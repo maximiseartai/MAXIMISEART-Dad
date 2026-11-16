@@ -3,7 +3,8 @@
 Jedyną operacją jest ``ActivityLegend.read(text)``, czysta funkcja bez plików i bez Centrum rozliczeń; liczą nią
 Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany legendy i brama. Niezmienniki
 legendy sprawdza sam typ ``ActivityLegend`` przy tworzeniu, więc legenda z błędem nie powstaje (``LegendRefused`` z
-polem i zdaniem). Plik legendy ↔ typy: ``activity_legend_file``.
+polem i zdaniem), także legenda z dwoma zapisami, do których może pasować to samo słowo: każde słowo opisu pasuje
+najwyżej do jednego zapisu. Plik legendy ↔ typy: ``activity_legend_file``.
 
 Zapis Kodu czynności to małe litery, cyfry i ``/`` bez spacji, od litery, z co najwyżej jednym miejscem na liczbę
 ``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Opis technika to same Kody czynności, a każde odstępstwo
@@ -12,7 +13,7 @@ to Błąd opisu, także opis bez żadnego kodu. Rachunek tekstu:
 1. Słowo to ciąg liter, cyfr i ``/`` z co najmniej jedną literą albo cyfrą; słowa rozdziela każdy inny znak (spacja,
    przecinek, kropka, nowy wiersz), a sam ``/`` między słowami też.
 2. Słowo jest Kodem czynności, gdy małymi literami (``casefold``) jest w całości zapisem kodu, a ``{n}`` to ciąg cyfr.
-   Gdy pasują zapisy dwóch kodów, słowo należy do pierwszego w legendzie. Słowa ``tak`` i ``nie`` nie są niczym.
+   Słowa ``tak`` i ``nie`` nie są niczym.
    Każde inne słowo to Błąd opisu (``NotACode``): zwykły opis, własny zapis pracownika (``utp18m``, ``instmdic``), kod
    ze spacją w środku (``inst 20m``), kody sklejone (``spawpgspawez``) i kod w dłuższym słowie (``xinst20m``).
 3. Kod z przedziałami wybiera kolumnę liczbą z zapisu, a kod z liczbą spoza przedziałów to Błąd opisu (``NumberOutOfRange``).
@@ -27,10 +28,11 @@ to Błąd opisu, także opis bez żadnego kodu. Rachunek tekstu:
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from itertools import pairwise
+from itertools import pairwise, product
 import re
 from types import MappingProxyType
 from typing import ClassVar, Final
@@ -133,13 +135,16 @@ class LegendRefused(ValueError):
 
 @dataclass(frozen=True)
 class _Pattern:
-    code: ActivityCode
+    """Zapis ``spelling`` kodu ``owner``."""
+
+    owner: ActivityCode
     spelling: str
 
 
 @dataclass(frozen=True)
 class ActivityLegend:
-    """Legenda czynności: identyfikatory kodów są różne, zapis należy do jednego kodu, a każdy kod coś wyznacza."""
+    """Legenda czynności: identyfikatory kodów są różne, słowo pasuje najwyżej do jednego zapisu, a każdy kod coś
+    wyznacza."""
 
     codes: tuple[ActivityCode, ...]
     _patterns: tuple[_Pattern, ...] = field(init=False, repr=False, compare=False)
@@ -147,11 +152,11 @@ class ActivityLegend:
     """Zapisy kodów w kolejności legendy, każdy w swojej grupie."""
 
     def __post_init__(self) -> None:
-        owners: dict[str, ActivityCode] = {}
         ids: set[str] = set()
+        earlier: list[_Pattern] = []
         for code in self.codes:
-            _check_code(code, ids, owners)
-        patterns = tuple(_Pattern(code, spelling) for code in self.codes for spelling in code.spellings)
+            _check_code(code, ids, earlier)
+        patterns = tuple(earlier)
         object.__setattr__(self, "_patterns", patterns)
         object.__setattr__(self, "_spellings", re.compile("|".join(_alternative(index, pattern.spelling) for index, pattern in enumerate(patterns))))
 
@@ -171,12 +176,12 @@ class ActivityLegend:
             index = _index(match)
             pattern = self._patterns[index]
             number = int(match[f"{_NUMBER_GROUP}{index}"]) if NUMBER in pattern.spelling else None
-            column = _column(pattern.code.column, number)
-            if isinstance(pattern.code.column, ColumnByNumber) and column is None:
+            column = _column(pattern.owner.column, number)
+            if isinstance(pattern.owner.column, ColumnByNumber) and column is None:
                 assert number is not None, "kod z przedziałami ma w każdym zapisie miejsce na liczbę"
-                problems.append(NumberOutOfRange(pattern.code.id, pattern.spelling, number))
+                problems.append(NumberOutOfRange(pattern.owner.id, pattern.spelling, number))
                 continue
-            found.append((FoundCode(pattern.code.id, pattern.spelling, number, column), pattern.code))
+            found.append((FoundCode(pattern.owner.id, pattern.spelling, number, column), pattern.owner))
         hits = [(written.column, code) for written, code in found if written.column is not None]
         fills = [(fill, code.id) for _, code in found for fill in code.fills]
         problems.extend(
@@ -366,7 +371,9 @@ def _is_number(value: object) -> bool:
     return isinstance(value, int) and not isinstance(value, bool)
 
 
-def _check_code(code: ActivityCode, ids: set[str], owners: dict[str, ActivityCode]) -> None:
+def _check_code(code: ActivityCode, ids: set[str], earlier: list[_Pattern]) -> None:
+    """Niezmienniki kodu ``code``; ``earlier``: zapisy kodów przed nim w legendzie, do których dopisuje swoje."""
+
     path = f"kody[{code.id}]"
     _require(bool(code.id) and code.id == code.id.strip(), f"{path}.id", "Kod potrzebuje nazwy bez spacji na początku i końcu.")
     _require(code.id not in ids, f"{path}.id", f"Kod „{code.id}” jest w legendzie dwa razy.")
@@ -379,12 +386,11 @@ def _check_code(code: ActivityCode, ids: set[str], owners: dict[str, ActivityCod
             f"Zapis „{shown_spelling(spelling)}” wpisz małymi literami, cyframi i „/”, bez spacji, od litery, z co najwyżej "
             f"jednym miejscem na liczbę ({SHOWN_NUMBER}).",
         )
-        owner = owners.setdefault(spelling, code)
-        _require(
-            owner is code,
-            f"{path}.zapisy[{index}]",
-            f"Zapis „{shown_spelling(spelling)}” ma już kod „{shown_spelling(owner.spellings[0])}”.",
-        )
+        pattern = _Pattern(code, spelling)
+        for before in earlier:
+            if (word := _common_word(before.spelling, spelling)) is not None:
+                raise LegendRefused(LegendProblem(f"{path}.zapisy[{index}]", _shared_word(before, pattern, word)))
+        earlier.append(pattern)
     _require(
         code.column is not None or code.amount is not None or bool(code.fills),
         path,
@@ -407,6 +413,79 @@ def _check_code(code: ActivityCode, ids: set[str], owners: dict[str, ActivityCod
         _require(fill.column in FILL_COLUMNS, where, f"Kolumny {fill.column} kod nie wypełnia: wybierz kolumnę N:AP bez P, Q i S albo AS.")
         _require(fill.column not in filled, where, f"Kolumna {fill.column} ma już kolor.")
         filled.add(fill.column)
+
+
+def _shared_word(before: _Pattern, pattern: _Pattern, word: str) -> str:
+    """Zdanie odmowy dla taty: zapis ``pattern`` i wcześniejszy zapis ``before`` pasują do słowa ``word``."""
+
+    spelling, other = shown_spelling(pattern.spelling), shown_spelling(before.spelling)
+    name = shown_spelling(before.owner.spellings[0])
+    if before.spelling == pattern.spelling:
+        return f"Zapis „{spelling}” jest w tym kodzie dwa razy." if before.owner is pattern.owner else f"Zapis „{spelling}” ma już kod „{name}”."
+    whose = "tego kodu" if before.owner is pattern.owner else f"kodu „{name}”"
+    return (
+        f"Zapis „{spelling}” i zapis „{other}” {whose} pasują do tego samego słowa „{word}”, a słowo w opisie może "
+        "pasować tylko do jednego zapisu."
+    )
+
+
+_State = tuple[int, bool]
+"""Miejsce w zapisie (numer elementu z ``_atoms``) i to, czy liczba ``{n}`` w tym miejscu ma już cyfrę."""
+_DIGITS: Final = "1234567890"
+
+
+def _common_word(first: str, second: str) -> str | None:
+    """Najkrótsze słowo, które pasuje w całości do obu zapisów, albo ``None``, gdy takiego nie ma: przeszukanie wszerz par
+    stanów obu zapisów, od początku obu naraz, znak po znaku."""
+
+    atoms = (_atoms(first), _atoms(second))
+    start: tuple[_State, _State] = ((0, False), (0, False))
+    words = {start: ""}
+    queue = deque([start])
+    while queue:
+        pair = queue.popleft()
+        if _ends(atoms[0], pair[0]) and _ends(atoms[1], pair[1]):
+            return words[pair]
+        for char in dict.fromkeys(char for state in _closure(pair[0]) for char in _readable(atoms[0], state)):
+            for after in product(_after(atoms[0], pair[0], char), _after(atoms[1], pair[1], char)):
+                if after not in words:
+                    words[after] = words[pair] + char
+                    queue.append(after)
+    return None
+
+
+def _atoms(spelling: str) -> tuple[str, ...]:
+    """Zapis jako elementy: każdy znak osobno, a ``{n}`` jako jeden element."""
+
+    return tuple(atom for part in re.split(r"(\{n\})", spelling) for atom in ((part,) if part == NUMBER else part))
+
+
+def _closure(state: _State) -> tuple[_State, ...]:
+    """Stany bez czytania znaku: liczba z cyfrą może się skończyć."""
+
+    place, in_number = state
+    return (state, (place + 1, False)) if in_number else (state,)
+
+
+def _readable(atoms: tuple[str, ...], state: _State) -> str:
+    place, _ = state
+    if place == len(atoms):
+        return ""
+    return _DIGITS if atoms[place] == NUMBER else atoms[place]
+
+
+def _after(atoms: tuple[str, ...], state: _State, char: str) -> tuple[_State, ...]:
+    """Stany po przeczytaniu znaku ``char``."""
+
+    return tuple(
+        (place, True) if atoms[place] == NUMBER else (place + 1, False)
+        for place, _ in _closure(state)
+        if char in _readable(atoms, (place, False))
+    )
+
+
+def _ends(atoms: tuple[str, ...], state: _State) -> bool:
+    return (len(atoms), False) in _closure(state)
 
 
 def _check_column(code: ActivityCode, path: str) -> None:

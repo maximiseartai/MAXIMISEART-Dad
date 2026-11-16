@@ -26,7 +26,7 @@ Printed by `scripts/sub_features.py --feature legenda-czynnosci` from the drive'
 - `legenda-zly-plik`: a bad file of the legend is a bad setting in one sentence over the last good legend, which Centrum counts.
 - `legenda-historia`: Historia has both changes outside Centrum, the good one as the code's sentence before and after.
 - `legenda-dopisany-zapis`: the pencil, „Dodaj zapis” and „Zapisz” add the spelling the workers write to the code.
-- `legenda-odmowa`: the column of a code is chosen by its price-list name, only from the … columns the legend writes; a spelling of another code is one sentence at its field, and the legend stays.
+- `legenda-odmowa`: the column of a code is chosen by its price-list name, only from the … columns the legend writes; a spelling of another code is one sentence at its field, and the legend stays; a spelling that matches the same word as a spelling of another code (inst20m and inst#m) is one sentence at its field naming that word, and the legend stays.
 - `legenda-nowy-kod`: a new code with a range of the number, an amount in AS and a colour is one more sentence of the legend.
 - `legenda-usuniecie-cofnij`: removing a code is a row of Historia, and its „Cofnij” brings the code back.
 - `legenda-podglad`: an unchanged form of a code has no preview; the server's preview counts with the Kontrola's row check: spawpg at 80 changes 1 row, which differs from Dad's 70 in AS, and the row with a Błąd opisu beside spawpg does not change; the preview shows the server's counts, the row with its description, the legend's 80 and Dad's 70 in AS.

@@ -326,7 +326,7 @@ Gdy zapis nie jest bezpieczny, Przebieg rozliczeń się zatrzymuje i nie publiku
 
 ## Rozliczenie pracownika
 
-Szablon pracownika uzupełniony wierszami tego wykonawcy z danego okresu, bez Ilości tylko dla INEA.
+Szablon pracownika uzupełniony wierszami tego wykonawcy z danego okresu, bez Ilości tylko dla INEA, z pustym Czerwonym polem i 1 w Zielonym polu.
 Plik jest identyfikowany nazwą `Rozliczenie {okres} - {nazwa wykonawcy}.xlsx`; `{okres}` to token okresu rozliczeniowego.
 
 ## Wiersz danych
@@ -352,8 +352,21 @@ _Avoid_: cyfry, zera i jedynki, kolumny
 ## Ilości tylko dla INEA
 
 Ilości usług z Pliku zbiorczego, które INEA płaci tacie, a Wykonawca ich nie wykonuje, więc nie przechodzą do Rozliczenia pracownika, np. `AP` w zleceniu z `gniazdo` w `URZĄDZENIA`, bez względu na liczbę.
-Wyznacza je Reguła ilości, którą tata ustawia jak każdą inną.
+Wyznacza je Reguła ilości, którą tata ustawia jak każdą inną; Zielone pole nie jest Ilością tylko dla INEA.
 _Avoid_: kasowanie jedynek, usuwanie cyfr
+
+## Czerwone pole
+
+Komórka Ilości usług albo `AS` Wiersza danych Pliku zbiorczego z jednolitym czerwonym wypełnieniem (`FFFF0000`), które kładzie Legenda czynności albo tata: pozycja, za którą płaci INEA, a nie Wykonawca, np. `AS` z 70 przy `spawpg`.
+W Rozliczeniu pracownika jest puste i bez wypełnienia, więc białe, bez względu na to, co w nim stoi; Plik zbiorczy zostaje bez zmian.
+Czerwone wypełnienie w innych kolumnach, np. znacznik taty w `ADRES` albo `URZĄDZENIA`, nie jest Czerwonym polem i przechodzi jak każde Wyróżnienie.
+_Avoid_: kolor INEA, czerwona komórka
+
+## Zielone pole
+
+Komórka Ilości usług albo `AS` Wiersza danych Pliku zbiorczego z jednolitym zielonym wypełnieniem (`FF92D050`), które kładzie Legenda czynności albo tata, zwykle bez liczby: pozycja, którą dostaje Wykonawca, a INEA za nią nie płaci, np. `AF` przy `rt2`.
+W Rozliczeniu pracownika ma 1 zamiast tego, co w nim stoi, i jest bez wypełnienia, więc białe, także gdy Reguła ilości zostawia tę komórkę pustą; Hiperłącze zostaje przy wartości. Plik zbiorczy zostaje bez zmian.
+_Avoid_: kolor pracownika, zielona komórka
 
 ## Reguły ilości
 
@@ -365,7 +378,7 @@ _Avoid_: scenariusze rozliczeń, instrukcja
 ## Legenda czynności
 
 Kody czynności, które tata ustala dla Wykonawców, każdy z tym, co wyznacza w Pliku zbiorczym.
-Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z opisu technika w zleceniu, którego `CZYNNOŚCI ZREALIZOWANE` mają co najmniej jeden Kod czynności.
+Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z opisu technika w zleceniu, którego `CZYNNOŚCI ZREALIZOWANE` są samymi Kodami czynności, bez Błędu opisu.
 _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 
 ## Kod czynności
@@ -377,7 +390,7 @@ _Avoid_: skrót, kod (bez dopowiedzenia)
 
 ## Błąd opisu
 
-`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku, sklejony z innym i zwykły opis bez kodu), kod z liczbą spoza przedziałów, kolumna Ilości usług trafiona drugi raz albo kolumna wypełniona przez kody dwoma kolorami.
+`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku, sklejony z innym i zwykły opis bez kodu), kod z liczbą spoza przedziałów, kolumna Ilości usług trafiona drugi raz albo kolumna wypełniona dwoma kolorami (jeden kod robi z niej Czerwone pole, a drugi Zielone pole).
 Opis pusty albo z samym `tak`/`nie` nie jest Błędem opisu.
 Opis z Błędem opisu nie wyznacza niczego, a Raport wykonawcy z takim Wpisem `tak` liczy się dla Przypomnień o raporcie jako niewysłany (ADR 0039).
 _Avoid_: zły kod, literówka
@@ -411,7 +424,7 @@ _Avoid_: uzupełnienie Excela, poprawki
 ## Wyróżnienie
 
 Wygląd komórki, którym tata, jego pracownik, Uporządkowanie INTERMAX (Kolor operatora) albo Legenda czynności zaznacza zlecenie: kolor wypełnienia, kolor czcionki, pogrubienie i kursywa.
-Przechodzi razem z wartością z Rejestru zleceń do plików okresu, a z Pliku zbiorczego do Rozliczeń pracowników, poza czerwonym i zielonym wypełnieniem, które w Rozliczeniu pracownika staje się białe (ADR 0039).
+Przechodzi razem z wartością z Rejestru zleceń do plików okresu, a z Pliku zbiorczego do Rozliczeń pracowników, poza wypełnieniem Czerwonego pola i Zielonego pola, które w Rozliczeniu pracownika staje się białe (ADR 0039).
 Wyróżnienia zastępują wygląd komórki wzorca w całości: komórka bez Wyróżnień daje komórkę bez wypełnienia, z kolorem automatycznym, bez pogrubienia i bez kursywy.
 Krój i rozmiar czcionki nie są Wyróżnieniem i pochodzą z wzorca (Wygląd Wiersza danych).
 _Avoid_: formatowanie (szersze: obejmuje też krój, obramowania i formaty liczb)

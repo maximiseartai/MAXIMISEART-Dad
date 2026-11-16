@@ -11,6 +11,7 @@ pilnuje:
   - src/rozliczenia/centrum/processes/*.py
   - src/rozliczenia/centrum/run_view.py
   - src/rozliczenia/collective_*.py
+  - src/rozliczenia/coloured_fields.py
   - src/rozliczenia/dad_files.py
   - src/rozliczenia/decision.py
   - src/rozliczenia/domain.py
@@ -177,7 +178,9 @@ its Wykonawca's Zlecenia skuteczne in Plik zbiorczy order, with `A:AT` equal to
 the Plik zbiorczy row, Gotowość entries included, except the Ilości tylko dla
 INEA (ADR 0018): `AP` of the synthetic `gniazdo` order and `AK` of the
 `Technicolor 3*globo` order are empty while the Plik zbiorczy holds a value
-there. Every cell keeps the Wyróżnienia of its Plik zbiorczy cell and, unless
+there, and the Czerwone pole and Zielone pole of the `spawpg rt2` order (ADR 0039,
+`WORKER_COLOURED_FIELDS`): `AM` and `AS` are empty and `AF` holds 1, all three
+without a fill. Every other cell keeps the Wyróżnienia of its Plik zbiorczy cell and, unless
 emptied, its Hiperłącze; A:L also keep the number format and get the Wygląd
 Wiersza danych; every `NUMER ZL.` cell keeps the
 Hiperłącze of its Rejestr cell. `chain-real-templates` runs

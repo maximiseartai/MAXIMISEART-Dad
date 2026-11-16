@@ -55,7 +55,7 @@ class OrderFacts:
     """Kwota taty w ``AS`` (Uwagi - kwota), czytana jak ilość taty."""
     fills: Mapping[str, FillColour] = field(default=_NO_FILLS)
     """Kolumna, którą może wypełnić Legenda czynności (``FILL_COLUMNS``) → kolor legendy jej wypełnienia, tylko z
-    wypełnieniem w kolorze legendy (``_colour``)."""
+    wypełnieniem w kolorze legendy (``legend_colour``)."""
 
     def quantity(self, column: str) -> TataValue:
         return self.quantities.get(column, 0)
@@ -160,14 +160,15 @@ def _completed(cell: object) -> str:
 
 
 def _fills(row: DataRow) -> Mapping[str, FillColour]:
-    colours = {column: _colour(row.cells[column_index_from_string(column) - 1].highlights.fill) for column in FILL_COLUMNS}
+    colours = {column: legend_colour(row.cells[column_index_from_string(column) - 1].highlights.fill) for column in FILL_COLUMNS}
     return MappingProxyType({column: colour for column, colour in colours.items() if colour is not None})
 
 
-def _colour(fill: Fill | None) -> FillColour | None:
+def legend_colour(fill: Fill | None) -> FillColour | None:
     """Kolor legendy wypełnienia komórki: jednolite wypełnienie koloru Legendy czynności (po RGB albo indeksie palety);
     każde inne wypełnienie i brak wypełnienia to ``None``. To jedyny odczyt koloru komórki taty pod kątem legendy:
-    Kontrola ilości i brama Legendy czynności biorą go z ``OrderFacts.fills``.
+    Kontrola ilości i brama Legendy czynności biorą go z ``OrderFacts.fills``, a Przebieg rozliczeń z niego rozpoznaje
+    Czerwone i zielone pole (``coloured_fields``).
 
     To lustro zapisu: w kolumnach za danymi wejściowymi Przygotowanie zostawia wygląd komórki Wzorca i kładzie na nim
     tylko wypełnienie legendy (``highlights.solid_fill``). Wypełnienie spoza palety legendy, np. białe tło motywu, które

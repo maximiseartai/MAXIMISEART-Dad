@@ -46,6 +46,7 @@ from atrapy.scenariusz_rozliczen import (
     REGISTER_NAME,
     ROW_MARKER,
     TEMPLATES_DIRECTORY,
+    WORKER_COLOURED_FIELDS,
     WORKER_ORDERS,
     WORKER_SETTLEMENTS_DIRECTORY,
     WORKER_TEMPLATE_NAME,
@@ -95,6 +96,10 @@ CODE_CELLS = {
 # Ilości tylko dla INEA (ADR 0018): AP of the gniazdo order and AK of the technicolor one stay empty in the
 # Rozliczenie pracownika, while the Plik zbiorczy keeps them.
 INEA_ONLY = {order_number(8): "AP", order_number(9): "AK"}
+# Czerwone pole and Zielone pole (ADR 0039): the red cell of a Kod czynności is empty in the Rozliczenie pracownika and
+# the green one holds 1, both white, as Excel shows a cell without a fill; the Plik zbiorczy keeps value and fill.
+COLOURED_FIELDS = {order_number(number): cells for number, cells in WORKER_COLOURED_FIELDS.items()}
+WHITE = 0xFFFFFF
 QUANTITY_SUMS_ROW = 15
 # CZYNNOŚCI ZREALIZOWANE of order 2 has two lines (scenariusz_rozliczen.completed_activities); every other
 # Wiersz danych has one.
@@ -397,6 +402,20 @@ def _check_codes(path: Path, rows: dict[str, int], *, label: str) -> int:
     return checked
 
 
+def _check_coloured_fields(path: Path, rows: dict[str, int], *, label: str) -> int:
+    """Excel shows each Czerwone pole and Zielone pole of the orders in this Rozliczenie pracownika white; returns the
+    cells. Their values ``wiersze-a-at`` checks."""
+
+    checked = 0
+    for order, cells in COLOURED_FIELDS.items():
+        if order not in rows:
+            continue
+        coloured = [f"{letter}{rows[order]}" for letter in cells if excel.fill(path, f"{letter}{rows[order]}")[0] != WHITE]
+        expect(not coloured, f"{label}: {', '.join(coloured)} are not white like a cell without a fill")
+        checked += len(cells)
+    return checked
+
+
 def period_files_open(
     run: Run, collective_reference: tuple[list[str], list[str]]
 ) -> tuple[Path, Layout, dict[str, str]]:
@@ -520,10 +539,11 @@ def worker_files(
             layout = _layout(path)
             rows = _order_rows(path, layout)
             expect(tuple(rows) == orders, f"{label} holds other Zlecenia or another order than the Plik zbiorczy")
-            inea_only = 0
+            inea_only = coloured = 0
             for order, row in rows.items():
                 shown = excel.read(path, f"A{row}:AT{row}")[0]
                 differing = []
+                for_worker = COLOURED_FIELDS.get(order, {})
                 for column, (left, right) in enumerate(zip(shown, expected[order], strict=True), start=1):
                     letter = get_column_letter(column)
                     if INEA_ONLY.get(order) == letter:
@@ -531,10 +551,15 @@ def worker_files(
                         if not left.empty:
                             differing.append(letter)
                         inea_only += 1
+                    elif letter in for_worker:
+                        value = for_worker[letter]
+                        if not (left.empty if value is None else left.kind == "n" and left.number == value):
+                            differing.append(letter)
+                        coloured += 1
                     elif left != right:
                         differing.append(letter)
                 expect(not differing, f"{label} row {row} differs from the Plik zbiorczy in {','.join(differing)}")
-            run.step(feature, "wiersze-a-at", f"{worker} | rows={len(rows)} | inea_only_empty={inea_only}")
+            run.step(feature, "wiersze-a-at", f"{worker} | rows={len(rows)} | inea_only_empty={inea_only} | coloured_fields={coloured}")
             links = _hyperlinks(run.worker_file(worker), rows)
             unequal = [str(row) for order, row in rows.items() if links[order] != expected_links[order]]
             expect(not unequal, f"{label} rows {', '.join(unequal)} lack the Hiperłącza of the Plik zbiorczy Excel saved")
@@ -546,8 +571,8 @@ def worker_files(
             run.step(feature, "formuly", worker)
             highlights = _check_highlights(path, rows, layout, label=label)
             run.step(feature, "wyroznienia", f"{worker} | cells={highlights}")
-            codes = _check_codes(path, rows, label=label)
-            run.step(feature, "kody-czynnosci", f"{worker} | cells={codes}")
+            coloured = _check_coloured_fields(path, rows, label=label)
+            run.step(feature, "czerwone-i-zielone-pole", f"{worker} | cells={coloured}")
             standard, dates = _check_row_look(path, rows, layout, label=label)
             differing_dates = [str(rows[order]) for order in rows if dates[order] != collective_dates[order]]
             expect(not differing_dates, f"{label}: DATA in rows {', '.join(differing_dates)} shows otherwise than in the Plik zbiorczy")
