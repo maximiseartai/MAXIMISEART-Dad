@@ -2421,7 +2421,8 @@ export const zWithoutQuantityRead = z.object({
 /**
  * WithoutQuantityUnread
  *
- * Pliku zbiorczego nie udało się odczytać, więc nie wiadomo, które wiersze są bez ilości; start zostaje możliwy.
+ * Nie wiadomo, które wiersze są bez ilości: Pliku zbiorczego nie udało się odczytać (start zostaje możliwy) albo
+ * pliku Reguł ilości lub Listy Urządzeń nie da się teraz przeczytać (start odmawia zdaniem o tym pliku).
  */
 export const zWithoutQuantityUnread = z.object({
     state: z.literal('unread')
