@@ -50,7 +50,12 @@ gdy każdy przejdzie, mutacje biegną dalej, a testy trafiają do zapisu flaky t
 z którego ``tools/ci/zgloszenia_ci.py`` zakłada issue ``Flaky test: …`` (ADR 0021, Z4 13.11).
 
 Potem każda mutacja biegnie przez silnik ``tools/lib/silnik_mutacji.py`` (własna kopia checkoutu), najpierw z testami, które
-wykonały jej linie. Pokrycie tylko przyspiesza wykrycie: mutacja, która je przeżyła, biegnie drugi raz, po jednej
+wykonały jej linie. W każdym przebiegu testy biegną od najkrótszego według czasów z junit pokrycia i jego ponowienia
+(``Coverage.fastest_first``), więc ``-x`` kończy polecenie na pierwszym szybkim teście, który mutację wykrywa: plik
+testów, który polecenie podaje zamiast listy testów dłuższej niż ``COMMAND_LIMIT``, trwa sumę czasów swoich testów, a
+test albo plik bez czasu w junit biegnie po nich, po nazwie. Pod xdist (``--dist worksteal``) każdy worker bierze ciągły
+kawałek tej listy i biegnie go po kolei, a test ``@pytest.mark.dlugi`` zaczyna kawałek (``tests/conftest.py``).
+Pokrycie tylko przyspiesza wykrycie: mutacja, która je przeżyła, biegnie drugi raz, po jednej
 naraz z ``--rownolegle`` workerami xdist, i dopiero ta porażka daje ``NIEWYKRYTA``. Drugi raz biegną testy, które
 wykonały jakikolwiek kod jej pliku albo uruchomiły proces i dochodzą do pliku importem albo nazwą pliku, katalogu
 lub globu w teście albo jego fixture (``Repository.reaching``), a wszystkie testy dotknięte plikiem, gdy linię wykonano
@@ -161,6 +166,7 @@ import repo
 import silnik_mutacji
 import szopa
 import wplyw_zmiany
+import wyniki_testow
 from zakres_runu import RDZENIE_RUNNERA
 
 # Mutacji naraz i workerów xdist pokrycia: vCPU runnera nocy. Stała, a nie ``silnik_mutacji.PARALLEL`` (rdzenie komputera), bo
@@ -726,6 +732,7 @@ class Coverage:
     files: dict[str, set[str]] = field(default_factory=lambda: defaultdict(set))  # test → pliki, których kod wykonał
     shared: dict[str, set[int]] = field(default_factory=lambda: defaultdict(set))  # plik → linie wykonane dla wielu testów
     spawners: set[str] = field(default_factory=set)  # testy, które uruchomiły proces
+    seconds: dict[str, float] = field(default_factory=dict)  # test → czas z junit pokrycia, a testu ponowionego z ponowienia
 
     def covering(self, mutant: Mutant) -> list[str]:
         return sorted(test for test, files in self.lines.items() if files.get(mutant.path, set()) & mutant.lines)
@@ -737,12 +744,26 @@ class Coverage:
         executed = {test for test, files in self.files.items() if path in files}
         return sorted(executed | {test for test in self.spawners if test.split("::")[0] in runners})
 
+    def fastest_first(self, tests: Iterable[str]) -> list[str]:
+        """Testy albo pliki testów od najkrótszego: plik trwa sumę czasów swoich testów, a test albo plik bez czasu
+        biegnie po nich. Sortowanie jest stabilne, a każda lista testów mutacji przychodzi posortowana po nazwie, więc
+        testy o tym samym czasie i bez czasu biegną po nazwie."""
+
+        files: dict[str, float] = defaultdict(float)
+        for test, seconds in self.seconds.items():
+            files[test.split("::")[0]] += seconds
+
+        def duration(test: str) -> float:
+            return self.seconds.get(test, files.get(test, math.inf))
+
+        return sorted(tests, key=duration)
+
 
 def _coverage(
     tests: Sequence[str], lines: dict[str, frozenset[int]], timeout: float, junit: Path, coverage: Coverage
 ) -> subprocess.CompletedProcess[str]:
-    """Uruchamia testy raz z pluginem ``pytest_pokrycie`` i z junit ``junit``; pokrycie zmienionych plików dopisuje do
-    ``coverage``.
+    """Uruchamia testy raz z pluginem ``pytest_pokrycie`` i z junit ``junit``; pokrycie zmienionych plików i czasy testów
+    z junit dopisuje do ``coverage``.
 
     Po ``timeout`` sekundach rzuca ``subprocess.TimeoutExpired``.
     """
@@ -764,6 +785,11 @@ def _coverage(
         }
         command = [sys.executable, "-m", "pytest", "-q", "-n", "auto", "-p", "pytest_pokrycie", "-p", "no:cacheprovider", *tests, "--junitxml", str(junit)]
         done = potomne.run(command, cwd=ROOT, env=env, timeout=timeout)
+        try:
+            timed = wyniki_testow.testy(junit)
+        except OSError:
+            timed = []  # pytest skończył się przed zapisem junit, więc część kończy się kodem 2 po ``niestabilne_testy.ponow``
+        coverage.seconds.update({test.id: test.sekundy for test in timed if test.id is not None and test.sekundy is not None})
 
         def relative(absolute: str) -> str:
             return Path(absolute).relative_to(ROOT).as_posix()
@@ -781,10 +807,12 @@ def _coverage(
     return done
 
 
-def _command(tests: Sequence[str], workers: int = 0) -> tuple[str, ...]:
+def _command(tests: Sequence[str], coverage: Coverage, workers: int = 0) -> tuple[str, ...]:
+    """Polecenie pytest testów mutacji od najkrótszego (``Coverage.fastest_first``)."""
+
     if sum(len(test) + 1 for test in tests) > COMMAND_LIMIT:
         tests = sorted({test.split("::")[0] for test in tests})
-    return ("-m", "pytest", "-q", "-x", "-n", str(workers), "-p", "no:cacheprovider", *tests)
+    return ("-m", "pytest", "-q", "-x", "-n", str(workers), "-p", "no:cacheprovider", *coverage.fastest_first(tests))
 
 
 def _allowance(allowed: Mapping[int, Allowance], mutant: Mutant, today: datetime.date) -> Allowance | None:
@@ -1029,7 +1057,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
         covering = coverage.covering(mutant)
         steps = [covering, touching, by_file[mutant.path]] if shared else [covering, touching or by_file[mutant.path]]
         first, *later = [list(tests) for tests in dict.fromkeys(map(tuple, steps)) if tests]
-        narrow.append((mutant, silnik_mutacji.Mutation(name, (edit,), _command(first)), later))
+        narrow.append((mutant, silnik_mutacji.Mutation(name, (edit,), _command(first, coverage)), later))
     clock.append(time.monotonic())
     # Pokrycie tylko przyspiesza: mutacja, która przeżyła testy swoich linii, biegnie z coraz większym zbiorem testów.
     # Przebieg przed ostatnim biegnie po kilka mutacji naraz jak pierwszy. Ostatni ma testy pliku, często tysiące, a
@@ -1054,9 +1082,9 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
             if verdict == silnik_mutacji.Verdict.OVER_LIMIT:
                 print(f"{verdict}: {mutation.name} → {last}{label or ' (testy linii)'}, biegnie dalej z szerszymi testami", flush=True)
             if remaining[1:]:
-                further.append((mutant, replace(mutation, command=_command(remaining[0])), remaining[1:]))
+                further.append((mutant, replace(mutation, command=_command(remaining[0], coverage)), remaining[1:]))
             else:
-                wide.append((mutant, replace(mutation, command=_command(remaining[0], args.rownolegle))))
+                wide.append((mutant, replace(mutation, command=_command(remaining[0], coverage, args.rownolegle))))
         middle += len(further)
         queued, label = further, " (testy kodu pliku)"
     clock.append(time.monotonic())

@@ -856,6 +856,43 @@ def test_mutacje_tabeli_modulu_wykrywa_test_funkcji_pliku_ktora_ja_czyta_przed_t
     assert len(found) == 2 and all(line.endswith(" (testy kodu pliku)") for line in found), done.stdout
 
 
+# Test, który przy mutacji dopisuje swoją nazwę do ``wykrywa.txt`` obok logu narzędzia i pada; ``-x`` kończy polecenie
+# mutacji na pierwszym takim teście, więc plik mówi, który z testów biegł pierwszy.
+KILLER = (
+    "import os\nfrom pathlib import Path\nimport time\n\nimport rozliczenia.warunek as warunek\n\n\n"
+    "def test_{name}() -> None:\n"
+    "    time.sleep({sleep})\n"
+    "    if not ({check}):\n"
+    "        with (Path(os.environ['LOG_NARZEDZIA']).parent / 'wykrywa.txt').open('a', encoding='utf-8') as found:\n"
+    "            found.write('{name}\\n')\n"
+    "    assert {check}\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("changed", "base", "check", "caught"),
+    [
+        (CHANGED, BASE, "(warunek.oba(True, False), warunek.oba(False, True), warunek.oba(True, True)) == (False, False, True)", 2),
+        ("WARTOSC = 2\n", "WARTOSC = 1\n", "warunek.WARTOSC == 2", 1),
+    ],
+    ids=["testy-linii", "pliki-testow-stalej-modulu"],
+)
+def test_mutacje_wykrywa_najpierw_szybki_test_a_wolny_ktory_tez_ja_wykrywa_nie_biegnie(
+    tmp_path: Path, changed: str, base: str, check: str, caught: int
+) -> None:
+    # Testy mutacji biegły po nazwie, a z ``-x`` mutację wykrytą przez kilka testów kończył pierwszy z nich: w nocy
+    # 154 mutacje dziennie czekały w pierwszym przebiegu na ~200 testów (~207 s). Wolny test ma nazwę przed szybkim.
+    # Stałą modułu wykonuje import, nie test, więc jej cofnięcie biegnie od razu z plikami testów pliku.
+    repo = _repo(tmp_path / "repo", KILLER.format(name="wolny", sleep=0.5, check=check), changed, base)
+    (repo / "tests" / "test_z_szybki.py").write_text(KILLER.format(name="szybki", sleep=0, check=check), encoding="utf-8")
+    commit(repo, "szybki test")
+
+    done = _run(repo, log=tmp_path / "log.txt")
+
+    assert done.returncode == 0, (tmp_path / "log.txt").read_text(encoding="utf-8") + done.stderr
+    assert (tmp_path / "wykrywa.txt").read_text(encoding="utf-8").splitlines() == ["szybki"] * caught
+
+
 def test_cofniecie_przywraca_usunieta_linie_zaczynajaca_sie_od_dwoch_minusow(tmp_path: Path) -> None:
     base = 'TEKST = """\n-- stare\n"""\n'
     tests = "from rozliczenia.warunek import TEKST\n\n\ndef test_tekst() -> None:\n    assert '-- stare' not in TEKST\n"
@@ -999,8 +1036,13 @@ def test_galaz_innego_systemu_jest_pominieta_a_nie_niewykryta(tmp_path: Path) ->
     assert done.stdout.splitlines()[-1].endswith("innego systemu=1")
 
 
-def test_testy_ktore_padaja_bez_mutacji_koncza_sie_bez_werdyktu_mutacji(tmp_path: Path) -> None:
-    done = _run(_repo(tmp_path, ONE_CASE.replace("is True", "is False")))
+@pytest.mark.parametrize(
+    ("test", "conftest"),
+    [(ONE_CASE.replace("is True", "is False"), ""), (ONE_CASE, "import os\n\n\ndef pytest_sessionstart(session: object) -> None:\n    os._exit(3)\n")],
+    ids=["test-pada", "pytest-konczy-sie-przed-zapisem-junit"],
+)
+def test_testy_ktore_padaja_bez_mutacji_koncza_sie_bez_werdyktu_mutacji(tmp_path: Path, test: str, conftest: str) -> None:
+    done = _run(_repo(tmp_path, test, conftest=conftest))
 
     assert done.returncode == 2, done.stdout + done.stderr
     assert "NIEWYKRYTA" not in done.stdout and "WYKRYTA" not in done.stdout
