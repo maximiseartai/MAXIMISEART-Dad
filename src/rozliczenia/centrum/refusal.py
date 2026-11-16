@@ -176,6 +176,14 @@ def report_entering_without_addresses() -> Refusal:
     return _refused(409, "Na Liście Wykonawców nikt nie ma jeszcze adresu. Dopisz adresy Wykonawców w Ustawieniach.")
 
 
+def mailing_without_workers() -> Refusal:
+    return _refused(
+        409,
+        "Listy Wykonawców nie da się teraz przeczytać, więc nie wiadomo, do kogo wysłać rozliczenie. "
+        "Sprawdź ją w Ustawieniach, w sekcji Wykonawcy.",
+    )
+
+
 def settings_change_unknown() -> Refusal:
     return _refused(404, "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.")
 

@@ -1,7 +1,7 @@
 """Ustawienia Centrum: jedyny czytelnik i pisarz plików Ustawień w ``config``, ich Historii i pamięci (ADR 0032).
 
 Obejmuje plik Folderów i motywu (``folders``), Listę Wykonawców (``workers``), Przypomnienia o raporcie
-(``reminders``), plik dostępu do skrzynki raportów
+(``reminders``), temat i treść Maila z rozliczeniem (``settlement_mail``), plik dostępu do skrzynki raportów
 (``inbox``), który jest sekretem: jego wiersz Historii ma same klucze bez wartości i nie ma „Cofnij”, a pamięć trzyma
 tylko odcisk jego treści, bez ostatniej dobrej treści i bez kopii złej treści w ``odrzucone``, przełącznik startu
 razem z Windows (``autostart``), którego stan to skrót w folderze Autostart, a nie plik w ``config``, pliki Reguł
@@ -156,9 +156,11 @@ from rozliczenia.centrum.settings.quantity_rules import (
     taken_problem,
 )
 from rozliczenia.centrum.settings.reminders import REMINDERS, RemindersEdit, dad_reminders
+from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL
 from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_workers
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
+from rozliczenia.settlement_mailing import SettlementMailSettings
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
 from rozliczenia.worker_report_inbox import InboxState
@@ -204,6 +206,9 @@ class SettingsSnapshot:
     activity_legend: ActivityLegend | UnreadableFile
     """Legenda czynności, którą liczy Uruchomienie: przy złym pliku ostatnia dobra, a przy pliku, którego system nie
     daje teraz czytać, ``UnreadableFile``."""
+    settlement_mail: SettlementMailSettings | UnreadableFile
+    """Temat i treść Maila z rozliczeniem: przy złym pliku ostatnie dobre albo domyślne, a przy pliku, którego system
+    nie daje teraz czytać, ``UnreadableFile``."""
 
 
 @dataclass(frozen=True)
@@ -248,6 +253,7 @@ class SettingsView:
     inbox: Read[InboxFile] | Unreadable
     autostart: Read[bool] | Unreadable | Unsupported
     reminders: Read[ReminderSettings] | Unreadable
+    settlement_mail: Read[SettlementMailSettings] | Unreadable
 
 
 @dataclass(frozen=True)
@@ -358,6 +364,7 @@ class CentrumSettings:
             FOLDERS.name: _ConfigFile(config / FOLDERS.name, pause),
             WORKERS.name: _ConfigFile(config / WORKERS.name, pause),
             REMINDERS.name: _ConfigFile(config / REMINDERS.name, pause),
+            SETTLEMENT_MAIL.name: _ConfigFile(config / SETTLEMENT_MAIL.name, pause),
             INBOX.name: _ConfigFile(config / INBOX.name, pause),
             AUTOSTART.name: AutostartPlace(autostart),
             DEVICES.name: _ConfigFile(config / DEVICES.name, pause),
@@ -374,6 +381,7 @@ class CentrumSettings:
             workers = self._observe(WORKERS)
             inbox_state = inbox.state(self._observe(INBOX))
             reminders = _or_unreadable(self._observe(REMINDERS), REMINDERS)
+            mail = _or_unreadable(self._observe(SETTLEMENT_MAIL), SETTLEMENT_MAIL)
             rules = self._quantity_rules()
             return SettingsSnapshot(
                 folders=folders,
@@ -382,6 +390,7 @@ class CentrumSettings:
                 reminders=reminders,
                 quantity_rules=rules.rules if rules.unreadable is None else UnreadableFile(rules.unreadable),
                 activity_legend=self._activity_legend(),
+                settlement_mail=mail,
             )
 
     def folders(self) -> FolderSettings | Unreadable:
@@ -426,6 +435,7 @@ class CentrumSettings:
                 inbox=self._observe(INBOX),
                 autostart=Unsupported() if autostart is not None else self._observe(AUTOSTART),
                 reminders=self._observe(REMINDERS),
+                settlement_mail=self._observe(SETTLEMENT_MAIL),
             )
 
     def change_folders(self, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
@@ -456,6 +466,11 @@ class CentrumSettings:
         """Zapis taty Przypomnień o raporcie (``dad_reminders``)."""
 
         return self._by_dad(REMINDERS, lambda current: dad_reminders(current, edit), undoes=None)
+
+    def change_settlement_mail(self, form: SettlementMailSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
+        """Zapis taty tematu i treści Maila z rozliczeniem (formularz przeczytany regułą pliku)."""
+
+        return self._by_dad(SETTLEMENT_MAIL, lambda _: form, undoes=None)
 
     def change_workers(self, edit: WorkersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty Listy Wykonawców (``dad_workers``); loginy, które usuwa, sprawdza w okresach ``_by_dad``,
@@ -1043,6 +1058,7 @@ _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {
     FOLDERS.name: FOLDERS,
     WORKERS.name: WORKERS,
     REMINDERS.name: REMINDERS,
+    SETTLEMENT_MAIL.name: SETTLEMENT_MAIL,
     AUTOSTART.name: AUTOSTART,
     DEVICES.name: DEVICES,
     RULES.name: RULES,
@@ -1074,6 +1090,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     folders = _or_unreadable(_read_only_view(config, FOLDERS), FOLDERS)
     reminders = _or_unreadable(_read_only_view(config, REMINDERS), REMINDERS)
     codes = _or_unreadable(_read_only_view(config, LEGEND), LEGEND)
+    mail = _or_unreadable(_read_only_view(config, SETTLEMENT_MAIL), SETTLEMENT_MAIL)
     return SettingsSnapshot(
         folders=folders,
         workers=_read_only_view(config, WORKERS),
@@ -1081,6 +1098,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
         reminders=reminders,
         quantity_rules=quantity_rules(rules, devices),
         activity_legend=codes if isinstance(codes, UnreadableFile) else activity_legend(codes),
+        settlement_mail=mail,
     )
 
 

@@ -477,6 +477,7 @@ ENTRIES: dict[str, Entry] = {
         {"worker": "Adrian Testowy"},
     ),
     "getRunSetup": _route("getRunSetup", "GET", "/api/runs/setup"),
+    "getSettlementMailing": _route("getSettlementMailing", "GET", "/api/settlement-mailing"),
     "getIntermaxSetup": _route("getIntermaxSetup", "GET", "/api/intermax"),
     "getIntermaxDays": _route("getIntermaxDays", "GET", "/api/intermax/days"),
     "getIntermaxCopies": _route("getIntermaxCopies", "GET", "/api/intermax/copies"),
@@ -557,6 +558,14 @@ NOT_SWEPT: dict[str, str] = {
     "changeReminders": "zapisuje pory i treść Przypomnień o raporcie w config i oddaje stan ścieżek jak getSettings, bez "
     "treści plików taty; zła wartość: test_centrum_rozliczen",
     "previewReminder": "składa przypomnienie z formularza, bez plików taty i bez zapisu: test_centrum_wpisanie_raportow",
+    "changeSettlementMail": "zapisuje temat i treść Maila z rozliczeniem w config i oddaje stan ścieżek jak getSettings, "
+    "bez treści plików taty; zła wartość: test_centrum_rozliczen",
+    "previewSettlementMail": "składa Mail z rozliczeniem z formularza, bez plików taty i bez zapisu: test_centrum_rozliczen",
+    "previewSettlementMails": "czyta tę samą migawkę i Folder rozliczeń pracowników co getSettlementMailing, bez treści "
+    "Rozliczeń pracowników; w świecie macierzy Rozliczenia pracownika nie ma (404): test_centrum_rozliczen",
+    "sendSettlementMail": "czyta tę samą migawkę i Folder rozliczeń pracowników co getSettlementMailing, a plik "
+    "Rozliczenia pracownika przez DadFiles; w świecie macierzy go nie ma (404), plik otwarty i porażki skrzynki: "
+    "test_centrum_rozliczen",
     "getSettingsHistory": "czyta tylko Historię Ustawień w config, nie pliki taty; urwana linia: test_centrum_rozliczen",
     "markQuantityException": "zapisuje w config wyjątek różnicy, którą liczy getQuantityDifferences z tych samych plików "
     "taty; różnicy już bez niej, nieczytelny Plik zbiorczy i zły plik wyjątków: test_centrum_kontrola_ilosci",
@@ -601,6 +610,7 @@ READS: dict[str, set[str]] = {
     "getWithoutQuantity": _BOARD,
     "getKindTable": _WINDOW,
     "openWorkerSettlement": _FOLDERS | {"ustawienia"},
+    "getSettlementMailing": _OWNER | _FOLDERS,
     "getRunSetup": _BOARD
     | {"rejestr", "metryki_przygotowania", "metryki_przebiegu", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getIntermaxSetup": _OWNER | {"rejestr", "logi_uruchomien"},

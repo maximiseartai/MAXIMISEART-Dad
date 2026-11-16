@@ -164,7 +164,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'previewActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'changeSettlementMail' | 'previewSettlementMail' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'previewActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'getSettlementMailing' | 'previewSettlementMails' | 'sendSettlementMail' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -309,6 +309,22 @@ export type ChangeRule = {
      */
     rule_id: string;
     rule: RuleForm;
+};
+
+/**
+ * ChangedAfterSending
+ *
+ * Plik zmienił się po ostatnim mailu z nim (``at``): można go wysłać jeszcze raz.
+ */
+export type ChangedAfterSending = {
+    /**
+     * State
+     */
+    state: 'changed';
+    /**
+     * At
+     */
+    at: string;
 };
 
 /**
@@ -572,7 +588,7 @@ export type DadNoteNotification = {
      */
     state: ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';
@@ -1834,6 +1850,257 @@ export type LoggedOutcome = {
 };
 
 /**
+ * MailPreview
+ *
+ * Mail z rozliczeniem tak, jak go dostanie Wykonawca: adresaci, temat, nazwa pliku i treść ze stopką.
+ */
+export type MailPreview = {
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * To
+     */
+    to: Array<string>;
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Attachment
+     */
+    attachment: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * MailPreviews
+ */
+export type MailPreviews = {
+    /**
+     * Mails
+     */
+    mails: Array<MailPreview>;
+};
+
+/**
+ * MailboxReady
+ */
+export type MailboxReady = {
+    /**
+     * State
+     */
+    state: 'ready';
+};
+
+/**
+ * MailboxUnreadable
+ *
+ * Skrzynki raportów nie da się teraz przeczytać: ``message`` mówi dlaczego jednym zdaniem; wysyłka jest wyłączona.
+ */
+export type MailboxUnreadable = {
+    /**
+     * State
+     */
+    state: 'unreadable';
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
+ * MailingChoice
+ *
+ * Rozliczenia pracowników okresu, które tata zaznaczył, po nazwie Wykonawcy z nazwy pliku.
+ */
+export type MailingChoice = {
+    /**
+     * Workers
+     */
+    workers: Array<string>;
+};
+
+/**
+ * MailingNotSet
+ *
+ * Folder okresów nie jest wskazany albo go nie ma: ``message`` mówi, co zrobić.
+ */
+export type MailingNotSet = {
+    /**
+     * State
+     */
+    state: 'not_set';
+    /**
+     * Message
+     */
+    message: string;
+};
+
+/**
+ * MailingPeriod
+ *
+ * Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików, wiersze i liczby do
+ * paska: ``to_send`` do wysłania, ``sent`` wysłane (także ręcznie i zmienione po wysłaniu), ``counted`` wszystkie
+ * oprócz bez zleceń i spoza Listy, ``without_orders`` bez zleceń.
+ */
+export type MailingPeriod = {
+    /**
+     * Token
+     */
+    token: string;
+    /**
+     * Tuesday
+     */
+    tuesday: string;
+    /**
+     * Monday
+     */
+    monday: string;
+    /**
+     * Label
+     */
+    label: string;
+    /**
+     * Settled At
+     */
+    settled_at: string | null;
+    /**
+     * Rows
+     */
+    rows: Array<MailingRow>;
+    /**
+     * To Send
+     */
+    to_send: number;
+    /**
+     * Sent
+     */
+    sent: number;
+    /**
+     * Counted
+     */
+    counted: number;
+    /**
+     * Without Orders
+     */
+    without_orders: number;
+};
+
+/**
+ * MailingReady
+ *
+ * Okresy z Rozliczeniami pracowników od najnowszego, najwyżej ostatnie ``MAILING_PERIODS``.
+ */
+export type MailingReady = {
+    /**
+     * State
+     */
+    state: 'ready';
+    /**
+     * Mailbox
+     */
+    mailbox: ({
+        state: 'ready';
+    } & MailboxReady) | ({
+        state: 'unreadable';
+    } & MailboxUnreadable);
+    /**
+     * Periods
+     */
+    periods: Array<MailingPeriod>;
+};
+
+/**
+ * MailingRow
+ *
+ * Rozliczenie pracownika okresu: nazwa Wykonawcy z nazwy pliku, nazwa pliku, adresy Wykonawcy z Listy Wykonawców i
+ * stan. ``sendable``: tata może je wysłać, ``preselected``: zaznaczone na start (do wysłania albo po porażce), a
+ * ``resend``: wysyłka jest ponowną wysyłką zmienionego pliku.
+ */
+export type MailingRow = {
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * File
+     */
+    file: string;
+    /**
+     * Addresses
+     */
+    addresses: Array<string>;
+    /**
+     * State
+     */
+    state: ({
+        state: 'to_send';
+    } & ToSend) | ({
+        state: 'sent';
+    } & RozliczeniaCentrumContractSettlementMailingSent) | ({
+        state: 'sent_by_hand';
+    } & SentByHand) | ({
+        state: 'changed';
+    } & ChangedAfterSending) | ({
+        state: 'no_address';
+    } & NoAddress) | ({
+        state: 'without_orders';
+    } & WithoutOrders) | ({
+        state: 'not_listed';
+    } & NotListed) | ({
+        state: 'not_sent';
+    } & NotSent) | ({
+        state: 'unknown';
+    } & Unknown);
+    /**
+     * Sendable
+     */
+    sendable: boolean;
+    /**
+     * Preselected
+     */
+    preselected: boolean;
+    /**
+     * Resend
+     */
+    resend: boolean;
+};
+
+/**
+ * MailingSend
+ *
+ * Jeden Mail z rozliczeniem: Wykonawca z nazwy pliku i to, czy tata wysyła jeszcze raz zmieniony plik.
+ */
+export type MailingSend = {
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * Resend
+     */
+    resend: boolean;
+};
+
+/**
+ * MailingSent
+ *
+ * Wynik wysyłki: wiersz po niej i to, czy mail poszedł teraz (``False``: już był w „Wysłanych” albo nie wyszedł).
+ */
+export type MailingSent = {
+    row: MailingRow;
+    /**
+     * Sent Now
+     */
+    sent_now: boolean;
+};
+
+/**
  * Message
  *
  * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień
@@ -1927,6 +2194,46 @@ export type ModeStatistics = {
     completed_runs: number;
     percentiles: Percentiles | null;
     results: ResultCounts;
+};
+
+/**
+ * NoAddress
+ *
+ * Wykonawca nie ma adresu w Liście Wykonawców.
+ */
+export type NoAddress = {
+    /**
+     * State
+     */
+    state: 'no_address';
+};
+
+/**
+ * NotListed
+ *
+ * Nazwa pliku nie odpowiada żadnemu Wykonawcy z Listy Wykonawców: nie idzie.
+ */
+export type NotListed = {
+    /**
+     * State
+     */
+    state: 'not_listed';
+};
+
+/**
+ * NotSent
+ *
+ * Ostatnia próba wysyłki nie wyszła; ``message`` mówi dlaczego.
+ */
+export type NotSent = {
+    /**
+     * State
+     */
+    state: 'not_sent';
+    /**
+     * Message
+     */
+    message: string;
 };
 
 /**
@@ -3338,7 +3645,7 @@ export type ReportNotification = {
      */
     state: ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';
@@ -3911,7 +4218,7 @@ export type RunOutcome = {
         state: 'not_queued';
     } & ReportNotQueued) | ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';
@@ -4073,15 +4380,19 @@ export type RunSummary = {
 };
 
 /**
- * Sent
+ * SentByHand
  *
- * Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później.
+ * Tata wysłał ten plik sam ze skrzynki raportów w chwili ``at`` i plik się od tego czasu nie zmienił.
  */
-export type Sent = {
+export type SentByHand = {
     /**
      * State
      */
-    state: 'sent';
+    state: 'sent_by_hand';
+    /**
+     * At
+     */
+    at: string;
 };
 
 /**
@@ -4188,6 +4499,7 @@ export type Settings = {
     inbox_problem: SettingProblem | null;
     autostart: AutostartSetting;
     reminders: RemindersSetting;
+    settlement_mail: SettlementMailSetting;
 };
 
 /**
@@ -4204,6 +4516,61 @@ export type SettingsHistory = {
      * Skipped
      */
     skipped: number;
+};
+
+/**
+ * SettlementMailForm
+ *
+ * Formularz sekcji Wysyłka rozliczeń: temat i treść z polami ``{okres}`` i ``{wykonawca}``.
+ */
+export type SettlementMailForm = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * SettlementMailPreview
+ *
+ * Mail z formularza dla przykładowego Wykonawcy i ostatniego pełnego okresu, ze stopką Przypomnień o raporcie. Nic
+ * się nie zapisuje ani nie wysyła.
+ */
+export type SettlementMailPreview = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Text
+     */
+    text: string;
+};
+
+/**
+ * SettlementMailSetting
+ *
+ * Temat i treść: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne) albo
+ * ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne).
+ */
+export type SettlementMailSetting = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Text
+     */
+    text: string;
+    /**
+     * State
+     */
+    state: 'good' | 'bad' | 'unreadable';
+    problem: SettingProblem | null;
 };
 
 /**
@@ -4300,6 +4667,18 @@ export type ThemeChange = {
 };
 
 /**
+ * ToSend
+ *
+ * Rozliczenie pracownika jeszcze nie poszło.
+ */
+export type ToSend = {
+    /**
+     * State
+     */
+    state: 'to_send';
+};
+
+/**
  * ToolUpdateFailed
  *
  * Aktualizacja narzędzia się nie udała; narzędzie zostało w wersji sprzed kliknięcia.
@@ -4330,7 +4709,7 @@ export type ToolUpdateFailed = {
         state: 'not_queued';
     } & ReportNotQueued) | ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';
@@ -4406,6 +4785,18 @@ export type ToolVersion = {
      * Since
      */
     since: string | null;
+};
+
+/**
+ * Unknown
+ *
+ * Skrzynki raportów nie dało się przeczytać, więc nie wiadomo, czy plik już poszedł.
+ */
+export type Unknown = {
+    /**
+     * State
+     */
+    state: 'unknown';
 };
 
 /**
@@ -4510,7 +4901,7 @@ export type ViewTiming = {
     /**
      * Page
      */
-    page: 'okresy' | 'uruchomienia' | 'metryki' | 'ustawienia' | 'powiadomienia' | 'uzupelnienie' | 'raporty';
+    page: 'okresy' | 'uruchomienia' | 'metryki' | 'ustawienia' | 'powiadomienia' | 'uzupelnienie' | 'raporty' | 'wysylka';
     /**
      * Ready Ms
      */
@@ -4527,6 +4918,18 @@ export type ViewTiming = {
      * Requests
      */
     requests: Array<ApiTiming>;
+};
+
+/**
+ * WithoutOrders
+ *
+ * Pusty Szablon pracownika: nie idzie.
+ */
+export type WithoutOrders = {
+    /**
+     * State
+     */
+    state: 'without_orders';
 };
 
 /**
@@ -4752,6 +5155,34 @@ export type WorkerSwitches = {
      * Reminders
      */
     reminders?: boolean | null;
+};
+
+/**
+ * Sent
+ *
+ * Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później.
+ */
+export type RozliczeniaCentrumContractCommonSent = {
+    /**
+     * State
+     */
+    state: 'sent';
+};
+
+/**
+ * Sent
+ *
+ * Centrum wysłało je w chwili ``at`` i plik się od tego czasu nie zmienił.
+ */
+export type RozliczeniaCentrumContractSettlementMailingSent = {
+    /**
+     * State
+     */
+    state: 'sent';
+    /**
+     * At
+     */
+    at: string;
 };
 
 /**
@@ -5147,7 +5578,7 @@ export type RunOutcomeWritable = {
         state: 'not_queued';
     } & ReportNotQueued) | ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';
@@ -5265,7 +5696,7 @@ export type SendDadNoteResponses = {
      */
     200: ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';
@@ -6210,7 +6641,7 @@ export type ReportRunResponses = {
         state: 'not_queued';
     } & ReportNotQueued) | ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';
@@ -7000,6 +7431,56 @@ export type PreviewReminderResponses = {
 
 export type PreviewReminderResponse = PreviewReminderResponses[keyof PreviewReminderResponses];
 
+export type ChangeSettlementMailData = {
+    body: SettlementMailForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/settlement-mail';
+};
+
+export type ChangeSettlementMailErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeSettlementMailError = ChangeSettlementMailErrors[keyof ChangeSettlementMailErrors];
+
+export type ChangeSettlementMailResponses = {
+    /**
+     * Successful Response
+     */
+    200: Choice;
+};
+
+export type ChangeSettlementMailResponse = ChangeSettlementMailResponses[keyof ChangeSettlementMailResponses];
+
+export type PreviewSettlementMailData = {
+    body: SettlementMailForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/settlement-mail/preview';
+};
+
+export type PreviewSettlementMailErrors = {
+    /**
+     * Zła wartość Ustawień Centrum z polem i zdaniem
+     */
+    422: Problem;
+};
+
+export type PreviewSettlementMailError = PreviewSettlementMailErrors[keyof PreviewSettlementMailErrors];
+
+export type PreviewSettlementMailResponses = {
+    /**
+     * Successful Response
+     */
+    200: SettlementMailPreview;
+};
+
+export type PreviewSettlementMailResponse = PreviewSettlementMailResponses[keyof PreviewSettlementMailResponses];
+
 export type ChangeThemeData = {
     body: ThemeChange;
     path?: never;
@@ -7194,6 +7675,113 @@ export type SwitchWorkerResponses = {
 
 export type SwitchWorkerResponse = SwitchWorkerResponses[keyof SwitchWorkerResponses];
 
+export type GetSettlementMailingData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settlement-mailing';
+};
+
+export type GetSettlementMailingErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+};
+
+export type GetSettlementMailingError = GetSettlementMailingErrors[keyof GetSettlementMailingErrors];
+
+export type GetSettlementMailingResponses = {
+    /**
+     * Response Getsettlementmailing
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'not_set';
+    } & MailingNotSet) | ({
+        state: 'ready';
+    } & MailingReady);
+};
+
+export type GetSettlementMailingResponse = GetSettlementMailingResponses[keyof GetSettlementMailingResponses];
+
+export type PreviewSettlementMailsData = {
+    body: MailingChoice;
+    path: {
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/api/settlement-mailing/{token}/preview';
+};
+
+export type PreviewSettlementMailsErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type PreviewSettlementMailsError = PreviewSettlementMailsErrors[keyof PreviewSettlementMailsErrors];
+
+export type PreviewSettlementMailsResponses = {
+    /**
+     * Successful Response
+     */
+    200: MailPreviews;
+};
+
+export type PreviewSettlementMailsResponse = PreviewSettlementMailsResponses[keyof PreviewSettlementMailsResponses];
+
+export type SendSettlementMailData = {
+    body: MailingSend;
+    path: {
+        /**
+         * Token
+         */
+        token: string;
+    };
+    query?: never;
+    url: '/api/settlement-mailing/{token}/send';
+};
+
+export type SendSettlementMailErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+};
+
+export type SendSettlementMailError = SendSettlementMailErrors[keyof SendSettlementMailErrors];
+
+export type SendSettlementMailResponses = {
+    /**
+     * Successful Response
+     */
+    200: MailingSent;
+};
+
+export type SendSettlementMailResponse = SendSettlementMailResponses[keyof SendSettlementMailResponses];
+
 export type CloseCentrumData = {
     body?: never;
     path?: never;
@@ -7318,7 +7906,7 @@ export type ReportToolUpdateResponses = {
         state: 'not_queued';
     } & ReportNotQueued) | ({
         state: 'sent';
-    } & Sent) | ({
+    } & RozliczeniaCentrumContractCommonSent) | ({
         state: 'queued';
     } & Queued) | ({
         state: 'rejected';

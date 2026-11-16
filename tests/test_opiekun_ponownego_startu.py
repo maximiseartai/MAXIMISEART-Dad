@@ -39,6 +39,7 @@ from rozliczenia import tool_files
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
+from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
@@ -163,6 +164,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "OLD_WORKER_MAPPING": tool_files.CONFIG_DIR / OLD_MAPPING_FILE,
         "OLD_WORKER_ADDRESSES": tool_files.CONFIG_DIR / OLD_ADDRESSES_FILE,
         "REMINDERS": tool_files.CONFIG_DIR / REMINDERS_FILE,
+        "SETTLEMENT_MAIL": tool_files.CONFIG_DIR / SETTLEMENT_MAIL_FILE,
         "OLD_REMINDERS_ROLLOUT": tool_files.CONFIG_DIR / OLD_ROLLOUT_FILE,
         "OLD_REMINDERS_FOOTER": tool_files.CONFIG_DIR / OLD_FOOTER_FILE,
         "WORKER_TEMPLATE": tool_files.WORKER_TEMPLATE,
@@ -185,6 +187,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "OLD_WORKER_MAPPING": "config/worker_mapping.yaml",
         "OLD_WORKER_ADDRESSES": "config/adresy-wykonawcow.yaml",
         "REMINDERS": "config/przypomnienia.yaml",
+        "SETTLEMENT_MAIL": "config/wysylka-rozliczen.yaml",
         "OLD_REMINDERS_ROLLOUT": "config/przypomnienia-od.txt",
         "OLD_REMINDERS_FOOTER": "config/stopka-przypomnien.txt",
         "WORKER_TEMPLATE": "config/Wzorzec rozliczenia pracownika.xlsx",

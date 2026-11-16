@@ -67,7 +67,7 @@ from rozliczenia.intermax_copies import default_directory as default_intermax_co
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk
 from rozliczenia.run_context import TemplateCheck, check_on_disk
 from rozliczenia.workbook_files import ByteSource, file_bytes
-from rozliczenia.worker_report_inbox import ImapConnect, ReminderMailbox, WorkerReportInbox
+from rozliczenia.worker_report_inbox import ImapConnect, ReminderMailbox, SettlementMailbox, SmtpConnect, WorkerReportInbox
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 
 from tests.fixtures.clock import ManualClock
@@ -610,6 +610,8 @@ def centrum_app(
     worker_report_inbox: WorkerReportInbox | Fake = FAKE,
     reminder_mailbox: ReminderMailbox | Fake = FAKE,
     reminder_rhythm: ReminderRhythm | Fake = FAKE,
+    settlement_mailbox: SettlementMailbox | Fake = FAKE,
+    inbox_smtp: SmtpConnect | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = (),
     update_threads: Threading = threading,
 ) -> FastAPI:
@@ -621,7 +623,8 @@ def centrum_app(
     przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool``, okno efenix pod martwym adresem i
     Skrzynka raportów bez maili (``FakeInbox``), skrzynka raportów bez sieci przy próbie logowania po zmianie hasła
     (``inbox_connect``), skrzynka Przypomnień o raporcie bez maili (``FakeMailbox``) i rytm przypomnień, który
-    sprawdza tylko na ``HandRhythm.tick`` testu, a Wydanie bez zmian Ustawień Centrum (produkcyjna lista
+    sprawdza tylko na ``HandRhythm.tick`` testu, skrzynka Wysyłki rozliczeń bez maili w „Wysłanych”
+    (``FakeMailbox``; ``inbox_smtp`` podaje SMTP skrzynki raportów z ``inbox_connect``), a Wydanie bez zmian Ustawień Centrum (produkcyjna lista
     ``RELEASE_CHANGES`` tylko w teście, który ją podaje); prawdziwego Gmaila test nie dostaje nigdy.
     ``None`` daje domyślną wartość produkcyjną tylko testowi, który ją sprawdza (np. Kopie INTERMAX w folderze
     narzędzia albo prawdziwy odczyt atrybutów OneDrive). Bez ``tool_update`` i ``guardian`` Aktualizacja narzędzia i
@@ -661,6 +664,8 @@ def centrum_app(
         worker_report_inbox=FakeInbox() if isinstance(worker_report_inbox, Fake) else worker_report_inbox,
         reminder_mailbox=FakeMailbox() if isinstance(reminder_mailbox, Fake) else reminder_mailbox,
         reminder_rhythm=HandRhythm() if isinstance(reminder_rhythm, Fake) else reminder_rhythm,
+        settlement_mailbox=FakeMailbox() if isinstance(settlement_mailbox, Fake) else settlement_mailbox,
+        inbox_smtp=inbox_smtp,
         release_changes=release_changes,
         update_threads=update_threads,
     )

@@ -33,6 +33,10 @@ _NO_PERIOD = "bez-okresu"
 WaitingCause = Literal["brak-klucza", "brak-sieci", "odmowa", "odmowa-tresci", "odmowa-archiwum"]
 """Dlaczego wysyłka w tle czeka w kolejce Skrzynki Zgłoszeń; ``odmowa-tresci`` i ``odmowa-archiwum`` (Archiwum okresu
 nie przyjęło pliku wysyłki, której części już doszły) dotyczą tylko jednego pliku kolejki."""
+SettlementMailFailure = Literal["wyslane-bez-odczytu", "plik", "haslo-odrzucone", "brak-sieci", "odmowa-wysylki"]
+"""Dlaczego Mail z rozliczeniem nie wyszedł: „Wysłanych” nie dało się przeczytać, pliku nie dało się przeczytać, Gmail
+odrzucił hasło, nie ma sieci albo Gmail odmówił maila."""
+
 ReminderFailure = Literal[
     "bez-wdrozenia",
     "bez-ustawien",
@@ -295,6 +299,17 @@ class CentrumLog:
 
         named = ({} if failure is None else {"typ": failure}) | ({} if file is None else {"plik": file})
         self._write("przypomnienia-porazka", przyczyna=cause, **named)
+
+    def settlement_mailed(self, *, period: str) -> None:
+        """Wysyłka rozliczeń wysłała jeden Mail z rozliczeniem okresu ``period`` (token); bez adresu, Wykonawcy, nazwy
+        pliku, tematu i treści (ADR 0040)."""
+
+        self._write("rozliczenie-wyslane", okres=period)
+
+    def settlement_mail_failed(self, *, period: str, cause: SettlementMailFailure, failure: str | None = None) -> None:
+        """Mail z rozliczeniem okresu ``period`` nie wyszedł: przyczyna i nazwa typu wyjątku, gdy jest (ADR 0040)."""
+
+        self._write("rozliczenie-niewyslane", okres=period, przyczyna=cause, **({} if failure is None else {"typ": failure}))
 
     def view_timed(
         self,

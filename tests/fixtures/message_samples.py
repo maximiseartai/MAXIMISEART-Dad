@@ -493,6 +493,7 @@ REFUSALS: RefusalSamples = {
     ],
     "place_missing": [partial(refusal.place_missing, place, PERIOD) for place in get_args(PeriodPlace)],
     "worker_settlement_missing": [partial(refusal.worker_settlement_missing, "Jan Testowy", PERIOD)],
+    "mailing_without_workers": [refusal.mailing_without_workers],
     "no_forwarding": [partial(refusal.no_forwarding, "Przygotowanie pliku zbiorczego")],
     "pricing_without_preview": [refusal.pricing_without_preview],
     # Tylko pary, które daje RunHost: drugie zamknięcie po przyjętym przechodzi, drugą aktualizację odrzuca

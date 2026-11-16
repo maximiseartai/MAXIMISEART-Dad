@@ -6,6 +6,7 @@ import {
   ClipboardPenLineIcon,
   MailCheckIcon,
   PlayIcon,
+  SendIcon,
   type LucideIcon,
 } from "lucide-react"
 
@@ -17,6 +18,7 @@ import { NotificationsPage } from "@/pages/notifications/notifications-page"
 import { PeriodsPage } from "@/pages/periods/periods-page"
 import { ReportsPage } from "@/pages/worker-reports/reports-page"
 import { RunsPage } from "@/pages/runs/runs-page"
+import { MailingPage } from "@/pages/settlement-mailing/mailing-page"
 
 export const NOTIFICATIONS_PAGE = {
   id: "powiadomienia",
@@ -37,6 +39,8 @@ export const PAGES = [
   { id: "uruchomienia", title: "Uruchomienia", icon: PlayIcon, Content: RunsPage, menu: true },
   // Raporty ma przycisk „Wpisz raporty z maili”; otwiera je też wynik Wpisania raportów w Uruchomieniach.
   { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: true },
+  // Wysyłka rozliczeń: Rozliczenia pracowników okresów mailem ze skrzynki raportów (ADR 0040).
+  { id: "wysylka", title: "Wysyłka rozliczeń", icon: SendIcon, Content: MailingPage, menu: true },
   { id: "metryki", title: "Metryki", icon: ChartColumnIcon, Content: MetricsPage, menu: true },
   NOTIFICATIONS_PAGE,
   {

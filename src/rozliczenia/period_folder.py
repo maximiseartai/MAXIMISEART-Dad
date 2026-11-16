@@ -36,6 +36,7 @@ import re
 from collections.abc import Iterable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -215,17 +216,45 @@ class PeriodFolder:
         Pomija pliki blokady Excela, pliki ukryte, foldery i Wzorzec rozliczenia pracownika bez nazwy wykonawcy.
         """
 
+        return tuple(found.path for found in self.worker_settlement_entries())
+
+    def worker_settlement_entries(self) -> tuple[WorkerSettlementFile, ...]:
+        """Rozliczenia pracownika jak ``worker_settlement_files``, każde z nazwą Wykonawcy z nazwy pliku i chwilą zmiany z
+        tego samego listowania (Windows podaje ją bez otwierania pliku w OneDrive)."""
+
         prefix, suffix = _WORKER_SETTLEMENT.format(token=self.period.token, worker="\0").split("\0")
         return tuple(
             sorted(
-                self.worker_settlements / entry.name
-                for entry in _listing(self.worker_settlements) or ()
-                if entry.name.startswith(prefix)
-                and entry.name.endswith(suffix)
-                and len(entry.name) > len(prefix) + len(suffix)
-                and entry_kind(entry) == "file"
+                (
+                    WorkerSettlementFile(
+                        self.worker_settlements / entry.name, entry.name[len(prefix) : -len(suffix)], _modified(entry)
+                    )
+                    for entry in _listing(self.worker_settlements) or ()
+                    if entry.name.startswith(prefix)
+                    and entry.name.endswith(suffix)
+                    and len(entry.name) > len(prefix) + len(suffix)
+                    and entry_kind(entry) == "file"
+                ),
+                key=lambda found: found.path,
             )
         )
+
+
+@dataclass(frozen=True)
+class WorkerSettlementFile:
+    """Rozliczenie pracownika w Folderze rozliczeń pracowników: ścieżka, nazwa Wykonawcy z nazwy pliku i chwila zmiany
+    pliku ze strefą (``None``: system jej nie podał)."""
+
+    path: Path
+    worker: str
+    modified_at: datetime | None
+
+
+def _modified(entry: os.DirEntry[str]) -> datetime | None:
+    try:
+        return datetime.fromtimestamp(entry.stat().st_mtime, timezone.utc)
+    except OSError:
+        return None
 
 
 def _listing(directory: Path) -> list[os.DirEntry[str]] | None:

@@ -193,6 +193,26 @@ def reminders_without_since() -> str:
     return "Włączone przypomnienia muszą mieć dzień wdrożenia. Wyłącz je i włącz jeszcze raz."
 
 
+def settlement_mail_empty_subject() -> str:
+    return "Wpisz temat maila z rozliczeniem."
+
+
+def settlement_mail_subject_lines() -> str:
+    return "Temat maila musi mieścić się w jednej linii."
+
+
+def settlement_mail_report_word() -> str:
+    return "Temat nie może mieć słowa „raport”: odpowiedź Wykonawcy Centrum wzięłoby za jego raport."
+
+
+def settlement_mail_unknown_field() -> str:
+    return "W temacie i treści mogą stać tylko pola {okres} i {wykonawca}, bez innych nawiasów klamrowych."
+
+
+def settlement_mail_empty_text() -> str:
+    return "Wpisz treść maila z rozliczeniem."
+
+
 def autostart_unsupported() -> str:
     return "Start razem z Windows działa tylko na komputerze z Windows."
 
