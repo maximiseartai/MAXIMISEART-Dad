@@ -11,6 +11,7 @@ pilnuje:
   - src/rozliczenia/centrum/processes/*.py
   - src/rozliczenia/centrum/run_view.py
   - src/rozliczenia/collective_*.py
+  - src/rozliczenia/coloured_fields.py
   - src/rozliczenia/dad_files.py
   - src/rozliczenia/decision.py
   - src/rozliczenia/domain.py
