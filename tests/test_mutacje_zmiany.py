@@ -921,6 +921,23 @@ def test_samotne_cr_w_pliku_spoza_kodu_przed_tekstem_w_ksztalcie_naglowka_nie_ch
     assert {path: [(hunk.start, hunk.count) for hunk in hunks] for path, hunks in zakres.fragmenty.items()} == {"tools/b.py": [(2, 1)]}
 
 
+def test_cofniecie_fragmentu_pliku_crlf_rowne_innej_mutacji_biegnie_jako_ta_mutacja_jak_w_pliku_lf(tmp_path: Path) -> None:
+    """Plik z końcami ``\\r\\n`` (jak ``write_text`` na Windows) pisany bajtami, a git bez ``core.autocrlf``, więc linia bazy
+    w diffie ma ``\\r`` na każdym systemie. Dodany element krotki: jego cofnięcie to „krotka bez `c`” (#523)."""
+
+    base = b"def xf(a: int, b: int, c: int) -> tuple[int, ...]:\r\n    return (a, b)\r\n"
+    repo = mutation_repository(tmp_path / "repo", {})
+    git(repo, "config", "core.autocrlf", "false")
+    (repo / "src" / "pakiet").mkdir(parents=True)
+    (repo / "src" / "pakiet" / "a.py").write_bytes(base)
+    start = commit(repo, "baza")
+    (repo / "src" / "pakiet" / "a.py").write_bytes(base.replace(b"(a, b)", b"(a, b, c)"))
+
+    zakres = ZakresMutacji.od(start, repo)
+
+    assert sorted((mutant.description, mutant.revert) for mutant in zakres.mutanty) == [("krotka bez `b`", False), ("krotka bez `c`", True)]
+
+
 def test_plik_kodu_z_polska_litera_w_nazwie_dostaje_fragmenty_zacommitowany_i_niesledzony(tmp_path: Path) -> None:
     repo = mutation_repository(tmp_path / "repo", {"tools/żółw.py": FUNKCJA})
     base = commit(repo, "baza")
