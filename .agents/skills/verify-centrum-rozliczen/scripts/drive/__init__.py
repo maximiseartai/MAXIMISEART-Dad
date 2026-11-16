@@ -95,23 +95,6 @@ FEATURES = (
             "354-urzadzenia-waskie",
         ),
     ),
-    # Writes Dad's file of the legend outside Centrum and in the editor, and removes it again, so the features after it
-    # find the Release's.
-    Feature(
-        "legenda-czynnosci",
-        (
-            "420-legenda-czynnosci-szerokie",
-            "421-legenda-czynnosci-zly-plik",
-            "422-legenda-czynnosci-historia",
-            "423-legenda-czynnosci-waskie",
-            "424-legenda-czynnosci-dopisany-zapis",
-            "425-legenda-czynnosci-kolumny",
-            "426-legenda-czynnosci-odmowa",
-            "427-legenda-czynnosci-nowy-kod",
-            "428-legenda-czynnosci-historia-edytora",
-            "429-legenda-czynnosci-waski-formularz",
-        ),
-    ),
     Feature(
         "tablica-okresow",
         (
@@ -358,6 +341,27 @@ FEATURES = (
             "383-edytor-zapisana",
             "384-edytor-historia",
             "385-edytor-waskie",
+        ),
+        needs=("przebieg-rozliczen",),
+    ),
+    # Writes Dad's file of the legend outside Centrum and in the editor, and removes it again, so the features after it
+    # find the Release's; the preview of a change counts on the Plik zbiorczy that Przebieg rozliczeń settled, with codes
+    # the harness writes into its CZYNNOŚCI ZREALIZOWANE and takes out again.
+    Feature(
+        "legenda-czynnosci",
+        (
+            "420-legenda-czynnosci-szerokie",
+            "421-legenda-czynnosci-zly-plik",
+            "422-legenda-czynnosci-historia",
+            "423-legenda-czynnosci-waskie",
+            "424-legenda-czynnosci-dopisany-zapis",
+            "425-legenda-czynnosci-kolumny",
+            "426-legenda-czynnosci-odmowa",
+            "427-legenda-czynnosci-nowy-kod",
+            "428-legenda-czynnosci-historia-edytora",
+            "429-legenda-czynnosci-waski-formularz",
+            "430-legenda-czynnosci-podglad",
+            "431-legenda-czynnosci-zapis-przy-roznicach",
         ),
         needs=("przebieg-rozliczen",),
     ),

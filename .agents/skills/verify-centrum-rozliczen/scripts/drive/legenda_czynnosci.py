@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
+from typing import Any
+import urllib.request
 
+from openpyxl import load_workbook
+from openpyxl.worksheet.worksheet import Worksheet
 from playwright.sync_api import Locator, Page, ViewportSize, expect
 
-from drive.common import DAD_VIEWPORT, Run, close_settings, open_settings, put_bytes, remove, settings_title, settings_window
+from drive.common import (
+    DAD_VIEWPORT,
+    Run,
+    close_settings,
+    open_settings,
+    period_files,
+    put_bytes,
+    read_bytes,
+    read_text,
+    remove,
+    settings_title,
+    settings_window,
+)
+from drive.waiting import Budget
 from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
 
 FEATURE = "legenda-czynnosci"
@@ -35,6 +53,16 @@ REFUSED = f"Plik {LEGEND_FILE} w folderze config: Zapis „spawpg” ma już kod
 WITH_SPELLING = "instwewrg6#m (też instrg6#m): # od 1 do 10 →"
 TAKEN = "Zapis „inst#m” ma już kod „inst#m”."
 NEW_CODE = "listwa#m: # od 1 do 15 → 1 w "
+# The preview of a change: the harness writes codes into CZYNNOŚCI ZREALIZOWANE of the Wiersze danych of the Plik
+# zbiorczy that Przebieg rozliczeń settled, with Dad's values as he types them; spawpg has his 1 in AB and 70 in AS but
+# no red AS. Dad changes the amount of spawpg to 80, so that row changes and differs from what he typed.
+COMPLETED_HEADER = "CZYNNOŚCI ZREALIZOWANE"
+CODED_ROWS: dict[int, tuple[str, dict[str, int]]] = {
+    18: ("inst20m", {"Y": 1}),
+    19: ("spawpg listwy", {"AB": 1, "AS": 70}),
+    20: ("rt2", {"AK": 1}),
+}
+SPAWPG_ROW = 19
 
 
 def _codes(window: Locator) -> Locator:
@@ -62,6 +90,50 @@ def _close_saved(page: Page) -> None:
     expect(saved.get_by_role("button", name="Cofnij", exact=True)).to_be_visible()
     saved.locator("[data-slot=toast-close]").click()
     expect(saved).to_have_count(0)
+
+
+def _write_codes(collective_file: Path) -> None:
+    """Dad's Plik zbiorczy with codes in CZYNNOŚCI ZREALIZOWANE (harness: openpyxl edits the run's file, no lock file)."""
+
+    workbook = load_workbook(collective_file)
+    try:
+        sheet = workbook.active
+        assert isinstance(sheet, Worksheet)
+        [column] = [cell.column for cell in sheet[17] if cell.value == COMPLETED_HEADER]
+        for row, (text, values) in CODED_ROWS.items():
+            sheet.cell(row, column).value = text
+            for letter, value in values.items():
+                sheet[f"{letter}{row}"].value = value
+        workbook.save(collective_file)
+    finally:
+        workbook.close()
+
+
+def _preview(run: Run, edit: dict[str, object]) -> dict[str, Any]:
+    """The server's preview of ``edit``; the evidence keeps it without the technicians' descriptions (workbook content)."""
+
+    request = urllib.request.Request(
+        run.url.rstrip("/") + URL + "/preview",
+        data=json.dumps(edit).encode(),
+        method="POST",
+        headers={"Origin": run.url.rstrip("/"), "Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=Budget.WORK.value) as response:
+        answer: dict[str, Any] = json.load(response)
+    shown = {**answer, "rows": [{**row, "description": "<tekst wiersza>"} for row in answer.get("rows", [])]}
+    (run.evidence / "api" / "legenda-czynnosci-podglad.json").write_text(json.dumps(shown, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    return answer
+
+
+def _capture(run: Run, page: Page, name: str, answer: dict[str, Any]) -> None:
+    """Screenshot with the preview; its ARIA snapshot keeps the descriptions out, like the saved answer."""
+
+    run.capture(page, name, full_page=False)
+    snapshot = run.evidence / "aria" / f"{name}.txt"
+    text = read_text(snapshot)
+    for row in answer.get("rows", []):
+        text = text.replace(row["description"], "<tekst wiersza>")
+    snapshot.write_text(text, encoding="utf-8")
 
 
 def _spellings(run: Run, name: str) -> dict[str, str]:
@@ -192,6 +264,8 @@ def drive(run: Run, page: Page) -> None:
     expect(_codes(window)).to_have_count(len(codes))
     close_settings(page)
 
+    _preview_and_save(run, page, legend, len(codes))
+
     run.step(FEATURE, "legenda-waskie-okno")
     page.set_viewport_size(NARROW)
     try:
@@ -211,3 +285,53 @@ def drive(run: Run, page: Page) -> None:
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
+
+
+def _preview_and_save(run: Run, page: Page, legend: Path, count: int) -> None:
+    collective_file = period_files(run)[1]
+    original = read_bytes(collective_file)
+    try:
+        run.step(FEATURE, "legenda-podglad")
+        print("  harness: codes typed into CZYNNOŚCI ZREALIZOWANE of rows 18–20 of the settled Plik zbiorczy", flush=True)
+        _write_codes(collective_file)
+        window = open_settings(page, SECTION)
+        form = _edit(window, "spawpg")
+        preview = form.get_by_role("list", name="Podgląd")
+        run.check(preview.count() == 0, "an unchanged form of a code has no preview")
+        form.get_by_role("spinbutton", name="Kwota w AS", exact=True).fill("80")
+        spawpg = next(code["code"] for code in run.api(URL, "legenda-czynnosci-przed-podgladem")["codes"] if code["id"] == "spawpg")
+        answer = _preview(run, {"kind": "change", "code_id": "spawpg", "code": {**spawpg, "amount": 80}})
+        [row] = [row for row in answer["rows"] if row["row"] == SPAWPG_ROW]
+        run.check(
+            answer["state"] == "ready" and answer["changed"] == 1 and answer["changed_as_tata"] == 0
+            and answer["differences_after"] > answer["differences_before"]
+            and [(cell["column"], cell["legend"], cell["tata"]) for cell in row["cells"] if cell["kind"] == "value"] == [("AS", 80, 70)],
+            "the server's preview counts with the Kontrola's row check: spawpg at 80 changes 1 row, which differs from Dad's 70 in AS",
+        )
+        summary = preview.get_by_role("listitem", name="Skutek", exact=True)
+        expect(summary).to_contain_text("Zmieni się 1 wiersz, w 0 będzie tak, jak wpisałeś.")
+        expect(summary).to_contain_text(
+            f"różnice legendy z Kontroli ilości: {answer['differences_before']} → {answer['differences_after']}"
+        )
+        shown = preview.get_by_role("listitem", name=f"Wiersz {SPAWPG_ROW}", exact=True)
+        expect(shown).to_contain_text("CZYNNOŚCI ZREALIZOWANE spawpg listwy")
+        expect(shown).to_contain_text("Uwagi - kwota · legenda 80")
+        expect(shown).to_contain_text("wpisałeś 70")
+        run.check(True, "the preview shows the server's counts, the row with its description, the legend's 80 and Dad's 70 in AS")
+        shown.scroll_into_view_if_needed()
+        _capture(run, page, "430-legenda-czynnosci-podglad", answer)
+
+        run.step(FEATURE, "legenda-zapis-przy-roznicach")
+        form.get_by_role("button", name="Zapisz", exact=True).click()
+        expect(_codes(window).filter(has_text="spawpg:")).to_contain_text("80 w Uwagi - kwota AS")
+        saved = next(code["code"] for code in run.api(URL, "legenda-czynnosci-zapis-przy-roznicach")["codes"] if code["id"] == "spawpg")
+        run.check(saved["amount"] == 80, "„Zapisz” saves the change although the preview shows a difference from Dad")
+        run.capture(page, "431-legenda-czynnosci-zapis-przy-roznicach", full_page=False)
+        _close_saved(page)
+        close_settings(page)
+    finally:
+        collective_file.write_bytes(original)
+        remove(legend, missing_ok=True)
+    window = open_settings(page, SECTION)
+    expect(_codes(window)).to_have_count(count)
+    close_settings(page)

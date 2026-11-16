@@ -10,7 +10,11 @@ outside Centrum is a row of Historia from outside Centrum; a bad file is a bad s
 good legend, which Centrum counts. The pencil at a code and „Dodaj kod” open the form of a code in place of its row:
 spellings (`#` for the number), the column of Ilości usług (one column or ranges of the number) with its value chosen
 only from the columns the legend writes, by price-list name, the amount in AS and the colours. „Zapisz” and „Usuń kod”
-are changes of Historia with „Cofnij”, and a refusal is one sentence at its field.
+are changes of Historia with „Cofnij”, and a refusal is one sentence at its field. A changed form shows the preview of
+the change on the last Pliki zbiorcze after Przebieg rozliczeń, counted by the server with the row check of the Kontrola
+ilości: how many rows change, in how many it will be as Dad typed, the Kontrola's legend differences before and after,
+and each changed row that differs from Dad with its CZYNNOŚCI ZREALIZOWANE after the data guard (ADR 0025), without the
+address, the order numbers and the date. „Zapisz” saves also with differences.
 
 ## Sub-features
 
@@ -34,7 +38,9 @@ of `#/ustawienia/legenda-czynnosci` opens the section too.
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature legenda-czynnosci`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/legenda-czynnosci*.json`.
-The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it after `legenda-usuniecie-cofnij`, so the features after this one find the legend of the Release.
+The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it after `legenda-usuniecie-cofnij` and again after `legenda-zapis-przy-roznicach`, so the features after this one find the legend of the Release.
+The preview needs the Plik zbiorczy that `przebieg-rozliczen` settled, whose CZYNNOŚCI ZREALIZOWANE in the fixture has no code: the step `legenda-podglad` types codes and Dad's values into rows 18–20 and the harness puts the file's bytes back after `legenda-zapis-przy-roznicach`.
+Its proof adds `api/legenda-czynnosci-podglad.json` with the descriptions replaced by `<tekst wiersza>`, as in the ARIA snapshot of `430`.
 
 ## Gotchas
 
