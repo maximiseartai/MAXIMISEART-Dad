@@ -63,6 +63,8 @@ CODED_ROWS: dict[int, tuple[str, dict[str, int]]] = {
     20: ("rt2", {"AK": 1}),
 }
 SPAWPG_ROW = 19
+# Removing inst leaves row 18 without a code, with Dad's 1 in Y, which the legend no longer writes.
+INST_ROW = 18
 
 
 def _codes(window: Locator) -> Locator:
@@ -109,8 +111,9 @@ def _write_codes(collective_file: Path) -> None:
         workbook.close()
 
 
-def _preview(run: Run, edit: dict[str, object]) -> dict[str, Any]:
-    """The server's preview of ``edit``; the evidence keeps it without the technicians' descriptions (workbook content)."""
+def _preview(run: Run, edit: dict[str, object], name: str) -> dict[str, Any]:
+    """The server's preview of ``edit`` as ``api/<name>.json``; the evidence keeps it without the technicians'
+    descriptions (workbook content)."""
 
     request = urllib.request.Request(
         run.url.rstrip("/") + URL + "/preview",
@@ -121,7 +124,7 @@ def _preview(run: Run, edit: dict[str, object]) -> dict[str, Any]:
     with urllib.request.urlopen(request, timeout=Budget.WORK.value) as response:
         answer: dict[str, Any] = json.load(response)
     shown = {**answer, "rows": [{**row, "description": "<tekst wiersza>"} for row in answer.get("rows", [])]}
-    (run.evidence / "api" / "legenda-czynnosci-podglad.json").write_text(json.dumps(shown, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    (run.evidence / "api" / f"{name}.json").write_text(json.dumps(shown, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     return answer
 
 
@@ -252,7 +255,10 @@ def drive(run: Run, page: Page) -> None:
     _close_saved(page)
 
     run.step(FEATURE, "legenda-usuniecie-cofnij")
-    _edit(window, "listwa#m").get_by_role("button", name="Usuń kod", exact=True).click()
+    form = _edit(window, "listwa#m")
+    form.get_by_role("button", name="Usuń kod", exact=True).click()
+    expect(form.get_by_text("Usunąć kod listwa#m?", exact=True)).to_be_visible()
+    form.get_by_role("button", name="Usuń", exact=True).click()
     expect(_codes(window)).to_have_count(len(codes))
     close_settings(page)
     window = open_settings(page, "Historia")
@@ -309,7 +315,7 @@ def _preview_and_save(run: Run, page: Page, legend: Path, count: int) -> None:
         run.check(preview.count() == 0, "an unchanged form of a code has no preview")
         form.get_by_role("spinbutton", name="Kwota w AS", exact=True).fill("80")
         spawpg = _spawpg(run, "legenda-czynnosci-przed-podgladem")
-        answer = _preview(run, {"kind": "change", "code_id": "spawpg", "code": {**spawpg, "amount": 80}})
+        answer = _preview(run, {"kind": "change", "code_id": "spawpg", "code": {**spawpg, "amount": 80}}, "legenda-czynnosci-podglad")
         [row] = [row for row in answer["rows"] if row["row"] == SPAWPG_ROW]
         run.check(
             answer["state"] == "ready" and answer["changed"] == 1 and answer["changed_as_tata"] == 0
@@ -336,6 +342,38 @@ def _preview_and_save(run: Run, page: Page, legend: Path, count: int) -> None:
         saved = _spawpg(run, "legenda-czynnosci-zapis-przy-roznicach")
         run.check(saved["amount"] == 80, "„Zapisz” saves the change although the preview shows a difference from Dad")
         run.capture(page, "431-legenda-czynnosci-zapis-przy-roznicach", full_page=False)
+        _close_saved(page)
+
+        run.step(FEATURE, "legenda-podglad-usuniecia")
+        form = _edit(window, "inst#m")
+        form.get_by_role("button", name="Usuń kod", exact=True).click()
+        expect(form.get_by_text("Usunąć kod inst#m?", exact=True)).to_be_visible()
+        run.check(
+            form.get_by_role("textbox", name="Zapis 1", exact=True).count() == 0,
+            "„Usuń kod” turns the form into the question „Usunąć kod?” without its fields",
+        )
+        preview = form.get_by_role("list", name="Podgląd")
+        answer = _preview(run, {"kind": "remove", "code_id": "inst"}, "legenda-czynnosci-podglad-usuniecia")
+        [row] = [row for row in answer["rows"] if row["row"] == INST_ROW]
+        run.check(
+            answer["state"] == "ready" and answer["changed"] == 1 and answer["changed_as_tata"] == 0 and row["codes"] == []
+            and [(cell["column"], cell["tata"]) for cell in row["cells"]] == [("Y", 1)],
+            "the server's preview of removing inst: row 18 changes and stays without a code, with Dad's 1 in Y",
+        )
+        summary = preview.get_by_role("listitem", name="Skutek", exact=True)
+        expect(summary).to_contain_text("Zmieni się 1 wiersz, w 0 będzie tak, jak wpisałeś.")
+        expect(summary).to_contain_text(
+            f"różnice legendy z Kontroli ilości: {answer['differences_before']} → {answer['differences_after']}"
+        )
+        shown = preview.get_by_role("listitem", name=f"Wiersz {INST_ROW}", exact=True)
+        expect(shown).to_contain_text("bez kodu")
+        expect(shown).to_contain_text("wpisałeś 1")
+        run.check(True, "before removing, the form shows the preview of the removal: the row left without a code and Dad's 1 in Y")
+        shown.scroll_into_view_if_needed()
+        _capture(run, page, "432-legenda-czynnosci-podglad-usuniecia", answer)
+        form.get_by_role("button", name="Usuń", exact=True).click()
+        expect(_codes(window)).to_have_count(count - 1)
+        run.check("inst" not in _spellings(run, "legenda-czynnosci-po-usunieciu"), "„Usuń” under the preview removes the code it previewed")
         _close_saved(page)
         close_settings(page)
     finally:

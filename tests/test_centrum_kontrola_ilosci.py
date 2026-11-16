@@ -870,25 +870,51 @@ def shown_legend_rows(preview: dict[str, Any]) -> list[tuple[Any, ...]]:
     ]
 
 
-def test_podglad_legendy_liczy_roznice_tym_samym_rachunkiem_co_kontrola_ilosci_a_zapis_przy_roznicach_dziala(
-    tmp_path: Path,
-) -> None:
+def legend_saved(centrum: SettlingCentrum, edit: dict[str, Any]) -> dict[str, Any]:
+    """Zapis tej samej zmiany, którą podgląd dostał jako ``edit``, drogą formularza kodu."""
+
+    if edit["kind"] == "add":
+        response = centrum.client.post(LEGEND_URL, json=edit["code"])
+    elif edit["kind"] == "change":
+        response = centrum.client.put(f"{LEGEND_URL}/{edit['code_id']}", json=edit["code"])
+    else:
+        response = centrum.client.delete(f"{LEGEND_URL}/{edit['code_id']}")
+    assert response.status_code == 200, response.text
+    found: dict[str, Any] = response.json()
+    return found
+
+
+# Każdy rodzaj zmiany z formularza kodu: (zmiana, różnice przed, po, zmienione wiersze, w tym tak, jak wpisał tata).
+LEGEND_EDITS: Final[dict[str, tuple[Callable[[SettlingCentrum], dict[str, Any]], tuple[int, int, int, int]]]] = {
+    # Wiersz „spawpg listwy”: tata wpisał 70 w AS, a po zmianie legenda da 80.
+    "zmiana": (lambda centrum: {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}}, (8, 9, 1, 0)),
+    # Wiersz „listwy 11 metrów”: nowy kod daje 220 w AS, tak jak wpisał tata.
+    "dodanie": (
+        lambda centrum: {"kind": "add", "code": {"spellings": ["metrów"], "column": None, "value": 1, "amount": 220, "fills": []}},
+        (8, 8, 1, 1),
+    ),
+    # Wiersz „inst20m”: bez kodu zostaje wpis taty 1 w Y.
+    "usuniecie": (lambda centrum: {"kind": "remove", "code_id": "inst"}, (8, 8, 1, 0)),
+}
+
+
+@pytest.mark.parametrize("kind", LEGEND_EDITS)
+def test_podglad_legendy_kazdej_zmiany_liczy_roznice_ktore_kontrola_ilosci_da_po_jej_zapisie(tmp_path: Path, kind: str) -> None:
     centrum = legend_centrum(tmp_path, LEGEND_ROWS)
     run_to_end(centrum, dry_run=False)
     first = sent_check(centrum)
-    spawpg = code_form(centrum, "spawpg") | {"amount": 80}
+    build, expected = LEGEND_EDITS[kind]
+    edit = build(centrum)
 
-    preview = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": spawpg})
-    saved = centrum.client.put(f"{LEGEND_URL}/spawpg", json=spawpg)
+    preview = legend_previewed(centrum, edit)
+    saved = legend_saved(centrum, edit)
     repeated(centrum)
 
-    assert saved.status_code == 200, saved.text
-    assert saved.json()["change"] is not None
+    assert saved["change"] is not None
     assert box(centrum).wait_until(lambda fake: bool(first.comments)), "druga Kontrola ilości nie dotarła"
     assert f"różnice legendy: {preview['differences_before']}\n" in first.body
     assert f"różnice legendy: {preview['differences_after']}\n" in first.comments[0]
-    # Wiersz „spawpg listwy”: tata wpisał 70 w AS, a po zmianie legenda da 80.
-    assert (preview["differences_before"], preview["differences_after"], preview["changed"], preview["changed_as_tata"]) == (8, 9, 1, 0)
+    assert (preview["differences_before"], preview["differences_after"], preview["changed"], preview["changed_as_tata"]) == expected
 
 
 def test_podglad_legendy_pokazuje_wiersz_z_roznica_od_taty_z_opisem_technika_kwota_i_kolorem(tmp_path: Path) -> None:
@@ -914,6 +940,18 @@ def test_podglad_legendy_liczy_wiersze_ktore_po_zmianie_beda_tak_jak_wpisal_tata
 
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (2, 2, [])
     assert (preview["differences_before"], preview["differences_after"]) == (8, 2)
+
+
+def test_podglad_legendy_liczy_zmiane_samych_kolorow_kodu_jako_zmieniony_wiersz(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+    # spawpg bez czerwonego AS, tak jak wpisał go tata: zmieniają się same kolory.
+    spawpg = code_form(centrum, "spawpg") | {"fills": []}
+
+    preview = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": spawpg})
+
+    assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
+    assert (preview["differences_before"], preview["differences_after"]) == (8, 7)
 
 
 def test_podglad_legendy_pokazuje_wpis_taty_w_wierszu_ktory_po_usunieciu_kodu_zostaje_bez_kodu(tmp_path: Path) -> None:

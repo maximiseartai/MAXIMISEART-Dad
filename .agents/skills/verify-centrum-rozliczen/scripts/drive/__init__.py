@@ -362,6 +362,7 @@ FEATURES = (
             "429-legenda-czynnosci-waski-formularz",
             "430-legenda-czynnosci-podglad",
             "431-legenda-czynnosci-zapis-przy-roznicach",
+            "432-legenda-czynnosci-podglad-usuniecia",
         ),
         needs=("przebieg-rozliczen",),
     ),
