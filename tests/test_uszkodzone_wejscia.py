@@ -558,7 +558,8 @@ NOT_SWEPT: dict[str, str] = {
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
-# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów i parę Reguł ilości (settings_reads), a nie całą migawkę.
+# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów, parę Reguł ilości i Legendę czynności (settings_reads), a
+# nie całą migawkę.
 _WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
 _BOARD = _WINDOW | _OWNER
 _SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)

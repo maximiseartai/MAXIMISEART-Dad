@@ -1,6 +1,6 @@
 ---
 name: boat
-description: Gdzie biegnie ciężkie polecenie w tym repozytorium (Mac albo box boat przez `boatbox`) i kiedy rozbić je na kilka boxów. Użyj przed `szybko.py`, `mutacje.py --plik`, pełnym pytestem i każdym innym poleceniem, które obciąży Maca dłużej niż minutę, oraz gdy test pada tylko na boxie.
+description: Ciężkie polecenie - na Macu albo na boxie boat (`boatbox`), także rozbite na kilka boxów. Użyj przed `szybko.py`, `mutacje.py --plik`, pełnym pytestem i innym poleceniem dłuższym niż minuta na Macu, oraz gdy test pada tylko na boxie.
 ---
 
 # Boat
@@ -24,7 +24,6 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 
 `szybko.py` uruchamiaj tak: `boatbox auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8 '.venv/bin/python tools/szybko.py'`.
 Box `large` ma 8 vCPU, a Mac zostaje przy 4 workerach z `czasy_ci.WORKERY_LOKALNE`, więc liczbę workerów boxa podaje tylko `--box-env`.
-Linia `boatbox: auto -> ...` na stderr mówi, gdzie polecenie pobiegło i dlaczego.
 W pomiarze A/B obie strony biegną po kolei na tym samym boxie.
 
 ## Base
@@ -63,8 +62,8 @@ Gdy pokazuje linię `over pace:`, pełny pytest zostaw CI, a `fan` uruchamiaj ty
 
 ## Dane
 
-Na box trafia każdy plik worktree, którego git nie ignoruje, także nieśledzony, a repozytorium jest publiczne.
-Prawdziwe pliki taty, pliki z `config/`, tokeny i treść skrzynki trzymaj poza worktree albo w ścieżkach ignorowanych przez git, a testom na boxie dawaj atrapy i dane syntetyczne.
+Prawdziwe pliki taty, pliki z `config/`, tokeny i treść skrzynki trzymaj poza worktree albo w ścieżkach ignorowanych przez git, bo na box trafia każdy nieignorowany plik, także nieśledzony.
+Testom na boxie dawaj atrapy i dane syntetyczne.
 
 ## Test pada tylko na boxie
 

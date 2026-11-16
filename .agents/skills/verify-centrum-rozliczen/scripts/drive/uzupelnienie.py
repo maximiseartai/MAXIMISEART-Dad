@@ -485,7 +485,8 @@ def _drive_kind(run: Run, page: Page, kind: str, shot: str) -> dict[str, object]
         f"{title}: the server names the row texts by their Plik zbiorczy headers",
     )
     run.check(
-        [column["name"] for column in columns] == list(PRICE_LIST),
+        # AS (Uwagi - kwota), where the Legenda czynności writes, has no name in the fixture's Wzorzec.
+        [column["name"] for column in columns] == [*PRICE_LIST, ""],
         f"{title}: every column N:AP carries its price-list name from row 17 of the Plik zbiorczy",
     )
 

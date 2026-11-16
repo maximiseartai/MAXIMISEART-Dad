@@ -1,6 +1,6 @@
 # Skrzynka Zgłoszeń: issues from Dad's computer
 
-Centrum rozliczeń on Dad's computer sends Zgłoszenia, Kontrole ilości, Logi Uruchomienia and Uwagi taty by itself to issues of the private repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia`, never to this public one ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)).
+Centrum rozliczeń on Dad's computer sends Zgłoszenia, Kontrole ilości, Logi Uruchomienia and Uwagi taty by itself to issues of the private repository `MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia`, labelled `zgloszenie`, `kontrola-ilosci`, `logi-uruchomienia` and `uwaga-taty` (`Label` in `src/rozliczenia/centrum/report_box.py`; Maks creates the labels, Centrum never does), never to this public one ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)).
 What each of them is, [`GLOSSARY.md`](../../GLOSSARY.md) says (Zgłoszenie, Kontrola ilości, Logi Uruchomienia, Archiwum Logów okresu, Kolejka wysyłki); how the queue delivers them, retries and logs its `skrzynka-*` lines, the docstrings of `src/rozliczenia/centrum/outbox.py` and `log.py` say.
 
 ## Dad's data

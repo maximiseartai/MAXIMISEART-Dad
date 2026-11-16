@@ -41,8 +41,11 @@ An open decision that only Maks can make lives as an issue labelled `decyzja-mak
 ## Specs, sub-issues, and dependencies
 
 - A published spec is the parent issue, and each ticket derived from it is a native GitHub sub-issue of that parent, not a standalone issue with only a textual parent link.
-  A `/wayfinder` map is such a parent: its tickets are its sub-issues.
 - Publish tickets in dependency order, blockers first, and add each blocking edge to the blocked ticket as a native dependency: `gh issue create --parent <spec> ...`, then `gh issue edit <blocked> --add-blocked-by <blocker>`.
   A `gh` without these flags takes `gh api repos/{owner}/{repo}/issues/<spec>/sub_issues --method POST --field sub_issue_id=<id>` and `gh api repos/{owner}/{repo}/issues/<blocked>/dependencies/blocked_by --method POST --field issue_id=<id>`, where `<id>` is the numeric issue ID from `gh api repos/{owner}/{repo}/issues/<number> --jq .id`, a 64-bit value passed without narrowing it to a 32-bit integer.
 - Keep a human-readable `Blocked by` section in each ticket body as documentation only: the native sub-issue and dependency relationships are the source of truth.
 - Publishing is done once `gh issue view <spec> --json subIssues` lists every ticket and `gh issue view <ticket> --json blockedBy` lists every blocker of each ticket.
+
+## Wayfinding operations
+
+A `/wayfinder` map is a parent issue as in the section above: its tickets are its sub-issues, linked and blocked the same way.
