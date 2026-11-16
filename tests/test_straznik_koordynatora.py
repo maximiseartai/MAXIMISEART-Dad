@@ -11,7 +11,7 @@ zapisu sesji T3.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from datetime import datetime, timedelta, timezone
 import importlib.util
 import json
@@ -20,6 +20,7 @@ from pathlib import Path
 import subprocess
 import sys
 from types import ModuleType
+from typing import NamedTuple
 
 import pytest
 
@@ -46,7 +47,27 @@ def _load(path: Path) -> ModuleType:
 
 
 straznik = _load(HOOK)
-Seen = straznik.Seen
+
+
+class Seen(NamedTuple):
+    """Stan wątku w scenariuszu testu: status i wiek ruchu w chwili pytania; ``_at`` robi z niego ``updatedAt``."""
+
+    status: str
+    age_s: float
+
+
+def _at(now: float, state: Seen | None) -> object:
+    return None if state is None else straznik.Seen(state.status, now - state.age_s)
+
+
+def decide(parent: Seen, children: Mapping[str, Seen | None], now: float, memory: object) -> list[str]:
+    shown = {name: _at(now, state) for name, state in children.items()}
+    return list(straznik.decide(_at(now, parent), shown, now, memory))
+
+
+def pending(parent: Seen, children: Mapping[str, Seen | None], now: float, memory: object) -> bool:
+    shown = {name: _at(now, state) for name, state in children.items()}
+    return bool(straznik.pending(_at(now, parent), shown, now, memory))
 
 
 def _delegated(*children: str) -> dict[str, object]:
@@ -86,15 +107,15 @@ def test_koordynator_po_turze_przy_dziecku_bez_ruchu_dostaje_jedno_budzenie_z_na
     parent = Seen("completed", 50 * MIN)
     stuck = {CHILD: Seen("running", 46 * MIN)}
 
-    (reason,) = straznik.decide(parent, stuck, 0.0, memory)
+    (reason,) = decide(parent, stuck, 0.0, memory)
     assert CHILD in reason and "bez ruchu od 46 min" in reason
     # Ten sam powód nie budzi drugi raz, choć minuty rosną.
-    assert straznik.decide(parent, {CHILD: Seen("running", 80 * MIN)}, 3600.0, memory) == []
+    assert decide(parent, {CHILD: Seen("running", 80 * MIN)}, 3600.0, memory) == []
 
 
 @pytest.mark.parametrize("status", ["failed", "interrupted"])
 def test_koordynator_ktory_padl_tez_dostaje_budzenie(status: str) -> None:
-    assert straznik.decide(Seen(status, 50 * MIN), {CHILD: Seen("running", 46 * MIN)}, 0.0, straznik.Memory())
+    assert decide(Seen(status, 50 * MIN), {CHILD: Seen("running", 46 * MIN)}, 0.0, straznik.Memory())
 
 
 @pytest.mark.parametrize(
@@ -119,50 +140,50 @@ def test_bez_budzenia_gdy_koordynator_pracuje_albo_nic_nie_stoi(
 ) -> None:
     seen = {CHILD: Seen(child[0], child[1] * MIN)}
 
-    assert straznik.decide(Seen(parent[0], parent[1] * MIN), seen, 0.0, straznik.Memory()) == []
+    assert decide(Seen(parent[0], parent[1] * MIN), seen, 0.0, straznik.Memory()) == []
 
 
 def test_dziecko_skonczone_bez_budzenia_koordynatora_przez_t3_budzi_go_strażnik() -> None:
     memory = straznik.Memory()
-    assert straznik.decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory) == []
+    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory) == []
     # Dziecko skończyło się w 19. minucie, a koordynator nie ruszył od 2. minuty.
-    assert straznik.decide(Seen("completed", 22 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory) == []
+    assert decide(Seen("completed", 22 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory) == []
 
-    (reason,) = straznik.decide(Seen("completed", 37 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 35 * MIN, memory)
+    (reason,) = decide(Seen("completed", 37 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 35 * MIN, memory)
 
     assert CHILD in reason and "16 min temu" in reason and "nie ruszył" in reason
 
 
 def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_potem_przesuwa_ruch_dziecka() -> None:
     memory = straznik.Memory()
-    straznik.decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
     # Dziecko skończyło się w 19. minucie, T3 obudziło koordynatora, a jego tura skończyła się w 21. minucie.
-    straznik.decide(Seen("completed", 4 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 25 * MIN, memory)
+    decide(Seen("completed", 4 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 25 * MIN, memory)
     # Restart T3 w 50. minucie przesuwa ruch skończonego dziecka, ale nie jego koniec.
     later = {CHILD: Seen("completed", 10 * MIN)}
 
-    assert straznik.decide(Seen("completed", 39 * MIN), later, 60 * MIN, memory) == []
-    assert not straznik.pending(Seen("completed", 39 * MIN), later, 60 * MIN, memory)
+    assert decide(Seen("completed", 39 * MIN), later, 60 * MIN, memory) == []
+    assert not pending(Seen("completed", 39 * MIN), later, 60 * MIN, memory)
 
 
 def test_strażnik_ze_startu_sesji_budzi_przy_dziecku_skonczonym_po_ostatnim_ruchu_koordynatora() -> None:
     # Restart T3 przerwał dziecko po ostatniej turze koordynatora; strażnik startuje z wznowioną sesją.
     memory = straznik.Memory()
-    assert straznik.decide(Seen("completed", 30 * MIN), {CHILD: Seen("interrupted", 5 * MIN)}, 0.0, memory) == []
+    assert decide(Seen("completed", 30 * MIN), {CHILD: Seen("interrupted", 5 * MIN)}, 0.0, memory) == []
 
-    assert straznik.decide(Seen("completed", 41 * MIN), {CHILD: Seen("interrupted", 16 * MIN)}, 11 * MIN, memory)
+    assert decide(Seen("completed", 41 * MIN), {CHILD: Seen("interrupted", 16 * MIN)}, 11 * MIN, memory)
 
 
 def test_dziecko_wznowione_przez_koordynatora_budzi_po_swoim_drugim_koncu() -> None:
     memory = straznik.Memory()
-    straznik.decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
     # Pierwszy koniec w 9. minucie, T3 budzi koordynatora, a ten w 12. minucie wznawia dziecko i kończy turę.
-    straznik.decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 10 * MIN, memory)
-    straznik.decide(Seen("completed", 1 * MIN), {CHILD: Seen("preparing", 1 * MIN)}, 13 * MIN, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 10 * MIN, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("preparing", 1 * MIN)}, 13 * MIN, memory)
     # Drugi koniec w 39. minucie, a T3 koordynatora nie budzi.
-    straznik.decide(Seen("completed", 28 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 40 * MIN, memory)
+    decide(Seen("completed", 28 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 40 * MIN, memory)
 
-    (reason,) = straznik.decide(Seen("completed", 44 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 56 * MIN, memory)
+    (reason,) = decide(Seen("completed", 44 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 56 * MIN, memory)
 
     assert "17 min temu" in reason
 
@@ -173,9 +194,9 @@ def test_dwa_budzenia_dzieli_przerwa_a_nowy_powod_po_niej_budzi() -> None:
     first = {CHILD: Seen("running", 50 * MIN)}
     both = {**first, "dziecko-2": Seen("completed", 20 * MIN)}
 
-    assert straznik.decide(parent, first, 0.0, memory)
-    assert straznik.decide(parent, both, straznik.PAUSE_S - 1, memory) == []
-    (reason,) = straznik.decide(parent, both, straznik.PAUSE_S + 1, memory)
+    assert decide(parent, first, 0.0, memory)
+    assert decide(parent, both, straznik.PAUSE_S - 1, memory) == []
+    (reason,) = decide(parent, both, straznik.PAUSE_S + 1, memory)
     assert "dziecko-2" in reason
 
 
@@ -183,9 +204,9 @@ def test_strażnik_konczy_sie_dopiero_gdy_nic_nie_trwa_i_koordynator_ruszyl_po_k
     def after(parent_min: float, status: str, child_min: float) -> bool:
         memory = straznik.Memory()
         child = {CHILD: Seen(status, child_min * MIN)}
-        straznik.decide(Seen("completed", 30 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-        straznik.decide(Seen("completed", parent_min * MIN), child, 10 * MIN, memory)
-        return not straznik.pending(Seen("completed", parent_min * MIN), child, 10 * MIN, memory)
+        decide(Seen("completed", 30 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+        decide(Seen("completed", parent_min * MIN), child, 10 * MIN, memory)
+        return not pending(Seen("completed", parent_min * MIN), child, 10 * MIN, memory)
 
     assert after(1, "completed", 2)
     assert not after(3, "completed", 2)
@@ -195,48 +216,45 @@ def test_strażnik_konczy_sie_dopiero_gdy_nic_nie_trwa_i_koordynator_ruszyl_po_k
 
 def test_po_budzeniu_bez_odpowiedzi_strażnik_nie_ma_juz_czego_pilnowac() -> None:
     memory = straznik.Memory()
-    straznik.decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    straznik.decide(Seen("completed", 22 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("completed", 22 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
     done = {CHILD: Seen("completed", 16 * MIN)}
-    assert straznik.pending(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
+    assert pending(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
 
-    assert straznik.decide(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
-    assert not straznik.pending(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
+    assert decide(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
+    assert not pending(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
 
 
 def test_dziecko_ktorego_t3_nie_pokazuje_przestaje_sie_liczyc_po_limicie() -> None:
     # Dziecko usunięte w trakcie albo środowisko odłączone: t3 thread show kończy się kodem 1.
     memory = straznik.Memory()
     parent = Seen("completed", 5 * MIN)
-    straznik.decide(parent, {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    straznik.decide(parent, {CHILD: None}, 10 * MIN, memory)
+    decide(parent, {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(parent, {CHILD: None}, 10 * MIN, memory)
 
-    assert straznik.pending(parent, {CHILD: None}, 10 * MIN + straznik.LOST_S, memory)
-    assert not straznik.pending(parent, {CHILD: None}, 10 * MIN + straznik.LOST_S + 1, memory)
+    assert pending(parent, {CHILD: None}, 10 * MIN + straznik.LOST_S, memory)
+    assert not pending(parent, {CHILD: None}, 10 * MIN + straznik.LOST_S + 1, memory)
 
 
 def test_dziecko_chwilowo_niewidoczne_ktore_wraca_dalej_jest_pilnowane() -> None:
     memory = straznik.Memory()
-    straznik.decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    assert straznik.decide(Seen("completed", 12 * MIN), {CHILD: None}, 10 * MIN, memory) == []
+    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    assert decide(Seen("completed", 12 * MIN), {CHILD: None}, 10 * MIN, memory) == []
 
-    (reason,) = straznik.decide(Seen("completed", 52 * MIN), {CHILD: Seen("running", 46 * MIN)}, 50 * MIN, memory)
+    (reason,) = decide(Seen("completed", 52 * MIN), {CHILD: Seen("running", 46 * MIN)}, 50 * MIN, memory)
 
     assert "bez ruchu od 46 min" in reason
 
 
-def test_cisza_wszystkiego_co_widac_konczy_strażnika_bez_wzgledu_na_odpowiedzi_t3() -> None:
-    memory = straznik.Memory()
-    stuck = {CHILD: Seen("running", 50 * MIN)}
-    straznik.decide(Seen("completed", 55 * MIN), stuck, 0.0, memory)
-    straznik.observe(None, {}, straznik.QUIET_S, memory)
-    assert not straznik.quiet(straznik.QUIET_S, memory)
+def test_limit_zycia_liczy_sie_od_startu_albo_od_ostatniego_delegate_task() -> None:
+    life = straznik.MAX_LIFE_S
 
-    # Ruch dziecka w połowie ciszy przesuwa jej początek.
-    straznik.decide(Seen("completed", 55 * MIN + straznik.QUIET_S / 2), {CHILD: Seen("running", 0)}, straznik.QUIET_S / 2, memory)
-    straznik.observe(None, {}, straznik.QUIET_S + 1, memory)
-    assert not straznik.quiet(straznik.QUIET_S + 1, memory)
-    assert straznik.quiet(straznik.QUIET_S * 1.5 + 1, memory)
+    assert straznik.alive(0.0, 0.0, life)
+    assert not straznik.alive(0.0, 0.0, life + 1)
+    assert straznik.alive(0.0, 100.0, life + 100)
+    # Strażnik ze startu sesji po zabitym poprzedniku żyje od swojego startu, choć stan jest starszy.
+    assert straznik.alive(100.0, 0.0, life + 50)
+    assert not straznik.alive(100.0, 0.0, life + 101)
 
 
 def test_ustawienia_wpinaja_hook_po_delegate_task_i_na_starcie_sesji() -> None:
@@ -395,3 +413,71 @@ def test_sesja_bez_zleconej_pracy_nie_zostawia_sladu(t3: tuple[Path, dict[str, s
 
     assert _hook(env, {"hook_event_name": "SessionStart", "source": "startup"}).returncode == 0
     assert _rows(Path(env["HOME"])) == []
+
+
+SLOW_T3 = r"""
+import json, sys, time
+from pathlib import Path
+
+here = Path(__file__).parent
+state = json.loads((here / "watki.json").read_text(encoding="utf-8"))
+if sys.argv[1:3] == ["thread", "show"]:
+    # Czas odpytania zmienia się z pytania na pytanie, jak na Macu pod obciążeniem.
+    tick = here / "takt"
+    slow = tick.exists()
+    tick.unlink() if slow else tick.touch()
+    time.sleep(0.15 if slow else 0.0)
+    if sys.argv[3] not in state:
+        sys.exit("Thread is no longer available. Thread ids belong to one environment.")
+    print(json.dumps({"thread": {"threadId": sys.argv[3], **state[sys.argv[3]]}, "messages": []}))
+elif sys.argv[1:3] == ["thread", "send"]:
+    with (here / "wyslane.txt").open("a", encoding="utf-8") as sent:
+        sent.write(sys.argv[4] + "\n")
+"""
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    ("parent", "child"),
+    [
+        ({"status": "completed", "updatedAt": 55}, {"status": "running", "updatedAt": 50}),
+        ({"status": "completed", "updatedAt": 55}, {"status": "running", "updatedAt": 0}),
+        ({"status": "completed", "updatedAt": 55}, {"status": "waiting", "updatedAt": 50}),
+        ({"status": "completed", "updatedAt": 55}, None),
+        ({"status": "completed", "updatedAt": 55}, {"status": "completed", "updatedAt": 20}),
+        ({"status": "running", "updatedAt": 0}, {"status": "running", "updatedAt": 50}),
+        (None, {"status": "running", "updatedAt": 50}),
+    ],
+    ids=[
+        "dziecko-stoi-po-budzeniu",
+        "dziecko-pracuje",
+        "dziecko-czeka-na-odpowiedz",
+        "dziecka-nie-widac",
+        "dziecko-skonczone-bez-odpowiedzi-koordynatora",
+        "koordynator-pracuje",
+        "koordynatora-nie-widac",
+    ],
+)
+def test_strażnik_konczy_sie_w_limicie_zycia_w_kazdym_stanie_dziecka_i_przy_zmiennym_czasie_odpytania(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, parent: dict[str, object] | None, child: dict[str, object] | None
+) -> None:
+    # Nic w T3 się nie rusza, a koordynator nie odpowiada na budzenie; zostaje tylko granica życia.
+    def ago(state: dict[str, object]) -> dict[str, object]:
+        return {**state, "updatedAt": _ago(float(str(state["updatedAt"])))}
+
+    program = fake_cli(tmp_path / "bin", "t3", SLOW_T3)
+    threads = {name: ago(state) for name, state in ((PARENT, parent), (CHILD, child)) if state is not None}
+    (tmp_path / "bin" / "watki.json").write_text(json.dumps(threads), encoding="utf-8")
+    monkeypatch.setenv("HOME", str(tmp_path / "dom"))
+    monkeypatch.setenv(straznik.STEP_ENV, "0.1")
+    monkeypatch.setattr(straznik, "MAX_LIFE_S", 2.0)
+    monkeypatch.setattr(straznik, "LOST_S", 3600.0)
+    kids, _, log = straznik._files(PARENT)
+    kids.parent.mkdir(parents=True)
+    kids.write_text(f"{CHILD}\n", encoding="utf-8")
+
+    assert straznik.watch(PARENT, str(program)) == 0
+
+    (end,) = [row for row in map(json.loads, log.read_text(encoding="utf-8").splitlines()) if row["zdarzenie"] == "koniec"]
+    assert str(end["powod"]).startswith(("limit życia", "nie ma czego pilnować"))
+    assert not kids.exists()

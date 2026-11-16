@@ -15,20 +15,22 @@ program T3 to ``T3CODE_CLI_PATH``, oba ze środowiska, które T3 daje sesji: bez
 taty) i na Windows hook nic nie robi. Stan, blokada i dziennik leżą w ``~/.cache/maximiseart/straznik/`` (``STATE``),
 plik na wątek nazwany skrótem jego identyfikatora.
 
-Strażnik (``pilnuj <wątek>``) to proces z ``potomne.detach``, więc koniec Claude Code go nie kończy. Co ``STEP_S``
-sekund pyta ``t3 thread show`` o wątek i każde dziecko (status i ``updatedAt``, czyli chwilę ostatniego ruchu):
+Strażnik (``pilnuj <wątek>``) to proces z ``potomne.detach``, więc koniec Claude Code go nie kończy. Żyje najwyżej
+``MAX_LIFE_S`` od swojego startu albo od ostatniego ``delegate_task`` wątku (czas zmiany pliku ``.dzieci``), cokolwiek
+odpowiada T3 i jakkolwiek wolno: to warunek jego pętli (``alive``), a nowe życie daje tylko nowe ``delegate_task`` albo
+``SessionStart`` po zabitym strażniku. Co ``STEP_S`` sekund pyta ``t3 thread show`` o wątek i każde dziecko; ``Seen``
+niesie ``updatedAt`` z T3 (chwilę ostatniego ruchu wątku), a każdy wiek liczy się z jednego ``now`` pytania, więc
+czas samego odpytania niczego nie przesuwa:
 
 - ``decide`` budzi wątek (``t3 thread send``), gdy wątek skończył turę (status z ``FINISHED``, także ``failed`` i
   ``interrupted``), a dziecko trwa bez ruchu dłużej niż ``CHILD_STALE_S`` albo skończyło się ponad ``WAKE_S`` temu, a
-  wątek od tego czasu nie ruszył, czyli T3 go nie obudził (``stalled``; koniec dziecka daje ``observe``);
+  wątek od tego czasu nie ruszył, czyli T3 go nie obudził (``stalled``; koniec dziecka zapisuje ``observe``);
 - tego samego powodu (dziecko i rodzaj powodu) nie powtarza, a dwa budzenia dzieli ``PAUSE_S``;
 - wątek ``running`` bez ruchu dłużej niż ``STUCK_S`` tylko zapisuje w dzienniku, bo wiadomość do zajętego wątku
   czeka na jego następną turę;
-- kończy się i usuwa stan wątku (plik ``.dzieci``), gdy nie ma już czego pilnować (``pending``: żadne dziecko nie
-  trwa, a po każdym końcu dziecka wątek ruszył albo dostał budzenie), a także po ``QUIET_S`` bez żadnego ruchu wątku i
-  dzieci, które strażnik widzi, co ogranicza jego życie bez względu na to, co T3 odpowiada; dziecko, którego
-  ``t3 thread show`` nie pokazuje (usunięte, środowisko odłączone) dłużej niż ``LOST_S``, przestaje się liczyć;
-- kończy się także, gdy ktoś usunie plik ``.dzieci``.
+- kończy się wcześniej, gdy nie ma już czego pilnować (``pending``: żadne dziecko nie trwa, a po każdym końcu dziecka
+  wątek ruszył albo dostał budzenie; dziecko, którego ``t3 thread show`` nie pokazuje dłużej niż ``LOST_S``, przestaje
+  się liczyć); każdy koniec poza usunięciem pliku ``.dzieci`` usuwa ten plik.
 
 Granica: dzieci to tylko wątki z ``childThreadId`` w odpowiedzi ``delegate_task``; dziecko w innym środowisku (og-box)
 ma ``childThreadId`` null, a jego identyfikator należy do tamtego środowiska, więc strażnik go nie pilnuje; podagent
@@ -69,7 +71,7 @@ WAKE_S = 15 * 60
 PAUSE_S = 30 * 60
 STUCK_S = 60 * 60
 LOST_S = 30 * 60
-QUIET_S = 6 * 60 * 60
+MAX_LIFE_S = 12 * 60 * 60
 # Status wątku T3 po końcu tury; każdy inny (running, waiting na odpowiedź, preparing, nieznany) znaczy, że wątek trwa.
 FINISHED = frozenset({"completed", "failed", "interrupted", "cancelled"})
 NO_STATE = "bez stanu"
@@ -78,50 +80,41 @@ NUDGE = "Strażnik koordynatora (tools/hooks/straznik_koordynatora.py):"
 
 @dataclass(frozen=True)
 class Seen:
-    """Stan wątku z ``t3 thread show``: status i sekundy od jego ostatniego ruchu (``updatedAt``)."""
+    """Stan wątku z ``t3 thread show``: status i ``updatedAt`` w sekundach epoki Uniksa."""
 
     status: str
-    age_s: float
+    updated: float
+
+    def age(self, now: float) -> float:
+        return now - self.updated
 
 
 @dataclass
 class Memory:
-    """Co strażnik pamięta między pytaniami (chwile na zegarze strażnika): koniec każdego dziecka, od kiedy dziecka nie
-    widać, ostatni ruch każdego wątku i chwilę ostatniego ruchu w ogóle, klucze powodów, z którymi już budził, i chwilę
-    ostatniego budzenia."""
+    """Co strażnik pamięta między pytaniami: koniec każdego dziecka (``updatedAt``), od kiedy dziecka nie widać, klucze
+    powodów, z którymi już budził, i chwilę ostatniego budzenia."""
 
     ended: dict[str, float] = field(default_factory=dict)
     unseen: dict[str, float] = field(default_factory=dict)
-    moves: dict[str, float] = field(default_factory=dict)
-    last_change: float | None = None
     told: set[str] = field(default_factory=set)
     last_nudge: float = float("-inf")
 
 
-def observe(parent: Seen | None, children: dict[str, Seen | None], now: float, memory: Memory) -> None:
+def observe(children: dict[str, Seen | None], now: float, memory: Memory) -> None:
     """Dziecko ``None`` to dziecko, którego ``t3 thread show`` nie pokazuje (usunięte, środowisko odłączone, T3 nie
-    odpowiada). Zapisuje koniec dziecka z jego ``updatedAt`` przy pierwszym pytaniu, na które dziecko jest skończone, i potem go
-    nie zmienia, bo ``updatedAt`` skończonego wątku T3 przesuwa się później także bez jego pracy (restart T3); dziecko,
-    które znów trwa (wznowione przez koordynatora), traci zapisany koniec. Zapisuje też, od kiedy dziecka nie widać
-    (``None``: ``t3 thread show`` go nie pokazuje), i chwilę ostatniego ruchu wątku albo dziecka, które widać."""
+    odpowiada). Zapisuje koniec dziecka z jego ``updatedAt`` przy pierwszym pytaniu, na które dziecko jest skończone, i
+    potem go nie zmienia, bo ``updatedAt`` skończonego wątku T3 przesuwa się później także bez jego pracy (restart T3);
+    dziecko, które znów trwa (wznowione przez koordynatora), traci zapisany koniec."""
 
-    if memory.last_change is None:
-        memory.last_change = now
-    for name, state in {"": parent, **children}.items():
+    for name, state in children.items():
         if state is None:
             memory.unseen.setdefault(name, now)
             continue
         memory.unseen.pop(name, None)
-        moved = now - state.age_s
-        if name in memory.moves and abs(moved - memory.moves[name]) > 1:
-            memory.last_change = now
-        memory.moves[name] = moved
-        if not name:
-            continue
         if state.status not in FINISHED:
             memory.ended.pop(name, None)
         elif name not in memory.ended:
-            memory.ended[name] = moved
+            memory.ended[name] = state.updated
 
 
 def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: Memory) -> dict[str, str]:
@@ -132,9 +125,9 @@ def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
         ended = memory.ended.get(child)
         if state is None:
             continue
-        if state.status not in FINISHED and state.age_s > CHILD_STALE_S:
-            reasons[f"{child} stoi"] = f"dziecko {child} ({state.status}) bez ruchu od {int(state.age_s // 60)} min"
-        elif ended is not None and WAKE_S < now - ended < parent.age_s:
+        if state.status not in FINISHED and state.age(now) > CHILD_STALE_S:
+            reasons[f"{child} stoi"] = f"dziecko {child} ({state.status}) bez ruchu od {int(state.age(now) // 60)} min"
+        elif ended is not None and WAKE_S < now - ended and parent.updated < ended:
             reasons[f"{child} bez budzenia"] = (
                 f"dziecko {child} skończyło się statusem {state.status} {int((now - ended) // 60)} min temu, a ten "
                 "wątek od tego czasu nie ruszył"
@@ -145,7 +138,7 @@ def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
 def decide(parent: Seen, children: dict[str, Seen | None], now: float, memory: Memory) -> list[str]:
     """Powody, z którymi budzić wątek teraz (pusta lista: nie budzić); zapamiętuje to pytanie i budzenie w ``memory``."""
 
-    observe(parent, children, now, memory)
+    observe(children, now, memory)
     fresh = {key: text for key, text in stalled(parent, children, now, memory).items() if key not in memory.told}
     if parent.status not in FINISHED or not fresh or now - memory.last_nudge < PAUSE_S:
         return []
@@ -164,15 +157,16 @@ def pending(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
                 return True
         elif state.status not in FINISHED:
             return True
-        elif child in memory.ended and parent.age_s >= now - memory.ended[child] and f"{child} bez budzenia" not in memory.told:
+        elif child in memory.ended and parent.updated <= memory.ended[child] and f"{child} bez budzenia" not in memory.told:
             return True
     return False
 
 
-def quiet(now: float, memory: Memory) -> bool:
-    """Czy od ostatniego ruchu wątku albo dziecka, które strażnik widział, minęło ponad ``QUIET_S`` (po ``observe``)."""
+def alive(started: float, armed: float, now: float) -> bool:
+    """Czy strażnik może jeszcze żyć: od jego startu albo od ostatniego ``delegate_task`` (``armed``) minęło najwyżej
+    ``MAX_LIFE_S``."""
 
-    return memory.last_change is not None and now - memory.last_change > QUIET_S
+    return now - max(started, armed) <= MAX_LIFE_S
 
 
 def message(reasons: list[str]) -> str:
@@ -264,7 +258,7 @@ def _show(cli: str, thread: str) -> Seen | None:
             raise ValueError(f"kod {shown.returncode}: {shown.stderr.strip()}")
         state = json.loads(shown.stdout)["thread"]
         moved = datetime.fromisoformat(str(state["updatedAt"]).replace("Z", "+00:00"))
-        return Seen(str(state["status"]), (datetime.now(timezone.utc) - moved).total_seconds())
+        return Seen(str(state["status"]), moved.timestamp())
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
         print(f"straznik_koordynatora: t3 thread show {thread}: {error!r}", file=sys.stderr)
         return None
@@ -279,32 +273,30 @@ def watch(thread: str, cli: str) -> int:
             return 0
         _log(log, zdarzenie="start", pid=os.getpid())
         step = float(os.environ.get(STEP_ENV) or STEP_S)
-        memory = Memory()
+        memory, started = Memory(), time.time()
         while True:
             try:
                 names = list(dict.fromkeys(kids.read_text(encoding="utf-8").split()))
+                armed = kids.stat().st_mtime
             except FileNotFoundError:
-                break
+                _log(log, zdarzenie="koniec", powod="stan wątku usunięty")
+                return 0
+            if not alive(started, armed, time.time()):
+                return _finish(kids, log, f"limit życia: {int(MAX_LIFE_S // 3600)} h od startu i od ostatniego delegate_task")
             parent = _show(cli, thread)
             children = {name: _show(cli, name) for name in names} if parent is not None else {}
-            now = time.monotonic()
-            if parent is None:
-                observe(None, {}, now, memory)
-            else:
-                if parent.status == "running" and parent.age_s > STUCK_S and "zastój" not in memory.told:
+            now = time.time()
+            if parent is not None:
+                if parent.status == "running" and parent.age(now) > STUCK_S and "zastój" not in memory.told:
                     memory.told.add("zastój")
-                    _log(log, zdarzenie="zastój", szczegoly=f"wątek running bez ruchu od {int(parent.age_s // 60)} min")
+                    _log(log, zdarzenie="zastój", szczegoly=f"wątek running bez ruchu od {int(parent.age(now) // 60)} min")
                 reasons = decide(parent, children, now, memory)
                 if reasons:
                     sent = potomne.run([cli, "thread", "send", thread, message(reasons)], cwd=Path.home(), timeout=60)
                     _log(log, zdarzenie="budzenie", powody=reasons, kod=sent.returncode)
                 elif not pending(parent, children, now, memory):
                     return _finish(kids, log, "nie ma czego pilnować: nic nie trwa ani nie czeka na budzenie")
-            if quiet(now, memory):
-                return _finish(kids, log, f"cisza: bez ruchu wątku i dzieci od {int(QUIET_S // 3600)} h")
-            time.sleep(step)
-        _log(log, zdarzenie="koniec", powod="stan wątku usunięty")
-        return 0
+            time.sleep(max(0.0, min(step, max(started, armed) + MAX_LIFE_S - time.time())))
 
 
 def _finish(kids: Path, log: Path, reason: str) -> int:
