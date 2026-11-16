@@ -42,9 +42,10 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
      ```
 
    - Przeżyte mutanty nocy: wystąpienie to PR z tytułu issue i rodzaj linii, której zmiany żaden test nie widzi, a jeden PR to jedno wystąpienie, ile by miał mutantów.
-     Linia, na którą komentarz agenta odpowiada `MUTACJA <plik>:<linia> <opis> | wykryta, …` albo `| nie warto, bo …`, wystąpieniem nie jest, chyba że późniejszy komentarz tę odpowiedź odwołuje: test już ją widzi, wykrywa ją brama typów albo jej zmiana niczego nie zmienia, a noc zgłosiła ją po limicie czasu albo jako mutację równoważną.
-     Issue, w którym tak odpowiedziano na każdą linię, nie daje wystąpienia, a linie bez takiej odpowiedzi (z testem w PR albo jeszcze bez odpowiedzi) dają je jak dotąd.
-     W polowaniu 2026-11-09 tak odpowiedziano na każdą linię w 39 z 88 issues, a klasa Atrapy efenix, liczona bez komentarzy, miała 12 wystąpień zamiast 3 (#784, #914, #1027).
+     Linia zgłoszona przez noc to każda linia bloku kodu w treści issue i w komentarzach `github-actions`, każdego rodzaju, który noc pisze (dziś `MUTACJA`, `SKRYPT` i `CZAS BLISKO LIMITU`).
+     Wystąpieniem nie jest linia, na którą komentarz agenta odpowiada jej tekstem (bez ` | klucz …`) z dopiskiem `| wykryta…` albo `| nie warto…`, chyba że późniejszy komentarz tę odpowiedź odwołuje: test albo brama typów już ją widzi, jej zmiana niczego nie zmienia albo skrypt skilla padł z powodu, który nie jest luką.
+     Issue, w którym tak odpowiedziano na każdą linię nocy, nie daje wystąpienia, a linie bez takiej odpowiedzi (z poprawką w PR albo jeszcze bez odpowiedzi) dają je jak dotąd.
+     W polowaniu 2026-11-09 tak odpowiedziano na każdą linię w 38 z 88 issues, a 14 issues z liniami Atrapy efenix daje 4 wystąpienia (#784, #914, #1027, #1084).
 
      ```bash
      gh issue list --label przezyte-mutacje --state all --search 'created:<poniedziałek>..<niedziela>' --limit 200 --json number,title,body,state,comments > <bieg>/mutanty.json
