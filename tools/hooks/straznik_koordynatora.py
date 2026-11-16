@@ -30,12 +30,18 @@ wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się
 - ``decide`` budzi wątek (``t3 thread send``), gdy wątek skończył turę (status z ``FINISHED``, także ``failed`` i
   ``interrupted``), a dziecko trwa bez ruchu dłużej niż ``CHILD_STALE_S`` albo skończyło się ponad ``WAKE_S`` temu, a
   powiadomienie o jego końcu do wątku nie dotarło (``stalled``; koniec dziecka zapisuje ``observe``);
-- powiadomienie dotarło, gdy po końcu dziecka transkrypt wątku ma wpis ``user`` ze znakiem dziecka (``marks``:
-  identyfikator bez przedrostka ``thread:``, który mają powiadomienie ``Delegated task`` i odpowiedź ``task_status``,
-  albo ``(`` z początkiem tytułu, który ma powiadomienie po ``t3_thread_send``); czyta go ``hear`` od miejsca, w którym
-  skończył, a ścieżkę daje ostatnia linia pliku ``.transkrypt``, którą hook dopisuje z ``transcript_path`` wejścia.
-  Sam ruch wątku nie wystarcza, bo koordynator zajęty innymi dziećmi rusza się także wtedy, gdy T3 powiadomienie
-  zgubiło (9.11.2026 gotowy wynik przeglądu PR czekał przez to godzinę); bez transkryptu dotarciem jest ruch wątku;
+- powiadomienie dotarło, gdy w transkrypcie wątku po ostatnim starcie dziecka stoi wpis ``user`` z jego znakiem
+  (``hear``, kolejność wpisów w pliku, bez zegara): startem jest odpowiedź narzędzia z ``STARTS`` (``delegate_task``
+  i ``t3_thread_send``, rozpoznane po ``tool_use_id`` wywołania z transkryptu), z której ``t3_thread_send`` strażnik
+  bierze znak kolejnego biegu (``SEND``), a odczyt dziecka w toku (``WORKING``) nie kończy czekania; znakiem jest identyfikator dziecka bez przedrostka ``thread:`` (powiadomienie ``Delegated task``
+  pierwszego biegu, odczyt ``task_status`` albo ``t3_thread_read``) i znak biegu z ``SEND`` (powiadomienie po
+  ``t3_thread_send``). Kolejność, nie chwila, bo T3 przesuwa ``updatedAt`` skończonego dziecka po powiadomieniu
+  (rozliczenie dzieci przy końcu rodzeństwa, restart), więc nowy pilnujący widziałby powiadomienie „przed końcem”.
+  Ścieżki dają linie pliku ``.transkrypt``, które hook dopisuje z ``transcript_path`` wejścia; strażnik czyta każdy
+  transkrypt w kolejności dopisania, od miejsca, w którym skończył, bo dziecko zlecone w starej sesji ma tam swój
+  start i powiadomienie. Dziecko bez wpisu w transkryptach czeka na powiadomienie. Sam ruch wątku nie wystarcza, bo
+  koordynator zajęty innymi dziećmi rusza się także wtedy, gdy T3 powiadomienie zgubiło (9.11.2026 gotowy wynik
+  przeglądu PR czekał przez to godzinę); bez transkryptu dotarciem jest ruch wątku po końcu dziecka;
 - tego samego powodu (dziecko i rodzaj powodu) nie powtarza, a dwa budzenia dzieli ``PAUSE_S``;
 - wątek ``running`` bez ruchu dłużej niż ``STUCK_S`` tylko zapisuje w dzienniku, bo wiadomość do zajętego wątku
   czeka na jego następną turę;
@@ -46,23 +52,27 @@ wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się
 Granica: dzieci to tylko wątki z ``childThreadId`` w odpowiedzi ``delegate_task``; dziecko w innym środowisku (og-box)
 ma ``childThreadId`` null, a jego identyfikator należy do tamtego środowiska, więc strażnik go nie pilnuje; podagent
 narzędzia Agent biegnie w procesie koordynatora i nie ma wątku, więc strażnik go nie widzi. Koordynator stojący przy
-gotowym PR bez żywego dziecka nie dostaje budzenia. Pliki ``.dzieci`` i ``.transkrypt`` rosną o linię na zlecenie i
-nikt ich nie skraca; przez całe życie pilnującego obok śpi najwyżej jeden czekający proces. Wpis ``user``, który ma znak
-dziecka z innego powodu (odczyt wątku, który je cytuje), uznaje powiadomienie za dotarłe i ukrywa jego brak, a bez
-transkryptu to samo robi T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury. Uruchamia go
-systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version`` w ``pyproject.toml``),
+gotowym PR bez żywego dziecka nie dostaje budzenia. Plik ``.dzieci`` rośnie o linię na zlecenie, a ``.transkrypt`` o
+linię na nową sesję wątku, i nikt ich nie skraca; przez całe życie pilnującego obok śpi najwyżej jeden czekający
+proces. Znakiem jest identyfikator, nie tytuł, więc powiadomienie o rodzeństwie o tym samym początku tytułu nie kończy
+czekania. Wpis ``user``, który ma znak dziecka z innego powodu (odczyt wątku, który je cytuje), uznaje powiadomienie za
+dotarłe i ukrywa jego brak; bieg, który T3 wznowi samo (bez ``t3_thread_send``), nie ma startu w transkrypcie, więc
+powiadomienie poprzedniego biegu ukrywa brak jego powiadomienia; koordynator, który przeczytał wynik inną drogą
+(werdykt na GitHubie), dostaje jedno zbędne budzenie. Bez transkryptu brak powiadomienia ukrywa też T3, które przy
+końcu dziecka dopisze coś do wątku rodzica bez jego tury. Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version`` w ``pyproject.toml``),
 a plik importuje tylko bibliotekę standardową i ``potomne``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable
 import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -91,18 +101,22 @@ LOST_S = 30 * 60
 MAX_LIFE_S = 12 * 60 * 60
 # Status wątku T3 po końcu tury; każdy inny (running, waiting na odpowiedź, preparing, nieznany) znaczy, że wątek trwa.
 FINISHED = frozenset({"completed", "failed", "interrupted", "cancelled"})
-# Tyle znaków tytułu dziecka niesie znak ``(`` z tytułem; T3 skraca długi tytuł w powiadomieniu dopiero za nimi.
-TITLE_CHARS = 30
+# Narzędzia, których odpowiedź to start biegu dziecka: zlecenie i wiadomość do dziecka.
+STARTS = frozenset({DELEGATE, "mcp__t3-code__t3_thread_send"})
+# Odczyt dziecka w toku (task_status przed jego końcem, JSON w tekście): nie jest powiadomieniem o końcu.
+WORKING = re.compile(r"workState\W+working")
+# Odpowiedź t3_thread_send: identyfikator wiadomości kolejnego biegu, który niesie potem jego powiadomienie.
+SEND = re.compile(r"thread-send:([0-9a-f-]{36})")
+NOTICE = "Delegated task "
 NUDGE = "Strażnik koordynatora (tools/hooks/straznik_koordynatora.py):"
 
 
 @dataclass(frozen=True)
 class Seen:
-    """Stan wątku z ``t3 thread show``: status, ``updatedAt`` w sekundach epoki Uniksa i tytuł."""
+    """Stan wątku z ``t3 thread show``: status i ``updatedAt`` w sekundach epoki Uniksa."""
 
     status: str
     updated: float
-    title: str = ""
 
     def age(self, now: float) -> float:
         return now - self.updated
@@ -111,58 +125,89 @@ class Seen:
 @dataclass
 class Memory:
     """Co strażnik pamięta między pytaniami: koniec każdego dziecka (``updatedAt``), od kiedy dziecka nie widać, klucze
-    powodów, z którymi już budził, chwilę ostatniego budzenia i ostatni wpis transkryptu wątku ze znakiem każdego
-    dziecka (``heard``; ``None``: transkryptu nie ma, więc dotarciem powiadomienia jest ruch wątku)."""
+    powodów, z którymi już budził, chwilę ostatniego budzenia, czy po ostatnim starcie dziecka dotarł do transkryptu
+    wątku wpis z jego znakiem (``heard``; ``None``: transkryptu nie ma, więc dotarciem jest ruch wątku) i znaki biegów
+    każdego dziecka po ``t3_thread_send`` (``runs``) z identyfikatorami wywołań narzędzi ``STARTS`` (``starts``)."""
 
     ended: dict[str, float] = field(default_factory=dict)
     unseen: dict[str, float] = field(default_factory=dict)
     told: set[str] = field(default_factory=set)
     last_nudge: float = float("-inf")
-    heard: dict[str, float] | None = None
+    heard: dict[str, bool] | None = None
+    runs: dict[str, set[str]] = field(default_factory=dict)
+    starts: set[str] = field(default_factory=set)
 
 
 def unheard(child: str, parent: Seen, memory: Memory) -> bool:
     """Czy po zapisanym końcu dziecka powiadomienie o nim nie dotarło do wątku ``parent``."""
 
-    ended = memory.ended[child]
-    last = parent.updated if memory.heard is None else memory.heard.get(child, float("-inf"))
-    return last < ended
+    if memory.heard is None:
+        return parent.updated < memory.ended[child]
+    return not memory.heard.get(child, False)
 
 
-def marks(child: str, title: str) -> tuple[str, ...]:
-    """Znaki dziecka we wpisie transkryptu rodzica: identyfikator bez przedrostka rodzaju i ``(`` z początkiem tytułu,
-    ten drugi także w postaci, w której JSON zapisuje litery spoza ASCII jako ``\\u…``."""
+def mark(child: str) -> str:
+    """Znak dziecka we wpisie transkryptu rodzica: identyfikator bez przedrostka ``thread:``, który mają też
+    ``taskId`` pierwszego biegu i powiadomienie o nim."""
 
     kind, _, rest = child.partition(":")
-    found = [rest if kind == "thread" and rest else child]
-    if title:
-        sign = "(" + title[:TITLE_CHARS]
-        found += dict.fromkeys([sign, json.dumps(sign)[1:-1]])
-    return tuple(found)
+    return rest if kind == "thread" and rest else child
 
 
-def hear(path: Path, offset: int, signs: Mapping[str, tuple[str, ...]], heard: dict[str, float]) -> int:
-    """Czyta transkrypt od bajtu ``offset`` do ostatniej pełnej linii i zapisuje w ``heard`` chwilę każdego wpisu
-    ``user`` ze znakiem dziecka; zwraca miejsce, od którego czytać następnym razem."""
+def _uses(entry: dict[str, object], kind: str, field_name: str) -> list[str]:
+    """Wartości pola ``field_name`` bloków ``kind`` treści wpisu (``tool_use``: ``id``, ``tool_result``:
+    ``tool_use_id``); ``name`` bloku ``tool_use`` musi stać w ``STARTS``."""
 
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    blocks = [block for block in content if isinstance(block, dict)] if isinstance(content, list) else []
+    return [
+        str(block.get(field_name))
+        for block in blocks
+        if block.get("type") == kind and (kind != "tool_use" or block.get("name") in STARTS)
+    ]
+
+
+def hear(path: Path, offset: int, children: Iterable[str], memory: Memory) -> int:
+    """Czyta transkrypt od bajtu ``offset`` do ostatniej pełnej linii i dla każdego wpisu ``user`` ze znakiem dziecka
+    zapisuje w ``memory.heard``, czy to start (``False``: odpowiedź narzędzia z ``STARTS`` albo odczyt dziecka w toku)
+    czy wiadomość po starcie (``True``); zwraca miejsce, od którego czytać następnym razem."""
+
+    heard = memory.heard if memory.heard is not None else {}
+    memory.heard = heard
     with path.open("rb") as handle:
         handle.seek(offset)
         data = handle.read()
     complete = data[: data.rfind(b"\n") + 1]
     for raw in complete.splitlines():
         line = raw.decode("utf-8", errors="replace")
-        found = [child for child, signs_of in signs.items() if any(sign in line for sign in signs_of)]
-        if not found:
+        calls = any(name in line for name in STARTS)
+        found = [
+            child for child in children if mark(child) in line or any(run in line for run in memory.runs.get(child, ()))
+        ]
+        if not found and not calls:
             continue
         try:
             entry = json.loads(line)
-            moment = datetime.fromisoformat(str(entry["timestamp"]).replace("Z", "+00:00")).timestamp()
-        except (ValueError, KeyError, TypeError, RecursionError):
+        except (ValueError, RecursionError):
             continue
-        if not isinstance(entry, dict) or entry.get("type") != "user":
+        if not isinstance(entry, dict):
             continue
+        if entry.get("type") == "assistant":
+            memory.starts.update(_uses(entry, "tool_use", "id"))
+        if entry.get("type") != "user" or not found:
+            continue
+        started = any(use in memory.starts for use in _uses(entry, "tool_result", "tool_use_id"))
+        sent = SEND.findall(line) if started else []
         for child in found:
-            heard[child] = max(heard.get(child, moment), moment)
+            if NOTICE in line and not started:
+                heard[child] = True
+            elif started:
+                if sent:
+                    memory.runs.setdefault(child, set()).update(sent)
+                heard[child] = False
+            else:
+                heard[child] = not WORKING.search(line)
     return offset + len(complete)
 
 
@@ -343,20 +388,21 @@ def _show(cli: str, thread: str) -> Seen | None:
             raise ValueError(f"kod {shown.returncode}: {shown.stderr.strip()}")
         state = json.loads(shown.stdout)["thread"]
         moved = datetime.fromisoformat(str(state["updatedAt"]).replace("Z", "+00:00"))
-        return Seen(str(state["status"]), moved.timestamp(), str(state.get("title") or ""))
+        return Seen(str(state["status"]), moved.timestamp())
     except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError) as error:
         print(f"straznik_koordynatora: t3 thread show {thread}: {error!r}", file=sys.stderr)
         return None
 
 
-def _transcript(files: Files) -> Path | None:
-    """Transkrypt wątku z ostatniej linii pliku ``.transkrypt`` (``None``: hook go nie podał)."""
+def _transcripts(files: Files) -> list[Path]:
+    """Transkrypty sesji wątku z pliku ``.transkrypt`` w kolejności dopisania, bez powtórzeń (pusta lista: hook żadnego
+    nie podał)."""
 
     try:
         lines = files.transcript.read_text(encoding="utf-8").splitlines()
     except OSError:
-        return None
-    return Path(lines[-1]) if lines and lines[-1] else None
+        return []
+    return [Path(line) for line in dict.fromkeys(lines) if line]
 
 
 def _send(cli: str, thread: str, text: str) -> int:
@@ -385,7 +431,7 @@ def watch(thread: str, cli: str, files: Files) -> int:
     step = float(os.environ.get(STEP_ENV) or STEP_S)
     life = float(os.environ.get(LIFE_ENV) or MAX_LIFE_S)
     memory = Memory()
-    transcript, offset, titles = None, 0, {}
+    offsets: dict[Path, int] = {}
     while True:
         try:
             text = files.kids.read_text(encoding="utf-8")
@@ -397,16 +443,10 @@ def watch(thread: str, cli: str, files: Files) -> int:
             return 0
         parent = _show(cli, thread)
         children = {name: _show(cli, name) for name in names} if parent is not None else {}
-        latest = _transcript(files)
-        if latest is not None and latest != transcript:
-            # Nowa sesja wątku pisze nowy transkrypt; to, co dotarło do starego, dalej dotarło.
-            transcript, offset = latest, 0
-            memory.heard = {} if memory.heard is None else memory.heard
-        titles.update({name: state.title for name, state in children.items() if state is not None and state.title})
-        if transcript is not None and memory.heard is not None:
-            signs = {name: marks(name, titles.get(name, "")) for name in names}
+        # Każda sesja wątku pisze swój transkrypt; dziecko zlecone w starej sesji ma tam swój start i powiadomienie.
+        for transcript in _transcripts(files):
             try:
-                offset = hear(transcript, offset, signs, memory.heard)
+                offsets[transcript] = hear(transcript, offsets.get(transcript, 0), names, memory)
             except OSError as error:
                 print(f"straznik_koordynatora: transkrypt {transcript}: {error!r}", file=sys.stderr)
         now = time.time()
@@ -445,7 +485,7 @@ def main(argv: list[str]) -> int:
         if new:
             record(files, new, time.time())
         transcript = fields.get("transcript_path")
-        if isinstance(transcript, str) and transcript and _transcript(files) != Path(transcript):
+        if isinstance(transcript, str) and transcript and Path(transcript) not in _transcripts(files):
             with files.transcript.open("a", encoding="utf-8") as handle:
                 handle.write(transcript + "\n")
         done = f"strażnik uruchomiony (PID {_start(thread, files)})"

@@ -158,7 +158,7 @@ def test_dziecko_skonczone_bez_budzenia_koordynatora_przez_t3_budzi_go_strażnik
 
 def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dostaje_budzenie() -> None:
     # Przegląd PR skończył się w 19. minucie, T3 zgubiło powiadomienie, a koordynator pracował dalej przy innych
-    # dzieciach (ruch w 33. minucie) i uważał przegląd za trwający.
+    # dzieciach (ruch w 33. minucie) i uważał przegląd za trwający; w transkrypcie nie ma wpisu o dziecku po starcie.
     memory = straznik.Memory(heard={})
     decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
     decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
@@ -170,58 +170,85 @@ def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dos
     assert CHILD in reason and "nie dotarło" in reason
 
 
-def test_powiadomienie_o_koncu_dziecka_w_transkrypcie_konczy_pilnowanie_bez_budzenia() -> None:
-    memory = straznik.Memory(heard={})
-    decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
-    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
-    assert memory.heard is not None
-    # Wpis z powiadomieniem przyszedł w 19,5. minucie, pół minuty po końcu dziecka, a koordynator potem nie ruszył.
-    memory.heard[CHILD] = 19.5 * MIN
-    done = {CHILD: Seen("completed", 16 * MIN)}
-
-    assert decide(Seen("completed", 15 * MIN), done, 35 * MIN, memory) == []
-    assert not pending(Seen("completed", 15 * MIN), done, 35 * MIN, memory)
+def _stamp(minute: float) -> str:
+    return (datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc) + timedelta(minutes=minute)).isoformat().replace("+00:00", "Z")
 
 
-def test_znaki_dziecka_to_identyfikator_bez_przedrostka_i_poczatek_tytulu() -> None:
-    title = "Przegląd wymyślonego PR runda 1 (granica kolejki)"
-
-    assert straznik.marks(CHILD, title) == (
-        "delegated-task:dziecko-wymyslone-1",
-        "(Przegląd wymyślonego PR runda ",
-        "(Przegl\\u0105d wymy\\u015blonego PR runda ",
-    )
-    assert straznik.marks(CHILD, "Bieg 7") == ("delegated-task:dziecko-wymyslone-1", "(Bieg 7")
-    assert straznik.marks("dziecko-2", "") == ("dziecko-2",)
+def _row(kind: str, stamp: str, content: object) -> str:
+    return json.dumps({"type": kind, "timestamp": stamp, "message": {"role": kind, "content": content}}, ensure_ascii=False)
 
 
 def _entry(kind: str, minute: float, text: str) -> str:
-    moment = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc) + timedelta(minutes=minute)
-    stamp = moment.isoformat().replace("+00:00", "Z")
-    return json.dumps({"type": kind, "timestamp": stamp, "message": {"role": kind, "content": text}}, ensure_ascii=False)
+    return _row(kind, _stamp(minute), text)
 
 
-def test_transkrypt_czytany_od_miejsca_konca_liczy_tylko_wpisy_user_ze_znakiem_dziecka(tmp_path: Path) -> None:
-    signs = {CHILD: straznik.marks(CHILD, "Przegląd A"), "dziecko-2": straznik.marks("dziecko-2", "Bieg B wymyślony")}
+def _call(tool: str, use: str, stamp: str, body: Mapping[str, object], arguments: Mapping[str, object] | None = None) -> str:
+    """Wywołanie narzędzia MCP i jego odpowiedź (tekst JSON), dwa wpisy w kształcie transkryptu Claude Code."""
+
+    call = [{"type": "tool_use", "id": use, "name": tool, "input": arguments or {"task": "wymyślone"}}]
+    result = [{"type": "tool_result", "tool_use_id": use, "content": json.dumps(body)}]
+    return _row("assistant", stamp, call) + "\n" + _row("user", stamp, result)
+
+
+def _delegated_at(child: str, stamp: str) -> str:
+    """Zlecenie ``delegate_task`` z odpowiedzią o dziecku w toku, jak w transkrypcie sesji T3."""
+
+    body = {"taskId": child.replace("thread:", "node:", 1), "childThreadId": child, "status": "running", "workState": "working"}
+    return _call(straznik.DELEGATE, f"toolu_{child[-1]}", stamp, body)
+
+
+def _started(child: str, minute: float) -> str:
+    return _delegated_at(child, _stamp(minute))
+
+
+SIBLING = "thread:delegated-task:dziecko-wymyslone-2"
+RUN = "0b1e2c3d-4a5b-4c6d-8e9f-a0b1c2d3e4f5"
+
+
+def test_powiadomienie_po_starcie_dziecka_liczy_sie_choc_t3_przesunelo_potem_jego_koniec(tmp_path: Path) -> None:
+    # Nowy pilnujący (wznowiona sesja) w 50. minucie: dziecko skończyło się w 18., koordynator dostał powiadomienie w
+    # 19., a T3 przy końcu rodzeństwa w 34. przesunęło updatedAt dziecka, więc koniec wygląda na późniejszy.
     transcript = tmp_path / "sesja.jsonl"
-    lines = [
-        _entry("assistant", 4, f"Przegląd trwa: [Przegląd A](t3-thread://x/{CHILD})"),
-        _entry("user", 2, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd A) [completed]: PASS"),
-        _entry("user", 3, "Delegated task node:inne (Bieg B wymyślony) [completed]: gotowe"),
-        "nie JSON z dziecko-2",
+    lines = [_started(CHILD, 0), _entry("user", 19, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd) [completed]: PASS")]
+    transcript.write_text("\n".join([*lines, _entry("user", 48, "scal PR")]) + "\n", encoding="utf-8")
+    memory = straznik.Memory()
+    straznik.hear(transcript, 0, [CHILD], memory)
+
+    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 50 * MIN, memory) == []
+    assert not pending(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 50 * MIN, memory)
+
+
+def test_transkrypt_czytany_od_miejsca_konca_rozroznia_start_i_powiadomienie_kazdego_biegu(tmp_path: Path) -> None:
+    transcript = tmp_path / "sesja.jsonl"
+    send = {"threadId": CHILD, "messageId": f"message:mcp:wymyslone:thread-send:{RUN}"}
+    running = {"taskId": f"node:wymyslone%3Athread-send%3A{RUN}", "childThreadId": CHILD, "status": "running", "workState": "working"}
+    sibling_notice = "Delegated task node:delegated-task:dziecko-wymyslone-2 (Przegląd wymyślonego PR runda 2) [completed]: OK"
+    first = [
+        _started(CHILD, 0),
+        _started(SIBLING, 1),
+        _entry("user", 5, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR runda 1) [completed]: FAIL"),
+        # Treść odpowiedzi t3_thread_send z „Delegated task” w tytule wątku nie robi z niej powiadomienia.
+        _call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(6), {**send, "link": "[Delegated task 2]"}),
+        _call("mcp__t3-code__task_status", "toolu_status", _stamp(6.7), running),
+        _entry("assistant", 6.8, f"Runda 2 trwa: [Przegląd wymyślonego PR runda 1](t3-thread://x/{CHILD})"),
+        _entry("user", 7, sibling_notice),
+        # Rodzeństwo wznowione i skończone; koordynator sam odczytał wynik, bez powiadomienia.
+        _call("mcp__t3-code__t3_thread_send", "toolu_send2", _stamp(7.5), {"threadId": SIBLING}),
+        _call("mcp__t3-code__t3_thread_read", "toolu_read", _stamp(8), {"thread": {"threadId": SIBLING}}, {"threadId": SIBLING}),
+        "nie JSON z " + CHILD,
     ]
-    transcript.write_text("\n".join(lines) + "\n" + _entry("user", 9, "dziecko-2")[:20], encoding="utf-8")
-    heard: dict[str, float] = {}
+    transcript.write_text("\n".join(first) + "\n" + _entry("user", 9, "x")[:20], encoding="utf-8")
+    memory = straznik.Memory()
 
-    offset = straznik.hear(transcript, 0, signs, heard)
+    offset = straznik.hear(transcript, 0, [CHILD, SIBLING], memory)
 
-    start = datetime(2026, 1, 5, 10, 0, tzinfo=timezone.utc).timestamp()
-    assert heard == {CHILD: start + 2 * MIN, "dziecko-2": start + 3 * MIN}
-    # Niepełna ostatnia linia czeka na swój koniec, a następny odczyt zaczyna się od niej.
+    # Drugi bieg dziecka ruszył po t3_thread_send, a powiadomienie o rodzeństwie o tym samym początku tytułu go nie kończy.
+    assert (memory.heard, memory.runs) == ({CHILD: False, SIBLING: True}, {CHILD: {RUN}})
+    rest = f"Delegated task node:wymyslone%3Athread-send%3A{RUN} (Przegląd wymyślonego PR runda 1) [completed]: PASS"
     with transcript.open("a", encoding="utf-8") as handle:
-        handle.write(_entry("user", 9, "odczyt task_status: dziecko-2")[20:] + "\n")
-    assert straznik.hear(transcript, offset, signs, heard) == transcript.stat().st_size
-    assert heard == {CHILD: start + 2 * MIN, "dziecko-2": start + 9 * MIN}
+        handle.write(_entry("user", 9, rest)[20:] + "\n")
+    assert straznik.hear(transcript, offset, [CHILD, SIBLING], memory) == transcript.stat().st_size
+    assert memory.heard == {CHILD: True, SIBLING: True}
 
 
 def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_potem_przesuwa_ruch_dziecka() -> None:
@@ -460,29 +487,36 @@ def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(
 
 
 @POSIX_ONLY
-@pytest.mark.parametrize("delivered", [False, True], ids=["powiadomienie-zgubione", "powiadomienie-dotarlo"])
-def test_koordynator_ruszajacy_sie_po_koncu_dziecka_dostaje_budzenie_tylko_bez_powiadomienia_w_transkrypcie(
-    t3: tuple[Path, dict[str, str]], delivered: bool
+@pytest.mark.parametrize(
+    ("delivered", "old_session"),
+    [(False, False), (True, False), (True, True)],
+    ids=["powiadomienie-zgubione", "powiadomienie-przed-przesunietym-koncem", "powiadomienie-w-starej-sesji"],
+)
+def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_dziecka(
+    t3: tuple[Path, dict[str, str]], monkeypatch: pytest.MonkeyPatch, delivered: bool, old_session: bool
 ) -> None:
-    # Przegląd skończył się 20 min temu, a koordynator pracował przy innych dzieciach jeszcze 5 min temu.
+    # Przegląd zlecony 40 min temu; koordynator pracował jeszcze 2 min temu, a T3 przesunęło updatedAt skończonego
+    # dziecka na 17 min temu (rozliczenie przy końcu rodzeństwa). Strażnik startuje z wznowioną sesją.
     folder, env = t3
-    threads = {
-        PARENT: {"status": "completed", "updatedAt": _ago(5)},
-        CHILD: {"status": "completed", "updatedAt": _ago(20), "title": "Przegląd wymyślonego PR r1"},
-    }
+    monkeypatch.setenv("HOME", env["HOME"])
+    # Wpis .dzieci z chwilą teraz: krótki limit życia strażnika w teście liczy się od niego.
+    straznik.record(straznik._files(PARENT), [CHILD], time.time())
+    threads = {PARENT: {"status": "completed", "updatedAt": _ago(1)}, CHILD: {"status": "completed", "updatedAt": _ago(17)}}
     (folder / "bin" / "watki.json").write_text(json.dumps(threads), encoding="utf-8")
+    notice = "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR r1) [completed]: FAIL, jedno Ważne"
+    lines = [
+        _delegated_at(CHILD, _ago(40)),
+        *([_row("user", _ago(32), notice)] if delivered else []),
+        _row("user", _ago(2), "scal PR po poprawce"),
+    ]
+    # W starej sesji zostaje start i powiadomienie, a nowa sesja (po wznowieniu) ma tylko ostatni wpis.
+    sessions = {"stara-sesja.jsonl": lines[:-1], "sesja-koordynatora.jsonl": lines[-1:]} if old_session else {"sesja-koordynatora.jsonl": lines}
+    for name, entries in sessions.items():
+        (folder / name).write_text("".join(entry + "\n" for entry in entries), encoding="utf-8")
+    if old_session:
+        straznik._files(PARENT).transcript.write_text(f"{folder / 'stara-sesja.jsonl'}\n", encoding="utf-8")
     transcript = folder / "sesja-koordynatora.jsonl"
-    notice = "Delegated task node:inne-zlecenie (Przegląd wymyślonego PR r1) [completed]: FAIL, jedno Ważne"
-    lines = [{"type": "user", "timestamp": _ago(25), "message": {"role": "user", "content": f"zlecone {CHILD}"}}]
-    if delivered:
-        lines.append({"type": "user", "timestamp": _ago(19), "message": {"role": "user", "content": notice}})
-    transcript.write_text("".join(json.dumps(line) + "\n" for line in lines), encoding="utf-8")
-    event = {
-        "hook_event_name": "PostToolUse",
-        "tool_name": straznik.DELEGATE,
-        "tool_response": _delegated(CHILD),
-        "transcript_path": str(transcript),
-    }
+    event: dict[str, object] = {"hook_event_name": "SessionStart", "source": "resume", "transcript_path": str(transcript)}
 
     assert _hook(env, event).returncode == 0
 
