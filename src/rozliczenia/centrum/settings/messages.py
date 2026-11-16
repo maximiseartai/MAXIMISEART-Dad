@@ -337,6 +337,6 @@ def unavailable(file: str) -> str:
 
 def unreadable(file: str) -> str:
     """Plik ``file``, bez którego treści Centrum odmawia, zamiast brać treść z Wydania: odmowa
-    ``refusal.settings_file_unreadable`` i zdanie pliku w oknie Ustawień."""
+    ``refusal.settings_file_unreadable``, zdanie pliku w oknie Ustawień i w podpowiedziach Wykonawców."""
 
     return f"Pliku {file} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie."

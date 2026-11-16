@@ -21,9 +21,8 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum.contract import settings_workers as contract
 from rozliczenia.centrum.settings import messages, workers
-from rozliczenia.centrum.settings.files import FieldProblem, usable
-from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import CentrumSettings, release_if_unreadable
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable, usable
+from rozliczenia.centrum.settings.owner import CentrumSettings, UnreadableFile
 from rozliczenia.centrum.settings.workers import AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
 from rozliczenia.centrum.settings_router import choice, describe
 from rozliczenia.centrum.worker_suggestions import worker_suggestions
@@ -51,7 +50,8 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
     def change(login: str, edit: contract.WorkerEdit) -> settings_contract.WorkerSaved:
         """Formularz Wykonawcy naraz. Zła wartość jest odmową, zanim cokolwiek się sprawdza; zmiana nazwy, przy której w
         okresie leży Rozliczenie pracownika ze starą nazwą, bez ``rename_confirmed`` niczego nie zapisuje i daje
-        ostrzeżenie; usunięty login sprawdza w okresach właściciel."""
+        ostrzeżenie (przy pliku Folderów bez odczytu bez ostrzeżenia: to ostrzeżenie, nie straż); usunięty login
+        sprawdza w okresach właściciel."""
 
         listed = _listed(settings)
         worker = _worker(listed, login)
@@ -60,7 +60,9 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         if isinstance(trial, FieldProblem):
             raise refusal.setting_refused(trial)
         if not edit.rename_confirmed:
-            old = old_name_periods(worker.name, edit.name, release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory)
+            folders = settings.folders()
+            periods_directory = None if isinstance(folders, Unreadable) else folders.periods_directory
+            old = old_name_periods(worker.name, edit.name, periods_directory)
             if old:
                 return settings_contract.WorkerSaved(
                     settings=describe(settings.view()), rename_warning=messages.worker_rename_old_files(old)
@@ -72,11 +74,14 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
     def suggestions() -> contract.WorkerSuggestions:
         """Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista
         Wykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie
-        o liście, a dodanie zapisuje listę od nowa."""
+        o liście, a dodanie zapisuje listę od nowa. Plik Folderów bez odczytu to stan ``unreadable`` ze zdaniem o tym
+        pliku, nie „wskaż Rejestr zleceń”."""
 
         snapshot = settings.snapshot()
+        if isinstance(snapshot.folders, UnreadableFile):
+            return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(snapshot.folders.name))
         listed = usable(snapshot.workers) or WorkerList(())
-        return worker_suggestions(listed, release_if_unreadable(snapshot.folders, FOLDERS).register, files, today())
+        return worker_suggestions(listed, snapshot.folders.register, files, today())
 
     @router.post("/{login}/addresses", operation_id="assignWorkerAddress", responses=_REFUSED)
     def assign_address(login: str, assigned: contract.WorkerAddress) -> settings_contract.Choice:

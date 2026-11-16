@@ -570,6 +570,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -1794,7 +1804,7 @@
           "ustawienia"
         ],
         "summary": "Suggestions",
-        "description": "Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``).",
+        "description": "Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``). Plik\nFolderów bez odczytu daje pustą listę jak niewskazany folder okresów: to podpowiedź, nie straż.",
         "operationId": "getDeviceSuggestions",
         "responses": {
           "200": {
@@ -2202,6 +2212,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
           }
         }
       }
@@ -2245,6 +2265,16 @@
               }
             },
             "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
           },
           "422": {
             "description": "Validation Error",
@@ -2734,7 +2764,7 @@
           "ustawienia"
         ],
         "summary": "Suggestions",
-        "description": "Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista\nWykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie\no liście, a dodanie zapisuje listę od nowa.",
+        "description": "Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista\nWykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie\no liście, a dodanie zapisuje listę od nowa. Plik Folderów bez odczytu to stan ``unreadable`` ze zdaniem o tym\npliku, nie „wskaż Rejestr zleceń”.",
         "operationId": "getWorkerSuggestions",
         "responses": {
           "200": {
@@ -2756,7 +2786,7 @@
           "ustawienia"
         ],
         "summary": "Change",
-        "description": "Formularz Wykonawcy naraz. Zła wartość jest odmową, zanim cokolwiek się sprawdza; zmiana nazwy, przy której w\nokresie leży Rozliczenie pracownika ze starą nazwą, bez ``rename_confirmed`` niczego nie zapisuje i daje\nostrzeżenie; usunięty login sprawdza w okresach właściciel.",
+        "description": "Formularz Wykonawcy naraz. Zła wartość jest odmową, zanim cokolwiek się sprawdza; zmiana nazwy, przy której w\nokresie leży Rozliczenie pracownika ze starą nazwą, bez ``rename_confirmed`` niczego nie zapisuje i daje\nostrzeżenie (przy pliku Folderów bez odczytu bez ostrzeżenia: to ostrzeżenie, nie straż); usunięty login\nsprawdza w okresach właściciel.",
         "operationId": "changeWorker",
         "parameters": [
           {
@@ -10487,7 +10517,7 @@
           "message"
         ],
         "title": "WorkerSuggestions",
-        "description": "Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być\npuste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim\nobszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``."
+        "description": "Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być\npuste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru albo pliku Folderów w ``config`` nie da się\nteraz przeczytać albo w Rejestrze nie ma obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i\n``unreadable``."
       },
       "WorkerSwitches": {
         "properties": {

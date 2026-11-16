@@ -46,7 +46,6 @@ from rozliczenia.centrum.settings.owner import (
     QuantityRulesView,
     Refused,
     Saved,
-    release_if_unreadable,
 )
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES_SECTION,
@@ -214,10 +213,12 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
     @router.get("/devices/suggestions", operation_id="getDeviceSuggestions")
     def suggestions() -> contract.DeviceSuggestions:
-        """Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``)."""
+        """Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``). Plik
+        Folderów bez odczytu daje pustą listę jak niewskazany folder okresów: to podpowiedź, nie straż."""
 
         rules = settings.quantity_rules().rules
-        directory = release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory_to_read
+        folders = settings.folders()
+        directory = None if isinstance(folders, Unreadable) else folders.periods_directory_to_read
         if directory is None:
             return contract.DeviceSuggestions(suggestions=[], unread=[])
         return device_suggestions(rules, recent.read(directory))
