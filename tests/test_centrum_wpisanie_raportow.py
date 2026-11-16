@@ -4268,7 +4268,7 @@ def test_praca_przypomnien_liczy_raport_z_bledem_opisu_jako_niewyslany_legenda_c
     centrum.rhythm.tick()
     centrum.client.stop()
 
-    sent = {reminder.worker: reminder.text for reminder, _ in mailbox.sends}
+    sent: dict[str, str] = {reminder.worker: reminder.text for reminder, _ in mailbox.sends}
     assert sorted(sent) == (["jan.testowy"] if dads_legend else ["anna.kowalska", "jan.testowy"])
     assert "Zlecenie" not in sent["jan.testowy"]
     if not dads_legend:

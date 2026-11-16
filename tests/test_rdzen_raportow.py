@@ -1233,7 +1233,9 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [*matching, *other], rollout=SIXTH, ordered=OPEN_DAYS))
 
     assert (outcome.moves, _problems(outcome)) == ((), ())
-    assert {(problem.day, type(problem)) for problem in outcome.problems} == {(DAY, FaultyDescription)}
+    assert [(type(problem), problem.day) for problem in outcome.problems if isinstance(problem, FaultyDescription)] == [
+        (FaultyDescription, DAY)
+    ] * 10
     assert len(outcome.problems) == 10
     assert {change.order for change in outcome.changes} == {order.row for order in [*matching, *other]}
     assert outcome.notes == (
