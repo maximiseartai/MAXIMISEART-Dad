@@ -95,6 +95,16 @@ FEATURES = (
             "354-urzadzenia-waskie",
         ),
     ),
+    # Writes Dad's file of the legend outside Centrum and removes it again, so the features after it find the Release's.
+    Feature(
+        "legenda-czynnosci",
+        (
+            "420-legenda-czynnosci-szerokie",
+            "421-legenda-czynnosci-zly-plik",
+            "422-legenda-czynnosci-historia",
+            "423-legenda-czynnosci-waskie",
+        ),
+    ),
     Feature(
         "tablica-okresow",
         (

@@ -50,6 +50,7 @@ ApiOperation = Literal[
     "changeDevice",
     "removeDevice",
     "getDeviceSuggestions",
+    "getActivityLegend",
     "undoSettingsChange",
     "getPeriodBoard",
     "openPeriodPath",

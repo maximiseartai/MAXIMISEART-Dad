@@ -3,15 +3,12 @@ import { PencilIcon, PlusIcon } from "lucide-react"
 
 import { getQuantityRules } from "@/api/centrum"
 import type { QuantityRuleSentence, QuantityRulesSettings, RuleForm, SettingProblem } from "@/api/generated"
-import { LoadFailure } from "@/components/load-failure"
 import { Button } from "@/components/ui/button"
-import { Skeleton } from "@/components/ui/skeleton"
-import { useReloadOnChange } from "@/lib/settings"
-import { useResource } from "@/lib/use-resource"
 import { QuantityDifferences } from "@/pages/settings/quantity-differences"
 import { RuleEditor } from "@/pages/settings/quantity-rule-editor"
 import { Sentence } from "@/pages/settings/rule-sentence"
 import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
+import { WithSettingsRead } from "@/pages/settings/settings-read"
 
 /** Grupy reguł według zakresu, w kolejności z ADR 0033; grupa bez reguł się nie pokazuje. */
 const SCOPES: ReadonlyArray<{ scope: QuantityRuleSentence["scope"]; title: string }> = [
@@ -112,31 +109,15 @@ export function Problem({ problem }: { problem: SettingProblem | null }) {
   return problem === null ? null : <FieldSentence>{problem.message}</FieldSentence>
 }
 
-/**
- * Sekcja z Regułami ilości: szkielet w czasie odczytu, Komunikat z „Spróbuj ponownie” po nieudanym, potem treść.
- * Każda przyjęta zmiana Ustawień (także „Cofnij” w powiadomieniu i w Historii) czyta reguły od nowa, bez szkieletu;
- * `saved` pokazuje od razu reguły z odpowiedzi zapisu.
- */
+/** Sekcja z Regułami ilości i Listą Urządzeń (`WithSettingsRead`). */
 export function WithQuantityRules({
   children,
 }: {
   children: (settings: QuantityRulesSettings, saved: (settings: QuantityRulesSettings) => void) => React.ReactNode
 }) {
-  const { resource, reload, replace } = useResource(getQuantityRules, [], { fromDadFiles: false })
-
-  useReloadOnChange(reload)
-
-  switch (resource.state) {
-    case "loading":
-      return <Skeleton className="h-40 w-full rounded-xl" aria-label="Wczytywanie Reguł ilości" />
-    case "failed":
-      return <LoadFailure what="Reguł ilości" message={resource.message} reload={reload} />
-    case "ready":
-      return children(resource.data, (data) => replace({ state: "ready", data }))
-    default: {
-      const unhandled: never = resource
-
-      return unhandled
-    }
-  }
+  return (
+    <WithSettingsRead read={getQuantityRules} what="Reguł ilości">
+      {children}
+    </WithSettingsRead>
+  )
 }

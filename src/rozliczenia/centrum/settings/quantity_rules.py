@@ -174,7 +174,7 @@ def rules_problem(
     rules: tuple[QuantityRule, ...], devices_now: tuple[Component, ...] | None, devices_good: tuple[Component, ...]
 ) -> FieldProblem | None:
     """Problem Reguł ilości dobrych samych w sobie razem z Listą Urządzeń: ``None``, gdy pasują do bieżącej listy
-    (``devices_now``, ``None``: lista zła sama w sobie albo nieczytelna) albo do ostatniej dobrej (``devices_good``)."""
+    (``devices_now``, ``None``: lista zła sama w sobie) albo do ostatniej dobrej (``devices_good``)."""
 
     if devices_now is not None and _refusal(rules, devices_now) is None:
         return None

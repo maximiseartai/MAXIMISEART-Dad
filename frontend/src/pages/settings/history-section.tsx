@@ -58,9 +58,11 @@ function keyOf(change: HistoryChange): Key {
   return KEYS.get(change.key) ?? { label: change.key, shown: (value) => value }
 }
 
-/** Nazwa zmiany ze zdaniem przed i po po kluczu Historii: składnik, wyjątek Kontroli ilości albo reguła. */
+/** Nazwa zmiany ze zdaniem przed i po po kluczu Historii: składnik, Kod czynności, wyjątek Kontroli ilości albo reguła. */
 function ruleLabel(key: string): string {
   if (key.startsWith("urzadzenia.")) return "Lista Urządzeń"
+
+  if (key.startsWith("kody.")) return "Legenda czynności"
 
   return key.startsWith("wyjatki.") ? "Wyjątek Kontroli ilości" : "Reguła ilości"
 }
@@ -119,7 +121,7 @@ function Row({ row }: { row: HistoryRow }) {
     await undoSettingsChange(row.id).then(undone, (failure: Error) => setRefusal(failureMessage(failure)))
   })
 
-  // Reguła ilości, składnik Listy Urządzeń i wyjątek Kontroli ilości mają w wierszu zdanie przed i po zamiast zapisu z pliku.
+  // Reguła ilości, składnik Listy Urządzeń, Kod czynności i wyjątek Kontroli ilości mają w wierszu zdanie przed i po zamiast zapisu z pliku.
   const rules = new Map(row.rules.map((rule) => [rule.key, rule]))
 
   const label = (change: HistoryChange) => (rules.has(change.key) ? ruleLabel(change.key) : keyOf(change).label)
