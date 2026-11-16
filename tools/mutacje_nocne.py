@@ -19,12 +19,14 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   wyjątek ``# mutacje-zmiany:`` liczy jako jedną mutację, żeby część go zgłosiła.
 - Czerwony run nie przesuwa bazy, więc noc po nim dostaje jego zakres jeszcze raz. Plan zbiera więc z zapisów części
   każdego czerwonego runu tego workflow na ``main`` z tą samą bazą (``baza`` jego ``zakres-nocy``, runy utworzone od
-  czasu commitu bazy) klucze mutacji, którym część dała werdykt (``mutacje_zmiany.OSADZONE``), i liczy listę bez nich
-  (``ZakresMutacji.bez_osadzonych``) przed ``do`` i podziałem na części, więc noc mutuje tylko to, czego żadna część nie
-  osądziła, a w zwolnionym limicie sięga dalej. Część, która padła bez zapisu, nie daje kluczy, więc jej mutacje
-  biegną znowu, a przeżyte z czerwonego runu poszły już do issue. Klucze plan zapisuje z ``--osadzone`` (artefakt
-  ``osadzone-nocy``), a zadania pokrycia i części podają ten plik w ``--osadzone``, więc liczą tę samą listę. Bez
-  czerwonego runu tej bazy plik jest pusty, a noc taka jak bez niego.
+  czasu commitu bazy) tożsamości mutacji, których werdykt nie potrzebuje issue (``mutacje_zmiany.OSADZONE``: wykryte,
+  zdominowane, pod wyjątkiem i innego systemu), i liczy listę bez nich (``ZakresMutacji.bez_osadzonych``) przed ``do`` i
+  podziałem na części, więc noc mutuje tylko to, czego żadna część nie osądziła, a w zwolnionym limicie sięga dalej.
+  Przeżyte i mutacje z przekroczonym czasem biegną znowu, bo to, czy mają issue, rozstrzygają tylko klucze w issue
+  (``akcje``): zgłoszenie czerwonego runu mogło paść przed ich issue, a gdy je założyło, noc nie zgłosi ich drugi raz.
+  Część, która padła bez zapisu, nie daje tożsamości, więc jej mutacje biegną znowu. Tożsamości plan zapisuje z
+  ``--osadzone`` (artefakt ``osadzone-nocy``), a zadania pokrycia i części podają ten plik w ``--osadzone``, więc liczą
+  tę samą listę. Bez czerwonego runu tej bazy plik jest pusty, a noc taka jak bez niego.
 - Część ma najwyżej ``NA_CZESC`` mutacji: tyle, że kończy się w limicie czasu części także z najdroższymi mutacjami
   zmierzonych nocy, w testach linii i w testach pliku. Noc mutuje najwyżej ``CZESCI_NA_NOC`` części, żeby nie dostała więcej,
   niż przerobi. Gdy od bazy jest więcej mutacji, ``do`` to najdalszy commit linii
@@ -60,7 +62,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   Część bez zapisu albo z kodem wyjścia spoza ``mutacje_zmiany.KODY_Z_WYNIKIEM`` (testy padają albo nie kończą się
   w limicie czasu części bez mutacji, zły wyjątek) czerwieni run po zgłoszeniu reszty, także przeżytych mutacji z jej
   zapisu, więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji, ale bez mutacji, którym części tego
-  runu dały werdykt (``plan`` wyżej). Zgłoszone mutacje się nie powtórzą, także gdy PR z
+  runu dały werdykt bez issue (``plan`` wyżej). Zgłoszone mutacje się nie powtórzą, także gdy PR z
   następnego dnia przesunie ich linie, bo klucz nie ma numerów linii.
 - Skrypty mutacji skilli nocy planuje ``tools/plan_ci.py plan --zdarzenie noc --baza <baza>`` (skrypty skilli, których
   folder, import (silnik mutacji i jego zależności), uruchamiacz kroku albo sprawdzenie zmieniło się od bazy, i części każdego n podstaw z ``ci-czesci``), a zadanie
@@ -147,8 +149,8 @@ ARTEFAKT_SKILLI = "mutacje-skilli-"
 # Artefakt planu z plikiem ``--zakres``: baza i koniec zakresu nocy, od którego zaczyna następna noc.
 ARTEFAKT_ZAKRESU = "zakres-nocy"
 ZAKRES = "zakres.json"
-# Artefakt planu z plikiem ``--osadzone`` (``mutacje_zmiany.zapisz_osadzone``): klucze mutacji, którym werdykt dały części
-# czerwonych runów tej samej bazy. Zadania pokrycia i części pobierają go i pomijają te mutacje jak plan.
+# Artefakt planu z plikiem ``--osadzone`` (``mutacje_zmiany.zapisz_osadzone``): tożsamości mutacji, którym części
+# czerwonych runów tej samej bazy dały werdykt bez issue. Zadania pokrycia i części pobierają go i pomijają je jak plan.
 ARTEFAKT_OSADZONYCH = "osadzone-nocy"
 # Klucz z linii ``MUTACJA`` w treści issue; długość klucza daje ``mutacje_zmiany.fingerprint``.
 _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]+)\b")
@@ -280,42 +282,43 @@ def _plik_artefaktu(github: GitHub, artefakt: dict[str, Any], plik: str) -> byte
         return archiwum.read(plik)
 
 
-def osadzone(github: GitHub, root: Path, od_sha: str) -> tuple[frozenset[str], list[int]]:
-    """Klucze mutacji, którym werdykt dały części czerwonych runów tego workflow na ``main`` z bazą ``od_sha`` (``baza``
-    z ich artefaktu ``zakres-nocy``), i id tych runów.
+def osadzone(github: GitHub, root: Path, od_sha: str) -> tuple[frozenset[mutacje_zmiany.Tozsamosc], list[int]]:
+    """Tożsamości mutacji, którym części czerwonych runów tego workflow na ``main`` z bazą ``od_sha`` (``baza`` z ich
+    artefaktu ``zakres-nocy``) dały werdykt bez issue (``mutacje_zmiany.OSADZONE``), i id tych runów.
 
     Czerwony run nie przesuwa bazy, więc noc po nim dostaje jego zakres jeszcze raz; bez tych mutacji mutuje tylko to,
-    czego żadna jego część nie osądziła, i sięga dalej. Część bez zapisu (padła, kod 2) nie daje kluczy, więc jej mutacje
-    biegną znowu. Runy szuka od czasu commitu bazy, bo run z tą bazą powstał po nim, a nie od ostatniego udanego runu:
-    spóźniony run crona po czerwonej nocy doby jest zielony bez pracy i bazy nie przesuwa. Run, którego artefaktów nie da
-    się przeczytać, nie daje kluczy, bo bez nich noc tylko powtarza pracę."""
+    czego żadna jego część nie osądziła, i sięga dalej. Przeżytych zapis nie ma, więc biegną znowu, a issue nie przyjmuje
+    ich klucza drugi raz. Część bez zapisu (padła, kod 2) nie daje tożsamości, więc jej mutacje biegną znowu. Runy szuka
+    od czasu commitu bazy, bo run z tą bazą powstał po nim, a nie od ostatniego udanego runu: spóźniony run crona po
+    czerwonej nocy doby jest zielony bez pracy i bazy nie przesuwa. Run, którego artefaktów nie da się przeczytać, nie
+    daje tożsamości, bo bez nich noc tylko powtarza pracę."""
 
     od = datetime.fromtimestamp(int(repo.git(root, "log", "-1", "--format=%ct", od_sha)), UTC)
     zapytanie = urllib.parse.quote(f">={od:%Y-%m-%dT%H:%M:%SZ}")
     runy = github.json(f"{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&status=failure&created={zapytanie}&per_page=100")["workflow_runs"]
-    klucze: set[str] = set()
+    wszystkie: set[mutacje_zmiany.Tozsamosc] = set()
     czerwone: list[int] = []
     for run in runy:
         try:
-            klucze_runu = _osadzone_runu(github, run["id"], od_sha)
+            z_runu = _osadzone_runu(github, run["id"], od_sha)
         except (RuntimeError, KeyError, TypeError, ValueError, zipfile.BadZipFile) as blad:
-            print(f"MUTACJE NOCNE | czerwony run {run['id']} bez kluczy osądzonych mutacji ({blad!r}): noc sprawdzi je znowu")
+            print(f"MUTACJE NOCNE | czerwony run {run['id']} bez tożsamości osądzonych mutacji ({blad!r}): noc sprawdzi je znowu")
             continue
-        if klucze_runu is not None:
+        if z_runu is not None:
             czerwone.append(run["id"])
-            klucze |= klucze_runu
-    return frozenset(klucze), czerwone
+            wszystkie |= z_runu
+    return frozenset(wszystkie), czerwone
 
 
-def _osadzone_runu(github: GitHub, run: int, od_sha: str) -> frozenset[str] | None:
-    """Klucze ``mutacje_zmiany.OSADZONE`` zapisów części runu, a ``None``, gdy run miał inną bazę. Run bez zakresu albo z
-    wygasłym artefaktem rzuca błąd, z którym ``osadzone`` go pomija."""
+def _osadzone_runu(github: GitHub, run: int, od_sha: str) -> frozenset[mutacje_zmiany.Tozsamosc] | None:
+    """Tożsamości ``mutacje_zmiany.OSADZONE`` zapisów części runu, a ``None``, gdy run miał inną bazę. Run bez zakresu
+    albo z wygasłym artefaktem rzuca błąd, z którym ``osadzone`` go pomija."""
 
     artefakty = {artefakt["name"]: artefakt for artefakt in github.json(f"{REPO}/actions/runs/{run}/artifacts?per_page=100")["artifacts"]}
     if json.loads(_plik_artefaktu(github, artefakty[ARTEFAKT_ZAKRESU], ZAKRES))["baza"] != od_sha:
         return None
     zapisy = [json.loads(_plik_artefaktu(github, artefakt, ZAPIS)) for nazwa, artefakt in artefakty.items() if nazwa.startswith(ARTEFAKT)]
-    return frozenset(str(klucz) for zapis in zapisy for klucz in zapis.get(mutacje_zmiany.OSADZONE, []))
+    return frozenset().union(*(mutacje_zmiany.wczytaj_osadzone(zapis.get(mutacje_zmiany.OSADZONE, [])) for zapis in zapisy))
 
 
 def macierz(noc: mutacje_zmiany.ZakresMutacji, n: int, repository: Repository, koszty: czasy_ci.KosztyPlikow) -> list[dict[str, int | bool]]:
@@ -361,8 +364,8 @@ def zaplanuj(
 ) -> int:
     """Plan nocy w ``root``: baza, koniec jej zakresu i macierz części po najwyżej ``na_czesc`` mutacji, najwyżej
     ``czesci_na_noc`` części, od najdroższej według ``koszty`` plików testów, w ``GITHUB_OUTPUT``, a z ``zakres`` plik
-    artefaktu ``zakres-nocy``. Mutacji, które osądziły czerwone runy tej bazy (``osadzone``), plan nie liczy, a ich klucze
-    zapisuje w ``osadzone_plik`` (artefakt ``osadzone-nocy``) dla zadań pokrycia i części. Noc doby (``wyzwolenie``),
+    artefaktu ``zakres-nocy``. Mutacji, którym czerwone runy tej bazy dały werdykt bez issue (``osadzone``), plan nie
+    liczy, a ich tożsamości zapisuje w ``osadzone_plik`` (artefakt ``osadzone-nocy``) dla zadań pokrycia i części. Noc doby (``wyzwolenie``),
     przed którą doba ``teraz`` miała już run nocy, nic nie mutuje: ``do`` to baza, a ``GITHUB_OUTPUT`` ma
     ``pominieta=true``."""
 
@@ -371,10 +374,10 @@ def zaplanuj(
     if (wczesniejsza := _wczesniejsza_noc(github, wyzwolenie, teraz)) is not None:
         print(f"MUTACJE NOCNE | noc doby biegła już w runie {wczesniejsza}: ten run nic nie mutuje, a następna noc zacznie od tej samej bazy")
         return _zapisz_plan(od_sha, skad, od_sha, [], [], 0, zakres, osadzone_plik, frozenset(), pominieta=True)
-    klucze, czerwone = osadzone(github, root, od_sha)
+    osadzone_czerwonych, czerwone = osadzone(github, root, od_sha)
     if czerwone:
-        print(f"MUTACJE NOCNE | czerwone runy tej bazy {', '.join(map(str, czerwone))}: noc pomija {len(klucze)} mutacji, którym dały werdykt")
-    caly = mutacje_zmiany.ZakresMutacji.od(od_sha, root).bez_osadzonych(klucze)
+        print(f"MUTACJE NOCNE | czerwone runy tej bazy {', '.join(map(str, czerwone))}: noc pomija {len(osadzone_czerwonych)} mutacji, którym dały werdykt bez issue")
+    caly = mutacje_zmiany.ZakresMutacji.od(od_sha, root).bez_osadzonych(osadzone_czerwonych)
     if caly.zly_wyjatek is not None:
         print(f"MUTACJE NOCNE | {caly.zly_wyjatek}; część mutacji to zgłosi")
     do_sha = caly.najdalszy_koniec(na_czesc * czesci_na_noc)
@@ -384,7 +387,7 @@ def zaplanuj(
     pokrycie = macierz_pokrycia(noc, repository) if wpisy else []
     if zalegle := len(caly.mutanty) - len(noc.mutanty):
         print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
-    return _zapisz_plan(od_sha, skad, do_sha, wpisy, pokrycie, noc.liczba_mutacji, zakres, osadzone_plik, klucze)
+    return _zapisz_plan(od_sha, skad, do_sha, wpisy, pokrycie, noc.liczba_mutacji, zakres, osadzone_plik, osadzone_czerwonych)
 
 
 def _zapisz_plan(
@@ -396,7 +399,7 @@ def _zapisz_plan(
     mutacje: int,
     zakres: Path | None,
     osadzone_plik: Path | None,
-    klucze: frozenset[str],
+    osadzone_czerwonych: frozenset[mutacje_zmiany.Tozsamosc],
     *,
     pominieta: bool = False,
 ) -> int:
@@ -412,7 +415,7 @@ def _zapisz_plan(
         zakres.parent.mkdir(parents=True, exist_ok=True)
         zakres.write_text(json.dumps({"baza": od_sha, "do": do_sha}), encoding="utf-8")
     if osadzone_plik is not None:
-        mutacje_zmiany.zapisz_osadzone(osadzone_plik, klucze)
+        mutacje_zmiany.zapisz_osadzone(osadzone_plik, osadzone_czerwonych)
     return 0
 
 
@@ -774,7 +777,7 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     plan.add_argument("--baza", help="To samo co --od, jak w innych narzędziach zmiany; obie z różnymi wartościami to błąd użycia.")
     plan.add_argument("--zakres", type=Path, help=f"Plik JSON z bazą i końcem zakresu nocy (artefakt {ARTEFAKT_ZAKRESU}, z którego następna noc bierze bazę).")
     plan.add_argument(
-        "--osadzone", type=Path, help=f"Plik kluczy mutacji osądzonych przez czerwone runy tej bazy (artefakt {ARTEFAKT_OSADZONYCH} dla pokrycia i części)."
+        "--osadzone", type=Path, help=f"Plik tożsamości mutacji osądzonych bez issue przez czerwone runy tej bazy (artefakt {ARTEFAKT_OSADZONYCH} dla pokrycia i części)."
     )
     plan.add_argument("--czasy", type=Path, help="Katalog artefaktów czasy-ci, pobieranych od nowa (domyślnie .git/czasy-ci); kolejność części.")
     plan.add_argument("--zdarzenie", default="", help="Zdarzenie runu (github.event_name): run schedule nie robi drugiej nocy doby; id runu daje GITHUB_RUN_ID.")

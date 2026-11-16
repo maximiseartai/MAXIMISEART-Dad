@@ -1177,14 +1177,16 @@ CZAS_PRZEBIEGU_S = "100"
 MUTACJE_PR = ("WYKRYTA: {plik}:2 granica `x > 2` → `>=`", "ZDOMINOWANA: {plik}:2 zmiana linii 2 cofnięta do bazy")
 
 
-def _trzy_pr_z_testami(tmp_path: Path) -> tuple[Path, str, list[str]]:
+def _trzy_pr_z_testami(tmp_path: Path, *, przezywa: bool = False) -> tuple[Path, str, list[str]]:
     """``main`` z bazą i squash PR-ami #1–#3: PR zmienia granicę w swoim pliku ``a``, ``b`` albo ``c``, a jego plik testów
-    ją sprawdza, więc obie mutacje PR-u (``MUTACJE_PR``) mają werdykt. Zwraca repozytorium, bazę i commity PR-ów."""
+    ją sprawdza, więc obie mutacje PR-u (``MUTACJE_PR``) mają werdykt. Z ``przezywa`` test ``a`` nie sprawdza granicy,
+    więc obie mutacje PR #1 przeżywają. Zwraca repozytorium, bazę i commity PR-ów."""
 
     pliki = {".gitignore": "__pycache__/\n", "src/rozliczenia/__init__.py": ""}
     for nazwa in "abc":
+        granica = 0 if przezywa and nazwa == "a" else 2
         pliki[f"src/rozliczenia/{nazwa}.py"] = FUNKCJA.replace("def a", f"def {nazwa}")
-        pliki[f"tests/test_{nazwa}.py"] = f"from rozliczenia.{nazwa} import {nazwa}\n\n\ndef test_{nazwa}() -> None:\n    assert {nazwa}(3) is True\n    assert {nazwa}(2) is False\n"
+        pliki[f"tests/test_{nazwa}.py"] = f"from rozliczenia.{nazwa} import {nazwa}\n\n\ndef test_{nazwa}() -> None:\n    assert {nazwa}(3) is True\n    assert {nazwa}({granica}) is False\n"
     repo = mutation_repository(tmp_path / "repo", pliki)
     copy_files(repo, with_imports(MUTACJE_ZMIANY))
     git(repo, "checkout", "--quiet", "-b", "main")
@@ -1198,18 +1200,19 @@ def _trzy_pr_z_testami(tmp_path: Path) -> tuple[Path, str, list[str]]:
 
 
 def _czerwona_noc(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], *, przezywa: bool = False
 ) -> tuple[Path, GitHubWPamieci, dict[str, str], list[str]]:
     """Run 2 planuje PR #1 i #2 w dwóch częściach po 2 mutacje (limit nocy 4), a PR #3 zostaje w zaległości. Część 1
     (PR #1) biegnie naprawdę i wgrywa zapis, a część 2 (PR #2) pada bez zapisu, więc run jest czerwony i nie przesuwa
-    bazy. Zwraca repozytorium, GitHub z tym runem, jego plan i commity PR-ów."""
+    bazy. Z ``przezywa`` obie mutacje części 1 przeżywają (``_trzy_pr_z_testami``). Zwraca repozytorium, GitHub z tym
+    runem, jego plan i commity PR-ów."""
 
-    repo, baza, commity = _trzy_pr_z_testami(tmp_path)
+    repo, baza, commity = _trzy_pr_z_testami(tmp_path, przezywa=przezywa)
     github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
     plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 2, na_czesc=2, czesci_na_noc=2)
     zapisy = tmp_path / "zapisy-2"
     czesc = _czesc(repo, plan, 1, zapisy, "--limit-czesci-s", CZAS_PRZEBIEGU_S)
-    assert (plan["do"], plan["mutacje"], czesc.returncode) == (commity[1], "4", 0), czesc.stdout + czesc.stderr
+    assert (plan["do"], plan["mutacje"], czesc.returncode) == (commity[1], "4", int(przezywa)), czesc.stdout + czesc.stderr
     github.utworzone.append(_run_doby(2, datetime.now(UTC).isoformat(), "failure"))
     github.zakresy[2] = Path(plan["zakres"]).read_bytes()
     github.zapisy_czesci[2] = {1: (zapisy / f"{mutacje_nocne.ARTEFAKT}1" / mutacje_nocne.ZAPIS).read_bytes()}
@@ -1227,7 +1230,7 @@ def test_noc_po_czerwonej_mutuje_tylko_to_czego_jej_czesci_nie_osadzily_i_siega_
 ) -> None:
     """Noc 3 zaczyna od bazy czerwonego runu 2, ale bez mutacji PR #1, którym jego część 1 dała werdykt. Mutacje PR #2
     z części 2, która padła bez zapisu, biegną znowu, a w zwolnionym limicie nocy noc bierze PR #3, więc ``do`` idzie
-    dalej. Zadanie pokrycia i części nocy 3 dostają klucze z pliku planu (artefakt ``osadzone-nocy``) i liczą tę samą
+    dalej. Zadanie pokrycia i części nocy 3 dostają tożsamości z pliku planu (artefakt ``osadzone-nocy``) i liczą tę samą
     listę: pokrycie plików testów PR #2 i #3, część 1 mutacje PR #2, część 2 mutacje PR #3."""
 
     repo, github, czerwona, commity = _czerwona_noc(tmp_path, monkeypatch, capsys)
@@ -1242,25 +1245,54 @@ def test_noc_po_czerwonej_mutuje_tylko_to_czego_jej_czesci_nie_osadzily_i_siega_
     ]
 
     assert (plan["baza"], plan["do"], plan["mutacje"], plan["liczba"]) == (czerwona["baza"], commity[2], "4", "2")
-    assert "MUTACJE NOCNE | czerwone runy tej bazy 2: noc pomija 2 mutacji, którym dały werdykt" in plan["log"].splitlines(), plan["log"]
+    assert "MUTACJE NOCNE | czerwone runy tej bazy 2: noc pomija 2 mutacji, którym dały werdykt bez issue" in plan["log"].splitlines(), plan["log"]
     assert zadanie_pokrycia.returncode == 0, zadanie_pokrycia.stdout + zadanie_pokrycia.stderr
     assert json.loads(pokrycie.read_text(encoding="utf-8"))["pliki_testow"] == ["tests/test_b.py", "tests/test_c.py"]
     assert [czesc.returncode for czesc in czesci] == [0, 0], [czesc.stdout + czesc.stderr for czesc in czesci]
     assert [_werdykty(czesc) for czesc in czesci] == [[linia.format(plik=f"src/rozliczenia/{nazwa}.py") for linia in MUTACJE_PR] for nazwa in "bc"]
 
 
+def test_przezyte_mutacje_czerwonego_runu_ktorego_zgloszenie_padlo_trafiaja_do_issue_w_nocy_po_nim(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Część 1 czerwonego runu 2 zapisała dwie przeżyte mutacje PR #1, a zgłoszenie runu padło na API przed ich issue.
+    Noc 3 od tej samej bazy mutuje je znowu i zakłada issue PR #1 z obiema, bo to, czy przeżyta ma issue, rozstrzygają
+    tylko klucze w issue, a nie zapis czerwonego runu."""
+
+    repo, github, czerwona, _ = _czerwona_noc(tmp_path, monkeypatch, capsys, przezywa=True)
+
+    def api_502(metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
+        raise RuntimeError("gh: HTTP 502")
+
+    with monkeypatch.context() as api:
+        api.setattr(github, "wyslij", api_502)
+        with pytest.raises(RuntimeError, match="HTTP 502"):
+            mutacje_nocne.zglos(github, repo, czerwona["baza"], tmp_path / "zapisy-2", int(czerwona["liczba"]), RUN)
+    plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 3, na_czesc=2, czesci_na_noc=2)
+    zapisy = tmp_path / "zapisy-3"
+    czesci = [_czesc(repo, plan, numer, zapisy, "--osadzone", plan["osadzone"], "--limit-czesci-s", CZAS_PRZEBIEGU_S) for numer in (1, 2)]
+    kod = mutacje_nocne.zglos(github, repo, plan["baza"], zapisy, len(czesci), RUN)
+
+    assert (plan["baza"], plan["do"], plan["mutacje"]) == (czerwona["baza"], czerwona["do"], "4"), plan["log"]
+    assert [czesc.returncode for czesc in czesci] == [1, 0], [czesc.stdout + czesc.stderr for czesc in czesci]
+    assert kod == 0, capsys.readouterr().out
+    assert {issue["title"]: sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.startswith("MUTACJA")) for issue in github.issues} == {
+        "Przeżyte mutacje z #1": ["MUTACJA src/rozliczenia/a.py:2 granica `x > 2` → `>=`", "MUTACJA src/rozliczenia/a.py:2 zmiana linii 2 cofnięta do bazy"]
+    }
+
+
 @pytest.mark.parametrize(
     ("zakres", "linie"),
     [
         ("inna baza", []),
-        ("urwany", ["MUTACJE NOCNE | czerwony run 2 bez kluczy osądzonych mutacji (BadZipFile('File is not a zip file')): noc sprawdzi je znowu"]),
+        ("urwany", ["MUTACJE NOCNE | czerwony run 2 bez tożsamości osądzonych mutacji (BadZipFile('File is not a zip file')): noc sprawdzi je znowu"]),
     ],
     ids=["inna-baza", "urwany-zakres"],
 )
 def test_czerwony_run_od_innej_bazy_albo_bez_zakresu_do_przeczytania_nie_zmienia_nocy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], zakres: str, linie: list[str]
 ) -> None:
-    """Czerwony run, który planował od innej bazy (ręczny run z ``od``), osądził mutacje innego zakresu, a klucz cofnięcia
+    """Czerwony run, który planował od innej bazy (ręczny run z ``od``), osądził mutacje innego zakresu, a zmiana cofnięcia
     fragmentu zależy od bazy. Run, którego zakresu plan nie przeczyta, nie mówi, od jakiej bazy liczył. Noc po każdym z
     nich liczy więc tę samą listę co czerwona noc 2: od jej bazy, do PR #2, 4 mutacje, a zakres bez odczytu ma linię."""
 
@@ -1608,7 +1640,7 @@ def test_plan_wgrywa_zakres_nocy_pod_nazwa_ktora_czyta_nastepna_noc() -> None:
 
 
 def test_zadania_pokrycia_i_czesci_pomijaja_mutacje_osadzone_z_pliku_planu() -> None:
-    """Plan wgrywa klucze mutacji osądzonych przez czerwone runy tej bazy (``--osadzone``) jako artefakt ``osadzone-nocy``,
+    """Plan wgrywa tożsamości mutacji osądzonych przez czerwone runy tej bazy (``--osadzone``) jako artefakt ``osadzone-nocy``,
     a zadania pokrycia i części pobierają go przed narzędziem i podają ten plik w ``--osadzone``. Pobranie nie ma
     ``continue-on-error``: zadanie bez pliku pada, zamiast podzielić inną listę mutacji niż plan."""
 

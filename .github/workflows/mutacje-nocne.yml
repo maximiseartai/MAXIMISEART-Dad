@@ -9,9 +9,10 @@ name: Mutacje nocne
 # mutation script to "Przeżyte mutacje skilli z #N" of the PR that last changed its skill (tools/mutacje_nocne.py,
 # ADR 0021). The parts do not run their own coverage pass: the shards of the job pokrycie run it once for the whole
 # night, and each part reads their records. A red night does not move the base, so the next night gets its range again,
-# but without the mutations its parts judged (caught, survived or dominated): the plan reads their keys from the part
-# records of the red runs with the same base, and the shards and parts skip the same keys (artifact osadzone-nocy), so
-# the night takes only what no part judged and reaches further. Pull requests neither run nor wait for it. The night
+# but without the mutations whose verdict from its parts needs no issue (caught, dominated, excused or of the other
+# system): the plan reads their identities from the part records of the red runs with the same base, and the shards and
+# parts skip the same identities (artifact osadzone-nocy), so the night takes only what no part judged and reaches
+# further. Surviving mutations run again, because only the keys in the issues say whether one was filed. Pull requests neither run nor wait for it. The night
 # starts from the first push to main after 01:30 UTC (mutacje-nocne-start.yml dispatches it with start: auto), and the
 # cron run that comes hours late does no second night.
 on:
@@ -80,7 +81,7 @@ jobs:
           include-hidden-files: true
           overwrite: true
 
-      # The keys of the mutations the red runs with the same base judged: the coverage shards and the parts skip them
+      # The identities of the mutations the red runs with the same base judged: the coverage shards and the parts skip them
       # as the plan did, so all three split the same list.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
