@@ -238,6 +238,23 @@ def test_legenda_z_dwoma_zapisami_do_tego_samego_slowa_nie_powstaje_a_zdanie_pod
     assert refused.value.problem == LegendProblem(field, message)
 
 
+@pytest.mark.parametrize("word", ["tak", "nie"])
+def test_legenda_z_zapisem_tak_albo_nie_nie_powstaje_bo_ten_zapis_nigdy_niczego_nie_wpisze(word: str) -> None:
+    """Słowa ``tak`` i ``nie`` mogą stać w opisie obok kodów i nie są kodem (ADR 0039), więc kod z takim zapisem nigdy
+    niczego by nie wpisał: legenda go nie przyjmuje, a zdanie przy polu zapisu mówi tacie dlaczego."""
+
+    codes = (ActivityCode("inst", ("inst{n}m",), FixedColumn("Y")), ActivityCode("zgoda", ("spawpg", word), FixedColumn("AB")))
+
+    with pytest.raises(LegendRefused) as refused:
+        ActivityLegend(codes)
+
+    assert refused.value.problem == LegendProblem(
+        "kody[zgoda].zapisy[1]",
+        f"Zapis „{word}” to słowo, które w opisie może stać obok kodów i nie jest kodem, więc ten zapis nigdy niczego nie "
+        "wpisze.",
+    )
+
+
 # Zapisy z małego alfabetu, żeby dwa z nich często pasowały do tego samego słowa: od „a”, z „a”, „b”, „1” i „2” i
 # najwyżej jednym miejscem na liczbę.
 _SMALL_SPELLING = st.builds(
