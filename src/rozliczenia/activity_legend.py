@@ -1,40 +1,39 @@
-"""Legenda czynności (ADR 0038): Ilości usług, kwota w ``AS`` i Wyróżnienia z Kodów czynności w ``CZYNNOŚCI ZREALIZOWANE``.
+"""Legenda czynności (ADR 0038, 0039): Ilości usług, kwota w ``AS`` i Wyróżnienia z Kodów czynności w ``CZYNNOŚCI ZREALIZOWANE``.
 
-Jedyną operacją jest ``read_codes(legend, text)``, czysta funkcja bez plików i bez Centrum rozliczeń; liczą nią
+Jedyną operacją jest ``ActivityLegend.read(text)``, czysta funkcja bez plików i bez Centrum rozliczeń; liczą nią
 Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany legendy i brama. Niezmienniki
 legendy sprawdza sam typ ``ActivityLegend`` przy tworzeniu, więc legenda z błędem nie powstaje (``LegendRefused`` z
 polem i zdaniem). Plik legendy ↔ typy: ``activity_legend_file``.
 
 Zapis Kodu czynności to małe litery, cyfry i ``/`` bez spacji, od litery, z co najwyżej jednym miejscem na liczbę
-``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Rachunek tekstu:
+``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Opis technika to same Kody czynności, a każde odstępstwo
+to Błąd opisu, także opis bez żadnego kodu. Rachunek tekstu:
 
-1. Tekst czyta się małymi literami (``casefold``). Zapis pasuje także ze spacjami między znakami (``inst utp17m``,
-   ``dzielnik 1 /2``), a ``{n}`` to ciąg cyfr bez spacji. Zapis kończący się cyfrą nie ma po niej cyfry (``rt25`` to nie
-   ``rt2``).
-2. Zapis nie zaczyna się w środku słowa: przed nim stoi początek tekstu, znak niebędący literą ani cyfrą albo koniec
-   innego kodu, więc ``xinst20m`` i ``art2`` to nie kody, a kody sklejone bez spacji liczą się wszystkie
-   (``spawpgspawez`` to ``spawpg`` i ``spawez``, w każdej kolejności).
-3. Tekst czyta się od lewej. W miejscu, gdzie może zacząć się zapis, pasuje najdłuższy (najwięcej znaków poza ``{n}``),
-   przy równej długości pierwszy w legendzie, a czytanie idzie dalej za nim, więc ``instwewrg610m`` jest tylko
-   ``instwewrg6``, a nie także ``instwew``.
-4. Kod z przedziałami wybiera kolumnę liczbą z zapisu. Liczba spoza przedziałów niczego nie wyznacza: kod jest wtedy w
-   ``out_of_range``, a nie w ``found``. Kod bez przedziałów liczby nie czyta.
-5. Każde wystąpienie kodu dodaje swoją wartość w kolumnie i swoją kwotę w ``AS``; różne kody się sumują. Wypełnienie
-   kolumny daje pierwszy w tekście kod, który ją wypełnia.
-6. Tekst z samych kodów (``only_codes``) to tekst z co najmniej jednym kodem w ``found``, bez kodu spoza przedziałów,
-   w którym poza kodami stoją najwyżej słowa ``tak`` i ``nie`` oraz znaki niebędące literą ani cyfrą.
+1. Słowo to ciąg liter, cyfr i ``/`` z co najmniej jedną literą albo cyfrą; słowa rozdziela każdy inny znak (spacja,
+   przecinek, kropka, nowy wiersz), a sam ``/`` między słowami też.
+2. Słowo jest Kodem czynności, gdy małymi literami (``casefold``) jest w całości zapisem kodu, a ``{n}`` to ciąg cyfr.
+   Gdy pasują zapisy dwóch kodów, słowo należy do pierwszego w legendzie. Słowa ``tak`` i ``nie`` nie są niczym.
+   Każde inne słowo to Błąd opisu (``NotACode``): zwykły opis, własny zapis pracownika (``utp18m``, ``instmdic``), kod
+   ze spacją w środku (``inst 20m``), kody sklejone (``spawpgspawez``) i kod w dłuższym słowie (``xinst20m``).
+3. Kod z przedziałami wybiera kolumnę liczbą z zapisu, a liczba spoza przedziałów to Błąd opisu (``NumberOutOfRange``).
+   Kod bez przedziałów liczby nie czyta.
+4. W kolumnę Ilości usług wpisuje najwyżej jeden kod: drugi, także ten sam kod drugi raz, to Błąd opisu
+   (``ColumnTwice``). Kwoty w ``AS`` się sumują. Kolumna, którą kody wypełniają dwoma różnymi kolorami, to Błąd opisu
+   (``TwoColours``); ten sam kolor z dwóch kodów nie.
+5. Wynik to ``NoCodes`` (opis pusty albo z samych ``tak`` i ``nie``), ``CodesOnly`` (same poprawne kody z tym, co
+   wyznaczają) albo ``DescriptionError`` z każdym powodem: najpierw słowa w kolejności z opisu, potem kolumny w
+   kolejności arkusza. Błąd opisu niczego nie wyznacza w wierszu, nawet za poprawne kody obok.
 """
 
 from __future__ import annotations
 
-from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from itertools import pairwise
 import re
 from types import MappingProxyType
-from typing import Final
+from typing import ClassVar, Final
 
 from .collective_layout import QUANTITY_LETTERS, REMARKS_AMOUNT, letter
 from .quantity_engine import BUILT_IN_COLUMNS, MAX_VALUE, Quantities
@@ -49,8 +48,8 @@ COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in BU
 """Kolumny, w które kod wpisuje Ilość usług: ``N:AP`` bez wbudowanych rachunków P, Q i S."""
 FILL_COLUMNS: Final = (*COLUMNS, AMOUNT_COLUMN)
 """Kolumny, które kod wypełnia kolorem."""
-ONLY_CODES_WORDS: Final = frozenset({"tak", "nie"})
-"""Słowa, które mogą stać obok kodów w tekście z samych kodów."""
+YES_NO: Final = frozenset({"tak", "nie"})
+"""Słowa, które mogą stać w opisie obok kodów i nie są Błędem opisu."""
 
 
 class FillColour(StrEnum):
@@ -144,96 +143,179 @@ class ActivityLegend:
 
     codes: tuple[ActivityCode, ...]
     _patterns: tuple[_Pattern, ...] = field(init=False, repr=False, compare=False)
-    _after_boundary: re.Pattern[str] = field(init=False, repr=False, compare=False)
-    """Zapis po początku tekstu albo po znaku niebędącym literą ani cyfrą."""
-    _after_code: re.Pattern[str] = field(init=False, repr=False, compare=False)
-    """Zapis zaraz za końcem innego kodu."""
+    _spellings: re.Pattern[str] = field(init=False, repr=False, compare=False)
+    """Zapisy kodów w kolejności legendy, każdy w swojej grupie."""
 
     def __post_init__(self) -> None:
         owners: dict[str, ActivityCode] = {}
         ids: set[str] = set()
         for code in self.codes:
             _check_code(code, ids, owners)
-        patterns = sorted(
-            (_Pattern(code, spelling) for code in self.codes for spelling in code.spellings),
-            key=lambda pattern: -len(pattern.spelling.replace(NUMBER, "")),
-        )
-        alternatives = "|".join(_alternative(index, pattern.spelling) for index, pattern in enumerate(patterns))
-        object.__setattr__(self, "_patterns", tuple(patterns))
-        object.__setattr__(self, "_after_boundary", re.compile(rf"(?<![^\W_])(?:{alternatives})"))
-        object.__setattr__(self, "_after_code", re.compile(alternatives))
+        patterns = tuple(_Pattern(code, spelling) for code in self.codes for spelling in code.spellings)
+        object.__setattr__(self, "_patterns", patterns)
+        object.__setattr__(self, "_spellings", re.compile("|".join(_alternative(index, pattern.spelling) for index, pattern in enumerate(patterns))))
 
-    def read(self, text: str) -> CodesRead:
-        """Wynik legendy dla tekstu; woła go ``read_codes``."""
+    def read(self, text: str) -> DescriptionRead:
+        """Wynik legendy dla opisu technika ``text`` (zob. rachunek w opisie modułu)."""
 
-        folded = text.casefold()
-        hits: list[tuple[FoundCode, ActivityCode, str | None]] = []
-        between: list[str] = []
-        end = 0
-        match = self._after_boundary.search(folded)
-        while match is not None:
-            between.append(folded[end : match.start()])
+        found: list[tuple[FoundCode, ActivityCode]] = []
+        problems: list[DescriptionProblem] = []
+        for word in (word for word in _WORD.findall(text) if word.strip("/")):
+            folded = word.casefold()
+            if folded in YES_NO:
+                continue
+            match = self._spellings.fullmatch(folded)
+            if match is None:
+                problems.append(NotACode(word))
+                continue
             index = _index(match)
             pattern = self._patterns[index]
             number = int(match[f"{_NUMBER_GROUP}{index}"]) if NUMBER in pattern.spelling else None
-            hits.append((FoundCode(pattern.code.id, pattern.spelling, number), pattern.code, _column(pattern.code.column, number)))
-            end = match.end()
-            match = self._after_code.match(folded, end) or self._after_boundary.search(folded, end)
-        if not hits:
-            return NOTHING_READ
-        between.append(folded[end:])
-        acting = [(found, code, column) for found, code, column in hits if not _outside(code, column)]
-        out_of_range = tuple(found for found, code, column in hits if _outside(code, column))
-        quantities: Counter[str] = Counter()
-        fills: dict[str, FillColour] = {}
-        amount = 0
-        for _, code, column in acting:
-            if column is not None:
-                quantities[column] += code.value
-            amount += code.amount or 0
-            for fill in code.fills:
-                fills.setdefault(fill.column, fill.colour)
-        words = [word for part in between for word in _WORD.findall(part)]
-        return CodesRead(
-            found=tuple(found for found, _, _ in acting),
-            quantities=MappingProxyType({column: quantities[column] for column in QUANTITY_LETTERS if quantities[column]}),
-            amount=amount,
-            fills=MappingProxyType({column: fills[column] for column in FILL_COLUMNS if column in fills}),
-            out_of_range=out_of_range,
-            only_codes=bool(acting) and not out_of_range and all(word in ONLY_CODES_WORDS for word in words),
+            column = _column(pattern.code.column, number)
+            if isinstance(pattern.code.column, ColumnByNumber) and column is None:
+                assert number is not None, "kod z przedziałami ma w każdym zapisie miejsce na liczbę"
+                problems.append(NumberOutOfRange(pattern.code.id, pattern.spelling, number))
+                continue
+            found.append((FoundCode(pattern.code.id, pattern.spelling, number, column), pattern.code))
+        hits = [(written.column, code) for written, code in found if written.column is not None]
+        fills = [(fill, code.id) for _, code in found for fill in code.fills]
+        problems.extend(
+            ColumnTwice(column, codes)
+            for column in QUANTITY_LETTERS
+            if len(codes := tuple(code.id for hit, code in hits if hit == column)) > 1
+        )
+        problems.extend(
+            TwoColours(column, tuple(code for fill, code in fills if fill.column == column))
+            for column in FILL_COLUMNS
+            if len({fill.colour for fill, _ in fills if fill.column == column}) > 1
+        )
+        if problems:
+            return DescriptionError(tuple(dict.fromkeys(problems)))
+        if not found:
+            return NO_CODES
+        values = {column: code.value for column, code in hits}
+        colours = {fill.column: fill.colour for fill, _ in fills}
+        return CodesOnly(
+            found=tuple(written for written, _ in found),
+            quantities=MappingProxyType({column: values[column] for column in QUANTITY_LETTERS if column in values}),
+            amount=sum(code.amount or 0 for _, code in found),
+            fills=MappingProxyType({column: colours[column] for column in FILL_COLUMNS if column in colours}),
         )
 
 
 @dataclass(frozen=True)
 class FoundCode:
-    """Wystąpienie Kodu czynności w tekście: identyfikator kodu, zapis, którym pasuje, i liczba z zapisu (``None``: zapis
-    bez ``{n}``)."""
+    """Kod czynności w opisie: identyfikator kodu, zapis, którym pasuje, liczba z zapisu (``None``: zapis bez ``{n}``) i
+    kolumna Ilości usług, w którą wpisuje (``None``: kod bez kolumny)."""
 
     code: str
     spelling: str
     number: int | None
+    column: str | None
 
 
 @dataclass(frozen=True)
-class CodesRead:
-    """Wynik Legendy czynności dla tekstu ``CZYNNOŚCI ZREALIZOWANE``.
+class NoCodes:
+    """Opis pusty albo z samych ``tak`` i ``nie``: bez kodu i bez Błędu opisu, więc legenda nic w nim nie wpisuje, a wiersz
+    zostaje tacie."""
 
-    ``found``: kody, które coś wyznaczyły, w kolejności z tekstu. ``quantities``: kolumna → suma Ilości usług, tylko
-    różne od zera, w kolejności kolumn. ``amount``: suma kwot w ``AS`` (0: bez kwoty). ``fills``: kolumna → kolor
-    wypełnienia. ``out_of_range``: kody z liczbą spoza przedziałów, w kolejności z tekstu. ``only_codes``: tekst z samych
-    kodów, więc wiersz nie czeka na tatę w kolumnach z opisu technika.
+
+@dataclass(frozen=True)
+class CodesOnly:
+    """Opis z samych poprawnych Kodów czynności, więc legenda wpisuje w wierszu swoje, a wiersz nie czeka na tatę w
+    kolumnach z opisu technika.
+
+    ``found``: kody w kolejności z opisu. ``quantities``: kolumna → Ilość usług, w kolejności kolumn. ``amount``: suma
+    kwot w ``AS`` (0: bez kwoty). ``fills``: kolumna → kolor wypełnienia, w kolejności arkusza.
     """
 
     found: tuple[FoundCode, ...]
     quantities: Quantities
     amount: int
     fills: Mapping[str, FillColour]
-    out_of_range: tuple[FoundCode, ...]
-    only_codes: bool
 
 
-NOTHING_READ: Final = CodesRead((), MappingProxyType({}), 0, MappingProxyType({}), (), only_codes=False)
-"""Wynik tekstu bez Kodu czynności."""
+@dataclass(frozen=True)
+class NotACode:
+    """Słowo opisu, które nie jest zapisem żadnego Kodu czynności ani ``tak`` czy ``nie``, tak jak w opisie."""
+
+    word: str
+    reason: ClassVar[str] = "słowo spoza legendy"
+
+
+@dataclass(frozen=True)
+class NumberOutOfRange:
+    """Kod czynności ``code`` w zapisie ``spelling`` z liczbą ``number`` spoza przedziałów kodu."""
+
+    code: str
+    spelling: str
+    number: int
+    reason: ClassVar[str] = "liczba spoza przedziałów"
+
+    @property
+    def detail(self) -> str:
+        """Kod z liczbą w miejscu ``{n}`` (``instutp40m``): z zapisu legendy, nie z tekstu technika."""
+
+        return self.spelling.replace(NUMBER, str(self.number))
+
+
+@dataclass(frozen=True)
+class ColumnTwice:
+    """W kolumnę Ilości usług ``column`` wpisuje więcej niż jeden kod: ``codes`` w kolejności z opisu, z powtórzeniami."""
+
+    column: str
+    codes: tuple[str, ...]
+    reason: ClassVar[str] = "kolumna więcej niż raz"
+
+    @property
+    def detail(self) -> str:
+        return f"{self.column}: {', '.join(self.codes)}"
+
+
+@dataclass(frozen=True)
+class TwoColours:
+    """Kody ``codes`` (w kolejności z opisu) wypełniają kolumnę ``column`` różnymi kolorami."""
+
+    column: str
+    codes: tuple[str, ...]
+    reason: ClassVar[str] = "kolumna w dwóch kolorach"
+
+    @property
+    def detail(self) -> str:
+        return f"{self.column}: {', '.join(self.codes)}"
+
+
+DescriptionProblem = NotACode | NumberOutOfRange | ColumnTwice | TwoColours
+"""Powód Błędu opisu: ``reason`` to rodzaj powodu. Tylko ``NotACode.word`` niesie tekst technika; ``detail`` pozostałych
+to kod z liczbą albo kolumna z identyfikatorami kodów."""
+REASONS: Final = tuple(kind.reason for kind in (NotACode, NumberOutOfRange, ColumnTwice, TwoColours))
+"""Rodzaje powodów Błędu opisu w stałej kolejności."""
+
+
+@dataclass(frozen=True)
+class DescriptionError:
+    """Błąd opisu: opis technika nie jest z samych poprawnych Kodów czynności, więc legenda nic w wierszu nie wpisuje, a
+    wiersz zostaje tacie. ``problems``: każdy powód raz (zob. opis modułu, punkt 5)."""
+
+    problems: tuple[DescriptionProblem, ...]
+
+
+DescriptionRead = NoCodes | CodesOnly | DescriptionError
+"""Wynik Legendy czynności dla opisu technika ``CZYNNOŚCI ZREALIZOWANE``."""
+
+NO_CODES: Final = NoCodes()
+
+
+def problem_text(problem: DescriptionProblem) -> str:
+    """Powód Błędu opisu słowami, ten sam dla taty i Maksa (``liczba spoza przedziałów (instutp40m)``), bez tekstu
+    technika: słowo spoza legendy to sam rodzaj powodu. Słowo osobno ominęłoby strażnika reguły danych, który maskuje
+    wartość tylko z jej słowami po kolei, więc pokazuje je opis technika obok powodu."""
+
+    match problem:
+        case NotACode():
+            return problem.reason
+        case NumberOutOfRange() | ColumnTwice() | TwoColours():
+            return f"{problem.reason} ({problem.detail})"
 
 
 def shown_spelling(spelling: str) -> str:
@@ -242,15 +324,9 @@ def shown_spelling(spelling: str) -> str:
     return spelling.replace(NUMBER, SHOWN_NUMBER)
 
 
-def read_codes(legend: ActivityLegend, text: str) -> CodesRead:
-    """Kody czynności w tekście ``text`` i to, co wyznaczają (zob. rachunek w opisie modułu)."""
-
-    return legend.read(text)
-
-
 _SPELLING_GROUP: Final = "zapis"
 _NUMBER_GROUP: Final = "liczba"
-_WORD: Final = re.compile(r"[^\W_]+")
+_WORD: Final = re.compile(r"(?:[^\W_]|/)+")
 _SPELLING: Final = re.compile(r"[^\W\d_](?:[^\W_]|/|\{n\})*")
 
 
@@ -264,17 +340,12 @@ def _column(choice: ColumnChoice | None, number: int | None) -> str | None:
             return None if number is None else choice.column(number)
 
 
-def _outside(code: ActivityCode, column: str | None) -> bool:
-    return isinstance(code.column, ColumnByNumber) and column is None
-
-
 def _alternative(index: int, spelling: str) -> str:
-    """Wzorzec zapisu numer ``index`` w alternatywie legendy: znaki zapisu ze spacjami między nimi, ``{n}`` jako liczba w
-    grupie ``liczba<index>``, a po zapisie kończącym się cyfrą bez cyfry."""
+    """Wzorzec zapisu numer ``index`` w alternatywie legendy: znaki zapisu, a ``{n}`` jako liczba w grupie
+    ``liczba<index>``."""
 
-    atoms = [rf"(?P<{_NUMBER_GROUP}{index}>[0-9]+)" if part == NUMBER else re.escape(part) for part in re.split(r"(\{n\})|", spelling) if part]
-    tail = r"(?![0-9])" if spelling[-1].isdigit() else ""
-    return rf"(?P<{_SPELLING_GROUP}{index}>" + r"\s*".join(atoms) + tail + ")"
+    atoms = [rf"(?P<{_NUMBER_GROUP}{index}>[0-9]+)" if part == NUMBER else re.escape(part) for part in re.split(r"(\{n\})", spelling) if part]
+    return rf"(?P<{_SPELLING_GROUP}{index}>" + "".join(atoms) + ")"
 
 
 def _index(match: re.Match[str]) -> int:

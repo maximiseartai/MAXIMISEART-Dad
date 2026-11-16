@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -19,7 +19,7 @@ from typing import Final
 
 from . import preparation_messages as messages
 from . import staged_publication
-from .activity_legend import NUMBER, FoundCode
+from .activity_legend import CodesOnly, DescriptionError, DescriptionProblem, FillColour
 from .collective_layout import QUANTITY_LETTERS
 from .file_state import path_taken
 from .highlights import solid_fill
@@ -70,7 +70,7 @@ class CollectiveFilePlan:
     ``rows_without_rule`` mają składnik ``URZĄDZENIA`` nieznany Regułom ilości, a ``rows_from_description`` rozlicza
     się z opisu technika, który nie jest z samych Kodów czynności. ``closed_by_legend``: liczba wierszy, których
     ``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności, więc nie czekają na tatę w kolumnach z opisu technika (ADR 0038).
-    ``out_of_range``: wiersze z Kodem czynności z liczbą spoza przedziałów i te kody, jak w tekście (``instutp40m``).
+    ``description_errors``: wiersze z Błędem opisu i jego powody.
     """
 
     successful_count: int
@@ -79,7 +79,7 @@ class CollectiveFilePlan:
     rows_without_rule: tuple[int, ...]
     rows_from_description: tuple[int, ...]
     closed_by_legend: int
-    out_of_range: tuple[tuple[int, tuple[str, ...]], ...]
+    description_errors: tuple[tuple[int, tuple[DescriptionProblem, ...]], ...]
 
     @property
     def too_few_zero_rows(self) -> bool:
@@ -105,21 +105,13 @@ def plan_period_files(
         rows_from_description=tuple(
             number
             for number, row in numbered
-            if isinstance(row.rule_result, FromDescription) and not row.codes.only_codes
+            if isinstance(row.rule_result, FromDescription) and not isinstance(row.read, CodesOnly)
         ),
-        closed_by_legend=sum(1 for row in collective_rows if row.codes.only_codes),
-        out_of_range=tuple(
-            (number, tuple(_written(found) for found in row.codes.out_of_range))
-            for number, row in numbered
-            if row.codes.out_of_range
+        closed_by_legend=sum(1 for row in collective_rows if isinstance(row.read, CodesOnly)),
+        description_errors=tuple(
+            (number, row.read.problems) for number, row in numbered if isinstance(row.read, DescriptionError)
         ),
     )
-
-
-def _written(found: FoundCode) -> str:
-    """Kod czynności z liczbą z tekstu w miejscu ``{n}`` (``instutp40m``); z zapisu legendy, nie z tekstu technika."""
-
-    return found.spelling.replace(NUMBER, str(found.number))
 
 
 def _create_file(template: TemplateFile, target: Path, rows: Sequence[RegisterRow]) -> Route:
@@ -228,14 +220,19 @@ def _with_quantities(row: CollectiveRow) -> RegisterRow:
     """Wiersz Rejestru z Ilościami usług Reguł ilości i Legendy czynności zsumowanymi w każdej kolumnie, kwotą w ``AS``
     i wypełnieniami z legendy."""
 
-    rules, codes = row.rule_result.quantities, row.codes
+    rules = row.rule_result.quantities
+    legend: Mapping[str, int] = {}
+    colours: Mapping[str, FillColour] = {}
+    amount = 0
+    if isinstance(row.read, CodesOnly):
+        legend, amount, colours = row.read.quantities, row.read.amount, row.read.fills
     quantities = {
-        column: rules.get(column, 0) + codes.quantities.get(column, 0)
+        column: rules.get(column, 0) + legend.get(column, 0)
         for column in QUANTITY_LETTERS
-        if column in rules or column in codes.quantities
+        if column in rules or column in legend
     }
-    fills = {column: solid_fill(colour.argb) for column, colour in codes.fills.items()}
-    return replace(row.order.register_row, quantities=quantities, amount=codes.amount, fills=fills)
+    fills = {column: solid_fill(colour.argb) for column, colour in colours.items()}
+    return replace(row.order.register_row, quantities=quantities, amount=amount, fills=fills)
 
 
 def _publish(staged_directory: Path, files: PeriodFiles) -> None:

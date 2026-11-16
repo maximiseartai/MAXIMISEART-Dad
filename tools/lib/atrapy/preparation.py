@@ -136,7 +136,7 @@ def register_order(
         "WYKONAWCA": worker,
         "NUMER UMOWY": f"OR-SYN-{number:03d}",
         "SKUTECZNE": successful,
-        "CZYNNOŚCI ZREALIZOWANE": "montaż",
+        "CZYNNOŚCI ZREALIZOWANE": "tak",
         "ZWROT": f"{NOT_TRANSFERRED_PREFIXES['ZWROT']}{number:03d}",
         "UWAGI": f"{NOT_TRANSFERRED_PREFIXES['UWAGI']}{number:03d}",
     }
@@ -475,7 +475,7 @@ def collective_row(number: int, started: datetime, successful: str, worker: str)
         worker,
         f"OR-SYN-{number:03d}",
         successful,
-        "montaż",
+        "tak",
     )
 
 

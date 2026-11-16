@@ -1488,7 +1488,7 @@ def test_formula_glowna_wspolnej_formuly_w_wierszu_okresu_daje_jedno_zlecenie_te
     summary = run_preparation(fixture)
 
     assert summary.period_order_count == 3
-    assert [row[10] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == ["=N5", "=N6", "montaż"]
+    assert [row[10] for row in sheet_rows(fixture.internal_settlement_path, min_row=2, max_col=13)] == ["=N5", "=N6", "tak"]
 
 
 _SECOND_PERIOD_ORDER = internal_row(3, datetime(2026, 9, 10, 8, 0), "NIE", "dariusz.fikcyjny2")

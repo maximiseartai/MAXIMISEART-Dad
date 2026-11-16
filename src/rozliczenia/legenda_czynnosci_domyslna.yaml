@@ -1,10 +1,11 @@
-# Legenda czynności z Wydania (ADR 0038): mail taty z 15.11.2026 i zapis instmdic przy instmdik. Do odpowiedzi taty
-# rt2 daje AM, liczba w bypas i instwew nie ma znaczenia, a pz działa tylko jako pz20m. Ten sam format ma plik
-# config/legenda-czynnosci.yaml taty (activity_legend_file).
+# Legenda czynności z Wydania (ADR 0038): mail taty z 15.11.2026 z jego odpowiedziami z 16.11.2026. Każdy kod ma
+# jeden zapis, ten z maila, bo pracownicy piszą same kody, a inny zapis to Błąd opisu. rt2 daje AM, liczba w bypas,
+# instwew i pz nie ma znaczenia (pz zawsze 480 w AS), a instutp i instwewrg6 z liczbą spoza przedziałów to Błąd opisu.
+# Ten sam format ma plik config/legenda-czynnosci.yaml taty (activity_legend_file).
 schema_version: 1
 kody:
   - {id: inst, zapisy: ["inst{n}m"], kolumna: Y}
-  - {id: instmdik, zapisy: [instmdik, instmdic], kolumna: Y}
+  - {id: instmdik, zapisy: [instmdik], kolumna: Y}
   - id: instutp
     zapisy: ["instutp{n}m"]
     przedzialy: [{od: 1, do: 15, kolumna: AL}, {od: 16, do: 30, kolumna: AJ}]
@@ -19,5 +20,5 @@ kody:
   - {id: spawez, zapisy: [spawez], kolumna: AB}
   - {id: spawmufakan, zapisy: [spawmufakan], kolumna: AB, kwota: 70}
   - {id: spawmufaziem, zapisy: [spawmufaziem], kolumna: AC}
-  - {id: dzielnik1/2, zapisy: [dzielnik1/2, dzielnika1/2], kwota: 50}
-  - {id: pz20m, zapisy: [pz20m], kwota: 480}
+  - {id: dzielnik1/2, zapisy: [dzielnik1/2], kwota: 50}
+  - {id: pz, zapisy: ["pz{n}m"], kwota: 480}

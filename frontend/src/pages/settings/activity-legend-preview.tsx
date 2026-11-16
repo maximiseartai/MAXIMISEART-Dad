@@ -7,8 +7,9 @@ type Edit = PreviewActivityLegendData["body"]
 
 /**
  * Skutek zmiany Kodu czynności na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, liczony przez serwer tym samym
- * rachunkiem wiersza co Kontrola ilości: ile wierszy się zmieni, w ilu będzie tak, jak wpisał tata, i wiersze z różnicą
- * z opisem technika, bez adresu i numerów. Zapis jest możliwy także przy różnicach.
+ * rachunkiem wiersza co Kontrola ilości: ile wierszy się zmieni, w ilu będzie tak, jak wpisał tata, ile wierszy ma Błąd
+ * opisu i wiersze z różnicą albo z Błędem opisu z opisem technika, bez adresu i numerów. Zapis jest możliwy także przy
+ * różnicach.
  */
 export function LegendPreview({ edit }: { edit: Edit }) {
   const shown = usePreview(edit, previewActivityLegend)
@@ -25,7 +26,11 @@ function Preview({ preview }: { preview: PreviewActivityLegendResponse }) {
 
   return (
     <>
-      <Summary preview={preview} differences="różnice legendy z Kontroli ilości" />
+      <Summary
+        preview={preview}
+        differences="różnice legendy z Kontroli ilości"
+        also={`wiersze z Błędem opisu: ${preview.errors_before} → ${preview.errors_after}`}
+      />
       {rows}
       <MoreRows more={preview.more} />
     </>
@@ -37,12 +42,13 @@ function Row({ row }: { row: LegendPreviewRow }) {
     <div role="listitem" aria-label={`Wiersz ${row.row}`} className="flex flex-col gap-2 px-4 py-3 text-sm">
       <p className="text-muted-foreground tabular-nums">
         {row.period} · wiersz {row.row}
-        {row.codes.length === 0 ? " · bez kodu" : ` · ${row.codes.join(", ")}`}
+        {rowCodes(row)}
       </p>
       <p className="text-pretty">
         <span className="text-muted-foreground">CZYNNOŚCI ZREALIZOWANE </span>
         <span className="font-mono">{row.description}</span>
       </p>
+      {row.problems.length === 0 ? null : <p className="text-pretty">Błąd opisu: {row.problems.join("; ")}</p>}
       <ul className="flex flex-col gap-1">
         {row.cells.map((cell) => (
           <li key={`${cell.kind}-${cell.column}`} className="flex flex-wrap items-center gap-x-2 tabular-nums">
@@ -58,6 +64,14 @@ function Row({ row }: { row: LegendPreviewRow }) {
       </ul>
     </div>
   )
+}
+
+function rowCodes(row: LegendPreviewRow) {
+  if (row.problems.length > 0) {
+    return " · Błąd opisu"
+  }
+
+  return row.codes.length === 0 ? " · bez kodu" : ` · ${row.codes.join(", ")}`
 }
 
 function shownValue(value: number | string | null) {

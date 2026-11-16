@@ -666,14 +666,15 @@ export const zLegendPreviewValue = z.object({
  * LegendPreviewRow
  *
  * Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis
- * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu i komórki różne od taty. Bez
- * adresu, numeru zlecenia i daty dziennej.
+ * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z samych kodów, powody Błędu
+ * opisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej.
  */
 export const zLegendPreviewRow = z.object({
     period: z.string(),
     row: z.int(),
     description: z.string(),
     codes: z.array(z.string()),
+    problems: z.array(z.string()),
     cells: z.array(z.union([zLegendPreviewValue, zLegendPreviewFill]))
 });
 
@@ -986,8 +987,9 @@ export const zPreviewFile = z.object({
  *
  * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze
  * co innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.
- * ``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie.
- * ``rows``: zmienione wiersze z różnicą od taty, najwyżej ``SHOWN_ROWS``, a ``more`` reszta.
+ * ``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie, a
+ * ``errors_before`` i ``errors_after``: wiersze z Błędem opisu teraz i po zmianie. ``rows``: zmienione wiersze z różnicą
+ * od taty albo z Błędem opisu, najwyżej ``SHOWN_ROWS``, a ``more`` reszta.
  */
 export const zLegendPreviewReady = z.object({
     state: z.literal('ready'),
@@ -997,6 +999,8 @@ export const zLegendPreviewReady = z.object({
     changed_as_tata: z.int(),
     differences_before: z.int(),
     differences_after: z.int(),
+    errors_before: z.int(),
+    errors_after: z.int(),
     rows: z.array(zLegendPreviewRow),
     more: z.int()
 });

@@ -223,15 +223,15 @@ rows_from_description #2 [WIERSZE_Z_OPISU]
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 20, 21, 23
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika w CZYNNOŚCI ZREALIZOWANE przed Przebiegiem rozliczeń.
 
-codes_out_of_range #1 [KODY_SPOZA_PRZEDZIALOW]
-  Co się stało: Liczba w Kodzie czynności jest spoza przedziałów Legendy czynności, więc kod niczego nie wpisał (wiersz 20: instutp40m).
+description_errors #1 [BLEDY_OPISU]
+  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: liczba spoza przedziałów (wiersz 20).
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersz 20
-  Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Jeśli taka liczba będzie wracać, powiedz o niej osobie utrzymującej narzędzie.
+  Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Kody czynności i ich zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności.
 
-codes_out_of_range #2 [KODY_SPOZA_PRZEDZIALOW]
-  Co się stało: Liczba w Kodzie czynności jest spoza przedziałów Legendy czynności, więc kod niczego nie wpisał (wiersz 20: instutp40m, instutp0m; wiersz 23: instwewrg631m).
-  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 20, 23
-  Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Jeśli taka liczba będzie wracać, powiedz o niej osobie utrzymującej narzędzie.
+description_errors #2 [BLEDY_OPISU]
+  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: słowo spoza legendy (wiersz 20); liczba spoza przedziałów (wiersz 20); kolumna więcej niż raz (wiersz 23); kolumna w dwóch kolorach (wiersz 24).
+  Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 20, 23, 24
+  Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Kody czynności i ich zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności.
 
 columns_from_description #1 [KOLUMNY_Z_OPISU]
   Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 12 wierszy.

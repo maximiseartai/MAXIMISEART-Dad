@@ -3,7 +3,7 @@
 Numery wierszy w ostrzeżeniach to numery wierszy Pliku zbiorczego, bo tata poprawia Plik zbiorczy: Zlecenia
 skuteczne leżą w nim od wiersza 18, bez pustych wierszy i zleceń nieskutecznych z Rejestru zleceń. Wiersz, którego
 ``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności z Legendy czynności z Wydania, nie czeka na tatę w kolumnach z opisu
-technika (ADR 0038).
+technika (ADR 0038), a wiersz z Błędem opisu czeka, z powodem w ostrzeżeniu (ADR 0039).
 """
 
 from __future__ import annotations
@@ -43,12 +43,12 @@ def _described(number: int, devices: str, completed: str, *, started: datetime |
 
 def _legend_period() -> list[RegisterRow]:
     return [
-        _described(1, "nokia zte", "tak inst15m, dzielnik 1/2."),  # Plik zbiorczy 18: same kody
-        _described(2, "nokia zte", "20 m patchcord dzielnik 1/2"),  # 19: kod obok opisu
-        _described(3, "prewencja", "INSTMDIC"),  # 20: z opisu, same kody
+        _described(1, "nokia zte", "tak inst15m, dzielnik1/2."),  # Plik zbiorczy 18: same kody
+        _described(2, "nokia zte", "20 m patchcord dzielnik1/2"),  # 19: kod obok słów spoza legendy
+        _described(3, "prewencja", "INSTMDIK"),  # 20: z opisu, same kody
         _described(4, "prewencja", "spawpg i wymiana gniazda"),  # 21: z opisu, kod obok opisu
-        _described(5, "nokia zte", "instutp40m"),  # 22: liczba spoza przedziałów
-        _described(6, "fut", "montaż", started=MONDAY),  # 23: bez kodu
+        _described(5, "nokia zte", "montaż instutp40m instmdik inst20m"),  # 22: słowo, liczba spoza przedziałów, dwa kody w Y
+        _described(6, "fut", "montaż ONT", started=MONDAY),  # 23: bez kodu, ze słowami spoza legendy
     ]
 
 
@@ -162,18 +162,24 @@ def test_w_centrum_zapis_okresu_tylko_ze_znanymi_urzadzeniami_wymaga_sprawdzenia
     assert [warning["where"] for warning in written["warnings"]] == [REMINDER[1]]
 
 
-def test_ostrzezenia_licza_wiersze_zamkniete_legenda_i_wskazuja_kod_spoza_przedzialow(tmp_path: Path) -> None:
+def test_ostrzezenia_licza_wiersze_zamkniete_legenda_i_wskazuja_wiersze_z_bledem_opisu_wedlug_powodu(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path, _legend_period())
 
     preview = run_preparation(fixture, dry_run=True)
     summary = run_preparation(fixture)
 
-    assert summary.warnings == [
-        messages.rows_from_description(COLLECTIVE_FILE_NAME, [21]),
-        messages.codes_out_of_range(COLLECTIVE_FILE_NAME, [(22, ["instutp40m"])]),
-        messages.columns_from_description(COLLECTIVE_FILE_NAME, DESCRIPTION_COLUMNS, closed=2, for_tata=4),
-    ]
+    errors = next(warning for warning in summary.warnings if warning.code == "BLEDY_OPISU")
+    assert errors.what == (
+        "Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc "
+        "Legenda czynności nic w nich nie wpisała: słowo spoza legendy (wiersze 19, 21, 22, 23); liczba spoza "
+        "przedziałów (wiersz 22); kolumna więcej niż raz (wiersz 22)."
+    )
+    assert errors.where == f"plik {COLLECTIVE_FILE_NAME}, wiersze 19, 21, 22, 23"
+    assert [warning.code for warning in summary.warnings] == ["WIERSZE_Z_OPISU", "BLEDY_OPISU", "KOLUMNY_Z_OPISU"]
+    assert summary.warnings[0] == messages.rows_from_description(COLLECTIVE_FILE_NAME, [21])
+    assert summary.warnings[2] == messages.columns_from_description(COLLECTIVE_FILE_NAME, DESCRIPTION_COLUMNS, closed=2, for_tata=4)
     assert preview.warnings == summary.warnings
+    assert [word for word in ("patchcord", "montaż", "instutp", "inst20m") if word in repr(summary.warnings)] == []
 
 
 def test_okres_z_samych_kodow_nie_przypomina_o_kolumnach_z_opisu(tmp_path: Path) -> None:

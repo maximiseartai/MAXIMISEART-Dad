@@ -17,6 +17,7 @@ from rozliczenia import tool_files
 from rozliczenia import efenix_messages, intermax_messages, intermax_replace, report_entering_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia import settlement_messages
+from rozliczenia.activity_legend import ColumnTwice, NotACode, NumberOutOfRange, TwoColours
 from rozliczenia.centrum import (
     diagnosis_messages,
     fill_messages,
@@ -144,9 +145,16 @@ PREPARATION_SAMPLES: Samples = {
         lambda: messages.rows_from_description(SOURCE.name, [20]),
         lambda: messages.rows_from_description(SOURCE.name, [20, 21, 23]),
     ],
-    "codes_out_of_range": [
-        lambda: messages.codes_out_of_range(SOURCE.name, [(20, ["instutp40m"])]),
-        lambda: messages.codes_out_of_range(SOURCE.name, [(20, ["instutp40m", "instutp0m"]), (23, ["instwewrg631m"])]),
+    "description_errors": [
+        lambda: messages.description_errors(SOURCE.name, [(20, [NumberOutOfRange("instutp", "instutp{n}m", 40)])]),
+        lambda: messages.description_errors(
+            SOURCE.name,
+            [
+                (20, [NotACode("montaż"), NumberOutOfRange("instutp", "instutp{n}m", 0)]),
+                (23, [ColumnTwice("Y", ("instmdik", "inst"))]),
+                (24, [TwoColours("AF", ("rt2", "instwew"))]),
+            ],
+        ),
     ],
     "columns_from_description": [
         lambda: messages.columns_from_description(SOURCE.name, DESCRIPTION_COLUMNS, closed=0, for_tata=12),

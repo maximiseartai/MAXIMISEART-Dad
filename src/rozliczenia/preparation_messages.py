@@ -14,6 +14,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Final, assert_never
 
+from .activity_legend import REASONS, DescriptionProblem
 from .message import IF_ERROR_RETURNS, Message, explorer_check, file_label, folder_label, refer_if
 from .period_folder import PeriodFolderLookupError, month_folder_label
 from .text import plural, row_range
@@ -556,24 +557,28 @@ def rows_from_description(collective_filename: str, row_numbers: Sequence[int]) 
     )
 
 
-def codes_out_of_range(collective_filename: str, rows: Sequence[tuple[int, Sequence[str]]]) -> Message:
-    """Ostrzeżenie: Kod czynności z liczbą spoza przedziałów Legendy czynności niczego nie wpisał (ADR 0038).
+def description_errors(collective_filename: str, rows: Sequence[tuple[int, Sequence[DescriptionProblem]]]) -> Message:
+    """Ostrzeżenie: wiersze z Błędem opisu, w których Legenda czynności nic nie wpisała (ADR 0038).
 
-    ``rows``: numer wiersza Pliku zbiorczego i kody z liczbą spoza przedziałów, jak w tekście (``instutp40m``).
+    ``rows``: numer wiersza Pliku zbiorczego i powody jego Błędu opisu. Powody idą rodzajami w stałej kolejności, każdy z
+    numerami swoich wierszy, bez słów i kodów z opisu: tata widzi je w wierszu.
     """
 
-    listed = "; ".join(f"wiersz {number}: {', '.join(codes)}" for number, codes in rows[:_LISTED_ROWS])
-    rest = len(rows) - _LISTED_ROWS
+    parts = [
+        f"{reason} ({_rows_label(numbers)})"
+        for reason in REASONS
+        if (numbers := [number for number, problems in rows if any(problem.reason == reason for problem in problems)])
+    ]
     return Message(
-        code="KODY_SPOZA_PRZEDZIALOW",
+        code="BLEDY_OPISU",
         what=(
-            "Liczba w Kodzie czynności jest spoza przedziałów Legendy czynności, więc kod niczego nie wpisał "
-            f"({listed}{f' i {rest} kolejnych' if rest > 0 else ''})."
+            "Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), "
+            f"więc Legenda czynności nic w nich nie wpisała: {'; '.join(parts)}."
         ),
-        where=f"plik {collective_filename}, {_rows_label([number for number, _codes in rows])}",
+        where=f"plik {collective_filename}, {_rows_label([number for number, _problems in rows])}",
         action=(
-            "Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. "
-            f"{refer_if('Jeśli taka liczba będzie wracać', request='powiedz o niej')}"
+            "Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Kody czynności i ich "
+            "zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności."
         ),
     )
 

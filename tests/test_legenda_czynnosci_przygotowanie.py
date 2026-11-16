@@ -1,8 +1,8 @@
 """Legenda czynności z Wydania w Pliku zbiorczym z Przygotowania pliku zbiorczego (ADR 0038).
 
 Każdy przypadek to jedno Zlecenie skuteczne syntetycznego Rejestru z ``CZYNNOŚCI ZREALIZOWANE``, a oczekiwane Ilości
-usług, kwota w ``AS`` i kolory pochodzą z maila taty z 15.11.2026 i wartości domyślnych ADR 0038, nie z kodu. Wzorce
-mają kształt Wzorców taty (``tools/syntetyczne_wzorce.py``).
+usług, kwota w ``AS`` i kolory pochodzą z maila taty z 15.11.2026, ADR 0038 i ADR 0039, nie z kodu: opis z Błędem
+opisu, także bez żadnego kodu, nie dostaje od legendy nic. Wzorce mają kształt Wzorców taty (``tools/syntetyczne_wzorce.py``).
 """
 
 from __future__ import annotations
@@ -45,7 +45,6 @@ MAIL: list[Case] = [
     Case("inst25m", DEVICES_ONLY_V | {"Y": 1}),
     Case("inst40m", DEVICES_ONLY_V | {"Y": 1}),
     Case("instmdik", DEVICES_ONLY_V | {"Y": 1}),
-    Case("instmdic", DEVICES_ONLY_V | {"Y": 1}),
     Case("instutp1m", DEVICES_ONLY_V | {"AL": 1}),
     Case("instutp15m", DEVICES_ONLY_V | {"AL": 1}),
     Case("instutp16m", DEVICES_ONLY_V | {"AJ": 1}),
@@ -62,37 +61,43 @@ MAIL: list[Case] = [
     Case("spawmufakan", DEVICES_ONLY_V | {"AB": 1, "AS": 70}),
     Case("spawmufaziem", DEVICES_ONLY_V | {"AC": 1}),
     Case("dzielnik1/2", DEVICES_ONLY_V | {"AS": 50}),
-    Case("dzielnika1/2", DEVICES_ONLY_V | {"AS": 50}),
     Case("pz20m", DEVICES_ONLY_V | {"AS": 480}),
+    Case("pz15m", DEVICES_ONLY_V | {"AS": 480}),
     Case("instwew15m", DEVICES_ONLY_V, {"AF": GREEN}),
 ]
 SUMS: list[Case] = [
-    Case("inst25m inst utp17m", DEVICES_ONLY_V | {"Y": 1, "AJ": 1}),
-    Case("inst20m inst20m", DEVICES_ONLY_V | {"Y": 2}),
-    Case("instmdik inst20m", DEVICES_ONLY_V | {"Y": 2}),
+    Case("inst25m instutp17m", DEVICES_ONLY_V | {"Y": 1, "AJ": 1}),
     Case("spawpg dzielnik1/2", DEVICES_ONLY_V | {"AB": 1, "AS": 120}, {"AS": RED}),
     Case("dzielnik1/2, dzielnik1/2", DEVICES_ONLY_V | {"AS": 100}),
-    Case("technicolor: instwewrg65m", {"O": 1, "S": 1, "Z": 1, "AK": 2, "V": 1}, devices="technicolor"),
+    Case("instwewrg65m", {"O": 1, "S": 1, "Z": 1, "AK": 2, "V": 1}, devices="technicolor"),
     Case("rt2", {"AM": 2, "V": 1}, {"AM": RED, "AF": GREEN}, devices="zmiana instalacji w lokalu abonenta"),
 ]
 SPELLING: list[Case] = [
     Case("INST20M", DEVICES_ONLY_V | {"Y": 1}),
-    Case("tak, Inst 20 m", DEVICES_ONLY_V | {"Y": 1}),
-    Case("dzielnik 1 /2", DEVICES_ONLY_V | {"AS": 50}),
-    Case("Spaw PG", DEVICES_ONLY_V | {"AB": 1, "AS": 70}, {"AS": RED}),
-    Case("20 m patchcord dzielnik 1/2", DEVICES_ONLY_V | {"AS": 50}),
+    Case("tak, Inst20M.", DEVICES_ONLY_V | {"Y": 1}),
+    Case("SpawPG\nnie", DEVICES_ONLY_V | {"AB": 1, "AS": 70}, {"AS": RED}),
 ]
-NOT_CODES: list[Case] = [
+DESCRIPTION_ERRORS: list[Case] = [
     Case("spawanie gniazda", DEVICES_ONLY_V),
     Case("instalacja 20m", DEVICES_ONLY_V),
     Case("xinst20m", DEVICES_ONLY_V),
     Case("rt25", DEVICES_ONLY_V),
+    Case("instmdic", DEVICES_ONLY_V),
+    Case("dzielnika1/2", DEVICES_ONLY_V),
+    Case("utp18m", DEVICES_ONLY_V),
+    Case("tak, Inst 20 m", DEVICES_ONLY_V),
+    Case("Spaw PG", DEVICES_ONLY_V),
+    Case("20 m patchcord dzielnik 1/2", DEVICES_ONLY_V),
     Case("instutp40m", DEVICES_ONLY_V),
     Case("instutp0m", DEVICES_ONLY_V),
     Case("instwewrg631m", DEVICES_ONLY_V),
-    Case("pz15m", DEVICES_ONLY_V),
+    Case("20 m patchcord dzielnik1/2", DEVICES_ONLY_V),
+    Case("spawpg montaż", DEVICES_ONLY_V),
+    Case("inst20m inst20m", DEVICES_ONLY_V),
+    Case("instmdik inst20m", DEVICES_ONLY_V),
+    Case("rt2 bypas5m", DEVICES_ONLY_V),
 ]
-CASES = [*MAIL, *SUMS, *SPELLING, *NOT_CODES]
+CASES = [*MAIL, *SUMS, *SPELLING, *DESCRIPTION_ERRORS]
 
 
 def _fixture(tmp_path: Path, cases: list[Case]) -> PreparationFixture:

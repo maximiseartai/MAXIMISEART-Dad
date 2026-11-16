@@ -1,244 +1,264 @@
-"""Moduł Legendy czynności na swoim interfejsie (ADR 0038): ``read_codes`` i parser pliku ``legenda-czynnosci.yaml``.
+"""Moduł Legendy czynności na swoim interfejsie (ADR 0038): ``ActivityLegend.read`` i parser pliku ``legenda-czynnosci.yaml``.
 
 Moduł jest szwem: liczą nim Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany
-legendy i brama, więc macierz reguł jest tu raz. Oczekiwania pochodzą z maila taty z 15.11.2026, ADR 0038 i opisu
-modułu ``activity_legend``. Przykłady Hypothesis są deterministyczne (``derandomize=True``, bez bazy przykładów).
+legendy i brama, więc macierz reguł jest tu raz. Oczekiwania pochodzą z maila taty z 15.11.2026, ADR 0039 (opis to
+same kody, każde odstępstwo to Błąd opisu, także opis bez kodu, w kolumnie zawsze tylko 1, kwoty w ``AS`` się sumują) i
+opisu modułu ``activity_legend``. Przykłady Hypothesis są deterministyczne (``derandomize=True``, bez bazy
+przykładów).
 """
 
 from __future__ import annotations
-
-from collections import Counter
 
 import pytest
 from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from rozliczenia.activity_legend import (
+    NO_CODES,
+    NUMBER,
     ActivityCode,
     ActivityLegend,
     CellFill,
-    CodesRead,
+    CodesOnly,
     ColumnByNumber,
+    ColumnTwice,
+    DescriptionError,
+    DescriptionRead,
     FillColour,
     FixedColumn,
-    NUMBER,
     LegendProblem,
+    NotACode,
+    NumberOutOfRange,
     NumberRange,
-    read_codes,
+    TwoColours,
 )
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND, dump_activity_legend, parse_activity_legend
 
 PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples=200)
 
 
-def _read(text: str) -> CodesRead:
-    return read_codes(DEFAULT_ACTIVITY_LEGEND, text)
+def _read(text: str) -> DescriptionRead:
+    return DEFAULT_ACTIVITY_LEGEND.read(text)
+
+
+def _codes(text: str) -> CodesOnly:
+    read = _read(text)
+    assert isinstance(read, CodesOnly), read
+    return read
+
+
+def _problems(text: str, legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND) -> tuple[object, ...]:
+    read = legend.read(text)
+    assert isinstance(read, DescriptionError), read
+    return read.problems
 
 
 @pytest.mark.parametrize(
     ("text", "column"),
     [
-        ("instutp0m", None),
         ("instutp1m", "AL"),
         ("instutp15m", "AL"),
         ("instutp16m", "AJ"),
         ("instutp30m", "AJ"),
-        ("instutp31m", None),
-        ("instwewrg60m", None),
         ("instwewrg610m", "AK"),
         ("instwewrg611m", "AL"),
         ("instwewrg615m", "AL"),
         ("instwewrg616m", "AJ"),
         ("instwewrg630m", "AJ"),
-        ("instwewrg631m", None),
     ],
 )
-def test_liczba_z_kodu_wybiera_kolumne_przedzialem_a_spoza_przedzialow_niczego_nie_wpisuje(text: str, column: str | None) -> None:
-    read = _read(text)
-
-    if column is None:
-        assert (read.quantities, read.amount, dict(read.fills), read.found) == ({}, 0, {}, ())
-        assert [found.code for found in read.out_of_range] == ["instutp" if text.startswith("instutp") else "instwewrg6"]
-        assert read.only_codes is False
-    else:
-        assert dict(read.quantities) == {column: 1}
-        assert read.out_of_range == ()
-        assert read.only_codes is True
+def test_liczba_z_kodu_wybiera_kolumne_przedzialem(text: str, column: str) -> None:
+    assert dict(_codes(text).quantities) == {column: 1}
 
 
 @pytest.mark.parametrize(
-    ("text", "code"),
+    ("text", "problem"),
     [
-        ("instwewrg610m", "instwewrg6"),
-        ("instwew10m", "instwew"),
-        ("inst10m", "inst"),
-        ("instmdik", "instmdik"),
-        ("spawmufakan", "spawmufakan"),
-        ("spawmufaziem", "spawmufaziem"),
+        ("instutp0m", NumberOutOfRange("instutp", "instutp{n}m", 0)),
+        ("instutp31m", NumberOutOfRange("instutp", "instutp{n}m", 31)),
+        ("instwewrg60m", NumberOutOfRange("instwewrg6", "instwewrg6{n}m", 0)),
+        ("instwewrg631m", NumberOutOfRange("instwewrg6", "instwewrg6{n}m", 31)),
     ],
 )
-def test_dluzszy_zapis_wygrywa_z_krotszym_a_dopasowany_tekst_nie_liczy_sie_drugi_raz(text: str, code: str) -> None:
-    assert [found.code for found in _read(text).found] == [code]
+def test_liczba_spoza_przedzialow_to_blad_opisu_z_kodem_i_liczba(text: str, problem: NumberOutOfRange) -> None:
+    assert _problems(text) == (problem,)
 
 
-# Zapisy, które pracownicy piszą bez liczby (pytania do taty: „samo instwew”), więc krótszy pasuje do początku dłuższego.
-_NESTED = ActivityLegend(
+@pytest.mark.parametrize(
+    "text",
+    [
+        "inst 20m",
+        "Inst 20 m",
+        "spaw pg",
+        "dzielnik 1/2",
+        "spawpgspawez",
+        "inst20mspawpg",
+        "xinst20m",
+        "ąinst20m",
+        "2inst20m",
+        "Montażinst20m",
+        "inst20m/spawpg",
+        "rt25",
+        "art2",
+        "instmdic",
+        "dzielnika1/2",
+        "pz",
+        "instwew",
+    ],
+)
+def test_slowo_ktore_nie_jest_w_calosci_zapisem_kodu_to_blad_opisu_samo_i_obok_kodu(text: str) -> None:
+    words = tuple(NotACode(word) for word in text.split())
+
+    assert (_problems(text), _problems(f"spawgnd {text}")) == (words, words)
+
+
+@pytest.mark.parametrize(
+    ("text", "words"),
+    [("montaż ONT", ("montaż", "ONT")), ("utp18m", ("utp18m",)), ("tak, wymiana routera", ("wymiana", "routera"))],
+)
+def test_opis_bez_zadnego_kodu_ze_slowem_innym_niz_tak_i_nie_to_blad_opisu(text: str, words: tuple[str, ...]) -> None:
+    assert _problems(text) == tuple(NotACode(word) for word in words)
+
+
+@pytest.mark.parametrize("text", ["", "   ", "tak", "Nie.", "TAK, nie!", "-", "/ /", "\n"])
+def test_opis_pusty_albo_z_samych_tak_i_nie_to_brak_kodow_bez_bledu(text: str) -> None:
+    assert _read(text) == NO_CODES
+
+
+def test_kod_z_liczba_spoza_przedzialow_jest_kodem_wiec_slowa_obok_sa_bledem() -> None:
+    assert _problems("montaż instutp40m") == (NotACode("montaż"), NumberOutOfRange("instutp", "instutp{n}m", 40))
+
+
+@pytest.mark.parametrize(
+    ("text", "problem"),
+    [
+        ("instmdik inst20m", ColumnTwice("Y", ("instmdik", "inst"))),
+        ("inst20m inst30m", ColumnTwice("Y", ("inst", "inst"))),
+        ("inst20m, inst20m", ColumnTwice("Y", ("inst", "inst"))),
+        ("spawpg spawez", ColumnTwice("AB", ("spawpg", "spawez"))),
+        ("instutp12m instwewrg612m", ColumnTwice("AL", ("instutp", "instwewrg6"))),
+        ("rt2 bypas5m", ColumnTwice("AM", ("rt2", "bypas"))),
+    ],
+)
+def test_drugi_kod_w_tej_samej_kolumnie_ilosci_uslug_to_blad_opisu_takze_ten_sam_kod(text: str, problem: ColumnTwice) -> None:
+    assert _problems(text) == (problem,)
+
+
+def test_kwoty_w_as_sie_sumuja_takze_tego_samego_kodu_i_nie_sa_bledem() -> None:
+    assert (_codes("spawpg dzielnik1/2").amount, _codes("dzielnik1/2, dzielnik1/2").amount) == (120, 100)
+    assert _codes("pz15m pz20m").amount == 960
+
+
+def test_rozne_kody_w_roznych_kolumnach_wyznaczaja_kazdy_swoje() -> None:
+    read = _codes("spawpg, dzielnik1/2 inst25m instutp17m rt2")
+
+    assert dict(read.quantities) == {"Y": 1, "AB": 1, "AJ": 1, "AM": 1}
+    assert read.amount == 120
+    assert dict(read.fills) == {"AF": FillColour.GREEN, "AM": FillColour.RED, "AS": FillColour.RED}
+    assert [found.code for found in read.found] == ["spawpg", "dzielnik1/2", "inst", "instutp", "rt2"]
+
+
+_COLOURED = ActivityLegend(
     (
-        ActivityCode("inst", ("inst",), FixedColumn("Y")),
-        ActivityCode("instwew", ("instwew",), fills=(CellFill("AF", FillColour.GREEN),)),
-        ActivityCode("instwewrg6", ("instwewrg6{n}m",), ColumnByNumber((NumberRange(1, 10, "AK"),))),
+        ActivityCode("zielony", ("zielony",), fills=(CellFill("AF", FillColour.GREEN),)),
+        ActivityCode("czerwony", ("czerwony",), fills=(CellFill("AF", FillColour.RED),)),
+        ActivityCode("tez-zielony", ("tezzielony",), fills=(CellFill("AF", FillColour.GREEN),)),
     )
 )
 
 
-@pytest.mark.parametrize(
-    ("text", "codes"),
-    [("instwewrg65m", ["instwewrg6"]), ("instwew", ["instwew"]), ("inst", ["inst"]), ("inst instwew instwewrg65m", ["inst", "instwew", "instwewrg6"])],
-)
-def test_dluzszy_zapis_wygrywa_z_krotszym_ktory_pasuje_do_jego_poczatku(text: str, codes: list[str]) -> None:
-    assert [found.code for found in read_codes(_NESTED, text).found] == codes
+def test_dwa_rozne_kolory_w_jednej_kolumnie_to_blad_opisu_a_ten_sam_kolor_dwa_razy_nie() -> None:
+    assert _problems("zielony czerwony zielony", _COLOURED) == (TwoColours("AF", ("zielony", "czerwony", "zielony")),)
+    read = _COLOURED.read("zielony tezzielony")
+    assert isinstance(read, CodesOnly) and dict(read.fills) == {"AF": FillColour.GREEN}
+    assert dict(_codes("rt2 instwew15m").fills)["AF"] is FillColour.GREEN
 
 
-@pytest.mark.parametrize("text", ["xinst20m", "ąinst20m", "2inst20m", "Montażinst20m", "spawanie gniazda", "instalacja 20m", "rt25", "art2"])
-def test_kod_nie_zaczyna_sie_w_srodku_slowa_a_zwykle_slowa_nie_sa_kodem(text: str) -> None:
-    assert _read(text).found == ()
+def test_powody_bledu_ida_najpierw_slowami_w_kolejnosci_z_opisu_potem_kolumnami_kazdy_raz() -> None:
+    assert _problems("instmdik montaż instutp40m inst20m montaż") == (
+        NotACode("montaż"),
+        NumberOutOfRange("instutp", "instutp{n}m", 40),
+        ColumnTwice("Y", ("instmdik", "inst")),
+    )
+
+
+def test_slowo_pasujace_do_zapisow_dwoch_kodow_nalezy_do_pierwszego_w_legendzie() -> None:
+    legend = ActivityLegend(
+        (
+            ActivityCode("rt2", ("rt2",), FixedColumn("AM")),
+            ActivityCode("rt", ("rt{n}",), FixedColumn("AK")),
+        )
+    )
+
+    read = legend.read("rt2 rt3")
+
+    assert isinstance(read, CodesOnly)
+    assert [(found.code, found.column) for found in read.found] == [("rt2", "AM"), ("rt", "AK")]
 
 
 _SPELLINGS = tuple(spelling for code in DEFAULT_ACTIVITY_LEGEND.codes for spelling in code.spellings)
-# Zapis z Legendy z Wydania z liczbą, także spoza przedziałów (0, 31…), tak jak mógł go napisać Wykonawca.
-_CODE = st.sampled_from(_SPELLINGS).flatmap(lambda spelling: st.integers(0, 40).map(lambda number: spelling.replace(NUMBER, str(number))))
-
-
-def _outcome(read: CodesRead) -> tuple[object, ...]:
-    return (
-        Counter(found.code for found in read.found),
-        Counter(found.code for found in read.out_of_range),
-        dict(read.quantities),
-        read.amount,
-        dict(read.fills),
-        read.only_codes,
-    )
-
-
-@PROPERTY
-@given(first=_CODE, second=_CODE)
-def test_kody_sklejone_bez_spacji_licza_sie_oba_w_kazdej_kolejnosci(first: str, second: str) -> None:
-    separated = _outcome(_read(f"{first}, {second}"))
-
-    assert _outcome(_read(first + second)) == separated
-    assert _outcome(_read(second + first)) == separated
-
-
+# Zapis z Legendy z Wydania z liczbą z przedziałów (1–30 pasuje do każdego kodu z przedziałami).
+_CODE = st.sampled_from(_SPELLINGS).flatmap(lambda spelling: st.integers(1, 30).map(lambda number: spelling.replace(NUMBER, str(number))))
+_BETWEEN = st.lists(st.sampled_from((" ", ", ", ". ", "; ", " tak ", " nie ", " TAK, ", " - ", "!", "\n", " / ")), min_size=1, max_size=3)
 # Litery i cyfry tekstu Wykonawcy; poza nimi są litery, które ``casefold`` rozkłada na literę i znak diakrytyczny (``İ``).
 _WORD_CHARACTERS = "abcdefghijklmnopqrstuvwxyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWXYZĄĆĘŁŃÓŚŹŻ0123456789"
 
 
-@PROPERTY
-@given(before=st.just("") | _CODE, word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12), code=_CODE)
-def test_kod_po_literze_albo_cyfrze_zwyklego_slowa_nie_pasuje(before: str, word: str, code: str) -> None:
-    assume(_read(word) == _read(""))
-
-    assert _outcome(_read(before + word + code)) == _outcome(_read(before + word))
-
-
-def test_wypelnienie_kolumny_daje_pierwszy_w_tekscie_kod() -> None:
-    legend = ActivityLegend(
-        (
-            ActivityCode("zielony", ("zielony",), fills=(CellFill("AF", FillColour.GREEN),)),
-            ActivityCode("czerwony", ("czerwony",), fills=(CellFill("AF", FillColour.RED),)),
-        )
-    )
-
-    assert dict(read_codes(legend, "zielony czerwony").fills) == {"AF": FillColour.GREEN}
-    assert dict(read_codes(legend, "czerwony zielony").fills) == {"AF": FillColour.RED}
-
-
-def test_kod_spoza_przedzialow_obok_dzialajacego_kodu_wyklucza_same_kody() -> None:
-    read = _read("inst20m instutp99m")
-
-    assert [found.code for found in read.found] == ["inst"]
-    assert [found.code for found in read.out_of_range] == ["instutp"]
-    assert read.only_codes is False
-
-
-def test_kazde_wystapienie_kodu_sie_dodaje_a_rozne_kody_sumuja_sie_takze_w_as() -> None:
-    read = _read("spawpg, spawpg dzielnik 1/2 inst25m inst utp17m instmdik")
-
-    assert dict(read.quantities) == {"Y": 2, "AB": 2, "AJ": 1}
-    assert read.amount == 190
-    assert dict(read.fills) == {"AS": FillColour.RED}
-    assert [found.code for found in read.found] == ["spawpg", "spawpg", "dzielnik1/2", "inst", "instutp", "instmdik"]
-
-
-def test_tekst_z_kodem_i_zwyklym_opisem_wyznacza_wartosci_kodu_ale_nie_jest_z_samych_kodow() -> None:
-    read = _read("20 m patchcord dzielnik 1/2")
-
-    assert (read.amount, read.only_codes) == (50, False)
-
-
-# Pierwsze litery zapisów legendy z Wydania; tekst bez nich nie może zawierać kodu, bo zapis zaczyna się od litery.
-_FIRST_LETTERS = frozenset(spelling[0] for code in DEFAULT_ACTIVITY_LEGEND.codes for spelling in code.spellings)
-_WITHOUT_CODES = st.text(
-    alphabet=st.characters(
-        blacklist_characters="".join(_FIRST_LETTERS | {letter.upper() for letter in _FIRST_LETTERS}),
-        blacklist_categories=["Cs"],
-    ),
-    max_size=60,
-).filter(lambda text: not any(letter in text.casefold() for letter in _FIRST_LETTERS))
-
-
-@PROPERTY
-@given(text=_WITHOUT_CODES)
-def test_tekst_bez_kodu_daje_pusty_wynik(text: str) -> None:
-    read = _read(text)
-
-    assert (read.found, dict(read.quantities), read.amount, dict(read.fills), read.out_of_range, read.only_codes) == (
-        (),
-        {},
-        0,
-        {},
-        (),
-        False,
-    )
-
-
-_SAMPLES = ("inst20m", "instmdic", "instutp17m", "instwewrg612m", "rt2", "bypas2m", "spawgnd", "spawpg", "dzielnik1/2", "pz20m", "instwew15m")
-_BETWEEN = st.lists(st.sampled_from((" ", ", ", ". ", "; ", " tak ", " nie ", " TAK, ", " - ", "!", "\n", "/ ")), min_size=0, max_size=3)
-
-
 @st.composite
-def _written(draw: st.DrawFn, codes: list[str]) -> str:
-    """Kody tak, jak mógł je zapisać Wykonawca: wielkość liter, spacje w środku kodu, ale nie w środku liczby."""
+def _cased(draw: st.DrawFn, code: str) -> str:
+    """Kod tak, jak mógł go zapisać Wykonawca na telefonie: każda litera małą albo wielką."""
 
-    text = ""
-    for code in codes:
-        upper = draw(st.integers(0, 2 ** len(code) - 1))
-        spaced = draw(st.integers(0, 2 ** len(code) - 1))
-        text += "".join(
-            (char.upper() if upper >> index & 1 else char)
-            + (" " if spaced >> index & 1 and index < len(code) - 1 and not (char + code[index + 1]).isdigit() else "")
-            for index, char in enumerate(code)
-        )
-        text += " "
-    return text
+    upper = draw(st.integers(0, 2 ** len(code) - 1))
+    return "".join(char.upper() if upper >> index & 1 else char for index, char in enumerate(code))
+
+
+def _one_per_column(codes: list[str]) -> bool:
+    read = _read(" ".join(codes))
+    return isinstance(read, CodesOnly)
 
 
 @PROPERTY
-@given(data=st.data(), codes=st.lists(st.sampled_from(_SAMPLES), min_size=1, max_size=4))
-def test_tak_nie_i_interpunkcja_nie_zmieniaja_rozstrzygniecia_same_kody(data: st.DataObject, codes: list[str]) -> None:
-    plain = _read(" ".join(codes))
-    joined = "".join("".join(data.draw(_BETWEEN)) + data.draw(_written([code])) for code in codes) + "".join(data.draw(_BETWEEN))
+@given(data=st.data(), codes=st.lists(_CODE, min_size=1, max_size=4))
+def test_wielkosc_liter_interpunkcja_tak_i_nie_nie_zmieniaja_wyniku_samych_kodow(data: st.DataObject, codes: list[str]) -> None:
+    assume(_one_per_column(codes))
+    plain = _codes(" ".join(codes))
+    written = "".join("".join(data.draw(_BETWEEN)) + data.draw(_cased(code)) for code in codes)
 
-    read = _read(joined)
+    read = _codes(written + "".join(data.draw(_BETWEEN)))
 
-    assert plain.only_codes is True
-    assert (read.only_codes, dict(read.quantities), read.amount, dict(read.fills)) == (
-        True,
-        dict(plain.quantities),
-        plain.amount,
-        dict(plain.fills),
-    )
-    assert _read(joined + " montaż").only_codes is False
+    assert (dict(read.quantities), read.amount, dict(read.fills)) == (dict(plain.quantities), plain.amount, dict(plain.fills))
+
+
+@PROPERTY
+@given(
+    data=st.data(),
+    codes=st.lists(_CODE, min_size=0, max_size=3),
+    word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12),
+)
+def test_slowo_spoza_legendy_w_dowolnym_miejscu_opisu_to_blad_opisu(
+    data: st.DataObject, codes: list[str], word: str
+) -> None:
+    assume(isinstance(_read(word), DescriptionError))
+    position = data.draw(st.integers(0, len(codes)))
+    words = [*codes[:position], word, *codes[position:]]
+
+    read = _read(data.draw(st.sampled_from((" ", ", ", ".\n"))).join(words))
+
+    assert isinstance(read, DescriptionError)
+    assert NotACode(word) in read.problems
+
+
+@PROPERTY
+@given(first=_CODE, second=_CODE)
+def test_kody_sklejone_bez_odstepu_to_jedno_slowo_spoza_legendy(first: str, second: str) -> None:
+    assert _problems(first + second) == (NotACode(first + second),)
+
+
+@PROPERTY
+@given(word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12), code=_CODE)
+def test_kod_w_srodku_albo_na_koncu_dluzszego_slowa_nie_jest_kodem(word: str, code: str) -> None:
+    assert NotACode(word + code) in _problems(word + code)
+    assert NotACode(code + word) in _problems(code + word)
 
 
 def test_legenda_z_wydania_czyta_sie_z_powrotem_w_ten_sam_typ() -> None:
