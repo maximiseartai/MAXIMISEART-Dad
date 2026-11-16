@@ -38,9 +38,10 @@ Its proof adds `api/karta-*.json` and `state/` (the Logi and the Centrum log).
   Uruchomienie.
 - The file of Logi moved aside in `karta-bez-szczegolow` goes back before the next step without a restart: Centrum
   reads it on each request.
-- In `all` the killed server is a successor of the runner's own process, because `aktualizacja` (the restart guardian)
-  and `kontrola-ilosci` already restarted Centrum; alone it is the runner's own; cleanup stops whichever `server.json`
-  names, and the runner's stop handles a process that is already dead.
+- The killed server is never the runner's own process but a successor the drive started: the feature closes and
+  starts Centrum in `karta-po-zamknieciu` and again in `karta-bez-szczegolow`, before the kill, and in `all` earlier
+  features restarted it too; cleanup stops whichever `server.json` names, and the runner's stop handles a process
+  that is already dead.
 - Kill only while the RUN waits for the Decyzja: nothing has been written to the Folder okresu then, so moving the
   folder back restores the fixture.
 - The note's date is `started_at` of the file of Logi, which is a few milliseconds before the metrics record's; compare

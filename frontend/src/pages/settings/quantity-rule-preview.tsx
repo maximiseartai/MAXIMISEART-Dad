@@ -16,10 +16,10 @@ type Edit = PreviewQuantityRulesData["body"]
 /** Podgląd czeka tyle po ostatniej zmianie formularza, żeby nie liczyć przy każdym znaku. */
 const PAUSE_MS = 400
 
-type Answer = { state: "refused"; message: string } | { state: "ready"; preview: PreviewQuantityRulesResponse }
+type Answer<R> = { state: "refused"; message: string } | { state: "ready"; preview: R }
 
 /** Ostatnia odpowiedź podglądu; `refreshing`: formularz zmienił się od niej, a nowa jeszcze nie przyszła. */
-type Shown = { state: "waiting" } | (Answer & { refreshing: boolean })
+type Shown<R> = { state: "waiting" } | (Answer<R> & { refreshing: boolean })
 
 const ROWS = { one: "wiersz", few: "wiersze", many: "wierszy" }
 
@@ -29,8 +29,16 @@ const ROWS = { one: "wiersz", few: "wiersze", many: "wierszy" }
  * adresu i numerów. Liczy się od nowa chwilę po każdej zmianie formularza; do odpowiedzi stoi poprzedni wynik.
  */
 export function RulePreview({ edit }: { edit: Edit }) {
-  const shown = usePreview(edit)
+  const shown = usePreview(edit, previewQuantityRules)
 
+  return <PreviewPanel shown={shown}>{shown.state === "ready" ? <Preview preview={shown.preview} /> : null}</PreviewPanel>
+}
+
+/**
+ * Podgląd zmiany pod formularzem: nagłówek z kręciołkiem, gdy liczy się nowa odpowiedź, i panel z jej treścią; gotową
+ * odpowiedź pokazuje `children`.
+ */
+export function PreviewPanel<R>({ shown, children }: { shown: Shown<R>; children: React.ReactNode }) {
   return (
     <section aria-label="Podgląd" className="flex flex-col gap-2">
       <p aria-hidden className="flex items-center gap-2 px-1 text-xs font-medium text-muted-foreground">
@@ -38,27 +46,33 @@ export function RulePreview({ edit }: { edit: Edit }) {
         {shown.state !== "waiting" && shown.refreshing ? <Spinner className="size-3" /> : null}
       </p>
       <SettingsPanel label="Podgląd" className="bg-muted/30">
-        <PreviewBody shown={shown} />
+        <PreviewState shown={shown}>{children}</PreviewState>
       </SettingsPanel>
     </section>
   )
 }
 
-function usePreview(edit: Edit): Shown {
+/**
+ * Odpowiedź serwera `ask` na zmianę `edit`, pytana chwilę po ostatniej zmianie formularza; odpowiedź na starsze pytanie
+ * nie zastępuje nowszej.
+ */
+export function usePreview<E, R>(edit: E, ask: (edit: E) => Promise<R>): Shown<R> {
   const key = JSON.stringify(edit)
   const latestEdit = React.useRef(edit)
+  const latestAsk = React.useRef(ask)
   const latest = React.useRef(0)
-  const [answered, setAnswered] = React.useState<{ key: string; answer: Answer } | null>(null)
+  const [answered, setAnswered] = React.useState<{ key: string; answer: Answer<R> } | null>(null)
 
   React.useEffect(() => {
     latestEdit.current = edit
+    latestAsk.current = ask
   })
 
   React.useEffect(() => {
     const asked = ++latest.current
 
     const timer = window.setTimeout(() => {
-      previewQuantityRules(latestEdit.current).then(
+      latestAsk.current(latestEdit.current).then(
         (preview) => {
           if (asked === latest.current) {
             setAnswered({ key, answer: { state: "ready", preview } })
@@ -78,7 +92,7 @@ function usePreview(edit: Edit): Shown {
   return answered === null ? { state: "waiting" } : { ...answered.answer, refreshing: answered.key !== key }
 }
 
-function PreviewBody({ shown }: { shown: Shown }) {
+function PreviewState<R>({ shown, children }: { shown: Shown<R>; children: React.ReactNode }) {
   switch (shown.state) {
     case "waiting":
       return (
@@ -93,7 +107,7 @@ function PreviewBody({ shown }: { shown: Shown }) {
         </p>
       )
     case "ready":
-      return <Preview preview={shown.preview} />
+      return children
     default: {
       const unhandled: never = shown
 
@@ -110,42 +124,45 @@ function Preview({ preview }: { preview: PreviewQuantityRulesResponse }) {
       </p>
     )
 
-  switch (preview.state) {
-    case "no_periods_directory":
-      return (
-        <>
-          {sentence}
-          <Note>Wskaż folder okresów w sekcji Foldery, żeby zobaczyć skutek na ostatnich okresach.</Note>
-        </>
-      )
-    case "no_settled_periods":
-      return (
-        <>
-          {sentence}
-          <Note>Żaden okres nie ma jeszcze Rozliczeń pracowników, więc nie ma z czym porównać.</Note>
-        </>
-      )
-    case "ready":
-      return (
-        <>
-          {sentence}
-          <Summary preview={preview} />
-          {preview.rows.map((row) => (
-            <Row key={`${row.period}-${row.row}`} row={row} />
-          ))}
-          {preview.more === 0 ? null : (
-            <Note>
-              I jeszcze {preview.more} {plural(preview.more, ROWS)} z różnicą.
-            </Note>
-          )}
-        </>
-      )
-    default: {
-      const unhandled: never = preview
-
-      return unhandled
-    }
+  if (preview.state !== "ready") {
+    return (
+      <>
+        {sentence}
+        <WithoutFiles state={preview.state} />
+      </>
+    )
   }
+
+  return (
+    <>
+      {sentence}
+      <Summary preview={preview} />
+      {preview.rows.map((row) => (
+        <Row key={`${row.period}-${row.row}`} row={row} />
+      ))}
+      <MoreRows more={preview.more} />
+    </>
+  )
+}
+
+/** Podgląd bez plików, na których da się policzyć skutek zmiany. */
+export function WithoutFiles({ state }: { state: "no_periods_directory" | "no_settled_periods" }) {
+  return (
+    <Note>
+      {state === "no_periods_directory"
+        ? "Wskaż folder okresów w sekcji Foldery, żeby zobaczyć skutek na ostatnich okresach."
+        : "Żaden okres nie ma jeszcze Rozliczeń pracowników, więc nie ma z czym porównać."}
+    </Note>
+  )
+}
+
+/** Wiersze z różnicą, których podgląd już nie pokazuje. */
+export function MoreRows({ more }: { more: number }) {
+  return more === 0 ? null : (
+    <Note>
+      I jeszcze {more} {plural(more, ROWS)} z różnicą.
+    </Note>
+  )
 }
 
 function Note({ children }: { children: React.ReactNode }) {
@@ -156,7 +173,11 @@ function Note({ children }: { children: React.ReactNode }) {
   )
 }
 
-function Summary({ preview }: { preview: PreviewReady }) {
+/** Liczby podglądu zmiany: ile wierszy się zmieni, w ilu będzie tak, jak wpisał tata, i różnice Kontroli ilości. */
+type Counted = Pick<PreviewReady, "files" | "unread" | "changed" | "changed_as_tata" | "differences_before" | "differences_after">
+
+/** Skutek zmiany na ostatnich Plikach zbiorczych; `differences`: czyje różnice Kontroli ilości liczy podgląd. */
+export function Summary({ preview, differences = "różnice z Kontroli ilości" }: { preview: Counted; differences?: string }) {
   const files = preview.files.length
 
   return (
@@ -168,7 +189,8 @@ function Summary({ preview }: { preview: PreviewReady }) {
       </p>
       <p className="text-sm text-muted-foreground tabular-nums">
         {files} {plural(files, { one: "ostatni Plik zbiorczy", few: "ostatnie Pliki zbiorcze", many: "ostatnich Plików zbiorczych" })}
-        {" · "}różnice z Kontroli ilości: {preview.differences_before} → {preview.differences_after}
+        {" · "}
+        {differences}: {preview.differences_before} → {preview.differences_after}
       </p>
       <UnreadPeriods periods={preview.unread} />
     </div>

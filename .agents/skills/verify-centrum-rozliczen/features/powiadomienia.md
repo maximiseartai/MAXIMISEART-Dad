@@ -71,4 +71,5 @@ Its proof adds `api/powiadomienia-*.json`.
 - The Zgłoszenie that `zgloszenie` closed has no `state_reason`; Centrum reads it as `completed`, so it may already be new when this feature starts.
 - Only the first failed save of a held state file waits for its retries (under a second); later reads try once. Poll the API with a timeout instead of expecting the Komunikat on the first answer: the Komunikat names `powiadomienia.json` only after the tab has marked the closed Uwaga read.
 - The Linux lock was never driven: CI drives Centrum on Windows, and root ignores a read-only folder, so there the Komunikat never shows and the step fails.
+  `tests/test_centrum_powiadomienia.py::test_oba_niedostepne_pliki_stanu_sa_w_jednym_komunikacie` checks on every system, with the save refused in the test, that two state files Centrum cannot save give one Komunikat that names both.
 - Run alone, the clone stands one commit behind the local origin; the Update step first makes the clone's `HEAD` the origin's only Wydanie, so the click never moves the clone.

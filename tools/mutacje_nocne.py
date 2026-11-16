@@ -4,6 +4,13 @@ Mutacje nocne (ADR 0021): mutacje linii zmienionych na ``main`` od ostatniej noc
 
 Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``workflow_dispatch`` z opcjonalnym ``od``).
 
+- ``start`` (workflow ``mutacje-nocne-start.yml``, każdy push na ``main``) uruchamia noc z pierwszego pushu po
+  ``POCZATEK_NOCY`` UTC, bo cron ``30 1 * * *`` tworzy run z kilkugodzinnym opóźnieniem: przed tą godziną nic nie robi, a po
+  niej uruchamia ``mutacje-nocne.yml`` na ``main`` z wejściem ``start: auto``, chyba że run nocy (każde zdarzenie)
+  powstał już od tej godziny. Run crona albo startu z pushu, przed którym powstał już nieanulowany run nocy doby, nie
+  robi drugiej nocy: ``plan`` daje ``do`` równe ``baza`` i pustą macierz części, a artefakt ``zakres-nocy`` z tym samym
+  ``do``, więc zielony run bez pracy nie przesuwa bazy następnej nocy. Ręczny run bez ``start: auto`` biegnie zawsze.
+
 - ``plan`` ustala bazę: ``--od`` (albo ``--baza``), gdy jest (``od`` spoza linii ``main`` zastępuje wspólny przodek HEAD i ``od``, od
   którego liczy też część), inaczej koniec zakresu ostatniego udanego runu tego workflow na ``main``
   (``do`` z jego artefaktu ``zakres-nocy``, a run bez tego artefaktu policzył wszystko do swojego ``headSha``), a bez
@@ -69,7 +76,7 @@ import argparse
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, time, timedelta
 from enum import Enum
 import io
 import json
@@ -79,6 +86,7 @@ import re
 import subprocess
 import sys
 from typing import Any
+import urllib.parse
 import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
@@ -98,6 +106,10 @@ from wplyw_zmiany import Repository, changed_since
 from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
 
 WORKFLOW = "mutacje-nocne.yml"
+# Doba nocy zaczyna się o godzinie crona ``30 1 * * *`` w mutacje-nocne.yml; od niej noc startuje z pierwszego pushu na main.
+POCZATEK_NOCY = time(1, 30)
+# Wejście ``start`` runu, który uruchomił start z pushu; ``plan`` traktuje taki run jak run crona.
+START_AUTO = "auto"
 PREFIKS = "MUTACJE NOCNE"
 # Część to 6 pełnych kolejek po WORKERS mutacji naraz. W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300,
 # 41601085650) mediana mutacji pliku wynosiła 1–210 s, ale 16 mutacji tools/mutacje.py trwało w testach linii pełny limit
@@ -157,6 +169,62 @@ class Rodzaj(Enum):
         self.dopisek = dopisek
         self.nazwa = nazwa
         self.rada = rada
+
+
+# --- start z pushu ---
+
+
+@dataclass(frozen=True)
+class Wyzwolenie:
+    """Co uruchomiło run planu: zdarzenie GitHub Actions (``github.event_name``), wejście ``start`` i id runu
+    (``GITHUB_RUN_ID``)."""
+
+    zdarzenie: str = ""
+    start: str = ""
+    run: int = 0
+
+    @property
+    def noc_doby(self) -> bool:
+        """Run, który ma być nocą doby: cron albo start z pushu; ręczny run człowieka (z ``od``) biegnie zawsze."""
+
+        return self.zdarzenie == "schedule" or self.start == START_AUTO
+
+
+# Plan poza runem crona i startu z pushu (lokalnie, ręczny run z ``od``) biegnie zawsze.
+RECZNE = Wyzwolenie()
+
+
+def _runy_doby(github: GitHub, teraz: datetime) -> list[dict[str, Any]]:
+    """Runy tego workflow na ``main`` utworzone od ``POCZATEK_NOCY`` UTC doby ``teraz``, każdym zdarzeniem."""
+
+    od = urllib.parse.quote(f">={datetime.combine(teraz.date(), POCZATEK_NOCY, UTC):%Y-%m-%dT%H:%M:%SZ}")
+    runy: list[dict[str, Any]] = github.json(f"{REPO}/actions/workflows/{WORKFLOW}/runs?branch=main&created={od}&per_page=100")["workflow_runs"]
+    return runy
+
+
+def start(github: GitHub, teraz: datetime) -> int:
+    """Uruchamia noc doby ``teraz`` z pushu na ``main``: przed ``POCZATEK_NOCY`` UTC i po runie nocy utworzonym od tej
+    godziny nic, a inaczej ``workflow_dispatch`` tego workflow na ``main`` z wejściem ``start: auto``."""
+
+    if teraz.time() < POCZATEK_NOCY:
+        print(f"MUTACJE NOCNE START | {teraz:%H:%M} UTC, przed {POCZATEK_NOCY:%H:%M} UTC: noc startuje z pierwszego pushu po tej godzinie")
+        return 0
+    if runy := _runy_doby(github, teraz):
+        print(f"MUTACJE NOCNE START | noc doby ma już run {min(run['id'] for run in runy)} od {POCZATEK_NOCY:%H:%M} UTC: bez drugiego")
+        return 0
+    github.wyslij("POST", f"{REPO}/actions/workflows/{WORKFLOW}/dispatches", {"ref": "main", "inputs": {"start": START_AUTO}})
+    print(f"MUTACJE NOCNE START | uruchomiona noc doby (start {START_AUTO})")
+    return 0
+
+
+def _wczesniejsza_noc(github: GitHub, wyzwolenie: Wyzwolenie, teraz: datetime) -> int | None:
+    """Pierwszy run nocy doby ``teraz`` utworzony przed runem ``wyzwolenie``, gdy ``wyzwolenie`` to noc doby. Run anulowany
+    (także czekający, którego zastąpił nowszy w grupie ``concurrency``) nic nie zmutował, więc go nie liczy."""
+
+    if not wyzwolenie.noc_doby:
+        return None
+    wczesniejsze = [run["id"] for run in _runy_doby(github, teraz) if run["id"] < wyzwolenie.run and run.get("conclusion") != "cancelled"]
+    return min(wczesniejsze, default=None)
 
 
 # --- plan ---
@@ -230,15 +298,22 @@ def zaplanuj(
     od: str,
     zakres: Path | None,
     *,
+    wyzwolenie: Wyzwolenie = RECZNE,
+    teraz: datetime | None = None,
     na_czesc: int = NA_CZESC,
     czesci_na_noc: int = CZESCI_NA_NOC,
     koszty: czasy_ci.KosztyPlikow = BEZ_CZASOW,
 ) -> int:
     """Plan nocy w ``root``: baza, koniec jej zakresu i macierz części po najwyżej ``na_czesc`` mutacji, najwyżej
     ``czesci_na_noc`` części, od najdroższej według ``koszty`` plików testów, w ``GITHUB_OUTPUT``, a z ``zakres`` plik
-    artefaktu ``zakres-nocy``."""
+    artefaktu ``zakres-nocy``. Noc doby (``wyzwolenie``), przed którą doba ``teraz`` miała już run nocy, nic nie mutuje:
+    ``do`` to baza, a ``GITHUB_OUTPUT`` ma ``pominieta=true``."""
 
-    od_sha, skad = baza(github, root, od, datetime.now(UTC))
+    teraz = teraz or datetime.now(UTC)
+    od_sha, skad = baza(github, root, od, teraz)
+    if (wczesniejsza := _wczesniejsza_noc(github, wyzwolenie, teraz)) is not None:
+        print(f"MUTACJE NOCNE | noc doby biegła już w runie {wczesniejsza}: ten run nic nie mutuje, a następna noc zacznie od tej samej bazy")
+        return _zapisz_plan(od_sha, skad, od_sha, [], [], 0, zakres, pominieta=True)
     caly = mutacje_zmiany.ZakresMutacji.od(od_sha, root)
     if caly.zly_wyjatek is not None:
         print(f"MUTACJE NOCNE | {caly.zly_wyjatek}; część mutacji to zgłosi")
@@ -247,13 +322,30 @@ def zaplanuj(
     repository = Repository.scan(root)
     wpisy = macierz(noc, noc.liczba_czesci(na_czesc), repository, koszty)
     pokrycie = macierz_pokrycia(noc, repository) if wpisy else []
-    z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
     if zalegle := len(caly.mutanty) - len(noc.mutanty):
         print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
-    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | do {do_sha} | mutacje {noc.liczba_mutacji} | części {len(wpisy)} | z Chromium {z_chromium}")
+    return _zapisz_plan(od_sha, skad, do_sha, wpisy, pokrycie, noc.liczba_mutacji, zakres)
+
+
+def _zapisz_plan(
+    od_sha: str,
+    skad: str,
+    do_sha: str,
+    wpisy: list[dict[str, int | bool]],
+    pokrycie: list[dict[str, int | bool]],
+    mutacje: int,
+    zakres: Path | None,
+    *,
+    pominieta: bool = False,
+) -> int:
+    z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
+    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | do {do_sha} | mutacje {mutacje} | części {len(wpisy)} | z Chromium {z_chromium}")
     if wyjscie := os.environ.get("GITHUB_OUTPUT"):
         with open(wyjscie, "a", encoding="utf-8") as plik:
-            plik.write(f"baza={od_sha}\ndo={do_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\npokrycie={json.dumps(pokrycie)}\n")
+            plik.write(
+                f"baza={od_sha}\ndo={do_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\npokrycie={json.dumps(pokrycie)}\n"
+                + ("pominieta=true\n" if pominieta else "")
+            )
     if zakres is not None:
         zakres.parent.mkdir(parents=True, exist_ok=True)
         zakres.write_text(json.dumps({"baza": od_sha, "do": do_sha}), encoding="utf-8")
@@ -618,6 +710,9 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     plan.add_argument("--baza", help="To samo co --od, jak w innych narzędziach zmiany; obie z różnymi wartościami to błąd użycia.")
     plan.add_argument("--zakres", type=Path, help=f"Plik JSON z bazą i końcem zakresu nocy (artefakt {ARTEFAKT_ZAKRESU}, z którego następna noc bierze bazę).")
     plan.add_argument("--czasy", type=Path, help="Katalog artefaktów czasy-ci, pobieranych od nowa (domyślnie .git/czasy-ci); kolejność części.")
+    plan.add_argument("--zdarzenie", default="", help="Zdarzenie runu (github.event_name): run schedule nie robi drugiej nocy doby; id runu daje GITHUB_RUN_ID.")
+    plan.add_argument("--start", default="", help=f"Wejście start runu: {START_AUTO} (start z pushu) nie robi drugiej nocy doby, jak run schedule.")
+    polecenia.add_parser("start", help=f"Z pushu na main po {POCZATEK_NOCY:%H:%M} UTC uruchamia noc doby, gdy nie ma jeszcze jej runu.")
     zgloszenie = polecenia.add_parser("zglos", help="Issue dla przeżytych mutacji ze wszystkich części.")
     zgloszenie.add_argument("--baza", required=True, help="Baza nocy z planu.")
     zgloszenie.add_argument("--zapisy", type=Path, required=True, help=f"Katalog z podkatalogami artefaktów {ARTEFAKT}<k>.")
@@ -627,6 +722,8 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     args = parser.parse_args(argv)
     noc = GITHUB if github is None else github
     try:
+        if args.polecenie == "start":
+            return start(noc, datetime.now(UTC))
         if args.polecenie == "plan":
             if args.od and args.baza and args.od != args.baza:
                 plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")
@@ -637,7 +734,8 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
             if czasy.blad:
                 print(f"CZASY CI | {czasy.blad}; część bez zmierzonej pracy testów zostaje na miejscu swojego numeru")
             # Części biegną na ubuntu-latest z Pythonem 3.14, jak zadania pytest toru ``TOR_LOKALNY``.
-            return zaplanuj(noc, root, args.od or args.baza or "", args.zakres, koszty=czasy.koszty(czasy_ci.TOR_LOKALNY))
+            wyzwolenie = Wyzwolenie(args.zdarzenie, args.start, int(os.environ.get("GITHUB_RUN_ID") or 0))
+            return zaplanuj(noc, root, args.od or args.baza or "", args.zakres, wyzwolenie=wyzwolenie, koszty=czasy.koszty(czasy_ci.TOR_LOKALNY))
         plan_skilli = None if args.plan_skilli is None else plan_runu.Plan.z_json(args.plan_skilli.read_text(encoding="utf-8"))
         return zglos(noc, root, args.baza, args.zapisy, args.czesci, args.run, plan_skilli)
     except (RuntimeError, ValueError, KeyError, OSError, subprocess.CalledProcessError, zipfile.BadZipFile) as blad:

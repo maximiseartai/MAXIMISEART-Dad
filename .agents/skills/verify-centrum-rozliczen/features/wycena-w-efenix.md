@@ -6,7 +6,8 @@ one of two buttons side by side (ADR 0027): `Uzupełnij bez zapisu` (he clicks t
 and Centrum remembers neither. Centrum opens the efenix window (at Dad's: his installed Google Chrome in the tool's own profile; here
 Playwright's headless Chromium on the Atrapa efenix, never efenix.pl) and waits until Dad logs in; the time he takes
 counts neither in `Czas uruchomienia` nor in the metrics. Then the live card counts the orders `n z m` with the current
-Wykonawca, the result card lists the errors, Emmett's warnings and the Zlecenia rozliczone (status „Rozliczone” in efenix,
+Wykonawca, the result card lists the errors, Emmett's warnings, the orders forwarded to acceptance (`Przekazane do akceptacji`, only with
+`Uzupełnij i zapisz`) and the Zlecenia rozliczone (status „Rozliczone” in efenix,
 not an error) with the row, the order number and the Wykonawca, and counts the skipped orders, and a toast names the result and the period. The ready orders get the Znacznik efenix in
 `ADRES` of the Plik zbiorczy, and the Status okresu stays. Dad looks at the efenix window or leaves the computer during
 the Wycena, so the result also waits for him under the bell: a new Powiadomienie with the result, the period and the

@@ -12,13 +12,11 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final, assert_never
 
-from rozliczenia.activity_legend import AMOUNT_COLUMN, NUMBER, ActivityCode, ColumnByNumber, FillColour, FixedColumn
+from rozliczenia.activity_legend import AMOUNT_COLUMN, SHOWN_NUMBER, ActivityCode, ColumnByNumber, FillColour, FixedColumn, shown_spelling
 from rozliczenia.centrum.contract.quantity_rules import SentenceColumn, SentencePart, SentenceText
 
 AMOUNT_NAME: Final = "Uwagi - kwota"
 """Nazwa kolumny ``AS`` w zdaniu kodu."""
-SHOWN_NUMBER: Final = "#"
-"""Miejsce na liczbę w zapisie pokazanym tacie."""
 
 
 def code_sentence(code: ActivityCode, names: Mapping[str, str]) -> list[SentencePart]:
@@ -31,7 +29,7 @@ def code_sentence(code: ActivityCode, names: Mapping[str, str]) -> list[Sentence
 def code_spellings(code: ActivityCode) -> str:
     """Zapisy kodu dla taty: pierwszy, a inne w nawiasie po „też”."""
 
-    first, *others = (spelling.replace(NUMBER, SHOWN_NUMBER) for spelling in code.spellings)
+    first, *others = (shown_spelling(spelling) for spelling in code.spellings)
     return f"{first} (też {', '.join(others)})" if others else first
 
 
