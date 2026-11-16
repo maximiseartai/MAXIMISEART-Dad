@@ -18,9 +18,10 @@ from tests.test_przerwana_aktualizacja_narzedzia import (
 POWTORZENIA = 8
 
 
-def test_sonda_polaczenia_z_portem_bez_nasluchu() -> None:
+@pytest.mark.parametrize("timeout", [1.0, 5.0])
+def test_sonda_polaczenia_z_portem_bez_nasluchu(timeout: float) -> None:
     lines = []
-    for timeout in (1.0, 5.0):
+    if True:
         for _ in range(3):
             port = free_port()
             start = time.monotonic()
