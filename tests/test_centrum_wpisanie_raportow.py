@@ -30,6 +30,8 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import get_column_letter
 import pytest
 
+from rozliczenia.activity_legend import ActivityCode, ActivityLegend, FixedColumn, NotACode
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.intermax_replace import LOCAL_DISK
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.tool_files import (
@@ -41,6 +43,8 @@ from rozliczenia.tool_files import (
 )
 from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.contract.common import Message
+from rozliczenia.centrum.run_logs import LoggedActivityLegend
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -62,6 +66,7 @@ from rozliczenia.worker_report_inbox import (
 from rozliczenia.worker_reports import (
     AddBar,
     ConflictingVerdicts,
+    FaultyDescription,
     Login,
     MailId,
     OrderNumber,
@@ -4207,3 +4212,66 @@ def test_nieczytelny_wynik_przypomnien_nie_psuje_widoku_raporty(tmp_path: Path, 
     view = _view(centrum)
 
     assert (_reminders_of(view, "jan.testowy"), view["reminders_without_footer"]) == ([], False)
+
+
+# --- Błąd opisu we Wpisie ``tak`` z Legendą czynności Ustawień Centrum (ADR 0039) ---
+
+MONTAZ = ActivityCode("montaz", ("montaż",), FixedColumn("Y"))
+"""Kod taty spoza legendy z Wydania: z nim ``montaż`` nie jest Błędem opisu."""
+
+
+def _with_dads_legend(centrum: EnteringCentrum) -> tuple[ActivityCode, ...]:
+    """Legenda czynności taty w ``config``: legenda z Wydania z kodem ``MONTAZ``."""
+
+    codes = (*DEFAULT_ACTIVITY_LEGEND.codes, MONTAZ)
+    (centrum.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(codes))
+    return codes
+
+
+@pytest.mark.parametrize("dads_legend", [False, True], ids=["legenda-z-wydania", "legenda-taty"])
+def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_logach(tmp_path: Path, dads_legend: bool) -> None:
+    """ADR 0039: Wpisanie raportów czyta opis Wpisu ``tak`` Legendą czynności z Ustawień Centrum, tą samą co
+    Przygotowanie pliku zbiorczego, a Logi Uruchomienia mają ją dla odtworzenia. Przy legendzie z Wydania ``montaż`` to
+    Błąd opisu: Wpis się wpisuje, a widok Raporty pokazuje przy dniu Wykonawcy problem z powodem; z ``montaż`` jako
+    kodem w legendzie taty problemu nie ma."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak montaż")])
+    codes = _with_dads_legend(centrum) if dads_legend else DEFAULT_ACTIVITY_LEGEND.codes
+
+    _finished(centrum)
+
+    faulty = FaultyDescription(Login("jan.testowy"), date(2026, 11, 9), OrderNumber("40000001"), (NotACode("montaż"),))
+    assert _cells(centrum.register)[40000001] == ("tak", "montaż")
+    assert _worker(_view(centrum), "jan.testowy")["problems"] == (
+        [] if dads_legend else [{"reason": reason(faulty), "number": "40000001", "keep": None}]
+    )
+    [logs] = centrum.run_logs()
+    assert LoggedActivityLegend.model_validate(logs["activity_legend"]).value() == ActivityLegend(codes)
+
+
+@pytest.mark.parametrize("dads_legend", [False, True], ids=["legenda-z-wydania", "legenda-taty"])
+def test_praca_przypomnien_liczy_raport_z_bledem_opisu_jako_niewyslany_legenda_czynnosci_z_ustawien(
+    tmp_path: Path, dads_legend: bool
+) -> None:
+    """ADR 0039: Raport Anny za 9.11 ma Wpis ``tak`` z opisem bez kodów, więc liczy się jako niewysłany i o 8:30 Anna
+    dostaje Przypomnienie o raporcie z numerem zlecenia i rodzajem błędu, bez słów swojego opisu; z ``montaż`` w
+    Legendzie czynności taty z Ustawień Centrum raport jest wysłany. Jan bez raportu dostaje przypomnienie zawsze."""
+
+    mailbox = FakeMailbox(outcome=(report(ANNA, "Raport 09.11.2026", "40000002 tak montaż"),))
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    if dads_legend:
+        _with_dads_legend(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    sent = {reminder.worker: reminder.text for reminder, _ in mailbox.sends}
+    assert sorted(sent) == (["jan.testowy"] if dads_legend else ["anna.kowalska", "jan.testowy"])
+    assert "Zlecenie" not in sent["jan.testowy"]
+    if not dads_legend:
+        assert "Zlecenie 40000002 ma w opisie słowo inne niż kod czynności." in sent["anna.kowalska"].splitlines()
+        assert "montaż" not in sent["anna.kowalska"]
+

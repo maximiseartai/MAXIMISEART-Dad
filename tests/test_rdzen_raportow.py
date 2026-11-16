@@ -1223,7 +1223,8 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
 ) -> None:
     """US 6–8: Raport wykonawcy za 8.11 z 8 zgodnymi i 2 niezgodnymi Wpisami (także wskazującymi różne dni) to pomylony
     temat: niezgodne wpisują się do zleceń z ich dnia w INTERMAX bez Przeniesienia, zgodne normalnie, a tata dostaje w
-    dniu z tematu informację o każdym przegranym temacie. Zlecenia z ich dnia liczą się jako wpisane z Wpisu."""
+    dniu z tematu informację o każdym przegranym temacie. Zlecenia z ich dnia liczą się jako wpisane z Wpisu, a Błąd
+    opisu każdego Wpisu tata widzi w dniu z tematu, jak brak ``tak``/``nie`` (ADR 0039)."""
 
     matching = [_numbered(index) for index in range(1, 9)]
     other = [_numbered(9, mistaken[0]), _numbered(10, mistaken[1])]
@@ -1232,6 +1233,8 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [*matching, *other], rollout=SIXTH, ordered=OPEN_DAYS))
 
     assert (outcome.moves, _problems(outcome)) == ((), ())
+    assert {(problem.day, type(problem)) for problem in outcome.problems} == {(DAY, FaultyDescription)}
+    assert len(outcome.problems) == 10
     assert {change.order for change in outcome.changes} == {order.row for order in [*matching, *other]}
     assert outcome.notes == (
         SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000009"), mistaken[0]),

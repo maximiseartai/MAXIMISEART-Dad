@@ -2209,6 +2209,24 @@ def test_logi_wpisania_raportow_sprzed_dni_zamknietych_bez_pola_closed_odtwarzaj
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
+def test_logi_wpisania_raportow_bez_legendy_czynnosci_odtwarzaja_sie_legenda_z_wydania_z_granica(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Logi Wpisania raportów sprzed ADR 0039 nie mają Legendy czynności Uruchomienia, bo kliknięcie nie czytało nią
+    opisu: odtworzenie liczy Błąd opisu legendą z Wydania tego drzewa i mówi o tym w granicach, a przy legendzie z
+    Wydania u taty wynik jest zgodny."""
+
+    produced = _report_entering(tmp_path / "taty")
+    assert produced.record["activity_legend"] is not None
+    changed = _changed(produced, tmp_path, lambda record: record.update(activity_legend=None))
+
+    code, lines = _replayed(capsys, changed, "--na-tym-drzewie")
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    granice = lines[lines.index("Granice:") + 1 :]
+    assert [line for line in granice if line.startswith("- Logi nie mają Legendy czynności Uruchomienia")], granice
+
+
 def _guard_cut(place: str) -> Callable[[dict[str, Any]], None]:
     return lambda record: record["technical_notes"].append(
         f"Reguła danych: pominięto {place}: strażnik zamaskował w nim wartość, której pole nie przyjmuje."

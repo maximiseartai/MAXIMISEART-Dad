@@ -27,7 +27,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   których żaden plik taty nie ma. Wzorce i Listę Wykonawców (``wykonawcy.yaml``) daje folder ``configuration``, bo Logi
   mają z nich tylko nazwę i rozmiar. Reguły ilości i Legenda czynności ze startu Uruchomienia są w Logach
   (``RunLog.quantity_rules``, ``RunLog.activity_legend``), a Przygotowanie i Przebieg z Logów sprzed ich zapisu liczą
-  Regułami ilości i Legendą czynności z Wydania tego drzewa (zastrzeżenie).
+  Regułami ilości i Legendą czynności z Wydania tego drzewa, tak samo Wpisanie raportów z Logów sprzed zapisu legendy
+  (zastrzeżenie).
 - Proces biegnie przez to samo Uruchomienie co w Centrum (``process_kind.PreparedRun.conduct``: ten sam rdzeń i wpis
   katalogu procesów), z Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``EndedRun.of``,
   ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa

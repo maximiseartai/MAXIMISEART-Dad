@@ -357,8 +357,8 @@ def _report_entering(root: Path) -> dict[str, object]:
     mails = root / "maile"
     mails.mkdir()
     sent = [
-        ("raport-a.eml", "wykonawca.a@przyklad.invalid", "40000101 tak wymiana routera"),
-        ("raport-b.eml", "wykonawca.b@przyklad.invalid", "40000103 tak montaż anteny"),
+        ("raport-a.eml", "wykonawca.a@przyklad.invalid", "40000101 tak inst20m rt2"),
+        ("raport-b.eml", "wykonawca.b@przyklad.invalid", "40000103 tak spawpg"),
         ("raport-obcy.eml", "obcy@przyklad.invalid", "40000103 nie brak klienta"),
     ]
     for index, (name, sender, text) in enumerate(sent):
