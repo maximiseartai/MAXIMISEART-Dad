@@ -78,13 +78,15 @@ class Matched:
     """Wynik dopasowania: zwycięski Wpis każdego zlecenia po kluczu, który zlecenie ma po kliknięciu (``targets``),
     zlecenie każdego zwycięskiego Wpisu z nadawcą, dniem po kliknięciu i chwilą przyjścia maila (``accepted``; zlecenie
     w innym miejscu przechodzi do nadawcy i na ten dzień), Zlecenia dopisane z raportu (``added``, po numerze), problemy
-    Wpisów bez jednego zlecenia i informacje o przegranym temacie zwycięskich Wpisów (``lost``)."""
+    Wpisów bez jednego zlecenia, informacje o przegranym temacie zwycięskich Wpisów (``lost``) i każdy zwycięski Wpis z
+    ``targets`` z nadawcą i dniem, w którym tata widzi jego problem, jak przy ``MissingVerdict`` (``entered``)."""
 
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]]
     accepted: tuple[tuple[RegisterOrder, Login, date, datetime], ...]
     problems: list[ReportProblem]
     lost: tuple[SubjectLost, ...]
     added: tuple[Addition, ...]
+    entered: tuple[tuple[Login, date, ReportEntry], ...]
 
 
 @dataclass(frozen=True)
@@ -239,6 +241,7 @@ class Board:
         targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
         accepted: list[tuple[RegisterOrder, Login, date, datetime]] = []
         lost: list[SubjectLost] = []
+        entered: list[tuple[Login, date, ReportEntry]] = []
         for claim in latest.values():
             order, report = claim.order, claim.report
             shown = report.day if self._window.opens(report.day) else claim.day
@@ -249,6 +252,7 @@ class Board:
                 case (ReportEntry(fault=None) as entry,):
                     targets[OrderKey(order.key.number, claim.day, report.worker)] = (order, entry)
                     accepted.append((order, report.worker, claim.day, report.arrived))
+                    entered.append((report.worker, shown, entry))
                     if claim.lost is not None:
                         lost.append(claim.lost)
                 case (ReportEntry(fault=VerdictFault() as fault),):
@@ -271,7 +275,7 @@ class Board:
                     problems.append(
                         ConflictingVerdicts(report.worker, report.day, number, report.mail, report.arrived, new.entries)
                     )
-        return Matched(targets, tuple(accepted), problems, tuple(lost), tuple(added))
+        return Matched(targets, tuple(accepted), problems, tuple(lost), tuple(added), tuple(entered))
 
     def _other_day_number(self, number: OrderNumber, day: date) -> bool:
         """Numer, którego zlecenia nie ma w dniu ``day`` (dzień sprzed Przeniesień Centrum), a jest w innym odczytanym

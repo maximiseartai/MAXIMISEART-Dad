@@ -140,7 +140,7 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
     """Kryterium #1227: Wpis z Raportu wykonawcy od adresu z listy trafia do obu komórek jego zlecenia z dnia z tematu,
     zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana routera")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
 
     setup = centrum.setup()
@@ -160,7 +160,7 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
         {"label": "Problemy", "value": 0, "unit": "count"},
         {"label": "Raporty", "value": 1, "unit": "count"},
     ]
-    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "inst20m rt2")}
     assert not centrum.tool.intermax_copies.exists(), "Wpisanie raportów nie robi Kopii INTERMAX"
     assert sorted(path.name for path in centrum.register.parent.iterdir()) == [REGISTER_NAME]
     assert [row["process_label"] for row in history["runs"] if row["run_id"] == view["run"]["id"]] == ["Wpisanie raportów"]
@@ -236,7 +236,8 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
 ) -> None:
     """Logi Wpisania raportów przechodzą przez strażnika Reguły danych: adres nadawcy, temat i treść maila spoza
     Wpisów nie mają w nich żadnego pola (Raport spoza listy adresów nie zostawia w nich swojej treści), a telefon w
-    czynnościach jest zamaskowany (ADR 0025, ADR 0028)."""
+    czynnościach jest zamaskowany (ADR 0025, ADR 0028); Błąd opisu tego Wpisu ma w Logach sam rodzaj powodu, bez słów
+    opisu (ADR 0039)."""
 
     activities = "wymiana routera, klient tel. 600 100 200"
     stranger = "obcy@przyklad.invalid"
@@ -257,7 +258,16 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
     assert [mail["kind"] for mail in entering["mails"]] == ["report", "stranger"]
     assert entering["mails"][0]["entries"][0]["activities"] == "wymiana routera, klient tel. [telefon]"
     assert [change["value"] for change in entering["changes"]] == ["tak", "wymiana routera, klient tel. [telefon]"]
-    assert entering["problems"] == [{"kind": "unknown_sender", "mail": entering["mails"][1]["mail"], "day": "2026-11-09"}]
+    assert entering["problems"] == [
+        {"kind": "unknown_sender", "mail": entering["mails"][1]["mail"], "day": "2026-11-09"},
+        {
+            "kind": "faulty_description",
+            "worker": "jan.testowy",
+            "day": "2026-11-09",
+            "number": "40000001",
+            "reasons": ["słowo inne niż zapis kodu"],
+        },
+    ]
     assert (entering["rollout_before"], entering["rollout"], entering["written"]) == (None, "2026-11-09", 2)
     assert _cells(centrum.register)[40000001] == ("tak", activities), "do INTERMAX trafia pełny Wpis"
 
@@ -658,21 +668,21 @@ def test_reczna_zmiana_komorki_miedzy_kliknieciami_wygrywa_z_poprawka_a_nietknie
     zmienił (opis Jana, oba Anny), dostają poprawkę; pamięć ma po kliknięciu wartości z poprawek bez ręcznej."""
 
     anna = SENDERS["anna.kowalska"]
-    reports = [report(JAN, SUBJECT, "40000001 tak wymiana"), report(anna, SUBJECT, "40000002 tak montaż")]
+    reports = [report(JAN, SUBJECT, "40000001 tak inst20m"), report(anna, SUBJECT, "40000002 tak spawpg")]
     centrum = entering_centrum(tmp_path, INTERMAX, reports)
     _finished(centrum)
     _tata_writes(centrum.register, 40000001, "nie")
     centrum.moment.append(datetime(2026, 11, 10, 8))
     centrum.fake_inbox.outcome = [
         *reports,
-        report(JAN, SUBJECT, "40000001 tak wymiana gniazda", at=datetime(2026, 11, 10, 7, 40)),
+        report(JAN, SUBJECT, "40000001 tak inst25m", at=datetime(2026, 11, 10, 7, 40)),
         report(anna, SUBJECT, "40000002 nie klient nieobecny", at=datetime(2026, 11, 10, 7, 45)),
     ]
 
     second = _finished(centrum)
 
     cells = _cells(centrum.register)
-    assert (cells[40000001], cells[40000002]) == (("nie", "wymiana gniazda"), ("nie", "klient nieobecny"))
+    assert (cells[40000001], cells[40000002]) == (("nie", "inst25m"), ("nie", "klient nieobecny"))
     assert second["result"]["summary"]["figures"][:2] == [
         {"label": "Wpisane", "value": 2, "unit": "count"},
         {"label": "Problemy", "value": 1, "unit": "count"},
@@ -687,7 +697,7 @@ def test_reczna_zmiana_komorki_miedzy_kliknieciami_wygrywa_z_poprawka_a_nietknie
     ]
     own = json.loads(_state(centrum).read_text(encoding="utf-8"))["own"]
     assert sorted((entry["number"], entry["column"], entry["value"]) for entry in own) == [
-        ("40000001", "CZYNNOŚCI ZREALIZOWANE", "wymiana gniazda"),
+        ("40000001", "CZYNNOŚCI ZREALIZOWANE", "inst25m"),
         ("40000002", "CZYNNOŚCI ZREALIZOWANE", "klient nieobecny"),
         ("40000002", "SKUTECZNE", "nie"),
     ]
@@ -1080,17 +1090,17 @@ def test_nowy_numer_jest_dopisany_a_jedyne_zlecenie_z_innego_dnia_przechodzi_na_
         centrum,
         ENTERING_NOW,
         [
-            report(ANNA, SUBJECT, "40000001 tak montaż", at=datetime(2026, 11, 9, 17)),
-            report(JAN, SUBJECT, "40000010 tak wymiana gniazda"),
-            report(JAN, SUBJECT, "30000077 tak wymiana modemu"),
-            report(JAN, SUBJECT, "40000001 tak wymiana routera"),
+            report(ANNA, SUBJECT, "40000001 tak spawpg", at=datetime(2026, 11, 9, 17)),
+            report(JAN, SUBJECT, "40000010 tak inst25m"),
+            report(JAN, SUBJECT, "30000077 tak spawez"),
+            report(JAN, SUBJECT, "40000001 tak inst20m rt2"),
         ],
     )
 
     assert _cells(centrum.register) == {
         **before,
-        40000001: ("tak", "wymiana routera"),
-        40000010: ("tak", "wymiana gniazda"),
+        40000001: ("tak", "inst20m rt2"),
+        40000010: ("tak", "inst25m"),
     }
     assert _entering(centrum, view)["problems"] == []
     assert [(added["number"], added["worker"]) for added in _entering(centrum, view)["added"]] == [(30000077, "jan.testowy")]
@@ -1121,7 +1131,7 @@ def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_do
     Liście Wykonawców i następne kliknięcie wpisuje ten sam mail bez innej pracy."""
 
     new_address = "jan.nowy@przyklad.invalid"
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(new_address, SUBJECT, "40000001 tak wymiana routera")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(new_address, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
 
     first = _finished(centrum)
@@ -1131,7 +1141,7 @@ def test_raport_z_adresu_spoza_listy_wpisuje_sie_przy_nastepnym_kliknieciu_po_do
 
     assert [problem["kind"] for problem in _entering(centrum, first)["problems"]] == ["unknown_sender"]
     assert _entering(centrum, second)["problems"] == []
-    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "inst20m rt2")}
     assert new_address not in json.dumps(centrum.run_logs(), ensure_ascii=False)
 
 
@@ -1165,7 +1175,7 @@ def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_rap
     widoku Raporty jest przypisany do Jana jeszcze przed następnym kliknięciem, a następne kliknięcie wpisuje ten sam mail
     bez innej pracy."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak wymiana routera")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(NEW_ADDRESS, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
     _finished(centrum)
     first = _view(centrum)
@@ -1184,12 +1194,12 @@ def test_tata_przypisuje_nieznanego_nadawce_do_wykonawcy_a_nastepne_wpisanie_rap
         }
     ]
     shown_first = json.dumps(first, ensure_ascii=False)
-    assert SUBJECT not in shown_first and "wymiana routera" not in shown_first, "widok Raporty bez tematu i treści maila"
+    assert SUBJECT not in shown_first and "inst20m rt2" not in shown_first, "widok Raporty bez tematu i treści maila"
     assert assigned.status_code == 200, assigned.json()
     assert _addresses(centrum)["jan.testowy"] == [JAN, NEW_ADDRESS]
     assert [found["worker"] for found in shown["unknown_senders"]] == ["jan.testowy"]
     assert _entering(centrum, second)["problems"] == []
-    assert _cells(centrum.register) == {**before, 40000001: ("tak", "wymiana routera")}
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "inst20m rt2")}
 
 
 def test_adres_innego_wykonawcy_nie_przypisuje_sie_a_cofniecie_przypisania_przywraca_nieznanego_nadawce(
@@ -1276,10 +1286,10 @@ def test_te_same_maile_w_innej_kolejnosci_i_drugie_klikniecie_daja_ten_sam_wynik
     świeższym mailem Jana, więc zlecenie zostaje u Jana bez problemu (ADR 0029)."""
 
     mails = [
-        report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17)),
+        report(JAN, SUBJECT, "40000001 tak inst20m", at=datetime(2026, 11, 9, 17)),
         report(JAN, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17, 30)),
-        report(ANNA, SUBJECT, "40000002 tak montaż", at=datetime(2026, 11, 9, 17, 10)),
-        report(ANNA, SUBJECT, "40000001 tak montaż", at=datetime(2026, 11, 9, 17, 20)),
+        report(ANNA, SUBJECT, "40000002 tak spawpg", at=datetime(2026, 11, 9, 17, 10)),
+        report(ANNA, SUBJECT, "40000001 tak spawpg", at=datetime(2026, 11, 9, 17, 20)),
         report("obcy@przyklad.invalid", SUBJECT, "40000002 nie brak", at=datetime(2026, 11, 9, 17, 5)),
     ]
     forward = entering_centrum(tmp_path / "w-kolejnosci", INTERMAX, mails)
@@ -1345,7 +1355,7 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
         ),
         raw=(),
     )
-    centrum = entering_centrum(tmp_path, intermax, [report(ANNA, SUBJECT, "40000001 tak montaż gniazda")])
+    centrum = entering_centrum(tmp_path, intermax, [report(ANNA, SUBJECT, "40000001 tak spawgnd")])
     look = _order_look(centrum.register, 40000001)
     assert _day_rows(centrum.register, 7) == [
         (40000001, "jan.testowy"),
@@ -1370,7 +1380,7 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
         "żółty",
     ]
     assert _order_look(centrum.register, 40000001) == look
-    assert _cells(centrum.register)[40000001] == ("tak", "montaż gniazda")
+    assert _cells(centrum.register)[40000001] == ("tak", "spawgnd")
     assert not centrum.tool.intermax_copies.exists(), "Wpisanie raportów nie robi Kopii INTERMAX"
     assert _entering(centrum, view)["moves"] == [{"sheet": ORDER_SHEET, "row": 2, "day": "2026-11-09", "worker": "anna.kowalska"}]
     assert _entering(centrum, view)["problems"] == []
@@ -1381,7 +1391,7 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
     assert [order["number"] for order in jan["orders_detail"]] == ["40000005"]
     assert (anna["problems"], jan["problems"]) == ([], [])
     text = json.dumps(shown, ensure_ascii=False)
-    assert "Ulica" not in text and "UM-" not in text and "montaż gniazda" not in text.replace('"activities": "montaż gniazda"', "")
+    assert "Ulica" not in text and "UM-" not in text and "spawgnd" not in text.replace('"activities": "spawgnd"', "")
     assert (_entering(centrum, again)["changes"], _entering(centrum, again)["moves"]) == ([], [])
     assert centrum.register.read_bytes() == after
     assert _worker(_view(centrum), "anna.kowalska")["notes"] == anna["notes"]
@@ -1431,7 +1441,7 @@ def test_klikniecie_przenosi_zlecenie_na_dzien_z_tematu_z_ta_sama_godzina_i_info
         "żółty",
     ]
 
-    view = _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000002 tak montaż gniazda")])
+    view = _click_at(centrum, ENTERING_NOW, [report(JAN, SUBJECT, "40000002 tak spawgnd")])
     shown = _view(centrum)
     after = centrum.register.read_bytes()
     again = _finished(centrum)
@@ -1450,7 +1460,7 @@ def test_klikniecie_przenosi_zlecenie_na_dzien_z_tematu_z_ta_sama_godzina_i_info
     assert _started(centrum.register, 40000002) == (datetime(2026, 11, 9, 10), date_format)
     assert _started(centrum.register, 40000004) == (datetime(2026, 11, 8, 12), date_format)
     assert _order_look(centrum.register, 40000002) == look
-    assert _cells(centrum.register)[40000002] == ("tak", "montaż gniazda")
+    assert _cells(centrum.register)[40000002] == ("tak", "spawgnd")
     entering = _entering(centrum, view)
     assert entering["moves"] == [{"sheet": ORDER_SHEET, "row": 4, "day": "2026-11-09", "worker": "jan.testowy"}]
     assert entering["problems"] == []
@@ -1778,7 +1788,7 @@ def test_druga_reczna_zmiana_wykonawcy_nie_wraca_mailem_ktory_centrum_juz_przyje
         ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)),
         raw=(),
     )
-    jan = report(JAN, SUBJECT, "40000001 tak wymiana", at=datetime(2026, 11, 9, 17))
+    jan = report(JAN, SUBJECT, "40000001 tak inst20m", at=datetime(2026, 11, 9, 17))
     anna = report(ANNA, SUBJECT, "40000001 nie klient nieobecny", at=datetime(2026, 11, 9, 17, 30))
     centrum = entering_centrum(tmp_path, intermax, [jan])
     _finished(centrum)
@@ -1793,7 +1803,7 @@ def test_druga_reczna_zmiana_wykonawcy_nie_wraca_mailem_ktory_centrum_juz_przyje
     assert _entering(centrum, at_anna)["moves"] == []
     assert _entering(centrum, back)["moves"] == []
     assert _entering(centrum, back)["problems"] == []
-    assert _cells(centrum.register)[40000001] == ("tak", "wymiana")
+    assert _cells(centrum.register)[40000001] == ("tak", "inst20m")
     assert _day_rows(centrum.register, 6) == [(40000002, "anna.kowalska"), "pusty", (40000001, "jan.testowy"), "pusty", "żółty"]
     assert (_worker(shown, "jan.testowy")["notes"], _worker(shown, "jan.testowy")["problems"]) == ([], [])
 
@@ -1851,7 +1861,7 @@ def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_p
         ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)),
         raw=(),
     )
-    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak montaż ONT")])
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak instmdik")])
     date_format = _started(centrum.register, 40000001)[1]
 
     view = _finished(centrum)
@@ -1878,7 +1888,7 @@ def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_p
         NUMBER: 40000077,
         WORKER: "jan.testowy",
         SUCCESSFUL: "tak",
-        COMPLETED: "montaż ONT",
+        COMPLETED: "instmdik",
     }
     assert sheet.cell(5, DATE).number_format == date_format
     looks = [(cell.font.name, cell.font.sz, bool(cell.font.b), cell.border.left.style, cell.fill.fill_type) for cell in sheet[5][FIRST - 1 : LAST]]
@@ -1892,7 +1902,7 @@ def test_klikniecie_dopisuje_zlecenie_z_raportu_pod_zlecenia_nadawcy_a_okienko_p
             "worker": "jan.testowy",
             "number": 40000077,
             "successful": "tak",
-            "completed": "montaż ONT",
+            "completed": "instmdik",
         }
     ]
     assert (entering["problems"], entering["moves"]) == ([], [])
@@ -1918,7 +1928,7 @@ def test_dopisanie_zapisuje_sie_w_pamieci_w_wersji_4_a_plik_wersji_3_z_dopisanie
     okienko dalej przypomina o adresie, a pamięć wraca do wersji 4 z tym samym dopisaniem."""
 
     intermax = Intermax(ordered=(_order(9, 9, "anna.kowalska", 40000002), _order(9, 10, "jan.testowy", 40000001)), raw=())
-    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak montaż ONT")])
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak instmdik")])
     _finished(centrum)
     saved = json.loads(_state(centrum).read_text(encoding="utf-8"))
     _state(centrum).write_text(json.dumps({**saved, "schema_version": 3}, ensure_ascii=False), encoding="utf-8")
@@ -1930,7 +1940,7 @@ def test_dopisanie_zapisuje_sie_w_pamieci_w_wersji_4_a_plik_wersji_3_z_dopisanie
     assert [(move["number"], move["added"]) for move in saved["moves"]] == [("40000077", True)]
     assert {(own["number"], own["column"], own["value"]) for own in saved["own"]} == {
         ("40000077", "SKUTECZNE", "tak"),
-        ("40000077", "CZYNNOŚCI ZREALIZOWANE", "montaż ONT"),
+        ("40000077", "CZYNNOŚCI ZREALIZOWANE", "instmdik"),
     }
     assert centrum.register.read_bytes() == after, "plik wersji 3 z dopisaniem nie dopisuje numeru drugi raz"
     assert (entering["added"], entering["problems"]) == ([], [])
@@ -2482,8 +2492,8 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
         tmp_path,
         intermax,
         [
-            report(JAN, SUBJECT, "40000001 tak wymiana routera"),
-            report(ANNA, SUBJECT, "400000099 tak montaż"),
+            report(JAN, SUBJECT, "40000001 tak inst20m rt2"),
+            report(ANNA, SUBJECT, "400000099 tak spawpg"),
             report(STRANGER, SUBJECT, "40000002 nie brak"),
         ],
     )
@@ -2536,7 +2546,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "problems": [],
                     "notes": [],
                     "orders_detail": [
-                        {"number": "40000001", "successful": "tak", "activities": "wymiana routera", "state": "entered"},
+                        {"number": "40000001", "successful": "tak", "activities": "inst20m rt2", "state": "entered"},
                         {"number": "40000005", "successful": None, "activities": None, "state": "without_report"},
                     ],
                     "reminders": [],
@@ -2567,7 +2577,7 @@ def test_zlecenia_dnia_w_widoku_raporty_zgadzaja_sie_z_intermax_po_kliknieciu_ta
     centrum = entering_centrum(
         tmp_path,
         intermax,
-        [report(JAN, SUBJECT, "40000006 tak montaż 40000001 tak wymiana"), report(ANNA, SUBJECT, "40000002 brak klienta")],
+        [report(JAN, SUBJECT, "40000006 tak spawpg 40000001 tak inst20m"), report(ANNA, SUBJECT, "40000002 brak klienta")],
     )
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     _tata_writes(centrum.register, 40000005, "klient przełożył", column=COMPLETED)
@@ -2804,7 +2814,7 @@ def test_udane_klikniecie_bez_problemow_nie_daje_powiadomienia(tmp_path: Path) -
     """US 57: kliknięcie, które wpisało Raport bez problemów, zmienia tylko stan na ekranie: wynik proponuje „Otwórz
     Raporty”, a pod dzwonkiem nie ma nic nowego."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     before = centrum.client.get("/api/notifications").json()
 
     view = _finished(centrum)
@@ -2825,7 +2835,7 @@ def test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_w
     INTERMAX zostaje bajt w bajt, a różnica znika z widoku od razu i nie wraca przy następnym kliknięciu, które ma
     decyzję w Logach. Poprawka Wykonawcy z inną treścią pokazuje różnicę znowu, a ręczna wartość dalej zostaje."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     first = _finished(centrum)
     [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
@@ -2839,7 +2849,7 @@ def test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_w
         "day": "2026-11-09",
         "worker": "jan.testowy",
         "column": "CZYNNOŚCI ZREALIZOWANE",
-        "reported": "wymiana",
+        "reported": "inst20m",
     }
     assert (difference["number"], difference["keep"]) == ("40000001", cell)
     assert kept.status_code == 200, kept.json()
@@ -2852,18 +2862,18 @@ def test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_w
 
     assert (_entering(centrum, again)["problems"], _worker(_view(centrum), "jan.testowy")["problems"]) == ([], [])
     assert _entering(centrum, again)["kept"] == [
-        {"number": 40000001, "day": "2026-11-09", "worker": "jan.testowy", "column": "CZYNNOŚCI ZREALIZOWANE", "value": "wymiana"}
+        {"number": 40000001, "day": "2026-11-09", "worker": "jan.testowy", "column": "CZYNNOŚCI ZREALIZOWANE", "value": "inst20m"}
     ]
     corrected = _click_at(
         centrum,
         datetime(2026, 11, 9, 19, 30),
         [
-            report(JAN, SUBJECT, "40000001 tak wymiana"),
-            report(JAN, SUBJECT, "40000001 tak wymiana gniazda", at=datetime(2026, 11, 9, 19)),
+            report(JAN, SUBJECT, "40000001 tak inst20m"),
+            report(JAN, SUBJECT, "40000001 tak inst25m", at=datetime(2026, 11, 9, 19)),
         ],
     )
     [shown] = _worker(_view(centrum), "jan.testowy")["problems"]
-    assert shown["keep"] == {**cell, "reported": "wymiana gniazda"}
+    assert shown["keep"] == {**cell, "reported": "inst25m"}
     assert corrected["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
     assert _cells(centrum.register)[40000001] == ("tak", "wymiana ręczna")
 
@@ -2873,23 +2883,23 @@ def test_logi_klikniecia_maja_decyzje_zostaw_moja_tylko_przy_zleceniach_z_wpisem
     Raportu Jana nie ma już w skrzynce, Logi kliknięcia z samym Raportem Anny nie mają decyzji przy zleceniu Jana, bo
     odtworzenie Logów z decyzją bez Wpisu kończy się granicą."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     _finished(centrum)
     [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
     assert centrum.client.post("/api/report-entering/keep", json=difference["keep"]).status_code == 200
 
-    later = _click_at(centrum, datetime(2026, 11, 9, 19, 30), [report(ANNA, SUBJECT, "40000002 tak montaż")])
+    later = _click_at(centrum, datetime(2026, 11, 9, 19, 30), [report(ANNA, SUBJECT, "40000002 tak spawpg")])
 
     assert _entering(centrum, later)["kept"] == []
-    assert _cells(centrum.register)[40000002] == ("tak", "montaż")
+    assert _cells(centrum.register)[40000002] == ("tak", "spawpg")
 
 
 def test_zostaw_moja_przy_roznicy_spoza_ostatniego_klikniecia_jest_odrzucone_bez_zapisu_decyzji(tmp_path: Path) -> None:
     """„Zostaw moją” tylko przy różnicy z wyniku ostatniego kliknięcia: inna treść Wpisu (widok sprzed nowszego
     kliknięcia) dostaje odmowę, a plik decyzji nie powstaje."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     _finished(centrum)
     [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
@@ -2910,7 +2920,7 @@ def test_nieczytelny_plik_wyniku_albo_decyzji_daje_odmowe_widoku_i_zostaw_moja_b
     dostają odmowę z tym samym zdaniem, a plik decyzji zostaje bajt w bajt, bo zapis bez dawnych decyzji przywróciłby
     ich różnice."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m")])
     _tata_writes(centrum.register, 40000001, "wymiana ręczna", column=COMPLETED)
     _finished(centrum)
     [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
@@ -2947,7 +2957,7 @@ def _report_in_inbox(uid: int, sender: str, subject: str, at: datetime) -> Atrap
     message["To"] = SKRZYNKA
     message["Subject"] = subject
     message["Message-ID"] = f"<{uid}@przyklad.invalid>"
-    message.set_content("40000002 tak montaż")
+    message.set_content("40000002 tak spawpg")
     return AtrapaMail(uid, at.astimezone(), bytes(message))
 
 
@@ -3170,14 +3180,15 @@ def _listed_worker(client: CentrumClient, login: str) -> dict[str, Any]:
     return dict(worker)
 
 
-# Treść przypomnienia za 9.11 ze stopką „Pozdrawiam / Tata”, jaką Centrum wysyłało przed Ustawieniami (spec #1344).
+# Treść przypomnienia za 9.11 z pierwszym zdaniem i stopką „Pozdrawiam / Tata”, jakie Centrum wysyłało przed Ustawieniami
+# (spec #1344), i ze wzorem Raportu wykonawcy z kodami czynności (ADR 0039).
 TEXT_BEFORE_SETTINGS = """Poproszę o wysłanie raportu za dzień 09.11.2026.
 
 Raport proszę wysłać według tego wzoru:
 Temat maila: Raport 09.11.2026
-Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności
+Treść maila: NR. ZLECENIA [spacja] tak [spacja] kody czynności albo NR. ZLECENIA [spacja] nie [spacja] powód
 PRZYKŁAD:
-12345678 tak montaż ONT
+12345678 tak inst20m spawpg
 12345679 nie brak klienta
 
 Pozdrawiam
@@ -3201,9 +3212,10 @@ def test_po_aktualizacji_bez_zmian_przypomnienia_z_plikow_maksa_ida_te_same_co_p
     tmp_path: Path, rollout: bytes, footer: bytes, text: str
 ) -> None:
     """Kryterium #1476: po Aktualizacji tata nic nie zmienia, a pierwszy start przenosi dzień wdrożenia i stopkę z plików
-    Maksa do Ustawień, więc o 8:30 dnia po dniu zleceń idą te same przypomnienia co przed Wydaniem, z tym samym tematem i
-    treścią bajt w bajt, a druga minuta pory nie wysyła drugiego (ADR 0030, DESIGN §3). Stopka z Notatnika (BOM i CRLF)
-    szła przed Wydaniem z CRLF między liniami i tak samo idzie po nim."""
+    Maksa do Ustawień, więc o 8:30 dnia po dniu zleceń idą te same przypomnienia co przed Wydaniem, z tym samym tematem,
+    pierwszym zdaniem i stopką bajt w bajt (wzór Raportu wykonawcy ma kody czynności, ADR 0039), a druga minuta pory nie
+    wysyła drugiego (ADR 0030, DESIGN §3). Stopka z Notatnika (BOM i CRLF) szła przed Wydaniem z CRLF między liniami i
+    tak samo idzie po nim."""
 
     mailbox = FakeMailbox()
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
@@ -3705,8 +3717,8 @@ def test_podglad_przypomnienia_pokazuje_temat_tresc_i_stopke_z_formularza_bez_za
         "text": (
             "Dzień dobry, czekam na raport za 08.11.2026.\n\nRaport proszę wysłać według tego wzoru:\n"
             "Temat maila: Raport 08.11.2026\n"
-            "Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności\nPRZYKŁAD:\n"
-            "12345678 tak montaż ONT\n12345679 nie brak klienta\n\nPozdrawiam\nTata Testowy\n"
+            "Treść maila: NR. ZLECENIA [spacja] tak [spacja] kody czynności albo NR. ZLECENIA [spacja] nie [spacja] powód\nPRZYKŁAD:\n"
+            "12345678 tak inst20m spawpg\n12345679 nie brak klienta\n\nPozdrawiam\nTata Testowy\n"
         ),
     }
     assert (config_files(centrum.tool.config), mailbox.sends) == (before, [])
@@ -3774,7 +3786,7 @@ def test_brak_sieci_przy_odczycie_maili_skrzynki_nie_wysyla_przypomnien_choc_wys
     przypomnienie poszłoby też do Wykonawcy, który raport przysłał; pora zostaje otwarta i następna minuta wysyła
     tylko temu, kto raportu nie przysłał (ADR 0030 „Kto i do kiedy”, US 47)."""
 
-    anna_report = report(ANNA, "Raport 09.11.2026", "40000002 tak montaż")
+    anna_report = report(ANNA, "Raport 09.11.2026", "40000002 tak spawpg")
     mailbox = FakeMailbox(outcome=InboxUnreachable("TimeoutError"))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -4141,7 +4153,7 @@ def test_widok_raporty_pokazuje_pory_przypomnien_przy_dniu_wykonawcy_a_brak_stop
         for_other_day,
         *(SentReminder(frozenset(reminder.recipients), reminder.day, at) for reminder, at in mailbox.sends),
     )
-    mailbox.outcome = (report(ANNA, "Raport 09.11.2026", "40000002 tak montaż"),)
+    mailbox.outcome = (report(ANNA, "Raport 09.11.2026", "40000002 tak spawpg"),)
     centrum.moment.append(datetime(2026, 11, 10, 18, 5))
     centrum.rhythm.tick()
     after_evening = _view(centrum)

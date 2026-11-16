@@ -128,6 +128,7 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     logs=_logs,
     quantity_check=_quantity_check,
     quantity_rules=True,
+    activity_legend=True,
 )
 """Przebieg rozliczeń w Centrum. Kliknięcie „Uruchom” jest potwierdzeniem Gotowości Pliku zbiorczego
 (``confirms_readiness``): Centrum nie zgaduje jej z pliku ani nie blokuje startu."""

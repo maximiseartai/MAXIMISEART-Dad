@@ -16,7 +16,13 @@ from typing import Final
 import unicodedata
 
 from ._model import OrderNumber, ReportEntry, Verdict, VerdictFault
-from ._reminders import EXAMPLE_NUMBERS
+
+EXAMPLE: Final = ("12345678 tak inst20m spawpg", "12345679 nie brak klienta")
+"""Linie przykładu w treści Przypomnienia o raporcie: Wpis ``tak`` z samymi Kodami czynności legendy z Wydania i Wpis
+``nie`` z powodem (ADR 0039)."""
+
+EXAMPLE_NUMBERS: Final = frozenset(OrderNumber(line.split()[0]) for line in EXAMPLE)
+"""Numery zleceń z przykładu w treści przypomnienia: w żadnym mailu nie są Wpisami (``entries``)."""
 
 _EDGES: Final = re.compile(r"^(?:[^\w]|_)+|(?:[^\w]|_)+$")
 _MARKS: Final[dict[str, Verdict | VerdictFault]] = {

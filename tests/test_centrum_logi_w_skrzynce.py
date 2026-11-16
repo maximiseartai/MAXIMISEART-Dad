@@ -1051,7 +1051,7 @@ def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
     assert second["result"]["ending"] == "finished"
     produced = Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
     problems = [problem["kind"] for problem in produced.record["report_entering"]["problems"]]
-    assert problems == ["unknown_sender"] * 3 + ["manual_difference"], problems
+    assert problems == ["unknown_sender"] * 3 + ["faulty_description"] * 2 + ["manual_difference"] + ["faulty_description"] * 2, problems
     added = [(found["number"], found["worker"]) for found in produced.record["report_entering"]["added"]]
     assert added == [(40000099, "jan.testowy")], "nowy numer Jana z 8 cyframi to Zlecenie dopisane z raportu (#1354)"
     assert "klient nieobecny" in [change["value"] for change in produced.record["report_entering"]["changes"]]
@@ -1858,7 +1858,7 @@ def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
 
     code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
 
-    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3
+    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3 + ["faulty_description"] * 4
     assert entering["added"] == [], "40000099 dopisało drugie kliknięcie, a trzecie go nie dubluje (#1354)"
     assert [move["number"] for move in entering["moves_before"] if move["added"]] == [40000099]
     assert [(kept["number"], kept["column"], kept["value"]) for kept in entering["kept"]] == [(40000006, "SKUTECZNE", "tak")]
@@ -1898,10 +1898,10 @@ def test_klikniecie_z_okresem_zamknietym_i_pomylkami_wykonawcow_odtwarza_sie_zgo
     jan, anna = SENDERS["jan.testowy"], SENDERS["anna.kowalska"]
     centrum.moment.append(datetime(2026, 11, 11, 8))
     centrum.fake_inbox.outcome = [
-        report(jan, "Raport 09.11.2026", "40000001 tak wymiana", at=datetime(2026, 11, 10, 7)),
-        report(jan, "Raport 11.11.2026", "40000011 tak wymiana", at=datetime(2026, 11, 11, 7)),
-        report(anna, "Raport 10.11.2026", "40000011 tak montaż", at=datetime(2026, 11, 11, 7, 1)),
-        report(jan, "Raport 10.11.2026", "40000013 tak montaż", at=datetime(2026, 11, 11, 7, 2)),
+        report(jan, "Raport 09.11.2026", "40000001 tak inst20m", at=datetime(2026, 11, 10, 7)),
+        report(jan, "Raport 11.11.2026", "40000011 tak inst20m", at=datetime(2026, 11, 11, 7)),
+        report(anna, "Raport 10.11.2026", "40000011 tak spawpg", at=datetime(2026, 11, 11, 7, 1)),
+        report(jan, "Raport 10.11.2026", "40000013 tak spawpg", at=datetime(2026, 11, 11, 7, 2)),
         report(jan, "Raport 10.11.2026", "40000012 nie brak klienta", at=datetime(2026, 11, 11, 7, 3)),
     ]
     second = centrum.run_to_end()
@@ -2050,14 +2050,14 @@ def test_klikniecie_z_tak_i_nie_jednego_zlecenia_w_mailu_odtwarza_sie_zgodnie(
     assert (entering["changes"], code, lines[0]) == ([], 0, "ODTWORZENIE ZGODNE"), lines
 
 
-def _corrected_unreadable(tmp_path: Path, text: str = "40000001 tak wymiana") -> Produced:
+def _corrected_unreadable(tmp_path: Path, text: str = "40000001 tak inst20m") -> Produced:
     """Logi kliknięcia, w którym Jan przysłał Raport z tematem bez dnia i treścią ``text``, a potem Raport z dniem."""
 
     surroundings = Surroundings()
     jan = SENDERS["jan.testowy"]
     mails = [
         report(jan, "Raport", text, at=ENTERING_NOW - timedelta(minutes=5)),
-        report(jan, "Raport 09.11.2026", "40000001 tak wymiana"),
+        report(jan, "Raport 09.11.2026", "40000001 tak inst20m"),
     ]
     centrum = entering_centrum(tmp_path / "taty", MATCHED, mails, surroundings=surroundings)
     write_report_key(ToolDirectory(tmp_path / "taty"))
@@ -2073,7 +2073,7 @@ OLD_LOGS_LIMIT: Final = "- Logi sprzed numerów Wpisów maila z nieczytelnym tem
 @pytest.mark.parametrize(
     ("text", "numbers", "problems"),
     [
-        pytest.param("40000001 tak wymiana", ["40000001"], [], id="poprawiony"),
+        pytest.param("40000001 tak inst20m", ["40000001"], [], id="poprawiony"),
         pytest.param("kurier jutro", [], ["unreadable_subject"], id="bez-wpisow"),
     ],
 )

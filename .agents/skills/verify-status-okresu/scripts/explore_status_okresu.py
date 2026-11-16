@@ -56,6 +56,7 @@ from atrapy.preparation import PreparationFixture, make_preparation_fixture
 from atrapy.settlement import MARKED, worker_list, write_quantity_source, write_template
 from atrapy.skrzynka_raportow import FakeInbox
 from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
@@ -625,6 +626,7 @@ def ask_entering(inputs: Inputs, periods: Path) -> Answer:
         periods,
         inputs.workers,
         ReportEnteringParts(inbox, ReportStateInMemory(SavedState(PERIOD.tuesday, OwnEntries.EMPTY))),
+        DEFAULT_ACTIVITY_LEGEND,
         now=lambda: CLICKED_AT,
     )
     try:

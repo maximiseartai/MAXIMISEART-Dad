@@ -6,22 +6,25 @@ komórek, Przeniesienia zleceń, problemy, informacje i liczby dla widoku Raport
 taty o problemie daje ``reasons.reason``, o informacji ``reasons.note``, a mail, z którego rdzeń czyta z powrotem ten
 sam odczyt (odtworzenie z Logów), ``as_mail``.
 Druga operacja, ``reminders_due``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ``_reminders.py``).
+Obie czytają opis Wpisu ``tak`` Legendą czynności z wejścia (``_descriptions.py``, ADR 0039).
 Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń, reguły komórek i postać kanoniczna maila
 w pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
-oraz ``report_cells``, ``settlement_period`` i ``text``, bo przejdzie bez zmian do Centrum w chmurze.
+oraz ``report_cells``, ``settlement_period``, ``text`` i ``activity_legend``, bo przejdzie bez zmian do Centrum w
+chmurze.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 
-from . import _cells, _corrections, _entries, _figures, _matching, _moves, _subject
+from . import _cells, _corrections, _descriptions, _entries, _figures, _matching, _moves, _subject
 from ._model import (
     ADDED_DIGITS,
     SUBJECT_WORD,
     AddBar,
     Added,
     ConflictingVerdicts,
+    FaultyDescription,
     HandedOver,
     Kept,
     Login,
@@ -72,12 +75,12 @@ from ._model import (
     problem_order,
 )
 from ._canonical import as_mail
+from ._entries import EXAMPLE_NUMBERS
 from ._reminders import (
     DAY_FIELD,
     DEFAULT_REMINDERS,
     DEFAULT_SCHEDULE,
     DEFAULT_TEXT,
-    EXAMPLE_NUMBERS,
     OLD_VERSION_SCHEDULES,
     Pora,
     Reminder,
@@ -108,6 +111,7 @@ __all__ = [
     "AddBar",
     "Added",
     "ConflictingVerdicts",
+    "FaultyDescription",
     "HandedOver",
     "Kept",
     "Login",
@@ -200,8 +204,10 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     chwilą przyjścia i tym samym Message-ID rozstrzyga treść odczytu. Wpis zmienia pustą komórkę albo własny wpis z
     ``inputs.memory``, którego nikt od tamtej pory nie zmienił, a inna wartość komórki jest ręczna i zostaje z
     ``ManualDifference`` (``_cells.reconcile``); własny wpis pamięć ma tylko przy jedynym zleceniu numeru
-    (``_moves._carried``). Problem z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail
-    (``_corrections.standing``).
+    (``_moves._carried``). Wpis ``tak`` z Błędem opisu (Legenda czynności ``inputs.legend``) wpisuje się jak każdy, bo
+    bez ``SKUTECZNE`` Przygotowanie pliku zbiorczego się zatrzymuje, a tata widzi przy nim problem
+    ``FaultyDescription``, dopóki zlecenie nie dostanie poprawnego Wpisu (ADR 0039, ``_descriptions.entered``). Problem
+    z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``).
     """
 
     window = inputs.window
@@ -232,6 +238,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     board = _matching.Board(orders, inputs.memory, window, inputs.ordered_days, inputs.present)
     matched = board.match(reports)
     additions = _corrections.uncorrected(matched.added, reports, board)
+    described = _descriptions.entered(inputs.legend, matched.entered, additions)
     moved = _moves.moved(matched.accepted, additions, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
     targets = {key: (after[order.row], entry) for key, (order, entry) in matched.targets.items()}
@@ -240,7 +247,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     memory = _cells.with_added(memory, ((key, found.verdict, found.activities) for key, found in added.items()))
     unreadable = [found for found in mails if isinstance(found, ReadUnreadable)]
     newest = {found.number: (found.arrived, found.mail) for found in additions}
-    standing = _corrections.standing([*problems, *matched.problems], reports, unreadable, board, newest)
+    standing = _corrections.standing([*problems, *matched.problems, *described], reports, unreadable, board, newest)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     shown = [report for report in reports if window.opens(report.day)]
     details = [

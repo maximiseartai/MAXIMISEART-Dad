@@ -189,6 +189,7 @@ _Avoid_: linia raportu, Wpis urządzenia i czynności INTERMAX (to wpis Uporząd
 Proces, który tata uruchamia na żądanie i który przenosi Wpisy raportu do uporządkowanych zleceń w Rejestrze zleceń: `tak` albo `nie` do `SKUTECZNE`, a czynności albo powód nieskuteczności do `CZYNNOŚCI ZREALIZOWANE`.
 Raport wykonawcy jest ważniejszy od Rejestru w dniu i Wykonawcy zlecenia, więc Wpisanie raportów robi też Przeniesienie zlecenia i Zlecenie dopisane z raportu, a o każdej takiej zmianie i o temacie, który przegrał z Rejestrem, informuje tatę przy dniu Wykonawcy w widoku Raporty.
 Zmienia tylko to, co jest puste albo co samo wcześniej zmieniło, a od tamtej pory nikt tego nie ruszył; ręczna wartość albo ręczna zmiana taty lub pracownika zawsze wygrywa.
+Wpis `tak` z Błędem opisu wpisuje jak każdy, a tata widzi przy nim problem w widoku Raporty (ADR 0039).
 Pisze tylko do zamkniętego Rejestru zleceń.
 Za każdym razem czyta wszystkie Raporty wykonawców z dni od jego wdrożenia w okresach, które nie mają jeszcze Pliku zbiorczego; okres z Plikiem zbiorczym jest dla niego zamknięty.
 Dzień zleceń jest uporządkowany, zanim Wykonawcy wyślą jego raporty, bo Uporządkowanie INTERMAX przygotowuje im dzień do pracy.

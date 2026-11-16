@@ -1059,8 +1059,8 @@ _SECTION: Final = re.compile(r"[.\[]")
 
 def read_snapshot(config: Path) -> SettingsSnapshot:
     """Migawka bez zapisu dla prób skrzynki i Przypomnień (``tools/proba_*``): plik, przy złej treści ostatnia dobra z
-    pamięci właściciela, a Foldery i Przypomnienia o raporcie przy pliku bez odczytu ``UnreadableFile``; nie dopisuje
-    Historii ani pamięci."""
+    pamięci właściciela, a Foldery, Przypomnienia o raporcie i Legenda czynności przy pliku bez odczytu
+    ``UnreadableFile``, jak w migawce Centrum; nie dopisuje Historii ani pamięci."""
 
     remembered_devices = Memory(config, lambda _: None).read(DEVICES.name)
     devices_data = settings_bytes(config / DEVICES.name)
@@ -1073,13 +1073,14 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     )
     folders = _or_unreadable(_read_only_view(config, FOLDERS), FOLDERS)
     reminders = _or_unreadable(_read_only_view(config, REMINDERS), REMINDERS)
+    codes = _or_unreadable(_read_only_view(config, LEGEND), LEGEND)
     return SettingsSnapshot(
         folders=folders,
         workers=_read_only_view(config, WORKERS),
         inbox=inbox.state(_read_only_view(config, INBOX)),
         reminders=reminders,
         quantity_rules=quantity_rules(rules, devices),
-        activity_legend=activity_legend(_read_only(config, LEGEND)),
+        activity_legend=codes if isinstance(codes, UnreadableFile) else activity_legend(codes),
     )
 
 

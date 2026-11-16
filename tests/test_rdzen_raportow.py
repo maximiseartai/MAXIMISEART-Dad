@@ -21,6 +21,8 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 
+from rozliczenia.activity_legend import ActivityCode, ActivityLegend, DescriptionError, FixedColumn
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_reports import (
@@ -29,6 +31,7 @@ from rozliczenia.worker_reports import (
     AddBar,
     Added,
     ConflictingVerdicts,
+    FaultyDescription,
     HandedOver,
     Kept,
     Login,
@@ -135,6 +138,7 @@ def _inputs(
     kept: frozenset[Kept] = frozenset(),
     ordered: Sequence[date] = (),
     present: Sequence[ReadNumber] | None = None,
+    legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND,
 ) -> ReportInputs:
     """Wejście rdzenia; bez ``present`` proces przeczytał tylko wiersze zleceń ``orders``, każdy raz."""
 
@@ -153,7 +157,15 @@ def _inputs(
         kept=kept,
         present=tuple(ReadNumber(order.key.number, order.key.day) for order in orders) if present is None else present,
         ordered_days=frozenset(OrderedDay(ROW.sheet, day) for day in ordered),
+        legend=legend,
     )
+
+
+def _problems(outcome: ReportsOutcome) -> tuple[ReportProblem, ...]:
+    """Problemy wyniku bez Błędów opisu: Wpisy w tych testach mają zwykły opis, bo sprawdzają czytanie opisu i
+    dopasowanie, a Błąd opisu sprawdzają testy z ``FaultyDescription``."""
+
+    return tuple(problem for problem in outcome.problems if not isinstance(problem, FaultyDescription))
 
 
 def _key(number: str = "40000001", day: date = DAY, worker: str = "jan.testowy") -> OrderKey:
@@ -171,7 +183,7 @@ def test_wpis_raportu_trafia_do_pustych_komorek_zlecenia_wykonawcy_z_dnia_z_tema
         CellChange(ROW, ReportColumn.SUCCESSFUL, "tak"),
         CellChange(ROW, ReportColumn.COMPLETED, "wymiana routera"),
     )
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
     assert outcome.memory.entries == (
         frozenset(
             {
@@ -188,7 +200,7 @@ def test_raport_z_adresu_spoza_listy_nie_zmienia_komorek_i_jest_problemem_niezna
     outcome = enter_reports(_inputs([mail], [_order()]))
 
     assert outcome.changes == ()
-    assert outcome.problems == (UnknownSender(mail.id, mail.sender, DAY),)
+    assert _problems(outcome) == (UnknownSender(mail.id, mail.sender, DAY),)
     assert outcome.mails == (ReadStranger(mail.id, EVENING, DAY),)
 
 
@@ -215,7 +227,7 @@ def test_mail_z_innym_tematem_niz_raport_z_data_nie_daje_niczego(subject: str) -
 
     outcome = enter_reports(_inputs([_mail(JAN, subject, TEXT)], [_order()]))
 
-    assert (outcome.changes, outcome.problems, outcome.mails) == ((), (), ())
+    assert (outcome.changes, _problems(outcome), outcome.mails) == ((), (), ())
 
 
 def test_komorka_rowna_wpisowi_nie_daje_zmiany_a_drugie_klikniecie_niczego_nie_zmienia() -> None:
@@ -232,10 +244,10 @@ def test_komorka_rowna_wpisowi_nie_daje_zmiany_a_drugie_klikniecie_niczego_nie_z
 
     assert first.changes == (CellChange(ROW, ReportColumn.COMPLETED, "wymiana routera"),)
     assert first.memory.entries == (frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "wymiana routera")}))
-    assert (second.changes, second.problems) == ((), ())
+    assert (second.changes, _problems(second)) == ((), ())
     assert second.memory == first.memory
     assert third.changes == (CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),)
-    assert third.problems == (ManualDifference(_key(), ReportColumn.SUCCESSFUL, "tak", "nie"),)
+    assert _problems(third) == (ManualDifference(_key(), ReportColumn.SUCCESSFUL, "tak", "nie"),)
 
 
 def test_reczny_opis_zostaje_z_roznica_dla_taty_a_puste_skuteczne_obok_dostaje_wpis() -> None:
@@ -246,7 +258,7 @@ def test_reczny_opis_zostaje_z_roznica_dla_taty_a_puste_skuteczne_obok_dostaje_w
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], [order]))
 
     assert outcome.changes == (CellChange(ROW, ReportColumn.SUCCESSFUL, "tak"),)
-    assert outcome.problems == (
+    assert _problems(outcome) == (
         ManualDifference(_key(), ReportColumn.COMPLETED, "wymiana modemu, klient prosi o telefon", "wymiana routera"),
     )
     assert outcome.memory.entries == (frozenset({OwnEntry(_key(), ReportColumn.SUCCESSFUL, "tak")}))
@@ -344,7 +356,7 @@ def test_wpis_trafia_tylko_do_zlecenia_nadawcy_z_dnia_z_tematu_a_pomylka_ma_dokl
     outcome = enter_reports(_inputs([_mail(sender, subject, TEXT)], orders, rollout=date(2026, 11, 1)))
 
     assert outcome.changes == ()
-    assert outcome.problems == (problem,)
+    assert _problems(outcome) == (problem,)
     assert reason(problem) == sentence
 
 
@@ -357,7 +369,7 @@ def test_numer_w_dwoch_miejscach_nie_przenosi_ani_zlecenia_nadawcy_z_innego_dnia
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], orders, rollout=date(2026, 11, 1), ordered=OPEN_DAYS))
 
     assert (outcome.changes, outcome.moves) == ((), ())
-    assert outcome.problems == (
+    assert _problems(outcome) == (
         RepeatedNumber(JAN_LOGIN, DAY, OrderNumber("40000001"), ((date(2026, 11, 7), JAN_LOGIN), (DAY, EWA_LOGIN))),
     )
     assert _days(outcome)[DAY, JAN_LOGIN].problems == 1
@@ -370,7 +382,7 @@ def test_numer_zlecen_dwoch_innych_wykonawcow_z_dnia_daje_jeden_problem_z_kazdym
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], orders))
 
     assert outcome.changes == ()
-    assert outcome.problems == (
+    assert _problems(outcome) == (
         RepeatedNumber(JAN_LOGIN, DAY, OrderNumber("40000001"), ((DAY, Login("adam.inny")), (DAY, EWA_LOGIN))),
     )
 
@@ -450,7 +462,7 @@ def test_wpis_innego_wykonawcy_do_zlecenia_z_dnia_przenosi_je_do_nadawcy_z_infor
         CellChange(ROW, ReportColumn.SUCCESSFUL, "tak"),
         CellChange(ROW, ReportColumn.COMPLETED, "montaż"),
     )
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
     assert outcome.notes == (
         TakenOver(DAY, EWA_LOGIN, OrderNumber("40000001"), JAN_LOGIN),
         HandedOver(DAY, JAN_LOGIN, OrderNumber("40000001"), EWA_LOGIN),
@@ -524,7 +536,7 @@ def test_drugie_klikniecie_bez_nowych_maili_nic_nie_zmienia_a_informacje_zostaja
 
     second = enter_reports(_inputs(mails, _after(orders, first), memory=first.memory))
 
-    assert (second.changes, second.moves, second.problems) == ((), (), ())
+    assert (second.changes, second.moves, _problems(second)) == ((), (), ())
     assert second.notes == first.notes != ()
     assert second.memory == first.memory
 
@@ -546,7 +558,7 @@ def test_reczna_zmiana_wykonawcy_po_przeniesieniu_wygrywa_bez_problemu(manual: s
     third = enter_reports(_inputs([*mails, later], by_tata, memory=second.memory))
 
     for after in (second, third):
-        assert (after.changes, after.moves, after.problems, after.notes) == ((), (), (), ())
+        assert (after.changes, after.moves, _problems(after), after.notes) == ((), (), (), ())
     assert second.memory.moves == {replace(move, overridden=True) for move in first.memory.moves}
 
 
@@ -618,7 +630,7 @@ def test_reczna_zmiana_wykonawcy_po_wpisie_bez_przeniesienia_wygrywa_z_tym_samym
     assert (first.moves, corrected.moves) == ((), ())
     assert [change.value for change in corrected.changes] == ["nie", "klient nieobecny"]
     for later in (second, third):
-        assert (later.changes, later.moves, later.problems, later.notes) == ((), (), (), ())
+        assert (later.changes, later.moves, _problems(later), later.notes) == ((), (), (), ())
     assert third.memory.entries == {
         OwnEntry(_key(worker="ewa.probna"), ReportColumn.SUCCESSFUL, "nie"),
         OwnEntry(_key(worker="ewa.probna"), ReportColumn.COMPLETED, "klient nieobecny"),
@@ -668,9 +680,9 @@ def test_druga_reczna_zmiana_po_wpisie_u_wykonawcy_od_taty_nie_wraca_starym_mail
     fourth = enter_reports(_inputs([jan, ewa], _after(back, third), memory=third.memory))
 
     assert (second.moves, [change.value for change in second.changes]) == ((), ["nie", "klient nieobecny"])
-    assert (third.moves, third.problems, third.notes) == ((), (), ())
+    assert (third.moves, _problems(third), third.notes) == ((), (), ())
     assert [change.value for change in third.changes] == ["tak", "wymiana routera"]
-    assert (fourth.changes, fourth.moves, fourth.problems) == ((), (), ())
+    assert (fourth.changes, fourth.moves, _problems(fourth)) == ((), (), ())
 
 
 def test_druga_reczna_zmiana_po_przeniesieniu_nie_wraca_starym_mailem() -> None:
@@ -693,7 +705,7 @@ def test_druga_reczna_zmiana_po_przeniesieniu_nie_wraca_starym_mailem() -> None:
     assert first.moves == (OrderMove(ROW, DAY, "Ewa.Probna"),)
     assert (second.moves, [change.value for change in second.changes]) == ((), ["tak", "wymiana routera"])
     assert (third.moves, fourth.moves) == ((), ())
-    assert ManualDifference not in {type(problem) for problem in (*third.problems, *fourth.problems)}
+    assert ManualDifference not in {type(problem) for problem in (*_problems(third), *_problems(fourth))}
 
 
 def test_zmiana_taty_przed_dzialaniem_centrum_a_potem_wpis_u_wykonawcy_od_taty_trzyma_tak_samo() -> None:
@@ -752,7 +764,7 @@ def test_pamiec_wpisow_numeru_pod_dwoma_kluczami_przepada_takze_przy_jednym_wier
 
     assert outcome.memory.entries == frozenset()
     assert outcome.changes == ()
-    assert outcome.problems == (ManualDifference(_key(), ReportColumn.SUCCESSFUL, "tak", "nie"),)
+    assert _problems(outcome) == (ManualDifference(_key(), ReportColumn.SUCCESSFUL, "tak", "nie"),)
 
 
 SEVENTH, SIXTH = date(2026, 11, 7), date(2026, 11, 6)
@@ -876,7 +888,7 @@ def _follows_table(events: Sequence[tuple[object, ...]]) -> None:
                 assert (after.key.worker, after.key.day) == expected
                 if winner is not None and winner[2]:
                     assert (after.successful, after.completed) == (winner[2], winner[0].text.split(maxsplit=2)[2])
-                assert not [problem for problem in outcome.problems if isinstance(problem, ManualDifference)]
+                assert not [problem for problem in _problems(outcome) if isinstance(problem, ManualDifference)]
                 standing = remembered is not None and remembered.placed == expected != remembered.origin
                 assert bool(outcome.notes) == standing
                 assert (again.changes, again.moves, again.memory) == ((), (), memory)
@@ -1144,8 +1156,8 @@ def test_zwycieski_wpis_bez_tak_albo_nie_nie_przenosi_zlecenia(text: str, proble
     outcome = enter_reports(_inputs([_mail(EWA, SUBJECT, text)], [_order(), EWA_OWN]))
 
     assert (outcome.moves, outcome.changes, outcome.notes) == ((), (), ())
-    assert len(outcome.problems) == 1
-    assert problem is None or outcome.problems == (problem,)
+    assert len(_problems(outcome)) == 1
+    assert problem is None or _problems(outcome) == (problem,)
 
 
 def test_dwa_zlecenia_jana_przejete_przez_ewe_bez_segmentu_przechodza_razem_po_wierszach() -> None:
@@ -1184,7 +1196,7 @@ def test_jeden_niezgodny_wpis_przenosi_zlecenie_na_dzien_z_tematu_z_informacja_p
 
     number = OrderNumber("40000001")
     assert outcome.moves == (OrderMove(moved.row, DAY, "Jan.Testowy"),)
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
     assert [(change.order, change.value) for change in outcome.changes] == [
         (moved.row, "tak"),
         (moved.row, "montaż"),
@@ -1219,7 +1231,7 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [*matching, *other], rollout=SIXTH, ordered=OPEN_DAYS))
 
-    assert (outcome.moves, outcome.problems) == ((), ())
+    assert (outcome.moves, _problems(outcome)) == ((), ())
     assert {change.order for change in outcome.changes} == {order.row for order in [*matching, *other]}
     assert outcome.notes == (
         SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000009"), mistaken[0]),
@@ -1251,7 +1263,7 @@ def test_ta_sama_tresc_raportu_pod_dwoma_dniami_wpisuje_sie_raz_do_zlecen_z_ich_
     for order in (mails, mails[::-1]):
         outcome = enter_reports(_inputs(order, [*twice, *seventh], rollout=SIXTH, ordered=OPEN_DAYS))
 
-        assert (outcome.moves, outcome.problems) == ((), ())
+        assert (outcome.moves, _problems(outcome)) == ((), ())
         assert {change.order for change in outcome.changes} == {found.row for found in [*twice, *seventh]}
         assert len(outcome.changes) == len({(change.order, change.column) for change in outcome.changes})
         assert {entry.key.day for entry in outcome.memory.entries if entry.key.number in {"40000001", "40000002", "40000003"}} == {
@@ -1320,7 +1332,7 @@ def test_niezgodny_wpis_z_numerem_w_dwoch_dniach_nie_przenosi_zadnego_zlecenia(
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "40000001 tak montaż")], numbered, rollout=SIXTH, ordered=OPEN_DAYS))
 
     assert (outcome.moves, outcome.changes) == ((), ())
-    assert outcome.problems == (RepeatedNumber(JAN_LOGIN, DAY, OrderNumber("40000001"), places),)
+    assert _problems(outcome) == (RepeatedNumber(JAN_LOGIN, DAY, OrderNumber("40000001"), places),)
 
 
 @pytest.mark.parametrize(
@@ -1342,7 +1354,7 @@ def test_przeniesienie_tylko_do_dnia_uporzadkowanego_arkusza_zlecenia(ordered: t
     outcome = enter_reports(inputs)
 
     assert (outcome.changes, outcome.moves, outcome.notes) == ((), (), ())
-    assert outcome.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000001"), SEVENTH, DAY, bar),)
+    assert _problems(outcome) == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000001"), SEVENTH, DAY, bar),)
     assert _days(outcome)[DAY, JAN_LOGIN].problems == 1
 
 
@@ -1364,8 +1376,8 @@ def test_przeniesienie_z_okresu_z_plikiem_zbiorczym_jest_problemem_bez_zmiany() 
     )
 
     assert (single.changes, single.moves) == ((), ())
-    assert single.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000001"), CLOSED_DAY, CLOSED_DAY, MoveBar.CLOSED_SOURCE),)
-    assert (mistaken.moves, mistaken.problems) == ((), ())
+    assert _problems(single) == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000001"), CLOSED_DAY, CLOSED_DAY, MoveBar.CLOSED_SOURCE),)
+    assert (mistaken.moves, _problems(mistaken)) == ((), ())
     assert [change.order for change in mistaken.changes] == [OrderRow("Zlecenia", 202)]
     assert mistaken.notes == (SubjectLost(DAY, JAN_LOGIN, OrderNumber("40000002"), SEVENTH),)
 
@@ -1397,11 +1409,11 @@ def test_przeniesienie_do_okresu_z_plikiem_zbiorczym_jest_problemem_w_dniu_zlece
 
     refused = RefusedMove(JAN_LOGIN, CLOSED_DAY, OrderNumber("40000001"), SEVENTH, CLOSED_DAY, MoveBar.CLOSED_TARGET)
     assert (single.changes, single.moves, single.notes) == ((), (), ())
-    assert single.problems == (refused,)
+    assert _problems(single) == (refused,)
     assert refused.shown == SEVENTH
     assert _days(single)[SEVENTH, JAN_LOGIN].problems == 1
     assert "okres z dniem 02.11.2026 ma już Plik zbiorczy" in reason(refused)
-    assert (mistaken.moves, mistaken.problems) == ((), ())
+    assert (mistaken.moves, _problems(mistaken)) == ((), ())
     assert {change.order for change in mistaken.changes} == {open_order.row, OrderRow("Zlecenia", 202)}
     assert set(mistaken.notes) == {
         SubjectLost(SEVENTH, JAN_LOGIN, OrderNumber("40000001"), SEVENTH),
@@ -1425,7 +1437,7 @@ def test_numer_dwa_razy_w_dniu_wpisuje_sie_do_jedynego_zlecenia_nadawcy_a_swiezs
 
     assert [(change.order, change.value) for change in first.changes] == [(jan.row, "tak"), (jan.row, "montaż")]
     assert (second.moves, second.changes) == ((), ())
-    assert second.problems == (
+    assert _problems(second) == (
         RepeatedNumber(JAN_LOGIN, DAY, OrderNumber("40000001"), ((SEVENTH, EWA_LOGIN), (SEVENTH, JAN_LOGIN))),
     )
     assert (first.memory.entries, second.memory.entries) == (frozenset(), frozenset())
@@ -1504,7 +1516,7 @@ def test_stary_mail_nie_cofa_recznej_zmiany_dnia_taty_gdy_numer_stoi_w_dwoch_mie
     assert first.changes == (CellChange(jan.row, ReportColumn.SUCCESSFUL, "tak"), CellChange(jan.row, ReportColumn.COMPLETED, "montaż"))
     assert [outcome.moves for outcome in (first, second, third, fourth)] == [(), (), (), ()]
     assert [outcome.changes for outcome in (second, third, fourth)] == [(), (), ()]
-    assert set(fourth.problems) == {RepeatedNumber(JAN_LOGIN, SEVENTH, N1, places), RepeatedNumber(sender, day, N1, places)}
+    assert set(_problems(fourth)) == {RepeatedNumber(JAN_LOGIN, SEVENTH, N1, places), RepeatedNumber(sender, day, N1, places)}
     assert [(order.key.worker, order.key.day, order.successful, order.completed) for order in orders] == [
         (EWA_LOGIN, SIXTH, None, None),
         (JAN_LOGIN, DAY, "tak", "montaż"),
@@ -1534,7 +1546,7 @@ def test_jedyne_zlecenie_numeru_przenosi_tylko_mail_swiezszy_od_kazdego_wpisu_ce
 
     assert [change.order for change in (*earlier.changes, *first.changes)] == [ewa.row, ewa.row, jan.row, jan.row]
     assert first.memory.moves == {OwnMove(N1, DAY, EWA_LOGIN, DAY, EWA_LOGIN, "Ewa.Probna", jan_mail.arrived)}
-    assert (second.moves, second.changes, second.problems) == ((), (), ())
+    assert (second.moves, second.changes, _problems(second)) == ((), (), ())
     assert (first.memory.entries, second.memory.entries) == (frozenset(), frozenset())
     assert third.moves == (OrderMove(jan.row, DAY, "adam.inny"),)
 
@@ -1607,7 +1619,7 @@ def test_wpisy_centrum_do_numeru_w_dwoch_wierszach_licza_sie_jak_reczne_gdy_tata
     assert first.memory.entries == frozenset()
     assert second.moves == (OrderMove(jan.row, DAY, "adam.inny"),)
     assert second.changes == ()
-    assert set(second.problems) == {
+    assert set(_problems(second)) == {
         ManualDifference(adam_key, ReportColumn.SUCCESSFUL, "tak", "nie"),
         ManualDifference(adam_key, ReportColumn.COMPLETED, "montaż", "wymiana"),
     }
@@ -1633,7 +1645,7 @@ def test_zlecenie_przeniesione_przez_centrum_dostaje_wpis_nadawcy_takze_gdy_nume
     assert first.moves == (OrderMove(jan.row, DAY, "adam.inny"),)
     assert {entry.key for entry in first.memory.entries} == {adam_key}
     assert (second.moves, second.changes) == ((), ())
-    assert set(second.problems) == {
+    assert set(_problems(second)) == {
         RepeatedNumber(JAN_LOGIN, SEVENTH, N1, ((SIXTH, EWA_LOGIN), (DAY, adam))),
         ManualDifference(adam_key, ReportColumn.SUCCESSFUL, "tak", "nie"),
         ManualDifference(adam_key, ReportColumn.COMPLETED, "wymiana", "klient nieobecny"),
@@ -1650,7 +1662,7 @@ def test_raport_z_dniem_okresu_z_plikiem_zbiorczym_z_numerem_w_dwoch_miejscach_n
 
     outcome = enter_reports(_inputs([mail], orders, rollout=date(2026, 10, 30), closed=CLOSED, ordered=OPEN_DAYS))
 
-    assert (outcome.changes, outcome.moves, outcome.problems, outcome.notes) == ((), (), (), ())
+    assert (outcome.changes, outcome.moves, _problems(outcome), outcome.notes) == ((), (), (), ())
 
 
 def test_raport_za_dzien_zamkniety_nie_wpisuje_sie_do_zlecenia_nadawcy_z_okresu_z_plikiem_zbiorczym() -> None:
@@ -1663,7 +1675,7 @@ def test_raport_za_dzien_zamkniety_nie_wpisuje_sie_do_zlecenia_nadawcy_z_okresu_
 
     outcome = enter_reports(_inputs([mail], orders, rollout=date(2026, 10, 30), closed=CLOSED, ordered=OPEN_DAYS))
 
-    assert (outcome.changes, outcome.moves, outcome.problems, outcome.notes) == ((), (), (), ())
+    assert (outcome.changes, outcome.moves, _problems(outcome), outcome.notes) == ((), (), (), ())
 
 
 def test_poprawiony_raport_z_dniem_zlecenia_nadawcy_usuwa_problem_numeru_w_dwoch_miejscach() -> None:
@@ -1678,8 +1690,8 @@ def test_poprawiony_raport_z_dniem_zlecenia_nadawcy_usuwa_problem_numeru_w_dwoch
     first = enter_reports(_inputs([wrong], orders, rollout=SIXTH, ordered=OPEN_DAYS))
     second = enter_reports(_inputs([wrong, fixed], orders, rollout=SIXTH, ordered=OPEN_DAYS))
 
-    assert first.problems == (RepeatedNumber(JAN_LOGIN, DAY, N1, ((SEVENTH, JAN_LOGIN), (DAY, EWA_LOGIN))),)
-    assert second.problems == ()
+    assert _problems(first) == (RepeatedNumber(JAN_LOGIN, DAY, N1, ((SEVENTH, JAN_LOGIN), (DAY, EWA_LOGIN))),)
+    assert _problems(second) == ()
     assert [change.order for change in second.changes] == [OrderRow("Zlecenia", 201)] * 2
 
 
@@ -1887,7 +1899,7 @@ def _click_keeping_invariants(
         line = _Line(added.number, added.day, worker, cells, written, mail.arrived)
         present[len(lines)] = line
         lines.append(line)
-    unknown = [problem for problem in outcome.problems if isinstance(problem, UnknownNumber)]
+    unknown = [problem for problem in _problems(outcome) if isinstance(problem, UnknownNumber)]
     assert all(ordered_count[problem.number] == 0 for problem in unknown), ("N2: numer zlecenia jako nieznany", unknown)
     assert all((problem.bar is AddBar.IN_INTERMAX) == (problem.number in read) for problem in unknown), (
         "N2: numer z przeczytanego wiersza bez powodu, że INTERMAX go ma",
@@ -2142,7 +2154,7 @@ def test_numer_przed_dzis_i_po_dzis_nie_przenosi_sie_a_tata_widzi_oba_dni() -> N
     repeated = RepeatedNumber(JAN_LOGIN, DAY, N1, ((SEVENTH, JAN_LOGIN), (NINTH, JAN_LOGIN)))
     for outcome in (today, tomorrow):
         assert (outcome.changes, outcome.moves) == ((), ())
-        assert outcome.problems == (repeated,)
+        assert _problems(outcome) == (repeated,)
     assert reason(repeated) == (
         "Zlecenie 40000001 jest w INTERMAX więcej niż raz: u jan.testowy z 07.11.2026, u jan.testowy z 09.11.2026. "
         "Centrum nie wie, którego z nich dotyczy Wpis od jan.testowy z 08.11.2026, więc nie zmieniło żadnego z nich przy "
@@ -2175,7 +2187,7 @@ def test_numer_tylko_w_dniu_po_dzis_nie_jest_nieznany_ani_zmieniany_a_tata_widzi
     refused = RefusedMove(JAN_LOGIN, DAY, N1, NINTH, NINTH, MoveBar.AFTER_TODAY)
     assert outcome.moves == ()
     assert {change.order for change in outcome.changes} <= {OrderRow("Zlecenia", 202)}
-    assert outcome.problems == (refused,)
+    assert _problems(outcome) == (refused,)
     assert outcome.notes == notes
     assert reason(refused) == (
         "Wpis zlecenia 40000001 od jan.testowy ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 09.11.2026. Centrum go "
@@ -2196,7 +2208,7 @@ def test_dwa_maile_z_numerem_tylko_z_jutra_z_pomylonym_tematem_i_bez_daja_tacie_
     for mails in ([single, mistaken], [mistaken, single]):
         outcome = enter_reports(_inputs(mails, orders, rollout=SIXTH, ordered=READ_DAYS))
 
-        assert [found for found in outcome.problems if isinstance(found, RefusedMove)] == [
+        assert [found for found in _problems(outcome) if isinstance(found, RefusedMove)] == [
             RefusedMove(JAN_LOGIN, DAY, N1, NINTH, NINTH, MoveBar.AFTER_TODAY)
         ]
 
@@ -2224,7 +2236,7 @@ def test_wpisy_centrum_w_zleceniu_jana_nie_przechodza_na_zlecenie_ewy_z_reczna_w
     ewa_fresh = _mail(EWA, "Raport 07.11.2026", "40000001 nie klient nieobecny", EVENING + timedelta(minutes=5))
 
     orders, first = _clicked(mails, [jan, ewa], OwnEntries.EMPTY)
-    kept = frozenset(Kept(found.key, found.column, found.reported) for found in first.problems if isinstance(found, ManualDifference))
+    kept = frozenset(Kept(found.key, found.column, found.reported) for found in _problems(first) if isinstance(found, ManualDifference))
     changed = tata(orders)
     second = enter_reports(_inputs(mails, changed, rollout=SIXTH, ordered=READ_DAYS, memory=first.memory, kept=kept))
     third = enter_reports(_inputs([*mails, ewa_fresh], changed, rollout=SIXTH, ordered=READ_DAYS, memory=second.memory, kept=kept))
@@ -2233,8 +2245,8 @@ def test_wpisy_centrum_w_zleceniu_jana_nie_przechodza_na_zlecenie_ewy_z_reczna_w
     assert len(kept) == 2
     for later in (second, third):
         assert (later.changes, later.moves) == ((), ())
-    assert not [found for found in second.problems if isinstance(found, ManualDifference)]
-    assert [(found.column, found.manual) for found in third.problems if isinstance(found, ManualDifference)] == [
+    assert not [found for found in _problems(second) if isinstance(found, ManualDifference)]
+    assert [(found.column, found.manual) for found in _problems(third) if isinstance(found, ManualDifference)] == [
         (ReportColumn.COMPLETED, "montaż taty")
     ]
 
@@ -2258,7 +2270,7 @@ def test_wpisy_centrum_nie_przechodza_na_wklejony_drugi_wiersz_numeru_z_reczna_w
     assert {entry.key for entry in first.memory.entries} == {_key()}
     assert (second.changes, second.moves) == ((), ())
     ewa_key = _key(day=SEVENTH, worker="ewa.probna")
-    assert set(second.problems) == {
+    assert set(_problems(second)) == {
         ManualDifference(ewa_key, ReportColumn.SUCCESSFUL, "tak", "nie"),
         ManualDifference(ewa_key, ReportColumn.COMPLETED, "wymiana", "brak klienta"),
     }
@@ -2284,7 +2296,7 @@ def test_wpisy_jana_nie_przechodza_nazajutrz_na_reczne_tak_ewy_w_zleceniu_ktore_
     assert first.memory.entries == frozenset()
     assert (second.changes, second.moves) == ((), ())
     ewa_key = _key(day=NINTH, worker="ewa.probna")
-    assert set(second.problems) == {
+    assert set(_problems(second)) == {
         ManualDifference(ewa_key, ReportColumn.SUCCESSFUL, "tak", "nie"),
         ManualDifference(ewa_key, ReportColumn.COMPLETED, "montaż taty", "brak klienta"),
     }
@@ -2310,9 +2322,9 @@ def test_odmowa_przeniesienia_najpozniejszego_maila_nie_oddaje_zlecenia_starszem
 
     assert first.moves == (OrderMove(moved.row, SEVENTH, "Jan.Testowy"),)
     assert {change.order for change in first.changes} == {moved.row}
-    assert MissingVerdict(Login("adam.inny"), SIXTH, OrderNumber("40000002"), VerdictFault.MISSING) in first.problems
+    assert MissingVerdict(Login("adam.inny"), SIXTH, OrderNumber("40000002"), VerdictFault.MISSING) in _problems(first)
     assert (second.changes, second.moves) == ((), ())
-    assert RefusedMove(Login("adam.inny"), SIXTH, OrderNumber("40000002"), SEVENTH, SIXTH, MoveBar.NOT_ORDERED) in second.problems
+    assert RefusedMove(Login("adam.inny"), SIXTH, OrderNumber("40000002"), SEVENTH, SIXTH, MoveBar.NOT_ORDERED) in _problems(second)
 
 
 def test_odmowa_przy_pomylonym_temacie_po_przeniesieniu_centrum_podaje_dzien_na_ktory_wpis_przenioslby_zlecenie() -> None:
@@ -2333,7 +2345,7 @@ def test_odmowa_przy_pomylonym_temacie_po_przeniesieniu_centrum_podaje_dzien_na_
     refused = RefusedMove(EWA_LOGIN, DAY, N1, SEVENTH, SIXTH, MoveBar.NOT_ORDERED)
     assert first.moves == (OrderMove(moved.row, SEVENTH, "Jan.Testowy"),)
     assert second.moves == ()
-    assert refused in second.problems
+    assert refused in _problems(second)
     assert reason(refused) == (
         "Wpis zlecenia 40000001 od ewa.probna ma w temacie 08.11.2026, a INTERMAX ma to zlecenie w 07.11.2026. Centrum go "
         "nie przeniosło i nie wpisało, bo dzień 06.11.2026 nie jest jeszcze uporządkowany w INTERMAX."
@@ -2361,7 +2373,7 @@ def test_przeniesienie_jedynego_zlecenia_czeka_na_kazda_pamiec_numeru_w_kazdej_k
     blocked = enter_reports(_inputs([older], [_order()], rollout=SIXTH, ordered=OPEN_DAYS, memory=memory))
     moved = enter_reports(_inputs([older, fresher], [_order()], rollout=SIXTH, ordered=OPEN_DAYS, memory=memory))
 
-    assert (blocked.moves, blocked.changes, blocked.problems) == ((), (), ())
+    assert (blocked.moves, blocked.changes, _problems(blocked)) == ((), (), ())
     assert moved.moves == (OrderMove(ROW, DAY, "adam.inny"),)
 
 
@@ -2372,7 +2384,7 @@ def test_powtorne_klikniecie_po_przeniesieniu_na_inny_dzien_nic_nie_zmienia_a_in
 
     second = enter_reports(_inputs(mails, _after(orders, first), rollout=SIXTH, ordered=OPEN_DAYS, memory=first.memory))
 
-    assert (second.changes, second.moves, second.problems) == ((), (), ())
+    assert (second.changes, second.moves, _problems(second)) == ((), (), ())
     assert second.notes == first.notes != ()
     assert second.memory == first.memory
 
@@ -2391,7 +2403,7 @@ def test_reczne_przeniesienie_po_zmianie_centrum_wygrywa_bez_problemu(day: date)
 
     second = enter_reports(_inputs(mails, by_tata, rollout=SIXTH, ordered=OPEN_DAYS, memory=first.memory))
 
-    assert (second.changes, second.moves, second.problems, second.notes) == ((), (), (), ())
+    assert (second.changes, second.moves, _problems(second), second.notes) == ((), (), (), ())
     assert second.memory.moves == {replace(move, overridden=True) for move in first.memory.moves}
 
 
@@ -2411,7 +2423,7 @@ def test_reczna_zmiana_dnia_po_przyjetym_wpisie_zostaje_przy_starym_mailu_a_swie
     new_mail = enter_reports(_inputs([mail, fresher], by_tata, rollout=SIXTH, ordered=OPEN_DAYS, memory=first.memory))
 
     assert first.moves == ()
-    assert (old_mail.changes, old_mail.moves, old_mail.problems, old_mail.notes) == ((), (), (), ())
+    assert (old_mail.changes, old_mail.moves, _problems(old_mail), old_mail.notes) == ((), (), (), ())
     assert new_mail.moves == (OrderMove(after.row, SEVENTH, "Jan.Testowy"),)
     assert [change.value for change in new_mail.changes] == ["nie", "klient nieobecny"]
 
@@ -2472,7 +2484,7 @@ def test_zlecenie_z_dnia_zamknietego_robi_numer_niejednoznacznym_jak_kazde_odczy
     )
 
     assert (outcome.moves, outcome.changes) == ((), ())
-    assert outcome.problems == (RepeatedNumber(JAN_LOGIN, DAY, N1, ((closed, JAN_LOGIN), (date(2026, 11, 7), JAN_LOGIN))),)
+    assert _problems(outcome) == (RepeatedNumber(JAN_LOGIN, DAY, N1, ((closed, JAN_LOGIN), (date(2026, 11, 7), JAN_LOGIN))),)
 
 
 def test_ten_sam_numer_dwa_razy_w_dniu_wykonawcy_nie_daje_zmian() -> None:
@@ -2481,7 +2493,7 @@ def test_ten_sam_numer_dwa_razy_w_dniu_wykonawcy_nie_daje_zmian() -> None:
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT)], orders))
 
     assert outcome.changes == ()
-    assert outcome.problems == (RepeatedOrder(Login("jan.testowy"), DAY, OrderNumber("40000001")),)
+    assert _problems(outcome) == (RepeatedOrder(Login("jan.testowy"), DAY, OrderNumber("40000001")),)
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -2521,7 +2533,7 @@ def test_obce_maile_z_jednym_message_id_daja_po_problemie_nieznanego_nadawcy_po_
     for order in itertools.permutations([*mails, _mail(JAN, SUBJECT, TEXT)]):
         outcome = enter_reports(_inputs(order, [_order()]))
 
-        assert outcome.problems == expected
+        assert _problems(outcome) == expected
         assert [change.column for change in outcome.changes] == [ReportColumn.SUCCESSFUL, ReportColumn.COMPLETED]
 
 
@@ -2534,7 +2546,7 @@ def test_obce_maile_z_jednego_adresu_i_dnia_daja_po_problemie_nieznanego_nadawcy
 
     outcome = enter_reports(_inputs(mails[::-1], []))
 
-    assert outcome.problems == tuple(
+    assert _problems(outcome) == tuple(
         UnknownSender(mail.id, mail.sender, DAY) for mail in sorted(mails, key=lambda mail: mail.id)
     )
 
@@ -2564,7 +2576,7 @@ def test_problemy_sa_bez_powtorzen_i_ten_sam_wynik_dla_kazdej_kolejnosci_maili()
     ]
 
     assert all(outcome == outcomes[0] for outcome in outcomes)
-    assert outcomes[0].problems == (
+    assert _problems(outcomes[0]) == (
         UnknownNumber(Login("ewa.probna"), date(2026, 11, 7), OrderNumber("40000009"), AddBar.NOT_ORDERED),
         UnknownSender(second.id, second.sender, DAY),
         UnknownSender(first.id, first.sender, DAY),
@@ -2756,7 +2768,7 @@ def test_regula_komorki_dla_kazdej_kolumny_osobno(
     )
 
     assert outcome.changes == ((CellChange(ROW, column, CORRECTED[column]),) if changed else ())
-    assert outcome.problems == ((ManualDifference(_key(), column, values[current or ""], CORRECTED[column]),) if different else ())
+    assert _problems(outcome) == ((ManualDifference(_key(), column, values[current or ""], CORRECTED[column]),) if different else ())
     remembered_after = (OwnEntry(_key(), column, CORRECTED[column]),) if remembers else ()
     assert outcome.memory.entries == (frozenset(remembered_after))
 
@@ -2784,7 +2796,7 @@ def test_poprawka_wykonawcy_w_drugim_kliknieciu_podmienia_nietkniety_wlasny_wpis
         CellChange(ROW, ReportColumn.SUCCESSFUL, "nie"),
         CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),
     )
-    assert second.problems == ()
+    assert _problems(second) == ()
     assert second.memory.entries == (frozenset(OwnEntry(_key(), column, value) for column, value in CORRECTED.items()))
 
 
@@ -2802,9 +2814,9 @@ def test_reczna_zmiana_miedzy_kliknieciami_wygrywa_z_poprawka_a_kolumna_obok_dos
 
     difference = ManualDifference(_key(), ReportColumn.SUCCESSFUL, "nie wiem", "nie")
     assert second.changes == (CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),)
-    assert second.problems == (difference,)
+    assert _problems(second) == (difference,)
     assert second.memory.entries == (frozenset({OwnEntry(_key(), ReportColumn.COMPLETED, "klient nieobecny")}))
-    assert (third.changes, third.problems, third.memory) == ((), (difference,), second.memory)
+    assert (third.changes, _problems(third), third.memory) == ((), (difference,), second.memory)
 
 
 def test_poprawka_nie_rusza_pamieci_innego_zlecenia_ani_wpisu_wczesniejszego_maila_w_innym_zleceniu() -> None:
@@ -2900,9 +2912,9 @@ def test_problem_z_bledu_wykonawcy_znika_w_nastepnym_kliknieciu_po_poprawionym_m
         _inputs([wrong] if fixed is None else [wrong, fixed], JAN_ORDERS, today=NEXT_DAY, rollout=DAY, closed=closed)
     )
 
-    assert len(first.problems) == 1
-    assert problem is None or first.problems == (problem,)
-    assert second.problems == ()
+    assert len(_problems(first)) == 1
+    assert problem is None or _problems(first) == (problem,)
+    assert _problems(second) == ()
 
 
 @pytest.mark.parametrize(
@@ -2977,7 +2989,7 @@ def test_problem_z_bledu_wykonawcy_zostaje_bez_raportu_wyslanego_jeszcze_raz(
 
     outcome = enter_reports(_inputs([wrong, later], JAN_ORDERS, today=NEXT_DAY, rollout=DAY))
 
-    assert problem in outcome.problems
+    assert problem in _problems(outcome)
 
 
 @pytest.mark.parametrize(
@@ -3016,7 +3028,7 @@ def test_regula_poprawki_liczy_zlecenia_wykonawcy_sprzed_przeniesien_centrum_w_k
     third = enter_reports(_inputs(mails, _after(after_first, second), ordered=[DAY], memory=second.memory))
 
     assert [move.order for move in first.moves] == [ROW]
-    assert (second.problems, third.problems) == (problems, problems)
+    assert (_problems(second), _problems(third)) == (problems, problems)
 
 
 def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_intermax() -> None:
@@ -3031,7 +3043,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
         _order(OrderRow("Zlecenia", 121), number="40000002", successful=" NIE "),
         _order(OrderRow("Zlecenia", 120), number="40000001"),
     ]
-    mails = [_mail(JAN, SUBJECT, TEXT), _mail(JAN, SUBJECT, "40000077 tak montaż", EVENING + timedelta(hours=1))]
+    mails = [_mail(JAN, SUBJECT, "40000001 tak inst20m"), _mail(JAN, SUBJECT, "40000077 tak montaż", EVENING + timedelta(hours=1))]
 
     outcome = enter_reports(_inputs(mails, orders))
 
@@ -3055,7 +3067,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
             problems=1,
             without_report=(OrderNumber("40000002"), OrderNumber("40000003"), OrderNumber("40000004")),
             orders_detail=(
-                OrderDetail(OrderNumber("40000001"), "tak", "wymiana routera", reported=True),
+                OrderDetail(OrderNumber("40000001"), "tak", "inst20m", reported=True),
                 OrderDetail(OrderNumber("40000002"), " NIE ", None, reported=False),
                 OrderDetail(OrderNumber("40000003"), None, None, reported=False),
                 OrderDetail(OrderNumber("40000004"), "???", "ręcznie", reported=False),
@@ -3178,7 +3190,7 @@ def _canonical_senders(outcome: ReportsOutcome) -> list[SenderAddress]:
     """Adres każdego odczytu: Wykonawcy z listy adresów, a maila spoza listy jeden z tylu adresów spoza niej, ile
     problemów nieznanego nadawcy ma jego mail z dniem, bo tyle różnych nadawców miały maile z tym Message-ID."""
 
-    senders = Counter((problem.mail, problem.day) for problem in outcome.problems if isinstance(problem, UnknownSender))
+    senders = Counter((problem.mail, problem.day) for problem in _problems(outcome) if isinstance(problem, UnknownSender))
     seen: Counter[tuple[MailId, date]] = Counter()
     found: list[str] = []
     for read in outcome.mails:
@@ -3233,7 +3245,7 @@ def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[
         outcome.workers,
         outcome.memory,
     )
-    assert sorted(map(repr, map(_seen, again.problems))) == sorted(map(repr, map(_seen, outcome.problems)))
+    assert sorted(map(repr, map(_seen, _problems(again)))) == sorted(map(repr, map(_seen, _problems(outcome))))
 
 
 def _read_back(read: ReadReport | ReadUnreadable) -> tuple[object, ...]:
@@ -3340,7 +3352,16 @@ def _every_problem() -> list[ReportProblem]:
         RefusedMove(jan, DAY, number, SEVENTH, SEVENTH, MoveBar.CLOSED_SOURCE),
         RefusedMove(jan, DAY, number, NINTH, NINTH, MoveBar.AFTER_TODAY),
         *(ManualDifference(_key(), column, "ręcznie", "z raportu") for column in ReportColumn),
+        *(_faulty(text) for text in ("montaż ONT", "instutp40m", "instmdik inst20m", "inst20m usterka instutp0m")),
     ]
+
+
+def _faulty(text: str, number: str = "40000001", worker: str = "jan.testowy", day: date = DAY) -> FaultyDescription:
+    """Błąd opisu Wpisu ``tak`` z czynnościami ``text`` według Legendy czynności z Wydania."""
+
+    read = DEFAULT_ACTIVITY_LEGEND.read(text)
+    assert isinstance(read, DescriptionError), text
+    return FaultyDescription(Login(worker), day, OrderNumber(number), read.problems)
 
 
 def test_powod_dla_taty_kazdego_rodzaju_problemu() -> None:
@@ -3378,7 +3399,7 @@ REMINDER_TEXT = reminder_text(DAY, DEFAULT_TEXT, "Pozdrawiam\nTata Testowy")
 QUOTED = "".join(f"> {line}\n" if line else ">\n" for line in REMINDER_TEXT.splitlines())
 INBOX = "Raporty <raporty.taty@przyklad.invalid>"
 OUTLOOK_HEADERS = f"Wysłane: poniedziałek, 9 listopada 2026 08:00\nDo: {JAN}\nTemat: {REMINDER}\n\n"
-REPLY = "40000001 tak wymiana routera"
+REPLY = "40000001 tak inst20m"
 
 
 @pytest.mark.parametrize(
@@ -3400,10 +3421,10 @@ def test_odpowiedz_na_przypomnienie_jest_raportem_wykonawcy_za_dzien_z_tematu_pr
 
     outcome = enter_reports(_inputs([mail], [_order()]))
 
-    assert outcome.changes == _both(ROW, "tak", "wymiana routera")
+    assert outcome.changes == _both(ROW, "tak", "inst20m")
     assert outcome.mails == (
         ReadReport(
-            mail.id, EVENING, Login("jan.testowy"), DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana routera"),)
+            mail.id, EVENING, Login("jan.testowy"), DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "inst20m"),)
         ),
     )
 
@@ -3429,7 +3450,7 @@ def test_przekazanie_przypomnienia_i_odpowiedz_na_inny_temat_nie_sa_raportem(sub
 
     outcome = enter_reports(_inputs([_mail(JAN, subject, REPLY)], [_order()]))
 
-    assert (outcome.changes, outcome.problems, outcome.mails) == ((), (), ())
+    assert (outcome.changes, _problems(outcome), outcome.mails) == ((), (), ())
 
 
 _PREFIXES = st.sampled_from(["Re:", "RE:", "re :", "Odp:", "ODP:", "odp:", "Fwd:", "FW:", "PD:", "pd :"])
@@ -3473,8 +3494,8 @@ def test_z_odpowiedzi_na_przypomnienie_licza_sie_tylko_wpisy_nad_cytatem(text: s
 
     outcome = enter_reports(_inputs([_mail(JAN, f"Re: {REMINDER}", text)], _orders()))
 
-    assert outcome.changes == _both(ROWS[0], "tak", "wymiana routera")
-    assert outcome.problems == ()
+    assert outcome.changes == _both(ROWS[0], "tak", "inst20m")
+    assert _problems(outcome) == ()
 
 
 def test_wpis_pod_linia_cytatu_sie_nie_liczy() -> None:
@@ -3484,15 +3505,15 @@ def test_wpis_pod_linia_cytatu_sie_nie_liczy() -> None:
 
     outcome = enter_reports(_inputs([_mail(JAN, f"Re: {REMINDER}", text)], _orders()))
 
-    assert outcome.changes == _both(ROWS[0], "tak", "wymiana routera")
+    assert outcome.changes == _both(ROWS[0], "tak", "inst20m")
 
 
 @pytest.mark.parametrize("subject", [f"Re: {REMINDER}", SUBJECT])
 @pytest.mark.parametrize(
     "text",
     [
-        pytest.param(f"{REPLY}\n12345678 tak montaż ONT\n12345679 nie brak klienta", id="przyklad-bez-cytatu"),
-        pytest.param(f"12345678 tak montaż ONT 12345679 nie brak klienta {REPLY}", id="przyklad-w-jednej-linii"),
+        pytest.param(f"{REPLY}\n12345678 tak inst20m spawpg\n12345679 nie brak klienta", id="przyklad-bez-cytatu"),
+        pytest.param(f"12345678 tak inst20m spawpg 12345679 nie brak klienta {REPLY}", id="przyklad-w-jednej-linii"),
         pytest.param(f"{REPLY}\n\n{REMINDER_TEXT}", id="cale-przypomnienie-bez-cytatu"),
         pytest.param(f"{REPLY}\n\n#12345678 t\n12345679", id="przyklad-z-krzyzykiem-i-bez-znaku"),
     ],
@@ -3507,15 +3528,15 @@ def test_numery_z_przykladu_nie_daja_wpisu_ani_problemu_nawet_gdy_sa_zleceniami(
 
     outcome = enter_reports(_inputs([mail], [_order(), example]))
 
-    assert outcome.changes == _both(ROW, "tak", "wymiana routera")
-    assert outcome.problems == ()
+    assert outcome.changes == _both(ROW, "tak", "inst20m")
+    assert _problems(outcome) == ()
     assert [entry.number for read in outcome.mails if isinstance(read, ReadReport) for entry in read.entries] == ["40000001"]
 
 
 def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
     """Mail z nieczytelnym tematem pamięta numery swoich Wpisów dla poprawionego maila, bez numerów z przykładu."""
 
-    mail = _mail(JAN, "Raport 08.11", f"{REPLY}\n12345678 tak montaż ONT")
+    mail = _mail(JAN, "Raport 08.11", f"{REPLY}\n12345678 tak inst20m spawpg")
 
     outcome = enter_reports(_inputs([mail], [_order()]))
 
@@ -3551,6 +3572,7 @@ def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: s
             inputs.addresses,
             frozenset(inputs.addresses.logins.values()),
             settings=DEFAULT_REMINDERS,
+            legend=inputs.legend,
         )
     )
 
@@ -3712,7 +3734,7 @@ def test_temat_ze_slowem_raport_ktorego_nie_da_sie_odczytac_jest_problemem_z_pow
     outcome = enter_reports(_inputs([mail], [_order()]))
 
     assert outcome.changes == ()
-    assert outcome.problems == (UnreadableSubject(mail.id, Login("jan.testowy"), EVENING, fault),)
+    assert _problems(outcome) == (UnreadableSubject(mail.id, Login("jan.testowy"), EVENING, fault),)
     assert outcome.mails == (ReadUnreadable(mail.id, EVENING, Login("jan.testowy"), fault, frozenset({OrderNumber("40000001")})),)
 
 
@@ -3732,7 +3754,7 @@ def test_nieczytelny_temat_spoza_wykonawcow_albo_z_okresu_z_plikiem_zbiorczym_je
 
     outcome = enter_reports(_inputs([_mail(sender, "Raport 08.11", TEXT, arrived)], [], rollout=rollout, closed=closed))
 
-    assert (outcome.problems, outcome.mails) == ((), ())
+    assert (_problems(outcome), outcome.mails) == ((), ())
 
 
 @pytest.mark.parametrize(
@@ -3757,7 +3779,7 @@ def test_wiele_wpisow_w_jednym_mailu_takze_w_jednej_linii(text: str) -> None:
         *_both(ROWS[1], "nie", "brak klienta"),
         *_both(ROWS[2], "tak", "montaż"),
     )
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
 
 
 @pytest.mark.parametrize(
@@ -3813,7 +3835,7 @@ def test_wlasnosc_wpisy_w_dowolnym_ukladzie_daja_te_same_komorki(text: str) -> N
     assert outcome.changes == tuple(
         change for row, (word, activities) in zip(ROWS, _EXPECTED, strict=True) for change in _both(row, word, activities)
     )
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
 
 
 @pytest.mark.parametrize(
@@ -3854,7 +3876,7 @@ def test_wpis_bez_tak_ani_nie_jest_problemem_a_nie_zgadnieta_wartoscia(text: str
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()]))
 
     assert outcome.changes == ()
-    assert outcome.problems == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), fault),)
+    assert _problems(outcome) == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), fault),)
 
 
 def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuje() -> None:
@@ -3865,7 +3887,7 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
     outcome = enter_reports(_inputs(mails, [_order()]))
 
     assert outcome.changes == ()
-    assert outcome.problems == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES),)
+    assert _problems(outcome) == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES),)
 
 
 @pytest.mark.parametrize(
@@ -3913,7 +3935,7 @@ def test_powitanie_podpis_i_cytat_nie_trafiaja_do_opisu(text: str) -> None:
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], _orders()))
 
     assert outcome.changes == (*_both(ROWS[0], "tak", "wymiana routera"), *_both(ROWS[1], "nie", "klient nieobecny"))
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
 
 
 def test_opis_ma_pojedyncze_spacje_bez_spacji_na_brzegach() -> None:
@@ -3938,7 +3960,7 @@ def test_numer_z_tak_albo_nie_spoza_zlecen_wykonawcy_jest_problemem(text: str, n
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()]))
 
     assert outcome.changes == ()
-    assert outcome.problems == (UnknownNumber(Login("jan.testowy"), DAY, OrderNumber(number), bar),)
+    assert _problems(outcome) == (UnknownNumber(Login("jan.testowy"), DAY, OrderNumber(number), bar),)
 
 
 def test_dwa_maile_z_jednym_message_id_i_chwila_przyjscia_daja_ten_sam_wynik_w_kazdej_kolejnosci() -> None:
@@ -4136,7 +4158,7 @@ def test_opis_wpisu_ciagnie_sie_przez_kolejne_linie_do_nastepnego_wpisu_podpisu_
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [*_orders(), *EWA_ORDERS]))
 
     assert outcome.changes == _cells(entered)
-    assert outcome.problems == problems
+    assert _problems(outcome) == problems
 
 
 @pytest.mark.parametrize(
@@ -4157,13 +4179,13 @@ def test_ksztalt_numeru_zlecenia_wyznacza_najkrotszy_numer_odczytanego_zlecenia(
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "40000001 tak router\n400099 nie brak")], orders))
 
-    assert outcome.problems == problems
+    assert _problems(outcome) == problems
 
 
 def test_raport_z_dnia_bez_zlecen_w_dniach_otwartych_daje_problem_numeru() -> None:
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, "Dzień dobry 12 tak router")], []))
 
-    assert outcome.problems == (_unknown("12", AddBar.FORM),)
+    assert _problems(outcome) == (_unknown("12", AddBar.FORM),)
 
 
 _WHITESPACE = st.sampled_from([" ", "  ", "\n", " \n ", "\t", "\r\n"])
@@ -4183,7 +4205,7 @@ def test_wlasnosc_dowolne_lamanie_linii_miedzy_slowami_daje_te_same_komorki(gaps
     assert outcome.changes == tuple(
         change for row, (word, activities) in zip(ROWS, _EXPECTED, strict=True) for change in _both(row, word, activities)
     )
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
 
 
 # --- Koniec opisu Wpisu (#1228 runda 3): tylko wyliczone znaczniki, reszta pod opisem należy do opisu ---
@@ -4282,7 +4304,7 @@ def test_opis_wpisu_konczy_pusta_linia_pozegnanie_z_tabeli_albo_przedrostek_nast
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], _orders()))
 
     assert outcome.changes == _cells(entered)
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
 
 
 def test_poprawiony_mail_zdejmuje_ostrzezenie_tylko_nieczytelnego_maila_sprzed_niego() -> None:
@@ -4295,7 +4317,7 @@ def test_poprawiony_mail_zdejmuje_ostrzezenie_tylko_nieczytelnego_maila_sprzed_n
 
     outcome = enter_reports(_inputs([before, corrected, after], [_order()]))
 
-    assert outcome.problems == (
+    assert _problems(outcome) == (
         UnreadableSubject(after.id, Login("jan.testowy"), EVENING + timedelta(minutes=2), SubjectFault.NO_DATE),
     )
 
@@ -4313,7 +4335,7 @@ def test_poprawiony_mail_nie_zdejmuje_ostrzezenia_drugiego_nieczytelnego_maila_z
 
     outcome = enter_reports(_inputs([*(unreadable[::-1] if reverse else unreadable), corrected], [_order()]))
 
-    assert outcome.problems == (UnreadableSubject(unreadable[0].id, Login("jan.testowy"), EVENING, SubjectFault.NO_DATE),)
+    assert _problems(outcome) == (UnreadableSubject(unreadable[0].id, Login("jan.testowy"), EVENING, SubjectFault.NO_DATE),)
 
 
 def test_dwa_nieczytelne_tematy_z_jednym_message_id_chwila_i_powodem_rozstrzygaja_numery_wpisow() -> None:
@@ -4435,7 +4457,7 @@ def test_stopka_aplikacji_pocztowej_w_srodku_ostatniej_linii_nie_trafia_do_opisu
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], FOOTER_ORDERS))
 
     assert outcome.changes == _cells(entered)
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
 
 
 _FOOTERS = (
@@ -4509,7 +4531,7 @@ def test_tak_i_nie_jednego_zlecenia_w_jednym_mailu_niczego_do_niego_nie_wpisuja_
         CellChange(OrderRow("Zlecenia", 130), ReportColumn.SUCCESSFUL, "tak"),
         CellChange(OrderRow("Zlecenia", 132), ReportColumn.SUCCESSFUL, "tak"),
     )
-    assert outcome.problems == (
+    assert _problems(outcome) == (
         _conflict(mail, _said("40000011", Verdict.YES, "inst25m"), _said("40000011", Verdict.NO, "brak klienta od umowy")),
     )
     assert outcome.memory.entries == {
@@ -4573,7 +4595,7 @@ def test_z_wpisow_numeru_w_jednym_mailu_liczy_sie_pierwszy_z_tak_albo_nie(
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order(number="40000011")]))
 
-    assert (outcome.changes, outcome.problems) == (changes, problems)
+    assert (outcome.changes, _problems(outcome)) == (changes, problems)
 
 
 @pytest.mark.parametrize(
@@ -4630,7 +4652,7 @@ def test_ostrzezenie_o_przeciwnym_zamiarze_wpisow_numeru_ma_pierwszy_wpis_kazdeg
 
     outcome = enter_reports(_inputs([mail], [_order(number="40000011")]))
 
-    assert (outcome.changes, outcome.problems) == ((), (_conflict(mail, *entries),))
+    assert (outcome.changes, _problems(outcome)) == ((), (_conflict(mail, *entries),))
 
 
 @pytest.mark.parametrize("reverse", [False, True])
@@ -4652,18 +4674,18 @@ def test_pozniejszy_mail_z_jednym_wpisem_numeru_rozwiazuje_ostrzezenie_a_pozniej
     written = [replace(order, successful="nie", completed="brak klienta od umowy") if order.key.number == "40000011" else order for order in orders]
     third = enter_reports(_inputs([conflict, fixed, late_conflict], written, memory=second.memory))
 
-    assert [type(problem) for problem in first.problems] == [ConflictingVerdicts]
-    assert second.problems == ()
+    assert [type(problem) for problem in _problems(first)] == [ConflictingVerdicts]
+    assert _problems(second) == ()
     assert _both(OrderRow("Zlecenia", 131), "nie", "brak klienta od umowy") == tuple(
         change for change in second.changes if change.order == OrderRow("Zlecenia", 131)
     )
-    assert third.problems == (
+    assert _problems(third) == (
         _conflict(
             late_conflict, _said("40000011", Verdict.YES, "inst25m"), _said("40000011", Verdict.NO, "brak klienta od umowy")
         ),
     )
     assert [change for change in third.changes if change.order == OrderRow("Zlecenia", 131)] == []
-    for problem in (*first.problems, *third.problems):
+    for problem in (*_problems(first), *_problems(third)):
         assert "Centrum nie zmieniło tego zlecenia przy tym kliknięciu." in reason(problem)
         assert "nie wpisało" not in reason(problem)
     assert {entry for entry in third.memory.entries if entry.key.number == "40000011"} == {
@@ -4684,7 +4706,7 @@ def test_postac_kanoniczna_maila_ze_sprzecznymi_wpisami_daje_te_same_wpisy_i_ost
     again = enter_reports(_inputs([as_mail(read, sender) for read in outcome.mails], CONFLICT_ORDERS))
 
     assert again == outcome
-    assert [type(problem) for problem in again.problems] == [ConflictingVerdicts]
+    assert [type(problem) for problem in _problems(again)] == [ConflictingVerdicts]
 
 
 # Zlecenie dopisane z raportu (#1354, ADR 0029): Wpis numeru z aplikacji firmowej (8 cyfr), którego INTERMAX nie ma w
@@ -4714,7 +4736,7 @@ def test_numer_z_aplikacji_spoza_dni_otwartych_to_zlecenie_dopisane_pod_zlecenia
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, ADDED_TEXT)], orders, ordered=[DAY]))
 
     assert outcome.added == (_added(),)
-    assert (outcome.changes, outcome.moves, outcome.problems) == ((), (), ())
+    assert (outcome.changes, outcome.moves, _problems(outcome)) == ((), (), ())
     assert outcome.notes == (_added_note(),)
     key = _key(ADDED)
     assert {entry for entry in outcome.memory.entries if entry.key == key} == {
@@ -4775,7 +4797,7 @@ def test_numer_bez_postaci_numeru_z_aplikacji_pomylony_temat_albo_dzien_nieuporz
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], orders, rollout=date(2026, 11, 7), ordered=ordered))
 
     assert outcome.added == ()
-    assert outcome.problems == (problem,)
+    assert _problems(outcome) == (problem,)
     assert not any(isinstance(note, Added) for note in outcome.notes)
 
 
@@ -4792,9 +4814,9 @@ def test_numer_z_przeczytanego_wiersza_bez_zlecenia_nie_jest_dopisany_i_nie_licz
     outcome = enter_reports(replace(inputs, present=(*inputs.present, ReadNumber(OrderNumber(ADDED)))))
 
     assert outcome.added == ()
-    assert outcome.problems == (UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), AddBar.IN_INTERMAX),)
+    assert _problems(outcome) == (UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), AddBar.IN_INTERMAX),)
     assert outcome.moves == (OrderMove(ROW, DAY, "Jan.Testowy"),)
-    assert reason(outcome.problems[0]).startswith(f"Zlecenie {ADDED} z Wpisu od jan.testowy z 08.11.2026 jest już w INTERMAX")
+    assert reason(_problems(outcome)[0]).startswith(f"Zlecenie {ADDED} z Wpisu od jan.testowy z 08.11.2026 jest już w INTERMAX")
 
 
 def test_numer_obecny_w_innym_otwartym_dniu_nie_jest_dopisany_tylko_przenoszony() -> None:
@@ -4827,10 +4849,10 @@ def test_numer_z_dnia_po_dzis_nie_jest_dopisany_a_nastepnego_dnia_przechodzi_na_
     tomorrow = enter_reports(_inputs([mail], orders, today=NEXT_DAY, rollout=DAY, ordered=[DAY, NEXT_DAY]))
 
     assert (today.added, today.moves, today.changes) == ((), (), ())
-    assert today.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000055"), NEXT_DAY, NEXT_DAY, MoveBar.AFTER_TODAY),)
+    assert _problems(today) == (RefusedMove(JAN_LOGIN, DAY, OrderNumber("40000055"), NEXT_DAY, NEXT_DAY, MoveBar.AFTER_TODAY),)
     assert tomorrow.added == ()
     assert tomorrow.moves == (OrderMove(LATER_ROW, DAY, "Jan.Testowy"),)
-    assert tomorrow.problems == ()
+    assert _problems(tomorrow) == ()
 
 
 def test_nowy_numer_w_raporcie_z_dwoma_zleceniami_z_jutra_nie_jest_dopisany_ani_dzis_ani_jutro() -> None:
@@ -4851,7 +4873,7 @@ def test_nowy_numer_w_raporcie_z_dwoma_zleceniami_z_jutra_nie_jest_dopisany_ani_
 
     for outcome in (today, tomorrow):
         assert (outcome.added, outcome.moves) == ((), ())
-        assert _unknown("40000099", AddBar.MISTAKEN_SUBJECT) in outcome.problems
+        assert _unknown("40000099", AddBar.MISTAKEN_SUBJECT) in _problems(outcome)
     assert today.changes == ()
 
 def test_numery_z_przykladu_przypomnienia_nigdy_nie_daja_dopisania() -> None:
@@ -4862,7 +4884,7 @@ def test_numery_z_przykladu_przypomnienia_nigdy_nie_daja_dopisania() -> None:
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()], ordered=[DAY]))
 
-    assert (outcome.added, outcome.changes, outcome.problems, outcome.notes) == ((), (), (), ())
+    assert (outcome.added, outcome.changes, _problems(outcome), outcome.notes) == ((), (), (), ())
 
 
 def test_drugie_klikniecie_nie_dubluje_dopisanego_zlecenia_a_informacja_stoi_do_wpisania_adresu() -> None:
@@ -4878,7 +4900,7 @@ def test_drugie_klikniecie_nie_dubluje_dopisanego_zlecenia_a_informacja_stoi_do_
     addressed = [replace(order, addressed=True) if order.key.number == ADDED else order for order in after]
     third = enter_reports(_inputs([mail], addressed, ordered=[DAY], memory=second.memory))
 
-    assert (second.added, second.changes, second.moves, second.problems) == ((), (), (), ())
+    assert (second.added, second.changes, second.moves, _problems(second)) == ((), (), (), ())
     assert second.notes == (_added_note(),)
     assert second.memory == first.memory
     assert (third.added, third.changes, third.notes) == ((), (), ())
@@ -4915,7 +4937,7 @@ def test_poprawka_wykonawcy_zmienia_komorki_dopisanego_zlecenia_a_reczna_wartosc
 
     [row] = [order.row for order in after if order.key.number == ADDED]
     assert [(change.order, change.value) for change in second.changes] == [(row, value) for value in changed]
-    assert second.problems == differences
+    assert _problems(second) == differences
     assert second.added == ()
 
 
@@ -4950,7 +4972,7 @@ def test_dopisane_zlecenie_usuniete_przez_tate_wraca_tylko_ze_swiezszym_mailem()
     fresher = _mail(JAN, SUBJECT, f"{ADDED} nie klient nieobecny", LATER)
     newer = enter_reports(_inputs([mail, fresher], orders, ordered=[DAY], memory=same.memory))
 
-    assert (same.added, same.problems, same.notes) == ((), (), ())
+    assert (same.added, _problems(same), same.notes) == ((), (), ())
     assert newer.added == (_added(successful="nie", completed="klient nieobecny"),)
 
 
@@ -4968,10 +4990,10 @@ def test_przy_kilku_mailach_z_nowym_numerem_dopisuje_najswiezszy_a_problem_stars
     without = enter_reports(_inputs([jan, ewa, letter], orders, today=NEXT_DAY, rollout=DAY, ordered=[DAY]))
 
     assert outcome.added == (_added("ewa.probna", "nie", "brak klienta"),)
-    assert outcome.problems == ()
+    assert _problems(outcome) == ()
     assert outcome.notes == (_added_note(EWA_LOGIN),)
     assert without.added == ()
-    assert without.problems == (
+    assert _problems(without) == (
         MissingVerdict(EWA_LOGIN, DAY, OrderNumber(ADDED), VerdictFault.LETTER_YES),
         UnknownNumber(JAN_LOGIN, NEXT_DAY, OrderNumber(ADDED), AddBar.NOT_ORDERED),
     )
@@ -5024,8 +5046,8 @@ def test_starszy_mail_nie_dopisuje_numeru_gdy_najswiezszy_wpis_tego_numeru_nie_d
     first = enter_reports(inputs)
     second = enter_reports(replace(inputs, orders=_after(orders, first), memory=first.memory))
 
-    assert (first.added, first.problems) == ((), problems)
-    assert (second.added, second.moves, second.changes, second.problems) == ((), (), (), problems)
+    assert (first.added, _problems(first)) == ((), problems)
+    assert (second.added, second.moves, second.changes, _problems(second)) == ((), (), (), problems)
 
 def test_literowka_poprawiona_swiezszym_mailem_tego_samego_wykonawcy_nie_jest_dopisana() -> None:
     """Przegląd #1374 r1, reguła poprawionego maila (US 40) dla dopisania: Jan wysłał raport z literówką w drugim numerze
@@ -5040,7 +5062,7 @@ def test_literowka_poprawiona_swiezszym_mailem_tego_samego_wykonawcy_nie_jest_do
     corrected = enter_reports(_inputs([typo, _mail(JAN, SUBJECT, RESENT, LATER)], orders, ordered=[DAY]))
     another = enter_reports(_inputs([typo, _mail(JAN, SUBJECT, "40000002 tak montaż", LATER)], orders, ordered=[DAY]))
 
-    assert (corrected.added, corrected.problems) == ((), ())
+    assert (corrected.added, _problems(corrected)) == ((), ())
     assert {(change.order.row, change.value) for change in corrected.changes} == {
         (120, "tak"),
         (120, "wymiana routera"),
@@ -5064,7 +5086,7 @@ def test_raport_za_inny_dzien_z_numerem_zlecenia_z_tamtego_dnia_nie_poprawia_rap
     )
 
     assert outcome.added == (_added(),)
-    assert (outcome.moves, outcome.problems) == ((), ())
+    assert (outcome.moves, _problems(outcome)) == ((), ())
     assert {(change.order.row, change.value) for change in outcome.changes} == {(120, "tak"), (120, "b")}
 
 
@@ -5101,7 +5123,7 @@ def test_dopisane_zlecenie_nie_robi_ze_starszego_raportu_pomylonego_tematu_w_nas
     assert first.changes == ()
     assert (second.changes, second.moves, second.added) == ((), (), ())
     assert second.memory == first.memory
-    assert second.problems == first.problems
+    assert _problems(second) == _problems(first)
 
 
 @pytest.mark.parametrize(
@@ -5132,7 +5154,7 @@ def test_dopisane_zlecenie_przelozone_przez_tate_na_dzien_nieotwarty_zostaje_tam
 
     assert [(found.day, found.number) for found in first.added] == [(DAY, ADDED)]
     assert (second.moves, second.changes, second.added) == ((), (), ())
-    assert second.problems == (RefusedMove(JAN_LOGIN, DAY, OrderNumber(ADDED), moved_to, moved_to, bar),)
+    assert _problems(second) == (RefusedMove(JAN_LOGIN, DAY, OrderNumber(ADDED), moved_to, moved_to, bar),)
 
 
 def test_raport_z_pomylonym_tematem_wpisuje_sie_do_dopisanego_zlecenia_w_jego_dniu_bez_przeniesienia() -> None:
@@ -5151,7 +5173,7 @@ def test_raport_z_pomylonym_tematem_wpisuje_sie_do_dopisanego_zlecenia_w_jego_dn
     )
 
     assert [(found.day, found.number) for found in first.added] == [(SEVENTH, ADDED)]
-    assert (second.moves, second.added, second.problems) == ((), (), ())
+    assert (second.moves, second.added, _problems(second)) == ((), (), ())
     assert {(change.order.row, change.value) for change in second.changes} == {
         (row, value) for row in (120, 121) for value in ("tak", "montaż")
     } | {(122, "nie"), (122, "brak klienta")}
@@ -5178,7 +5200,7 @@ def test_zlecenie_numeru_z_drugim_przeczytanym_wierszem_nie_przechodzi_a_zleceni
 
     assert moved.moves == (OrderMove(ROW, DAY, "Jan.Testowy"),)
     assert (repasted.moves, repasted.changes) == ((), ())
-    assert repasted.problems == (RepeatedNumber(JAN_LOGIN, DAY, N1, ((SEVENTH, JAN_LOGIN),)),)
+    assert _problems(repasted) == (RepeatedNumber(JAN_LOGIN, DAY, N1, ((SEVENTH, JAN_LOGIN),)),)
     assert own.moves == ()
     assert {(change.order, change.value) for change in own.changes} == {(ROW, "tak"), (ROW, "montaż")}
 
@@ -5212,4 +5234,102 @@ def test_numer_przeczytany_tylko_w_zleceniach_sprzed_okna_ma_wlasny_powod(
     outcome = enter_reports(inputs)
 
     assert outcome.added == ()
-    assert outcome.problems == (UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), bar),)
+    assert _problems(outcome) == (UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), bar),)
+
+
+# --- Błąd opisu we Wpisie ``tak`` (ADR 0039): Wpis wpisany, problem dla taty ---
+
+
+@pytest.mark.parametrize(
+    ("text", "changes", "problems"),
+    [
+        pytest.param("40000001 tak montaż ONT", _both(ROW, "tak", "montaż ONT"), (_faulty("montaż ONT"),), id="zwykly-opis"),
+        pytest.param("40000001 tak instutp40m", _both(ROW, "tak", "instutp40m"), (_faulty("instutp40m"),), id="liczba-spoza-przedzialow"),
+        pytest.param(
+            "40000001 tak instmdik inst20m",
+            _both(ROW, "tak", "instmdik inst20m"),
+            (_faulty("instmdik inst20m"),),
+            id="kolumna-drugi-raz",
+        ),
+        pytest.param("40000001 tak inst20m spawpg", _both(ROW, "tak", "inst20m spawpg"), (), id="same-kody"),
+        pytest.param("40000001 tak", (CellChange(ROW, ReportColumn.SUCCESSFUL, "tak"),), (), id="bez-opisu"),
+        pytest.param("40000001 nie montaż się nie udał", _both(ROW, "nie", "montaż się nie udał"), (), id="nie-z-powodem"),
+        pytest.param(
+            "40000001 t montaż",
+            (),
+            (MissingVerdict(JAN_LOGIN, DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES),),
+            id="litera-zamiast-tak",
+        ),
+    ],
+)
+def test_wpis_tak_z_bledem_opisu_wpisuje_sie_jak_kazdy_a_tata_widzi_problem_z_powodem(
+    text: str, changes: tuple[CellChange, ...], problems: tuple[ReportProblem, ...]
+) -> None:
+    """ADR 0039: Wpis ``tak``, którego czynności mają Błąd opisu, Wpisanie raportów wpisuje jak dotąd, bo bez
+    ``SKUTECZNE`` Przygotowanie pliku zbiorczego się zatrzymuje, a tata widzi przy dniu Wykonawcy problem z powodem.
+    Opis Wpisu ``nie`` to powód nieskuteczności, więc legenda go nie czyta, a Wpis bez ``tak`` ani ``nie`` niczego nie
+    wpisuje i ma swój problem."""
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()]))
+
+    assert outcome.changes == changes
+    assert outcome.problems == problems
+    assert _days(outcome)[DAY, JAN_LOGIN].problems == len(problems)
+
+
+def test_pozniejszy_poprawny_wpis_zastepuje_wpis_z_bledem_opisu_a_problem_znika() -> None:
+    """Późniejszy Wpis zlecenia wygrywa, więc poprawiony Wpis Wykonawcy zastępuje Wpis z Błędem opisu w tym samym
+    kliknięciu i w następnym (własny wpis Centrum), a problem znika; Wpis z błędem po poprawnym daje problem znowu."""
+
+    faulty = _mail(JAN, SUBJECT, "40000001 tak montaż ONT")
+    corrected = _mail(JAN, SUBJECT, "40000001 tak inst20m", LATER)
+
+    first = enter_reports(_inputs([faulty], [_order()]))
+    second = enter_reports(_inputs([faulty, corrected], _after([_order()], first), memory=first.memory))
+    together = enter_reports(_inputs([faulty, corrected], [_order()]))
+    worse = enter_reports(_inputs([_mail(JAN, SUBJECT, "40000001 tak inst20m"), _mail(JAN, SUBJECT, "40000001 tak montaż ONT", LATER)], [_order()]))
+
+    assert first.problems == (_faulty("montaż ONT"),)
+    assert (second.changes, second.problems) == ((CellChange(ROW, ReportColumn.COMPLETED, "inst20m"),), ())
+    assert (together.changes, together.problems) == (_both(ROW, "tak", "inst20m"), ())
+    assert (worse.changes, worse.problems) == (_both(ROW, "tak", "montaż ONT"), (_faulty("montaż ONT"),))
+
+
+def test_zlecenie_dopisane_z_raportu_z_bledem_opisu_ma_problem_a_odrzucona_literowka_nie() -> None:
+    """Zlecenie dopisane z raportu z Wpisem ``tak`` z Błędem opisu dopisuje się jak każde, z problemem; numer, który
+    poprawiony mail odrzucił jako literówkę, nie staje się zleceniem, więc nie ma też Błędu opisu (US 40)."""
+
+    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002")]
+
+    added = enter_reports(_inputs([_mail(JAN, SUBJECT, ADDED_TEXT)], orders, ordered=[DAY]))
+    corrected = enter_reports(_inputs([_mail(JAN, SUBJECT, TYPO), _mail(JAN, SUBJECT, RESENT, LATER)], orders, ordered=[DAY]))
+
+    assert (added.added, added.problems) == ((_added(),), (_faulty("montaż ONT", number=ADDED),))
+    assert corrected.added == ()
+    assert corrected.problems == (_faulty("wymiana routera"), _faulty("montaż", number="40000002"))
+
+
+def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydania() -> None:
+    """Legenda czynności to Ustawienie Centrum taty, to samo co w Przygotowaniu pliku zbiorczego: opis z jego kodów nie
+    jest Błędem opisu, choć legenda z Wydania ich nie zna."""
+
+    legend = ActivityLegend((ActivityCode("montaz", ("montaż",), FixedColumn("Y")), ActivityCode("ont", ("ont",), FixedColumn("AB"))))
+    mails = [_mail(JAN, SUBJECT, "40000001 tak montaż ONT")]
+
+    assert enter_reports(_inputs(mails, [_order()], legend=legend)).problems == ()
+    assert enter_reports(_inputs(mails, [_order()])).problems == (_faulty("montaż ONT"),)
+
+
+def test_linie_bledu_opisu_z_przypomnienia_bez_znaku_cytatu_nie_daja_wpisu() -> None:
+    """Przypomnienie po Błędzie opisu ma numery prawdziwych zleceń, a odpowiedź może je zacytować bez znaku cytatu: linia
+    zlecenia z Błędem opisu nie zaczyna Wpisu, więc odpowiedź wpisuje tylko swój Wpis."""
+
+    reminder = reminder_text(DAY, DEFAULT_TEXT, "Tata", (_faulty("montaż ONT"), _faulty("instutp40m", number="40000002")))
+    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002"), _order(OrderRow("Zlecenia", 122), number="40000003")]
+
+    outcome = enter_reports(_inputs([_mail(JAN, f"Re: {REMINDER}", f"40000003 tak inst20m\n\n{reminder}")], orders))
+
+    assert "Zlecenie 40000001 ma w opisie" in reminder and "Zlecenie 40000002 ma w opisie" in reminder
+    assert [entry.number for read in outcome.mails if isinstance(read, ReadReport) for entry in read.entries] == ["40000003"]
+    assert outcome.changes == _both(OrderRow("Zlecenia", 122), "tak", "inst20m")
+

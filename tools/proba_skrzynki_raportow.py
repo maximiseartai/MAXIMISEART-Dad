@@ -11,7 +11,8 @@ Po kolei:
 2. czyta flagi IMAP każdego maila z dni od dnia przed ``--od`` w folderze, który czyta port (``\\All``, a bez niego
    ``INBOX``), i liczy maile ze słowem ``raport`` w temacie w tym folderze i w ``INBOX`` (``ImapInbox.survey``);
 3. czyta Raporty wykonawców od ``--od`` portem (``mails_since``) i przepuszcza je przez rdzeń raportów
-   (``enter_reports``) bez zleceń INTERMAX, więc każdy Wpis raportu z rozpoznanego Raportu to problem nieznanego numeru;
+   (``enter_reports``) bez zleceń INTERMAX, więc każdy Wpis raportu z rozpoznanego Raportu to problem nieznanego numeru,
+   a żaden Wpis się nie wpisuje, więc Legenda czynności (z Wydania) nie czyta żadnego opisu;
 4. czyta flagi jeszcze raz i porównuje je z pierwszym odczytem: mail, którego flagi są inne albo którego nie ma w
    drugim odczycie, to mail ze zmienionymi flagami. Port oddaje flagi każdego wyszukanego maila albo błąd
    ``UnexpectedReply``, a próba sprawdza jeszcze, że w każdym odczycie liczba maili z flagami równa się liczbie
@@ -90,6 +91,7 @@ from typing import Final, TextIO
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum.settings.files import usable
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.worker_report_inbox import (
@@ -156,7 +158,7 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
         raise ProbeFailed(_unreachable(read, "odczycie maili"))
     mails = read.mails
     window = Window.of(today, since)
-    outcome = enter_reports(ReportInputs(mails, addresses, (), window, OwnEntries.EMPTY, frozenset(), ()))
+    outcome = enter_reports(ReportInputs(mails, addresses, (), window, OwnEntries.EMPTY, frozenset(), (), DEFAULT_ACTIVITY_LEGEND))
     if review is not None:
         review.write(mails, addresses, window)
     after = _survey(inbox, since, "drugim odczycie flag")
@@ -283,7 +285,9 @@ def _worker_reads(
     mails: Sequence[ReportMail], addresses: WorkerAddresses
 ) -> Iterator[tuple[ReportMail, ReadReport | ReadUnreadable]]:
     for mail in mails:
-        outcome = enter_reports(ReportInputs((mail,), addresses, (), _WHOLE_TIME, OwnEntries.EMPTY, frozenset(), ()))
+        outcome = enter_reports(
+            ReportInputs((mail,), addresses, (), _WHOLE_TIME, OwnEntries.EMPTY, frozenset(), (), DEFAULT_ACTIVITY_LEGEND)
+        )
         for found in outcome.mails:
             if isinstance(found, (ReadReport, ReadUnreadable)):
                 yield mail, found

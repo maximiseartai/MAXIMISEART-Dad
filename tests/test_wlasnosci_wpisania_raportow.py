@@ -29,6 +29,7 @@ from itertools import pairwise
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.raw_orders import (
     CellFacts,
     MissingDays,
@@ -365,6 +366,7 @@ def _core(
             memory,
             kept,
             read.present,
+            DEFAULT_ACTIVITY_LEGEND,
             read.ordered,
         )
     )

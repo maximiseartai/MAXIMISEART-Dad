@@ -4,7 +4,8 @@ Rytm (``ReminderRhythm``, u taty ``MinuteRhythm``) woła ``ReportReminders.check
 zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i na początku migawkę Ustawień Centrum, więc zmiana
 pór, treści albo stopki działa od następnego sprawdzenia, bez ponownego startu Centrum (ADR 0032). Przy wyłączonych
 przypomnieniach i poza porą przypomnień z Ustawień (``reminder_pora``) nic więcej nie robi. W porze bierze z migawki
-INTERMAX i folder okresów, dzień wdrożenia przypomnień, Listę Wykonawców, treść i stopkę taty, potem czyta Pliki
+INTERMAX i folder okresów, dzień wdrożenia przypomnień, Legendę czynności, Listę Wykonawców, treść i stopkę taty
+(Legendą rdzeń czyta, który Wpis ``tak`` ma Błąd opisu, ADR 0039), potem czyta Pliki
 zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
@@ -27,8 +28,8 @@ już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłos
 (``ReminderReport``) i zamyka porę, żeby Gmail nie dostawał złego hasła co minutę. Brak pliku, Ustawienia albo
 nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od następnej minuty.
 
-Plik Przypomnień albo Folderów, którego system nie daje teraz czytać (np. trzyma go OneDrive), to nie wyłączone
-przypomnienia ani niewskazany INTERMAX: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
+Plik Przypomnień, Folderów albo Legendy czynności, którego system nie daje teraz czytać (np. trzyma go OneDrive), to nie
+wyłączone przypomnienia ani niewskazany INTERMAX: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
 plik nie wróci do końca pory, dziennik Centrum dostaje jeden wpis z nazwą pliku (``plik-bez-odczytu``), przy pierwszym
 sprawdzeniu po tej porze. Bez pliku Przypomnień porę liczą pory z ostatniego przeczytanego pliku w tej pracy Centrum, a
 przed nim ostatnie pory z ``REMINDERS_SCHEDULES`` (``_unread_schedule``); wyniku dla widoku Raporty
@@ -402,7 +403,7 @@ def due_reminders(
     in_effect: SchedulesInEffect,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
     """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: Przypomnienia o
-    raporcie, Ustawienia Centrum z Listą Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
+    raporcie, Ustawienia Centrum z Legendą czynności i Listą Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
     INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``, z porami „Wysłanych” z ``in_effect``
     (``schedules_in_effect``). Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
@@ -417,6 +418,9 @@ def due_reminders(
     settings = snapshot.folders
     if isinstance(settings, UnreadableFile):
         return NotRead("plik-bez-odczytu", file=settings.name)
+    legend = snapshot.activity_legend
+    if isinstance(legend, UnreadableFile):
+        return NotRead("plik-bez-odczytu", file=legend.name)
     if settings.register is None or settings.periods_directory is None:
         return NotRead("bez-ustawien")
     if mailbox.access() != "ready":
@@ -443,7 +447,9 @@ def due_reminders(
     if not isinstance(sent, SentReminders):
         return sent
     due = reminders_due(
-        ReminderInputs(now, window, orders, mails.mails, sent.reminders, addresses, workers.reminded(), reminders, in_effect)
+        ReminderInputs(
+            now, window, orders, mails.mails, sent.reminders, addresses, workers.reminded(), reminders, legend, in_effect
+        )
     )
     return DueReminders(due, sent.reminders, addresses, reminders.footer if reminders.footer.strip() else None)
 

@@ -105,7 +105,7 @@ class Catalog:
             raise ValueError(f"{kind.title} potrzebuje Listy Wykonawców, a start jej nie ma")
         if kind.quantity_rules and start.quantity_rules is None:
             raise ValueError(f"{kind.title} liczy Regułami ilości, a start ich nie ma")
-        if kind.quantity_rules and start.activity_legend is None:
+        if kind.activity_legend and start.activity_legend is None:
             raise ValueError(f"{kind.title} liczy Legendą czynności, a start jej nie ma")
         if "efenix_window" in kind.needs and parts.efenix is None:
             raise ValueError(f"{kind.title} potrzebuje okna efenix")
@@ -128,7 +128,7 @@ class Catalog:
             start.settings,
             start.warnings,
             start.quantity_rules if kind.quantity_rules else None,
-            start.activity_legend if kind.quantity_rules else None,
+            start.activity_legend if kind.activity_legend else None,
         )
 
 
