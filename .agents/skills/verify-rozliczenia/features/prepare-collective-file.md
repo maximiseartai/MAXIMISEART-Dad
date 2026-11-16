@@ -42,9 +42,8 @@ Folder okresu is found in `Rozliczenia {rok}\{miesiąc}\INEA`; the synthetic fix
 
 Run `py -3 .agents\skills\verify-rozliczenia\scripts\run_verification.py --variant preparation` from the repository
 root (macOS: `.venv/bin/python`). The proof is in the evidence folder that `VERIFY OK` names: `dry-run.json`,
-`run.json`, their `-metrics.jsonl` and `assert-*.txt`. `--variant preparation-real-templates` runs the same plan on
-byte copies of the real Wzorce in `config/` (or `--templates-dir`), only locally, after changes to how template styles
-are applied; without both Wzorce it prints `VERIFY SKIP`, which is a skip.
+`run.json`, their `-metrics.jsonl` and `assert-*.txt`.
+`--variant preparation-real-templates` runs the same plan on byte copies of the real Wzorce in `config/` (or `--templates-dir`), as `SKILL.md`, Launch, says.
 
 ## Gotchas
 
