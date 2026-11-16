@@ -22,6 +22,7 @@ import type {
   RunEvent,
   RunInfo,
   RunOutcome,
+  PreviewActivityLegendData,
   PreviewQuantityRulesData,
   ActivityCodeForm,
   ComponentForm,
@@ -223,6 +224,11 @@ export function changeActivityCode(id: string, code: ActivityCodeForm) {
 
 export function removeActivityCode(id: string) {
   return call("removeActivityCode", { path: { code_id: id } })
+}
+
+/** Skutek zmiany Legendy czynności na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, bez zapisu. */
+export function previewActivityLegend(edit: PreviewActivityLegendData["body"]) {
+  return call("previewActivityLegend", { body: edit })
 }
 
 /** Nowa Reguła ilości z edytora; zła reguła to odmowa z polem formularza (`jesli[0].tekst`, `to.wpisy[1].kolumna`). */

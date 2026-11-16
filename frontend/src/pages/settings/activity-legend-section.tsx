@@ -7,6 +7,7 @@ import { zFillForm } from "@/api/generated/zod.gen"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useUnsavedForm } from "@/lib/unsaved"
+import { LegendPreview } from "@/pages/settings/activity-legend-preview"
 import { Choice, type Option } from "@/pages/settings/quantity-rule-editor"
 import { useActivityLegendSave } from "@/pages/settings/quantity-rules-save"
 import { Problem } from "@/pages/settings/quantity-rules-section"
@@ -287,6 +288,7 @@ function CodeEditor({
           Dodaj kolor
         </Button>
       </FormRow>
+      {dirty ? <LegendPreview edit={id === null ? { kind: "add", code: form } : { kind: "change", code_id: id, code: form }} /> : null}
       <FormActions
         cancel={() => close(null)}
         save={() => void saving.run(() => (id === null ? addActivityCode(form) : changeActivityCode(id, form)))}

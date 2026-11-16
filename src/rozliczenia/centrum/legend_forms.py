@@ -67,7 +67,7 @@ def form_of(code: ActivityCode) -> contract.ActivityCodeForm:
         column=_column_form(code.column),
         value=code.value,
         amount=code.amount,
-        fills=[contract.FillForm(column=fill.column, colour=_COLOURS[fill.colour]) for fill in code.fills],
+        fills=[contract.FillForm(column=fill.column, colour=colour_name(fill.colour)) for fill in code.fills],
     )
 
 
@@ -184,6 +184,12 @@ def _column_form(choice: ColumnChoice | None) -> contract.FixedColumnForm | cont
             )
         case _:
             assert_never(choice)
+
+
+def colour_name(colour: FillColour) -> contract.FillColourName:
+    """Kolor wypełnienia tak, jak go nazywa kontrakt."""
+
+    return _COLOURS[colour]
 
 
 def _colour(name: contract.FillColourName) -> FillColour:

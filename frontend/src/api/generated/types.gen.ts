@@ -118,6 +118,17 @@ export type ActivityLegendSettings = {
 };
 
 /**
+ * AddActivityCode
+ */
+export type AddActivityCode = {
+    /**
+     * Kind
+     */
+    kind: 'add';
+    code: ActivityCodeForm;
+};
+
+/**
  * AddRule
  */
 export type AddRule = {
@@ -153,7 +164,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'previewActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -269,6 +280,21 @@ export type BoardReady = {
  * Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia.
  */
 export type CellSource = 'tool' | 'tata' | 'empty';
+
+/**
+ * ChangeActivityCode
+ */
+export type ChangeActivityCode = {
+    /**
+     * Kind
+     */
+    kind: 'change';
+    /**
+     * Code Id
+     */
+    code_id: string;
+    code: ActivityCodeForm;
+};
 
 /**
  * ChangeRule
@@ -1550,6 +1576,156 @@ export type LegendColumn = {
      * Name
      */
     name: string | null;
+};
+
+/**
+ * LegendPreviewFill
+ *
+ * Kolor wypełnienia kolumny po zmianie inny niż u taty; ``None``: bez koloru legendy.
+ */
+export type LegendPreviewFill = {
+    /**
+     * Kind
+     */
+    kind: 'fill';
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Legend
+     */
+    legend: 'zielony' | 'czerwony' | null;
+    /**
+     * Tata
+     */
+    tata: 'zielony' | 'czerwony' | null;
+};
+
+/**
+ * LegendPreviewReady
+ *
+ * Skutek zmiany Legendy czynności na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym
+ * rachunkiem wiersza co Kontrola ilości.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze
+ * co innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.
+ * ``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie.
+ * ``rows``: zmienione wiersze z różnicą od taty, najwyżej ``SHOWN_ROWS``, a ``more`` reszta.
+ */
+export type LegendPreviewReady = {
+    /**
+     * State
+     */
+    state: 'ready';
+    /**
+     * Files
+     */
+    files: Array<PreviewFile>;
+    /**
+     * Unread
+     */
+    unread: Array<string>;
+    /**
+     * Changed
+     */
+    changed: number;
+    /**
+     * Changed As Tata
+     */
+    changed_as_tata: number;
+    /**
+     * Differences Before
+     */
+    differences_before: number;
+    /**
+     * Differences After
+     */
+    differences_after: number;
+    /**
+     * Rows
+     */
+    rows: Array<LegendPreviewRow>;
+    /**
+     * More
+     */
+    more: number;
+};
+
+/**
+ * LegendPreviewRow
+ *
+ * Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis
+ * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu i komórki różne od taty. Bez
+ * adresu, numeru zlecenia i daty dziennej.
+ */
+export type LegendPreviewRow = {
+    /**
+     * Period
+     */
+    period: string;
+    /**
+     * Row
+     */
+    row: number;
+    /**
+     * Description
+     */
+    description: string;
+    /**
+     * Codes
+     */
+    codes: Array<string>;
+    /**
+     * Cells
+     */
+    cells: Array<LegendPreviewValue | LegendPreviewFill>;
+};
+
+/**
+ * LegendPreviewValue
+ *
+ * Wartość komórki (Ilość usług w kolumnie albo kwota w ``AS``) po zmianie inna niż u taty: ``legend`` to Reguły ilości
+ * i legenda razem, tak jak wpisze je Przygotowanie, a ``tata`` wpis taty (liczba albo „nieliczbowa”).
+ */
+export type LegendPreviewValue = {
+    /**
+     * Kind
+     */
+    kind: 'value';
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Name
+     */
+    name: string | null;
+    /**
+     * Legend
+     */
+    legend: number;
+    /**
+     * Tata
+     */
+    tata: number | 'nieliczbowa';
+};
+
+/**
+ * LegendPreviewWithoutFiles
+ *
+ * Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export type LegendPreviewWithoutFiles = {
+    /**
+     * State
+     */
+    state: 'no_periods_directory' | 'no_settled_periods';
 };
 
 /**
@@ -3032,6 +3208,20 @@ export type RemindersSetting = {
      */
     since: string | null;
     problem: SettingProblem | null;
+};
+
+/**
+ * RemoveActivityCode
+ */
+export type RemoveActivityCode = {
+    /**
+     * Kind
+     */
+    kind: 'remove';
+    /**
+     * Code Id
+     */
+    code_id: string;
 };
 
 /**
@@ -6076,6 +6266,54 @@ export type AddActivityCodeResponses = {
 };
 
 export type AddActivityCodeResponse = AddActivityCodeResponses[keyof AddActivityCodeResponses];
+
+export type PreviewActivityLegendData = {
+    /**
+     * Edit
+     */
+    body: ({
+        kind: 'add';
+    } & AddActivityCode) | ({
+        kind: 'change';
+    } & ChangeActivityCode) | ({
+        kind: 'remove';
+    } & RemoveActivityCode);
+    path?: never;
+    query?: never;
+    url: '/api/settings/activity-legend/preview';
+};
+
+export type PreviewActivityLegendErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Pliku Legendy czynności nie da się teraz przeczytać
+     */
+    409: Problem;
+    /**
+     * Zły Kod czynności z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type PreviewActivityLegendError = PreviewActivityLegendErrors[keyof PreviewActivityLegendErrors];
+
+export type PreviewActivityLegendResponses = {
+    /**
+     * Response Previewactivitylegend
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'ready';
+    } & LegendPreviewReady) | ({
+        state: 'no_periods_directory' | 'no_settled_periods';
+    } & LegendPreviewWithoutFiles);
+};
+
+export type PreviewActivityLegendResponse = PreviewActivityLegendResponses[keyof PreviewActivityLegendResponses];
 
 export type RemoveActivityCodeData = {
     body?: never;

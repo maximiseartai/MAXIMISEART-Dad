@@ -512,6 +512,22 @@ class CentrumSettings:
                 return paired
             return QuantityRules(paired[0], DeviceList(paired[1]))
 
+    def legend_after(self, edit: ActivityCodeEdit) -> ActivityLegend | FieldProblem | NotSaved:
+        """Legenda czynności, którą da zapis taty polecenia ``edit`` (``change_legend``), albo jego odmowa, bez zapisu:
+        podgląd zmiany kodu sprawdza tym to samo, co sprawdzi zapis (``_dad_legend`` i parser pliku w ``_change``). Id
+        nowego kodu spoza kluczy Historii nadaje dopiero zapis, a żadna odmowa legendy od niego nie zależy, więc Historii
+        nie czyta. Plik legendy, którego system nie daje teraz czytać, to ``NotSaved`` z jego nazwą, jak w zapisie."""
+
+        with self._lock:
+            current = _usable(self._observe_for_change(LEGEND), LEGEND)
+            if isinstance(current, Unreadable):
+                return NotSaved(LEGEND.name)
+            codes = legend_refusal(legend_forms.dad_legend(current, edit, frozenset()))
+            if isinstance(codes, FieldProblem):
+                return codes
+            parsed = LEGEND.parse(LEGEND.dump(codes))
+            return parsed if isinstance(parsed, FieldProblem) else activity_legend(parsed)
+
     def _release(self) -> bool:
         """Procesy liczą Regułami ilości z Wydania: tata nie ma pliku reguł."""
 
