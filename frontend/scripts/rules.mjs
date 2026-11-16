@@ -469,6 +469,7 @@ function readBySymbol(fields) {
   function referenceAt(name) {
     const file = name.getSourceFile()
     const start = name.getStart(file)
+
     const entry = (service.findReferences(file.fileName, start) ?? [])
       .flatMap((symbol) => symbol.references)
       .find((reference) => reference.fileName === file.fileName && reference.textSpan.start === start)
