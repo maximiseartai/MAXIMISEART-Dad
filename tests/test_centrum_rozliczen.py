@@ -7240,6 +7240,61 @@ def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_star
     assert _config_files(app.tool.config) == before
 
 
+WINDOW_READS: dict[str, tuple[str, str, object]] = {
+    "getPeriodBoard": ("GET", "/api/periods", None),
+    "openPeriodPath": ("POST", f"/api/periods/{UNREADABLE_PERIOD}/open", {"target": "collective_file"}),
+    "openWorkerSettlement": ("POST", f"/api/periods/{UNREADABLE_PERIOD}/worker-settlements/open", {"worker": "Anna Testowa"}),
+    "getQuantitiesToFill": ("GET", f"/api/periods/{UNREADABLE_PERIOD}/quantities-to-fill", None),
+    "getQuantityDifferences": ("GET", f"{QUANTITY_RULES_URL}/differences", None),
+    "markQuantityException": ("POST", f"{QUANTITY_RULES_URL}/differences/nie-ma-takiej/exception", None),
+}
+"""Odczyty okna Centrum, które odpowiadają tacie z pliku Folderów albo pary Reguł ilości i Listy Urządzeń."""
+
+
+def _window_reads(app: Centrum) -> dict[str, tuple[int, object]]:
+    answers: dict[str, tuple[int, object]] = {}
+    for operation, (method, url, body) in WINDOW_READS.items():
+        response = app.client.request(method, url, json=body)
+        answers[operation] = (response.status_code, response.json())
+    answers["getWorkerSuggestions"] = (200, app.client.get("/api/settings/workers/suggestions").json())
+    return answers
+
+
+@pytest.mark.parametrize(
+    ("unreadable", "refusing"),
+    [
+        (SETTINGS_FILE, tuple(WINDOW_READS)),
+        (RULES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
+        (DEVICES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
+    ],
+)
+def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_o_nim(
+    tmp_path: Path, unreadable: str, refusing: tuple[str, ...]
+) -> None:
+    """Plik Ustawień, którego system nie daje teraz czytać (np. trzyma go OneDrive), nie znaczy treści z Wydania:
+    Tablica okresów, otwarcie ścieżki okresu i Rozliczenia pracownika, Uzupełnienie, różnice Kontroli ilości i „To był
+    wyjątek” odmawiają 409 zdaniem o tym pliku zamiast „Wskaż folder okresów”, „Najpierw wskaż …” albo różnic
+    liczonych regułami z Wydania, a podpowiedzi Wykonawców mówią je w stanie ``unreadable`` zamiast „wskaż Rejestr
+    zleceń”. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
+    pliki w ``config`` zostają bez zmian."""
+
+    app, _periods = _with_folders_and_rules(tmp_path)
+    sentence = refusal.settings_file_unreadable(unreadable).message
+    readable = _window_reads(app)
+    assert all(answer != {"message": sentence} for _status, answer in readable.values())
+    opened, before = list(app.platform.opened), _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / unreadable):
+        answers = _window_reads(app)
+
+    expected = {operation: (409, {"message": sentence}) if operation in refusing else readable[operation] for operation in readable}
+    if unreadable == SETTINGS_FILE:
+        expected["getWorkerSuggestions"] = (200, {"state": "unreadable", "suggestions": [], "message": sentence})
+    assert answers == expected
+    assert app.platform.opened[len(opened) :] == ([] if "openPeriodPath" in refusing else opened)
+    assert _config_files(app.tool.config) == before
+
+
 def _tools_rules(config: Path) -> QuantityRules:
     """Reguły ilości, którymi liczą narzędzia Maksa (``read_snapshot``)."""
 

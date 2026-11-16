@@ -4,8 +4,9 @@ wpisałeś inaczej niż reguła”, „To był wyjątek” i formularz nowej reg
 Różnica to komórka Wiersza danych, w której Kontrola ilości liczy różnicę: kolumna z ``quantity_check.row_check``, z
 którego ``check`` Kontroli ilości liczy swoje różnice. Pliki to ostatnie Pliki zbiorcze po Przebiegu rozliczeń z
 odczytu podglądu zmiany reguł (``RecentCollectiveFiles``), a reguły to bieżące Reguły ilości z Ustawień, więc okres,
-którego reguł nikt nie zmienił od Przebiegu, ma tu tyle różnic co jego Kontrola ilości. Plik, którego nie da się
-przeczytać, lista pomija i nazywa jego okres.
+którego reguł nikt nie zmienił od Przebiegu, ma tu tyle różnic co jego Kontrola ilości. Plik zbiorczy, którego nie da
+się przeczytać, lista pomija i nazywa jego okres, a plik Folderów, Reguł ilości albo Listy Urządzeń bez odczytu to
+odmowa 409 o nim (lista i „To był wyjątek”), nie „brak folderu okresów” ani różnice liczone regułami z Wydania.
 
 Wyjątki (``settings.quantity_exceptions``) tylko ukrywają różnice na tej liście: Kontrola ilości w Skrzynce Zgłoszeń i
 podgląd zmiany reguł liczą dalej każdą. „To był wyjątek” wysyła samo id różnicy; serwer liczy różnice od nowa i
@@ -48,16 +49,10 @@ from rozliczenia.centrum.contract.quantity_rules import (
 )
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
 from rozliczenia.centrum.quantity_rules_preview import Recent, RecentCollectiveFiles
+from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
-from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import (
-    CentrumSettings,
-    KeptInPeriods,
-    NotSaved,
-    Refused,
-    Saved,
-    release_if_unreadable,
-)
+from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings_reads import readable_folders, readable_quantity_rules
 from rozliczenia.centrum.settings.quantity_exceptions import (
     SECTION,
     QuantityException,
@@ -72,7 +67,8 @@ from rozliczenia.text import normalize_text
 
 SHOWN: Final = 50
 """Najwyżej tyle różnic pokazuje lista; resztę tylko liczy."""
-_UNKNOWN: Final[dict[int | str, dict[str, object]]] = {404: {"model": common_contract.Problem}}
+_UNREADABLE: Final[dict[int | str, dict[str, object]]] = {409: {"model": common_contract.Problem}}
+"""Odmowa w OpenAPI: plik Ustawień, z którego liczą się różnice, bez odczytu (409) jako ``Problem``."""
 
 
 @dataclass(frozen=True)
@@ -122,10 +118,10 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
     def listed() -> tuple[contract.QuantityDifferences, list[Difference]]:
         """Lista dla sekcji i wszystkie różnice ostatnich plików, także te, które są wyjątkami."""
 
-        view = settings.quantity_rules()
+        view = readable_quantity_rules(settings)
         rules, bad = view.rules, view.exceptions_problem
         problem = None if bad is None else SettingProblem(field=bad.place, message=bad.sentence)
-        directory = release_if_unreadable(settings.snapshot().folders, FOLDERS).periods_directory_to_read
+        directory = readable_folders(settings).periods_directory_to_read
         if directory is None:
             return contract.DifferencesWithoutFiles(state="no_periods_directory", exceptions_problem=problem), []
         found = recent.read(directory)
@@ -148,11 +144,11 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
             every,
         )
 
-    @router.get("/quantity-rules/differences", operation_id="getQuantityDifferences")
+    @router.get("/quantity-rules/differences", operation_id="getQuantityDifferences", responses=_UNREADABLE)
     def read() -> contract.QuantityDifferences:
         return listed()[0]
 
-    @router.post("/quantity-rules/differences/{difference_id}/exception", operation_id="markQuantityException", responses=_UNKNOWN)
+    @router.post("/quantity-rules/differences/{difference_id}/exception", operation_id="markQuantityException", responses=NOT_FOUND_OR_CONFLICT)
     def mark(difference_id: str) -> contract.ExceptionSaved:
         """„To był wyjątek”: wyjątek różnicy o tym id z różnic policzonych teraz, zapisem właściciela Ustawień."""
 

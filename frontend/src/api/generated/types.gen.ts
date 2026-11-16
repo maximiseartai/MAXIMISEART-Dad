@@ -4330,8 +4330,9 @@ export type WorkerSuggestion = {
  * WorkerSuggestions
  *
  * Podpowiedzi sekcji Wykonawcy od najczęstszej: ``read`` (Rejestr zleceń przeczytany, ``suggestions`` mogą być
- * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru nie da się teraz przeczytać albo nie ma w nim
- * obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i ``unreadable``.
+ * puste), ``not_set`` (Rejestr niewskazany) albo ``unreadable`` (Rejestru albo pliku Folderów w ``config`` nie da się
+ * teraz przeczytać albo w Rejestrze nie ma obszaru wklejania zleceń); ``message``: zdanie dla taty przy ``not_set`` i
+ * ``unreadable``.
  */
 export type WorkerSuggestions = {
     /**
@@ -5174,6 +5175,15 @@ export type GetPeriodBoardData = {
     query?: never;
     url: '/api/periods';
 };
+
+export type GetPeriodBoardErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+};
+
+export type GetPeriodBoardError = GetPeriodBoardErrors[keyof GetPeriodBoardErrors];
 
 export type GetPeriodBoardResponses = {
     /**
@@ -6149,6 +6159,15 @@ export type GetQuantityDifferencesData = {
     url: '/api/settings/quantity-rules/differences';
 };
 
+export type GetQuantityDifferencesErrors = {
+    /**
+     * Conflict
+     */
+    409: Problem;
+};
+
+export type GetQuantityDifferencesError = GetQuantityDifferencesErrors[keyof GetQuantityDifferencesErrors];
+
 export type GetQuantityDifferencesResponses = {
     /**
      * Response Getquantitydifferences
@@ -6181,6 +6200,10 @@ export type MarkQuantityExceptionErrors = {
      * Not Found
      */
     404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
     /**
      * Validation Error
      */

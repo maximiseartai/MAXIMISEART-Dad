@@ -14,9 +14,9 @@ Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie wartości
 Ustawień, która odpowiada z jego wartości (``folders``, ``QuantityRulesView.source_rules``, ``rules_after``), i zapis taty,
 który sprawdza nim zmianę (``NotSaved.unreadable``), odmawiają wtedy zdaniem o tym pliku. Migawka dla procesu ma w miejscu
 nieczytelnego pliku Folderów, Przypomnień o raporcie albo pliku pary Reguł ilości i Listy Urządzeń ``UnreadableFile`` z
-jego nazwą, więc start procesu odmawia tym samym zdaniem, Logi Urwanego Uruchomienia i praca Przypomnień o raporcie
-mówią, którego pliku nie dało się przeczytać, a odczyty okna Centrum, które go jeszcze nie mówią, biorą treść z Wydania
-(``release_if_unreadable``).
+jego nazwą, więc start procesu odmawia tym samym zdaniem, a Logi Urwanego Uruchomienia, praca Przypomnień o raporcie i
+odczyty okna Centrum (Tablica okresów, różnice Kontroli ilości, podpowiedzi Wykonawców) mówią, którego pliku nie dało
+się przeczytać.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
 odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
 nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
@@ -1124,13 +1124,6 @@ def _or_release(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:
     jego zdanie w oknie Ustawień (``messages.unavailable``)."""
 
     return file.default if isinstance(observed, Unreadable) else _value(observed, file)
-
-
-def release_if_unreadable(value: T | UnreadableFile, file: SettingsFile[T]) -> T:
-    """Wartość z migawki, a w miejscu pliku, którego system nie daje teraz czytać, treść z Wydania, jak u taty bez
-    własnego pliku: odczyty okna Centrum, które jeszcze nie mówią zdania o tym pliku."""
-
-    return file.default if isinstance(value, UnreadableFile) else value
 
 
 def _reported(row: HistoryRow) -> str:
