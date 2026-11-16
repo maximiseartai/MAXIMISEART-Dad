@@ -250,7 +250,9 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
 
 
 class MergeGitHub(FakeGitHub):
-    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = "2026-11-01T00:00:00Z", real_checks: bool = False) -> None:
+    STARTED = "2026-11-01T00:00:00Z"
+
+    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = STARTED, real_checks: bool = False) -> None:
         """Commit ``start`` ma datę ``started``, a z kopią narzędzia dodaje moduł bramki korzenia, więc to chwila jej
         wdrożenia na ``main`` (``bramka_korzenia.MARKER``); domyślnie po werdyktach atrapy (24.10.2026), więc ich wątki
         kończą bez bramki, a ``GATE_BEFORE_VERDICTS`` ją w nich włącza.
@@ -2100,7 +2102,7 @@ def test_ponowny_przeglad_tego_samego_head_publikuje_i_scala_tylko_z_punktem_pon
     który miał już werdykt, też nie scala PR bez punktu. Moduł reguły stoi w commicie ``start``, więc ``started``
     przed werdyktami atrapy to wdrożenie przed wątkiem, a domyślne po nich to wątek sprzed wdrożenia."""
 
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, **({"started": GATE_BEFORE_VERDICTS} if deployed_before else {}))
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, started=GATE_BEFORE_VERDICTS if deployed_before else MergeGitHub.STARTED)
     _deploy_template(github)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 0\n"})
     github.comment(1, SPRAWDZONE_PASS.format(head=head))
