@@ -40,10 +40,6 @@ ALL_CASES = (
     "    assert oba(True, False) is False\n"
     "    assert oba(False, True) is False\n"
 )
-# Zmieniona stała napisu nie ma innej mutacji niż cofnięcie fragmentu, więc za ``BASE`` i ``CHANGED`` (linia 5) jej
-# cofnięcie biegnie obok mutacji ``and``.
-NAZWA_BASE = '\n\nNAZWA = "stara"\n'
-NAZWA_CHANGED = '\n\nNAZWA = "nowa"\n'
 
 
 def _repo(
@@ -100,15 +96,15 @@ def _run(
 def test_zmiana_bez_testu_ktory_ja_widzi_konczy_sie_fail_z_nazwa_mutacji_takze_w_zapisie_dla_scal_pr(tmp_path: Path) -> None:
     record = tmp_path / "zapis" / "czesc.json"
 
-    done = _run(_repo(tmp_path / "repo", ONE_CASE, CHANGED + NAZWA_CHANGED, BASE + NAZWA_BASE), "--zapis", str(record))
+    done = _run(_repo(tmp_path / "repo", ONE_CASE), "--zapis", str(record))
 
     assert done.returncode == 1, done.stdout + done.stderr
     survived = [line.removeprefix("NIEWYKRYTA: ").partition(" → ")[0] for line in done.stdout.splitlines() if line.startswith("NIEWYKRYTA")]
-    assert sorted(survived) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:5 zmiana linii 5 cofnięta do bazy"]
+    assert sorted(survived) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"]
     assert done.stdout.splitlines()[-1].startswith("MUTACJE ZMIANY FAIL | przeżyło 2")
     written = json.loads(record.read_text(encoding="utf-8"))
     assert (written["czesc"], written["kod"], written["wynik"]) == ("1/1", 1, done.stdout.splitlines()[-1])
-    assert sorted((_named(entry), entry["linie"]) for entry in written["przezyte"]) == list(zip(sorted(survived), [[2], [5]], strict=True))
+    assert sorted((_named(entry), entry["linie"]) for entry in written["przezyte"]) == [(name, [2]) for name in sorted(survived)]
     assert len({entry["klucz"] for entry in written["przezyte"]}) == 2
 
 
@@ -135,8 +131,8 @@ def _named(entry: dict[str, object]) -> str:
     return f"{entry['plik']}:{entry['linia']} {entry['opis']}"
 
 
-def _caught(done: subprocess.CompletedProcess[str]) -> list[str]:
-    return [line.removeprefix("WYKRYTA: ").partition(" → ")[0] for line in done.stdout.splitlines() if line.startswith("WYKRYTA: ")]
+def _caught(done: subprocess.CompletedProcess[str], verdict: str = "WYKRYTA") -> list[str]:
+    return [line.removeprefix(f"{verdict}: ").partition(" → ")[0] for line in done.stdout.splitlines() if line.startswith(f"{verdict}: ")]
 
 
 @pytest.mark.parametrize("separator", [" ", "\x0c"], ids=["u2028", "form-feed"])
@@ -151,7 +147,7 @@ def test_czesc_nocy_mutuje_zmieniona_linie_za_linia_z_separatorem_ktory_nie_konc
     done = _run(repo, "--do", head)
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert _caught(done) == ["src/rozliczenia/warunek.py:3 bez `b` w `and`"]
+    assert (_caught(done), _caught(done, "ZDOMINOWANA")) == (["src/rozliczenia/warunek.py:3 bez `b` w `and`"], ["src/rozliczenia/warunek.py:3 zmiana linii 3 cofnięta do bazy"])
 
 
 def test_czesc_nocy_do_commitu_scalenia_mutuje_zmiane_z_galezi_pr(tmp_path: Path) -> None:
@@ -167,7 +163,7 @@ def test_czesc_nocy_do_commitu_scalenia_mutuje_zmiane_z_galezi_pr(tmp_path: Path
     done = _run(repo, "--do", git(repo, "rev-parse", "HEAD"))
 
     assert done.returncode == 0, done.stdout + done.stderr
-    assert _caught(done) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`"]
+    assert (_caught(done), _caught(done, "ZDOMINOWANA")) == (["src/rozliczenia/warunek.py:2 bez `b` w `and`"], ["src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"])
 
 
 def test_mutacja_ktora_przezyla_testy_pliku_albo_nie_ma_testow_tez_trafia_do_zapisu(tmp_path: Path) -> None:
@@ -186,10 +182,12 @@ def test_mutacja_ktora_przezyla_testy_pliku_albo_nie_ma_testow_tez_trafia_do_zap
     survived = {line.removeprefix("NIEWYKRYTA: ").rpartition(" → ")[0]: line for line in done.stdout.splitlines() if line.startswith("NIEWYKRYTA")}
     assert sorted(survived) == [
         "src/rozliczenia/inny.py:2 `return 2` → `return None`",
+        "src/rozliczenia/inny.py:2 zmiana linii 2 cofnięta do bazy",
         "src/rozliczenia/warunek.py:2 bez `b` w `and`",
+        "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy",
     ], done.stdout
-    assert [line.endswith("żaden test nie zależy od src/rozliczenia/inny.py") for _, line in sorted(survived.items())] == [True, False]
-    assert [line.endswith("(testy pliku)") for _, line in sorted(survived.items())] == [False, True]
+    assert [line.endswith("żaden test nie zależy od src/rozliczenia/inny.py") for _, line in sorted(survived.items())] == [True, True, False, False]
+    assert [line.endswith("(testy pliku)") for _, line in sorted(survived.items())] == [False, False, True, True]
     written = json.loads(record.read_text(encoding="utf-8"))["przezyte"]
     assert sorted(_named(entry) for entry in written) == sorted(survived)
     assert all(entry["linie"] == [2] and len(entry["klucz"]) == 12 for entry in written)
@@ -213,32 +211,31 @@ MATCH_TEST = (
 def test_brama_typow_sprawdza_przezyte_mutacje_operatorow_a_cofniecie_do_bazy_trafia_do_zapisu(tmp_path: Path) -> None:
     """Bramę sprawdzają przeżyte mutacje operatorów, także z pliku bez testów; atrapa łapie linie z ``# brama:``.
 
-    Cofnięcie przywraca kod bazy, który przeszedł bramę, więc jej błąd na nim (tu ``# brama:`` z bazy, jak #671) mówi
-    tylko o niezgodności z resztą zmiany: cofnięcie trafia do zapisu, a brama go nie sprawdza.
+    Cofnięcie przywraca kod bazy, który przeszedł bramę, więc jej błąd na nim (tu ``# brama:`` z bazy, jak #674 i #671)
+    mówi tylko o niezgodności z resztą zmiany: cofnięcie trafia do zapisu, a brama go nie sprawdza.
     """
 
     record = tmp_path / "zapis" / "czesc.json"
+    base = MATCH_BASE.replace('    return "zielony"\n', '    return "zielony"  # brama: mypy exhaustive-match\n')
     # Mutacje operatorów, które przeżywają testy linii (``zapas``) i testy pliku (``WOLNO`` czyta import modułu).
     changed = MATCH_CHANGED + "\n\ndef zapas() -> int:\n    return 1  # brama gdy None: mypy return-value\n\n\nWOLNO = False  # brama gdy True: mypy assignment\n"
-    other = 'NAZWA = "stara"  # brama: ruff F821\n\n\ndef inna() -> int:\n    return 2\n'
-    repo = _repo(tmp_path / "repo", MATCH_TEST, changed, MATCH_BASE, other=other)
-    (repo / "src" / "rozliczenia" / "inny.py").write_text(
-        'NAZWA = "nowa"\n\n\ndef inna() -> int:\n    return 1  # brama gdy None: ruff F821\n', encoding="utf-8"
-    )
+    repo = _repo(tmp_path / "repo", MATCH_TEST, changed, base, other="def inna() -> int:\n    return 2  # brama: ruff F821\n")
+    (repo / "src" / "rozliczenia" / "inny.py").write_text("def inna() -> int:\n    return 1  # brama gdy None: ruff F821\n", encoding="utf-8")
 
     done = _run(repo, "--zapis", str(record), fake_gate=True)
 
     assert done.returncode == 1, done.stdout + done.stderr
     caught = sorted(line for line in done.stdout.splitlines() if line.startswith("WYKRYTA PRZEZ BRAMĘ TYPÓW"))
     assert caught == [
-        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/inny.py:5 `return 1` → `return None` → ruff: src/rozliczenia/inny.py:5: F821",
+        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/inny.py:2 `return 1` → `return None` → ruff: src/rozliczenia/inny.py:2: F821",
         "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:20 `return 1` → `return None` → mypy: src/rozliczenia/warunek.py:20: return-value",
         "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:23 `False` → `True` → mypy: src/rozliczenia/warunek.py:23: assignment (testy pliku)",
     ], done.stdout
     assert re.search(r"\| brama typów \d+ s \(3 mutacji\)$", next(line for line in done.stdout.splitlines() if line.startswith("CZAS |"))), done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
     assert sorted(_named(entry) for entry in written["przezyte"]) == [
-        "src/rozliczenia/inny.py:1 zmiana linii 1 cofnięta do bazy",
+        "src/rozliczenia/inny.py:2 zmiana linii 2 cofnięta do bazy",
+        "src/rozliczenia/warunek.py:15 zmiana linii 15–23 cofnięta do bazy",
         "src/rozliczenia/warunek.py:3 zmiana linii 3 cofnięta do bazy",
     ]
 
@@ -266,8 +263,10 @@ def test_mutacja_ktorej_brama_typow_nie_sprawdzila_w_czasie_trafia_do_zapisu_jak
     assert late not in [_named(entry) for entry in written["przezyte"]]
 
 
-# Poprawka dodaje import i zmienną, którą zwraca; test przechodzi z nią i bez niej. ``return wynik`` → ``return None``
-# zostawia nieużytą zmienną (F841) i przeżywa jak przed bramą (#703, runda 1 przeglądu #721).
+# Poprawka dodaje import w jednym fragmencie, a używa go w innym, i zmienną, którą zwraca; test przechodzi z nią i bez
+# niej. Cofnięcie fragmentu z użyciem zostawiłoby nieużyty import (ruff F401), ale nie biegnie, bo test wykrywa
+# ``return None`` w jego linii, a ``return wynik`` → ``return None`` zostawia nieużytą zmienną (F841) i przeżywa jak przed
+# bramą (#703, runda 1 przeglądu #721).
 GATE_BASE = MATCH_BASE + "\n\ndef wciety(tekst: str) -> str:\n    return tekst\n\n\ndef pierwszy(teksty: list[str]) -> str | None:\n    return None\n"
 GATE_CHANGED = (
     MATCH_CHANGED.replace("from enum import Enum\n", "from enum import Enum\nimport textwrap\n")
@@ -283,8 +282,9 @@ GATE_TEST = MATCH_TEST.replace("import Kolor, nazwa", "import Kolor, nazwa, pier
 def test_brama_typow_z_ruff_i_mypy_liczy_blad_mutacji_operatora_a_cofniecie_do_bazy_przezywa(tmp_path: Path) -> None:
     """Jedyny test z prawdziwymi ruff i mypy: ich JSON i kody, które brama liczy (``silnik_mutacji.wrong``).
 
-    Cofnięcie, na którym brama by padła (F821 jak #671), przeżywa, bo brama go nie sprawdza; ``return JEDEN`` →
-    ``return None`` w funkcji ``-> int``, której nie sprawdza test, łapie tylko mypy.
+    Cofnięcie, na którym brama by padła (F821 jak #671), przeżywa, bo brama go nie sprawdza, a cofnięć ``exhaustive-match``
+    jak #674 i F401 nie ma, bo inną mutację ich linii wykrył test; ``return JEDEN`` → ``return None`` w funkcji ``-> int``,
+    której nie sprawdza test, łapie tylko mypy.
     """
 
     record = tmp_path / "zapis" / "czesc.json"
@@ -313,28 +313,25 @@ def test_czesc_konczy_sie_zapisem_w_limicie_czasu_czesci_takze_gdy_mutacja_zawie
         "def test_oba() -> None:\n    while oba(True, False):\n        time.sleep(0.1)\n\n\n"
         "def test_jeden() -> None:\n    assert jeden() == 1\n"
     )
-    # test_jeden wykonuje inny kod pliku, więc mutacja linii 2 ma po testach linii jeszcze krok z testami pliku (#695).
+    # test_jeden wykonuje inny kod pliku, więc mutacja ma po testach linii jeszcze krok z testami pliku (#695).
     one = "\n\ndef jeden() -> int:\n    return 1\n"
     record = tmp_path / "zapis" / "czesc.json"
 
-    done = _run(
-        _repo(tmp_path / "repo", hangs, CHANGED + one, BASE + one.replace("return 1", "return 0")),
-        "--rownolegle", "1", "--limit-czesci-s", "15", "--zapis", str(record),
-    )
+    done = _run(_repo(tmp_path / "repo", hangs, CHANGED + one, BASE + one), "--rownolegle", "1", "--limit-czesci-s", "15", "--zapis", str(record))
 
     assert done.returncode == 3, done.stdout + done.stderr
     verdicts = [line for line in done.stdout.splitlines() if " → " in line]
     # Pierwsza mutacja zawiesza testy do końca czasu części, więc druga już się nie zaczyna, a mutacja bez werdyktu
     # nie biegnie w dalszym kroku, więc każda ma jedną linię i liczy się raz.
     assert len(verdicts) == 2 and verdicts[0].startswith("BEZ WERDYKTU: src/rozliczenia/warunek.py:2 bez `b` w `and` → brak wyniku po "), done.stdout
-    assert verdicts[1] == "BEZ WERDYKTU: src/rozliczenia/warunek.py:6 `return 1` → `return None` → czas minął, zanim się zaczęła", done.stdout
+    assert verdicts[1] == "BEZ WERDYKTU: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy → czas minął, zanim się zaczęła", done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
     assert written["wynik"] == "MUTACJE ZMIANY FAIL | limit czasu części 15 s minął przed werdyktem 2 mutacji | przeżyło 0 | mutacje=2 | wyjątki=0 | innego systemu=0"
     # Testy zawieszone do końca czasu części to nie przeżyta mutacja, ale noc zgłasza ją jako mutację bez werdyktu.
     assert written["przezyte"] == []
     assert [(_named(entry), entry["linie"]) for entry in written["bez_werdyktu"]] == [
         ("src/rozliczenia/warunek.py:2 bez `b` w `and`", [2]),
-        ("src/rozliczenia/warunek.py:6 `return 1` → `return None`", [6]),
+        ("src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy", [2]),
     ]
 
 
@@ -357,9 +354,12 @@ def test_mutacja_ktora_wiesza_test_do_limitu_pytest_timeout_jest_wykryta_a_nie_p
 
     assert done.returncode == 0, done.stdout + done.stderr
     hang = "→ Failed: Timeout (>3.0s) from pytest-timeout. (liczona jako wykryta: pytest-timeout czerwieni test w CI)"
-    assert [line for line in done.stdout.splitlines() if " → " in line] == [f"ZAWIESZENIE: src/rozliczenia/warunek.py:2 bez `b` w `and` {hang}"], done.stdout
+    assert [line for line in done.stdout.splitlines() if " → " in line] == [
+        f"ZAWIESZENIE: src/rozliczenia/warunek.py:2 bez `b` w `and` {hang}",
+        "ZDOMINOWANA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy → każdą inną mutację jej linii wykrył test",
+    ], done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert (written["kod"], written["wynik"], written["przezyte"]) == (0, "MUTACJE ZMIANY OK | mutacje=1 | wyjątki=0 | innego systemu=0", [])
+    assert (written["kod"], written["wynik"], written["przezyte"]) == (0, "MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0", [])
 
 
 @pytest.mark.parametrize("further", [False, True], ids=["ostatni-krok", "z-dalszymi-krokami"])
@@ -382,15 +382,15 @@ def test_mutacja_ktora_tylko_spowalnia_test_ponad_limit_narzedzia_nie_jest_wykry
 
     assert done.returncode == 1, done.stdout + done.stderr
     late = "→ brak wyniku po 8 s (limit --limit-s narzędzia, nie pytest-timeout)"
-    names = ["src/rozliczenia/warunek.py:2 bez `b` w `and`"]
+    names = ["src/rozliczenia/warunek.py:2 bez `b` w `and`", "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"]
     lines = [line for line in done.stdout.splitlines() if " → " in line]
     if further:
         lines_pass = [f"PRZEKROCZONY CZAS: {name} {late} (testy linii), biegnie dalej z szerszymi testami" for name in names]
-        assert lines[:1] == lines_pass, done.stdout
-        lines = lines[1:]
+        assert sorted(lines[:2]) == lines_pass, done.stdout
+        lines = lines[2:]
     assert lines == [f"PRZEKROCZONY CZAS: {name} {late}" + (" (testy pliku)" if further else "") for name in names], done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
-    assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | przeżyło 0 | przekroczony czas 1 | "), written["wynik"]
+    assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | przeżyło 0 | przekroczony czas 2 | "), written["wynik"]
     assert (written["przezyte"], sorted(_named(entry) for entry in written["przekroczony_czas"])) == ([], names)
 
 
@@ -465,7 +465,7 @@ def test_czesc_z_testem_zawieszonym_bez_mutacji_konczy_sie_zapisem_w_limicie_cza
     assert done.returncode == 2, done.stdout + done.stderr
     written = json.loads(record.read_text(encoding="utf-8"))
     assert (written["wynik"], written["przezyte"], written["bez_werdyktu"]) == (
-        "MUTACJE ZMIANY FAIL | limit czasu części 5 s minął w pokryciu, przed werdyktem 1 mutacji",
+        "MUTACJE ZMIANY FAIL | limit czasu części 5 s minął w pokryciu, przed werdyktem 2 mutacji",
         [],
         [],
     )
@@ -488,13 +488,13 @@ def test_porazka_bez_wyniku_mutacji_ma_inny_kod_niz_przezyte_mutacje(tmp_path: P
 
 
 def test_klucz_mutacji_nie_zalezy_od_jej_linii_a_rozroznia_mutacje() -> None:
-    changed = CHANGED + NAZWA_CHANGED
-    found = selected(MODULE, changed, [Hunk(2, 1, ("    return a",)), Hunk(5, 1, ('NAZWA = "stara"',))], {})
-    shifted = "# opis\n\n" + changed
-    moved = selected(MODULE, shifted, [Hunk(4, 1, ("    return a",)), Hunk(7, 1, ('NAZWA = "stara"',))], {})
+    hunk = Hunk(2, 1, ("    return a",))
+    found = selected(MODULE, CHANGED, [hunk])
+    shifted = "# opis\n\n" + CHANGED
+    moved = selected(MODULE, shifted, [Hunk(4, 1, ("    return a",))])
 
     assert [mutant.line for mutant in moved] == [mutant.line + 2 for mutant in found]
-    keys = [fingerprint(mutant, changed) for mutant in found]
+    keys = [fingerprint(mutant, CHANGED) for mutant in found]
     assert [fingerprint(mutant, shifted) for mutant in moved] == keys
     assert len(set(keys)) == len(keys) == 2
 
@@ -504,12 +504,12 @@ def test_zmiana_z_testami_ktore_widza_kazda_mutacje_konczy_sie_ok(tmp_path: Path
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert "NIEWYKRYTA" not in done.stdout
-    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | mutacje=1 | wyjątki=0 | innego systemu=0"
+    assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0"
 
 
 def test_liczbe_mutacji_widac_w_logu_ci_zanim_pobiegna_testy(tmp_path: Path) -> None:
     # Log CI to plik, więc linia bez ``flush`` czekałaby w buforze przez cały pierwszy przebieg testów.
-    line = "Mutacje: 1 w 1 plikach src/ i jednostek przepuszcza od baza. Testy dotknięte zmianą: 1."
+    line = "Mutacje: 2 w 1 plikach src/ i jednostek przepuszcza od baza. Testy dotknięte zmianą: 1."
     reads_log = f"\n\ndef test_log() -> None:\n    assert {line!r} in Path(os.environ['LOG_NARZEDZIA']).read_text(encoding='utf-8')\n"
     log = tmp_path / "log.txt"
 
@@ -543,7 +543,7 @@ def test_werdykt_mutacji_z_testami_pliku_widac_w_logu_ci_zanim_pobiegnie_nastepn
 
 
 def test_czesci_dziela_mutacje_miedzy_siebie(tmp_path: Path) -> None:
-    repo = _repo(tmp_path, ONE_CASE, CHANGED + NAZWA_CHANGED, BASE + NAZWA_BASE)
+    repo = _repo(tmp_path, ONE_CASE)
 
     parts = [_run(repo, "--czesc", f"{number}/2") for number in (1, 2)]
 
@@ -555,16 +555,15 @@ def test_czesci_dziela_mutacje_miedzy_siebie(tmp_path: Path) -> None:
 
 def test_czesc_bez_mutacji_przy_mutacjach_zmiany_konczy_sie_ok_z_numerem_czesci(tmp_path: Path) -> None:
     # Dwie mutacje zmiany na trzy części: część 1/3 to pusty kawałek listy.
-    done = _run(_repo(tmp_path, ONE_CASE, CHANGED + NAZWA_CHANGED, BASE + NAZWA_BASE), "--czesc", "1/3")
+    done = _run(_repo(tmp_path, ONE_CASE), "--czesc", "1/3")
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == "MUTACJE ZMIANY OK | brak mutacji zmienionych linii src/ i jednostek przepuszcza od baza w części 1/3"
 
 def test_czesc_bierze_kolejne_mutacje_wiec_pokrycie_biegnie_na_testach_mniejszej_liczby_plikow(tmp_path: Path) -> None:
     # Noc mutuje zmiany wielu PR-ów; co N-ta mutacja dałaby każdej części testy wszystkich zmienionych plików.
-    other = "def inny(a: bool, b: bool) -> bool:\n    return a\n"
-    repo = _repo(tmp_path, ONE_CASE, CHANGED + NAZWA_CHANGED, BASE + NAZWA_BASE, other=other + NAZWA_BASE)
-    (repo / "src" / "rozliczenia" / "inny.py").write_text(other.replace("return a", "return a or b") + NAZWA_CHANGED, encoding="utf-8")
+    repo = _repo(tmp_path, ONE_CASE, other="def inny(a: bool, b: bool) -> bool:\n    return a\n")
+    (repo / "src" / "rozliczenia" / "inny.py").write_text("def inny(a: bool, b: bool) -> bool:\n    return a or b\n", encoding="utf-8")
 
     parts = [_run(repo, "--czesc", f"{number}/2") for number in (1, 2)]
 
@@ -576,21 +575,18 @@ FUNKCJA = "def a(x: int) -> bool:\n    return x > 1\n"
 
 
 def _dopisz(repo: Path, subject: str, *names: str) -> str:
-    """Commit, który dopisuje do każdego ``src/pakiet/<nazwa>.py`` stałą na początku i funkcję na końcu: dwie mutacje,
-    cofnięcie fragmentu stałej i granica porównania (cofnięcia fragmentu funkcji nie ma, bo granica psuje jego linię)."""
+    """Commit, który dopisuje funkcję do każdego ``src/pakiet/<nazwa>.py``: dwie mutacje, granica porównania i cofnięcie."""
 
     for name in names:
-        path = repo / "src" / "pakiet" / f"{name}.py"
-        constants, _, functions = path.read_text(encoding="utf-8").partition("def ")
-        added = f'{constants.rstrip()}\nNAZWA_{subject.upper()} = "{subject}"\n\n\ndef {functions}\n\ndef {subject}_{name}(x: int) -> bool:\n    return x < 3\n'
-        path.write_text(added.lstrip(), encoding="utf-8")
+        with (repo / "src" / "pakiet" / f"{name}.py").open("a", encoding="utf-8") as code:
+            code.write(f"\n\ndef {subject}_{name}(x: int) -> bool:\n    return x < 3\n")
     return commit(repo, subject)
 
 
 def _historia_zakresu(tmp_path: Path) -> tuple[Path, str, list[str]]:
-    """``main`` z bazą i czterema commitami: bez mutacji (README), 2 mutacje w ``m1``, 4 w ``m2`` i ``m3`` i druga stała
-    i funkcja w ``m1`` tuż za pierwszymi. Cofnięcie fragmentu stałych ``m1`` psuje wtedy linie obu commitów, więc wchodzi
-    do zakresu z pierwszym, a ostatni commit ma już tylko granicę porównania: razem 7 mutacji."""
+    """``main`` z bazą i czterema commitami: bez mutacji (README), 2 mutacje w ``m1``, 4 w ``m2`` i ``m3`` i druga funkcja
+    w ``m1`` tuż za pierwszą. Cofnięcie fragmentu ``m1`` psuje wtedy linie obu commitów, więc wchodzi do zakresu z
+    pierwszym, a ostatni commit ma już tylko granicę porównania: razem 7 mutacji."""
 
     repo = mutation_repository(tmp_path / "repo", {"README.md": "repozytorium\n", **{f"src/pakiet/m{number}.py": FUNKCJA for number in (1, 2, 3)}})
     base = commit(repo, "baza")
@@ -970,6 +966,73 @@ def test_wyjatek_w_srodku_fragmentu_nie_obejmuje_cofniecia_calego_fragmentu(tmp_
     assert "NIEWYKRYTA: src/rozliczenia/warunek.py:1 zmiana linii 1–2 cofnięta do bazy" in done.stdout
 
 
+REVERT = "src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"
+
+
+@pytest.mark.parametrize(("part", "verdict", "dominated"), [("1/1", "ZDOMINOWANA", 1), ("2/2", "WYKRYTA", 0)], ids=["cala-zmiana", "fragment-bez-innej-mutacji-w-czesci"])
+def test_cofniecie_fragmentu_nie_biegnie_gdy_kazda_inna_mutacje_jego_linii_w_czesci_wykryl_test(
+    tmp_path: Path, part: str, verdict: str, dominated: int
+) -> None:
+    # 12 nocy 9–15.11: przy każdej innej mutacji linii wykrytej testem samo cofnięcie przeżyło 102 razy na 1219, zawsze przy
+    # zmianie, która nic nie zmieniała. Część 2/2 ma samo cofnięcie, bez mutacji ``and``, więc cofnięcie biegnie.
+    done = _run(_repo(tmp_path, ALL_CASES), "--czesc", part)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert [line.partition(" → ")[0] for line in done.stdout.splitlines() if REVERT in line] == [f"{verdict}: {REVERT}"], done.stdout
+    assert f"| cofnięcia zdominowane {dominated} |" in next(line for line in done.stdout.splitlines() if line.startswith("CZAS |")), done.stdout
+
+
+def test_cofniecie_fragmentu_biegnie_choc_ta_sama_linia_innego_pliku_ma_mutacje_wykryta_testem(tmp_path: Path) -> None:
+    other = 'X = 1\nNAZWA = "stara"\n'
+    test = ALL_CASES.replace("from rozliczenia.warunek import oba\n", "from rozliczenia import inny\nfrom rozliczenia.warunek import oba\n")
+    repo = _repo(tmp_path, test + "    assert inny.X == 1\n", other=other)
+    (repo / "src" / "rozliczenia" / "inny.py").write_text(other.replace("stara", "nowa"), encoding="utf-8")
+
+    done = _run(repo)
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert (_caught(done, "ZDOMINOWANA"), _caught(done, "NIEWYKRYTA")) == ([REVERT], ["src/rozliczenia/inny.py:2 zmiana linii 2 cofnięta do bazy"]), done.stdout
+
+
+TYPE_GATE_ONLY_BASE = (
+    "from dataclasses import dataclass\n\n\n@dataclass\nclass Wynik:\n    a: bool\n    b: bool = False\n\n\n"
+    "def zrob(a: bool, b: bool) -> Wynik:\n    return Wynik(a)\n"
+)
+TUPLE_BASE = "def xf(a: int, b: int, c: int) -> tuple[int, ...]:\n    return (a, b)\n"
+
+
+@pytest.mark.parametrize(
+    ("test", "changed", "base", "other"),
+    [
+        (
+            "from rozliczenia.warunek import zrob\n\n\ndef test_zrob() -> None:\n    assert zrob(True, True).a is True\n",
+            TYPE_GATE_ONLY_BASE.replace("    return Wynik(a)\n", "    return Wynik(a, b=b)  # brama gdy None: mypy arg-type\n"),
+            TYPE_GATE_ONLY_BASE,
+            ("WYKRYTA PRZEZ BRAMĘ TYPÓW", "src/rozliczenia/warunek.py:11 `b=b` → `b=None`", "src/rozliczenia/warunek.py:11 zmiana linii 11 cofnięta do bazy"),
+        ),
+        (
+            "from rozliczenia.warunek import xf\n\n\ndef test_xf() -> None:\n    assert xf(1, 2, 3)[:2] == (1, 2)\n",
+            TUPLE_BASE.replace("(a, b)", "(a, b, c)"),
+            TUPLE_BASE,
+            ("WYKRYTA", "src/rozliczenia/warunek.py:2 krotka bez `b`", "src/rozliczenia/warunek.py:2 krotka bez `c`"),
+        ),
+    ],
+    ids=["inna-mutacja-wykryta-tylko-przez-brame-typow", "cofniecie-pod-opisem-innej-mutacji"],
+)
+def test_cofniecie_fragmentu_biegnie_gdy_test_nie_wykryl_innej_mutacji_jego_linii_albo_samo_jest_inna_mutacja(
+    tmp_path: Path, test: str, changed: str, base: str, other: tuple[str, str, str]
+) -> None:
+    # Przegląd #1975: r2 nowy argument nazwany bez testu (``b=None`` łapie tylko brama typów), r1 dodany element krotki
+    # bez testu, którego cofnięcie to ``krotka bez`` tego elementu (#523).
+    verdict, caught, reverted = other
+
+    done = _run(_repo(tmp_path, test, changed, base), fake_gate=True)
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    lines = done.stdout.splitlines()
+    assert [any(line.startswith(f"{seen}: {name} → ") for line in lines) for seen, name in ((verdict, caught), ("NIEWYKRYTA", reverted))] == [True, True], done.stdout
+
+
 def test_nowy_niesledzony_plik_dostaje_mutacje(tmp_path: Path) -> None:
     repo = _repo(tmp_path, ONE_CASE, BASE)
     (repo / "src" / "rozliczenia" / "nowy.py").write_text("def jeden(a: bool) -> bool:\n    return a or False\n", encoding="utf-8")
@@ -1029,7 +1092,7 @@ def test_test_ktory_bez_mutacji_pada_raz_jest_flaky_testem_a_czesc_mutuje_dalej(
         assert not record.exists()
         return
     assert "FLAKY TESTY | przeszły po ponowieniu: tests/test_warunek.py::test_niestabilny" in done.stdout.splitlines()
-    assert done.stdout.splitlines()[-1].startswith("MUTACJE ZMIANY OK | mutacje=1")
+    assert done.stdout.splitlines()[-1].startswith("MUTACJE ZMIANY OK | mutacje=2")
     assert [(flaky.test, flaky.zadanie) for flaky in niestabilne_testy.flaky_testy_z_json(record.read_text(encoding="utf-8"))[0]] == [
         ("tests/test_warunek.py::test_niestabilny", "Change mutations (1/1)")
     ]
@@ -1055,7 +1118,7 @@ def test_mutacje_sprawdza_flaky_test_ktory_w_pierwszym_przebiegu_padl_przed_kode
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert "FLAKY TESTY | przeszły po ponowieniu: tests/test_warunek.py::test_oba_niestabilny" in done.stdout.splitlines()
-    assert _caught(done) == ["src/rozliczenia/warunek.py:2 bez `b` w `and`"]
+    assert (_caught(done), _caught(done, "ZDOMINOWANA")) == (["src/rozliczenia/warunek.py:2 bez `b` w `and`"], ["src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy"])
 
 
 def test_zmieniona_linia_narzedzia_dostaje_mutacje_jak_linia_src(tmp_path: Path) -> None:
@@ -1174,7 +1237,7 @@ def test_z_predykatu_napisu_biegnie_in_na_startswith() -> None:
     # #460 r1: ``word in text`` → ``text.endswith(word)`` wykrył test, a przeżyło ``text.startswith(word)``.
     code = "def f(a, t):\n    x = a in t\n    y = t.startswith(a)\n    z = t.endswith(a)\n"
 
-    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, [Hunk(2, 3, ())], {}) if mutant.revert is Revert.NONE]
+    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, [Hunk(2, 3, ())]) if mutant.revert is Revert.NONE]
 
     assert chosen == [
         (2, "`a in t` → `t.startswith(a)`"),
@@ -1189,14 +1252,14 @@ def test_predykat_napisu_biegnie_tylko_na_linii_bez_innej_mutacji() -> None:
     code = 'GLOBS = frozenset({"glob", "rglob"})\n\n\ndef f(node, name, t):\n    if isinstance(node, str) and name in GLOBS:\n        return t\n'
     hunks = [Hunk(5, 1, ())]
 
-    chosen = [mutant.description for mutant in selected("m.py", code, hunks, {}) if mutant.revert is Revert.NONE]
+    chosen = [mutant.description for mutant in selected("m.py", code, hunks) if mutant.revert is Revert.NONE]
 
     assert "`name in GLOBS` → `GLOBS.startswith(name)`" in {mutant.description for mutant in mutants("m.py", code, hunks)}
     assert chosen == ["bez `name in GLOBS` w `and`"]
 
 
 def test_mutacja_glebiej_niz_predykat_napisu_wygrywa_z_nim() -> None:
-    chosen = [mutant.description for mutant in selected("m.py", "x = a in (b if c else d)\n", [Hunk(1, 1, ())], {}) if mutant.revert is Revert.NONE]
+    chosen = [mutant.description for mutant in selected("m.py", "x = a in (b if c else d)\n", [Hunk(1, 1, ())]) if mutant.revert is Revert.NONE]
 
     assert chosen == ["`b if c else d` zawsze `d`"]
 
@@ -1256,29 +1319,22 @@ def test_liczba_zwracana_poza_sys_exit_dostaje_none() -> None:
     assert _returns(code) == {"`return 0` → `return None`"}
 
 
-def test_biegnie_jedna_mutacja_linii_z_jej_najglebszego_wezla() -> None:
+def test_biegnie_kazde_cofniecie_fragmentu_i_jedna_mutacja_linii_z_jej_najglebszego_wezla() -> None:
     code = "def f(a, b, c):\n    if a and b:\n        return c > 1\n    zapisz(a)\n    return (a, b)\n"
     hunks = [Hunk(2, 2, ("    if a:", "        return c")), Hunk(5, 1, ("    return a",))]
 
     every = mutants("m.py", code, hunks)
-    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, hunks, {})]
+    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, hunks)]
 
-    assert chosen == [(2, "bez `b` w `and`"), (3, "granica `c > 1` → `>=`"), (5, "krotka bez `b`")]
+    assert chosen == [
+        (2, "bez `b` w `and`"),
+        (2, "zmiana linii 2–3 cofnięta do bazy"),
+        (3, "granica `c > 1` → `>=`"),
+        (5, "krotka bez `b`"),
+        (5, "zmiana linii 5 cofnięta do bazy"),
+    ]
     assert len(every) > len(chosen)
-    assert {mutant.line for mutant in every if mutant.revert is Revert.NONE} == {line for line, _ in chosen}
-
-
-def test_cofniecie_fragmentu_biegnie_tylko_gdy_zadna_inna_mutacja_nie_psuje_jego_linii() -> None:
-    """Fragment 2–3 ma mutację tylko w linii 3, a jego cofnięcie i tak nie biegnie; fragment stałej w linii 6 nie ma
-    innej mutacji, więc jego cofnięcie biegnie."""
-
-    code = 'def f(a, b):\n    napis = "nowy"\n    return a and b\n\n\nNAZWA = "nowa"\n'
-    hunks = [Hunk(2, 2, ('    napis = "stary"', "    return a")), Hunk(6, 1, ('NAZWA = "stara"',))]
-
-    chosen = [(mutant.line, mutant.description) for mutant in selected("m.py", code, hunks, {})]
-
-    assert "zmiana linii 2–3 cofnięta do bazy" in {mutant.description for mutant in mutants("m.py", code, hunks)}
-    assert chosen == [(3, "bez `b` w `and`"), (6, "zmiana linii 6 cofnięta do bazy")]
+    assert {mutant.line for mutant in every if mutant.revert is Revert.NONE} == {line for line, description in chosen if "cofnięta" not in description}
 
 
 def test_biegnie_cofniecie_rowne_innej_mutacji_linii() -> None:
@@ -1286,33 +1342,12 @@ def test_biegnie_cofniecie_rowne_innej_mutacji_linii() -> None:
     code = "def xf(number_format, font, fill_id, border):\n    return FORMAT % (number_format, font, fill_id, border)\n"
     base = "def xf(number_format, font, fill_id, border):\n    return FORMAT % (number_format, font, border)\n"
 
-    chosen = selected("m.py", code, [Hunk(2, 1, ("    return FORMAT % (number_format, font, border)",))], {})
+    chosen = selected("m.py", code, [Hunk(2, 1, ("    return FORMAT % (number_format, font, border)",))])
 
     assert [(mutant.description, mutant.revert, mutant.source == base) for mutant in chosen] == [
         ("krotka bez `fill_id`", Revert.MERGED, True),
         ("krotka bez `border`", Revert.NONE, False),
     ]
-
-
-@pytest.mark.parametrize("until", ["2999-01-01", "2000-01-01"])
-def test_mutacja_wylaczona_wyjatkiem_takze_po_terminie_nie_zdejmuje_cofniecia_fragmentu(until: str) -> None:
-    code = f'def f(a, b):\n    napis = "nowy"\n    return a and b  # mutacje-zmiany: tylko na próbę | do {until} | zgoda Maks\n'
-    hunks = [Hunk(2, 2, ('    napis = "stary"', "    return a"))]
-
-    chosen = [mutant.description for mutant in selected("m.py", code, hunks, exceptions(code, "m.py"))]
-
-    assert chosen == ["zmiana linii 2–3 cofnięta do bazy", "bez `b` w `and`"]
-
-
-def test_mutacja_kodu_innego_systemu_nie_zdejmuje_cofniecia_fragmentu() -> None:
-    code = "import sys\n\nPROG = 'nowy'\nif sys.platform == 'win32':\n    x = a or b\n"
-    hunks = [Hunk(3, 3, ("PROG = 'stary'", "if sys.platform == 'win32':", "    x = a"))]
-
-    def reverts(platform: str) -> list[str]:
-        return [mutant.description for mutant in selected("m.py", code, hunks, {}, platform) if mutant.revert is Revert.HUNK]
-
-    assert reverts("linux") == ["zmiana linii 3–5 cofnięta do bazy"]
-    assert reverts("win32") == []
 
 
 def test_niezmieniona_linia_nie_dostaje_mutacji() -> None:

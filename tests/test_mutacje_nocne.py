@@ -513,26 +513,26 @@ def test_mutacja_instrukcji_wielowierszowej_trafia_do_pr_ktory_zmienil_jej_linie
     assert all(f"MUTACJA {_nazwa(wpis)} | klucz {wpis['klucz']}" in github.issues[0]["body"] for wpis in przezyte)
 
 
-@pytest.mark.parametrize(("pierwsza", "druga"), [(1, 2), (2, 1)], ids=["pozniejszy-nizej", "pozniejszy-wyzej"])
+@pytest.mark.parametrize(("pierwsza", "druga"), [(3, 4), (4, 3)], ids=["pozniejszy-nizej", "pozniejszy-wyzej"])
 def test_mutacja_linii_zmienionych_przez_dwa_pr_trafia_do_pr_scalonego_pozniej(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], pierwsza: int, druga: int
 ) -> None:
-    repo = mutation_repository(tmp_path / "repo", {"src/a.py": 'PIERWSZA = "stara"\nDRUGA = "stara"\n'})
+    repo = mutation_repository(tmp_path / "repo", {"src/a.py": WARUNEK})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "Stary kod (#20)")
     for numer, linia in ((40, pierwsza), (41, druga)):
         git(repo, "checkout", "--quiet", "-b", f"feat/{numer}")
-        _zmien(repo, linia, {1: 'PIERWSZA = "nowa"', 2: 'DRUGA = "nowa"'}[linia])
+        _zmien(repo, linia, {3: "        x > 2", 4: "        and y > 5"}[linia])
         commit(repo, f"zmień linię {linia}")
         _scal(repo, f"feat/{numer}", f"Merge pull request #{numer} from org/feat/{numer}")
-    # Cofnięcie fragmentu 1–2 psuje linie obu PR-ów, a ostatni zmienił je PR #41.
-    cofniecie = [wpis for wpis in _noc(repo, baza) if wpis["linie"] == [1, 2]]
+    # Cofnięcie fragmentu 3–4 psuje linie obu PR-ów, a ostatni zmienił je PR #41.
+    cofniecie = [wpis for wpis in _noc(repo, baza) if wpis["linie"] == [3, 4]]
     github = GitHubWPamieci()
 
     kod = mutacje_nocne.zglos(github, repo, baza, _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, cofniecie)}), 1, RUN)
 
     assert kod == 0, capsys.readouterr().out
-    assert [_nazwa(wpis) for wpis in cofniecie] == ["src/a.py:1 zmiana linii 1–2 cofnięta do bazy"]
+    assert [_nazwa(wpis) for wpis in cofniecie] == ["src/a.py:3 zmiana linii 3–4 cofnięta do bazy"]
     assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #41"]
 
 
@@ -700,14 +700,13 @@ def test_noc_doby_po_wczesniejszym_runie_doby_nic_nie_mutuje_a_zakres_zostawia_b
 ZLY_WYJATEK = "src/pakiet/a.py:4: wyjątek musi mieć postać `# mutacje-zmiany: <powód> | do RRRR-MM-DD | zgoda <kto>`"
 
 
-NOWA_FUNKCJA = "\n\ndef b(x: int) -> bool:\n    wynik = x < 3\n    return wynik\n"
+NOWA_FUNKCJA = "\n\ndef b(x: int) -> bool:\n    return x < 3\n"
 
 
 @pytest.mark.parametrize(
     ("dopisane", "na_czesc", "mutacje", "czesci"),
     [
-        # Nowa funkcja to dwie mutacje, granica porównania i ``return wynik`` → ``return None``; jej cofnięcie nie
-        # biegnie, bo obie psują jego linie.
+        # Z mutacji nowej linii ``return`` biegnie jedna, granica porównania, i cofnięcie fragmentu.
         (NOWA_FUNKCJA, 1, 2, [1, 2]),
         # Część ma miejsce na obie mutacje, więc ``liczba`` (N w ``--czesc k/N``) to liczba części, nie mutacji.
         (NOWA_FUNKCJA, 2, 2, [1]),
@@ -751,9 +750,9 @@ LISTA_ZAKRESU = (
 @pytest.mark.parametrize(
     ("plik", "mutacje"),
     [
-        ("src/pakiet/a.py", 1),
-        ("tools/bramka.py", 1),
-        ("tools/lib/silnik/a.py", 1),
+        ("src/pakiet/a.py", 2),
+        ("tools/bramka.py", 2),
+        ("tools/lib/silnik/a.py", 2),
         ("tools/pomiar.py", 0),
         ("tools/lib/inny.py", 0),
         (".agents/skills/verify-proba/scripts/a.py", 0),
@@ -779,8 +778,8 @@ def test_plan_nocy_mutuje_src_i_jednostki_szopy_z_oznaczeniem_przepuszcza_a_resz
 
 
 def _plik_zwykly_i_plik_okna(tmp_path: Path) -> tuple[Path, str]:
-    """Repozytorium i baza nocy, od której zmiana daje przy jednej mutacji na część (granica porównania) dwie części,
-    każdą z jednego pliku: część 1 to ``a.py`` z ``tests/test_a.py``, a część 2 ``okno.py`` z
+    """Repozytorium i baza nocy, od której zmiana daje dwie części po dwie mutacje (granica porównania i cofnięcie
+    fragmentu), każdą z jednego pliku: część 1 to ``a.py`` z ``tests/test_a.py``, a część 2 ``okno.py`` z
     ``tests/test_okno.py``, który sięga Atrapy efenix przez fixture, więc biegnie w prawdziwej przeglądarce."""
 
     fixture = "from atrapy.atrapa_efenix import ATRAPA as OKNO\n"
@@ -815,7 +814,7 @@ def test_czesc_ktorej_mutacje_sprawdzaja_testy_atrapy_efenix_dostaje_chromium_a_
     repo, baza = _plik_zwykly_i_plik_okna(tmp_path)
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
 
-    kod = mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=1)
+    kod = mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=2)
 
     output = _wyjscie_planu(tmp_path / "output")
     assert (kod, capsys.readouterr().out.splitlines()[-1].rpartition(" | ")[2]) == (0, "z Chromium 1")
@@ -843,7 +842,7 @@ def test_czesc_z_najdrozszymi_testami_startuje_pierwsza_a_noc_mutuje_te_same_cze
     plany = {}
     for nazwa, koszty in (("numery", {}), ("czasy", praca)):
         monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / f"output-{nazwa}"))
-        assert mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=1, koszty=czasy_ci.KosztyPlikow(koszty)) == 0
+        assert mutacje_nocne.zaplanuj(GitHubWPamieci(), repo, baza, None, na_czesc=2, koszty=czasy_ci.KosztyPlikow(koszty)) == 0
         plany[nazwa] = _wyjscie_planu(tmp_path / f"output-{nazwa}")
     czesci = json.loads(plany["czasy"].pop("czesci"))
 
@@ -933,8 +932,7 @@ def _main_z_zalegloscia(tmp_path: Path, plikow: int) -> tuple[Path, str]:
 
 
 def _dopisz(repo: Path, numer: int, *pliki: int) -> str:
-    """Squash PR #``numer``: nowa funkcja w każdym z ``pliki`` to dwie mutacje, granica porównania i ``return wynik`` →
-    ``return None``."""
+    """Squash PR #``numer``: nowa funkcja w każdym z ``pliki`` to dwie mutacje, granica porównania i cofnięcie fragmentu."""
 
     for plik in pliki or (numer,):
         with (repo / "src" / "pakiet" / f"m{plik}.py").open("a", encoding="utf-8") as kod:
@@ -1041,21 +1039,21 @@ def test_mutacja_linii_dwoch_pr_liczy_sie_do_nocy_wczesniejszego_z_nich_jak_w_za
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Cofnięcie fragmentu, którego linie zmieniły PR #2 i PR #3, część mutuje już w zakresie do #2 (``until``), więc
-    plan liczy je przy #2: noc do #2 miałaby 2 mutacje przy limicie 1, więc kończy się na #1."""
+    plan liczy je przy #2: noc do #2 miałaby 4 mutacje przy limicie 3, więc kończy się na #1."""
 
-    b = 'C = "stara"\nD = "stara"\n'
+    b = "def b(x: int, y: int) -> bool:\n    c = x > 1\n    d = y > 1\n    return c and d\n"
     repo = mutation_repository(tmp_path / "repo", {"src/pakiet/a.py": FUNKCJA, "src/pakiet/b.py": b})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza")
     commity: list[str] = []
-    for plik, stare, nowe in (("a", "x > 1", "x > 2"), ("b", 'C = "stara"', 'C = "nowa"'), ("b", 'D = "stara"', 'D = "nowa"')):
+    for plik, stare, nowe in (("a", "x > 1", "x > 2"), ("b", "c = x > 1", "c = x > 2"), ("b", "d = y > 1", "d = y > 2")):
         sciezka = repo / "src" / "pakiet" / f"{plik}.py"
         sciezka.write_text(sciezka.read_text(encoding="utf-8").replace(stare, nowe), encoding="utf-8")
         commity.append(commit(repo, f"Zmień {plik} (#{len(commity) + 1})"))
 
-    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), repo, tmp_path, monkeypatch, capsys, 2, na_czesc=1, czesci_na_noc=1)
+    plan = _plan_nocy(GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}]), repo, tmp_path, monkeypatch, capsys, 2, na_czesc=3, czesci_na_noc=1)
 
-    assert (plan["do"], plan["mutacje"]) == (commity[0], "1")
+    assert (plan["do"], plan["mutacje"]) == (commity[0], "2")
 
 
 # Limit czasu części w teście: części biegną naprawdę, jak krok zadania części w mutacje-nocne.yml.
@@ -1085,7 +1083,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     po każdej jej mutacji śpi 300 s, więc jej część kończy limit czasu przed werdyktem. Noc i tak jest udana: mutacje bez
     werdyktu idą do issue PR #2, a następna noc zaczyna od końca tego zakresu, nie od tej samej bazy."""
 
-    test_b = "import time\n\nfrom rozliczenia.b import b\n\n\ndef test_b() -> None:\n    if b(2) is not False:\n        time.sleep(300)\n    assert b(3) is True\n"
+    test_b = "import time\n\nfrom rozliczenia.b import b\n\n\ndef test_b() -> None:\n    if b(2):\n        time.sleep(300)\n    assert b(3) is True\n"
     pliki = {
         ".gitignore": "__pycache__/\n",
         "src/rozliczenia/__init__.py": "",
@@ -1100,7 +1098,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     baza = commit(repo, "baza")
     for numer, plik in enumerate(("a", "b"), start=1):
         sciezka = repo / "src" / "rozliczenia" / f"{plik}.py"
-        sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("    return x > 1\n", "    wynik = x > 2\n    return wynik\n"), encoding="utf-8")
+        sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 1", "x > 2"), encoding="utf-8")
         commit(repo, f"Zmień {plik} (#{numer})")
     github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
     plan = _plan_nocy(github, repo, tmp_path, monkeypatch, capsys, 2, na_czesc=2)
@@ -1116,7 +1114,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
     assert issue["title"] == "Przeżyte mutacje z #2"
     assert sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.endswith(mutacje_nocne.Rodzaj.BEZ_WERDYKTU.dopisek)) == [
         "MUTACJA src/rozliczenia/b.py:2 granica `x > 2` → `>=`",
-        "MUTACJA src/rozliczenia/b.py:3 `return wynik` → `return None`",
+        "MUTACJA src/rozliczenia/b.py:2 zmiana linii 2 cofnięta do bazy",
     ]
     # Run jest udany, więc następna noc ma tylko PR #3 dopisany po nim.
     github.runy = [{"id": 2, "head_sha": git(repo, "rev-parse", "HEAD")}]
@@ -1132,14 +1130,14 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Ręczny run z ``od`` z gałęzi bocznej, której zmiany ``b.py`` nie ma na ``main``. Noc mutuje zmiany ``main`` od
-    wspólnego przodka HEAD i ``od``, czyli tylko PR #1 w ``a.py`` (granica porównania), a nie cofnięcie zmiany stałej
-    gałęzi bocznej: tyle mutacji liczy plan i tyle razem mutują jego części."""
+    wspólnego przodka HEAD i ``od``, czyli tylko PR #1 w ``a.py`` (granica porównania i cofnięcie fragmentu), a nie cofnięcie
+    zmiany gałęzi bocznej: tyle mutacji liczy plan i tyle razem mutują jego części."""
 
     pliki = {
         ".gitignore": "__pycache__/\n",
         "src/rozliczenia/__init__.py": "",
         "src/rozliczenia/a.py": FUNKCJA,
-        "src/rozliczenia/b.py": 'NAZWA = "main"\n',
+        "src/rozliczenia/b.py": FUNKCJA.replace("def a", "def b"),
         "tests/test_a.py": "from rozliczenia.a import a\n\n\ndef test_a() -> None:\n    assert a(3) is True\n    assert a(2) is False\n",
     }
     # Pliki wchodzą commitem po korzeniu, jak na ``main``: ``git blame`` skraca SHA commitu korzenia.
@@ -1152,7 +1150,7 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     copy_files(repo, with_imports(MUTACJE_ZMIANY))
     wspolny = commit(repo, "baza")
     git(repo, "checkout", "--quiet", "-b", "boczna")
-    (repo / "src" / "rozliczenia" / "b.py").write_text('NAZWA = "boczna"\n', encoding="utf-8")
+    (repo / "src" / "rozliczenia" / "b.py").write_text("def b(x: int) -> bool:\n    return x < 5 and x > 0\n", encoding="utf-8")
     boczny = commit(repo, "Zmiana gałęzi bocznej")
     git(repo, "checkout", "--quiet", "main")
     (repo / "src" / "rozliczenia" / "a.py").write_text(FUNKCJA.replace("x > 1", "x > 2"), encoding="utf-8")
@@ -1161,8 +1159,8 @@ def test_reczna_noc_z_od_spoza_linii_main_liczy_od_wspolnego_przodka_te_same_mut
     plan = _plan_nocy(GitHubWPamieci(), repo, tmp_path, monkeypatch, capsys, 2, od=boczny)
     czesci = [_czesc(repo, plan, numer, tmp_path / "zapisy") for numer in range(1, int(plan["liczba"]) + 1)]
 
-    assert (plan["mutacje"], [czesc.stdout.splitlines()[-1] for czesc in czesci]) == ("1", ["MUTACJE ZMIANY OK | mutacje=1 | wyjątki=0 | innego systemu=0"])
-    assert plan["linia"] == f"MUTACJE NOCNE PLAN | baza {wspolny} (merge-base HEAD z --od {boczny}) | do {head} | mutacje 1 | części 1 | z Chromium 0"
+    assert (plan["mutacje"], [czesc.stdout.splitlines()[-1] for czesc in czesci]) == ("2", ["MUTACJE ZMIANY OK | mutacje=2 | wyjątki=0 | innego systemu=0"])
+    assert plan["linia"] == f"MUTACJE NOCNE PLAN | baza {wspolny} (merge-base HEAD z --od {boczny}) | do {head} | mutacje 2 | części 1 | z Chromium 0"
     assert (plan["baza"], json.loads(Path(plan["zakres"]).read_text(encoding="utf-8"))["baza"]) == (wspolny, wspolny)
 
 
@@ -1187,15 +1185,15 @@ def _ze_zlym_wyjatkiem(repo: Path, baza: str) -> str:
 
 
 def _od_spoza_main(repo: Path, baza: str) -> str:
-    """Gałąź boczna odchodzi od ``main`` po PR #1 i zmienia stałą ``m2``, której ``main`` potem nie zmienia: od niej plan
-    dołożyłby cofnięcie tej zmiany. Stałą ``m2`` dopisuje PR #1, bo linii commitu korzenia ``git blame -l`` nie daje
+    """Gałąź boczna odchodzi od ``main`` po PR #1 i zmienia linię ``m2``, której ``main`` potem nie zmienia: od niej plan
+    dołożyłby cofnięcie tej zmiany. Linię ``m2`` zmienia PR #1, bo linii commitu korzenia ``git blame -l`` nie daje
     pełnego SHA, więc żaden zakres jej nie zawiera."""
 
     sciezka = repo / "src" / "pakiet" / "m2.py"
-    sciezka.write_text(sciezka.read_text(encoding="utf-8") + '\n\nNAZWA = "main"\n', encoding="utf-8")
+    sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 1", "x > 2"), encoding="utf-8")
     commit(repo, "Zmień m2 (#1)")
     git(repo, "checkout", "--quiet", "-b", "boczna")
-    sciezka.write_text(sciezka.read_text(encoding="utf-8").replace('"main"', '"boczna"'), encoding="utf-8")
+    sciezka.write_text(sciezka.read_text(encoding="utf-8").replace("x > 2", "x > 0 and x < 5"), encoding="utf-8")
     boczny = commit(repo, "Zmiana gałęzi bocznej")
     git(repo, "checkout", "--quiet", "main")
     _dopisz(repo, 3)
