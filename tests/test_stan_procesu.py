@@ -445,7 +445,10 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
 # Fixtura modułu zmienia w setupie każdy rodzaj stanu procesu. Czysta sprząta go na końcu, więc nie wywraca żadnego
 # testu, także gdy zmienia katalog roboczy; test, który pod nią znów zmienia jej katalog i zmienną, pada sam, a plugin
 # wraca do wartości fixtury, także pod fixturą klasy, która zmienia tę samą zmienną i przywraca ją na swoim końcu.
-# Brudna nie sprząta, więc wywraca ostatni test modułu z nazwą fixtury, a plugin przywraca katalog i środowisko, zanim
+# Czysta fixtura modułu, która bierze fixturę sesji przez request.getfixturevalue, nie przejmuje jej stanu, więc ani jej
+# ostatni test, ani sąsiad z tą fixturą sesji w innym module nie padają, a jej zmienna, zmieniona przed fixturą sesji i
+# po niej, wraca na jej końcu do wartości sprzed pierwszej zmiany. Stan setupu, który padł, należy do testu. Test, który usuwa katalog roboczy żywej fixtury,
+# pada sam z nazwanym katalogiem. Brudna nie sprząta, więc wywraca ostatni test modułu z nazwą fixtury, a plugin przywraca katalog i środowisko, zanim
 # zacznie się sąsiad. Wątek testu, który zamyka plik zaraz po teście, nie zostawia stanu.
 _RODZAJ_FIXTURY: Final = """
 import os
@@ -557,6 +560,66 @@ def test_watek_fixtury_uruchamia_watek_w_pierwszym_tescie(rozdzielacz_modulu):
 def test_drugi_z_rozdzielaczem(rozdzielacz_modulu):
     pass
 """,
+    "test_a_zagniezdzona.py": """
+import pytest
+
+
+@pytest.fixture(scope="module")
+def modul_z_sesja(request):
+    # Ta sama zmienna przed fixturą sesji i po niej, przywrócona na końcu do stanu sprzed pierwszej zmiany.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("ZMIENNA_MODULU_ZAGN", "przed")
+        sesja = request.getfixturevalue("ustawienia_sesji")
+        patch.setenv("ZMIENNA_MODULU_ZAGN", "po")
+        yield sesja
+
+
+def test_pierwszy_z_zagniezdzona(modul_z_sesja):
+    assert modul_z_sesja == "sesja"
+
+
+def test_ostatni_z_zagniezdzona(modul_z_sesja):
+    assert modul_z_sesja == "sesja"
+""",
+    "test_a_padly_setup.py": """
+import os
+
+import pytest
+
+
+@pytest.fixture(scope="module")
+def padly_setup():
+    os.environ["ZMIENNA_PADLEGO_SETUPU"] = "1"
+    raise RuntimeError("setup fixtury pada")
+
+
+def test_z_padlym_setupem(padly_setup):
+    pass
+""",
+    "test_a_usuwa_katalog_fixtury.py": """
+import os
+import shutil
+import sys
+
+import pytest
+
+
+@pytest.fixture(scope="module")
+def w_katalogu(tmp_path_factory):
+    with pytest.MonkeyPatch.context() as patch:
+        patch.chdir(tmp_path_factory.mktemp("usuwany_fixtury"))
+        yield
+
+
+def test_sprawca_usuwa_katalog_fixtury(w_katalogu):
+    if sys.platform == "win32":
+        pytest.skip("Windows nie usuwa katalogu roboczego procesu")
+    shutil.rmtree(os.getcwd())
+
+
+def test_drugi_w_katalogu_fixtury(w_katalogu):
+    pass
+""",
     "test_b_brudna.py": _RODZAJ_FIXTURY
     + """
 
@@ -580,14 +643,30 @@ def test_drugi_z_brudna(brudna_modulu):
 import os
 
 
+def test_sasiad_z_sesja_w_innym_module(ustawienia_sesji):
+    assert os.environ.get("ZMIENNA_SESJI_ZAGN") == "sesja"
+
+
 def test_sasiad_ma_katalog_i_srodowisko_sprzed_fixtury(request):
     assert (os.getcwd(), os.environ.get("ZMIENNA_BRUDNEJ")) == (str(request.config.invocation_params.dir), None)
 """,
 }
 
 
+_SESJA_ZAGNIEZDZONA: Final = """
+
+@pytest.fixture(scope="session")
+def ustawienia_sesji():
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("ZMIENNA_SESJI_ZAGN", "sesja")
+        yield "sesja"
+"""
+
+
 def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(tmp_path: Path) -> None:
-    errors = _sesja(tmp_path, _RODZAJE_FIXTUR)
+    errors = _sesja(tmp_path, _RODZAJE_FIXTUR, _CONFTEST + _SESJA_ZAGNIEZDZONA)
+    deleted = _zostawione(errors.pop("test_sprawca_usuwa_katalog_fixtury"))
+    failed_setup = errors.pop("test_z_padlym_setupem")
     dirty = _zostawione(errors.pop("test_drugi_z_brudna"))
     culprit = _zostawione(errors.pop("test_sprawca_pod_czysta_zmienia_jej_katalog_i_zmienna"))
     kinds = (
@@ -602,12 +681,16 @@ def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(
         [kind for kind in kinds if kind in dirty],
         dirty.count("fixtura brudna_modulu zasięgu module"),
         [part.split(" → ")[0] for part in culprit.split("; ")],
+        ("→ katalog usunięty (katalogu oczekiwanego już nie ma)" in deleted, "fixtura" in deleted),
+        _zostawione(failed_setup),
     ) == (
         {name: "" for name in errors},
         list(kinds),
         len(kinds),
         [f"katalog roboczy {tmp_path / 'tmp' / 'czysta0'}", "zmienna środowiska ZMIENNA_CZYSTEJ zmieniona"],
-    ), (dirty, culprit, errors)
+        (sys.platform != "win32", False),
+        "zmienna środowiska ZMIENNA_PADLEGO_SETUPU zmieniona",
+    ), (dirty, culprit, deleted, failed_setup, errors)
 
 
 _LUKI_CONFTEST: Final = _CONFTEST + """

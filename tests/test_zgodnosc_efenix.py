@@ -36,7 +36,7 @@ from decimal import Decimal
 from functools import partial
 import http.client
 import io
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 from pathlib import Path
 import queue
@@ -84,6 +84,7 @@ from atrapy.atrapa_efenix import (
     atrapa_efenix,
 )
 from atrapy.efenix import write_template_costs
+from atrapy.serwer_http import serwer_http
 from tests.fixtures.expect import assert_expected
 from tests.fixtures.potomne import wait_for_value
 from atrapy.settlement import CellValue
@@ -871,16 +872,8 @@ def _in_front(atrapa: AtrapaEfenix, rewrites: Mapping[str, Rewrite]) -> Iterator
             self.end_headers()
             self.wfile.write(content)
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    thread = threading.Thread(target=server.serve_forever, args=(POLL_S,), name="przed-atrapa-efenix")
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}/{LIST_PAGE}"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join()
+    with serwer_http(Handler, name="przed-atrapa-efenix", poll_s=POLL_S) as server:
+        yield f"{server.url}/{LIST_PAGE}"
 
 
 def _dead_endpoint() -> str:

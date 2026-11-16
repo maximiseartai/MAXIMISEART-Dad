@@ -110,7 +110,8 @@ ROOT = SRC.parent
 # Wyrocznia Wyceny w efenix i moduły spoza biblioteki standardowej, które wolno jej importować.
 EFENIX_ORACLE = {
     ROOT / "tools" / "lib" / "atrapy" / "model_efenix.py": frozenset[str](),
-    ROOT / "tools" / "lib" / "atrapy" / "atrapa_efenix.py": frozenset({"atrapy.model_efenix"}),
+    ROOT / "tools" / "lib" / "atrapy" / "serwer_http.py": frozenset[str](),
+    ROOT / "tools" / "lib" / "atrapy" / "atrapa_efenix.py": frozenset({"atrapy.model_efenix", "atrapy.serwer_http"}),
 }
 # Okno w procesie i moduły kodu pod testem, z których bierze tylko typy.
 WINDOW_IN_PROCESS = ROOT / "tests" / "fixtures" / "okno_w_procesie.py"
@@ -1150,9 +1151,10 @@ def test_model_i_atrapa_efenix_nie_importuja_kodu_pod_testem() -> None:
     assert not found, "\n".join(
         [
             *sorted(found),
-            "Model efenix (tools/lib/atrapy/model_efenix.py) importuje tylko bibliotekę standardową, a Atrapa efenix "
-            "(tools/lib/atrapy/atrapa_efenix.py) tylko ją i model: test porównuje z nimi Wycenę w efenix, więc nie biorą "
-            "niczego z kodu pod testem. Napisz potrzebny kod w modelu albo w Atrapie.",
+            "Model efenix (tools/lib/atrapy/model_efenix.py) i serwer HTTP atrap (tools/lib/atrapy/serwer_http.py) "
+            "importują tylko bibliotekę standardową, a Atrapa efenix (tools/lib/atrapy/atrapa_efenix.py) tylko ją, model "
+            "i serwer: test porównuje z nimi Wycenę w efenix, więc nie biorą niczego z kodu pod testem. Napisz potrzebny "
+            "kod w modelu albo w Atrapie.",
         ]
     )
 

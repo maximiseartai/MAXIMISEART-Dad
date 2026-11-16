@@ -6,6 +6,7 @@ pilnuje:
   - src/rozliczenia/centrum/logs_disk.py
   - src/rozliczenia/centrum/efenix_chrome.py
   - tools/lib/atrapy/atrapa_efenix.py
+  - tools/lib/atrapy/serwer_http.py
   - tools/lib/atrapy/model_efenix.py
   - tests/fixtures/okno_w_procesie.py
   - tools/lib/atrapy/efenix.py

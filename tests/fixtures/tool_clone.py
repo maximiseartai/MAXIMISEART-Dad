@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 import json
 import os
 from pathlib import Path
@@ -30,6 +30,7 @@ import subprocess
 import threading
 import urllib.request
 
+from atrapy.serwer_http import serwer_http
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import MEMORY_DIRECTORY
@@ -329,14 +330,8 @@ class _LoginRequired(BaseHTTPRequestHandler):
 def origin_asking_for_login() -> Iterator[str]:
     """Serwer HTTP na tym komputerze, który na każde pytanie Gita odpowiada „401: zaloguj się”, jak GitHub."""
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _LoginRequired)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}/MAXIMISEART-Dad.git"
-    finally:
-        server.shutdown()
-        server.server_close()
+    with serwer_http(_LoginRequired, name="github-logowanie") as server:
+        yield f"{server.url}/MAXIMISEART-Dad.git"
 
 
 class _Stalling(BaseHTTPRequestHandler):
@@ -363,15 +358,11 @@ def origin_that_stalls() -> Iterator[str]:
 
     released = threading.Event()
     handler = type("_StallingUntilReleased", (_Stalling,), {"released": released})
-    server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}/MAXIMISEART-Dad.git"
-    finally:
-        released.set()
-        server.shutdown()
-        server.server_close()
+    with serwer_http(handler, name="github-wstrzymany") as server:
+        try:
+            yield f"{server.url}/MAXIMISEART-Dad.git"
+        finally:
+            released.set()
 
 
 class FakeInstaller:
@@ -430,11 +421,5 @@ def github_api_of(origin: Path, *, asked: list[str] | None = None) -> Iterator[s
         def log_message(self, format: str, *args: object) -> None:
             pass
 
-    server = ThreadingHTTPServer(("127.0.0.1", 0), _Api)
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
-    thread.start()
-    try:
-        yield f"http://127.0.0.1:{server.server_address[1]}/repo"
-    finally:
-        server.shutdown()
-        server.server_close()
+    with serwer_http(_Api, name="atrapa-api-github") as server:
+        yield f"{server.url}/repo"
