@@ -6,7 +6,9 @@ whatever the mode, result and ending. The file says whether it was a `DRY-RUN`
 or a `RUN`, carries the card's result, ending, Rodzaj Zatrzymania, summary and
 Komunikaty in three parts with their codes, the number of problems, the call trace of a Zatrzymanie, the
 Szablony pracowników with their outcome and time, the tool's commit and its Wydanie, and the process's files by
-name (with size and whether OneDrive holds them only online). A Przebieg rozliczeń adds how many Ilości tylko dla
+name (with size and whether OneDrive holds them only online). A Przygotowanie pliku zbiorczego and a Przebieg
+rozliczeń carry the Reguły ilości with the Lista Urządzeń and the Legenda czynności of their start (`quantity_rules`,
+`activity_legend`). A Przebieg rozliczeń adds how many Ilości tylko dla
 INEA it left empty (`inea_only_cleared`, ADR 0018), an Uporządkowanie INTERMAX its Wpisy urządzenia i
 czynności INTERMAX (`intermax_entries`, ADR 0019): INTERMAX row numbers and operator names, a Wycena w efenix the
 trace of every order (`efenix_orders`, `efenix_stop`), and a Wpisanie raportów its Wpisy, problems and changed cells

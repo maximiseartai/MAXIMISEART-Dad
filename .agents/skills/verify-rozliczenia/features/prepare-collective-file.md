@@ -2,9 +2,11 @@
 
 The second process, run before the settlement. From a Rejestr zleceń it creates the Rozliczenie wewnętrzne and the
 Plik zbiorczy of one period inside the Folder okresu, both together or neither: every period order in the Rozliczenie
-wewnętrzne, every Zlecenie skuteczne in `A:K` of the Plik zbiorczy with its Ilości usług from the Reguły ilości in
-`N:AP`. The `assert-*` steps check both files, their Hiperłącza and external links, the inputs and the metrics; their
-messages stand in `assert_preparation.py`.
+wewnętrzne, every Zlecenie skuteczne in `A:K` of the Plik zbiorczy with its Ilości usług in `N:AP`: in each column the
+sum of what the Reguły ilości give and what the Legenda czynności gives for the Kody czynności in `CZYNNOŚCI
+ZREALIZOWANE`, which also write the amount in `AS` and their fills. The `assert-*` steps check both files, their
+Hiperłącza and external links, what the Kody czynności wrote (`activity_codes=N:AP,AS,fills`), the inputs and the
+metrics; their messages stand in `assert_preparation.py`.
 
 ## Sub-features
 
@@ -50,8 +52,12 @@ root (macOS: `.venv/bin/python`). The proof is in the evidence folder that `VERI
 - The variant reaches no stop, no warning but the three Ilości usług warnings of its Rejestr, no Wzorzec with Dad's
   leftovers and not every line of Dad's instruction; prove them with `py -3 -m pytest
   tests/test_collective_preparation.py tests/test_collective_preparation_stops.py tests/test_wyglad_wiersza_danych.py
-  tests/test_ilosci_uslug.py -q`. `tests/test_instrukcja_taty.py` keeps Dad's "komunikat → co zrobić" table in step
-  with the message catalog.
+  tests/test_ilosci_uslug.py tests/test_ostrzezenia_ilosci.py -q`. `tests/test_instrukcja_taty.py` keeps Dad's
+  "komunikat → co zrobić" table in step with the message catalog.
+- The machine script counts with the Legenda czynności of the Wydanie, never with Dad's from Ustawienia:
+  `tests/test_centrum_przygotowanie.py::test_przygotowanie_liczy_legenda_z_chwili_startu_a_zapis_dopisany_w_sekcji_w_trakcie_dziala_od_nastepnego`
+  checks that Przygotowanie in Centrum counts with Dad's legend as it was at the start, and a spelling he adds during
+  the run from the next one.
 - Without `--dry-run`, an incomplete period (last order before the Monday) asks a Decyzja taty after the Planowanie
   stage. The machine script refuses every Decyzja taty, so such a run stops with exit `1` and writes nothing; keep a
   Monday order in the fixture.

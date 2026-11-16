@@ -23,7 +23,7 @@ Dad sees the board on `Okresy`, the start page of Centrum (`#/okresy`), once his
 ## Driving it with Playwright for Python
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature tablica-skrocona`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
-Its proof adds `api/tablica-skrocona.json`.
+Its proof adds `api/tablica-skrocona.json` and `api/tablica-skrocona-ustawienia.json`.
 
 ## Gotchas
 
