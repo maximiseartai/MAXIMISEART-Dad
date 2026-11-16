@@ -54,7 +54,7 @@ def _quantity_warnings(run: Run) -> tuple[tuple[str, str], ...]:
     return (
         ("Narzędzie nie zna urządzenia z kolumny URZĄDZENIA", f"plik {COLLECTIVE_FILE}, {_rows(rows['without_rule'])}"),
         ("rozlicza się z opisu technika", f"plik {COLLECTIVE_FILE}, {_rows(rows['from_description'])}"),
-        ("Ilości, które wynikają z opisu technika", f"plik {COLLECTIVE_FILE}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
+        ("Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE)", f"plik {COLLECTIVE_FILE}, kolumny Y, AB, AD, AJ, AK, AL i AM"),
     )
 
 

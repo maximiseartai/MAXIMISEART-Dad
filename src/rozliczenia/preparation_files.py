@@ -19,6 +19,7 @@ from typing import Final
 
 from . import preparation_messages as messages
 from . import staged_publication
+from .activity_legend import NUMBER, FoundCode
 from .collective_layout import QUANTITY_LETTERS
 from .file_state import path_taken
 from .highlights import solid_fill
@@ -67,7 +68,9 @@ class CollectiveFilePlan:
     """Fakty Planowania o Pliku zbiorczym, z numerami jego wierszy (nie wierszy Rejestru zleceń).
 
     ``rows_without_rule`` mają składnik ``URZĄDZENIA`` nieznany Regułom ilości, a ``rows_from_description`` rozlicza
-    się z opisu technika.
+    się z opisu technika, który nie jest z samych Kodów czynności. ``closed_by_legend``: liczba wierszy, których
+    ``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności, więc nie czekają na tatę w kolumnach z opisu technika (ADR 0038).
+    ``out_of_range``: wiersze z Kodem czynności z liczbą spoza przedziałów i te kody, jak w tekście (``instutp40m``).
     """
 
     successful_count: int
@@ -75,6 +78,8 @@ class CollectiveFilePlan:
     first_row_without_zeros: int
     rows_without_rule: tuple[int, ...]
     rows_from_description: tuple[int, ...]
+    closed_by_legend: int
+    out_of_range: tuple[tuple[int, tuple[str, ...]], ...]
 
     @property
     def too_few_zero_rows(self) -> bool:
@@ -98,9 +103,23 @@ def plan_period_files(
         first_row_without_zeros=collective.first_row_without_zeros,
         rows_without_rule=tuple(number for number, row in numbered if isinstance(row.rule_result, WithoutRule)),
         rows_from_description=tuple(
-            number for number, row in numbered if isinstance(row.rule_result, FromDescription)
+            number
+            for number, row in numbered
+            if isinstance(row.rule_result, FromDescription) and not row.codes.only_codes
+        ),
+        closed_by_legend=sum(1 for row in collective_rows if row.codes.only_codes),
+        out_of_range=tuple(
+            (number, tuple(_written(found) for found in row.codes.out_of_range))
+            for number, row in numbered
+            if row.codes.out_of_range
         ),
     )
+
+
+def _written(found: FoundCode) -> str:
+    """Kod czynności z liczbą z tekstu w miejscu ``{n}`` (``instutp40m``); z zapisu legendy, nie z tekstu technika."""
+
+    return found.spelling.replace(NUMBER, str(found.number))
 
 
 def _create_file(template: TemplateFile, target: Path, rows: Sequence[RegisterRow]) -> Route:
