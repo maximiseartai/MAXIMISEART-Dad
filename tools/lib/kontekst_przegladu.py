@@ -29,7 +29,6 @@ from repo import ROOT
 import repo
 import stan_pr
 import werdykt_pr
-import werdykt_scalenia
 
 SKILLS_FOR_CHANGE = Path("tools") / "skille_dla_zmiany.py"
 SKILLS_TIMEOUT_S = 300
@@ -53,9 +52,9 @@ def _skills_for_change(head: str, fork: str) -> list[str]:
     return lines
 
 
-def print_context(number: int) -> int:
-    pull = stan_pr.pull(number)
-    base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
+def print_context(pull: stan_pr.Pull, base: str) -> int:
+    """Kontekst przeglądu ``pull`` z bazą ``base`` (SHA ``origin/<baza PR>`` tuż po pobraniu)."""
+
     if refused := limit_rund.deployed_problem(pull):
         print(f"PRZEGLĄD ODMOWA | #{pull.number} {pull.head[:7]} | {refused}")
         return 1

@@ -46,7 +46,7 @@ Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że by
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
 wynik. Kod 1 to odmowa albo błąd narzędzia (``SCAL FAIL``).
 
-Werdykt (``--werdykt``) i merge (także ``--bez-merge``) sądzi kod ``origin/<baza PR>`` tuż po pobraniu bazy, nie kod
+Werdykt (``--werdykt``), kontekst przeglądu (``--przeglad``) i merge (także ``--bez-merge``) sądzi kod ``origin/<baza PR>`` tuż po pobraniu bazy, nie kod
 checkoutu, z którego je uruchomiono: reguły werdyktu, bramki korzenia i wzoru opisu żyją w ``tools/`` i w plikach
 skilli, a checkout gałęzi PR albo stary checkout `main` może mieć ich starszą albo zmienioną wersję (#1573). Checkout,
 którego HEAD to ten commit bazy, bez zmian w plikach śledzonych przez Gita, sądzi sam. Każdy inny uruchamia to samo
@@ -54,7 +54,7 @@ polecenie z odłączonej kopii tego commitu (``potomne.commit_copy``) tym samym 
 roboczym, i kończy się jej kodem, a linia ``SĘDZIA`` przed jej wyjściem mówi, z którego commitu są reguły. PR, który
 sam zmienia te reguły, sądzi więc wersja z bazy, a jego zmiana obowiązuje od jego merge'a. Kopia, której baza
 w ``origin`` przesunęła się, zanim pobrała ją ponownie, nie uruchamia następnej kopii, tylko odmawia z poleceniem, by
-uruchomić ponownie. ``--przeglad`` biegnie w checkoucie, z którego go uruchomiono.
+uruchomić ponownie. Tak samo biegnie ``--przeglad``, bo limit rund odmawia kolejnej rundy już w nim.
 
 Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–5 jako status commita ``Werdykt i bramka``
 (``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
@@ -316,8 +316,6 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(given)
     label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "SCAL"
     try:
-        if args.przeglad:
-            return kontekst_przegladu.print_context(args.numer)
         pull = stan_pr.pull(args.numer)
         if args.status and (skipped := _skipped_status(pull)):
             print(f"STATUS POMINIĘTY | #{pull.number} {pull.head[:7]} | {skipped}")
@@ -325,6 +323,8 @@ def main(argv: list[str] | None = None) -> int:
         base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
         if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy)) is not None:
             return judged
+        if args.przeglad:
+            return kontekst_przegladu.print_context(pull, base)
         if args.werdykt:
             return _publish_verdict(pull, args.werdykt)
         if args.status:

@@ -131,7 +131,9 @@ Zamkniętych znalezisk nie powtarza.
 Ważne poprzedniej rundy jest zamknięte, gdy korzeń wyrwano według sekcji „Korzeń i chwast”, z dowodem wyrwania i sondą formy siostrzanej.
 Nowe znalezisko w kodzie, którego ta runda nie zmieniła, jest Ważne tylko wtedy, gdy to defekt zachowania z dowodem.
 Po drugiej rundzie z `FAIL` na tej samej przesłance (ta sama granica albo reguła pada na kolejnym przypadku) kolejna runda zaczyna się od zmiany podejścia: ataku na przesłankę, granicy z mechanizmu albo podziału PR.
-Po trzeciej rundzie z `FAIL` czwartej rundy w tym PR nie ma: `tools/scal_pr.py` odmawia jej w `--przeglad`, w `--werdykt` i przy merge'u (limit rund, `tools/lib/limit_rund.py`), więc koordynator zamyka PR i otwiera nowy ze zmienionym podejściem albo z częścią, którą przegląd przyjął.
+Po trzeciej rundzie z `FAIL` bez zmiany podejścia czwartej rundy nie ma: `tools/scal_pr.py` odmawia jej w `--przeglad`, w `--werdykt` i przy merge'u (limit rund, `tools/lib/limit_rund.py`), dopóki autor nie zmieni podejścia w tym samym PR i nie opisze tego komentarzem PR z pierwszą linią `ZMIANA PODEJŚCIA: <zdanie>`.
+Podejście zmienia się w tym samym PR, a nie w nowym, bo bramka korzenia i bramka idiomu czytają tylko werdykty własnego PR, więc nowy PR gubi Ważne rund poprzednika (#1990); część, której przegląd nie przyjął, usuwasz z PR, a jej Ważne dostają w `## Korzeń` szczebel (a) z usuniętym kodem.
+Recenzent rundy po zmianie podejścia sprawdza najpierw, czy diff od ostatniego `FAIL` robi to, co mówi to zdanie; gdy nie robi, to Ważne.
 Każdą rundę robi nowy recenzent, który nie pisał kodu, z linkiem do poprzednich werdyktów.
 
 ## Tryb autora: przed zleceniem przeglądu
@@ -152,7 +154,7 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
 
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
 3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)), dla Ważnego z polem `Idiom: <id>` dodaj albo popraw regułę ast-grep o tym id z jej dowodem, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
-   Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zamykasz PR i otwierasz nowy ze zmienionym podejściem albo z częścią, którą przegląd przyjął (sekcja „Kolejne rundy”).
+   Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście w tym samym PR i piszesz komentarz `ZMIANA PODEJŚCIA: <zdanie>` (sekcja „Kolejne rundy”).
 
 ## Tryb recenzenta: werdykt na PR
 
@@ -161,6 +163,7 @@ Recenzent nie pisał kodu i pracuje we własnym odłączonym checkoucie HEAD PR 
 
 1. Uruchom `.venv/bin/python tools/scal_pr.py <PR> --przeglad`.
    Krok kończy się, gdy masz SHA HEAD i merge-base; poprzedni werdykt znaczy, że to kolejna runda (sekcja „Kolejne rundy”).
+   Gdy kończy się linią `PRZEGLĄD ODMOWA`, nie przeglądasz i nie piszesz werdyktu, tylko oddajesz wywołującemu tę linię, bo `--werdykt` odmówi z tej samej przyczyny.
 2. Przejrzyj diff według sekcji „Co jest porażką” i „Dowody”, a skille z linii `SKILLE VERIFY` wykonaj według sekcji `What CI runs and what stays local` każdego z nich.
    Linia `CI` z kroku 1 mówi, czy polecenia z linii `LICZY CI` przeszły: przy `success` logów zadań CI nie przeszukuj, a przy `failure` czytaj tylko logi padłych zadań, które podaje.
    Każde potwierdzone znalezisko od razu dopisz do pliku `runda-<k>.md` w katalogu werdyktu blokiem szablonu z sekcji „Postać werdyktu”, żeby przerwany przegląd zostawił znaleziska.
