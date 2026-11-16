@@ -27,7 +27,7 @@ from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.styles.fills import Fill
 from openpyxl.styles.numbers import is_date_format
 from openpyxl.utils import column_index_from_string, get_column_letter
-from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH
+from openpyxl.utils.datetime import WINDOWS_EPOCH
 
 from rozliczenia import tool_files
 from rozliczenia.client_data import empty_memory
@@ -42,19 +42,18 @@ from rozliczenia.workbook_files import (
     Problem,
     RegisterRow,
     WorkbookError,
+    read_computed_rows,
     read_data_rows,
 )
 from rozliczenia.template_copy import Package
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.write_routes import Route
 from rozliczenia.workbook_parts import (
-    FirstRows,
     IrregularSheetData,
     RowsFromBottom,
     UnsupportedShape,
     active_sheet,
     appended,
-    first_rows,
     package_parts,
     rows_dated_between,
 )
@@ -391,14 +390,20 @@ def test_skoroszyt_w_folderze_bez_dostepu_jest_niedostepny_przy_kazdym_otwarciu(
     assert raised.value.problem is Problem.INACCESSIBLE
 
 
-@pytest.mark.parametrize("opening", OPENINGS)
+OPENINGS_IN_EXCEL: dict[str, Callable[[Path], object]] = OPENINGS | {
+    "odczyt-wartosci-policzonych": lambda path: read_computed_rows(path, DadFiles()),
+}
+"""Otwarcia z odczytem wartości policzonych przez Excel (Wycena w efenix), który też odmawia pliku otwartego w Excelu."""
+
+
+@pytest.mark.parametrize("opening", OPENINGS_IN_EXCEL)
 def test_plik_otwarty_w_excelu_przy_kazdym_otwarciu(tmp_path: Path, opening: str) -> None:
     path = styled_template(tmp_path / "Skoroszyt.xlsx")
     lock_file = tmp_path / "~$Skoroszyt.xlsx"
     lock_file.touch()
 
     with pytest.raises(WorkbookError) as raised:
-        OPENINGS[opening](path)
+        OPENINGS_IN_EXCEL[opening](path)
 
     assert raised.value.problem is Problem.OPEN_IN_EXCEL
     assert lock_file.exists()
@@ -1355,47 +1360,6 @@ def test_wzorzec_z_ukrytym_aktywnym_arkuszem_idzie_dawna_droga_i_wiersze_trafiaj
     assert (route, written) == (Route.OPENPYXL if hidden else Route.COPY, ("hidden" if hidden else "visible", "syntetyczne miasto"))
 
 
-def test_wiersz_1_bez_openpyxl_ma_teksty_komorek_takie_jak_openpyxl(tmp_path: Path) -> None:
-    """Rejestr zleceń jest zawężany po kolumnach daty z wiersza 1 czytanego bez openpyxl: tekst wspólny (także z
-    fragmentami i podpowiedzią wymowy), wbudowany i typu ``str`` jest taki, jaki daje openpyxl, liczba, formuła i pusta
-    komórka nie są tekstem, a arkusz bez wiersza 1 nie ma tekstów."""
-
-    path = tmp_path / "Rejestr.xlsx"
-    workbook = Workbook()
-    workbook.epoch = MAC_EPOCH
-    orders = active_worksheet(workbook)
-    orders.title = "Zlecenia"
-    for column, value in enumerate(["DATA GODZ. POCZ.", "UWAGI", 5, "=A1", None, "  MIASTO  ", "x", "x"], start=1):
-        orders.cell(1, column, value)
-    workbook.create_sheet("Lista").cell(2, 1, "WYKONAWCA")
-    workbook.save(path)
-    like_excel(path)
-    replace_cells(
-        path,
-        {
-            "D1": '<c r="D1" t="str"><f>A1</f><v>DATA GODZ. POCZ.</v></c>',
-            "G1": '<c r="G1" t="str"><v>tekst</v></c>',
-            "H1": '<c t="inlineStr"><is><r><t>NUMER</t></r><r><t xml:space="preserve"> ZL.</t></r>'
-            '<rPh sb="0" eb="1"><t>X</t></rPh></is></c>',
-        },
-    )
-
-    opened = load_workbook(path, read_only=True)
-    try:
-        by_openpyxl: dict[str, list[object]] = {}
-        for sheet in opened.worksheets:
-            row: list[object] = [cell.value if cell.data_type == "s" else None for cell in next(sheet.iter_rows(max_row=1), ())]
-            while row and row[-1] is None:  # openpyxl dopełnia brakujący wiersz 1 pustymi komórkami
-                row.pop()
-            by_openpyxl[sheet.title] = row
-        assert opened.epoch == MAC_EPOCH
-    finally:
-        opened.close()
-    texts = ["DATA GODZ. POCZ.", "UWAGI", None, None, None, "  MIASTO  ", "tekst", "NUMER ZL."]
-    assert first_rows(path.read_bytes()) == FirstRows(True, {"Zlecenia": texts, "Lista": []})
-    assert by_openpyxl == {"Zlecenia": texts, "Lista": []}
-
-
 @pytest.mark.parametrize(
     ("cell", "kept"),
     [
@@ -1460,6 +1424,33 @@ def test_rejestr_z_pusta_tabela_tekstow_wspolnych_zawezony_do_okresu_ma_wiersze_
     assert _rows(narrowed) == {number: whole[number] for number in (1, 10, 11, 12)}
 
 
+def test_rejestr_z_wierszem_1_bez_komorek_zawezony_do_okresu_ma_wiersze_okresu_jak_caly(tmp_path: Path) -> None:
+    """Wiersz 1 arkusza bez żadnej komórki, tylko z wysokością, zapisany jako pusty element ``<row …/>``: zawężony do
+    10–12.09.2026 arkusz ma ten wiersz i wiersze z tymi datami, a nie wiersz 2, takie same jak cały Rejestr."""
+
+    path = tmp_path / "Rejestr.xlsx"
+    workbook = Workbook()
+    orders = active_worksheet(workbook)
+    orders.title = "ZLECENIA"
+    for number in range(2, 21):
+        orders.cell(number, 1, datetime(2026, 9, number, 8))
+    workbook.save(path)
+    rewrite_parts(
+        path,
+        lambda name, data: data.replace(b"<sheetData>", b'<sheetData><row r="1" ht="20" customHeight="1"/>', 1)
+        if name == "xl/worksheets/sheet1.xml"
+        else data,
+    )
+    content = path.read_bytes()
+    day = (datetime(2026, 9, 10) - WINDOWS_EPOCH) / timedelta(days=1)
+
+    narrowed, ranges = rows_dated_between(content, {"ZLECENIA": 1}, day, day + 3)
+
+    whole = _rows(content)
+    assert ranges == {"ZLECENIA": range(10, 13)}
+    assert _rows(narrowed) == {number: whole[number] for number in (10, 11, 12)}
+
+
 def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teksty_swoich_wierszy(tmp_path: Path) -> None:
     """Rejestr zapisany jak w Excelu: wiersze 2 i 4 to zlecenia z 2025 r., a wiersz 3 zlecenie z 8.09.2026. Po zawężeniu
     do tego dnia tabela tekstów wspólnych nie ma tekstów wierszy 2 i 4, a wiersze 1 i 3 mają te same wartości co w
@@ -1485,6 +1476,32 @@ def test_rejestr_zawezony_do_okresu_niesie_w_tabeli_tekstow_wspolnych_tylko_teks
     assert (b"UM-SYN-002" in table, b"UM-SYN-100" in table, b"UM-SYN-101" in table) == (True, False, False)
     whole = _rows(content)
     assert _rows(narrowed) == {1: whole[1], 3: whole[3]}
+
+
+def test_rejestr_z_numerem_tekstu_wspolnego_tuz_za_tabela_zawezony_do_okresu_ma_cala_tabele_tekstow(tmp_path: Path) -> None:
+    """Komórka zlecenia z 8.09.2026 w arkuszu ``ZLECENIA`` sięga po tekst wspólny o numerze równym liczbie tekstów tabeli, czyli tuż za nią:
+    zawężenie do tego dnia nie podmienia tabeli tekstów wspólnych, więc openpyxl czyta ją taką, jak w całym Rejestrze."""
+
+    path = write_register(tmp_path / "Rejestr.xlsx", [register_order(2, datetime(2026, 9, 8, 8, 0))])
+    like_excel(path)
+    with package_parts(path.read_bytes()) as parts:
+        table = parts["xl/sharedStrings.xml"]
+    count = table.count(b"<si>")
+    rewrite_parts(
+        path,
+        lambda name, data: re.sub(rb'(<c r="B2"[^>]*t="s"[^>]*><v>)\d+', rb"\g<1>%d" % count, data, count=1)
+        if name == "xl/worksheets/sheet2.xml"
+        else data,
+    )
+    with package_parts(path.read_bytes()) as parts:
+        assert re.search(rb'<c r="B2"[^>]*t="s"[^>]*><v>%d</v>' % count, parts["xl/worksheets/sheet2.xml"])
+    day = (datetime(2026, 9, 8) - WINDOWS_EPOCH) / timedelta(days=1)
+
+    narrowed, ranges = rows_dated_between(path.read_bytes(), {"ZLECENIA": 3}, day, day + 1)
+
+    with package_parts(narrowed) as parts:
+        assert parts["xl/sharedStrings.xml"] == table
+    assert ranges == {"ZLECENIA": range(2, 3)}
 
 
 STYLES_WITHOUT_BORDERS = (

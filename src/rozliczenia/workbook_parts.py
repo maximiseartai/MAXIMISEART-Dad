@@ -34,9 +34,8 @@ ma tam wartości: każda jego komórka w tych kolumnach jest pustym elementem
 
 ``rows_dated_between`` (zlecenia okresu z Rejestru zleceń) zostawia wiersz 1 z
 nagłówkami, z którego czytający rozpoznaje arkusze zleceń, i wiersze od pierwszego
-do ostatniego z liczbą z przedziału w kolumnie daty. Kolumnę daty do zawężenia
-czytający bierze z wiersza 1 czytanego bez openpyxl (``first_rows``), a sprawdza ją
-na wierszu 1 zawężonego skoroszytu w openpyxl. openpyxl daje datę tylko z liczby
+do ostatniego z liczbą z przedziału w kolumnie daty, którą podaje czytający
+(``date_columns``). openpyxl daje datę tylko z liczby
 w komórce bez typu albo z ``t="n"`` (ze stylem daty), więc wiersz, którego data
 leży w przedziale, ma w kolumnie daty liczbę z przedziału. Zakres od pierwszej do
 ostatniej takiej liczby zawiera więc każdy taki wiersz i wszystkie wiersze między
@@ -65,15 +64,14 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass
 from functools import cached_property, lru_cache
 from io import BytesIO
-from itertools import islice, pairwise
+from itertools import pairwise
 from types import MappingProxyType
-from typing import Any, Final, NamedTuple, NoReturn, cast
+from typing import Final, NoReturn
 from xml.etree import ElementTree
 from xml.parsers import expat
 
 from openpyxl.utils import get_column_letter
-from openpyxl.utils.cell import column_index_from_string, coordinate_to_tuple
-from openpyxl.workbook.properties import WorkbookProperties
+from openpyxl.utils.cell import column_index_from_string
 
 SPREADSHEET_NS: Final = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 MAIN: Final = f"{{{SPREADSHEET_NS}}}"
@@ -229,100 +227,6 @@ def active_sheet(parts: Mapping[str, bytes], workbook: str) -> ActiveSheet:
         return loaded[int(view.get("activeTab", "0")) if view is not None else 0]
     except (ValueError, IndexError):
         raise UnsupportedShape("aktywna karta") from None
-
-
-_HEAD_CHUNK: Final = 16 * 1024
-"""Porcja części czytana strumieniowo, taka jak w ``iterparse``, którym openpyxl parsuje arkusz."""
-
-
-class FirstRows(NamedTuple):
-    """Wiersz 1 każdego arkusza skoroszytu jako teksty komórek od kolumny A i system dat skoroszytu."""
-
-    date1904: bool
-    sheets: dict[str, list[str | None]]
-    """Nazwa arkusza z ``workbook.xml`` → teksty wiersza 1 w kolejności arkuszy; arkusz bez wiersza 1 ma pustą listę."""
-
-
-def first_rows(content: bytes) -> FirstRows:
-    """Wiersz 1 każdego arkusza skoroszytu ``content`` (.xlsx) i jego system dat, bez openpyxl.
-
-    Tekst ma tylko komórka bez formuły z tekstem wbudowanym, typu ``str`` albo z tekstem wspólnym o numerze z tabeli,
-    taki, jaki daje openpyxl; każda inna komórka to ``None``. Arkusz i teksty wspólne są rozpakowywane i parsowane
-    tylko do wiersza 1 i do ostatniego tekstu, do którego on sięga, a arkusz, którego części nie ma w zip, jest
-    pominięty. Uszkodzenie zgłaszają ``zipfile``, ``zlib``, brak części ``KeyError`` albo parser (``ParseError``).
-    """
-
-    with zipfile.ZipFile(BytesIO(content)) as archive:
-        parts = _ZipParts(archive)
-        workbook = office_document(parts) or ""
-        root = ElementTree.fromstring(parts[workbook])
-        properties = root.find(f"{MAIN}workbookPr")
-        settings = None if properties is None else cast(WorkbookProperties, WorkbookProperties.from_tree(cast(Any, properties)))
-        date1904 = settings is not None and bool(settings.date1904)
-        rels = relationships(parts, workbook)
-        strings = next((rel.target for rel in rels.values() if rel.kind.endswith("/sharedStrings")), None)
-        rows: dict[str, list[ElementTree.Element]] = {}
-        for sheet in root.iterfind(f"{MAIN}sheets/{MAIN}sheet"):
-            relationship = rels.get(sheet.get(f"{{{OFFICE_REL}}}id", ""))
-            if relationship is not None and relationship.target in parts:
-                row = next(_streamed(archive, relationship.target, f"{MAIN}row"), None)
-                header = [] if row is None or row.get("r", "1") != "1" else list(row.iterfind(f"{MAIN}c"))
-                rows[sheet.get("name", "")] = header
-        needed = [index for cells in rows.values() for cell in cells if (index := _shared_index(cell)) is not None]
-        shared = (
-            [_text(item).replace("x005F_", "") for item in islice(_streamed(archive, strings, f"{MAIN}si"), max(needed) + 1)]
-            if needed and strings is not None
-            else []
-        )
-    return FirstRows(date1904, {title: _row_texts(cells, shared) for title, cells in rows.items()})
-
-
-def _streamed(archive: zipfile.ZipFile, part: str, tag: str) -> Iterator[ElementTree.Element]:
-    """Elementy ``tag`` części ``part`` po kolei, z części rozpakowywanej porcjami dopiero, gdy czytający po nie sięga;
-    parser oddaje tylko zdarzenia ``end``."""
-
-    parser = ElementTree.XMLPullParser(("end",))
-    with archive.open(part) as stream:
-        while chunk := stream.read(_HEAD_CHUNK):
-            parser.feed(chunk)
-            ends = cast(Iterator[tuple[str, ElementTree.Element]], parser.read_events())
-            for _, element in ends:
-                if element.tag == tag:
-                    yield element
-
-
-def _value(cell: ElementTree.Element) -> str | None:
-    return cell.findtext(f"{MAIN}v") or None
-
-
-def _shared_index(cell: ElementTree.Element) -> int | None:
-    value = _value(cell)
-    return int(value) if cell.get("t") == "s" and value is not None and value.isdecimal() else None
-
-
-def _text(item: ElementTree.Element) -> str:
-    """Tekst ``<si>`` albo ``<is>`` bez formatowania i podpowiedzi wymowy, jak ``openpyxl.cell.text.Text.content``."""
-
-    blocks = (item.find(f"{MAIN}t"), *item.iterfind(f"{MAIN}r/{MAIN}t"))
-    return "".join(block.text or "" for block in blocks if block is not None)
-
-
-def _row_texts(cells: Sequence[ElementTree.Element], shared: Sequence[str]) -> list[str | None]:
-    texts: dict[int, str | None] = {}
-    column = 0
-    for cell in cells:
-        reference = cell.get("r")
-        column = coordinate_to_tuple(reference)[1] if reference else column + 1
-        kind, value, inline, index = cell.get("t", "n"), _value(cell), cell.find(f"{MAIN}is"), _shared_index(cell)
-        if cell.find(f"{MAIN}f") is not None:
-            texts[column] = None
-        elif kind == "inlineStr":
-            texts[column] = None if inline is None else _text(inline)
-        elif index is not None:
-            texts[column] = shared[index] if index < len(shared) else None
-        else:
-            texts[column] = value if kind == "str" else None
-    return [texts.get(number) for number in range(1, max(texts, default=0) + 1)]
 
 
 def style_list(xml: bytes, tag: bytes) -> re.Match[bytes]:
