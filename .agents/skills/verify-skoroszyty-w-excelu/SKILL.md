@@ -1,6 +1,6 @@
 ---
 name: verify-skoroszyty-w-excelu
-description: Verify in real Microsoft Excel for Mac (AppleScript) that the files of MAXIMISEART-Dad's processes open without a dialog, keep their external link, formulas, Wyróżnienia and Wygląd Wiersza danych, and that a Gotowość typed and saved in Excel reaches the Rozliczenia pracowników. Local only, because it needs this Mac's Excel. Use when `tools/skille_dla_zmiany.py` lists it, when its cleanup mutations are red, or when asked what Dad sees of a workbook in Excel.
+description: Verify in real Microsoft Excel for Mac (AppleScript) that the files of MAXIMISEART-Dad's processes open without a dialog, keep their external link, formulas, Wyróżnienia and Wygląd Wiersza danych, and that a Gotowość typed and saved in Excel reaches the Rozliczenia pracowników. Local only, because it needs this Mac's Excel. Use when `tools/skille_dla_zmiany.py` lists it, when Dad's Wzorce in `config/` change (outside git, so that tool cannot see it), when its cleanup mutations are red, or when asked what Dad sees of a workbook in Excel.
 pilnuje:
   - src/rozliczenia/collective_layout.py
   - src/rozliczenia/workbook_files.py
