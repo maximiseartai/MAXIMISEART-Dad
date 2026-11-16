@@ -33,6 +33,7 @@ from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 from tests.fixtures.bez_dostepu import without_reading
 
 from atrapy.intermax import NUMBER, Intermax, Order
+from atrapy.preparation import COMPLETED_WITHOUT_CODES
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp
 
@@ -75,7 +76,7 @@ def _raport_anny() -> AtrapaMail:
     message["To"] = SKRZYNKA
     message["Subject"] = "Raport 09.11.2026"
     message["Message-ID"] = "<1@przyklad.invalid>"
-    message.set_content("40000003 tak inst20m")
+    message.set_content(f"40000003 tak {COMPLETED_WITHOUT_CODES}")
     return AtrapaMail(1, datetime(2026, 11, 9, 19, 0).astimezone(), message.as_bytes())
 
 

@@ -122,7 +122,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
 )
 from tests.fixtures.potomne import wait_for
-from atrapy.preparation import INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
+from atrapy.preparation import COMPLETED_WITHOUT_CODES, INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
 from atrapy.settlement import PERIOD, write_quantity_source
 import sys
 
@@ -1898,10 +1898,10 @@ def test_klikniecie_z_okresem_zamknietym_i_pomylkami_wykonawcow_odtwarza_sie_zgo
     jan, anna = SENDERS["jan.testowy"], SENDERS["anna.kowalska"]
     centrum.moment.append(datetime(2026, 11, 11, 8))
     centrum.fake_inbox.outcome = [
-        report(jan, "Raport 09.11.2026", "40000001 tak inst20m", at=datetime(2026, 11, 10, 7)),
-        report(jan, "Raport 11.11.2026", "40000011 tak inst20m", at=datetime(2026, 11, 11, 7)),
-        report(anna, "Raport 10.11.2026", "40000011 tak spawpg", at=datetime(2026, 11, 11, 7, 1)),
-        report(jan, "Raport 10.11.2026", "40000013 tak spawpg", at=datetime(2026, 11, 11, 7, 2)),
+        report(jan, "Raport 09.11.2026", f"40000001 tak {COMPLETED_WITHOUT_CODES}", at=datetime(2026, 11, 10, 7)),
+        report(jan, "Raport 11.11.2026", f"40000011 tak {COMPLETED_WITHOUT_CODES}", at=datetime(2026, 11, 11, 7)),
+        report(anna, "Raport 10.11.2026", f"40000011 tak {COMPLETED_WITHOUT_CODES}", at=datetime(2026, 11, 11, 7, 1)),
+        report(jan, "Raport 10.11.2026", f"40000013 tak {COMPLETED_WITHOUT_CODES}", at=datetime(2026, 11, 11, 7, 2)),
         report(jan, "Raport 10.11.2026", "40000012 nie brak klienta", at=datetime(2026, 11, 11, 7, 3)),
     ]
     second = centrum.run_to_end()
@@ -2050,14 +2050,14 @@ def test_klikniecie_z_tak_i_nie_jednego_zlecenia_w_mailu_odtwarza_sie_zgodnie(
     assert (entering["changes"], code, lines[0]) == ([], 0, "ODTWORZENIE ZGODNE"), lines
 
 
-def _corrected_unreadable(tmp_path: Path, text: str = "40000001 tak inst20m") -> Produced:
+def _corrected_unreadable(tmp_path: Path, text: str = f"40000001 tak {COMPLETED_WITHOUT_CODES}") -> Produced:
     """Logi kliknięcia, w którym Jan przysłał Raport z tematem bez dnia i treścią ``text``, a potem Raport z dniem."""
 
     surroundings = Surroundings()
     jan = SENDERS["jan.testowy"]
     mails = [
         report(jan, "Raport", text, at=ENTERING_NOW - timedelta(minutes=5)),
-        report(jan, "Raport 09.11.2026", "40000001 tak inst20m"),
+        report(jan, "Raport 09.11.2026", f"40000001 tak {COMPLETED_WITHOUT_CODES}"),
     ]
     centrum = entering_centrum(tmp_path / "taty", MATCHED, mails, surroundings=surroundings)
     write_report_key(ToolDirectory(tmp_path / "taty"))
@@ -2073,7 +2073,7 @@ OLD_LOGS_LIMIT: Final = "- Logi sprzed numerów Wpisów maila z nieczytelnym tem
 @pytest.mark.parametrize(
     ("text", "numbers", "problems"),
     [
-        pytest.param("40000001 tak inst20m", ["40000001"], [], id="poprawiony"),
+        pytest.param(f"40000001 tak {COMPLETED_WITHOUT_CODES}", ["40000001"], [], id="poprawiony"),
         pytest.param("kurier jutro", [], ["unreadable_subject"], id="bez-wpisow"),
     ],
 )

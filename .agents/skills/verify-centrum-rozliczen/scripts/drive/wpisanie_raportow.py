@@ -10,6 +10,7 @@ from typing import Any
 
 from playwright.sync_api import Locator, Page, Route, ViewportSize, expect
 
+from atrapy.preparation import COMPLETED_WITHOUT_CODES
 from atrapy.workbooks import excel_lock
 from drive.common import (
     DAD_VIEWPORT,
@@ -53,7 +54,7 @@ TILES = {"wykonawca.a": "Bez raportu", "wykonawca.b": "Problem"}
 # ZREALIZOWANE and state. Dad's own `montaż ręcznie` stays, so 40000103 is a problem until `Zostaw moją`.
 ORDERS = {
     "wykonawca.a": [
-        ("40000101", "tak", "inst20m rt2", "entered"),
+        ("40000101", "tak", COMPLETED_WITHOUT_CODES, "entered"),
         ("40000102", None, None, "without_report"),
     ],
     "wykonawca.b": [("40000103", "tak", "montaż ręcznie", "problem")],
@@ -63,7 +64,7 @@ KEPT = {
     "day": DAY,
     "worker": "wykonawca.b",
     "column": "CZYNNOŚCI ZREALIZOWANE",
-    "reported": "spawpg",
+    "reported": COMPLETED_WITHOUT_CODES,
 }
 NARROW: ViewportSize = {"width": 390, "height": 844}
 # „Przypisz do Wykonawcy…” gives the stranger's address to Wykonawca D of the fixture: he has no orders and no Raport
@@ -314,7 +315,7 @@ def _order(number: str, state: str) -> Json:
     return {
         "number": number,
         "successful": "tak" if entered else None,
-        "activities": "inst20m rt2" if entered else None,
+        "activities": COMPLETED_WITHOUT_CODES if entered else None,
         "state": state,
     }
 
@@ -807,7 +808,7 @@ def drive(run: Run, page: Page) -> None:
     expect(orders.get_by_role("listitem")).to_have_count(2)
     expect(orders.get_by_role("listitem").nth(0)).to_contain_text("40000101")
     expect(orders.get_by_role("listitem").nth(0)).to_contain_text("tak")
-    expect(orders.get_by_role("listitem").nth(0)).to_contain_text("inst20m rt2")
+    expect(orders.get_by_role("listitem").nth(0)).to_contain_text(COMPLETED_WITHOUT_CODES)
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("40000102")
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("Brak Wpisu w raporcie")
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("Bez raportu")

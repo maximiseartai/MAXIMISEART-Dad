@@ -82,7 +82,7 @@ from rozliczenia.worker_reports import (
 from rozliczenia.worker_reports.reasons import reason
 
 from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order
-from atrapy.preparation import PERIOD, incomplete_period_rows
+from atrapy.preparation import COMPLETED_WITHOUT_CODES, PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
@@ -2962,7 +2962,7 @@ def _report_in_inbox(uid: int, sender: str, subject: str, at: datetime) -> Atrap
     message["To"] = SKRZYNKA
     message["Subject"] = subject
     message["Message-ID"] = f"<{uid}@przyklad.invalid>"
-    message.set_content("40000002 tak spawpg")
+    message.set_content(f"40000002 tak {COMPLETED_WITHOUT_CODES}")
     return AtrapaMail(uid, at.astimezone(), bytes(message))
 
 
