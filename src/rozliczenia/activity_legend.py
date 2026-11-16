@@ -157,15 +157,17 @@ class ActivityLegend:
     def read(self, text: str) -> CodesRead:
         """Wynik legendy dla tekstu; woła go ``read_codes``."""
 
-        rest = list(text.casefold())
+        rest = text.casefold()
         hits: list[tuple[int, FoundCode, ActivityCode, str | None]] = []
         for pattern in self._patterns:
-            for match in pattern.regex.finditer("".join(rest)):
+            if pattern.spelling[0] not in rest:
+                continue
+            matches = list(pattern.regex.finditer(rest))
+            for match in matches:
                 number = None if match.lastindex is None else int(match[1])
-                column = _column(pattern.code.column, number)
-                found = FoundCode(pattern.code.id, pattern.spelling, number)
-                hits.append((match.start(), found, pattern.code, column))
-                rest[match.start() : match.end()] = _CONSUMED * (match.end() - match.start())
+                hits.append((match.start(), FoundCode(pattern.code.id, pattern.spelling, number), pattern.code, _column(pattern.code.column, number)))
+            if matches:
+                rest = pattern.regex.sub(lambda match: _CONSUMED * len(match[0]), rest)
         if not hits:
             return NOTHING_READ
         hits.sort(key=lambda hit: hit[0])
@@ -180,7 +182,7 @@ class ActivityLegend:
             amount += code.amount or 0
             for fill in code.fills:
                 fills.setdefault(fill.column, fill.colour)
-        words = _WORD.findall("".join(rest))
+        words = _WORD.findall(rest)
         return CodesRead(
             found=tuple(found for found, _, _ in acting),
             quantities=MappingProxyType({column: quantities[column] for column in QUANTITY_LETTERS if quantities[column]}),
@@ -251,11 +253,13 @@ def _outside(code: ActivityCode, column: str | None) -> bool:
 
 def _regex(spelling: str) -> re.Pattern[str]:
     """Wzorzec zapisu: znaki zapisu ze spacjami między nimi, ``{n}`` jako liczba, bez litery ani cyfry przed zapisem, a
-    po zapisie kończącym się cyfrą bez cyfry."""
+    po zapisie kończącym się cyfrą bez cyfry. Warunek „bez litery ani cyfry przed” stoi za pierwszą literą, bo wzorzec
+    zaczynający się od litery szuka jej w tekście szybciej niż od warunku."""
 
     atoms = [r"([0-9]+)" if part == NUMBER else re.escape(part) for part in re.split(r"(\{n\})|", spelling) if part]
+    first = atoms[0]
     tail = r"(?![0-9])" if spelling[-1].isdigit() else ""
-    return re.compile(r"(?<![^\W_])" + r"\s*".join(atoms) + tail)
+    return re.compile(first + rf"(?<![^\W_]{first})" + "".join(r"\s*" + atom for atom in atoms[1:]) + tail)
 
 
 def _require(holds: bool, path: str, message: str) -> None:
