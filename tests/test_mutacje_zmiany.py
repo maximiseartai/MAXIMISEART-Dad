@@ -21,7 +21,7 @@ from tests.fixtures.brama_typow import FAKE_GATE, TYPE_GATE_ON_SRC, real_static_
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 
 from jednostka import Czesc
-from mutacje_zmiany import Hunk, Revert, ZakresMutacji, exceptions, fingerprint, mutants, selected
+from mutacje_zmiany import Coverage, Hunk, Revert, ZakresMutacji, exceptions, fingerprint, mutants, selected
 import niestabilne_testy
 import pokrycie_procesu
 
@@ -857,6 +857,88 @@ def test_mutacje_tabeli_modulu_wykrywa_test_funkcji_pliku_ktora_ja_czyta_przed_t
     assert [line.endswith(" (testy kodu pliku)") for line in found] == [True], done.stdout
 
 
+# Test, który przy mutacji dopisuje swoją nazwę do ``wykrywa.txt`` obok logu narzędzia i pada; ``-x`` kończy polecenie
+# mutacji na pierwszym takim teście, więc plik mówi, który z testów biegł pierwszy.
+KILLER = (
+    "import os\nfrom pathlib import Path\nimport time\n\nimport rozliczenia.warunek as warunek\n\n\n"
+    "def test_{name}() -> None:\n"
+    "    time.sleep({sleep})\n"
+    "    if not ({check}):\n"
+    "        with (Path(os.environ['LOG_NARZEDZIA']).parent / 'wykrywa.txt').open('a', encoding='utf-8') as found:\n"
+    "            found.write('{name}\\n')\n"
+    "    assert {check}\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("changed", "base", "check"),
+    [
+        (CHANGED, BASE, "(warunek.oba(True, False), warunek.oba(False, True), warunek.oba(True, True)) == (False, False, True)"),
+        ("WARTOSC = 2\n", "WARTOSC = 1\n", "warunek.WARTOSC == 2"),
+    ],
+    ids=["testy-linii", "pliki-testow-stalej-modulu"],
+)
+def test_mutacje_wykrywa_najpierw_szybki_test_a_wolny_ktory_tez_ja_wykrywa_nie_biegnie(
+    tmp_path: Path, changed: str, base: str, check: str
+) -> None:
+    # Testy mutacji biegły po nazwie, a z ``-x`` mutację wykrytą przez kilka testów kończył pierwszy z nich: w nocy
+    # 154 mutacje dziennie czekały w pierwszym przebiegu na ~200 testów (~207 s). Wolny test ma nazwę przed szybkim.
+    # Stałą modułu wykonuje import, nie test, więc jej cofnięcie biegnie od razu z plikami testów pliku.
+    repo = _repo(tmp_path / "repo", KILLER.format(name="wolny", sleep=0.5, check=check), changed, base)
+    (repo / "tests" / "test_z_szybki.py").write_text(KILLER.format(name="szybki", sleep=0, check=check), encoding="utf-8")
+    commit(repo, "szybki test")
+
+    done = _run(repo, log=tmp_path / "log.txt")
+
+    assert done.returncode == 0, (tmp_path / "log.txt").read_text(encoding="utf-8") + done.stderr
+    assert (tmp_path / "wykrywa.txt").read_text(encoding="utf-8").splitlines() == ["szybki"]
+
+
+def test_mutacje_wykrywa_najpierw_test_szybki_w_ponowieniu_pokrycia_choc_w_pierwszym_przebiegu_byl_wolny(tmp_path: Path) -> None:
+    # Flaky test w pierwszym przebiegu pokrycia czeka sekundę i pada, a w ponowieniu przechodzi od razu. Liczy się czas
+    # z ponowienia, więc biegnie przed stałym testem (0,3 s), choć jego plik ma nazwę po pliku stałego testu.
+    check = "warunek.oba(True, False) is False"
+    counter = tmp_path / "przebiegi"
+    first_run_slow = (
+        f"    licznik = Path({str(counter)!r})\n    przebieg = int(licznik.read_text()) if licznik.exists() else 0\n"
+        "    licznik.write_text(str(przebieg + 1))\n    time.sleep(0 if przebieg else 1)\n    assert przebieg\n"
+    )
+    repo = _repo(tmp_path / "repo", KILLER.format(name="staly", sleep=0.3, check=check))
+    flaky = KILLER.format(name="niestabilny", sleep=0, check=check).replace("    time.sleep(0)\n", first_run_slow)
+    (repo / "tests" / "test_z_niestabilny.py").write_text(flaky, encoding="utf-8")
+    commit(repo, "flaky test")
+
+    done = _run(repo, log=tmp_path / "log.txt")
+
+    assert done.returncode == 0, (tmp_path / "log.txt").read_text(encoding="utf-8") + done.stderr
+    assert (tmp_path / "wykrywa.txt").read_text(encoding="utf-8").splitlines() == ["niestabilny"]
+
+
+@pytest.mark.parametrize(
+    ("tests", "order"),
+    [
+        (
+            ["tests/test_a.py::test_1", "tests/test_a.py::test_2", "tests/test_a.py::test_3", "tests/test_b.py::test_1", "tests/test_b.py::test_2", "tests/test_c.py::test_1"],
+            ["tests/test_b.py::test_2", "tests/test_b.py::test_1", "tests/test_a.py::test_2", "tests/test_a.py::test_1", "tests/test_a.py::test_3", "tests/test_c.py::test_1"],
+        ),
+        (
+            ["tests/test_a.py::test_2", "tests/test_b.py::test_1", "tests/test_b.py::test_2"],
+            ["tests/test_a.py::test_2", "tests/test_b.py::test_2", "tests/test_b.py::test_1"],
+        ),
+        (["tests/test_a.py", "tests/test_b.py", "tests/test_c.py"], ["tests/test_b.py", "tests/test_a.py", "tests/test_c.py"]),
+    ],
+    ids=["testy-plikow", "czesc-testow-pliku", "pliki"],
+)
+def test_testy_mutacji_biegna_plikami_od_najkrotszej_sumy_a_test_i_plik_bez_czasu_z_junit_po_testach_z_czasem(
+    tests: list[str], order: list[str]
+) -> None:
+    # Testy pliku biegną razem, bo fixture modułu startuje przy każdym powrocie do niego: Chromium testów efenix
+    # startował 57 razy zamiast 3 przy testach od najkrótszego bez względu na plik.
+    seconds = {"tests/test_a.py::test_1": 3.0, "tests/test_a.py::test_2": 0.1, "tests/test_b.py::test_1": 2.0, "tests/test_b.py::test_2": 0.5}
+
+    assert Coverage(seconds=seconds).fastest_first(tests) == order
+
+
 def test_cofniecie_przywraca_usunieta_linie_zaczynajaca_sie_od_dwoch_minusow(tmp_path: Path) -> None:
     base = 'TEKST = """\n-- stare\n"""\n'
     tests = "from rozliczenia.warunek import TEKST\n\n\ndef test_tekst() -> None:\n    assert '-- stare' not in TEKST\n"
@@ -1135,8 +1217,13 @@ def test_galaz_innego_systemu_jest_pominieta_a_nie_niewykryta(tmp_path: Path) ->
     assert done.stdout.splitlines()[-1].endswith("innego systemu=1")
 
 
-def test_testy_ktore_padaja_bez_mutacji_koncza_sie_bez_werdyktu_mutacji(tmp_path: Path) -> None:
-    done = _run(_repo(tmp_path, ONE_CASE.replace("is True", "is False")))
+@pytest.mark.parametrize(
+    ("test", "conftest"),
+    [(ONE_CASE.replace("is True", "is False"), ""), (ONE_CASE, "import os\n\n\ndef pytest_sessionstart(session: object) -> None:\n    os._exit(3)\n")],
+    ids=["test-pada", "pytest-konczy-sie-przed-zapisem-junit"],
+)
+def test_testy_ktore_padaja_bez_mutacji_koncza_sie_bez_werdyktu_mutacji(tmp_path: Path, test: str, conftest: str) -> None:
+    done = _run(_repo(tmp_path, test, conftest=conftest))
 
     assert done.returncode == 2, done.stdout + done.stderr
     assert "NIEWYKRYTA" not in done.stdout and "WYKRYTA" not in done.stdout
