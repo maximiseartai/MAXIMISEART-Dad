@@ -2,7 +2,7 @@
 
 Wpis kwarantanny ma numer issue ``Flaky test: <test>`` i ostatni dzień kwarantanny, najwyżej 7 dni od dziś, i nie wygasł,
 a jego test istnieje. Maks zgodził się 26.10 z góry na każdy taki wpis (ADR 0020, decyzja Q15), więc wpis nie
-potrzebuje osobnej zgody z ``AGENTS.md``, jakiej wymaga wyjątek z terminem. Wpis bez issue, z dłuższym terminem,
+potrzebuje osobnej zgody, jakiej wymaga wyjątek tymczasowy (``CODING_STANDARDS.md``). Wpis bez issue, z dłuższym terminem,
 wygasły albo bez testu czerwieni ten test, a z nim ``Required CI status`` każdego PR, bo test biegnie przy każdym
 ``tools/szybko.py`` i w każdej bramce PR.
 
