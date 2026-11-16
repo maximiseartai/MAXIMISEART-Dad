@@ -18,6 +18,7 @@ SECTIONS = (
     "Foldery",
     "Wykonawcy",
     "Przypomnienia",
+    "Wysyłka rozliczeń",
     "Reguły ilości",
     "Urządzenia",
     "Legenda czynności",

@@ -135,6 +135,7 @@ class File(Enum):
     AUTOSTART_SHORTCUT = "skrot-autostartu/Centrum rozliczeń.lnk"  # Centrum's shortcut in the Autostart folder; the drive may remove it
     EFENIX_ADDRESS = f"{_EFENIX}/adres.txt"  # the address of the Atrapa efenix
     SERVER = "server.json"  # the pid and port of the served Centrum
+    SENT_MAILS = "skrzynka-raportow/wyslane"  # a folder: each mail the atrapa SMTP took, as <number>.eml
     # The fixture writes this, both sides read it.
     FIXTURE = "fixture.json"  # the run's inputs and the values the drive expects (create_centrum_fixture.py)
 

@@ -161,6 +161,17 @@ FEATURES = (
             "413-wykonawcy-rejestr-nieczytelny",
         ),
     ),
+    # Sends the settled period's Rozliczenia pracowników through the atrapa SMTP, so it runs before any feature that counts
+    # „Wysłane”; it leaves the access file of the skrzynka raportów as it found it and saves its own subject.
+    Feature(
+        "wysylka-rozliczen",
+        (
+            "500-wysylka-przed",
+            "501-wysylka-potwierdzenie",
+            "502-wysylka-po",
+            "503-wysylka-ustawienia",
+        ),
+    ),
     # Moves the run's tool clone right after Konfiguracja shows it.
     Feature(
         "aktualizacja",

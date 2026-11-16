@@ -522,7 +522,8 @@ class AtrapaSmtp:
 
     Przyjmuje ``AUTH PLAIN`` z adresem i hasłem ``imap`` (inne hasło: ``535``, jak Gmail) i kładzie każdy przyjęty mail
     w „Wysłanych” ``imap`` z chwilą z nagłówka ``Date``. ``cut="greeting"`` zrywa połączenie przed powitaniem, jak
-    sieć, która zgubiła Gmaila, a ``refuse="recipients"`` odmawia każdego adresata (``550``).
+    sieć, która zgubiła Gmaila, a ``refuse="recipients"`` odmawia każdego adresata (``550``). Z ``saved`` każdy przyjęty
+    mail leży też jako ``<numer>.eml`` w tym folderze, dla procesu, który nie widzi ``received`` (napęd skilla).
     """
 
     def __init__(
@@ -531,8 +532,10 @@ class AtrapaSmtp:
         *,
         cut: Literal["greeting"] | None = None,
         refuse: Literal["recipients"] | None = None,
+        saved: Path | None = None,
     ) -> None:
         self.imap = imap
+        self.saved = saved
         self.cut = cut
         self.refuse = refuse
         self.commands: list[str] = []
@@ -619,6 +622,9 @@ class _SmtpSession(socketserver.StreamRequestHandler):
         raw = b"".join(lines)
         atrapa = self.server.atrapa
         atrapa.received.append((raw, recipients))
+        if atrapa.saved is not None:
+            atrapa.saved.mkdir(parents=True, exist_ok=True)
+            (atrapa.saved / f"{len(atrapa.received):03d}.eml").write_bytes(raw)
         message = email.message_from_bytes(raw, policy=email.policy.default)
         imap = atrapa.imap
         uid = 1 + max((mail.uid for mail in (*imap.mails, *imap.sent)), default=1000)

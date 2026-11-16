@@ -55,6 +55,7 @@ PAGES = {
     "okresy": "Okresy",
     "uruchomienia": "Uruchomienia",
     "raporty": "Raporty",
+    "wysylka": "Wysyłka rozliczeń",
     "metryki": "Metryki",
 }
 # Dad's computer runs on Polish time; dates in Centrum are shown in the browser's time zone.
