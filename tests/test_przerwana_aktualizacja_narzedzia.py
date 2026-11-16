@@ -36,8 +36,8 @@ SAMPLE_MAPPING = "schema_version: 1\nworkers:\n  przyklad: Przykładowy Wykonawc
 GITIGNORE = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
 MAPPING = "config/worker_mapping.yaml"
 STACKS_AFTER_S = 45.0
-"""Po tylu sekundach od startu skrót i każdy proces Pythona, który on uruchomi, wypisuje do swojej konsoli stosy swoich
-wątków: przed końcem 60 s ``centrum_health``, więc konsola skrótu w nocie porażki mówi, gdzie stał każdy z nich."""
+"""Po tylu sekundach od startu skrót i każdy proces Pythona, który on uruchomi, zapisuje stosy swoich wątków: przed
+końcem 60 s ``centrum_health``, więc nota porażki mówi, gdzie stał każdy z nich."""
 
 
 def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
@@ -53,12 +53,13 @@ def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
 def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterator[subprocess.Popen[str]]:
     """Tata klika skrót: ``run_centrum.py`` z klonu; po bloku Centrum zamyka się razem z każdym procesem potomnym.
     ``browser``: program podstawiony jako przeglądarka (zmienna ``BROWSER``). Gdy blok rzuci, wyjątek dostaje notę
-    ``_shortcut_when_failed`` ze stosami z ``STACKS_AFTER_S``."""
+    ``_shortcut_when_failed``."""
 
+    stacks = clone.parent / "stosy-skrotu"
     process = subprocess.Popen(
         [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
         cwd=clone,
-        env=_environment(browser) | _stacks_later(clone.parent / "stosy-skrotu"),
+        env=_environment(browser) | _stacks_later(stacks),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -70,18 +71,22 @@ def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterato
         yield process
     except BaseException as failure:
         alive, journal = process.poll() is None, (config_dir(clone) / tool_update.JOURNAL).exists()
-        failure.add_note(_shortcut_when_failed(clone, alive=alive, journal=journal, console=_stopped(process)))
+        console = _stopped(process)
+        failure.add_note(_shortcut_when_failed(clone, stacks, alive=alive, journal=journal, console=console))
         raise
     _stopped(process)
 
 
 def _stacks_later(directory: Path) -> dict[str, str]:
-    """Środowisko, w którym każdy proces Pythona po ``STACKS_AFTER_S`` od startu wypisuje stosy swoich wątków na stderr:
-    ``sitecustomize`` z ``directory`` na początku ``PYTHONPATH``; zwykły przebieg zamyka skrót wcześniej."""
+    """Środowisko, w którym każdy proces Pythona po ``STACKS_AFTER_S`` od startu zapisuje stosy swoich wątków do pliku
+    ``stosy-<pid>.txt`` w ``directory``: ``sitecustomize`` z ``directory`` na początku ``PYTHONPATH``. Plik, nie konsola,
+    bo konsoli skrótu nikt nie czyta do końca bloku, a pełna rura zatrzymałaby Centrum na jego własnym wypisie."""
 
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "sitecustomize.py").write_text(
-        f"import faulthandler, sys\nfaulthandler.dump_traceback_later({STACKS_AFTER_S}, file=sys.stderr)\n",
+        "import faulthandler, os\n"
+        f"_stacks = open(os.path.join({str(directory)!r}, f'stosy-{{os.getpid()}}.txt'), 'w', encoding='utf-8')\n"
+        f"faulthandler.dump_traceback_later({STACKS_AFTER_S}, file=_stacks)\n",
         encoding="utf-8",
     )
     return {"PYTHONPATH": os.pathsep.join([str(directory), *filter(None, [os.environ.get("PYTHONPATH")])])}
@@ -98,9 +103,10 @@ def _stopped(process: subprocess.Popen[str]) -> str:
     return console
 
 
-def _shortcut_when_failed(clone: Path, *, alive: bool, journal: bool, console: str) -> str:
+def _shortcut_when_failed(clone: Path, stacks: Path, *, alive: bool, journal: bool, console: str) -> str:
     """Gdzie był skrót, gdy test padł: czy żył, czy skończył cofanie (dziennik „Aktualizacja w toku” znika po nim), jego
-    konsola i koniec dziennika Centrum klonu, do którego piszą skrót i Centrum, które on uruchomił."""
+    konsola, stosy każdego jego procesu Pythona, który żył ``STACKS_AFTER_S``, i koniec dziennika Centrum klonu, do
+    którego piszą skrót i Centrum, które on uruchomił."""
 
     centrum_log = log_path(clone)
     log_tail = centrum_log.read_text(encoding="utf-8", errors="replace").splitlines()[-30:] if centrum_log.exists() else []
@@ -110,6 +116,11 @@ def _shortcut_when_failed(clone: Path, *, alive: bool, journal: bool, console: s
             f"Dziennik „Aktualizacja w toku” klonu: {'jeszcze jest' if journal else 'nie ma go'}.",
             "Konsola skrótu:",
             console.rstrip() or "(pusta)",
+            *(
+                f"Stosy procesu {dump.stem.removeprefix('stosy-')} po {STACKS_AFTER_S:.0f} s:\n{text.rstrip()}"
+                for dump in sorted(stacks.glob("stosy-*.txt"))
+                if (text := dump.read_text(encoding="utf-8", errors="replace"))
+            ),
             "Koniec dziennika Centrum klonu:",
             *(log_tail or ["(brak dziennika)"]),
         ]
