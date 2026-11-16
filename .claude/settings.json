@@ -45,7 +45,7 @@
     ],
     "PostToolUse": [
       {
-        "matcher": "mcp__t3-code__(delegate_task|create_threads|t3_thread_launch)",
+        "matcher": "mcp__t3-code__delegate_task",
         "hooks": [
           {
             "type": "command",

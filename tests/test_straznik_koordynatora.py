@@ -1,10 +1,12 @@
-"""Hook ``tools/hooks/straznik_koordynatora.py``: wątek T3, który zlecił pracę innym wątkom, dostaje strażnika bez prośby.
+"""Hook ``tools/hooks/straznik_koordynatora.py``: wątek T3, który zlecił pracę delegatowi, dostaje strażnika bez prośby.
 
 Koordynator zleca pracę delegatowi i kończy turę; nikt nie stawia strażnika, a delegat staje albo T3 nie budzi
 koordynatora po jego końcu. Oczekiwania biorą się z docstringu hooka. Testy procesu uruchamiają hook tak, jak Claude
 Code w T3: JSON wejścia ``PostToolUse`` na stdin i środowisko T3 (``T3CODE_THREAD_ID``, ``T3CODE_CLI_PATH``), z atrapą
-programu ``t3``, która trzyma stan wątków w pliku obok siebie. Identyfikatory wątków są wymyślone, a kształt odpowiedzi
-narzędzia ``delegate_task`` (tekst JSON w liście treści) to kształt z zapisu sesji T3.
+programu ``t3``, która trzyma stan wątków w pliku obok siebie i jak prawdziwe ``t3`` kończy się kodem 1 na wątku, którego
+nie zna (usunięty albo z innego środowiska). Identyfikatory wątków są wymyślone, a kształt odpowiedzi ``delegate_task``
+(tekst JSON w liście treści, ``childThreadId`` null i ``remoteChild`` przy dziecku na innym środowisku) to kształt z
+zapisu sesji T3.
 """
 
 from __future__ import annotations
@@ -52,11 +54,30 @@ def _delegated(*children: str) -> dict[str, object]:
     return {"content": [{"type": "text", "text": json.dumps(item)} for item in body]}
 
 
+REMOTE = {
+    "content": [
+        {
+            "type": "text",
+            "text": json.dumps(
+                {
+                    "taskId": "node:zdalne",
+                    "childThreadId": None,
+                    "remoteChild": {"environmentId": "srodowisko-wymyslone", "threadId": "mcp:launch:zdalne"},
+                    "status": "running",
+                }
+            ),
+        }
+    ]
+}
+# Odpowiedź z polem childThreadId, żeby test sprawdzał samo pominięcie narzędzia, nie kształt jego odpowiedzi.
+LAUNCHED = {"content": [{"type": "text", "text": json.dumps({"threadId": "mcp:przekazany", "childThreadId": "mcp:przekazany"})}]}
+
+
 def test_dzieci_z_odpowiedzi_delegate_task_w_tekscie_json_listy_tresci() -> None:
     response = _delegated(CHILD, "thread:delegated-task:dziecko-wymyslone-2", CHILD)
 
     assert straznik.children_in(response) == [CHILD, "thread:delegated-task:dziecko-wymyslone-2"]
-    assert straznik.children_in({"threadId": "mcp:watek-wymyslony", "link": "x"}) == ["mcp:watek-wymyslony"]
+    assert straznik.children_in(REMOTE) == []
     assert straznik.children_in("nie JSON") == []
 
 
@@ -121,7 +142,7 @@ def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_pote
     later = {CHILD: Seen("completed", 10 * MIN)}
 
     assert straznik.decide(Seen("completed", 39 * MIN), later, 60 * MIN, memory) == []
-    assert straznik.settled(Seen("completed", 39 * MIN), later, 60 * MIN, memory)
+    assert not straznik.pending(Seen("completed", 39 * MIN), later, 60 * MIN, memory)
 
 
 def test_strażnik_ze_startu_sesji_budzi_przy_dziecku_skonczonym_po_ostatnim_ruchu_koordynatora() -> None:
@@ -164,7 +185,7 @@ def test_strażnik_konczy_sie_dopiero_gdy_nic_nie_trwa_i_koordynator_ruszyl_po_k
         child = {CHILD: Seen(status, child_min * MIN)}
         straznik.decide(Seen("completed", 30 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
         straznik.decide(Seen("completed", parent_min * MIN), child, 10 * MIN, memory)
-        return bool(straznik.settled(Seen("completed", parent_min * MIN), child, 10 * MIN, memory))
+        return not straznik.pending(Seen("completed", parent_min * MIN), child, 10 * MIN, memory)
 
     assert after(1, "completed", 2)
     assert not after(3, "completed", 2)
@@ -172,12 +193,58 @@ def test_strażnik_konczy_sie_dopiero_gdy_nic_nie_trwa_i_koordynator_ruszyl_po_k
     assert not after(1, "preparing", 0)
 
 
-def test_ustawienia_wpinaja_hook_po_kazdym_narzedziu_zlecajacym_prace_i_na_starcie_sesji() -> None:
+def test_po_budzeniu_bez_odpowiedzi_strażnik_nie_ma_juz_czego_pilnowac() -> None:
+    memory = straznik.Memory()
+    straznik.decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    straznik.decide(Seen("completed", 22 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
+    done = {CHILD: Seen("completed", 16 * MIN)}
+    assert straznik.pending(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
+
+    assert straznik.decide(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
+    assert not straznik.pending(Seen("completed", 37 * MIN), done, 35 * MIN, memory)
+
+
+def test_dziecko_ktorego_t3_nie_pokazuje_przestaje_sie_liczyc_po_limicie() -> None:
+    # Dziecko usunięte w trakcie albo środowisko odłączone: t3 thread show kończy się kodem 1.
+    memory = straznik.Memory()
+    parent = Seen("completed", 5 * MIN)
+    straznik.decide(parent, {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    straznik.decide(parent, {CHILD: None}, 10 * MIN, memory)
+
+    assert straznik.pending(parent, {CHILD: None}, 10 * MIN + straznik.LOST_S, memory)
+    assert not straznik.pending(parent, {CHILD: None}, 10 * MIN + straznik.LOST_S + 1, memory)
+
+
+def test_dziecko_chwilowo_niewidoczne_ktore_wraca_dalej_jest_pilnowane() -> None:
+    memory = straznik.Memory()
+    straznik.decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    assert straznik.decide(Seen("completed", 12 * MIN), {CHILD: None}, 10 * MIN, memory) == []
+
+    (reason,) = straznik.decide(Seen("completed", 52 * MIN), {CHILD: Seen("running", 46 * MIN)}, 50 * MIN, memory)
+
+    assert "bez ruchu od 46 min" in reason
+
+
+def test_cisza_wszystkiego_co_widac_konczy_strażnika_bez_wzgledu_na_odpowiedzi_t3() -> None:
+    memory = straznik.Memory()
+    stuck = {CHILD: Seen("running", 50 * MIN)}
+    straznik.decide(Seen("completed", 55 * MIN), stuck, 0.0, memory)
+    straznik.observe(None, {}, straznik.QUIET_S, memory)
+    assert not straznik.quiet(straznik.QUIET_S, memory)
+
+    # Ruch dziecka w połowie ciszy przesuwa jej początek.
+    straznik.decide(Seen("completed", 55 * MIN + straznik.QUIET_S / 2), {CHILD: Seen("running", 0)}, straznik.QUIET_S / 2, memory)
+    straznik.observe(None, {}, straznik.QUIET_S + 1, memory)
+    assert not straznik.quiet(straznik.QUIET_S + 1, memory)
+    assert straznik.quiet(straznik.QUIET_S * 1.5 + 1, memory)
+
+
+def test_ustawienia_wpinaja_hook_po_delegate_task_i_na_starcie_sesji() -> None:
     hooks = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]
     (after,) = hooks["PostToolUse"]
     (start,) = hooks["SessionStart"]
 
-    assert after["matcher"] == "mcp__t3-code__(" + "|".join(name.split("__")[-1] for name in straznik.DELEGATING) + ")"
+    assert after["matcher"] == straznik.DELEGATE
     for entry in (after, start):
         (command,) = entry["hooks"]
         assert command["command"].endswith('python3 "$CLAUDE_PROJECT_DIR/tools/hooks/straznik_koordynatora.py"')
@@ -192,6 +259,8 @@ state_file = Path(__file__).with_name("watki.json")
 state = json.loads(state_file.read_text(encoding="utf-8"))
 moment = datetime.now(timezone.utc)
 now = moment.isoformat().replace("+00:00", "Z")
+if sys.argv[1:3] == ["thread", "show"] and sys.argv[3] not in state:
+    sys.exit(f"Thread {sys.argv[3]} is no longer available. Thread ids belong to one environment.")
 if sys.argv[1:3] == ["thread", "show"]:
     thread = state[sys.argv[3]]
     print(json.dumps({"thread": {"threadId": sys.argv[3], **thread}, "messages": []}))
@@ -256,7 +325,7 @@ def test_koordynator_ktory_zlecil_prace_i_skonczyl_ture_bez_strażnika_dostaje_g
     t3: tuple[Path, dict[str, str]],
 ) -> None:
     folder, env = t3
-    event = {"hook_event_name": "PostToolUse", "tool_name": straznik.DELEGATING[0], "tool_response": _delegated(CHILD)}
+    event = {"hook_event_name": "PostToolUse", "tool_name": straznik.DELEGATE, "tool_response": _delegated(CHILD)}
 
     first, second = _hook(env, event), _hook(env, event)
 
@@ -267,23 +336,47 @@ def test_koordynator_ktory_zlecil_prace_i_skonczyl_ture_bez_strażnika_dostaje_g
     assert sent.startswith(f"{PARENT} {straznik.NUDGE} dziecko {CHILD} (running) bez ruchu od 50 min")
     events = [row["zdarzenie"] for row in _rows(home)]
     assert events.count("start") == 1 and events.count("budzenie") == 1
+    # Stan wątku znika z końcem strażnika, więc wznowiona sesja nie stawia go znów na stare dzieci.
+    assert list((home / straznik.STATE).glob("*.dzieci")) == []
+    assert _hook(env, {"hook_event_name": "SessionStart", "source": "resume"}).returncode == 0
+    assert [row["zdarzenie"] for row in _rows(home)].count("start") == 1
 
 
 @POSIX_ONLY
-def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(t3: tuple[Path, dict[str, str]]) -> None:
-    # Restart T3 zabija strażnika, a T3 wznawia sesję koordynatora; dziecko z tamtej tury znów stoi.
+def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(
+    t3: tuple[Path, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Restart Maca zabił strażnika, zanim skończył; zostawił stan wątku, a T3 wznawia sesję koordynatora.
     folder, env = t3
-    home = Path(env["HOME"])
-    state = (folder / "bin" / "watki.json").read_text(encoding="utf-8")
-    event = {"hook_event_name": "PostToolUse", "tool_name": straznik.DELEGATING[1], "tool_response": _delegated(CHILD)}
-    assert _hook(env, event).returncode == 0
-    assert wait_for(lambda: any(row.get("zdarzenie") == "koniec" for row in _rows(home)), 30)
-    (folder / "bin" / "watki.json").write_text(state, encoding="utf-8")
+    monkeypatch.setenv("HOME", env["HOME"])
+    kids, _, _ = straznik._files(PARENT)
+    kids.parent.mkdir(parents=True)
+    kids.write_text(f"{CHILD}\n", encoding="utf-8")
 
     assert _hook(env, {"hook_event_name": "SessionStart", "source": "resume"}).returncode == 0
 
-    assert wait_for(lambda: [row.get("zdarzenie") for row in _rows(home)].count("koniec") == 2, 30)
-    assert len((folder / "bin" / "wyslane.txt").read_text(encoding="utf-8").splitlines()) == 2
+    assert wait_for(lambda: any(row.get("zdarzenie") == "koniec" for row in _rows(Path(env["HOME"]))), 30)
+    assert len((folder / "bin" / "wyslane.txt").read_text(encoding="utf-8").splitlines()) == 1
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    ("tool", "response"),
+    [
+        ("mcp__t3-code__t3_thread_launch", LAUNCHED),
+        ("mcp__t3-code__create_threads", LAUNCHED),
+        ("mcp__t3-code__delegate_task", REMOTE),
+    ],
+    ids=["watek-najwyzszego-poziomu", "watki-najwyzszego-poziomu", "dziecko-na-innym-srodowisku"],
+)
+def test_przekazanie_bez_budzenia_przez_t3_i_dziecko_spoza_srodowiska_nie_stawiaja_strażnika(
+    t3: tuple[Path, dict[str, str]], tool: str, response: dict[str, object]
+) -> None:
+    _, env = t3
+
+    assert _hook(env, {"hook_event_name": "PostToolUse", "tool_name": tool, "tool_response": response}).returncode == 0
+    assert _rows(Path(env["HOME"])) == []
+    assert list((Path(env["HOME"]) / straznik.STATE).glob("*.dzieci")) == []
 
 
 @POSIX_ONLY
@@ -291,7 +384,7 @@ def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(t3: tuple[Pa
 def test_poza_t3_hook_nic_nie_zapisuje_i_nie_uruchamia(t3: tuple[Path, dict[str, str]], missing: str) -> None:
     _, env = t3
     env = {name: value for name, value in env.items() if name != missing}
-    event = {"hook_event_name": "PostToolUse", "tool_name": straznik.DELEGATING[0], "tool_response": _delegated(CHILD)}
+    event = {"hook_event_name": "PostToolUse", "tool_name": straznik.DELEGATE, "tool_response": _delegated(CHILD)}
 
     assert (_hook(env, event).returncode, (Path(env["HOME"]) / straznik.STATE).exists()) == (0, False)
 
