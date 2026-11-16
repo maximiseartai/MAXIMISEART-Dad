@@ -23,6 +23,41 @@ export type ActivitiesCondition = {
 };
 
 /**
+ * ActivityCodeSentence
+ *
+ * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
+ */
+export type ActivityCodeSentence = {
+    /**
+     * Id
+     */
+    id: string;
+    /**
+     * Spellings
+     */
+    spellings: string;
+    /**
+     * Sentence
+     */
+    sentence: Array<SentenceText | SentenceColumn>;
+};
+
+/**
+ * ActivityLegendSettings
+ *
+ * Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe
+ * ustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).
+ */
+export type ActivityLegendSettings = {
+    /**
+     * Codes
+     */
+    codes: Array<ActivityCodeSentence>;
+    problem: SettingProblem | null;
+};
+
+/**
  * AddRule
  */
 export type AddRule = {
@@ -58,7 +93,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -557,7 +592,7 @@ export type DecisionAnswer = {
 /**
  * DescriptionColumn
  *
- * Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał.
+ * Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał poza kolumnami narzędzia.
  */
 export type DescriptionColumn = {
     /**
@@ -568,6 +603,23 @@ export type DescriptionColumn = {
      * Rows
      */
     rows: number;
+};
+
+/**
+ * DescriptionRows
+ *
+ * Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła
+ * Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe.
+ */
+export type DescriptionRows = {
+    /**
+     * By Legend
+     */
+    by_legend: number;
+    /**
+     * For Tata
+     */
+    for_tata: number;
 };
 
 /**
@@ -1283,7 +1335,8 @@ export type KeptCell = {
 /**
  * KindTableCell
  *
- * Komórka N:AP wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia, wpis taty, który robi wiersz, albo nic (0).
+ * Komórka N:AP albo ``AS`` wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia (Reguły ilości albo
+ * Legenda czynności), wpis taty albo nic (0).
  */
 export type KindTableCell = {
     source: CellSource;
@@ -1296,7 +1349,7 @@ export type KindTableCell = {
 /**
  * KindTableReady
  *
- * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a
+ * Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP i ``AS`` po kolei, a
  * ``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.
  *
  * ``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``.
@@ -2135,7 +2188,7 @@ export type PreviewWithoutFiles = {
 /**
  * PriceListItem
  *
- * Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
+ * Kolumna N:AP albo ``AS`` i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
  */
 export type PriceListItem = {
     /**
@@ -2488,6 +2541,7 @@ export type QuantitiesToFillReady = {
      * Kinds
      */
     kinds: Array<KindToFill>;
+    description_rows: DescriptionRows;
     /**
      * Description Columns
      */
@@ -4151,7 +4205,8 @@ export type WithoutQuantityRead = {
  * WithoutQuantityUnread
  *
  * Nie wiadomo, które wiersze są bez ilości: Pliku zbiorczego nie udało się odczytać (start zostaje możliwy) albo
- * pliku Reguł ilości lub Listy Urządzeń nie da się teraz przeczytać (start odmawia zdaniem o tym pliku).
+ * pliku Reguł ilości, Listy Urządzeń lub Legendy czynności nie da się teraz przeczytać (start odmawia zdaniem o tym
+ * pliku).
  */
 export type WithoutQuantityUnread = {
     /**
@@ -5833,6 +5888,22 @@ export type GetSettingsResponses = {
 };
 
 export type GetSettingsResponse = GetSettingsResponses[keyof GetSettingsResponses];
+
+export type GetActivityLegendData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/settings/activity-legend';
+};
+
+export type GetActivityLegendResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActivityLegendSettings;
+};
+
+export type GetActivityLegendResponse = GetActivityLegendResponses[keyof GetActivityLegendResponses];
 
 export type ChangeAutostartData = {
     body: AutostartChange;

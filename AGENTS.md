@@ -15,14 +15,14 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 - Skille: przeczytaj [`docs/agents/skille.md`](docs/agents/skille.md) przed utworzeniem albo zmianą skilla.
 - Wydajność i środowisko taty: przy pomiarach wydajności albo decyzjach zależnych od jego sprzętu lub OneDrive przeczytaj [`docs/agents/komputer-taty.md`](docs/agents/komputer-taty.md).
 - Uruchamianie narzędzia przez człowieka: użyj [`README.md`](README.md).
-- Issues i specyfikacje: użyj [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
-- Triage: użyj [`docs/agents/triage-labels.md`](docs/agents/triage-labels.md).
+- Issues, specyfikacje i triage: użyj [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md); role triage to etykiety o tych samych nazwach.
 
 ## Narzędzia
 
 Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tools/<nazwa>.py`), a jego `--help` mówi, jak go użyć.
 <!-- spis narzędzi: generuje tests/test_spis_narzedzi.py z ZAPISZ_EXPECT=1, nie edytuj ręcznie -->
 - `tools/benchmark_przebiegu.py`: Mierzy czas Przebiegu rozliczeń (measure) na lustrze folderów taty, bez danych klientów; użyj przed i po zmianie wydajności silnika.
+- `tools/brama_legendy.py`: Brama Legendy czynności: liczy, w ilu wierszach z kodem legenda daje to, co wpisał tata; tylko na Macu Maksa, przed Wydaniem z legendą.
 - `tools/ci_lokalnie.py`: Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 - `tools/mutacje.py`: Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
 - `tools/mutacje_nocne.py`: Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.
@@ -67,10 +67,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 Przy poprawce operatora, Ważnym z przeglądu i czerwonym `main` z prawdziwej zmiany nazwij korzeń i wyrwij go na najwyższym szczeblu, który działa, według sekcji „Korzeń i chwast” skilla [`przeglad`](.agents/skills/przeglad/SKILL.md).
 Ważne z polem `Idiom: <id>`, które pisze recenzent, scala się tylko z regułą chwastu o tym id na HEAD PR i jej dowodem, a odpalenia reguły chwastu nie ukrywa ani tłumienie, ani zwolnienie poza prawem właściciela ([ADR 0036](docs/adr/0036-chwast-to-regula.md)).
-Regułę i drogę naprawy mówi komunikat strażnika (asercja testu, `msg` w `banned-api`, odmowa hooka albo narzędzia), a wiersz tabeli dopisz tylko z nowym strażnikiem, którego komunikat nie mówi już tej reguły albo który nie łapie każdej jej formy, w dokumencie reguły (kod i testy: `CODING_STANDARDS.md` po angielsku; proces: `docs/agents/pr-i-ci.md` albo `docs/agents/skille.md`); regułę z osądem zostaw zdaniem dla recenzenta, a wiersz, którego błąd nie może się już zdarzyć, usuń.
-Granicę nowego i zmienianego strażnika pokazują próbki `ZNANE_LUKI` w jego teście: próbka to kod postaci, którą strażnik przepuszcza, nazwany klasą mechanizmu, który ją przepuszcza (np. „zna tylko nazwę z importu”), a `tests/fixtures/znane_luki.py` puszcza ją przez prawdziwe mechanizmy strażnika i każe ją usunąć, gdy strażnik zaczyna ją łapać; próbki to luki znane, nie pełna lista postaci ani klas, więc nowo znaleziona luka staje się nową próbką albo zamyka ją konstrukcja (typ, zakaz ruff, odmowa w biegu), a wiersz tabeli wskazuje ten test; wiersz strażnika, który trzyma granicę jeszcze prozą, podaje jej miejsce po `boundary:` (wypisuje je `grep -n "(boundary[:]" CODING_STANDARDS.md`), strażnik bez wiersza w tabelach `CODING_STANDARDS.md` trzyma granicę w docstringu do swojej najbliższej zmiany, a reguły `npm run rules` w komentarzu `frontend/scripts/rules.mjs`, bo zadania pytest nie instalują zależności frontendu.
-Prawo właściciela, czyli stałe użycie zakazanego API przez moduł, do którego komunikat zakazu kieruje resztę kodu, zapisz w konfiguracji reguły (dla `TID251`: `per-file-ignores` w `pyproject.toml` i `OWNERS` w `tests/test_zakazy_ruff.py`).
-Wyjątek tymczasowy zapisz na linii, której dotyczy, z powodem, terminem i zgodą Maksa (wzór: `KNOWN` i `known()` w `tests/fixtures/fakt_domeny.py`).
+Strażnik reguły (nowy albo zmieniany), jego wiersz w tabeli reguł, prawo właściciela i wyjątek tymczasowy: zanim je zapiszesz, przeczytaj wstęp [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 
 ## Stałe prośby Maksa
 

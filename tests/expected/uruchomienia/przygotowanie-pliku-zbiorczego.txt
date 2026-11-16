@@ -31,7 +31,7 @@ Ostrzeżenia:
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 18, 19, 20
     Co zrobić: Uzupełnij pozostałe ilości w tych wierszach ręcznie przed Przebiegiem rozliczeń. Jeśli to nowe urządzenie, które będzie wracać, powiedz o nim osobie utrzymującej narzędzie.
   KOLUMNY_Z_OPISU
-    Co się stało: Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia.
+    Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 3 wiersze.
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
     Co zrobić: Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń.
 Zatrzymanie: brak
@@ -70,7 +70,7 @@ Ostrzeżenia:
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 18, 19, 20
     Co zrobić: Uzupełnij pozostałe ilości w tych wierszach ręcznie przed Przebiegiem rozliczeń. Jeśli to nowe urządzenie, które będzie wracać, powiedz o nim osobie utrzymującej narzędzie.
   KOLUMNY_Z_OPISU
-    Co się stało: Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia.
+    Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 3 wiersze.
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
     Co zrobić: Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń.
 Zatrzymanie: brak
@@ -107,7 +107,7 @@ Ostrzeżenia:
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 18, 19, 20
     Co zrobić: Uzupełnij pozostałe ilości w tych wierszach ręcznie przed Przebiegiem rozliczeń. Jeśli to nowe urządzenie, które będzie wracać, powiedz o nim osobie utrzymującej narzędzie.
   KOLUMNY_Z_OPISU
-    Co się stało: Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia.
+    Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 3 wiersze.
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
     Co zrobić: Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń.
 Zatrzymanie: brak
@@ -146,7 +146,7 @@ Ostrzeżenia:
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 18, 19, 20
     Co zrobić: Uzupełnij pozostałe ilości w tych wierszach ręcznie przed Przebiegiem rozliczeń. Jeśli to nowe urządzenie, które będzie wracać, powiedz o nim osobie utrzymującej narzędzie.
   KOLUMNY_Z_OPISU
-    Co się stało: Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia.
+    Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 3 wiersze.
     Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
     Co zrobić: Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń.
 Zatrzymanie: brak

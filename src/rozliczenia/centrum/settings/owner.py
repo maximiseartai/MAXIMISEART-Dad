@@ -224,6 +224,16 @@ class QuantityRulesView:
 
 
 @dataclass(frozen=True)
+class ActivityLegendView:
+    """Legenda czynności dla okna Ustawień: ta, którą liczy następne Uruchomienie (przy złym pliku ostatnia dobra, przy
+    pliku, którego system nie daje teraz czytać, legenda z Wydania), i problem pliku (``None``: plik dobry). Przy pliku
+    bez odczytu problem mówi, że proces nie wystartuje, bo migawka ma wtedy ``UnreadableFile``."""
+
+    legend: ActivityLegend
+    problem: FieldProblem | None
+
+
+@dataclass(frozen=True)
 class SettingsView:
     """Ustawienia Centrum dla okna Ustawień: każda sekcja z wartością albo złym ustawieniem."""
 
@@ -359,14 +369,13 @@ class CentrumSettings:
             inbox_state = inbox.state(self._observe(INBOX))
             reminders = _or_unreadable(self._observe(REMINDERS), REMINDERS)
             rules = self._quantity_rules()
-            legend = self._observe(LEGEND)
             return SettingsSnapshot(
                 folders=folders,
                 workers=workers,
                 inbox=inbox_state,
                 reminders=reminders,
                 quantity_rules=rules.rules if rules.unreadable is None else UnreadableFile(rules.unreadable),
-                activity_legend=UnreadableFile(LEGEND.name) if isinstance(legend, Unreadable) else activity_legend(_value(legend, LEGEND)),
+                activity_legend=self._activity_legend(),
             )
 
     def folders(self) -> FolderSettings | Unreadable:
@@ -382,6 +391,24 @@ class CentrumSettings:
 
         with self._lock:
             return self._quantity_rules()
+
+    def activity_legend(self) -> ActivityLegendView:
+        """Legenda czynności dla okna Ustawień, plik porównany z pamięcią jak przy każdym odczycie."""
+
+        with self._lock:
+            observed = self._observe(LEGEND)
+            return ActivityLegendView(activity_legend(_or_release(observed, LEGEND)), _problem(observed, LEGEND, messages.unreadable))
+
+    def counted_activity_legend(self) -> ActivityLegend | UnreadableFile:
+        """Legenda czynności, którą liczy następne Uruchomienie, jak w migawce, dla odczytu okna (Ilości do uzupełnienia)
+        bez reszty migawki; plik porównany z pamięcią jak przy każdym odczycie."""
+
+        with self._lock:
+            return self._activity_legend()
+
+    def _activity_legend(self) -> ActivityLegend | UnreadableFile:
+        legend = self._observe(LEGEND)
+        return UnreadableFile(LEGEND.name) if isinstance(legend, Unreadable) else activity_legend(_value(legend, LEGEND))
 
     def view(self) -> SettingsView:
         with self._lock:

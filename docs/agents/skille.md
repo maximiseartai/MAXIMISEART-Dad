@@ -11,6 +11,17 @@
   Jednostka musi przejść zaraz po starcie części albo po każdej wcześniejszej jednostce, bo noc na `main` uruchamia każdą część każdej liczby do n (`LICZY NOC`), a pull request części jednej liczby, którą wybiera plan.
 - Znane ustalenie skilla `verify-*` (`KNOWN_FINDINGS` eksploratora albo znane naruszenie modelu TLA+) wybacza jedną wąską przyczynę, a skrypt mutacji ma na nie dwie mutacje: usunięcie tylko tej przyczyny daje `ZNALEZISKO ZNIKNĘŁO` tylko dla niego, a ta sama szkoda z innej przyczyny `NOWE NARUSZENIE` (#1341, #1343, #1345).
 
+## Redakcja prozy skilla `verify-*`
+
+Skill `verify-*` to skill weryfikacji pstack (`/pstack:create-verification-skill`), a jego treść zmienia tylko przebieg utrzymania z dowodem ze źródła i biegu na żywo (`/pstack:maintain-verification-skill`).
+Redakcja pod agenta (skill `writing-for-agents`) zmienia więc samą formę: każde zdanie o kodzie, środowisku albo biegu zostaje ze swoją treścią.
+
+- Opis (`description`) mówi, co skill sprawdza, i daje jeden wyzwalacz na gałąź, bez listy ścieżek, bo kiedy skill obowiązuje, mówi jego `pilnuje:` przez `tools/skille_dla_zmiany.py`.
+- Usuń zdanie, które powtarza inne zdanie skilla albo jego mapy, kod skryptu albo `--help`, i zdanie, które nie zmienia zachowania agenta.
+  Zdanie z `Gotchas` zostaje, bo to wiedza, której agent nie znajdzie w kodzie.
+- Nietknięte zostają: klucze frontmatteru poza `description`, nagłówki H2 szablonu mapy, sekcja `## Sub-features` (drukuje ją `scripts/sub_features.py`, a bieg porównuje ją z plikiem), polecenia, nazwy funkcji i nazwy testów.
+- Skill, którego PR utrzymania jest otwarty (`tools/praca_w_toku.py`), czeka na jego merge.
+
 ## Cotygodniowe utrzymanie skilli weryfikacji
 
 Zadanie T3 uruchamia raz w tygodniu `/pstack:maintain-verification-skill` dla dwóch skilli, które samo nazywa: skillu procesów (skrypt maszynowy `tools/uruchom_proces.py`) i skillu Centrum (napęd przeglądarki).

@@ -500,6 +500,7 @@ ENTRIES: dict[str, Entry] = {
     ),
     "removeDevice": _route("removeDevice", "DELETE", "/api/settings/devices/globo"),
     "getDeviceSuggestions": _route("getDeviceSuggestions", "GET", "/api/settings/devices/suggestions"),
+    "getActivityLegend": _route("getActivityLegend", "GET", "/api/settings/activity-legend"),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -557,7 +558,8 @@ NOT_SWEPT: dict[str, str] = {
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
-# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów i parę Reguł ilości (settings_reads), a nie całą migawkę.
+# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów, parę Reguł ilości i Legendę czynności (settings_reads), a
+# nie całą migawkę.
 _WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
 _BOARD = _WINDOW | _OWNER
 _SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)
@@ -603,6 +605,7 @@ READS: dict[str, set[str]] = {
     "changeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "removeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "getDeviceSuggestions": _WINDOW,
+    "getActivityLegend": {"wzorzec_zbiorczy"},
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,

@@ -488,7 +488,7 @@ uruchomienie dostaje komunikat, że trwa już Uruchomienie procesu. Zakładka
   pierwszego do ostatniego zlecenia okresu, także te między zleceniami innych
   tygodni. Nie trafiają do żadnego pliku.
 - Liczba `Ostrzeżenia` to ostrzeżenia pod wynikiem: pliki powstały, ale coś
-  wymaga uwagi, co najmniej kolumny z opisu technika. Każde ostrzeżenie jest
+  wymaga uwagi, zwykle kolumny z opisu technika. Każde ostrzeżenie jest
   opisane w tabeli poniżej.
 - W Folderze okresu (np. `INEA\08_14_09_2026`) są dwa nowe pliki:
   `Rozliczenie wew. {okres}.xlsx` i `Rozliczenie {okres} - zbiorcze.xlsx`.
@@ -562,17 +562,19 @@ Ostrzeżenie nie zatrzymuje procesu. Ostrzeżenie o niepełnym okresie pojawia
 się przed zapisem w okienku `Kontynuować mimo niepełnego okresu?`. Pozostałe
 ostrzeżenia są pod wynikiem, a podgląd bez zapisu pokazuje je zawsze takie same
 jak zapis. Ostrzeżenia o ilościach do uzupełnienia wskazują numery wierszy
-Pliku zbiorczego, a nie Rejestru zleceń. Przypomnienie o kolumnach z opisu
-technika jest zawsze, więc wynik zapisu to `Plik zbiorczy przygotowany ·
-wymaga sprawdzenia`: pliki powstały, a Ty uzupełniasz Plik zbiorczy przed
-Przebiegiem rozliczeń.
+Pliku zbiorczego, a nie Rejestru zleceń. Wynik zapisu to zawsze `Plik zbiorczy
+przygotowany · wymaga sprawdzenia`: pliki powstały, a Ty uzupełniasz Plik
+zbiorczy przed Przebiegiem rozliczeń. Wiersz, którego `CZYNNOŚCI ZREALIZOWANE`
+to same Kody czynności (poza `tak`, `nie` i znakami interpunkcji), wypełniła
+Legenda czynności, więc na Ciebie nie czeka.
 
 | Co się stało (fragment) | Co zrobić |
 |---|---|
 | „Rejestr zleceń może nie mieć jeszcze wszystkich zleceń tego okresu” | Sprawdź `Zlecenia na dzień`. Jeśli brakuje zleceń z końca tygodnia, kliknij `Przerwij bez zapisu`, uzupełnij eksport w Rejestrze, zapisz go, zamknij i uruchom ponownie. Jeśli w te dni naprawdę nie było zleceń, kliknij `Kontynuuj`. |
 | „Narzędzie nie zna urządzenia z kolumny URZĄDZENIA” | W tych wierszach narzędzie wpisało tylko V, T i N. Uzupełnij pozostałe ilości ręcznie. Jeśli to nowe urządzenie, które będzie wracać, powiedz o nim osobie utrzymującej narzędzie. |
-| „rozlicza się z opisu technika” | Prewencja, niedostępność usług albo puste `URZĄDZENIA`: narzędzie nie wpisało w tych wierszach żadnych ilości. Wpisz je według `CZYNNOŚCI ZREALIZOWANE`. |
-| „Ilości, które wynikają z opisu technika” | Przypomnienie przy każdym Przygotowaniu. W kolumnach Y, AB, AD, AJ, AK, AL i AM uzupełnij ilości według `CZYNNOŚCI ZREALIZOWANE` w każdym wierszu. |
+| „rozlicza się z opisu technika” | Prewencja, niedostępność usług albo puste `URZĄDZENIA`: Reguły ilości nie wpisały w tych wierszach żadnych ilości, a Legenda czynności najwyżej to, co wynika z kodów. Wpisz je według `CZYNNOŚCI ZREALIZOWANE`. |
+| „spoza przedziałów Legendy czynności” | Kod z liczbą spoza przedziałów (np. `instutp40m`) niczego nie wpisał. Wpisz ilości w tych wierszach według opisu technika. Jeśli taka liczba będzie wracać, powiedz o niej osobie utrzymującej narzędzie. |
+| „Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE)” | Mówi, w ilu wierszach legenda wpisała ilości i ile wierszy zostało Tobie. W tych wierszach uzupełnij ilości w kolumnach Y, AB, AD, AJ, AK, AL i AM według `CZYNNOŚCI ZREALIZOWANE`; to, co wynika z kodów, jest już wpisane. Gdy nic nie zostało, tego ostrzeżenia nie ma. |
 | „Dolne wiersze Pliku zbiorczego nie mają zer w kolumnach ilości” | Pliki powstały. Narzędzie wpisało ilości w tych wierszach tak samo jak w pozostałych, a puste komórki liczą się jak 0. Sprawdź je jak pozostałe wiersze. Jeśli zdarza się to często, poproś osobę utrzymującą narzędzie o dodanie wierszy z zerami we Wzorcu pliku zbiorczego. |
 
 ## Uzupełnienie pliku zbiorczego

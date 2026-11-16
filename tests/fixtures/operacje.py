@@ -20,7 +20,7 @@ from rozliczenia.message import Message
 from rozliczenia.progress import ProgressProjection
 from rozliczenia.run_context import UNASKED, RunContext
 
-QUANTITY_WARNINGS = frozenset({"NIEZNANE_URZADZENIA", "WIERSZE_Z_OPISU", "KOLUMNY_Z_OPISU"})
+QUANTITY_WARNINGS = frozenset({"NIEZNANE_URZADZENIA", "WIERSZE_Z_OPISU", "KODY_SPOZA_PRZEDZIALOW", "KOLUMNY_Z_OPISU"})
 """Kody ostrzeżeń o Ilościach usług do uzupełnienia (``tests/test_ostrzezenia_ilosci.py``)."""
 
 

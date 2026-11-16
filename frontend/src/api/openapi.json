@@ -887,7 +887,7 @@
           "okresy"
         ],
         "summary": "Rows Without Quantity",
-        "description": "Wiersze bez ilości dla okna „Uruchomić z zapisem?” Przebiegu rozliczeń tego okresu.\n\nTylko na żądanie wybranego okresu, bo odczyt trwa u taty ponad sekundę. Nieudany odczyt Pliku zbiorczego nie\nblokuje startu; Komunikat i wpis w dzienniku daje strona Uzupełnienia, a sam Przebieg rozliczeń nazywa plik.\nPlik pary Reguł ilości bez odczytu to też wiersze nieprzeczytane, a start odmawia wtedy zdaniem o tym pliku.",
+        "description": "Wiersze bez ilości dla okna „Uruchomić z zapisem?” Przebiegu rozliczeń tego okresu.\n\nTylko na żądanie wybranego okresu, bo odczyt trwa u taty ponad sekundę. Nieudany odczyt Pliku zbiorczego nie\nblokuje startu; Komunikat i wpis w dzienniku daje strona Uzupełnienia, a sam Przebieg rozliczeń nazywa plik.\nPlik pary Reguł ilości albo Legendy czynności bez odczytu to też wiersze nieprzeczytane, a start odmawia wtedy\nzdaniem o tym pliku.",
         "operationId": "getWithoutQuantity",
         "parameters": [
           {
@@ -1709,6 +1709,27 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Settings"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/activity-legend": {
+      "get": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Read",
+        "operationId": "getActivityLegend",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityLegendSettings"
                 }
               }
             }
@@ -3268,6 +3289,77 @@
         ],
         "title": "ActivitiesCondition"
       },
+      "ActivityCodeSentence": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "spellings": {
+            "type": "string",
+            "title": "Spellings"
+          },
+          "sentence": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SentenceText"
+                },
+                {
+                  "$ref": "#/components/schemas/SentenceColumn"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "column": "#/components/schemas/SentenceColumn",
+                  "text": "#/components/schemas/SentenceText"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Sentence"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "id",
+          "spellings",
+          "sentence"
+        ],
+        "title": "ActivityCodeSentence",
+        "description": "Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne\npo „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika."
+      },
+      "ActivityLegendSettings": {
+        "properties": {
+          "codes": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityCodeSentence"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "codes",
+          "problem"
+        ],
+        "title": "ActivityLegendSettings",
+        "description": "Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe\nustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania)."
+      },
       "AddRule": {
         "properties": {
           "kind": {
@@ -3343,6 +3435,7 @@
               "changeDevice",
               "removeDevice",
               "getDeviceSuggestions",
+              "getActivityLegend",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
@@ -4190,7 +4283,27 @@
           "rows"
         ],
         "title": "DescriptionColumn",
-        "description": "Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał."
+        "description": "Kolumna z opisu technika i liczba wierszy, w których tata coś w niej wpisał poza kolumnami narzędzia."
+      },
+      "DescriptionRows": {
+        "properties": {
+          "by_legend": {
+            "type": "integer",
+            "title": "By Legend"
+          },
+          "for_tata": {
+            "type": "integer",
+            "title": "For Tata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "by_legend",
+          "for_tata"
+        ],
+        "title": "DescriptionRows",
+        "description": "Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła\nLegenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe."
       },
       "DeviceComponent": {
         "properties": {
@@ -5397,7 +5510,7 @@
           "value"
         ],
         "title": "KindTableCell",
-        "description": "Komórka N:AP wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia, wpis taty, który robi wiersz, albo nic (0)."
+        "description": "Komórka N:AP albo ``AS`` wiersza na stronie rodzaju: wartość z pliku w kolumnie narzędzia (Reguły ilości albo\nLegenda czynności), wpis taty albo nic (0)."
       },
       "KindTableReady": {
         "properties": {
@@ -5451,7 +5564,7 @@
           "rows"
         ],
         "title": "KindTableReady",
-        "description": "Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP po kolei, a\n``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.\n\n``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``."
+        "description": "Wiersze jednego rodzaju Ilości do uzupełnienia rosnąco po numerze; ``columns`` to N:AP i ``AS`` po kolei, a\n``text_columns`` nagłówki kolumn Pliku zbiorczego z tekstami wiersza po kolei.\n\n``settled`` jak w ``QuantitiesToFillReady``, ``hint`` jak w ``KindToFill``."
       },
       "KindTableRow": {
         "properties": {
@@ -6813,7 +6926,7 @@
           "name"
         ],
         "title": "PriceListItem",
-        "description": "Kolumna N:AP i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego."
+        "description": "Kolumna N:AP albo ``AS`` i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego."
       },
       "PricingNotification": {
         "properties": {
@@ -7383,6 +7496,9 @@
             "type": "array",
             "title": "Kinds"
           },
+          "description_rows": {
+            "$ref": "#/components/schemas/DescriptionRows"
+          },
           "description_columns": {
             "items": {
               "$ref": "#/components/schemas/DescriptionColumn"
@@ -7398,6 +7514,7 @@
           "read",
           "settled",
           "kinds",
+          "description_rows",
           "description_columns"
         ],
         "title": "QuantitiesToFillReady",
@@ -10233,7 +10350,7 @@
           "state"
         ],
         "title": "WithoutQuantityUnread",
-        "description": "Nie wiadomo, które wiersze są bez ilości: Pliku zbiorczego nie udało się odczytać (start zostaje możliwy) albo\npliku Reguł ilości lub Listy Urządzeń nie da się teraz przeczytać (start odmawia zdaniem o tym pliku)."
+        "description": "Nie wiadomo, które wiersze są bez ilości: Pliku zbiorczego nie udało się odczytać (start zostaje możliwy) albo\npliku Reguł ilości, Listy Urządzeń lub Legendy czynności nie da się teraz przeczytać (start odmawia zdaniem o tym\npliku)."
       },
       "WorkerAddress": {
         "properties": {
