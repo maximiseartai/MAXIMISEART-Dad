@@ -207,8 +207,8 @@ def start(github: GitHub, teraz: datetime) -> int:
     if runy := _runy_doby(github, teraz):
         print(f"MUTACJE NOCNE START | noc doby ma już run {min(run['id'] for run in runy)} od {POCZATEK_NOCY:%H:%M} UTC: bez drugiego")
         return 0
-    run = github.wyslij("POST", f"{REPO}/actions/workflows/{WORKFLOW}/dispatches", {"ref": "main", "inputs": {"start": START_AUTO}})
-    print(f"MUTACJE NOCNE START | uruchomiona noc doby: run {run['workflow_run_id']} (start {START_AUTO})")
+    github.wyslij("POST", f"{REPO}/actions/workflows/{WORKFLOW}/dispatches", {"ref": "main", "inputs": {"start": START_AUTO}})
+    print(f"MUTACJE NOCNE START | uruchomiona noc doby (start {START_AUTO})")
     return 0
 
 
