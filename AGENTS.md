@@ -7,7 +7,7 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 - Worktree: zanim uruchomisz Pythona, utwórz własne `.venv` przez `python3 tools/setup_worktree.py` (Windows: `py -3`); `.venv` głównego checkoutu sprawdza kod `main`.
 - Issue N: przed startem uruchom `tools/praca_w_toku.py --issue N`. Gdy issue dotyczy gałęzi otwartego PR albo ktoś ma już na nim commity, poprawka należy do właściciela tej gałęzi: powiedz o tym użytkownikowi i zostaw ją jemu.
 - Po każdej zmianie uruchom `.venv/bin/python tools/szybko.py` (Windows: `py -3 tools/szybko.py`), na gałęzi zbudowanej na innej z `--baza <gałąź rodzica>`. Co sprawdza, a co zostawia CI, mówi jego `--help`.
-- Ciężkie polecenie (`szybko.py`, `mutacje.py --plik`, pełny pytest, budowa frontendu i wszystko, co obciąży Maca dłużej niż minutę): zanim je uruchomisz, przeczytaj skill [`boat`](.agents/skills/boat/SKILL.md), bo mówi, czy biegnie na Macu, czy na boxie boat.
+- Ciężkie polecenie (`szybko.py`, `mutacje.py --plik`, pełny pytest i wszystko, co obciąży Maca dłużej niż minutę): zanim je uruchomisz, przeczytaj skill [`boat`](.agents/skills/boat/SKILL.md), bo mówi, czy biegnie na Macu, czy na boxie boat.
 - Kod i testy: zanim napiszesz albo zrecenzujesz kod (także w `tools/`, `frontend/` i skryptach skilli) albo test, przeczytaj [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 - Model domeny i reguły procesu: przeczytaj [`GLOSSARY.md`](GLOSSARY.md) oraz właściwe ADR-y w [`docs/adr/`](docs/adr/).
 - Tytuł i opis PR: napisz według skilla [`.agents/skills/pr/SKILL.md`](.agents/skills/pr/SKILL.md), także zamiast osobistego `/pr`, a gdy wzorowi czegoś brakuje, dopisz to do skilla.
