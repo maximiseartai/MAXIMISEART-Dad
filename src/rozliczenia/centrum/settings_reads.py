@@ -7,10 +7,11 @@ niczego nie zapisuje, więc odmowa nie jest regułą przyjęcia zmiany właścic
 
 from __future__ import annotations
 
+from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.settings.files import Unreadable
 from rozliczenia.centrum.settings.folders import FOLDERS, FolderSettings
-from rozliczenia.centrum.settings.owner import CentrumSettings, QuantityRulesView
+from rozliczenia.centrum.settings.owner import CentrumSettings, QuantityRulesView, UnreadableFile
 
 
 def readable_folders(settings: CentrumSettings) -> FolderSettings:
@@ -29,3 +30,12 @@ def readable_quantity_rules(settings: CentrumSettings) -> QuantityRulesView:
     if view.unreadable is None:
         return view
     raise refusal.settings_file_unreadable(view.unreadable)
+
+
+def readable_activity_legend(settings: CentrumSettings) -> ActivityLegend:
+    """Legenda czynności; plik legendy bez odczytu to odmowa o nim, a nie legenda z Wydania."""
+
+    legend = settings.counted_activity_legend()
+    if isinstance(legend, UnreadableFile):
+        raise refusal.settings_file_unreadable(legend.name)
+    return legend

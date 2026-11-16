@@ -2,30 +2,35 @@
 
 Czysta funkcja ``quantities_to_fill`` na Wierszach danych zapisanego Pliku zbiorczego, przeliczana przy każdym
 odczycie; nic nie jest przechowywane. Rodzaj wiersza wynika tylko z typu wyniku Reguł ilości (``evaluate``) na
-regułach podanych przy odczycie, a
-kolumny, w których wpis taty się liczy, to kolumny poza porównywanymi przez Kontrolę ilości (``compared_columns``),
-więc ta lista i Kontrola ilości się nie rozjadą. Puste i 0 to to samo, jak w Kontroli ilości.
+regułach podanych przy odczycie, a kolumny narzędzia to kolumny porównywane przez Kontrolę ilości
+(``compared_columns``) i kolumny, w które Legenda czynności wpisuje z ``CZYNNOŚCI ZREALIZOWANE`` wiersza
+(``read_codes``, ADR 0038). Puste i 0 to to samo, jak w Kontroli ilości.
 
-Wiersz bez reguły jest zrobiony, gdy ma ilość różną od 0 poza kolumnami reguł dla składnika spoza listy (z Wydania
-V, T i N), a wiersz z opisu, gdy ma ją gdziekolwiek w N:AP. Każda komórka N:AP wiersza pokazuje wartość z pliku: w kolumnie, którą wyznaczają Reguły ilości, jako
-kolumnę narzędzia, która nie robi wiersza zrobionym, a w pozostałych jako wpis taty. Wyniku Reguł ilości obok
-wartości z pliku nie ma, bo porównanie ich to Kontrola ilości, która zostaje dla Maksa.
+Wiersz z opisu, którego ``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności, nie czeka na tatę: ilości z opisu technika
+wpisała legenda. Wiersz bez reguły czeka mimo to, bo legenda nie wpisuje ilości z ``URZĄDZENIA``.
+Wiersz bez reguły jest zrobiony, gdy ma ilość różną od 0 poza kolumnami narzędzia (z Wydania V, T i N oraz kolumny
+legendy), a wiersz z opisu, gdy ma ją gdziekolwiek w N:AP poza kolumnami legendy. Każda komórka N:AP i ``AS`` wiersza
+pokazuje wartość z pliku: w kolumnie narzędzia jako kolumnę narzędzia, która nie robi wiersza zrobionym, a w
+pozostałych jako wpis taty; kwota taty w ``AS`` się pokazuje, ale wiersza nie robi, bo nie jest Ilością usług. Wyniku
+Reguł ilości i legendy obok wartości z pliku nie ma, bo porównanie ich to Kontrola ilości, która zostaje dla Maksa.
 Wiersz z ``DATA``, która nie jest datą, nie ma wyniku reguł, więc nie trafia do żadnego rodzaju. Kolumny z opisu
-technika mają tylko liczbę wierszy, w których tata coś wpisał, wziętą z Kontroli ilości tych samych wierszy.
+technika mają liczbę wierszy, które zamknęła legenda, liczbę pozostałych i w każdej kolumnie liczbę wierszy, w których
+tata coś wpisał poza kolumnami narzędzia.
 Po Przebiegu rozliczeń okresu wiersz z listą bez wpisu taty nie czeka już na tatę: jest „bez ilości”.
 """
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
+from .activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesRead
 from .collective_layout import QUANTITY_LETTERS
-from .activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from .order_facts import OrderFacts, TataValue
-from .quantity_check import QuantityCheck, check, compared_columns
+from .quantity_check import compared_columns
 from .quantity_engine import DESCRIPTION_COLUMNS, FromDescription, QuantityRules, RuleResult, WithoutRule, evaluate
 from .register_columns import ACTIVITIES, COMPLETED, DEVICES, WORKER, Column
 
@@ -61,7 +66,10 @@ def fill_hint(kind: FillKind, rules: QuantityRules) -> str:
 
 TEXT_COLUMNS: Final[tuple[Column, ...]] = (WORKER, DEVICES, ACTIVITIES, COMPLETED)
 """Kolumny Pliku zbiorczego, po których tata rozpoznaje zlecenie na stronie rodzaju (ADR 0016), w kolejności strony;
-``CZYNNOŚCI ZREALIZOWANE`` to opis technika."""
+``CZYNNOŚCI ZREALIZOWANE`` to opis technika, z którego czyta Legenda czynności."""
+_COMPLETED: Final = TEXT_COLUMNS.index(COMPLETED)
+CELL_COLUMNS: Final = (*QUANTITY_LETTERS, AMOUNT_COLUMN)
+"""Kolumny komórek wiersza do uzupełnienia: Ilości usług N:AP i ``AS`` (Uwagi - kwota), w którą wpisuje Legenda czynności."""
 
 RowTexts = tuple[str, ...]
 """Teksty Wiersza danych w kolumnach ``TEXT_COLUMNS`` po kolei; pusta komórka to ``""``.
@@ -72,22 +80,25 @@ wysyła tylko w wierszach wskazanych przez ``quantity_check.legend_row_check``."
 
 @dataclass(frozen=True)
 class NumberedOrder:
-    """Wiersz danych Pliku zbiorczego: numer wiersza w pliku, jego treść po filtrze prywatności i teksty strony rodzaju."""
+    """Wiersz danych Pliku zbiorczego: numer wiersza w pliku, jego treść po filtrze prywatności, teksty strony rodzaju i
+    kwota w ``AS``, która jak teksty trafia tylko do przeglądarki taty."""
 
     number: int
     order: OrderFacts
     texts: RowTexts
+    amount: TataValue
 
 
 class CellSource(StrEnum):
     """Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia."""
 
     TOOL = "tool"
-    """Kolumna, którą wyznaczają Reguły ilości: wartość z pliku, także 0, nie robi wiersza zrobionym."""
+    """Kolumna, którą wyznaczają Reguły ilości albo Legenda czynności: wartość z pliku, także 0, nie robi wiersza
+    zrobionym."""
     TATA = "tata"
-    """Ilość taty różna od 0 w kolumnie, której Reguły ilości nie wyznaczają: robi wiersz zrobionym."""
+    """Wartość taty różna od 0 w kolumnie, której narzędzie nie wyznacza: w N:AP robi wiersz zrobionym, w ``AS`` nie."""
     EMPTY = "empty"
-    """Kolumna, której Reguły ilości nie wyznaczają, pusta albo z 0."""
+    """Kolumna, której narzędzie nie wyznacza, pusta albo z 0."""
 
 
 @dataclass(frozen=True)
@@ -99,11 +110,11 @@ class QuantityCell:
 
 class RowState(StrEnum):
     TO_FILL = "to_fill"
-    """Bez komórki ``TATA``, a Przebiegu rozliczeń okresu jeszcze nie było."""
+    """Bez komórki ``TATA`` w N:AP, a Przebiegu rozliczeń okresu jeszcze nie było."""
     DONE = "done"
-    """Choć jedna komórka ``TATA``."""
+    """Choć jedna komórka ``TATA`` w N:AP."""
     WITHOUT_QUANTITY = "without_quantity"
-    """Bez komórki ``TATA`` po Przebiegu rozliczeń okresu: wiersz został na zerach („bez ilości”)."""
+    """Bez komórki ``TATA`` w N:AP po Przebiegu rozliczeń okresu: wiersz został na zerach („bez ilości”)."""
 
 
 @dataclass(frozen=True)
@@ -112,7 +123,7 @@ class RowToFill:
     """Numer wiersza w Pliku zbiorczym z tego odczytu, więc usunięcie wiersza w Excelu przenumerowuje listę."""
     texts: RowTexts
     cells: tuple[QuantityCell, ...]
-    """Każda kolumna N:AP po kolei."""
+    """Każda kolumna ``CELL_COLUMNS`` po kolei."""
     state: RowState
 
     @property
@@ -134,11 +145,22 @@ class KindToFill:
 
 
 @dataclass(frozen=True)
+class DescriptionRows:
+    """Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, więc nie czekają na
+    tatę, a ``for_tata`` pozostałe."""
+
+    by_legend: int
+    for_tata: int
+
+
+@dataclass(frozen=True)
 class QuantitiesToFill:
     kinds: tuple[KindToFill, ...]
     """Każdy ``FillKind`` w kolejności z ``FillKind``, także bez wierszy."""
+    description_rows: DescriptionRows
     description_filled: Mapping[str, int]
-    """Każda kolumna z opisu technika (``DESCRIPTION_COLUMNS``) → liczba wierszy, w których tata coś wpisał."""
+    """Każda kolumna z opisu technika (``DESCRIPTION_COLUMNS``) → liczba wierszy, w których tata coś w niej wpisał, poza
+    wierszami, w których tę kolumnę wyznacza narzędzie."""
 
     @property
     def without_quantity(self) -> tuple[int, ...]:
@@ -147,44 +169,50 @@ class QuantitiesToFill:
         return tuple(sorted(row.number for kind in self.kinds for row in kind.rows if not row.done))
 
 
-def quantities_to_fill(rows: Sequence[NumberedOrder], rules: QuantityRules, *, settled: bool) -> QuantitiesToFill:
-    """``rules``: Reguły ilości, którymi liczyć; ``settled``: Przebieg rozliczeń okresu się odbył, więc wiersz bez wpisu
-    taty jest „bez ilości”. Kontrola ilości (``check``) nie porównuje tylko przy brakujących nagłówkach, więc tu zawsze
-    daje ``QuantityCheck``; jej liczby wierszy kolumn z opisu technika nie zależą od Legendy czynności, więc liczy je
-    legenda z Wydania."""
+def quantities_to_fill(
+    rows: Sequence[NumberedOrder], rules: QuantityRules, legend: ActivityLegend, *, settled: bool
+) -> QuantitiesToFill:
+    """``rules`` i ``legend``: Reguły ilości i Legenda czynności, którymi liczyć; ``settled``: Przebieg rozliczeń okresu
+    się odbył, więc wiersz bez wpisu taty jest „bez ilości”."""
 
     listed: dict[FillKind, list[RowToFill]] = {kind: [] for kind in FillKind}
+    filled: Counter[str] = Counter()
+    by_legend = 0
     for row in rows:
+        codes = legend.read(row.texts[_COMPLETED])
+        by_legend += codes.only_codes
         content = row.order.content
-        if content is None:
+        rule = None if content is None else evaluate(rules, content)
+        tool = _tool_columns(rule, rules, codes)
+        filled.update(column for column in DESCRIPTION_COLUMNS if row.order.quantity(column) != 0 and column not in tool)
+        kind = None if rule is None else _KINDS.get(type(rule))
+        if kind is None or (kind is FillKind.FROM_DESCRIPTION and codes.only_codes):
             continue
-        rule = evaluate(rules, content)
-        kind = _KINDS.get(type(rule))
-        if kind is not None:
-            listed[kind].append(_row(row, rule, rules, settled=settled))
-    control = check(tuple(row.order for row in rows), rules, DEFAULT_ACTIVITY_LEGEND)
-    assert isinstance(control, QuantityCheck)
+        listed[kind].append(_row(row, tool, settled=settled))
     return QuantitiesToFill(
         tuple(KindToFill(kind, tuple(found)) for kind, found in listed.items()),
-        {column: control.description_filled[column] for column in DESCRIPTION_COLUMNS},
+        DescriptionRows(by_legend, len(rows) - by_legend),
+        {column: filled[column] for column in DESCRIPTION_COLUMNS},
     )
 
 
-def _row(row: NumberedOrder, rule: RuleResult, rules: QuantityRules, *, settled: bool) -> RowToFill:
-    cells = _cells(row.order, rule, rules)
-    if any(cell.source is CellSource.TATA for cell in cells):
+def _tool_columns(rule: RuleResult | None, rules: QuantityRules, codes: CodesRead) -> frozenset[str]:
+    """Kolumny ``CELL_COLUMNS``, które w wierszu wyznacza narzędzie: Reguły ilości (``compared_columns``) i legenda."""
+
+    by_rules = () if rule is None else compared_columns(rule, rules)
+    return frozenset((*by_rules, *codes.quantities, *((AMOUNT_COLUMN,) if codes.amount else ())))
+
+
+def _row(row: NumberedOrder, tool: frozenset[str], *, settled: bool) -> RowToFill:
+    quantities = tuple(_cell(row.order.quantity(column), column in tool) for column in QUANTITY_LETTERS)
+    if any(cell.source is CellSource.TATA for cell in quantities):
         state = RowState.DONE
     else:
         state = RowState.WITHOUT_QUANTITY if settled else RowState.TO_FILL
-    return RowToFill(row.number, row.texts, cells, state)
+    return RowToFill(row.number, row.texts, (*quantities, _cell(row.amount, AMOUNT_COLUMN in tool)), state)
 
 
-def _cells(order: OrderFacts, rule: RuleResult, rules: QuantityRules) -> tuple[QuantityCell, ...]:
-    compared = compared_columns(rule, rules)
-    return tuple(_cell(order.quantity(column), column in compared) for column in QUANTITY_LETTERS)
-
-
-def _cell(value: TataValue, by_rules: bool) -> QuantityCell:
-    if by_rules:
+def _cell(value: TataValue, by_tool: bool) -> QuantityCell:
+    if by_tool:
         return QuantityCell(CellSource.TOOL, value)
     return QuantityCell(CellSource.EMPTY if value == 0 else CellSource.TATA, value)

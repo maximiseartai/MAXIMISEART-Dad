@@ -18,6 +18,8 @@ from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import tool_files
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from tests.fixtures.bez_dostepu import without_reading
 from tests.fixtures.centrum import FakeOneDrive, finished_view
@@ -398,14 +400,14 @@ def test_okres_bez_folderu_okresu_daje_komunikat_o_braku_pliku_zbiorczego(tmp_pa
     assert view["message"]["what"] == "Nie ma Pliku zbiorczego tego okresu."
 
 
-@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
-def test_plik_regul_ilosci_albo_listy_urzadzen_bez_odczytu_to_odmowa_uzupelnienia_a_nie_reguly_z_wydania(
+@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE, LEGEND_FILE])
+def test_plik_regul_ilosci_listy_urzadzen_albo_legendy_bez_odczytu_to_odmowa_uzupelnienia_a_nie_plik_z_wydania(
     tmp_path: Path, unreadable: str
 ) -> None:
     """Decyzja 2A Maksa: plik pary Reguł ilości i Listy Urządzeń, którego system nie daje teraz czytać (np. trzyma go
     OneDrive), nie znaczy reguł z Wydania. Strona Uzupełnienia i strona rodzaju mówią tacie, którego pliku nie da się
     przeczytać, a okno „Uruchomić z zapisem?” nie liczy wierszy bez ilości (start Przebiegu rozliczeń odmawia tym samym
-    zdaniem). Przy czytelnym pliku te same strony liczą regułami taty."""
+    zdaniem). Przy czytelnym pliku te same strony liczą regułami taty. Tak samo plik Legendy czynności (#1940)."""
 
     centrum = _prepared(tmp_path)
     write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "  - {id: fut, zapisy: [fut], grupa: tv}\n", "  - {id: przeniesienie, zapisy: [przeniesienie]}\n")
@@ -415,6 +417,7 @@ def test_plik_regul_ilosci_albo_listy_urzadzen_bez_odczytu_to_odmowa_uzupelnieni
         "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n",
         "",
     )
+    (tool_files.config_dir(tmp_path) / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     window_url = f"/api/periods/{PERIOD}/without-quantity"
     assert (centrum.view(URL)["state"], centrum.view(window_url)["state"]) == ("ready", "read")
     sentence = {"message": f"Pliku {unreadable} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie."}

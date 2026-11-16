@@ -6,7 +6,7 @@ na Komunikat. Moduł nie zna mapowania Wykonawców ani nazw plików okresu
 Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli ilości, zanim Wiersze danych z
 Wykonawcą stracą Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018) i Znacznik efenix (``efenix_mark``).
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
-obok filtra teksty wiersza i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
+obok filtra teksty wiersza, kwotę w ``AS`` i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
 Plik czyta uchwyt plików taty (zob. ``dad_files.DadFiles``).
 """
 
@@ -17,10 +17,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from . import workbook_files
+from .collective_layout import REMARKS_AMOUNT, letter
 from .dad_files import DadFiles
 from .efenix_mark import without_efenix_mark
 from .inea_only_quantities import Cleared, without_inea_only
-from .order_facts import CollectiveOrders, MissingHeaders, collective_orders
+from .order_facts import CollectiveOrders, MissingHeaders, collective_orders, tata_value
 from .quantity_engine import QuantityRules
 from .register_columns import WORKER, Column
 from .quantities_to_fill import TEXT_COLUMNS, NumberedOrder, RowTexts
@@ -60,7 +61,7 @@ class NumberedOrders:
     rows: tuple[NumberedOrder, ...]
     """Każdy Wiersz danych w kolejności z pliku."""
     price_list: Mapping[str, str]
-    """Litera kolumny N:AP → nazwa pozycji cennika z wiersza 17."""
+    """Litera kolumny N:AP i ``AS`` → nazwa pozycji cennika z wiersza 17."""
 
 
 def read_numbered_orders(path: Path, files: DadFiles) -> NumberedOrders | MissingHeaders:
@@ -73,9 +74,12 @@ def read_numbered_orders(path: Path, files: DadFiles) -> NumberedOrders | Missin
     orders = collective_orders(read.header, read.rows)
     if isinstance(orders, MissingHeaders):
         return orders
-    texts = [_texts(read.header, row) for row in read.rows]
     return NumberedOrders(
-        tuple(map(NumberedOrder, (row.number for row in read.rows), orders, texts)), read.price_list
+        tuple(
+            NumberedOrder(row.number, order, _texts(read.header, row), tata_value(row.value(letter(REMARKS_AMOUNT))))
+            for row, order in zip(read.rows, orders, strict=True)
+        ),
+        read.price_list,
     )
 
 

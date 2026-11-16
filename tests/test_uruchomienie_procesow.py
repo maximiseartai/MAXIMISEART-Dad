@@ -279,7 +279,7 @@ def test_zapisane_przygotowanie_okresu_z_samymi_zleceniami_nieskutecznymi_wymaga
 
     assert outcome.result == "WYMAGA_SPRAWDZENIA"
     assert isinstance(outcome.view, PreparationSummary)
-    assert "KOLUMNY_Z_OPISU" in [warning.code for warning in outcome.view.warnings]
+    assert outcome.view.warnings == [], "Plik zbiorczy bez wierszy nie ma czego uzupełniać w kolumnach z opisu technika"
 
 
 @dataclass

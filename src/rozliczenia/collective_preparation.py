@@ -118,7 +118,15 @@ def _plan_warnings(
         warnings.append(messages.unknown_devices(collective_filename, collective.rows_without_rule))
     if collective.rows_from_description:
         warnings.append(messages.rows_from_description(collective_filename, collective.rows_from_description))
-    warnings.append(messages.columns_from_description(collective_filename, DESCRIPTION_COLUMNS))
+    if collective.out_of_range:
+        warnings.append(messages.codes_out_of_range(collective_filename, collective.out_of_range))
+    for_tata = collective.successful_count - collective.closed_by_legend
+    if for_tata:
+        warnings.append(
+            messages.columns_from_description(
+                collective_filename, DESCRIPTION_COLUMNS, closed=collective.closed_by_legend, for_tata=for_tata
+            )
+        )
     return warnings
 
 
