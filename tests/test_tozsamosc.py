@@ -33,6 +33,14 @@ SETTINGS = ROOT / ".claude" / "settings.json"
 IDENTITY = r"^(user|author|committer)\.(name|email)$"
 _calls = itertools.count()
 
+
+def _git_version() -> tuple[int, ...]:
+    words = subprocess.run(["git", "--version"], capture_output=True, text=True, check=True).stdout.split()
+    return tuple(int(part) for part in words[2].split(".")[:2])
+
+
+# Podpolecenia ``git config set`` i ``rename-section`` ma git od 2.46; starszy (runner Ubuntu) ich nie zna i nic nie zapisuje.
+git_2_46 = pytest.mark.skipif(sys.platform == "win32" or _git_version() < (2, 46), reason="podpolecenie git config od gita 2.46")
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="polecenia agenta biegną w bash, jak Claude Code na macOS i Linuksie")
 
 # Każda postać zapisu z werdyktu r1 (sonda recenzenta) i z incydentu; ``{glowne}`` to główny checkout repo.
@@ -44,7 +52,7 @@ WRITES = (
     "git -C $(git rev-parse --show-toplevel) config user.name r",
     "git --git-dir=$(git rev-parse --git-common-dir) config user.name r",
     "GIT_DIR={glowne}/.git git config user.name r",
-    "git config set user.name r",
+    pytest.param("git config set user.name r", marks=git_2_46),
     "env git config user.name r",
     "command git config user.name r",
     "exec git config user.name r",
@@ -62,7 +70,8 @@ WRITES = (
     "git -c alias.ustaw=config ustaw user.name r",
     "git config --unset user.email",
     "git config --remove-section user",
-    "git config rename-section user stary",
+    pytest.param("git config rename-section user stary", marks=git_2_46),
+    "git config --rename-section user stary",
     "git config User.Name r",
     "git config --add user.name drugi",
     "git config author.email a@x",
