@@ -34,6 +34,8 @@ składnik potrzebny regule, reguła bez składnika, zapis, który tata musi zwol
 zdaniem dla formularza i „Cofnij”, a zdanie reguły ma kolumny z cennika (``column_names``). Przy Regułach ilości z
 Wydania zmiana listy dostaje listę uzupełnioną i zapisuje ją uzupełnioną, a pierwszy plik reguł taty zapisuje najpierw
 listę, do której pasuje (``quantity_rules.dad_devices_edit``, ``devices_for_dad_rules``, ``dad_rules_problem``).
+Zapis taty Legendy czynności (formularz kodu, „Cofnij”) też idzie przez ``_dad_change``: odmowa to zdanie silnika legendy
+o legendzie po zmianie, nie zdanie o złym pliku (``activity_legend.legend_refusal``).
 
 Każdy odczyt i każdy zapis idzie pod jedną blokadą i zaczyna się od porównania stanu pliku (brak pliku albo jego
 bajty) z ostatnim stanem przyjętym w pamięci (``memory``). Inny stan to zmiana spoza Centrum i dokładnie jeden wiersz
@@ -99,13 +101,14 @@ import threading
 from typing import Any, Final, Protocol, TypeVar
 import uuid
 
-from rozliczenia.centrum import device_forms, rule_forms
+from rozliczenia.centrum import device_forms, legend_forms, rule_forms
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
+from rozliczenia.centrum.contract.activity_legend import ActivityCodeEdit
 from rozliczenia.centrum.contract.quantity_rules import RuleEdit
 from rozliczenia.centrum.device_forms import DeviceEdit
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import Autostart
-from rozliczenia.centrum.settings.activity_legend import LEGEND, activity_legend
+from rozliczenia.centrum.settings.activity_legend import LEGEND, Codes, activity_legend, code_ids, legend_refusal
 from rozliczenia.centrum.settings.autostart import AUTOSTART, AutostartPlace, Unsupported
 from rozliczenia.centrum.settings.files import (
     Bad,
@@ -154,7 +157,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
 )
 from rozliczenia.centrum.settings.reminders import REMINDERS, RemindersEdit, dad_reminders
 from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_workers
-from rozliczenia.activity_legend import ActivityLegend
+from rozliczenia.activity_legend import ActivityCode, ActivityLegend
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
@@ -231,6 +234,9 @@ class ActivityLegendView:
 
     legend: ActivityLegend
     problem: FieldProblem | None
+    codes: tuple[ActivityCode, ...] | Unreadable
+    """Kody, z których powstała legenda (z pliku, ostatnie dobre albo z Wydania); zmienia je zapis taty. Pliku, którego
+    system nie daje teraz czytać, nikt nie zna (``Unreadable``)."""
 
 
 @dataclass(frozen=True)
@@ -397,7 +403,8 @@ class CentrumSettings:
 
         with self._lock:
             observed = self._observe(LEGEND)
-            return ActivityLegendView(activity_legend(_or_release(observed, LEGEND)), _problem(observed, LEGEND, messages.unreadable))
+            codes = _usable(observed, LEGEND)
+            return ActivityLegendView(activity_legend(_or_release(observed, LEGEND)), _problem(observed, LEGEND, messages.unreadable), codes)
 
     def counted_activity_legend(self) -> ActivityLegend | UnreadableFile:
         """Legenda czynności, którą liczy następne Uruchomienie, jak w migawce, dla odczytu okna (Ilości do uzupełnienia)
@@ -472,6 +479,12 @@ class CentrumSettings:
         """Zapis taty polecenia edytora reguł (``rule_forms.dad_rules``) z id nowej reguły spoza kluczy Historii."""
 
         return self._with_used_keys(RULES, lambda current, keys: rule_forms.dad_rules(current, edit, rule_ids(keys)))
+
+    def change_legend(self, edit: ActivityCodeEdit) -> Saved | Refused | NotSaved:
+        """Zapis taty polecenia formularza kodu (``legend_forms.dad_legend``) z id nowego kodu spoza kluczy Historii;
+        legendę po zmianie sprawdza ``_dad_change`` tym samym zdaniem co „Cofnij”."""
+
+        return self._with_used_keys(LEGEND, lambda current, keys: legend_forms.dad_legend(current, edit, code_ids(keys)))
 
     def _with_used_keys(
         self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T | FieldProblem]
@@ -734,17 +747,24 @@ class CentrumSettings:
     def _dad_change(
         self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None, checked: frozenset[str]
     ) -> Saved | Refused | NotSaved:
-        """Zapis taty pod blokadą; jedyna droga zapisu taty Listy Urządzeń i Reguł ilości, więc jedyne miejsce, które
-        sprawdza go jako zmianę pary i daje odmowę zdaniem o tej zmianie (``_dad_devices``, ``_dad_rules``)."""
+        """Zapis taty pod blokadą; jedyna droga zapisu taty Listy Urządzeń, Reguł ilości i Legendy czynności, więc jedyne
+        miejsce, które sprawdza go jako zmianę pary albo legendy i daje odmowę zdaniem o tej zmianie (``_dad_devices``,
+        ``_dad_rules``, ``_dad_legend``)."""
 
         paired: Mapping[str, Callable[..., Saved | Refused | NotSaved]] = {
             DEVICES.name: self._dad_devices,
             RULES.name: self._dad_rules,
+            LEGEND.name: self._dad_legend,
         }
         write = paired.get(file.name)
         if write is None:
             return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
         return write(edit, undoes=undoes, checked=checked)
+
+    def _dad_legend(self, edit: Callable[[Codes], Codes | FieldProblem], *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+        """Zmiana taty Legendy czynności z odmową zdaniem silnika o legendzie po zmianie (``legend_refusal``)."""
+
+        return self._change(LEGEND, lambda current: legend_refusal(edit(current)), undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
     def _dad_devices(self, edit: DevicesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
         """Zmiana taty Listy Urządzeń sprawdzona jako zmiana z regułami, którymi liczy Centrum; przy Regułach ilości z

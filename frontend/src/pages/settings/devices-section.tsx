@@ -6,7 +6,6 @@ import type { ComponentForm, DeviceComponent, DeviceSuggestion, QuantityRulesSet
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Spinner } from "@/components/ui/spinner"
 import { plural } from "@/lib/format"
 import { useReloadOnChange } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
@@ -15,7 +14,7 @@ import { Choice, type Option } from "@/pages/settings/quantity-rule-editor"
 import { UnreadPeriods } from "@/pages/settings/quantity-rule-preview"
 import { useQuantityRulesSave } from "@/pages/settings/quantity-rules-save"
 import { Problem, WithQuantityRules } from "@/pages/settings/quantity-rules-section"
-import { FieldSentence, SettingsPanel } from "@/pages/settings/setting-row"
+import { FieldSentence, FormActions, FormRow, SettingsPanel } from "@/pages/settings/setting-row"
 
 type Group = NonNullable<DeviceComponent["group"]>
 
@@ -178,17 +177,17 @@ function DeviceEditor({
     <div role="listitem" aria-label={id === null ? "Nowy składnik" : `Zmiana ${editing.form.name}`} className="flex flex-col gap-3 px-4 py-3.5">
       {sentenceAt(null)}
       {suggestion === null ? null : (
-        <Row label="Dodaj jako">
+        <FormRow label="Dodaj jako">
           <Choice label="Dodaj jako" value={id ?? NEW} options={targets} onChange={target} />
-        </Row>
+        </FormRow>
       )}
-      <Row label="Nazwa">
+      <FormRow label="Nazwa">
         <Input aria-label="Nazwa" value={form.name} onChange={(event) => update({ ...form, name: event.target.value })} />
-      </Row>
+      </FormRow>
       {sentenceAt("nazwa")}
       {form.other_spellings.map((spelling, index) => (
         <React.Fragment key={index}>
-          <Row label={index === 0 ? "Inne zapisy" : ""}>
+          <FormRow label={index === 0 ? "Inne zapisy" : ""}>
             <div className="flex w-full items-center gap-1">
               <Input
                 aria-label={`Inny zapis ${index + 1}`}
@@ -207,46 +206,31 @@ function DeviceEditor({
                 <XIcon />
               </Button>
             </div>
-          </Row>
+          </FormRow>
           {sentenceAt(`zapisy[${index}]`)}
         </React.Fragment>
       ))}
-      <Row label={form.other_spellings.length === 0 ? "Inne zapisy" : ""}>
+      <FormRow label={form.other_spellings.length === 0 ? "Inne zapisy" : ""}>
         <Button variant="ghost" size="sm" onClick={() => update({ ...form, other_spellings: [...form.other_spellings, ""] })}>
           <PlusIcon data-icon="inline-start" />
           Dodaj zapis
         </Button>
-      </Row>
-      <Row label="Grupa">
+      </FormRow>
+      <FormRow label="Grupa">
         <Choice label="Grupa" value={form.group ?? "none"} options={GROUPS} onChange={(group) => update({ ...form, group: group === "none" ? null : group })} />
-      </Row>
-      <div className="flex flex-wrap items-center gap-2 pt-1">
+      </FormRow>
+      <FormActions
+        cancel={() => close(null)}
+        save={() => void saving.run(() => (id === null ? addDevice(form) : changeDevice(id, form)))}
+        dirty={dirty}
+        saving={saving.running !== null}
+      >
         {id === null || suggestion !== null ? null : (
           <Button variant="ghost" className="text-destructive" disabled={saving.running !== null} onClick={() => void saving.run(() => removeDevice(id))}>
             Usuń składnik
           </Button>
         )}
-        <div className="ml-auto flex gap-2">
-          <Button variant="ghost" onClick={() => close(null)}>
-            Anuluj
-          </Button>
-          <Button disabled={!dirty || saving.running !== null} onClick={() => void saving.run(() => (id === null ? addDevice(form) : changeDevice(id, form)))}>
-            {saving.running === null ? null : <Spinner data-icon="inline-start" />}
-            Zapisz
-          </Button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
-      <span aria-hidden className="min-w-0 basis-28 text-sm text-muted-foreground">
-        {label}
-      </span>
-      <div className="flex min-w-0 flex-1 basis-56 items-center">{children}</div>
+      </FormActions>
     </div>
   )
 }
