@@ -12,7 +12,11 @@ folders open with one click, for paths the server derived itself; a file gone
 since the last read gives the error toast `Nie udało się otworzyć` and the board
 is read again. The view follows the disk on every read; a folder okresów or
 Folder okresu Centrum cannot read (OneDrive, access rights) gives the Komunikat
-`Nie udało się odczytać folderu <name>. …` instead of the board.
+`Nie udało się odczytać folderu <name>. …` instead of the board. A file of Ustawienia that cannot be read now
+(`centrum-ustawienia.yaml`) is not driven here:
+`tests/test_centrum_rozliczen.py::test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_o_nim`
+checks that the board's read and the opening of a period's path then answer 409 with a sentence about that file, not
+`Wskaż folder okresów`, and open nothing.
 
 ## Sub-features
 

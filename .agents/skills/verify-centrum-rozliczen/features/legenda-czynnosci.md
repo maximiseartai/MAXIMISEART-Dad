@@ -2,16 +2,16 @@
 
 In the group Ilości of the window Ustawienia, Dad sees the Legenda czynności that the next Przygotowanie pliku
 zbiorczego uses (ADR 0038). Each Kod czynności is one sentence built by the server from the engine's types: its
-spellings (`#` for the number in a spelling) and what it gives, e.g. „spawpg: 1 w Spawanie w mufie (AB), 70 w Uwagi -
-kwota (AS), AS na czerwono.”. A column of Ilości usług shows its price-list name from row 17 of the Wzorzec pliku
+spellings (`#` for the number in a spelling) and what it gives, e.g. „spawpg: 1 w Spawanie w mufie AB, 70 w Uwagi -
+kwota AS, AS na czerwono.”. A column of Ilości usług shows its price-list name from row 17 of the Wzorzec pliku
 zbiorczego next to its letter, the amount stands in AS named „Uwagi - kwota”, and a filled column is its letter alone.
 Without Dad's file `legenda-czynnosci.yaml` in `config` the section shows the legend of the Release. A file changed
 outside Centrum is a row of Historia from outside Centrum; a bad file is a bad setting in one sentence over the last
-good legend, which Centrum counts. The pencil at a code and „Dodaj kod” open the form of a code in place of its row:
+good legend, which Centrum counts. The pencil at a code opens the form of the code in place of its row, „Dodaj kod” an empty one at the end of the list:
 spellings (`#` for the number), the column of Ilości usług (one column or ranges of the number) with its value chosen
 only from the columns the legend writes, by price-list name, the amount in AS and the colours. „Usuń kod” turns the
 form into the question „Usunąć kod?” with „Nie usuwaj” and „Usuń”. „Zapisz” and „Usuń” are changes of Historia with
-„Cofnij”, and a refusal is one sentence at its field. Every change of the form, the removal too, shows the preview of the
+„Cofnij”, and a refusal is one sentence at its field, or above the form when it names no field. Every change of the form, the removal too, shows the preview of the
 change it saves on the last Pliki zbiorcze after Przebieg rozliczeń, counted by the server with the row check of the
 Kontrola ilości: how many rows change, in how many it will be as Dad typed, the Kontrola's legend differences before and
 after, and each changed row that differs from Dad with its CZYNNOŚCI ZREALIZOWANE after the data guard (ADR 0025),

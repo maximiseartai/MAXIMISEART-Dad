@@ -4,7 +4,7 @@ Dad clicks `Wpisz raporty z maili`, the one main button in the header of Raporty
 from the Raporty wykonawców go into empty cells of INTERMAX (ADR 0028). Uruchomienia have no card of it (Maks's decision
 of 11.11.2026, #1321), but they still show the Uruchomienie live and its result with `Otwórz Raporty`. Raporty set
 INTERMAX (in one quiet line, with `Ustaw w Ustawieniach` while it is not set), turn the button off at a blocker from the server, and
-read the view again by themselves when the Wpisanie ends. The button is off while any Uruchomienie procesu runs. The
+read the view again by themselves when the Wpisanie ends, and show the last click under the button in the line „Ostatnio …”, from its Logi, with the button of its card. The button is off while any Uruchomienie procesu runs. The
 view Raporty is the result of the last click, read from its file and not from the mailbox: the server gives the whole
 window of the click (each day with its holiday, each Wykonawca with his days and the orders of each day as INTERMAX has
 them after the click, #1322), and the page shows it as a Mapa cieplna (#1323): a row per Wykonawca in alphabetical
