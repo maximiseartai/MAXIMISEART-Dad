@@ -1,6 +1,6 @@
 ---
 name: verify-aktualizacja-narzedzia
-description: Model-check with TLA+ (TLC) that Aktualizacja narzędzia leaves Dad with a version that starts and with his own file in `config/`, that the restart guardian rolls back only a new version that really does not start, that Dad always ends with Centrum or a dialog, that the card says „Narzędzie zaktualizowane” only on the new version, and that the new version's card shows no failure of an earlier try, under every order of failures - fetch, git, pip, file copy, the result file, restart guardian, a new version that will not start, the computer switching off, and Dad clicking the desktop shortcut during the restart. Use when a change touches `ToolClone.update`, `_DadFiles`, `_Journal`, `_roll_back`, `write_result`, `ToolUpdates._update`, `_restart` or `_after_restart`, `restart_guardian.main`, or the start in `launcher._start` in `src/rozliczenia/centrum/`, or when fixing #196.
+description: Model-check with TLA+ (TLC) that Aktualizacja narzędzia leaves Dad with a version that starts and with his own file in `config/`, that the restart guardian rolls back only a new version that really does not start, that Dad always ends with Centrum or a dialog, that the card says „Narzędzie zaktualizowane” only on the new version, and that the new version's card shows no failure of an earlier try, under every order of failures - fetch, git, pip, file copy, the result file, restart guardian, a new version that will not start, the computer switching off, and Dad clicking the desktop shortcut during the restart. Use when `tools/skille_dla_zmiany.py` lists it, when its Mutation checks step is red, or when asked whether an update can leave Dad without a working tool.
 pilnuje:
   - src/rozliczenia/centrum/tool_update.py
   - src/rozliczenia/centrum/tool_updates.py
@@ -20,8 +20,8 @@ ci: .agents/skills/verify-aktualizacja-narzedzia/scripts/sprawdz_aktualizacje.py
 CI runs `sprawdz_aktualizacje.py` (the `ci:` key) in Mutation checks on Windows whenever a change
 touches this skill, so run it locally only while you bring the model in line or to reproduce a red
 Mutation checks step. In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
-Run by hand, the script prints the same drift as an `UWAGA:` line above the verdict.
-`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
+Run by hand, the script prints the same drift as an `UWAGA:` line above the verdict (Run).
+`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request.
 What stays with you on every change to the covered code is „Bring the model in
 line, then run”: read the diff against the table, change the model, break a new path in it, and run
 the check while you do. A change whose model nobody brought in line is not verified, whatever CI says.
@@ -196,23 +196,11 @@ no longer describes.
 ```
 
 On Windows use `py -3 .agents\skills\verify-aktualizacja-narzedzia\scripts\sprawdz_aktualizacje.py`.
-In a worktree, create its `.venv` first (`python3 tools/setup_worktree.py`).
-No system Java is needed. The first run downloads pinned `jdk4py==25.0.2.1`
-(a Java runtime packaged for pip, about 50 MB) and `tla2tools.jar` v1.7.4
-(TLC 2.19, SHA-256 checked) into `.verification/formal-aktualizacja/`, which
-Git ignores. After that a run takes about 6 s, offline. The pins, the
-download and the install live in `tools/lib/narzedzia_tlc.py`, and the run of
-TLC, the verdict and the known findings in `tools/lib/model_tlc.py`, which
-every skill with a TLA+ model shares: a network error, HTTP 5xx or
-429 is retried twice, and a download that still fails ends with a line
-`BŁĄD POBIERANIA NARZĘDZIA TLC`, which is a failed download, not a model
-verdict, and so does a downloaded jar with another SHA-256. A jar in the
-folder with another SHA-256 is downloaded again. CI keeps the folder in its
-cache, keyed by that file (#930), and saves it only with the jar of the
-pinned SHA-256 (step `Check the TLC tools before saving them` of the
-Mutation checks jobs, #940).
-`--config NAME` runs one configuration, and `--strict` makes known findings
-exit 1.
+No system Java is needed: the first run downloads a pinned Java runtime packaged for pip (about 50 MB) and `tla2tools.jar` into `.verification/formal-aktualizacja/`, which Git ignores.
+After that a run takes about 6 s, offline.
+The pins, the download, its retries and its CI cache live in `tools/lib/narzedzia_tlc.py`, and the run of TLC, the verdict and the known findings in `tools/lib/model_tlc.py`, which every skill with a TLA+ model shares.
+A last line `BŁĄD POBIERANIA NARZĘDZIA TLC` is a failed download, not a model verdict.
+A jar in the folder with another SHA-256 is downloaded again.
 
 The last line is the verdict:
 
@@ -256,21 +244,8 @@ Every configuration checks the invariants `TataMaDzialajacaWersje`,
 A broken `Postep` prints `naruszone Postep` and a counterexample that ends in a
 loop: `(dalej nic się nie dzieje)` or `(stąd znów krok n i tak bez końca)`.
 
-A known finding names the promise it breaks (`obietnica`) and its cause
-(`przyczyna`), a tag that `Slad(...)` adds to `slady`. TLC stops at the first
-counterexample, so each known finding runs on its own, with the
-`…PozaZnanymi` variant of every promise (`obietnice` of `MODEL` in the script)
-and `Wybaczone<promise>` set to the causes of its configuration's other
-findings, and the configuration runs once more with all of them; `Po(...)`
-checks the tag.
-
-1. Excusing every other known finding of its configuration, it must break
-   exactly its promise with its cause in `slady`. The printed counterexample is
-   this finding. If it passes, the finding is gone; another promise or no cause
-   is new.
-2. Excusing every known finding of the configuration, it must pass. If it
-   breaks, the promise fails in a way no known finding explains, and that is
-   reported as new.
+A known finding names the promise it breaks (`obietnica`) and its cause (`przyczyna`), a tag that `Slad(...)` adds to `slady` and `Po(...)` checks.
+How each known finding runs on its own and excused (`…PozaZnanymi`, `Wybaczone<promise>`) is in `tools/lib/model_tlc.py`; the `…PozaZnanymi` variants are `obietnice` of `MODEL` in the script.
 
 ## Known findings
 
