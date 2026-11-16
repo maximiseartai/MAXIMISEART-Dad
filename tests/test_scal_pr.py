@@ -28,6 +28,7 @@ from tests.fixtures.git_repo import commit, git, with_imports
 import bramka_idiomu
 import czasy_ci
 import github as klient_github
+import limit_rund
 import naprawia
 import rejestr_korzeni
 import stan_pr
@@ -1901,6 +1902,93 @@ def test_ta_sama_regula_szablonu_rozstrzyga_publikacje_i_zgode_na_merge_takze_dl
         assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (" in _last_line(checked), checked.stdout
         assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD>" in _last_line(checked), checked.stdout
         assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+
+
+FIRST_ROUND = "1" * 40
+SECOND_ROUND = "2" * 40
+
+
+def _limit_reason(*failed: str) -> str:
+    """Przyczyna odmowy limitu rund PR 1 z rundami z FAIL na commitach ``failed``, w postaci ze skilla ``przeglad``."""
+
+    commits = ", ".join(sha[:7] for sha in failed)
+    return (
+        f"limit rund: rund z FAIL {len(failed)} ({commits}), a po 3. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad,"
+        " „Kolejne rundy”): zamknij #1 i otwórz nowy PR ze zmienionym podejściem albo z częścią, którą przegląd przyjął,"
+        " z linkiem do #1 w „## Why”"
+    )
+
+
+# Skill ``przeglad``: po trzeciej rundzie z FAIL czwartej nie ma. Tydzień 9–15.11.2026 miał czwartą i dalszą rundę na
+# 24 PR-ach (#1693 do dziewiątej, #1720 do ósmej), choć zdanie stało w skillu od 29.10.
+@pytest.mark.parametrize(
+    ("verdicts", "deployed", "failed"),
+    [
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, HEAD)),
+        (
+            [("comment", f"WERDYKT: PASS {FIRST_ROUND}"), ("COMMENTED", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD), ("comment", PASS_HEAD)],
+            BEFORE_FIRST,
+            (FIRST_ROUND, SECOND_ROUND, HEAD),
+        ),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("CHANGES_REQUESTED", "Popraw.")], BEFORE_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD, "CONTRIBUTOR")], BEFORE_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], AFTER_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], None, None),
+    ],
+    ids=[
+        "trzy-rundy-z-fail",
+        "pass-przed-rundami-i-po-nich-jak-1853",
+        "dwa-werdykty-fail-jednego-commitu-to-jedna-runda",
+        "prosba-o-zmiany-bez-linii-werdyktu-nie-jest-runda",
+        "fail-konta-bez-prawa-zapisu-nie-jest-runda",
+        "watek-sprzed-wdrozenia-limitu-konczy-po-staremu",
+        "limit-niewdrozony",
+    ],
+)
+def test_po_trzeciej_rundzie_z_fail_pr_nie_dostaje_kolejnej_rundy(
+    verdicts: list[tuple[str, ...]], deployed: datetime | None, failed: tuple[str, ...] | None
+) -> None:
+    assert limit_rund.problem(_written(*verdicts), deployed) == (None if failed is None else _limit_reason(*failed))
+
+
+@pytest.mark.parametrize("rounds", [2, 3], ids=["po-drugiej-rundzie-z-fail-kolejna-runda-sie-odbywa", "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma"])
+def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze_dla_pass_spoza_werdyktu(tmp_path: Path, rounds: int) -> None:
+    """Każda runda idzie przez ``--przeglad`` (krok 1 recenzenta) i ``--werdykt``, a ``PASS`` opublikowany bez
+    ``--werdykt`` liczy się przy merge'u, więc limit odmawia we wszystkich trzech miejscach."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, started=GATE_BEFORE_VERDICTS)
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 0\n"})
+    failed = []
+    for number in range(1, rounds + 1):
+        github.comment(1, f"WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)")
+        failed.append(head)
+        head = github.push_pull(1, {"kod/inne.py": f"INNE: int = {number}\n"})
+    path = tmp_path / f"runda-{rounds + 1}.md"
+    path.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
+    refused = rounds == 3
+
+    reviewed = github.run("1", "--przeglad")
+    answered = github.run("1", "--werdykt", str(path))
+    github.reload()
+    if refused:
+        github.comment(1, SPRAWDZONE_PASS.format(head=head))
+    checked = github.run("1", "--bez-merge")
+
+    reason = _limit_reason(*failed)
+    assert reviewed.returncode == int(refused), reviewed.stdout + reviewed.stderr
+    assert answered.returncode == int(refused), answered.stdout + answered.stderr
+    if refused:
+        assert _last_line(reviewed) == f"PRZEGLĄD ODMOWA | #1 {head[:7]} | {reason}"
+        assert "ZMIANA |" not in reviewed.stdout
+        assert _last_line(answered) == f"WERDYKT ODMOWA | #1 | {reason}"
+        assert github.published() == []
+    else:
+        assert _last_line(reviewed) == f"PRZEGLĄD OK | #1 {head[:7]}"
+        assert len(github.published()) == 1
+    assert (reason in _last_line(checked)) == refused, checked.stdout + checked.stderr
+    assert github.merges() == []
 
 
 # Reguły werdyktu w checkoucie, który nie jest ``origin/main``: gałąź sprzed wdrożenia szablonu (#1489) go nie zna,

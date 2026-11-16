@@ -130,7 +130,8 @@ Runda po `FAIL` sprawdza diff od przejrzanego SHA do nowego HEAD i to, czy każd
 Zamkniętych znalezisk nie powtarza.
 Ważne poprzedniej rundy jest zamknięte, gdy korzeń wyrwano według sekcji „Korzeń i chwast”, z dowodem wyrwania i sondą formy siostrzanej.
 Nowe znalezisko w kodzie, którego ta runda nie zmieniła, jest Ważne tylko wtedy, gdy to defekt zachowania z dowodem.
-Po drugiej rundzie z `FAIL` na tej samej przesłance (ta sama granica albo reguła pada na kolejnym przypadku) kolejna runda zaczyna się od zmiany podejścia: ataku na przesłankę, granicy z mechanizmu albo podziału PR; po trzeciej rundzie z `FAIL` koordynator nie zleca czwartej, tylko zmienia podejście albo dzieli PR.
+Po drugiej rundzie z `FAIL` na tej samej przesłance (ta sama granica albo reguła pada na kolejnym przypadku) kolejna runda zaczyna się od zmiany podejścia: ataku na przesłankę, granicy z mechanizmu albo podziału PR.
+Po trzeciej rundzie z `FAIL` czwartej rundy w tym PR nie ma: `tools/scal_pr.py` odmawia jej w `--przeglad`, w `--werdykt` i przy merge'u (limit rund, `tools/lib/limit_rund.py`), więc koordynator zamyka PR i otwiera nowy ze zmienionym podejściem albo z częścią, którą przegląd przyjął.
 Każdą rundę robi nowy recenzent, który nie pisał kodu, z linkiem do poprzednich werdyktów.
 
 ## Tryb autora: przed zleceniem przeglądu
@@ -151,7 +152,7 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
 
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
 3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)), dla Ważnego z polem `Idiom: <id>` dodaj albo popraw regułę ast-grep o tym id z jej dowodem, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
-   Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście albo dzielisz PR.
+   Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zamykasz PR i otwierasz nowy ze zmienionym podejściem albo z częścią, którą przegląd przyjął (sekcja „Kolejne rundy”).
 
 ## Tryb recenzenta: werdykt na PR
 

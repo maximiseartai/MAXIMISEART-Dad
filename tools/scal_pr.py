@@ -11,7 +11,8 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    zadaniach z jego ``needs:``, run z zadaniem w toku też (ponowienie), a checki starszych runów na tym HEAD, na
    przykład sprzed zamknięcia i otwarcia PR, się nie liczą, ani czerwone, ani zielone (``stan_pr.latest_ci_run``);
    check workflow ``CI`` bez identyfikatora runu w ``detailsUrl`` to odmowa;
-3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej);
+3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej), a PR nie ma trzech
+   rund z ``FAIL`` (limit rund, niżej, który odmawia też ``--werdykt`` i ``--przeglad``);
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
@@ -90,6 +91,7 @@ import bramka_idiomu
 import bramka_korzenia
 import github
 import kontekst_przegladu
+import limit_rund
 import naprawia
 import potomne
 import rejestr_korzeni
@@ -148,7 +150,7 @@ def _problems(pull: Pull) -> list[str]:
     if pull.from_fork:
         problems.append("PR z forka")
     template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
-    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template)]
+    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template), limit_rund.deployed_problem(pull)]
     return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER))]
 
 
@@ -231,6 +233,9 @@ def _clean_up() -> str:
 
 def _publish_verdict(pull: Pull, path: Path) -> int:
     text = path.read_text(encoding="utf-8")
+    if limit := limit_rund.deployed_problem(pull):
+        print(f"WERDYKT ODMOWA | #{pull.number} | {limit}")
+        return 1
     deployed = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
     if problems := werdykt_pr.publish_problems(text, pull, deployed):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
@@ -296,7 +301,7 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )
