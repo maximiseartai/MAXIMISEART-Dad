@@ -16,10 +16,11 @@ pierwszą wersję tylko raz i potem ją kopiuje (``built_once``).
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import itertools
 import json
 import os
 from pathlib import Path
@@ -28,6 +29,8 @@ import shutil
 import socket
 import subprocess
 import threading
+import time
+import urllib.error
 import urllib.request
 
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -279,20 +282,23 @@ def centrum_health(
 ) -> dict[str, object]:
     """``/api/health`` Centrum na porcie; z ``commit`` dopiero odpowiedź Centrum w tym commicie (skróconym).
 
-    Gdy przez ``timeout_s`` nikt nie odpowiedział, rzuca ostatni ``OSError`` połączenia, a gdy odpowiadało Centrum w
-    innym commicie, ``AssertionError`` z jego odpowiedzią. ``process``, który skończył się, zanim Centrum odpowiedziało,
-    to ``AssertionError`` z jego kodem wyjścia i konsolą.
+    Gdy przez ``timeout_s`` nikt nie odpowiedział, rzuca ostatni ``OSError`` połączenia z notą, co port odpowiadał po
+    kolei w tym czasie (``_what_the_port_said``), a gdy odpowiadało Centrum w innym commicie, ``AssertionError`` z jego
+    odpowiedzią. ``process``, który skończył się, zanim Centrum odpowiedziało, to ``AssertionError`` z jego kodem wyjścia
+    i konsolą.
     """
 
     answers: list[dict[str, object]] = []
-    failures: list[OSError] = []
+    failures: list[tuple[float, OSError]] = []
+    start = time.monotonic()
 
     def answered() -> bool:
+        asked = time.monotonic() - start
         try:
             with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=1) as response:
                 body = json.load(response)
         except OSError as failure:
-            failures.append(failure)
+            failures.append((asked, failure))
             if process is not None and process.poll() is not None:
                 output = process.stdout.read() if process.stdout else ""
                 raise AssertionError(f"Centrum zakończyło się kodem {process.returncode}:\n{output}") from failure
@@ -304,8 +310,39 @@ def centrum_health(
     if not wait_for(answered, timeout_s, every=0.1):
         if answers:
             raise AssertionError(f"Centrum nie odpowiedziało w commicie {commit}: {answers[-1]}")
-        raise failures[-1]
+        last = failures[-1][1]
+        last.add_note(_what_the_port_said(failures))
+        raise last
     return answers[-1]
+
+
+def _what_the_port_said(failures: Sequence[tuple[float, OSError]]) -> str:
+    """Kolejne odcinki pytań o ``health`` z tą samą odpowiedzią portu: w których sekundach od pierwszego pytania padły,
+    ile ich było i co port odpowiedział. Mówią, czy w tym czasie ktoś słuchał na porcie, a jeśli tak, czy przyjmował połączenia."""
+
+    lines = ["Co odpowiadał port na kolejne pytania o health:"]
+    for answer, group in itertools.groupby(failures, key=lambda failure: _port_answer(failure[1])):
+        seconds = [at for at, _ in group]
+        lines.append(f"  {seconds[0]:.1f}-{seconds[-1]:.1f} s, {len(seconds)}×: {answer}")
+    return "\n".join(lines)
+
+
+def _port_answer(failure: OSError) -> str:
+    """``urlopen`` zamienia na ``URLError`` tylko błąd połączenia i wysłania pytania, a błąd odczytu odpowiedzi rzuca
+    bez zmian, więc typ mówi, czy port przyjął połączenie."""
+
+    if isinstance(failure, urllib.error.HTTPError):
+        return f"odpowiedź HTTP {failure.code}"
+    if isinstance(failure, urllib.error.URLError):
+        reason = failure.reason
+        if isinstance(reason, ConnectionRefusedError):
+            return "odmowa połączenia: nikt nie słucha"
+        if isinstance(reason, TimeoutError):
+            return "połączenie nieprzyjęte przez 1 s"
+        return f"połączenie nieudane: {type(reason).__name__}"
+    if isinstance(failure, TimeoutError):
+        return "połączenie przyjęte, bez odpowiedzi przez 1 s: port trzyma proces, który nie odpowiada"
+    return f"połączenie przyjęte, potem {type(failure).__name__}"
 
 
 def unreachable_origin() -> str:

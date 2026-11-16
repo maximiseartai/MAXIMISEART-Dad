@@ -24,6 +24,7 @@ import urllib.request
 import pytest
 
 from rozliczenia.centrum import tool_update
+from rozliczenia.tool_files import config_dir, log_path
 
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum
 from tests.fixtures.fake_cli import fake_cli
@@ -63,12 +64,40 @@ def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterato
     )
     try:
         yield process
-    finally:
-        if sys.platform == "win32":
-            subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, check=False)
-        elif process.poll() is None:
-            os.killpg(process.pid, signal.SIGTERM)
-        process.communicate(timeout=30)
+    except BaseException as failure:
+        alive, journal = process.poll() is None, (config_dir(clone) / tool_update.JOURNAL).exists()
+        failure.add_note(_shortcut_when_failed(clone, alive=alive, journal=journal, console=_stopped(process)))
+        raise
+    _stopped(process)
+
+
+def _stopped(process: subprocess.Popen[str]) -> str:
+    """Zamyka skrót razem z każdym procesem potomnym i oddaje jego konsolę, także Centrum uruchomionego od nowa z dysku."""
+
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, check=False)
+    elif process.poll() is None:
+        os.killpg(process.pid, signal.SIGTERM)
+    console, _ = process.communicate(timeout=30)
+    return console
+
+
+def _shortcut_when_failed(clone: Path, *, alive: bool, journal: bool, console: str) -> str:
+    """Gdzie był skrót, gdy test padł: czy żył, czy skończył cofanie (dziennik „Aktualizacja w toku” znika po nim), jego
+    konsola i koniec dziennika Centrum klonu, do którego piszą skrót i Centrum, które on uruchomił."""
+
+    centrum_log = log_path(clone)
+    log_tail = centrum_log.read_text(encoding="utf-8", errors="replace").splitlines()[-30:] if centrum_log.exists() else []
+    return "\n".join(
+        [
+            f"Skrót w chwili porażki: {'żył' if alive else 'już się skończył'}.",
+            f"Dziennik „Aktualizacja w toku” klonu: {'jeszcze jest' if journal else 'nie ma go'}.",
+            "Konsola skrótu:",
+            console.rstrip() or "(pusta)",
+            "Koniec dziennika Centrum klonu:",
+            *(log_tail or ["(brak dziennika)"]),
+        ]
+    )
 
 
 def _environment(browser: Path | None) -> dict[str, str]:
