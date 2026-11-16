@@ -6,6 +6,7 @@ from collections.abc import Mapping
 import gc
 import os
 from pathlib import Path
+import re
 import subprocess
 import sys
 from typing import Final
@@ -39,8 +40,9 @@ def plik_w_cyklu(path):
 
 
 def _sesja(tmp_path: Path, pliki: Mapping[str, str], conftest: str = _CONFTEST) -> dict[str, str]:
-    """Komunikat błędu albo porażki każdego testu sesji próbek z plików ``pliki``, w prawdziwym cyklu życia testu w
-    osobnym procesie pytest; test bez błędu ma pusty komunikat."""
+    """Raport błędu albo porażki każdego testu sesji próbek z plików ``pliki``, w prawdziwym cyklu życia testu w
+    osobnym procesie pytest: pierwsza linia to fazy błędów (``on setup``, ``on teardown``), dalej pełny raport z treści
+    elementu JUnit, bo atrybut ``message`` pytest 9 skraca do 500 znaków; test bez błędu ma pusty raport."""
 
     (tmp_path / "conftest.py").write_text(conftest, encoding="utf-8")
     for name, text in pliki.items():
@@ -58,18 +60,31 @@ def _sesja(tmp_path: Path, pliki: Mapping[str, str], conftest: str = _CONFTEST) 
         check=False,
     )
     assert report.exists(), done.stdout + done.stderr
-    return {
-        case.attrib["name"]: " ".join(
-            element.get("message", "") for element in case if element.tag in ("error", "failure")
-        )
-        for case in ET.parse(report).iter("testcase")
-    }
+    reports: dict[str, str] = {}
+    for case in ET.parse(report).iter("testcase"):
+        failed = [element for element in case if element.tag in ("error", "failure")]
+        phases = [
+            match.group(0) for element in failed if (match := re.search(r"on (setup|teardown)", element.get("message", "")))
+        ]
+        texts = [element.text or "" for element in failed]
+        reports[case.attrib["name"]] = "\n".join([" ".join(phases), *texts]) if failed else ""
+    return reports
 
 
-def _zostawione(message: str) -> str:
-    """Część komunikatu pluginu z tym, co test zostawił, bez rady, jak to naprawić."""
+_KOMUNIKAT: Final = re.compile(
+    r"AssertionError: Test albo jego fixtura zostawiły procesowi workera stan, który działa w oknie następnego testu: "
+    r"(.*?)\. Zamknij plik"
+)
 
-    return message.partition("następnego testu: ")[2].partition(". Zamknij")[0]
+
+def _zostawione(report: str) -> str:
+    """Części komunikatów pluginu w raporcie ``_sesja`` z tym, co test zostawił, bez rady, jak to naprawić."""
+
+    return "; ".join(_KOMUNIKAT.findall(report))
+
+
+def _fazy_i_zostawione(report: str) -> str:
+    return report.partition("\n")[0] + " " + _zostawione(report)
 
 
 # Sprawca zostawia stan, a sąsiad w tym samym procesie zbiera ostrzeżenia gc jak sąsiad z #1923 i czyta środowisko i
@@ -126,6 +141,13 @@ def test_katalog_roboczy(tmp_path):
 
 def test_zmienna_srodowiska():
     os.environ["ZMIENNA_SPRAWCY"] = "1"
+
+
+def test_katalog_roboczy_usuniety(tmp_path):
+    usuwany = tmp_path / "usuwany"
+    usuwany.mkdir()
+    os.chdir(usuwany)
+    usuwany.rmdir()
 """,
     "test_b_sasiad.py": """
 import gc
@@ -178,7 +200,9 @@ def test_kazdy_zasob_zostawiony_przez_test_wywraca_sprawce_a_nie_sasiada(tmp_pat
         "test_proces_potomny_bez_konca": ["potok", "otwarty po teście", "proces potomny"],
         "test_katalog_roboczy": ["katalog roboczy"],
         "test_zmienna_srodowiska": ["zmienna środowiska ZMIENNA_SPRAWCY zmieniona"],
+        "test_katalog_roboczy_usuniety": ["katalog roboczy"],
     }, ""), errors
+    assert "→ katalog usunięty" in _zostawione(errors["test_katalog_roboczy_usuniety"]), errors
 
 
 # Fixtura każdego zasięgu yielduje plik w cyklu bez close(); sąsiad na końcu sesji zbiera ostrzeżenia gc jak test portu
@@ -281,6 +305,8 @@ def test_ostatni_w_module(plik_modulu):
     assert plik_modulu
 """,
     "test_c_parametr.py": """
+import os
+
 import pytest
 from conftest import plik_w_cyklu
 
@@ -288,6 +314,8 @@ from conftest import plik_w_cyklu
 @pytest.fixture(scope="module", params=["jeden", "dwa"])
 def plik_parametru(request, tmp_path_factory):
     stan = [plik_w_cyklu(tmp_path_factory.mktemp(request.param) / f"{request.param}.bin")]
+    if request.param == "jeden":
+        os.environ["ZMIENNA_JEDEN"] = "1"  # bez przywrócenia: sprawdzenie przy zmianie parametru ją wraca
     yield request.param
     stan.clear()
     zywe = [[i] for i in range(1_000_000)]
@@ -382,8 +410,9 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
                 "sesja.bin",
                 "fixtura plik_sesji zasięgu session",
                 "ZMIENNA_SESJI",
+                "ZMIENNA_JEDEN",
             )
-            if owner in message
+            if owner in _fazy_i_zostawione(message)
         ]
         for name, message in errors.items()
         if message
@@ -402,7 +431,7 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
         "test_cialo_zostawia_plik": ["on teardown", "cialo.bin"],
         "test_setup_pada": ["on setup", "on teardown", "przed_bledem.bin"],
         "test_ostatni_w_module": ["on teardown", "modul.bin", "fixtura plik_modulu zasięgu module"],
-        "test_z_parametrem[dwa]": ["on setup", "jeden.bin", "fixtura plik_parametru zasięgu module"],
+        "test_z_parametrem[dwa]": ["on setup", "jeden.bin", "fixtura plik_parametru zasięgu module", "ZMIENNA_JEDEN"],
         "test_jedyny_w_module": ["on teardown", "samotny.bin", "fixtura plik_samotnego zasięgu module"],
         "test_teardown_skip": ["on teardown", "skip.bin", "fixtura plik_skip zasięgu module"],
         "test_teardown_rzuca": ["on teardown", "rzuca.bin", "fixtura plik_rzuca zasięgu module"],
@@ -414,9 +443,10 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
 
 
 # Fixtura modułu zmienia w setupie każdy rodzaj stanu procesu. Czysta sprząta go na końcu, więc nie wywraca żadnego
-# testu, także gdy zmienia katalog roboczy; brudna nie sprząta, więc wywraca ostatni test modułu z nazwą fixtury, a
-# plugin przywraca katalog i środowisko, zanim zacznie się sąsiad. Wątek testu, który zamyka plik zaraz po teście, nie
-# zostawia stanu.
+# testu, także gdy zmienia katalog roboczy; test, który pod nią znów zmienia jej katalog i zmienną, pada sam, a plugin
+# wraca do wartości fixtury, także pod fixturą klasy, która zmienia tę samą zmienną i przywraca ją na swoim końcu.
+# Brudna nie sprząta, więc wywraca ostatni test modułu z nazwą fixtury, a plugin przywraca katalog i środowisko, zanim
+# zacznie się sąsiad. Wątek testu, który zamyka plik zaraz po teście, nie zostawia stanu.
 _RODZAJ_FIXTURY: Final = """
 import os
 import subprocess
@@ -459,8 +489,24 @@ def test_pierwszy_z_czysta(czysta_modulu):
     assert os.environ["ZMIENNA_CZYSTEJ"] == "1"
 
 
-def test_drugi_z_czysta(czysta_modulu):
-    assert os.getcwd().endswith("czysta0")
+def test_sprawca_pod_czysta_zmienia_jej_katalog_i_zmienna(czysta_modulu, tmp_path):
+    os.chdir(tmp_path)
+    os.environ["ZMIENNA_CZYSTEJ"] = "2"
+
+
+class TestZagniezdzonaKlasa:
+    @pytest.fixture(scope="class")
+    def klasa_nad_czysta(self, czysta_modulu):
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("ZMIENNA_CZYSTEJ", "klasa")
+            yield
+
+    def test_w_klasie(self, klasa_nad_czysta):
+        assert os.environ["ZMIENNA_CZYSTEJ"] == "klasa"
+
+
+def test_drugi_z_czysta_ma_jej_katalog_i_zmienna(czysta_modulu):
+    assert (os.getcwd().endswith("czysta0"), os.environ["ZMIENNA_CZYSTEJ"]) == (True, "1")
 
 
 def test_watek_zamyka_plik_zaraz_po_tescie(tmp_path):
@@ -472,6 +518,44 @@ def test_watek_zamyka_plik_zaraz_po_tescie(tmp_path):
         plik.close()
 
     threading.Thread(target=zamyka, daemon=True).start()
+""",
+    "test_a_rozdzielacz.py": """
+import queue
+import threading
+
+import pytest
+
+
+@pytest.fixture(scope="module")
+def rozdzielacz_modulu():
+    prosby, stop, uruchomiony = queue.Queue(), threading.Event(), threading.Event()
+    watki = []
+
+    def rozdziela():
+        while prosby.get():
+            watek = threading.Thread(target=stop.wait, name="watek-rozdzielacza", daemon=True)
+            watek.start()
+            watki.append(watek)
+            uruchomiony.set()
+
+    rozdzielacz = threading.Thread(target=rozdziela, name="rozdzielacz", daemon=True)
+    rozdzielacz.start()
+    yield prosby, uruchomiony
+    stop.set()
+    prosby.put(False)
+    rozdzielacz.join()
+    for watek in watki:
+        watek.join()
+
+
+def test_watek_fixtury_uruchamia_watek_w_pierwszym_tescie(rozdzielacz_modulu):
+    prosby, uruchomiony = rozdzielacz_modulu
+    prosby.put(True)
+    assert uruchomiony.wait(10)
+
+
+def test_drugi_z_rozdzielaczem(rozdzielacz_modulu):
+    pass
 """,
     "test_b_brudna.py": _RODZAJ_FIXTURY
     + """
@@ -505,6 +589,7 @@ def test_sasiad_ma_katalog_i_srodowisko_sprzed_fixtury(request):
 def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(tmp_path: Path) -> None:
     errors = _sesja(tmp_path, _RODZAJE_FIXTUR)
     dirty = _zostawione(errors.pop("test_drugi_z_brudna"))
+    culprit = _zostawione(errors.pop("test_sprawca_pod_czysta_zmienia_jej_katalog_i_zmienna"))
     kinds = (
         *(("brudna.bin otwarty po teście", "potok", "proces potomny") if sys.platform != "win32" else ()),
         "wątek watek-brudna żyje 1 s po teście",
@@ -512,11 +597,17 @@ def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(
         "zmienna środowiska ZMIENNA_BRUDNEJ zmieniona",
     )
 
-    assert (errors, [kind for kind in kinds if kind in dirty], dirty.count("fixtura brudna_modulu zasięgu module")) == (
+    assert (
+        errors,
+        [kind for kind in kinds if kind in dirty],
+        dirty.count("fixtura brudna_modulu zasięgu module"),
+        [part.split(" → ")[0] for part in culprit.split("; ")],
+    ) == (
         {name: "" for name in errors},
         list(kinds),
         len(kinds),
-    ), dirty
+        [f"katalog roboczy {tmp_path / 'tmp' / 'czysta0'}", "zmienna środowiska ZMIENNA_CZYSTEJ zmieniona"],
+    ), (dirty, culprit, errors)
 
 
 _LUKI_CONFTEST: Final = _CONFTEST + """
