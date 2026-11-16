@@ -236,6 +236,7 @@ def pytest_runtest_call(item: pytest.Item) -> Generator[None, object, object]:
 def pytest_fixture_setup(
     fixturedef: pytest.FixtureDef[object], request: pytest.FixtureRequest
 ) -> Generator[None, object, object]:
+    _granica()  # setup fixtury biegnie w środku setupu innej (request.getfixturevalue): jej odcinek się tu kończy
     if any(isinstance(wpis, _Wlasne) for wpis in _ksiega):
         # pytest skończył instancję fixtury z params w setupie następnego testu (FixtureDef.execute)
         try:
@@ -244,8 +245,6 @@ def pytest_fixture_setup(
             _release_gc()
     if fixturedef.scope == "function":
         return (yield)
-    if _stos:  # setup fixtury biegnie w środku setupu innej (request.getfixturevalue): jej odcinek się tu kończy
-        _zamknij_odcinek(_stos[-1])
     ramka = _Ramka(_Wlasne(_Fixture(fixturedef.argname, fixturedef.scope)), stan())
     _stos.append(ramka)
     try:
@@ -265,6 +264,15 @@ def pytest_fixture_setup(
     # puszczenie cached_result aż do sprawdzenia.
     fixturedef.addfinalizer(_hold_gc)
     return result
+
+
+def _granica() -> None:
+    """Granica setupu fixtury: najpierw kończy odcinek fixtury z wierzchu stosu, a dopiero potem plugin sprawdza stan
+    (koniec fixtury z ``params``, który pytest robi tuż przed tym setupem) albo otwiera ramkę, więc każdy odcinek należy
+    do jednej fixtury."""
+
+    if _stos:
+        _zamknij_odcinek(_stos[-1])
 
 
 def _zamknij_odcinek(ramka: _Ramka, *, do_ksiegi: bool = True) -> None:

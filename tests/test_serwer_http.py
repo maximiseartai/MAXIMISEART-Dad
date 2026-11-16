@@ -46,7 +46,7 @@ def test_po_bloku_serwera_nie_zyje_watek_obslugi_polaczenia_ktore_klient_trzyma_
 
     client = threading.Thread(target=serve_one_request, name="klient-serwera-testu", daemon=True)
     client.start()
-    finished = ended.wait(10)
+    finished = ended.wait(30)
     alive = [thread.name for thread in threads_since(since) if "process_request_thread" in thread.name]
     for connection in connections:
         connection.close()

@@ -447,7 +447,8 @@ def test_plik_fixtury_kazdego_zasiegu_wywraca_test_po_ktorym_fixtura_sie_konczy_
 # wraca do wartości fixtury, także pod fixturą klasy, która zmienia tę samą zmienną i przywraca ją na swoim końcu.
 # Czysta fixtura modułu, która bierze fixturę sesji przez request.getfixturevalue, nie przejmuje jej stanu, więc ani jej
 # ostatni test, ani sąsiad z tą fixturą sesji w innym module nie padają, a jej zmienna, zmieniona przed fixturą sesji i
-# po niej, wraca na jej końcu do wartości sprzed pierwszej zmiany. Stan setupu, który padł, należy do testu. Test, który usuwa katalog roboczy żywej fixtury,
+# po niej, wraca na jej końcu do wartości sprzed pierwszej zmiany, także gdy pytest w jej środku zmienia parametr innej
+# fixtury. Stan setupu, który padł, należy do testu. Test, który usuwa katalog roboczy żywej fixtury,
 # pada sam z nazwanym katalogiem. Brudna nie sprząta, więc wywraca ostatni test modułu z nazwą fixtury, a plugin przywraca katalog i środowisko, zanim
 # zacznie się sąsiad. Wątek testu, który zamyka plik zaraz po teście, nie zostawia stanu.
 _RODZAJ_FIXTURY: Final = """
@@ -580,6 +581,32 @@ def test_pierwszy_z_zagniezdzona(modul_z_sesja):
 
 def test_ostatni_z_zagniezdzona(modul_z_sesja):
     assert modul_z_sesja == "sesja"
+""",
+    "test_a_param_w_zagniezdzeniu.py": """
+import pytest
+
+
+@pytest.fixture(scope="module")
+def parametr(request):
+    return request.param
+
+
+@pytest.fixture(scope="module")
+def z_parametrem(request):
+    # Czysta fixtura modułu zmienia zmienną, a potem bierze fixturę z parametrem, którą pytest wtedy zmienia.
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("ZMIENNA_PRZED_PARAMETREM", "1")
+        yield request.getfixturevalue("parametr")
+
+
+@pytest.mark.parametrize("parametr", [1], indirect=True)
+def test_pierwszy_parametr(parametr):
+    assert parametr == 1
+
+
+@pytest.mark.parametrize("parametr", [2], indirect=True)
+def test_drugi_parametr_w_zagniezdzeniu(z_parametrem, parametr):
+    assert (z_parametrem, parametr) == (2, 2)
 """,
     "test_a_padly_setup.py": """
 import os
