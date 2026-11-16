@@ -597,9 +597,11 @@ def columns_from_description(collective_filename: str, columns: Sequence[str], *
         what=by_legend,
         where=f"plik {collective_filename}, kolumny {', '.join(columns[:-1])} i {columns[-1]}",
         action=(
-            f"Przejrzyj opis technika w {'pozostałych wierszach' if closed else 'każdym wierszu'} Pliku zbiorczego "
-            "i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już "
-            "wpisała."
+            "Przejrzyj opis technika w pozostałych wierszach Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed "
+            "Przebiegiem rozliczeń; ilości z Kodów czynności legenda już wpisała."
+            if closed
+            else "Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed "
+            "Przebiegiem rozliczeń."
         ),
     )
 

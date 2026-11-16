@@ -35,7 +35,7 @@ def readable_quantity_rules(settings: CentrumSettings) -> QuantityRulesView:
 def readable_activity_legend(settings: CentrumSettings) -> ActivityLegend:
     """Legenda czynności; plik legendy bez odczytu to odmowa o nim, a nie legenda z Wydania."""
 
-    legend = settings.snapshot().activity_legend
+    legend = settings.activity_legend()
     if isinstance(legend, UnreadableFile):
         raise refusal.settings_file_unreadable(legend.name)
     return legend
