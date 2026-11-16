@@ -14,13 +14,13 @@ from datetime import datetime
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.diagnosis import Diagnosis
+from rozliczenia.centrum.logged_input_copy import LoggedInputFile
 from rozliczenia.centrum.run_logs import (
     SCHEMA_VERSION,
     Environment,
     Explanation,
     LoggedCheck,
     LoggedDiagnosis,
-    LoggedInputFile,
     LoggedMessage,
     LoggedPhase,
     LoggedActivityLegend,

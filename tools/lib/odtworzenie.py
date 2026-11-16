@@ -85,7 +85,8 @@ from rozliczenia.centrum.process_kind import (
     startable,
 )
 from rozliczenia.centrum.report_entering_logs import EnteringReplay, ReplayedOrderless, Unreplayable
-from rozliczenia.centrum.run_logs import Environment, LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped, RunLog, StartFacts
+from rozliczenia.centrum.logged_input_copy import LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped
+from rozliczenia.centrum.run_logs import Environment, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, empty_memory, forbidden_columns
