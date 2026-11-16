@@ -159,7 +159,7 @@ def test_dziecko_skonczone_bez_budzenia_koordynatora_przez_t3_budzi_go_strażnik
 def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dostaje_budzenie() -> None:
     # Przegląd PR skończył się w 19. minucie, T3 zgubiło powiadomienie, a koordynator pracował dalej przy innych
     # dzieciach (ruch w 33. minucie) i uważał przegląd za trwający; w transkrypcie jest tylko start dziecka.
-    memory = straznik.Memory(heard={CHILD: False})
+    memory = straznik.Memory(heard=set(), runs={CHILD: "node:przeglad"})
     decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
     decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
     # Strażnik dalej pilnuje, choć koordynator ruszył po końcu dziecka.
@@ -167,13 +167,13 @@ def test_koordynator_zajety_innymi_dziecmi_bez_powiadomienia_o_koncu_dziecka_dos
 
     (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 35 * MIN, memory)
 
-    assert CHILD in reason and "nie dotarło" in reason
+    assert CHILD in reason and "nie dotarło" in reason and "duplikat" in reason
 
 
 def test_dziecko_bez_startu_w_transkryptach_czeka_jak_bez_transkryptu_na_ruch_watku() -> None:
     # Transkrypt jest, ale nie ma w nim odpowiedzi startu tego dziecka (zlecenie z sesji sprzed hooka).
     def reasons(parent_min: float) -> list[str]:
-        memory = straznik.Memory(heard={SIBLING: True})
+        memory = straznik.Memory(heard={"node:rodzenstwo"}, runs={SIBLING: "node:rodzenstwo"})
         decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
         decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 20 * MIN, memory)
         return decide(Seen("completed", parent_min * MIN), {CHILD: Seen("completed", 16 * MIN)}, 35 * MIN, memory)
@@ -240,13 +240,10 @@ def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu
         _entry("user", 5, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR runda 1) [completed]: FAIL"),
         # Wznowienie: T3 nazywa nowy bieg węzłem, który nie zawiera identyfikatora dziecka w postaci z odpowiedzi.
         _call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(6), {"threadId": CHILD, "taskId": CONTINUED, "link": "[Delegated task 2]"}),
-        # Odczyt dziecka w toku bez pola workState i link w tekście koordynatora nie są powiadomieniem.
-        _call("mcp__t3-code__t3_thread_read", "toolu_read", _stamp(6.7), {"thread": {"threadId": CHILD, "status": "running"}}, {"threadId": CHILD}),
-        _entry("assistant", 6.8, f"Runda 2 trwa: [Przegląd wymyślonego PR runda 1](t3-thread://x/{CHILD})"),
         _entry("user", 7, "Delegated task node:delegated-task:dziecko-wymyslone-2 (Przegląd wymyślonego PR runda 2) [completed]: OK"),
-        # Rodzeństwo wznowione i skończone; koordynator sam odczytał wynik, a powiadomienie nie przyszło.
         _call("mcp__t3-code__t3_thread_send", "toolu_send2", _stamp(7.5), {"threadId": SIBLING, "taskId": SENT}),
-        _call("mcp__t3-code__t3_thread_read", "toolu_read2", _stamp(8), {"thread": {"threadId": SIBLING, "status": "completed"}}, {"threadId": SIBLING}),
+        # Cytat powiadomienia w środku linii wiadomości (koordynator albo Maks je przytacza) nie jest powiadomieniem.
+        _entry("user", 7.8, f"Wcześniej przyszło: Delegated task {SENT} (Bieg) [completed]"),
         # Wynik Basha, który cytuje powiadomienie od początku linii, to nie wiadomość od T3.
         _call("Bash", "toolu_bash", _stamp(8.2), {"stdout": "x"}).split("\n")[0],
         _row("user", _stamp(8.2), [{"type": "tool_result", "tool_use_id": "toolu_bash", "content": f"Delegated task {CONTINUED} (Przegląd) [completed]"}]),
@@ -261,49 +258,59 @@ def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu
 
     offset = straznik.hear(transcript, 0, [CHILD, SIBLING], memory)
 
-    assert (memory.heard, memory.runs) == ({CHILD: False, SIBLING: True}, {CHILD: CONTINUED, SIBLING: SENT})
-    rest = f"Delegated task {CONTINUED} (Przegląd wymyślonego PR runda 1) [completed]: PASS"
+    assert memory.runs == {CHILD: CONTINUED, SIBLING: SENT}
+    assert memory.heard == {"node:delegated-task:dziecko-wymyslone-1", "node:delegated-task:dziecko-wymyslone-2"}
+    # Dalsza część niepełnej linii: powiadomienie o biegu 2 dziecka w jednej wiadomości z powiadomieniem o innym biegu.
+    rest = f"Delegated task node:inne (Inne) [completed]: OK\n\nDelegated task {CONTINUED} (Przegląd wymyślonego PR runda 1) [completed]: PASS"
     with transcript.open("a", encoding="utf-8") as handle:
         handle.write(_entry("user", 9, rest)[20:] + "\n")
     assert straznik.hear(transcript, offset, [CHILD, SIBLING], memory) == transcript.stat().st_size
-    assert memory.heard == {CHILD: True, SIBLING: True}
+    assert CONTINUED in memory.heard and SENT not in memory.heard
 
 
 @pytest.mark.parametrize(
-    ("reply", "about", "ended"),
+    ("tool", "reply"),
     [
-        ({"taskId": SENT, "childThreadId": CHILD, "status": "running", "workState": "working"}, CHILD, False),
-        # Dziecko czeka na własne dzieci: bieg trwa, choć workState nie jest working.
-        ({"taskId": SENT, "childThreadId": CHILD, "status": "running", "workState": "waiting_for_children"}, CHILD, False),
-        ({"taskId": SENT, "childThreadId": CHILD, "status": "completed", "workState": "result_available"}, CHILD, True),
-        ({"taskId": SENT, "status": "cancel_requested"}, CHILD, True),
-        ({"threadId": CHILD, "status": "interrupted"}, CHILD, True),
-        ({"thread": {"threadId": CHILD, "status": "running"}}, CHILD, False),
-        ({"thread": {"threadId": CHILD, "status": "waiting"}}, CHILD, False),
-        ({"thread": {"threadId": CHILD, "status": "completed"}}, CHILD, True),
-        # Odczyt wątku mówi o wątku: status zadania na wierzchu odpowiedzi go nie zastępuje.
-        ({"thread": {"threadId": CHILD, "status": "running"}, "status": "completed"}, CHILD, False),
-        ({"taskId": SENT, "state": "done"}, CHILD, False),
-        ({"threads": [{"threadId": CHILD, "status": "completed"}]}, None, False),
-        ({"taskId": "node:inne", "status": "cancel_requested"}, None, True),
+        ("mcp__t3-code__task_status", {"taskId": SENT, "childThreadId": CHILD, "status": "completed", "workState": "result_available"}),
+        ("mcp__t3-code__task_status", {"taskId": SENT, "childThreadId": CHILD, "status": "running", "workState": "waiting_for_children"}),
+        ("mcp__t3-code__task_cancel", {"taskId": SENT, "status": "cancel_requested"}),
+        ("mcp__t3-code__t3_thread_interrupt", {"threadId": CHILD, "status": "interrupted"}),
+        ("mcp__t3-code__t3_thread_read", {"thread": {"threadId": CHILD, "status": "completed"}}),
+        ("mcp__t3-code__task_status", {"taskId": "node:delegated-task:dziecko-wymyslone-1", "childThreadId": CHILD, "status": "completed"}),
+        # Odpowiedź narzędzia spoza STARTS z wątkiem dziecka i taskId biegu 1 nie jest startem.
+        ("mcp__t3-code__t3_thread_wait", {"threadId": CHILD, "taskId": "node:delegated-task:dziecko-wymyslone-1", "status": "completed"}),
     ],
     ids=[
-        "task-status-w-toku",
+        "odczyt-po-koncu",
         "czeka-na-dzieci",
-        "task-status-po-koncu",
         "anulowanie",
-        "przerwanie-watku",
-        "odczyt-watku-w-toku",
-        "odczyt-watku-czeka",
+        "przerwanie",
         "odczyt-watku-po-koncu",
-        "odczyt-watku-pierwszenstwo",
-        "nieznany-ksztalt",
-        "lista-watkow",
-        "inny-bieg",
+        "odczyt-starego-biegu",
+        "inne-narzedzie-z-taskid",
     ],
 )
-def test_koniec_biegu_tylko_ze_statusu_z_zamknietego_zbioru(reply: dict[str, object], about: str | None, ended: bool) -> None:
-    assert (straznik._subject(reply, {CHILD: SENT}), straznik._ended(reply)) == (about, ended)
+def test_zadna_odpowiedz_na_wywolanie_koordynatora_nie_zastepuje_powiadomienia(
+    tmp_path: Path, tool: str, reply: dict[str, object]
+) -> None:
+    # Bieg 2 dziecka (t3_thread_send) skończył się, koordynator coś o nim wywołał, a powiadomienie T3 nie przyszło:
+    # strażnik budzi raz, z treścią, że to może być duplikat.
+    transcript = tmp_path / "sesja.jsonl"
+    lines = [
+        _started(CHILD, 0),
+        _entry("user", 0.5, "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd r1) [completed]: FAIL"),
+        _call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(1), {"threadId": CHILD, "taskId": SENT}),
+        _call(tool, "toolu_kontakt", _stamp(5), reply, {"threadId": CHILD}),
+    ]
+    transcript.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    memory = straznik.Memory()
+    straznik.hear(transcript, 0, [CHILD], memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 10 * MIN, memory)
+
+    (reason,) = decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 26 * MIN, memory)
+
+    assert "nie dotarło" in reason and "duplikat" in reason
 
 
 def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_potem_przesuwa_ruch_dziecka() -> None:
@@ -594,7 +601,8 @@ def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_d
     assert wait_for(lambda: any(row.get("zdarzenie") == "koniec" for row in _rows(home)), 30)
     sent = folder / "bin" / "wyslane.txt"
     nudges = sent.read_text(encoding="utf-8").splitlines() if sent.exists() else []
-    assert [CHILD in nudge and "nie dotarło" in nudge for nudge in nudges] == ([True] if delivered in (False, "czeka") else [])
+    # Koniec biegu bez powiadomienia budzi raz, także gdy koordynator sam anulował dziecko (koszt granicy).
+    assert [CHILD in nudge and "nie dotarło" in nudge for nudge in nudges] == ([True] if delivered in (False, "czeka", "anulowanie") else [])
 
 
 @POSIX_ONLY
@@ -837,11 +845,11 @@ def test_dziecko_zlecone_w_trakcie_pilnowania_dostaje_budzenie_od_pilnujacego(
 def test_dwa_biegi_jednego_dziecka_bez_powiadomienia_daja_dwa_budzenia() -> None:
     # Bieg 1 kończy się w 5. minucie, koordynator się rusza, a powiadomienie nie przychodzi; w 26. koordynator wznawia
     # dziecko (t3_thread_send, nowy taskId), bieg 2 kończy się w 40., a jego powiadomienie też ginie.
-    memory = straznik.Memory(heard={CHILD: False}, runs={CHILD: "node:bieg-1"})
+    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
     decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
     decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 5 * MIN)}, 10 * MIN, memory)
     assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 25 * MIN, memory)
-    memory.runs[CHILD], memory.heard[CHILD] = "node:bieg-2", False
+    memory.runs[CHILD] = "node:bieg-2"
     decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 30 * MIN, memory)
     decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 41 * MIN, memory)
     assert pending(Seen("completed", 33 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 60 * MIN, memory)
@@ -881,6 +889,8 @@ class _T3Runs:
         with self.lock:
             if thread == PARENT:
                 return self.parent
+            if thread == SIBLING:
+                return straznik.Seen("running", time.time())
             return self.child.pop(0) if len(self.child) > 1 else self.child[0]
 
     def send(self, cli: str, thread: str, text: str) -> int:
@@ -894,7 +904,8 @@ def test_jeden_straznik_budzi_przy_kazdym_z_dwoch_biegow_jednego_dziecka_bez_pow
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Prawdziwa pętla strażnika z transkryptem: bieg 1 (delegate_task) i bieg 2 (t3_thread_send) tego samego dziecka
-    # kończą się bez powiadomienia, a koordynator po turze; progi skrócone, żeby test trwał sekundy.
+    # kończą się bez powiadomienia, a koordynator po turze; progi skrócone, żeby test trwał sekundy. Rodzeństwo trwa
+    # cały czas, więc strażnik nie kończy się między biegami, ile by trwał krok testu.
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv(straznik.STEP_ENV, "0.05")
     monkeypatch.setenv(straznik.LIFE_ENV, "20")
@@ -905,34 +916,34 @@ def test_jeden_straznik_budzi_przy_kazdym_z_dwoch_biegow_jednego_dziecka_bez_pow
     monkeypatch.setattr(straznik, "_send", t3.send)
     files = straznik._files(PARENT)
     transcript = tmp_path / "sesja.jsonl"
-    transcript.write_text(_delegated_at(CHILD, _ago(0)) + "\n", encoding="utf-8")
+    transcript.write_text(_delegated_at(CHILD, _ago(0)) + "\n" + _delegated_at(SIBLING, _ago(0)) + "\n", encoding="utf-8")
     files.transcript.parent.mkdir(parents=True, exist_ok=True)
     files.transcript.write_text(f"{transcript}\n", encoding="utf-8")
-    straznik.record(files, [CHILD], time.time())
-    now = time.time()
-    t3.set(straznik.Seen("completed", now), straznik.Seen("completed", now))
+    straznik.record(files, [CHILD, SIBLING], time.time())
+    first_end = time.time()
+    t3.set(straznik.Seen("completed", first_end), straznik.Seen("completed", first_end))
     guard = threading.Thread(target=straznik.serve, args=(PARENT, "t3"))
     guard.start()
     assert wait_for(lambda: len(t3.sent) == 1, 5)
 
+    # Bieg 2 startuje w transkrypcie, a T3 jeszcze pokazuje koniec biegu 1: ten koniec nie należy do biegu 2.
     second = {"threadId": CHILD, "taskId": SENT, "status": "starting"}
     with transcript.open("a", encoding="utf-8") as handle:
         handle.write(_call("mcp__t3-code__t3_thread_send", "toolu_send", _ago(0), second, {"threadId": CHILD}) + "\n")
-    # Jedno pytanie widzi bieg 2 w toku, następne jego koniec.
-    moved = time.time()
-    t3.set(straznik.Seen("completed", moved), straznik.Seen("running", moved), straznik.Seen("completed", moved + 0.01))
+    t3.set(straznik.Seen("completed", time.time()), straznik.Seen("completed", first_end), straznik.Seen("completed", first_end + 1))
 
     assert wait_for(lambda: len(t3.sent) == 2, 5)
     assert all(CHILD in text and "nie dotarło" in text for text in t3.sent)
     files.kids.write_text("", encoding="utf-8")
     guard.join(15)
     assert not guard.is_alive()
+    assert len(t3.sent) == 2
 
 
 def test_dziecko_czekajace_na_prace_w_tle_w_dzisiejszym_t3_nie_jest_skonczone() -> None:
     # Dzisiejszy T3 pokazuje wątek dziecka, które po turze czeka na pracę w tle, jako waiting (spoza FINISHED), a T3
     # z października pokazywał go jako completed; ostatni kontakt koordynatora to task_status waiting_for_children.
-    memory = straznik.Memory(heard={CHILD: False}, runs={CHILD: SENT})
+    memory = straznik.Memory(heard=set(), runs={CHILD: SENT})
     decide(Seen("completed", 2 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
 
     assert decide(Seen("completed", 30 * MIN), {CHILD: Seen("waiting", 20 * MIN)}, 30 * MIN, memory) == []
@@ -940,7 +951,7 @@ def test_dziecko_czekajace_na_prace_w_tle_w_dzisiejszym_t3_nie_jest_skonczone() 
 
 
 def test_drugi_bieg_tego_samego_dziecka_ktory_stoi_budzi_choc_pierwszy_juz_budzil() -> None:
-    memory = straznik.Memory(heard={CHILD: False}, runs={CHILD: "node:bieg-1"})
+    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
     assert decide(Seen("completed", 50 * MIN), {CHILD: Seen("running", 46 * MIN)}, 0.0, memory)
     # Koordynator przerwał bieg 1 i wznowił dziecko (nowy taskId); bieg 2 też staje.
     memory.runs[CHILD] = "node:bieg-2"
@@ -948,3 +959,32 @@ def test_drugi_bieg_tego_samego_dziecka_ktory_stoi_budzi_choc_pierwszy_juz_budzi
     (reason,) = decide(Seen("completed", 50 * MIN), {CHILD: Seen("running", 47 * MIN)}, 60 * MIN, memory)
 
     assert "bez ruchu od 47 min" in reason
+
+
+def test_bieg_ktory_zaczal_sie_i_skonczyl_miedzy_pytaniami_nie_dziedziczy_konca_poprzedniego() -> None:
+    # Bieg 1 kończy się w 5. minucie (budzenie w 21.); bieg 2 startuje w 60. i kończy się w 62., zanim strażnik zapyta.
+    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 0.0, memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 6 * MIN, memory)
+    assert decide(Seen("completed", 2 * MIN), {CHILD: Seen("completed", 16 * MIN)}, 21 * MIN, memory)
+    memory.runs[CHILD] = "node:bieg-2"
+    # T3 jeszcze pokazuje koniec biegu 1: bieg 2 nie ma końca, więc nie budzi wiekiem biegu 1.
+    assert decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 56 * MIN)}, 61 * MIN, memory) == []
+    assert decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 2 * MIN)}, 64 * MIN, memory) == []
+    assert decide(Seen("completed", 6 * MIN), {CHILD: Seen("completed", 8 * MIN)}, 70 * MIN, memory) == []
+    # Powiadomienie biegu 2 przychodzi w 75.: nic nie budzi ani przed nim, ani po nim.
+    memory.heard.add("node:bieg-2")
+    assert decide(Seen("completed", 16 * MIN), {CHILD: Seen("completed", 18 * MIN)}, 80 * MIN, memory) == []
+    assert not pending(Seen("completed", 16 * MIN), {CHILD: Seen("completed", 18 * MIN)}, 80 * MIN, memory)
+
+
+def test_bieg_2_bez_powiadomienia_budzi_z_wiekiem_wlasnego_konca() -> None:
+    memory = straznik.Memory(heard=set(), runs={CHILD: "node:bieg-1"})
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 0.0, memory)
+    assert decide(Seen("completed", 20 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 16 * MIN, memory)
+    memory.runs[CHILD] = "node:bieg-2"
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 2 * MIN)}, 40 * MIN, memory)
+
+    (reason,) = decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 18 * MIN)}, 56 * MIN, memory)
+
+    assert "18 min temu" in reason
