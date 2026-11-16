@@ -2,10 +2,11 @@
 // 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/:
 //    jej nazwa występuje jako identyfikator (dostęp, destrukturyzacja, klucz obiektu) albo tekst literału. Pole
 //    odpowiedzi operacji GET (pierwszy poziom schematu 200, każdego wariantu unii i elementu tablicy) liczy się, gdy src
-//    je odczytuje (`x.pole`, `x?.pole`, `x!.pole`, `x["pole"]`, `{ pole }`), a to, że odczyt dotyczy tego pola, mówi
-//    findReferences kompilatora: (a) odczyt przez typ tego schematu albo typ z niego (`Pick<S, …>`, alias, `T extends S`,
-//    `z.output`); (b) odczyt na wiązaniu (prop komponentu, parametr, zmienna), do którego src podaje wartość z tym polem
-//    w atrybucie JSX, argumencie albo inicjalizatorze, także przez kolejne wiązania, bez względu na typ wiązania;
+//    je odczytuje (`x.pole`, `x?.pole`, `x!.pole`, `x["pole"]`, `{ pole }`; zapis to odniesienie oznaczone przez kompilator
+//    `isWriteAccess`), a to, że odczyt dotyczy tego pola, mówi findReferences kompilatora: (a) odczyt przez typ tego
+//    schematu albo typ z niego (`Pick<S, …>`, alias, `T extends S`, `z.output`); (b) odczyt na wiązaniu (prop
+//    komponentu, parametr, zmienna), do którego src podaje wartość z tym polem w atrybucie JSX, argumencie albo
+//    inicjalizatorze, także przez kolejne wiązania, bez względu na typ wiązania;
 //    (c) odczyt pola zadeklarowanego w src w typie, który przyjmuje wynik funkcji podanej jako argument
 //    (`read: () => Promise<T>` z `T extends LiveFileView`). Ta sama nazwa w innym schemacie go nie zastępuje (#1577 W2:
 //    `unread` podpowiedzi Urządzeń bez zdania w sekcji, a nazwę `unread` czytały inne sekcje), także gdy wartość trafia
@@ -14,7 +15,9 @@
 //    odczyt pola typu z src także dla innej wartości tego typu; wartość w kontenerze (tablica, `Resource`) wchodząca do
 //    typu innego schematu, rozwinięcie (`{ ...x }`), rzutowanie (`as`), przypisanie po deklaracji, wartość zwrócona jako
 //    typ innego schematu i komponent bez deklaracji w src (biblioteka, `memo`) nie przenoszą odczytu, więc pole liczy się
-//    jako nieużyte; pola schematów zagnieżdżonych i ciał zapytań reguła zna tylko z nazwy.
+//    jako nieużyte, tak samo odczyt przez odbicie (`Object.entries(x)`, `Object.keys(x)`, `for (const k in x)`), w którym
+//    findReferences nie ma odniesienia pola; zapis `x["pole"] = …` kompilator zostawia bez `isWriteAccess`, więc liczy się
+//    jako odczyt; pola schematów zagnieżdżonych i ciał zapytań reguła zna tylko z nazwy.
 // 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`. Granica: reguła
 //    łapie tylko porównanie i `case`; `["settlement", "preparation"].includes(nazwa)`, odczyt z obiektu po nazwie
 //    (`({ settlement: 1 })[nazwa]`) i inne rozgałęzienia na nazwie procesu łapie tylko przegląd.
@@ -362,31 +365,23 @@ function nodeAt(file, node, position) {
   return child === undefined ? node : nodeAt(file, child, position)
 }
 
-function isAssigned(access) {
-  const parent = access.parent
-
-  return (
-    ts.isBinaryExpression(parent) &&
-    parent.left === access &&
-    parent.operatorToken.kind >= ts.SyntaxKind.FirstAssignment &&
-    parent.operatorToken.kind <= ts.SyntaxKind.LastAssignment
-  )
-}
-
-// Odczyt pola w węźle jego nazwy: `x.pole` i `x["pole"]` poza lewą stroną przypisania, `{ pole } = x` i `{ pole: y } = x`.
-// Klucz w typie (`Pick<X, "pole">`), pole literału obiektu i atrybut JSX to dla findReferences też odniesienia, nie odczyty.
-function readsField(name) {
-  const parent = name.parent
+// Odczyt pola w odniesieniu findReferences (`node` to węzeł nazwy): `{ pole } = x` i `{ pole: y } = x` oraz `x.pole`
+// i `x["pole"]`, których kompilator nie oznacza jako zapis (`isWriteAccess`: `x.pole = …`, `[x.pole] = …`,
+// `({ pole: x.pole } = …)`, `for (x.pole of …)`, `x.pole++`). Wzorzec deklaracji kompilator oznacza jako zapis zmiennej,
+// więc jego odczyt mówi kształt. Klucz w typie (`Pick<X, "pole">`), pole literału obiektu i atrybut JSX to dla
+// findReferences też odniesienia, nie odczyty.
+function readsField({ node, write }) {
+  const parent = node.parent
 
   if (ts.isBindingElement(parent)) {
-    return (parent.propertyName ?? parent.name) === name
+    return (parent.propertyName ?? parent.name) === node
   }
 
   const accessed =
-    (ts.isPropertyAccessExpression(parent) && parent.name === name) ||
-    (ts.isElementAccessExpression(parent) && parent.argumentExpression === name)
+    (ts.isPropertyAccessExpression(parent) && parent.name === node) ||
+    (ts.isElementAccessExpression(parent) && parent.argumentExpression === node)
 
-  return accessed && !isAssigned(parent)
+  return accessed && !write
 }
 
 function isOwn(fileName) {
@@ -456,7 +451,7 @@ function readBySymbol(fields) {
     fields,
   )
 
-  // Węzły nazw w src, które findReferences wiąże z deklaracją `name`, bez samej deklaracji.
+  // Odniesienia w src, które findReferences wiąże z deklaracją `name`, bez samej deklaracji: węzeł nazwy i `isWriteAccess`.
   function references(name) {
     const file = name.getSourceFile()
 
@@ -466,8 +461,19 @@ function readBySymbol(fields) {
       .map((reference) => {
         const place = program.getSourceFile(reference.fileName)
 
-        return nodeAt(place, place, reference.textSpan.start)
+        return { node: nodeAt(place, place, reference.textSpan.start), write: reference.isWriteAccess === true }
       })
+  }
+
+  // Odniesienie findReferences w miejscu węzła nazwy `name` (dostęp do pola na wiązaniu (b)).
+  function referenceAt(name) {
+    const file = name.getSourceFile()
+    const start = name.getStart(file)
+    const entry = (service.findReferences(file.fileName, start) ?? [])
+      .flatMap((symbol) => symbol.references)
+      .find((reference) => reference.fileName === file.fileName && reference.textSpan.start === start)
+
+    return { node: name, write: entry?.isWriteAccess === true }
   }
 
   // (a) Odczyt, który findReferences wiąże z deklaracją pola w generated/.
@@ -528,7 +534,7 @@ function readBySymbol(fields) {
       return element !== undefined && (element.path.length === 0 || bindingReads({ name: element.name, path: [] }, field, depth))
     }
 
-    return references(target.name).some((reference) => valueReads(reference, target.path, field, depth))
+    return references(target.name).some((reference) => valueReads(reference.node, target.path, field, depth))
   }
 
   function valueReads(node, path, field, depth) {
@@ -546,11 +552,15 @@ function readBySymbol(fields) {
     }
 
     if (access !== undefined) {
-      return access.text === field && readsField(access)
+      return access.text === field && readsField(referenceAt(access))
     }
 
     if (ts.isElementAccessExpression(parent) && parent.expression === value && path.length === 0) {
-      return ts.isStringLiteralLike(parent.argumentExpression) && parent.argumentExpression.text === field && !isAssigned(parent)
+      return (
+        ts.isStringLiteralLike(parent.argumentExpression) &&
+        parent.argumentExpression.text === field &&
+        readsField(referenceAt(parent.argumentExpression))
+      )
     }
 
     return receivers(value, path).some((target) => bindingReads(target, field, depth - 1))
