@@ -1,6 +1,6 @@
 ---
 name: verify-karta-uruchomienia
-description: Model-check with TLA+ (TLC) how one browser tab of Centrum rozliczeń follows an Uruchomienie procesu and an Aktualizacja narzędzia, under every order of stream events, HTTP answers, Dad's clicks in this tab and in a second tab, an unreadable view, a broken stream and Centrum restarting - that a start or a Decyzja sent from this tab ends (its buttons come back) once the server's last view can be read, that the card shows the result of a finished Uruchomienie instead of the start card unless Dad chose a new Uruchomienie in this tab after that result, and that the Aktualizacja card does not return to „Zaktualizuj narzędzie” while the update it showed is still running. Use when a change touches `RunsProvider`, `streamShows`, `starting` or `deciding` in `frontend/src/lib/runs.tsx`, `useAction` in `frontend/src/lib/action.ts`, `RunOrSetup` in `frontend/src/pages/runs/runs-page.tsx`, a `setDraft` or a start button gated by `starting`, `watchRunEvents` in `frontend/src/api/centrum.ts`, `ToolUpdateProvider` in `frontend/src/lib/tool-update.tsx` or `ToolUpdateButton`/`ToolUpdateStatus` in `frontend/src/components/tool-update.tsx`, or `RunHost.start`, `RunHost.decide`, `_event_stream`, `ToolUpdates.start` or `ToolUpdates.current` on the server.
+description: Model-check with TLA+ (TLC) how one browser tab of Centrum rozliczeń follows an Uruchomienie procesu and an Aktualizacja narzędzia, under every order of stream events, HTTP answers, Dad's clicks in this tab and in a second tab, an unreadable view, a broken stream and Centrum restarting - that a start or a Decyzja sent from this tab ends (its buttons come back) once the server's last view can be read, that the card shows the result of a finished Uruchomienie instead of the start card unless Dad chose a new Uruchomienie in this tab after that result, and that the Aktualizacja card does not return to „Zaktualizuj narzędzie” while the update it showed is still running. Use when `tools/skille_dla_zmiany.py` names it, when a change adds a place that calls `start`, `setDraft`, `decide` or `useToolUpdate().start`, or when `sprawdz_karte_uruchomienia.py` fails.
 pilnuje:
   - frontend/src/lib/runs.tsx
   - frontend/src/lib/action.ts
@@ -28,13 +28,12 @@ ci: .agents/skills/verify-karta-uruchomienia/scripts/sprawdz_karte_uruchomienia.
 ## What CI runs and what stays local
 
 CI runs `sprawdz_karte_uruchomienia.py` (the `ci:` key) in Mutation checks whenever a change touches this skill's
-`pilnuje:` or folder, so run it locally only while you bring the model in line or to reproduce a red Mutation checks
-step. In CI the Mutation checks step does not start while covered code differs from its digests in `model/definicje.json`: it fails with a `ROZJAZD MODELU Z KODEM | <skill>: …` line, but it cannot tell whether your change to the model is right.
-`tools/szybko.py` fails on the same drift before you push (step `rozjazd modelu`, without TLC) whenever the change would run this check on a pull request; one module, `tools/lib/rozjazd_modelu.py`, decides what drift is for both.
-`check_model_karty_mutations.py` runs on a pull request that changes a file in `model/`, the script itself or
-`sprawdz_karte_uruchomienia.py`, and in full CI and nightly on `main` after a change of this skill's folder.
-What stays with you on every change to the covered code is „Bring the model in line, then run”: read the diff against
-the table, change the model, break the new path in it, and run the check while you do. A change whose model nobody
+`pilnuje:` or folder, and `scripts/check_model_karty_mutations.py` on a pull request that changes a file in `model/`,
+the script itself or `sprawdz_karte_uruchomienia.py`, and in full CI and nightly on `main` after a change of this
+skill's folder. Run them locally only while you bring the model in line or to reproduce a red Mutation checks step.
+CI and `tools/szybko.py` catch drift: covered code that differs from its digests in `model/definicje.json`
+(`ROZJAZD MODELU Z KODEM | <skill>: …`); they cannot tell whether your change to the model is right.
+What stays with you on every change to the covered code is „Bring the model in line”. A change whose model nobody
 brought in line is not verified, whatever CI says.
 
 The frontend has no unit-test runner (`frontend/package.json`: typecheck, oxlint, knip, jscpd, `rules`), and
@@ -106,13 +105,9 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `AktPorazka` | `ToolUpdates._update`: a failure before the restart (`failed`, same Centrum) |
 | `AktZamkniecie`, `AktPonownyStart` | `ToolUpdates._restart`: Centrum closes, the restart guardian starts the new one (another `instance`), which reads the result once (`_after_restart`: `updated` or `failed`) |
 
-The script compares these definitions with their digests (`model/definicje.json`, a name is a path from the module):
-the whole files `frontend/src/lib/runs.tsx`, `frontend/src/lib/action.ts`, `frontend/src/pages/runs/runs-page.tsx`,
-`frontend/src/lib/tool-update.tsx` and `frontend/src/components/tool-update.tsx` (a TypeScript file has no digest per
-function, so any change in them moves the model); `RunHost.start`, `RunHost.decide`, `RunHost.events_after`,
-`RunHost.end`, `RunHost._publish_locked`, `Run.confirm` and `_event_stream` in `src/rozliczenia/centrum/runs.py`;
-`ToolUpdates.current`, `ToolUpdates.start`, `ToolUpdates._restart` and `ToolUpdates._after_restart` in
-`src/rozliczenia/centrum/tool_updates.py`.
+The script compares the definitions in `model/definicje.json` with their digests (a name is a path from the module).
+Its TypeScript files are digested whole (`cały plik`): a TypeScript file has no digest per function, so any change in
+them moves the model.
 The other files in `pilnuje:` are not in `model/definicje.json`, but they hold the guards of `KlikStart`, `KlikDecyzja`,
 `NoweUruchomienie`, both `Wybor…` actions and `Odbierz`: a change of when a button there is enabled, a new `setDraft`
 or `start`, or a change of `watchRunEvents` in `frontend/src/api/centrum.ts` moves the model though no digest changes.
@@ -131,10 +126,8 @@ src/rozliczenia/centrum/runs.py src/rozliczenia/centrum/tool_updates.py`.
 py -3 .agents\skills\verify-karta-uruchomienia\scripts\sprawdz_karte_uruchomienia.py
 ```
 
-`--config NAME` runs one configuration, `--strict` fails also on known findings. The run of TLC, the verdict and the
-known findings are `tools/lib/model_tlc.py`, which every skill with a TLA+ model shares; Java and `tla2tools.jar` come
-from `tools/lib/narzedzia_tlc.py` (pinned `jdk4py` and the jar in `.verification/` on first use; `TLC_JAVA` and
-`TLC_JAR` override them). The whole check took 41 s on Maks's Mac (2026-11-12): `druga-karta` 10 s, `restart` 20 s, `aktualizacja` 9 s.
+The run of TLC, the verdict and the known findings are `tools/lib/model_tlc.py`, which every skill with a TLA+ model
+shares; Java and `tla2tools.jar` come from `tools/lib/narzedzia_tlc.py`. The whole check took 41 s on Maks's Mac (2026-11-12): `druga-karta` 10 s, `restart` 20 s, `aktualizacja` 9 s.
 
 The last line is the verdict:
 
@@ -276,14 +269,3 @@ Left out, each a reason the check can pass while the code is wrong:
   of that update, which are `running` or its result.
 - **Dad's choices in the form other than `draft`** (which process and period), the Komunikaty, the toasts and timing:
   `POLL_MS`, the stream's poll every 50 ms and `retry` are left out, so every order counts, however unlikely.
-
-## Files
-
-- `model/KartaUruchomienia.tla`: the model, with the code each action describes.
-- `model/konfiguracje.json`: the configurations (description, constants and known findings; the script writes each
-  `.cfg` with `TypeOK`, every promise and the temporal property `PrzyciskWraca`).
-- `model/definicje.json`: the definitions of the code the model describes.
-- `scripts/sprawdz_karte_uruchomienia.py`: runs TLC on every configuration and tells each counterexample.
-- `scripts/check_model_karty_mutations.py`: proves the check fails when the model loses a guard the code has; run it
-  through `.venv/bin/python .agents/skills/verify-karta-uruchomienia/scripts/check_model_karty_mutations.py` only to
-  reproduce a red Mutation checks step or while you change the model.
