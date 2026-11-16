@@ -2,7 +2,8 @@
 
 INEA płaci za nie tacie przy każdym takim zleceniu, ale Wykonawca tej pracy nie wykonuje. Które komórki zostają puste,
 mówią reguły „zostaw pustą w Rozliczeniu pracownika” Reguł ilości (ADR 0033), liczone silnikiem na treści zlecenia
-każdego Wiersza danych, także bez daty w ``DATA``. Czyszczone są tylko Wiersze danych w drodze do Rozliczenia
+każdego Wiersza danych, także bez daty w ``DATA``. Zielone pole nie jest Ilością tylko dla INEA, bo Wykonawca dostaje w
+nim 1 (ADR 0039, ``coloured_fields``), więc zostaje i się nie liczy. Czyszczone są tylko Wiersze danych w drodze do Rozliczenia
 pracownika: Plik zbiorczy i Kontrola ilości dalej widzą te ilości.
 """
 
@@ -13,13 +14,14 @@ from dataclasses import replace
 
 from openpyxl.utils import column_index_from_string
 
+from .coloured_fields import is_green
 from .order_facts import MissingHeaders, order_contents
 from .quantity_engine import QuantityRules, evaluate
 from .register_columns import DEVICES
 from .workbook_files import DataRow, is_blank
 
 Cleared = Mapping[str, int]
-"""Kolumna reguły „zostaw pustą” → liczba wyczyszczonych komórek, które miały wartość (także 0); każda kolumna
+"""Kolumna reguły „zostaw pustą” → liczba wyczyszczonych komórek, które miały wartość (także 0), bez Zielonych pól; każda kolumna
 ``QuantityRules.leave_empty_columns`` w jej kolejności, także z liczbą 0."""
 
 
@@ -43,6 +45,8 @@ def without_inea_only(
         cells = list(row.cells)
         for column in evaluate(rules, content).leave_empty:
             index = column_index_from_string(column) - 1
+            if is_green(cells[index]):
+                continue
             cleared[column] += not is_blank(cells[index].value)
             cells[index] = cells[index]._replace(value=None, hyperlink=None)
         result.append(replace(row, cells=tuple(cells)))
