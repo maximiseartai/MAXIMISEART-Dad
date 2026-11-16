@@ -556,7 +556,9 @@ NOT_SWEPT: dict[str, str] = {
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
-_BOARD = _FOLDERS | _OWNER | {"plik_zbiorczy"}
+# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów (CentrumSettings.folders), a nie całą migawkę.
+_WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
+_BOARD = _WINDOW | _OWNER
 _SETTINGS = _OWNER | {"rejestr", "folder_okresow", "folder_miesiaca"}  # miesiąc: korzeń układu (#1472)
 _METRICS = {"metryki_przygotowania", "metryki_przebiegu", "metryki_uporzadkowania"}
 _NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "uwagi_taty", "wyslane_zgloszenia", "przeczytane_powiadomienia"}
@@ -573,13 +575,13 @@ READS: dict[str, set[str]] = {
     "choosePeriodsDirectory": _SETTINGS,
     "openRegister": {"ustawienia", "rejestr"},
     "changeTheme": _SETTINGS | {"dziennik_centrum"},
-    "getPeriodBoard": _BOARD,
-    "openPeriodPath": _BOARD,
+    "getPeriodBoard": _WINDOW,
+    "openPeriodPath": _WINDOW,
     "getQuantitiesToFill": _BOARD,
-    "getCollectiveFileVersion": _BOARD,
+    "getCollectiveFileVersion": _WINDOW,
     "getWithoutQuantity": _BOARD,
     "getKindTable": _BOARD,
-    "openWorkerSettlement": _FOLDERS | _OWNER,
+    "openWorkerSettlement": _FOLDERS | {"ustawienia"},
     "getRunSetup": _BOARD
     | {"rejestr", "metryki_przygotowania", "metryki_przebiegu", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getIntermaxSetup": _OWNER | {"rejestr", "logi_uruchomien"},
@@ -590,7 +592,7 @@ READS: dict[str, set[str]] = {
     | {"rejestr", "folder_okresow", "logi_uruchomien", "folder_kopii_intermax"},
     "restoreIntermaxCopy": _OWNER | {"rejestr", "folder_kopii_intermax", "kopia_intermax"},
     "getMetrics": _METRICS | {"uruchomienia_centrum"},
-    "getQuantityDifferences": _BOARD,
+    "getQuantityDifferences": _WINDOW,
     "getQuantityRules": {"wzorzec_zbiorczy"},
     "addQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "changeQuantityRule": {"wzorzec_zbiorczy", "dziennik_centrum"},
@@ -599,7 +601,7 @@ READS: dict[str, set[str]] = {
     "addDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "changeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "removeDevice": {"wzorzec_zbiorczy", "dziennik_centrum"},
-    "getDeviceSuggestions": _BOARD,
+    "getDeviceSuggestions": _WINDOW,
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,
