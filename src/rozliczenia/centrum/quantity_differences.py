@@ -38,7 +38,6 @@ from rozliczenia.centrum.contract.quantity_rules import (
     ComponentCondition,
     DevicesCondition,
     FillAction,
-    PreviewFile,
     RuleCondition,
     RuleForm,
     RuleWrite,
@@ -138,7 +137,6 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
         return (
             contract.DifferencesReady(
                 state="ready",
-                files=[PreviewFile(period=file.period, rows=len(file.orders.rows)) for file in found.files],
                 unread=list(found.unread),
                 differences=[_difference(difference, names, rules.devices) for difference in shown[:SHOWN]],
                 more=max(0, len(shown) - SHOWN),

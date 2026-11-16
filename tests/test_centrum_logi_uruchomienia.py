@@ -47,6 +47,7 @@ from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_logs import Environment, LoggedInterruption, LoggedOrder, LoggedStep, ProcessLogs, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import guard_text
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
@@ -101,7 +102,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from tests.fixtures.bez_dostepu import without_creating
+from tests.fixtures.bez_dostepu import without_creating, without_reading
 from tests.fixtures.centrum_w_procesie import centrum_process
 from atrapy.dziennik_wyceny import begun_line, end_line, ended_line, left_journal
 from atrapy.efenix import DAY, Order, write_collective_file
@@ -3065,6 +3066,36 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
     [logged] = json.loads(text)["efenix_orders"]
     assert logged["steps"][0]["quantities"] == {"[ulica]": 1, "tel. [telefon]": 2}
     assert [value for value in (STREET, PHONE) if any(value in kept for kept in (text, comment))] == []
+
+
+def test_logi_urwanego_uruchomienia_przy_pliku_folderow_bez_odczytu_maja_jego_nazwe_zamiast_plikow_procesu(
+    tmp_path: Path,
+) -> None:
+    """Decyzja 3A Maksa: Logi Urwanego Uruchomienia nie mają migawki Ustawień ze startu, więc pliki procesu liczą z
+    bieżącego pliku Folderów. Gdy system nie daje go przeczytać (np. trzyma go OneDrive), Logi mówią, którego pliku nie
+    dało się przeczytać, i nie mają listy plików, zamiast listy jak przy Rejestrze zleceń i folderze okresów
+    niewskazanych. Przy czytelnym pliku Logi mają pliki procesu i nie mają tej nazwy."""
+
+    centrum = settling_centrum(tmp_path)
+    readable, unreadable = (
+        StartFacts(run_id=letter * 32, process="efenix", mode=RunMode.RUN, period=PERIOD, started_at=utc(at))
+        for letter, at in (("e", "2026-09-16T10:15:00+00:00"), ("f", "2026-09-16T11:15:00+00:00"))
+    )
+
+    left_journal(centrum.log_path.parent, readable)
+    centrum.restart()
+    centrum.client.stop()
+    left_journal(centrum.log_path.parent, unreadable)
+    with without_reading(centrum.tool.settings):
+        centrum.restart()
+        centrum.client.stop()
+
+    by_run = {record["run_id"]: record["environment"] for record in records(centrum)}
+    assert (by_run[readable.run_id]["files"] is not None, by_run[readable.run_id]["unreadable_settings"]) == (True, None)
+    assert {key: by_run[unreadable.run_id][key] for key in ("files", "unreadable_settings")} == {
+        "files": None,
+        "unreadable_settings": SETTINGS_FILE,
+    }
 
 
 def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: Path) -> None:

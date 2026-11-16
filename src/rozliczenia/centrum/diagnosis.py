@@ -5,7 +5,9 @@ Diagnozę tata uruchamia przy Zatrzymaniu „do Maksa” albo przy powtórce
 Konfiguracji (odczyt Rejestru zleceń, Sprawdzanie wzorców, Lista
 Wykonawców z Ustawień Centrum, odszukanie Folderu okresu, plik blokady Excela) i
 gotowego Komunikatu z katalogu procesu; tylko przyczyny bez Komunikatu procesu
-mają własny katalog (``diagnosis_messages``). Wyjaśnienie to Komunikat
+mają własny katalog (``diagnosis_messages``). Plik Folderów, którego system nie daje teraz czytać, nie jest
+Rejestrem zleceń i folderem okresów niewskazanymi: każde sprawdzenie, które z niego bierze, jest „nie sprawdzono” ze
+zdaniem o tym pliku (``_FoldersUnread``), a reszta sprawdzeń idzie dalej. Wyjaśnienie to Komunikat
 pierwszego sprawdzenia, które nie przeszło, a gdy przeszły wszystkie:
 „Nie znalazłem przyczyny na tym komputerze”. Rodzaj wyjaśnienia (tata usuwa
 przyczynę sam albo nie) liczy ta sama reguła co rodzaj Zatrzymania. Aktualność
@@ -56,11 +58,20 @@ from rozliczenia.period_folder import (
 )
 from rozliczenia.centrum.settings.files import Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import UnreadableFile
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 from rozliczenia.worker_list import WorkerList
 
 _LOG_ENTRIES: Final = 20
+
+
+class _FoldersUnread(Exception):
+    """Sprawdzenie bierze Foldery z migawki, w której plik Folderów ``file`` był bez odczytu (``_ProcessFiles.folders``)."""
+
+    def __init__(self, file: str) -> None:
+        super().__init__(file)
+        self.file = file
 
 
 @dataclass(frozen=True)
@@ -166,15 +177,24 @@ class _ProcessFiles:
 
     declaration: ProcessKind[Any, Any]
     period: SettlementPeriod
-    settings: FolderSettings
+    settings: FolderSettings | UnreadableFile
     configuration: ConfigurationFiles
+
+    @property
+    def folders(self) -> FolderSettings:
+        """Foldery z migawki; przy pliku Folderów bez odczytu ``_FoldersUnread``, bo jego Rejestru zleceń i folderu
+        okresów nikt nie zna."""
+
+        if isinstance(self.settings, UnreadableFile):
+            raise _FoldersUnread(self.settings.name)
+        return self.settings
 
     @cached_property
     def period_folder(self) -> PeriodFolder | PeriodFolderLookupError | None:
         """Folder okresu odszukany jak w procesie; ``None`` bez folderu okresów, a ``PeriodFolderInaccessible``, gdy
         folderu okresów nie da się odczytać."""
 
-        periods_directory = self.settings.periods_directory_to_read
+        periods_directory = self.folders.periods_directory_to_read
         if periods_directory is None:
             return None
         try:
@@ -198,20 +218,27 @@ class _ProcessFiles:
         """Rejestr zleceń, gdy proces go czyta, Wzorce procesu i pliki Folderu okresu, gdy proces należy do okresu;
         ścieżki mogą nie istnieć."""
 
-        register = self.settings.register_to_read
+        register = self.folders.register_to_read
         files = [register] if self.declaration.reads_register and register is not None else []
         files += [template.path for template in self.templates]
         return files + list(self.period_files) if self.declaration.reads_period_folder else files
 
 
 def files_of_process(
-    process: common_contract.ProcessKey, period: str, *, settings: FolderSettings, configuration: ConfigurationFiles
-) -> list[Path]:
-    """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive.
+    process: common_contract.ProcessKey,
+    period: str,
+    *,
+    settings: FolderSettings | UnreadableFile,
+    configuration: ConfigurationFiles,
+) -> list[Path] | UnreadableFile:
+    """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive;
+    przy pliku Folderów bez odczytu ten plik, bo bez niego listy nie da się wyliczyć.
 
     ``PeriodFolderInaccessible``, gdy folderu okresów albo Folderu okresu nie da się odczytać.
     """
 
+    if isinstance(settings, UnreadableFile):
+        return settings
     return _ProcessFiles(declaration_of(process), parse_period_token(period), settings, configuration).files
 
 
@@ -243,7 +270,8 @@ class _Check:
 
     def results(self, computer: _Computer) -> list[CheckResult]:
         """Folder, którego nie da się odczytać, nie jest porażką sprawdzenia, tylko przyczyną: oba procesy
-        wyjaśniają ją Komunikatem Przygotowania, jak odszukanie Folderu okresu.
+        wyjaśniają ją Komunikatem Przygotowania, jak odszukanie Folderu okresu. Sprawdzenie, które bierze Foldery z
+        pliku bez odczytu, nie sprawdza nic i mówi, którego pliku nie dało się przeczytać.
 
         Typ wyjątku trafia do dziennika Centrum od razu, więc ostatnie wpisy dziennika w Diagnozie i
         Zgłoszeniu już go mają.
@@ -253,6 +281,8 @@ class _Check:
             return self.run(computer, self.label)
         except PeriodFolderInaccessible as inaccessible:
             return [CheckResult.failed(self.label, preparation_messages.folder_inaccessible(inaccessible.folder))]
+        except _FoldersUnread as unread:
+            return [CheckResult.not_checked(self.label, f"Nie sprawdzono: pliku {unread.file} w folderze config nie dało się przeczytać.")]
         except Exception as failure:
             computer.log.unexpected_failure(failure, where=f"Diagnoza: {self.label}")
             return [CheckResult.not_checked(self.label, _NOT_CHECKED_UNEXPECTED)]
@@ -301,7 +331,7 @@ def _tata_settings(computer: _Computer, label: str) -> list[CheckResult]:
     Niedostępnego nie wyjaśnia: Komunikat o nim daje odczyt w sprawdzeniu, które go czyta.
     """
 
-    settings = computer.settings
+    settings = computer.folders
     needed: Sequence[NeededSetting] = computer.declaration.settings
     for setting in needed:
         chosen = setting.chosen(settings)
@@ -318,7 +348,7 @@ def _tata_settings(computer: _Computer, label: str) -> list[CheckResult]:
 
 @_check("Rejestr zleceń")
 def _register(computer: _Computer, label: str) -> list[CheckResult]:
-    register = computer.settings.register_to_read
+    register = computer.folders.register_to_read
     if register is None:
         return [CheckResult.not_checked(label, "Rejestru zleceń nie ma na miejscu.")]
     problem = preparation_register.register_problem(register, computer.dad_files)
@@ -329,7 +359,7 @@ def _register(computer: _Computer, label: str) -> list[CheckResult]:
 
 @_check("INTERMAX")
 def _intermax(computer: _Computer, label: str) -> list[CheckResult]:
-    register = computer.settings.register_to_read
+    register = computer.folders.register_to_read
     if register is None:
         return [CheckResult.not_checked(label, "INTERMAX nie ma na miejscu.")]
     problem = intermax_ordering.register_problem(register, computer.dad_files)
@@ -482,7 +512,7 @@ def diagnose(
     process: common_contract.ProcessKey,
     period: str,
     *,
-    settings: FolderSettings,
+    settings: FolderSettings | UnreadableFile,
     configuration: ConfigurationFiles,
     log: CentrumLog,
     surroundings: Surroundings,
@@ -493,7 +523,8 @@ def diagnose(
     """Wszystkie sprawdzenia procesu ``process``, tylko do odczytu.
 
     Pliki taty czyta uchwyt ``files``, którego pamięć poznaje komórki zakazanych kolumn przeczytanego Rejestru zleceń
-    (reguła danych, ADR 0025). ``workers``: Lista Wykonawców z migawki Ustawień Centrum ze startu Uruchomienia (bez niej z chwili Diagnozy).
+    (reguła danych, ADR 0025). ``settings`` i ``workers``: Foldery i Lista Wykonawców z migawki Ustawień Centrum ze startu
+    Uruchomienia (bez niej z chwili Diagnozy).
     """
 
     declaration = declaration_of(process)

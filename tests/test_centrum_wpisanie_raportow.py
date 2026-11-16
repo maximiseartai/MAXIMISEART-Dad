@@ -43,7 +43,9 @@ from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_list import WorkerEntry, WorkerList
@@ -78,7 +80,7 @@ from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, LAST
 from atrapy.preparation import PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
-from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
@@ -146,7 +148,6 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
     history = centrum.client.get("/api/metrics").json()
 
     assert setup == {
-        "title": "Wpisanie raportów",
         "reminder": "Zapisz i zamknij INTERMAX w Excelu",
         "blocker": None,
         "open_in_excel": [],
@@ -3961,6 +3962,119 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
     log = centrum.tool.log_path.read_text(encoding="utf-8")
     for secret in (JAN, ANNA, SKRZYNKA, HASLO):
         assert secret not in log, secret
+
+
+@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE])
+@pytest.mark.parametrize("back", [True, False], ids=["wraca-w-porze", "nie-wraca-do-konca-pory"])
+def test_plik_przypomnien_albo_folderow_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia_wpis_z_nazwa_pliku(
+    tmp_path: Path, file: str, back: bool
+) -> None:
+    """Decyzja 4A Maksa: plik Przypomnień albo Folderów, którego system nie daje teraz czytać (np. trzyma go OneDrive),
+    to nie wyłączone przypomnienia ani niewskazany INTERMAX. Następna minuta tej samej pory próbuje znowu, więc plik,
+    który wraca w porze, daje przypomnienia bez wpisu w dzienniku Centrum; plik, który nie wraca do końca pory, nie daje
+    żadnego maila, a pierwsze sprawdzenie po porze zostawia w dzienniku Centrum jeden wpis z nazwą tego pliku."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / file):
+        for moment in (REMINDER_MORNING, datetime(2026, 11, 10, 8, 31)):
+            centrum.moment.append(moment)
+            centrum.rhythm.tick()
+        unread = (list(mailbox.sends), _failures_in_log(centrum))
+        if not back:
+            centrum.moment.append(datetime(2026, 11, 10, 16, 59))
+            centrum.rhythm.tick()
+    centrum.moment.append(datetime(2026, 11, 10, 8, 32) if back else datetime(2026, 11, 10, 17, 1))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert unread == ([], []), "w porze plik bez odczytu tylko czeka na następną minutę"
+    reminded = sorted(reminder.worker for reminder, _ in mailbox.sends)
+    if back:
+        assert (reminded, _failures_in_log(centrum)) == (["anna.kowalska", "jan.testowy"], [])
+    else:
+        assert (reminded, _failures_in_log(centrum)) == ([], [f"przyczyna=plik-bez-odczytu plik={file}"])
+
+
+def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_z_ostatniego_sprawdzenia_pracy(tmp_path: Path) -> None:
+    """Decyzja 4A Maksa przy porze taty spoza pór ADR 0030: wczoraj praca sprawdzała w porannej porze taty 6:00–7:30,
+    a dziś OneDrive trzyma plik Przypomnień od startu Centrum do końca tej pory. Porę zna plik pór pracy z wczoraj, więc
+    pierwsze sprawdzenie po 7:30 zostawia w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    form = _reminders_form(footer="Pozdrawiam\nTata\n", morning={"start": "06:00", "end": "07:30"}, first="06:00")
+    assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 6, 30))
+    centrum.rhythm.tick()
+    yesterday = len(mailbox.sends)
+    centrum.restart()
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / REMINDERS_FILE):
+        for moment in (datetime(2026, 11, 11, 6, 30), datetime(2026, 11, 11, 7, 30, 1)):
+            centrum.moment.append(moment)
+            centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert yesterday > 0, "wczoraj praca sprawdzała w porze taty"
+    assert (len(mailbox.sends), _failures_in_log(centrum)) == (yesterday, [f"przyczyna=plik-bez-odczytu plik={REMINDERS_FILE}"])
+
+
+def test_plik_przypomnien_bez_odczytu_od_startu_centrum_liczy_pore_taty_zmieniona_poza_pora(tmp_path: Path) -> None:
+    """Decyzja 4A Maksa po zmianie pór poza porą: wczoraj praca sprawdzała w wieczornej porze z ADR 0030, o 22:30 tata
+    przesunął poranną porę na 6:00–7:30 i zamknął Centrum przed nią, a dziś OneDrive trzyma plik Przypomnień od startu
+    Centrum do końca tej pory. Pory z odczytu poza porą zna plik pór pracy, więc pierwsze sprawdzenie po 7:30 zostawia
+    w dzienniku Centrum wpis z nazwą pliku, a nie czeka na porę z ADR 0030."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+    centrum.moment.append(datetime(2026, 11, 10, 18, 30))
+    centrum.rhythm.tick()
+    centrum.moment.append(datetime(2026, 11, 10, 22, 30))
+    form = _reminders_form(footer="Pozdrawiam\nTata\n", morning={"start": "06:00", "end": "07:30"}, first="06:00")
+    assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+    centrum.moment.append(datetime(2026, 11, 10, 22, 31))
+    centrum.rhythm.tick()
+    yesterday = len(mailbox.sends)
+    centrum.restart()
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / REMINDERS_FILE):
+        for moment in (datetime(2026, 11, 11, 6, 30), datetime(2026, 11, 11, 7, 30, 1)):
+            centrum.moment.append(moment)
+            centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert (len(mailbox.sends), _failures_in_log(centrum)) == (yesterday, [f"przyczyna=plik-bez-odczytu plik={REMINDERS_FILE}"])
+
+
+def test_przypomnienia_wylaczone_w_tej_samej_porze_po_pliku_bez_odczytu_nie_zostawiaja_wpisu(tmp_path: Path) -> None:
+    """Plik Przypomnień bez odczytu w porze, a potem w tej samej porze tata wyłącza przypomnienia: wyłączone są
+    wyłączone, a nie zepsute, więc po końcu pory dziennik Centrum nie dostaje wpisu o pliku bez odczytu."""
+
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.client.start()
+
+    with without_reading(centrum.tool.config / REMINDERS_FILE):
+        centrum.moment.append(REMINDER_MORNING)
+        centrum.rhythm.tick()
+    assert centrum.client.put("/api/settings/reminders/enabled", json={"enabled": False}).status_code == 200
+    for moment in (datetime(2026, 11, 10, 8, 31), datetime(2026, 11, 10, 17, 1)):
+        centrum.moment.append(moment)
+        centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert (mailbox.sends, _failures_in_log(centrum)) == ([], [])
 
 
 def test_praca_przypomnien_nie_blokuje_wpisania_raportow_ktore_biegnie_w_trakcie_wysylki(tmp_path: Path) -> None:

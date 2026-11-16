@@ -2,7 +2,8 @@
 
 Logi powstają z tych samych faktów co karta Uruchomienia (``logs_of_run.logs_of``): wynik, Komunikaty z kodami,
 podsumowanie, etapy, ślad wywołań Zatrzymania, a z ostatniego snapshotu projekcji postępu Przetworzenia Szablonów
-pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive.
+pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive,
+a przy pliku Folderów bez odczytu zamiast plików nazwa tego pliku.
 Dodatki Logów procesu (``ProcessLogs``) daje jego wpis w katalogu procesów: z podsumowania silnika Przebiegu rozliczeń
 liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 0018), a z podsumowania Uporządkowania
 INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy, a z
@@ -235,6 +236,9 @@ class Environment(_Record):
     python: str
     files: list[LoggedFile] | None
     """``None``: plików procesu nie dało się wyliczyć (np. Folder okresu niedostępny)."""
+    unreadable_settings: str | None = None
+    """Plik Ustawień Centrum (nazwa w ``config``), którego nie dało się przeczytać, więc plików procesu nie wyliczono
+    (``files`` ``None``); ``None``: każdy plik Ustawień przeczytany i pliki sprzed tego pola."""
 
 
 class Explanation(_Record):

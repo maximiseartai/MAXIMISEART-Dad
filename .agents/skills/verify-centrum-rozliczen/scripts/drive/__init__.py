@@ -525,6 +525,7 @@ FEATURES = (
         (
             "280-raporty-przycisk",
             "285-raporty-blokada",
+            "419-raporty-ostatnio",
             "281-raporty-dzien-z-problemami",
             "282-raporty-zostaw-moja",
             "414-raporty-przypisz",

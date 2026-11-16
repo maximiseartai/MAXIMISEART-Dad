@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
-from rozliczenia.centrum.contract.quantity_rules import PreviewFile, RuleForm
+from rozliczenia.centrum.contract.quantity_rules import RuleForm
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
 
 
@@ -43,7 +43,6 @@ class DifferencesReady(Model):
     (lista liczy wtedy z ostatnimi dobrymi wyjątkami)."""
 
     state: Literal["ready"]
-    files: list[PreviewFile]
     unread: list[str]
     differences: list[QuantityDifference]
     more: int

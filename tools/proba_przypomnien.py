@@ -55,7 +55,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
 from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders, schedules_in_effect
-from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.owner import UnreadableFile, read_snapshot
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_report_inbox import (
@@ -86,7 +86,10 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
     """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``."""
 
     snapshot = read_snapshot(config)
-    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, snapshot.reminders.schedule))
+    reminders = snapshot.reminders
+    if isinstance(reminders, UnreadableFile):
+        return f"{FAIL} | {_not_read(NotRead('plik-bez-odczytu', file=reminders.name))}"
+    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, reminders.schedule))
     match read:
         case NotRead():
             return f"{FAIL} | {_not_read(read)}"
@@ -94,7 +97,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
             return f"{FAIL} | {_unreachable(read, 'odczycie skrzynki')}"
         case DueReminders():
             pass
-    pora = reminder_pora(now, snapshot.reminders.schedule)
+    pora = reminder_pora(now, reminders.schedule)
     counts = (
         f"pora={'brak' if pora is None else pora.value} | przypomnienia={len(read.due)}"
         f" | wykonawcy={len({reminder.worker for reminder in read.due})} | dni={len({reminder.day for reminder in read.due})}"
@@ -103,7 +106,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
         return f"{FAIL} | {counts} | podany adres jest na liscie adresow Wykonawcow, {_NOT_SENT}"
     if read.footer is None:
         return f"{FAIL} | {counts} | brak stopki w Ustawieniach (config/{REMINDERS_FILE}), {_NOT_SENT}"
-    sent = inbox.send(_sample(read, snapshot.reminders, now, target), now)
+    sent = inbox.send(_sample(read, reminders, now, target), now)
     match sent:
         case MailSent():
             return f"{OK} | {counts} | wyslano 1 na podany adres"
@@ -127,6 +130,8 @@ def _not_read(read: NotRead) -> str:
     match read.cause:
         case "bez-wdrozenia":
             return f"przypomnienia wylaczone w Ustawieniach (config/{REMINDERS_FILE})"
+        case "plik-bez-odczytu":
+            return f"pliku config/{read.file} nie da sie teraz przeczytac"
         case "bez-ustawien":
             return "brak INTERMAX albo folderu okresow w Ustawieniach taty"
         case "bez-dostepu":
