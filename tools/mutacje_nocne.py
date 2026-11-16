@@ -23,7 +23,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   pierwszych rodziców od bazy, do którego mutacje zmian mieszczą się w tym limicie (co najmniej pierwszy commit z
   mutacjami, także większy), a noc mutuje tylko zmiany do niego (``ZakresMutacji.do``). Bazą następnej nocy jest
   ``do``, więc zaległość przechodzi na kolejne noce, a nie przepada. Plan pisze do ``GITHUB_OUTPUT`` ``baza``, ``do``,
-  ``czesci`` i ``liczba``, a z ``--zakres`` plik JSON z ``baza`` i ``do`` (artefakt ``zakres-nocy``). ``czesci`` to
+  ``czesci``, ``liczba`` i ``pokrycie`` (macierz zadań pokrycia, ``macierz_pokrycia``), a z ``--zakres`` plik JSON z ``baza`` i ``do`` (artefakt ``zakres-nocy``). ``czesci`` to
   macierz zadań części: numer i ``przegladarka``, gdy testy, które mogą sprawdzać mutacje części (dotknięte jej
   plikami), sięgają Atrapy efenix, więc zadanie części instaluje Chromium tak jak zadanie pytest planu CI.
   Wpisy idą od części, której najdroższy plik ma najwięcej pracy testów na ``main`` (``czasy_ci``, tor ``TOR_LOKALNY``),
@@ -31,8 +31,10 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   wolnych slotów organizacji), a długa część
   na końcu kolejki wydłuża noc. Kolejność nie zmienia mutacji części, bo te daje numer części; równa praca, także bez
   czasów, zostawia kolejność numerów.
-- Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --zapis …``: kolejne mutacje z listy
-  posortowanej po plikach, więc pokrycie biegnie na testach kilku plików, nie całej zmiany dnia.
+- Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --pokrycie <zapisy> --zapis …``: kolejne
+  mutacje z listy posortowanej po plikach, więc mutacja biegnie z testami kilku plików, nie całej zmiany dnia. Pokrycie
+  tych testów bez mutacji liczą przed częściami zadania ``pokrycie`` workflow, każde dla swojej części plików testów
+  nocy (``tools/mutacje_zmiany.py --pokrycie-czesc``), a część czyta ich zapisy.
 - ``wystapienia <plik>`` czyta wynik ``gh issue list --label przezyte-mutacje --json number,title,body,state,comments`` i drukuje
   każdą linię nocy, na którą ostatnia odpowiedź agenta nie zaczyna się od ``wykryta`` ani ``nie warto`` (linia
   ``WYSTĄPIENIE``), a na końcu liczbę issues z wystąpieniem i bez; linię nocy i odpowiedź rozpoznaje ``rdzen``, ten sam,
@@ -124,6 +126,9 @@ NA_CZESC = 6 * mutacje_zmiany.WORKERS
 # Zadania części biegną najwyżej po 17 naraz, a zadania skryptów skilli po 3 (max-parallel w mutacje-nocne.yml), bo 60
 # zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
 CZESCI_NA_NOC = 40
+# Zadania pokrycia nocy (``mutacje_zmiany.py --pokrycie-czesc``): każde liczy pokrycie ok. czwartej części plików testów
+# nocy, a części nocy czekają na najwolniejsze. Każde płaci też checkout, instalację i listę mutacji nocy (ADR 0021).
+CZESCI_POKRYCIA = 4
 # Plan bez czasów CI waży każdą część zerem, więc części zostają w kolejności numerów.
 BEZ_CZASOW = czasy_ci.KosztyPlikow({})
 GITHUB = GhApi()
@@ -285,6 +290,18 @@ def macierz(noc: mutacje_zmiany.ZakresMutacji, n: int, repository: Repository, k
     return [wpis for _, wpis in sorted(wpisy, key=lambda para: -para[0])]
 
 
+def macierz_pokrycia(noc: mutacje_zmiany.ZakresMutacji, repository: Repository) -> list[dict[str, int | bool]]:
+    """Wpis macierzy każdego zadania pokrycia nocy: numer jego części plików testów nocy (``Czesc.co_nta`` listy
+    ``ZakresMutacji.pliki_testow``, jak w ``mutacje_zmiany.py --pokrycie-czesc``) i ``przegladarka``, gdy któryś z nich
+    sięga Atrapy efenix. Zadań jest ``CZESCI_POKRYCIA``, a mniej, gdy noc ma mniej plików testów."""
+
+    testy = noc.pliki_testow(repository)
+    return [
+        {"czesc": czesc.k, "przegladarka": bool(potrzebuja_chromium(czesc.co_nta(testy), repository))}
+        for czesc in Czesc.calosc(min(CZESCI_POKRYCIA, len(testy)))
+    ]
+
+
 def zaplanuj(
     github: GitHub,
     root: Path,
@@ -306,24 +323,39 @@ def zaplanuj(
     od_sha, skad = baza(github, root, od, teraz)
     if (wczesniejsza := _wczesniejsza_noc(github, wyzwolenie, teraz)) is not None:
         print(f"MUTACJE NOCNE | noc doby biegła już w runie {wczesniejsza}: ten run nic nie mutuje, a następna noc zacznie od tej samej bazy")
-        return _zapisz_plan(od_sha, skad, od_sha, [], 0, zakres, pominieta=True)
+        return _zapisz_plan(od_sha, skad, od_sha, [], [], 0, zakres, pominieta=True)
     caly = mutacje_zmiany.ZakresMutacji.od(od_sha, root)
     if caly.zly_wyjatek is not None:
         print(f"MUTACJE NOCNE | {caly.zly_wyjatek}; część mutacji to zgłosi")
     do_sha = caly.najdalszy_koniec(na_czesc * czesci_na_noc)
     noc = caly.do(do_sha)
-    wpisy = macierz(noc, noc.liczba_czesci(na_czesc), Repository.scan(root), koszty)
+    repository = Repository.scan(root)
+    wpisy = macierz(noc, noc.liczba_czesci(na_czesc), repository, koszty)
+    pokrycie = macierz_pokrycia(noc, repository) if wpisy else []
     if zalegle := len(caly.mutanty) - len(noc.mutanty):
         print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
-    return _zapisz_plan(od_sha, skad, do_sha, wpisy, noc.liczba_mutacji, zakres)
+    return _zapisz_plan(od_sha, skad, do_sha, wpisy, pokrycie, noc.liczba_mutacji, zakres)
 
 
-def _zapisz_plan(od_sha: str, skad: str, do_sha: str, wpisy: list[dict[str, int | bool]], mutacje: int, zakres: Path | None, *, pominieta: bool = False) -> int:
+def _zapisz_plan(
+    od_sha: str,
+    skad: str,
+    do_sha: str,
+    wpisy: list[dict[str, int | bool]],
+    pokrycie: list[dict[str, int | bool]],
+    mutacje: int,
+    zakres: Path | None,
+    *,
+    pominieta: bool = False,
+) -> int:
     z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
     print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | do {do_sha} | mutacje {mutacje} | części {len(wpisy)} | z Chromium {z_chromium}")
     if wyjscie := os.environ.get("GITHUB_OUTPUT"):
         with open(wyjscie, "a", encoding="utf-8") as plik:
-            plik.write(f"baza={od_sha}\ndo={do_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\n" + ("pominieta=true\n" if pominieta else ""))
+            plik.write(
+                f"baza={od_sha}\ndo={do_sha}\nczesci={json.dumps(wpisy)}\nliczba={len(wpisy)}\npokrycie={json.dumps(pokrycie)}\n"
+                + ("pominieta=true\n" if pominieta else "")
+            )
     if zakres is not None:
         zakres.parent.mkdir(parents=True, exist_ok=True)
         zakres.write_text(json.dumps({"baza": od_sha, "do": do_sha}), encoding="utf-8")
