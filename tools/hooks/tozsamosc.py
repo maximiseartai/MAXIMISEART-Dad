@@ -1,264 +1,263 @@
 #!/usr/bin/env python3
-"""Hook ``PreToolUse`` Claude Code dla Basha: odrzuca zapis tożsamości autora gita do configu.
+"""Hook Claude Code dla Basha: przywraca tożsamość autora gita, którą polecenie zmieniło we wspólnym configu.
 
 ``git config user.email r@x`` bez ``--file`` pisze do ``.git/config`` głównego checkoutu, który dzielą wszystkie
 jego worktree, więc od tej chwili każdy agent na tym komputerze podpisuje nim commity (13.11.2026 recenzent PR #1646
-ustawił tak próbną tożsamość i podpisała ona setki commitów na ``main``). ``--worktree`` bez
-``extensions.worktreeConfig`` też pisze tam, a ``--global`` i ``--system`` sięgają wszystkich repozytoriów. Repo
-próbne w katalogu tymczasowym nie jest wyjątkiem, bo worktree pod ``/tmp`` to wciąż wspólny config; jednorazowy podpis
-(``git -c user.name=… commit``, zmienne ``GIT_AUTHOR_*``/``GIT_COMMITTER_*``) działa wszędzie.
+ustawił tak próbną tożsamość i podpisała ona setki commitów na ``main``).
 
-Odrzuca (kod 2, przyczyna na stderr trafia do agenta) wywołanie ``git … config``, które zapisuje albo usuwa klucz
-``user``, ``author`` albo ``committer`` z ``name`` lub ``email`` (wielkość liter bez znaczenia): ustawienie (dwa
-słowa pozycyjne), ``set``, ``unset``, ``--add``, ``--replace-all``, ``--unset``, ``--unset-all`` oraz
-``rename-section`` i ``remove-section`` tych sekcji, z dowolnym zakresem i dowolnymi opcjami globalnymi ``git``
-(``-C ścieżka``, ``--git-dir``). Przechodzi odczyt (jedno słowo pozycyjne, ``get``, ``--get*``, ``--list``), zapis
-innych kluczy i zapis do pliku ``--file``, którego nazwa nie jest nazwą configu gita (``config``,
-``config.worktree``, ``.gitconfig``). Hook czyta polecenie słowami ``shlex``: słowo ``git`` w dowolnym miejscu (za
-``env``, ``xargs``, ``sudo``, ale też w ``echo git config user.name x``) zaczyna wywołanie, które biegnie do
-następnego ``git``, ``;``, ``&``, ``|`` albo nawiasu. Czyta też skrypt ``-c`` powłoki, argumenty ``eval``
-i ``$(…)`` albo `` `…` `` w cudzysłowie; napis w apostrofach i ciało heredoca pomija, bo to tekst (skrypt Pythona,
-treść commitu), a nie polecenie.
-Wszystko inne przechodzi bez słowa (kod 0), także wejście, którego nie da się odczytać, bo hook nie może zatrzymać
-pracy.
+Hook ocenia skutek polecenia, a nie jego tekst, bo zapis może przyjść w nieskończenie wielu postaciach (``xargs``,
+skrypt, Python, łamanie linii, alias). ``PreToolUse`` zapamiętuje bajty configów, z których git czyta tożsamość:
+wspólnego configu repo katalogu polecenia (``cwd``) i projektu (``CLAUDE_PROJECT_DIR``) razem z ``config.worktree``
+głównego checkoutu i bieżącego worktree, globalnego (``GIT_CONFIG_GLOBAL`` albo ``~/.gitconfig`` i
+``$XDG_CONFIG_HOME/git/config``) i systemowego (``GIT_CONFIG_SYSTEM`` albo ``/etc/gitconfig`` i ``etc/gitconfig`` obok
+katalogu ``git`` z PATH). ``PostToolUse`` i ``PostToolUseFailure`` (polecenie z kodem różnym od zera i przerwane)
+porównują je z tym samym plikiem stanu (``session_id`` i ``tool_use_id``). Gdy plik się zmienił, ``git config --file``
+czyta z obu wersji klucze ``user``, ``author`` i ``committer`` z ``name`` i ``email``; każdy zmieniony klucz wraca do
+poprzednich wartości, a kod 2 z przyczyną i drogą jednorazowego podpisu na stderr trafia do agenta. Git biegnie więc
+tylko wtedy, gdy któryś config zmienił bajty, a repo tymczasowe spoza tych configów (świeży ``git init``) zostaje bez
+zmian.
 
-Granica: inne harnessy niż Claude Code (Codex, opencode), skrypt z pliku albo z heredoca, Python (``subprocess``),
-klucz albo polecenie ze zmiennej i alias gita łapie tylko przegląd; postacie z próbkami są w ``ZNANE_LUKI``
-w ``tests/test_tozsamosc.py``.
+Hook nie wie, kto zmienił config: zmianę Maksa z jego terminalu w trakcie polecenia agenta też cofa, a komunikat każe
+agentowi powiedzieć o tym w raporcie. Commit zrobiony w tym samym poleceniu ma już zmienioną tożsamość.
+Wszystko inne przechodzi bez słowa (kod 0), także wejście, którego nie da się odczytać, i brak gita, bo hook nie może
+zatrzymać pracy.
+
+Granica: hook porównuje configi tylko do zwrotu polecenia (zapis w poleceniu w tle po nim zostaje), tylko w repo
+katalogu polecenia i projektu, bez plików z ``include.path`` i tylko na tym komputerze (``ssh``); inne harnessy niż
+Claude Code (Codex, opencode) łapie tylko przegląd. Postacie z próbkami są w ``ZNANE_LUKI`` w
+``tests/test_tozsamosc.py``.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
+(``per-file-target-version`` w ``pyproject.toml``), a poza biblioteką standardową importuje tylko ``tools/lib/repo.py``
+(też pod 3.9), i to dopiero przy zmianie configu.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 import json
+import os
+from pathlib import Path
 import re
-import shlex
+import shutil
+import subprocess
 import sys
+import tempfile
+import time
 from typing import Optional
 
-IDENTITY_SECTIONS = frozenset({"user", "author", "committer"})
-IDENTITY_KEYS = frozenset(f"{section}.{name}" for section in IDENTITY_SECTIONS for name in ("name", "email"))
-CONFIG_FILES = frozenset({"config", "config.worktree", ".gitconfig"})
-GIT_VALUE_OPTIONS = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env", "--super-prefix"})
-CONFIG_VALUE_OPTIONS = frozenset({"-f", "--file", "--blob", "--type", "--default", "--comment", "--value", "--url"})
-WRITE_SUBCOMMANDS = frozenset({"set", "unset", "rename-section", "remove-section", "edit"})
-READ_SUBCOMMANDS = frozenset({"get", "list"})
-WRITE_OPTIONS = frozenset({"--add", "--replace-all", "--unset", "--unset-all", "--rename-section", "--remove-section", "-e", "--edit"})
-READ_OPTIONS = frozenset({"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--get-color", "--get-colorbool", "-l", "--list"})
-SECTION_OPERATIONS = frozenset({"rename-section", "remove-section", "--rename-section", "--remove-section"})
-SHELLS = frozenset({"sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "csh", "tcsh", "su", "runuser"})
-SCRIPT_OPTION = re.compile(r"-[a-zA-Z]*c[a-zA-Z]*")
-HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)(\w+)\1")
-SEPARATORS = frozenset("();|&")
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
-REFUSAL = (
-    "Odmowa: git config zapisuje tożsamość autora (user.name/user.email, także author.* i committer.*) do configu, "
-    "który dzielą checkout główny i wszystkie jego worktree (albo --global/--system: cały komputer), więc od tej chwili "
-    "podpisywałby nią commity każdy agent. Podpisz jedno polecenie: git -c user.name=… -c user.email=… commit …, "
-    "albo zmiennymi GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME i GIT_COMMITTER_EMAIL przed tym jednym "
-    "poleceniem (próba z wieloma commitami: export tych zmiennych na początku jej polecenia Basha). Tak samo w repo "
-    "próbnym w katalogu tymczasowym, bo worktree pod /tmp też pisze do wspólnego configu. "
-    "Tożsamość we wspólnym configu zmienia tylko Maks we własnym terminalu."
+IDENTITY_KEYS = tuple(f"{section}.{name}" for section in ("user", "author", "committer") for name in ("name", "email"))
+# Katalog plików stanu między ``PreToolUse`` a ``PostToolUse``; testy podają własny.
+STATE_ENV = "TOZSAMOSC_STAN"
+# Plik stanu bez ``PostToolUse`` (inny hook odmówił polecenia, człowiek go nie zatwierdził) znika po dobie.
+STALE_S = 24 * 3600
+GIT_TIMEOUT_S = 3.0
+
+Identity = dict[str, list[str]]
+
+MESSAGE = (
+    "Tożsamość autora gita zmieniła się w trakcie tego polecenia, więc hook przywrócił poprzednie wartości:\n{changes}\n"
+    "Te configi dzielą checkout główny i wszystkie jego worktree (globalny i systemowy: każde repo na komputerze), więc "
+    "każdy agent podpisywałby nimi commity. Podpisz jedno polecenie: git -c user.name=… -c user.email=… commit …, albo "
+    "zmiennymi GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME i GIT_COMMITTER_EMAIL przed tym poleceniem (próba "
+    "z wieloma commitami: export tych zmiennych na początku jej polecenia Basha); świeże repo w katalogu tymczasowym "
+    "(git init) ma własny config. Commit zrobiony w tym poleceniu ma zmienioną tożsamość: przed pushem popraw go "
+    "jednorazowym podpisem (git -c user.name=… -c user.email=… commit --amend --reset-author --no-edit). Jeśli to "
+    "polecenie nie zmieniało tożsamości, zmienił ją w tym czasie ktoś inny (inny agent albo Maks w swoim terminalu): "
+    "powiedz o tym w raporcie, bo hook cofnął także tę zmianę. Tożsamość we wspólnym configu zmienia tylko Maks."
 )
 
 
-def _without_heredocs(command: str) -> str:
-    kept: list[str] = []
-    delimiter: Optional[str] = None
-    for line in command.split("\n"):
-        if delimiter is not None:
-            if line.strip() == delimiter:
-                delimiter = None
-            continue
-        kept.append(line)
-        opened = HEREDOC.search(line)
-        if opened:
-            delimiter = opened.group(2)
-    return "\n".join(kept)
+def _git_dir(start: Path) -> Optional[Path]:
+    """Katalog gita repo, w którym leży ``start`` (``.git`` albo ``gitdir:`` z pliku ``.git`` worktree)."""
 
-
-def _tokens(command: str) -> list[str]:
-    lexer = shlex.shlex(command.replace("`", " ; "), posix=True, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        return list(lexer)
-    except ValueError:  # niedomknięty cudzysłów: słowa bez cudzysłowów
-        return command.split()
-
-
-def _is_separator(token: str) -> bool:
-    return bool(token) and set(token) <= SEPARATORS
-
-
-def _is_redirection(token: str) -> bool:
-    return bool(token) and set(token) <= SEPARATORS | {"<", ">"} and ("<" in token or ">" in token)
-
-
-def _simple_commands(tokens: list[str]) -> Iterator[list[str]]:
-    """Słowa każdego polecenia prostego bez przekierowań (``2>/dev/null`` ani jego cel nie są słowem polecenia)."""
-
-    words: list[str] = []
-    skip_target = False
-    for token in tokens:
-        if skip_target:
-            skip_target = False
-        elif _is_redirection(token):
-            if words and words[-1].isdigit():
-                words.pop()
-            skip_target = True
-        elif _is_separator(token):
-            yield words
-            words = []
-        else:
-            words.append(token)
-    yield words
-
-
-def _scripts(words: list[str]) -> Iterator[str]:
-    """Skrypty, które polecenie proste wykonuje: ciało ``-c`` powłoki i argumenty ``eval``."""
-
-    shell = False
-    for index, word in enumerate(words):
-        name = word.rsplit("/", 1)[-1]
-        if name == "eval":
-            # Słowa za ``eval`` to jeden skrypt, a dalsze ``eval`` stoją w nim.
-            yield " ".join(words[index + 1 :])
-            return
-        if name in SHELLS:
-            shell = True
-        elif shell and SCRIPT_OPTION.fullmatch(word) and index + 1 < len(words):
-            yield words[index + 1]
-
-
-def _substitutions(command: str) -> Iterator[str]:
-    """Polecenie każdego ``$(…)`` i `` `…` `` w napisie w cudzysłowie; w apostrofach to tekst, a nie polecenie.
-
-    Poza cudzysłowami podstawienie rozcina już ``_tokens``. Słowa czyta ``shlex`` bez trybu POSIX, który zostawia
-    cudzysłowy w słowie, a podstawienie zagnieżdżone w znalezionym czyta następne wywołanie ``writes_identity``.
-    """
-
-    lexer = shlex.shlex(command, posix=False, punctuation_chars=True)
-    lexer.whitespace_split = True
-    try:
-        words = list(lexer)
-    except ValueError:  # niedomknięty cudzysłów
-        return
-    for word in words:
-        quote, index = "", 0
-        while index < len(word):
-            char = word[index]
-            if char == "\\" and quote != "'":
-                index += 2
-                continue
-            if char in "'\"" and quote in ("", char):
-                quote = "" if quote else char
-            elif quote != "'" and (word.startswith("$(", index) or char == "`"):
-                start = index + (2 if char == "$" else 1)
-                end = _closing(word, start, ")" if char == "$" else "`")
-                yield word[start:end]
-                index = end
-            index += 1
-
-
-def _closing(word: str, start: int, close: str) -> int:
-    depth = 0
-    for index in range(start, len(word)):
-        char = word[index]
-        if char == close and depth == 0:
-            return index
-        if close == ")" and char in "()":
-            depth += 1 if char == "(" else -1
-    return len(word)
-
-
-def _git_calls(words: list[str]) -> Iterator[list[str]]:
-    """Słowa za każdym ``git`` polecenia prostego, do następnego ``git``."""
-
-    call: Optional[list[str]] = None
-    for word in words:
-        if word.rsplit("/", 1)[-1] == "git":
-            if call is not None:
-                yield call
-            call = []
-        elif call is not None:
-            call.append(word)
-    if call is not None:
-        yield call
-
-
-def _config_arguments(call: list[str]) -> Optional[list[str]]:
-    """Argumenty za ``config``, gdy podpolecenie ``git`` to ``config``; opcje globalne ``git`` pomija."""
-
-    index = 0
-    while index < len(call):
-        word = call[index]
-        if word in GIT_VALUE_OPTIONS:
-            index += 2
-        elif word.startswith("-"):
-            index += 1
-        else:
-            return call[index + 1 :] if word == "config" else None
+    for directory in (start, *start.parents):
+        dot_git = directory / ".git"
+        if dot_git.is_dir():
+            return dot_git
+        if dot_git.is_file():
+            first = dot_git.read_text(encoding="utf-8", errors="replace").partition("\n")[0]
+            if first.startswith("gitdir:"):
+                return directory / first[len("gitdir:") :].strip()
+            return None
     return None
 
 
-def _writes_identity(arguments: list[str]) -> bool:
-    options: set[str] = set()
-    positional: list[str] = []
-    config_file: Optional[str] = None
-    index = 0
-    while index < len(arguments):
-        word = arguments[index]
-        option, equals, value = word.partition("=")
-        if word.startswith("-") and option in CONFIG_VALUE_OPTIONS:
-            if not equals:
-                index += 1
-                value = arguments[index] if index < len(arguments) else ""
-            if option in ("-f", "--file"):
-                config_file = value
-        elif word.startswith("-"):
-            options.add(option)
-        else:
-            positional.append(word)
-        index += 1
-    if config_file is not None and config_file.replace("\\", "/").rsplit("/", 1)[-1] not in CONFIG_FILES:
-        return False
-    subcommand = positional[0] if positional and positional[0] in WRITE_SUBCOMMANDS | READ_SUBCOMMANDS else None
-    names = positional[1:] if subcommand else positional
-    if subcommand in READ_SUBCOMMANDS or options & READ_OPTIONS:
-        return False
-    if not (subcommand in WRITE_SUBCOMMANDS or options & WRITE_OPTIONS or len(names) >= 2):
-        return False
-    if subcommand in SECTION_OPERATIONS or options & SECTION_OPERATIONS:
-        return any(name.casefold() in IDENTITY_SECTIONS for name in names[:2])
-    return bool(names) and names[0].casefold() in IDENTITY_KEYS
+def _common_dir(git_dir: Path) -> Path:
+    commondir = git_dir / "commondir"
+    if commondir.is_file():
+        return git_dir / commondir.read_text(encoding="utf-8", errors="replace").strip()
+    return git_dir
 
 
-def writes_identity(command: str, depth: int = 0) -> bool:
-    """Czy polecenie zapisuje albo usuwa tożsamość autora w configu gita (szczegóły w docstringu modułu)."""
+def watched(directories: list[str], environment: dict[str, str]) -> list[Path]:
+    """Configi, z których git w ``directories`` czyta tożsamość, w kolejności, bez powtórzeń."""
 
-    if depth > 20:  # setki zagnieżdżonych ``bash -c``: polecenia nie da się odczytać, więc przechodzi
-        return False
-    shell = _without_heredocs(command)
-    for words in _simple_commands(_tokens(shell)):
-        for call in _git_calls(words):
-            arguments = _config_arguments(call)
-            if arguments is not None and _writes_identity(arguments):
-                return True
-        if any(writes_identity(script, depth + 1) for script in _scripts(words)):
-            return True
-    return any(writes_identity(script, depth + 1) for script in _substitutions(shell))
+    files: list[Path] = []
+    for directory in directories:
+        git_dir = _git_dir(Path(directory))
+        if git_dir is not None:
+            common = _common_dir(git_dir)
+            files += [common / "config", common / "config.worktree", git_dir / "config.worktree"]
+    if environment.get("GIT_CONFIG_GLOBAL"):
+        files.append(Path(environment["GIT_CONFIG_GLOBAL"]))
+    else:
+        home = Path(environment.get("HOME") or Path.home())
+        xdg = environment.get("XDG_CONFIG_HOME") or str(home / ".config")
+        files += [home / ".gitconfig", Path(xdg) / "git" / "config"]
+    if environment.get("GIT_CONFIG_SYSTEM"):
+        files.append(Path(environment["GIT_CONFIG_SYSTEM"]))
+    else:
+        files.append(Path("/etc/gitconfig"))
+        git = shutil.which("git", path=environment.get("PATH"))
+        if git:
+            files.append(Path(git).parent.parent / "etc" / "gitconfig")
+    unique: dict[str, Path] = {}
+    for path in files:
+        unique.setdefault(os.path.realpath(path), Path(os.path.normpath(path)))
+    return list(unique.values())
+
+
+def _read(path: Path) -> Optional[str]:
+    """Bajty pliku jako tekst latin-1 (odwracalny dla każdego bajtu) albo ``None``, gdy pliku nie ma."""
+
+    try:
+        return path.read_bytes().decode("latin-1")
+    except OSError:
+        return None
+
+
+def _state_dir(environment: dict[str, str]) -> Path:
+    given = environment.get(STATE_ENV)
+    if given:
+        return Path(given)
+    user = str(os.getuid()) if hasattr(os, "getuid") else os.environ.get("USERNAME", "")
+    return Path(tempfile.gettempdir()) / f"claude-tozsamosc-{user}"
+
+
+def _state_file(data: dict[str, object], environment: dict[str, str]) -> Optional[Path]:
+    session, call = data.get("session_id"), data.get("tool_use_id")
+    if not isinstance(call, str) or not call:
+        return None
+    name = re.sub(r"[^\w.-]", "_", f"{session}-{call}")[:200]
+    return _state_dir(environment) / f"{name}.json"
+
+
+def before(data: dict[str, object], environment: dict[str, str]) -> None:
+    state = _state_file(data, environment)
+    if state is None:
+        return
+    directories = [value for value in (data.get("cwd"), environment.get("CLAUDE_PROJECT_DIR")) if isinstance(value, str) and value]
+    snapshot = {str(path): _read(path) for path in watched(directories, environment)}
+    state.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    now = time.time()
+    for old in state.parent.glob("*.json"):
+        try:
+            if now - old.stat().st_mtime > STALE_S:
+                old.unlink()
+        except OSError:
+            pass
+    descriptor = os.open(state, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(snapshot, handle)
+
+
+def _git(directory: Path, *arguments: str) -> str:
+    import repo  # dopiero przy zmianie configu: polecenie, które configu nie zmienia, nie płaci za import
+
+    return repo.git(directory, *arguments, timeout=GIT_TIMEOUT_S)
+
+
+def identity(content: Optional[str], directory: Path) -> Optional[Identity]:
+    """Wartości kluczy tożsamości w treści configu (pusty słownik bez pliku) albo ``None``, gdy git jej nie czyta."""
+
+    if content is None:
+        return {}
+    copy = directory / f"config-{os.getpid()}"
+    copy.write_bytes(content.encode("latin-1"))
+    try:
+        listed = _git(directory, "config", "--file", str(copy), "--no-includes", "--list", "-z")
+    except subprocess.CalledProcessError:
+        return None
+    finally:
+        copy.unlink()
+    found: Identity = {}
+    for entry in listed.split("\0"):
+        key, _, value = entry.partition("\n")  # git podaje sekcję i nazwę klucza małymi literami
+        if key in IDENTITY_KEYS:
+            found.setdefault(key, []).append(value)
+    return found
+
+
+def _restore(path: Path, key: str, values: list[str]) -> Optional[str]:
+    """Przywraca ``values`` klucza ``key`` w ``path`` (jedną wartość w miejscu wpisu); zwraca błąd gita albo ``None``."""
+
+    steps: list[tuple[str, ...]] = [("--replace-all", key, values[0])] if len(values) == 1 else [("--unset-all", key)]
+    if len(values) != 1:
+        steps += [("--add", key, value) for value in values]
+    for step in steps:
+        try:
+            _git(path.parent, "config", "--file", str(path), *step)
+        except subprocess.CalledProcessError as failed:
+            if failed.returncode != 5:  # 5: klucza nie ma, więc nie ma czego usuwać
+                return str(failed.stderr).strip() or f"kod {failed.returncode}"
+    return None
+
+
+def _shown(values: list[str]) -> str:
+    return ", ".join(repr(value) for value in values) or "(brak)"
+
+
+def after(data: dict[str, object], environment: dict[str, str]) -> list[str]:
+    """Zmiany tożsamości od ``PreToolUse`` tego polecenia, każda przywrócona (albo z błędem przywrócenia)."""
+
+    state = _state_file(data, environment)
+    if state is None:
+        return []
+    try:
+        snapshot = json.loads(state.read_text(encoding="utf-8"))
+        state.unlink()
+    except (OSError, ValueError):
+        return []
+    changes: list[str] = []
+    for name, old in snapshot.items() if isinstance(snapshot, dict) else ():
+        path = Path(name)
+        new = _read(path)
+        if new == old:
+            continue
+        before_values, after_values = identity(old, state.parent), identity(new, state.parent)
+        if before_values is None or after_values is None:
+            continue
+        for key in IDENTITY_KEYS:
+            was, now = before_values.get(key, []), after_values.get(key, [])
+            if was != now:
+                failed = _restore(path, key, was)
+                outcome = f"nie udało się przywrócić ({failed}), powiedz Maksowi" if failed else "przywrócone"
+                changes.append(f"- {path}: {key} {_shown(was)} → {_shown(now)}: {outcome}")
+    return changes
 
 
 def main() -> int:
     try:
-        command = json.load(sys.stdin)["tool_input"]["command"]
-    except (ValueError, KeyError, TypeError, RecursionError):
+        data = json.load(sys.stdin)
+    except (ValueError, RecursionError):
         return 0
-    if not isinstance(command, str) or not writes_identity(command):
+    if not isinstance(data, dict):
         return 0
-    print(REFUSAL, file=sys.stderr)
+    environment = dict(os.environ)
+    event = data.get("hook_event_name")
+    try:
+        if event == "PreToolUse":
+            before(data, environment)
+            return 0
+        if event not in ("PostToolUse", "PostToolUseFailure"):
+            return 0
+        changes = after(data, environment)
+    except (OSError, ImportError, subprocess.SubprocessError):
+        return 0
+    if not changes:
+        return 0
+    print(MESSAGE.format(changes="\n".join(changes)), file=sys.stderr)
     return 2
 
 
