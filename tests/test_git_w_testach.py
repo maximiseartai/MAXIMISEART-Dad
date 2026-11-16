@@ -24,6 +24,7 @@ import pytest
 
 from rozliczenia.centrum import tool_update
 
+from tests.fixtures.git_config import hermetic_git
 from tests.fixtures.tool_clone import git
 
 MISSING_FIXTURE = (
@@ -31,25 +32,46 @@ MISSING_FIXTURE = (
     "fixture git_bez_konfiguracji_komputera z hermetic_git (tests/fixtures/git_config.py)"
 )
 FOREIGN_CONFIG = "GIT_CONFIG_GLOBAL='/dev/null' to nie konfiguracja testów"
-POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="Windows nie ma os.posix_spawn ani programu env")
+POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows nie ma os.posix_spawn ani programu env"
+)
 
 
-def _maintenance_after_commit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *config: str) -> list[list[str]]:
+def _maintenance_after_commit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *config: str
+) -> list[list[str]]:
     repo, trace = tmp_path / "repo", tmp_path / "trace2.json"
     repo.mkdir()
     git(repo, "init", "--quiet")
     monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
     git(repo, *config, "commit", "--quiet", "--allow-empty", "--message", "x")
-    events = [json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()]
-    return [event["argv"] for event in events if event["event"] == "child_start" and "maintenance" in event["argv"]]
+    events = [
+        json.loads(line) for line in trace.read_text(encoding="utf-8").splitlines()
+    ]
+    return [
+        event["argv"]
+        for event in events
+        if event["event"] == "child_start" and "maintenance" in event["argv"]
+    ]
 
 
-def test_commit_w_tescie_nie_uruchamia_konserwacji_repozytorium(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_commit_w_tescie_nie_uruchamia_konserwacji_repozytorium(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     assert _maintenance_after_commit(tmp_path, monkeypatch) == []
 
 
-def test_slad_gita_pokazuje_konserwacje_wlaczona_jawnie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    started = _maintenance_after_commit(tmp_path, monkeypatch, "-c", "maintenance.auto=true", "-c", "maintenance.autoDetach=false")
+def test_slad_gita_pokazuje_konserwacje_wlaczona_jawnie(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started = _maintenance_after_commit(
+        tmp_path,
+        monkeypatch,
+        "-c",
+        "maintenance.auto=true",
+        "-c",
+        "maintenance.autoDetach=false",
+    )
 
     assert [argv[1:3] for argv in started] == [["maintenance", "run"]]
 
@@ -72,8 +94,44 @@ def test_git_w_tescie_czyta_tylko_konfiguracje_testow(tmp_path: Path) -> None:
     ], MISSING_FIXTURE
 
 
-def test_klon_pustego_origin_po_pushu_main_ma_pliki_na_kazdym_komputerze(tmp_path: Path) -> None:
-    origin, work, other = tmp_path / "origin.git", tmp_path / "praca", tmp_path / "inny-klon"
+def test_git_w_tescie_nie_bierze_tozsamosci_ze_srodowiska_wolajacego(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    for role in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{role}_NAME", "agent")
+        monkeypatch.setenv(f"GIT_{role}_EMAIL", "agent@example.invalid")
+    (tmp_path / "sesja").mkdir()
+    with hermetic_git(tmp_path / "sesja"):
+        subprocess.run(["git", "init", "--quiet", str(tmp_path / "repo")], check=True)
+        subprocess.run(
+            [
+                "git",
+                "-C",
+                str(tmp_path / "repo"),
+                "commit",
+                "--quiet",
+                "--allow-empty",
+                "-m",
+                "x",
+            ],
+            check=True,
+        )
+        identity = git(tmp_path / "repo", "log", "-1", "--format=%an <%ae> | %cn <%ce>")
+
+    assert identity == "test <test@example.com> | test <test@example.com>", (
+        "git testów bierze tożsamość ze środowiska wołającego (GIT_AUTHOR_*/GIT_COMMITTER_*, które Claude Code daje "
+        "agentom z .claude/settings.json), więc wynik testu zależy od tego, kto go uruchomił: hermetic_git ma je zdjąć"
+    )
+
+
+def test_klon_pustego_origin_po_pushu_main_ma_pliki_na_kazdym_komputerze(
+    tmp_path: Path,
+) -> None:
+    origin, work, other = (
+        tmp_path / "origin.git",
+        tmp_path / "praca",
+        tmp_path / "inny-klon",
+    )
     git(tmp_path, "init", "--quiet", "--bare", str(origin))
     git(tmp_path, "init", "--quiet", str(work))
     (work / "kod.py").write_text("WERSJA = 1\n", encoding="utf-8")
@@ -83,16 +141,32 @@ def test_klon_pustego_origin_po_pushu_main_ma_pliki_na_kazdym_komputerze(tmp_pat
 
     git(tmp_path, "clone", "--quiet", str(origin), str(other))
 
-    assert (other / "kod.py").read_text(encoding="utf-8") == "WERSJA = 1\n", MISSING_FIXTURE
+    assert (other / "kod.py").read_text(encoding="utf-8") == "WERSJA = 1\n", (
+        MISSING_FIXTURE
+    )
 
 
 def test_git_ze_srodowiskiem_bez_konfiguracji_testow_wywraca_test() -> None:
-    with pytest.raises(AssertionError, match="GIT_CONFIG_NOSYSTEM nie jest 1.*Napraw: zbuduj env z os.environ"):
-        subprocess.run(["git", "--version"], env={"PATH": os.environ["PATH"]}, check=True)
+    with pytest.raises(
+        AssertionError,
+        match="GIT_CONFIG_NOSYSTEM nie jest 1.*Napraw: zbuduj env z os.environ",
+    ):
+        subprocess.run(
+            ["git", "--version"], env={"PATH": os.environ["PATH"]}, check=True
+        )
     with pytest.raises(AssertionError, match=FOREIGN_CONFIG):
-        subprocess.run(["git", "--version"], env=os.environ | {"GIT_CONFIG_GLOBAL": "/dev/null"}, check=True)
+        subprocess.run(
+            ["git", "--version"],
+            env=os.environ | {"GIT_CONFIG_GLOBAL": "/dev/null"},
+            check=True,
+        )
 
-    subprocess.run(["git", "--version"], env=os.environ | {"LC_ALL": "C"}, capture_output=True, check=True)
+    subprocess.run(
+        ["git", "--version"],
+        env=os.environ | {"LC_ALL": "C"},
+        capture_output=True,
+        check=True,
+    )
 
 
 @pytest.mark.parametrize(
@@ -110,7 +184,12 @@ def test_git_bez_zadnej_konfiguracji_przechodzi_tylko_z_pustym_home_bez_xdg_conf
     home.mkdir()
     for name in home_files:
         (home / name).write_text("", encoding="utf-8")
-    environment = {"PATH": os.environ["PATH"], "HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull}
+    environment = {
+        "PATH": os.environ["PATH"],
+        "HOME": str(home),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+    }
     if xdg:
         environment["XDG_CONFIG_HOME"] = str(tmp_path)
     if sys.platform == "win32":
@@ -118,19 +197,31 @@ def test_git_bez_zadnej_konfiguracji_przechodzi_tylko_z_pustym_home_bez_xdg_conf
 
     if refused:
         with pytest.raises(AssertionError, match="to nie konfiguracja testów"):
-            subprocess.run(["git", "--version"], env=environment, capture_output=True, check=True)
+            subprocess.run(
+                ["git", "--version"], env=environment, capture_output=True, check=True
+            )
     else:
-        subprocess.run(["git", "--version"], env=environment, capture_output=True, check=True)
+        subprocess.run(
+            ["git", "--version"], env=environment, capture_output=True, check=True
+        )
 
 
 LAUNCHES: dict[str, Callable[[], object]] = {
     "lista bez env=": lambda: subprocess.run(["git", "--version"], check=True),
     "krotka": lambda: subprocess.run(("git", "--version"), check=True),
-    "pełna ścieżka": lambda: subprocess.run([str(tool_update.find_git()), "--version"], check=True),
-    "env": lambda: subprocess.run(["/usr/bin/env", "LC_ALL=C", "git", "--version"], check=True),
+    "pełna ścieżka": lambda: subprocess.run(
+        [str(tool_update.find_git()), "--version"], check=True
+    ),
+    "env": lambda: subprocess.run(
+        ["/usr/bin/env", "LC_ALL=C", "git", "--version"], check=True
+    ),
     "sh -c": lambda: subprocess.run(["sh", "-c", "cd . && git --version"], check=True),
-    "shell=True": lambda: subprocess.run("cd . && git --version", shell=True, check=True),
-    "executable=": lambda: subprocess.run(["wersja", "--version"], executable=tool_update.find_git(), check=True),
+    "shell=True": lambda: subprocess.run(
+        "cd . && git --version", shell=True, check=True
+    ),
+    "executable=": lambda: subprocess.run(
+        ["wersja", "--version"], executable=tool_update.find_git(), check=True
+    ),
     "os.system": lambda: os.system("git --version"),
 }
 
@@ -147,16 +238,26 @@ def test_git_kazda_droga_ze_srodowiskiem_bez_konfiguracji_testow_wywraca_test(
 
 @POSIX_ONLY
 @pytest.mark.parametrize("spawn", ["posix_spawn", "posix_spawnp"])
-def test_git_z_posix_spawn_ze_srodowiskiem_bez_konfiguracji_testow_wywraca_test(spawn: str) -> None:
+def test_git_z_posix_spawn_ze_srodowiskiem_bez_konfiguracji_testow_wywraca_test(
+    spawn: str,
+) -> None:
     git_program = str(tool_update.find_git())
 
     with pytest.raises(AssertionError, match=FOREIGN_CONFIG):
-        getattr(os, spawn)(git_program, [git_program, "--version"], os.environ | {"GIT_CONFIG_GLOBAL": "/dev/null"})
+        getattr(os, spawn)(
+            git_program,
+            [git_program, "--version"],
+            os.environ | {"GIT_CONFIG_GLOBAL": "/dev/null"},
+        )
 
 
 @POSIX_ONLY
 @pytest.mark.parametrize("spawn", ["posix_spawn", "posix_spawnp"])
-@pytest.mark.parametrize("command", [["git", "--version"], ["sh", "-c", "cd . && git --version"]], ids=["git", "sh -c"])
+@pytest.mark.parametrize(
+    "command",
+    [["git", "--version"], ["sh", "-c", "cd . && git --version"]],
+    ids=["git", "sh -c"],
+)
 def test_posix_spawn_bez_env_sprawdza_srodowisko_procesu(
     spawn: str, command: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -179,28 +280,49 @@ def test_posix_spawn_bez_env_sprawdza_srodowisko_procesu(
     ],
     ids=["env -i", "env -u", "unset w powłoce", "przypisanie w powłoce"],
 )
-def test_polecenie_ktore_zdejmuje_konfiguracje_testow_przed_gitem_wywraca_test(command: list[str] | str, shell: bool) -> None:
+def test_polecenie_ktore_zdejmuje_konfiguracje_testow_przed_gitem_wywraca_test(
+    command: list[str] | str, shell: bool
+) -> None:
     with pytest.raises(AssertionError, match="GIT_CONFIG_NOSYSTEM nie jest 1"):
         subprocess.run(command, shell=shell, check=True)
 
 
 @POSIX_ONLY
 def test_git_przez_env_i_powloke_z_konfiguracja_testow_dziala() -> None:
-    for command in (["env", "LC_ALL=C", "git", "--version"], ["sh", "-c", "git --version"]):
+    for command in (
+        ["env", "LC_ALL=C", "git", "--version"],
+        ["sh", "-c", "git --version"],
+    ):
         subprocess.run(command, capture_output=True, check=True)
     assert os.system("git --version >/dev/null") == 0
 
 
-def test_git_z_kodu_narzedzia_nie_ma_tozsamosci_jak_u_taty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_git_z_kodu_narzedzia_nie_ma_tozsamosci_jak_u_taty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     for role in ("AUTHOR", "COMMITTER"):
         monkeypatch.setenv(f"GIT_{role}_NAME", "Maks")
         monkeypatch.setenv(f"GIT_{role}_EMAIL", "maks@example.invalid")
     git_program = tool_update.find_git()
     assert git_program is not None
     git(tmp_path, "init", "--quiet")
-    subprocess.run(["git", "-C", str(tmp_path), "commit", "--quiet", "--allow-empty", "--message", "test"], check=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(tmp_path),
+            "commit",
+            "--quiet",
+            "--allow-empty",
+            "--message",
+            "test",
+        ],
+        check=True,
+    )
 
-    from_tool = tool_update._Git(git_program, tmp_path).run("commit", "--quiet", "--allow-empty", "--message", "narzędzie")
+    from_tool = tool_update._Git(git_program, tmp_path).run(
+        "commit", "--quiet", "--allow-empty", "--message", "narzędzie"
+    )
 
     identity = (
         "git z kodu narzędzia (src/) ma pustą tożsamość, jak u taty, więc jego git commit pada: nie przekazuj mu "

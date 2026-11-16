@@ -1,6 +1,10 @@
 {
   "env": {
-    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1"
+    "CLAUDE_CODE_DISABLE_AUTO_MEMORY": "1",
+    "GIT_AUTHOR_NAME": "MAXIMISEART-AI",
+    "GIT_AUTHOR_EMAIL": "281159351+MAXIMISEART-AI@users.noreply.github.com",
+    "GIT_COMMITTER_NAME": "MAXIMISEART-AI",
+    "GIT_COMMITTER_EMAIL": "281159351+MAXIMISEART-AI@users.noreply.github.com"
   },
   "permissions": {
     "deny": [
