@@ -1,11 +1,13 @@
-"""Przypomnienia o raporcie (ADR 0030, ADR 0032): które przypomnienia należą się teraz, ich temat i treść.
+"""Przypomnienia o raporcie (ADR 0030, ADR 0032, ADR 0039): które przypomnienia należą się teraz, ich temat i treść.
 
 Pory, godzina pierwszego przypomnienia, pierwsze zdanie treści i stopka to Ustawienia Centrum taty
 (``ReminderSettings``), a dzisiejsze wartości z ADR 0030 są ich wartościami domyślnymi (``DEFAULT_REMINDERS``). Reguły
-tych ustawień ma jedna budowa, ``ReminderSettings.of``. Stały blok wzoru Raportu wykonawcy z ``EXAMPLE`` i temat zostają w
-kodzie, bo po nich Wpisanie raportów poznaje odpowiedź, a numery przykładu nie są Wpisami. Czytelność tematu Raportu
-wykonawcy rozstrzyga ``_subject.read``, ten sam co we Wpisaniu raportów. Temat przypomnienia też ma ``_subject``
-(``reminder_subject``, ``reminder_day``), bo odpowiedź na przypomnienie jest Raportem wykonawcy.
+tych ustawień ma jedna budowa, ``ReminderSettings.of``. Stały blok wzoru Raportu wykonawcy z przykładem
+(``_entries.EXAMPLE``) i temat zostają w kodzie, bo po nich Wpisanie raportów poznaje odpowiedź, a numery przykładu nie
+są Wpisami. Czytelność tematu Raportu wykonawcy rozstrzyga ``_subject.read``, a Wpisy treści ``_entries.entries``, te
+same co we Wpisaniu raportów. Temat przypomnienia też ma ``_subject`` (``reminder_subject``, ``reminder_day``), bo
+odpowiedź na przypomnienie jest Raportem wykonawcy. Który Wpis ``tak`` ma Błąd opisu, mówi ``_descriptions``, ta sama
+reguła co w problemie Wpisania raportów.
 """
 
 from __future__ import annotations
@@ -14,10 +16,12 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from enum import Enum
-from typing import Final, Literal
+from typing import Final, Literal, assert_never
 
-from . import _subject
-from ._model import Login, OrderNumber, RegisterOrder, ReportMail, SenderAddress, Window, WorkerAddresses
+from ..activity_legend import ActivityLegend, ColumnTwice, DescriptionProblem, NotACode, NumberOutOfRange, TwoColours
+from . import _descriptions, _entries, _subject
+from ._entries import EXAMPLE
+from ._model import FaultyDescription, Login, ReadReport, RegisterOrder, ReportMail, SenderAddress, Window, WorkerAddresses
 from ._subject import reminder_subject
 
 
@@ -59,12 +63,6 @@ kilka minut (decyzja Maksa 12.11)."""
 
 DEFAULT_TEXT: Final = f"Poproszę o wysłanie raportu za dzień {DAY_FIELD}."
 """Pierwsze zdanie domyślnego tekstu przypomnienia."""
-
-EXAMPLE: Final = ("12345678 tak montaż ONT", "12345679 nie brak klienta")
-"""Linie przykładu w treści przypomnienia."""
-
-EXAMPLE_NUMBERS: Final = frozenset(OrderNumber(line.split()[0]) for line in EXAMPLE)
-"""Numery zleceń z przykładu w treści przypomnienia: w żadnym mailu nie są Wpisami (``_entries.entries``)."""
 
 
 ReminderProblemKind = Literal["empty_morning", "empty_evening", "overlap", "empty_text", "unknown_field", "enabled_without_since"]
@@ -184,8 +182,9 @@ class ReminderInputs:
     zbiorczym), uporządkowane zlecenia INTERMAX, maile ze Skrzynki raportów, przypomnienia z „Wysłanych”, adresy
     Wykonawców z Listy Wykonawców (także tych, którym przypomnienia nie idą: ich Raport wykonawcy dalej jest raportem),
     loginy Wykonawców, którym przypomnienia idą (``reminded``: aktywni z włączonymi przypomnieniami), Ustawienia
-    przypomnień (pory, godzina pierwszego, treść i stopka) i pory, przy których praca przypomnień sprawdzała
-    (``in_effect``; bez nich pory „Wysłanych” to pory z ADR 0030, jedyne pory wersji sprzed Ustawień Centrum)."""
+    przypomnień (pory, godzina pierwszego, treść i stopka), Legenda czynności Ustawień Centrum (``legend``, ta sama co
+    we Wpisaniu raportów) i pory, przy których praca przypomnień sprawdzała (``in_effect``; bez nich pory „Wysłanych”
+    to pory z ADR 0030, jedyne pory wersji sprzed Ustawień Centrum)."""
 
     now: datetime
     window: Window
@@ -195,6 +194,7 @@ class ReminderInputs:
     addresses: WorkerAddresses
     reminded: frozenset[Login]
     settings: ReminderSettings
+    legend: ActivityLegend
     in_effect: SchedulesInEffect = SchedulesInEffect()
 
 
@@ -217,23 +217,54 @@ def reminder_pora(now: datetime, schedule: ReminderSchedule) -> Pora | None:
     return Pora.EVENING if schedule.evening.holds(now.time()) else None
 
 
-def reminder_text(day: date, text: str, footer: str) -> str:
-    """Treść Przypomnienia o raporcie za dzień ``day``: pierwsze zdanie taty z dniem w miejscu ``{dzień}``, stały wzór
-    Raportu wykonawcy, a na końcu stopka taty, gdy nie jest pusta."""
+def reminder_text(day: date, text: str, footer: str, faults: Sequence[FaultyDescription] = ()) -> str:
+    """Treść Przypomnienia o raporcie za dzień ``day``: pierwsze zdanie taty z dniem w miejscu ``{dzień}``, zlecenia
+    raportu z tego dnia z Błędem opisu z powodem (``faults``), stały wzór Raportu wykonawcy, a na końcu stopka taty,
+    gdy nie jest pusta.
+
+    Linia zlecenia z Błędem opisu zaczyna się słowem „Zlecenie”, a po numerze stoi „ma”, więc odpowiedź, która cytuje ją
+    bez znaku cytatu, nie daje z niej Wpisu (``_entries.entries``). Powód nie ma słów opisu Wykonawcy (``_said``)."""
 
     shown = f"{day:%d.%m.%Y}"
-    lines = [
-        text.replace(DAY_FIELD, shown),
-        "",
+    lines = [text.replace(DAY_FIELD, shown), ""]
+    if faults:
+        lines += [
+            "W raporcie za ten dzień opis zlecenia ma być z samych kodów czynności. Proszę wysłać jeszcze raz te zlecenia:",
+            *(f"Zlecenie {fault.number} ma w opisie {_said(fault.problems)}." for fault in faults),
+            "",
+        ]
+    lines += [
         "Raport proszę wysłać według tego wzoru:",
         f"Temat maila: Raport {shown}",
-        "Treść maila: NR. ZLECENIA [spacja] tak/nie [spacja] opis zrealizowanej czynności",
+        "Treść maila: NR. ZLECENIA [spacja] tak [spacja] kody czynności albo NR. ZLECENIA [spacja] nie [spacja] powód",
         "PRZYKŁAD:",
         *EXAMPLE,
     ]
     if footer.strip():
         lines += ["", footer.strip("\r\n")]
     return "\n".join(lines) + "\n"
+
+
+def _said(problems: Sequence[DescriptionProblem]) -> str:
+    """Powody Błędu opisu dla Wykonawcy, każdy rodzaj raz, w kolejności z opisu: bez słów z jego opisu, bo przypomnienie
+    idzie na każdy jego adres z listy, i bez kolumn Pliku zbiorczego, których Wykonawca nie zna."""
+
+    said = list(dict.fromkeys(map(_reason, problems)))
+    return said[0] if len(said) == 1 else f"{', '.join(said[:-1])} i {said[-1]}"
+
+
+def _reason(problem: DescriptionProblem) -> str:
+    match problem:
+        case NotACode():
+            return "słowo inne niż kod czynności"
+        case NumberOutOfRange():
+            return f"kod z liczbą spoza zakresu ({problem.detail})"
+        case ColumnTwice():
+            return "dwa kody tej samej usługi"
+        case TwoColours():
+            return "kody, których nie można łączyć"
+        case _:
+            assert_never(problem)
 
 
 def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
@@ -243,9 +274,11 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
     zlecenie dnia X, od godziny pierwszego przypomnienia dnia
     X+1, w porze (``reminder_pora``), w której tego dnia nie poszło jeszcze przypomnienie za X do żadnego jego adresu
     (porę wysłanego liczą pory z chwili wysyłki, ``SchedulesInEffect.around``),
-    dopóki nie przyśle czytelnego Raportu wykonawcy za X (temat daje dzień X, także z literówką w roku, treść bez znaczenia) z któregokolwiek
-    adresu z listy. Liczą się tylko dni otwarte okna (``Window.opens``): od dnia wdrożenia przypomnień, bez okresów z
-    Plikiem zbiorczym. Każdy dzień ma osobne przypomnienie.
+    dopóki nie przyśle czytelnego Raportu wykonawcy za X (temat daje dzień X, także z literówką w roku) z któregokolwiek
+    adresu z listy i dopóki któryś wygrywający Wpis ``tak`` jego raportów za X ma Błąd opisu (``_descriptions.standing``,
+    ADR 0039); przypomnienie po Błędzie opisu mówi, w którym zleceniu jest i jaki. Liczą
+    się tylko dni otwarte okna (``Window.opens``): od dnia wdrożenia przypomnień, bez okresów z Plikiem zbiorczym.
+    Każdy dzień ma osobne przypomnienie.
     """
 
     now = inputs.now
@@ -254,11 +287,18 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
     if pora is None:
         return ()
     logins = inputs.addresses.logins
-    reported = {
-        (worker, day)
-        for mail in inputs.mails
-        if isinstance(day := _subject.read(mail.subject, mail.arrived.date()), date) and (worker := logins.get(mail.sender)) is not None
-    }
+    digits = min((len(order.key.number) for order in inputs.orders), default=1)
+    reports = sorted(
+        (
+            ReadReport(mail.id, mail.arrived, worker, day, _entries.entries(mail.text, digits))
+            for mail in inputs.mails
+            if isinstance(day := _subject.read(mail.subject, mail.arrived.date()), date)
+            and (worker := logins.get(mail.sender)) is not None
+        ),
+        key=lambda report: (report.arrived, report.mail),
+    )
+    faults = _descriptions.standing(inputs.legend, reports, frozenset(order.key.number for order in inputs.orders))
+    reported = {(report.worker, report.day) for report in reports} - faults.keys()
     reminded = {
         (worker, sent.day)
         for sent in inputs.sent
@@ -280,7 +320,14 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
         and order.key.worker in inputs.reminded
         and (order.key.worker, order.key.day) not in answered
     }
+    settings = inputs.settings
     return tuple(
-        Reminder(worker, tuple(sorted(recipients[worker])), day, reminder_subject(day), reminder_text(day, inputs.settings.text, inputs.settings.footer))
+        Reminder(
+            worker,
+            tuple(sorted(recipients[worker])),
+            day,
+            reminder_subject(day),
+            reminder_text(day, settings.text, settings.footer, faults.get((worker, day), ())),
+        )
         for day, worker in sorted(due)
     )

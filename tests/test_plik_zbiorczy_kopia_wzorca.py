@@ -279,6 +279,16 @@ def _date_zeros(path: Path) -> None:
     _third_zero_row(path, lambda reference: f'<c r="{reference}" s="{style}"><v>0</v></c>')
 
 
+def _zeros_beside_quantities(path: Path) -> None:
+    """Wiersz 20 bez liczb w N:AP, a z liczbą 0 w kolumnach tuż obok nich, M i AQ: to nie wiersz przygotowany zerami."""
+
+    replace_cells(
+        path,
+        {f"{letter}20": f'<c r="{letter}20"/>' for letter in _QUANTITY_LETTERS[1:-1]}
+        | {"N20": '<c r="M20"><v>0</v></c><c r="N20"/>', "AP20": '<c r="AP20"/><c r="AQ20"><v>0</v></c>'},
+    )
+
+
 def _zero_only_in_ap(path: Path) -> None:
     _third_zero_row(path, lambda reference: f'<c r="{reference}"/>' if reference != "AP20" else '<c r="AP20"><v>0.0</v></c>')
 
@@ -289,6 +299,7 @@ def _zero_only_in_ap(path: Path) -> None:
     [
         pytest.param(lambda path: None, COLLECTIVE_TEMPLATE_ZERO_ROWS, id="wzorzec"),
         pytest.param(_zero_only_in_ap, COLLECTIVE_TEMPLATE_ZERO_ROWS, id="zero-tylko-w-AP"),
+        pytest.param(_zeros_beside_quantities, 2, id="zera-obok-N-AP"),
         pytest.param(
             lambda path: _third_zero_row(path, lambda reference: f'<c r="{reference}" t="inlineStr"><is><t>0</t></is></c>'),
             2,

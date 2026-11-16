@@ -4,7 +4,8 @@ Jedyną operacją jest ``ActivityLegend.read(text)``, czysta funkcja bez plików
 Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany legendy i brama. Niezmienniki
 legendy sprawdza sam typ ``ActivityLegend`` przy tworzeniu, więc legenda z błędem nie powstaje (``LegendRefused`` z
 polem i zdaniem), także legenda z dwoma zapisami, do których może pasować to samo słowo: każde słowo opisu pasuje
-najwyżej do jednego zapisu. Plik legendy ↔ typy: ``activity_legend_file``.
+najwyżej do jednego zapisu, a ``tak`` i ``nie`` do żadnego, bo zapis tych słów nigdy niczego by nie wpisał. Plik
+legendy ↔ typy: ``activity_legend_file``.
 
 Zapis Kodu czynności to małe litery, cyfry i ``/`` bez spacji, od litery, z co najwyżej jednym miejscem na liczbę
 ``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Opis technika to same Kody czynności, a każde odstępstwo
@@ -143,8 +144,8 @@ class _Pattern:
 
 @dataclass(frozen=True)
 class ActivityLegend:
-    """Legenda czynności: identyfikatory kodów są różne, słowo pasuje najwyżej do jednego zapisu, a każdy kod coś
-    wyznacza."""
+    """Legenda czynności: identyfikatory kodów są różne, słowo pasuje najwyżej do jednego zapisu, ``tak`` i ``nie`` do
+    żadnego, a każdy kod coś wyznacza."""
 
     codes: tuple[ActivityCode, ...]
     _patterns: tuple[_Pattern, ...] = field(init=False, repr=False, compare=False)
@@ -385,6 +386,12 @@ def _check_code(code: ActivityCode, ids: set[str], earlier: list[_Pattern]) -> N
             f"{path}.zapisy[{index}]",
             f"Zapis „{shown_spelling(spelling)}” wpisz małymi literami, cyframi i „/”, bez spacji, od litery, z co najwyżej "
             f"jednym miejscem na liczbę ({SHOWN_NUMBER}).",
+        )
+        _require(
+            spelling not in YES_NO,
+            f"{path}.zapisy[{index}]",
+            f"Zapis „{spelling}” to słowo, które w opisie może stać obok kodów i nie jest kodem, więc ten zapis nigdy "
+            "niczego nie wpisze.",
         )
         pattern = _Pattern(code, spelling)
         for before in earlier:

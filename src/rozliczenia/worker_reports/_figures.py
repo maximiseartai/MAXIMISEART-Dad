@@ -10,6 +10,7 @@ from ..report_cells import CellChange, OrderRow, ReportColumn
 from ..text import normalize_text
 from ._model import (
     ConflictingVerdicts,
+    FaultyDescription,
     Login,
     ManualDifference,
     MissingVerdict,
@@ -97,7 +98,7 @@ def _place(problem: ReportProblem) -> tuple[date, Login] | None:
     match problem:
         case UnreadableSubject() | UnknownSender():
             return None
-        case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber():
+        case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber() | FaultyDescription():
             return problem.day, problem.worker
         case RefusedMove():
             return problem.shown, problem.worker

@@ -50,13 +50,14 @@ BAD = GOOD.replace(b"zapisy: [spawez]", b"zapisy: [spawez, spawpg]")
 INST_AA = "inst#m: 2 w Przyłącze doziemne AA."
 REFUSED = f"Plik {LEGEND_FILE} w folderze config: Zapis „spawpg” ma już kod „spawpg”."
 # Dad's editor: a spelling the workers write (instrg6 for instwewrg6), a spelling of another code, a spelling that
-# matches the same word as a spelling of another code (inst20m and inst#m), a new code.
+# matches the same word as a spelling of another code (inst20m and inst#m), the word tak, a new code.
 WITH_SPELLING = "instwewrg6#m (też instrg6#m): # od 1 do 10 →"
 TAKEN = "Zapis „inst#m” ma już kod „inst#m”."
 SHARED_WORD = (
     "Zapis „inst20m” i zapis „inst#m” kodu „inst#m” pasują do tego samego słowa „inst20m”, a słowo w opisie może pasować "
     "tylko do jednego zapisu."
 )
+YES = "Zapis „tak” to słowo, które w opisie może stać obok kodów i nie jest kodem, więc ten zapis nigdy niczego nie wpisze."
 NEW_CODE = "listwa#m: # od 1 do 15 → 1 w "
 # The preview of a change: the harness writes codes into CZYNNOŚCI ZREALIZOWANE of the Wiersze danych of the Plik
 # zbiorczy that Przebieg rozliczeń settled, with Dad's values as he types them; spawpg has his 1 in AB and 70 in AS but
@@ -256,6 +257,13 @@ def drive(run: Run, page: Page) -> None:
         "field naming that word, and the legend stays",
     )
     run.capture(page, "426-legenda-czynnosci-odmowa-slowa", full_page=False)
+    form.get_by_role("textbox", name="Zapis 1", exact=True).fill("tak")
+    form.get_by_role("button", name="Zapisz", exact=True).click()
+    expect(form.get_by_role("alert")).to_have_text(YES)
+    run.check(
+        len(_spellings(run, "legenda-czynnosci-po-odmowie-tak")) == len(codes),
+        "a spelling tak, which the legend reads as no code, is one sentence at its field, and the legend stays",
+    )
 
     run.step(FEATURE, "legenda-nowy-kod")
     form.get_by_role("textbox", name="Zapis 1", exact=True).fill("listwa#m")

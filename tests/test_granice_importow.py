@@ -205,9 +205,13 @@ STDLIB_ONLY = {
     "rozliczenia/worker_reports/_moves.py": "Przeniesienia zleceń w rdzeniu raportów (ADR 0029, #1161)",
     "rozliczenia/worker_reports/_canonical.py": "postać kanoniczna maila w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_reminders.py": "Przypomnienia o raporcie w rdzeniu raportów (ADR 0030, #1161)",
+    "rozliczenia/worker_reports/_descriptions.py": "Błąd opisu we Wpisie w rdzeniu raportów (ADR 0039)",
     "rozliczenia/worker_reports/reasons.py": "zdania o problemach rdzenia raportów (ADR 0028, #1161)",
     "rozliczenia/report_cells.py": "rdzeń raportów zwraca zmiany komórek bez Excela (ADR 0028, #1161)",
     "rozliczenia/settlement_period.py": "rdzeń raportów liczy dni okresów zamkniętych bez zależności (ADR 0028, #1161)",
+    "rozliczenia/activity_legend.py": "rdzeń raportów czyta opis Wpisu Legendą czynności (ADR 0039)",
+    "rozliczenia/quantity_engine.py": "Legenda czynności bierze z niego Ilości usług i ich granicę, także w rdzeniu raportów",
+    "rozliczenia/collective_layout.py": "kolumny Pliku zbiorczego Legendy czynności, także w rdzeniu raportów",
 }
 WITHOUT_WORKBOOK = {
     "rozliczenia/domain.py": "protokół postępu, który zna każdy proces, Centrum i Skrypt dla maszyn",
@@ -549,7 +553,13 @@ def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tm
 REPORT_CORE: typing.Final = "rozliczenia/worker_reports"
 REPORT_CORE_PACKAGE: typing.Final = "rozliczenia.worker_reports"
 REPORT_CORE_ENGINE: typing.Final = frozenset(
-    {"rozliczenia", "rozliczenia.report_cells", "rozliczenia.settlement_period", "rozliczenia.text"}
+    {
+        "rozliczenia",
+        "rozliczenia.report_cells",
+        "rozliczenia.settlement_period",
+        "rozliczenia.text",
+        "rozliczenia.activity_legend",
+    }
 )
 # Kod, który mógłby sięgnąć do modułów prywatnych rdzenia raportów, i po jednym jego pliku z każdej części.
 REPORT_CORE_READERS: typing.Final = ("src/**/*.py", "tools/**/*.py", "tests/**/*.py", ".agents/skills/*/scripts/**/*.py")
@@ -593,7 +603,7 @@ def _report_core_private(tree: ast.Module, file: str | None) -> list[tuple[int, 
     return sorted(set(found))
 
 
-def test_rdzen_raportow_bierze_spoza_biblioteki_standardowej_tylko_komorki_okres_i_tekst() -> None:
+def test_rdzen_raportow_bierze_spoza_biblioteki_standardowej_tylko_komorki_okres_tekst_i_legende() -> None:
     files = sorted(path.relative_to(SRC).as_posix() for path in (SRC / REPORT_CORE).rglob("*.py"))
     found = {
         str(found)
@@ -607,8 +617,8 @@ def test_rdzen_raportow_bierze_spoza_biblioteki_standardowej_tylko_komorki_okres
         [
             *sorted(found),
             f"Rdzeń raportów ({REPORT_CORE}) przejdzie bez zmian do Centrum w chmurze (ADR 0028, #1161), więc bierze "
-            "spoza biblioteki standardowej tylko report_cells, settlement_period i text, także w funkcji: plik, Excel "
-            "i IMAP zostają w procesie (report_entering), który podaje rdzeniowi gotowe dane.",
+            "spoza biblioteki standardowej tylko report_cells, settlement_period, text i activity_legend, także w "
+            "funkcji: plik, Excel i IMAP zostają w procesie (report_entering), który podaje rdzeniowi gotowe dane.",
         ]
     )
 

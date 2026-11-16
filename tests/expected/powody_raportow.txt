@@ -60,3 +60,11 @@ ManualDifference
   Zlecenie 40000001 od jan.testowy z 08.11.2026 ma w SKUTECZNE ręczną wartość „ręcznie”, a Wpis raportu mówi „z raportu”. Ręczna wartość zostaje.
 ManualDifference
   Zlecenie 40000001 od jan.testowy z 08.11.2026 ma w CZYNNOŚCI ZREALIZOWANE ręczną wartość „ręcznie”, a Wpis raportu mówi „z raportu”. Ręczna wartość zostaje.
+FaultyDescription
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma Błąd opisu: słowo inne niż zapis kodu. Centrum go wpisało, ale Legenda czynności nic z niego nie wyznaczy, a raport z tego dnia liczy się dla Przypomnień o raporcie jako niewysłany, dopóki Wykonawca nie przyśle poprawionego Wpisu.
+FaultyDescription
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma Błąd opisu: kod z liczbą spoza przedziałów (instutp40m). Centrum go wpisało, ale Legenda czynności nic z niego nie wyznaczy, a raport z tego dnia liczy się dla Przypomnień o raporcie jako niewysłany, dopóki Wykonawca nie przyśle poprawionego Wpisu.
+FaultyDescription
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma Błąd opisu: kolumna Ilości usług trafiona drugi raz (Y: instmdik, inst). Centrum go wpisało, ale Legenda czynności nic z niego nie wyznaczy, a raport z tego dnia liczy się dla Przypomnień o raporcie jako niewysłany, dopóki Wykonawca nie przyśle poprawionego Wpisu.
+FaultyDescription
+  Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma Błąd opisu: słowo inne niż zapis kodu; kod z liczbą spoza przedziałów (instutp0m). Centrum go wpisało, ale Legenda czynności nic z niego nie wyznaczy, a raport z tego dnia liczy się dla Przypomnień o raporcie jako niewysłany, dopóki Wykonawca nie przyśle poprawionego Wpisu.
