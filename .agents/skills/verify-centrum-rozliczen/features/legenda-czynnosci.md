@@ -27,6 +27,8 @@ Printed by `scripts/sub_features.py --feature legenda-czynnosci` from the drive'
 - `legenda-odmowa`: the column of a code is chosen by its price-list name, only from the … columns the legend writes; a spelling of another code is one sentence at its field, and the legend stays.
 - `legenda-nowy-kod`: a new code with a range of the number, an amount in AS and a colour is one more sentence of the legend.
 - `legenda-usuniecie-cofnij`: removing a code is a row of Historia, and its „Cofnij” brings the code back.
+- `legenda-podglad`: an unchanged form of a code has no preview; the server's preview counts with the Kontrola's row check: spawpg at 80 changes 1 row, which differs from Dad's 70 in AS; the preview shows the server's counts, the row with its description, the legend's 80 and Dad's 70 in AS.
+- `legenda-zapis-przy-roznicach`: „Zapisz” saves the change although the preview shows a difference from Dad.
 - `legenda-waskie-okno`: the narrow window shows every code (…); on a narrow window the sentences wrap without a horizontal scroll; on a narrow window the form of a code with ranges wraps without a horizontal scroll.
 
 ## How to get to it (user POV)
