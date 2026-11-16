@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
@@ -11,13 +12,13 @@ from typing import Any
 
 import pytest
 
-from rozliczenia.centrum import notifications as notifications_module
+from rozliczenia.centrum import notifications as notifications_module, tool_freshness
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes, render
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_REPORTS_FILE, REPORT
 from rozliczenia.centrum.report_box import CloseReason, Refused, Unreachable
-from rozliczenia.centrum.tool_freshness import PublishedRelease
+from rozliczenia.centrum.tool_freshness import PUBLISHED_PAGE, AnswerSource, KeySource, PublishedRelease
 from rozliczenia.centrum.tool_update import Release
 
 from tests.fixtures.centrum import (
@@ -26,15 +27,24 @@ from tests.fixtures.centrum import (
     RESOLVED,
     SENT,
     TOOL_COMMIT,
+    CentrumClient,
     ToolDirectory,
     case_states,
+    centrum_app,
     centrum as plain_centrum,
     finished_view,
     join_threads_since,
     remove_report_key,
     write_report_key,
 )
-from tests.fixtures.centrum_processes import PreparingCentrum, preparing_centrum, settling_centrum, stopped_for_maks
+from tests.fixtures.centrum_processes import (
+    PreparingCentrum,
+    preparing_centrum,
+    settling_centrum,
+    stopped_for_maks,
+    write_configuration,
+)
+from tests.fixtures.github_api import github_api, newest_on_main
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.locked_file import lock_file
 from tests.fixtures.potomne import wait_for
@@ -550,6 +560,37 @@ def test_github_jest_pytany_o_wydania_przy_starcie_i_najwyzej_raz_na_10_minut_ws
         assert [item["version"] for item in new_versions(centrum)] == ["0.2.0"]
         centrum.client.get("/api/configuration")
         assert (github.asked, github.asked_published) == (2, 2)
+
+
+TOOL_REPOSITORY = "/repos/tata/narzedzie"
+
+
+@pytest.mark.parametrize(
+    ("key", "authorization"),
+    [(None, None), ("token-wymyslony-w-tescie", "Bearer token-wymyslony-w-tescie")],
+    ids=["bez-pliku-klucza", "z-tokenem"],
+)
+def test_powiadomienia_pytaja_github_o_liste_wydan_z_tokenem_do_zgloszen_tylko_gdy_jest_plik_klucza(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    prawdziwe_wydania_githuba: Callable[[KeySource, str], AnswerSource],
+    key: str | None,
+    authorization: str | None,
+) -> None:
+    monkeypatch.setattr(tool_freshness, "github_releases", prawdziwe_wydania_githuba)
+    tool = ToolDirectory(tmp_path)
+    write_configuration(tool)
+    if key is not None:
+        write_report_key(tool, key)
+    listed = f"{TOOL_REPOSITORY}/releases?per_page={PUBLISHED_PAGE}"
+    with github_api(newest_on_main(TOOL_REPOSITORY, "v9.0.0", NEW_COMMIT)) as api:
+        monkeypatch.setattr(tool_freshness, "TOOL_API", f"{api.url}{TOOL_REPOSITORY}")
+        client = CentrumClient(centrum_app(tool, tool_freshness=None))
+        client.start()  # start Centrum pyta GitHub o Wydania w tle
+        wait_for(lambda: any(asked.path == listed for asked in api.asked), 5, every=0.01)
+        client.stop()
+
+    assert [asked.authorization for asked in api.asked if asked.path == listed] == [authorization]
 
 
 def queued_report(centrum: PreparingCentrum) -> str:

@@ -1,5 +1,5 @@
-"""Atrapa API GitHuba na 127.0.0.1 dla pytań o Wydania: odpowiedzi po ścieżce i nagłówek ``Authorization`` każdego
-pytania, nigdy połączenie z GitHubem."""
+"""Atrapa API GitHuba na 127.0.0.1: odpowiedzi po ścieżce, a metoda i nagłówek ``Authorization`` każdego pytania
+zapisane, nigdy połączenie z GitHubem."""
 
 from __future__ import annotations
 
@@ -32,10 +32,11 @@ class Answer:
 
 @dataclass(frozen=True)
 class Asked:
-    """Jedno pytanie do atrapy: ścieżka z zapytaniem i nagłówek ``Authorization`` (``None``: bez tokenu)."""
+    """Jedno pytanie do atrapy: ścieżka z zapytaniem, nagłówek ``Authorization`` (``None``: bez tokenu) i metoda HTTP."""
 
     path: str
     authorization: str | None
+    method: str
 
 
 class GitHubApi:
@@ -63,7 +64,8 @@ def github_api(
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
             authorization = self.headers.get("Authorization")
-            api.asked.append(Asked(self.path, authorization))
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            api.asked.append(Asked(self.path, authorization, self.command))
             refused = api.refused_token
             refusal = Answer(refused, {"message": "Bad credentials"}, _LEFT) if isinstance(refused, int) else refused
             not_found = Answer(404, {"message": "Not Found"}, _LEFT)
@@ -85,6 +87,8 @@ def github_api(
             self.send_header("Transfer-Encoding", "chunked")
             self.end_headers()
             self._chunked(body, endless=answer.ending == "endless")
+
+        do_POST = do_PATCH = do_DELETE = do_GET
 
         def _chunked(self, body: bytes, *, endless: bool) -> None:
             self.close_connection = True

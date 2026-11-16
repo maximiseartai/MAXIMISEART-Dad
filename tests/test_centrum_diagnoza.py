@@ -1149,6 +1149,24 @@ def test_konfiguracja_i_diagnoza_proponuja_aktualizacje_tylko_przy_nowszym_wydan
     assert (diagnosis["next_action"], diagnosis["update_proposal"]) == diagnosis_offer
 
 
+def test_odmowa_githuba_z_powodu_limitu_w_diagnozie_nie_zabiera_konfiguracji_propozycji_aktualizacji(
+    tmp_path: Path,
+) -> None:
+    """Konfiguracja nadal proponuje Aktualizację z odpowiedzi GitHuba, którą pamięta, gdy Diagnoza dostała odmowę."""
+
+    github = FakeGitHub(release=NEWER_MAIN)
+    centrum = preparing_centrum(tmp_path, surroundings=Surroundings(github=github))
+    run_id = stopped_for_maks(centrum)
+    assert centrum.client.get("/api/configuration").json()["update_offered"] is True
+
+    github.limited = datetime(2026, 11, 8, 3, 49, tzinfo=timezone.utc)
+    diagnosis = diagnose(centrum, run_id)
+    configuration = centrum.client.get("/api/configuration").json()
+
+    assert check(diagnosis, "Aktualność narzędzia")[0] == "not_checked"
+    assert configuration["update_offered"] is True
+
+
 def test_brak_sieci_przy_sprawdzaniu_aktualnosci_nie_zmienia_wyjasnienia(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(github=FakeGitHub(release=None)))
     lock(centrum.fixture.register_path)
