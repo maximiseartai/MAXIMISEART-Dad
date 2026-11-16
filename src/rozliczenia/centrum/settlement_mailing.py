@@ -7,7 +7,8 @@ raportów od wtorku najstarszego z nich (``SettlementMailbox.sent_attachments``)
 ``settlement_mailing.mailing_state``; Szablon pracownika czyta tylko plik, który jeszcze nie poszedł, i tylko kolumnę
 ``WYKONAWCA`` z XML (``workbook_files.collective_workers``), z pamięcią po chwili zmiany pliku. Skrzynki, której nie da
 się przeczytać, strona nie zgaduje: mówi o niej jednym zdaniem, plik do wysłania ma stan nieznany i wysyłka jest
-wyłączona.
+wyłączona. Pliku Ustawień, którego system nie daje teraz czytać (Foldery, temat i treść, Przypomnienia o raporcie),
+strona, podgląd i wysyłka też nie zgadują: każde odmawia o tym pliku (``_inputs``).
 
 Wysyłka idzie po jednym mailu pod jedną blokadą: przed każdym mailem znowu czyta „Wysłane” od wtorku okresu, więc
 plik już wysłany i niezmieniony nie idzie drugi raz (podwójne kliknięcie, ponowienie, druga karta), a zmieniony idzie
@@ -43,7 +44,6 @@ from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.period_folder import PeriodFolder, WorkerSettlementFile, scan_period_folders
 from rozliczenia.settlement_mailing import (
-    DEFAULT_SETTLEMENT_MAIL,
     ChangedAfterSending,
     MailingState,
     NoAddress,
@@ -333,16 +333,20 @@ class SettlementMailing:
 
 
 def _inputs(snapshot: SettingsSnapshot) -> _Inputs | None:
+    """Jedyna droga od migawki Ustawień do wejść strony, podglądu i wysyłki, więc mail z podglądu jest mailem, który
+    pójdzie. Plik tematu i treści albo Przypomnień o raporcie, którego system nie daje teraz czytać, to odmowa o tym
+    pliku (``refusal.settings_file_unreadable``) jak przy Folderach, a nie mail z treścią z Wydania bez stopki taty;
+    ``None``: Lista Wykonawców bez wartości, na której proces może biec."""
+
+    mail, reminders = snapshot.settlement_mail, snapshot.reminders
+    if isinstance(mail, UnreadableFile):
+        raise refusal.settings_file_unreadable(mail.name)
+    if isinstance(reminders, UnreadableFile):
+        raise refusal.settings_file_unreadable(reminders.name)
     workers = usable(snapshot.workers)
     if workers is None:
         return None
-    mail = snapshot.settlement_mail
-    reminders = snapshot.reminders
-    return _Inputs(
-        workers.workers,
-        DEFAULT_SETTLEMENT_MAIL if isinstance(mail, UnreadableFile) else mail,
-        "" if isinstance(reminders, UnreadableFile) else reminders.footer,
-    )
+    return _Inputs(workers.workers, mail, reminders.footer)
 
 
 def _entry(entries: Sequence[WorkerSettlementFile], worker: str, token: str) -> WorkerSettlementFile:

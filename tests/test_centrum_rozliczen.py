@@ -8427,6 +8427,30 @@ def test_skrzynka_bez_odczytu_wylacza_wysylke_i_mowi_o_tym_jednym_zdaniem(tmp_pa
     assert f"rozliczenie-niewyslane okres={WYSYLKA_OKRES} przyczyna=wyslane-bez-odczytu typ=OSError" in app.log()
 
 
+@pytest.mark.parametrize("file", [SETTLEMENT_MAIL_FILE, REMINDERS_FILE])
+def test_plik_tematu_albo_stopki_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila(tmp_path: Path, file: str) -> None:
+    """Temat i treść taty albo jego stopka, których system nie daje teraz czytać: strona, podgląd i wysyłka odmawiają
+    o tym pliku tym samym zdaniem, a mail z treścią z Wydania bez stopki taty nie idzie (#2029 W1 r1)."""
+
+    app = wysylka_centrum(tmp_path)
+    assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik taty za {okres}", "text": "Tekst taty"}).status_code == 200
+    reminders = app.client.get("/api/settings").json()["reminders"]
+    form = {key: reminders[key] for key in ("morning", "evening", "first", "text")} | {"footer": "Podpis taty"}
+    assert app.client.put("/api/settings/reminders", json=form).status_code == 200
+    choice = {"workers": ["Anna Łącka"]}
+
+    with without_reading(app.tool.config / file):
+        responses = [
+            app.client.get("/api/settlement-mailing"),
+            app.client.post(f"/api/settlement-mailing/{WYSYLKA_OKRES}/preview", json=choice),
+            app.client.post(f"/api/settlement-mailing/{WYSYLKA_OKRES}/send", json={"worker": "Anna Łącka", "resend": False}),
+        ]
+
+    refused = (409, {"message": refusal.settings_file_unreadable(file).message})
+    assert [(response.status_code, response.json()) for response in responses] == [refused] * 3
+    assert app.mailbox.mailed == []
+
+
 def test_porazka_wysylki_to_stan_nie_wyszlo_z_powodem_zaznaczony_do_ponowienia(tmp_path: Path) -> None:
     """Gmail odmówił maila: wiersz mówi dlaczego i zostaje zaznaczony, a dziennik ma przyczynę bez adresu."""
 
