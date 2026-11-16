@@ -35,6 +35,9 @@ DAD_MAPPING = "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny
 SAMPLE_MAPPING = "schema_version: 1\nworkers:\n  przyklad: Przykładowy Wykonawca\n"
 GITIGNORE = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
 MAPPING = "config/worker_mapping.yaml"
+STACKS_AFTER_S = 45.0
+"""Po tylu sekundach od startu skrót i każdy proces Pythona, który on uruchomi, wypisuje do swojej konsoli stosy swoich
+wątków: przed końcem 60 s ``centrum_health``, więc konsola skrótu w nocie porażki mówi, gdzie stał każdy z nich."""
 
 
 def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
@@ -49,12 +52,13 @@ def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
 @contextmanager
 def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterator[subprocess.Popen[str]]:
     """Tata klika skrót: ``run_centrum.py`` z klonu; po bloku Centrum zamyka się razem z każdym procesem potomnym.
-    ``browser``: program podstawiony jako przeglądarka (zmienna ``BROWSER``)."""
+    ``browser``: program podstawiony jako przeglądarka (zmienna ``BROWSER``). Gdy blok rzuci, wyjątek dostaje notę
+    ``_shortcut_when_failed`` ze stosami z ``STACKS_AFTER_S``."""
 
     process = subprocess.Popen(
         [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
         cwd=clone,
-        env=_environment(browser),
+        env=_environment(browser) | _stacks_later(clone.parent / "stosy-skrotu"),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -69,6 +73,18 @@ def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterato
         failure.add_note(_shortcut_when_failed(clone, alive=alive, journal=journal, console=_stopped(process)))
         raise
     _stopped(process)
+
+
+def _stacks_later(directory: Path) -> dict[str, str]:
+    """Środowisko, w którym każdy proces Pythona po ``STACKS_AFTER_S`` od startu wypisuje stosy swoich wątków na stderr:
+    ``sitecustomize`` z ``directory`` na początku ``PYTHONPATH``; zwykły przebieg zamyka skrót wcześniej."""
+
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "sitecustomize.py").write_text(
+        f"import faulthandler, sys\nfaulthandler.dump_traceback_later({STACKS_AFTER_S}, file=sys.stderr)\n",
+        encoding="utf-8",
+    )
+    return {"PYTHONPATH": os.pathsep.join([str(directory), *filter(None, [os.environ.get("PYTHONPATH")])])}
 
 
 def _stopped(process: subprocess.Popen[str]) -> str:

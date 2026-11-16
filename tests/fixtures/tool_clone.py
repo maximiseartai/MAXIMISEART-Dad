@@ -338,7 +338,7 @@ def _port_answer(failure: OSError) -> str:
         if isinstance(reason, ConnectionRefusedError):
             return "odmowa połączenia: nikt nie słucha"
         if isinstance(reason, TimeoutError):
-            return "połączenie nieprzyjęte przez 1 s"
+            return "połączenie nieprzyjęte przez 1 s: na Windows nikt nie słucha (odmowę Windows daje dopiero po 2 s)"
         return f"połączenie nieudane: {type(reason).__name__}"
     if isinstance(failure, TimeoutError):
         return "połączenie przyjęte, bez odpowiedzi przez 1 s: port trzyma proces, który nie odpowiada"
