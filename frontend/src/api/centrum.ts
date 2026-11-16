@@ -205,6 +205,11 @@ export function getQuantityRules() {
   return call("getQuantityRules")
 }
 
+/** Legenda czynności jako zdania, którą liczy następne Przygotowanie pliku zbiorczego. */
+export function getActivityLegend() {
+  return call("getActivityLegend")
+}
+
 /** Nowa Reguła ilości z edytora; zła reguła to odmowa z polem formularza (`jesli[0].tekst`, `to.wpisy[1].kolumna`). */
 export function addQuantityRule(rule: RuleForm) {
   return call("addQuantityRule", { body: rule })
