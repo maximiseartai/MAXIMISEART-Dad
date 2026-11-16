@@ -93,18 +93,59 @@ def git_failing_on(tmp_path: Path, *words: str) -> Path:
     )
 
 
-def _comparison(origin: Path, base: str, head: str) -> dict[str, object]:
-    """Strona porównania GitHuba bez commitów i plików: stan ``head`` względem ``base`` i liczby commitów."""
+@dataclass(frozen=True)
+class _History:
+    """Historia repozytorium odczytana Gitem raz: rodzice każdego commitu, tagi z ich commitami i czubek `main`."""
 
-    ahead = int(git(origin, "rev-list", "--count", f"{base}..{head}"))
-    behind = int(git(origin, "rev-list", "--count", f"{head}..{base}"))
-    status = "identical" if ahead == behind == 0 else "ahead" if behind == 0 else "behind" if ahead == 0 else "diverged"
-    return {"status": status, "ahead_by": ahead, "behind_by": behind, "commits": [], "files": []}
+    parents: Mapping[str, tuple[str, ...]]
+    tags: tuple[tuple[str, str], ...]
+    main: str
 
+    @classmethod
+    def of(cls, origin: Path) -> _History:
+        parents: dict[str, tuple[str, ...]] = {}
+        for line in git(origin, "rev-list", "--all", "--parents").splitlines():
+            commit, *of_commit = line.split()
+            parents[commit] = tuple(of_commit)
+        peeled = "%(refname:strip=2) %(if)%(*objectname)%(then)%(*objectname)%(else)%(objectname)%(end)"
+        listed = git(origin, "for-each-ref", "--sort=refname", f"--format={peeled}", "refs/tags").splitlines()
+        tags = tuple((tag, commit) for tag, commit in (line.split() for line in listed))
+        return cls(parents, tags, git(origin, "rev-parse", "main"))
 
-def _succeeds(directory: Path, *args: str) -> bool:
-    command = ["git", "-C", str(directory), *args]
-    return subprocess.run(command, env=isolated_git_environment(), capture_output=True, check=False).returncode == 0
+    def commit(self, name: str) -> str | None:
+        """Commit ``<commit>`` albo ``<commit>~k`` (k-ty przodek po pierwszych rodzicach); ``None``, gdy go nie ma."""
+
+        commit, back, steps = name.partition("~")
+        if commit not in self.parents or (back and not steps.isdigit()):
+            return None
+        for _ in range(int(steps or 0)):
+            first = self.parents[commit][:1]
+            if not first:
+                return None
+            commit = first[0]
+        return commit
+
+    def comparison(self, base: str, head: str) -> dict[str, object] | None:
+        """Strona porównania GitHuba bez commitów i plików: stan ``head`` względem ``base`` i liczby commitów;
+        ``None``, gdy jednego z nich nie ma (``commit``)."""
+
+        base_commit, head_commit = self.commit(base), self.commit(head)
+        if base_commit is None or head_commit is None:
+            return None
+        of_base, of_head = self._ancestors(base_commit), self._ancestors(head_commit)
+        ahead, behind = len(of_head - of_base), len(of_base - of_head)
+        status = "identical" if ahead == behind == 0 else "ahead" if behind == 0 else "behind" if ahead == 0 else "diverged"
+        return {"status": status, "ahead_by": ahead, "behind_by": behind, "commits": [], "files": []}
+
+    def _ancestors(self, commit: str) -> set[str]:
+        found: set[str] = set()
+        waiting = [commit]
+        while waiting:
+            current = waiting.pop()
+            if current not in found:
+                found.add(current)
+                waiting.extend(self.parents[current])
+        return found
 
 
 def _write(root: Path, files: Mapping[str, str | None]) -> None:
@@ -394,12 +435,16 @@ class FakeInstaller:
 
 @contextmanager
 def github_api_of(origin: Path, *, asked: list[str] | None = None) -> Iterator[str]:
-    """API GitHuba (lista tagów, czubek `main` i porównanie commitów) dla repozytorium ``origin``, liczone Gitem w
-    ``origin``; ścieżka każdego pytania trafia do ``asked``.
+    """API GitHuba (lista tagów, czubek `main` i porównanie commitów) dla repozytorium ``origin`` z historii, którą
+    Git odczytuje raz, gdy blok się zaczyna; ścieżka każdego pytania trafia do ``asked``.
 
-    Adres zwrócony przez blok to repozytorium w tym API (``github.TOOL_API``). Porównanie przyjmuje commity tak jak
-    GitHub, także ``<commit>~k``, a commitu, którego nie ma (``~k`` sprzed pierwszego commitu), nie zna (404).
+    Odpowiedź nie uruchamia Gita, więc jej czas nie zależy od obciążenia komputera i limit czasu ``releases_from``
+    mierzy tylko kod narzędzia, a zmiana ``origin`` w bloku do API nie trafia. Adres zwrócony przez blok to repozytorium w tym API (``github.TOOL_API``). Porównanie
+    przyjmuje commity tak jak GitHub, także ``<commit>~k``, a commitu, którego nie ma (``~k`` sprzed pierwszego
+    commitu), nie zna (404).
     """
+
+    history = _History.of(origin)
 
     class _Api(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
@@ -407,17 +452,15 @@ def github_api_of(origin: Path, *, asked: list[str] | None = None) -> Iterator[s
                 asked.append(self.path)
             compared = self.path.removeprefix("/repo/compare/").removesuffix("?per_page=1&page=2").split("...")
             if self.path == "/repo/tags?per_page=100":
-                tags = [
-                    {"name": tag, "commit": {"sha": git(origin, "rev-parse", f"{tag}^{{commit}}")}}
-                    for tag in git(origin, "tag").split()
-                ]
-                self._answer(json.dumps(tags))
+                self._answer(json.dumps([{"name": tag, "commit": {"sha": commit}} for tag, commit in history.tags]))
             elif self.path == "/repo/git/ref/heads/main":
-                self._answer(json.dumps({"ref": "refs/heads/main", "object": {"sha": git(origin, "rev-parse", "main")}}))
-            elif self.path.startswith("/repo/compare/") and len(compared) == 2 and _succeeds(
-                origin, "rev-parse", "--quiet", "--verify", f"{compared[1]}^{{commit}}"
+                self._answer(json.dumps({"ref": "refs/heads/main", "object": {"sha": history.main}}))
+            elif (
+                self.path.startswith("/repo/compare/")
+                and len(compared) == 2
+                and (page := history.comparison(*compared)) is not None
             ):
-                self._answer(json.dumps(_comparison(origin, *compared)))
+                self._answer(json.dumps(page))
             else:
                 self.send_response(404)
                 self.end_headers()
