@@ -73,6 +73,9 @@ REFUSED = (
     "x=$(git config user.name r)",
     'echo "$(git config user.email r@x)"',
     "echo `git config user.name r`",
+    'echo "`git config user.name r`"',
+    """bash -c 'echo "$(git config user.name r)"'""",
+    'echo "$(cd $(mktemp -d) && git config user.name r)"',
 )
 
 PASSING = (
@@ -93,6 +96,8 @@ PASSING = (
     "git commit -m 'fix: hook odrzuca git config user.name r'",
     "git commit -q -F - <<'EOF'\nfix: hook odrzuca\ngit config user.name r\nEOF\ngit log -1",
     "rg -n 'git config user\\.' tools tests",
+    "python3 -c 'x = \"$(git config user.name r)\"'",
+    "echo '`git config user.name r`'",
     "git log --format='%an <%ae>' -5",
 )
 
@@ -107,6 +112,7 @@ ZNANE_LUKI = {
     "zna tylko słowo git: program ze zmiennej": "g=git; $g config user.name r",
     "zna tylko podpolecenie config: alias gita": "git -c alias.ustaw=config ustaw user.name r",
     "zna tylko klucze tożsamości: include.path do pliku z tożsamością": "git config include.path ~/tozsamosc.inc",
+    "nie czyta argumentów innych programów niż powłoka: polecenie przez ssh": "ssh og-box 'git config --global user.name r'",
 }
 
 

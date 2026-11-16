@@ -17,7 +17,8 @@ innych kluczy i zapis do pliku ``--file``, którego nazwa nie jest nazwą config
 ``config.worktree``, ``.gitconfig``). Hook czyta polecenie słowami ``shlex``: słowo ``git`` w dowolnym miejscu (za
 ``env``, ``xargs``, ``sudo``, ale też w ``echo git config user.name x``) zaczyna wywołanie, które biegnie do
 następnego ``git``, ``;``, ``&``, ``|`` albo nawiasu. Czyta też skrypt ``-c`` powłoki, argumenty ``eval``
-i ``$(…)`` w napisie; ciała heredoców pomija, bo to zwykle treść commitu.
+i ``$(…)`` albo `` `…` `` w cudzysłowie; napis w apostrofach i ciało heredoca pomija, bo to tekst (skrypt Pythona,
+treść commitu), a nie polecenie.
 Wszystko inne przechodzi bez słowa (kod 0), także wejście, którego nie da się odczytać, bo hook nie może zatrzymać
 pracy.
 
@@ -57,7 +58,8 @@ REFUSAL = (
     "który dzielą checkout główny i wszystkie jego worktree (albo --global/--system: cały komputer), więc od tej chwili "
     "podpisywałby nią commity każdy agent. Podpisz jedno polecenie: git -c user.name=… -c user.email=… commit …, "
     "albo zmiennymi GIT_AUTHOR_NAME, GIT_AUTHOR_EMAIL, GIT_COMMITTER_NAME i GIT_COMMITTER_EMAIL przed tym jednym "
-    "poleceniem. Tak samo w repo próbnym w katalogu tymczasowym, bo worktree pod /tmp też pisze do wspólnego configu. "
+    "poleceniem (próba z wieloma commitami: export tych zmiennych na początku jej polecenia Basha). Tak samo w repo "
+    "próbnym w katalogu tymczasowym, bo worktree pod /tmp też pisze do wspólnego configu. "
     "Tożsamość we wspólnym configu zmienia tylko Maks we własnym terminalu."
 )
 
@@ -114,13 +116,11 @@ def _simple_commands(tokens: list[str]) -> Iterator[list[str]]:
     yield words
 
 
-def _nested(words: list[str]) -> Iterator[str]:
-    """Skrypty, które polecenie proste wykonuje: ciało ``-c`` powłoki, argumenty ``eval`` i ``$(…)`` w słowie."""
+def _scripts(words: list[str]) -> Iterator[str]:
+    """Skrypty, które polecenie proste wykonuje: ciało ``-c`` powłoki i argumenty ``eval``."""
 
     shell = False
     for index, word in enumerate(words):
-        if "$(" in word:
-            yield word[word.index("$(") + 2 :]
         name = word.rsplit("/", 1)[-1]
         if name == "eval":
             # Słowa za ``eval`` to jeden skrypt, a dalsze ``eval`` stoją w nim.
@@ -130,6 +130,47 @@ def _nested(words: list[str]) -> Iterator[str]:
             shell = True
         elif shell and SCRIPT_OPTION.fullmatch(word) and index + 1 < len(words):
             yield words[index + 1]
+
+
+def _substitutions(command: str) -> Iterator[str]:
+    """Polecenie każdego ``$(…)`` i `` `…` `` w napisie w cudzysłowie; w apostrofach to tekst, a nie polecenie.
+
+    Poza cudzysłowami podstawienie rozcina już ``_tokens``. Słowa czyta ``shlex`` bez trybu POSIX, który zostawia
+    cudzysłowy w słowie, a podstawienie zagnieżdżone w znalezionym czyta następne wywołanie ``writes_identity``.
+    """
+
+    lexer = shlex.shlex(command, posix=False, punctuation_chars=True)
+    lexer.whitespace_split = True
+    try:
+        words = list(lexer)
+    except ValueError:  # niedomknięty cudzysłów
+        return
+    for word in words:
+        quote, index = "", 0
+        while index < len(word):
+            char = word[index]
+            if char == "\\" and quote != "'":
+                index += 2
+                continue
+            if char in "'\"" and quote in ("", char):
+                quote = "" if quote else char
+            elif quote != "'" and (word.startswith("$(", index) or char == "`"):
+                start = index + (2 if char == "$" else 1)
+                end = _closing(word, start, ")" if char == "$" else "`")
+                yield word[start:end]
+                index = end
+            index += 1
+
+
+def _closing(word: str, start: int, close: str) -> int:
+    depth = 0
+    for index in range(start, len(word)):
+        char = word[index]
+        if char == close and depth == 0:
+            return index
+        if close == ")" and char in "()":
+            depth += 1 if char == "(" else -1
+    return len(word)
 
 
 def _git_calls(words: list[str]) -> Iterator[list[str]]:
@@ -199,14 +240,15 @@ def writes_identity(command: str, depth: int = 0) -> bool:
 
     if depth > 20:  # setki zagnieżdżonych ``bash -c``: polecenia nie da się odczytać, więc przechodzi
         return False
-    for words in _simple_commands(_tokens(_without_heredocs(command))):
+    shell = _without_heredocs(command)
+    for words in _simple_commands(_tokens(shell)):
         for call in _git_calls(words):
             arguments = _config_arguments(call)
             if arguments is not None and _writes_identity(arguments):
                 return True
-        if any(writes_identity(script, depth + 1) for script in _nested(words)):
+        if any(writes_identity(script, depth + 1) for script in _scripts(words)):
             return True
-    return False
+    return any(writes_identity(script, depth + 1) for script in _substitutions(shell))
 
 
 def main() -> int:
