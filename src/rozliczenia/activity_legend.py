@@ -9,15 +9,19 @@ Zapis Kodu czynności to małe litery, cyfry i ``/`` bez spacji, od litery, z co
 ``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Rachunek tekstu:
 
 1. Tekst czyta się małymi literami (``casefold``). Zapis pasuje także ze spacjami między znakami (``inst utp17m``,
-   ``dzielnik 1 /2``), a ``{n}`` to ciąg cyfr bez spacji. Zapis nie zaczyna się po literze ani cyfrze (``xinst20m`` to nie kod),
-   a zapis kończący się cyfrą nie ma po niej cyfry (``rt25`` to nie ``rt2``).
-2. Zapisy pasują od najdłuższego (najwięcej znaków poza ``{n}``), przy równej długości w kolejności legendy; tekst
-   dopasowany raz nie pasuje drugi raz, więc ``instwewrg610m`` jest tylko ``instwewrg6``, a nie także ``instwew``.
-3. Kod z przedziałami wybiera kolumnę liczbą z zapisu. Liczba spoza przedziałów niczego nie wyznacza: kod jest wtedy w
+   ``dzielnik 1 /2``), a ``{n}`` to ciąg cyfr bez spacji. Zapis kończący się cyfrą nie ma po niej cyfry (``rt25`` to nie
+   ``rt2``).
+2. Zapis nie zaczyna się w środku słowa: przed nim stoi początek tekstu, znak niebędący literą ani cyfrą albo koniec
+   innego kodu, więc ``xinst20m`` i ``art2`` to nie kody, a kody sklejone bez spacji liczą się wszystkie
+   (``spawpgspawez`` to ``spawpg`` i ``spawez``, w każdej kolejności).
+3. Tekst czyta się od lewej. W miejscu, gdzie może zacząć się zapis, pasuje najdłuższy (najwięcej znaków poza ``{n}``),
+   przy równej długości pierwszy w legendzie, a czytanie idzie dalej za nim, więc ``instwewrg610m`` jest tylko
+   ``instwewrg6``, a nie także ``instwew``.
+4. Kod z przedziałami wybiera kolumnę liczbą z zapisu. Liczba spoza przedziałów niczego nie wyznacza: kod jest wtedy w
    ``out_of_range``, a nie w ``found``. Kod bez przedziałów liczby nie czyta.
-4. Każde wystąpienie kodu dodaje swoją wartość w kolumnie i swoją kwotę w ``AS``; różne kody się sumują. Wypełnienie
+5. Każde wystąpienie kodu dodaje swoją wartość w kolumnie i swoją kwotę w ``AS``; różne kody się sumują. Wypełnienie
    kolumny daje pierwszy w tekście kod, który ją wypełnia.
-5. Tekst z samych kodów (``only_codes``) to tekst z co najmniej jednym kodem w ``found``, bez kodu spoza przedziałów,
+6. Tekst z samych kodów (``only_codes``) to tekst z co najmniej jednym kodem w ``found``, bez kodu spoza przedziałów,
    w którym poza kodami stoją najwyżej słowa ``tak`` i ``nie`` oraz znaki niebędące literą ani cyfrą.
 """
 
@@ -130,8 +134,6 @@ class LegendRefused(ValueError):
 class _Pattern:
     code: ActivityCode
     spelling: str
-    regex: re.Pattern[str]
-    length: int
 
 
 @dataclass(frozen=True)
@@ -140,39 +142,46 @@ class ActivityLegend:
 
     codes: tuple[ActivityCode, ...]
     _patterns: tuple[_Pattern, ...] = field(init=False, repr=False, compare=False)
+    _after_boundary: re.Pattern[str] = field(init=False, repr=False, compare=False)
+    """Zapis po początku tekstu albo po znaku niebędącym literą ani cyfrą."""
+    _after_code: re.Pattern[str] = field(init=False, repr=False, compare=False)
+    """Zapis zaraz za końcem innego kodu."""
 
     def __post_init__(self) -> None:
         owners: dict[str, ActivityCode] = {}
         ids: set[str] = set()
         for code in self.codes:
             _check_code(code, ids, owners)
-        patterns = [
-            _Pattern(code, spelling, _regex(spelling), len(spelling.replace(NUMBER, "")))
-            for code in self.codes
-            for spelling in code.spellings
-        ]
-        patterns.sort(key=lambda pattern: -pattern.length)
+        patterns = sorted(
+            (_Pattern(code, spelling) for code in self.codes for spelling in code.spellings),
+            key=lambda pattern: -len(pattern.spelling.replace(NUMBER, "")),
+        )
+        alternatives = "|".join(_alternative(index, pattern.spelling) for index, pattern in enumerate(patterns))
         object.__setattr__(self, "_patterns", tuple(patterns))
+        object.__setattr__(self, "_after_boundary", re.compile(rf"(?<![^\W_])(?:{alternatives})"))
+        object.__setattr__(self, "_after_code", re.compile(alternatives))
 
     def read(self, text: str) -> CodesRead:
         """Wynik legendy dla tekstu; woła go ``read_codes``."""
 
-        rest = text.casefold()
-        hits: list[tuple[int, FoundCode, ActivityCode, str | None]] = []
-        for pattern in self._patterns:
-            if pattern.spelling[0] not in rest:
-                continue
-            matches = list(pattern.regex.finditer(rest))
-            for match in matches:
-                number = None if match.lastindex is None else int(match[1])
-                hits.append((match.start(), FoundCode(pattern.code.id, pattern.spelling, number), pattern.code, _column(pattern.code.column, number)))
-            if matches:
-                rest = pattern.regex.sub(lambda match: _CONSUMED * len(match[0]), rest)
+        folded = text.casefold()
+        hits: list[tuple[FoundCode, ActivityCode, str | None]] = []
+        between: list[str] = []
+        end = 0
+        match = self._after_boundary.search(folded)
+        while match is not None:
+            between.append(folded[end : match.start()])
+            index = _index(match)
+            pattern = self._patterns[index]
+            number = int(match[f"{_NUMBER_GROUP}{index}"]) if NUMBER in pattern.spelling else None
+            hits.append((FoundCode(pattern.code.id, pattern.spelling, number), pattern.code, _column(pattern.code.column, number)))
+            end = match.end()
+            match = self._after_code.match(folded, end) or self._after_boundary.search(folded, end)
         if not hits:
             return NOTHING_READ
-        hits.sort(key=lambda hit: hit[0])
-        acting = [(found, code, column) for _, found, code, column in hits if not _outside(code, column)]
-        out_of_range = tuple(found for _, found, code, column in hits if _outside(code, column))
+        between.append(folded[end:])
+        acting = [(found, code, column) for found, code, column in hits if not _outside(code, column)]
+        out_of_range = tuple(found for found, code, column in hits if _outside(code, column))
         quantities: Counter[str] = Counter()
         fills: dict[str, FillColour] = {}
         amount = 0
@@ -182,7 +191,7 @@ class ActivityLegend:
             amount += code.amount or 0
             for fill in code.fills:
                 fills.setdefault(fill.column, fill.colour)
-        words = _WORD.findall(rest)
+        words = [word for part in between for word in _WORD.findall(part)]
         return CodesRead(
             found=tuple(found for found, _, _ in acting),
             quantities=MappingProxyType({column: quantities[column] for column in QUANTITY_LETTERS if quantities[column]}),
@@ -231,8 +240,8 @@ def read_codes(legend: ActivityLegend, text: str) -> CodesRead:
     return legend.read(text)
 
 
-_CONSUMED: Final = "\0"
-"""Znak w miejscu dopasowanego tekstu: nie litera, nie cyfra i nie spacja, więc zapis nie sięga przez niego."""
+_SPELLING_GROUP: Final = "zapis"
+_NUMBER_GROUP: Final = "liczba"
 _WORD: Final = re.compile(r"[^\W_]+")
 _SPELLING: Final = re.compile(r"[^\W\d_](?:[^\W_]|/|\{n\})*")
 
@@ -251,15 +260,20 @@ def _outside(code: ActivityCode, column: str | None) -> bool:
     return isinstance(code.column, ColumnByNumber) and column is None
 
 
-def _regex(spelling: str) -> re.Pattern[str]:
-    """Wzorzec zapisu: znaki zapisu ze spacjami między nimi, ``{n}`` jako liczba, bez litery ani cyfry przed zapisem, a
-    po zapisie kończącym się cyfrą bez cyfry. Warunek „bez litery ani cyfry przed” stoi za pierwszą literą, bo wzorzec
-    zaczynający się od litery szuka jej w tekście szybciej niż od warunku."""
+def _alternative(index: int, spelling: str) -> str:
+    """Wzorzec zapisu numer ``index`` w alternatywie legendy: znaki zapisu ze spacjami między nimi, ``{n}`` jako liczba w
+    grupie ``liczba<index>``, a po zapisie kończącym się cyfrą bez cyfry."""
 
-    atoms = [r"([0-9]+)" if part == NUMBER else re.escape(part) for part in re.split(r"(\{n\})|", spelling) if part]
-    first = atoms[0]
+    atoms = [rf"(?P<{_NUMBER_GROUP}{index}>[0-9]+)" if part == NUMBER else re.escape(part) for part in re.split(r"(\{n\})|", spelling) if part]
     tail = r"(?![0-9])" if spelling[-1].isdigit() else ""
-    return re.compile(first + rf"(?<![^\W_]{first})" + "".join(r"\s*" + atom for atom in atoms[1:]) + tail)
+    return rf"(?P<{_SPELLING_GROUP}{index}>" + r"\s*".join(atoms) + tail + ")"
+
+
+def _index(match: re.Match[str]) -> int:
+    """Numer zapisu, który pasuje: grupa zapisu zamyka się po grupie liczby, więc jest ostatnią (``lastgroup``)."""
+
+    assert match.lastgroup is not None, "każdy zapis legendy ma swoją grupę"
+    return int(match.lastgroup.removeprefix(_SPELLING_GROUP))
 
 
 def _require(holds: bool, path: str, message: str) -> None:

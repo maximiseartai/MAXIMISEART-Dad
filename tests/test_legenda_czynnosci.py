@@ -7,8 +7,10 @@ modułu ``activity_legend``. Przykłady Hypothesis są deterministyczne (``deran
 
 from __future__ import annotations
 
+from collections import Counter
+
 import pytest
-from hypothesis import given, settings
+from hypothesis import assume, given, settings
 from hypothesis import strategies as st
 
 from rozliczenia.activity_legend import (
@@ -19,6 +21,7 @@ from rozliczenia.activity_legend import (
     ColumnByNumber,
     FillColour,
     FixedColumn,
+    NUMBER,
     LegendProblem,
     NumberRange,
     read_codes,
@@ -99,6 +102,63 @@ def test_dluzszy_zapis_wygrywa_z_krotszym_ktory_pasuje_do_jego_poczatku(text: st
 @pytest.mark.parametrize("text", ["xinst20m", "ąinst20m", "2inst20m", "Montażinst20m", "spawanie gniazda", "instalacja 20m", "rt25", "art2"])
 def test_kod_nie_zaczyna_sie_w_srodku_slowa_a_zwykle_slowa_nie_sa_kodem(text: str) -> None:
     assert _read(text).found == ()
+
+
+_SPELLINGS = tuple(spelling for code in DEFAULT_ACTIVITY_LEGEND.codes for spelling in code.spellings)
+# Zapis z Legendy z Wydania z liczbą, także spoza przedziałów (0, 31…), tak jak mógł go napisać Wykonawca.
+_CODE = st.sampled_from(_SPELLINGS).flatmap(lambda spelling: st.integers(0, 40).map(lambda number: spelling.replace(NUMBER, str(number))))
+
+
+def _outcome(read: CodesRead) -> tuple[object, ...]:
+    return (
+        Counter(found.code for found in read.found),
+        Counter(found.code for found in read.out_of_range),
+        dict(read.quantities),
+        read.amount,
+        dict(read.fills),
+        read.only_codes,
+    )
+
+
+@PROPERTY
+@given(first=_CODE, second=_CODE)
+def test_kody_sklejone_bez_spacji_licza_sie_oba_w_kazdej_kolejnosci(first: str, second: str) -> None:
+    separated = _outcome(_read(f"{first}, {second}"))
+
+    assert _outcome(_read(first + second)) == separated
+    assert _outcome(_read(second + first)) == separated
+
+
+# Litery i cyfry tekstu Wykonawcy; poza nimi są litery, które ``casefold`` rozkłada na literę i znak diakrytyczny (``İ``).
+_WORD_CHARACTERS = "abcdefghijklmnopqrstuvwxyząćęłńóśźżABCDEFGHIJKLMNOPQRSTUVWXYZĄĆĘŁŃÓŚŹŻ0123456789"
+
+
+@PROPERTY
+@given(before=st.just("") | _CODE, word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12), code=_CODE)
+def test_kod_po_literze_albo_cyfrze_zwyklego_slowa_nie_pasuje(before: str, word: str, code: str) -> None:
+    assume(_read(word) == _read(""))
+
+    assert _outcome(_read(before + word + code)) == _outcome(_read(before + word))
+
+
+def test_wypelnienie_kolumny_daje_pierwszy_w_tekscie_kod() -> None:
+    legend = ActivityLegend(
+        (
+            ActivityCode("zielony", ("zielony",), fills=(CellFill("AF", FillColour.GREEN),)),
+            ActivityCode("czerwony", ("czerwony",), fills=(CellFill("AF", FillColour.RED),)),
+        )
+    )
+
+    assert dict(read_codes(legend, "zielony czerwony").fills) == {"AF": FillColour.GREEN}
+    assert dict(read_codes(legend, "czerwony zielony").fills) == {"AF": FillColour.RED}
+
+
+def test_kod_spoza_przedzialow_obok_dzialajacego_kodu_wyklucza_same_kody() -> None:
+    read = _read("inst20m instutp99m")
+
+    assert [found.code for found in read.found] == ["inst"]
+    assert [found.code for found in read.out_of_range] == ["instutp"]
+    assert read.only_codes is False
 
 
 def test_kazde_wystapienie_kodu_sie_dodaje_a_rozne_kody_sumuja_sie_takze_w_as() -> None:
