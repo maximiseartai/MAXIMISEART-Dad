@@ -43,8 +43,8 @@ wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się
   #2010 wyliczało postacie odpowiedzi T3, z których dało się wnioskować o końcu, i każda runda znajdowała następną).
   Ścieżki transkryptów dają linie pliku ``.transkrypt``, które hook dopisuje z ``transcript_path`` wejścia; strażnik
   czyta każdy transkrypt w kolejności dopisania, od miejsca, w którym skończył, bo dziecko zlecone w starej sesji ma
-  tam swój start i powiadomienie. Bez transkryptu i dla dziecka bez startu w transkryptach dotarciem jest, jak przed
-  tą regułą, ruch wątku po końcu dziecka;
+  tam swój start i powiadomienie. Bez transkryptu, dla dziecka bez startu w transkryptach i dla biegu, który T3
+  wznowiło samo (``resumed``), dotarciem jest, jak przed tą regułą, ruch wątku po końcu dziecka;
 - tego samego powodu (bieg dziecka z ``run_of`` i rodzaj powodu, przy „nie dotarło” także chwila końca) nie
   powtarza, a dwa budzenia dzieli ``PAUSE_S``; koniec dziecka należy do biegu (``ended_by``, ``end_of``), więc bieg,
   który zaczął się i skończył między dwoma pytaniami, nie dziedziczy końca poprzedniego, a widoczność dziecka
@@ -64,8 +64,13 @@ proces. Bieg rozpoznaje ``taskId``, nie tytuł, więc powiadomienie o rodzeństw
 czekania. Koszt granicy: każdy bieg, którego koniec koordynator poznał inaczej niż z powiadomienia (sam anulował
 dziecko, odczytał wynik, przeczytał werdykt na GitHubie), a powiadomienie nie przyszło, daje jedno zbędne budzenie;
 inny początek powiadomienia w przyszłym T3 dałby jedno budzenie na każdy bieg. Bieg, który T3 wznowi samo (bez
-``t3_thread_send``), nie ma startu w transkrypcie i dzieli ``taskId`` z poprzednim, więc powiadomienie poprzedniego
-biegu ukrywa brak jego powiadomienia. T3 z 24–29.10.2026 pokazywał w ``t3 thread show`` wątek dziecka, które po turze
+``t3_thread_send``), ma własny ``taskId`` (``provider-continuation``), ale nie ma odpowiedzi startu w transkrypcie: gdy
+strażnik widzi dziecko w toku po powiadomieniu jego znanego biegu, to bieg bez startu z regułą ruchu wątku
+(``resumed``), a jego powiadomienie, jak każdy wpis rodzica, zamyka go ruchem wątku; nowy ``updatedAt`` skończonego
+wątku bez stanu w toku (T3 przesuwa go po powiadomieniu) takim biegiem nie jest. Kontynuacja, której stan w toku nie
+wypadł na pytanie strażnika (krótsza niż ``STEP_S``) albo która ruszyła przed powiadomieniem poprzedniego biegu,
+zostaje przypisana do poprzedniego biegu i jej zgubione powiadomienie się ukrywa, a dla wznowionej kontynuacji, jak
+dla każdego biegu bez startu, ruch wątku przy innych dzieciach liczy się jako dotarcie. T3 z 24–29.10.2026 pokazywał w ``t3 thread show`` wątek dziecka, które po turze
 czekało na pracę w tle, jako ``completed``, choć bieg trwał: strażnik uznawał wtedy bieg za skończony i budził raz
 zbędnie, a gdy wznowiona tura dziecka zmieściła się między dwoma pytaniami strażnika, jej koniec miał ten sam klucz i
 zgubione powiadomienie tego końca się ukrywało; dzisiejszy T3 pokazuje taki wątek jako ``waiting`` (z
@@ -140,8 +145,9 @@ class Memory:
     """Co strażnik pamięta między pytaniami: koniec każdego dziecka (``updatedAt``) i bieg, do którego ten koniec należy
     (``ended_by``), od kiedy dziecka nie widać, klucze powodów, z którymi już budził, chwilę ostatniego budzenia,
     ``taskId`` biegów, o których końcu przyszło powiadomienie T3 (``heard``; ``None``: transkryptu nie ma, więc
-    dotarciem jest ruch wątku), ``taskId`` bieżącego biegu każdego dziecka (``runs``) i identyfikatory wywołań narzędzi
-    ``STARTS`` (``starts``)."""
+    dotarciem jest ruch wątku), ``taskId`` bieżącego biegu każdego dziecka (``runs``), identyfikatory wywołań narzędzi
+    ``STARTS`` (``starts``) i dzieci w biegu bez startu w transkrypcie (``resumed``: strażnik widział je w toku po
+    powiadomieniu ich znanego biegu, czyli T3 wznowiło je samo)."""
 
     ended: dict[str, float] = field(default_factory=dict)
     ended_by: dict[str, str] = field(default_factory=dict)
@@ -151,12 +157,16 @@ class Memory:
     heard: set[str] | None = None
     runs: dict[str, str] = field(default_factory=dict)
     starts: set[str] = field(default_factory=set)
+    resumed: set[str] = field(default_factory=set)
 
 
 def run_of(child: str, memory: Memory) -> str:
     """Tożsamość bieżącego biegu dziecka, jedyny klucz stanu strażnika o biegu: ``taskId`` z odpowiedzi startu
-    (``runs``), a bez startu w transkryptach sam wątek dziecka."""
+    (``runs``); bieg bez startu w transkrypcie (``resumed``) i dziecko bez startu w transkryptach to sam wątek dziecka
+    z dopiskiem, czy bieg wznowiło T3."""
 
+    if child in memory.resumed:
+        return f"{child} wznowiony przez T3 po {memory.runs.get(child)}"
     return memory.runs.get(child) or child
 
 
@@ -172,7 +182,7 @@ def unheard(child: str, parent: Seen, memory: Memory) -> bool:
     """Czy po zapisanym końcu bieżącego biegu dziecka nie przyszło powiadomienie T3 o tym biegu; bez transkryptu albo
     bez startu w nim, jak przed tą regułą, czy wątek ``parent`` nie ruszył od końca dziecka."""
 
-    if memory.heard is None or child not in memory.runs:
+    if memory.heard is None or child not in memory.runs or child in memory.resumed:
         return parent.updated < memory.ended[child]
     return memory.runs[child] not in memory.heard
 
@@ -250,6 +260,7 @@ def hear(path: Path, offset: int, children: Iterable[str], memory: Memory) -> in
                 child, task = reply.get(CHILD_KEY) or reply.get(SEND_KEY), reply.get(TASK_KEY)
                 if child in watched and isinstance(task, str) and task:
                     memory.runs[str(child)] = task
+                    memory.resumed.discard(str(child))
         for text in _text(entry).splitlines():
             found = NOTICE_LINE.match(text)
             if found:
@@ -263,7 +274,8 @@ def observe(children: dict[str, Seen | None], now: float, memory: Memory) -> Non
     jest skończone, i potem go nie zmienia, bo ``updatedAt`` skończonego wątku T3 przesuwa się później także bez jego
     pracy (restart T3); dziecko, które znów trwa, traci zapisany koniec. Nowy bieg, którego strażnik nie widział w
     toku (zaczął się i skończył między dwoma pytaniami), dostaje koniec dopiero z ``updatedAt`` nowszym niż koniec
-    poprzedniego biegu, a do tego czasu nie ma końca (``end_of``)."""
+    poprzedniego biegu, a do tego czasu nie ma końca (``end_of``). Dziecko w toku, którego znany bieg ze startem ma już
+    powiadomienie, a nowego startu w transkrypcie nie ma, jest w biegu wznowionym przez T3 (``resumed``)."""
 
     for name, state in children.items():
         if state is None:
@@ -274,6 +286,8 @@ def observe(children: dict[str, Seen | None], now: float, memory: Memory) -> Non
         if state.status not in FINISHED:
             memory.ended.pop(name, None)
             memory.ended_by.pop(name, None)
+            if memory.heard is not None and memory.runs.get(name) in memory.heard:
+                memory.resumed.add(name)
         elif name not in memory.ended or (memory.ended_by.get(name) != run and state.updated > memory.ended[name]):
             memory.ended[name] = state.updated
             memory.ended_by[name] = run
@@ -297,9 +311,11 @@ def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
         if state.status not in FINISHED and state.age(now) > CHILD_STALE_S:
             reasons[f"{run_of(child, memory)} stoi"] = f"dziecko {child} ({state.status}) bez ruchu od {int(state.age(now) // 60)} min"
         elif ended is not None and WAKE_S < now - ended and unheard(child, parent, memory):
+            since = "a ten wątek od tego czasu nie ruszył" if child in memory.resumed else (
+                "a powiadomienie T3 o końcu tego biegu do tego wątku nie dotarło (jeśli znasz już jego wynik, to duplikat)"
+            )
             reasons[_unheard_key(child, memory)] = (
-                f"dziecko {child} skończyło się statusem {state.status} {int((now - ended) // 60)} min temu, a "
-                "powiadomienie T3 o końcu tego biegu do tego wątku nie dotarło (jeśli znasz już jego wynik, to duplikat)"
+                f"dziecko {child} skończyło się statusem {state.status} {int((now - ended) // 60)} min temu, {since}"
             )
     return reasons
 
@@ -326,7 +342,11 @@ def pending(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
                 return True
         elif state.status not in FINISHED:
             return True
-        elif end_of(child, memory) is not None and unheard(child, parent, memory) and _unheard_key(child, memory) not in memory.told:
+        elif end_of(child, memory) is None:
+            # T3 pokazuje jeszcze koniec poprzedniego biegu, a bieżący bieg ze startem ruszy i się skończy.
+            if memory.heard is not None and child in memory.runs and memory.runs[child] not in memory.heard:
+                return True
+        elif unheard(child, parent, memory) and _unheard_key(child, memory) not in memory.told:
             return True
     return False
 

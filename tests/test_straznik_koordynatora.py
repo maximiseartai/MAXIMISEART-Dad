@@ -988,3 +988,67 @@ def test_bieg_2_bez_powiadomienia_budzi_z_wiekiem_wlasnego_konca() -> None:
     (reason,) = decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 18 * MIN)}, 56 * MIN, memory)
 
     assert "18 min temu" in reason
+
+
+@pytest.mark.parametrize("between", ["waiting", "completed"], ids=["dzisiejszy-t3-waiting", "completed-miedzy-turami"])
+def test_bieg_wznowiony_przez_t3_bez_startu_idzie_regula_ruchu_watku(between: str) -> None:
+    # Bieg X kończy się w 5. minucie z powiadomieniem; T3 wznawia dziecko samo w 20. (provider-continuation, bez
+    # odpowiedzi startu w transkrypcie), kontynuacja kończy się w 30., a jej powiadomienie ginie.
+    def run(parent_moved_at: float) -> list[list[str]]:
+        memory = straznik.Memory(heard={"node:bieg-x"}, runs={CHILD: "node:bieg-x"})
+        decide(Seen("completed", 1 * MIN), {CHILD: Seen(between, 1 * MIN)}, 6 * MIN, memory)
+        decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 21 * MIN, memory)
+        decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 31 * MIN, memory)
+        parent = Seen("completed", (50 - parent_moved_at) * MIN)
+        return [decide(parent, {CHILD: Seen("completed", 20 * MIN)}, 50 * MIN, memory)]
+
+    (woken,) = run(parent_moved_at=7)
+    (reason,) = woken
+    assert CHILD in reason and "nie ruszył" in reason
+    # Powiadomienie kontynuacji przyszło w 31. minucie jako wpis rodzica: ruch wątku zamyka bieg.
+    assert run(parent_moved_at=31) == [[]]
+
+
+def test_przesuniety_koniec_watku_po_powiadomieniu_nie_jest_biegiem_wznowionym() -> None:
+    # Bieg X skończył się z powiadomieniem; T3 przesuwa potem updatedAt skończonego wątku (rozliczenie, restart),
+    # a dziecko ani razu nie trwało: świeży i stary pilnujący nie budzą (W1 r1).
+    memory = straznik.Memory(heard={"node:bieg-x"}, runs={CHILD: "node:bieg-x"})
+    decide(Seen("completed", 30 * MIN), {CHILD: Seen("completed", 20 * MIN)}, 0.0, memory)
+    for minute in (20, 40, 60):
+        assert decide(Seen("completed", 60 * MIN), {CHILD: Seen("completed", 1 * MIN)}, minute * MIN, memory) == []
+    assert not pending(Seen("completed", 60 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 60 * MIN, memory)
+
+
+def test_strażnik_pilnuje_biegu_2_ze_startem_choc_t3_pokazuje_jeszcze_koniec_biegu_1() -> None:
+    memory = straznik.Memory(heard={"node:bieg-1"}, runs={CHILD: "node:bieg-1"})
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 5 * MIN)}, 0.0, memory)
+    assert not pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 5 * MIN)}, 0.0, memory)
+    # Start biegu 2 stoi w transkrypcie, a T3 jeszcze nie pokazuje dziecka w toku.
+    memory.runs[CHILD] = "node:bieg-2"
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 1 * MIN, memory)
+    assert pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 1 * MIN, memory)
+    memory.heard.add("node:bieg-2")
+    assert not pending(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 6 * MIN)}, 1 * MIN, memory)
+
+
+def test_start_po_wznowieniu_przez_t3_wraca_do_reguly_powiadomienia(tmp_path: Path) -> None:
+    # Bieg 1 z powiadomieniem, potem T3 wznawia dziecko samo; koordynator wysyła mu t3_thread_send (bieg 2), bieg 2
+    # kończy się bez powiadomienia, a koordynator pracuje dalej przy innych dzieciach.
+    transcript = tmp_path / "sesja.jsonl"
+    transcript.write_text(
+        _started(CHILD, 0) + "\n" + _entry("user", 3, "Delegated task node:delegated-task:dziecko-wymyslone-1 (P) [completed]") + "\n",
+        encoding="utf-8",
+    )
+    memory = straznik.Memory()
+    offset = straznik.hear(transcript, 0, [CHILD], memory)
+    decide(Seen("completed", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 10 * MIN, memory)
+    assert CHILD in memory.resumed
+    with transcript.open("a", encoding="utf-8") as handle:
+        handle.write(_call("mcp__t3-code__t3_thread_send", "toolu_send", _stamp(20), {"threadId": CHILD, "taskId": SENT}) + "\n")
+    straznik.hear(transcript, offset, [CHILD], memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("running", 1 * MIN)}, 25 * MIN, memory)
+    decide(Seen("running", 1 * MIN), {CHILD: Seen("completed", 1 * MIN)}, 31 * MIN, memory)
+
+    (reason,) = decide(Seen("completed", 1 * MIN), {CHILD: Seen("completed", 17 * MIN)}, 47 * MIN, memory)
+
+    assert "nie dotarło" in reason and "duplikat" in reason
