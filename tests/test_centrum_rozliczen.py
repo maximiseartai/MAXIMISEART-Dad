@@ -2736,6 +2736,11 @@ LEGEND_EDITS: dict[str, tuple[LegendEdit, str | None, str | None]] = {
         None,
         "listwa#m: # od 1 do 10 → 2 w AK, # od 11 do 20 → 2 w AL, 30 w Uwagi - kwota (AS), AF na czerwono.",
     ),
+    "dodanie kodu z samą kwotą przy wartości z formularza": (
+        lambda client: client.post(LEGEND_URL, json=code_form("listwy#m", value=3, amount=20)),
+        None,
+        "listwy#m: 20 w Uwagi - kwota (AS).",
+    ),
     "zmiana kodu": (
         lambda client: client.put(code_url("spawpg"), json=shown_form(client, "spawpg") | {"column": fixed("AC"), "amount": 80}),
         "spawpg: 1 w AB, 70 w Uwagi - kwota (AS), AS na czerwono.",

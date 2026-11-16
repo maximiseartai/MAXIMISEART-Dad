@@ -31,15 +31,40 @@ kody:
 BAD = GOOD.replace(b"zapisy: [spawez]", b"zapisy: [spawez, spawpg]")
 INST_AA = "inst#m: 2 w Przyłącze doziemne AA."
 REFUSED = f"Plik {LEGEND_FILE} w folderze config: Zapis „spawpg” ma już kod „spawpg”."
+# Dad's editor: a spelling the workers write (instrg6 for instwewrg6), a spelling of another code, a new code.
+WITH_SPELLING = "instwewrg6#m (też instrg6#m): # od 1 do 10 →"
+TAKEN = "Zapis „inst#m” ma już kod „inst#m”."
+NEW_CODE = "listwa#m: # od 1 do 15 → 1 w "
 
 
 def _codes(window: Locator) -> Locator:
     return window.get_by_role("list", name="Kody czynności").get_by_role("listitem")
 
 
-def drive(run: Run, page: Page) -> None:
-    codes = run.api(URL, "legenda-czynnosci")["codes"]
+def _edit(window: Locator, spellings: str) -> Locator:
+    """Dad's pencil at the code shown as ``spellings``; the form stands in place of its row."""
+
+    window.get_by_role("button", name=f"Zmień {spellings}", exact=True).click()
+    form = window.get_by_role("listitem", name=f"Zmiana {spellings}", exact=True)
+    expect(form).to_be_visible()
+    return form
+
+
+def _choose(page: Page, form: Locator, field: str, option: str) -> None:
+    form.get_by_role("combobox", name=field, exact=True).click()
+    page.get_by_role("option", name=option, exact=True).click()
+
+
+def _spellings(run: Run, name: str) -> dict[str, str]:
+    codes = run.api(URL, name)["codes"]
     assert isinstance(codes, list)
+    return {code["id"]: code["spellings"] for code in codes}
+
+
+def drive(run: Run, page: Page) -> None:
+    read = run.api(URL, "legenda-czynnosci")
+    codes, columns = read["codes"], read["columns"]
+    assert isinstance(codes, list) and isinstance(columns, list)
     legend = Path(run.fixture["settings"]).parent / LEGEND_FILE
 
     run.step(FEATURE, "legenda-zdania")
@@ -85,6 +110,72 @@ def drive(run: Run, page: Page) -> None:
     run.check(True, "Historia has both changes outside Centrum, the good one as the code's sentence before and after")
     run.capture(page, "422-legenda-czynnosci-historia", full_page=False)
     close_settings(page)
+    remove(legend)
+    window = open_settings(page, SECTION)
+    expect(_codes(window)).to_have_count(len(codes))
+
+    run.step(FEATURE, "legenda-dopisany-zapis")
+    form = _edit(window, "instwewrg6#m")
+    form.get_by_role("button", name="Dodaj zapis", exact=True).click()
+    form.get_by_role("textbox", name="Zapis 2", exact=True).fill("instrg6#m")
+    form.get_by_role("button", name="Zapisz", exact=True).click()
+    expect(_codes(window).filter(has_text="instwewrg6#m")).to_contain_text(WITH_SPELLING)
+    run.check(
+        _spellings(run, "legenda-czynnosci-dopisany-zapis")["instwewrg6"] == "instwewrg6#m (też instrg6#m)",
+        "the pencil, „Dodaj zapis” and „Zapisz” add the spelling the workers write to the code",
+    )
+    run.capture(page, "424-legenda-czynnosci-dopisany-zapis", full_page=False)
+
+    run.step(FEATURE, "legenda-odmowa")
+    window.get_by_role("button", name="Dodaj kod", exact=True).click()
+    form = window.get_by_role("listitem", name="Nowy kod", exact=True)
+    form.get_by_role("textbox", name="Zapis 1", exact=True).fill("inst#m")
+    _choose(page, form, "Ilość usług", "W jedną kolumnę, liczba bez znaczenia")
+    form.get_by_role("combobox", name="Kolumna", exact=True).click()
+    options = page.get_by_role("option")
+    expect(options.filter(has_text="Spawanie w mufie (AB)")).to_have_count(1)
+    shown = [text.strip() for text in options.all_inner_texts()]
+    run.check(
+        len(shown) == len(columns) and not {"P", "Q", "S", "AS"} & {text.rsplit("(", 1)[-1].rstrip(")") for text in shown},
+        f"the column of a code is chosen by its price-list name, only from the {len(shown)} columns the legend writes",
+    )
+    run.capture(page, "425-legenda-czynnosci-kolumny", full_page=False)
+    page.keyboard.press("Escape")
+    form.get_by_role("button", name="Zapisz", exact=True).click()
+    expect(form.get_by_role("alert")).to_have_text(TAKEN)
+    run.check(len(_spellings(run, "legenda-czynnosci-po-odmowie")) == len(codes), "a spelling of another code is one sentence at its field, and the legend stays")
+    run.capture(page, "426-legenda-czynnosci-odmowa", full_page=False)
+
+    run.step(FEATURE, "legenda-nowy-kod")
+    form.get_by_role("textbox", name="Zapis 1", exact=True).fill("listwa#m")
+    _choose(page, form, "Ilość usług", "Kolumna według liczby w kodzie")
+    form.get_by_role("spinbutton", name="Kwota w AS", exact=True).fill("30")
+    form.get_by_role("button", name="Dodaj kolor", exact=True).click()
+    form.get_by_role("button", name="Zapisz", exact=True).click()
+    expect(_codes(window).last).to_contain_text(NEW_CODE)
+    expect(_codes(window).last).to_contain_text("30 w Uwagi - kwota AS")
+    run.check(
+        _spellings(run, "legenda-czynnosci-nowy-kod")["listwa"] == "listwa#m",
+        "a new code with a range of the number, an amount in AS and a colour is one more sentence of the legend",
+    )
+    run.capture(page, "427-legenda-czynnosci-nowy-kod", full_page=False)
+
+    run.step(FEATURE, "legenda-usuniecie-cofnij")
+    _edit(window, "listwa#m").get_by_role("button", name="Usuń kod", exact=True).click()
+    expect(_codes(window)).to_have_count(len(codes))
+    close_settings(page)
+    window = open_settings(page, "Historia")
+    changes = window.get_by_role("list", name="Zmiany").get_by_role("listitem")
+    expect(changes.first).to_contain_text("Legenda czynności")
+    expect(changes.first).to_contain_text("Przed: listwa#m")
+    run.capture(page, "428-legenda-czynnosci-historia-edytora", full_page=False)
+    changes.first.get_by_role("button", name="Cofnij: Legenda czynności", exact=True).click()
+    expect(changes.first).to_contain_text("Po: listwa#m")
+    run.check(
+        "listwa" in _spellings(run, "legenda-czynnosci-po-cofnieciu"),
+        "removing a code is a row of Historia, and its „Cofnij” brings the code back",
+    )
+    close_settings(page)
     # The features after this one find the legend of the Release, as without Dad's file.
     remove(legend)
     window = open_settings(page, SECTION)
@@ -102,6 +193,11 @@ def drive(run: Run, page: Page) -> None:
         page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
         run.check(True, "on a narrow window the sentences wrap without a horizontal scroll")
         run.capture(page, "423-legenda-czynnosci-waskie", full_page=False)
+        _edit(window, "instutp#m")
+        page.wait_for_function("document.documentElement.scrollWidth <= document.documentElement.clientWidth")
+        run.check(True, "on a narrow window the form of a code with ranges wraps without a horizontal scroll")
+        run.capture(page, "429-legenda-czynnosci-waski-formularz", full_page=False)
+        window.get_by_role("button", name="Anuluj", exact=True).click()
         close_settings(page)
     finally:
         page.set_viewport_size(DAD_VIEWPORT)
