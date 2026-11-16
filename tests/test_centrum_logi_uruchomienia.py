@@ -13,6 +13,7 @@ from decimal import Decimal
 import errno
 import hashlib
 from http import HTTPStatus
+from importlib.metadata import version
 import json
 import os
 from pathlib import Path
@@ -2281,12 +2282,15 @@ class StartPath:
 _BROWSER_FAILURE = "błąd przeglądarki w działaniu okna"
 _PLAYWRIGHT_ERROR = "playwright._impl._errors.Error"
 _STOP_ERROR = "rozliczenia.message.StopError"
+_DRIVER_MISSING = _PLAYWRIGHT_ERROR if tuple(map(int, version("playwright").split(".")[:2])) >= (1, 65) else "FileNotFoundError"
+"""Typ błędu startu sterownika Playwrighta bez programu sterownika: od 1.65 klient Pythona zgłasza go jako błąd
+Playwrighta (``Cannot launch Node.js executable``), a wcześniej jako ``FileNotFoundError``; tata dostaje ten sam Komunikat."""
 START_PATHS = {
     "sterownik-playwrighta-nie-wystartowal": StartPath(
         "for_tata",
         "EFENIX_BRAK_PRZEGLADARKI",
-        {"what": _BROWSER_FAILURE, "error_type": "FileNotFoundError", "operation": "start sterownika Playwrighta"},
-        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", "FileNotFoundError"],
+        {"what": _BROWSER_FAILURE, "error_type": _DRIVER_MISSING, "operation": "start sterownika Playwrighta"},
+        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", _DRIVER_MISSING],
         "_playwright",
         driver=True,
     ),
