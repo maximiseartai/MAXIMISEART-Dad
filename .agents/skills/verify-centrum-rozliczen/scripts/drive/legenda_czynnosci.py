@@ -55,16 +55,20 @@ TAKEN = "Zapis „inst#m” ma już kod „inst#m”."
 NEW_CODE = "listwa#m: # od 1 do 15 → 1 w "
 # The preview of a change: the harness writes codes into CZYNNOŚCI ZREALIZOWANE of the Wiersze danych of the Plik
 # zbiorczy that Przebieg rozliczeń settled, with Dad's values as he types them; spawpg has his 1 in AB and 70 in AS but
-# no red AS. Dad changes the amount of spawpg to 80, so that row changes and differs from what he typed.
+# no red AS. Dad changes the amount of spawpg to 80, so that row changes and differs from what he typed. Row 21 is a
+# Błąd opisu (a word beside the code, ADR 0039): the legend writes nothing there before or after the change.
 COMPLETED_HEADER = "CZYNNOŚCI ZREALIZOWANE"
 CODED_ROWS: dict[int, tuple[str, dict[str, int]]] = {
     18: ("inst20m", {"Y": 1}),
-    19: ("spawpg listwy", {"AB": 1, "AS": 70}),
+    19: ("spawpg", {"AB": 1, "AS": 70}),
     20: ("rt2", {"AK": 1}),
+    21: ("spawpg listwy", {"AB": 1}),
 }
 SPAWPG_ROW = 19
-# Removing inst leaves row 18 without a code, with Dad's 1 in Y, which the legend no longer writes.
+# Removing inst makes inst20m of row 18 a word outside the legend, so the row has a Błąd opisu, with Dad's 1 in Y, which
+# the legend no longer writes.
 INST_ROW = 18
+WORD_OUTSIDE = "słowo spoza legendy"
 
 
 def _codes(window: Locator) -> Locator:
@@ -320,16 +324,19 @@ def _preview_and_save(run: Run, page: Page, legend: Path, count: int) -> None:
         run.check(
             answer["state"] == "ready" and answer["changed"] == 1 and answer["changed_as_tata"] == 0
             and answer["differences_after"] > answer["differences_before"]
+            and answer["errors_before"] == answer["errors_after"] >= 1
             and [(cell["column"], cell["legend"], cell["tata"]) for cell in row["cells"] if cell["kind"] == "value"] == [("AS", 80, 70)],
-            "the server's preview counts with the Kontrola's row check: spawpg at 80 changes 1 row, which differs from Dad's 70 in AS",
+            "the server's preview counts with the Kontrola's row check: spawpg at 80 changes 1 row, which differs from Dad's 70 in "
+            "AS, and the row with a Błąd opisu beside spawpg does not change",
         )
         summary = preview.get_by_role("listitem", name="Skutek", exact=True)
         expect(summary).to_contain_text("Zmieni się 1 wiersz, w 0 będzie tak, jak wpisałeś.")
         expect(summary).to_contain_text(
             f"różnice legendy z Kontroli ilości: {answer['differences_before']} → {answer['differences_after']}"
+            f" · wiersze z Błędem opisu: {answer['errors_before']} → {answer['errors_after']}"
         )
         shown = preview.get_by_role("listitem", name=f"Wiersz {SPAWPG_ROW}", exact=True)
-        expect(shown).to_contain_text("CZYNNOŚCI ZREALIZOWANE spawpg listwy")
+        expect(shown).to_contain_text("CZYNNOŚCI ZREALIZOWANE spawpg")
         expect(shown).to_contain_text("Uwagi - kwota · legenda 80")
         expect(shown).to_contain_text("wpisałeś 70")
         run.check(True, "the preview shows the server's counts, the row with its description, the legend's 80 and Dad's 70 in AS")
@@ -357,18 +364,20 @@ def _preview_and_save(run: Run, page: Page, legend: Path, count: int) -> None:
         [row] = [row for row in answer["rows"] if row["row"] == INST_ROW]
         run.check(
             answer["state"] == "ready" and answer["changed"] == 1 and answer["changed_as_tata"] == 0 and row["codes"] == []
+            and row["problems"] == [WORD_OUTSIDE] and answer["errors_after"] == answer["errors_before"] + 1
             and [(cell["column"], cell["tata"]) for cell in row["cells"]] == [("Y", 1)],
-            "the server's preview of removing inst: row 18 changes and stays without a code, with Dad's 1 in Y",
+            "the server's preview of removing inst: row 18 changes to a Błąd opisu with its reason, with Dad's 1 in Y",
         )
         summary = preview.get_by_role("listitem", name="Skutek", exact=True)
         expect(summary).to_contain_text("Zmieni się 1 wiersz, w 0 będzie tak, jak wpisałeś.")
         expect(summary).to_contain_text(
             f"różnice legendy z Kontroli ilości: {answer['differences_before']} → {answer['differences_after']}"
+            f" · wiersze z Błędem opisu: {answer['errors_before']} → {answer['errors_after']}"
         )
         shown = preview.get_by_role("listitem", name=f"Wiersz {INST_ROW}", exact=True)
-        expect(shown).to_contain_text("bez kodu")
+        expect(shown).to_contain_text(f"Błąd opisu: {WORD_OUTSIDE}")
         expect(shown).to_contain_text("wpisałeś 1")
-        run.check(True, "before removing, the form shows the preview of the removal: the row left without a code and Dad's 1 in Y")
+        run.check(True, "before removing, the form shows the preview of the removal: the row's Błąd opisu with its reason and Dad's 1 in Y")
         shown.scroll_into_view_if_needed()
         _capture(run, page, "432-legenda-czynnosci-podglad-usuniecia", answer)
         form.get_by_role("button", name="Usuń", exact=True).click()
