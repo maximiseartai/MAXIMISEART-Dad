@@ -101,7 +101,7 @@ Dowód: <polecenie i wynik>
 - The body describes the HEAD it is on.
   After a review round, rewrite the sections that changed instead of adding a section about what changed after the review: the history lives in the verdicts and comments.
 - The repository is public: no client address, order or contract number, Wykonawca, row content of Dad's files, and nothing copied from a Zgłoszenie or a Kontrola ilości.
-  Refer to a Zgłoszenie by number only (`Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#N`, `docs/agents/issue-tracker.md`).
+  Refer to a Zgłoszenie by number only (`Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#N`, `docs/agents/skrzynka-zgloszen.md`).
 
 ## Why
 
