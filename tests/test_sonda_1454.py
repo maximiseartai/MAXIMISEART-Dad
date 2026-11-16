@@ -49,7 +49,7 @@ def test_sonda_skrotu(tmp_path: Path, obciazenie: int) -> None:
                 try:
                     scenariusz(tmp_path / str(n), monkeypatch)
                     outcome = "OK"
-                except Exception as failure:
+                except (AssertionError, OSError, subprocess.SubprocessError) as failure:
                     notes = "\n".join(getattr(failure, "__notes__", []))
                     outcome = f"PADŁ {type(failure).__name__}: {failure}\n{notes}"
             results.append(f"[{n}] {time.monotonic() - start:.1f} s {outcome}")
