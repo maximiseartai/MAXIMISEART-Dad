@@ -43,7 +43,7 @@ The scope is the area (`intermax`, `centrum`, `plan`, `agents`), and the subject
 
 <optional: potential ramifications of merge>
 
-<optional: **Decyzja Maksa:** a call only Maks can make, the default you applied, and what he could choose instead>
+<optional: **Decyzja Maksa:** a call you made that Maks may want to reverse, the choice you applied, and what he could choose instead>
 
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
@@ -146,4 +146,4 @@ The door says whether a merge can be walked back (two-way) or not (one-way).
 
 For the blast radius, consider every reach of the change: a process and its Komunikaty, Centrum rozliczeń in Dad's browser, Windows only, the CI gate and its time, the tools agents run.
 
-A question for Maks goes into the optional `**Decyzja Maksa:**` line, not into a section of its own.
+A call you made for Maks to see goes into the optional `**Decyzja Maksa:**` line, not into a section of its own, and a decision of a kind that only Maks makes ([`issue-tracker.md`](../../../docs/agents/issue-tracker.md), „Decisions for Maks”) into an issue `decyzja-maksa`.
