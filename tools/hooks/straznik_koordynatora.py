@@ -30,21 +30,22 @@ wolno odpowiada T3. ``Seen`` niesie ``updatedAt`` z T3, a każdy wiek liczy się
 - ``decide`` budzi wątek (``t3 thread send``), gdy wątek skończył turę (status z ``FINISHED``, także ``failed`` i
   ``interrupted``), a dziecko trwa bez ruchu dłużej niż ``CHILD_STALE_S`` albo skończyło się ponad ``WAKE_S`` temu, a
   powiadomienie o jego końcu do wątku nie dotarło (``stalled``; koniec dziecka zapisuje ``observe``);
-- powiadomienie dotarło, gdy w transkrypcie wątku po ostatnim starcie dziecka stoi wpis ``user`` z powiadomieniem o
-  tym biegu (``hear``, kolejność wpisów w pliku, bez zegara; ``queue-operation`` z tym samym tekstem to jeszcze kolejka
-  T3, nie dotarcie). Znak biegu podaje sam T3: startem jest odpowiedź narzędzia z ``STARTS`` (``delegate_task`` i
-  ``t3_thread_send``, rozpoznana po ``tool_use_id`` wywołania z transkryptu) z polem ``TASK_KEY``, a powiadomienie o
-  końcu tego biegu zaczyna się od ``NOTICE`` i tego ``taskId`` (``notice``), w każdej postaci węzła, którą T3 nada
-  (``delegate-task``, ``thread-send``, ``provider-continuation``). Dotarciem jest też odczyt koordynatora, który
-  pokazuje skończony bieg (``_finished``: ``task_status`` albo ``t3_thread_read`` ze statusem z ``FINISHED``); odczyt
-  dziecka w toku i odpowiedź innego kształtu nie są dotarciem, więc nieznany kształt daje najwyżej jedno zbędne
-  budzenie, a nie ukryty brak powiadomienia. Kolejność, nie chwila, bo T3 przesuwa ``updatedAt`` skończonego dziecka
-  po powiadomieniu (rozliczenie dzieci przy końcu rodzeństwa, restart), więc nowy pilnujący widziałby powiadomienie
-  „przed końcem”. Ścieżki dają linie pliku ``.transkrypt``, które hook dopisuje z ``transcript_path`` wejścia;
-  strażnik czyta każdy transkrypt w kolejności dopisania, od miejsca, w którym skończył, bo dziecko zlecone w starej
-  sesji ma tam swój start i powiadomienie. Sam ruch wątku nie wystarcza, bo koordynator zajęty innymi dziećmi rusza
-  się także wtedy, gdy T3 powiadomienie zgubiło (9.11.2026 gotowy wynik przeglądu PR czekał przez to godzinę); bez
-  transkryptu i dla dziecka bez startu w transkryptach dotarciem jest, jak dotąd, ruch wątku po końcu dziecka;
+- powiadomienie dotarło, gdy ostatni kontakt koordynatora z bieżącym biegiem dziecka mówi, że wie o jego końcu
+  (``hear``, kolejność wpisów w transkrypcie, bez zegara). Bieg to ``TASK_KEY`` z odpowiedzi narzędzia z ``STARTS``
+  (``delegate_task`` i ``t3_thread_send``, rozpoznanej po ``tool_use_id`` wywołania), który T3 nadaje w każdej postaci
+  węzła (``delegate-task``, ``thread-send``, ``provider-continuation``). Kontaktem jest powiadomienie T3 (wiadomość
+  ``user`` z tekstem, nie wynik narzędzia, z linią od ``notice``; ``queue-operation`` to jeszcze kolejka) i odpowiedź
+  na dowolne własne wywołanie koordynatora, której przedmiotem jest ten bieg (``_subject``). Odpowiedź startu i
+  odpowiedź, która sama mówi, że bieg trwa (``_running``: ``thread.status`` spoza ``FINISHED`` jak dla
+  ``t3 thread show`` albo ``WORK_KEY`` równe ``WORKING``), znaczą „trwa”; powiadomienie i każda inna odpowiedź o biegu
+  (anulowanie, przerwanie, odczyt skończonego) znaczą „wie o końcu”, więc nieznane oznaczenie biegu w toku daje ciszę,
+  jak przed tą regułą, a nie fałszywe budzenie. Kolejność, nie chwila, bo T3 przesuwa ``updatedAt`` skończonego
+  dziecka po powiadomieniu (rozliczenie dzieci przy końcu rodzeństwa, restart), więc nowy pilnujący widziałby
+  powiadomienie „przed końcem”. Ścieżki dają linie pliku ``.transkrypt``, które hook dopisuje z ``transcript_path``
+  wejścia; strażnik czyta każdy transkrypt w kolejności dopisania, od miejsca, w którym skończył, bo dziecko zlecone w
+  starej sesji ma tam swój start i powiadomienie. Sam ruch wątku nie wystarcza, bo koordynator zajęty innymi dziećmi
+  rusza się także wtedy, gdy T3 powiadomienie zgubiło (9.11.2026 gotowy wynik przeglądu PR czekał przez to godzinę);
+  bez transkryptu i dla dziecka bez startu w transkryptach dotarciem jest, jak dotąd, ruch wątku po końcu dziecka;
 - tego samego powodu (dziecko i rodzaj powodu) nie powtarza, a dwa budzenia dzieli ``PAUSE_S``;
 - wątek ``running`` bez ruchu dłużej niż ``STUCK_S`` tylko zapisuje w dzienniku, bo wiadomość do zajętego wątku
   czeka na jego następną turę;
@@ -57,18 +58,19 @@ ma ``childThreadId`` null, a jego identyfikator należy do tamtego środowiska, 
 narzędzia Agent biegnie w procesie koordynatora i nie ma wątku, więc strażnik go nie widzi. Koordynator stojący przy
 gotowym PR bez żywego dziecka nie dostaje budzenia. Plik ``.dzieci`` rośnie o linię na zlecenie, a ``.transkrypt`` o
 linię na nową sesję wątku, i nikt ich nie skraca; przez całe życie pilnującego obok śpi najwyżej jeden czekający
-proces. Znakiem jest identyfikator, nie tytuł, więc powiadomienie o rodzeństwie o tym samym początku tytułu nie kończy
-czekania. Bieg, który T3 wznowi samo (bez ``t3_thread_send``), nie ma startu w transkrypcie, więc powiadomienie
-poprzedniego biegu ukrywa brak jego powiadomienia; koordynator, który odczytał wynik inną drogą (werdykt na GitHubie),
-a powiadomienie nie przyszło, dostaje jedno budzenie; inny początek powiadomienia w przyszłym T3 dałby jedno
-budzenie na każde dziecko. Bez transkryptu brak powiadomienia ukrywa też T3, które przy
-końcu dziecka dopisze coś do wątku rodzica bez jego tury. Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version`` w ``pyproject.toml``),
-a plik importuje tylko bibliotekę standardową i ``potomne``.
+proces. Bieg rozpoznaje ``taskId``, nie tytuł, więc powiadomienie o rodzeństwie o tym samym początku tytułu nie kończy
+czekania. Bieg, który T3 wznowi samo (bez ``t3_thread_send``), nie ma startu w transkrypcie, więc ostatni kontakt z
+poprzednim biegiem ukrywa brak jego powiadomienia; koordynator, który dowiedział się o końcu poza T3 (werdykt na
+GitHubie), a powiadomienie nie przyszło, dostaje jedno budzenie; inny początek powiadomienia w przyszłym T3 dałby jedno
+budzenie na każde dziecko, a odpowiedź o biegu w toku bez obu oznaczeń ``_running`` ukrywa zgubione powiadomienie.
+Bez transkryptu brak powiadomienia ukrywa też T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury.
+Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9 (``per-file-target-version`` w
+``pyproject.toml``), a plik importuje tylko bibliotekę standardową i ``potomne``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 import contextlib
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -108,6 +110,9 @@ FINISHED = frozenset({"completed", "failed", "interrupted", "cancelled"})
 STARTS = frozenset({DELEGATE, "mcp__t3-code__t3_thread_send"})
 SEND_KEY = "threadId"
 TASK_KEY = "taskId"
+# Pole odpowiedzi o zadaniu T3 (task_status) i jego wartość, dopóki bieg trwa.
+WORK_KEY = "workState"
+WORKING = "working"
 NOTICE = "Delegated task "
 NUDGE = "Strażnik koordynatora (tools/hooks/straznik_koordynatora.py):"
 
@@ -170,26 +175,49 @@ def _replies(block: dict[str, object]) -> list[dict[str, object]]:
     return found
 
 
-def _finished(reply: dict[str, object]) -> str | None:
-    """Dziecko, którego skończony bieg pokazuje odczyt koordynatora: ``task_status`` (``CHILD_KEY`` i ``status``) albo
-    ``t3_thread_read`` (``thread`` z ``threadId`` i ``status``); status spoza ``FINISHED`` i inny kształt nic nie dają."""
+def _subject(reply: dict[str, object], runs: Mapping[str, str]) -> str | None:
+    """Dziecko, którego bieżący bieg jest przedmiotem odpowiedzi: ``thread.threadId``, ``CHILD_KEY`` albo ``SEND_KEY``
+    równe dziecku albo ``TASK_KEY`` równy jego biegowi (``None``: odpowiedź nie mówi o żadnym pilnowanym biegu)."""
 
     thread = reply.get("thread")
-    shown = thread if isinstance(thread, dict) else reply
-    child = shown.get(SEND_KEY) if shown is thread else reply.get(CHILD_KEY)
-    return str(child) if isinstance(child, str) and shown.get("status") in FINISHED else None
+    named = thread.get(SEND_KEY) if isinstance(thread, dict) else reply.get(CHILD_KEY) or reply.get(SEND_KEY)
+    if isinstance(named, str) and named in runs:
+        return named
+    task = reply.get(TASK_KEY)
+    return next((child for child, run in runs.items() if task == run), None)
+
+
+def _running(reply: dict[str, object]) -> bool:
+    """Czy odpowiedź sama mówi, że bieg trwa: ``thread.status`` spoza ``FINISHED`` (ta sama reguła co dla
+    ``t3 thread show``) albo ``WORK_KEY`` równe ``WORKING`` w odpowiedzi o zadaniu."""
+
+    thread = reply.get("thread")
+    if isinstance(thread, dict):
+        return thread.get("status") not in FINISHED
+    return reply.get(WORK_KEY) == WORKING
+
+
+def _text(entry: dict[str, object]) -> str:
+    """Tekst wiadomości wpisu (napis albo bloki ``text``), bez wyników narzędzi."""
+
+    message = entry.get("message")
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str):
+        return content
+    return "\n".join(str(block.get("text")) for block in _blocks(entry, "text"))
 
 
 def notice(task: str) -> str:
-    """Początek powiadomienia T3 o końcu biegu ``task``."""
+    """Początek linii powiadomienia T3 o końcu biegu ``task``."""
 
     return f"{NOTICE}{task} "
 
 
 def hear(path: Path, offset: int, children: Iterable[str], memory: Memory) -> int:
-    """Czyta transkrypt od bajtu ``offset`` do ostatniej pełnej linii: odpowiedź startu dziecka zapisuje jego bieg
-    (``runs``) i ``heard`` ``False``, a powiadomienie o tym biegu ``heard`` ``True``; zwraca miejsce, od którego czytać
-    następnym razem."""
+    """Czyta transkrypt od bajtu ``offset`` do ostatniej pełnej linii i zapisuje w ``memory.heard``, co po ostatnim
+    kontakcie z bieżącym biegiem dziecka koordynator sądzi: ``False`` (trwa: odpowiedź startu albo odpowiedź, która
+    mówi, że bieg trwa) albo ``True`` (wie o końcu: powiadomienie T3 i każda inna odpowiedź o tym biegu); zwraca
+    miejsce, od którego czytać następnym razem."""
 
     heard = memory.heard if memory.heard is not None else {}
     memory.heard = heard
@@ -200,7 +228,8 @@ def hear(path: Path, offset: int, children: Iterable[str], memory: Memory) -> in
     complete = data[: data.rfind(b"\n") + 1]
     for raw in complete.splitlines():
         line = raw.decode("utf-8", errors="replace")
-        if NOTICE not in line and not any(name in line for name in STARTS) and not any(child in line for child in watched):
+        signs = [*STARTS, *watched, *memory.runs.values()]
+        if NOTICE not in line and not any(sign in line for sign in signs):
             continue
         try:
             entry = json.loads(line)
@@ -213,22 +242,23 @@ def hear(path: Path, offset: int, children: Iterable[str], memory: Memory) -> in
             continue
         if entry.get("type") != "user":
             continue
+        runs = {child: run for child, run in memory.runs.items() if child in watched}
         for block in _blocks(entry, "tool_result"):
             start = block.get("tool_use_id") in memory.starts
             for reply in _replies(block):
                 if start:
                     child, task = reply.get(CHILD_KEY) or reply.get(SEND_KEY), reply.get(TASK_KEY)
                     if child in watched and isinstance(task, str) and task:
-                        memory.runs[str(child)] = task
+                        memory.runs[str(child)] = runs[str(child)] = task
                         heard[str(child)] = False
                     continue
-                done = _finished(reply)
-                if done in watched and done in memory.runs:
-                    heard[done] = True
-        if NOTICE in line:
-            for child, task in memory.runs.items():
-                if child in watched and notice(task) in line:
-                    heard[child] = True
+                about = _subject(reply, runs)
+                if about is not None:
+                    heard[about] = not _running(reply)
+        said = _text(entry).splitlines()
+        for child, task in runs.items():
+            if any(text.startswith(notice(task)) for text in said):
+                heard[child] = True
     return offset + len(complete)
 
 

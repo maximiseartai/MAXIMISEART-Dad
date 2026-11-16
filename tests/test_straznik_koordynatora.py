@@ -247,6 +247,11 @@ def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu
         # Rodzeństwo wznowione i skończone; koordynator sam odczytał wynik, a powiadomienie nie przyszło.
         _call("mcp__t3-code__t3_thread_send", "toolu_send2", _stamp(7.5), {"threadId": SIBLING, "taskId": SENT}),
         _call("mcp__t3-code__t3_thread_read", "toolu_read2", _stamp(8), {"thread": {"threadId": SIBLING, "status": "completed"}}, {"threadId": SIBLING}),
+        # Wynik Basha, który cytuje powiadomienie od początku linii, to nie wiadomość od T3.
+        _call("Bash", "toolu_bash", _stamp(8.2), {"stdout": "x"}).split("\n")[0],
+        _row("user", _stamp(8.2), [{"type": "tool_result", "tool_use_id": "toolu_bash", "content": f"Delegated task {CONTINUED} (Przegląd) [completed]"}]),
+        # Kopia zapytania do API (api-request-blob) z tekstem powiadomienia też nie jest wiadomością od T3.
+        json.dumps({"type": "api-request-blob", "message": {"role": "user", "content": [{"type": "text", "text": f"Delegated task {CONTINUED} (Przegląd)"}]}}),
         # Powiadomienie w kolejce T3 (queue-operation) to jeszcze nie wpis user, który dotarł do koordynatora.
         json.dumps({"type": "queue-operation", "timestamp": _stamp(8.5), "content": f"Delegated task {CONTINUED} (Przegląd) [completed]"}),
         "nie JSON z " + CHILD,
@@ -265,19 +270,32 @@ def test_transkrypt_czytany_od_miejsca_konca_zna_bieg_z_taskid_odpowiedzi_startu
 
 
 @pytest.mark.parametrize(
-    ("reply", "child"),
+    ("reply", "about", "running"),
     [
-        ({"taskId": SENT, "childThreadId": CHILD, "status": "completed"}, CHILD),
-        ({"thread": {"threadId": CHILD, "status": "failed"}}, CHILD),
-        ({"taskId": SENT, "childThreadId": CHILD, "status": "running"}, None),
-        ({"thread": {"threadId": CHILD, "status": "running"}}, None),
-        ({"threadId": CHILD, "status": "completed"}, None),
-        ({"threads": [{"threadId": CHILD, "status": "completed"}]}, None),
+        ({"taskId": SENT, "childThreadId": CHILD, "status": "running", "workState": "working"}, CHILD, True),
+        ({"taskId": SENT, "childThreadId": CHILD, "status": "completed", "workState": "result_available"}, CHILD, False),
+        ({"taskId": SENT, "status": "cancel_requested"}, CHILD, False),
+        ({"threadId": CHILD, "status": "interrupted"}, CHILD, False),
+        ({"thread": {"threadId": CHILD, "status": "running"}}, CHILD, True),
+        ({"thread": {"threadId": CHILD, "status": "completed"}}, CHILD, False),
+        ({"threads": [{"threadId": CHILD, "status": "running"}]}, None, False),
+        ({"taskId": "node:inne", "status": "cancel_requested"}, None, False),
     ],
-    ids=["task-status-po-koncu", "odczyt-watku-po-koncu", "task-status-w-toku", "odczyt-watku-w-toku", "inny-ksztalt", "lista-watkow"],
+    ids=[
+        "task-status-w-toku",
+        "task-status-po-koncu",
+        "anulowanie",
+        "przerwanie-watku",
+        "odczyt-watku-w-toku",
+        "odczyt-watku-po-koncu",
+        "lista-watkow",
+        "inny-bieg",
+    ],
 )
-def test_odczyt_koordynatora_konczy_czekanie_tylko_przy_skonczonym_biegu(reply: dict[str, object], child: str | None) -> None:
-    assert straznik._finished(reply) == child
+def test_odpowiedz_o_biegu_mowi_kogo_dotyczy_i_czy_bieg_trwa(
+    reply: dict[str, object], about: str | None, running: bool
+) -> None:
+    assert (straznik._subject(reply, {CHILD: SENT}), straznik._running(reply)) == (about, running)
 
 
 def test_koordynator_obudzony_po_koncu_dziecka_nie_dostaje_budzenia_choc_t3_potem_przesuwa_ruch_dziecka() -> None:
@@ -518,11 +536,16 @@ def test_wznowiona_sesja_koordynatora_dostaje_strażnika_z_powrotem(
 @POSIX_ONLY
 @pytest.mark.parametrize(
     ("delivered", "old_session"),
-    [(False, False), (True, False), (True, True)],
-    ids=["powiadomienie-zgubione", "powiadomienie-przed-przesunietym-koncem", "powiadomienie-w-starej-sesji"],
+    [(False, False), (True, False), (True, True), ("anulowanie", False)],
+    ids=[
+        "powiadomienie-zgubione",
+        "powiadomienie-przed-przesunietym-koncem",
+        "powiadomienie-w-starej-sesji",
+        "dziecko-anulowane-przez-koordynatora",
+    ],
 )
 def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_dziecka(
-    t3: tuple[Path, dict[str, str]], monkeypatch: pytest.MonkeyPatch, delivered: bool, old_session: bool
+    t3: tuple[Path, dict[str, str]], monkeypatch: pytest.MonkeyPatch, delivered: bool | str, old_session: bool
 ) -> None:
     # Przegląd zlecony 40 min temu; koordynator pracował jeszcze 2 min temu, a T3 przesunęło updatedAt skończonego
     # dziecka na 17 min temu (rozliczenie przy końcu rodzeństwa). Strażnik startuje z wznowioną sesją.
@@ -537,11 +560,13 @@ def test_wznowiona_sesja_budzi_tylko_koordynatora_bez_powiadomienia_po_starcie_d
     }
     (folder / "bin" / "watki.json").write_text(json.dumps(threads), encoding="utf-8")
     notice = "Delegated task node:delegated-task:dziecko-wymyslone-1 (Przegląd wymyślonego PR r1) [completed]: FAIL, jedno Ważne"
-    lines = [
-        _delegated_at(CHILD, _ago(40)),
-        *([_row("user", _ago(32), notice)] if delivered else []),
-        _row("user", _ago(2), "scal PR po poprawce"),
-    ]
+    # Koordynator sam anuluje przegląd (nowy HEAD), a T3 kończy dziecko bez powiadomienia.
+    cancel = {"taskId": "node:delegated-task:dziecko-wymyslone-1", "status": "cancel_requested"}
+    ending = {
+        True: [_row("user", _ago(32), notice)],
+        "anulowanie": [_call("mcp__t3-code__task_cancel", "toolu_cancel", _ago(32), cancel, {"taskId": cancel["taskId"]})],
+    }
+    lines = [_delegated_at(CHILD, _ago(40)), *ending.get(delivered, []), _row("user", _ago(2), "scal PR po poprawce")]
     # W starej sesji zostaje start i powiadomienie, a nowa sesja (po wznowieniu) ma tylko ostatni wpis.
     sessions = {"stara-sesja.jsonl": lines[:-1], "sesja-koordynatora.jsonl": lines[-1:]} if old_session else {"sesja-koordynatora.jsonl": lines}
     for name, entries in sessions.items():
