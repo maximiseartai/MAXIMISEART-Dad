@@ -57,6 +57,8 @@ RUNY = f"{REPO}/actions/workflows/mutacje-nocne.yml/runs?branch=main&status=succ
 TERAZ = datetime(2026, 10, 29, 1, 30, tzinfo=UTC)
 RUN = "https://github.com/maximiseartai/MAXIMISEART-Dad/actions/runs/7"
 NOCNE = ROOT / ".github" / "workflows" / "mutacje-nocne.yml"
+START_NOCY = ROOT / ".github" / "workflows" / "mutacje-nocne-start.yml"
+URUCHOMIENIE_NOCY = ("POST", f"{REPO}/actions/workflows/mutacje-nocne.yml/dispatches", {"ref": "main", "inputs": {"start": "auto"}})
 
 
 class GitHubWPamieci:
@@ -69,6 +71,7 @@ class GitHubWPamieci:
         runy: list[dict[str, Any]] | None = None,
         zakresy: dict[int, bytes | None] | None = None,
         urwane: frozenset[int] = frozenset(),
+        utworzone: list[dict[str, Any]] | None = None,
     ) -> None:
         self.issues = issues or []
         self.pr_commitow = pr_commitow or {}
@@ -77,6 +80,8 @@ class GitHubWPamieci:
         self.zakresy = zakresy or {}
         # Runy, których archiwum artefaktu ``zakres-nocy`` przychodzi urwane w połowie.
         self.urwane = urwane
+        # Runy nocy na main każdym zdarzeniem i stanem, z ``created_at``, które API filtruje parametrem ``created``.
+        self.utworzone = utworzone or []
         self.wyslane: list[tuple[str, str, Mapping[str, object]]] = []
 
     def json(self, sciezka: str) -> Any:
@@ -87,6 +92,9 @@ class GitHubWPamieci:
             return {"artifacts": [{"id": id_runu, "expired": self.zakresy[id_runu] is None}] if id_runu in self.zakresy else []}
         adres, _, zapytanie = sciezka.partition("?")
         parametry = dict(urllib.parse.parse_qsl(zapytanie))
+        if adres == f"{REPO}/actions/workflows/mutacje-nocne.yml/runs" and parametry.get("branch") == "main" and "created" in parametry:
+            od = datetime.fromisoformat(parametry["created"].removeprefix(">="))
+            return {"workflow_runs": [run for run in self.utworzone if datetime.fromisoformat(run["created_at"]) >= od]}
         if commit := re.fullmatch(rf"{re.escape(REPO)}/commits/(\w+)/pulls", adres):
             return self.pr_commitow.get(commit[1], [])
         if adres == f"{REPO}/issues" and parametry.pop("labels") == "przezyte-mutacje" and parametry.pop("state") == "all":
@@ -109,6 +117,8 @@ class GitHubWPamieci:
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
         self.wyslane.append((metoda, sciezka, tresc))
+        if (metoda, sciezka) == URUCHOMIENIE_NOCY[:2]:
+            return {"workflow_run_id": 9001, "run_url": f"https://api.github.com/{REPO}/actions/runs/9001", "html_url": RUN}
         if (metoda, sciezka) == ("POST", f"{REPO}/issues"):
             numer = 900 + len(self.issues)
             self.issues.append({"number": numer, "state": "open", "comments": [], **tresc})
@@ -623,6 +633,69 @@ def test_reczna_noc_z_od_bez_wspolnego_przodka_z_head_konczy_sie_fail_z_przyczyn
     assert not (tmp_path / "output").exists()
 
 
+def _run_doby(id_runu: int, utworzony: str, wynik: str | None = "success") -> dict[str, object]:
+    return {"id": id_runu, "created_at": utworzony, "conclusion": wynik}
+
+
+@pytest.mark.parametrize(
+    ("godzina", "utworzone", "uruchamia"),
+    [
+        ("01:29", [], False),
+        ("01:30", [], True),
+        ("02:12", [], True),
+        ("02:12", [_run_doby(50, "2026-11-16T01:31:00Z", None)], False),
+        ("02:12", [_run_doby(49, "2026-11-15T07:12:00Z")], True),
+    ],
+    ids=["przed-0130", "o-0130", "pierwszy-push-doby", "noc-doby-juz-ma-run", "run-crona-z-wczoraj"],
+)
+def test_push_na_main_po_0130_utc_uruchamia_noc_doby_raz_a_przed_0130_nic(
+    capsys: pytest.CaptureFixture[str], godzina: str, utworzone: list[dict[str, Any]], uruchamia: bool
+) -> None:
+    github = GitHubWPamieci(utworzone=utworzone)
+
+    kod = mutacje_nocne.start(github, datetime.fromisoformat(f"2026-11-16T{godzina}:00+00:00"))
+
+    assert (kod, github.wyslane) == (0, [URUCHOMIENIE_NOCY] if uruchamia else [])
+    assert capsys.readouterr().out.startswith("MUTACJE NOCNE START | ")
+
+
+@pytest.mark.parametrize(
+    ("zdarzenie", "start", "wczesniejszy", "pominieta"),
+    [
+        ("schedule", "", "success", True),
+        ("workflow_dispatch", "auto", "failure", True),
+        ("workflow_dispatch", "", "success", False),
+        # Czekający run, którego zastąpił nowszy w grupie concurrency, kończy się anulowany bez pracy.
+        ("schedule", "", "cancelled", False),
+        ("schedule", "", None, False),
+    ],
+    ids=["cron-po-nocy-doby", "start-z-pushu-po-nocy-doby", "reczny-run-czlowieka", "po-anulowanym-runie", "tylko-wlasny-i-pozniejszy-run"],
+)
+def test_noc_doby_po_wczesniejszym_runie_doby_nic_nie_mutuje_a_zakres_zostawia_baze(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, zdarzenie: str, start: str, wczesniejszy: str | None, pominieta: bool
+) -> None:
+    repo, baza = _main_z_zalegloscia(tmp_path, 1)
+    head = _dopisz(repo, 1)
+    dzis = datetime.now(UTC).date().isoformat()
+    utworzone = [_run_doby(61, f"{dzis}T01:32:00Z", None), _run_doby(70, f"{dzis}T01:33:00Z", None)]
+    if wczesniejszy:
+        utworzone.append(_run_doby(50, f"{dzis}T01:31:00Z", wczesniejszy))
+    github = GitHubWPamieci(runy=[{"id": 40, "head_sha": baza}], utworzone=utworzone)
+    monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / "output"))
+    monkeypatch.setenv("GITHUB_RUN_ID", "61")
+    zakres = tmp_path / "zakres.json"
+
+    kod = mutacje_nocne.main(["plan", "--zdarzenie", zdarzenie, "--start", start, "--zakres", str(zakres), "--czasy", str(tmp_path / "czasy")], root=repo, github=github)
+
+    output = _wyjscie_planu(tmp_path / "output")
+    assert kod == 0
+    if pominieta:
+        assert output == {"baza": baza, "do": baza, "czesci": "[]", "liczba": "0", "pominieta": "true"}
+    else:
+        assert (output["do"], output["liczba"], "pominieta" in output) == (head, "1", False)
+    assert json.loads(zakres.read_text(encoding="utf-8")) == {"baza": baza, "do": baza if pominieta else head}
+
+
 ZLY_WYJATEK = "src/pakiet/a.py:4: wyjątek musi mieć postać `# mutacje-zmiany: <powód> | do RRRR-MM-DD | zgoda <kto>`"
 
 
@@ -877,13 +950,15 @@ def _plan_nocy(
     *,
     na_czesc: int = mutacje_nocne.NA_CZESC,
     czesci_na_noc: int = mutacje_nocne.CZESCI_NA_NOC,
+    wyzwolenie: mutacje_nocne.Wyzwolenie = mutacje_nocne.RECZNE,
+    teraz: datetime | None = None,
 ) -> dict[str, str]:
     """``baza``, ``do``, ``liczba`` części i ``mutacje`` z planu nocy ``repo`` (z ``od`` ręcznego runu), ``linia`` planu oraz
     ``zakres``, plik artefaktu ``zakres-nocy``."""
 
     monkeypatch.setenv("GITHUB_OUTPUT", str(tmp_path / f"output-{noc}"))
     zakres = tmp_path / f"zakres-{noc}.json"
-    assert mutacje_nocne.zaplanuj(github, repo, od, zakres, na_czesc=na_czesc, czesci_na_noc=czesci_na_noc) == 0
+    assert mutacje_nocne.zaplanuj(github, repo, od, zakres, wyzwolenie=wyzwolenie, teraz=teraz, na_czesc=na_czesc, czesci_na_noc=czesci_na_noc) == 0
     plan = capsys.readouterr().out.splitlines()[-1]
     output = dict(linia.split("=", 1) for linia in (tmp_path / f"output-{noc}").read_text(encoding="utf-8").splitlines())
     return {**output, "mutacje": plan.split(" | mutacje ")[1].split(" |")[0], "zakres": str(zakres), "linia": plan}
@@ -916,6 +991,35 @@ def test_noc_z_zalegloscia_mutuje_najwyzej_limit_a_kolejne_noce_przerabiaja_ja_d
     ]
     # Udane noce przerobiły razem każdą mutację od pierwszej bazy do HEAD, żadnej dwa razy.
     assert sum(int(noce[numer]["mutacje"]) for numer in (0, 2, 3, 4)) == len(mutacje_zmiany.ZakresMutacji.od(baza, repo).mutanty) == 16
+
+
+def test_zielony_run_crona_po_nocy_doby_nie_przesuwa_bazy_wiec_pr_scalony_rano_dostaje_nastepna_noc(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Noc doby startuje z pushu o 02:00 i mutuje do HEAD. PR #2 scalony rano zostaje następnej nocy, choć spóźniony run
+    crona z 07:12 kończy się na zielono i to z jego artefaktu ``zakres-nocy`` następna noc bierze bazę."""
+
+    repo, baza = _main_z_zalegloscia(tmp_path, 2)
+    pr = {1: _dopisz(repo, 1)}
+    github = GitHubWPamieci(runy=[{"id": 1, "head_sha": baza}])
+    noce = []
+    for noc, (wyzwolenie, utworzony, nowy) in enumerate(
+        [
+            (mutacje_nocne.Wyzwolenie("workflow_dispatch", "auto", 60), "2026-11-16T02:00:00Z", None),
+            (mutacje_nocne.Wyzwolenie("schedule", "", 61), "2026-11-16T07:12:00Z", 2),
+            (mutacje_nocne.Wyzwolenie("workflow_dispatch", "auto", 62), "2026-11-17T02:00:00Z", None),
+        ],
+        start=2,
+    ):
+        if nowy:
+            pr[nowy] = _dopisz(repo, nowy)
+        github.utworzone.append(_run_doby(wyzwolenie.run, utworzony, None))
+        noce.append(_plan_nocy(github, repo, tmp_path, monkeypatch, capsys, noc, wyzwolenie=wyzwolenie, teraz=datetime.fromisoformat(utworzony)))
+        github.utworzone[-1]["conclusion"] = "success"
+        github.runy = [{"id": wyzwolenie.run, "head_sha": git(repo, "rev-parse", "HEAD")}]
+        github.zakresy[wyzwolenie.run] = Path(noce[-1]["zakres"]).read_bytes()
+
+    assert [(plan["baza"], plan["do"], plan["mutacje"]) for plan in noce] == [(baza, pr[1], "2"), (pr[1], pr[1], "0"), (pr[1], pr[2], "2")]
 
 
 def test_pierwszy_pr_z_wieksza_liczba_mutacji_niz_limit_nocy_dostaje_noc_w_calosci(
@@ -1222,6 +1326,31 @@ def test_noc_biegnie_raz_na_dobe_i_recznie_z_opcjonalnym_od_a_dwa_przebiegi_nie_
     assert [re.fullmatch(r"\d+ \d+ \* \* \*", wpis["cron"]) is not None for wpis in wyzwalacze["schedule"]] == [True]
     assert wyzwalacze["workflow_dispatch"]["inputs"]["od"]["required"] is False
     assert workflow["concurrency"]["cancel-in-progress"] is False
+
+
+def test_kazdy_push_na_main_uruchamia_start_nocy_z_prawem_do_uruchomienia_workflow() -> None:
+    workflow = yaml.safe_load(START_NOCY.read_text(encoding="utf-8"))
+    (zadanie,) = workflow["jobs"].values()
+
+    assert workflow[True] == {"push": {"branches": ["main"]}}
+    assert [krok["run"] for krok in zadanie["steps"] if "run" in krok] == ["python3 tools/mutacje_nocne.py start"]
+    assert zadanie["permissions"]["actions"] == "write"
+
+
+def test_plan_nocy_dostaje_zdarzenie_i_wejscie_start_a_run_bez_pracy_nie_planuje_skryptow_skilli() -> None:
+    workflow = _nocne()
+    plan = workflow["jobs"]["plan"]
+    krok = next(krok for krok in plan["steps"] if "tools/mutacje_nocne.py plan" in krok.get("run", ""))
+    polecenie = shlex.split(krok["run"])
+    bez_pracy = [krok.get("if") for krok in plan["steps"] if krok.get("id") == "skille" or krok.get("with", {}).get("name") == "plan-skilli"]
+
+    # GitHub odrzuca workflow_dispatch z wejściem, którego workflow nie deklaruje.
+    assert set(workflow[True]["workflow_dispatch"]["inputs"]) >= set(cast(dict[str, Any], URUCHOMIENIE_NOCY[2])["inputs"])
+    assert {argument: krok["env"][polecenie[polecenie.index(argument) + 1].removeprefix("$")] for argument in ("--zdarzenie", "--start")} == {
+        "--zdarzenie": "${{ github.event_name }}",
+        "--start": "${{ inputs.start }}",
+    }
+    assert bez_pracy == ["${{ steps.plan.outputs.pominieta != 'true' }}"] * 2
 
 
 def test_noc_zajmuje_najwyzej_20_zadan_organizacji_naraz() -> None:
@@ -1671,7 +1800,7 @@ def test_noc_planuje_skrypty_skilli_od_bazy_a_ich_zadanie_wgrywa_zapis_pod_nazwa
 
     assert polecenie_planu[polecenie_planu.index("--zdarzenie") + 1] == Zdarzenie.NOC
     assert (polecenie_planu[polecenie_planu.index("--baza") + 1], krok_planu["env"]["BAZA"]) == ("$BAZA", "${{ steps.plan.outputs.baza }}")
-    assert plan_nocy["outputs"]["skille"] == f"${{{{ steps.{krok_planu['id']}.outputs.mutations }}}}"
+    assert plan_nocy["outputs"]["skille"] == f"${{{{ steps.{krok_planu['id']}.outputs.mutations || '[]' }}}}"
     assert (skille["needs"], skille["strategy"]["matrix"]["include"]) == ("plan", "${{ fromJSON(needs.plan.outputs.skille) }}")
     assert wykonanie["run"].endswith("--zadanie ${{ matrix.id }}") and wykonanie["continue-on-error"] is True
     assert (wgranie["with"]["path"], wgranie["with"]["name"]) == (plan_runu.WYKONANIE.as_posix(), f"{mutacje_nocne.ARTEFAKT_SKILLI}${{{{ matrix.id }}}}")
