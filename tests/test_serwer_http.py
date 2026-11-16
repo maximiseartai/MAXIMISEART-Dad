@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from http.server import BaseHTTPRequestHandler
 import http.client
+import select
 import threading
 import time
 
 from atrapy.serwer_http import CZEKANIE_S, serwer_http
 from tests.fixtures.linie_watkow import new_line, threads_since
+from tests.fixtures.potomne import wait_for
 
 
 class _KeepAlive(BaseHTTPRequestHandler):
@@ -66,8 +68,10 @@ def test_polaczenie_trzymane_przez_klienta_dluzej_niz_krok_czekania_dalej_obslug
                 connection.request("GET", "/")
                 response = connection.getresponse()
                 response.read()
-                answers.append((response.status, connection.sock.getsockname() if connection.sock else None))
-                threading.Event().wait(5 * CZEKANIE_S)
+                sock = connection.sock
+                answers.append((response.status, sock.getsockname() if sock else None))
+                # Przez kilka kroków czekania serwer nie zamyka połączenia (koniec strumienia daje gniazdu dane).
+                assert sock is not None and not wait_for(lambda: bool(select.select([sock], [], [], 0)[0]), 5 * CZEKANIE_S)
         finally:
             connection.close()
 
