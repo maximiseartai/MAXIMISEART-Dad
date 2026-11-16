@@ -76,6 +76,7 @@ from rozliczenia.decision import Decision
 from rozliczenia.message import Message
 from rozliczenia.process_run import Interlocutor
 from rozliczenia.progress import ProgressProjection
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.run_context import RunContext
 from rozliczenia.worker_list import WorkerList
@@ -506,6 +507,7 @@ def prepared_run(scheduler: Scheduler) -> process_kind.PreparedRun[Any, Any]:
             dry_run=False,
             workers=WorkerList(()),
             quantity_rules=DEFAULT_QUANTITY_RULES,
+            activity_legend=DEFAULT_ACTIVITY_LEGEND,
             warnings=(),
         ),
         process_kind.HostParts(),

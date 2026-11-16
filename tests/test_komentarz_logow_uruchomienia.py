@@ -2490,6 +2490,9 @@ FULL_LOGS: Final[dict[str, Any]] = {
         '"tekst":"czynność reguły syntetyczna"}],"to":{"rodzaj":"wpisz","wpisy":[{"kolumna":"AA","wartosc":2,"razy":"raz"}]}}]}',
         "devices": '{"schema_version":1,"urzadzenia":[{"id":"skladnik-syntetyczny","zapisy":["składnik syntetyczny"]}]}',
     },
+    "activity_legend": {
+        "legend": '{"schema_version":1,"kody":[{"id":"kod-syntetyczny","zapisy":["kodsyntetyczny{n}m"],"kolumna":"AA"}]}',
+    },
 }
 
 

@@ -1,0 +1,204 @@
+"""Legenda czynności z Wydania w Pliku zbiorczym z Przygotowania pliku zbiorczego (ADR 0038).
+
+Każdy przypadek to jedno Zlecenie skuteczne syntetycznego Rejestru z ``CZYNNOŚCI ZREALIZOWANE``, a oczekiwane Ilości
+usług, kwota w ``AS`` i kolory pochodzą z maila taty z 15.11.2026 i wartości domyślnych ADR 0038, nie z kodu. Wzorce
+mają kształt Wzorców taty (``tools/syntetyczne_wzorce.py``).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field, replace
+from datetime import datetime, timedelta
+from pathlib import Path
+
+from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
+
+from rozliczenia.collective_layout import PHOTO_COLUMNS, QUANTITY_COLUMNS
+
+from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
+from atrapy.preparation import PreparationFixture, make_preparation_fixture, register_order
+from tests.fixtures.operacje import run_preparation
+from tests.fixtures.wyglad_komorek import wyglady
+from atrapy.workbooks import active_worksheet, refused_by_copy
+
+LETTERS = [get_column_letter(column) for column in (*QUANTITY_COLUMNS, 43, 44, 45)]
+"""Kolumny Ilości usług N:AP i AQ:AS, w tym ``AS`` (Uwagi - kwota)."""
+PHOTO_LETTERS = [get_column_letter(column) for column in PHOTO_COLUMNS]
+GREEN, RED = "FF92D050", "FFFF0000"
+DEVICES_ONLY_V = {"V": 1}
+"""``dekoder`` (składnik spoza Listy Urządzeń) daje z Reguł ilości z Wydania tylko V (instrukcja taty)."""
+
+
+@dataclass(frozen=True)
+class Case:
+    completed: str
+    values: dict[str, int]
+    """Ilości usług i kwota w ``AS`` poza wartościami Wzorca, razem z wartością Reguł ilości."""
+    fills: dict[str, str | None] = field(default_factory=dict)
+    devices: str = "dekoder"
+
+
+MAIL: list[Case] = [
+    Case("inst20m", DEVICES_ONLY_V | {"Y": 1}),
+    Case("inst5m", DEVICES_ONLY_V | {"Y": 1}),
+    Case("inst25m", DEVICES_ONLY_V | {"Y": 1}),
+    Case("inst40m", DEVICES_ONLY_V | {"Y": 1}),
+    Case("instmdik", DEVICES_ONLY_V | {"Y": 1}),
+    Case("instmdic", DEVICES_ONLY_V | {"Y": 1}),
+    Case("instutp1m", DEVICES_ONLY_V | {"AL": 1}),
+    Case("instutp15m", DEVICES_ONLY_V | {"AL": 1}),
+    Case("instutp16m", DEVICES_ONLY_V | {"AJ": 1}),
+    Case("instutp30m", DEVICES_ONLY_V | {"AJ": 1}),
+    Case("instwewrg610m", DEVICES_ONLY_V | {"AK": 1}),
+    Case("instwewrg611m", DEVICES_ONLY_V | {"AL": 1}),
+    Case("instwewrg615m", DEVICES_ONLY_V | {"AL": 1}),
+    Case("instwewrg616m", DEVICES_ONLY_V | {"AJ": 1}),
+    Case("rt2", DEVICES_ONLY_V | {"AM": 1}, {"AM": RED, "AF": GREEN}),
+    Case("bypas2m", DEVICES_ONLY_V | {"AM": 1}),
+    Case("spawgnd", DEVICES_ONLY_V | {"AD": 1}),
+    Case("spawpg", DEVICES_ONLY_V | {"AB": 1, "AS": 70}, {"AS": RED}),
+    Case("spawez", DEVICES_ONLY_V | {"AB": 1}),
+    Case("spawmufakan", DEVICES_ONLY_V | {"AB": 1, "AS": 70}),
+    Case("spawmufaziem", DEVICES_ONLY_V | {"AC": 1}),
+    Case("dzielnik1/2", DEVICES_ONLY_V | {"AS": 50}),
+    Case("dzielnika1/2", DEVICES_ONLY_V | {"AS": 50}),
+    Case("pz20m", DEVICES_ONLY_V | {"AS": 480}),
+    Case("instwew15m", DEVICES_ONLY_V, {"AF": GREEN}),
+]
+SUMS: list[Case] = [
+    Case("inst25m inst utp17m", DEVICES_ONLY_V | {"Y": 1, "AJ": 1}),
+    Case("inst20m inst20m", DEVICES_ONLY_V | {"Y": 2}),
+    Case("instmdik inst20m", DEVICES_ONLY_V | {"Y": 2}),
+    Case("spawpg dzielnik1/2", DEVICES_ONLY_V | {"AB": 1, "AS": 120}, {"AS": RED}),
+    Case("dzielnik1/2, dzielnik1/2", DEVICES_ONLY_V | {"AS": 100}),
+    Case("technicolor: instwewrg65m", {"O": 1, "S": 1, "Z": 1, "AK": 2, "V": 1}, devices="technicolor"),
+    Case("rt2", {"AM": 2, "V": 1}, {"AM": RED, "AF": GREEN}, devices="zmiana instalacji w lokalu abonenta"),
+]
+SPELLING: list[Case] = [
+    Case("INST20M", DEVICES_ONLY_V | {"Y": 1}),
+    Case("tak, Inst 20 m", DEVICES_ONLY_V | {"Y": 1}),
+    Case("dzielnik 1 /2", DEVICES_ONLY_V | {"AS": 50}),
+    Case("Spaw PG", DEVICES_ONLY_V | {"AB": 1, "AS": 70}, {"AS": RED}),
+    Case("20 m patchcord dzielnik 1/2", DEVICES_ONLY_V | {"AS": 50}),
+]
+NOT_CODES: list[Case] = [
+    Case("spawanie gniazda", DEVICES_ONLY_V),
+    Case("instalacja 20m", DEVICES_ONLY_V),
+    Case("xinst20m", DEVICES_ONLY_V),
+    Case("rt25", DEVICES_ONLY_V),
+    Case("instutp40m", DEVICES_ONLY_V),
+    Case("instutp0m", DEVICES_ONLY_V),
+    Case("instwewrg631m", DEVICES_ONLY_V),
+    Case("pz15m", DEVICES_ONLY_V),
+]
+CASES = [*MAIL, *SUMS, *SPELLING, *NOT_CODES]
+
+
+def _fixture(tmp_path: Path, cases: list[Case]) -> PreparationFixture:
+    start = datetime(2026, 9, 8, 8, 0)
+    rows: list[dict[str, object] | None] = [
+        register_order(number, start + timedelta(minutes=number))
+        | {"URZĄDZENIA": case.devices, "UMOWA": "pr", "CZYNNOŚCI ZREALIZOWANE": case.completed}
+        for number, case in enumerate(cases, start=1)
+    ]
+    templates = write_synthetic_templates(tmp_path / "wzorce")
+    (tmp_path / "okres").mkdir()
+    return replace(
+        make_preparation_fixture(tmp_path / "okres", rows),
+        internal_template_path=templates / INTERNAL_TEMPLATE,
+        collective_template_path=templates / COLLECTIVE_TEMPLATE,
+    )
+
+
+def _values(path: Path, count: int) -> list[dict[str, object]]:
+    workbook = load_workbook(path)
+    try:
+        sheet = active_worksheet(workbook)
+        return [{letter: sheet[f"{letter}{row}"].value for letter in LETTERS} for row in range(18, 18 + count)]
+    finally:
+        workbook.close()
+
+
+def _fills(path: Path, count: int) -> list[dict[str, str | None]]:
+    """Kolor wypełnienia jednolitego każdej komórki N:AS; ``None``: komórka bez wypełnienia jednolitego."""
+
+    workbook = load_workbook(path)
+    try:
+        sheet = active_worksheet(workbook)
+        return [
+            {
+                letter: str(cell.fill.fgColor.rgb) if cell.fill.patternType == "solid" else None
+                for letter in LETTERS
+                for cell in (sheet[f"{letter}{row}"],)
+            }
+            for row in range(18, 18 + count)
+        ]
+    finally:
+        workbook.close()
+
+
+def test_kazdy_kod_z_maila_taty_daje_w_pliku_zbiorczym_swoje_ilosci_kwote_as_i_kolory(tmp_path: Path) -> None:
+    fixture = _fixture(tmp_path, CASES)
+    register = fixture.register_path.read_bytes()
+
+    preview = run_preparation(fixture, dry_run=True)
+    summary = run_preparation(fixture)
+
+    assert replace(preview, phase_durations_ms={}, routes={}) == replace(summary, phase_durations_ms={}, routes={})
+    template_values = _values(fixture.collective_template_path, len(CASES))
+    template_fills = _fills(fixture.collective_template_path, len(CASES))
+    assert {GREEN, RED}.isdisjoint(fill for row in template_fills for fill in row.values())
+    expected_values = [cells | case.values for cells, case in zip(template_values, CASES, strict=True)]
+    expected_fills = [fills | case.fills for fills, case in zip(template_fills, CASES, strict=True)]
+    written_values = _values(fixture.collective_file_path, len(CASES))
+    written_fills = _fills(fixture.collective_file_path, len(CASES))
+    assert [
+        (case.completed, {letter: (row[letter], want[letter]) for letter in row if row[letter] != want[letter]})
+        for case, row, want in zip(CASES, written_values, expected_values, strict=True)
+        if row != want
+    ] == []
+    assert [
+        (case.completed, {letter: (row[letter], want[letter]) for letter in row if row[letter] != want[letter]})
+        for case, row, want in zip(CASES, written_fills, expected_fills, strict=True)
+        if row != want
+    ] == []
+    assert fixture.register_path.read_bytes() == register
+
+
+def test_kolor_bez_wartosci_nie_robi_ze_zlecenia_zlecenia_ze_zdjeciami(tmp_path: Path) -> None:
+    """Zlecenie ze zdjęciami to wartość inna niż 0 w kolumnach zdjęć (GLOSSARY); zielone ``AF`` z ``instwew15m`` jej nie
+    daje."""
+
+    cases = [Case("instwew15m", DEVICES_ONLY_V, {"AF": GREEN})]
+    fixture = _fixture(tmp_path, cases)
+
+    run_preparation(fixture)
+
+    [row] = _values(fixture.collective_file_path, 1)
+    assert {letter: row[letter] for letter in PHOTO_LETTERS if row[letter] not in (None, 0)} == {}
+    assert _fills(fixture.collective_file_path, 1)[0]["AF"] == GREEN
+
+
+def test_legenda_z_kopii_wzorca_jest_taka_jak_z_openpyxl(tmp_path: Path) -> None:
+    (tmp_path / "kopia").mkdir()
+    (tmp_path / "openpyxl").mkdir()
+    by_copy = _fixture(tmp_path / "kopia", CASES)
+    by_openpyxl = _fixture(tmp_path / "openpyxl", CASES)
+    refused_by_copy(by_openpyxl.collective_template_path)
+
+    run_preparation(by_copy)
+    run_preparation(by_openpyxl)
+
+    created, reference = by_copy.collective_file_path, by_openpyxl.collective_file_path
+    assert _values(created, len(CASES)) == _values(reference, len(CASES))
+    assert _looks(created, len(CASES)) == _looks(reference, len(CASES))
+
+
+def _looks(path: Path, count: int) -> dict[str, object]:
+    workbook = load_workbook(path)
+    try:
+        sheet = active_worksheet(workbook)
+        return dict(wyglady(cell for row in sheet.iter_rows(min_row=18, max_row=17 + count, min_col=14, max_col=45) for cell in row))
+    finally:
+        workbook.close()

@@ -88,6 +88,7 @@ from rozliczenia.run_context import RunContext
 from rozliczenia.tool_files import CONFIG_DIR
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
 
@@ -246,6 +247,7 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace, parser: argpar
         pricing="z Przekazaniem" if values.get("handover") else None,
         workers=_workers(args.workers, parser) if "workers" in kind.needs else None,
         quantity_rules=DEFAULT_QUANTITY_RULES,
+        activity_legend=DEFAULT_ACTIVITY_LEGEND,
         warnings=(),
     )
 

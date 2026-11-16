@@ -39,6 +39,7 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
 from rozliczenia.quantity_check import CheckResult
+from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs
@@ -51,6 +52,7 @@ from rozliczenia.worker_list import WorkerList
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
+_Setting = TypeVar("_Setting")
 
 SettingField = Literal["register", "periods_directory"]
 TemplateRole = Literal["internal", "collective", "worker"]
@@ -95,10 +97,11 @@ class Start:
     (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces
     jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
     chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania; ``None`` w Centrum u procesu, który nimi
-    nie liczy (``ProcessKind.quantity_rules``). ``warnings``: ostrzeżenia startu na
+    nie liczy (``ProcessKind.quantity_rules``). ``activity_legend``: Legenda czynności tego Uruchomienia, skąd i kiedy
+    jak ``quantity_rules`` (gospodarz bez Ustawień Centrum podaje Legendę czynności z Wydania). ``warnings``: ostrzeżenia startu na
     kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla
-    maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ani ``warnings`` nie mają wartości
-    domyślnej, więc każdy gospodarz mówi, skąd je ma.
+    maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ``activity_legend``, ani ``warnings``
+    nie mają wartości domyślnej, więc każdy gospodarz mówi, skąd je ma.
     """
 
     paths: Mapping[PathNeed, Path]
@@ -108,6 +111,7 @@ class Start:
     settings: SettingsSnapshot | None = None
     workers: WorkerList | None = None
     quantity_rules: QuantityRules | None = field(kw_only=True)
+    activity_legend: ActivityLegend | None = field(kw_only=True)
     warnings: tuple[Message, ...] = field(kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
@@ -116,6 +120,10 @@ class Start:
     def counted_rules(self) -> QuantityRules:
         assert self.quantity_rules is not None, "Catalog.prepared sprawdza Reguły ilości procesu, który nimi liczy"
         return self.quantity_rules
+
+    def counted_legend(self) -> ActivityLegend:
+        assert self.activity_legend is not None, "Catalog.prepared sprawdza Legendę czynności procesu, który nią liczy"
+        return self.activity_legend
 
     def worker_list(self) -> WorkerList:
         assert self.workers is not None, "Catalog.prepared sprawdza potrzebę workers"
@@ -137,35 +145,39 @@ def start_from_settings(
 ) -> Start:
     """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
     Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
-    ilości procesu, który nimi liczy (``Refusal``, gdy pliku pary nie da się teraz przeczytać), i ostrzeżenia startu.
+    ilości i Legendę czynności procesu, który nimi liczy (``Refusal``, gdy pliku pary albo legendy nie da się teraz
+    przeczytać), i ostrzeżenia startu.
     Ścieżki, okres i tryb wybiera gospodarz."""
 
     return Start(
         paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
         workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
-        quantity_rules=_rules_at_start(settings.quantity_rules) if kind.quantity_rules else None,
+        quantity_rules=_readable_at_start(settings.quantity_rules) if kind.quantity_rules else None,
+        activity_legend=_readable_at_start(settings.activity_legend) if kind.quantity_rules else None,
         warnings=_start_warnings(settings, kind.needs),
     )
 
 
-def _rules_at_start(rules: QuantityRules | UnreadableFile) -> QuantityRules:
-    if isinstance(rules, UnreadableFile):
-        raise refusal.settings_file_unreadable(rules.name)
-    return rules
+def _readable_at_start(value: _Setting | UnreadableFile) -> _Setting:
+    if isinstance(value, UnreadableFile):
+        raise refusal.settings_file_unreadable(value.name)
+    return value
 
 
 def chosen_settings(
     settings: SettingsSnapshot, needed: Sequence[NeededSetting], *, quantity_rules: bool
 ) -> dict[SettingField, Path] | Refusal:
-    """Ścieżki ``needed`` z migawki Ustawień Centrum do startu procesu (``quantity_rules``: proces liczy Regułami ilości)
-    albo odmowa startu: plik Folderów albo pliku pary Reguł ilości i Listy Urządzeń, którego system nie daje teraz czytać,
-    a potem „Najpierw wskaż …” z nazwami niewskazanych ścieżek."""
+    """Ścieżki ``needed`` z migawki Ustawień Centrum do startu procesu (``quantity_rules``: proces liczy Regułami ilości
+    i Legendą czynności) albo odmowa startu: plik Folderów, pliku pary Reguł ilości i Listy Urządzeń albo Legendy
+    czynności, którego system nie daje teraz czytać, a potem „Najpierw wskaż …” z nazwami niewskazanych ścieżek."""
 
     folders = settings.folders
     if isinstance(folders, UnreadableFile):
         return refusal.settings_file_unreadable(folders.name)
     if quantity_rules and isinstance(settings.quantity_rules, UnreadableFile):
         return refusal.settings_file_unreadable(settings.quantity_rules.name)
+    if quantity_rules and isinstance(settings.activity_legend, UnreadableFile):
+        return refusal.settings_file_unreadable(settings.activity_legend.name)
     missing = [setting.name for setting in needed if setting.chosen(folders) is None]
     if missing:
         return refusal.first_choose(missing)
@@ -494,8 +506,8 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
     w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
-    ``quantity_rules``: Reguły ilości ze startu (``Start.quantity_rules``) procesu, który nimi liczy
-    (``ProcessKind.quantity_rules``; inny ma ``None``), dla Logów Uruchomienia,
+    ``quantity_rules`` i ``activity_legend``: Reguły ilości i Legenda czynności ze startu (``Start``) procesu, który
+    nimi liczy (``ProcessKind.quantity_rules``; inny ma ``None``), dla Logów Uruchomienia,
     ``warnings``: ostrzeżenia startu na kartę i do Logów (``Start.warnings``), ``engine``: silnik z katalogu
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
     Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
@@ -514,6 +526,7 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
     """
 
     __slots__ = (
+        "activity_legend",
         "context",
         "engine",
         "inputs",
@@ -539,6 +552,7 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
         settings: SettingsSnapshot | None,
         warnings: tuple[Message, ...],
         quantity_rules: QuantityRules | None,
+        activity_legend: ActivityLegend | None,
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -550,6 +564,7 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
         self.settings: Final = settings
         self.warnings: Final = warnings
         self.quantity_rules: Final = quantity_rules
+        self.activity_legend: Final = activity_legend
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError(f"{_NO_SUBCLASSES} Podklasa: {cls.__qualname__}.")

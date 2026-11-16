@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/template_copy.py": {
-    "cały plik": "9338481668c65ff7"
+    "cały plik": "930cb1b553a01f1a"
   },
   "src/rozliczenia/row_look.py": {
     "cały plik": "76d1e80a6cb03edc"
@@ -31,10 +31,10 @@
     "TemplateFile": "c1429e56a5dbbc7c",
     "_Rules": "362cb8b7df713be5",
     "_WORKER_SETTLEMENT": "454a0b42cc644edc",
-    "_ensure_unmerged": "b28aebeb4af8c1ef",
+    "_ensure_unmerged": "a07436cf96840ed1",
     "_last_written_column": "1ac5d8677c49655f",
-    "_in_columns": "384aa41005a44c1f",
-    "_write_rows": "dec71281de83d294",
+    "_in_columns": "cd9c5d1115a6f021",
+    "_write_rows": "8cb8b85aeb3ae46e",
     "_package_writer": "78c5739d1fa69f88",
     "_active_worksheet": "23e27585d804a8b6",
     "_request_recalculation": "018de366512c2ddc"

@@ -17,6 +17,8 @@ pilnuje:
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/preparation_process.py
   - src/rozliczenia/quantity_engine.py
+  - src/rozliczenia/activity_legend*.py
+  - src/rozliczenia/legenda_czynnosci_domyslna.yaml
   - src/rozliczenia/quantity_rules_file.py
   - src/rozliczenia/reguly_ilosci_domyslne.yaml
   - src/rozliczenia/lista_urzadzen_domyslna.yaml

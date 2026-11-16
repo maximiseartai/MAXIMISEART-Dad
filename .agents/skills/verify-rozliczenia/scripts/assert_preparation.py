@@ -32,17 +32,19 @@ from skrypt_skilla import Parser
 from rozliczenia.collective_layout import QUANTITY_COLUMNS
 from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
 from atrapy.scenariusz_rozliczen import (
+    CODE_AMOUNTS,
+    CODE_FILLS,
     COLLECTIVE_TEMPLATE_NAME,
     INTERNAL_TEMPLATE_NAME,
     ORDER_LINK,
     ORDERS,
     PERIODS_DIRECTORY,
-    QUANTITIES,
     REGISTER_NAME,
     ROW_MARKER,
     TEMPLATES_DIRECTORY,
     order_number,
     register_values,
+    written_quantities,
 )
 from atrapy.settlement import PERIOD
 
@@ -137,8 +139,18 @@ INTERNAL_ORDERS = (2, 3, 4, 7, 6, 8, 9)
 COLLECTIVE_ORDERS = (2, 4, 7, 6, 8, 9)
 EXPECTED_INTERNAL_ROWS = tuple(_internal_row(number) for number in INTERNAL_ORDERS)
 EXPECTED_COLLECTIVE_ROWS = tuple(_collective_row(number) for number in COLLECTIVE_ORDERS)
-# Ilości usług of rows 18..23 from the Reguły ilości; every other N:AP cell keeps the Wzorzec 0.
-EXPECTED_QUANTITIES = tuple(QUANTITIES[number] for number in COLLECTIVE_ORDERS)
+# Ilości usług of rows 18..23 from the Reguły ilości and the Legenda czynności; every other N:AP cell keeps the
+# Wzorzec 0.
+EXPECTED_QUANTITIES = tuple(written_quantities(number) for number in COLLECTIVE_ORDERS)
+# The amount column of the Kody czynności. A deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”): AS
+# (Uwagi - kwota) is a header of Dad's Wzorzec, so a change of ``collective_layout.REMARKS_AMOUNT`` must break this.
+AMOUNT_COLUMN = "AS"
+EXPECTED_AMOUNTS = tuple(CODE_AMOUNTS.get(number) for number in COLLECTIVE_ORDERS)
+# Ilości usług and the AS amount by column letter; they replace the Wzorzec value of the written row.
+EXPECTED_NUMBERS = tuple(
+    {**quantities, **({} if amount is None else {AMOUNT_COLUMN: amount})}
+    for quantities, amount in zip(EXPECTED_QUANTITIES, EXPECTED_AMOUNTS, strict=True)
+)
 EXPECTED_INTERNAL_ORDER_NUMBERS = tuple(order_number(number) for number in INTERNAL_ORDERS)
 EXPECTED_COLLECTIVE_ORDER_NUMBERS = tuple(order_number(number) for number in COLLECTIVE_ORDERS)
 # Rejestr rows of those orders; their NUMER ZL. Hiperłącze ends with the row number.
@@ -248,6 +260,9 @@ def _check_collective_file(path: Path, errors: list[str]) -> None:
         ]
         if quantities != expected:
             errors.append("Plik zbiorczy N:AP is not the Ilości usług from the Reguły ilości over the Wzorzec zeros")
+        amount_column = column_index_from_string(AMOUNT_COLUMN)
+        if [sheet.cell(row, amount_column).value for row in range(18, 26)] != [*EXPECTED_AMOUNTS, None, None]:
+            errors.append(f"Plik zbiorczy {AMOUNT_COLUMN} is not the amount of the Kody czynności")
         formulas = [sheet.cell(row, 47).value for row in range(18, 26)]
         if formulas != [f"=N{row}*$N$1" for row in range(18, 26)]:
             errors.append("Plik zbiorczy changed the Wzorzec formulas")
@@ -304,12 +319,13 @@ def _check_real_template_file(
     header_row: int,
     look_columns: int,
     order_numbers: tuple[object, ...],
-    quantities: tuple[dict[str, int], ...],
+    numbers: tuple[dict[str, int], ...],
     errors: list[str],
 ) -> None:
     """Rows routed by header, the Wygląd Wiersza danych in A..``look_columns``, and the rest of the Wzorzec unchanged.
 
-    ``quantities`` are the Ilości usług of the written rows by column letter; they replace the Wzorzec value.
+    ``numbers`` are the Ilości usług and the AS amount of the written rows by column letter; they replace the Wzorzec
+    value.
 
     Messages name columns and fonts only, never a cell value of the Wzorzec or the Rejestr.
     """
@@ -338,8 +354,8 @@ def _check_real_template_file(
             errors.append(f"{label}: Wygląd Wiersza danych differs: {'; '.join(look)}")
 
         expected_values = _cell_values(template_book, written)
-        for row, row_quantities in zip(written_rows, quantities, strict=True):
-            for letter, value in row_quantities.items():
+        for row, row_numbers in zip(written_rows, numbers, strict=True):
+            for letter, value in row_numbers.items():
                 expected_values[(template_sheet.title, row, column_index_from_string(letter))] = value
         actual_values = _cell_values(output_book, written)
         changed = sorted(
@@ -356,6 +372,24 @@ def _check_real_template_file(
 def _fill(cell: Cell | MergedCell) -> tuple[object, object]:
     fill_type = cell.fill.fill_type
     return fill_type, cell.fill.fgColor.rgb if fill_type else None
+
+
+def _check_code_fills(path: Path, errors: list[str]) -> None:
+    """Every Plik zbiorczy row of an order with Kody czynności has their solid fills, also in a cell without a value."""
+
+    workbook = load_workbook(path, data_only=False)
+    try:
+        sheet = _sheet(workbook.active)
+        wrong = [
+            f"{letter}{row}"
+            for row, number in enumerate(COLLECTIVE_ORDERS, start=18)
+            for letter, argb in CODE_FILLS.get(number, {}).items()
+            if _fill(sheet[f"{letter}{row}"]) != ("solid", argb)
+        ]
+        if not CODE_FILLS or wrong:
+            errors.append(f"Plik zbiorczy lacks the fills of the Kody czynności in {', '.join(wrong) or 'the scenario'}")
+    finally:
+        workbook.close()
 
 
 def _check_address_fills(
@@ -437,7 +471,7 @@ def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: 
                     header_row=1,
                     look_columns=13,
                     order_numbers=EXPECTED_INTERNAL_ORDER_NUMBERS,
-                    quantities=({},) * len(EXPECTED_INTERNAL_ORDER_NUMBERS),
+                    numbers=({},) * len(EXPECTED_INTERNAL_ORDER_NUMBERS),
                     errors=errors,
                 )
                 _check_real_template_file(
@@ -447,9 +481,10 @@ def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: 
                     header_row=17,
                     look_columns=12,
                     order_numbers=EXPECTED_COLLECTIVE_ORDER_NUMBERS,
-                    quantities=EXPECTED_QUANTITIES,
+                    numbers=EXPECTED_NUMBERS,
                     errors=errors,
                 )
+            _check_code_fills(period_directory / COLLECTIVE_FILE_NAME, errors)
             for template, output, label, header_row, register_rows in (
                 (INTERNAL_TEMPLATE, INTERNAL_SETTLEMENT_NAME, "Rozliczenie wewnętrzne", 1, EXPECTED_INTERNAL_REGISTER_ROWS),
                 (COLLECTIVE_TEMPLATE, COLLECTIVE_FILE_NAME, "Plik zbiorczy", 17, EXPECTED_COLLECTIVE_REGISTER_ROWS),
@@ -483,7 +518,7 @@ def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: 
         errors,
         f"ASSERT OK | process=przygotowanie | mode=run | templates={templates} | workbooks_checked=2 | "
         "formatting_preserved=true | row_look=A:M,A:L | hyperlinks_from_rejestr=NUMER ZL. | address_fill_from_rejestr=ADRES | "
-        "external_links_preserved=true | inputs_unchanged=true",
+        "activity_codes=N:AP,AS,fills | external_links_preserved=true | inputs_unchanged=true",
     )
 
 

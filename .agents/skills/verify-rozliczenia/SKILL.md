@@ -3,6 +3,7 @@ name: verify-rozliczenia
 description: Verify MAXIMISEART-Dad's processes (Przebieg rozliczeń, Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX) through the machine script `tools/uruchom_proces.py`, each alone and chained from Rejestr zleceń to Rozliczenia pracowników, with synthetic Excel files, workbook side-effect checks, and retained evidence; use after process, workbook, or safety-rule changes.
 pilnuje:
   - src/rozliczenia/__init__.py
+  - src/rozliczenia/activity_legend*.py
   - src/rozliczenia/call_trace.py
   - src/rozliczenia/client_data.py
   - src/rozliczenia/centrum/contract/common.py
@@ -22,6 +23,7 @@ pilnuje:
   - src/rozliczenia/input_checks.py
   - src/rozliczenia/input_copy.py
   - src/rozliczenia/intermax_*.py
+  - src/rozliczenia/legenda_czynnosci_domyslna.yaml
   - src/rozliczenia/lista_urzadzen_domyslna.yaml
   - src/rozliczenia/mail_skeleton.py
   - src/rozliczenia/message.py
