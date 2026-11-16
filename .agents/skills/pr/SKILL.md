@@ -1,13 +1,12 @@
 ---
 name: pr
-description: Write the title and body of every pull request in this repository from one template. Use before `gh pr create` or `gh pr edit --body`, when a PR body needs a new kind of evidence, and when the template lacks something a PR needs (then change this skill). `tools/scal_pr.py` refuses to merge a PR whose body lacks a `##` heading of the template.
+description: PR title and body from the one template of this repository. Use before `gh pr create` or `gh pr edit --body`, and when the template lacks something a PR needs (then change this skill).
 ---
 
 # PR
 
 Every PR in this repository has the same title shape and the same body sections, so Maks and the reviewer read every PR the same way.
-This file is the one template.
-When a PR needs something the template lacks, add it here, in the same PR or in its own, and do not invent a private variant in the PR body.
+When a PR needs something the template lacks, add it here, in the same PR or in its own, instead of a private variant in the PR body.
 
 `tools/scal_pr.py` reads the `##` headings of the template below and refuses to merge a PR whose body does not have each of them, in this order, as its own line.
 Check a body before the review with `.venv/bin/python tools/scal_pr.py N --bez-merge`.
@@ -86,8 +85,7 @@ Dowód: <polecenie i wynik>
 - A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first into the default branch: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
   Write both numbers as bare `#N`, so GitHub links the two PRs on their timelines.
 - Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
-- A Ważne with the field `Idiom: <id>` or `Idiom: <id> jak #N W<n> r<k>`, which the reviewer writes, merges only when an ast-grep rule with that id stands on HEAD and its proof passes on every case of that id from the history of `Idiom:` fields ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.md)); a `ZNANE_LUKI` sample never replaces the rule.
-  `tools/scal_pr.py` runs the proof from the base code, and its block's `Dowód:` is the last line `DOWÓD OK` of `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`.
+- A Ważne with the field `Idiom: <id>` or `Idiom: <id> jak #N W<n> r<k>` merges only with the ast-grep rule `<id>` on HEAD and its proof (section „Korzeń i chwast” of `przeglad`): its block's `Dowód:` is the last line `DOWÓD OK` of `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`.
   A Ważne with `Idiom: bez reguły <klasa> jak #N W<n> r<k>` needs no rule.
 - Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
 
@@ -97,10 +95,10 @@ Dowód: <polecenie i wynik>
 - Skip preambles and keep prose brief: short sentences, one thought each.
   Keep it under about 40 lines: Maks and the reviewer read it in a minute.
   The body keeps the shortened result; long logs, tables of every run and lane recitals go into a PR comment or stay in the CI run that printed them, linked from the body, so an agent on another machine reads them.
-  A log with Dad's data or a Zgłoszenie's content stays off GitHub, not in the body, a PR comment, an issue or a CI run log: the body gives its shortened result without that data and names what the evidence covers.
 - The body describes the HEAD it is on.
   After a review round, rewrite the sections that changed instead of adding a section about what changed after the review: the history lives in the verdicts and comments.
 - The repository is public: no client address, order or contract number, Wykonawca, row content of Dad's files, and nothing copied from a Zgłoszenie or a Kontrola ilości.
+  A log with Dad's data or a Zgłoszenie's content stays off GitHub, not in the body, a PR comment, an issue or a CI run log: the body gives its shortened result without that data and names what the evidence covers.
   Refer to a Zgłoszenie by number only (`Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#N`, `docs/agents/issue-tracker.md`).
 
 ## Why
@@ -112,117 +110,14 @@ Name the issue the PR closes (`Closes #N`, which GitHub closes, or `Naprawia #N`
 
 ## Summary
 
-Pick the smallest view that makes the key point clear.
-
-- Show logic or an algorithm as pseudocode:
-
-```text
-on(save)
-  if content is unchanged
-    return cached result
-  write new content
-  return fresh result
-```
-
-- Show runtime control flow as a call tree:
-
-```text
-submitForm
-  createSession
-    persistPrompt
-    launchAgent
-  navigateToSession
-```
-
-- Show UI structure as a component tree, including state and module boundaries that matter:
-
-```text
-<SessionPage> (apps/example/src/routes/session.tsx)
-  useSessionEvents()
-  <SessionToolbar>
-    <RunSkillButton> (packages/ui)
-```
-
-- Show file responsibility or a broad refactor as a shallow file tree:
-
-```text
-src/
-├── commands/       # parses user actions
-├── sessions/       # owns session state
-└── transport/      # sends API requests
-```
-
-- Show component interaction, control flow, or data flow with Mermaid:
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant UI
-    participant Daemon
-    User->>UI: choose command
-    UI->>Daemon: send expanded prompt
-    Daemon-->>UI: stream result
-```
-
-- Use `diff` when the point is what changes and the surrounding shape already exists.
-  Match the diff shape to the topic.
-
-For a component change:
-
-```diff
- <SessionPage>
-   useSessionEvents()
-   <SessionToolbar>
-+    <RunSkillButton />
-   <SessionTimeline>
-+    <SkillResultCard />
-```
-
-For a file-layout change:
-
-```diff
- src/
- ├── commands/
-+│   └── show-me.ts       # expands the slash command
- ├── sessions/
--└── transport.ts
-+└── transport/
-+    ├── client.ts
-+    └── stream.ts
-```
-
-For a call-tree or call-stack change:
-
-```diff
- submitForm
-   createSession
-     persistPrompt
-+    expandSkillMention
-     launchAgent
--  navigateToSession
-+  navigateToSession
-+    subscribeToEvents
-```
-
-For a state or control-flow change:
-
-```diff
- on(save)
--  write content
-+  if content is unchanged
-+    return cached result
-+  write new content
-+  invalidate cache
-```
-
-- Show the whole block when most of it is new, when omitted context would hide ownership or order, or when the reader needs a copyable target shape.
+Pick the smallest view that makes the key point clear: pseudocode, a call tree, a component tree, a shallow file tree, Mermaid, or a `diff` of one of them when the point is what changes in a shape that already exists.
+To draw one, or to choose between a `diff` and the whole block, read [`summary-views.md`](summary-views.md): an example of each.
 
 - A change that Dad sees shows what he sees, before and after: the three parts of a Komunikat (Co się stało, Gdzie, Co zrobić), the text of a card, or the Excel cell he opens.
   When a committed expected-output file of a test changes, its diff is this view: paste the part that matters.
 
 Place each visual next to the short text it supports.
 Keep only the calls, files, props, states, and boundaries needed to understand the change.
-You may use one of these, you may use several, it is unlikely you will use all of them.
 
 ## Evidence
 
@@ -243,19 +138,12 @@ Concrete evidence that the change works, as a before and an after.
 
 ## Merge Danger
 
-Describe whether it's a one-way or two-way door.
-You can walk back through two-way doors, but not one-way doors.
-A PR that is cheap to roll back is lower risk.
+The door says whether a merge can be walked back (two-way) or not (one-way).
 
 - Dad gets code only through a Wydanie (ADR 0014), so a merge to `main` reaches agents and CI first, and Dad only at the next Wydanie.
   Say when the change reaches him and what he notices then.
 - A change is a one-way door when it changes what lies on Dad's disk and an older version must still read (Ustawienia Centrum, the metrics file, the queue of Zgłoszenia, Kopie INTERMAX), when it writes Dad's workbooks differently, or when it accepts an ADR.
 
-The blast radius is the potential impact or scope of the changes introduced by this PR.
-Consider all possibilities: a process and its Komunikaty, Centrum rozliczeń in Dad's browser, Windows only, the CI gate and its time, the tools agents run.
+For the blast radius, consider every reach of the change: a process and its Komunikaty, Centrum rozliczeń in Dad's browser, Windows only, the CI gate and its time, the tools agents run.
 
 A question for Maks goes into the optional `**Decyzja Maksa:**` line, not into a section of its own.
-
-## Credits
-
-The Summary section's menu of visuals and its placement guidance come from [Dex Horthy](https://github.com/dexhorthy)'s `show-me` skill ([humanlayer](https://github.com/humanlayer/humanlayer)), through Maks's personal `pr` skill, which this file extends for this repository.
