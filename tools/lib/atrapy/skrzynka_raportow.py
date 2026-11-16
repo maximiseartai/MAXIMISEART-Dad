@@ -1,5 +1,5 @@
 """Atrapy Skrzynki raportów taty w Gmailu: ``FakeInbox`` dla testów procesu, ``FakeMailbox`` dla pracy przypomnień
-Centrum, ``FolderInbox`` dla Skryptu dla maszyn i skilli oraz ``AtrapaImap`` i ``AtrapaSmtp`` dla testu portu.
+i Wysyłki rozliczeń Centrum, ``FolderInbox`` dla Skryptu dla maszyn i skilli oraz ``AtrapaImap`` i ``AtrapaSmtp`` dla testu portu.
 
 ``FakeInbox`` oddaje gotowy wynik ``mails_since``, zapisuje dzień każdego wywołania i w jego trakcie robi ``during``. ``FolderInbox`` czyta maile z
 plików ``.eml`` folderu tym samym rozbiorem MIME co port (``mail_of``), z chwilą przyjścia z nagłówka ``Date``. ``AtrapaImap`` to lokalny serwer
@@ -32,6 +32,7 @@ from types import TracebackType
 from typing import Final, Literal
 
 from rozliczenia.worker_report_inbox import (
+    AttachmentMail,
     InboxAccess,
     InboxOutcome,
     InboxUnreachable,
@@ -39,6 +40,8 @@ from rozliczenia.worker_report_inbox import (
     Mails,
     MailSent,
     PasswordRejected,
+    SentAttachment,
+    SentAttachments,
     SentReminders,
     mail_of,
 )
@@ -85,12 +88,28 @@ class FakeInbox:
 
 @dataclass
 class FakeMailbox(FakeInbox):
-    """Skrzynka raportów pracy przypomnień: maile jak ``FakeInbox``, przypomnienia z „Wysłanych” (``sent`` albo wynik
-    porażki) i każda wysyłka w ``sends`` (przypomnienie i chwila); ``send_outcome`` to wynik każdej wysyłki."""
+    """Skrzynka raportów pracy przypomnień i Wysyłki rozliczeń: maile jak ``FakeInbox``, przypomnienia z „Wysłanych”
+    (``sent`` albo wynik porażki) i każda wysyłka w ``sends`` (przypomnienie i chwila); ``send_outcome`` to wynik każdej
+    wysyłki. Załączniki z „Wysłanych” to ``attachments`` (albo wynik porażki), a każdy Mail z rozliczeniem trafia do
+    ``mailed``; wysłany (``send_outcome`` to ``MailSent``) Gmail kładzie w „Wysłanych”, więc dochodzi do ``attachments``
+    ze znakiem Centrum."""
 
     sent: Sequence[SentReminder] | PasswordRejected | InboxUnreachable = ()
     send_outcome: MailSent | PasswordRejected | InboxUnreachable | MailRefused = MailSent()
     sends: list[tuple[Reminder, datetime]] = field(default_factory=list)
+    attachments: list[SentAttachment] | PasswordRejected | InboxUnreachable = field(default_factory=list)
+    mailed: list[tuple[AttachmentMail, datetime]] = field(default_factory=list)
+
+    def sent_attachments(self, day: date) -> SentAttachments | PasswordRejected | InboxUnreachable:
+        if isinstance(self.attachments, (PasswordRejected, InboxUnreachable)):
+            return self.attachments
+        return SentAttachments(tuple(found for found in self.attachments if found.sent_at.date() >= day - timedelta(days=1)))
+
+    def send_attachment(self, mail: AttachmentMail, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        self.mailed.append((mail, at))
+        if isinstance(self.send_outcome, MailSent) and isinstance(self.attachments, list):
+            self.attachments.append(SentAttachment(mail.name, frozenset(mail.recipients), at, by_centrum=True))
+        return self.send_outcome
 
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
         if isinstance(self.sent, (PasswordRejected, InboxUnreachable)):

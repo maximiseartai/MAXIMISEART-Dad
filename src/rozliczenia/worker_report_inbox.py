@@ -1,5 +1,5 @@
 """Skrzynka raportów: maile Wykonawców ze skrzynki raportów taty w Gmailu, przez IMAP i tylko do odczytu (ADR 0028), oraz
-wysyłka Przypomnień o raporcie przez SMTP Gmaila (ADR 0030).
+wysyłka Przypomnień o raporcie (ADR 0030) i Maili z rozliczeniem (ADR 0040) przez SMTP Gmaila.
 
 Port niczego w skrzynce nie zmienia: otwiera folder przez ``EXAMINE`` i pobiera maile przez ``BODY.PEEK``, więc nie
 oznacza ich jako przeczytanych, i nie wysyła ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE`` ani ``APPEND``.
@@ -25,6 +25,15 @@ dostępu, a porażkę oddaje jako wynik: odrzucone hasło (``SMTPAuthenticationE
 (``OSError``, zerwane albo nienawiązane połączenie SMTP) to ``InboxUnreachable``, a każda inna odmowa serwera SMTP to
 ``MailRefused``; każdy wynik niesie tylko nazwę typu wyjątku.
 
+Wysyłka rozliczeń (``SettlementMailbox``, ADR 0040): ``sent_attachments`` czyta tak samo tylko do odczytu „Wysłane” i
+oddaje nazwę pliku każdego załącznika maili z dni od dnia przed wskazanym, z adresatami z ``To``, chwilą przyjęcia przez
+Gmaila i tym, czy mail ma znak Centrum (``CENTRUM_MARK``). Bierze z serwera tylko ``BODYSTRUCTURE`` każdego maila, a
+nagłówek maila i nagłówki części tylko maili, które mają część inną niż tekst, nigdy treści załączników; nazwę pliku
+czyta pakiet ``email`` z nagłówka części (RFC 2231 i RFC 2047). Odpowiedź serwera, której port nie zna, to
+``InboxUnreachable``, a nie pusta lista, bo pusta lista wysłałaby drugi raz to, co już poszło. ``send_attachment``
+wysyła jeden mail z tekstem i jednym załącznikiem xlsx tą samą drogą SMTP i z tymi samymi wynikami co ``send``, ze znakiem
+Centrum w nagłówku; Gmail sam kładzie go w „Wysłanych”.
+
 ``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``): flagi maili i liczby maili
 ze słowem w temacie w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
 wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a nie swoją kopię.
@@ -38,6 +47,9 @@ from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 import email
 from email.message import MIMEPart
+from email.mime.application import MIMEApplication
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 import email.policy
 from email.utils import format_datetime, getaddresses, make_msgid
@@ -50,12 +62,14 @@ import ssl
 import time
 from typing import Final, Literal, Protocol, TypeVar
 
-from .mail_skeleton import FetchValue, Structure, UnknownReply, chosen, fetch_responses, sections, skeleton
+from .mail_skeleton import FetchValue, Structure, UnknownReply, attachment_sections, chosen, fetch_responses, sections, skeleton
 from .worker_reports import SUBJECT_WORD, MailId, Reminder, ReportMail, SenderAddress, SentReminder, reminder_day
 
 __all__ = [
+    "CENTRUM_MARK",
     "FETCH_BATCH",
     "INBOX_ACCESS_FILE",
+    "AttachmentMail",
     "ImapInbox",
     "ImapConnect",
     "InboxAccess",
@@ -70,7 +84,11 @@ __all__ = [
     "Mails",
     "PasswordRejected",
     "ReminderMailbox",
+    "SentAttachment",
+    "SentAttachments",
     "SentReminders",
+    "SettlementMailbox",
+    "SmtpConnect",
     "WorkerReportInbox",
     "mail_of",
 ]
@@ -91,6 +109,12 @@ _FLAGS: Final = re.compile(rb"\bFLAGS \((?P<flags>[^)]*)\)")
 _SENT_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])"
 _LIGHT_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])"
 _WHOLE_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[])"
+_SENT_STRUCTURE_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE)"
+CENTRUM_MARK: Final = ("X-Centrum-Rozliczen", "wysylka-rozliczen")
+"""Nagłówek i wartość, którymi Centrum znaczy Mail z rozliczeniem: po nich „Wysłane” odróżniają mail Centrum od
+rozliczenia, które tata wysłał z tej skrzynki sam."""
+_XLSX: Final = ("application", "vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+"""Typ MIME pliku xlsx załącznika."""
 _BODY_PREFERENCE: Final = ("plain", "html")
 """Treść maila to część ``text/plain``, a bez niej ``text/html`` (``mail_of``, ``mail_skeleton.chosen``)."""
 _SMTP_NETWORK: Final = (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError)
@@ -106,6 +130,9 @@ LoginResult = Literal["accepted", "rejected", "no_network"]
 
 ImapConnect = Callable[[], imaplib.IMAP4]
 """Połączenie z serwerem IMAP skrzynki raportów; testy i skille podają atrapę."""
+
+SmtpConnect = Callable[[], smtplib.SMTP]
+"""Połączenie z serwerem SMTP skrzynki raportów; testy i skille podają atrapę."""
 
 
 @dataclass(frozen=True)
@@ -143,8 +170,37 @@ class SentReminders:
 
 
 @dataclass(frozen=True)
+class SentAttachment:
+    """Plik załączony do maila z folderu „Wysłane”: nazwa pliku, adresaci z ``To``, chwila przyjęcia przez Gmaila ze
+    strefą i to, czy mail ma znak Centrum (``CENTRUM_MARK``); ``False``: tata wysłał go sam z tej skrzynki."""
+
+    name: str
+    recipients: frozenset[SenderAddress]
+    sent_at: datetime
+    by_centrum: bool
+
+
+@dataclass(frozen=True)
+class SentAttachments:
+    """Załączniki maili z folderu „Wysłane” z dni od dnia przed wskazanym, w kolejności skrzynki."""
+
+    attachments: tuple[SentAttachment, ...]
+
+
+@dataclass(frozen=True)
+class AttachmentMail:
+    """Mail z jednym plikiem xlsx do wysłania ze skrzynki raportów: adresaci, temat, treść i plik (nazwa i bajty)."""
+
+    recipients: tuple[SenderAddress, ...]
+    subject: str
+    text: str
+    name: str
+    content: bytes = field(repr=False)
+
+
+@dataclass(frozen=True)
 class MailSent:
-    """Gmail przyjął przypomnienie do wysłania."""
+    """Gmail przyjął mail do wysłania."""
 
 
 @dataclass(frozen=True)
@@ -191,6 +247,22 @@ class ReminderMailbox(WorkerReportInbox, Protocol):
         ...
 
 
+class SettlementMailbox(Protocol):
+    def access(self) -> InboxAccess:
+        """Stan pliku dostępu do skrzynki, bez sieci."""
+        ...
+
+    def sent_attachments(self, day: date) -> SentAttachments | PasswordRejected | InboxUnreachable:
+        """Załączniki maili z folderu „Wysłane” z dni od dnia przed ``day``; skrzynka zostaje bez zmian."""
+        ...
+
+    def send_attachment(
+        self, mail: AttachmentMail, at: datetime
+    ) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        """Wysyła mail z załącznikiem ze skrzynki raportów do jego adresatów z datą ``at`` i znakiem Centrum."""
+        ...
+
+
 @dataclass(frozen=True)
 class InboxCredentials:
     """Adres skrzynki raportów i hasło aplikacji z pliku dostępu; hasła nie ma w ``repr``."""
@@ -225,7 +297,7 @@ class ImapInbox:
         access: Callable[[], InboxState],
         *,
         connect: ImapConnect | None = None,
-        smtp: Callable[[], smtplib.SMTP] = _gmail_smtp,
+        smtp: SmtpConnect = _gmail_smtp,
     ) -> None:
         self._access = access
         self._connect = connect or _gmail
@@ -254,10 +326,21 @@ class ImapInbox:
         return self._session(lambda imap, access: _sent(imap, access, day))
 
     def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        return self._submit(lambda sender: _reminder_message(reminder, sender, at))
+
+    def sent_attachments(self, day: date) -> SentAttachments | PasswordRejected | InboxUnreachable:
+        return self._session(lambda imap, access: _sent_attachments(imap, access, day))
+
+    def send_attachment(self, mail: AttachmentMail, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        return self._submit(lambda sender: _attachment_message(mail, sender, at))
+
+    def _submit(self, build: Callable[[SenderAddress], MIMEBase]) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        """Jeden mail przez SMTP z adresu i hasła aplikacji z pliku dostępu; porażka to wynik (docstring modułu)."""
+
         found = self._access()
         if not isinstance(found, InboxCredentials):
             return InboxUnreachable(found)
-        message = _reminder_message(reminder, found.address, at)
+        message = build(found.address)
         smtp: smtplib.SMTP | None = None
         try:
             smtp = self._smtp()
@@ -559,6 +642,99 @@ def _sent_reminder(header: bytes, sent_at: datetime) -> SentReminder | None:
         return None
     recipients = frozenset(address for _, raw in pairs if (address := SenderAddress.of(raw)) is not None)
     return None if day is None or not recipients else SentReminder(recipients, day, sent_at)
+
+
+def _sent_attachments(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> SentAttachments:
+    """Załączniki maili „Wysłanych” z dni od dnia przed ``day``: najpierw ``BODYSTRUCTURE`` każdego maila, potem nagłówek
+    maila i nagłówki części innych niż tekst (``attachment_sections``) tylko maili, które je mają, jedno ``UID FETCH`` na
+    paczkę maili z tą samą listą sekcji. Mail, którego ``BODYSTRUCTURE`` ma kształt spoza RFC 3501, nie ma czytelnych
+    załączników; odmowa albo odpowiedź spoza RFC 3501 to ``UnexpectedReply``."""
+
+    imap.login(_quoted(access.address.shown()), access.password)
+    folder = _special(imap, rb"\sent")
+    if folder is None:
+        raise UnexpectedReply
+    _ok(imap.select(_quoted(folder), readonly=True))
+    described: dict[str, tuple[datetime, tuple[str, ...]]] = {}
+    for sequence, _ in _batches(_since(imap, day)):
+        for response in _strict(imap.uid("FETCH", sequence, _SENT_STRUCTURE_ITEMS)):
+            number, internal = response.get(b"UID"), response.get(b"INTERNALDATE")
+            if not (isinstance(number, bytes) and isinstance(internal, bytes)):
+                raise UnexpectedReply
+            structure = Structure.of(response.get(b"BODYSTRUCTURE"))
+            names = () if structure is None else attachment_sections(structure)
+            if names:
+                described[number.decode("ascii")] = (_internal_moment(b'INTERNALDATE "' + internal + b'"'), names)
+    groups: dict[tuple[str, ...], list[str]] = {}
+    for uid, (_, names) in described.items():
+        groups.setdefault(("HEADER", *names), []).append(uid)
+    found: dict[str, list[SentAttachment]] = {}
+    for names, members in groups.items():
+        items = "(UID " + " ".join(f"BODY.PEEK[{name}]" for name in names) + ")"
+        for sequence, _ in _batches(members):
+            for response in _strict(imap.uid("FETCH", sequence, items)):
+                number = response.get(b"UID")
+                uid = number.decode("ascii") if isinstance(number, bytes) else ""
+                if uid not in described:
+                    raise UnexpectedReply
+                found[uid] = _attachments(response, names, described[uid][0])
+    return SentAttachments(tuple(attachment for uid in described for attachment in found.get(uid, ())))
+
+
+def _strict(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchValue]]:
+    """Odpowiedzi ``FETCH`` polecenia; odmowa albo forma spoza RFC 3501 to ``UnexpectedReply``."""
+
+    try:
+        return fetch_responses(_ok(reply))
+    except UnknownReply:
+        raise UnexpectedReply from None
+
+
+def _internal_moment(prefix: bytes) -> datetime:
+    moment = imaplib.Internaldate2tuple(prefix)
+    if moment is None:
+        raise UnexpectedReply
+    return datetime.fromtimestamp(time.mktime(moment), tz=timezone.utc).astimezone()
+
+
+def _attachments(response: Mapping[bytes, FetchValue], names: tuple[str, ...], sent_at: datetime) -> list[SentAttachment]:
+    """Załączniki jednego maila z jego nagłówka (``HEADER``) i nagłówków części (``filename`` z
+    ``Content-Disposition``, a bez niego ``name`` z ``Content-Type``, po RFC 2231 i RFC 2047); część bez nazwy pliku
+    nie daje załącznika, a mail z nagłówkiem, którego pakiet ``email`` nie umie rozebrać (zgłasza wtedy różne wyjątki,
+    jak w ``mail_of``), nie daje żadnego."""
+
+    header = response.get(b"BODY[HEADER]")
+    parts = [response.get(f"BODY[{name}]".encode("ascii")) for name in names[1:]]
+    try:
+        message = email.message_from_bytes(header if isinstance(header, bytes) else b"", policy=email.policy.default)
+        pairs = getaddresses([str(value) for value in message.get_all("To", [])])
+        marked = str(message.get(CENTRUM_MARK[0]) or "").strip() == CENTRUM_MARK[1]
+        file_names = [
+            email.message_from_bytes(part, policy=email.policy.default).get_filename() if isinstance(part, bytes) else None
+            for part in parts
+        ]
+    except Exception:  # noqa: BLE001 - granica jednego maila z „Wysłanych”: mail bez czytelnych załączników
+        return []
+    recipients = frozenset(address for _, raw in pairs if (address := SenderAddress.of(raw)) is not None)
+    return [SentAttachment(name, recipients, sent_at, marked) for name in file_names if name]
+
+
+def _attachment_message(mail: AttachmentMail, sender: SenderAddress, at: datetime) -> MIMEMultipart:
+    """Mail z treścią w UTF-8 i jednym plikiem xlsx o nazwie ``mail.name`` w ``Content-Disposition`` (RFC 2231 dla
+    polskich liter), ze znakiem Centrum w nagłówku."""
+
+    message = MIMEMultipart(policy=email.policy.SMTP)
+    message["From"] = sender.shown()
+    message["To"] = ", ".join(recipient.shown() for recipient in mail.recipients)
+    message["Subject"] = mail.subject
+    message["Date"] = format_datetime(at)
+    message["Message-ID"] = make_msgid(domain=sender.shown().partition("@")[2])
+    message[CENTRUM_MARK[0]] = CENTRUM_MARK[1]
+    message.attach(MIMEText(mail.text, "plain", "utf-8", policy=email.policy.SMTP))
+    attachment = MIMEApplication(mail.content, _subtype=_XLSX[1], policy=email.policy.SMTP)
+    attachment.add_header("Content-Disposition", "attachment", filename=("utf-8", "", mail.name))
+    message.attach(attachment)
+    return message
 
 
 def _reminder_message(reminder: Reminder, sender: SenderAddress, at: datetime) -> MIMEText:
