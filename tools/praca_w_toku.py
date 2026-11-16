@@ -1,4 +1,4 @@
-"""Odpowiada sesji na trzy pytania: czy ktoś aktywnie robi jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
+"""Odpowiada sesji na trzy pytania: czy ktoś zajmuje jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
 
 Narzędzie nie wylicza pracy w repozytorium. Zaczyna od bieżącego checkoutu (tego, w którym je uruchomiono), jego
 plików i numeru zgłoszenia, i szuka tylko innej pracy, która się z nimi przecina. Bez ``--issue`` i bez plików
@@ -23,8 +23,10 @@ Commity wspólne obu stron (gałąź zbudowana na innej) się nie liczą. Przeni
 i nowej ścieżki. PR bez lokalnej gałęzi ma swoje commity w ``origin/<gałąź>``, jeśli ją pobrano, a inaczej jego pliki
 z GitHuba przecinają się z plikami checkoutu.
 
-Zgłoszenie #N zajmuje linia pracy, aktywna czy nie, której nazwa gałęzi zawiera N, której commit spoza ``origin/main``
-albo tytuł lub opis PR odwołuje się do #N, albo której PR wskazuje treść zgłoszenia #N.
+Zgłoszenie #N zajmuje linia pracy, aktywna czy nie, której nazwa gałęzi ma N jako osobny człon (cyfry, najwyżej pięć,
+odcięte od reszty nazwy przez ``/``, ``-``, ``_`` albo jej brzeg, jak w ``feat/legenda-1940-ostrzezenia``), której commit
+spoza ``origin/main`` albo tytuł lub opis PR odwołuje się do #N, albo której PR wskazuje treść zgłoszenia #N. Aktywność
+nie zmienia tej odpowiedzi: nieaktywną linię pracy odpowiedź nazywa z wiekiem jej ruchu, liczonym jak w nakładaniach.
 
 Raport kończy się liniami odpowiedzi w tej kolejności, więc ``tail -3`` daje same odpowiedzi. Nad nimi stoją
 szczegóły, jedna linia na linię pracy, od najświeższego ruchu: najpierw każda linia, która zajmuje zgłoszenie (z jego
@@ -32,8 +34,8 @@ powodem), potem aktywne linie, które nakładają się z checkoutem (z plikami, 
 ``--wszystkie`` także nieaktywne:
 
     - <gałąź albo odłączony HEAD>[ (PR #M)] | <worktree> | bez worktree | tylko na GitHubie | ruch <wiek> temu | <powód albo pliki>
-    ZGŁOSZENIE #N | zajęte: <linie pracy>; poprawka należy do właściciela tej gałęzi[; nieaktywne: <linia (wiek)>, …]
-    ZGŁOSZENIE #N | wolne[; nieaktywne: <linia (wiek)>, …]
+    ZGŁOSZENIE #N | zajęte: <linia pracy>[ (<wiek>, nieaktywna)], …; poprawka należy do właściciela tej gałęzi
+    ZGŁOSZENIE #N | wolne
     NAKŁADANIA | brak | aktywne prace na twoich plikach: <k> (wyżej)[; nieaktywne: <m>, pokaż: --wszystkie]
     AKTUALIZACJA: potrzebna (…) | niepotrzebna (…) | nieznana (…) | origin/main <sha>[ uwaga o fetch]
 
@@ -92,7 +94,7 @@ TIMEOUT_S = 30
 FRESH_FETCH_S = 3600
 ISSUE_REFERENCE = re.compile(r"#(\d+)\b")
 PR_REFERENCE = re.compile(r"(?:#|/pull/)(\d+)\b")
-BRANCH_NUMBER = re.compile(r"(?:^|/)(\d{1,5})(?=$|[/_-])")
+BRANCH_NUMBER = re.compile(r"(?:^|[/_-])(\d{1,5})(?=$|[/_-])")
 ASK_ISSUE = "nie podano; przed startem zgłoszenia N: tools/praca_w_toku.py --issue N"
 
 
@@ -244,7 +246,10 @@ class Work:
 
 @dataclass(frozen=True)
 class Line:
+    """Kandydat z plikami wspólnymi z checkoutem i ostatnim ruchem, liczony raz dla obu odpowiedzi."""
+
     work: Work
+    files: frozenset[str]
     seen: float
 
     def active(self, now: float) -> bool:
@@ -254,6 +259,9 @@ class Line:
         pr = f" (PR #{self.work.pr.number})" if self.work.pr is not None else ""
         return f"{self.work.branch or 'odłączony HEAD'}{pr}"
 
+    def claimant(self, now: float) -> str:
+        return self.name() if self.active(now) else f"{self.name()} ({_age(now - self.seen)}, nieaktywna)"
+
     def detail(self, now: float, what: str) -> str:
         if self.work.tree is not None:
             place = str(self.work.tree.path)
@@ -261,12 +269,6 @@ class Line:
             place = "bez worktree" if self.work.local else "tylko na GitHubie"
         moved = f"ruch {_age(now - self.seen)} temu" if self.seen else "ruch nieznany"
         return f"- {self.name()} | {place} | {moved} | {what}"
-
-
-@dataclass(frozen=True)
-class Overlap:
-    line: Line
-    files: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -312,7 +314,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     me = Me.read(root, branch)
     claimed: list[Claim] | None = None
-    overlapping: list[Overlap] | None = None
+    overlapping: list[Line] | None = None
     gh = GitHub((), "", "--lokalnie", "--lokalnie")
     if issue is not None or me.files:
         with ThreadPoolExecutor(1) as pool:
@@ -321,11 +323,11 @@ def main(argv: list[str] | None = None) -> int:
             statused = _candidate_trees(world, me.files, args.wszystkie) if me.files else []
             dirty = _dirty_hits(statused, me.files)
             gh = gh if asked is None else asked.result()
-        works = _works(me, world, gh)
+        lines = _lines(me, world, _works(me, world, gh), dirty)
         if issue is not None:
-            claimed = claims(issue, world, gh, works)
+            claimed = claims(issue, world, gh, lines)
         if me.files:
-            overlapping = overlaps(me, world, works, dirty, frozenset(tree.path for tree in statused))
+            overlapping = overlaps(world, lines, dirty, frozenset(tree.path for tree in statused))
         now = world.now
     else:
         now = time.time()
@@ -372,10 +374,8 @@ def _dirty_hits(trees: list[Tree], files: frozenset[str]) -> dict[Path, frozense
         return {tree.path: found for tree, found in zip(trees, pool.map(hit, trees), strict=True) if found}
 
 
-def overlaps(
-    me: Me, world: World, works: list[Work], dirty: Mapping[Path, frozenset[str]], statused: frozenset[Path]
-) -> list[Overlap]:
-    """Nakładania checkoutu z liniami pracy, aktywnymi i nie; niezacommitowane pliki znane tylko w ``statused``."""
+def _lines(me: Me, world: World, works: list[Work], dirty: Mapping[Path, frozenset[str]]) -> list[Line]:
+    """Każdy kandydat raz, z plikami, które nakładają się z checkoutem, i z ruchem, który liczy ich zmiany."""
 
     commits = world.commits
     found = []
@@ -386,20 +386,29 @@ def overlaps(
         else:
             theirs = commits.own(work.tip)
             files = (commits.touched(me.own - theirs) | me.dirty) & (commits.touched(theirs - me.own) | theirs_dirty)
-            readable = work.tree is not None and work.tree.path in statused
-            if files and not theirs_dirty and not _is_work(work, world, read_tree=readable):
-                continue
-        if files:
-            found.append(Overlap(_line(work, world, theirs_dirty & files), files))
+        found.append(_line(work, world, files, theirs_dirty & files))
     return found
 
 
-def claims(issue: int, world: World, gh: GitHub, works: list[Work]) -> list[Claim]:
+def overlaps(world: World, lines: list[Line], dirty: Mapping[Path, frozenset[str]], statused: frozenset[Path]) -> list[Line]:
+    """Linie pracy, aktywne i nie, które nakładają się z checkoutem; niezacommitowane pliki znane tylko w ``statused``."""
+
+    def working(line: Line) -> bool:
+        tree = line.work.tree
+        if tree is not None and tree.path in dirty:
+            return True  # niezacommitowany plik checkoutu w tym worktree to już praca, bez drugiego git status
+        return _is_work(line.work, world, read_tree=tree is not None and tree.path in statused)
+
+    return [line for line in lines if line.files and working(line)]
+
+
+def claims(issue: int, world: World, gh: GitHub, lines: list[Line]) -> list[Claim]:
     """Linie pracy, aktywne i nie, które zajmują zgłoszenie ``issue``."""
 
     referenced = {int(number) for number in PR_REFERENCE.findall(gh.issue_body)} - {issue}
     found = []
-    for work in works:
+    for line in lines:
+        work = line.work
         reasons = []
         if issue in _branch_issues(work.branch):
             reasons.append("nazwa gałęzi")
@@ -410,7 +419,7 @@ def claims(issue: int, world: World, gh: GitHub, works: list[Work]) -> list[Clai
         if work.pr is not None and work.pr.number in referenced:
             reasons.append(f"#{issue} wskazuje PR #{work.pr.number}")
         if reasons and _is_work(work, world, read_tree=True):
-            found.append(Claim(_line(work, world), tuple(reasons)))
+            found.append(Claim(line, tuple(reasons)))
     return found
 
 
@@ -430,19 +439,19 @@ def _is_work(work: Work, world: World, read_tree: bool) -> bool:
         return False  # inna sesja właśnie usunęła ten worktree
 
 
-def _line(work: Work, world: World, dirty: Iterable[str] = ()) -> Line:
+def _line(work: Work, world: World, files: frozenset[str], dirty: Iterable[str]) -> Line:
     signs = [float(world.commits.time.get(work.tip or "", 0))]
     if work.tree is not None:
         signs += [work.tree.seen, *(_touched_at(work.tree.path, name) for name in dirty)]
     if work.local and work.branch is not None:
         signs.append(_reflog_time(world.common, work.branch))
-    return Line(work, max(signs))
+    return Line(work, files, max(signs))
 
 
 def render(
     issue: int | None,
     claimed: list[Claim] | None,
-    overlapping: list[Overlap] | None,
+    overlapping: list[Line] | None,
     gh: GitHub,
     now: float,
     *,
@@ -459,18 +468,16 @@ def render(
         else:
             ordered = sorted(claimed, key=lambda claim: -claim.line.seen)
             details += [claim.line.detail(now, ", ".join(claim.reasons)) for claim in ordered]
-            active = [claim.line.name() for claim in ordered if claim.line.active(now)]
-            answer = f"zajęte: {', '.join(active)}; poprawka należy do właściciela tej gałęzi" if active else "wolne"
-            if stale := [claim.line for claim in ordered if not claim.line.active(now)]:
-                answer += "; nieaktywne: " + ", ".join(f"{line.name()} ({_age(now - line.seen)})" for line in stale)
+            claimants = ", ".join(claim.line.claimant(now) for claim in ordered)
+            answer = f"zajęte: {claimants}; poprawka należy do właściciela tej gałęzi" if claimants else "wolne"
             answers.append(f"{_issue_title(issue)} | {answer}{_without(gh.issue_skipped)}")
     if overlapping is None:
         answers.append("NAKŁADANIA | brak: ten checkout jeszcze niczego nie zmienia")
     else:
-        ordered_overlaps = sorted(overlapping, key=lambda overlap: -overlap.line.seen)
-        active_overlaps = [overlap for overlap in ordered_overlaps if overlap.line.active(now)]
+        ordered_overlaps = sorted(overlapping, key=lambda line: -line.seen)
+        active_overlaps = [line for line in ordered_overlaps if line.active(now)]
         shown = ordered_overlaps if everything else active_overlaps
-        details += [overlap.line.detail(now, _named(overlap.files)) for overlap in shown]
+        details += [line.detail(now, _named(line.files)) for line in shown]
         answer = f"aktywne prace na twoich plikach: {len(active_overlaps)} (wyżej)" if active_overlaps else "brak"
         if inactive := len(ordered_overlaps) - len(active_overlaps):
             answer += f"; nieaktywne: {inactive} (wyżej)" if everything else f"; nieaktywne: {inactive}, pokaż: --wszystkie"

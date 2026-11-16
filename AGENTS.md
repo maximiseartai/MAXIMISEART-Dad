@@ -35,7 +35,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/ponow_ci.py`: Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
 - `tools/poprawki_operatora.py`: Wypisuje wiadomości operatora z wątków T3 Code tego repo w jednym tygodniu; użyj w polowaniu na powtarzane błędy.
 - `tools/porownanie_rozliczen.py`: Porównuje znaczeniowo dwa Foldery rozliczeń pracowników (spec #141); użyj jako bramki, gdy zmiana silnika ma dać te same rozliczenia.
-- `tools/praca_w_toku.py`: Odpowiada sesji na trzy pytania: czy ktoś aktywnie robi jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
+- `tools/praca_w_toku.py`: Odpowiada sesji na trzy pytania: czy ktoś zajmuje jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
 - `tools/proba_przypomnien.py`: Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przed Wydaniem.
 - `tools/proba_skrzynki_raportow.py`: Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przed Wydaniem z Wpisaniem raportów.
 - `tools/przesun_model.py`: Przelicza skróty kodu w model/definicje.json skilla verify-*; użyj, gdy model albo eksplorator skilla znów opisuje zmieniony kod.
