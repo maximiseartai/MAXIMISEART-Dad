@@ -112,6 +112,24 @@ def test_watki_modelu_biegna_po_jednym_do_kolejnego_kroku_z_wynikiem_wybranym_pr
     assert Interleaving.current() is None
 
 
+def test_watek_zalozony_przez_watek_modelu_konczy_sie_w_eksploratorze_a_zakladajacy_czeka_na_swoj_krok() -> None:
+    interleaving = _Przeplot()
+    founder = _Watek("a")
+
+    def body() -> None:
+        interleaving.spawn(_Watek("c"), lambda: None)
+        founder.log += (interleaving.park(founder),)
+
+    interleaving.spawn(founder, body)
+    interleaving.settle()
+    assert [(thread.name, thread.status) for thread in interleaving.threads] == [("a", "parked"), ("c", "done")]
+
+    interleaving.release(founder, "a1")
+    interleaving.settle()
+
+    assert (founder.log, founder.status) == (("a1",), "done")
+
+
 def test_wynik_kroku_daje_tylko_release_eksploratora() -> None:
     """Wątek przełączony bez ``release`` nie dostaje wyniku poprzedniego kroku: taki błąd eksploratora pada od razu,
     zamiast powtórzyć krok, którego eksplorator nie wybrał."""

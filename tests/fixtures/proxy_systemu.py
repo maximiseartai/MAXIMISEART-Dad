@@ -1,4 +1,5 @@
-"""Proxy z ustawień systemu w teście: lokalny serwer, który zapisuje każde żądanie i odmawia, bez wyjścia do sieci."""
+"""Proxy z ustawień systemu w teście, bez wyjścia do sieci: lokalny serwer, który zapisuje każde żądanie i odmawia
+(``system_proxy``), albo serwer testu w tej roli (``proxy_of_system``)."""
 
 from __future__ import annotations
 
@@ -32,14 +33,19 @@ def system_proxy(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str]]:
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Proxy)
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
     thread.start()
-    address = f"http://127.0.0.1:{server.server_address[1]}"
-    for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
-        monkeypatch.setenv(name, address)
-    for name in ("no_proxy", "NO_PROXY", "all_proxy", "ALL_PROXY"):
-        monkeypatch.delenv(name, raising=False)
+    proxy_of_system(monkeypatch, f"http://127.0.0.1:{server.server_address[1]}")
     try:
         yield requests
     finally:
         server.shutdown()
         server.server_close()
         thread.join()
+
+
+def proxy_of_system(monkeypatch: pytest.MonkeyPatch, address: str) -> None:
+    """Serwer pod ``address`` jest proxy HTTP i HTTPS z ustawień systemu dla każdego adresu."""
+
+    for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+        monkeypatch.setenv(name, address)
+    for name in ("no_proxy", "NO_PROXY", "all_proxy", "ALL_PROXY"):
+        monkeypatch.delenv(name, raising=False)
