@@ -757,6 +757,30 @@ def test_przygotowanie_liczy_ilosci_regulami_z_ustawien_z_chwili_startu_a_zmiana
     assert (during, _quantity(centrum, "Z18")) == (1, 3)
 
 
+LEGEND_URL = "/api/settings/activity-legend"
+
+
+def test_przygotowanie_liczy_legenda_z_chwili_startu_a_zapis_dopisany_w_sekcji_w_trakcie_dziala_od_nastepnego(
+    tmp_path: Path,
+) -> None:
+    def tata_adds_spelling(_path: Path) -> None:
+        form = next(code["code"] for code in centrum.client.get(LEGEND_URL).json()["codes"] if code["id"] == "instwewrg6")
+        if "instrg6#m" not in form["spellings"]:
+            saved = centrum.client.put(f"{LEGEND_URL}/instwewrg6", json=form | {"spellings": [*form["spellings"], "instrg6#m"]})
+            assert saved.status_code == 200, saved.text
+
+    # Pracownik pisze instrg6 zamiast instwewrg6: 12 m to w legendzie z Wydania 1 w AL.
+    rows: list[RegisterRow] = [{**register_order(1, PERIOD_MONDAY), "CZYNNOŚCI ZREALIZOWANE": "instrg6 12m"}]
+    centrum = preparing_centrum(tmp_path, rows, surroundings=Surroundings(source=on_register_read(tata_adds_spelling)))
+
+    run_to_end(centrum, dry_run=False)
+    during = _quantity(centrum, "AL18")
+    shutil.rmtree(centrum.fixture.period_directory)
+    run_to_end(centrum, dry_run=False)
+
+    assert (during, _quantity(centrum, "AL18")) == (0, 1)
+
+
 def test_przygotowanie_liczy_ostatnia_dobra_para_gdy_lista_urzadzen_zmieniona_poza_centrum_nie_pasuje_do_regul(
     tmp_path: Path,
 ) -> None:
