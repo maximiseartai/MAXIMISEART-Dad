@@ -216,6 +216,8 @@ PRZEKROCZONY_CZAS = "przekroczony_czas"
 OSADZONE = "osadzone"
 # Tożsamość mutacji w zapisie ``OSADZONE`` (``ZakresMutacji.tozsamosci``), inna niż klucz issue (``fingerprint``).
 Tozsamosc = NewType("Tozsamosc", str)
+# Commit linii niezacommitowanej w ``git blame``.
+UNCOMMITTED = "0" * 40
 # Kody wyjścia części, której zapis ``--zapis`` niesie wynik mutacji: 0 bez przeżytych, 1 z przeżytymi albo z przekroczonym
 # czasem testów, 3 z mutacjami bez werdyktu po limicie czasu części; kod 2 nic o mutacjach nie mówi.
 KODY_Z_WYNIKIEM = frozenset({0, 1, 3})
@@ -1111,13 +1113,16 @@ def entry(mutant: Mutant, text: str) -> dict[str, object]:
 def _origins(every: Sequence[Mutant], root: Path) -> list[frozenset[tuple[str, int]]]:
     """Pochodzenie linii każdej mutacji z ``every`` w checkoucie: commit linii pierwszych rodziców, który ostatni ją
     zmienił (``git blame --first-parent``: zmianę z gałęzi PR-u dostaje jego commit scalenia, a linię niezacommitowaną
-    zera), i jej numer w pliku tego commitu. Pochodzenie linii nie zmienia się, gdy późniejszy commit przesuwa ją
-    linią dopisaną albo usuniętą wyżej, a dwie linie o tej samej treści mają różne.
+    zera, także w pliku nieśledzonym, którego blame nie zna), i jej numer w pliku tego commitu. Pochodzenie linii
+    nie zmienia się, gdy późniejszy commit przesuwa ją linią dopisaną albo usuniętą wyżej, a dwie linie o tej samej
+    treści mają różne.
     Wiersze ``--porcelain`` dzieli tylko koniec linii gita (``_rows``): linia z U+2028 albo form feed to dalej jeden
     wiersz, a nagłówek linii stoi zaraz po treści poprzedniej (``\\t``)."""
 
+    paths = dict.fromkeys(mutant.path for mutant in every)
+    untracked = set(repo.git(root, "ls-files", "-z", "--others", "--exclude-standard", "--", *paths).split("\0"))
     blamed: dict[str, list[tuple[str, int]]] = {}
-    for path in dict.fromkeys(mutant.path for mutant in every):
+    for path in paths.keys() - untracked:
         lines = blamed[path] = []
         header = True
         for row in _rows(repo.git(root, "blame", "--first-parent", "--porcelain", "--", path, timeout=None)):
@@ -1125,7 +1130,7 @@ def _origins(every: Sequence[Mutant], root: Path) -> list[frozenset[tuple[str, i
                 commit, original, *_ = row.split()
                 lines.append((commit, int(original)))
             header = row.startswith("\t")
-    return [frozenset(blamed[mutant.path][line - 1] for line in mutant.lines) for mutant in every]
+    return [frozenset(blamed[mutant.path][line - 1] if mutant.path in blamed else (UNCOMMITTED, line) for line in mutant.lines) for mutant in every]
 
 
 def _last_changes(every: Sequence[Mutant], root: Path) -> list[frozenset[str]]:
