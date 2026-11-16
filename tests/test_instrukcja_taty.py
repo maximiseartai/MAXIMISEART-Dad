@@ -1,7 +1,8 @@
 """Instrukcja dla taty a katalogi Komunikatów.
 
 Każdy katalog (Przygotowanie pliku zbiorczego, Przebieg rozliczeń, start
-Centrum rozliczeń, Diagnoza, Zgłoszenie, Powiadomienia, Aktualizacja narzędzia, Uzupełnienie pliku zbiorczego) ma w ``docs/tata-instrukcja.md`` swoją sekcję z tabelą,
+Centrum rozliczeń, Diagnoza, Zgłoszenie, Powiadomienia, Aktualizacja narzędzia, Uzupełnienie pliku zbiorczego,
+Uporządkowanie INTERMAX, Wycena w efenix) ma w ``docs/tata-instrukcja.md`` swoją sekcję z tabelą,
 której wiersze cytują faktyczną treść „Co się stało”. Jeden zestaw sprawdzeń
 obejmuje każdy katalog: nowy katalog dostaje wszystkie sprawdzenia, gdy tylko
 trafi do ``CATALOGS``. Zmiana treści Komunikatu bez poprawki instrukcji psuje
@@ -21,6 +22,7 @@ from types import FrameType, ModuleType
 
 import pytest
 
+from rozliczenia import efenix_messages, intermax_messages
 from rozliczenia import preparation_messages as messages
 from rozliczenia import settlement_messages
 from rozliczenia.centrum import (
@@ -36,8 +38,10 @@ from rozliczenia.message import Message
 from tests.fixtures.message_samples import (
     ABOVE_CONFIG,
     DIAGNOSIS_SAMPLES,
+    EFENIX_SAMPLES,
     FILL_SAMPLES,
     NOTIFICATION_SAMPLES,
+    INTERMAX_ORDERING_ONLY,
     PREPARATION_SAMPLES,
     REPORT_SAMPLES,
     SETTLEMENT_SAMPLES,
@@ -57,8 +61,8 @@ FULL_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\/]|(?<![:\\/])(?:\\\\|//)[^\\/
 class Catalog:
     """Katalog Komunikatów, jego sekcja w instrukcji i próbki każdej fabryki.
 
-    ``outside_centrum`` to fabryki, których Komunikatu Centrum rozliczeń nigdy
-    nie pokazuje, więc instrukcja ich nie cytuje. ``hidden_folders`` to foldery
+    ``outside_centrum`` to fabryki, których Komunikatu Centrum rozliczeń nie
+    pokazuje w procesie sekcji, więc sekcja ich nie cytuje. ``hidden_folders`` to foldery
     ze ścieżek próbek leżące wyżej niż folder nadrzędny wskazywanego pliku albo
     folderu; trzy części Komunikatu ich nie pokazują.
     """
@@ -136,6 +140,24 @@ CATALOGS = {
         "### Uzupełnienie → co zrobić",
         FILL_SAMPLES,
         hidden_folders=ABOVE_CONFIG | {"Dane", "INEA"},
+    ),
+    # Katalog INTERMAX służy też przywróceniu Kopii INTERMAX (okno Ustawień) i Wpisaniu raportów (ekran Raporty), więc
+    # próbki mają Komunikaty o INTERMAX tylko w wariancie Uporządkowania. Kopie INTERMAX leżą w folderze narzędzia,
+    # więc jego nazwę legalnie widać jako folder nadrzędny folderu Kopii.
+    "uporzadkowanie-intermax": Catalog(
+        intermax_messages,
+        "### Uporządkowanie INTERMAX → co zrobić",
+        INTERMAX_ORDERING_ONLY,
+        outside_centrum=frozenset({"copies_unreadable", "copy_missing", "copy_unusable", "copy_damaged"}),
+        hidden_folders=ABOVE_CONFIG - {"Narzedzie"},
+    ),
+    # Wycena wskazuje Plik zbiorczy w Folderze okresu, więc folderów nad nim nie widać. Folderu Dane próbek nie ma na
+    # liście, bo jego nazwa zaczyna zdanie „Dane adresowe zlecenia” w Komunikacie; pełną ścieżkę łapie i tak FULL_PATH.
+    "wycena-w-efenix": Catalog(
+        efenix_messages,
+        "### Wycena w efenix → co zrobić",
+        EFENIX_SAMPLES,
+        hidden_folders=ABOVE_CONFIG | {"INEA"},
     ),
 }
 

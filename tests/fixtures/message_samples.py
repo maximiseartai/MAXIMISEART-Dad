@@ -334,16 +334,36 @@ _WITHOUT_COPY = tuple(
     for refusal in intermax_replace.Refusal
     if refusal not in (intermax_replace.Refusal.COPY_FAILED, intermax_replace.Refusal.COPY_EXISTS)
 )
+
+
+def _replacing(replacement: intermax_messages.Replacement) -> dict[str, list[Callable[[], Message]]]:
+    """Próbki fabryk, których Komunikat zależy od procesu podmieniającego INTERMAX, tylko dla ``replacement``."""
+
+    entering = replacement is intermax_messages.ENTERING
+    refusals = _WITHOUT_COPY if entering else tuple(intermax_replace.Refusal)
+    return {
+        "register_unusable": [
+            partial(intermax_messages.register_unusable, WorkbookError(REGISTER, problem), replacement) for problem in Problem
+        ],
+        "register_missing": [partial(intermax_messages.register_missing, REGISTER, replacement)],
+        "refused": [
+            partial(intermax_messages.refused, refusal, REGISTER, REGISTER.parent if entering else COPIES, replacement)
+            for refusal in refusals
+        ],
+        "old_copies_kept": [] if entering else [partial(intermax_messages.old_copies_kept, COPIES, replacement)],
+    }
+
+
+_REPLACING = tuple(_replacing(replacement) for replacement in (*REPLACEMENTS, intermax_messages.ENTERING))
+
+
+def _every_replacement(factory: str) -> list[Callable[[], Message]]:
+    return [sample for samples in _REPLACING for sample in samples[factory]]
+
+
 INTERMAX_SAMPLES: Samples = {
-    "register_unusable": [
-        partial(intermax_messages.register_unusable, WorkbookError(REGISTER, problem), replacement)
-        for replacement in (*REPLACEMENTS, intermax_messages.ENTERING)
-        for problem in Problem
-    ],
-    "register_missing": [
-        partial(intermax_messages.register_missing, REGISTER, replacement)
-        for replacement in (*REPLACEMENTS, intermax_messages.ENTERING)
-    ],
+    "register_unusable": _every_replacement("register_unusable"),
+    "register_missing": _every_replacement("register_missing"),
     "no_order_sheet": [lambda: intermax_messages.no_order_sheet(REGISTER)],
     "register_with_duplicated_headers": [
         lambda: intermax_messages.register_with_duplicated_headers(REGISTER, SHEET, ["ADRES"]),
@@ -369,18 +389,8 @@ INTERMAX_SAMPLES: Samples = {
         lambda: intermax_messages.day_already_ordered(REGISTER, SHEET, SEPTEMBER_14, 816, 816),
     ],
     "unsupported_shape": [lambda: intermax_messages.unsupported_shape(REGISTER, SHEET)],
-    "refused": [
-        *(
-            partial(intermax_messages.refused, refusal, REGISTER, COPIES, replacement)
-            for replacement in REPLACEMENTS
-            for refusal in intermax_replace.Refusal
-        ),
-        *(
-            partial(intermax_messages.refused, refusal, REGISTER, REGISTER.parent, intermax_messages.ENTERING)
-            for refusal in _WITHOUT_COPY
-        ),
-    ],
-    "old_copies_kept": [partial(intermax_messages.old_copies_kept, COPIES, replacement) for replacement in REPLACEMENTS],
+    "refused": _every_replacement("refused"),
+    "old_copies_kept": _every_replacement("old_copies_kept"),
     "copies_unreadable": [lambda: intermax_messages.copies_unreadable(COPIES)],
     "copy_missing": [lambda: intermax_messages.copy_missing(COPIES, COPY.name)],
     "copy_unusable": [partial(intermax_messages.copy_unusable, WorkbookError(COPY, problem)) for problem in Problem],
@@ -388,6 +398,9 @@ INTERMAX_SAMPLES: Samples = {
     "unexpected_failure": [intermax_messages.unexpected_failure],
     "summary_not_shown": [intermax_messages.summary_not_shown],
 }
+INTERMAX_ORDERING_ONLY: Samples = {**INTERMAX_SAMPLES, **_REPLACING[0]}
+"""Próbki katalogu INTERMAX, w których Komunikaty zależne od procesu mają tylko wariant Uporządkowania INTERMAX; bez
+końcówki ``_SAMPLES``, bo to widok katalogu, a nie osobny katalog z plikiem expect."""
 
 # Kopia konfliktu OneDrive obok INTERMAX: jego nazwa z dopiskiem nazwy komputera (``onedrive_conflicts``).
 CONFLICT_COPY = REGISTER.with_name(f"{REGISTER.stem}-LAPTOP-TATY{REGISTER.suffix}")
