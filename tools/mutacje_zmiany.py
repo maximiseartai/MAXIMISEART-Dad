@@ -245,12 +245,14 @@ def _changes(fork: str, root: Path) -> dict[str, list[Hunk]]:
     # Linie spoza UTF-8 mogą mieć tylko pliki, które ``_code`` odsiewa (plik ``.py`` czyta ``read_text`` w UTF-8),
     # więc zastąpienie ich znaków nie zmienia fragmentów.
     # Usunięty plik nie ma linii do zepsucia, więc każdy nagłówek ``+++`` to ``b/<ścieżka>``.
+    # Linia bazy pliku z końcami ``\r\n`` przychodzi z ``\r``, którego nie ma w tekście z ``read_text``: bez niego
+    # cofnięcie fragmentu jest tym samym kodem co w pliku z końcami ``\n``, więc łączy się z równą mu inną mutacją.
     for line in repo.git(root, "diff", "-U0", "-M", "--diff-filter=d", "--no-color", fork).split("\n"):
         if old_left and line.startswith("-"):
             old_left -= 1
             if current is not None:
                 hunk = found[current][-1]
-                found[current][-1] = Hunk(hunk.start, hunk.count, (*hunk.old, line[1:]))
+                found[current][-1] = Hunk(hunk.start, hunk.count, (*hunk.old, line[1:].removesuffix("\r")))
         elif new_left and line.startswith("+"):
             new_left -= 1
         elif line.startswith("+++ "):
