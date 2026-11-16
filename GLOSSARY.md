@@ -217,6 +217,19 @@ Idzie w porannej i wieczornej porze z Ustawień Centrum (domyślne pory i nadrab
 Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
 
+## Wysyłka rozliczeń
+
+Wysłanie Rozliczeń pracowników okresu z Centrum rozliczeń, każdemu Wykonawcy jego własnego, jako Mail z rozliczeniem, na kliknięcie taty, dla wszystkich albo zaznaczonych plików ([ADR 0040](docs/adr/0040-wysylka-rozliczen-mailem-ze-skrzynki-raportow.md)).
+Plik Wykonawcy idzie tylko na jego adresy z Listy Wykonawców, także Nieaktywnego, a pusty Szablon pracownika i plik bez Wykonawcy z Listy nie idą.
+Co już poszło, wie folder „Wysłane” skrzynki raportów: plik wysłany i niezmieniony nie idzie drugi raz, a zmieniony po wysłaniu idzie tylko na ponowną prośbę taty.
+_Avoid_: mailing, rozsyłka
+
+## Mail z rozliczeniem
+
+Mail ze skrzynki raportów taty do Wykonawcy z jego Rozliczeniem pracownika jako załącznikiem, z tematem i treścią z Ustawień Centrum i stopką taty.
+Rozpoznaje się go w „Wysłanych” po nazwie pliku załącznika, a nie po temacie, więc także wtedy, gdy tata wysłał go ręcznie z tej skrzynki.
+_Avoid_: mail z plikiem, wysyłka rozliczenia
+
 ## Rozliczenie wewnętrzne
 
 Skoroszyt `Rozliczenie wew. {okres}.xlsx` zawierający wszystkie zlecenia jednego okresu rozliczeniowego z Rejestru zleceń, skuteczne i nieskuteczne, w kolejności z Rejestru, bez pustych wierszy.
@@ -267,12 +280,12 @@ Wartość w tej kolumnie jest identyfikatorem źródłowym, który nie musi być
 ## Lista Wykonawców
 
 Część Ustawień Centrum: każdy Wykonawca z identyfikatorem z kolumny `WYKONAWCA` (H), nazwą w Rozliczeniu pracownika i adresami, z których wysyła Raporty wykonawcy.
-Wspólna dla Przebiegu rozliczeń, Przygotowania pliku zbiorczego, Wpisania raportów i Przypomnień o raporcie.
+Wspólna dla Przebiegu rozliczeń, Przygotowania pliku zbiorczego, Wpisania raportów, Przypomnień o raporcie i Wysyłki rozliczeń.
 _Avoid_: Konfiguracja wykonawców, lista adresów Wykonawców, pracownicy
 
 ## Nieaktywny Wykonawca
 
-Wykonawca z Listy Wykonawców, który już nie pracuje u taty: nie dostaje Przypomnień o raporcie, a okresy z jego zleceniami nadal się rozliczają.
+Wykonawca z Listy Wykonawców, który już nie pracuje u taty: nie dostaje Przypomnień o raporcie, a okresy z jego zleceniami nadal się rozliczają i Wysyłka rozliczeń wysyła mu jego Rozliczenie pracownika.
 Wykonawcy, którego identyfikator występuje w jakimkolwiek okresie, się nie usuwa, tylko oznacza jako nieaktywnego.
 _Avoid_: usunięty Wykonawca, były pracownik
 

@@ -921,3 +921,18 @@ okresu każdy folder, którego nazwa zaczyna się tak, jak podaje komunikat
 - Jeśli pojawi się komunikat „Nie można odczytać Pliku zbiorczego”, sprawdź, czy ten plik otwiera się w Excelu i jest zapisany jako `.xlsx`. Zamknij go i uruchom proces ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie.
 - Jeśli pojawi się informacja o braku szablonu, nie twórz pliku ręcznie z innego pracownika. Przekaż tę informację osobie utrzymującej narzędzie.
 - Jeśli plik pracownika ma już dane, narzędzie go nie nadpisze.
+
+## Wysyłka rozliczeń
+
+Po Przebiegu rozliczeń otwórz w menu `Wysyłka rozliczeń`. Po lewej są tygodnie z Rozliczeniami pracowników, po
+prawej pracownicy wybranego tygodnia z adresami i stanem pliku. Zaznaczeni są ci, którym rozliczenie jeszcze nie
+poszło. Kliknij `Wyślij`, obejrzyj maile w okienku (strzałkami przechodzisz do następnego) i potwierdź: każdy pracownik
+dostaje osobny mail ze swoim plikiem, ze skrzynki raportów, na wszystkie swoje adresy z Listy Wykonawców.
+
+- Temat i treść maila zmieniasz w oknie `Ustawienia`, w sekcji `Wysyłka rozliczeń`; `{okres}` to dni tygodnia, a
+  `{wykonawca}` imię i nazwisko pracownika. Stopka jest ta sama co w Przypomnieniach o raporcie.
+- Plik, który już poszedł, drugi raz nie pójdzie. Gdy po wysłaniu poprawisz plik, przy pracowniku stoi
+  `Zmienione po wysłaniu`: zaznacz go i wyślij jeszcze raz.
+- `Brak adresu`: dopisz pracownikowi adres w sekcji `Wykonawcy`. `Bez zleceń`: pracownik nie miał w tym tygodniu
+  zleceń, więc plik nie idzie.
+- Plik otwarty w Excelu nie pójdzie: zapisz go, zamknij i wyślij jeszcze raz.

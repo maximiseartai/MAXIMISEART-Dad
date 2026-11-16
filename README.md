@@ -486,6 +486,10 @@ wystarczają zależności z `requirements.txt`, bez Node.
   `config/ustawienia-pamiec/`, wszystko poza gitem. Każdą ręczną zmianę pliku
   (także usunięcie i złą treść) Centrum zapisuje w Historii jednym wierszem
   spoza Centrum, a złą treść pokazuje jako złe ustawienie z ostatnią dobrą wartością.
+- Wysyłka rozliczeń (strona `#/wysylka`,
+  [ADR 0040](docs/adr/0040-wysylka-rozliczen-mailem-ze-skrzynki-raportow.md)) wysyła każdemu Wykonawcy jego
+  Rozliczenie pracownika mailem ze skrzynki raportów, na kliknięcie taty. Temat i treść są w
+  `config/wysylka-rozliczen.yaml` (sekcja Ustawień „Wysyłka rozliczeń”), a co już poszło, wie folder „Wysłane”.
 - Metryki czytają przy każdym odczycie oba pliki metryk
   (`.rozliczenia-metrics.jsonl`, `.przygotowanie-pliku-zbiorczego-metrics.jsonl`)
   bez zmiany schematu, więc widać w nich także Uruchomienia spoza Centrum.
