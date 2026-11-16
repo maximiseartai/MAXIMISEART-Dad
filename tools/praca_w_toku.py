@@ -31,6 +31,7 @@ obiektów tylko nieosiągalne obiekty scalenia, które usuwa ``git gc``.
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, replace
 import io
 import json
@@ -49,7 +50,6 @@ from repo import BASE
 import repo
 
 
-SUBJECTS = 3
 TIMEOUT_S = 30
 FRESH_FETCH_S = 3600
 ISSUE_REFERENCE = re.compile(r"#(\d+)\b")
@@ -71,7 +71,82 @@ class WorkInProgress:
     files: frozenset[str]
     pr: int | None
     issues: frozenset[int]
-    subjects: tuple[str, ...]
+    subject: str | None
+
+
+@dataclass(frozen=True)
+class Commits:
+    """Commity spoza ``origin/main`` osiągalne z gałęzi, gałęzi zdalnych, HEAD i odłączonych HEAD worktree.
+
+    Jeden ``git log`` zamiast poleceń gita na każdą gałąź: ``own(tip)`` to dokładnie ``origin/main..tip``, a pliki
+    ``own(a) - own(b)`` to dokładnie ``git log a ^origin/main ^b --name-only`` (merge bez plików, jak w ``git log``).
+    Kolejność kluczy to kolejność ``git log``, od najnowszego commitu.
+    """
+
+    parents: Mapping[str, tuple[str, ...]]
+    files: Mapping[str, frozenset[str]]
+    subjects: Mapping[str, str]
+    issues: Mapping[str, frozenset[int]]
+
+    @classmethod
+    def read(cls, root: Path, tips: Iterable[str]) -> Commits:
+        log = repo.git(root, "log", "--no-renames", "--name-only", "-z", "--format=%x01%H %P%x02%s%x02%B%x02", *tips, f"^{BASE}")
+        parents: dict[str, tuple[str, ...]] = {}
+        files: dict[str, frozenset[str]] = {}
+        subjects: dict[str, str] = {}
+        issues: dict[str, frozenset[int]] = {}
+        for record in log.split("\x01")[1:]:
+            header, subject, rest = record.split("\x02", 2)
+            body, _, names = rest.rpartition("\x02")
+            sha, *above = header.split()
+            parents[sha] = tuple(above)
+            files[sha] = frozenset(name.lstrip("\n") for name in names.split("\0")) - {""}
+            subjects[sha] = subject
+            issues[sha] = _issues(body)
+        return cls(parents, files, subjects, issues)
+
+    def own(self, tip: str) -> frozenset[str]:
+        """Commity osiągalne z ``tip`` spoza ``origin/main``."""
+
+        seen: set[str] = set()
+        stack = [tip] if tip in self.parents else []
+        while stack:
+            sha = stack.pop()
+            if sha not in seen:
+                seen.add(sha)
+                stack += [parent for parent in self.parents[sha] if parent in self.parents]
+        return frozenset(seen)
+
+    def touched(self, commits: Iterable[str]) -> frozenset[str]:
+        return frozenset[str]().union(*(self.files[sha] for sha in commits))
+
+    def merge(self, sha: str) -> bool:
+        return len(self.parents[sha]) > 1
+
+    def newest_subject(self, commits: frozenset[str]) -> str | None:
+        return next((subject for sha, subject in self.subjects.items() if sha in commits and not self.merge(sha)), None)
+
+
+@dataclass(frozen=True)
+class _Refs:
+    """Wspólny graf i commity, które z niego posiadają gałęzie oraz gałęzie zdalne."""
+
+    commits: Commits
+    branches: Mapping[str, str]
+    remotes: Mapping[str, str]
+    on_refs: frozenset[str]
+    on_remotes: frozenset[str]
+
+    @classmethod
+    def read(cls, root: Path, detached_heads: Iterable[str]) -> _Refs:
+        listed = repo.git(root, "for-each-ref", "refs/heads", "refs/remotes", "--format=%(refname) %(objectname)")
+        refs = dict(line.rsplit(" ", 1) for line in listed.splitlines() if line)
+        commits = Commits.read(root, ["--branches", "--remotes", "HEAD", *dict.fromkeys(detached_heads)])
+        branches = {ref.removeprefix("refs/heads/"): sha for ref, sha in refs.items() if ref.startswith("refs/heads/")}
+        remotes = {ref: sha for ref, sha in refs.items() if ref.startswith("refs/remotes/")}
+        on_remotes = frozenset[str]().union(*(commits.own(sha) for sha in remotes.values()))
+        on_refs = on_remotes.union(*(commits.own(sha) for sha in branches.values()))
+        return cls(commits, branches, remotes, on_refs, on_remotes)
 
 
 @dataclass(frozen=True)
@@ -110,7 +185,12 @@ def main(argv: list[str] | None = None) -> int:
         print(_update_verdict(root, branch))
         return 0
     mine_dirty = _dirty(root)
-    others = [item for item in _local_work(root) if item.worktree != root and (branch is None or item.branch != branch)]
+    worktrees = _worktrees(root)
+    refs = _Refs.read(root, [tree.head for tree in worktrees if tree.branch is None])
+    mine_own = refs.commits.own(repo.git(root, "rev-parse", "HEAD").strip())
+    others = [
+        item for item in _local_work(refs, worktrees) if item.worktree != root and (branch is None or item.branch != branch)
+    ]
     issue_body = ""
     if args.lokalnie:
         print("GITHUB POMINIĘTY | --lokalnie")
@@ -134,52 +214,48 @@ def main(argv: list[str] | None = None) -> int:
         print(f"PRACA W TOKU | inne: {len(others)} | odniesienie: {root} ({branch or 'odłączony HEAD'})")
         for item in others:
             print(_line(item))
-    mine = _files(root, "HEAD") | mine_dirty
-    for line in _overlaps([(item, _shared(root, mine, mine_dirty, item)) for item in others]):
+    mine = refs.commits.touched(mine_own) | mine_dirty
+    for line in _overlaps([(item, _shared(refs, mine_own, mine, mine_dirty, item)) for item in others]):
         print(line)
     if not args.nakladania:
         print(_update_verdict(root, branch))
     return 0
 
 
-def _local_work(root: Path) -> list[WorkInProgress]:
-    worktrees = _worktrees(root)
+def _local_work(refs: _Refs, worktrees: list[repo.Worktree]) -> list[WorkInProgress]:
     checked_out = {tree.branch: tree.path for tree in worktrees if tree.branch is not None}
-    branches = repo.git(root, "for-each-ref", "refs/heads", "--format=%(refname)").split()
-    lines: list[tuple[str | None, Path | None, str]] = [
-        (ref.removeprefix("refs/heads/"), checked_out.get(ref.removeprefix("refs/heads/")), ref) for ref in branches
-    ]
+    lines: list[tuple[str | None, Path | None, str]] = [(branch, checked_out.get(branch), sha) for branch, sha in refs.branches.items()]
     lines += [(None, tree.path, tree.head) for tree in worktrees if tree.branch is None]
     work = []
-    for branch, worktree, ref in lines:
+    for branch, worktree, sha in lines:
         try:
-            item = _work(root, branch, worktree, ref)
+            item = _work(refs, branch, worktree, sha)
         except (OSError, subprocess.CalledProcessError):
-            continue  # inna sesja właśnie usunęła ten worktree albo gałąź
+            continue  # inna sesja właśnie usunęła ten worktree
         if item is not None:
             work.append(item)
     return work
 
 
-def _work(root: Path, branch: str | None, worktree: Path | None, ref: str) -> WorkInProgress | None:
+def _work(refs: _Refs, branch: str | None, worktree: Path | None, sha: str) -> WorkInProgress | None:
     dirty = _dirty(worktree) if worktree is not None else frozenset()
-    own = ("rev-list", "--count", "--no-merges", ref, "--not", "--branches", "--remotes")
-    if branch is None and not dirty and not int(repo.git(root, *own)):
+    commits = refs.commits
+    own = commits.own(sha)
+    if branch is None and not dirty and all(commits.merge(c) for c in own - refs.on_refs):
         return None  # czysta odłączona kopia commitów, które pokazuje już gałąź, albo ich merge: piaskownica albo przegląd
-    ahead = int(repo.git(root, "rev-list", "--count", f"{BASE}..{ref}"))
-    if not ahead and not dirty:
+    if not own and not dirty:
         return None
     return WorkInProgress(
         branch=branch,
         worktree=worktree,
-        head=repo.git(root, "rev-parse", ref).strip(),
-        ahead=ahead,
-        unpushed=int(repo.git(root, "rev-list", "--count", ref, "--not", "--remotes")),
+        head=sha,
+        ahead=len(own),
+        unpushed=len(own - refs.on_remotes),
         dirty=dirty,
-        files=_files(root, ref) | dirty,
+        files=commits.touched(own) | dirty,
         pr=None,
-        issues=_issues(repo.git(root, "log", "--format=%B", f"{BASE}..{ref}")) | _branch_issues(branch),
-        subjects=tuple(repo.git(root, "log", "--no-merges", f"-n{SUBJECTS}", "--format=%s", f"{BASE}..{ref}").splitlines()),
+        issues=frozenset[int]().union(*(commits.issues[c] for c in own)) | _branch_issues(branch),
+        subject=commits.newest_subject(own),
     )
 
 
@@ -228,7 +304,7 @@ def _with_pull_requests(
             files=pr.files,
             pr=pr.number,
             issues=pr.issues | _branch_issues(pr.branch),
-            subjects=(),
+            subject=None,
         )
         for pr in pull_requests
         if pr.branch not in local and pr.branch != current_branch
@@ -288,12 +364,12 @@ def _line(item: WorkInProgress) -> str:
     parts.append(", ".join(counts))
     if item.issues:
         parts.append(" ".join(f"#{number}" for number in sorted(item.issues)))
-    if item.subjects:
-        parts.append(item.subjects[0])
+    if item.subject is not None:
+        parts.append(item.subject)
     return "- " + " | ".join(parts)
 
 
-def _shared(root: Path, mine: frozenset[str], mine_dirty: frozenset[str], item: WorkInProgress) -> frozenset[str]:
+def _shared(refs: _Refs, mine_own: frozenset[str], mine: frozenset[str], mine_dirty: frozenset[str], item: WorkInProgress) -> frozenset[str]:
     """Pliki, które zmienia ten checkout i ``item``, każdy we własnych commitach albo niezacommitowanych.
 
     Gałąź zbudowana na innej niesie jej commity; liczą się tylko commity, których druga strona nie ma.
@@ -301,11 +377,13 @@ def _shared(root: Path, mine: frozenset[str], mine_dirty: frozenset[str], item: 
     """
 
     if item.head is None:
-        pushed = f"refs/remotes/origin/{item.branch}"
-        if repo.commit(root, pushed) is None:
+        pushed = refs.remotes.get(f"refs/remotes/origin/{item.branch}")
+        if pushed is None:
             return mine & item.files
-        return (_own_files(root, "HEAD", pushed) | mine_dirty) & _own_files(root, pushed, "HEAD")
-    return (_own_files(root, "HEAD", item.head) | mine_dirty) & (_own_files(root, item.head, "HEAD") | item.dirty)
+        theirs = refs.commits.own(pushed)
+    else:
+        theirs = refs.commits.own(item.head)
+    return (refs.commits.touched(mine_own - theirs) | mine_dirty) & (refs.commits.touched(theirs - mine_own) | item.dirty)
 
 
 def _overlaps(shared: list[tuple[WorkInProgress, frozenset[str]]]) -> list[str]:
@@ -377,11 +455,6 @@ def _base_note(root: Path) -> str:
 
 def _files(root: Path, ref: str, since: str = BASE) -> frozenset[str]:
     return repo.changed(root, repo.merge_base(root, since, ref), ref)
-
-
-def _own_files(root: Path, ref: str, other: str) -> frozenset[str]:
-    log = repo.git(root, "log", "--no-renames", "--name-only", "--format=", "-z", ref, f"^{BASE}", f"^{other}")
-    return frozenset(log.split("\0")) - {""}
 
 
 def _dirty(worktree: Path) -> frozenset[str]:
