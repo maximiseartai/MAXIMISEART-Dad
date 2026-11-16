@@ -4,6 +4,7 @@
 
 Zaakceptowana (decyzje Maksa ze specyfikacji #1597, 13.11.2026).
 Zmieniona 14.11.2026 decyzją Maksa w #1622: „Maszyneria maleje” pokazuje etykieta zamiast zgody `ZGODA SZOPA`.
+Zmieniona 16.11.2026 (polowanie 2026-11-09, klasa „decyzja u Maksa”): wyjątek tymczasowy nie czeka na zgodę Maksa, a decyzja Maksa to tylko rodzaj z listy w [`docs/agents/issue-tracker.md`](../agents/issue-tracker.md), „Decisions for Maks” (decyzje „Prawo właściciela i wyjątek”, „Los wiedzy” i „Decyzje Maksa”), bo Maks odrzucił swoją zgodę jako bramkę w #1622, [ADR 0036](0036-chwast-to-regula.md) i #1888.
 Zmieniona 14.11.2026 w #1611 (po trzech werdyktach FAIL PR #1680: dwóch za brakujące warianty i jednym za klasę spoza ręcznej tabeli klas): próbka znanej luki nosi nazwę klasy mechanizmu strażnika, a próbki to luki znane, nie pełna lista postaci ani klas (sekcja Decyzja, „Granica strażnika”).
 Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach o źródłach chwastu, szczeblu (d), PR korzenia, etykiecie `ready-for-agent` i pomiarze co poniedziałek.
 Zmienia sekcję „Reguły i co ich pilnuje” w [`AGENTS.md`](../../AGENTS.md): granicę strażnika, wyjątek na linii i źródła korzenia, a dokłada zakaz pamięci agentów poza repo.
@@ -41,7 +42,7 @@ Każda decyzja niżej ma jedno zdanie decyzji, jedno zdanie powodu i ticket, kt�
 - **Nowa reguła struktury.** Nowa reguła struktury wchodzi tylko jako typ, reguła ruff, kontrakt import-linter albo reguła ast-grep, a bez takiej postaci dostaje test zachowania albo punkt w „Co jest porażką” skilla `przeglad`, nie matcher w Pythonie.
   Powód: granicę strażnika wyznacza wtedy mechanizm gotowego narzędzia, więc runda przeglądu nie szuka kolejnej postaci obejścia.
   Wchodzi w #1612, #1613 i #1615.
-- **Prawo właściciela i wyjątek.** Stałe prawo modułu-właściciela do zakazanego API stoi jako zakres reguły w `per-file-ignores` konfiguracji ruff, a na linii stoi tylko wyjątek tymczasowy z powodem, datą wygaśnięcia i zgodą Maksa.
+- **Prawo właściciela i wyjątek.** Stałe prawo modułu-właściciela do zakazanego API stoi jako zakres reguły w `per-file-ignores` konfiguracji ruff, a na linii stoi tylko wyjątek tymczasowy z powodem i datą wygaśnięcia, którego powód sprawdza recenzent.
   Powód: prawo właściciela zapisane tłumieniem w linii wygląda jak wyjątek do skopiowania.
   Wchodzi w #1608.
 - **Licznik tłumień.** Liczba `noqa` i `type: ignore` w każdym katalogu stoi w repo, a PR, który zmienia liczbę tłumień, zmienia też zapisaną liczbę, także w dół.
@@ -74,10 +75,10 @@ Każda decyzja niżej ma jedno zdanie decyzji, jedno zdanie powodu i ticket, kt�
 - **Zakaz pamięci poza repo.** Agenci nie zapisują niczego do pamięci poza repo, a zakaz stoi w ustawieniach projektu w repo i wchodzi po rozbiórce dzisiejszych wpisów.
   Powód: pamięć jednej maszyny starzeje się, inne maszyny jej nie widzą, nic jej nie pilnuje i służy do usprawiedliwiania obejść.
   Wchodzi w #1603 i #1606.
-- **Los wiedzy.** Lekcja o kodzie albo procesie idzie przez drabinę (a)–(e) tylko wtedy, gdy wróciła co najmniej dwa razy, fakt domeny idzie do [`GLOSSARY.md`](../../GLOSSARY.md) albo ADR, preferencja pracy w repo do strażnika albo linii `AGENTS.md`, a fakt prywatny albo o maszynie do pliku reguł użytkownika na tej maszynie, który pisze tylko Maks, albo do narzędzia, które ten stan wykrywa.
+- **Los wiedzy.** Lekcja o kodzie albo procesie idzie przez drabinę (a)–(e) tylko wtedy, gdy wróciła co najmniej dwa razy, fakt domeny idzie do [`GLOSSARY.md`](../../GLOSSARY.md) albo ADR, preferencja pracy w repo do strażnika albo linii `AGENTS.md`, a fakt prywatny albo o maszynie do pliku reguł użytkownika na tej maszynie, spoza repo, albo do narzędzia, które ten stan wykrywa; linie, które Maks przyjął, wpisuje do tego pliku agent (Maks przy #1787, 15.11.2026).
   Powód: każda wiedza ma wtedy miejsce, które ją sprawdza albo czyta, a lekcja jednorazowa i historia biegów tylko rozdymają prozę dla agentów.
   Wchodzi w #1603 i #1605.
-- **Decyzje Maksa.** Otwarta decyzja dla Maksa jest issue z etykietą `decyzja-maksa` i szablonem bez wolnej prozy, a agenci mają stałą zgodę na zakładanie tylko takich issues, gdy sprawdzili, że decyzja nie jest już rozstrzygnięta.
+- **Decyzje Maksa.** Otwarta decyzja dla Maksa jest issue z etykietą `decyzja-maksa` i szablonem bez wolnej prozy, a agenci mają stałą zgodę na zakładanie tylko takich issues, gdy sprawdzili, że decyzja nie jest już rozstrzygnięta i należy do rodzaju z listy w `docs/agents/issue-tracker.md`; każdą inną decyzję agent podejmuje sam.
   Powód: decyzja zapisana w pamięci agenta czeka na Maksa niewidoczna dla niego i dla innych maszyn.
   Wchodzi w #1604.
 - **Notatki biegów.** Repo nie powołuje się na notatki biegów: dowód i decyzja, na których coś stoi, są w ADR, PR albo issue, a pliki werdyktów przeglądu mogą powstawać w notatkach, bo publikacja werdyktu przenosi je na GitHuba.

@@ -12,6 +12,15 @@ Zgłoszenie, Kontrola ilości or Logi Uruchomienia from Dad's computer: before y
 ## Decisions for Maks
 
 An open decision that only Maks can make lives as an issue labelled `decyzja-maksa` ([ADR 0034](../adr/0034-kod-jest-pamiecia.md)).
+Only a decision of one of these kinds is Maks's:
+
+- **Dad's data:** a risk that Dad's or his clients' data leave Dad's computer, or a new way of processing them ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md), [ADR 0025](../adr/0025-regula-danych-wysylki-do-skrzynki.md)).
+- **Maks's account or money:** a step that needs Maks's own login (a token, a GitHub App, a ruleset setting), or a cost beyond the usual budget of model tokens and boat hours.
+- **What Dad sees or does**, when no ADR or issue records Dad's or Maks's choice, and a question only Dad can answer.
+- **Reversing Maks:** a change to a decision Maks recorded in an ADR or an issue comment.
+
+Every other decision is the agent's: it decides, applies the choice, and names it in the `**Decyzja Maksa:**` line of the PR body (skill [`pr`](../../.agents/skills/pr/SKILL.md)), where Maks can reverse it; a step the agent can do itself (a merge through `tools/scal_pr.py`, a change in the repository) it does without asking.
+A mechanism (a rule, a tool, a skill step, an option of a decision issue) never makes Maks's consent or action a step that repeats for each entry, merge, exception or run outside these kinds: a rule, the reviewer or the tool checks that step, because a gate on Maks waits for him at the computer, and he rejected it three times (`ZGODA KORZEŃ` in [ADR 0036](../adr/0036-chwast-to-regula.md), `ZGODA SZOPA` in #1622, option A of #1888).
 
 - Create one without asking Maks, once ADRs, merged PRs and issue comments show the decision is still open.
   This standing consent covers only issues labelled `decyzja-maksa`; tickets of a spec still wait for Maks's yes.
@@ -21,6 +30,9 @@ An open decision that only Maks can make lives as an issue labelled `decyzja-mak
   ```markdown
   ## Pytanie
   <one question Maks answers in one sentence>
+
+  ## Czemu Maks
+  <the kind from the list above and the fact that makes the decision one>
 
   ## Opcje
   - **A. <name>:** <what happens after this answer>

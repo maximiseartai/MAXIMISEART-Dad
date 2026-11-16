@@ -79,7 +79,7 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
    - raport `<bieg>/klasa-<nazwa>.md` z sekcjami: Wynik w skrócie (mechanizm, szczebel, dowód, fałszywe alarmy, koszt migracji, gałąź), Prawdziwy kształt klasy, Szczebel i czemu nie inny, Dług i koszt migracji, Prototyp, Dowody (polecenie i ostatnia linia), Fałszywe alarmy, Złapane z historii, Kolizje, Ograniczenia;
    - PR zwykłą drogą (skill [`pr`](../pr/SKILL.md) z linią `Polowanie <poniedziałek>: klasa <nazwa>` w opisie, przegląd według [`przeglad`](../przeglad/SKILL.md), merge przez `tools/scal_pr.py`).
 
-   Klasa, której mechanizm wymaga decyzji Maksa, dostaje issue `decyzja-maksa` według [`issue-tracker.md`](../../../docs/agents/issue-tracker.md) zamiast PR, a PR bez merge'u przechodzi na następne polowanie i liczy się tam do limitu.
+   Klasa, której mechanizm wymaga decyzji Maksa (rodzaj z listy „Decisions for Maks”; o każdej innej, także o miejscu reguły w repo, decyduje agent klasy), dostaje issue `decyzja-maksa` według [`issue-tracker.md`](../../../docs/agents/issue-tracker.md) zamiast PR, a PR bez merge'u przechodzi na następne polowanie i liczy się tam do limitu.
    Krok kończy się, gdy każda klasa bez mechanizmu i każda reguła ponad progiem ma w `klasy.md` link do PR z raportem klasy, issue `decyzja-maksa` albo zdanie „czeka: limit dwóch PR-ów”.
 5. Zakończ odpowiedź w wątku zadania jedną linią: `POLOWANIE <poniedziałek> | klasy <k> (nowe <n>) | PR: <URL-e albo brak> | reguły ponad progiem: <id p%, albo brak> | decyzje: <URL-e albo brak> | niedostępne: <plik źródła: powód, albo brak>`.
    Krok kończy się, gdy linia ma każdy PR i issue z kroku 4 i każdą regułę ponad progiem z kroku 3.

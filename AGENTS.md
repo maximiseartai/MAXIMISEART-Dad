@@ -73,4 +73,5 @@ Strażnik reguły (nowy albo zmieniany), jego wiersz w tabeli reguł, prawo wła
 
 - Tickety: podział specyfikacji (tytuł, blokady, co daje) pokazujesz Maksowi i publikujesz dopiero po jego „tak” na tę listę, a issue specyfikacji, także jego etykiety, zostaje bez zmian.
 - Długi bieg (hillclimb, noc, program wielu PR-ów) kończysz spokojną wizualizacją HTML wyniku w wątku T3 (`html_render`).
+- Decyzje: decyzję spoza rodzajów z sekcji „Decisions for Maks” w [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md) podejmujesz sam i mówisz Maksowi, co wybrałeś, a krok, który możesz zrobić sam, robisz bez pytania; mechanizm, który projektujesz, działa bez Maksa przy komputerze.
 - Wiedza: lekcję, regułę i fakt zapisujesz w repo (dokument reguły, ADR, skill), a stan pracy na GitHubie (issue, PR, komentarz), bo pamięć Claude spoza repo wyłącza `.claude/settings.json`.
