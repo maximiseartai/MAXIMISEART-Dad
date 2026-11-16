@@ -335,6 +335,19 @@ def test_worktree_zablokowany_albo_w_trakcie_bisect_zostaje(
     assert _line(lines, str(path)).endswith(f"| {reason}")
 
 
+def test_worktree_w_trakcie_git_worktree_add_zostaje(merged: Path, fake_lsof: Callable[..., None]) -> None:
+    main, path = merged, merged.parent / "zrobione"
+    fake_lsof(ELSEWHERE)
+    # Tak zostawia HEAD git worktree add, zanim ustawi go na commit.
+    (Path(git(path, "rev-parse", "--absolute-git-dir")) / "HEAD").write_text("0" * 40 + "\n", encoding="utf-8")
+
+    code, lines = _cleanup(main, "--usun")
+
+    assert code == 0
+    assert path.is_dir()
+    assert _line(lines, str(path)).endswith("| w trakcie tworzenia (HEAD bez commitu)")
+
+
 def test_odmowa_gita_zostawia_worktree_z_powodem(merged: Path, fake_lsof: Callable[..., None]) -> None:
     main, path = merged, merged.parent / "zrobione"
     fake_lsof(ELSEWHERE)

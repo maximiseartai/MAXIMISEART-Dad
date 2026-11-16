@@ -14,7 +14,7 @@ zamykać swoje pliki. Po śmierci narzędzia bez sprzątania (SIGKILL, ``os._exi
 narzędzia, a na Windows system, gdy zamyka uchwyt Job Object (KILL_ON_JOB_CLOSE).
 
 ``commit_copy`` to odłączony worktree commitu w katalogu tymczasowym. Znika z blokiem ``with``, a po
-śmierci narzędzia usuwa go strażnik.
+śmierci narzędzia usuwa go strażnik. ``is_commit_copy`` rozpoznaje taką kopię wśród worktree repozytorium.
 
 Strażnik to ten plik uruchomiony ``python -I`` we własnej sesji. Po EOF na stdin, czyli po końcu
 narzędzia, zabija zgłoszone drzewa i usuwa zgłoszone kopie. Narzędzie uruchomione przez inne narzędzie
@@ -63,6 +63,7 @@ _RELEASE_S = 10.0
 # worktree jednego repozytorium to osobne procesy, więc te polecenia idą po kolei pod ``_worktrees`` (#1312), z blokadą
 # tego pliku w katalogu gita wspólnym dla wszystkich worktree repozytorium.
 _WORKTREES_LOCK = "potomne-worktree.lock"
+_COPY_PREFIX = "kopia-commitu-"
 
 
 class Stopped(Exception):
@@ -147,7 +148,7 @@ def commit_copy(repo: Path, commit: str) -> Iterator[Path]:
 
     repo = repo.resolve()
     guard = _guard()
-    copy = Path(tempfile.mkdtemp(prefix="kopia-commitu-"))
+    copy = Path(tempfile.mkdtemp(prefix=_COPY_PREFIX))
     try:
         guard.report("+", "kopia", str(copy), str(repo))
         # Przez run: strażnik zabija przerwane ``worktree add``, zanim usunie kopię, którą ono jeszcze wypełnia.
@@ -160,6 +161,12 @@ def commit_copy(repo: Path, commit: str) -> Iterator[Path]:
         _remove_copy(repo, copy)
         with suppress(OSError):
             guard.report("-", "kopia", str(copy), str(repo))
+
+
+def is_commit_copy(path: Path) -> bool:
+    """Czy worktree ``path`` to kopia z ``commit_copy``: jego katalog ma nazwę z prefiksem, z którym go zakłada."""
+
+    return path.name.startswith(_COPY_PREFIX)
 
 
 def _wait(process: subprocess.Popen[str], timeout: float, stop: threading.Event | None) -> None:
