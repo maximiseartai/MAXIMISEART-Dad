@@ -11,7 +11,8 @@ PR, się nie liczą: ``success``, gdy run się skończył, a jego Required przes
 jeszcze biegną albo padły, wymienia osobno, bo gotowość czeka i na nie; ``pending``, gdy run trwa (nie ma jeszcze
 checku Required, bo GitHub tworzy go po zadaniach z jego ``needs:``, albo któreś jego zadanie biegnie); ``failure``
 z padłymi zadaniami runu i poleceniem ``gh run view <run> --log-failed``; ``nieznany``, gdy check workflow ``CI``
-nie ma identyfikatora runu w ``detailsUrl``; ``brak``, gdy CI na HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``.
+nie ma identyfikatora runu w ``detailsUrl``; ``brak``, gdy CI na HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``,
+a PR, któremu limit rund (``limit_rund``) nie daje kolejnej rundy, tylko linią ``PRZEGLĄD ODMOWA | #N <sha> | <przyczyna>``.
 """
 
 from __future__ import annotations
@@ -21,13 +22,13 @@ import subprocess
 import sys
 
 import github
+import limit_rund
 from ostatnie_linie import SKILLE_VERIFY
 import potomne
 from repo import ROOT
 import repo
 import stan_pr
 import werdykt_pr
-import werdykt_scalenia
 
 SKILLS_FOR_CHANGE = Path("tools") / "skille_dla_zmiany.py"
 SKILLS_TIMEOUT_S = 300
@@ -51,9 +52,12 @@ def _skills_for_change(head: str, fork: str) -> list[str]:
     return lines
 
 
-def print_context(number: int) -> int:
-    pull = stan_pr.pull(number)
-    base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
+def print_context(pull: stan_pr.Pull, base: str) -> int:
+    """Kontekst przeglądu ``pull`` z bazą ``base`` (SHA ``origin/<baza PR>`` tuż po pobraniu)."""
+
+    if refused := limit_rund.deployed_problem(pull):
+        print(f"PRZEGLĄD ODMOWA | #{pull.number} {pull.head[:7]} | {refused}")
+        return 1
     limit = github.LIMIT_S
     fork = repo.merge_base(ROOT, base, pull.head, timeout=limit)
     files = sorted(repo.changed(ROOT, fork, pull.head, timeout=limit))
