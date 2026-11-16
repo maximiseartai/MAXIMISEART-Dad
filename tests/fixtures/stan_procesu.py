@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 import ctypes
 import gc
 import io
+import multiprocessing.forkserver
 import multiprocessing.resource_tracker
 import os
 from pathlib import Path
@@ -74,9 +75,12 @@ def _uruchom_zasoby_procesu() -> None:
     """Zasoby, które biblioteka otwiera raz na proces przy pierwszym użyciu i trzyma do jego końca: bez startu przed
     pierwszym testem należałyby do testu, który pierwszy ich użył. Nowy taki zasób dopisz tutaj."""
 
+    if sys.platform == "win32":  # tam plugin nie porównuje deskryptorów ani potomków
+        return
     socket.getaddrinfo("localhost", None)  # macOS: połączenia resolvera systemu (mDNSResponder, netsrc)
     potomne.run([sys.executable, "-c", ""], cwd=Path.cwd(), timeout=60)  # strażnik drzew procesów narzędzi
     multiprocessing.resource_tracker.ensure_running()  # proces śledzący zasoby multiprocessing
+    multiprocessing.forkserver.ensure_running()  # serwer startu procesów multiprocessing (domyślny od Pythona 3.14)
 
 
 _ZASOBY_PROCESU: list[Callable[[], None]] = [_uruchom_zasoby_procesu]
