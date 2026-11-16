@@ -12,6 +12,7 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.error
 import urllib.request
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -160,6 +161,23 @@ def test_wolny_port_dla_centrum_omija_port_na_ktorym_ktos_slucha(monkeypatch: py
         monkeypatch.setattr(random, "sample", lambda _population, _k: drawn)
 
         assert free_port() == drawn[1]
+
+
+def test_czekanie_na_centrum_bez_odpowiedzi_mowi_po_kolei_kiedy_port_milczal_a_kiedy_nikt_na_nim_nie_sluchal() -> None:
+    """Porażka czekania na ``health`` mówi, co port odpowiadał w kolejnych sekundach, bo bez tego log flaky testu skrótu
+    nie rozstrzygał, czy Centrum trzymało port bez odpowiedzi, czy nikt na nim nie słuchał (#1454)."""
+
+    silent = socket.create_server(("127.0.0.1", free_port()))
+    port = silent.getsockname()[1]
+    closing = threading.Timer(1.5, silent.close)
+    closing.start()
+
+    with pytest.raises(urllib.error.URLError) as failure:
+        centrum_health(port, timeout_s=3)
+    closing.join()
+
+    spans = failure.value.__notes__[-1].splitlines()[1:]
+    assert ("bez odpowiedzi" in spans[0], "nikt nie słucha" in spans[-1]) == (True, True), spans
 
 
 def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path: Path) -> None:
