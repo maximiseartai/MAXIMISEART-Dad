@@ -737,9 +737,7 @@ _STATES = (("ja", True), ("ja-odlaczony", False), ("ja-na-zdalnej", True), ("reb
 
 @pytest.mark.dlugi
 def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Path) -> None:
-    started = time.monotonic()
     world = _world(tmp_path)
-    built = time.monotonic()
     answer = json.dumps(
         [
             {"number": pr, "headRefName": branch, "title": "", "body": _PR_BODIES.get(branch, ""), "files": [{"path": p} for p in sorted(files)]}
@@ -762,7 +760,6 @@ def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Pa
         with ThreadPoolExecutor(len(runs)) as pool:
             reports = [pool.submit(report, *run) for run in runs]
             results = [future.result() for future in reports]
-    ran = time.monotonic()
 
     mismatches = []
     for (name, github, everything), actual in zip(runs, results, strict=True):
@@ -773,4 +770,3 @@ def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Pa
         mismatches += [f"{run}: nadmiar {line}" for line in actual[:-3] if line not in details]
         mismatches += [f"{run}: odpowiedzi {actual[-3:]} zamiast {answers}"] if _in_any_order(actual[-3:]) != _in_any_order(answers) else []
     assert not mismatches, "\n".join(mismatches)
-    pytest.fail(f"POMIAR 1685 | świat {built - started:.1f} s | uruchomienia {ran - built:.1f} s | razem {ran - started:.1f} s")
