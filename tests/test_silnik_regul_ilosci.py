@@ -560,7 +560,7 @@ def test_przygotowanie_przebieg_kontrola_i_uzupelnienie_licza_regulami_ilosci_ze
         SettlementInputs(preparation.collective_file, worker_list(), worker_template, quantity_rules=OWN_RULES),
         RunContext(),
     )
-    check = quantity_check.check(settlement.orders, settlement.quantity_rules)
+    check = quantity_check.check(settlement.orders, settlement.quantity_rules, settlement.activity_legend)
     read = collective_file.read_numbered_orders(preparation.collective_file, DadFiles())
     assert not isinstance(read, MissingHeaders)
     to_fill = quantities_to_fill(read.rows, OWN_RULES, settled=False)

@@ -14,6 +14,19 @@ Wiersze rozliczane z opisu nie dają różnic, a wiersze bez reguły tworzą gru
 różnice tylko w kolumnach reguł dla składnika spoza listy (``QuantityRules.without_rule_columns``, z Wydania V, T i N)
 oraz wartości taty w pozostałych kolumnach N:AP (decyzja 10). Puste i 0 to to samo
 (decyzja 11). Grupy różnic pokazują dzień tygodnia i pełną godzinę, bo od godziny zależy dodatek za usterkę.
+
+Legenda czynności (ADR 0038) liczy się rachunkiem jednego wiersza ``legend_row_check``, tym samym w Kontroli i w
+podglądzie zmiany legendy. W wierszu z Kodem czynności (także tylko spoza przedziałów) porównuje z tatą:
+
+- kolumny, w które może wpisać którykolwiek kod legendy, z wartością Reguł ilości i legendy razem, tak jak wpisuje
+  je Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy legenda wpisała w nią coś w tym wierszu, i wtedy
+  ta kolumna nie jest różnicą Reguł ilości;
+- kwotę w ``AS``;
+- kolory kolumn, które może wypełnić którykolwiek kod legendy (jest albo nie ma, zielony, czerwony albo inny kolor).
+
+W wierszu bez kodu liczy wpis taty: kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. Opis
+technika (``CZYNNOŚCI ZREALIZOWANE``) wiersz oddaje (``LegendRowCheck.description``) tylko przy różnicy legendy albo,
+bez kodu, przy wpisie taty, więc tylko taki opis trafia do treści Kontroli, a w niej przez strażnika reguły danych.
 """
 
 from __future__ import annotations
@@ -23,9 +36,10 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Final
 
+from .activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesRead, ColumnByNumber, FillColour, FixedColumn
 from .text import WEEKDAY_LABELS, plural
 from .collective_layout import HEADER_ROW, QUANTITY_LETTERS
-from .order_facts import CollectiveOrders, MissingHeaders, OrderFacts, TataValue
+from .order_facts import CollectiveOrders, MissingHeaders, OrderFacts, TataFill, TataValue
 from .quantity_engine import (
     DESCRIPTION_COLUMNS,
     FromDescription,
@@ -76,6 +90,22 @@ class QuantityCheck:
     unruled: dict[str, Unruled] = field(default_factory=lambda: defaultdict(Unruled))
     description_filled: Counter[str] = field(default_factory=Counter)
     other_filled: Counter[str] = field(default_factory=Counter)
+    coded: int = 0
+    """Wiersze danych z Kodem czynności."""
+    coded_matching: int = 0
+    """Wiersze z Kodem czynności bez różnicy legendy."""
+    legend_differences: dict[tuple[str, ...], LegendGroup] = field(default_factory=lambda: defaultdict(LegendGroup))
+    """Identyfikatory kodów wiersza → różnice legendy wierszy z tymi kodami."""
+    uncoded_entries: Counter[tuple[str, tuple[tuple[str, TataValue], ...]]] = field(default_factory=Counter)
+    """(opis technika, wpis taty) → wiersze bez kodu z tym wpisem."""
+    out_of_range: Counter[tuple[str, int]] = field(default_factory=Counter)
+    """(kod, liczba z zapisu spoza przedziałów) → wiersze."""
+
+    @property
+    def legend_difference_count(self) -> int:
+        """Komórki różne od legendy (wartość albo kolor) w wierszach z Kodem czynności."""
+
+        return sum(sum(group.rows.values()) for group in self.legend_differences.values())
 
     @property
     def unruled_rows(self) -> int:
@@ -86,6 +116,14 @@ class QuantityCheck:
         """Komórki różne od reguły w kolumnach Reguł ilości, także V, T i N wierszy bez reguły."""
 
         return sum(self.differences.values()) + sum(sum(group.differences.values()) for group in self.unruled.values())
+
+
+@dataclass
+class LegendGroup:
+    """Różnice legendy wierszy o jednym zestawie Kodów czynności: różnica → wiersze i opisy technika tych wierszy."""
+
+    rows: Counter[LegendDifference] = field(default_factory=Counter)
+    descriptions: dict[LegendDifference, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))
 
 
 @dataclass(frozen=True)
@@ -122,8 +160,102 @@ def row_check(row: OrderFacts, rules: QuantityRules) -> RowCheck:
     )
 
 
-def check(orders: CollectiveOrders, rules: QuantityRules) -> CheckResult:
-    """Kontrola ilości Zleceń Przebiegu według ``rules``, Reguł ilości tego Przebiegu."""
+@dataclass(frozen=True)
+class ValueDifference:
+    """Wartość komórki (Ilość usług w kolumnie albo kwota w ``AS``) inna u taty niż według Reguł ilości i legendy."""
+
+    column: str
+    legend: int
+    tata: TataValue
+
+
+@dataclass(frozen=True)
+class FillDifference:
+    """Kolor wypełnienia kolumny inny u taty niż według legendy; ``None``: bez wypełnienia."""
+
+    column: str
+    legend: FillColour | None
+    tata: TataFill | None
+
+
+LegendDifference = ValueDifference | FillDifference
+
+
+@dataclass(frozen=True)
+class LegendRowCheck:
+    """Legenda czynności w Kontroli ilości jednego Wiersza danych.
+
+    ``codes``: wynik legendy dla opisu technika. ``rules``: rachunek Reguł ilości (``row_check``). ``differences``: różnice
+    legendy w wierszu z kodem, w kolejności N:AP, ``AS``, potem kolory. ``entry``: wpis taty w wierszu bez kodu (kolumna
+    → wartość). ``description``: opis technika, tylko w wierszu z różnicą legendy albo bez kodu z wpisem taty.
+    """
+
+    codes: CodesRead
+    rules: RowCheck
+    differences: tuple[LegendDifference, ...]
+    entry: tuple[tuple[str, TataValue], ...]
+    description: str | None
+
+    @property
+    def coded(self) -> bool:
+        return bool(self.codes.found or self.codes.out_of_range)
+
+    @property
+    def rule_differences(self) -> tuple[str, ...]:
+        """Różnice Reguł ilości bez kolumn, które w tym wierszu wpisała też legenda: te porównuje legenda, z sumą."""
+
+        return tuple(column for column in self.rules.differences if column not in self.codes.quantities)
+
+
+def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRules) -> LegendRowCheck:
+    """Rachunek Legendy czynności ``legend`` w Kontroli ilości na jednym Wierszu danych, z Regułami ilości ``rules``; ten
+    sam liczy ``check`` i podgląd zmiany legendy w Ustawieniach (zob. opis modułu)."""
+
+    ruled = row_check(row, rules)
+    codes = legend.read(row.completed)
+    if not (codes.found or codes.out_of_range):
+        entry = tuple(
+            (column, row.quantity(column))
+            for column in DESCRIPTION_COLUMNS
+            if column not in ruled.compared and row.quantity(column) != 0
+        ) + (((AMOUNT_COLUMN, row.amount),) if row.amount != 0 else ())
+        return LegendRowCheck(codes, ruled, (), entry, row.completed if entry else None)
+    ruled_quantities = {} if ruled.result is None else ruled.result.quantities
+    compared: list[LegendDifference] = [
+        ValueDifference(column, ruled_quantities.get(column, 0) + codes.quantities.get(column, 0), row.quantity(column))
+        for column in _legend_columns(legend)
+        if column in codes.quantities or column not in ruled.compared
+    ]
+    compared.append(ValueDifference(AMOUNT_COLUMN, codes.amount, row.amount))
+    compared.extend(FillDifference(column, codes.fills.get(column), row.fills.get(column)) for column in _legend_fill_columns(legend))
+    differences = tuple(difference for difference in compared if difference.legend != difference.tata)
+    return LegendRowCheck(codes, ruled, differences, (), row.completed if differences else None)
+
+
+def _legend_columns(legend: ActivityLegend) -> tuple[str, ...]:
+    """Kolumny N:AP, w które może wpisać którykolwiek kod legendy, w kolejności N:AP."""
+
+    columns: set[str] = set()
+    for code in legend.codes:
+        match code.column:
+            case FixedColumn(column=column):
+                columns.add(column)
+            case ColumnByNumber(ranges=ranges):
+                columns.update(found.column for found in ranges)
+            case None:
+                pass
+    return tuple(column for column in QUANTITY_LETTERS if column in columns)
+
+
+def _legend_fill_columns(legend: ActivityLegend) -> tuple[str, ...]:
+    """Kolumny, które może wypełnić którykolwiek kod legendy, w kolejności arkusza."""
+
+    columns = {fill.column for code in legend.codes for fill in code.fills}
+    return tuple(column for column in (*QUANTITY_LETTERS, AMOUNT_COLUMN) if column in columns)
+
+
+def check(orders: CollectiveOrders, rules: QuantityRules, legend: ActivityLegend) -> CheckResult:
+    """Kontrola ilości Zleceń Przebiegu według ``rules`` i ``legend``, Reguł ilości i Legendy czynności tego Przebiegu."""
 
     if isinstance(orders, MissingHeaders):
         return NotCompared(orders.headers)
@@ -134,7 +266,8 @@ def check(orders: CollectiveOrders, rules: QuantityRules) -> CheckResult:
     result = QuantityCheck(other_columns)
     for row in orders:
         result.rows += 1
-        checked = row_check(row, rules)
+        coded = legend_row_check(row, legend, rules)
+        checked = coded.rules
         content, rule, compared = row.content, checked.result, checked.compared
         if content is None or content.started is None or rule is None:
             result.undated += 1
@@ -142,14 +275,32 @@ def check(orders: CollectiveOrders, rules: QuantityRules) -> CheckResult:
             result.from_description += 1
         elif isinstance(rule, ServiceQuantities):
             result.compared += 1
-            result.differences.update(_differences(content, content.started, row, rule.quantities, checked.differences))
+            result.differences.update(_differences(content, content.started, row, rule.quantities, coded.rule_differences))
         else:
-            _add_unruled(result.unruled[content.devices], content, content.started, row, rule, checked)
+            _add_unruled(result.unruled[content.devices], content, content.started, row, rule, coded)
         result.description_filled.update(
             column for column in DESCRIPTION_COLUMNS if row.quantity(column) != 0 and column not in compared
         )
         result.other_filled.update(column for column in other_columns if row.quantity(column) != 0)
+        _add_legend(result, coded)
     return result
+
+
+def _add_legend(result: QuantityCheck, coded: LegendRowCheck) -> None:
+    result.out_of_range.update({(found.code, found.number) for found in coded.codes.out_of_range if found.number is not None})
+    if not coded.coded:
+        if coded.description is not None:
+            result.uncoded_entries[coded.description, coded.entry] += 1
+        return
+    result.coded += 1
+    if not coded.differences:
+        result.coded_matching += 1
+        return
+    ids = tuple(dict.fromkeys(found.code for found in (*coded.codes.found, *coded.codes.out_of_range)))
+    group = result.legend_differences[ids]
+    group.rows.update(coded.differences)
+    for difference in coded.differences:
+        group.descriptions[difference][coded.description or ""] += 1
 
 
 def week_hour(weekday: int, hour: int) -> str:
@@ -176,14 +327,14 @@ def _add_unruled(
     started: WeekTime,
     row: OrderFacts,
     rule: WithoutRule,
-    checked: RowCheck,
+    coded: LegendRowCheck,
 ) -> None:
     group.rows += 1
-    group.differences.update(_differences(content, started, row, rule.quantities, checked.differences))
+    group.differences.update(_differences(content, started, row, rule.quantities, coded.rule_differences))
     group.values.update(
         (column, row.quantity(column))
         for column in QUANTITY_LETTERS
-        if column not in checked.compared and row.quantity(column) != 0
+        if column not in coded.rules.compared and row.quantity(column) != 0
     )
 
 
@@ -208,7 +359,7 @@ def _differences(
 def title(period: str, result: CheckResult) -> str:
     if isinstance(result, NotCompared):
         return f"Kontrola ilości {period}: bez porównania"
-    count = result.difference_count
+    count = result.difference_count + result.legend_difference_count
     differences = f"{count} {plural(count, 'różnica', 'różnice', 'różnic')}" if count else "bez różnic"
     return f"Kontrola ilości {period}: {differences}"
 
@@ -244,9 +395,14 @@ def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str
         _INTRO,
         f"- Wiersze danych: {result.rows} (porównane {result.compared}, rozliczane z opisu "
         f"{result.from_description}, bez reguły {result.unruled_rows}, bez daty i godziny w DATA {result.undated})\n"
-        f"- Różnice w kolumnach Reguł ilości: {result.difference_count}\n",
+        f"- Różnice w kolumnach Reguł ilości: {result.difference_count}\n"
+        f"- Wiersze z Kodem czynności: {result.coded} (zgodne z legendą {result.coded_matching}), "
+        f"różnice legendy: {result.legend_difference_count}\n",
         *_difference_blocks(result.differences),
         *_unruled_blocks(result.unruled),
+        *_legend_blocks(result.legend_differences),
+        *_uncoded_blocks(result.uncoded_entries),
+        *_out_of_range_blocks(result.out_of_range),
         "\n## Kolumny z opisu technika: wiersze wypełnione przez tatę\n\n",
         _count_table(DESCRIPTION_COLUMNS, result.description_filled),
         "\n## Pozostałe kolumny N:AP: wiersze wypełnione przez tatę\n\n",
@@ -284,6 +440,71 @@ def _unruled_blocks(unruled: Mapping[str, Unruled]) -> list[str]:
                 )
             )
     return found
+
+
+_LEGEND_HEADER: Final = "| Kolumna | Legenda | Tata | Wiersze | Opisy |\n| --- | --- | --- | --- | --- |\n"
+_NO_FILL: Final = "brak"
+
+
+def _legend_blocks(groups: Mapping[tuple[str, ...], LegendGroup]) -> list[str]:
+    if not groups:
+        return []
+    found: list[str] = ["\n## Różnice legendy\n"]
+    for ids in sorted(groups, key=lambda ids: [_text_order(code) for code in ids]):
+        group = groups[ids]
+        found.append(f"\n### Kody {', '.join(_code(code) for code in ids)}\n\n{_LEGEND_HEADER}")
+        found.extend(
+            f"| {_legend_column(difference)} | {_legend_value(difference.legend)} | {_legend_value(difference.tata)} | "
+            f"{group.rows[difference]} | {_descriptions(group.descriptions[difference])} |\n"
+            for difference in sorted(group.rows, key=_legend_order)
+        )
+    return found
+
+
+def _uncoded_blocks(entries: Counter[tuple[str, tuple[tuple[str, TataValue], ...]]]) -> list[str]:
+    if not entries:
+        return []
+    return [
+        "\n## Wiersze bez kodu z wpisem taty\n\n| Opis | Wpis taty | Wiersze |\n| --- | --- | --- |\n",
+        *(
+            f"| {_code(description)} | {', '.join(f'{column} {value}' for column, value in entry)} | {count} |\n"
+            for (description, entry), count in sorted(entries.items(), key=lambda item: (_text_order(item[0][0]), str(item[0][1])))
+        ),
+    ]
+
+
+def _out_of_range_blocks(codes: Counter[tuple[str, int]]) -> list[str]:
+    if not codes:
+        return []
+    return [
+        "\n## Kody spoza przedziałów\n\n| Kod | Liczba | Wiersze |\n| --- | --- | --- |\n",
+        *(
+            f"| {_code(code)} | {number} | {count} |\n"
+            for (code, number), count in sorted(codes.items(), key=lambda item: (_text_order(item[0][0]), item[0][1]))
+        ),
+    ]
+
+
+def _legend_column(difference: LegendDifference) -> str:
+    return f"{difference.column} kolor" if isinstance(difference, FillDifference) else difference.column
+
+
+def _legend_value(value: int | str | None) -> str:
+    return _NO_FILL if value is None else str(value)
+
+
+def _legend_order(difference: LegendDifference) -> tuple[int, int, str, str]:
+    position = _COLUMN_ORDER.get(difference.column, len(_COLUMN_ORDER))
+    return (isinstance(difference, FillDifference), position, str(difference.legend), str(difference.tata))
+
+
+def _descriptions(descriptions: Counter[str]) -> str:
+    """Opisy technika wierszy różnicy, każdy raz, z liczbą wierszy, gdy jest ich więcej niż jeden."""
+
+    return "<br>".join(
+        _code(description) + (f" ({count})" if count > 1 else "")
+        for description, count in sorted(descriptions.items(), key=lambda item: _text_order(item[0]))
+    )
 
 
 def _difference_rows(differences: Counter[Difference], devices: str) -> list[str]:

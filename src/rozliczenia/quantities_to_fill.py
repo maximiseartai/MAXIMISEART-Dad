@@ -23,6 +23,7 @@ from enum import StrEnum
 from typing import Final
 
 from .collective_layout import QUANTITY_LETTERS
+from .activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from .order_facts import OrderFacts, TataValue
 from .quantity_check import QuantityCheck, check, compared_columns
 from .quantity_engine import DESCRIPTION_COLUMNS, FromDescription, QuantityRules, RuleResult, WithoutRule, evaluate
@@ -65,8 +66,8 @@ TEXT_COLUMNS: Final[tuple[Column, ...]] = (WORKER, DEVICES, ACTIVITIES, COMPLETE
 RowTexts = tuple[str, ...]
 """Teksty Wiersza danych w kolumnach ``TEXT_COLUMNS`` po kolei; pusta komórka to ``""``.
 
-Trafiają tylko do przeglądarki taty, nigdy do ``OrderFacts``, więc nie wychodzą z komputera: ani w Kontroli ilości, ani
-w Logach Uruchomienia."""
+Trafiają tylko do przeglądarki taty, nie przez ``OrderFacts``; opis technika ma tam osobne pole, które Kontrola ilości
+wysyła tylko w wierszach wskazanych przez ``quantity_check.legend_row_check``."""
 
 
 @dataclass(frozen=True)
@@ -149,7 +150,8 @@ class QuantitiesToFill:
 def quantities_to_fill(rows: Sequence[NumberedOrder], rules: QuantityRules, *, settled: bool) -> QuantitiesToFill:
     """``rules``: Reguły ilości, którymi liczyć; ``settled``: Przebieg rozliczeń okresu się odbył, więc wiersz bez wpisu
     taty jest „bez ilości”. Kontrola ilości (``check``) nie porównuje tylko przy brakujących nagłówkach, więc tu zawsze
-    daje ``QuantityCheck``."""
+    daje ``QuantityCheck``; jej liczby wierszy kolumn z opisu technika nie zależą od Legendy czynności, więc liczy je
+    legenda z Wydania."""
 
     listed: dict[FillKind, list[RowToFill]] = {kind: [] for kind in FillKind}
     for row in rows:
@@ -160,7 +162,7 @@ def quantities_to_fill(rows: Sequence[NumberedOrder], rules: QuantityRules, *, s
         kind = _KINDS.get(type(rule))
         if kind is not None:
             listed[kind].append(_row(row, rule, rules, settled=settled))
-    control = check(tuple(row.order for row in rows), rules)
+    control = check(tuple(row.order for row in rows), rules, DEFAULT_ACTIVITY_LEGEND)
     assert isinstance(control, QuantityCheck)
     return QuantitiesToFill(
         tuple(KindToFill(kind, tuple(found)) for kind, found in listed.items()),

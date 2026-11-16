@@ -1,7 +1,8 @@
 """Filtr prywatności Wiersza danych (``order_facts``): jedyna treść komórek Pliku zbiorczego, która opuszcza komputer taty.
 
 Seam z dwoma wejściami (Kontrola ilości teraz, Logi Uruchomienia później), więc macierz reguły jest tu raz
-(ADR 0013, ADR 0015). Dozwolone: UMOWA, URZĄDZENIA, CZYNNOŚCI, dzień tygodnia i godzina z DATA oraz N:AP.
+(ADR 0013, ADR 0015, ADR 0038). Dozwolone: UMOWA, URZĄDZENIA, CZYNNOŚCI, CZYNNOŚCI ZREALIZOWANE, dzień tygodnia i godzina
+z DATA, N:AP, ``AS`` jako ilość taty i kolory wypełnienia kolumn, które może wypełnić Legenda czynności.
 """
 
 from __future__ import annotations
@@ -10,11 +11,15 @@ from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
 
-from openpyxl.utils import get_column_letter
+from openpyxl.styles.colors import Color
+from openpyxl.styles.fills import GradientFill, PatternFill
+from openpyxl.utils import column_index_from_string, get_column_letter
 import pytest
 
+from rozliczenia.activity_legend import FillColour
 from rozliczenia.dad_files import DadFiles
-from rozliczenia.order_facts import NON_NUMERIC, MissingHeaders, OrderFacts, collective_orders, tata_value
+from rozliczenia.highlights import Highlights
+from rozliczenia.order_facts import NON_NUMERIC, OTHER_COLOUR, MissingHeaders, OrderFacts, collective_orders, tata_value
 from rozliczenia.quantity_engine import OrderContent, WeekTime
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.collective_file import read_data_rows
@@ -44,21 +49,24 @@ def _marked_row() -> list[object]:
     return row
 
 
-def _filtered(header: dict[str, int], row: list[object]) -> OrderFacts:
-    orders = collective_orders(header, [data_row(tuple(row))])  # type: ignore[arg-type]
+def _filtered(header: dict[str, int], row: list[object], fills: dict[str, object] | None = None) -> OrderFacts:
+    highlights = {column_index_from_string(letter): Highlights(fill=fill) for letter, fill in (fills or {}).items()}
+    orders = collective_orders(header, [data_row(tuple(row), highlights)])  # type: ignore[arg-type]
     assert isinstance(orders, tuple)
     [facts] = orders
     return facts
 
 
-def test_wiersz_po_filtrze_ma_tylko_umowe_urzadzenia_czynnosci_pore_i_ilosci() -> None:
+def test_wiersz_po_filtrze_ma_tylko_umowe_urzadzenia_czynnosci_opis_technika_pore_ilosci_i_kwote() -> None:
     facts = _filtered(HEADER, _marked_row())
 
     assert facts == OrderFacts(
         content=OrderContent("ZNACZNIK-C", "ZNACZNIK-D", "ZNACZNIK-E", WeekTime(3, time(13, 45))),
         quantities={get_column_letter(column): NON_NUMERIC for column in range(14, 43)},
+        completed="ZNACZNIK-K",
+        amount=NON_NUMERIC,
     )
-    forbidden = [f"ZNACZNIK-{letter}" for letter in ("A", "B", "F", "G", "H", "I", "J", "K", "AQ", "AR", "AS", "AT")]
+    forbidden = [f"ZNACZNIK-{letter}" for letter in ("A", "B", "F", "G", "H", "I", "J", "AQ", "AR", "AS", "AT")]
     text = repr(facts)
     assert [marker for marker in forbidden if marker in text] == []
     assert "2026" not in text and "17" not in text.replace("ZNACZNIK-", "")
@@ -161,3 +169,51 @@ def test_wiersz_danych_bez_wykonawcy_tez_przechodzi_przez_filtr(tmp_path: Path) 
     assert read.without_worker == [19]
     assert isinstance(read.orders, tuple)
     assert [facts.quantity("V") for facts in read.orders] == [1, 2]
+
+
+def _solid(color: Color) -> PatternFill:
+    return PatternFill(patternType="solid", fgColor=color)
+
+
+def test_kolor_wypelnienia_kolumn_legendy_to_kolor_legendy_inny_kolor_albo_brak() -> None:
+    row: list[object] = [None] * 46
+    row[6] = STARTED
+    fills: dict[str, object] = {
+        "Y": _solid(Color(rgb="FF92D050")),
+        "AS": _solid(Color(indexed=10)),
+        "AB": _solid(Color(rgb="FFFFFF00")),
+        "AC": _solid(Color(theme=9)),
+        "AD": PatternFill(patternType="lightGray", fgColor=Color(rgb="FFFF0000")),
+        "AE": GradientFill(),
+        "P": _solid(Color(rgb="FF92D050")),
+        "AQ": _solid(Color(rgb="FFFF0000")),
+    }
+
+    facts = _filtered(HEADER, row, fills)
+
+    assert dict(facts.fills) == {
+        "Y": FillColour.GREEN,
+        "AB": OTHER_COLOUR,
+        "AC": OTHER_COLOUR,
+        "AD": OTHER_COLOUR,
+        "AE": OTHER_COLOUR,
+        "AS": FillColour.RED,
+    }, "P liczy narzędzie, a AQ nie jest kolumną legendy"
+
+
+@pytest.mark.parametrize(
+    ("cell", "completed"),
+    [(None, ""), ("  ", ""), ("inst20m ⏎ spawpg", "inst20m ⏎ spawpg"), (600123456.0, "600123456"), (7, "7")],
+    ids=repr,
+)
+def test_opis_technika_to_tekst_komorki_jak_w_excelu(cell: object, completed: str) -> None:
+    row: list[object] = [None] * 46
+    row[6], row[10] = STARTED, cell
+
+    assert _filtered(HEADER, row).completed == completed
+
+
+def test_bez_naglowka_czynnosci_zrealizowane_opis_technika_jest_pusty() -> None:
+    header = {name: column for name, column in HEADER.items() if name != "czynności zrealizowane"}
+
+    assert _filtered(header, _marked_row()).completed == ""
