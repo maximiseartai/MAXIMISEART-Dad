@@ -541,6 +541,17 @@ def test_dzien_liczy_sie_jako_wyslany_gdy_kazde_zlecenie_ma_wygrywajacy_wpis_tak
         assert (reminder.worker, _faults(reminder)) == ("jan.testowy", faults)
 
 
+def test_blad_opisu_raportu_przyslanego_nastepnego_dnia_zostawia_niewyslany_dzien_z_tematu() -> None:
+    """ADR 0039: Raport wykonawcy za dzień X, który przychodzi rano dnia X+1 z Błędem opisu, liczy się jako niewysłany
+    za dzień X z tematu, nie za dzień przyjścia maila, więc przypomnienie idzie za X i mówi, które zlecenie ma błąd."""
+
+    late = _mail(JAN, "Raport 09.11.2026", "40000001 tak montaż", _at(DAY + timedelta(days=1), 7))
+
+    [reminder] = _due(NEXT_MORNING, mails=[late])
+
+    assert (reminder.worker, reminder.day, _faults(reminder)) == ("jan.testowy", DAY, [f"Zlecenie 40000001 ma w opisie {NOT_A_CODE}."])
+
+
 def test_przypomnienie_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydania() -> None:
     """Legenda czynności to Ustawienie Centrum taty: kod z jego legendy nie jest Błędem opisu, choć legenda z Wydania go
     nie zna, a dwa jego kody, które wypełniają tę samą kolumnę różnymi kolorami, to błąd z własnym powodem."""

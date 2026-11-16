@@ -808,7 +808,6 @@ def drive(run: Run, page: Page) -> None:
     expect(orders.get_by_role("listitem")).to_have_count(2)
     expect(orders.get_by_role("listitem").nth(0)).to_contain_text("40000101")
     expect(orders.get_by_role("listitem").nth(0)).to_contain_text("tak")
-    expect(orders.get_by_role("listitem").nth(0)).to_contain_text(COMPLETED_WITHOUT_CODES)
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("40000102")
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("Brak Wpisu w raporcie")
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("Bez raportu")

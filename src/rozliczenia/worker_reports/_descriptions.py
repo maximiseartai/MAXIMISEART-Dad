@@ -49,8 +49,11 @@ def standing(
 
     ``reports`` idą w kolejności przyjścia, a numer wygrywa Wpis najpóźniejszego Raportu wykonawcy z tym numerem, także
     od innego Wykonawcy, jak we Wpisaniu raportów; raport z Wpisami numeru o przeciwnym zamiarze niczego nie wpisuje, więc
-    nie daje Błędu opisu. Liczą się tylko numery zleceń INTERMAX (``numbers``): Wpis innego numeru to literówka, którą
-    poprawiony mail zastępuje innym numerem, albo zlecenie, którego Wpisanie raportów jeszcze nie dopisało."""
+    nie daje Błędu opisu. Liczą się tylko numery zleceń INTERMAX (``numbers``): Wpis innego numeru to zlecenie, którego
+    Wpisanie raportów jeszcze nie dopisało, albo literówka, którą poprawiony mail przed kliknięciem odrzuca
+    (``_corrections.uncorrected``). Literówkę dopisaną kliknięciem przed poprawką INTERMAX ma jako zlecenie, więc
+    przypomina jak każde zlecenie z takim Wpisem, np. dopóki tata nie usunie jej wiersza albo okres nie dostanie Pliku
+    zbiorczego."""
 
     winners: dict[OrderNumber, tuple[ReadReport, list[ReportEntry]]] = {}
     for report in reports:
