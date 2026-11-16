@@ -1,4 +1,4 @@
-# ADR 0039: Opis z Kodem czynności to same kody
+# ADR 0039: Opis zlecenia to same Kody czynności
 
 ## Status
 
@@ -15,14 +15,12 @@ zdania ADR 0038:
   kwoty w `AS`, a kolumna Ilości usług trafiona drugi raz to Błąd opisu;
 - „Gdy obok kodu stoi inny tekst, legenda wpisuje swoje, a wiersz zostaje tacie do sprawdzenia. (…) Słowa obok kodu nie
   dają osobnego ostrzeżenia”: inny tekst obok kodu to Błąd opisu, a legenda nie wpisuje wtedy nic;
-- „Dla każdego wiersza z różnicą i każdego wiersza bez kodu z wartością taty (…) wysyła treść `CZYNNOŚCI
-  ZREALIZOWANE`”: wysyła ją też dla każdego wiersza z Błędem opisu;
 - „W kodzie, nie w danych (…): kod sumuje się także w `Y` (…), a `AS` i kolory przechodzą do Rozliczenia pracownika”:
   czerwone i zielone pola zmieniają się w Rozliczeniu pracownika;
 - „Później: (…) legenda w Przypomnieniu o raporcie”: niepotrzebna.
 
-Dopełnia [ADR 0018](0018-ilosci-tylko-dla-inea-nie-przechodza-do-rozliczenia-pracownika.md): czerwone pole to kolejna
-pozycja, za którą płaci INEA, a nie Wykonawca.
+Dopełnia [ADR 0018](0018-ilosci-tylko-dla-inea-nie-przechodza-do-rozliczenia-pracownika.md): obok Ilości tylko dla INEA
+także liczba z czerwonego pola nie przechodzi do Rozliczenia pracownika.
 
 ## Kontekst
 
@@ -46,30 +44,34 @@ Zmienia zasady:
 - (10) Kod obok zwykłego opisu: „Pracownicy mają pisać same kody, resztę traktujemy jako błąd.”
 - (11) `instmdik` i `inst20m` w jednym zleceniu: „to jest błąd, nie będzie nigdy 2, 3 itd., zawsze tylko 1”.
 
-Odpowiedzi nie mówią o opisie bez żadnego kodu („montaż ONT”, wymiana routera). Na Logach Wpisania raportów z
-03.11–15.11.2026 takich Wpisów `tak` było 104 z 213, a dopłaty z odpowiedzi 14 Wykonawca może opisać tylko słowami.
+Odpowiedzi 9 i 10 obejmują każdy opis inny niż same kody, także bez żadnego kodu: własny zapis (`utp18m`) i zwykły
+opis („montaż ONT”) to „napiszą inaczej”. Na Logach Wpisania raportów z 03.11–15.11.2026, sprzed powiadomienia
+Wykonawców przez tatę (15), takich Wpisów `tak` było 116 z 213, w tym 104 bez żadnego zapisu kodu z legendy.
 
 ## Decyzja
 
-- **Opis z Kodem czynności to same kody.** Słowo opisu to ciąg liter, cyfr i `/`. W opisie, w którym stoi co najmniej
-  jeden Kod czynności, każde słowo to cały zapis kodu z legendy albo `tak`/`nie` (odpowiedzi 9, 10). Wielkość liter nie
-  ma znaczenia (decyzja koordynatora: telefon sam zaczyna wielką literą, a tata pisze o zapisie kodu).
-- **Opis bez kodu zostaje tacie jak dotąd, bez błędu** (decyzja koordynatora: odpowiedzi o nim nie mówią, dopłaty z
-  odpowiedzi 14 nie mają kodu, a błąd w połowie Wpisów `tak` zalałby Wykonawców przypomnieniami). Własny zapis bez
-  żadnego kodu z legendy (`utp18m`) jest więc opisem bez kodu, a tata widzi go w Ilościach do uzupełnienia i Kontroli
-  ilości jak dziś.
-- **Błąd opisu** to opis z Kodem czynności i: słowem, które nie jest zapisem kodu (10), kodem z liczbą spoza przedziałów
+- **Opis zlecenia to same kody.** Słowo opisu to ciąg liter, cyfr i `/`. Każde słowo to cały zapis kodu z legendy albo
+  `tak`/`nie` (9: „mają pisać zgodnie z kodami”, 10: „mają pisać same kody”). Opis pusty albo z samym `tak`/`nie` nie ma
+  błędu. Wielkość liter nie ma znaczenia (decyzja koordynatora: telefon sam zaczyna wielką literą, a tata pisze o
+  zapisie kodu).
+- **Błąd opisu** to opis ze słowem, które nie jest zapisem kodu (9, 10; także kod ze spacją w środku, sklejony z innym i
+  zwykły opis bez kodu), z kodem z liczbą spoza przedziałów
   (8) albo kolumną Ilości usług trafioną drugi raz, także tym samym kodem (11; decyzja koordynatora: każda kolumna, nie
   tylko `Y`, bo tata pisze „zawsze tylko 1”). Kwoty w `AS` się sumują i nie są błędem (12).
 - **Opis z Błędem opisu nie wyznacza niczego.** Legenda nie wpisuje w tym wierszu Ilości, kwoty ani koloru, a wiersz
   zostaje tacie w Ilościach do uzupełnienia. Przygotowanie pliku zbiorczego ostrzega o tych wierszach, a Kontrola
-  ilości pokazuje je z opisem w maskowaniu [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md).
+  ilości liczy je według powodu. Opis wysyła tylko w wierszach z ADR 0038 (różnica albo wartość taty w kolumnie z opisu
+  technika), z maskowaniem [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md), bo Błąd opisu w wolnym tekście bez
+  wpisu taty niczego Maksowi nie mówi.
 - **Błąd opisu w Raporcie wykonawcy: raport niewysłany, Wpis wpisany** (9). Raport dnia z Wpisem `tak` z Błędem opisu
   liczy się dla Przypomnień jako niewysłany, a Przypomnienie mówi, w którym zleceniu jest błąd i jaki (decyzja
-  koordynatora: bez powodu Wykonawca odeśle ten sam raport). Kończy je następny raport tego dnia bez Błędu opisu.
+  koordynatora: bez powodu Wykonawca odeśle ten sam raport). Dzień liczy się jako wysłany, gdy żaden wygrywający Wpis
+  `tak` tego dnia nie ma Błędu opisu, czyli gdy każde takie zlecenie dostało poprawny Wpis.
   Wpisanie raportów wpisuje taki Wpis jak dotąd (decyzja koordynatora: bez `SKUTECZNE` Przygotowanie pliku zbiorczego
   się zatrzymuje, a legenda i tak nic z niego nie wyznaczy), a późniejszy poprawny Wpis go zastępuje. Opis we Wpisie
   `nie` to powód nieskuteczności, więc legenda go nie czyta (13). Wzór treści i przykład w Przypomnieniu pokazują kody.
+  Dopłata bez kodu (14: listwy, „2x spawanie”) nie ma zapisu w opisie, a jak Wykonawca ma ją zgłaszać, mówi tacie, nie
+  narzędziu (pytanie do taty przekazuje Maks).
 - **Czerwone i zielone pole w Rozliczeniu pracownika** (5). Przebieg rozliczeń kasuje liczbę z pola z czerwonym
   wypełnieniem i wpisuje 1 w pole z zielonym, a oba robi białymi. Dotyczy to każdego takiego pola, także
   pokolorowanego przez tatę ręcznie, i czerwonego pola bez liczby (decyzja koordynatora: kolor znika i tak). Plik
@@ -81,9 +83,12 @@ Odpowiedzi nie mówią o opisie bez żadnego kodu („montaż ONT”, wymiana ro
 
 ## Odrzucone warianty
 
-- **Każdy opis z innym słowem niż kod to Błąd opisu**, także bez kodu. Tak brzmi „pracownicy mają pisać same kody”
-  wzięte dosłownie, ale dopłaty bez kodu (14) nie miałyby wtedy poprawnego zapisu, a 104 z 213 Wpisów `tak` z dwóch
-  tygodni dałyby Przypomnienie. Zmiana to jedno zdanie silnika, gdy tata to potwierdzi.
+- **Opis bez żadnego kodu bez błędu**, jak dziś. Przeczy odpowiedzi 9, w której tata nazwał błędem właśnie własne
+  zapisy bez kodu z legendy (`utp18m`, `instmdic`), i dawałby dwa wyniki temu samemu zapisowi (`utp18m` bez błędu,
+  `utp18m spawpg` z błędem). Zmniejszyłby liczbę Przypomnień z dwóch tygodni przed powiadomieniem Wykonawców o 104
+  Wpisy.
+- **Własny zapis kodu rozpoznany po podobieństwie** (rdzeń kodu i cyfra). ADR 0038 odrzucił rozmyte dopasowanie, a
+  granica „podobny do kodu” nie wynika ze słów taty.
 - **Kod obok zwykłego opisu wpisuje swoje** (ADR 0038). Tata chce samych kodów, a częściowy wynik mieszałby się z
   poprawką taty albo z poprawionym raportem Wykonawcy.
 - **Wpis z Błędem opisu niewpisany**, jak Wpis bez znaku `tak`/`nie`. Puste `SKUTECZNE` zatrzymuje Przygotowanie

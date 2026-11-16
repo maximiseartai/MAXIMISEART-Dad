@@ -9,7 +9,7 @@ pracownika przestaje być wierną kopią Pliku zbiorczego w kolumnach `N:AP`.
 [ADR 0033](0033-reguly-ilosci-naleza-do-taty.md) zmienia punkt „Zasada należy do taty, a utrzymuje ją Maks”: Ilości tylko
 dla INEA to działanie Reguły ilości, które tata ustawia sam.
 
-[ADR 0039](0039-opis-z-kodem-czynnosci-to-same-kody.md) dopełnia: w Rozliczeniu pracownika czerwone pole traci liczbę, a zielone dostaje
+[ADR 0039](0039-opis-zlecenia-to-same-kody-czynnosci.md) dopełnia: w Rozliczeniu pracownika czerwone pole traci liczbę, a zielone dostaje
 1, i oba stają się białe.
 
 ## Kontekst

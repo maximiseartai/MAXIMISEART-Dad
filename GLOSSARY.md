@@ -210,7 +210,7 @@ _Avoid_: nowe zlecenie, brakujące zlecenie
 
 ## Przypomnienie o raporcie
 
-Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu wykonawcy za ten dzień bez Błędu opisu we Wpisie `tak`.
+Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu wykonawcy za ten dzień albo któryś jego wygrywający Wpis `tak` ma Błąd opisu.
 Prosi o raport za ten dzień (a po Błędzie opisu mówi, w którym zleceniu jest błąd), podaje wzór tematu i treści i kończy się stopką taty.
 Idzie w porannej i wieczornej porze z Ustawień Centrum (domyślne pory i nadrabianie pominiętej: [ADR 0030](docs/adr/0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md)), pierwsze od godziny pierwszego przypomnienia następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia przypomnień.
 Każdy brakujący dzień ma własne przypomnienia.
@@ -376,8 +376,8 @@ _Avoid_: skrót, kod (bez dopowiedzenia)
 
 ## Błąd opisu
 
-`CZYNNOŚCI ZREALIZOWANE` z co najmniej jednym Kodem czynności, które nie są samymi kodami: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku albo sklejony z innym), kod z liczbą spoza przedziałów albo kolumna Ilości usług trafiona drugi raz.
-Opis bez żadnego kodu nie jest Błędem opisu.
+`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku, sklejony z innym i zwykły opis bez kodu), kod z liczbą spoza przedziałów albo kolumna Ilości usług trafiona drugi raz.
+Opis pusty albo z samym `tak`/`nie` nie jest Błędem opisu.
 Opis z Błędem opisu nie wyznacza niczego, a Raport wykonawcy z takim Wpisem `tak` liczy się dla Przypomnień o raporcie jako niewysłany (ADR 0039).
 _Avoid_: zły kod, literówka
 
@@ -643,7 +643,7 @@ _Avoid_: Wydanie, release Logów, załącznik
 
 Porównanie Ilości usług, które dają Reguły ilości i Legenda czynności (ta także kwotę w `AS` i kolory), z tym, co stoi w Pliku zbiorczym, z którego tata uruchomił Przebieg rozliczeń.
 Pokazuje, co tata musiał poprawić albo dopisać ręcznie: tacie jako podpowiedzi przy Regułach ilości, a Maksowi w Skrzynce Zgłoszeń, gdzie jeden okres ma jedną Kontrolę ilości, której tata nie wysyła.
-Różnica legendy, wiersz z Błędem opisu i wpis taty w wierszu bez Kodu czynności idą tam z opisem technika.
+Różnica legendy i wpis taty w wierszu bez Kodu czynności idą tam z opisem technika, a wiersze z Błędem opisu jako liczby według powodu.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 ## Wyjątek Kontroli ilości
