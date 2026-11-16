@@ -37,10 +37,10 @@ def for_worker(rows: Sequence[DataRow]) -> list[DataRow]:
     return [_for_worker(row) for row in rows]
 
 
-def is_green(cell: DataCell, column: int) -> bool:
-    """Czy komórka w kolumnie ``column`` (od 0) Wiersza danych jest Zielonym polem."""
+def is_green(cell: DataCell) -> bool:
+    """Czy komórka Ilości usług albo ``AS`` Wiersza danych jest Zielonym polem (kolumnę zna wołający)."""
 
-    return column in _COLUMNS and legend_colour(cell.highlights.fill) is FillColour.GREEN
+    return legend_colour(cell.highlights.fill) is FillColour.GREEN
 
 
 def _for_worker(row: DataRow) -> DataRow:

@@ -45,7 +45,7 @@ def without_inea_only(
         cells = list(row.cells)
         for column in evaluate(rules, content).leave_empty:
             index = column_index_from_string(column) - 1
-            if is_green(cells[index], index):
+            if is_green(cells[index]):
                 continue
             cleared[column] += not is_blank(cells[index].value)
             cells[index] = cells[index]._replace(value=None, hyperlink=None)
