@@ -308,9 +308,15 @@ CI proves the check can still fail. The night on `main` runs
 `.agents/skills/verify-zapis-intermax/scripts/check_intermax_mutations.py`
 after a change of this skill's folder. It applies each broken variant to a
 temporary copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end with
-`MUTACJE OK`. Each variant in `MUTATIONS` of the script names the defect it brings back and the
-rule it breaks, and gives `INTERMAX: NOWE NARUSZENIE`; those in `BOUNDARIES` stand just outside a part of a known
-finding's shape.
+`MUTACJE OK`. Each variant in `MUTATIONS` of the script names the defect it brings back (`name`, `harm`) and gives
+`INTERMAX: NOWE NARUSZENIE`; those in `BOUNDARIES` stand just outside a part of a known finding's shape.
+Three of them break a rule their `harm` does not name: with a Kopia that overwrites one of the same name (no `O_EXCL`), the restore that overwrites the Kopia of the first one in the
+same second stops with it rewritten (ZATRZYMANIE_BEZ_SLADU) or, after its replace, fails on `made[0]` (BEZ_WYJATKU); the
+same with a taken name that does not stop the run breaks KOPIE_NAJNOWSZE; Wpisanie raportów without `check_cells`
+breaks DOKLADNIE_WPISANE.
+Since #716 both processes share one Kopia and one cleanup, so the first two mutations break both at once and the list
+has no separate restore mutations; „the Kopia made before the write check” is not a mutation either, because the one
+cleanup removes such a Kopia after a mismatch and only `tests/test_podmiana_intermax.py` sees the order.
 
 A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its
 `anchor` and `replacement` against the new code so that it breaks the same
