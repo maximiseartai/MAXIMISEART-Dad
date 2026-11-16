@@ -369,10 +369,16 @@ _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 
 ## Kod czynności
 
-Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu zamiast opisu, np. `inst20m` albo `spawpg`, bez względu na wielkość liter i spacje, w jednym z jego zapisów (np. `instmdik` i `instmdic`).
-Wyznacza w Pliku zbiorczym Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z nich naraz, a każde jego wystąpienie się dodaje.
-Liczba w kodzie albo nie ma znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`); liczba spoza przedziałów niczego nie wyznacza.
+Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu zamiast opisu, np. `inst20m` albo `spawpg`, w jednym z jego zapisów, bez względu na wielkość liter.
+Wyznacza w Pliku zbiorczym Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z nich naraz; kwoty kilku kodów w zleceniu się sumują.
+Liczba w kodzie albo nie ma znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`).
 _Avoid_: skrót, kod (bez dopowiedzenia)
+
+## Błąd opisu
+
+`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku albo sklejony z innym), kod z liczbą spoza przedziałów albo kolumna Ilości usług trafiona drugi raz.
+Opis z Błędem opisu nie wyznacza niczego, a w Raporcie wykonawcy czyni raport tego dnia niewysłanym (ADR 0039).
+_Avoid_: zły kod, literówka
 
 ## Lista Urządzeń
 
