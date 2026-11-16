@@ -20,6 +20,8 @@ from pathlib import Path
 import subprocess
 import shutil
 import sys
+import threading
+import time
 from types import ModuleType
 
 import pytest
@@ -108,8 +110,12 @@ ZNANE_LUKI = {
         "printf '[user]\\n\\tname = r\\n' > {inne}/tozsamosc.inc && git config include.path {inne}/tozsamosc.inc"
     ),
     "pilnuje tylko configów tego komputera: polecenie przez ssh": "ssh og-box 'git config --global user.name r'",
+    "polecenie bez PostToolUse wstrzymuje przyjęcie odniesienia na IN_FLIGHT_S: zmiana Maksa po odmowie innego hooka": (
+        "git config user.name r"
+    ),
 }
 BACKGROUND = "porównuje configi tylko do zwrotu polecenia: zapis w poleceniu w tle"
+DENIED = "polecenie bez PostToolUse wstrzymuje przyjęcie odniesienia na IN_FLIGHT_S: zmiana Maksa po odmowie innego hooka"
 
 
 @dataclass(frozen=True)
@@ -169,17 +175,20 @@ def repo(tmp_path: Path) -> Iterator[Repo]:
     yield made
 
 
-def _hook(event: str, call: str, repo: Repo, command: str) -> subprocess.CompletedProcess[str]:
+def _hook(
+    event: str, call: str, repo: Repo, command: str, *, session: str = "sesja", cwd: Path | None = None
+) -> subprocess.CompletedProcess[str]:
     data = {
         "hook_event_name": event,
-        "session_id": "sesja",
+        "session_id": session,
         "tool_use_id": call,
-        "cwd": str(repo.worktree),
+        "cwd": str(cwd or repo.worktree),
         "tool_name": "Bash",
         "tool_input": {"command": command, "description": "x"},
     }
+    # Claude Code przerywa hook po limicie z ustawień (10 s).
     return subprocess.run(
-        [sys.executable, str(HOOK)], input=json.dumps(data), env=repo.env, capture_output=True, text=True, check=False
+        [sys.executable, str(HOOK)], input=json.dumps(data), env=repo.env, capture_output=True, text=True, check=False, timeout=10
     )
 
 
@@ -288,16 +297,142 @@ def test_bez_zmiany_configu_hook_nie_uruchamia_gita(repo: Repo, tmp_path: Path) 
     assert (quiet.returncode, changed.returncode, len(listed)) == (0, 2, 2), listed
 
 
+def _worktree(repo: Repo, name: str) -> Path:
+    added = repo.glowne.parent / name
+    repo.git("worktree", "add", "-q", str(added), cwd=repo.glowne)
+    return added
+
+
+def _bash(repo: Repo, command: str) -> None:
+    subprocess.run(["bash", "-c", command], cwd=repo.worktree, env=repo.env, capture_output=True, check=True)
+
+
+@pytest.mark.parametrize("waiting", [1, 2], ids=["dwa-hooki", "trzy-hooki"])
+def test_hook_agenta_ktory_zaczal_przy_zlym_podpisie_innego_nie_wpisuje_go_z_powrotem(repo: Repo, waiting: int) -> None:
+    # Kolejność z sondy recenzenta r2 (#1966): agenci w innych worktree zaczynają polecenia, gdy zły podpis agenta A
+    # jest już we wspólnym configu, a hook A przywraca dobry przed ich PostToolUse.
+    before = repo.identity()
+    others = [_worktree(repo, f"inny-{number}") for number in range(waiting)]
+    _hook("PreToolUse", "A", repo, "x", session="A")
+    _bash(repo, "git config user.name Recenzent")
+    for number, cwd in enumerate(others):
+        _hook("PreToolUse", f"B{number}", repo, "x", session=f"B{number}", cwd=cwd)
+
+    fixed = _hook("PostToolUse", "A", repo, "x", session="A")
+    later = [_hook("PostToolUse", f"B{number}", repo, "x", session=f"B{number}", cwd=cwd) for number, cwd in enumerate(others)]
+
+    assert (fixed.returncode, [(hooked.returncode, hooked.stderr) for hooked in later]) == (2, [(0, "")] * waiting), fixed.stderr
+    assert repo.identity() == before
+
+
+def test_agent_ktory_zaczal_przy_zlym_podpisie_i_zmienil_go_dostaje_dobry_podpis(repo: Repo) -> None:
+    # Hook B kończy pierwszy, a jego migawka ma zły podpis A: celem przywrócenia jest podpis sprzed poleceń agentów.
+    before = repo.identity()
+    other = _worktree(repo, "inny")
+    _hook("PreToolUse", "A", repo, "x", session="A")
+    _bash(repo, "git config user.name Recenzent")
+    _hook("PreToolUse", "B", repo, "x", session="B", cwd=other)
+    _bash(repo, "git config user.name Drugi")
+
+    fixed = _hook("PostToolUse", "B", repo, "x", session="B", cwd=other)
+    _hook("PostToolUse", "A", repo, "x", session="A")
+
+    assert (fixed.returncode, "user.name 'Maks' → 'Drugi': przywrócone" in fixed.stderr) == (2, True), fixed.stderr
+    assert repo.identity() == before
+
+
+def test_zmiana_maksa_gdy_zaden_agent_nie_ma_polecenia_w_toku_jest_nowym_celem_przywrocenia(repo: Repo) -> None:
+    _agent(repo, "echo start")
+    repo.git("config", "user.name", "Maks Nowy", cwd=repo.glowne)
+
+    after = _agent(repo, "git config user.name r")
+
+    assert (after.returncode, repo.git("config", "user.name").stdout) == (2, "Maks Nowy\n"), after.stderr
+
+
+def test_zmiane_sprzed_pre_przywraca_hook_polecenia_ktore_ja_objelo(repo: Repo) -> None:
+    other = _worktree(repo, "inny")
+    _hook("PreToolUse", "A", repo, "x", session="A")
+    _bash(repo, "git config user.name Recenzent")
+    _hook("PreToolUse", "B", repo, "x", session="B", cwd=other)
+    _bash(repo, "git config core.x y")
+
+    unrelated = _hook("PostToolUse", "B", repo, "x", session="B", cwd=other)
+    culprit = _hook("PostToolUse", "A", repo, "x", session="A")
+
+    assert ((unrelated.returncode, unrelated.stderr), culprit.returncode) == ((0, ""), 2), culprit.stderr
+    assert repo.git("config", "user.name").stdout == "Maks\n"
+
+
+def test_hook_czeka_na_rejestr_trzymany_przez_hook_innego_agenta(repo: Repo) -> None:
+    # Rejestr czyta i pisze naraz kilkanaście sesji: bez blokady PreToolUse jednej gubi polecenie w toku drugiej.
+    import fcntl
+
+    state = Path(repo.env["TOZSAMOSC_STAN"])
+    state.mkdir()
+    data = {"hook_event_name": "PreToolUse", "session_id": "sesja", "tool_use_id": "A", "cwd": str(repo.worktree)}
+    with (state / "zamek").open("w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        waiting = subprocess.Popen([sys.executable, str(HOOK)], stdin=subprocess.PIPE, env=repo.env, text=True)
+        assert waiting.stdin is not None
+        waiting.stdin.write(json.dumps(data))
+        waiting.stdin.close()
+        time.sleep(0.5)
+        blocked = waiting.poll() is None
+    waiting.wait(timeout=10)
+    _bash(repo, "git config user.name r")
+
+    after = _hook("PostToolUse", "A", repo, "x")
+
+    assert (blocked, after.returncode, repo.git("config", "user.name").stdout) == (True, 2, "Maks\n"), after.stderr
+
+
+@pytest.mark.parametrize(
+    ("released_after", "outcome", "name"),
+    [(0.3, "przywrócone", "Maks\n"), (None, "nie udało się przywrócić", "r\n")],
+    ids=["zwolniony", "trzymany"],
+)
+def test_przywrocenie_czeka_na_config_lock_innego_gita_ograniczony_czas(
+    repo: Repo, released_after: float | None, outcome: str, name: str
+) -> None:
+    lock = repo.glowne / ".git" / "config.lock"
+    _hook("PreToolUse", "A", repo, "x")
+    _bash(repo, "git config user.name r")
+    lock.write_text("", encoding="utf-8")  # inny git (git push -u, drugi hook) właśnie pisze config
+    release = threading.Timer(released_after or 0, lock.unlink, kwargs={"missing_ok": True})
+    if released_after is not None:
+        release.start()
+    started = time.monotonic()
+
+    after = _hook("PostToolUse", "A", repo, "x")
+
+    took = time.monotonic() - started
+    if released_after is not None:
+        release.join()
+    lock.unlink(missing_ok=True)
+    assert (after.returncode, f"user.name 'Maks' → 'r': {outcome}" in after.stderr) == (2, True), after.stderr
+    # Limit hooka w ustawieniach to 10 s, a po nim Claude Code przerywa hook bez komunikatu.
+    assert (repo.git("config", "user.name").stdout, took < _load().RESTORE_RETRY_S + 3) == (name, True), took
+
+
 def test_znane_luki_hooka_tozsamosci_przechodza_przez_hook(repo: Repo) -> None:
     zgloszenia = {}
     configs = {path: path.read_bytes() for path in repo.configs() if path.exists()}
     for opis, command in ZNANE_LUKI.items():
         before = repo.identity()
+        if opis == DENIED:
+            _hook("PreToolUse", "odrzucone", repo, "sleep 60", session="inna")  # inny hook odmówił, więc bez Post
+            repo.git("config", "user.name", "Maks Nowy", cwd=repo.glowne)  # Maks, gdy żaden agent nie ma polecenia w toku
         after = _agent(repo, command.format(inne=repo.inne), background=opis == BACKGROUND)
-        changed = [] if opis != BACKGROUND or repo.identity() != before else ["zapis w tle nie zmienił tożsamości"]
-        zgloszenia[opis] = [line for line in [after.stderr.strip()] if line] + changed
-        for path, content in configs.items():  # następna próbka zaczyna od tożsamości sprzed tej
+        if opis == DENIED:
+            kept = repo.git("config", "user.name").stdout == "Maks Nowy\n"
+            zgloszenia[opis] = ["zmiana Maksa została"] if kept else []
+        else:
+            changed = [] if opis != BACKGROUND or repo.identity() != before else ["zapis w tle nie zmienił tożsamości"]
+            zgloszenia[opis] = [line for line in [after.stderr.strip()] if line] + changed
+        for path, content in configs.items():  # następna próbka zaczyna od tożsamości i rejestru sprzed tej
             path.write_bytes(content)
+        shutil.rmtree(repo.env["TOZSAMOSC_STAN"], ignore_errors=True)
 
     assert_znane_luki(zgloszenia, "tests/test_tozsamosc.py")
 
