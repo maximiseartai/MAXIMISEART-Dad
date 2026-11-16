@@ -33,6 +33,10 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   czasów, zostawia kolejność numerów.
 - Część k z n to ``tools/mutacje_zmiany.py --baza <baza> --do <do> --czesc k/n --zapis …``: kolejne mutacje z listy
   posortowanej po plikach, więc pokrycie biegnie na testach kilku plików, nie całej zmiany dnia.
+- ``wystapienia <plik>`` czyta wynik ``gh issue list --label przezyte-mutacje --json number,title,body,state,comments`` i drukuje
+  każdą linię nocy, na którą ostatnia odpowiedź agenta nie zaczyna się od ``wykryta`` ani ``nie warto`` (linia
+  ``WYSTĄPIENIE``), a na końcu liczbę issues z wystąpieniem i bez; linię nocy i odpowiedź rozpoznaje ``rdzen``, ten sam,
+  po którym noc nie zgłasza linii drugi raz. Woła go krok 1 skilla polowania.
 - ``zglos`` czyta zapisy części. Każdą przeżytą mutację, mutację bez werdyktu po limicie czasu części i mutację, której
   testy w ostatnim przebiegu przekroczyły limit czasu mutacji, przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
   linie, które mutacja psuje, a nie linię jej nazwy, bo nazwę daje początek węzła, a w wielowierszowym ``if (`` zmienia
@@ -135,6 +139,12 @@ ARTEFAKT_ZAKRESU = "zakres-nocy"
 ZAKRES = "zakres.json"
 # Klucz z linii ``MUTACJA`` w treści issue; długość klucza daje ``mutacje_zmiany.fingerprint``.
 _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]+)\b")
+# Początki linii ``SKRYPT`` i ``CZAS BLISKO LIMITU`` issue skryptów skilli oraz środek czasu ostrzeżenia, który ``rdzen``
+# odcina, bo czas zmienia się co noc.
+_SKRYPT = "SKRYPT "
+_BLISKO = "CZAS BLISKO LIMITU "
+_Z_LIMITU = " s z limitu --limit-s "
+_CZAS_BLISKO = re.compile(rf" \| \d+{re.escape(_Z_LIMITU)}\S+ s( \({ZMIENNA_CZESCI}=\S+\))?\s*$")
 _RADA_MUTACJE = "uruchom ją `tools/mutacje.py`, a gdy test już ją wykrywa, napisz w komentarzu `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`"
 
 
@@ -567,8 +577,21 @@ def _rady(mutacje: Sequence[Przezyta]) -> list[str]:
     return [f"Linia z `{rodzaj.dopisek.removeprefix(' | ')}` {rodzaj.rada}" for rodzaj in Rodzaj if rodzaj.rada and rodzaj in obecne]
 
 
+def _po_rdzeniu(tekst: str, rdzen: str) -> list[str]:
+    """Reszta każdej linii ``tekst``, która zaczyna się rdzeniem linii nocy ``rdzen``: pusta dla samego rdzenia, a po
+    ``rdzen |`` tekst za kreską bez spacji wokół."""
+
+    reszty = []
+    for obecna in (linia.strip() for linia in tekst.splitlines()):
+        if obecna == rdzen:
+            reszty.append("")
+        elif obecna.startswith(f"{rdzen} |"):
+            reszty.append(obecna.removeprefix(f"{rdzen} |").strip())
+    return reszty
+
+
 def _ma(tekst: str, linia: str) -> bool:
-    return any(obecna.strip() == linia or obecna.strip().startswith(f"{linia} |") for obecna in tekst.splitlines())
+    return bool(_po_rdzeniu(tekst, linia))
 
 
 def akcje_skryptow(github: GitHub, przypisane: dict[Autor, Skrypty], run: str) -> list[Akcja]:
@@ -585,7 +608,7 @@ def akcje_skryptow(github: GitHub, przypisane: dict[Autor, Skrypty], run: str) -
         znane = "" if issue is None else "\n".join(
             [issue.get("body") or "", *(komentarz["body"] or "" for komentarz in strony(github, f"{REPO}/issues/{issue['number']}/comments"))]
         )
-        padly = [linia for linia in (f"SKRYPT {skrypt}" for skrypt in skrypty.padly) if not _ma(znane, linia)]
+        padly = [linia for linia in (f"{_SKRYPT}{skrypt}" for skrypt in skrypty.padly) if not _ma(znane, linia)]
         blisko = [_linia_blisko(ostrzezenie) for ostrzezenie in skrypty.blisko if not _ma(znane, _klucz_blisko(ostrzezenie))]
         if issue is None:
             tresc = []
@@ -631,12 +654,84 @@ RADA_BLISKO = (
 def _klucz_blisko(ostrzezenie: NearLimit) -> str:
     """Początek linii ostrzeżenia w issue: bez czasu, który zmienia się co noc, więc po nim noc nie zgłasza go drugi raz."""
 
-    return f"CZAS BLISKO LIMITU {ostrzezenie.script} | {ostrzezenie.name}"
+    return f"{_BLISKO}{ostrzezenie.script} | {ostrzezenie.name}"
 
 
 def _linia_blisko(ostrzezenie: NearLimit) -> str:
     czesc = f" ({ZMIENNA_CZESCI}={ostrzezenie.part})" if ostrzezenie.part else ""
-    return f"{_klucz_blisko(ostrzezenie)} | {ostrzezenie.seconds} s z limitu --limit-s {ostrzezenie.limit_s:g} s{czesc}"
+    return f"{_klucz_blisko(ostrzezenie)} | {ostrzezenie.seconds}{_Z_LIMITU}{ostrzezenie.limit_s:g} s{czesc}"
+
+
+def rdzen(linia: str) -> str | None:
+    """Rdzeń linii, którą noc pisze w issue: linia ``MUTACJA`` do klucza (``Przezyta.w_issue``), linia ``SKRYPT`` cała,
+    a linia ``CZAS BLISKO LIMITU`` bez czasu (``_klucz_blisko``). Po rdzeniu noc nie zgłasza linii drugi raz (``_ma``),
+    a agent na nią odpowiada (``rdzeń | <odpowiedź>``). Każda inna linia, także odpowiedź agenta, daje ``None``."""
+
+    linia = linia.strip()
+    if linia.startswith("MUTACJA ") and (klucz := _KLUCZ.search(linia)):
+        return linia[: klucz.start()].rstrip()
+    if linia.startswith(_SKRYPT):
+        return linia
+    if linia.startswith(_BLISKO) and (czas := _CZAS_BLISKO.search(linia)):
+        return linia[: czas.start()]
+    return None
+
+
+# Odpowiedzi z rad nocy, po których linia nie jest luką w testach ani sprawdzeniu: test albo brama typów już ją widzi,
+# albo agent uzasadnił, że nie ma czego widzieć.
+BEZ_LUKI = ("wykryta", "nie warto")
+# Autor treści issue i komentarzy nocy w ``gh issue list --json`` (``github-actions``) i w REST API (``[bot]``).
+_NOC = ("github-actions", "github-actions[bot]")
+
+
+@dataclass(frozen=True)
+class Wystapienie:
+    """Issue przeżytych mutacji z liniami nocy (``rdzen``), na które ostatnia odpowiedź agenta nie jest ``BEZ_LUKI``."""
+
+    numer: int
+    tytul: str
+    linie: tuple[str, ...]
+
+
+def wystapienia(issues_json: Sequence[Any]) -> tuple[list[Wystapienie], int]:
+    """Wystąpienia z wyniku ``gh issue list --json number,title,body,comments`` i liczba issues bez wystąpienia.
+
+    Linie nocy to linie treści issue i komentarzy ``_NOC``, którym ``rdzen`` daje rdzeń. Odpowiedź na linię to reszta
+    linii komentarza agenta po ``rdzeń |`` (postać z rady nocy) albo po całej linii nocy i ``|``; liczy się ostatnia,
+    więc późniejsza odpowiedź odwołuje wcześniejszą, a sam cytat linii nocy niczego nie odpowiada. Issue bez żadnej linii
+    nocy to ``ValueError``: noc pisze je w postaci, której ``rdzen`` nie zna.
+    """
+
+    wynik: list[Wystapienie] = []
+    bez = 0
+    for issue in issues_json:
+        if not isinstance(issue, dict) or any(pole not in issue for pole in ("number", "title", "body", "comments")):
+            raise ValueError(f"issue bez pól number, title, body i comments (gh issue list --json number,title,body,comments): {str(issue)[:200]}")
+        komentarze = issue["comments"]
+        nocne = [issue["body"] or "", *(k["body"] or "" for k in komentarze if k["author"]["login"] in _NOC)]
+        pelne: dict[str, set[str]] = {}
+        for linia in (linia.strip() for tekst in nocne for linia in tekst.splitlines()):
+            if r := rdzen(linia):
+                pelne.setdefault(r, set()).add(linia)
+        if not pelne:
+            raise ValueError(f"issue #{issue['number']} nie ma linii nocy w postaci, którą zna rdzen()")
+        agenta = [linia for k in komentarze if k["author"]["login"] not in _NOC for linia in (k["body"] or "").splitlines()]
+        otwarte = tuple(r for r, linie in pelne.items() if not _ostatnia_odpowiedz(agenta, (*sorted(linie, key=len, reverse=True), r)).startswith(BEZ_LUKI))
+        if otwarte:
+            wynik.append(Wystapienie(int(issue["number"]), str(issue["title"]), otwarte))
+        else:
+            bez += 1
+    return wynik, bez
+
+
+def _ostatnia_odpowiedz(linie: Sequence[str], przedrostki: Sequence[str]) -> str:
+    """Ostatnia niepusta reszta linii po pierwszym z ``przedrostki``, od którego zaczyna się linia; ``""`` bez odpowiedzi."""
+
+    ostatnia = ""
+    for linia in linie:
+        reszta = next((reszty[0] for przedrostek in przedrostki if (reszty := _po_rdzeniu(linia, przedrostek))), "")
+        ostatnia = reszta or ostatnia
+    return ostatnia
 
 
 def _uzupelnij(issue: dict[str, Any], tresc: str) -> Skomentuj:
@@ -667,6 +762,17 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
     return 0
 
 
+def _drukuj_wystapienia(issues_json: Any) -> int:
+    if not isinstance(issues_json, list):
+        raise ValueError("plik issues to nie lista JSON z gh issue list")
+    znalezione, bez = wystapienia(issues_json)
+    for wystapienie in znalezione:
+        for linia in wystapienie.linie:
+            print(f"WYSTĄPIENIE #{wystapienie.numer} {wystapienie.tytul} | {linia}")
+    print(f"{PREFIKS} WYSTĄPIENIA | issues z wystąpieniem {len(znalezione)} | bez wystąpienia {bez} | z {len(issues_json)}")
+    return 0
+
+
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub | None = None) -> int:
     """``root`` to checkout ``main``, którego zmiany noc mutuje, a ``github`` daje runy nocy, issue przeżytych mutacji
     i artefakty czasów CI; bez niego noc pyta ``GITHUB``, a czasy ``czasy_ci.GITHUB``."""
@@ -681,6 +787,8 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     plan.add_argument("--zdarzenie", default="", help="Zdarzenie runu (github.event_name): run schedule nie robi drugiej nocy doby; id runu daje GITHUB_RUN_ID.")
     plan.add_argument("--start", default="", help=f"Wejście start runu: {START_AUTO} (start z pushu) nie robi drugiej nocy doby, jak run schedule.")
     polecenia.add_parser("start", help=f"Z pushu na main po {POCZATEK_NOCY:%H:%M} UTC uruchamia noc doby, gdy nie ma jeszcze jej runu.")
+    wystapien = polecenia.add_parser("wystapienia", help="Linie nocy bez odpowiedzi wykryta albo nie warto w issues przeżytych mutacji (krok 1 polowania).")
+    wystapien.add_argument("issues", type=Path, help="Wynik gh issue list --label przezyte-mutacje --json number,title,body,state,comments.")
     zgloszenie = polecenia.add_parser("zglos", help="Issue dla przeżytych mutacji ze wszystkich części.")
     zgloszenie.add_argument("--baza", required=True, help="Baza nocy z planu.")
     zgloszenie.add_argument("--zapisy", type=Path, required=True, help=f"Katalog z podkatalogami artefaktów {ARTEFAKT}<k>.")
@@ -690,6 +798,8 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     args = parser.parse_args(argv)
     noc = GITHUB if github is None else github
     try:
+        if args.polecenie == "wystapienia":
+            return _drukuj_wystapienia(json.loads(args.issues.read_text(encoding="utf-8")))
         if args.polecenie == "start":
             return start(noc, datetime.now(UTC))
         if args.polecenie == "plan":
