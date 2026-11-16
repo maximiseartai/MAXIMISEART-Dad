@@ -196,7 +196,8 @@ class DataRow:
     """Wiersz danych Pliku zbiorczego: komórki kolumn A:AT po kolei od A.
 
     ``number`` to numer wiersza w Pliku zbiorczym. Przebieg rozliczeń wpisuje każdą komórkę do tej samej kolumny
-    Rozliczenia pracownika, a Ilości tylko dla INEA jako puste (``inea_only_quantities``). Format liczby z pliku mają
+    Rozliczenia pracownika, a Ilości tylko dla INEA jako puste (``inea_only_quantities``), tak samo Czerwone pole, a
+    Zielone pole z 1 (``coloured_fields``). Format liczby z pliku mają
     tylko kolumny wyglądu A:L, a dalsze komórki ogólny: odczyt formatu, którego plik nie użyje, mógłby zatrzymać
     rozliczenie na komórce ze stylem bez definicji formatu.
     """

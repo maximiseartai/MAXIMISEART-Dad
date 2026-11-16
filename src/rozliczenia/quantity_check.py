@@ -24,7 +24,7 @@ tylko spoza przedziałów) porównuje z tatą:
   ta kolumna nie jest różnicą Reguł ilości;
 - kwotę w ``AS``;
 - kolory kolumn, które może wypełnić którykolwiek kod legendy (zielony, czerwony albo brak; wypełnienie spoza palety
-  legendy, np. tło z Wzorca, to brak, zob. ``order_facts._colour``).
+  legendy, np. tło z Wzorca, to brak, zob. ``order_facts.legend_colour``).
 
 W wierszu bez kodu liczy wpis taty: kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. Opis
 technika (``CZYNNOŚCI ZREALIZOWANE``) wiersz oddaje (``LegendRowCheck.description``) tylko przy różnicy legendy albo,
