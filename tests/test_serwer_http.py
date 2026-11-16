@@ -7,7 +7,7 @@ import http.client
 import threading
 import time
 
-from atrapy.serwer_http import serwer_http
+from atrapy.serwer_http import CZEKANIE_S, serwer_http
 from tests.fixtures.linie_watkow import new_line, threads_since
 
 
@@ -31,7 +31,8 @@ class _KeepAlive(BaseHTTPRequestHandler):
 
 def test_po_bloku_serwera_nie_zyje_watek_obslugi_polaczenia_ktore_klient_trzyma_otwarte() -> None:
     # Klient trzyma połączenie po odpowiedzi, jak przeglądarka i pula requests, więc wątek obsługi czeka na następne
-    # żądanie; bez zamknięcia połączeń serwer czekałby na niego bez końca, a bez czekania wątek przeżyłby blok.
+    # żądanie. Serwer nie budzi tego odczytu przez system (shutdown ani close gniazda), tylko flagą końca, więc ten
+    # test na każdym systemie sprawdza tę samą drogę, którą wątek obsługi kończy się na Windows.
     since = new_line()
     connections: list[http.client.HTTPConnection] = []
     ended = threading.Event()
@@ -53,3 +54,22 @@ def test_po_bloku_serwera_nie_zyje_watek_obslugi_polaczenia_ktore_klient_trzyma_
     client.join(30)
 
     assert (finished, alive) == (True, [])
+
+
+def test_polaczenie_trzymane_przez_klienta_dluzej_niz_krok_czekania_dalej_obsluguje_zadania() -> None:
+    # Czekanie w krokach dotyczy tylko końca serwera: dopóki serwer działa, połączenie keep-alive nie zrywa się po kroku.
+    with serwer_http(_KeepAlive, name="serwer-testu") as server:
+        connection = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=30)
+        try:
+            answers = []
+            for _ in range(2):
+                connection.request("GET", "/")
+                response = connection.getresponse()
+                response.read()
+                answers.append((response.status, connection.sock.getsockname() if connection.sock else None))
+                threading.Event().wait(5 * CZEKANIE_S)
+        finally:
+            connection.close()
+
+    # To samo gniazdo klienta (ten sam port lokalny) dostaje obie odpowiedzi.
+    assert [status for status, _ in answers] == [200, 200] and answers[0][1] == answers[1][1] is not None, answers
