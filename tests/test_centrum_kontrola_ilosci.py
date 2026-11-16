@@ -848,6 +848,174 @@ def test_podglad_liczy_wiersz_ktory_zmiana_reguly_tylko_zostawia_pusty_w_rozlicz
     assert (preview["differences_before"], preview["differences_after"]) == (7, 7)
 
 
+LEGEND_URL = "/api/settings/activity-legend"
+
+
+def legend_previewed(centrum: SettlingCentrum, edit: dict[str, Any]) -> dict[str, Any]:
+    response = centrum.client.post(f"{LEGEND_URL}/preview", json=edit)
+    assert response.status_code == 200, response.text
+    found: dict[str, Any] = response.json()
+    return found
+
+
+def code_form(centrum: SettlingCentrum, code_id: str) -> dict[str, Any]:
+    form: dict[str, Any] = next(code["code"] for code in centrum.client.get(LEGEND_URL).json()["codes"] if code["id"] == code_id)
+    return form
+
+
+def shown_legend_rows(preview: dict[str, Any]) -> list[tuple[Any, ...]]:
+    return [
+        (row["row"], row["description"], row["codes"], [(cell["kind"], cell["column"], cell["legend"], cell["tata"]) for cell in row["cells"]])
+        for row in preview["rows"]
+    ]
+
+
+def legend_saved(centrum: SettlingCentrum, edit: dict[str, Any]) -> dict[str, Any]:
+    """Zapis tej samej zmiany, którą podgląd dostał jako ``edit``, drogą formularza kodu."""
+
+    if edit["kind"] == "add":
+        response = centrum.client.post(LEGEND_URL, json=edit["code"])
+    elif edit["kind"] == "change":
+        response = centrum.client.put(f"{LEGEND_URL}/{edit['code_id']}", json=edit["code"])
+    else:
+        response = centrum.client.delete(f"{LEGEND_URL}/{edit['code_id']}")
+    assert response.status_code == 200, response.text
+    found: dict[str, Any] = response.json()
+    return found
+
+
+# Każdy rodzaj zmiany z formularza kodu: (zmiana, różnice przed, po, zmienione wiersze, w tym tak, jak wpisał tata).
+LEGEND_EDITS: Final[dict[str, tuple[Callable[[SettlingCentrum], dict[str, Any]], tuple[int, int, int, int]]]] = {
+    # Wiersz „spawpg listwy”: tata wpisał 70 w AS, a po zmianie legenda da 80.
+    "zmiana": (lambda centrum: {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}}, (8, 9, 1, 0)),
+    # Wiersz „listwy 11 metrów”: nowy kod daje 220 w AS, tak jak wpisał tata.
+    "dodanie": (
+        lambda centrum: {"kind": "add", "code": {"spellings": ["metrów"], "column": None, "value": 1, "amount": 220, "fills": []}},
+        (8, 8, 1, 1),
+    ),
+    # Wiersz „inst20m”: bez kodu zostaje wpis taty 1 w Y.
+    "usuniecie": (lambda centrum: {"kind": "remove", "code_id": "inst"}, (8, 8, 1, 0)),
+}
+
+
+@pytest.mark.parametrize("kind", LEGEND_EDITS)
+def test_podglad_legendy_kazdej_zmiany_liczy_roznice_ktore_kontrola_ilosci_da_po_jej_zapisie(tmp_path: Path, kind: str) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+    first = sent_check(centrum)
+    build, expected = LEGEND_EDITS[kind]
+    edit = build(centrum)
+
+    preview = legend_previewed(centrum, edit)
+    saved = legend_saved(centrum, edit)
+    repeated(centrum)
+
+    assert saved["change"] is not None
+    assert box(centrum).wait_until(lambda fake: bool(first.comments)), "druga Kontrola ilości nie dotarła"
+    assert f"różnice legendy: {preview['differences_before']}\n" in first.body
+    assert f"różnice legendy: {preview['differences_after']}\n" in first.comments[0]
+    assert (preview["differences_before"], preview["differences_after"], preview["changed"], preview["changed_as_tata"]) == expected
+
+
+def test_podglad_legendy_pokazuje_wiersz_z_roznica_od_taty_z_opisem_technika_kwota_i_kolorem(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+
+    preview = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}})
+
+    assert preview["files"] == [{"period": PERIOD, "rows": len(LEGEND_ROWS)}]
+    assert shown_legend_rows(preview) == [
+        (19, "spawpg listwy", ["spawpg"], [("value", "AS", 80, 70), ("fill", "AS", "czerwony", None)]),
+    ]
+    assert preview["more"] == 0
+
+
+def test_podglad_legendy_liczy_wiersze_ktore_po_zmianie_beda_tak_jak_wpisal_tata(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+    # rt2 tak, jak wpisuje go tata: 1 w AK i samo zielone AF.
+    tata_rt2 = code_form(centrum, "rt2") | {"column": {"kind": "fixed", "column": "AK"}, "fills": [{"column": "AF", "colour": "zielony"}]}
+
+    preview = legend_previewed(centrum, {"kind": "change", "code_id": "rt2", "code": tata_rt2})
+
+    assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (2, 2, [])
+    assert (preview["differences_before"], preview["differences_after"]) == (8, 2)
+
+
+def test_podglad_legendy_liczy_zmiane_samych_kolorow_kodu_jako_zmieniony_wiersz(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+    # spawpg bez czerwonego AS, tak jak wpisał go tata: zmieniają się same kolory.
+    spawpg = code_form(centrum, "spawpg") | {"fills": []}
+
+    preview = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": spawpg})
+
+    assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
+    assert (preview["differences_before"], preview["differences_after"]) == (8, 7)
+
+
+def test_podglad_legendy_pokazuje_wpis_taty_w_wierszu_ktory_po_usunieciu_kodu_zostaje_bez_kodu(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+
+    preview = legend_previewed(centrum, {"kind": "remove", "code_id": "inst"})
+
+    assert (preview["changed"], preview["changed_as_tata"]) == (1, 0)
+    assert shown_legend_rows(preview) == [(18, "inst20m ZNACZNIKZGODNY", [], [("value", "Y", 0, 1)])]
+
+
+def test_podglad_legendy_odmawia_tym_samym_zdaniem_przy_polu_co_zapis_bez_zapisu(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+    taken = {"spellings": ["rt2"], "column": None, "value": 1, "amount": 10, "fills": []}
+
+    previewed = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "add", "code": taken})
+    unknown = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "remove", "code_id": "nie-ma-takiego"})
+    added = centrum.client.post(LEGEND_URL, json=taken)
+
+    assert (previewed.status_code, previewed.json()) == (added.status_code, added.json())
+    assert previewed.status_code == 422
+    assert unknown.status_code == 404
+    assert not (centrum.tool.config / LEGEND_FILE).exists()
+
+
+def test_podglad_legendy_bez_okresu_po_przebiegu_rozliczen_nie_ma_na_czym_policzyc(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+
+    preview = legend_previewed(centrum, {"kind": "remove", "code_id": "rt2"})
+
+    assert preview == {"state": "no_settled_periods"}
+
+
+def test_podglad_legendy_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_nazywa_jego_okres(tmp_path: Path) -> None:
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    run_to_end(centrum, dry_run=False)
+    centrum.collective_file.write_bytes(b"to nie jest skoroszyt")
+
+    preview = legend_previewed(centrum, {"kind": "remove", "code_id": "rt2"})
+
+    assert (preview["state"], preview["files"], preview["unread"], preview["changed"]) == ("ready", [], [PERIOD], 0)
+
+
+def test_podglad_legendy_ma_opis_technika_po_strazniku_bez_adresu_numerow_zlecenia_ani_daty_dziennej(tmp_path: Path) -> None:
+    address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
+    described = {**RULED, "K": f"rt2 klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5"}
+    centrum = centrum_with(tmp_path, [{**MARKED, "K": "rt2 ZNACZNIK-OPIS"}, {**RULED, "B": address, "I": orange}, described])
+    run_to_end(centrum, dry_run=False)
+
+    response = centrum.client.post(
+        f"{LEGEND_URL}/preview", json={"kind": "change", "code_id": "rt2", "code": code_form(centrum, "rt2") | {"amount": 10}}
+    )
+
+    assert response.status_code == 200, response.text
+    leaked = (address, orange, "600-123-456", "Kwiatowa", *FORBIDDEN, "2026-09-08", "08.09", "10:15")
+    assert [marker for marker in leaked if marker in response.text] == []
+    assert [row["description"] for row in response.json()["rows"]] == [
+        "rt2 ZNACZNIK-OPIS",
+        "rt2 klient [adres] umowa [numer Orange] tel. [telefon] [ulica]",
+    ]
+
+
 SUGGESTIONS_URL = "/api/settings/devices/suggestions"
 
 

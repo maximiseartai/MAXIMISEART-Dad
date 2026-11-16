@@ -514,6 +514,9 @@ ENTRIES: dict[str, Entry] = {
         {"spellings": ["spawez"], "column": {"kind": "fixed", "column": "AC"}, "value": 1, "amount": None, "fills": []},
     ),
     "removeActivityCode": _route("removeActivityCode", "DELETE", "/api/settings/activity-legend/spawez"),
+    "previewActivityLegend": _route(
+        "previewActivityLegend", "POST", "/api/settings/activity-legend/preview", {"kind": "remove", "code_id": "spawez"}
+    ),
     "getNotifications": _route("getNotifications", "GET", "/api/notifications"),
     "markNotificationsRead": _route(
         "markNotificationsRead", "POST", "/api/notifications/read", {"ids": [READ_NOTIFICATION]}
@@ -622,6 +625,7 @@ READS: dict[str, set[str]] = {
     "addActivityCode": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "changeActivityCode": {"wzorzec_zbiorczy", "dziennik_centrum"},
     "removeActivityCode": {"wzorzec_zbiorczy", "dziennik_centrum"},
+    "previewActivityLegend": _FOLDERS | {"ustawienia", "plik_zbiorczy"},
     "getConfiguration": {"klucz_zgloszen", "wzorzec_wewnetrzny", "wzorzec_zbiorczy", "wzorzec_pracownika"},
     "getNotifications": _NOTIFICATIONS,
     "markNotificationsRead": _NOTIFICATIONS,

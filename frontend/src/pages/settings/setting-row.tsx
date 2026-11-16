@@ -73,19 +73,22 @@ export function FormRow({ label, children }: { label: string; children: React.Re
 
 /**
  * Przyciski formularza w wierszu sekcji: przycisk usunięcia wpisu po lewej (`children`, przy nowym wpisie brak), „Anuluj”
- * i „Zapisz” po prawej. W czasie zapisu (`saving`) „Zapisz” czeka, a bez zmiany jest nieaktywne.
+ * i „Zapisz” po prawej. W czasie zapisu (`saving`) „Zapisz” czeka, a bez zmiany jest nieaktywne. Formularz, który pyta
+ * o usunięcie (`removing`), ma w ich miejscu „Nie usuwaj” i „Usuń”.
  */
 export function FormActions({
   cancel,
   save,
   dirty,
   saving,
+  removing = false,
   children,
 }: {
   cancel: () => void
   save: () => void
   dirty: boolean
   saving: boolean
+  removing?: boolean
   children?: React.ReactNode
 }) {
   return (
@@ -93,11 +96,11 @@ export function FormActions({
       {children}
       <div className="ml-auto flex gap-2">
         <Button variant="ghost" onClick={cancel}>
-          Anuluj
+          {removing ? <>Nie usuwaj</> : <>Anuluj</>}
         </Button>
-        <Button disabled={!dirty || saving} onClick={save}>
+        <Button variant={removing ? "destructive" : "default"} disabled={!dirty || saving} onClick={save}>
           {saving ? <Spinner data-icon="inline-start" /> : null}
-          Zapisz
+          {removing ? <>Usuń</> : <>Zapisz</>}
         </Button>
       </div>
     </div>

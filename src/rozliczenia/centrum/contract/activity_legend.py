@@ -8,7 +8,7 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Model
-from rozliczenia.centrum.contract.quantity_rules import SentencePart
+from rozliczenia.centrum.contract.quantity_rules import PreviewFile, SentencePart
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
 
 FillColourName = Literal["zielony", "czerwony"]
@@ -114,3 +114,69 @@ class RemoveActivityCode(Model):
 
 ActivityCodeEdit = Annotated[AddActivityCode | ChangeActivityCode | RemoveActivityCode, Field(discriminator="kind")]
 """Zmiana Legendy czynności z formularza kodu."""
+
+
+class LegendPreviewValue(Model):
+    """Wartość komórki (Ilość usług w kolumnie albo kwota w ``AS``) po zmianie inna niż u taty: ``legend`` to Reguły ilości
+    i legenda razem, tak jak wpisze je Przygotowanie, a ``tata`` wpis taty (liczba albo „nieliczbowa”)."""
+
+    kind: Literal["value"]
+    column: str
+    name: str | None
+    legend: int
+    tata: int | Literal["nieliczbowa"]
+
+
+class LegendPreviewFill(Model):
+    """Kolor wypełnienia kolumny po zmianie inny niż u taty; ``None``: bez koloru legendy."""
+
+    kind: Literal["fill"]
+    column: str
+    name: str | None
+    legend: FillColourName | None
+    tata: FillColourName | None
+
+
+LegendPreviewCell = Annotated[LegendPreviewValue | LegendPreviewFill, Field(discriminator="kind")]
+
+
+class LegendPreviewRow(Model):
+    """Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis
+    technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu i komórki różne od taty. Bez
+    adresu, numeru zlecenia i daty dziennej."""
+
+    period: str
+    row: int
+    description: str
+    codes: list[str]
+    cells: list[LegendPreviewCell]
+
+
+class LegendPreviewReady(Model):
+    """Skutek zmiany Legendy czynności na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym
+    rachunkiem wiersza co Kontrola ilości.
+
+    ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze
+    co innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.
+    ``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie.
+    ``rows``: zmienione wiersze z różnicą od taty, najwyżej ``SHOWN_ROWS``, a ``more`` reszta."""
+
+    state: Literal["ready"]
+    files: list[PreviewFile]
+    unread: list[str]
+    changed: int
+    changed_as_tata: int
+    differences_before: int
+    differences_after: int
+    rows: list[LegendPreviewRow]
+    more: int
+
+
+class LegendPreviewWithoutFiles(Model):
+    """Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+    ma jeszcze Rozliczeń pracowników (``no_settled_periods``)."""
+
+    state: Literal["no_periods_directory", "no_settled_periods"]
+
+
+LegendPreview = Annotated[LegendPreviewReady | LegendPreviewWithoutFiles, Field(discriminator="state")]

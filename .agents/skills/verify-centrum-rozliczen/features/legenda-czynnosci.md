@@ -9,8 +9,14 @@ Without Dad's file `legenda-czynnosci.yaml` in `config` the section shows the le
 outside Centrum is a row of Historia from outside Centrum; a bad file is a bad setting in one sentence over the last
 good legend, which Centrum counts. The pencil at a code and „Dodaj kod” open the form of a code in place of its row:
 spellings (`#` for the number), the column of Ilości usług (one column or ranges of the number) with its value chosen
-only from the columns the legend writes, by price-list name, the amount in AS and the colours. „Zapisz” and „Usuń kod”
-are changes of Historia with „Cofnij”, and a refusal is one sentence at its field.
+only from the columns the legend writes, by price-list name, the amount in AS and the colours. „Usuń kod” turns the
+form into the question „Usunąć kod?” with „Nie usuwaj” and „Usuń”. „Zapisz” and „Usuń” are changes of Historia with
+„Cofnij”, and a refusal is one sentence at its field. Every change of the form, the removal too, shows the preview of the
+change it saves on the last Pliki zbiorcze after Przebieg rozliczeń, counted by the server with the row check of the
+Kontrola ilości: how many rows change, in how many it will be as Dad typed, the Kontrola's legend differences before and
+after, and each changed row that differs from Dad with its CZYNNOŚCI ZREALIZOWANE after the data guard (ADR 0025),
+without the address, the order numbers and the date; a row left without a code shows Dad's entry. „Zapisz” and „Usuń”
+save also with differences.
 
 ## Sub-features
 
@@ -23,6 +29,9 @@ Printed by `scripts/sub_features.py --feature legenda-czynnosci` from the drive'
 - `legenda-odmowa`: the column of a code is chosen by its price-list name, only from the … columns the legend writes; a spelling of another code is one sentence at its field, and the legend stays.
 - `legenda-nowy-kod`: a new code with a range of the number, an amount in AS and a colour is one more sentence of the legend.
 - `legenda-usuniecie-cofnij`: removing a code is a row of Historia, and its „Cofnij” brings the code back.
+- `legenda-podglad`: an unchanged form of a code has no preview; the server's preview counts with the Kontrola's row check: spawpg at 80 changes 1 row, which differs from Dad's 70 in AS; the preview shows the server's counts, the row with its description, the legend's 80 and Dad's 70 in AS.
+- `legenda-zapis-przy-roznicach`: „Zapisz” saves the change although the preview shows a difference from Dad.
+- `legenda-podglad-usuniecia`: „Usuń kod” turns the form into the question „Usunąć kod?” without its fields; the server's preview of removing inst: row 18 changes and stays without a code, with Dad's 1 in Y; before removing, the form shows the preview of the removal: the row left without a code and Dad's 1 in Y; „Usuń” under the preview removes the code it previewed.
 - `legenda-waskie-okno`: the narrow window shows every code (…); on a narrow window the sentences wrap without a horizontal scroll; on a narrow window the form of a code with ranges wraps without a horizontal scroll.
 
 ## How to get to it (user POV)
@@ -34,7 +43,9 @@ of `#/ustawienia/legenda-czynnosci` opens the section too.
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature legenda-czynnosci`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/legenda-czynnosci*.json`.
-The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it after `legenda-usuniecie-cofnij`, so the features after this one find the legend of the Release.
+The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it after `legenda-usuniecie-cofnij` and again after `legenda-podglad-usuniecia`, so the features after this one find the legend of the Release.
+The preview needs the Plik zbiorczy that `przebieg-rozliczen` settled, whose CZYNNOŚCI ZREALIZOWANE in the fixture has no code: the step `legenda-podglad` types codes and Dad's values into rows 18–20 and the harness puts the file's bytes back after `legenda-podglad-usuniecia`.
+Its proof adds `api/legenda-czynnosci-podglad.json` and `api/legenda-czynnosci-podglad-usuniecia.json` with the descriptions replaced by `<tekst wiersza>`, as in the ARIA snapshots of `430` and `432`.
 
 ## Gotchas
 

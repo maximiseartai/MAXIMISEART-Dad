@@ -221,7 +221,7 @@ def create_app(
     app.include_router(workers_router(settings, files, today))
     recent = RecentCollectiveFiles(files)
     app.include_router(quantity_rules_router(settings, price_list, recent))
-    app.include_router(activity_legend_router(settings, price_list))
+    app.include_router(activity_legend_router(settings, price_list, recent, work.forbidden))
     app.include_router(quantity_differences_router(settings, price_list, recent))
     filling = FillingReads(work, files)
     app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))

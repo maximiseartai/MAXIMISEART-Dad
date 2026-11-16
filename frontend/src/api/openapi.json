@@ -1786,6 +1786,103 @@
         }
       }
     },
+    "/api/settings/activity-legend/preview": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Preview Change",
+        "description": "Skutek zmiany na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, bez zapisu (``activity_legend_preview``);\nlegendę po zmianie i odmowę daje właściciel tą samą drogą co zapis (``CentrumSettings.legend_after``).",
+        "operationId": "previewActivityLegend",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/AddActivityCode"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ChangeActivityCode"
+                  },
+                  {
+                    "$ref": "#/components/schemas/RemoveActivityCode"
+                  }
+                ],
+                "title": "Edit",
+                "discriminator": {
+                  "propertyName": "kind",
+                  "mapping": {
+                    "add": "#/components/schemas/AddActivityCode",
+                    "change": "#/components/schemas/ChangeActivityCode",
+                    "remove": "#/components/schemas/RemoveActivityCode"
+                  }
+                }
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/LegendPreviewReady"
+                    },
+                    {
+                      "$ref": "#/components/schemas/LegendPreviewWithoutFiles"
+                    }
+                  ],
+                  "title": "Response Previewactivitylegend",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "ready": "#/components/schemas/LegendPreviewReady",
+                      "no_periods_directory": "#/components/schemas/LegendPreviewWithoutFiles",
+                      "no_settled_periods": "#/components/schemas/LegendPreviewWithoutFiles"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zły Kod czynności z polem formularza i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Pliku Legendy czynności nie da się teraz przeczytać",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/activity-legend/{code_id}": {
       "put": {
         "tags": [
@@ -3660,6 +3757,25 @@
         "title": "ActivityLegendSettings",
         "description": "Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe\nustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).\n``columns``: kolumny, w które kod wpisuje Ilość usług, ``amount_column``: kolumna kwoty (``AS``), a ``fill_columns``:\nkolumny, które kod wypełnia kolorem."
       },
+      "AddActivityCode": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "add",
+            "title": "Kind"
+          },
+          "code": {
+            "$ref": "#/components/schemas/ActivityCodeForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "code"
+        ],
+        "title": "AddActivityCode"
+      },
       "AddRule": {
         "properties": {
           "kind": {
@@ -3739,6 +3855,7 @@
               "addActivityCode",
               "changeActivityCode",
               "removeActivityCode",
+              "previewActivityLegend",
               "undoSettingsChange",
               "getPeriodBoard",
               "openPeriodPath",
@@ -3977,6 +4094,30 @@
         ],
         "title": "CellSource",
         "description": "Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia."
+      },
+      "ChangeActivityCode": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "change",
+            "title": "Kind"
+          },
+          "code_id": {
+            "type": "string",
+            "title": "Code Id"
+          },
+          "code": {
+            "$ref": "#/components/schemas/ActivityCodeForm"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "code_id",
+          "code"
+        ],
+        "title": "ChangeActivityCode"
       },
       "ChangeRule": {
         "properties": {
@@ -6030,6 +6171,261 @@
         ],
         "title": "LegendColumn",
         "description": "Kolumna do wyboru w formularzu kodu z nazwą pozycji cennika z wiersza 17 Wzorca pliku zbiorczego (``None``: Wzorca\nnie da się przeczytać albo komórka jest pusta)."
+      },
+      "LegendPreviewFill": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "fill",
+            "title": "Kind"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "legend": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "zielony",
+                  "czerwony"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Legend"
+          },
+          "tata": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "zielony",
+                  "czerwony"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "column",
+          "name",
+          "legend",
+          "tata"
+        ],
+        "title": "LegendPreviewFill",
+        "description": "Kolor wypełnienia kolumny po zmianie inny niż u taty; ``None``: bez koloru legendy."
+      },
+      "LegendPreviewReady": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "ready",
+            "title": "State"
+          },
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/PreviewFile"
+            },
+            "type": "array",
+            "title": "Files"
+          },
+          "unread": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Unread"
+          },
+          "changed": {
+            "type": "integer",
+            "title": "Changed"
+          },
+          "changed_as_tata": {
+            "type": "integer",
+            "title": "Changed As Tata"
+          },
+          "differences_before": {
+            "type": "integer",
+            "title": "Differences Before"
+          },
+          "differences_after": {
+            "type": "integer",
+            "title": "Differences After"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/LegendPreviewRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "more": {
+            "type": "integer",
+            "title": "More"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "files",
+          "unread",
+          "changed",
+          "changed_as_tata",
+          "differences_before",
+          "differences_after",
+          "rows",
+          "more"
+        ],
+        "title": "LegendPreviewReady",
+        "description": "Skutek zmiany Legendy czynności na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym\nrachunkiem wiersza co Kontrola ilości.\n\n``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze\nco innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.\n``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie.\n``rows``: zmienione wiersze z różnicą od taty, najwyżej ``SHOWN_ROWS``, a ``more`` reszta."
+      },
+      "LegendPreviewRow": {
+        "properties": {
+          "period": {
+            "type": "string",
+            "title": "Period"
+          },
+          "row": {
+            "type": "integer",
+            "title": "Row"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "cells": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/LegendPreviewValue"
+                },
+                {
+                  "$ref": "#/components/schemas/LegendPreviewFill"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "fill": "#/components/schemas/LegendPreviewFill",
+                  "value": "#/components/schemas/LegendPreviewValue"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "period",
+          "row",
+          "description",
+          "codes",
+          "cells"
+        ],
+        "title": "LegendPreviewRow",
+        "description": "Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis\ntechnika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu i komórki różne od taty. Bez\nadresu, numeru zlecenia i daty dziennej."
+      },
+      "LegendPreviewValue": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "value",
+            "title": "Kind"
+          },
+          "column": {
+            "type": "string",
+            "title": "Column"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "legend": {
+            "type": "integer",
+            "title": "Legend"
+          },
+          "tata": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string",
+                "const": "nieliczbowa"
+              }
+            ],
+            "title": "Tata"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "column",
+          "name",
+          "legend",
+          "tata"
+        ],
+        "title": "LegendPreviewValue",
+        "description": "Wartość komórki (Ilość usług w kolumnie albo kwota w ``AS``) po zmianie inna niż u taty: ``legend`` to Reguły ilości\ni legenda razem, tak jak wpisze je Przygotowanie, a ``tata`` wpis taty (liczba albo „nieliczbowa”)."
+      },
+      "LegendPreviewWithoutFiles": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "no_periods_directory",
+              "no_settled_periods"
+            ],
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "LegendPreviewWithoutFiles",
+        "description": "Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie\nma jeszcze Rozliczeń pracowników (``no_settled_periods``)."
       },
       "ListedWorker": {
         "properties": {
@@ -8478,6 +8874,26 @@
         ],
         "title": "RemindersSetting",
         "description": "Przypomnienia o raporcie: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne)\nalbo ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne). ``enabled``: przypomnienia idą;\n``since``: dzień wdrożenia, od którego liczą się dni (``None``: jeszcze nie włączone)."
+      },
+      "RemoveActivityCode": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "remove",
+            "title": "Kind"
+          },
+          "code_id": {
+            "type": "string",
+            "title": "Code Id"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind",
+          "code_id"
+        ],
+        "title": "RemoveActivityCode"
       },
       "RemoveRule": {
         "properties": {
