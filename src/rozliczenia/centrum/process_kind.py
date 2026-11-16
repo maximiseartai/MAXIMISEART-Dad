@@ -52,7 +52,6 @@ from rozliczenia.worker_list import WorkerList
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
-_Setting = TypeVar("_Setting")
 
 SettingField = Literal["register", "periods_directory"]
 TemplateRole = Literal["internal", "collective", "worker"]
@@ -145,23 +144,18 @@ def start_from_settings(
 ) -> Start:
     """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
     Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
-    ilości i Legendę czynności procesu, który nimi liczy (``Refusal``, gdy pliku pary albo legendy nie da się teraz
-    przeczytać), i ostrzeżenia startu.
-    Ścieżki, okres i tryb wybiera gospodarz."""
+    ilości i Legendę czynności procesu, który nimi liczy, i ostrzeżenia startu. Ścieżki, okres i tryb wybiera gospodarz.
+    Plik pary Reguł ilości albo Legendy czynności bez odczytu to ``None``: odmowę dla taty daje wcześniej karta startu z
+    tej samej migawki (``ProcessKind.required_paths``), a start bez nich to błąd gospodarza w ``Catalog.prepared``."""
 
+    rules, legend = settings.quantity_rules, settings.activity_legend
     return Start(
         paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
         workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
-        quantity_rules=_readable_at_start(settings.quantity_rules) if kind.quantity_rules else None,
-        activity_legend=_readable_at_start(settings.activity_legend) if kind.quantity_rules else None,
+        quantity_rules=rules if kind.quantity_rules and isinstance(rules, QuantityRules) else None,
+        activity_legend=legend if kind.quantity_rules and isinstance(legend, ActivityLegend) else None,
         warnings=_start_warnings(settings, kind.needs),
     )
-
-
-def _readable_at_start(value: _Setting | UnreadableFile) -> _Setting:
-    if isinstance(value, UnreadableFile):
-        raise refusal.settings_file_unreadable(value.name)
-    return value
 
 
 def chosen_settings(
