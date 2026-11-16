@@ -331,7 +331,7 @@ def _versions() -> dict[str, CommentVersion]:
     }
 
 
-# Stopień wersji (GLOSSARY „Logi Uruchomienia”, #910): postęp najniższy, wersja zastępcza ze startu Centrum niższa niż
+# Stopień wersji (ADR 0015, dopisek #910): postęp najniższy, wersja zastępcza ze startu Centrum niższa niż
 # Logi z wynikiem, a Logi z pracy Centrum Uruchomienia najwyższe.
 RANKS: Final = {
     "postep": Rank.DRAFT,
@@ -1358,7 +1358,7 @@ def _without_logs(
     return WithoutLogsVersion(final, guard_text(without_logs_markdown(final), "wynik Wyceny w efenix bez Logów", forbidden))
 
 
-# Macierz startu Centrum (GLOSSARY „Dziennik Wyceny w efenix”, #910): co zastał na dysku → wersja zastępcza po strażniku
+# Macierz startu Centrum (ADR 0017, dopisek #910): co zastał na dysku → wersja zastępcza po strażniku
 # reguły danych tej pracy Centrum i czy start złożył Logi Urwanego Uruchomienia (zabiera działania taty).
 CLOSE_MATRIX: Final[
     dict[str, tuple[EndEntry | None, bool, LogsRead, Callable[[JournalRead, ForbiddenValues], Closing], bool]]

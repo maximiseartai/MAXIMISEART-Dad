@@ -84,11 +84,14 @@ __all__ = [
 
 @dataclass(frozen=True)
 class Worktree:
-    """Worktree z ``git worktree list --porcelain`` (bez repozytorium bare); ``main`` to główny checkout."""
+    """Worktree z ``git worktree list --porcelain`` (bez repozytorium bare); ``main`` to główny checkout.
+
+    ``head`` to ``None``, gdy HEAD nie jest jeszcze commitem: ``git worktree add`` zapisuje HEAD z samych zer, zanim
+    ustawi go na commit."""
 
     path: Path
     branch: str | None
-    head: str
+    head: str | None
     main: bool
     locked: bool
     missing: bool
@@ -256,11 +259,12 @@ def worktrees(root: Path) -> list[Worktree]:
             continue
         path = Path(fields["worktree"])
         branch = fields.get("branch")
+        head = fields.get("HEAD", "")
         trees.append(
             Worktree(
                 path=path.resolve(),
                 branch=branch.removeprefix("refs/heads/") if branch else None,
-                head=fields["HEAD"],
+                head=head if head.strip("0") else None,
                 main=number == 0,
                 locked="locked" in fields,
                 missing="prunable" in fields or not path.is_dir(),

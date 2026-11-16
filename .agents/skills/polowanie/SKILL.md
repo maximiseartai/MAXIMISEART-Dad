@@ -1,6 +1,6 @@
 ---
 name: polowanie
-description: Cotygodniowe polowanie na powtarzane błędy, których bramka z polem `Idiom:` nie widzi - klasy z dowodami, mechanizm na klasę zwykłym PR i zdrowie reguł chwastu; uruchamia je stałe zadanie T3 w poniedziałek.
+description: Cotygodniowe polowanie na powtarzane błędy poza bramką `Idiom:` - klasy, mechanizm na klasę i zdrowie reguł chwastu (stałe zadanie T3 w poniedziałek).
 disable-model-invocation: true
 ---
 
@@ -63,7 +63,7 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
 3. Zmierz zdrowie każdej reguły chwastu: reguły ast-grep z `reguly-ast-grep/`, klucza `banned-api` i kontraktu import-linter.
    - Odpalenie to porażka runu CI tygodnia na tej regule: `gh run list --workflow ci.yml --status failure --created <poniedziałek>..<niedziela> --limit 1000 --json databaseId --jq '.[].databaseId'`, potem dla każdego runu `gh run view <id> --log-failed`; zapadka drukuje odpalenie reguły ast-grep jako `rule='<id>'`, ruff jako `TID251`, import-linter nazwą kontraktu.
    - Fałszywy alarm to odpalenie, po którym PR zmienił regułę, dodał tłumienie albo zwolnienie albo przepisał poprawny kod tylko po to, żeby reguła zamilkła; rozstrzyga następny commit tego PR.
-   - Obejście to tłumienie albo zwolnienie dodane do `main` w tygodniu: dla każdego merge'u `git diff <merge>^1 <merge> -U0 -- . ':!tests/' ':!docs/' ':!*.md'` z linią dodaną z `# ast-grep-ignore`, `# noqa: … TID251` albo `# ruff: noqa`, oraz każdy commit z `git log origin/main --first-parent --since=<poniedziałek> --until=<poniedziałek następnego tygodnia> -- reguly-ast-grep/ sgconfig.yml .importlinter pyproject.toml src/ruff.toml tests/ruff.toml drive/ruff.toml`, który dodaje `ignores:`, `per-file-ignores` albo zawęża `files:`.
+   - Obejście to tłumienie albo zwolnienie dodane do `main` w tygodniu: dla każdego merge'u `git diff <merge>^1 <merge> -U0 -- . ':!tests/' ':!docs/' ':!*.md'` z linią dodaną z `# ast-grep-ignore`, `# noqa: … TID251` albo `# ruff: noqa`, oraz każdy commit z `git log origin/main --first-parent --since=<poniedziałek> --until=<poniedziałek następnego tygodnia> -- reguly-ast-grep/ sgconfig.yml .importlinter pyproject.toml src/ruff.toml tests/ruff.toml .agents/skills/verify-centrum-rozliczen/scripts/drive/ruff.toml`, który dodaje `ignores:`, `per-file-ignores` albo zawęża `files:`.
 
    Reguła, której fałszywe alarmy to ponad 10% jej odpaleń, dostaje w kroku 4 PR, który ją zawęża albo usuwa (próg Tricordera i miara AutoCommentera z [badania pętli](../../../docs/research/petla-blad-regula.md), „Co przejąć u nas”, punkt 1).
    Krok kończy się, gdy `<bieg>/zdrowie.md` ma wiersz na każdą regułę z liczbą odpaleń, fałszywych alarmów i obejść, a każda reguła ponad progiem stoi w kroku 4 jako klasa do zawężenia.
