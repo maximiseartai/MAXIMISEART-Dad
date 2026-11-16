@@ -32,10 +32,8 @@ one again.
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature kontrola-ilosci`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP kontrola-ilosci` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
-`api/kontrola-skrzynka.json` and the two server consoles `api/kontrola-start-*-server.txt`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature kontrola-ilosci`.
+Its proof adds `api/kontrola-skrzynka.json` and the two server consoles `api/kontrola-start-*-server.txt`.
 
 ## Gotchas
 

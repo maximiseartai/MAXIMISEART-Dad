@@ -41,10 +41,8 @@ Dad opens Ustawienia with the gear in the menu's footer and chooses the section 
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wykonawcy`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP wykonawcy` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, and
-`api/wykonawcy-*.json`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wykonawcy`.
+Its proof adds `api/wykonawcy-*.json`.
 
 ## Gotchas
 

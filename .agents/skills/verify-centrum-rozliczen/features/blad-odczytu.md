@@ -39,9 +39,7 @@ Printed by `scripts/sub_features.py --feature blad-odczytu` from the drive's ste
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature blad-odczytu`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP blad-odczytu` in `drive.txt` and the screenshots of its `Feature` in `scripts/drive/__init__.py`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature blad-odczytu`.
 
 ## Gotchas
 

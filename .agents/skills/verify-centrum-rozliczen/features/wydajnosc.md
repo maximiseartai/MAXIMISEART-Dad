@@ -8,8 +8,7 @@ Uruchomienie/Historia tabs, collapsing the sidebar, returning to the tab), the
 API requests of each scenario, the bundle size, and CPU traces of the cold start
 of Okresy and Metryki. It is the hill-climbing loop for frontend changes: every
 change that makes Centrum faster or slower updates the baseline in its own PR.
-It runs only when named (`--feature wydajnosc`), never in `all`: it takes a few
-minutes and holds the machine alone. Raporty (a menu page with no budget in the baseline yet,
+Raporty (a menu page with no budget in the baseline yet,
 `MEASURED_PAGES` in `drive/wydajnosc.py`), Powiadomienia (the header bell) and the dialog `Napisz do Maksa`
 are not measured.
 Every scenario runs in Chromium at CPU 4× (the reference profile of Dad's laptop) and 6× (the pessimistic
@@ -26,21 +25,13 @@ Printed by `scripts/sub_features.py --feature wydajnosc` from the drive's steps 
 
 ## How to get to it (user POV)
 
-Maks, not Dad, runs it by name (Windows: `py -3 .agents\skills\verify-centrum-rozliczen\scripts\run_centrum_verification.py --feature wydajnosc`).
-`--baseline <file>` compares with another baseline (for example a deliberately broken one), and `--powtorzenia <n>`
-changes the repetitions (fewer for a quick look, never for a baseline). The scenarios are Dad's own paths: opening
-Centrum on a page, clicking through the sidebar, switching the theme, filtering Metryki, switching tabs, collapsing
-the sidebar, returning to the browser tab.
+Maks, not Dad, runs it by name, with `--baseline <file>` to compare with another baseline (for example a deliberately broken one).
+The scenarios are Dad's own paths: opening Centrum on a page, clicking through the sidebar, switching the theme, filtering Metryki, switching tabs, collapsing the sidebar, returning to the browser tab.
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wydajnosc`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP wydajnosc` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
-`api/wydajnosc-*.json`, `wydajnosc/raport.txt` and `wydajnosc/raport.json` (every scenario and profile with median,
-baseline, budget and verdict, then the API requests, the bundle, the CPU traces and the failures),
-`wydajnosc/baseline-kandydat.json` and the CPU traces `wydajnosc/slad-*.json` (open them in Chrome DevTools →
-Performance).
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature wydajnosc`.
+Its proof adds `api/wydajnosc-*.json`, `wydajnosc/raport.txt` and `wydajnosc/raport.json` (every scenario and profile with median, baseline, budget and verdict, then the API requests, the bundle, the CPU traces and the failures), `wydajnosc/baseline-kandydat.json` and the CPU traces `wydajnosc/slad-*.json` (open them in Chrome DevTools → Performance).
 
 ## Gotchas
 

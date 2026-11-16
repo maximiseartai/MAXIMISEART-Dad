@@ -22,10 +22,8 @@ Dad opens Ustawienia (the gear in the menu's footer), section Foldery, clicks `Z
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uklad-folderow-taty`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP uklad-folderow-taty` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`,
-`api/uklad-taty-ustawienia.json`, `api/uklad-taty-tablica.json` and `state/opened.jsonl`.
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature uklad-folderow-taty`.
+Its proof adds `api/uklad-taty-ustawienia.json`, `api/uklad-taty-tablica.json` and `state/opened.jsonl`.
 
 ## Gotchas
 
