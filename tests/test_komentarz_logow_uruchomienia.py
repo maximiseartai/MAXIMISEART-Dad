@@ -16,7 +16,7 @@ Typy pól, które strażnik zostawia bez maski (``TOOL_FIELDS``), sprawdza tu te
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence, Sized
 import copy
 import dataclasses
 from dataclasses import dataclass, fields, is_dataclass
@@ -2658,8 +2658,8 @@ def _schema_words() -> tuple[set[str], set[str]]:
 
 
 def _bez_probki(logs: RunLog) -> list[str]:
-    """Pola rekordów schematu Logów bez wartości w Logach ``logs`` (``Rekord.pole``; pusta lista i ``None`` to brak
-    wartości, choć pole z domyślną ma w JSON-ie klucz) i rodzaje rekordów unii z polem rodzaju bez rekordu tego rodzaju
+    """Pola rekordów schematu Logów bez wartości w Logach ``logs`` (``Rekord.pole``; ``None`` i wartość bez elementów, czyli
+    pusta lista, krotka, słownik albo tekst, to brak wartości, choć pole z domyślną ma w JSON-ie klucz) i rodzaje rekordów unii z polem rodzaju bez rekordu tego rodzaju
     (``Rekord.pole=rodzaj``), także rodzaj, którego pola mają już wartości w rekordzie innego rodzaju."""
 
     schema = RunLog.model_json_schema()
@@ -2687,7 +2687,7 @@ def _bez_probki(logs: RunLog) -> list[str]:
             names = type(value).model_fields if isinstance(value, BaseModel) else [item.name for item in fields(value)]
             for name in names:
                 entry = getattr(value, name)
-                if entry is not None and entry != [] and entry != {}:
+                if not (entry is None or (isinstance(entry, Sized) and len(entry) == 0)):
                     found.add(f"{type(value).__name__}.{name}")
                 if isinstance(entry, (str, Enum)):
                     found.add(f"{type(value).__name__}.{name}={entry.value if isinstance(entry, Enum) else entry}")
