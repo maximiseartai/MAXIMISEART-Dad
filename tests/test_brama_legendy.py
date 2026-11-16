@@ -40,9 +40,11 @@ ORDERS = [
     ("instutp40m", "dekoder"),
     ("kabel SYN-OPIS 15 m", "dekoder"),
     ("instmdik dzielnik1/2", "dekoder"),
+    ("", "technicolor"),
 ]
 """``CZYNNOŚCI ZREALIZOWANE`` i ``URZĄDZENIA`` zleceń; ``dekoder`` daje z Reguł ilości z Wydania tylko V, a
-``technicolor`` także 1 w AK, do którego legenda dodaje swoje 1 z ``instwewrg65m``."""
+``technicolor`` także 1 w AK, do którego legenda dodaje swoje 1 z ``instwewrg65m``, a bez kodu to 1 nie jest wpisem
+taty."""
 
 
 def _filled_by_dad(tmp_path: Path) -> PreparationFixture:
@@ -107,7 +109,7 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
 
     disk = lines.index(f"== {collective.name} | porównane: Y AB AC AD AJ AK AL AM, AS, kolory AF AM AS")
     assert lines[disk + 1 : disk + 10] == [
-        "wiersze danych: 8 | z kodem: 6 | z samych kodów: 4 | kod obok opisu: 2 | DATA nie jest datą: 0",
+        "wiersze danych: 9 | z kodem: 6 | z samych kodów: 4 | kod obok opisu: 2 | DATA nie jest datą: 0",
         "zgodne z tatą wiersze z kodem: 3/6 (50.0%) | z samych kodów: 2/4 (50.0%) | kod obok opisu: 1/2 (50.0%)",
         "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1",
         "-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): 3 klas",
@@ -148,7 +150,7 @@ def test_brama_liczy_legenda_z_ustawien_a_opisow_nie_zapisuje_w_repozytorium(tmp
     assert lines[0] == f"Legenda czynności: {LEGEND_FILE} | Reguły ilości: z Wydania"
     assert lines[1].endswith("| porównane: AK, AS, kolory brak")
     assert lines[2:4] == [
-        "wiersze danych: 8 | z kodem: 1 | z samych kodów: 1 | kod obok opisu: 0 | DATA nie jest datą: 0",
+        "wiersze danych: 9 | z kodem: 1 | z samych kodów: 1 | kod obok opisu: 0 | DATA nie jest datą: 0",
         "zgodne z tatą wiersze z kodem: 1/1 (100.0%) | z samych kodów: 1/1 (100.0%) | kod obok opisu: 0/0",
     ]
     inside = ROOT / "opisy-brama.txt"
