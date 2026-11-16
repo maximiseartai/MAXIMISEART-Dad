@@ -2805,6 +2805,7 @@ def test_formularz_kazdego_kodu_zapisany_bez_zmiany_nie_zmienia_legendy(tmp_path
 
     saved = [client.put(code_url(code["id"]), json=code["code"]) for code in codes]
 
+    assert codes[0]["code"] == code_form("inst#m", column=fixed("Y")), "formularz pokazuje miejsce na liczbę jako #"
     assert [(response.status_code, response.json()["change"]) for response in saved] == [(200, None)] * len(codes)
     assert legend_history(client) == []
 
