@@ -78,6 +78,24 @@ def test_dluzszy_zapis_wygrywa_z_krotszym_a_dopasowany_tekst_nie_liczy_sie_drugi
     assert [found.code for found in _read(text).found] == [code]
 
 
+# Zapisy, które pracownicy piszą bez liczby (pytania do taty: „samo instwew”), więc krótszy pasuje do początku dłuższego.
+_NESTED = ActivityLegend(
+    (
+        ActivityCode("inst", ("inst",), FixedColumn("Y")),
+        ActivityCode("instwew", ("instwew",), fills=(CellFill("AF", FillColour.GREEN),)),
+        ActivityCode("instwewrg6", ("instwewrg6{n}m",), ColumnByNumber((NumberRange(1, 10, "AK"),))),
+    )
+)
+
+
+@pytest.mark.parametrize(
+    ("text", "codes"),
+    [("instwewrg65m", ["instwewrg6"]), ("instwew", ["instwew"]), ("inst", ["inst"]), ("inst instwew instwewrg65m", ["inst", "instwew", "instwewrg6"])],
+)
+def test_dluzszy_zapis_wygrywa_z_krotszym_ktory_pasuje_do_jego_poczatku(text: str, codes: list[str]) -> None:
+    assert [found.code for found in read_codes(_NESTED, text).found] == codes
+
+
 @pytest.mark.parametrize("text", ["xinst20m", "ąinst20m", "2inst20m", "Montażinst20m", "spawanie gniazda", "instalacja 20m", "rt25", "art2"])
 def test_kod_nie_zaczyna_sie_w_srodku_slowa_a_zwykle_slowa_nie_sa_kodem(text: str) -> None:
     assert _read(text).found == ()
