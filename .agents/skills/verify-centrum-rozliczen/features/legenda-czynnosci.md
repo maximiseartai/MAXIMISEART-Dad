@@ -7,7 +7,10 @@ kwota (AS), AS na czerwono.”. A column of Ilości usług shows its price-list 
 zbiorczego next to its letter, the amount stands in AS named „Uwagi - kwota”, and a filled column is its letter alone.
 Without Dad's file `legenda-czynnosci.yaml` in `config` the section shows the legend of the Release. A file changed
 outside Centrum is a row of Historia from outside Centrum; a bad file is a bad setting in one sentence over the last
-good legend, which Centrum counts. The editor of a code comes with #1944.
+good legend, which Centrum counts. The pencil at a code and „Dodaj kod” open the form of a code in place of its row:
+spellings (`#` for the number), the column of Ilości usług (one column or ranges of the number) with its value chosen
+only from the columns the legend writes, by price-list name, the amount in AS and the colours. „Zapisz” and „Usuń kod”
+are changes of Historia with „Cofnij”, and a refusal is one sentence at its field.
 
 ## Sub-features
 
@@ -16,7 +19,11 @@ Printed by `scripts/sub_features.py --feature legenda-czynnosci` from the drive'
 - `legenda-zdania`: each of the … codes of the Release is one sentence on screen (…); column AB shows its price-list name next to the letter, the amount stands in „Uwagi - kwota” AS.
 - `legenda-zly-plik`: a bad file of the legend is a bad setting in one sentence over the last good legend, which Centrum counts.
 - `legenda-historia`: Historia has both changes outside Centrum, the good one as the code's sentence before and after.
-- `legenda-waskie-okno`: the narrow window shows every code (…); on a narrow window the sentences wrap without a horizontal scroll.
+- `legenda-dopisany-zapis`: the pencil, „Dodaj zapis” and „Zapisz” add the spelling the workers write to the code.
+- `legenda-odmowa`: the column of a code is chosen by its price-list name, only from the … columns the legend writes; a spelling of another code is one sentence at its field, and the legend stays.
+- `legenda-nowy-kod`: a new code with a range of the number, an amount in AS and a colour is one more sentence of the legend.
+- `legenda-usuniecie-cofnij`: removing a code is a row of Historia, and its „Cofnij” brings the code back.
+- `legenda-waskie-okno`: the narrow window shows every code (…); on a narrow window the sentences wrap without a horizontal scroll; on a narrow window the form of a code with ranges wraps without a horizontal scroll.
 
 ## How to get to it (user POV)
 
@@ -27,8 +34,9 @@ of `#/ustawienia/legenda-czynnosci` opens the section too.
 
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature legenda-czynnosci`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/legenda-czynnosci*.json`.
-The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`.
+The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it after `legenda-usuniecie-cofnij`, so the features after this one find the legend of the Release.
 
 ## Gotchas
 
-None known that the drive does not handle.
+The toast „Zapisano · Cofnij” stands over the last rows of the list; the drive closes it before the pencil of the
+last code.

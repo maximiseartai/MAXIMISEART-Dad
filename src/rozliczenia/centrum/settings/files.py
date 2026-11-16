@@ -77,14 +77,18 @@ FieldName = Literal[
     "wartosc",
     "kolumny",
     "zapisy",
+    "przedzialy",
+    "kwota",
+    "wypelnienia",
 ]
 """Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``.
 
 Nazwy stoją w grupach według pliku: ``centrum-ustawienia.yaml`` od ``rejestr_zlecen``, ``skrzynka-raportow.txt`` od
 ``adres``, ``wykonawcy.yaml`` od ``wykonawcy``, ``przypomnienia.yaml`` od ``wlaczone``, przełącznik startu razem z Windows
 (skrót w folderze Autostart) ``autostart``, ``wyjatki-ilosci.yaml`` (różnice Kontroli ilości oznaczone „To był wyjątek”)
-od ``wyjatki``, reguła pliku ``reguly-ilosci.yaml`` w edytorze Reguł ilości od ``jesli`` i składnik pliku
-``lista-urzadzen.yaml`` w sekcji Urządzenia ``zapisy`` (nazwa składnika to ``nazwa``).
+od ``wyjatki``, reguła pliku ``reguly-ilosci.yaml`` w edytorze Reguł ilości od ``jesli``, składnik pliku
+``lista-urzadzen.yaml`` w sekcji Urządzenia ``zapisy`` (nazwa składnika to ``nazwa``) i Kod czynności pliku
+``legenda-czynnosci.yaml`` w formularzu kodu od ``przedzialy`` (do tego ``zapisy``, ``kolumna``, ``wartosc``).
 """
 
 

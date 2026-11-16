@@ -19,6 +19,7 @@ import time
 import unicodedata
 from collections import Counter
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from urllib.parse import quote
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -2692,6 +2693,338 @@ def test_legenda_z_wydania_zmienia_sie_tylko_jawna_zmiana_w_wydaniu() -> None:
     )
 
 
+def code_form(*spellings: str, column: dict[str, Any] | None = None, value: int = 1, amount: int | None = None, fills: list[dict[str, str]] | None = None) -> dict[str, Any]:
+    """Formularz Kodu czynności w sekcji Legenda czynności (``#`` w miejscu liczby)."""
+
+    return {"spellings": list(spellings), "column": column, "value": value, "amount": amount, "fills": fills or []}
+
+
+def fixed(column: str) -> dict[str, Any]:
+    return {"kind": "fixed", "column": column}
+
+
+def ranges(*found: tuple[int, int, str]) -> dict[str, Any]:
+    return {"kind": "ranges", "ranges": [{"low": low, "high": high, "column": column} for low, high, column in found]}
+
+
+def code_url(code: str) -> str:
+    """Adres kodu w sekcji: id kodu może mieć „/” (``dzielnik1/2``), więc przeglądarka koduje go jak każdy parametr."""
+
+    return f"{LEGEND_URL}/{quote(code, safe='')}"
+
+
+def shown_form(client: CentrumClient, code: str) -> dict[str, Any]:
+    """Formularz kodu ``code``, który sekcja daje przy ołówku."""
+
+    found: dict[str, Any] = next(read["code"] for read in client.get(LEGEND_URL).json()["codes"] if read["id"] == code)
+    return found
+
+
+LegendEdit = Callable[[CentrumClient], Any]
+
+LEGEND_EDITS: dict[str, tuple[LegendEdit, str | None, str | None]] = {
+    "dodanie kodu ze stałą kolumną": (
+        lambda client: client.post(LEGEND_URL, json=code_form("instrg6#m", column=fixed("AK"))),
+        None,
+        "instrg6#m: 1 w AK.",
+    ),
+    "dodanie kodu z przedziałami, kwotą i kolorem": (
+        lambda client: client.post(
+            LEGEND_URL,
+            json=code_form("Listwa #m", column=ranges((1, 10, "AK"), (11, 20, "AL")), value=2, amount=30, fills=[{"column": "AF", "colour": "czerwony"}]),
+        ),
+        None,
+        "listwa#m: # od 1 do 10 → 2 w AK, # od 11 do 20 → 2 w AL, 30 w Uwagi - kwota (AS), AF na czerwono.",
+    ),
+    "dodanie kodu z samą kwotą przy wartości z formularza": (
+        lambda client: client.post(LEGEND_URL, json=code_form("listwy#m", value=3, amount=20)),
+        None,
+        "listwy#m: 20 w Uwagi - kwota (AS).",
+    ),
+    "zmiana kodu": (
+        lambda client: client.put(code_url("spawpg"), json=shown_form(client, "spawpg") | {"column": fixed("AC"), "amount": 80}),
+        "spawpg: 1 w AB, 70 w Uwagi - kwota (AS), AS na czerwono.",
+        "spawpg: 1 w AC, 80 w Uwagi - kwota (AS), AS na czerwono.",
+    ),
+    "zmiana kodu z „/” w id": (
+        lambda client: client.put(code_url("dzielnik1/2"), json=shown_form(client, "dzielnik1/2") | {"amount": 60}),
+        "dzielnik1/2 (też dzielnika1/2): 50 w Uwagi - kwota (AS).",
+        "dzielnik1/2 (też dzielnika1/2): 60 w Uwagi - kwota (AS).",
+    ),
+    "usunięcie kodu": (
+        lambda client: client.delete(code_url("pz20m")),
+        "pz20m: 480 w Uwagi - kwota (AS).",
+        None,
+    ),
+    "dopisanie zapisu pracowników": (
+        lambda client: client.put(
+            code_url("instwewrg6"), json=shown_form(client, "instwewrg6") | {"spellings": ["instwewrg6#m", "instrg6#m"]}
+        ),
+        "instwewrg6#m: # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
+        "instwewrg6#m (też instrg6#m): # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
+    ),
+    "usunięcie zapisu": (
+        lambda client: client.put(code_url("instmdik"), json=shown_form(client, "instmdik") | {"spellings": ["instmdik"]}),
+        "instmdik (też instmdic): 1 w Y.",
+        "instmdik: 1 w Y.",
+    ),
+}
+"""Zmiana Legendy czynności z sekcji: zapytanie, zdanie kodu przed (``None``: nowy kod) i po (``None``: usunięty)."""
+
+
+@pytest.mark.parametrize("edit", LEGEND_EDITS)
+def test_zmiana_legendy_z_sekcji_jest_w_historii_ze_zdaniem_i_cofniecie_przywraca_legende(tmp_path: Path, edit: str) -> None:
+    request, before, after = LEGEND_EDITS[edit]
+    client = centrum(tmp_path).client
+    expected = (
+        [*MAIL_SENTENCES, after]
+        if before is None
+        else [after if sentence == before else sentence for sentence in MAIL_SENTENCES if sentence != before or after is not None]
+    )
+
+    response = request(client)
+    sentences, _ = legend_sentences(client)
+    [row] = legend_history(client)
+    undone = client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert response.status_code == 200, response.text
+    assert response.json()["change"] == row["id"]
+    assert list(sentences.values()) == expected
+    assert (row["source"], row["section"], row["undoable"]) == ("tata", "kody", True)
+    assert [
+        (None if change["before"] is None else plain(change["before"]), None if change["after"] is None else plain(change["after"]))
+        for change in row["rules"]
+    ] == [(before, after)]
+    assert undone.status_code == 200, undone.text
+    assert list(legend_sentences(client)[0].values()) == MAIL_SENTENCES
+
+
+def test_formularz_kazdego_kodu_zapisany_bez_zmiany_nie_zmienia_legendy(tmp_path: Path) -> None:
+    client = centrum(tmp_path).client
+    codes = client.get(LEGEND_URL).json()["codes"]
+
+    saved = [client.put(code_url(code["id"]), json=code["code"]) for code in codes]
+
+    assert codes[0]["code"] == code_form("inst#m", column=fixed("Y")), "formularz pokazuje miejsce na liczbę jako #"
+    assert [(response.status_code, response.json()["change"]) for response in saved] == [(200, None)] * len(codes)
+    assert legend_history(client) == []
+
+
+def test_nowy_kod_dostaje_id_spoza_historii_wiec_cofniecie_usuniecia_nie_rusza_kodu_dodanego_potem(tmp_path: Path) -> None:
+    client = centrum(tmp_path).client
+    first = client.post(LEGEND_URL, json=code_form("listwa#m", amount=20)).json()["activity_legend"]["codes"][-1]["id"]
+    removed = client.delete(code_url(first)).json()["change"]
+    again = client.post(LEGEND_URL, json=code_form("listwa#m", amount=30)).json()["activity_legend"]["codes"][-1]["id"]
+
+    undone = client.post(f"/api/settings/history/{removed}/undo")
+    sentences, _ = legend_sentences(client)
+
+    assert again != first
+    assert undone.status_code == 422, undone.text
+    assert undone.json() == {"message": "Zapis „listwa#m” ma już kod „listwa#m”."}
+    assert sentences[again] == "listwa#m: 30 w Uwagi - kwota (AS)."
+    assert first not in sentences
+
+
+@pytest.mark.parametrize(
+    ("request_", "field", "message"),
+    [
+        (
+            ("POST", LEGEND_URL, code_form("instrg#m", "inst#m", column=fixed("AK"))),
+            "zapisy[1]",
+            "Zapis „inst#m” ma już kod „inst#m”.",
+        ),
+        (
+            ("PUT", code_url("inst"), code_form("inst#m", "", "spawpg", column=fixed("Y"))),
+            "zapisy[2]",
+            "Zapis „spawpg” ma już kod „spawpg”.",
+        ),
+        (
+            ("POST", LEGEND_URL, code_form("utp#m", column=ranges((1, 15, "AL"), (15, 30, "AJ")))),
+            "przedzialy",
+            "Przedziały 1–15 i 15–30 zachodzą na siebie.",
+        ),
+        (
+            ("POST", LEGEND_URL, code_form("utp#m", column=ranges((10, 5, "AL")))),
+            "przedzialy[0]",
+            "Przedział to liczby całkowite od 1, a „od” nie jest większe niż „do”.",
+        ),
+        (
+            ("POST", LEGEND_URL, code_form("utp", column=ranges((1, 15, "AL")))),
+            "zapisy[0]",
+            "Zapis „utp” potrzebuje miejsca na liczbę (#), bo przedziały wybierają kolumnę liczbą z zapisu.",
+        ),
+        (
+            ("POST", LEGEND_URL, code_form("montaz")),
+            None,
+            "Kod musi coś wyznaczać: Ilość usług w kolumnie, kwotę w AS albo kolor.",
+        ),
+        (("POST", LEGEND_URL, code_form("montaz", column=fixed("P"))), "kolumna", "Kolumna „P” nie jest kolumną Ilości usług N:AP bez P, Q i S."),
+        (("POST", LEGEND_URL, code_form("montaz", column=fixed("AS"))), "kolumna", "AS przyjmuje tylko kwotę: wpisz ją w pole kwoty."),
+        (
+            ("POST", LEGEND_URL, code_form("utp#m", column=ranges((1, 15, "S")))),
+            "przedzialy[0].kolumna",
+            "Kolumna „S” nie jest kolumną Ilości usług N:AP bez P, Q i S.",
+        ),
+        (
+            ("POST", LEGEND_URL, code_form("montaz", fills=[{"column": "AF", "colour": "zielony"}, {"column": "AT", "colour": "zielony"}])),
+            "wypelnienia[1]",
+            "Kolumny AT kod nie wypełnia: wybierz kolumnę N:AP bez P, Q i S albo AS.",
+        ),
+        (("POST", LEGEND_URL, code_form("montaz", column=fixed("AB"), value=0)), "wartosc", "Wartość musi być liczbą całkowitą od 1 do 999 i mieć kolumnę."),
+        (("POST", LEGEND_URL, code_form("montaz", amount=0)), "kwota", "Kwota w AS musi być liczbą całkowitą od 1 do 999."),
+        (("POST", LEGEND_URL, code_form(" ", amount=10)), "zapisy[0]", "Kod potrzebuje co najmniej jednego zapisu."),
+        (
+            ("POST", LEGEND_URL, code_form("20m", amount=10)),
+            "zapisy[0]",
+            "Zapis „20m” wpisz małymi literami, cyframi i „/”, bez spacji, od litery, z co najwyżej jednym miejscem na liczbę (#).",
+        ),
+    ],
+    ids=[
+        "zapis innego kodu",
+        "zmieniany kod bierze zapis kodu dalej w legendzie",
+        "nachodzące przedziały",
+        "przedział od większego do mniejszego",
+        "przedziały bez miejsca na liczbę",
+        "kod bez działania",
+        "kolumna rachunku narzędzia",
+        "kwota jako kolumna",
+        "kolumna przedziału",
+        "kolumna koloru",
+        "wartość zero",
+        "kwota zero",
+        "bez zapisu",
+        "zapis od cyfry",
+    ],
+)
+def test_zly_kod_z_sekcji_to_odmowa_jednym_zdaniem_przy_polu_bez_zapisu(
+    tmp_path: Path, request_: tuple[str, str, dict[str, Any]], field: str | None, message: str
+) -> None:
+    app = centrum(tmp_path)
+    method, url, body = request_
+
+    response = app.client.request(method, url, json=body)
+
+    assert (response.status_code, response.json()) == (422, {"message": message} if field is None else {"field": field, "message": message})
+    assert not (app.tool.config / LEGEND_FILE).exists()
+    assert legend_history(app.client) == []
+
+
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_zmiana_albo_usuniecie_kodu_ktorego_juz_nie_ma_to_404_bez_zapisu(tmp_path: Path, method: str) -> None:
+    app = centrum(tmp_path)
+
+    response = app.client.request(method, code_url("nie-ma"), json=code_form("nie#m", amount=10) if method == "PUT" else None)
+
+    assert (response.status_code, response.json()) == (404, {"message": refusal.activity_code_unknown().message})
+    assert not (app.tool.config / LEGEND_FILE).exists()
+
+
+@pytest.mark.parametrize(
+    "request_",
+    [
+        ("POST", LEGEND_URL, code_form("listwa#m", amount=20)),
+        ("PUT", code_url("spawez"), code_form("spawez", column=fixed("AC"))),
+        ("DELETE", code_url("spawez"), None),
+    ],
+    ids=["dodanie", "zmiana", "usunięcie"],
+)
+def test_zapis_legendy_przy_pliku_legendy_bez_odczytu_to_409_o_tym_pliku_bez_zapisu(
+    tmp_path: Path, request_: tuple[str, str, dict[str, Any] | None]
+) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    path = app.tool.config / LEGEND_FILE
+    own = with_own(own_code("spawpg", amount=80))
+    path.write_bytes(own)
+    method, url, body = request_
+
+    with without_reading(path):
+        response = app.client.request(method, url, json=body)
+
+    assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(LEGEND_FILE).message})
+    assert path.read_bytes() == own
+
+
+def test_sekcja_przy_pliku_legendy_bez_odczytu_mowi_o_tym_pliku_i_pokazuje_legende_z_wydania(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    path = app.tool.config / LEGEND_FILE
+    path.write_bytes(with_own(own_code("spawpg", amount=80)))
+    legend_sentences(app.client)
+
+    with without_reading(path):
+        sentences, problem = legend_sentences(app.client)
+
+    assert problem == {"field": None, "message": settings_messages.unreadable(LEGEND_FILE)}
+    assert list(sentences.values()) == MAIL_SENTENCES
+
+
+def test_kolumny_formularza_kodu_to_kolumny_legendy_z_nazwa_cennika_a_kwota_tylko_w_as(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    template = write_collective_template(app.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    active_worksheet(workbook)["AB17"] = "Spawanie\nw mufie"
+    workbook.save(template)
+
+    read = app.client.get(LEGEND_URL).json()
+
+    letters = [column["letter"] for column in read["columns"]]
+    assert (letters[0], letters[-1]) == ("N", "AP")
+    assert not {"P", "Q", "S", "AS"} & set(letters)
+    assert {column["letter"]: column["name"] for column in read["columns"]}["AB"] == "Spawanie w mufie"
+    assert read["amount_column"] == {"letter": "AS", "name": "Uwagi - kwota"}
+    assert [column["letter"] for column in read["fill_columns"]] == [*letters, "AS"]
+
+
+LISTWY = ActivityCode("listwy", ("listwy{n}m",), amount=20)
+"""Kod, którego legenda z Wydania nie ma: np. kwota za listwy po odpowiedzi taty."""
+
+
+def test_jawna_zmiana_legendy_w_wydaniu_dopisuje_kod_ktorego_tata_nie_ma_na_koncu(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    client = started(tool, (ReleaseChange("2026-12-listwy", LEGEND, set_codes(LISTWY)),))
+    sentences, _ = legend_sentences(client)
+    rows = legend_history(client)
+    client.stop()
+
+    assert list(sentences.values()) == [*MAIL_SENTENCES, "listwy#m: 20 w Uwagi - kwota (AS)."]
+    assert [row["source"] for row in rows] == ["release"]
+
+
+@pytest.mark.parametrize("state", ["zła treść", "bez odczytu"])
+def test_jawna_zmiana_legendy_w_wydaniu_czeka_przy_zlym_albo_nieczytelnym_pliku_taty_i_wchodzi_po_jego_poprawie(
+    tmp_path: Path, state: str
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    path = tool.config / LEGEND_FILE
+    good = with_own(own_code("spawpg", amount=80))
+    stored = with_own(own_code("spawez", spellings=("spawpg",))) if state == "zła treść" else good
+    path.write_bytes(stored)
+    change = ReleaseChange("2026-12-listwy", LEGEND, set_codes(LISTWY))
+
+    if state == "bez odczytu":
+        with without_reading(path):
+            waiting = started(tool, (change,))
+            waiting.stop()
+    else:
+        waiting = started(tool, (change,))
+        waiting.stop()
+    kept = path.read_bytes()
+    path.write_bytes(good)
+    again = started(tool, (change,))
+    sentences, _ = legend_sentences(again)
+    rows = legend_history(again)
+    again.stop()
+
+    assert kept == stored, "zmiana nie nadpisała pliku taty ostatnią dobrą legendą"
+    assert sentences["listwy"] == "listwy#m: 20 w Uwagi - kwota (AS)."
+    assert sentences["spawpg"] == "spawpg: 1 w AB, 80 w Uwagi - kwota (AS), AS na czerwono."
+    assert [row["source"] for row in rows if row["source"] == "release"] == ["release"]
+
+
 @pytest.mark.parametrize(
     ("register", "periods", "problem"),
     [
@@ -3281,17 +3614,22 @@ class SettingsWorld:
     difference: str = ""
 
 
+WORLD_CODE: Final = {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": []}
+"""Kod czynności, który tata w świecie próbek dodał i usunął: nowy kod z tym formularzem nie może dostać jego id."""
+
 EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
 """Wyjątek Kontroli ilości, który tata oznaczył w świecie próbek, zanim przyszła próbka."""
 
 
 def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[str, str]:
     """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, Legenda czynności taty bez pierwszego kodu z
-    Wydania, przypomnienia ze stopką taty, usunięta reguła i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
+    Wydania i z usuniętym kodem w Historii, przypomnienia ze stopką taty, usunięta reguła i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
     usuniętego składnika."""
 
     (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
     (tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes[1:]))
+    code = client.post(LEGEND_URL, json=WORLD_CODE).json()["activity_legend"]["codes"][-1]["id"]
+    client.delete(code_url(code))
     client.put("/api/settings/reminders", json=SIGNED_REMINDERS | {"footer": "Tata"})
     rule = client.post(QUANTITY_RULES_URL, json=EDITED["A"]).json()["quantity_rules"]["rules"][-1]["id"]
     client.delete(f"{QUANTITY_RULES_URL}/{rule}")
@@ -3406,6 +3744,9 @@ SETTINGS_WRITES: dict[str, SettingsRequest] = {
     "previewQuantityRules": lambda w: ("POST", f"{QUANTITY_RULES_URL}/preview", {"kind": "change", "rule_id": w.rule, "rule": EDITED["A"]}),
     "changeQuantityRule": lambda w: ("PUT", f"{QUANTITY_RULES_URL}/{w.rule}", EDITED["A"]),
     "removeQuantityRule": lambda w: ("DELETE", f"{QUANTITY_RULES_URL}/{w.rule}", None),
+    "addActivityCode": lambda w: ("POST", LEGEND_URL, WORLD_CODE),
+    "changeActivityCode": lambda w: ("PUT", code_url("spawez"), WORLD_CODE),
+    "removeActivityCode": lambda w: ("DELETE", code_url("spawez"), None),
     "chooseRegister": lambda w: ("POST", "/api/settings/register/choose", None),
     "openRegister": lambda w: ("POST", "/api/settings/register/open", None),
     "changeReminders": lambda w: ("PUT", "/api/settings/reminders", SIGNED_REMINDERS),
@@ -3572,13 +3913,20 @@ def _kept_data(locked: Outcome, readable: Outcome, untouched: Mapping[str, str |
 
 
 _USED_KEYS_ONLY_FOR_NEW_ENTRY = (
-    "klucze z Historii dostaje tylko nowy wpis (``_with_used_keys`` czyta Historię dla każdej zmiany sekcji Urządzenia "
-    "i edytora reguł), a zmiana i usunięcie nowego wpisu nie tworzą, więc treść Historii nie zmienia ich zapisu w żadnym "
-    "świecie; odebrana Historia daje odmowę"
+    "klucze z Historii dostaje tylko nowy wpis (``_with_used_keys`` czyta Historię dla każdej zmiany sekcji Urządzenia, "
+    "edytora reguł i formularza kodu legendy), a zmiana i usunięcie nowego wpisu nie tworzą, więc treść Historii nie "
+    "zmienia ich zapisu w żadnym świecie; odebrana Historia daje odmowę"
 )
 READ_WITHOUT_EFFECT: Final[dict[tuple[str, Path], str]] = {
     (operation, Path("config") / HISTORY_FILE): _USED_KEYS_ONLY_FOR_NEW_ENTRY
-    for operation in ("changeDevice", "removeDevice", "changeQuantityRule", "removeQuantityRule")
+    for operation in (
+        "changeDevice",
+        "removeDevice",
+        "changeQuantityRule",
+        "removeQuantityRule",
+        "changeActivityCode",
+        "removeActivityCode",
+    )
 }
 """Plik, który operacja czyta przed zapisem, ale którego treść nie zmienia jej zapisu w żadnym świecie, z powodem: warunek
 znaczenia (``_meaningless``) go nie zgłasza, a test pada, gdy plik zaczyna coś znaczyć."""

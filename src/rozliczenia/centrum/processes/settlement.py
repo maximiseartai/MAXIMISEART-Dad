@@ -77,7 +77,7 @@ def _logs(summary: SettlementSummary | None, _facts: object) -> ProcessLogs:
 
 
 def _quantity_check(summary: SettlementSummary) -> quantity_check.CheckResult:
-    return quantity_check.check(summary.orders, summary.quantity_rules)
+    return quantity_check.check(summary.orders, summary.quantity_rules, summary.activity_legend)
 
 
 def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
@@ -87,6 +87,7 @@ def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
         workers=start.worker_list(),
         worker_template_path=start.path("worker_template"),
         quantity_rules=start.counted_rules(),
+        activity_legend=start.counted_legend(),
     )
 
 

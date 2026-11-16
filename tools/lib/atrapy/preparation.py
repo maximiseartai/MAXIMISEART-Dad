@@ -12,7 +12,7 @@ from datetime import datetime
 from pathlib import Path
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -64,7 +64,12 @@ COLLECTIVE_TEMPLATE_RATE = 17.5
 COLLECTIVE_TEMPLATE_ZERO_ROWS = 6
 # Formatowanie przygotowanych wierszy Wzorca pliku zbiorczego: A:K i kolumny ilości.
 COLLECTIVE_TEMPLATE_DATA_FILL = PatternFill(fill_type="solid", fgColor="FFDDDDDD")
-COLLECTIVE_TEMPLATE_QUANTITY_FILL = PatternFill(fill_type="solid", fgColor="FFCCE5FF")
+# Tło kolumn ilości przygotowanych wierszy jak we Wzorcu taty: kolor motywu 0 przyciemniony w N:V i X, kolor motywu 2 w
+# AI, reszta N:AP i AS bez wypełnienia. To wygląd Wzorca w kolumnach, które może wypełnić Legenda czynności.
+COLLECTIVE_TEMPLATE_QUANTITY_FILLS: Mapping[int, PatternFill] = {
+    **{column: PatternFill(fill_type="solid", fgColor=Color(theme=0, tint=-0.1499984740745262)) for column in (*range(14, 23), 24)},
+    35: PatternFill(fill_type="solid", fgColor=Color(theme=2)),
+}
 
 RegisterRow = dict[str, object] | None
 """Wiersz Rejestru: wartości po nagłówkach Rejestru albo ``None`` dla całkowicie pustego wiersza."""
@@ -377,7 +382,7 @@ def write_collective_template(
         for column in QUANTITY_COLUMNS:
             cell = sheet.cell(row, column)
             cell.value = 0
-            cell.fill = COLLECTIVE_TEMPLATE_QUANTITY_FILL
+            cell.fill = COLLECTIVE_TEMPLATE_QUANTITY_FILLS.get(column, PatternFill())
             cell.number_format = "0"
         sheet.cell(row, AMOUNT_COLUMN).value = f"=N{row}*$N$1"
     rates = workbook.create_sheet("Rates")

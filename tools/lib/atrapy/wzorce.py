@@ -52,7 +52,9 @@ _XML = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
 _COLUMN = {index: get_column_letter(index) for index in range(1, 54)}
 # Ilości N:AP, koniec Wiersza danych AT i Kwota AU z układu plików taty; pozostałe kolumny to szczegóły Wzorca taty.
 _N, _AP, _AT, _AU = QUANTITY_COLUMNS[0], QUANTITY_COLUMNS[-1], DATA_ROW_COLUMNS[-1], AMOUNT_COLUMN
-_V, _W, _X, _AY, _BA = 22, 23, 24, 51, 53
+_V, _W, _X, _AI, _AY, _BA = 22, 23, 24, 35, 51, 53
+# Tło Wierszy danych Wzorca taty w N:V i X do wiersza 500 (w AI kolor motywu 2): wygląd Wzorca, nie Wyróżnienie.
+_THEME_SHADE = 'theme="0" tint="-0.14999847407452621"'
 
 _SUMMARY_HEADERS = (
     "Obciążenie klienta - opis",
@@ -93,6 +95,7 @@ class _Styles:
         bold: bool = False,
         color: str = "FF000000",
         fill: str | None = None,
+        theme_fill: str | None = None,
         border: str | None = None,
         number_format: int = 0,
         horizontal: str | None = None,
@@ -102,10 +105,11 @@ class _Styles:
             f'<font>{"<b/>" if bold else ""}<sz val="{size}"/><color rgb="{color}"/>'
             '<name val="Calibri"/><family val="2"/><charset val="238"/></font>'
         )
+        colour = f'rgb="{fill}"' if fill is not None else theme_fill
         fill_xml = (
             '<fill><patternFill patternType="none"/></fill>'
-            if fill is None
-            else f'<fill><patternFill patternType="solid"><fgColor rgb="{fill}"/><bgColor indexed="64"/></patternFill></fill>'
+            if colour is None
+            else f'<fill><patternFill patternType="solid"><fgColor {colour}/><bgColor indexed="64"/></patternFill></fill>'
         )
         side = "" if border is None else f' style="{border}"><color indexed="64"/'
         border_xml = (
@@ -226,8 +230,9 @@ class _TemplateSheet:
             "bottom": add(size=10, border="hair"),
             "bottom-text": add(size=10, border="hair", wrap=True),
             "bottom-date": add(size=10, border="hair", number_format=14),
-            "zero": add(size=11, number_format=1, fill="FFCCE5FF", border="thin", horizontal="center"),
-            "zero-last": add(size=11, number_format=1, fill="FFCCE5FF", border="medium", horizontal="center"),
+            "zero": add(size=11, number_format=1, theme_fill=_THEME_SHADE, border="thin", horizontal="center"),
+            "zero-last": add(size=11, number_format=1, theme_fill=_THEME_SHADE, border="medium", horizontal="center"),
+            "zero-extra": add(size=11, number_format=2, theme_fill='theme="2"', border="hair"),
             "quantity": add(size=11, number_format=1, border="hair", horizontal="center"),
             "quantity-last": add(size=11, number_format=1, border="medium", horizontal="center"),
             "separator": add(size=11, fill="FF808080"),
@@ -365,6 +370,8 @@ class _TemplateSheet:
                 cells.append(self._number(column, row, "zero-last" if column == _V and row > 19 else "zero", 0))
             elif column <= _X:
                 cells.append(self._cell(column, row, "quantity-last" if column == _V else "quantity"))
+            elif zero and column == _AI:
+                cells.append(self._cell(column, row, "zero-extra"))
             else:
                 cells.append(self._cell(column, row, "extra"))
         return cells

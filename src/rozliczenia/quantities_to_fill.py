@@ -74,8 +74,8 @@ CELL_COLUMNS: Final = (*QUANTITY_LETTERS, AMOUNT_COLUMN)
 RowTexts = tuple[str, ...]
 """Teksty Wiersza danych w kolumnach ``TEXT_COLUMNS`` po kolei; pusta komórka to ``""``.
 
-Trafiają tylko do przeglądarki taty, nigdy do ``OrderFacts``, więc nie wychodzą z komputera: ani w Kontroli ilości, ani
-w Logach Uruchomienia."""
+Trafiają tylko do przeglądarki taty, nie przez ``OrderFacts``; opis technika ma tam osobne pole, które Kontrola ilości
+wysyła tylko w wierszach wskazanych przez ``quantity_check.legend_row_check``."""
 
 
 @dataclass(frozen=True)

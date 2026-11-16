@@ -59,6 +59,9 @@ export const zApiTiming = z.object({
         'removeDevice',
         'getDeviceSuggestions',
         'getActivityLegend',
+        'addActivityCode',
+        'changeActivityCode',
+        'removeActivityCode',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -430,11 +433,29 @@ export const zFigure = z.object({
 });
 
 /**
+ * FillForm
+ */
+export const zFillForm = z.object({
+    column: z.string(),
+    colour: z.enum(['zielony', 'czerwony'])
+});
+
+/**
  * FillKind
  *
  * Rodzaj Ilości do uzupełnienia, który ma listę wierszy.
  */
 export const zFillKind = z.enum(['without_rule', 'from_description']);
+
+/**
+ * FixedColumnForm
+ *
+ * Kod wpisuje w jedną kolumnę, a liczba w zapisie nie ma znaczenia.
+ */
+export const zFixedColumnForm = z.object({
+    kind: z.literal('fixed'),
+    column: z.string()
+});
 
 /**
  * FoldersChange
@@ -597,6 +618,17 @@ export const zKindTableCell = z.object({
 export const zLeaveEmptyAction = z.object({
     kind: z.literal('leave_empty'),
     columns: z.array(z.string())
+});
+
+/**
+ * LegendColumn
+ *
+ * Kolumna do wyboru w formularzu kodu z nazwą pozycji cennika z wiersza 17 Wzorca pliku zbiorczego (``None``: Wzorca
+ * nie da się przeczytać albo komórka jest pusta).
+ */
+export const zLegendColumn = z.object({
+    letter: z.string(),
+    name: z.string().nullable()
 });
 
 /**
@@ -1111,6 +1143,45 @@ export const zQuantitiesToFillProblem = z.object({
 export const zQueued = z.object({
     state: z.literal('queued'),
     waits_for: z.enum(['internet', 'key'])
+});
+
+/**
+ * RangeForm
+ *
+ * Liczba z zapisu od ``low`` do ``high`` włącznie wybiera kolumnę ``column``.
+ */
+export const zRangeForm = z.object({
+    low: z.int(),
+    high: z.int(),
+    column: z.string()
+});
+
+/**
+ * RangesForm
+ *
+ * Kod wybiera kolumnę liczbą z zapisu, przedziałami („1–15 → AL, 16–30 → AJ”).
+ */
+export const zRangesForm = z.object({
+    kind: z.literal('ranges'),
+    ranges: z.array(zRangeForm)
+});
+
+/**
+ * ActivityCodeForm
+ *
+ * Kod czynności w formularzu: zapisy (``#`` w miejscu liczby), kolumna Ilości usług (``None``: bez kolumny) z wartością
+ * za jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty) i kolory wybranych kolumn. Bez kolumny wartość się nie
+ * liczy.
+ */
+export const zActivityCodeForm = z.object({
+    spellings: z.array(z.string()),
+    column: z.discriminatedUnion('kind', [
+        zFixedColumnForm,
+        zRangesForm
+    ]).nullable(),
+    value: z.int(),
+    amount: z.int().nullable(),
+    fills: z.array(zFillForm)
 });
 
 /**
@@ -1874,12 +1945,13 @@ export const zSentenceText = z.object({
  * ActivityCodeSentence
  *
  * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
- * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika; ``code`` to ten sam kod jako formularz.
  */
 export const zActivityCodeSentence = z.object({
     id: z.string(),
     spellings: z.string(),
-    sentence: z.array(z.union([zSentenceText, zSentenceColumn]))
+    sentence: z.array(z.union([zSentenceText, zSentenceColumn])),
+    code: zActivityCodeForm
 });
 
 /**
@@ -1967,10 +2039,26 @@ export const zSettingProblem = z.object({
  *
  * Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe
  * ustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).
+ * ``columns``: kolumny, w które kod wpisuje Ilość usług, ``amount_column``: kolumna kwoty (``AS``), a ``fill_columns``:
+ * kolumny, które kod wypełnia kolorem.
  */
 export const zActivityLegendSettings = z.object({
     codes: z.array(zActivityCodeSentence),
-    problem: zSettingProblem.nullable()
+    problem: zSettingProblem.nullable(),
+    columns: z.array(zLegendColumn),
+    amount_column: zLegendColumn,
+    fill_columns: z.array(zLegendColumn)
+});
+
+/**
+ * ActivityLegendSaved
+ *
+ * Legenda czynności po zapisie formularza kodu; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”),
+ * ``None``: zapis niczego nie zmienił.
+ */
+export const zActivityLegendSaved = z.object({
+    activity_legend: zActivityLegendSettings,
+    change: z.string().nullable()
 });
 
 /**
@@ -3492,6 +3580,33 @@ export const zGetSettingsResponse = zSettings;
  * Successful Response
  */
 export const zGetActivityLegendResponse = zActivityLegendSettings;
+
+export const zAddActivityCodeBody = zActivityCodeForm;
+
+/**
+ * Successful Response
+ */
+export const zAddActivityCodeResponse = zActivityLegendSaved;
+
+export const zRemoveActivityCodePath = z.object({
+    code_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zRemoveActivityCodeResponse = zActivityLegendSaved;
+
+export const zChangeActivityCodeBody = zActivityCodeForm;
+
+export const zChangeActivityCodePath = z.object({
+    code_id: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zChangeActivityCodeResponse = zActivityLegendSaved;
 
 export const zChangeAutostartBody = zAutostartChange;
 

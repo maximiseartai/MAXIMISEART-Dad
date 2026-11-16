@@ -41,6 +41,8 @@ from .quantity_engine import BUILT_IN_COLUMNS, MAX_VALUE, Quantities
 
 NUMBER: Final = "{n}"
 """Miejsce na liczbę w zapisie Kodu czynności."""
+SHOWN_NUMBER: Final = "#"
+"""Miejsce na liczbę w zapisie pokazanym tacie: w zdaniach kodów, w odmowach i w formularzu kodu."""
 AMOUNT_COLUMN: Final = letter(REMARKS_AMOUNT)
 """``AS`` (Uwagi - kwota): kolumna kwoty Kodu czynności, nigdy kolumna jego Ilości usług."""
 COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in BUILT_IN_COLUMNS)
@@ -234,6 +236,12 @@ NOTHING_READ: Final = CodesRead((), MappingProxyType({}), 0, MappingProxyType({}
 """Wynik tekstu bez Kodu czynności."""
 
 
+def shown_spelling(spelling: str) -> str:
+    """Zapis Kodu czynności tak, jak widzi go tata: miejsce na liczbę to ``#`` (``inst#m``)."""
+
+    return spelling.replace(NUMBER, SHOWN_NUMBER)
+
+
 def read_codes(legend: ActivityLegend, text: str) -> CodesRead:
     """Kody czynności w tekście ``text`` i to, co wyznaczają (zob. rachunek w opisie modułu)."""
 
@@ -293,14 +301,19 @@ def _check_code(code: ActivityCode, ids: set[str], owners: dict[str, ActivityCod
     _require(code.id not in ids, f"{path}.id", f"Kod „{code.id}” jest w legendzie dwa razy.")
     ids.add(code.id)
     _require(bool(code.spellings), f"{path}.zapisy", "Kod potrzebuje co najmniej jednego zapisu.")
-    for spelling in code.spellings:
+    for index, spelling in enumerate(code.spellings):
         _require(
             _SPELLING.fullmatch(spelling) is not None and spelling == spelling.casefold() and spelling.count(NUMBER) <= 1,
-            f"{path}.zapisy",
-            f"Zapis „{spelling}” wpisz małymi literami, cyframi i „/”, bez spacji, od litery, z co najwyżej jednym {NUMBER}.",
+            f"{path}.zapisy[{index}]",
+            f"Zapis „{shown_spelling(spelling)}” wpisz małymi literami, cyframi i „/”, bez spacji, od litery, z co najwyżej "
+            f"jednym miejscem na liczbę ({SHOWN_NUMBER}).",
         )
         owner = owners.setdefault(spelling, code)
-        _require(owner is code, f"{path}.zapisy", f"Zapis „{spelling}” ma już kod „{owner.id}”.")
+        _require(
+            owner is code,
+            f"{path}.zapisy[{index}]",
+            f"Zapis „{shown_spelling(spelling)}” ma już kod „{shown_spelling(owner.spellings[0])}”.",
+        )
     _require(
         code.column is not None or code.amount is not None or bool(code.fills),
         path,
@@ -318,9 +331,10 @@ def _check_code(code: ActivityCode, ids: set[str], owners: dict[str, ActivityCod
         f"Kwota w AS musi być liczbą całkowitą od 1 do {MAX_VALUE}.",
     )
     filled: set[str] = set()
-    for fill in code.fills:
-        _require(fill.column in FILL_COLUMNS, f"{path}.wypelnienia", f"Kolumny {fill.column} kod nie wypełnia: wybierz kolumnę N:AP bez P, Q i S albo AS.")
-        _require(fill.column not in filled, f"{path}.wypelnienia", f"Kolumna {fill.column} ma dwa kolory.")
+    for index, fill in enumerate(code.fills):
+        where = f"{path}.wypelnienia[{index}]"
+        _require(fill.column in FILL_COLUMNS, where, f"Kolumny {fill.column} kod nie wypełnia: wybierz kolumnę N:AP bez P, Q i S albo AS.")
+        _require(fill.column not in filled, where, f"Kolumna {fill.column} ma już kolor.")
         filled.add(fill.column)
 
 
@@ -333,11 +347,13 @@ def _check_column(code: ActivityCode, path: str) -> None:
             _check_letter(column, f"{path}.kolumna")
         case ColumnByNumber(ranges=ranges):
             _require(bool(ranges), path_ranges, "Wybór kolumny liczbą potrzebuje co najmniej jednego przedziału.")
-            _require(
-                all(NUMBER in spelling for spelling in code.spellings),
-                path_ranges,
-                f"Przedziały wybierają kolumnę liczbą z zapisu, więc każdy zapis kodu potrzebuje {NUMBER}.",
-            )
+            for index, spelling in enumerate(code.spellings):
+                _require(
+                    NUMBER in spelling,
+                    f"{path}.zapisy[{index}]",
+                    f"Zapis „{spelling}” potrzebuje miejsca na liczbę ({SHOWN_NUMBER}), bo przedziały wybierają kolumnę "
+                    "liczbą z zapisu.",
+                )
             for index, found in enumerate(ranges):
                 where = f"{path_ranges}[{index}]"
                 _require(

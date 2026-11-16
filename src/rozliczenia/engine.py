@@ -10,6 +10,8 @@ from types import MappingProxyType
 from typing import Literal
 
 from . import collective_file, input_checks, settlement_files, settlement_messages
+from .activity_legend import ActivityLegend
+from .activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from .domain import ProgressPhase
 from .dad_files import DadFiles
 from .inea_only_quantities import Cleared
@@ -33,6 +35,7 @@ class SettlementInputs:
 
     Okres wynika z nazwy Pliku zbiorczego (``nieznany``, gdy się nie da). ``quantity_rules``: Reguły ilości tego
     Uruchomienia, z których Przebieg liczy Ilości tylko dla INEA, a Kontrola ilości po nim Ilości usług.
+    ``activity_legend``: Legenda czynności tego Uruchomienia, którą liczy Kontrola ilości po nim.
     """
 
     source: Path
@@ -40,6 +43,7 @@ class SettlementInputs:
     worker_template_path: Path
     dry_run: bool = False
     quantity_rules: QuantityRules = DEFAULT_QUANTITY_RULES
+    activity_legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND
 
     @property
     def period(self) -> str:
@@ -90,6 +94,8 @@ class SettlementSummary:
     """Liczba wyczyszczonych komórek Ilości tylko dla INEA w każdej kolumnie: tylko dla Logów Uruchomienia."""
     quantity_rules: QuantityRules = field(default=DEFAULT_QUANTITY_RULES, repr=False)
     """Reguły ilości, z których Przebieg liczył: Kontrola ilości po nim liczy tymi samymi."""
+    activity_legend: ActivityLegend = field(default=DEFAULT_ACTIVITY_LEGEND, repr=False)
+    """Legenda czynności ze startu Przebiegu: Kontrola ilości po nim liczy tą samą."""
     results: list[WorkerResult] = field(default_factory=list)
     warnings: list[Message] = field(default_factory=list)
     """Ostrzeżenia Podglądu bez zapisu z katalogu Przebiegu rozliczeń; Przebieg z zapisem zatrzymuje się na nich."""
@@ -208,6 +214,7 @@ def run_settlements(inputs: SettlementInputs, context: RunContext) -> Settlement
         orders=orders,
         inea_only_cleared=inea_only,
         quantity_rules=inputs.quantity_rules,
+        activity_legend=inputs.activity_legend,
         warnings=warnings,
     )
 
