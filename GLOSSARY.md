@@ -223,7 +223,7 @@ Ma formatowanie Wzorca rozliczenia wewnętrznego, a zlecenia Wygląd Wiersza dan
 
 ## Wzorzec
 
-Wspólna nazwa trzech skoroszytów bazowych bez zleceń (Wzorzec rozliczenia wewnętrznego, Wzorzec pliku zbiorczego, Wzorzec rozliczenia pracownika), z których powstają pliki nowego okresu.
+Każdy z trzech skoroszytów bazowych bez zleceń, z których powstają pliki nowego okresu: Wzorzec rozliczenia wewnętrznego, Wzorzec pliku zbiorczego i Wzorzec rozliczenia pracownika.
 Jest jedynym źródłem szerokości kolumn plików, które z niego powstają, nie poprzedni okres.
 Plik okresu otwiera się tak jak jego Wzorzec: w lewym górnym rogu arkusza, w powiększeniu 75%.
 Wzorzec pozostaje niezmieniony.
