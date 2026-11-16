@@ -10,7 +10,7 @@ import time
 import zipfile
 
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import PatternFill
+from openpyxl.styles import Color, PatternFill
 from openpyxl.utils import column_index_from_string
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 import pytest
@@ -792,7 +792,7 @@ def test_plik_zbiorczy_columns_outside_a_to_l_keep_wzorzec_formatting(tmp_path: 
         try:
             sheet = active_worksheet(workbook)
             return [
-                (cell.coordinate, cell.fill.fill_type, cell.fill.fgColor.rgb, cell.number_format, cell.font.name)
+                (cell.coordinate, cell.fill.fill_type, cell.fill.fgColor, cell.number_format, cell.font.name)
                 for row in sheet.iter_rows(min_row=18, max_row=24, min_col=13, max_col=47)
                 for cell in row
             ]
@@ -800,7 +800,7 @@ def test_plik_zbiorczy_columns_outside_a_to_l_keep_wzorzec_formatting(tmp_path: 
             workbook.close()
 
     expected = formats(fixture.collective_template_path)
-    assert ("N18", "solid", "FFCCE5FF", "0", "Calibri") in expected
+    assert ("N18", "solid", Color(theme=0, tint=-0.1499984740745262), "0", "Calibri") in expected
     assert formats(fixture.collective_file_path) == expected
 
 

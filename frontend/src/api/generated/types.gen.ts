@@ -23,10 +23,44 @@ export type ActivitiesCondition = {
 };
 
 /**
+ * ActivityCodeForm
+ *
+ * Kod czynności w formularzu: zapisy (``#`` w miejscu liczby), kolumna Ilości usług (``None``: bez kolumny) z wartością
+ * za jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty) i kolory wybranych kolumn. Bez kolumny wartość się nie
+ * liczy.
+ */
+export type ActivityCodeForm = {
+    /**
+     * Spellings
+     */
+    spellings: Array<string>;
+    /**
+     * Column
+     */
+    column: ({
+        kind: 'fixed';
+    } & FixedColumnForm) | ({
+        kind: 'ranges';
+    } & RangesForm) | null;
+    /**
+     * Value
+     */
+    value: number;
+    /**
+     * Amount
+     */
+    amount: number | null;
+    /**
+     * Fills
+     */
+    fills: Array<FillForm>;
+};
+
+/**
  * ActivityCodeSentence
  *
  * Kod czynności jako jedno zdanie „zapisy: co wyznacza.”: ``spellings`` to zapisy (``#`` w miejscu liczby, inne
- * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika.
+ * po „też”), a ``sentence`` to, co wyznacza, z kolumnami nazwanymi z cennika; ``code`` to ten sam kod jako formularz.
  */
 export type ActivityCodeSentence = {
     /**
@@ -41,6 +75,21 @@ export type ActivityCodeSentence = {
      * Sentence
      */
     sentence: Array<SentenceText | SentenceColumn>;
+    code: ActivityCodeForm;
+};
+
+/**
+ * ActivityLegendSaved
+ *
+ * Legenda czynności po zapisie formularza kodu; ``change``: id wiersza Historii Ustawień („Zapisano · Cofnij”),
+ * ``None``: zapis niczego nie zmienił.
+ */
+export type ActivityLegendSaved = {
+    activity_legend: ActivityLegendSettings;
+    /**
+     * Change
+     */
+    change: string | null;
 };
 
 /**
@@ -48,6 +97,8 @@ export type ActivityCodeSentence = {
  *
  * Legenda czynności, którą liczy następne Przygotowanie pliku zbiorczego, w kolejności z pliku. ``problem``: złe
  * ustawienie w pliku, a wtedy pokazana jest legenda, którą Centrum liczy mimo to (ostatnia dobra albo z Wydania).
+ * ``columns``: kolumny, w które kod wpisuje Ilość usług, ``amount_column``: kolumna kwoty (``AS``), a ``fill_columns``:
+ * kolumny, które kod wypełnia kolorem.
  */
 export type ActivityLegendSettings = {
     /**
@@ -55,6 +106,15 @@ export type ActivityLegendSettings = {
      */
     codes: Array<ActivityCodeSentence>;
     problem: SettingProblem | null;
+    /**
+     * Columns
+     */
+    columns: Array<LegendColumn>;
+    amount_column: LegendColumn;
+    /**
+     * Fill Columns
+     */
+    fill_columns: Array<LegendColumn>;
 };
 
 /**
@@ -93,7 +153,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -863,6 +923,20 @@ export type FillAction = {
 };
 
 /**
+ * FillForm
+ */
+export type FillForm = {
+    /**
+     * Column
+     */
+    column: string;
+    /**
+     * Colour
+     */
+    colour: 'zielony' | 'czerwony';
+};
+
+/**
  * FillKind
  *
  * Rodzaj Ilości do uzupełnienia, który ma listę wierszy.
@@ -889,6 +963,22 @@ export type FillStep = {
      */
     hint: string;
     then: ProcessStep;
+};
+
+/**
+ * FixedColumnForm
+ *
+ * Kod wpisuje w jedną kolumnę, a liczba w zapisie nie ma znaczenia.
+ */
+export type FixedColumnForm = {
+    /**
+     * Kind
+     */
+    kind: 'fixed';
+    /**
+     * Column
+     */
+    column: string;
 };
 
 /**
@@ -1443,6 +1533,23 @@ export type LeaveEmptyAction = {
      * Columns
      */
     columns: Array<string>;
+};
+
+/**
+ * LegendColumn
+ *
+ * Kolumna do wyboru w formularzu kodu z nazwą pozycji cennika z wiersza 17 Wzorca pliku zbiorczego (``None``: Wzorca
+ * nie da się przeczytać albo komórka jest pusta).
+ */
+export type LegendColumn = {
+    /**
+     * Letter
+     */
+    letter: string;
+    /**
+     * Name
+     */
+    name: string | null;
 };
 
 /**
@@ -2680,6 +2787,42 @@ export type Queued = {
      * Waits For
      */
     waits_for: 'internet' | 'key';
+};
+
+/**
+ * RangeForm
+ *
+ * Liczba z zapisu od ``low`` do ``high`` włącznie wybiera kolumnę ``column``.
+ */
+export type RangeForm = {
+    /**
+     * Low
+     */
+    low: number;
+    /**
+     * High
+     */
+    high: number;
+    /**
+     * Column
+     */
+    column: string;
+};
+
+/**
+ * RangesForm
+ *
+ * Kod wybiera kolumnę liczbą z zapisu, przedziałami („1–15 → AL, 16–30 → AJ”).
+ */
+export type RangesForm = {
+    /**
+     * Kind
+     */
+    kind: 'ranges';
+    /**
+     * Ranges
+     */
+    ranges: Array<RangeForm>;
 };
 
 /**
@@ -5904,6 +6047,111 @@ export type GetActivityLegendResponses = {
 };
 
 export type GetActivityLegendResponse = GetActivityLegendResponses[keyof GetActivityLegendResponses];
+
+export type AddActivityCodeData = {
+    body: ActivityCodeForm;
+    path?: never;
+    query?: never;
+    url: '/api/settings/activity-legend';
+};
+
+export type AddActivityCodeErrors = {
+    /**
+     * Pliku Legendy czynności nie da się teraz przeczytać
+     */
+    409: Problem;
+    /**
+     * Zły Kod czynności z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type AddActivityCodeError = AddActivityCodeErrors[keyof AddActivityCodeErrors];
+
+export type AddActivityCodeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActivityLegendSaved;
+};
+
+export type AddActivityCodeResponse = AddActivityCodeResponses[keyof AddActivityCodeResponses];
+
+export type RemoveActivityCodeData = {
+    body?: never;
+    path: {
+        /**
+         * Code Id
+         */
+        code_id: string;
+    };
+    query?: never;
+    url: '/api/settings/activity-legend/{code_id}';
+};
+
+export type RemoveActivityCodeErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Pliku Legendy czynności nie da się teraz przeczytać
+     */
+    409: Problem;
+    /**
+     * Zły Kod czynności z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type RemoveActivityCodeError = RemoveActivityCodeErrors[keyof RemoveActivityCodeErrors];
+
+export type RemoveActivityCodeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActivityLegendSaved;
+};
+
+export type RemoveActivityCodeResponse = RemoveActivityCodeResponses[keyof RemoveActivityCodeResponses];
+
+export type ChangeActivityCodeData = {
+    body: ActivityCodeForm;
+    path: {
+        /**
+         * Code Id
+         */
+        code_id: string;
+    };
+    query?: never;
+    url: '/api/settings/activity-legend/{code_id}';
+};
+
+export type ChangeActivityCodeErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Pliku Legendy czynności nie da się teraz przeczytać
+     */
+    409: Problem;
+    /**
+     * Zły Kod czynności z polem formularza i zdaniem
+     */
+    422: Problem;
+};
+
+export type ChangeActivityCodeError = ChangeActivityCodeErrors[keyof ChangeActivityCodeErrors];
+
+export type ChangeActivityCodeResponses = {
+    /**
+     * Successful Response
+     */
+    200: ActivityLegendSaved;
+};
+
+export type ChangeActivityCodeResponse = ChangeActivityCodeResponses[keyof ChangeActivityCodeResponses];
 
 export type ChangeAutostartData = {
     body: AutostartChange;

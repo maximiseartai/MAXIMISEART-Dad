@@ -5,6 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 
+from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
+
+from rozliczenia.activity_legend import FILL_COLUMNS, ActivityCode, ActivityLegend, CellFill, FillColour
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import tool_files
 from rozliczenia import quantity_check
@@ -15,6 +20,7 @@ from atrapy.preparation import PERIOD, make_preparation_fixture
 from atrapy.preparation import cell_values, collective_row, register_order
 from tests.fixtures.operacje import run_preparation
 from atrapy.settlement import worker_list, write_template
+from atrapy.workbooks import active_worksheet
 
 
 def test_plik_zbiorczy_z_przygotowania_daje_rozliczenia_pracownikow_z_ich_zleceniami_skutecznymi(
@@ -100,7 +106,7 @@ def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_p
         SettlementInputs(preparation.collective_file, worker_list(), worker_template),
         RunContext(),
     )
-    result = quantity_check.check(settlement.orders, settlement.quantity_rules)
+    result = quantity_check.check(settlement.orders, settlement.quantity_rules, settlement.activity_legend)
 
     assert isinstance(result, quantity_check.QuantityCheck)
     assert (result.rows, result.compared, result.from_description, result.unruled_rows, result.undated) == (
@@ -111,3 +117,38 @@ def test_swiezo_przygotowany_plik_zbiorczy_daje_kontrole_ilosci_bez_roznic(tmp_p
         0,
     )
     assert result.difference_count == 0
+
+
+def test_legenda_kolorujaca_kazda_kolumne_nie_daje_roznic_koloru_na_tle_wzorca_taty(tmp_path: Path) -> None:
+    # Wzorzec pliku zbiorczego ma tło Wzorca taty w N:V, X i AI przygotowanych wierszy; ``każdykolor`` koloruje każdą
+    # kolumnę, którą może wypełnić legenda, więc w wierszach z innym kodem i bez kodu Kontrola widzi tam tło Wzorca.
+    every = ActivityCode("każdykolor", ("każdykolor",), fills=tuple(CellFill(column, FillColour.GREEN) for column in FILL_COLUMNS))
+    legend = ActivityLegend((*DEFAULT_ACTIVITY_LEGEND.codes, every))
+    completed = ("każdykolor", "inst20m", "spawpg", "montaż")
+    rows: list[dict[str, object] | None] = [
+        register_order(number, TUE.replace(hour=10, minute=number)) | {"CZYNNOŚCI ZREALIZOWANE": text}
+        for number, text in enumerate(completed, start=1)
+    ]
+    fixture = make_preparation_fixture(tmp_path, rows)
+    worker_template = tmp_path / tool_files.WORKER_TEMPLATE.name
+    write_template(worker_template)
+
+    preparation = run_preparation(fixture, legend=legend)
+    settlement = run_settlements(
+        SettlementInputs(preparation.collective_file, worker_list(), worker_template, activity_legend=legend),
+        RunContext(),
+    )
+    result = quantity_check.check(settlement.orders, settlement.quantity_rules, settlement.activity_legend)
+
+    workbook = load_workbook(preparation.collective_file)
+    try:
+        sheet = active_worksheet(workbook)
+        backgrounds = {
+            str(sheet.cell(row, 11).value): {get_column_letter(column) for column in range(14, 47) if sheet.cell(row, column).fill.patternType}
+            for row in range(18, 22)
+        }
+    finally:
+        workbook.close()
+    assert backgrounds["inst20m"] >= {"N", "V", "X", "AI"}, "warunek: wiersz bez koloru legendy ma tło Wzorca taty"
+    assert isinstance(result, quantity_check.QuantityCheck)
+    assert (result.coded, result.coded_matching, result.legend_difference_count) == (3, 3, 0)

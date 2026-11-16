@@ -1,6 +1,6 @@
 ---
 name: verify-publikacja-plikow-okresu
-description: Exhaustively check that Przygotowanie pliku zbiorczego publishes Rozliczenie wewnętrzne and Plik zbiorczy together or not at all, and never overwrites another file, under every order of a second run, Dad's actions, filesystem errors, and a killed process. Use when a change touches `write_period_files`, `_publish`, `ensure_period_files_absent` in `src/rozliczenia/preparation_files.py`, `publish_staged` in `src/rozliczenia/staged_publication.py`, or `test_publikacja_plikow_okresu` fails.
+description: Exhaustively check that Przygotowanie pliku zbiorczego publishes Rozliczenie wewnętrzne and Plik zbiorczy together or not at all, and never overwrites another file, under every order of a second run, Dad's actions, filesystem errors, and a killed process. Use when `tools/skille_dla_zmiany.py` lists it, when a change makes Przygotowanie publish its period files another way, or when `test_publikacja_plikow_okresu` fails.
 pilnuje:
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/collective_preparation.py
@@ -78,8 +78,7 @@ py -3 .agents\skills\verify-publikacja-plikow-okresu\scripts\explore_publication
 ```
 
 On macOS or Linux use `.venv/bin/python` instead of `py -3`. It takes about 5 s on a
-Mac, needs nothing beyond the repo's `.venv`, and runs in CI as
-`tests/test_publikacja_plikow_okresu.py`. In a worktree the script checks the
+Mac and needs nothing beyond the repo's `.venv`. In a worktree the script checks the
 worktree's own `src`.
 
 The script has no step limit of its own, so a hang in the code under check (a
@@ -151,9 +150,7 @@ above, and Przebieg rozliczeń's own folder publication in `settlement_files.py`
 
 None at present: `KNOWN_FINDINGS` in `explore_publication.py` is empty.
 
-A known finding is a real defect in the current code. It is reported on every
-run until the code is fixed. When a code change fixes it, the check ends with
-`ZNALEZISKO ZNIKNĘŁO`: delete its entry from `KNOWN_FINDINGS` and from this list.
+A known finding is a real defect in the current code, reported on every run until a fix makes the check end with `ZNALEZISKO ZNIKNĘŁO` (see the verdict table).
 
 ## Accepted risks
 
@@ -220,16 +217,7 @@ copy of the checkout (`tools/lib/silnik_mutacji.py`), never to the checkout:
 py -3 .agents\skills\verify-publikacja-plikow-okresu\scripts\check_publication_mutations.py
 ```
 
-It must end with `MUTACJE OK`: `os.replace` instead of `os.rename`, a removed
-rollback (`BOUNDARIES`: a run that is not killed, outside `killed_before`), the
-period files moved in the reverse order (`BOUNDARIES`: only the Plik zbiorczy
-left, outside `left`), a rollback that retries a failed `os.unlink`
-(`BOUNDARIES`: killed before the retry, outside `unlink_failed`), a failed
-rollback reported as plain `BLAD_ZAPISU`, recording a file
-for rollback before it is moved, and a failed staging cleanup after publication
-raised as a stop all give `NOWE NARUSZENIE`. `shutil.move` gives `LUKA MODELU`. A mutation reported as
-`NIEAKTUALNA` no longer matches `preparation_files.py` or `staged_publication.py`. Rewrite its `anchor` and
-`replacement` in `check_publication_mutations.py` against the new code so it breaks the same
-rule again. If the publication code moves to another file, update
-`VERIFIED_FILE` and the harness in `explore_publication.py`, and update this
-skill's description.
+It must end with `MUTACJE OK`: each broken variant of its table, those of `BOUNDARIES` included, gives the line it names (`NOWE NARUSZENIE`, or `LUKA MODELU` for `shutil.move`).
+A mutation reported as `NIEAKTUALNA` no longer matches `preparation_files.py` or `staged_publication.py`.
+Rewrite its `anchor` and `replacement` in `check_publication_mutations.py` against the new code so it breaks the same rule again.
+If the publication code moves to another file, update `VERIFIED_FILE` and the harness in `explore_publication.py`, and update this skill's `pilnuje:` and „Does the change touch it?”.

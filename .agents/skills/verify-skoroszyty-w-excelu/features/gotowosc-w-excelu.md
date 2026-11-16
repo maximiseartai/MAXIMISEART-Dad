@@ -30,7 +30,7 @@ Preconditions: the Plik zbiorczy is open on the desk from `otwarcie-plikow-okres
 ## Gotchas
 
 - `excel.save` is `tell wb to save`; `save wb` from AppleScript reports nothing and saves nothing.
-- Each entry recalculates every formula of the workbook. `type_row` enters a whole row in one call; typed cell by cell, the synthetic Wzorce's first row ran past the 60 s call limit.
+- Each entry recalculates every formula of the workbook (some 50 000 in Dad's Wzorce). `type_row` enters a whole row in one call; typed cell by cell, the synthetic Wzorce's first row ran past the 60 s call limit.
 - Numbers are entered through `formula` with a decimal point (`25.5`), Excel's English input, so the system locale does not change them. Dad types `25,5`; that parsing is his locale's and is not covered here.
 - Excel rewrites the external link part on save (its size changes); compare its presence, not its bytes.
 - Before Excel's save, `NUMER ZL.` without a Hiperłącze fails the step, so an empty fixture cannot make the comparison pass.

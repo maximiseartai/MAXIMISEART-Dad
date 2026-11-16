@@ -192,6 +192,13 @@ def device_component_unknown() -> Refusal:
     return _refused(404, "Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień.")
 
 
+def activity_code_unknown() -> Refusal:
+    """Kodu czynności o tym id nie ma już w Legendzie czynności, którą liczy Centrum (np. cofnięty w Historii w innym
+    oknie)."""
+
+    return _refused(404, "Tego kodu już nie ma w Legendzie czynności. Odśwież okno Ustawień.")
+
+
 def quantity_difference_unknown() -> Refusal:
     """Różnicy z Kontroli ilości o tym id nie ma już na liście „Tu wpisałeś inaczej niż reguła” (np. tata poprawił Plik
     zbiorczy albo regułę), więc nie ma czego oznaczyć jako wyjątek."""

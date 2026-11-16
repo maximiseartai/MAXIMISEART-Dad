@@ -1597,6 +1597,9 @@ quantity_rule_unknown [HTTP 404]
 device_component_unknown [HTTP 404]
   Tego składnika już nie ma na Liście Urządzeń. Odśwież okno Ustawień.
 
+activity_code_unknown [HTTP 404]
+  Tego kodu już nie ma w Legendzie czynności. Odśwież okno Ustawień.
+
 quantity_difference_unknown [HTTP 404]
   Tej różnicy już nie ma na liście. Odśwież okno Ustawień.
 

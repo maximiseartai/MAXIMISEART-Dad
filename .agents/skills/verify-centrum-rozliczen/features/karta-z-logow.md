@@ -29,10 +29,8 @@ Dad starts Centrum with the shortcut and opens Uruchomienia: the last Uruchomien
 
 ## Driving it with Playwright for Python
 
-Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature karta-z-logow`
-from the repository root (Windows: `py -3`). The proof is in the evidence folder that `VERIFY OK` names: the lines under
-`STEP karta-z-logow` in `drive.txt`, the screenshots of its `Feature` in `scripts/drive/__init__.py`, `api/karta-*.json`
-and `state/` (the Logi and the Centrum log).
+Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature karta-z-logow`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
+Its proof adds `api/karta-*.json` and `state/` (the Logi and the Centrum log).
 
 ## Gotchas
 

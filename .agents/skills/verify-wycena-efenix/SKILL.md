@@ -1,6 +1,6 @@
 ---
 name: verify-wycena-efenix
-description: Exhaustively break each request of a real Wycena w efenix (the window `efenix_browser.window` in Playwright's Chromium on the Atrapa efenix, behind a fault proxy) with every kind of fault (network cut, torn, stalled or slow; HTTP 4xx and 5xx; logout; redirect; a „Załaduj do zlecenia” refused with a 200 answer; a hung answer; an answer just before or after the window's time limit; the login page under an order address; a closed tab; Dad's login wait; the tool killed) and check the Zatrzymanie's cause and Komunikat, the efenix state, the Znaczniki efenix and the Logi, and what a killed tool leaves, then resume each stop and kill with and without Dad's changes in efenix and check that the second run completes every order to the file only upwards. Use when a change touches `efenix_browser`, `efenix_pricing`, `efenix_positions`, `efenix_marking` or another `efenix_*` module, the Dziennik Wyceny w efenix, the Atrapa efenix, or when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail.
+description: Exhaustively break each request of a real Wycena w efenix on the Atrapa efenix (network, HTTP errors, logout, a closed tab, Dad's login wait, a killed tool) and check the Zatrzymanie, the efenix state, the Znaczniki efenix and the Logi, then resume each stop and kill with and without Dad's changes in efenix. Use when `tools/skille_dla_zmiany.py` names it, when `explore_wycena_efenix.py` or the explorer tests in `tests/test_centrum_logi_uruchomienia.py` fail, or when asked to verify how Wycena w efenix stops and resumes.
 pilnuje:
   - src/rozliczenia/efenix_*.py
   - src/rozliczenia/centrum/logs_disk.py
@@ -140,12 +140,8 @@ The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does
 .venv/bin/python .agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py [--variant <axis> ...] [--rola <role> ...] [--rownolegle 4]
 ```
 
-- `--variant`: `odciecia`, `odpowiedzi`, `granica-czasu`, `zamkniete-okno`, `logowanie`, `zabity-proces`, or `all`
-  (default). The map in `features/` describes each axis; second runs follow every axis. An answer just before the window's time limit to „Załaduj do
-  zlecenia”, to the page reloaded after it or to that page's files comes earlier by the 1 s reload (`early_s`), because
-  the window waits for all of them in one time limit; at „Załaduj do zlecenia” it ends like the run without a fault.
-- `--rola`: the request roles of `Role` (`strona-zlecenia`, `zaladuj-do-zlecenia`, `ilosc`, …).
-- `--lista` prints the cases of this part (`MUTACJE_CZESC`) without a browser; `--zostaw-run` keeps the run files.
+- `--variant` picks axes and `--rola` request roles (`Role`), both listed by `--help`; the map in `features/`
+  describes each axis, and second runs follow every axis.
 - The last line is the verdict: `WYCENA EFENIX OK` or `WYCENA EFENIX OK, ZNANE USTALENIA: n, ZAAKCEPTOWANE RYZYKA: m`
   (a count of zero left out; exit 0), `WYCENA EFENIX: NOWE NARUSZENIE (n)` (exit 1), `WYCENA EFENIX: LUKA MODELU (n)`
   (the window sends requests `EXPECTED_CALLS` does not know: the space is stale; exit 2) or `WYCENA EFENIX: ZNALEZISKO
@@ -168,9 +164,7 @@ remove that folder (only one with `.katalog-runu`).
 
 ## Helpers
 
-- `scripts/explore_wycena_efenix.py`: the explorer (above).
 - `scripts/awarie_efenix.py`: the proxy and `Fault`; imported by the explorer, not run alone.
-- `scripts/check_wycena_efenix_mutations.py`: the mutation table (below).
 
 ## Known findings
 
@@ -243,30 +237,8 @@ Zatrzymanie or result. Then sort it:
 CI proves the check can still fail. The night on `main` runs
 `.agents/skills/verify-wycena-efenix/scripts/check_wycena_efenix_mutations.py` after a change of this skill's folder; it
 applies each broken variant to a temporary copy of the checkout (`tools/lib/silnik_mutacji.py`) and must end with `MUTACJE OK`.
-Each gives `WYCENA EFENIX: NOWE NARUSZENIE`:
-
-- #808: an HTTP error page instead of the order page read as a page shape; the page reloaded after Emmett read
-  without its response; the login form under the order address read as a page shape;
-- #802: a browser failure without the window's operation; the window waiting for the headers of an answer instead of
-  the whole answer (a stalled answer hangs the run);
-- #758: a tab closed during Dad's login wait not seen until the wait ends;
-- #891: an error page of the list after Dad's login read as more waiting for his login;
-- a tab closed during the window's action not seen at all (`_action` without its closed check);
-- #895: the answer of „Załaduj do zlecenia” read after the reload at every Emmett;
-- #889: amount 0 after „Załaduj do zlecenia” always read as Emmett proposing nothing, so a refusal with 200
-  `result: nok` lets the window enter the file's quantities without Emmett;
-- #908: an empty Emmett dialog after a failed proposal read as Emmett proposing nothing, so `REFUSED_NO_PROPOSAL`
-  lets the window enter the file's quantities without Emmett;
-- the window waiting for the reload after „Załaduj do zlecenia” 1 s shorter than for its answer, which only the answer
-  just before the time limit meets;
-- a „zaczynam” entry of the dziennik written only after the window's actions at an order;
-- #960: Wycena Emmetta loaded also into an order with quantities; a pricing that already is only compared instead of
-  completed to the file; the file's quantity entered only in positions empty on the page (the rule before #960, which
-  leaves Emmett's S below the file); the file's quantity entered also where efenix has more (lowering it); no
-  Ostrzeżenie Emmetta for a position with more than the file;
-- #965: Wycena Emmetta loaded into an order with quantities on resume also on the axis `odciecia` at
-  `propozycja-emmetta` and `ilosc`, where a torn answer can make efenix load Emmett twice;
-- the window clicking Przekazanie do akceptacji; a Komunikat that always says nothing changed; a Zatrzymanie without the Znaczniki of orders gotowe before it.
+Each variant in `MUTATIONS` of the script names the defect it brings back (its issue, such as #808 or #960) and the harm,
+and gives `WYCENA EFENIX: NOWE NARUSZENIE`.
 
 A mutation reported as `NIEAKTUALNA` no longer matches its file: rewrite its anchor and replacement against the new code
 so that it breaks the same rule again.

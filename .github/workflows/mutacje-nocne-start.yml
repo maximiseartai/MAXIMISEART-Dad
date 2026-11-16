@@ -1,0 +1,31 @@
+name: Start mutacji nocnych
+
+# The cron of mutacje-nocne.yml creates its run hours late, and pushes reach main soon after 01:30 UTC. Each push to
+# main runs tools/mutacje_nocne.py start: after 01:30 UTC it dispatches mutacje-nocne.yml on main with start: auto,
+# unless a run of it was already created since 01:30 UTC today. The cron stays for a day with no push (ADR 0021).
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  start:
+    name: Start mutacji nocnych
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # Lists the runs of mutacje-nocne.yml and dispatches it; a workflow_dispatch made with GITHUB_TOKEN starts a run.
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Standard library only, so the runner's python3 runs it as is.
+      - name: Dispatch the night unless it already has a run today
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/mutacje_nocne.py start

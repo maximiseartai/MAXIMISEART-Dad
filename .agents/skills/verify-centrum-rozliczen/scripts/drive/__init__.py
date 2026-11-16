@@ -95,7 +95,8 @@ FEATURES = (
             "354-urzadzenia-waskie",
         ),
     ),
-    # Writes Dad's file of the legend outside Centrum and removes it again, so the features after it find the Release's.
+    # Writes Dad's file of the legend outside Centrum and in the editor, and removes it again, so the features after it
+    # find the Release's.
     Feature(
         "legenda-czynnosci",
         (
@@ -103,6 +104,12 @@ FEATURES = (
             "421-legenda-czynnosci-zly-plik",
             "422-legenda-czynnosci-historia",
             "423-legenda-czynnosci-waskie",
+            "424-legenda-czynnosci-dopisany-zapis",
+            "425-legenda-czynnosci-kolumny",
+            "426-legenda-czynnosci-odmowa",
+            "427-legenda-czynnosci-nowy-kod",
+            "428-legenda-czynnosci-historia-edytora",
+            "429-legenda-czynnosci-waski-formularz",
         ),
     ),
     Feature(

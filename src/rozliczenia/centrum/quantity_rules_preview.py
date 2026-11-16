@@ -8,8 +8,9 @@ zostaje w pamięci do zmiany jego znacznika zapisu, więc kolejne podglądy tej 
 Plik, którego nie da się przeczytać, podgląd pomija i nazywa jego okres.
 
 Rachunek wiersza to ``quantity_check.row_check`` (ten sam liczy Kontrola ilości) dla reguł teraz i po zmianie, a liczby
-różnic to ``quantity_check.check`` każdego pliku, więc ``differences_after`` to liczba różnic Kontroli ilości, którą
-dałyby te pliki po zmianie. Wiersz zmienia się, gdy reguły dają w nim inny rodzaj wyniku, inne ilości albo inne kolumny
+różnic to suma jego różnic na każdym pliku, więc ``differences_after`` to liczba różnic Kontroli ilości w kolumnach
+Reguł ilości, którą dałyby te pliki po zmianie; kolumnę, w którą w tym samym wierszu wpisała też Legenda czynności,
+Kontrola porównuje z sumą reguł i legendy wśród różnic legendy, a podgląd liczy ją jak różnicę reguł. Wiersz zmienia się, gdy reguły dają w nim inny rodzaj wyniku, inne ilości albo inne kolumny
 zostawione puste w Rozliczeniu pracownika. Odpowiedź ma tylko treść dozwoloną filtrem prywatności (``OrderFacts``) bez
 ``UMOWA``: ``URZĄDZENIA``, ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (jak grupy różnic Kontroli ilości) i ilości,
 nigdy adresu, numeru zlecenia ani daty dziennej.
@@ -33,7 +34,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.order_facts import MissingHeaders
 from rozliczenia.period_folder import PeriodFolder, scan_period_folders
 from rozliczenia.quantities_to_fill import NumberedOrder
-from rozliczenia.quantity_check import QuantityCheck, RowCheck, check, row_check, week_hour
+from rozliczenia.quantity_check import RowCheck, row_check, week_hour
 from rozliczenia.quantity_engine import QuantityRule, QuantityRules, RuleResult
 from rozliczenia.workbook_files import WorkbookError
 
@@ -162,12 +163,7 @@ def _outcome(result: RuleResult | None) -> object:
 
 
 def _differences(files: Sequence[RecentFile], rules: QuantityRules) -> int:
-    total = 0
-    for file in files:
-        result = check(tuple(numbered.order for numbered in file.orders.rows), rules)
-        assert isinstance(result, QuantityCheck), "plik bez nagłówków wejścia nie trafia do podglądu"
-        total += result.difference_count
-    return total
+    return sum(len(row_check(numbered.order, rules).differences) for file in files for numbered in file.orders.rows)
 
 
 def _row(

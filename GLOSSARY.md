@@ -212,7 +212,7 @@ _Avoid_: nowe zlecenie, brakujące zlecenie
 
 Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu wykonawcy za ten dzień.
 Prosi o raport za ten dzień, podaje wzór tematu i treści i kończy się stopką taty.
-Idzie w porannej i wieczornej porze z Ustawień Centrum, pierwsze od godziny pierwszego przypomnienia następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia przypomnień.
+Idzie w porannej i wieczornej porze z Ustawień Centrum (domyślne pory i nadrabianie pominiętej: [ADR 0030](docs/adr/0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md)), pierwsze od godziny pierwszego przypomnienia następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia przypomnień.
 Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
 
@@ -223,7 +223,7 @@ Ma formatowanie Wzorca rozliczenia wewnętrznego, a zlecenia Wygląd Wiersza dan
 
 ## Wzorzec
 
-Wspólny skoroszyt bazowy bez zleceń, z którego powstają pliki nowego okresu: Wzorzec rozliczenia wewnętrznego, Wzorzec pliku zbiorczego albo Wzorzec rozliczenia pracownika.
+Każdy z trzech skoroszytów bazowych bez zleceń, z których powstają pliki nowego okresu: Wzorzec rozliczenia wewnętrznego, Wzorzec pliku zbiorczego i Wzorzec rozliczenia pracownika.
 Jest jedynym źródłem szerokości kolumn plików, które z niego powstają, nie poprzedni okres.
 Plik okresu otwiera się tak jak jego Wzorzec: w lewym górnym rogu arkusza, w powiększeniu 75%.
 Wzorzec pozostaje niezmieniony.
@@ -634,8 +634,9 @@ _Avoid_: Wydanie, release Logów, załącznik
 
 ## Kontrola ilości
 
-Porównanie Ilości usług, które dają Reguły ilości, z Ilościami usług w Pliku zbiorczym, z którego tata uruchomił Przebieg rozliczeń.
+Porównanie Ilości usług, które dają Reguły ilości i Legenda czynności (ta także kwotę w `AS` i kolory), z tym, co stoi w Pliku zbiorczym, z którego tata uruchomił Przebieg rozliczeń.
 Pokazuje, co tata musiał poprawić albo dopisać ręcznie: tacie jako podpowiedzi przy Regułach ilości, a Maksowi w Skrzynce Zgłoszeń, gdzie jeden okres ma jedną Kontrolę ilości, której tata nie wysyła.
+Różnica legendy i wpis taty w wierszu bez Kodu czynności idą tam z opisem technika.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 ## Wyjątek Kontroli ilości
