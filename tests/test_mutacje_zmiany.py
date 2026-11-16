@@ -926,17 +926,48 @@ def test_mutacje_wykrywa_najpierw_test_szybki_w_ponowieniu_pokrycia_choc_w_pierw
             ["tests/test_a.py::test_2", "tests/test_b.py::test_2", "tests/test_b.py::test_1"],
         ),
         (["tests/test_a.py", "tests/test_b.py", "tests/test_c.py"], ["tests/test_b.py", "tests/test_a.py", "tests/test_c.py"]),
+        (
+            ["tests/test_a.py::test_2", "tests/test_a.py::test_3", "tests/test_b.py::test_1"],
+            ["tests/test_a.py::test_2", "tests/test_a.py::test_3", "tests/test_b.py::test_1"],
+        ),
+        (
+            ["tests/test_b.py::test_1", "tests/test_d.py::test_1", "tests/test_d.py::test_2", "tests/test_d.py::test_3"],
+            ["tests/test_b.py::test_1", "tests/test_d.py::test_1", "tests/test_d.py::test_2", "tests/test_d.py::test_3"],
+        ),
     ],
-    ids=["testy-plikow", "czesc-testow-pliku", "pliki"],
+    ids=["testy-plikow", "czesc-testow-pliku", "pliki", "plik-z-testem-bez-czasu-po-sumie-czasow", "plik-trwa-sume-a-nie-najdluzszy-test"],
 )
 def test_testy_mutacji_biegna_plikami_od_najkrotszej_sumy_a_test_i_plik_bez_czasu_z_junit_po_testach_z_czasem(
     tests: list[str], order: list[str]
 ) -> None:
     # Testy pliku biegną razem, bo fixture modułu startuje przy każdym powrocie do niego: Chromium testów efenix
     # startował 57 razy zamiast 3 przy testach od najkrótszego bez względu na plik.
-    seconds = {"tests/test_a.py::test_1": 3.0, "tests/test_a.py::test_2": 0.1, "tests/test_b.py::test_1": 2.0, "tests/test_b.py::test_2": 0.5}
+    seconds = {
+        "tests/test_a.py::test_1": 3.0,
+        "tests/test_a.py::test_2": 0.1,
+        "tests/test_b.py::test_1": 2.0,
+        "tests/test_b.py::test_2": 0.5,
+        **{f"tests/test_d.py::test_{n}": 1.0 for n in (1, 2, 3)},
+    }
 
     assert Coverage(seconds=seconds).fastest_first(tests) == order
+
+
+def test_testy_pliku_mutacji_biegna_od_najkrotszego_pliku(tmp_path: Path) -> None:
+    # Stałą czyta tylko ``test_wolny`` i ``test_szybki``, a kod pliku wykonuje ``test_f``, więc jej cofnięcie przeżywa
+    # testy kodu pliku i biegnie z testami pliku. Jeden worker xdist uruchamia je w kolejności z polecenia.
+    check = "warunek.WARTOSC == 2"
+    module = "WARTOSC = {}\n\n\ndef f() -> int:\n    return 1\n"
+    tests = KILLER.format(name="wolny", sleep=0.5, check=check) + "\n\ndef test_f() -> None:\n    assert warunek.f() == 1\n"
+    repo = _repo(tmp_path / "repo", tests, module.format(2), module.format(1))
+    (repo / "tests" / "test_z_szybki.py").write_text(KILLER.format(name="szybki", sleep=0, check=check), encoding="utf-8")
+    commit(repo, "szybki test")
+
+    done = _run(repo, "--rownolegle", "1", log=tmp_path / "log.txt")
+
+    assert done.returncode == 0, (tmp_path / "log.txt").read_text(encoding="utf-8") + done.stderr
+    assert "(testy pliku)" in next(line for line in (tmp_path / "log.txt").read_text(encoding="utf-8").splitlines() if "cofnięta do bazy" in line)
+    assert (tmp_path / "wykrywa.txt").read_text(encoding="utf-8").splitlines()[0] == "szybki"
 
 
 def test_cofniecie_przywraca_usunieta_linie_zaczynajaca_sie_od_dwoch_minusow(tmp_path: Path) -> None:
@@ -1285,10 +1316,13 @@ def _verdicts(done: subprocess.CompletedProcess[str]) -> list[str]:
 
 def test_czesc_z_pokryciem_nocy_daje_kazdej_mutacji_ten_sam_werdykt_co_z_wlasnym_pokryciem(tmp_path: Path) -> None:
     """Zadanie pokrycia nocy liczy pokrycie testów zmiany raz, a część z ``--pokrycie`` bierze je z jego zapisu zamiast
-    uruchamiać testy bez mutacji. ``oba`` sprawdza test jej linii, a ``NAZWA`` test, który jej cofnięcia nie widzi."""
+    uruchamiać testy bez mutacji. ``oba`` sprawdza test jej linii, a ``INNA`` żaden test. ``NAZWA`` import wykonuje dla
+    wszystkich testów, a sprawdza ją test, który kodu pliku nie wykonuje, więc jej cofnięcie wykrywają dopiero testy
+    pliku, które linie wspólne zapisu nocy dają też części."""
 
-    tests = ALL_CASES.replace("import oba", "import NAZWA, oba") + "\n\ndef test_nazwa() -> None:\n    assert NAZWA\n"
-    repo = _repo(tmp_path / "repo", tests, CHANGED + '\n\nNAZWA = "nowa"\n', BASE + '\n\nNAZWA = "stara"\n')
+    tests = ALL_CASES.replace("import oba", "import INNA, NAZWA, oba") + '\n\ndef test_stale() -> None:\n    assert (NAZWA, bool(INNA)) == ("nowa", True)\n'
+    stale = '\n\nNAZWA = "{0}"\n\nINNA = "{0}"\n'
+    repo = _repo(tmp_path / "repo", tests, CHANGED + stale.format("nowa"), BASE + stale.format("stara"))
     record = tmp_path / "pokrycie" / "pokrycie-nocy-1" / "pokrycie.json"
 
     shard = _run(repo, "--pokrycie-czesc", "1/1", "--zapis-pokrycia", str(record))
@@ -1297,10 +1331,12 @@ def test_czesc_z_pokryciem_nocy_daje_kazdej_mutacji_ten_sam_werdykt_co_z_wlasnym
     assert shard.returncode == 0, shard.stdout + shard.stderr
     assert shard.stdout.splitlines()[-1].startswith("POKRYCIE NOCY 1/1 | plików testów 1 |")
     assert (shared.returncode, _verdicts(shared)) == (own.returncode, _verdicts(own)) == (1, [
-        "NIEWYKRYTA: src/rozliczenia/warunek.py:5 zmiana linii 5 cofnięta do bazy",
+        "NIEWYKRYTA: src/rozliczenia/warunek.py:7 zmiana linii 7 cofnięta do bazy",
         "WYKRYTA: src/rozliczenia/warunek.py:2 bez `b` w `and`",
+        "WYKRYTA: src/rozliczenia/warunek.py:5 zmiana linii 5 cofnięta do bazy",
         "ZDOMINOWANA: src/rozliczenia/warunek.py:2 zmiana linii 2 cofnięta do bazy",
     ]), shared.stdout + shared.stderr
+    assert next(line for line in shared.stdout.splitlines() if ":5 zmiana linii 5" in line).endswith(" (testy pliku)"), shared.stdout
 
 
 def test_zapis_pokrycia_kilku_zadan_wraca_jako_jedno_pokrycie_z_czasami_testow(tmp_path: Path) -> None:
@@ -1339,6 +1375,23 @@ def test_zapis_pokrycia_kilku_zadan_wraca_jako_jedno_pokrycie_z_czasami_testow(t
         ["tests/test_b.py::test_b"],
         {"tests/test_b.py::test_b": 0.5},
     )
+
+
+def test_zadanie_pokrycia_nocy_zapisuje_zmienione_linie_kazdego_pliku_nocy(tmp_path: Path) -> None:
+    """Część, której pliku zapis nie śledził, nie ma testów linii i od razu biegnie z szerszymi testami."""
+
+    repo = _repo(tmp_path / "repo", ALL_CASES, other="def inny() -> int:\n    return 1\n")
+    (repo / "tests" / "test_inny.py").write_text("from rozliczenia.inny import inny\n\n\ndef test_inny() -> None:\n    assert inny() == 2\n", encoding="utf-8")
+    commit(repo, "test innego")
+    (repo / "src" / "rozliczenia" / "inny.py").write_text("def inny() -> int:\n    return 2\n", encoding="utf-8")
+
+    shard = _run(repo, "--pokrycie-czesc", "1/1", "--zapis-pokrycia", str(tmp_path / "pokrycie" / "pokrycie.json"))
+
+    assert shard.returncode == 0, shard.stdout + shard.stderr
+    assert {test: dict(files) for test, files in ZapisPokrycia.z_katalogu(tmp_path / "pokrycie").pokrycie.lines.items()} == {
+        "tests/test_inny.py::test_inny": {"src/rozliczenia/inny.py": {2}},
+        "tests/test_warunek.py::test_oba": {"src/rozliczenia/warunek.py": {2}},
+    }
 
 
 @pytest.mark.parametrize(
