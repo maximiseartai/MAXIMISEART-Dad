@@ -107,7 +107,7 @@ def _age_tree(path: Path) -> None:
     stale = time.time() - STALE_S
     git_dir = Path(git(path, "rev-parse", "--absolute-git-dir"))
     for place in [path, *path.rglob("*"), git_dir / "index", git_dir / "HEAD"]:
-        os.utime(place, (stale, stale), follow_symlinks=False)
+        os.utime(place, (stale, stale))
 
 
 def _stale_commits(monkeypatch: pytest.MonkeyPatch) -> None:
