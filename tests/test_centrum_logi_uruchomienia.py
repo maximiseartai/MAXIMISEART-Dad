@@ -11,6 +11,7 @@ from dataclasses import dataclass, field, replace
 from datetime import datetime, time as time_of_day, timedelta, timezone
 from decimal import Decimal
 import errno
+import gc
 import hashlib
 from http import HTTPStatus
 import json
@@ -24,6 +25,7 @@ import sys
 import threading
 import time
 from typing import Any, Final, NoReturn, cast
+import warnings
 
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
@@ -2335,6 +2337,13 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
         assert _start_pricing(centrum).status_code == 200
         finished_view(centrum.client)
     monkeypatch.delenv("PLAYWRIGHT_NODEJS_PATH", raising=False)
+    if path.driver:
+        # Playwright, którego sterownik nie wystartował, nie zamyka swojej pętli zdarzeń (błąd startu sterownika wychodzi
+        # z PlaywrightContextManager.__enter__ przed jego __exit__), więc gniazda tej pętli zbiera gc tego testu, a nie
+        # gc w oknie sąsiada (tests/fixtures/stan_procesu.py).
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", ResourceWarning)
+            gc.collect()
     [record] = records(centrum)
     stop, trace = record["efenix_stop"], record["trace"]
     cause = {key: value for key, value in stop["cause"].items() if value is not None}

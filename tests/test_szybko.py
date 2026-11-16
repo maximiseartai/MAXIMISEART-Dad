@@ -45,9 +45,9 @@ BY_CHANGE_ONLY = {
         "puszcza próbki przez nakładkę Run.refusing_text_settings_writes w procesie testu; graf wybiera jego plik przy "
         "zmianie skryptów napędu verify-centrum-rozliczen, które ładuje ścieżką"
     ),
-    "tests/test_pliki_w_smieciach.py": (
-        "sprawdza straż na plikach tymczasowych testu, a nie całe repozytorium: samą straż plugin z conftest stawia przy "
-        "każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/pliki_w_smieciach.py, który importuje"
+    "tests/test_stan_procesu.py": (
+        "sprawdza plugin na sesjach próbek w katalogu tymczasowym, a nie całe repozytorium: sam plugin conftest stawia "
+        "przy każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/stan_procesu.py, który importuje"
     ),
     "tests/test_zakazy_ruff.py::test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa": (
         "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
