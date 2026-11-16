@@ -86,7 +86,7 @@ Koszt: od 2.11 do 12.11 ponowienie uratowało 44 porażki testów na 37 PR-ach (
 Kwarantanna to wpis z numerem issue i datą wygaśnięcia najwyżej 7 dni od wpisania.
 Test w kwarantannie dalej biegnie na `main`, ale nie czerwieni `Required CI status`.
 Dlatego narzędzie Wydań sprawdza osobno, że na commicie Wydania testy z kwarantanny przeszły.
-Maks zgodził się 26.10 na takie wpisy z góry, więc nie wymagają osobnej zgody z `AGENTS.md`; wpis bez issue, z dłuższym terminem albo wygasły czerwieni strażnika.
+Maks zgodził się 26.10 na takie wpisy z góry, więc nie wymagają osobnej zgody wyjątku tymczasowego z `CODING_STANDARDS.md`; wpis bez issue, z dłuższym terminem albo wygasły czerwieni strażnika.
 
 ## Konsekwencje
 

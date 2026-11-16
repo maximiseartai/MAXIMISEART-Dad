@@ -15,7 +15,7 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 - Skille: przeczytaj [`docs/agents/skille.md`](docs/agents/skille.md) przed utworzeniem albo zmianą skilla.
 - Wydajność i środowisko taty: przy pomiarach wydajności albo decyzjach zależnych od jego sprzętu lub OneDrive przeczytaj [`docs/agents/komputer-taty.md`](docs/agents/komputer-taty.md).
 - Uruchamianie narzędzia przez człowieka: użyj [`README.md`](README.md).
-- Issues i specyfikacje: użyj [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md).
+- Issues, specyfikacje i triage: użyj [`docs/agents/issue-tracker.md`](docs/agents/issue-tracker.md); role triage to etykiety o tych samych nazwach.
 
 ## Narzędzia
 
