@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import datetime, timedelta
 import gzip
+import json
 from pathlib import Path
 import subprocess
 import sys
@@ -17,7 +18,8 @@ import sys
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
-from rozliczenia.centrum.run_logs import LoggedInputFile, RunLog
+from rozliczenia.centrum.logged_input_copy import LoggedInputFile
+from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_copy import InputCopy
 from rozliczenia.workbook_files import read_computed_rows
@@ -77,38 +79,14 @@ def _filled_by_dad(tmp_path: Path) -> PreparationFixture:
 
 
 def _efenix_logs(collective: Path, target: Path) -> Path:
-    """Plik Logów Wyceny w efenix z Kopią wejścia ``collective``, jak go pisze Centrum, spakowany jak w Archiwum Logów."""
+    """Plik Logów Wyceny w efenix z polami, które brama czyta (proces i Kopia wejścia ``collective``, jak ją pisze
+    Centrum), spakowany jak w Archiwum Logów okresu."""
 
     files = DadFiles(copy=InputCopy())
     read_computed_rows(collective, files)
     assert files.copy is not None
-    logs = RunLog.model_validate(
-        {
-            "schema_version": 3,
-            "run_id": "brama",
-            "process": "efenix",
-            "mode": "RUN",
-            "period": "08_14_09_2026",
-            "started_at": "2026-09-15T08:00:00Z",
-            "ended_at": "2026-09-15T08:10:00Z",
-            "duration_ms": 1000,
-            "tool": {"wydanie": None, "commit": None},
-            "result": "OK",
-            "ending": "finished",
-            "stop_kind": None,
-            "issue_count": 0,
-            "messages": [],
-            "technical_notes": [],
-            "summary": None,
-            "phases": [],
-            "templates": [],
-            "environment": {"system": "Windows-11", "python": "3.13.1", "files": None},
-            "trace": None,
-            "diagnosis": None,
-            "input_copy": [LoggedInputFile.of(copied).model_dump(mode="json") for copied in files.copy.files()],
-        }
-    )
-    target.write_bytes(gzip.compress(logs.model_dump_json().encode("utf-8")))
+    copied = [LoggedInputFile.of(file).model_dump(mode="json") for file in files.copy.files()]
+    target.write_bytes(gzip.compress(json.dumps({"process": "efenix", "input_copy": copied}).encode("utf-8")))
     return target
 
 
@@ -162,12 +140,12 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
 
 def test_brama_liczy_legenda_z_ustawien_a_opisow_nie_zapisuje_w_repozytorium(tmp_path: Path) -> None:
     fixture = _filled_by_dad(tmp_path)
-    legend = tmp_path / "legenda-czynnosci.yaml"
+    legend = tmp_path / LEGEND_FILE
     legend.write_text("schema_version: 1\nkody:\n  - {id: rt2, zapisy: [rt2], kolumna: AK}\n", encoding="utf-8")
 
     lines = _gate(fixture.collective_file_path, "--legenda", legend)
 
-    assert lines[0] == "Legenda czynności: legenda-czynnosci.yaml | Reguły ilości: z Wydania"
+    assert lines[0] == f"Legenda czynności: {LEGEND_FILE} | Reguły ilości: z Wydania"
     assert lines[1].endswith("| porównane: AK, AS, kolory brak")
     assert lines[2:4] == [
         "wiersze danych: 8 | z kodem: 1 | z samych kodów: 1 | kod obok opisu: 0 | DATA nie jest datą: 0",

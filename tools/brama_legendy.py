@@ -53,7 +53,7 @@ from rozliczenia.activity_legend import (
     read_codes,
 )
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND, parse_activity_legend
-from rozliczenia.centrum.run_logs import LoggedCell, LoggedInputFile, LoggedTyped
+from rozliczenia.centrum.logged_input_copy import LoggedCell, LoggedInputFile, LoggedTyped
 from rozliczenia.collective_layout import DATA_ROW_COLUMNS, INPUT_COLUMNS, QUANTITY_LETTERS, letter
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.highlights import PLAIN, Highlights
