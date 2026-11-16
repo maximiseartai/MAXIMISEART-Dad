@@ -17,7 +17,9 @@ from pathlib import Path
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 from typing import Any
 import urllib.request
 
@@ -28,7 +30,7 @@ from rozliczenia.tool_files import config_dir, log_path
 
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.potomne import wait_for_value
+from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, FakeInstaller, ToolRepository, centrum_tool_repository, free_port, centrum_health
 
 DAD_MAPPING = "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n"
@@ -36,8 +38,11 @@ SAMPLE_MAPPING = "schema_version: 1\nworkers:\n  przyklad: Przykładowy Wykonawc
 GITIGNORE = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
 MAPPING = "config/worker_mapping.yaml"
 STACKS_AFTER_S = 45.0
-"""Po tylu sekundach od startu skrót i każdy proces Pythona, który on uruchomi, zapisuje stosy swoich wątków: przed
-końcem 60 s ``centrum_health``, więc nota porażki mówi, gdzie stał każdy z nich."""
+"""Po tylu sekundach od startu skrótu on i każdy proces Pythona, który on uruchomi, także później, zapisuje stosy swoich
+wątków: przed końcem 60 s ``centrum_health``, więc nota porażki mówi, gdzie stał każdy z nich."""
+LATE_STACKS_AFTER_S = 1.0
+"""Proces skrótu uruchomiony po terminie stosów (Centrum z dysku po wolnym cofaniu) zapisuje je po tylu sekundach od
+swojego startu, żeby jego stos pokazał, gdzie stanął, a nie sam start."""
 
 
 def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
@@ -55,11 +60,12 @@ def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterato
     ``browser``: program podstawiony jako przeglądarka (zmienna ``BROWSER``). Gdy blok rzuci, wyjątek dostaje notę
     ``_shortcut_when_failed``."""
 
-    stacks = clone.parent / "stosy-skrotu"
+    # Własny katalog każdego skrótu, bo test z dwoma skrótami pokazałby w nocie drugiego stosy procesów pierwszego.
+    stacks = Path(tempfile.mkdtemp(prefix="stosy-skrotu-", dir=clone.parent))
     process = subprocess.Popen(
         [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
         cwd=clone,
-        env=_environment(browser) | _stacks_later(stacks),
+        env=_environment(browser) | _stacks_later(stacks, at=time.time() + STACKS_AFTER_S),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -77,16 +83,19 @@ def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterato
     _stopped(process)
 
 
-def _stacks_later(directory: Path) -> dict[str, str]:
-    """Środowisko, w którym każdy proces Pythona po ``STACKS_AFTER_S`` od startu zapisuje stosy swoich wątków do pliku
-    ``stosy-<pid>.txt`` w ``directory``: ``sitecustomize`` z ``directory`` na początku ``PYTHONPATH``. Plik, nie konsola,
-    bo konsoli skrótu nikt nie czyta do końca bloku, a pełna rura zatrzymałaby Centrum na jego własnym wypisie."""
+def _stacks_later(directory: Path, *, at: float) -> dict[str, str]:
+    """Środowisko, w którym każdy proces Pythona zapisuje stosy swoich wątków do pliku ``stosy-<pid>.txt`` w
+    ``directory`` o jednej chwili ``at`` (``time.time()``), a uruchomiony po niej ``LATE_STACKS_AFTER_S`` po swoim
+    starcie: ``sitecustomize`` z ``directory`` na początku ``PYTHONPATH``. Jedna chwila dla wszystkich, bo proces
+    uruchomiony później niż skrót z opóźnieniem liczonym od własnego startu zapisałby stosy po końcu czekania (przegląd
+    #2023 r1 W1). Plik, nie konsola, bo konsoli skrótu nikt nie czyta do końca bloku, a pełna rura zatrzymałaby Centrum
+    na jego własnym wypisie."""
 
     directory.mkdir(parents=True, exist_ok=True)
     (directory / "sitecustomize.py").write_text(
-        "import faulthandler, os\n"
+        "import faulthandler, os, time\n"
         f"_stacks = open(os.path.join({str(directory)!r}, f'stosy-{{os.getpid()}}.txt'), 'w', encoding='utf-8')\n"
-        f"faulthandler.dump_traceback_later({STACKS_AFTER_S}, file=_stacks)\n",
+        f"faulthandler.dump_traceback_later(max({at!r} - time.time(), {LATE_STACKS_AFTER_S}), file=_stacks)\n",
         encoding="utf-8",
     )
     return {"PYTHONPATH": os.pathsep.join([str(directory), *filter(None, [os.environ.get("PYTHONPATH")])])}
@@ -105,8 +114,8 @@ def _stopped(process: subprocess.Popen[str]) -> str:
 
 def _shortcut_when_failed(clone: Path, stacks: Path, *, alive: bool, journal: bool, console: str) -> str:
     """Gdzie był skrót, gdy test padł: czy żył, czy skończył cofanie (dziennik „Aktualizacja w toku” znika po nim), jego
-    konsola, stosy każdego jego procesu Pythona, który żył ``STACKS_AFTER_S``, i koniec dziennika Centrum klonu, do
-    którego piszą skrót i Centrum, które on uruchomił."""
+    konsola, stosy każdego jego procesu Pythona, który dożył swojej chwili z ``_stacks_later``, i koniec dziennika
+    Centrum klonu, do którego piszą skrót i Centrum, które on uruchomił."""
 
     centrum_log = log_path(clone)
     log_tail = centrum_log.read_text(encoding="utf-8", errors="replace").splitlines()[-30:] if centrum_log.exists() else []
@@ -117,7 +126,7 @@ def _shortcut_when_failed(clone: Path, stacks: Path, *, alive: bool, journal: bo
             "Konsola skrótu:",
             console.rstrip() or "(pusta)",
             *(
-                f"Stosy procesu {dump.stem.removeprefix('stosy-')} po {STACKS_AFTER_S:.0f} s:\n{text.rstrip()}"
+                f"Stosy procesu {dump.stem.removeprefix('stosy-')}:\n{text.rstrip()}"
                 for dump in sorted(stacks.glob("stosy-*.txt"))
                 if (text := dump.read_text(encoding="utf-8", errors="replace"))
             ),
@@ -125,6 +134,42 @@ def _shortcut_when_failed(clone: Path, stacks: Path, *, alive: bool, journal: bo
             *(log_tail or ["(brak dziennika)"]),
         ]
     )
+
+
+def test_proces_skrotu_uruchomiony_po_terminie_stosow_ma_swoj_stos_w_nocie_porazki(tmp_path: Path) -> None:
+    """Centrum z dysku startuje po wolnym cofaniu później niż skrót, a o jego stos pyta #1454, więc nota porażki ma go
+    mieć, zanim minie czekanie na ``health``: tu skrót i jego dziecko startują już po terminie stosów, a ich stosy muszą
+    być w nocie po ``LATE_STACKS_AFTER_S``, nie po ``STACKS_AFTER_S`` liczonym od startu każdego z nich (przegląd #2023 r1
+    W1)."""
+
+    scripts = tmp_path / "skrypty"
+    scripts.mkdir()
+    (scripts / "centrum_z_dysku.py").write_text("import time\ntime.sleep(120)\n", encoding="utf-8")
+    (scripts / "skrot.py").write_text(
+        f"import subprocess, sys\nsubprocess.call([sys.executable, {str(scripts / 'centrum_z_dysku.py')!r}])\n",
+        encoding="utf-8",
+    )
+    stacks = tmp_path / "stosy"
+    shortcut = subprocess.Popen(
+        [sys.executable, str(scripts / "skrot.py")],
+        env=_environment(None) | _stacks_later(stacks, at=time.time()),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        start_new_session=sys.platform != "win32",
+    )
+
+    def note() -> str:
+        return _shortcut_when_failed(tmp_path, stacks, alive=True, journal=False, console="")
+
+    try:
+        both = wait_for(lambda: all(f"{script}\"" in note() for script in ("skrot.py", "centrum_z_dysku.py")), 20)
+    finally:
+        _stopped(shortcut)
+
+    assert both, note()
 
 
 def _environment(browser: Path | None) -> dict[str, str]:
