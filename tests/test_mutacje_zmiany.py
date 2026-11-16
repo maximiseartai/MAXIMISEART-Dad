@@ -1477,7 +1477,12 @@ def test_zapis_pokrycia_procesu_w_toku_nie_daje_czesci_niepelnego_pliku(tmp_path
 
     recorder = pokrycie_procesu.Recorder({})
     recorder.shared["/repo/modul.py"] = set(range(300_000))
-    writer = threading.Thread(target=lambda: [recorder.write(tmp_path) for _ in range(40)])
+
+    def write_repeatedly() -> None:
+        for _ in range(40):
+            recorder.write(tmp_path)
+
+    writer = threading.Thread(target=write_repeatedly)
     writer.start()
     read = []
     while writer.is_alive():
