@@ -235,7 +235,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--wolny-runner",
         action="store_true",
-        help="Slow animations, late writes of the tab and a late API, as a slow runner (features/README.md); not in CI.",
+        help="Slow animations, late writes of the tab, a late API and a slow pip, as a slow runner (features/README.md); not in CI.",
     )
     args = parser.parse_args(argv)
     if args.wolny_runner:

@@ -438,7 +438,7 @@ def _drive_failed_installation(
 
     run.step(FEATURE, "aktualizacja-instalacja-nieudana")
     message = card.get_by_role("alert").filter(has_text=LIBRARIES_FAILED)
-    expect(message).to_be_visible(timeout=Budget.SLOWED.ms)
+    expect(message).to_be_visible(timeout=Budget.BACKGROUND.ms)
     expect(message).to_contain_text("Narzędzie działa dalej w poprzedniej wersji.")
     expect(card).to_contain_text(newest[:7])
     expect(card).to_contain_text("Jest nowsza wersja")
