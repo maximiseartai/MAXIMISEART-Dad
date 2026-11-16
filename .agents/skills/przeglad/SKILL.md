@@ -8,6 +8,7 @@ description: Przegląd PR - co jest porażką, korzeń i szczebel, dowody, posta
 Oba tryby, autora i recenzenta, czytają wspólne reguły przeglądu, a różnią się tylko krokami końcowymi na dole.
 `PASS` mówi też, że skille `verify-*` z linii `SKILLE VERIFY` przeszły na tym SHA (gotowość w `tools/scal_pr.py --help`).
 Zlecenie przeglądu i brief koordynatora dodają tylko cel i punkty do sprawdzenia, a co jest Ważne, jakie dowody i jak opublikować werdykt, ustala ten skill.
+Punkt do sprawdzenia może być tezą koordynatora („sprawdź, czy X nie daje wycieku”), bo Ważne z tezy stoi na tym samym powtarzalnym dowodzie co każde inne, więc werdykt nie oddziela znalezisk z tez od własnych (#950).
 
 ## Co jest porażką
 
@@ -26,6 +27,7 @@ W tym repo Ważne były zwykle:
 - fikstura albo przykład testu narzędzia, które czyta prywatne dane (transkrypty Claude Code, baza T3, pliki taty), z tekstem, nazwą sesji albo katalogu przepisanymi z prawdziwych danych zamiast wymyślonych, bo repozytorium jest publiczne, a CI tych danych nie ma, więc nic przed pushem cytatu nie odróżni (#1914: wiadomości operatora w teście `tools/poprawki_operatora.py`);
 - nowy plik w `PARSERS` w `tests/test_zapadki.py` bez powodu w opisie PR albo z powodem nieprawdziwym, czyli taki, że reguła ruff, ast-grep albo test zachowania jednak wystarczają (#1888);
 - tłumienie reguły chwastu na dodanej linii (`# noqa`, `# ruff: noqa`, `# ast-grep-ignore`, także z powodem i terminem) albo jej zwolnienie poza prawem właściciela z [`CODING_STANDARDS.md`](../../../CODING_STANDARDS.md) (nowy wpis `per-file-ignores` albo `ignores:`, zawężone `files:`, usunięta reguła), dopóki nie odmawia go krok Required CI PR kroku ukryć ticketu #1676 (#1720, [ADR 0036](../../../docs/adr/0036-chwast-to-regula.md), reguła przejściowa).
+- ADR albo spec zapisany po odpowiedziach taty albo Maksa, w którym reguła różna od słów źródła (szersza albo węższa) stoi jako jego słowa, bez podziału na cytat i nazwaną decyzję koordynatora, w którym „źródło o tym nie mówi” nie zostało sprawdzone z pytaniem, na które źródło odpowiadało, albo którego lista „Zmienia te zdania” pomija zdanie zmienianego ADR, bo powstała z pamięci, a nie z przejścia po każdym punkcie jego Decyzji (#2011: r1 poszerzył odpowiedź taty bez nazwania decyzji, r2 zawęził ją, pisząc, że tata o własnych zapisach nie mówi).
 
 Dziura w sprawdzeniu to też defekt zachowania.
 W PR, który dodaje albo zmienia sprawdzenie (test struktury, checker, hook, skrypt mutacji, bramka CI, reguła lintu), Ważne jest odtworzony przypadek, który według wiersza reguły, docstringu albo opisu PR to sprawdzenie powinno wywrócić, a ono go przepuszcza, i wywrócenie się sprawdzenia na poprawnym wejściu.
@@ -136,6 +138,7 @@ Po trzeciej rundzie z `FAIL` bez zmiany podejścia czwartej rundy nie ma: `tools
 Podejście zmienia się w tym samym PR, a nie w nowym, bo bramka korzenia i bramka idiomu czytają tylko werdykty własnego PR, więc nowy PR gubi Ważne rund poprzednika (#1990); część, której przegląd nie przyjął, usuwasz z PR, a jej Ważne dostają w `## Korzeń` szczebel (a) z usuniętym kodem.
 Recenzent rundy po zmianie podejścia sprawdza najpierw, czy diff od ostatniego `FAIL` robi to, co mówi to zdanie; gdy nie robi, to Ważne.
 Każdą rundę robi nowy recenzent, który nie pisał kodu, z linkiem do poprzednich werdyktów.
+Werdykt dla SHA, który ma już werdykt w tym PR (linia `RUNDA` z `--przeglad` kończy się `czyli dla tego HEAD`), ma w `## Sprawdzone` punkt `Ponowny przegląd: <czemu kolejny przegląd tego SHA i punkty „Do sprawdzenia” ze zlecenia>`, więc ślad na PR mówi, skąd zmiana zgody bez zmiany kodu (#875 r3: `FAIL` po `PASS` po tezie koordynatora); bez niego `--werdykt` i merge odmawiają (`tools/lib/ponowny_przeglad.py`).
 
 ## Tryb autora: przed zleceniem przeglądu
 

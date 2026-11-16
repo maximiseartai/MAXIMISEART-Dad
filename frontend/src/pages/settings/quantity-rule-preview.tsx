@@ -176,8 +176,19 @@ function Note({ children }: { children: React.ReactNode }) {
 /** Liczby podglądu zmiany: ile wierszy się zmieni, w ilu będzie tak, jak wpisał tata, i różnice Kontroli ilości. */
 type Counted = Pick<PreviewReady, "files" | "unread" | "changed" | "changed_as_tata" | "differences_before" | "differences_after">
 
-/** Skutek zmiany na ostatnich Plikach zbiorczych; `differences`: czyje różnice Kontroli ilości liczy podgląd. */
-export function Summary({ preview, differences = "różnice z Kontroli ilości" }: { preview: Counted; differences?: string }) {
+/**
+ * Skutek zmiany na ostatnich Plikach zbiorczych; `differences`: czyje różnice Kontroli ilości liczy podgląd, a `also`:
+ * dalsza liczba tego podglądu w tej samej linii.
+ */
+export function Summary({
+  preview,
+  differences = "różnice z Kontroli ilości",
+  also,
+}: {
+  preview: Counted
+  differences?: string
+  also?: string
+}) {
   const files = preview.files.length
 
   return (
@@ -191,6 +202,7 @@ export function Summary({ preview, differences = "różnice z Kontroli ilości" 
         {files} {plural(files, { one: "ostatni Plik zbiorczy", few: "ostatnie Pliki zbiorcze", many: "ostatnich Plików zbiorczych" })}
         {" · "}
         {differences}: {preview.differences_before} → {preview.differences_after}
+        {also === undefined ? null : ` · ${also}`}
       </p>
       <UnreadPeriods periods={preview.unread} />
     </div>

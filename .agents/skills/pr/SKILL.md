@@ -132,6 +132,7 @@ Concrete evidence that the change works, as a before and an after.
 - Every promise in the body has its proof here.
   A behaviour the body claims has a test that fails when the behaviour breaks, shown with a mutation from `tools/mutacje.py` (`WYKRYTA`), and a sentence with no proof comes out of the body.
 - A PR that adds or changes a check (a structure test, a lint rule, a CI job, a checking tool) shows its result on real history from `tools/na_scalonych_pr.py`: on the PRs whose review found the mistake it finds it, and on `--ostatnie 5` it raises no false alarm (`CODING_STANDARDS.md`).
+  A check that promises a whole class also shows its table of cases here (`CODING_STANDARDS.md`, introduction).
 - A measured speedup or regression gives one number with its unit, `before → after`, and links the rest.
 - Name the `verify-*` skills from the `SKILLE VERIFY` line of `tools/skille_dla_zmiany.py` and the result of the part each one leaves local.
   `SZYBKO OK` alone is not evidence.

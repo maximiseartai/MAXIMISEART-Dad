@@ -52,7 +52,7 @@ from rozliczenia.client_data import logs_text, tool
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.github_api import Answer, github_api
-from tests.fixtures.proxy_systemu import system_proxy
+from tests.fixtures.proxy_systemu import proxy_of_system, system_proxy
 from atrapy.sluchacz_kolejki import QueueListener
 
 import github_przypadki_archiwum
@@ -147,6 +147,37 @@ def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki_na_inny_serwer(same_se
     assert answer.status == 200
     assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"] * (same_server_hops + 1)
     assert [asked.authorization for asked in elsewhere.asked] == [None]
+
+
+@pytest.mark.parametrize(
+    ("asked", "moved"),
+    [("http://skrzynka.test/0", "http://skrzynka.test:80/1"), ("http://skrzynka.test:80/0", "http://skrzynka.test/1")],
+    ids=["na-port-podany-wprost", "z-portu-podanego-wprost"],
+)
+def test_klucz_taty_idzie_za_przekierowaniem_skrzynki_na_ten_sam_serwer_z_domyslnym_portem_podanym_albo_nie(
+    monkeypatch: pytest.MonkeyPatch, asked: str, moved: str
+) -> None:
+    # Adres bez portu i adres z domyślnym portem schematu to ten sam origin. Atrapa jest proxy z ustawień systemu, bo
+    # serwer testu nie dostaje portu 80; przez proxy urllib pyta o cały adres, a nazwy hosta nie rozwiązuje.
+    with github_api({asked: Answer(301, headers={"Location": moved}), moved: Answer(body=[])}) as proxy:
+        proxy_of_system(monkeypatch, proxy.url)
+        answer = SKRZYNKA_TRANSPORT(HttpRequest("GET", asked, headers(KEY), None))
+
+    assert answer.status == 200
+    assert [(seen.path, seen.authorization) for seen in proxy.asked] == [(asked, f"Bearer {KEY}"), (moved, f"Bearer {KEY}")]
+
+
+@pytest.mark.parametrize(("method", "body"), [("PATCH", b'{"body": "Poprawiona"}'), ("DELETE", None)])
+def test_skrzynka_wysyla_do_githuba_zadanie_jego_metoda(
+    monkeypatch: pytest.MonkeyPatch, method: str, body: bytes | None
+) -> None:
+    # Bez podanej metody urllib wysyła POST, gdy żądanie ma treść, a GET bez niej: poprawka komentarza i usunięcie
+    # pliku archiwum nie doszłyby do GitHuba.
+    with github_api({"/zasob": Answer(body={})}) as box:
+        answer = SKRZYNKA_TRANSPORT(HttpRequest(method, f"{box.url}/zasob", headers(KEY), body))
+
+    assert answer.status == 200
+    assert [seen.method for seen in box.asked] == [method]
 
 
 def test_przekierowanie_skrzynki_na_adres_z_nieczytelnym_portem_to_skrzynka_nieosiagalna(

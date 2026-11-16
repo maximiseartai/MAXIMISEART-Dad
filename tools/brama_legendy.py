@@ -7,16 +7,17 @@ Kopię wejścia Pliku zbiorczego: ``N:AP`` i ``CZYNNOŚCI ZREALIZOWANE``, bo kol
 
 Wiersz czyta filtr prywatności wierszy (``order_facts.collective_orders``), a liczy go rachunek Kontroli ilości
 (``quantity_check.legend_row_check``) z Regułami ilości z Wydania, więc brama i Kontrola mówią to samo o każdej komórce
-tego samego pliku. Wiersz z kodem to wiersz z Kodem czynności, także tylko spoza przedziałów. W nim brama porównuje z
-tatą kolumny legendy (wartość Reguł ilości i legendy razem, jak wpisuje je Przygotowanie), a z dysku także kwotę w
-``AS`` i kolory kolumn, które legenda wypełnia (zielony, czerwony albo brak; inne wypełnienie, np. tło Wzorca, to brak).
-Wiersz bez kodu z wpisem taty to wiersz z wartością taty w kolumnie z opisu technika, której nie porównują Reguły
-ilości, albo z kwotą w ``AS``. Wiersz, którego ``DATA`` nie jest datą, liczy się bez Reguł ilości, jak w Kontroli.
+tego samego pliku. Wiersz z kodem to wiersz z samych Kodów czynności. W nim brama porównuje z tatą kolumny legendy
+(wartość Reguł ilości i legendy razem, jak wpisuje je Przygotowanie), a z dysku także kwotę w ``AS`` i kolory kolumn,
+które legenda wypełnia (zielony, czerwony albo brak; inne wypełnienie, np. tło Wzorca, to brak). Wiersz z Błędem opisu
+brama liczy osobno, według powodu, bo legenda nic w nim nie wpisuje. Wpis taty w wierszu bez kodów albo z Błędem opisu
+to wartość taty w kolumnie z opisu technika, której nie porównują Reguły ilości, albo kwota w ``AS``. Wiersz, którego
+``DATA`` nie jest datą, liczy się bez Reguł ilości, jak w Kontroli.
 
 Na stdout trafiają same liczby, identyfikatory kodów legendy, liczby z kodów spoza przedziałów i litery kolumn: bez
-opisów technika, adresów i numerów, więc wynik można wkleić do PR. ``--opisy PLIK`` zapisuje lokalnie każdy wiersz z
-różnicą, bez kodu z wpisem taty i z kodem spoza przedziałów razem z numerem wiersza i treścią ``CZYNNOŚCI
-ZREALIZOWANE``; plik w repozytorium (publicznym) jest odrzucony.
+opisów technika i słów spoza legendy, adresów i numerów, więc wynik można wkleić do PR. ``--opisy PLIK`` zapisuje
+lokalnie każdy wiersz z różnicą, z Błędem opisu i bez kodów z wpisem taty razem z numerem wiersza i treścią
+``CZYNNOŚCI ZREALIZOWANE``; plik w repozytorium (publicznym) jest odrzucony.
 
     .venv/bin/python tools/brama_legendy.py "…/Rozliczenie 08_14_09_2026 - zbiorcze.xlsx" "…/…-efenix-….json.gz" \
         [--legenda config/legenda-czynnosci.yaml] [--opisy ~/.t3/notes/<run>/opisy.txt]
@@ -40,7 +41,18 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rozliczenia.activity_legend import AMOUNT_COLUMN, ActivityLegend, FillColour, LegendProblem
+from rozliczenia.activity_legend import (
+    AMOUNT_COLUMN,
+    REASONS,
+    ActivityLegend,
+    CodesOnly,
+    DescriptionError,
+    DescriptionProblem,
+    FillColour,
+    LegendProblem,
+    NotACode,
+    problem_text,
+)
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND, parse_activity_legend
 from rozliczenia.centrum.logged_input_copy import LoggedCell, LoggedInputFile, LoggedTyped
 from rozliczenia.collective_layout import DATA_ROW_COLUMNS, INPUT_COLUMNS, QUANTITY_LETTERS, letter
@@ -88,8 +100,8 @@ class Source:
 
 @dataclass(frozen=True)
 class Checked:
-    """Wiersz po rachunku Kontroli ilości: różnice legendy z tatą (wiersz z kodem) i wpis taty (wiersz bez kodu), z
-    Logów bez ``AS`` i kolorów."""
+    """Wiersz po rachunku Kontroli ilości: różnice legendy z tatą (wiersz z samych kodów) i wpis taty (wiersz bez kodów
+    albo z Błędem opisu), z Logów bez ``AS`` i kolorów."""
 
     row: DadRow
     check: LegendRowCheck
@@ -98,16 +110,17 @@ class Checked:
 
     @property
     def coded(self) -> bool:
-        return self.check.coded
+        return isinstance(self.check.read, CodesOnly)
 
     @property
     def code_ids(self) -> tuple[str, ...]:
-        codes = self.check.codes
-        return tuple(dict.fromkeys(found.code for found in (*codes.found, *codes.out_of_range)))
+        read = self.check.read
+        return tuple(dict.fromkeys(found.code for found in read.found)) if isinstance(read, CodesOnly) else ()
 
     @property
-    def kind(self) -> str:
-        return "z samych kodów" if self.check.codes.only_codes else "kod obok opisu"
+    def problems(self) -> tuple[DescriptionProblem, ...]:
+        read = self.check.read
+        return read.problems if isinstance(read, DescriptionError) else ()
 
 
 class Gate:
@@ -217,32 +230,36 @@ class Tally:
 
     def report(self) -> list[str]:
         coded = [row for row in self.checked if row.coded]
-        only = [row for row in coded if row.check.codes.only_codes]
-        beside = [row for row in coded if not row.check.codes.only_codes]
+        faulty = [row for row in self.checked if row.problems]
+        uncoded = [row for row in self.checked if not row.coded and not row.problems]
         lines = [
-            f"wiersze danych: {self.rows} | z kodem: {len(coded)} | z samych kodów: {len(only)}"
-            f" | kod obok opisu: {len(beside)} | DATA nie jest datą: {self.undated}",
-            f"zgodne z tatą wiersze z kodem: {_share(coded)} | z samych kodów: {_share(only)} | kod obok opisu: {_share(beside)}",
+            f"wiersze danych: {self.rows} | z kodem: {len(coded)} | z Błędem opisu: {len(faulty)}"
+            f" | bez kodów: {len(uncoded)} | DATA nie jest datą: {self.undated}",
+            f"zgodne z tatą wiersze z kodem: {_share(coded)}",
         ]
         codes = Counter(code for row in coded for code in row.code_ids)
         lines.append(f"kody (wiersze): {' '.join(f'{code}={count}' for code, count in codes.most_common()) or NONE}")
-        classes = Counter((row.kind, row.code_ids, row.differences) for row in coded if row.differences)
-        lines.append(f"-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): {len(classes)} klas")
-        for (kind, code_ids, differences), count in sorted(classes.items(), key=lambda item: (-item[1], item[0])):
+        classes = Counter((row.code_ids, row.differences) for row in coded if row.differences)
+        lines.append(f"-- różnice (wiersze | kody | kolumna: legenda, tata): {len(classes)} klas")
+        for (code_ids, differences), count in sorted(classes.items(), key=lambda item: (-item[1], item[0])):
             shown = "; ".join(f"{column}: legenda {legend}, tata {tata}" for column, legend, tata in differences)
-            lines.append(f"{count} | {kind} | {', '.join(code_ids)} | {shown}")
-        outside = Counter((found.code, found.number) for row in self.checked for found in row.check.codes.out_of_range)
+            lines.append(f"{count} | {', '.join(code_ids)} | {shown}")
+        reasons = Counter(reason for row in faulty for reason in dict.fromkeys(problem.reason for problem in row.problems))
         lines.append(
-            "-- kody spoza przedziałów (kod liczba → wiersze): "
-            + (" ".join(f"{code} {number}→{count}" for (code, number), count in sorted(outside.items(), key=str)) or NONE)
+            "-- Błędy opisu (powód → wiersze): "
+            + (" | ".join(f"{reason}={reasons[reason]}" for reason in REASONS if reason in reasons) or NONE)
         )
-        uncoded = [row for row in self.checked if not row.coded and row.entries]
-        entries = Counter(column for row in uncoded for column in row.entries)
-        ordered = [column for column in (*QUANTITY_LETTERS, AMOUNT_COLUMN) if column in entries]
-        lines.append(
-            f"-- wiersze bez kodu z wpisem taty: {len(uncoded)} | " + (" ".join(f"{column}={entries[column]}" for column in ordered) or NONE)
-        )
+        named = Counter(problem_text(problem) for row in faulty for problem in row.problems if not isinstance(problem, NotACode))
+        lines.append("-- powody z kodami (powód → wiersze): " + (" | ".join(f"{reason}→{count}" for reason, count in sorted(named.items())) or NONE))
+        lines.append(_entries("Błędy opisu z wpisem taty", [row for row in faulty if row.entries]))
+        lines.append(_entries("wiersze bez kodów z wpisem taty", [row for row in uncoded if row.entries]))
         return lines
+
+
+def _entries(label: str, rows: Sequence[Checked]) -> str:
+    entries = Counter(column for row in rows for column in row.entries)
+    ordered = [column for column in (*QUANTITY_LETTERS, AMOUNT_COLUMN) if column in entries]
+    return f"-- {label}: {len(rows)} | " + (" ".join(f"{column}={entries[column]}" for column in ordered) or NONE)
 
 
 def _share(rows: Sequence[Checked]) -> str:
@@ -251,23 +268,23 @@ def _share(rows: Sequence[Checked]) -> str:
 
 
 def descriptions(gate: Gate, sources: Sequence[Source]) -> list[str]:
-    """Wiersze z różnicą, bez kodu z wpisem taty i z kodem spoza przedziałów z treścią ``CZYNNOŚCI ZREALIZOWANE``:
-    tylko do pliku lokalnego."""
+    """Wiersze z różnicą, z Błędem opisu i bez kodów z wpisem taty z treścią ``CZYNNOŚCI ZREALIZOWANE``: tylko do pliku
+    lokalnego."""
 
     lines: list[str] = []
     for source in sources:
         for row in (gate.check(dad_row, looked=source.looked) for dad_row in source.rows):
             text = " ".join(row.row.order.completed.split())
             where = f"{source.label} | wiersz {row.row.number}"
+            entries = " ".join(f"{column}={value}" for column, value in row.entries.items()) or NONE
             if row.differences:
                 shown = "; ".join(f"{column}: legenda {legend}, tata {tata}" for column, legend, tata in row.differences)
-                lines.append(f"{where} | różnica | {row.kind} | {', '.join(row.code_ids)} | {shown} | {text}")
-            if row.entries:
-                shown = " ".join(f"{column}={value}" for column, value in row.entries.items())
-                lines.append(f"{where} | bez kodu z wpisem taty | {shown} | {text}")
-            if row.check.codes.out_of_range:
-                shown = ", ".join(f"{found.code} {found.number}" for found in row.check.codes.out_of_range)
-                lines.append(f"{where} | spoza przedziałów | {shown} | {text}")
+                lines.append(f"{where} | różnica | {', '.join(row.code_ids)} | {shown} | {text}")
+            elif row.problems:
+                shown = "; ".join(f"„{problem.word}”" if isinstance(problem, NotACode) else problem_text(problem) for problem in row.problems)
+                lines.append(f"{where} | Błąd opisu | {shown} | wpis taty {entries} | {text}")
+            elif row.entries:
+                lines.append(f"{where} | bez kodów z wpisem taty | {entries} | {text}")
     return lines
 
 

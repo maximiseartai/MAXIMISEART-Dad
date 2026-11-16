@@ -73,17 +73,18 @@ class Budget(Enum):
     SCREEN = 10.0
     # Centrum sends to the skrzynka what Dad wrote, and the window waits for the skrzynka's answer.
     SEND = 15.0
-    # Work the harness slows on purpose answers: a step after the pacing of the harness (Git, pip or the guardian of
+    # Work the harness slows on purpose answers: a step after the pacing of the harness (Git or the guardian of
     # Aktualizacja narzędzia, Szablony pracowników), a tab on a processor as slow as Dad's, or a save onto state files
-    # another program holds.
+    # another program holds. A real pip run after the pacing is not such a step: nothing of the harness bounds it.
     SLOWED = 20.0
     # Centrum answers after work heavier than a screen: its start, the queue it sends at its start, a step of the efenix
     # window, or a read of the latest Pliki zbiorcze.
     WORK = 30.0
     # Work of many steps, of which the drive sees only the end, finishes on its own: Centrum started again by
     # Aktualizacja narzędzia (its guardian waits up to 60 s, and the tab reloads when it answers), a whole Wycena through
-    # the efenix window (5.6–5.9 s on Maks's Mac, past 10 s on the Windows runner of CI, #1296), the queue delivered to
-    # the skrzynka in the background, or the launcher of Centrum (``run_centrum.py``).
+    # the efenix window (5.6–5.9 s on Maks's Mac, past 10 s on the Windows runner of CI, #1296), the real pip of a failed
+    # installation of libraries (under a second on Maks's Mac, past 18 s on a cold Windows runner of CI, run
+    # 43807617660), the queue delivered to the skrzynka in the background, or the launcher of Centrum (``run_centrum.py``).
     BACKGROUND = 60.0
     # A process of the tool outside Centrum (``tools/uruchom_proces.py``) ends.
     PROCESS = 120.0

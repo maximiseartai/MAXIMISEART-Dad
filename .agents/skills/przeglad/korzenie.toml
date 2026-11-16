@@ -154,3 +154,7 @@ przyklad = 1992
 [R-WYSCIG-STANU]
 opis = "Dwa procesy dzielą plik stanu, a jeden usuwa go albo przepisuje według treści przeczytanej wcześniej, bez blokady, pod którą drugi pisze, więc zapis z okna między odczytem a usunięciem ginie po cichu."
 przyklad = 1992
+
+[R-ZRODLO-SZERZEJ]
+opis = "Dokument decyzji przypisuje źródłu (odpowiedziom taty, mailowi) regułę szerszą niż jego treść i nie nazywa poszerzenia decyzją, więc ani Maks, ani tata go nie widzą."
+przyklad = 2011

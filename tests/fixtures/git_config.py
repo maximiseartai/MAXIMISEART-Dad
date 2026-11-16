@@ -10,7 +10,8 @@ komputera, jak ``repo.git(isolated=True)``: ``GIT_CONFIG_GLOBAL`` to ``os.devnul
 komputera, a w CI padnie.
 
 Proces, który uruchamia kod narzędzia (pakiet ``rozliczenia``), dostaje gita bez tożsamości, jak u taty: ``CONFIG``
-daje ją tylko gitowi testów i narzędzi Maksa.
+daje ją tylko gitowi testów i narzędzi Maksa. Tożsamość ze środowiska wołającego (``GIT_AUTHOR_*`` i ``GIT_COMMITTER_*``,
+które Claude Code daje agentom z ``.claude/settings.json``) ``hermetic_git`` zdejmuje, bo bije ``user.*`` z ``CONFIG``.
 """
 
 from __future__ import annotations
@@ -249,7 +250,7 @@ def hermetic_git(directory: Path) -> Iterator[None]:
         return original_system(command)
 
     with pytest.MonkeyPatch.context() as patch:
-        for name in _MACHINE_VARIABLES:
+        for name in (*_MACHINE_VARIABLES, *_IDENTITY_VARIABLES):
             patch.delenv(name, raising=False)
         patch.setenv("GIT_CONFIG_NOSYSTEM", "1")
         patch.setenv("GIT_CONFIG_GLOBAL", str(config))

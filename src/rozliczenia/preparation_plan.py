@@ -19,7 +19,7 @@ from . import preparation_messages as messages
 from .message import StopError
 from .preparation_register import cell_value
 from .register_file import RegisterSheet
-from .activity_legend import ActivityLegend, CodesRead
+from .activity_legend import ActivityLegend, DescriptionRead
 from .register_columns import ACTIVITIES, COMPLETED, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
 from .quantity_engine import OrderContent, QuantityRules, RuleResult, evaluate
 from .settlement_period import SettlementPeriod
@@ -54,7 +54,7 @@ class CollectiveRow:
 
     order: PeriodOrder
     rule_result: RuleResult
-    codes: CodesRead
+    read: DescriptionRead
 
     @classmethod
     def of(cls, order: PeriodOrder, rules: QuantityRules, legend: ActivityLegend) -> CollectiveRow:

@@ -921,8 +921,7 @@ _DISABLED_FEATURES: Final = ("TcpPortRandomizationWin",)
 """Funkcje Chromium, które każda przeglądarka okna wyłącza ponad listę Playwrighta. ``TcpPortRandomizationWin``:
 Chromium 156 na Windows 11 22H2 i nowszym (także Windows Server 2025 runnerów CI) losuje port lokalny każdego
 połączenia, a Windows odmawia wtedy czasem połączenia z WSAENOBUFS (``net::ERR_NO_BUFFER_SPACE``), choć porty są
-wolne (crbug.com/572515601, microsoft/playwright#43545). Playwright wyłącza ją sam od microsoft/playwright#43605,
-scalonego po wydaniu 1.64.1."""
+wolne (crbug.com/572515601, microsoft/playwright#43545). Playwright 1.65 wyłącza ją sam (microsoft/playwright#43605)."""
 _DISABLE_FEATURES: Final = "--disable-features="
 _LOG_TO_STDERR: Final = ("--enable-logging=stderr",)
 """Dziennik przeglądarki idzie na jej stderr, który czyta Playwright, a nie do pliku. Bez tego ``chromium-headless-shell``
@@ -944,12 +943,17 @@ def launch_options(playwright: Playwright, *, channel: str | None = None, argume
     Jeden ``--disable-features`` z listą Playwrighta i ``_DISABLED_FEATURES`` zamiast przełącznika Playwrighta, bo
     Chromium bierze tylko ostatni ``--disable-features``, a własny obok zgubiłby listę Playwrighta. Tej listy Playwright
     nie podaje w API, więc daje ją linia poleceń przeglądarki tego kanału uruchomionej raz na proces bez okna i zaraz
-    zamkniętej; ``PlaywrightError``, gdy ta przeglądarka nie wystartowała.
+    zamkniętej; ``PlaywrightError``, gdy ta przeglądarka nie wystartowała. Gdy lista Playwrighta ma już każdą funkcję z
+    ``_DISABLED_FEATURES``, zostaje przełącznik Playwrighta bez własnego, bo ``ignore_default_args`` usuwa każdy argument
+    równy pominiętemu, także podany w ``args``, a złożony przełącznik byłby wtedy równy przełącznikowi Playwrighta.
     """
 
     theirs = _playwright_disabling(playwright, channel)
     features = [feature for switch in theirs for feature in switch.removeprefix(_DISABLE_FEATURES).split(",")]
-    disabled = ",".join(dict.fromkeys([*features, *_DISABLED_FEATURES]))
+    missing = [feature for feature in _DISABLED_FEATURES if feature not in features]
+    if not missing:
+        return {"ignore_default_args": [], "args": [*_LOG_TO_STDERR, *arguments]}
+    disabled = ",".join(dict.fromkeys([*features, *missing]))
     return {"ignore_default_args": list(theirs), "args": [_DISABLE_FEATURES + disabled, *_LOG_TO_STDERR, *arguments]}
 
 

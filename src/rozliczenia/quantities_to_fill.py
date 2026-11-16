@@ -4,10 +4,11 @@ Czysta funkcja ``quantities_to_fill`` na Wierszach danych zapisanego Pliku zbior
 odczycie; nic nie jest przechowywane. Rodzaj wiersza wynika tylko z typu wyniku Reguł ilości (``evaluate``) na
 regułach podanych przy odczycie, a kolumny narzędzia to kolumny porównywane przez Kontrolę ilości
 (``compared_columns``) i kolumny, w które Legenda czynności wpisuje z ``CZYNNOŚCI ZREALIZOWANE`` wiersza
-(``read_codes``, ADR 0038). Puste i 0 to to samo, jak w Kontroli ilości.
+(``ActivityLegend.read``, ADR 0038). Puste i 0 to to samo, jak w Kontroli ilości.
 
 Wiersz z opisu, którego ``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności, nie czeka na tatę: ilości z opisu technika
-wpisała legenda. Wiersz bez reguły czeka mimo to, bo legenda nie wpisuje ilości z ``URZĄDZENIA``.
+wpisała legenda. Wiersz bez kodów i wiersz z Błędem opisu czekają na tatę, bo legenda nic w nich nie wpisała. Wiersz
+bez reguły czeka mimo to, bo legenda nie wpisuje ilości z ``URZĄDZENIA``.
 Wiersz bez reguły jest zrobiony, gdy ma ilość różną od 0 poza kolumnami narzędzia (z Wydania V, T i N oraz kolumny
 legendy), a wiersz z opisu, gdy ma ją gdziekolwiek w N:AP poza kolumnami legendy. Każda komórka N:AP i ``AS`` wiersza
 pokazuje wartość z pliku: w kolumnie narzędzia jako kolumnę narzędzia, która nie robi wiersza zrobionym, a w
@@ -27,7 +28,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final
 
-from .activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesRead
+from .activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesOnly, DescriptionRead
 from .collective_layout import QUANTITY_LETTERS
 from .order_facts import OrderFacts, TataValue
 from .quantity_check import compared_columns
@@ -180,13 +181,14 @@ def quantities_to_fill(
     by_legend = 0
     for row in rows:
         codes = legend.read(row.texts[_COMPLETED])
-        by_legend += codes.only_codes
+        closed = isinstance(codes, CodesOnly)
+        by_legend += closed
         content = row.order.content
         rule = None if content is None else evaluate(rules, content)
         tool = _tool_columns(rule, rules, codes)
         filled.update(column for column in DESCRIPTION_COLUMNS if row.order.quantity(column) != 0 and column not in tool)
         kind = None if rule is None else _KINDS.get(type(rule))
-        if kind is None or (kind is FillKind.FROM_DESCRIPTION and codes.only_codes):
+        if kind is None or (kind is FillKind.FROM_DESCRIPTION and closed):
             continue
         listed[kind].append(_row(row, tool, settled=settled))
     return QuantitiesToFill(
@@ -196,10 +198,12 @@ def quantities_to_fill(
     )
 
 
-def _tool_columns(rule: RuleResult | None, rules: QuantityRules, codes: CodesRead) -> frozenset[str]:
+def _tool_columns(rule: RuleResult | None, rules: QuantityRules, codes: DescriptionRead) -> frozenset[str]:
     """Kolumny ``CELL_COLUMNS``, które w wierszu wyznacza narzędzie: Reguły ilości (``compared_columns``) i legenda."""
 
     by_rules = () if rule is None else compared_columns(rule, rules)
+    if not isinstance(codes, CodesOnly):
+        return frozenset(by_rules)
     return frozenset((*by_rules, *codes.quantities, *((AMOUNT_COLUMN,) if codes.amount else ())))
 
 

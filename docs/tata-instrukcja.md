@@ -566,14 +566,16 @@ Pliku zbiorczego, a nie Rejestru zleceń. Wynik zapisu to zawsze `Plik zbiorczy
 przygotowany · wymaga sprawdzenia`: pliki powstały, a Ty uzupełniasz Plik
 zbiorczy przed Przebiegiem rozliczeń. Wiersz, którego `CZYNNOŚCI ZREALIZOWANE`
 to same Kody czynności (poza `tak`, `nie` i znakami interpunkcji), wypełniła
-Legenda czynności, więc na Ciebie nie czeka.
+Legenda czynności, więc na Ciebie nie czeka. Każde inne słowo, kod z liczbą
+spoza przedziałów albo dwa kody w jednej kolumnie to Błąd opisu: wtedy legenda
+nic w wierszu nie wpisuje, a wiersz czeka na Ciebie.
 
 | Co się stało (fragment) | Co zrobić |
 |---|---|
 | „Rejestr zleceń może nie mieć jeszcze wszystkich zleceń tego okresu” | Sprawdź `Zlecenia na dzień`. Jeśli brakuje zleceń z końca tygodnia, kliknij `Przerwij bez zapisu`, uzupełnij eksport w Rejestrze, zapisz go, zamknij i uruchom ponownie. Jeśli w te dni naprawdę nie było zleceń, kliknij `Kontynuuj`. |
 | „Narzędzie nie zna urządzenia z kolumny URZĄDZENIA” | W tych wierszach narzędzie wpisało tylko V, T i N. Uzupełnij pozostałe ilości ręcznie. Jeśli to nowe urządzenie, które będzie wracać, powiedz o nim osobie utrzymującej narzędzie. |
 | „rozlicza się z opisu technika” | Prewencja, niedostępność usług albo puste `URZĄDZENIA`: Reguły ilości nie wpisały w tych wierszach żadnych ilości, a Legenda czynności najwyżej to, co wynika z kodów. Wpisz je według `CZYNNOŚCI ZREALIZOWANE`. |
-| „spoza przedziałów Legendy czynności” | Kod z liczbą spoza przedziałów (np. `instutp40m`) niczego nie wpisał. Wpisz ilości w tych wierszach według opisu technika. Jeśli taka liczba będzie wracać, powiedz o niej osobie utrzymującej narzędzie. |
+| „nie jest w tych wierszach z samych Kodów czynności” | Pracownik napisał w `CZYNNOŚCI ZREALIZOWANE` coś poza Kodami czynności: zwykły opis, kod ze spacją w środku (`inst 20m`), kod z liczbą spoza przedziałów (np. `instutp40m`) albo dwa kody w jednej kolumnie (np. `instmdik` i `inst20m` w Y). Legenda nic w tych wierszach nie wpisała. Wpisz ilości według opisu technika. Kody czynności i ich zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności. |
 | „Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE)” | Mówi, w ilu wierszach legenda wpisała ilości i ile wierszy zostało Tobie. W tych wierszach uzupełnij ilości w kolumnach Y, AB, AD, AJ, AK, AL i AM według `CZYNNOŚCI ZREALIZOWANE`; to, co wynika z kodów, jest już wpisane. Gdy nic nie zostało, tego ostrzeżenia nie ma. |
 | „Dolne wiersze Pliku zbiorczego nie mają zer w kolumnach ilości” | Pliki powstały. Narzędzie wpisało ilości w tych wierszach tak samo jak w pozostałych, a puste komórki liczą się jak 0. Sprawdź je jak pozostałe wiersze. Jeśli zdarza się to często, poproś osobę utrzymującą narzędzie o dodanie wierszy z zerami we Wzorcu pliku zbiorczego. |
 

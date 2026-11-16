@@ -1614,8 +1614,9 @@ export type LegendPreviewFill = {
  *
  * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze
  * co innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.
- * ``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie.
- * ``rows``: zmienione wiersze z różnicą od taty, najwyżej ``SHOWN_ROWS``, a ``more`` reszta.
+ * ``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie, a
+ * ``errors_before`` i ``errors_after``: wiersze z Błędem opisu teraz i po zmianie. ``rows``: zmienione wiersze z różnicą
+ * od taty albo z Błędem opisu, najwyżej ``SHOWN_ROWS``, a ``more`` reszta.
  */
 export type LegendPreviewReady = {
     /**
@@ -1647,6 +1648,14 @@ export type LegendPreviewReady = {
      */
     differences_after: number;
     /**
+     * Errors Before
+     */
+    errors_before: number;
+    /**
+     * Errors After
+     */
+    errors_after: number;
+    /**
      * Rows
      */
     rows: Array<LegendPreviewRow>;
@@ -1660,8 +1669,8 @@ export type LegendPreviewReady = {
  * LegendPreviewRow
  *
  * Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis
- * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu i komórki różne od taty. Bez
- * adresu, numeru zlecenia i daty dziennej.
+ * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z samych kodów, powody Błędu
+ * opisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej.
  */
 export type LegendPreviewRow = {
     /**
@@ -1680,6 +1689,10 @@ export type LegendPreviewRow = {
      * Codes
      */
     codes: Array<string>;
+    /**
+     * Problems
+     */
+    problems: Array<string>;
     /**
      * Cells
      */

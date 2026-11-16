@@ -15,6 +15,7 @@ import errno
 import gc
 import hashlib
 from http import HTTPStatus
+from importlib.metadata import version
 import json
 import os
 from pathlib import Path
@@ -116,6 +117,7 @@ from tests.fixtures.potomne import wait_for, wait_for_value
 from tests.fixtures.praca_centrum import centrum_work
 from atrapy.pliki_taty import COLLECTIVE_HEADERS, REGISTER_NAME
 from atrapy.preparation import (
+    COMPLETED_WITHOUT_CODES,
     OLD_REGISTER_HEADERS,
     PERIOD,
     RAW_ORDER_FONT,
@@ -2283,12 +2285,15 @@ class StartPath:
 _BROWSER_FAILURE = "błąd przeglądarki w działaniu okna"
 _PLAYWRIGHT_ERROR = "playwright._impl._errors.Error"
 _STOP_ERROR = "rozliczenia.message.StopError"
+_DRIVER_MISSING = _PLAYWRIGHT_ERROR if tuple(map(int, version("playwright").split(".")[:2])) >= (1, 65) else "FileNotFoundError"
+"""Typ błędu startu sterownika Playwrighta bez programu sterownika: od 1.65 klient Pythona zgłasza go jako błąd
+Playwrighta (``Cannot launch Node.js executable``), a wcześniej jako ``FileNotFoundError``; tata dostaje ten sam Komunikat."""
 START_PATHS = {
     "sterownik-playwrighta-nie-wystartowal": StartPath(
         "for_tata",
         "EFENIX_BRAK_PRZEGLADARKI",
-        {"what": _BROWSER_FAILURE, "error_type": "FileNotFoundError", "operation": "start sterownika Playwrighta"},
-        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", "FileNotFoundError"],
+        {"what": _BROWSER_FAILURE, "error_type": _DRIVER_MISSING, "operation": "start sterownika Playwrighta"},
+        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", _DRIVER_MISSING],
         "_playwright",
         driver=True,
     ),
@@ -3681,7 +3686,7 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
             "I": f"ZL-SYN-{order:03d}",
             "J": worker,
             "L": successful,
-            "M": "montaż",
+            "M": COMPLETED_WITHOUT_CODES,
         }, number
     assert {5, 7, 8, 10} <= set(sheet["empty_rows"]), "puste wiersze między zleceniami okresu"
 

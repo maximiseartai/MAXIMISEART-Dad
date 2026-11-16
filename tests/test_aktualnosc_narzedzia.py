@@ -657,6 +657,27 @@ def test_wyczerpany_limit_konta_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje
     assert WITH_TOKEN not in [asked.authorization for asked in api.asked][1:]
 
 
+def test_odmowa_z_tokenem_z_nieczytelna_chwila_odnowienia_limitu_to_odmowa_tokenu_ponowiona_bez_niego() -> None:
+    unreadable = Answer(403, {"message": "API rate limit exceeded"}, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "jutro"})
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=unreadable) as api:
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest == GitHubReleases(NEWEST, "v0.2.0")
+    assert [asked.authorization for asked in api.asked][:2] == [WITH_TOKEN, None]
+
+
+@pytest.mark.parametrize("status", [500, 502])
+def test_awaria_githuba_na_pytanie_z_tokenem_to_brak_odpowiedzi_bez_ponowienia_bez_tokenu(status: int) -> None:
+    """Bez tokenu ponawia się tylko odmowę tokenu (401, 403, limit konta) i 404, a awaria GitHuba nią nie jest."""
+
+    failure = Answer(status, {"message": "Server Error"})
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=failure) as api:
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest is None
+    assert [asked.authorization for asked in api.asked] == [WITH_TOKEN]
+
+
 @pytest.mark.parametrize(
     "headers",
     [{"X-RateLimit-Remaining": "1", "X-RateLimit-Reset": "1793000000"}, {"X-RateLimit-Remaining": "0"}],

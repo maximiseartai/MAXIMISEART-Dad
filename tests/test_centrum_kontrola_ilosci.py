@@ -108,7 +108,7 @@ def expected_body(run_id: str) -> str:
         "\n"
         "- Wiersze danych: 14 (porównane 10, rozliczane z opisu 1, bez reguły 2, bez daty i godziny w DATA 1)\n"
         "- Różnice w kolumnach Reguł ilości: 7\n"
-        "- Wiersze z Kodem czynności: 0 (zgodne z legendą 0), różnice legendy: 0\n"
+        "- Wiersze z samych Kodów czynności: 0 (zgodne z legendą 0), różnice legendy: 0, wiersze z Błędem opisu: 0\n"
         "\n"
         "## Różnice\n"
         "\n"
@@ -408,26 +408,30 @@ def test_wysylka_w_tle_nie_trzyma_miejsca_uruchomienia_ani_zamkniecia_centrum(tm
 
 
 # Zlecenie zgodne z Regułami ilości z Wydania (TATA_ROWS[0]); wiersze legendy różnią się tylko opisem technika (K),
-# wpisami taty w kolumnach legendy i AS oraz kolorami. Oczekiwania z maila taty (ADR 0038): spawpg daje 1 w AB, 70 w AS
-# i AS na czerwono, rt2 daje 1 w AM, AM na czerwono i AF na zielono, instutp wybiera kolumnę liczbą 1–30.
+# wpisami taty w kolumnach legendy i AS oraz kolorami. Oczekiwania z maila taty (ADR 0038, 0039): spawpg daje 1 w AB, 70
+# w AS i AS na czerwono, rt2 daje 1 w AM, AM na czerwono i AF na zielono, instutp wybiera kolumnę liczbą 1–30, a opis ze
+# słowem innym niż kod, tak i nie (także bez kodu) albo z liczbą spoza przedziałów to Błąd opisu.
 RULED: dict[str, CellValue] = {"C": "u", "D": "nokia zte", "E": "instalacja", "G": TUE.replace(hour=10, minute=15),
                                "V": 1, "T": 1, "O": 1, "Z": 1, "S": 1}
 LEGEND_ROWS: list[dict[str, CellValue]] = [
     # zgodny z legendą: opis nie wychodzi
-    {**RULED, "K": "inst20m ZNACZNIKZGODNY", "Y": 1},
+    {**RULED, "K": "Inst20m tak", "Y": 1},
     # spawpg z wartościami legendy, ale bez czerwonego AS
-    {**RULED, "K": "spawpg listwy", "AB": 1, "AS": 70},
+    {**RULED, "K": "spawpg", "AB": 1, "AS": 70},
     # rt2 dwa razy: tata wpisał AK zamiast AM i dał tylko zielone AF
     {**RULED, "K": "rt2", "AK": 1},
     {**RULED, "K": "rt2", "AK": 1},
-    # liczba spoza przedziałów instutp: legenda nic nie wpisuje, tata wpisał AJ
+    # Błędy opisu: kod z liczbą spoza przedziałów instutp z wpisem taty AJ, kod obok słowa bez wpisu taty: opis nie wychodzi
     {**RULED, "K": "instutp40m", "AJ": 1},
-    # bez kodu z kwotą taty w AS
-    {**RULED, "K": "listwy 11 metrów", "AS": 220},
-    # bez kodu z tekstem w AS: wychodzi jako „nieliczbowa”, nie jako tekst
+    {**RULED, "K": "spawpg montaż"},
+    # Błędy opisu bez kodu: z kwotą taty w AS
+    {**RULED, "K": "listwy", "AS": 220},
+    # z tekstem w AS: wychodzi jako „nieliczbowa”, nie jako tekst
     {**RULED, "K": "kwota tekstem", "AS": "ZNACZNIK-KWOTA"},
-    # bez kodu i bez wpisu taty: opis nie wychodzi
+    # bez wpisu taty: opis nie wychodzi
     {**RULED, "K": "ZNACZNIKBEZWPISU"},
+    # bez kodu i bez Błędu opisu, z wpisem taty w Y
+    {**RULED, "K": "tak", "Y": 1},
 ]
 GREEN, RED = "FF92D050", "FFFF0000"
 
@@ -459,13 +463,10 @@ def test_kontrola_ilosci_grupuje_roznice_legendy_po_kodzie_z_opisem_technika_kwo
 
     issue = sent_check(centrum)
     sent = issue.title + issue.body + "".join(issue.comments)
-    assert issue.title == f"Kontrola ilości {PERIOD}: 8 różnic"
-    assert "- Wiersze z Kodem czynności: 5 (zgodne z legendą 1), różnice legendy: 8\n" in sent
+    assert issue.title == f"Kontrola ilości {PERIOD}: 7 różnic"
+    assert "- Wiersze z samych Kodów czynności: 4 (zgodne z legendą 1), różnice legendy: 7, wiersze z Błędem opisu: 5\n" in sent
     assert (
         "\n## Różnice legendy\n"
-        "\n### Kody `instutp`\n\n"
-        "| Kolumna | Legenda | Tata | Wiersze | Opisy |\n| --- | --- | --- | --- | --- |\n"
-        "| AJ | 0 | 1 | 1 | `instutp40m` |\n"
         "\n### Kody `rt2`\n\n"
         "| Kolumna | Legenda | Tata | Wiersze | Opisy |\n| --- | --- | --- | --- | --- |\n"
         "| AK | 0 | 1 | 2 | `rt2` (2) |\n"
@@ -473,18 +474,23 @@ def test_kontrola_ilosci_grupuje_roznice_legendy_po_kodzie_z_opisem_technika_kwo
         "| AM kolor | czerwony | brak | 2 | `rt2` (2) |\n"
         "\n### Kody `spawpg`\n\n"
         "| Kolumna | Legenda | Tata | Wiersze | Opisy |\n| --- | --- | --- | --- | --- |\n"
-        "| AS kolor | czerwony | brak | 1 | `spawpg listwy` |\n"
+        "| AS kolor | czerwony | brak | 1 | `spawpg` |\n"
+        "\n## Błędy opisu\n\n"
+        "| Powód | Wiersze |\n| --- | --- |\n"
+        "| kod z liczbą spoza przedziałów (instutp40m) | 1 |\n"
+        "| słowo inne niż zapis kodu | 4 |\n"
+        "\n### Błędy opisu z wpisem taty\n\n"
+        "| Opis | Powód | Wpis taty | Wiersze |\n| --- | --- | --- | --- |\n"
+        "| `instutp40m` | kod z liczbą spoza przedziałów (instutp40m) | AJ 1 | 1 |\n"
+        "| `kwota tekstem` | słowo inne niż zapis kodu | AS nieliczbowa | 1 |\n"
+        "| `listwy` | słowo inne niż zapis kodu | AS 220 | 1 |\n"
         "\n## Wiersze bez kodu z wpisem taty\n\n"
         "| Opis | Wpis taty | Wiersze |\n| --- | --- | --- |\n"
-        "| `kwota tekstem` | AS nieliczbowa | 1 |\n"
-        "| `listwy 11 metrów` | AS 220 | 1 |\n"
-        "\n## Kody spoza przedziałów\n\n"
-        "| Kod | Liczba | Wiersze |\n| --- | --- | --- |\n"
-        "| `instutp` | 40 | 1 |\n"
+        "| `tak` | Y 1 | 1 |\n"
     ) in sent
     assert "- Różnice w kolumnach Reguł ilości: 0\n" in sent
-    assert [marker for marker in ("ZNACZNIKZGODNY", "ZNACZNIKBEZWPISU", "ZNACZNIK-KWOTA") if marker in sent] == []
-    assert "listwy" not in centrum.log_path.read_text(encoding="utf-8")
+    assert [marker for marker in ("Inst20m", "montaż", "ZNACZNIKBEZWPISU", "ZNACZNIK-KWOTA") if marker in sent] == []
+    assert [text for text in ("listwy", "montaż") if text in centrum.log_path.read_text(encoding="utf-8")] == []
 
 
 def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_przebieg(tmp_path: Path) -> None:
@@ -496,7 +502,7 @@ def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_prz
     run_to_end(centrum, dry_run=False)
 
     body = sent_check(centrum).body
-    assert "- Wiersze z Kodem czynności: 1 (zgodne z legendą 0), różnice legendy: 1\n" in body
+    assert "- Wiersze z samych Kodów czynności: 1 (zgodne z legendą 0), różnice legendy: 1, wiersze z Błędem opisu: 0\n" in body
     assert "| AS | 80 | 70 | 1 | `spawpg` |\n" in body
 
 
@@ -510,13 +516,13 @@ def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_s
 
     body = sent_check(centrum).body
     assert "- Różnice w kolumnach Reguł ilości: 0\n" in body
-    assert "- Wiersze z Kodem czynności: 2 (zgodne z legendą 1), różnice legendy: 1\n" in body
+    assert "- Wiersze z samych Kodów czynności: 2 (zgodne z legendą 1), różnice legendy: 1, wiersze z Błędem opisu: 0\n" in body
     assert "| AK | 2 | 1 | 1 | `instwewrg65m` |\n" in body
 
 
 def test_adres_numer_orange_telefon_i_ulica_w_opisie_technika_wychodza_zamaskowane_z_uwaga(tmp_path: Path) -> None:
     address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
-    described = {**RULED, "K": f"rt2 klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5"}
+    described = {**RULED, "K": f"rt2 klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5", "Y": 1}
     centrum = centrum_with(tmp_path, [{**RULED, "B": address, "I": orange}, described])
 
     run_to_end(centrum, dry_run=False)
@@ -524,7 +530,7 @@ def test_adres_numer_orange_telefon_i_ulica_w_opisie_technika_wychodza_zamaskowa
     issue = sent_check(centrum)
     sent = issue.title + issue.body + "".join(issue.comments)
     assert [value for value in (address, orange, "600-123-456", "Kwiatowa") if value in sent] == []
-    assert "| AM | 1 | 0 | 1 | `rt2 klient [adres] umowa [numer Orange] tel. [telefon] [ulica]` |\n" in sent
+    assert "| `rt2 klient [adres] umowa [numer Orange] tel. [telefon] [ulica]` | słowo inne niż zapis kodu | Y 1 | 1 |\n" in sent
     assert sent.endswith(
         "## Uwagi techniczne\n\n"
         "- Reguła danych: zamaskowano wartość kolumny ADRES w: treść Kontroli ilości.\n"
@@ -865,7 +871,13 @@ def code_form(centrum: SettlingCentrum, code_id: str) -> dict[str, Any]:
 
 def shown_legend_rows(preview: dict[str, Any]) -> list[tuple[Any, ...]]:
     return [
-        (row["row"], row["description"], row["codes"], [(cell["kind"], cell["column"], cell["legend"], cell["tata"]) for cell in row["cells"]])
+        (
+            row["row"],
+            row["description"],
+            row["codes"],
+            row["problems"],
+            [(cell["kind"], cell["column"], cell["legend"], cell["tata"]) for cell in row["cells"]],
+        )
         for row in preview["rows"]
     ]
 
@@ -884,17 +896,28 @@ def legend_saved(centrum: SettlingCentrum, edit: dict[str, Any]) -> dict[str, An
     return found
 
 
-# Każdy rodzaj zmiany z formularza kodu: (zmiana, różnice przed, po, zmienione wiersze, w tym tak, jak wpisał tata).
-LEGEND_EDITS: Final[dict[str, tuple[Callable[[SettlingCentrum], dict[str, Any]], tuple[int, int, int, int]]]] = {
-    # Wiersz „spawpg listwy”: tata wpisał 70 w AS, a po zmianie legenda da 80.
-    "zmiana": (lambda centrum: {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}}, (8, 9, 1, 0)),
-    # Wiersz „listwy 11 metrów”: nowy kod daje 220 w AS, tak jak wpisał tata.
+# Każdy rodzaj zmiany z formularza kodu: (zmiana, (różnice legendy przed, po, wiersze z Błędem opisu przed, po,
+# zmienione wiersze, w tym tak, jak wpisał tata)).
+LEGEND_EDITS: Final[dict[str, tuple[Callable[[SettlingCentrum], dict[str, Any]], tuple[int, int, int, int, int, int]]]] = {
+    # Wiersz „spawpg”: tata wpisał 70 w AS, a po zmianie legenda da 80. „spawpg montaż” zostaje Błędem opisu.
+    "zmiana": (lambda centrum: {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}}, (7, 8, 5, 5, 1, 0)),
+    # Wiersz „listwy”: nowy kod daje 220 w AS, tak jak wpisał tata, więc nie jest już Błędem opisu.
     "dodanie": (
-        lambda centrum: {"kind": "add", "code": {"spellings": ["metrów"], "column": None, "value": 1, "amount": 220, "fills": []}},
-        (8, 8, 1, 1),
+        lambda centrum: {"kind": "add", "code": {"spellings": ["listwy"], "column": None, "value": 1, "amount": 220, "fills": []}},
+        (7, 7, 5, 4, 1, 1),
     ),
-    # Wiersz „inst20m”: bez kodu zostaje wpis taty 1 w Y.
-    "usuniecie": (lambda centrum: {"kind": "remove", "code_id": "inst"}, (8, 8, 1, 0)),
+    # Wiersz „Inst20m tak”: bez kodu to Błąd opisu, a zostaje wpis taty 1 w Y.
+    "usuniecie": (lambda centrum: {"kind": "remove", "code_id": "inst"}, (7, 7, 5, 6, 1, 0)),
+    # Wiersz „instutp40m”: przedział do 40 daje 1 w AJ, tak jak wpisał tata, więc nie jest już Błędem opisu.
+    "przedzial": (
+        lambda centrum: {
+            "kind": "change",
+            "code_id": "instutp",
+            "code": code_form(centrum, "instutp")
+            | {"column": {"kind": "ranges", "ranges": [{"low": 1, "high": 15, "column": "AL"}, {"low": 16, "high": 40, "column": "AJ"}]}},
+        },
+        (7, 7, 5, 4, 1, 1),
+    ),
 }
 
 
@@ -912,9 +935,10 @@ def test_podglad_legendy_kazdej_zmiany_liczy_roznice_ktore_kontrola_ilosci_da_po
 
     assert saved["change"] is not None
     assert box(centrum).wait_until(lambda fake: bool(first.comments)), "druga Kontrola ilości nie dotarła"
-    assert f"różnice legendy: {preview['differences_before']}\n" in first.body
-    assert f"różnice legendy: {preview['differences_after']}\n" in first.comments[0]
-    assert (preview["differences_before"], preview["differences_after"], preview["changed"], preview["changed_as_tata"]) == expected
+    assert f"różnice legendy: {preview['differences_before']}, wiersze z Błędem opisu: {preview['errors_before']}\n" in first.body
+    assert f"różnice legendy: {preview['differences_after']}, wiersze z Błędem opisu: {preview['errors_after']}\n" in first.comments[0]
+    counted = ("differences_before", "differences_after", "errors_before", "errors_after", "changed", "changed_as_tata")
+    assert tuple(preview[name] for name in counted) == expected
 
 
 def test_podglad_legendy_pokazuje_wiersz_z_roznica_od_taty_z_opisem_technika_kwota_i_kolorem(tmp_path: Path) -> None:
@@ -925,7 +949,7 @@ def test_podglad_legendy_pokazuje_wiersz_z_roznica_od_taty_z_opisem_technika_kwo
 
     assert preview["files"] == [{"period": PERIOD, "rows": len(LEGEND_ROWS)}]
     assert shown_legend_rows(preview) == [
-        (19, "spawpg listwy", ["spawpg"], [("value", "AS", 80, 70), ("fill", "AS", "czerwony", None)]),
+        (19, "spawpg", ["spawpg"], [], [("value", "AS", 80, 70), ("fill", "AS", "czerwony", None)]),
     ]
     assert preview["more"] == 0
 
@@ -939,7 +963,7 @@ def test_podglad_legendy_liczy_wiersze_ktore_po_zmianie_beda_tak_jak_wpisal_tata
     preview = legend_previewed(centrum, {"kind": "change", "code_id": "rt2", "code": tata_rt2})
 
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (2, 2, [])
-    assert (preview["differences_before"], preview["differences_after"]) == (8, 2)
+    assert (preview["differences_before"], preview["differences_after"]) == (7, 1)
 
 
 def test_podglad_legendy_liczy_zmiane_samych_kolorow_kodu_jako_zmieniony_wiersz(tmp_path: Path) -> None:
@@ -951,17 +975,31 @@ def test_podglad_legendy_liczy_zmiane_samych_kolorow_kodu_jako_zmieniony_wiersz(
     preview = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": spawpg})
 
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
-    assert (preview["differences_before"], preview["differences_after"]) == (8, 7)
+    assert (preview["differences_before"], preview["differences_after"]) == (7, 6)
 
 
-def test_podglad_legendy_pokazuje_wpis_taty_w_wierszu_ktory_po_usunieciu_kodu_zostaje_bez_kodu(tmp_path: Path) -> None:
+def test_podglad_legendy_pokazuje_wpis_taty_w_wierszu_ktory_po_usunieciu_kodu_ma_blad_opisu(tmp_path: Path) -> None:
     centrum = legend_centrum(tmp_path, LEGEND_ROWS)
     run_to_end(centrum, dry_run=False)
 
     preview = legend_previewed(centrum, {"kind": "remove", "code_id": "inst"})
 
     assert (preview["changed"], preview["changed_as_tata"]) == (1, 0)
-    assert shown_legend_rows(preview) == [(18, "inst20m ZNACZNIKZGODNY", [], [("value", "Y", 0, 1)])]
+    assert shown_legend_rows(preview) == [(18, "Inst20m tak", [], ["słowo inne niż zapis kodu"], [("value", "Y", 0, 1)])]
+
+
+def test_podglad_legendy_pokazuje_wiersz_ktory_po_zmianie_ma_blad_opisu_z_powodem_i_wpisem_taty(tmp_path: Path) -> None:
+    # bypas w Y obok inst20m to dwa kody w jednej kolumnie: legenda nie wpisze nic, a wpis taty zostaje.
+    centrum = centrum_with(tmp_path, [{**RULED, "K": "inst20m bypas5m", "Y": 1, "AM": 1}])
+    run_to_end(centrum, dry_run=False)
+    bypas = code_form(centrum, "bypas") | {"column": {"kind": "fixed", "column": "Y"}}
+
+    preview = legend_previewed(centrum, {"kind": "change", "code_id": "bypas", "code": bypas})
+
+    assert (preview["errors_before"], preview["errors_after"], preview["changed"], preview["changed_as_tata"]) == (0, 1, 1, 0)
+    assert shown_legend_rows(preview) == [
+        (18, "inst20m bypas5m", [], ["kolumna Ilości usług trafiona drugi raz (Y: inst, bypas)"], [("value", "Y", 0, 1), ("value", "AM", 0, 1)])
+    ]
 
 
 def test_podglad_legendy_odmawia_tym_samym_zdaniem_przy_polu_co_zapis_bez_zapisu(tmp_path: Path) -> None:
@@ -998,22 +1036,21 @@ def test_podglad_legendy_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_na
 
 
 def test_podglad_legendy_ma_opis_technika_po_strazniku_bez_adresu_numerow_zlecenia_ani_daty_dziennej(tmp_path: Path) -> None:
-    address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
-    described = {**RULED, "K": f"rt2 klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5"}
-    centrum = centrum_with(tmp_path, [{**MARKED, "K": "rt2 ZNACZNIK-OPIS"}, {**RULED, "B": address, "I": orange}, described])
+    # Wiersz, który podgląd pokazuje, ma opis z samych kodów przed albo po zmianie, więc adres stanie w nim tylko wtedy,
+    # gdy tata doda kod o zapisie równym wartości ADRES. Opis z adresem i telefonem bez takiego kodu się nie zmienia.
+    address, orange = "Malachitowa", "4807654321"
+    described = {**RULED, "K": f"rt2 klient {orange} tel. 600-123-456 ul. Kwiatowa 5"}
+    rows = [{**MARKED, "K": f"rt2 {address}"}, {**RULED, "B": address, "I": orange}, described]
+    centrum = centrum_with(tmp_path, rows)
     run_to_end(centrum, dry_run=False)
+    added = {"spellings": [address.casefold()], "column": None, "value": 1, "amount": 10, "fills": []}
 
-    response = centrum.client.post(
-        f"{LEGEND_URL}/preview", json={"kind": "change", "code_id": "rt2", "code": code_form(centrum, "rt2") | {"amount": 10}}
-    )
+    response = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "add", "code": added})
 
     assert response.status_code == 200, response.text
     leaked = (address, orange, "600-123-456", "Kwiatowa", *FORBIDDEN, "2026-09-08", "08.09", "10:15")
     assert [marker for marker in leaked if marker in response.text] == []
-    assert [row["description"] for row in response.json()["rows"]] == [
-        "rt2 ZNACZNIK-OPIS",
-        "rt2 klient [adres] umowa [numer Orange] tel. [telefon] [ulica]",
-    ]
+    assert [row["description"] for row in response.json()["rows"]] == ["rt2 [adres]"]
 
 
 SUGGESTIONS_URL = "/api/settings/devices/suggestions"

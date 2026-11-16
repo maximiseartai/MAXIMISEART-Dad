@@ -123,6 +123,7 @@ injected instead of load, so a check that depends on time fails on every run (#1
 | animations of every page of `dad_context` (CDP `Animation.setPlaybackRate`) | `SLOW_ANIMATIONS` 0.2 | `drive/common.py` | a check of a state visible for a moment (#1534) |
 | each write (`fetch` other than GET) of the tab leaves it late | `LATE_WRITE_MS` 1500 | `drive/waiting.py`, put into the tab by `dad_context` of `drive/common.py` | a read right after a click, before its request arrives (#1570) |
 | each request of `/api/` waits before Centrum takes it | `API_DELAY_S` 0.3 | `serve_centrum.py` | a fixed sleep or limit shorter than the server's answer |
+| each installation of libraries waits before pip starts | `INSTALL_DELAY_S` 25 | `serve_centrum.py` | a wait for a real pip run with a budget of work the harness paces (run 43807617660) |
 
 Every delay stays inside the drive's budgets (`drive/waiting.py`): a wait or an assertion on a condition passes, a single read or a fixed sleep does not.
 The drive waits for a condition through `until` of `drive/waiting.py` and also through Playwright's `page.wait_for_function`, which polls a condition inside the page for the page's default limit (`Budget.SCREEN` for the drive's page, what `dad_tab` or `wydajnosc` set for theirs, Playwright's own 30 s for a tab opened without `set_default_timeout`); it waits for the screen through its `expect` and lets the page run through `quiet_for`.
