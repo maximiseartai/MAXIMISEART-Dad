@@ -588,8 +588,8 @@ def columns_from_description(collective_filename: str, columns: Sequence[str], *
         f"{plural(closed, 'wierszu', 'wierszach', 'wierszach')} z samych Kodów czynności. {left}"
         if closed
         else (
-            "Żaden opis technika (CZYNNOŚCI ZREALIZOWANE) nie jest z samych Kodów czynności, więc ilości z opisu "
-            f"narzędzie zostawia do uzupełnienia. {left}"
+            "Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia: "
+            f"żaden opis nie jest z samych Kodów czynności. {left}"
         )
     )
     return Message(

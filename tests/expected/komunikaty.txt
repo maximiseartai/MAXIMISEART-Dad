@@ -234,7 +234,7 @@ codes_out_of_range #2 [KODY_SPOZA_PRZEDZIALOW]
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Jeśli taka liczba będzie wracać, powiedz o niej osobie utrzymującej narzędzie.
 
 columns_from_description #1 [KOLUMNY_Z_OPISU]
-  Co się stało: Żaden opis technika (CZYNNOŚCI ZREALIZOWANE) nie jest z samych Kodów czynności, więc ilości z opisu narzędzie zostawia do uzupełnienia. Do uzupełnienia: 12 wierszy.
+  Co się stało: Ilości, które wynikają z opisu technika (CZYNNOŚCI ZREALIZOWANE), narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 12 wierszy.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
   Co zrobić: Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już wpisała.
 

@@ -37,7 +37,8 @@ def _order(number: int, devices: str | None, *, started: datetime | None = None,
 
 
 def _described(number: int, devices: str, completed: str, *, started: datetime | None = None) -> RegisterRow:
-    return _order(number, devices, started=started) | {"CZYNNOŚCI ZREALIZOWANE": completed}
+    started = started or TUESDAY + timedelta(hours=number)
+    return register_order(number, started) | {"URZĄDZENIA": devices, "CZYNNOŚCI ZREALIZOWANE": completed}
 
 
 def _legend_period() -> list[RegisterRow]:
