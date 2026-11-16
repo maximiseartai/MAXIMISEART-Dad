@@ -166,7 +166,8 @@ def _fills(row: DataRow) -> Mapping[str, FillColour]:
 
 def _colour(fill: Fill | None) -> FillColour | None:
     """Kolor legendy wypełnienia komórki: jednolite wypełnienie koloru Legendy czynności (po RGB albo indeksie palety);
-    każde inne wypełnienie i brak wypełnienia to ``None``.
+    każde inne wypełnienie i brak wypełnienia to ``None``. To jedyny odczyt koloru komórki taty pod kątem legendy:
+    Kontrola ilości i brama Legendy czynności biorą go z ``OrderFacts.fills``.
 
     To lustro zapisu: w kolumnach za danymi wejściowymi Przygotowanie zostawia wygląd komórki Wzorca i kładzie na nim
     tylko wypełnienie legendy (``highlights.solid_fill``). Wypełnienie spoza palety legendy, np. białe tło motywu, które

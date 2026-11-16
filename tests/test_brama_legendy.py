@@ -18,15 +18,21 @@ import sys
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
 
+from rozliczenia import quantity_check
+from rozliczenia.activity_legend import ActivityLegend, CellFill, FillColour
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum.logged_input_copy import LoggedInputFile
-from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.input_copy import InputCopy
+from rozliczenia.run_context import RunContext
 from rozliczenia.workbook_files import read_computed_rows
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
 from atrapy.preparation import PreparationFixture, make_preparation_fixture, register_order
 from tests.fixtures.operacje import run_preparation
+from atrapy.settlement import worker_list, write_template
 from atrapy.workbooks import active_worksheet
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -47,7 +53,7 @@ ORDERS = [
 taty."""
 
 
-def _filled_by_dad(tmp_path: Path) -> PreparationFixture:
+def _filled_by_dad(tmp_path: Path, legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND) -> PreparationFixture:
     start = datetime(2026, 9, 8, 8, 0)
     rows: list[dict[str, object] | None] = [
         register_order(number, start + timedelta(minutes=number))
@@ -61,7 +67,7 @@ def _filled_by_dad(tmp_path: Path) -> PreparationFixture:
         internal_template_path=templates / INTERNAL_TEMPLATE,
         collective_template_path=templates / COLLECTIVE_TEMPLATE,
     )
-    run_preparation(fixture)
+    run_preparation(fixture, legend=legend)
     workbook = load_workbook(fixture.collective_file_path)
     try:
         sheet = active_worksheet(workbook)
@@ -108,36 +114,74 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
     lines = _gate(collective, logs, "--opisy", described)
 
     disk = lines.index(f"== {collective.name} | porównane: Y AB AC AD AJ AK AL AM, AS, kolory AF AM AS")
-    assert lines[disk + 1 : disk + 10] == [
-        "wiersze danych: 9 | z kodem: 6 | z samych kodów: 4 | kod obok opisu: 2 | DATA nie jest datą: 0",
-        "zgodne z tatą wiersze z kodem: 3/6 (50.0%) | z samych kodów: 2/4 (50.0%) | kod obok opisu: 1/2 (50.0%)",
-        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1",
-        "-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): 3 klas",
+    assert lines[disk + 1 : disk + 11] == [
+        "wiersze danych: 9 | z kodem: 7 | z samych kodów: 4 | kod obok opisu: 3 | DATA nie jest datą: 0",
+        "zgodne z tatą wiersze z kodem: 3/7 (42.9%) | z samych kodów: 2/4 (50.0%) | kod obok opisu: 1/3 (33.3%)",
+        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instutp=1 instmdik=1",
+        "-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): 4 klas",
         "1 | kod obok opisu | dzielnik1/2 | Y: legenda 0, tata 1",
+        "1 | kod obok opisu | instutp | AJ: legenda 0, tata 1",
         "1 | z samych kodów | instmdik, dzielnik1/2 | AS: legenda 50, tata 100",
         "1 | z samych kodów | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0;"
         " kolor AF: legenda zielony, tata brak; kolor AM: legenda czerwony, tata brak",
         "-- kody spoza przedziałów (kod liczba → wiersze): instutp 40→1",
-        "-- wiersze bez kodu z wpisem taty: 2 | Y=1 AJ=1 AS=1",
+        "-- wiersze bez kodu z wpisem taty: 1 | Y=1 AS=1",
     ]
     copied = lines.index(f"== {collective.name} (Logi {logs.name}) | porównane: Y AB AC AD AJ AK AL AM (Logi: bez AS i kolorów)")
-    assert lines[copied + 2 : copied + 10] == [
-        "zgodne z tatą wiersze z kodem: 4/6 (66.7%) | z samych kodów: 3/4 (75.0%) | kod obok opisu: 1/2 (50.0%)",
-        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1",
-        "-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): 2 klas",
+    assert lines[copied + 2 : copied + 11] == [
+        "zgodne z tatą wiersze z kodem: 4/7 (57.1%) | z samych kodów: 3/4 (75.0%) | kod obok opisu: 1/3 (33.3%)",
+        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instutp=1 instmdik=1",
+        "-- różnice (wiersze | wiersz | kody | kolumna: legenda, tata): 3 klas",
         "1 | kod obok opisu | dzielnik1/2 | Y: legenda 0, tata 1",
+        "1 | kod obok opisu | instutp | AJ: legenda 0, tata 1",
         "1 | z samych kodów | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0",
         "-- kody spoza przedziałów (kod liczba → wiersze): instutp 40→1",
-        "-- wiersze bez kodu z wpisem taty: 2 | Y=1 AJ=1",
+        "-- wiersze bez kodu z wpisem taty: 1 | Y=1",
         "== razem: 2 plików",
     ]
-    assert lines[lines.index("== razem: 2 plików") + 2] == "zgodne z tatą wiersze z kodem: 7/12 (58.3%) | z samych kodów: 5/8 (62.5%) | kod obok opisu: 2/4 (50.0%)"
+    assert lines[lines.index("== razem: 2 plików") + 2] == "zgodne z tatą wiersze z kodem: 7/14 (50.0%) | z samych kodów: 5/8 (62.5%) | kod obok opisu: 2/6 (33.3%)"
     assert "SYN" not in "\n".join(lines)
     assert "patchcord" not in "\n".join(lines)
     notes = described.read_text(encoding="utf-8")
     assert f"{collective.name} | wiersz 22 | różnica | kod obok opisu | dzielnik1/2 | Y: legenda 0, tata 1 | 20 m patchcord dzielnik 1/2" in notes
     assert f"{collective.name} | wiersz 24 | bez kodu z wpisem taty | Y=1 AS=30 | kabel SYN-OPIS 15 m" in notes
+    assert f"{collective.name} | wiersz 23 | różnica | kod obok opisu | instutp | AJ: legenda 0, tata 1 | instutp40m" in notes
     assert f"{collective.name} | wiersz 23 | spoza przedziałów | instutp 40 | instutp40m" in notes
+
+
+def test_brama_i_kontrola_ilosci_licza_te_same_zgodne_wiersze_z_kodem_na_tle_wzorca_taty(tmp_path: Path) -> None:
+    # Wzorzec pliku zbiorczego taty ma w X każdego Wiersza danych tło motywu, którego żaden kod nie wpisze. ``spawpg``
+    # koloruje tu też X, więc w pozostałych wierszach z kodem X ma tylko to tło, a tata zdjął zielony X w wierszu ``spawpg``.
+    legend = ActivityLegend(
+        tuple(
+            replace(code, fills=(*code.fills, CellFill("X", FillColour.GREEN))) if code.id == "spawpg" else code
+            for code in DEFAULT_ACTIVITY_LEGEND.codes
+        )
+    )
+    fixture = _filled_by_dad(tmp_path, legend)
+    collective = fixture.collective_file_path
+    workbook = load_workbook(collective)
+    try:
+        sheet = active_worksheet(workbook)
+        background = (sheet["X18"].fill.patternType, sheet["X18"].fill.fgColor.type)
+        sheet["X19"].fill = PatternFill()
+        workbook.save(collective)
+    finally:
+        workbook.close()
+    (tmp_path / LEGEND_FILE).write_bytes(LEGEND.dump(legend.codes))
+    worker_template = tmp_path / "wzorzec-pracownika.xlsx"
+    write_template(worker_template)
+
+    lines = _gate(collective, "--legenda", tmp_path / LEGEND_FILE)
+    settlement = run_settlements(SettlementInputs(collective, worker_list(), worker_template, activity_legend=legend), RunContext())
+    checked = quantity_check.check(settlement.orders, settlement.quantity_rules, settlement.activity_legend)
+
+    assert background == ("solid", "theme"), "warunek: wiersz bez koloru legendy w X ma tło Wzorca taty"
+    assert isinstance(checked, quantity_check.QuantityCheck)
+    assert (checked.coded_matching, checked.coded) == (2, 7)
+    assert lines[3].startswith(f"zgodne z tatą wiersze z kodem: {checked.coded_matching}/{checked.coded} ")
+    assert quantity_check.FillDifference("X", FillColour.GREEN, None) in checked.legend_differences["spawpg",].rows
+    assert "1 | z samych kodów | spawpg | kolor X: legenda zielony, tata brak" in lines
 
 
 def test_brama_liczy_legenda_z_ustawien_a_opisow_nie_zapisuje_w_repozytorium(tmp_path: Path) -> None:

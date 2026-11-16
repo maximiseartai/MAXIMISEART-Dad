@@ -15,8 +15,9 @@ różnice tylko w kolumnach reguł dla składnika spoza listy (``QuantityRules.w
 oraz wartości taty w pozostałych kolumnach N:AP (decyzja 10). Puste i 0 to to samo
 (decyzja 11). Grupy różnic pokazują dzień tygodnia i pełną godzinę, bo od godziny zależy dodatek za usterkę.
 
-Legenda czynności (ADR 0038) liczy się rachunkiem jednego wiersza ``legend_row_check``, tym samym w Kontroli i w
-podglądzie zmiany legendy. W wierszu z Kodem czynności (także tylko spoza przedziałów) porównuje z tatą:
+Legenda czynności (ADR 0038) liczy się rachunkiem jednego wiersza ``legend_row_check``, tym samym w Kontroli, w
+podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.py``). W wierszu z Kodem czynności (także
+tylko spoza przedziałów) porównuje z tatą:
 
 - kolumny, w które może wpisać którykolwiek kod legendy, z wartością Reguł ilości i legendy razem, tak jak wpisuje
   je Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy legenda wpisała w nią coś w tym wierszu, i wtedy
@@ -210,7 +211,7 @@ class LegendRowCheck:
 
 def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRules) -> LegendRowCheck:
     """Rachunek Legendy czynności ``legend`` w Kontroli ilości na jednym Wierszu danych, z Regułami ilości ``rules``; ten
-    sam liczy ``check`` i podgląd zmiany legendy w Ustawieniach (zob. opis modułu)."""
+    sam liczy ``check``, podgląd zmiany legendy w Ustawieniach i brama Legendy czynności (zob. opis modułu)."""
 
     ruled = row_check(row, rules)
     codes = legend.read(row.completed)
@@ -224,16 +225,16 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
     ruled_quantities = {} if ruled.result is None else ruled.result.quantities
     compared: list[LegendDifference] = [
         ValueDifference(column, ruled_quantities.get(column, 0) + codes.quantities.get(column, 0), row.quantity(column))
-        for column in _legend_columns(legend)
+        for column in legend_columns(legend)
         if column in codes.quantities or column not in ruled.compared
     ]
     compared.append(ValueDifference(AMOUNT_COLUMN, codes.amount, row.amount))
-    compared.extend(FillDifference(column, codes.fills.get(column), row.fills.get(column)) for column in _legend_fill_columns(legend))
+    compared.extend(FillDifference(column, codes.fills.get(column), row.fills.get(column)) for column in legend_fill_columns(legend))
     differences = tuple(difference for difference in compared if difference.legend != difference.tata)
     return LegendRowCheck(codes, ruled, differences, (), row.completed if differences else None)
 
 
-def _legend_columns(legend: ActivityLegend) -> tuple[str, ...]:
+def legend_columns(legend: ActivityLegend) -> tuple[str, ...]:
     """Kolumny N:AP, w które może wpisać którykolwiek kod legendy, w kolejności N:AP."""
 
     columns: set[str] = set()
@@ -248,7 +249,7 @@ def _legend_columns(legend: ActivityLegend) -> tuple[str, ...]:
     return tuple(column for column in QUANTITY_LETTERS if column in columns)
 
 
-def _legend_fill_columns(legend: ActivityLegend) -> tuple[str, ...]:
+def legend_fill_columns(legend: ActivityLegend) -> tuple[str, ...]:
     """Kolumny, które może wypełnić którykolwiek kod legendy, w kolejności arkusza."""
 
     columns = {fill.column for code in legend.codes for fill in code.fills}

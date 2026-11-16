@@ -5,14 +5,13 @@ Wydania) na Plikach zbiorczych wypełnionych przez tatę: ``.xlsx`` z dysku (war
 plik Logów Wyceny w efenix z dysku taty lub z Archiwum Logów okresu (``.json``, ``.json.gz``), z którego czyta tylko
 Kopię wejścia Pliku zbiorczego: ``N:AP`` i ``CZYNNOŚCI ZREALIZOWANE``, bo kolorów Logi nie mają. Pliki są tylko czytane.
 
-Rachunek wiersza jest rachunkiem Przygotowania pliku zbiorczego: ``read_codes`` z ``CZYNNOŚCI ZREALIZOWANE``, a w
-kolumnie Ilości usług wartość legendy dodana do wartości Reguł ilości z Wydania (``quantity_engine.evaluate``), jak w
-``preparation_files``. Wiersz z kodem to wiersz, w którym legenda znalazła kod, który coś wyznacza. W nim brama
-porównuje z tatą kolumny legendy (każda kolumna Ilości usług jej kodów), a z dysku także kwotę w ``AS`` i kolory
-kolumn, które legenda wypełnia (jest albo nie ma, zielony, czerwony albo inny kolor taty). Wiersz bez kodu z wpisem
-taty to wiersz, w którym tata wpisał w kolumnie legendy albo z opisu technika (``DESCRIPTION_COLUMNS``) coś innego niż
-Reguły ilości, albo kwotę w ``AS``. Wiersz, którego ``DATA`` nie jest datą, ma tylko liczbę, bo bez pory nie ma wyniku
-Reguł ilości.
+Wiersz czyta filtr prywatności wierszy (``order_facts.collective_orders``), a liczy go rachunek Kontroli ilości
+(``quantity_check.legend_row_check``) z Regułami ilości z Wydania, więc brama i Kontrola mówią to samo o każdej komórce
+tego samego pliku. Wiersz z kodem to wiersz z Kodem czynności, także tylko spoza przedziałów. W nim brama porównuje z
+tatą kolumny legendy (wartość Reguł ilości i legendy razem, jak wpisuje je Przygotowanie), a z dysku także kwotę w
+``AS`` i kolory kolumn, które legenda wypełnia (zielony, czerwony albo brak; inne wypełnienie, np. tło Wzorca, to brak).
+Wiersz bez kodu z wpisem taty to wiersz z wartością taty w kolumnie z opisu technika, której nie porównują Reguły
+ilości, albo z kwotą w ``AS``. Wiersz, którego ``DATA`` nie jest datą, liczy się bez Reguł ilości, jak w Kontroli.
 
 Na stdout trafiają same liczby, identyfikatory kodów legendy, liczby z kodów spoza przedziałów i litery kolumn: bez
 opisów technika, adresów i numerów, więc wynik można wkleić do PR. ``--opisy PLIK`` zapisuje lokalnie każdy wiersz z
@@ -34,31 +33,29 @@ import gzip
 import json
 from pathlib import Path
 import sys
-from typing import Final, Literal
+from typing import Final
 
 from pydantic import TypeAdapter, ValidationError
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from rozliczenia.activity_legend import (
-    AMOUNT_COLUMN,
-    FILL_COLUMNS,
-    ActivityLegend,
-    CodesRead,
-    ColumnByNumber,
-    FillColour,
-    FixedColumn,
-    LegendProblem,
-    read_codes,
-)
+from rozliczenia.activity_legend import AMOUNT_COLUMN, ActivityLegend, FillColour, LegendProblem
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND, parse_activity_legend
 from rozliczenia.centrum.logged_input_copy import LoggedCell, LoggedInputFile, LoggedTyped
 from rozliczenia.collective_layout import DATA_ROW_COLUMNS, INPUT_COLUMNS, QUANTITY_LETTERS, letter
 from rozliczenia.dad_files import DadFiles
-from rozliczenia.highlights import PLAIN, Highlights
-from rozliczenia.order_facts import MissingHeaders, OrderFacts, TataValue, collective_orders, tata_value
-from rozliczenia.quantity_engine import DESCRIPTION_COLUMNS, Quantities, QuantityRules, evaluate
+from rozliczenia.highlights import PLAIN
+from rozliczenia.order_facts import MissingHeaders, OrderFacts, TataValue, collective_orders
+from rozliczenia.quantity_check import (
+    FillDifference,
+    LegendDifference,
+    LegendRowCheck,
+    legend_columns,
+    legend_fill_columns,
+    legend_row_check,
+)
+from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.register_columns import COMPLETED
 from rozliczenia.row_look import GENERAL
@@ -66,10 +63,7 @@ from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import DataCell, DataRow, header_columns, read_data_rows
 
 ROOT: Final = Path(__file__).resolve().parents[1]
-OTHER: Final = "inny"
 NONE: Final = "brak"
-Colour = FillColour | Literal["inny"]
-"""Kolor wypełnienia komórki taty: zielony i czerwony legendy albo inny."""
 Difference = tuple[str, str, str]
 """Kolumna (``kolor AF`` dla koloru), wartość legendy, wartość taty."""
 _LOGS: Final = TypeAdapter(list[LoggedInputFile])
@@ -77,22 +71,11 @@ _EFENIX: Final = "efenix"
 
 
 @dataclass(frozen=True)
-class Look:
-    """Kwota w ``AS`` i kolory wypełnienia komórek taty: tylko z Pliku zbiorczego na dysku."""
-
-    amount: TataValue
-    fills: Mapping[str, Colour]
-
-
-@dataclass(frozen=True)
 class DadRow:
-    """Wiersz danych Pliku zbiorczego taty, jak go czyta brama."""
+    """Wiersz danych Pliku zbiorczego taty po filtrze prywatności wierszy, z numerem wiersza arkusza."""
 
     number: int
     order: OrderFacts
-    completed: str
-    look: Look | None
-    """``None``: Logi, które nie niosą kolorów."""
 
 
 @dataclass(frozen=True)
@@ -105,24 +88,26 @@ class Source:
 
 @dataclass(frozen=True)
 class Checked:
-    """Wiersz po rachunku bramy: wynik legendy, różnice z tatą (wiersz z kodem) i wpisy taty (wiersz bez kodu)."""
+    """Wiersz po rachunku Kontroli ilości: różnice legendy z tatą (wiersz z kodem) i wpis taty (wiersz bez kodu), z
+    Logów bez ``AS`` i kolorów."""
 
     row: DadRow
-    codes: CodesRead
+    check: LegendRowCheck
     differences: tuple[Difference, ...]
     entries: Mapping[str, TataValue]
 
     @property
     def coded(self) -> bool:
-        return bool(self.codes.found)
+        return self.check.coded
 
     @property
     def code_ids(self) -> tuple[str, ...]:
-        return tuple(dict.fromkeys(found.code for found in self.codes.found))
+        codes = self.check.codes
+        return tuple(dict.fromkeys(found.code for found in (*codes.found, *codes.out_of_range)))
 
     @property
     def kind(self) -> str:
-        return "z samych kodów" if self.codes.only_codes else "kod obok opisu"
+        return "z samych kodów" if self.check.codes.only_codes else "kod obok opisu"
 
 
 class Gate:
@@ -131,48 +116,16 @@ class Gate:
     def __init__(self, legend: ActivityLegend, rules: QuantityRules) -> None:
         self.legend = legend
         self.rules = rules
-        used = {column for code in legend.codes for column in _columns(code.column)}
-        filled = {fill.column for code in legend.codes for fill in code.fills}
-        self.columns = tuple(column for column in QUANTITY_LETTERS if column in used)
-        self.fill_columns = tuple(column for column in FILL_COLUMNS if column in filled)
-        self.entry_columns = tuple(column for column in QUANTITY_LETTERS if column in used or column in DESCRIPTION_COLUMNS)
+        self.columns = legend_columns(legend)
+        self.fill_columns = legend_fill_columns(legend)
 
-    def check(self, row: DadRow) -> Checked | None:
-        """Wiersz po rachunku; ``None``: ``DATA`` nie jest datą."""
+    def check(self, row: DadRow, *, looked: bool) -> Checked:
+        """Wiersz po rachunku; ``looked=False`` (Logi) pomija ``AS`` i kolory, których Logi nie mają."""
 
-        content = row.order.content
-        if content is None:
-            return None
-        ruled = evaluate(self.rules, content).quantities
-        codes = read_codes(self.legend, row.completed)
-        if codes.found:
-            return Checked(row, codes, self._differences(row, ruled, codes), {})
-        return Checked(row, codes, (), self._entries(row, ruled))
-
-    def _differences(self, row: DadRow, ruled: Quantities, codes: CodesRead) -> tuple[Difference, ...]:
-        found: list[Difference] = []
-        for column in self.columns:
-            expected, tata = ruled.get(column, 0) + codes.quantities.get(column, 0), row.order.quantity(column)
-            if expected != tata:
-                found.append((column, str(expected), str(tata)))
-        if row.look is not None:
-            if codes.amount != row.look.amount:
-                found.append((AMOUNT_COLUMN, str(codes.amount), str(row.look.amount)))
-            for column in self.fill_columns:
-                expected_colour, tata_colour = codes.fills.get(column), row.look.fills.get(column)
-                if expected_colour != tata_colour:
-                    found.append((f"kolor {column}", _colour(expected_colour), _colour(tata_colour)))
-        return tuple(found)
-
-    def _entries(self, row: DadRow, ruled: Quantities) -> dict[str, TataValue]:
-        entries = {
-            column: row.order.quantity(column)
-            for column in self.entry_columns
-            if row.order.quantity(column) != ruled.get(column, 0)
-        }
-        if row.look is not None and row.look.amount != 0:
-            entries[AMOUNT_COLUMN] = row.look.amount
-        return entries
+        checked = legend_row_check(row.order, self.legend, self.rules)
+        differences = tuple(_shown(found) for found in checked.differences if looked or _in_logs(found))
+        entries = {column: value for column, value in checked.entry if looked or column != AMOUNT_COLUMN}
+        return Checked(row, checked, differences, entries)
 
     def compared(self, looked: bool) -> str:
         columns = " ".join(self.columns)
@@ -181,17 +134,17 @@ class Gate:
         return f"{columns}, {AMOUNT_COLUMN}, kolory {' '.join(self.fill_columns) or NONE}"
 
 
-def _columns(choice: FixedColumn | ColumnByNumber | None) -> tuple[str, ...]:
-    match choice:
-        case None:
-            return ()
-        case FixedColumn(column=column):
-            return (column,)
-        case ColumnByNumber(ranges=ranges):
-            return tuple(found.column for found in ranges)
+def _in_logs(difference: LegendDifference) -> bool:
+    return not isinstance(difference, FillDifference) and difference.column != AMOUNT_COLUMN
 
 
-def _colour(colour: Colour | None) -> str:
+def _shown(difference: LegendDifference) -> Difference:
+    if isinstance(difference, FillDifference):
+        return (f"kolor {difference.column}", _colour(difference.legend), _colour(difference.tata))
+    return (difference.column, str(difference.legend), str(difference.tata))
+
+
+def _colour(colour: FillColour | None) -> str:
     return NONE if colour is None else str(colour)
 
 
@@ -199,7 +152,7 @@ def disk_rows(path: Path) -> Source:
     """Wiersze danych Pliku zbiorczego z dysku z kwotą w ``AS`` i kolorami."""
 
     read = read_data_rows(path, DadFiles(), despite_excel_lock=True)
-    return Source(path.name, _rows(path.name, read.header, read.rows, looked=True), looked=True)
+    return Source(path.name, _rows(path.name, read.header, read.rows), looked=True)
 
 
 def logs_rows(path: Path) -> Source:
@@ -223,7 +176,7 @@ def logs_rows(path: Path) -> Source:
         for row in sheet.rows
     ]
     label = f"{copied.name} (Logi {path.name})"
-    return Source(label, _rows(label, header, rows, looked=False), looked=False)
+    return Source(label, _rows(label, header, rows), looked=False)
 
 
 def _value(cell: LoggedCell | None) -> bool | int | float | str | datetime | time | timedelta | None:
@@ -240,38 +193,13 @@ def _value(cell: LoggedCell | None) -> bool | int | float | str | datetime | tim
             return cell.text
 
 
-def _rows(label: str, header: Mapping[str, int], rows: Sequence[DataRow], *, looked: bool) -> tuple[DadRow, ...]:
+def _rows(label: str, header: Mapping[str, int], rows: Sequence[DataRow]) -> tuple[DadRow, ...]:
+    if normalize_text(COMPLETED.target_header) not in header:
+        raise SystemExit(f"{label}: w wierszu nagłówka nie ma {COMPLETED.target_header}")
     orders = collective_orders(header, rows)
     if isinstance(orders, MissingHeaders):
         raise SystemExit(f"{label}: w wierszu nagłówka nie ma {', '.join(orders.headers)}")
-    completed_column = header.get(normalize_text(COMPLETED.target_header))
-    if completed_column is None:
-        raise SystemExit(f"{label}: w wierszu nagłówka nie ma {COMPLETED.target_header}")
-    completed = letter(completed_column)
-    return tuple(
-        DadRow(row.number, order, _text(row.value(completed)), _look(row) if looked else None)
-        for row, order in zip(rows, orders, strict=True)
-    )
-
-
-def _text(value: object) -> str:
-    return "" if value is None else str(value)
-
-
-def _look(row: DataRow) -> Look:
-    cells = {letter(number): cell for number, cell in enumerate(row.cells, start=1)}
-    fills = {column: colour for column in FILL_COLUMNS if (colour := _fill(cells[column].highlights)) is not None}
-    return Look(tata_value(cells[AMOUNT_COLUMN].value), fills)
-
-
-def _fill(highlights: Highlights) -> Colour | None:
-    fill = highlights.fill
-    if fill is None:
-        return None
-    rgb = getattr(getattr(fill, "fgColor", None), "rgb", None)
-    if getattr(fill, "patternType", None) == "solid":
-        return next((colour for colour in FillColour if colour.argb == rgb), OTHER)
-    return OTHER
+    return tuple(DadRow(row.number, order) for row, order in zip(rows, orders, strict=True))
 
 
 @dataclass(frozen=True)
@@ -284,14 +212,13 @@ class Tally:
 
     @classmethod
     def of(cls, gate: Gate, sources: Iterable[Source]) -> Tally:
-        rows = [row for source in sources for row in source.rows]
-        results = [gate.check(row) for row in rows]
-        return cls(len(rows), sum(result is None for result in results), tuple(result for result in results if result is not None))
+        checked = tuple(gate.check(row, looked=source.looked) for source in sources for row in source.rows)
+        return cls(len(checked), sum(row.row.order.content is None for row in checked), checked)
 
     def report(self) -> list[str]:
         coded = [row for row in self.checked if row.coded]
-        only = [row for row in coded if row.codes.only_codes]
-        beside = [row for row in coded if not row.codes.only_codes]
+        only = [row for row in coded if row.check.codes.only_codes]
+        beside = [row for row in coded if not row.check.codes.only_codes]
         lines = [
             f"wiersze danych: {self.rows} | z kodem: {len(coded)} | z samych kodów: {len(only)}"
             f" | kod obok opisu: {len(beside)} | DATA nie jest datą: {self.undated}",
@@ -304,7 +231,7 @@ class Tally:
         for (kind, code_ids, differences), count in sorted(classes.items(), key=lambda item: (-item[1], item[0])):
             shown = "; ".join(f"{column}: legenda {legend}, tata {tata}" for column, legend, tata in differences)
             lines.append(f"{count} | {kind} | {', '.join(code_ids)} | {shown}")
-        outside = Counter((found.code, found.number) for row in self.checked for found in row.codes.out_of_range)
+        outside = Counter((found.code, found.number) for row in self.checked for found in row.check.codes.out_of_range)
         lines.append(
             "-- kody spoza przedziałów (kod liczba → wiersze): "
             + (" ".join(f"{code} {number}→{count}" for (code, number), count in sorted(outside.items(), key=str)) or NONE)
@@ -329,8 +256,8 @@ def descriptions(gate: Gate, sources: Sequence[Source]) -> list[str]:
 
     lines: list[str] = []
     for source in sources:
-        for row in filter(None, map(gate.check, source.rows)):
-            text = " ".join(row.row.completed.split())
+        for row in (gate.check(dad_row, looked=source.looked) for dad_row in source.rows):
+            text = " ".join(row.row.order.completed.split())
             where = f"{source.label} | wiersz {row.row.number}"
             if row.differences:
                 shown = "; ".join(f"{column}: legenda {legend}, tata {tata}" for column, legend, tata in row.differences)
@@ -338,8 +265,8 @@ def descriptions(gate: Gate, sources: Sequence[Source]) -> list[str]:
             if row.entries:
                 shown = " ".join(f"{column}={value}" for column, value in row.entries.items())
                 lines.append(f"{where} | bez kodu z wpisem taty | {shown} | {text}")
-            if row.codes.out_of_range:
-                shown = ", ".join(f"{found.code} {found.number}" for found in row.codes.out_of_range)
+            if row.check.codes.out_of_range:
+                shown = ", ".join(f"{found.code} {found.number}" for found in row.check.codes.out_of_range)
                 lines.append(f"{where} | spoza przedziałów | {shown} | {text}")
     return lines
 
