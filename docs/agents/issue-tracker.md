@@ -146,10 +146,18 @@ create none.
   the description columns (Y, AB, AD, AJ, AK, AL, AM; AK and AM only where the
   rule gives zero) and in the other N:AP columns. Blank and 0 are the same;
   `nieliczbowa` is a cell that is not a whole number (a word, a formula, 1.5).
-  It ends with the tool commit and the Uruchomienie id.
-- It never has an address, order or contract number, Wykonawca, the daily date
-  or `CZYNNOŚCI ZREALIZOWANE`. The exact URZĄDZENIA, CZYNNOŚCI and UMOWA texts
-  are Dad's data: the same rules as for a Zgłoszenie apply. Review it in a
+  For the Legenda czynności of the same Uruchomienie (ADR 0038) it groups, by
+  the codes of the row, the cells of rows with a Kod czynności where Dad's
+  value, `AS` amount or fill colour differs from the legend (legend columns
+  summed with the Reguły ilości), with the `CZYNNOŚCI ZREALIZOWANE` of those
+  rows; it lists rows without a code where Dad wrote in a description column
+  or `AS`, with their `CZYNNOŚCI ZREALIZOWANE`, and codes whose number is
+  outside every range. It ends with the tool commit and the Uruchomienie id.
+- It never has an address, order or contract number, Wykonawca or the daily
+  date, and `CZYNNOŚCI ZREALIZOWANE` only in the rows above, masked by the
+  data rule (ADR 0025). The exact URZĄDZENIA, CZYNNOŚCI, UMOWA and
+  `CZYNNOŚCI ZREALIZOWANE` texts are Dad's data: the same rules as for a
+  Zgłoszenie apply. Review it in a
   session with an agent; a rule change needs Dad's confirmation, and the public
   PR refers to the issue by number only with a synthetic test case.
 - A body over GitHub's 65 536 characters arrives as an issue with part 1 and

@@ -503,7 +503,7 @@ def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_prz
 def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy(tmp_path: Path) -> None:
     # Reguły ilości z Wydania dają przy samym technicolor 1 w AK, a instwewrg6 z liczbą 1–10 też 1 w AK: Przygotowanie
     # wpisuje 2, więc 2 taty jest zgodne, a 1 to różnica legendy, nie różnica Reguł ilości.
-    technicolor = {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1, "K": "instwewrg65m"}
+    technicolor: dict[str, CellValue] = {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1, "K": "instwewrg65m"}
     centrum = centrum_with(tmp_path, [{**technicolor, "AK": 2}, {**technicolor, "AK": 1}])
 
     run_to_end(centrum, dry_run=False)

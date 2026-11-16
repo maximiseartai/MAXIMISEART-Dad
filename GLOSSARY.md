@@ -945,11 +945,13 @@ _Avoid_: Wydanie, release Logów, załącznik
 
 ## Kontrola ilości
 
-Porównanie Ilości usług, które dają Reguły ilości, z Ilościami usług w Pliku
-zbiorczym, z którego tata uruchomił Przebieg rozliczeń. Pokazuje, co tata
-musiał poprawić albo dopisać ręcznie: tacie jako podpowiedzi przy Regułach
-ilości, a Maksowi w Skrzynce Zgłoszeń, gdzie jeden okres ma jedną Kontrolę
-ilości, której tata nie wysyła.
+Porównanie Ilości usług, które dają Reguły ilości i Legenda czynności (ta także
+kwotę w `AS` i kolory), z tym, co stoi w Pliku zbiorczym, z którego tata
+uruchomił Przebieg rozliczeń. Pokazuje, co tata musiał poprawić albo dopisać
+ręcznie: tacie jako podpowiedzi przy Regułach ilości, a Maksowi w Skrzynce
+Zgłoszeń, gdzie jeden okres ma jedną Kontrolę ilości, której tata nie wysyła.
+Różnica legendy i wpis taty w wierszu bez Kodu czynności idą tam z opisem
+technika.
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 ## Wyjątek Kontroli ilości

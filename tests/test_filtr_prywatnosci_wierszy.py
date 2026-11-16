@@ -12,7 +12,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from openpyxl.styles.colors import Color
-from openpyxl.styles.fills import GradientFill, PatternFill
+from openpyxl.styles.fills import Fill, GradientFill, PatternFill
 from openpyxl.utils import column_index_from_string, get_column_letter
 import pytest
 
@@ -51,7 +51,7 @@ def _marked_row() -> list[object]:
     return row
 
 
-def _filtered(header: dict[str, int], row: list[object], fills: dict[str, object] | None = None) -> OrderFacts:
+def _filtered(header: dict[str, int], row: list[object], fills: dict[str, Fill] | None = None) -> OrderFacts:
     highlights = {column_index_from_string(letter): Highlights(fill=fill) for letter, fill in (fills or {}).items()}
     orders = collective_orders(header, [data_row(tuple(row), highlights)])  # type: ignore[arg-type]
     assert isinstance(orders, tuple)
@@ -180,7 +180,7 @@ def _solid(color: Color) -> PatternFill:
 def test_kolor_wypelnienia_kolumn_legendy_to_kolor_legendy_inny_kolor_albo_brak() -> None:
     row: list[object] = [None] * 46
     row[6] = STARTED
-    fills: dict[str, object] = {
+    fills: dict[str, Fill] = {
         "Y": _solid(Color(rgb="FF92D050")),
         "AS": _solid(Color(indexed=10)),
         "AB": _solid(Color(rgb="FFFFFF00")),
