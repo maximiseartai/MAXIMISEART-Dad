@@ -12,7 +12,8 @@ zapisuje w katalogu ``wynik`` plik ``<pid>.json``:
   kodu procesu z ``-I`` albo bez tych zmiennych zapis nie widzi.
 
 Proces potomny zapisuje się pod testem ze zmiennej ``POKRYCIE_LINII_TEST``, przy wyjściu. Proces zabity sygnałem,
-uruchomiony z ``-I`` albo z własnym środowiskiem bez tych zmiennych nie zapisuje nic.
+uruchomiony z ``-I`` albo z własnym środowiskiem bez tych zmiennych nie zapisuje nic, a plik ``<pid>.json`` jest zawsze
+cały: zapis w toku albo urwany ma inną nazwę.
 """
 
 from __future__ import annotations
@@ -75,7 +76,12 @@ class Recorder:
             "wspolne": {path: sorted(lines) for path, lines in self.shared.items()},
             "procesy": sorted(self.spawners),
         }
-        (folder / f"{os.getpid()}.json").write_text(json.dumps(recorded), encoding="utf-8")
+        # Proces potomny testu potrafi zginąć w trakcie zapisu albo pisać, gdy pytest już skończył, a część czyta
+        # każdy ``*.json`` zaraz po pytest (run 43572533066, część 30/40: pusty plik). Podmiana nazwy pokazuje plik cały.
+        written = folder / f"{os.getpid()}.json"
+        partial = written.with_suffix(".json.tmp")
+        partial.write_text(json.dumps(recorded), encoding="utf-8")
+        os.replace(partial, written)
 
 
 def _start(recorder: Recorder) -> None:

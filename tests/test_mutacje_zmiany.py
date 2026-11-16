@@ -13,6 +13,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import threading
 
 import pytest
 
@@ -1469,6 +1470,23 @@ def test_pokrycie_workera_xdist_przetrwa_zamkniecie_workera_zaraz_po_koncu_sesji
     assert "1 passed" in done.stdout, done.stdout + done.stderr
     recorded = [json.loads(written.read_text(encoding="utf-8")) for written in found.iterdir()]
     assert [part["linie"] for part in recorded if part["linie"]] == [{"test_modul.py::test_w_tescie": {str(module): [2]}}]
+
+
+def test_zapis_pokrycia_procesu_w_toku_nie_daje_czesci_niepelnego_pliku(tmp_path: Path) -> None:
+    """Proces potomny testu pisze swój zapis, gdy część już czyta katalog wyników (run 43572533066, część 30/40)."""
+
+    recorder = pokrycie_procesu.Recorder({})
+    recorder.shared["/repo/modul.py"] = set(range(300_000))
+    writer = threading.Thread(target=lambda: [recorder.write(tmp_path) for _ in range(40)])
+    writer.start()
+    read = []
+    while writer.is_alive():
+        for written in tmp_path.glob("*.json"):
+            text = written.read_text(encoding="utf-8")
+            read.append(len(json.loads(text)["wspolne"]["/repo/modul.py"]) if text.endswith("}") else text[-20:])
+    writer.join()
+
+    assert read and set(read) == {300_000}
 
 
 def test_pokrycie_przypisuje_zmieniona_linie_testom_ktore_ja_wykonuja_w_watku_i_w_podprocesie(tmp_path: Path) -> None:
