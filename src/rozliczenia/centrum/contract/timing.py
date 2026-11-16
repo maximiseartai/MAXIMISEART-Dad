@@ -54,6 +54,7 @@ ApiOperation = Literal[
     "addActivityCode",
     "changeActivityCode",
     "removeActivityCode",
+    "previewActivityLegend",
     "undoSettingsChange",
     "getPeriodBoard",
     "openPeriodPath",

@@ -62,6 +62,7 @@ export const zApiTiming = z.object({
         'addActivityCode',
         'changeActivityCode',
         'removeActivityCode',
+        'previewActivityLegend',
         'undoSettingsChange',
         'getPeriodBoard',
         'openPeriodPath',
@@ -632,6 +633,61 @@ export const zLegendColumn = z.object({
 });
 
 /**
+ * LegendPreviewFill
+ *
+ * Kolor wypełnienia kolumny po zmianie inny niż u taty; ``None``: bez koloru legendy.
+ */
+export const zLegendPreviewFill = z.object({
+    kind: z.literal('fill'),
+    column: z.string(),
+    name: z.string().nullable(),
+    legend: z.enum(['zielony', 'czerwony']).nullable(),
+    tata: z.enum(['zielony', 'czerwony']).nullable()
+});
+
+/**
+ * LegendPreviewValue
+ *
+ * Wartość komórki (Ilość usług w kolumnie albo kwota w ``AS``) po zmianie inna niż u taty: ``legend`` to Reguły ilości
+ * i legenda razem, tak jak wpisze je Przygotowanie, a ``tata`` wpis taty (liczba albo „nieliczbowa”).
+ */
+export const zLegendPreviewValue = z.object({
+    kind: z.literal('value'),
+    column: z.string(),
+    name: z.string().nullable(),
+    legend: z.int(),
+    tata: z.union([
+        z.int(),
+        z.literal('nieliczbowa')
+    ])
+});
+
+/**
+ * LegendPreviewRow
+ *
+ * Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis
+ * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu i komórki różne od taty. Bez
+ * adresu, numeru zlecenia i daty dziennej.
+ */
+export const zLegendPreviewRow = z.object({
+    period: z.string(),
+    row: z.int(),
+    description: z.string(),
+    codes: z.array(z.string()),
+    cells: z.array(z.union([zLegendPreviewValue, zLegendPreviewFill]))
+});
+
+/**
+ * LegendPreviewWithoutFiles
+ *
+ * Podglądu nie ma na czym policzyć: folder okresów nie jest wskazany (``no_periods_directory``) albo żaden okres nie
+ * ma jeszcze Rozliczeń pracowników (``no_settled_periods``).
+ */
+export const zLegendPreviewWithoutFiles = z.object({
+    state: z.enum(['no_periods_directory', 'no_settled_periods'])
+});
+
+/**
  * ListedWorker
  *
  * Wykonawca z Listy Wykonawców: loginy z kolumny WYKONAWCA, nazwa w Rozliczeniu pracownika, adresy Raportów
@@ -923,6 +979,29 @@ export const zPreviewFile = z.object({
 });
 
 /**
+ * LegendPreviewReady
+ *
+ * Skutek zmiany Legendy czynności na Wierszach danych ostatnich Plików zbiorczych po Przebiegu rozliczeń, tym samym
+ * rachunkiem wiersza co Kontrola ilości.
+ *
+ * ``unread``: okresy, których Pliku zbiorczego nie dało się przeczytać. ``changed``: wiersze, w których legenda wpisze
+ * co innego (Ilości usług, kwotę w ``AS`` albo kolory), z czego ``changed_as_tata`` będzie tak, jak wpisał tata.
+ * ``differences_before`` i ``differences_after``: różnice legendy Kontroli ilości tych plików teraz i po zmianie.
+ * ``rows``: zmienione wiersze z różnicą od taty, najwyżej ``SHOWN_ROWS``, a ``more`` reszta.
+ */
+export const zLegendPreviewReady = z.object({
+    state: z.literal('ready'),
+    files: z.array(zPreviewFile),
+    unread: z.array(z.string()),
+    changed: z.int(),
+    changed_as_tata: z.int(),
+    differences_before: z.int(),
+    differences_after: z.int(),
+    rows: z.array(zLegendPreviewRow),
+    more: z.int()
+});
+
+/**
  * PriceListItem
  *
  * Kolumna N:AP albo ``AS`` i nazwa pozycji cennika z wiersza 17 Pliku zbiorczego.
@@ -1185,6 +1264,23 @@ export const zActivityCodeForm = z.object({
 });
 
 /**
+ * AddActivityCode
+ */
+export const zAddActivityCode = z.object({
+    kind: z.literal('add'),
+    code: zActivityCodeForm
+});
+
+/**
+ * ChangeActivityCode
+ */
+export const zChangeActivityCode = z.object({
+    kind: z.literal('change'),
+    code_id: z.string(),
+    code: zActivityCodeForm
+});
+
+/**
  * ReadByMaks
  *
  * Maks zamknął issue sprawy jako ``not_planned`` albo duplikat: przeczytał, bez zmian.
@@ -1256,6 +1352,14 @@ export const zRemindersForm = z.object({
     first: z.string(),
     text: z.string(),
     footer: z.string()
+});
+
+/**
+ * RemoveActivityCode
+ */
+export const zRemoveActivityCode = z.object({
+    kind: z.literal('remove'),
+    code_id: z.string()
 });
 
 /**
@@ -3587,6 +3691,26 @@ export const zAddActivityCodeBody = zActivityCodeForm;
  * Successful Response
  */
 export const zAddActivityCodeResponse = zActivityLegendSaved;
+
+/**
+ * Edit
+ */
+export const zPreviewActivityLegendBody = z.discriminatedUnion('kind', [
+    zAddActivityCode,
+    zChangeActivityCode,
+    zRemoveActivityCode
+]);
+
+/**
+ * Response Previewactivitylegend
+ *
+ * Successful Response
+ */
+export const zPreviewActivityLegendResponse = z.discriminatedUnion('state', [
+    zLegendPreviewReady,
+    zLegendPreviewWithoutFiles.extend({ state: z.literal('no_periods_directory') }),
+    zLegendPreviewWithoutFiles.extend({ state: z.literal('no_settled_periods') })
+]);
 
 export const zRemoveActivityCodePath = z.object({
     code_id: z.string()
