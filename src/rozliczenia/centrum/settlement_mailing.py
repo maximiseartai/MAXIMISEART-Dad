@@ -22,7 +22,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import threading
 from typing import Final, assert_never
@@ -265,7 +265,7 @@ class SettlementMailing:
             tuesday=folder.period.tuesday,
             monday=folder.period.monday,
             label=period_words(folder.period),
-            settled_at=max(moments, default=None),
+            settled_at=None if not moments else _utc(max(moments)),
             rows=rows,
             to_send=sum(state in ("to_send", "not_sent") for state in states),
             sent=sum(state in ("sent", "sent_by_hand", "changed") for state in states),
@@ -379,11 +379,11 @@ def _shown(state: MailingState) -> contract.MailingState:
         case ToSend():
             return contract.ToSend(state="to_send")
         case Sent(at=at):
-            return contract.Sent(state="sent", at=at)
+            return contract.Sent(state="sent", at=_utc(at))
         case SentByHand(at=at):
-            return contract.SentByHand(state="sent_by_hand", at=at)
+            return contract.SentByHand(state="sent_by_hand", at=_utc(at))
         case ChangedAfterSending(at=at):
-            return contract.ChangedAfterSending(state="changed", at=at)
+            return contract.ChangedAfterSending(state="changed", at=_utc(at))
         case NoAddress():
             return contract.NoAddress(state="no_address")
         case WithoutOrders():
@@ -394,6 +394,12 @@ def _shown(state: MailingState) -> contract.MailingState:
             return contract.NotSent(state="not_sent", message=sentence)
         case _:
             assert_never(state)
+
+
+def _utc(moment: datetime) -> datetime:
+    """Chwila dla przeglądarki w UTC, jak każda chwila kontraktu: przeglądarka przyjmuje tylko zapis z „Z”."""
+
+    return moment.astimezone(timezone.utc)
 
 
 def _unreadable_sentence(outcome: PasswordRejected | InboxUnreachable) -> str:

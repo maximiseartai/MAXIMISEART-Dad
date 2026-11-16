@@ -8352,7 +8352,7 @@ def test_wysylka_wysyla_plik_wykonawcy_na_wszystkie_jego_adresy_raz_a_ponowienie
     assert mail.text == "Cześć,\nplik za 3–9 listopada 2026.\n\nPozdrawiam\nTata\n"
     assert mail.name == f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"
     assert mail.content == app.file(WYSYLKA_OKRES, "Anna Łącka").read_bytes()
-    assert (first["sent_now"], first["row"]["state"]) == (True, {"state": "sent", "at": WYSYLKA_CHWILA.isoformat()})
+    assert (first["sent_now"], first["row"]["state"]) == (True, {"state": "sent", "at": "2026-11-16T09:00:00Z"})
     assert (second["sent_now"], second["row"]["state"]["state"]) == (False, "sent")
     log = app.log()
     assert log.count(f"rozliczenie-wyslane okres={WYSYLKA_OKRES}") == 1
@@ -8390,7 +8390,7 @@ def test_plik_zmieniony_po_wysylce_idzie_drugi_raz_tylko_jako_ponowna_wysylka(tm
     again = app.send("Anna Łącka", resend=True)
 
     assert (row["state"], row["sendable"], row["preselected"], row["resend"]) == (
-        {"state": "changed", "at": mailed.isoformat()}, True, False, True
+        {"state": "changed", "at": "2026-11-12T08:00:00Z"}, True, False, True
     )
     assert (without["sent_now"], without["row"]["state"]["state"]) == (False, "changed")
     assert (again["sent_now"], again["row"]["state"]["state"]) == (True, "sent")
