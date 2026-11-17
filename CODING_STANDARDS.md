@@ -107,6 +107,9 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 - A test leaves no thread, process, lock or open file behind, and passes alone and in any order, because the xdist shards on the Mac and in CI hold different neighbours.
 - A test holds on Windows and on Python 3.13, the oldest in `requires-python` and Dad's Python: a Windows path inside JSON escapes its backslashes, and the Windows console encodes in cp1252.
 - A refactor that splits a shared path gives each new branch a test that fails when that branch breaks, because tests that reached it only through the old shared path stop covering it without failing.
+- A test whose docstring names a wrong implementation it catches shows that each of its samples fails on that implementation: the sample's world holds the case the docstring promises, or the test asserts that it does.
+  `test_operacja_ustawien_przy_pliku_bez_odczytu_odmawia_bez_zapisu_albo_daje_wynik_jak_przy_czytelnym` in `tests/test_centrum_rozliczen.py` fails when a run without a file it reads gives the same result as the run with it (`_meaningless`, outside `READ_WITHOUT_EFFECT`), because then an unreadable copy of that file checks nothing (#1909), and `test_komorka_w_polu_narzedzia_nie_wychodzi_bez_maski_z_guard_logs` in `tests/test_komentarz_logow_uruchomienia.py` looks for the cell in the decoded Logi, where a separator is no longer a JSON escape (#1869).
+  Nightly mutations do not catch such a sample, because a PR that changes only tests gets no mutant ([ADR 0036](docs/adr/0036-chwast-to-regula.md), class `brak-testu`).
 - Prove that a new or changed test or check fails on the broken code it guards with `tools/mutacje.py`, the command line of the repository's one mutation engine (`tools/lib/silnik_mutacji.py`): use it rather than writing another.
   A rebase, or a fix that leaves the test unchanged, does not need a new run.
 

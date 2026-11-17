@@ -64,7 +64,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 
   | Klasa | Recenzent pisze ją, gdy | Recenzent następnej rundy daje Ważne, gdy |
   |---|---|---|
-  | `brak-testu` | brakuje testu, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokaże regułę, która idiom wyraża; brak testu zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)) |
+  | `brak-testu` | brakuje testu, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokaże regułę, która idiom wyraża; brak testu zostaje nocnym mutacjom ([ADR 0021](0021-mutacje-noca.md)), poza próbką testu, która nie może paść na złej implementacji z jego docstringu: tę łapie tylko przegląd |
   | `stan-kroku` | błąd to stan po wykonaniu kroku, a idiomu nie wyrazi żaden mechanizm z sekcji „Jednostka chwastu” | pokaże regułę, która idiom wyraża |
   | `typ` | idiom zamyka typ, z którym zła postać nie przechodzi mypy (szczebel (b)), także gdy regułą też da się go wyrazić | jego dowód mutacji nie daje `WYKRYTA`; reguły nie żąda |
   | `test-klasy` | idiom zamyka test zachowania, który łapie całą klasę (szczebel (c)), także gdy regułą też da się go wyrazić | jego dowód mutacji nie daje `WYKRYTA`; reguły nie żąda |
@@ -73,6 +73,8 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   Luka: gdy runda po poprawce kończy się `PASS` bez punktu dowodu, PR scala się bez dowodu, bo następnej rundy nie ma, a bramka tego nie sprawdza; ślad zostaje tylko w poniedziałkowym raporcie.
   Powód: z 11 prawdziwych powrotów regułą da się wyrazić 4, częściowo 2, a 5 to braki testu albo stan po wykonaniu. Mutacje linii zmienionych przed merge'em odpadły w próbie #1634: linię z Ważnego wskazały w 3 z 5 PR-ów, a żaden przebieg nie zmieścił się w 10 minutach.
   Powód klas `typ` i `test-klasy`: bramka, która przyjmowała tylko regułę ast-grep, popychała autora na szczebel (d), choć wyższy działał, a automatyczny dowód typu i testu po czterech rundach przeglądu dało się obejść przez tekst wyjścia narzędzi; Maks 15.11.2026 wybrał recenzenta jako bramkę ([#1912](https://github.com/maximiseartai/MAXIMISEART-Dad/pull/1912#issuecomment-6902436281)), jak w [#1888](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1888#issuecomment-6902408070), i przyjął tę lukę zamiast maszynerii dowodu.
+  Granica nocy w klasie `brak-testu`: noc psuje tylko zmienione linie `src/` i części `tools/`, więc PR, który zmienia same testy, nie dostaje mutanta, a granicy obiecanej w docstringu testu (plik „bez odczytu”, którego świat próbki nie ma) obecne operatory nie wyrażą. Próbkę, która nie może paść na złej implementacji z docstringu testu, łapie więc tylko przegląd, według punktu w „Co jest porażką” skilla `przeglad` i zasady w „Test Surface” `CODING_STANDARDS.md`.
+  Powód: 7 takich Ważnych w 3 PR-ach z 9–15.11.2026 (#1853, #1869, #1909) dostało 0 mutantów nocy, a odmowa w świecie próbki łapała 2 z 7 i odpalała na każdym z 20 ostatnich scalonych PR-ów; Maks 17.11.2026 wybrał zdanie zamiast mechanizmu ([#2006](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2006)).
 
 ### Issues „Chwast”
 
