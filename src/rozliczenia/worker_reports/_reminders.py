@@ -187,11 +187,13 @@ class SchedulesInEffect:
 @dataclass(frozen=True)
 class ReminderInputs:
     """Wejście ``reminders_due``: chwila ze strefą taty, wejście odczytu okna (``reports``, w kształcie wejścia Wpisania
-    raportów: okno dni od dnia wdrożenia przypomnień bez okresów z Plikiem zbiorczym, zlecenia, Dni uporządkowane i
-    numery wierszy z tego samego odczytu INTERMAX co we Wpisaniu, maile ze Skrzynki raportów i adresy Wykonawców z Listy
-    Wykonawców, także tych, którym przypomnienia nie idą, bo ich Raport wykonawcy dalej jest raportem), przypomnienia z
-    „Wysłanych”, loginy Wykonawców, którym przypomnienia idą (``reminded``: aktywni z włączonymi przypomnieniami),
-    Ustawienia przypomnień (pory, godzina pierwszego, treść i stopka) i pory, przy których praca przypomnień sprawdzała
+    raportów: okno dni od wcześniejszego z dni wdrożenia przypomnień i Wpisania raportów, bez okresów z Plikiem
+    zbiorczym, bo Przeniesienie Centrum na dzień sprzed wdrożenia przypomnień dalej zmienia dzień raportu; zlecenia, Dni
+    uporządkowane i numery wierszy z tego samego odczytu INTERMAX co we Wpisaniu, maile ze Skrzynki raportów i adresy
+    Wykonawców z Listy Wykonawców, także tych, którym przypomnienia nie idą, bo ich Raport wykonawcy dalej jest
+    raportem), przypomnienia z „Wysłanych”, loginy Wykonawców, którym przypomnienia idą (``reminded``: aktywni z
+    włączonymi przypomnieniami), Ustawienia przypomnień (dzień wdrożenia, od którego idą, pory, godzina pierwszego,
+    treść i stopka) i pory, przy których praca przypomnień sprawdzała
     (``in_effect``; bez nich pory „Wysłanych” to pory z ADR 0030, jedyne pory wersji sprzed Ustawień Centrum).
 
     ``reports`` ma pamięć własnych wpisów i decyzje „Zostaw moją” z pamięci Wpisania raportów, bo dzień raportu zależy
@@ -255,8 +257,8 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
     dopóki nie przyśle z któregokolwiek adresu z listy żadnego Raportu wykonawcy za X (ADR 0041): Raport z Błędem opisu
     jest przysłany, a Raport z pomylonym tematem jest przysłany za dzień swoich zleceń, nie za dzień z tematu. Dzień
     każdego Raportu daje ten sam odczyt okna co we Wpisaniu raportów (``_reading.read_window``). Liczą
-    się tylko dni otwarte okna (``Window.opens``): od dnia wdrożenia przypomnień, bez okresów z Plikiem zbiorczym.
-    Każdy dzień ma osobne przypomnienie.
+    się tylko dni otwarte okna (``Window.opens``) od dnia wdrożenia przypomnień (``ReminderSettings.since``, bez niego
+    od dnia wdrożenia okna), bez okresów z Plikiem zbiorczym. Każdy dzień ma osobne przypomnienie.
     """
 
     now = inputs.now
@@ -264,6 +266,7 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
     pora = reminder_pora(now, schedule)
     if pora is None:
         return ()
+    since = inputs.settings.since or inputs.reports.window.rollout
     logins = inputs.reports.addresses.logins
     reported = set(_reading.read_window(inputs.reports).reported)
     reminded = {
@@ -282,6 +285,7 @@ def reminders_due(inputs: ReminderInputs) -> tuple[Reminder, ...]:
         (order.key.day, order.key.worker)
         for order in inputs.reports.orders
         if inputs.reports.window.opens(order.key.day)
+        and order.key.day >= since
         and now >= datetime.combine(order.key.day + timedelta(days=1), schedule.first, now.tzinfo)
         and order.key.worker in recipients
         and order.key.worker in inputs.reminded

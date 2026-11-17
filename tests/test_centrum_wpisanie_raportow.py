@@ -4445,3 +4445,43 @@ def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach
         (40000008, "2026-11-09"),
     ]
     assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
+
+
+def test_praca_przypomnien_czyta_okno_od_wdrozenia_wpisania_raportow_gdy_jest_wczesniejsze_niz_wdrozenie_przypomnien(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041 (historia 14), forma siostrzana W1 r1 #2059: Wpisanie raportów działa od 8.11, przypomnienia od 9.11.
+    Jan przysyła Raport z tematem 9.11 z dwoma numerami swoich zleceń z 8.11, czyli pomylony temat, który kafelek
+    Wpisania liczy za 8.11. Praca przypomnień czyta okno od 8.11 jak Wpisanie, więc zna te zlecenia i o 8:30 10.11
+    przypomina Janowi o 9.11, za który raportu nie ma; za 8.11, dzień sprzed wdrożenia przypomnień, nie przypomina
+    nikomu, także Annie bez raportu."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(8, 9, "jan.testowy", 40000001),
+            _order(8, 10, "jan.testowy", 40000002),
+            _order(8, 11, "anna.kowalska", 40000004),
+            _order(9, 9, "jan.testowy", 40000003),
+            _order(9, 11, "anna.kowalska", 40000005),
+        ),
+        raw=(),
+    )
+    mistaken = report(JAN, SUBJECT, "40000001 tak inst20m\n40000002 tak spawpg", at=datetime(2026, 11, 9, 19))
+    mailbox = FakeMailbox(outcome=(mistaken,))
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    _click_at(centrum, datetime(2026, 11, 10, 8), [mistaken])
+    shown = _view(centrum)
+    tiles = [_worker(shown, "jan.testowy", day)["mails"] for day in ("2026-11-08", "2026-11-09")]
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert tiles == [1, 0]
+    assert sorted((reminder.worker, reminder.day) for reminder, _ in mailbox.sends) == [
+        ("anna.kowalska", date(2026, 11, 9)),
+        ("jan.testowy", date(2026, 11, 9)),
+    ]

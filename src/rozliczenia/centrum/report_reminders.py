@@ -436,7 +436,8 @@ def due_reminders(
     (``schedules_in_effect``). Przypomnienia wysłane w tej pracy Centrum (``sent_in_work``) liczą się jak te z
     „Wysłanych”: zamykają porę i są w ``DueReminders.sent`` dla widoku Raporty. Pamięć Wpisania raportów czyta
     ``entering`` tą samą drogą co Wpisanie (``ReportState.load``), a wejście odczytu okna buduje ``report_inputs`` jak
-    we Wpisaniu, więc dzień raportu jest ten sam co w kafelku Wpisania; pamięci, której nie da się odczytać, nie
+    we Wpisaniu, z oknem od wcześniejszego z dni wdrożenia przypomnień i Wpisania (przed pierwszym kliknięciem: dziś),
+    więc dzień raportu jest ten sam co w kafelku Wpisania; pamięci, której nie da się odczytać, nie
     zastępuje pustą (``pamiec-wpisania``), bo pusta zmieniłaby dzień raportu. Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
@@ -466,11 +467,12 @@ def due_reminders(
     except (StateUnreadable, DecisionsUnreadable) as error:
         return NotRead("pamiec-wpisania", type(error).__name__)
     today = now.date()
+    since = min(rollout, today if saved.rollout is None else saved.rollout)
     try:
-        closed = closed_periods(settings.periods_directory, Window.periods(today, rollout))
+        closed = closed_periods(settings.periods_directory, Window.periods(today, since))
     except StopError:
         return NotRead("okresy")
-    window = Window.of(today, rollout, closed)
+    window = Window.of(today, since, closed)
     try:
         register = register_file.read(settings.register, files, despite_excel_lock=True)
         intermax = register_window(register, window, addresses, copy=False)
