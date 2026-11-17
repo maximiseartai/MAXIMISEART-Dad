@@ -2393,6 +2393,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
                 "fault": "no_year",
                 "numbers": ["40000010"],
                 "day": "2026-11-09",
+                "entries": [{"number": "40000010", "verdict": None, "fault": "word_no", "activities": "Czynność syntetyczna"}],
             },
             {"kind": "stranger", "mail": "cdefghijklmnopab", "arrived": "2026-11-09T17:20:00.300000Z", "day": "2026-11-08"},
         ],

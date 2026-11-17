@@ -2170,6 +2170,39 @@ def test_wpis_na_zyczenie_i_nastepne_klikniecie_z_decyzja_taty_z_pamieci_odtwarz
     assert [(code, lines[0]) for code, lines in replays] == [(0, "ODTWORZENIE ZGODNE")] * 2, replays
 
 
+def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_odtwarza_sie_zgodnie_takze_przy_nastepnym_kliknieciu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0041, US 44 i 52: Logi mają Wpisy raportu z błędem tematu i decyzję taty przy zleceniu z 9.11, więc
+    odtworzenie z Logów wpisuje Wpis z ``t`` do dnia z tematu jak u taty, a wynik pierwszego kliknięcia (z przyciskiem
+    przy zleceniu) i następnego kliknięcia z decyzją z pamięci też odtwarza się zgodnie."""
+
+    surroundings = Surroundings()
+    mail = report(SENDERS["jan.testowy"], "Raport 09.11.2026 Kowalski", "40000001 t wymiana", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, [mail], surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    first = centrum.run_to_end()
+    assert first["result"]["ending"] == "finished"
+    [request] = [
+        order["request"]
+        for worker in centrum.client.get("/api/report-entering/view").json()["workers"]
+        for day in worker["days"]
+        for order in day["orders_detail"]
+        if order["request"] is not None
+    ]
+    assert centrum.client.post("/api/report-entering/request", json=request).status_code == 200
+    requested = finished_view(centrum.client)
+    again = centrum.run_to_end()
+
+    replays = [
+        _replayed(capsys, _archived_run(surroundings.report_box, tmp_path, view["run"]["id"]), "--na-tym-drzewie")
+        for view in (first, requested, again)
+    ]
+
+    assert [(code, lines[0]) for code, lines in replays] == [(0, "ODTWORZENIE ZGODNE")] * 3, replays
+    assert request["successful"] == "tak"
+
+
 def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:
     """Jedyny Wpis raportu z numerem ``number`` w Logach Wpisania raportów, do zmiany w miejscu."""
 
@@ -2366,7 +2399,7 @@ def _entering_facts() -> EnteringFacts:
         skipped=2,
         mails=(
             ReadReport(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
-            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, frozenset({plain}), CLICK_DAY, ReportSubject("")),
+            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, entries[1:], CLICK_DAY, ReportSubject("")),
             ReadStranger(twice, arrived, CLICK_DAY),
             ReadStranger(twice, arrived, CLICK_DAY),
             ReadStranger(once, arrived, CLICK_DAY),

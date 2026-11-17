@@ -9,7 +9,7 @@ problemy i liczby na wyjściu. Dane są syntetyczne, adresy w domenie ``.invalid
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta, timezone
 import itertools
@@ -62,6 +62,7 @@ from rozliczenia.worker_reports import (
     ReportMail,
     ReportProblem,
     Requestable,
+    RequestedEntry,
     ReportsOutcome,
     ReportSubject,
     SenderAddress,
@@ -150,6 +151,7 @@ def _inputs(
     ordered: Sequence[date] = (),
     present: Sequence[ReadNumber] | None = None,
     legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND,
+    requested: frozenset[RequestedEntry] = frozenset(),
 ) -> ReportInputs:
     """Wejście rdzenia; bez ``present`` proces przeczytał tylko wiersze zleceń ``orders``, każdy raz."""
 
@@ -169,6 +171,7 @@ def _inputs(
         present=tuple(ReadNumber(order.key.number, order.key.day) for order in orders) if present is None else present,
         ordered_days=frozenset(OrderedDay(ROW.sheet, day) for day in ordered),
         legend=legend,
+        requested=requested,
     )
 
 
@@ -3314,13 +3317,17 @@ DAY_BESIDE_FAULTS = (SubjectFault.OTHER_WORDS, SubjectFault.OTHER_TEXT, SubjectF
     ids=lambda found: found.name if isinstance(found, SubjectFault) else str(found),
 )
 def test_postac_kanoniczna_bledu_tematu_daje_ten_sam_powod_i_dzien_z_tematu(fault: SubjectFault, day: date | None) -> None:
-    """Każdy powód błędu tematu, także taki, którego przykłady własności wyżej nie trafią, z numerami Wpisów, bez dnia z
-    tematu i z nim przy błędzie obok daty, także z dniem następnego roku, który temat bez roku daje tylko z granic od
-    dnia przyjścia. ``SEPARATOR`` jest tylko w Logach sprzed tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś
-    jako dzień."""
+    """Każdy powód błędu tematu, także taki, którego przykłady własności wyżej nie trafią, z Wpisami (ze znakiem i
+    czynnościami, które wpisuje Wpis na życzenie), bez dnia z tematu i z nim przy błędzie obok daty, także z dniem
+    następnego roku, który temat bez roku daje tylko z granic od dnia przyjścia. ``SEPARATOR`` jest tylko w Logach
+    sprzed tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś jako dzień."""
 
-    numbers = frozenset({OrderNumber("40000001"), OrderNumber("40000002")})
-    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, numbers, day, ReportSubject(""))
+    entries = (
+        ReportEntry(OrderNumber("40000002"), None, VerdictFault.LETTER_YES, "wymiana routera"),
+        ReportEntry(OrderNumber("40000001"), Verdict.NO, None, "brak klienta"),
+        ReportEntry(OrderNumber("40000003"), None, VerdictFault.MISSING, ""),
+    )
+    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, entries, day, ReportSubject(""))
 
     assert _read_back(read) == (read,)
 
@@ -3612,7 +3619,7 @@ def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
             EVENING,
             Login("jan.testowy"),
             SubjectFault.NO_YEAR,
-            frozenset({OrderNumber("40000001")}),
+            (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "inst20m"),),
             DAY,
             ReportSubject("Raport 08.11"),
         ),
@@ -3973,10 +3980,10 @@ def test_raport_z_bledem_tematu_liczy_sie_za_dzien_z_tematu_albo_wskazany_i_nic_
 
     outcome = enter_reports(_inputs([mail], orders, today=NEXT_DAY, rollout=DAY))
 
-    jan, numbers = Login("jan.testowy"), frozenset({OrderNumber("40000001")})
+    jan, entries = Login("jan.testowy"), (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana routera"),)
     assert outcome.changes == ()
     assert _problems(outcome) == (UnreadableSubject(mail.id, jan, mail.arrived, fault, ReportSubject(subject), day or NEXT_DAY),)
-    assert outcome.mails == (ReadUnreadable(mail.id, mail.arrived, jan, fault, numbers, day, ReportSubject(subject)),)
+    assert outcome.mails == (ReadUnreadable(mail.id, mail.arrived, jan, fault, entries, day, ReportSubject(subject)),)
     counted = {DAY: int(day == DAY), NEXT_DAY: int(day is None)}
     assert {(figure.day, figure.mails, figure.problems) for figure in outcome.workers} == {
         (found, mails, mails) for found, mails in counted.items()
@@ -3996,6 +4003,119 @@ def test_raport_z_bledem_tematu_bez_dnia_otwartego_jest_problemem_bez_dnia_a_z_d
     jan = Login("jan.testowy")
     assert _problems(outcome) == (UnreadableSubject(no_day.id, jan, no_day.arrived, SubjectFault.NO_DATE, ReportSubject("Raport"), None),)
     assert [(figure.day, figure.mails) for figure in outcome.workers] == [(DAY, 1)]
+
+
+def _requests(outcome: ReportsOutcome) -> dict[OrderNumber, Requestable | None]:
+    """Wpis na życzenie przy każdym zleceniu Jana z dnia ``DAY`` w wyniku, po numerze."""
+
+    [jan] = [figure for figure in outcome.workers if (figure.day, figure.worker) == (DAY, "jan.testowy")]
+    return {order.number: order.request for order in jan.orders_detail}
+
+
+def _decisions(mail: ReportMail, offers: Mapping[OrderNumber, Requestable | None]) -> frozenset[RequestedEntry]:
+    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers`` raportu ``mail``, przy zleceniu z dnia ``DAY``."""
+
+    return frozenset(
+        RequestedEntry(mail.id, Login("jan.testowy"), DAY, number, offer.verdict, offer.activities, EVENING + timedelta(hours=1))
+        for number, offer in offers.items()
+        if offer is not None
+    )
+
+
+TWO_ORDERS = (_order(), _order(OrderRow("Zlecenia", 121), number="40000002"))
+
+
+@pytest.mark.parametrize(
+    ("subject", "text", "same"),
+    [
+        pytest.param("Raport 08.11.2026 Kowalski", "40000001 tak wymiana routera", "40000001 tak wymiana routera", id="inne-slowa"),
+        pytest.param("Raport", "40000001 t wymiana routera", "40000001 tak wymiana routera", id="bez-dnia-z-t"),
+        pytest.param("Raport 08.11", "40000001 Nieskuteczne: brak klienta", "40000001 nie brak klienta", id="bez-roku-nieskuteczne"),
+        pytest.param(
+            "Raport 09.11.2026 Kowalski",
+            "40000001 tak wymiana\n40000002 n brak klienta",
+            "40000001 tak wymiana\n40000002 nie brak klienta",
+            id="pomylony-dzien-z-tematu",
+        ),
+    ],
+)
+def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_to_co_raport_z_dniem_zlecenia_w_temacie(
+    subject: str, text: str, same: str
+) -> None:
+    """ADR 0041 (historie 44, 46, 48): przy każdym zleceniu raportu z błędem tematu wynik ma Wpis na życzenie do dnia
+    zlecenia z ``tak`` albo ``nie`` (także z zamiaru ``t``, ``n``, ``nieskuteczne``) i czynnościami Wpisu, a dzień
+    zlecenia daje odczyt okna: dzień z tematu, dzień wskazany przy temacie bez dnia albo dzień zleceń, gdy numery są z
+    innego dnia niż temat. Decyzja taty przy każdym z nich wpisuje to samo, co Raport wykonawcy z tym dniem w temacie
+    i ``tak``/``nie``, a błąd tematu znika."""
+
+    mail = _mail(JAN, subject, text, EVENING + timedelta(days=1))
+    inputs = _inputs([mail], TWO_ORDERS, today=NEXT_DAY, rollout=DAY)
+    correct = enter_reports(replace(inputs, mails=[_mail(JAN, SUBJECT, same, mail.arrived)]))
+
+    offered = enter_reports(inputs)
+    decided = enter_reports(replace(inputs, requested=_decisions(mail, _requests(offered))))
+
+    expected = {
+        number: Requestable(mail.id, verdict, activities, DAY)
+        for number, verdict, activities in (
+            (entry.number, entry.verdict, entry.activities) for entry in _entries_of(same)
+        )
+        if verdict is not None
+    }
+    assert _requests(offered) == {OrderNumber("40000002"): None} | expected
+    assert offered.changes == ()
+    assert (decided.changes, decided.memory) == (correct.changes, correct.memory) != ((), OwnEntries.EMPTY)
+    assert _problems(decided) == ()
+    assert set(_requests(decided).values()) == {None}
+
+
+def _entries_of(text: str) -> tuple[ReportEntry, ...]:
+    """Wpisy Raportu wykonawcy z dnia ``DAY`` z treścią ``text``, jak je czyta rdzeń."""
+
+    [read] = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], TWO_ORDERS)).mails
+    assert isinstance(read, ReadReport), read
+    return read.entries
+
+
+def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_tematu_a_decyzja_przy_innym_wpisie_nic_nie_wpisuje() -> None:
+    """ADR 0041 (historia 49): Wpis na życzenie z raportu z błędem tematu ma chwilę przyjścia swojego maila, więc
+    późniejszy Raport wykonawcy za ten dzień wygrywa z nim. Decyzja przy Wpisie z innymi czynnościami niż w mailu (np.
+    z widoku sprzed poprawki) niczego nie wpisuje, a błąd tematu i przycisk zostają."""
+
+    faulty = _mail(JAN, "Raport 08.11.2026 Kowalski", TEXT)
+    later = _mail(JAN, SUBJECT, "40000001 nie brak klienta", EVENING + timedelta(hours=1))
+    decision = RequestedEntry(faulty.id, Login("jan.testowy"), DAY, OrderNumber("40000001"), Verdict.YES, "wymiana routera", EVENING)
+
+    won = enter_reports(_inputs([faulty, later], [_order()], requested=frozenset({decision})))
+    stale = enter_reports(_inputs([faulty], [_order()], requested=frozenset({replace(decision, activities="wymiana")})))
+
+    assert won.changes == _both(ROW, "nie", "brak klienta")
+    assert stale.changes == ()
+    assert [type(problem) for problem in _problems(stale)] == [UnreadableSubject]
+    assert _requests(stale) == {OrderNumber("40000001"): Requestable(faulty.id, Verdict.YES, "wymiana routera", DAY)}
+
+
+@pytest.mark.parametrize(
+    ("texts", "orders"),
+    [
+        pytest.param(["40000001 t wymiana\n40000001 nie brak klienta"], [_order()], id="przeciwne-wpisy"),
+        pytest.param(["40000001 wymiana routera"], [_order()], id="wpis-bez-znaku"),
+        pytest.param([TEXT], [_order(), _order(OrderRow("Zlecenia", 121))], id="numer-dwa-razy-w-dniu"),
+        pytest.param([TEXT, "40000001 t wymiana\n40000001 nie brak klienta"], [_order()], id="pozniejszy-mail-bez-rozstrzygniecia"),
+    ],
+)
+def test_wpisu_na_zyczenie_przy_raporcie_z_bledem_tematu_nie_ma_gdy_centrum_nie_wie_co_wpisac(
+    texts: list[str], orders: list[RegisterOrder]
+) -> None:
+    """ADR 0041 (historia 51): przy zleceniu raportu z błędem tematu przycisku nie ma przy przeciwnych Wpisach, Wpisie
+    bez znaku i numerze, który Jan ma dwa razy w dniu, a także wtedy, gdy późniejszy raport z błędem tematu ma przy tym
+    numerze przeciwne Wpisy: decyduje najpóźniejszy mail z numerem."""
+
+    mails = [_mail(JAN, "Raport 08.11.2026 Kowalski", text, EVENING + timedelta(minutes=index)) for index, text in enumerate(texts)]
+
+    outcome = enter_reports(_inputs(mails, orders))
+
+    assert set(_requests(outcome).values()) == {None}
 
 
 @pytest.mark.parametrize(

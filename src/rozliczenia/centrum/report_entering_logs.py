@@ -79,6 +79,10 @@ class LoggedReportEntry(_Record):
             activities=entry.activities,
         )
 
+    def entry(self) -> ReportEntry:
+        verdict = None if self.verdict is None else Verdict(self.verdict)
+        return ReportEntry(OrderNumber(self.number), verdict, self.fault, self.activities)
+
 
 class LoggedReportMail(_Record):
     """Raport wykonawcy od Wykonawcy z listy adresów: skrót maila, chwila przyjścia, login, dzień z tematu i Wpisy; bez
@@ -106,6 +110,10 @@ class LoggedUnreadableMail(_Record):
     pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, a takiego maila rdzeń nie czyta (ADR 0041), więc mail
     i jego ostrzeżenie dają w odtworzeniu różnicę."""
     day: date | None = None
+    entries: list[LoggedReportEntry] | None = None
+    """Wpisy treści maila jak w ``LoggedReportMail``, które Wpis na życzenie wpisuje (ADR 0041). ``None``: Logi sprzed
+    Wpisu na życzenie przy błędzie tematu, które odtworzenie czyta jako same numery z ``numbers``, bez znaku i
+    czynności, bo wtedy Wpisy takiego maila niczego nie zmieniały."""
 
 
 class LoggedStrangerMail(_Record):
@@ -136,6 +144,7 @@ def _mail(read: MailRead) -> LoggedMail:
                 fault=read.fault,
                 numbers=sorted(read.numbers),
                 day=read.day,
+                entries=[LoggedReportEntry.of(entry) for entry in read.entries],
             )
         case ReadStranger():
             return LoggedStrangerMail(kind="stranger", mail=read.mail.digest, arrived=read.arrived, day=read.day)
@@ -151,24 +160,22 @@ def _read(mail: LoggedMail) -> MailRead:
 
     match mail:
         case LoggedReportMail():
-            entries = tuple(
-                ReportEntry(
-                    OrderNumber(entry.number),
-                    None if entry.verdict is None else Verdict(entry.verdict),
-                    entry.fault,
-                    entry.activities,
-                )
-                for entry in mail.entries
-            )
+            entries = tuple(entry.entry() for entry in mail.entries)
             return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
+        case LoggedUnreadableMail(entries=None):
+            numbers = sorted(OrderNumber(number) for number in mail.numbers or ())
+            return _unreadable(mail, tuple(ReportEntry(number, None, VerdictFault.MISSING, "") for number in numbers))
         case LoggedUnreadableMail():
-            numbers = frozenset(OrderNumber(number) for number in mail.numbers or ())
-            subject = ReportSubject("")
-            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, numbers, mail.day, subject)
+            return _unreadable(mail, tuple(entry.entry() for entry in mail.entries or ()))
         case LoggedStrangerMail():
             return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
         case _:
             assert_never(mail)
+
+
+def _unreadable(mail: LoggedUnreadableMail, entries: tuple[ReportEntry, ...]) -> ReadUnreadable:
+    subject = ReportSubject("")
+    return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, entries, mail.day, subject)
 
 
 class LoggedOrderPlace(_Record):
@@ -684,7 +691,14 @@ def _digits(number: str) -> bool:
 
 
 def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
-    return [entry for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
+    """Wpisy raportu w Logach, także raportów z błędem tematu, które wpisuje Wpis na życzenie."""
+
+    return [
+        entry
+        for mail in entering.mails
+        if not isinstance(mail, LoggedStrangerMail)
+        for entry in (mail.entries or () if isinstance(mail, LoggedUnreadableMail) else mail.entries)
+    ]
 
 
 def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: date, worker: str) -> set[str]:
@@ -701,14 +715,15 @@ def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: dat
 
 def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
     """Numery Wpisów raportu w Logach po liczbie, dniu i Wykonawcy: pamięć wpisów ma w Logach numer tylko jako liczbę,
-    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie."""
+    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie. Wpis raportu z
+    błędem tematu ma dzień z decyzji Wpisu na życzenie, bo tylko z nią coś wpisuje."""
 
+    said = [(mail.day, mail.worker, entry.number) for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
+    said += [(decision.day, decision.worker, decision.number) for decision in entering.requested]
     numbers: dict[tuple[int, date, str], set[str]] = {}
-    for mail in entering.mails:
-        if isinstance(mail, LoggedReportMail):
-            for entry in mail.entries:
-                if _digits(entry.number):
-                    numbers.setdefault((int(entry.number), mail.day, mail.worker), set()).add(entry.number)
+    for day, worker, number in said:
+        if _digits(number):
+            numbers.setdefault((int(number), day, worker), set()).add(number)
     return numbers
 
 

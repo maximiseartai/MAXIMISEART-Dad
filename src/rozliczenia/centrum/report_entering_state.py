@@ -16,7 +16,8 @@
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
   numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis, Kody czynności zlecenia ``tak``
-  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów, i czy ma Wpis w raporcie z błędem tematu, ``faulty``), zdaniem o każdym problemie
+  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów, czy ma Wpis w raporcie z błędem tematu, ``faulty``, i
+  Wpis na życzenie tego Wpisu, ``request``; plik bez niego czyta się bez przycisku), zdaniem o każdym problemie
   (``reasons.reason``), Wpisem na życzenie przy problemie, przy którym tata może go kliknąć (``request``; plik bez
   niego czyta się bez przycisku), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
   Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Przy
@@ -72,6 +73,7 @@ from rozliczenia.worker_reports import (
     RepeatedOrder,
     ReportNote,
     ReportProblem,
+    Requestable,
     RequestedEntry,
     UnknownNumber,
     UnknownSender,
@@ -211,6 +213,15 @@ class _WorkerV1(_Record):
     without_report: list[str]
 
 
+class _OrderOffer(_Record):
+    """Wpis na życzenie przy zleceniu z Wpisem raportu z błędem tematu: skrót maila i co się wpisze do tego zlecenia
+    (``successful`` z czynnościami ``activities``); dzień, Wykonawca i numer to te zlecenia."""
+
+    mail: str
+    activities: str
+    successful: Literal["tak", "nie"]
+
+
 class _Order(_Record):
     number: str
     successful: str | None
@@ -218,6 +229,7 @@ class _Order(_Record):
     reported: bool
     codes: list[str] | None = None
     faulty: bool = False
+    request: _OrderOffer | None = None
 
 
 class _Worker(_WorkerV1):
@@ -311,6 +323,16 @@ class ShownWorker:
     orders_detail: tuple[OrderDetail, ...] | None
     mistaken: tuple[date, ...]
 
+    def offer(self, order: OrderDetail) -> ShownOffer | None:
+        """Wpis na życzenie przy zleceniu ``order`` tego dnia; ``None``: przycisku nie ma."""
+
+        found = order.request
+        if found is None:
+            return None
+        return ShownOffer(
+            found.mail.digest, self.worker, self.day, order.number, found.activities, found.verdict, found.order_day
+        )
+
 
 @dataclass(frozen=True)
 class ShownFaultySubject:
@@ -383,6 +405,12 @@ class ShownResult:
     problems: tuple[ShownProblem, ...]
     detailed: bool
     notes: tuple[ShownNote, ...] = ()
+
+    def requests(self) -> frozenset[ShownOffer]:
+        """Każdy Wpis na życzenie, który tata może kliknąć: przy problemie i przy zleceniu dnia."""
+
+        at_orders = (worker.offer(order) for worker in self.workers for order in worker.orders_detail or ())
+        return frozenset(offer for offer in (*(problem.request for problem in self.problems), *at_orders) if offer)
 
 
 @dataclass
@@ -531,6 +559,9 @@ class FileReportState:
                         reported=order.reported,
                         codes=None if order.codes is None else list(order.codes),
                         faulty=order.faulty,
+                        request=None
+                        if (offer := order.request) is None
+                        else _OrderOffer(mail=offer.mail.digest, activities=offer.activities, successful=offer.verdict.value),
                     )
                     for order in worker.orders_detail
                 ],
@@ -570,7 +601,7 @@ class FileReportState:
                     worker.entered,
                     worker.mails,
                     tuple(worker.without_report),
-                    _orders(worker),
+                    _orders(worker, worker.day),
                     tuple(worker.mistaken) if isinstance(worker, _Worker) else (),
                 )
                 for worker in result.workers
@@ -619,7 +650,7 @@ class FileReportState:
             )
 
 
-def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
+def _orders(worker: _WorkerV1, day: date) -> tuple[OrderDetail, ...] | None:
     if not isinstance(worker, _Worker):
         return None
     return tuple(
@@ -630,6 +661,9 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
             order.reported,
             None if order.codes is None else tuple(order.codes),
             order.faulty,
+            None
+            if (offer := order.request) is None
+            else Requestable(MailId(offer.mail), Verdict(offer.successful), offer.activities, day),
         )
         for order in worker.orders_detail
     )

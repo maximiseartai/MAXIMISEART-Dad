@@ -10058,6 +10058,16 @@
           "no_code": {
             "type": "boolean",
             "title": "No Code"
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestedCell"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -10068,10 +10078,11 @@
           "activities",
           "state",
           "codes",
-          "no_code"
+          "no_code",
+          "request"
         ],
         "title": "ReportsOrder",
-        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem\ntylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego\nWpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem."
+        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem\ntylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego\nWpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.\n``request``: Wpis na życzenie przy zleceniu ze stanem ``faulty_subject`` (ADR 0041), który wpisze Wpis raportu z\nbłędem tematu do tego zlecenia (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać)."
       },
       "ReportsProblem": {
         "properties": {

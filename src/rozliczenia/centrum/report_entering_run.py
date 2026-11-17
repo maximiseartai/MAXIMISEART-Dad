@@ -192,7 +192,7 @@ class ReportEnteringEntry:
             shown = self.files.shown()
         except StateUnreadable as error:
             raise refusal.reports_unreadable() from error
-        if shown is None or offer not in {problem.request for problem in shown.problems}:
+        if shown is None or offer not in shown.requests():
             raise refusal.request_gone()
         return self.prepare(offer.decision(self.parts.now()))
 
@@ -338,6 +338,7 @@ def _worker_day(
                 state=OrderState.of(reported=order.reported, faulty=order.faulty, problem=order.number in numbers).value,
                 codes=list(order.codes or ()),
                 no_code=order.codes == (),
+                request=None if figure is None or (offer := figure.offer(order)) is None else _requested_cell(offer),
             )
             for order in orders
         ],
@@ -358,30 +359,29 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
             reported=difference.reported,
         )
     )
-    offer = problem.request
-    request = (
-        None
-        if offer is None
-        else report_entering_contract.RequestedCell(
-            mail=offer.mail,
-            number=offer.number,
-            day=offer.day,
-            worker=offer.worker,
-            activities=offer.activities,
-            successful=offer.successful.value,
-            order_day=offer.order_day,
-        )
-    )
+    request = None if problem.request is None else _requested_cell(problem.request)
     found = problem.faulty_subject
     faulty = (
         None
         if found is None
         else report_entering_contract.ReportsFaultySubject(
-            subject=found.subject, fault=found.fault, day=found.day, arrived=found.arrived
+            subject=found.subject, fault=found.fault, day=found.day, arrived=found.arrived.astimezone(timezone.utc)
         )
     )
     return report_entering_contract.ReportsProblem(
         reason=problem.reason, number=problem.number, keep=keep, request=request, faulty_subject=faulty
+    )
+
+
+def _requested_cell(offer: ShownOffer) -> report_entering_contract.RequestedCell:
+    return report_entering_contract.RequestedCell(
+        mail=offer.mail,
+        number=offer.number,
+        day=offer.day,
+        worker=offer.worker,
+        activities=offer.activities,
+        successful=offer.successful.value,
+        order_day=offer.order_day,
     )
 
 

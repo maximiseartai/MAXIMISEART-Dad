@@ -569,6 +569,8 @@ FEATURES = (
             "416-raporty-przypisany",
             "283-raporty-dzien-bez-problemow",
             "284-raporty-waski-ekran",
+            "408-raporty-blad-tematu-na-zyczenie-podglad",
+            "409-raporty-blad-tematu-na-zyczenie-po",
             "405-raporty-na-zyczenie-podglad",
             "406-raporty-na-zyczenie-odmowa",
             "407-raporty-na-zyczenie-po",

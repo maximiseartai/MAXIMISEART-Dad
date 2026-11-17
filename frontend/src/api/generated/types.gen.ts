@@ -3734,6 +3734,8 @@ export type ReportsNote = {
  * ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
  * i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
  * czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.
+ * ``request``: Wpis na życzenie przy zleceniu ze stanem ``faulty_subject`` (ADR 0041), który wpisze Wpis raportu z
+ * błędem tematu do tego zlecenia (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać).
  */
 export type ReportsOrder = {
     /**
@@ -3760,6 +3762,7 @@ export type ReportsOrder = {
      * No Code
      */
     no_code: boolean;
+    request: RequestedCell | null;
 };
 
 /**

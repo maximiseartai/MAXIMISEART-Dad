@@ -437,13 +437,20 @@ class Kept:
 
 @dataclass(frozen=True)
 class RequestedEntry:
-    """Wpis na życzenie (ADR 0041): decyzja taty z chwili kliknięcia ``at``, że zwycięski Wpis zlecenia ``number`` z
-    Raportu wykonawcy ``mail`` od Wykonawcy ``worker``, który tata widzi w dniu ``day``, ze znakiem zamiast
-    ``tak``/``nie`` (``t``, ``n``, ``skuteczne``, ``nieskuteczne``) i czynnościami ``activities`` to ``verdict``, które
-    ten znak ma na myśli (``VerdictFault.leaning``). Rdzeń wpisuje go tak, dopóki ten Wpis tego maila jest zwycięskim
-    Wpisem zlecenia: Wpis z późniejszego maila wygrywa jak każdy późniejszy, także z tym samym znakiem, a ręczna wartość
-    zostaje z ``ManualDifference``. Decyzja należy do maila, a nie do chwili, bo zegar komputera taty nie musi się
-    zgadzać z chwilą przyjścia maila; ``at`` mają tylko pamięć i Logi."""
+    """Wpis na życzenie (ADR 0041): decyzja taty z chwili kliknięcia ``at``, że Wpis zlecenia ``number`` z czynnościami
+    ``activities`` z Raportu wykonawcy ``mail`` od Wykonawcy ``worker``, który tata widzi w dniu ``day``, to
+    ``verdict``. Dwa przypadki, jedna decyzja:
+
+    - zwycięski Wpis ze znakiem zamiast ``tak``/``nie`` (``t``, ``n``, ``skuteczne``, ``nieskuteczne``): ``verdict`` to
+      zamiar znaku (``VerdictFault.leaning``);
+    - Wpis raportu z błędem tematu (``ReadUnreadable``) przy zleceniu z dnia ``day``: rdzeń czyta go jak Wpis Raportu
+      wykonawcy z tym dniem w temacie (``_reading.WindowRead.requested``), a Wpis z ``t`` czy ``skuteczne`` także ze
+      znakiem zamienionym na ``verdict``.
+
+    Rdzeń wpisuje go tak, dopóki ten Wpis tego maila jest zwycięskim Wpisem zlecenia: Wpis z późniejszego maila wygrywa
+    jak każdy późniejszy, także z tym samym znakiem, a ręczna wartość zostaje z ``ManualDifference``. Decyzja należy do
+    maila, a nie do chwili, bo zegar komputera taty nie musi się zgadzać z chwilą przyjścia maila; ``at`` mają tylko
+    pamięć i Logi."""
 
     mail: MailId
     worker: Login
@@ -462,8 +469,9 @@ class RequestedEntry:
 
 @dataclass(frozen=True)
 class Requestable:
-    """Co wpisze Wpis na życzenie przy ``MissingVerdict`` z Wpisu Raportu wykonawcy ``mail``: ``tak`` albo ``nie``
-    (``verdict``) i czynności Wpisu (``activities``) do zlecenia z dnia ``order_day``, który ma ono po Wpisie."""
+    """Co wpisze Wpis na życzenie z Wpisu Raportu wykonawcy ``mail`` (przy ``MissingVerdict`` albo przy zleceniu z
+    Wpisem raportu z błędem tematu, ``OrderDetail.request``): ``tak`` albo ``nie`` (``verdict``) i czynności Wpisu
+    (``activities``) do zlecenia z dnia ``order_day``, który ma ono po Wpisie."""
 
     mail: MailId
     verdict: Verdict
@@ -635,18 +643,25 @@ class ReadReport:
 @dataclass(frozen=True)
 class ReadUnreadable:
     """Raport wykonawcy z błędem tematu (ADR 0041): mail od Wykonawcy z Wpisami i ze słowem Raportu wykonawcy w
-    temacie, który nie daje dnia zleceń wprost, z powodem ``fault``. ``numbers``: numery Wpisów jego treści, po których
-    poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``) i które wygrywają z datą (``Board.days``);
-    ``day``: dzień z tematu, gdy da się go przeczytać obok błędu (``_subject.read``); ``subject``: temat dla taty, poza
-    tożsamością odczytu, więc z dwóch odczytów różnych tylko tematem liczy się pierwszy w kolejności skrzynki."""
+    temacie, który nie daje dnia zleceń wprost, z powodem ``fault``. ``entries``: Wpisy jego treści jak w
+    ``ReadReport``, które Centrum wpisuje tylko Wpisem na życzenie (``RequestedEntry``); ``day``: dzień z tematu, gdy
+    da się go przeczytać obok błędu (``_subject.read``); ``subject``: temat dla taty, poza tożsamością odczytu, więc z
+    dwóch odczytów różnych tylko tematem liczy się pierwszy w kolejności skrzynki."""
 
     mail: MailId
     arrived: datetime
     worker: Login
     fault: SubjectFault
-    numbers: frozenset[OrderNumber]
+    entries: tuple[ReportEntry, ...]
     day: date | None
     subject: ReportSubject = field(compare=False)
+
+    @property
+    def numbers(self) -> frozenset[OrderNumber]:
+        """Numery Wpisów, po których poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``) i które wygrywają
+        z datą (``Board.days``)."""
+
+        return frozenset(entry.number for entry in self.entries)
 
 
 @dataclass(frozen=True)
@@ -955,7 +970,8 @@ class OrderDetail:
     kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), czy zlecenie ma jakikolwiek Wpis (``reported``) i Kody
     czynności zlecenia ``tak`` z Legendy czynności kliknięcia (``codes``, ``_descriptions.codes``; pusta krotka: „BRAK
     KODU”; ``None``: zlecenie bez ``tak`` albo wynik kliknięcia sprzed kodów). ``faulty``: zlecenie ma Wpis w raporcie z
-    błędem tematu za swój dzień (``WindowRead.faulty_entries``), którego Centrum nie wpisało."""
+    błędem tematu za swój dzień (``WindowRead.faulty_entries``), którego Centrum nie wpisało, a ``request`` Wpis na
+    życzenie tego Wpisu, gdy Centrum wie, co wpisać (``WindowRead.offers``; ``None``: przycisku nie ma)."""
 
     number: OrderNumber
     successful: str | None
@@ -963,6 +979,7 @@ class OrderDetail:
     reported: bool
     codes: tuple[str, ...] | None = None
     faulty: bool = False
+    request: Requestable | None = None
 
 
 @dataclass(frozen=True)

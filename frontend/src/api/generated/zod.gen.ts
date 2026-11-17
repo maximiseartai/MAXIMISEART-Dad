@@ -1586,32 +1586,6 @@ export const zReportsNote = z.object({
 });
 
 /**
- * ReportsOrder
- *
- * Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
- * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem
- * tylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego
- * Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
- *
- * ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
- * i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
- * czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.
- */
-export const zReportsOrder = z.object({
-    number: z.string(),
-    successful: z.string().nullable(),
-    activities: z.string().nullable(),
-    state: z.enum([
-        'entered',
-        'without_report',
-        'problem',
-        'faulty_subject'
-    ]),
-    codes: z.array(z.string()),
-    no_code: z.boolean()
-});
-
-/**
  * RequestedCell
  *
  * Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
@@ -1626,6 +1600,35 @@ export const zRequestedCell = z.object({
     activities: z.string(),
     successful: z.enum(['tak', 'nie']),
     order_day: z.iso.date()
+});
+
+/**
+ * ReportsOrder
+ *
+ * Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
+ * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem
+ * tylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego
+ * Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
+ *
+ * ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
+ * i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
+ * czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.
+ * ``request``: Wpis na życzenie przy zleceniu ze stanem ``faulty_subject`` (ADR 0041), który wpisze Wpis raportu z
+ * błędem tematu do tego zlecenia (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać).
+ */
+export const zReportsOrder = z.object({
+    number: z.string(),
+    successful: z.string().nullable(),
+    activities: z.string().nullable(),
+    state: z.enum([
+        'entered',
+        'without_report',
+        'problem',
+        'faulty_subject'
+    ]),
+    codes: z.array(z.string()),
+    no_code: z.boolean(),
+    request: zRequestedCell.nullable()
 });
 
 /**

@@ -46,7 +46,7 @@ export function WorkerAvatar({ worker }: { worker: string }) {
  * (`orders_detail`) z problemami, „Zostaw moją”, Wpisem na życzenie, spokojnymi informacjami o Przeniesieniach zleceń
  * (`notes`) i o raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z tematem
  * po strażniku reguły danych, rodzajem błędu, dniem, za który Centrum go liczy, i chwilą przyjścia maila, a jego zlecenia mają stan
- * „Błąd tematu”, nie „Bez raportu”. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
+ * „Błąd tematu”, nie „Bez raportu”, i Wpis na życzenie, gdy Centrum wie, co wpisać. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
  * przebieg Przypomnień o raporcie za ten dzień (`reminders`), gdy jakieś poszło.
  */
 export function DayDetails({
@@ -174,6 +174,7 @@ function Orders({
           <OrderLine order={order} />
           <StatusBadge status={orderStatus(order, state.kind)} label={ORDER_LABELS[order.state]} />
           <CodesLine order={order} />
+          {order.request === null ? null : <OnRequest request={order.request} />}
           {state.day.problems
             .filter((problem) => problem.number === order.number)
             .map((problem) => (
@@ -387,8 +388,8 @@ function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem }
 }
 
 /**
- * Wpis na życzenie (ADR 0041): co wpisze się do INTERMAX, zanim tata kliknie, i przycisk, który startuje Wpisanie
- * raportów z jego decyzją. W czasie każdego Uruchomienia przycisk czeka; odmowę serwera (INTERMAX otwarty w Excelu)
+ * Wpis na życzenie (ADR 0041) przy problemie albo przy zleceniu z Wpisem raportu z błędem tematu: co wpisze się do
+ * INTERMAX, zanim tata kliknie, i przycisk, który startuje Wpisanie raportów z jego decyzją. W czasie każdego Uruchomienia przycisk czeka; odmowę serwera (INTERMAX otwarty w Excelu)
  * pokazuje powiadomienie.
  */
 function OnRequest({ request }: { request: RequestedCell }) {
