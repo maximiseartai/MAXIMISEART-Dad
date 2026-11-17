@@ -4,15 +4,18 @@
 
 Zaakceptowana (słowa taty przekazane przez Maksa 17.11.2026 i decyzje Maksa z grilla w gałęzi
 `docs/powiadomienia-brak-raportow`). Od taty są trzy reguły, cytowane w Kontekście: przypomnienie tylko bez raportu,
-błąd raportu tylko dla taty i dopisany opis to nie błąd. Pozostałe punkty Decyzji to decyzje Maksa, nazwane przy
+błąd raportu tylko dla taty i zwykły opis obok kodów to nie błąd. Pozostałe punkty Decyzji to decyzje Maksa, nazwane przy
 każdym. Spis zdań niżej powstał z przejścia po każdym punkcie Decyzji ADR 0039 i ADR 0030.
 
 Zmienia te zdania [ADR 0039](0039-opis-zlecenia-to-same-kody-czynnosci.md):
 
 - „Opis zlecenia to same kody. (…) Każde słowo to cały zapis kodu z legendy albo `tak`/`nie`”: obok Kodów czynności
   stoi zwykły opis technika, a słowo, które nie jest zapisem kodu, jest opisem, nie błędem;
-- „Błąd opisu to opis ze słowem, które nie jest zapisem kodu (…)”: Błąd opisu to już tylko kod z liczbą spoza
-  przedziałów, kolumna Ilości usług trafiona drugi raz i kolumna wypełniona dwoma kolorami;
+- „Błąd opisu to opis ze słowem, które nie jest zapisem kodu (9, 10; także kod ze spacją w środku, sklejony z innym i
+  zwykły opis bez kodu)”: Błąd opisu to już tylko kod z liczbą spoza przedziałów, kolumna Ilości usług trafiona drugi
+  raz i kolumna wypełniona dwoma kolorami. Odpada też oparcie tego zdania na pierwszym zdaniu odpowiedzi 9 („Pracownicy
+  mają pisać zgodnie z kodami; jeżeli napiszą inaczej, to traktujemy to jako błąd”): własny zapis kodu nie jest już
+  Błędem opisu, tylko zwykłym opisem (decyzja Maksa, niżej);
 - „Opis z Błędem opisu nie wyznacza niczego” zostaje, ale opis z kodami i zwykłym tekstem wyznacza Ilości z samych
   kodów: wraca wariant „Kod obok zwykłego opisu wpisuje swoje”, który ADR 0039 odrzucił;
 - „Błąd opisu w Raporcie wykonawcy: raport niewysłany, Wpis wpisany”: raport jest przysłany, Wpis wpisany, a błąd
@@ -41,25 +44,37 @@ Wykonawcom. Trzy poszły po raporcie z błędem w temacie (literówka w słowie 
 dnia), a tylko trzy za dni, za które raportu naprawdę nie było. Tata tego samego ranka sam pisał do Wykonawców o
 błędach, a potem do wszystkich, że dodatkowy opis nie jest błędem.
 
-Tata mówi: przypomnienie idzie tylko wtedy, gdy Wykonawca w ogóle nie przysłał raportu. Raport przysłany źle (temat,
-kod, tekst) to sprawa taty, nie przypomnienie. Odpowiedź 9 z ADR 0039 („każdy błąd można potraktować jako
-niewysłany raport”) była możliwością, nie życzeniem, a odpowiedź 10 („resztę traktujemy jako błąd”) nie przetrwała
-pierwszego dnia: opis obok kodu „często będzie, bo musi być”.
+Słowa taty przekazane przez Maksa: przypomnienia „mają wychodzić tylko wtedy, kiedy pracownik w ogóle nie przesłał
+raportu”, a „kiedy przysłał go źle (zły format, kod, tekst itd.) ma tata zostać tylko powiadomiony”; „w opisie oprócz
+tych kodów (…) będzie też zwykły opis”. Mail taty do Wykonawców: „dodatkowy opis nie jest błędem”. Tata nie mówi o
+własnym zapisie kodu (`instmdic`, `dzielnik 1/2`), więc to, że i on jest zwykłym opisem, to decyzja Maksa.
+
+Drugie zdanie odpowiedzi 9 z ADR 0039 („każdy błąd można potraktować jako niewysłany raport”) było możliwością, którą
+tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmienia jego mail. Maks dodaje, że dodatkowy opis
+„często będzie, bo musi być”.
 
 ## Decyzja
 
 - **Przypomnienie tylko bez raportu.** Przypomnienie za dzień idzie, dopóki Wykonawca nie przysłał za ten dzień żadnego
   Raportu wykonawcy. Raport z błędem w temacie albo we Wpisach jest przysłany.
-- **Zwykły opis obok kodów.** Wpisanie raportów wpisuje do `CZYNNOŚCI ZREALIZOWANE` cały opis po `tak`/`nie`, a
-  Przygotowanie pliku zbiorczego wyznacza Ilości legendą z samych Kodów czynności. Zlecenie `tak` bez żadnego
-  rozpoznanego kodu ma w szczegółach dnia informację „BRAK KODU”, bez zgadywania, do którego kodu słowo jest podobne
-  (ADR 0038 odrzucił rozmyte dopasowanie), i zostaje tacie w Ilościach do uzupełnienia.
+- **Zwykły opis obok kodów** (słowa taty). Zwykły opis obok Kodów czynności nie jest błędem.
+- **Cały opis do INTERMAX, Ilości z samych kodów** (decyzja Maksa). Wpisanie raportów wpisuje do
+  `CZYNNOŚCI ZREALIZOWANE` cały opis po `tak`/`nie`, a Przygotowanie pliku zbiorczego wyznacza Ilości legendą z samych
+  Kodów czynności, także gdy obok stoi zwykły opis.
+- **Własny zapis kodu to zwykły opis, „BRAK KODU” dla taty** (decyzja Maksa). Słowo, które nie jest zapisem kodu z
+  legendy, także własny zapis kodu (`instmdic`, `dzielnik 1/2`), jest zwykłym opisem i niczego nie wyznacza. Zlecenie
+  `tak` bez żadnego rozpoznanego kodu ma w szczegółach dnia informację „BRAK KODU”, bez zgadywania, do którego kodu
+  słowo jest podobne (ADR 0038 odrzucił rozmyte dopasowanie). Zlecenie z kodem i własnym zapisem drugiego kodu
+  informacji nie ma: tata widzi wtedy tylko cały opis. Zlecenie bez kodu zostaje tacie w Ilościach do uzupełnienia;
+  Przygotowanie pliku zbiorczego liczy je w ostrzeżeniu o kolumnach z opisu technika jako wiersz zostawiony tacie, a
+  Kontrola ilości jako wiersz bez kodu, jak przed ADR 0039 (decyzja koordynatora: ostrzeżenie i blok Kontroli według
+  powodu zostają tylko dla Błędu opisu).
 - **Błędy raportu widzi tata w kafelku dnia** (decyzja Maksa: miejsce powiadomienia z reguły taty). Błąd opisu, błąd tematu i każdy inny problem Wpisania raportów stoi przy
   zleceniu w szczegółach dnia Wykonawcy na mapie cieplnej widoku Raporty, po kliknięciu „Wpisz raporty z maili”. Praca
   przypomnień w tle niczego nie pokazuje w kafelkach.
 - **Wpis na życzenie** (decyzja Maksa: „dopisanie danych z raportu do INTERMAX na życzenie, a nie jako
-  automatyczny run”). Przy błędzie, przy którym wiadomo, co wpisać (temat bez dnia albo z dniem, którego numery
-  zleceń nie potwierdzają; `t`, `n`, `skuteczne`, `nieskuteczne` zamiast `tak`/`nie`), tata jednym kliknięciem przy
+  automatyczny run”). Przy błędzie, przy którym wiadomo, co wpisać (błąd tematu, czyli temat ze słowem raportu
+  bez dnia albo z innymi słowami; `t`, `n`, `skuteczne`, `nieskuteczne` zamiast `tak`/`nie`), tata jednym kliknięciem przy
   zleceniu wpisuje Wpis do INTERMAX na swoją odpowiedzialność, zamiast prosić Wykonawcę o nowy mail. W INTERMAX wygląda
   jak każdy Wpis, Centrum pamięta decyzję taty jak „Zostaw moją”, a późniejszy poprawny Wpis raportu wygrywa. Przy
   przeciwnych Wpisach i numerze, którego INTERMAX nie ma albo ma w kilku miejscach, przycisku nie ma.

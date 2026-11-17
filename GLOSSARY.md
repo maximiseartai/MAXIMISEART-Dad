@@ -202,7 +202,7 @@ _Avoid_: import maili, synchronizacja
 ## Wpis na życzenie
 
 Wpis raportu z błędem, który Wpisanie raportów samo pomija, a tata wpisuje do Rejestru zleceń jednym kliknięciem przy zleceniu w widoku Raporty, na swoją odpowiedzialność.
-Jest tylko przy błędzie, przy którym wiadomo, co wpisać: błąd tematu (temat bez dnia, z innymi słowami albo z dniem, którego numery zleceń nie potwierdzają; wtedy dzień, który Centrum wskazuje przy zleceniu) i `t`, `n`, `skuteczne` albo `nieskuteczne` zamiast `tak` albo `nie`.
+Jest tylko przy błędzie, przy którym wiadomo, co wpisać: błąd tematu (temat ze słowem raportu bez dnia albo z innymi słowami; wtedy dzień z tematu albo dzień, który Centrum wskazuje przy zleceniu, a numery zleceń dalej rozstrzygają jak przy pomylonym temacie i Przeniesieniu zlecenia) i `t`, `n`, `skuteczne` albo `nieskuteczne` zamiast `tak` albo `nie`.
 W Rejestrze wygląda jak każdy Wpis, a późniejszy poprawny Wpis raportu wygrywa z nim.
 _Avoid_: dopisanie ręczne, wymuszenie, Zlecenie dopisane z raportu (to zlecenie, którego nie było w Rejestrze)
 
