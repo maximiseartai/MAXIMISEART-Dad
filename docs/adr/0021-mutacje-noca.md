@@ -80,9 +80,12 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Taki wynik nie mówi więc ani, że test łapie mutację, ani, że jej nie łapie; przed #1339 siedem takich linii z nocy 9–11.11 trafiło do issues jako zwykłe przeżyte, choć test każdą łapał.
   W runach 42783639074 i 42982940704 tak kończyło się 21 z 64 i 20 ze 143 przeżytych mutacji (odtworzenie zapisów i logów części w #1339).
   Zapis części ma je w liście `przekroczony_czas`, a część kończy się kodem 1 jak z przeżytymi.
-  `PRZEKROCZONY CZAS` w przebiegu przed ostatnim ma linię w logu części z nazwą przebiegu, a mutacja biegnie dalej z szerszymi testami.
+  `PRZEKROCZONY CZAS` w przebiegu przed ostatnim ma linię w logu części z nazwą przebiegu, a mutacja biegnie dalej od razu z testami pliku, ostatnim przebiegiem z workerami xdist.
+  Testy kodu pliku są podzbiorem testów pliku i biegną bez xdist jak testy linii, więc po przekroczeniu w testach linii przekraczały limit znowu: w nocach 12–17.11 109 razy na 110, a ten jeden raz wykryłyby ją też testy pliku; 17.11 kosztowało to 17 razy po 900 s na najdłuższych łańcuchach części.
 - Przeżyta to mutacja, której nie wykrył ani test, ani brama typów (#703, zgoda Maksa w wątku T3 31.10).
   Mutację operatora (`True` → `False`, `<` → `<=`, `return x` → `return None`…), która przeżyła testy, sprawdzają jeszcze ruff i mypy obu systemów, te same kroki co brama pre-push (`tools/mutacje.py`, `type_gate`).
+  Mutację, która idzie do testów pliku, brama sprawdza przed nimi, bo trwa sekundy, a testy pliku minuty na wszystkich rdzeniach: 17.11 brama wykryła 20 z 80 mutacji, które przeszły testy pliku albo przekroczyły w nich limit, więc ich testy pliku nic nie dały (linia z dopiskiem `(przed testami pliku)`).
+  Wyjątkiem jest mutacja linii samego cofnięcia fragmentu tej części: o tym, czy cofnięcie jest zdominowane, mówi jej wykrycie testem, a nie bramą, więc biegnie z testami pliku jak dotąd (#2064 r1; 17.11 dotyczyło to 1 z 16 mutacji, które brama złapała po testach pliku).
   Gdy któryś zgłasza, że kod jest błędny, mutacja jest `WYKRYTA PRZEZ BRAMĘ TYPÓW` i nie trafia do issue, bo takiego kodu nie wpuszczą brama pre-push ani zadanie CI „Ruff, mypy”.
   Za błąd kodu liczy się z ruff tylko niezdefiniowana nazwa (F821, F822, F823) i błąd składni, a z mypy każdy błąd typów poza pozostałościami (`unused-ignore`, `redundant-*`, `unreachable`, `no-any-return`), `mutacje.wrong`.
   Nieużyty import albo zmienna (F401, F841) się nie liczy, bo zostawia ją sama mutacja jednej linii.

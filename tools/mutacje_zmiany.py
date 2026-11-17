@@ -85,13 +85,17 @@ nawet gdy test tamtego narzędzia by go wykrył: potrzebuje testu, który sam na
 Mutacja, po której pytest-timeout kończy test (``ZAWIESZENIE``), liczy się jak wykryta z dopiskiem ``liczona jako
 wykryta: pytest-timeout czerwieni test w CI`` (``silnik_mutacji.in_ci``) i nie biegnie z szerszymi testami. Mutacja, po której
 testy nie kończą się w ``--limit-s`` (``PRZEKROCZONY CZAS``), nie jest wykryta, bo test tylko wolniejszy CI przechodzi: z
-przebiegu przed ostatnim biegnie dalej z szerszymi testami, z linią ``PRZEKROCZONY CZAS`` z nazwą przebiegu. Po ostatnim
+przebiegu przed ostatnim biegnie dalej od razu z testami pliku, z linią ``PRZEKROCZONY CZAS`` z nazwą przebiegu (testy
+kodu pliku to ich podzbiór bez xdist, więc przekroczyłyby limit znowu, ADR 0021). Po ostatnim
 przebiegu nie jest też przeżyta: limit dotyczy całego polecenia ``pytest``, a sam zbiór testów pliku trwa blisko niego
 (run 42783639074, część 10/37: 802.59 s bez wykrycia), więc mutacja, po której test pada, potrafi go przekroczyć przed
 końcem ``-x`` (#1339). Gdy nie wykryje jej brama typów (cofnięcia fragmentu brama nie sprawdza), trafia do zapisu
 jako ``przekroczony_czas``, a do issue z dopiskiem, że noc nie dała jej werdyktu.
 Mutację, która przeżyła ostatni przebieg testów albo nie ma żadnego testu, sprawdza jeszcze brama typów
-(``silnik_mutacji.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutacja, po której któryś zgłasza, że kod jest
+(``silnik_mutacji.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutację, która idzie do testów pliku,
+brama sprawdza przed nimi (linia z dopiskiem ``(przed testami pliku)``), bo trwa sekundy, a one minuty na wszystkich
+rdzeniach; mutację linii samego cofnięcia fragmentu części dopiero po nich, bo ``_dominated`` potrzebuje jej wykrycia
+testem. Mutacja, po której któryś zgłasza, że kod jest
 błędny (niezdefiniowana nazwa, błąd składni, błąd typów), to ``WYKRYTA PRZEZ BRAMĘ TYPÓW`` z nazwą kroku i tym błędem, i
 nie trafia do zapisu ani do issue (``silnik_mutacji.wrong``). Cofnięcia fragmentu do bazy (``Mutant.revert``) brama nie
 sprawdza: przywraca ono kod, który przeszedł bramę, więc jej błąd na nim powstaje tylko z niezgodności z niecofniętymi
@@ -1378,9 +1382,12 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     others = [entry for entry in narrow if entry[0].revert is not Revert.HUNK]
     reverts = [entry for entry in narrow if entry[0].revert is Revert.HUNK]
     killed: set[Mutant] = set()  # wykryte przez test, nie przez bramę typów
+    # Linie cofnięć fragmentu części: o tym, czy cofnięcie jest ``_dominated``, mówi wykrycie testem mutacji tych linii.
+    reverted = {(revert.path, line) for revert, _, _ in reverts for line in revert.lines}
     ran: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []
-    middle = wide_count = dominated = 0
-    narrow_s = wide_s = 0.0
+    let_through: set[Mutant] = set()  # mutacje, które brama typów przepuściła przed testami pliku
+    middle = wide_count = dominated = ahead_count = 0
+    narrow_s = wide_s = ahead_s = 0.0
     for second in (False, True):
         queued = others
         if second:
@@ -1412,15 +1419,47 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
                 if caught or verdict == silnik_mutacji.Verdict.NO_VERDICT or not remaining:
                     print(f"{verdict}: {mutation.name} → {last}{label}", flush=True)
                     continue
-                if verdict == silnik_mutacji.Verdict.OVER_LIMIT:
+                late = verdict == silnik_mutacji.Verdict.OVER_LIMIT
+                if late:
                     print(f"{verdict}: {mutation.name} → {last}{label or ' (testy linii)'}, biegnie dalej z szerszymi testami", flush=True)
-                if remaining[1:]:
-                    further.append((mutant, replace(mutation, command=_command(remaining[0], coverage)), remaining[1:]))
+                # Testy kodu pliku to podzbiór testów pliku i też biegną bez xdist, więc po przekroczeniu limitu
+                # przekraczają go znowu: w nocach 12–17.11 109 razy na 110.
+                steps = remaining[-1:] if late else remaining
+                if steps[1:]:
+                    further.append((mutant, replace(mutation, command=_command(steps[0], coverage)), steps[1:]))
                 else:
-                    wide.append((mutant, replace(mutation, command=_command(remaining[0], coverage, args.rownolegle))))
+                    wide.append((mutant, replace(mutation, command=_command(steps[0], coverage, args.rownolegle))))
             middle += len(further)
             queued, label = further, " (testy kodu pliku)"
         between = time.monotonic()
+        # Brama typów trwa sekundy, a testy pliku minuty na wszystkich rdzeniach, więc mutację bez cofnięcia sprawdza
+        # przed nimi: tę, którą odrzuca, wyjęłaby z issue także po nich. Mutacja linii cofnięcia fragmentu biegnie z
+        # testami pliku najpierw, bo bez jej wykrycia testem cofnięcie nie jest ZDOMINOWANA i trafia do issue (#2064 r1).
+        ahead = [(mutant, mutation) for mutant, mutation in wide if mutant.revert is Revert.NONE and (mutant.path, mutant.line) not in reverted]
+        if ahead:
+            gated_ahead = silnik_mutacji.type_gate(
+                [mutation for _, mutation in ahead],
+                [(silnik_mutacji.Verdict.SURVIVED, "")] * len(ahead),
+                workers=args.rownolegle,
+                limit_s=args.limit_s,
+                deadline=deadline,
+                gate=gate,
+            )
+            stopped: set[Mutant] = set()
+            for (mutant, mutation), (verdict, shown) in zip(ahead, gated_ahead, strict=True):
+                if verdict == silnik_mutacji.Verdict.TYPE_GATE:
+                    judged.append(identity[mutant])
+                elif verdict == silnik_mutacji.Verdict.NO_VERDICT:
+                    unchecked.append((mutant, texts[mutant.path]))
+                else:
+                    let_through.add(mutant)
+                    continue
+                stopped.add(mutant)
+                print(f"{verdict}: {mutation.name} → {shown} (przed testami pliku)", flush=True)
+            wide = [(mutant, mutation) for mutant, mutation in wide if mutant not in stopped]
+        ahead_count += len(ahead)
+        widened = time.monotonic()
+        ahead_s += widened - between
         for (mutant, mutation), (verdict, shown) in zip(wide, silnik_mutacji.verdicts([m for _, m in wide], workers=1, limit_s=args.limit_s, deadline=deadline), strict=True):
             caught, last = silnik_mutacji.in_ci(verdict, shown)
             if caught:
@@ -1432,19 +1471,20 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
                 unchecked.append((mutant, texts[mutant.path]))
             print(f"{verdict}: {mutation.name} → {last} (testy pliku)", flush=True)
         narrow_s += between - started
-        wide_s += time.monotonic() - between
+        wide_s += time.monotonic() - widened
         wide_count += len(wide)
     clock.append(time.monotonic())
     judged += [identity[mutant] for mutant in found if mutant in killed]
     # Cofnięcie do bazy przywraca kod, który przeszedł bramę, więc jej błąd mówi tylko o niezgodności z resztą zmiany.
-    checked = [(mutation, (verdict, shown)) for mutant, mutation, verdict, shown, _ in passed if mutant.revert is Revert.NONE]
+    to_gate = {mutant for mutant, *_ in passed if mutant.revert is Revert.NONE and mutant not in let_through}
+    checked = [(mutation, (verdict, shown)) for mutant, mutation, verdict, shown, _ in passed if mutant in to_gate]
     gated = iter(
         silnik_mutacji.type_gate(
             [mutation for mutation, _ in checked], [found for _, found in checked], workers=args.rownolegle, limit_s=args.limit_s, deadline=deadline, gate=gate
         )
     )
     for mutant, mutation, tests_verdict, tests_shown, label in passed:
-        verdict, shown = next(gated) if mutant.revert is Revert.NONE else (tests_verdict, tests_shown)
+        verdict, shown = next(gated) if mutant in to_gate else (tests_verdict, tests_shown)
         caught, last = silnik_mutacji.in_ci(verdict, shown)
         if caught:
             judged.append(identity[mutant])
@@ -1462,7 +1502,7 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     print(
         f"CZAS | pokrycie {coverage_s:.0f} s | testy linii {narrow_s:.0f} s ({len(ran)} mutacji, w tym {uncovered} bez drugiego"
         f" i {middle} z testami kodu pliku) | testy pliku {wide_s:.0f} s ({wide_count} mutacji) | cofnięcia zdominowane {dominated}"
-        f" | brama typów {gate_s:.0f} s ({len(checked)} mutacji)",
+        f" | brama typów {gate_s + ahead_s:.0f} s ({len(checked) + ahead_count} mutacji)",
         flush=True,
     )
     summary = f"mutacje={len(found)} | wyjątki={excused} | innego systemu={other_system}"
