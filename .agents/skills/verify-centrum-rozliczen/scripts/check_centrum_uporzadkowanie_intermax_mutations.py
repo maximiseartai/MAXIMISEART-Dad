@@ -75,7 +75,7 @@ MUTATIONS = (
     ),
     Mutation(
         "wynik bez Historii adresu",
-        (Edit(INTERMAX_KIND, '[count_figure("Historia adresu", summary.history.orders)]', "[]"),),
+        (Edit(INTERMAX_KIND, "[count_figure(intermax_messages.HISTORY_FIGURE, summary.history.orders)]", "[]"),),
         UPORZADKOWANIE,
         "tata nie widzi, czy kopiowanie z Bazy zleceń zadziałało",
     ),

@@ -760,10 +760,10 @@ HISTORY_BASE = (
 """Baza zleceń z Historią adresu zleceń ``Ulica 101`` (dwa wiersze) i ``Ulica 103`` (jeden) domyślnego wklejenia."""
 
 
-def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_karta_mowi_n_z_m_zlecen_a_logi_maja_same_liczby(
+def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_karta_ma_liczbe_historii_adresu_po_zleceniach_a_logi_same_liczby(
     tmp_path: Path,
 ) -> None:
-    """Karta czyta „Historia adresu: 2 z 6 zleceń” z liczby Historii adresu zaraz po liczbie Zleceń."""
+    """Karta ma osobną liczbę „Historia adresu” 2 (zleceń z Historią adresu) zaraz po liczbie „Zlecenia” 6."""
 
     centrum = ordering_centrum(tmp_path, order_base=HISTORY_BASE)
 

@@ -19,10 +19,12 @@ from rozliczenia.tool_files import INTERMAX_METRICS
 
 
 def _summary(summary: OrderingSummary, _dry_run: bool) -> runs_contract.RunSummary:
-    """Liczby karty Uporządkowania: Historia adresu stoi zaraz po Zleceniach, więc tata czyta „N z M zleceń”; bez Bazy
+    """Liczby karty Uporządkowania: osobna liczba zleceń z Historią adresu stoi zaraz po liczbie Zleceń; bez Bazy
     zleceń jej nie ma, a mówi o tym ostrzeżenie."""
 
-    history = [] if summary.history is None else [count_figure("Historia adresu", summary.history.orders)]
+    history = (
+        [] if summary.history is None else [count_figure(intermax_messages.HISTORY_FIGURE, summary.history.orders)]
+    )
     return runs_contract.RunSummary(
         figures=[
             count_figure("Zlecenia", summary.order_count),

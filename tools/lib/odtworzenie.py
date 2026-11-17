@@ -34,10 +34,10 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa
   tylko wtedy, gdy Logi kończą się odmową.
 - Porównanie (``first_difference``) idzie po polach Logów w kolejności przyczyn: Kopia wejścia (czy pliki z Kopii
-  czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty (bez ostrzeżenia o Bazie zleceń, której
-  Kopia wejścia nie ma, więc odtworzenie porządkuje bez niej), uwagi techniczne, podsumowanie, liczba
+  czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty, uwagi techniczne, podsumowanie, liczba
   problemów, etapy, Szablony pracownika, Ilości tylko dla INEA, Wpisy INTERMAX, Wpisanie raportów, ślad zleceń i
-  Zatrzymanie okna efenix oraz ślad wywołań. Raport podaje przyczynę Zatrzymania z Logów (``stop_cause``): przyczynę techniczną Zatrzymania
+  Zatrzymanie okna efenix oraz ślad wywołań, bez tego, co zależy od Bazy zleceń, której Kopia wejścia nie ma
+  (``_without_order_base``: ostrzeżenie o Bazie i liczba Historii adresu karty), bo odtworzenie porządkuje bez niej. Raport podaje przyczynę Zatrzymania z Logów (``stop_cause``): przyczynę techniczną Zatrzymania
   okna efenix i łańcuch wyjątków śladu wywołań z drogą startu okna, która zawiodła (#976). Czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty i uwagi strażnika o Kopii
   wejścia są poza porównaniem: zależą od komputera i chwili, a nie od kodu i wejścia.
 
@@ -1152,11 +1152,7 @@ COMPARED: Final = (
     _Part("wynik", "result"),
     _Part("zakończenie", "ending"),
     _Part("Rodzaj Zatrzymania", "stop_kind", lambda kind: "for_tata" if kind == "repeated" else kind),
-    _Part(
-        "Komunikaty",
-        "messages",
-        lambda messages: [message for message in messages if message["code"] != intermax_messages.ORDER_BASE_SKIPPED],
-    ),
+    _Part("Komunikaty", "messages"),
     _Part("uwagi techniczne", "technical_notes"),
     _Part("podsumowanie", "summary"),
     _Part("liczba problemów", "issue_count"),
@@ -1198,8 +1194,20 @@ Każde inne
 pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 
 
+def _without_order_base(record: dict[str, Any]) -> dict[str, Any]:
+    """Logi bez tego, co zależy od Bazy zleceń, której Kopia wejścia nie ma: ostrzeżenia o Bazie zleceń w Komunikatach i
+    liczby Historii adresu na karcie; liczby Historii adresu w Logach (``address_history``) są w ``NOT_COMPARED``."""
+
+    messages = [message for message in record["messages"] if message["code"] != intermax_messages.ORDER_BASE_SKIPPED]
+    summary = record["summary"]
+    if summary is not None:
+        figures = [figure for figure in summary["figures"] if figure["label"] != intermax_messages.HISTORY_FIGURE]
+        summary = {**summary, "figures": figures}
+    return {**record, "messages": messages, "summary": summary}
+
+
 def first_difference(logged: RunLog, replayed: RunLog) -> Difference | None:
-    left, right = logged.model_dump(), replayed.model_dump()
+    left, right = _without_order_base(logged.model_dump()), _without_order_base(replayed.model_dump())
     for part in COMPARED:
         found = _walk(part.view(left[part.key]), part.view(right[part.key]), f"{part.name} ({part.key})")
         if found is not None:
