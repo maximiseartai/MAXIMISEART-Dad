@@ -95,7 +95,8 @@ def held(path: Path) -> bool:
     procesu z opóźnieniem zależnym od zasobów, więc po zabiciu pytaj ``wait_for(lambda: not held(path), s)``.
 
     Pytanie samo bierze wolną blokadę na chwilę, więc kod, który bierze ją w tej chwili bez czekania, dostaje odmowę, a
-    odpowiedź nie mówi, kto ją trzyma; o blokadę, którą kod pod testem bierze bez czekania, nie pytaj nim (#2086)."""
+    odpowiedź nie mówi, kto ją trzyma; o blokadę, którą kod pod testem bierze bez czekania, nie pytaj nim, dopóki jej
+    nie trzyma (#2086): pytanie o blokadę już trzymaną niczego jej nie odbiera."""
 
     if not path.exists():
         return False

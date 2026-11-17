@@ -570,7 +570,7 @@ def test_dziecko_zlecone_w_kazdej_chwili_konca_strażnika_ma_strażnika(
 
     def hook() -> None:
         straznik.record(files, [NEW], time.time())
-        started.append(threading.Thread(target=straznik.serve, args=(PARENT, "t3")))
+        started.append(threading.Thread(target=straznik.serve, args=(PARENT, "t3"), daemon=True))
         started[-1].start()
 
     log = straznik._log
@@ -585,7 +585,7 @@ def test_dziecko_zlecone_w_kazdej_chwili_konca_strażnika_ma_strażnika(
     # Strażnik pierwszego dziecka pyta T3, więc trzyma życie i oddał kolejkę; czekający (gdy jest) bierze kolejkę i czeka
     # na życie. Stan czytają zdarzenia z wnętrza serve, bo sonda held bierze blokadę na chwilę, a czekający, który wtedy
     # bierze kolejkę bez czekania, kończy się (#2086).
-    first = threading.Thread(target=straznik.serve, args=(PARENT, "t3"))
+    first = threading.Thread(target=straznik.serve, args=(PARENT, "t3"), daemon=True)
     first.start()
     assert t3.asked.wait(5)
     if waiting:
@@ -593,13 +593,13 @@ def test_dziecko_zlecone_w_kazdej_chwili_konca_strażnika_ma_strażnika(
         taken = straznik._taken
 
         def mark_queued(handle: IO[str], *, wait: bool) -> bool:
-            # Na życie czeka tylko proces, który już wziął kolejkę.
-            if wait:
+            # Na życie czeka tylko proces, który trzyma kolejkę; sonda nie odbiera jej trzymającemu.
+            if wait and held(files.queue):
                 queued.set()
             return bool(taken(handle, wait=wait))
 
         monkeypatch.setattr(straznik, "_taken", mark_queued)
-        started.append(threading.Thread(target=straznik.serve, args=(PARENT, "t3")))
+        started.append(threading.Thread(target=straznik.serve, args=(PARENT, "t3"), daemon=True))
         started[-1].start()
         assert queued.wait(5)
     t3.gate.set()
