@@ -38,7 +38,7 @@ from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_SECTION
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import ActivityLegendView, CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings_reads import readable_folders, readable_quantity_rules
+from rozliczenia.centrum.settings_reads import readable_activity_legend, readable_folders, readable_quantity_rules
 from rozliczenia.client_data import ForbiddenValues
 
 _REFUSED: dict[int | str, dict[str, object]] = {
@@ -61,7 +61,7 @@ def activity_legend_router(
                 contract.ActivityCodeSentence(
                     id=code.id, spellings=code_spellings(code), sentence=code_effects(code, names), code=form_of(code)
                 )
-                for code in view.legend.codes
+                for code in view.shown.codes
             ],
             problem=None if view.problem is None else SettingProblem(field=view.problem.place, message=view.problem.sentence),
             columns=[_column(letter, names) for letter in COLUMNS],
@@ -121,8 +121,8 @@ def activity_legend_router(
         found = recent.read(directory)
         if not found.files and not found.unread:
             return contract.LegendPreviewWithoutFiles(state="no_settled_periods")
-        rules = readable_quantity_rules(settings).rules
-        return legend_preview(view.legend, after, rules, found, price_list.names(), forbidden)
+        rules = readable_quantity_rules(settings)
+        return legend_preview(readable_activity_legend(settings), after, rules, found, price_list.names(), forbidden)
 
     return router
 

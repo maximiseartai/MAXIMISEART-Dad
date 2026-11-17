@@ -95,7 +95,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     )
     def quantities(token: str) -> filling_contract.QuantitiesToFill:
         folder = requested_folder(settings, token)
-        rules, legend = readable_quantity_rules(settings).rules, readable_activity_legend(settings)
+        rules, legend = readable_quantity_rules(settings), readable_activity_legend(settings)
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
@@ -106,7 +106,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     )
     def kind_table(token: str, kind: FillKind) -> filling_contract.KindTable:
         folder = requested_folder(settings, token)
-        rules, legend = readable_quantity_rules(settings).rules, readable_activity_legend(settings)
+        rules, legend = readable_quantity_rules(settings), readable_activity_legend(settings)
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
