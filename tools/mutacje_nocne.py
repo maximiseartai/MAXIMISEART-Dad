@@ -327,7 +327,8 @@ def _osadzone_runu(github: GitHub, run: int, od_sha: str) -> frozenset[mutacje_z
     """Tożsamości ``mutacje_zmiany.OSADZONE`` zapisów części runu, a ``None``, gdy run miał inną bazę. Run bez zakresu
     albo z wygasłym artefaktem rzuca błąd, z którym ``osadzone`` go pomija."""
 
-    # Run ma więcej artefaktów niż strona API: zapis i testy niestabilne każdej części, pokrycie i skrypty skilli.
+    # Lista artefaktów runu ma strony po 100: zapis każdej części, pokrycie i jego testy niestabilne, zapisy skryptów
+    # skilli, więc noc z ok. 75 częściami już się na jednej nie mieści.
     artefakty = {artefakt["name"]: artefakt for artefakt in strony(github, f"{REPO}/actions/runs/{run}/artifacts", "artifacts")}
     if json.loads(_plik_artefaktu(github, artefakty[ARTEFAKT_ZAKRESU], ZAKRES))["baza"] != od_sha:
         return None

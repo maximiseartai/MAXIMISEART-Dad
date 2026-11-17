@@ -187,9 +187,8 @@ def wykonaj(github: GitHub, wykonane: Sequence[Akcja], *, bez_zapisu: bool) -> l
 
 
 def _artefakty(github: GitHub, run_id: int, poczatek: str) -> list[tuple[str, bytes]]:
-    znalezione = github.json(f"{REPO}/actions/runs/{run_id}/artifacts?per_page=100")["artifacts"]
     pliki = []
-    for artefakt in znalezione:
+    for artefakt in strony(github, f"{REPO}/actions/runs/{run_id}/artifacts", "artifacts"):
         if not artefakt["name"].startswith(poczatek) or artefakt["expired"]:
             continue
         with zipfile.ZipFile(io.BytesIO(github.bajty(f"{REPO}/actions/artifacts/{artefakt['id']}/zip"))) as archiwum:

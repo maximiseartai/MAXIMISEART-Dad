@@ -61,8 +61,9 @@ NOCNE = ROOT / ".github" / "workflows" / "mutacje-nocne.yml"
 START_NOCY = ROOT / ".github" / "workflows" / "mutacje-nocne-start.yml"
 # Id artefaktu części w atrapie GitHuba: id runu razy ta liczba plus numer części, a id artefaktu zakresu to id runu.
 ID_CZESCI = 1000
-# Artefakty testów niestabilnych przed zapisami części w liście artefaktów runu w atrapie: więcej niż strona API (100).
-NIESTABILNE = 100
+# Inne artefakty przed zapisami części w liście artefaktów runu w atrapie, tyle co strona API: zapisy części leżą na
+# drugiej stronie, jak w nocy z ok. 75 częściami.
+INNE_ARTEFAKTY = 100
 URUCHOMIENIE_NOCY = ("POST", f"{REPO}/actions/workflows/mutacje-nocne.yml/dispatches", {"ref": "main", "inputs": {"start": "auto"}})
 
 
@@ -123,13 +124,12 @@ class GitHubWPamieci:
 
     def _artefakty(self, id_runu: int) -> list[dict[str, Any]]:
         """Artefakt ``zakres-nocy`` runu ma id runu, a ``mutacje-nocne-<k>`` id ``ID_CZESCI`` razy run plus ``k``. Przed
-        nimi leży ``NIESTABILNE`` artefaktów testów niestabilnych części, więc zapisy części są dopiero na drugiej stronie
-        listy, jak w nocy 60 części."""
+        nimi leży ``INNE_ARTEFAKTY`` zapisów skryptów skilli, więc zapisy części są dopiero na drugiej stronie listy."""
 
-        niestabilne = [{"id": -numer, "name": f"flaky-testy-mutacje-{numer}", "expired": False} for numer in range(1, NIESTABILNE + 1)]
+        inne = [{"id": -numer, "name": f"mutacje-skilli-mutacje-{numer}", "expired": False} for numer in range(1, INNE_ARTEFAKTY + 1)]
         zakres = [{"id": id_runu, "name": "zakres-nocy", "expired": self.zakresy[id_runu] is None}] if id_runu in self.zakresy else []
         czesci = [{"id": id_runu * ID_CZESCI + numer, "name": f"mutacje-nocne-{numer}", "expired": False} for numer in self.zapisy_czesci.get(id_runu, {})]
-        return niestabilne + zakres + czesci
+        return inne + zakres + czesci
 
     def bajty(self, sciezka: str) -> bytes:
         artefakt = re.fullmatch(rf"{re.escape(REPO)}/actions/artifacts/(\d+)/zip", sciezka)

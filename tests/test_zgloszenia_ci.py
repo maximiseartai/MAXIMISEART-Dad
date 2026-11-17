@@ -87,9 +87,15 @@ def _flaky(test: str) -> dict[str, object]:
 
 
 def _artefakty(run_id: int, artefakty: dict[str, object]) -> dict[str, Any]:
+    """Artefakty runu na dwóch stronach API: pierwszą wypełniają inne artefakty (noc ma ich więcej niż strona), a druga
+    ma podane i ``czasy-ci``."""
+
     lista = [{"id": run_id * 10 + numer, "name": nazwa, "expired": False} for numer, nazwa in enumerate(artefakty)]
+    inne = [{"id": -numer, "name": f"mutacje-nocne-{numer}", "expired": False} for numer in range(1, STRONA + 1)]
+    strona = f"{REPO}/actions/runs/{run_id}/artifacts?per_page={STRONA}&page="
     return {
-        f"{REPO}/actions/runs/{run_id}/artifacts?per_page=100": {"artifacts": [*lista, {"id": 7, "name": "czasy-ci", "expired": False}]},
+        f"{strona}1": {"artifacts": inne},
+        f"{strona}2": {"artifacts": [*lista, {"id": 7, "name": "czasy-ci", "expired": False}]},
         **{f"{REPO}/actions/artifacts/{run_id * 10 + numer}/zip": _zip(tresc) for numer, tresc in enumerate(artefakty.values())},
     }
 
