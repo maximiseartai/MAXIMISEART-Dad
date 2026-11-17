@@ -3241,7 +3241,7 @@
           "ustawienia"
         ],
         "summary": "Suggestions",
-        "description": "Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista\nWykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie\no liście, a dodanie zapisuje listę od nowa. Plik Folderów bez odczytu to stan ``unreadable`` ze zdaniem o tym\npliku, nie „wskaż Rejestr zleceń”.",
+        "description": "Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Zła\nLista Wykonawców bez ostatniej dobrej jest pusta: sekcja pokazuje wtedy zdanie o liście, a dodanie zapisuje listę\nod nowa. Plik Folderów albo Listy Wykonawców bez odczytu to stan ``unreadable`` ze zdaniem o tym pliku, nie\n„wskaż Rejestr zleceń” ani loginy, które lista już ma.",
         "operationId": "getWorkerSuggestions",
         "responses": {
           "200": {
