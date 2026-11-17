@@ -3,8 +3,9 @@ zmienia ADR 0032).
 
 Kształt pliku sprawdza ``parse`` (mapa, schemat, znane pola, tekst), a reguły tematu i treści
 ``SettlementMailSettings.of``, ta sama budowa co w Wysyłce rozliczeń. Brak pliku i pole, którego w pliku nie ma, to
-wartości domyślne (``DEFAULT_SETTLEMENT_MAIL``). Stopki ten plik nie ma: Mail z rozliczeniem kończy się stopką
-Przypomnień o raporcie, jednym podpisem taty.
+wartości domyślne (``DEFAULT_SETTLEMENT_MAIL``). Temat i treść pliku bez tych reguł (``written``) są tylko do pokazania
+w oknie Ustawień, gdy proces nie ma wartości taty, którą przyjmuje dzisiejsza reguła. Stopki ten plik nie ma: Mail z
+rozliczeniem kończy się stopką Przypomnień o raporcie, jednym podpisem taty.
 
 Klucz Historii to ``wysylka_rozliczen.<pole>``. Zgłoszenie nie podaje ich wartości, tylko że się zmieniły, bo temat i
 treść tata pisze do swoich Wykonawców (ADR 0040).
@@ -13,7 +14,7 @@ treść tata pisze do swoich Wykonawców (ADR 0040).
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from typing import Final
 
 import yaml
@@ -32,11 +33,35 @@ TEXT: Final[FieldName] = "tresc"
 _KEYS: Final = (SUBJECT, TEXT)
 
 
+@dataclass(frozen=True)
+class WrittenMail:
+    """Temat i treść, jak stoją w pliku, bez reguł ``SettlementMailSettings.of``: tylko do pokazania w oknie Ustawień,
+    więc to inny typ niż wartość, którą liczy Wysyłka rozliczeń."""
+
+    subject: str
+    text: str
+
+
 def parse(data: bytes | None) -> SettlementMailSettings | FieldProblem:
     """Temat i treść z bajtów pliku; ``None`` (brak pliku) to wartości domyślne, zła treść to pierwszy problem."""
 
+    found = _written(data)
+    return found if isinstance(found, FieldProblem) else settings_of(found.subject, found.text)
+
+
+def written(data: bytes | None) -> WrittenMail | None:
+    """Temat i treść pliku w stanie ``data`` bez reguł tematu i treści (brak pliku: wartości domyślne); ``None``: plik
+    nie ma kształtu pliku tematu i treści, więc nie ma czego pokazać."""
+
+    found = _written(data)
+    return None if isinstance(found, FieldProblem) else found
+
+
+def _written(data: bytes | None) -> WrittenMail | FieldProblem:
+    """Kształt pliku (mapa, schemat, znane pola, tekst): jedyny odczyt bajtów pliku dla ``parse`` i ``written``."""
+
     if data is None:
-        return DEFAULT_SETTLEMENT_MAIL
+        return WrittenMail(DEFAULT_SETTLEMENT_MAIL.subject, DEFAULT_SETTLEMENT_MAIL.text)
     try:
         document = yaml.safe_load(data.decode("utf-8"))
     except UnicodeDecodeError:
@@ -56,7 +81,7 @@ def parse(data: bytes | None) -> SettlementMailSettings | FieldProblem:
     text = document.get(TEXT, DEFAULT_SETTLEMENT_MAIL.text)
     if not isinstance(text, str):
         return _bad(FieldPath(TEXT))
-    return settings_of(subject, text)
+    return WrittenMail(subject, text)
 
 
 def settings_of(subject: str, text: str) -> SettlementMailSettings | FieldProblem:
@@ -74,6 +99,7 @@ _PROBLEMS: Final[Mapping[MailProblemKind, tuple[FieldName, Callable[[], str]]]] 
     "empty_subject": (SUBJECT, messages.settlement_mail_empty_subject),
     "subject_lines": (SUBJECT, messages.settlement_mail_subject_lines),
     "subject_report_word": (SUBJECT, messages.settlement_mail_report_word),
+    "subject_reads_as_report": (SUBJECT, messages.settlement_mail_reads_as_report),
     "subject_unknown_field": (SUBJECT, messages.settlement_mail_unknown_field),
     "empty_text": (TEXT, messages.settlement_mail_empty_text),
     "text_unknown_field": (TEXT, messages.settlement_mail_unknown_field),

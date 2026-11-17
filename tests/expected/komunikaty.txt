@@ -1478,6 +1478,12 @@ settlement_mail_subject_lines [zdanie]
 settlement_mail_report_word [zdanie]
   Temat nie może mieć słowa „raport”: odpowiedź Wykonawcy Centrum wzięłoby za jego raport.
 
+settlement_mail_reads_as_report [zdanie]
+  Temat wygląda jak temat raportu: odpowiedź Wykonawcy Centrum wzięłoby za jego raport.
+
+settlement_mail_unusable [zdanie]
+  Mail z rozliczeniem nie pójdzie, dopóki temat i treść mają złe ustawienie. Temat wygląda jak temat raportu: odpowiedź Wykonawcy Centrum wzięłoby za jego raport. Popraw je w Ustawieniach, w sekcji Wysyłka rozliczeń.
+
 settlement_mail_unknown_field [zdanie]
   W temacie i treści mogą stać tylko pola {okres} i {wykonawca}, bez innych nawiasów klamrowych.
 
@@ -1691,6 +1697,9 @@ worker_settlement_missing [HTTP 404]
 
 mailing_without_workers [HTTP 409]
   Listy Wykonawców nie da się teraz przeczytać, więc nie wiadomo, do kogo wysłać rozliczenie. Sprawdź ją w Ustawieniach, w sekcji Wykonawcy.
+
+settlement_mail_unusable [HTTP 409]
+  Mail z rozliczeniem nie pójdzie, dopóki temat i treść mają złe ustawienie. Temat wygląda jak temat raportu: odpowiedź Wykonawcy Centrum wzięłoby za jego raport. Popraw je w Ustawieniach, w sekcji Wysyłka rozliczeń.
 
 no_forwarding [HTTP 409]
   Przygotowanie pliku zbiorczego nie ma trybu z Przekazaniem do akceptacji.

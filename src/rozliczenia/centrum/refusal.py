@@ -184,6 +184,13 @@ def mailing_without_workers() -> Refusal:
     )
 
 
+def settlement_mail_unusable(problem: FieldProblem) -> Refusal:
+    """Wysyłka rozliczeń nie ma tematu i treści taty, które przyjmuje dzisiejsza reguła (``problem``: zła treść pliku bez
+    ostatniej dobrej wartości), więc nie wysyła maila z tematem i treścią z Wydania zamiast nich."""
+
+    return _refused(409, settings_messages.settlement_mail_unusable(problem.sentence), problem.place)
+
+
 def settings_change_unknown() -> Refusal:
     return _refused(404, "Tej zmiany nie ma w Historii Ustawień. Odśwież okno Ustawień.")
 
