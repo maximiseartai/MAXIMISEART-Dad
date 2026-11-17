@@ -1,7 +1,7 @@
-"""Gramatyka tematu Raportu wykonawcy: dzień zleceń z tematu ``Raport dd.mm.rrrr`` albo z odpowiedzi na Przypomnienie o
-raporcie, albo powód, dla którego temat zaczęty słowem ``raport`` go nie daje, z dniem z tematu obok błędu, gdy da się go
-przeczytać; a także temat Przypomnienia o raporcie, który pisze Centrum (``reminder_subject``) i czyta z „Wysłanych”
-(``reminder_day``)."""
+"""Gramatyka tematu Raportu wykonawcy: dzień zleceń z tematu ``Raport dd.mm.rrrr``, z odpowiedzi na Przypomnienie o
+raporcie albo z poprawki raportu w odpowiedzi, albo powód, dla którego temat zaczęty słowem ``raport`` go nie daje, z
+dniem z tematu obok błędu, gdy da się go przeczytać; a także temat Przypomnienia o raporcie, który pisze Centrum
+(``reminder_subject``) i czyta z „Wysłanych” (``reminder_day``)."""
 
 from __future__ import annotations
 
@@ -12,8 +12,8 @@ from typing import Final
 
 from ._model import SUBJECT_WORD, SubjectFault
 
-_REMINDER_REPLY: Final = re.compile(r"(?:\s*(?:re|odp)\s*:)+", re.IGNORECASE)
-"""Przedrostki odpowiedzi przed tematem przypomnienia: ``Re:`` i z Outlooka po polsku ``Odp:``, raz albo więcej."""
+_REPLY: Final = re.compile(r"(?:\s*(?:re|odp)\s*:)+", re.IGNORECASE)
+"""Przedrostki odpowiedzi: ``Re:`` i z Outlooka po polsku ``Odp:``, raz albo więcej."""
 _NUMBER: Final = re.compile(r"[0-9]+")
 _WORD: Final = re.compile(r"(?P<before>[\W_]*?)(?P<word>[^\W\d_]+)")
 _LETTER: Final = re.compile(r"[^\W\d_]")
@@ -75,12 +75,15 @@ def read(subject: str, arrived: date) -> date | FaultySubject | None:
     """Dzień zleceń z tematu Raportu wykonawcy, błąd tematu, gdy temat Raportu wykonawcy nie daje dnia, albo ``None``, gdy
     mail nie jest Raportem wykonawcy: pierwsze słowo tematu różni się od ``raport`` o więcej niż jedną literę
     (``Montaże …``, ``Zdjęcia do raportu …``, ``Re:``, ``Fwd:``, z Outlooka po polsku ``Odp:`` i ``PD:``), poza
-    odpowiedzią na Przypomnienie o raporcie.
+    odpowiedzią.
 
-    Odpowiedź na Przypomnienie o raporcie (ADR 0030) to ``Re:`` albo ``Odp:``, raz albo więcej, w dowolnej wielkości
-    liter i z dowolnymi białymi znakami wokół, przed tematem, z którego ``reminder_day`` czyta dzień; daje ten dzień.
-    ``Fwd:``, ``Fw:`` albo ``PD:`` gdziekolwiek przed tematem przypomnienia i temat przypomnienia bez przedrostka nie są
-    Raportem wykonawcy.
+    Odpowiedź to ``Re:`` albo ``Odp:``, raz albo więcej, w dowolnej wielkości liter i z dowolnymi białymi znakami wokół,
+    przed tematem, który daje dzień: tematem, z którego ``reminder_day`` czyta dzień (odpowiedź na Przypomnienie o
+    raporcie, ADR 0030), albo tematem, który zaczyna się od tematu Raportu wykonawcy z dniem, a po nim ma dowolny dopisek
+    (poprawka raportu w odpowiedzi, ADR 0041: ``Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW``); temat Raportu
+    wykonawcy kończy wtedy trzecia liczba po słowie. Inna odpowiedź (``Re: Zmiana w raportach …``, ``Re: Raport 16.11``),
+    ``Fwd:``, ``Fw:`` albo ``PD:`` gdziekolwiek przed tematem i temat przypomnienia bez przedrostka nie są Raportem
+    wykonawcy.
 
     Temat Raportu wykonawcy (ADR 0041) zaczyna słowo ``raport`` w dowolnej wielkości liter, z jedną literówką albo bez
     (zamiana, przestawienie sąsiednich, brak albo nadmiar jednej litery: ``Rapotr``, ``Rapor``, ``Raportt``), a po nim
@@ -112,9 +115,24 @@ def read(subject: str, arrived: date) -> date | FaultySubject | None:
 def _read(subject: str) -> date | tuple[SubjectFault, str] | None:
     """Dzień z tematu przed poprawką roku, powód z tekstem po słowie raportu albo ``None``, gdy to nie raport."""
 
-    reply = _REMINDER_REPLY.match(subject)
-    if reply is not None and (day := reminder_day(subject[reply.end() :])) is not None:
+    reply = _REPLY.match(subject)
+    if reply is not None:
+        return _replied(subject[reply.end() :])
+    return _report(subject)
+
+
+def _replied(subject: str) -> date | None:
+    """Dzień z tematu po przedrostkach odpowiedzi: z tematu przypomnienia albo z tematu Raportu wykonawcy do trzeciej
+    liczby, gdy daje dzień, a nie błąd."""
+
+    if (day := reminder_day(subject)) is not None:
         return day
+    numbers = [found.end() for found in _NUMBER.finditer(subject)][:3]
+    found = _report(subject[: numbers[-1]]) if len(numbers) == 3 else None
+    return found if isinstance(found, date) else None
+
+
+def _report(subject: str) -> date | tuple[SubjectFault, str] | None:
     text = subject.casefold()
     first = _WORD.match(text)
     if first is None or not _one_edit(first["word"], SUBJECT_WORD):

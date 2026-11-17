@@ -8597,6 +8597,7 @@ def test_temat_i_tresc_bez_pliku_maja_wartosci_domyslne_i_nie_zakladaja_pliku(tm
         pytest.param({"subject": "Rozliczenie\nza {okres}"}, "temat", settings_messages.settlement_mail_subject_lines(), id="dwie-linie"),
         pytest.param({"subject": "Raport za {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="slowo-raport"),
         pytest.param({"subject": "Twoje RAPORTY {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="raport-w-slowie"),
+        pytest.param({"subject": " rapotr 16 11 26 {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="temat-raportu-z-literowka"),
         pytest.param({"subject": "Za {dzień}"}, "temat", settings_messages.settlement_mail_unknown_field(), id="nieznane-pole-tematu"),
         pytest.param({"text": " \n"}, "tresc", settings_messages.settlement_mail_empty_text(), id="pusta-tresc"),
         pytest.param({"text": "Plik {okres}}"}, "tresc", settings_messages.settlement_mail_unknown_field(), id="samotny-nawias"),

@@ -207,17 +207,21 @@ def test_raport_z_adresu_spoza_listy_nie_zmienia_komorek_i_jest_problemem_niezna
 @pytest.mark.parametrize(
     "subject",
     [
-        "Re: Raport 08.11.2026",
-        "RE:Raport 08.11.2026",
         "Fwd: Raport 08.11.2026",
         "FW: raport 08.11.2026",
         " re: Fwd: Raport 08.11.2026",
+        "Re: PD: Raport 08.11.2026",
         "Re: Raport bez daty",
-        "ODP: Raport 08.11.2026",
-        "Odp: Raport 08.11.2026",
-        "odp :Raport 08.11.2026",
+        "Re: Raport 08.11 popraw",
+        "Re: Raport za 08.11.2026",
+        "Re: Zmiana w raportach 08.11.2026",
+        "Re: Raporty",
         "PD: Raport 08.11.2026",
         "pd: Raport bez daty",
+        "Ropart 08.11.2026",
+        "Raportów 08.11.2026",
+        "Rapo 08.11.2026",
+        "Re: Ropart 08.11.2026",
         "Zlecenia na jutro 08.11.2026",
         "Montaże 08.11.2026",
         "Zlecenia 08.11.2026",
@@ -232,9 +236,10 @@ def test_raport_z_adresu_spoza_listy_nie_zmienia_komorek_i_jest_problemem_niezna
     ],
 )
 def test_mail_z_innym_tematem_niz_raport_z_data_nie_daje_niczego(subject: str) -> None:
-    """Odpowiedź i przekazanie dalej nie są Raportem wykonawcy (US 9), także po polsku z Outlooka (``Odp:``, ``PD:``) i z
-    tematem, którego nie da się odczytać. Temat, którego pierwsze słowo różni się od ``raport`` o więcej niż jedną
-    literę, też nie (``Montaże``, ``Zdjęcia do raportu``, ADR 0041), choć treść ma Wpis."""
+    """Przekazanie dalej nie jest Raportem wykonawcy (US 9), także po polsku z Outlooka (``PD:``), ani odpowiedź z
+    tematem, który po przedrostkach nie zaczyna się od tematu Raportu wykonawcy z dniem (spec #2032, historie 30–31).
+    Temat, którego pierwsze słowo różni się od ``raport`` o więcej niż jedną literę (przestawienie liter nie obok siebie,
+    dwie litery za dużo albo za mało), też nie (``Montaże``, ``Zdjęcia do raportu``, ADR 0041), choć treść ma Wpis."""
 
     outcome = enter_reports(_inputs([_mail(JAN, subject, TEXT)], [_order()]))
 
@@ -3585,11 +3590,16 @@ def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
         pytest.param(f"Odp: Re: {REMINDER}", [], id="odpowiedz-z-outlooka"),
         pytest.param(f"Fwd: {REMINDER}", [(Login("jan.testowy"), DAY)], id="przekazanie"),
         pytest.param("Re: Przypomnienie: raport za dzień 07.11.2026", [(Login("jan.testowy"), DAY)], id="inny-dzien"),
+        pytest.param("Re: Raport 08.11.2026 - BŁĘDY PROSZĘ POPRAW", [], id="poprawka-w-odpowiedzi"),
+        pytest.param("Odp: Re: Raport 08.11.2026 - BŁĘDY PROSZĘ POPRAW", [], id="poprawka-w-odpowiedzi-z-outlooka"),
+        pytest.param("Fwd: Raport 08.11.2026", [(Login("jan.testowy"), DAY)], id="przekazany-raport"),
+        pytest.param("Re: Zmiana w raportach 08.11.2026", [(Login("jan.testowy"), DAY)], id="odpowiedz-o-czym-innym"),
     ],
 )
 def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: str, due: list[tuple[Login, date]]) -> None:
     """US 49 i ADR 0030: odpowiedź na przypomnienie za dzień jest czytelnym Raportem wykonawcy za ten dzień, więc
-    przypomnienia za niego ustają; przekazanie dalej i odpowiedź za inny dzień ich nie kończą."""
+    przypomnienia za niego ustają, tak jak poprawka raportu w odpowiedzi z tematem raportu za ten dzień (ADR 0041,
+    historia 6); przekazanie dalej, odpowiedź za inny dzień i odpowiedź na mail o czym innym ich nie kończą."""
 
     mail = _mail(JAN, subject, f"{REPLY}\n\nW dniu pon., 9 lis 2026 o 08:00 {INBOX} napisał(a):\n{QUOTED}")
     now = datetime(2026, 11, 9, 18, 0, tzinfo=TAPA)
@@ -3598,6 +3608,63 @@ def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: s
     found = reminders_due(ReminderInputs(now, inputs, (), frozenset(inputs.addresses.logins.values()), settings=DEFAULT_REMINDERS))
 
     assert [(reminder.worker, reminder.day) for reminder in found] == due
+
+
+# --- Poprawka raportu w odpowiedzi (#2039, spec #2032 historie 26–31, ADR 0041) ---
+
+# Tata odpisał Wykonawcy na raport za 8.11 z listą błędów, a Wykonawca odpowiada poprawionym Wpisem nad cytatem.
+FIXED = "Re: Raport 08.11.2026 - BŁĘDY PROSZĘ POPRAW"
+TATA_ANSWER = f"> BŁĘDY PROSZĘ POPRAW\n>\n> {TEXT}\n> 40000002 nie klient nieobecny\n"
+FIXED_TEXT = f"40000001 tak wymiana modemu\n\nW dniu pon., 9 lis 2026 o 08:00 {INBOX} napisał(a):\n\n{TATA_ANSWER}"
+
+
+@pytest.mark.parametrize(
+    "subject",
+    [
+        FIXED,
+        "RE: Raport 08.11.2026 - BŁĘDY PROSZĘ POPRAW",
+        "Odp: Raport 08.11.2026 - BŁĘDY PROSZĘ POPRAW",
+        "Re: Re: Raport 08.11.2026 - BŁĘDY PROSZĘ POPRAW",
+        "Odp: Re: Raport 08.11.2026 - BŁĘDY PROSZĘ POPRAW",
+        "re:RE: odp: raport 08.11.2026",
+        "Re: Rapotr 08.11.2026 - BŁĘDY PROSZĘ POPRAW",
+        "Re: Raport 8/11/26r. popraw opis",
+        "Re: Raport 08.11.2026 Kowalski",
+        "Re: Raport 08.11.2026 2 montaże",
+        "Re: Raport 08.11.2016 - BŁĘDY",
+    ],
+)
+def test_poprawka_w_odpowiedzi_z_tematem_raportu_na_poczatku_jest_raportem_za_jego_dzien(subject: str) -> None:
+    """Historie 26 i 29: ``Re:`` albo ``Odp:``, raz albo więcej, w dowolnej wielkości liter, przed tematem Raportu
+    wykonawcy z dniem, z jedną literówką w słowie i rokiem pomylonym jak w samym temacie, a po nim dowolny dopisek, daje
+    dzień z tematu, a Wpisy tylko z tekstu nad cytatem (historia 27)."""
+
+    mail = _mail(JAN, subject, FIXED_TEXT)
+
+    outcome = enter_reports(_inputs([mail], _orders()))
+
+    assert outcome.changes == _both(ROWS[0], "tak", "wymiana modemu")
+    assert _problems(outcome) == ()
+    assert outcome.mails == (
+        ReadReport(
+            mail.id, EVENING, Login("jan.testowy"), DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana modemu"),)
+        ),
+    )
+
+
+def test_poprawka_w_odpowiedzi_wygrywa_z_wczesniejszym_wpisem_zlecenia_a_cytat_niczego_nie_wpisuje() -> None:
+    """Historie 26–28: po pierwszym kliknięciu INTERMAX ma Wpis z raportu za 8.11, a poprawka w odpowiedzi na mail taty
+    podmienia go jak każdy późniejszy Wpis; Wpis ``nie`` z cytatu nie trafia do zlecenia ``40000002``."""
+
+    report = _mail(JAN, SUBJECT, TEXT)
+    fixed = _mail(JAN, FIXED, FIXED_TEXT, EVENING + timedelta(hours=14))
+    first = enter_reports(_inputs([report], _orders()))
+    entered = [_order(ROWS[0], successful="tak", completed="wymiana routera"), *_orders()[1:]]
+
+    second = enter_reports(_inputs([report, fixed], entered, today=DAY + timedelta(days=1), rollout=DAY, memory=first.memory))
+
+    assert second.changes == (CellChange(ROWS[0], ReportColumn.COMPLETED, "wymiana modemu"),)
+    assert _problems(second) == ()
 
 
 # --- Rozpoznanie tematu i Wpisów tak, jak piszą Wykonawcy (#1228, US 8–10, 18–26) ---
@@ -3773,6 +3840,25 @@ def test_wlasnosc_temat_z_dniem_i_innymi_slowami_liczy_sie_za_ten_sam_dzien_z_te
     read = [(found.fault, found.day) for found in enter_reports(inputs).mails if isinstance(found, ReadUnreadable)]
 
     assert read == [(SubjectFault.OTHER_WORDS, *expected)]
+
+
+@PROPERTY
+@given(
+    st.dates(date(1000, 1, 1), date(9999, 12, 31)).flatmap(lambda day: st.tuples(st.just(day), _subject_of_day(day))),
+    st.dates(date(2001, 1, 1), date(2098, 12, 31)),
+    st.lists(st.sampled_from(["Re:", "RE:", "re :", "Odp:", "ODP:"]), min_size=1, max_size=3),
+    st.sampled_from(["", " - BŁĘDY PROSZĘ POPRAW", " Kowalski", " 2 montaże 8 usterek", ", poprawka 3"]),
+)
+def test_wlasnosc_poprawka_w_odpowiedzi_liczy_sie_za_ten_sam_dzien_co_temat_raportu_bez_przedrostkow(
+    written: tuple[date, str], arrived_day: date, prefixes: list[str], words: str
+) -> None:
+    """Historie 26 i 29: każdy temat, który gramatyka czyta jako dzień, po ``Re:`` albo ``Odp:`` raz albo więcej i z
+    dowolnym dopiskiem, także z liczbami, daje ten sam dzień co sam temat, także z pomylonym rokiem."""
+
+    _, subject = written
+    arrived = datetime.combine(arrived_day, time(18, 5), TAPA)
+
+    assert _days_read(" ".join(prefixes) + subject + words, arrived) == _days_read(subject, arrived)
 
 
 def _days_read(subject: str, arrived: datetime) -> list[date]:

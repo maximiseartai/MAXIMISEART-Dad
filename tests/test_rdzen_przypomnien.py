@@ -384,7 +384,9 @@ def test_przypomnienie_za_inny_dzien_albo_do_innego_wykonawcy_nie_zamyka_pory() 
         pytest.param(_mail(JAN, "Raport 09.11.2016", "40000001 tak inst20m"), True, id="literowka-w-roku"),
         pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak inst20m"), True, id="blad-tematu-bez-roku"),
         pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak inst20m"), True, id="blad-tematu-bez-daty"),
-        pytest.param(_mail(JAN, "Re: Raport 09.11.2026", "40000001 tak inst20m"), False, id="odpowiedz"),
+        pytest.param(_mail(JAN, "Re: Raport 09.11.2026 - BŁĘDY PROSZĘ POPRAW", "40000001 tak inst20m"), True, id="poprawka-w-odpowiedzi"),
+        pytest.param(_mail(JAN, "Re: Zmiana w raportach 09.11.2026", "40000001 tak inst20m"), False, id="odpowiedz-o-czym-innym"),
+        pytest.param(_mail(JAN, "Fwd: Raport 09.11.2026", "40000001 tak inst20m"), False, id="przekazany-raport"),
         pytest.param(_mail(JAN, "Raport 08.11.2026", "40000001 tak inst20m"), False, id="inny-dzien"),
         pytest.param(_mail(EWA, "Raport 09.11.2026", "40000001 tak inst20m"), False, id="inny-wykonawca"),
         pytest.param(_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak"), False, id="adres-spoza-listy"),
@@ -394,8 +396,9 @@ def test_raport_za_dzien_nawet_niepelny_i_z_bledem_tematu_konczy_przypomnienia_a
     mail: ReportMail, ends: bool
 ) -> None:
     """Każdy Raport wykonawcy za dzień X od Wykonawcy z listy, nawet niepełny, kończy przypomnienia za X, także z błędem
-    tematu, który liczy się za wskazany dzień (ADR 0041, historie 3, 5, 20), a odpowiedź na inny mail, raport za inny
-    dzień, raport kogoś innego i mail bez żadnego Wpisu, który nie jest raportem (ADR 0041), nie (US 37–38)."""
+    tematu, który liczy się za wskazany dzień (ADR 0041, historie 3, 5, 20), i poprawka raportu w odpowiedzi (historia 6),
+    a odpowiedź na mail o czym innym, przekazany raport, raport za inny dzień, raport kogoś innego i mail bez żadnego
+    Wpisu, który nie jest raportem (ADR 0041), nie (US 37–38)."""
 
     assert _days(_due(NEXT_MORNING, mails=[mail])) == ([] if ends else [("jan.testowy", DAY)])
 
@@ -659,6 +662,28 @@ TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak ins
         pytest.param([], [_mail(JAN, "Raport", "40000001 tak", _at(DAY - timedelta(days=1), 20))], set(), id="bez-dnia-bez-takiego-dnia"),
         pytest.param([], [_mail(JAN, "Raport 31.11.2026", "40000004 tak")], {JAN_9}, id="data-ktora-nie-jest-dniem"),
         pytest.param([], [_mail(JAN, "Montaże 09.11.2026", "40000001 tak inst20m")], set(), id="bez-slowa-raport"),
+        pytest.param([], [_mail(JAN, "Re: Raport 09.11.2026 - BŁĘDY PROSZĘ POPRAW", "40000001 tak inst20m")], {JAN_9}, id="poprawka-w-odpowiedzi"),
+        pytest.param(
+            [],
+            [
+                _mail(
+                    JAN,
+                    "Re: Raport 10.11.2026 - BŁĘDY PROSZĘ POPRAW",
+                    "40000004 tak inst20m\n\n> 40000001 tak inst20m\n> 40000002 tak spawpg",
+                    _at(DAY + timedelta(days=1), 20),
+                )
+            ],
+            {JAN_10},
+            id="poprawka-w-odpowiedzi-cytat-nie-daje-wpisow",
+        ),
+        pytest.param(
+            [],
+            [_mail(JAN, "Odp: Re: Rapotr 10.11.2026 popraw", "40000004 tak inst20m", _at(DAY + timedelta(days=1), 20))],
+            {JAN_10},
+            id="poprawka-w-odpowiedzi-z-outlooka-z-literowka",
+        ),
+        pytest.param([], [_mail(JAN, "Fwd: Raport 09.11.2026", "40000001 tak inst20m")], set(), id="przekazany-raport"),
+        pytest.param([], [_mail(JAN, "Re: Zmiana w raportach 09.11.2026", "40000001 tak inst20m")], set(), id="odpowiedz-o-czym-innym"),
         pytest.param([], [_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak")], set(), id="adres-spoza-listy"),
         pytest.param([], [TIE_FAULTY, TIE_GOOD], {JAN_9}, id="remis-blad-opisu-pierwszy"),
         pytest.param([], [TIE_GOOD, TIE_FAULTY], {JAN_9}, id="remis-blad-opisu-drugi"),
@@ -689,7 +714,9 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
     niego (temat bez daty albo z datą, która nie jest dniem) za ostatni dzień Wykonawcy ze zleceniami, za który nie ma
     innego raportu, także z błędem tematu z dniem z tematu, nie późniejszy niż dzień przyjścia maila, kolejne takie maile
     po kolei przyjścia; bez takiego dnia
-    niczego nie kończy. Mail bez słowa ``Raport`` i adres spoza listy nie są raportem Wykonawcy. Po wcześniejszym kliknięciu (``earlier``) obie operacje biorą tę samą pamięć Wpisania raportów i INTERMAX
+    niczego nie kończy. Poprawka raportu w odpowiedzi (historie 6, 26–29) liczy się za dzień z tematu po przedrostkach
+    z Wpisami tylko nad cytatem, a przekazany raport, odpowiedź na mail o czym innym (historie 30–31), mail bez słowa
+    ``Raport`` i adres spoza listy nie są raportem Wykonawcy. Po wcześniejszym kliknięciu (``earlier``) obie operacje biorą tę samą pamięć Wpisania raportów i INTERMAX
     po nim: numery dopisane przez Centrum nie robią z poprawionego tematu pomylonego, a zlecenie po Przeniesieniu liczy
     się za dzień sprzed niego, więc ten sam raport z dobrą datą liczy się za dzień z tematu (W1 r1 #2059)."""
 

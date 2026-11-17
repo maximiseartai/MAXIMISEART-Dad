@@ -4,13 +4,14 @@ wysyłka Przypomnień o raporcie (ADR 0030) i Maili z rozliczeniem (ADR 0040) pr
 Port niczego w skrzynce nie zmienia: otwiera folder przez ``EXAMINE`` i pobiera maile przez ``BODY.PEEK``, więc nie
 oznacza ich jako przeczytanych, i nie wysyła ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE`` ani ``APPEND``.
 Oddaje maile, których temat rdzeń raportów czyta jako temat Raportu wykonawcy (``reads_as_report``, także z literówką
-w słowie ``Raport``, ADR 0041), od każdego nadawcy oprócz samej skrzynki: Raport wykonawcy od adresu spoza pliku adresów
-rozpoznaje i pokazuje tacie rdzeń raportów, więc port nie filtruje po nadawcy. Wybiera je po nagłówkach ``Subject`` i
-``From`` wszystkich maili z dni okna, a resztę maila pobiera tylko dla wybranych, więc treści innej korespondencji taty
-nie czyta; wyszukiwania Gmaila po słowie nie używa, bo nie znajduje tematu z literówką (``Rapotr``). Mail, którego nie
-umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki. Treści
-załączników nie pobiera: z serwera bierze szkielet maila (``mail_skeleton``), z którego ``mail_of`` czyta to samo co z
-całego maila, a cały mail tylko wtedy, gdy szkieletu nie da się złożyć.
+w słowie ``Raport`` i poprawkę raportu w odpowiedzi ``Re: Raport dd.mm.rrrr …``, ADR 0041), od każdego nadawcy oprócz
+samej skrzynki: Raport wykonawcy od adresu spoza pliku adresów rozpoznaje i pokazuje tacie rdzeń raportów, więc port
+nie filtruje po nadawcy. Wybiera je po nagłówkach ``Subject`` i ``From`` wszystkich maili z dni okna, a resztę maila
+pobiera tylko dla wybranych, więc treści innej korespondencji taty nie czyta; wyszukiwania Gmaila po słowie nie używa,
+bo nie znajduje tematu z literówką (``Rapotr``). Mail, którego nie umie przeczytać, pomija i tylko liczy, więc jeden
+zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki. Treści załączników nie pobiera: z serwera bierze szkielet
+maila (``mail_skeleton``), z którego ``mail_of`` czyta to samo co z całego maila, a cały mail tylko wtedy, gdy
+szkieletu nie da się złożyć.
 
 Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło). Plik
 czyta i zmienia tylko właściciel Ustawień Centrum (``rozliczenia.centrum.settings.inbox``), a port dostaje od niego
