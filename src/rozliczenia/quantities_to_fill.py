@@ -6,8 +6,9 @@ regułach podanych przy odczycie: rodzaj wynika tylko z typu wyniku Reguł iloś
 porównywane przez Kontrolę ilości (``compared_columns``) i kolumny, w które Legenda czynności wpisuje z ``CZYNNOŚCI
 ZREALIZOWANE`` wiersza (ADR 0038). Puste i 0 to to samo, jak w Kontroli ilości.
 
-Wiersz z opisu, którego ``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności, nie czeka na tatę: ilości z opisu technika
-wpisała legenda. Wiersz bez kodów i wiersz z Błędem opisu czekają na tatę, bo legenda nic w nich nie wpisała. Wiersz
+Wiersz z opisu, którego ``CZYNNOŚCI ZREALIZOWANE`` mają Kody czynności bez Błędu opisu, także obok zwykłego opisu, nie
+czeka na tatę: ilości z opisu technika wpisała legenda. Wiersz bez żadnego kodu i wiersz z Błędem opisu czekają na
+tatę, bo legenda nic w nich nie wpisała. Wiersz
 bez reguły czeka mimo to, bo legenda nie wpisuje ilości z ``URZĄDZENIA``.
 Wiersz bez reguły jest zrobiony, gdy ma ilość różną od 0 poza kolumnami narzędzia (z Wydania V, T i N oraz kolumny
 legendy), a wiersz z opisu, gdy ma ją gdziekolwiek w N:AP poza kolumnami legendy. Każda komórka N:AP i ``AS`` wiersza
@@ -52,8 +53,7 @@ def fill_hint(kind: FillKind, rules: QuantityRules) -> str:
 
 TEXT_COLUMNS: Final[tuple[Column, ...]] = (WORKER, DEVICES, ACTIVITIES, COMPLETED)
 """Kolumny Pliku zbiorczego, po których tata rozpoznaje zlecenie na stronie rodzaju (ADR 0016), w kolejności strony;
-``CZYNNOŚCI ZREALIZOWANE`` to opis technika, z którego czyta Legenda czynności."""
-_COMPLETED: Final = TEXT_COLUMNS.index(COMPLETED)
+``CZYNNOŚCI ZREALIZOWANE`` to opis technika, który Legenda czynności czyta z ``OrderFacts.completed``."""
 CELL_COLUMNS: Final = (*QUANTITY_LETTERS, AMOUNT_COLUMN)
 """Kolumny komórek wiersza do uzupełnienia: Ilości usług N:AP i ``AS`` (Uwagi - kwota), w którą wpisuje Legenda czynności."""
 
@@ -132,8 +132,8 @@ class KindToFill:
 
 @dataclass(frozen=True)
 class DescriptionRows:
-    """Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, więc nie czekają na
-    tatę, a ``for_tata`` pozostałe."""
+    """Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z Kodami czynności bez Błędu opisu, więc nie
+    czekają na tatę, a ``for_tata`` pozostałe (bez żadnego kodu albo z Błędem opisu)."""
 
     by_legend: int
     for_tata: int
@@ -165,7 +165,7 @@ def quantities_to_fill(
     filled: Counter[str] = Counter()
     by_legend = 0
     for row in rows:
-        entry = tool_entry(row.order.content, row.texts[_COMPLETED], rules, legend)
+        entry = tool_entry(row.order.content, row.order.completed, rules, legend)
         by_legend += entry.closed
         filled.update(column for column in DESCRIPTION_COLUMNS if row.order.quantity(column) != 0 and column not in entry.columns)
         if entry.kind is None:

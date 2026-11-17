@@ -67,8 +67,9 @@ class CollectiveFilePlan:
     """Fakty Planowania o Pliku zbiorczym, z numerami jego wierszy (nie wierszy Rejestru zleceń).
 
     ``rows_without_rule`` mają składnik ``URZĄDZENIA`` nieznany Regułom ilości, a ``rows_from_description`` rozlicza
-    się z opisu technika, który nie jest z samych Kodów czynności. ``closed_by_legend``: liczba wierszy, których
-    ``CZYNNOŚCI ZREALIZOWANE`` to same Kody czynności, więc nie czekają na tatę w kolumnach z opisu technika (ADR 0038).
+    się z opisu technika bez żadnego Kodu czynności albo z Błędem opisu. ``closed_by_legend``: liczba wierszy, których
+    ``CZYNNOŚCI ZREALIZOWANE`` mają Kody czynności bez Błędu opisu, także obok zwykłego opisu, więc nie czekają na tatę w
+    kolumnach z opisu technika (ADR 0041).
     ``description_errors``: wiersze z Błędem opisu i jego powody.
     """
 

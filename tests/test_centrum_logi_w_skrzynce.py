@@ -1018,8 +1018,8 @@ JAN_REPORTS = [
 ]
 NEXT_MORNING = [
     *JAN_REPORTS,
-    report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000002 tak montaż", at=datetime(2026, 11, 10, 7, 50)),
-    report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000006 tak montaż anteny", at=datetime(2026, 11, 10, 7, 51)),
+    report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000002 tak montaż instutp40m", at=datetime(2026, 11, 10, 7, 50)),
+    report(SENDERS["anna.kowalska"], _REPORTED_DAY, "40000006 tak montaż anteny instutp0m", at=datetime(2026, 11, 10, 7, 51)),
     report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000099 tak wymiana", at=datetime(2026, 11, 10, 7, 52)),
     report("obcy@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53), message_id="<a@x>"),
     report("inny@przyklad.invalid", _REPORTED_DAY, "40000002 nie brak", at=datetime(2026, 11, 10, 7, 53), message_id="<a@x>"),
@@ -1051,7 +1051,7 @@ def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
     assert second["result"]["ending"] == "finished"
     produced = Produced(_archived_run(surroundings.report_box, tmp_path, second["run"]["id"]), ())
     problems = [problem["kind"] for problem in produced.record["report_entering"]["problems"]]
-    assert problems == ["unknown_sender"] * 3 + ["faulty_description"] * 2 + ["manual_difference"] + ["faulty_description"] * 2, problems
+    assert problems == ["unknown_sender"] * 3 + ["faulty_description"] * 2 + ["manual_difference"], problems
     added = [(found["number"], found["worker"]) for found in produced.record["report_entering"]["added"]]
     assert added == [(40000099, "jan.testowy")], "nowy numer Jana z 8 cyframi to Zlecenie dopisane z raportu (#1354)"
     assert "klient nieobecny" in [change["value"] for change in produced.record["report_entering"]["changes"]]
@@ -1858,7 +1858,7 @@ def test_klikniecie_po_zostaw_moja_odtwarza_sie_zgodnie_z_decyzja_z_logow(
 
     code, lines = _replayed(capsys, logs, "--na-tym-drzewie")
 
-    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3 + ["faulty_description"] * 4
+    assert [problem["kind"] for problem in entering["problems"]] == ["unknown_sender"] * 3 + ["faulty_description"] * 2
     assert entering["added"] == [], "40000099 dopisało drugie kliknięcie, a trzecie go nie dubluje (#1354)"
     assert [move["number"] for move in entering["moves_before"] if move["added"]] == [40000099]
     assert [(kept["number"], kept["column"], kept["value"]) for kept in entering["kept"]] == [(40000006, "SKUTECZNE", "tak")]
@@ -2147,7 +2147,7 @@ def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:
 
 
 def _other_activities(record: dict[str, Any]) -> None:
-    _logged_entry(record, "40000002")["activities"] = "montaż gniazda"
+    _logged_entry(record, "40000002")["activities"] = "montaż gniazda instutp40m"
 
 
 def test_zmieniony_wpis_raportu_w_logach_daje_pierwsza_roznice_w_komorkach_wpisanych_przez_odtworzenie(
@@ -2166,8 +2166,8 @@ def test_zmieniony_wpis_raportu_w_logach_daje_pierwsza_roznice_w_komorkach_wpisa
     [sheet] = produced.record["input_copy"][0]["sheets"]
     assert lines[3:6] == [
         f"Pierwsza różnica: Wpisanie raportów (report_entering).changes[2: arkusz {sheet['sheet']}].value",
-        '  Logi:        "montaż"',
-        '  Odtworzenie: "montaż gniazda"',
+        '  Logi:        "montaż instutp40m"',
+        '  Odtworzenie: "montaż gniazda instutp40m"',
     ]
 
 

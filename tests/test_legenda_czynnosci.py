@@ -1,9 +1,10 @@
 """Moduł Legendy czynności na swoim interfejsie (ADR 0038): ``ActivityLegend.read`` i parser pliku ``legenda-czynnosci.yaml``.
 
 Moduł jest szwem: liczą nim Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany
-legendy i brama, więc macierz reguł jest tu raz. Oczekiwania pochodzą z maila taty z 15.11.2026, ADR 0039 (opis to
-same kody, każde odstępstwo to Błąd opisu, także opis bez kodu, w kolumnie zawsze tylko 1, kwoty w ``AS`` się sumują) i
-opisu modułu ``activity_legend``. Przykłady Hypothesis są deterministyczne (``derandomize=True``, bez bazy
+legendy, brama i Wpisanie raportów, więc macierz reguł jest tu raz. Oczekiwania pochodzą z maila taty z 15.11.2026,
+ADR 0039 (w kolumnie zawsze tylko 1, kwoty w ``AS`` się sumują), ADR 0041 (zwykły opis obok kodów nie jest błędem,
+własny zapis kodu to zwykły opis, Błąd opisu to tylko kod z liczbą spoza przedziałów, kolumna trafiona drugi raz i dwa
+kolory) i opisu modułu ``activity_legend``. Przykłady Hypothesis są deterministyczne (``derandomize=True``, bez bazy
 przykładów).
 """
 
@@ -23,7 +24,6 @@ from rozliczenia.activity_legend import (
     ActivityCode,
     ActivityLegend,
     CellFill,
-    CodesOnly,
     ColumnByNumber,
     ColumnTwice,
     DescriptionError,
@@ -32,10 +32,10 @@ from rozliczenia.activity_legend import (
     FixedColumn,
     LegendProblem,
     LegendRefused,
-    NotACode,
     NumberOutOfRange,
     NumberRange,
     TwoColours,
+    WithCodes,
 )
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND, dump_activity_legend, parse_activity_legend
 
@@ -46,9 +46,9 @@ def _read(text: str) -> DescriptionRead:
     return DEFAULT_ACTIVITY_LEGEND.read(text)
 
 
-def _codes(text: str) -> CodesOnly:
+def _codes(text: str) -> WithCodes:
     read = _read(text)
-    assert isinstance(read, CodesOnly), read
+    assert isinstance(read, WithCodes), read
     return read
 
 
@@ -111,27 +111,51 @@ def test_liczba_spoza_przedzialow_to_blad_opisu_z_kodem_i_liczba(text: str, prob
         "instwew",
     ],
 )
-def test_slowo_ktore_nie_jest_w_calosci_zapisem_kodu_to_blad_opisu_samo_i_obok_kodu(text: str) -> None:
-    words = tuple(NotACode(word) for word in text.split())
-
-    assert (_problems(text), _problems(f"spawgnd {text}")) == (words, words)
+def test_slowo_ktore_nie_jest_w_calosci_zapisem_kodu_to_zwykly_opis_bez_dopasowania_samo_i_obok_kodu(text: str) -> None:
+    assert _read(text) == NO_CODES
+    assert _read(f"spawgnd {text}") == _read("spawgnd")
 
 
 @pytest.mark.parametrize(
-    ("text", "words"),
-    [("montaż ONT", ("montaż", "ONT")), ("utp18m", ("utp18m",)), ("tak, wymiana routera", ("wymiana", "routera"))],
+    "text",
+    ["montaż ONT", "utp18m", "tak, wymiana routera", "Podłączyłem lokal, klient zadowolony", "", "   ", "tak", "Nie.", "TAK, nie!", "-", "/ /", "\n"],
 )
-def test_opis_bez_zadnego_kodu_ze_slowem_innym_niz_tak_i_nie_to_blad_opisu(text: str, words: tuple[str, ...]) -> None:
-    assert _problems(text) == tuple(NotACode(word) for word in words)
+def test_opis_bez_zadnego_kodu_to_brak_kodu_bez_bledu_opisu(text: str) -> None:
+    read = _read(text)
+
+    assert (read, read.spelled) == (NO_CODES, ())
 
 
-@pytest.mark.parametrize("text", ["", "   ", "tak", "Nie.", "TAK, nie!", "-", "/ /", "\n"])
-def test_opis_pusty_albo_z_samych_tak_i_nie_to_brak_kodow_bez_bledu(text: str) -> None:
-    assert _read(text) == NO_CODES
+@pytest.mark.parametrize(
+    "text",
+    ["inst30m Podłączyłem lokal, klient zadowolony.", "Podłączyłem lokal: inst30m", "tak inst30m instmdic", "INST30M - dzielnik 1/2"],
+)
+def test_zwykly_opis_obok_kodu_wyznacza_to_samo_co_sam_kod(text: str) -> None:
+    read, alone = _codes(text), _codes("inst30m")
+
+    assert (dict(read.quantities), read.amount, dict(read.fills), read.found) == (
+        dict(alone.quantities),
+        alone.amount,
+        dict(alone.fills),
+        alone.found,
+    )
 
 
-def test_kod_z_liczba_spoza_przedzialow_jest_kodem_wiec_slowa_obok_sa_bledem() -> None:
-    assert _problems("montaż instutp40m") == (NotACode("montaż"), NumberOutOfRange("instutp", "instutp{n}m", 40))
+@pytest.mark.parametrize(
+    ("text", "spelled"),
+    [
+        ("inst30m instmdic", ("inst30m",)),
+        ("Spawpg, montaż INST025m dzielnik1/2", ("spawpg", "inst25m", "dzielnik1/2")),
+        ("instutp40m i spawpg", ("instutp40m", "spawpg")),
+        ("inst20m inst30m", ("inst20m", "inst30m")),
+    ],
+)
+def test_kody_z_opisu_w_zapisie_legendy_w_kolejnosci_z_opisu_takze_przy_bledzie_opisu(text: str, spelled: tuple[str, ...]) -> None:
+    assert _read(text).spelled == spelled
+
+
+def test_kod_z_liczba_spoza_przedzialow_to_blad_opisu_takze_obok_zwyklego_opisu() -> None:
+    assert _problems("montaż instutp40m") == (NumberOutOfRange("instutp", "instutp{n}m", 40),)
 
 
 @pytest.mark.parametrize(
@@ -181,17 +205,17 @@ def test_dwa_rozne_kolory_w_jednej_kolumnie_to_blad_opisu_a_ten_sam_kolor_dwa_ra
 
     assert _problems("zielony czerwony zielony", legend) == (TwoColours(column, ("zielony", "czerwony", "zielony")),)
     read = legend.read("zielony tezzielony")
-    assert isinstance(read, CodesOnly) and dict(read.fills) == {column: FillColour.GREEN}
+    assert isinstance(read, WithCodes) and dict(read.fills) == {column: FillColour.GREEN}
 
 
 def test_dwa_kody_z_tym_samym_kolorem_w_af_z_legendy_z_wydania_nie_sa_bledem() -> None:
     assert dict(_codes("rt2 instwew15m").fills)["AF"] is FillColour.GREEN
 
 
-def test_powody_bledu_ida_najpierw_slowami_w_kolejnosci_z_opisu_potem_kolumnami_kazdy_raz() -> None:
-    assert _problems("instmdik montaż instutp40m inst20m montaż") == (
-        NotACode("montaż"),
+def test_powody_bledu_ida_najpierw_kodami_spoza_przedzialow_w_kolejnosci_z_opisu_potem_kolumnami_kazdy_raz() -> None:
+    assert _problems("instmdik montaż instutp40m inst20m instwewrg60m instutp40m") == (
         NumberOutOfRange("instutp", "instutp{n}m", 40),
+        NumberOutOfRange("instwewrg6", "instwewrg6{n}m", 0),
         ColumnTwice("Y", ("instmdik", "inst")),
     )
 
@@ -316,7 +340,7 @@ def _cased(draw: st.DrawFn, code: str) -> str:
 
 def _one_per_column(codes: list[str]) -> bool:
     read = _read(" ".join(codes))
-    return isinstance(read, CodesOnly)
+    return isinstance(read, WithCodes)
 
 
 @PROPERTY
@@ -337,30 +361,29 @@ def test_wielkosc_liter_interpunkcja_tak_i_nie_nie_zmieniaja_wyniku_samych_kodow
     codes=st.lists(_CODE, min_size=0, max_size=3),
     word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12),
 )
-def test_slowo_spoza_legendy_w_dowolnym_miejscu_opisu_to_blad_opisu(
+def test_slowo_spoza_legendy_w_dowolnym_miejscu_opisu_nie_zmienia_wyniku(
     data: st.DataObject, codes: list[str], word: str
 ) -> None:
-    assume(isinstance(_read(word), DescriptionError))
+    assume(_read(word) == NO_CODES)
     position = data.draw(st.integers(0, len(codes)))
     words = [*codes[:position], word, *codes[position:]]
 
     read = _read(data.draw(st.sampled_from((" ", ", ", ".\n"))).join(words))
 
-    assert isinstance(read, DescriptionError)
-    assert NotACode(word) in read.problems
+    assert read == _read(" ".join(codes))
 
 
 @PROPERTY
 @given(first=_CODE, second=_CODE)
-def test_kody_sklejone_bez_odstepu_to_jedno_slowo_spoza_legendy(first: str, second: str) -> None:
-    assert _problems(first + second) == (NotACode(first + second),)
+def test_kody_sklejone_bez_odstepu_to_jedno_slowo_zwyklego_opisu(first: str, second: str) -> None:
+    assert _read(first + second) == NO_CODES
 
 
 @PROPERTY
 @given(word=st.text(alphabet=_WORD_CHARACTERS, min_size=1, max_size=12), code=_CODE)
 def test_kod_w_srodku_albo_na_koncu_dluzszego_slowa_nie_jest_kodem(word: str, code: str) -> None:
-    assert NotACode(word + code) in _problems(word + code)
-    assert NotACode(code + word) in _problems(code + word)
+    assert _read(word + code) == NO_CODES
+    assert _read(code + word) == NO_CODES
 
 
 def test_legenda_z_wydania_czyta_sie_z_powrotem_w_ten_sam_typ() -> None:

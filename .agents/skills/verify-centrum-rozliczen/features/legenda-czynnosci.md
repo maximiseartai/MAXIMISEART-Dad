@@ -31,7 +31,7 @@ Printed by `scripts/sub_features.py --feature legenda-czynnosci` from the drive'
 - `legenda-usuniecie-cofnij`: removing a code is a row of Historia, and its „Cofnij” brings the code back.
 - `legenda-podglad`: an unchanged form of a code has no preview; the server's preview counts with the Kontrola's row check: spawpg at 80 changes 1 row, which differs from Dad's 70 in AS, and the row with a Błąd opisu beside spawpg does not change; the preview shows the server's counts, the row with its description, the legend's 80 and Dad's 70 in AS.
 - `legenda-zapis-przy-roznicach`: „Zapisz” saves the change although the preview shows a difference from Dad.
-- `legenda-podglad-usuniecia`: „Usuń kod” turns the form into the question „Usunąć kod?” without its fields; the server's preview of removing inst: row 18 changes to a Błąd opisu with its reason, with Dad's 1 in Y; before removing, the form shows the preview of the removal: the row's Błąd opisu with its reason and Dad's 1 in Y; „Usuń” under the preview removes the code it previewed.
+- `legenda-podglad-usuniecia`: „Usuń kod” turns the form into the question „Usunąć kod?” without its fields; the server's preview of removing inst: row 18 changes to a row without a code, not a Błąd opisu, with Dad's 1 in Y; before removing, the form shows the preview of the removal: the row without a code and Dad's 1 in Y; „Usuń” under the preview removes the code it previewed.
 - `legenda-waskie-okno`: the narrow window shows every code (…); on a narrow window the sentences wrap without a horizontal scroll; on a narrow window the form of a code with ranges wraps without a horizontal scroll.
 
 ## How to get to it (user POV)

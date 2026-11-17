@@ -7,13 +7,13 @@ wiersza to ``quantity_check.legend_row_check`` na treści wiersza po filtrze pry
 teraz i po zmianie, z Regułami ilości, którymi liczy następne Uruchomienie. ``differences_after`` to suma jego różnic na
 każdym pliku, więc liczba różnic legendy, którą Kontrola ilości dałaby tym plikom po zmianie; ``errors_before`` i
 ``errors_after`` liczą osobno wiersze z Błędem opisu. Wiersz zmienia się, gdy legenda wpisze w nim co innego: inne
-Ilości usług, kwotę w ``AS`` albo kolory (``CodesOnly`` rachunku; wiersz bez kodów i z Błędem opisu nie dostaje nic).
+Ilości usług, kwotę w ``AS`` albo kolory (``WithCodes`` rachunku; wiersz bez kodów i z Błędem opisu nie dostaje nic).
 Będzie tak, jak wpisał tata, gdy rachunek po zmianie nie oddaje opisu technika: wiersz nie ma różnicy legendy ani
 Błędu opisu, a bez kodów wpisu taty w kolumnie z opisu technika albo w ``AS``. Wiersz bez kodów albo z Błędem opisu
 pokazuje wpis taty jako komórki, w które legenda nic nie wpisze, a wiersz z Błędem opisu także jego powody.
 
-Odpowiedź idzie do przeglądarki taty, więc ma tylko numer wiersza, Kody czynności, komórki, powody Błędu opisu bez
-tekstu technika (``problem_text``) i opis technika, który rachunek oddaje tylko w wierszu z różnicą albo z Błędem opisu;
+Odpowiedź idzie do przeglądarki taty, więc ma tylko numer wiersza, Kody czynności, komórki, powody Błędu opisu
+(``problem_text``) i opis technika, który rachunek oddaje tylko w wierszu z różnicą albo z Błędem opisu;
 opis przechodzi przez strażnika reguły danych (ADR 0025) z pamięcią pracy Centrum, która zna każdą wartość ``ADRES`` i
 numer Orange przeczytanych plików. Nigdy adresu, numeru zlecenia ani daty dziennej.
 """
@@ -23,7 +23,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Final
 
-from rozliczenia.activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesOnly, DescriptionError, DescriptionRead, FillColour, problem_text
+from rozliczenia.activity_legend import AMOUNT_COLUMN, ActivityLegend, DescriptionError, DescriptionRead, FillColour, WithCodes, problem_text
 from rozliczenia.centrum.contract import activity_legend as contract
 from rozliczenia.centrum.contract.quantity_rules import PreviewFile
 from rozliczenia.centrum.legend_forms import colour_name
@@ -83,7 +83,7 @@ def legend_preview(
 def _written(read: DescriptionRead) -> object:
     """To, co legenda wpisze w wierszu Pliku zbiorczego: Ilości usług, kwota w ``AS`` i kolory."""
 
-    if not isinstance(read, CodesOnly):
+    if not isinstance(read, WithCodes):
         return ({}, 0, {})
     return (dict(read.quantities), read.amount, dict(read.fills))
 
@@ -97,7 +97,7 @@ def _row(
         period=period,
         row=number,
         description=guarded(forbidden, checked.description, _PLACE).text,
-        codes=list(dict.fromkeys(found.code for found in read.found)) if isinstance(read, CodesOnly) else [],
+        codes=list(dict.fromkeys(found.code for found in read.found)) if isinstance(read, WithCodes) else [],
         problems=list(dict.fromkeys(problem_text(problem) for problem in read.problems)) if isinstance(read, DescriptionError) else [],
         cells=[
             *(_cell(difference, names) for difference in checked.differences),

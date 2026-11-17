@@ -142,8 +142,8 @@ LegendPreviewCell = Annotated[LegendPreviewValue | LegendPreviewFill, Field(disc
 
 class LegendPreviewRow(Model):
     """Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis
-    technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z samych kodów, powody Błędu
-    opisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej."""
+    technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z kodami bez Błędu opisu,
+    powody Błędu opisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej."""
 
     period: str
     row: int

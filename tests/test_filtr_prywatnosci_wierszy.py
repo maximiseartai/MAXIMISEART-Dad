@@ -227,7 +227,9 @@ def test_bez_naglowka_czynnosci_zrealizowane_opis_technika_jest_pusty() -> None:
         ("spawpg", {"AB": 1, "AS": 70}, True),
         ("instutp40m", {}, False),
         ("instutp40m", {"AJ": 1}, True),
-        ("inst20m listwy", {"Y": 1}, True),
+        ("inst20m listwy", {"Y": 1}, False),
+        ("inst20m listwy", {}, True),
+        ("inst20m instutp40m", {"Y": 1}, True),
         ("tak", {"Y": 1}, True),
         ("listwy 11 metrów", {}, False),
         ("listwy 11 metrów", {"AS": 220}, True),
@@ -239,8 +241,9 @@ def test_bez_naglowka_czynnosci_zrealizowane_opis_technika_jest_pusty() -> None:
 def test_opis_technika_wychodzi_tylko_w_wierszu_z_roznica_legendy_albo_z_wpisem_taty_gdy_legenda_nic_nie_wpisala(
     completed: str, cells: dict[str, int], sent: bool
 ) -> None:
-    # spawpg bez czerwonego AS to różnica koloru; instutp40m, kod obok słowa i zwykły opis to Błąd opisu (ADR 0039), więc
-    # legenda nic nie wpisuje, tak jak przy samym „tak”; AE nie jest kolumną z opisu technika.
+    # spawpg bez czerwonego AS to różnica koloru; inst20m obok zwykłego opisu wpisuje to samo co sam inst20m (ADR 0041);
+    # instutp40m to Błąd opisu, a sam zwykły opis to wiersz bez kodu, więc legenda nic nie wpisuje, tak jak przy samym
+    # „tak”; AE nie jest kolumną z opisu technika.
     row: list[object] = [None] * 46
     row[3], row[6], row[10] = "przeniesienie", STARTED, completed
     for letter, value in cells.items():
