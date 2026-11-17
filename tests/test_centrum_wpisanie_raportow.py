@@ -3906,31 +3906,105 @@ def test_seria_porannych_przypomnien_przerwana_o_17_reszta_idzie_dopiero_o_18_be
         ("jan.testowy", evening.astimezone()),
     ]
 
+
+def _shown_sent(centrum: EnteringCentrum) -> list[tuple[str, str, datetime]]:
+    """Wysłane przypomnienia z pliku wyniku, który czyta widok Raporty: Wykonawca, dzień i chwila wysłania."""
+
+    return [
+        (sent["worker"], sent["day"], datetime.fromisoformat(sent["sent_at"])) for sent in _reminder_result(centrum)["sent"]
+    ]
+
+
+def _filed_at(mailbox: FakeMailbox) -> list[datetime]:
+    """Chwile przypomnień, które Gmail atrapy położył już w „Wysłanych”."""
+
+    assert isinstance(mailbox.sent, tuple), mailbox.sent
+    return [found.sent_at for found in mailbox.sent]
+
+
 def test_przypomnienie_wyslane_przed_brakiem_sieci_nie_idzie_drugi_raz_zanim_gmail_polozy_je_w_wyslanych(
     tmp_path: Path,
 ) -> None:
     """Sprawdzenie wysyła przypomnienie Annie, a przy Janie sieć znika, więc pora zostaje otwarta. Następna minuta tej
     samej pory wysyła tylko Janowi, choć Gmail jeszcze nie położył przypomnienia Anny w „Wysłanych”: maile wysłane w
-    tej pracy Centrum praca pamięta sama (ADR 0030 „Najwyżej jedno w każdej porze”)."""
+    tej pracy Centrum praca pamięta sama (ADR 0030 „Najwyżej jedno w każdej porze”), a widok Raporty pokazuje oba
+    przypomnienia do końca pory. O 18:00 Gmail położył już tylko przypomnienie Anny, a widok pokazuje każde poranne
+    raz: przypomnienia Jana z 8:31 nie zakrywa przypomnienie Anny z „Wysłanych” wysłane minutę wcześniej."""
 
     class NetworkGoneAtJan(FakeMailbox):
         def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
             self.send_outcome = InboxUnreachable("TimeoutError") if len(self.sends) == 1 else MailSent()
             return super().send(reminder, at)
 
-    mailbox = NetworkGoneAtJan(filed_after=10)
+    mailbox = NetworkGoneAtJan(filed_after=1)
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
+    anna, jan = REMINDER_MORNING.astimezone(), (REMINDER_MORNING + timedelta(minutes=1)).astimezone()
+    evening = datetime(2026, 11, 10, 18, 0)
 
     centrum.rhythm.tick()
     centrum.moment.append(REMINDER_MORNING + timedelta(minutes=1))
     centrum.rhythm.tick()
+    centrum.moment.append(REMINDER_MORNING + timedelta(minutes=29))
+    centrum.rhythm.tick()
+    morning_view = _shown_sent(centrum)
+    morning_sends = [reminder.worker for reminder, _ in mailbox.sends]
+    centrum.moment.append(evening)
+    centrum.rhythm.tick()
     centrum.client.stop()
 
-    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy", "jan.testowy"]
-    assert mailbox.sent == ()
+    assert morning_sends == ["anna.kowalska", "jan.testowy", "jan.testowy"]
+    assert morning_view == [("anna.kowalska", "2026-11-09", anna), ("jan.testowy", "2026-11-09", jan)]
+    assert _filed_at(mailbox) == [anna]
+    assert _shown_sent(centrum) == [
+        ("anna.kowalska", "2026-11-09", anna),
+        ("anna.kowalska", "2026-11-09", evening.astimezone()),
+        ("jan.testowy", "2026-11-09", jan),
+        ("jan.testowy", "2026-11-09", evening.astimezone()),
+    ]
+
+
+def _pora_changed_twice(centrum: EnteringCentrum) -> list[tuple[str, str, datetime]]:
+    """Sprawdzenie o 8:30 wysyła poranne przypomnienia, a tata dwa razy zmienia poranną porę, każda zmiana minutę
+    później (#1568). Wynik: widok Raporty po pierwszej zmianie; ten po drugiej zostaje w pliku wyniku."""
+
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+    centrum.rhythm.tick()
+
+    def change(minute: int, end: str) -> None:
+        form = _reminders_form(morning={"start": "08:00", "end": end}, footer="Pozdrawiam\nTata\n")
+        assert centrum.client.put("/api/settings/reminders", json=form).status_code == 200
+        centrum.moment.append(REMINDER_MORNING + timedelta(minutes=minute))
+        centrum.rhythm.tick()
+
+    change(1, "12:00")
+    shown = _shown_sent(centrum)
+    change(2, "13:00")
+    centrum.client.stop()
+    return shown
+
+
+def test_zmiana_por_tuz_po_wysylce_widok_raporty_pokazuje_przypomnienia_zanim_gmail_je_polozy_i_po_tym_kazde_raz(
+    tmp_path: Path,
+) -> None:
+    """Tata zmienia poranną porę minutę po wysyłce, zanim Gmail położy przypomnienia w „Wysłanych”: nowe sprawdzenie
+    nie wysyła ich drugi raz, a widok Raporty dalej je pokazuje. Po drugiej zmianie Gmail już je położył, a widok
+    pokazuje każde raz, bo mail z „Wysłanych” i z pamięci tej pracy to ten sam mail."""
+
+    mailbox = FakeMailbox(filed_after=1)
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+
+    before_filed = _pora_changed_twice(centrum)
+
+    morning = REMINDER_MORNING.astimezone()
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy"]
+    assert before_filed == [("anna.kowalska", "2026-11-09", morning), ("jan.testowy", "2026-11-09", morning)]
+    assert _filed_at(mailbox) == [morning, morning]
+    assert _shown_sent(centrum) == before_filed
 
 
 def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_porze(tmp_path: Path) -> None:

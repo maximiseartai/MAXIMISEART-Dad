@@ -48,7 +48,8 @@ Laptop taty na pewno działa o 8:00. Nie wiadomo, czy działa w nocy albo wieczo
   już w bieżącej porze; poranne wysłane o 9:30 nie blokuje więc wieczornego o 18:00. Restart Centrum ani dwa
   sprawdzenia naraz nie wysyłają go drugi raz, a Centrum nie ma własnego pliku stanu przypomnień. Gmail kładzie mail
   w „Wysłanych” z opóźnieniem, więc przypomnienia wysłane w tej pracy Centrum praca pamięta też w pamięci procesu (jak
-  Wysyłka rozliczeń, ADR 0040): następna minuta pory po braku sieci w trakcie serii nie wysyła ich drugi raz. Centrum
+  Wysyłka rozliczeń, ADR 0040): następna minuta pory po braku sieci w trakcie serii nie wysyła ich drugi raz, a widok
+  Raporty pokazuje je od wysyłki, każde raz także po tym, jak Gmail je położy. Centrum
   ponownie uruchomione tuż po wysyłce zna wysłane tylko z „Wysłanych”, więc przypomnienie, którego Gmail jeszcze tam
   nie położył, może wtedy pójść drugi raz.
 - **Kto i do kiedy.** Tylko Wykonawcy z listy adresów Wykonawców, którzy mają zlecenia dnia w INTERMAX, czytanym tylko

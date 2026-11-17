@@ -125,6 +125,16 @@ class SentReminder:
     day: date
     sent_at: datetime
 
+    def same_mail(self, other: SentReminder) -> bool:
+        """Ten sam mail widziany dwoma zegarami: ci sami adresaci i dzień przypomnienia, a chwile wysłania (zegar
+        laptopa taty i zegar Gmaila w „Wysłanych”) najwyżej ``CLOCK_MARGIN`` od siebie. Nie porównuje pór: dwa maile tej
+        samej pory, gdy Gmail nie położył pierwszego przed ponownym startem Centrum, to dwa maile."""
+
+        return (
+            (self.recipients, self.day) == (other.recipients, other.day)
+            and abs(self.sent_at - other.sent_at) <= CLOCK_MARGIN
+        )
+
 
 CLOCK_MARGIN: Final = timedelta(minutes=2)
 """Ile chwila z „Wysłanych” (zegar Gmaila) może odejść od zegara laptopa taty, przy którym praca przypomnień zapisała
