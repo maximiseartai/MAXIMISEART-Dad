@@ -4598,6 +4598,32 @@ def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach
     assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
 
 
+def test_raport_bez_dnia_w_temacie_nie_konczy_przypomnien_za_dzien_sprzed_wdrozenia_wpisania_raportow(tmp_path: Path) -> None:
+    """ADR 0041 (historia 20), D1 r1 #2068: przypomnienia działają od 9.11, a Wpisanie raportów od pierwszego kliknięcia
+    10.11. Jan ma zlecenia 9.11 i 10.11, a 10.11 przysyła ``Raport 10.11.2026`` i sam ``Raport``. Dzień wskazany raportu
+    bez dnia w temacie leży w dniach otwartych Wpisania, więc ten raport w obu operacjach nie liczy się za żaden dzień:
+    widok Raporty ma problem bez dnia, a 11.11 rano idzie Janowi przypomnienie za 9.11."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000004)), raw=())
+    mails = (
+        report(JAN, "Raport 10.11.2026", "40000004 tak inst20m", at=datetime(2026, 11, 10, 19)),
+        report(JAN, "Raport", "40000001 tak spawpg", at=datetime(2026, 11, 10, 20)),
+    )
+    mailbox = FakeMailbox(outcome=mails)
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 10, 21), list(mails))
+    jan = _worker(_view(centrum), "jan.testowy", "2026-11-10")
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [_faulty_subject(problem) for problem in jan["problems"]] == [("bez daty", None, mails[1].arrived)]
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("jan.testowy", date(2026, 11, 9))]
+
+
 def test_praca_przypomnien_czyta_okno_od_wdrozenia_wpisania_raportow_gdy_jest_wczesniejsze_niz_wdrozenie_przypomnien(
     tmp_path: Path,
 ) -> None:

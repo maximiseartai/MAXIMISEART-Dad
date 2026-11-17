@@ -443,7 +443,12 @@ class ReportInputs:
     dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy.
 
     ``legend``: Legenda czynności Ustawień Centrum, ta sama, którą liczy Przygotowanie pliku zbiorczego; z niej rdzeń
-    wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``)."""
+    wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``).
+
+    ``entering_rollout``: dzień wdrożenia Wpisania raportów, gdy okno zaczyna się wcześniej (Przypomnienia o raporcie z
+    wcześniejszym dniem wdrożenia przypomnień, ``report_entering.report_inputs``; ``None``: ``window.rollout``). Dzień
+    wskazany raportu z błędem tematu bez dnia w temacie leży od niego, w dniach otwartych Wpisania, więc obie operacje
+    wskazują ten sam dzień albo żaden."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -454,6 +459,7 @@ class ReportInputs:
     present: Sequence[ReadNumber]
     legend: ActivityLegend
     ordered_days: frozenset[OrderedDay] = frozenset()
+    entering_rollout: date | None = None
 
 
 class Verdict(Enum):

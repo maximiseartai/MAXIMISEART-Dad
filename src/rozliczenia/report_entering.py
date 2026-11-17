@@ -579,7 +579,9 @@ def report_inputs(
     okna z ``register_window`` i pamięć Wpisania raportów z ``ReportState.load`` (``saved``; pamięć z pliku sprzed wersji
     4 zamieniona przy odczytanych zleceniach, ``OlderOwnEntries.upgraded``). Dzień raportu zależy od pamięci: numer
     dopisany przez Centrum nie robi z tematu pomylonego, a zlecenie po Przeniesieniu ma w rdzeniu dzień sprzed niego,
-    więc obie operacje liczą ten sam dzień raportu tylko z tej samej pamięci."""
+    więc obie operacje liczą ten sam dzień raportu tylko z tej samej pamięci. Dzień wdrożenia Wpisania z pamięci (przed
+    pierwszym kliknięciem: dziś) ogranicza dzień wskazany raportu bez dnia w temacie także w oknie przypomnień, które
+    zaczyna się wcześniej (``ReportInputs.entering_rollout``)."""
 
     memory = saved.memory.upgraded(intermax.orders) if isinstance(saved.memory, OlderOwnEntries) else saved.memory
     return ReportInputs(
@@ -592,6 +594,7 @@ def report_inputs(
         ordered_days=intermax.ordered_days,
         present=tuple(read for _, read in intermax.present),
         legend=legend,
+        entering_rollout=window.today if saved.rollout is None else saved.rollout,
     )
 
 

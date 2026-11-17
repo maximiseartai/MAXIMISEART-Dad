@@ -91,7 +91,7 @@ def read_window(inputs: ReportInputs) -> WindowRead:
         if window.opens(day)
     ]
     unreadable = [found for found in mails if isinstance(found, ReadUnreadable)]
-    counted = _faulty(unreadable, reported, orders, window, board)
+    counted = _faulty(unreadable, reported, orders, window, inputs.entering_rollout or window.rollout, board)
     reported += [(found.worker, day) for found in unreadable for day in sorted(counted[found])]
     faulty = tuple(
         (found, shown)
@@ -113,32 +113,34 @@ def _faulty(
     reported: Sequence[tuple[Login, date]],
     orders: Sequence[RegisterOrder],
     window: Window,
+    since: date,
     board: _matching.Board,
 ) -> dict[ReadUnreadable, frozenset[date]]:
     """Dni, za które liczy się każdy raport z błędem tematu (ADR 0041), z numerami zleceń, które wygrywają z datą jak przy
     pomylonym temacie (``Board.days``): dzień z tematu, gdy da się go przeczytać, a bez niego dzień wskazany, czyli
-    ostatni dzień otwarty Wykonawcy ze zleceniami, nie późniejszy niż dzień przyjścia maila, za który nie ma innego
-    raportu (``reported`` i raporty z błędem tematu z dniem z tematu, potem bez niego po ``_mail_order``). Bez dnia z
+    ostatni dzień otwarty Wykonawcy ze zleceniami, nie wcześniejszy niż dzień wdrożenia Wpisania raportów ``since`` i nie
+    późniejszy niż dzień przyjścia maila, za który nie ma innego raportu (``reported`` i raporty z błędem tematu z dniem
+    z tematu, potem bez niego po ``_mail_order``). Bez dnia z
     tematu i bez wskazanego dnia raport nie liczy się za żaden dzień (pusto: problem bez dnia)."""
 
     counted: dict[ReadUnreadable, frozenset[date]] = {}
     taken = set(reported)
     for found in sorted(dict.fromkeys(unreadable), key=lambda found: found.day is None):
-        day = found.day or _indicated(found, orders, window, taken)
+        day = found.day or _indicated(found, orders, window, since, taken)
         counted[found] = frozenset() if day is None else board.days(sorted(found.numbers), day)
         taken.update((found.worker, counted_day) for counted_day in counted[found])
     return counted
 
 
 def _indicated(
-    found: ReadUnreadable, orders: Sequence[RegisterOrder], window: Window, taken: set[tuple[Login, date]]
+    found: ReadUnreadable, orders: Sequence[RegisterOrder], window: Window, since: date, taken: set[tuple[Login, date]]
 ) -> date | None:
     days = {
         order.key.day
         for order in orders
         if order.key.worker == found.worker
         and window.opens(order.key.day)
-        and order.key.day <= found.arrived.date()
+        and since <= order.key.day <= found.arrived.date()
         and (found.worker, order.key.day) not in taken
     }
     return max(days, default=None)
