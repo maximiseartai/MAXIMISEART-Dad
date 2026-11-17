@@ -28,8 +28,8 @@ waits that many milliseconds first. One version on the origin's branch
 
 ``<root>/INTERMAX/`` holds two synthetic INTERMAX files for ``uporzadkowanie-intermax``: one with the Surowe
 zlecenia of Monday 26.10.2026 pasted under the ordered days (6 orders of 3 Wykonawcy, the first row shifted), and
-one whose pasted rows hold a formula, which Uporządkowanie INTERMAX stops „do Maksa”. Kopie INTERMAX go to
-``<root>/Kopie INTERMAX``. ``<root>/INTERMAX/przywracanie/`` holds a third INTERMAX for ``kopie-intermax`` and the
+one whose pasted rows hold a formula, which Uporządkowanie INTERMAX stops „do Maksa”. Beside them lies a synthetic
+Baza zleceń with the Historia adresu of two of the 6 pasted orders. Kopie INTERMAX go to ``<root>/Kopie INTERMAX``. ``<root>/INTERMAX/przywracanie/`` holds a third INTERMAX for ``kopie-intermax`` and the
 bytes of three Kopie of both names (one ordered order fewer in the oldest), which that feature puts into the folder
 of Kopie only while it runs.
 
@@ -65,6 +65,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
 from skrypt_skilla import Parser, create_run_root
 from harness import File
+from atrapy.baza_zlecen import TWELVE, BaseSheet, Visit, write_order_base
 from atrapy.intermax import FIRST, HEADERS, NUMBER, ORDER_SHEET, Intermax, Order
 from atrapy.scenariusz_centrum import (
     COLLECTIVE_FILE_ROWS,
@@ -100,6 +101,7 @@ from atrapy.pliki_taty import (
 from atrapy.preparation import COMPLETED_WITHOUT_CODES
 from atrapy.scenariusz_rozliczen import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, WORKER_TEMPLATE_NAME
 from rozliczenia.centrum.settings.workers import WORKERS as WORKER_LIST_FILE, WORKERS_FILE
+from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.tool_files import config_dir
 from rozliczenia.worker_list import WorkerEntry, WorkerList
 
@@ -277,6 +279,8 @@ def _intermax(root: Path) -> dict[str, object]:
     workbook = load_workbook(with_formula)
     workbook[ORDER_SHEET].cell(layout.first_raw + 1, 4).value = "=1+1"
     workbook.save(with_formula)
+    history = [Visit("ULICA 101", datetime(2026, 2, 3, 9), 7001, "wizyta"), Visit("UL. ULICA 103", None, 7002, "wizyta")]
+    write_order_base(folder / ORDER_BASE_NAME, (BaseSheet("19_12_2025-17_11_2026", TWELVE, history),))
     restore = folder / "przywracanie"
     (restore / "kopie").mkdir(parents=True)
     restored = restore / register.name
@@ -297,6 +301,7 @@ def _intermax(root: Path) -> dict[str, object]:
         "copies": str(root / "Kopie INTERMAX"),
         "orders": len(layout.raw),
         "workers": len({order.worker for order in layout.raw}),
+        "history": len(history),
         "day": "pon 26.10.2026",
         "restore": {
             "register": str(restored),

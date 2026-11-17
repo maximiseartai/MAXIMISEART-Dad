@@ -74,6 +74,12 @@ MUTATIONS = (
         "tata nie wie, która Kopia INTERMAX ma stan sprzed zapisu",
     ),
     Mutation(
+        "wynik bez Historii adresu",
+        (Edit(INTERMAX_KIND, '[count_figure("Historia adresu", summary.history.orders)]', "[]"),),
+        UPORZADKOWANIE,
+        "tata nie widzi, czy kopiowanie z Bazy zleceń zadziałało",
+    ),
+    Mutation(
         "wynik otwiera Plik zbiorczy zamiast INTERMAX",
         (Edit(INTERMAX_KIND, '    result_action="open_order_register",\n', '    result_action="open_collective_file",\n'),),
         UPORZADKOWANIE,
