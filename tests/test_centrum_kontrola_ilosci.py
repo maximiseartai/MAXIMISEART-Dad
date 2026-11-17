@@ -29,7 +29,7 @@ from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
-from rozliczenia.centrum.settings.quantity_rules import RULES_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 
 from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
@@ -49,6 +49,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
     write_dad_quantity_rules,
 )
+from tests.fixtures.bez_dostepu import without_reading
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.zegar_scienny import MOMENTS, STEP, wall_clock_from
 from atrapy import pliki_taty
@@ -1015,6 +1016,26 @@ def test_podglad_legendy_odmawia_tym_samym_zdaniem_przy_polu_co_zapis_bez_zapisu
     assert previewed.status_code == 422
     assert unknown.status_code == 404
     assert not (centrum.tool.config / LEGEND_FILE).exists()
+
+
+@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
+def test_podglad_legendy_przy_pliku_pary_regul_ilosci_bez_odczytu_to_409_o_tym_pliku_a_nie_podglad_regulami_z_wydania(
+    tmp_path: Path, unreadable: str
+) -> None:
+    """Podgląd liczy legendę po zmianie razem z Regułami ilości, którymi liczy Przebieg rozliczeń: Reguły ilości z
+    Wydania w miejscu pliku pary, którego system nie daje teraz czytać, dałyby tacie inny skutek zmiany kodu niż
+    następny Przebieg, więc podgląd mówi, którego pliku nie da się przeczytać, jak zapis."""
+
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
+    write_dad_quantity_rules(centrum.tool, RULES_FILE, rule, rule.replace("wartosc: 1", "wartosc: 2"))
+    write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "nokia-router", "nokia-router")
+    run_to_end(centrum, dry_run=False)
+
+    with without_reading(centrum.tool.config / unreadable):
+        response = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "remove", "code_id": "rt2"})
+
+    assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(unreadable).message})
 
 
 def test_podglad_legendy_bez_okresu_po_przebiegu_rozliczen_nie_ma_na_czym_policzyc(tmp_path: Path) -> None:
