@@ -2,9 +2,11 @@
 (``register_file``) i Bazy zleceń (``order_base``).
 
 Wartość komórki (``CellValues.value``) to tekst wspólny albo wbudowany, liczba, a w formacie daty data z systemu dat
-skoroszytu (1900 albo 1904); inny typ (prawda/fałsz jako 1 i 0, błąd, wynik formuły tekstem) to tekst jej zapisu.
-Pusta komórka i tekst z samych odstępów to ``None``. Formaty dat to wbudowane formaty daty Excela i własne formaty
-skoroszytu, które openpyxl uznaje za daty (``is_date_format``).
+skoroszytu (1900 albo 1904), dla liczby poniżej 1 godzina (``time``); inny typ (prawda/fałsz jako 1 i 0, błąd, wynik
+formuły tekstem) to tekst jej zapisu. Pusta komórka i tekst z samych odstępów to ``None``. Formaty dat to wbudowane
+formaty daty Excela i własne formaty skoroszytu, które openpyxl uznaje za daty (``is_date_format``). Liczba w formacie
+daty, której Excel nie pokazuje jako daty, bo jest ujemna albo za ostatnią chwilą 31.12.9999 (``_LAST_MOMENT``), ma w
+Excelu ``#######`` i zostaje liczbą.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ import html
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Final, cast
 from xml.etree import ElementTree
 
@@ -28,6 +30,9 @@ __all__ = ["CellValues"]
 
 _HEADER_ROW: Final = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
 _TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
+_LAST_MOMENT: Final = datetime(9999, 12, 31, 23, 59, 59, 999000)
+"""Ostatnia chwila, którą Excel pokazuje jako datę; ``from_excel`` zamienia każdą liczbę od 0 do niej."""
+_DAY: Final = timedelta(days=1)
 
 
 @dataclass(frozen=True)
@@ -64,7 +69,8 @@ class CellValues:
         )
 
     def value(self, cell: SheetCell) -> object:
-        """Wartość komórki: tekst (także prawda/fałsz jako 1 i 0), liczba, data w formacie daty; ``None`` dla pustej."""
+        """Wartość komórki: tekst (także prawda/fałsz jako 1 i 0), liczba, data albo godzina w formacie daty (zob.
+        docstring modułu); ``None`` dla pustej."""
 
         kind = cell.kind or b"n"
         if kind == b"inlineStr":
@@ -78,7 +84,7 @@ class CellValues:
                 text = self.shared[int(raw)]
             elif kind == b"n":
                 number = float(raw)
-                if self.number_formats[cell.style] in self.date_formats:
+                if self.number_formats[cell.style] in self.date_formats and 0 <= number <= (_LAST_MOMENT - self.epoch) / _DAY:
                     return from_excel(number, self.epoch)
                 return number
             else:

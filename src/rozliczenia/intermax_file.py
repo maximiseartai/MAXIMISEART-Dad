@@ -18,7 +18,8 @@ tylko:
   znikają; zlecenie z Wpisem urządzenia i czynności INTERMAX ma w ``URZĄDZENIA`` i ``CZYNNOŚCI`` tekst Wpisu
   zamiast wartości z aplikacji; zlecenie z Historią adresu (``Placement.history``) ma od kolumny za ``UWAGI``
   jej bloki jeden za drugim, każdy w swojej szerokości, z wartościami bez stylów Bazy zleceń (``_history_cells``):
-  czcionka, ramka i wyrównanie jak w kolumnach zlecenia, data w formacie daty uporządkowanych dni, blok 1., 3., …
+  czcionka, ramka i wyrównanie jak w kolumnach zlecenia, data w formacie daty uporządkowanych dni, a godzina w
+  formacie godziny (``_TIME_FORMAT``), blok 1., 3., …
   na jasnoszarym tle (``_HISTORY_FILL``), a kolumna A takiego zlecenia jest czerwona (``_HISTORY_MARK``);
   pusty wiersz między segmentami ma puste komórki od A do ``UWAGI`` z tym
   samym wyglądem; inny pusty wiersz, który był pusty, zostaje bajt w bajt, a wiersz, z którego zlecenie odeszło, i
@@ -49,7 +50,7 @@ import zlib
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, time
 from io import BytesIO
 from typing import Any, Final, cast
 from xml.etree import ElementTree
@@ -97,14 +98,16 @@ __all__ = ["Cells", "check", "check_cells", "ordered", "with_cells"]
 
 _DATE_FORMAT: Final = 22
 """Wbudowany format liczby 22 (m/d/yy h:mm): format daty uporządkowanych dni."""
+_TIME_FORMAT: Final = 20
+"""Wbudowany format liczby 20 (h:mm): format godziny z Historii adresu, z dokładnością daty uporządkowanych dni."""
 _BLACK: Final = "FF000000"
 _HISTORY_FILL: Final = "D9D9D9"
 """Jasnoszare wypełnienie bloku 1., 3., 5.… Historii adresu (RGB)."""
 _HISTORY_MARK: Final = "FF0000"
 """Czerwone wypełnienie kolumny A zlecenia z Historią adresu (RGB)."""
 _FILL_ID: Final = re.compile(rb'\sfillId="(\d+)"')
-_SERIAL: Final = cast(Callable[[datetime, datetime], float], to_excel)
-"""Liczba daty Excela w systemie dat skoroszytu: ``to_excel`` openpyxl, który nie ma typów."""
+_SERIAL: Final = cast(Callable[[datetime | time, datetime], float], to_excel)
+"""Liczba daty albo godziny Excela w systemie dat skoroszytu: ``to_excel`` openpyxl, który nie ma typów."""
 
 _FORMULA = re.compile(rb"<f[\s>/]")
 _DIMENSION = re.compile(rb'<dimension ref="([^"]*)"\s*/>')
@@ -856,15 +859,16 @@ class _HistoryCell:
 
 def _history_cells(history: Sequence[HistoryBlock], columns: OrderColumns, epoch: datetime) -> dict[int, _HistoryCell]:
     """Komórki bloków ``history`` po kolumnie, od pierwszej za ``UWAGI``: każdy blok w szerokości swoich wartości,
-    także pustych, blok 1., 3., … z ``_HISTORY_FILL``. Tekst staje się tekstem wbudowanym, liczba liczbą, a data
-    liczbą daty w systemie dat INTERMAX (``epoch``)."""
+    także pustych, blok 1., 3., … z ``_HISTORY_FILL``. Tekst staje się tekstem wbudowanym, liczba liczbą, a data i
+    godzina liczbą daty w systemie dat INTERMAX (``epoch``) w formacie daty albo godziny."""
 
     cells: dict[int, _HistoryCell] = {}
     column = columns.last + 1
     for index, block in enumerate(history):
         fill = _HISTORY_FILL if index % 2 == 0 else None
         for value in block.values:
-            cells[column] = _HistoryCell(_value_cell(column, value, epoch), _DATE_FORMAT if isinstance(value, datetime) else 0, fill)
+            number_format = _DATE_FORMAT if isinstance(value, datetime) else _TIME_FORMAT if isinstance(value, time) else 0
+            cells[column] = _HistoryCell(_value_cell(column, value, epoch), number_format, fill)
             column += 1
     return cells
 
@@ -872,7 +876,7 @@ def _history_cells(history: Sequence[HistoryBlock], columns: OrderColumns, epoch
 def _value_cell(column: int, value: object, epoch: datetime) -> SheetCell:
     if value is None:
         return SheetCell(column, b"", None)
-    if isinstance(value, datetime):
+    if isinstance(value, (datetime, time)):
         value = _SERIAL(value, epoch)
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return SheetCell(column, b"", b"<v>%s</v>" % repr(value).encode("ascii"))

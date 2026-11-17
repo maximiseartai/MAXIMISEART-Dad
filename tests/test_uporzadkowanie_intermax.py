@@ -20,12 +20,13 @@ from tempfile import TemporaryDirectory
 from typing import Final, Literal
 
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from openpyxl.styles import Color, Font, PatternFill
 from openpyxl.utils.cell import column_index_from_string, coordinate_from_string, get_column_letter
+from openpyxl.utils.datetime import CALENDAR_MAC_1904
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import intermax_copies
@@ -66,6 +67,7 @@ from atrapy.intermax import (
     Intermax,
     Layout,
     Order,
+    like_excel,
     order_rows,
     parts,
 )
@@ -2692,12 +2694,12 @@ def test_kolumna_a_zlecenia_z_historia_adresu_jest_czerwona_a_zlecenie_bez_trafi
 def test_wiersz_bazy_z_numerem_porzadkowanego_zlecenia_nie_jest_kopiowany_a_dwa_z_innym_wspolnym_numerem_sa(
     tmp_path: Path,
 ) -> None:
-    """Zlecenie ``ZL-501``: wiersz Bazy z numerem 501 (liczbą albo tekstem z innymi znakami) to ono samo po przywróceniu
-    Kopii INTERMAX, a dwa wiersze z numerem 777 to dwie wizyty innego zlecenia."""
+    """Zlecenie ``ZL-501``: wiersz Bazy z numerem 501 (liczbą albo tekstem z innymi znakami i zerem wiodącym) to ono
+    samo po przywróceniu Kopii INTERMAX, a dwa wiersze z numerem 777 to dwie wizyty innego zlecenia."""
 
     order = _order(0, "UL. GRABOWA 2", number=501)
     own_number = _visit("GRABOWA 2", "własny liczbą", datetime(2026, 10, 1), 501)
-    own_text = _visit("GRABOWA 2", "własny tekstem", datetime(2026, 9, 1), "nr 501")
+    own_text = _visit("GRABOWA 2", "własny tekstem", datetime(2026, 9, 1), "nr 0501")
     first = (TWELVE, _visit("GRABOWA 2", "pierwsza wizyta", datetime(2025, 1, 1), 777))
     second = (TWELVE, _visit("GRABOWA 2", "druga wizyta", datetime(2024, 1, 1), 777))
     sheets = (
@@ -2798,6 +2800,99 @@ def test_baza_ktorej_nie_da_sie_przeczytac_to_ostrzezenie_z_nazwa_pliku_a_dzien_
     assert (summary.history, summary.order_count) == (None, len(RULE_ORDERS))
     sheet = day.sheet()
     assert [day.after_uwagi(sheet, order) for order in RULE_ORDERS] == [()] * len(RULE_ORDERS)
+
+
+def _with_cell(
+    path: Path, row: int, column: int, value: bool | float | str | None, number_format: str, *, date1904: bool = False
+) -> None:
+    """Baza ``path`` z komórką w wierszu ``row`` i kolumnie ``column`` pierwszego arkusza zmienioną na ``value`` w
+    formacie liczby ``number_format``, zapisana jak w Excelu; ``date1904``: w systemie dat od 1904 r."""
+
+    workbook = load_workbook(path)
+    if date1904:
+        workbook.epoch = CALENDAR_MAC_1904
+    cell = workbook.worksheets[0].cell(row, column)
+    cell.value = value
+    cell.number_format = number_format
+    workbook.save(path)
+    like_excel(path)
+
+
+_LIPOWA_BASE: Final = (BaseSheet("19_12_2025-17_11_2026", TWELVE, [_visit("LIPOWA 18/3", "a")]),)
+_UMOWA: Final = TWELVE.headers.index("UMOWA") + 1
+
+
+@pytest.mark.parametrize(
+    ("value", "number_format", "expected"),
+    [(0.5, "hh:mm", time(12)), (40000011, "dd.mm.yyyy", 40000011), (-1.5, "dd.mm.yyyy", -1.5)],
+    ids=["godzina", "liczba za 31.12.9999", "liczba ujemna"],
+)
+def test_godzina_z_bazy_jest_w_historii_adresu_godzina_a_liczba_spoza_dat_excela_liczba(
+    tmp_path: Path, value: float, number_format: str, expected: object
+) -> None:
+    """Liczba w formacie daty, której Excel nie pokazuje jako daty (ujemna albo za 31.12.9999, np. 8-cyfrowy numer), ma
+    w Bazie ``#######``, a jej wartością zostaje liczba; godzina jest wartością czasu, nie tekstem."""
+
+    order = _order(0, "UL. LIPOWA 18/3")
+    day = _day(tmp_path, (order,), _LIPOWA_BASE)
+    _with_cell(_base_path(tmp_path), 2, _UMOWA, value, number_format)
+
+    _ordered(_run(tmp_path, base=True))
+
+    cell = day.sheet().cell(day.row(order), P + _UMOWA - 1)
+    assert isinstance(cell, Cell) and (cell.value, cell.is_date) == (expected, isinstance(expected, time))
+
+
+_OWN_NUMBER: Final = 987654321
+"""Numer porządkowanego zlecenia, którego żadna wartość z ``_CELL_VALUES`` nie powtarza w praktyce."""
+_CELL_VALUES: Final = (
+    st.none()
+    | st.booleans()
+    | st.floats(allow_nan=False, allow_infinity=False)
+    | st.integers(-(10**300), 10**300)
+    | st.text(st.characters(exclude_categories=("Cc", "Cs", "Cn")))
+    | st.text("0123456789", min_size=4301, max_size=4310)
+)
+"""Wartość, którą Excel zapisuje w komórce: pusta, prawda albo fałsz, liczba dowolnej wielkości i znaku, tekst, także
+tekst samych cyfr dłuższy niż 4300 cyfr (granica zamiany tekstu na liczbę całkowitą w Pythonie)."""
+_NUMBER_FORMATS: Final = st.sampled_from(
+    ("General", "0.00", "@", "dd.mm.yyyy", "dd.mm.yyyy hh:mm", "yyyy-mm-dd", "hh:mm", "mm:ss", "[h]:mm")
+)
+_BASE_PLACES: Final = st.tuples(st.just(1), st.integers(1, 20)) | st.tuples(st.just(2), st.integers(2, 20))
+"""Wiersz i kolumna komórki: wiersz 1 arkusza (nagłówek i za nim) albo wiersz trafienia poza adresem w kolumnie A."""
+
+
+@settings(derandomize=True, database=None, deadline=None, max_examples=60)
+@given(
+    layout=st.sampled_from((FIVE, ELEVEN, TWELVE)),
+    place=_BASE_PLACES,
+    value=_CELL_VALUES,
+    number_format=_NUMBER_FORMATS,
+    date1904=st.booleans(),
+)
+@example(layout=TWELVE, place=(2, _UMOWA), value=40000011, number_format="dd.mm.yyyy", date1904=False)
+@example(layout=TWELVE, place=(2, TWELVE.number), value="1" * 4301, number_format="General", date1904=False)
+@example(layout=TWELVE, place=(2, _UMOWA), value=2958000, number_format="dd.mm.yyyy", date1904=True)
+def test_dowolna_komorka_bazy_daje_historie_adresu_albo_ostrzezenie_a_dzien_jest_uporzadkowany(
+    layout: BaseLayout, place: tuple[int, int], value: bool | float | str | None, number_format: str, date1904: bool
+) -> None:
+    """Jedna komórka Bazy z dowolną wartością w dowolnym formacie liczby, w wierszu 1 arkusza albo w wierszu trafienia,
+    w systemie dat od 1900 albo 1904 r.: Uporządkowanie kończy się dniem uporządkowanym z Historią adresu albo z
+    ostrzeżeniem ``BAZA_ZLECEN_POMINIETA``, nigdy Zatrzymaniem z nieoczekiwanym błędem.
+
+    Przykłady stałe: 8-cyfrowy numer w formacie daty w ``UMOWA``, 4301 cyfr w ``NUMER ZL.`` i liczba w formacie daty
+    za 31.12.9999 tylko w systemie dat od 1904 r."""
+
+    row, column = place
+    order = _order(0, "UL. LIPOWA 18/3", number=_OWN_NUMBER)
+    with TemporaryDirectory() as folder:
+        tmp_path = Path(folder)
+        _day(tmp_path, (order,), (BaseSheet("19_12_2025-17_11_2026", layout, [_visit("LIPOWA 18/3", "a")]),))
+        _with_cell(_base_path(tmp_path), row, column, value, number_format, date1904=date1904)
+        summary = _ordered(_run(tmp_path, base=True))
+
+    codes = [warning.code for warning in summary.warnings]
+    assert (codes, summary.history) in (([], HistoryCounts(1, 1, 1)), (["BAZA_ZLECEN_POMINIETA"], None)), (codes, summary.history)
 
 
 def test_baza_otwarta_w_excelu_daje_historie_adresu_z_ostatniego_zapisu(tmp_path: Path) -> None:

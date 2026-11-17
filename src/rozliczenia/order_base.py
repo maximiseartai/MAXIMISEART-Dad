@@ -60,7 +60,7 @@ _NOT_DIGIT: Final = re.compile(r"\D")
 @dataclass(frozen=True)
 class HistoryBlock:
     """Wiersz Bazy zleceń w Historii adresu zlecenia: wartości komórek od kolumny A do szerokości nagłówka jego arkusza
-    (``None``: pusta komórka, data jako ``datetime``)."""
+    (``cell_values``; ``None``: pusta komórka)."""
 
     values: tuple[object, ...]
 
@@ -179,8 +179,8 @@ def _column(header: Sequence[str], names: frozenset[str]) -> int | None:
     return next((column for column, value in enumerate(header, start=1) if value in names), None)
 
 
-def _order_number(value: object) -> int | None:
-    """Numer zlecenia po samych cyfrach tego, co pokazuje Excel (``shown``); ``None``: bez cyfr."""
+def _order_number(value: object) -> str | None:
+    """Numer zlecenia: same cyfry tego, co pokazuje Excel (``shown``), bez zer wiodących; ``None``: bez cyfry innej niż
+    zero. Cyfry zostają tekstem, bo komórka Bazy ma ich dowolnie wiele."""
 
-    digits = "" if value is None else _NOT_DIGIT.sub("", shown(value))
-    return int(digits) if digits else None
+    return ("" if value is None else _NOT_DIGIT.sub("", shown(value)).lstrip("0")) or None
