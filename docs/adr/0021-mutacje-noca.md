@@ -63,7 +63,8 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Część, której limit czasu minął po pokryciu, przed werdyktem którejś mutacji, dała wynik: `tools/mutacje_zmiany.py` kończy się kodem 3, a zapis wymienia mutacje bez werdyktu.
   Każda trafia do issue `Przeżyte mutacje z #N` PR-u, który ostatni zmienił jej linie, z dopiskiem `bez werdyktu w limicie czasu części`, a agent sprawdza ją `tools/mutacje.py`.
   Zadanie części zostaje zielone, a przebieg przesuwa bazę, więc część z drogimi mutacjami nie zatrzymuje nocy, a następna noc nie dostaje tego samego zakresu.
-- Noc ma najwyżej 40 części, czyli 960 mutacji, a naraz biegnie najwyżej 17 zadań części i 3 zadania skryptów skilli, bo 60 zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
+- Noc ma najwyżej 60 części, czyli 1440 mutacji, a naraz biegnie najwyżej 17 zadań części i 3 zadania skryptów skilli, bo 60 zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
+  Do 17.11 limit wynosił 40 części: w 6 nocach 12–17.11 zmiany `main` dawały ok. 980 mutacji na dobę, a noc najwyżej 960, więc zaległość rosła (11.11: 7450, 17.11: 7812); 60 części zmniejsza ją o ok. 460 na noc kosztem ok. pół godziny nocy (czwarta fala części).
   GitHub wpuszcza wpisy macierzy do okna `max-parallel` w kolejności listy: w nocach 9–12.11 (runy 42584604729, 42783639074, 42982940704, 43183893292) wpisy spoza pierwszej fali startowały po kolei (0 inwersji w 77 wpisach), zwykle 1–2 s po końcu innej części, a gdy sloty organizacji były zajęte, także pierwsza fala startowała z opóźnieniem i nie po kolei (12.11: 9 z pierwszych 20 wpisów po 190–216 s).
   Dlatego plan stawia na początku listy części, których najdroższy plik ma najwięcej pracy dotkniętych nim plików testów w zadaniach pytest `linux-3.14` na `main` (artefakt `czasy-ci`), a równa praca, także bez czasów, zostawia kolejność numerów.
   Kolejność nie zmienia mutacji części ani ich zgłoszenia, bo te wyznacza numer części.
@@ -159,7 +160,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   3.11 od bazy ostatniego udanego przebiegu czekało 2176 mutacji (`tools/mutacje_nocne.py plan`: 829 w pierwszej nocy i 1347 zaległości), a od 30.10 dochodziło ok. 570 mutacji na dobę, więc same noce wychodzą z zaległości po ok. 5 nocach, a noce po 1120 wyszłyby po ok. 4.
 - Przed limitem nocy części rosły z zaległością: 1.11 po ok. 49 mutacji (10 z 20 części czerwonych na limicie czasu), 2.11 po ok. 93 (16 z 20), 3.11 po ok. 102 (16 z 20, run 41601085650), a czerwona noc nie przesuwała bazy, więc następna miała jeszcze więcej.
 - Przebieg nocny, który nie skończył się sukcesem, nie zakłada issue o sobie; widać go w Actions, a następna noc dostaje jego zakres bez mutacji, którym jego części dały werdykt.
-- Plan nocy po czerwonej pobiera przez API GitHuba zapis każdej części każdego czerwonego runu tej bazy, do 40 artefaktów na run.
+- Plan nocy po czerwonej pobiera przez API GitHuba zapis każdej części każdego czerwonego runu tej bazy, do 60 artefaktów zapisów części na run, ze wszystkich stron listy artefaktów.
   Run, którego artefaktów plan nie przeczyta, nie daje tożsamości, więc noc tylko powtarza jego pracę, a nie gubi mutacji.
 - Prawdziwa porażka, która przechodzi za drugim razem, nie czerwieni nocy, tylko daje issue `Flaky test:`; pilnuje jej dalej pełne CI `main`, które Wydanie wymaga zielonego.
   Flaky test zostaje w testach mutacji części, więc jego porażka po mutacji może policzyć mutację jako wykrytą i schować lukę w testach do następnej zmiany tej linii.
