@@ -359,8 +359,9 @@ def test_przypomnienie_za_inny_dzien_albo_do_innego_wykonawcy_nie_zamyka_pory() 
     ("mail", "ends"),
     [
         pytest.param(_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m"), True, id="pelny"),
-        pytest.param(_mail(JAN, "Raport 09.11.2026", "dziś nic"), True, id="niepelny-bez-wpisu"),
-        pytest.param(_mail(JAN_PRYWATNY, "raport 9.11.26", ""), True, id="drugi-adres-krotka-data"),
+        pytest.param(_mail(JAN, "Raport 09.11.2026", "40000002 tak inst20m"), True, id="niepelny-inne-zlecenie"),
+        pytest.param(_mail(JAN_PRYWATNY, "raport 9.11.26", "40000001 nie brak klienta"), True, id="drugi-adres-krotka-data"),
+        pytest.param(_mail(JAN, "Raport 09.11.2026", "dziś nic"), False, id="bez-wpisow"),
         pytest.param(_mail(JAN, "Raport 09.11.2016", "40000001 tak inst20m"), True, id="literowka-w-roku"),
         pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak inst20m"), False, id="nieczytelny-bez-roku"),
         pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak inst20m"), False, id="nieczytelny-bez-daty"),
@@ -374,7 +375,8 @@ def test_czytelny_raport_za_dzien_nawet_niepelny_konczy_przypomnienia_a_nieczyte
     mail: ReportMail, ends: bool
 ) -> None:
     """Każdy czytelny Raport wykonawcy za dzień X od Wykonawcy z listy, nawet niepełny, kończy przypomnienia za X, a
-    mail z nieczytelnym tematem, odpowiedź, raport za inny dzień i raport kogoś innego nie (US 37–38)."""
+    mail z nieczytelnym tematem, odpowiedź, raport za inny dzień, raport kogoś innego i mail bez żadnego Wpisu, który
+    nie jest raportem (ADR 0041), nie (US 37–38)."""
 
     assert _days(_due(NEXT_MORNING, mails=[mail])) == ([] if ends else [("jan.testowy", DAY)])
 
@@ -562,7 +564,7 @@ TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak ins
         pytest.param([], set(), id="bez-maila"),
         pytest.param([_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m")], {JAN_9}, id="czytelny"),
         pytest.param([_mail(JAN, "Raport 09.11.2026", "40000001 tak montaż")], {JAN_9}, id="blad-opisu"),
-        pytest.param([_mail(JAN, "Raport 09.11.2026", "dziś nic")], {JAN_9}, id="bez-wpisow"),
+        pytest.param([_mail(JAN, "Raport 09.11.2026", "dziś nic")], set(), id="bez-wpisow"),
         pytest.param([_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat"),
         pytest.param([_mail(JAN, "Raport 26.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat-po-dzis"),
         pytest.param(
@@ -589,8 +591,8 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
     mails: list[ReportMail], reported: set[tuple[str, date]]
 ) -> None:
     """ADR 0041 (historia 14): dla tych samych maili i zleceń dzień Wykonawcy, za który kafelek Wpisania raportów liczy
-    Raport wykonawcy, to dokładnie dzień, za który przypomnienie nie idzie: Raport z Błędem opisu i bez Wpisów jest
-    przysłany, pomylony temat (dwa numery z innego dnia, także z dniem z tematu po dziś albo sprzed wdrożenia) liczy się za
+    Raport wykonawcy, to dokładnie dzień, za który przypomnienie nie idzie: Raport z Błędem opisu jest
+    przysłany, mail bez Wpisów nie jest raportem, pomylony temat (dwa numery z innego dnia, także z dniem z tematu po dziś albo sprzed wdrożenia) liczy się za
     dzień zleceń (bez dni numeru, który INTERMAX ma w kilku zleceniach, bo jego Wpis niczego nie wpisuje), a jeden
     niezgodny Wpis za dzień z tematu. Mail z tą samą chwilą i tym samym Message-ID daje ten sam
     wynik w każdej kolejności skrzynki. Temat bez roku, mail bez słowa ``Raport`` i adres spoza listy nie są raportem
