@@ -19,10 +19,11 @@ from . import preparation_messages as messages
 from .message import StopError
 from .preparation_register import cell_value
 from .register_file import RegisterSheet
-from .activity_legend import ActivityLegend, DescriptionRead
+from .activity_legend import ActivityLegend
 from .register_columns import ACTIVITIES, COMPLETED, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
-from .quantity_engine import OrderContent, QuantityRules, RuleResult, evaluate
+from .quantity_engine import OrderContent, QuantityRules
 from .settlement_period import SettlementPeriod
+from .tool_entry import ToolEntry, tool_entry
 from .workbook_files import RegisterRow, cell_datetime, is_blank
 from .text import normalize_text
 
@@ -49,12 +50,10 @@ class PeriodOrder:
 
 @dataclass(frozen=True)
 class CollectiveRow:
-    """Wiersz danych Pliku zbiorczego: Zlecenie skuteczne, wynik Reguł ilości dla jego treści i wynik Legendy czynności
-    dla jego ``CZYNNOŚCI ZREALIZOWANE``."""
+    """Wiersz danych Pliku zbiorczego: Zlecenie skuteczne i Wpis narzędzia dla jego treści i ``CZYNNOŚCI ZREALIZOWANE``."""
 
     order: PeriodOrder
-    rule_result: RuleResult
-    read: DescriptionRead
+    entry: ToolEntry
 
     @classmethod
     def of(cls, order: PeriodOrder, rules: QuantityRules, legend: ActivityLegend) -> CollectiveRow:
@@ -63,7 +62,7 @@ class CollectiveRow:
             cell_value(row, CONTRACT), cell_value(row, DEVICES), cell_value(row, ACTIVITIES), order.started
         )
         completed = cell_value(row, COMPLETED)
-        return cls(order, evaluate(rules, content), legend.read("" if completed is None else str(completed)))
+        return cls(order, tool_entry(content, "" if completed is None else str(completed), rules, legend))
 
 
 @dataclass(frozen=True)

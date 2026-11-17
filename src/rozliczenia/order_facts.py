@@ -5,7 +5,8 @@ To jedyny typ z treścią komórek Pliku zbiorczego, który przeżywa silnik Prz
 które wylicza dozwolone kolumny: UMOWA, URZĄDZENIA, CZYNNOŚCI i CZYNNOŚCI ZREALIZOWANE (po nagłówku z wiersza 17, pod
 którym zapisuje je Przygotowanie), dzień tygodnia i godzina z DATA, N:AP i ``AS`` (po literze kolumny) oraz kolor
 legendy w wypełnieniu kolumn, które może wypełnić Legenda czynności. Treść zlecenia
-robią z komórek Reguły ilości (``OrderContent.of``), tak samo jak z Rejestru zleceń w Przygotowaniu; tę samą treść,
+robią z komórek Reguły ilości (``OrderContent.of``), tak samo jak z Rejestru zleceń w Przygotowaniu, a z niej i z
+opisu technika Kontrola ilości i Ilości do uzupełnienia liczą Wpis narzędzia (``tool_entry``); tę samą treść,
 także bez daty w DATA, czytają Ilości tylko dla INEA Przebiegu (``order_contents``). Adres, numery
 zlecenia i umowy, Wykonawca, data dzienna i reszta A:AT nie mają pola, więc nie da się ich wysłać przez ten typ. Tekst
 wpisany przez tatę w komórce ilości i w ``AS`` też nie przechodzi: zostaje z niego „nieliczbowa”. Opis technika

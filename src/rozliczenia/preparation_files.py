@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -19,15 +19,14 @@ from typing import Final
 
 from . import preparation_messages as messages
 from . import staged_publication
-from .activity_legend import CodesOnly, DescriptionError, DescriptionProblem, FillColour
-from .collective_layout import QUANTITY_LETTERS
+from .activity_legend import DescriptionError, DescriptionProblem
 from .file_state import path_taken
 from .highlights import solid_fill
 from .message import StopError
 from .period_folder import PeriodFolder
 from .preparation_plan import CollectiveRow, PeriodOrder
-from .quantity_engine import FromDescription, WithoutRule
 from .template_file import TemplateFile
+from .tool_entry import FillKind
 from .workbook_files import RegisterRow, WorkbookError
 from .workbook_save import WorkbookSaveError
 from .write_routes import Route, RouteCounts, TemplateKind
@@ -101,15 +100,11 @@ def plan_period_files(
         successful_count=len(collective_rows),
         zero_row_count=collective.zero_row_count,
         first_row_without_zeros=collective.first_row_without_zeros,
-        rows_without_rule=tuple(number for number, row in numbered if isinstance(row.rule_result, WithoutRule)),
-        rows_from_description=tuple(
-            number
-            for number, row in numbered
-            if isinstance(row.rule_result, FromDescription) and not isinstance(row.read, CodesOnly)
-        ),
-        closed_by_legend=sum(1 for row in collective_rows if isinstance(row.read, CodesOnly)),
+        rows_without_rule=tuple(number for number, row in numbered if row.entry.kind is FillKind.WITHOUT_RULE),
+        rows_from_description=tuple(number for number, row in numbered if row.entry.kind is FillKind.FROM_DESCRIPTION),
+        closed_by_legend=sum(1 for row in collective_rows if row.entry.closed),
         description_errors=tuple(
-            (number, row.read.problems) for number, row in numbered if isinstance(row.read, DescriptionError)
+            (number, row.entry.read.problems) for number, row in numbered if isinstance(row.entry.read, DescriptionError)
         ),
     )
 
@@ -217,22 +212,11 @@ def _write_period_file(
 
 
 def _with_quantities(row: CollectiveRow) -> RegisterRow:
-    """Wiersz Rejestru z Ilościami usług Reguł ilości i Legendy czynności zsumowanymi w każdej kolumnie, kwotą w ``AS``
-    i wypełnieniami z legendy."""
+    """Wiersz Rejestru z Wpisem narzędzia: Ilości usług, kwota w ``AS`` i wypełnienia z legendy."""
 
-    rules = row.rule_result.quantities
-    legend: Mapping[str, int] = {}
-    colours: Mapping[str, FillColour] = {}
-    amount = 0
-    if isinstance(row.read, CodesOnly):
-        legend, amount, colours = row.read.quantities, row.read.amount, row.read.fills
-    quantities = {
-        column: rules.get(column, 0) + legend.get(column, 0)
-        for column in QUANTITY_LETTERS
-        if column in rules or column in legend
-    }
-    fills = {column: solid_fill(colour.argb) for column, colour in colours.items()}
-    return replace(row.order.register_row, quantities=quantities, amount=amount, fills=fills)
+    entry = row.entry
+    fills = {column: solid_fill(colour.argb) for column, colour in entry.fills.items()}
+    return replace(row.order.register_row, quantities=dict(entry.quantities), amount=entry.amount, fills=fills)
 
 
 def _publish(staged_directory: Path, files: PeriodFiles) -> None:

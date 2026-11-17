@@ -2,7 +2,7 @@
 
 Dla każdego Pliku zbiorczego z argumentów liczy to, co Kontrola ilości, tymi samymi częściami i Regułami ilości z
 Wydania (``DEFAULT_QUANTITY_RULES``): jeden odczyt (``collective_file.read_data_rows``), treść po filtrze prywatności
-(``order_facts``), silnik Reguł ilości i kolumny porównania (``quantity_check.compared_columns``). Własne są tylko zestawienia: zgodność całych wierszy i kolumn oraz klasy
+(``order_facts``), silnik Reguł ilości i kolumny porównania (``tool_entry.compared_columns``). Własne są tylko zestawienia: zgodność całych wierszy i kolumn oraz klasy
 rozbieżności. Wypisuje same liczby i teksty ``URZĄDZENIA``, bez adresów, numerów, umów i opisów technika, więc
 wynik nie niesie danych klientów. Pliki są tylko czytane.
 
@@ -30,7 +30,7 @@ from rozliczenia.collective_file import read_data_rows
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.collective_layout import HEADER_ROW, QUANTITY_LETTERS
 from rozliczenia.order_facts import MissingHeaders, OrderFacts, TataValue
-from rozliczenia.quantity_check import compared_columns
+from rozliczenia.tool_entry import compared_columns
 from rozliczenia.quantity_engine import FromDescription, OrderContent, RuleResult, ServiceQuantities, WeekTime, WithoutRule, evaluate
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.text import WEEKDAY_LABELS

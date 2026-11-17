@@ -271,3 +271,15 @@ def test_wpis_taty_poza_kolumnami_legendy_robi_wiersz_a_kwota_taty_w_as_nie(tmp_
     assert _shown(without_rule[22])["AS"] == ("tata", 30)
     description = {column["column"]: column["rows"] for column in view["description_columns"]}
     assert (description["Y"], description["AB"]) == (1, 0), "Y19 i AB18 wpisała legenda, Y21 tata"
+
+
+def test_kwota_taty_w_as_wiersza_z_kodami_bez_kwoty_pokazuje_sie_jako_wpis_taty(tmp_path: Path) -> None:
+    centrum = filling_centrum(
+        tmp_path, columns=lambda _index, row: {"CZYNNOŚCI ZREALIZOWANE": "inst20m" if row == 19 else CODED[row]}
+    )
+    _write(centrum, {"AS19": 30})
+
+    [row] = [row for row in _table(centrum, "without_rule")["rows"] if row["row"] == 19]
+
+    assert row["state"] == "to_fill", "kwota w AS nie jest Ilością usług, więc nie robi wiersza zrobionym"
+    assert (_shown(row)["Y"], _shown(row)["AS"]) == (("tool", 1), ("tata", 30)), "inst20m wpisuje Y, ale nie kwotę"

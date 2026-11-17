@@ -8,8 +8,8 @@ Kopię wejścia Pliku zbiorczego: ``N:AP`` i ``CZYNNOŚCI ZREALIZOWANE``, bo kol
 Wiersz czyta filtr prywatności wierszy (``order_facts.collective_orders``), a liczy go rachunek Kontroli ilości
 (``quantity_check.legend_row_check``) z Regułami ilości z Wydania, więc brama i Kontrola mówią to samo o każdej komórce
 tego samego pliku. Wiersz z kodem to wiersz z samych Kodów czynności. W nim brama porównuje z tatą kolumny legendy
-(wartość Reguł ilości i legendy razem, jak wpisuje je Przygotowanie), a z dysku także kwotę w ``AS`` i kolory kolumn,
-które legenda wypełnia (zielony, czerwony albo brak; inne wypełnienie, np. tło Wzorca, to brak). Wiersz z Błędem opisu
+(wartość Reguł ilości i legendy razem z Wpisu narzędzia, ``tool_entry``, tego samego, który wpisuje Przygotowanie), a
+z dysku także kwotę w ``AS`` i kolory kolumn, które legenda wypełnia (zielony, czerwony albo brak; inne wypełnienie, np. tło Wzorca, to brak). Wiersz z Błędem opisu
 brama liczy osobno, według powodu, bo legenda nic w nim nie wpisuje. Wpis taty w wierszu bez kodów albo z Błędem opisu
 to wartość taty w kolumnie z opisu technika, której nie porównują Reguły ilości, albo kwota w ``AS``. Wiersz, którego
 ``DATA`` nie jest datą, liczy się bez Reguł ilości, jak w Kontroli.
