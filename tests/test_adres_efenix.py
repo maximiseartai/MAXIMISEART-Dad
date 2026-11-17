@@ -209,6 +209,7 @@ def test_numer_budynku_z_wiecej_niz_dwiema_czesciami_albo_pusta_czescia_nie_jest
         pytest.param("TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2", id="plik-bez-rodzaju-ulica"),
         pytest.param("RYNEK TESTOWY 9/9", "Poznań-Wilda rynekTestowy 9 Lokal 9", id="rynek-sklejony-w-efenix"),
         pytest.param("RYNEK TESTOWY 9/9", "Poznań rynek Testowy 9 Lokal 9", id="rynek-ze-spacja-w-efenix"),
+        pytest.param("ŻÓŁTY 13/14/1", "Poznań rynekŻółty 13/14 Lokal 1", id="rynek-sklejony-z-polska-wielka-litera"),
         pytest.param("NOWY RYNEK 5/2", "Poznań ul.Nowy Rynek 5 Lokal 2", id="rynek-na-koncu-nazwy-ulicy"),
     ],
 )
@@ -277,6 +278,7 @@ def test_roznica_adresow_to_dokladnie_zmieniona_czesc_ulica_numer_domu_albo_loka
         pytest.param("UL. TESTOWA 1/2", "Poznań ul.Inna 3 Lokal 4", (AddressPart.STREET, AddressPart.NUMBER, AddressPart.FLAT), id="wszystkie-czesci"),
         pytest.param("UL. TESTOWA 1/2/3/4", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-z-trzema-ukosnikami"),
         pytest.param("TESTOWA", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-bez-rodzaju-i-numeru"),
+        pytest.param("1/2", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-z-samym-numerem"),
         pytest.param("UL. TESTOWA 1/2", "Poznań Testowa 1 Lokal 2", (AddressPart.EFENIX_UNREAD,), id="efenix-bez-rodzaju"),
         pytest.param("UL. TESTOWA", "Poznań ul.Testowa", (AddressPart.FILE_UNREAD, AddressPart.EFENIX_UNREAD), id="obie-bez-numeru"),
     ],
