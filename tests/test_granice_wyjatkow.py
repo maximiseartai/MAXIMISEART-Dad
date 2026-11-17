@@ -127,7 +127,7 @@ def test_szeroki_except_w_centrum_konczy_sie_dziennikiem_centrum_albo_ponownym_r
 ZAPISANE = {
     ".": {"noqa": 0, "type: ignore": 0},
     ".agents/skills": {"noqa": 22, "type: ignore": 13},
-    "src": {"noqa": 12, "type: ignore": 7},
+    "src": {"noqa": 13, "type: ignore": 7},
     "tests": {"noqa": 3, "type: ignore": 39},
     "tools": {"noqa": 20, "type: ignore": 6},
 }

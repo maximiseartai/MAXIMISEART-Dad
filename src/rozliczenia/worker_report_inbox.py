@@ -439,7 +439,7 @@ def _reads(header: bytes, own: SenderAddress) -> bool:
     try:
         message = email.message_from_bytes(header, policy=email.policy.default)
         subject, sender = str(message["Subject"] or ""), SenderAddress.of(str(message["From"] or ""))
-    except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: mail_of policzy go jako pominięty
+    except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: nagłówek nie do rozebrania, więc mail_of rozstrzyga
         return True
     return bool(message.defects) or (reads_as_report(subject) and sender != own)
 
