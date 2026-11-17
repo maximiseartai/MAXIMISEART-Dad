@@ -4350,6 +4350,42 @@ def test_zmiana_por_tuz_po_wysylce_widok_raporty_pokazuje_przypomnienia_zanim_gm
     assert _shown_sent(centrum) == before_filed
 
 
+def test_wieczorem_po_polozeniu_przez_gmaila_widok_pokazuje_raz_poranne_wykonawcy_z_dwoma_adresami_z_wolnej_serii(
+    tmp_path: Path,
+) -> None:
+    """Anna ma dwa adresy, a odczyt skrzynki w sprawdzeniu z 8:30 trwa do 8:34, więc poranne przypomnienia idą o 8:34,
+    dalej niż ``CLOCK_MARGIN`` od początku sprawdzenia. Wieczorem Gmail położył je już w „Wysłanych”, a widok Raporty
+    pokazuje każde poranne raz: mail z pamięci tej pracy ma tych samych adresatów i chwilę wysyłki co mail z
+    „Wysłanych”, więc to ten sam mail."""
+
+    sent_at = datetime(2026, 11, 10, 8, 34)
+    mailbox = FakeMailbox(filed_after=0, during=lambda: centrum.moment.append(sent_at) if not mailbox.sends else None)
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    assert _assign(centrum, "anna.kowalska", "anna.druga@przyklad.invalid").status_code == 200
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+    evening = datetime(2026, 11, 10, 18, 0)
+
+    centrum.rhythm.tick()
+    centrum.moment.append(evening)
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    morning = sent_at.astimezone()
+    assert [(reminder.worker, len(reminder.recipients), at) for reminder, at in mailbox.sends[:2]] == [
+        ("anna.kowalska", 2, morning),
+        ("jan.testowy", 1, morning),
+    ]
+    assert _filed_at(mailbox) == [morning, morning]
+    assert _shown_sent(centrum) == [
+        ("anna.kowalska", "2026-11-09", morning),
+        ("anna.kowalska", "2026-11-09", evening.astimezone()),
+        ("jan.testowy", "2026-11-09", morning),
+        ("jan.testowy", "2026-11-09", evening.astimezone()),
+    ]
+
+
 def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_porze(tmp_path: Path) -> None:
     """Odrzucone hasło aplikacji przy wysyłce przypomnienia Centrum zgłasza Maksowi samo, bez taty, i do końca pory
     nie pyta Gmaila znowu (US 47)."""
