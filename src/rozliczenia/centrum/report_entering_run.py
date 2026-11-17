@@ -195,7 +195,7 @@ class ReportEnteringEntry:
             shown = self.files.shown()
         except StateUnreadable as error:
             raise refusal.reports_unreadable() from error
-        if shown is None or offer not in {problem.request for problem in shown.problems}:
+        if shown is None or offer not in shown.requests():
             raise refusal.request_gone()
         return self.prepare(offer.decision(self.parts.now()))
 
@@ -244,7 +244,12 @@ def _view(
     nadawca, którego adres ma teraz Wykonawca z ``addresses`` (tata przypisał go po kliknięciu), ma jego login.
 
     Przy dniu Wykonawcy stoją chwile Przypomnień o raporcie za ten dzień z ``reminders``. Przypomnienie za dzień, którego
-    Wykonawca nie ma w wyniku kliknięcia, nie tworzy dnia, bo kafelek bez wyniku nie ma okienka."""
+    Wykonawca nie ma w wyniku kliknięcia, nie tworzy dnia, bo kafelek bez wyniku nie ma okienka.
+
+    Raport z błędem tematu stoi w swoim dniu z każdym Wpisem na życzenie swojego maila przy zleceniach, a w dniu
+    Wykonawcy, który ma zlecenie z takim Wpisem, a nie jest tym dniem (Przeniesienie do nadawcy albo na dzień z tematu),
+    jeszcze raz, z Wpisami zleceń tego dnia: tata widzi przycisk w kafelku z błędem, a kafelek ze zleceniem nie jest
+    Komplet, dopóki tata nie zdecyduje."""
 
     if shown is None:
         return report_entering_contract.ReportsView(
@@ -256,10 +261,17 @@ def _view(
             reminders_without_footer=reminders.without_footer,
         )
     problems = [problem for problem in shown.problems if problem.difference not in kept]
-    placed: defaultdict[tuple[str, date], list[ShownProblem]] = defaultdict(list)
+    held = _held(shown)
+    placed: defaultdict[tuple[str, date], list[_Placed]] = defaultdict(list)
     for problem in problems:
-        if problem.worker is not None:
-            placed[problem.worker, problem.day].append(problem)
+        if problem.worker is None:
+            continue
+        place = problem.worker, problem.day
+        faulty = problem.faulty_subject
+        offers = held.get(faulty.mail, ()) if faulty is not None and faulty.mail is not None else ()
+        placed[place].append(_Placed(problem, offers))
+        for holder in sorted({(found.worker, found.day) for found in offers} - {place}):
+            placed[holder].append(_Placed(problem, tuple(found for found in offers if (found.worker, found.day) == holder)))
     noted: defaultdict[tuple[str, date], list[ShownNote]] = defaultdict(list)
     for found in shown.notes:
         noted[found.worker, found.day].append(found)
@@ -292,6 +304,34 @@ def _view(
     )
 
 
+@dataclass(frozen=True)
+class _Held:
+    """Wpis na życzenie ``offer`` przy zleceniu, które w wyniku kliknięcia ma Wykonawca ``worker`` w dniu ``day``."""
+
+    worker: str
+    day: date
+    offer: ShownOffer
+
+
+@dataclass(frozen=True)
+class _Placed:
+    """Problem w dniu Wykonawcy z Wpisami na życzenie, które pokazuje przy raporcie z błędem tematu (``offers``)."""
+
+    problem: ShownProblem
+    offers: tuple[_Held, ...]
+
+
+def _held(shown: ShownResult) -> dict[str, tuple[_Held, ...]]:
+    """Wpisy na życzenie przy zleceniach wyniku po skrócie maila, z miejscem zlecenia, w kolejności dni i zleceń."""
+
+    held: defaultdict[str, list[_Held]] = defaultdict(list)
+    for worker in shown.workers:
+        for order in worker.orders_detail or ():
+            if (offer := worker.offer(order)) is not None:
+                held[offer.mail].append(_Held(worker.worker, worker.day, offer))
+    return {mail: tuple(found) for mail, found in held.items()}
+
+
 def _assigned(sender: str, addresses: WorkerAddresses) -> str | None:
     """Login Wykonawcy, który ma teraz adres nieznanego nadawcy ``sender`` z wyniku kliknięcia; ``None``: nikt."""
 
@@ -309,7 +349,7 @@ def _days(days: set[date]) -> list[report_entering_contract.ReportsDay]:
 def _worker_day(
     day: date,
     figure: ShownWorker | None,
-    problems: list[ShownProblem],
+    problems: list[_Placed],
     notes: list[ShownNote],
     detailed: bool,
     reminders: tuple[datetime, ...],
@@ -318,7 +358,7 @@ def _worker_day(
     raportów z pomylonym tematem), problemami ``problems``, informacjami ``notes`` i chwilami Przypomnień o raporcie
     ``reminders``; stan zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
 
-    numbers = {problem.number for problem in problems}
+    numbers = {placed.problem.number for placed in problems}
     orders = () if figure is None else figure.orders_detail
     if figure is None and not detailed:
         orders = None
@@ -328,7 +368,7 @@ def _worker_day(
         entered=0 if figure is None else figure.entered,
         mails=0 if figure is None else figure.mails,
         without_report=[] if figure is None else list(figure.without_report),
-        problems=[_problem(problem) for problem in problems],
+        problems=[_problem(placed) for placed in problems],
         notes=[report_entering_contract.ReportsNote(number=found.number, text=found.text) for found in notes],
         mistaken_subjects=[] if figure is None else list(figure.mistaken),
         orders_detail=None
@@ -341,6 +381,7 @@ def _worker_day(
                 state=OrderState.of(reported=order.reported, faulty=order.faulty, problem=order.number in numbers).value,
                 codes=list(order.codes or ()),
                 no_code=order.codes == (),
+                request=None if figure is None or (offer := figure.offer(order)) is None else _requested_cell(offer),
             )
             for order in orders
         ],
@@ -348,7 +389,8 @@ def _worker_day(
     )
 
 
-def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
+def _problem(placed: _Placed) -> report_entering_contract.ReportsProblem:
+    problem = placed.problem
     difference = problem.difference
     keep = (
         None
@@ -361,30 +403,38 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
             reported=difference.reported,
         )
     )
-    offer = problem.request
-    request = (
-        None
-        if offer is None
-        else report_entering_contract.RequestedCell(
-            mail=offer.mail,
-            number=offer.number,
-            day=offer.day,
-            worker=offer.worker,
-            activities=offer.activities,
-            successful=offer.successful.value,
-            order_day=offer.order_day,
-        )
-    )
+    request = None if problem.request is None else _requested_cell(problem.request)
     found = problem.faulty_subject
     faulty = (
         None
         if found is None
         else report_entering_contract.ReportsFaultySubject(
-            subject=found.subject, fault=found.fault, day=found.day, arrived=found.arrived
+            subject=found.subject,
+            fault=found.fault,
+            day=found.day,
+            arrived=found.arrived.astimezone(timezone.utc),
+            offers=[
+                report_entering_contract.ReportsFaultyOffer(
+                    worker=held.worker, day=held.day, request=_requested_cell(held.offer)
+                )
+                for held in placed.offers
+            ],
         )
     )
     return report_entering_contract.ReportsProblem(
         reason=problem.reason, number=problem.number, keep=keep, request=request, faulty_subject=faulty
+    )
+
+
+def _requested_cell(offer: ShownOffer) -> report_entering_contract.RequestedCell:
+    return report_entering_contract.RequestedCell(
+        mail=offer.mail,
+        number=offer.number,
+        day=offer.day,
+        worker=offer.worker,
+        activities=offer.activities,
+        successful=offer.successful.value,
+        order_day=offer.order_day,
     )
 
 

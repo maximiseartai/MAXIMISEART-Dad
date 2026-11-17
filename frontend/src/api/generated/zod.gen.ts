@@ -1560,21 +1560,6 @@ export const zReportsDay = z.object({
 });
 
 /**
- * ReportsFaultySubject
- *
- * Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości
- * ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
- * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
- * kończy), i chwila przyjścia maila.
- */
-export const zReportsFaultySubject = z.object({
-    subject: z.string(),
-    fault: z.string(),
-    day: z.iso.date().nullable(),
-    arrived: z.iso.datetime()
-});
-
-/**
  * ReportsNote
  *
  * Informacja z ostatniego kliknięcia przy dniu Wykonawcy o zmianie, którą Centrum zrobiło w INTERMAX (ADR 0029):
@@ -1583,6 +1568,57 @@ export const zReportsFaultySubject = z.object({
 export const zReportsNote = z.object({
     number: z.string(),
     text: z.string()
+});
+
+/**
+ * RequestedCell
+ *
+ * Wpis na życzenie przy problemie albo przy zleceniu: Wpis, przy którym tata klika (skrót Raportu wykonawcy
+ * ``mail``, Wykonawca i dzień, w którym widzi problem, a przy zleceniu Wykonawca i dzień, które zlecenie ma po Wpisie,
+ * przy Przeniesieniu nadawca raportu, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+ * ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu.
+ */
+export const zRequestedCell = z.object({
+    mail: z.string(),
+    number: z.string(),
+    day: z.iso.date(),
+    worker: z.string(),
+    activities: z.string(),
+    successful: z.enum(['tak', 'nie']),
+    order_day: z.iso.date()
+});
+
+/**
+ * ReportsFaultyOffer
+ *
+ * Wpis raportu z błędem tematu, który tata może wpisać: zlecenie, które dziś ma Wykonawca ``worker`` w dniu ``day``,
+ * i jego Wpis na życzenie (``request``), ta sama komórka co przy tym zleceniu (``ReportsOrder.request``). Gdy
+ * ``request`` stawia zlecenie u innego Wykonawcy albo w innym dniu, Wpis je przeniesie (ADR 0029).
+ */
+export const zReportsFaultyOffer = z.object({
+    worker: z.string(),
+    day: z.iso.date(),
+    request: zRequestedCell
+});
+
+/**
+ * ReportsFaultySubject
+ *
+ * Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości
+ * ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
+ * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
+ * kończy), i chwila przyjścia maila.
+ *
+ * ``offers``: Wpisy tego raportu, które tata może wpisać. Problem stoi w dniu, za który Centrum liczy raport, z każdym
+ * Wpisem raportu, a także w dniu każdego Wykonawcy, który dziś ma zlecenie z takim Wpisem, z Wpisami jego zleceń, więc
+ * ten dzień ma problem, dopóki tata nie zdecyduje.
+ */
+export const zReportsFaultySubject = z.object({
+    subject: z.string(),
+    fault: z.string(),
+    day: z.iso.date().nullable(),
+    arrived: z.iso.datetime(),
+    offers: z.array(zReportsFaultyOffer)
 });
 
 /**
@@ -1596,6 +1632,9 @@ export const zReportsNote = z.object({
  * ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
  * i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
  * czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.
+ * ``request``: Wpis na życzenie przy zleceniu, o którym decyduje Wpis raportu z błędem tematu, bo to najpóźniejszy mail
+ * z jego numerem (ADR 0041), który wpisze ten Wpis do tego zlecenia jak Raport wykonawcy z dniem w temacie, także z
+ * Przeniesieniem do nadawcy (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać).
  */
 export const zReportsOrder = z.object({
     number: z.string(),
@@ -1608,24 +1647,8 @@ export const zReportsOrder = z.object({
         'faulty_subject'
     ]),
     codes: z.array(z.string()),
-    no_code: z.boolean()
-});
-
-/**
- * RequestedCell
- *
- * Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
- * dzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
- * ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu.
- */
-export const zRequestedCell = z.object({
-    mail: z.string(),
-    number: z.string(),
-    day: z.iso.date(),
-    worker: z.string(),
-    activities: z.string(),
-    successful: z.enum(['tak', 'nie']),
-    order_day: z.iso.date()
+    no_code: z.boolean(),
+    request: zRequestedCell.nullable()
 });
 
 /**

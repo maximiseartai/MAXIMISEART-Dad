@@ -218,13 +218,15 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     ``FaultyDescription``, dopóki zlecenie nie dostanie poprawnego Wpisu (ADR 0039, ``_descriptions.entered``). Problem
     z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``). Decyzja taty Wpisu na
     życzenie (``inputs.requested``) wpisuje Wpis ze znakiem zamiast ``tak``/``nie`` jak Wpis z chwilą kliknięcia
-    (``_matching.Board.match``).
+    (``_matching.Board.match``), a Wpis raportu z błędem tematu jak Wpis Raportu wykonawcy z dniem zlecenia w temacie
+    (``WindowRead.entering``); zlecenie z Wpisem raportu z błędem tematu ma Wpis na życzenie, gdy Centrum wie, co
+    wpisać (``WindowRead.offers``).
     """
 
     window = inputs.window
     orders = tuple(inputs.orders)
     read = _reading.read_window(inputs)
-    mails, reports, board = read.mails, list(read.reports), read.board
+    mails, reports, board = read.mails, list(read.entering), read.board
     problems: list[ReportProblem] = list(read.strangers)
     matched = board.match(reports, inputs.requested)
     additions = _corrections.uncorrected(matched.added, reports, board)
@@ -257,6 +259,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
         inputs.legend,
         read.mistaken,
         read.faulty_entries,
+        read.offers,
     )
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
     return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added)

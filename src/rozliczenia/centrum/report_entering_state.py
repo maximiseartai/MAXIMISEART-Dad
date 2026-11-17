@@ -16,13 +16,15 @@
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
   numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis, Kody czynności zlecenia ``tak``
-  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów, i czy ma Wpis w raporcie z błędem tematu, ``faulty``), zdaniem o każdym problemie
+  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów, czy ma Wpis w raporcie z błędem tematu, ``faulty``, i
+  Wpis na życzenie tego Wpisu, ``request``; plik bez niego czyta się bez przycisku), zdaniem o każdym problemie
   (``reasons.reason``), Wpisem na życzenie przy problemie, przy którym tata może go kliknąć (``request``; plik bez
   niego czyta się bez przycisku), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
   Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Przy
   problemie raportu z błędem tematu ma jego temat po strażniku reguły danych pracy Centrum (``guarded``, ADR 0025: bez
   wartości ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu (``reasons.subject_fault``), dzień, za który
-  Centrum go liczy, i chwilę przyjścia maila (``faulty_subject``), a przy dniu Wykonawcy dni z tematu raportów z
+  Centrum go liczy, chwilę przyjścia maila i skrót maila, po którym widok łączy problem z Wpisami na życzenie tego
+  raportu przy zleceniach (``faulty_subject``), a przy dniu Wykonawcy dni z tematu raportów z
   pomylonym tematem za ten dzień (``mistaken``); plik bez nich czyta się bez nich. Pisze go tylko proces, po
   pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
@@ -72,6 +74,7 @@ from rozliczenia.worker_reports import (
     RepeatedOrder,
     ReportNote,
     ReportProblem,
+    Requestable,
     RequestedEntry,
     UnknownNumber,
     UnknownSender,
@@ -211,6 +214,18 @@ class _WorkerV1(_Record):
     without_report: list[str]
 
 
+class _OrderOffer(_Record):
+    """Wpis na życzenie przy zleceniu z Wpisem raportu z błędem tematu: skrót maila i co się wpisze do tego zlecenia
+    (``successful`` z czynnościami ``activities``), które po Wpisie stoi w dniu ``order_day`` u ``worker`` (przy
+    Przeniesieniu nadawca i dzień z tematu); numer to ten zlecenia."""
+
+    mail: str
+    activities: str
+    successful: Literal["tak", "nie"]
+    worker: str
+    order_day: date
+
+
 class _Order(_Record):
     number: str
     successful: str | None
@@ -218,6 +233,7 @@ class _Order(_Record):
     reported: bool
     codes: list[str] | None = None
     faulty: bool = False
+    request: _OrderOffer | None = None
 
 
 class _Worker(_WorkerV1):
@@ -230,6 +246,7 @@ class _FaultySubject(_Record):
     fault: str
     day: date | None
     arrived: datetime
+    mail: str | None = None
 
 
 class _Offer(_Record):
@@ -311,16 +328,29 @@ class ShownWorker:
     orders_detail: tuple[OrderDetail, ...] | None
     mistaken: tuple[date, ...]
 
+    def offer(self, order: OrderDetail) -> ShownOffer | None:
+        """Wpis na życzenie przy zleceniu ``order`` tego dnia z decyzją w miejscu, które zlecenie ma po Wpisie;
+        ``None``: przycisku nie ma."""
+
+        found = order.request
+        if found is None:
+            return None
+        return ShownOffer(
+            found.mail.digest, found.worker, found.order_day, order.number, found.activities, found.verdict, found.order_day
+        )
+
 
 @dataclass(frozen=True)
 class ShownFaultySubject:
     """Raport z błędem tematu przy problemie: temat po strażniku reguły danych, rodzaj błędu, dzień, za który Centrum go
-    liczy (``None``: problem bez dnia), i chwila przyjścia maila."""
+    liczy (``None``: problem bez dnia), chwila przyjścia maila i jego skrót, po którym widok znajduje Wpisy na życzenie
+    tego raportu przy zleceniach (``None``: plik wyniku sprzed Wpisu na życzenie raportu z błędem tematu)."""
 
     subject: str
     fault: str
     day: date | None
     arrived: datetime
+    mail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -383,6 +413,12 @@ class ShownResult:
     problems: tuple[ShownProblem, ...]
     detailed: bool
     notes: tuple[ShownNote, ...] = ()
+
+    def requests(self) -> frozenset[ShownOffer]:
+        """Każdy Wpis na życzenie, który tata może kliknąć: przy problemie i przy zleceniu dnia."""
+
+        at_orders = (worker.offer(order) for worker in self.workers for order in worker.orders_detail or ())
+        return frozenset(offer for offer in (*(problem.request for problem in self.problems), *at_orders) if offer)
 
 
 @dataclass
@@ -531,6 +567,15 @@ class FileReportState:
                         reported=order.reported,
                         codes=None if order.codes is None else list(order.codes),
                         faulty=order.faulty,
+                        request=None
+                        if (offer := order.request) is None
+                        else _OrderOffer(
+                            mail=offer.mail.digest,
+                            activities=offer.activities,
+                            successful=offer.verdict.value,
+                            worker=offer.worker,
+                            order_day=offer.order_day,
+                        ),
                     )
                     for order in worker.orders_detail
                 ],
@@ -585,7 +630,7 @@ class FileReportState:
                     None if problem.difference is None else problem.difference.kept(),
                     None
                     if (faulty := problem.faulty_subject) is None
-                    else ShownFaultySubject(faulty.subject, faulty.fault, faulty.day, faulty.arrived),
+                    else ShownFaultySubject(faulty.subject, faulty.fault, faulty.day, faulty.arrived, faulty.mail),
                     None if problem.request is None else _shown_offer(problem.request),
                 )
                 for problem in result.problems
@@ -630,6 +675,11 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
             order.reported,
             None if order.codes is None else tuple(order.codes),
             order.faulty,
+            None
+            if (offer := order.request) is None
+            else Requestable(
+                MailId(offer.mail), Verdict(offer.successful), offer.activities, offer.order_day, Login(offer.worker)
+            ),
         )
         for order in worker.orders_detail
     )
@@ -660,9 +710,9 @@ def _problem(problem: ReportProblem, forbidden: ForbiddenValues) -> _Problem:
 
     said = reason(problem)
     match problem:
-        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
+        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
             shown = guarded(forbidden, subject.shown(), "temat Raportu wykonawcy").text
-            found = _FaultySubject(subject=shown, fault=subject_fault(fault), day=day, arrived=arrived)
+            found = _FaultySubject(subject=shown, fault=subject_fault(fault), day=day, arrived=arrived, mail=mail.digest)
             return _Problem(
                 day=day or arrived.date(),
                 worker=worker,

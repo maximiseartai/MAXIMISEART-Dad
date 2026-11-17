@@ -9951,6 +9951,31 @@
         "title": "ReportsDay",
         "description": "Dzień okna widoku Raporty z nazwą polskiego dnia ustawowo wolnego od pracy (``None``: dzień bez święta)."
       },
+      "ReportsFaultyOffer": {
+        "properties": {
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "request": {
+            "$ref": "#/components/schemas/RequestedCell"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "worker",
+          "day",
+          "request"
+        ],
+        "title": "ReportsFaultyOffer",
+        "description": "Wpis raportu z błędem tematu, który tata może wpisać: zlecenie, które dziś ma Wykonawca ``worker`` w dniu ``day``,\ni jego Wpis na życzenie (``request``), ta sama komórka co przy tym zleceniu (``ReportsOrder.request``). Gdy\n``request`` stawia zlecenie u innego Wykonawcy albo w innym dniu, Wpis je przeniesie (ADR 0029)."
+      },
       "ReportsFaultySubject": {
         "properties": {
           "subject": {
@@ -9977,6 +10002,13 @@
             "type": "string",
             "format": "date-time",
             "title": "Arrived"
+          },
+          "offers": {
+            "items": {
+              "$ref": "#/components/schemas/ReportsFaultyOffer"
+            },
+            "type": "array",
+            "title": "Offers"
           }
         },
         "additionalProperties": false,
@@ -9985,10 +10017,11 @@
           "subject",
           "fault",
           "day",
-          "arrived"
+          "arrived",
+          "offers"
         ],
         "title": "ReportsFaultySubject",
-        "description": "Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości\n``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy), i chwila przyjścia maila."
+        "description": "Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości\n``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy), i chwila przyjścia maila.\n\n``offers``: Wpisy tego raportu, które tata może wpisać. Problem stoi w dniu, za który Centrum liczy raport, z każdym\nWpisem raportu, a także w dniu każdego Wykonawcy, który dziś ma zlecenie z takim Wpisem, z Wpisami jego zleceń, więc\nten dzień ma problem, dopóki tata nie zdecyduje."
       },
       "ReportsNote": {
         "properties": {
@@ -10058,6 +10091,16 @@
           "no_code": {
             "type": "boolean",
             "title": "No Code"
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestedCell"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -10068,10 +10111,11 @@
           "activities",
           "state",
           "codes",
-          "no_code"
+          "no_code",
+          "request"
         ],
         "title": "ReportsOrder",
-        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem\ntylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego\nWpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem."
+        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem\ntylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego\nWpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.\n``request``: Wpis na życzenie przy zleceniu, o którym decyduje Wpis raportu z błędem tematu, bo to najpóźniejszy mail\nz jego numerem (ADR 0041), który wpisze ten Wpis do tego zlecenia jak Raport wykonawcy z dniem w temacie, także z\nPrzeniesieniem do nadawcy (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać)."
       },
       "ReportsProblem": {
         "properties": {
@@ -10351,7 +10395,7 @@
           "order_day"
         ],
         "title": "RequestedCell",
-        "description": "Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,\ndzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI\nZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."
+        "description": "Wpis na życzenie przy problemie albo przy zleceniu: Wpis, przy którym tata klika (skrót Raportu wykonawcy\n``mail``, Wykonawca i dzień, w którym widzi problem, a przy zleceniu Wykonawca i dzień, które zlecenie ma po Wpisie,\nprzy Przeniesieniu nadawca raportu, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI\nZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."
       },
       "Resolved": {
         "properties": {

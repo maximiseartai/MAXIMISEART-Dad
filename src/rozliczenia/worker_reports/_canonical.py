@@ -3,7 +3,7 @@
 Odtworzenie Uruchomienia z Logów ma z maila tylko odczyt, bez adresu, tematu i treści, więc buduje z niego mail
 w postaci kanonicznej: temat ``Raport dd.mm.rrrr``, jedna linia ``<numer> <znak> <czynności>`` na Wpis raportu, a pod
 nimi pusta linia i ``_CLOSING``. Raport z błędem tematu ma temat z tym samym powodem i tym samym dniem z tematu albo bez
-niego, a w treści sam numer w linii na każdy numer jego Wpisów. Rdzeń czyta z tego maila ten sam odczyt, poza tematem
+niego i te same linie Wpisów. Rdzeń czyta z tego maila ten sam odczyt, poza tematem
 dla taty, którego Logi nie mają, dla każdego powodu tematu poza ``SubjectFault.SEPARATOR`` (``_unreadable``).
 """
 
@@ -41,8 +41,8 @@ def as_mail(read: MailRead, sender: SenderAddress) -> ReportMail:
             return ReportMail(read.mail, sender, _subject(day), "\n".join(map(_line, entries)) + _CLOSING, read.arrived)
         case ReadStranger(day=day):
             return ReportMail(read.mail, sender, _subject(day), "", read.arrived)
-        case ReadUnreadable(fault=fault, numbers=numbers, day=day):
-            return ReportMail(read.mail, sender, _unreadable(fault, day), "\n".join(sorted(numbers)), read.arrived)
+        case ReadUnreadable(fault=fault, entries=entries, day=day):
+            return ReportMail(read.mail, sender, _unreadable(fault, day), "\n".join(map(_line, entries)) + _CLOSING, read.arrived)
         case _:
             assert_never(read)
 

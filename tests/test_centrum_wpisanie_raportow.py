@@ -2562,6 +2562,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                             "state": "without_report",
                             "codes": [],
                             "no_code": False,
+                            "request": None,
                         }
                     ],
                     "mistaken_subjects": [],
@@ -2588,6 +2589,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                             "state": "entered",
                             "codes": ["inst20m", "rt2"],
                             "no_code": False,
+                            "request": None,
                         },
                         {
                             "number": "40000005",
@@ -2596,6 +2598,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                             "state": "without_report",
                             "codes": [],
                             "no_code": False,
+                            "request": None,
                         },
                     ],
                     "mistaken_subjects": [],
@@ -3288,6 +3291,226 @@ def test_wpis_na_zyczenie_przy_nieczytelnym_pliku_wyniku_odmawia_bez_uruchomieni
         "powtarza, wyślij Uwagę ogólną.",
     )
     assert (len(centrum.run_logs()), centrum.client.get("/api/runs/current").json()["state"]) == (logs, "finished")
+
+
+def _order_requests(centrum: EnteringCentrum, login: str, day: str = "2026-11-09") -> dict[str, Any]:
+    """Stan i Wpis na życzenie każdego zlecenia dnia ``day`` Wykonawcy ``login`` w widoku Raporty, po numerze."""
+
+    return {
+        order["number"]: (order["state"], order["request"])
+        for order in _worker(_view(centrum), login, day)["orders_detail"]
+    }
+
+
+def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_wpis_do_dnia_z_tematu_i_do_wskazanego_dnia(
+    tmp_path: Path,
+) -> None:
+    """US 44, 46, 48 i 52: przy każdym zleceniu raportu ``Raport 09.11.2026 Kowalski`` (stan „Błąd tematu”) widok
+    Raporty ma Wpis na życzenie z dniem z tematu, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``, także przy Wpisie z ``t``
+    (wpisze ``tak``), a przy raporcie Anny ``Raport`` bez dnia z dniem, który Centrum wskazuje (8.11). Kliknięcie
+    wpisuje jednym Uruchomieniem tylko ten Wpis; błąd tematu Jana stoi, dopóki tata nie wpisze obu jego Wpisów, a
+    potem znika i nie wraca przy następnym kliknięciu „Wpisz raporty z maili”. Logi mają każdą decyzję taty. Chwila
+    przyjścia raportu z błędem tematu idzie w UTC (``Z``), jak każda chwila kontraktu, bo stronę Raporty odrzuca inną."""
+
+    ordered = (
+        _order(9, 9, "jan.testowy", 40000001),
+        _order(9, 10, "jan.testowy", 40000003),
+        _order(8, 11, "anna.kowalska", 40000002),
+    )
+    mails = [
+        report(JAN, "Raport 09.11.2026 Kowalski", "40000001 tak inst20m\n40000003 t spawpg"),
+        report(ANNA, "Raport", "40000002 nie brak klienta"),
+    ]
+    centrum = entering_centrum(tmp_path, Intermax(ordered=ordered, raw=()))
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    _click_at(centrum, ENTERING_NOW, mails)
+    jan, anna = _order_requests(centrum, "jan.testowy"), _order_requests(centrum, "anna.kowalska", "2026-11-08")
+    [faulty_arrived] = [problem["faulty_subject"]["arrived"] for problem in _worker(_view(centrum), "jan.testowy")["problems"]]
+
+    first = _enter_on_request(centrum, jan["40000001"][1], datetime(2026, 11, 9, 19))
+    between = (_cells(centrum.register), _order_requests(centrum, "jan.testowy"), len(_worker(_view(centrum), "jan.testowy")["problems"]))
+    second = _enter_on_request(centrum, jan["40000003"][1], datetime(2026, 11, 9, 19, 5))
+    _enter_on_request(centrum, anna["40000002"][1], datetime(2026, 11, 9, 19, 10))
+    again = _click_at(centrum, datetime(2026, 11, 9, 20), mails)
+
+    on_jan = {"day": "2026-11-09", "worker": "jan.testowy", "mail": mails[0].id.digest, "order_day": "2026-11-09"}
+    assert jan == {
+        "40000001": ("faulty_subject", {**on_jan, "number": "40000001", "activities": "inst20m", "successful": "tak"}),
+        "40000003": ("faulty_subject", {**on_jan, "number": "40000003", "activities": "spawpg", "successful": "tak"}),
+    }
+    on_anna = {"day": "2026-11-08", "worker": "anna.kowalska", "mail": mails[1].id.digest, "order_day": "2026-11-08"}
+    assert anna == {"40000002": ("faulty_subject", {**on_anna, "number": "40000002", "activities": "brak klienta", "successful": "nie"})}
+    assert between == (
+        {40000001: ("tak", "inst20m"), 40000003: (None, None), 40000002: (None, None)},
+        {"40000001": ("entered", None), "40000003": jan["40000003"]},
+        1,
+    )
+    assert _cells(centrum.register) == {40000001: ("tak", "inst20m"), 40000003: ("tak", "spawpg"), 40000002: ("nie", "brak klienta")}
+    for login, day in (("jan.testowy", "2026-11-09"), ("anna.kowalska", "2026-11-08")):
+        shown = _worker(_view(centrum), login, day)
+        assert (shown["problems"], {order["state"] for order in shown["orders_detail"]}) == ([], {"entered"}), shown
+    assert [decision["number"] for decision in _entering(centrum, first)["requested"]] == ["40000001"]
+    assert faulty_arrived.endswith("Z"), faulty_arrived
+    assert _without_moment(_entering(centrum, second)["requested"]) == [
+        {"mail": mails[0].id.digest, "worker": "jan.testowy", "day": "2026-11-09", "number": number, "verdict": "tak", "activities": activities}
+        for number, activities in (("40000001", "inst20m"), ("40000003", "spawpg"))
+    ]
+    assert len(_entering(centrum, again)["requested"]) == 3
+
+
+def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_tematu_a_reczna_wartosc_zostaje(
+    tmp_path: Path,
+) -> None:
+    """US 49–50: Wpis na życzenie z raportu z błędem tematu wpisuje się jak Wpis z chwilą przyjścia tego maila, więc
+    późniejszy poprawny Raport Jana za 9.11 wygrywa z nim, a przy zleceniu z ręcznymi czynnościami taty Wpis na życzenie
+    wpisuje tylko pusty ``SKUTECZNE``, a czynności taty zostają z różnicą „Zostaw moją”."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
+    faulty = report(JAN, "Raport 09.11.2026 Kowalski", "40000001 tak inst20m\n40000005 nie brak dostępu", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path, intermax, [faulty])
+    _tata_writes(centrum.register, 40000005, "wymiana ręczna", column=COMPLETED)
+    _finished(centrum)
+    offers = _order_requests(centrum, "jan.testowy")
+
+    _enter_on_request(centrum, offers["40000001"][1], datetime(2026, 11, 9, 19))
+    _enter_on_request(centrum, offers["40000005"][1], datetime(2026, 11, 9, 19, 5))
+    [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
+    corrected = report(JAN, SUBJECT, "40000001 nie brak klienta", at=datetime(2026, 11, 9, 20))
+    _click_at(centrum, datetime(2026, 11, 9, 20, 30), [faulty, corrected])
+
+    assert _cells(centrum.register) == {40000001: ("nie", "brak klienta"), 40000005: ("nie", "wymiana ręczna")}
+    assert (difference["number"], difference["keep"]["reported"]) == ("40000005", "brak dostępu")
+    assert [problem["number"] for problem in _worker(_view(centrum), "jan.testowy")["problems"]] == ["40000005"]
+
+
+def _rows(register: Path) -> list[tuple[object, ...]]:
+    """Wartości każdego wiersza arkusza zleceń od góry."""
+
+    return [tuple(cell.value for cell in row) for row in load_workbook(register)[ORDER_SHEET].iter_rows()]
+
+
+def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_z_przeniesieniem_przenosi_zlecenie_jak_poprawny_raport(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041 i 0029 (US 44): Anna przysyła ``Raport 09.11.2026 Nowak`` z jedynym zleceniem Jana z 9.11. Przy tym
+    zleceniu u Jana stoi Wpis na życzenie z Anną i 9.11 (stan „Błąd tematu”, nie „Bez raportu”), a kliknięcie daje w
+    INTERMAX to samo Przeniesienie i Wpis co poprawny raport Anny za 9.11; błąd tematu znika, a zlecenie stoi u Anny."""
+
+    def intermax() -> Intermax:
+        return Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+
+    faulty = report(ANNA, "Raport 09.11.2026 Nowak", "40000001 tak inst20m")
+    centrum = entering_centrum(tmp_path / "blad", intermax(), [faulty])
+    right = entering_centrum(tmp_path / "poprawny", intermax(), [report(ANNA, SUBJECT, "40000001 tak inst20m")])
+    _finished(centrum)
+    _finished(right)
+    offers = _order_requests(centrum, "jan.testowy")
+
+    _enter_on_request(centrum, offers["40000001"][1], datetime(2026, 11, 9, 19))
+
+    assert offers == {
+        "40000001": (
+            "faulty_subject",
+            {
+                "mail": faulty.id.digest,
+                "worker": "anna.kowalska",
+                "day": "2026-11-09",
+                "number": "40000001",
+                "activities": "inst20m",
+                "successful": "tak",
+                "order_day": "2026-11-09",
+            },
+        )
+    }
+    assert _workers(centrum.register)[40000001] == "anna.kowalska"
+    assert _rows(centrum.register) == _rows(right.register)
+    anna = _worker(_view(centrum), "anna.kowalska")
+    assert (anna["problems"], [order["number"] for order in anna["orders_detail"]]) == ([], ["40000002", "40000001"])
+
+
+@pytest.mark.parametrize(
+    ("sender", "subject", "numbers", "place"),
+    [
+        pytest.param(JAN, "Raport 09.11.2026 Kowalski", ["40000001"], ("jan.testowy", "2026-11-09"), id="wlasne-zlecenie"),
+        pytest.param(ANNA, "Raport 09.11.2026 Nowak", ["40000001", "40000002"], ("anna.kowalska", "2026-11-09"), id="do-nadawcy"),
+        pytest.param(JAN, "Raport 10.11.2026 Kowalski", ["40000001"], ("jan.testowy", "2026-11-10"), id="na-dzien-z-tematu"),
+    ],
+)
+def test_dzien_ze_zleceniem_z_wpisem_na_zyczenie_nie_jest_komplet_a_blad_tematu_nadawcy_ma_jego_przycisk(
+    tmp_path: Path, sender: str, subject: str, numbers: list[str], place: tuple[str, str]
+) -> None:
+    """Historie 42 i 44 speca #2032 przy każdym rodzaju Wpisu na życzenie raportu z błędem tematu: własne zlecenie
+    nadawcy, Przeniesienie do nadawcy (Anna raportuje zlecenie Jana obok swojego) i Przeniesienie na dzień z tematu (Jan
+    raportuje 10.11 zlecenie z 9.11). Problem raportu z błędem tematu w dniu, za który Centrum go liczy, ma przy numerze
+    każdego zlecenia raportu ten sam Wpis na życzenie co to zlecenie, więc tata klika tam, gdzie widzi błąd. Dzień
+    Wykonawcy, w którym takie zlecenie stoi, ma ten problem z Wpisami swoich zleceń, więc strona nie pokaże go jako
+    Komplet ani nie schowa filtrem „Problem”."""
+
+    ordered = (_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002), _order(10, 9, "jan.testowy", 40000003))
+    faulty = report(sender, subject, "\n".join(f"{number} tak inst20m" for number in numbers))
+    centrum = entering_centrum(tmp_path, Intermax(ordered=ordered, raw=()))
+    _click_at(centrum, datetime(2026, 11, 9, 12), [])
+    _click_at(centrum, datetime(2026, 11, 10, 18), [faulty])
+    view = _view(centrum)
+    offers = {
+        order["number"]: {"worker": worker["worker"], "day": day["day"], "request": order["request"]}
+        for worker in view["workers"]
+        for day in worker["days"]
+        for order in day["orders_detail"]
+        if order["request"] is not None
+    }
+    holders = {(offer["worker"], offer["day"]) for offer in offers.values()}
+
+    def faults(where: tuple[str, str]) -> list[list[dict[str, Any]]]:
+        """Wpisy na życzenie każdego problemu raportu z błędem tematu dnia ``where``, po numerze zlecenia."""
+
+        return [
+            sorted(problem["faulty_subject"]["offers"], key=lambda offer: str(offer["request"]["number"]))
+            for problem in _worker(view, *where)["problems"]
+            if problem["faulty_subject"]
+        ]
+
+    assert sorted(offers) == numbers
+    assert {where: bool(day["problems"] or day["without_report"]) for where in holders for day in [_worker(view, *where)]} == (
+        dict.fromkeys(holders, True)
+    )
+    assert faults(place) == [[offers[number] for number in numbers]]
+    assert {where: faults(where) for where in holders - {place}} == {
+        where: [[offer for offer in offers.values() if (offer["worker"], offer["day"]) == where]] for where in holders - {place}
+    }
+
+
+def test_wpisu_na_zyczenie_przy_raporcie_z_bledem_tematu_nie_ma_przy_przeciwnych_wpisach_wpisie_bez_znaku_i_numerze_dwa_razy(
+    tmp_path: Path,
+) -> None:
+    """US 51: przy zleceniach raportu z błędem tematu przycisk jest tylko tam, gdzie Centrum wie, co wpisać: nie ma go
+    przy ``t`` i ``nie`` jednego zlecenia, przy Wpisie bez żadnego znaku i przy numerze, który Jan ma dwa razy w dniu;
+    jest przy ``tak``. Raport z błędem tematu bez wskazanego dnia (Anna bez zleceń) nie ma zleceń, więc i przycisku."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 10, "jan.testowy", 40000005),
+            _order(9, 11, "jan.testowy", 40000006),
+            _order(9, 12, "jan.testowy", 40000008),
+            _order(9, 13, "jan.testowy", 40000008),
+        ),
+        raw=(),
+    )
+    text = "\n".join(("40000001 t inst20m", "40000001 nie brak klienta", "40000005 inst20m", "40000006 tak inst20m", "40000008 tak spawpg"))
+    mails = [report(JAN, "Raport 09.11.2026 Kowalski", text), report(ANNA, "Raport", "40000002 tak montaż")]
+    centrum = entering_centrum(tmp_path, intermax, mails)
+
+    _finished(centrum)
+
+    shown = _order_requests(centrum, "jan.testowy")
+    assert {number: request is not None for number, (_, request) in shown.items()} == {
+        "40000001": False,
+        "40000005": False,
+        "40000006": True,
+        "40000008": False,
+    }
+    assert [problem["request"] for problem in _worker(_view(centrum), "anna.kowalska")["problems"]] == [None]
 
 
 # --- Przypomnienia o raporcie: praca Centrum co minutę (ADR 0030, #1349) -----------------------------------------------

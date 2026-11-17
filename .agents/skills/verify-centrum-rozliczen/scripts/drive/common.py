@@ -705,12 +705,19 @@ def queued_posts(run: Run, label: str, run_id: str | None = None, *, leaving: bo
 
 
 def run_logs(run: Run, process: str | None = None) -> dict[str, dict[str, Any]]:
-    """The files of Logi of ``process`` (every one without it) by name, oldest first, as the name starts with the start.
+    """The files of Logi of ``process`` (every one without it) by name, oldest first by the ``started_at`` they hold,
+    then by their ``ended_at`` and name, so ``[-1]`` is the latest Uruchomienie. A name has the start only to the second
+    and then a random id, so the names of two Uruchomienia within one second sort either way.
 
     The server puts a file of Logi in place whole, also when it adds a Diagnoza, so each is read with ``read_json``."""
 
     pattern = "*.json" if process is None else f"*-{process}-*.json"
-    return {path.name: read_json(path) for path in sorted(run.run_logs_dir.glob(pattern))}
+    logs = {path.name: read_json(path) for path in run.run_logs_dir.glob(pattern)}
+    return {name: logs[name] for name in sorted(logs, key=lambda name: _started_ended(logs[name]) + (name,))}
+
+
+def _started_ended(logs: dict[str, Any]) -> tuple[datetime, datetime]:
+    return datetime.fromisoformat(logs["started_at"]), datetime.fromisoformat(logs["ended_at"])
 
 
 def check_clock_alarm(run: Run) -> None:

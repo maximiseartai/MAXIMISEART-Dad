@@ -85,6 +85,17 @@ ON_REQUEST = {
     "order_day": DAY,
 }
 ON_REQUEST_BUTTON = "Wpisz do INTERMAX"
+# The Raport z błędem tematu of wykonawca.a for the same order without a report, before the Raport with `t` (step
+# `wpis-na-zyczenie-blad-tematu`): its order has the state Błąd tematu and the button, and its Wpis, entered on request,
+# loses to the later Raport with `t`, so the step `wpis-na-zyczenie` still finds its problem.
+FAULTY_ACTIVITIES = "inst20m"
+FAULTY_ID = "<raport-a-blad-tematu.eml@przyklad.invalid>"
+FAULTY_REQUEST = {**ON_REQUEST, "mail": MailId.of(FAULTY_ID).digest, "activities": FAULTY_ACTIVITIES}
+# The Raport z błędem tematu of wykonawca.b for the same order of wykonawca.a, last of the steps on the real INTERMAX
+# (step `wpis-na-zyczenie-przeniesienie`): with the day in its subject it would take the order over, so the button at the
+# order of wykonawca.a names wykonawca.b, and the click moves the order like a correct Raport (ADR 0029).
+MOVE_ID = "<raport-b-blad-tematu.eml@przyklad.invalid>"
+MOVE_REQUEST = {**FAULTY_REQUEST, "mail": MailId.of(MOVE_ID).digest, "worker": "wykonawca.b"}
 NARROW: ViewportSize = {"width": 390, "height": 844}
 # „Przypisz do Wykonawcy…” gives the stranger's address to Wykonawca D of the fixture: he has no orders and no Raport
 # today, so his address changes no figure of the click.
@@ -338,6 +349,7 @@ def _order(number: str, state: str) -> Json:
         "state": state,
         "codes": [],
         "no_code": entered,
+        "request": None,
     }
 
 
@@ -434,15 +446,16 @@ def _window_view(clicked_at: str) -> Json:
 
 
 SUBJECT_TODAY = "2026-11-19"
-SUBJECT_FAULT = {
+SUBJECT_FAULT: Json = {
     "subject": "Raport 16.11.2026 Kowalski [adres] tel. [telefon]",
     "fault": "inne słowa",
     "day": "2026-11-16",
     "arrived": "2026-11-16T17:05:00Z",
+    "offers": [],
 }
 """The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038), with its subject after the guard of
 the data rule (#2070: the value of `ADRES` and the phone masked, the surname kept)."""
-NO_DAY_FAULT = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z"}
+NO_DAY_FAULT: Json = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z", "offers": []}
 """The Raport z błędem tematu of `wykonawca.b`, who has no orders: a problem without a day at the day it came."""
 MISTAKEN_DAY = "2026-11-28"
 """The day in the subject of the Raport of `wykonawca.a` whose numbers are his orders of 18.11 (ADR 0029)."""
@@ -842,19 +855,187 @@ def _narrow_layout(run: Run, page: Page, what: str) -> None:
     )
 
 
+def _report_mail(
+    run: Run, name: str, subject: str, message_id: str, text: str, at: datetime, sender: str = "wykonawca.a"
+) -> Path:
+    """A mail of ``sender`` in the fixture's Skrzynka raportów."""
+
+    mail = run.root / "maile" / name
+    message = EmailMessage()
+    message["From"] = f"{sender}@przyklad.invalid"
+    message["Subject"] = subject
+    message["Date"] = format_datetime(at.astimezone())
+    message["Message-ID"] = message_id
+    message.set_content(text)
+    mail.write_bytes(bytes(message))
+    return mail
+
+
+def _on_request_faulty_subject(run: Run, page: Page, register: Path) -> None:
+    """Wpis na życzenie of a Raport z błędem tematu (ADR 0041, #2040): the order with the state Błąd tematu, its
+    button with the preview, the order entered after the click, and the fault that does not come back."""
+
+    run.step(FEATURE, "wpis-na-zyczenie-blad-tematu")
+    text = f"{ON_REQUEST_NUMBER} tak {FAULTY_ACTIVITIES}"
+    mail = _report_mail(run, "raport-a-blad-tematu.eml", "Raport 19.10.2026 Kowalski", FAULTY_ID, text, datetime(2026, 10, 19, 17))
+    print(f"  harness: wykonawca.a sends `Raport 19.10.2026 Kowalski` with {ON_REQUEST_NUMBER}", flush=True)
+    try:
+        offered = result_of_start(run, "raporty-blad-tematu-klikniecie", _button(page).click)
+        run.check(
+            (figure(offered["summary"], "Wpisane"), figure(offered["summary"], "Problemy")) == (0, 1),
+            "the Raport z błędem tematu enters nothing and gives one problem",
+        )
+        [order] = [found for found in _days_of(_view(run, "raporty-blad-tematu-przed"))["wykonawca.a"]["orders_detail"] if found["number"] == ON_REQUEST_NUMBER]
+        run.check(
+            (order["state"], order["request"]) == ("faulty_subject", FAULTY_REQUEST),
+            "its order has the state Błąd tematu and the view offers Wpis na życzenie with the day of the order, tak and the activities",
+        )
+        popover = _popover(page, "wykonawca.a", DAY)
+        row = popover.get_by_role("list", name="Zlecenia dnia").get_by_role("listitem").filter(has_text=ON_REQUEST_NUMBER)
+        expect(row).to_contain_text("Błąd tematu")
+        expect(row.get_by_text(f"Wpisze się do INTERMAX, zlecenie z {_short(DAY)}:", exact=True)).to_be_visible()
+        what = row.get_by_label("Co się wpisze", exact=True).get_by_role("definition")
+        expect(what.nth(0)).to_have_text("tak")
+        expect(what.nth(1)).to_have_text(FAULTY_ACTIVITIES)
+        button = row.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)
+        expect(button).to_be_enabled()
+        run.check(True, "before the click the order Błąd tematu says what it writes: the day, SKUTECZNE and CZYNNOŚCI ZREALIZOWANE")
+        run.capture(page, "408-raporty-blad-tematu-na-zyczenie-podglad", full_page=False)
+
+        before = read_bytes(register)
+        entered = result_of_start(run, "raporty-blad-tematu-na-zyczenie", button.click)
+        run.check(
+            (figure(entered["summary"], "Wpisane"), figure(entered["summary"], "Problemy")) == (1, 0),
+            "the click enters the order with one Uruchomienie and the fault of the subject is gone",
+        )
+        run.check(read_bytes(register) != before, "INTERMAX is written on disk")
+        after = _view(run, "raporty-blad-tematu-po")
+        run.check(
+            _orders(after)["wykonawca.a"][1] == (ON_REQUEST_NUMBER, "tak", FAULTY_ACTIVITIES, "entered")
+            and not _days_of(after)["wykonawca.a"]["problems"],
+            "after the click the order has tak and the activities of the Raport like any Wpis",
+        )
+        decisions = [
+            (found["number"], found["day"], found["verdict"], found["activities"])
+            for found in read_json(run.config / "wpisanie-raportow-stan.json")["requested"]
+            if found["mail"] == FAULTY_REQUEST["mail"]
+        ]
+        logged = [found["number"] for found in _entering_logs(run)[-1]["requested"] if found["mail"] == FAULTY_REQUEST["mail"]]
+        run.check(
+            decisions == [(ON_REQUEST_NUMBER, DAY, "tak", FAULTY_ACTIVITIES)] and logged == [ON_REQUEST_NUMBER],
+            "the memory file and the Logi of the Uruchomienie have Dad's decision at the day of the order",
+        )
+        if popover.is_visible():
+            _close(page, popover)
+        popover = _popover(page, "wykonawca.a", DAY)
+        expect(popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_have_count(0)
+        expect(popover).not_to_contain_text("Raport z błędem tematu")
+        _tile_is(page, "wykonawca.a", DAY, "Komplet", 2, 2)
+        run.check(True, "the popover has the order entered, without the button and the fault, and the tile turns Komplet")
+        run.capture(page, "409-raporty-blad-tematu-na-zyczenie-po", full_page=False)
+        _close(page, popover)
+
+        again = result_of_start(run, "raporty-blad-tematu-drugie", _button(page).click)
+        run.check(
+            figure(again["summary"], "Problemy") == 0 and not _days_of(_view(run, "raporty-blad-tematu-drugie"))["wykonawca.a"]["problems"],
+            "the next click „Wpisz raporty z maili” does not bring the fault of the subject back",
+        )
+    finally:
+        remove(mail, missing_ok=True)
+
+
+def _on_request_move(run: Run, page: Page, register: Path) -> None:
+    """Wpis na życzenie of a Raport z błędem tematu that takes over the order of another Wykonawca (ADR 0041, 0029): the
+    tile of wykonawca.a with the order is Problem, not Komplet, and its button says the order goes from wykonawca.a to
+    wykonawca.b; the red tile of wykonawca.b has the same button at the fault of the subject, under the number of the
+    order (stories 42 and 44 of #2032), and Dad clicks it there; the click moves the order and enters it like a correct
+    Raport of wykonawca.b."""
+
+    run.step(FEATURE, "wpis-na-zyczenie-przeniesienie")
+    text = f"{ON_REQUEST_NUMBER} tak {FAULTY_ACTIVITIES}"
+    at = datetime(2026, 10, 19, 18)
+    mail = _report_mail(run, "raport-b-blad-tematu.eml", "Raport 19.10.2026 Nowak", MOVE_ID, text, at, "wykonawca.b")
+    print(f"  harness: wykonawca.b sends `Raport 19.10.2026 Nowak` with {ON_REQUEST_NUMBER} of wykonawca.a", flush=True)
+    try:
+        result_of_start(run, "raporty-przeniesienie-klikniecie", _button(page).click)
+        days = _days_of(_view(run, "raporty-przeniesienie-przed"))
+        [order] = [found for found in days["wykonawca.a"]["orders_detail"] if found["number"] == ON_REQUEST_NUMBER]
+        run.check(
+            (order["state"], order["request"]) == ("faulty_subject", MOVE_REQUEST),
+            "the order of wykonawca.a has the state Błąd tematu and Wpis na życzenie of wykonawca.b",
+        )
+        offer = {"worker": "wykonawca.a", "day": DAY, "request": MOVE_REQUEST}
+        run.check(
+            [
+                [problem["faulty_subject"]["offers"] for problem in days[worker]["problems"] if problem["faulty_subject"]]
+                for worker in ("wykonawca.a", "wykonawca.b")
+            ]
+            == [[[offer]], [[offer]]],
+            "the fault of the subject stands at wykonawca.b and at wykonawca.a, which has the order, both with its Wpis na życzenie",
+        )
+        _tile_is(page, "wykonawca.a", DAY, "Problem", 2, 2)
+        popover = _popover(page, "wykonawca.a", DAY)
+        row = popover.get_by_role("list", name="Zlecenia dnia").get_by_role("listitem").filter(has_text=ON_REQUEST_NUMBER)
+        expect(row).to_contain_text("Błąd tematu")
+        moving = f"Wpisze się do INTERMAX, zlecenie przejdzie od wykonawca.a do wykonawca.b na {_short(DAY)}:"
+        expect(row.get_by_text(moving, exact=True)).to_be_visible()
+        expect(row.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_be_enabled()
+        expect(popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_have_count(1)
+        expect(popover).to_contain_text("Raport z błędem tematu")
+        run.check(
+            True,
+            "the tile of wykonawca.a is Problem, not Komplet, and its order says it goes to wykonawca.b and what it writes, with one button",
+        )
+        run.capture(page, "433-raporty-blad-tematu-przeniesienie-podglad", full_page=False)
+        _close(page, popover)
+
+        popover = _popover(page, "wykonawca.b", DAY)
+        fault = popover.get_by_role("list", name="Zlecenia dnia").get_by_role("listitem").filter(has_text="Raport z błędem tematu")
+        expect(fault).to_contain_text(f"Zlecenie {ON_REQUEST_NUMBER}")
+        expect(fault.get_by_text(moving, exact=True)).to_be_visible()
+        what = fault.get_by_label("Co się wpisze", exact=True).get_by_role("definition")
+        expect(what.nth(0)).to_have_text("tak")
+        expect(what.nth(1)).to_have_text(FAULTY_ACTIVITIES)
+        button = fault.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)
+        expect(button).to_be_enabled()
+        run.check(True, "the red tile of wykonawca.b has the button at its fault of the subject, with the number of the order and what it writes")
+        run.capture(page, "435-raporty-blad-tematu-przeniesienie-nadawca", full_page=False)
+
+        entered = result_of_start(run, "raporty-przeniesienie-na-zyczenie", button.click)
+        run.check(figure(entered["summary"], "Problemy") == 0, "the click leaves no problem")
+        after = _orders(_view(run, "raporty-przeniesienie-po"))
+        run.check(
+            (ON_REQUEST_NUMBER, "tak", FAULTY_ACTIVITIES, "entered") in after["wykonawca.b"]
+            and ON_REQUEST_NUMBER not in {number for number, *_ in after["wykonawca.a"]},
+            "after the click the order stands at wykonawca.b with tak and the activities, like after a correct Raport",
+        )
+        [clicked] = [
+            logs for logs in _entering_logs(run) if any(found["mail"] == MOVE_REQUEST["mail"] for found in logs["requested"])
+        ]
+        run.check(
+            [found["worker"] for found in clicked["moves"]] == ["wykonawca.b"],
+            "the Logi of the Uruchomienie have the Przeniesienie to wykonawca.b",
+        )
+        if popover.is_visible():
+            _close(page, popover)
+        popover = _popover(page, "wykonawca.b", DAY)
+        expect(popover.get_by_role("listitem").filter(has_text=ON_REQUEST_NUMBER)).to_contain_text(TAKEN_NOTE)
+        expect(popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_have_count(0)
+        run.check(True, "the popover of wykonawca.b has the order taken over from wykonawca.a, without the button")
+        run.capture(page, "434-raporty-blad-tematu-przeniesienie-po", full_page=False)
+        _close(page, popover)
+    finally:
+        remove(mail, missing_ok=True)
+
+
 def _on_request(run: Run, page: Page, register: Path) -> None:
-    """Wpis na życzenie (ADR 0041): a Raport with `t`, its button with the preview, the refusal while INTERMAX is open
-    in Excel and the order entered after the click."""
+    """Wpis na życzenie (ADR 0041): a Raport with `t`, later than the Wpis na życzenie of the Raport z błędem tematu, so
+    it wins over it, its button with the preview, the refusal while INTERMAX is open in Excel and the order entered after
+    the click."""
 
     run.step(FEATURE, "wpis-na-zyczenie")
-    mail = run.root / "maile" / "raport-a-litera.eml"
-    message = EmailMessage()
-    message["From"] = "wykonawca.a@przyklad.invalid"
-    message["Subject"] = "Raport 19.10.2026"
-    message["Date"] = format_datetime(datetime(2026, 10, 19, 17, 30).astimezone())
-    message["Message-ID"] = ON_REQUEST_ID
-    message.set_content(f"{ON_REQUEST_NUMBER} t {ON_REQUEST_ACTIVITIES}")
-    mail.write_bytes(bytes(message))
+    text = f"{ON_REQUEST_NUMBER} t {ON_REQUEST_ACTIVITIES}"
+    mail = _report_mail(run, "raport-a-litera.eml", "Raport 19.10.2026", ON_REQUEST_ID, text, datetime(2026, 10, 19, 17, 30))
     print(f"  harness: wykonawca.a sends a Raport with `t` for {ON_REQUEST_NUMBER}", flush=True)
     try:
         offered = result_of_start(run, "raporty-litera", _button(page).click)
@@ -904,8 +1085,11 @@ def _on_request(run: Run, page: Page, register: Path) -> None:
         decisions = [
             (found["number"], found["verdict"], found["activities"])
             for found in read_json(run.config / "wpisanie-raportow-stan.json")["requested"]
+            if found["mail"] == ON_REQUEST["mail"]
         ]
-        logged = [(found["number"], found["verdict"]) for found in _entering_logs(run)[-1]["requested"]]
+        logged = [
+            (found["number"], found["verdict"]) for found in _entering_logs(run)[-1]["requested"] if found["mail"] == ON_REQUEST["mail"]
+        ]
         run.check(
             decisions == [(ON_REQUEST_NUMBER, "tak", ON_REQUEST_ACTIVITIES)] and logged == [(ON_REQUEST_NUMBER, "tak")],
             "the memory file and the Logi of the Uruchomienie have Dad's decision",
@@ -1129,7 +1313,9 @@ def drive(run: Run, page: Page) -> None:
         finally:
             page.set_viewport_size(DAD_VIEWPORT)
 
+        _on_request_faulty_subject(run, page, register)
         _on_request(run, page, register)
+        _on_request_move(run, page, register)
     finally:
         move(aside, stranger)
 

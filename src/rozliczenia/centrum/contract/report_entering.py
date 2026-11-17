@@ -38,8 +38,9 @@ class KeptCell(Model):
 
 
 class RequestedCell(Model):
-    """Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
-    dzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+    """Wpis na życzenie przy problemie albo przy zleceniu: Wpis, przy którym tata klika (skrót Raportu wykonawcy
+    ``mail``, Wykonawca i dzień, w którym widzi problem, a przy zleceniu Wykonawca i dzień, które zlecenie ma po Wpisie,
+    przy Przeniesieniu nadawca raportu, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
     ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."""
 
     mail: str
@@ -51,16 +52,31 @@ class RequestedCell(Model):
     order_day: date
 
 
+class ReportsFaultyOffer(Model):
+    """Wpis raportu z błędem tematu, który tata może wpisać: zlecenie, które dziś ma Wykonawca ``worker`` w dniu ``day``,
+    i jego Wpis na życzenie (``request``), ta sama komórka co przy tym zleceniu (``ReportsOrder.request``). Gdy
+    ``request`` stawia zlecenie u innego Wykonawcy albo w innym dniu, Wpis je przeniesie (ADR 0029)."""
+
+    worker: str
+    day: date
+    request: RequestedCell
+
+
 class ReportsFaultySubject(Model):
     """Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości
     ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
     Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
-    kończy), i chwila przyjścia maila."""
+    kończy), i chwila przyjścia maila.
+
+    ``offers``: Wpisy tego raportu, które tata może wpisać. Problem stoi w dniu, za który Centrum liczy raport, z każdym
+    Wpisem raportu, a także w dniu każdego Wykonawcy, który dziś ma zlecenie z takim Wpisem, z Wpisami jego zleceń, więc
+    ten dzień ma problem, dopóki tata nie zdecyduje."""
 
     subject: str
     fault: str
     day: date | None
     arrived: datetime
+    offers: list[ReportsFaultyOffer]
 
 
 class ReportsProblem(Model):
@@ -92,7 +108,10 @@ class ReportsOrder(Model):
 
     ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
     i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
-    czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem."""
+    czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.
+    ``request``: Wpis na życzenie przy zleceniu, o którym decyduje Wpis raportu z błędem tematu, bo to najpóźniejszy mail
+    z jego numerem (ADR 0041), który wpisze ten Wpis do tego zlecenia jak Raport wykonawcy z dniem w temacie, także z
+    Przeniesieniem do nadawcy (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać)."""
 
     number: str
     successful: str | None
@@ -100,6 +119,7 @@ class ReportsOrder(Model):
     state: Literal["entered", "without_report", "problem", "faulty_subject"]
     codes: list[str]
     no_code: bool
+    request: RequestedCell | None
 
 
 class ReportsWorkerDay(Model):

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import gzip
 import json
 import re
@@ -199,7 +198,7 @@ def drive(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "logi-kazde-uruchomienie")
     ended = _ended_in_centrum_log(run)
-    records = sorted(run_logs(run).values(), key=lambda record: datetime.fromisoformat(record["started_at"]))
+    records = list(run_logs(run).values())
     run.check(
         [(record["process"], record["mode"], record["period"], record["result"], record["ending"]) for record in records]
         == ended,
