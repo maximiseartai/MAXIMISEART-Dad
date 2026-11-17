@@ -25,6 +25,7 @@ from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_reports import (
     DEFAULT_REMINDERS,
     EXAMPLE_NUMBERS,
+    FaultyDescription,
     MailId,
     OrderedDay,
     OrderNumber,
@@ -106,12 +107,13 @@ def _due(
     workers: WorkerList | None = None,
     settings: ReminderSettings | None = None,
     in_effect: SchedulesInEffect | None = None,
+    memory: OwnEntries = OwnEntries.EMPTY,
 ) -> tuple[Reminder, ...]:
     listed = workers or _workers()
     return reminders_due(
         ReminderInputs(
             now=now,
-            reports=_reports(now, orders or (_order(),), mails, rollout=rollout, closed=closed, workers=listed),
+            reports=_reports(now, orders or (_order(),), mails, rollout=rollout, closed=closed, workers=listed, memory=memory),
             sent=sent,
             reminded=listed.reminded(),
             settings=settings or replace(DEFAULT_REMINDERS, enabled=True, since=rollout, footer=footer),
@@ -128,21 +130,39 @@ def _reports(
     rollout: date = ROLLOUT,
     closed: Sequence[str] = (),
     workers: WorkerList | None = None,
+    memory: OwnEntries = OwnEntries.EMPTY,
 ) -> ReportInputs:
-    """Wejście odczytu okna, jak buduje je praca przypomnień Centrum: bez pamięci Wpisania i decyzji taty, a każde
-    zlecenie w swoim wierszu INTERMAX i w Dniu uporządkowanym."""
+    """Wejście odczytu okna, to samo dla Wpisania raportów i przypomnień: pamięć Wpisania ``memory`` (domyślnie przed
+    pierwszym kliknięciem) bez decyzji taty, a każde zlecenie w swoim wierszu INTERMAX i w Dniu uporządkowanym."""
 
     return ReportInputs(
         mails=mails,
         addresses=(workers or _workers()).addresses(),
         orders=orders,
         window=Window.of(now.date(), rollout, closed),
-        memory=OwnEntries.EMPTY,
+        memory=memory,
         kept=frozenset(),
         present=[ReadNumber(order.key.number, order.key.day) for order in orders],
         legend=DEFAULT_ACTIVITY_LEGEND,
         ordered_days=frozenset(OrderedDay(order.row.sheet, order.key.day) for order in orders),
     )
+
+
+def _after_click(
+    clicked_at: datetime, orders: Sequence[RegisterOrder], mails: Sequence[ReportMail]
+) -> tuple[tuple[RegisterOrder, ...], OwnEntries]:
+    """Zlecenia INTERMAX i pamięć Wpisania raportów po kliknięciu w chwili ``clicked_at`` z mailami ``mails``:
+    Przeniesienie daje wierszowi nowy dzień i Wykonawcę, a Zlecenie dopisane z raportu staje w nowym wierszu."""
+
+    clicked = enter_reports(_reports(clicked_at, orders, mails))
+    moved = {move.order: move for move in clicked.moves}
+    after = [
+        order if (move := moved.get(order.row)) is None else _order(move.worker, move.day, int(order.key.number), order.row.row)
+        for order in orders
+    ]
+    rows = range(max(order.row.row for order in orders) + 1, max(order.row.row for order in orders) + 1 + len(clicked.added))
+    after += [_order(added.worker, added.day, int(added.number), row) for added, row in zip(clicked.added, rows, strict=True)]
+    return tuple(after), clicked.memory
 
 
 def _workers(*, active: bool = True, reminders: bool = True) -> WorkerList:
@@ -553,42 +573,63 @@ przypomnienia za oba dni."""
 JAN_9 = ("jan.testowy", DAY)
 JAN_10 = ("jan.testowy", DAY + timedelta(days=1))
 EWA_9 = ("ewa.probna", DAY)
+ADDED_TEXT = "40000007 tak inst20m\n40000008 tak spawpg"
+"""Dwa numery, których INTERMAX nie ma: raport z nimi dopisuje oba Janowi (Zlecenia dopisane z raportu)."""
 TIE = MailId.of("<ten-sam@przyklad.invalid>")
 TIE_FAULTY = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak montaż", _at(DAY, 19))
 TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak inst20m", _at(DAY, 19))
 
 
 @pytest.mark.parametrize(
-    ("mails", "reported"),
+    ("earlier", "mails", "reported"),
     [
-        pytest.param([], set(), id="bez-maila"),
-        pytest.param([_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m")], {JAN_9}, id="czytelny"),
-        pytest.param([_mail(JAN, "Raport 09.11.2026", "40000001 tak montaż")], {JAN_9}, id="blad-opisu"),
-        pytest.param([_mail(JAN, "Raport 09.11.2026", "dziś nic")], set(), id="bez-wpisow"),
-        pytest.param([_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat"),
-        pytest.param([_mail(JAN, "Raport 26.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat-po-dzis"),
+        pytest.param([], [], set(), id="bez-maila"),
+        pytest.param([], [_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m")], {JAN_9}, id="czytelny"),
+        pytest.param([], [_mail(JAN, "Raport 09.11.2026", "40000001 tak montaż")], {JAN_9}, id="blad-opisu"),
+        pytest.param([], [_mail(JAN, "Raport 09.11.2026", "dziś nic")], set(), id="bez-wpisow"),
+        pytest.param([], [_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat"),
+        pytest.param([], [_mail(JAN, "Raport 26.11.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat-po-dzis"),
         pytest.param(
-            [_mail(JAN, "Raport 30.10.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat-sprzed-wdrozenia"
+            [],
+            [_mail(JAN, "Raport 30.10.2026", "40000001 tak inst20m\n40000002 tak spawpg")],
+            {JAN_9},
+            id="pomylony-temat-sprzed-wdrozenia",
         ),
         pytest.param(
+            [],
             [_mail(JAN, "Raport 08.11.2026", "40000001 tak inst20m\n40000002 tak spawpg\n40000005 tak inst20m")],
             {JAN_9},
             id="pomylony-temat-z-numerem-w-kilku-zleceniach",
         ),
         pytest.param(
-            [_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000004 tak spawpg")], {JAN_10}, id="jeden-niezgodny-wpis"
+            [],
+            [_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000004 tak spawpg")],
+            {JAN_10},
+            id="jeden-niezgodny-wpis",
         ),
-        pytest.param([_mail(JAN, f"Re: {reminder_subject(DAY)}", "40000001 tak inst20m")], {JAN_9}, id="odpowiedz-na-przypomnienie"),
-        pytest.param([_mail(EWA, "Raport 09.11.2026", "40000001 tak inst20m")], {EWA_9}, id="raport-innego-wykonawcy"),
-        pytest.param([_mail(JAN, "Raport 9.11", "40000001 tak inst20m")], set(), id="temat-bez-roku"),
-        pytest.param([_mail(JAN, "Montaże 09.11.2026", "40000001 tak inst20m")], set(), id="bez-slowa-raport"),
-        pytest.param([_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak")], set(), id="adres-spoza-listy"),
-        pytest.param([TIE_FAULTY, TIE_GOOD], {JAN_9}, id="remis-blad-opisu-pierwszy"),
-        pytest.param([TIE_GOOD, TIE_FAULTY], {JAN_9}, id="remis-blad-opisu-drugi"),
+        pytest.param([], [_mail(JAN, f"Re: {reminder_subject(DAY)}", "40000001 tak inst20m")], {JAN_9}, id="odpowiedz-na-przypomnienie"),
+        pytest.param([], [_mail(EWA, "Raport 09.11.2026", "40000001 tak inst20m")], {EWA_9}, id="raport-innego-wykonawcy"),
+        pytest.param([], [_mail(JAN, "Raport 9.11", "40000001 tak inst20m")], set(), id="temat-bez-roku"),
+        pytest.param([], [_mail(JAN, "Montaże 09.11.2026", "40000001 tak inst20m")], set(), id="bez-slowa-raport"),
+        pytest.param([], [_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak")], set(), id="adres-spoza-listy"),
+        pytest.param([], [TIE_FAULTY, TIE_GOOD], {JAN_9}, id="remis-blad-opisu-pierwszy"),
+        pytest.param([], [TIE_GOOD, TIE_FAULTY], {JAN_9}, id="remis-blad-opisu-drugi"),
+        pytest.param(
+            [_mail(JAN, "Raport 09.11.2026", ADDED_TEXT, _at(DAY + timedelta(days=1), 6))],
+            [_mail(JAN, "Raport 10.11.2026", ADDED_TEXT, _at(DAY + timedelta(days=1), 20))],
+            {JAN_9, JAN_10},
+            id="pamiec-po-dopisaniu-z-raportu",
+        ),
+        pytest.param(
+            [_mail(JAN, "Raport 09.11.2026", "40000001 tak inst20m\n40000004 tak spawpg", _at(DAY + timedelta(days=1), 6))],
+            [_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000004 tak spawpg", _at(DAY + timedelta(days=1), 20))],
+            {JAN_9, JAN_10},
+            id="pamiec-po-przeniesieniu",
+        ),
     ],
 )
 def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_raportem(
-    mails: list[ReportMail], reported: set[tuple[str, date]]
+    earlier: list[ReportMail], mails: list[ReportMail], reported: set[tuple[str, date]]
 ) -> None:
     """ADR 0041 (historia 14): dla tych samych maili i zleceń dzień Wykonawcy, za który kafelek Wpisania raportów liczy
     Raport wykonawcy, to dokładnie dzień, za który przypomnienie nie idzie: Raport z Błędem opisu jest
@@ -596,16 +637,39 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
     dzień zleceń (bez dni numeru, który INTERMAX ma w kilku zleceniach, bo jego Wpis niczego nie wpisuje), a jeden
     niezgodny Wpis za dzień z tematu. Mail z tą samą chwilą i tym samym Message-ID daje ten sam
     wynik w każdej kolejności skrzynki. Temat bez roku, mail bez słowa ``Raport`` i adres spoza listy nie są raportem
-    Wykonawcy."""
+    Wykonawcy. Po wcześniejszym kliknięciu (``earlier``) obie operacje biorą tę samą pamięć Wpisania raportów i INTERMAX
+    po nim: numery dopisane przez Centrum nie robią z poprawionego tematu pomylonego, a zlecenie po Przeniesieniu liczy
+    się za dzień sprzed niego, więc ten sam raport z dobrą datą liczy się za dzień z tematu (W1 r1 #2059)."""
 
     now = _at(DAY + timedelta(days=2), 8)
+    orders, memory = _after_click(_at(DAY + timedelta(days=1), 7), SAME, earlier)
 
-    entered = enter_reports(_reports(now, SAME, mails))
-    due = _due(now, SAME, mails=mails)
+    entered = enter_reports(_reports(now, orders, [*earlier, *mails], memory=memory))
+    due = _due(now, orders, mails=[*earlier, *mails], memory=memory)
 
     open_days = {(order.key.worker, order.key.day) for order in SAME}
     assert {(figure.worker, figure.day) for figure in entered.workers if figure.mails} & open_days == reported
     assert open_days - set(_days(due)) == reported
+
+
+def test_raport_wolnym_tekstem_z_wpisem_tak_z_bledem_opisu_konczy_przypomnienia_a_mail_bez_wpisu_nie() -> None:
+    """Historia 10 speca #2032 (ADR 0041, „Co nie jest raportem”): 13–14.11 Wykonawcy pisali raporty wolnym tekstem.
+    Raport za 13.11 z Wpisem ``tak`` z Błędem opisu jest przysłany: Wpisanie raportów wpisuje go z problemem, a po
+    Aktualizacji 17.11 rano przypomnienie za 13.11 nie idzie. Mail za 14.11 bez żadnego numeru zlecenia nie jest
+    raportem, więc przypomnienie za 14.11 idzie."""
+
+    day_13, day_14 = date(2026, 11, 13), date(2026, 11, 14)
+    orders = (_order(day=day_13, number=40012345, row=120), _order(day=day_14, number=40012346, row=121))
+    now = _at(date(2026, 11, 17), 8)
+    mails = [
+        _mail(JAN, "Raport 13.11.2026", "Dzień dobry,\n40012345 tak montaż ONT, klient zadowolony\nPozdrawiam Jan", _at(day_13, 19)),
+        _mail(JAN, "Raport 14.11.2026", "Dzień dobry, dziś zrobiłem montaż ONT i jedną awarię.\nPozdrawiam Jan", _at(day_14, 19)),
+    ]
+
+    entered = enter_reports(_reports(now, orders, mails, rollout=date(2026, 11, 12)))
+
+    assert [(type(problem), problem.day) for problem in entered.problems] == [(FaultyDescription, day_13)]
+    assert _days(_due(now, orders, mails=mails, rollout=date(2026, 11, 12))) == [("jan.testowy", day_14)]
 
 
 def test_przyklad_w_przypomnieniu_to_wpis_tak_z_samymi_kodami_legendy_z_wydania_i_wpis_nie_z_powodem() -> None:
