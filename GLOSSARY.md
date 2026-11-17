@@ -420,7 +420,7 @@ _Avoid_: skrót, kod (bez dopowiedzenia)
 `CZYNNOŚCI ZREALIZOWANE` z Kodami czynności, których legenda nie może przyjąć: kod z liczbą spoza przedziałów, kolumna Ilości usług trafiona drugi raz albo kolumna wypełniona dwoma kolorami (jeden kod robi z niej Czerwone pole, a drugi Zielone pole).
 Słowo, które nie jest zapisem kodu, to zwykły opis technika, a nie Błąd opisu: obok kodów zwykły opis jest dozwolony.
 Opis z Błędem opisu nie wyznacza niczego, a Raport wykonawcy z takim Wpisem `tak` jest przysłany: błąd widzi tata przy zleceniu w widoku Raporty, a Wykonawca nie dostaje przypomnienia.
-Zlecenie `tak` bez żadnego Kodu czynności nie ma Błędu opisu, a tata widzi przy nim w szczegółach dnia informację „BRAK KODU”.
+W szczegółach dnia tata widzi przy zleceniu `tak`, które słowa opisu są Kodami czynności, a przy zleceniu `tak` bez żadnego kodu informację „BRAK KODU”; brak kodu nie jest Błędem opisu.
 _Avoid_: zły kod, literówka
 
 ## Lista Urządzeń

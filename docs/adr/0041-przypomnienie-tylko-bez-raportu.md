@@ -4,7 +4,7 @@
 
 Zaakceptowana (słowa taty przekazane przez Maksa 17.11.2026 i decyzje Maksa z grilla w gałęzi
 `docs/powiadomienia-brak-raportow`). Od taty są trzy reguły, cytowane w Kontekście: przypomnienie tylko bez raportu,
-błąd raportu tylko dla taty i zwykły opis obok kodów to nie błąd. Pozostałe punkty Decyzji to decyzje Maksa, nazwane przy
+błąd raportu tylko dla taty i zwykły opis obok kodów to nie błąd. Cytaty Maksa z grilla mają poprawioną pisownię. Pozostałe punkty Decyzji to decyzje Maksa, nazwane przy
 każdym. Spis zdań niżej powstał z przejścia po każdym punkcie Decyzji ADR 0039 i ADR 0030.
 
 Zmienia te zdania [ADR 0039](0039-opis-zlecenia-to-same-kody-czynnosci.md):
@@ -61,15 +61,19 @@ tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmien
 - **Cały opis do INTERMAX, Ilości z samych kodów** (decyzja Maksa). Wpisanie raportów wpisuje do
   `CZYNNOŚCI ZREALIZOWANE` cały opis po `tak`/`nie`, a Przygotowanie pliku zbiorczego wyznacza Ilości legendą z samych
   Kodów czynności, także gdy obok stoi zwykły opis.
-- **Własny zapis kodu to zwykły opis, „BRAK KODU” dla taty** (decyzja Maksa). Słowo, które nie jest zapisem kodu z
-  legendy, także własny zapis kodu (`instmdic`, `dzielnik 1/2`), jest zwykłym opisem i niczego nie wyznacza. Zlecenie
-  `tak` bez żadnego rozpoznanego kodu ma w szczegółach dnia informację „BRAK KODU”, bez zgadywania, do którego kodu
-  słowo jest podobne (ADR 0038 odrzucił rozmyte dopasowanie). Zlecenie z kodem i własnym zapisem drugiego kodu
-  informacji nie ma: tata widzi wtedy tylko cały opis. Zlecenie bez kodu zostaje tacie w Ilościach do uzupełnienia;
+- **Własny zapis kodu to zwykły opis, tata widzi rozpoznane kody i „BRAK KODU”** (decyzja Maksa: „tata musi być
+  powiadomiony, najlepiej (…) w szczegółach danego dnia, jeżeli nie ma rozpoznanego kodu w danym zleceniu, to jest
+  informacja, że BRAK KODU”, przy wybranym wariancie, w którym szczegóły zlecenia pokazują, które słowa legenda wzięła
+  za kody). Słowo, które nie jest zapisem kodu z legendy, także własny zapis kodu (`instmdic`, `dzielnik 1/2`), jest
+  zwykłym opisem i niczego nie wyznacza. W szczegółach dnia przy każdym zleceniu `tak` widać, które słowa opisu
+  legenda wzięła za kody, więc przy `inst30m instmdic` tata widzi, że kodem jest tylko `inst30m`. Zlecenie `tak` bez
+  żadnego rozpoznanego kodu ma informację „BRAK KODU”, bez zgadywania, do którego kodu słowo jest podobne (ADR 0038
+  odrzucił rozmyte dopasowanie). Zlecenie bez kodu zostaje tacie w Ilościach do uzupełnienia;
   Przygotowanie pliku zbiorczego liczy je w ostrzeżeniu o kolumnach z opisu technika jako wiersz zostawiony tacie, a
   Kontrola ilości jako wiersz bez kodu, jak przed ADR 0039 (decyzja koordynatora: ostrzeżenie i blok Kontroli według
   powodu zostają tylko dla Błędu opisu).
-- **Błędy raportu widzi tata w kafelku dnia** (decyzja Maksa: miejsce powiadomienia z reguły taty). Błąd opisu, błąd tematu i każdy inny problem Wpisania raportów stoi przy
+- **Błędy raportu widzi tata w kafelku dnia** (decyzja Maksa: „najlepiej na heat mapie po kliknięciu na kafelek, tam gdzie są
+  szczegóły poszczególnych zleceń”). Błąd opisu, błąd tematu i każdy inny problem Wpisania raportów stoi przy
   zleceniu w szczegółach dnia Wykonawcy na mapie cieplnej widoku Raporty, po kliknięciu „Wpisz raporty z maili”. Praca
   przypomnień w tle niczego nie pokazuje w kafelkach.
 - **Wpis na życzenie** (decyzja Maksa: „dopisanie danych z raportu do INTERMAX na życzenie, a nie jako
@@ -78,7 +82,8 @@ tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmien
   zleceniu wpisuje Wpis do INTERMAX na swoją odpowiedzialność, zamiast prosić Wykonawcę o nowy mail. W INTERMAX wygląda
   jak każdy Wpis, Centrum pamięta decyzję taty jak „Zostaw moją”, a późniejszy poprawny Wpis raportu wygrywa. Przy
   przeciwnych Wpisach i numerze, którego INTERMAX nie ma albo ma w kilku miejscach, przycisku nie ma.
-- **Tolerancja tematu** (decyzja Maksa; tata mówi o „złym formacie”, a granicę wyznaczają tematy ze skrzynki).
+- **Tolerancja tematu** (decyzja Maksa: „błędy, jeżeli chodzi o ortografię i interpunkcję w temacie (…) powinieneś go
+  traktować jako poprawne”; granicę wyznaczają tematy ze skrzynki).
   Temat wybacza wielkość liter, jedną literówkę w słowie `Raport`, dowolną interpunkcję albo
   spację w dacie i interpunkcję na końcu. Na tematach od Wykonawców z 16–17.11.2026 (pierwsze dni nowego wzoru) to
   łapie wszystkie trzy błędne. Inne słowa obok słowa i daty to błąd tematu z Wpisem na życzenie. Dzień raportu bez
@@ -86,8 +91,9 @@ tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmien
   numery zleceń dalej wygrywają z datą (ADR 0029).
 - **Co nie jest raportem** (decyzja Maksa). Mail bez żadnego Wpisu i mail ze zdjęciami do raportu (`Zdjęcia do raportu …`, codziennie
   od jednego Wykonawcy) Centrum pomija po cichu. Mail bez słowa `Raport` w temacie (także `Montaże …`, `Zlecenia …`)
-  nie jest raportem nawet z Wpisami: Centrum nie czyta treści wszystkich maili Wykonawców, a taki temat tata poprawia
-  u Wykonawcy sam, po przypomnieniu, które wtedy pójdzie.
+  nie jest raportem nawet z Wpisami: Centrum nie czyta treści wszystkich maili Wykonawców (Maks: „żeby niepotrzebnie
+  nie czytać wszystkich maili”), a przypomnienie wtedy pójdzie; Maks: „tata na pewno zobaczy, że jest montaże zamiast
+  raport, i poprawi pracownika”.
 - **Poprawka raportu w odpowiedzi** (decyzja Maksa). Odpowiedź (`Re:`, `Odp:`) z tematem Raportu wykonawcy za dzień na początku i
   dowolnym dopiskiem po nim (tata odpisuje „Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW…”) jest Raportem wykonawcy
   za ten dzień, a jej Wpisami jest tylko tekst nad cytatem, jak w odpowiedzi na Przypomnienie.
@@ -95,10 +101,12 @@ tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmien
 ## Odrzucone warianty
 
 - **Błąd opisu dalej jako raport niewysłany, tylko z łagodniejszą legendą.** Przypomnienie dalej szłoby do Wykonawcy,
-  który raport przysłał, a tata chce sam decydować, czy błąd wart jest maila.
-- **Powiadomienie taty mailem.** Tata pracuje w widoku Raporty i tam ma szczegóły zlecenia; mail do jego własnej
-  skrzynki raportów byłby szumem między raportami.
+  który raport przysłał, a tata przy raporcie przysłanym źle chce być „tylko powiadomiony”.
+- **Powiadomienie taty mailem.** Maks wybrał widok Raporty („w Raportach w odpowiednim dniu i zleceniu na heat
+  mapie”), gdzie są szczegóły zlecenia; mail do skrzynki raportów taty byłby szumem między raportami.
 - **Czytać wszystkie maile Wykonawców i brać każdy z Wpisami.** Złapałby `Montaże 13.11.26`, ale czyta całą
-  korespondencję Wykonawców z tatą; tata woli, żeby Centrum czytało tylko maile ze słowem `Raport`.
+  korespondencję Wykonawców z tatą; Maks woli, żeby Centrum czytało tylko maile ze słowem `Raport` (decyzja Maksa
+  wyżej, „Co nie jest raportem”).
 - **Wpisywać zawsze, gdy numery pasują do innego dnia, i nigdy nie pytać taty.** Zostaje tylko dla pomylonego tematu z
-  ADR 0029, gdzie co najmniej dwa numery dowodzą dnia; przy temacie bez dnia decyduje tata.
+  ADR 0029, gdzie co najmniej dwa numery dowodzą dnia (Maks: „numery zleceń są ważniejsze niż daty w takich
+  przypadkach”); przy błędzie tematu tata wpisuje raport Wpisem na życzenie (decyzja Maksa wyżej).
