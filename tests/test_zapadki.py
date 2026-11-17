@@ -798,6 +798,9 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 REGULY_CALEGO_DRZEWA: Final = (
     "historia-w-docstringu",
     "komentarz-w-src",
+    "kotwica-konca-linii",
+    "lokator-tytulu-okna",
+    "regula-w-trasie",
     "stan-pliku-poza-file-state",
     "watki-workera",
     "wlasna-wyrocznia-numeru",
