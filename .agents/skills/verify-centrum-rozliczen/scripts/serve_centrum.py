@@ -109,6 +109,9 @@ Uruchomienie procesu and its Diagnoza both read the Rejestr with, so the fault r
 Diagnoza too, as a real one that does not go away would. No synthetic file causes one,
 because every known problem has its own Komunikat.
 
+Wysyłka rozliczeń sends through an atrapa SMTP of the skrzynka raportów (``AtrapaSmtp``), which puts each mail in the
+atrapa IMAP's „Wysłane” and in ``File.SENT_MAILS``, never through Gmail.
+
 Once the port is bound, ``File.SERVER`` records this process and URL.
 Each HTTP request it answered is a line ``REQUEST <moment> <method> <path> <status>`` on its console (``_RequestLog``),
 which the run keeps as ``server.txt`` or ``api/<name>-server.txt`` of the evidence.
@@ -138,6 +141,7 @@ from functools import partial
 import imaplib
 import json
 import os
+import smtplib
 from pathlib import Path
 import sys
 import threading
@@ -211,7 +215,7 @@ from atrapy.skrzynka import ArchivedFile, Archives, BoxArchive, BoxIssue, Issues
 from atrapy.widok_skrzynki import shown
 from atrapy.efenix import write_collective_file
 from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
-from atrapy.skrzynka_raportow import AtrapaImap, FolderInbox
+from atrapy.skrzynka_raportow import AtrapaImap, AtrapaSmtp, FolderInbox
 
 EFENIX_SEARCH_DELAY_S = 1.0
 # The mode „wolny runner” (SLOW_RUNNER): Centrum takes each request of its API this late.
@@ -740,6 +744,7 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
     _pace_worker_templates(root, configuration["worker_template"])
     efenix = stack.enter_context(_efenix_window(root))
     inbox = stack.enter_context(AtrapaImap(address=INBOX_ADDRESS, password=INBOX_PASSWORD))
+    smtp = stack.enter_context(AtrapaSmtp(inbox, saved=File.SENT_MAILS.file(root)))
 
     def inbox_connect() -> imaplib.IMAP4:
         """The login after a new password in Ustawienia goes to the atrapa, or nowhere while ``INBOX_OFFLINE`` is on."""
@@ -771,6 +776,9 @@ def _serve(args: argparse.Namespace, stack: ExitStack) -> int:
         now=lambda: datetime.combine(today, datetime.now().astimezone().timetz()),
         efenix_window=efenix,
         inbox_connect=inbox_connect,
+        # Wysyłka rozliczeń sends through the atrapa SMTP, which puts each mail in the atrapa's „Wysłane” and in
+        # <root>/skrzynka-raportow/wyslane/, never through Gmail.
+        inbox_smtp=lambda: smtplib.SMTP("127.0.0.1", smtp.port, timeout=10),
         # Wpisanie raportów reads the run's .eml folder, never Dad's Gmail.
         worker_report_inbox=FolderInbox(Path(fixture["report_entering"]["mails"])),
     )

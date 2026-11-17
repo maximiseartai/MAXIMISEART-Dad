@@ -1,5 +1,5 @@
 """Atrapy Skrzynki raportów taty w Gmailu: ``FakeInbox`` dla testów procesu, ``FakeMailbox`` dla pracy przypomnień
-Centrum, ``FolderInbox`` dla Skryptu dla maszyn i skilli oraz ``AtrapaImap`` i ``AtrapaSmtp`` dla testu portu.
+i Wysyłki rozliczeń Centrum, ``FolderInbox`` dla Skryptu dla maszyn i skilli oraz ``AtrapaImap`` i ``AtrapaSmtp`` dla testu portu.
 
 ``FakeInbox`` oddaje gotowy wynik ``mails_since``, zapisuje dzień każdego wywołania i w jego trakcie robi ``during``. ``FolderInbox`` czyta maile z
 plików ``.eml`` folderu tym samym rozbiorem MIME co port (``mail_of``), z chwilą przyjścia z nagłówka ``Date``. ``AtrapaImap`` to lokalny serwer
@@ -32,6 +32,7 @@ from types import TracebackType
 from typing import Final, Literal
 
 from rozliczenia.worker_report_inbox import (
+    AttachmentMail,
     InboxAccess,
     InboxOutcome,
     InboxUnreachable,
@@ -39,6 +40,8 @@ from rozliczenia.worker_report_inbox import (
     Mails,
     MailSent,
     PasswordRejected,
+    SentAttachment,
+    SentAttachments,
     SentReminders,
     mail_of,
 )
@@ -85,12 +88,28 @@ class FakeInbox:
 
 @dataclass
 class FakeMailbox(FakeInbox):
-    """Skrzynka raportów pracy przypomnień: maile jak ``FakeInbox``, przypomnienia z „Wysłanych” (``sent`` albo wynik
-    porażki) i każda wysyłka w ``sends`` (przypomnienie i chwila); ``send_outcome`` to wynik każdej wysyłki."""
+    """Skrzynka raportów pracy przypomnień i Wysyłki rozliczeń: maile jak ``FakeInbox``, przypomnienia z „Wysłanych”
+    (``sent`` albo wynik porażki) i każda wysyłka w ``sends`` (przypomnienie i chwila); ``send_outcome`` to wynik każdej
+    wysyłki. Załączniki z „Wysłanych” to ``attachments`` (albo wynik porażki), a każdy Mail z rozliczeniem trafia do
+    ``mailed``; wysłany (``send_outcome`` to ``MailSent``) Gmail kładzie w „Wysłanych”, więc dochodzi do ``attachments``
+    ze znakiem Centrum."""
 
     sent: Sequence[SentReminder] | PasswordRejected | InboxUnreachable = ()
     send_outcome: MailSent | PasswordRejected | InboxUnreachable | MailRefused = MailSent()
     sends: list[tuple[Reminder, datetime]] = field(default_factory=list)
+    attachments: list[SentAttachment] | PasswordRejected | InboxUnreachable = field(default_factory=list)
+    mailed: list[tuple[AttachmentMail, datetime]] = field(default_factory=list)
+
+    def sent_attachments(self, day: date) -> SentAttachments | PasswordRejected | InboxUnreachable:
+        if isinstance(self.attachments, (PasswordRejected, InboxUnreachable)):
+            return self.attachments
+        return SentAttachments(tuple(found for found in self.attachments if found.sent_at.date() >= day - timedelta(days=1)))
+
+    def send_attachment(self, mail: AttachmentMail, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+        self.mailed.append((mail, at))
+        if isinstance(self.send_outcome, MailSent) and isinstance(self.attachments, list):
+            self.attachments.append(SentAttachment(mail.name, frozenset(mail.recipients), at, by_centrum=True))
+        return self.send_outcome
 
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
         if isinstance(self.sent, (PasswordRejected, InboxUnreachable)):
@@ -503,7 +522,8 @@ class AtrapaSmtp:
 
     Przyjmuje ``AUTH PLAIN`` z adresem i hasłem ``imap`` (inne hasło: ``535``, jak Gmail) i kładzie każdy przyjęty mail
     w „Wysłanych” ``imap`` z chwilą z nagłówka ``Date``. ``cut="greeting"`` zrywa połączenie przed powitaniem, jak
-    sieć, która zgubiła Gmaila, a ``refuse="recipients"`` odmawia każdego adresata (``550``).
+    sieć, która zgubiła Gmaila, a ``refuse="recipients"`` odmawia każdego adresata (``550``). Z ``saved`` każdy przyjęty
+    mail leży też jako ``<numer>.eml`` w tym folderze, dla procesu, który nie widzi ``received`` (napęd skilla).
     """
 
     def __init__(
@@ -512,8 +532,10 @@ class AtrapaSmtp:
         *,
         cut: Literal["greeting"] | None = None,
         refuse: Literal["recipients"] | None = None,
+        saved: Path | None = None,
     ) -> None:
         self.imap = imap
+        self.saved = saved
         self.cut = cut
         self.refuse = refuse
         self.commands: list[str] = []
@@ -600,6 +622,9 @@ class _SmtpSession(socketserver.StreamRequestHandler):
         raw = b"".join(lines)
         atrapa = self.server.atrapa
         atrapa.received.append((raw, recipients))
+        if atrapa.saved is not None:
+            atrapa.saved.mkdir(parents=True, exist_ok=True)
+            (atrapa.saved / f"{len(atrapa.received):03d}.eml").write_bytes(raw)
         message = email.message_from_bytes(raw, policy=email.policy.default)
         imap = atrapa.imap
         uid = 1 + max((mail.uid for mail in (*imap.mails, *imap.sent)), default=1000)

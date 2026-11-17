@@ -11,6 +11,7 @@ import {
   MailIcon,
   PaletteIcon,
   RouterIcon,
+  SendIcon,
   UsersIcon,
   WrenchIcon,
   type LucideIcon,
@@ -27,6 +28,7 @@ import { IntermaxCopiesSection } from "@/pages/settings/intermax-copies-section"
 import { QuantityRulesSection } from "@/pages/settings/quantity-rules-section"
 import { REMINDERS_SECTION, RemindersSection } from "@/pages/settings/reminders-section"
 import { ReportsSection } from "@/pages/settings/reports-section"
+import { SETTLEMENT_MAIL_SECTION, SettlementMailSection } from "@/pages/settings/settlement-mail-section"
 import { TemplatesSection } from "@/pages/settings/templates-section"
 import { ToolSection } from "@/pages/settings/tool-section"
 import { WORKERS_SECTION, WorkersSection } from "@/pages/settings/workers-section"
@@ -44,6 +46,7 @@ export const SETTINGS_SECTIONS = [
   { id: FOLDERS_SECTION, title: "Foldery", group: "Praca", icon: FolderIcon, Content: FoldersSection },
   { id: WORKERS_SECTION, title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection },
   { id: REMINDERS_SECTION, title: "Przypomnienia", group: "Praca", icon: BellIcon, Content: RemindersSection },
+  { id: SETTLEMENT_MAIL_SECTION, title: "Wysyłka rozliczeń", group: "Praca", icon: SendIcon, Content: SettlementMailSection },
   { id: "reguly-ilosci", title: "Reguły ilości", group: "Ilości", icon: ListChecksIcon, Content: QuantityRulesSection },
   { id: "urzadzenia", title: "Urządzenia", group: "Ilości", icon: RouterIcon, Content: DevicesSection },
   { id: "legenda-czynnosci", title: "Legenda czynności", group: "Ilości", icon: BookTextIcon, Content: ActivityLegendSection },

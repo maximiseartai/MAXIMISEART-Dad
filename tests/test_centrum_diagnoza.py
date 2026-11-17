@@ -16,6 +16,7 @@ import pytest
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
+from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
@@ -424,6 +425,25 @@ def test_zgloszenie_podaje_zmiane_por_przypomnien_wprost_a_stopke_bez_jej_tresci
         for line in body.splitlines()
     ), body
     for secret in ("Tata Syntetyczny", "600 100 200"):
+        assert not zawiera_wartosc(body, secret), secret
+
+
+def test_zgloszenie_ma_zmiane_tematu_i_tresci_maila_z_rozliczeniem_samym_znacznikiem_bez_tekstu(tmp_path: Path) -> None:
+    """ADR 0040: temat i treść Maila z rozliczeniem tata pisze do Wykonawców, więc Zgłoszenie mówi tylko, że się
+    zmieniły."""
+
+    centrum = preparing_centrum(tmp_path)
+    form = {"subject": "Rozliczenie Syntetyczne {okres}", "text": "Cześć, tu Tata Syntetyczny, tel. 600 100 200"}
+    assert centrum.client.put("/api/settings/settlement-mail", json=form).status_code == 200
+    run_id = stopped_for_maks(centrum)
+
+    body = diagnose(centrum, run_id)["report"]["body"]
+
+    assert any(
+        line.endswith(f"· tata · {SETTLEMENT_MAIL_FILE} · wysylka_rozliczen.temat: zmieniono; wysylka_rozliczen.tresc: zmieniono")
+        for line in body.splitlines()
+    ), body
+    for secret in ("Rozliczenie Syntetyczne", "Tata Syntetyczny", "600 100 200"):
         assert not zawiera_wartosc(body, secret), secret
 
 

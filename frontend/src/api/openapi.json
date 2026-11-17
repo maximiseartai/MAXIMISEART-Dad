@@ -51,7 +51,7 @@
                 "schema": {
                   "oneOf": [
                     {
-                      "$ref": "#/components/schemas/Sent"
+                      "$ref": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
                     },
                     {
                       "$ref": "#/components/schemas/Queued"
@@ -64,7 +64,7 @@
                   "discriminator": {
                     "propertyName": "state",
                     "mapping": {
-                      "sent": "#/components/schemas/Sent",
+                      "sent": "#/components/schemas/rozliczenia__centrum__contract__common__Sent",
                       "queued": "#/components/schemas/Queued",
                       "rejected": "#/components/schemas/Rejected"
                     }
@@ -1637,7 +1637,7 @@
                       "$ref": "#/components/schemas/ReportNotQueued"
                     },
                     {
-                      "$ref": "#/components/schemas/Sent"
+                      "$ref": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
                     },
                     {
                       "$ref": "#/components/schemas/Queued"
@@ -1652,7 +1652,7 @@
                       "ready": "#/components/schemas/ReportReady",
                       "waiting": "#/components/schemas/ReportWaiting",
                       "not_queued": "#/components/schemas/ReportNotQueued",
-                      "sent": "#/components/schemas/Sent",
+                      "sent": "#/components/schemas/rozliczenia__centrum__contract__common__Sent",
                       "queued": "#/components/schemas/Queued",
                       "rejected": "#/components/schemas/Rejected"
                     }
@@ -2975,6 +2975,90 @@
         }
       }
     },
+    "/api/settings/settlement-mail": {
+      "put": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Change Settlement Mail",
+        "description": "Temat i treść Maila z rozliczeniem naraz; działają od następnej wysyłki.",
+        "operationId": "changeSettlementMail",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementMailForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Choice"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings/settlement-mail/preview": {
+      "post": {
+        "tags": [
+          "ustawienia"
+        ],
+        "summary": "Preview Settlement Mail",
+        "description": "Mail z formularza dla pierwszego Wykonawcy z Listy (bez Wykonawców: przykładowej nazwy) i ostatniego pełnego\nokresu, ze stopką Przypomnień o raporcie, bez zapisu i bez wysyłki; zła wartość to ta sama odmowa co przy\nzapisie, a Lista albo plik Przypomnień, których system nie daje teraz czytać, to odmowa o tym pliku, a nie\npodgląd z innym Wykonawcą albo bez stopki.",
+        "operationId": "previewSettlementMail",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettlementMailForm"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettlementMailPreview"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Zła wartość Ustawień Centrum z polem i zdaniem",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings/theme": {
       "put": {
         "tags": [
@@ -3298,6 +3382,196 @@
         }
       }
     },
+    "/api/settlement-mailing": {
+      "get": {
+        "tags": [
+          "wysylka-rozliczen"
+        ],
+        "summary": "View",
+        "operationId": "getSettlementMailing",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/MailingNotSet"
+                    },
+                    {
+                      "$ref": "#/components/schemas/MailingReady"
+                    }
+                  ],
+                  "title": "Response Getsettlementmailing",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "not_set": "#/components/schemas/MailingNotSet",
+                      "ready": "#/components/schemas/MailingReady"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settlement-mailing/{token}/preview": {
+      "post": {
+        "tags": [
+          "wysylka-rozliczen"
+        ],
+        "summary": "Previews",
+        "operationId": "previewSettlementMails",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailingChoice"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailPreviews"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settlement-mailing/{token}/send": {
+      "post": {
+        "tags": [
+          "wysylka-rozliczen"
+        ],
+        "summary": "Send",
+        "operationId": "sendSettlementMail",
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MailingSend"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MailingSent"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/shutdown": {
       "post": {
         "tags": [
@@ -3467,7 +3741,7 @@
                       "$ref": "#/components/schemas/ReportNotQueued"
                     },
                     {
-                      "$ref": "#/components/schemas/Sent"
+                      "$ref": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
                     },
                     {
                       "$ref": "#/components/schemas/Queued"
@@ -3483,7 +3757,7 @@
                       "ready": "#/components/schemas/ReportReady",
                       "waiting": "#/components/schemas/ReportWaiting",
                       "not_queued": "#/components/schemas/ReportNotQueued",
-                      "sent": "#/components/schemas/Sent",
+                      "sent": "#/components/schemas/rozliczenia__centrum__contract__common__Sent",
                       "queued": "#/components/schemas/Queued",
                       "rejected": "#/components/schemas/Rejected"
                     }
@@ -3839,6 +4113,8 @@
               "changeRemindersEnabled",
               "changeReminders",
               "previewReminder",
+              "changeSettlementMail",
+              "previewSettlementMail",
               "getSettingsHistory",
               "getQuantityDifferences",
               "markQuantityException",
@@ -3875,6 +4151,9 @@
               "startReportEntering",
               "getReportsView",
               "keepManualValue",
+              "getSettlementMailing",
+              "previewSettlementMails",
+              "sendSettlementMail",
               "decideRun",
               "diagnoseRun",
               "reportRun",
@@ -4142,6 +4421,28 @@
           "rule"
         ],
         "title": "ChangeRule"
+      },
+      "ChangedAfterSending": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "changed",
+            "title": "State"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "at"
+        ],
+        "title": "ChangedAfterSending",
+        "description": "Plik zmienił się po ostatnim mailu z nim (``at``): można go wysłać jeszcze raz."
       },
       "Choice": {
         "properties": {
@@ -4524,7 +4825,7 @@
           "state": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/Sent"
+                "$ref": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
               },
               {
                 "$ref": "#/components/schemas/Queued"
@@ -4547,7 +4848,7 @@
                 "read": "#/components/schemas/ReadByMaks",
                 "rejected": "#/components/schemas/Rejected",
                 "resolved": "#/components/schemas/Resolved",
-                "sent": "#/components/schemas/Sent"
+                "sent": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
               }
             }
           }
@@ -6619,6 +6920,361 @@
         "title": "LoggedOutcome",
         "description": "Wynik Uruchomienia procesu taki, jak niosą go Logi Uruchomienia: to, co karta pokazuje także po zamknięciu Centrum.\n\nZatrzymania i ostrzeżenia w trzech częściach, uwagi techniczne i podsumowanie. ``ending`` mówi, jak się\nskończyło (``Ending``).\n``next_action`` to akcja, którą Centrum proponuje po wyniku, a ``headline`` to tytuł banera wyniku; oba\nwylicza z wyniku jedna reguła (``runs.verdict``). ``stop_kind`` to Rodzaj Zatrzymania (``None`` bez\nZatrzymania), a ``stop_note`` zdanie pod tytułem Zatrzymania (``runs.stop_note``; ``None``: bez niego).\n``collective_file_prepared``: wynik przygotował Plik zbiorczy okresu, więc karta pokazuje pod nim\nUzupełnienie pliku zbiorczego (``run_view.ProcessView.collective_file_prepared``)."
       },
+      "MailPreview": {
+        "properties": {
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "to": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "To"
+          },
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "attachment": {
+            "type": "string",
+            "title": "Attachment"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "worker",
+          "to",
+          "subject",
+          "attachment",
+          "text"
+        ],
+        "title": "MailPreview",
+        "description": "Mail z rozliczeniem tak, jak go dostanie Wykonawca: adresaci, temat, nazwa pliku i treść ze stopką."
+      },
+      "MailPreviews": {
+        "properties": {
+          "mails": {
+            "items": {
+              "$ref": "#/components/schemas/MailPreview"
+            },
+            "type": "array",
+            "title": "Mails"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "mails"
+        ],
+        "title": "MailPreviews"
+      },
+      "MailboxReady": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "ready",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "MailboxReady"
+      },
+      "MailboxUnreadable": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "unreadable",
+            "title": "State"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "message"
+        ],
+        "title": "MailboxUnreadable",
+        "description": "Skrzynki raportów nie da się teraz przeczytać: ``message`` mówi dlaczego jednym zdaniem; wysyłka jest wyłączona."
+      },
+      "MailingChoice": {
+        "properties": {
+          "workers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Workers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "workers"
+        ],
+        "title": "MailingChoice",
+        "description": "Rozliczenia pracowników okresu, które tata zaznaczył, po nazwie Wykonawcy z nazwy pliku."
+      },
+      "MailingNotSet": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "not_set",
+            "title": "State"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "message"
+        ],
+        "title": "MailingNotSet",
+        "description": "Folder okresów nie jest wskazany albo go nie ma: ``message`` mówi, co zrobić."
+      },
+      "MailingPeriod": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "tuesday": {
+            "type": "string",
+            "format": "date",
+            "title": "Tuesday"
+          },
+          "monday": {
+            "type": "string",
+            "format": "date",
+            "title": "Monday"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "settled_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settled At"
+          },
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/MailingRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "token",
+          "tuesday",
+          "monday",
+          "label",
+          "settled_at",
+          "rows"
+        ],
+        "title": "MailingPeriod",
+        "description": "Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików i wiersze; ile poszło,\nstrona liczy ze stanów wierszy, bo zmienia je po każdym mailu wysyłki."
+      },
+      "MailingReady": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "ready",
+            "title": "State"
+          },
+          "mailbox": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/MailboxReady"
+              },
+              {
+                "$ref": "#/components/schemas/MailboxUnreadable"
+              }
+            ],
+            "title": "Mailbox",
+            "discriminator": {
+              "propertyName": "state",
+              "mapping": {
+                "ready": "#/components/schemas/MailboxReady",
+                "unreadable": "#/components/schemas/MailboxUnreadable"
+              }
+            }
+          },
+          "periods": {
+            "items": {
+              "$ref": "#/components/schemas/MailingPeriod"
+            },
+            "type": "array",
+            "title": "Periods"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "mailbox",
+          "periods"
+        ],
+        "title": "MailingReady",
+        "description": "Okresy z Rozliczeniami pracowników od najnowszego, najwyżej ostatnie ``MAILING_PERIODS``."
+      },
+      "MailingRow": {
+        "properties": {
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "file": {
+            "type": "string",
+            "title": "File"
+          },
+          "addresses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Addresses"
+          },
+          "state": {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/ToSend"
+              },
+              {
+                "$ref": "#/components/schemas/rozliczenia__centrum__contract__settlement_mailing__Sent"
+              },
+              {
+                "$ref": "#/components/schemas/SentByHand"
+              },
+              {
+                "$ref": "#/components/schemas/ChangedAfterSending"
+              },
+              {
+                "$ref": "#/components/schemas/NoAddress"
+              },
+              {
+                "$ref": "#/components/schemas/WithoutOrders"
+              },
+              {
+                "$ref": "#/components/schemas/NotListed"
+              },
+              {
+                "$ref": "#/components/schemas/NotSent"
+              },
+              {
+                "$ref": "#/components/schemas/Unknown"
+              }
+            ],
+            "title": "State",
+            "discriminator": {
+              "propertyName": "state",
+              "mapping": {
+                "changed": "#/components/schemas/ChangedAfterSending",
+                "no_address": "#/components/schemas/NoAddress",
+                "not_listed": "#/components/schemas/NotListed",
+                "not_sent": "#/components/schemas/NotSent",
+                "sent": "#/components/schemas/rozliczenia__centrum__contract__settlement_mailing__Sent",
+                "sent_by_hand": "#/components/schemas/SentByHand",
+                "to_send": "#/components/schemas/ToSend",
+                "unknown": "#/components/schemas/Unknown",
+                "without_orders": "#/components/schemas/WithoutOrders"
+              }
+            }
+          },
+          "sendable": {
+            "type": "boolean",
+            "title": "Sendable"
+          },
+          "preselected": {
+            "type": "boolean",
+            "title": "Preselected"
+          },
+          "resend": {
+            "type": "boolean",
+            "title": "Resend"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "worker",
+          "file",
+          "addresses",
+          "state",
+          "sendable",
+          "preselected",
+          "resend"
+        ],
+        "title": "MailingRow",
+        "description": "Rozliczenie pracownika okresu: nazwa Wykonawcy z nazwy pliku, nazwa pliku, adresy Wykonawcy z Listy Wykonawców i\nstan. ``sendable``: tata może je wysłać, ``preselected``: zaznaczone na start (do wysłania albo po porażce), a\n``resend``: wysyłka jest ponowną wysyłką zmienionego pliku."
+      },
+      "MailingSend": {
+        "properties": {
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "resend": {
+            "type": "boolean",
+            "title": "Resend"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "worker",
+          "resend"
+        ],
+        "title": "MailingSend",
+        "description": "Jeden Mail z rozliczeniem: Wykonawca z nazwy pliku i to, czy tata wysyła jeszcze raz zmieniony plik."
+      },
+      "MailingSent": {
+        "properties": {
+          "row": {
+            "$ref": "#/components/schemas/MailingRow"
+          },
+          "sent_now": {
+            "type": "boolean",
+            "title": "Sent Now"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "row",
+          "sent_now"
+        ],
+        "title": "MailingSent",
+        "description": "Wynik wysyłki: wiersz po niej i to, czy mail poszedł teraz (``False``: już był w „Wysłanych” albo nie wyszedł)."
+      },
       "Message": {
         "properties": {
           "what": {
@@ -6778,6 +7434,59 @@
         ],
         "title": "ModeStatistics",
         "description": "Statystyki jednego procesu w jednym trybie; bez ``percentiles`` poniżej minimum ukończonych obserwacji."
+      },
+      "NoAddress": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "no_address",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "NoAddress",
+        "description": "Wykonawca nie ma adresu w Liście Wykonawców."
+      },
+      "NotListed": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "not_listed",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "NotListed",
+        "description": "Nazwa pliku nie odpowiada żadnemu Wykonawcy z Listy Wykonawców: nie idzie."
+      },
+      "NotSent": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "not_sent",
+            "title": "State"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "message"
+        ],
+        "title": "NotSent",
+        "description": "Ostatnia próba wysyłki nie wyszła; ``message`` mówi dlaczego."
       },
       "NotSetPath": {
         "properties": {
@@ -9046,7 +9755,7 @@
           "state": {
             "oneOf": [
               {
-                "$ref": "#/components/schemas/Sent"
+                "$ref": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
               },
               {
                 "$ref": "#/components/schemas/Queued"
@@ -9069,7 +9778,7 @@
                 "read": "#/components/schemas/ReadByMaks",
                 "rejected": "#/components/schemas/Rejected",
                 "resolved": "#/components/schemas/Resolved",
-                "sent": "#/components/schemas/Sent"
+                "sent": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
               }
             }
           }
@@ -10059,7 +10768,7 @@
                     "$ref": "#/components/schemas/ReportNotQueued"
                   },
                   {
-                    "$ref": "#/components/schemas/Sent"
+                    "$ref": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
                   },
                   {
                     "$ref": "#/components/schemas/Queued"
@@ -10075,7 +10784,7 @@
                     "queued": "#/components/schemas/Queued",
                     "ready": "#/components/schemas/ReportReady",
                     "rejected": "#/components/schemas/Rejected",
-                    "sent": "#/components/schemas/Sent",
+                    "sent": "#/components/schemas/rozliczenia__centrum__contract__common__Sent",
                     "waiting": "#/components/schemas/ReportWaiting"
                   }
                 }
@@ -10393,21 +11102,27 @@
         "title": "RunSummary",
         "description": "Podsumowanie albo plan (DRY-RUN) procesu tak, jak pokazuje je karta Uruchomienia, bez danych klientów.\n\nLiczby wyniku, potem szczegóły: kafelki liczb (np. Zlecenia na dzień), pliki okresu i Rozliczenia\npracowników: plan po podglądzie, zapisane po uruchomieniu (``None``, gdy proces ich nie tworzy)."
       },
-      "Sent": {
+      "SentByHand": {
         "properties": {
           "state": {
             "type": "string",
-            "const": "sent",
+            "const": "sent_by_hand",
             "title": "State"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "state"
+          "state",
+          "at"
         ],
-        "title": "Sent",
-        "description": "Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później."
+        "title": "SentByHand",
+        "description": "Tata wysłał ten plik sam ze skrzynki raportów w chwili ``at`` i plik się od tego czasu nie zmienił."
       },
       "SentenceColumn": {
         "properties": {
@@ -10601,6 +11316,9 @@
           },
           "reminders": {
             "$ref": "#/components/schemas/RemindersSetting"
+          },
+          "settlement_mail": {
+            "$ref": "#/components/schemas/SettlementMailSetting"
           }
         },
         "additionalProperties": false,
@@ -10615,7 +11333,8 @@
           "inbox",
           "inbox_problem",
           "autostart",
-          "reminders"
+          "reminders",
+          "settlement_mail"
         ],
         "title": "Settings",
         "description": "Ustawienia Centrum naraz. Przy złym pliku Folderów i motywu (``folders_problem``) ścieżki i motyw to ostatnie\ndobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy pliku Folderów bez odczytu ``theme`` to ``None``:\nstrona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka\njest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum\nwidzi Foldery okresu wszystkich lat (``Załączniki``)."
@@ -10642,6 +11361,87 @@
         ],
         "title": "SettingsHistory",
         "description": "Historia Ustawień od najnowszej zmiany i liczba linii pliku, których nie dało się przeczytać."
+      },
+      "SettlementMailForm": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "text"
+        ],
+        "title": "SettlementMailForm",
+        "description": "Formularz sekcji Wysyłka rozliczeń: temat i treść z polami ``{okres}`` i ``{wykonawca}``."
+      },
+      "SettlementMailPreview": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "text"
+        ],
+        "title": "SettlementMailPreview",
+        "description": "Mail z formularza dla przykładowego Wykonawcy i ostatniego pełnego okresu, ze stopką Przypomnień o raporcie. Nic\nsię nie zapisuje ani nie wysyła."
+      },
+      "SettlementMailSetting": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "good",
+              "bad",
+              "unreadable"
+            ],
+            "title": "State"
+          },
+          "problem": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingProblem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "text",
+          "state",
+          "problem"
+        ],
+        "title": "SettlementMailSetting",
+        "description": "Temat i treść: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne) albo\n``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne)."
       },
       "SolvedCase": {
         "properties": {
@@ -10798,6 +11598,22 @@
         ],
         "title": "ThemeChange"
       },
+      "ToSend": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "to_send",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "ToSend",
+        "description": "Rozliczenie pracownika jeszcze nie poszło."
+      },
       "ToolUpdateFailed": {
         "properties": {
           "state": {
@@ -10828,7 +11644,7 @@
                 "$ref": "#/components/schemas/ReportNotQueued"
               },
               {
-                "$ref": "#/components/schemas/Sent"
+                "$ref": "#/components/schemas/rozliczenia__centrum__contract__common__Sent"
               },
               {
                 "$ref": "#/components/schemas/Queued"
@@ -10845,7 +11661,7 @@
                 "queued": "#/components/schemas/Queued",
                 "ready": "#/components/schemas/ReportReady",
                 "rejected": "#/components/schemas/Rejected",
-                "sent": "#/components/schemas/Sent",
+                "sent": "#/components/schemas/rozliczenia__centrum__contract__common__Sent",
                 "waiting": "#/components/schemas/ReportWaiting"
               }
             }
@@ -10971,6 +11787,22 @@
         ],
         "title": "ToolVersion",
         "description": "Wersja narzędzia, z której działa Centrum: skrót commitu i dzień, od którego narzędzie jest na tym commicie."
+      },
+      "Unknown": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "unknown",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "Unknown",
+        "description": "Skrzynki raportów nie dało się przeczytać, więc nie wiadomo, czy plik już poszedł."
       },
       "UnknownReportSender": {
         "properties": {
@@ -11114,7 +11946,8 @@
               "ustawienia",
               "powiadomienia",
               "uzupelnienie",
-              "raporty"
+              "raporty",
+              "wysylka"
             ],
             "title": "Page"
           },
@@ -11164,6 +11997,22 @@
         ],
         "title": "ViewTiming",
         "description": "Pomiar gotowego widoku z przeglądarki: same liczby i nazwy z kontraktu, bez adresów i treści.\n\n``ready_ms`` to czas do gotowej treści, ``fcp_ms`` pierwsze malowanie treści\n(tylko przy zimnym starcie), ``skeleton_ms`` czas widocznego szkieletu."
+      },
+      "WithoutOrders": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "without_orders",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "WithoutOrders",
+        "description": "Pusty Szablon pracownika: nie idzie."
       },
       "WithoutQuantityRead": {
         "properties": {
@@ -11522,6 +12371,44 @@
         "type": "object",
         "title": "WorkerSwitches",
         "description": "Przełącznik na karcie Wykonawcy, zapisany od razu: ``active`` (``False``: Nieaktywny Wykonawca) albo\n``reminders`` (Przypomnienia o raporcie); ``None`` zostawia przełącznik."
+      },
+      "rozliczenia__centrum__contract__common__Sent": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "sent",
+            "title": "State"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state"
+        ],
+        "title": "Sent",
+        "description": "Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później."
+      },
+      "rozliczenia__centrum__contract__settlement_mailing__Sent": {
+        "properties": {
+          "state": {
+            "type": "string",
+            "const": "sent",
+            "title": "State"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "state",
+          "at"
+        ],
+        "title": "Sent",
+        "description": "Centrum wysłało je w chwili ``at`` i plik się od tego czasu nie zmienił."
       }
     }
   }

@@ -62,6 +62,7 @@ from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings_router import settings_router
+from rozliczenia.centrum.settlement_mailing import SettlementMailing, settlement_mailing_router
 from rozliczenia.centrum.workers_router import workers_router
 from rozliczenia.centrum.quantity_differences import quantity_differences_router, with_exception_sentences
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles
@@ -85,7 +86,14 @@ from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.workbook_files import ByteSource
 from rozliczenia.worker_periods import WorkerPeriods
-from rozliczenia.worker_report_inbox import ImapConnect, ImapInbox, ReminderMailbox, WorkerReportInbox
+from rozliczenia.worker_report_inbox import (
+    ImapConnect,
+    ImapInbox,
+    ReminderMailbox,
+    SettlementMailbox,
+    SmtpConnect,
+    WorkerReportInbox,
+)
 from rozliczenia.wall_clock import dad_today, local_now
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
@@ -116,9 +124,11 @@ def create_app(
     now: Callable[[], datetime] = local_now,
     efenix_window: EfenixWindow | None = None,
     inbox_connect: ImapConnect | None = None,
+    inbox_smtp: SmtpConnect | None = None,
     worker_report_inbox: WorkerReportInbox | None = None,
     reminder_mailbox: ReminderMailbox | None = None,
     reminder_rhythm: ReminderRhythm | None = None,
+    settlement_mailbox: SettlementMailbox | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
     update_threads: Threading = threading,
 ) -> FastAPI:
@@ -140,7 +150,8 @@ def create_app(
     Trasy: bez ``/docs``, ``/redoc`` i ``/openapi.json``, bo kontrakt eksportuje ``tools/ci/export_openapi.py``, a
     Swagger ładowałby skrypty z sieci. Odmowy ``Host``/``Origin``, kolejność middleware i ``Server-Timing`` należą do
     straży HTTP (``http_guard``). Uporządkowanie INTERMAX (ADR 0019) i Wpisanie raportów (ADR 0028) mają własne karty
-    i routery startu poza okresami; widok Raportów pokazuje też wynik ostatniego sprawdzenia Przypomnień. Bez
+    i routery startu poza okresami; widok Raportów pokazuje też wynik ostatniego sprawdzenia Przypomnień. Wysyłka
+    rozliczeń (ADR 0040) wysyła Maile z rozliczeniem tą samą skrzynką raportów, z SMTP ``inbox_smtp`` (``None``: Gmail). Bez
     zbudowanego frontendu działa samo API.
     """
 
@@ -203,7 +214,11 @@ def create_app(
         release_changes=release_changes,
         release_origin=release_origin,
     )
-    inbox = ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
+    inbox = (
+        ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect)
+        if inbox_smtp is None
+        else ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect, smtp=inbox_smtp)
+    )
     sentences = with_legend_sentences(with_exception_sentences(history_sentences(settings, price_list), price_list), price_list)
     app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
     app.include_router(order_register_router(settings, platform))
@@ -286,6 +301,8 @@ def create_app(
     reminders = ReportReminders(
         work, settings, reminder_mailbox or inbox, files, reports, now
     )
+    mailing = SettlementMailing(work, settings, settlement_mailbox or inbox, files, now)
+    app.include_router(settlement_mailing_router(mailing))
     report_entering = ReportEnteringEntry(settings, catalog, configuration, parts, contexts, report_files, reminders.shown)
     rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)

@@ -921,3 +921,24 @@ okresu każdy folder, którego nazwa zaczyna się tak, jak podaje komunikat
 - Jeśli pojawi się komunikat „Nie można odczytać Pliku zbiorczego”, sprawdź, czy ten plik otwiera się w Excelu i jest zapisany jako `.xlsx`. Zamknij go i uruchom proces ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie.
 - Jeśli pojawi się informacja o braku szablonu, nie twórz pliku ręcznie z innego pracownika. Przekaż tę informację osobie utrzymującej narzędzie.
 - Jeśli plik pracownika ma już dane, narzędzie go nie nadpisze.
+
+## Wysyłka rozliczeń
+
+Po Przebiegu rozliczeń otwórz w menu `Wysyłka rozliczeń`. Tygodnie z Rozliczeniami pracowników stoją jeden pod drugim,
+najnowszy na górze. Tydzień, w którym coś czeka, ma kartę z pracownikami, ich adresami i stanem pliku; zaznaczeni są ci,
+którym rozliczenie jeszcze nie poszło. Kliknij `Wyślij N rozliczeń`, obejrzyj maile w okienku (strzałkami przechodzisz
+do następnego) i potwierdź: każdy pracownik dostaje osobny mail ze swoim plikiem, ze skrzynki raportów, na wszystkie
+swoje adresy z Listy Wykonawców. Przy każdym pracowniku pojawia się zielony znacznik, gdy jego mail poszedł, a pasek
+na górze karty rośnie. Gdy poszło wszystko, karta zwija się w jeden wiersz tygodnia.
+
+- Przełącznik w prawym górnym rogu: `Do wysłania` pokazuje tylko tygodnie, w których coś czeka, `Wszystkie okresy`
+  także wysłane. W wierszu tygodnia `kto i kiedy` pokazuje, komu i kiedy poszło.
+- Temat i treść maila zmieniasz w oknie `Ustawienia`, w sekcji `Wysyłka rozliczeń` (link `Temat i treść` u góry
+  strony); `{okres}` to dni tygodnia, a `{wykonawca}` imię i nazwisko pracownika. Stopka jest ta sama co w Przypomnieniach o raporcie.
+- Plik, który już poszedł, drugi raz nie pójdzie. Gdy po wysłaniu poprawisz plik, tydzień pyta „… ma poprawione
+  rozliczenie”: kliknij `Wyślij poprawione`. Gdy w tygodniu czekają też inne pliki, przy pracowniku stoi `Zmienione po
+  wysłaniu`: zaznacz go i wyślij razem z resztą.
+- `Nie wyszło`: powód stoi przy pracowniku; kliknij `Ponów` przy nim albo `Ponów` na dole karty.
+- `Brak adresu`: dopisz pracownikowi adres w sekcji `Wykonawcy`. `Bez zleceń`: pracownik nie miał w tym tygodniu
+  zleceń, więc plik nie idzie.
+- Plik otwarty w Excelu nie pójdzie: zapisz go, zamknij i wyślij jeszcze raz.

@@ -46,6 +46,8 @@ export const zApiTiming = z.object({
         'changeRemindersEnabled',
         'changeReminders',
         'previewReminder',
+        'changeSettlementMail',
+        'previewSettlementMail',
         'getSettingsHistory',
         'getQuantityDifferences',
         'markQuantityException',
@@ -82,6 +84,9 @@ export const zApiTiming = z.object({
         'startReportEntering',
         'getReportsView',
         'keepManualValue',
+        'getSettlementMailing',
+        'previewSettlementMails',
+        'sendSettlementMail',
         'decideRun',
         'diagnoseRun',
         'reportRun',
@@ -171,6 +176,16 @@ export const zCellSource = z.enum([
     'tata',
     'empty'
 ]);
+
+/**
+ * ChangedAfterSending
+ *
+ * Plik zmienił się po ostatnim mailu z nim (``at``): można go wysłać jeszcze raz.
+ */
+export const zChangedAfterSending = z.object({
+    state: z.literal('changed'),
+    at: z.iso.datetime()
+});
 
 /**
  * ClosedStep
@@ -703,6 +718,72 @@ export const zListedWorker = z.object({
 });
 
 /**
+ * MailPreview
+ *
+ * Mail z rozliczeniem tak, jak go dostanie Wykonawca: adresaci, temat, nazwa pliku i treść ze stopką.
+ */
+export const zMailPreview = z.object({
+    worker: z.string(),
+    to: z.array(z.string()),
+    subject: z.string(),
+    attachment: z.string(),
+    text: z.string()
+});
+
+/**
+ * MailPreviews
+ */
+export const zMailPreviews = z.object({
+    mails: z.array(zMailPreview)
+});
+
+/**
+ * MailboxReady
+ */
+export const zMailboxReady = z.object({
+    state: z.literal('ready')
+});
+
+/**
+ * MailboxUnreadable
+ *
+ * Skrzynki raportów nie da się teraz przeczytać: ``message`` mówi dlaczego jednym zdaniem; wysyłka jest wyłączona.
+ */
+export const zMailboxUnreadable = z.object({
+    state: z.literal('unreadable'),
+    message: z.string()
+});
+
+/**
+ * MailingChoice
+ *
+ * Rozliczenia pracowników okresu, które tata zaznaczył, po nazwie Wykonawcy z nazwy pliku.
+ */
+export const zMailingChoice = z.object({
+    workers: z.array(z.string())
+});
+
+/**
+ * MailingNotSet
+ *
+ * Folder okresów nie jest wskazany albo go nie ma: ``message`` mówi, co zrobić.
+ */
+export const zMailingNotSet = z.object({
+    state: z.literal('not_set'),
+    message: z.string()
+});
+
+/**
+ * MailingSend
+ *
+ * Jeden Mail z rozliczeniem: Wykonawca z nazwy pliku i to, czy tata wysyła jeszcze raz zmieniony plik.
+ */
+export const zMailingSend = z.object({
+    worker: z.string(),
+    resend: z.boolean()
+});
+
+/**
  * Message
  *
  * Komunikat w trzech częściach (Co się stało, Gdzie, Co zrobić) bez kodu; ``setting``: sekcja okna Ustawień
@@ -784,6 +865,34 @@ export const zMissingPath = z.object({
     state: z.literal('missing'),
     path: z.string(),
     name: z.string()
+});
+
+/**
+ * NoAddress
+ *
+ * Wykonawca nie ma adresu w Liście Wykonawców.
+ */
+export const zNoAddress = z.object({
+    state: z.literal('no_address')
+});
+
+/**
+ * NotListed
+ *
+ * Nazwa pliku nie odpowiada żadnemu Wykonawcy z Listy Wykonawców: nie idzie.
+ */
+export const zNotListed = z.object({
+    state: z.literal('not_listed')
+});
+
+/**
+ * NotSent
+ *
+ * Ostatnia próba wysyłki nie wyszła; ``message`` mówi dlaczego.
+ */
+export const zNotSent = z.object({
+    state: z.literal('not_sent'),
+    message: z.string()
 });
 
 /**
@@ -1981,52 +2090,13 @@ export const zRunSetup = z.object({
 });
 
 /**
- * Sent
+ * SentByHand
  *
- * Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później.
+ * Tata wysłał ten plik sam ze skrzynki raportów w chwili ``at`` i plik się od tego czasu nie zmienił.
  */
-export const zSent = z.object({
-    state: z.literal('sent')
-});
-
-/**
- * DadNoteNotification
- *
- * Powiadomienie o Uwadze taty, nazwanej jej tytułem.
- */
-export const zDadNoteNotification = z.object({
-    id: z.string(),
-    at: z.iso.datetime(),
-    unread: z.boolean(),
-    kind: z.literal('uwaga'),
-    title: z.string(),
-    state: z.discriminatedUnion('state', [
-        zSent,
-        zQueued,
-        zRejected,
-        zResolved,
-        zReadByMaks
-    ])
-});
-
-/**
- * ReportNotification
- *
- * Powiadomienie o Zgłoszeniu, nazwanym „Co się stało” jego Komunikatu, bez kodu.
- */
-export const zReportNotification = z.object({
-    id: z.string(),
-    at: z.iso.datetime(),
-    unread: z.boolean(),
-    kind: z.literal('zgloszenie'),
-    what: z.string(),
-    state: z.discriminatedUnion('state', [
-        zSent,
-        zQueued,
-        zRejected,
-        zResolved,
-        zReadByMaks
-    ])
+export const zSentByHand = z.object({
+    state: z.literal('sent_by_hand'),
+    at: z.iso.datetime()
 });
 
 /**
@@ -2276,6 +2346,44 @@ export const zSettingsHistory = z.object({
 });
 
 /**
+ * SettlementMailForm
+ *
+ * Formularz sekcji Wysyłka rozliczeń: temat i treść z polami ``{okres}`` i ``{wykonawca}``.
+ */
+export const zSettlementMailForm = z.object({
+    subject: z.string(),
+    text: z.string()
+});
+
+/**
+ * SettlementMailPreview
+ *
+ * Mail z formularza dla przykładowego Wykonawcy i ostatniego pełnego okresu, ze stopką Przypomnień o raporcie. Nic
+ * się nie zapisuje ani nie wysyła.
+ */
+export const zSettlementMailPreview = z.object({
+    subject: z.string(),
+    text: z.string()
+});
+
+/**
+ * SettlementMailSetting
+ *
+ * Temat i treść: ``good``, ``bad`` (zły plik: ``problem`` i ostatnie dobre wartości, a bez nich domyślne) albo
+ * ``unreadable`` (system nie daje teraz czytać pliku, wartości domyślne).
+ */
+export const zSettlementMailSetting = z.object({
+    subject: z.string(),
+    text: z.string(),
+    state: z.enum([
+        'good',
+        'bad',
+        'unreadable'
+    ]),
+    problem: zSettingProblem.nullable()
+});
+
+/**
  * SolvedCase
  *
  * Sprawa wysłana z tego komputera, którą Wydanie rozwiązuje: Uwaga taty nazwana tytułem, Zgłoszenie jego
@@ -2303,23 +2411,6 @@ export const zReleaseNotification = z.object({
     points: z.array(z.string()),
     solved: z.array(zSolvedCase),
     update_offered: z.boolean()
-});
-
-/**
- * Notifications
- *
- * Powiadomienia od najnowszego, liczba nieprzeczytanych (kropka na dzwonku) i Komunikat o pliku stanu, którego
- * Centrum nie może zapisać (``None``: wszystko zapisane).
- */
-export const zNotifications = z.object({
-    unread: z.int(),
-    items: z.array(z.union([
-        zDadNoteNotification,
-        zReportNotification,
-        zReleaseNotification,
-        zPricingNotification
-    ])),
-    message: zMessage.nullable()
 });
 
 /**
@@ -2421,29 +2512,12 @@ export const zThemeChange = z.object({
 });
 
 /**
- * ToolUpdateFailed
+ * ToSend
  *
- * Aktualizacja narzędzia się nie udała; narzędzie zostało w wersji sprzed kliknięcia.
- *
- * ``next_action`` ``retry``: tata klika „Zaktualizuj narzędzie” jeszcze raz (np. gdy wróci internet);
- * ``report``: sprawę przejmuje Maks. ``draft`` to Zgłoszenie z faktami dziennika tej aktualizacji, które
- * wyśle „Wyślij do Maksa”, a ``report`` jego stan. ``after_restart``: porażkę zastało to Centrum przy starcie, od
- * opiekuna ponownego startu (np. nowa wersja nie wystartowała), a nie z kliknięcia w tym Centrum.
+ * Rozliczenie pracownika jeszcze nie poszło.
  */
-export const zToolUpdateFailed = z.object({
-    state: z.literal('failed'),
-    message: zMessage,
-    next_action: z.enum(['retry', 'report']),
-    report: z.discriminatedUnion('state', [
-        zReportReady,
-        zReportWaiting,
-        zReportNotQueued,
-        zSent,
-        zQueued,
-        zRejected
-    ]),
-    draft: zReportDraft,
-    after_restart: z.boolean()
+export const zToSend = z.object({
+    state: z.literal('to_send')
 });
 
 /**
@@ -2518,6 +2592,15 @@ export const zConfiguration = z.object({
         'missing_key',
         'refused_key'
     ])
+});
+
+/**
+ * Unknown
+ *
+ * Skrzynki raportów nie dało się przeczytać, więc nie wiadomo, czy plik już poszedł.
+ */
+export const zUnknown = z.object({
+    state: z.literal('unknown')
 });
 
 /**
@@ -2607,12 +2690,22 @@ export const zViewTiming = z.object({
         'ustawienia',
         'powiadomienia',
         'uzupelnienie',
-        'raporty'
+        'raporty',
+        'wysylka'
     ]),
     ready_ms: z.int().gte(0).lte(600000),
     fcp_ms: z.int().gte(0).lte(600000).nullable(),
     skeleton_ms: z.int().gte(0).lte(600000),
     requests: z.array(zApiTiming).max(20)
+});
+
+/**
+ * WithoutOrders
+ *
+ * Pusty Szablon pracownika: nie idzie.
+ */
+export const zWithoutOrders = z.object({
+    state: z.literal('without_orders')
 });
 
 /**
@@ -2721,7 +2814,8 @@ export const zSettings = z.object({
     inbox: zInboxSetting,
     inbox_problem: zSettingProblem.nullable(),
     autostart: zAutostartSetting,
-    reminders: zRemindersSetting
+    reminders: zRemindersSetting,
+    settlement_mail: zSettlementMailSetting
 });
 
 /**
@@ -2848,84 +2942,6 @@ export const zLoggedOutcome = z.object({
 });
 
 /**
- * RunOutcome
- *
- * Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.
- *
- * ``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla
- * taty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).
- * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
- * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
- * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
- * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
- * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
- */
-export const zRunOutcome = z.object({
-    result: z.enum([
-        'OK',
-        'WYMAGA_SPRAWDZENIA',
-        'BLAD_KRYTYCZNY'
-    ]),
-    headline: z.string(),
-    ending: z.enum([
-        'finished',
-        'stop',
-        'declined',
-        'unexpected',
-        'after_engine'
-    ]),
-    next_action: z.enum([
-        'run',
-        'rerun',
-        'open_collective_file',
-        'open_worker_settlements_folder',
-        'open_order_register',
-        'open_reports_view'
-    ]),
-    stop_kind: z.enum([
-        'for_tata',
-        'for_maks',
-        'repeated',
-        'declined'
-    ]).nullable(),
-    stop_note: z.string().nullable(),
-    stops: z.array(zMessage),
-    warnings: z.array(zMessage),
-    technical_notes: z.array(z.string()),
-    summary: zRunSummary.nullable(),
-    collective_file_prepared: z.boolean(),
-    diagnosis: z.enum(['on_request', 'automatic']).nullable(),
-    report: z.discriminatedUnion('state', [
-        zReportReady,
-        zReportWaiting,
-        zReportNotQueued,
-        zSent,
-        zQueued,
-        zRejected
-    ]).nullable(),
-    files_unchanged: z.boolean(),
-    opens: z.enum(['order_register', 'collective_file']).nullable(),
-    order_notes: z.array(zOrderNotes).nullish(),
-    tone: z.enum([
-        'ok',
-        'needs_review',
-        'stopped',
-        'failed'
-    ]).readonly()
-});
-
-/**
- * RunFinished
- */
-export const zRunFinished = z.object({
-    state: z.literal('finished'),
-    run: zRunInfo,
-    progress: zProgress,
-    progress_stale: z.boolean(),
-    result: zRunOutcome
-});
-
-/**
  * RunRestored
  *
  * Karta zakończonego Uruchomienia z jego Logów Uruchomienia: nic, czego w nich nie ma.
@@ -2995,21 +3011,6 @@ export const zRunIdle = z.object({
 });
 
 /**
- * RunEvent
- *
- * Jedno zdarzenie strumienia SSE: kolejny numer i pełny widok bieżącego Uruchomienia procesu.
- */
-export const zRunEvent = z.object({
-    sequence: z.int(),
-    view: z.discriminatedUnion('state', [
-        zRunIdle,
-        zRunRunning,
-        zRunAwaitingDecision,
-        zRunFinished
-    ])
-});
-
-/**
  * WorkerSettlementRequest
  *
  * Którego Wykonawcy Rozliczenie pracownika otworzyć; ścieżkę wylicza serwer z Folderu okresu.
@@ -3056,6 +3057,267 @@ export const zWorkerSuggestions = z.object({
 export const zWorkerSwitches = z.object({
     active: z.boolean().nullish(),
     reminders: z.boolean().nullish()
+});
+
+/**
+ * Sent
+ *
+ * Skrzynka Zgłoszeń przyjęła wysyłkę taty, od razu albo gdy Kolejka wysyłki dostarczyła ją później.
+ */
+export const zRozliczeniaCentrumContractCommonSent = z.object({
+    state: z.literal('sent')
+});
+
+/**
+ * DadNoteNotification
+ *
+ * Powiadomienie o Uwadze taty, nazwanej jej tytułem.
+ */
+export const zDadNoteNotification = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    unread: z.boolean(),
+    kind: z.literal('uwaga'),
+    title: z.string(),
+    state: z.discriminatedUnion('state', [
+        zRozliczeniaCentrumContractCommonSent,
+        zQueued,
+        zRejected,
+        zResolved,
+        zReadByMaks
+    ])
+});
+
+/**
+ * ReportNotification
+ *
+ * Powiadomienie o Zgłoszeniu, nazwanym „Co się stało” jego Komunikatu, bez kodu.
+ */
+export const zReportNotification = z.object({
+    id: z.string(),
+    at: z.iso.datetime(),
+    unread: z.boolean(),
+    kind: z.literal('zgloszenie'),
+    what: z.string(),
+    state: z.discriminatedUnion('state', [
+        zRozliczeniaCentrumContractCommonSent,
+        zQueued,
+        zRejected,
+        zResolved,
+        zReadByMaks
+    ])
+});
+
+/**
+ * Notifications
+ *
+ * Powiadomienia od najnowszego, liczba nieprzeczytanych (kropka na dzwonku) i Komunikat o pliku stanu, którego
+ * Centrum nie może zapisać (``None``: wszystko zapisane).
+ */
+export const zNotifications = z.object({
+    unread: z.int(),
+    items: z.array(z.union([
+        zDadNoteNotification,
+        zReportNotification,
+        zReleaseNotification,
+        zPricingNotification
+    ])),
+    message: zMessage.nullable()
+});
+
+/**
+ * RunOutcome
+ *
+ * Wynik bieżącego Uruchomienia tej pracy Centrum: ``LoggedOutcome`` i to, czego Logi Uruchomienia nie niosą.
+ *
+ * ``diagnosis`` to Diagnoza, którą Centrum z niego proponuje (``None``: bez Zatrzymania i przy Zatrzymaniu „dla
+ * taty”), a ``report`` stan Zgłoszenia do Maksa tego problemu (``None``, gdy Centrum nie proponuje Diagnozy).
+ * ``files_unchanged``: Uruchomienie nie zmieniło plików taty (podgląd bez zapisu albo koniec przed
+ * Zapisywaniem), więc karta może to tacie powiedzieć. ``opens`` to plik taty, w którym jest poprawka
+ * Zatrzymania, a karta proponuje go otworzyć (``None``: żaden). ``order_notes``: zlecenia Wyceny w efenix, które
+ * zostały tacie, Zlecenia przekazane i Zlecenia rozliczone, po wyniku, z numerami zleceń i Wykonawcami, które karta pokazuje zamiast ostrzeżeń w
+ * trzech częściach (``None``: inny proces albo wynik bez podsumowania).
+ */
+export const zRunOutcome = z.object({
+    result: z.enum([
+        'OK',
+        'WYMAGA_SPRAWDZENIA',
+        'BLAD_KRYTYCZNY'
+    ]),
+    headline: z.string(),
+    ending: z.enum([
+        'finished',
+        'stop',
+        'declined',
+        'unexpected',
+        'after_engine'
+    ]),
+    next_action: z.enum([
+        'run',
+        'rerun',
+        'open_collective_file',
+        'open_worker_settlements_folder',
+        'open_order_register',
+        'open_reports_view'
+    ]),
+    stop_kind: z.enum([
+        'for_tata',
+        'for_maks',
+        'repeated',
+        'declined'
+    ]).nullable(),
+    stop_note: z.string().nullable(),
+    stops: z.array(zMessage),
+    warnings: z.array(zMessage),
+    technical_notes: z.array(z.string()),
+    summary: zRunSummary.nullable(),
+    collective_file_prepared: z.boolean(),
+    diagnosis: z.enum(['on_request', 'automatic']).nullable(),
+    report: z.discriminatedUnion('state', [
+        zReportReady,
+        zReportWaiting,
+        zReportNotQueued,
+        zRozliczeniaCentrumContractCommonSent,
+        zQueued,
+        zRejected
+    ]).nullable(),
+    files_unchanged: z.boolean(),
+    opens: z.enum(['order_register', 'collective_file']).nullable(),
+    order_notes: z.array(zOrderNotes).nullish(),
+    tone: z.enum([
+        'ok',
+        'needs_review',
+        'stopped',
+        'failed'
+    ]).readonly()
+});
+
+/**
+ * RunFinished
+ */
+export const zRunFinished = z.object({
+    state: z.literal('finished'),
+    run: zRunInfo,
+    progress: zProgress,
+    progress_stale: z.boolean(),
+    result: zRunOutcome
+});
+
+/**
+ * RunEvent
+ *
+ * Jedno zdarzenie strumienia SSE: kolejny numer i pełny widok bieżącego Uruchomienia procesu.
+ */
+export const zRunEvent = z.object({
+    sequence: z.int(),
+    view: z.discriminatedUnion('state', [
+        zRunIdle,
+        zRunRunning,
+        zRunAwaitingDecision,
+        zRunFinished
+    ])
+});
+
+/**
+ * ToolUpdateFailed
+ *
+ * Aktualizacja narzędzia się nie udała; narzędzie zostało w wersji sprzed kliknięcia.
+ *
+ * ``next_action`` ``retry``: tata klika „Zaktualizuj narzędzie” jeszcze raz (np. gdy wróci internet);
+ * ``report``: sprawę przejmuje Maks. ``draft`` to Zgłoszenie z faktami dziennika tej aktualizacji, które
+ * wyśle „Wyślij do Maksa”, a ``report`` jego stan. ``after_restart``: porażkę zastało to Centrum przy starcie, od
+ * opiekuna ponownego startu (np. nowa wersja nie wystartowała), a nie z kliknięcia w tym Centrum.
+ */
+export const zToolUpdateFailed = z.object({
+    state: z.literal('failed'),
+    message: zMessage,
+    next_action: z.enum(['retry', 'report']),
+    report: z.discriminatedUnion('state', [
+        zReportReady,
+        zReportWaiting,
+        zReportNotQueued,
+        zRozliczeniaCentrumContractCommonSent,
+        zQueued,
+        zRejected
+    ]),
+    draft: zReportDraft,
+    after_restart: z.boolean()
+});
+
+/**
+ * Sent
+ *
+ * Centrum wysłało je w chwili ``at`` i plik się od tego czasu nie zmienił.
+ */
+export const zRozliczeniaCentrumContractSettlementMailingSent = z.object({
+    state: z.literal('sent'),
+    at: z.iso.datetime()
+});
+
+/**
+ * MailingRow
+ *
+ * Rozliczenie pracownika okresu: nazwa Wykonawcy z nazwy pliku, nazwa pliku, adresy Wykonawcy z Listy Wykonawców i
+ * stan. ``sendable``: tata może je wysłać, ``preselected``: zaznaczone na start (do wysłania albo po porażce), a
+ * ``resend``: wysyłka jest ponowną wysyłką zmienionego pliku.
+ */
+export const zMailingRow = z.object({
+    worker: z.string(),
+    file: z.string(),
+    addresses: z.array(z.string()),
+    state: z.discriminatedUnion('state', [
+        zToSend,
+        zRozliczeniaCentrumContractSettlementMailingSent,
+        zSentByHand,
+        zChangedAfterSending,
+        zNoAddress,
+        zWithoutOrders,
+        zNotListed,
+        zNotSent,
+        zUnknown
+    ]),
+    sendable: z.boolean(),
+    preselected: z.boolean(),
+    resend: z.boolean()
+});
+
+/**
+ * MailingPeriod
+ *
+ * Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików i wiersze; ile poszło,
+ * strona liczy ze stanów wierszy, bo zmienia je po każdym mailu wysyłki.
+ */
+export const zMailingPeriod = z.object({
+    token: z.string(),
+    tuesday: z.iso.date(),
+    monday: z.iso.date(),
+    label: z.string(),
+    settled_at: z.iso.datetime().nullable(),
+    rows: z.array(zMailingRow)
+});
+
+/**
+ * MailingReady
+ *
+ * Okresy z Rozliczeniami pracowników od najnowszego, najwyżej ostatnie ``MAILING_PERIODS``.
+ */
+export const zMailingReady = z.object({
+    state: z.literal('ready'),
+    mailbox: z.discriminatedUnion('state', [
+        zMailboxReady,
+        zMailboxUnreadable
+    ]),
+    periods: z.array(zMailingPeriod)
+});
+
+/**
+ * MailingSent
+ *
+ * Wynik wysyłki: wiersz po niej i to, czy mail poszedł teraz (``False``: już był w „Wysłanych” albo nie wyszedł).
+ */
+export const zMailingSent = z.object({
+    row: zMailingRow,
+    sent_now: z.boolean()
 });
 
 /**
@@ -3227,7 +3489,7 @@ export const zRunOutcomeWritable = z.object({
         zReportReady,
         zReportWaiting,
         zReportNotQueued,
-        zSent,
+        zRozliczeniaCentrumContractCommonSent,
         zQueued,
         zRejected
     ]).nullable(),
@@ -3386,7 +3648,7 @@ export const zSendDadNoteBody = zDadNoteRequest;
  * Successful Response
  */
 export const zSendDadNoteResponse = z.discriminatedUnion('state', [
-    zSent,
+    zRozliczeniaCentrumContractCommonSent,
     zQueued,
     zRejected
 ]);
@@ -3674,7 +3936,7 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
     zReportReady,
     zReportWaiting,
     zReportNotQueued,
-    zSent,
+    zRozliczeniaCentrumContractCommonSent,
     zQueued,
     zRejected
 ]);
@@ -3911,6 +4173,20 @@ export const zPreviewReminderBody = zRemindersForm;
  */
 export const zPreviewReminderResponse = zReminderPreview;
 
+export const zChangeSettlementMailBody = zSettlementMailForm;
+
+/**
+ * Successful Response
+ */
+export const zChangeSettlementMailResponse = zChoice;
+
+export const zPreviewSettlementMailBody = zSettlementMailForm;
+
+/**
+ * Successful Response
+ */
+export const zPreviewSettlementMailResponse = zSettlementMailPreview;
+
 export const zChangeThemeBody = zThemeChange;
 
 /**
@@ -3973,6 +4249,38 @@ export const zSwitchWorkerPath = z.object({
 export const zSwitchWorkerResponse = zChoice;
 
 /**
+ * Response Getsettlementmailing
+ *
+ * Successful Response
+ */
+export const zGetSettlementMailingResponse = z.discriminatedUnion('state', [
+    zMailingNotSet,
+    zMailingReady
+]);
+
+export const zPreviewSettlementMailsBody = zMailingChoice;
+
+export const zPreviewSettlementMailsPath = z.object({
+    token: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zPreviewSettlementMailsResponse = zMailPreviews;
+
+export const zSendSettlementMailBody = zMailingSend;
+
+export const zSendSettlementMailPath = z.object({
+    token: z.string()
+});
+
+/**
+ * Successful Response
+ */
+export const zSendSettlementMailResponse = zMailingSent;
+
+/**
  * Successful Response
  */
 export const zCloseCentrumResponse = zClosing;
@@ -4012,7 +4320,7 @@ export const zReportToolUpdateResponse = z.discriminatedUnion('state', [
     zReportReady,
     zReportWaiting,
     zReportNotQueued,
-    zSent,
+    zRozliczeniaCentrumContractCommonSent,
     zQueued,
     zRejected
 ]);

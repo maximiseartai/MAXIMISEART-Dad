@@ -1469,6 +1469,21 @@ reminders_unknown_field [zdanie]
 reminders_without_since [zdanie]
   Włączone przypomnienia muszą mieć dzień wdrożenia. Wyłącz je i włącz jeszcze raz.
 
+settlement_mail_empty_subject [zdanie]
+  Wpisz temat maila z rozliczeniem.
+
+settlement_mail_subject_lines [zdanie]
+  Temat maila musi mieścić się w jednej linii.
+
+settlement_mail_report_word [zdanie]
+  Temat nie może mieć słowa „raport”: odpowiedź Wykonawcy Centrum wzięłoby za jego raport.
+
+settlement_mail_unknown_field [zdanie]
+  W temacie i treści mogą stać tylko pola {okres} i {wykonawca}, bez innych nawiasów klamrowych.
+
+settlement_mail_empty_text [zdanie]
+  Wpisz treść maila z rozliczeniem.
+
 autostart_unsupported [zdanie]
   Start razem z Windows działa tylko na komputerze z Windows.
 
@@ -1522,6 +1537,44 @@ rule_needs_component [zdanie]
 
 quantity_rules_problem [zdanie]
   Plik reguly-ilosci.yaml w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.
+
+=== Wysyłka rozliczeń (zdania) (src/rozliczenia/centrum/mailing_messages.py) ===
+
+mailbox_without_access [zdanie]
+  Centrum nie ma hasła do skrzynki raportów: wpisz je w Ustawieniach, w sekcji Skrzynka raportów. Do tego czasu wysyłka nie działa.
+
+mailbox_password_rejected [zdanie]
+  Skrzynka raportów odrzuciła hasło: wpisz nowe w Ustawieniach, w sekcji Skrzynka raportów. Do tego czasu wysyłka nie działa.
+
+mailbox_unreachable [zdanie]
+  Nie ma połączenia ze skrzynką raportów, więc nie wiadomo, co już poszło. Sprawdź internet i odśwież stronę.
+
+sent_unread [zdanie]
+  Nie dało się sprawdzić w skrzynce, czy to rozliczenie już poszło, więc Centrum go nie wysłało. Wyślij jeszcze raz.
+
+file_open_in_excel [zdanie]
+  Plik jest otwarty w Excelu. Zapisz go, zamknij i wyślij jeszcze raz.
+
+file_unreadable [zdanie]
+  Pliku nie dało się przeczytać. Sprawdź, czy jest w Folderze rozliczeń pracowników, i wyślij jeszcze raz.
+
+password_rejected [zdanie]
+  Skrzynka raportów odrzuciła hasło: wpisz nowe w Ustawieniach, w sekcji Skrzynka raportów i wyślij jeszcze raz.
+
+no_network [zdanie]
+  Nie ma połączenia ze skrzynką raportów. Sprawdź internet i wyślij jeszcze raz.
+
+mail_refused [zdanie]
+  Gmail nie przyjął maila. Sprawdź adresy Wykonawcy w Ustawieniach, w sekcji Wykonawcy, i wyślij jeszcze raz.
+
+worker_list_unusable [zdanie]
+  Listy Wykonawców nie da się teraz przeczytać, więc nie wiadomo, do kogo wysłać rozliczenia. Sprawdź ją w Ustawieniach.
+
+periods_directory_not_set [zdanie]
+  Wskaż folder okresów w Ustawieniach, w sekcji Foldery.
+
+periods_directory_missing [zdanie]
+  Folderu okresów nie ma już na dysku. Wskaż go jeszcze raz w Ustawieniach, w sekcji Foldery.
 
 === Odmowy Centrum rozliczeń (src/rozliczenia/centrum/refusal.py) ===
 
@@ -1635,6 +1688,9 @@ place_missing #4 [HTTP 404]
 
 worker_settlement_missing [HTTP 404]
   Rozliczenia pracownika Jan Testowy nie ma w okresie 08_14_09_2026.
+
+mailing_without_workers [HTTP 409]
+  Listy Wykonawców nie da się teraz przeczytać, więc nie wiadomo, do kogo wysłać rozliczenie. Sprawdź ją w Ustawieniach, w sekcji Wykonawcy.
 
 no_forwarding [HTTP 409]
   Przygotowanie pliku zbiorczego nie ma trybu z Przekazaniem do akceptacji.

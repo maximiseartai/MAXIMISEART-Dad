@@ -22,11 +22,14 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from urllib.parse import quote
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+import email
+import email.policy
 from pathlib import Path
 from types import ModuleType
 from typing import Any, Final, Literal, get_args
 import imaplib
+import smtplib
 
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
@@ -80,10 +83,12 @@ from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, EXCEPTIONS_FILE, QuantityException
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
+from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL_FILE
+from rozliczenia.centrum.mailing_messages import mail_refused, mailbox_unreachable, sent_unread
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
-from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
+from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxUnreachable, MailRefused, SentAttachment
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE, set_codes
@@ -112,6 +117,7 @@ from tests.fixtures.bez_dostepu import (
 from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.centrum import (
     CENTRUM,
+    FakeAutostart,
     FakeReportBox,
     TOOL_COMMIT,
     Centrum,
@@ -142,10 +148,10 @@ from tests.fixtures.tool_clone import tool_repository
 from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 from atrapy.pliki_taty import REGISTER_NAME
-from atrapy.settlement import PERIOD, CellValue, worker_list, write_quantity_source, write_source, write_worker_list
+from atrapy.settlement import PERIOD, CellValue, SourceRow, worker_list, write_quantity_source, write_source, write_source_rows, write_template, write_worker_list
 from atrapy.settlement import WORKERS as SETTLEMENT_WORKERS
 from atrapy.workbooks import active_worksheet, rewrite_parts
-from atrapy.skrzynka_raportow import AtrapaImap
+from atrapy.skrzynka_raportow import AtrapaImap, AtrapaSmtp, FakeMailbox
 from atrapy.preparation import (
     OLD_REGISTER_HEADERS,
     REGISTER_HEADERS,
@@ -314,6 +320,13 @@ ADR_0030_REMINDERS: dict[str, object] = {
 przypomnienie od 8:00 dnia następnego, pierwsze zdanie ze speca, bez stopki."""
 # Sekcja Przypomnienia bez pliku przypomnień: wartości z ADR 0030, wyłączone (DESIGN D2).
 NO_REMINDERS: dict[str, object] = {**ADR_0030_REMINDERS, "state": "good", "enabled": False, "since": None, "problem": None}
+DEFAULT_SETTLEMENT_MAIL: dict[str, object] = {
+    "state": "good",
+    "subject": "Rozliczenie za {okres}",
+    "text": "Dzień dobry,\nw załączniku rozliczenie za {okres}.",
+    "problem": None,
+}
+"""Temat i treść Maila z rozliczeniem bez pliku Ustawień (ADR 0040)."""
 """Skrzynka raportów bez pliku dostępu: bez adresu i bez hasła (#1469)."""
 
 
@@ -331,6 +344,7 @@ def test_brak_pliku_ustawien_znaczy_nie_ustawiono(tmp_path: Path) -> None:
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
         "reminders": NO_REMINDERS,
+        "settlement_mail": DEFAULT_SETTLEMENT_MAIL,
     }
 
 
@@ -402,6 +416,7 @@ def test_uszkodzony_plik_ustawien_bez_dobrej_tresci_to_zle_ustawienie_z_wartosci
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
         "reminders": NO_REMINDERS,
+        "settlement_mail": DEFAULT_SETTLEMENT_MAIL,
     }
 
 
@@ -452,6 +467,7 @@ def test_rejestr_zlecen_i_folder_okresow_w_folderze_bez_dostepu_sa_nieczytelne_a
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
             "reminders": NO_REMINDERS,
+            "settlement_mail": DEFAULT_SETTLEMENT_MAIL,
         },
     )
 
@@ -482,6 +498,7 @@ def test_niedostepny_plik_ustawien_nie_udaje_niewskazanych_sciezek(tmp_path: Pat
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
             "reminders": NO_REMINDERS,
+            "settlement_mail": DEFAULT_SETTLEMENT_MAIL,
         },
     )
 
@@ -513,6 +530,7 @@ def test_anulowane_okno_wyboru_przy_niedostepnym_pliku_ustawien_nie_udaje_niewsk
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
             "reminders": NO_REMINDERS,
+            "settlement_mail": DEFAULT_SETTLEMENT_MAIL,
         },
     )
 
@@ -608,6 +626,7 @@ def test_zmiana_motywu_nadpisuje_plik_ustawien_ktorego_tresci_nie_da_sie_uzyc(tm
         **NO_INBOX,
         "autostart": AUTOSTART_SHOWN_OFF,
         "reminders": NO_REMINDERS,
+        "settlement_mail": DEFAULT_SETTLEMENT_MAIL,
     }
 
 
@@ -3113,6 +3132,7 @@ def test_zla_tresc_pliku_po_dobrej_to_zle_ustawienie_z_ostatnia_dobra_wartoscia_
             **NO_INBOX,
             "autostart": AUTOSTART_SHOWN_OFF,
             "reminders": NO_REMINDERS,
+            "settlement_mail": DEFAULT_SETTLEMENT_MAIL,
         },
     )
     assert second.json() == first.json()
@@ -3621,9 +3641,13 @@ EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
 """Wyjątek Kontroli ilości, który tata oznaczył w świecie próbek, zanim przyszła próbka."""
 
 
+WORLD_SETTLEMENT_MAIL: Final = {"subject": "Rozliczenie taty za {okres}", "text": "Cześć {wykonawca}"}
+"""Temat i treść Maila z rozliczeniem, które tata zapisał w świecie próbek."""
+
+
 def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[str, str]:
     """Pliki Ustawień, które mają tata i Maks: skrzynka raportów z adresem, Legenda czynności taty bez pierwszego kodu z
-    Wydania i z usuniętym kodem w Historii, przypomnienia ze stopką taty, usunięta reguła i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
+    Wydania i z usuniętym kodem w Historii, przypomnienia ze stopką taty, temat i treść Maila z rozliczeniem taty, usunięta reguła i usunięty składnik w Historii, z których reguły i lista zostają jak z Wydania. Zwraca id usuniętej reguły i
     usuniętego składnika."""
 
     (tool.config / INBOX_ACCESS_FILE).write_bytes(f"{SKRZYNKA}\r\n{STARE_HASLO}\r\n".encode("utf-8-sig"))
@@ -3631,6 +3655,7 @@ def _files_of_dad_and_maks(client: CentrumClient, tool: ToolDirectory) -> tuple[
     code = client.post(LEGEND_URL, json=WORLD_CODE).json()["activity_legend"]["codes"][-1]["id"]
     client.delete(code_url(code))
     client.put("/api/settings/reminders", json=SIGNED_REMINDERS | {"footer": "Tata"})
+    client.put("/api/settings/settlement-mail", json=WORLD_SETTLEMENT_MAIL)
     rule = client.post(QUANTITY_RULES_URL, json=EDITED["A"]).json()["quantity_rules"]["rules"][-1]["id"]
     client.delete(f"{QUANTITY_RULES_URL}/{rule}")
     form: dict[str, object] = {"name": "ont x", "other_spellings": [], "group": None}
@@ -3753,6 +3778,8 @@ SETTINGS_WRITES: dict[str, SettingsRequest] = {
     "changeReminders": lambda w: ("PUT", "/api/settings/reminders", SIGNED_REMINDERS),
     "changeRemindersEnabled": lambda w: ("PUT", "/api/settings/reminders/enabled", {"enabled": True}),
     "previewReminder": lambda w: ("POST", "/api/settings/reminders/preview", SIGNED_REMINDERS),
+    "changeSettlementMail": lambda w: ("PUT", "/api/settings/settlement-mail", {"subject": "Plik za {okres}", "text": "Cześć"}),
+    "previewSettlementMail": lambda w: ("POST", "/api/settings/settlement-mail/preview", WORLD_SETTLEMENT_MAIL),
     "changeTheme": lambda w: ("PUT", "/api/settings/theme", {"theme": "dark"}),
     "addWorker": lambda w: ("POST", "/api/settings/workers", {"logins": ["ewa.znika"], "name": "Ewa", "addresses": []}),
     "changeWorker": lambda w: (
@@ -8157,3 +8184,402 @@ def test_tresc_pliku_ustawien_poza_bajtami_nie_przechodzi_mypy_a_znane_luki_prze
     przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_TEKSTU_USTAWIEN.items() if not any(odmowa in z for z in zgloszenia[opis])}
     assert przepuszczone == {}
     assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_BAJTOW_USTAWIEN}, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_BAJTOW_USTAWIEN)")
+
+
+# --- Wysyłka rozliczeń (ADR 0040): strona, wysyłka jednego Maila z rozliczeniem przez interfejs HTTP, temat i treść w
+# Ustawieniach. Skrzynka to ``FakeMailbox``, a jeden test idzie przez prawdziwy port do ``AtrapaImap`` i ``AtrapaSmtp``;
+# Rozliczenie pracownika z Wierszem danych ma Wykonawcę w ``WYKONAWCA``, a pusty Szablon pracownika to Wzorzec bez niego. --
+
+WYSYLKA_DZIEN = date(2026, 11, 16)
+STREFA_TATY = timezone(timedelta(hours=1))
+WYSYLKA_CHWILA = datetime(2026, 11, 16, 10, 0, tzinfo=STREFA_TATY)
+WYSYLKA_OKRES = "03_09_11_2026"
+WYSYLKA_STARSZY = "27_02_11_2026"
+WYSYLKA_ROZLICZONE = datetime(2026, 11, 10, 8, 41, tzinfo=STREFA_TATY)
+"""Chwila zmiany każdego Rozliczenia pracownika: przed każdym mailem testu."""
+WYSYLKA_SKRZYNKA = "raporty.taty@przyklad.invalid"
+WYSYLKA_HASLO = "abcdefghijklmnop"
+ADRES_ANNY = "anna@przyklad.invalid"
+ADRES_PRYWATNY_ANNY = "anna.prywatna@przyklad.invalid"
+ADRES_CELINY = "celina@przyklad.invalid"
+ADRES_DARII = "daria@przyklad.invalid"
+WYKONAWCY_WYSYLKI = (
+    WorkerEntry(["anna.testowa"], "Anna Łącka", [ADRES_ANNY, ADRES_PRYWATNY_ANNY]),
+    WorkerEntry(["bartek.fikcyjny"], "Bartek Fikcyjny"),
+    WorkerEntry(["celina.pusta"], "Celina Pusta", [ADRES_CELINY]),
+    WorkerEntry(["daria.nieaktywna"], "Daria Nieaktywna", [ADRES_DARII], active=False),
+)
+PLIKI_WYSYLKI: dict[str, dict[str, str | None]] = {
+    WYSYLKA_OKRES: {"Anna Łącka": "anna.testowa", "Bartek Fikcyjny": "bartek.fikcyjny", "Celina Pusta": None,
+             "Daria Nieaktywna": "daria.nieaktywna", "Ewa Spoza": "ewa.spoza"},
+    WYSYLKA_STARSZY: {"Anna Łącka": "anna.testowa", "Daria Nieaktywna": "daria.nieaktywna"},
+}
+"""Rozliczenia pracowników okresów: nazwa w pliku → Wykonawca w Wierszu danych (``None``: pusty Szablon)."""
+
+
+@dataclass
+class Wysylka:
+    client: CentrumClient
+    tool: ToolDirectory
+    periods: Path
+    mailbox: FakeMailbox
+
+    def file(self, token: str, worker: str) -> Path:
+        return PeriodFolder(self.periods, parse_period_token(token)).worker_settlement(worker)
+
+    def view(self) -> dict[str, Any]:
+        response = self.client.get("/api/settlement-mailing")
+        assert response.status_code == 200, response.text
+        found: dict[str, Any] = response.json()
+        return found
+
+    def rows(self, token: str) -> dict[str, dict[str, Any]]:
+        [period] = [found for found in self.view()["periods"] if found["token"] == token]
+        return {row["worker"]: row for row in period["rows"]}
+
+    def send(self, worker: str, *, resend: bool = False, token: str = WYSYLKA_OKRES) -> dict[str, Any]:
+        response = self.client.post(f"/api/settlement-mailing/{token}/send", json={"worker": worker, "resend": resend})
+        assert response.status_code == 200, response.text
+        found: dict[str, Any] = response.json()
+        return found
+
+    def log(self) -> str:
+        path = self.tool.log_path
+        return path.read_text(encoding="utf-8") if path.exists() else ""
+
+
+def wysylka_centrum(tmp_path: Path, mailbox: FakeMailbox | None = None, **app: Any) -> Wysylka:
+    """Centrum z folderem okresów, w którym leżą Rozliczenia pracowników ``PLIKI_WYSYLKI``, i Listą Wykonawców ``WYKONAWCY_WYSYLKI``."""
+
+    tool = ToolDirectory(tmp_path)
+    workers = WorkerList.of(WYKONAWCY_WYSYLKI)
+    assert isinstance(workers, WorkerList)
+    write_worker_list(tool.worker_list, workers)
+    periods = tmp_path / "INEA"
+    for token, files in PLIKI_WYSYLKI.items():
+        folder = PeriodFolder(periods, parse_period_token(token))
+        folder.worker_settlements.mkdir(parents=True)
+        for name, login in files.items():
+            path = folder.worker_settlement(name)
+            if login is None:
+                write_template(path)
+            else:
+                write_source_rows(path, [SourceRow("Miasto", "ul. Syntetyczna 1", login, "40000001")])
+            os.utime(path, (WYSYLKA_ROZLICZONE.timestamp(), WYSYLKA_ROZLICZONE.timestamp()))
+    platform = FakePlatform(chosen_folders=[periods])
+    box = mailbox if mailbox is not None else FakeMailbox()
+    built = centrum_app(
+        tool,
+        platform=platform,
+        autostart=FakeAutostart(tmp_path / "autostart"),
+        today=WYSYLKA_DZIEN,
+        now=lambda: WYSYLKA_CHWILA,
+        settlement_mailbox=app.pop("settlement_mailbox", box),
+        **app,
+    )
+    client = CentrumClient(built)
+    assert client.post("/api/settings/periods-directory/choose").status_code == 200
+    return Wysylka(client, tool, periods, box)
+
+
+def w_wyslanych(name: str, to: Sequence[str], at: datetime, *, by_centrum: bool = True) -> SentAttachment:
+    return SentAttachment(name, frozenset(SenderAddress(address) for address in to), at, by_centrum)
+
+
+def stany_wysylki(rows: Mapping[str, Mapping[str, Any]]) -> dict[str, tuple[str, bool, bool]]:
+    return {worker: (row["state"]["state"], row["sendable"], row["preselected"]) for worker, row in rows.items()}
+
+
+def test_strona_pokazuje_okresy_od_najnowszego_ze_stanem_kazdego_rozliczenia_pracownika(tmp_path: Path) -> None:
+    """Stany z ADR 0040: plik bez maila w „Wysłanych” jest do wysłania i zaznaczony, także Nieaktywnego Wykonawcy;
+    Wykonawca bez adresu, pusty Szablon i plik bez Wykonawcy z Listy nie idą; mail Centrum z plikiem to wysłane, a mail
+    bez znaku Centrum to wysłane ręcznie. Mail z plikiem na adres spoza Wykonawcy się nie liczy."""
+
+    older = f"Rozliczenie {WYSYLKA_STARSZY} - "
+    box = FakeMailbox(
+        attachments=[
+            w_wyslanych(f"{older}Anna Łącka.xlsx", [ADRES_ANNY], datetime(2026, 11, 11, 9, 0, tzinfo=STREFA_TATY)),
+            w_wyslanych(f"{older}Daria Nieaktywna.xlsx", [ADRES_DARII], datetime(2026, 11, 11, 9, 5, tzinfo=STREFA_TATY), by_centrum=False),
+            w_wyslanych(f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx", ["biuro@przyklad.invalid"], WYSYLKA_CHWILA - timedelta(hours=1)),
+        ]
+    )
+    app = wysylka_centrum(tmp_path, box)
+
+    view = app.view()
+
+    assert view["mailbox"] == {"state": "ready"}
+    assert [(period["token"], period["label"]) for period in view["periods"]] == [
+        (WYSYLKA_OKRES, "3–9 listopada 2026"),
+        (WYSYLKA_STARSZY, "27 października – 2 listopada 2026"),
+    ]
+    newest, oldest = view["periods"]
+    assert stany_wysylki({row["worker"]: row for row in newest["rows"]}) == {
+        "Anna Łącka": ("to_send", True, True),
+        "Bartek Fikcyjny": ("no_address", False, False),
+        "Celina Pusta": ("without_orders", False, False),
+        "Daria Nieaktywna": ("to_send", True, True),
+        "Ewa Spoza": ("not_listed", False, False),
+    }
+    assert [(row["state"]["state"], row["addresses"]) for row in oldest["rows"]] == [
+        ("sent", [ADRES_ANNY, ADRES_PRYWATNY_ANNY]),
+        ("sent_by_hand", [ADRES_DARII]),
+    ]
+    assert datetime.fromisoformat(newest["settled_at"]) == WYSYLKA_ROZLICZONE
+
+
+def test_wysylka_wysyla_plik_wykonawcy_na_wszystkie_jego_adresy_raz_a_ponowienie_niczego_nie_wysyla(tmp_path: Path) -> None:
+    """Mail ma temat i treść z Ustawień z polami, stopkę Przypomnień o raporcie i plik Wykonawcy pod jego nazwą; drugi
+    POST tego samego pliku (podwójne kliknięcie) mail zna i go nie wysyła. Dziennik Centrum ma tylko token okresu."""
+
+    app = wysylka_centrum(tmp_path)
+    assert app.client.put(
+        "/api/settings/settlement-mail", json={"subject": "Rozliczenie {wykonawca} za {okres}", "text": "Cześć,\nplik za {okres}."}
+    ).status_code == 200
+    reminders = app.client.get("/api/settings").json()["reminders"]
+    form = {key: reminders[key] for key in ("morning", "evening", "first", "text")} | {"footer": "Pozdrawiam\nTata\n"}
+    assert app.client.put("/api/settings/reminders", json=form).status_code == 200
+
+    first = app.send("Anna Łącka")
+    second = app.send("Anna Łącka")
+
+    [(mail, at)] = app.mailbox.mailed
+    assert at == WYSYLKA_CHWILA
+    assert mail.recipients == (SenderAddress(ADRES_ANNY), SenderAddress(ADRES_PRYWATNY_ANNY))
+    assert mail.subject == "Rozliczenie Anna Łącka za 3–9 listopada 2026"
+    assert mail.text == "Cześć,\nplik za 3–9 listopada 2026.\n\nPozdrawiam\nTata\n"
+    assert mail.name == f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"
+    assert mail.content == app.file(WYSYLKA_OKRES, "Anna Łącka").read_bytes()
+    assert (first["sent_now"], first["row"]["state"]) == (True, {"state": "sent", "at": "2026-11-16T09:00:00Z"})
+    assert (second["sent_now"], second["row"]["state"]["state"]) == (False, "sent")
+    log = app.log()
+    assert log.count(f"rozliczenie-wyslane okres={WYSYLKA_OKRES}") == 1
+    for secret in (ADRES_ANNY, "Anna", "Łącka", "Rozliczenie Anna", "plik za"):
+        assert secret not in log, secret
+
+
+def test_wysylka_odmawia_pliku_ktory_nie_idzie_bez_maila(tmp_path: Path) -> None:
+    """Wykonawca bez adresu, pusty Szablon i plik bez Wykonawcy z Listy wracają ze swoim stanem, bez maila."""
+
+    app = wysylka_centrum(tmp_path)
+
+    sent = [app.send(worker) for worker in ("Bartek Fikcyjny", "Celina Pusta", "Ewa Spoza")]
+
+    assert [(found["sent_now"], found["row"]["state"]["state"]) for found in sent] == [
+        (False, "no_address"),
+        (False, "without_orders"),
+        (False, "not_listed"),
+    ]
+    assert app.mailbox.mailed == []
+
+
+def test_plik_zmieniony_po_wysylce_idzie_drugi_raz_tylko_jako_ponowna_wysylka(tmp_path: Path) -> None:
+    """Plik zmieniony po ostatnim mailu z nim można wysłać jeszcze raz, ale nie jest zaznaczony, a wysyłka bez
+    ``resend`` go nie wysyła."""
+
+    name = f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"
+    mailed = datetime(2026, 11, 12, 9, 0, tzinfo=STREFA_TATY)
+    app = wysylka_centrum(tmp_path, FakeMailbox(attachments=[w_wyslanych(name, [ADRES_ANNY], mailed)]))
+    changed = mailed + timedelta(hours=3)
+    os.utime(app.file(WYSYLKA_OKRES, "Anna Łącka"), (changed.timestamp(), changed.timestamp()))
+
+    row = app.rows(WYSYLKA_OKRES)["Anna Łącka"]
+    without = app.send("Anna Łącka")
+    again = app.send("Anna Łącka", resend=True)
+
+    assert (row["state"], row["sendable"], row["preselected"], row["resend"]) == (
+        {"state": "changed", "at": "2026-11-12T08:00:00Z"}, True, False, True
+    )
+    assert (without["sent_now"], without["row"]["state"]["state"]) == (False, "changed")
+    assert (again["sent_now"], again["row"]["state"]["state"]) == (True, "sent")
+    assert [mail.name for mail, _ in app.mailbox.mailed] == [name]
+
+
+def test_plik_zmieniony_w_granicy_zegara_po_mailu_jest_dalej_wyslany(tmp_path: Path) -> None:
+    """Zegar laptopa i Gmaila różnią się o sekundy: zmiana pliku do 2 minut po mailu nie jest zmianą po wysłaniu."""
+
+    name = f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"
+    mailed = datetime(2026, 11, 12, 9, 0, tzinfo=STREFA_TATY)
+    app = wysylka_centrum(tmp_path, FakeMailbox(attachments=[w_wyslanych(name, [ADRES_ANNY], mailed)]))
+    near = mailed + timedelta(minutes=1)
+    os.utime(app.file(WYSYLKA_OKRES, "Anna Łącka"), (near.timestamp(), near.timestamp()))
+
+    assert app.rows(WYSYLKA_OKRES)["Anna Łącka"]["state"]["state"] == "sent"
+
+
+def test_skrzynka_bez_odczytu_wylacza_wysylke_i_mowi_o_tym_jednym_zdaniem(tmp_path: Path) -> None:
+    """Bez „Wysłanych” nie wiadomo, co już poszło: strona mówi o skrzynce, plik do wysłania ma stan nieznany, a
+    wysyłka nie idzie i mówi dlaczego."""
+
+    app = wysylka_centrum(tmp_path, FakeMailbox(attachments=InboxUnreachable("OSError")))
+
+    view = app.view()
+    sent = app.send("Anna Łącka")
+
+    assert view["mailbox"] == {"state": "unreadable", "message": mailbox_unreachable()}
+    rows = {row["worker"]: row for row in view["periods"][0]["rows"]}
+    assert stany_wysylki(rows)["Anna Łącka"] == ("unknown", False, False)
+    assert stany_wysylki(rows)["Bartek Fikcyjny"] == ("no_address", False, False)
+    assert (sent["sent_now"], sent["row"]["state"]) == (False, {"state": "not_sent", "message": sent_unread()})
+    assert app.mailbox.mailed == []
+    assert f"rozliczenie-niewyslane okres={WYSYLKA_OKRES} przyczyna=wyslane-bez-odczytu typ=OSError" in app.log()
+
+
+@pytest.mark.parametrize("file", [SETTLEMENT_MAIL_FILE, REMINDERS_FILE])
+def test_plik_tematu_albo_stopki_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila(tmp_path: Path, file: str) -> None:
+    """Temat i treść taty albo jego stopka, których system nie daje teraz czytać: strona, podgląd i wysyłka odmawiają
+    o tym pliku tym samym zdaniem, a mail z treścią z Wydania bez stopki taty nie idzie (#2029 W1 r1)."""
+
+    app = wysylka_centrum(tmp_path)
+    assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik taty za {okres}", "text": "Tekst taty"}).status_code == 200
+    reminders = app.client.get("/api/settings").json()["reminders"]
+    form = {key: reminders[key] for key in ("morning", "evening", "first", "text")} | {"footer": "Podpis taty"}
+    assert app.client.put("/api/settings/reminders", json=form).status_code == 200
+    choice = {"workers": ["Anna Łącka"]}
+
+    with without_reading(app.tool.config / file):
+        responses = [
+            app.client.get("/api/settlement-mailing"),
+            app.client.post(f"/api/settlement-mailing/{WYSYLKA_OKRES}/preview", json=choice),
+            app.client.post(f"/api/settlement-mailing/{WYSYLKA_OKRES}/send", json={"worker": "Anna Łącka", "resend": False}),
+        ]
+
+    refused = (409, {"message": refusal.settings_file_unreadable(file).message})
+    assert [(response.status_code, response.json()) for response in responses] == [refused] * 3
+    assert app.mailbox.mailed == []
+
+
+def test_porazka_wysylki_to_stan_nie_wyszlo_z_powodem_zaznaczony_do_ponowienia(tmp_path: Path) -> None:
+    """Gmail odmówił maila: wiersz mówi dlaczego i zostaje zaznaczony, a dziennik ma przyczynę bez adresu."""
+
+    app = wysylka_centrum(tmp_path, FakeMailbox(send_outcome=MailRefused("SMTPRecipientsRefused")))
+
+    sent = app.send("Anna Łącka")
+    row = app.rows(WYSYLKA_OKRES)["Anna Łącka"]
+
+    assert (sent["sent_now"], sent["row"]["state"]) == (False, {"state": "not_sent", "message": mail_refused()})
+    assert (row["state"]["state"], row["sendable"], row["preselected"]) == ("not_sent", True, True)
+    log = app.log()
+    assert f"rozliczenie-niewyslane okres={WYSYLKA_OKRES} przyczyna=odmowa-wysylki typ=SMTPRecipientsRefused" in log
+    assert ADRES_ANNY not in log
+
+
+def test_podglad_pokazuje_maile_zaznaczonych_plikow_tak_jak_je_dostana_wykonawcy(tmp_path: Path) -> None:
+    """Podgląd ma adresatów, temat, nazwę pliku i treść każdego zaznaczonego pliku z adresem, w kolejności zaznaczenia."""
+
+    app = wysylka_centrum(tmp_path)
+
+    response = app.client.post(
+        f"/api/settlement-mailing/{WYSYLKA_OKRES}/preview", json={"workers": ["Daria Nieaktywna", "Bartek Fikcyjny", "Anna Łącka"]}
+    )
+
+    assert response.status_code == 200
+    assert [(mail["worker"], mail["to"], mail["subject"], mail["attachment"]) for mail in response.json()["mails"]] == [
+        ("Daria Nieaktywna", [ADRES_DARII], "Rozliczenie za 3–9 listopada 2026", f"Rozliczenie {WYSYLKA_OKRES} - Daria Nieaktywna.xlsx"),
+        ("Anna Łącka", [ADRES_ANNY, ADRES_PRYWATNY_ANNY], "Rozliczenie za 3–9 listopada 2026", f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"),
+    ]
+    assert app.mailbox.mailed == []
+
+
+def test_wysylka_pliku_ktorego_nie_ma_w_okresie_to_odmowa_404(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path)
+
+    response = app.client.post(f"/api/settlement-mailing/{WYSYLKA_OKRES}/send", json={"worker": "../Anna Łącka", "resend": False})
+
+    assert response.status_code == 404
+    assert app.mailbox.mailed == []
+
+
+def test_mail_z_rozliczeniem_przez_smtp_trafia_do_wyslanych_i_strona_widzi_go_jako_wyslany(tmp_path: Path) -> None:
+    """Prawdziwy port: mail idzie przez SMTP skrzynki raportów z plikiem xlsx pod nazwą z polskimi literami, Gmail
+    (atrapa) kładzie go w „Wysłanych”, a następny odczyt strony bierze go z „Wysłanych” jako wysłany przez Centrum,
+    bez pobierania treści maili."""
+
+    (tmp_path / "config").mkdir(parents=True, exist_ok=True)
+    access = ToolDirectory(tmp_path).config / INBOX_ACCESS_FILE
+    access.parent.mkdir(parents=True, exist_ok=True)
+    access.write_text(f"{WYSYLKA_SKRZYNKA}\n{WYSYLKA_HASLO}\n", encoding="utf-8")
+    with AtrapaImap(address=WYSYLKA_SKRZYNKA, password=WYSYLKA_HASLO) as imap, AtrapaSmtp(imap) as smtp:
+        port = ImapInbox(
+            lambda: read_snapshot(ToolDirectory(tmp_path).config).inbox,
+            connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port),
+            smtp=lambda: smtplib.SMTP("127.0.0.1", smtp.port, timeout=10),
+        )
+        app = wysylka_centrum(tmp_path, settlement_mailbox=port)
+        sent = app.send("Anna Łącka")
+        row = app.rows(WYSYLKA_OKRES)["Anna Łącka"]
+        app.client.stop()
+
+    assert sent["sent_now"] is True
+    [(raw, recipients)] = smtp.received
+    message = email.message_from_bytes(raw, policy=email.policy.default)
+    [attachment] = list(message.iter_attachments())
+    assert recipients == (ADRES_ANNY, ADRES_PRYWATNY_ANNY)
+    assert attachment.get_content_type() == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    assert attachment.get_filename() == f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"
+    assert attachment.get_content() == app.file(WYSYLKA_OKRES, "Anna Łącka").read_bytes()
+    assert row["state"]["state"] == "sent"
+    fetches = [command for command in imap.commands if command.startswith("UID FETCH")]
+    assert fetches and not [command for command in fetches if "BODY.PEEK[]" in command or "BODY.PEEK[2]" in command]
+
+
+def test_temat_i_tresc_bez_pliku_maja_wartosci_domyslne_i_nie_zakladaja_pliku(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path)
+
+    setting = app.client.get("/api/settings").json()["settlement_mail"]
+
+    assert setting == {
+        "state": "good",
+        "subject": "Rozliczenie za {okres}",
+        "text": "Dzień dobry,\nw załączniku rozliczenie za {okres}.",
+        "problem": None,
+    }
+    assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
+
+
+@pytest.mark.parametrize(
+    ("form", "field", "sentence"),
+    [
+        pytest.param({"subject": "  "}, "temat", settings_messages.settlement_mail_empty_subject(), id="pusty-temat"),
+        pytest.param({"subject": "Rozliczenie\nza {okres}"}, "temat", settings_messages.settlement_mail_subject_lines(), id="dwie-linie"),
+        pytest.param({"subject": "Raport za {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="slowo-raport"),
+        pytest.param({"subject": "Twoje RAPORTY {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="raport-w-slowie"),
+        pytest.param({"subject": "Za {dzień}"}, "temat", settings_messages.settlement_mail_unknown_field(), id="nieznane-pole-tematu"),
+        pytest.param({"text": " \n"}, "tresc", settings_messages.settlement_mail_empty_text(), id="pusta-tresc"),
+        pytest.param({"text": "Plik {okres}}"}, "tresc", settings_messages.settlement_mail_unknown_field(), id="samotny-nawias"),
+    ],
+)
+def test_zly_temat_albo_tresc_jest_odrzucony_zdaniem_przy_polu_bez_zapisu_i_bez_podgladu(
+    tmp_path: Path, form: dict[str, str], field: str, sentence: str
+) -> None:
+    app = wysylka_centrum(tmp_path)
+    body = {"subject": "Rozliczenie za {okres}", "text": "Plik za {okres}."} | form
+
+    saved = app.client.put("/api/settings/settlement-mail", json=body)
+    preview = app.client.post("/api/settings/settlement-mail/preview", json=body)
+
+    assert [(response.status_code, response.json()) for response in (saved, preview)] == [
+        (422, {"message": sentence, "field": field})
+    ] * 2
+    assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
+
+
+def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tmp_path: Path) -> None:
+    """Zapis idzie do ``wysylka-rozliczen.yaml`` z wierszem Historii Ustawień; „Cofnij” przywraca poprzedni temat, a
+    podgląd pokazuje mail pierwszego Wykonawcy z Listy za ostatni pełny okres."""
+
+    app = wysylka_centrum(tmp_path)
+    form = {"subject": "Rozliczenie {wykonawca}, {okres}", "text": "Dzień dobry {wykonawca}"}
+
+    saved = app.client.put("/api/settings/settlement-mail", json=form)
+    preview = app.client.post("/api/settings/settlement-mail/preview", json=form).json()
+    [row] = [found for found in app.client.get("/api/settings/history").json()["rows"] if found["file"] == SETTLEMENT_MAIL_FILE]
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert saved.json()["settings"]["settlement_mail"] == {**form, "state": "good", "problem": None}
+    assert preview == {"subject": "Rozliczenie Anna Łącka, 3–9 listopada 2026", "text": "Dzień dobry Anna Łącka\n"}
+    assert [(change["key"], change["before"], change["after"]) for change in row["changes"]] == [
+        ("wysylka_rozliczen.temat", "Rozliczenie za {okres}", form["subject"]),
+        ("wysylka_rozliczen.tresc", "Dzień dobry,\nw załączniku rozliczenie za {okres}.", form["text"]),
+    ]
+    assert undone.json()["settings"]["settlement_mail"]["subject"] == "Rozliczenie za {okres}"
+    assert yaml.safe_load((app.tool.config / SETTLEMENT_MAIL_FILE).read_bytes())["temat"] == "Rozliczenie za {okres}"

@@ -18,6 +18,9 @@ serwera, ``skeleton`` porównuje z ``BODYSTRUCTURE`` i przy różnicy zwraca ``N
 ``fetch_responses`` czyta odpowiedź ``FETCH`` w postaci, w której oddaje ją ``imaplib`` (linie i pary z literałem), tylko
 w formach z RFC 3501: nawias, napis w cudzysłowie, literał, ``NIL`` i atom. Każda inna forma to ``UnknownReply``, a
 ``Structure.of`` daje ``None`` dla ``BODYSTRUCTURE`` w innym kształcie niż część albo ``multipart``.
+
+``attachment_sections`` podaje nagłówki części innych niż tekst, z których port czyta nazwy plików Maili z rozliczeniem
+w „Wysłanych” (ADR 0040), też bez ich treści.
 """
 
 from __future__ import annotations
@@ -32,7 +35,7 @@ import itertools
 import re
 from typing import Final
 
-__all__ = ["FetchValue", "Structure", "UnknownReply", "chosen", "fetch_responses", "sections", "skeleton"]
+__all__ = ["FetchValue", "Structure", "UnknownReply", "attachment_sections", "chosen", "fetch_responses", "sections", "skeleton"]
 
 FetchValue = bytes | None | list["FetchValue"]
 """Wartość z odpowiedzi ``FETCH``: napis albo literał (``bytes``), ``NIL`` (``None``) albo lista w nawiasie."""
@@ -188,6 +191,22 @@ def _sections(structure: Structure, prefix: str, with_plain: bool) -> Iterator[s
             yield name
         if part.multipart:
             yield from _sections(part, f"{name}.", with_plain)
+
+
+def attachment_sections(structure: Structure) -> tuple[str, ...]:
+    """Sekcje ``n.MIME`` nagłówków części maila ``multipart``, które nie są ani ``multipart``, ani tekstem (``TEXT``), w
+    kolejności części: tam stoi nazwa pliku załącznika. Mail z jedną częścią nie ma załącznika obok treści."""
+
+    return tuple(_attachment_sections(structure, "")) if structure.multipart else ()
+
+
+def _attachment_sections(structure: Structure, prefix: str) -> Iterator[str]:
+    for number, part in enumerate(structure.parts, start=1):
+        name = f"{prefix}{number}"
+        if part.multipart:
+            yield from _attachment_sections(part, f"{name}.")
+        elif not part.text:
+            yield f"{name}.MIME"
 
 
 def skeleton(structure: Structure, header: bytes, parts: Mapping[str, bytes]) -> bytes | None:

@@ -1,6 +1,6 @@
 """Interfejs HTTP Ustawień Centrum: odczyt wszystkich sekcji, zapis sekcji Foldery, wybór Rejestru zleceń i folderu
 okresów oknem wyboru, zmiana motywu, zmiana hasła skrzynki raportów z próbą logowania, przełącznik startu razem
-z Windows, Przypomnienia o raporcie z podglądem maila, Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma
+z Windows, Przypomnienia o raporcie i temat z treścią Maila z rozliczeniem z podglądem maila, Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma
 w żadnej odpowiedzi. Otwarcie Rejestru zleceń niczego w Ustawieniach nie zapisuje, więc ma własny router
 (``order_register_router``).
 
@@ -22,12 +22,13 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum.contract.quantity_rules import SentencePart
 from rozliczenia.centrum.contract import settings_reminders as reminders_contract
+from rozliczenia.centrum.contract import settlement_mailing as mailing_contract
 from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.settings import messages
 from rozliczenia.centrum.settings.autostart import Unsupported
-from rozliczenia.centrum.settings.files import Bad, FieldPath, FieldProblem, Good, Read, Unreadable
+from rozliczenia.centrum.settings.files import Bad, FieldPath, FieldProblem, Good, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import (
     ChangeFolders,
     ChangeTheme,
@@ -49,6 +50,7 @@ from rozliczenia.centrum.settings.owner import (
     SettingsView,
 )
 from rozliczenia.centrum.settings.reminders import (
+    REMINDERS,
     EVENING,
     FIRST,
     MORNING,
@@ -58,6 +60,10 @@ from rozliczenia.centrum.settings.reminders import (
     parse_time,
     settings_of,
 )
+from rozliczenia.centrum.settings.settlement_mail import settings_of as settlement_mail_of
+from rozliczenia.centrum.settings.workers import WORKERS
+from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL, SettlementMailSettings, mail_subject, mail_text
+from rozliczenia.settlement_period import last_complete_period
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
 from rozliczenia.worker_report_inbox import LoginResult
 from rozliczenia.worker_reports import (
@@ -69,6 +75,8 @@ from rozliczenia.worker_reports import (
     reminder_text,
 )
 
+_SAMPLE_WORKER = "Jan Kowalski"
+"""Wykonawca podglądu Maila z rozliczeniem, gdy Lista Wykonawców jest pusta."""
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
 _PERIODS_DIALOG = "Wybierz folder okresów (np. Załączniki albo INEA)"
@@ -170,6 +178,39 @@ def settings_router(
         day = today() - timedelta(days=1)
         return reminders_contract.ReminderPreview(subject=reminder_subject(day), text=reminder_text(day, read.text, read.footer))
 
+    @router.put("/settlement-mail", operation_id="changeSettlementMail", responses=_REFUSED)
+    def change_settlement_mail(form: mailing_contract.SettlementMailForm) -> settings_contract.Choice:
+        """Temat i treść Maila z rozliczeniem naraz; działają od następnej wysyłki."""
+
+        read = settlement_mail_of(form.subject, form.text)
+        if isinstance(read, FieldProblem):
+            raise refusal.setting_refused(read)
+        return choice(settings, settings.change_settlement_mail(read))
+
+    @router.post("/settlement-mail/preview", operation_id="previewSettlementMail", responses=_REFUSED)
+    def preview_settlement_mail(form: mailing_contract.SettlementMailForm) -> mailing_contract.SettlementMailPreview:
+        """Mail z formularza dla pierwszego Wykonawcy z Listy (bez Wykonawców: przykładowej nazwy) i ostatniego pełnego
+        okresu, ze stopką Przypomnień o raporcie, bez zapisu i bez wysyłki; zła wartość to ta sama odmowa co przy
+        zapisie, a Lista albo plik Przypomnień, których system nie daje teraz czytać, to odmowa o tym pliku, a nie
+        podgląd z innym Wykonawcą albo bez stopki."""
+
+        read = settlement_mail_of(form.subject, form.text)
+        if isinstance(read, FieldProblem):
+            raise refusal.setting_refused(read)
+        view = settings.view()
+        if isinstance(view.workers, Unreadable):
+            raise refusal.settings_file_unreadable(WORKERS.name)
+        if isinstance(view.reminders, Unreadable):
+            raise refusal.settings_file_unreadable(REMINDERS.name)
+        workers = usable(view.workers)
+        worker = workers.workers[0].name if workers is not None and workers.workers else _SAMPLE_WORKER
+        reminders = usable(view.reminders)
+        footer = "" if reminders is None else reminders.footer
+        period = last_complete_period(today())
+        return mailing_contract.SettlementMailPreview(
+            subject=mail_subject(read, period, worker), text=mail_text(read, period, worker, footer)
+        )
+
     @router.get("/history", operation_id="getSettingsHistory")
     def history() -> settings_contract.SettingsHistory:
         read = settings.history()
@@ -235,6 +276,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
     inbox_setting, inbox_problem = _describe_inbox(view.inbox)
     autostart = _describe_autostart(view.autostart)
     reminders = _reminders(view.reminders)
+    settlement_mail = _settlement_mail(view.settlement_mail)
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")
@@ -249,6 +291,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
                 inbox_problem=inbox_problem,
                 autostart=autostart,
                 reminders=reminders,
+                settlement_mail=settlement_mail,
             )
         case Good(value=folders):
             problem = None
@@ -266,6 +309,7 @@ def describe(view: SettingsView) -> settings_contract.Settings:
         inbox_problem=inbox_problem,
         autostart=autostart,
         reminders=reminders,
+        settlement_mail=settlement_mail,
     )
 
 
@@ -355,6 +399,23 @@ def _reminders(read: Read[ReminderSettings] | Unreadable) -> reminders_contract.
         text=found.text,
         footer=found.footer,
         problem=problem,
+    )
+
+
+def _settlement_mail(read: Read[SettlementMailSettings] | Unreadable) -> mailing_contract.SettlementMailSetting:
+    """Temat i treść Maila z rozliczeniem; przy złym pliku ostatnie dobre (bez nich domyślne) i zdanie o problemie."""
+
+    match read:
+        case Good(value=found):
+            state: Literal["good", "bad", "unreadable"] = "good"
+            problem = None
+        case Bad(problem=bad, usable=last):
+            state, found = "bad", last or DEFAULT_SETTLEMENT_MAIL
+            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
+        case Unreadable():
+            state, found, problem = "unreadable", DEFAULT_SETTLEMENT_MAIL, None
+    return mailing_contract.SettlementMailSetting(
+        state=state, subject=found.subject, text=found.text, problem=problem
     )
 
 

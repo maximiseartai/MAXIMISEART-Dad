@@ -44,6 +44,7 @@ from rozliczenia import preparation_messages as messages
 from rozliczenia.centrum import (
     diagnosis_messages,
     fill_messages,
+    mailing_messages,
     notification_messages,
     refusal,
     reminder_messages,
@@ -185,6 +186,11 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "reminders_empty_text": [settings_messages.reminders_empty_text],
             "reminders_unknown_field": [settings_messages.reminders_unknown_field],
             "reminders_without_since": [settings_messages.reminders_without_since],
+            "settlement_mail_empty_subject": [settings_messages.settlement_mail_empty_subject],
+            "settlement_mail_subject_lines": [settings_messages.settlement_mail_subject_lines],
+            "settlement_mail_report_word": [settings_messages.settlement_mail_report_word],
+            "settlement_mail_unknown_field": [settings_messages.settlement_mail_unknown_field],
+            "settlement_mail_empty_text": [settings_messages.settlement_mail_empty_text],
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
             "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],
@@ -225,6 +231,23 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
             ],
+        },
+    ),
+    "Wysyłka rozliczeń (zdania)": (
+        mailing_messages,
+        {
+            "mailbox_without_access": [mailing_messages.mailbox_without_access],
+            "mailbox_password_rejected": [mailing_messages.mailbox_password_rejected],
+            "mailbox_unreachable": [mailing_messages.mailbox_unreachable],
+            "sent_unread": [mailing_messages.sent_unread],
+            "file_open_in_excel": [mailing_messages.file_open_in_excel],
+            "file_unreadable": [mailing_messages.file_unreadable],
+            "password_rejected": [mailing_messages.password_rejected],
+            "no_network": [mailing_messages.no_network],
+            "mail_refused": [mailing_messages.mail_refused],
+            "worker_list_unusable": [mailing_messages.worker_list_unusable],
+            "periods_directory_not_set": [mailing_messages.periods_directory_not_set],
+            "periods_directory_missing": [mailing_messages.periods_directory_missing],
         },
     ),
 }
@@ -1051,6 +1074,7 @@ QUOTES_OUTSIDE_UI: Final = {
     "Diagnoza": "napis przycisku w drugiej gałęzi warunku (pages/runs/diagnosis.tsx), postaci, której test nie czyta; sprawdza przegląd",
     "instalacja ręczna": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
     "wizja": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
+    "raport": "słowo tematu Raportu wykonawcy (SUBJECT_WORD), nie napis UI",
 }
 
 

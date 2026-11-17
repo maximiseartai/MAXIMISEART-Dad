@@ -40,7 +40,7 @@ import yaml
 
 from drive import feature
 from drive.waiting import LATE_WRITE_MS, Budget, expect, quiet_for, until, while_open
-from harness import SLOW_RUNNER, File, Log, issue_file, report_box
+from harness import INBOX_ADDRESS, INBOX_PASSWORD, SLOW_RUNNER, File, Log, issue_file, report_box
 from atrapy.scenariusz_centrum import LAST_COMPLETE
 from atrapy.pliki_taty import QUEUE_DIRECTORY, RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.case_delivery import queue_directory
@@ -55,6 +55,7 @@ PAGES = {
     "okresy": "Okresy",
     "uruchomienia": "Uruchomienia",
     "raporty": "Raporty",
+    "wysylka": "Wysyłka rozliczeń",
     "metryki": "Metryki",
 }
 # Dad's computer runs on Polish time; dates in Centrum are shown in the browser's time zone.
@@ -603,6 +604,27 @@ def put_text(path: Path, text: str) -> None:
     written = path.with_name(f"{path.name}.zapis")
     written.write_text(text, encoding="utf-8")
     replace_file(written, path)
+
+
+@contextmanager
+def atrapa_inbox_access(run: Run, name: str) -> Iterator[None]:
+    """Harness: while the block lasts, the run's access file of the skrzynka raportów logs in to the served atrapa
+    skrzynka (Maks's access file, never Dad's Gmail); after it the file is as the block found it, removed when there was
+    none. Centrum writes the Historia Ustawień row and the memory of a file it did not write at its first read of that
+    file, so the block ends with that read (``api/<name>.json``): the feature leaves ``config`` at rest, and a later
+    feature that compares ``config`` with its own start (``aktualizacja``) finds it untouched (#2029 W2 r1)."""
+
+    access = run.config / "skrzynka-raportow.txt"
+    before = read_bytes(access) if access.exists() else None
+    put_bytes(access, f"{INBOX_ADDRESS}\r\n{INBOX_PASSWORD}\r\n".encode("utf-8-sig"))
+    try:
+        yield
+    finally:
+        if before is None:
+            remove(access)
+        else:
+            put_bytes(access, before)
+        run.api("/api/settings", name)
 
 
 def edit_issue(run: Run, number: int, **changes: object) -> None:

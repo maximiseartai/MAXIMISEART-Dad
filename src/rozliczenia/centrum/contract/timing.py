@@ -9,7 +9,7 @@ from pydantic import Field
 from rozliczenia.centrum.contract.common import Model
 
 
-PageId = Literal["okresy", "uruchomienia", "metryki", "ustawienia", "powiadomienia", "uzupelnienie", "raporty"]
+PageId = Literal["okresy", "uruchomienia", "metryki", "ustawienia", "powiadomienia", "uzupelnienie", "raporty", "wysylka"]
 """Strony Centrum (``frontend/src/pages.tsx``): z bocznego menu i widok Powiadomienia; identyfikator to adres ``#/<id>``
 strony. Okno Ustawień (``#/ustawienia/<sekcja>``) otwiera się nad stroną i mierzy się jak ona, pod identyfikatorem
 ``ustawienia``."""
@@ -38,6 +38,8 @@ ApiOperation = Literal[
     "changeRemindersEnabled",
     "changeReminders",
     "previewReminder",
+    "changeSettlementMail",
+    "previewSettlementMail",
     "getSettingsHistory",
     "getQuantityDifferences",
     "markQuantityException",
@@ -74,6 +76,9 @@ ApiOperation = Literal[
     "startReportEntering",
     "getReportsView",
     "keepManualValue",
+    "getSettlementMailing",
+    "previewSettlementMails",
+    "sendSettlementMail",
     "decideRun",
     "diagnoseRun",
     "reportRun",

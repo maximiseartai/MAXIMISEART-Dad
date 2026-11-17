@@ -19,6 +19,8 @@ import type {
   GetToolUpdateResponse,
   OpenRequest,
   RemindersForm,
+  SettlementMailForm,
+  GetSettlementMailingResponse,
   RunEvent,
   RunInfo,
   RunOutcome,
@@ -147,6 +149,36 @@ export function changeReminders(form: RemindersForm) {
 /** Przypomnienie z formularza za wczoraj, bez zapisu i bez wysyłki. */
 export function previewReminder(form: RemindersForm) {
   return call("previewReminder", { body: form })
+}
+
+/** Zapis tematu i treści Maila z rozliczeniem naraz; zły temat albo treść to odmowa z polem. */
+export function changeSettlementMail(form: SettlementMailForm) {
+  return call("changeSettlementMail", { body: form })
+}
+
+/** Mail z rozliczeniem z formularza dla pierwszego Wykonawcy z Listy, bez zapisu i bez wysyłki. */
+export function previewSettlementMail(form: SettlementMailForm) {
+  return call("previewSettlementMail", { body: form })
+}
+
+/** Strona Wysyłka rozliczeń: okresy z Rozliczeniami pracowników i stan każdego (unia z kontraktu po `state`). */
+export type SettlementMailing = GetSettlementMailingResponse
+
+export function getSettlementMailing() {
+  return call("getSettlementMailing")
+}
+
+/** Maile z rozliczeniem zaznaczonych Wykonawców okresu tak, jak je dostaną, bez wysyłki. */
+export function previewSettlementMails(token: string, workers: string[]) {
+  return call("previewSettlementMails", { path: { token }, body: { workers } })
+}
+
+/**
+ * Jeden Mail z rozliczeniem; serwer przed nim sprawdza „Wysłane”, więc plik już wysłany i niezmieniony nie idzie drugi
+ * raz, a zmieniony idzie tylko z `resend`.
+ */
+export function sendSettlementMail(token: string, worker: string, resend: boolean) {
+  return call("sendSettlementMail", { path: { token }, body: { worker, resend } })
 }
 
 /** Zapis sekcji Foldery naraz: pełne ścieżki Rejestru zleceń i folderu okresów, `null` czyści ustawienie. */
