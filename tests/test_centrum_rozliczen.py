@@ -40,6 +40,7 @@ from hypothesis import strategies as st
 import yaml
 import pytest
 
+from rozliczenia.settlement_mailing import SettlementMailSettings
 from rozliczenia.settlement_period import last_complete_period, parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
 from rozliczenia.period_folder import PeriodFolder, PeriodFolderInaccessible, layout_root
@@ -60,7 +61,7 @@ from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, m
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
-from rozliczenia.centrum.settings.files import FieldPath
+from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Remembered, settings_bytes
@@ -83,7 +84,7 @@ from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, EXCEPTIONS_FILE, QuantityException
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
-from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL_FILE
+from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL, SETTLEMENT_MAIL_FILE
 from rozliczenia.centrum.mailing_messages import mail_refused, mailbox_unreachable, sent_unread
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
@@ -8548,6 +8549,77 @@ def test_plik_tematu_albo_stopki_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki
     refused = (409, {"message": refusal.settings_file_unreadable(file).message})
     assert [(response.status_code, response.json()) for response in responses] == [refused] * 3
     assert app.mailbox.mailed == []
+
+
+TRESC_TATY = "Tekst taty dla {wykonawca}"
+TEMATY_ODRZUCONE_DZIS = [
+    pytest.param("Report {okres}", lambda: settings_messages.settlement_mail_reads_as_report(), id="odpowiedz-re-jak-raport"),
+    pytest.param("Rozliczenie raport {okres}", lambda: settings_messages.settlement_mail_report_word(), id="slowo-raport"),
+]
+"""Temat taty, którego dzisiejsza reguła nie przyjmuje, i zdanie tej reguły: odpowiedź ``Re:`` na ``Report 3–9 listopada
+2026`` skrzynka raportów wzięłaby za Raport wykonawcy, choć temat nie ma słowa „raport”."""
+
+
+def _plik_tematu_taty(tool: ToolDirectory, subject: str, *, przyjety: bool) -> None:
+    """Plik tematu i treści z tematem ``subject`` w bajtach ``SETTLEMENT_MAIL.dump``. ``przyjety``: pamięć właściciela
+    ma go jako ostatnią dobrą treść, jak po zapisie taty w wersji sprzed zaostrzenia reguły tematu; bez niej plik jest zły
+    już przy pierwszym odczycie (ręczna edycja)."""
+
+    data = SETTLEMENT_MAIL.dump(SettlementMailSettings(subject, TRESC_TATY))
+    (tool.config / MEMORY_DIRECTORY).mkdir(parents=True)
+    (tool.config / SETTLEMENT_MAIL_FILE).write_bytes(data)
+    if przyjety:
+        remembered = Remembered(seen=data, good=data)
+        (tool.config / MEMORY_DIRECTORY / f"{SETTLEMENT_MAIL_FILE}.json").write_bytes(remembered.model_dump_json(by_alias=True).encode("utf-8"))
+
+
+@pytest.mark.parametrize("przyjety", [False, True], ids=["bez-pamieci", "przyjety-przed-zaostrzeniem"])
+@pytest.mark.parametrize(("subject", "sentence"), TEMATY_ODRZUCONE_DZIS)
+def test_temat_taty_ktorego_regula_nie_przyjmuje_to_odmowa_strony_podgladu_i_wysylki_bez_maila(
+    tmp_path: Path, subject: str, sentence: Callable[[], str], przyjety: bool
+) -> None:
+    """Mail z rozliczeniem idzie z tematem i treścią taty albo wcale: bez wartości taty, którą przyjmuje dzisiejsza
+    reguła, strona, podgląd i wysyłka odmawiają jednym zdaniem o tym, co poprawić w Ustawieniach, zamiast wysłać temat i
+    treść z Wydania (#2074). Okno Ustawień pokazuje w polach temat i treść z pliku taty ze zdaniem jego reguły."""
+
+    _plik_tematu_taty(ToolDirectory(tmp_path), subject, przyjety=przyjety)
+    app = wysylka_centrum(tmp_path)
+
+    setting = app.client.get("/api/settings").json()["settlement_mail"]
+    responses = [
+        app.client.get("/api/settlement-mailing"),
+        app.client.post(f"/api/settlement-mailing/{WYSYLKA_OKRES}/preview", json={"workers": ["Anna Łącka"]}),
+        app.client.post(f"/api/settlement-mailing/{WYSYLKA_OKRES}/send", json={"worker": "Anna Łącka", "resend": False}),
+    ]
+
+    problem = {"field": "temat", "message": sentence()}
+    assert setting == {"state": "bad", "subject": subject, "text": TRESC_TATY, "problem": problem}
+    refused = refusal.settlement_mail_unusable(FieldProblem(FieldPath("temat"), sentence()))
+    assert [(response.status_code, response.json()) for response in responses] == [
+        (409, {"message": refused.message, "field": "temat"})
+    ] * 3
+    assert app.mailbox.mailed == []
+
+
+def test_ostatni_dobry_temat_taty_dalej_idzie_gdy_plik_ma_temat_ktorego_regula_nie_przyjmuje(tmp_path: Path) -> None:
+    """Zła treść pliku ma ostatnią dobrą wartość taty, którą dzisiejsza reguła przyjmuje: Mail z rozliczeniem idzie z
+    nią, a okno Ustawień pokazuje ją ze zdaniem o złej treści (ADR 0032)."""
+
+    app = wysylka_centrum(tmp_path)
+    assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik taty za {okres}", "text": "Cześć {wykonawca}"}).status_code == 200
+    (app.tool.config / SETTLEMENT_MAIL_FILE).write_bytes(SETTLEMENT_MAIL.dump(SettlementMailSettings("Report {okres}", TRESC_TATY)))
+
+    setting = app.client.get("/api/settings").json()["settlement_mail"]
+    sent = app.send("Anna Łącka")
+
+    assert setting == {
+        "state": "bad",
+        "subject": "Plik taty za {okres}",
+        "text": "Cześć {wykonawca}",
+        "problem": {"field": "temat", "message": settings_messages.settlement_mail_reads_as_report()},
+    }
+    [(mail, _)] = app.mailbox.mailed
+    assert (sent["sent_now"], mail.subject, mail.text) == (True, "Plik taty za 3–9 listopada 2026", "Cześć Anna Łącka\n")
 
 
 def test_porazka_wysylki_to_stan_nie_wyszlo_z_powodem_zaznaczony_do_ponowienia(tmp_path: Path) -> None:
