@@ -94,7 +94,8 @@ jako ``przekroczony_czas``, a do issue z dopiskiem, że noc nie dała jej werdyk
 Mutację, która przeżyła ostatni przebieg testów albo nie ma żadnego testu, sprawdza jeszcze brama typów
 (``silnik_mutacji.type_gate``): ruff i mypy obu systemów, kroki bramy pre-push. Mutację, która idzie do testów pliku,
 brama sprawdza przed nimi (linia z dopiskiem ``(przed testami pliku)``), bo trwa sekundy, a one minuty na wszystkich
-rdzeniach. Mutacja, po której któryś zgłasza, że kod jest
+rdzeniach; mutację linii samego cofnięcia fragmentu części dopiero po nich, bo ``_dominated`` potrzebuje jej wykrycia
+testem. Mutacja, po której któryś zgłasza, że kod jest
 błędny (niezdefiniowana nazwa, błąd składni, błąd typów), to ``WYKRYTA PRZEZ BRAMĘ TYPÓW`` z nazwą kroku i tym błędem, i
 nie trafia do zapisu ani do issue (``silnik_mutacji.wrong``). Cofnięcia fragmentu do bazy (``Mutant.revert``) brama nie
 sprawdza: przywraca ono kod, który przeszedł bramę, więc jej błąd na nim powstaje tylko z niezgodności z niecofniętymi
@@ -1381,6 +1382,8 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
     others = [entry for entry in narrow if entry[0].revert is not Revert.HUNK]
     reverts = [entry for entry in narrow if entry[0].revert is Revert.HUNK]
     killed: set[Mutant] = set()  # wykryte przez test, nie przez bramę typów
+    # Linie cofnięć fragmentu części: o tym, czy cofnięcie jest ``_dominated``, mówi wykrycie testem mutacji tych linii.
+    reverted = {(revert.path, line) for revert, _, _ in reverts for line in revert.lines}
     ran: list[tuple[Mutant, silnik_mutacji.Mutation, list[list[str]]]] = []
     let_through: set[Mutant] = set()  # mutacje, które brama typów przepuściła przed testami pliku
     middle = wide_count = dominated = ahead_count = 0
@@ -1430,8 +1433,9 @@ def _mutate(args: argparse.Namespace, outcome: Outcome, gate: silnik_mutacji.Gat
             queued, label = further, " (testy kodu pliku)"
         between = time.monotonic()
         # Brama typów trwa sekundy, a testy pliku minuty na wszystkich rdzeniach, więc mutację bez cofnięcia sprawdza
-        # przed nimi: tę, którą odrzuca, wyjęłaby z issue także po nich.
-        ahead = [(mutant, mutation) for mutant, mutation in wide if mutant.revert is Revert.NONE]
+        # przed nimi: tę, którą odrzuca, wyjęłaby z issue także po nich. Mutacja linii cofnięcia fragmentu biegnie z
+        # testami pliku najpierw, bo bez jej wykrycia testem cofnięcie nie jest ZDOMINOWANA i trafia do issue (#2064 r1).
+        ahead = [(mutant, mutation) for mutant, mutation in wide if mutant.revert is Revert.NONE and (mutant.path, mutant.line) not in reverted]
         if ahead:
             gated_ahead = silnik_mutacji.type_gate(
                 [mutation for _, mutation in ahead],

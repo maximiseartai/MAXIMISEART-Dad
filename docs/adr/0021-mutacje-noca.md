@@ -85,6 +85,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Przeżyta to mutacja, której nie wykrył ani test, ani brama typów (#703, zgoda Maksa w wątku T3 31.10).
   Mutację operatora (`True` → `False`, `<` → `<=`, `return x` → `return None`…), która przeżyła testy, sprawdzają jeszcze ruff i mypy obu systemów, te same kroki co brama pre-push (`tools/mutacje.py`, `type_gate`).
   Mutację, która idzie do testów pliku, brama sprawdza przed nimi, bo trwa sekundy, a testy pliku minuty na wszystkich rdzeniach: 17.11 brama wykryła 20 z 80 mutacji, które przeszły testy pliku albo przekroczyły w nich limit, więc ich testy pliku nic nie dały (linia z dopiskiem `(przed testami pliku)`).
+  Wyjątkiem jest mutacja linii samego cofnięcia fragmentu tej części: o tym, czy cofnięcie jest zdominowane, mówi jej wykrycie testem, a nie bramą, więc biegnie z testami pliku jak dotąd (#2064 r1; 17.11 dotyczyło to 1 z 16 mutacji, które brama złapała po testach pliku).
   Gdy któryś zgłasza, że kod jest błędny, mutacja jest `WYKRYTA PRZEZ BRAMĘ TYPÓW` i nie trafia do issue, bo takiego kodu nie wpuszczą brama pre-push ani zadanie CI „Ruff, mypy”.
   Za błąd kodu liczy się z ruff tylko niezdefiniowana nazwa (F821, F822, F823) i błąd składni, a z mypy każdy błąd typów poza pozostałościami (`unused-ignore`, `redundant-*`, `unreachable`, `no-any-return`), `mutacje.wrong`.
   Nieużyty import albo zmienna (F401, F841) się nie liczy, bo zostawia ją sama mutacja jednej linii.

@@ -229,7 +229,7 @@ def test_brama_typow_sprawdza_przezyte_mutacje_operatorow_a_cofniecie_do_bazy_tr
     assert caught == [
         "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/inny.py:2 `return 1` → `return None` → ruff: src/rozliczenia/inny.py:2: F821",
         "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:20 `return 1` → `return None` → mypy: src/rozliczenia/warunek.py:20: return-value",
-        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:23 `False` → `True` → mypy: src/rozliczenia/warunek.py:23: assignment (przed testami pliku)",
+        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:23 `False` → `True` → mypy: src/rozliczenia/warunek.py:23: assignment (testy pliku)",
     ], done.stdout
     assert re.search(r"\| brama typów \d+ s \(3 mutacji\)$", next(line for line in done.stdout.splitlines() if line.startswith("CZAS |"))), done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
@@ -433,6 +433,50 @@ def test_mutacja_ktora_tylko_spowalnia_test_ponad_limit_narzedzia_nie_jest_wykry
     written = json.loads(record.read_text(encoding="utf-8"))
     assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | przeżyło 0 | przekroczony czas 2 | "), written["wynik"]
     assert (written["przezyte"], sorted(_named(entry) for entry in written["przekroczony_czas"])) == ([], names)
+
+
+def test_brama_typow_przed_testami_pliku_sprawdza_mutacje_poza_liniami_cofniecia_fragmentu_a_przepuszczonej_nie_sprawdza_drugi_raz(
+    tmp_path: Path,
+) -> None:
+    """Test wywołuje funkcje bez asercji, więc mutacje ich linii idą do testów pliku. Cofnięcie każdej linii to kod innej
+    mutacji (``True`` → ``False``, krotka bez ``c``), więc żadna linia nie ma osobnego cofnięcia fragmentu, od którego
+    wykrycia testem zależałoby ``ZDOMINOWANA``: pozostałe mutacje brama sprawdza przed testami pliku, a tę, którą
+    przepuściła, testy pliku zostawiają przeżytą bez drugiej bramy."""
+
+    module = (
+        "import functools\n\n\n@functools.cache\ndef jest() -> bool:\n    return {}  # brama gdy None: mypy return-value\n\n\n"
+        "@functools.cache\ndef trzy(a: int, b: int, c: int) -> tuple[int, ...]:\n    return {}\n"
+    )
+    tests = "from rozliczenia.warunek import jest, trzy\n\n\ndef test_wywolania() -> None:\n    jest()\n    trzy(1, 2, 3)\n"
+
+    done = _run(_repo(tmp_path, tests, module.format("True", "(a, b, c)"), module.format("False", "(a, b)")), fake_gate=True)
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    verdicts = [(line.partition(" → ")[0], line.rpartition(" ")[2]) for line in done.stdout.splitlines() if line.startswith(("WYKRYTA", "NIEWYKRYTA"))]
+    assert sorted(verdicts) == [
+        ("NIEWYKRYTA: src/rozliczenia/warunek.py:11 krotka bez `b`", "pliku)"),
+        ("NIEWYKRYTA: src/rozliczenia/warunek.py:11 krotka bez `c`", "pliku)"),
+        ("NIEWYKRYTA: src/rozliczenia/warunek.py:6 `True`", "pliku)"),
+        ("WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:6 `return True`", "pliku)"),
+    ], done.stdout
+    assert "mypy: src/rozliczenia/warunek.py:6: return-value (przed testami pliku)" in done.stdout, done.stdout
+    assert re.search(r"\| brama typów \d+ s \(2 mutacji\)$", next(line for line in done.stdout.splitlines() if line.startswith("CZAS |"))), done.stdout
+
+
+def test_mutacja_linii_cofniecia_ktora_lapia_test_pliku_i_brama_zostawia_cofniecie_zdominowane(tmp_path: Path) -> None:
+    """Przegląd #2064 r1: brama przed testami pliku odebrałaby mutacji wykrycie testem, a bez niego cofnięcie fragmentu
+    nie jest ZDOMINOWANA i trafia do issue jako przeżyte. Mutację linii cofnięcia sprawdzają więc najpierw testy pliku."""
+
+    module = "import functools\n\n\n@functools.cache\ndef jeden() -> int:\n    return {}  # brama gdy None: mypy return-value\n"
+    tests = "from rozliczenia.warunek import jeden\n\n\ndef test_a() -> None:\n    jeden()\n\n\ndef test_b() -> None:\n    assert jeden() == 1\n"
+
+    done = _run(_repo(tmp_path, tests, module.format("1"), module.format("0 + 1")), fake_gate=True)
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert [line.rpartition(" → ")[0] for line in done.stdout.splitlines() if " → " in line and not line.startswith("CZAS")] == [
+        "WYKRYTA: src/rozliczenia/warunek.py:6 `return 1` → `return None`",
+        "ZDOMINOWANA: src/rozliczenia/warunek.py:6 zmiana linii 6 cofnięta do bazy",
+    ], done.stdout
 
 
 def test_mutacja_kodu_z_cache_po_przekroczonym_czasie_testow_linii_biegnie_od_razu_z_testami_pliku(tmp_path: Path) -> None:
