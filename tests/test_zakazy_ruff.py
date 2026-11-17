@@ -214,6 +214,50 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Mypy wyłączony na funkcji bez komentarza tłumienia, którego licznik tłumień nie widzi (przegląd #1689, W1).
     "import typing\n@typing.no_type_check\ndef f() -> int:\n    return '1'": (SRC_CONFIG, ("rozliczenia",), "typing.no_type_check"),
     "from typing_extensions import no_type_check as unchecked": (TESTS_CONFIG, (), "typing_extensions.no_type_check"),
+    # Treść z Wydania w miejscu pliku Ustawień bez odczytu: postacie z tabeli przypadków przy ZNANE_LUKI_TRESCI_Z_WYDANIA,
+    # pierwsza to mail z treścią z Wydania z przeglądu #2029 (r1, W1).
+    "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL",
+    ),
+    "from ..settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL",
+    ),
+    "from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES as rules": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.quantity_rules_file.DEFAULT_QUANTITY_RULES",
+    ),
+    "from rozliczenia import activity_legend_file\nlegend = activity_legend_file.DEFAULT_ACTIVITY_LEGEND": (
+        SRC_CONFIG,
+        ("rozliczenia",),
+        "rozliczenia.activity_legend_file.DEFAULT_ACTIVITY_LEGEND",
+    ),
+    "import rozliczenia.worker_reports as reports\nfooter = reports.DEFAULT_REMINDERS.footer": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.worker_reports.DEFAULT_REMINDERS",
+    ),
+    "from rozliczenia.worker_reports import DEFAULT_SCHEDULE": (SRC_CONFIG, ("rozliczenia",), "rozliczenia.worker_reports.DEFAULT_SCHEDULE"),
+    "from rozliczenia.worker_reports import DEFAULT_TEXT": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.worker_reports.DEFAULT_TEXT"),
+    "from ._reminders import DEFAULT_REMINDERS": (
+        SRC_CONFIG,
+        ("rozliczenia", "worker_reports"),
+        "rozliczenia.worker_reports._reminders.DEFAULT_REMINDERS",
+    ),
+    "from ._reminders import DEFAULT_SCHEDULE": (
+        SRC_CONFIG,
+        ("rozliczenia", "worker_reports"),
+        "rozliczenia.worker_reports._reminders.DEFAULT_SCHEDULE",
+    ),
+    "from rozliczenia.worker_reports._reminders import DEFAULT_TEXT": (
+        SRC_CONFIG,
+        ("rozliczenia",),
+        "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
+    ),
 }
 
 
@@ -362,6 +406,62 @@ def test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff(tmp_path: Path)
     assert_znane_luki(w_src | poza, "tests/test_zakazy_ruff.py (ZNANE_LUKI_SLEDZENIA)")
 
 
+ZNANE_LUKI_TRESCI_Z_WYDANIA = {
+    "zakaz zna tylko nazwy, nie treść wartości: literał w gałęzi unii (#2029 r1 W1)": (
+        "from rozliczenia.centrum.settings.owner import UnreadableFile\nfrom rozliczenia.worker_reports import ReminderSettings\n\n\n"
+        "def stopka(reminders: ReminderSettings | UnreadableFile) -> str:\n"
+        '    return "" if isinstance(reminders, UnreadableFile) else reminders.footer\n'
+    ),
+    "zakaz zna tylko nazwy, nie treść wartości: konstruktor z wartościami domyślnymi (#1931 r1 D2)": (
+        "from rozliczenia.centrum.settings.folders import FolderSettings\nfrom rozliczenia.centrum.settings.owner import UnreadableFile\n\n\n"
+        "def foldery(folders: FolderSettings | UnreadableFile) -> FolderSettings:\n"
+        "    return FolderSettings() if isinstance(folders, UnreadableFile) else folders\n"
+    ),
+    "zakaz zna tylko nazwy modułów, nie pola obiektu: pole widoku właściciela z treścią z Wydania": (
+        "from rozliczenia.centrum.settings.owner import CentrumSettings\nfrom rozliczenia.quantity_engine import QuantityRules\n\n\n"
+        "def reguly(settings: CentrumSettings) -> QuantityRules:\n    return settings.quantity_rules().rules\n"
+    ),
+    "zakaz zna tylko nazwy modułów, nie pola obiektu: wartość domyślna opisu pliku Ustawień": (
+        "from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL\n\nMAIL = SETTLEMENT_MAIL.default\n"
+    ),
+    "refleksja po nazwie: getattr modułu": (
+        'from rozliczenia import settlement_mailing\n\nMAIL = getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")\n'
+    ),
+    "ufa tłumieniu ruff: noqa na linii importu": (
+        "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL  # noqa: TID251 - próbka\n\nMAIL = DEFAULT_SETTLEMENT_MAIL\n"
+    ),
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
+    """Treść z Wydania pliku Ustawień (``DEFAULT_*``) czyta w ``src/`` tylko właściciel Ustawień i moduły z prawem
+    właściciela (``OWNERS``), bo każdy inny wołający, który ma w ręku plik bez odczytu, wstawia ją w miejsce pliku taty.
+
+    | Postać | Zakaz | Próbka |
+    |---|---|---|
+    | import z modułu: ``from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL`` (#2029 r1 W1) | łapie | ``SAMPLES`` |
+    | import względny: ``from ..settlement_mailing import DEFAULT_SETTLEMENT_MAIL`` | łapie | ``SAMPLES`` |
+    | import pod inną nazwą: ``… import DEFAULT_QUANTITY_RULES as rules`` | łapie | ``SAMPLES`` |
+    | atrybut zaimportowanego modułu: ``activity_legend_file.DEFAULT_ACTIVITY_LEGEND`` | łapie | ``SAMPLES`` |
+    | atrybut pakietu pod aliasem: ``reports.DEFAULT_REMINDERS.footer`` | łapie | ``SAMPLES`` |
+    | prywatny moduł pakietu: ``from ._reminders import DEFAULT_REMINDERS`` | łapie | ``SAMPLES`` |
+    | część treści Przypomnień: ``DEFAULT_SCHEDULE``, ``DEFAULT_TEXT`` | łapie | ``SAMPLES`` |
+    | literał w gałęzi unii: ``"" if isinstance(reminders, UnreadableFile) else …`` (#2029 r1 W1) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | konstruktor z wartościami domyślnymi: ``FolderSettings()`` (#1931 r1 D2) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | pole widoku właściciela z treścią z Wydania: ``settings.quantity_rules().rules`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | refleksja po nazwie: ``getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | ``# noqa: TID251`` na linii importu | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+
+    Poza ``src/`` zakaz nie obowiązuje: narzędzia w ``tools/`` liczą celowo treścią z Wydania."""
+    pliki = zapisz(ZNANE_LUKI_TRESCI_Z_WYDANIA, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py")
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_TRESCI_Z_WYDANIA)")
+
+
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
 # zakazów: kod właściciela zgłasza dokładnie swoje nazwy, gdy stoi poza zwolnieniem.
@@ -382,6 +482,27 @@ OWNERS: dict[str, frozenset[str]] = {
         {"rozliczenia.workbook_files.open_workbook", "rozliczenia.workbook_files.template_content"}
     ),
     "src/rozliczenia/centrum/opener.py": frozenset({"urllib.request.build_opener"}),
+    "src/rozliczenia/centrum/settings/activity_legend.py": frozenset({"rozliczenia.activity_legend_file.DEFAULT_ACTIVITY_LEGEND"}),
+    "src/rozliczenia/centrum/settings/quantity_rules.py": frozenset({"rozliczenia.quantity_rules_file.DEFAULT_QUANTITY_RULES"}),
+    "src/rozliczenia/centrum/settings/reminders.py": frozenset({"rozliczenia.worker_reports.DEFAULT_REMINDERS"}),
+    "src/rozliczenia/centrum/settings/settlement_mail.py": frozenset({"rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL"}),
+    "src/rozliczenia/centrum/settings_router.py": frozenset(
+        {"rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL", "rozliczenia.worker_reports.DEFAULT_REMINDERS"}
+    ),
+    "src/rozliczenia/centrum/report_reminders.py": frozenset({"rozliczenia.worker_reports.DEFAULT_REMINDERS"}),
+    "src/rozliczenia/engine.py": frozenset(
+        {"rozliczenia.activity_legend_file.DEFAULT_ACTIVITY_LEGEND", "rozliczenia.quantity_rules_file.DEFAULT_QUANTITY_RULES"}
+    ),
+    "src/rozliczenia/collective_preparation.py": frozenset(
+        {"rozliczenia.activity_legend_file.DEFAULT_ACTIVITY_LEGEND", "rozliczenia.quantity_rules_file.DEFAULT_QUANTITY_RULES"}
+    ),
+    "src/rozliczenia/worker_reports/__init__.py": frozenset(
+        {
+            "rozliczenia.worker_reports._reminders.DEFAULT_REMINDERS",
+            "rozliczenia.worker_reports._reminders.DEFAULT_SCHEDULE",
+            "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
+        }
+    ),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
