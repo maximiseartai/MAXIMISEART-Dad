@@ -42,6 +42,7 @@ ReminderFailure = Literal[
     "bez-ustawien",
     "bez-dostepu",
     "bez-adresow",
+    "pamiec-wpisania",
     "okresy",
     "intermax",
     "brak-sieci",

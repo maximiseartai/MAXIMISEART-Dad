@@ -206,6 +206,7 @@ STDLIB_ONLY = {
     "rozliczenia/worker_reports/_canonical.py": "postać kanoniczna maila w rdzeniu raportów (ADR 0028, #1161)",
     "rozliczenia/worker_reports/_reminders.py": "Przypomnienia o raporcie w rdzeniu raportów (ADR 0030, #1161)",
     "rozliczenia/worker_reports/_descriptions.py": "Błąd opisu we Wpisie w rdzeniu raportów (ADR 0039)",
+    "rozliczenia/worker_reports/_reading.py": "odczyt okna Raportów wykonawców w rdzeniu raportów (ADR 0041)",
     "rozliczenia/worker_reports/reasons.py": "zdania o problemach rdzenia raportów (ADR 0028, #1161)",
     "rozliczenia/report_cells.py": "rdzeń raportów zwraca zmiany komórek bez Excela (ADR 0028, #1161)",
     "rozliczenia/settlement_period.py": "rdzeń raportów liczy dni okresów zamkniętych bez zależności (ADR 0028, #1161)",

@@ -35,6 +35,7 @@ _VERDICTS = frozenset(verdict.value for verdict in Verdict)
 def worker_days(
     orders: Iterable[RegisterOrder],
     reports: Sequence[ReadReport],
+    sent: Iterable[tuple[date, Login]],
     problems: Iterable[ReportProblem],
     changes: Iterable[CellChange],
     moved: frozenset[OrderRow],
@@ -42,7 +43,10 @@ def worker_days(
     added: Iterable[tuple[OrderKey, OrderDetail]],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
-    zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał.
+    zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał, a ``mails``
+    Raporty wykonawców za ten dzień (``sent``: dzień i Wykonawca raz na Raport i dzień, za który jest przysłany,
+    przy pomylonym temacie dzień zleceń, ADR 0041). Dzień z tematu Raportu wykonawcy (``reports``) ma swoje liczby, także
+    gdy Raport liczy się za inny dzień, bo przy nim stoją problemy jego Wpisów.
 
     ``orders`` mają klucz po Przeniesieniach kliknięcia. Zlecenia dnia idą w kolejności z INTERMAX po zapisie: arkusze
     zleceń tak, jak przyszły w ``orders``, a w arkuszu od góry, a zlecenia przeniesione (``moved``) za pozostałymi,
@@ -58,14 +62,15 @@ def worker_days(
     days: defaultdict[tuple[date, Login], list[RegisterOrder]] = defaultdict(list)
     for order in sorted(found_orders, key=lambda order: (order.row in moved, sheets[order.row.sheet], order.row.row)):
         days[order.key.day, order.key.worker].append(order)
-    mails = Counter((report.day, report.worker) for report in reports)
+    mails = Counter(sent)
     reported = reached | {OrderKey(entry.number, report.day, report.worker) for report in reports for entry in report.entries}
     places = Counter(place for problem in problems if (place := _place(problem)) is not None)
     extra: defaultdict[tuple[date, Login], list[OrderDetail]] = defaultdict(list)
     for key, found in added:
         extra[key.day, key.worker].append(found)
     figures = []
-    for day, worker in sorted(days.keys() | mails.keys() | extra.keys()):
+    subjects = {(report.day, report.worker) for report in reports}
+    for day, worker in sorted(days.keys() | mails.keys() | subjects | extra.keys()):
         detail = (
             *(
                 OrderDetail(

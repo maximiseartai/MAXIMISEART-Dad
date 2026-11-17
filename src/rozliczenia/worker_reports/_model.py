@@ -766,8 +766,8 @@ class ManualDifference:
 @dataclass(frozen=True)
 class FaultyDescription:
     """Wpis ``tak`` zlecenia ``number`` od Wykonawcy ``worker`` z dnia ``day`` ma Błąd opisu (ADR 0039): jego czynności
-    nie są samymi Kodami czynności, z powodami ``problems`` (``ActivityLegend.read``). Wpis jest wpisany, a dzień
-    Wykonawcy liczy się dla Przypomnień o raporcie jako niewysłany, dopóki zlecenie nie dostanie poprawnego Wpisu."""
+    nie są samymi Kodami czynności, z powodami ``problems`` (``ActivityLegend.read``). Wpis jest wpisany, a raport jest
+    przysłany, więc za jego dzień nie idzie Przypomnienie o raporcie (ADR 0041)."""
 
     worker: Login
     day: date
