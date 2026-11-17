@@ -668,7 +668,10 @@ def test_raport_wolnym_tekstem_z_wpisem_tak_z_bledem_opisu_konczy_przypomnienia_
 
     entered = enter_reports(_reports(now, orders, mails, rollout=date(2026, 11, 12)))
 
-    assert [(type(problem), problem.day) for problem in entered.problems] == [(FaultyDescription, day_13)]
+    assert [(problem.number, problem.day) for problem in entered.problems if isinstance(problem, FaultyDescription)] == [
+        ("40012345", day_13)
+    ]
+    assert len(entered.problems) == 1
     assert _days(_due(now, orders, mails=mails, rollout=date(2026, 11, 12))) == [("jan.testowy", day_14)]
 
 
