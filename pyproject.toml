@@ -186,6 +186,12 @@ extend-select = [
 "src/rozliczenia/template_file.py" = ["TID251"]
 "src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard}.py" = ["TID251"]
 "src/rozliczenia/centrum/opener.py" = ["TID251"]
+# Treść z Wydania plików Ustawień: właściciel Ustawień (domyślne plików i okno Ustawień), pora Przypomnień sprzed pliku
+# (ADR 0030), wartości domyślne Uruchomienia silnika i pakiet Raportów pracowników, który ją wystawia.
+"src/rozliczenia/centrum/settings/{activity_legend,quantity_rules,reminders,settlement_mail}.py" = ["TID251"]
+"src/rozliczenia/centrum/{settings_router,report_reminders}.py" = ["TID251"]
+"src/rozliczenia/{engine,collective_preparation}.py" = ["TID251"]
+"src/rozliczenia/worker_reports/__init__.py" = ["TID251"]
 "tools/lib/import_dynamiczny.py" = ["TID251"]
 "tests/conftest.py" = ["TID251"]
 "tests/fixtures/linie_watkow.py" = ["TID251"]
