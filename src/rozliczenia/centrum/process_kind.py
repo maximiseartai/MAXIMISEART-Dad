@@ -66,7 +66,8 @@ Need = PathNeed | SettingNeed | Literal["period", "efenix_window", "worker_repor
 ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
 odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``SettingNeed``: Ustawienie ze startu, którym
 proces liczy, w polu ``Start`` o tej samej nazwie (``workers``: Lista Wykonawców, ``quantity_rules``: Reguły ilości,
-``activity_legend``: Legenda czynności), ``efenix_window``: okno efenix gospodarza
+``activity_legend``: Legenda czynności; skąd bierze je każdy gospodarz, mówi ``Start``), ``efenix_window``: okno
+efenix gospodarza
 (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
 
 
@@ -95,15 +96,16 @@ class Start:
     trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
     startu, z której Logi Uruchomienia biorą pliki procesu, a Diagnoza Zatrzymania pliki i Listę Wykonawców; ``None``:
     gospodarz bez Ustawień Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu
-    (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów Wpisania raportów,
-    a Przygotowania i Przebiegu rozliczeń plik ``wykonawcy.yaml`` folderu Konfiguracji); ``None``: proces
-    jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie (Centrum: migawka Ustawień z
+    (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista złożona z loginów Wpisów
+    w Logach Wpisania raportów, a Przygotowania i Przebiegu rozliczeń plik ``wykonawcy.yaml`` folderu Konfiguracji);
+    ``None``: proces jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie (Centrum: migawka Ustawień z
     chwili startu, ``None``, gdy pliku pary nie da się czytać; Skrypt dla maszyn: Reguły ilości z Wydania;
     odtworzenie: Reguły ilości z Logów, a z Logów sprzed ich zapisu z Wydania). ``activity_legend``: Legenda czynności
     tego Uruchomienia, z tych samych źródeł co ``quantity_rules`` (w Centrum ``None``, gdy pliku legendy nie da się
     czytać).
     Proces, który Ustawieniem ze startu nie liczy (bez jego ``SettingNeed`` w ``ProcessKind.needs``), dostaje je w
-    wejściu i w Logach jako ``None`` (rzut w ``Catalog.prepared``). ``warnings``: ostrzeżenia startu na
+    wejściu jako ``None`` (rzut w ``Catalog.prepared``), więc w jego Logach nie ma też jego Reguł ilości ani Legendy
+    czynności; samej Listy Wykonawców nie mają Logi żadnego procesu. ``warnings``: ostrzeżenia startu na
     kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla
     maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ``activity_legend``, ani ``warnings``
     nie mają wartości domyślnej, więc każdy gospodarz mówi, skąd je ma.
@@ -338,8 +340,8 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
     ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
     ``None``: proces bez Kontroli ilości. Proces, który liczy Ustawieniem ze startu (Listą Wykonawców, Regułami ilości,
-    Legendą czynności), ma jego ``SettingNeed`` w ``needs``, więc jego Uruchomienie ma je w Logach
-    (``PreparedRun.quantity_rules``, ``PreparedRun.activity_legend``), a odtworzenie z Logów liczy nimi.
+    Legendą czynności), ma jego ``SettingNeed`` w ``needs``; skąd biorą je gospodarze i co z nich trafia do wejścia
+    i do Logów, mówi ``Start``.
     """
 
     key: common_contract.ProcessKey
