@@ -75,7 +75,7 @@ Reguły szczebla i dowodu:
   „Bez mechanizmu” nie jest szczeblem.
 - Dowód wyrwania: mechanizm pada na pierwotnym błędzie (mutacja z `tools/mutacje.py` albo cofnięcie poprawki).
   Recenzent następnej rundy powtarza ten dowód i jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
-  Przy Ważnym z korzeniem R-PROZA-KOPIA autor przed kolejną rundą sam czyta z kodem każde zdanie diffu od merge-base na temat zdania z werdyktu, a nie tylko to zdanie, bo #2069 dostał trzy `FAIL` za kolejne zdania o tym, skąd gospodarze biorą Ustawienia ze startu, i przeszedł dopiero po przeczesaniu wszystkich.
+  Przy Ważnym z korzeniem R-PROZA-KOPIA regułę „Fix the class, not the instance” z `CODING_STANDARDS.md` autor stosuje do prozy: klasą jest każde zdanie diffu od merge-base na temat zdania z werdyktu, które przed kolejną rundą czyta z kodem (#2069: trzy `FAIL` za kolejne zdania o tym, skąd gospodarze biorą Ustawienia ze startu, `PASS` dopiero po przeczesaniu wszystkich).
 - Autor może zakwestionować kod korzenia z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy kodem w swoim werdykcie: punktem `Korzeń W<n> r<k>: R-KOD - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
   Rejestr korzeni i bramka korzenia biorą kod z ostatniego werdyktu, który dotyczy tego Ważnego.
 - Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
