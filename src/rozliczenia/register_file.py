@@ -65,6 +65,7 @@ from .raw_orders import SHIFT, CellFacts, OrderColumns, RowFacts, RowLook
 from .register_columns import (
     ACTIVITIES,
     ADDRESS,
+    CITY,
     COLUMNS,
     CONTRACT_NUMBER,
     DATE,
@@ -379,6 +380,7 @@ def _paste_area(
         activities=positions[ACTIVITIES],
         contract_number=positions[CONTRACT_NUMBER],
         address=positions[ADDRESS],
+        city=positions[CITY],
         number=positions[ORDER_NUMBER],
     )
     return PasteArea(sheet.name, part, columns, header, parts[part], values, file)

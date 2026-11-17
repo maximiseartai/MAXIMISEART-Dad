@@ -249,7 +249,7 @@ def _history(
     if base is None:
         return None
     try:
-        return {order.row: base.history(order.address, order.number) for order in orders}
+        return {order.row: base.history(order.address, order.city, order.number) for order in orders}
     except WorkbookError as error:
         warnings.append(messages.order_base_unusable(error))
         return None

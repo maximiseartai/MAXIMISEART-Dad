@@ -87,8 +87,7 @@ od 2021 roku: około 42 tys. wierszy, cztery arkusze, około 6,5 MB, w OneDrive.
   #2079). Uporządkowanie czyta tylko do odczytu Bazę zleceń z folderu INTERMAX
   i każdemu porządkowanemu zleceniu kopiuje od kolumny P, pierwszej za
   `UWAGI`, jego Historię adresu: co nią jest, także co to ten sam adres, mówi
-  hasło Historia adresu w `GLOSSARY.md`. Krótsza nazwa ulicy i miasto z tego
-  hasła wchodzą w #2081. Kontrola zapisu porównuje też te
+  hasło Historia adresu w `GLOSSARY.md`. Kontrola zapisu porównuje też te
   komórki i wypełnienie kolumny A z planem dnia, a `<dimension>` rośnie o
   najdalszą kolumnę Historii adresu. Bazy, której nie ma albo nie da się
   przeczytać, Uporządkowanie nie używa: dzień porządkuje bez Historii adresu z

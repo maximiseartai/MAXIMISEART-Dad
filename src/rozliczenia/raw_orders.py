@@ -84,8 +84,8 @@ class OrderColumns:
     """Kolumny arkusza zleceń (od 1) po nagłówkach z wiersza 1: kolumny zlecenia od ``first`` do ``last`` (UWAGI).
 
     ``devices``, ``activities`` i ``contract_number`` to ``URZĄDZENIA``, ``CZYNNOŚCI`` i ``NUMER UMOWY``, w których
-    staje Kolor operatora, a ``address`` i ``number`` to ``ADRES`` i ``NUMER ZL.``, po których Planowanie szuka
-    Historii adresu.
+    staje Kolor operatora, a ``address``, ``city`` i ``number`` to ``ADRES``, ``MIASTO`` i ``NUMER ZL.``, po których
+    Planowanie szuka Historii adresu.
     """
 
     first: int
@@ -96,6 +96,7 @@ class OrderColumns:
     activities: int
     contract_number: int
     address: int
+    city: int
     number: int
 
     @cached_property
@@ -203,8 +204,9 @@ class RawOrder:
 
     ``offset``: o tyle kolumn na lewo od swoich nagłówków stoją komórki wiersza (``SHIFT`` w przesuniętym pierwszym
     wierszu bloku, inaczej 0). ``operator`` to nazwa operatora z ``CZYNNOŚCI`` taka, jak z aplikacji, bez spacji na
-    brzegach (``None``: puste), a ``kind`` rodzaj zlecenia z ``URZĄDZENIA``. ``address`` i ``number`` to wartości
-    ``ADRES`` i ``NUMER ZL.`` (``None``: pusta komórka), po których Planowanie szuka Historii adresu.
+    brzegach (``None``: puste), a ``kind`` rodzaj zlecenia z ``URZĄDZENIA``. ``address``, ``city`` i ``number`` to
+    wartości ``ADRES``, ``MIASTO`` i ``NUMER ZL.`` (``None``: pusta komórka), po których Planowanie szuka Historii
+    adresu.
     """
 
     row: int
@@ -214,6 +216,7 @@ class RawOrder:
     operator: str | None
     kind: OrderKind
     address: object = field(repr=False)
+    city: object = field(repr=False)
     number: object = field(repr=False)
 
 
@@ -934,6 +937,7 @@ def _order(row: RowFacts, columns: OrderColumns, offset: int) -> RawOrder | Unda
         None if operator is None else str(operator).strip(),
         kind,
         address=row.value(columns.address - offset),
+        city=row.value(columns.city - offset),
         number=row.value(columns.number - offset),
     )
 
