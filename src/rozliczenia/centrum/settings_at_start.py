@@ -1,7 +1,7 @@
 """Ustawienia ze startu: Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, z chwili jego startu (ADR 0032).
 
 Proces mówi, którymi z nich liczy, potrzebą w ``ProcessKind.needs`` (``SettingNeed``), a nie osobną flagą na każde
-Ustawienie. Nazwa potrzeby to nazwa pola ``process_kind.Start`` i, poza ``workers``, pola ``SettingsSnapshot``, więc
+Ustawienie. Nazwa potrzeby to nazwa pola ``process_kind.Start`` i pola ``SettingsSnapshot``, więc
 sprawdzenie startu w ``Catalog.prepared`` (``missing``), rzut startu na proces (``not_counted``) i odmowa startu przy
 pliku bez odczytu (``unreadable``) to po jednej pętli po ``SettingNeed``.
 """
@@ -44,8 +44,7 @@ def unreadable(snapshot: SettingsSnapshot, needs: Collection[str]) -> Refusal | 
     daje teraz czytać, w kolejności ``SettingNeed``; ``None``, gdy każdy da się czytać."""
 
     for need in _SETTING_NEEDS:
-        value = getattr(snapshot, need)
-        if need in needs and isinstance(value, UnreadableFile):
+        if need in needs and isinstance(value := getattr(snapshot, need), UnreadableFile):
             return refusal.settings_file_unreadable(value.name)
     return None
 

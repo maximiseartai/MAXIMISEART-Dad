@@ -450,15 +450,15 @@ def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospoda
         CATALOG.prepared(kind.key, start, _ATRAPA, RunContext())
 
 
-def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_startu_a_poza_lista_wykonawcow_pole_migawki_ustawien() -> None:
+def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_startu_i_pole_migawki_ustawien() -> None:
     """Sprawdzenie startu i rzut na proces w ``Catalog.prepared`` czytają Ustawienie ze startu z pola ``Start``
     o nazwie jego potrzeby, a odmowa startu przy pliku bez odczytu z pola migawki Ustawień Centrum o tej nazwie
-    (``settings_at_start``), więc potrzeba bez takiego pola nie miałaby sprawdzenia ani odmowy."""
+    (``settings_at_start``), więc potrzeba bez takiego pola wywróciłaby start procesu, który nią liczy."""
 
     potrzeby = set(get_args(SettingNeed))
 
     assert potrzeby <= {pole.name for pole in dataclasses.fields(Start)}
-    assert potrzeby - {"workers"} <= {pole.name for pole in dataclasses.fields(SettingsSnapshot)}
+    assert potrzeby <= {pole.name for pole in dataclasses.fields(SettingsSnapshot)}
 
 
 @pytest.mark.parametrize(("chosen", "expected"), [(None, "bez Przekazania"), ("z Przekazaniem", "z Przekazaniem")])

@@ -95,7 +95,8 @@ class Start:
     trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
     startu, z której Logi Uruchomienia biorą pliki procesu, a Diagnoza Zatrzymania pliki i Listę Wykonawców; ``None``:
     gospodarz bez Ustawień Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu
-    (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces
+    (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów Wpisania raportów,
+    a Przygotowania i Przebiegu rozliczeń plik ``wykonawcy.yaml`` folderu Konfiguracji); ``None``: proces
     jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
     chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania; ``None`` w Centrum, gdy pliku pary
     nie da się czytać. ``activity_legend``: Legenda czynności tego Uruchomienia, skąd i kiedy jak ``quantity_rules``.
