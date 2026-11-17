@@ -64,7 +64,6 @@ from rozliczenia.worker_report_inbox import (
     SentReminders,
 )
 from rozliczenia.worker_reports import (
-    DEFAULT_TEXT,
     AddBar,
     ConflictingVerdicts,
     FaultyDescription,
@@ -79,7 +78,6 @@ from rozliczenia.worker_reports import (
     UnknownNumber,
     UnreadableSubject,
     Verdict,
-    reminder_text,
 )
 from rozliczenia.worker_reports.reasons import reason
 
@@ -4367,7 +4365,19 @@ def test_praca_przypomnien_nie_wysyla_przypomnienia_po_raporcie_z_bledem_opisu(t
 
     [(reminder, _)] = mailbox.sends
     assert reminder.worker == "jan.testowy"
-    assert reminder.text == reminder_text(date(2026, 11, 9), DEFAULT_TEXT, "Pozdrawiam\nTata\n")
+    assert reminder.text.splitlines() == [
+        "Poproszę o wysłanie raportu za dzień 09.11.2026.",
+        "",
+        "Raport proszę wysłać według tego wzoru:",
+        "Temat maila: Raport 09.11.2026",
+        "Treść maila: NR. ZLECENIA [spacja] tak [spacja] kody czynności albo NR. ZLECENIA [spacja] nie [spacja] powód",
+        "PRZYKŁAD:",
+        "12345678 tak inst20m spawpg",
+        "12345679 nie brak klienta",
+        "",
+        "Pozdrawiam",
+        "Tata",
+    ]
 
 
 def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_intermax_co_wpisanie_raportow(

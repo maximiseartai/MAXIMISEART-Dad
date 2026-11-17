@@ -538,8 +538,16 @@ def test_raport_z_pomylonym_tematem_konczy_przypomnienia_za_dzien_swoich_zlecen_
     assert _days(_due(now, MISTAKEN_ORDERS, mails=mails)) == due
 
 
-SAME = (_order(), _order(number=40000002, row=121), _order("Ewa.Probna", number=40000003, row=122), _order(day=DAY + timedelta(days=1), number=40000004, row=123))
-"""Zlecenia Jana z 9.11 i 10.11 i Ewy z 9.11: o 8:00 11.11 należą się przypomnienia za oba dni."""
+SAME = (
+    _order(),
+    _order(number=40000002, row=121),
+    _order("Ewa.Probna", number=40000003, row=122),
+    _order(day=DAY + timedelta(days=1), number=40000004, row=123),
+    _order(day=DAY + timedelta(days=1), number=40000005, row=124),
+    _order("Ewa.Probna", number=40000005, row=125),
+)
+"""Zlecenia Jana z 9.11 i 10.11 i Ewy z 9.11, a numer 40000005 u Jana 10.11 i u Ewy 9.11: o 8:00 11.11 należą się
+przypomnienia za oba dni."""
 JAN_9 = ("jan.testowy", DAY)
 JAN_10 = ("jan.testowy", DAY + timedelta(days=1))
 EWA_9 = ("ewa.probna", DAY)
@@ -561,6 +569,11 @@ TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak ins
             [_mail(JAN, "Raport 30.10.2026", "40000001 tak inst20m\n40000002 tak spawpg")], {JAN_9}, id="pomylony-temat-sprzed-wdrozenia"
         ),
         pytest.param(
+            [_mail(JAN, "Raport 08.11.2026", "40000001 tak inst20m\n40000002 tak spawpg\n40000005 tak inst20m")],
+            {JAN_9},
+            id="pomylony-temat-z-numerem-w-kilku-zleceniach",
+        ),
+        pytest.param(
             [_mail(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000004 tak spawpg")], {JAN_10}, id="jeden-niezgodny-wpis"
         ),
         pytest.param([_mail(JAN, f"Re: {reminder_subject(DAY)}", "40000001 tak inst20m")], {JAN_9}, id="odpowiedz-na-przypomnienie"),
@@ -578,7 +591,8 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
     """ADR 0041 (historia 14): dla tych samych maili i zleceń dzień Wykonawcy, za który kafelek Wpisania raportów liczy
     Raport wykonawcy, to dokładnie dzień, za który przypomnienie nie idzie: Raport z Błędem opisu i bez Wpisów jest
     przysłany, pomylony temat (dwa numery z innego dnia, także z dniem z tematu po dziś albo sprzed wdrożenia) liczy się za
-    dzień zleceń, a jeden niezgodny Wpis za dzień z tematu. Mail z tą samą chwilą i tym samym Message-ID daje ten sam
+    dzień zleceń (bez dni numeru, który INTERMAX ma w kilku zleceniach, bo jego Wpis niczego nie wpisuje), a jeden
+    niezgodny Wpis za dzień z tematu. Mail z tą samą chwilą i tym samym Message-ID daje ten sam
     wynik w każdej kolejności skrzynki. Temat bez roku, mail bez słowa ``Raport`` i adres spoza listy nie są raportem
     Wykonawcy."""
 
