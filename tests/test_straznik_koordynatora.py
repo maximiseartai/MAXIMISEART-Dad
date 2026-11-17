@@ -22,7 +22,7 @@ import sys
 import threading
 import time
 from types import ModuleType
-from typing import NamedTuple
+from typing import IO, NamedTuple
 
 import pytest
 
@@ -512,9 +512,11 @@ class _T3InProcess:
         }
         self.sent: list[str] = []
         self.inject: tuple[str, Callable[[], None]] | None = None
+        self.asked = threading.Event()
         self.gate = threading.Event()
 
     def show(self, cli: str, thread: str) -> object:
+        self.asked.set()
         assert self.gate.wait(10)
         self._fire("show")
         with self.lock:
@@ -580,14 +582,26 @@ def test_dziecko_zlecone_w_kazdej_chwili_konca_strażnika_ma_strażnika(
 
     monkeypatch.setattr(straznik, "_log", log_then_inject)
     t3.inject = (point, hook)
-    # Strażnik pierwszego dziecka bierze życie i czeka na T3; czekający (gdy jest) staje w kolejce.
+    # Strażnik pierwszego dziecka pyta T3, więc trzyma życie i oddał kolejkę; czekający (gdy jest) bierze kolejkę i czeka
+    # na życie. Stan czytają zdarzenia z wnętrza serve, bo sonda held bierze blokadę na chwilę, a czekający, który wtedy
+    # bierze kolejkę bez czekania, kończy się (#2086).
     first = threading.Thread(target=straznik.serve, args=(PARENT, "t3"))
     first.start()
-    assert wait_for(lambda: held(files.life), 5)
+    assert t3.asked.wait(5)
     if waiting:
+        queued = threading.Event()
+        taken = straznik._taken
+
+        def mark_queued(handle: IO[str], *, wait: bool) -> bool:
+            # Na życie czeka tylko proces, który już wziął kolejkę.
+            if wait:
+                queued.set()
+            return bool(taken(handle, wait=wait))
+
+        monkeypatch.setattr(straznik, "_taken", mark_queued)
         started.append(threading.Thread(target=straznik.serve, args=(PARENT, "t3")))
         started[-1].start()
-        assert wait_for(lambda: held(files.queue), 5)
+        assert queued.wait(5)
     t3.gate.set()
     first.join(15)
     assert not first.is_alive()
@@ -616,7 +630,7 @@ def test_dziecko_zlecone_w_trakcie_pilnowania_dostaje_budzenie_od_pilnujacego(
     straznik.record(files, [CHILD], time.time())
     first = threading.Thread(target=straznik.serve, args=(PARENT, "t3"))
     first.start()
-    assert wait_for(lambda: held(files.life), 5)
+    assert t3.asked.wait(5)
     t3.gate.set()
 
     straznik.record(files, [NEW], time.time())
