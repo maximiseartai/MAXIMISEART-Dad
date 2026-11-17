@@ -453,8 +453,9 @@ def _kept_order(kept: Kept) -> tuple[OrderKey, str, str]:
     return kept.key, kept.column.value, kept.reported
 
 
-def _requested_order(decision: RequestedEntry) -> tuple[date, str, str, str, str, datetime]:
-    return decision.day, decision.worker, decision.number, decision.verdict.value, decision.activities, decision.at
+def _requested_order(decision: RequestedEntry) -> tuple[date, str, str, str, str, str, datetime]:
+    key = decision.day, decision.worker, decision.number, decision.mail.digest
+    return *key, decision.verdict.value, decision.activities, decision.at
 
 
 def _open_days(window: Window) -> tuple[date, ...]:

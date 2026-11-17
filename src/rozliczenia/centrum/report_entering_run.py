@@ -180,6 +180,7 @@ class ReportEnteringEntry:
         taty z chwilą kliknięcia; ``Refusal``, gdy wynik nie ma tego Wpisu z przyciskiem."""
 
         offer = ShownOffer(
+            cell.mail,
             cell.worker,
             cell.day,
             cell.number,
@@ -361,6 +362,7 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
         None
         if offer is None
         else report_entering_contract.RequestedCell(
+            mail=offer.mail,
             number=offer.number,
             day=offer.day,
             worker=offer.worker,

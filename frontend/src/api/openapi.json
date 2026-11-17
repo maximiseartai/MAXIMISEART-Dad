@@ -10231,6 +10231,10 @@
       },
       "RequestedCell": {
         "properties": {
+          "mail": {
+            "type": "string",
+            "title": "Mail"
+          },
           "number": {
             "type": "string",
             "title": "Number"
@@ -10265,6 +10269,7 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "mail",
           "number",
           "day",
           "worker",
@@ -10273,7 +10278,7 @@
           "order_day"
         ],
         "title": "RequestedCell",
-        "description": "Wpis na życzenie przy problemie: Wpis, przy którym tata klika (Wykonawca, dzień, w którym widzi problem, numer i\nczynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI\nZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."
+        "description": "Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,\ndzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI\nZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."
       },
       "Resolved": {
         "properties": {

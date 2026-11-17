@@ -23,7 +23,7 @@
     "_TextFile": "9c433f212b12cb17",
     "FileReportState.of_work": "2b62d28982518644",
     "FileReportState.load": "aae08959cc0fa028",
-    "FileReportState.save_memory": "641df3f57053e7b4",
+    "FileReportState.save_memory": "56b68bb5c2e9236e",
     "FileReportState.save_result": "c054fa963d01bc4d",
     "FileReportState.shown": "b1188a5d3b9cd5cd",
     "FileReportState.kept": "97d11bf6647e9014",
@@ -33,7 +33,7 @@
     "ReportEnteringEntry.keep": "c20ea2503a531687",
     "ReportEnteringEntry.view": "8c93b20763ced3a0",
     "_view": "be3a3d6d989ac742",
-    "ReportEnteringEntry.on_request": "6ddb8ac3449229b2"
+    "ReportEnteringEntry.on_request": "5fe436e623357c93"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "StateFile": "71beaa3fba9d5cdd"

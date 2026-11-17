@@ -392,10 +392,12 @@ class LoggedAdded(_Record):
 
 
 class LoggedRequestedEntry(_Record):
-    """Decyzja taty Wpisu na życzenie (``RequestedEntry``, ADR 0041): Wykonawca i dzień, przy którym tata widzi Wpis,
+    """Decyzja taty Wpisu na życzenie (``RequestedEntry``, ADR 0041): skrót maila, Wykonawca i dzień, przy którym tata
+    widzi Wpis,
     numer z treści maila i czynności Wpisu (pod strażnikiem jak w ``LoggedReportEntry``), ``tak`` albo ``nie``, które
     tata wpisał, i chwila kliknięcia."""
 
+    mail: str
     worker: str
     day: date
     number: str
@@ -406,6 +408,7 @@ class LoggedRequestedEntry(_Record):
     @classmethod
     def of(cls, decision: RequestedEntry) -> LoggedRequestedEntry:
         return cls(
+            mail=decision.mail.digest,
             worker=decision.worker,
             day=decision.day,
             number=decision.number,
@@ -415,7 +418,7 @@ class LoggedRequestedEntry(_Record):
         )
 
     def decision(self) -> RequestedEntry:
-        key = Login(self.worker), self.day, OrderNumber(self.number)
+        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
         return RequestedEntry(*key, Verdict(self.verdict), self.activities, self.at)
 
 

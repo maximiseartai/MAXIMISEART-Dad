@@ -1,8 +1,8 @@
 """Pliki Wpisania raportów w ``config`` (ADR 0028): jedyny moduł, który zna ich format. Każdy plik ma jednego pisarza.
 
 - ``wpisanie-raportow-stan.json``, ``{schema_version: 4, rollout, own: [{number, day, worker, column, value}], moves:
-  [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden, added}], requested: [{worker, day,
-  number, verdict, activities, at}]}``: dzień wdrożenia, komórki, które Wpisanie raportów samo wpisało, pamięć zleceń,
+  [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden, added}], requested: [{mail, worker,
+  day, number, verdict, activities, at}]}``: dzień wdrożenia, komórki, które Wpisanie raportów samo wpisało, pamięć zleceń,
   na które samo zadziałało Przeniesieniem, Wpisem albo dopisaniem (``OwnMove``, ADR 0029), i decyzje taty Wpisu na
   życzenie (``RequestedEntry``, ADR 0041). Pisze go tylko proces po udanym zapisie INTERMAX, także z decyzją z
   kliknięcia Wpisu na życzenie. Wersja 4 to obietnica
@@ -51,6 +51,7 @@ from rozliczenia.worker_reports import (
     FaultyDescription,
     Kept,
     Login,
+    MailId,
     ManualDifference,
     MissingVerdict,
     OlderOwnEntries,
@@ -108,6 +109,7 @@ class _Move(_Record):
 
 
 class _Requested(_Record):
+    mail: str
     worker: str
     day: date
     number: str
@@ -118,6 +120,7 @@ class _Requested(_Record):
     @classmethod
     def of(cls, decision: RequestedEntry) -> _Requested:
         return cls(
+            mail=decision.mail.digest,
             worker=decision.worker,
             day=decision.day,
             number=decision.number,
@@ -127,7 +130,7 @@ class _Requested(_Record):
         )
 
     def decision(self) -> RequestedEntry:
-        key = Login(self.worker), self.day, OrderNumber(self.number)
+        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
         return RequestedEntry(*key, Verdict(self.verdict), self.activities, self.at)
 
 
@@ -214,9 +217,10 @@ class _Worker(_WorkerV1):
 
 
 class _Offer(_Record):
-    """Wpis na życzenie przy problemie: Wpis, przy którym tata klika (Wykonawca, dzień, numer, czynności), i co się
-    wpisze (``successful`` z tymi czynnościami do zlecenia z dnia ``order_day``)."""
+    """Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót maila, Wykonawca, dzień, numer, czynności),
+    i co się wpisze (``successful`` z tymi czynnościami do zlecenia z dnia ``order_day``)."""
 
+    mail: str
     worker: str
     day: date
     number: str
@@ -292,10 +296,11 @@ class ShownWorker:
 
 @dataclass(frozen=True)
 class ShownOffer:
-    """Wpis na życzenie przy problemie z ostatniego kliknięcia: Wpis, przy którym tata klika (Wykonawca, dzień, numer i
-    czynności), i co się wpisze: ``tak`` albo ``nie`` (``successful``) z tymi czynnościami do zlecenia z dnia
-    ``order_day``."""
+    """Wpis na życzenie przy problemie z ostatniego kliknięcia: Wpis, przy którym tata klika (skrót maila, Wykonawca,
+    dzień, numer i czynności), i co się wpisze: ``tak`` albo ``nie`` (``successful``) z tymi czynnościami do zlecenia z
+    dnia ``order_day``."""
 
+    mail: str
     worker: str
     day: date
     number: str
@@ -306,7 +311,8 @@ class ShownOffer:
     def decision(self, at: datetime) -> RequestedEntry:
         """Decyzja taty z kliknięcia w chwili ``at``."""
 
-        return RequestedEntry(Login(self.worker), self.day, OrderNumber(self.number), self.successful, self.activities, at)
+        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
+        return RequestedEntry(*key, self.successful, self.activities, at)
 
 
 @dataclass(frozen=True)
@@ -466,7 +472,7 @@ class FileReportState:
             _Requested.of(decision)
             for decision in sorted(
                 requested,
-                key=lambda decision: (decision.day, decision.worker, decision.number, decision.verdict.value, decision.at),
+                key=lambda decision: (decision.day, decision.worker, decision.number, decision.mail.digest, decision.at),
             )
         ]
         return self.memory.write(
@@ -582,6 +588,7 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
 
 def _shown_offer(offer: _Offer) -> ShownOffer:
     return ShownOffer(
+        offer.mail,
         offer.worker,
         offer.day,
         offer.number,
@@ -609,6 +616,7 @@ def _problem(problem: ReportProblem) -> _Problem:
             return _Problem(day=day, worker=None, number=None, reason=said, sender=sender.shown(), difference=None)
         case MissingVerdict(requestable=offered) if offered is not None:
             offer = _Offer(
+                mail=offered.mail.digest,
                 worker=problem.worker,
                 day=problem.day,
                 number=problem.number,

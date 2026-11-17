@@ -209,17 +209,14 @@ class Board:
         dopisane starszym mailem, a najpóźniejszy mail przeniósłby je albo dał problem, więc dwa kliknięcia dałyby co
         innego niż jedno.
 
-        Zwycięski Wpis zlecenia ze znakiem, który ma zamiar (``t``, ``n``, ``skuteczne``, ``nieskuteczne``), z maila,
-        który przyszedł nie później niż decyzja taty ``requested`` przy tym Wpisie (``RequestedEntry``: Wykonawca, dzień,
-        w którym tata widzi problem, numer, zamiar znaku i czynności; z kilku przy jednym Wpisie liczy się najnowsza),
-        trafia do zlecenia jak Wpis z tym ``tak`` albo ``nie``; bez decyzji to ``MissingVerdict`` z tym, co wpisze Wpis na życzenie (``Requestable``). Wpis
-        numeru bez zlecenia (Zlecenie dopisane z raportu) Wpisu na życzenie nie ma.
+        Zwycięski Wpis zlecenia ze znakiem, który ma zamiar (``t``, ``n``, ``skuteczne``, ``nieskuteczne``), z decyzją
+        taty ``requested`` przy tym Wpisie (``RequestedEntry``: mail, Wykonawca, dzień, w którym tata widzi problem,
+        numer, zamiar znaku i czynności) trafia do zlecenia jak Wpis z tym ``tak`` albo ``nie``; bez decyzji to
+        ``MissingVerdict`` z tym, co wpisze Wpis na życzenie (``Requestable``). Wpis numeru bez zlecenia (Zlecenie
+        dopisane z raportu) Wpisu na życzenie nie ma.
         """
 
-        decided: dict[tuple[Login, date, OrderNumber, Verdict, str], RequestedEntry] = {}
-        for decision in requested:
-            if decision.place not in decided or decided[decision.place].at < decision.at:
-                decided[decision.place] = decision
+        decided = {decision.place: decision for decision in requested}
 
         latest: dict[OrderRow, _Claim] = {}
         newest: dict[OrderNumber, _New] = {}
@@ -270,7 +267,7 @@ class Board:
                     if claim.lost is not None:
                         lost.append(claim.lost)
                 case (ReportEntry(fault=VerdictFault() as fault, activities=activities),):
-                    offer = None if fault.leaning is None else Requestable(fault.leaning, activities, claim.day)
+                    offer = None if fault.leaning is None else Requestable(report.mail, fault.leaning, activities, claim.day)
                     problems.append(MissingVerdict(report.worker, shown, order.key.number, fault, offer))
                 case _:
                     problems.append(
@@ -411,19 +408,19 @@ class Board:
 
 
 def _requested(
-    decided: Mapping[tuple[Login, date, OrderNumber, Verdict, str], RequestedEntry],
+    decided: Mapping[tuple[MailId, Login, date, OrderNumber, Verdict, str], RequestedEntry],
     report: ReadReport,
     shown: date,
     entries: tuple[ReportEntry, ...],
 ) -> tuple[ReportEntry, ...]:
     """Zwycięskie Wpisy zlecenia z Raportu wykonawcy ``report``, które tata widzi w dniu ``shown``: jeden Wpis ze znakiem
-    z zamiarem, przy którym tata kliknął Wpis na życzenie po przyjściu maila (``decided``), staje się Wpisem z tym
-    ``tak`` albo ``nie``, a inne zostają."""
+    z zamiarem, przy którym tata kliknął Wpis na życzenie (``decided``), staje się Wpisem z tym ``tak`` albo ``nie``, a
+    inne zostają."""
 
     match entries:
         case (ReportEntry(verdict=None, fault=VerdictFault(leaning=Verdict() as leaning)) as entry,):
-            decision = decided.get((report.worker, shown, entry.number, leaning, entry.activities))
-            if decision is not None and decision.at > report.arrived:
+            decision = decided.get((report.mail, report.worker, shown, entry.number, leaning, entry.activities))
+            if decision is not None:
                 return (ReportEntry(entry.number, leaning, None, entry.activities),)
         case _:
             pass

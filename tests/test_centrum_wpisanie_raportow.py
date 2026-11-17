@@ -2993,8 +2993,9 @@ def test_wpis_na_zyczenie_przy_t_wpisuje_tak_z_czynnosciami_a_blad_nie_wraca_prz
     done = _enter_on_request(centrum, jan, datetime(2026, 11, 9, 19))
 
     offer = {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "activities": "inst20m rt2"}
-    assert jan == {**offer, "successful": "tak", "order_day": "2026-11-09"}
+    assert jan == {**offer, "mail": mails[0].id.digest, "successful": "tak", "order_day": "2026-11-09"}
     assert anna["request"] == {
+        "mail": mails[1].id.digest,
         "number": "40000002",
         "day": "2026-11-09",
         "worker": "anna.kowalska",
@@ -3007,7 +3008,14 @@ def test_wpis_na_zyczenie_przy_t_wpisuje_tak_z_czynnosciami_a_blad_nie_wraca_prz
     shown = _worker(_view(centrum), "jan.testowy")
     assert (shown["problems"], shown["orders_detail"][0]["state"]) == ([], "entered")
     assert _worker(_view(centrum), "anna.kowalska")["problems"] == [anna]
-    decision = {"worker": "jan.testowy", "day": "2026-11-09", "number": "40000001", "verdict": "tak", "activities": "inst20m rt2"}
+    decision = {
+        "mail": mails[0].id.digest,
+        "worker": "jan.testowy",
+        "day": "2026-11-09",
+        "number": "40000001",
+        "verdict": "tak",
+        "activities": "inst20m rt2",
+    }
     [logged] = _entering(centrum, done)["requested"]
     assert _without_moment([logged]) == [decision]
     assert datetime.fromisoformat(logged["at"]) == datetime(2026, 11, 9, 19).astimezone()
@@ -3020,9 +3028,8 @@ def test_wpis_na_zyczenie_przy_t_wpisuje_tak_z_czynnosciami_a_blad_nie_wraca_prz
 
 
 def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_a_reczna_wartosc_taty_zostaje(tmp_path: Path) -> None:
-    """US 49–50: Raport Jana, który przyszedł w chwili kliknięcia taty o 19:00, wygrywa z Wpisem na życzenie także
-    wtedy, gdy znowu ma ``t``: błąd wraca z przyciskiem, a drugie kliknięcie o 19:50 znowu go wpisuje. Poprawny Raport
-    z 20:00 wygrywa z oboma. Przy zleceniu z ręcznymi czynnościami taty Wpis na życzenie wpisuje ``nie`` do pustego
+    """US 49–50: późniejszy Raport Jana wygrywa z Wpisem na życzenie także wtedy, gdy znowu ma ``t``: błąd wraca z
+    przyciskiem, a drugie kliknięcie znowu go wpisuje. Poprawny Raport z 20:00 wygrywa z oboma. Przy zleceniu z ręcznymi czynnościami taty Wpis na życzenie wpisuje ``nie`` do pustego
     ``SKUTECZNE``, a czynności taty zostają z różnicą „Zostaw moją”."""
 
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
@@ -3035,7 +3042,7 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_a_reczna_wartosc_taty_zo
     _enter_on_request(centrum, offers["40000001"], datetime(2026, 11, 9, 19))
     manual = _enter_on_request(centrum, offers["40000005"], datetime(2026, 11, 9, 19, 5))
     [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
-    repeated = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 19), message_id="<drugi@przyklad.invalid>")
+    repeated = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 19, 30), message_id="<drugi@przyklad.invalid>")
     _click_at(centrum, datetime(2026, 11, 9, 19, 45), [first, repeated])
     back = _requests(centrum, "jan.testowy")
     _enter_on_request(centrum, back["40000001"], datetime(2026, 11, 9, 19, 50))
@@ -3046,8 +3053,23 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_a_reczna_wartosc_taty_zo
     assert _cells(centrum.register) == {40000001: ("nie", "brak klienta"), 40000005: ("nie", "wymiana ręczna")}
     assert manual["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
     assert (difference["number"], difference["keep"]["reported"], difference["request"]) == ("40000005", "brak dostępu", None)
-    assert back["40000001"] == offers["40000001"]
+    assert back["40000001"] == {**offers["40000001"], "mail": repeated.id.digest}
     assert set(again) == set(_requests(centrum, "jan.testowy")) == {"40000005"}
+
+
+def test_wpis_na_zyczenie_wpisuje_sie_takze_gdy_zegar_komputera_taty_jest_wczesniej_niz_chwila_maila(
+    tmp_path: Path,
+) -> None:
+    """Decyzja taty należy do maila, przy którym kliknął, a nie do chwili: zegar komputera taty, który stoi przed
+    chwilą przyjścia maila, nie zostawia błędu w kafelku."""
+
+    mail = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path, INTERMAX, [mail])
+    _click_at(centrum, datetime(2026, 11, 9, 18), [mail])
+
+    _enter_on_request(centrum, _requests(centrum, "jan.testowy")["40000001"], datetime(2026, 11, 9, 16))
+
+    assert (_cells(centrum.register)[40000001], _requests(centrum, "jan.testowy")) == (("tak", "inst20m"), {})
 
 
 def _offered_problems(centrum: EnteringCentrum) -> list[tuple[str | None, bool]]:

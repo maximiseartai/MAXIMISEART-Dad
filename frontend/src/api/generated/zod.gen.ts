@@ -1591,11 +1591,12 @@ export const zReportsOrder = z.object({
 /**
  * RequestedCell
  *
- * Wpis na życzenie przy problemie: Wpis, przy którym tata klika (Wykonawca, dzień, w którym widzi problem, numer i
- * czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+ * Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
+ * dzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
  * ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu.
  */
 export const zRequestedCell = z.object({
+    mail: z.string(),
     number: z.string(),
     day: z.iso.date(),
     worker: z.string(),

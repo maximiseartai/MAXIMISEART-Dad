@@ -409,13 +409,15 @@ class Kept:
 
 @dataclass(frozen=True)
 class RequestedEntry:
-    """Wpis na życzenie (ADR 0041): decyzja taty z chwili kliknięcia ``at``, że zwycięski Wpis zlecenia ``number``
-    Wykonawcy ``worker``, który tata widzi w dniu ``day``, ze znakiem zamiast ``tak``/``nie`` (``t``, ``n``,
-    ``skuteczne``, ``nieskuteczne``) i czynnościami ``activities`` to ``verdict``, które ten znak ma na myśli
-    (``VerdictFault.leaning``). Rdzeń wpisuje go tak, dopóki ten Wpis z maila sprzed ``at`` jest zwycięskim Wpisem
-    zlecenia: Wpis z maila, który przyszedł po ``at``, wygrywa jak każdy późniejszy, także z tym samym znakiem, a ręczna
-    wartość zostaje z ``ManualDifference``."""
+    """Wpis na życzenie (ADR 0041): decyzja taty z chwili kliknięcia ``at``, że zwycięski Wpis zlecenia ``number`` z
+    Raportu wykonawcy ``mail`` od Wykonawcy ``worker``, który tata widzi w dniu ``day``, ze znakiem zamiast
+    ``tak``/``nie`` (``t``, ``n``, ``skuteczne``, ``nieskuteczne``) i czynnościami ``activities`` to ``verdict``, które
+    ten znak ma na myśli (``VerdictFault.leaning``). Rdzeń wpisuje go tak, dopóki ten Wpis tego maila jest zwycięskim
+    Wpisem zlecenia: Wpis z późniejszego maila wygrywa jak każdy późniejszy, także z tym samym znakiem, a ręczna wartość
+    zostaje z ``ManualDifference``. Decyzja należy do maila, a nie do chwili, bo zegar komputera taty nie musi się
+    zgadzać z chwilą przyjścia maila; ``at`` mają tylko pamięć i Logi."""
 
+    mail: MailId
     worker: Login
     day: date
     number: OrderNumber
@@ -424,17 +426,18 @@ class RequestedEntry:
     at: datetime
 
     @property
-    def place(self) -> tuple[Login, date, OrderNumber, Verdict, str]:
-        """Wpis, przy którym tata kliknął, bez chwili kliknięcia: z kilku decyzji przy nim liczy się najnowsza."""
+    def place(self) -> tuple[MailId, Login, date, OrderNumber, Verdict, str]:
+        """Wpis, przy którym tata kliknął, bez chwili kliknięcia."""
 
-        return self.worker, self.day, self.number, self.verdict, self.activities
+        return self.mail, self.worker, self.day, self.number, self.verdict, self.activities
 
 
 @dataclass(frozen=True)
 class Requestable:
-    """Co wpisze Wpis na życzenie przy ``MissingVerdict``: ``tak`` albo ``nie`` (``verdict``) i czynności Wpisu
-    (``activities``) do zlecenia z dnia ``order_day``, który ma ono po Wpisie."""
+    """Co wpisze Wpis na życzenie przy ``MissingVerdict`` z Wpisu Raportu wykonawcy ``mail``: ``tak`` albo ``nie``
+    (``verdict``) i czynności Wpisu (``activities``) do zlecenia z dnia ``order_day``, który ma ono po Wpisie."""
 
+    mail: MailId
     verdict: Verdict
     activities: str
     order_day: date
