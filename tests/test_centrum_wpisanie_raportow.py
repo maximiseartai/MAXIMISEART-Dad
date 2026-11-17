@@ -4649,7 +4649,7 @@ def test_szczegoly_dnia_maja_przy_zleceniu_tak_kody_z_opisu_albo_brak_kodu_a_prz
         ("40000006", "problem", ["instutp40m"], False),
         ("40000007", "entered", [], False),
     ]
-    assert jan["problems"] == [{"reason": reason(faulty), "number": "40000006", "keep": None}]
+    assert jan["problems"] == [{"reason": reason(faulty), "number": "40000006", "keep": None, "request": None}]
     assert {number: _cells(centrum.register)[number] for number in numbers} == {
         40000001: ("tak", "inst30m instmdic Podłączyłem lokal, klient zadowolony"),
         40000005: ("tak", "Podłączyłem lokal, dzielnik 1/2"),
