@@ -4,9 +4,7 @@ Skoroszyt czyta moduł skoroszytu (``workbook_files``); jego ``WorkbookError`` p
 na Komunikat. Moduł nie zna mapowania Wykonawców ani nazw plików okresu
 (``period_folder``). Z tego samego odczytu każdy Wiersz danych, także bez
 Wykonawcy, przechodzi przez filtr prywatności (``order_facts``) dla Kontroli ilości, zanim Wiersze danych z
-Wykonawcą stracą Znacznik efenix (``efenix_mark``) i Ilości tylko dla INEA (``inea_only_quantities``, ADR 0018), a po
-nich ich Czerwone pole i Zielone pole dostaną wartość dla Wykonawcy (``coloured_fields``, ADR 0039): Zielone pole nie jest
-Ilością tylko dla INEA, więc ma 1 także tam, gdzie Reguła ilości zostawia komórkę pustą.
+Wykonawcą staną się tym, co dostaje Wykonawca (``worker_settlement``).
 Ten sam odczyt i filtr dają Ilości do uzupełnienia (``read_numbered_orders``), także z pliku otwartego w Excelu, a
 obok filtra teksty wiersza, kwotę w ``AS`` i nazwy pozycji cennika dla strony rodzaju, które nie wychodzą z komputera (ADR 0016).
 Plik czyta uchwyt plików taty (zob. ``dad_files.DadFiles``).
@@ -18,17 +16,16 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 
-from . import coloured_fields, workbook_files
+from . import workbook_files, worker_settlement
 from .collective_layout import REMARKS_AMOUNT, letter
 from .dad_files import DadFiles
-from .efenix_mark import without_efenix_mark
-from .inea_only_quantities import Cleared, without_inea_only
 from .order_facts import CollectiveOrders, MissingHeaders, collective_orders, tata_value
 from .quantity_engine import QuantityRules
 from .register_columns import WORKER, Column
 from .quantities_to_fill import TEXT_COLUMNS, NumberedOrder, RowTexts
 from .workbook_files import DataRow
 from .text import normalize_text
+from .worker_settlement import Cleared
 
 
 @dataclass(frozen=True)
@@ -56,8 +53,8 @@ def read_data_rows(path: Path, files: DadFiles, rules: QuantityRules) -> Collect
             without_worker.append(row.number)
             continue
         rows.append(row)
-    rows, inea_only = without_inea_only(read.header, without_efenix_mark(read.header, rows), rules)
-    return CollectiveRows(coloured_fields.for_worker(rows), without_worker, collective_orders(read.header, read.rows), inea_only)
+    rows, inea_only = worker_settlement.for_worker(read.header, rows, rules)
+    return CollectiveRows(rows, without_worker, collective_orders(read.header, read.rows), inea_only)
 
 
 @dataclass(frozen=True)

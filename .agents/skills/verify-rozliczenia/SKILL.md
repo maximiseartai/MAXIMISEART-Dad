@@ -11,7 +11,6 @@ pilnuje:
   - src/rozliczenia/centrum/processes/*.py
   - src/rozliczenia/centrum/run_view.py
   - src/rozliczenia/collective_*.py
-  - src/rozliczenia/coloured_fields.py
   - src/rozliczenia/dad_files.py
   - src/rozliczenia/decision.py
   - src/rozliczenia/domain.py
@@ -20,7 +19,6 @@ pilnuje:
   - src/rozliczenia/file_state.py
   - src/rozliczenia/highlights.py
   - src/rozliczenia/hyperlinks.py
-  - src/rozliczenia/inea_only_quantities.py
   - src/rozliczenia/input_checks.py
   - src/rozliczenia/input_copy.py
   - src/rozliczenia/intermax_*.py
@@ -57,6 +55,7 @@ pilnuje:
   - src/rozliczenia/workbook_*.py
   - src/rozliczenia/worker_list.py
   - src/rozliczenia/worker_report_inbox.py
+  - src/rozliczenia/worker_settlement.py
   - src/rozliczenia/worker_reports/*.py
   - src/rozliczenia/write_routes.py
   - tools/lib/atrapy/intermax.py

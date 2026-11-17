@@ -2,7 +2,7 @@
 
 Przebieg rozliczeń przenosi je z każdej komórki A:AT Wiersza danych Pliku
 zbiorczego do tej samej komórki Rozliczenia pracownika, poza wypełnieniem Czerwonego
-pola i Zielonego pola (``coloured_fields``). W kolumnach A:L są częścią
+pola i Zielonego pola (``worker_settlement``). W kolumnach A:L są częścią
 Wyglądu Wiersza danych (``row_look``); w dalszych krój i rozmiar czcionki, format
 liczby, obramowanie, wyrównanie i ochrona zostają z Wzorca rozliczenia
 pracownika. Wyróżnienia zastępują wygląd komórki Wzorca w całości: komórka bez

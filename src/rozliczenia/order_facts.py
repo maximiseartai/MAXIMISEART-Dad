@@ -169,7 +169,7 @@ def legend_colour(fill: Fill | None) -> FillColour | None:
     """Kolor legendy wypełnienia komórki: jednolite wypełnienie koloru Legendy czynności (po RGB albo indeksie palety);
     każde inne wypełnienie i brak wypełnienia to ``None``. To jedyny odczyt koloru komórki taty pod kątem legendy:
     Kontrola ilości i brama Legendy czynności biorą go z ``OrderFacts.fills``, a Przebieg rozliczeń z niego rozpoznaje
-    Czerwone i zielone pole (``coloured_fields``).
+    Czerwone i zielone pole (``worker_settlement``).
 
     To lustro zapisu: w kolumnach za danymi wejściowymi Przygotowanie zostawia wygląd komórki Wzorca i kładzie na nim
     tylko wypełnienie legendy (``highlights.solid_fill``). Wypełnienie spoza palety legendy, np. białe tło motywu, które
