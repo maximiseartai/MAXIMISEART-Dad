@@ -1936,7 +1936,8 @@ def test_dopisanie_zapisuje_sie_w_pamieci_w_wersji_4_a_plik_wersji_3_z_dopisanie
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "40000077 tak instmdik")])
     _finished(centrum)
     saved = json.loads(_state(centrum).read_text(encoding="utf-8"))
-    _state(centrum).write_text(json.dumps({**saved, "schema_version": 3}, ensure_ascii=False), encoding="utf-8")
+    older = {key: value for key, value in saved.items() if key != "requested"}
+    _state(centrum).write_text(json.dumps({**older, "schema_version": 3}, ensure_ascii=False), encoding="utf-8")
     after = centrum.register.read_bytes()
 
     entering = _entering(centrum, _finished(centrum))

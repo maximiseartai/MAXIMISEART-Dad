@@ -61,6 +61,7 @@ from rozliczenia.worker_reports import (
     ReportInputs,
     ReportMail,
     ReportProblem,
+    Requestable,
     ReportsOutcome,
     SenderAddress,
     SubjectFault,
@@ -102,6 +103,15 @@ def _mail(
     assert address is not None
     mail = MailId.of(message_id or f"<{subject}|{text}|{arrived.isoformat()}@{sender}>")
     return ReportMail(mail, address, subject, text, arrived)
+
+
+def _letter(text: str, number: str, fault: VerdictFault, activities: str) -> MissingVerdict:
+    """``MissingVerdict`` Wpisu Jana z dnia ``DAY`` ze znakiem ``fault`` z maila ``_mail(JAN, SUBJECT, text)``, z Wpisem
+    na życzenie, który wpisze zamiar znaku i ``activities`` do zlecenia z tego dnia."""
+
+    assert fault.leaning is not None, fault
+    offer = Requestable(_mail(JAN, SUBJECT, text).id, fault.leaning, activities, DAY)
+    return MissingVerdict(Login("jan.testowy"), DAY, OrderNumber(number), fault, offer)
 
 
 def _order(
@@ -3927,25 +3937,33 @@ def test_tak_albo_nie_bez_wzgledu_na_wielkosc_liter_i_interpunkcje_trafia_malymi
 
 
 @pytest.mark.parametrize(
-    ("text", "fault"),
+    ("text", "fault", "activities"),
     [
-        pytest.param("40000001 t wymiana routera", VerdictFault.LETTER_YES, id="t"),
-        pytest.param("40000001 N, brak klienta", VerdictFault.LETTER_NO, id="n"),
-        pytest.param("40000001 skuteczne wymiana routera", VerdictFault.WORD_YES, id="skuteczne"),
-        pytest.param("40000001 Nieskuteczne: brak klienta", VerdictFault.WORD_NO, id="nieskuteczne"),
-        pytest.param("40000001 wymiana routera", VerdictFault.MISSING, id="bez-tak-nie"),
-        pytest.param("40000001 nieobecny", VerdictFault.MISSING, id="slowo-od-nie"),
-        pytest.param("40000001", VerdictFault.MISSING, id="sam-numer"),
-        pytest.param("#40000001 takie same gniazda", VerdictFault.MISSING, id="slowo-od-tak"),
+        pytest.param("40000001 t wymiana routera", VerdictFault.LETTER_YES, "wymiana routera", id="t"),
+        pytest.param("40000001 N, brak klienta", VerdictFault.LETTER_NO, "brak klienta", id="n"),
+        pytest.param("40000001 skuteczne wymiana routera", VerdictFault.WORD_YES, "wymiana routera", id="skuteczne"),
+        pytest.param("40000001 Nieskuteczne: brak klienta", VerdictFault.WORD_NO, "brak klienta", id="nieskuteczne"),
+        pytest.param("40000001 wymiana routera", VerdictFault.MISSING, None, id="bez-tak-nie"),
+        pytest.param("40000001 nieobecny", VerdictFault.MISSING, None, id="slowo-od-nie"),
+        pytest.param("40000001", VerdictFault.MISSING, None, id="sam-numer"),
+        pytest.param("#40000001 takie same gniazda", VerdictFault.MISSING, None, id="slowo-od-tak"),
     ],
 )
-def test_wpis_bez_tak_ani_nie_jest_problemem_a_nie_zgadnieta_wartoscia(text: str, fault: VerdictFault) -> None:
-    """US 22: ani ``SKUTECZNE``, ani ``CZYNNOŚCI ZREALIZOWANE`` takiego Wpisu nie dostają."""
+def test_wpis_bez_tak_ani_nie_jest_problemem_a_nie_zgadnieta_wartoscia(
+    text: str, fault: VerdictFault, activities: str | None
+) -> None:
+    """US 22: ani ``SKUTECZNE``, ani ``CZYNNOŚCI ZREALIZOWANE`` takiego Wpisu nie dostają; przy znaku z zamiarem tata
+    ma Wpis na życzenie z tym zamiarem (ADR 0041), a bez znaku nie."""
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()]))
 
+    expected = (
+        MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), fault)
+        if activities is None
+        else _letter(text, "40000001", fault, activities)
+    )
     assert outcome.changes == ()
-    assert _problems(outcome) == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), fault),)
+    assert _problems(outcome) == (expected,)
 
 
 def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuje() -> None:
@@ -3955,8 +3973,11 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
 
     outcome = enter_reports(_inputs(mails, [_order()]))
 
+    offer = Requestable(mails[1].id, Verdict.YES, "wymiana routera", DAY)
     assert outcome.changes == ()
-    assert _problems(outcome) == (MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES),)
+    assert _problems(outcome) == (
+        MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES, offer),
+    )
 
 
 @pytest.mark.parametrize(
@@ -4643,7 +4664,7 @@ def test_tak_i_nie_jednego_zlecenia_w_jednym_mailu_niczego_do_niego_nie_wpisuja_
         pytest.param(
             "40000011 skuteczne\n40000011 t montaż\n40000011 inst25m",
             (),
-            (MissingVerdict(JAN_LOGIN, DAY, OrderNumber("40000011"), VerdictFault.WORD_YES),),
+            (_letter("40000011 skuteczne\n40000011 t montaż\n40000011 inst25m", "40000011", VerdictFault.WORD_YES, ""),),
             id="slowo-i-litera-w-zgodzie-pierwszy-wpis",
         ),
         pytest.param(
@@ -5326,7 +5347,7 @@ def test_numer_przeczytany_tylko_w_zleceniach_sprzed_okna_ma_wlasny_powod(
         pytest.param(
             "40000001 t montaż",
             (),
-            (MissingVerdict(JAN_LOGIN, DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES),),
+            (_letter("40000001 t montaż", "40000001", VerdictFault.LETTER_YES, "montaż"),),
             id="litera-zamiast-tak",
         ),
     ],
