@@ -1588,15 +1588,31 @@ export const zReportsOrder = z.object({
 });
 
 /**
+ * ReportsSubject
+ *
+ * Raport wykonawcy z błędem tematu (ADR 0041): temat maila po regule danych (ADR 0025 i ADR 0028: bez wartości
+ * ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”) i dzień, za który
+ * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
+ * kończy).
+ */
+export const zReportsSubject = z.object({
+    subject: z.string(),
+    fault: z.string(),
+    day: z.iso.date().nullable()
+});
+
+/**
  * ReportsProblem
  *
  * Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
- * numeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``).
+ * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,
+ * gdy to on jest problemem (``subject``).
  */
 export const zReportsProblem = z.object({
     reason: z.string(),
     number: z.string().nullable(),
-    keep: zKeptCell.nullable()
+    keep: zKeptCell.nullable(),
+    subject: zReportsSubject.nullable()
 });
 
 /**
@@ -1616,6 +1632,7 @@ export const zReportsWorkerDay = z.object({
     problems: z.array(zReportsProblem),
     notes: z.array(zReportsNote),
     orders_detail: z.array(zReportsOrder).nullable(),
+    mistaken_subjects: z.array(z.iso.date()),
     reminders: z.array(z.iso.datetime())
 });
 

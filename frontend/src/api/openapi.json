@@ -9951,6 +9951,16 @@
                 "type": "null"
               }
             ]
+          },
+          "subject": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportsSubject"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -9958,10 +9968,44 @@
         "required": [
           "reason",
           "number",
-          "keep"
+          "keep",
+          "subject"
         ],
         "title": "ReportsProblem",
-        "description": "Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez\nnumeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``)."
+        "description": "Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez\nnumeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,\ngdy to on jest problemem (``subject``)."
+      },
+      "ReportsSubject": {
+        "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
+          "fault": {
+            "type": "string",
+            "title": "Fault"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "subject",
+          "fault",
+          "day"
+        ],
+        "title": "ReportsSubject",
+        "description": "Raport wykonawcy z błędem tematu (ADR 0041): temat maila po regule danych (ADR 0025 i ADR 0028: bez wartości\n``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”) i dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy)."
       },
       "ReportsView": {
         "properties": {
@@ -10098,6 +10142,14 @@
             ],
             "title": "Orders Detail"
           },
+          "mistaken_subjects": {
+            "items": {
+              "type": "string",
+              "format": "date"
+            },
+            "type": "array",
+            "title": "Mistaken Subjects"
+          },
           "reminders": {
             "items": {
               "type": "string",
@@ -10118,6 +10170,7 @@
           "problems",
           "notes",
           "orders_detail",
+          "mistaken_subjects",
           "reminders"
         ],
         "title": "ReportsWorkerDay",

@@ -36,13 +36,26 @@ class KeptCell(Model):
     reported: str
 
 
+class ReportsSubject(Model):
+    """Raport wykonawcy z błędem tematu (ADR 0041): temat maila po regule danych (ADR 0025 i ADR 0028: bez wartości
+    ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”) i dzień, za który
+    Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
+    kończy)."""
+
+    subject: str
+    fault: str
+    day: date | None
+
+
 class ReportsProblem(Model):
     """Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
-    numeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``)."""
+    numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,
+    gdy to on jest problemem (``subject``)."""
 
     reason: str
     number: str | None
     keep: KeptCell | None
+    subject: ReportsSubject | None
 
 
 class ReportsNote(Model):
@@ -78,6 +91,9 @@ class ReportsWorkerDay(Model):
     problems: list[ReportsProblem]
     notes: list[ReportsNote]
     orders_detail: list[ReportsOrder] | None
+    mistaken_subjects: list[date]
+    """Dni z tematu Raportów wykonawcy z pomylonym tematem (ADR 0029), których Wpisy poszły do zleceń tego dnia, bo
+    numery zleceń wygrywają z datą: informacja, nie problem."""
     reminders: list[datetime]
     """Chwile wysłania Przypomnień o raporcie za ten dzień do tego Wykonawcy z ostatniego sprawdzenia pracy przypomnień,
     od najstarszej (ADR 0030), bez adresów i tematów maili."""

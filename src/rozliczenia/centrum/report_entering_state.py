@@ -15,7 +15,11 @@
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
   numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
   (``reasons.reason``), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
-  Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze go tylko proces, po
+  Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Przy
+  problemie raportu z błędem tematu ma jego temat po strażniku reguły danych pracy Centrum (``guarded``, ADR 0025: bez
+  wartości ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu (``reasons.subject_fault``) i dzień, za który
+  Centrum go liczy (``subject``), a przy dniu Wykonawcy dni z tematu raportów z pomylonym tematem za ten dzień
+  (``mistaken``); plik bez nich czyta się bez tematu i bez tych dni. Pisze go tylko proces, po
   pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
@@ -38,6 +42,7 @@ from typing import Annotated, Final, Literal, assert_never
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from rozliczenia.centrum.atomic_file import StateFile
+from rozliczenia.client_data import ForbiddenValues, guarded
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.report_cells import ReportColumn
@@ -66,7 +71,7 @@ from rozliczenia.worker_reports import (
     UnknownSender,
     UnreadableSubject,
 )
-from rozliczenia.worker_reports.reasons import note, reason
+from rozliczenia.worker_reports.reasons import note, reason, subject_fault
 
 _DECISIONS_VERSION: Final = 1
 _STATE_VERSION: Final = 4
@@ -181,6 +186,13 @@ class _Order(_Record):
 
 class _Worker(_WorkerV1):
     orders_detail: list[_Order]
+    mistaken: list[date] = []
+
+
+class _Subject(_Record):
+    subject: str
+    fault: str
+    day: date | None
 
 
 class _Problem(_Record):
@@ -190,6 +202,7 @@ class _Problem(_Record):
     reason: str
     sender: str | None
     difference: _Kept | None
+    subject: _Subject | None = None
 
 
 class _Note(_Record):
@@ -236,7 +249,7 @@ class _AnyResult(RootModel[Annotated[_ResultV1 | _ResultV2 | _Result, Field(disc
 class ShownWorker:
     """Liczby Wykonawcy ``worker`` z dnia ``day`` z ostatniego kliknięcia: zlecenia, wpisane (``tak`` albo ``nie`` w
     ``SKUTECZNE`` po kliknięciu), Raporty wykonawcy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności z
-    INTERMAX (``None``: plik wyniku sprzed zleceń dnia)."""
+    INTERMAX (``None``: plik wyniku sprzed zleceń dnia) i dni z tematu raportów z pomylonym tematem za ten dzień."""
 
     day: date
     worker: str
@@ -245,13 +258,24 @@ class ShownWorker:
     mails: int
     without_report: tuple[str, ...]
     orders_detail: tuple[OrderDetail, ...] | None
+    mistaken: tuple[date, ...]
+
+
+@dataclass(frozen=True)
+class ShownSubject:
+    """Raport z błędem tematu przy problemie: temat po strażniku reguły danych, rodzaj błędu i dzień, za który Centrum go
+    liczy (``None``: problem bez dnia)."""
+
+    subject: str
+    fault: str
+    day: date | None
 
 
 @dataclass(frozen=True)
 class ShownProblem:
     """Problem z ostatniego kliknięcia w widoku Raporty: dzień i Wykonawca, przy którym stoi (``None``: nieznany
     nadawca), numer zlecenia, jeśli problem go ma, zdanie dla taty, adres nieznanego nadawcy i komórka różnicy z ręczną
-    wartością, przy której tata może kliknąć „Zostaw moją”."""
+    wartością, przy której tata może kliknąć „Zostaw moją”, a przy raporcie z błędem tematu jego temat (``subject``)."""
 
     day: date
     worker: str | None
@@ -259,6 +283,7 @@ class ShownProblem:
     reason: str
     sender: str | None
     difference: Kept | None
+    subject: ShownSubject | None
 
 
 @dataclass(frozen=True)
@@ -316,11 +341,14 @@ class _TextFile:
 @dataclass
 class FileReportState:
     """Pliki Wpisania raportów w ``config`` pracy Centrum: pamięć własnych wpisów, wynik dla widoku Raporty i decyzje
-    „Zostaw moją”. Decyzje zapisuje ``keep`` pod blokadą, więc dwa kliknięcia „Zostaw moją” naraz nie gubią żadnej."""
+    „Zostaw moją”, oraz pamięć reguły danych pracy Centrum (``forbidden``), przez której strażnika temat raportu z
+    błędem tematu trafia do pliku wyniku. Decyzje zapisuje ``keep`` pod blokadą, więc dwa kliknięcia „Zostaw moją” naraz
+    nie gubią żadnej."""
 
     memory: _TextFile
     result: _TextFile
     decisions: _TextFile
+    forbidden: ForbiddenValues
     _deciding: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @classmethod
@@ -332,6 +360,7 @@ class FileReportState:
             file(REPORT_ENTERING_STATE, "pamięć Wpisania raportów"),
             file(REPORT_ENTERING_RESULT, "wynik Wpisania raportów"),
             file(REPORT_ENTERING_DECISIONS, "decyzje „Zostaw moją”", DecisionsUnreadable),
+            work.forbidden,
         )
 
     def load(self) -> SavedState:
@@ -414,6 +443,7 @@ class FileReportState:
                     )
                     for order in worker.orders_detail
                 ],
+                mistaken=list(worker.mistaken),
             )
             for worker in result.workers
         ]
@@ -423,7 +453,7 @@ class FileReportState:
                 clicked_at=result.clicked_at,
                 days=list(result.days),
                 workers=workers,
-                problems=[_problem(problem) for problem in result.problems],
+                problems=[_problem(problem, self.forbidden) for problem in result.problems],
                 notes=[_note(found) for found in result.notes],
             )
         )
@@ -450,6 +480,7 @@ class FileReportState:
                     worker.mails,
                     tuple(worker.without_report),
                     _orders(worker),
+                    tuple(worker.mistaken) if isinstance(worker, _Worker) else (),
                 )
                 for worker in result.workers
             ),
@@ -461,6 +492,7 @@ class FileReportState:
                     problem.reason,
                     problem.sender,
                     None if problem.difference is None else problem.difference.kept(),
+                    None if problem.subject is None else ShownSubject(problem.subject.subject, problem.subject.fault, problem.subject.day),
                 )
                 for problem in result.problems
             ),
@@ -508,14 +540,19 @@ def _note(found: ReportNote) -> _Note:
     return _Note(day=found.day, worker=found.worker, number=found.number, text=note(found))
 
 
-def _problem(problem: ReportProblem) -> _Problem:
+def _problem(problem: ReportProblem, forbidden: ForbiddenValues) -> _Problem:
     """Problem w pliku wyniku: miejsce w widoku Raporty, numer zlecenia, zdanie dla taty, a przy nieznanym nadawcy jego
-    adres (jedyne miejsce, do którego trafia, ADR 0028)."""
+    adres i przy raporcie z błędem tematu jego temat po strażniku reguły danych (jedyne miejsca, do których trafiają,
+    ADR 0028)."""
 
     said = reason(problem)
     match problem:
-        case UnreadableSubject(worker=worker, arrived=arrived):
-            return _Problem(day=arrived.date(), worker=worker, number=None, reason=said, sender=None, difference=None)
+        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
+            shown = guarded(forbidden, subject.shown(), "temat Raportu wykonawcy").text
+            found = _Subject(subject=shown, fault=subject_fault(fault), day=day)
+            return _Problem(
+                day=day or arrived.date(), worker=worker, number=None, reason=said, sender=None, difference=None, subject=found
+            )
         case UnknownSender(sender=sender, day=day):
             return _Problem(day=day, worker=None, number=None, reason=said, sender=sender.shown(), difference=None)
         case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber() | FaultyDescription():

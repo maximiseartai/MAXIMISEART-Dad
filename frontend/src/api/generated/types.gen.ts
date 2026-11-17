@@ -3726,7 +3726,8 @@ export type ReportsOrder = {
  * ReportsProblem
  *
  * Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
- * numeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``).
+ * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,
+ * gdy to on jest problemem (``subject``).
  */
 export type ReportsProblem = {
     /**
@@ -3738,6 +3739,30 @@ export type ReportsProblem = {
      */
     number: string | null;
     keep: KeptCell | null;
+    subject: ReportsSubject | null;
+};
+
+/**
+ * ReportsSubject
+ *
+ * Raport wykonawcy z błędem tematu (ADR 0041): temat maila po regule danych (ADR 0025 i ADR 0028: bez wartości
+ * ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”) i dzień, za który
+ * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
+ * kończy).
+ */
+export type ReportsSubject = {
+    /**
+     * Subject
+     */
+    subject: string;
+    /**
+     * Fault
+     */
+    fault: string;
+    /**
+     * Day
+     */
+    day: string | null;
 };
 
 /**
@@ -3834,6 +3859,10 @@ export type ReportsWorkerDay = {
      * Orders Detail
      */
     orders_detail: Array<ReportsOrder> | null;
+    /**
+     * Mistaken Subjects
+     */
+    mistaken_subjects: Array<string>;
     /**
      * Reminders
      */
