@@ -5,9 +5,10 @@ Temat i treść to Ustawienia Centrum taty (``SettlementMailSettings``) z polami
 „3–9 listopada 2026”) i ``{wykonawca}`` (nazwa Wykonawcy); reguły ma jedna budowa, ``SettlementMailSettings.of``.
 Odpowiedź Wykonawcy ma temat Maila z rozliczeniem po ``Re:``, a port Skrzynki raportów wybiera maile, których temat
 rdzeń raportów czyta jako temat Raportu wykonawcy (``reads_as_report``: pierwsze słowo ``raport`` z jedną literówką
-albo bez, odpowiedź na Przypomnienie o raporcie i poprawka raportu w odpowiedzi), więc temat, którego odpowiedź port
-by wybrał (``Raport 16.11.2026 …``), jest odmową. Treść kończy się stopką Przypomnień o raporcie, jednym podpisem
-taty.
+albo bez, odpowiedź na Przypomnienie o raporcie i poprawka raportu w odpowiedzi ``Re: Raport 16.11.2026 …``), więc
+temat, którego odpowiedź port by wybrał, jest odmową (także ``Rapotr 16.11.2026`` bez słowa ``SUBJECT_WORD``). Temat
+nie może też mieć słowa ``SUBJECT_WORD`` w żadnym miejscu, jak mówi tacie podpowiedź pola w Ustawieniach (ADR 0040).
+Treść kończy się stopką Przypomnień o raporcie, jednym podpisem taty.
 
 Pamięcią wysłanych jest folder „Wysłane” skrzynki raportów, jak dla Przypomnień o raporcie (ADR 0030): Mail z
 rozliczeniem rozpoznaje się po nazwie pliku załącznika (nazwa Rozliczenia pracownika z tokenem okresu i nazwą
@@ -29,7 +30,7 @@ from .settlement_period import SettlementPeriod
 from .text import normalize_text
 from .worker_list import Worker
 from .worker_report_inbox import SentAttachment
-from .worker_reports import reads_as_report
+from .worker_reports import SUBJECT_WORD, reads_as_report
 
 __all__ = [
     "CLOCK_MARGIN",
@@ -83,11 +84,11 @@ zmianą."""
 
 
 MailProblemKind = Literal[
-    "empty_subject", "subject_lines", "subject_report", "subject_unknown_field", "empty_text", "text_unknown_field"
+    "empty_subject", "subject_lines", "subject_report_word", "subject_unknown_field", "empty_text", "text_unknown_field"
 ]
-"""Reguła tematu i treści, której wartość nie spełnia: pusty temat, temat w kilku liniach, temat, którego odpowiedź
-``Re:`` port Skrzynki raportów wybrałby jako Raport wykonawcy, nawias klamrowy w temacie inny niż pole, pusta treść i
-nawias klamrowy w treści inny niż pole."""
+"""Reguła tematu i treści, której wartość nie spełnia: pusty temat, temat w kilku liniach, temat ze słowem
+``SUBJECT_WORD`` albo taki, którego odpowiedź ``Re:`` port Skrzynki raportów wybrałby jako Raport wykonawcy, nawias
+klamrowy w temacie inny niż pole, pusta treść i nawias klamrowy w treści inny niż pole."""
 
 
 @dataclass(frozen=True)
@@ -109,7 +110,8 @@ class SettlementMailSettings:
         rules: Mapping[MailProblemKind, bool] = {
             "empty_subject": bool(subject.strip()),
             "subject_lines": not {"\r", "\n"} & set(subject),
-            "subject_report": not reads_as_report(f"Re: {_without_fields(subject)}"),
+            "subject_report_word": SUBJECT_WORD not in _without_fields(subject).casefold()
+            and not reads_as_report(f"Re: {_without_fields(subject)}"),
             "subject_unknown_field": not {"{", "}"} & set(_without_fields(subject)),
             "empty_text": bool(text.strip()),
             "text_unknown_field": not {"{", "}"} & set(_without_fields(text)),

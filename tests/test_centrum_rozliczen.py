@@ -8595,14 +8595,9 @@ def test_temat_i_tresc_bez_pliku_maja_wartosci_domyslne_i_nie_zakladaja_pliku(tm
     [
         pytest.param({"subject": "  "}, "temat", settings_messages.settlement_mail_empty_subject(), id="pusty-temat"),
         pytest.param({"subject": "Rozliczenie\nza {okres}"}, "temat", settings_messages.settlement_mail_subject_lines(), id="dwie-linie"),
-        pytest.param({"subject": "Raport 16.11.2026 {okres}"}, "temat", settings_messages.settlement_mail_report_subject(), id="temat-raportu"),
-        pytest.param({"subject": " rapotr 16 11 26"}, "temat", settings_messages.settlement_mail_report_subject(), id="temat-raportu-z-literowka"),
-        pytest.param(
-            {"subject": "Przypomnienie: raport za dzień 16.11.2026"},
-            "temat",
-            settings_messages.settlement_mail_report_subject(),
-            id="temat-przypomnienia",
-        ),
+        pytest.param({"subject": "Raport za {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="slowo-raport"),
+        pytest.param({"subject": "Twoje RAPORTY {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="raport-w-slowie"),
+        pytest.param({"subject": " rapotr 16 11 26 {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="temat-raportu-z-literowka"),
         pytest.param({"subject": "Za {dzień}"}, "temat", settings_messages.settlement_mail_unknown_field(), id="nieznane-pole-tematu"),
         pytest.param({"text": " \n"}, "tresc", settings_messages.settlement_mail_empty_text(), id="pusta-tresc"),
         pytest.param({"text": "Plik {okres}}"}, "tresc", settings_messages.settlement_mail_unknown_field(), id="samotny-nawias"),
@@ -8621,18 +8616,6 @@ def test_zly_temat_albo_tresc_jest_odrzucony_zdaniem_przy_polu_bez_zapisu_i_bez_
         (422, {"message": sentence, "field": field})
     ] * 2
     assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
-
-
-@pytest.mark.parametrize("subject", ["Raport za {okres}", "Raport {okres}", "Twoje RAPORTY {okres}", "Rozliczenie i raport {wykonawca}"])
-def test_temat_ze_slowem_raport_ktorego_odpowiedzi_port_nie_wybiera_jest_zapisany(tmp_path: Path, subject: str) -> None:
-    """Port Skrzynki raportów wybiera maile po gramatyce tematu, nie po słowie ``raport`` w dowolnym miejscu (ADR 0041):
-    odpowiedź ``Re: Raport za 3–9 listopada 2026`` nie jest Raportem wykonawcy, więc taki temat nie jest odmową."""
-
-    app = wysylka_centrum(tmp_path)
-
-    saved = app.client.put("/api/settings/settlement-mail", json={"subject": subject, "text": "Plik za {okres}."})
-
-    assert saved.json()["settings"]["settlement_mail"]["subject"] == subject
 
 
 def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tmp_path: Path) -> None:

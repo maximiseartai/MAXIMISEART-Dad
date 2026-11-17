@@ -201,8 +201,8 @@ def settlement_mail_subject_lines() -> str:
     return "Temat maila musi mieścić się w jednej linii."
 
 
-def settlement_mail_report_subject() -> str:
-    return "Temat nie może zaczynać się słowem „raport” i datą: odpowiedź Wykonawcy Centrum wzięłoby za jego raport."
+def settlement_mail_report_word() -> str:
+    return "Temat nie może mieć słowa „raport”: odpowiedź Wykonawcy Centrum wzięłoby za jego raport."
 
 
 def settlement_mail_unknown_field() -> str:
