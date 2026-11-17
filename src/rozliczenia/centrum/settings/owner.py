@@ -219,25 +219,30 @@ class QuantityRulesView:
     ilości z Wydania liczą bez niego, ma zamiast problemu zdanie o nim (``taken_problem``), a Reguły ilości zdanie, że
     ich zmiana zapisze się dopiero ze zwolnionym zapisem (``devices_for_dad_rules``). ``source_rules``: reguły z pliku
     albo z Wydania, z których powstały te liczone; zmienia je zapis reguł taty. Pliku reguł, którego system nie daje
-    teraz czytać, nikt nie zna (``Unreadable``), a okno pokazuje wtedy reguły z Wydania. ``unreadable``: plik pary
-    (nazwa w ``config``), którego system nie daje teraz czytać; ``None``: oba pliki dało się przeczytać."""
+    teraz czytać, nikt nie zna (``Unreadable``)."""
 
-    rules: QuantityRules
+    rules: QuantityRules | UnreadableFile
+    """Reguły, którymi liczy następne Uruchomienie; plik pary, którego system nie daje teraz czytać, to ``UnreadableFile``
+    z jego nazwą, a nie treść z Wydania."""
+    shown: QuantityRules
+    """Reguły, które pokazuje okno Ustawień obok problemu pliku: przy pliku pary bez odczytu z Wydania. Tylko do pokazania;
+    odczyt, który z reguł liczy, bierze ``rules``."""
     rules_problem: FieldProblem | None
     devices_problem: FieldProblem | None
     source_rules: tuple[QuantityRule, ...] | Unreadable
     exceptions: tuple[QuantityException, ...]
     exceptions_problem: FieldProblem | None
-    unreadable: str | None
 
 
 @dataclass(frozen=True)
 class ActivityLegendView:
-    """Legenda czynności dla okna Ustawień: ta, którą liczy następne Uruchomienie (przy złym pliku ostatnia dobra, przy
-    pliku, którego system nie daje teraz czytać, legenda z Wydania), i problem pliku (``None``: plik dobry). Przy pliku
-    bez odczytu problem mówi, że proces nie wystartuje, bo migawka ma wtedy ``UnreadableFile``."""
+    """Legenda czynności dla okna Ustawień i problem pliku (``None``: plik dobry). Przy pliku bez odczytu problem mówi,
+    że proces nie wystartuje, bo migawka ma wtedy ``UnreadableFile``."""
 
-    legend: ActivityLegend
+    shown: ActivityLegend
+    """Legenda, którą pokazuje okno Ustawień: przy złym pliku ostatnia dobra, przy pliku, którego system nie daje teraz
+    czytać, legenda z Wydania. Tylko do pokazania; legendę, którą liczy następne Uruchomienie, daje
+    ``counted_activity_legend``."""
     problem: FieldProblem | None
     codes: tuple[ActivityCode, ...] | Unreadable
     """Kody, z których powstała legenda (z pliku, ostatnie dobre albo z Wydania); zmienia je zapis taty. Pliku, którego
@@ -388,7 +393,7 @@ class CentrumSettings:
                 workers=workers,
                 inbox=inbox_state,
                 reminders=reminders,
-                quantity_rules=rules.rules if rules.unreadable is None else UnreadableFile(rules.unreadable),
+                quantity_rules=rules.rules,
                 activity_legend=self._activity_legend(),
                 settlement_mail=mail,
             )
@@ -713,14 +718,15 @@ class CentrumSettings:
         usable_rules, usable_devices = _or_release(rules, RULES), _or_release(devices, DEVICES)
         waiting = devices_for_dad_rules(usable_devices, usable_rules, usable_rules) if self._release() else None
         unreadable = next((file.name for read, file in ((rules, RULES), (devices, DEVICES)) if isinstance(read, Unreadable)), None)
+        shown = quantity_rules(usable_rules, usable_devices)
         return QuantityRulesView(
-            quantity_rules(usable_rules, usable_devices),
+            shown if unreadable is None else UnreadableFile(unreadable),
+            shown,
             _problem(rules, RULES, messages.unreadable) or (waiting if isinstance(waiting, FieldProblem) else None),
             _problem(devices, DEVICES, messages.unreadable) or taken_problem(usable_rules, usable_devices),
             source_rules,
             _or_release(exceptions, EXCEPTIONS),
             _problem(exceptions, EXCEPTIONS, messages.unavailable),
-            unreadable,
         )
 
     def _checked(

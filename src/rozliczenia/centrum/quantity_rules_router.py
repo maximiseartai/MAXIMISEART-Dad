@@ -94,7 +94,7 @@ def history_sentences(settings: CentrumSettings, price_list: PriceList) -> Calla
     nazwami z cennika."""
 
     def reader() -> RuleSentences:
-        devices = settings.quantity_rules().rules.devices
+        devices = settings.quantity_rules().shown.devices
         names = price_list.names()
 
         def sentence(key: str, value: str | None) -> list[SentencePart] | None:
@@ -123,8 +123,8 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         view = settings.quantity_rules()
         names = price_list.names()
         return contract.QuantityRulesSettings(
-            rules=[_rule(rule, view.rules, names) for rule in view.rules.rules],
-            devices=[device_forms.device_component(component) for component in view.rules.devices.components],
+            rules=[_rule(rule, view.shown, names) for rule in view.shown.rules],
+            devices=[device_forms.device_component(component) for component in view.shown.devices.components],
             columns=[
                 contract.RuleColumn(letter=letter, name=names.get(letter) or None, writable=letter not in BUILT_IN_COLUMNS)
                 for letter in QUANTITY_LETTERS
@@ -149,7 +149,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         if isinstance(after, FieldProblem):
             raise refusal.setting_refused(_at_form_field(edit, after))
         rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(source_rules, after.rules)
-        return view.rules, after, rule_id
+        return readable_quantity_rules(settings), after, rule_id
 
     def saved(edit: contract.RuleEdit) -> contract.QuantityRulesSaved:
         """Zapis zmiany przez właściciela Ustawień: na bieżącej wartości pliku reguł, z jego sprawdzeniem pary."""
@@ -186,7 +186,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         kluczy Historii (jak reguła); formularz, parę z regułami i uzupełnienie listy sprawdza właściciel
         (``CentrumSettings._dad_change``), a odmowę zapisu u dwóch składników trasa stawia przy polu z tym zapisem."""
 
-        if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in readable_quantity_rules(settings).rules.devices.ids():
+        if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in readable_quantity_rules(settings).devices.ids():
             raise refusal.device_component_unknown()
 
         match settings.change_devices(edit):
@@ -218,7 +218,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         """Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``). Plik
         Folderów bez odczytu daje pustą listę jak niewskazany folder okresów: to podpowiedź, nie straż."""
 
-        rules = settings.quantity_rules().rules
+        rules = settings.quantity_rules().shown
         folders = settings.folders()
         directory = None if isinstance(folders, Unreadable) else folders.periods_directory_to_read
         if directory is None:

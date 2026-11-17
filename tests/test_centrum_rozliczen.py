@@ -7748,6 +7748,26 @@ def test_zmiana_i_usuniecie_skladnika_taty_przy_liscie_urzadzen_bez_odczytu_to_4
     assert _config_files(app.tool.config) == before
 
 
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+@pytest.mark.parametrize("other", [HISTORY_FILE, DEVICES_FILE])
+def test_zmiana_i_usuniecie_skladnika_taty_przy_regulach_ilosci_i_drugim_pliku_bez_odczytu_to_409_o_regulach(
+    tmp_path: Path, other: str, method: str
+) -> None:
+    """Plik reguł, którego system nie daje teraz czytać, razem z Historią Ustawień albo Listą Urządzeń: odmowa mówi o
+    pliku reguł, pierwszym pliku pary, a nie o błędzie zapisu Historii ani „tego składnika już nie ma”."""
+
+    app = centrum(tmp_path)
+    own = _own_pair(app)
+    form = {"name": "ont y", "other_spellings": ["onty"], "group": None}
+    before = _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / RULES_FILE), without_reading(app.tool.config / other):
+        response = app.client.request(method, f"{DEVICES_URL}/{own}", json=form if method == "PUT" else None)
+
+    assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(RULES_FILE).message})
+    assert _config_files(app.tool.config) == before
+
+
 HAND_EDITS: dict[str, tuple[str, str]] = {
     RULES_FILE: ("wartosc: 2", "wartosc: 5"),
     DEVICES_FILE: ("- id: ont-y\n  zapisy:\n  - ont y\n", "- id: ont-y\n  zapisy:\n  - ont y\n  - onty\n"),

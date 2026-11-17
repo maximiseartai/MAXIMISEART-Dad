@@ -117,8 +117,9 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
     def listed() -> tuple[contract.QuantityDifferences, list[Difference]]:
         """Lista dla sekcji i wszystkie różnice ostatnich plików, także te, które są wyjątkami."""
 
-        view = readable_quantity_rules(settings)
-        rules, bad = view.rules, view.exceptions_problem
+        rules = readable_quantity_rules(settings)
+        view = settings.quantity_rules()
+        bad = view.exceptions_problem
         problem = None if bad is None else SettingProblem(field=bad.place, message=bad.sentence)
         directory = readable_folders(settings).periods_directory_to_read
         if directory is None:
