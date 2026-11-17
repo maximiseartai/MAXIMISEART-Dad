@@ -264,9 +264,9 @@ def _worker_day(
     detailed: bool,
     reminders: tuple[datetime, ...],
 ) -> report_entering_contract.ReportsWorkerDay:
-    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem albo informacją, zera), problemami
-    ``problems``, informacjami ``notes`` i chwilami Przypomnień o raporcie ``reminders``; stan zlecenia daje
-    ``OrderState.of`` z numerów problemów dnia."""
+    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem albo informacją, zera, bez dni z tematu
+    raportów z pomylonym tematem), problemami ``problems``, informacjami ``notes`` i chwilami Przypomnień o raporcie
+    ``reminders``; stan zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
 
     numbers = {problem.number for problem in problems}
     orders = () if figure is None else figure.orders_detail
@@ -280,6 +280,7 @@ def _worker_day(
         without_report=[] if figure is None else list(figure.without_report),
         problems=[_problem(problem) for problem in problems],
         notes=[report_entering_contract.ReportsNote(number=found.number, text=found.text) for found in notes],
+        mistaken_subjects=[] if figure is None else list(figure.mistaken),
         orders_detail=None
         if orders is None
         else [
@@ -287,7 +288,7 @@ def _worker_day(
                 number=order.number,
                 successful=order.successful,
                 activities=order.activities,
-                state=OrderState.of(reported=order.reported, problem=order.number in numbers).value,
+                state=OrderState.of(reported=order.reported, faulty=order.faulty, problem=order.number in numbers).value,
                 codes=list(order.codes or ()),
                 no_code=order.codes == (),
             )
@@ -310,7 +311,15 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
             reported=difference.reported,
         )
     )
-    return report_entering_contract.ReportsProblem(reason=problem.reason, number=problem.number, keep=keep)
+    found = problem.faulty_subject
+    faulty = (
+        None
+        if found is None
+        else report_entering_contract.ReportsFaultySubject(fault=found.fault, day=found.day, arrived=found.arrived)
+    )
+    return report_entering_contract.ReportsProblem(
+        reason=problem.reason, number=problem.number, keep=keep, faulty_subject=faulty
+    )
 
 
 def conflict_note(copy: Path) -> str:

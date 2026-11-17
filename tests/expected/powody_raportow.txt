@@ -1,19 +1,30 @@
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale nie ma w nim daty dnia zleceń, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: nie ma w nim daty dnia zleceń. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: bez daty
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale poza tym słowem i datą temat ma inne słowa, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: poza tym słowem i datą temat ma inne słowa. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: inne słowa
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale przed słowem albo między nim a datą temat ma znak inny niż spacja, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: przed słowem albo między nim a datą temat ma znak inny niż spacja. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: znak przed datą
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie ma roku, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: data nie ma roku. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: bez roku
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie ma postaci dzień, miesiąc, rok, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: data nie ma postaci dzień, miesiąc, rok. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: data nie jako dzień, miesiąc, rok
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale dzień, miesiąc i rok nie są rozdzielone kropką, podkreśleniem ani ukośnikiem, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: dzień, miesiąc i rok nie są rozdzielone kropką, podkreśleniem ani ukośnikiem. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: zły znak w dacie
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale rok w dacie nie ma dwóch ani czterech cyfr, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: rok w dacie nie ma dwóch ani czterech cyfr. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: zły rok
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie jest prawdziwym dniem, więc Centrum go nie wpisało.
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie: data nie jest prawdziwym dniem. Centrum liczy go za 08.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.
+  rodzaj błędu tematu: dzień, którego nie ma
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale nie ma w nim daty dnia zleceń, a jan.testowy nie ma do dnia przyjścia maila dnia ze zleceniami bez innego raportu, za który Centrum mogłoby go liczyć. Centrum go nie wpisało i nie kończy nim Przypomnień o raporcie.
+  rodzaj błędu tematu: bez daty
 UnknownSender
   Raport wykonawcy z 08.11.2026 przyszedł z adresu, którego nie ma na Liście Wykonawców, więc Centrum go nie wpisało. Przypisz ten adres Wykonawcy, a następne kliknięcie go wpisze.
 MissingVerdict

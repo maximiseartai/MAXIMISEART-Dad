@@ -13,10 +13,13 @@
   ``since``) jak wersja 1, a wersja 3 (nigdy w Wydaniu) z pamięcią zleceń, czasem także z ``added``.
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
-  numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis i Kody czynności zlecenia ``tak``
-  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów), zdaniem o każdym problemie
+  numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis, Kody czynności zlecenia ``tak``
+  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów, i czy ma Wpis w raporcie z błędem tematu, ``faulty``), zdaniem o każdym problemie
   (``reasons.reason``), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
-  Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze go tylko proces, po
+  Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Przy
+  problemie raportu z błędem tematu ma rodzaj błędu (``reasons.subject_fault``), dzień, za który Centrum go liczy, i
+  chwilę przyjścia maila (``faulty_subject``), bez tematu (ADR 0028), a przy dniu Wykonawcy dni z tematu raportów z
+  pomylonym tematem za ten dzień (``mistaken``); plik bez nich czyta się bez nich. Pisze go tylko proces, po
   pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
@@ -67,7 +70,7 @@ from rozliczenia.worker_reports import (
     UnknownSender,
     UnreadableSubject,
 )
-from rozliczenia.worker_reports.reasons import note, reason
+from rozliczenia.worker_reports.reasons import note, reason, subject_fault
 
 _DECISIONS_VERSION: Final = 1
 _STATE_VERSION: Final = 4
@@ -179,10 +182,18 @@ class _Order(_Record):
     activities: str | None
     reported: bool
     codes: list[str] | None = None
+    faulty: bool = False
 
 
 class _Worker(_WorkerV1):
     orders_detail: list[_Order]
+    mistaken: list[date] = []
+
+
+class _FaultySubject(_Record):
+    fault: str
+    day: date | None
+    arrived: datetime
 
 
 class _Problem(_Record):
@@ -192,6 +203,7 @@ class _Problem(_Record):
     reason: str
     sender: str | None
     difference: _Kept | None
+    faulty_subject: _FaultySubject | None = None
 
 
 class _Note(_Record):
@@ -238,7 +250,7 @@ class _AnyResult(RootModel[Annotated[_ResultV1 | _ResultV2 | _Result, Field(disc
 class ShownWorker:
     """Liczby Wykonawcy ``worker`` z dnia ``day`` z ostatniego kliknięcia: zlecenia, wpisane (``tak`` albo ``nie`` w
     ``SKUTECZNE`` po kliknięciu), Raporty wykonawcy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności z
-    INTERMAX (``None``: plik wyniku sprzed zleceń dnia)."""
+    INTERMAX (``None``: plik wyniku sprzed zleceń dnia) i dni z tematu raportów z pomylonym tematem za ten dzień."""
 
     day: date
     worker: str
@@ -247,13 +259,25 @@ class ShownWorker:
     mails: int
     without_report: tuple[str, ...]
     orders_detail: tuple[OrderDetail, ...] | None
+    mistaken: tuple[date, ...]
+
+
+@dataclass(frozen=True)
+class ShownFaultySubject:
+    """Raport z błędem tematu przy problemie: rodzaj błędu, dzień, za który Centrum go liczy (``None``: problem bez dnia),
+    i chwila przyjścia maila."""
+
+    fault: str
+    day: date | None
+    arrived: datetime
 
 
 @dataclass(frozen=True)
 class ShownProblem:
     """Problem z ostatniego kliknięcia w widoku Raporty: dzień i Wykonawca, przy którym stoi (``None``: nieznany
     nadawca), numer zlecenia, jeśli problem go ma, zdanie dla taty, adres nieznanego nadawcy i komórka różnicy z ręczną
-    wartością, przy której tata może kliknąć „Zostaw moją”."""
+    wartością, przy której tata może kliknąć „Zostaw moją”, a przy raporcie z błędem tematu rodzaj błędu, jego dzień i
+    chwila przyjścia (``faulty_subject``)."""
 
     day: date
     worker: str | None
@@ -261,6 +285,7 @@ class ShownProblem:
     reason: str
     sender: str | None
     difference: Kept | None
+    faulty_subject: ShownFaultySubject | None
 
 
 @dataclass(frozen=True)
@@ -414,9 +439,11 @@ class FileReportState:
                         activities=order.activities,
                         reported=order.reported,
                         codes=None if order.codes is None else list(order.codes),
+                        faulty=order.faulty,
                     )
                     for order in worker.orders_detail
                 ],
+                mistaken=list(worker.mistaken),
             )
             for worker in result.workers
         ]
@@ -453,6 +480,7 @@ class FileReportState:
                     worker.mails,
                     tuple(worker.without_report),
                     _orders(worker),
+                    tuple(worker.mistaken) if isinstance(worker, _Worker) else (),
                 )
                 for worker in result.workers
             ),
@@ -464,6 +492,7 @@ class FileReportState:
                     problem.reason,
                     problem.sender,
                     None if problem.difference is None else problem.difference.kept(),
+                    None if (faulty := problem.faulty_subject) is None else ShownFaultySubject(faulty.fault, faulty.day, faulty.arrived),
                 )
                 for problem in result.problems
             ),
@@ -506,6 +535,7 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
             order.activities,
             order.reported,
             None if order.codes is None else tuple(order.codes),
+            order.faulty,
         )
         for order in worker.orders_detail
     )
@@ -518,13 +548,23 @@ def _note(found: ReportNote) -> _Note:
 
 
 def _problem(problem: ReportProblem) -> _Problem:
-    """Problem w pliku wyniku: miejsce w widoku Raporty, numer zlecenia, zdanie dla taty, a przy nieznanym nadawcy jego
-    adres (jedyne miejsce, do którego trafia, ADR 0028)."""
+    """Problem w pliku wyniku: miejsce w widoku Raporty, numer zlecenia, zdanie dla taty, przy nieznanym nadawcy jego
+    adres (jedyne miejsce, do którego trafia, ADR 0028), a przy raporcie z błędem tematu rodzaj błędu, dzień, za który
+    Centrum go liczy, i chwila przyjścia maila, bez tematu."""
 
     said = reason(problem)
     match problem:
-        case UnreadableSubject(worker=worker, arrived=arrived):
-            return _Problem(day=arrived.date(), worker=worker, number=None, reason=said, sender=None, difference=None)
+        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault, day=day):
+            found = _FaultySubject(fault=subject_fault(fault), day=day, arrived=arrived)
+            return _Problem(
+                day=day or arrived.date(),
+                worker=worker,
+                number=None,
+                reason=said,
+                sender=None,
+                difference=None,
+                faulty_subject=found,
+            )
         case UnknownSender(sender=sender, day=day):
             return _Problem(day=day, worker=None, number=None, reason=said, sender=sender.shown(), difference=None)
         case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber() | FaultyDescription():

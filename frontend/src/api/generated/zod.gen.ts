@@ -1559,6 +1559,19 @@ export const zReportsDay = z.object({
 });
 
 /**
+ * ReportsFaultySubject
+ *
+ * Raport wykonawcy z błędem tematu (ADR 0041): rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
+ * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
+ * kończy), i chwila przyjścia maila. Bez tematu, bo tematy maili nie trafiają do przeglądarki (ADR 0028).
+ */
+export const zReportsFaultySubject = z.object({
+    fault: z.string(),
+    day: z.iso.date().nullable(),
+    arrived: z.iso.datetime()
+});
+
+/**
  * ReportsNote
  *
  * Informacja z ostatniego kliknięcia przy dniu Wykonawcy o zmianie, którą Centrum zrobiło w INTERMAX (ADR 0029):
@@ -1573,8 +1586,9 @@ export const zReportsNote = z.object({
  * ReportsOrder
  *
  * Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
- * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez
- * żadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
+ * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem
+ * tylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego
+ * Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
  *
  * ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
  * i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
@@ -1587,7 +1601,8 @@ export const zReportsOrder = z.object({
     state: z.enum([
         'entered',
         'without_report',
-        'problem'
+        'problem',
+        'faulty_subject'
     ]),
     codes: z.array(z.string()),
     no_code: z.boolean()
@@ -1597,12 +1612,14 @@ export const zReportsOrder = z.object({
  * ReportsProblem
  *
  * Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
- * numeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``).
+ * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,
+ * gdy to on jest problemem (``faulty_subject``).
  */
 export const zReportsProblem = z.object({
     reason: z.string(),
     number: z.string().nullable(),
-    keep: zKeptCell.nullable()
+    keep: zKeptCell.nullable(),
+    faulty_subject: zReportsFaultySubject.nullable()
 });
 
 /**
@@ -1622,6 +1639,7 @@ export const zReportsWorkerDay = z.object({
     problems: z.array(zReportsProblem),
     notes: z.array(zReportsNote),
     orders_detail: z.array(zReportsOrder).nullable(),
+    mistaken_subjects: z.array(z.iso.date()),
     reminders: z.array(z.iso.datetime())
 });
 

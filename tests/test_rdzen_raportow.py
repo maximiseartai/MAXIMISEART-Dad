@@ -17,7 +17,7 @@ from pathlib import Path
 from string import ascii_lowercase
 from typing import get_args
 
-from hypothesis import example, given, settings
+from hypothesis import assume, example, given, settings
 from hypothesis import strategies as st
 import pytest
 
@@ -79,7 +79,7 @@ from rozliczenia.worker_reports import (
     reminder_text,
     reminders_due,
 )
-from rozliczenia.worker_reports.reasons import note, reason
+from rozliczenia.worker_reports.reasons import note, reason, subject_fault
 from tests.fixtures.expect import assert_expected
 
 DAY = date(2026, 11, 8)
@@ -2883,7 +2883,8 @@ JAN_TYPO = UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("40000092"), Add
 
 
 def _no_year(arrived: datetime = EVENING) -> UnreadableSubject:
-    return UnreadableSubject(_mail(JAN, NO_YEAR, TEXT, arrived).id, Login("jan.testowy"), arrived, SubjectFault.NO_YEAR)
+    mail = _mail(JAN, NO_YEAR, TEXT, arrived).id
+    return UnreadableSubject(mail, Login("jan.testowy"), arrived, SubjectFault.NO_YEAR, DAY)
 
 
 @pytest.mark.parametrize(
@@ -3065,6 +3066,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
             problems=0,
             without_report=(OrderNumber("40000010"),),
             orders_detail=(OrderDetail(OrderNumber("40000010"), None, None, reported=False),),
+            mistaken=(),
         ),
         WorkerDay(
             DAY,
@@ -3080,6 +3082,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
                 OrderDetail(OrderNumber("40000003"), None, None, reported=False),
                 OrderDetail(OrderNumber("40000004"), "???", "ręcznie", reported=False),
             ),
+            mistaken=(),
         ),
     )
 
@@ -3236,7 +3239,8 @@ def _seen(problem: ReportProblem) -> object:
 )
 def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[ReportMail]) -> None:
     """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
-    ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy), liczby i pamięć wpisów."""
+    ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy),
+    liczby i pamięć wpisów."""
 
     inputs = _inputs(
         mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY, ordered=_CANONICAL_DAYS
@@ -3262,13 +3266,26 @@ def _read_back(read: ReadReport | ReadUnreadable) -> tuple[object, ...]:
     return enter_reports(_inputs([as_mail(read, sender)], [_order()])).mails
 
 
-@pytest.mark.parametrize("fault", [fault for fault in SubjectFault if fault is not SubjectFault.SEPARATOR], ids=lambda fault: fault.name)
-def test_postac_kanoniczna_nieczytelnego_tematu_daje_ten_sam_powod(fault: SubjectFault) -> None:
-    """Każdy powód nieczytelnego tematu, także taki, którego przykłady własności wyżej nie trafią, z numerami Wpisów.
-    ``SEPARATOR`` jest tylko w Logach sprzed tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś jako dzień."""
+DAY_BESIDE_FAULTS = (SubjectFault.OTHER_WORDS, SubjectFault.OTHER_TEXT, SubjectFault.NO_YEAR)
+
+
+@pytest.mark.parametrize(
+    ("fault", "day"),
+    [
+        *((fault, None) for fault in SubjectFault if fault is not SubjectFault.SEPARATOR),
+        *((fault, DAY) for fault in DAY_BESIDE_FAULTS),
+        *((fault, date(2027, 1, 5)) for fault in DAY_BESIDE_FAULTS),
+    ],
+    ids=lambda found: found.name if isinstance(found, SubjectFault) else str(found),
+)
+def test_postac_kanoniczna_bledu_tematu_daje_ten_sam_powod_i_dzien_z_tematu(fault: SubjectFault, day: date | None) -> None:
+    """Każdy powód błędu tematu, także taki, którego przykłady własności wyżej nie trafią, z numerami Wpisów, bez dnia z
+    tematu i z nim przy błędzie obok daty, także z dniem następnego roku, który temat bez roku daje tylko z granic od
+    dnia przyjścia. ``SEPARATOR`` jest tylko w Logach sprzed tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś
+    jako dzień."""
 
     numbers = frozenset({OrderNumber("40000001"), OrderNumber("40000002")})
-    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, numbers)
+    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, numbers, day)
 
     assert _read_back(read) == (read,)
 
@@ -3314,7 +3331,8 @@ def _every_problem() -> list[ReportProblem]:
     sender = SenderAddress.of("obcy@przyklad.invalid")
     assert sender is not None
     return [
-        *(UnreadableSubject(mail, jan, EVENING, fault) for fault in SubjectFault),
+        *(UnreadableSubject(mail, jan, EVENING, fault, DAY) for fault in SubjectFault),
+        UnreadableSubject(mail, jan, EVENING, SubjectFault.NO_DATE, None),
         UnknownSender(mail, sender, DAY),
         *(MissingVerdict(jan, DAY, number, fault) for fault in VerdictFault),
         ConflictingVerdicts(
@@ -3375,7 +3393,11 @@ def _faulty(text: str, number: str = "40000001", worker: str = "jan.testowy", da
 
 def test_powod_dla_taty_kazdego_rodzaju_problemu() -> None:
     problems = _every_problem()
-    text = "".join(f"{type(problem).__name__}\n  {reason(problem)}\n" for problem in problems)
+    text = "".join(
+        f"{type(problem).__name__}\n  {reason(problem)}\n"
+        + (f"  rodzaj błędu tematu: {subject_fault(problem.fault)}\n" if isinstance(problem, UnreadableSubject) else "")
+        for problem in problems
+    )
 
     assert {type(problem) for problem in problems} == set(get_args(ReportProblem))
     assert "obcy@przyklad.invalid" not in text
@@ -3550,7 +3572,9 @@ def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
     outcome = enter_reports(_inputs([mail], [_order()]))
 
     assert outcome.mails == (
-        ReadUnreadable(mail.id, EVENING, Login("jan.testowy"), SubjectFault.NO_YEAR, frozenset({OrderNumber("40000001")})),
+        ReadUnreadable(
+            mail.id, EVENING, Login("jan.testowy"), SubjectFault.NO_YEAR, frozenset({OrderNumber("40000001")}), DAY
+        ),
     )
 
 
@@ -3727,6 +3751,30 @@ def test_wlasnosc_temat_z_dniem_sprzed_tolerancji_daje_ten_sam_dzien_co_zapis_ka
     assert _days_read(subject, arrived) == _days_read(f"Raport {day:%d.%m}.{day.year:04d}", arrived)
 
 
+@PROPERTY
+@given(
+    st.dates(date(1000, 1, 1), date(9999, 12, 31)).flatmap(lambda day: st.tuples(st.just(day), _subject_of_day(day))),
+    st.dates(date(2001, 1, 1), date(2098, 12, 31)),
+    st.sampled_from([" Kowalski", " za 2 montaże 8 usterek", ", Jan Kowalski", "poprawka"]),
+)
+def test_wlasnosc_temat_z_dniem_i_innymi_slowami_liczy_sie_za_ten_sam_dzien_z_tematu(
+    written: tuple[date, str], arrived_day: date, words: str
+) -> None:
+    """ADR 0041 (historia 19): każdy temat, który gramatyka czyta jako dzień, z innymi słowami po dacie, także z liczbą
+    albo przyklejonymi do daty, to Raport wykonawcy z błędem tematu „inne słowa” z tym samym dniem z tematu, co
+    ``Raport dd.mm.rrrr`` z tym dniem, także z pomylonym rokiem."""
+
+    day, subject = written
+    arrived = datetime.combine(arrived_day, time(18, 5), TAPA)
+    expected = _days_read(f"Raport {day:%d.%m}.{day.year:04d}", arrived)
+    assume(expected)
+    inputs = _inputs([_mail(JAN, subject + words, TEXT, arrived)], [], today=arrived.date() + timedelta(days=62), rollout=date(1000, 1, 1))
+
+    read = [(found.fault, found.day) for found in enter_reports(inputs).mails if isinstance(found, ReadUnreadable)]
+
+    assert read == [(SubjectFault.OTHER_WORDS, *expected)]
+
+
 def _days_read(subject: str, arrived: datetime) -> list[date]:
     """Dzień Raportu wykonawcy z tematu ``subject`` w mailu, który przyszedł ``arrived``, w oknie od roku 1000 do
     ``_AFTER`` po dniu przyjścia, więc pusta lista to tylko 29 lutego z roku spoza okna."""
@@ -3753,46 +3801,75 @@ def test_mail_z_bledem_tematu_bez_zadnego_wpisu_jest_pomijany_po_cichu(subject: 
 
 
 @pytest.mark.parametrize(
-    ("subject", "fault"),
+    ("subject", "fault", "day"),
     [
-        pytest.param("Raport", SubjectFault.NO_DATE, id="samo-slowo"),
-        pytest.param("raport z dzisiaj", SubjectFault.NO_DATE, id="bez-liczb"),
-        pytest.param("Raport 08.11", SubjectFault.NO_YEAR, id="bez-roku"),
-        pytest.param("Raport 8/11 ", SubjectFault.NO_YEAR, id="bez-roku-ukosnik"),
-        pytest.param("Raport 31.11.2026", SubjectFault.NOT_A_DAY, id="31-listopada"),
-        pytest.param("Raport 08.13.2026", SubjectFault.NOT_A_DAY, id="miesiac-13"),
-        pytest.param("Raport 0.11.2026", SubjectFault.NOT_A_DAY, id="dzien-zero"),
-        pytest.param("Raport 29.02.27", SubjectFault.NOT_A_DAY, id="29-lutego-roku-zwyklego"),
-        pytest.param("Raport 08.11.226", SubjectFault.YEAR_DIGITS, id="rok-trzy-cyfry"),
-        pytest.param("Raport 08.11.20226", SubjectFault.YEAR_DIGITS, id="rok-piec-cyfr"),
-        pytest.param("Raport 08112026", SubjectFault.DATE_FORM, id="bez-separatorow"),
-        pytest.param("Raport 008.11.2026", SubjectFault.DATE_FORM, id="dzien-trzy-cyfry"),
-        pytest.param("Raport 08.011.2026", SubjectFault.DATE_FORM, id="miesiac-trzy-cyfry"),
-        pytest.param("Raport 08.11.2026.1", SubjectFault.DATE_FORM, id="cztery-liczby"),
-        pytest.param("Raport z 08.11.2026", SubjectFault.OTHER_WORDS, id="slowo-przed-data"),
-        pytest.param("Raport 08.11.2026 poprawka", SubjectFault.OTHER_WORDS, id="tekst-po-dacie"),
-        pytest.param("Raport 08.11.2026 rok", SubjectFault.OTHER_WORDS, id="slowo-rok-po-dacie"),
-        pytest.param("Raport 08.11.2026 Kowalski", SubjectFault.OTHER_WORDS, id="nazwisko"),
-        pytest.param("Raport za 08.11.2026 2 montaże 8 usterek", SubjectFault.OTHER_WORDS, id="liczba-montazy"),
-        pytest.param("Raport 08.11 Kowalski", SubjectFault.OTHER_WORDS, id="slowa-przed-brakiem-roku"),
-        pytest.param("Raport 08r11r2026", SubjectFault.OTHER_WORDS, id="litera-miedzy-liczbami"),
-        pytest.param("Raport: 08.11.2026", SubjectFault.OTHER_TEXT, id="dwukropek"),
-        pytest.param("Raport - 08.11.2026", SubjectFault.OTHER_TEXT, id="myslnik-przed-data"),
-        pytest.param("[Raport 08.11.2026]", SubjectFault.OTHER_TEXT, id="nawias-przed-slowem"),
+        pytest.param("Raport", SubjectFault.NO_DATE, None, id="samo-slowo"),
+        pytest.param("raport z dzisiaj", SubjectFault.NO_DATE, None, id="bez-liczb"),
+        pytest.param("Raport 08.11", SubjectFault.NO_YEAR, DAY, id="bez-roku"),
+        pytest.param("Raport 8/11 ", SubjectFault.NO_YEAR, DAY, id="bez-roku-ukosnik"),
+        pytest.param("Raport 31.11.2026", SubjectFault.NOT_A_DAY, None, id="31-listopada"),
+        pytest.param("Raport 08.13.2026", SubjectFault.NOT_A_DAY, None, id="miesiac-13"),
+        pytest.param("Raport 0.11.2026", SubjectFault.NOT_A_DAY, None, id="dzien-zero"),
+        pytest.param("Raport 29.02.27", SubjectFault.NOT_A_DAY, None, id="29-lutego-roku-zwyklego"),
+        pytest.param("Raport 08.11.226", SubjectFault.YEAR_DIGITS, None, id="rok-trzy-cyfry"),
+        pytest.param("Raport 08.11.20226", SubjectFault.YEAR_DIGITS, None, id="rok-piec-cyfr"),
+        pytest.param("Raport 08112026", SubjectFault.DATE_FORM, None, id="bez-separatorow"),
+        pytest.param("Raport 008.11.2026", SubjectFault.DATE_FORM, None, id="dzien-trzy-cyfry"),
+        pytest.param("Raport 08.011.2026", SubjectFault.DATE_FORM, None, id="miesiac-trzy-cyfry"),
+        pytest.param("Raport 08.11.2026.1", SubjectFault.DATE_FORM, None, id="cztery-liczby"),
+        pytest.param("Raport z 08.11.2026", SubjectFault.OTHER_WORDS, DAY, id="slowo-przed-data"),
+        pytest.param("Raport 08.11.2026 poprawka", SubjectFault.OTHER_WORDS, DAY, id="tekst-po-dacie"),
+        pytest.param("Raport 08.11.2026 rok", SubjectFault.OTHER_WORDS, DAY, id="slowo-rok-po-dacie"),
+        pytest.param("Raport 08.11.2026 Kowalski", SubjectFault.OTHER_WORDS, DAY, id="nazwisko"),
+        pytest.param("Raport za 08.11.2026 2 montaże 8 usterek", SubjectFault.OTHER_WORDS, DAY, id="liczba-montazy"),
+        pytest.param("Raport 08.11 Kowalski", SubjectFault.OTHER_WORDS, DAY, id="slowa-przed-brakiem-roku"),
+        pytest.param("Raport 8 11 26 Kowalski", SubjectFault.OTHER_WORDS, DAY, id="spacje-w-dacie-i-slowo"),
+        pytest.param("Raport 08.11.2016 Kowalski", SubjectFault.OTHER_WORDS, DAY, id="literowka-w-roku-i-slowo"),
+        pytest.param("Raport 2 montaże 8 usterek", SubjectFault.OTHER_WORDS, None, id="liczby-bez-daty"),
+        pytest.param("Raport 08r11r2026", SubjectFault.OTHER_WORDS, None, id="litera-miedzy-liczbami"),
+        pytest.param("Raport 31.11.2026 Kowalski", SubjectFault.OTHER_WORDS, None, id="slowo-i-data-ktora-nie-jest-dniem"),
+        pytest.param("Raport: 08.11.2026", SubjectFault.OTHER_TEXT, DAY, id="dwukropek"),
+        pytest.param("Raport - 08.11.2026", SubjectFault.OTHER_TEXT, DAY, id="myslnik-przed-data"),
+        pytest.param("[Raport 08.11.2026]", SubjectFault.OTHER_TEXT, DAY, id="nawias-przed-slowem"),
     ],
 )
-def test_temat_ze_slowem_raport_ktorego_nie_da_sie_odczytac_jest_problemem_z_powodem(
-    subject: str, fault: SubjectFault
+def test_raport_z_bledem_tematu_liczy_sie_za_dzien_z_tematu_albo_wskazany_i_nic_nie_wpisuje(
+    subject: str, fault: SubjectFault, day: date | None
 ) -> None:
-    """US 10: mail od Wykonawcy ze słowem „raport” w temacie bez dnia zleceń nic nie wpisuje i mówi tacie dlaczego."""
+    """US 10 i ADR 0041 (historie 19–20, 40): Raport wykonawcy ze słowem „raport” w temacie bez dnia zleceń wprost nic nie
+    wpisuje i mówi tacie dlaczego. Przy błędzie obok daty (inne słowa, znak przed datą, brak roku) liczy się za dzień
+    z tematu (``day``: pierwszy dzień i miesiąc po słowie, z rokiem albo z granic od dnia przyjścia), a bez niego za dzień
+    wskazany: ostatni dzień otwarty Jana ze zleceniami, nie późniejszy niż dzień przyjścia maila (9.11). Problem stoi
+    przy tym dniu i liczy się w nim jako Raport wykonawcy i problem."""
 
-    mail = _mail(JAN, subject, TEXT)
+    mail = _mail(JAN, subject, TEXT, EVENING + timedelta(days=1))
+    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002", day=NEXT_DAY)]
 
-    outcome = enter_reports(_inputs([mail], [_order()]))
+    outcome = enter_reports(_inputs([mail], orders, today=NEXT_DAY, rollout=DAY))
 
+    jan, numbers = Login("jan.testowy"), frozenset({OrderNumber("40000001")})
     assert outcome.changes == ()
-    assert _problems(outcome) == (UnreadableSubject(mail.id, Login("jan.testowy"), EVENING, fault),)
-    assert outcome.mails == (ReadUnreadable(mail.id, EVENING, Login("jan.testowy"), fault, frozenset({OrderNumber("40000001")})),)
+    assert _problems(outcome) == (UnreadableSubject(mail.id, jan, mail.arrived, fault, day or NEXT_DAY),)
+    assert outcome.mails == (ReadUnreadable(mail.id, mail.arrived, jan, fault, numbers, day),)
+    counted = {DAY: int(day == DAY), NEXT_DAY: int(day is None)}
+    assert {(figure.day, figure.mails, figure.problems) for figure in outcome.workers} == {
+        (found, mails, mails) for found, mails in counted.items()
+    }
+
+
+def test_raport_z_bledem_tematu_bez_dnia_otwartego_jest_problemem_bez_dnia_a_z_dniem_spoza_okna_nie_jest_widoczny() -> None:
+    """ADR 0041 (historia 20): raport ``Raport`` od Jana, który nie ma do dnia przyjścia maila dnia ze zleceniami bez
+    innego raportu, niczego nie kończy i jest problemem bez dnia przy dniu przyjścia, a ``Raport 30.10.2026 Kowalski``
+    z dniem sprzed dnia wdrożenia liczy się za ten dzień, którego tata nie widzi, jak Raport wykonawcy z takim dniem."""
+
+    no_day = _mail(JAN, "Raport", TEXT, EVENING + timedelta(minutes=1))
+    before_window = _mail(JAN, "Raport 30.10.2026 Kowalski", TEXT, EVENING + timedelta(minutes=2))
+
+    outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT), no_day, before_window], [_order()]))
+
+    jan = Login("jan.testowy")
+    assert _problems(outcome) == (UnreadableSubject(no_day.id, jan, no_day.arrived, SubjectFault.NO_DATE, None),)
+    assert [(figure.day, figure.mails) for figure in outcome.workers] == [(DAY, 1)]
 
 
 @pytest.mark.parametrize(
@@ -4375,7 +4452,7 @@ def test_poprawiony_mail_zdejmuje_ostrzezenie_tylko_nieczytelnego_maila_sprzed_n
     outcome = enter_reports(_inputs([before, corrected, after], [_order()]))
 
     assert _problems(outcome) == (
-        UnreadableSubject(after.id, Login("jan.testowy"), EVENING + timedelta(minutes=2), SubjectFault.NO_DATE),
+        UnreadableSubject(after.id, Login("jan.testowy"), EVENING + timedelta(minutes=2), SubjectFault.NO_DATE, None),
     )
 
 
@@ -4392,7 +4469,8 @@ def test_poprawiony_mail_nie_zdejmuje_ostrzezenia_drugiego_nieczytelnego_maila_z
 
     outcome = enter_reports(_inputs([*(unreadable[::-1] if reverse else unreadable), corrected], [_order()]))
 
-    assert _problems(outcome) == (UnreadableSubject(unreadable[0].id, Login("jan.testowy"), EVENING, SubjectFault.NO_DATE),)
+    jan = Login("jan.testowy")
+    assert _problems(outcome) == (UnreadableSubject(unreadable[0].id, jan, EVENING, SubjectFault.NO_DATE, None),)
 
 
 def test_dwa_nieczytelne_tematy_z_jednym_message_id_chwila_i_powodem_rozstrzygaja_numery_wpisow() -> None:

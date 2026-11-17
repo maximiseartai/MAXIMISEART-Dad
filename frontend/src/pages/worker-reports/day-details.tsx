@@ -1,10 +1,10 @@
-import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, type LucideIcon } from "lucide-react"
+import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, MailWarningIcon, type LucideIcon } from "lucide-react"
 import { cn } from "cn"
 
-import type { KeptCell, ReportsNote, ReportsOrder, ReportsProblem, ReportsWorkerDay } from "@/api/generated"
+import type { KeptCell, ReportsNote, ReportsOrder, ReportsFaultySubject, ReportsProblem, ReportsWorkerDay } from "@/api/generated"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { dayMonth, hourMinute, plural } from "@/lib/format"
+import { dayMonth, hourMinute, plural, shortDate } from "@/lib/format"
 import type { DayState, Status } from "@/pages/worker-reports/day-state"
 import { shortDay, weekdayOfDate } from "@/pages/worker-reports/days"
 import { look, StatusBadge } from "@/pages/worker-reports/status"
@@ -34,8 +34,10 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
- * (`orders_detail`) z problemami, „Zostaw moją” i spokojnymi informacjami o Przeniesieniach zleceń (`notes`). Wynik
- * kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
+ * (`orders_detail`) z problemami, „Zostaw moją”, spokojnymi informacjami o Przeniesieniach zleceń (`notes`) i o
+ * raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z rodzajem błędu, dniem,
+ * za który Centrum go liczy, i chwilą przyjścia maila, bez tematu (ADR 0028), a jego zlecenia mają stan „Błąd tematu”,
+ * nie „Bez raportu”. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
  * przebieg Przypomnień o raporcie za ten dzień (`reminders`), gdy jakieś poszło.
  */
 export function DayDetails({
@@ -141,8 +143,9 @@ const LIST = "flex flex-col border-t py-1 [&>li+li]:border-t [&>li+li]:border-bo
 const ROW = "grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-y-1 px-3.5 py-2"
 
 /**
- * Zlecenia dnia w kolejności z INTERMAX, a po nich problemy bez zlecenia tego dnia (np. numer spoza zleceń) i
- * informacje o zleceniach, których dzień już nie ma (np. „przekazane …”).
+ * Zlecenia dnia w kolejności z INTERMAX, a po nich problemy bez zlecenia tego dnia (np. numer spoza zleceń albo raport
+ * z błędem tematu), informacje o zleceniach, których dzień już nie ma (np. „przekazane …”), i o raportach z pomylonym
+ * tematem, których Wpisy poszły do zleceń tego dnia.
  */
 function Orders({
   orders,
@@ -160,10 +163,7 @@ function Orders({
         <li key={order.number} className={ROW}>
           <OrderNumber number={order.number} />
           <OrderLine order={order} />
-          <StatusBadge
-            status={orderStatus(order, state.kind)}
-            label={order.state === "entered" ? "Wpisane" : undefined}
-          />
+          <StatusBadge status={orderStatus(order, state.kind)} label={ORDER_LABELS[order.state]} />
           <CodesLine order={order} />
           {state.day.problems
             .filter((problem) => problem.number === order.number)
@@ -183,10 +183,18 @@ function Orders({
           <NoteLine note={note} />
         </li>
       ))}
+      {state.day.mistaken_subjects.map((subjectDay) => (
+        <li key={subjectDay} className={ROW}>
+          <OrderNumber number={null} />
+          <MistakenLine subjectDay={subjectDay} />
+        </li>
+      ))}
       {loose.map((problem) => (
         <li key={problemKey(problem)} className={ROW}>
           <OrderNumber number={problem.number} />
-          <span className="font-medium">Problem bez zlecenia tego dnia</span>
+          <span className="font-medium">
+            {problem.faulty_subject === null ? "Problem bez zlecenia tego dnia" : "Raport z błędem tematu"}
+          </span>
           <StatusBadge status="problem" />
           <ProblemReason problem={problem} keeping={keeping} onKeep={onKeep} />
         </li>
@@ -195,11 +203,20 @@ function Orders({
   )
 }
 
+/** Napis znaczka zlecenia, gdy różni się od nazwy stanu kafelka. */
+const ORDER_LABELS: Readonly<Record<ReportsOrder["state"], string | undefined>> = {
+  entered: "Wpisane",
+  faulty_subject: "Błąd tematu",
+  problem: undefined,
+  without_report: undefined,
+}
+
 function orderStatus(order: ReportsOrder, day: Status): Status {
   switch (order.state) {
     case "entered":
       return "complete"
     case "problem":
+    case "faulty_subject":
       return "problem"
     case "without_report":
       return day === "waiting" ? "waiting" : "without_report"
@@ -214,6 +231,10 @@ function orderStatus(order: ReportsOrder, day: Status): Status {
 function OrderLine({ order }: { order: ReportsOrder }) {
   if (order.state === "without_report") {
     return <span className="text-muted-foreground">Brak Wpisu w raporcie</span>
+  }
+
+  if (order.state === "faulty_subject") {
+    return <span className="text-muted-foreground">Wpis w raporcie z błędem tematu, niewpisany</span>
   }
 
   return (
@@ -295,6 +316,36 @@ function NoteLine({ note }: { note: ReportsNote }) {
   )
 }
 
+/** Informacja o raporcie z pomylonym tematem: dzień z tematu i to, że Wpisy poszły do zleceń tego dnia. */
+function MistakenLine({ subjectDay }: { subjectDay: string }) {
+  return (
+    <span className="col-start-2 col-end-4 flex items-center gap-1.5 text-xs text-muted-foreground">
+      <ArrowLeftRightIcon className="size-3 shrink-0" aria-hidden />
+      {`Pomylony temat: raport z dniem ${shortDate(subjectDay)} w temacie, Wpisy poszły do zleceń tego dnia`}
+    </span>
+  )
+}
+
+/**
+ * Rodzaj błędu tematu, dzień, za który Centrum liczy raport, i chwila przyjścia maila, nad zdaniem problemu. Tematu nie
+ * ma, bo tematy maili nie trafiają do przeglądarki (ADR 0028).
+ */
+function FaultyFacts({ faulty }: { faulty: ReportsFaultySubject }) {
+  return (
+    <dl className="col-start-2 col-end-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs" aria-label="Błąd tematu">
+      <dt className="flex items-center gap-1 text-muted-foreground">
+        <MailWarningIcon className="size-3 shrink-0" aria-hidden />
+        Błąd tematu
+      </dt>
+      <dd className="font-medium">{faulty.fault}</dd>
+      <dt className="text-muted-foreground">Liczony za</dt>
+      <dd className="tabular-nums">{faulty.day === null ? "żaden dzień" : shortDate(faulty.day)}</dd>
+      <dt className="text-muted-foreground">Przyszedł</dt>
+      <dd className="tabular-nums">{`${dayMonth(faulty.arrived)}, ${hourMinute(faulty.arrived)}`}</dd>
+    </dl>
+  )
+}
+
 function OrderNumber({ number }: { number: string | null }) {
   return <span className="pt-0.5 text-xs text-muted-foreground tabular-nums">{number ?? "—"}</span>
 }
@@ -304,6 +355,7 @@ function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem }
 
   return (
     <>
+      {problem.faulty_subject === null ? null : <FaultyFacts faulty={problem.faulty_subject} />}
       <span className="col-start-2 col-end-4 text-xs leading-relaxed text-muted-foreground">{problem.reason}</span>
       {keep === null ? null : (
         <span className="col-start-2 col-end-4">

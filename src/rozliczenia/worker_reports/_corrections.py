@@ -24,7 +24,7 @@ from ._model import (
 def standing(
     problems: Iterable[ReportProblem],
     reports: Sequence[ReadReport],
-    unreadable: Sequence[ReadUnreadable],
+    unreadable: Sequence[tuple[ReadUnreadable, frozenset[date]]],
     board: _matching.Board,
     added: Mapping[OrderNumber, tuple[datetime, MailId]],
 ) -> set[ReportProblem]:
@@ -39,10 +39,11 @@ def standing(
     numery: nie sprawdza ``tak``/``nie`` ani opisu i nie wymaga, żeby poprawiony mail powtórzył resztę wcześniejszego. Kolejny
     raport bez tych numerów problemu nie usuwa, bo nieznany numer może być zleceniem, którego brak w INTERMAX.
     Poprawiony mail usuwa nieznany numer z dnia z tematu, numer z kilkoma zleceniami z dniem któregoś z nich (dzień
-    poprawki to dzień zlecenia), Przeniesienie na dzień, do którego nie wolno, tak samo z dniem zlecenia i nieczytelny
-    temat (``unreadable``: odczyty maili z nieczytelnym tematem z numerami ich Wpisów). Nieznany numer znika też, gdy
+    poprawki to dzień zlecenia), Przeniesienie na dzień, do którego nie wolno, tak samo z dniem zlecenia i błąd tematu
+    (``unreadable``: raporty z błędem tematu z numerami ich Wpisów, każdy z dniami otwartymi, za które się liczy, a
+    problem stoi przy każdym z nich albo, bez nich, bez dnia). Nieznany numer znika też, gdy
     ten numer dopisał w tym kliknięciu późniejszy mail (od każdego Wykonawcy), bo zlecenie już jest. Ostrzeżenie
-    o nieczytelnym temacie stoi, gdy któregoś odczytu z nim nie poprawiono, więc nie zależy od kolejności maili z tym
+    o błędzie tematu stoi, gdy któregoś odczytu z nim nie poprawiono, więc nie zależy od kolejności maili z tym
     samym Message-ID. Brak
     ``tak``/``nie`` i przeciwny zamiar Wpisów jednego numeru daje już najpóźniejszy mail z numerem, a numer dwa razy
     w dniu to stan INTERMAX, więc stoją, jak nieznany nadawca i różnica z ręczną wartością.
@@ -58,9 +59,12 @@ def standing(
                 continue
             case _:
                 found.add(problem)
-    for read in unreadable:
+    for read, days in unreadable:
         if not corrected(read.worker, read.numbers, (read.arrived, read.mail), None):
-            found.add(UnreadableSubject(read.mail, read.worker, read.arrived, read.fault))
+            found.update(
+                UnreadableSubject(read.mail, read.worker, read.arrived, read.fault, day)
+                for day in (sorted(days) if days else [None])
+            )
     for report in reports:
         numbers = frozenset(entry.number for entry in report.entries)
         for problem in board.match([report]).problems:
