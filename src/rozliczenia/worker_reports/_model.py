@@ -96,8 +96,9 @@ class ReportSubject:
 
     Nie jest ``str``, więc pole tekstowe Logów go nie przyjmie: ``str()`` i f-string zgłaszają ``TypeError``, a ``repr``
     nie pokazuje tematu, bo temat nie trafia do Logów, Zgłoszeń ani Archiwum Logów. Tekst daje tylko ``shown()``, które
-    woła jedynie zapis wyniku dla widoku Raporty, po strażniku reguły danych. Równość, skrót i kolejność idą po tekście
-    tematu, bo temat odróżnia w ``problem_order`` dwa problemy ``UnreadableSubject`` z jednym Message-ID.
+    woła jedynie zapis wyniku dla widoku Raporty, po strażniku reguły danych. Nie należy do tożsamości odczytu ani
+    problemu (``compare=False``): mail wskazuje Message-ID, a Logi tematu nie mają, więc odtworzenie z Logów liczy
+    odczyty i problemy tak samo jak przebieg.
     """
 
     __slots__ = ("_text",)
@@ -107,15 +108,6 @@ class ReportSubject:
 
     def shown(self) -> str:
         return self._text
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, ReportSubject) and other._text == self._text
-
-    def __hash__(self) -> int:
-        return hash(self._text)
-
-    def __lt__(self, other: ReportSubject) -> bool:
-        return self._text < other._text
 
     def __repr__(self) -> str:
         return "ReportSubject(…)"
@@ -607,7 +599,8 @@ class ReadUnreadable:
     """Raport wykonawcy z błędem tematu (ADR 0041): mail od Wykonawcy z Wpisami i ze słowem Raportu wykonawcy w
     temacie, który nie daje dnia zleceń wprost, z powodem ``fault``. ``numbers``: numery Wpisów jego treści, po których
     poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``) i które wygrywają z datą (``Board.days``);
-    ``day``: dzień z tematu, gdy da się go przeczytać obok błędu (``_subject.read``); ``subject``: temat dla taty."""
+    ``day``: dzień z tematu, gdy da się go przeczytać obok błędu (``_subject.read``); ``subject``: temat dla taty, poza
+    tożsamością odczytu, więc z dwóch odczytów różnych tylko tematem liczy się pierwszy w kolejności skrzynki."""
 
     mail: MailId
     arrived: datetime
@@ -615,7 +608,7 @@ class ReadUnreadable:
     fault: SubjectFault
     numbers: frozenset[OrderNumber]
     day: date | None
-    subject: ReportSubject
+    subject: ReportSubject = field(compare=False)
 
 
 @dataclass(frozen=True)
@@ -632,15 +625,16 @@ MailRead = ReadReport | ReadUnreadable | ReadStranger
 
 @dataclass(frozen=True)
 class UnreadableSubject:
-    """Raport wykonawcy z błędem tematu z powodem ``fault`` i tematem ``subject``, liczony za dzień otwarty ``day``
-    (``_reading.read_window``): Centrum go nie wpisuje, a tata widzi go przy tym dniu. ``None``: problem bez dnia, bo
-    Centrum nie wskazało dnia otwartego, za który raport się liczy, więc tata widzi go przy dniu przyjścia maila."""
+    """Raport wykonawcy z błędem tematu z powodem ``fault`` i tematem ``subject`` (poza tożsamością problemu, jak w
+    ``ReadUnreadable``), liczony za dzień otwarty ``day`` (``_reading.read_window``): Centrum go nie wpisuje, a tata
+    widzi go przy tym dniu. ``None``: problem bez dnia, bo Centrum nie wskazało dnia otwartego, za który raport się
+    liczy, więc tata widzi go przy dniu przyjścia maila."""
 
     mail: MailId
     worker: Login
     arrived: datetime
     fault: SubjectFault
-    subject: ReportSubject
+    subject: ReportSubject = field(compare=False)
     day: date | None
 
 
@@ -968,7 +962,7 @@ class ReportsOutcome:
 
 def problem_order(
     problem: ReportProblem,
-) -> tuple[date, str, str, str, tuple[str | SenderAddress | ReportSubject | datetime, ...]]:
+) -> tuple[date, str, str, str, tuple[str | SenderAddress | datetime, ...]]:
     """Miejsce problemu w widoku Raporty: dzień, Wykonawca, numer, rodzaj i pozostałe pola problemu. Klucz bierze
     każde pole, którym mogą się różnić dwa problemy jednego wyniku, więc dwa różne problemy nigdy nie mają równego
     miejsca, a kolejność nie zależy od kolejności maili ani od ``PYTHONHASHSEED``. ``ConflictingVerdicts`` jest
@@ -977,8 +971,8 @@ def problem_order(
 
     kind = type(problem).__name__
     match problem:
-        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
-            return day or arrived.date(), worker, "", kind, (mail.digest, fault.name, arrived, subject)
+        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault, day=day):
+            return day or arrived.date(), worker, "", kind, (mail.digest, fault.name, arrived)
         case UnknownSender(mail=mail, sender=sender, day=day):
             return day, "", "", kind, (mail.digest, sender)
         case MissingVerdict(fault=fault):

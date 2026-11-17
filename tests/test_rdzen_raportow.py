@@ -36,7 +36,6 @@ from rozliczenia.worker_reports import (
     Kept,
     Login,
     MailId,
-    MailRead,
     ManualDifference,
     MissingVerdict,
     MoveBar,
@@ -3176,18 +3175,34 @@ _SUBJECTS = st.one_of(
     st.sampled_from(["Raport z 08.11.2026", "Raport 2026.11.08", "Raport 08-11-2026", "Raport 08.11.202"]),
 )
 _SENDERS = st.sampled_from([JAN, EWA, "obcy@przyklad.invalid"])
-_MAILS = st.lists(
-    st.builds(
-        lambda sender, subject, text, minutes, index: _mail(
-            sender, subject, text, EVENING + timedelta(minutes=minutes), f"<{index}@przyklad.invalid>"
+
+
+def _twins(mails: list[ReportMail], twins: bool) -> list[ReportMail]:
+    """Przy ``twins`` pierwszy mail dwa razy, z jednym Message-ID, chwilą i treścią, różny tylko słowem na końcu tematu,
+    więc z tematem z dniem obaj są raportem z błędem tematu z tym samym powodem i dniem, a różni ich tylko temat."""
+
+    if not (twins and mails):
+        return mails
+    first = mails[0]
+    return [replace(first, subject=f"{first.subject} rano"), *mails[1:], replace(first, subject=f"{first.subject} wieczorem")]
+
+
+_MAILS = st.builds(
+    _twins,
+    st.lists(
+        st.builds(
+            lambda sender, subject, text, minutes, index: _mail(
+                sender, subject, text, EVENING + timedelta(minutes=minutes), f"<{index}@przyklad.invalid>"
+            ),
+            _SENDERS,
+            _SUBJECTS,
+            _TEXTS,
+            st.integers(0, 2),
+            st.integers(0, 3),
         ),
-        _SENDERS,
-        _SUBJECTS,
-        _TEXTS,
-        st.integers(0, 2),
-        st.integers(0, 3),
+        max_size=5,
     ),
-    max_size=5,
+    st.booleans(),
 )
 _CANONICAL_ORDERS = (
     _order(number=40000001.0),
@@ -3225,16 +3240,9 @@ def _canonical_senders(outcome: ReportsOutcome) -> list[SenderAddress]:
 
 
 def _seen(problem: ReportProblem) -> object:
-    """Problem bez adresu nieznanego nadawcy: postać kanoniczna ma inny adres spoza listy. Temat błędu tematu, którego
-    Logi nie mają, ``repr`` porównania pomija sam (``ReportSubject``)."""
+    """Problem bez adresu nieznanego nadawcy: postać kanoniczna ma inny adres spoza listy."""
 
     return (problem.mail, problem.day) if isinstance(problem, UnknownSender) else problem
-
-
-def _read_seen(read: MailRead) -> MailRead:
-    """Odczyt maila bez tematu błędu tematu: postać kanoniczna ma swój temat, bo Logi nie mają tematu."""
-
-    return replace(read, subject=ReportSubject("")) if isinstance(read, ReadUnreadable) else read
 
 
 @settings(derandomize=True, database=None)
@@ -3252,10 +3260,12 @@ def _read_seen(read: MailRead) -> MailRead:
         _mail(JAN, SUBJECT, "40000001 tak wymiana", EVENING + timedelta(minutes=1), "<2@przyklad.invalid>"),
     ]
 )
+@example([_mail(JAN, f"{SUBJECT} Nowak {words}", TEXT, EVENING, "<1@przyklad.invalid>") for words in ("rano", "wieczorem")])
 def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[ReportMail]) -> None:
     """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
-    ten sam odczyt (poza tematem błędu tematu), te same zmiany komórek, problemy (poza adresem nieznanego nadawcy),
-    liczby i pamięć wpisów."""
+    ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy), liczby i pamięć wpisów. Logi nie
+    mają tematu, więc dwa Raporty wykonawcy z błędem tematu różne tylko tematem są w przebiegu, jak w odtworzeniu, jednym
+    problemem (ostatni przykład)."""
 
     inputs = _inputs(
         mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY, ordered=_CANONICAL_DAYS
@@ -3265,8 +3275,8 @@ def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[
 
     again = enter_reports(replace(inputs, mails=canonical))
 
-    assert (tuple(map(_read_seen, again.mails)), again.changes, again.added, again.workers, again.memory) == (
-        tuple(map(_read_seen, outcome.mails)),
+    assert (again.mails, again.changes, again.added, again.workers, again.memory) == (
+        outcome.mails,
         outcome.changes,
         outcome.added,
         outcome.workers,
@@ -3296,15 +3306,13 @@ DAY_BESIDE_FAULTS = (SubjectFault.OTHER_WORDS, SubjectFault.OTHER_TEXT, SubjectF
 def test_postac_kanoniczna_bledu_tematu_daje_ten_sam_powod_i_dzien_z_tematu(fault: SubjectFault, day: date | None) -> None:
     """Każdy powód błędu tematu, także taki, którego przykłady własności wyżej nie trafią, z numerami Wpisów, bez dnia z
     tematu i z nim przy błędzie obok daty, także z dniem następnego roku, który temat bez roku daje tylko z granic od
-    dnia przyjścia. Logi nie mają tematu, więc odczyt z postaci kanonicznej ma jej temat. ``SEPARATOR`` jest tylko w
-    Logach sprzed tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś jako dzień."""
+    dnia przyjścia. ``SEPARATOR`` jest tylko w Logach sprzed tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś
+    jako dzień."""
 
     numbers = frozenset({OrderNumber("40000001"), OrderNumber("40000002")})
     read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, numbers, day, ReportSubject(""))
-    sender = SenderAddress.of(JAN)
-    assert sender is not None
 
-    assert _read_back(read) == (replace(read, subject=ReportSubject(as_mail(read, sender).subject)),)
+    assert _read_back(read) == (read,)
 
 
 @pytest.mark.parametrize("activities", ["", "wymiana routera"])
@@ -4605,28 +4613,31 @@ SURNAMES = (
 )
 
 
-def test_raporty_z_bledem_tematu_rozne_tylko_tematem_daja_ten_sam_wynik_w_kazdej_kolejnosci() -> None:
+def test_raporty_z_bledem_tematu_rozne_tylko_tematem_sa_jednym_problemem_z_tematem_pierwszego_w_skrzynce() -> None:
     """Pary Raportów wykonawcy z błędem tematu z jednym Message-ID, chwilą przyjścia, powodem, dniem z tematu i Wpisami,
-    różne tylko tematem, który tata widzi (ADR 0041): oba maile pary są problemami, a remis odczytów i problemów
-    rozstrzyga temat, nie kolejność maili na wejściu ani zbioru problemów. Bez tematu w kluczu kolejność pary szłaby za
-    skrótem tematu, który zależy od ``PYTHONHASHSEED``; szesnaście par wyklucza, że wszystkie trafią w kolejność tematu
+    różne tylko tematem: mail wskazuje Message-ID, a Logi tematu nie mają, więc para jest jednym problemem, jak po
+    odtworzeniu z Logów, a tata widzi temat maila pierwszego w kolejności skrzynki, w każdej kolejności. Szesnaście par
+    wyklucza, że temat szedłby za skrótem tematu (``PYTHONHASHSEED``), a wszystkie pary trafiłyby w kolejność skrzynki
     przypadkiem."""
 
     pairs = [(f"Raport 08.11.2026 {surname} rano", f"Raport 08.11.2026 {surname} wieczorem") for surname in SURNAMES]
-    mails = [
-        _mail(JAN, subject, TEXT, EVENING, f"<{index}@przyklad.invalid>")
-        for index, pair in enumerate(pairs)
-        for subject in pair
-    ]
+    for inbox in (pairs, [(evening, morning) for morning, evening in pairs]):
+        mails = [
+            _mail(JAN, subject, TEXT, EVENING, f"<{index}@przyklad.invalid>")
+            for index, pair in enumerate(inbox)
+            for subject in pair
+        ]
 
-    outcomes = [enter_reports(_inputs(order, [_order()])) for order in (mails, mails[::-1])]
+        outcome = enter_reports(_inputs(mails, [_order()]))
 
-    assert outcomes[0] == outcomes[1]
-    reads = [read.subject for read in outcomes[0].mails if isinstance(read, ReadUnreadable)]
-    problems = [problem.subject for problem in _problems(outcomes[0]) if isinstance(problem, UnreadableSubject)]
-    expected = sorted(tuple(map(ReportSubject, pair)) for pair in pairs)
-    for found in (reads, problems):
-        assert sorted(tuple(found[index : index + 2]) for index in range(0, len(found), 2)) == expected
+        problems = sorted(
+            (problem.mail.digest, problem.subject.shown())
+            for problem in _problems(outcome)
+            if isinstance(problem, UnreadableSubject)
+        )
+        first = sorted((MailId.of(f"<{index}@przyklad.invalid>").digest, pair[0]) for index, pair in enumerate(inbox))
+        assert problems == first
+        assert [(figure.day, figure.mails, figure.problems) for figure in outcome.workers] == [(DAY, 32, 16)]
 
 
 def test_dwa_nieczytelne_tematy_z_jednym_message_id_i_chwila_przyjscia_daja_ten_sam_wynik_w_kazdej_kolejnosci() -> None:

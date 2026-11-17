@@ -164,8 +164,8 @@ def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]
                 )
             )
             return found.arrived, found.mail, "report", (worker, day.isoformat(), *content)
-        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers, day=day, subject=subject):
-            said = (fault.name, "" if day is None else day.isoformat(), subject.shown())
+        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers, day=day):
+            said = (fault.name, "" if day is None else day.isoformat())
             return found.arrived, found.mail, "unreadable", (worker, *said, *sorted(numbers))
         case ReadStranger(day=day):
             return found.arrived, found.mail, "stranger", (day.isoformat(),)
