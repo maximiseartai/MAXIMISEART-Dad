@@ -1,0 +1,89 @@
+# ADR 0041: Przypomnienie tylko bez raportu, błąd raportu widzi tata
+
+## Status
+
+Zaakceptowana (słowa taty przekazane przez Maksa 17.11.2026 i decyzje Maksa z grilla w gałęzi
+`docs/powiadomienia-brak-raportow`). Od taty są trzy reguły, cytowane w Kontekście: przypomnienie tylko bez raportu,
+błąd raportu tylko dla taty i dopisany opis to nie błąd. Pozostałe punkty Decyzji to decyzje Maksa, nazwane przy
+każdym. Spis zdań niżej powstał z przejścia po każdym punkcie Decyzji ADR 0039 i ADR 0030.
+
+Zmienia te zdania [ADR 0039](0039-opis-zlecenia-to-same-kody-czynnosci.md):
+
+- „Opis zlecenia to same kody. (…) Każde słowo to cały zapis kodu z legendy albo `tak`/`nie`”: obok Kodów czynności
+  stoi zwykły opis technika, a słowo, które nie jest zapisem kodu, jest opisem, nie błędem;
+- „Błąd opisu to opis ze słowem, które nie jest zapisem kodu (…)”: Błąd opisu to już tylko kod z liczbą spoza
+  przedziałów, kolumna Ilości usług trafiona drugi raz i kolumna wypełniona dwoma kolorami;
+- „Opis z Błędem opisu nie wyznacza niczego” zostaje, ale opis z kodami i zwykłym tekstem wyznacza Ilości z samych
+  kodów: wraca wariant „Kod obok zwykłego opisu wpisuje swoje”, który ADR 0039 odrzucił;
+- „Błąd opisu w Raporcie wykonawcy: raport niewysłany, Wpis wpisany”: raport jest przysłany, Wpis wpisany, a błąd
+  widzi tata przy zleceniu w szczegółach dnia Wykonawcy w widoku Raporty; Przypomnienie nie wymienia już zleceń z
+  błędem (zdania „Przypomnienie mówi, w którym zleceniu jest błąd i jaki” i „Dzień liczy się jako wysłany, gdy żaden
+  wygrywający Wpis `tak` tego dnia nie ma Błędu opisu” odpadają);
+- „Opis z Błędem opisu nie wyznacza niczego. (…) wiersz zostaje tacie w Ilościach do uzupełnienia”: tak zostaje, ale
+  w Ilościach do uzupełnienia czeka też tylko wiersz bez żadnego kodu, a nie wiersz z kodem i zwykłym opisem;
+- odrzucony wariant „Opis bez żadnego kodu bez błędu”: przyjęty, z informacją „BRAK KODU” dla taty zamiast Błędu
+  opisu.
+
+Zmienia te zdania [ADR 0030](0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md):
+
+- „Przypomnienia kończy czytelny Raport wykonawcy za ten dzień, nawet niepełny; mail z nieczytelnym tematem ich nie
+  kończy”: kończy je każdy Raport wykonawcy za ten dzień, także z błędem tematu, z Błędem opisu i z pomylonym tematem
+  ([ADR 0029](0029-raport-wykonawcy-wazniejszy-od-intermax.md)), który liczy się za dzień swoich zleceń;
+- „Odpowiedź na przypomnienie jest raportem. (…) dotąd każdy temat z `Re:` był pomijany”: raportem jest też odpowiedź
+  z tematem Raportu wykonawcy na początku (poprawka raportu), z tą samą regułą tekstu nad cytatem.
+
+## Kontekst
+
+Pierwszego ranka po wdrożeniu ADR 0039 Centrum wysłało o 8:00 25 przypomnień do 18 Wykonawców. 19 z nich poszło
+za dni, za które Wykonawca przysłał czytelny raport, a Błąd opisu miał każdy z 88 wskazanych Wpisów z jednego powodu:
+słowa, które nie jest zapisem kodu (dopisany opis albo kod ze spacją). Część dni była sprzed ogłoszenia kodów
+Wykonawcom. Trzy poszły po raporcie z błędem w temacie (literówka w słowie `Raport`, spacja w dacie, zła cyfra
+dnia), a tylko trzy za dni, za które raportu naprawdę nie było. Tata tego samego ranka sam pisał do Wykonawców o
+błędach, a potem do wszystkich, że dodatkowy opis nie jest błędem.
+
+Tata mówi: przypomnienie idzie tylko wtedy, gdy Wykonawca w ogóle nie przysłał raportu. Raport przysłany źle (temat,
+kod, tekst) to sprawa taty, nie przypomnienie. Odpowiedź 9 z ADR 0039 („każdy błąd można potraktować jako
+niewysłany raport”) była możliwością, nie życzeniem, a odpowiedź 10 („resztę traktujemy jako błąd”) nie przetrwała
+pierwszego dnia: opis obok kodu „często będzie, bo musi być”.
+
+## Decyzja
+
+- **Przypomnienie tylko bez raportu.** Przypomnienie za dzień idzie, dopóki Wykonawca nie przysłał za ten dzień żadnego
+  Raportu wykonawcy. Raport z błędem w temacie albo we Wpisach jest przysłany.
+- **Zwykły opis obok kodów.** Wpisanie raportów wpisuje do `CZYNNOŚCI ZREALIZOWANE` cały opis po `tak`/`nie`, a
+  Przygotowanie pliku zbiorczego wyznacza Ilości legendą z samych Kodów czynności. Zlecenie `tak` bez żadnego
+  rozpoznanego kodu ma w szczegółach dnia informację „BRAK KODU”, bez zgadywania, do którego kodu słowo jest podobne
+  (ADR 0038 odrzucił rozmyte dopasowanie), i zostaje tacie w Ilościach do uzupełnienia.
+- **Błędy raportu widzi tata w kafelku dnia** (decyzja Maksa: miejsce powiadomienia z reguły taty). Błąd opisu, błąd tematu i każdy inny problem Wpisania raportów stoi przy
+  zleceniu w szczegółach dnia Wykonawcy na mapie cieplnej widoku Raporty, po kliknięciu „Wpisz raporty z maili”. Praca
+  przypomnień w tle niczego nie pokazuje w kafelkach.
+- **Wpis na życzenie** (decyzja Maksa: „dopisanie danych z raportu do INTERMAX na życzenie, a nie jako
+  automatyczny run”). Przy błędzie, przy którym wiadomo, co wpisać (temat bez dnia albo z dniem, którego numery
+  zleceń nie potwierdzają; `t`, `n`, `skuteczne`, `nieskuteczne` zamiast `tak`/`nie`), tata jednym kliknięciem przy
+  zleceniu wpisuje Wpis do INTERMAX na swoją odpowiedzialność, zamiast prosić Wykonawcę o nowy mail. W INTERMAX wygląda
+  jak każdy Wpis, Centrum pamięta decyzję taty jak „Zostaw moją”, a późniejszy poprawny Wpis raportu wygrywa. Przy
+  przeciwnych Wpisach i numerze, którego INTERMAX nie ma albo ma w kilku miejscach, przycisku nie ma.
+- **Tolerancja tematu** (decyzja Maksa; tata mówi o „złym formacie”, a granicę wyznaczają tematy ze skrzynki).
+  Temat wybacza wielkość liter, jedną literówkę w słowie `Raport`, dowolną interpunkcję albo
+  spację w dacie i interpunkcję na końcu. Na tematach od Wykonawców z 16–17.11.2026 (pierwsze dni nowego wzoru) to
+  łapie wszystkie trzy błędne. Inne słowa obok słowa i daty to błąd tematu z Wpisem na życzenie. Dzień raportu bez
+  dnia w temacie to ostatni dzień Wykonawcy ze zleceniami bez raportu, nie późniejszy niż dzień przyjścia maila, a
+  numery zleceń dalej wygrywają z datą (ADR 0029).
+- **Co nie jest raportem** (decyzja Maksa). Mail bez żadnego Wpisu i mail ze zdjęciami do raportu (`Zdjęcia do raportu …`, codziennie
+  od jednego Wykonawcy) Centrum pomija po cichu. Mail bez słowa `Raport` w temacie (także `Montaże …`, `Zlecenia …`)
+  nie jest raportem nawet z Wpisami: Centrum nie czyta treści wszystkich maili Wykonawców, a taki temat tata poprawia
+  u Wykonawcy sam, po przypomnieniu, które wtedy pójdzie.
+- **Poprawka raportu w odpowiedzi** (decyzja Maksa). Odpowiedź (`Re:`, `Odp:`) z tematem Raportu wykonawcy za dzień na początku i
+  dowolnym dopiskiem po nim (tata odpisuje „Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW…”) jest Raportem wykonawcy
+  za ten dzień, a jej Wpisami jest tylko tekst nad cytatem, jak w odpowiedzi na Przypomnienie.
+
+## Odrzucone warianty
+
+- **Błąd opisu dalej jako raport niewysłany, tylko z łagodniejszą legendą.** Przypomnienie dalej szłoby do Wykonawcy,
+  który raport przysłał, a tata chce sam decydować, czy błąd wart jest maila.
+- **Powiadomienie taty mailem.** Tata pracuje w widoku Raporty i tam ma szczegóły zlecenia; mail do jego własnej
+  skrzynki raportów byłby szumem między raportami.
+- **Czytać wszystkie maile Wykonawców i brać każdy z Wpisami.** Złapałby `Montaże 13.11.26`, ale czyta całą
+  korespondencję Wykonawców z tatą; tata woli, żeby Centrum czytało tylko maile ze słowem `Raport`.
+- **Wpisywać zawsze, gdy numery pasują do innego dnia, i nigdy nie pytać taty.** Zostaje tylko dla pomylonego tematu z
+  ADR 0029, gdzie co najmniej dwa numery dowodzą dnia; przy temacie bez dnia decyduje tata.
