@@ -91,34 +91,61 @@ class FakeMailbox(FakeInbox):
     """Skrzynka raportów pracy przypomnień i Wysyłki rozliczeń: maile jak ``FakeInbox``, przypomnienia z „Wysłanych”
     (``sent`` albo wynik porażki) i każda wysyłka w ``sends`` (przypomnienie i chwila); ``send_outcome`` to wynik każdej
     wysyłki. Załączniki z „Wysłanych” to ``attachments`` (albo wynik porażki), a każdy Mail z rozliczeniem trafia do
-    ``mailed``; wysłany (``send_outcome`` to ``MailSent``) Gmail kładzie w „Wysłanych”, więc dochodzi do ``attachments``
-    ze znakiem Centrum."""
+    ``mailed``.
+
+    Gdzie Gmail kładzie wysłany mail (``send_outcome`` to ``MailSent``), mówi ``filed_after``: bez niego Mail z
+    rozliczeniem dochodzi do ``attachments`` ze znakiem Centrum od razu, a przypomnienie nie dochodzi do ``sent``
+    nigdy; z liczbą N oba rodzaje maili dochodzą do „Wysłanych” dopiero przed odczytem N+1 po wysyłce
+    (``sent_reminders`` i ``sent_attachments`` czytają ten sam folder), jak Gmail, który kładzie mail z opóźnieniem."""
 
     sent: Sequence[SentReminder] | PasswordRejected | InboxUnreachable = ()
     send_outcome: MailSent | PasswordRejected | InboxUnreachable | MailRefused = MailSent()
     sends: list[tuple[Reminder, datetime]] = field(default_factory=list)
     attachments: list[SentAttachment] | PasswordRejected | InboxUnreachable = field(default_factory=list)
     mailed: list[tuple[AttachmentMail, datetime]] = field(default_factory=list)
+    filed_after: int | None = None
+    filing: list[tuple[int, SentReminder | SentAttachment]] = field(default_factory=list)
+    """Wysłane, których Gmail jeszcze nie położył w „Wysłanych”: ile odczytów jeszcze ich nie widzi i mail."""
 
     def sent_attachments(self, day: date) -> SentAttachments | PasswordRejected | InboxUnreachable:
+        self._file()
         if isinstance(self.attachments, (PasswordRejected, InboxUnreachable)):
             return self.attachments
         return SentAttachments(tuple(found for found in self.attachments if found.sent_at.date() >= day - timedelta(days=1)))
 
     def send_attachment(self, mail: AttachmentMail, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
         self.mailed.append((mail, at))
-        if isinstance(self.send_outcome, MailSent) and isinstance(self.attachments, list):
-            self.attachments.append(SentAttachment(mail.name, frozenset(mail.recipients), at, by_centrum=True))
+        if isinstance(self.send_outcome, MailSent):
+            sent = SentAttachment(mail.name, frozenset(mail.recipients), at, by_centrum=True)
+            if self.filed_after is not None:
+                self.filing.append((self.filed_after, sent))
+            elif isinstance(self.attachments, list):
+                self.attachments.append(sent)
         return self.send_outcome
 
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
+        self._file()
         if isinstance(self.sent, (PasswordRejected, InboxUnreachable)):
             return self.sent
         return SentReminders(tuple(self.sent))
 
     def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
         self.sends.append((reminder, at))
+        if isinstance(self.send_outcome, MailSent) and self.filed_after is not None:
+            self.filing.append((self.filed_after, SentReminder(frozenset(reminder.recipients), reminder.day, at)))
         return self.send_outcome
+
+    def _file(self) -> None:
+        waiting: list[tuple[int, SentReminder | SentAttachment]] = []
+        for left, mail in self.filing:
+            if left > 0:
+                waiting.append((left - 1, mail))
+            elif isinstance(mail, SentAttachment):
+                if isinstance(self.attachments, list):
+                    self.attachments.append(mail)
+            elif not isinstance(self.sent, (PasswordRejected, InboxUnreachable)):
+                self.sent = (*self.sent, mail)
+        self.filing = waiting
 
 
 @dataclass(frozen=True)

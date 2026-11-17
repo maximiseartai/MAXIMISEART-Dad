@@ -8357,6 +8357,20 @@ def test_wysylka_wysyla_plik_wykonawcy_na_wszystkie_jego_adresy_raz_a_ponowienie
         assert secret not in log, secret
 
 
+def test_ponowienie_wysylki_zanim_gmail_polozy_mail_w_wyslanych_niczego_nie_wysyla(tmp_path: Path) -> None:
+    """Gmail kładzie Mail z rozliczeniem w „Wysłanych” z opóźnieniem: drugi POST tego samego pliku, zanim mail tam
+    jest, zna go z tej pracy Centrum i go nie wysyła, a wiersz mówi „wysłane” (ADR 0040 „Wysyłka bez powtórek”)."""
+
+    app = wysylka_centrum(tmp_path, FakeMailbox(filed_after=10))
+
+    first = app.send("Anna Łącka")
+    second = app.send("Anna Łącka")
+
+    assert [mail.name for mail, _ in app.mailbox.mailed] == [f"Rozliczenie {WYSYLKA_OKRES} - Anna Łącka.xlsx"]
+    assert (first["sent_now"], second["sent_now"], second["row"]["state"]["state"]) == (True, False, "sent")
+    assert app.mailbox.attachments == []
+
+
 def test_wysylka_odmawia_pliku_ktory_nie_idzie_bez_maila(tmp_path: Path) -> None:
     """Wykonawca bez adresu, pusty Szablon i plik bez Wykonawcy z Listy wracają ze swoim stanem, bez maila."""
 

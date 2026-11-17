@@ -3906,6 +3906,33 @@ def test_seria_porannych_przypomnien_przerwana_o_17_reszta_idzie_dopiero_o_18_be
         ("jan.testowy", evening.astimezone()),
     ]
 
+def test_przypomnienie_wyslane_przed_brakiem_sieci_nie_idzie_drugi_raz_zanim_gmail_polozy_je_w_wyslanych(
+    tmp_path: Path,
+) -> None:
+    """Sprawdzenie wysyła przypomnienie Annie, a przy Janie sieć znika, więc pora zostaje otwarta. Następna minuta tej
+    samej pory wysyła tylko Janowi, choć Gmail jeszcze nie położył przypomnienia Anny w „Wysłanych”: maile wysłane w
+    tej pracy Centrum praca pamięta sama (ADR 0030 „Najwyżej jedno w każdej porze”)."""
+
+    class NetworkGoneAtJan(FakeMailbox):
+        def send(self, reminder: Reminder, at: datetime) -> MailSent | PasswordRejected | InboxUnreachable | MailRefused:
+            self.send_outcome = InboxUnreachable("TimeoutError") if len(self.sends) == 1 else MailSent()
+            return super().send(reminder, at)
+
+    mailbox = NetworkGoneAtJan(filed_after=10)
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.moment.append(REMINDER_MORNING + timedelta(minutes=1))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [reminder.worker for reminder, _ in mailbox.sends] == ["anna.kowalska", "jan.testowy", "jan.testowy"]
+    assert mailbox.sent == ()
+
+
 def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_porze(tmp_path: Path) -> None:
     """Odrzucone hasło aplikacji przy wysyłce przypomnienia Centrum zgłasza Maksowi samo, bez taty, i do końca pory
     nie pyta Gmaila znowu (US 47)."""

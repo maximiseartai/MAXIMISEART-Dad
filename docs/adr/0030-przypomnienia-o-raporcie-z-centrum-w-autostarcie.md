@@ -46,7 +46,11 @@ Laptop taty na pewno działa o 8:00. Nie wiadomo, czy działa w nocy albo wieczo
 - **Najwyżej jedno w każdej porze, folder „Wysłane” jest pamięcią.** Pora poranna trwa od 8:00 do 17:00, wieczorna od
   18:00 do 22:00. Przed wysłaniem Centrum sprawdza w skrzynce, czy przypomnienie za ten dzień do tego Wykonawcy poszło
   już w bieżącej porze; poranne wysłane o 9:30 nie blokuje więc wieczornego o 18:00. Restart Centrum ani dwa
-  sprawdzenia naraz nie wysyłają go drugi raz, a Centrum nie ma własnego pliku stanu przypomnień.
+  sprawdzenia naraz nie wysyłają go drugi raz, a Centrum nie ma własnego pliku stanu przypomnień. Gmail kładzie mail
+  w „Wysłanych” z opóźnieniem, więc przypomnienia wysłane w tej pracy Centrum praca pamięta też w pamięci procesu (jak
+  Wysyłka rozliczeń, ADR 0040): następna minuta pory po braku sieci w trakcie serii nie wysyła ich drugi raz. Centrum
+  ponownie uruchomione tuż po wysyłce zna wysłane tylko z „Wysłanych”, więc przypomnienie, którego Gmail jeszcze tam
+  nie położył, może wtedy pójść drugi raz.
 - **Kto i do kiedy.** Tylko Wykonawcy z listy adresów Wykonawców, którzy mają zlecenia dnia w INTERMAX, czytanym tylko
   do odczytu. Przypomnienia kończy czytelny Raport wykonawcy za ten dzień, nawet niepełny; mail z nieczytelnym
   tematem ich nie kończy. Kończy je też Plik zbiorczy okresu dnia. Liczą się dni od wdrożenia przypomnień, nie od
