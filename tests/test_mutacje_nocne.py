@@ -61,6 +61,9 @@ NOCNE = ROOT / ".github" / "workflows" / "mutacje-nocne.yml"
 START_NOCY = ROOT / ".github" / "workflows" / "mutacje-nocne-start.yml"
 # Id artefaktu części w atrapie GitHuba: id runu razy ta liczba plus numer części, a id artefaktu zakresu to id runu.
 ID_CZESCI = 1000
+# Inne artefakty przed zapisami części w liście artefaktów runu w atrapie, tyle co strona API: zapisy części leżą na
+# drugiej stronie, jak w nocy z ok. 75 częściami.
+INNE_ARTEFAKTY = 100
 URUCHOMIENIE_NOCY = ("POST", f"{REPO}/actions/workflows/mutacje-nocne.yml/dispatches", {"ref": "main", "inputs": {"start": "auto"}})
 
 
@@ -97,8 +100,9 @@ class GitHubWPamieci:
         if run := re.fullmatch(rf"{re.escape(REPO)}/actions/runs/(\d+)/artifacts\?name=zakres-nocy", sciezka):
             id_runu = int(run[1])
             return {"artifacts": [{"id": id_runu, "expired": self.zakresy[id_runu] is None}] if id_runu in self.zakresy else []}
-        if run := re.fullmatch(rf"{re.escape(REPO)}/actions/runs/(\d+)/artifacts\?per_page=100", sciezka):
-            return {"artifacts": self._artefakty(int(run[1]))}
+        if run := re.fullmatch(rf"{re.escape(REPO)}/actions/runs/(\d+)/artifacts\?per_page=(\d+)&page=(\d+)", sciezka):
+            na_strone, strona = int(run[2]), int(run[3])
+            return {"artifacts": self._artefakty(int(run[1]))[(strona - 1) * na_strone : strona * na_strone]}
         adres, _, zapytanie = sciezka.partition("?")
         parametry = dict(urllib.parse.parse_qsl(zapytanie))
         if adres == f"{REPO}/actions/workflows/mutacje-nocne.yml/runs" and parametry.get("branch") == "main" and "created" in parametry:
@@ -119,11 +123,13 @@ class GitHubWPamieci:
         raise KeyError(sciezka)
 
     def _artefakty(self, id_runu: int) -> list[dict[str, Any]]:
-        """Artefakt ``zakres-nocy`` runu ma id runu, a ``mutacje-nocne-<k>`` id ``ID_CZESCI`` razy run plus ``k``."""
+        """Artefakt ``zakres-nocy`` runu ma id runu, a ``mutacje-nocne-<k>`` id ``ID_CZESCI`` razy run plus ``k``. Przed
+        nimi leży ``INNE_ARTEFAKTY`` zapisów skryptów skilli, więc zapisy części są dopiero na drugiej stronie listy."""
 
+        inne = [{"id": -numer, "name": f"mutacje-skilli-mutacje-{numer}", "expired": False} for numer in range(1, INNE_ARTEFAKTY + 1)]
         zakres = [{"id": id_runu, "name": "zakres-nocy", "expired": self.zakresy[id_runu] is None}] if id_runu in self.zakresy else []
         czesci = [{"id": id_runu * ID_CZESCI + numer, "name": f"mutacje-nocne-{numer}", "expired": False} for numer in self.zapisy_czesci.get(id_runu, {})]
-        return zakres + czesci
+        return inne + zakres + czesci
 
     def bajty(self, sciezka: str) -> bytes:
         artefakt = re.fullmatch(rf"{re.escape(REPO)}/actions/artifacts/(\d+)/zip", sciezka)

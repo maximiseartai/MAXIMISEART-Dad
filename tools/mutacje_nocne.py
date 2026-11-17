@@ -135,8 +135,11 @@ PREFIKS = "MUTACJE NOCNE"
 # 10 800 s (ADR 0021). Mutacja, która trwa pełny limit także w testach pliku, może go przekroczyć i zostaje bez werdyktu.
 NA_CZESC = 6 * mutacje_zmiany.WORKERS
 # Zadania części biegną najwyżej po 17 naraz, a zadania skryptów skilli po 3 (max-parallel w mutacje-nocne.yml), bo 60
-# zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
-CZESCI_NA_NOC = 40
+# zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20. W 6 nocach 12–17.11 zmiany main dawały
+# ok. 980 mutacji na dobę, a noc 40 części najwyżej 960, więc zaległość rosła (11.11: 7450, 17.11: 7812). 60 części to
+# 1440 mutacji: zaległość maleje o ok. 460 na noc, a noc trwa ok. 4 h zamiast 3,5 h, bo części biegną w czterech falach
+# po 17 zamiast w trzech (ADR 0021).
+CZESCI_NA_NOC = 60
 # Zadania pokrycia nocy (``mutacje_zmiany.py --pokrycie-czesc``): każde liczy pokrycie ok. czwartej części plików testów
 # nocy, a części nocy czekają na najwolniejsze. Każde płaci też checkout, instalację i listę mutacji nocy (ADR 0021).
 CZESCI_POKRYCIA = 4
@@ -324,7 +327,9 @@ def _osadzone_runu(github: GitHub, run: int, od_sha: str) -> frozenset[mutacje_z
     """Tożsamości ``mutacje_zmiany.OSADZONE`` zapisów części runu, a ``None``, gdy run miał inną bazę. Run bez zakresu
     albo z wygasłym artefaktem rzuca błąd, z którym ``osadzone`` go pomija."""
 
-    artefakty = {artefakt["name"]: artefakt for artefakt in github.json(f"{REPO}/actions/runs/{run}/artifacts?per_page=100")["artifacts"]}
+    # Lista artefaktów runu ma strony po 100: zapis każdej części, pokrycie i jego testy niestabilne, zapisy skryptów
+    # skilli, więc noc z ok. 75 częściami już się na jednej nie mieści.
+    artefakty = {artefakt["name"]: artefakt for artefakt in strony(github, f"{REPO}/actions/runs/{run}/artifacts", "artifacts")}
     if json.loads(_plik_artefaktu(github, artefakty[ARTEFAKT_ZAKRESU], ZAKRES))["baza"] != od_sha:
         return None
     zapisy = [json.loads(_plik_artefaktu(github, artefakt, ZAPIS)) for nazwa, artefakt in artefakty.items() if nazwa.startswith(ARTEFAKT)]
