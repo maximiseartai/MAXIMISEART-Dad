@@ -512,6 +512,14 @@ Zegar Uruchomienia stoi, gdy proces czeka na tatę (Decyzja taty, logowanie w ef
 Zależność jednego procesu (okno efenix, folder Kopii INTERMAX) nie należy do Kontekstu, tylko do wejścia procesu.
 _Avoid_: ustawienia Uruchomienia, środowisko
 
+## Ustawienia ze startu
+
+Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, w chwili jego startu: Lista Wykonawców, Reguły ilości i Legenda czynności.
+Proces mówi, którymi z nich liczy, w swoich potrzebach, a Uruchomienie procesu, który danym Ustawieniem nie liczy, nie ma go ani w wejściu, ani w Logach Uruchomienia.
+Centrum bierze je z migawki Ustawień Centrum, Skrypt dla maszyn z Wydania i z pliku Listy Wykonawców, a odtworzenie z Logów Uruchomienia.
+Zmiana Ustawień w trakcie Uruchomienia ich nie zmienia (ADR 0032).
+_Avoid_: fakty startu (to fakty o tym, jak wystartowało Uruchomienie), ustawienia Uruchomienia
+
 ## Decyzja taty
 
 Pytanie, które proces zadaje tacie w trakcie Uruchomienia procesu; dziś tylko o niepełny okres w Przygotowaniu pliku zbiorczego.
