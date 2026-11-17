@@ -520,6 +520,20 @@ def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_s
     assert "| AK | 2 | 1 | 1 | `instwewrg65m` |\n" in body
 
 
+def test_kolumne_z_opisu_technika_wpisana_legenda_kontrola_nie_liczy_jako_wypelniona_przez_tate(tmp_path: Path) -> None:
+    # inst20m wpisuje 1 w Y, jak Przygotowanie; Y taty w wierszu bez kodu liczy się, jak w Ilościach do uzupełnienia.
+    centrum = centrum_with(tmp_path, [{**RULED, "K": "inst20m", "Y": 1}, {**RULED, "Y": 1}])
+
+    run_to_end(centrum, dry_run=False)
+
+    body = sent_check(centrum).body
+    assert (
+        "## Kolumny z opisu technika: wiersze wypełnione przez tatę\n\n"
+        "| Y | AB | AD | AJ | AK | AL | AM |\n| --- | --- | --- | --- | --- | --- | --- |\n"
+        "| 1 | 0 | 0 | 0 | 0 | 0 | 0 |\n"
+    ) in body
+
+
 def test_adres_numer_orange_telefon_i_ulica_w_opisie_technika_wychodza_zamaskowane_z_uwaga(tmp_path: Path) -> None:
     address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
     described = {**RULED, "K": f"rt2 klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5", "Y": 1}

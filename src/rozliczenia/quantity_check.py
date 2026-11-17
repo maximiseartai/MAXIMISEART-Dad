@@ -7,7 +7,8 @@ Przebieg. Kolumny (decyzja 9):
 - kolumny Reguł ilości (``QuantityRules.rule_columns``) są porównywane; te z nich, które są też kolumnami z opisu
   technika (AK i AM), tylko w wierszu, w którym reguła daje w nich wartość różną od zera, a w pozostałych liczą się
   jak kolumny z opisu technika;
-- kolumny z opisu technika (``DESCRIPTION_COLUMNS``): liczba wierszy wypełnionych przez tatę;
+- kolumny z opisu technika (``DESCRIPTION_COLUMNS``): liczba wierszy wypełnionych przez tatę poza kolumnami narzędzia
+  wiersza (``ToolEntry.columns``), tak jak w Ilościach do uzupełnienia;
 - pozostałe kolumny N:AP, wyliczone jako reszta: liczba wypełnionych wierszy, osobno.
 
 Wiersze rozliczane z opisu nie dają różnic, a wiersze bez reguły tworzą grupę na dokładny tekst URZĄDZENIA:
@@ -212,7 +213,7 @@ class LegendRowCheck:
     ``read``: wynik legendy dla opisu technika. ``rules``: rachunek Reguł ilości (``row_check``). ``differences``: różnice
     legendy w wierszu z samych kodów, w kolejności N:AP, ``AS``, potem kolory. ``entry``: wpis taty w wierszu bez kodów
     albo z Błędem opisu. ``description``: opis technika, tylko w wierszu z różnicą legendy albo, bez kodów i z Błędem
-    opisu, z wpisem taty.
+    opisu, z wpisem taty. ``columns``: kolumny narzędzia wiersza (``ToolEntry.columns``).
     """
 
     read: DescriptionRead
@@ -220,6 +221,7 @@ class LegendRowCheck:
     differences: tuple[LegendDifference, ...]
     entry: Entry
     description: str | None
+    columns: frozenset[str]
 
     @property
     def rule_differences(self) -> tuple[str, ...]:
@@ -242,7 +244,7 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
             for column in DESCRIPTION_COLUMNS
             if column not in ruled.compared and row.quantity(column) != 0
         ) + (((AMOUNT_COLUMN, row.amount),) if row.amount != 0 else ())
-        return LegendRowCheck(codes, ruled, (), entry, row.completed if entry else None)
+        return LegendRowCheck(codes, ruled, (), entry, row.completed if entry else None, tool.columns)
     compared: list[LegendDifference] = [
         ValueDifference(column, tool.quantities.get(column, 0), row.quantity(column))
         for column in legend_columns(legend)
@@ -251,7 +253,7 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
     compared.append(ValueDifference(AMOUNT_COLUMN, tool.amount, row.amount))
     compared.extend(FillDifference(column, tool.fills.get(column), row.fills.get(column)) for column in legend_fill_columns(legend))
     differences = tuple(difference for difference in compared if difference.legend != difference.tata)
-    return LegendRowCheck(codes, ruled, differences, (), row.completed if differences else None)
+    return LegendRowCheck(codes, ruled, differences, (), row.completed if differences else None, tool.columns)
 
 
 def legend_columns(legend: ActivityLegend) -> tuple[str, ...]:
@@ -290,7 +292,7 @@ def check(orders: CollectiveOrders, rules: QuantityRules, legend: ActivityLegend
         result.rows += 1
         coded = legend_row_check(row, legend, rules)
         checked = coded.rules
-        content, rule, compared = row.content, checked.result, checked.compared
+        content, rule = row.content, checked.result
         if content is None or content.started is None or rule is None:
             result.undated += 1
         elif isinstance(rule, FromDescription):
@@ -301,7 +303,7 @@ def check(orders: CollectiveOrders, rules: QuantityRules, legend: ActivityLegend
         else:
             _add_unruled(result.unruled[content.devices], content, content.started, row, rule, coded)
         result.description_filled.update(
-            column for column in DESCRIPTION_COLUMNS if row.quantity(column) != 0 and column not in compared
+            column for column in DESCRIPTION_COLUMNS if row.quantity(column) != 0 and column not in coded.columns
         )
         result.other_filled.update(column for column in other_columns if row.quantity(column) != 0)
         _add_legend(result, coded)
