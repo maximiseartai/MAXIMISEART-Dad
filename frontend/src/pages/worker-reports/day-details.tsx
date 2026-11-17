@@ -2,6 +2,7 @@ import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, MailWarningIcon,
 import { cn } from "cn"
 
 import type { KeptCell, ReportsNote, ReportsOrder, ReportsProblem, ReportsSubject, ReportsWorkerDay } from "@/api/generated"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { dayMonth, hourMinute, plural, shortDate } from "@/lib/format"
 import type { DayState, Status } from "@/pages/worker-reports/day-state"
@@ -166,6 +167,7 @@ function Orders({
             status={orderStatus(order, state.kind)}
             label={order.state === "entered" ? "Wpisane" : undefined}
           />
+          <CodesLine order={order} />
           {state.day.problems
             .filter((problem) => problem.number === order.number)
             .map((problem) => (
@@ -231,6 +233,38 @@ function OrderLine({ order }: { order: ReportsOrder }) {
         </span>
       )}
       {order.activities}
+    </span>
+  )
+}
+
+/**
+ * Kody czynności, które legenda wzięła z opisu zlecenia `tak`, albo informacja „BRAK KODU”: spokojna, bez znaczka
+ * problemu, bo Ilości z opisu tata wpisze sam w Pliku zbiorczym.
+ */
+function CodesLine({ order }: { order: ReportsOrder }) {
+  if (order.no_code) {
+    return (
+      <span className="col-start-2 col-end-4 flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+        <Badge variant="outline" className="rounded-full">
+          BRAK KODU
+        </Badge>
+        Legenda czynności nie znalazła w opisie żadnego kodu.
+      </span>
+    )
+  }
+
+  if (order.codes.length === 0) {
+    return null
+  }
+
+  return (
+    <span className="col-start-2 col-end-4 flex flex-wrap items-center gap-1 text-xs text-muted-foreground">
+      {plural(order.codes.length, { one: "Kod", few: "Kody", many: "Kodów" })}:
+      {order.codes.map((code, index) => (
+        <code key={`${index} ${code}`} className="rounded bg-muted px-1 py-0.5 font-mono text-foreground">
+          {code}
+        </code>
+      ))}
     </span>
   )
 }

@@ -1239,7 +1239,7 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
 
     matching = [_numbered(index) for index in range(1, 9)]
     other = [_numbered(9, mistaken[0]), _numbered(10, mistaken[1])]
-    text = "\n".join(f"4000{index:04d} tak montaż {index}" for index in range(1, 11))
+    text = "\n".join(f"4000{index:04d} tak montaż instutp{30 + index}m" for index in range(1, 11))
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [*matching, *other], rollout=SIXTH, ordered=OPEN_DAYS))
 
@@ -1257,7 +1257,7 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
     assert {(move.day, move.worker) == (move.origin_day, move.origin_worker) for move in outcome.memory.moves} == {True}
     for order in other:
         [detail] = [found for found in _days(outcome)[order.key.day, JAN_LOGIN].orders_detail if found.number == order.key.number]
-        assert detail == OrderDetail(order.key.number, "tak", detail.activities, reported=True)
+        assert detail == OrderDetail(order.key.number, "tak", detail.activities, reported=True, codes=detail.codes)
 
 
 @pytest.mark.parametrize("intermax_day", [SIXTH, SEVENTH], ids=["zlecenia-z-6", "zlecenia-z-7"])
@@ -3079,7 +3079,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
             problems=1,
             without_report=(OrderNumber("40000002"), OrderNumber("40000003"), OrderNumber("40000004")),
             orders_detail=(
-                OrderDetail(OrderNumber("40000001"), "tak", "inst20m", reported=True),
+                OrderDetail(OrderNumber("40000001"), "tak", "inst20m", reported=True, codes=("inst20m",)),
                 OrderDetail(OrderNumber("40000002"), " NIE ", None, reported=False),
                 OrderDetail(OrderNumber("40000003"), None, None, reported=False),
                 OrderDetail(OrderNumber("40000004"), "???", "ręcznie", reported=False),
@@ -3390,7 +3390,7 @@ def _every_problem() -> list[ReportProblem]:
         RefusedMove(jan, DAY, number, SEVENTH, SEVENTH, MoveBar.CLOSED_SOURCE),
         RefusedMove(jan, DAY, number, NINTH, NINTH, MoveBar.AFTER_TODAY),
         *(ManualDifference(_key(), column, "ręcznie", "z raportu") for column in ReportColumn),
-        *(_faulty(text) for text in ("montaż ONT", "instutp40m", "instmdik inst20m", "inst20m usterka instutp0m")),
+        *(_faulty(text) for text in ("montaż instwewrg631m", "instutp40m", "instmdik inst20m", "inst20m usterka instutp0m")),
     ]
 
 
@@ -4894,7 +4894,7 @@ def test_numer_z_aplikacji_spoza_dni_otwartych_to_zlecenie_dopisane_pod_zlecenia
     }
     [jan] = [worker for worker in outcome.workers if worker.worker == JAN_LOGIN]
     assert (jan.orders, jan.entered, jan.without_report) == (2, 1, (OrderNumber("40000001"),))
-    assert jan.orders_detail[-1] == OrderDetail(OrderNumber(ADDED), "tak", "montaż ONT", True)
+    assert jan.orders_detail[-1] == OrderDetail(OrderNumber(ADDED), "tak", "montaż ONT", True, codes=())
 
 
 @pytest.mark.parametrize(
@@ -5383,13 +5383,25 @@ def test_numer_przeczytany_tylko_w_zleceniach_sprzed_okna_ma_wlasny_powod(
     assert _problems(outcome) == (UnknownNumber(JAN_LOGIN, DAY, OrderNumber(ADDED), bar),)
 
 
-# --- Błąd opisu we Wpisie ``tak`` (ADR 0039): Wpis wpisany, problem dla taty ---
+# --- Błąd opisu we Wpisie ``tak`` (ADR 0039, ADR 0041): Wpis wpisany cały, problem dla taty tylko przy Błędzie opisu ---
 
 
 @pytest.mark.parametrize(
     ("text", "changes", "problems"),
     [
-        pytest.param("40000001 tak montaż ONT", _both(ROW, "tak", "montaż ONT"), (_faulty("montaż ONT"),), id="zwykly-opis"),
+        pytest.param("40000001 tak montaż ONT", _both(ROW, "tak", "montaż ONT"), (), id="zwykly-opis-bez-kodu"),
+        pytest.param(
+            "40000001 tak inst30m Podłączyłem lokal, instmdic.",
+            _both(ROW, "tak", "inst30m Podłączyłem lokal, instmdic."),
+            (),
+            id="kod-obok-zwyklego-opisu",
+        ),
+        pytest.param(
+            "40000001 tak montaż instutp40m",
+            _both(ROW, "tak", "montaż instutp40m"),
+            (_faulty("montaż instutp40m"),),
+            id="liczba-spoza-przedzialow-obok-zwyklego-opisu",
+        ),
         pytest.param("40000001 tak instutp40m", _both(ROW, "tak", "instutp40m"), (_faulty("instutp40m"),), id="liczba-spoza-przedzialow"),
         pytest.param(
             "40000001 tak instmdik inst20m",
@@ -5408,11 +5420,13 @@ def test_numer_przeczytany_tylko_w_zleceniach_sprzed_okna_ma_wlasny_powod(
         ),
     ],
 )
-def test_wpis_tak_z_bledem_opisu_wpisuje_sie_jak_kazdy_a_tata_widzi_problem_z_powodem(
+def test_wpis_tak_wpisuje_caly_opis_a_tata_widzi_problem_z_powodem_tylko_przy_bledzie_opisu(
     text: str, changes: tuple[CellChange, ...], problems: tuple[ReportProblem, ...]
 ) -> None:
-    """ADR 0039: Wpis ``tak``, którego czynności mają Błąd opisu, Wpisanie raportów wpisuje jak dotąd, bo bez
-    ``SKUTECZNE`` Przygotowanie pliku zbiorczego się zatrzymuje, a tata widzi przy dniu Wykonawcy problem z powodem.
+    """ADR 0039, ADR 0041: Wpisanie raportów wpisuje do ``CZYNNOŚCI ZREALIZOWANE`` cały opis po ``tak``, Kody czynności
+    razem ze zwykłym opisem; Wpis ``tak`` z Błędem opisu wpisuje jak każdy, bo bez ``SKUTECZNE`` Przygotowanie pliku
+    zbiorczego się zatrzymuje, a tata widzi przy dniu Wykonawcy problem z powodem. Zwykły opis obok kodów i opis bez
+    żadnego kodu nie są Błędem opisu.
     Opis Wpisu ``nie`` to powód nieskuteczności, więc legenda go nie czyta, a Wpis bez ``tak`` ani ``nie`` niczego nie
     wpisuje i ma swój problem."""
 
@@ -5427,18 +5441,20 @@ def test_pozniejszy_poprawny_wpis_zastepuje_wpis_z_bledem_opisu_a_problem_znika(
     """Późniejszy Wpis zlecenia wygrywa, więc poprawiony Wpis Wykonawcy zastępuje Wpis z Błędem opisu w tym samym
     kliknięciu i w następnym (własny wpis Centrum), a problem znika; Wpis z błędem po poprawnym daje problem znowu."""
 
-    faulty = _mail(JAN, SUBJECT, "40000001 tak montaż ONT")
+    faulty = _mail(JAN, SUBJECT, "40000001 tak montaż instutp40m")
     corrected = _mail(JAN, SUBJECT, "40000001 tak inst20m", LATER)
 
     first = enter_reports(_inputs([faulty], [_order()]))
     second = enter_reports(_inputs([faulty, corrected], _after([_order()], first), memory=first.memory))
     together = enter_reports(_inputs([faulty, corrected], [_order()]))
-    worse = enter_reports(_inputs([_mail(JAN, SUBJECT, "40000001 tak inst20m"), _mail(JAN, SUBJECT, "40000001 tak montaż ONT", LATER)], [_order()]))
+    worse = enter_reports(
+        _inputs([_mail(JAN, SUBJECT, "40000001 tak inst20m"), _mail(JAN, SUBJECT, "40000001 tak montaż instutp40m", LATER)], [_order()])
+    )
 
-    assert first.problems == (_faulty("montaż ONT"),)
+    assert first.problems == (_faulty("montaż instutp40m"),)
     assert (second.changes, second.problems) == ((CellChange(ROW, ReportColumn.COMPLETED, "inst20m"),), ())
     assert (together.changes, together.problems) == (_both(ROW, "tak", "inst20m"), ())
-    assert (worse.changes, worse.problems) == (_both(ROW, "tak", "montaż ONT"), (_faulty("montaż ONT"),))
+    assert (worse.changes, worse.problems) == (_both(ROW, "tak", "montaż instutp40m"), (_faulty("montaż instutp40m"),))
 
 
 def test_zlecenie_dopisane_z_raportu_z_bledem_opisu_ma_problem_a_odrzucona_literowka_nie() -> None:
@@ -5446,21 +5462,23 @@ def test_zlecenie_dopisane_z_raportu_z_bledem_opisu_ma_problem_a_odrzucona_liter
     poprawiony mail odrzucił jako literówkę, nie staje się zleceniem, więc nie ma też Błędu opisu (US 40)."""
 
     orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002")]
+    typo, resent = (f"40000001 tak instutp40m {number} tak montaż instutp0m" for number in ("40000092", "40000002"))
 
-    added = enter_reports(_inputs([_mail(JAN, SUBJECT, ADDED_TEXT)], orders, ordered=[DAY]))
-    corrected = enter_reports(_inputs([_mail(JAN, SUBJECT, TYPO), _mail(JAN, SUBJECT, RESENT, LATER)], orders, ordered=[DAY]))
+    added = enter_reports(_inputs([_mail(JAN, SUBJECT, f"{ADDED} tak montaż instutp40m")], orders, ordered=[DAY]))
+    corrected = enter_reports(_inputs([_mail(JAN, SUBJECT, typo), _mail(JAN, SUBJECT, resent, LATER)], orders, ordered=[DAY]))
 
-    assert (added.added, added.problems) == ((_added(),), (_faulty("montaż ONT", number=ADDED),))
+    assert (added.added, added.problems) == ((_added(completed="montaż instutp40m"),), (_faulty("montaż instutp40m", number=ADDED),))
     assert corrected.added == ()
-    assert corrected.problems == (_faulty("wymiana routera"), _faulty("montaż", number="40000002"))
+    assert corrected.problems == (_faulty("instutp40m"), _faulty("montaż instutp0m", number="40000002"))
 
 
 def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydania() -> None:
     """Legenda czynności to Ustawienie Centrum taty, to samo co w Przygotowaniu pliku zbiorczego: opis z jego kodów nie
-    jest Błędem opisu, choć legenda z Wydania ich nie zna."""
+    ma Błędu opisu, choć z legendą z Wydania dwa kody wpisują w Y, a ``inst20m inst30m`` w jego legendzie to zwykły
+    opis."""
 
     legend = ActivityLegend((ActivityCode("montaz", ("montaż",), FixedColumn("Y")), ActivityCode("ont", ("ont",), FixedColumn("AB"))))
-    mails = [_mail(JAN, SUBJECT, "40000001 tak montaż ONT")]
+    mails = [_mail(JAN, SUBJECT, "40000001 tak montaż ONT inst20m inst30m")]
 
     assert enter_reports(_inputs(mails, [_order()], legend=legend)).problems == ()
-    assert enter_reports(_inputs(mails, [_order()])).problems == (_faulty("montaż ONT"),)
+    assert enter_reports(_inputs(mails, [_order()])).problems == (_faulty("montaż ONT inst20m inst30m"),)

@@ -904,12 +904,15 @@ class OrderState(Enum):
 @dataclass(frozen=True)
 class OrderDetail:
     """Zlecenie dnia Wykonawcy w widoku Raporty: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie zmian
-    kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i czy zlecenie ma jakikolwiek Wpis (``reported``)."""
+    kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), czy zlecenie ma jakikolwiek Wpis (``reported``) i Kody
+    czynności zlecenia ``tak`` z Legendy czynności kliknięcia (``codes``, ``_descriptions.codes``; pusta krotka: „BRAK
+    KODU”; ``None``: zlecenie bez ``tak`` albo wynik kliknięcia sprzed kodów)."""
 
     number: OrderNumber
     successful: str | None
     activities: str | None
     reported: bool
+    codes: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)

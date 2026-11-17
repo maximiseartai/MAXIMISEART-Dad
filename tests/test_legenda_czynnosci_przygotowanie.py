@@ -1,8 +1,9 @@
 """Legenda czynności z Wydania w Pliku zbiorczym z Przygotowania pliku zbiorczego (ADR 0038).
 
 Każdy przypadek to jedno Zlecenie skuteczne syntetycznego Rejestru z ``CZYNNOŚCI ZREALIZOWANE``, a oczekiwane Ilości
-usług, kwota w ``AS`` i kolory pochodzą z maila taty z 15.11.2026, ADR 0038 i ADR 0039, nie z kodu: opis z Błędem
-opisu, także bez żadnego kodu, nie dostaje od legendy nic. Wzorce mają kształt Wzorców taty (``tools/syntetyczne_wzorce.py``).
+usług, kwota w ``AS`` i kolory pochodzą z maila taty z 15.11.2026, ADR 0038, ADR 0039 i ADR 0041, nie z kodu: zwykły
+opis obok kodów nie zmienia tego, co kody wyznaczają, a opis bez żadnego kodu i opis z Błędem opisu nie dostaje od
+legendy nic. Wzorce mają kształt Wzorców taty (``tools/syntetyczne_wzorce.py``).
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+import pytest
 
 from rozliczenia.collective_layout import PHOTO_COLUMNS, QUANTITY_COLUMNS
 
@@ -77,7 +79,12 @@ SPELLING: list[Case] = [
     Case("tak, Inst20M.", DEVICES_ONLY_V | {"Y": 1}),
     Case("SpawPG\nnie", DEVICES_ONLY_V | {"AB": 1, "AS": 70}, {"AS": RED}),
 ]
-DESCRIPTION_ERRORS: list[Case] = [
+BESIDE_PLAIN: list[Case] = [
+    Case("20 m patchcord dzielnik1/2", DEVICES_ONLY_V | {"AS": 50}),
+    Case("spawpg montaż", DEVICES_ONLY_V | {"AB": 1, "AS": 70}, {"AS": RED}),
+    Case("Podłączyłem lokal, rt2 i instmdic.", DEVICES_ONLY_V | {"AM": 1}, {"AM": RED, "AF": GREEN}),
+]
+WITHOUT_CODE: list[Case] = [
     Case("spawanie gniazda", DEVICES_ONLY_V),
     Case("instalacja 20m", DEVICES_ONLY_V),
     Case("xinst20m", DEVICES_ONLY_V),
@@ -88,16 +95,18 @@ DESCRIPTION_ERRORS: list[Case] = [
     Case("tak, Inst 20 m", DEVICES_ONLY_V),
     Case("Spaw PG", DEVICES_ONLY_V),
     Case("20 m patchcord dzielnik 1/2", DEVICES_ONLY_V),
+]
+DESCRIPTION_ERRORS: list[Case] = [
     Case("instutp40m", DEVICES_ONLY_V),
     Case("instutp0m", DEVICES_ONLY_V),
     Case("instwewrg631m", DEVICES_ONLY_V),
-    Case("20 m patchcord dzielnik1/2", DEVICES_ONLY_V),
-    Case("spawpg montaż", DEVICES_ONLY_V),
+    Case("montaż instutp40m spawpg", DEVICES_ONLY_V),
     Case("inst20m inst20m", DEVICES_ONLY_V),
     Case("instmdik inst20m", DEVICES_ONLY_V),
     Case("rt2 bypas5m", DEVICES_ONLY_V),
+    Case("Podłączyłem lokal: inst20m, inst30m.", DEVICES_ONLY_V),
 ]
-CASES = [*MAIL, *SUMS, *SPELLING, *DESCRIPTION_ERRORS]
+CASES = [*MAIL, *SUMS, *SPELLING, *BESIDE_PLAIN, *WITHOUT_CODE, *DESCRIPTION_ERRORS]
 
 
 def _fixture(tmp_path: Path, cases: list[Case]) -> PreparationFixture:
@@ -169,6 +178,19 @@ def test_kazdy_kod_z_maila_taty_daje_w_pliku_zbiorczym_swoje_ilosci_kwote_as_i_k
         if row != want
     ] == []
     assert fixture.register_path.read_bytes() == register
+
+
+@pytest.mark.parametrize("code", ["inst30m", "spawpg", "rt2", "instutp17m dzielnik1/2"])
+def test_kod_ze_zwyklym_opisem_obok_daje_w_pliku_zbiorczym_te_same_komorki_co_sam_kod(tmp_path: Path, code: str) -> None:
+    described = f"{code} Podłączyłem lokal, klient zadowolony, wymiana gniazda."
+    cases = [Case(code, {}), Case(described, {}), Case(f"Na miejscu: {code}", {})]
+    fixture = _fixture(tmp_path, cases)
+
+    run_preparation(fixture)
+
+    values, fills = _values(fixture.collective_file_path, 3), _fills(fixture.collective_file_path, 3)
+    assert (values[1], fills[1]) == (values[0], fills[0])
+    assert (values[2], fills[2]) == (values[0], fills[0])
 
 
 def test_kolor_bez_wartosci_nie_robi_ze_zlecenia_zlecenia_ze_zdjeciami(tmp_path: Path) -> None:

@@ -2,9 +2,9 @@
 
 Każdy test przygotowuje Plik zbiorczy z syntetycznego Rejestru zleceń w Centrum, potem zmienia go jak tata w
 Excelu (openpyxl) i pyta Centrum o tabelę jednego rodzaju Ilości do uzupełnienia. Testy z ``CODED`` liczą Legendą
-czynności z Wydania (ADR 0038, 0039): wiersz z opisu, którego opis to same Kody czynności z maila taty, nie czeka na
-tatę, wiersz bez reguły z samych kodów czeka z wartościami legendy jako kolumnami narzędzia, a wiersz z Błędem opisu
-(kod obok zwykłego opisu) czeka bez niczego od legendy.
+czynności z Wydania (ADR 0038, 0039, 0041): wiersz z opisu, którego opis ma Kody czynności z maila taty, nie czeka na
+tatę, wiersz bez reguły z kodami czeka z wartościami legendy jako kolumnami narzędzia, a wiersz z Błędem opisu czeka
+bez niczego od legendy.
 """
 
 from __future__ import annotations
@@ -220,8 +220,8 @@ def test_bez_naglowka_czynnosci_zrealizowane_tabela_ma_pusty_opis(tmp_path: Path
 CODED = {
     18: "spawpg",  # nokia zte: same kody
     19: "tak inst20m, dzielnik1/2",  # przeniesienie (wiersz bez reguły): same kody
-    20: "instmdik.",  # prewencja (wiersz z opisu): same kody
-    21: "20 m patchcord dzielnik1/2",  # puste URZĄDZENIA (wiersz z opisu): Błąd opisu, kod obok opisu
+    20: "instmdik, wymiana gniazda.",  # prewencja (wiersz z opisu): kod obok zwykłego opisu
+    21: "20 m patchcord instutp40m",  # puste URZĄDZENIA (wiersz z opisu): Błąd opisu, kod z liczbą spoza przedziałów
     22: "montaż",  # router x9 (wiersz bez reguły): bez kodu
 }
 
@@ -238,7 +238,7 @@ def _rows(centrum: PreparingCentrum, kind: str) -> dict[int, dict[str, Any]]:
     return {row["row"]: row for row in _table(centrum, kind)["rows"]}
 
 
-def test_wiersz_z_opisu_z_samych_kodow_nie_czeka_na_tate_a_z_bledem_opisu_czeka(tmp_path: Path) -> None:
+def test_wiersz_z_opisu_z_kodami_obok_zwyklego_opisu_nie_czeka_na_tate_a_z_bledem_opisu_czeka(tmp_path: Path) -> None:
     view = _coded(tmp_path).view(URL)
 
     assert _states(view) == {"without_rule": [(19, "to_fill"), (22, "to_fill")], "from_description": [(21, "to_fill")]}

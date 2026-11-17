@@ -317,6 +317,8 @@ def _order(number: str, state: str) -> Json:
         "successful": "tak" if entered else None,
         "activities": COMPLETED_WITHOUT_CODES if entered else None,
         "state": state,
+        "codes": [],
+        "no_code": entered,
     }
 
 
@@ -924,6 +926,13 @@ def drive(run: Run, page: Page) -> None:
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("Brak Wpisu w raporcie")
     expect(orders.get_by_role("listitem").nth(1)).to_contain_text("Bez raportu")
     run.check(True, "the popover of wykonawca.a has his figures and the orders of the day in the INTERMAX order")
+    [coded] = [order for order in _days_of(view)["wykonawca.a"]["orders_detail"] if order["number"] == "40000101"]
+    expect(orders.get_by_role("listitem").nth(0)).to_contain_text("BRAK KODU")
+    expect(orders.get_by_role("listitem").nth(1)).not_to_contain_text("BRAK KODU")
+    run.check(
+        (coded["codes"], coded["no_code"]) == ([], True),
+        "the order tak without a Kod czynności has „BRAK KODU” in the view and the popover, the order without a Wpis has not (ADR 0041)",
+    )
     _close(page, popover)
     popover = _popover(page, "wykonawca.b", DAY)
     _figures(popover, SHOWN["wykonawca.b"])

@@ -17,7 +17,7 @@ from hypothesis import example, given, settings
 from hypothesis import strategies as st
 import pytest
 
-from rozliczenia.activity_legend import CodesOnly
+from rozliczenia.activity_legend import WithCodes
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.report_cells import OrderRow
 from rozliczenia.settlement_period import period_of
@@ -25,7 +25,6 @@ from rozliczenia.worker_list import WorkerEntry, WorkerList
 from rozliczenia.worker_reports import (
     DEFAULT_REMINDERS,
     EXAMPLE_NUMBERS,
-    FaultyDescription,
     MailId,
     OrderedDay,
     OrderNumber,
@@ -492,14 +491,14 @@ def test_temat_przypomnienia_czyta_sie_z_powrotem_jako_jego_dzien(day: date) -> 
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "problems"),
     [
-        pytest.param("40000001 tak montaż ONT", id="zwykly-opis"),
-        pytest.param("40000001 tak utp18m", id="wlasny-zapis"),
-        pytest.param("40000001 tak inst20m, klient zadowolony", id="kod-obok-opisu"),
-        pytest.param("40000001 tak instutp40m", id="liczba-spoza-przedzialow"),
-        pytest.param("40000001 tak instmdik inst20m", id="kolumna-drugi-raz"),
-        pytest.param("40000001 tak montaż instutp0m", id="dwa-powody"),
+        pytest.param("40000001 tak montaż ONT", [], id="zwykly-opis"),
+        pytest.param("40000001 tak utp18m", [], id="wlasny-zapis"),
+        pytest.param("40000001 tak inst20m, klient zadowolony", [], id="kod-obok-opisu"),
+        pytest.param("40000001 tak instutp40m", ["FaultyDescription"], id="liczba-spoza-przedzialow"),
+        pytest.param("40000001 tak instmdik inst20m", ["FaultyDescription"], id="kolumna-drugi-raz"),
+        pytest.param("40000001 tak montaż instutp0m", ["FaultyDescription"], id="kod-spoza-przedzialow-obok-opisu"),
     ],
 )
 @pytest.mark.parametrize(
@@ -513,14 +512,16 @@ def test_temat_przypomnienia_czyta_sie_z_powrotem_jako_jego_dzien(day: date) -> 
         pytest.param(_at(DAY + timedelta(days=2), 8), id="poranna-kolejnego-dnia"),
     ],
 )
-def test_raport_z_bledem_opisu_konczy_przypomnienia_za_swoj_dzien_w_kazdej_porze(text: str, arrived: datetime, now: datetime) -> None:
-    """ADR 0041 (historie 1, 2, 9): Raport wykonawcy za dzień X z Wpisem ``tak`` z Błędem opisu jest przysłany, także
-    gdy przyjdzie rano dnia X+1, więc Wykonawca nie dostaje przypomnienia za X w żadnej porze; Błąd opisu widzi tylko
-    tata, przy zleceniu we Wpisaniu raportów."""
+def test_raport_z_bledem_opisu_albo_zwyklym_opisem_konczy_przypomnienia_za_swoj_dzien_w_kazdej_porze(
+    text: str, problems: list[str], arrived: datetime, now: datetime
+) -> None:
+    """ADR 0041 (historie 1, 2, 9, 33): Raport wykonawcy za dzień X z Wpisem ``tak`` z Błędem opisu albo ze zwykłym
+    opisem jest przysłany, także gdy przyjdzie rano dnia X+1, więc Wykonawca nie dostaje przypomnienia za X w żadnej
+    porze; Błąd opisu widzi tylko tata, przy zleceniu we Wpisaniu raportów, a zwykły opis nie jest problemem."""
 
     mails = [_mail(JAN, "Raport 09.11.2026", text, arrived)]
 
-    assert [type(problem).__name__ for problem in enter_reports(_reports(now, [_order()], mails)).problems] == ["FaultyDescription"]
+    assert [type(problem).__name__ for problem in enter_reports(_reports(now, [_order()], mails)).problems] == problems
     assert _due(now, mails=mails) == ()
 
 
@@ -703,10 +704,10 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
     assert open_days - set(_days(due)) == reported
 
 
-def test_raport_wolnym_tekstem_z_wpisem_tak_z_bledem_opisu_konczy_przypomnienia_a_mail_bez_wpisu_nie() -> None:
+def test_raport_wolnym_tekstem_z_wpisem_tak_konczy_przypomnienia_a_mail_bez_wpisu_nie() -> None:
     """Historia 10 speca #2032 (ADR 0041, „Co nie jest raportem”): 13–14.11 Wykonawcy pisali raporty wolnym tekstem.
-    Raport za 13.11 z Wpisem ``tak`` z Błędem opisu jest przysłany: Wpisanie raportów wpisuje go z problemem, a po
-    Aktualizacji 17.11 rano przypomnienie za 13.11 nie idzie. Mail za 14.11 bez żadnego numeru zlecenia nie jest
+    Raport za 13.11 z Wpisem ``tak`` ze zwykłym opisem jest przysłany: Wpisanie raportów wpisuje go bez problemu, bo
+    zwykły opis nie jest Błędem opisu, a po Aktualizacji 17.11 rano przypomnienie za 13.11 nie idzie. Mail za 14.11 bez żadnego numeru zlecenia nie jest
     raportem, więc przypomnienie za 14.11 idzie."""
 
     day_13, day_14 = date(2026, 11, 13), date(2026, 11, 14)
@@ -719,10 +720,8 @@ def test_raport_wolnym_tekstem_z_wpisem_tak_z_bledem_opisu_konczy_przypomnienia_
 
     entered = enter_reports(_reports(now, orders, mails, rollout=date(2026, 11, 12)))
 
-    assert [(problem.number, problem.day) for problem in entered.problems if isinstance(problem, FaultyDescription)] == [
-        ("40012345", day_13)
-    ]
-    assert len(entered.problems) == 1
+    assert entered.problems == ()
+    assert [change.value for change in entered.changes] == ["tak", "montaż ONT, klient zadowolony"]
     assert _days(_due(now, orders, mails=mails, rollout=date(2026, 11, 12))) == [("jan.testowy", day_14)]
 
 
@@ -735,7 +734,8 @@ def test_przyklad_w_przypomnieniu_to_wpis_tak_z_samymi_kodami_legendy_z_wydania_
     example = lines.index("PRZYKŁAD:")
     yes, no = (line.split(maxsplit=2) for line in lines[example + 1 : example + 3])
 
-    assert yes[1] == "tak" and isinstance(DEFAULT_ACTIVITY_LEGEND.read(yes[2]), CodesOnly)
+    read = DEFAULT_ACTIVITY_LEGEND.read(yes[2])
+    assert yes[1] == "tak" and isinstance(read, WithCodes) and read.spelled == tuple(yes[2].split())
     assert no[1:] == ["nie", "brak klienta"]
 
 

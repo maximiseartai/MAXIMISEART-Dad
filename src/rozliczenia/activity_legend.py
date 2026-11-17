@@ -8,23 +8,24 @@ najwyżej do jednego zapisu, a ``tak`` i ``nie`` do żadnego, bo zapis tych sł�
 legendy ↔ typy: ``activity_legend_file``.
 
 Zapis Kodu czynności to małe litery, cyfry i ``/`` bez spacji, od litery, z co najwyżej jednym miejscem na liczbę
-``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Opis technika to same Kody czynności, a każde odstępstwo
-to Błąd opisu, także opis bez żadnego kodu. Rachunek tekstu:
+``{n}`` (``inst{n}m``, ``instwewrg6{n}m``, ``dzielnik1/2``). Obok Kodów czynności w opisie technika stoi zwykły opis,
+który nie jest błędem i niczego nie wyznacza (ADR 0041). Rachunek tekstu:
 
 1. Słowo to ciąg liter, cyfr i ``/`` z co najmniej jedną literą albo cyfrą; słowa rozdziela każdy inny znak (spacja,
    przecinek, kropka, nowy wiersz), a sam ``/`` między słowami też.
 2. Słowo jest Kodem czynności, gdy małymi literami (``casefold``) jest w całości zapisem kodu, a ``{n}`` to ciąg cyfr.
-   Słowa ``tak`` i ``nie`` nie są niczym.
-   Każde inne słowo to Błąd opisu (``NotACode``): zwykły opis, własny zapis pracownika (``utp18m``, ``instmdic``), kod
-   ze spacją w środku (``inst 20m``), kody sklejone (``spawpgspawez``) i kod w dłuższym słowie (``xinst20m``).
+   Każde inne słowo to zwykły opis: ``tak`` i ``nie``, własny zapis pracownika (``utp18m``, ``instmdic``, bez
+   dopasowania po podobieństwie), kod ze spacją w środku (``inst 20m``), kody sklejone (``spawpgspawez``) i kod w
+   dłuższym słowie (``xinst20m``).
 3. Kod z przedziałami wybiera kolumnę liczbą z zapisu, a kod z liczbą spoza przedziałów to Błąd opisu (``NumberOutOfRange``).
    Kod bez przedziałów liczby nie czyta.
 4. W kolumnę Ilości usług wpisuje najwyżej jeden kod: drugi, także ten sam kod drugi raz, to Błąd opisu
    (``ColumnTwice``). Kwoty w ``AS`` się sumują. Kolumna, którą kody wypełniają dwoma różnymi kolorami, to Błąd opisu
    (``TwoColours``); ten sam kolor z dwóch kodów nie.
-5. Wynik to ``NoCodes`` (opis pusty albo z samych ``tak`` i ``nie``), ``CodesOnly`` (same poprawne kody z tym, co
-   wyznaczają) albo ``DescriptionError`` z każdym powodem: najpierw słowa w kolejności z opisu, potem kolumny w
-   kolejności arkusza. Błąd opisu niczego nie wyznacza w wierszu, nawet za poprawne kody obok.
+5. Wynik to ``NoCodes`` (opis bez żadnego Kodu czynności), ``WithCodes`` (poprawne kody z tym, co wyznaczają, obok
+   zwykłego opisu albo bez niego) albo ``DescriptionError`` z każdym powodem: najpierw kody z liczbą spoza przedziałów
+   w kolejności z opisu, potem kolumny w kolejności arkusza. Błąd opisu niczego nie wyznacza w wierszu, nawet za
+   poprawne kody obok. Każdy wynik ma kody z opisu w zapisie legendy (``spelled``), w kolejności z opisu.
 """
 
 from __future__ import annotations
@@ -52,7 +53,7 @@ COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in BU
 FILL_COLUMNS: Final = (*COLUMNS, AMOUNT_COLUMN)
 """Kolumny, które kod wypełnia kolorem."""
 YES_NO: Final = frozenset({"tak", "nie"})
-"""Słowa, które mogą stać w opisie obok kodów i nie są Błędem opisu."""
+"""Słowa, które stoją w opisie obok kodów i nigdy nie są kodem."""
 
 
 class FillColour(StrEnum):
@@ -165,24 +166,23 @@ class ActivityLegend:
         """Wynik legendy dla opisu technika ``text`` (zob. rachunek w opisie modułu)."""
 
         found: list[tuple[FoundCode, ActivityCode]] = []
+        spelled: list[str] = []
         problems: list[DescriptionProblem] = []
         for word in (word for word in _WORD.findall(text) if word.strip("/")):
-            folded = word.casefold()
-            if folded in YES_NO:
-                continue
-            match = self._spellings.fullmatch(folded)
+            match = self._spellings.fullmatch(word.casefold())
             if match is None:
-                problems.append(NotACode(word))
                 continue
             index = _index(match)
             pattern = self._patterns[index]
             number = int(match[f"{_NUMBER_GROUP}{index}"]) if NUMBER in pattern.spelling else None
             column = _column(pattern.owner.column, number)
+            written = FoundCode(pattern.owner.id, pattern.spelling, number, column)
+            spelled.append(written.spelled)
             if isinstance(pattern.owner.column, ColumnByNumber) and column is None:
                 assert number is not None, "kod z przedziałami ma w każdym zapisie miejsce na liczbę"
                 problems.append(NumberOutOfRange(pattern.owner.id, pattern.spelling, number))
                 continue
-            found.append((FoundCode(pattern.owner.id, pattern.spelling, number, column), pattern.owner))
+            found.append((written, pattern.owner))
         hits = [(written.column, code) for written, code in found if written.column is not None]
         fills = [(fill, code.id) for _, code in found for fill in code.fills]
         problems.extend(
@@ -196,12 +196,12 @@ class ActivityLegend:
             if len({fill.colour for fill, _ in fills if fill.column == column}) > 1
         )
         if problems:
-            return DescriptionError(tuple(dict.fromkeys(problems)))
+            return DescriptionError(tuple(dict.fromkeys(problems)), tuple(spelled))
         if not found:
             return NO_CODES
         values = {column: code.value for column, code in hits}
         colours = {fill.column: fill.colour for fill, _ in fills}
-        return CodesOnly(
+        return WithCodes(
             found=tuple(written for written, _ in found),
             quantities=MappingProxyType({column: values[column] for column in QUANTITY_LETTERS if column in values}),
             amount=sum(code.amount or 0 for _, code in found),
@@ -219,17 +219,25 @@ class FoundCode:
     number: int | None
     column: str | None
 
+    @property
+    def spelled(self) -> str:
+        """Kod w zapisie legendy z liczbą z opisu w miejscu ``{n}`` (``inst30m``), nie w zapisie technika."""
+
+        return self.spelling if self.number is None else self.spelling.replace(NUMBER, str(self.number))
+
 
 @dataclass(frozen=True)
 class NoCodes:
-    """Opis pusty albo z samych ``tak`` i ``nie``: bez kodu i bez Błędu opisu, więc legenda nic w nim nie wpisuje, a wiersz
-    zostaje tacie."""
+    """Opis bez żadnego Kodu czynności (pusty albo sam zwykły opis): bez Błędu opisu, ale legenda nic w nim nie wpisuje,
+    więc wiersz zostaje tacie, a przy zleceniu ``tak`` tata widzi „BRAK KODU”."""
+
+    spelled: ClassVar[tuple[str, ...]] = ()
 
 
 @dataclass(frozen=True)
-class CodesOnly:
-    """Opis z samych poprawnych Kodów czynności, więc legenda wpisuje w wierszu swoje, a wiersz nie czeka na tatę w
-    kolumnach z opisu technika.
+class WithCodes:
+    """Opis z poprawnymi Kodami czynności, obok zwykłego opisu albo bez niego, więc legenda wpisuje w wierszu swoje, a
+    wiersz nie czeka na tatę w kolumnach z opisu technika.
 
     ``found``: kody w kolejności z opisu. ``quantities``: kolumna → Ilość usług, w kolejności kolumn. ``amount``: suma
     kwot w ``AS`` (0: bez kwoty). ``fills``: kolumna → kolor wypełnienia, w kolejności arkusza.
@@ -240,13 +248,9 @@ class CodesOnly:
     amount: int
     fills: Mapping[str, FillColour]
 
-
-@dataclass(frozen=True)
-class NotACode:
-    """Słowo opisu, które nie jest zapisem żadnego Kodu czynności ani ``tak`` czy ``nie``, tak jak w opisie."""
-
-    word: str
-    reason: ClassVar[str] = "słowo inne niż zapis kodu"
+    @property
+    def spelled(self) -> tuple[str, ...]:
+        return tuple(found.spelled for found in self.found)
 
 
 @dataclass(frozen=True)
@@ -291,22 +295,24 @@ class TwoColours:
         return f"{self.column}: {', '.join(self.codes)}"
 
 
-DescriptionProblem = NotACode | NumberOutOfRange | ColumnTwice | TwoColours
-"""Powód Błędu opisu: ``reason`` to rodzaj powodu. Tylko ``NotACode.word`` niesie tekst technika; ``detail`` pozostałych
-to kod z liczbą albo kolumna z identyfikatorami kodów."""
-REASONS: Final = tuple(kind.reason for kind in (NotACode, NumberOutOfRange, ColumnTwice, TwoColours))
+DescriptionProblem = NumberOutOfRange | ColumnTwice | TwoColours
+"""Powód Błędu opisu: ``reason`` to rodzaj powodu, a ``detail`` kod z liczbą albo kolumna z identyfikatorami kodów, bez
+tekstu technika."""
+REASONS: Final = tuple(kind.reason for kind in (NumberOutOfRange, ColumnTwice, TwoColours))
 """Rodzaje powodów Błędu opisu w stałej kolejności."""
 
 
 @dataclass(frozen=True)
 class DescriptionError:
-    """Błąd opisu: opis technika nie jest z samych poprawnych Kodów czynności, więc legenda nic w wierszu nie wpisuje, a
-    wiersz zostaje tacie. ``problems``: każdy powód raz (zob. opis modułu, punkt 5)."""
+    """Błąd opisu: Kody czynności opisu technika, których legenda nie może przyjąć, więc legenda nic w wierszu nie
+    wpisuje, a wiersz zostaje tacie. ``problems``: każdy powód raz (zob. opis modułu, punkt 5); ``spelled``: kody z opisu
+    w zapisie legendy, także z liczbą spoza przedziałów."""
 
     problems: tuple[DescriptionProblem, ...]
+    spelled: tuple[str, ...]
 
 
-DescriptionRead = NoCodes | CodesOnly | DescriptionError
+DescriptionRead = NoCodes | WithCodes | DescriptionError
 """Wynik Legendy czynności dla opisu technika ``CZYNNOŚCI ZREALIZOWANE``."""
 
 NO_CODES: Final = NoCodes()
@@ -314,14 +320,9 @@ NO_CODES: Final = NoCodes()
 
 def problem_text(problem: DescriptionProblem) -> str:
     """Powód Błędu opisu słowami, ten sam dla taty i Maksa (``kod z liczbą spoza przedziałów (instutp40m)``), bez tekstu
-    technika: słowo inne niż zapis kodu to sam rodzaj powodu. Słowo osobno ominęłoby strażnika reguły danych, który maskuje
-    wartość tylko z jej słowami po kolei, więc pokazuje je opis technika obok powodu."""
+    technika."""
 
-    match problem:
-        case NotACode():
-            return problem.reason
-        case NumberOutOfRange() | ColumnTwice() | TwoColours():
-            return f"{problem.reason} ({problem.detail})"
+    return f"{problem.reason} ({problem.detail})"
 
 
 def shown_spelling(spelling: str) -> str:

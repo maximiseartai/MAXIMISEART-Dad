@@ -710,8 +710,8 @@ export type DescriptionColumn = {
 /**
  * DescriptionRows
  *
- * Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła
- * Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe.
+ * Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z Kodami czynności bez Błędu opisu, które
+ * wypełniła Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe.
  */
 export type DescriptionRows = {
     /**
@@ -1685,8 +1685,8 @@ export type LegendPreviewReady = {
  * LegendPreviewRow
  *
  * Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis
- * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z samych kodów, powody Błędu
- * opisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej.
+ * technika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z kodami bez Błędu opisu,
+ * powody Błędu opisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej.
  */
 export type LegendPreviewRow = {
     /**
@@ -3702,6 +3702,10 @@ export type ReportsNote = {
  * Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
  * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez
  * żadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
+ *
+ * ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
+ * i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
+ * czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.
  */
 export type ReportsOrder = {
     /**
@@ -3720,6 +3724,14 @@ export type ReportsOrder = {
      * State
      */
     state: 'entered' | 'without_report' | 'problem';
+    /**
+     * Codes
+     */
+    codes: Array<string>;
+    /**
+     * No Code
+     */
+    no_code: boolean;
 };
 
 /**

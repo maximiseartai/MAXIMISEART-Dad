@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 from collections.abc import Iterable, Sequence
+from dataclasses import replace
 from datetime import date
 
+from ..activity_legend import ActivityLegend
 from ..report_cells import CellChange, OrderRow, ReportColumn
 from ..text import normalize_text
+from ._descriptions import codes
 from ._model import (
     ConflictingVerdicts,
     FaultyDescription,
@@ -41,6 +44,7 @@ def worker_days(
     moved: frozenset[OrderRow],
     reached: frozenset[OrderKey],
     added: Iterable[tuple[OrderKey, OrderDetail]],
+    legend: ActivityLegend,
     mistaken: Iterable[tuple[Login, date, date]],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
@@ -54,8 +58,9 @@ def worker_days(
     bo zapis stawia je pod ostatnim zleceniem nowego Wykonawcy. Zlecenie ma Wpis, gdy Raport wykonawcy z jego dnia ma
     jego numer albo gdy zwycięski Wpis innego dnia trafił do niego (``reached``: klucze celów po kliknięciu, np.
     pomylony temat). Zlecenia dopisane z raportu (``added``: klucz i zlecenie po zapisie) stoją na końcu zleceń swojego
-    Wykonawcy z dnia, za przeniesionymi, bo zapis dopisuje je po Przeniesieniach. Dzień, za który liczy się raport z
-    pomylonym tematem (``mistaken``: Wykonawca, ten dzień i dzień z tematu), ma jego dzień z tematu.
+    Wykonawcy z dnia, za przeniesionymi, bo zapis dopisuje je po Przeniesieniach. Każde zlecenie ``tak`` ma Kody
+    czynności swojego opisu z Legendy czynności ``legend`` (``_descriptions.codes``). Dzień, za który liczy się
+    raport z pomylonym tematem (``mistaken``: Wykonawca, ten dzień i dzień z tematu), ma jego dzień z tematu.
     """
 
     found_orders = tuple(orders)
@@ -76,17 +81,20 @@ def worker_days(
     figures = []
     subjects = {(report.day, report.worker) for report in reports}
     for day, worker in sorted(days.keys() | mails.keys() | subjects | extra.keys()):
-        detail = (
-            *(
-                OrderDetail(
-                    order.key.number,
-                    written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
-                    written.get((order.row, ReportColumn.COMPLETED), order.completed),
-                    order.key in reported,
-                )
-                for order in days.get((day, worker), [])
-            ),
-            *extra.get((day, worker), []),
+        detail = tuple(
+            replace(found, codes=codes(legend, found.successful, found.activities))
+            for found in (
+                *(
+                    OrderDetail(
+                        order.key.number,
+                        written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
+                        written.get((order.row, ReportColumn.COMPLETED), order.completed),
+                        order.key in reported,
+                    )
+                    for order in days.get((day, worker), [])
+                ),
+                *extra.get((day, worker), []),
+            )
         )
         missing = {order.number for order in detail if not order.reported}
         figures.append(
