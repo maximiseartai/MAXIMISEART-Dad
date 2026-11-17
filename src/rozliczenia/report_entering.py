@@ -339,9 +339,8 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 assert_never(outcome)
         with _stops_unusable():
             register = register_file.read(register_path, files)
-        orders = register_orders(register, window.start, copy=files.copy is not None, workers=addresses)
-        ordered = _ordered_days(register, window.start)
-        return window, register, orders, ordered, _present(register, window.numbers_since), outcome.skipped, outcome.mails
+        read = register_window(register, window, addresses, copy=files.copy is not None)
+        return window, register, read.orders, read.ordered_days, read.present, outcome.skipped, outcome.mails
 
     window, register, orders, ordered_days, present, skipped, mails = phases.read(read)
 
@@ -565,7 +564,29 @@ def _orderless(
     return tuple(sorted(found, key=lambda logged: (logged.sheet, logged.number)))
 
 
-def register_orders(
+@dataclass(frozen=True)
+class RegisterWindow:
+    """INTERMAX okna dla rdzenia raportów: uporządkowane zlecenia i Dni uporządkowane od ``Window.start`` oraz numer
+    każdego przeczytanego wiersza od ``Window.numbers_since`` z nazwą arkusza (``ReportInputs``)."""
+
+    orders: tuple[RegisterOrder, ...]
+    ordered_days: frozenset[OrderedDay]
+    present: tuple[tuple[str, ReadNumber], ...]
+
+
+def register_window(register: RegisterFile, window: Window, workers: WorkerAddresses, *, copy: bool) -> RegisterWindow:
+    """Jedyny odczyt INTERMAX dla rdzenia raportów, ten sam dla Wpisania raportów i Przypomnień o raporcie, więc obie
+    operacje znają te same zlecenia i od tych samych cyfr czytają Wpisy; ``copy``: każdy przeczytany wiersz zlecenia
+    trafia do Kopii wejścia (ma ją tylko Uruchomienie procesu)."""
+
+    return RegisterWindow(
+        _register_orders(register, window.start, copy=copy, workers=workers),
+        _ordered_days(register, window.start),
+        _present(register, window.numbers_since),
+    )
+
+
+def _register_orders(
     register: RegisterFile, since: date, *, copy: bool, workers: WorkerAddresses
 ) -> tuple[RegisterOrder, ...]:
     """Uporządkowane zlecenia z dni od ``since`` w każdym obszarze wklejania, każdy przeczytany wiersz w Kopii wejścia

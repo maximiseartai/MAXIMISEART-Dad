@@ -64,6 +64,7 @@ from rozliczenia.worker_report_inbox import (
     SentReminders,
 )
 from rozliczenia.worker_reports import (
+    DEFAULT_TEXT,
     AddBar,
     ConflictingVerdicts,
     FaultyDescription,
@@ -78,6 +79,7 @@ from rozliczenia.worker_reports import (
     UnknownNumber,
     UnreadableSubject,
     Verdict,
+    reminder_text,
 )
 from rozliczenia.worker_reports.reasons import reason
 
@@ -4350,29 +4352,48 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_log
     assert LoggedActivityLegend.model_validate(logs["activity_legend"]).value() == ActivityLegend(codes)
 
 
-@pytest.mark.parametrize("dads_legend", [False, True], ids=["legenda-z-wydania", "legenda-taty"])
-def test_praca_przypomnien_liczy_raport_z_bledem_opisu_jako_niewyslany_legenda_czynnosci_z_ustawien(
-    tmp_path: Path, dads_legend: bool
-) -> None:
-    """ADR 0039: Raport Anny za 9.11 ma Wpis ``tak`` z opisem bez kodów, więc liczy się jako niewysłany i o 8:30 Anna
-    dostaje Przypomnienie o raporcie z numerem zlecenia i rodzajem błędu, bez słów swojego opisu; z ``montaż`` w
-    Legendzie czynności taty z Ustawień Centrum raport jest wysłany. Jan bez raportu dostaje przypomnienie zawsze."""
+def test_praca_przypomnien_nie_wysyla_przypomnienia_po_raporcie_z_bledem_opisu(tmp_path: Path) -> None:
+    """ADR 0041: Raport Anny za 9.11 ma Wpis ``tak`` z opisem bez kodów, czyli Błąd opisu, ale jest przysłany, więc o
+    8:30 Anna nie dostaje Przypomnienia o raporcie; Jan bez raportu dostaje je z samym wzorem, bez bloku o zleceniach."""
 
     mailbox = FakeMailbox(outcome=(report(ANNA, "Raport 09.11.2026", "40000002 tak montaż"),))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
-    if dads_legend:
-        _with_dads_legend(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
     centrum.rhythm.tick()
     centrum.client.stop()
 
-    sent: dict[str, str] = {reminder.worker: reminder.text for reminder, _ in mailbox.sends}
-    assert sorted(sent) == (["jan.testowy"] if dads_legend else ["anna.kowalska", "jan.testowy"])
-    assert "Zlecenie" not in sent["jan.testowy"]
-    if not dads_legend:
-        assert "Zlecenie 40000002 ma w opisie słowo inne niż kod czynności." in sent["anna.kowalska"].splitlines()
-        assert "montaż" not in sent["anna.kowalska"]
+    [(reminder, _)] = mailbox.sends
+    assert reminder.worker == "jan.testowy"
+    assert reminder.text == reminder_text(date(2026, 11, 9), DEFAULT_TEXT, "Pozdrawiam\nTata\n")
+
+
+def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_intermax_co_wpisanie_raportow(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041 (historia 14): okres 03_09_11_2026 ma Plik zbiorczy, a Jan przysyła 10.11 wieczorem Raport z pomylonym
+    tematem 11.11 z dwoma numerami swoich zleceń: z 10.11 i siedmiocyfrowym z 9.11. Przypomnienia czytają INTERMAX od
+    ``Window.start``, jak Wpisanie raportów, więc krótszy numer z dnia zamkniętego jest Wpisem, a nie słowem opisu, dwa
+    niezgodne Wpisy to pomylony temat i raport liczy się za 10.11: o 8:30 11.11 przypomnienie dostaje tylko Anna."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "jan.testowy", 4000007), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
+        raw=(),
+    )
+    mail = report(JAN, "Raport 11.11.2026", "40000005 tak inst20m\n4000007 tak spawpg", at=datetime(2026, 11, 10, 21))
+    mailbox = FakeMailbox(outcome=(mail,))
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    folder = centrum.periods_directory / MONDAY_PERIOD
+    folder.mkdir(parents=True)
+    (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
 

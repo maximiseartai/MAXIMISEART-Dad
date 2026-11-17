@@ -3571,19 +3571,7 @@ def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: s
     now = datetime(2026, 11, 9, 18, 0, tzinfo=TAPA)
     inputs = _inputs([mail], [_order()], today=now.date(), rollout=DAY - timedelta(days=1))
 
-    found = reminders_due(
-        ReminderInputs(
-            now,
-            inputs.window,
-            inputs.orders,
-            inputs.mails,
-            (),
-            inputs.addresses,
-            frozenset(inputs.addresses.logins.values()),
-            settings=DEFAULT_REMINDERS,
-            legend=inputs.legend,
-        )
-    )
+    found = reminders_due(ReminderInputs(now, inputs, (), frozenset(inputs.addresses.logins.values()), settings=DEFAULT_REMINDERS))
 
     assert [(reminder.worker, reminder.day) for reminder in found] == due
 
@@ -5387,18 +5375,3 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydani
 
     assert enter_reports(_inputs(mails, [_order()], legend=legend)).problems == ()
     assert enter_reports(_inputs(mails, [_order()])).problems == (_faulty("montaż ONT"),)
-
-
-def test_linie_bledu_opisu_z_przypomnienia_bez_znaku_cytatu_nie_daja_wpisu() -> None:
-    """Przypomnienie po Błędzie opisu ma numery prawdziwych zleceń, a odpowiedź może je zacytować bez znaku cytatu: linia
-    zlecenia z Błędem opisu nie zaczyna Wpisu, więc odpowiedź wpisuje tylko swój Wpis."""
-
-    reminder = reminder_text(DAY, DEFAULT_TEXT, "Tata", (_faulty("montaż ONT"), _faulty("instutp40m", number="40000002")))
-    orders = [_order(), _order(OrderRow("Zlecenia", 121), number="40000002"), _order(OrderRow("Zlecenia", 122), number="40000003")]
-
-    outcome = enter_reports(_inputs([_mail(JAN, f"Re: {REMINDER}", f"40000003 tak inst20m\n\n{reminder}")], orders))
-
-    assert "Zlecenie 40000001 ma w opisie" in reminder and "Zlecenie 40000002 ma w opisie" in reminder
-    assert [entry.number for read in outcome.mails if isinstance(read, ReadReport) for entry in read.entries] == ["40000003"]
-    assert outcome.changes == _both(OrderRow("Zlecenia", 122), "tak", "inst20m")
-

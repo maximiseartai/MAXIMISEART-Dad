@@ -5,8 +5,9 @@ Operacja Wpisania raportów to ``enter_reports``: maile ze Skrzynki raportów (`
 komórek, Przeniesienia zleceń, problemy, informacje i liczby dla widoku Raporty i nowa pamięć na wyjściu. Zdanie dla
 taty o problemie daje ``reasons.reason``, o informacji ``reasons.note``, a mail, z którego rdzeń czyta z powrotem ten
 sam odczyt (odtworzenie z Logów), ``as_mail``.
-Druga operacja, ``reminders_due``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ``_reminders.py``).
-Obie czytają opis Wpisu ``tak`` Legendą czynności z wejścia (``_descriptions.py``, ADR 0039).
+Druga operacja, ``reminders_due``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ADR 0041,
+``_reminders.py``). Obie biorą Raporty wykonawców i ich dni z jednego odczytu okna (``_reading.py``), a Wpisanie czyta
+opis Wpisu ``tak`` Legendą czynności z wejścia (``_descriptions.py``, ADR 0039).
 Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń, reguły komórek i postać kanoniczna maila
 w pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
 oraz ``report_cells``, ``settlement_period``, ``text`` i ``activity_legend``, bo przejdzie bez zmian do Centrum w
@@ -15,9 +16,7 @@ chmurze.
 
 from __future__ import annotations
 
-from datetime import date, datetime
-
-from . import _cells, _corrections, _descriptions, _entries, _figures, _matching, _moves, _subject
+from . import _cells, _corrections, _descriptions, _figures, _moves, _reading
 from ._model import (
     ADDED_DIGITS,
     SUBJECT_WORD,
@@ -184,12 +183,11 @@ __all__ = [
 def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     """Operacja Wpisania raportów: ten sam wynik dla tych samych wejść, w dowolnej kolejności maili.
 
-    Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``, z rokiem literówki czytanym od dnia przyjścia
-    maila) z dniem otwartym w ``inputs.window``, a od
-    Wykonawcy także z dniem w okresie z Plikiem zbiorczym od dnia wdrożenia (``Window.closes``), który daje tylko
-    niezgodne Wpisy; inne maile rdzeń pomija po cichu, także mail od Wykonawcy bez żadnego Wpisu (ADR 0041). Temat
-    Raportu wykonawcy bez dnia zleceń daje ``UnreadableSubject``, gdy mail z Wpisami przyszedł od Wykonawcy w dniu
-    otwartym. Które numery są w INTERMAX i ile mają
+    Które maile są Raportami wykonawców i za które dni, mówi odczyt okna (``_reading.read_window``), ten sam co w
+    Przypomnieniach o raporcie: mail od Wykonawcy bez żadnego Wpisu nie jest raportem (ADR 0041), Raport z dniem w
+    okresie z Plikiem zbiorczym albo spoza okna daje tylko niezgodne Wpisy, a temat Raportu wykonawcy bez dnia zleceń
+    daje ``UnreadableSubject``, gdy mail z Wpisami przyszedł od Wykonawcy w dniu otwartym. Liczba Raportów wykonawców dnia w widoku
+    Raporty liczy Raport za każdy dzień, za który jest przysłany (``WindowRead.reported``). Które numery są w INTERMAX i ile mają
     zleceń, mówi każde odczytane zlecenie (``inputs.orders``, także z dni zamkniętych i po dziś), a okno mówi tylko, do
     których wolno pisać; Wpis zaczyna więc numer z co najmniej tyloma cyframi, ile ma najkrótszy numer odczytanego
     zlecenia (``_entries.entries``). Wpis trafia do zlecenia nadawcy z dnia z tematu, a bez niego do jedynego zlecenia tego
@@ -214,30 +212,9 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
 
     window = inputs.window
     orders = tuple(inputs.orders)
-    digits = min((len(order.key.number) for order in orders), default=1)
-    read: list[MailRead] = []
-    problems: list[ReportProblem] = []
-    for mail in inputs.mails:
-        found = _subject.read(mail.subject, mail.arrived.date())
-        worker = inputs.addresses.logins.get(mail.sender)
-        match found:
-            case None:
-                continue
-            case SubjectFault():
-                numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
-                if worker is not None and window.opens(mail.arrived.date()) and numbers:
-                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, found, numbers))
-            case date() if worker is None and window.opens(found):
-                read.append(ReadStranger(mail.id, mail.arrived, found))
-                problems.append(UnknownSender(mail.id, mail.sender, found))
-            case date() if worker is not None and (window.opens(found) or window.closes(found)):
-                if entries := _entries.entries(mail.text, digits):
-                    read.append(ReadReport(mail.id, mail.arrived, worker, found, entries))
-            case date():
-                continue
-    mails = tuple(sorted(read, key=_mail_order))
-    reports = [found for found in mails if isinstance(found, ReadReport)]
-    board = _matching.Board(orders, inputs.memory, window, inputs.ordered_days, inputs.present)
+    read = _reading.read_window(inputs)
+    mails, reports, board = read.mails, list(read.reports), read.board
+    problems: list[ReportProblem] = list(read.strangers)
     matched = board.match(reports)
     additions = _corrections.uncorrected(matched.added, reports, board)
     described = _descriptions.entered(inputs.legend, matched.entered, additions)
@@ -252,34 +229,13 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     standing = _corrections.standing([*problems, *matched.problems, *described], reports, unreadable, board, newest)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     shown = [report for report in reports if window.opens(report.day)]
+    reported = [(day, worker) for worker, day in read.reported if window.opens(day)]
     details = [
         (key, OrderDetail(found.number, found.verdict.value, found.activities or None, True))
         for key, found in added.items()
     ]
     opened = [order for order in moved.orders if window.opens(order.key.day)]
-    figures = _figures.worker_days(opened, shown, problems_found, changes, moved.rows, frozenset(targets), details)
+    figures = _figures.worker_days(opened, shown, reported, problems_found, changes, moved.rows, frozenset(targets), details)
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
     return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added)
 
-
-def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]]:
-    """Chwila przyjścia, mail, a przy remisie (Message-ID ustawia nadawca) rodzaj i każde pole odczytu, więc dwa różne
-    odczyty nigdy nie mają równego miejsca."""
-
-    match found:
-        case ReadReport(worker=worker, day=day, entries=entries):
-            content = (
-                part
-                for entry in entries
-                for part in (
-                    entry.number,
-                    "" if entry.verdict is None else entry.verdict.value,
-                    "" if entry.fault is None else entry.fault.name,
-                    entry.activities,
-                )
-            )
-            return found.arrived, found.mail, "report", (worker, day.isoformat(), *content)
-        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers):
-            return found.arrived, found.mail, "unreadable", (worker, fault.name, *sorted(numbers))
-        case ReadStranger(day=day):
-            return found.arrived, found.mail, "stranger", (day.isoformat(),)

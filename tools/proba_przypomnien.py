@@ -5,11 +5,12 @@ Narzędzie dla Maksa, poza CI (spec #1344, US 57–58, ADR 0030). Pracę Przypom
 i tą samą drogą co praca przypomnień Centrum (``rozliczenia.centrum.report_reminders.due_reminders``): z folderu
 ``--config`` Przypomnienia o raporcie z Ustawień Centrum (``przypomnienia.yaml``: czy idą, dzień wdrożenia, pory,
 treść i stopka taty), Ustawienia taty (``centrum-ustawienia.yaml``: INTERMAX i folder okresów), Legendę czynności
-(``legenda-czynnosci.yaml``, bez niego legenda z Wydania: z niej wie, który Wpis ``tak`` ma Błąd opisu), plik dostępu do
+(``legenda-czynnosci.yaml``, bez niego legenda z Wydania), plik dostępu do
 skrzynki raportów (``skrzynka-raportow.txt``), Listę Wykonawców (``wykonawcy.yaml``) i pory, przy których sprawdzała
 praca przypomnień (``przypomnienia-pory.json``: z nich pory „Wysłanych”), potem Pliki zbiorcze okresów, INTERMAX tylko do
 odczytu (także otwarty w Excelu), skrzynkę i jej „Wysłane” tylko do odczytu, i pyta rdzeń raportów, które
-przypomnienia należą się w tej chwili.
+przypomnienia należą się w tej chwili: tylko za dni, za które Wykonawca nie przysłał żadnego Raportu wykonawcy, z dniem
+raportu z tego samego odczytu okna co we Wpisaniu raportów (ADR 0041).
 
 Potem wysyła przez SMTP Gmaila **jedno** przypomnienie, a jedynym adresatem jest adres z ``--do`` (adres Maksa):
 pierwsze należne przypomnienie (najstarszy dzień) z adresatami zamienionymi na ten adres, a gdy nic się nie należy

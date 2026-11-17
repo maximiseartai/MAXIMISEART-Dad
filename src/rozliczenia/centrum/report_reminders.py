@@ -4,10 +4,9 @@ Rytm (``ReminderRhythm``, u taty ``MinuteRhythm``) woła ``ReportReminders.check
 zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i na początku migawkę Ustawień Centrum, więc zmiana
 pór, treści albo stopki działa od następnego sprawdzenia, bez ponownego startu Centrum (ADR 0032). Przy wyłączonych
 przypomnieniach i poza porą przypomnień z Ustawień (``reminder_pora``) nic więcej nie robi. W porze bierze z migawki
-INTERMAX i folder okresów, dzień wdrożenia przypomnień, Legendę czynności, Listę Wykonawców, treść i stopkę taty
-(Legendą rdzeń czyta, który Wpis ``tak`` ma Błąd opisu, ADR 0039), potem czyta Pliki
-zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii
-wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
+INTERMAX i folder okresów, dzień wdrożenia przypomnień, Legendę czynności, Listę Wykonawców, treść i stopkę taty,
+potem czyta Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii wejścia, tym
+samym odczytem co Wpisanie raportów (``register_window``), potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
 której sprawdzenie ruszyło (minęła 17:00 albo 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
 czeka na następną porę, która zna wysłane z „Wysłanych” i z pamięci tej pracy Centrum. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
@@ -78,7 +77,7 @@ from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
-from rozliczenia.report_entering import closed_periods, register_orders
+from rozliczenia.report_entering import closed_periods, register_window
 from rozliczenia.tool_files import REMINDERS_RESULT, REMINDERS_SCHEDULES
 from rozliczenia.workbook_files import WorkbookError
 from rozliczenia.worker_report_inbox import (
@@ -93,10 +92,12 @@ from rozliczenia.worker_report_inbox import (
 from rozliczenia.worker_reports import (
     DEFAULT_REMINDERS,
     OLD_VERSION_SCHEDULES,
+    OwnEntries,
     Pora,
     Reminder,
     ReminderInputs,
     ReminderSchedule,
+    ReportInputs,
     SchedulesInEffect,
     ScheduleSince,
     SentReminder,
@@ -449,7 +450,7 @@ def due_reminders(
     window = Window.of(today, rollout, closed)
     try:
         register = register_file.read(settings.register, files, despite_excel_lock=True)
-        orders = register_orders(register, window.first, copy=False, workers=addresses)
+        intermax = register_window(register, window, addresses, copy=False)
     except (WorkbookError, StopError) as error:
         return NotRead("intermax", type(error).__name__)
     mails = mailbox.mails_since(window.first)
@@ -459,20 +460,18 @@ def due_reminders(
     if not isinstance(filed, SentReminders):
         return filed
     sent = _known_sent(filed.reminders, sent_in_work)
-    due = reminders_due(
-        ReminderInputs(
-            now,
-            window,
-            orders,
-            mails.mails,
-            sent,
-            addresses,
-            workers.reminded(),
-            reminders,
-            legend,
-            in_effect,
-        )
+    reports = ReportInputs(
+        mails=mails.mails,
+        addresses=addresses,
+        orders=intermax.orders,
+        window=window,
+        memory=OwnEntries.EMPTY,
+        kept=frozenset(),
+        present=tuple(read for _, read in intermax.present),
+        legend=legend,
+        ordered_days=intermax.ordered_days,
     )
+    due = reminders_due(ReminderInputs(now, reports, sent, workers.reminded(), reminders, in_effect))
     return DueReminders(due, sent, addresses, reminders.footer if reminders.footer.strip() else None)
 
 
