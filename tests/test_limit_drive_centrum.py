@@ -246,6 +246,29 @@ def test_znane_luki_czekania_until_przechodza_przez_until(common: ModuleType, tm
     assert_znane_luki(zgloszenia, "tests/test_limit_drive_centrum.py (ZNANE_LUKI_UNTIL)")
 
 
+def test_logi_dwoch_uruchomien_w_jednej_sekundzie_ostatnie_to_pozniej_rozpoczete_a_nie_dalsze_w_nazwie(
+    common: ModuleType, tmp_path: Path
+) -> None:
+    """Nazwa pliku Logów ma start do sekundy i losowy id, więc dwa Uruchomienia w jednej sekundzie (szybki runner
+    Windows, CI 44194162002) sortują się po nazwie odwrotnie co trzeci raz; ``[-1]`` napędu ma być późniejszym."""
+
+    run = _run(common, tmp_path)
+    run.run_logs_dir.mkdir(parents=True)
+    for run_id, started, ended in [
+        ("96b82ef9", "2026-11-17T22:55:33.182448Z", "2026-11-17T22:55:33.210000Z"),
+        ("50346d26", "2026-11-17T22:55:33.853516Z", "2026-11-17T22:55:33.880951Z"),
+        ("0a000000", "2026-11-17T22:55:33.853516Z", "2026-11-17T22:55:33.990000Z"),
+    ]:
+        logged = {"run_id": run_id, "started_at": started, "ended_at": ended}
+        (run.run_logs_dir / f"20261117T225533Z-report_entering-{run_id}.json").write_text(json.dumps(logged), encoding="utf-8")
+
+    assert [logged["run_id"] for logged in common.run_logs(run, "report_entering").values()] == [
+        "96b82ef9",
+        "50346d26",
+        "0a000000",
+    ]
+
+
 # Znane luki nakładki ``Run.refusing_text_settings_writes`` (tests/fixtures/znane_luki.py): klasa mechanizmu → moduł z
 # ``zapis(path)``, który pisze plik Ustawień runu tekstem, a nakładka go przepuszcza. Nakładka odmawia tylko otwarcia
 # do zapisu tekstem przez ``io.open`` i ``os.open`` procesu napędu pliku o tożsamości pliku Ustawień w chwili otwarcia

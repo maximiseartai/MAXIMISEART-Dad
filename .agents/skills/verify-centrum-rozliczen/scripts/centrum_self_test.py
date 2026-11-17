@@ -626,18 +626,19 @@ def _check_read_while_put_in_place(errors: list[str]) -> None:
         run = Run(root, "http://127.0.0.1:1/", Path(scratch) / "evidence")
         run.run_logs_dir.mkdir(parents=True)
         logs = run.run_logs_dir / "20261019T060000Z-preparation-aaaaaaaa.json"
-        logs.write_text(json.dumps({"run_id": "aaaaaaaa"}), encoding="utf-8")
+        logged = {"run_id": "aaaaaaaa", "started_at": "2026-10-19T06:00:00Z", "ended_at": "2026-10-19T06:00:01Z"}
+        logs.write_text(json.dumps(logged), encoding="utf-8")
         settings.parent.mkdir()
         settings.write_bytes(b"rejestr_zlecen: INTERMAX.xlsx\n")
 
         read = _read_while_put_in_place(logs, lambda: read_text(logs))
-        if read != '{"run_id": "aaaaaaaa"}':
+        if read != json.dumps(logged):
             errors.append(f"read_text gives up on a file the server is putting in place: {read!r}")
         read = _read_while_put_in_place(logs, lambda: read_bytes(logs))
-        if read != b'{"run_id": "aaaaaaaa"}':
+        if read != json.dumps(logged).encode():
             errors.append(f"read_bytes gives up on a file the server is putting in place: {read!r}")
         read = _read_while_put_in_place(logs, lambda: run_logs(run))
-        if read != {logs.name: {"run_id": "aaaaaaaa"}}:
+        if read != {logs.name: logged}:
             errors.append(f"run_logs gives up on a file of Logi the server is putting in place: {read!r}")
         read = _read_while_put_in_place(settings, lambda: run.remembered("rejestr_zlecen"))
         if read != "INTERMAX.xlsx":
