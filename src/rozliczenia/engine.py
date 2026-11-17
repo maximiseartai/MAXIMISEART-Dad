@@ -14,7 +14,6 @@ from .activity_legend import ActivityLegend
 from .activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from .domain import ProgressPhase
 from .dad_files import DadFiles
-from .inea_only_quantities import Cleared
 from .message import Message, StopError
 from .order_facts import CollectiveOrders
 from .quantity_engine import QuantityRules
@@ -27,6 +26,7 @@ from .write_routes import Route, RouteCounts, TemplateKind
 from .period_folder import collective_period_token
 from .run_context import RunContext
 from .worker_list import WorkerList
+from .worker_settlement import Cleared
 
 
 @dataclass(frozen=True)
