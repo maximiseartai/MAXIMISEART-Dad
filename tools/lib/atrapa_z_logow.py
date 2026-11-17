@@ -37,8 +37,8 @@ from atrapy.model_efenix import CATALOG, PRICES, EfenixOrder
 
 SYNTHETIC_ADDRESS: Final = "ul. Odtworzeniowa {row}"
 """``ADRES`` wiersza odtworzonego pliku, który reguła adresu efenix rozbiera (rodzaj, nazwa ulicy, numer)."""
-_UNREAD_FILE_ADDRESS: Final = "Odtworzeniowa bez rodzaju {row}"
-"""``ADRES`` wiersza, którego reguła adresu w Logach nie rozebrała: bez rodzaju ulicy."""
+_UNREAD_FILE_ADDRESS: Final = "ul. Odtworzeniowa/bez rozbioru {row}"
+"""``ADRES`` wiersza, którego reguła adresu w Logach nie rozebrała: z ukośnikiem w nazwie ulicy."""
 _UNREAD_EFENIX_ADDRESS: Final = "Dane adresowe bez rodzaju {row}"
 _OTHER_STREET: Final = "Inna"
 _FLAT: Final = " Lokal 7"

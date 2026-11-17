@@ -213,8 +213,9 @@ def test_numer_budynku_z_wiecej_niz_dwiema_czesciami_albo_pusta_czescia_nie_jest
     ],
 )
 def test_adres_pliku_bez_rodzaju_i_rynek_sa_rowne_temu_samemu_adresowi_w_efenix(collective: str, efenix: str) -> None:
-    """Tata pisze rynek bez rodzaju (``TESTOWY 13/14/1``) albo z nim (``RYNEK TESTOWY 9/9``), a efenix zapisuje rodzaj
-    ``rynek`` przed nazwą, jak ``ul.`` (Logi Wycen w efenix okresów 27_02_11 i 03_09_11: obie strony bez rozbioru)."""
+    """Tata pisze rynek bez rodzaju (``TESTOWY 13/14/1``) albo z nim (``RYNEK TESTOWY 9/9``). W Logach Wycen w efenix
+    okresów 27_02_11 i 03_09_11 takie zlecenia mają obie strony bez rozbioru, więc efenix nie pisze przy nich ``ul.``,
+    tylko rodzaj ``rynek``, sklejony z nazwą jak ``ul.Testowa`` albo ze spacją."""
 
     assert address_differences(collective, efenix) == ()
 

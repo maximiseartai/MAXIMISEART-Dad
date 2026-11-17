@@ -2635,10 +2635,10 @@ def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen
     assert lines[3] == "Pierwsza różnica: Komunikaty (messages)[1: kod EFENIX_INNY_STATUS].code"
 
 
-# Wiersze 18–20 po Wykonawcach: ``ADRES``, którego reguła adresu nie rozbiera (bez rodzaju ulicy), ``Dane adresowe``
+# Wiersze 18–20 po Wykonawcach: ``ADRES``, którego reguła adresu nie rozbiera (trzy ukośniki), ``Dane adresowe``
 # bez rodzaju ulicy i ``Dane adresowe`` z inną ulicą i numerem domu. Adresy są wymyślone.
 ADDRESSED = [
-    _efenix_order("#ZLQR11", "adrian.testowy", address="ZAWILCOWA 12/3"),
+    _efenix_order("#ZLQR11", "adrian.testowy", address="UL. ZAWILCOWA 12/3/4/5"),
     _efenix_order("#ZLQR12", "beata.testowa", efenix_address="Miastowo-Centrum Zawilcowa 12 Lokal 3"),
     _efenix_order("#ZLQR13", "celina.testowa", efenix_address="Miastowo-Centrum ul.Rumiankowa 14 Lokal 3"),
 ]
@@ -2648,7 +2648,7 @@ def test_logi_wyceny_z_adresem_bez_rozbioru_i_innym_adresem_w_efenix_odtwarzaja_
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Atrapa z Logów pokazuje ``Dane adresowe``, które różnią się od ``ADRES`` odtworzonego Pliku zbiorczego tymi
-    samymi częściami co u taty: ``ADRES`` bez rozbioru (w odtworzonym pliku też bez rodzaju ulicy, z numerem swojego
+    samymi częściami co u taty: ``ADRES`` bez rozbioru (w odtworzonym pliku z ukośnikiem w nazwie ulicy, z numerem swojego
     wiersza), ``Dane adresowe`` bez rozbioru oraz inna ulica i numer domu. Wycena daje więc te same Komunikaty i ślad, a
     raport nie ma granicy o adresie."""
 
