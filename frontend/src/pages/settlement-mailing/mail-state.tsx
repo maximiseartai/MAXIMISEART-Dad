@@ -1,117 +1,92 @@
-import { CircleCheckIcon, CircleDashedIcon, CircleHelpIcon, CircleXIcon, FilePenLineIcon, MinusIcon, UserXIcon } from "lucide-react"
+import {
+  CheckIcon,
+  CircleDashedIcon,
+  CircleHelpIcon,
+  CircleXIcon,
+  FilePenLineIcon,
+  MinusIcon,
+  SendIcon,
+  UserXIcon,
+  type LucideIcon,
+} from "lucide-react"
 
-import type { MailingRow } from "@/api/generated"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { Spinner } from "@/components/ui/spinner"
-import { settingsHref } from "@/lib/address"
 import { dateTime } from "@/lib/format"
-import { WORKERS_SECTION } from "@/pages/settings/workers-section"
+import type { ShownState } from "@/pages/settlement-mailing/periods"
+import { initials } from "@/pages/settlement-mailing/words"
+import { cn } from "cn"
 
-/** Stan wiersza na ekranie: stan Rozliczenia pracownika z serwera albo „wysyłam”, dopóki jego mail jest w drodze. */
-export type ShownState = MailingRow["state"] | { state: "sending" }
+type Tone = "sent" | "by_hand" | "changed" | "failed" | "plain" | "off"
+
+/** Każdy stan Rozliczenia pracownika w Wysyłce: słowa, ikona i ton odznaki oraz kropki przy awatarze. */
+const LOOK: Record<ShownState["state"], { words: string; icon: LucideIcon; tone: Tone }> = {
+  sending: { words: "Wysyłam…", icon: SendIcon, tone: "plain" },
+  to_send: { words: "Do wysłania", icon: CircleDashedIcon, tone: "plain" },
+  sent: { words: "Wysłane", icon: CheckIcon, tone: "sent" },
+  sent_by_hand: { words: "Wysłane ręcznie", icon: CheckIcon, tone: "by_hand" },
+  changed: { words: "Zmienione po wysłaniu", icon: FilePenLineIcon, tone: "changed" },
+  no_address: { words: "Brak adresu", icon: UserXIcon, tone: "off" },
+  without_orders: { words: "Bez zleceń", icon: MinusIcon, tone: "off" },
+  not_listed: { words: "Nie ma w Liście Wykonawców", icon: UserXIcon, tone: "off" },
+  not_sent: { words: "Nie wyszło", icon: CircleXIcon, tone: "failed" },
+  unknown: { words: "Nie wiadomo", icon: CircleHelpIcon, tone: "off" },
+}
+
+const BADGE: Record<Tone, string> = {
+  sent: "bg-success-tile text-success-tile-foreground",
+  by_hand: "bg-success-tile text-success-tile-foreground",
+  changed: "bg-warning-tile text-warning-tile-foreground",
+  failed: "bg-destructive-tile text-destructive-tile-foreground",
+  plain: "bg-muted text-foreground",
+  off: "border-border text-muted-foreground",
+}
+
+const DOT: Record<Tone, string> = {
+  sent: "bg-success",
+  by_hand: "bg-card shadow-[inset_0_0_0_1.5px_var(--success)]",
+  changed: "bg-warning",
+  failed: "bg-destructive",
+  plain: "bg-border",
+  off: "bg-border",
+}
+
+/** `Wysłane 19.10.2026 08:02`, `Zmienione po wysłaniu`: stan słowami, z chwilą wysłania, gdy mail poszedł. */
+export function stateWords(state: ShownState): string {
+  const { words } = LOOK[state.state]
+
+  return state.state === "sent" || state.state === "sent_by_hand" ? `${words} ${dateTime(state.at)}` : words
+}
+
+/** Odznaka stanu Rozliczenia pracownika, zawsze z ikoną i słowami, nigdy samym kolorem. */
+export function MailStateBadge({ state }: { state: ShownState }) {
+  const { icon: Icon, tone } = LOOK[state.state]
+
+  return (
+    <Badge variant="outline" className={cn("tabular-nums", BADGE[tone], tone === "off" ? null : "border-transparent")}>
+      <Icon data-icon="inline-start" />
+      {stateWords(state)}
+    </Badge>
+  )
+}
 
 /**
- * Odznaka stanu Rozliczenia pracownika w Wysyłce, zawsze z ikoną i słowami, nigdy samym kolorem. Każdy stan to nowy
- * element (`key` w wierszu), więc zmiana w trakcie wysyłki wchodzi przejściem `podmiana`.
+ * Awatar Wykonawcy z inicjałami i kropką stanu: wysłane (pełna), wysłane ręcznie (pusta w środku), zmienione po
+ * wysłaniu (bursztynowa), nie wyszło (czerwona), reszta szara. Stan słowami niesie nazwa obrazka.
  */
-export function MailStateBadge({ state }: { state: ShownState }) {
-  switch (state.state) {
-    case "sending":
-      return (
-        <Badge variant="outline">
-          <Spinner data-icon="inline-start" />
-          Wysyłam…
-        </Badge>
-      )
-    case "to_send":
-      return (
-        <Badge variant="outline">
-          <CircleDashedIcon data-icon="inline-start" />
-          Do wysłania
-        </Badge>
-      )
-    case "sent":
-      return (
-        <Badge variant="secondary" className="tabular-nums">
-          <CircleCheckIcon data-icon="inline-start" className="text-success" />
-          Wysłane {dateTime(state.at)}
-        </Badge>
-      )
-    case "sent_by_hand":
-      return (
-        <Badge variant="secondary" className="tabular-nums">
-          <CircleCheckIcon data-icon="inline-start" className="text-success" />
-          Wysłane ręcznie {dateTime(state.at)}
-        </Badge>
-      )
-    case "changed":
-      return (
-        <Badge variant="outline" title={`Wysłane ${dateTime(state.at)}`}>
-          <FilePenLineIcon data-icon="inline-start" className="text-warning" />
-          Zmienione po wysłaniu
-        </Badge>
-      )
-    case "no_address":
-      return (
-        <Badge variant="outline">
-          <UserXIcon data-icon="inline-start" />
-          Brak adresu
-        </Badge>
-      )
-    case "without_orders":
-      return (
-        <Badge variant="outline" className="text-muted-foreground">
-          <MinusIcon data-icon="inline-start" />
-          Bez zleceń
-        </Badge>
-      )
-    case "not_listed":
-      return (
-        <Badge variant="outline" className="text-muted-foreground">
-          <UserXIcon data-icon="inline-start" />
-          Nie ma w Liście Wykonawców
-        </Badge>
-      )
-    case "not_sent":
-      return (
-        <Badge variant="destructive">
-          <CircleXIcon data-icon="inline-start" />
-          Nie wyszło
-        </Badge>
-      )
-    case "unknown":
-      return (
-        <Badge variant="outline" className="text-muted-foreground">
-          <CircleHelpIcon data-icon="inline-start" />
-          Nie wiadomo
-        </Badge>
-      )
-    default: {
-      const unhandled: never = state
-
-      return unhandled
-    }
-  }
-}
-
-/** Zdanie albo link pod odznaką: co zrobić z plikiem, który nie idzie, i dlaczego mail nie wyszedł. */
-export function MailStateNote({ state }: { state: ShownState }) {
-  switch (state.state) {
-    case "no_address":
-      return <SettingsLink>Dodaj adres w Ustawieniach</SettingsLink>
-    case "not_listed":
-      return <SettingsLink>Dodaj Wykonawcę w Ustawieniach</SettingsLink>
-    case "not_sent":
-      return <p className="max-w-64 text-xs text-destructive">{state.message}</p>
-    default:
-      return null
-  }
-}
-
-function SettingsLink({ children }: { children: string }) {
+export function WorkerAvatar({ worker, state, size = "sm" }: { worker: string; state?: ShownState; size?: "sm" | "default" }) {
   return (
-    <a href={settingsHref(WORKERS_SECTION)} className="text-xs underline underline-offset-4 hover:text-foreground">
-      {children}
-    </a>
+    <Avatar size={size} role={state === undefined ? undefined : "img"} aria-label={state === undefined ? undefined : `${worker}: ${stateWords(state)}`}>
+      <AvatarFallback className="text-[0.6rem] font-semibold">{initials(worker)}</AvatarFallback>
+      {state === undefined ? null : (
+        <span
+          aria-hidden
+          className={cn(
+            "absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-background transition-colors duration-200",
+            DOT[LOOK[state.state].tone]
+          )}
+        />
+      )}
+    </Avatar>
   )
 }

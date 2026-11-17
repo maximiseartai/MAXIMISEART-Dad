@@ -16,18 +16,21 @@ type Previews = { state: "loading" } | { state: "ready"; mails: MailPreview[] } 
 /**
  * Okno „Wysłać N rozliczeń?”: podgląd każdego maila tak, jak go dostanie Wykonawca (1 z N, poprzedni i następny), z
  * linkiem do tematu i treści w Ustawieniach. Podgląd składa serwer z bieżących Ustawień, więc okno pokazuje dokładnie
- * to, co pójdzie; „Wyślij” jest dostępne dopiero, gdy podgląd przyszedł.
+ * to, co pójdzie; „Wyślij” jest dostępne dopiero, gdy podgląd przyszedł. `again`: jeden plik zmieniony po wysłaniu idzie
+ * jeszcze raz, więc okno pyta o poprawione rozliczenie.
  */
 export function ConfirmMailing({
   token,
   label,
   workers,
+  again = false,
   onCancel,
   onConfirm,
 }: {
   token: string
   label: string
   workers: string[]
+  again?: boolean
   onCancel: () => void
   onConfirm: () => void
 }) {
@@ -62,7 +65,7 @@ export function ConfirmMailing({
     <Dialog open onOpenChange={(open) => (open ? undefined : onCancel())}>
       <DialogContent className="gap-5 sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>Wysłać {settlements(count)}?</DialogTitle>
+          <DialogTitle>{again ? "Wysłać poprawione rozliczenie?" : `Wysłać ${settlements(count)}?`}</DialogTitle>
           <p className="text-sm text-muted-foreground">
             Każdy Wykonawca dostanie osobny mail ze swoim plikiem, ze skrzynki raportów. Okres: {label}.
           </p>
@@ -112,7 +115,7 @@ export function ConfirmMailing({
             </Button>
             <Button disabled={previews.state !== "ready" || count === 0} onClick={onConfirm}>
               <SendIcon data-icon="inline-start" />
-              Wyślij {count}
+              {again ? "Wyślij poprawione" : `Wyślij ${count}`}
             </Button>
           </div>
         </DialogFooter>

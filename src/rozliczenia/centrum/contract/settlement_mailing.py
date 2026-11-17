@@ -114,9 +114,8 @@ class MailingRow(Model):
 
 
 class MailingPeriod(Model):
-    """Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików, wiersze i liczby do
-    paska: ``to_send`` do wysłania, ``sent`` wysłane (także ręcznie i zmienione po wysłaniu), ``counted`` wszystkie
-    oprócz bez zleceń i spoza Listy, ``without_orders`` bez zleceń."""
+    """Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików i wiersze; ile poszło,
+    strona liczy ze stanów wierszy, bo zmienia je po każdym mailu wysyłki."""
 
     token: str
     tuesday: date
@@ -124,10 +123,6 @@ class MailingPeriod(Model):
     label: str
     settled_at: datetime | None
     rows: list[MailingRow]
-    to_send: int
-    sent: int
-    counted: int
-    without_orders: int
 
 
 class MailboxReady(Model):

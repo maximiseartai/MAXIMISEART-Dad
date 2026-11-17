@@ -1944,9 +1944,8 @@ export type MailingNotSet = {
 /**
  * MailingPeriod
  *
- * Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików, wiersze i liczby do
- * paska: ``to_send`` do wysłania, ``sent`` wysłane (także ręcznie i zmienione po wysłaniu), ``counted`` wszystkie
- * oprócz bez zleceń i spoza Listy, ``without_orders`` bez zleceń.
+ * Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików i wiersze; ile poszło,
+ * strona liczy ze stanów wierszy, bo zmienia je po każdym mailu wysyłki.
  */
 export type MailingPeriod = {
     /**
@@ -1973,22 +1972,6 @@ export type MailingPeriod = {
      * Rows
      */
     rows: Array<MailingRow>;
-    /**
-     * To Send
-     */
-    to_send: number;
-    /**
-     * Sent
-     */
-    sent: number;
-    /**
-     * Counted
-     */
-    counted: number;
-    /**
-     * Without Orders
-     */
-    without_orders: number;
 };
 
 /**

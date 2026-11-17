@@ -220,6 +220,193 @@
   [aria-busy="true"] .szkielet {
     animation: var(--animate-pulse) 270ms;
   }
+
+  /* Wysyłka rozliczeń. Liczba, która się zmienia, wjeżdża od dołu, a odliczanie w kropce okresu od góry. */
+  .liczba {
+    display: inline-block;
+    transition:
+      opacity 280ms var(--ease-out),
+      translate 280ms var(--ease-out);
+  }
+  /* Pasek wysłanych rośnie 1,1 s: pokazuje postęp, nie odpowiada na klik, więc wolniej niż 300 ms. */
+  .pasek-wysylki {
+    transform-origin: left center;
+    transition: transform 1100ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  /* Poświata przechodzi przez wypełnienie paska w pętli, póki maile wychodzą, i raz po wysłaniu wszystkich. */
+  .poswiata {
+    opacity: 0;
+    background: linear-gradient(90deg, transparent 30%, oklch(1 0 0 / 0.55) 50%, transparent 70%) 0 0 / 220% 100%
+      no-repeat;
+  }
+  .poswiata[data-petla] {
+    animation: poswiata 1400ms var(--ease-out) infinite;
+  }
+  .poswiata[data-raz] {
+    animation: poswiata 1400ms var(--ease-out) 150ms both;
+  }
+  /* Napis czynności w toku („Wysyłam 2 z 5”): przygaszony, a przez litery przechodzi jasny pas. Bez spinnera obok. */
+  .migotanie {
+    position: relative;
+    color: color-mix(in oklab, currentColor 62%, transparent);
+  }
+  .migotanie::after {
+    content: attr(data-text);
+    position: absolute;
+    inset: 0;
+    color: transparent;
+    background: linear-gradient(90deg, transparent 38%, var(--migotanie, var(--primary-foreground)) 50%, transparent 62%)
+      100% 0 / 300% 100% no-repeat;
+    -webkit-background-clip: text;
+    background-clip: text;
+    animation: migotanie 1400ms linear infinite;
+  }
+  /* Pierścień stanu Wykonawcy: przerywany, gdy pominięty, kręci się przy wysyłce, wypełnia się z rysowanym znacznikiem
+     po wysłaniu, czerwony, gdy nie wyszło. Podskok tylko po wysyłce w tej wizycie (`data-swieze`). */
+  .pierscien {
+    display: grid;
+    place-items: center;
+    width: 1.3rem;
+    height: 1.3rem;
+    flex: none;
+    border-radius: 999px;
+    border: 1.5px solid var(--ring);
+    color: var(--card);
+    transition:
+      background-color 220ms var(--ease-out),
+      border-color 220ms var(--ease-out);
+  }
+  .pierscien svg,
+  .kropka-okresu .znacznik {
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1;
+  }
+  .pierscien svg {
+    width: 0.85rem;
+    height: 0.85rem;
+    stroke-width: 2.6;
+    stroke-dashoffset: 1;
+  }
+  .pierscien[data-ring="skipped"] {
+    border-style: dashed;
+    border-color: var(--border);
+  }
+  .pierscien[data-ring="sending"] {
+    border-color: var(--border);
+    border-top-color: var(--foreground);
+    animation: obrot 700ms linear infinite;
+  }
+  .pierscien[data-ring="sent"] {
+    background: var(--success);
+    border-color: var(--success);
+  }
+  .pierscien[data-ring="sent"] svg {
+    stroke-dashoffset: 0;
+    transition: stroke-dashoffset 260ms var(--ease-out) 80ms;
+  }
+  .pierscien[data-ring="failed"] {
+    border-color: var(--destructive);
+  }
+  .pierscien[data-ring="sent"][data-swieze] {
+    animation: wyskok 300ms var(--ease-out);
+  }
+  /* Kropka okresu na osi: liczba maili do wysłania, zielona ze znacznikiem, gdy wszystko poszło, bursztynowa przy
+     poprawionym rozliczeniu. */
+  .kropka-okresu {
+    display: grid;
+    place-items: center;
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    background: var(--card);
+    border: 1.5px solid var(--ring);
+    font-size: 0.78rem;
+    font-weight: 600;
+    transition:
+      background-color 240ms var(--ease-out),
+      border-color 240ms var(--ease-out),
+      color 240ms var(--ease-out);
+  }
+  .kropka-okresu svg {
+    width: 0.95rem;
+    height: 0.95rem;
+  }
+  .kropka-okresu .znacznik {
+    stroke-width: 2.4;
+  }
+  .kropka-okresu[data-tone="now"] {
+    border-color: var(--foreground);
+  }
+  .kropka-okresu[data-tone="done"] {
+    background: var(--success);
+    border-color: var(--success);
+    color: var(--card);
+  }
+  .kropka-okresu[data-tone="fix"] {
+    background: var(--warning-tile);
+    border-color: var(--warning);
+    color: var(--warning-tile-foreground);
+  }
+  .kropka-okresu[data-tone="done"][data-swieze] {
+    animation: wyskok 300ms var(--ease-out);
+  }
+  .kropka-okresu[data-tone="done"][data-swieze] .znacznik {
+    stroke-dashoffset: 1;
+    animation: rysowanie 260ms var(--ease-out) 80ms forwards;
+  }
+}
+
+@keyframes poswiata {
+  from {
+    background-position: 120% 0;
+    opacity: 1;
+  }
+  to {
+    background-position: -20% 0;
+    opacity: 0;
+  }
+}
+
+@keyframes migotanie {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: 0% 0;
+  }
+}
+
+@keyframes obrot {
+  to {
+    rotate: 360deg;
+  }
+}
+
+@keyframes wyskok {
+  0% {
+    scale: 0.9;
+  }
+  60% {
+    scale: 1.06;
+  }
+  100% {
+    scale: 1;
+  }
+}
+
+@keyframes rysowanie {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* Przycisk w trakcie wysyłki jest wyłączony, ale nie przygaszony: napis z migotaniem mówi, co się dzieje. Poza warstwą,
+   więc wygrywa z `disabled:opacity-50` przycisku. */
+[data-slot="button"][data-wysylam]:disabled {
+  opacity: 1;
 }
 
 @keyframes szkielet-odsloniecie {
@@ -239,6 +426,13 @@
   }
   .pojawienie {
     opacity: 0;
+  }
+  .liczba {
+    opacity: 0;
+    translate: 0 60%;
+  }
+  .liczba-w-dol {
+    translate: 0 -60%;
   }
 }
 
@@ -282,6 +476,25 @@
   }
   [data-slot="toast"] {
     transition-property: opacity !important;
+  }
+  /* Wysyłka rozliczeń: liczby tylko przenikają, pasek staje od razu, poświaty i migotania nie ma, nic nie podskakuje. */
+  .liczba {
+    transition: opacity 280ms var(--ease-out);
+    translate: none;
+  }
+  .pasek-wysylki {
+    transition: none;
+  }
+  .poswiata,
+  .migotanie::after {
+    display: none;
+  }
+  .pierscien[data-swieze],
+  .kropka-okresu[data-swieze] {
+    animation: none !important;
+  }
+  .pierscien[data-ring="sending"] {
+    animation-duration: 1400ms;
   }
   /* Wysokość od razu pełna (`auto` zamiast pomiaru Base UI), więc zwijany panel widać, gdy przenika. */
   [data-slot="collapsible-content"] {

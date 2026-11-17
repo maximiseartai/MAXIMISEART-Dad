@@ -7088,22 +7088,6 @@
             },
             "type": "array",
             "title": "Rows"
-          },
-          "to_send": {
-            "type": "integer",
-            "title": "To Send"
-          },
-          "sent": {
-            "type": "integer",
-            "title": "Sent"
-          },
-          "counted": {
-            "type": "integer",
-            "title": "Counted"
-          },
-          "without_orders": {
-            "type": "integer",
-            "title": "Without Orders"
           }
         },
         "additionalProperties": false,
@@ -7114,14 +7098,10 @@
           "monday",
           "label",
           "settled_at",
-          "rows",
-          "to_send",
-          "sent",
-          "counted",
-          "without_orders"
+          "rows"
         ],
         "title": "MailingPeriod",
-        "description": "Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików, wiersze i liczby do\npaska: ``to_send`` do wysłania, ``sent`` wysłane (także ręcznie i zmienione po wysłaniu), ``counted`` wszystkie\noprócz bez zleceń i spoza Listy, ``without_orders`` bez zleceń."
+        "description": "Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików i wiersze; ile poszło,\nstrona liczy ze stanów wierszy, bo zmienia je po każdym mailu wysyłki."
       },
       "MailingReady": {
         "properties": {

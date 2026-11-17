@@ -47,8 +47,13 @@ def _mails(root: Path) -> list[EmailMessage]:
     return found
 
 
-def _row(table: Locator, worker: str) -> Locator:
-    return table.get_by_role("row").filter(has_text=worker)
+# The states whose file has no mail, so the period's count „X z Y wysłane” leaves them out and the card names them
+# under the Wykonawcy instead of giving them a row (frontend periods.ts, copied on purpose).
+WITHOUT_MAIL = ("no_address", "without_orders", "not_listed")
+
+
+def _row(card: Locator, worker: str) -> Locator:
+    return card.get_by_role("list", name=f"Wykonawcy: {LABEL}").get_by_role("listitem").filter(has_text=worker)
 
 
 def drive(run: Run, page: Page) -> None:
@@ -81,17 +86,20 @@ def _send(run: Run, page: Page) -> None:
         bool(to_send) and all(rows[worker]["state"] == {"state": "to_send"} for worker in to_send),
         "the files of the settled period that never went are „do wysłania” and ticked",
     )
+    mailed = [worker for worker, row in rows.items() if row["state"]["state"] not in WITHOUT_MAIL]
     page.goto(run.url + "#/wysylka")
     expect(page.get_by_role("heading", name="Wysyłka rozliczeń", level=1)).to_be_visible()
-    page.get_by_role("button").filter(has_text=LABEL).click()
-    table = page.get_by_role("table")
-    for worker in rows:
-        expect(_row(table, worker)).to_be_visible()
+    card = page.get_by_role("region", name=LABEL)
+    expect(card.get_by_text(f"z {len(mailed)} wysłane")).to_be_visible()
+    for worker in mailed:
+        expect(_row(card, worker)).to_be_visible()
     for worker in to_send:
-        expect(_row(table, worker).get_by_role("checkbox")).to_be_checked()
-        expect(_row(table, worker)).to_contain_text("Do wysłania")
+        expect(_row(card, worker).get_by_role("checkbox")).to_be_checked()
+        expect(_row(card, worker)).to_contain_text("Do wysłania")
+    for worker in set(rows) - set(mailed):
+        expect(card).to_contain_text(worker)
     run.check(True, "each Rozliczenie pracownika of the period has its row, ticked when it waits")
-    send = page.get_by_role("button", name=f"Wyślij {len(to_send)} rozlicz", exact=False)
+    send = card.get_by_role("button", name=f"Wyślij {len(to_send)} rozlicz", exact=False)
     expect(send).to_be_enabled()
     run.capture(page, "500-wysylka-przed", full_page=False)
 
@@ -111,9 +119,9 @@ def _send(run: Run, page: Page) -> None:
 
     run.step(FEATURE, "po-wysylce")
     dialog.get_by_role("button", name=f"Wyślij {len(to_send)}", exact=True).click()
-    expect(page.get_by_text(f"Wysłano {len(to_send)} rozlicz", exact=False)).to_be_visible()
+    expect(card.get_by_text("Wszystkie rozliczenia wysłane")).to_be_visible()
     for worker in to_send:
-        expect(_row(table, worker)).to_contain_text("Wysłane")
+        expect(_row(card, worker)).to_contain_text("Wysłane")
     mails = until(lambda: (found if len(found := _mails(run.root)) == len(to_send) else None), "the atrapa SMTP took every mail")
     for worker, message in zip(to_send, mails, strict=True):
         [attachment] = list(message.iter_attachments())
@@ -126,7 +134,8 @@ def _send(run: Run, page: Page) -> None:
         )
     after = _period(run, "wysylka-po")
     run.check(
-        all(row["state"]["state"] == "sent" for row in after["rows"] if row["worker"] in to_send) and after["to_send"] == 0,
+        all(row["state"]["state"] == "sent" for row in after["rows"] if row["worker"] in to_send)
+        and not [row for row in after["rows"] if row["sendable"]],
         "the server reads every mail from „Wysłane” as sent by Centrum",
     )
     log = run.log()
@@ -135,6 +144,13 @@ def _send(run: Run, page: Page) -> None:
         and not [worker for worker in rows if worker in log],
         "the Centrum log has one line per mail with the period token, without names",
     )
+    line = page.get_by_role("region", name=LABEL)
+    expect(line.get_by_text(f"{len(mailed)} z {len(mailed)} · ", exact=False)).to_be_visible()
+    expect(line.get_by_role("progressbar", name=f"Wysłane: {LABEL}")).to_have_attribute("aria-valuenow", str(len(mailed)))
+    line.get_by_role("button", name="kto i kiedy").click()
+    for worker in to_send:
+        expect(line.get_by_role("listitem").filter(has_text=worker).filter(has_text="Wysłane")).to_be_visible()
+    run.check(True, "the sent period closes into one line of the axis, „X z X”, and „kto i kiedy” shows each mail as sent")
     run.capture(page, "502-wysylka-po", full_page=False)
 
     run.step(FEATURE, "bez-powtorki")

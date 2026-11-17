@@ -3284,9 +3284,8 @@ export const zMailingRow = z.object({
 /**
  * MailingPeriod
  *
- * Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików, wiersze i liczby do
- * paska: ``to_send`` do wysłania, ``sent`` wysłane (także ręcznie i zmienione po wysłaniu), ``counted`` wszystkie
- * oprócz bez zleceń i spoza Listy, ``without_orders`` bez zleceń.
+ * Okres z Rozliczeniami pracowników: dni słowami (``label``), najnowsza zmiana jego plików i wiersze; ile poszło,
+ * strona liczy ze stanów wierszy, bo zmienia je po każdym mailu wysyłki.
  */
 export const zMailingPeriod = z.object({
     token: z.string(),
@@ -3294,11 +3293,7 @@ export const zMailingPeriod = z.object({
     monday: z.iso.date(),
     label: z.string(),
     settled_at: z.iso.datetime().nullable(),
-    rows: z.array(zMailingRow),
-    to_send: z.int(),
-    sent: z.int(),
-    counted: z.int(),
-    without_orders: z.int()
+    rows: z.array(zMailingRow)
 });
 
 /**

@@ -8320,9 +8320,6 @@ def test_strona_pokazuje_okresy_od_najnowszego_ze_stanem_kazdego_rozliczenia_pra
         "Daria Nieaktywna": ("to_send", True, True),
         "Ewa Spoza": ("not_listed", False, False),
     }
-    assert {key: newest[key] for key in ("to_send", "sent", "counted", "without_orders")} == {
-        "to_send": 2, "sent": 0, "counted": 3, "without_orders": 1
-    }
     assert [(row["state"]["state"], row["addresses"]) for row in oldest["rows"]] == [
         ("sent", [ADRES_ANNY, ADRES_PRYWATNY_ANNY]),
         ("sent_by_hand", [ADRES_DARII]),

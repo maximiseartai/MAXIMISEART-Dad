@@ -258,7 +258,6 @@ class SettlementMailing:
             self._row(folder, entry, inputs, sent) if sent is not None else self._unknown_row(folder, entry, inputs)
             for entry in entries
         ]
-        states = [row.state.state for row in rows]
         moments = [entry.modified_at for entry in entries if entry.modified_at is not None]
         return contract.MailingPeriod(
             token=folder.period.token,
@@ -267,10 +266,6 @@ class SettlementMailing:
             label=period_words(folder.period),
             settled_at=None if not moments else _utc(max(moments)),
             rows=rows,
-            to_send=sum(state in ("to_send", "not_sent") for state in states),
-            sent=sum(state in ("sent", "sent_by_hand", "changed") for state in states),
-            counted=sum(state not in ("without_orders", "not_listed") for state in states),
-            without_orders=states.count("without_orders"),
         )
 
     def _row(

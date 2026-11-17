@@ -23,9 +23,14 @@ skrzynkę raportów z hasłem aplikacji.
 
 ## Decyzja
 
-- **Strona „Wysyłka rozliczeń” (`#/wysylka`), okres po okresie.** Po lewej ostatnie 12 Folderów okresu, które mają
-  Rozliczenia pracowników, od najnowszego, każdy z liczbą plików do wysłania i paskiem „Wysłane X z Y”. Po prawej
-  Wykonawcy wybranego okresu z adresami, plikiem i stanem. Na start wybrany jest najnowszy okres, w którym coś czeka.
+- **Strona „Wysyłka rozliczeń” (`#/wysylka`): oś okresów z paskiem postępu** (wariant „Mix”, wybrany przez Maksa
+  17.11.2026 z drugiej rundy prototypów). Ostatnie 12 Folderów okresu, które mają Rozliczenia pracowników, stoi na
+  pionowej osi od najnowszego. Okres z plikiem do wysłania to karta z paskiem „X z Y wysłane” i Wykonawcami z adresami
+  i stanem; gdy wszystko poszło, karta zamienia się w jeden wiersz osi. Okres, w którym czekają tylko pliki zmienione po
+  wysłaniu, pyta o każdy z nich („Wyślij poprawione”), a reszta to jeden wiersz z małym paskiem i Wykonawcami. Widok
+  „Do wysłania” pokazuje tylko okresy, które czekają na tatę (i wysłane w tej wizycie), „Wszystkie okresy” także resztę.
+  „X z Y” liczy pliki, które mają mail: bez braku adresu, bez zleceń i spoza Listy, a zmieniony po wysłaniu czeka na
+  ponowną wysyłkę, więc okres z nim nie jest pełny. Strona liczy to ze stanów wierszy, bo zmienia je po każdym mailu.
 - **Stany Rozliczenia pracownika w Wysyłce** to jedna unia, liczona w tej kolejności: nie ma w Liście Wykonawców (nazwa
   pliku nie odpowiada żadnej nazwie z Listy), brak adresu, wysłane (przez Centrum) albo wysłane ręcznie (mail z tym
   plikiem bez znaku Centrum), zmienione po wysłaniu (plik zmieniony ponad 2 minuty po ostatnim mailu z nim), nie wyszło
@@ -77,6 +82,8 @@ skrzynce bez odczytu; strona nie pokazuje okresów bez Rozliczeń pracowników.
 
 - **Własny plik stanu wysłanych.** Folder „Wysłane” już to wie i widzi też maile wysłane przez tatę ręcznie, a plik
   rozjechałby się ze skrzynką (ADR 0030).
+- **Okres po okresie (lista okresów po lewej, Wykonawcy wybranego po prawej).** Pierwsza wersja tej strony; na osi
+  tata widzi naraz, co czeka w każdym okresie, a skończony okres zwija się w jeden wiersz zamiast stać na liście.
 - **Mapa okresów (Wykonawcy × okresy).** Widać wszystko naraz, ale tata wysyła okres po okresie, a mapa przy kilkunastu
   okresach nie mieści się na laptopie taty i ukrywa adresy, które tata sprawdza przed wysyłką.
 - **Lista „Do wysłania” ze wszystkich okresów.** Szybsza przy zaległościach, ale miesza okresy w jednym oknie
