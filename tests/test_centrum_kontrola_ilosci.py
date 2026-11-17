@@ -7,6 +7,7 @@ może wysłać, są znacznikami. Żaden test nie łączy się z GitHubem.
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack
 from datetime import datetime, time, timedelta, timezone
 import json
 from pathlib import Path
@@ -26,6 +27,7 @@ from rozliczenia.worker_periods import InRegister
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
 from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
@@ -1050,6 +1052,35 @@ def test_podglad_legendy_przy_pliku_pary_regul_ilosci_bez_odczytu_to_409_o_tym_p
         response = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "remove", "code_id": "rt2"})
 
     assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(unreadable).message})
+
+
+@pytest.mark.parametrize(
+    ("settled", "expected"),
+    [
+        pytest.param(True, (409, {"message": refusal.settings_file_unreadable(SETTINGS_FILE).message}), id="foldery_przed_regulami"),
+        pytest.param(False, (200, {"state": "no_settled_periods"}), id="brak_okresu_przed_regulami"),
+    ],
+)
+def test_podglad_legendy_przy_regulach_ilosci_bez_odczytu_najpierw_mowi_o_folderach_i_o_braku_okresu(
+    tmp_path: Path, settled: bool, expected: tuple[int, dict[str, str]]
+) -> None:
+    """Reguły ilości podgląd czyta dopiero, gdy ma na czym liczyć: plik Folderów bez odczytu i brak okresu po Przebiegu
+    rozliczeń mówią tacie to samo co bez pliku reguł, którego system nie daje teraz czytać."""
+
+    centrum = legend_centrum(tmp_path, LEGEND_ROWS)
+    rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
+    write_dad_quantity_rules(centrum.tool, RULES_FILE, rule, rule.replace("wartosc: 1", "wartosc: 2"))
+    write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "nokia-router", "nokia-router")
+    if settled:
+        run_to_end(centrum, dry_run=False)
+    unreadable = (RULES_FILE, SETTINGS_FILE) if settled else (RULES_FILE,)
+
+    with ExitStack() as stack:
+        for name in unreadable:
+            stack.enter_context(without_reading(centrum.tool.config / name))
+        response = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "remove", "code_id": "rt2"})
+
+    assert (response.status_code, response.json()) == expected
 
 
 def test_podglad_legendy_bez_okresu_po_przebiegu_rozliczen_nie_ma_na_czym_policzyc(tmp_path: Path) -> None:
