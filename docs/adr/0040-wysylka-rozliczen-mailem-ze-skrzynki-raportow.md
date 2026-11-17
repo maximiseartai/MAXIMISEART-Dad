@@ -60,9 +60,10 @@ skrzynkę raportów z hasłem aplikacji.
   (polskie litery po RFC 2231). Plik otwarty w Excelu nie idzie: tata zapisuje go i zamyka.
 - **Temat i treść to Ustawienie Centrum** w `config/wysylka-rozliczen.yaml` (schemat 1: `temat`, `tresc`), w sekcji
   „Wysyłka rozliczeń” grupy Praca, z podglądem i Historią Ustawień. Domyślnie temat „Rozliczenie za {okres}” i treść
-  „Dzień dobry, w załączniku rozliczenie za {okres}.”. Temat jest wymagany, w jednej linii i bez słowa `raport`, bo
-  port Skrzynki raportów bierze maile z tym słowem w temacie jako kandydatów na Raport wykonawcy; inny nawias klamrowy
-  niż pole to odmowa.
+  „Dzień dobry, w załączniku rozliczenie za {okres}.”. Temat jest wymagany, w jednej linii i taki, że port Skrzynki
+  raportów nie wybierze odpowiedzi Wykonawcy `Re: <temat>` jako Raportu wykonawcy (gramatyka tematu z ADR 0041,
+  `reads_as_report`: odmową jest np. `Raport 16.11.2026 …`, poprawka raportu w odpowiedzi); inny nawias klamrowy niż
+  pole to odmowa.
 - **Bez zleceń.** Pusty Szablon pracownika nie idzie. Centrum poznaje go po braku Wykonawcy w `WYKONAWCA` od pierwszego
   Wiersza danych (odczyt kolumny z XML, bez openpyxl), tylko dla pliku, który jeszcze nie poszedł, z pamięcią po chwili
   zmiany pliku. Plik, którego nie da się przeczytać, liczy się jako plik ze zleceniami: lepiej go pokazać niż ukryć.

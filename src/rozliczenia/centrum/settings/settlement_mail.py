@@ -73,7 +73,7 @@ def settings_of(subject: str, text: str) -> SettlementMailSettings | FieldProble
 _PROBLEMS: Final[Mapping[MailProblemKind, tuple[FieldName, Callable[[], str]]]] = {
     "empty_subject": (SUBJECT, messages.settlement_mail_empty_subject),
     "subject_lines": (SUBJECT, messages.settlement_mail_subject_lines),
-    "subject_report_word": (SUBJECT, messages.settlement_mail_report_word),
+    "subject_report": (SUBJECT, messages.settlement_mail_report_subject),
     "subject_unknown_field": (SUBJECT, messages.settlement_mail_unknown_field),
     "empty_text": (TEXT, messages.settlement_mail_empty_text),
     "text_unknown_field": (TEXT, messages.settlement_mail_unknown_field),

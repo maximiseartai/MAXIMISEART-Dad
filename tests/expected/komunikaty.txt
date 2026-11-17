@@ -1475,8 +1475,8 @@ settlement_mail_empty_subject [zdanie]
 settlement_mail_subject_lines [zdanie]
   Temat maila musi mieścić się w jednej linii.
 
-settlement_mail_report_word [zdanie]
-  Temat nie może mieć słowa „raport”: odpowiedź Wykonawcy Centrum wzięłoby za jego raport.
+settlement_mail_report_subject [zdanie]
+  Temat nie może zaczynać się słowem „raport” i datą: odpowiedź Wykonawcy Centrum wzięłoby za jego raport.
 
 settlement_mail_unknown_field [zdanie]
   W temacie i treści mogą stać tylko pola {okres} i {wykonawca}, bez innych nawiasów klamrowych.
