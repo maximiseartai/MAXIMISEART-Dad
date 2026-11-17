@@ -2498,6 +2498,17 @@ FULL_LOGS: Final[dict[str, Any]] = {
             }
         ],
         "orderless": [{"sheet": "Arkusz zleceń syntetyczny", "number": 40000008, "day": "2026-11-03"}],
+        "requested": [
+            {
+                "mail": "efghijklmnopabcd",
+                "worker": "wykonawca.na.zyczenie",
+                "day": "2026-11-07",
+                "number": "40000018",
+                "verdict": "tak",
+                "activities": "Czynność na życzenie syntetyczna",
+                "at": "2026-11-09T18:00:00.400000Z",
+            }
+        ],
         "written": 1,
     },
     "input_copy": [
