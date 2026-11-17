@@ -169,11 +169,13 @@ Puste `SKUTECZNE` albo inna wartość, na przykład `???` czy `tsk`, to brak w R
 
 ## Raport wykonawcy
 
-Mail, który Wykonawca wysyła ze swojego adresu na skrzynkę raportów taty, z tematem `Raport` i datą dnia zleceń (dzień, miesiąc, rok rozdzielone `.`, `_` albo `/`), bez względu na wielkość liter, bez `Re:` ani `Fwd:` w temacie.
+Mail, który Wykonawca wysyła ze swojego adresu na skrzynkę raportów taty, z tematem `Raport` i datą dnia zleceń, bez `Re:` ani `Fwd:` w temacie.
+Temat wybacza wielkość liter, jedną literówkę w słowie `Raport` (`Rapotr`, `Rapor`), dowolną interpunkcję albo spację między dniem, miesiącem i rokiem oraz interpunkcję na końcu; inne słowa obok słowa i daty to błąd tematu.
 Datę z rokiem pomylonym przez Wykonawcę (ponad 302 dni przed przyjściem maila albo ponad 62 dni po nim) Centrum czyta jako ten sam dzień i miesiąc w roku, w którym data leży w tych granicach.
-Ma jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii.
-Raportem wykonawcy za dzień jest też odpowiedź Wykonawcy na Przypomnienie o raporcie za ten dzień, a jego Wpisami tylko tekst nad cytatem, bez numerów z przykładu w przypomnieniu.
-Inne maile w tej skrzynce, także od Wykonawców, nie są Raportami wykonawcy.
+Ma jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii; mail bez żadnego Wpisu i mail ze zdjęciami do raportu (`Zdjęcia do raportu …`) nie jest Raportem wykonawcy.
+Raport z błędem tematu (temat bez dnia albo z innymi słowami) jest przysłany za dzień z tematu, a bez niego za ostatni dzień Wykonawcy ze zleceniami bez raportu, nie późniejszy niż dzień przyjścia maila; tata widzi błąd przy tym dniu i wpisuje raport Wpisem na życzenie.
+Raportem wykonawcy za dzień jest też odpowiedź Wykonawcy na Przypomnienie o raporcie za ten dzień i poprawka raportu: odpowiedź (`Re:`, `Odp:`) z tematem Raportu wykonawcy za ten dzień na początku i dowolnym dopiskiem po nim; jej Wpisami jest tylko tekst nad cytatem, bez numerów z przykładu w przypomnieniu.
+Inne maile w tej skrzynce, także od Wykonawców z innym słowem w temacie (`Montaże 13.11.2026`), nie są Raportami wykonawcy.
 _Avoid_: mail, raport (bez dopowiedzenia), sprawozdanie
 
 ## Wpis raportu
@@ -189,11 +191,20 @@ _Avoid_: linia raportu, Wpis urządzenia i czynności INTERMAX (to wpis Uporząd
 Proces, który tata uruchamia na żądanie i który przenosi Wpisy raportu do uporządkowanych zleceń w Rejestrze zleceń: `tak` albo `nie` do `SKUTECZNE`, a czynności albo powód nieskuteczności do `CZYNNOŚCI ZREALIZOWANE`.
 Raport wykonawcy jest ważniejszy od Rejestru w dniu i Wykonawcy zlecenia, więc Wpisanie raportów robi też Przeniesienie zlecenia i Zlecenie dopisane z raportu, a o każdej takiej zmianie i o temacie, który przegrał z Rejestrem, informuje tatę przy dniu Wykonawcy w widoku Raporty.
 Zmienia tylko to, co jest puste albo co samo wcześniej zmieniło, a od tamtej pory nikt tego nie ruszył; ręczna wartość albo ręczna zmiana taty lub pracownika zawsze wygrywa.
-Wpis `tak` z Błędem opisu wpisuje jak każdy, a tata widzi przy nim problem w widoku Raporty (ADR 0039).
+Do `CZYNNOŚCI ZREALIZOWANE` wpisuje cały opis po `tak` albo `nie`, Kody czynności razem ze zwykłym opisem.
+Wpis `tak` z Błędem opisu wpisuje jak każdy, a tata widzi przy nim problem w widoku Raporty.
+Wpis z błędem, z którego Centrum wie, co wpisać, czeka na Wpis na życzenie.
 Pisze tylko do zamkniętego Rejestru zleceń.
 Za każdym razem czyta wszystkie Raporty wykonawców z dni od jego wdrożenia w okresach, które nie mają jeszcze Pliku zbiorczego; okres z Plikiem zbiorczym jest dla niego zamknięty.
 Dzień zleceń jest uporządkowany, zanim Wykonawcy wyślą jego raporty, bo Uporządkowanie INTERMAX przygotowuje im dzień do pracy.
 _Avoid_: import maili, synchronizacja
+
+## Wpis na życzenie
+
+Wpis raportu z błędem, który Wpisanie raportów samo pomija, a tata wpisuje do Rejestru zleceń jednym kliknięciem przy zleceniu w widoku Raporty, na swoją odpowiedzialność.
+Jest tylko przy błędzie, przy którym wiadomo, co wpisać: błąd tematu (temat ze słowem raportu bez dnia albo z innymi słowami; wtedy dzień z tematu albo dzień, który Centrum wskazuje przy zleceniu, a numery zleceń dalej rozstrzygają jak przy pomylonym temacie i Przeniesieniu zlecenia) i `t`, `n`, `skuteczne` albo `nieskuteczne` zamiast `tak` albo `nie`.
+W Rejestrze wygląda jak każdy Wpis, a późniejszy poprawny Wpis raportu wygrywa z nim.
+_Avoid_: dopisanie ręczne, wymuszenie, Zlecenie dopisane z raportu (to zlecenie, którego nie było w Rejestrze)
 
 ## Przeniesienie zlecenia
 
@@ -211,8 +222,10 @@ _Avoid_: nowe zlecenie, brakujące zlecenie
 
 ## Przypomnienie o raporcie
 
-Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze czytelnego Raportu wykonawcy za ten dzień albo któryś jego wygrywający Wpis `tak` ma Błąd opisu.
-Prosi o raport za ten dzień (a po Błędzie opisu mówi, w którym zleceniu jest błąd), podaje wzór tematu i treści i kończy się stopką taty.
+Mail ze skrzynki raportów taty do aktywnego Wykonawcy z Listy Wykonawców, który ma w Rejestrze zleceń zlecenia dnia, a nie przysłał jeszcze za ten dzień żadnego Raportu wykonawcy.
+Raport, którego temat jest pomyłką, jest przysłany za dzień swoich zleceń z Rejestru.
+Raport z błędem (w temacie albo we Wpisach) jest przysłany: Wykonawca nie dostaje za ten dzień przypomnienia, a błąd widzi tata przy zleceniu w widoku Raporty ([ADR 0041](docs/adr/0041-przypomnienie-tylko-bez-raportu.md)).
+Prosi o raport za ten dzień, podaje wzór tematu i treści i kończy się stopką taty.
 Idzie w porannej i wieczornej porze z Ustawień Centrum (domyślne pory i nadrabianie pominiętej: [ADR 0030](docs/adr/0030-przypomnienia-o-raporcie-z-centrum-w-autostarcie.md)), pierwsze od godziny pierwszego przypomnienia następnego dnia, najwyżej jedno w każdej porze, aż raport przyjdzie albo okres dnia dostanie Plik zbiorczy; nigdy poza porami i nigdy za dni sprzed wdrożenia przypomnień.
 Każdy brakujący dzień ma własne przypomnienia.
 _Avoid_: monit, ponaglenie
@@ -392,21 +405,22 @@ _Avoid_: scenariusze rozliczeń, instrukcja
 ## Legenda czynności
 
 Kody czynności, które tata ustala dla Wykonawców, każdy z tym, co wyznacza w Pliku zbiorczym.
-Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z opisu technika w zleceniu, którego `CZYNNOŚCI ZREALIZOWANE` są samymi Kodami czynności, bez Błędu opisu.
+Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z Kodów czynności w opisie technika (`CZYNNOŚCI ZREALIZOWANE`), gdy opis nie ma Błędu opisu; zwykły opis obok kodów niczego nie wyznacza.
 _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 
 ## Kod czynności
 
-Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu zamiast opisu, np. `inst20m` albo `spawpg`, w jednym z jego zapisów, bez względu na wielkość liter.
+Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu obok zwykłego opisu albo bez niego, np. `inst20m` albo `spawpg`, w jednym z jego zapisów, bez względu na wielkość liter.
 Wyznacza w Pliku zbiorczym Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z nich naraz; kwoty kilku kodów w zleceniu się sumują.
 Liczba w kodzie albo nie ma znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`).
 _Avoid_: skrót, kod (bez dopowiedzenia)
 
 ## Błąd opisu
 
-`CZYNNOŚCI ZREALIZOWANE`, które nie są samymi Kodami czynności: słowo inne niż zapis kodu, `tak` i `nie` (także kod ze spacją w środku, sklejony z innym i zwykły opis bez kodu), kod z liczbą spoza przedziałów, kolumna Ilości usług trafiona drugi raz albo kolumna wypełniona dwoma kolorami (jeden kod robi z niej Czerwone pole, a drugi Zielone pole).
-Opis pusty albo z samym `tak`/`nie` nie jest Błędem opisu.
-Opis z Błędem opisu nie wyznacza niczego, a Raport wykonawcy z takim Wpisem `tak` liczy się dla Przypomnień o raporcie jako niewysłany (ADR 0039).
+`CZYNNOŚCI ZREALIZOWANE` z Kodami czynności, których legenda nie może przyjąć: kod z liczbą spoza przedziałów, kolumna Ilości usług trafiona drugi raz albo kolumna wypełniona dwoma kolorami (jeden kod robi z niej Czerwone pole, a drugi Zielone pole).
+Słowo, które nie jest zapisem kodu, to zwykły opis technika, a nie Błąd opisu: obok kodów zwykły opis jest dozwolony.
+Opis z Błędem opisu nie wyznacza niczego, a Raport wykonawcy z takim Wpisem `tak` jest przysłany: błąd widzi tata przy zleceniu w widoku Raporty, a Wykonawca nie dostaje przypomnienia.
+W szczegółach dnia tata widzi przy zleceniu `tak`, które słowa opisu są Kodami czynności, a przy zleceniu `tak` bez żadnego kodu informację „BRAK KODU”; brak kodu nie jest Błędem opisu.
 _Avoid_: zły kod, literówka
 
 ## Lista Urządzeń
@@ -424,7 +438,7 @@ _Avoid_: wynik wiersza, decyzja (Decyzja taty to co innego)
 
 ## Ilości do uzupełnienia
 
-Ilości usług w Pliku zbiorczym, których Reguły ilości nie wyznaczają, więc wpisuje je tata: w wierszu bez reguły (nieznane `URZĄDZENIA`, reguły dały najwyżej V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie są samymi Kodami czynności (poza `tak`, `nie` i znakami interpunkcji) albo mają Błąd opisu.
+Ilości usług w Pliku zbiorczym, których Reguły ilości nie wyznaczają, więc wpisuje je tata: w wierszu bez reguły (nieznane `URZĄDZENIA`, reguły dały najwyżej V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie mają żadnego Kodu czynności albo mają Błąd opisu.
 To miejsca zostawione tacie, nie błędy taty.
 _Avoid_: błędy, braki, cyfry do wpisania
 
