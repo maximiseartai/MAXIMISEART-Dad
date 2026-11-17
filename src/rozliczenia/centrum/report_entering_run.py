@@ -246,7 +246,7 @@ def _view(
     Raport z błędem tematu stoi w swoim dniu z każdym Wpisem na życzenie swojego maila przy zleceniach, a w dniu
     Wykonawcy, który ma zlecenie z takim Wpisem, a nie jest tym dniem (Przeniesienie do nadawcy albo na dzień z tematu),
     jeszcze raz, z Wpisami zleceń tego dnia: tata widzi przycisk w kafelku z błędem, a kafelek ze zleceniem nie jest
-    Komplet, dopóki tata nie zdecyduje (historie 42 i 44 speca #2032)."""
+    Komplet, dopóki tata nie zdecyduje."""
 
     if shown is None:
         return report_entering_contract.ReportsView(

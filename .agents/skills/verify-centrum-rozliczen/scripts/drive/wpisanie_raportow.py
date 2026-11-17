@@ -446,7 +446,7 @@ def _window_view(clicked_at: str) -> Json:
 
 
 SUBJECT_TODAY = "2026-11-19"
-SUBJECT_FAULT = {
+SUBJECT_FAULT: Json = {
     "subject": "Raport 16.11.2026 Kowalski [adres] tel. [telefon]",
     "fault": "inne słowa",
     "day": "2026-11-16",
@@ -455,7 +455,7 @@ SUBJECT_FAULT = {
 }
 """The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038), with its subject after the guard of
 the data rule (#2070: the value of `ADRES` and the phone masked, the surname kept)."""
-NO_DAY_FAULT = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z", "offers": []}
+NO_DAY_FAULT: Json = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z", "offers": []}
 """The Raport z błędem tematu of `wykonawca.b`, who has no orders: a problem without a day at the day it came."""
 MISTAKEN_DAY = "2026-11-28"
 """The day in the subject of the Raport of `wykonawca.a` whose numbers are his orders of 18.11 (ADR 0029)."""

@@ -70,7 +70,7 @@ class ReportsFaultySubject(Model):
 
     ``offers``: Wpisy tego raportu, które tata może wpisać. Problem stoi w dniu, za który Centrum liczy raport, z każdym
     Wpisem raportu, a także w dniu każdego Wykonawcy, który dziś ma zlecenie z takim Wpisem, z Wpisami jego zleceń, więc
-    ten dzień ma problem, dopóki tata nie zdecyduje (historia 42 speca #2032)."""
+    ten dzień ma problem, dopóki tata nie zdecyduje."""
 
     subject: str
     fault: str
