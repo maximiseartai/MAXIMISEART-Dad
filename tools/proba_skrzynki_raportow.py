@@ -94,8 +94,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
-from rozliczenia.centrum.settings.files import usable
+from rozliczenia.centrum.settings.files import Unreadable, usable
 from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
     ImapInbox,
@@ -147,9 +148,12 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
             raise ProbeFailed(f"nieczytelny plik dostepu config/{INBOX_ACCESS_FILE}")
         case "ready":
             pass
-    workers = usable(read_snapshot(config).workers)
+    listed = read_snapshot(config).workers
+    if isinstance(listed, Unreadable):
+        raise ProbeFailed(f"pliku config/{WORKERS_FILE} nie da sie teraz przeczytac")
+    workers = usable(listed)
     if workers is None:
-        raise ProbeFailed("Lista Wykonawcow ma zle ustawienie albo nie da sie jej teraz odczytac")
+        raise ProbeFailed("Lista Wykonawcow ma zle ustawienie bez ostatniej dobrej")
     addresses = workers.addresses()
     if not addresses.logins:
         raise ProbeFailed("na Liscie Wykonawcow nikt nie ma adresu")
