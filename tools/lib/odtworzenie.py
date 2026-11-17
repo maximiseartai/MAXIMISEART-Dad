@@ -999,11 +999,7 @@ def _prepared(
     period = record.period if isinstance(kind, PeriodProcessKind) else None
     workers = rebuilt.workers if rebuilt.workers is not None else _configured_workers(work) if "workers" in kind.needs else None
     settings = SettingsAtStart(
-        snapshot=None,
-        workers=workers,
-        quantity_rules=_quantity_rules(record),
-        activity_legend=_activity_legend(record),
-        warnings=record.start_warnings(),
+        snapshot=None, workers=workers, quantity_rules=_quantity_rules(record), activity_legend=_activity_legend(record), warnings=record.start_warnings()
     )
     start = Start(paths, period=period, dry_run=record.mode.dry_run, pricing=record.pricing, settings=settings)
     metrics = work.path("metryki.jsonl")

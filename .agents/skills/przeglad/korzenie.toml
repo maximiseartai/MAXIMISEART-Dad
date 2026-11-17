@@ -158,3 +158,7 @@ przyklad = 1992
 [R-ZRODLO-SZERZEJ]
 opis = "Dokument decyzji przypisuje źródłu (odpowiedziom taty, mailowi) regułę szerszą niż jego treść i nie nazywa poszerzenia decyzją, więc ani Maks, ani tata go nie widzą."
 przyklad = 2011
+
+[R-NOWY-MODUL]
+opis = "Odstępstwo od rozpisu dostaje nowy moduł obok istniejącego właściciela tej samej drogi, więc przybywa linii procesu i drugiej kopii opisu, zamiast przenieść kod do właściciela."
+przyklad = 2073

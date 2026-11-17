@@ -78,6 +78,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start, startable
+from rozliczenia.centrum.settings_at_start import SettingsAtStart
 from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.centrum.settings.memory import settings_bytes
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
@@ -88,10 +89,11 @@ from rozliczenia.run_context import RunContext
 from rozliczenia.tool_files import CONFIG_DIR
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
 
 from atrapy.skrzynka_raportow import FolderInbox
-from ustawienia_z_wydania import ustawienia_z_wydania
 
 _EXIT_CODES = {"OK": 0, "WYMAGA_SPRAWDZENIA": 2, "BLAD_KRYTYCZNY": 1}
 
@@ -252,6 +254,12 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace, parser: argpar
         pricing="z Przekazaniem" if values.get("handover") else None,
         settings=ustawienia_z_wydania(_workers(args.workers, parser) if "workers" in kind.needs else None),
     )
+
+
+def ustawienia_z_wydania(workers: WorkerList | None) -> SettingsAtStart:
+    """Ustawienia ze startu z Wydania z Listą Wykonawców ``workers``; biorą je też wyrocznia i testy."""
+
+    return SettingsAtStart(snapshot=None, workers=workers, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=())
 
 
 def _workers(path: Path, parser: argparse.ArgumentParser) -> WorkerList:

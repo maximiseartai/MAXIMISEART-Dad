@@ -66,6 +66,7 @@ from greenlet import getcurrent  # type: ignore[import-untyped]  # greenlet ship
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 
 from rozliczenia import process_run
 from rozliczenia.centrum import process_kind, runs, shutdown
@@ -80,7 +81,7 @@ from rozliczenia.run_context import RunContext
 from rozliczenia.worker_list import WorkerList
 from eksplorator import Choices, Excuse, Interleaving, Shape, Thread, excuse_line, excused, gone_lines, schedules, verdict
 import rozjazd_modelu
-from ustawienia_z_wydania import ustawienia_z_wydania
+from uruchom_proces import ustawienia_z_wydania
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 

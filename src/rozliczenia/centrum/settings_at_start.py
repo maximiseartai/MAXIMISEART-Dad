@@ -51,7 +51,7 @@ class SettingsAtStart:
       Wykonawców dobra, a przy złym pliku ostatnia dobra z ostrzeżeniem startu (``Refusal``, gdy ostatniej dobrej nie
       ma albo pliku nie da się teraz przeczytać); Reguły ilości albo Legenda czynności z pliku bez odczytu to ``None``.
     - Skrypt dla maszyn (``tools/uruchom_proces.py``) bierze Reguły ilości i Legendę czynności z Wydania, a Listę
-      Wykonawców z pliku ``--wykonawcy``, bez migawki i bez ostrzeżeń (``tools/lib/ustawienia_z_wydania.py``, z której
+      Wykonawców z pliku ``--wykonawcy``, bez migawki i bez ostrzeżeń (``uruchom_proces.ustawienia_z_wydania``, z której
       biorą je też wyrocznia ``verify-jedno-uruchomienie-naraz`` i testy).
     - Odtworzenie (``tools/lib/odtworzenie.py``) bierze Reguły ilości, Legendę czynności i ostrzeżenia startu z Logów
       Uruchomienia, a Reguły ilości i Legendę czynności z Wydania tylko dla Logów sprzed ich zapisu, bez migawki. Logi

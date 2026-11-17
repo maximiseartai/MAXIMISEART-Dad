@@ -50,7 +50,7 @@ from atrapy.settlement import write_worker_list
 from atrapy.skrzynka_raportow import FolderInbox
 import odtworzenie
 import uruchom_proces
-from ustawienia_z_wydania import ustawienia_z_wydania
+from uruchom_proces import ustawienia_z_wydania
 
 
 def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
