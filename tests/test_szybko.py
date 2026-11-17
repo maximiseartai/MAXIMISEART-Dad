@@ -107,6 +107,10 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
         "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
+    "tests/test_zakazy_ruff.py::test_tresc_z_wydania_w_src_tylko_u_wlascicieli_takze_z_noqa": (
+        "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
+        "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
+    ),
     "tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
         "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"

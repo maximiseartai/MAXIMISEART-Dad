@@ -427,9 +427,6 @@ ZNANE_LUKI_TRESCI_Z_WYDANIA = {
     "refleksja po nazwie: getattr modułu": (
         'from rozliczenia import settlement_mailing\n\nMAIL = getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")\n'
     ),
-    "ufa tłumieniu ruff: noqa na linii importu": (
-        "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL  # noqa: TID251 - próbka\n\nMAIL = DEFAULT_SETTLEMENT_MAIL\n"
-    ),
 }
 
 
@@ -452,12 +449,15 @@ def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_pat
     | pole widoku do pokazania w odczycie, który liczy: ``settings.quantity_rules().shown`` (``.rules`` to unia z ``UnreadableFile``: mypy) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | refleksja po nazwie: ``getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
-    | ``# noqa: TID251`` na linii importu | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | ``# noqa: TID251`` na linii importu | łapie | ``RELEASE_CONTENT_PROBE`` |
 
     Poza ``src/`` zakaz nie obowiązuje: narzędzia w ``tools/`` liczą celowo treścią z Wydania."""
+    probe = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
     pliki = zapisz(ZNANE_LUKI_TRESCI_Z_WYDANIA, tmp_path)
 
-    zgloszenia = ruff_i_mypy(pliki, sonda=SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py")
+    zgloszenia = ruff_i_mypy(pliki, sonda=probe)
+    for opis, plik in pliki.items():
+        zgloszenia[opis] += _release_content_findings("--stdin-filename", str(probe), "-", code=plik.read_text(encoding="utf-8"))
 
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_TRESCI_Z_WYDANIA)")
 
@@ -583,6 +583,40 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
         f"{owner} używa zakazanych nazw {sorted(found)}, a jego prawo w OWNERS to {sorted(OWNERS[owner])}: inną nazwę "
         "bierz przez jej właściciela, a nazwę, której plik już nie używa, usuń z OWNERS"
     )
+
+
+# Zakazy treści z Wydania pliku Ustawień w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: każda zakazana
+# nazwa ``DEFAULT_*``, więc nowa treść z Wydania z zakazem wchodzi tu bez dopisywania.
+RELEASE_CONTENT = frozenset(
+    name for name in _banned(tomllib.loads(SRC_CONFIG.read_text(encoding="utf-8"))["lint"]) if name.rpartition(".")[2].startswith("DEFAULT_")
+)
+RELEASE_CONTENT_PROBE = "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL  # noqa: TID251 - sonda\n\nMAIL = DEFAULT_SETTLEMENT_MAIL\n"
+
+
+def _release_content_findings(*arguments: str, code: str | None = None) -> list[str]:
+    """``plik: nazwa`` każdego zakazu z ``RELEASE_CONTENT``, który ``ruff check`` z ``--ignore-noqa`` zgłasza."""
+
+    return [f"{path}: {name}" for path, name in _banned_names(*arguments, code=code) if name in RELEASE_CONTENT]
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_tresc_z_wydania_w_src_tylko_u_wlascicieli_takze_z_noqa() -> None:
+    """``# noqa: TID251`` przy imporcie ``DEFAULT_*`` byłoby drugą drogą do treści z Wydania obok właściciela Ustawień
+    (#2053 r1 D1), więc te zakazy biegną tu z ``--ignore-noqa``; właściciele przechodzą tylko dzięki prawu właściciela
+    w konfiguracji ruff, a że używają tylko swoich nazw, sprawdza ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw``."""
+
+    assert _release_content_findings("src") == [], "treść z Wydania bierz od właściciela Ustawień, bez noqa"
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_noqa_nie_zwalnia_z_zakazu_tresci_z_wydania_a_wlasciciel_jest_zwolniony() -> None:
+    probe = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_zakazu.py"
+    owner = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "settings" / "settlement_mail.py"
+
+    assert _release_content_findings("--stdin-filename", str(probe), "-", code=RELEASE_CONTENT_PROBE) == [
+        "src/rozliczenia/centrum/sonda_zakazu.py: rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL"
+    ]
+    assert _release_content_findings("--stdin-filename", str(owner), "-", code=RELEASE_CONTENT_PROBE) == []
 
 
 # Właściciel importu w trakcie działania poza tests/: jedyny plik z prawem do jego dróg (OWNERS).
