@@ -79,7 +79,7 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | --- | --- |
 | `KlikStart` | a start button whose `start` reaches `useAction` `starting` (`runs.tsx`): the start card's „Podgląd bez zapisu”, „Uruchom” and Wycena modes (`run-setup-card.tsx`, disabled by `starting`), `IntermaxCard` (`outside-period-card.tsx`, disabled by `starting`), „Wpisz raporty z maili” (`report-entering.tsx`, disabled by `starting` and `isActive(view)`), the preview of the next step on the Tablica okresów (`prepare-actions.tsx` `PreviewAction`, only when `!isActive(view)`) and „Uruchom ponownie” (`rerun`). `useAction.run` ignores the click while `inFlight` (`action.ts`); otherwise `before = shownRun(latest.current)` and `fetch` `startRun` |
 | `KlikDecyzja` | `DecisionDialog` (`run-dialogs.tsx`) in `RunOrSetup` on an `awaiting_decision` view, disabled while `deciding` is this Uruchomienie; `useAction` `deciding`, `fetch` `decideRun` |
-| `NoweUruchomienie` | `NewRunButton` on the result (`RunCard` on `finished`, `run-card.tsx`; `PastRunCard` on `idle` with `previous`): `newRun` = `setDismissed(run.id)` |
+| `NoweUruchomienie` | `NewRunButton` on the result (`RunCard` on `"finished"`, `run-card.tsx`; `PastRunCard` on `"idle"` with `previous`): `newRun` = `setDismissed(run.id)` |
 | `WyborNaKarcieStartu` | `RunSetupCard` (`run-setup-card.tsx`): `onValueChange` of the process tiles and of the period: `setDraft` |
 | `WyborSpozaKarty` | `setDraft` outside the start card, at any time: `DraftButton` in the Tablica okresów (`prepare-actions.tsx`), `ReadyForSettlement` („Gotowe, rozlicz pracowników”, `ready-for-settlement.tsx`), `rerun` of a Wycena w efenix |
 | `OdpowiedzStartu` | `starting` after `await startRun(...)`: a refusal or a network error ends the action (toast, `draft` stays); an accepted start runs `setDraft(null)`, returns when `shownRun(latest.current) === accepted`, and otherwise awaits `streamShows((next) => shownRun(next) !== before \|\| next.state === "idle")` |
@@ -91,7 +91,7 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `ObslugaDecyzji` | `RunHost.decide` under its lock: `unknown_run`/`not_awaiting_decision` refusal, or `Run.answer` and the `running` view published before the answer |
 | `InnaKartaStart`, `InnaKartaDecyzja` | the same server steps for a request from a second tab or window; its own refused requests change nothing and are left out |
 | `PytanieODecyzje` | `Run.confirm`: the `awaiting_decision` view; today only Przygotowanie pliku zbiorczego asks, once per Uruchomienie (`collective_preparation`) |
-| `KoniecUruchomienia` | `RunHost.end`: the `finished` view (result or Zatrzymanie) and the end under one lock |
+| `KoniecUruchomienia` | `RunHost.end`: the `"finished"` view (result or Zatrzymanie) and the end under one lock |
 | `Restart` | Centrum killed and started again: a new `RunHost` with `idle` (`previous` from the Logi), the tab's stream gets `error`, a request the old server did not handle fails |
 | `KlikAktualizuj` | `ToolUpdateButton` (`components/tool-update.tsx`, disabled only by `busy`, so also before the first read answers): `useAction` `starting`, `setClicked(true)`, `getHealth` |
 | `ZdrowieStartu` | `.then(health => { instance.current = health.instance; return startToolUpdate() })`; no answer ends the action with a toast |
@@ -103,8 +103,8 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `Tik` | the effect on `update?.state === "running"`: after `POLL_MS` `getHealth`; the cleanup clears the timer, never a request already sent |
 | `ZdrowiePetli` | `getHealth().then`: `instance.current ??= health.instance`; another instance is `sessionStorage` and `window.location.reload()` (the new page reads again), the same one is `getToolUpdate()`; no answer is `.catch(() => show({state: "running", step: "restarting"}))` |
 | `OdbierzPetli` | `getToolUpdate().then(show)` in the poll, with no request number either; its failure goes to the same `.catch` |
-| `AktPorazka` | `ToolUpdates._update`: a failure before the restart (`failed`, same Centrum) |
-| `AktZamkniecie`, `AktPonownyStart` | `ToolUpdates._restart`: Centrum closes, the restart guardian starts the new one (another `instance`), which reads the result once (`_after_restart`: `updated` or `failed`) |
+| `AktPorazka` | `ToolUpdates._update`: a failure before the restart (`"failed"`, same Centrum) |
+| `AktZamkniecie`, `AktPonownyStart` | `ToolUpdates._restart`: Centrum closes, the restart guardian starts the new one (another `instance`), which reads the result once (`_after_restart`: `"updated"` or `"failed"`) |
 
 The script compares the definitions in `model/definicje.json` with their digests (a name is a path from the module).
 Its TypeScript files are digested whole (`cały plik`): a TypeScript file has no digest per function, so any change in

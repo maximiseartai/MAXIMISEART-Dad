@@ -13,7 +13,8 @@
   },
   "src/rozliczenia/efenix_positions.py": {
     "completion": "04cc1603fa80ed24",
-    "same_amount": "bc973a2141c850aa"
+    "same_amount": "bc973a2141c850aa",
+    "missing_positions": "7950ae174d838df1"
   },
   "src/rozliczenia/efenix_browser.py": {
     "BrowserEfenix.load_emmett": "c740d6de76e24f51",
@@ -25,7 +26,11 @@
     "BrowserEfenix._refusal": "6db03a32bf79bec1",
     "BrowserEfenix._status_answer": "62ae5a5d85da2b52",
     "BrowserEfenix._go": "39c1032aa0fbd655",
-    "BrowserEfenix._reloaded": "b442ccdf419af511"
+    "BrowserEfenix._reloaded": "b442ccdf419af511",
+    "BrowserEfenix.search": "b2e1699fce240fff",
+    "BrowserEfenix.open_order": "87742ecd03ff98a9",
+    "BrowserEfenix._answer": "9bee25f232803eed",
+    "BrowserEfenix._read_order": "9b1f209d7a62fc14"
   },
   "src/rozliczenia/efenix_checks.py": {
     "listing": "8faac784be1d32ab"
