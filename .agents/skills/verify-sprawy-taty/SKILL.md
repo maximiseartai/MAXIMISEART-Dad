@@ -97,7 +97,8 @@ keep the two in step. Each model action is one indivisible step of this code (`s
 | `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again: memory is gone (`DadCases._rejected`, `Outbox._rejected`, `_first_comments` of this work, the handle), `dad_cases._load` reads `config/sprawy-taty.json`, `Outbox.resume`, and the card of a Zatrzymanie of this problem gets a new handle with `Reports._state_of`. No code reconciles the cases with the queue files after a start |
 
 `model/definicje.json` holds the digests of the definitions the table names. Left out on purpose: the text of a
-Zgłoszenie and of an Uwaga (`_preview`, `note_issue`, the guard), `_CaseDelivery.prepare` (the line of the Logs in a
+Zgłoszenie and of an Uwaga (`ReportSource.report`, which `_preview` calls, `note_issue`, the guard), the Komunikat of
+an Uwaga that was not queued (`refusal.note_not_queued`), `_CaseDelivery.prepare` (the line of the Logs in a
 pinned Uwaga, which changes no case), `KeyedBox.judge` (which of „na internet” and „na Token” the waiting case shows),
 and `Reports._find_open` (one call of the Skrzynka). Two changes move the model without changing a definition, so look for
 them in the diff: a new caller of `DadCases.add`, `withdraw`, `forget` or `numbered` outside these definitions, and a

@@ -8,6 +8,7 @@ pilnuje:
   - src/rozliczenia/efenix_window.py
   - src/rozliczenia/efenix_checks.py
   - src/rozliczenia/efenix_mark.py
+  - src/rozliczenia/efenix_page.py
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
@@ -108,7 +109,7 @@ The digests in `model/definicje.json` were taken when every row of the table was
 (`tools/przesun_model.py`); what that check found is in the message of the commit that changed the digests. Check what
 changed since: `git diff $(git log -1 --format=%h -- .agents/skills/verify-wznowienie-wyceny-efenix/model/definicje.json)
 -- src/rozliczenia/efenix_pricing.py src/rozliczenia/efenix_positions.py src/rozliczenia/efenix_browser.py
-src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py`.
+src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py src/rozliczenia/efenix_page.py`.
 
 ## Run
 

@@ -10,6 +10,7 @@ pilnuje:
   - src/rozliczenia/centrum/launcher.py
   - src/rozliczenia/centrum/server.py
   - src/rozliczenia/tool_files.py
+  - src/rozliczenia/centrum/run_comments.py
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
@@ -119,9 +120,10 @@ fail, lose or kill; the docstrings of `explore_outbox.py`, `MemoryBox`, `Bounds`
 | a held decision `Gone` | `KeyedBox.known_issue` in `_deliver_to_known`: a list without the known number is `Gone` only when a write with its label would not be held (`_held`), else `Unreachable` without a decision (#915). Every list in the checker reads `OPENING_FILE`, so it never reaches the hold: the model does (`znane`), and `test_komentarz_do_swiezego_issue_ktorego_lista_nie_pokazuje_czeka_zamiast_porzucenia` in `test_kolejka_skrzynki_zgloszen.py` runs both on the real code |
 | a restart of Centrum | a new `Outbox` and `KeyedBox` on the same folder, then `Outbox.resume` |
 
-`model/definicje.json` lists the files the checker covers whole, and the definitions in `app.py`, `launcher.py`,
+`model/definicje.json` lists the files the checker covers whole, the definitions in `app.py`, `launcher.py`,
 `tool_files.py` and `server.py` that only the model covers (two Centrum processes sharing the queue folder,
-configuration `dwa-procesy`): a change to the rest of those four files is no drift.
+configuration `dwa-procesy`), and in `run_comments.py` the two callers that queue a later wysyłka (`ASSUME Diagnoza`
+below): a change to the rest of those five files is no drift.
 Each action of `model/KolejkaSkrzynki.tla` is one indivisible step of the code, and the comment above the action and
 each branch names that code.
 

@@ -37,15 +37,6 @@ APP = ROOT / "src" / "rozliczenia" / "centrum" / "app.py"
 LAUNCHER = ROOT / "src" / "rozliczenia" / "centrum" / "launcher.py"
 SERVER = ROOT / "src" / "rozliczenia" / "centrum" / "server.py"
 TOOL_FILES = ROOT / "src" / "rozliczenia" / "tool_files.py"
-# Pliki opisane modelem w całości.
-WHOLE = (
-    ROOT / "src" / "rozliczenia" / "centrum" / "outbox.py",
-    ROOT / "src" / "rozliczenia" / "centrum" / "keyed_box.py",
-    ROOT / "src" / "rozliczenia" / "centrum" / "report_box.py",
-    ROOT / "src" / "rozliczenia" / "centrum" / "atomic_file.py",
-)
-
-
 def test_kontrprzyklad_kolejki_opowiada_kroki_kodu_i_stan_kolejki_i_skrzynki_na_koncu(capsys: pytest.CaptureFixture[str]) -> None:
     output = wyjscie_tlc(
         "JednoIssuePozaZnanymi",
@@ -87,7 +78,7 @@ def _no_change(text: str) -> str:
 def test_rozjazd_liczy_w_plikach_procesu_centrum_tylko_definicje_procesow_centrum(
     tmp_path: Path, path: Path, edit: Callable[[str], str], moved: str | None
 ) -> None:
-    for source in (APP, LAUNCHER, SERVER, TOOL_FILES, *WHOLE, DEFINITIONS):
+    for source in (*(ROOT / path for path in rozjazd_modelu.definicje(DEFINITIONS.parents[1])), DEFINITIONS):
         copy = tmp_path / source.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")

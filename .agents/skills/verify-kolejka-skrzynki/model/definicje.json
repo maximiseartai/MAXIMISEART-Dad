@@ -25,5 +25,9 @@
     "_GRACEFUL_SHUTDOWN_S": "06931a36054ed6bc",
     "serve": "82e8b0ef557e7425",
     "_Server": "8ceb23258608b3c4"
+  },
+  "src/rozliczenia/centrum/run_comments.py": {
+    "RunComments.diagnosed": "72bbeac6e8ee3b68",
+    "RunComments._progress": "5c4dcf5d41886d17"
   }
 }

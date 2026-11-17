@@ -37,5 +37,9 @@
   },
   "src/rozliczenia/efenix_mark.py": {
     "Mark.replaces": "708b8f23926b8082"
+  },
+  "src/rozliczenia/efenix_page.py": {
+    "emmett_window_fault": "5c5e40921dbb5fcc",
+    "emmett_window": "f1c76273e6a37854"
   }
 }
