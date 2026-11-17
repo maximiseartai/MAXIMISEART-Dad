@@ -549,6 +549,8 @@ NOT_SWEPT: dict[str, str] = {
     "closeCentrum": "kończy Centrum testu",
     "getReportsView": "czyta tylko pliki Wpisania raportów w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
     "keepManualValue": "zapisuje tylko plik decyzji w config, nie pliki taty; nieczytelny: test_centrum_wpisanie_raportow",
+    "enterOnRequest": "startuje Wpisanie raportów, którego odczyty sprawdza zapis[wpisanie], z decyzją taty; nieczytelny "
+    "wynik: test_centrum_wpisanie_raportow",
     "changeFolders": "zapisuje ścieżki z żądania i oddaje stan ścieżek jak getSettings, bez treści plików taty; zła wartość "
     "i niedostępny plik Ustawień: test_centrum_rozliczen",
     "changeAutostart": "zakłada albo usuwa skrót w folderze Autostart i oddaje stan ścieżek jak getSettings, bez treści "

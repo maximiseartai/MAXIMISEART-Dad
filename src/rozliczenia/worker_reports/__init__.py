@@ -58,6 +58,8 @@ from ._model import (
     ReportProblem,
     ReportsOutcome,
     ReportSubject,
+    Requestable,
+    RequestedEntry,
     SenderAddress,
     SubjectFault,
     SubjectLost,
@@ -153,6 +155,8 @@ __all__ = [
     "ReportProblem",
     "ReportsOutcome",
     "ReportSubject",
+    "Requestable",
+    "RequestedEntry",
     "ScheduleSince",
     "SchedulesInEffect",
     "SenderAddress",
@@ -212,7 +216,9 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     (``_moves._carried``). Wpis ``tak`` z Błędem opisu (Legenda czynności ``inputs.legend``) wpisuje się jak każdy, bo
     bez ``SKUTECZNE`` Przygotowanie pliku zbiorczego się zatrzymuje, a tata widzi przy nim problem
     ``FaultyDescription``, dopóki zlecenie nie dostanie poprawnego Wpisu (ADR 0039, ``_descriptions.entered``). Problem
-    z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``).
+    z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``). Decyzja taty Wpisu na
+    życzenie (``inputs.requested``) wpisuje Wpis ze znakiem zamiast ``tak``/``nie`` jak Wpis z chwilą kliknięcia
+    (``_matching.Board.match``).
     """
 
     window = inputs.window
@@ -220,7 +226,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     read = _reading.read_window(inputs)
     mails, reports, board = read.mails, list(read.reports), read.board
     problems: list[ReportProblem] = list(read.strangers)
-    matched = board.match(reports)
+    matched = board.match(reports, inputs.requested)
     additions = _corrections.uncorrected(matched.added, reports, board)
     described = _descriptions.entered(inputs.legend, matched.entered, additions)
     moved = _moves.moved(matched.accepted, additions, orders, inputs.memory, window)

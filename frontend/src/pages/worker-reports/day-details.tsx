@@ -1,10 +1,19 @@
 import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, MailWarningIcon, type LucideIcon } from "lucide-react"
 import { cn } from "cn"
 
-import type { KeptCell, ReportsNote, ReportsOrder, ReportsFaultySubject, ReportsProblem, ReportsWorkerDay } from "@/api/generated"
+import type {
+  KeptCell,
+  ReportsFaultySubject,
+  ReportsNote,
+  ReportsOrder,
+  ReportsProblem,
+  ReportsWorkerDay,
+  RequestedCell,
+} from "@/api/generated"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { dayMonth, hourMinute, plural, shortDate } from "@/lib/format"
+import { isActive, useRuns } from "@/lib/runs"
 import type { DayState, Status } from "@/pages/worker-reports/day-state"
 import { shortDay, weekdayOfDate } from "@/pages/worker-reports/days"
 import { look, StatusBadge } from "@/pages/worker-reports/status"
@@ -34,9 +43,9 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
- * (`orders_detail`) z problemami, „Zostaw moją”, spokojnymi informacjami o Przeniesieniach zleceń (`notes`) i o
- * raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z tematem po strażniku
- * reguły danych, rodzajem błędu, dniem, za który Centrum go liczy, i chwilą przyjścia maila, a jego zlecenia mają stan
+ * (`orders_detail`) z problemami, „Zostaw moją”, Wpisem na życzenie, spokojnymi informacjami o Przeniesieniach zleceń
+ * (`notes`) i o raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z tematem
+ * po strażniku reguły danych, rodzajem błędu, dniem, za który Centrum go liczy, i chwilą przyjścia maila, a jego zlecenia mają stan
  * „Błąd tematu”, nie „Bez raportu”. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
  * przebieg Przypomnień o raporcie za ten dzień (`reminders`), gdy jakieś poszło.
  */
@@ -359,6 +368,7 @@ function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem }
     <>
       {problem.faulty_subject === null ? null : <FaultyFacts faulty={problem.faulty_subject} />}
       <span className="col-start-2 col-end-4 text-xs leading-relaxed text-muted-foreground">{problem.reason}</span>
+      {problem.request === null ? null : <OnRequest request={problem.request} />}
       {keep === null ? null : (
         <span className="col-start-2 col-end-4">
           <Button
@@ -376,6 +386,37 @@ function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem }
   )
 }
 
+/**
+ * Wpis na życzenie (ADR 0041): co wpisze się do INTERMAX, zanim tata kliknie, i przycisk, który startuje Wpisanie
+ * raportów z jego decyzją. W czasie każdego Uruchomienia przycisk czeka; odmowę serwera (INTERMAX otwarty w Excelu)
+ * pokazuje powiadomienie.
+ */
+function OnRequest({ request }: { request: RequestedCell }) {
+  const { view, starting, start } = useRuns()
+
+  return (
+    <span className="col-start-2 col-end-4 flex flex-col gap-2 rounded-md border border-dashed px-2.5 py-2 text-xs">
+      <span className="text-muted-foreground">Wpisze się do INTERMAX, zlecenie z {shortDay(request.order_day)}:</span>
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-0.5" aria-label="Co się wpisze">
+        <dt className="text-muted-foreground">SKUTECZNE</dt>
+        <dd className="font-semibold">{request.successful}</dd>
+        <dt className="text-muted-foreground">CZYNNOŚCI ZREALIZOWANE</dt>
+        <dd className="min-w-0 break-words">{request.activities === "" ? "—" : request.activities}</dd>
+      </dl>
+      <span>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={starting || isActive(view)}
+          onClick={() => void start({ process: "report_entering", request })}
+        >
+          Wpisz do INTERMAX
+        </Button>
+      </span>
+    </span>
+  )
+}
+
 function problemKey(problem: ReportsProblem): string {
-  return JSON.stringify([problem.number, problem.reason, problem.keep])
+  return JSON.stringify([problem.number, problem.reason, problem.keep, problem.request])
 }

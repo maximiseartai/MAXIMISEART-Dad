@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from email.message import EmailMessage
+from email.utils import format_datetime
 import json
 from pathlib import Path
 import re
@@ -20,6 +22,7 @@ from drive.common import (
     choose_periods_directory,
     current_run,
     ended_run_shown,
+    error_toasts,
     figure,
     move,
     open_settings,
@@ -36,6 +39,7 @@ from drive.common import (
     switch_theme,
 )
 from drive.waiting import until
+from rozliczenia.worker_reports import MailId
 
 FEATURE = "wpisanie-raportow"
 BUTTON = "Wpisz raporty z maili"
@@ -66,6 +70,21 @@ KEPT = {
     "column": "CZYNNOŚCI ZREALIZOWANE",
     "reported": COMPLETED_WITHOUT_CODES,
 }
+# The Raport of wykonawca.a with `t` instead of `tak` for his order without a report (step `wpis-na-zyczenie`): the
+# offer of Wpis na życzenie, its preview and its decision in the memory file. Its activities are Kody czynności of the
+# legend from the Wydanie, so the entered Wpis has no Błąd opisu.
+ON_REQUEST_NUMBER, ON_REQUEST_ACTIVITIES = "40000102", "inst20m spawpg"
+ON_REQUEST_ID = "<raport-a-litera.eml@przyklad.invalid>"
+ON_REQUEST = {
+    "mail": MailId.of(ON_REQUEST_ID).digest,
+    "number": ON_REQUEST_NUMBER,
+    "day": DAY,
+    "worker": "wykonawca.a",
+    "activities": ON_REQUEST_ACTIVITIES,
+    "successful": "tak",
+    "order_day": DAY,
+}
+ON_REQUEST_BUTTON = "Wpisz do INTERMAX"
 NARROW: ViewportSize = {"width": 390, "height": 844}
 # „Przypisz do Wykonawcy…” gives the stranger's address to Wykonawca D of the fixture: he has no orders and no Raport
 # today, so his address changes no figure of the click.
@@ -354,6 +373,7 @@ def _window_day(
                 "reason": f"Raport wykonawcy z {day[8:10]}.{day[5:7]}.{day[:4]} ma dla zlecenia {numbers[0]} różne Wpisy.",
                 "number": numbers[0],
                 "keep": None,
+                "request": None,
                 "faulty_subject": None,
             }
         ]
@@ -444,6 +464,7 @@ def _subject_view(clicked_at: str) -> Json:
             "ale jego Wpisów nie wpisało.",
             "number": None,
             "keep": None,
+            "request": None,
             "faulty_subject": SUBJECT_FAULT,
         }
     ]
@@ -457,6 +478,7 @@ def _subject_view(clicked_at: str) -> Json:
             "Centrum mogłoby go liczyć. Centrum go nie wpisało i nie kończy nim Przypomnień o raporcie.",
             "number": None,
             "keep": None,
+            "request": None,
             "faulty_subject": NO_DAY_FAULT,
         }
     ]
@@ -820,6 +842,89 @@ def _narrow_layout(run: Run, page: Page, what: str) -> None:
     )
 
 
+def _on_request(run: Run, page: Page, register: Path) -> None:
+    """Wpis na życzenie (ADR 0041): a Raport with `t`, its button with the preview, the refusal while INTERMAX is open
+    in Excel and the order entered after the click."""
+
+    run.step(FEATURE, "wpis-na-zyczenie")
+    mail = run.root / "maile" / "raport-a-litera.eml"
+    message = EmailMessage()
+    message["From"] = "wykonawca.a@przyklad.invalid"
+    message["Subject"] = "Raport 19.10.2026"
+    message["Date"] = format_datetime(datetime(2026, 10, 19, 17, 30).astimezone())
+    message["Message-ID"] = ON_REQUEST_ID
+    message.set_content(f"{ON_REQUEST_NUMBER} t {ON_REQUEST_ACTIVITIES}")
+    mail.write_bytes(bytes(message))
+    print(f"  harness: wykonawca.a sends a Raport with `t` for {ON_REQUEST_NUMBER}", flush=True)
+    try:
+        offered = result_of_start(run, "raporty-litera", _button(page).click)
+        run.check(figure(offered["summary"], "Problemy") == 1, "the Raport with `t` gives one problem and enters nothing")
+        [problem] = _days_of(_view(run, "raporty-na-zyczenie-przed"))["wykonawca.a"]["problems"]
+        run.check(problem["request"] == ON_REQUEST, "the view offers Wpis na życzenie with what it writes: the day, tak and the activities")
+        popover = _popover(page, "wykonawca.a", DAY)
+        what = popover.get_by_label("Co się wpisze", exact=True).get_by_role("definition")
+        expect(popover.get_by_text(f"Wpisze się do INTERMAX, zlecenie z {_short(DAY)}:", exact=True)).to_be_visible()
+        expect(what.nth(0)).to_have_text("tak")
+        expect(what.nth(1)).to_have_text(ON_REQUEST_ACTIVITIES)
+        button = popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)
+        expect(button).to_be_enabled()
+        run.check(True, "before the click the popover says what it writes: the day, SKUTECZNE and CZYNNOŚCI ZREALIZOWANE")
+        run.capture(page, "405-raporty-na-zyczenie-podglad", full_page=False)
+
+        before = read_bytes(register)
+        lock = excel_lock(register)
+        lock.touch()
+        print(f"  harness: Excel opens {register.name}, so its lock file is next to it", flush=True)
+        try:
+            with page.expect_response(lambda response: response.url.endswith("/api/report-entering/request")) as answered:
+                button.click()
+            refused = error_toasts(page)
+            expect(refused).to_contain_text("INTERMAX jest otwarty w Excelu, więc nic się nie wpisało")
+            run.check(
+                answered.value.status == 409 and read_bytes(register) == before,
+                "with INTERMAX open in Excel the button refuses in one sentence and INTERMAX stays byte for byte",
+            )
+            run.capture(page, "406-raporty-na-zyczenie-odmowa", full_page=False)
+        finally:
+            remove(lock, missing_ok=True)
+        page.evaluate(FOCUS)
+
+        entered = result_of_start(run, "raporty-na-zyczenie", popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True).click)
+        run.check(
+            (figure(entered["summary"], "Wpisane"), figure(entered["summary"], "Problemy")) == (1, 0),
+            "the click enters the order with one Uruchomienie and leaves no problem",
+        )
+        run.check(read_bytes(register) != before, "INTERMAX is written on disk")
+        after = _view(run, "raporty-na-zyczenie-po")
+        run.check(
+            _orders(after)["wykonawca.a"][1] == (ON_REQUEST_NUMBER, "tak", ON_REQUEST_ACTIVITIES, "entered")
+            and not _days_of(after)["wykonawca.a"]["problems"],
+            "after the click the order has tak and the activities like any Wpis, and the problem is gone",
+        )
+        decisions = [
+            (found["number"], found["verdict"], found["activities"])
+            for found in read_json(run.config / "wpisanie-raportow-stan.json")["requested"]
+        ]
+        logged = [(found["number"], found["verdict"]) for found in _entering_logs(run)[-1]["requested"]]
+        run.check(
+            decisions == [(ON_REQUEST_NUMBER, "tak", ON_REQUEST_ACTIVITIES)] and logged == [(ON_REQUEST_NUMBER, "tak")],
+            "the memory file and the Logi of the Uruchomienie have Dad's decision",
+        )
+        if popover.is_visible():
+            _close(page, popover)
+        popover = _popover(page, "wykonawca.a", DAY)
+        expect(popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_have_count(0)
+        expect(popover.get_by_role("list", name="Zlecenia dnia").get_by_role("listitem").nth(1)).to_contain_text(
+            ON_REQUEST_ACTIVITIES
+        )
+        _tile_is(page, "wykonawca.a", DAY, "Komplet", 2, 2)
+        run.check(True, "the popover has the order entered, without the button, and the tile turns Komplet without a reload")
+        run.capture(page, "407-raporty-na-zyczenie-po", full_page=False)
+        _close(page, popover)
+    finally:
+        remove(mail, missing_ok=True)
+
+
 def drive(run: Run, page: Page) -> None:
     fixture = run.fixture["report_entering"]
     register = Path(fixture["register"])
@@ -1023,6 +1128,8 @@ def drive(run: Run, page: Page) -> None:
             run.capture(page, "284-raporty-waski-ekran")
         finally:
             page.set_viewport_size(DAD_VIEWPORT)
+
+        _on_request(run, page, register)
     finally:
         move(aside, stranger)
 

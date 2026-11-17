@@ -28,7 +28,10 @@ Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
   liczby zakładają wpisane komórki.
 
 Decyzje taty „Zostaw moją” proces bierze w Sprawdzaniu jako migawkę (``SavedState.kept``), razem z pamięcią: decyzja
-kliknięta w trakcie Uruchomienia działa od następnego kliknięcia, a widok Raporty pokazuje ją od razu.
+kliknięta w trakcie Uruchomienia działa od następnego kliknięcia, a widok Raporty pokazuje ją od razu. Wpis na życzenie
+(ADR 0041) to Uruchomienie z decyzją taty na wejściu (``ReportEnteringParts.requested``): rdzeń dostaje ją razem z
+decyzjami z pamięci (``SavedState.requested``), a pamięć zapisuje je po udanym zapisie INTERMAX, więc decyzja działa
+też w następnych kliknięciach, a po odmowie zapisu nie zostaje.
 
 Okno dni zaczyna się od dnia wdrożenia z pamięci (przed pierwszym udanym kliknięciem: dziś) i nie ma dni okresów z
 Plikiem zbiorczym w folderze okresów; bez folderu okresów albo bez dostępu do niego skrzynka nie jest czytana. Proces nie należy do
@@ -85,6 +88,7 @@ from .worker_reports import (
     ReportMail,
     ReportNote,
     ReportProblem,
+    RequestedEntry,
     Window,
     WorkerAddresses,
     WorkerDay,
@@ -111,12 +115,14 @@ __all__ = [
 
 @dataclass(frozen=True)
 class SavedState:
-    """Pamięć z ostatniego udanego zapisu: dzień wdrożenia (``None``: jeszcze żadnego udanego kliknięcia) i własne
-    wpisy (``OlderOwnEntries`` z pliku sprzed wersji 4), a do tego decyzje taty „Zostaw moją” (``kept``)."""
+    """Pamięć z ostatniego udanego zapisu: dzień wdrożenia (``None``: jeszcze żadnego udanego kliknięcia), własne
+    wpisy (``OlderOwnEntries`` z pliku sprzed wersji 4) i decyzje taty Wpisu na życzenie (``requested``), a do tego
+    decyzje taty „Zostaw moją” (``kept``)."""
 
     rollout: date | None
     memory: OwnEntries | OlderOwnEntries
     kept: frozenset[Kept] = frozenset()
+    requested: frozenset[RequestedEntry] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -148,9 +154,11 @@ class ReportState(Protocol):
         ``DecisionsUnreadable``, gdy pamięć jest poprawna, ale decyzji „Zostaw moją” nie da się odczytać."""
         ...
 
-    def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
-        """Zapisuje dzień wdrożenia i pamięć po udanym zapisie INTERMAX (``written`` to dowód zapisu); ``False``, gdy
-        zapis na dysku się nie udał i czeka na następną próbę."""
+    def save_memory(
+        self, written: CellsWritten, rollout: date, memory: OwnEntries, requested: frozenset[RequestedEntry]
+    ) -> bool:
+        """Zapisuje dzień wdrożenia, pamięć i decyzje Wpisu na życzenie po udanym zapisie INTERMAX (``written`` to
+        dowód zapisu); ``False``, gdy zapis na dysku się nie udał i czeka na następną próbę."""
         ...
 
     def save_result(self, written: CellsWritten, result: ClickResult) -> None:
@@ -170,8 +178,10 @@ class ReportStateInMemory:
     def load(self) -> SavedState:
         return self.saved
 
-    def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
-        self.saved = SavedState(rollout, memory, self.saved.kept)
+    def save_memory(
+        self, written: CellsWritten, rollout: date, memory: OwnEntries, requested: frozenset[RequestedEntry]
+    ) -> bool:
+        self.saved = SavedState(rollout, memory, self.saved.kept, requested)
         return True
 
     def save_result(self, written: CellsWritten, result: ClickResult) -> None:
@@ -180,10 +190,12 @@ class ReportStateInMemory:
 
 @dataclass(frozen=True)
 class ReportEnteringParts:
-    """Zależności Wpisania raportów od gospodarza: Skrzynka raportów i pamięć własnych wpisów."""
+    """Zależności Wpisania raportów od gospodarza: Skrzynka raportów i pamięć własnych wpisów. ``requested``: decyzja
+    taty z kliknięcia Wpisu na życzenie, które startuje to Uruchomienie (``None``: „Wpisz raporty z maili”)."""
 
     inbox: WorkerReportInbox
     state: ReportState
+    requested: RequestedEntry | None = None
 
 
 @dataclass(frozen=True)
@@ -228,7 +240,8 @@ class EnteringFacts:
     wpisy numerów, które mają Wpis w tym kliknięciu, z każdego dnia, pod każdym Wykonawcą, bo wpisy idą za wierszem, tak
     jak je dostał rdzeń (z pliku sprzed wersji 4 po ``OlderOwnEntries.upgraded``), więc odtworzenie z Logów daje ten sam
     wynik, a
-    ``kept``: decyzje „Zostaw moją” zleceń z Wpisem z migawki kliknięcia, ``moves_before``: pamięć zleceń (``OwnMove``)
+    ``kept``: decyzje „Zostaw moją” zleceń z Wpisem z migawki kliknięcia, ``requested``: decyzje Wpisu na życzenie z
+    pamięci i z tego kliknięcia (numer jest w nich tekstem, więc odtworzenie nie potrzebuje Wpisu), ``moves_before``: pamięć zleceń (``OwnMove``)
     numerów, które mają Wpis w tym kliknięciu, z każdego dnia, bo zlecenie mogło przejść na inny dzień, a pamięć zostaje
     pod dniem, w którym zostawiło je Centrum. ``skipped``: maile, których Skrzynka raportów nie umiała przeczytać.
     ``moves``: Przeniesienia zleceń do zapisu, ``added``: Zlecenia dopisane z raportu do zapisu, ``notes``: informacje
@@ -251,6 +264,7 @@ class EnteringFacts:
     moves_before: tuple[OwnMove, ...] = ()
     added: tuple[OrderAdded, ...] = ()
     orderless: tuple[Orderless, ...] = ()
+    requested: tuple[RequestedEntry, ...] = ()
 
 
 @dataclass
@@ -309,6 +323,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         return addresses, saved
 
     addresses, saved = phases.check(check)
+    clicked = saved if parts.requested is None else replace(saved, requested=saved.requested | {parts.requested})
     clicked_at = inputs.now()
     today = clicked_at.date()
 
@@ -337,7 +352,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     window, register, intermax, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
-        given = report_inputs(window, intermax, mails, addresses, saved, inputs.legend)
+        given = report_inputs(window, intermax, mails, addresses, clicked, inputs.legend)
         remembered = given.memory
         found = enter_reports(given)
         reported = {
@@ -378,6 +393,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             moves_before,
             found.added,
             orderless,
+            tuple(sorted(clicked.requested, key=_requested_order)),
         )
         return planned, found.memory, found.workers
 
@@ -403,7 +419,8 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 assert_never(written)
 
     written = phases.save(save)
-    warnings = [] if parts.state.save_memory(written, window.rollout, memory) else [messages.memory_not_saved()]
+    saved_memory = parts.state.save_memory(written, window.rollout, memory, clicked.requested)
+    warnings = [] if saved_memory else [messages.memory_not_saved()]
     parts.state.save_result(written, ClickResult(clicked_at, _open_days(window), figures, facts.problems, facts.notes))
     summary = replace(EnteringSummary(facts, written.count, warnings), phase_durations_ms=phases.durations_ms())
     if copies := onedrive_conflicts.beside(register_path):
@@ -413,6 +430,11 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
 
 def _kept_order(kept: Kept) -> tuple[OrderKey, str, str]:
     return kept.key, kept.column.value, kept.reported
+
+
+def _requested_order(decision: RequestedEntry) -> tuple[date, str, str, str, str, str, datetime]:
+    key = decision.day, decision.worker, decision.number, decision.mail.digest
+    return *key, decision.verdict.value, decision.activities, decision.at
 
 
 def _open_days(window: Window) -> tuple[date, ...]:
@@ -577,11 +599,12 @@ def report_inputs(
 ) -> ReportInputs:
     """Jedyne wejście odczytu okna rdzenia raportów, to samo dla Wpisania raportów i Przypomnień o raporcie: INTERMAX
     okna z ``register_window`` i pamięć Wpisania raportów z ``ReportState.load`` (``saved``; pamięć z pliku sprzed wersji
-    4 zamieniona przy odczytanych zleceniach, ``OlderOwnEntries.upgraded``). Dzień raportu zależy od pamięci: numer
-    dopisany przez Centrum nie robi z tematu pomylonego, a zlecenie po Przeniesieniu ma w rdzeniu dzień sprzed niego,
-    więc obie operacje liczą ten sam dzień raportu tylko z tej samej pamięci. Dzień wdrożenia Wpisania z pamięci (przed
-    pierwszym kliknięciem: dziś) ogranicza dzień wskazany raportu bez dnia w temacie także w oknie przypomnień, które
-    zaczyna się wcześniej (``ReportInputs.entering_rollout``)."""
+    4 zamieniona przy odczytanych zleceniach, ``OlderOwnEntries.upgraded``, i decyzje Wpisu na życzenie, we Wpisaniu
+    razem z decyzją kliknięcia). Dzień raportu zależy od pamięci: numer dopisany przez Centrum nie robi z tematu
+    pomylonego, a zlecenie po Przeniesieniu ma w rdzeniu dzień sprzed niego, więc obie operacje liczą ten sam dzień
+    raportu tylko z tej samej pamięci; decyzje Wpisu na życzenie zmieniają tylko wpisany znak, nie dzień raportu. Dzień
+    wdrożenia Wpisania z pamięci (przed pierwszym kliknięciem: dziś) ogranicza dzień wskazany raportu bez dnia w temacie
+    także w oknie przypomnień, które zaczyna się wcześniej (``ReportInputs.entering_rollout``)."""
 
     memory = saved.memory.upgraded(intermax.orders) if isinstance(saved.memory, OlderOwnEntries) else saved.memory
     return ReportInputs(
@@ -594,6 +617,7 @@ def report_inputs(
         ordered_days=intermax.ordered_days,
         present=tuple(read for _, read in intermax.present),
         legend=legend,
+        requested=saved.requested,
         entering_rollout=window.today if saved.rollout is None else saved.rollout,
     )
 

@@ -10,12 +10,12 @@
     "Kept": "417281fbc0c25393"
   },
   "src/rozliczenia/worker_reports/__init__.py": {
-    "enter_reports": "23523260be9a9d73"
+    "enter_reports": "5609fdc7442431b6"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "1990ef6d4407a8f7",
+    "enter_from_mail": "562772f6599f90c1",
     "closed_periods": "5b9ce8bf021b5dd9",
-    "SavedState": "61cca2a0f5c0d9c4"
+    "SavedState": "2bef4c3810a32563"
   },
   "src/rozliczenia/intermax_cells.py": {
     "write_cells": "a2a848ebcb13bf49"
@@ -23,17 +23,19 @@
   "src/rozliczenia/centrum/report_entering_state.py": {
     "_TextFile": "9c433f212b12cb17",
     "FileReportState.of_work": "f1ce4f0a2f2f9966",
-    "FileReportState.load": "0c7ce0d1793237f2",
-    "FileReportState.save_memory": "85ec60b9bb845e6b",
+    "FileReportState.load": "aae08959cc0fa028",
+    "FileReportState.save_memory": "56b68bb5c2e9236e",
     "FileReportState.save_result": "8489a345ea644287",
-    "FileReportState.shown": "dc7e8b874c2821e3",
+    "FileReportState.shown": "c698d0663fdd6fc1",
     "FileReportState.kept": "97d11bf6647e9014",
     "FileReportState.keep": "c661614598a4c6a9"
   },
   "src/rozliczenia/centrum/report_entering_run.py": {
     "ReportEnteringEntry.keep": "c20ea2503a531687",
     "ReportEnteringEntry.view": "8c93b20763ced3a0",
-    "_view": "be3a3d6d989ac742"
+    "_view": "be3a3d6d989ac742",
+    "ReportEnteringEntry.on_request": "5fe436e623357c93",
+    "ReportEnteringEntry.prepare": "37dcb3f86e349f85"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "StateFile": "71beaa3fba9d5cdd",

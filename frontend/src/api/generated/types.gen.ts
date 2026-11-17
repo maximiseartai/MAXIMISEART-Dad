@@ -164,7 +164,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'changeSettlementMail' | 'previewSettlementMail' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'previewActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'getSettlementMailing' | 'previewSettlementMails' | 'sendSettlementMail' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'changeSettlementMail' | 'previewSettlementMail' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'previewActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'enterOnRequest' | 'getSettlementMailing' | 'previewSettlementMails' | 'sendSettlementMail' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -3766,8 +3766,9 @@ export type ReportsOrder = {
  * ReportsProblem
  *
  * Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
- * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,
- * gdy to on jest problemem (``faulty_subject``).
+ * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), Wpis na życzenie, przy
+ * którym stoi jego przycisk (``request``; ``None``: przycisku nie ma), i raport z błędem tematu, gdy to on jest
+ * problemem (``faulty_subject``).
  */
 export type ReportsProblem = {
     /**
@@ -3779,6 +3780,7 @@ export type ReportsProblem = {
      */
     number: string | null;
     keep: KeptCell | null;
+    request: RequestedCell | null;
     faulty_subject: ReportsFaultySubject | null;
 };
 
@@ -3884,6 +3886,44 @@ export type ReportsWorkerDay = {
      * Reminders
      */
     reminders: Array<string>;
+};
+
+/**
+ * RequestedCell
+ *
+ * Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
+ * dzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+ * ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu.
+ */
+export type RequestedCell = {
+    /**
+     * Mail
+     */
+    mail: string;
+    /**
+     * Number
+     */
+    number: string;
+    /**
+     * Day
+     */
+    day: string;
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * Activities
+     */
+    activities: string;
+    /**
+     * Successful
+     */
+    successful: 'tak' | 'nie';
+    /**
+     * Order Day
+     */
+    order_day: string;
 };
 
 /**
@@ -6339,6 +6379,53 @@ export type KeepManualValueResponses = {
 };
 
 export type KeepManualValueResponse = KeepManualValueResponses[keyof KeepManualValueResponses];
+
+export type EnterOnRequestData = {
+    body: RequestedCell;
+    path?: never;
+    query?: never;
+    url: '/api/report-entering/request';
+};
+
+export type EnterOnRequestErrors = {
+    /**
+     * Not Found
+     */
+    404: Problem;
+    /**
+     * Conflict
+     */
+    409: Problem;
+    /**
+     * Validation Error
+     */
+    422: HttpValidationError;
+    /**
+     * Internal Server Error
+     */
+    500: Problem;
+};
+
+export type EnterOnRequestError = EnterOnRequestErrors[keyof EnterOnRequestErrors];
+
+export type EnterOnRequestResponses = {
+    /**
+     * Response Enteronrequest
+     *
+     * Successful Response
+     */
+    200: ({
+        state: 'idle';
+    } & RunIdle) | ({
+        state: 'running';
+    } & RunRunning) | ({
+        state: 'awaiting_decision';
+    } & RunAwaitingDecision) | ({
+        state: 'finished';
+    } & RunFinished);
+};
+
+export type EnterOnRequestResponse = EnterOnRequestResponses[keyof EnterOnRequestResponses];
 
 export type StartReportEnteringData = {
     body?: never;

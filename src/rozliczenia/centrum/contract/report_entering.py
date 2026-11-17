@@ -1,4 +1,5 @@
-"""Kontrakt Wpisania raportów: przycisk „Wpisz raporty z maili” poza okresami i widok Raporty (ADR 0028)."""
+"""Kontrakt Wpisania raportów: przycisk „Wpisz raporty z maili” poza okresami, widok Raporty (ADR 0028) i Wpis na
+życzenie (ADR 0041)."""
 
 from __future__ import annotations
 
@@ -36,6 +37,20 @@ class KeptCell(Model):
     reported: str
 
 
+class RequestedCell(Model):
+    """Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
+    dzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+    ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."""
+
+    mail: str
+    number: str
+    day: date
+    worker: str
+    activities: str
+    successful: Literal["tak", "nie"]
+    order_day: date
+
+
 class ReportsFaultySubject(Model):
     """Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości
     ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
@@ -50,12 +65,14 @@ class ReportsFaultySubject(Model):
 
 class ReportsProblem(Model):
     """Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
-    numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,
-    gdy to on jest problemem (``faulty_subject``)."""
+    numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), Wpis na życzenie, przy
+    którym stoi jego przycisk (``request``; ``None``: przycisku nie ma), i raport z błędem tematu, gdy to on jest
+    problemem (``faulty_subject``)."""
 
     reason: str
     number: str | None
     keep: KeptCell | None
+    request: RequestedCell | None
     faulty_subject: ReportsFaultySubject | None
 
 

@@ -1,12 +1,14 @@
 """Pliki Wpisania raportów w ``config`` (ADR 0028): jedyny moduł, który zna ich format. Każdy plik ma jednego pisarza.
 
 - ``wpisanie-raportow-stan.json``, ``{schema_version: 4, rollout, own: [{number, day, worker, column, value}], moves:
-  [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden, added}]}``: dzień wdrożenia,
-  komórki, które Wpisanie raportów samo wpisało, i pamięć zleceń, na które samo zadziałało Przeniesieniem, Wpisem albo
-  dopisaniem (``OwnMove``, ADR 0029). Pisze go tylko proces po udanym zapisie INTERMAX. Wersja 4 to obietnica
+  [{number, day, worker, origin_day, origin_worker, origin_name, since, overridden, added}], requested: [{mail, worker,
+  day, number, verdict, activities, at}]}``: dzień wdrożenia, komórki, które Wpisanie raportów samo wpisało, pamięć zleceń,
+  na które samo zadziałało Przeniesieniem, Wpisem albo dopisaniem (``OwnMove``, ADR 0029), i decyzje taty Wpisu na
+  życzenie (``RequestedEntry``, ADR 0041). Pisze go tylko proces po udanym zapisie INTERMAX, także z decyzją z
+  kliknięcia Wpisu na życzenie. Wersja 4 to obietnica
   pisarza: ``own`` ma tylko numer, który w chwili zapisu miał w odczytanych dniach jedno zlecenie, pod jego kluczem
   (``OwnEntries``), więc wpisy idą za wierszem. Plik bez ``added`` (sprzed Zleceń dopisanych z raportu) czyta się
-  z ``added`` fałszywym.
+  z ``added`` fałszywym, a plik bez ``requested`` (sprzed Wpisu na życzenie) bez decyzji.
   Starsze wersje czyta ``load`` jako ``OlderOwnEntries``, bez Zatrzymania, a ich wpis należy do miejsca z chwili zapisu
   (numer, dzień, Wykonawca), dopóki następne kliknięcie nie zapisze wersji 4: wersja 1 (Wydania v0.7.0 i v0.8.0, sprzed
   Przeniesień) bez pamięci zleceń, wersja 2 (nigdy w Wydaniu, bez ``overridden``, czasem też bez ``origin_name`` i
@@ -15,7 +17,8 @@
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
   numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis, Kody czynności zlecenia ``tak``
   w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów, i czy ma Wpis w raporcie z błędem tematu, ``faulty``), zdaniem o każdym problemie
-  (``reasons.reason``), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
+  (``reasons.reason``), Wpisem na życzenie przy problemie, przy którym tata może go kliknąć (``request``; plik bez
+  niego czyta się bez przycisku), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
   Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Przy
   problemie raportu z błędem tematu ma jego temat po strażniku reguły danych pracy Centrum (``guarded``, ADR 0025: bez
   wartości ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu (``reasons.subject_fault``), dzień, za który
@@ -54,6 +57,7 @@ from rozliczenia.worker_reports import (
     FaultyDescription,
     Kept,
     Login,
+    MailId,
     ManualDifference,
     MissingVerdict,
     OlderOwnEntries,
@@ -68,9 +72,11 @@ from rozliczenia.worker_reports import (
     RepeatedOrder,
     ReportNote,
     ReportProblem,
+    RequestedEntry,
     UnknownNumber,
     UnknownSender,
     UnreadableSubject,
+    Verdict,
 )
 from rozliczenia.worker_reports.reasons import note, reason, subject_fault
 
@@ -108,6 +114,32 @@ class _Move(_Record):
     added: bool = False
 
 
+class _Requested(_Record):
+    mail: str
+    worker: str
+    day: date
+    number: str
+    verdict: Literal["tak", "nie"]
+    activities: str
+    at: datetime
+
+    @classmethod
+    def of(cls, decision: RequestedEntry) -> _Requested:
+        return cls(
+            mail=decision.mail.digest,
+            worker=decision.worker,
+            day=decision.day,
+            number=decision.number,
+            verdict=decision.verdict.value,
+            activities=decision.activities,
+            at=decision.at,
+        )
+
+    def decision(self) -> RequestedEntry:
+        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
+        return RequestedEntry(*key, Verdict(self.verdict), self.activities, self.at)
+
+
 class _StateV1(_Record):
     """Plik pamięci sprzed Przeniesień: czyta go tylko ``load``."""
 
@@ -141,6 +173,7 @@ class _State(_Record):
     rollout: date
     own: list[_Own]
     moves: list[_Move]
+    requested: list[_Requested] = []
 
 
 class _AnyState(RootModel[Annotated[_StateV1 | _StateV2 | _StateV3 | _State, Field(discriminator="schema_version")]]):
@@ -199,6 +232,19 @@ class _FaultySubject(_Record):
     arrived: datetime
 
 
+class _Offer(_Record):
+    """Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót maila, Wykonawca, dzień, numer, czynności),
+    i co się wpisze (``successful`` z tymi czynnościami do zlecenia z dnia ``order_day``)."""
+
+    mail: str
+    worker: str
+    day: date
+    number: str
+    activities: str
+    successful: Literal["tak", "nie"]
+    order_day: date
+
+
 class _Problem(_Record):
     day: date
     worker: str | None
@@ -206,6 +252,7 @@ class _Problem(_Record):
     reason: str
     sender: str | None
     difference: _Kept | None
+    request: _Offer | None = None
     faulty_subject: _FaultySubject | None = None
 
 
@@ -277,11 +324,32 @@ class ShownFaultySubject:
 
 
 @dataclass(frozen=True)
+class ShownOffer:
+    """Wpis na życzenie przy problemie z ostatniego kliknięcia: Wpis, przy którym tata klika (skrót maila, Wykonawca,
+    dzień, numer i czynności), i co się wpisze: ``tak`` albo ``nie`` (``successful``) z tymi czynnościami do zlecenia z
+    dnia ``order_day``."""
+
+    mail: str
+    worker: str
+    day: date
+    number: str
+    activities: str
+    successful: Verdict
+    order_day: date
+
+    def decision(self, at: datetime) -> RequestedEntry:
+        """Decyzja taty z kliknięcia w chwili ``at``."""
+
+        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
+        return RequestedEntry(*key, self.successful, self.activities, at)
+
+
+@dataclass(frozen=True)
 class ShownProblem:
     """Problem z ostatniego kliknięcia w widoku Raporty: dzień i Wykonawca, przy którym stoi (``None``: nieznany
-    nadawca), numer zlecenia, jeśli problem go ma, zdanie dla taty, adres nieznanego nadawcy i komórka różnicy z ręczną
-    wartością, przy której tata może kliknąć „Zostaw moją”, a przy raporcie z błędem tematu jego temat, rodzaj błędu,
-    dzień i chwila przyjścia (``faulty_subject``)."""
+    nadawca), numer zlecenia, jeśli problem go ma, zdanie dla taty, adres nieznanego nadawcy, komórka różnicy z ręczną
+    wartością, przy której tata może kliknąć „Zostaw moją”, przy raporcie z błędem tematu jego temat, rodzaj błędu,
+    dzień i chwila przyjścia (``faulty_subject``) i Wpis na życzenie, który tata może kliknąć (``request``)."""
 
     day: date
     worker: str | None
@@ -290,6 +358,7 @@ class ShownProblem:
     sender: str | None
     difference: Kept | None
     faulty_subject: ShownFaultySubject | None
+    request: ShownOffer | None = None
 
 
 @dataclass(frozen=True)
@@ -402,9 +471,14 @@ class FileReportState:
             memory = OwnEntries(entries, moves)
         except (ValidationError, ValueError) as error:
             raise StateUnreadable from error
-        return SavedState(state.rollout, memory if isinstance(state, _State) else OlderOwnEntries(memory), self.kept())
+        requested = frozenset(found.decision() for found in (state.requested if isinstance(state, _State) else ()))
+        return SavedState(
+            state.rollout, memory if isinstance(state, _State) else OlderOwnEntries(memory), self.kept(), requested
+        )
 
-    def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
+    def save_memory(
+        self, written: CellsWritten, rollout: date, memory: OwnEntries, requested: frozenset[RequestedEntry]
+    ) -> bool:
         own = [
             _Own(
                 number=entry.key.number,
@@ -429,7 +503,16 @@ class FileReportState:
             )
             for move in sorted(memory.moves, key=lambda move: (move.day, move.number))
         ]
-        return self.memory.write(_State(schema_version=_STATE_VERSION, rollout=rollout, own=own, moves=moves))
+        decisions = [
+            _Requested.of(decision)
+            for decision in sorted(
+                requested,
+                key=lambda decision: (decision.day, decision.worker, decision.number, decision.mail.digest, decision.at),
+            )
+        ]
+        return self.memory.write(
+            _State(schema_version=_STATE_VERSION, rollout=rollout, own=own, moves=moves, requested=decisions)
+        )
 
     def save_result(self, written: CellsWritten, result: ClickResult) -> None:
         workers = [
@@ -503,6 +586,7 @@ class FileReportState:
                     None
                     if (faulty := problem.faulty_subject) is None
                     else ShownFaultySubject(faulty.subject, faulty.fault, faulty.day, faulty.arrived),
+                    None if problem.request is None else _shown_offer(problem.request),
                 )
                 for problem in result.problems
             ),
@@ -551,6 +635,18 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
     )
 
 
+def _shown_offer(offer: _Offer) -> ShownOffer:
+    return ShownOffer(
+        offer.mail,
+        offer.worker,
+        offer.day,
+        offer.number,
+        offer.activities,
+        Verdict(offer.successful),
+        offer.order_day,
+    )
+
+
 def _note(found: ReportNote) -> _Note:
     """Informacja w pliku wyniku: dzień i Wykonawca kafelka, numer zlecenia i zdanie dla taty, bez treści maili."""
 
@@ -578,6 +674,25 @@ def _problem(problem: ReportProblem, forbidden: ForbiddenValues) -> _Problem:
             )
         case UnknownSender(sender=sender, day=day):
             return _Problem(day=day, worker=None, number=None, reason=said, sender=sender.shown(), difference=None)
+        case MissingVerdict(requestable=offered) if offered is not None:
+            offer = _Offer(
+                mail=offered.mail.digest,
+                worker=problem.worker,
+                day=problem.day,
+                number=problem.number,
+                activities=offered.activities,
+                successful=offered.verdict.value,
+                order_day=offered.order_day,
+            )
+            return _Problem(
+                day=problem.day,
+                worker=problem.worker,
+                number=problem.number,
+                reason=said,
+                sender=None,
+                difference=None,
+                request=offer,
+            )
         case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber() | FaultyDescription():
             return _Problem(
                 day=problem.day, worker=problem.worker, number=problem.number, reason=said, sender=None, difference=None

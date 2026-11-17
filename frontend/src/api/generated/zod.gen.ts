@@ -84,6 +84,7 @@ export const zApiTiming = z.object({
         'startReportEntering',
         'getReportsView',
         'keepManualValue',
+        'enterOnRequest',
         'getSettlementMailing',
         'previewSettlementMails',
         'sendSettlementMail',
@@ -1611,16 +1612,35 @@ export const zReportsOrder = z.object({
 });
 
 /**
+ * RequestedCell
+ *
+ * Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
+ * dzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+ * ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu.
+ */
+export const zRequestedCell = z.object({
+    mail: z.string(),
+    number: z.string(),
+    day: z.iso.date(),
+    worker: z.string(),
+    activities: z.string(),
+    successful: z.enum(['tak', 'nie']),
+    order_day: z.iso.date()
+});
+
+/**
  * ReportsProblem
  *
  * Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
- * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,
- * gdy to on jest problemem (``faulty_subject``).
+ * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), Wpis na życzenie, przy
+ * którym stoi jego przycisk (``request``; ``None``: przycisku nie ma), i raport z błędem tematu, gdy to on jest
+ * problemem (``faulty_subject``).
  */
 export const zReportsProblem = z.object({
     reason: z.string(),
     number: z.string().nullable(),
     keep: zKeptCell.nullable(),
+    request: zRequestedCell.nullable(),
     faulty_subject: zReportsFaultySubject.nullable()
 });
 
@@ -3854,6 +3874,20 @@ export const zKeepManualValueBody = zKeptCell;
  * Successful Response
  */
 export const zKeepManualValueResponse = zReportsView;
+
+export const zEnterOnRequestBody = zRequestedCell;
+
+/**
+ * Response Enteronrequest
+ *
+ * Successful Response
+ */
+export const zEnterOnRequestResponse = z.discriminatedUnion('state', [
+    zRunIdle,
+    zRunRunning,
+    zRunAwaitingDecision,
+    zRunFinished
+]);
 
 /**
  * Response Startreportentering

@@ -1,7 +1,15 @@
 import * as React from "react"
 
-import { decideRun, startIntermax, startReportEntering, startRun, watchRunEvents, type RunView } from "@/api/centrum"
-import type { DecisionAnswer, RunEvent, RunInfo, RunMode, RunRequest } from "@/api/generated"
+import {
+  decideRun,
+  enterOnRequest,
+  startIntermax,
+  startReportEntering,
+  startRun,
+  watchRunEvents,
+  type RunView,
+} from "@/api/centrum"
+import type { DecisionAnswer, RequestedCell, RunEvent, RunInfo, RunMode, RunRequest } from "@/api/generated"
 import { toast } from "@/components/ui/toast"
 import { useAction } from "@/lib/action"
 
@@ -11,8 +19,11 @@ export type RunDraft = Pick<RunRequest, "process" | "period">
 /** Proces bez okresu, który bierze tylko Ustawienia Centrum i startuje własną operacją kontraktu. */
 type ProcessWithoutPeriod = "intermax" | "report_entering"
 
-/** Start Uruchomienia: proces z okresem albo proces bez okresu (Uporządkowanie INTERMAX, Wpisanie raportów). */
-export type RunStart = RunRequest | { process: ProcessWithoutPeriod }
+/**
+ * Start Uruchomienia: proces z okresem, proces bez okresu (Uporządkowanie INTERMAX, Wpisanie raportów) albo Wpis na
+ * życzenie, czyli Wpisanie raportów z decyzją taty przy Wpisie `request`.
+ */
+export type RunStart = RunRequest | { process: ProcessWithoutPeriod } | { process: "report_entering"; request: RequestedCell }
 
 export function rerunOf(run: RunInfo, mode: RunMode): RunStart {
   switch (run.process) {
@@ -26,6 +37,14 @@ export function rerunOf(run: RunInfo, mode: RunMode): RunStart {
 
 function startWithoutPeriod(process: ProcessWithoutPeriod) {
   return process === "intermax" ? startIntermax() : startReportEntering()
+}
+
+function startOf(request: RunStart) {
+  if ("period" in request) {
+    return startRun(request)
+  }
+
+  return "request" in request ? enterOnRequest(request.request) : startWithoutPeriod(request.process)
 }
 
 type RunsContextValue = {
@@ -136,7 +155,7 @@ export function RunsProvider({ children }: { children: React.ReactNode }) {
   // zapisu mógłby się nawet wykonać. Odmowa pierwszego kliknięcia (np. Uruchomienie z innej karty) pokazuje się jak dotąd.
   const starting = useAction(async (request: RunStart) => {
     const before = shownRun(latest.current)
-    const accepted = shownRun(await ("period" in request ? startRun(request) : startWithoutPeriod(request.process)))
+    const accepted = shownRun(await startOf(request))
 
     setDraft(null)
 

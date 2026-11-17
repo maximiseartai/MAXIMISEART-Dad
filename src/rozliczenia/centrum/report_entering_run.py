@@ -17,20 +17,25 @@ informacjami o Przeniesieniach zleceń i zleceniami dnia. Problemy łączy przy 
 różnica, przy której tata kliknął „Zostaw moją” z tą samą treścią Wpisu, znika z widoku od razu, także gdy wynik
 pochodzi z kliknięcia sprzed decyzji, a jej zlecenie jest wtedy wpisane. „Zostaw moją” zapisuje decyzję w pliku decyzji,
 nigdy w INTERMAX, i tylko przy różnicy z wyniku ostatniego kliknięcia.
+
+Wpis na życzenie (ADR 0041) startuje tylko przy Wpisie, który wynik ostatniego kliknięcia ma z przyciskiem: jedno
+Uruchomienie Wpisania raportów z decyzją taty na wejściu (``ReportEnteringParts.requested``) i chwilą kliknięcia z
+zegara Centrum. Przy INTERMAX otwartym w Excelu i w czasie innego Uruchomienia odmawia jednym zdaniem, zanim cokolwiek
+zapisze.
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Final
 
 from fastapi import APIRouter
 
-from rozliczenia import onedrive_conflicts
+from rozliczenia import onedrive_conflicts, workbook_files
 from rozliczenia import report_entering_messages as messages
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.catalog import Catalog, declaration_of
@@ -49,7 +54,14 @@ from rozliczenia.centrum.process_kind import (
     start_from_settings,
 )
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.report_entering_state import FileReportState, ShownNote, ShownProblem, ShownResult, ShownWorker
+from rozliczenia.centrum.report_entering_state import (
+    FileReportState,
+    ShownNote,
+    ShownOffer,
+    ShownProblem,
+    ShownResult,
+    ShownWorker,
+)
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia.centrum.settings.files import Good, Read, Unreadable, usable
@@ -59,7 +71,17 @@ from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
 from rozliczenia.run_context import RunContexts
 from rozliczenia.worker_list import WorkerList
-from rozliczenia.worker_reports import Kept, Login, OrderKey, OrderNumber, OrderState, SenderAddress, WorkerAddresses
+from rozliczenia.worker_reports import (
+    Kept,
+    Login,
+    OrderKey,
+    OrderNumber,
+    OrderState,
+    RequestedEntry,
+    SenderAddress,
+    Verdict,
+    WorkerAddresses,
+)
 
 _KIND: Final = declaration_of("report_entering")
 _UNREADABLE: Final[dict[int | str, dict[str, object]]] = {500: {"model": common_contract.Problem}}
@@ -104,9 +126,10 @@ class ReportEnteringEntry:
             last=last,
         )
 
-    def prepare(self) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień Centrum i Konfiguracji; ``Refusal``, gdy INTERMAX albo folder okresów nie jest
-        wskazany albo pliku Folderów nie da się teraz przeczytać."""
+    def prepare(self, requested: RequestedEntry | None = None) -> PreparedRun[Any, Any]:
+        """Wejście procesu z Ustawień Centrum i Konfiguracji, z decyzją taty Wpisu na życzenie ``requested`` (``None``:
+        „Wpisz raporty z maili”); ``Refusal``, gdy INTERMAX albo folder okresów nie jest wskazany, pliku Folderów nie da
+        się teraz przeczytać albo Wpis na życzenie zastałby INTERMAX otwarty w Excelu."""
 
         snapshot = self.settings.snapshot()
         chosen = _chosen(snapshot)
@@ -119,7 +142,12 @@ class ReportEnteringEntry:
         start = start_from_settings(_KIND, snapshot, paths, period=None, dry_run=False)
         if not start.settings.worker_list().addresses().logins:
             raise refusal.report_entering_without_addresses()
-        return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
+        if requested is None:
+            return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
+        if workbook_files.is_open_in_excel(chosen["register"]):
+            raise refusal.request_while_open_in_excel()
+        parts = replace(self.parts, reports=replace(self.parts.report_entering(), requested=requested))
+        return self.catalog.prepared(self.key, start, parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:
         """Widok Raporty całego okna z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”, z Przypomnieniami o raporcie
@@ -146,6 +174,27 @@ class ReportEnteringEntry:
         except (StateUnreadable, DecisionsUnreadable) as error:
             raise refusal.reports_unreadable() from error
         return self.view()
+
+    def on_request(self, cell: report_entering_contract.RequestedCell) -> PreparedRun[Any, Any]:
+        """Wpis na życzenie przy Wpisie ``cell`` z wyniku ostatniego kliknięcia: Uruchomienie Wpisania raportów z decyzją
+        taty z chwilą kliknięcia; ``Refusal``, gdy wynik nie ma tego Wpisu z przyciskiem."""
+
+        offer = ShownOffer(
+            cell.mail,
+            cell.worker,
+            cell.day,
+            cell.number,
+            cell.activities,
+            Verdict(cell.successful),
+            cell.order_day,
+        )
+        try:
+            shown = self.files.shown()
+        except StateUnreadable as error:
+            raise refusal.reports_unreadable() from error
+        if shown is None or offer not in {problem.request for problem in shown.problems}:
+            raise refusal.request_gone()
+        return self.prepare(offer.decision(self.parts.now()))
 
     def _missing(self) -> list[refusal.ReportEnteringFile]:
         """Pliki w ``config``, których nie ma: bez nich kliknięcie i tak by się nie udało."""
@@ -309,6 +358,20 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
             reported=difference.reported,
         )
     )
+    offer = problem.request
+    request = (
+        None
+        if offer is None
+        else report_entering_contract.RequestedCell(
+            mail=offer.mail,
+            number=offer.number,
+            day=offer.day,
+            worker=offer.worker,
+            activities=offer.activities,
+            successful=offer.successful.value,
+            order_day=offer.order_day,
+        )
+    )
     found = problem.faulty_subject
     faulty = (
         None
@@ -318,7 +381,7 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
         )
     )
     return report_entering_contract.ReportsProblem(
-        reason=problem.reason, number=problem.number, keep=keep, faulty_subject=faulty
+        reason=problem.reason, number=problem.number, keep=keep, request=request, faulty_subject=faulty
     )
 
 
@@ -348,5 +411,9 @@ def report_entering_router(
     @router.post("/keep", operation_id="keepManualValue", responses={**NOT_FOUND_OR_CONFLICT, **_UNREADABLE})
     def keep(cell: report_entering_contract.KeptCell) -> report_entering_contract.ReportsView:
         return entry.keep(cell)
+
+    @router.post("/request", operation_id="enterOnRequest", responses={**NOT_FOUND_OR_CONFLICT, **_UNREADABLE})
+    def on_request(cell: report_entering_contract.RequestedCell) -> runs_contract.RunView:
+        return host.start(entry.on_request(cell))
 
     return router

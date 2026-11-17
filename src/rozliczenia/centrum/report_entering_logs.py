@@ -47,6 +47,7 @@ from rozliczenia.worker_reports import (
     ReportEntry,
     ReportProblem,
     ReportSubject,
+    RequestedEntry,
     SubjectFault,
     UnknownNumber,
     UnknownSender,
@@ -401,6 +402,37 @@ class LoggedAdded(_Record):
     completed: str | None
 
 
+class LoggedRequestedEntry(_Record):
+    """Decyzja taty Wpisu na życzenie (``RequestedEntry``, ADR 0041): skrót maila, Wykonawca i dzień, przy którym tata
+    widzi Wpis,
+    numer z treści maila i czynności Wpisu (pod strażnikiem jak w ``LoggedReportEntry``), ``tak`` albo ``nie``, które
+    tata wpisał, i chwila kliknięcia."""
+
+    mail: str
+    worker: str
+    day: date
+    number: str
+    verdict: Literal["tak", "nie"]
+    activities: str
+    at: datetime
+
+    @classmethod
+    def of(cls, decision: RequestedEntry) -> LoggedRequestedEntry:
+        return cls(
+            mail=decision.mail.digest,
+            worker=decision.worker,
+            day=decision.day,
+            number=decision.number,
+            verdict=decision.verdict.value,
+            activities=decision.activities,
+            at=decision.at,
+        )
+
+    def decision(self) -> RequestedEntry:
+        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
+        return RequestedEntry(*key, Verdict(self.verdict), self.activities, self.at)
+
+
 class LoggedOrderless(_Record):
     """Numer z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu bez zlecenia, także obok zlecenia tego
     numeru (``report_entering.Orderless``): arkusz i numer jak w ``LoggedOwnEntry``, a ``day`` dzień zlecenia, gdy każdy
@@ -457,7 +489,9 @@ class LoggedReports(_Record):
     ``moves`` Przeniesienia zleceń do zapisu, ``moves_before`` zapamiętane miejsca zleceń numerów z Wpisami tego
     kliknięcia (starsze Logi nie mają obu), ``added`` Zlecenia dopisane z raportu do zapisu, ``orderless`` numery z
     Wpisem tego kliknięcia z przeczytanych wierszy INTERMAX bez zlecenia (Logi sprzed Zleceń dopisanych z raportu nie
-    mają obu), a ``written`` liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
+    mają obu), ``requested`` decyzje taty Wpisu na życzenie z pamięci i z kliknięcia Wpisu na życzenie,
+    które startuje to Uruchomienie (Logi sprzed Wpisu na życzenie ich nie mają), a
+    ``written`` liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
     """
 
     today: date
@@ -474,6 +508,7 @@ class LoggedReports(_Record):
     moves_before: list[LoggedOwnMove] = []
     added: list[LoggedAdded] = []
     orderless: list[LoggedOrderless] = []
+    requested: list[LoggedRequestedEntry] = []
     written: int | None
 
     @classmethod
@@ -511,6 +546,7 @@ class LoggedReports(_Record):
             orderless=[
                 LoggedOrderless(sheet=found.sheet, number=int(found.number), day=found.day) for found in facts.orderless
             ],
+            requested=[LoggedRequestedEntry.of(decision) for decision in facts.requested],
             written=written,
         )
 
@@ -531,8 +567,8 @@ class LoggedReports(_Record):
                 return None
 
     def replay(self) -> EnteringReplay | Unreplayable:
-        """Wejście kliknięcia z Logów dla odtworzenia Uruchomienia: maile, pamięć wpisów i decyzje „Zostaw moją” sprzed
-        kliknięcia i numery bez zlecenia, z zastrzeżeniami, a ``Unreplayable``, gdy Logi nie wyznaczają numeru zlecenia
+        """Wejście kliknięcia z Logów dla odtworzenia Uruchomienia: maile, pamięć wpisów, decyzje „Zostaw moją” sprzed
+        kliknięcia, decyzje Wpisu na życzenie i numery bez zlecenia, z zastrzeżeniami, a ``Unreplayable``, gdy Logi nie wyznaczają numeru zlecenia
         Wpisu albo pamięci."""
 
         masked = [entry.number for entry in _logged_entries(self) if not _digits(entry.number)]
@@ -591,7 +627,8 @@ class LoggedReports(_Record):
 class EnteringReplay:
     """Wejście kliknięcia Wpisania raportów z Logów: dzień kliknięcia, tokeny okresów zamkniętych, maile, których
     Skrzynka raportów nie umiała przeczytać, przeczytane maile po kolei, numer adresu każdego maila spoza listy adresów
-    po kolei, pamięć wpisów i decyzje „Zostaw moją” sprzed kliknięcia, numery z Wpisem z wierszy INTERMAX bez
+    po kolei, pamięć wpisów, decyzje „Zostaw moją” sprzed kliknięcia i decyzje Wpisu na życzenie (w
+    ``SavedState.requested`` także decyzja z kliknięcia Wpisu na życzenie), numery z Wpisem z wierszy INTERMAX bez
     zlecenia i zastrzeżenia odtworzenia, które z nich wynikają."""
 
     today: date
@@ -707,7 +744,8 @@ def _saved(entering: LoggedReports) -> SavedState:
         )
         for logged in entering.moves_before
     )
-    return SavedState(entering.rollout_before, OwnEntries(entries, moves), kept)
+    requested = frozenset(logged.decision() for logged in entering.requested)
+    return SavedState(entering.rollout_before, OwnEntries(entries, moves), kept, requested)
 
 
 def _orderless(entering: LoggedReports) -> list[ReplayedOrderless]:
