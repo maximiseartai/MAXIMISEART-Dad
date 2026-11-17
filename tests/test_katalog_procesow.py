@@ -414,6 +414,14 @@ _BRAK_W_STARCIE: Final = {
 }
 
 
+_PELNE: Final = ustawienia_z_wydania(WorkerList(()))
+_BEZ_USTAWIENIA: Final = {
+    "workers": dataclasses.replace(_PELNE, workers=None),
+    "quantity_rules": dataclasses.replace(_PELNE, quantity_rules=None),
+    "activity_legend": dataclasses.replace(_PELNE, activity_legend=None),
+}
+
+
 def _liczy_w_starcie(kind: ProcessKind[Any, Any]) -> tuple[str, ...]:
     return tuple(ustawienie for ustawienie in get_args(SettingNeed) if ustawienie in kind.needs)
 
@@ -433,7 +441,7 @@ def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospoda
         {need: Path(need) for need in kind.path_needs},
         PERIOD if "period" in kind.needs else None,
         False,
-        settings=dataclasses.replace(ustawienia_z_wydania(WorkerList(())), **{ustawienie: None}),
+        settings=_BEZ_USTAWIENIA[ustawienie],
     )
 
     with pytest.raises(ValueError, match=f"^{kind.title} {_BRAK_W_STARCIE[ustawienie]}$"):
@@ -459,7 +467,7 @@ def test_uruchomienie_gotowe_do_startu_ma_tylko_ustawienia_ze_startu_ktorymi_pro
     startu bez zmian: Logi czytają je z ``PreparedRun.settings``."""
 
     ostrzezenia = (diagnosis_messages.worker_list_last_good("zdanie"),)
-    pelne = dataclasses.replace(ustawienia_z_wydania(WorkerList(())), warnings=ostrzezenia)
+    pelne = dataclasses.replace(_PELNE, warnings=ostrzezenia)
     start = Start({need: Path(need) for need in kind.path_needs}, PERIOD if "period" in kind.needs else None, False, settings=pelne)
 
     czesci = dataclasses.replace(_ATRAPA, reports=ReportEnteringParts(FolderInbox(Path("skrzynka")), ReportStateInMemory()))
