@@ -367,7 +367,7 @@ def _rules_limits(record: RunLog, kind: ProcessKind[Any, Any]) -> list[Limit]:
     danych, kończą odtworzenie: wynik z innymi regułami nic by nie znaczył."""
 
     logged = record.quantity_rules
-    if not kind.quantity_rules:
+    if "quantity_rules" not in kind.needs:
         return []
     if logged is None:
         return [
@@ -397,7 +397,7 @@ def _legend_limits(record: RunLog, kind: ProcessKind[Any, Any]) -> list[Limit]:
     danych, kończy odtworzenie."""
 
     logged = record.activity_legend
-    if not kind.activity_legend:
+    if "activity_legend" not in kind.needs:
         return []
     if logged is None:
         return [

@@ -31,6 +31,7 @@ from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, 
 from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
 from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings_at_start import SettingNeed, unreadable
 from rozliczenia.client_data import WithoutSubclasses
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
@@ -60,11 +61,12 @@ TemplateNeed = Literal["internal_template", "collective_template", "worker_templ
 ConfigurationNeed = TemplateNeed
 """Plik Konfiguracji (``configuration.ConfigurationFiles``): Wzorzec."""
 PathNeed = Literal["register", "periods_directory", "collective_file", "copies_directory", ConfigurationNeed]
-Need = PathNeed | Literal["period", "workers", "efenix_window", "worker_report_inbox"]
+Need = PathNeed | SettingNeed | Literal["period", "efenix_window", "worker_report_inbox"]
 """Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
 ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
-odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``workers``: Lista Wykonawców (``Start.workers``),
-``efenix_window``: okno efenix gospodarza
+odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``SettingNeed``: Ustawienie ze startu, którym
+proces liczy, w polu ``Start`` o tej samej nazwie (``workers``: Lista Wykonawców, ``quantity_rules``: Reguły ilości,
+``activity_legend``: Legenda czynności), ``efenix_window``: okno efenix gospodarza
 (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
 
 
@@ -95,10 +97,10 @@ class Start:
     gospodarz bez Ustawień Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu
     (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów); ``None``: proces
     jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
-    chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania; ``None`` w Centrum u procesu, który nimi
-    nie liczy (``ProcessKind.quantity_rules``). ``activity_legend``: Legenda czynności tego Uruchomienia, skąd i kiedy
-    jak ``quantity_rules`` (gospodarz bez Ustawień Centrum podaje Legendę czynności z Wydania; ``None`` w Centrum u
-    procesu, który nią nie liczy, ``ProcessKind.activity_legend``). ``warnings``: ostrzeżenia startu na
+    chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania; ``None`` w Centrum, gdy pliku pary
+    nie da się czytać. ``activity_legend``: Legenda czynności tego Uruchomienia, skąd i kiedy jak ``quantity_rules``.
+    Proces, który Ustawieniem ze startu nie liczy (bez jego ``SettingNeed`` w ``ProcessKind.needs``), dostaje je w
+    wejściu i w Logach jako ``None`` (rzut w ``Catalog.prepared``). ``warnings``: ostrzeżenia startu na
     kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla
     maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ``activity_legend``, ani ``warnings``
     nie mają wartości domyślnej, więc każdy gospodarz mówi, skąd je ma.
@@ -145,36 +147,34 @@ def start_from_settings(
 ) -> Start:
     """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
     Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
-    ilości procesu, który nimi liczy, Legendę czynności procesu, który nią liczy, i ostrzeżenia startu. Ścieżki, okres
-    i tryb wybiera gospodarz. Plik pary Reguł ilości albo Legendy czynności bez odczytu to ``None``: odmowę dla taty
-    daje wcześniej karta startu z tej samej migawki (``ProcessKind.required_paths``), a start bez nich to błąd
-    gospodarza w ``Catalog.prepared``."""
+    ilości, Legendę czynności i ostrzeżenia startu; Ustawienia, którymi proces nie liczy, odrzuca ``Catalog.prepared``.
+    Ścieżki, okres i tryb wybiera gospodarz. Plik pary Reguł ilości albo Legendy czynności bez odczytu to ``None``:
+    odmowę dla taty daje wcześniej karta startu z tej samej migawki (``ProcessKind.required_paths``), a start bez nich
+    procesu, który nimi liczy, to błąd gospodarza w ``Catalog.prepared``."""
 
     rules, legend = settings.quantity_rules, settings.activity_legend
     return Start(
         paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
         workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
-        quantity_rules=rules if kind.quantity_rules and isinstance(rules, QuantityRules) else None,
-        activity_legend=legend if kind.activity_legend and isinstance(legend, ActivityLegend) else None,
+        quantity_rules=None if isinstance(rules, UnreadableFile) else rules,
+        activity_legend=None if isinstance(legend, UnreadableFile) else legend,
         warnings=_start_warnings(settings, kind.needs),
     )
 
 
 def chosen_settings(
-    settings: SettingsSnapshot, needed: Sequence[NeededSetting], *, quantity_rules: bool, activity_legend: bool
+    settings: SettingsSnapshot, needed: Sequence[NeededSetting], needs: Sequence[Need]
 ) -> dict[SettingField, Path] | Refusal:
-    """Ścieżki ``needed`` z migawki Ustawień Centrum do startu procesu (``quantity_rules``: proces liczy Regułami
-    ilości, ``activity_legend``: Legendą czynności) albo odmowa startu: plik Folderów, pliku pary Reguł ilości i Listy
-    Urządzeń albo Legendy czynności, którego system nie daje teraz czytać, a potem „Najpierw wskaż …” z nazwami
-    niewskazanych ścieżek."""
+    """Ścieżki ``needed`` z migawki Ustawień Centrum do startu procesu o potrzebach ``needs`` albo odmowa startu: plik
+    Folderów, potem plik Ustawienia ze startu, którym proces liczy (pliki pary Reguł ilości i Listy Urządzeń, Legendy
+    czynności; ``settings_at_start.unreadable``), którego system nie daje teraz czytać, a potem „Najpierw wskaż …” z
+    nazwami niewskazanych ścieżek."""
 
     folders = settings.folders
     if isinstance(folders, UnreadableFile):
         return refusal.settings_file_unreadable(folders.name)
-    if quantity_rules and isinstance(settings.quantity_rules, UnreadableFile):
-        return refusal.settings_file_unreadable(settings.quantity_rules.name)
-    if activity_legend and isinstance(settings.activity_legend, UnreadableFile):
-        return refusal.settings_file_unreadable(settings.activity_legend.name)
+    if (refused := unreadable(settings, needs)) is not None:
+        return refused
     missing = [setting.name for setting in needed if setting.chosen(folders) is None]
     if missing:
         return refusal.first_choose(missing)
@@ -334,9 +334,9 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
     silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
     ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
-    ``None``: proces bez Kontroli ilości. ``quantity_rules``: proces liczy Regułami ilości ze startu (``Start``), więc
-    jego Uruchomienie ma je w Logach (``PreparedRun.quantity_rules``), a odtworzenie z Logów liczy nimi;
-    ``activity_legend`` tak samo z Legendą czynności (``PreparedRun.activity_legend``).
+    ``None``: proces bez Kontroli ilości. Proces, który liczy Ustawieniem ze startu (Listą Wykonawców, Regułami ilości,
+    Legendą czynności), ma jego ``SettingNeed`` w ``needs``, więc jego Uruchomienie ma je w Logach
+    (``PreparedRun.quantity_rules``, ``PreparedRun.activity_legend``), a odtworzenie z Logów liczy nimi.
     """
 
     key: common_contract.ProcessKey
@@ -351,8 +351,6 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     journaled: bool = False
     logs: Callable[[SummaryT | None, object], ProcessLogs] = lambda _summary, _facts: ProcessLogs()
     quantity_check: Callable[[SummaryT], CheckResult] | None = None
-    quantity_rules: bool = False
-    activity_legend: bool = False
 
     def __post_init__(self) -> None:
         """Pierwszy tryb Wyceny to ``DEFAULT_PRICING``: Logi sprzed trybów nie mają trybu, a Wycena biegła wtedy bez
@@ -429,17 +427,13 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     def settings_blocker(self, settings: SettingsSnapshot) -> str | None:
         """Zdanie odmowy startu z Ustawień Centrum (``chosen_settings``) na kartę; ``None``, gdy proces może startować."""
 
-        chosen = chosen_settings(
-            settings, self.settings, quantity_rules=self.quantity_rules, activity_legend=self.activity_legend
-        )
+        chosen = chosen_settings(settings, self.settings, self.needs)
         return chosen.message if isinstance(chosen, Refusal) else None
 
     def required_paths(self, settings: SettingsSnapshot) -> Mapping[SettingField, Path]:
         """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy proces nie może startować."""
 
-        chosen = chosen_settings(
-            settings, self.settings, quantity_rules=self.quantity_rules, activity_legend=self.activity_legend
-        )
+        chosen = chosen_settings(settings, self.settings, self.needs)
         if isinstance(chosen, Refusal):
             raise chosen
         return chosen
@@ -510,7 +504,7 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
     w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
     ``quantity_rules`` i ``activity_legend``: Reguły ilości i Legenda czynności ze startu (``Start``) procesu, który
-    nimi liczy (``ProcessKind.quantity_rules``, ``ProcessKind.activity_legend``; inny ma ``None``), dla Logów
+    nimi liczy (``"quantity_rules"``, ``"activity_legend"`` w ``ProcessKind.needs``; inny ma ``None``), dla Logów
     Uruchomienia,
     ``warnings``: ostrzeżenia startu na kartę i do Logów (``Start.warnings``), ``engine``: silnik z katalogu
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).

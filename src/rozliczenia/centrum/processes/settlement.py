@@ -105,7 +105,7 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     ),
     core=settlement_process.PROCESS,
     default_metrics=SETTLEMENT_METRICS,
-    needs=("collective_file", "workers", "worker_template"),
+    needs=("collective_file", "workers", "worker_template", "quantity_rules", "activity_legend"),
     inputs=_inputs,
     start=PeriodStart(
         creates="Rozliczenia pracowników",
@@ -127,8 +127,6 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     ),
     logs=_logs,
     quantity_check=_quantity_check,
-    quantity_rules=True,
-    activity_legend=True,
 )
 """Przebieg rozliczeń w Centrum. Kliknięcie „Uruchom” jest potwierdzeniem Gotowości Pliku zbiorczego
 (``confirms_readiness``): Centrum nie zgaduje jej z pliku ani nie blokuje startu."""

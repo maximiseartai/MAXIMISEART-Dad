@@ -1375,7 +1375,7 @@ def _quantity(collective: Path, cell: str) -> object:
         workbook.close()
 
 
-# Każdy proces, który liczy Regułami ilości ze startu (``ProcessKind.quantity_rules``), z regułą taty z edytora.
+# Każdy proces, który liczy Regułami ilości ze startu (``"quantity_rules"`` w ``ProcessKind.needs``), z regułą taty z edytora.
 EDITED_RULES_RUNS: dict[str, Callable[[Path], _EditedRulesRun]] = {
     "settlement": _settlement_with_edited_rule,
     "preparation": _preparation_with_edited_rule,
@@ -1383,7 +1383,7 @@ EDITED_RULES_RUNS: dict[str, Callable[[Path], _EditedRulesRun]] = {
 
 
 def test_kazdy_proces_liczacy_regulami_ilosci_ze_startu_ma_tu_uruchomienie_z_regula_z_edytora() -> None:
-    assert set(EDITED_RULES_RUNS) == {kind.key for kind in KINDS if kind.quantity_rules}
+    assert set(EDITED_RULES_RUNS) == {kind.key for kind in KINDS if "quantity_rules" in kind.needs}
 
 
 @pytest.mark.parametrize("process", EDITED_RULES_RUNS)
