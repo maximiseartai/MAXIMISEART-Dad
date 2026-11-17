@@ -7,7 +7,8 @@ i tą samą drogą co praca przypomnień Centrum (``rozliczenia.centrum.report_r
 treść i stopka taty), Ustawienia taty (``centrum-ustawienia.yaml``: INTERMAX i folder okresów), Legendę czynności
 (``legenda-czynnosci.yaml``, bez niego legenda z Wydania), plik dostępu do
 skrzynki raportów (``skrzynka-raportow.txt``), Listę Wykonawców (``wykonawcy.yaml``) i pory, przy których sprawdzała
-praca przypomnień (``przypomnienia-pory.json``: z nich pory „Wysłanych”), potem Pliki zbiorcze okresów, INTERMAX tylko do
+praca przypomnień (``przypomnienia-pory.json``: z nich pory „Wysłanych”) i pamięć Wpisania raportów
+(``wpisanie-raportow-stan.json`` z decyzjami „Zostaw moją”, jak Wpisanie raportów), potem Pliki zbiorcze okresów, INTERMAX tylko do
 odczytu (także otwarty w Excelu), skrzynkę i jej „Wysłane” tylko do odczytu, i pyta rdzeń raportów, które
 przypomnienia należą się w tej chwili: tylko za dni, za które Wykonawca nie przysłał żadnego Raportu wykonawcy, z dniem
 raportu z tego samego odczytu okna co we Wpisaniu raportów (ADR 0041).
@@ -30,7 +31,8 @@ ASCII (polskie słowa bez polskich liter, jak próba IMAP ``tools/proba_skrzynki
 ``pora`` to ``poranna`` albo ``wieczorna`` według pór z Ustawień (domyślnie 8:00–17:00 i 18:00–22:00), albo ``brak``
 (poza porami, domyślnie 17:00–18:00 i noc 22:00–8:00: wtedy przypomnienia nie idą i liczby to zera), ``przypomnienia`` to liczba przypomnień, które praca Centrum wysłałaby teraz, ``wykonawcy`` liczba ich
 Wykonawców, a ``dni`` liczba dni, za które są. Porażka to ``PROBA PRZYPOMNIEN FAIL | <powód>`` (kod 1), każda z
-własnym powodem: przypomnienia wyłączone w Ustawieniach, brak Ustawień taty, pliku dostępu albo adresów, nieczytelny folder okresów albo
+własnym powodem: przypomnienia wyłączone w Ustawieniach, brak Ustawień taty, pliku dostępu albo adresów, nieczytelna
+pamięć Wpisania raportów, nieczytelny folder okresów albo
 INTERMAX (nazwa typu błędu), odrzucone hasło aplikacji albo niedostępna skrzynka przy odczycie skrzynki. Porażka po
 policzeniu przypomnień ma przed powodem te same liczby: brak stopki, adres Wykonawcy w ``--do``, odrzucone hasło
 aplikacji, sieć (nazwa typu błędu) albo inna odmowa Gmaila przy wysyłce. Hasła nie ma w wyniku ani wyjątkach: zna je
@@ -51,14 +53,20 @@ import imaplib
 from pathlib import Path
 import smtplib
 import sys
+import time
 from typing import Final
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
+from rozliczenia.centrum.clock import SYSTEM_CLOCK
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.report_entering_state import FileReportState
 from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders, schedules_in_effect
 from rozliczenia.centrum.settings.owner import UnreadableFile, read_snapshot
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
+from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.client_data import empty_memory
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.worker_report_inbox import (
     INBOX_ACCESS_FILE,
@@ -91,7 +99,8 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
     reminders = snapshot.reminders
     if isinstance(reminders, UnreadableFile):
         return f"{FAIL} | {_not_read(NotRead('plik-bez-odczytu', file=reminders.name))}"
-    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, reminders.schedule), ())
+    in_effect = schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, reminders.schedule)
+    read = due_reminders(now, snapshot, inbox, DadFiles(), in_effect, (), _entering(config).load)
     match read:
         case NotRead():
             return f"{FAIL} | {_not_read(read)}"
@@ -118,6 +127,14 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
             return f"{FAIL} | {counts} | {_unreachable(sent, 'wysylce')}"
 
 
+def _entering(config: Path) -> FileReportState:
+    """Pamięć Wpisania raportów z ``config`` przez ten sam plik i odczyt co w Centrum (``FileReportState``), tylko do
+    odczytu: próba nie zapisuje pamięci, więc dziennik Centrum nie dostaje od niej żadnej linii."""
+
+    log = CentrumLog(tool_files.LOG_PATH, append=lambda _line: None)
+    return FileReportState.of_work(CentrumWork(config, log, SYSTEM_CLOCK, time.sleep, empty_memory()))
+
+
 def _sample(read: DueReminders, reminders: ReminderSettings, now: datetime, target: SenderAddress) -> Reminder:
     """Pierwsze należne przypomnienie z jedynym adresatem ``target``, a bez należnych przypomnienie za wczoraj."""
 
@@ -140,6 +157,8 @@ def _not_read(read: NotRead) -> str:
             return f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"
         case "bez-adresow":
             return "zla albo nieczytelna Lista Wykonawcow"
+        case "pamiec-wpisania":
+            return f"nieczytelna pamiec Wpisania raportow: {read.failure}"
         case "okresy":
             return "nieczytelny folder okresow"
         case "intermax":

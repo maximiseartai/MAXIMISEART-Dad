@@ -4047,6 +4047,8 @@ def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
     [
         pytest.param("bez-ustawien", "ustawienia", id="bez-ustawien"),
         pytest.param("bez-dostepu", "dostep", id="bez-dostepu"),
+        pytest.param("pamiec-wpisania", "pamiec", id="pamiec-wpisania"),
+        pytest.param("pamiec-wpisania", "decyzje", id="decyzje-zostaw-moja"),
         pytest.param("okresy", "okresy", id="okresy"),
         pytest.param("intermax", "intermax", id="intermax"),
     ],
@@ -4055,7 +4057,8 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
     tmp_path: Path, cause: str, broken: str
 ) -> None:
     """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
-    pliku dostępu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
+    pliku dostępu, nieczytelna pamięć Wpisania raportów albo decyzje „Zostaw moją”, bo pusta pamięć zmieniłaby dzień
+    raportu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
     adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
     są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
 
@@ -4066,6 +4069,10 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
         shutil.rmtree(centrum.periods_directory)
     if broken == "intermax":
         centrum.register.write_bytes(b"to nie jest skoroszyt")
+    if broken == "pamiec":
+        _state(centrum).write_text("{", encoding="utf-8")
+    if broken == "decyzje":
+        (centrum.tool.config / REPORT_ENTERING_DECISIONS).write_text("{", encoding="utf-8")
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -4407,3 +4414,34 @@ def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_inte
 
     assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
 
+
+
+def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu(tmp_path: Path) -> None:
+    """ADR 0041 (historia 14), W1 r1 #2059: Jan przysyła 10.11 rano raport za 10.11 z datą 9.11 i dwoma numerami,
+    których INTERMAX jeszcze nie ma, a kliknięcie o 7:00 dopisuje oba Janowi na 9.11. Wieczorem przychodzi ten sam
+    raport z dobrą datą. Kafelek Wpisania z pamięcią tego kliknięcia liczy raport za 9.11 i za 10.11, bo numery dopisane
+    przez Centrum nie robią z tematu pomylonego, więc praca przypomnień, która czyta tę samą pamięć, o 8:30 11.11 nie
+    przypomina Janowi o 10.11; przypomnienie dostaje tylko Anna bez raportu."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
+        raw=(),
+    )
+    body = "40000007 tak inst20m\n40000008 tak spawpg"
+    misdated = report(JAN, "Raport 09.11.2026", body, at=datetime(2026, 11, 10, 6))
+    mailbox = FakeMailbox(outcome=(misdated, report(JAN, "Raport 10.11.2026", body, at=datetime(2026, 11, 10, 20))))
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    clicked = _click_at(centrum, datetime(2026, 11, 10, 7), [misdated])
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(added["number"], added["day"]) for added in _entering(centrum, clicked)["added"]] == [
+        (40000007, "2026-11-09"),
+        (40000008, "2026-11-09"),
+    ]
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]

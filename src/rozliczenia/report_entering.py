@@ -42,7 +42,7 @@ wychodzą z rdzenia do faktów: ``MailRead`` ich nie ma, a adres nieznanego nada
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -312,15 +312,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     clicked_at = inputs.now()
     today = clicked_at.date()
 
-    def read() -> tuple[
-        Window,
-        RegisterFile,
-        tuple[RegisterOrder, ...],
-        frozenset[OrderedDay],
-        tuple[tuple[str, ReadNumber], ...],
-        int,
-        tuple[ReportMail, ...],
-    ]:
+    def read() -> tuple[Window, RegisterFile, RegisterWindow, int, tuple[ReportMail, ...]]:
         closed = closed_periods(inputs.periods_directory, Window.periods(today, saved.rollout))
         window = Window.of(today, saved.rollout, closed)
         outcome = parts.inbox.mails_since(window.first)
@@ -339,26 +331,15 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
                 assert_never(outcome)
         with _stops_unusable():
             register = register_file.read(register_path, files)
-        read = register_window(register, window, addresses, copy=files.copy is not None)
-        return window, register, read.orders, read.ordered_days, read.present, outcome.skipped, outcome.mails
+        intermax = register_window(register, window, addresses, copy=files.copy is not None)
+        return window, register, intermax, outcome.skipped, outcome.mails
 
-    window, register, orders, ordered_days, present, skipped, mails = phases.read(read)
+    window, register, intermax, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
-        remembered = saved.memory.upgraded(orders) if isinstance(saved.memory, OlderOwnEntries) else saved.memory
-        found = enter_reports(
-            ReportInputs(
-                mails=mails,
-                addresses=addresses,
-                orders=orders,
-                window=window,
-                memory=remembered,
-                kept=saved.kept,
-                ordered_days=ordered_days,
-                present=tuple(read for _, read in present),
-                legend=inputs.legend,
-            )
-        )
+        given = report_inputs(window, intermax, mails, addresses, saved, inputs.legend)
+        remembered = given.memory
+        found = enter_reports(given)
         reported = {
             OrderKey(entry.number, read.day, read.worker)
             for read in found.mails
@@ -380,7 +361,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
             )
         )
         closed = tuple(period.token for period in Window.periods(today, saved.rollout) if period.token in window.closed)
-        orderless = _orderless(present, orders, numbers, window.start)
+        orderless = _orderless(intermax.present, intermax.orders, numbers, window.start)
         planned = EnteringFacts(
             window.today,
             saved.rollout,
@@ -583,6 +564,34 @@ def register_window(register: RegisterFile, window: Window, workers: WorkerAddre
         _register_orders(register, window.start, copy=copy, workers=workers),
         _ordered_days(register, window.start),
         _present(register, window.numbers_since),
+    )
+
+
+def report_inputs(
+    window: Window,
+    intermax: RegisterWindow,
+    mails: Sequence[ReportMail],
+    addresses: WorkerAddresses,
+    saved: SavedState,
+    legend: ActivityLegend,
+) -> ReportInputs:
+    """Jedyne wejście odczytu okna rdzenia raportów, to samo dla Wpisania raportów i Przypomnień o raporcie: INTERMAX
+    okna z ``register_window`` i pamięć Wpisania raportów z ``ReportState.load`` (``saved``; pamięć z pliku sprzed wersji
+    4 zamieniona przy odczytanych zleceniach, ``OlderOwnEntries.upgraded``). Dzień raportu zależy od pamięci: numer
+    dopisany przez Centrum nie robi z tematu pomylonego, a zlecenie po Przeniesieniu ma w rdzeniu dzień sprzed niego,
+    więc obie operacje liczą ten sam dzień raportu tylko z tej samej pamięci."""
+
+    memory = saved.memory.upgraded(intermax.orders) if isinstance(saved.memory, OlderOwnEntries) else saved.memory
+    return ReportInputs(
+        mails=mails,
+        addresses=addresses,
+        orders=intermax.orders,
+        window=window,
+        memory=memory,
+        kept=saved.kept,
+        ordered_days=intermax.ordered_days,
+        present=tuple(read for _, read in intermax.present),
+        legend=legend,
     )
 
 
