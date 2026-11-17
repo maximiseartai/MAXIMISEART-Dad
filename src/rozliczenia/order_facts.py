@@ -26,7 +26,7 @@ from openpyxl.styles.fills import Fill, PatternFill
 from openpyxl.utils import column_index_from_string, get_column_letter
 
 from .activity_legend import AMOUNT_COLUMN, FILL_COLUMNS, FillColour
-from .client_data import shown
+from .tool_entry import description
 from .collective_layout import QUANTITY_LETTERS
 from .register_columns import ACTIVITIES, COMPLETED, CONTRACT, DATE, DEVICES, Column
 from .quantity_engine import OrderContent
@@ -87,7 +87,7 @@ def collective_orders(header: Mapping[str, int], rows: Sequence[DataRow]) -> Col
         OrderFacts(
             None if content.started is None else content,
             _quantities(row),
-            _completed(_value(row, completed)),
+            description(_value(row, completed)),
             tata_value(row.value(AMOUNT_COLUMN)),
             _fills(row),
         )
@@ -154,10 +154,6 @@ def _number_text(text: str) -> TataValue:
 def _quantities(row: DataRow) -> dict[str, TataValue]:
     values = {letter: tata_value(row.value(letter)) for letter in QUANTITY_LETTERS}
     return {letter: value for letter, value in values.items() if value != 0}
-
-
-def _completed(cell: object) -> str:
-    return "" if is_blank(cell) else shown(cell)
 
 
 def _fills(row: DataRow) -> Mapping[str, FillColour]:

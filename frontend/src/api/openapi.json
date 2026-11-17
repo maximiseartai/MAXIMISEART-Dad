@@ -5143,7 +5143,7 @@
           "for_tata"
         ],
         "title": "DescriptionRows",
-        "description": "Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła\nLegenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe."
+        "description": "Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z Kodami czynności bez Błędu opisu, które\nwypełniła Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe."
       },
       "DeviceComponent": {
         "properties": {
@@ -6769,7 +6769,7 @@
           "cells"
         ],
         "title": "LegendPreviewRow",
-        "description": "Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis\ntechnika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z samych kodów, powody Błędu\nopisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej."
+        "description": "Wiersz danych, w którym po zmianie legenda da inaczej niż wpisał tata: okres, numer wiersza Pliku zbiorczego, opis\ntechnika (``CZYNNOŚCI ZREALIZOWANE``) po strażniku reguły danych, Kody czynności z opisu z kodami bez Błędu opisu,\npowody Błędu opisu bez tekstu technika (puste bez błędu) i komórki różne od taty. Bez adresu, numeru zlecenia i daty dziennej."
       },
       "LegendPreviewValue": {
         "properties": {
@@ -10007,6 +10007,17 @@
               "problem"
             ],
             "title": "State"
+          },
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Codes"
+          },
+          "no_code": {
+            "type": "boolean",
+            "title": "No Code"
           }
         },
         "additionalProperties": false,
@@ -10015,10 +10026,12 @@
           "number",
           "successful",
           "activities",
-          "state"
+          "state",
+          "codes",
+          "no_code"
         ],
         "title": "ReportsOrder",
-        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez\nżadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``)."
+        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez\nżadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem."
       },
       "ReportsProblem": {
         "properties": {

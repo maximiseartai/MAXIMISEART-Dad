@@ -417,9 +417,9 @@ ZNANE_LUKI_TRESCI_Z_WYDANIA = {
         "def foldery(folders: FolderSettings | UnreadableFile) -> FolderSettings:\n"
         "    return FolderSettings() if isinstance(folders, UnreadableFile) else folders\n"
     ),
-    "zakaz zna tylko nazwy modułów, nie pola obiektu: pole widoku właściciela z treścią z Wydania": (
+    "zakaz zna tylko nazwy modułów, nie pola obiektu: pole widoku właściciela do pokazania w odczycie, który liczy": (
         "from rozliczenia.centrum.settings.owner import CentrumSettings\nfrom rozliczenia.quantity_engine import QuantityRules\n\n\n"
-        "def reguly(settings: CentrumSettings) -> QuantityRules:\n    return settings.quantity_rules().rules\n"
+        "def reguly(settings: CentrumSettings) -> QuantityRules:\n    return settings.quantity_rules().shown\n"
     ),
     "zakaz zna tylko nazwy modułów, nie pola obiektu: wartość domyślna opisu pliku Ustawień": (
         "from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL\n\nMAIL = SETTLEMENT_MAIL.default\n"
@@ -449,7 +449,7 @@ def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_pat
     | część treści Przypomnień: ``DEFAULT_SCHEDULE``, ``DEFAULT_TEXT`` | łapie | ``SAMPLES`` |
     | literał w gałęzi unii: ``"" if isinstance(reminders, UnreadableFile) else …`` (#2029 r1 W1) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | konstruktor z wartościami domyślnymi: ``FolderSettings()`` (#1931 r1 D2) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
-    | pole widoku właściciela z treścią z Wydania: ``settings.quantity_rules().rules`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | pole widoku do pokazania w odczycie, który liczy: ``settings.quantity_rules().shown`` (``.rules`` to unia z ``UnreadableFile``: mypy) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | refleksja po nazwie: ``getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | ``# noqa: TID251`` na linii importu | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |

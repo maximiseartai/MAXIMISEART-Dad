@@ -3,7 +3,7 @@ powodu, same liczby i kody.
 
 Plik zbiorczy powstaje z Przygotowania pliku zbiorczego z legendą z Wydania na syntetycznym Rejestrze i Wzorcach w
 kształcie Wzorców taty, a potem „tata” zmienia w nim kilka komórek. Oczekiwane wartości legendy pochodzą z maila taty z
-15.11.2026 (ADR 0038) i z ADR 0039, a plik Logów Wyceny w efenix z prawdziwej Kopii wejścia tego Pliku zbiorczego.
+15.11.2026 (ADR 0038), z ADR 0039 i z ADR 0041 (zwykły opis obok kodu nie jest Błędem opisu), a plik Logów Wyceny w efenix z prawdziwej Kopii wejścia tego Pliku zbiorczego.
 """
 
 from __future__ import annotations
@@ -117,39 +117,41 @@ def test_brama_liczy_zgodnosc_wierszy_z_kodem_z_tata_z_dysku_i_z_logow_wyceny_be
 
     disk = lines.index(f"== {collective.name} | porównane: Y AB AC AD AJ AK AL AM, AS, kolory AF AM AS")
     errors = [
-        "-- Błędy opisu (powód → wiersze): słowo inne niż zapis kodu=2 | kod z liczbą spoza przedziałów=1 | kolumna Ilości usług trafiona drugi raz=1",
+        "-- Błędy opisu (powód → wiersze): kod z liczbą spoza przedziałów=1 | kolumna Ilości usług trafiona drugi raz=1",
         "-- powody z kodami (powód → wiersze): kod z liczbą spoza przedziałów (instutp40m)→1 | kolumna Ilości usług trafiona drugi raz (Y: instmdik, inst)→1",
     ]
-    assert lines[disk + 1 : disk + 11] == [
-        "wiersze danych: 10 | z kodem: 5 | z Błędem opisu: 4 | bez kodów: 1 | DATA nie jest datą: 0",
-        "zgodne z tatą wiersze z kodem: 3/5 (60.0%)",
-        "kody (wiersze): inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1 dzielnik1/2=1",
-        "-- różnice (wiersze | kody | kolumna: legenda, tata): 2 klas",
+    assert lines[disk + 1 : disk + 12] == [
+        "wiersze danych: 10 | z kodem: 6 | z Błędem opisu: 2 | bez kodów: 2 | DATA nie jest datą: 0",
+        "zgodne z tatą wiersze z kodem: 3/6 (50.0%)",
+        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1",
+        "-- różnice (wiersze | kody | kolumna: legenda, tata): 3 klas",
+        "1 | dzielnik1/2 | Y: legenda 0, tata 1",
         "1 | instmdik, dzielnik1/2 | AS: legenda 50, tata 100",
         "1 | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0; kolor AF: legenda zielony, tata brak; kolor AM: legenda czerwony, tata brak",
         *errors,
-        "-- Błędy opisu z wpisem taty: 3 | Y=2 AJ=1 AS=1",
-        "-- wiersze bez kodów z wpisem taty: 0 | brak",
+        "-- Błędy opisu z wpisem taty: 1 | AJ=1",
+        "-- wiersze bez kodów z wpisem taty: 1 | Y=1 AS=1",
     ]
     copied = lines.index(f"== {collective.name} (Logi {logs.name}) | porównane: Y AB AC AD AJ AK AL AM (Logi: bez AS i kolorów)")
-    assert lines[copied + 2 : copied + 11] == [
-        "zgodne z tatą wiersze z kodem: 4/5 (80.0%)",
-        "kody (wiersze): inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1 dzielnik1/2=1",
-        "-- różnice (wiersze | kody | kolumna: legenda, tata): 1 klas",
+    assert lines[copied + 2 : copied + 12] == [
+        "zgodne z tatą wiersze z kodem: 4/6 (66.7%)",
+        "kody (wiersze): dzielnik1/2=2 inst=1 spawpg=1 instwewrg6=1 rt2=1 instmdik=1",
+        "-- różnice (wiersze | kody | kolumna: legenda, tata): 2 klas",
+        "1 | dzielnik1/2 | Y: legenda 0, tata 1",
         "1 | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0",
         *errors,
-        "-- Błędy opisu z wpisem taty: 3 | Y=2 AJ=1",
-        "-- wiersze bez kodów z wpisem taty: 0 | brak",
+        "-- Błędy opisu z wpisem taty: 1 | AJ=1",
+        "-- wiersze bez kodów z wpisem taty: 1 | Y=1",
         "== razem: 2 plików",
     ]
-    assert lines[lines.index("== razem: 2 plików") + 2] == "zgodne z tatą wiersze z kodem: 7/10 (70.0%)"
+    assert lines[lines.index("== razem: 2 plików") + 2] == "zgodne z tatą wiersze z kodem: 7/12 (58.3%)"
     assert "SYN" not in "\n".join(lines)
     assert "patchcord" not in "\n".join(lines)
     notes = described.read_text(encoding="utf-8")
     assert f"{collective.name} | wiersz 21 | różnica | rt2 | AK: legenda 0, tata 1; AM: legenda 1, tata 0;" in notes
-    assert f"{collective.name} | wiersz 22 | Błąd opisu | „20”; „m”; „patchcord” | wpis taty Y=1 | 20 m patchcord dzielnik1/2" in notes
+    assert f"{collective.name} | wiersz 22 | różnica | dzielnik1/2 | Y: legenda 0, tata 1 | 20 m patchcord dzielnik1/2" in notes
     assert f"{collective.name} | wiersz 23 | Błąd opisu | kod z liczbą spoza przedziałów (instutp40m) | wpis taty AJ=1 | instutp40m" in notes
-    assert f"{collective.name} | wiersz 24 | Błąd opisu | „kabel”; „SYN”; „OPIS”; „15”; „m” | wpis taty Y=1 AS=30 | kabel SYN-OPIS 15 m" in notes
+    assert f"{collective.name} | wiersz 24 | bez kodów z wpisem taty | Y=1 AS=30 | kabel SYN-OPIS 15 m" in notes
 
 
 def test_brama_i_kontrola_ilosci_licza_te_same_zgodne_wiersze_z_kodem_na_tle_wzorca_taty(tmp_path: Path) -> None:
@@ -181,7 +183,7 @@ def test_brama_i_kontrola_ilosci_licza_te_same_zgodne_wiersze_z_kodem_na_tle_wzo
 
     assert background == ("solid", "theme"), "warunek: wiersz bez koloru legendy w X ma tło Wzorca taty"
     assert isinstance(checked, quantity_check.QuantityCheck)
-    assert (checked.coded_matching, checked.coded) == (2, 5)
+    assert (checked.coded_matching, checked.coded) == (2, 6)
     assert lines[3].startswith(f"zgodne z tatą wiersze z kodem: {checked.coded_matching}/{checked.coded} ")
     assert quantity_check.FillDifference("X", FillColour.GREEN, None) in checked.legend_differences["spawpg",].rows
     assert "1 | spawpg | kolor X: legenda zielony, tata brak" in lines
@@ -197,7 +199,7 @@ def test_brama_liczy_legenda_z_ustawien_a_opisow_nie_zapisuje_w_repozytorium(tmp
     assert lines[0] == f"Legenda czynności: {LEGEND_FILE} | Reguły ilości: z Wydania"
     assert lines[1].endswith("| porównane: AK, AS, kolory brak")
     assert lines[2:4] == [
-        "wiersze danych: 10 | z kodem: 1 | z Błędem opisu: 8 | bez kodów: 1 | DATA nie jest datą: 0",
+        "wiersze danych: 10 | z kodem: 1 | z Błędem opisu: 0 | bez kodów: 9 | DATA nie jest datą: 0",
         "zgodne z tatą wiersze z kodem: 1/1 (100.0%)",
     ]
     inside = ROOT / "opisy-brama.txt"

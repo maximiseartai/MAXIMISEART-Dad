@@ -23,7 +23,7 @@ from .activity_legend import ActivityLegend
 from .register_columns import ACTIVITIES, COMPLETED, CONTRACT, DATE, DEVICES, SUCCESSFUL, WORKER
 from .quantity_engine import OrderContent, QuantityRules
 from .settlement_period import SettlementPeriod
-from .tool_entry import ToolEntry, tool_entry
+from .tool_entry import ToolEntry, description, tool_entry
 from .workbook_files import RegisterRow, cell_datetime, is_blank
 from .text import normalize_text
 
@@ -61,8 +61,7 @@ class CollectiveRow:
         content = OrderContent.of(
             cell_value(row, CONTRACT), cell_value(row, DEVICES), cell_value(row, ACTIVITIES), order.started
         )
-        completed = cell_value(row, COMPLETED)
-        return cls(order, tool_entry(content, "" if completed is None else str(completed), rules, legend))
+        return cls(order, tool_entry(content, description(cell_value(row, COMPLETED)), rules, legend))
 
 
 @dataclass(frozen=True)

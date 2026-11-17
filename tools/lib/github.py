@@ -189,10 +189,13 @@ class GhApi:
         return json.loads(odpowiedz) if odpowiedz.strip() else None
 
 
-def strony(github: GitHub, sciezka: str) -> Iterator[dict[str, Any]]:
+def strony(github: GitHub, sciezka: str, pole: str | None = None) -> Iterator[dict[str, Any]]:
+    """Elementy listy z każdej strony odpowiedzi; ``pole`` to klucz listy, gdy API zwraca obiekt (``artifacts``)."""
+
     laczenie = "&" if "?" in sciezka else "?"
     for strona in itertools.count(1):
-        partia = github.json(f"{sciezka}{laczenie}per_page={STRONA}&page={strona}")
+        odpowiedz = github.json(f"{sciezka}{laczenie}per_page={STRONA}&page={strona}")
+        partia = odpowiedz if pole is None else odpowiedz[pole]
         yield from partia
         if len(partia) < STRONA:
             return

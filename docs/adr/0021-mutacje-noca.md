@@ -63,7 +63,8 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Część, której limit czasu minął po pokryciu, przed werdyktem którejś mutacji, dała wynik: `tools/mutacje_zmiany.py` kończy się kodem 3, a zapis wymienia mutacje bez werdyktu.
   Każda trafia do issue `Przeżyte mutacje z #N` PR-u, który ostatni zmienił jej linie, z dopiskiem `bez werdyktu w limicie czasu części`, a agent sprawdza ją `tools/mutacje.py`.
   Zadanie części zostaje zielone, a przebieg przesuwa bazę, więc część z drogimi mutacjami nie zatrzymuje nocy, a następna noc nie dostaje tego samego zakresu.
-- Noc ma najwyżej 40 części, czyli 960 mutacji, a naraz biegnie najwyżej 17 zadań części i 3 zadania skryptów skilli, bo 60 zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
+- Noc ma najwyżej 60 części, czyli 1440 mutacji, a naraz biegnie najwyżej 17 zadań części i 3 zadania skryptów skilli, bo 60 zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
+  Do 17.11 limit wynosił 40 części: w 6 nocach 12–17.11 zmiany `main` dawały ok. 980 mutacji na dobę, a noc najwyżej 960, więc zaległość rosła (11.11: 7450, 17.11: 7812); 60 części zmniejsza ją o ok. 460 na noc kosztem ok. pół godziny nocy (czwarta fala części).
   GitHub wpuszcza wpisy macierzy do okna `max-parallel` w kolejności listy: w nocach 9–12.11 (runy 42584604729, 42783639074, 42982940704, 43183893292) wpisy spoza pierwszej fali startowały po kolei (0 inwersji w 77 wpisach), zwykle 1–2 s po końcu innej części, a gdy sloty organizacji były zajęte, także pierwsza fala startowała z opóźnieniem i nie po kolei (12.11: 9 z pierwszych 20 wpisów po 190–216 s).
   Dlatego plan stawia na początku listy części, których najdroższy plik ma najwięcej pracy dotkniętych nim plików testów w zadaniach pytest `linux-3.14` na `main` (artefakt `czasy-ci`), a równa praca, także bez czasów, zostawia kolejność numerów.
   Kolejność nie zmienia mutacji części ani ich zgłoszenia, bo te wyznacza numer części.
@@ -80,9 +81,12 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Taki wynik nie mówi więc ani, że test łapie mutację, ani, że jej nie łapie; przed #1339 siedem takich linii z nocy 9–11.11 trafiło do issues jako zwykłe przeżyte, choć test każdą łapał.
   W runach 42783639074 i 42982940704 tak kończyło się 21 z 64 i 20 ze 143 przeżytych mutacji (odtworzenie zapisów i logów części w #1339).
   Zapis części ma je w liście `przekroczony_czas`, a część kończy się kodem 1 jak z przeżytymi.
-  `PRZEKROCZONY CZAS` w przebiegu przed ostatnim ma linię w logu części z nazwą przebiegu, a mutacja biegnie dalej z szerszymi testami.
+  `PRZEKROCZONY CZAS` w przebiegu przed ostatnim ma linię w logu części z nazwą przebiegu, a mutacja biegnie dalej od razu z testami pliku, ostatnim przebiegiem z workerami xdist.
+  Testy kodu pliku są podzbiorem testów pliku i biegną bez xdist jak testy linii, więc po przekroczeniu w testach linii przekraczały limit znowu: w nocach 12–17.11 109 razy na 110, a ten jeden raz wykryłyby ją też testy pliku; 17.11 kosztowało to 17 razy po 900 s na najdłuższych łańcuchach części.
 - Przeżyta to mutacja, której nie wykrył ani test, ani brama typów (#703, zgoda Maksa w wątku T3 31.10).
   Mutację operatora (`True` → `False`, `<` → `<=`, `return x` → `return None`…), która przeżyła testy, sprawdzają jeszcze ruff i mypy obu systemów, te same kroki co brama pre-push (`tools/mutacje.py`, `type_gate`).
+  Mutację, która idzie do testów pliku, brama sprawdza przed nimi, bo trwa sekundy, a testy pliku minuty na wszystkich rdzeniach: 17.11 brama wykryła 20 z 80 mutacji, które przeszły testy pliku albo przekroczyły w nich limit, więc ich testy pliku nic nie dały (linia z dopiskiem `(przed testami pliku)`).
+  Wyjątkiem jest mutacja linii samego cofnięcia fragmentu tej części: o tym, czy cofnięcie jest zdominowane, mówi jej wykrycie testem, a nie bramą, więc biegnie z testami pliku jak dotąd (#2064 r1; 17.11 dotyczyło to 1 z 16 mutacji, które brama złapała po testach pliku).
   Gdy któryś zgłasza, że kod jest błędny, mutacja jest `WYKRYTA PRZEZ BRAMĘ TYPÓW` i nie trafia do issue, bo takiego kodu nie wpuszczą brama pre-push ani zadanie CI „Ruff, mypy”.
   Za błąd kodu liczy się z ruff tylko niezdefiniowana nazwa (F821, F822, F823) i błąd składni, a z mypy każdy błąd typów poza pozostałościami (`unused-ignore`, `redundant-*`, `unreachable`, `no-any-return`), `mutacje.wrong`.
   Nieużyty import albo zmienna (F401, F841) się nie liczy, bo zostawia ją sama mutacja jednej linii.
@@ -159,7 +163,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   3.11 od bazy ostatniego udanego przebiegu czekało 2176 mutacji (`tools/mutacje_nocne.py plan`: 829 w pierwszej nocy i 1347 zaległości), a od 30.10 dochodziło ok. 570 mutacji na dobę, więc same noce wychodzą z zaległości po ok. 5 nocach, a noce po 1120 wyszłyby po ok. 4.
 - Przed limitem nocy części rosły z zaległością: 1.11 po ok. 49 mutacji (10 z 20 części czerwonych na limicie czasu), 2.11 po ok. 93 (16 z 20), 3.11 po ok. 102 (16 z 20, run 41601085650), a czerwona noc nie przesuwała bazy, więc następna miała jeszcze więcej.
 - Przebieg nocny, który nie skończył się sukcesem, nie zakłada issue o sobie; widać go w Actions, a następna noc dostaje jego zakres bez mutacji, którym jego części dały werdykt.
-- Plan nocy po czerwonej pobiera przez API GitHuba zapis każdej części każdego czerwonego runu tej bazy, do 40 artefaktów na run.
+- Plan nocy po czerwonej pobiera przez API GitHuba zapis każdej części każdego czerwonego runu tej bazy, do 60 artefaktów zapisów części na run, ze wszystkich stron listy artefaktów.
   Run, którego artefaktów plan nie przeczyta, nie daje tożsamości, więc noc tylko powtarza jego pracę, a nie gubi mutacji.
 - Prawdziwa porażka, która przechodzi za drugim razem, nie czerwieni nocy, tylko daje issue `Flaky test:`; pilnuje jej dalej pełne CI `main`, które Wydanie wymaga zielonego.
   Flaky test zostaje w testach mutacji części, więc jego porażka po mutacji może policzyć mutację jako wykrytą i schować lukę w testach do następnej zmiany tej linii.

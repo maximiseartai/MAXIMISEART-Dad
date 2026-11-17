@@ -30,7 +30,7 @@ from openpyxl import load_workbook
 from openpyxl.utils.cell import get_column_letter
 import pytest
 
-from rozliczenia.activity_legend import ActivityCode, ActivityLegend, FixedColumn, NotACode
+from rozliczenia.activity_legend import ActivityCode, ActivityLegend, FixedColumn, NumberOutOfRange
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.intermax_replace import LOCAL_DISK
 from rozliczenia.public_holidays import public_holidays
@@ -241,10 +241,10 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
 ) -> None:
     """Logi Wpisania raportów przechodzą przez strażnika Reguły danych: adres nadawcy, temat i treść maila spoza
     Wpisów nie mają w nich żadnego pola (Raport spoza listy adresów nie zostawia w nich swojej treści), a telefon w
-    czynnościach jest zamaskowany (ADR 0025, ADR 0028); Błąd opisu tego Wpisu ma w Logach sam rodzaj powodu, bez słów
-    opisu (ADR 0039)."""
+    czynnościach jest zamaskowany (ADR 0025, ADR 0028); Błąd opisu tego Wpisu ma w Logach sam powód z kodem, bez słów
+    zwykłego opisu (ADR 0039, ADR 0041)."""
 
-    activities = "wymiana routera, klient tel. 600 100 200"
+    activities = "instutp40m wymiana routera, klient tel. 600 100 200"
     stranger = "obcy@przyklad.invalid"
     later = datetime(2026, 11, 9, 18, 40)
     centrum = entering_centrum(
@@ -261,8 +261,8 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
         assert secret not in written, secret
     entering = logs["report_entering"]
     assert [mail["kind"] for mail in entering["mails"]] == ["report", "stranger"]
-    assert entering["mails"][0]["entries"][0]["activities"] == "wymiana routera, klient tel. [telefon]"
-    assert [change["value"] for change in entering["changes"]] == ["tak", "wymiana routera, klient tel. [telefon]"]
+    assert entering["mails"][0]["entries"][0]["activities"] == "instutp40m wymiana routera, klient tel. [telefon]"
+    assert [change["value"] for change in entering["changes"]] == ["tak", "instutp40m wymiana routera, klient tel. [telefon]"]
     assert entering["problems"] == [
         {"kind": "unknown_sender", "mail": entering["mails"][1]["mail"], "day": "2026-11-09"},
         {
@@ -270,7 +270,7 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
             "worker": "jan.testowy",
             "day": "2026-11-09",
             "number": "40000001",
-            "reasons": ["słowo inne niż zapis kodu"],
+            "reasons": ["kod z liczbą spoza przedziałów (instutp40m)"],
         },
     ]
     assert (entering["rollout_before"], entering["rollout"], entering["written"]) == (None, "2026-11-09", 2)
@@ -1396,7 +1396,8 @@ def test_klikniecie_przenosi_przejete_zlecenie_pod_zlecenia_nadawcy_z_informacja
     assert [order["number"] for order in jan["orders_detail"]] == ["40000005"]
     assert (anna["problems"], jan["problems"]) == ([], [])
     text = json.dumps(shown, ensure_ascii=False)
-    assert "Ulica" not in text and "UM-" not in text and "spawgnd" not in text.replace('"activities": "spawgnd"', "")
+    shown_codes = text.replace('"activities": "spawgnd"', "").replace('"codes": ["spawgnd"]', "")
+    assert "Ulica" not in text and "UM-" not in text and "spawgnd" not in shown_codes
     assert (_entering(centrum, again)["changes"], _entering(centrum, again)["moves"]) == ([], [])
     assert centrum.register.read_bytes() == after
     assert _worker(_view(centrum), "anna.kowalska")["notes"] == anna["notes"]
@@ -2534,7 +2535,14 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None, "request": None}],
                     "notes": [],
                     "orders_detail": [
-                        {"number": "40000002", "successful": None, "activities": None, "state": "without_report"}
+                        {
+                            "number": "40000002",
+                            "successful": None,
+                            "activities": None,
+                            "state": "without_report",
+                            "codes": [],
+                            "no_code": False,
+                        }
                     ],
                     "reminders": [],
                 }
@@ -2552,8 +2560,22 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "problems": [],
                     "notes": [],
                     "orders_detail": [
-                        {"number": "40000001", "successful": "tak", "activities": "inst20m rt2", "state": "entered"},
-                        {"number": "40000005", "successful": None, "activities": None, "state": "without_report"},
+                        {
+                            "number": "40000001",
+                            "successful": "tak",
+                            "activities": "inst20m rt2",
+                            "state": "entered",
+                            "codes": ["inst20m", "rt2"],
+                            "no_code": False,
+                        },
+                        {
+                            "number": "40000005",
+                            "successful": None,
+                            "activities": None,
+                            "state": "without_report",
+                            "codes": [],
+                            "no_code": False,
+                        },
                     ],
                     "reminders": [],
                 }
@@ -4553,7 +4575,7 @@ def test_nieczytelny_wynik_przypomnien_nie_psuje_widoku_raporty(tmp_path: Path, 
 # --- Błąd opisu we Wpisie ``tak`` z Legendą czynności Ustawień Centrum (ADR 0039) ---
 
 MONTAZ = ActivityCode("montaz", ("montaż",), FixedColumn("Y"))
-"""Kod taty spoza legendy z Wydania: z nim ``montaż`` nie jest Błędem opisu."""
+"""Kod taty spoza legendy z Wydania: z nim ``montaż`` jest Kodem czynności, a bez niego zwykłym opisem."""
 
 
 def _with_dads_legend(centrum: EnteringCentrum) -> tuple[ActivityCode, ...]:
@@ -4566,30 +4588,82 @@ def _with_dads_legend(centrum: EnteringCentrum) -> tuple[ActivityCode, ...]:
 
 @pytest.mark.parametrize("dads_legend", [False, True], ids=["legenda-z-wydania", "legenda-taty"])
 def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_logach(tmp_path: Path, dads_legend: bool) -> None:
-    """ADR 0039: Wpisanie raportów czyta opis Wpisu ``tak`` Legendą czynności z Ustawień Centrum, tą samą co
+    """ADR 0039, ADR 0041: Wpisanie raportów czyta opis Wpisu ``tak`` Legendą czynności z Ustawień Centrum, tą samą co
     Przygotowanie pliku zbiorczego, a Logi Uruchomienia mają ją dla odtworzenia. Przy legendzie z Wydania ``montaż`` to
-    Błąd opisu: Wpis się wpisuje, a widok Raporty pokazuje przy dniu Wykonawcy problem z powodem; z ``montaż`` jako
-    kodem w legendzie taty problemu nie ma."""
+    zwykły opis: Wpis się wpisuje, a widok Raporty pokazuje przy zleceniu „BRAK KODU”, nie problem; z ``montaż`` jako
+    kodem w legendzie taty zlecenie ma ten kod. Przy kodzie z liczbą spoza przedziałów widok ma problem z powodem."""
 
-    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak montaż")])
+    centrum = entering_centrum(
+        tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak montaż"), report(ANNA, SUBJECT, "40000002 tak montaż instutp40m")]
+    )
     codes = _with_dads_legend(centrum) if dads_legend else DEFAULT_ACTIVITY_LEGEND.codes
 
     _finished(centrum)
 
-    faulty = FaultyDescription(Login("jan.testowy"), date(2026, 11, 9), OrderNumber("40000001"), (NotACode("montaż"),))
-    assert _cells(centrum.register)[40000001] == ("tak", "montaż")
-    assert _worker(_view(centrum), "jan.testowy")["problems"] == (
-        [] if dads_legend else [{"reason": reason(faulty), "number": "40000001", "keep": None, "request": None}]
+    view = _view(centrum)
+    faulty = FaultyDescription(
+        Login("anna.kowalska"), date(2026, 11, 9), OrderNumber("40000002"), (NumberOutOfRange("instutp", "instutp{n}m", 40),)
     )
+    assert _cells(centrum.register)[40000001] == ("tak", "montaż")
+    assert _worker(view, "jan.testowy")["problems"] == []
+    assert [(order["codes"], order["no_code"]) for order in _worker(view, "jan.testowy")["orders_detail"]] == [
+        (["montaż"], False) if dads_legend else ([], True)
+    ]
+    assert _worker(view, "anna.kowalska")["problems"] == [
+        {"reason": reason(faulty), "number": "40000002", "keep": None, "request": None}
+    ]
+    assert [(order["codes"], order["no_code"]) for order in _worker(view, "anna.kowalska")["orders_detail"]] == [
+        (["montaż", "instutp40m"] if dads_legend else ["instutp40m"], False)
+    ]
     [logs] = centrum.run_logs()
     assert LoggedActivityLegend.model_validate(logs["activity_legend"]).value() == ActivityLegend(codes)
 
 
-def test_praca_przypomnien_nie_wysyla_przypomnienia_po_raporcie_z_bledem_opisu(tmp_path: Path) -> None:
-    """ADR 0041: Raport Anny za 9.11 ma Wpis ``tak`` z opisem bez kodów, czyli Błąd opisu, ale jest przysłany, więc o
-    8:30 Anna nie dostaje Przypomnienia o raporcie; Jan bez raportu dostaje je z samym wzorem, bez bloku o zleceniach."""
+def test_szczegoly_dnia_maja_przy_zleceniu_tak_kody_z_opisu_albo_brak_kodu_a_przy_bledzie_opisu_jego_powod(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041, US 32–39: Wpisanie raportów wpisuje do ``CZYNNOŚCI ZREALIZOWANE`` cały opis po ``tak``/``nie``, a
+    szczegóły dnia w widoku Raporty mają przy każdym zleceniu ``tak`` słowa, które legenda wzięła za Kody czynności (przy
+    ``inst30m instmdic`` tylko ``inst30m``, bez dopasowania po podobieństwie), przy zleceniu ``tak`` bez kodu „BRAK KODU”
+    jako informację, nie problem, a przy Błędzie opisu jego powód. Zlecenie ``nie`` nie ma ani kodów, ani „BRAK KODU”."""
 
-    mailbox = FakeMailbox(outcome=(report(ANNA, "Raport 09.11.2026", "40000002 tak montaż"),))
+    numbers = (40000001, 40000005, 40000006, 40000007)
+    intermax = Intermax(ordered=tuple(_order(9, 9 + index, "jan.testowy", number) for index, number in enumerate(numbers)), raw=())
+    text = (
+        "40000001 tak inst30m instmdic Podłączyłem lokal, klient zadowolony\n"
+        "40000005 tak Podłączyłem lokal, dzielnik 1/2\n"
+        "40000006 tak instutp40m wymiana gniazda\n"
+        "40000007 nie brak klienta\n"
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, text)])
+
+    _finished(centrum)
+
+    jan = _worker(_view(centrum), "jan.testowy")
+    faulty = FaultyDescription(
+        Login("jan.testowy"), date(2026, 11, 9), OrderNumber("40000006"), (NumberOutOfRange("instutp", "instutp{n}m", 40),)
+    )
+    assert [(order["number"], order["state"], order["codes"], order["no_code"]) for order in jan["orders_detail"]] == [
+        ("40000001", "entered", ["inst30m"], False),
+        ("40000005", "entered", [], True),
+        ("40000006", "problem", ["instutp40m"], False),
+        ("40000007", "entered", [], False),
+    ]
+    assert jan["problems"] == [{"reason": reason(faulty), "number": "40000006", "keep": None}]
+    assert {number: _cells(centrum.register)[number] for number in numbers} == {
+        40000001: ("tak", "inst30m instmdic Podłączyłem lokal, klient zadowolony"),
+        40000005: ("tak", "Podłączyłem lokal, dzielnik 1/2"),
+        40000006: ("tak", "instutp40m wymiana gniazda"),
+        40000007: ("nie", "brak klienta"),
+    }
+
+
+def test_praca_przypomnien_nie_wysyla_przypomnienia_po_raporcie_z_bledem_opisu(tmp_path: Path) -> None:
+    """ADR 0041: Raport Anny za 9.11 ma Wpis ``tak`` z kodem z liczbą spoza przedziałów, czyli Błąd opisu, ale jest
+    przysłany, więc o 8:30 Anna nie dostaje Przypomnienia o raporcie; Jan bez raportu dostaje je z samym wzorem, bez
+    bloku o zleceniach."""
+
+    mailbox = FakeMailbox(outcome=(report(ANNA, "Raport 09.11.2026", "40000002 tak montaż instutp40m"),))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
     centrum.moment.append(REMINDER_MORNING)

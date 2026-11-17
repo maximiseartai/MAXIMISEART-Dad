@@ -541,7 +541,7 @@ def unknown_devices(collective_filename: str, row_numbers: Sequence[int]) -> Mes
 
 def rows_from_description(collective_filename: str, row_numbers: Sequence[int]) -> Message:
     """Ostrzeżenie: wiersze rozliczane z opisu (prewencja, niedostępność usług, puste ``URZĄDZENIA``) bez ilości z Reguł
-    ilości, których ``CZYNNOŚCI ZREALIZOWANE`` nie są samymi Kodami czynności."""
+    ilości, których ``CZYNNOŚCI ZREALIZOWANE`` nie mają żadnego Kodu czynności albo mają Błąd opisu."""
 
     return Message(
         code="WIERSZE_Z_OPISU",
@@ -561,7 +561,7 @@ def description_errors(collective_filename: str, rows: Sequence[tuple[int, Seque
     """Ostrzeżenie: wiersze z Błędem opisu, w których Legenda czynności nic nie wpisała (ADR 0038).
 
     ``rows``: numer wiersza Pliku zbiorczego i powody jego Błędu opisu. Powody idą rodzajami w stałej kolejności, każdy z
-    numerami swoich wierszy, bez słów i kodów z opisu: tata widzi je w wierszu.
+    numerami swoich wierszy, bez kodów z opisu: tata widzi je w wierszu.
     """
 
     parts = [
@@ -572,7 +572,7 @@ def description_errors(collective_filename: str, rows: Sequence[tuple[int, Seque
     return Message(
         code="BLEDY_OPISU",
         what=(
-            "Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), "
+            "Kody czynności w CZYNNOŚCI ZREALIZOWANE mają w tych wierszach Błąd opisu, "
             f"więc Legenda czynności nic w nich nie wpisała: {'; '.join(parts)}."
         ),
         where=f"plik {collective_filename}, {_rows_label([number for number, _problems in rows])}",
@@ -585,16 +585,17 @@ def description_errors(collective_filename: str, rows: Sequence[tuple[int, Seque
 
 def columns_from_description(collective_filename: str, columns: Sequence[str], *, closed: int, for_tata: int) -> Message:
     """Ostrzeżenie po Planowaniu, gdy choć jeden wiersz czeka na tatę w kolumnach z opisu technika (``columns``):
-    ``closed`` wierszy zamknęła Legenda czynności (same Kody czynności), a ``for_tata`` zostało tacie."""
+    ``closed`` wierszy zamknęła Legenda czynności (Kody czynności bez Błędu opisu), a ``for_tata`` zostało tacie (bez
+    żadnego kodu albo z Błędem opisu)."""
 
     left = f"Do uzupełnienia: {for_tata} {plural(for_tata, 'wiersz', 'wiersze', 'wierszy')}."
     by_legend = (
         f"Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w {closed} "
-        f"{plural(closed, 'wierszu', 'wierszach', 'wierszach')} z samych Kodów czynności. {left}"
+        f"{plural(closed, 'wierszu', 'wierszach', 'wierszach')} z Kodami czynności. {left}"
         if closed
         else (
-            "Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest "
-            f"z samych Kodów czynności. {left}"
+            "Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie ma "
+            f"Kodów czynności bez Błędu opisu. {left}"
         )
     )
     return Message(

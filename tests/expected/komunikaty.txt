@@ -224,27 +224,27 @@ rows_from_description #2 [WIERSZE_Z_OPISU]
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika w CZYNNOŚCI ZREALIZOWANE przed Przebiegiem rozliczeń.
 
 description_errors #1 [BLEDY_OPISU]
-  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: kod z liczbą spoza przedziałów (wiersz 20).
+  Co się stało: Kody czynności w CZYNNOŚCI ZREALIZOWANE mają w tych wierszach Błąd opisu, więc Legenda czynności nic w nich nie wpisała: kod z liczbą spoza przedziałów (wiersz 20).
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersz 20
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Kody czynności i ich zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności.
 
 description_errors #2 [BLEDY_OPISU]
-  Co się stało: Opis technika w CZYNNOŚCI ZREALIZOWANE nie jest w tych wierszach z samych Kodów czynności (Błąd opisu), więc Legenda czynności nic w nich nie wpisała: słowo inne niż zapis kodu (wiersz 20); kod z liczbą spoza przedziałów (wiersz 20); kolumna Ilości usług trafiona drugi raz (wiersz 23); kolumna wypełniona dwoma kolorami (wiersz 24).
+  Co się stało: Kody czynności w CZYNNOŚCI ZREALIZOWANE mają w tych wierszach Błąd opisu, więc Legenda czynności nic w nich nie wpisała: kod z liczbą spoza przedziałów (wiersz 20); kolumna Ilości usług trafiona drugi raz (wiersz 23); kolumna wypełniona dwoma kolorami (wiersz 24).
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, wiersze 20, 23, 24
   Co zrobić: Wpisz ilości w tych wierszach według opisu technika przed Przebiegiem rozliczeń. Kody czynności i ich zapisy zmienisz w Ustawieniach, w sekcji Legenda czynności.
 
 columns_from_description #1 [KOLUMNY_Z_OPISU]
-  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie jest z samych Kodów czynności. Do uzupełnienia: 12 wierszy.
+  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) narzędzie zostawia do uzupełnienia: żaden opis nie ma Kodów czynności bez Błędu opisu. Do uzupełnienia: 12 wierszy.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
   Co zrobić: Przejrzyj opis technika w każdym wierszu Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń.
 
 columns_from_description #2 [KOLUMNY_Z_OPISU]
-  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w 3 wierszach z samych Kodów czynności. Do uzupełnienia: 1 wiersz.
+  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w 3 wierszach z Kodami czynności. Do uzupełnienia: 1 wiersz.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
   Co zrobić: Przejrzyj opis technika w pozostałych wierszach Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już wpisała.
 
 columns_from_description #3 [KOLUMNY_Z_OPISU]
-  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w 22 wierszach z samych Kodów czynności. Do uzupełnienia: 5 wierszy.
+  Co się stało: Ilości z opisu technika (CZYNNOŚCI ZREALIZOWANE) wpisała Legenda czynności w 22 wierszach z Kodami czynności. Do uzupełnienia: 5 wierszy.
   Gdzie: plik Rozliczenie 08_14_09_2026 - zbiorcze.xlsx, kolumny Y, AB, AD, AJ, AK, AL i AM
   Co zrobić: Przejrzyj opis technika w pozostałych wierszach Pliku zbiorczego i uzupełnij ilości w tych kolumnach przed Przebiegiem rozliczeń; ilości z Kodów czynności legenda już wpisała.
 

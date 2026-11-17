@@ -15,7 +15,8 @@
   ``since``) jak wersja 1, a wersja 3 (nigdy w Wydaniu) z pamięcią zleceń, czasem także z ``added``.
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
-  numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu i czy zlecenie ma Wpis), zdaniem o każdym problemie
+  numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis i Kody czynności zlecenia ``tak``
+  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów), zdaniem o każdym problemie
   (``reasons.reason``), Wpisem na życzenie przy problemie, przy którym tata może go kliknąć (``request``; plik bez
   niego czyta się bez przycisku), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
   Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Pisze go tylko proces, po
@@ -210,6 +211,7 @@ class _Order(_Record):
     successful: str | None
     activities: str | None
     reported: bool
+    codes: list[str] | None = None
 
 
 class _Worker(_WorkerV1):
@@ -494,6 +496,7 @@ class FileReportState:
                         successful=order.successful,
                         activities=order.activities,
                         reported=order.reported,
+                        codes=None if order.codes is None else list(order.codes),
                     )
                     for order in worker.orders_detail
                 ],
@@ -581,7 +584,13 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
     if not isinstance(worker, _Worker):
         return None
     return tuple(
-        OrderDetail(OrderNumber(order.number), order.successful, order.activities, order.reported)
+        OrderDetail(
+            OrderNumber(order.number),
+            order.successful,
+            order.activities,
+            order.reported,
+            None if order.codes is None else tuple(order.codes),
+        )
         for order in worker.orders_detail
     )
 
