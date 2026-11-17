@@ -8,7 +8,8 @@ from typing import Annotated, Literal
 from pydantic import Field
 
 from rozliczenia.centrum.contract.common import Message, Model
-from rozliczenia.quantities_to_fill import CellSource, FillKind, RowState
+from rozliczenia.quantities_to_fill import CellSource, RowState
+from rozliczenia.tool_entry import FillKind
 
 
 class RowToFill(Model):

@@ -416,6 +416,12 @@ Część Ustawień Centrum.
 Składnik spoza Listy Urządzeń to nieznane `URZĄDZENIA`: działają wtedy tylko reguły z zakresem „składnik spoza listy” albo „każde zlecenie”.
 _Avoid_: słownik, aliasy
 
+## Wpis narzędzia
+
+To, co Przygotowanie pliku zbiorczego wpisuje w Wiersz danych Pliku zbiorczego z Reguł ilości i Legendy czynności: Ilości usług w `N:AP` (reguły i legenda razem), kwota w `AS`, Wyróżnienia legendy oraz kolumny, które narzędzie w tym wierszu wyznacza.
+Kontrola ilości porównuje z nim wpis taty, a Ilości do uzupełnienia to miejsca poza nim.
+_Avoid_: wynik wiersza, decyzja (Decyzja taty to co innego)
+
 ## Ilości do uzupełnienia
 
 Ilości usług w Pliku zbiorczym, których Reguły ilości nie wyznaczają, więc wpisuje je tata: w wierszu bez reguły (nieznane `URZĄDZENIA`, reguły dały najwyżej V, T i N), w wierszu z opisu (prewencja, niedostępność usług albo puste `URZĄDZENIA`, reguły nie dały nic) i w kolumnach z opisu technika w każdym wierszu, którego `CZYNNOŚCI ZREALIZOWANE` nie są samymi Kodami czynności (poza `tak`, `nie` i znakami interpunkcji) albo mają Błąd opisu.

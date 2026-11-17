@@ -7,6 +7,7 @@ pilnuje:
   - src/rozliczenia/report_entering.py
   - src/rozliczenia/worker_reports/_model.py
   - src/rozliczenia/quantities_to_fill.py
+  - src/rozliczenia/tool_entry.py
   - src/rozliczenia/preparation_files.py
   - src/rozliczenia/settlement_files.py
   - src/rozliczenia/input_checks.py

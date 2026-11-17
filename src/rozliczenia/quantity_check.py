@@ -19,10 +19,10 @@ Legenda czynności (ADR 0038) liczy się rachunkiem jednego wiersza ``legend_row
 podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.py``). W wierszu z samych Kodów czynności
 (``CodesOnly``) porównuje z tatą:
 
-- kolumny, w które może wpisać którykolwiek kod legendy, z wartością Reguł ilości i legendy razem, tak jak wpisuje
-  je Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy legenda wpisała w nią coś w tym wierszu, i wtedy
-  ta kolumna nie jest różnicą Reguł ilości;
-- kwotę w ``AS``;
+- kolumny, w które może wpisać którykolwiek kod legendy, z wartością Reguł ilości i legendy razem z Wpisu narzędzia
+  (``tool_entry``), tego samego, który wpisuje Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy
+  legenda wpisała w nią coś w tym wierszu, i wtedy ta kolumna nie jest różnicą Reguł ilości;
+- kwotę w ``AS`` z Wpisu narzędzia;
 - kolory kolumn, które może wypełnić którykolwiek kod legendy (zielony, czerwony albo brak; wypełnienie spoza palety
   legendy, np. tło z Wzorca, to brak, zob. ``order_facts.legend_colour``).
 
@@ -65,6 +65,7 @@ from .quantity_engine import (
     WithoutRule,
     evaluate,
 )
+from .tool_entry import compared_columns, tool_entry
 
 
 @dataclass(frozen=True)
@@ -169,9 +170,12 @@ def row_check(row: OrderFacts, rules: QuantityRules) -> RowCheck:
     Reguł ilości w Ustawieniach (ADR 0033)."""
 
     content = row.content
-    if content is None or content.started is None:
+    return _rule_check(row, None if content is None or content.started is None else evaluate(rules, content), rules)
+
+
+def _rule_check(row: OrderFacts, result: RuleResult | None, rules: QuantityRules) -> RowCheck:
+    if result is None:
         return RowCheck(None, (), ())
-    result = evaluate(rules, content)
     compared = compared_columns(result, rules)
     return RowCheck(
         result, compared, tuple(column for column in compared if result.quantities.get(column, 0) != row.quantity(column))
@@ -229,8 +233,9 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
     """Rachunek Legendy czynności ``legend`` w Kontroli ilości na jednym Wierszu danych, z Regułami ilości ``rules``; ten
     sam liczy ``check``, podgląd zmiany legendy w Ustawieniach i brama Legendy czynności (zob. opis modułu)."""
 
-    ruled = row_check(row, rules)
-    codes = legend.read(row.completed)
+    tool = tool_entry(row.content, row.completed, rules, legend)
+    ruled = _rule_check(row, tool.rules, rules)
+    codes = tool.read
     if not isinstance(codes, CodesOnly):
         entry = tuple(
             (column, row.quantity(column))
@@ -238,14 +243,13 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
             if column not in ruled.compared and row.quantity(column) != 0
         ) + (((AMOUNT_COLUMN, row.amount),) if row.amount != 0 else ())
         return LegendRowCheck(codes, ruled, (), entry, row.completed if entry else None)
-    ruled_quantities = {} if ruled.result is None else ruled.result.quantities
     compared: list[LegendDifference] = [
-        ValueDifference(column, ruled_quantities.get(column, 0) + codes.quantities.get(column, 0), row.quantity(column))
+        ValueDifference(column, tool.quantities.get(column, 0), row.quantity(column))
         for column in legend_columns(legend)
         if column in codes.quantities or column not in ruled.compared
     ]
-    compared.append(ValueDifference(AMOUNT_COLUMN, codes.amount, row.amount))
-    compared.extend(FillDifference(column, codes.fills.get(column), row.fills.get(column)) for column in legend_fill_columns(legend))
+    compared.append(ValueDifference(AMOUNT_COLUMN, tool.amount, row.amount))
+    compared.extend(FillDifference(column, tool.fills.get(column), row.fills.get(column)) for column in legend_fill_columns(legend))
     differences = tuple(difference for difference in compared if difference.legend != difference.tata)
     return LegendRowCheck(codes, ruled, differences, (), row.completed if differences else None)
 
@@ -333,18 +337,6 @@ def week_hour(weekday: int, hour: int) -> str:
     """Dzień tygodnia z pełną godziną, jak grupy różnic Kontroli ilości („pt 16”): od godziny zależy dodatek za usterkę."""
 
     return f"{WEEKDAY_LABELS[weekday]} {hour}"
-
-
-def compared_columns(rule: RuleResult, rules: QuantityRules) -> tuple[str, ...]:
-    """Kolumny Reguł ilości ``rules``, w których Kontrola porównuje wynik reguł z wpisami taty (decyzje 9 i 10)."""
-
-    if isinstance(rule, FromDescription):
-        return ()
-    if isinstance(rule, WithoutRule):
-        return rules.without_rule_columns
-    return tuple(
-        column for column in rules.rule_columns if column not in DESCRIPTION_COLUMNS or rule.quantities.get(column, 0)
-    )
 
 
 def _add_unruled(

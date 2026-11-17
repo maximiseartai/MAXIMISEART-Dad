@@ -15,6 +15,7 @@ pilnuje:
   - src/rozliczenia/preparation_register.py
   - src/rozliczenia/register_columns.py
   - src/rozliczenia/preparation_files.py
+  - src/rozliczenia/tool_entry.py
   - src/rozliczenia/preparation_process.py
   - src/rozliczenia/quantity_engine.py
   - src/rozliczenia/activity_legend*.py

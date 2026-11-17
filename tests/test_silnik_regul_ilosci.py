@@ -26,7 +26,8 @@ from rozliczenia.collective_preparation import PreparationInputs, prepare_collec
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.order_facts import MissingHeaders
-from rozliczenia.quantities_to_fill import FillKind, RowState, fill_hint, quantities_to_fill
+from rozliczenia.quantities_to_fill import RowState, fill_hint, quantities_to_fill
+from rozliczenia.tool_entry import FillKind
 from rozliczenia.quantity_engine import (
     ActivitiesContain,
     Component,
