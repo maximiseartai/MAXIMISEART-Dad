@@ -229,7 +229,7 @@ def test_brama_typow_sprawdza_przezyte_mutacje_operatorow_a_cofniecie_do_bazy_tr
     assert caught == [
         "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/inny.py:2 `return 1` → `return None` → ruff: src/rozliczenia/inny.py:2: F821",
         "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:20 `return 1` → `return None` → mypy: src/rozliczenia/warunek.py:20: return-value",
-        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:23 `False` → `True` → mypy: src/rozliczenia/warunek.py:23: assignment (testy pliku)",
+        "WYKRYTA PRZEZ BRAMĘ TYPÓW: src/rozliczenia/warunek.py:23 `False` → `True` → mypy: src/rozliczenia/warunek.py:23: assignment (przed testami pliku)",
     ], done.stdout
     assert re.search(r"\| brama typów \d+ s \(3 mutacji\)$", next(line for line in done.stdout.splitlines() if line.startswith("CZAS |"))), done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
@@ -433,6 +433,28 @@ def test_mutacja_ktora_tylko_spowalnia_test_ponad_limit_narzedzia_nie_jest_wykry
     written = json.loads(record.read_text(encoding="utf-8"))
     assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | przeżyło 0 | przekroczony czas 2 | "), written["wynik"]
     assert (written["przezyte"], sorted(_named(entry) for entry in written["przekroczony_czas"])) == ([], names)
+
+
+def test_mutacja_kodu_z_cache_po_przekroczonym_czasie_testow_linii_biegnie_od_razu_z_testami_pliku(tmp_path: Path) -> None:
+    """Testy kodu pliku to podzbiór testów pliku bez xdist, więc po przekroczeniu w testach linii przekraczały limit
+    znowu: w nocach 12–17.11 109 razy na 110 (ADR 0021). Mutacja kodu z ``@cache`` ma trzy przebiegi, a biegnie dwa."""
+
+    module = "import functools\n\n\n@functools.cache\ndef oba(a: bool, b: bool) -> bool:\n    return {}\n\n\ndef jeden() -> int:\n    return 1\n"
+    slow = (
+        "import time\n\nfrom rozliczenia.warunek import jeden, oba\n\n\n"
+        "def test_oba() -> None:\n    assert oba(True, True) is True\n    if oba(True, False):\n        time.sleep(30)\n\n\n"
+        "def test_jeden() -> None:\n    assert jeden() == 1\n"
+    )
+
+    done = _run(_repo(tmp_path, slow, module.format("a and b"), module.format("a")), "--limit-s", "8")
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    late = "→ brak wyniku po 8 s (limit --limit-s narzędzia, nie pytest-timeout)"
+    name = "src/rozliczenia/warunek.py:6 bez `b` w `and`"
+    assert [line for line in done.stdout.splitlines() if line.startswith(f"PRZEKROCZONY CZAS: {name} ")] == [
+        f"PRZEKROCZONY CZAS: {name} {late} (testy linii), biegnie dalej z szerszymi testami",
+        f"PRZEKROCZONY CZAS: {name} {late} (testy pliku)",
+    ], done.stdout
 
 
 def test_mutacja_ktora_test_pliku_lapie_po_limicie_czasu_calego_zbioru_trafia_do_zapisu_z_przekroczonym_czasem_a_nie_jako_przezyta(
