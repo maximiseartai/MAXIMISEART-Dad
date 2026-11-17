@@ -281,17 +281,17 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
     ("subject", "fault"),
     [
         pytest.param("Raport bez daty", "no_date", id="bez-daty"),
-        pytest.param("Raport z 09.11.2026", "other_text", id="inny-tekst"),
+        pytest.param("Raport 09.11.2026 Kowalski", "other_words", id="inne-slowa"),
+        pytest.param("Raport: 09.11.2026", "other_text", id="inny-tekst"),
         pytest.param("Raport 09.11", "no_year", id="bez-roku"),
         pytest.param("Raport 09112026", "date_form", id="postac-daty"),
-        pytest.param("Raport 09-11-2026", "separator", id="separator"),
         pytest.param("Raport 09.11.226", "year_digits", id="cyfry-roku"),
         pytest.param("Raport 31.11.2026", "not_a_day", id="nie-dzien"),
     ],
 )
 def test_logi_maja_powod_kazdego_nieczytelnego_tematu_bez_tematu(tmp_path: Path, subject: str, fault: str) -> None:
-    """Każdy powód nieczytelnego tematu z rdzenia ma swoje słowo w Logach (mail i problem), a sam temat do Logów nie
-    trafia (ADR 0028)."""
+    """Każdy powód nieczytelnego tematu, który daje dziś rdzeń, ma swoje słowo w Logach (mail i problem), a sam temat do
+    Logów nie trafia (ADR 0028)."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, subject, "40000001 tak wymiana")])
 

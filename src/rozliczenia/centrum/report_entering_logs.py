@@ -100,8 +100,8 @@ class LoggedUnreadableMail(_Record):
     fault: SubjectFault
     numbers: list[str] | None = None
     """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
-    pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, więc ostrzeżenie zdjęte przez poprawkę wraca w nim jako
-    różnica."""
+    pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, a takiego maila rdzeń nie czyta (ADR 0041), więc mail
+    i jego ostrzeżenie dają w odtworzeniu różnicę."""
 
 
 class LoggedStrangerMail(_Record):

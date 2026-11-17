@@ -20,8 +20,9 @@ from ..settlement_period import SettlementPeriod, period_of
 from ..text import normalize_text
 
 SUBJECT_WORD: Final = "raport"
-"""Słowo tematu Raportu wykonawcy bez względu na wielkość liter: port bierze ze skrzynki tylko maile z nim w temacie,
-a rdzeń rozstrzyga resztę tematu."""
+"""Pierwsze słowo tematu Raportu wykonawcy, bez względu na wielkość liter i z jedną literówką albo bez
+(``_subject.read``): port bierze ze skrzynki tylko maile, których temat rdzeń czyta jako temat raportu
+(``reads_as_report``)."""
 
 Login = NewType("Login", str)
 """Identyfikator Wykonawcy z ``WYKONAWCA`` po ``normalize_text``: login Wykonawcy z Listy Wykonawców."""
@@ -92,7 +93,7 @@ class SenderAddress:
 
 @dataclass(frozen=True)
 class ReportMail:
-    """Mail ze Skrzynki raportów ze słowem ``SUBJECT_WORD`` w temacie: temat i treść jako tekst, ``arrived`` ze strefą
+    """Mail ze Skrzynki raportów z tematem, który może być tematem Raportu wykonawcy (``reads_as_report``): temat i treść jako tekst, ``arrived`` ze strefą
     taty. Od ``arrived`` zależy, który Wpis raportu jest poprawką wcześniejszego."""
 
     id: MailId
@@ -504,12 +505,15 @@ class VerdictFault(Enum):
 
 
 class SubjectFault(Enum):
-    """Dlaczego temat ze słowem Raportu wykonawcy nie daje dnia zleceń, w kolejności, w jakiej rdzeń to sprawdza: brak
-    liczb, inny tekst poza słowem i datą, dwie liczby, liczby nie w postaci dzień.miesiąc.rok, separator inny niż ``.``,
-    ``_`` albo ``/``, rok bez dwóch ani czterech cyfr i data, która nie jest dniem. Wartość to słowo powodu w Logach
-    Uruchomienia: czytają je stare Logi i odtworzenie, więc się nie zmienia."""
+    """Dlaczego temat zaczęty słowem Raportu wykonawcy nie daje dnia zleceń, w kolejności, w jakiej rdzeń to sprawdza:
+    brak liczb, inne słowa poza słowem i datą, znak przed datą inny niż biały, dwie liczby, liczby nie w postaci
+    dzień.miesiąc.rok, rok bez dwóch ani czterech cyfr i data, która nie jest dniem. Wartość to słowo powodu w Logach
+    Uruchomienia: czytają je stare Logi i odtworzenie, więc się nie zmienia. ``SEPARATOR`` (dzień, miesiąc i rok
+    rozdzielone czymś innym niż ``.``, ``_`` albo ``/``) jest tylko w Logach sprzed tolerancji tematu (ADR 0041), bo
+    gramatyka wybacza dziś każdy taki znak."""
 
     NO_DATE = "no_date"
+    OTHER_WORDS = "other_words"
     OTHER_TEXT = "other_text"
     NO_YEAR = "no_year"
     DATE_FORM = "date_form"

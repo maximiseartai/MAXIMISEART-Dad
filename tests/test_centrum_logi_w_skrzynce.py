@@ -2050,13 +2050,13 @@ def test_klikniecie_z_tak_i_nie_jednego_zlecenia_w_mailu_odtwarza_sie_zgodnie(
     assert (entering["changes"], code, lines[0]) == ([], 0, "ODTWORZENIE ZGODNE"), lines
 
 
-def _corrected_unreadable(tmp_path: Path, text: str = f"40000001 tak {COMPLETED_WITHOUT_CODES}") -> Produced:
-    """Logi kliknięcia, w którym Jan przysłał Raport z tematem bez dnia i treścią ``text``, a potem Raport z dniem."""
+def _corrected_unreadable(tmp_path: Path) -> Produced:
+    """Logi kliknięcia, w którym Jan przysłał Raport z tematem bez dnia, a potem Raport z dniem z tym samym Wpisem."""
 
     surroundings = Surroundings()
     jan = SENDERS["jan.testowy"]
     mails = [
-        report(jan, "Raport", text, at=ENTERING_NOW - timedelta(minutes=5)),
+        report(jan, "Raport", f"40000001 tak {COMPLETED_WITHOUT_CODES}", at=ENTERING_NOW - timedelta(minutes=5)),
         report(jan, "Raport 09.11.2026", f"40000001 tak {COMPLETED_WITHOUT_CODES}"),
     ]
     centrum = entering_centrum(tmp_path / "taty", MATCHED, mails, surroundings=surroundings)
@@ -2070,31 +2070,23 @@ def _corrected_unreadable(tmp_path: Path, text: str = f"40000001 tak {COMPLETED_
 OLD_LOGS_LIMIT: Final = "- Logi sprzed numerów Wpisów maila z nieczytelnym tematem (v0.7.0)"
 
 
-@pytest.mark.parametrize(
-    ("text", "numbers", "problems"),
-    [
-        pytest.param(f"40000001 tak {COMPLETED_WITHOUT_CODES}", ["40000001"], [], id="poprawiony"),
-        pytest.param("kurier jutro", [], ["unreadable_subject"], id="bez-wpisow"),
-    ],
-)
 def test_klikniecie_z_nieczytelnym_tematem_i_poprawionym_mailem_odtwarza_sie_zgodnie(
-    text: str, numbers: list[str], problems: list[str], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Poprawiony mail zdejmuje ostrzeżenie o nieczytelnym temacie, a Logi mają numery Wpisów nieczytelnego maila, więc
     odtworzenie też widzi poprawkę i nie pokazuje ostrzeżenia, którego kliknięcie u taty nie pokazało (kliknięcie
-    taty z 11.11 odtwarzało się z jednym problemem więcej). Mail bez Wpisów ma w nowych Logach pustą listę numerów,
-    więc ostrzeżenie zostaje, a granicy starych Logów nie ma."""
+    taty z 11.11 odtwarzało się z jednym problemem więcej), a granicy starych Logów nie ma."""
 
-    produced = _corrected_unreadable(tmp_path, text)
+    produced = _corrected_unreadable(tmp_path)
     entering = produced.record["report_entering"]
 
     code, lines = _replayed(capsys, produced.archived, *produced.arguments)
 
     assert [(mail["kind"], mail.get("numbers")) for mail in entering["mails"]] == [
-        ("unreadable", numbers),
+        ("unreadable", ["40000001"]),
         ("report", None),
     ]
-    assert [problem["kind"] for problem in entering["problems"]] == problems
+    assert entering["problems"] == []
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     assert not any(line.startswith(OLD_LOGS_LIMIT) for line in lines), lines
 
