@@ -383,20 +383,20 @@ def test_przypomnienie_za_inny_dzien_albo_do_innego_wykonawcy_nie_zamyka_pory() 
         pytest.param(_mail(JAN_PRYWATNY, "raport 9.11.26", "40000001 nie brak klienta"), True, id="drugi-adres-krotka-data"),
         pytest.param(_mail(JAN, "Raport 09.11.2026", "dziś nic"), False, id="bez-wpisow"),
         pytest.param(_mail(JAN, "Raport 09.11.2016", "40000001 tak inst20m"), True, id="literowka-w-roku"),
-        pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak inst20m"), False, id="nieczytelny-bez-roku"),
-        pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak inst20m"), False, id="nieczytelny-bez-daty"),
+        pytest.param(_mail(JAN, "Raport 9.11", "40000001 tak inst20m"), True, id="blad-tematu-bez-roku"),
+        pytest.param(_mail(JAN, "Raport z poniedziałku", "40000001 tak inst20m"), True, id="blad-tematu-bez-daty"),
         pytest.param(_mail(JAN, "Re: Raport 09.11.2026", "40000001 tak inst20m"), False, id="odpowiedz"),
         pytest.param(_mail(JAN, "Raport 08.11.2026", "40000001 tak inst20m"), False, id="inny-dzien"),
         pytest.param(_mail(EWA, "Raport 09.11.2026", "40000001 tak inst20m"), False, id="inny-wykonawca"),
         pytest.param(_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak"), False, id="adres-spoza-listy"),
     ],
 )
-def test_czytelny_raport_za_dzien_nawet_niepelny_konczy_przypomnienia_a_nieczytelny_temat_nie(
+def test_raport_za_dzien_nawet_niepelny_i_z_bledem_tematu_konczy_przypomnienia_a_raport_za_inny_dzien_nie(
     mail: ReportMail, ends: bool
 ) -> None:
-    """Każdy czytelny Raport wykonawcy za dzień X od Wykonawcy z listy, nawet niepełny, kończy przypomnienia za X, a
-    mail z nieczytelnym tematem, odpowiedź, raport za inny dzień, raport kogoś innego i mail bez żadnego Wpisu, który
-    nie jest raportem (ADR 0041), nie (US 37–38)."""
+    """Każdy Raport wykonawcy za dzień X od Wykonawcy z listy, nawet niepełny, kończy przypomnienia za X, także z błędem
+    tematu, który liczy się za wskazany dzień (ADR 0041, historie 3, 5, 20), a odpowiedź na inny mail, raport za inny
+    dzień, raport kogoś innego i mail bez żadnego Wpisu, który nie jest raportem (ADR 0041), nie (US 37–38)."""
 
     assert _days(_due(NEXT_MORNING, mails=[mail])) == ([] if ends else [("jan.testowy", DAY)])
 
@@ -609,7 +609,54 @@ TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak ins
         ),
         pytest.param([], [_mail(JAN, f"Re: {reminder_subject(DAY)}", "40000001 tak inst20m")], {JAN_9}, id="odpowiedz-na-przypomnienie"),
         pytest.param([], [_mail(EWA, "Raport 09.11.2026", "40000001 tak inst20m")], {EWA_9}, id="raport-innego-wykonawcy"),
-        pytest.param([], [_mail(JAN, "Raport 9.11", "40000001 tak inst20m")], set(), id="temat-bez-roku"),
+        pytest.param(
+            [], [_mail(JAN, "Raport 09.11.2026 Kowalski", "40000001 tak inst20m", _at(DAY + timedelta(days=1), 20))], {JAN_9}, id="inne-slowa"
+        ),
+        pytest.param(
+            [],
+            [_mail(JAN, "Raport za 10.11.2026 2 montaże 8 usterek", "40000004 tak inst20m", _at(DAY + timedelta(days=1), 20))],
+            {JAN_10},
+            id="inne-slowa-z-liczbami",
+        ),
+        pytest.param([], [_mail(JAN, "raport 10.11", "40000004 tak", _at(DAY + timedelta(days=1), 20))], {JAN_10}, id="bez-roku"),
+        pytest.param([], [_mail(JAN, "Raport 9.11", "40000001 tak inst20m")], {JAN_9}, id="bez-roku-dzien-bez-zera"),
+        pytest.param(
+            [],
+            [_mail(JAN, "Raport 10.11.2026 Kowalski", "40000001 tak inst20m\n40000002 tak spawpg", _at(DAY + timedelta(days=1), 20))],
+            {JAN_9},
+            id="inne-slowa-numery-wygrywaja-z-data",
+        ),
+        pytest.param([], [_mail(JAN, "Raport", "40000004 tak", _at(DAY + timedelta(days=1), 20))], {JAN_10}, id="bez-dnia"),
+        pytest.param([], [_mail(JAN, "Raport", "40000004 tak")], {JAN_9}, id="bez-dnia-nie-pozniej-niz-przyjscie"),
+        pytest.param(
+            [],
+            [
+                _mail(JAN, "Raport 10.11.2026", "40000004 tak", _at(DAY + timedelta(days=1), 19)),
+                _mail(JAN, "Raport", "40000005 tak", _at(DAY + timedelta(days=1), 20)),
+            ],
+            {JAN_9, JAN_10},
+            id="bez-dnia-za-dzien-bez-innego-raportu",
+        ),
+        pytest.param(
+            [],
+            [
+                _mail(JAN, "Raport", "40000005 tak", _at(DAY + timedelta(days=1), 21)),
+                _mail(JAN, "Raport", "40000004 tak", _at(DAY + timedelta(days=1), 20)),
+            ],
+            {JAN_9, JAN_10},
+            id="dwa-bez-dnia-po-kolei-przyjscia",
+        ),
+        pytest.param(
+            [],
+            [
+                _mail(JAN, "Raport", "40000005 tak", _at(DAY + timedelta(days=1), 20)),
+                _mail(JAN, "Raport 10.11.2026 Kowalski", "40000004 tak", _at(DAY + timedelta(days=1), 21)),
+            ],
+            {JAN_9, JAN_10},
+            id="bez-dnia-po-dniu-z-tematu-pozniejszego-maila",
+        ),
+        pytest.param([], [_mail(JAN, "Raport", "40000001 tak", _at(DAY - timedelta(days=1), 20))], set(), id="bez-dnia-bez-takiego-dnia"),
+        pytest.param([], [_mail(JAN, "Raport 31.11.2026", "40000004 tak")], {JAN_9}, id="data-ktora-nie-jest-dniem"),
         pytest.param([], [_mail(JAN, "Montaże 09.11.2026", "40000001 tak inst20m")], set(), id="bez-slowa-raport"),
         pytest.param([], [_mail("obcy@przyklad.invalid", "Raport 09.11.2026", "40000001 tak")], set(), id="adres-spoza-listy"),
         pytest.param([], [TIE_FAULTY, TIE_GOOD], {JAN_9}, id="remis-blad-opisu-pierwszy"),
@@ -636,8 +683,12 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
     przysłany, mail bez Wpisów nie jest raportem, pomylony temat (dwa numery z innego dnia, także z dniem z tematu po dziś albo sprzed wdrożenia) liczy się za
     dzień zleceń (bez dni numeru, który INTERMAX ma w kilku zleceniach, bo jego Wpis niczego nie wpisuje), a jeden
     niezgodny Wpis za dzień z tematu. Mail z tą samą chwilą i tym samym Message-ID daje ten sam
-    wynik w każdej kolejności skrzynki. Temat bez roku, mail bez słowa ``Raport`` i adres spoza listy nie są raportem
-    Wykonawcy. Po wcześniejszym kliknięciu (``earlier``) obie operacje biorą tę samą pamięć Wpisania raportów i INTERMAX
+    wynik w każdej kolejności skrzynki. Raport z błędem tematu (historie 3, 5, 19–20) liczy się za dzień z tematu, gdy
+    da się go przeczytać (inne słowa obok daty, data bez roku), z numerami zleceń, które dalej wygrywają z datą, a bez
+    niego (temat bez daty albo z datą, która nie jest dniem) za ostatni dzień Wykonawcy ze zleceniami, za który nie ma
+    innego raportu, także z błędem tematu z dniem z tematu, nie późniejszy niż dzień przyjścia maila, kolejne takie maile
+    po kolei przyjścia; bez takiego dnia
+    niczego nie kończy. Mail bez słowa ``Raport`` i adres spoza listy nie są raportem Wykonawcy. Po wcześniejszym kliknięciu (``earlier``) obie operacje biorą tę samą pamięć Wpisania raportów i INTERMAX
     po nim: numery dopisane przez Centrum nie robią z poprawionego tematu pomylonego, a zlecenie po Przeniesieniu liczy
     się za dzień sprzed niego, więc ten sam raport z dobrą datą liczy się za dzień z tematu (W1 r1 #2059)."""
 

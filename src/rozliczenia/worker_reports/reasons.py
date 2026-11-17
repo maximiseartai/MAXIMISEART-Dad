@@ -36,15 +36,22 @@ from . import (
     VerdictFault,
 )
 
-__all__ = ["note", "reason"]
+__all__ = ["note", "reason", "subject_fault"]
 
 
 def reason(problem: ReportProblem) -> str:
     match problem:
-        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault):
+        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault, day=day):
+            if day is None:
+                return (
+                    f"Mail od {worker} z {arrived:%d.%m.%Y, %H:%M} ma w temacie słowo „Raport”, ale {_subject(fault)}, a "
+                    f"{worker} nie ma do dnia przyjścia maila dnia ze zleceniami bez innego raportu, za który Centrum "
+                    "mogłoby go liczyć. Centrum go nie wpisało i nie kończy nim Przypomnień o raporcie."
+                )
             return (
-                f"Mail od {worker} z {arrived:%d.%m.%Y, %H:%M} ma w temacie słowo „Raport”, ale {_subject(fault)}, "
-                "więc Centrum go nie wpisało."
+                f"Raport wykonawcy od {worker} z {arrived:%d.%m.%Y, %H:%M} ma błąd w temacie: {_subject(fault)}. "
+                f"Centrum liczy go za {_day(day)}, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów "
+                "nie wpisało."
             )
         case UnknownSender(day=day):
             return (
@@ -175,6 +182,28 @@ def _unknown(problem: UnknownNumber) -> str:
             )
         case AddBar.NOT_ORDERED:
             return f"{missing}, a Centrum go nie dopisało, bo dzień {_day(day)} nie jest jeszcze uporządkowany w INTERMAX."
+
+
+def subject_fault(fault: SubjectFault) -> str:
+    """Rodzaj błędu tematu w kilku słowach, do szczegółów dnia przy temacie raportu."""
+
+    match fault:
+        case SubjectFault.NO_DATE:
+            return "bez daty"
+        case SubjectFault.OTHER_WORDS:
+            return "inne słowa"
+        case SubjectFault.OTHER_TEXT:
+            return "znak przed datą"
+        case SubjectFault.NO_YEAR:
+            return "bez roku"
+        case SubjectFault.DATE_FORM:
+            return "data nie jako dzień, miesiąc, rok"
+        case SubjectFault.SEPARATOR:
+            return "zły znak w dacie"
+        case SubjectFault.YEAR_DIGITS:
+            return "zły rok"
+        case SubjectFault.NOT_A_DAY:
+            return "dzień, którego nie ma"
 
 
 def _subject(fault: SubjectFault) -> str:

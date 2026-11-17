@@ -74,6 +74,7 @@ from rozliczenia.worker_reports import (
     ReadStranger,
     ReadUnreadable,
     ReportEntry,
+    ReportSubject,
     SenderAddress,
     SubjectFault,
     UnknownSender,
@@ -2316,8 +2317,9 @@ JAN, ANNA = Login("jan.testowy"), Login("anna.testowa")
 
 def _entering_facts() -> EnteringFacts:
     """Fakty kliknięcia z numerem z zerem na początku we Wpisie (pamięć wpisów, pamięć zlecenia z innego dnia i od
-    innego Wykonawcy, numer bez zlecenia), decyzją „Zostaw moją”, mailem z nieczytelnym tematem i trzema mailami spoza
-    listy adresów, z których dwa mają ten sam Message-ID i różne adresy."""
+    innego Wykonawcy, numer bez zlecenia), decyzją „Zostaw moją”, raportem z błędem tematu z dniem z tematu (bez
+    tematu, którego Logi nie mają) i trzema mailami spoza listy adresów, z których dwa mają ten sam Message-ID i różne
+    adresy."""
 
     arrived = datetime(2026, 11, 9, 18, 0).astimezone()
     zero, plain = OrderNumber("040000001"), OrderNumber("40000002")
@@ -2333,7 +2335,7 @@ def _entering_facts() -> EnteringFacts:
         skipped=2,
         mails=(
             ReadReport(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
-            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.NO_DATE, frozenset({plain})),
+            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, frozenset({plain}), CLICK_DAY, ReportSubject("")),
             ReadStranger(twice, arrived, CLICK_DAY),
             ReadStranger(twice, arrived, CLICK_DAY),
             ReadStranger(once, arrived, CLICK_DAY),

@@ -46,6 +46,7 @@ from rozliczenia.worker_reports import (
     RepeatedOrder,
     ReportEntry,
     ReportProblem,
+    ReportSubject,
     SubjectFault,
     UnknownNumber,
     UnknownSender,
@@ -91,7 +92,8 @@ class LoggedReportMail(_Record):
 
 
 class LoggedUnreadableMail(_Record):
-    """Mail od Wykonawcy z tematem, z którego nie da się odczytać dnia; bez tematu."""
+    """Raport wykonawcy z błędem tematu: powód i dzień z tematu, gdy da się go przeczytać obok błędu (``day``; Logi
+    sprzed dnia z tematu go nie mają); bez tematu."""
 
     kind: Literal["unreadable"]
     mail: str
@@ -102,6 +104,7 @@ class LoggedUnreadableMail(_Record):
     """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
     pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, a takiego maila rdzeń nie czyta (ADR 0041), więc mail
     i jego ostrzeżenie dają w odtworzeniu różnicę."""
+    day: date | None = None
 
 
 class LoggedStrangerMail(_Record):
@@ -131,6 +134,7 @@ def _mail(read: MailRead) -> LoggedMail:
                 worker=read.worker,
                 fault=read.fault,
                 numbers=sorted(read.numbers),
+                day=read.day,
             )
         case ReadStranger():
             return LoggedStrangerMail(kind="stranger", mail=read.mail.digest, arrived=read.arrived, day=read.day)
@@ -141,7 +145,8 @@ def _mail(read: MailRead) -> LoggedMail:
 def _read(mail: LoggedMail) -> MailRead:
     """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów
     (``tools/odtworz_uruchomienie.py``) podaje go procesowi jako mail w postaci kanonicznej
-    (``worker_reports.as_mail``)."""
+    (``worker_reports.as_mail``). Raport z błędem tematu ma pusty temat dla taty, bo Logi tematów nie mają (ADR 0028),
+    a postać kanoniczna bierze z odczytu tylko powód i dzień z tematu."""
 
     match mail:
         case LoggedReportMail():
@@ -157,7 +162,8 @@ def _read(mail: LoggedMail) -> MailRead:
             return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
         case LoggedUnreadableMail():
             numbers = frozenset(OrderNumber(number) for number in mail.numbers or ())
-            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, numbers)
+            subject = ReportSubject("")
+            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, numbers, mail.day, subject)
         case LoggedStrangerMail():
             return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
         case _:
@@ -235,11 +241,15 @@ class LoggedDescriptionProblem(_Record):
 
 
 class LoggedSubjectProblem(_Record):
+    """Raport wykonawcy z błędem tematu: skrót maila, Wykonawca, chwila przyjścia, powód i dzień, za który Centrum go
+    liczy (``day``; ``None``: problem bez dnia, także w Logach sprzed wskazanego dnia); bez tematu."""
+
     kind: Literal["unreadable_subject"]
     mail: str
     worker: str
     arrived: datetime
     fault: SubjectFault
+    day: date | None = None
 
 
 class LoggedSenderProblem(_Record):
@@ -295,6 +305,7 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
                 worker=problem.worker,
                 arrived=problem.arrived,
                 fault=problem.fault,
+                day=problem.day,
             )
         case UnknownSender():
             return LoggedSenderProblem(kind="unknown_sender", mail=problem.mail.digest, day=problem.day)

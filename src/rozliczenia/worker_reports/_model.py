@@ -91,6 +91,42 @@ class SenderAddress:
         raise TypeError("Adres nadawcy nie jest tekstem: daje go tylko SenderAddress.shown() dla widoku Raporty.")
 
 
+class ReportSubject:
+    """Temat maila ze Skrzynki raportów, który rdzeń pokazuje tacie przy błędzie tematu (ADR 0041).
+
+    Nie jest ``str``, więc pole tekstowe Logów go nie przyjmie: ``str()`` i f-string zgłaszają ``TypeError``, a ``repr``
+    nie pokazuje tematu (ADR 0028: tematy nie trafiają do Logów). Tekst daje tylko ``shown()``, które woła jedynie zapis
+    wyniku dla widoku Raporty, po strażniku reguły danych. Równość, skrót i kolejność idą po tekście tematu, bo temat
+    odróżnia w ``problem_order`` dwa problemy ``UnreadableSubject`` z jednym Message-ID.
+    """
+
+    __slots__ = ("_text",)
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def shown(self) -> str:
+        return self._text
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, ReportSubject) and other._text == self._text
+
+    def __hash__(self) -> int:
+        return hash(self._text)
+
+    def __lt__(self, other: ReportSubject) -> bool:
+        return self._text < other._text
+
+    def __repr__(self) -> str:
+        return "ReportSubject(…)"
+
+    def __str__(self) -> str:
+        raise TypeError("Temat maila nie jest tekstem: daje go tylko ReportSubject.shown() dla widoku Raporty.")
+
+    def __format__(self, spec: str) -> str:
+        raise TypeError("Temat maila nie jest tekstem: daje go tylko ReportSubject.shown() dla widoku Raporty.")
+
+
 @dataclass(frozen=True)
 class ReportMail:
     """Mail ze Skrzynki raportów z tematem, który może być tematem Raportu wykonawcy (``reads_as_report``): temat i treść jako tekst, ``arrived`` ze strefą
@@ -562,14 +598,18 @@ class ReadReport:
 
 @dataclass(frozen=True)
 class ReadUnreadable:
-    """Mail od Wykonawcy ze słowem Raportu wykonawcy w temacie, z którego tematu nie da się odczytać dnia. ``numbers``:
-    numery Wpisów jego treści, po których poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``)."""
+    """Raport wykonawcy z błędem tematu (ADR 0041): mail od Wykonawcy z Wpisami i ze słowem Raportu wykonawcy w
+    temacie, który nie daje dnia zleceń wprost, z powodem ``fault``. ``numbers``: numery Wpisów jego treści, po których
+    poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``) i które wygrywają z datą (``Board.days``);
+    ``day``: dzień z tematu, gdy da się go przeczytać obok błędu (``_subject.read``); ``subject``: temat dla taty."""
 
     mail: MailId
     arrived: datetime
     worker: Login
     fault: SubjectFault
     numbers: frozenset[OrderNumber]
+    day: date | None
+    subject: ReportSubject
 
 
 @dataclass(frozen=True)
@@ -586,10 +626,16 @@ MailRead = ReadReport | ReadUnreadable | ReadStranger
 
 @dataclass(frozen=True)
 class UnreadableSubject:
+    """Raport wykonawcy z błędem tematu z powodem ``fault`` i tematem ``subject``, liczony za dzień otwarty ``day``
+    (``_reading.read_window``): Centrum go nie wpisuje, a tata widzi go przy tym dniu. ``None``: problem bez dnia, bo
+    Centrum nie wskazało dnia otwartego, za który raport się liczy, więc tata widzi go przy dniu przyjścia maila."""
+
     mail: MailId
     worker: Login
     arrived: datetime
     fault: SubjectFault
+    subject: ReportSubject
+    day: date | None
 
 
 @dataclass(frozen=True)
@@ -870,7 +916,7 @@ class OrderDetail:
 class WorkerDay:
     """Liczby Wykonawcy z dnia dla widoku Raporty: zlecenia, zlecenia z ``tak`` albo ``nie`` w ``SKUTECZNE`` po
     kliknięciu (``entered``), Raporty wykonawcy, problemy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności
-    z INTERMAX (``orders_detail``)."""
+    z INTERMAX (``orders_detail``) i dni z tematu raportów z pomylonym tematem za ten dzień (``mistaken``)."""
 
     day: date
     worker: Login
@@ -880,6 +926,8 @@ class WorkerDay:
     problems: int
     without_report: tuple[OrderNumber, ...]
     orders_detail: tuple[OrderDetail, ...]
+    mistaken: tuple[date, ...]
+    """Dni z tematu Raportów wykonawcy z pomylonym tematem, które liczą się za ten dzień (ADR 0029), od najwcześniejszego."""
 
 
 @dataclass(frozen=True)
@@ -904,7 +952,7 @@ class ReportsOutcome:
 
 def problem_order(
     problem: ReportProblem,
-) -> tuple[date, str, str, str, tuple[str | SenderAddress | datetime, ...]]:
+) -> tuple[date, str, str, str, tuple[str | SenderAddress | ReportSubject | datetime, ...]]:
     """Miejsce problemu w widoku Raporty: dzień, Wykonawca, numer, rodzaj i pozostałe pola problemu. Klucz bierze
     każde pole, którym mogą się różnić dwa problemy jednego wyniku, więc dwa różne problemy nigdy nie mają równego
     miejsca, a kolejność nie zależy od kolejności maili ani od ``PYTHONHASHSEED``. ``ConflictingVerdicts`` jest
@@ -913,8 +961,8 @@ def problem_order(
 
     kind = type(problem).__name__
     match problem:
-        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault):
-            return arrived.date(), worker, "", kind, (mail.digest, fault.name, arrived)
+        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
+            return day or arrived.date(), worker, "", kind, (mail.digest, fault.name, arrived, subject)
         case UnknownSender(mail=mail, sender=sender, day=day):
             return day, "", "", kind, (mail.digest, sender)
         case MissingVerdict(fault=fault):
