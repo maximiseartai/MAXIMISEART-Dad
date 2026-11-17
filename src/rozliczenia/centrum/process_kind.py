@@ -97,9 +97,11 @@ class Start:
     gospodarz bez Ustawień Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu
     (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista z Logów Wpisania raportów,
     a Przygotowania i Przebiegu rozliczeń plik ``wykonawcy.yaml`` folderu Konfiguracji); ``None``: proces
-    jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie, z migawki Ustawień Centrum z
-    chwili startu; gospodarz bez Ustawień Centrum podaje Reguły ilości z Wydania; ``None`` w Centrum, gdy pliku pary
-    nie da się czytać. ``activity_legend``: Legenda czynności tego Uruchomienia, skąd i kiedy jak ``quantity_rules``.
+    jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie (Centrum: migawka Ustawień z
+    chwili startu, ``None``, gdy pliku pary nie da się czytać; Skrypt dla maszyn: Reguły ilości z Wydania;
+    odtworzenie: Reguły ilości z Logów, a z Logów sprzed ich zapisu z Wydania). ``activity_legend``: Legenda czynności
+    tego Uruchomienia, z tych samych źródeł co ``quantity_rules`` (w Centrum ``None``, gdy pliku legendy nie da się
+    czytać).
     Proces, który Ustawieniem ze startu nie liczy (bez jego ``SettingNeed`` w ``ProcessKind.needs``), dostaje je w
     wejściu i w Logach jako ``None`` (rzut w ``Catalog.prepared``). ``warnings``: ostrzeżenia startu na
     kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla

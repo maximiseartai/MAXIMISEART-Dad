@@ -516,7 +516,7 @@ _Avoid_: ustawienia Uruchomienia, środowisko
 
 Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, w chwili jego startu: Lista Wykonawców, Reguły ilości i Legenda czynności.
 Proces mówi, którymi z nich liczy, w swoich potrzebach, a Uruchomienie procesu, który danym Ustawieniem nie liczy, nie ma go ani w wejściu, ani w Logach Uruchomienia.
-Centrum bierze je z migawki Ustawień Centrum, a Skrypt dla maszyn z Wydania i z pliku Listy Wykonawców; odtworzenie bierze Reguły ilości i Legendę czynności z Logów Uruchomienia, a Listę Wykonawców z Logów tylko Wpisania raportów, bo Przygotowanie i Przebieg rozliczeń mają w Logach z jej pliku tylko nazwę i rozmiar, więc dla nich czyta ją z pliku Listy Wykonawców w folderze Konfiguracji.
+Skąd bierze je każdy gospodarz Uruchomienia (Centrum rozliczeń, Skrypt dla maszyn, odtworzenie z Logów), mówi jeden opis: `process_kind.Start`.
 Zmiana Ustawień w trakcie Uruchomienia ich nie zmienia (ADR 0032).
 _Avoid_: fakty startu (to fakty o tym, jak wystartowało Uruchomienie), ustawienia Uruchomienia
 
