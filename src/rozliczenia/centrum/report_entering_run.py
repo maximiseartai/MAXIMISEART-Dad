@@ -288,7 +288,7 @@ def _worker_day(
                 number=order.number,
                 successful=order.successful,
                 activities=order.activities,
-                state=OrderState.of(reported=order.reported, problem=order.number in numbers).value,
+                state=OrderState.of(reported=order.reported, faulty=order.faulty, problem=order.number in numbers).value,
                 codes=list(order.codes or ()),
                 no_code=order.codes == (),
             )
@@ -311,13 +311,15 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
             reported=difference.reported,
         )
     )
-    found = problem.subject
-    subject = (
+    found = problem.faulty_subject
+    faulty = (
         None
         if found is None
-        else report_entering_contract.ReportsSubject(subject=found.subject, fault=found.fault, day=found.day)
+        else report_entering_contract.ReportsFaultySubject(fault=found.fault, day=found.day, arrived=found.arrived)
     )
-    return report_entering_contract.ReportsProblem(reason=problem.reason, number=problem.number, keep=keep, subject=subject)
+    return report_entering_contract.ReportsProblem(
+        reason=problem.reason, number=problem.number, keep=keep, faulty_subject=faulty
+    )
 
 
 def conflict_note(copy: Path) -> str:

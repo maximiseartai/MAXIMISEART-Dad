@@ -1,7 +1,7 @@
 import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, MailWarningIcon, type LucideIcon } from "lucide-react"
 import { cn } from "cn"
 
-import type { KeptCell, ReportsNote, ReportsOrder, ReportsProblem, ReportsSubject, ReportsWorkerDay } from "@/api/generated"
+import type { KeptCell, ReportsNote, ReportsOrder, ReportsFaultySubject, ReportsProblem, ReportsWorkerDay } from "@/api/generated"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { dayMonth, hourMinute, plural, shortDate } from "@/lib/format"
@@ -35,9 +35,9 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
  * (`orders_detail`) z problemami, „Zostaw moją”, spokojnymi informacjami o Przeniesieniach zleceń (`notes`) i o
- * raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z tematem, rodzajem
- * błędu i dniem, za który Centrum go liczy. Wynik
- * kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
+ * raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z rodzajem błędu, dniem,
+ * za który Centrum go liczy, i chwilą przyjścia maila, bez tematu (ADR 0028), a jego zlecenia mają stan „Błąd tematu”,
+ * nie „Bez raportu”. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
  * przebieg Przypomnień o raporcie za ten dzień (`reminders`), gdy jakieś poszło.
  */
 export function DayDetails({
@@ -163,10 +163,7 @@ function Orders({
         <li key={order.number} className={ROW}>
           <OrderNumber number={order.number} />
           <OrderLine order={order} />
-          <StatusBadge
-            status={orderStatus(order, state.kind)}
-            label={order.state === "entered" ? "Wpisane" : undefined}
-          />
+          <StatusBadge status={orderStatus(order, state.kind)} label={ORDER_LABELS[order.state]} />
           <CodesLine order={order} />
           {state.day.problems
             .filter((problem) => problem.number === order.number)
@@ -195,7 +192,9 @@ function Orders({
       {loose.map((problem) => (
         <li key={problemKey(problem)} className={ROW}>
           <OrderNumber number={problem.number} />
-          <span className="font-medium">{problem.subject === null ? "Problem bez zlecenia tego dnia" : "Raport z błędem tematu"}</span>
+          <span className="font-medium">
+            {problem.faulty_subject === null ? "Problem bez zlecenia tego dnia" : "Raport z błędem tematu"}
+          </span>
           <StatusBadge status="problem" />
           <ProblemReason problem={problem} keeping={keeping} onKeep={onKeep} />
         </li>
@@ -204,11 +203,20 @@ function Orders({
   )
 }
 
+/** Napis znaczka zlecenia, gdy różni się od nazwy stanu kafelka. */
+const ORDER_LABELS: Readonly<Record<ReportsOrder["state"], string | undefined>> = {
+  entered: "Wpisane",
+  faulty_subject: "Błąd tematu",
+  problem: undefined,
+  without_report: undefined,
+}
+
 function orderStatus(order: ReportsOrder, day: Status): Status {
   switch (order.state) {
     case "entered":
       return "complete"
     case "problem":
+    case "faulty_subject":
       return "problem"
     case "without_report":
       return day === "waiting" ? "waiting" : "without_report"
@@ -223,6 +231,10 @@ function orderStatus(order: ReportsOrder, day: Status): Status {
 function OrderLine({ order }: { order: ReportsOrder }) {
   if (order.state === "without_report") {
     return <span className="text-muted-foreground">Brak Wpisu w raporcie</span>
+  }
+
+  if (order.state === "faulty_subject") {
+    return <span className="text-muted-foreground">Wpis w raporcie z błędem tematu, niewpisany</span>
   }
 
   return (
@@ -314,19 +326,22 @@ function MistakenLine({ subjectDay }: { subjectDay: string }) {
   )
 }
 
-/** Temat raportu z błędem tematu, rodzaj błędu i dzień, za który Centrum liczy raport, nad zdaniem problemu. */
-function SubjectFacts({ subject }: { subject: ReportsSubject }) {
+/**
+ * Rodzaj błędu tematu, dzień, za który Centrum liczy raport, i chwila przyjścia maila, nad zdaniem problemu. Tematu nie
+ * ma, bo tematy maili nie trafiają do przeglądarki (ADR 0028).
+ */
+function FaultyFacts({ faulty }: { faulty: ReportsFaultySubject }) {
   return (
-    <dl className="col-start-2 col-end-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs" aria-label="Temat raportu">
+    <dl className="col-start-2 col-end-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs" aria-label="Błąd tematu">
       <dt className="flex items-center gap-1 text-muted-foreground">
         <MailWarningIcon className="size-3 shrink-0" aria-hidden />
-        Temat
+        Błąd tematu
       </dt>
-      <dd className="min-w-0 break-words font-medium">„{subject.subject}”</dd>
-      <dt className="text-muted-foreground">Błąd tematu</dt>
-      <dd>{subject.fault}</dd>
+      <dd className="font-medium">{faulty.fault}</dd>
       <dt className="text-muted-foreground">Liczony za</dt>
-      <dd className="tabular-nums">{subject.day === null ? "żaden dzień" : shortDate(subject.day)}</dd>
+      <dd className="tabular-nums">{faulty.day === null ? "żaden dzień" : shortDate(faulty.day)}</dd>
+      <dt className="text-muted-foreground">Przyszedł</dt>
+      <dd className="tabular-nums">{`${dayMonth(faulty.arrived)}, ${hourMinute(faulty.arrived)}`}</dd>
     </dl>
   )
 }
@@ -340,7 +355,7 @@ function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem }
 
   return (
     <>
-      {problem.subject === null ? null : <SubjectFacts subject={problem.subject} />}
+      {problem.faulty_subject === null ? null : <FaultyFacts faulty={problem.faulty_subject} />}
       <span className="col-start-2 col-end-4 text-xs leading-relaxed text-muted-foreground">{problem.reason}</span>
       {keep === null ? null : (
         <span className="col-start-2 col-end-4">

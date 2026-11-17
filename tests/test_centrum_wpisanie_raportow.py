@@ -72,7 +72,6 @@ from rozliczenia.worker_reports import (
     OrderNumber,
     Reminder,
     ReportEntry,
-    ReportSubject,
     SenderAddress,
     SentReminder,
     SubjectFault,
@@ -2466,6 +2465,13 @@ def _view(centrum: EnteringCentrum) -> dict[str, Any]:
     return dict(response.json())
 
 
+def _faulty_subject(problem: dict[str, Any]) -> tuple[str, str | None, datetime]:
+    """Rodzaj błędu, dzień, za który Centrum liczy raport, i chwila przyjścia raportu z błędem tematu z problemu widoku."""
+
+    found = problem["faulty_subject"]
+    return found["fault"], found["day"], datetime.fromisoformat(found["arrived"])
+
+
 def _worker(view: dict[str, Any], login: str, day: str = "2026-11-09") -> dict[str, Any]:
     """Dzień ``day`` Wykonawcy ``login`` z widoku Raporty."""
 
@@ -2535,7 +2541,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "entered": 0,
                     "mails": 1,
                     "without_report": ["40000002"],
-                    "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None, "subject": None}],
+                    "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None, "faulty_subject": None}],
                     "notes": [],
                     "orders_detail": [
                         {
@@ -2732,10 +2738,11 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
         Login("anna.kowalska"),
         mail.arrived,
         SubjectFault.NO_DATE,
-        ReportSubject("Raport bez daty"),
         None,
     )
-    assert _worker(view, "anna.kowalska") == {
+    anna = _worker(view, "anna.kowalska")
+    assert [_faulty_subject(problem) for problem in anna["problems"]] == [("bez daty", None, mail.arrived)]
+    assert anna == {
         "day": "2026-11-09",
         "orders": 0,
         "entered": 0,
@@ -2746,7 +2753,7 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
                 "reason": reason(unreadable),
                 "number": None,
                 "keep": None,
-                "subject": {"subject": "Raport bez daty", "fault": "bez daty", "day": None},
+                "faulty_subject": anna["problems"][0]["faulty_subject"],
             }
         ],
         "notes": [],
@@ -2756,16 +2763,18 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
     }
 
 
-def test_raport_z_bledem_tematu_stoi_przy_wskazanym_dniu_z_tematem_po_strazniku_rodzajem_bledu_i_tym_dniem(tmp_path: Path) -> None:
-    """ADR 0041 (historie 3, 5, 19–20, 40, 42): raport z błędem tematu jest przysłany. Jan pisze w temacie nazwisko i
-    adres klienta, Anna sam ``Raport``. Odpowiedź HTTP widoku Raporty ma przy dniu każdego z nich Raport wykonawcy i
-    problem z tematem po regule danych (ADR 0028: bez wartości ``ADRES`` i z zamaskowanym telefonem), rodzajem błędu i
-    dniem, za który Centrum go liczy: dla Jana dzień z tematu, dla Anny jej ostatni dzień ze zleceniami (8.11), choć mail
-    przyszedł 9.11. Wpisów takiego raportu Centrum nie wpisuje, a temat nie trafia do Logów."""
+def test_raport_z_bledem_tematu_stoi_przy_wskazanym_dniu_z_rodzajem_bledu_i_tym_dniem_bez_tematu(tmp_path: Path) -> None:
+    """ADR 0041 (historie 3, 5, 19–20, 40, 42) i ADR 0028: raport z błędem tematu jest przysłany. Jan pisze w temacie
+    nazwisko i adres klienta, Anna sam ``Raport``. Odpowiedź HTTP widoku Raporty ma przy dniu każdego z nich Raport
+    wykonawcy i problem z rodzajem błędu, dniem, za który Centrum go liczy (dla Jana dzień z tematu, dla Anny jej ostatni
+    dzień ze zleceniami, 8.11, choć mail przyszedł 9.11), i chwilą przyjścia maila, ale bez tematu, bo tematy maili nie
+    trafiają do przeglądarki. Zlecenia z Wpisami takiego raportu nie są bez raportu: mają stan ``faulty_subject``, a
+    linia Wykonawcy nie liczy ich do bez raportu, tylko drugie zlecenie Jana, którego raport nie ma. Wpisów takiego raportu Centrum nie wpisuje, a temat nie trafia do Logów."""
 
     client = "Testowa 12 m. 3 Wrocław"
     jan_order = Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (ADDRESS, client)))
-    intermax = Intermax(ordered=(jan_order, _order(8, 11, "anna.kowalska", 40000002)), raw=())
+    ordered = (jan_order, _order(9, 12, "jan.testowy", 40000003), _order(8, 11, "anna.kowalska", 40000002))
+    intermax = Intermax(ordered=ordered, raw=())
     mails = [
         report(JAN, f"Raport 09.11.2026 Kowalski {client} tel. 600 123 456", "40000001 tak inst20m"),
         report(ANNA, "Raport", "40000002 tak spawpg"),
@@ -2778,11 +2787,16 @@ def test_raport_z_bledem_tematu_stoi_przy_wskazanym_dniu_z_tematem_po_strazniku_
     view = _view(centrum)
 
     jan, anna = _worker(view, "jan.testowy"), _worker(view, "anna.kowalska", "2026-11-08")
-    assert [(day["mails"], [problem["subject"] for problem in day["problems"]]) for day in (jan, anna)] == [
-        (1, [{"subject": "Raport 09.11.2026 Kowalski [adres] tel. [telefon]", "fault": "inne słowa", "day": "2026-11-09"}]),
-        (1, [{"subject": "Raport", "fault": "bez daty", "day": "2026-11-08"}]),
+    assert [(day["mails"], [_faulty_subject(problem) for problem in day["problems"]]) for day in (jan, anna)] == [
+        (1, [("inne słowa", "2026-11-09", mails[0].arrived)]),
+        (1, [("bez daty", "2026-11-08", mails[1].arrived)]),
     ]
-    assert [order["state"] for order in (*jan["orders_detail"], *anna["orders_detail"])] == ["without_report", "without_report"]
+    shown = json.dumps(view, ensure_ascii=False)
+    assert "Kowalski" not in shown and "Testowa" not in shown and "600 123" not in shown
+    assert [([(order["number"], order["state"]) for order in day["orders_detail"]], day["without_report"]) for day in (jan, anna)] == [
+        ([("40000001", "faulty_subject"), ("40000003", "without_report")], ["40000003"]),
+        ([("40000002", "faulty_subject")], []),
+    ]
     assert _cells(centrum.register) == before
     logs = json.dumps(centrum.run_logs(), ensure_ascii=False)
     assert "Kowalski" not in logs and "Testowa" not in logs
@@ -2831,7 +2845,7 @@ def test_tak_i_nie_jednego_zlecenia_w_mailu_nic_do_niego_nie_wpisuja_a_widok_rap
         {"label": "Problemy", "value": 1, "unit": "count"},
     ]
     assert _worker(_view(centrum), "jan.testowy")["problems"] == [
-        {"reason": reason(warning), "number": "40000001", "keep": None, "subject": None}
+        {"reason": reason(warning), "number": "40000001", "keep": None, "faulty_subject": None}
     ]
     assert f"{mail.arrived:%d.%m.%Y o %H:%M}" in reason(warning)
 
@@ -4446,7 +4460,7 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_log
     assert [(order["codes"], order["no_code"]) for order in _worker(view, "jan.testowy")["orders_detail"]] == [
         (["montaż"], False) if dads_legend else ([], True)
     ]
-    assert _worker(view, "anna.kowalska")["problems"] == [{"reason": reason(faulty), "number": "40000002", "keep": None, "subject": None}]
+    assert _worker(view, "anna.kowalska")["problems"] == [{"reason": reason(faulty), "number": "40000002", "keep": None, "faulty_subject": None}]
     assert [(order["codes"], order["no_code"]) for order in _worker(view, "anna.kowalska")["orders_detail"]] == [
         (["montaż", "instutp40m"] if dads_legend else ["instutp40m"], False)
     ]
@@ -4484,7 +4498,7 @@ def test_szczegoly_dnia_maja_przy_zleceniu_tak_kody_z_opisu_albo_brak_kodu_a_prz
         ("40000006", "problem", ["instutp40m"], False),
         ("40000007", "entered", [], False),
     ]
-    assert jan["problems"] == [{"reason": reason(faulty), "number": "40000006", "keep": None, "subject": None}]
+    assert jan["problems"] == [{"reason": reason(faulty), "number": "40000006", "keep": None, "faulty_subject": None}]
     assert {number: _cells(centrum.register)[number] for number in numbers} == {
         40000001: ("tak", "inst30m instmdic Podłączyłem lokal, klient zadowolony"),
         40000005: ("tak", "Podłączyłem lokal, dzielnik 1/2"),

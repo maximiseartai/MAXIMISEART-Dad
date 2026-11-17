@@ -46,6 +46,7 @@ def worker_days(
     added: Iterable[tuple[OrderKey, OrderDetail]],
     legend: ActivityLegend,
     mistaken: Iterable[tuple[Login, date, date]],
+    faulty: frozenset[OrderKey],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał, a ``mails``
@@ -61,6 +62,8 @@ def worker_days(
     Wykonawcy z dnia, za przeniesionymi, bo zapis dopisuje je po Przeniesieniach. Każde zlecenie ``tak`` ma Kody
     czynności swojego opisu z Legendy czynności ``legend`` (``_descriptions.codes``). Dzień, za który liczy się
     raport z pomylonym tematem (``mistaken``: Wykonawca, ten dzień i dzień z tematu), ma jego dzień z tematu.
+    Zlecenie bez Wpisu, które ma Wpis w raporcie z błędem tematu za swój dzień (``faulty``,
+    ``WindowRead.faulty_entries``), nie jest bez raportu, bo raport przyszedł.
     """
 
     found_orders = tuple(orders)
@@ -90,13 +93,14 @@ def worker_days(
                         written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
                         written.get((order.row, ReportColumn.COMPLETED), order.completed),
                         order.key in reported,
+                        faulty=order.key in faulty,
                     )
                     for order in days.get((day, worker), [])
                 ),
                 *extra.get((day, worker), []),
             )
         )
-        missing = {order.number for order in detail if not order.reported}
+        missing = {order.number for order in detail if not (order.reported or order.faulty)}
         figures.append(
             WorkerDay(
                 day,

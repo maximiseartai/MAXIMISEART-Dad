@@ -46,7 +46,6 @@ from rozliczenia.worker_reports import (
     RepeatedOrder,
     ReportEntry,
     ReportProblem,
-    ReportSubject,
     SubjectFault,
     UnknownNumber,
     UnknownSender,
@@ -145,8 +144,7 @@ def _mail(read: MailRead) -> LoggedMail:
 def _read(mail: LoggedMail) -> MailRead:
     """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów
     (``tools/odtworz_uruchomienie.py``) podaje go procesowi jako mail w postaci kanonicznej
-    (``worker_reports.as_mail``). Raport z błędem tematu ma pusty temat dla taty, bo Logi tematów nie mają (ADR 0028),
-    a postać kanoniczna bierze z odczytu tylko powód i dzień z tematu."""
+    (``worker_reports.as_mail``)."""
 
     match mail:
         case LoggedReportMail():
@@ -162,8 +160,7 @@ def _read(mail: LoggedMail) -> MailRead:
             return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
         case LoggedUnreadableMail():
             numbers = frozenset(OrderNumber(number) for number in mail.numbers or ())
-            subject = ReportSubject("")
-            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, numbers, mail.day, subject)
+            return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, numbers, mail.day)
         case LoggedStrangerMail():
             return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
         case _:

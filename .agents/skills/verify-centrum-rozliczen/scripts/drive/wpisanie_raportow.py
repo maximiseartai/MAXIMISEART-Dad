@@ -354,7 +354,7 @@ def _window_day(
                 "reason": f"Raport wykonawcy z {day[8:10]}.{day[5:7]}.{day[:4]} ma dla zlecenia {numbers[0]} różne Wpisy.",
                 "number": numbers[0],
                 "keep": None,
-                "subject": None,
+                "faulty_subject": None,
             }
         ]
         if problem
@@ -414,9 +414,9 @@ def _window_view(clicked_at: str) -> Json:
 
 
 SUBJECT_TODAY = "2026-11-19"
-SUBJECT_FAULT = {"subject": "Raport 16.11.2026 Kowalski", "fault": "inne słowa", "day": "2026-11-16"}
-"""The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038)."""
-NO_DAY_FAULT = {"subject": "Raport", "fault": "bez daty", "day": None}
+SUBJECT_FAULT = {"fault": "inne słowa", "day": "2026-11-16", "arrived": "2026-11-16T17:05:00Z"}
+"""The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038), without its subject (ADR 0028)."""
+NO_DAY_FAULT = {"fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z"}
 """The Raport z błędem tematu of `wykonawca.b`, who has no orders: a problem without a day at the day it came."""
 MISTAKEN_DAY = "2026-11-28"
 """The day in the subject of the Raport of `wykonawca.a` whose numbers are his orders of 18.11 (ADR 0029)."""
@@ -429,6 +429,8 @@ def _subject_view(clicked_at: str) -> Json:
 
     days = [(date(2026, 11, 16) + timedelta(days=offset)).isoformat() for offset in range(4)]
     fault = _window_day(days[0], 40200000, 2, without=2)
+    fault["without_report"] = []
+    fault["orders_detail"] = [_order(order["number"], "faulty_subject") for order in fault["orders_detail"]]
     fault["entered"], fault["problems"] = 0, [
         {
             "reason": "Raport wykonawcy od wykonawca.a z 16.11.2026, 18:05 ma błąd w temacie: poza tym słowem i datą "
@@ -436,7 +438,7 @@ def _subject_view(clicked_at: str) -> Json:
             "ale jego Wpisów nie wpisało.",
             "number": None,
             "keep": None,
-            "subject": SUBJECT_FAULT,
+            "faulty_subject": SUBJECT_FAULT,
         }
     ]
     mistaken = _window_day(days[2], 40200020, 2)
@@ -449,7 +451,7 @@ def _subject_view(clicked_at: str) -> Json:
             "Centrum mogłoby go liczyć. Centrum go nie wpisało i nie kończy nim Przypomnień o raporcie.",
             "number": None,
             "keep": None,
-            "subject": NO_DAY_FAULT,
+            "faulty_subject": NO_DAY_FAULT,
         }
     ]
     return {
@@ -489,18 +491,24 @@ def _subject_faults(run: Run, page: Page) -> None:
         run.check(True, "the tile of a day with a Raport z błędem tematu is Problem, the day without a Raport Bez raportu")
         run.capture(page, "440-raporty-blad-tematu-kafelki", full_page=False)
         popover = _popover(page, "wykonawca.a", "2026-11-16")
-        facts = popover.get_by_label("Temat raportu", exact=True)
-        expect(facts).to_contain_text(f"„{SUBJECT_FAULT['subject']}”")
-        expect(facts).to_contain_text("Błąd tematu")
+        facts = popover.get_by_label("Błąd tematu", exact=True)
         expect(facts).to_contain_text("inne słowa")
         expect(facts).to_contain_text("Liczony za")
         expect(facts).to_contain_text("16.11")
+        expect(facts).to_contain_text("Przyszedł")
+        expect(facts).to_contain_text("16.11, 18:05")
+        expect(popover).not_to_contain_text("Temat")
         expect(popover.get_by_role("listitem").filter(has_text="Raport z błędem tematu")).to_have_count(1)
+        orders = popover.get_by_role("listitem").filter(has_text="Wpis w raporcie z błędem tematu, niewpisany")
+        expect(orders).to_have_count(2)
+        expect(orders.filter(has_text="Błąd tematu")).to_have_count(2)
+        expect(popover).not_to_contain_text("Bez raportu")
         run.capture(page, "441-raporty-blad-tematu", full_page=False)
         _close(page, popover)
         run.check(
             True,
-            "the popover of 16.11 shows the subject, the kind of the fault „inne słowa” and the day Centrum counts it for",
+            "the popover of 16.11 shows the kind of the fault „inne słowa”, the day Centrum counts it for and when it "
+            "came, without the subject, and its orders as Błąd tematu, not Bez raportu",
         )
         popover = _popover(page, "wykonawca.a", "2026-11-18")
         mistaken = popover.get_by_role("listitem").filter(has_text="Pomylony temat")
@@ -509,7 +517,7 @@ def _subject_faults(run: Run, page: Page) -> None:
         run.capture(page, "442-raporty-pomylony-temat", full_page=False)
         _close(page, popover)
         popover = _popover(page, "wykonawca.b", "2026-11-18")
-        expect(popover.get_by_label("Temat raportu", exact=True)).to_contain_text("żaden dzień")
+        expect(popover.get_by_label("Błąd tematu", exact=True)).to_contain_text("żaden dzień")
         _close(page, popover)
         run.check(
             True,

@@ -36,7 +36,6 @@ from rozliczenia.worker_reports import (
     Kept,
     Login,
     MailId,
-    MailRead,
     ManualDifference,
     MissingVerdict,
     MoveBar,
@@ -63,7 +62,6 @@ from rozliczenia.worker_reports import (
     ReportMail,
     ReportProblem,
     ReportsOutcome,
-    ReportSubject,
     SenderAddress,
     SubjectFault,
     SubjectLost,
@@ -2886,7 +2884,7 @@ JAN_TYPO = UnknownNumber(Login("jan.testowy"), DAY, OrderNumber("40000092"), Add
 
 def _no_year(arrived: datetime = EVENING) -> UnreadableSubject:
     mail = _mail(JAN, NO_YEAR, TEXT, arrived).id
-    return UnreadableSubject(mail, Login("jan.testowy"), arrived, SubjectFault.NO_YEAR, ReportSubject(NO_YEAR), DAY)
+    return UnreadableSubject(mail, Login("jan.testowy"), arrived, SubjectFault.NO_YEAR, DAY)
 
 
 @pytest.mark.parametrize(
@@ -3219,16 +3217,9 @@ def _canonical_senders(outcome: ReportsOutcome) -> list[SenderAddress]:
 
 
 def _seen(problem: ReportProblem) -> object:
-    """Problem bez adresu nieznanego nadawcy: postać kanoniczna ma inny adres spoza listy. Temat błędu tematu, którego
-    Logi nie mają, ``repr`` porównania pomija sam (``ReportSubject``)."""
+    """Problem bez adresu nieznanego nadawcy: postać kanoniczna ma inny adres spoza listy."""
 
     return (problem.mail, problem.day) if isinstance(problem, UnknownSender) else problem
-
-
-def _read_seen(read: MailRead) -> MailRead:
-    """Odczyt maila bez tematu błędu tematu: postać kanoniczna ma swój temat, bo Logi nie mają tematu."""
-
-    return replace(read, subject=ReportSubject("")) if isinstance(read, ReadUnreadable) else read
 
 
 @settings(derandomize=True, database=None)
@@ -3248,7 +3239,7 @@ def _read_seen(read: MailRead) -> MailRead:
 )
 def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[ReportMail]) -> None:
     """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
-    ten sam odczyt (poza tematem błędu tematu), te same zmiany komórek, problemy (poza adresem nieznanego nadawcy),
+    ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy),
     liczby i pamięć wpisów."""
 
     inputs = _inputs(
@@ -3259,8 +3250,8 @@ def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[
 
     again = enter_reports(replace(inputs, mails=canonical))
 
-    assert (tuple(map(_read_seen, again.mails)), again.changes, again.added, again.workers, again.memory) == (
-        tuple(map(_read_seen, outcome.mails)),
+    assert (again.mails, again.changes, again.added, again.workers, again.memory) == (
+        outcome.mails,
         outcome.changes,
         outcome.added,
         outcome.workers,
@@ -3290,15 +3281,13 @@ DAY_BESIDE_FAULTS = (SubjectFault.OTHER_WORDS, SubjectFault.OTHER_TEXT, SubjectF
 def test_postac_kanoniczna_bledu_tematu_daje_ten_sam_powod_i_dzien_z_tematu(fault: SubjectFault, day: date | None) -> None:
     """Każdy powód błędu tematu, także taki, którego przykłady własności wyżej nie trafią, z numerami Wpisów, bez dnia z
     tematu i z nim przy błędzie obok daty, także z dniem następnego roku, który temat bez roku daje tylko z granic od
-    dnia przyjścia. Logi nie mają tematu, więc odczyt z postaci kanonicznej ma jej temat. ``SEPARATOR`` jest tylko w Logach sprzed
-    tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś jako dzień."""
+    dnia przyjścia. ``SEPARATOR`` jest tylko w Logach sprzed tolerancji tematu (ADR 0041), a jego temat rdzeń czyta dziś
+    jako dzień."""
 
     numbers = frozenset({OrderNumber("40000001"), OrderNumber("40000002")})
-    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, numbers, day, ReportSubject(""))
-    sender = SenderAddress.of(JAN)
-    assert sender is not None
+    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, numbers, day)
 
-    assert _read_back(read) == (replace(read, subject=ReportSubject(as_mail(read, sender).subject)),)
+    assert _read_back(read) == (read,)
 
 
 @pytest.mark.parametrize("activities", ["", "wymiana routera"])
@@ -3342,8 +3331,8 @@ def _every_problem() -> list[ReportProblem]:
     sender = SenderAddress.of("obcy@przyklad.invalid")
     assert sender is not None
     return [
-        *(UnreadableSubject(mail, jan, EVENING, fault, ReportSubject("Raport"), DAY) for fault in SubjectFault),
-        UnreadableSubject(mail, jan, EVENING, SubjectFault.NO_DATE, ReportSubject("Raport"), None),
+        *(UnreadableSubject(mail, jan, EVENING, fault, DAY) for fault in SubjectFault),
+        UnreadableSubject(mail, jan, EVENING, SubjectFault.NO_DATE, None),
         UnknownSender(mail, sender, DAY),
         *(MissingVerdict(jan, DAY, number, fault) for fault in VerdictFault),
         ConflictingVerdicts(
@@ -3584,7 +3573,7 @@ def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
 
     assert outcome.mails == (
         ReadUnreadable(
-            mail.id, EVENING, Login("jan.testowy"), SubjectFault.NO_YEAR, frozenset({OrderNumber("40000001")}), DAY, ReportSubject("Raport 08.11")
+            mail.id, EVENING, Login("jan.testowy"), SubjectFault.NO_YEAR, frozenset({OrderNumber("40000001")}), DAY
         ),
     )
 
@@ -3860,8 +3849,8 @@ def test_raport_z_bledem_tematu_liczy_sie_za_dzien_z_tematu_albo_wskazany_i_nic_
 
     jan, numbers = Login("jan.testowy"), frozenset({OrderNumber("40000001")})
     assert outcome.changes == ()
-    assert _problems(outcome) == (UnreadableSubject(mail.id, jan, mail.arrived, fault, ReportSubject(subject), day or NEXT_DAY),)
-    assert outcome.mails == (ReadUnreadable(mail.id, mail.arrived, jan, fault, numbers, day, ReportSubject(subject)),)
+    assert _problems(outcome) == (UnreadableSubject(mail.id, jan, mail.arrived, fault, day or NEXT_DAY),)
+    assert outcome.mails == (ReadUnreadable(mail.id, mail.arrived, jan, fault, numbers, day),)
     counted = {DAY: int(day == DAY), NEXT_DAY: int(day is None)}
     assert {(figure.day, figure.mails, figure.problems) for figure in outcome.workers} == {
         (found, mails, mails) for found, mails in counted.items()
@@ -3879,7 +3868,7 @@ def test_raport_z_bledem_tematu_bez_dnia_otwartego_jest_problemem_bez_dnia_a_z_d
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, TEXT), no_day, before_window], [_order()]))
 
     jan = Login("jan.testowy")
-    assert _problems(outcome) == (UnreadableSubject(no_day.id, jan, no_day.arrived, SubjectFault.NO_DATE, ReportSubject("Raport"), None),)
+    assert _problems(outcome) == (UnreadableSubject(no_day.id, jan, no_day.arrived, SubjectFault.NO_DATE, None),)
     assert [(figure.day, figure.mails) for figure in outcome.workers] == [(DAY, 1)]
 
 
@@ -4463,7 +4452,7 @@ def test_poprawiony_mail_zdejmuje_ostrzezenie_tylko_nieczytelnego_maila_sprzed_n
     outcome = enter_reports(_inputs([before, corrected, after], [_order()]))
 
     assert _problems(outcome) == (
-        UnreadableSubject(after.id, Login("jan.testowy"), EVENING + timedelta(minutes=2), SubjectFault.NO_DATE, ReportSubject("Raport"), None),
+        UnreadableSubject(after.id, Login("jan.testowy"), EVENING + timedelta(minutes=2), SubjectFault.NO_DATE, None),
     )
 
 
@@ -4481,7 +4470,7 @@ def test_poprawiony_mail_nie_zdejmuje_ostrzezenia_drugiego_nieczytelnego_maila_z
     outcome = enter_reports(_inputs([*(unreadable[::-1] if reverse else unreadable), corrected], [_order()]))
 
     jan = Login("jan.testowy")
-    assert _problems(outcome) == (UnreadableSubject(unreadable[0].id, jan, EVENING, SubjectFault.NO_DATE, ReportSubject("Raport"), None),)
+    assert _problems(outcome) == (UnreadableSubject(unreadable[0].id, jan, EVENING, SubjectFault.NO_DATE, None),)
 
 
 def test_dwa_nieczytelne_tematy_z_jednym_message_id_chwila_i_powodem_rozstrzygaja_numery_wpisow() -> None:

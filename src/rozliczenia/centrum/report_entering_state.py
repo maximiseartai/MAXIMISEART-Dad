@@ -13,14 +13,13 @@
   ``since``) jak wersja 1, a wersja 3 (nigdy w Wydaniu) z pamięcią zleceń, czasem także z ``added``.
 - ``wpisanie-raportow-wynik.json``, ``{schema_version: 3, clicked_at, days, workers, problems, notes}``: wynik
   ostatniego udanego kliknięcia dla widoku Raporty, z liczbami i zleceniami dnia każdego Wykonawcy (``orders_detail``:
-  numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis i Kody czynności zlecenia ``tak``
-  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów), zdaniem o każdym problemie
+  numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po kliknięciu, czy zlecenie ma Wpis, Kody czynności zlecenia ``tak``
+  w ``codes``, a plik bez nich, sprzed kodów, czyta się bez kodów, i czy ma Wpis w raporcie z błędem tematu, ``faulty``), zdaniem o każdym problemie
   (``reasons.reason``), adresem nieznanego nadawcy i informacjami o Przeniesieniach i dopisaniach (``notes``: dzień,
   Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Przy
-  problemie raportu z błędem tematu ma jego temat po strażniku reguły danych pracy Centrum (``guarded``, ADR 0025: bez
-  wartości ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu (``reasons.subject_fault``) i dzień, za który
-  Centrum go liczy (``subject``), a przy dniu Wykonawcy dni z tematu raportów z pomylonym tematem za ten dzień
-  (``mistaken``); plik bez nich czyta się bez tematu i bez tych dni. Pisze go tylko proces, po
+  problemie raportu z błędem tematu ma rodzaj błędu (``reasons.subject_fault``), dzień, za który Centrum go liczy, i
+  chwilę przyjścia maila (``faulty_subject``), bez tematu (ADR 0028), a przy dniu Wykonawcy dni z tematu raportów z
+  pomylonym tematem za ten dzień (``mistaken``); plik bez nich czyta się bez nich. Pisze go tylko proces, po
   pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
@@ -43,7 +42,6 @@ from typing import Annotated, Final, Literal, assert_never
 from pydantic import BaseModel, ConfigDict, Field, RootModel, ValidationError
 
 from rozliczenia.centrum.atomic_file import StateFile
-from rozliczenia.client_data import ForbiddenValues, guarded
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.report_cells import ReportColumn
@@ -184,6 +182,7 @@ class _Order(_Record):
     activities: str | None
     reported: bool
     codes: list[str] | None = None
+    faulty: bool = False
 
 
 class _Worker(_WorkerV1):
@@ -191,10 +190,10 @@ class _Worker(_WorkerV1):
     mistaken: list[date] = []
 
 
-class _Subject(_Record):
-    subject: str
+class _FaultySubject(_Record):
     fault: str
     day: date | None
+    arrived: datetime
 
 
 class _Problem(_Record):
@@ -204,7 +203,7 @@ class _Problem(_Record):
     reason: str
     sender: str | None
     difference: _Kept | None
-    subject: _Subject | None = None
+    faulty_subject: _FaultySubject | None = None
 
 
 class _Note(_Record):
@@ -264,20 +263,21 @@ class ShownWorker:
 
 
 @dataclass(frozen=True)
-class ShownSubject:
-    """Raport z błędem tematu przy problemie: temat po strażniku reguły danych, rodzaj błędu i dzień, za który Centrum go
-    liczy (``None``: problem bez dnia)."""
+class ShownFaultySubject:
+    """Raport z błędem tematu przy problemie: rodzaj błędu, dzień, za który Centrum go liczy (``None``: problem bez dnia),
+    i chwila przyjścia maila."""
 
-    subject: str
     fault: str
     day: date | None
+    arrived: datetime
 
 
 @dataclass(frozen=True)
 class ShownProblem:
     """Problem z ostatniego kliknięcia w widoku Raporty: dzień i Wykonawca, przy którym stoi (``None``: nieznany
     nadawca), numer zlecenia, jeśli problem go ma, zdanie dla taty, adres nieznanego nadawcy i komórka różnicy z ręczną
-    wartością, przy której tata może kliknąć „Zostaw moją”, a przy raporcie z błędem tematu jego temat (``subject``)."""
+    wartością, przy której tata może kliknąć „Zostaw moją”, a przy raporcie z błędem tematu rodzaj błędu, jego dzień i
+    chwila przyjścia (``faulty_subject``)."""
 
     day: date
     worker: str | None
@@ -285,7 +285,7 @@ class ShownProblem:
     reason: str
     sender: str | None
     difference: Kept | None
-    subject: ShownSubject | None
+    faulty_subject: ShownFaultySubject | None
 
 
 @dataclass(frozen=True)
@@ -343,14 +343,11 @@ class _TextFile:
 @dataclass
 class FileReportState:
     """Pliki Wpisania raportów w ``config`` pracy Centrum: pamięć własnych wpisów, wynik dla widoku Raporty i decyzje
-    „Zostaw moją”, oraz pamięć reguły danych pracy Centrum (``forbidden``), przez której strażnika temat raportu z
-    błędem tematu trafia do pliku wyniku. Decyzje zapisuje ``keep`` pod blokadą, więc dwa kliknięcia „Zostaw moją” naraz
-    nie gubią żadnej."""
+    „Zostaw moją”. Decyzje zapisuje ``keep`` pod blokadą, więc dwa kliknięcia „Zostaw moją” naraz nie gubią żadnej."""
 
     memory: _TextFile
     result: _TextFile
     decisions: _TextFile
-    forbidden: ForbiddenValues
     _deciding: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @classmethod
@@ -362,7 +359,6 @@ class FileReportState:
             file(REPORT_ENTERING_STATE, "pamięć Wpisania raportów"),
             file(REPORT_ENTERING_RESULT, "wynik Wpisania raportów"),
             file(REPORT_ENTERING_DECISIONS, "decyzje „Zostaw moją”", DecisionsUnreadable),
-            work.forbidden,
         )
 
     def load(self) -> SavedState:
@@ -443,6 +439,7 @@ class FileReportState:
                         activities=order.activities,
                         reported=order.reported,
                         codes=None if order.codes is None else list(order.codes),
+                        faulty=order.faulty,
                     )
                     for order in worker.orders_detail
                 ],
@@ -456,7 +453,7 @@ class FileReportState:
                 clicked_at=result.clicked_at,
                 days=list(result.days),
                 workers=workers,
-                problems=[_problem(problem, self.forbidden) for problem in result.problems],
+                problems=[_problem(problem) for problem in result.problems],
                 notes=[_note(found) for found in result.notes],
             )
         )
@@ -495,7 +492,7 @@ class FileReportState:
                     problem.reason,
                     problem.sender,
                     None if problem.difference is None else problem.difference.kept(),
-                    None if problem.subject is None else ShownSubject(problem.subject.subject, problem.subject.fault, problem.subject.day),
+                    None if (faulty := problem.faulty_subject) is None else ShownFaultySubject(faulty.fault, faulty.day, faulty.arrived),
                 )
                 for problem in result.problems
             ),
@@ -538,6 +535,7 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
             order.activities,
             order.reported,
             None if order.codes is None else tuple(order.codes),
+            order.faulty,
         )
         for order in worker.orders_detail
     )
@@ -549,18 +547,23 @@ def _note(found: ReportNote) -> _Note:
     return _Note(day=found.day, worker=found.worker, number=found.number, text=note(found))
 
 
-def _problem(problem: ReportProblem, forbidden: ForbiddenValues) -> _Problem:
-    """Problem w pliku wyniku: miejsce w widoku Raporty, numer zlecenia, zdanie dla taty, a przy nieznanym nadawcy jego
-    adres i przy raporcie z błędem tematu jego temat po strażniku reguły danych (jedyne miejsca, do których trafiają,
-    ADR 0028)."""
+def _problem(problem: ReportProblem) -> _Problem:
+    """Problem w pliku wyniku: miejsce w widoku Raporty, numer zlecenia, zdanie dla taty, przy nieznanym nadawcy jego
+    adres (jedyne miejsce, do którego trafia, ADR 0028), a przy raporcie z błędem tematu rodzaj błędu, dzień, za który
+    Centrum go liczy, i chwila przyjścia maila, bez tematu."""
 
     said = reason(problem)
     match problem:
-        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
-            shown = guarded(forbidden, subject.shown(), "temat Raportu wykonawcy").text
-            found = _Subject(subject=shown, fault=subject_fault(fault), day=day)
+        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault, day=day):
+            found = _FaultySubject(fault=subject_fault(fault), day=day, arrived=arrived)
             return _Problem(
-                day=day or arrived.date(), worker=worker, number=None, reason=said, sender=None, difference=None, subject=found
+                day=day or arrived.date(),
+                worker=worker,
+                number=None,
+                reason=said,
+                sender=None,
+                difference=None,
+                faulty_subject=found,
             )
         case UnknownSender(sender=sender, day=day):
             return _Problem(day=day, worker=None, number=None, reason=said, sender=sender.shown(), difference=None)

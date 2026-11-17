@@ -57,7 +57,6 @@ from ._model import (
     ReportNote,
     ReportProblem,
     ReportsOutcome,
-    ReportSubject,
     SenderAddress,
     SubjectFault,
     SubjectLost,
@@ -152,7 +151,6 @@ __all__ = [
     "ReportNote",
     "ReportProblem",
     "ReportsOutcome",
-    "ReportSubject",
     "ScheduleSince",
     "SchedulesInEffect",
     "SenderAddress",
@@ -240,7 +238,17 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     ]
     opened = [order for order in moved.orders if window.opens(order.key.day)]
     figures = _figures.worker_days(
-        opened, shown, reported, problems_found, changes, moved.rows, frozenset(targets), details, inputs.legend, read.mistaken
+        opened,
+        shown,
+        reported,
+        problems_found,
+        changes,
+        moved.rows,
+        frozenset(targets),
+        details,
+        inputs.legend,
+        read.mistaken,
+        read.faulty_entries,
     )
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
     return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added)

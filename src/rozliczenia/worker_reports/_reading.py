@@ -13,12 +13,12 @@ from ._model import (
     Login,
     MailId,
     MailRead,
+    OrderKey,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
     RegisterOrder,
     ReportInputs,
-    ReportSubject,
     UnknownSender,
     Window,
 )
@@ -32,7 +32,9 @@ class WindowRead:
     widzi, w tej samej kolejności, z dniami otwartymi, za które się liczą (``faulty``; pusto: problem bez dnia), i każdy
     dzień otwarty, za który liczy się raport z pomylonym tematem, z jego dniem z tematu (``mistaken``: Wykonawca, dzień,
     dzień z tematu). Raport z błędem tematu z dniem z tematu, który liczy się tylko za dni spoza dni otwartych, tata nie
-    widzi, jak Raport wykonawcy z takim dniem."""
+    widzi, jak Raport wykonawcy z takim dniem. ``faulty_entries``: zlecenia (numer, dzień, Wykonawca) z Wpisem w raporcie
+    z błędem tematu za każdy dzień, za który ten raport się liczy; raport jest przysłany, więc takie zlecenie nie jest
+    bez raportu, choć Centrum jego Wpisu nie wpisało."""
 
     mails: tuple[MailRead, ...]
     strangers: tuple[UnknownSender, ...]
@@ -41,6 +43,7 @@ class WindowRead:
     reported: tuple[tuple[Login, date], ...]
     faulty: tuple[tuple[ReadUnreadable, frozenset[date]], ...]
     mistaken: tuple[tuple[Login, date, date], ...]
+    faulty_entries: frozenset[OrderKey]
 
 
 def read_window(inputs: ReportInputs) -> WindowRead:
@@ -68,7 +71,7 @@ def read_window(inputs: ReportInputs) -> WindowRead:
             case _subject.FaultySubject(fault=fault, day=day):
                 numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
                 if worker is not None and window.opens(mail.arrived.date()) and numbers:
-                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, fault, numbers, day, ReportSubject(mail.subject)))
+                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, fault, numbers, day))
             case date() if worker is None and window.opens(found):
                 read.append(ReadStranger(mail.id, mail.arrived, found))
                 strangers.append(UnknownSender(mail.id, mail.sender, found))
@@ -95,7 +98,10 @@ def read_window(inputs: ReportInputs) -> WindowRead:
         for found in unreadable
         if (shown := frozenset(filter(window.opens, counted[found]))) or found.day is None
     )
-    return WindowRead(mails, tuple(strangers), reports, board, tuple(reported), faulty, tuple(mistaken))
+    entries = frozenset(
+        OrderKey(number, day, found.worker) for found in unreadable for day in counted[found] for number in found.numbers
+    )
+    return WindowRead(mails, tuple(strangers), reports, board, tuple(reported), faulty, tuple(mistaken), entries)
 
 
 def _days(board: _matching.Board, report: ReadReport) -> frozenset[date]:
@@ -155,8 +161,8 @@ def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]
                 )
             )
             return found.arrived, found.mail, "report", (worker, day.isoformat(), *content)
-        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers, day=day, subject=subject):
-            said = (fault.name, "" if day is None else day.isoformat(), subject.shown())
+        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers, day=day):
+            said = (fault.name, "" if day is None else day.isoformat())
             return found.arrived, found.mail, "unreadable", (worker, *said, *sorted(numbers))
         case ReadStranger(day=day):
             return found.arrived, found.mail, "stranger", (day.isoformat(),)

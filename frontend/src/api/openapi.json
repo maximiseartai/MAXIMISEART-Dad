@@ -9856,6 +9856,40 @@
         "title": "ReportsDay",
         "description": "Dzień okna widoku Raporty z nazwą polskiego dnia ustawowo wolnego od pracy (``None``: dzień bez święta)."
       },
+      "ReportsFaultySubject": {
+        "properties": {
+          "fault": {
+            "type": "string",
+            "title": "Fault"
+          },
+          "day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day"
+          },
+          "arrived": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Arrived"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "fault",
+          "day",
+          "arrived"
+        ],
+        "title": "ReportsFaultySubject",
+        "description": "Raport wykonawcy z błędem tematu (ADR 0041): rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy), i chwila przyjścia maila. Bez tematu, bo tematy maili nie trafiają do przeglądarki (ADR 0028)."
+      },
       "ReportsNote": {
         "properties": {
           "number": {
@@ -9909,7 +9943,8 @@
             "enum": [
               "entered",
               "without_report",
-              "problem"
+              "problem",
+              "faulty_subject"
             ],
             "title": "State"
           },
@@ -9936,7 +9971,7 @@
           "no_code"
         ],
         "title": "ReportsOrder",
-        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez\nżadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem."
+        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem\ntylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego\nWpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem."
       },
       "ReportsProblem": {
         "properties": {
@@ -9965,10 +10000,10 @@
               }
             ]
           },
-          "subject": {
+          "faulty_subject": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ReportsSubject"
+                "$ref": "#/components/schemas/ReportsFaultySubject"
               },
               {
                 "type": "null"
@@ -9982,43 +10017,10 @@
           "reason",
           "number",
           "keep",
-          "subject"
+          "faulty_subject"
         ],
         "title": "ReportsProblem",
-        "description": "Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez\nnumeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,\ngdy to on jest problemem (``subject``)."
-      },
-      "ReportsSubject": {
-        "properties": {
-          "subject": {
-            "type": "string",
-            "title": "Subject"
-          },
-          "fault": {
-            "type": "string",
-            "title": "Fault"
-          },
-          "day": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "date"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Day"
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "subject",
-          "fault",
-          "day"
-        ],
-        "title": "ReportsSubject",
-        "description": "Raport wykonawcy z błędem tematu (ADR 0041): temat maila po regule danych (ADR 0025 i ADR 0028: bez wartości\n``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”) i dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy)."
+        "description": "Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez\nnumeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i raport z błędem tematu,\ngdy to on jest problemem (``faulty_subject``)."
       },
       "ReportsView": {
         "properties": {
