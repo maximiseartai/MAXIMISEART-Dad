@@ -1,6 +1,6 @@
 """Ustawienia ze startu gospodarza bez Ustawień Centrum (``settings_at_start.SettingsAtStart``): Skryptu dla maszyn,
-wyroczni skilli i testów. Jest w ``tools/lib``, bo treść z Wydania plików Ustawień czyta w ``src/`` tylko ich właściciel
-(``src/ruff.toml``).
+wyroczni ``verify-jedno-uruchomienie-naraz`` i testów. Jest w ``tools/lib``, bo treść z Wydania plików Ustawień czyta
+w ``src/`` tylko ich właściciel (``src/ruff.toml``).
 """
 
 from __future__ import annotations
