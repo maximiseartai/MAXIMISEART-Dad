@@ -147,16 +147,16 @@ class Unreadable:
 Read = Good[T] | Bad[T]
 
 
-def usable(read: Read[T] | Unreadable) -> T | None:
-    """Wartość, na której proces może biec: dobra albo ostatnia dobra przy złym pliku; ``None``: żadnej nie ma."""
+def usable(read: Read[T]) -> T | None:
+    """Wartość, na której proces może biec: dobra albo ostatnia dobra przy złym pliku; ``None``: żadnej nie ma.
+    ``Unreadable`` tu nie wchodzi, bo plik bez odczytu to nie zły plik bez ostatniej dobrej: wołający mówi sam, co z nim
+    robi."""
 
     match read:
         case Good(value=value):
             return value
         case Bad(usable=value):
             return value
-        case Unreadable():
-            return None
 
 
 @dataclass(frozen=True)

@@ -23,7 +23,7 @@ from rozliczenia.centrum.contract import settings_workers as contract
 from rozliczenia.centrum.settings import messages, workers
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable, usable
 from rozliczenia.centrum.settings.owner import CentrumSettings, UnreadableFile
-from rozliczenia.centrum.settings.workers import AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
+from rozliczenia.centrum.settings.workers import WORKERS_FILE, AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
 from rozliczenia.centrum.settings_router import choice, describe
 from rozliczenia.centrum.worker_suggestions import worker_suggestions
 from rozliczenia.dad_files import DadFiles
@@ -72,14 +72,16 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
 
     @router.get("/suggestions", operation_id="getWorkerSuggestions")
     def suggestions() -> contract.WorkerSuggestions:
-        """Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Lista
-        Wykonawców, której nie ma (nieczytelna albo zła bez ostatniej dobrej), jest pusta: sekcja pokazuje wtedy zdanie
-        o liście, a dodanie zapisuje listę od nowa. Plik Folderów bez odczytu to stan ``unreadable`` ze zdaniem o tym
-        pliku, nie „wskaż Rejestr zleceń”."""
+        """Loginy ostatnich zleceń Rejestru zleceń spoza Listy Wykonawców (``worker_suggestions``), bez zapisu. Zła
+        Lista Wykonawców bez ostatniej dobrej jest pusta: sekcja pokazuje wtedy zdanie o liście, a dodanie zapisuje listę
+        od nowa. Plik Folderów albo Listy Wykonawców bez odczytu to stan ``unreadable`` ze zdaniem o tym pliku, nie
+        „wskaż Rejestr zleceń” ani loginy, które lista już ma."""
 
         snapshot = settings.snapshot()
         if isinstance(snapshot.folders, UnreadableFile):
             return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(snapshot.folders.name))
+        if isinstance(snapshot.workers, Unreadable):
+            return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(WORKERS_FILE))
         listed = usable(snapshot.workers) or WorkerList(())
         return worker_suggestions(listed, snapshot.folders.register, files, today())
 
@@ -112,7 +114,10 @@ def _form(form: contract.WorkerForm) -> WorkerForm:
 def _listed(settings: CentrumSettings) -> WorkerList:
     """Lista Wykonawców, od której zaczyna zmiana: dobra albo ostatnia dobra przy złym pliku."""
 
-    listed = usable(settings.view().workers)
+    workers = settings.view().workers
+    if isinstance(workers, Unreadable):
+        raise refusal.workers_unusable(None)
+    listed = usable(workers)
     if listed is None:
         raise refusal.workers_unusable(None)
     return listed

@@ -26,6 +26,7 @@ from rozliczenia.worker_report_inbox import FETCH_BATCH, INBOX_ACCESS_FILE
 
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail
+from tests.fixtures.bez_dostepu import without_reading
 
 SKRZYNKA = "raporty.taty@przyklad.invalid"
 HASLO = "abcdefghijklmnop"
@@ -348,6 +349,20 @@ def test_proba_bez_adresow_na_liscie_wykonawcow_nie_laczy_sie_ze_skrzynka(
         code, lines = proba(capsys, config(tmp_path, adresy=False), lokalnie(atrapa.port))
 
     assert (code, lines) == (1, ["PROBA IMAP FAIL | na Liscie Wykonawcow nikt nie ma adresu"])
+    assert atrapa.commands == []
+
+
+def test_proba_przy_liscie_wykonawcow_bez_odczytu_nazywa_plik_i_nie_laczy_sie_ze_skrzynka(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Lista Wykonawców, której system nie daje teraz czytać (np. trzyma ją OneDrive), to nie zła lista: próba nazywa
+    plik, zanim połączy się ze skrzynką."""
+
+    folder = config(tmp_path)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=skrzynka_z_raportami()) as atrapa, without_reading(folder / WORKERS_FILE):
+        code, lines = proba(capsys, folder, lokalnie(atrapa.port))
+
+    assert (code, lines) == (1, [f"PROBA IMAP FAIL | pliku config/{WORKERS_FILE} nie da sie teraz przeczytac"])
     assert atrapa.commands == []
 
 

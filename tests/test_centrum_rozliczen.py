@@ -7872,9 +7872,10 @@ UNREADABLE_PERIOD = "22_28_09_2026"
 
 def _with_folders_and_rules(tmp_path: Path) -> tuple[Centrum, Path]:
     """Centrum, w którym tata wskazał Rejestr zleceń i folder okresów z Folderem okresu ``UNREADABLE_PERIOD`` oraz ma
-    własne pliki Reguł ilości i Listy Urządzeń."""
+    własne pliki Reguł ilości, Listy Urządzeń i Listy Wykonawców."""
 
     app, _register = with_register(tmp_path)
+    write_worker_list(app.tool.worker_list, worker_list({"anna.testowa": "Anna Testowa"}))
     periods = tmp_path / "INEA"
     periods.mkdir()
     write_period_files(periods, UNREADABLE_PERIOD)
@@ -8061,6 +8062,7 @@ def _window_reads(app: Centrum) -> dict[str, tuple[int, object]]:
         (SETTINGS_FILE, tuple(WINDOW_READS)),
         (RULES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
         (DEVICES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
+        (WORKERS_FILE, ()),
     ],
 )
 def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_o_nim(
@@ -8070,7 +8072,7 @@ def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_
     Tablica okresów, otwarcie ścieżki okresu i Rozliczenia pracownika, Uzupełnienie, różnice Kontroli ilości i „To był
     wyjątek” odmawiają 409 zdaniem o tym pliku zamiast „Wskaż folder okresów”, „Najpierw wskaż …” albo różnic
     liczonych regułami z Wydania, a podpowiedzi Wykonawców mówią je w stanie ``unreadable`` zamiast „wskaż Rejestr
-    zleceń”. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
+    zleceń” ani loginów, które Lista Wykonawców bez odczytu już ma. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
     pliki w ``config`` zostają bez zmian."""
 
     app, _periods = _with_folders_and_rules(tmp_path)
@@ -8083,7 +8085,7 @@ def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_
         answers = _window_reads(app)
 
     expected = {operation: (409, {"message": sentence}) if operation in refusing else readable[operation] for operation in readable}
-    if unreadable == SETTINGS_FILE:
+    if unreadable in (SETTINGS_FILE, WORKERS_FILE):
         expected["getWorkerSuggestions"] = (200, {"state": "unreadable", "suggestions": [], "message": sentence})
     assert answers == expected
     assert app.platform.opened[len(opened) :] == ([] if "openPeriodPath" in refusing else opened)
@@ -8273,6 +8275,65 @@ def test_tresc_pliku_ustawien_poza_bajtami_nie_przechodzi_mypy_a_znane_luki_prze
     przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_TEKSTU_USTAWIEN.items() if not any(odmowa in z for z in zgloszenia[opis])}
     assert przepuszczone == {}
     assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_BAJTOW_USTAWIEN}, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_BAJTOW_USTAWIEN)")
+
+
+_GLOWA_LISTY_BEZ_ODCZYTU: Final = """from pathlib import Path
+
+from rozliczenia.centrum.settings.files import {nazwy}
+from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.worker_list import WorkerList
+
+"""
+
+DROGI_LISTY_BEZ_ODCZYTU: Final = {
+    "lista bez odczytu jako zła lista bez ostatniej dobrej: usable() na migawce (Decyzja 4A, przyczyna bez-adresow)": (
+        _GLOWA_LISTY_BEZ_ODCZYTU.format(nazwy="usable")
+        + "def lista(config: Path) -> WorkerList | None:\n    return usable(read_snapshot(config).workers)\n",
+        'Argument 1 to "usable" has incompatible type',
+    ),
+    "lista bez odczytu jako pusta lista: usable() or WorkerList(())": (
+        _GLOWA_LISTY_BEZ_ODCZYTU.format(nazwy="usable")
+        + "def lista(config: Path) -> WorkerList:\n    return usable(read_snapshot(config).workers) or WorkerList(())\n",
+        'Argument 1 to "usable" has incompatible type',
+    ),
+}
+
+ZNANE_LUKI_LISTY_BEZ_ODCZYTU: Final = {
+    "typ żąda gałęzi Unreadable, nie sprawdza, co ona daje: pusta lista w jawnej gałęzi": _GLOWA_LISTY_BEZ_ODCZYTU.format(
+        nazwy="Unreadable, usable"
+    )
+    + """def lista(config: Path) -> WorkerList | None:
+    workers = read_snapshot(config).workers
+    return WorkerList(()) if isinstance(workers, Unreadable) else usable(workers)
+""",
+    "typ pilnuje tylko usable(): wartość dobrego odczytu wzięta przez isinstance": _GLOWA_LISTY_BEZ_ODCZYTU.format(nazwy="Good")
+    + """def lista(config: Path) -> WorkerList | None:
+    workers = read_snapshot(config).workers
+    return workers.value if isinstance(workers, Good) else None
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_lista_wykonawcow_bez_odczytu_bez_jawnej_galezi_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    """Lista Wykonawców, której system nie daje teraz czytać, to nie zła lista bez ostatniej dobrej: ``usable`` przyjmuje
+    tylko ``Read[T]``, więc wołający, który ma w ręku ``Read[WorkerList] | Unreadable``, sam pisze gałąź ``Unreadable``.
+
+    | Postać | mypy | Próbka |
+    |---|---|---|
+    | ``usable(read_snapshot(config).workers)`` | łapie | ``DROGI_LISTY_BEZ_ODCZYTU`` |
+    | ``usable(…) or WorkerList(())`` | łapie | ``DROGI_LISTY_BEZ_ODCZYTU`` |
+    | pusta lista w jawnej gałęzi ``Unreadable`` | przepuszcza | ``ZNANE_LUKI_LISTY_BEZ_ODCZYTU`` |
+    | ``workers.value if isinstance(workers, Good) else None`` | przepuszcza | ``ZNANE_LUKI_LISTY_BEZ_ODCZYTU`` |
+    """
+
+    probki = {opis: kod for opis, (kod, _) in DROGI_LISTY_BEZ_ODCZYTU.items()} | ZNANE_LUKI_LISTY_BEZ_ODCZYTU
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=Path(__file__).with_name("sonda_listy_bez_odczytu.py"))
+
+    przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_LISTY_BEZ_ODCZYTU.items() if not any(odmowa in z for z in zgloszenia[opis])}
+    assert przepuszczone == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_LISTY_BEZ_ODCZYTU}, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_LISTY_BEZ_ODCZYTU)")
 
 
 # --- Wysyłka rozliczeń (ADR 0040): strona, wysyłka jednego Maila z rozliczeniem przez interfejs HTTP, temat i treść w
@@ -8527,10 +8588,11 @@ def test_skrzynka_bez_odczytu_wylacza_wysylke_i_mowi_o_tym_jednym_zdaniem(tmp_pa
     assert f"rozliczenie-niewyslane okres={WYSYLKA_OKRES} przyczyna=wyslane-bez-odczytu typ=OSError" in app.log()
 
 
-@pytest.mark.parametrize("file", [SETTLEMENT_MAIL_FILE, REMINDERS_FILE])
-def test_plik_tematu_albo_stopki_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila(tmp_path: Path, file: str) -> None:
-    """Temat i treść taty albo jego stopka, których system nie daje teraz czytać: strona, podgląd i wysyłka odmawiają
-    o tym pliku tym samym zdaniem, a mail z treścią z Wydania bez stopki taty nie idzie (#2029 W1 r1)."""
+@pytest.mark.parametrize("file", [SETTLEMENT_MAIL_FILE, REMINDERS_FILE, WORKERS_FILE])
+def test_plik_tematu_stopki_albo_listy_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila(tmp_path: Path, file: str) -> None:
+    """Temat i treść taty, jego stopka albo Lista Wykonawców, których system nie daje teraz czytać: strona, podgląd i
+    wysyłka odmawiają o tym pliku tym samym zdaniem, a mail z treścią z Wydania bez stopki taty nie idzie (#2029 W1
+    r1), a strona nie mówi „sprawdź Listę Wykonawców w Ustawieniach” zamiast nazwy pliku."""
 
     app = wysylka_centrum(tmp_path)
     assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik taty za {okres}", "text": "Tekst taty"}).status_code == 200

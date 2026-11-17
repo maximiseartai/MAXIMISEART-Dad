@@ -39,8 +39,8 @@ nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od
 Wpisania raportów albo decyzje „Zostaw moją”, których nie da się odczytać (``pamiec-wpisania``): pusta pamięć
 zmieniłaby dzień raportu, więc sprawdzenie nie wysyła, tak jak Wpisanie raportów zatrzymuje wtedy kliknięcie.
 
-Plik Przypomnień, Folderów albo Legendy czynności, którego system nie daje teraz czytać (np. trzyma go OneDrive), to nie
-wyłączone przypomnienia ani niewskazany INTERMAX: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
+Plik Przypomnień, Folderów, Legendy czynności albo Listy Wykonawców, którego system nie daje teraz czytać (np. trzyma go
+OneDrive), to nie wyłączone przypomnienia, niewskazany INTERMAX ani Wykonawcy bez adresów: pora zostaje otwarta, więc następna minuta tej samej pory próbuje znowu, a gdy
 plik nie wróci do końca pory, dziennik Centrum dostaje jeden wpis z nazwą pliku (``plik-bez-odczytu``), przy pierwszym
 sprawdzeniu po tej porze. Bez pliku Przypomnień porę liczą pory z ostatniego przeczytanego pliku w tej pracy Centrum, a
 przed nim ostatnie pory z ``REMINDERS_SCHEDULES`` (``_unread_schedule``); wyniku dla widoku Raporty
@@ -76,8 +76,9 @@ from rozliczenia.centrum import reminder_messages
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
-from rozliczenia.centrum.settings.files import usable
+from rozliczenia.centrum.settings.files import Unreadable, usable
 from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
@@ -458,6 +459,8 @@ def due_reminders(
         return NotRead("bez-ustawien")
     if mailbox.access() != "ready":
         return NotRead("bez-dostepu")
+    if isinstance(snapshot.workers, Unreadable):
+        return NotRead("plik-bez-odczytu", file=WORKERS_FILE)
     workers = usable(snapshot.workers)
     if workers is None:
         return NotRead("bez-adresow")

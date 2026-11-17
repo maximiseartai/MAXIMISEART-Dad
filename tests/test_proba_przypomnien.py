@@ -331,7 +331,7 @@ def _zly_plik(nazwa: str) -> Callable[[Klon], None]:
         (lambda klon: _przypomnienia(klon.config, wlaczone="false"), f"przypomnienia wylaczone w Ustawieniach (config/{REMINDERS_FILE})"),
         (_bez_pliku(SETTINGS_FILE), "brak INTERMAX albo folderu okresow w Ustawieniach taty"),
         (_bez_pliku(INBOX_ACCESS_FILE), f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"),
-        (_zly_plik(WORKERS_FILE), "zla albo nieczytelna Lista Wykonawcow"),
+        (_zly_plik(WORKERS_FILE), "zla Lista Wykonawcow bez ostatniej dobrej"),
         (_zly_plik(REPORT_ENTERING_STATE), "nieczytelna pamiec Wpisania raportow: StateUnreadable"),
         (lambda klon: klon.okresy.rmdir(), "nieczytelny folder okresow"),
         (lambda klon: klon.intermax.unlink(), "nieczytelny INTERMAX: WorkbookError"),
@@ -350,12 +350,12 @@ def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
     assert serwer.received == []
 
 
-@pytest.mark.parametrize("plik", [REMINDERS_FILE, SETTINGS_FILE, LEGEND_FILE])
+@pytest.mark.parametrize("plik", [REMINDERS_FILE, SETTINGS_FILE, LEGEND_FILE, WORKERS_FILE])
 def test_plik_ustawien_bez_odczytu_ma_wlasna_linie_z_jego_nazwa_bez_wysylki(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], plik: str
 ) -> None:
-    """Plik Przypomnień, Folderów albo Legendy czynności, którego system nie daje teraz czytać, to nie wyłączone
-    przypomnienia ani brak INTERMAX: próba nazywa ten plik i nic nie wysyła, bo bez legendy nie wie, który Wpis ``tak``
+    """Plik Przypomnień, Folderów, Legendy czynności albo Listy Wykonawców, którego system nie daje teraz czytać, to nie
+    wyłączone przypomnienia, brak INTERMAX ani zła lista: próba nazywa ten plik i nic nie wysyła, bo bez legendy nie wie, który Wpis ``tak``
     ma Błąd opisu (ADR 0039)."""
 
     klon = _klon(tmp_path)
