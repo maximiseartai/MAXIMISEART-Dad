@@ -46,7 +46,7 @@ TRESCI = [
     "Raport 08.11.2026",
     "Raport 09.11.2026",
     "Raport bez daty",
-    "Re: Raport",
+    "Re: Zmiana w raportach",
     "Faktura",
     "40000001",
     "40000003",
@@ -80,13 +80,13 @@ def mail(
 
 def skrzynka_z_raportami() -> list[AtrapaMail]:
     """Siedem maili z dni okna: dwa Raporty Wykonawcy z Wpisem (jeden tylko w folderze wszystkich maili), mail z tematem
-    Raportu bez Wpisu, Raport obcego nadawcy, odpowiedź na Raport i faktura, których port nie bierze, i mail z tematem
-    Raportu bez nadawcy."""
+    Raportu bez Wpisu, Raport obcego nadawcy, odpowiedź na mail o czym innym i faktura, których port nie bierze, i mail z
+    tematem Raportu bez nadawcy."""
 
     return [
         mail(1, temat="Raport 08.11.2026", flagi=("\\Seen",)),
         mail(2, temat="Raport 09.11.2026", tresc="40000003 tak", od=f"<{OBCY}>"),
-        mail(3, temat="Re: Raport 08.11.2026", tresc="40000001 tak"),
+        mail(3, temat="Re: Zmiana w raportach 08.11.2026", tresc="40000001 tak"),
         mail(4, temat="Faktura", tresc="do zapłaty", flagi=("\\Seen", "$Etykieta")),
         mail(5, temat="Raport 09.11.2026", tresc="40000004 nie klient odmówił", charset="iso-8859-2", w_odebranych=False),
         mail(6, temat="Raport 09.11.2026", od=None),

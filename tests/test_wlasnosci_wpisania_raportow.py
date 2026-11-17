@@ -538,7 +538,7 @@ class _Register:
             (
                 day
                 for day in MAIL_DAYS
-                if ROLLOUT <= day <= today and sent.mail.subject in _subjects(day)[:4]
+                if ROLLOUT <= day <= today and sent.mail.subject in _subjects(day)[:REPORT_SUBJECTS]
             ),
             None,
         )
@@ -1261,16 +1261,22 @@ def _body(
 
 
 def _subjects(day: date) -> tuple[str, ...]:
-    """Tematy maila z dniem ``day``: Raport wykonawcy w kilku zapisach daty, odpowiedź na Przypomnienie o raporcie, a
-    także odpowiedź na raport, która Raportem wykonawcy nie jest."""
+    """Tematy maila z dniem ``day``: Raport wykonawcy w kilku zapisach daty, odpowiedź na Przypomnienie o raporcie,
+    poprawka raportu w odpowiedzi (``REPORT_SUBJECTS`` pierwszych), a także odpowiedź na mail o czym innym, która
+    Raportem wykonawcy nie jest."""
 
     return (
         f"Raport {day:%d.%m.%Y}",
         f"raport {day.day}.{day.month}.{day:%y}",
         f"RAPORT {day:%d_%m_%Y} r.",
         f"Re: Przypomnienie: raport za dzień {day:%d.%m.%Y}",
-        f"Re: Raport {day:%d.%m.%Y}",
+        f"Re: Raport {day:%d.%m.%Y} - BŁĘDY PROSZĘ POPRAW",
+        f"Re: Zmiana w raportach {day:%d.%m.%Y}",
     )
+
+
+REPORT_SUBJECTS = 5
+"""Ile pierwszych tematów z ``_subjects`` to tematy Raportu wykonawcy."""
 
 
 UNREADABLE = ("Raport", "Raport za wczoraj", "Raport 08.11")
