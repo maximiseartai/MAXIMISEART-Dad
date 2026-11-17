@@ -1,20 +1,19 @@
 """Błąd opisu we Wpisie raportu (ADR 0039): Wpis ``tak``, którego czynności Legenda czynności czyta jako Błąd opisu.
 
-Regułę ma jedna funkcja, ``faulty``, dla obu operacji rdzenia: Wpisanie raportów wpisuje taki Wpis jak każdy i daje przy
-nim problem ``FaultyDescription`` (``entered``), a Przypomnienia o raporcie liczą dzień Wykonawcy z takim wygrywającym
-Wpisem jako niewysłany (``standing``). Opis Wpisu ``nie`` to powód nieskuteczności, więc legenda go nie czyta, a Wpis
-bez ``tak`` ani ``nie`` niczego nie wpisuje i ma swój problem (``MissingVerdict``).
+Wpisanie raportów wpisuje taki Wpis jak każdy i daje przy nim problem ``FaultyDescription`` (``entered``); Przypomnień o
+raporcie Błąd opisu nie dotyczy, bo raport z nim jest przysłany (ADR 0041). Opis Wpisu ``nie`` to powód
+nieskuteczności, więc legenda go nie czyta, a Wpis bez ``tak`` ani ``nie`` niczego nie wpisuje i ma swój problem
+(``MissingVerdict``).
 """
 
 from __future__ import annotations
 
-from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable
 from datetime import date
 
 from ..activity_legend import ActivityLegend, DescriptionError
 from ._matching import Addition
-from ._model import FaultyDescription, Login, OrderNumber, ReadReport, ReportEntry, Verdict
+from ._model import FaultyDescription, Login, OrderNumber, ReportEntry, Verdict
 
 
 def faulty(
@@ -41,31 +40,3 @@ def entered(
     ]
     return tuple(fault for fault in found if fault is not None)
 
-
-def standing(
-    legend: ActivityLegend, reports: Sequence[ReadReport], numbers: frozenset[OrderNumber]
-) -> Mapping[tuple[Login, date], tuple[FaultyDescription, ...]]:
-    """Wygrywające Wpisy ``tak`` z Błędem opisu po Wykonawcy i dniu z tematu, a przy każdym po numerze.
-
-    ``reports`` idą w kolejności przyjścia, a numer wygrywa Wpis najpóźniejszego Raportu wykonawcy z tym numerem, także
-    od innego Wykonawcy, jak we Wpisaniu raportów; raport z Wpisami numeru o przeciwnym zamiarze niczego nie wpisuje, więc
-    nie daje Błędu opisu. Liczą się tylko numery zleceń INTERMAX (``numbers``): Wpis innego numeru to zlecenie, którego
-    Wpisanie raportów jeszcze nie dopisało, albo literówka, którą poprawiony mail przed kliknięciem odrzuca
-    (``_corrections.uncorrected``). Literówkę dopisaną kliknięciem przed poprawką INTERMAX ma jako zlecenie, więc
-    przypomina jak każde zlecenie z takim Wpisem, np. dopóki tata nie usunie jej wiersza albo okres nie dostanie Pliku
-    zbiorczego."""
-
-    winners: dict[OrderNumber, tuple[ReadReport, list[ReportEntry]]] = {}
-    for report in reports:
-        said: dict[OrderNumber, list[ReportEntry]] = defaultdict(list)
-        for entry in report.entries:
-            said[entry.number].append(entry)
-        winners.update((number, (report, written)) for number, written in said.items())
-    found: dict[tuple[Login, date], list[FaultyDescription]] = defaultdict(list)
-    for number, (report, written) in sorted(winners.items(), key=lambda won: (len(won[0]), won[0])):
-        if number not in numbers or len(written) != 1:
-            continue
-        fault = faulty(legend, report.worker, report.day, number, written[0].verdict, written[0].activities)
-        if fault is not None:
-            found[report.worker, report.day].append(fault)
-    return {place: tuple(faults) for place, faults in found.items()}

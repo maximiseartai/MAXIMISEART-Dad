@@ -92,8 +92,7 @@ def reason(problem: ReportProblem) -> str:
             said = "; ".join(dict.fromkeys(map(problem_text, problems)))
             return (
                 f"Wpis zlecenia {number} od {worker} z {_day(day)} ma Błąd opisu: {said}. Centrum go wpisało, ale Legenda "
-                "czynności nic z niego nie wyznaczy, a raport z tego dnia liczy się dla Przypomnień o raporcie jako "
-                "niewysłany, dopóki Wykonawca nie przyśle poprawionego Wpisu."
+                "czynności nic z niego nie wyznaczy, dopóki Wykonawca nie przyśle poprawionego Wpisu."
             )
         case _:
             assert_never(problem)

@@ -4047,6 +4047,8 @@ def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
     [
         pytest.param("bez-ustawien", "ustawienia", id="bez-ustawien"),
         pytest.param("bez-dostepu", "dostep", id="bez-dostepu"),
+        pytest.param("pamiec-wpisania", "pamiec", id="pamiec-wpisania"),
+        pytest.param("pamiec-wpisania", "decyzje", id="decyzje-zostaw-moja"),
         pytest.param("okresy", "okresy", id="okresy"),
         pytest.param("intermax", "intermax", id="intermax"),
     ],
@@ -4055,7 +4057,8 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
     tmp_path: Path, cause: str, broken: str
 ) -> None:
     """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
-    pliku dostępu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
+    pliku dostępu, nieczytelna pamięć Wpisania raportów albo decyzje „Zostaw moją”, bo pusta pamięć zmieniłaby dzień
+    raportu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
     adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
     są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
 
@@ -4066,6 +4069,10 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
         shutil.rmtree(centrum.periods_directory)
     if broken == "intermax":
         centrum.register.write_bytes(b"to nie jest skoroszyt")
+    if broken == "pamiec":
+        _state(centrum).write_text("{", encoding="utf-8")
+    if broken == "decyzje":
+        (centrum.tool.config / REPORT_ENTERING_DECISIONS).write_text("{", encoding="utf-8")
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
@@ -4350,29 +4357,131 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_log
     assert LoggedActivityLegend.model_validate(logs["activity_legend"]).value() == ActivityLegend(codes)
 
 
-@pytest.mark.parametrize("dads_legend", [False, True], ids=["legenda-z-wydania", "legenda-taty"])
-def test_praca_przypomnien_liczy_raport_z_bledem_opisu_jako_niewyslany_legenda_czynnosci_z_ustawien(
-    tmp_path: Path, dads_legend: bool
-) -> None:
-    """ADR 0039: Raport Anny za 9.11 ma Wpis ``tak`` z opisem bez kodów, więc liczy się jako niewysłany i o 8:30 Anna
-    dostaje Przypomnienie o raporcie z numerem zlecenia i rodzajem błędu, bez słów swojego opisu; z ``montaż`` w
-    Legendzie czynności taty z Ustawień Centrum raport jest wysłany. Jan bez raportu dostaje przypomnienie zawsze."""
+def test_praca_przypomnien_nie_wysyla_przypomnienia_po_raporcie_z_bledem_opisu(tmp_path: Path) -> None:
+    """ADR 0041: Raport Anny za 9.11 ma Wpis ``tak`` z opisem bez kodów, czyli Błąd opisu, ale jest przysłany, więc o
+    8:30 Anna nie dostaje Przypomnienia o raporcie; Jan bez raportu dostaje je z samym wzorem, bez bloku o zleceniach."""
 
     mailbox = FakeMailbox(outcome=(report(ANNA, "Raport 09.11.2026", "40000002 tak montaż"),))
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
-    if dads_legend:
-        _with_dads_legend(centrum)
     centrum.moment.append(REMINDER_MORNING)
     centrum.client.start()
 
     centrum.rhythm.tick()
     centrum.client.stop()
 
-    sent: dict[str, str] = {reminder.worker: reminder.text for reminder, _ in mailbox.sends}
-    assert sorted(sent) == (["jan.testowy"] if dads_legend else ["anna.kowalska", "jan.testowy"])
-    assert "Zlecenie" not in sent["jan.testowy"]
-    if not dads_legend:
-        assert "Zlecenie 40000002 ma w opisie słowo inne niż kod czynności." in sent["anna.kowalska"].splitlines()
-        assert "montaż" not in sent["anna.kowalska"]
+    [(reminder, _)] = mailbox.sends
+    assert reminder.worker == "jan.testowy"
+    assert reminder.text.splitlines() == [
+        "Poproszę o wysłanie raportu za dzień 09.11.2026.",
+        "",
+        "Raport proszę wysłać według tego wzoru:",
+        "Temat maila: Raport 09.11.2026",
+        "Treść maila: NR. ZLECENIA [spacja] tak [spacja] kody czynności albo NR. ZLECENIA [spacja] nie [spacja] powód",
+        "PRZYKŁAD:",
+        "12345678 tak inst20m spawpg",
+        "12345679 nie brak klienta",
+        "",
+        "Pozdrawiam",
+        "Tata",
+    ]
 
+
+def test_praca_przypomnien_czyta_wpisy_od_cyfr_zlecen_z_tego_samego_odczytu_intermax_co_wpisanie_raportow(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041 (historia 14): okres 03_09_11_2026 ma Plik zbiorczy, a Jan przysyła 10.11 wieczorem Raport z pomylonym
+    tematem 11.11 z dwoma numerami swoich zleceń: z 10.11 i siedmiocyfrowym z 9.11. Przypomnienia czytają INTERMAX od
+    ``Window.start``, jak Wpisanie raportów, więc krótszy numer z dnia zamkniętego jest Wpisem, a nie słowem opisu, dwa
+    niezgodne Wpisy to pomylony temat i raport liczy się za 10.11: o 8:30 11.11 przypomnienie dostaje tylko Anna."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "jan.testowy", 4000007), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
+        raw=(),
+    )
+    mail = report(JAN, "Raport 11.11.2026", "40000005 tak inst20m\n4000007 tak spawpg", at=datetime(2026, 11, 10, 21))
+    mailbox = FakeMailbox(outcome=(mail,))
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    folder = centrum.periods_directory / MONDAY_PERIOD
+    folder.mkdir(parents=True)
+    (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
+
+
+
+def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu(tmp_path: Path) -> None:
+    """ADR 0041 (historia 14), W1 r1 #2059: Jan przysyła 10.11 rano raport za 10.11 z datą 9.11 i dwoma numerami,
+    których INTERMAX jeszcze nie ma, a kliknięcie o 7:00 dopisuje oba Janowi na 9.11. Wieczorem przychodzi ten sam
+    raport z dobrą datą. Kafelek Wpisania z pamięcią tego kliknięcia liczy raport za 9.11 i za 10.11, bo numery dopisane
+    przez Centrum nie robią z tematu pomylonego, więc praca przypomnień, która czyta tę samą pamięć, o 8:30 11.11 nie
+    przypomina Janowi o 10.11; przypomnienie dostaje tylko Anna bez raportu."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000005), _order(10, 11, "anna.kowalska", 40000006)),
+        raw=(),
+    )
+    body = "40000007 tak inst20m\n40000008 tak spawpg"
+    misdated = report(JAN, "Raport 09.11.2026", body, at=datetime(2026, 11, 10, 6))
+    mailbox = FakeMailbox(outcome=(misdated, report(JAN, "Raport 10.11.2026", body, at=datetime(2026, 11, 10, 20))))
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    clicked = _click_at(centrum, datetime(2026, 11, 10, 7), [misdated])
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(added["number"], added["day"]) for added in _entering(centrum, clicked)["added"]] == [
+        (40000007, "2026-11-09"),
+        (40000008, "2026-11-09"),
+    ]
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
+
+
+def test_praca_przypomnien_czyta_okno_od_wdrozenia_wpisania_raportow_gdy_jest_wczesniejsze_niz_wdrozenie_przypomnien(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041 (historia 14), forma siostrzana W1 r1 #2059: Wpisanie raportów działa od 8.11, przypomnienia od 9.11.
+    Jan przysyła Raport z tematem 9.11 z dwoma numerami swoich zleceń z 8.11, czyli pomylony temat, który kafelek
+    Wpisania liczy za 8.11. Praca przypomnień czyta okno od 8.11 jak Wpisanie, więc zna te zlecenia i o 8:30 10.11
+    przypomina Janowi o 9.11, za który raportu nie ma; za 8.11, dzień sprzed wdrożenia przypomnień, nie przypomina
+    nikomu, także Annie bez raportu."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(8, 9, "jan.testowy", 40000001),
+            _order(8, 10, "jan.testowy", 40000002),
+            _order(8, 11, "anna.kowalska", 40000004),
+            _order(9, 9, "jan.testowy", 40000003),
+            _order(9, 11, "anna.kowalska", 40000005),
+        ),
+        raw=(),
+    )
+    mistaken = report(JAN, SUBJECT, "40000001 tak inst20m\n40000002 tak spawpg", at=datetime(2026, 11, 9, 19))
+    mailbox = FakeMailbox(outcome=(mistaken,))
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    _click_at(centrum, datetime(2026, 11, 10, 8), [mistaken])
+    shown = _view(centrum)
+    tiles = [_worker(shown, "jan.testowy", day)["mails"] for day in ("2026-11-08", "2026-11-09")]
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert tiles == [1, 0]
+    assert sorted((reminder.worker, reminder.day) for reminder, _ in mailbox.sends) == [
+        ("anna.kowalska", date(2026, 11, 9)),
+        ("jan.testowy", date(2026, 11, 9)),
+    ]

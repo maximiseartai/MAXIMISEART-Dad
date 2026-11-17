@@ -28,6 +28,7 @@ from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
+from rozliczenia.tool_files import REPORT_ENTERING_STATE
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from tests.fixtures.bez_dostepu import without_reading
@@ -331,10 +332,11 @@ def _zly_plik(nazwa: str) -> Callable[[Klon], None]:
         (_bez_pliku(SETTINGS_FILE), "brak INTERMAX albo folderu okresow w Ustawieniach taty"),
         (_bez_pliku(INBOX_ACCESS_FILE), f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"),
         (_zly_plik(WORKERS_FILE), "zla albo nieczytelna Lista Wykonawcow"),
+        (_zly_plik(REPORT_ENTERING_STATE), "nieczytelna pamiec Wpisania raportow: StateUnreadable"),
         (lambda klon: klon.okresy.rmdir(), "nieczytelny folder okresow"),
         (lambda klon: klon.intermax.unlink(), "nieczytelny INTERMAX: WorkbookError"),
     ],
-    ids=["bez-przypomnien", "wylaczone", "ustawienia", "dostep", "adresy", "okresy", "intermax"],
+    ids=["bez-przypomnien", "wylaczone", "ustawienia", "dostep", "adresy", "pamiec-wpisania", "okresy", "intermax"],
 )
 def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], zepsuj: Callable[[Klon], None], powod: str
