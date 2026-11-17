@@ -365,12 +365,6 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
             "potrzebuje plików",
         ),
         (
-            "settlement",
-            Start(_SETTLEMENT_FILES, period=None, dry_run=False, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=()),
-            HostParts(),
-            "potrzebuje Listy Wykonawców",
-        ),
-        (
             "preparation",
             Start(
                 {
@@ -406,7 +400,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
             "nie ma trybu z Przekazaniem",
         ),
     ],
-    ids=["bez-pliku", "bez-listy-wykonawcow", "bez-okresu", "bez-okna-efenix", "podglad-bez-podgladu", "tryb-spoza-procesu"],
+    ids=["bez-pliku", "bez-okresu", "bez-okna-efenix", "podglad-bez-podgladu", "tryb-spoza-procesu"],
 )
 def test_start_bez_potrzeby_procesu_to_blad_gospodarza_a_nie_uruchomienie(
     key: common_contract.ProcessKey, start: Start, parts: HostParts, error: str
@@ -416,6 +410,43 @@ def test_start_bez_potrzeby_procesu_to_blad_gospodarza_a_nie_uruchomienie(
 
     with pytest.raises(ValueError, match=error):
         CATALOG.prepared(key, start, parts, RunContext())
+
+
+_BRAK_W_STARCIE: Final = {
+    "workers": "potrzebuje Listy Wykonawców, a start jej nie ma",
+    "quantity_rules": "liczy Regułami ilości, a start ich nie ma",
+    "activity_legend": "liczy Legendą czynności, a start jej nie ma",
+}
+
+
+def _liczy_w_starcie(kind: ProcessKind[Any, Any]) -> tuple[str, ...]:
+    liczy = {"workers": "workers" in kind.needs, "quantity_rules": kind.quantity_rules, "activity_legend": kind.activity_legend}
+    return tuple(ustawienie for ustawienie, potrzebne in liczy.items() if potrzebne)
+
+
+@pytest.mark.parametrize(
+    ("kind", "ustawienie"),
+    [(kind, ustawienie) for kind in CATALOG.kinds for ustawienie in _liczy_w_starcie(kind)],
+    ids=lambda wartosc: wartosc.key if isinstance(wartosc, ProcessKind) else wartosc,
+)
+def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospodarza(
+    kind: ProcessKind[Any, Any], ustawienie: str
+) -> None:
+    """Start pełny poza Listą Wykonawców, Regułami ilości albo Legendą czynności procesu, który nimi liczy, to błąd
+    gospodarza o tym, czego brakuje, a nie Uruchomienie bez nich."""
+
+    start = Start(
+        {need: Path(need) for need in kind.path_needs},
+        PERIOD if "period" in kind.needs else None,
+        False,
+        workers=None if ustawienie == "workers" else WorkerList(()),
+        quantity_rules=None if ustawienie == "quantity_rules" else DEFAULT_QUANTITY_RULES,
+        activity_legend=None if ustawienie == "activity_legend" else DEFAULT_ACTIVITY_LEGEND,
+        warnings=(),
+    )
+
+    with pytest.raises(ValueError, match=f"^{kind.title} {_BRAK_W_STARCIE[ustawienie]}$"):
+        CATALOG.prepared(kind.key, start, _ATRAPA, RunContext())
 
 
 @pytest.mark.parametrize(("chosen", "expected"), [(None, "bez Przekazania"), ("z Przekazaniem", "z Przekazaniem")])
