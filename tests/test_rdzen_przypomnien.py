@@ -731,6 +731,33 @@ def test_wpisanie_raportow_i_przypomnienia_licza_ten_sam_zbior_dni_z_przyslanym_
     assert open_days - set(_days(due)) == reported
 
 
+@pytest.mark.parametrize(
+    ("subject", "arrived", "day", "reported"),
+    [
+        pytest.param("Re: Raport 16.11 - popraw", _at(date(2026, 11, 17), 9), date(2026, 11, 16), True, id="poprawka-bez-roku"),
+        pytest.param("Odp: raport 31.12 popraw", _at(date(2027, 1, 2), 9), date(2026, 12, 31), True, id="poprawka-bez-roku-za-poprzedni-rok"),
+        pytest.param("Re: Raport popraw", _at(date(2026, 11, 17), 9), date(2026, 11, 16), False, id="odpowiedz-bez-dnia"),
+    ],
+)
+def test_poprawka_w_odpowiedzi_bez_roku_liczy_sie_w_obu_operacjach_za_dzien_w_roku_bliskim_dniu_przyjscia(
+    subject: str, arrived: datetime, day: date, reported: bool
+) -> None:
+    """ADR 0041, „Poprawka raportu w odpowiedzi” (decyzja Maksa 17.11.2026): odpowiedź z tematem raportu bez roku liczy
+    się w Wpisaniu raportów i w Przypomnieniach za ten dzień i miesiąc w roku, w którym leżą w granicach od dnia
+    przyjścia maila (``31.12`` w mailu z 2.01 to poprzedni rok), bez błędu tematu, a odpowiedź bez dnia nie jest
+    raportem."""
+
+    orders = (_order(day=day),)
+    mails = [_mail(JAN, subject, "40000001 tak inst20m", arrived)]
+    now = _at(arrived.date() + timedelta(days=1), 8)
+
+    entered = enter_reports(_reports(now, orders, mails))
+
+    assert {(figure.worker, figure.day) for figure in entered.workers if figure.mails} == ({("jan.testowy", day)} if reported else set())
+    assert (entered.problems, len(entered.changes) > 0) == ((), reported)
+    assert _days(_due(now, orders, mails=mails)) == ([] if reported else [("jan.testowy", day)])
+
+
 def test_raport_wolnym_tekstem_z_wpisem_tak_konczy_przypomnienia_a_mail_bez_wpisu_nie() -> None:
     """Historia 10 speca #2032 (ADR 0041, „Co nie jest raportem”): 13–14.11 Wykonawcy pisali raporty wolnym tekstem.
     Raport za 13.11 z Wpisem ``tak`` ze zwykłym opisem jest przysłany: Wpisanie raportów wpisuje go bez problemu, bo

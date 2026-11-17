@@ -212,7 +212,8 @@ def test_raport_z_adresu_spoza_listy_nie_zmienia_komorek_i_jest_problemem_niezna
         " re: Fwd: Raport 08.11.2026",
         "Re: PD: Raport 08.11.2026",
         "Re: Raport bez daty",
-        "Re: Raport 08.11 popraw",
+        "Re: Raport popraw",
+        "Re: Raport 31.11 popraw",
         "Re: Raport za 08.11.2026",
         "Re: Zmiana w raportach 08.11.2026",
         "Re: Raporty",
@@ -3632,12 +3633,16 @@ FIXED_TEXT = f"40000001 tak wymiana modemu\n\nW dniu pon., 9 lis 2026 o 08:00 {I
         "Re: Raport 08.11.2026 Kowalski",
         "Re: Raport 08.11.2026 2 montaże",
         "Re: Raport 08.11.2016 - BŁĘDY",
+        "Re: Raport 08.11 popraw",
+        "Odp: raport 8.11",
+        "Re: Raport 8/11 - BŁĘDY PROSZĘ POPRAW 40000002",
     ],
 )
 def test_poprawka_w_odpowiedzi_z_tematem_raportu_na_poczatku_jest_raportem_za_jego_dzien(subject: str) -> None:
     """Historie 26 i 29: ``Re:`` albo ``Odp:``, raz albo więcej, w dowolnej wielkości liter, przed tematem Raportu
-    wykonawcy z dniem, z jedną literówką w słowie i rokiem pomylonym jak w samym temacie, a po nim dowolny dopisek, daje
-    dzień z tematu, a Wpisy tylko z tekstu nad cytatem (historia 27)."""
+    wykonawcy z dniem, z jedną literówką w słowie i rokiem pomylonym jak w samym temacie albo bez roku (decyzja Maksa
+    17.11.2026), a po nim dowolny dopisek, także z liczbami, daje dzień z tematu, a Wpisy tylko z tekstu nad cytatem
+    (historia 27)."""
 
     mail = _mail(JAN, subject, FIXED_TEXT)
 

@@ -45,6 +45,14 @@ class FaultySubject:
     day: date | None
 
 
+@dataclass(frozen=True)
+class _DayMonth:
+    """Dzień i miesiąc z poprawki raportu w odpowiedzi bez roku: rok daje dopiero dzień przyjścia maila."""
+
+    day: int
+    month: int
+
+
 def reminder_subject(day: date) -> str:
     """Temat Przypomnienia o raporcie za dzień ``day``: ``Przypomnienie: raport za dzień dd.mm.rrrr``."""
 
@@ -65,8 +73,9 @@ def reminder_day(subject: str) -> date | None:
 
 
 def reads_as_report(subject: str) -> bool:
-    """Czy mail z tematem ``subject`` może być Raportem wykonawcy: ``read`` daje dla niego dzień albo powód, a nie
-    ``None``. Po nim port skrzynki wybiera maile, których treść pobiera."""
+    """Czy mail z tematem ``subject`` może być Raportem wykonawcy: ``read`` daje dla niego dzień albo powód, a ``None``
+    tylko dla poprawki raportu w odpowiedzi bez roku, której dzień nie leży w granicach od dnia przyjścia. Po nim port
+    skrzynki wybiera maile, których treść pobiera."""
 
     return _read(subject) is not None
 
@@ -81,9 +90,11 @@ def read(subject: str, arrived: date) -> date | FaultySubject | None:
     przed tematem, który daje dzień: tematem, z którego ``reminder_day`` czyta dzień (odpowiedź na Przypomnienie o
     raporcie, ADR 0030), albo tematem, który zaczyna się od tematu Raportu wykonawcy z dniem, a po nim ma dowolny dopisek
     (poprawka raportu w odpowiedzi, ADR 0041: ``Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW``); temat Raportu
-    wykonawcy kończy wtedy trzecia liczba po słowie. Inna odpowiedź (``Re: Zmiana w raportach …``, ``Re: Raport 16.11``),
-    ``Fwd:``, ``Fw:`` albo ``PD:`` gdziekolwiek przed tematem i temat przypomnienia bez przedrostka nie są Raportem
-    wykonawcy.
+    wykonawcy kończy wtedy trzecia liczba po słowie, a gdy do niej nie daje dnia, druga liczba: temat bez roku
+    (``Re: Raport 16.11 - popraw``) daje dzień i miesiąc w roku, w którym leżą w granicach ``_BEFORE`` i ``_AFTER`` od
+    dnia przyjścia (decyzja Maksa 17.11.2026), a bez takiego roku (``Re: Raport 31.11``) nie jest Raportem wykonawcy.
+    Inna odpowiedź (``Re: Zmiana w raportach …``, ``Re: Raport popraw``, ``Re: Raport za 16.11.2026``), ``Fwd:``,
+    ``Fw:`` albo ``PD:`` gdziekolwiek przed tematem i temat przypomnienia bez przedrostka nie są Raportem wykonawcy.
 
     Temat Raportu wykonawcy (ADR 0041) zaczyna słowo ``raport`` w dowolnej wielkości liter, z jedną literówką albo bez
     (zamiana, przestawienie sąsiednich, brak albo nadmiar jednej litery: ``Rapotr``, ``Rapor``, ``Raportt``), a po nim
@@ -106,14 +117,17 @@ def read(subject: str, arrived: date) -> date | FaultySubject | None:
     match found:
         case date():
             return _near(found, arrived)
+        case _DayMonth(day=day, month=month):
+            return _without_year(day, month, arrived)
         case (SubjectFault() as fault, str() as rest):
             return FaultySubject(fault, _day_beside(rest, arrived) if fault in _DAY_BESIDE_FAULTS else None)
         case None:
             return None
 
 
-def _read(subject: str) -> date | tuple[SubjectFault, str] | None:
-    """Dzień z tematu przed poprawką roku, powód z tekstem po słowie raportu albo ``None``, gdy to nie raport."""
+def _read(subject: str) -> date | _DayMonth | tuple[SubjectFault, str] | None:
+    """Dzień z tematu przed poprawką roku, dzień i miesiąc poprawki w odpowiedzi bez roku, powód z tekstem po słowie
+    raportu albo ``None``, gdy to nie raport."""
 
     reply = _REPLY.match(subject)
     if reply is not None:
@@ -121,15 +135,23 @@ def _read(subject: str) -> date | tuple[SubjectFault, str] | None:
     return _report(subject)
 
 
-def _replied(subject: str) -> date | None:
+def _replied(subject: str) -> date | _DayMonth | None:
     """Dzień z tematu po przedrostkach odpowiedzi: z tematu przypomnienia albo z tematu Raportu wykonawcy do trzeciej
-    liczby, gdy daje dzień, a nie błąd."""
+    liczby, gdy daje dzień, a nie błąd, a inaczej dzień i miesiąc z tematu do drugiej liczby, gdy to temat bez roku."""
 
     if (day := reminder_day(subject)) is not None:
         return day
-    numbers = [found.end() for found in _NUMBER.finditer(subject)][:3]
-    found = _report(subject[: numbers[-1]]) if len(numbers) == 3 else None
-    return found if isinstance(found, date) else None
+    ends = [found.end() for found in _NUMBER.finditer(subject)][:3]
+    if len(ends) == 3 and isinstance(found := _report(subject[: ends[2]]), date):
+        return found
+    if len(ends) < 2:
+        return None
+    match _report(subject[: ends[1]]):
+        case (SubjectFault.NO_YEAR, str() as rest):
+            day, month = _NUMBER.findall(rest)
+            return _DayMonth(int(day), int(month))
+        case _:
+            return None
 
 
 def _report(subject: str) -> date | tuple[SubjectFault, str] | None:
@@ -192,9 +214,16 @@ def _day_beside(rest: str, arrived: date) -> date | None:
     if found["year"] is not None:
         day = _day(found["day"], found["month"], found["year"])
         return _near(day, arrived) if isinstance(day, date) else None
+    return _without_year(int(found["day"]), int(found["month"]), arrived)
+
+
+def _without_year(day: int, month: int, arrived: date) -> date | None:
+    """Dzień ``day`` miesiąca ``month`` w roku, w którym leży w granicach ``_BEFORE`` i ``_AFTER`` od dnia przyjścia;
+    ``None``, gdy w żadnym nie jest dniem w tych granicach."""
+
     for year in (arrived.year - 1, arrived.year, arrived.year + 1):
         try:
-            candidate = date(year, int(found["month"]), int(found["day"]))
+            candidate = date(year, month, day)
         except ValueError:
             continue
         if arrived - _BEFORE <= candidate <= arrived + _AFTER:
