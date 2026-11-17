@@ -112,13 +112,12 @@ def test_inny_numer_lokal_rodzaj_albo_slowo_ulicy_to_inny_adres(data: st.DataObj
     ("collective", "efenix"),
     [
         pytest.param("", "Poznań ul.Testowa 1", id="pusty-adres"),
-        pytest.param("TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2", id="bez-rodzaju"),
         pytest.param("UL. TESTOWA", "Poznań ul.Testowa", id="bez-numeru"),
         pytest.param("UL. TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2 kod", id="cos-po-lokalu"),
         pytest.param("UL. 12 LOKAL 3", "Poznań ul. 12 Lokal 3", id="lokal-bez-nazwy-ulicy"),
     ],
 )
-def test_adres_bez_rodzaju_numeru_albo_z_czyms_po_lokalu_nie_jest_rowny_zadnemu(collective: str, efenix: str) -> None:
+def test_adres_bez_numeru_albo_z_czyms_po_lokalu_nie_jest_rowny_zadnemu(collective: str, efenix: str) -> None:
     assert not same_address(collective, efenix)
 
 
@@ -202,6 +201,45 @@ def test_numer_budynku_z_wiecej_niz_dwiema_czesciami_albo_pusta_czescia_nie_jest
     assert not same_address(address, address)
 
 
+@pytest.mark.parametrize(
+    ("collective", "efenix"),
+    [
+        pytest.param("TESTOWY 13/14/1", "Poznań-Nowe Miasto rynekTestowy 13/14 Lokal 1", id="plik-bez-rodzaju-x/y/z"),
+        pytest.param("TESTOWY 8/27/3", "Poznań rynekTestowy 8 Lokal 27/3", id="plik-bez-rodzaju-x-lokal-y/z"),
+        pytest.param("TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2", id="plik-bez-rodzaju-ulica"),
+        pytest.param("RYNEK TESTOWY 9/9", "Poznań-Wilda rynekTestowy 9 Lokal 9", id="rynek-sklejony-w-efenix"),
+        pytest.param("RYNEK TESTOWY 9/9", "Poznań rynek Testowy 9 Lokal 9", id="rynek-ze-spacja-w-efenix"),
+        pytest.param("ŻÓŁTY 13/14/1", "Poznań rynekŻółty 13/14 Lokal 1", id="rynek-sklejony-z-polska-wielka-litera"),
+        pytest.param("NOWY RYNEK 5/2", "Poznań ul.Nowy Rynek 5 Lokal 2", id="rynek-na-koncu-nazwy-ulicy"),
+    ],
+)
+def test_adres_pliku_bez_rodzaju_i_rynek_sa_rowne_temu_samemu_adresowi_w_efenix(collective: str, efenix: str) -> None:
+    """Tata pisze rynek bez rodzaju (``TESTOWY 13/14/1``) albo z nim (``RYNEK TESTOWY 9/9``). W Logach Wycen w efenix
+    okresów 27_02_11 i 03_09_11 takie zlecenia mają obie strony bez rozbioru, więc efenix nie pisze przy nich ``ul.``,
+    tylko rodzaj ``rynek``, sklejony z nazwą jak ``ul.Testowa`` albo ze spacją."""
+
+    assert address_differences(collective, efenix) == ()
+
+
+@pytest.mark.parametrize(
+    ("collective", "efenix", "parts"),
+    [
+        pytest.param("INNY 13/14/1", "Poznań rynekTestowy 13/14 Lokal 1", (AddressPart.STREET,), id="plik-bez-rodzaju-inna-nazwa"),
+        pytest.param("TESTOWY 13/14/2", "Poznań rynekTestowy 13/14 Lokal 1", (AddressPart.FLAT,), id="plik-bez-rodzaju-inny-lokal"),
+        pytest.param("POZNAŃ TESTOWY 1/2", "Poznań rynekTestowy 1 Lokal 2", (AddressPart.STREET,), id="plik-bez-rodzaju-z-miastem"),
+        pytest.param("RYNEK TESTOWY 9/9", "Poznań ul.Testowy 9 Lokal 9", (AddressPart.STREET,), id="rynek-to-inny-rodzaj-niz-ul"),
+        pytest.param("TESTOWY 1/2", "Poznań Testowy 1 Lokal 2", (AddressPart.EFENIX_UNREAD,), id="efenix-bez-rodzaju-dalej-bez-rozbioru"),
+    ],
+)
+def test_adres_pliku_bez_rodzaju_rozni_sie_nazwa_ulicy_numerem_albo_lokalem(
+    collective: str, efenix: str, parts: tuple[AddressPart, ...]
+) -> None:
+    """Bez rodzaju w pliku nazwą ulicy są wszystkie słowa przed numerem; w efenix przed rodzajem stoi miejscowość, więc
+    ``Dane adresowe`` bez rodzaju dalej nie mają rozbioru."""
+
+    assert address_differences(collective, efenix) == parts
+
+
 def _changed_part(address: Address) -> st.SearchStrategy[tuple[Address, AddressPart]]:
     """Adres ``address`` ze zmianą jednej części i ta część; numer z ``/`` zostaje z lokalem, jak w ``addresses``."""
 
@@ -238,7 +276,9 @@ def test_roznica_adresow_to_dokladnie_zmieniona_czesc_ulica_numer_domu_albo_loka
     ("collective", "efenix", "parts"),
     [
         pytest.param("UL. TESTOWA 1/2", "Poznań ul.Inna 3 Lokal 4", (AddressPart.STREET, AddressPart.NUMBER, AddressPart.FLAT), id="wszystkie-czesci"),
-        pytest.param("TESTOWA 1/2", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-bez-rodzaju"),
+        pytest.param("UL. TESTOWA 1/2/3/4", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-z-trzema-ukosnikami"),
+        pytest.param("TESTOWA", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-bez-rodzaju-i-numeru"),
+        pytest.param("1/2", "Poznań ul.Testowa 1 Lokal 2", (AddressPart.FILE_UNREAD,), id="plik-z-samym-numerem"),
         pytest.param("UL. TESTOWA 1/2", "Poznań Testowa 1 Lokal 2", (AddressPart.EFENIX_UNREAD,), id="efenix-bez-rodzaju"),
         pytest.param("UL. TESTOWA", "Poznań ul.Testowa", (AddressPart.FILE_UNREAD, AddressPart.EFENIX_UNREAD), id="obie-bez-numeru"),
     ],
