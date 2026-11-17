@@ -115,7 +115,7 @@ _Avoid_: eksport, nowe dane
 ## Uporządkowanie INTERMAX
 
 Proces, który tata uruchamia w Centrum rozliczeń po wklejeniu Surowych zleceń dnia.
-Przesuwa pierwszy wiersz na miejsce, gdy przyszedł przesunięty, dzieli zlecenia na segmenty Wykonawców w kolejności alfabetycznej, oddzielone jednym pustym wierszem, w segmencie układa je od najwcześniejszej godziny do najpóźniejszej i nadaje im od kolumny A do `UWAGI` wygląd reszty Rejestru zleceń z cienką ramką i pogrubionym tylko `WYKONAWCA`, Kolory operatora i Wpisy urządzenia i czynności INTERMAX, a kolumny z aplikacji za `UWAGI` usuwa.
+Przesuwa pierwszy wiersz na miejsce, gdy przyszedł przesunięty, dzieli zlecenia na segmenty Wykonawców w kolejności alfabetycznej, oddzielone jednym pustym wierszem, w segmencie układa je od najwcześniejszej godziny do najpóźniejszej i nadaje im od kolumny A do `UWAGI` wygląd reszty Rejestru zleceń z cienką ramką i pogrubionym tylko `WYKONAWCA`, Kolory operatora i Wpisy urządzenia i czynności INTERMAX, a kolumny z aplikacji za `UWAGI` usuwa i na ich miejsce kopiuje Historię adresu.
 Dzień stawia jeden pusty wiersz pod żółtym wierszem, którym tata oddziela dni, a bez niego 10 pustych wierszy pod ostatnim uporządkowanym zleceniem.
 Po nim Rejestr otwiera się na dzisiejszym dniu z kalendarza, a gdy dziś nie ma zleceń, na ostatnim wcześniejszym dniu ze zleceniami.
 Zmienia tylko Surowe zlecenia i widok po otwarciu.
@@ -155,6 +155,18 @@ Netia, P4, Plus, VECTRA i SYSTEMIA dostają `nokia` i ` - akt pętli`, ORANGE `g
 Usterki, instalacje ręczne, inne rodzaje zleceń i inni operatorzy, także INEA i OXYLION, zostają bez wpisu.
 Zlecenie ORANGE, które okazało się BSA, tata i pracownicy poprawiają ręcznie na `nokia` i ` - akt pętli BSA`, tak jak dopisują `stb2`, `tv` czy `akt int` po wizycie.
 _Avoid_: szablon, autouzupełnianie
+
+## Baza zleceń
+
+Skoroszyt taty `Baza zleceń do 17_11_2026.xlsx` w folderze Rejestru zleceń: dawne zlecenia od 2018 roku w arkuszach po okresach, każdy arkusz z własnym układem kolumn i adresem w kolumnie A zapisanym na wiele sposobów.
+Jest jeden i nie zmienia nazwy; tata z czasem dopisuje do niego nowe arkusze, a procesy go tylko czytają.
+_Avoid_: archiwum, stary INTERMAX
+
+## Historia adresu
+
+Wiersze Bazy zleceń z tym samym adresem co zlecenie, które Uporządkowanie INTERMAX kopiuje do wiersza tego zlecenia za `UWAGI`, od najnowszej daty realizacji do najstarszej, każdy w szerokości swojego arkusza, a co drugi, od pierwszego, na jasnoszarym tle; zlecenie z Historią adresu ma czerwoną kolumnę A.
+Ten sam adres to ta sama ulica, numer budynku i numer mieszkania, a adres bez numeru mieszkania jest tym samym tylko dla adresu bez niego, bez względu na `UL.`, `OS.`, wielkość liter, kropki i zera wiodące; nazwa ulicy zgadza się także wtedy, gdy krótsza jest końcem dłuższej (`KOWALSKIEGO` i `UL. JANA KOWALSKIEGO`), a miasto tylko wtedy się liczy, gdy mają je oba wiersze.
+_Avoid_: dopasowanie, historia zleceń
 
 ## Zlecenie skuteczne
 
