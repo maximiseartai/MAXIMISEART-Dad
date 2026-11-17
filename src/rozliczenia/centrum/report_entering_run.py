@@ -313,7 +313,9 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
     faulty = (
         None
         if found is None
-        else report_entering_contract.ReportsFaultySubject(fault=found.fault, day=found.day, arrived=found.arrived)
+        else report_entering_contract.ReportsFaultySubject(
+            subject=found.subject, fault=found.fault, day=found.day, arrived=found.arrived
+        )
     )
     return report_entering_contract.ReportsProblem(
         reason=problem.reason, number=problem.number, keep=keep, faulty_subject=faulty

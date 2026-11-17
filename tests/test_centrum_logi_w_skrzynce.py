@@ -74,6 +74,7 @@ from rozliczenia.worker_reports import (
     ReadStranger,
     ReadUnreadable,
     ReportEntry,
+    ReportSubject,
     SenderAddress,
     SubjectFault,
     UnknownSender,
@@ -2334,7 +2335,7 @@ def _entering_facts() -> EnteringFacts:
         skipped=2,
         mails=(
             ReadReport(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
-            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, frozenset({plain}), CLICK_DAY),
+            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, frozenset({plain}), CLICK_DAY, ReportSubject("")),
             ReadStranger(twice, arrived, CLICK_DAY),
             ReadStranger(twice, arrived, CLICK_DAY),
             ReadStranger(once, arrived, CLICK_DAY),

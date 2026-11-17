@@ -3682,11 +3682,16 @@ export type ReportsDay = {
 /**
  * ReportsFaultySubject
  *
- * Raport wykonawcy z błędem tematu (ADR 0041): rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
+ * Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości
+ * ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
  * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
- * kończy), i chwila przyjścia maila. Bez tematu, bo tematy maili nie trafiają do przeglądarki (ADR 0028).
+ * kończy), i chwila przyjścia maila.
  */
 export type ReportsFaultySubject = {
+    /**
+     * Subject
+     */
+    subject: string;
     /**
      * Fault
      */

@@ -19,6 +19,7 @@ from ._model import (
     ReadUnreadable,
     RegisterOrder,
     ReportInputs,
+    ReportSubject,
     UnknownSender,
     Window,
 )
@@ -71,7 +72,7 @@ def read_window(inputs: ReportInputs) -> WindowRead:
             case _subject.FaultySubject(fault=fault, day=day):
                 numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
                 if worker is not None and window.opens(mail.arrived.date()) and numbers:
-                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, fault, numbers, day))
+                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, fault, numbers, day, ReportSubject(mail.subject)))
             case date() if worker is None and window.opens(found):
                 read.append(ReadStranger(mail.id, mail.arrived, found))
                 strangers.append(UnknownSender(mail.id, mail.sender, found))
@@ -163,8 +164,8 @@ def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]
                 )
             )
             return found.arrived, found.mail, "report", (worker, day.isoformat(), *content)
-        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers, day=day):
-            said = (fault.name, "" if day is None else day.isoformat())
+        case ReadUnreadable(worker=worker, fault=fault, numbers=numbers, day=day, subject=subject):
+            said = (fault.name, "" if day is None else day.isoformat(), subject.shown())
             return found.arrived, found.mail, "unreadable", (worker, *said, *sorted(numbers))
         case ReadStranger(day=day):
             return found.arrived, found.mail, "stranger", (day.isoformat(),)

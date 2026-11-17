@@ -21,11 +21,11 @@
   },
   "src/rozliczenia/centrum/report_entering_state.py": {
     "_TextFile": "9c433f212b12cb17",
-    "FileReportState.of_work": "2b62d28982518644",
+    "FileReportState.of_work": "f1ce4f0a2f2f9966",
     "FileReportState.load": "0c7ce0d1793237f2",
     "FileReportState.save_memory": "85ec60b9bb845e6b",
-    "FileReportState.save_result": "8b6b4f22796d3cdf",
-    "FileReportState.shown": "027818f51fd2e60f",
+    "FileReportState.save_result": "8489a345ea644287",
+    "FileReportState.shown": "dc7e8b874c2821e3",
     "FileReportState.kept": "97d11bf6647e9014",
     "FileReportState.keep": "c661614598a4c6a9"
   },
