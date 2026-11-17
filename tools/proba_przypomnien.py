@@ -90,7 +90,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
     reminders = snapshot.reminders
     if isinstance(reminders, UnreadableFile):
         return f"{FAIL} | {_not_read(NotRead('plik-bez-odczytu', file=reminders.name))}"
-    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, reminders.schedule))
+    read = due_reminders(now, snapshot, inbox, DadFiles(), schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, reminders.schedule), ())
     match read:
         case NotRead():
             return f"{FAIL} | {_not_read(read)}"

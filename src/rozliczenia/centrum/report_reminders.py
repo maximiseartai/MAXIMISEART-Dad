@@ -10,12 +10,12 @@ zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez 
 wejścia, potem Skrzynkę raportów i jej „Wysłane”, pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
 której sprawdzenie ruszyło (minęła 17:00 albo 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
-czeka na następną porę, która zna wysłane z „Wysłanych”. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
+czeka na następną porę, która zna wysłane z „Wysłanych” i z pamięci tej pracy Centrum. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
 niego bierze przypomnienia praca Centrum i próba Przypomnień przed Wydaniem (``tools/proba_przypomnien.py``).
 
 Pora tego dnia jest załatwiona, gdy sprawdzenie skończy się bez porażki, którą naprawia czas: wtedy do końca pory nie
 czyta już niczego poza Ustawieniami. Załatwiona jest pora przy tych porach z Ustawień: zmiana pór otwiera porę na jedno
-nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wysłane”. Nazwaną porę przypomnienia z
+nowe sprawdzenie, a przed drugim mailem tej samej nazwanej pory chronią „Wysłane” i pamięć tej pracy Centrum. Nazwaną porę przypomnienia z
 „Wysłanych” liczą pory z chwili jego wysyłki, nie bieżące (decyzja Maksa): poranne wysłane o 8:05 zamyka
 poranną porę tego dnia także po jej przesunięciu na 9:00–17:00. Dlatego każdy czytelny odczyt z włączonymi
 przypomnieniami, w porze przed wysyłką i poza porą, zapisuje pory, gdy różnią się od ostatnio zapisanych
@@ -24,7 +24,15 @@ Bez tego pliku wysyłała tylko wersja sprzed Ustawień Centrum, więc liczą po
 plikiem nieczytelnym pory z ADR 0030 razem z bieżącymi, zapisane w pliku na następne starty. Dopóki zapis pór się nie
 uda (``zapis-por``), sprawdzenie nie wysyła, a pora zostaje otwarta. Brak sieci
 (``InboxUnreachable``) zostawia porę otwartą, więc następna minuta tej samej pory próbuje znowu, a przypomnienia, które
-już poszły, zna z „Wysłanych”. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
+już poszły, zna z „Wysłanych” i z pamięci tej pracy Centrum: Gmail kładzie mail w „Wysłanych” z opóźnieniem, więc
+przypomnienia wysłane w tej pracy praca pamięta też w pamięci procesu (``sent_in_work`` w ``due_reminders``), jak
+Wysyłka rozliczeń (``settlement_mailing``). Jeden zbiór wysłanych, które zna praca (``_known_sent``: „Wysłane” i
+pamięć bez maili, które Gmail już tam położył), dostaje i rdzeń, i widok Raporty. Granicą jest ponowny start Centrum tuż po wysyłce: nowa praca zna wysłane
+tylko z „Wysłanych”, więc przypomnienie, którego Gmail jeszcze tam nie położył, może pójść drugi raz. Pamięć jest
+własna, a nie wspólna z Wysyłką rozliczeń za jednym modułem „wysłane przez Centrum”, bo obie liczą z wysłanych co
+innego: przypomnienie porę z chwili wysyłki i Wykonawcę z adresów Listy, Mail z rozliczeniem stan pliku po jego
+nazwie i chwili zmiany, z ostatnim mailem pliku w miejscu poprzedniego, a dostęp do skrzynki sprawdzają w innym
+miejscu odczytu i z innym skutkiem. Odrzucone hasło aplikacji zakłada Zgłoszenie do Maksa
 (``ReminderReport``) i zamyka porę, żeby Gmail nie dostawał złego hasła co minutę. Brak pliku, Ustawienia albo
 nieczytelny INTERMAX zostawia porę otwartą: naprawa Maksa albo taty działa od następnej minuty.
 
@@ -41,7 +49,7 @@ porażka trafia do dziennika Centrum, bez adresów, Wykonawców i treści maili 
 dostaje raz, aż przyczyna się zmieni. Wyjątkiem są przypomnienia wyłączone w Ustawieniach (``bez-wdrozenia``): są
 wtedy wyłączone, a nie zepsute, więc sprawdzenie nie zostawia śladu ani w dzienniku, ani w ``config``, a pora zostaje
 otwarta. Wynik ostatniego sprawdzenia w porze z dniem wdrożenia leży w ``REMINDERS_RESULT`` dla widoku Raporty:
-``{schema_version: 1, checked_at, pora, failure, footer, sent: [{worker, day, sent_at}]}``, gdzie ``sent`` to przypomnienia z „Wysłanych” i z tego sprawdzenia przypisane Wykonawcom z listy adresów (pusta lista, gdy sprawdzenie
+``{schema_version: 1, checked_at, pora, failure, footer, sent: [{worker, day, sent_at}]}``, gdzie ``sent`` to wysłane przypomnienia, które zna praca, i te z tego sprawdzenia, przypisane Wykonawcom z listy adresów (pusta lista, gdy sprawdzenie
 nie doszło do „Wysłanych”), a ``footer`` to ``present``, ``missing`` (stopka w Ustawieniach pusta) albo ``null``, gdy
 sprawdzenie nie doszło do przypomnień. Widok Raporty
 czyta go przez ``ReportReminders.shown`` tym samym kształtem (``_Result``): chwile wysłania po Wykonawcy i dniu i to, czy
@@ -212,6 +220,7 @@ class ReportReminders:
         self._last_failure: _Failed | None = None
         self._schedule: ReminderSchedule | None = None
         self._unread: _Unread | None = None
+        self._sent_in_work: list[SentReminder] = []
 
     def check(self) -> None:
         """Jedno sprawdzenie; nieoczekiwany wyjątek trafia do dziennika Centrum, a następna minuta próbuje znowu."""
@@ -317,7 +326,7 @@ class ReportReminders:
     def _send(
         self, now: datetime, snapshot: SettingsSnapshot, schedule: ReminderSchedule, in_effect: SchedulesInEffect, found: _Check
     ) -> None:
-        read = due_reminders(now, snapshot, self._mailbox, self._files, in_effect)
+        read = due_reminders(now, snapshot, self._mailbox, self._files, in_effect, tuple(self._sent_in_work))
         match read:
             case NotRead():
                 found.failed = _Failed(read.cause, read.failure, file=read.file)
@@ -336,6 +345,7 @@ class ReportReminders:
             outcome = self._mailbox.send(reminder, moment)
             match outcome:
                 case MailSent():
+                    self._sent_in_work.append(SentReminder(frozenset(reminder.recipients), reminder.day, moment))
                     self._log.reminder_sent(day=reminder.day.isoformat(), pora=_pora(now, schedule))
                     found.sent.append((reminder.worker, reminder.day, moment))
                 case MailRefused(cause=cause):
@@ -376,8 +386,8 @@ NotReadCause = Literal["bez-wdrozenia", "plik-bez-odczytu", "bez-ustawien", "bez
 
 @dataclass(frozen=True)
 class DueReminders:
-    """Odczyt sprawdzenia, które doszło do przypomnień: przypomnienia, które należą się teraz, przypomnienia z
-    „Wysłanych”, adresy Wykonawców i stopka taty z Ustawień (``None``: stopka pusta)."""
+    """Odczyt sprawdzenia, które doszło do przypomnień: przypomnienia, które należą się teraz, wysłane przypomnienia,
+    które zna praca (``_known_sent``), adresy Wykonawców i stopka taty z Ustawień (``None``: stopka pusta)."""
 
     due: tuple[Reminder, ...]
     sent: tuple[SentReminder, ...]
@@ -401,11 +411,13 @@ def due_reminders(
     mailbox: ReminderMailbox,
     files: DadFiles,
     in_effect: SchedulesInEffect,
+    sent_in_work: tuple[SentReminder, ...],
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
     """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: Przypomnienia o
     raporcie, Ustawienia Centrum z Legendą czynności i Listą Wykonawców z migawki ``snapshot``, Pliki zbiorcze okresów okna,
     INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``, z porami „Wysłanych” z ``in_effect``
-    (``schedules_in_effect``). Niczego nie wysyła i nie zapisuje: wysyła
+    (``schedules_in_effect``). Przypomnienia wysłane w tej pracy Centrum (``sent_in_work``) liczą się jak te z
+    „Wysłanych”: zamykają porę i są w ``DueReminders.sent`` dla widoku Raporty. Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
 
@@ -443,15 +455,25 @@ def due_reminders(
     mails = mailbox.mails_since(window.first)
     if not isinstance(mails, Mails):
         return mails
-    sent = mailbox.sent_reminders(window.first)
-    if not isinstance(sent, SentReminders):
-        return sent
+    filed = mailbox.sent_reminders(window.first)
+    if not isinstance(filed, SentReminders):
+        return filed
+    sent = _known_sent(filed.reminders, sent_in_work)
     due = reminders_due(
         ReminderInputs(
-            now, window, orders, mails.mails, sent.reminders, addresses, workers.reminded(), reminders, legend, in_effect
+            now,
+            window,
+            orders,
+            mails.mails,
+            sent,
+            addresses,
+            workers.reminded(),
+            reminders,
+            legend,
+            in_effect,
         )
     )
-    return DueReminders(due, sent.reminders, addresses, reminders.footer if reminders.footer.strip() else None)
+    return DueReminders(due, sent, addresses, reminders.footer if reminders.footer.strip() else None)
 
 
 
@@ -525,8 +547,15 @@ def _pora(now: datetime, schedule: ReminderSchedule) -> str:
     return "" if pora is None else pora.value
 
 
+def _known_sent(filed: tuple[SentReminder, ...], in_work: tuple[SentReminder, ...]) -> tuple[SentReminder, ...]:
+    """Wysłane przypomnienia, które zna praca: te z „Wysłanych” i te z pamięci tej pracy, których Gmail jeszcze tam nie
+    położył (``SentReminder.same_mail``), więc mail położony już przez Gmaila liczy się raz."""
+
+    return (*filed, *(mine for mine in in_work if not any(mine.same_mail(found) for found in filed)))
+
+
 def _by_worker(sent: tuple[SentReminder, ...], addresses: WorkerAddresses) -> list[tuple[str, date, datetime]]:
-    """Przypomnienia z „Wysłanych” przypisane Wykonawcom z listy adresów, raz na Wykonawcę w przypomnieniu."""
+    """Wysłane przypomnienia przypisane Wykonawcom z listy adresów, raz na Wykonawcę w przypomnieniu."""
 
     found: list[tuple[str, date, datetime]] = []
     for reminder in sent:

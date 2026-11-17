@@ -583,3 +583,25 @@ def test_przyklad_w_przypomnieniu_to_wpis_tak_z_samymi_kodami_legendy_z_wydania_
 
     assert yes[1] == "tak" and isinstance(DEFAULT_ACTIVITY_LEGEND.read(yes[2]), CodesOnly)
     assert no[1:] == ["nie", "brak klienta"]
+
+
+@pytest.mark.parametrize(
+    ("gmail", "same"),
+    [
+        (_sent(DAY, NEXT_MORNING + timedelta(minutes=2)), True),
+        (_sent(DAY, NEXT_MORNING - timedelta(minutes=2)), True),
+        (_sent(DAY, NEXT_MORNING + timedelta(minutes=2, seconds=1)), False),
+        (_sent(DAY, NEXT_MORNING - timedelta(minutes=2, seconds=1)), False),
+        (_sent(DAY + timedelta(days=1), NEXT_MORNING), False),
+        (_sent(DAY, NEXT_MORNING, EWA), False),
+        (_sent(DAY, NEXT_MORNING, JAN, JAN_PRYWATNY), False),
+    ],
+)
+def test_przypomnienie_z_wyslanych_to_ten_sam_mail_co_wyslane_w_pracy_przy_tych_samych_adresatach_dniu_i_zegarze_do_2_minut(
+    gmail: SentReminder, same: bool
+) -> None:
+    """Przypomnienie, które praca Centrum pamięta z wysyłki (zegar laptopa taty), i przypomnienie z „Wysłanych” (zegar
+    Gmaila) to ten sam mail przy tych samych adresatach i dniu przypomnienia i chwilach najwyżej zapas zegara
+    (``CLOCK_MARGIN``, 2 minuty) od siebie w obie strony; inny dzień albo inni adresaci to inny mail."""
+
+    assert _sent(DAY, NEXT_MORNING).same_mail(gmail) is same
