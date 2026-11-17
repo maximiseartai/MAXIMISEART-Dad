@@ -76,9 +76,9 @@ spoza listy, widok `Raporty` pokazuje ten adres z przyciskiem
 następne `Wpisz raporty z maili` wpisze ten raport.
 Gdy pracownik w zleceniu z `tak` napisze coś poza Kodami czynności (Błąd opisu),
 `Wpisz raporty z maili` wpisuje to zlecenie jak każde, a widok `Raporty`
-pokazuje przy jego dniu problem z powodem. Taki raport liczy się jako
-niewysłany, więc pracownik dostaje Przypomnienie o raporcie z numerem zlecenia
-i rodzajem błędu, dopóki nie przyśle tego zlecenia jeszcze raz z samymi kodami.
+pokazuje przy jego dniu problem z powodem. Taki raport jest przysłany, więc
+pracownik nie dostaje za ten dzień Przypomnienia o raporcie: przypomnienie idzie
+tylko za dzień, za który nie przysłał żadnego raportu.
 
 ### Foldery tygodni
 
