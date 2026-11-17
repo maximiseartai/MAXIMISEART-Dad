@@ -3,7 +3,7 @@
 Wpisanie raportów wpisuje Raporty wykonawców do INTERMAX z Ustawień Centrum i nie należy do okresu (jak Uporządkowanie
 INTERMAX, ADR 0019); folder okresów z Ustawień czyta tylko po to, by pominąć dni okresów z Plikiem zbiorczym. Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``).
 Legendą czynności ze startu, tą samą co Przygotowanie pliku zbiorczego, czyta opis Wpisu ``tak`` (ADR 0039), więc Logi
-Uruchomienia mają ją dla odtworzenia (``ProcessKind.activity_legend``).
+Uruchomienia mają ją dla odtworzenia (``"activity_legend"`` w ``needs``).
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ KIND: Final[ProcessKind[EnteringInputs, EnteringSummary]] = ProcessKind(
     view=_VIEW,
     core=report_entering_process.PROCESS,
     default_metrics=REPORT_ENTERING_METRICS,
-    needs=("register", "periods_directory", "workers", "worker_report_inbox"),
+    needs=("register", "periods_directory", "workers", "worker_report_inbox", "activity_legend"),
     inputs=_inputs,
     settings=(
         NeededSetting(
@@ -77,5 +77,4 @@ KIND: Final[ProcessKind[EnteringInputs, EnteringSummary]] = ProcessKind(
     ),
     checks=("tata_settings", "files_in_onedrive", "intermax", "worker_list", *TAIL),
     logs=_logs,
-    activity_legend=True,
 )

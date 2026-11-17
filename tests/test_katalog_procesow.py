@@ -29,6 +29,8 @@ from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings_at_start import SettingNeed
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
@@ -420,8 +422,7 @@ _BRAK_W_STARCIE: Final = {
 
 
 def _liczy_w_starcie(kind: ProcessKind[Any, Any]) -> tuple[str, ...]:
-    liczy = {"workers": "workers" in kind.needs, "quantity_rules": kind.quantity_rules, "activity_legend": kind.activity_legend}
-    return tuple(ustawienie for ustawienie, potrzebne in liczy.items() if potrzebne)
+    return tuple(ustawienie for ustawienie in get_args(SettingNeed) if ustawienie in kind.needs)
 
 
 @pytest.mark.parametrize(
@@ -447,6 +448,17 @@ def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospoda
 
     with pytest.raises(ValueError, match=f"^{kind.title} {_BRAK_W_STARCIE[ustawienie]}$"):
         CATALOG.prepared(kind.key, start, _ATRAPA, RunContext())
+
+
+def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_startu_i_pole_migawki_ustawien() -> None:
+    """Sprawdzenie startu i rzut na proces w ``Catalog.prepared`` czytają Ustawienie ze startu z pola ``Start``
+    o nazwie jego potrzeby, a odmowa startu przy pliku bez odczytu z pola migawki Ustawień Centrum o tej nazwie
+    (``settings_at_start``), więc potrzeba bez takiego pola wywróciłaby start procesu, który nią liczy."""
+
+    potrzeby = set(get_args(SettingNeed))
+
+    assert potrzeby <= {pole.name for pole in dataclasses.fields(Start)}
+    assert potrzeby <= {pole.name for pole in dataclasses.fields(SettingsSnapshot)}
 
 
 @pytest.mark.parametrize(("chosen", "expected"), [(None, "bez Przekazania"), ("z Przekazaniem", "z Przekazaniem")])
@@ -598,7 +610,10 @@ def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii
         declaration.view.register_name,
     )
     assert card["run"] == run
-    logs = guard_logs(RunLog.model_validate_json(log_file.read_text(encoding="utf-8")), empty_memory())
+    record = RunLog.model_validate_json(log_file.read_text(encoding="utf-8"))
+    assert (record.quantity_rules is not None) is ("quantity_rules" in declaration.needs)
+    assert (record.activity_legend is not None) is ("activity_legend" in declaration.needs)
+    logs = guard_logs(record, empty_memory())
     assert summary_markdown(logs).startswith(
         f"**Logi Uruchomienia**: {declaration.title}, "
     )

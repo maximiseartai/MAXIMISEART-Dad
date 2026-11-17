@@ -163,9 +163,7 @@ class ReportEnteringEntry:
 def _chosen(snapshot: SettingsSnapshot) -> dict[SettingField, Path] | refusal.Refusal:
     """Ścieżki kliknięcia z Ustawień Centrum albo odmowa startu (``chosen_settings``)."""
 
-    return chosen_settings(
-        snapshot, _SETTINGS, quantity_rules=_KIND.quantity_rules, activity_legend=_KIND.activity_legend
-    )
+    return chosen_settings(snapshot, _SETTINGS, _KIND.needs)
 
 
 def _no_addresses(workers: Read[WorkerList] | Unreadable) -> str | None:

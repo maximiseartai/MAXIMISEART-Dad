@@ -79,7 +79,10 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
     view=_VIEW,
     core=preparation_process.PROCESS,
     default_metrics=PREPARATION_METRICS,
-    needs=("register", "periods_directory", "period", "workers", "internal_template", "collective_template"),
+    needs=(
+        "register", "periods_directory", "period", "workers", "internal_template", "collective_template",
+        "quantity_rules", "activity_legend",
+    ),
     inputs=_inputs,
     start=PeriodStart(creates="Rozliczenie wewnętrzne i Plik zbiorczy", chooser=RecentWeeks(8)),
     settings=(
@@ -96,8 +99,6 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
         "period_files_in_excel",
         *TAIL,
     ),
-    quantity_rules=True,
-    activity_legend=True,
 )
 """Przygotowanie pliku zbiorczego w Centrum. Sprawdzenie OneDrive (``files_in_onedrive``) idzie przed sprawdzeniami,
 które otwierają Rejestr zleceń, Wzorce i pliki okresu: plik tylko w chmurze może się nie otworzyć, a wtedy przyczyną
