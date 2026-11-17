@@ -8277,6 +8277,65 @@ def test_tresc_pliku_ustawien_poza_bajtami_nie_przechodzi_mypy_a_znane_luki_prze
     assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_BAJTOW_USTAWIEN}, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_BAJTOW_USTAWIEN)")
 
 
+_GLOWA_LISTY_BEZ_ODCZYTU: Final = """from pathlib import Path
+
+from rozliczenia.centrum.settings.files import {nazwy}
+from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.worker_list import WorkerList
+
+"""
+
+DROGI_LISTY_BEZ_ODCZYTU: Final = {
+    "lista bez odczytu jako zła lista bez ostatniej dobrej: usable() na migawce (Decyzja 4A, przyczyna bez-adresow)": (
+        _GLOWA_LISTY_BEZ_ODCZYTU.format(nazwy="usable")
+        + "def lista(config: Path) -> WorkerList | None:\n    return usable(read_snapshot(config).workers)\n",
+        'Argument 1 to "usable" has incompatible type',
+    ),
+    "lista bez odczytu jako pusta lista: usable() or WorkerList(())": (
+        _GLOWA_LISTY_BEZ_ODCZYTU.format(nazwy="usable")
+        + "def lista(config: Path) -> WorkerList:\n    return usable(read_snapshot(config).workers) or WorkerList(())\n",
+        'Argument 1 to "usable" has incompatible type',
+    ),
+}
+
+ZNANE_LUKI_LISTY_BEZ_ODCZYTU: Final = {
+    "typ żąda gałęzi Unreadable, nie sprawdza, co ona daje: pusta lista w jawnej gałęzi": _GLOWA_LISTY_BEZ_ODCZYTU.format(
+        nazwy="Unreadable, usable"
+    )
+    + """def lista(config: Path) -> WorkerList | None:
+    workers = read_snapshot(config).workers
+    return WorkerList(()) if isinstance(workers, Unreadable) else usable(workers)
+""",
+    "typ pilnuje tylko usable(): wartość dobrego odczytu wzięta przez isinstance": _GLOWA_LISTY_BEZ_ODCZYTU.format(nazwy="Good")
+    + """def lista(config: Path) -> WorkerList | None:
+    workers = read_snapshot(config).workers
+    return workers.value if isinstance(workers, Good) else None
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_lista_wykonawcow_bez_odczytu_bez_jawnej_galezi_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    """Lista Wykonawców, której system nie daje teraz czytać, to nie zła lista bez ostatniej dobrej: ``usable`` przyjmuje
+    tylko ``Read[T]``, więc wołający, który ma w ręku ``Read[WorkerList] | Unreadable``, sam pisze gałąź ``Unreadable``.
+
+    | Postać | mypy | Próbka |
+    |---|---|---|
+    | ``usable(read_snapshot(config).workers)`` | łapie | ``DROGI_LISTY_BEZ_ODCZYTU`` |
+    | ``usable(…) or WorkerList(())`` | łapie | ``DROGI_LISTY_BEZ_ODCZYTU`` |
+    | pusta lista w jawnej gałęzi ``Unreadable`` | przepuszcza | ``ZNANE_LUKI_LISTY_BEZ_ODCZYTU`` |
+    | ``workers.value if isinstance(workers, Good) else None`` | przepuszcza | ``ZNANE_LUKI_LISTY_BEZ_ODCZYTU`` |
+    """
+
+    probki = {opis: kod for opis, (kod, _) in DROGI_LISTY_BEZ_ODCZYTU.items()} | ZNANE_LUKI_LISTY_BEZ_ODCZYTU
+    pliki = zapisz(probki, tmp_path)
+    zgloszenia = ruff_i_mypy(pliki, sonda=Path(__file__).with_name("sonda_listy_bez_odczytu.py"))
+
+    przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_LISTY_BEZ_ODCZYTU.items() if not any(odmowa in z for z in zgloszenia[opis])}
+    assert przepuszczone == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_LISTY_BEZ_ODCZYTU}, "tests/test_centrum_rozliczen.py (ZNANE_LUKI_LISTY_BEZ_ODCZYTU)")
+
+
 # --- Wysyłka rozliczeń (ADR 0040): strona, wysyłka jednego Maila z rozliczeniem przez interfejs HTTP, temat i treść w
 # Ustawieniach. Skrzynka to ``FakeMailbox``, a jeden test idzie przez prawdziwy port do ``AtrapaImap`` i ``AtrapaSmtp``;
 # Rozliczenie pracownika z Wierszem danych ma Wykonawcę w ``WYKONAWCA``, a pusty Szablon pracownika to Wzorzec bez niego. --
