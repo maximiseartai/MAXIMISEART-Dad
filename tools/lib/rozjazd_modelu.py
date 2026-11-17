@@ -13,7 +13,8 @@ obok rozjazdem nie są. Rozjazd to skrót inny niż w pliku ``DEFINICJE`` albo d
 pyta gita, więc rebase i squash go nie zmieniają.
 
 Skróty przelicza ``przesun`` (``tools/przesun_model.py``), dopiero gdy model znów opisuje kod. Rozjazdem jest też plik
-definicji w innej postaci, bo model nie jest wtedy porównany z kodem.
+definicji w innej postaci, bo model nie jest wtedy porównany z kodem. Rozjazd widzi tylko definicje z kluczem w pliku
+``DEFINICJE``, więc ``bez_klucza`` mówi, które funkcje z tabeli modelu w ``SKILL.md`` skilla klucza nie mają.
 """
 
 from __future__ import annotations
@@ -23,13 +24,15 @@ import hashlib
 import json
 from pathlib import Path
 
-__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "definicje", "przesun", "rozjazd", "skille", "skroty"]
+__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "przesun", "rozjazd", "skille", "skroty"]
 
 DEFINICJE = "model/definicje.json"
 CALY_PLIK = "cały plik"
 # Początek nagłówka sekcji ``SKILL.md`` skilla z krokami, które doprowadzają model do kodu.
 KROKI = "Bring the model in line"
 ROZJAZD = "ROZJAZD MODELU Z KODEM"
+# Nagłówek sekcji ``SKILL.md`` skilla z tabelą, która wiąże model z kodem.
+TABELA = "## Does the change touch it?"
 # Długość skrótu w znakach szesnastkowych SHA-256: dość, by przypadkiem nie trafić tego samego skrótu.
 DLUGOSC = 16
 
@@ -109,6 +112,87 @@ def przesun(skill: Path, root: Path) -> list[str]:
     moved = [f"{path} {name}" for path, names in recorded.items() for name, digest in names.items() if now[path][name] != digest]
     (skill / DEFINICJE).write_text(json.dumps(now, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
     return moved
+
+
+def bez_klucza(skill: Path, root: Path) -> list[str]:
+    """Funkcje i metody, które tabela sekcji ``TABELA`` w ``SKILL.md`` skilla nazywa w `` ` ``, stojące w pliku z
+    ``DEFINICJE``, bez klucza tam: ``"ścieżka nazwa"`` w kolejności tabeli. Rozjazd zmiany takiej funkcji nie widzi, choć
+    model ją opisuje. ``SKILL.md`` bez tej sekcji to ``ValueError``.
+
+    | Nazwa w wierszu tabeli | Przykład | Wynik |
+    | --- | --- | --- |
+    | funkcja modułu z pliku definicji | `enter_reports` | bez klucza `enter_reports`: zgłoszona |
+    | metoda klasy | `ReportEnteringEntry.on_request` | bez klucza tej metody i klasy: zgłoszona |
+    | z modułem z przodu | `_cells.with_added` | jak `with_added` w `_cells.py` (`__init__.py`: nazwa pakietu) |
+    | z wywołaniem | `write_cells(...)`, `kept()` | jak nazwa bez nawiasów |
+    | metoda klasy z kluczem | `StateFile.retry` przy kluczu `StateFile` | przechodzi: skrót klasy obejmuje metodę |
+    | funkcja pliku z `CALY_PLIK` | | przechodzi |
+    | nazwa w dwóch plikach definicji | `_case` z kluczem w jednym z nich | przechodzi |
+
+    Granice, które przechodzą bez klucza: klasa, stała i przypisanie (`ClickResult`, `RETRY_S`), zaślepka bez ciała
+    poza docstringiem i ``...`` (metoda ``Protocol``, `Listener.rejected`), nazwa obiektu zamiast definicji
+    (`files.shown()`), definicja w pliku spoza ``DEFINICJE`` (`onedrive_conflicts.beside`), nazwa w prozie sekcji poza
+    tabelą, nazwa w tabeli innej sekcji i każda nazwa skilla, którego sekcja nie ma tabeli, bo model wiąże z kodem proza
+    albo komentarze modelu TLA+ (`verify-urwane-uruchomienie`).
+    """
+
+    recorded = definicje(skill)
+    trees = {path: _tree((root / path).read_text(encoding="utf-8")) for path, names in recorded.items() if CALY_PLIK not in names}
+    missing: list[str] = []
+    for span in _table_spans((skill / "SKILL.md").read_text(encoding="utf-8")):
+        name = span.split("(", 1)[0] if span.endswith(")") else span
+        if not all(part.isidentifier() for part in name.split(".")):
+            continue
+        found = [
+            (path, inner, any(".".join(inner.split(".")[:end]) in recorded[path] for end in range(1, inner.count(".") + 2)))
+            for path, tree in trees.items()
+            for inner in _in_module(path, name)
+            if _is_function(tree, inner)
+        ]
+        if found and not any(keyed for _, _, keyed in found):
+            missing += [f"{path} {inner}" for path, inner, _ in found if f"{path} {inner}" not in missing]
+    return missing
+
+
+def _table_spans(text: str) -> list[str]:
+    lines = text.splitlines()
+    if TABELA not in lines:
+        raise ValueError(f"SKILL.md nie ma sekcji „{TABELA}”")
+    rows: list[str] = []
+    for line in lines[lines.index(TABELA) + 1 :]:
+        if line.startswith("## "):
+            break
+        if line.startswith("|"):
+            rows.append(line)
+    return [span for row in rows for span in row.split("`")[1::2]]
+
+
+def _in_module(path: str, name: str) -> list[str]:
+    """Ścieżki od modułu, które ``name`` może znaczyć w pliku ``path``: sama nazwa i bez członu modułu z przodu."""
+
+    file = Path(path)
+    module = file.parent.name if file.name == "__init__.py" else file.stem
+    head, _, rest = name.partition(".")
+    return [name, rest] if head == module and rest else [name]
+
+
+def _is_function(tree: ast.Module | None, name: str) -> bool:
+    """Czy ``name`` w ``tree`` to funkcja albo metoda z ciałem: każde jej wiązanie to ``def`` z czymś poza docstringiem
+    i ``...``."""
+
+    if tree is None:
+        return False
+    scopes: list[ast.AST] = [tree]
+    nodes: list[ast.stmt] = []
+    for part in name.split("."):
+        nodes = [node for scope in scopes for node in _bindings(scope, part)]
+        scopes = [node for node in nodes if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
+    functions = [node for node in nodes if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    return bool(nodes) and len(functions) == len(nodes) and any(not _stub(function) for function in functions)
+
+
+def _stub(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return all(isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and (node.value.value is ... or isinstance(node.value.value, str)) for node in function.body)
 
 
 def _tree(source: str | None) -> ast.Module | None:

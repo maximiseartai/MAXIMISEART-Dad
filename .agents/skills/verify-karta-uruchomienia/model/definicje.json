@@ -21,12 +21,14 @@
     "RunHost.end": "f33e1a9caf7e6872",
     "RunHost._publish_locked": "307ebb387aedd689",
     "Run.confirm": "69ff1258f6270e0a",
-    "_event_stream": "1552b10a851ab334"
+    "_event_stream": "1552b10a851ab334",
+    "Run.answer": "b72dd62c32bac834"
   },
   "src/rozliczenia/centrum/tool_updates.py": {
     "ToolUpdates.current": "3e1bb96ef847a5fe",
     "ToolUpdates.start": "0532ba161f3b54b2",
     "ToolUpdates._restart": "6e32987dfb385d7a",
-    "ToolUpdates._after_restart": "2189ce7f905850c3"
+    "ToolUpdates._after_restart": "2189ce7f905850c3",
+    "ToolUpdates._update": "14bf3a1e6a0ce716"
   }
 }
