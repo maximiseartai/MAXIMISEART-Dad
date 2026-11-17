@@ -57,13 +57,15 @@ TemplateNeed = Literal["internal_template", "collective_template", "worker_templ
 ConfigurationNeed = TemplateNeed
 """Plik Konfiguracji (``configuration.ConfigurationFiles``): Wzorzec."""
 PathNeed = Literal["register", "periods_directory", "collective_file", "copies_directory", ConfigurationNeed]
-Need = PathNeed | SettingNeed | Literal["period", "efenix_window", "worker_report_inbox"]
+Need = PathNeed | SettingNeed | Literal["period", "efenix_window", "worker_report_inbox", "order_base"]
 """Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
 ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
 odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``SettingNeed``: Ustawienie ze startu, którym
 proces liczy, w polu ``Start.settings`` o tej samej nazwie (``workers``: Lista Wykonawców, ``quantity_rules``: Reguły
 ilości, ``activity_legend``: Legenda czynności; skąd bierze je każdy gospodarz, mówi ``SettingsAtStart``),
-``efenix_window``: okno efenix gospodarza (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
+``efenix_window``: okno efenix gospodarza (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``),
+``order_base``: Baza zleceń, gdy gospodarz ją ma (``Start.order_base``): Centrum z folderu INTERMAX, Skrypt dla maszyn
+z flagi, a odtworzenie żadnej, bo Kopia wejścia jej nie ma."""
 
 
 def _is_path(need: Need) -> TypeGuard[PathNeed]:
@@ -90,6 +92,7 @@ class Start:
     wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
     trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: Ustawienia ze startu, bez wartości
     domyślnej; skąd bierze je każdy gospodarz i co z nich trafia do wejścia i do Logów, mówi ``SettingsAtStart``.
+    ``order_base``: Baza zleceń procesu z potrzebą ``order_base``; ``None``: gospodarz jej nie ma.
     """
 
     paths: Mapping[PathNeed, Path]
@@ -97,6 +100,7 @@ class Start:
     dry_run: bool
     pricing: runs_contract.Pricing | None = None
     settings: SettingsAtStart = field(kw_only=True)
+    order_base: Path | None = field(default=None, kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
@@ -114,12 +118,18 @@ def start_from_settings(
     period: str | None,
     dry_run: bool,
     pricing: runs_contract.Pricing | None = None,
+    order_base: Path | None = None,
 ) -> Start:
     """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032, ``SettingsAtStart.of_snapshot``);
-    ścieżki, okres i tryb wybiera gospodarz."""
+    ścieżki, okres, tryb i Bazę zleceń wybiera gospodarz."""
 
     return Start(
-        paths, period=period, dry_run=dry_run, pricing=pricing, settings=SettingsAtStart.of_snapshot(settings, kind.needs)
+        paths,
+        period=period,
+        dry_run=dry_run,
+        pricing=pricing,
+        settings=SettingsAtStart.of_snapshot(settings, kind.needs),
+        order_base=order_base,
     )
 
 

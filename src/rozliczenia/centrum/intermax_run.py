@@ -38,6 +38,7 @@ from rozliczenia.centrum.process_kind import HostParts, PreparedRun, start_from_
 from rozliczenia.centrum.runs import RunHost
 from rozliczenia import intermax_ordering, intermax_restore
 from rozliczenia.intermax_copies import Copy
+from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.run_context import RunContexts
 from rozliczenia.message import Message, StopError
 from rozliczenia.text import short_day_label
@@ -118,12 +119,14 @@ class IntermaxEntry:
         return intermax_contract.IntermaxDays(days=[_day(day, today) for day in found], problem=None)
 
     def prepare(self) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień Centrum; ``Refusal``, gdy Rejestr zleceń nie jest wskazany."""
+        """Wejście procesu z Ustawień Centrum i Bazą zleceń z folderu INTERMAX; ``Refusal``, gdy Rejestr zleceń nie
+        jest wskazany."""
 
         snapshot = self.settings.snapshot()
+        register = _register(snapshot)
         start = start_from_settings(
-            _KIND, snapshot, {"register": _register(snapshot), "copies_directory": self.copies_directory},
-            period=None, dry_run=False,
+            _KIND, snapshot, {"register": register, "copies_directory": self.copies_directory},
+            period=None, dry_run=False, order_base=register.parent / ORDER_BASE_NAME,
         )
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 

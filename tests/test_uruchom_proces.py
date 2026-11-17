@@ -16,6 +16,8 @@ from typing import Any, get_args, get_type_hints
 
 import pytest
 
+from openpyxl import load_workbook
+
 from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import settlement_messages
@@ -55,6 +57,7 @@ from atrapy.preparation import (
     link_register_order_numbers,
     make_preparation_fixture,
 )
+from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.period_folder import worker_settlements_name_with
 from rozliczenia.preparation_register import period_sheets, read
 from rozliczenia.workbook_files import read_data_rows
@@ -70,6 +73,7 @@ from atrapy.settlement import (
 from atrapy.atrapa_efenix import amount_of, atrapa_efenix
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
+from atrapy.baza_zlecen import TWELVE, BaseSheet, Visit, write_order_base
 from atrapy.intermax import Intermax
 from atrapy.workbooks import hyperlinks
 
@@ -459,6 +463,27 @@ def test_uporzadkowanie_intermax_ze_skryptu_dla_maszyn_oddaje_karte_uruchomienia
     assert "jan.nowak" not in json.dumps(result) and "jan.nowak" not in metrics.read_text(encoding="utf-8")
 
 
+def test_uporzadkowanie_intermax_z_baza_zlecen_z_parametru_kopiuje_historie_adresu_a_bez_niego_nie(tmp_path: Path) -> None:
+    """Domyślne wklejenie atrapy ma zlecenie pod adresem ``Ulica 101``, a Baza zleceń ma jego wiersz."""
+
+    for given in (True, False):
+        folder = tmp_path / ("z bazą" if given else "bez bazy")
+        folder.mkdir()
+        register = folder / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
+        layout = Intermax().write(register)
+        base = folder / ORDER_BASE_NAME
+        write_order_base(base, (BaseSheet("19_12_2025-17_11_2026", TWELVE, [Visit("ULICA 101", None, 1, "wizyta")]),))
+        flags = ("--baza", base) if given else ()
+
+        exit_code, result = _run("intermax", "--register", register, "--copies", folder / "Kopie", *flags, "--metrics", folder / "m.jsonl")
+
+        assert (exit_code, result["result"], result["warnings"]) == (0, "OK", [])
+        assert layout.yellow is not None
+        sheet = load_workbook(register).worksheets[1]
+        found = [sheet.cell(row, 16).value for row in range(layout.yellow + 2, layout.yellow + 12)]
+        assert found.count("ULICA 101") == (1 if given else 0), given
+
+
 def test_uporzadkowanie_intermax_z_nieusunieta_stara_kopia_konczy_sie_ok_z_ostrzezeniem(tmp_path: Path) -> None:
     register = tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
     Intermax().write(register)
@@ -599,7 +624,7 @@ _METRICS = "Plik metryk JSONL."
 _DRY_RUN = ("--dry-run", False, False, "Podgląd bez zapisu.")
 # Flagi Skryptu dla maszyn zamrożone z f981e7c6e, ostatniego commitu z podparserami pisanymi ręcznie: kolejność,
 # wymagalność, wartość domyślna i pomoc, na których stoją E2E, benchmark, skille i tools/rownowaznosc.py; Listę
-# Wykonawców (--wykonawcy) w miejscu --config i --adresy-wykonawcow wprowadził #1473.
+# Wykonawców (--wykonawcy) w miejscu --config i --adresy-wykonawcow wprowadził #1473, a Bazę zleceń (--baza) #2080.
 _FLAGS = {
     "settlement": [
         ("--source", True, None, "Plik zbiorczy."),
@@ -621,6 +646,7 @@ _FLAGS = {
     "intermax": [
         ("--register", True, None, "Rejestr zleceń (INTERMAX)."),
         ("--copies", False, TOOL_ROOT / "Kopie INTERMAX", "Folder Kopii INTERMAX."),
+        ("--baza", False, None, "Baza zleceń; bez niej Uporządkowanie bez Historii adresu."),
         ("--metrics", False, INTERMAX_METRICS, _METRICS),
     ],
     "efenix": [

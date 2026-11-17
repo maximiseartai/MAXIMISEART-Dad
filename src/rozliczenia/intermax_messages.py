@@ -15,6 +15,7 @@ from typing import Final
 
 from .intermax_replace import Refusal
 from .message import IF_ERROR_RETURNS, Message, file_label, folder_label, refer_if
+from .order_base import ORDER_BASE_NAME
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
 from .text import row_range
 from . import workbook_messages
@@ -327,6 +328,72 @@ def old_copies_kept(directory: Path, replacement: Replacement) -> Message:
         action=(
             "Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. "
             f"{refer_if('Jeśli komunikat wraca', request='przekaż go')}"
+        ),
+    )
+
+
+ORDER_BASE_SKIPPED: Final = "BAZA_ZLECEN_POMINIETA"
+"""Kod ostrzeżenia, że dzień jest bez Historii adresu, bo Bazy zleceń nie dało się przeczytać; odtworzenie, które
+Bazy nie ma, pomija je w porównaniu Komunikatów."""
+_WITHOUT_HISTORY: Final = "INTERMAX został uporządkowany bez Historii adresu"
+_HISTORY_LATER: Final = (
+    "Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania "
+    f"{_COPIES_PLACE} i uruchom ponownie."
+)
+
+
+def order_base_unusable(error: WorkbookError) -> Message:
+    """Ostrzeżenie: Bazy zleceń z folderu INTERMAX nie dało się przeczytać, więc dzień jest bez Historii adresu;
+    ``error`` mówi dlaczego. Bazę otwartą w Excelu proces czyta w jej ostatniej zapisanej wersji."""
+
+    return workbook_messages.unusable(
+        error,
+        WorkbookMessages(
+            missing=_order_base_missing,
+            open_in_excel=_order_base_inaccessible,
+            inaccessible=_order_base_inaccessible,
+            unreadable=_order_base_unreadable,
+        ),
+    )
+
+
+def _order_base_missing(base: Path) -> Message:
+    return Message(
+        code=ORDER_BASE_SKIPPED,
+        what=f"{_WITHOUT_HISTORY}, bo w folderze INTERMAX nie ma Bazy zleceń.",
+        where=file_label(base),
+        action=f"Połóż Bazę zleceń w folderze INTERMAX pod nazwą {ORDER_BASE_NAME}. {_HISTORY_LATER}",
+    )
+
+
+def _order_base_inaccessible(base: Path) -> Message:
+    return Message(
+        code=ORDER_BASE_SKIPPED,
+        what=f"{_WITHOUT_HISTORY}, bo nie można teraz odczytać Bazy zleceń.",
+        where=file_label(base),
+        action=f"Poczekaj, aż OneDrive skończy synchronizację Bazy zleceń. {_HISTORY_LATER} {IF_ERROR_RETURNS}",
+    )
+
+
+def _order_base_unreadable(base: Path) -> Message:
+    return Message(
+        code=ORDER_BASE_SKIPPED,
+        what=f"{_WITHOUT_HISTORY}, bo Bazy zleceń nie można odczytać jako skoroszytu Excela.",
+        where=file_label(base),
+        action=f"Otwórz Bazę zleceń w Excelu i sprawdź, czy się otwiera; jeśli tak, zapisz ją. {_HISTORY_LATER} {IF_ERROR_RETURNS}",
+    )
+
+
+def order_base_unsupported(base: Path, sheet: str) -> Message:
+    """Ostrzeżenie: arkusz Bazy zleceń ma układ, którego narzędzie nie czyta, więc dzień jest bez Historii adresu."""
+
+    return Message(
+        code=ORDER_BASE_SKIPPED,
+        what=f"{_WITHOUT_HISTORY}, bo arkusz Bazy zleceń ma układ, którego narzędzie nie czyta.",
+        where=f"{file_label(base)}, arkusz {sheet}",
+        action=(
+            "Sprawdź, czy w wierszu 1 tego arkusza kolumna A ma nagłówek nad adresami. "
+            f"{refer_if('Jeśli ma, a komunikat wraca', request='przekaż go')} {_HISTORY_LATER}"
         ),
     )
 

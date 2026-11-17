@@ -32,11 +32,13 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.intermax_cells import CellProblem, CellsWritten, Rejected, write_cells
 from rozliczenia.intermax_ordering import OrderingInputs, order_register
 from rozliczenia.intermax_replace import LOCAL_DISK, Refusal, Waiting
+from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from rozliczenia.run_context import RunContext
 from rozliczenia.workbook_parts import UnsupportedShape
 
-from atrapy.intermax import DATE, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order, parts
+from atrapy.baza_zlecen import TWELVE, BaseSheet, Visit, write_order_base
+from atrapy.intermax import ADDRESS, DATE, FIRST, HEADERS, LAST, NUMBER, ORDER_SHEET, WORKER, Intermax, Order, parts
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace
@@ -1110,3 +1112,42 @@ def test_inny_wiersz_dopisanego_zlecenia_w_odczycie_kontrolnym_nie_podmienia_int
         outcome = _write(path, [], added=[_add("jan.testowy")], disk=disk)
 
     assert outcome == Refusal.WRITE_MISMATCH
+
+
+def _history_of(path: Path, number: int) -> tuple[str | None, tuple[object, ...]]:
+    """Wypełnienie kolumny A i wartości od kolumny za ``UWAGI`` wiersza zlecenia ``number`` (``NUMER ZL.``)."""
+
+    sheet = load_workbook(path)[ORDER_SHEET]
+    row = next(row for row in range(2, sheet.max_row + 1) if sheet.cell(row, NUMBER).value == number)
+    mark = sheet.cell(row, 1).fill
+    values = tuple(sheet.cell(row, column).value for column in range(LAST + 1, sheet.max_column + 1))
+    while values and values[-1] is None:
+        values = values[:-1]
+    return (mark.fgColor.rgb if mark.fill_type == "solid" else None), values
+
+
+def test_przeniesienie_i_dopisanie_zostawiaja_historie_adresu_i_czerwona_kolumne_a_przy_wlasciwym_zleceniu(
+    tmp_path: Path,
+) -> None:
+    """Spec #2079, historyjka 26: dzień uporządkowany z Historią adresu zleceń przy ulicy Lipowej 1 i 3. Przeniesienie
+    zlecenia Anny do Jana przesuwa jego wiersz razem z blokami za ``UWAGI`` i czerwoną kolumną A, Zlecenie dopisane z
+    raportu przesuwa wiersze pod sobą, a samo nie ma Historii adresu."""
+
+    raw = tuple(
+        Order(datetime(2026, 11, 9, 8 + index), worker, number, cells=((NUMBER, number), (ADDRESS, f"UL. LIPOWA {index + 1}")))
+        for index, (worker, number) in enumerate((("anna.kowalska", 40000011), ("anna.kowalska", 40000012), ("jan.testowy", 40000013)))
+    )
+    path = _register(tmp_path, Intermax(raw=raw))
+    base = path.with_name(ORDER_BASE_NAME)
+    visits = [Visit("LIPOWA 1", datetime(2026, 1, 1), 1, "pierwsza"), Visit("LIPOWA 3", datetime(2026, 2, 2), 3, "trzecia")]
+    write_order_base(base, (BaseSheet("19_12_2025-17_11_2026", TWELVE, visits),))
+    order_register(OrderingInputs(path, tmp_path / "Kopie", now=lambda: NOW, order_base=base), RunContext())
+    red = ("FFFF0000", tuple(visits[0].values(TWELVE))), (None, ()), ("FFFF0000", tuple(visits[1].values(TWELVE)))
+    assert tuple(_history_of(path, order.number) for order in raw) == red
+    moved = next(row for row in range(2, 40) if load_workbook(path)[ORDER_SHEET].cell(row, NUMBER).value == 40000011)
+
+    outcome = _write(path, [], moves=[_move(moved, "jan.testowy")], added=[_add("anna.kowalska")])
+
+    assert outcome == CellsWritten(0, 1, 1)
+    assert tuple(_history_of(path, order.number) for order in raw) == red
+    assert _history_of(path, 40000077) == (None, ())

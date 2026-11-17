@@ -51,9 +51,11 @@ from atrapy.intermax import (
     Intermax,
     Order,
 )
+from atrapy.baza_zlecen import ELEVEN, FIVE, TWELVE, BaseSheet, Visit
 from atrapy.settlement import write_worker_list
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.fakt_domeny import known
+from tests.fixtures.wyciek import zawiera_wartosc
 from tests.fixtures.intermax_disk import denied, failing_replace
 
 COPY = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
@@ -741,6 +743,48 @@ def test_logi_uporzadkowania_maja_wiersze_wpisow_na_operatora_i_instalacje_hurt_
             if column in (ADDRESS, CONTRACT_NUMBER) or column > LAST:
                 assert str(value) not in text, value
     assert "akt pętli" not in text and "nokia" not in text, "bez wartości Wpisu"
+
+
+_BASE_ADDRESSES = ("Miastko,Ulica 0101/", "ULICA 101", "UL. ULICA 103", "ULICA 999")
+HISTORY_BASE = (
+    BaseSheet("10_12_2018-01_08_2020", FIVE, [Visit(_BASE_ADDRESSES[0], datetime(2019, 2, 3), 7001, "stary")]),
+    BaseSheet("01_08_2020-01_06_2021", ELEVEN, [Visit(_BASE_ADDRESSES[1], datetime(2021, 2, 3), 7002, "średni")]),
+    BaseSheet(
+        "19_12_2025-17_11_2026",
+        TWELVE,
+        [Visit(_BASE_ADDRESSES[2], datetime(2026, 2, 3), 7003, "nowy"), Visit(_BASE_ADDRESSES[3], None, 7004, "obcy")],
+    ),
+)
+"""Baza zleceń z Historią adresu zleceń ``Ulica 101`` (dwa wiersze) i ``Ulica 103`` (jeden) domyślnego wklejenia."""
+
+
+def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_a_logi_maja_same_liczby_historii_adresu(
+    tmp_path: Path,
+) -> None:
+    centrum = ordering_centrum(tmp_path, order_base=HISTORY_BASE)
+
+    view = centrum.run_to_end()
+
+    assert (view["result"]["headline"], view["result"]["warnings"]) == ("INTERMAX uporządkowany", [])
+    [logs] = centrum.run_logs()
+    assert logs["address_history"] == {"orders": 2, "rows": 3, "sheets": 3}
+    [path] = ToolDirectory(tmp_path).run_logs.glob("*.json")
+    text = path.read_text(encoding="utf-8")
+    assert [address for address in _BASE_ADDRESSES if zawiera_wartosc(text, address)] == []
+    assert not any(marker in text for marker in ("stary", "średni", "nowy", "7001", "7003")), "bez treści wierszy Bazy"
+
+
+def test_uporzadkowanie_z_centrum_bez_bazy_zlecen_w_folderze_intermax_ostrzega_a_logi_nie_maja_historii_adresu(
+    tmp_path: Path,
+) -> None:
+    centrum = ordering_centrum(tmp_path, order_base=None)
+
+    view = centrum.run_to_end()
+
+    [warning] = view["result"]["warnings"]
+    assert warning["what"] == "INTERMAX został uporządkowany bez Historii adresu, bo w folderze INTERMAX nie ma Bazy zleceń."
+    [logs] = centrum.run_logs()
+    assert (logs["address_history"], [message["code"] for message in logs["messages"]]) == (None, ["BAZA_ZLECEN_POMINIETA"])
 
 
 def test_karta_wraca_z_logow_uporzadkowania_sprzed_wpisow_intermax(tmp_path: Path) -> None:

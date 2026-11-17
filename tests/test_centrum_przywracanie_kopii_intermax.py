@@ -20,6 +20,7 @@ import zipfile
 import pytest
 
 from rozliczenia import intermax_copies
+from rozliczenia.order_base import ORDER_BASE_NAME
 
 from tests.fixtures.intermax_disk import denied, failing_replace, no_space, partial_copy, writing
 from tests.fixtures.centrum_intermax import NOW, REGISTER_NAME, Clock, OrderingCentrum, copies, open_in_excel, ordering_centrum
@@ -177,7 +178,7 @@ def test_przywrocona_kopia_jest_intermax_bajt_w_bajt_a_stan_sprzed_przywrocenia_
     newest, _ = _listed(centrum)["copies"]
     assert [copy["name"] for copy in _listed(centrum)["copies"]] == [BEFORE_RESTORE, ORDERED]
     assert (newest["before"], datetime.fromisoformat(newest["taken_at"])) == ("restore", LATER.astimezone())
-    assert [path.name for path in centrum.register.parent.iterdir()] == [REGISTER_NAME]
+    assert sorted(path.name for path in centrum.register.parent.iterdir()) == [ORDER_BASE_NAME, REGISTER_NAME]
 
 
 def test_przywrocenie_mozna_cofnac_przywracajac_kopie_stanu_sprzed_przywrocenia(tmp_path: Path) -> None:
@@ -470,7 +471,7 @@ def test_gdy_onedrive_trzyma_intermax_przywrocenie_mowi_o_synchronizacji_i_zosta
     assert refused["what"] == f"OneDrive jeszcze synchronizuje INTERMAX. {UNCHANGED}"
     assert (len(attempts), centrum.surroundings.clock.seconds - started_at) == (11, 5.0)
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
-    assert [path.name for path in centrum.register.parent.iterdir()] == [REGISTER_NAME]
+    assert sorted(path.name for path in centrum.register.parent.iterdir()) == [ORDER_BASE_NAME, REGISTER_NAME]
 
 
 def test_intermax_otwarty_w_excelu_w_chwili_podmiany_to_odmowa_bez_nowej_kopii(tmp_path: Path) -> None:
@@ -513,7 +514,7 @@ def test_plik_obok_intermax_z_innymi_bajtami_niz_kopia_to_odmowa_bez_podmiany_i_
 
     assert refused["what"] == f"Nie udało się przywrócić kopii. {UNCHANGED}"
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
-    assert [path.name for path in centrum.register.parent.iterdir()] == [REGISTER_NAME]
+    assert sorted(path.name for path in centrum.register.parent.iterdir()) == [ORDER_BASE_NAME, REGISTER_NAME]
 
 
 def test_w_trakcie_przywracania_uruchomienie_zamkniecie_i_drugie_przywrocenie_sa_odrzucone(tmp_path: Path) -> None:

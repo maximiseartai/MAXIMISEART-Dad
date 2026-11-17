@@ -14,6 +14,8 @@ Kopii INTERMAX.
 [ADR 0029](0029-raport-wykonawcy-wazniejszy-od-intermax.md) pozwala Wpisaniu
 raportów zmieniać też dzień i `WYKONAWCA` zlecenia, przenosić jego wiersz i
 dopisywać nowe wiersze do Dnia uporządkowanego.
+Aneks z 2026-11-17 (polecenie taty, spec #2079) stawia za `UWAGI` Historię
+adresu z Bazy zleceń.
 
 ## Kontekst
 
@@ -68,8 +70,8 @@ od 2021 roku: około 42 tys. wierszy, cztery arkusze, około 6,5 MB, w OneDrive.
   zmianami z poprzedniego punktu wszystko musi się zgadzać, a zlecenia bloku
   mają od kolumny A do `UWAGI` te same wartości co Surowe zlecenia po
   przesunięciu, poza Wpisem urządzenia i czynności INTERMAX z następnego
-  punktu, i żadnej komórki za `UWAGI`. Inaczej
-  Zatrzymanie „do Maksa”, a INTERMAX zostaje nietknięty.
+  punktu, i żadnej komórki za `UWAGI` poza Historią adresu z aneksu niżej.
+  Inaczej Zatrzymanie „do Maksa”, a INTERMAX zostaje nietknięty.
 - **Wygląd dnia jak w dniach uporządkowanych ręcznie** (2026-10-28, Uwaga
   taty). Wiersz zlecenia i pusty wiersz między segmentami mają komórki od
   kolumny A do `UWAGI`, wszystkie z cienką ramką, także pustą kolumnę A przed
@@ -79,7 +81,19 @@ od 2021 roku: około 42 tys. wierszy, cztery arkusze, około 6,5 MB, w OneDrive.
   historyjki 12 („nic nie pogrubione”) i 22 („kolumny za `UWAGI` zostają”)
   specu #462. Hiperłącze z aplikacji, które stoi za `UWAGI`, nie ma już
   komórki, więc daje Zatrzymanie „do Maksa”; na kopii INTERMAX taty
-  Hiperłącza są tylko w `NUMER ZL.`.
+  Hiperłącza są tylko w `NUMER ZL.`. Na miejsce kolumn z aplikacji staje
+  Historia adresu (aneks niżej).
+- **Aneks: Historia adresu za `UWAGI`** (2026-11-17, polecenie taty, spec
+  #2079). Uporządkowanie czyta tylko do odczytu Bazę zleceń z folderu INTERMAX
+  i każdemu porządkowanemu zleceniu kopiuje od kolumny P, pierwszej za
+  `UWAGI`, jego Historię adresu: co nią jest, także co to ten sam adres, mówi
+  hasło Historia adresu w `GLOSSARY.md`. Krótsza nazwa ulicy i miasto z tego
+  hasła wchodzą w #2081. Kontrola zapisu porównuje też te
+  komórki i wypełnienie kolumny A z planem dnia, a `<dimension>` rośnie o
+  najdalszą kolumnę Historii adresu. Bazy, której nie ma albo nie da się
+  przeczytać, Uporządkowanie nie używa: dzień porządkuje bez Historii adresu z
+  ostrzeżeniem, nie Zatrzymaniem. Baza nie trafia do Kopii wejścia, a Logi mają
+  tylko liczby: zlecenia z Historią adresu, skopiowane wiersze i arkusze Bazy.
 - **Zapis zmienia też wartości: Wpis urządzenia i czynności INTERMAX**
   (2026-10-27, reguła taty). Surowe zlecenie z rodzajem `Instalacja Hurt` u
   operatora z listy taty (Netia, P4, Plus, VECTRA, SYSTEMIA, ORANGE, TMOBILE)

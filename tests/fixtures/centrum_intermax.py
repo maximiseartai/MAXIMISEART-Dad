@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from rozliczenia import intermax_copies
+from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from fastapi import FastAPI
@@ -38,6 +39,7 @@ from tests.fixtures.centrum import (
     join_threads_since,
 )
 from tests.fixtures.centrum_processes import Engines, Surroundings
+from atrapy.baza_zlecen import WITHOUT_HITS, BaseSheet, write_order_base
 from atrapy.intermax import Intermax, Layout
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import FakeInbox, FakeMailbox
@@ -169,17 +171,21 @@ def ordering_centrum(
     surroundings: Surroundings | None = None,
     periods_directory: Path | None = None,
     tool_copies: bool = False,
+    order_base: Sequence[BaseSheet] | None = WITHOUT_HITS,
 ) -> OrderingCentrum:
     """Centrum z syntetycznym INTERMAX (domyślnie z Surowymi zleceniami 26.10.2026) i własnymi metrykami.
 
     ``chosen``: tata wskazał INTERMAX w Ustawieniach jako Rejestr zleceń. Bez ``surroundings`` narzędzie jest
     aktualne, a każdy plik ma kopię na tym komputerze. ``periods_directory``: tata wskazał też folder okresów.
     ``tool_copies``: Centrum nie dostaje folderu Kopii INTERMAX i kładzie je w domyślnym folderze narzędzia.
+    ``order_base``: arkusze Bazy zleceń obok INTERMAX, jak u taty (domyślnie bez trafień); ``None``: bez Bazy.
     """
 
     register = tmp_path / "OneDrive" / REGISTER_NAME
     register.parent.mkdir(parents=True)
     layout = (intermax or Intermax()).write(register)
+    if order_base is not None:
+        write_order_base(register.with_name(ORDER_BASE_NAME), order_base)
     surroundings, engines, clock = surroundings or Surroundings(), Engines(ToolDirectory(tmp_path).metrics), clock or Clock()
     platform = FakePlatform(chosen_files=[register], chosen_folders=[periods_directory])
     copies = intermax_copies.default_directory() if tool_copies else tmp_path / "Kopie INTERMAX"

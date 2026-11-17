@@ -73,10 +73,10 @@ from rozliczenia.worker_reports import (
 )
 
 SHEET = "ZLECENIA OD 06_2025"
-COLUMNS = OrderColumns(
-    first=1, date=2, worker=3, last=9, devices=4, activities=5, contract_number=6
-)
 NUMBER_COLUMN, SUCCESSFUL_COLUMN, COMPLETED_COLUMN = 7, 8, 9
+COLUMNS = OrderColumns(
+    first=1, date=2, worker=3, last=9, devices=4, activities=5, contract_number=6, address=1, number=NUMBER_COLUMN
+)
 ORDERED_FACE = (ORDERED_FONT, float(ORDERED_SIZE))
 APP_FACE = ("Arial", 10.0)
 
