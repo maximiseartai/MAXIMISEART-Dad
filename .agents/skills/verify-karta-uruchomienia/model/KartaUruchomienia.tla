@@ -1,7 +1,7 @@
 ------------------------------ MODULE KartaUruchomienia ------------------------------
 (* Jedna karta przeglądarki z Centrum rozliczeń: jak śledzi Uruchomienie procesu ze strumienia Uruchomień          *)
 (* (RunsProvider w frontend/src/lib/runs.tsx, panel RunOrSetup w frontend/src/pages/runs/runs-page.tsx) i         *)
-(* Aktualizację narzędzia (ToolUpdateProvider w frontend/src/lib/tool-update.tsx). Serwer jest tu tylko źródłem   *)
+(* Aktualizację narzędzia (toolUpdateMachine w frontend/src/lib/tool-update-machine.ts). Serwer jest tu tylko źródłem *)
 (* zdarzeń i odpowiedzi (RunHost w src/rozliczenia/centrum/runs.py, ToolUpdates w tool_updates.py); jego slot     *)
 (* „jedno naraz” sprawdza verify-jedno-uruchomienie-naraz. Każda akcja to jeden niepodzielny krok z tabeli w      *)
 (* SKILL.md skilla verify-karta-uruchomienia: jedno zadanie pętli zdarzeń przeglądarki (zdarzenie strumienia,      *)
@@ -42,9 +42,12 @@ IsActive(v) == v.stan \in {"trwa", "decyzja"}
 Ended(v) == v.stan \in {"idle", "wynik"}
 
 StanyAktualizacji == {"idle", "running", "updated", "failed"}
+\* Stany toolUpdateMachine, w których maszyna czeka; polling to "czeka" (after poll) i "pyta" (invoke poll), a
+\* settled (choice) i reloading (przeładowanie) nie są stanami spoczynku.
+StanyMaszyny == {"entering", "idle", "reading", "starting", "czeka", "pyta"}
 
 ZnaneZnaleziska == {"cudze-uruchomienie-przed-odpowiedzia", "restart-przed-odpowiedzia", "druga-karta",
-                    "wybor-przed-wynikiem", "stary-odczyt", "stary-odczyt-petli"}
+                    "wybor-przed-wynikiem"}
 
 VARIABLES
     \* --- serwer: RunHost ---
@@ -69,14 +72,14 @@ VARIABLES
     startuje,        \* useAction starting: [faza, przed, id (Run.info.id, gdy serwer przyjmie), wynik (przyjęte Uruchomienie,
                      \* Brak przy odmowie i błędzie), inst (start Centrum, który obsłużył żądanie)]
     decyduje,        \* useAction deciding: [faza, run, wynik]
-    \* --- karta: ToolUpdateProvider i serwer ToolUpdates ---
+    \* --- karta: toolUpdateMachine i serwer ToolUpdates ---
     aSrv,            \* stan Aktualizacji narzędzia na serwerze
     aNr,             \* która aktualizacja na serwerze (do rozpoznania starej odpowiedzi)
-    upd,             \* update.state karty ("null" przed pierwszym odczytem)
-    instRef,         \* instance.current: -1 to null
-    startA,          \* useAction starting aktualizacji: [faza, odp]
-    odczyty,         \* odczyty getToolUpdate z read() i z wejścia: [faza, odp, nr]
-    petla,           \* odpytywanie co POLL_MS: [faza, odp, nr]
+    upd,             \* context.update maszyny ("null" przed pierwszym odczytem)
+    instRef,         \* context.instance: -1 to null
+    ms,              \* stan maszyny (StanyMaszyny)
+    zad,             \* zapytanie aktora invoke bieżącego stanu: [faza, odp, nr, i (instance z health)]; wyjście ze
+                     \* stanu zatrzymuje aktora, więc jego odpowiedź już nic nie zmienia
     wejsc, zaladowan,
     \* --- zmienne pomocnicze obietnic ---
     kto,             \* kto uruchomił Uruchomienie: "ta" | "inna" | "-"
@@ -90,7 +93,7 @@ VARIABLES
 
 serwer == <<inst, dziala, srvRun, srvStan, srvKonc, srvPytal, prev, log, baza, proby, nieczyt, zerwan, restartow>>
 karta == <<widok, nieczytelny, rozlaczony, draft, odlozony, polaczenie, widziane, startuje, decyduje>>
-aktualizacja == <<aSrv, aNr, upd, instRef, startA, odczyty, petla, wejsc, zaladowan>>
+aktualizacja == <<aSrv, aNr, upd, instRef, ms, zad, wejsc, zaladowan>>
 pomocnicze == <<kto, przedWynikiem, odczytane, wybralPo, widzialTrwa, slady>>
 vars == <<serwer, karta, aktualizacja, pomocnicze, zaslonietyWynik, wrocilPrzycisk>>
 
@@ -98,7 +101,8 @@ Zdarzenie == {{}} \cup {{s} : s \in SUBSET ZnaneZnaleziska}
 
 NieStartuje == [faza |-> "nie", przed |-> Brak, id |-> Brak, wynik |-> Brak, inst |-> 0]
 NieDecyduje == [faza |-> "nie", run |-> Brak, wynik |-> "-"]
-Nic == [faza |-> "nie", odp |-> "-", nr |-> 0]
+Nic == [faza |-> "nie", odp |-> "-", nr |-> 0, i |-> -1]
+Wyslany(f) == [faza |-> f, odp |-> "-", nr |-> 0, i |-> -1]
 
 TypeOK ==
     /\ inst \in 0..(MaxRestartow + MaxAktualizacji) /\ dziala \in BOOLEAN
@@ -109,9 +113,7 @@ TypeOK ==
     /\ startuje.faza \in {"nie", "wyslany", "odpowiedz", "czeka"}
     /\ decyduje.faza \in {"nie", "wyslany", "odpowiedz", "czeka"}
     /\ aSrv \in StanyAktualizacji /\ upd \in StanyAktualizacji \cup {"null"}
-    /\ startA.faza \in {"nie", "zdrowie", "wyslany", "odpowiedz"}
-    /\ \A i \in 1..MaxWejsc : odczyty[i].faza \in {"nie", "wyslany", "odpowiedz", "zrobiony"}
-    /\ petla.faza \in {"nie", "zdrowie", "wyslany", "odpowiedz"}
+    /\ ms \in StanyMaszyny /\ zad.faza \in {"nie", "zdrowie", "wyslany", "odpowiedz"}
     /\ zaslonietyWynik \in Zdarzenie /\ wrocilPrzycisk \in Zdarzenie
 
 (* ------------------------------------------------------------------------------------------------------------ *)
@@ -143,14 +145,14 @@ Init ==
     /\ widok = Pusty /\ nieczytelny = FALSE /\ rozlaczony = FALSE /\ draft = FALSE /\ odlozony = Brak
     /\ polaczenie = "otwarte" /\ widziane = -1
     /\ startuje = NieStartuje /\ decyduje = NieDecyduje
-    /\ aSrv = "idle" /\ aNr = 0 /\ upd = "null" /\ instRef = -1 /\ startA = [faza |-> "nie", odp |-> "-"]
-    /\ odczyty = [i \in 1..MaxWejsc |-> Nic] /\ petla = Nic /\ wejsc = 0 /\ zaladowan = 0
+    /\ aSrv = "idle" /\ aNr = 0 /\ upd = "null" /\ instRef = -1
+    /\ ms = "entering" /\ zad = Wyslany("wyslany") /\ wejsc = 0 /\ zaladowan = 0
     /\ kto = [r \in Uruchomienia |-> "-"] /\ przedWynikiem = {} /\ odczytane = {} /\ wybralPo = {} /\ widzialTrwa = FALSE /\ slady = {}
     /\ zaslonietyWynik = {} /\ wrocilPrzycisk = {}
 
 (* Zmienne historii obietnic: każda akcja kończy się krokiem Historia. *)
-\* busy w ToolUpdateProvider: start wysłany albo update.state === "running".
-Busy == startA.faza # "nie" \/ upd = "running"
+\* busy w ToolUpdateProvider (shownOf): maszyna w starting albo polling (reloading to już przeładowanie).
+Busy == ms \in {"starting", "czeka", "pyta"}
 AktTrwa == aSrv = "running" \/ ~dziala
 Odp(s) == IF dziala THEN s ELSE "blad"
 
@@ -386,130 +388,128 @@ Restart ==
     /\ Historia
 
 (* ============================ Aktualizacja narzędzia ============================ *)
+(* toolUpdateMachine (frontend/src/lib/tool-update-machine.ts). Każdy stan z invoke ma najwyżej jedno zapytanie  *)
+(* (zad); wyjście ze stanu zatrzymuje jego aktora, więc odpowiedź przychodzi tylko do stanu, który ją wysłał.     *)
 
-\* show(result): stan od serwera zastępuje to, co karta pokazywała.
+\* Stan od serwera zastępuje to, co karta pokazywała (context.update).
 Pokaz(s) ==
     /\ upd' = s
     /\ widzialTrwa' = (widzialTrwa \/ s = "running")
-\* Ślad przyczyny: odpowiedź s zapytania, które serwer obsłużył przed startem trwającej aktualizacji (nr < aNr),
-\* zastępuje jej stan. Odczyt przy wejściu (read) i pętla odpytywania mają osobne przyczyny, bo każde naprawia się
-\* osobno.
-Slad(s, nr, przyczyna) ==
-    slady' = IF nr < aNr /\ AktTrwa /\ s # "running" THEN slady \cup {przyczyna} ELSE slady
+\* settled (choice): running to polling (czeka), każdy inny stan to idle.
+PoStanie(s) == IF s = "running" THEN "czeka" ELSE "idle"
 
-\* ToolUpdateButton: useAction starting, setClicked(true), potem getHealth: instance.current = health.instance.
-\* Przycisk ma tylko disabled={busy}, więc działa też przed pierwszym odczytem (update === null).
+\* ToolUpdateButton: send start; entering, idle i reading przechodzą do starting (clicked), a invoke start zaczyna od
+\* getHealth. Wyjście z entering albo reading zatrzymuje ich odczyt. Przycisk działa też przed pierwszym odczytem.
 KlikAktualizuj ==
-    /\ Aktualizuj /\ ~Busy /\ aNr < MaxAktualizacji
-    /\ startA' = [faza |-> "zdrowie", odp |-> "-"]
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, odczyty, petla, wejsc, zaladowan, pomocnicze>>
+    /\ Aktualizuj /\ ms \in {"entering", "idle", "reading"} /\ aNr < MaxAktualizacji
+    /\ ms' = "starting" /\ zad' = Wyslany("zdrowie")
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, wejsc, zaladowan, pomocnicze>>
     /\ Historia
 
-\* .then(health => { instance.current = health.instance; return startToolUpdate() }); getHealth bez odpowiedzi
-\* kończy akcję powiadomieniem „Nie zaktualizowano narzędzia”.
+\* start: getHealth, potem startToolUpdate w tym samym aktorze; getHealth bez odpowiedzi to onError: powiadomienie
+\* „Nie zaktualizowano narzędzia” i idle.
 ZdrowieStartu ==
-    /\ Aktualizuj /\ startA.faza = "zdrowie"
-    /\ IF dziala THEN /\ instRef' = inst /\ startA' = [faza |-> "wyslany", odp |-> "-"]
-                 ELSE /\ startA' = [faza |-> "nie", odp |-> "-"] /\ UNCHANGED instRef
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, odczyty, petla, wejsc, zaladowan, pomocnicze>>
+    /\ Aktualizuj /\ ms = "starting" /\ zad.faza = "zdrowie"
+    /\ IF dziala THEN /\ zad' = [Wyslany("wyslany") EXCEPT !.i = inst] /\ UNCHANGED ms
+                 ELSE /\ ms' = "idle" /\ zad' = Nic
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, wejsc, zaladowan, pomocnicze>>
     /\ Historia
 
 \* POST /api/tool-update: ToolUpdates.start zajmuje begin_update i odpowiada pierwszym krokiem (running); trwająca
 \* aktualizacja to odmowa.
 ObslugaStartuAkt ==
-    /\ Aktualizuj /\ dziala /\ startA.faza = "wyslany"
+    /\ Aktualizuj /\ dziala /\ ms = "starting" /\ zad.faza = "wyslany"
     /\ IF aSrv = "running"
-       THEN /\ startA' = [faza |-> "odpowiedz", odp |-> "odmowa"] /\ UNCHANGED <<aSrv, aNr>>
-       ELSE /\ aSrv' = "running" /\ aNr' = aNr + 1 /\ startA' = [faza |-> "odpowiedz", odp |-> "running"]
-    /\ UNCHANGED <<serwer, karta, upd, instRef, odczyty, petla, wejsc, zaladowan, pomocnicze>>
+       THEN /\ zad' = [zad EXCEPT !.faza = "odpowiedz", !.odp = "odmowa"] /\ UNCHANGED <<aSrv, aNr>>
+       ELSE /\ aSrv' = "running" /\ aNr' = aNr + 1 /\ zad' = [zad EXCEPT !.faza = "odpowiedz", !.odp = "running"]
+    /\ UNCHANGED <<serwer, karta, upd, instRef, ms, wejsc, zaladowan, pomocnicze>>
     /\ Historia
 
-\* .then(show) po starcie; odmowa albo błąd sieci to powiadomienie, a stan karty zostaje.
+\* onDone startu: update i instance z odpowiedzi, potem settled; odmowa to onError: powiadomienie i idle, stan karty
+\* zostaje.
 KoniecStartuAkt ==
-    /\ Aktualizuj /\ startA.faza = "odpowiedz"
-    /\ startA' = [faza |-> "nie", odp |-> "-"]
-    /\ IF startA.odp = "running" THEN Pokaz("running") ELSE UNCHANGED <<upd, widzialTrwa>>
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, odczyty, petla, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo, slady>>
+    /\ Aktualizuj /\ ms = "starting" /\ zad.faza = "odpowiedz"
+    /\ zad' = Nic
+    /\ IF zad.odp = "running"
+       THEN /\ Pokaz("running") /\ instRef' = zad.i /\ ms' = "czeka"
+       ELSE /\ ms' = "idle" /\ UNCHANGED <<upd, widzialTrwa, instRef>>
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo, slady>>
     /\ Historia
 
-\* Wejście na stronę z przyciskiem: efekt ToolUpdateProvider przy załadowaniu strony i ToolUpdateStatus
-\* (React.useEffect(read)) wysyłają getToolUpdate bez numeru zapytania.
+\* Wejście na stronę z przyciskiem: ToolUpdateStatus wysyła read; tylko idle go przyjmuje (reading), w każdym innym
+\* stanie maszyna już czyta albo odpytuje.
 Wejscie ==
     /\ Aktualizuj /\ wejsc < MaxWejsc
     /\ wejsc' = wejsc + 1
-    /\ odczyty' = [odczyty EXCEPT ![wejsc + 1] = [faza |-> "wyslany", odp |-> "-", nr |-> 0]]
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, startA, petla, zaladowan, pomocnicze>>
+    /\ IF ms = "idle" THEN ms' = "reading" /\ zad' = Wyslany("wyslany") ELSE UNCHANGED <<ms, zad>>
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, zaladowan, pomocnicze>>
     /\ Historia
 
-\* GET /api/tool-update: serwer podaje bieżący stan (ToolUpdates.state); Centrum zamknięte nie odpowiada.
-ObslugaOdczytu(i) ==
-    /\ Aktualizuj /\ odczyty[i].faza = "wyslany"
-    /\ odczyty' = [odczyty EXCEPT ![i] = [faza |-> "odpowiedz", odp |-> Odp(aSrv), nr |-> aNr]]
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, startA, petla, wejsc, zaladowan, pomocnicze>>
+\* GET /api/tool-update z invoke enter albo read: serwer podaje bieżący stan; Centrum zamknięte nie odpowiada.
+ObslugaOdczytu ==
+    /\ Aktualizuj /\ ms \in {"entering", "reading"} /\ zad.faza = "wyslany"
+    /\ zad' = [zad EXCEPT !.faza = "odpowiedz", !.odp = Odp(aSrv), !.nr = aNr]
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, ms, wejsc, zaladowan, pomocnicze>>
     /\ Historia
 
-\* read(): getToolUpdate().then(show, failRead); odpowiedzi przychodzą w dowolnej kolejności.
-OdbierzOdczyt(i) ==
-    /\ Aktualizuj /\ odczyty[i].faza = "odpowiedz"
-    /\ odczyty' = [odczyty EXCEPT ![i].faza = "zrobiony"]
-    /\ IF odczyty[i].odp = "blad" THEN UNCHANGED <<upd, widzialTrwa, slady>>
-       ELSE Pokaz(odczyty[i].odp) /\ Slad(odczyty[i].odp, odczyty[i].nr, "stary-odczyt")
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, startA, petla, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo>>
+\* onDone odczytu: update, potem settled; onError: readFailure i idle, update zostaje.
+OdbierzOdczyt ==
+    /\ Aktualizuj /\ ms \in {"entering", "reading"} /\ zad.faza = "odpowiedz"
+    /\ zad' = Nic
+    /\ IF zad.odp = "blad" THEN ms' = "idle" /\ UNCHANGED <<upd, widzialTrwa>>
+       ELSE Pokaz(zad.odp) /\ ms' = PoStanie(zad.odp)
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo, slady>>
     /\ Historia
 
-\* Efekt przy update.state === "running": po POLL_MS getHealth (instance.current ??= health.instance). Timer
-\* czyści cleanup efektu, ale wysłanego łańcucha nikt nie przerywa.
+\* polling.waiting: after poll (500 ms) do asking, którego invoke poll zaczyna od getHealth.
 Tik ==
-    /\ Aktualizuj /\ upd = "running" /\ petla.faza = "nie"
-    /\ petla' = [faza |-> "zdrowie", odp |-> "-", nr |-> 0]
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, startA, odczyty, wejsc, zaladowan, pomocnicze>>
+    /\ Aktualizuj /\ ms = "czeka"
+    /\ ms' = "pyta" /\ zad' = Wyslany("zdrowie")
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, wejsc, zaladowan, pomocnicze>>
     /\ Historia
 
-\* Strona po przeładowaniu: ToolUpdateProvider od nowa, bez odpowiedzi poprzedniej strony; odczyt przy wejściu.
+\* Strona po przeładowaniu: maszyna od nowa w entering z odczytem, bez odpowiedzi poprzedniej strony.
 Zaladuj ==
     /\ zaladowan' = zaladowan + 1
-    /\ upd' = "null" /\ instRef' = -1 /\ startA' = [faza |-> "nie", odp |-> "-"] /\ petla' = Nic
-    /\ odczyty' = [i \in 1..MaxWejsc |-> IF i = 1 THEN [faza |-> "wyslany", odp |-> "-", nr |-> 0] ELSE Nic]
-    /\ wejsc' = 1 /\ widzialTrwa' = FALSE
+    /\ upd' = "null" /\ instRef' = -1 /\ ms' = "entering" /\ zad' = Wyslany("wyslany")
+    /\ wejsc' = 0 /\ widzialTrwa' = FALSE
 
-\* getHealth().then: inny instance to przeładowanie strony (sessionStorage), ten sam to getToolUpdate; brak
-\* odpowiedzi (.catch) to show({state: "running", step: "restarting"}).
+\* poll: getHealth; inny instance niż context.instance to reloading (sessionStorage, window.location.reload), ten
+\* sam to getToolUpdate; brak odpowiedzi to onError: update running/restarting i znów waiting.
 ZdrowiePetli ==
-    /\ Aktualizuj /\ petla.faza = "zdrowie"
+    /\ Aktualizuj /\ ms = "pyta" /\ zad.faza = "zdrowie"
     /\ (dziala /\ instRef # -1 /\ inst # instRef) => zaladowan < MaxZaladowan
     /\ IF ~dziala
-       THEN /\ petla' = Nic /\ Pokaz("running")
-            /\ UNCHANGED <<instRef, startA, odczyty, wejsc, zaladowan, slady>>
+       THEN /\ zad' = Nic /\ ms' = "czeka" /\ Pokaz("running")
+            /\ UNCHANGED <<instRef, wejsc, zaladowan>>
        ELSE IF instRef # -1 /\ inst # instRef
-       THEN /\ Zaladuj /\ UNCHANGED slady
-       ELSE /\ petla' = [faza |-> "wyslany", odp |-> "-", nr |-> 0]
-            /\ instRef' = IF instRef = -1 THEN inst ELSE instRef
-            /\ UNCHANGED <<upd, startA, odczyty, wejsc, zaladowan, widzialTrwa, slady>>
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, kto, odczytane, przedWynikiem, wybralPo>>
+       THEN Zaladuj
+       ELSE /\ zad' = [Wyslany("wyslany") EXCEPT !.i = inst]
+            /\ UNCHANGED <<upd, instRef, ms, wejsc, zaladowan, widzialTrwa>>
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, kto, odczytane, przedWynikiem, wybralPo, slady>>
     /\ Historia
 
 ObslugaPetli ==
-    /\ Aktualizuj /\ petla.faza = "wyslany"
-    /\ petla' = [faza |-> "odpowiedz", odp |-> Odp(aSrv), nr |-> aNr]
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, startA, odczyty, wejsc, zaladowan, pomocnicze>>
+    /\ Aktualizuj /\ ms = "pyta" /\ zad.faza = "wyslany"
+    /\ zad' = [zad EXCEPT !.faza = "odpowiedz", !.odp = Odp(aSrv), !.nr = aNr]
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, upd, instRef, ms, wejsc, zaladowan, pomocnicze>>
     /\ Historia
 
-\* getToolUpdate().then(show) w pętli, bez numeru zapytania jak read(); błąd przechodzi do .catch: show(running,
-\* restarting). Łańcuch wysłany w trakcie poprzedniej aktualizacji odpowiada też po starcie następnej: wynik
-\* poprzedniej zastępuje wtedy running.
+\* onDone poll: update i instance, potem settled; błąd getToolUpdate to ten sam onError co brak health.
 OdbierzPetli ==
-    /\ Aktualizuj /\ petla.faza = "odpowiedz"
-    /\ petla' = Nic
-    /\ LET s == IF petla.odp = "blad" THEN "running" ELSE petla.odp
-       IN Pokaz(s) /\ Slad(s, petla.nr, "stary-odczyt-petli")
-    /\ UNCHANGED <<serwer, karta, aSrv, aNr, instRef, startA, odczyty, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo>>
+    /\ Aktualizuj /\ ms = "pyta" /\ zad.faza = "odpowiedz"
+    /\ zad' = Nic
+    /\ IF zad.odp = "blad"
+       THEN Pokaz("running") /\ ms' = "czeka" /\ UNCHANGED instRef
+       ELSE Pokaz(zad.odp) /\ ms' = PoStanie(zad.odp) /\ instRef' = zad.i
+    /\ UNCHANGED <<serwer, karta, aSrv, aNr, wejsc, zaladowan, kto, odczytane, przedWynikiem, wybralPo, slady>>
     /\ Historia
 
 \* ToolUpdates._update: porażka kroku przed ponownym startem (fetch, pip) kończy aktualizację w tym samym Centrum.
 AktPorazka ==
     /\ Aktualizuj /\ dziala /\ aSrv = "running"
     /\ aSrv' = "failed" /\ widzialTrwa' = FALSE
-    /\ UNCHANGED <<serwer, karta, aNr, upd, instRef, startA, odczyty, petla, wejsc, zaladowan>>
+    /\ UNCHANGED <<serwer, karta, aNr, upd, instRef, ms, zad, wejsc, zaladowan>>
     /\ UNCHANGED <<kto, odczytane, przedWynikiem, wybralPo, slady>>
     /\ Historia
 
@@ -528,7 +528,7 @@ AktPonownyStart ==
     /\ \E s \in {"updated", "failed"} : aSrv' = s
     /\ widzialTrwa' = FALSE
     /\ UNCHANGED <<srvRun, srvStan, srvKonc, srvPytal, prev, log, baza, proby, nieczyt, zerwan, restartow>>
-    /\ UNCHANGED <<karta, aNr, upd, instRef, startA, odczyty, petla, wejsc, zaladowan>>
+    /\ UNCHANGED <<karta, aNr, upd, instRef, ms, zad, wejsc, zaladowan>>
     /\ UNCHANGED <<kto, odczytane, przedWynikiem, wybralPo, slady>>
     /\ Historia
 
@@ -538,8 +538,7 @@ Next ==
     \/ ObslugaStartu \/ ObslugaDecyzji \/ InnaKartaStart \/ InnaKartaDecyzja \/ PytanieODecyzje
     \/ KoniecUruchomienia \/ Restart
     \/ KlikAktualizuj \/ ZdrowieStartu \/ ObslugaStartuAkt \/ KoniecStartuAkt \/ Wejscie
-    \/ \E i \in 1..MaxWejsc : ObslugaOdczytu(i)
-    \/ \E i \in 1..MaxWejsc : OdbierzOdczyt(i)
+    \/ ObslugaOdczytu \/ OdbierzOdczyt
     \/ Tik \/ ZdrowiePetli \/ ObslugaPetli \/ OdbierzPetli \/ AktPorazka \/ AktZamkniecie \/ AktPonownyStart
 
 (* ------------------------------------------------------------------------------------------------------------ *)

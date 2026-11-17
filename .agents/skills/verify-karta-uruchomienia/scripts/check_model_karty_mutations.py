@@ -4,8 +4,8 @@ Each mutation removes from ``model/KartaUruchomienia.tla`` one guard or step who
 ``frontend/src/lib/runs.tsx``, ``frontend/src/pages/runs/runs-page.tsx`` or ``frontend/src/lib/tool-update.tsx`` the
 mutation names, runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must end the check with
 ``KARTA URUCHOMIENIA: NOWE NARUSZENIE``. A mutation that instead fixes the cause of one known finding the way the code
-would (a request number on one kind of read) must end it with ``KARTA URUCHOMIENIA: ZNALEZISKO ZNIKNĘŁO``: the fix of
-one finding is not hidden by another one. A mutation whose anchor text is no longer in the model is reported as
+would must end it with ``KARTA URUCHOMIENIA: ZNALEZISKO ZNIKNĘŁO``: the fix of one finding is not hidden by another
+one. A mutation whose anchor text is no longer in the model is reported as
 NIEAKTUALNA: update it to the new model.
 
 The copy of the checkout has no ignored TLC cache, so this script hands Java and ``tla2tools.jar`` of this checkout
@@ -37,14 +37,20 @@ MUTATIONS = (
     Mutation(
         "start czeka na strumień także wtedy, gdy latest pokazuje przyjęte Uruchomienie (runs.tsx: bez return po"
         " shownRun(latest.current) === accepted)",
-        (Edit(MODEL, "            /\\ IF ShownRun(widok) = startuje.wynik\n", "            /\\ IF FALSE\n"),),
+        (
+            Edit(
+                MODEL,
+                "            /\\ IF ShownRun(widok) = startuje.wynik\n",
+                "            /\\ IF FALSE\n",
+            ),
+        ),
         _check("jedna-karta"),
         "strumień pokazał start i wynik przed odpowiedzią, a karta czeka na kolejny widok i przyciski startu zostają"
         " wyłączone (PrzyciskWraca)",
         NEW,
     ),
     Mutation(
-        "start nie kończy się na idle (runs.tsx streamShows: bez || next.state === \"idle\")",
+        'start nie kończy się na idle (runs.tsx streamShows: bez || next.state === "idle")',
         (
             Edit(
                 MODEL,
@@ -85,7 +91,13 @@ MUTATIONS = (
     ),
     Mutation(
         "przyjęty start nie czyści wyboru (runs.tsx: bez setDraft(null))",
-        (Edit(MODEL, "       ELSE /\\ draft' = FALSE\n", "       ELSE /\\ draft' = draft\n"),),
+        (
+            Edit(
+                MODEL,
+                "       ELSE /\\ draft' = FALSE\n",
+                "       ELSE /\\ draft' = draft\n",
+            ),
+        ),
         _check("jedna-karta"),
         "tata wybiera proces na karcie startu i uruchamia, a po końcu widzi kartę startu zamiast wyniku (WynikNaKarcie)",
         NEW,
@@ -104,20 +116,26 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "przycisk aktualizacji wyłączony tylko na czas startu (tool-update.tsx busy: bez || running)",
-        (Edit(MODEL, 'Busy == startA.faza # "nie" \\/ upd = "running"', 'Busy == startA.faza # "nie"'),),
+        'przycisk aktualizacji wyłączony tylko na czas startu (tool-update.tsx shownOf: busy bez matches("polling"))',
+        (
+            Edit(
+                MODEL,
+                'Busy == ms \\in {"starting", "czeka", "pyta"}',
+                'Busy == ms = "starting"',
+            ),
+        ),
         _check("aktualizacja"),
         "po odpowiedzi startu przycisk „Zaktualizuj narzędzie” wraca, choć aktualizacja trwa (AktualizacjaNieWraca)",
         NEW,
     ),
     Mutation(
-        "Centrum bez odpowiedzi w pętli to porażka, nie ponowny start (tool-update.tsx: .catch bez show(running,"
-        " restarting))",
+        "Centrum bez odpowiedzi w pętli to porażka, nie ponowny start (tool-update-machine.ts: onError poll do idle"
+        " z failed zamiast waiting z running/restarting)",
         (
             Edit(
                 MODEL,
-                '       THEN /\\ petla\' = Nic /\\ Pokaz("running")\n',
-                '       THEN /\\ petla\' = Nic /\\ Pokaz("failed")\n',
+                '       THEN /\\ zad\' = Nic /\\ ms\' = "czeka" /\\ Pokaz("running")\n',
+                '       THEN /\\ zad\' = Nic /\\ ms\' = "idle" /\\ Pokaz("failed")\n',
             ),
         ),
         _check("aktualizacja"),
@@ -125,33 +143,31 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "read() z numerem zapytania pomija odpowiedź sprzed startu trwającej aktualizacji (tool-update.tsx: naprawa"
-        " znaleziska stary-odczyt), a pętla odpytywania zostaje bez niego",
+        "read przyjęty w każdym stanie (tool-update-machine.ts: read na poziomie maszyny zamiast tylko w idle)",
         (
             Edit(
                 MODEL,
-                '    /\\ IF odczyty[i].odp = "blad" THEN UNCHANGED <<upd, widzialTrwa, slady>>\n',
-                '    /\\ IF odczyty[i].odp = "blad" \\/ odczyty[i].nr < aNr THEN UNCHANGED <<upd, widzialTrwa, slady>>\n',
+                '    /\\ IF ms = "idle" THEN ms\' = "reading"',
+                '    /\\ IF ms \\in {"idle", "czeka", "pyta"} THEN ms\' = "reading"',
             ),
         ),
         _check("aktualizacja"),
-        "naprawa read() nie usuwa znaleziska stary-odczyt, bo przykrywa je stara odpowiedź pętli",
-        GONE,
+        "wejście na stronę w trakcie aktualizacji przerywa odpytywanie: przycisk wraca, a karta się nie przeładuje"
+        " (AktualizacjaNieWraca)",
+        NEW,
     ),
     Mutation(
-        "pętla odpytywania z numerem zapytania pomija odpowiedź sprzed startu trwającej aktualizacji (tool-update.tsx:"
-        " naprawa znaleziska stary-odczyt-petli), a read() zostaje bez niego",
+        "settled nie odpytuje po odczycie running (tool-update-machine.ts choice: zawsze idle)",
         (
             Edit(
                 MODEL,
-                '       IN Pokaz(s) /\\ Slad(s, petla.nr, "stary-odczyt-petli")',
-                '       IN IF petla.nr < aNr /\\ petla.odp # "blad" THEN UNCHANGED <<upd, widzialTrwa, slady>>\n'
-                '          ELSE Pokaz(s) /\\ Slad(s, petla.nr, "stary-odczyt-petli")',
+                'PoStanie(s) == IF s = "running" THEN "czeka" ELSE "idle"',
+                'PoStanie(s) == "idle"',
             ),
         ),
         _check("aktualizacja"),
-        "naprawa pętli nie usuwa znaleziska stary-odczyt-petli, bo przykrywa je stara odpowiedź read()",
-        GONE,
+        "karta odczytuje trwającą aktualizację i pokazuje przycisk zamiast kroku (AktualizacjaNieWraca)",
+        NEW,
     ),
 )
 

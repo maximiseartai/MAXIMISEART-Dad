@@ -9,7 +9,10 @@
     "cały plik": "d9164558226c7777"
   },
   "frontend/src/lib/tool-update.tsx": {
-    "cały plik": "b13eb51cdb0267a4"
+    "cały plik": "5431c8809022225d"
+  },
+  "frontend/src/lib/tool-update-machine.ts": {
+    "cały plik": "4237a26ee5d01ad0"
   },
   "frontend/src/components/tool-update.tsx": {
     "cały plik": "fd349cace15e253c"

@@ -41,17 +41,17 @@ _STEPS = {
     "PytanieODecyzje": "Uruchomienie pyta o Decyzję taty (Run.confirm)",
     "KoniecUruchomienia": "Uruchomienie się kończy: wynik na karcie (RunHost.end)",
     "Restart": "Centrum gaśnie i startuje od nowa z idle (nowy RunHost)",
-    "KlikAktualizuj": "tata klika „Zaktualizuj narzędzie” (getHealth przed startem)",
-    "ZdrowieStartu": "karta zapamiętuje instance i wysyła startToolUpdate",
+    "KlikAktualizuj": "tata klika „Zaktualizuj narzędzie” (start: starting, invoke start zaczyna od getHealth)",
+    "ZdrowieStartu": "invoke start dostaje health i wysyła startToolUpdate (bez health: onError, idle)",
     "ObslugaStartuAkt": "serwer zaczyna Aktualizację narzędzia (ToolUpdates.start) albo odmawia",
-    "KoniecStartuAkt": "karta dostaje odpowiedź startu aktualizacji (show)",
-    "Wejscie": "tata wchodzi na stronę z przyciskiem aktualizacji: read() wysyła getToolUpdate",
+    "KoniecStartuAkt": "invoke start kończy się (onDone: update i instance, settled; odmowa: onError, idle)",
+    "Wejscie": "tata wchodzi na stronę z przyciskiem aktualizacji: read (tylko idle przechodzi do reading)",
     "ObslugaOdczytu": "serwer odpowiada na odczyt stanu aktualizacji (GET /api/tool-update)",
-    "OdbierzOdczyt": "karta dostaje odpowiedź odczytu (read: show)",
-    "Tik": "mija POLL_MS przy trwającej aktualizacji: getHealth",
-    "ZdrowiePetli": "karta dostaje health w pętli (inny instance: przeładowanie; ten sam: getToolUpdate)",
+    "OdbierzOdczyt": "invoke enter albo read kończy się w stanie, który go wysłał (onDone: settled; onError: idle)",
+    "Tik": "polling.waiting: mija after poll, asking wysyła getHealth",
+    "ZdrowiePetli": "invoke poll dostaje health (inny instance: przeładowanie; ten sam: getToolUpdate)",
     "ObslugaPetli": "serwer odpowiada na odczyt pętli",
-    "OdbierzPetli": "karta dostaje odpowiedź pętli (show)",
+    "OdbierzPetli": "invoke poll kończy się (onDone: settled; onError: running/restarting i waiting)",
     "AktPorazka": "aktualizacja zawodzi przed ponownym startem (ToolUpdates._update)",
     "AktZamkniecie": "Centrum zamyka się do ponownego startu po aktualizacji (_restart)",
     "AktPonownyStart": "nowe Centrum startuje i czyta wynik aktualizacji (_after_restart)",
@@ -68,7 +68,8 @@ _SHOWN = (
     ("decyduje", "Decyzja"),
     ("aSrv", "serwer: aktualizacja"),
     ("upd", "karta: aktualizacja"),
-    ("startA", "start aktualizacji"),
+    ("ms", "stan maszyny"),
+    ("zad", "zapytanie"),
 )
 
 
@@ -78,7 +79,8 @@ def _tell(states: Sequence[Stan]) -> None:
         changed = [
             f"{name} {_brief(state.zmienne[variable])}"
             for variable, name in _SHOWN
-            if variable in state.zmienne and state.zmienne[variable] != before.zmienne.get(variable)
+            if variable in state.zmienne
+            and state.zmienne[variable] != before.zmienne.get(variable)
         ]
         print(f"   {number}. {step}" + (f": {', '.join(changed)}" if changed else ""))
 

@@ -5,6 +5,7 @@ pilnuje:
   - frontend/src/lib/runs.tsx
   - frontend/src/lib/action.ts
   - frontend/src/lib/tool-update.tsx
+  - frontend/src/lib/tool-update-machine.ts
   - frontend/src/components/tool-update.tsx
   - frontend/src/api/centrum.ts
   - frontend/src/pages/runs/runs-page.tsx
@@ -61,7 +62,7 @@ card instead of the result”. The model checks three promises over every order 
 - **AktualizacjaNieWraca**: once the page has shown an Aktualizacja narzędzia as running, the card does not return to
   an enabled „Zaktualizuj narzędzie” (`busy` false) while that update is still running on the server or Centrum is
   closed for its restart (`ToolUpdateProvider`: „Start wysłany albo aktualizacja trwa: każdy przycisk aktualizacji jest
-  wtedy wyłączony”).
+  wtedy wyłączony”; `busy` is the machine in `starting`, `polling` or `reloading`).
 
 Harm: for the first, Dad cannot start anything or answer a Decyzja until he refreshes the page, and nothing on the
 start card tells him why. For the second, Dad never sees the result (its Komunikaty, „Otwórz plik zbiorczy”, the
@@ -93,16 +94,16 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `PytanieODecyzje` | `Run.confirm`: the `awaiting_decision` view; today only Przygotowanie pliku zbiorczego asks, once per Uruchomienie (`collective_preparation`) |
 | `KoniecUruchomienia` | `RunHost.end`: the `finished` view (result or Zatrzymanie) and the end under one lock |
 | `Restart` | Centrum killed and started again: a new `RunHost` with `idle` (`previous` from the Logi), the tab's stream gets `error`, a request the old server did not handle fails |
-| `KlikAktualizuj` | `ToolUpdateButton` (`components/tool-update.tsx`, disabled only by `busy`, so also before the first read answers): `useAction` `starting`, `setClicked(true)`, `getHealth` |
-| `ZdrowieStartu` | `.then(health => { instance.current = health.instance; return startToolUpdate() })`; no answer ends the action with a toast |
+| `KlikAktualizuj` | `ToolUpdateButton` (`components/tool-update.tsx`, disabled only by `busy`, so also before the first read answers): `start` of `toolUpdateMachine` (`lib/tool-update-machine.ts`), taken in `entering`, `idle` and `reading`; leaving `entering` or `reading` stops its read; `starting` sets `clicked` and invokes `start`, which begins with `getHealth` |
+| `ZdrowieStartu` | the `start` actor after `getHealth`: `startToolUpdate`; no answer is `onError` (toast „Nie zaktualizowano narzędzia”, `idle`) |
 | `ObslugaStartuAkt` | `ToolUpdates.start`: `begin_update` (refused while an update runs) and the first step `running` as the answer |
-| `KoniecStartuAkt` | `.then(show)` of the start; a refusal is a toast and the card keeps its state |
-| `Wejscie` | a page with the update button mounts: the provider's first read and `ToolUpdateStatus` (`React.useEffect(read, [read])`) send `getToolUpdate` with no request number |
+| `KoniecStartuAkt` | `onDone` of `start`: `update` and `instance` from the answer, then `settled` (`running` goes to `polling`); a refusal is `onError`: a toast and `idle`, the card keeps its state |
+| `Wejscie` | a page with the update button mounts: `ToolUpdateStatus` (`React.useEffect(read, [read])`) sends `read`, which only `idle` takes (to `reading`); the provider's first read is the machine's initial state `entering` |
 | `ObslugaOdczytu`, `ObslugaPetli` | `GET /api/tool-update`: `ToolUpdates.current` at the moment the server handles it; a closed Centrum does not answer |
-| `OdbierzOdczyt` | `read`: `getToolUpdate().then(show, failRead)`; answers arrive in any order, and `failRead` leaves `update` as it is |
-| `Tik` | the effect on `update?.state === "running"`: after `POLL_MS` `getHealth`; the cleanup clears the timer, never a request already sent |
-| `ZdrowiePetli` | `getHealth().then`: `instance.current ??= health.instance`; another instance is `sessionStorage` and `window.location.reload()` (the new page reads again), the same one is `getToolUpdate()`; no answer is `.catch(() => show({state: "running", step: "restarting"}))` |
-| `OdbierzPetli` | `getToolUpdate().then(show)` in the poll, with no request number either; its failure goes to the same `.catch` |
+| `OdbierzOdczyt` | `onDone` of the `enter` or `read` actor, only in the state that invoked it (XState stops the actor when the state is left, and its answer is never applied): `update`, then `settled`; `onError` is `readFailure` and `idle`, `update` stays |
+| `Tik` | `polling.waiting`: `after: { poll }` (500 ms) to `asking`, whose `poll` actor begins with `getHealth` |
+| `ZdrowiePetli` | the `poll` actor after `getHealth`: another `instance` than `context.instance` is `reloading` (`sessionStorage`, `window.location.reload()`; the new page starts in `entering`), the same one is `getToolUpdate()`; no answer is `onError`: `update` `{state: "running", step: "restarting"}` and back to `waiting` |
+| `OdbierzPetli` | `onDone` of `poll`: `update` and `instance`, then `settled`; a failure of its `getToolUpdate` is the same `onError` |
 | `AktPorazka` | `ToolUpdates._update`: a failure before the restart (`failed`, same Centrum) |
 | `AktZamkniecie`, `AktPonownyStart` | `ToolUpdates._restart`: Centrum closes, the restart guardian starts the new one (another `instance`), which reads the result once (`_after_restart`: `updated` or `failed`) |
 
@@ -168,7 +169,7 @@ A path that does not happen on the build means the model is wrong until you show
 | `jedna-karta` | one tab, two starts, a Decyzja, one unreadable view, one broken stream | known `wybor-przed-wynikiem` |
 | `druga-karta` | a second tab starts and answers the Decyzja, two starts in all | known `wybor-przed-wynikiem`, `druga-karta`, `cudze-uruchomienie-przed-odpowiedzia` |
 | `restart` | Centrum starts again once at any moment, two starts, a Decyzja, one unreadable view | known `wybor-przed-wynikiem`, `restart-przed-odpowiedzia` |
-| `aktualizacja` | two page entries with a read, two updates, a failure or a restart, one reload, a click before the first read | known `stary-odczyt`, `stary-odczyt-petli` |
+| `aktualizacja` | two page entries with a read, two updates, a failure or a restart, one reload, a click before the first read | passes |
 
 `Czesc` picks the part of the tab the configuration runs; the other part's actions stay disabled. Every
 configuration lets an Uruchomienie end with a result only (`MozeZatrzymac = FALSE`): a Zatrzymanie is the same
@@ -200,27 +201,11 @@ new violation. Each was replayed on the real build of 12.11.2026 (Centrum on the
    the `idle` of a restarted Centrum: the comment says `idle` before the answer is „zwykły stan świeżo uruchomionego
    Centrum”, but this `idle` comes from the new Centrum, and nothing follows it. Replayed: answer held while the stream
    showed `idle`; „Podgląd bez zapisu” disabled 3 s later, the start card with no explanation.
-5. **`stary-odczyt`, AktualizacjaNieWraca.** `read()` (the provider's first read and `ToolUpdateStatus` on mount)
-   sends `getToolUpdate` with no request number. A read sent when the page mounted (state `idle`) whose answer arrives
-   after the start answered `running` replaces `running` with `idle`: „Zaktualizuj narzędzie” is enabled again,
-   „Pobieranie nowej wersji…” disappears, the poll stops (the effect runs only on `running`), and the tab will not
-   reload into the new version. The model counts only answers of `read()` here (`OdbierzOdczyt`). Replayed on
-   Konfiguracja: the first read's answer kept from the page until after the click; button enabled, no status, 0 reads
-   in the next 2 s (without the held answer: disabled, status shown, 3–4 reads).
-6. **`stary-odczyt-petli`, AktualizacjaNieWraca.** The poll's `getToolUpdate` has no request number either, and the
-   effect's cleanup clears only the timer, never a chain already past `setTimeout`. Update 1 runs; the poll sends
-   `getHealth`, then `getToolUpdate`; update 1 fails and the server answers that read `failed`, but the answer is late.
-   Meanwhile a page entry's `read()` shows `failed` (the effect stops on a state that is not `running`), Dad clicks
-   „Zaktualizuj narzędzie” again and the start answers `running` (a new timer of `POLL_MS`). The late poll answer
-   arrives before that timer fires: `show(failed)` puts back update 1's Komunikat porażki, enables the button during
-   update 2, clears the new timer, and the tab neither polls nor reloads into the new version. A request number on
-   `read()` alone does not fix it, and the mutation script proves each fix removes only its own finding. Replayed on
-   Konfiguracja: the poll's answer `failed` kept from the page while Dad went to Tablica okresów and back (`failed`
-   shown) and clicked again, then released; button enabled, update 1's Komunikat shown, no „Pobieranie…”, 0 reads in
-   the next 2 s (released before leaving the page: disabled, „Pobieranie…”, 4 reads).
+Findings 5 (`stary-odczyt`) and 6 (`stary-odczyt-petli`) of the Aktualizacja narzędzia, a late answer of `read()` or
+of the poll replacing `running` with an older state, went away when `toolUpdateMachine` replaced the provider's effects:
+each read belongs to the state that invoked it, and the click and every later state stop it first.
 
-Findings 3 and 4 need an answer that reaches the tab later than whole Uruchomienia or a restart, and findings 5 and 6
-an answer that reaches it later than a newer one; on Dad's computer the answer usually comes in milliseconds, so they
+Findings 3 and 4 need an answer that reaches the tab later than whole Uruchomienia or a restart; on Dad's computer the answer usually comes in milliseconds, so they
 are rare, but nothing in the code rules them out.
 
 ## Bring the model in line
@@ -242,7 +227,8 @@ When a definition from `model/definicje.json` or a guard in another file of `pil
 
 Verified: the three promises over every order of the actions above for the bounds of each configuration (two starts,
 one Decyzja per Uruchomienie, one unreadable view, one broken stream, one restart, two updates, two reads, one poll
-chain, one reload).
+chain, one reload). That an actor stopped by leaving its state applies no answer is XState's own rule (`invoke`:
+„The child stops when that state is exited”), which the model takes as given.
 The server is only the source of views and answers; its slot „jedno naraz” and the rule that the result of every
 Uruchomienie stays among the views a tab reads (`WYNIK_NA_KARCIE`) belong to `verify-jedno-uruchomienie-naraz`.
 
