@@ -610,7 +610,10 @@ def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii
         declaration.view.register_name,
     )
     assert card["run"] == run
-    logs = guard_logs(RunLog.model_validate_json(log_file.read_text(encoding="utf-8")), empty_memory())
+    record = RunLog.model_validate_json(log_file.read_text(encoding="utf-8"))
+    assert (record.quantity_rules is not None) is ("quantity_rules" in declaration.needs)
+    assert (record.activity_legend is not None) is ("activity_legend" in declaration.needs)
+    logs = guard_logs(record, empty_memory())
     assert summary_markdown(logs).startswith(
         f"**Logi Uruchomienia**: {declaration.title}, "
     )
