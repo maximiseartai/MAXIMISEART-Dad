@@ -434,7 +434,7 @@ _Avoid_: słownik, aliasy
 
 To, co Przygotowanie pliku zbiorczego wpisuje w Wiersz danych Pliku zbiorczego z Reguł ilości i Legendy czynności: Ilości usług w `N:AP` (reguły i legenda razem), kwota w `AS`, Wyróżnienia legendy oraz kolumny, które narzędzie w tym wierszu wyznacza.
 Kontrola ilości porównuje z nim wpis taty, a Ilości do uzupełnienia to miejsca poza nim.
-_Avoid_: wynik wiersza, decyzja (Decyzja taty to co innego)
+_Avoid_: wynik wiersza, decyzja (Decyzja taty to co innego), Wpis urządzenia i czynności INTERMAX (to wpis Uporządkowania w Rejestrze zleceń)
 
 ## Ilości do uzupełnienia
 
