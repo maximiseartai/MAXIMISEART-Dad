@@ -31,6 +31,8 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 
 - Name tests after the domain behaviour they protect, in the terms of `GLOSSARY.md`.
   Use an implementation name only when the test intentionally protects that module's interface.
+- A `GLOSSARY.md` entry defines its term and, for implementation detail (which host does what, from which file), names the code owner that states it, like `settings_at_start.SettingsAtStart` in „Ustawienia ze startu”, instead of restating it.
+  A docstring outside that owner points to it the same way, because a restatement can drift from its owner without anything failing (#2069 r2: the entry and the docstring it restated said opposite things about where the replay takes the same setting).
 - Write identifiers in `src/` in English, and docstrings, test names and every text tata or Maks reads in Polish, with the terms of `GLOSSARY.md` and no synonym of a defined term.
 
 ## Design
