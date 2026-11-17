@@ -215,11 +215,14 @@ class _WorkerV1(_Record):
 
 class _OrderOffer(_Record):
     """Wpis na życzenie przy zleceniu z Wpisem raportu z błędem tematu: skrót maila i co się wpisze do tego zlecenia
-    (``successful`` z czynnościami ``activities``); dzień, Wykonawca i numer to te zlecenia."""
+    (``successful`` z czynnościami ``activities``), które po Wpisie stoi w dniu ``order_day`` u ``worker`` (przy
+    Przeniesieniu nadawca i dzień z tematu); numer to ten zlecenia."""
 
     mail: str
     activities: str
     successful: Literal["tak", "nie"]
+    worker: str
+    order_day: date
 
 
 class _Order(_Record):
@@ -324,13 +327,14 @@ class ShownWorker:
     mistaken: tuple[date, ...]
 
     def offer(self, order: OrderDetail) -> ShownOffer | None:
-        """Wpis na życzenie przy zleceniu ``order`` tego dnia; ``None``: przycisku nie ma."""
+        """Wpis na życzenie przy zleceniu ``order`` tego dnia z decyzją w miejscu, które zlecenie ma po Wpisie;
+        ``None``: przycisku nie ma."""
 
         found = order.request
         if found is None:
             return None
         return ShownOffer(
-            found.mail.digest, self.worker, self.day, order.number, found.activities, found.verdict, found.order_day
+            found.mail.digest, found.worker, found.order_day, order.number, found.activities, found.verdict, found.order_day
         )
 
 
@@ -561,7 +565,13 @@ class FileReportState:
                         faulty=order.faulty,
                         request=None
                         if (offer := order.request) is None
-                        else _OrderOffer(mail=offer.mail.digest, activities=offer.activities, successful=offer.verdict.value),
+                        else _OrderOffer(
+                            mail=offer.mail.digest,
+                            activities=offer.activities,
+                            successful=offer.verdict.value,
+                            worker=offer.worker,
+                            order_day=offer.order_day,
+                        ),
                     )
                     for order in worker.orders_detail
                 ],
@@ -601,7 +611,7 @@ class FileReportState:
                     worker.entered,
                     worker.mails,
                     tuple(worker.without_report),
-                    _orders(worker, worker.day),
+                    _orders(worker),
                     tuple(worker.mistaken) if isinstance(worker, _Worker) else (),
                 )
                 for worker in result.workers
@@ -650,7 +660,7 @@ class FileReportState:
             )
 
 
-def _orders(worker: _WorkerV1, day: date) -> tuple[OrderDetail, ...] | None:
+def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
     if not isinstance(worker, _Worker):
         return None
     return tuple(
@@ -663,7 +673,9 @@ def _orders(worker: _WorkerV1, day: date) -> tuple[OrderDetail, ...] | None:
             order.faulty,
             None
             if (offer := order.request) is None
-            else Requestable(MailId(offer.mail), Verdict(offer.successful), offer.activities, day),
+            else Requestable(
+                MailId(offer.mail), Verdict(offer.successful), offer.activities, offer.order_day, Login(offer.worker)
+            ),
         )
         for order in worker.orders_detail
     )

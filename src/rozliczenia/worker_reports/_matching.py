@@ -81,7 +81,8 @@ class Matched:
     zlecenie każdego zwycięskiego Wpisu z nadawcą, dniem po kliknięciu i chwilą przyjścia maila (``accepted``; zlecenie
     w innym miejscu przechodzi do nadawcy i na ten dzień), Zlecenia dopisane z raportu (``added``, po numerze), problemy
     Wpisów bez jednego zlecenia, informacje o przegranym temacie zwycięskich Wpisów (``lost``) i każdy zwycięski Wpis z
-    ``targets`` z nadawcą i dniem, w którym tata widzi jego problem, jak przy ``MissingVerdict`` (``entered``)."""
+    ``targets`` z nadawcą i dniem, w którym tata widzi jego problem, jak przy ``MissingVerdict`` (``entered``), a mail
+    zwycięskiego Wpisu każdego zlecenia z ``targets`` po jego wierszu (``mails``)."""
 
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]]
     accepted: tuple[tuple[RegisterOrder, Login, date, datetime], ...]
@@ -89,6 +90,7 @@ class Matched:
     lost: tuple[SubjectLost, ...]
     added: tuple[Addition, ...]
     entered: tuple[tuple[Login, date, ReportEntry], ...]
+    mails: Mapping[OrderRow, MailId]
 
 
 @dataclass(frozen=True)
@@ -252,6 +254,7 @@ class Board:
         accepted: list[tuple[RegisterOrder, Login, date, datetime]] = []
         lost: list[SubjectLost] = []
         entered: list[tuple[Login, date, ReportEntry]] = []
+        mails: dict[OrderRow, MailId] = {}
         for claim in latest.values():
             order, report = claim.order, claim.report
             shown = report.day if self._window.opens(report.day) else claim.day
@@ -264,10 +267,15 @@ class Board:
                     targets[OrderKey(order.key.number, claim.day, report.worker)] = (order, entry)
                     accepted.append((order, report.worker, claim.day, report.arrived))
                     entered.append((report.worker, shown, entry))
+                    mails[order.row] = report.mail
                     if claim.lost is not None:
                         lost.append(claim.lost)
                 case (ReportEntry(fault=VerdictFault() as fault, activities=activities),):
-                    offer = None if fault.leaning is None else Requestable(report.mail, fault.leaning, activities, claim.day)
+                    offer = (
+                        None
+                        if fault.leaning is None
+                        else Requestable(report.mail, fault.leaning, activities, claim.day, report.worker)
+                    )
                     problems.append(MissingVerdict(report.worker, shown, order.key.number, fault, offer))
                 case _:
                     problems.append(
@@ -287,7 +295,7 @@ class Board:
                     problems.append(
                         ConflictingVerdicts(report.worker, report.day, number, report.mail, report.arrived, new.entries)
                     )
-        return Matched(targets, tuple(accepted), problems, tuple(lost), tuple(added), tuple(entered))
+        return Matched(targets, tuple(accepted), problems, tuple(lost), tuple(added), tuple(entered), mails)
 
     def days(self, numbers: Iterable[OrderNumber], day: date) -> frozenset[date]:
         """Dni, za które Raport wykonawcy z numerami Wpisów ``numbers`` i dniem ``day`` (dzień z tematu albo dzień

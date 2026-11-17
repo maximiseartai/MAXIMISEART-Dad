@@ -443,9 +443,9 @@ class RequestedEntry:
 
     - zwycięski Wpis ze znakiem zamiast ``tak``/``nie`` (``t``, ``n``, ``skuteczne``, ``nieskuteczne``): ``verdict`` to
       zamiar znaku (``VerdictFault.leaning``);
-    - Wpis raportu z błędem tematu (``ReadUnreadable``) przy zleceniu z dnia ``day``: rdzeń czyta go jak Wpis Raportu
-      wykonawcy z tym dniem w temacie (``_reading.WindowRead.requested``), a Wpis z ``t`` czy ``skuteczne`` także ze
-      znakiem zamienionym na ``verdict``.
+    - Wpis raportu z błędem tematu (``ReadUnreadable``), który stawia zlecenie w dniu ``day`` u ``worker``, także z
+      Przeniesieniem zlecenia: rdzeń czyta go jak Wpis Raportu wykonawcy z tym dniem w temacie
+      (``_reading.WindowRead.requested``), a Wpis z ``t`` czy ``skuteczne`` także ze znakiem zamienionym na ``verdict``.
 
     Rdzeń wpisuje go tak, dopóki ten Wpis tego maila jest zwycięskim Wpisem zlecenia: Wpis z późniejszego maila wygrywa
     jak każdy późniejszy, także z tym samym znakiem, a ręczna wartość zostaje z ``ManualDifference``. Decyzja należy do
@@ -471,12 +471,14 @@ class RequestedEntry:
 class Requestable:
     """Co wpisze Wpis na życzenie z Wpisu Raportu wykonawcy ``mail`` (przy ``MissingVerdict`` albo przy zleceniu z
     Wpisem raportu z błędem tematu, ``OrderDetail.request``): ``tak`` albo ``nie`` (``verdict``) i czynności Wpisu
-    (``activities``) do zlecenia z dnia ``order_day``, który ma ono po Wpisie."""
+    (``activities``) do zlecenia z dnia ``order_day`` u Wykonawcy ``worker``, które ma ono po Wpisie; przy zleceniu
+    innego Wykonawcy albo z innego dnia Wpis je przenosi jak Raport wykonawcy z tym dniem w temacie."""
 
     mail: MailId
     verdict: Verdict
     activities: str
     order_day: date
+    worker: Login
 
 
 @dataclass(frozen=True, order=True)
@@ -970,8 +972,9 @@ class OrderDetail:
     kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), czy zlecenie ma jakikolwiek Wpis (``reported``) i Kody
     czynności zlecenia ``tak`` z Legendy czynności kliknięcia (``codes``, ``_descriptions.codes``; pusta krotka: „BRAK
     KODU”; ``None``: zlecenie bez ``tak`` albo wynik kliknięcia sprzed kodów). ``faulty``: zlecenie ma Wpis w raporcie z
-    błędem tematu za swój dzień (``WindowRead.faulty_entries``), którego Centrum nie wpisało, a ``request`` Wpis na
-    życzenie tego Wpisu, gdy Centrum wie, co wpisać (``WindowRead.offers``; ``None``: przycisku nie ma)."""
+    błędem tematu (za swój dzień, ``WindowRead.faulty_entries``, albo z Wpisem na życzenie), którego Centrum nie
+    wpisało, a ``request`` Wpis na życzenie z najpóźniejszego maila z Wpisem zlecenia, gdy to raport z błędem tematu, a
+    Centrum wie, co wpisać (``WindowRead.offers``; ``None``: przycisku nie ma)."""
 
     number: OrderNumber
     successful: str | None

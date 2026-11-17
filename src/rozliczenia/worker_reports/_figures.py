@@ -48,7 +48,7 @@ def worker_days(
     legend: ActivityLegend,
     mistaken: Iterable[tuple[Login, date, date]],
     faulty: frozenset[OrderKey],
-    offers: Mapping[OrderKey, Requestable],
+    offers: Mapping[OrderRow, Requestable],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał, a ``mails``
@@ -65,8 +65,9 @@ def worker_days(
     czynności swojego opisu z Legendy czynności ``legend`` (``_descriptions.codes``). Dzień, za który liczy się
     raport z pomylonym tematem (``mistaken``: Wykonawca, ten dzień i dzień z tematu), ma jego dzień z tematu.
     Zlecenie bez Wpisu, które ma Wpis w raporcie z błędem tematu za swój dzień (``faulty``,
-    ``WindowRead.faulty_entries``), nie jest bez raportu, bo raport przyszedł, a ma Wpis na życzenie z ``offers``
-    (``WindowRead.offers``).
+    ``WindowRead.faulty_entries``), nie jest bez raportu, bo raport przyszedł. Zlecenie, o którym decyduje Wpis raportu z
+    błędem tematu, ma Wpis na życzenie z ``offers`` (``WindowRead.offers``, po wierszu), także gdy ma już Wpis, a bez
+    Wpisu nie jest bez raportu, także przy Przeniesieniu do nadawcy.
     """
 
     found_orders = tuple(orders)
@@ -96,8 +97,8 @@ def worker_days(
                         written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
                         written.get((order.row, ReportColumn.COMPLETED), order.completed),
                         order.key in reported,
-                        faulty=order.key in faulty,
-                        request=None if order.key in reported else offers.get(order.key),
+                        faulty=order.key in faulty or order.row in offers,
+                        request=offers.get(order.row),
                     )
                     for order in days.get((day, worker), [])
                 ),

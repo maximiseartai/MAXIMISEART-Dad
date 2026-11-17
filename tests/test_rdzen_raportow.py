@@ -112,7 +112,7 @@ def _letter(text: str, number: str, fault: VerdictFault, activities: str) -> Mis
     na życzenie, który wpisze zamiar znaku i ``activities`` do zlecenia z tego dnia."""
 
     assert fault.leaning is not None, fault
-    offer = Requestable(_mail(JAN, SUBJECT, text).id, fault.leaning, activities, DAY)
+    offer = Requestable(_mail(JAN, SUBJECT, text).id, fault.leaning, activities, DAY, Login("jan.testowy"))
     return MissingVerdict(Login("jan.testowy"), DAY, OrderNumber(number), fault, offer)
 
 
@@ -4006,17 +4006,17 @@ def test_raport_z_bledem_tematu_bez_dnia_otwartego_jest_problemem_bez_dnia_a_z_d
 
 
 def _requests(outcome: ReportsOutcome) -> dict[OrderNumber, Requestable | None]:
-    """Wpis na życzenie przy każdym zleceniu Jana z dnia ``DAY`` w wyniku, po numerze."""
+    """Wpis na życzenie przy każdym zleceniu z dnia otwartego w wyniku, po numerze."""
 
-    [jan] = [figure for figure in outcome.workers if (figure.day, figure.worker) == (DAY, "jan.testowy")]
-    return {order.number: order.request for order in jan.orders_detail}
+    return {order.number: order.request for figure in outcome.workers for order in figure.orders_detail or ()}
 
 
 def _decisions(mail: ReportMail, offers: Mapping[OrderNumber, Requestable | None]) -> frozenset[RequestedEntry]:
-    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers`` raportu ``mail``, przy zleceniu z dnia ``DAY``."""
+    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers`` raportu ``mail``: decyzja ma Wykonawcę i dzień, które
+    zlecenie ma po Wpisie, jak w widoku Raporty."""
 
     return frozenset(
-        RequestedEntry(mail.id, Login("jan.testowy"), DAY, number, offer.verdict, offer.activities, EVENING + timedelta(hours=1))
+        RequestedEntry(mail.id, offer.worker, offer.order_day, number, offer.verdict, offer.activities, EVENING + timedelta(hours=1))
         for number, offer in offers.items()
         if offer is not None
     )
@@ -4056,7 +4056,7 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_to_co_raport_z_d
     decided = enter_reports(replace(inputs, requested=_decisions(mail, _requests(offered))))
 
     expected = {
-        number: Requestable(mail.id, verdict, activities, DAY)
+        number: Requestable(mail.id, verdict, activities, DAY, Login("jan.testowy"))
         for number, verdict, activities in (
             (entry.number, entry.verdict, entry.activities) for entry in _entries_of(same)
         )
@@ -4067,6 +4067,91 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_to_co_raport_z_d
     assert (decided.changes, decided.memory) == (correct.changes, correct.memory) != ((), OwnEntries.EMPTY)
     assert _problems(decided) == ()
     assert set(_requests(decided).values()) == {None}
+
+
+@pytest.mark.parametrize(
+    ("sender", "subject", "correct", "order_day"),
+    [
+        pytest.param(EWA, "Raport 08.11.2026 Nowak", SUBJECT, DAY, id="zlecenie-innego-wykonawcy"),
+        pytest.param(JAN, "Raport 09.11.2026 Kowalski", "Raport 09.11.2026", NEXT_DAY, id="jeden-wpis-z-innego-dnia"),
+    ],
+)
+def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_przenosi_zlecenie_jak_raport_z_dniem_w_temacie(
+    sender: str, subject: str, correct: str, order_day: date
+) -> None:
+    """ADR 0041 i 0029 (historia 44): Wpis raportu z błędem tematu, który z dniem w temacie przeniósłby jedyne zlecenie
+    numeru (do nadawcy albo na dzień z tematu), ma Wpis na życzenie przy tym zleceniu, z nadawcą i dniem z tematu, a
+    decyzja taty daje to samo Przeniesienie, Wpis i informacje co Raport wykonawcy z tym dniem w temacie."""
+
+    mail = _mail(sender, subject, TEXT, EVENING + timedelta(days=1))
+    inputs = _inputs([mail], [_order()], today=NEXT_DAY, rollout=DAY, ordered=[DAY, NEXT_DAY])
+    right = enter_reports(replace(inputs, mails=[_mail(sender, correct, TEXT, mail.arrived)]))
+
+    offered = enter_reports(inputs)
+    decided = enter_reports(replace(inputs, requested=_decisions(mail, _requests(offered))))
+
+    [login] = [Login(login) for login, addresses in ADDRESSES.items() if sender in addresses]
+    assert _requests(offered) == {OrderNumber("40000001"): Requestable(mail.id, Verdict.YES, "wymiana routera", order_day, login)}
+    assert (offered.changes, offered.moves) == ((), ())
+    assert (decided.changes, decided.moves, decided.memory, decided.notes) == (right.changes, right.moves, right.memory, right.notes)
+    assert right.moves != ()
+    assert _problems(decided) == ()
+    assert set(_requests(decided).values()) == {None}
+
+
+_FAULTY_SEQUENCE = st.lists(
+    st.tuples(st.booleans(), st.sampled_from(["tak wymiana routera", "nie brak klienta", "t montaż"]), st.booleans()),
+    min_size=1,
+    max_size=4,
+)
+"""Maile Jana z Wpisem zlecenia 40000001 po kolei: czy z błędem tematu, Wpis i czy tata kliknął przy nim Wpis na
+życzenie (tylko przy raporcie z błędem tematu)."""
+
+
+@settings(derandomize=True, database=None)
+@given(_FAULTY_SEQUENCE)
+@example([(True, "tak wymiana routera", True), (True, "nie brak klienta", False)])
+@example([(False, "tak wymiana routera", False), (True, "nie brak klienta", False)])
+def test_o_wpisie_na_zyczenie_raportow_z_bledem_tematu_decyduje_najpozniejszy_mail_z_numerem(
+    sequence: list[tuple[bool, str, bool]],
+) -> None:
+    """ADR 0041 (historie 44, 49): decyzja taty należy do maila, z którego kliknął. Przy ciągu Raportów wykonawcy i
+    raportów z błędem tematu z decyzją taty albo bez niej INTERMAX ma Wpis najpóźniejszego maila, który się wpisuje
+    (poprawny temat albo decyzja taty), a przycisk przy zleceniu i błąd tematu ma tylko najpóźniejszy mail z numerem,
+    gdy to raport z błędem tematu bez decyzji; jego kliknięcie wpisuje jego Wpis i zdejmuje błąd tematu. Pierwszy
+    przykład: poprawka z tym samym błędem tematu po Wpisie na życzenie, drugi: raport z błędem tematu po poprawnym."""
+
+    mails = [
+        (_mail(JAN, "Raport 08.11.2026 Kowalski" if faulty else SUBJECT, f"40000001 {text}", EVENING + timedelta(minutes=index)), faulty, decided)
+        for index, (faulty, text, decided) in enumerate(sequence)
+    ]
+    entered = {mail.id: _entries_of(mail.text)[0] for mail, _, _ in mails}
+    decisions = frozenset(
+        RequestedEntry(mail.id, Login("jan.testowy"), DAY, OrderNumber("40000001"), verdict, entered[mail.id].activities, EVENING)
+        for mail, faulty, decided in mails
+        if faulty and decided and (verdict := entered[mail.id].leaning) is not None
+    )
+    inputs = _inputs([mail for mail, _, _ in mails], [_order()], requested=decisions)
+
+    outcome = enter_reports(inputs)
+
+    clicked = {decision.mail for decision in decisions}
+    writing = [mail for mail, faulty, _ in mails if not faulty or mail.id in clicked]
+    winner = None if not writing else entered[writing[-1].id]
+    verdict = None if winner is None else winner.leaning if writing[-1].id in clicked else winner.verdict
+    last, last_faulty, _ = mails[-1]
+    pending, offer = last_faulty and last.id not in clicked, entered[last.id]
+    assert outcome.changes == (() if winner is None or verdict is None else _both(ROW, verdict.value, winner.activities))
+    assert offer.leaning is not None
+    assert _requests(outcome) == {
+        OrderNumber("40000001"): Requestable(last.id, offer.leaning, offer.activities, DAY, Login("jan.testowy")) if pending else None
+    }
+    assert (last.id in {problem.mail for problem in _problems(outcome) if isinstance(problem, UnreadableSubject)}) == pending
+    if pending:
+        after = enter_reports(replace(inputs, requested=decisions | _decisions(last, _requests(outcome))))
+        assert after.changes == _both(ROW, offer.leaning.value, offer.activities)
+        assert set(_requests(after).values()) == {None}
+        assert last.id not in {problem.mail for problem in _problems(after) if isinstance(problem, UnreadableSubject)}
 
 
 def _entries_of(text: str) -> tuple[ReportEntry, ...]:
@@ -4092,7 +4177,9 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_temat
     assert won.changes == _both(ROW, "nie", "brak klienta")
     assert stale.changes == ()
     assert [type(problem) for problem in _problems(stale)] == [UnreadableSubject]
-    assert _requests(stale) == {OrderNumber("40000001"): Requestable(faulty.id, Verdict.YES, "wymiana routera", DAY)}
+    assert _requests(stale) == {
+        OrderNumber("40000001"): Requestable(faulty.id, Verdict.YES, "wymiana routera", DAY, Login("jan.testowy"))
+    }
 
 
 @pytest.mark.parametrize(
@@ -4274,7 +4361,7 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
 
     outcome = enter_reports(_inputs(mails, [_order()]))
 
-    offer = Requestable(mails[1].id, Verdict.YES, "wymiana routera", DAY)
+    offer = Requestable(mails[1].id, Verdict.YES, "wymiana routera", DAY, Login("jan.testowy"))
     assert outcome.changes == ()
     assert _problems(outcome) == (
         MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES, offer),

@@ -80,7 +80,7 @@ export function DayDetails({
       {day.orders_detail === null ? (
         <Fallback state={state} keeping={keeping} onKeep={onKeep} />
       ) : (
-        <Orders orders={day.orders_detail} state={state} keeping={keeping} onKeep={onKeep} />
+        <Orders orders={day.orders_detail} worker={worker} state={state} keeping={keeping} onKeep={onKeep} />
       )}
     </div>
   )
@@ -158,10 +158,11 @@ const ROW = "grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-
  */
 function Orders({
   orders,
+  worker,
   state,
   keeping,
   onKeep,
-}: { orders: ReadonlyArray<ReportsOrder>; state: Extract<DayState, { kind: Status }> } & Keeping) {
+}: { orders: ReadonlyArray<ReportsOrder>; worker: string; state: Extract<DayState, { kind: Status }> } & Keeping) {
   const numbers = new Set(orders.map((order) => order.number))
   const loose = state.day.problems.filter((problem) => problem.number === null || !numbers.has(problem.number))
   const handed = state.day.notes.filter((note) => !numbers.has(note.number))
@@ -174,7 +175,7 @@ function Orders({
           <OrderLine order={order} />
           <StatusBadge status={orderStatus(order, state.kind)} label={ORDER_LABELS[order.state]} />
           <CodesLine order={order} />
-          {order.request === null ? null : <OnRequest request={order.request} />}
+          {order.request === null ? null : <OnRequest request={order.request} worker={worker} />}
           {state.day.problems
             .filter((problem) => problem.number === order.number)
             .map((problem) => (
@@ -389,15 +390,20 @@ function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem }
 
 /**
  * Wpis na życzenie (ADR 0041) przy problemie albo przy zleceniu z Wpisem raportu z błędem tematu: co wpisze się do
- * INTERMAX, zanim tata kliknie, i przycisk, który startuje Wpisanie raportów z jego decyzją. W czasie każdego Uruchomienia przycisk czeka; odmowę serwera (INTERMAX otwarty w Excelu)
+ * INTERMAX, zanim tata kliknie, i przycisk, który startuje Wpisanie raportów z jego decyzją. Przy zleceniu, które stoi
+ * u Wykonawcy `worker`, a Wpis przeniesie je do nadawcy raportu, mówi, do kogo przejdzie. W czasie każdego Uruchomienia przycisk czeka; odmowę serwera (INTERMAX otwarty w Excelu)
  * pokazuje powiadomienie.
  */
-function OnRequest({ request }: { request: RequestedCell }) {
+function OnRequest({ request, worker = request.worker }: { request: RequestedCell; worker?: string }) {
   const { view, starting, start } = useRuns()
 
   return (
     <span className="col-start-2 col-end-4 flex flex-col gap-2 rounded-md border border-dashed px-2.5 py-2 text-xs">
-      <span className="text-muted-foreground">Wpisze się do INTERMAX, zlecenie z {shortDay(request.order_day)}:</span>
+      <span className="text-muted-foreground">
+        {request.worker === worker
+          ? `Wpisze się do INTERMAX, zlecenie z ${shortDay(request.order_day)}:`
+          : `Wpisze się do INTERMAX, zlecenie przejdzie do ${request.worker} na ${shortDay(request.order_day)}:`}
+      </span>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-0.5" aria-label="Co się wpisze">
         <dt className="text-muted-foreground">SKUTECZNE</dt>
         <dd className="font-semibold">{request.successful}</dd>

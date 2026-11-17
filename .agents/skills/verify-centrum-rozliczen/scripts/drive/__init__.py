@@ -574,6 +574,8 @@ FEATURES = (
             "405-raporty-na-zyczenie-podglad",
             "406-raporty-na-zyczenie-odmowa",
             "407-raporty-na-zyczenie-po",
+            "433-raporty-blad-tematu-przeniesienie-podglad",
+            "434-raporty-blad-tematu-przeniesienie-po",
             "287-raporty-w-czasie-innego",
             "293-raporty-mapa-bez-popovera",
             "288-raporty-mapa-jasna",

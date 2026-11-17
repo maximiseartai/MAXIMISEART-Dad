@@ -38,8 +38,9 @@ class KeptCell(Model):
 
 
 class RequestedCell(Model):
-    """Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,
-    dzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+    """Wpis na życzenie przy problemie albo przy zleceniu: Wpis, przy którym tata klika (skrót Raportu wykonawcy
+    ``mail``, Wykonawca i dzień, w którym widzi problem, a przy zleceniu Wykonawca i dzień, które zlecenie ma po Wpisie,
+    przy Przeniesieniu nadawca raportu, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
     ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."""
 
     mail: str
@@ -93,8 +94,9 @@ class ReportsOrder(Model):
     ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
     i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
     czynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.
-    ``request``: Wpis na życzenie przy zleceniu ze stanem ``faulty_subject`` (ADR 0041), który wpisze Wpis raportu z
-    błędem tematu do tego zlecenia (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać)."""
+    ``request``: Wpis na życzenie przy zleceniu, o którym decyduje Wpis raportu z błędem tematu, bo to najpóźniejszy mail
+    z jego numerem (ADR 0041), który wpisze ten Wpis do tego zlecenia jak Raport wykonawcy z dniem w temacie, także z
+    Przeniesieniem do nadawcy (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać)."""
 
     number: str
     successful: str | None

@@ -8,12 +8,12 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 
+from ..report_cells import OrderRow
 from . import _entries, _matching, _subject
 from ._model import (
     Login,
     MailId,
     MailRead,
-    MissingVerdict,
     OrderKey,
     OrderNumber,
     ReadReport,
@@ -44,8 +44,8 @@ class WindowRead:
     bez raportu, choć Centrum jego Wpisu nie wpisało.
 
     Wpis na życzenie przy raporcie z błędem tematu (ADR 0041) ma kształt Wpisu Raportu wykonawcy z dniem zlecenia w
-    temacie: ``offers`` to Wpis na życzenie przy każdym zleceniu z takim Wpisem, gdy Centrum wie, co wpisać
-    (``_offers``), a ``requested`` to Wpisy, przy których tata kliknął (``inputs.requested``), jako Raporty wykonawcy
+    temacie: ``offers`` to Wpis na życzenie przy wierszu każdego zlecenia, o którym decyduje Wpis takiego raportu,
+    gdy Centrum wie, co wpisać (``_offers``), a ``requested`` to Wpisy, przy których tata kliknął (``inputs.requested``), jako Raporty wykonawcy
     tego maila z dniem decyzji (``_requested``), które ``entering`` stawia wśród Raportów wykonawców po kolei."""
 
     mails: tuple[MailRead, ...]
@@ -56,7 +56,7 @@ class WindowRead:
     faulty: tuple[tuple[ReadUnreadable, frozenset[date]], ...]
     mistaken: tuple[tuple[Login, date, date], ...]
     faulty_entries: frozenset[OrderKey]
-    offers: Mapping[OrderKey, Requestable]
+    offers: Mapping[OrderRow, Requestable]
     requested: tuple[ReadReport, ...]
 
     @property
@@ -125,14 +125,13 @@ def read_window(inputs: ReportInputs) -> WindowRead:
     entries = frozenset(
         OrderKey(number, day, found.worker) for found in unreadable for day in counted[found] for number in found.numbers
     )
-    offers: dict[OrderKey, Requestable] = {}
-    for faulty_read in unreadable:
-        if shown[faulty_read] and (base := days[faulty_read]) is not None:
-            for number in faulty_read.numbers:
-                for counted_day in counted[faulty_read]:
-                    offers.pop(OrderKey(number, counted_day, faulty_read.worker), None)
-            offers.update(_offers(board, faulty_read, base))
     requested = _requested(unreadable, decided)
+    asked = tuple(
+        ReadReport(found.mail, found.arrived, found.worker, day, tuple(map(_leaned, found.entries)))
+        for found in unreadable
+        if shown[found] and (day := days[found]) is not None
+    )
+    offers = _offers(board, (*reports, *requested), asked, inputs.requested, decided)
     return WindowRead(
         mails, tuple(strangers), reports, board, tuple(reported), faulty, tuple(mistaken), entries, offers, requested
     )
@@ -180,22 +179,37 @@ def _indicated(
     return max(days, default=None)
 
 
-def _offers(board: _matching.Board, found: ReadUnreadable, day: date) -> dict[OrderKey, Requestable]:
-    """Wpis na życzenie przy zleceniu z Wpisem raportu z błędem tematu ``found`` z dniem ``day``: tam, gdzie ten raport
-    z dniem ``day`` w temacie wpisałby Wpis do zlecenia Wykonawcy z jego dnia bez Przeniesienia, z ``tak``/``nie`` albo
-    z zamiarem znaku (``MissingVerdict.requestable``). Bez przycisku zostaje to, czego taki raport by nie wpisał:
-    przeciwne Wpisy, Wpis bez znaku, numer bez zlecenia i numer w kilku miejscach."""
+def _offers(
+    board: _matching.Board,
+    entering: Iterable[ReadReport],
+    asked: Sequence[ReadReport],
+    requested: Iterable[RequestedEntry],
+    decided: Mapping[tuple[MailId, OrderNumber], object],
+) -> dict[OrderRow, Requestable]:
+    """Wpis na życzenie przy każdym zleceniu, którego zwycięskim Wpisem byłby Wpis raportu z błędem tematu, gdyby każdy
+    taki raport miał w temacie swój dzień, a każdy znak z zamiarem był swoim ``tak``/``nie`` (``asked``), wśród
+    Raportów wykonawców Wpisania raportów (``entering``): decyduje najpóźniejszy mail z numerem, jak w ``Board.match``.
+    Wpis, który tata już wpisał (``decided``), i Wpis, z którym wygrywa późniejszy mail, przycisku nie mają, a Wpis
+    późniejszego raportu z błędem tematu ma własny, także przy zleceniu z Wpisem na życzenie wcześniejszego maila. Wpis,
+    który stawia zlecenie u nadawcy albo w dniu z tematu, ma przycisk jak Raport wykonawcy, który by je przeniósł (ADR
+    0029); bez przycisku zostaje to, czego taki raport by nie wpisał: przeciwne Wpisy, Wpis bez znaku, numer bez
+    zlecenia, numer w kilku miejscach i Przeniesienie, do którego nie wolno."""
 
-    matched = board.match([ReadReport(found.mail, found.arrived, found.worker, day, found.entries)])
-    offers = {
-        key: Requestable(found.mail, entry.verdict, entry.activities, key.day)
+    faulty = {report.mail for report in asked}
+    matched = board.match(sorted((*entering, *asked), key=_mail_order), requested)
+    return {
+        order.row: Requestable(mail, entry.verdict, entry.activities, key.day, key.worker)
         for key, (order, entry) in matched.targets.items()
-        if order.key == key and entry.verdict is not None
+        if (mail := matched.mails[order.row]) in faulty and (mail, key.number) not in decided and entry.verdict is not None
     }
-    for problem in matched.problems:
-        if isinstance(problem, MissingVerdict) and (offer := problem.requestable) is not None:
-            offers[OrderKey(problem.number, offer.order_day, found.worker)] = offer
-    return offers
+
+
+def _leaned(entry: ReportEntry) -> ReportEntry:
+    """Wpis ze znakiem z zamiarem (``t``, ``nieskuteczne``) jako Wpis z tym ``tak``/``nie``, jak po decyzji taty."""
+
+    if entry.verdict is None and entry.leaning is not None:
+        return ReportEntry(entry.number, entry.leaning, None, entry.activities)
+    return entry
 
 
 def _decided(

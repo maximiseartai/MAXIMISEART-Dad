@@ -3383,6 +3383,51 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_temat
     assert [problem["number"] for problem in _worker(_view(centrum), "jan.testowy")["problems"]] == ["40000005"]
 
 
+def _rows(register: Path) -> list[tuple[object, ...]]:
+    """Wartości każdego wiersza arkusza zleceń od góry."""
+
+    return [tuple(cell.value for cell in row) for row in load_workbook(register)[ORDER_SHEET].iter_rows()]
+
+
+def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_z_przeniesieniem_przenosi_zlecenie_jak_poprawny_raport(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041 i 0029 (US 44): Anna przysyła ``Raport 09.11.2026 Nowak`` z jedynym zleceniem Jana z 9.11. Przy tym
+    zleceniu u Jana stoi Wpis na życzenie z Anną i 9.11 (stan „Błąd tematu”, nie „Bez raportu”), a kliknięcie daje w
+    INTERMAX to samo Przeniesienie i Wpis co poprawny raport Anny za 9.11; błąd tematu znika, a zlecenie stoi u Anny."""
+
+    def intermax() -> Intermax:
+        return Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+
+    faulty = report(ANNA, "Raport 09.11.2026 Nowak", "40000001 tak inst20m")
+    centrum = entering_centrum(tmp_path / "blad", intermax(), [faulty])
+    right = entering_centrum(tmp_path / "poprawny", intermax(), [report(ANNA, SUBJECT, "40000001 tak inst20m")])
+    _finished(centrum)
+    _finished(right)
+    offers = _order_requests(centrum, "jan.testowy")
+
+    _enter_on_request(centrum, offers["40000001"][1], datetime(2026, 11, 9, 19))
+
+    assert offers == {
+        "40000001": (
+            "faulty_subject",
+            {
+                "mail": faulty.id.digest,
+                "worker": "anna.kowalska",
+                "day": "2026-11-09",
+                "number": "40000001",
+                "activities": "inst20m",
+                "successful": "tak",
+                "order_day": "2026-11-09",
+            },
+        )
+    }
+    assert _workers(centrum.register)[40000001] == "anna.kowalska"
+    assert _rows(centrum.register) == _rows(right.register)
+    anna = _worker(_view(centrum), "anna.kowalska")
+    assert (anna["problems"], [order["number"] for order in anna["orders_detail"]]) == ([], ["40000002", "40000001"])
+
+
 def test_wpisu_na_zyczenie_przy_raporcie_z_bledem_tematu_nie_ma_przy_przeciwnych_wpisach_wpisie_bez_znaku_i_numerze_dwa_razy(
     tmp_path: Path,
 ) -> None:

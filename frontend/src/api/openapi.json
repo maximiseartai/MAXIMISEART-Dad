@@ -10082,7 +10082,7 @@
           "request"
         ],
         "title": "ReportsOrder",
-        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem\ntylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego\nWpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.\n``request``: Wpis na życzenie przy zleceniu ze stanem ``faulty_subject`` (ADR 0041), który wpisze Wpis raportu z\nbłędem tematu do tego zlecenia (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać)."
+        "description": "Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie\nzmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem\ntylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego\nWpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).\n\n``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy\ni kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu\nczynności, informacja „BRAK KODU” dla taty, bo Ilości z opisu wpisze sam; nie jest problemem ani Zgłoszeniem.\n``request``: Wpis na życzenie przy zleceniu, o którym decyduje Wpis raportu z błędem tematu, bo to najpóźniejszy mail\nz jego numerem (ADR 0041), który wpisze ten Wpis do tego zlecenia jak Raport wykonawcy z dniem w temacie, także z\nPrzeniesieniem do nadawcy (``None``: przycisku nie ma, bo Centrum nie wie, co wpisać)."
       },
       "ReportsProblem": {
         "properties": {
@@ -10362,7 +10362,7 @@
           "order_day"
         ],
         "title": "RequestedCell",
-        "description": "Wpis na życzenie przy problemie: Wpis, przy którym tata klika (skrót Raportu wykonawcy ``mail``, Wykonawca,\ndzień, w którym widzi problem, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI\nZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."
+        "description": "Wpis na życzenie przy problemie albo przy zleceniu: Wpis, przy którym tata klika (skrót Raportu wykonawcy\n``mail``, Wykonawca i dzień, w którym widzi problem, a przy zleceniu Wykonawca i dzień, które zlecenie ma po Wpisie,\nprzy Przeniesieniu nadawca raportu, numer i czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI\nZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."
       },
       "Resolved": {
         "properties": {
