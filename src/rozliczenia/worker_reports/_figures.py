@@ -45,6 +45,8 @@ def worker_days(
     reached: frozenset[OrderKey],
     added: Iterable[tuple[OrderKey, OrderDetail]],
     legend: ActivityLegend,
+    mistaken: Iterable[tuple[Login, date, date]],
+    faulty: frozenset[OrderKey],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał, a ``mails``
@@ -58,7 +60,10 @@ def worker_days(
     jego numer albo gdy zwycięski Wpis innego dnia trafił do niego (``reached``: klucze celów po kliknięciu, np.
     pomylony temat). Zlecenia dopisane z raportu (``added``: klucz i zlecenie po zapisie) stoją na końcu zleceń swojego
     Wykonawcy z dnia, za przeniesionymi, bo zapis dopisuje je po Przeniesieniach. Każde zlecenie ``tak`` ma Kody
-    czynności swojego opisu z Legendy czynności ``legend`` (``_descriptions.codes``).
+    czynności swojego opisu z Legendy czynności ``legend`` (``_descriptions.codes``). Dzień, za który liczy się
+    raport z pomylonym tematem (``mistaken``: Wykonawca, ten dzień i dzień z tematu), ma jego dzień z tematu.
+    Zlecenie bez Wpisu, które ma Wpis w raporcie z błędem tematu za swój dzień (``faulty``,
+    ``WindowRead.faulty_entries``), nie jest bez raportu, bo raport przyszedł.
     """
 
     found_orders = tuple(orders)
@@ -73,6 +78,9 @@ def worker_days(
     extra: defaultdict[tuple[date, Login], list[OrderDetail]] = defaultdict(list)
     for key, found in added:
         extra[key.day, key.worker].append(found)
+    subject_days: defaultdict[tuple[date, Login], set[date]] = defaultdict(set)
+    for worker, day, subject_day in mistaken:
+        subject_days[day, worker].add(subject_day)
     figures = []
     subjects = {(report.day, report.worker) for report in reports}
     for day, worker in sorted(days.keys() | mails.keys() | subjects | extra.keys()):
@@ -85,13 +93,14 @@ def worker_days(
                         written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
                         written.get((order.row, ReportColumn.COMPLETED), order.completed),
                         order.key in reported,
+                        faulty=order.key in faulty,
                     )
                     for order in days.get((day, worker), [])
                 ),
                 *extra.get((day, worker), []),
             )
         )
-        missing = {order.number for order in detail if not order.reported}
+        missing = {order.number for order in detail if not (order.reported or order.faulty)}
         figures.append(
             WorkerDay(
                 day,
@@ -102,6 +111,7 @@ def worker_days(
                 problems=places[day, worker],
                 without_report=tuple(sorted(missing, key=lambda number: (len(number), number))),
                 orders_detail=detail,
+                mistaken=tuple(sorted(subject_days.get((day, worker), ()))),
             )
         )
     return tuple(figures)
@@ -109,6 +119,8 @@ def worker_days(
 
 def _place(problem: ReportProblem) -> tuple[date, Login] | None:
     match problem:
+        case UnreadableSubject(day=date() as day):
+            return day, problem.worker
         case UnreadableSubject() | UnknownSender():
             return None
         case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber() | FaultyDescription():

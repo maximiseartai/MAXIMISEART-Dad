@@ -480,7 +480,12 @@ class ReportInputs:
 
     ``legend``: Legenda czynności Ustawień Centrum, ta sama, którą liczy Przygotowanie pliku zbiorczego; z niej rdzeń
     wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``). ``requested``: decyzje taty Wpisu na
-    życzenie (``RequestedEntry``)."""
+    życzenie (``RequestedEntry``).
+
+    ``entering_rollout``: dzień wdrożenia Wpisania raportów, gdy okno zaczyna się wcześniej (Przypomnienia o raporcie z
+    wcześniejszym dniem wdrożenia przypomnień, ``report_entering.report_inputs``; ``None``: ``window.rollout``). Dzień
+    wskazany raportu z błędem tematu bez dnia w temacie leży od niego, w dniach otwartych Wpisania, więc obie operacje
+    wskazują ten sam dzień albo żaden."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -492,6 +497,7 @@ class ReportInputs:
     legend: ActivityLegend
     ordered_days: frozenset[OrderedDay] = frozenset()
     requested: frozenset[RequestedEntry] = frozenset()
+    entering_rollout: date | None = None
 
 
 class Verdict(Enum):
@@ -600,14 +606,18 @@ class ReadReport:
 
 @dataclass(frozen=True)
 class ReadUnreadable:
-    """Mail od Wykonawcy ze słowem Raportu wykonawcy w temacie, z którego tematu nie da się odczytać dnia. ``numbers``:
-    numery Wpisów jego treści, po których poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``)."""
+    """Raport wykonawcy z błędem tematu (ADR 0041): mail od Wykonawcy z Wpisami i ze słowem Raportu wykonawcy w
+    temacie, który nie daje dnia zleceń wprost, z powodem ``fault``. ``numbers``: numery Wpisów jego treści, po których
+    poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``) i które wygrywają z datą (``Board.days``);
+    ``day``: dzień z tematu, gdy da się go przeczytać obok błędu (``_subject.read``). Tematu nie ma, bo nie trafia ani
+    do Logów, ani do przeglądarki (ADR 0028)."""
 
     mail: MailId
     arrived: datetime
     worker: Login
     fault: SubjectFault
     numbers: frozenset[OrderNumber]
+    day: date | None
 
 
 @dataclass(frozen=True)
@@ -624,10 +634,15 @@ MailRead = ReadReport | ReadUnreadable | ReadStranger
 
 @dataclass(frozen=True)
 class UnreadableSubject:
+    """Raport wykonawcy z błędem tematu z powodem ``fault``, liczony za dzień otwarty ``day``
+    (``_reading.read_window``): Centrum go nie wpisuje, a tata widzi go przy tym dniu. ``None``: problem bez dnia, bo
+    Centrum nie wskazało dnia otwartego, za który raport się liczy, więc tata widzi go przy dniu przyjścia maila."""
+
     mail: MailId
     worker: Login
     arrived: datetime
     fault: SubjectFault
+    day: date | None
 
 
 @dataclass(frozen=True)
@@ -881,21 +896,26 @@ def note_order(note: ReportNote) -> tuple[date, str, str, str, str]:
 
 
 class OrderState(Enum):
-    """Stan zlecenia dnia Wykonawcy w widoku Raporty: problem, którego tata nie zostawił „Zostaw moją”, bez żadnego Wpisu
-    (bez raportu, także gdy tata sam wpisał ``tak``) albo wpisane z Wpisu."""
+    """Stan zlecenia dnia Wykonawcy w widoku Raporty: problem, którego tata nie zostawił „Zostaw moją”, wpisane z Wpisu,
+    z Wpisem tylko w raporcie z błędem tematu (raport przysłany, Wpis niewpisany) albo bez żadnego Wpisu (bez raportu,
+    także gdy tata sam wpisał ``tak``)."""
 
     ENTERED = "entered"
     WITHOUT_REPORT = "without_report"
     PROBLEM = "problem"
+    FAULTY_SUBJECT = "faulty_subject"
 
     @classmethod
-    def of(cls, *, reported: bool, problem: bool) -> OrderState:
-        """Stan zlecenia z Wpisem (``reported``) albo bez niego, z problemem w widoku albo bez; problem ma tylko zlecenie
-        z Wpisem, bo każdy problem przy numerze zlecenia z dnia Wykonawcy pochodzi z jego Wpisu."""
+    def of(cls, *, reported: bool, faulty: bool, problem: bool) -> OrderState:
+        """Stan zlecenia z Wpisem (``reported``), z Wpisem w raporcie z błędem tematu (``faulty``) albo bez Wpisu, z
+        problemem w widoku albo bez; problem ma tylko zlecenie z Wpisem, bo każdy problem przy numerze zlecenia z dnia
+        Wykonawcy pochodzi z jego Wpisu, a wpisany Wpis wygrywa z niewpisanym."""
 
         if problem:
             return cls.PROBLEM
-        return cls.ENTERED if reported else cls.WITHOUT_REPORT
+        if reported:
+            return cls.ENTERED
+        return cls.FAULTY_SUBJECT if faulty else cls.WITHOUT_REPORT
 
 
 @dataclass(frozen=True)
@@ -903,20 +923,22 @@ class OrderDetail:
     """Zlecenie dnia Wykonawcy w widoku Raporty: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie zmian
     kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), czy zlecenie ma jakikolwiek Wpis (``reported``) i Kody
     czynności zlecenia ``tak`` z Legendy czynności kliknięcia (``codes``, ``_descriptions.codes``; pusta krotka: „BRAK
-    KODU”; ``None``: zlecenie bez ``tak`` albo wynik kliknięcia sprzed kodów)."""
+    KODU”; ``None``: zlecenie bez ``tak`` albo wynik kliknięcia sprzed kodów). ``faulty``: zlecenie ma Wpis w raporcie z
+    błędem tematu za swój dzień (``WindowRead.faulty_entries``), którego Centrum nie wpisało."""
 
     number: OrderNumber
     successful: str | None
     activities: str | None
     reported: bool
     codes: tuple[str, ...] | None = None
+    faulty: bool = False
 
 
 @dataclass(frozen=True)
 class WorkerDay:
     """Liczby Wykonawcy z dnia dla widoku Raporty: zlecenia, zlecenia z ``tak`` albo ``nie`` w ``SKUTECZNE`` po
     kliknięciu (``entered``), Raporty wykonawcy, problemy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności
-    z INTERMAX (``orders_detail``)."""
+    z INTERMAX (``orders_detail``) i dni z tematu raportów z pomylonym tematem za ten dzień (``mistaken``)."""
 
     day: date
     worker: Login
@@ -926,6 +948,8 @@ class WorkerDay:
     problems: int
     without_report: tuple[OrderNumber, ...]
     orders_detail: tuple[OrderDetail, ...]
+    mistaken: tuple[date, ...]
+    """Dni z tematu Raportów wykonawcy z pomylonym tematem, które liczą się za ten dzień (ADR 0029), od najwcześniejszego."""
 
 
 @dataclass(frozen=True)
@@ -959,8 +983,8 @@ def problem_order(
 
     kind = type(problem).__name__
     match problem:
-        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault):
-            return arrived.date(), worker, "", kind, (mail.digest, fault.name, arrived)
+        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault, day=day):
+            return day or arrived.date(), worker, "", kind, (mail.digest, fault.name, arrived)
         case UnknownSender(mail=mail, sender=sender, day=day):
             return day, "", "", kind, (mail.digest, sender)
         case MissingVerdict(fault=fault):

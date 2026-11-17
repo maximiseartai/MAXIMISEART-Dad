@@ -278,20 +278,21 @@ def test_logi_maja_wpisy_i_zmiany_bez_adresow_tematow_i_tresci_maili_a_telefon_w
 
 
 @pytest.mark.parametrize(
-    ("subject", "fault"),
+    ("subject", "fault", "day"),
     [
-        pytest.param("Raport bez daty", "no_date", id="bez-daty"),
-        pytest.param("Raport 09.11.2026 Kowalski", "other_words", id="inne-slowa"),
-        pytest.param("Raport: 09.11.2026", "other_text", id="inny-tekst"),
-        pytest.param("Raport 09.11", "no_year", id="bez-roku"),
-        pytest.param("Raport 09112026", "date_form", id="postac-daty"),
-        pytest.param("Raport 09.11.226", "year_digits", id="cyfry-roku"),
-        pytest.param("Raport 31.11.2026", "not_a_day", id="nie-dzien"),
+        pytest.param("Raport bez daty", "no_date", None, id="bez-daty"),
+        pytest.param("Raport 09.11.2026 Kowalski", "other_words", "2026-11-09", id="inne-slowa"),
+        pytest.param("Raport: 09.11.2026", "other_text", "2026-11-09", id="inny-tekst"),
+        pytest.param("Raport 09.11", "no_year", "2026-11-09", id="bez-roku"),
+        pytest.param("Raport 09112026", "date_form", None, id="postac-daty"),
+        pytest.param("Raport 09.11.226", "year_digits", None, id="cyfry-roku"),
+        pytest.param("Raport 31.11.2026", "not_a_day", None, id="nie-dzien"),
     ],
 )
-def test_logi_maja_powod_kazdego_nieczytelnego_tematu_bez_tematu(tmp_path: Path, subject: str, fault: str) -> None:
-    """Każdy powód nieczytelnego tematu, który daje dziś rdzeń, ma swoje słowo w Logach (mail i problem), a sam temat do
-    Logów nie trafia (ADR 0028)."""
+def test_logi_maja_powod_kazdego_bledu_tematu_i_dzien_bez_tematu(tmp_path: Path, subject: str, fault: str, day: str | None) -> None:
+    """Każdy powód błędu tematu, który daje dziś rdzeń, ma swoje słowo w Logach (mail i problem), mail ma dzień z
+    tematu, gdy da się go przeczytać, a problem dzień, za który Centrum liczy raport (ADR 0041: Jan ma zlecenie tylko
+    9.11), a sam temat do Logów nie trafia (ADR 0028)."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, subject, "40000001 tak wymiana")])
 
@@ -299,8 +300,10 @@ def test_logi_maja_powod_kazdego_nieczytelnego_tematu_bez_tematu(tmp_path: Path,
 
     [logs] = centrum.run_logs()
     entering = logs["report_entering"]
-    assert [(mail["kind"], mail["fault"]) for mail in entering["mails"]] == [("unreadable", fault)]
-    assert [(problem["kind"], problem["fault"]) for problem in entering["problems"]] == [("unreadable_subject", fault)]
+    assert [(mail["kind"], mail["fault"], mail["day"]) for mail in entering["mails"]] == [("unreadable", fault, day)]
+    assert [(problem["kind"], problem["fault"], problem["day"]) for problem in entering["problems"]] == [
+        ("unreadable_subject", fault, "2026-11-09")
+    ]
     assert subject not in json.dumps(logs, ensure_ascii=False)
 
 
@@ -2463,6 +2466,13 @@ def _view(centrum: EnteringCentrum) -> dict[str, Any]:
     return dict(response.json())
 
 
+def _faulty_subject(problem: dict[str, Any]) -> tuple[str, str | None, datetime]:
+    """Rodzaj błędu, dzień, za który Centrum liczy raport, i chwila przyjścia raportu z błędem tematu z problemu widoku."""
+
+    found = problem["faulty_subject"]
+    return found["fault"], found["day"], datetime.fromisoformat(found["arrived"])
+
+
 def _worker(view: dict[str, Any], login: str, day: str = "2026-11-09") -> dict[str, Any]:
     """Dzień ``day`` Wykonawcy ``login`` z widoku Raporty."""
 
@@ -2532,7 +2542,15 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "entered": 0,
                     "mails": 1,
                     "without_report": ["40000002"],
-                    "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None, "request": None}],
+                    "problems": [
+                        {
+                            "reason": reason(unknown),
+                            "number": "400000099",
+                            "keep": None,
+                            "request": None,
+                            "faulty_subject": None,
+                        }
+                    ],
                     "notes": [],
                     "orders_detail": [
                         {
@@ -2544,6 +2562,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                             "no_code": False,
                         }
                     ],
+                    "mistaken_subjects": [],
                     "reminders": [],
                 }
             ],
@@ -2577,6 +2596,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                             "no_code": False,
                         },
                     ],
+                    "mistaken_subjects": [],
                     "reminders": [],
                 }
             ],
@@ -2711,8 +2731,9 @@ def test_widok_raporty_na_przelomie_roku_daje_swieta_z_obu_lat(tmp_path: Path) -
 
 
 def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlecen_i_raportow(tmp_path: Path) -> None:
-    """US 55: Anna nie ma zleceń 9.11, a jej mail z tego dnia ma temat bez daty, więc nie jest Raportem wykonawcy.
-    Widok Raporty pokazuje ją przy tym dniu z zerami i tym problemem, zamiast zgubić problem razem z nią."""
+    """US 55 i ADR 0041 (historia 20): Anna nie ma zleceń, a jej mail z 9.11 ma temat bez daty, więc Centrum nie liczy
+    go za żaden dzień i jest problemem bez dnia. Widok Raporty pokazuje ją przy dniu przyjścia maila z zerami i tym
+    problemem z tematem bez dnia, zamiast zgubić problem razem z nią."""
 
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001),), raw=())
     mail = report(ANNA, "Raport bez daty", "40000002 tak montaż")
@@ -2722,19 +2743,86 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
     view = _view(centrum)
 
     unreadable = UnreadableSubject(
-        MailId.of("<syntetyczny@przyklad.invalid>"), Login("anna.kowalska"), mail.arrived, SubjectFault.NO_DATE
+        MailId.of("<syntetyczny@przyklad.invalid>"),
+        Login("anna.kowalska"),
+        mail.arrived,
+        SubjectFault.NO_DATE,
+        None,
     )
-    assert _worker(view, "anna.kowalska") == {
+    anna = _worker(view, "anna.kowalska")
+    assert [_faulty_subject(problem) for problem in anna["problems"]] == [("bez daty", None, mail.arrived)]
+    assert anna == {
         "day": "2026-11-09",
         "orders": 0,
         "entered": 0,
         "mails": 0,
         "without_report": [],
-        "problems": [{"reason": reason(unreadable), "number": None, "keep": None, "request": None}],
+        "problems": [
+            {
+                "reason": reason(unreadable),
+                "number": None,
+                "keep": None,
+                "request": None,
+                "faulty_subject": anna["problems"][0]["faulty_subject"],
+            }
+        ],
         "notes": [],
         "orders_detail": [],
+        "mistaken_subjects": [],
         "reminders": [],
     }
+
+
+def test_raport_z_bledem_tematu_stoi_przy_wskazanym_dniu_z_rodzajem_bledu_i_tym_dniem_bez_tematu(tmp_path: Path) -> None:
+    """ADR 0041 (historie 3, 5, 19–20, 40, 42) i ADR 0028: raport z błędem tematu jest przysłany. Jan pisze w temacie
+    nazwisko i adres klienta, Anna sam ``Raport``. Odpowiedź HTTP widoku Raporty ma przy dniu każdego z nich Raport
+    wykonawcy i problem z rodzajem błędu, dniem, za który Centrum go liczy (dla Jana dzień z tematu, dla Anny jej ostatni
+    dzień ze zleceniami, 8.11, choć mail przyszedł 9.11), i chwilą przyjścia maila, ale bez tematu, bo tematy maili nie
+    trafiają do przeglądarki. Zlecenia z Wpisami takiego raportu nie są bez raportu: mają stan ``faulty_subject``, a
+    linia Wykonawcy nie liczy ich do bez raportu, tylko drugie zlecenie Jana, którego raport nie ma. Wpisów takiego raportu Centrum nie wpisuje, a temat nie trafia do Logów."""
+
+    client = "Testowa 12 m. 3 Wrocław"
+    jan_order = Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (ADDRESS, client)))
+    ordered = (jan_order, _order(9, 12, "jan.testowy", 40000003), _order(8, 11, "anna.kowalska", 40000002))
+    intermax = Intermax(ordered=ordered, raw=())
+    mails = [
+        report(JAN, f"Raport 09.11.2026 Kowalski {client} tel. 600 123 456", "40000001 tak inst20m"),
+        report(ANNA, "Raport", "40000002 tak spawpg"),
+    ]
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+    before = _cells(centrum.register)
+    _click_at(centrum, ENTERING_NOW, mails)
+
+    view = _view(centrum)
+
+    jan, anna = _worker(view, "jan.testowy"), _worker(view, "anna.kowalska", "2026-11-08")
+    assert [(day["mails"], [_faulty_subject(problem) for problem in day["problems"]]) for day in (jan, anna)] == [
+        (1, [("inne słowa", "2026-11-09", mails[0].arrived)]),
+        (1, [("bez daty", "2026-11-08", mails[1].arrived)]),
+    ]
+    shown = json.dumps(view, ensure_ascii=False)
+    assert "Kowalski" not in shown and "Testowa" not in shown and "600 123" not in shown
+    assert [([(order["number"], order["state"]) for order in day["orders_detail"]], day["without_report"]) for day in (jan, anna)] == [
+        ([("40000001", "faulty_subject"), ("40000003", "without_report")], ["40000003"]),
+        ([("40000002", "faulty_subject")], []),
+    ]
+    assert _cells(centrum.register) == before
+    logs = json.dumps(centrum.run_logs(), ensure_ascii=False)
+    assert "Kowalski" not in logs and "Testowa" not in logs
+
+
+def test_raport_z_pomylonym_tematem_stoi_przy_dniu_swoich_zlecen_jako_informacja_z_dniem_z_tematu(tmp_path: Path) -> None:
+    """ADR 0041 (historia 41) i ADR 0029: ``Raport 10.11.2026`` z dwoma numerami zleceń Jana z 9.11 to pomylony temat.
+    Wpisy idą do zleceń z 9.11, a przy tym dniu widok Raporty ma informację z dniem z tematu, bez problemu."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, "Raport 10.11.2026", "40000001 tak inst20m\n40000005 tak spawpg")])
+    _finished(centrum)
+
+    jan = _worker(_view(centrum), "jan.testowy")
+
+    assert (jan["mails"], jan["entered"], jan["problems"], jan["mistaken_subjects"]) == (1, 2, [], ["2026-11-10"])
 
 
 def test_tak_i_nie_jednego_zlecenia_w_mailu_nic_do_niego_nie_wpisuja_a_widok_raporty_pokazuje_ostrzezenie_z_oboma_wpisami(
@@ -2767,7 +2855,7 @@ def test_tak_i_nie_jednego_zlecenia_w_mailu_nic_do_niego_nie_wpisuja_a_widok_rap
         {"label": "Problemy", "value": 1, "unit": "count"},
     ]
     assert _worker(_view(centrum), "jan.testowy")["problems"] == [
-        {"reason": reason(warning), "number": "40000001", "keep": None, "request": None}
+        {"reason": reason(warning), "number": "40000001", "keep": None, "request": None, "faulty_subject": None}
     ]
     assert f"{mail.arrived:%d.%m.%Y o %H:%M}" in reason(warning)
 
@@ -4610,7 +4698,7 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_log
         (["montaż"], False) if dads_legend else ([], True)
     ]
     assert _worker(view, "anna.kowalska")["problems"] == [
-        {"reason": reason(faulty), "number": "40000002", "keep": None, "request": None}
+        {"reason": reason(faulty), "number": "40000002", "keep": None, "request": None, "faulty_subject": None}
     ]
     assert [(order["codes"], order["no_code"]) for order in _worker(view, "anna.kowalska")["orders_detail"]] == [
         (["montaż", "instutp40m"] if dads_legend else ["instutp40m"], False)
@@ -4649,7 +4737,9 @@ def test_szczegoly_dnia_maja_przy_zleceniu_tak_kody_z_opisu_albo_brak_kodu_a_prz
         ("40000006", "problem", ["instutp40m"], False),
         ("40000007", "entered", [], False),
     ]
-    assert jan["problems"] == [{"reason": reason(faulty), "number": "40000006", "keep": None, "request": None}]
+    assert jan["problems"] == [
+        {"reason": reason(faulty), "number": "40000006", "keep": None, "request": None, "faulty_subject": None}
+    ]
     assert {number: _cells(centrum.register)[number] for number in numbers} == {
         40000001: ("tak", "inst30m instmdic Podłączyłem lokal, klient zadowolony"),
         40000005: ("tak", "Podłączyłem lokal, dzielnik 1/2"),
@@ -4747,6 +4837,32 @@ def test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach
         (40000008, "2026-11-09"),
     ]
     assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
+
+
+def test_raport_bez_dnia_w_temacie_nie_konczy_przypomnien_za_dzien_sprzed_wdrozenia_wpisania_raportow(tmp_path: Path) -> None:
+    """ADR 0041 (historia 20), D1 r1 #2068: przypomnienia działają od 9.11, a Wpisanie raportów od pierwszego kliknięcia
+    10.11. Jan ma zlecenia 9.11 i 10.11, a 10.11 przysyła ``Raport 10.11.2026`` i sam ``Raport``. Dzień wskazany raportu
+    bez dnia w temacie leży w dniach otwartych Wpisania, więc ten raport w obu operacjach nie liczy się za żaden dzień:
+    widok Raporty ma problem bez dnia, a 11.11 rano idzie Janowi przypomnienie za 9.11."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000004)), raw=())
+    mails = (
+        report(JAN, "Raport 10.11.2026", "40000004 tak inst20m", at=datetime(2026, 11, 10, 19)),
+        report(JAN, "Raport", "40000001 tak spawpg", at=datetime(2026, 11, 10, 20)),
+    )
+    mailbox = FakeMailbox(outcome=mails)
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 10, 21), list(mails))
+    jan = _worker(_view(centrum), "jan.testowy", "2026-11-10")
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [_faulty_subject(problem) for problem in jan["problems"]] == [("bez daty", None, mails[1].arrived)]
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("jan.testowy", date(2026, 11, 9))]
 
 
 def test_praca_przypomnien_czyta_okno_od_wdrozenia_wpisania_raportow_gdy_jest_wczesniejsze_niz_wdrozenie_przypomnien(

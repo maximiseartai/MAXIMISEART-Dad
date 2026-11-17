@@ -3680,6 +3680,28 @@ export type ReportsDay = {
 };
 
 /**
+ * ReportsFaultySubject
+ *
+ * Raport wykonawcy z błędem tematu (ADR 0041): rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
+ * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
+ * kończy), i chwila przyjścia maila. Bez tematu, bo tematy maili nie trafiają do przeglądarki (ADR 0028).
+ */
+export type ReportsFaultySubject = {
+    /**
+     * Fault
+     */
+    fault: string;
+    /**
+     * Day
+     */
+    day: string | null;
+    /**
+     * Arrived
+     */
+    arrived: string;
+};
+
+/**
  * ReportsNote
  *
  * Informacja z ostatniego kliknięcia przy dniu Wykonawcy o zmianie, którą Centrum zrobiło w INTERMAX (ADR 0029):
@@ -3700,8 +3722,9 @@ export type ReportsNote = {
  * ReportsOrder
  *
  * Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
- * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez
- * żadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
+ * zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem
+ * tylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego
+ * Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
  *
  * ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
  * i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
@@ -3723,7 +3746,7 @@ export type ReportsOrder = {
     /**
      * State
      */
-    state: 'entered' | 'without_report' | 'problem';
+    state: 'entered' | 'without_report' | 'problem' | 'faulty_subject';
     /**
      * Codes
      */
@@ -3738,8 +3761,9 @@ export type ReportsOrder = {
  * ReportsProblem
  *
  * Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
- * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i Wpis na życzenie, przy
- * którym stoi jego przycisk (``request``; ``None``: przycisku nie ma).
+ * numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), Wpis na życzenie, przy
+ * którym stoi jego przycisk (``request``; ``None``: przycisku nie ma), i raport z błędem tematu, gdy to on jest
+ * problemem (``faulty_subject``).
  */
 export type ReportsProblem = {
     /**
@@ -3752,6 +3776,7 @@ export type ReportsProblem = {
     number: string | null;
     keep: KeptCell | null;
     request: RequestedCell | null;
+    faulty_subject: ReportsFaultySubject | null;
 };
 
 /**
@@ -3848,6 +3873,10 @@ export type ReportsWorkerDay = {
      * Orders Detail
      */
     orders_detail: Array<ReportsOrder> | null;
+    /**
+     * Mistaken Subjects
+     */
+    mistaken_subjects: Array<string>;
     /**
      * Reminders
      */

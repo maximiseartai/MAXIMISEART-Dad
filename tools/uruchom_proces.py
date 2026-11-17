@@ -174,8 +174,12 @@ class _Flag:
     path: bool = True
 
 
-def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag:
+def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag | None:
+    """Flaga potrzeby ``need``; ``None``: potrzeba bez flagi, bo Skrypt dla maszyn liczy nią z Wydania (``_start``)."""
+
     match need:
+        case "quantity_rules" | "activity_legend":
+            return None
         case "collective_file":
             return _Flag("--source", "Plik zbiorczy.")
         case "register":
@@ -216,6 +220,8 @@ def _parser() -> argparse.ArgumentParser:
         process = processes.add_parser(kind.key, help=kind.title)
         for need in kind.needs:
             flag = _flag(need, kind)
+            if flag is None:
+                continue
             process.add_argument(
                 flag.option,
                 dest=need,

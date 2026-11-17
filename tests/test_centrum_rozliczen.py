@@ -7986,6 +7986,54 @@ def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_star
     assert _config_files(app.tool.config) == before
 
 
+def test_karta_procesu_przy_kilku_plikach_ustawien_bez_odczytu_mowi_o_pierwszym_z_folderow_regul_ilosci_i_legendy(
+    tmp_path: Path,
+) -> None:
+    """Karta startu Przygotowania i Przebiegu rozliczeń, które liczą Regułami ilości i Legendą czynności, przy kilku
+    plikach Ustawień naraz, których system nie daje teraz czytać, mówi o pierwszym z nich: najpierw plik Folderów,
+    potem plik Reguł ilości, potem plik Legendy czynności. Przy jednym pliku bez odczytu karta mówi o nim
+    (``test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_startu_zdaniem_o_nim``), więc zdanie
+    o innym pliku pochodzi z kolejności."""
+
+    app, _periods = _with_folders_and_rules(tmp_path)
+    config = app.tool.config
+    (config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
+    counted = ("preparation", "settlement")
+
+    def blockers() -> dict[str, str | None]:
+        found = _start_blockers(app)
+        return {process: found[process] for process in counted}
+
+    with without_reading(config / SETTINGS_FILE), without_reading(config / RULES_FILE), without_reading(config / LEGEND_FILE):
+        folders_first = blockers()
+    with without_reading(config / RULES_FILE), without_reading(config / LEGEND_FILE):
+        rules_first = blockers()
+
+    assert (folders_first, rules_first) == (
+        dict.fromkeys(counted, refusal.settings_file_unreadable(SETTINGS_FILE).message),
+        dict.fromkeys(counted, refusal.settings_file_unreadable(RULES_FILE).message),
+    )
+
+
+def test_karta_przygotowania_przy_niewskazanym_folderze_okresow_i_pliku_legendy_bez_odczytu_mowi_o_pliku_legendy(
+    tmp_path: Path,
+) -> None:
+    """Plik Legendy czynności, którego system nie daje teraz czytać, idzie na karcie Przygotowania pliku zbiorczego
+    przed „Najpierw wskaż …”: tata najpierw dowiaduje się, którego pliku nie da się przeczytać."""
+
+    app, _register = with_register(tmp_path)
+    (app.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
+    readable = _start_blockers(app)["preparation"]
+
+    with without_reading(app.tool.config / LEGEND_FILE):
+        blocker = _start_blockers(app)["preparation"]
+
+    assert (readable, blocker) == (
+        refusal.first_choose(["folder okresów"]).message,
+        refusal.settings_file_unreadable(LEGEND_FILE).message,
+    )
+
+
 WINDOW_READS: dict[str, tuple[str, str, object]] = {
     "getPeriodBoard": ("GET", "/api/periods", None),
     "openPeriodPath": ("POST", f"/api/periods/{UNREADABLE_PERIOD}/open", {"target": "collective_file"}),
@@ -8597,6 +8645,7 @@ def test_temat_i_tresc_bez_pliku_maja_wartosci_domyslne_i_nie_zakladaja_pliku(tm
         pytest.param({"subject": "Rozliczenie\nza {okres}"}, "temat", settings_messages.settlement_mail_subject_lines(), id="dwie-linie"),
         pytest.param({"subject": "Raport za {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="slowo-raport"),
         pytest.param({"subject": "Twoje RAPORTY {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="raport-w-slowie"),
+        pytest.param({"subject": " rapotr 16 11 26 {okres}"}, "temat", settings_messages.settlement_mail_report_word(), id="temat-raportu-z-literowka"),
         pytest.param({"subject": "Za {dzień}"}, "temat", settings_messages.settlement_mail_unknown_field(), id="nieznane-pole-tematu"),
         pytest.param({"text": " \n"}, "tresc", settings_messages.settlement_mail_empty_text(), id="pusta-tresc"),
         pytest.param({"text": "Plik {okres}}"}, "tresc", settings_messages.settlement_mail_unknown_field(), id="samotny-nawias"),

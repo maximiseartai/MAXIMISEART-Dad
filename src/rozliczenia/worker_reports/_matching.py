@@ -289,22 +289,22 @@ class Board:
                     )
         return Matched(targets, tuple(accepted), problems, tuple(lost), tuple(added), tuple(entered))
 
-    def days(self, report: ReadReport) -> frozenset[date]:
-        """Dni, za które Raport wykonawcy ``report`` jest przysłany (ADR 0041): dzień z tematu, a przy pomylonym temacie
-        (ADR 0029, ten sam próg co w ``match``) dni zleceń jego numerów, każde z jedynego zlecenia numeru z dniem sprzed
-        Przeniesień Centrum, bez numerów, które Centrum dopisało; dzień z tematu tylko wtedy, gdy któryś numer ma
-        zlecenie w tym dniu. Pomylony temat bez takiego zlecenia (każdy niezgodny numer w kilku zleceniach) liczy się za
-        dzień z tematu."""
+    def days(self, numbers: Iterable[OrderNumber], day: date) -> frozenset[date]:
+        """Dni, za które Raport wykonawcy z numerami Wpisów ``numbers`` i dniem ``day`` (dzień z tematu albo dzień
+        wskazany przy błędzie tematu) jest przysłany (ADR 0041): ten dzień, a przy pomylonym temacie (ADR 0029, ten sam
+        próg co w ``match``) dni zleceń jego numerów, każde z jedynego zlecenia numeru z dniem sprzed Przeniesień
+        Centrum, bez numerów, które Centrum dopisało; ten dzień tylko wtedy, gdy któryś numer ma zlecenie w tym dniu.
+        Pomylony temat bez takiego zlecenia (każdy niezgodny numer w kilku zleceniach) liczy się za ten dzień."""
 
-        numbers = dict.fromkeys(entry.number for entry in report.entries)
-        if not self._mistaken([number for number in numbers if self._other_day_number(number, report.day)]):
-            return frozenset({report.day})
+        found_numbers = dict.fromkeys(numbers)
+        if not self._mistaken([number for number in found_numbers if self._other_day_number(number, day)]):
+            return frozenset({day})
         found = {
             placed[0].day
-            for number in numbers
+            for number in found_numbers
             if number not in self._added and len(placed := self._numbered.get(number, [])) == 1
         }
-        return frozenset(found or {report.day})
+        return frozenset(found or {day})
 
     def _mistaken(self, other_day: Sequence[OrderNumber]) -> bool:
         """Pomylony temat: co najmniej ``MISTAKEN_SUBJECT`` niezgodnych numerów bez numerów, które Centrum dopisało."""

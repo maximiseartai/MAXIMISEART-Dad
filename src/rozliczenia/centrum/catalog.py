@@ -27,6 +27,7 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.process_kind import Engine, HostParts, PeriodProcessKind, PreparedRun, ProcessKind, Start
 from rozliczenia.centrum.process_kind import _CATALOG
 from rozliczenia.centrum.processes import efenix, intermax, preparation, report_entering, settlement
+from rozliczenia.centrum.settings_at_start import missing, not_counted
 from rozliczenia.process_run import Process, run_process
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
@@ -101,12 +102,8 @@ class Catalog:
             raise ValueError(f"{kind.title} potrzebuje plików {sorted(kind.path_needs)}, a start ma {sorted(start.paths)}")
         if "period" in kind.needs and start.period is None:
             raise ValueError(f"{kind.title} potrzebuje okresu")
-        if "workers" in kind.needs and start.workers is None:
-            raise ValueError(f"{kind.title} potrzebuje Listy Wykonawców, a start jej nie ma")
-        if kind.quantity_rules and start.quantity_rules is None:
-            raise ValueError(f"{kind.title} liczy Regułami ilości, a start ich nie ma")
-        if kind.activity_legend and start.activity_legend is None:
-            raise ValueError(f"{kind.title} liczy Legendą czynności, a start jej nie ma")
+        if (absent := missing(start, kind.needs)) is not None:
+            raise ValueError(f"{kind.title} {absent}")
         if "efenix_window" in kind.needs and parts.efenix is None:
             raise ValueError(f"{kind.title} potrzebuje okna efenix")
         if "worker_report_inbox" in kind.needs and parts.reports is None:
@@ -114,7 +111,8 @@ class Catalog:
         if start.dry_run and kind.core.preview is None:
             raise ValueError(f"{kind.title} nie ma Podglądu bez zapisu")
         pricing = kind.pricing_of(start.pricing)
-        inputs = kind.inputs(replace(start, pricing=pricing), parts)
+        counted = replace(start, pricing=pricing, **not_counted(kind.needs))
+        inputs = kind.inputs(counted, parts)
         period = inputs.period if start.period is None else start.period
         return PreparedRun(
             kind,
@@ -125,10 +123,10 @@ class Catalog:
             pricing,
             self.engine,
             _CATALOG,
-            start.settings,
-            start.warnings,
-            start.quantity_rules if kind.quantity_rules else None,
-            start.activity_legend if kind.activity_legend else None,
+            counted.settings,
+            counted.warnings,
+            counted.quantity_rules,
+            counted.activity_legend,
         )
 
 

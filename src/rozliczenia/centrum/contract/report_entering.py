@@ -51,15 +51,27 @@ class RequestedCell(Model):
     order_day: date
 
 
+class ReportsFaultySubject(Model):
+    """Raport wykonawcy z błędem tematu (ADR 0041): rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
+    Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
+    kończy), i chwila przyjścia maila. Bez tematu, bo tematy maili nie trafiają do przeglądarki (ADR 0028)."""
+
+    fault: str
+    day: date | None
+    arrived: datetime
+
+
 class ReportsProblem(Model):
     """Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
-    numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i Wpis na życzenie, przy
-    którym stoi jego przycisk (``request``; ``None``: przycisku nie ma)."""
+    numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), Wpis na życzenie, przy
+    którym stoi jego przycisk (``request``; ``None``: przycisku nie ma), i raport z błędem tematu, gdy to on jest
+    problemem (``faulty_subject``)."""
 
     reason: str
     number: str | None
     keep: KeptCell | None
     request: RequestedCell | None
+    faulty_subject: ReportsFaultySubject | None
 
 
 class ReportsNote(Model):
@@ -72,8 +84,9 @@ class ReportsNote(Model):
 
 class ReportsOrder(Model):
     """Zlecenie dnia Wykonawcy w kolejności z INTERMAX: numer, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` po zapisie
-    zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), bez
-    żadnego Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
+    zmian kliknięcia, kto by ich nie wpisał (``None``: pusta komórka), i stan: wpisane z Wpisu (``entered``), z Wpisem
+    tylko w raporcie z błędem tematu, którego Centrum nie wpisało (``faulty_subject``: raport przysłany), bez żadnego
+    Wpisu (``without_report``) albo z problemem, którego tata nie zostawił „Zostaw moją” (``problem``).
 
     ``codes``: słowa opisu zlecenia ``tak``, które Legenda czynności kliknięcia wzięła za Kody czynności, w zapisie legendy
     i kolejności z opisu (pusta lista także przy zleceniu bez ``tak``). ``no_code``: zlecenie ``tak`` bez żadnego Kodu
@@ -82,7 +95,7 @@ class ReportsOrder(Model):
     number: str
     successful: str | None
     activities: str | None
-    state: Literal["entered", "without_report", "problem"]
+    state: Literal["entered", "without_report", "problem", "faulty_subject"]
     codes: list[str]
     no_code: bool
 
@@ -101,6 +114,9 @@ class ReportsWorkerDay(Model):
     problems: list[ReportsProblem]
     notes: list[ReportsNote]
     orders_detail: list[ReportsOrder] | None
+    mistaken_subjects: list[date]
+    """Dni z tematu Raportów wykonawcy z pomylonym tematem (ADR 0029), których Wpisy poszły do zleceń tego dnia, bo
+    numery zleceń wygrywają z datą: informacja, nie problem."""
     reminders: list[datetime]
     """Chwile wysłania Przypomnień o raporcie za ten dzień do tego Wykonawcy z ostatniego sprawdzenia pracy przypomnień,
     od najstarszej (ADR 0030), bez adresów i tematów maili."""
