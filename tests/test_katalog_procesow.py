@@ -682,10 +682,12 @@ def test_zla_lista_wykonawcow_wstrzymuje_albo_ostrzega_tylko_proces_ktory_jej_po
 
     started = stopping.start()
     refused = started.json()["message"] if started.status_code == 409 else None
+    # Strumień czeka na koniec Uruchomienia bez granicy, więc tylko po starcie, który Uruchomienie zaczął: błąd
+    # gospodarza (500) pada w asercji niżej, a nie w limicie czasu testu.
     warnings = (
-        None
-        if refused is not None
-        else [warning for warning in finished_view(stopping.client)["result"]["warnings"] if warning["setting"] == "wykonawcy"]
+        [warning for warning in finished_view(stopping.client)["result"]["warnings"] if warning["setting"] == "wykonawcy"]
+        if started.status_code == 200
+        else None
     )
 
     needed = "workers" in declaration.needs

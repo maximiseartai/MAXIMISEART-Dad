@@ -8051,6 +8051,8 @@ def _window_reads(app: Centrum) -> dict[str, tuple[int, object]]:
         response = app.client.request(method, url, json=body)
         answers[operation] = (response.status_code, response.json())
     answers["getWorkerSuggestions"] = (200, app.client.get("/api/settings/workers/suggestions").json())
+    devices = app.client.get("/api/settings/devices/suggestions")
+    answers["getDeviceSuggestions"] = (devices.status_code, devices.json())
     return answers
 
 
@@ -8069,8 +8071,9 @@ def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_
     Tablica okresów, otwarcie ścieżki okresu i Rozliczenia pracownika, Uzupełnienie, różnice Kontroli ilości i „To był
     wyjątek” odmawiają 409 zdaniem o tym pliku zamiast „Wskaż folder okresów”, „Najpierw wskaż …” albo różnic
     liczonych regułami z Wydania, a podpowiedzi Wykonawców mówią je w stanie ``unreadable`` zamiast „wskaż Rejestr
-    zleceń”. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
-    pliki w ``config`` zostają bez zmian."""
+    zleceń”. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym, także podpowiedzi Listy
+    Urządzeń, które przy pliku pary bez odczytu zostają listą, a nie odmową, bo to podpowiedź, nie straż; odmowa
+    niczego nie otwiera, a pliki w ``config`` zostają bez zmian."""
 
     app, _periods = _with_folders_and_rules(tmp_path)
     sentence = refusal.settings_file_unreadable(unreadable).message
