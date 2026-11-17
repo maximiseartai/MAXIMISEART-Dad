@@ -45,14 +45,14 @@ from rozliczenia.worker_report_inbox import (
     SentReminders,
     mail_of,
 )
-from rozliczenia.worker_reports import SUBJECT_WORD, Reminder, ReportMail, SentReminder
+from rozliczenia.worker_reports import Reminder, ReportMail, SentReminder, reads_as_report
 
 __all__ = ["AtrapaImap", "AtrapaMail", "AtrapaSmtp", "FakeInbox", "FakeMailbox", "FolderInbox"]
 
 _MONTHS: Final = ("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec")
 _WRITES: Final = frozenset({"SELECT", "STORE", "COPY", "MOVE", "EXPUNGE", "APPEND"})
 _HEADER_ITEMS: Final = {
-    "BODY.PEEK[HEADER.FIELDS (SUBJECT)]": ("BODY[HEADER.FIELDS (SUBJECT)]", (b"subject",)),
+    "BODY.PEEK[HEADER.FIELDS (SUBJECT FROM)]": ("BODY[HEADER.FIELDS (SUBJECT FROM)]", (b"subject", b"from")),
     "BODY.PEEK[HEADER.FIELDS (SUBJECT TO)]": ("BODY[HEADER.FIELDS (SUBJECT TO)]", (b"subject", b"to")),
 }
 _ALL: Final = "[Gmail]/Wszystkie wiadomo&AVs-ci"
@@ -152,7 +152,7 @@ class FakeMailbox(FakeInbox):
 class FolderInbox:
     """Skrzynka raportów z plików ``.eml`` w ``folder``, po nazwie pliku; bez folderu plik dostępu jest ``missing``.
 
-    Jak port oddaje maile ze słowem ``SUBJECT_WORD`` w temacie z dni od dnia przed wskazanym, a mail, którego nie umie
+    Jak port oddaje maile z tematem Raportu wykonawcy (``reads_as_report``) z dni od dnia przed wskazanym, a mail, którego nie umie
     przeczytać (bez ``From`` z adresem albo bez ``Date``), tylko liczy. Nie łączy się z siecią.
     """
 
@@ -169,7 +169,7 @@ class FolderInbox:
         for path in sorted(self.folder.glob("*.eml")):
             raw = path.read_bytes()
             message = email.message_from_bytes(raw, policy=email.policy.default)
-            if SUBJECT_WORD not in str(message["Subject"] or "").casefold():
+            if not reads_as_report(str(message["Subject"] or "")):
                 continue
             sent = message["Date"]
             arrived = None if sent is None else sent.datetime

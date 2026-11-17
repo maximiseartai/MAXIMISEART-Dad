@@ -3,9 +3,12 @@ wysyłka Przypomnień o raporcie (ADR 0030) i Maili z rozliczeniem (ADR 0040) pr
 
 Port niczego w skrzynce nie zmienia: otwiera folder przez ``EXAMINE`` i pobiera maile przez ``BODY.PEEK``, więc nie
 oznacza ich jako przeczytanych, i nie wysyła ``SELECT``, ``STORE``, ``COPY``, ``MOVE``, ``EXPUNGE`` ani ``APPEND``.
-Oddaje maile ze słowem ``SUBJECT_WORD`` w temacie, od każdego nadawcy oprócz samej skrzynki: Raport wykonawcy od
-adresu spoza pliku adresów rozpoznaje i pokazuje tacie rdzeń raportów, więc port nie filtruje po nadawcy. Mail, którego
-nie umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki. Treści
+Oddaje maile, których temat rdzeń raportów czyta jako temat Raportu wykonawcy (``reads_as_report``, także z literówką
+w słowie ``Raport``, ADR 0041), od każdego nadawcy oprócz samej skrzynki: Raport wykonawcy od adresu spoza pliku adresów
+rozpoznaje i pokazuje tacie rdzeń raportów, więc port nie filtruje po nadawcy. Wybiera je po nagłówkach ``Subject`` i
+``From`` wszystkich maili z dni okna, a resztę maila pobiera tylko dla wybranych, więc treści innej korespondencji taty
+nie czyta; wyszukiwania Gmaila po słowie nie używa, bo nie znajduje tematu z literówką (``Rapotr``). Mail, którego nie
+umie przeczytać, pomija i tylko liczy, więc jeden zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki. Treści
 załączników nie pobiera: z serwera bierze szkielet maila (``mail_skeleton``), z którego ``mail_of`` czyta to samo co z
 całego maila, a cały mail tylko wtedy, gdy szkieletu nie da się złożyć.
 
@@ -35,7 +38,7 @@ wysyła jeden mail z tekstem i jednym załącznikiem xlsx tą samą drogą SMTP 
 Centrum w nagłówku; Gmail sam kładzie go w „Wysłanych”.
 
 ``ImapInbox.survey`` to odczyt dla próby IMAP (``tools/proba_skrzynki_raportow.py``): flagi maili i liczby maili
-ze słowem w temacie w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
+z tematem Raportu wykonawcy w folderze ``mails_since`` i w ``INBOX``, tą samą drogą (plik dostępu, połączenie, wybór folderu,
 wyniki porażek) i tak samo tylko do odczytu, żeby próba sprawdzała port, a nie swoją kopię.
 """
 
@@ -63,7 +66,7 @@ import time
 from typing import Final, Literal, Protocol, TypeVar
 
 from .mail_skeleton import FetchValue, Structure, UnknownReply, attachment_sections, chosen, fetch_responses, sections, skeleton
-from .worker_reports import SUBJECT_WORD, MailId, Reminder, ReportMail, SenderAddress, SentReminder, reminder_day
+from .worker_reports import MailId, Reminder, ReportMail, SenderAddress, SentReminder, reads_as_report, reminder_day
 
 __all__ = [
     "CENTRUM_MARK",
@@ -107,6 +110,7 @@ _LIST_LINE: Final = re.compile(rb'\((?P<flags>[^)]*)\) (?:"(?:[^"\\]|\\.)*"|NIL)
 _UID: Final = re.compile(rb"\bUID (\d+)\b")
 _FLAGS: Final = re.compile(rb"\bFLAGS \((?P<flags>[^)]*)\)")
 _SENT_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[HEADER.FIELDS (SUBJECT TO)])"
+_CHOICE_ITEMS: Final = "(UID BODY.PEEK[HEADER.FIELDS (SUBJECT FROM)])"
 _LIGHT_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE BODY.PEEK[HEADER])"
 _WHOLE_ITEMS: Final = "(UID INTERNALDATE BODY.PEEK[])"
 _SENT_STRUCTURE_ITEMS: Final = "(UID INTERNALDATE BODYSTRUCTURE)"
@@ -137,8 +141,8 @@ SmtpConnect = Callable[[], smtplib.SMTP]
 
 @dataclass(frozen=True)
 class Mails:
-    """Maile ze słowem ``SUBJECT_WORD`` w temacie z dni od dnia przed wskazanym, w kolejności skrzynki. ``skipped`` to
-    liczba maili ze słowem w temacie, których port nie przeczytał (bez adresu nadawcy albo takich, których pakiet
+    """Maile z tematem Raportu wykonawcy (``reads_as_report``) z dni od dnia przed wskazanym, w kolejności skrzynki.
+    ``skipped`` to liczba maili z takim tematem, których port nie przeczytał (bez adresu nadawcy albo takich, których pakiet
     ``email`` nie umie rozebrać), bez ich treści, adresów i tematów."""
 
     mails: tuple[ReportMail, ...]
@@ -214,8 +218,8 @@ class MailRefused:
 class InboxSurvey:
     """Stan skrzynki z dni od dnia przed wskazanym, bez treści maili. ``searched`` to liczba maili, które w folderze
     czytanym przez ``mails_since`` dało wyszukiwanie tych dni, a ``flags`` to flagi IMAP każdego z nich po UID;
-    ``in_folder`` i ``in_inbox`` to liczby maili ze słowem ``SUBJECT_WORD`` w temacie w tym folderze i w ``INBOX`` (te
-    same, gdy port czyta ``INBOX``)."""
+    ``in_folder`` i ``in_inbox`` to liczby maili, które port wybiera do odczytu (``mails_since``), w tym folderze i w
+    ``INBOX`` (te same, gdy port czyta ``INBOX``)."""
 
     searched: int
     flags: Mapping[str, frozenset[str]]
@@ -229,7 +233,8 @@ class WorkerReportInbox(Protocol):
         ...
 
     def mails_since(self, day: date) -> InboxOutcome:
-        """Maile ze słowem ``SUBJECT_WORD`` w temacie z dni od dnia przed ``day``; skrzynka zostaje bez zmian.
+        """Maile z tematem Raportu wykonawcy (``reads_as_report``) z dni od dnia przed ``day``; skrzynka zostaje bez
+        zmian.
 
         Dzień wcześniej, bo Gmail liczy ``SINCE`` po dniu przyjęcia w swojej strefie, a nie w strefie taty, a o dniu
         Raportu i tak rozstrzyga rdzeń raportów z tematu.
@@ -405,9 +410,9 @@ def _ok(reply: tuple[str, Sequence[object]]) -> Sequence[object]:
 def _read(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> Mails:
     imap.login(_quoted(access.address.shown()), access.password)
     _ok(imap.select(_quoted(_folder(imap)), readonly=True))
-    chosen = _with_subject_word(imap, _since(imap, day))
+    chosen = _chosen(imap, _since(imap, day), access.address)
     mails, skipped = [], 0
-    for prefix, raw in _mail_bytes(imap, chosen, access.address).values():
+    for prefix, raw in _mail_bytes(imap, chosen).values():
         moment = imaplib.Internaldate2tuple(prefix)
         if moment is None:
             raise UnexpectedReply
@@ -415,32 +420,47 @@ def _read(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> Mails:
         mail = mail_of(raw, arrived)
         if mail is None:
             skipped += 1
-        elif mail.sender != access.address:
+        else:
             mails.append(mail)
     return Mails(tuple(mails), skipped)
 
 
-def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dict[str, tuple[bytes, bytes]]:
-    """UID → (``INTERNALDATE`` jak początek odpowiedzi FETCH, bajty maila) dla ``uids``, w ich kolejności, bez maili od
-    samej skrzynki ``own`` (jej Przypomnień o raporcie), które port i tak pomija, a o nadawcy mówi już nagłówek: szkielet
-    bez treści załączników (``mail_skeleton``), a cały mail (``BODY.PEEK[]``) tylko wtedy, gdy szkieletu nie da się
-    złożyć albo mail nie ma ``Message-ID``, bo ``mail_of`` liczy wtedy jego ``MailId`` z bajtów całego maila.
+def _chosen(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> list[str]:
+    """UID z ``uids`` maili, które port czyta: z tematem Raportu wykonawcy (``reads_as_report``) i nie od samej skrzynki
+    ``own`` (jej Przypomnień o raporcie i odpowiedzi taty), z samych nagłówków ``Subject`` i ``From``. Mail z
+    nagłówkami, których pakiet ``email`` nie umie rozebrać (wyjątek albo defekt, np. sam ``\r`` w ``From``, po którym
+    ``Subject`` staje się treścią), port wybiera, a ``mail_of`` czyta go albo liczy jako pominięty."""
+
+    headers = _fetched(imap, uids, _CHOICE_ITEMS)
+    return [uid for uid, (_, header) in headers.items() if _reads(header, own)]
+
+
+def _reads(header: bytes, own: SenderAddress) -> bool:
+    try:
+        message = email.message_from_bytes(header, policy=email.policy.default)
+        subject, sender = str(message["Subject"] or ""), SenderAddress.of(str(message["From"] or ""))
+    except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: mail_of policzy go jako pominięty
+        return True
+    return bool(message.defects) or (reads_as_report(subject) and sender != own)
+
+
+def _mail_bytes(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, tuple[bytes, bytes]]:
+    """UID → (``INTERNALDATE`` jak początek odpowiedzi FETCH, bajty maila) dla ``uids``, w ich kolejności: szkielet bez
+    treści załączników (``mail_skeleton``), a cały mail (``BODY.PEEK[]``) tylko wtedy, gdy szkieletu nie da się złożyć
+    albo mail nie ma ``Message-ID``, bo ``mail_of`` liczy wtedy jego ``MailId`` z bajtów całego maila.
 
     Najpierw ``BODYSTRUCTURE`` i nagłówek w paczkach po ``FETCH_BATCH``, potem sekcje ``mail_skeleton.sections``:
     jedno ``UID FETCH`` na paczkę maili z tą samą listą sekcji, bo Gmail odmawia całego polecenia, gdy któryś mail nie
     ma żądanej sekcji. Odmowa albo odpowiedź spoza RFC 3501 przy tych poleceniach odsyła maile do pobrania w całości."""
 
     light: dict[str, tuple[bytes, Structure, bytes]] = {}
-    from_box: set[str] = set()
     for sequence, _ in _batches(uids):
         for response in _responses(imap.uid("FETCH", sequence, _LIGHT_ITEMS)):
             described = _described(response)
             if described is None:
                 continue
-            uid, internal, structure, header, sender, identified = described
-            if sender == own:
-                from_box.add(uid)
-            elif identified:
+            uid, internal, structure, header, identified = described
+            if identified:
                 light[uid] = (internal, structure, header)
     groups: dict[tuple[str, ...], list[str]] = {}
     for uid, (_, structure, _) in light.items():
@@ -458,7 +478,7 @@ def _mail_bytes(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dic
         found = _skeleton_of(structure, header, parts[uid])
         if found is not None and (found[1] is None or found[1] in parts[uid]):
             built[uid] = (internal, found[0])
-    whole = _fetched(imap, [uid for uid in uids if uid not in built and uid not in from_box], _WHOLE_ITEMS)
+    whole = _fetched(imap, [uid for uid in uids if uid not in built], _WHOLE_ITEMS)
     return {uid: mail for uid in uids if (mail := built.get(uid) or whole.get(uid)) is not None}
 
 
@@ -491,21 +511,19 @@ def _fetch_sections(imap: imaplib.IMAP4, groups: Mapping[tuple[str, ...], list[s
                         taken[name] = value
 
 
-def _described(
-    response: Mapping[bytes, FetchValue],
-) -> tuple[str, bytes, Structure, bytes, SenderAddress | None, bool] | None:
-    """UID, ``INTERNALDATE`` jak początek odpowiedzi FETCH, ``BODYSTRUCTURE``, nagłówek maila, nadawca z ``From`` i to,
-    czy nagłówek ma ``Message-ID``, z odpowiedzi; ``None``, gdy czegoś brak, kształt jest nieznany albo nagłówka nie da
-    się rozebrać."""
+def _described(response: Mapping[bytes, FetchValue]) -> tuple[str, bytes, Structure, bytes, bool] | None:
+    """UID, ``INTERNALDATE`` jak początek odpowiedzi FETCH, ``BODYSTRUCTURE``, nagłówek maila i to, czy nagłówek ma
+    ``Message-ID``, z odpowiedzi; ``None``, gdy czegoś brak, kształt jest nieznany albo nagłówka nie da się
+    rozebrać."""
 
     uid, internal, header = (response.get(name) for name in (b"UID", b"INTERNALDATE", b"BODY[HEADER]"))
     structure = Structure.of(response.get(b"BODYSTRUCTURE"))
     if not (isinstance(uid, bytes) and isinstance(internal, bytes) and isinstance(header, bytes)) or structure is None:
         return None
-    facts = _header_facts(header)
-    if facts is None:
+    identified = _identified(header)
+    if identified is None:
         return None
-    return uid.decode("ascii"), b'INTERNALDATE "' + internal + b'"', structure, header, *facts
+    return uid.decode("ascii"), b'INTERNALDATE "' + internal + b'"', structure, header, identified
 
 
 def _batches(uids: list[str]) -> Iterator[tuple[str, list[str]]]:
@@ -538,14 +556,14 @@ def _responses(reply: tuple[str, Sequence[object]]) -> list[dict[bytes, FetchVal
         return []
 
 
-def _header_facts(header: bytes) -> tuple[SenderAddress | None, bool] | None:
-    """Nadawca z ``From`` tak, jak go czyta ``mail_of``, i to, czy nagłówek daje ``mail_of`` niepusty ``Message-ID``, z
-    którego liczy ``MailId`` bez bajtów treści; ``None``, gdy nagłówka nie da się rozebrać (port pobiera cały mail):
-    pakiet ``email`` zgłasza wtedy któryś z wyjątków (jak w ``mail_of``)."""
+def _identified(header: bytes) -> bool | None:
+    """Czy nagłówek daje ``mail_of`` niepusty ``Message-ID``, z którego liczy ``MailId`` bez bajtów treści; ``None``, gdy
+    nagłówka nie da się rozebrać (port pobiera cały mail): pakiet ``email`` zgłasza wtedy któryś z wyjątków (jak w
+    ``mail_of``)."""
 
     try:
         message = email.message_from_bytes(header, policy=email.policy.default)
-        return SenderAddress.of(str(message["From"] or "")), bool(str(message["Message-ID"] or ""))
+        return bool(str(message["Message-ID"] or ""))
     except Exception:  # noqa: BLE001 - granica jednego maila z zewnątrz: taki mail port pobiera w całości
         return None
 
@@ -556,11 +574,11 @@ def _survey(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> InboxSu
     _ok(imap.select(_quoted(folder), readonly=True))
     uids = _since(imap, day)
     flags = _flags(imap, uids)
-    in_folder = len(_with_subject_word(imap, uids))
+    in_folder = len(_chosen(imap, uids, access.address))
     if folder == "INBOX":
         return InboxSurvey(len(uids), flags, in_folder, in_folder)
     _ok(imap.select(_quoted("INBOX"), readonly=True))
-    return InboxSurvey(len(uids), flags, in_folder, len(_with_subject_word(imap, _since(imap, day))))
+    return InboxSurvey(len(uids), flags, in_folder, len(_chosen(imap, _since(imap, day), access.address)))
 
 
 def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
@@ -570,11 +588,6 @@ def _since(imap: imaplib.IMAP4, day: date) -> list[str]:
     since = f"{first.day:02d}-{_MONTHS[first.month - 1]}-{first.year}"
     found = _ok(imap.uid("SEARCH", "SINCE", since))
     return [uid.decode("ascii") for line in found if isinstance(line, bytes) for uid in line.split()]
-
-
-def _with_subject_word(imap: imaplib.IMAP4, uids: list[str]) -> list[str]:
-    subjects = _fetched(imap, uids, "(UID BODY.PEEK[HEADER.FIELDS (SUBJECT)])")
-    return [uid for uid, (_, header) in subjects.items() if SUBJECT_WORD in _subject(header).casefold()]
 
 
 def _flags(imap: imaplib.IMAP4, uids: list[str]) -> dict[str, frozenset[str]]:
@@ -777,10 +790,6 @@ def _fetched(imap: imaplib.IMAP4, uids: list[str], items: str) -> dict[str, tupl
                 raise UnexpectedReply
             fetched[uid[1].decode("ascii")] = (prefix, literal)
     return fetched
-
-
-def _subject(header: bytes) -> str:
-    return str(email.message_from_bytes(header, policy=email.policy.default)["Subject"] or "")
 
 
 def _close(imap: imaplib.IMAP4) -> None:

@@ -523,6 +523,7 @@ VERDICT_FAULT_WORDS: Final = {
 }
 SUBJECT_FAULT_WORDS: Final = {
     "no_date": SubjectFault.NO_DATE,
+    "other_words": SubjectFault.OTHER_WORDS,
     "other_text": SubjectFault.OTHER_TEXT,
     "no_year": SubjectFault.NO_YEAR,
     "date_form": SubjectFault.DATE_FORM,

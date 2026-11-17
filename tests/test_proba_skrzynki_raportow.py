@@ -79,9 +79,9 @@ def mail(
 
 
 def skrzynka_z_raportami() -> list[AtrapaMail]:
-    """Siedem maili z dni okna: dwa Raporty Wykonawcy z Wpisem (jeden tylko w folderze wszystkich maili) i jeden bez
-    Wpisu, Raport obcego nadawcy, odpowiedź na Raport, mail ze słowem ``raport`` bez nadawcy i faktura bez tego
-    słowa."""
+    """Siedem maili z dni okna: dwa Raporty Wykonawcy z Wpisem (jeden tylko w folderze wszystkich maili), mail z tematem
+    Raportu bez Wpisu, Raport obcego nadawcy, odpowiedź na Raport i faktura, których port nie bierze, i mail z tematem
+    Raportu bez nadawcy."""
 
     return [
         mail(1, temat="Raport 08.11.2026", flagi=("\\Seen",)),
@@ -125,11 +125,11 @@ def test_proba_na_skrzynce_z_raportami_drukuje_same_liczby_i_ostatnia_linie_ok_b
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
     assert lines == [
-        "SKRZYNKA | folder_wszystkich=6 | odebrane=5 | poza_odebranymi=1",
-        "MAILE | przeczytane=5 | pominiete=1 | raporty=4 | wpisy=2 | polskie_znaki=3 | zepsute_znaki=0",
+        "SKRZYNKA | folder_wszystkich=5 | odebrane=4 | poza_odebranymi=1",
+        "MAILE | przeczytane=4 | pominiete=1 | raporty=3 | wpisy=2 | polskie_znaki=3 | zepsute_znaki=0",
         "PROBLEMY | UnknownNumber=2 | UnknownSender=1",
         "FLAGI | sprawdzone=7 | zmienione=0",
-        "PROBA IMAP OK | maile=5 | flagi bez zmian",
+        "PROBA IMAP OK | maile=4 | flagi bez zmian",
     ]
     assert code == 0
     names = {command.split(" ")[0] if not command.startswith("UID ") else command.split(" ")[1] for command in atrapa.commands}
@@ -144,8 +144,8 @@ def test_proba_zglasza_flage_zmieniona_miedzy_odczytami(tmp_path: Path, capsys: 
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
     assert lines[-2:] == [
-        "FLAGI | sprawdzone=7 | zmienione=5",
-        "PROBA IMAP FAIL | flagi zmienione w 5 mailach",
+        "FLAGI | sprawdzone=7 | zmienione=4",
+        "PROBA IMAP FAIL | flagi zmienione w 4 mailach",
     ]
     assert code == 1
 
@@ -254,27 +254,27 @@ def test_proba_porownuje_flagi_maili_z_kazdej_paczki_odczytu_flag(
     [
         pytest.param(
             [mail(4, temat="Faktura")],
-            "maile_z_raport=0, nieznani_nadawcy=0, nierozpoznane_tematy=0, raporty_bez_wpisow=0, wpisy_bez_tak_nie=0",
+            "maile_z_raport=0, nieznani_nadawcy=0, nierozpoznane_tematy=0, bez_odczytu=0, wpisy_bez_tak_nie=0",
             id="bez-maila-ze-slowem-raport",
         ),
         pytest.param(
             [mail(3, temat="Raport bez daty")],
-            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=1, raporty_bez_wpisow=0, wpisy_bez_tak_nie=0",
+            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=1, bez_odczytu=0, wpisy_bez_tak_nie=0",
             id="temat-bez-dnia-od-wykonawcy",
         ),
         pytest.param(
             [mail(2, temat="Raport 09.11.2026", tresc="40000003 tak", od=f"<{OBCY}>")],
-            "maile_z_raport=1, nieznani_nadawcy=1, nierozpoznane_tematy=0, raporty_bez_wpisow=0, wpisy_bez_tak_nie=0",
+            "maile_z_raport=1, nieznani_nadawcy=1, nierozpoznane_tematy=0, bez_odczytu=0, wpisy_bez_tak_nie=0",
             id="adres-spoza-pliku-adresow",
         ),
         pytest.param(
             [mail(7, temat="Raport 09.11.2026", tresc="dzień bez zleceń")],
-            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=0, raporty_bez_wpisow=1, wpisy_bez_tak_nie=0",
+            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=0, bez_odczytu=1, wpisy_bez_tak_nie=0",
             id="raport-wykonawcy-bez-wpisu",
         ),
         pytest.param(
             [mail(1, temat="Raport 08.11.2026", tresc="40000001 t wymiana")],
-            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=0, raporty_bez_wpisow=0, wpisy_bez_tak_nie=1",
+            "maile_z_raport=1, nieznani_nadawcy=0, nierozpoznane_tematy=0, bez_odczytu=0, wpisy_bez_tak_nie=1",
             id="wpis-z-litera-t-zamiast-tak",
         ),
     ],

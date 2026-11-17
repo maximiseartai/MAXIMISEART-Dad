@@ -9,7 +9,8 @@ Po kolei:
 1. czyta adresy z Listy Wykonawców przez Ustawienia Centrum bez zapisu (``read_snapshot``), jak Wpisanie raportów:
    przy złym pliku ostatnia dobra lista, a bez niej albo bez żadnego adresu próba nie przechodzi;
 2. czyta flagi IMAP każdego maila z dni od dnia przed ``--od`` w folderze, który czyta port (``\\All``, a bez niego
-   ``INBOX``), i liczy maile ze słowem ``raport`` w temacie w tym folderze i w ``INBOX`` (``ImapInbox.survey``);
+   ``INBOX``), i liczy maile, które port wybiera do odczytu (z tematem Raportu wykonawcy, nie od samej skrzynki), w
+   tym folderze i w ``INBOX`` (``ImapInbox.survey``);
 3. czyta Raporty wykonawców od ``--od`` portem (``mails_since``) i przepuszcza je przez rdzeń raportów
    (``enter_reports``) bez zleceń INTERMAX, więc każdy Wpis raportu z rozpoznanego Raportu to problem nieznanego numeru,
    a żaden Wpis się nie wpisuje, więc Legenda czynności (z Wydania) nie czyta żadnego opisu;
@@ -17,8 +18,8 @@ Po kolei:
    drugim odczycie, to mail ze zmienionymi flagami. Port oddaje flagi każdego wyszukanego maila albo błąd
    ``UnexpectedReply``, a próba sprawdza jeszcze, że w każdym odczycie liczba maili z flagami równa się liczbie
    wyszukanych. Port oddaje UID tylko w odczycie flag, więc mail, który przyszedł po pierwszym odczycie flag, próba
-   poznaje po liczbie: przeczytanych i pominiętych maili jest więcej niż maili ze słowem ``raport`` w temacie w
-   pierwszym odczycie, a flag takiego maila nikt nie porównał.
+   poznaje po liczbie: przeczytanych i pominiętych maili jest więcej niż maili wybranych do odczytu w pierwszym
+   odczycie, a flag takiego maila nikt nie porównał.
 
 Skrzynki nie zmienia: port otwiera folder przez ``EXAMINE`` i pobiera tematy, treści i flagi przez ``BODY.PEEK`` i
 ``FETCH (FLAGS)``, bez ``SELECT`` i ``STORE``.
@@ -32,9 +33,9 @@ słowa bez polskich liter), bo konsola Windows przy przekierowaniu wyjścia kodu
     FLAGI | sprawdzone=<n> | zmienione=<n>
     PROBA IMAP OK | maile=<n> | flagi bez zmian
 
-``SKRZYNKA`` liczy maile ze słowem ``raport`` w temacie: ``poza_odebranymi`` to ile ich więcej jest w folderze, który
+``SKRZYNKA`` liczy maile, które port wybiera do odczytu: ``poza_odebranymi`` to ile ich więcej jest w folderze, który
 czyta port, niż w ``INBOX``. ``MAILE``: ``przeczytane`` to maile, które oddał port, ``pominiete`` te, których nie umiał
-rozebrać, ``raporty`` maile z tematem ``Raport dd.mm.rrrr`` z dniem od ``--od``, ``wpisy`` ich Wpisy raportu,
+rozebrać, ``raporty`` maile z Wpisami i tematem Raportu wykonawcy z dniem od ``--od``, ``wpisy`` ich Wpisy raportu,
 ``polskie_znaki`` maile z polską literą w temacie albo treści, a ``zepsute_znaki`` maile ze znakiem zastępczym U+FFFD
 albo literą ``Ã``, ``Ä``, ``Å``, ``Ă``, ``Ĺ``, którą daje polska litera z UTF-8 przeczytana w zestawie jednobajtowym.
 ``PROBLEMY`` liczy problemy rdzenia według rodzaju (nazwa typu z ``rozliczenia.worker_reports``).
@@ -44,10 +45,11 @@ adresu z pliku adresów z Wpisem raportu z ``tak`` albo ``nie``, a inaczej ``PRO
 albo zła treść pliku dostępu, pliku adresów albo Konfiguracji wykonawców, odrzucone hasło, skrzynka niedostępna (nazwa
 typu błędu), brak rozpoznanego Raportu wykonawcy, zepsute znaki, flagi nieodczytane dla części wyszukanych maili, mail,
 który przyszedł w trakcie próby, albo flagi, które zmieniły się między odczytami. Powód ``brak rozpoznanego Raportu wykonawcy`` niesie liczby: maile ze
-słowem ``raport`` w temacie (``maile_z_raport``), Raporty od adresów spoza pliku adresów (``nieznani_nadawcy``), maile,
-których temat nie jest ``Raport dd.mm.rrrr`` z dniem od ``--od`` (``nierozpoznane_tematy``), Raporty od Wykonawców bez
-Wpisu (``raporty_bez_wpisow``) i Wpisy bez ``tak`` ani ``nie`` (``wpisy_bez_tak_nie``). Zepsute znaki daje też
-zagraniczne nazwisko z ``Å`` albo ``Ä`` w mailu ze słowem ``raport``: wtedy Maks sprawdza te maile ręcznie. Hasła nie ma
+tematem Raportu wykonawcy, które oddał port (``maile_z_raport``), Raporty od adresów spoza pliku adresów
+(``nieznani_nadawcy``), maile z Wpisami z błędem tematu (``nierozpoznane_tematy``), maile, które rdzeń pomija po cichu:
+bez żadnego Wpisu, z dniem sprzed ``--od`` albo z błędem tematu od adresu spoza pliku adresów (``bez_odczytu``), i Wpisy
+bez ``tak`` ani ``nie`` (``wpisy_bez_tak_nie``). Zepsute znaki daje też zagraniczne nazwisko z ``Å`` albo ``Ä`` w mailu
+z tematem Raportu wykonawcy: wtedy Maks sprawdza te maile ręcznie. Hasła nie ma
 w wyniku, wyjątkach ani żadnym pliku: zna je tylko port.
 
 Uruchomienie u taty, w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``), a ostatnią linię Maks wpisuje w
@@ -324,10 +326,11 @@ def _recognised(outcome: ReportsOutcome) -> bool:
 def _no_report(mails: Sequence[ReportMail], outcome: ReportsOutcome, since: date) -> str:
     strangers = len(_strangers(outcome))
     reports = _reports(outcome)
+    unreadable = sum(1 for read in outcome.mails if isinstance(read, ReadUnreadable))
     return (
         f"brak rozpoznanego Raportu wykonawcy od {since.isoformat()} (maile_z_raport={len(mails)}"
-        f", nieznani_nadawcy={strangers}, nierozpoznane_tematy={len(mails) - len(reports) - strangers}"
-        f", raporty_bez_wpisow={sum(1 for report in reports if not report.entries)}"
+        f", nieznani_nadawcy={strangers}, nierozpoznane_tematy={unreadable}"
+        f", bez_odczytu={len(mails) - len(reports) - strangers - unreadable}"
         f", wpisy_bez_tak_nie={sum(1 for report in reports for entry in report.entries if entry.verdict is None)})"
     )
 

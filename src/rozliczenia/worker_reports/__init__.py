@@ -97,7 +97,7 @@ from ._reminders import (
     reminder_text,
     reminders_due,
 )
-from ._subject import reminder_day, reminder_subject
+from ._subject import reads_as_report, reminder_day, reminder_subject
 
 __all__ = [
     "ADDED_DIGITS",
@@ -172,6 +172,7 @@ __all__ = [
     "enter_reports",
     "note_order",
     "order_number",
+    "reads_as_report",
     "reminder_day",
     "reminder_pora",
     "reminder_subject",
@@ -186,8 +187,9 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``, z rokiem literówki czytanym od dnia przyjścia
     maila) z dniem otwartym w ``inputs.window``, a od
     Wykonawcy także z dniem w okresie z Plikiem zbiorczym od dnia wdrożenia (``Window.closes``), który daje tylko
-    niezgodne Wpisy; inne maile rdzeń pomija po cichu. Temat ze słowem ``raport`` bez dnia zleceń daje
-    ``UnreadableSubject``, gdy mail przyszedł od Wykonawcy w dniu otwartym. Które numery są w INTERMAX i ile mają
+    niezgodne Wpisy; inne maile rdzeń pomija po cichu, także mail od Wykonawcy bez żadnego Wpisu (ADR 0041). Temat
+    Raportu wykonawcy bez dnia zleceń daje ``UnreadableSubject``, gdy mail z Wpisami przyszedł od Wykonawcy w dniu
+    otwartym. Które numery są w INTERMAX i ile mają
     zleceń, mówi każde odczytane zlecenie (``inputs.orders``, także z dni zamkniętych i po dziś), a okno mówi tylko, do
     których wolno pisać; Wpis zaczyna więc numer z co najmniej tyloma cyframi, ile ma najkrótszy numer odczytanego
     zlecenia (``_entries.entries``). Wpis trafia do zlecenia nadawcy z dnia z tematu, a bez niego do jedynego zlecenia tego
@@ -222,15 +224,15 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
             case None:
                 continue
             case SubjectFault():
-                if worker is not None and window.opens(mail.arrived.date()):
-                    numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
+                numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
+                if worker is not None and window.opens(mail.arrived.date()) and numbers:
                     read.append(ReadUnreadable(mail.id, mail.arrived, worker, found, numbers))
             case date() if worker is None and window.opens(found):
                 read.append(ReadStranger(mail.id, mail.arrived, found))
                 problems.append(UnknownSender(mail.id, mail.sender, found))
             case date() if worker is not None and (window.opens(found) or window.closes(found)):
-                entries = _entries.entries(mail.text, digits)
-                read.append(ReadReport(mail.id, mail.arrived, worker, found, entries))
+                if entries := _entries.entries(mail.text, digits):
+                    read.append(ReadReport(mail.id, mail.arrived, worker, found, entries))
             case date():
                 continue
     mails = tuple(sorted(read, key=_mail_order))

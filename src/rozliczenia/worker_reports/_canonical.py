@@ -3,6 +3,7 @@
 Odtworzenie Uruchomienia z Logów ma z maila tylko odczyt, bez adresu, tematu i treści, więc buduje z niego mail
 w postaci kanonicznej: temat ``Raport dd.mm.rrrr``, jedna linia ``<numer> <znak> <czynności>`` na Wpis raportu, a pod
 nimi pusta linia i ``_CLOSING``. Mail z nieczytelnym tematem ma w treści sam numer w linii na każdy numer jego Wpisów.
+Rdzeń czyta z tego maila ten sam odczyt dla każdego powodu tematu poza ``SubjectFault.SEPARATOR`` (``_unreadable``).
 """
 
 from __future__ import annotations
@@ -50,13 +51,17 @@ def _subject(day: date) -> str:
 
 
 def _unreadable(fault: SubjectFault) -> str:
-    """Temat ze słowem Raportu wykonawcy, który nie daje dnia z powodu ``fault``."""
+    """Temat zaczęty słowem Raportu wykonawcy, który nie daje dnia z powodu ``fault``. ``SEPARATOR`` jest tylko w Logach
+    sprzed tolerancji tematu (ADR 0041), a jego temat (``Raport 08-11-2026``) rdzeń czyta dziś jako dzień, tak jak
+    prawdziwy temat z takim separatorem."""
 
     match fault:
         case SubjectFault.NO_DATE:
             return _WORD
-        case SubjectFault.OTHER_TEXT:
+        case SubjectFault.OTHER_WORDS:
             return f"{_WORD} z 08.11.2026"
+        case SubjectFault.OTHER_TEXT:
+            return f"{_WORD}: 08.11.2026"
         case SubjectFault.NO_YEAR:
             return f"{_WORD} 08.11"
         case SubjectFault.DATE_FORM:

@@ -191,6 +191,7 @@ def test_skrzynka_raportow_oddaje_maile_ze_slowem_raport_w_temacie_od_dnia_bez_m
             id="odp-z-outlooka",
         ),
         pytest.param(b"Re: Przypomnienie o fakturze", [], id="bez-slowa-raport"),
+        pytest.param(b"Fwd: Przypomnienie: raport za dzie\xc5\x84 08.11.2026", [], id="przekazane-dalej"),
     ],
 )
 def test_skrzynka_oddaje_odpowiedz_wykonawcy_na_przypomnienie_o_raporcie(
@@ -264,7 +265,43 @@ def test_skrzynka_czyta_raport_bez_pobierania_zalacznikow(tmp_path: Path) -> Non
     assert [(mail.id, mail.subject, mail.text) for mail in found] == [(MailId.of("<z-zalacznikami@x.invalid>"), TEMAT, TRESC)]
     fetches = [command for command in atrapa.commands if command.startswith("UID FETCH")]
     asked = {section for command in fetches for section in re.findall(r"BODY\.PEEK\[([^\]]*)\]", command)}
-    assert asked == {"HEADER.FIELDS (SUBJECT)", "HEADER", "1.MIME", "1.1.MIME", "1.1", "1.2.MIME"}
+    assert asked == {"HEADER.FIELDS (SUBJECT FROM)", "HEADER", "1.MIME", "1.1.MIME", "1.1", "1.2.MIME"}
+
+
+def _pobrane(atrapa: AtrapaImap) -> set[int]:
+    """UID maili, z których port pobrał więcej niż nagłówki ``Subject`` i ``From``: strukturę, nagłówek albo treść."""
+
+    found: set[int] = set()
+    for command in atrapa.commands:
+        if command.startswith("UID FETCH") and "HEADER.FIELDS (SUBJECT FROM)" not in command:
+            for part in command.split(" ")[2].split(","):
+                first, _, last = part.partition(":")
+                found.update(range(int(first), int(last or first) + 1))
+    return found
+
+
+def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tylko_wybranych(tmp_path: Path) -> None:
+    """US 54–55 (ADR 0041): temat z literówką w słowie ``Raport`` port oddaje, choć wyszukiwanie Gmaila po słowie go nie
+    znajduje, a z ``Montaże …``, ``Zdjęcia do raportu …``, innej korespondencji i maili samej skrzynki bierze tylko
+    nagłówki ``Subject`` i ``From``."""
+
+    def mail(uid: int, temat: bytes, od: bytes = b"Jan Testowy <jan.testowy@przyklad.invalid>") -> AtrapaMail:
+        return w_skrzynce(uid, surowy(temat=temat, od=od, message_id=f"<{uid}@x.invalid>".encode()))
+
+    mails = [
+        mail(1, b"Rapotr 08.11.2026"),
+        mail(2, b"Montaze 08.11.2026"),
+        mail(3, "Zdjęcia do raportu 08.11.2026".encode()),
+        mail(4, b"Faktura za listopad", b"Biuro <biuro@przyklad.invalid>"),
+        mail(5, b"Raport 08.11.2026 Kowalski"),
+        mail(6, b"Raport 08.11.2026", f"Tata <{SKRZYNKA}>".encode()),
+        mail(7, b"Re: Raport 08.11.2026", f"Tata <{SKRZYNKA}>".encode()),
+    ]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
+        found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
+
+    assert [mail.subject for mail in found] == ["Rapotr 08.11.2026", "Raport 08.11.2026 Kowalski"]
+    assert _pobrane(atrapa) == {1, 5}
 
 
 def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:

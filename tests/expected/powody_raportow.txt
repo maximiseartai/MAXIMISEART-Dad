@@ -1,7 +1,9 @@
 UnreadableSubject
   Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale nie ma w nim daty dnia zleceń, więc Centrum go nie wpisało.
 UnreadableSubject
-  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale poza tym słowem i datą temat ma inny tekst, więc Centrum go nie wpisało.
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale poza tym słowem i datą temat ma inne słowa, więc Centrum go nie wpisało.
+UnreadableSubject
+  Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale przed słowem albo między nim a datą temat ma znak inny niż spacja, więc Centrum go nie wpisało.
 UnreadableSubject
   Mail od jan.testowy z 08.11.2026, 18:05 ma w temacie słowo „Raport”, ale data nie ma roku, więc Centrum go nie wpisało.
 UnreadableSubject

@@ -182,8 +182,10 @@ def _subject(fault: SubjectFault) -> str:
     match fault:
         case SubjectFault.NO_DATE:
             return "nie ma w nim daty dnia zleceń"
+        case SubjectFault.OTHER_WORDS:
+            return "poza tym słowem i datą temat ma inne słowa"
         case SubjectFault.OTHER_TEXT:
-            return "poza tym słowem i datą temat ma inny tekst"
+            return "przed słowem albo między nim a datą temat ma znak inny niż spacja"
         case SubjectFault.NO_YEAR:
             return "data nie ma roku"
         case SubjectFault.DATE_FORM:
