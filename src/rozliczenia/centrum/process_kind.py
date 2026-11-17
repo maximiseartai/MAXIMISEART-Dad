@@ -23,15 +23,14 @@ from typing import Any, Final, Generic, Literal, Protocol, TypeGuard, TypeVar, f
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum import diagnosis_messages, refusal
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
-from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
 from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
-from rozliczenia.centrum.settings_at_start import SettingNeed, unreadable
+from rozliczenia.centrum.settings_at_start import SettingNeed, SettingsAtStart, unreadable
 from rozliczenia.client_data import WithoutSubclasses
 from rozliczenia.efenix_pace import Pace
 from rozliczenia.efenix_pricing import NO_JOURNAL, OrderJournal
@@ -40,8 +39,6 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.intermax_replace import LOCAL_DISK, Disk, Waiting
 from rozliczenia.message import Message
 from rozliczenia.quantity_check import CheckResult
-from rozliczenia.activity_legend import ActivityLegend
-from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.period_folder import PeriodStatus
 from rozliczenia.process_run import Interlocutor, Outcome, Process, ProcessInputs
 from rozliczenia.progress import ProgressSnapshot
@@ -49,7 +46,6 @@ from rozliczenia.report_entering import ReportEnteringParts
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
 from rozliczenia.wall_clock import local_now
-from rozliczenia.worker_list import WorkerList
 
 InputsT = TypeVar("InputsT", bound=ProcessInputs)
 SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
@@ -65,10 +61,9 @@ Need = PathNeed | SettingNeed | Literal["period", "efenix_window", "worker_repor
 """Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
 ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
 odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``SettingNeed``: Ustawienie ze startu, którym
-proces liczy, w polu ``Start`` o tej samej nazwie (``workers``: Lista Wykonawców, ``quantity_rules``: Reguły ilości,
-``activity_legend``: Legenda czynności; skąd bierze je każdy gospodarz, mówi ``Start``), ``efenix_window``: okno
-efenix gospodarza
-(``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
+proces liczy, w polu ``Start.settings`` o tej samej nazwie (``workers``: Lista Wykonawców, ``quantity_rules``: Reguły
+ilości, ``activity_legend``: Legenda czynności; skąd bierze je każdy gospodarz, mówi ``SettingsAtStart``),
+``efenix_window``: okno efenix gospodarza (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``)."""
 
 
 def _is_path(need: Need) -> TypeGuard[PathNeed]:
@@ -93,48 +88,18 @@ class Start:
     ``paths`` ma ścieżkę każdej potrzeby-pliku procesu (sprawdza ``Catalog.prepared``). ``period``: token okresu, gdy
     gospodarz go zna (karta, ``--period``, Logi); ``None``: okres wynika z wejścia. ``pricing``: tryb Wyceny w efenix
     wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
-    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: migawka Ustawień Centrum z chwili
-    startu, z której Logi Uruchomienia biorą pliki procesu, a Diagnoza Zatrzymania pliki i Listę Wykonawców; ``None``:
-    gospodarz bez Ustawień Centrum (Skrypt dla maszyn, odtworzenie). ``workers``: Lista Wykonawców z chwili startu
-    (Centrum: migawka Ustawień, Skrypt dla maszyn: plik ``--wykonawcy``, odtworzenie: lista złożona z loginów Wpisów
-    w Logach Wpisania raportów, a Przygotowania i Przebiegu rozliczeń plik ``wykonawcy.yaml`` folderu Konfiguracji);
-    ``None``: proces jej nie potrzebuje. ``quantity_rules``: Reguły ilości, którymi liczy Uruchomienie (Centrum: migawka Ustawień z
-    chwili startu, ``None``, gdy pliku pary nie da się czytać; Skrypt dla maszyn: Reguły ilości z Wydania;
-    odtworzenie: Reguły ilości z Logów, a z Logów sprzed ich zapisu z Wydania). ``activity_legend``: Legenda czynności
-    tego Uruchomienia, z tych samych źródeł co ``quantity_rules`` (w Centrum ``None``, gdy pliku legendy nie da się
-    czytać).
-    Proces, który Ustawieniem ze startu nie liczy (bez jego ``SettingNeed`` w ``ProcessKind.needs``), dostaje je w
-    wejściu jako ``None`` (rzut w ``Catalog.prepared``), więc w jego Logach nie ma też jego Reguł ilości ani Legendy
-    czynności; samej Listy Wykonawców nie mają Logi żadnego procesu. ``warnings``: ostrzeżenia startu na
-    kartę i do Logów, fakt startu jak Lista Wykonawców (Centrum: ``start_from_settings`` z migawki Ustawień, Skrypt dla
-    maszyn: brak, odtworzenie: ostrzeżenia startu z Logów). Ani ``quantity_rules``, ``activity_legend``, ani ``warnings``
-    nie mają wartości domyślnej, więc każdy gospodarz mówi, skąd je ma.
+    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: Ustawienia ze startu, bez wartości
+    domyślnej; skąd bierze je każdy gospodarz i co z nich trafia do wejścia i do Logów, mówi ``SettingsAtStart``.
     """
 
     paths: Mapping[PathNeed, Path]
     period: str | None
     dry_run: bool
     pricing: runs_contract.Pricing | None = None
-    settings: SettingsSnapshot | None = None
-    workers: WorkerList | None = None
-    quantity_rules: QuantityRules | None = field(kw_only=True)
-    activity_legend: ActivityLegend | None = field(kw_only=True)
-    warnings: tuple[Message, ...] = field(kw_only=True)
+    settings: SettingsAtStart = field(kw_only=True)
 
     def path(self, need: PathNeed) -> Path:
         return self.paths[need]
-
-    def counted_rules(self) -> QuantityRules:
-        assert self.quantity_rules is not None, "Catalog.prepared sprawdza Reguły ilości procesu, który nimi liczy"
-        return self.quantity_rules
-
-    def counted_legend(self) -> ActivityLegend:
-        assert self.activity_legend is not None, "Catalog.prepared sprawdza Legendę czynności procesu, który nią liczy"
-        return self.activity_legend
-
-    def worker_list(self) -> WorkerList:
-        assert self.workers is not None, "Catalog.prepared sprawdza potrzebę workers"
-        return self.workers
 
     def token(self) -> str:
         assert self.period is not None, "Catalog.prepared sprawdza potrzebę period"
@@ -150,20 +115,11 @@ def start_from_settings(
     dry_run: bool,
     pricing: runs_contract.Pricing | None = None,
 ) -> Start:
-    """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032): migawka dla Logów i Diagnozy, Lista
-    Wykonawców procesu, który jej potrzebuje (ostatnia dobra przy złym pliku; ``Refusal``, gdy jej nie ma), Reguły
-    ilości, Legendę czynności i ostrzeżenia startu; Ustawienia, którymi proces nie liczy, odrzuca ``Catalog.prepared``.
-    Ścieżki, okres i tryb wybiera gospodarz. Plik pary Reguł ilości albo Legendy czynności bez odczytu to ``None``:
-    odmowę dla taty daje wcześniej karta startu z tej samej migawki (``ProcessKind.required_paths``), a start bez nich
-    procesu, który nimi liczy, to błąd gospodarza w ``Catalog.prepared``."""
+    """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032, ``SettingsAtStart.of_snapshot``);
+    ścieżki, okres i tryb wybiera gospodarz."""
 
-    rules, legend = settings.quantity_rules, settings.activity_legend
     return Start(
-        paths, period=period, dry_run=dry_run, pricing=pricing, settings=settings,
-        workers=_workers_at_start(settings.workers) if "workers" in kind.needs else None,
-        quantity_rules=None if isinstance(rules, UnreadableFile) else rules,
-        activity_legend=None if isinstance(legend, UnreadableFile) else legend,
-        warnings=_start_warnings(settings, kind.needs),
+        paths, period=period, dry_run=dry_run, pricing=pricing, settings=SettingsAtStart.of_snapshot(settings, kind.needs)
     )
 
 
@@ -184,26 +140,6 @@ def chosen_settings(
     if missing:
         return refusal.first_choose(missing)
     return {setting.field: path for setting in needed if (path := setting.chosen(folders)) is not None}
-
-
-def _workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
-    """Lista Wykonawców dla startu Uruchomienia z migawki Ustawień: dobra, a przy złym ustawieniu ostatnia dobra;
-    ``Refusal``, gdy ostatniej dobrej nie ma albo pliku nie da się teraz przeczytać."""
-
-    found = usable(workers)
-    if found is None:
-        raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)
-    return found
-
-
-def _start_warnings(settings: SettingsSnapshot, needs: Sequence[Need]) -> tuple[Message, ...]:
-    """Ostrzeżenia startu Uruchomienia procesu o potrzebach ``needs`` z migawki Ustawień Centrum (``Start.warnings``):
-    proces z Listą Wykonawców biegnie na ostatniej dobrej liście, bo plik ma złe ustawienie."""
-
-    workers = settings.workers
-    if "workers" in needs and isinstance(workers, Bad) and workers.usable is not None:
-        return (diagnosis_messages.worker_list_last_good(workers.problem.sentence),)
-    return ()
 
 
 @dataclass(frozen=True)
@@ -341,7 +277,7 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
     ``None``: proces bez Kontroli ilości. Proces, który liczy Ustawieniem ze startu (Listą Wykonawców, Regułami ilości,
     Legendą czynności), ma jego ``SettingNeed`` w ``needs``; skąd biorą je gospodarze i co z nich trafia do wejścia
-    i do Logów, mówi ``Start``.
+    i do Logów, mówi ``SettingsAtStart``.
     """
 
     key: common_contract.ProcessKey
@@ -507,11 +443,8 @@ _NO_SUBCLASSES: Final = (
 class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
     """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
     Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
-    w efenix (``None``: proces bez trybów), ``settings``: migawka Ustawień Centrum ze startu (``Start.settings``),
-    ``quantity_rules`` i ``activity_legend``: Reguły ilości i Legenda czynności ze startu (``Start``) procesu, który
-    nimi liczy (``"quantity_rules"``, ``"activity_legend"`` w ``ProcessKind.needs``; inny ma ``None``), dla Logów
-    Uruchomienia,
-    ``warnings``: ostrzeżenia startu na kartę i do Logów (``Start.warnings``), ``engine``: silnik z katalogu
+    w efenix (``None``: proces bez trybów), ``settings``: Ustawienia ze startu po rzucie na proces
+    (``SettingsAtStart.for_process``), ``engine``: silnik z katalogu
     (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
     Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
 
@@ -529,7 +462,6 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
     """
 
     __slots__ = (
-        "activity_legend",
         "context",
         "engine",
         "inputs",
@@ -537,9 +469,7 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
         "metrics",
         "period",
         "pricing",
-        "quantity_rules",
         "settings",
-        "warnings",
     )
 
     def __init__(
@@ -552,10 +482,7 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
         pricing: runs_contract.Pricing | None,
         engine: Engine,
         proof: _Catalog,
-        settings: SettingsSnapshot | None,
-        warnings: tuple[Message, ...],
-        quantity_rules: QuantityRules | None,
-        activity_legend: ActivityLegend | None,
+        settings: SettingsAtStart,
     ) -> None:
         self.kind: Final = kind
         self.period: Final = period
@@ -565,9 +492,6 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
         self.pricing: Final = pricing
         self.engine: Final = engine
         self.settings: Final = settings
-        self.warnings: Final = warnings
-        self.quantity_rules: Final = quantity_rules
-        self.activity_legend: Final = activity_legend
 
     def __init_subclass__(cls, **kwargs: object) -> None:
         raise TypeError(f"{_NO_SUBCLASSES} Podklasa: {cls.__qualname__}.")

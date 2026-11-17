@@ -121,7 +121,8 @@ The steps the points stand for have digests in `model/definicje.json`: `intermax
 lock check of the files above. When one of them changes, `tools/szybko.py` fails before you push (step `rozjazd modelu`), and this
 skill's Mutation checks step fails before it starts (line `ROZJAZD MODELU Z KODEM`), until you have done
 „Bring the model in line”. `intermax_file.check` and `check_cells` have no digest: what they compare does not matter here (DOKLADNIE_WPISANE
-has its own oracle), and a change to how they are called ends the check with BEZ_WYJATKU.
+has its own oracle), and a change to how they are called ends the check with BEZ_WYJATKU. Neither has
+`intermax_messages.refused`: it only words the Komunikat of a refusal.
 
 ## Bring the model in line
 

@@ -13,7 +13,8 @@ obok rozjazdem nie są. Rozjazd to skrót inny niż w pliku ``DEFINICJE`` albo d
 pyta gita, więc rebase i squash go nie zmieniają.
 
 Skróty przelicza ``przesun`` (``tools/przesun_model.py``), dopiero gdy model znów opisuje kod. Rozjazdem jest też plik
-definicji w innej postaci, bo model nie jest wtedy porównany z kodem.
+definicji w innej postaci, bo model nie jest wtedy porównany z kodem. Rozjazd widzi tylko definicje z kluczem w pliku
+``DEFINICJE``, więc ``bez_klucza`` mówi, które funkcje z tabeli modelu w ``SKILL.md`` skilla klucza nie mają.
 """
 
 from __future__ import annotations
@@ -22,14 +23,19 @@ import ast
 import hashlib
 import json
 from pathlib import Path
+import re
 
-__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "definicje", "przesun", "rozjazd", "skille", "skroty"]
+__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "przesun", "rozjazd", "skille", "skroty"]
 
 DEFINICJE = "model/definicje.json"
 CALY_PLIK = "cały plik"
 # Początek nagłówka sekcji ``SKILL.md`` skilla z krokami, które doprowadzają model do kodu.
 KROKI = "Bring the model in line"
 ROZJAZD = "ROZJAZD MODELU Z KODEM"
+# Nagłówek sekcji ``SKILL.md`` skilla z tabelą, która wiąże model z kodem.
+TABELA = "## Does the change touch it?"
+# Katalogi kodu, w których ``bez_klucza`` szuka nazwy z tabeli z klasą albo modułem z przodu.
+KOD = ("src", "tools")
 # Długość skrótu w znakach szesnastkowych SHA-256: dość, by przypadkiem nie trafić tego samego skrótu.
 DLUGOSC = 16
 
@@ -111,6 +117,113 @@ def przesun(skill: Path, root: Path) -> list[str]:
     return moved
 
 
+def bez_klucza(skill: Path, root: Path) -> list[str]:
+    """Funkcje i metody, które tabela sekcji ``TABELA`` w ``SKILL.md`` skilla nazywa w `` ` ``, bez klucza w ``DEFINICJE``:
+    ``"ścieżka nazwa"`` w kolejności tabeli. Rozjazd zmiany takiej funkcji nie widzi, choć model ją opisuje. Nazwę z
+    klasą albo modułem z przodu sprawdzenie szuka w całym kodzie ``KOD``, więc zgubiony wpis całego pliku też jest
+    zgłoszony, a gołą nazwę tylko w plikach z ``DEFINICJE``, bo ``save`` czy ``read`` jest w wielu plikach. ``SKILL.md``
+    bez tej sekcji to ``ValueError``.
+
+    | Nazwa w wierszu tabeli | Przykład | Wynik |
+    | --- | --- | --- |
+    | funkcja modułu z pliku definicji | `enter_reports` | bez klucza `enter_reports`: zgłoszona |
+    | metoda klasy | `ReportEnteringEntry.on_request` | bez klucza tej metody i klasy: zgłoszona |
+    | z modułem z przodu | `_cells.with_added` | jak `with_added` w `_cells.py` (`__init__.py`: nazwa pakietu) |
+    | z klasą albo modułem z przodu z pliku spoza definicji | `efenix_page.emmett_window`, `RunHost.end` | zgłoszona |
+    | z wywołaniem | `write_cells(...)`, `kept()` | jak nazwa bez nawiasów |
+    | metoda bez klasy | `prepare`, `efenix.search` | nazwa bez definicji od modułu: jak `Klasa.prepare` każdej klasy z pliku definicji |
+    | metoda klasy z kluczem | `StateFile.retry` przy kluczu `StateFile` | przechodzi: skrót klasy obejmuje metodę |
+    | funkcja pliku z `CALY_PLIK` | | przechodzi |
+    | nazwa w dwóch plikach | `_case` z kluczem w jednym z nich | przechodzi |
+
+    Granice, które przechodzą bez klucza: klasa, stała i przypisanie (`ClickResult`, `RETRY_S`), zaślepka bez ciała
+    poza docstringiem i ``...`` (metoda ``Protocol``, `OrderJournal.ended`), także gdy inna klasa ma metodę o tej nazwie
+    z ciałem, nazwa obiektu przed funkcją modułu (`pliki.zapisz()` to tylko metoda `zapisz`), goła nazwa definicji w
+    pliku spoza ``DEFINICJE`` (`beside`), nazwa w prozie sekcji poza tabelą, nazwa w tabeli innej sekcji i każda nazwa
+    skilla, którego sekcja nie ma tabeli, bo model wiąże z kodem proza albo komentarze modelu TLA+
+    (`verify-urwane-uruchomienie`).
+    """
+
+    recorded = definicje(skill)
+    whole = {path for path, names in recorded.items() if CALY_PLIK in names}
+    listed = [path for path in recorded if path not in whole]
+    code = sorted({file.relative_to(root).as_posix() for folder in KOD for file in (root / folder).rglob("*.py")} - whole - set(listed))
+    sources = {path: (root / path).read_text(encoding="utf-8") for path in [*listed, *code]}
+    # Plik kodu spoza definicji wchodzi w poszukiwania nazwy, gdy jest jej modułem albo ma klasę tej nazwy; drzewo
+    # składni dopiero wtedy, bo przeglądanie drzew całego kodu przy każdej nazwie tabeli trwa sekundy.
+    heads = {path: {_module(path), *re.findall(r"^[ \t]*class[ \t]+(\w+)", sources[path], re.MULTILINE)} for path in code}
+    trees: dict[str, ast.Module | None] = {}
+
+    def tree(path: str) -> ast.Module | None:
+        if path not in trees:
+            trees[path] = _tree(sources[path])
+        return trees[path]
+
+    missing: list[str] = []
+    for span in _table_spans((skill / "SKILL.md").read_text(encoding="utf-8")):
+        name = span.split("(", 1)[0] if span.endswith(")") else span
+        if not all(part.isidentifier() for part in name.split(".")):
+            continue
+        head = name.split(".", 1)[0]
+        scope = [*listed, *(path for path in code if "." in name and head in heads[path])]
+        bound = [(path, inner, nodes) for path in scope for inner in _in_module(path, name) if (nodes := _nodes(tree(path), inner))]
+        if not bound:
+            method = name.rsplit(".", 1)[-1]
+            bound = [(path, f"{cls}.{method}", nodes) for path in listed for cls in _classes(tree(path)) if (nodes := _nodes(tree(path), f"{cls}.{method}"))]
+        found = [(path, inner) for path, inner, nodes in bound if _is_function(nodes)]
+        if found and not any(_keyed(recorded.get(path, {}), inner) for path, inner in found):
+            missing += [f"{path} {inner}" for path, inner in found if f"{path} {inner}" not in missing]
+    return missing
+
+
+def _keyed(names: dict[str, str], name: str) -> bool:
+    """Czy ``name`` albo zakres, w którym stoi (klasa metody), ma klucz w ``names``: skrót zakresu obejmuje ``name``."""
+
+    parts = name.split(".")
+    return any(".".join(parts[:end]) in names for end in range(1, len(parts) + 1))
+
+
+def _classes(tree: ast.Module | None) -> list[str]:
+    return [] if tree is None else list(dict.fromkeys(node.name for node in _statements(tree) if isinstance(node, ast.ClassDef)))
+
+
+def _table_spans(text: str) -> list[str]:
+    lines = text.splitlines()
+    if TABELA not in lines:
+        raise ValueError(f"SKILL.md nie ma sekcji „{TABELA}”")
+    rows: list[str] = []
+    for line in lines[lines.index(TABELA) + 1 :]:
+        if line.startswith("## "):
+            break
+        if line.startswith("|"):
+            rows.append(line)
+    return [span for row in rows for span in row.split("`")[1::2]]
+
+
+def _in_module(path: str, name: str) -> list[str]:
+    """Ścieżki od modułu, które ``name`` może znaczyć w pliku ``path``: sama nazwa i bez członu modułu z przodu."""
+
+    head, _, rest = name.partition(".")
+    return [name, rest] if head == _module(path) and rest else [name]
+
+
+def _module(path: str) -> str:
+    file = Path(path)
+    return file.parent.name if file.name == "__init__.py" else file.stem
+
+
+def _is_function(nodes: list[ast.stmt]) -> bool:
+    """Czy wiązania ``nodes`` jednej nazwy to funkcja albo metoda z ciałem: każde to ``def``, a jedno ma coś poza
+    docstringiem i ``...``."""
+
+    functions = [node for node in nodes if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    return bool(nodes) and len(functions) == len(nodes) and any(not _stub(function) for function in functions)
+
+
+def _stub(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    return all(isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and (node.value.value is ... or isinstance(node.value.value, str)) for node in function.body)
+
+
 def _tree(source: str | None) -> ast.Module | None:
     """Drzewo składni ``source``; ``None``, gdy pliku nie ma albo się nie parsuje (każda jego definicja się zmieniła)."""
 
@@ -125,32 +238,47 @@ def _tree(source: str | None) -> ast.Module | None:
 def _definition(tree: ast.Module | None, name: str) -> str | None:
     """Skrót definicji ``name`` (ścieżka po kropkach od modułu) w ``tree``; ``None``, gdy jej nie ma."""
 
+    nodes = _nodes(tree, name)
+    return _digest("\n".join(_canonical(node) for node in nodes)) if nodes else None
+
+
+def _nodes(tree: ast.Module | None, name: str) -> list[ast.stmt]:
+    """Wiązania definicji ``name`` (ścieżka po kropkach od modułu) w ``tree``; pusta lista, gdy jej nie ma."""
+
     if tree is None:
-        return None
+        return []
     scopes: list[ast.AST] = [tree]
     nodes: list[ast.stmt] = []
     for part in name.split("."):
         nodes = [node for scope in scopes for node in _bindings(scope, part)]
         scopes = [node for node in nodes if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))]
-    return _digest("\n".join(_canonical(node) for node in nodes)) if nodes else None
+    return nodes
 
 
 def _bindings(scope: ast.AST, name: str) -> list[ast.stmt]:
-    """Funkcje, klasy i przypisania ``name`` w zakresie ``scope``, w kolejności kodu, także w jego instrukcjach złożonych,
-    bez zagnieżdżonych funkcji i klas."""
+    """Funkcje, klasy i przypisania ``name`` w zakresie ``scope``, w kolejności kodu."""
+
+    return [node for node in _statements(scope) if _binds(node, name)]
+
+
+def _binds(node: ast.stmt, name: str) -> bool:
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return node.name == name
+    targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
+    return any(isinstance(target, ast.Name) and target.id == name for target in targets)
+
+
+def _statements(scope: ast.AST) -> list[ast.stmt]:
+    """Instrukcje zakresu ``scope`` w kolejności kodu, także w jego instrukcjach złożonych, bez wnętrza zagnieżdżonych
+    funkcji i klas."""
 
     found: list[ast.stmt] = []
     pending = list(reversed(_body(scope)))
     while pending:
         node = pending.pop()
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-            if node.name == name:
-                found.append(node)
-            continue
-        targets = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
-        if any(isinstance(target, ast.Name) and target.id == name for target in targets):
-            found.append(node)
-        pending += reversed(_body(node))
+        found.append(node)
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            pending += reversed(_body(node))
     return found
 
 

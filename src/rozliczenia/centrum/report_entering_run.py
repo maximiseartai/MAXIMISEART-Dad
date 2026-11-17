@@ -140,7 +140,7 @@ class ReportEnteringEntry:
             raise refusal.report_entering_not_set_up(missing)
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
         start = start_from_settings(_KIND, snapshot, paths, period=None, dry_run=False)
-        if not start.worker_list().addresses().logins:
+        if not start.settings.worker_list().addresses().logins:
             raise refusal.report_entering_without_addresses()
         if requested is None:
             return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
@@ -376,7 +376,9 @@ def _problem(problem: ShownProblem) -> report_entering_contract.ReportsProblem:
     faulty = (
         None
         if found is None
-        else report_entering_contract.ReportsFaultySubject(fault=found.fault, day=found.day, arrived=found.arrived)
+        else report_entering_contract.ReportsFaultySubject(
+            subject=found.subject, fault=found.fault, day=found.day, arrived=found.arrived
+        )
     )
     return report_entering_contract.ReportsProblem(
         reason=problem.reason, number=problem.number, keep=keep, request=request, faulty_subject=faulty

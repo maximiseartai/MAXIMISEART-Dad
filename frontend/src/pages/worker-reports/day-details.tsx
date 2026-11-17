@@ -44,8 +44,8 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
  * (`orders_detail`) z problemami, „Zostaw moją”, Wpisem na życzenie, spokojnymi informacjami o Przeniesieniach zleceń
- * (`notes`) i o raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z rodzajem
- * błędu, dniem, za który Centrum go liczy, i chwilą przyjścia maila, bez tematu (ADR 0028), a jego zlecenia mają stan
+ * (`notes`) i o raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z tematem
+ * po strażniku reguły danych, rodzajem błędu, dniem, za który Centrum go liczy, i chwilą przyjścia maila, a jego zlecenia mają stan
  * „Błąd tematu”, nie „Bez raportu”. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
  * przebieg Przypomnień o raporcie za ten dzień (`reminders`), gdy jakieś poszło.
  */
@@ -336,17 +336,19 @@ function MistakenLine({ subjectDay }: { subjectDay: string }) {
 }
 
 /**
- * Rodzaj błędu tematu, dzień, za który Centrum liczy raport, i chwila przyjścia maila, nad zdaniem problemu. Tematu nie
- * ma, bo tematy maili nie trafiają do przeglądarki (ADR 0028).
+ * Temat raportu po strażniku reguły danych, rodzaj błędu tematu, dzień, za który Centrum liczy raport, i chwila przyjścia
+ * maila, nad zdaniem problemu.
  */
 function FaultyFacts({ faulty }: { faulty: ReportsFaultySubject }) {
   return (
     <dl className="col-start-2 col-end-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs" aria-label="Błąd tematu">
       <dt className="flex items-center gap-1 text-muted-foreground">
         <MailWarningIcon className="size-3 shrink-0" aria-hidden />
-        Błąd tematu
+        Temat
       </dt>
-      <dd className="font-medium">{faulty.fault}</dd>
+      <dd className="min-w-0 break-words font-medium">„{faulty.subject}”</dd>
+      <dt className="text-muted-foreground">Błąd tematu</dt>
+      <dd>{faulty.fault}</dd>
       <dt className="text-muted-foreground">Liczony za</dt>
       <dd className="tabular-nums">{faulty.day === null ? "żaden dzień" : shortDate(faulty.day)}</dd>
       <dt className="text-muted-foreground">Przyszedł</dt>

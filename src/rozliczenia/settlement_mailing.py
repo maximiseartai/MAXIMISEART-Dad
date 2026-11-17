@@ -3,10 +3,11 @@ raportów taty, jego temat i treść z Ustawień Centrum i stan każdego Rozlicz
 
 Temat i treść to Ustawienia Centrum taty (``SettlementMailSettings``) z polami ``{okres}`` (dni okresu słowami, np.
 „3–9 listopada 2026”) i ``{wykonawca}`` (nazwa Wykonawcy); reguły ma jedna budowa, ``SettlementMailSettings.of``.
-Odpowiedź Wykonawcy ma temat Maila z rozliczeniem po ``Re:``, a port Skrzynki raportów wybiera maile, których temat
-rdzeń raportów czyta jako temat Raportu wykonawcy (``reads_as_report``: pierwsze słowo ``raport`` z jedną literówką
-albo bez, odpowiedź na Przypomnienie o raporcie i poprawka raportu w odpowiedzi ``Re: Raport 16.11.2026 …``), więc
-temat, którego odpowiedź port by wybrał, jest odmową (także ``Rapotr 16.11.2026`` bez słowa ``SUBJECT_WORD``). Temat
+Odpowiedź Wykonawcy ma wysłany temat Maila z rozliczeniem (z wypełnionymi polami) po ``Re:``, a port Skrzynki raportów
+wybiera maile, których temat rdzeń raportów czyta jako temat Raportu wykonawcy (``reads_as_report``: pierwsze słowo
+``raport`` z jedną literówką albo bez, odpowiedź na Przypomnienie o raporcie i poprawka raportu w odpowiedzi
+``Re: Raport 16.11 …``, z rokiem albo bez), więc temat, którego odpowiedź port by wybrał dla któregoś okresu, jest
+odmową (także ``Rapotr 16.11.2026`` i ``Report {okres}``, gdzie liczby daje okres, bez słowa ``SUBJECT_WORD``). Temat
 nie może też mieć słowa ``SUBJECT_WORD`` w żadnym miejscu, jak mówi tacie podpowiedź pola w Ustawieniach (ADR 0040).
 Treść kończy się stopką Przypomnień o raporcie, jednym podpisem taty.
 
@@ -22,7 +23,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Final, Literal
 import unicodedata
 
@@ -77,6 +78,15 @@ _MONTHS: Final = (
     "listopada",
     "grudnia",
 )
+_SAMPLE_PERIODS: Final = (
+    SettlementPeriod(date(2026, 11, 3)),
+    SettlementPeriod(date(2026, 10, 27)),
+    SettlementPeriod(date(2026, 12, 29)),
+)
+"""Okresy, którymi reguła tematu wypełnia ``{okres}`` jak wysłany temat: w jednym miesiącu, przez przełom miesięcy i
+przez przełom lat, czyli każda postać ``period_words``; ``reads_as_report`` zależy od kształtu liczb i słów tematu, a nie
+od samych dni, więc te trzy wystarczą."""
+_SAMPLE_WORKER: Final = "Jan Nowak"
 CLOCK_MARGIN: Final = timedelta(minutes=2)
 """O ile zmiana pliku (zegar komputera taty) musi być późniejsza od chwili maila w „Wysłanych” (zegar Gmaila), żeby plik
 był zmieniony po wysłaniu: zegary laptopa i Gmaila różnią się o sekundy, a plik czytany tuż przed wysyłką nie jest
@@ -111,7 +121,7 @@ class SettlementMailSettings:
             "empty_subject": bool(subject.strip()),
             "subject_lines": not {"\r", "\n"} & set(subject),
             "subject_report_word": SUBJECT_WORD not in _without_fields(subject).casefold()
-            and not reads_as_report(f"Re: {_without_fields(subject)}"),
+            and not any(reads_as_report(f"Re: {_filled(subject, period, _SAMPLE_WORKER)}") for period in _SAMPLE_PERIODS),
             "subject_unknown_field": not {"{", "}"} & set(_without_fields(subject)),
             "empty_text": bool(text.strip()),
             "text_unknown_field": not {"{", "}"} & set(_without_fields(text)),

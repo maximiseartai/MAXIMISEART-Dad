@@ -27,7 +27,6 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.process_kind import Engine, HostParts, PeriodProcessKind, PreparedRun, ProcessKind, Start
 from rozliczenia.centrum.process_kind import _CATALOG
 from rozliczenia.centrum.processes import efenix, intermax, preparation, report_entering, settlement
-from rozliczenia.centrum.settings_at_start import missing, not_counted
 from rozliczenia.process_run import Process, run_process
 from rozliczenia.run_context import RunContext
 from rozliczenia.telemetry import MetricsStore
@@ -102,7 +101,7 @@ class Catalog:
             raise ValueError(f"{kind.title} potrzebuje plików {sorted(kind.path_needs)}, a start ma {sorted(start.paths)}")
         if "period" in kind.needs and start.period is None:
             raise ValueError(f"{kind.title} potrzebuje okresu")
-        if (absent := missing(start, kind.needs)) is not None:
+        if (absent := start.settings.missing(kind.needs)) is not None:
             raise ValueError(f"{kind.title} {absent}")
         if "efenix_window" in kind.needs and parts.efenix is None:
             raise ValueError(f"{kind.title} potrzebuje okna efenix")
@@ -111,8 +110,8 @@ class Catalog:
         if start.dry_run and kind.core.preview is None:
             raise ValueError(f"{kind.title} nie ma Podglądu bez zapisu")
         pricing = kind.pricing_of(start.pricing)
-        counted = replace(start, pricing=pricing, **not_counted(kind.needs))
-        inputs = kind.inputs(counted, parts)
+        settings = start.settings.for_process(kind.needs)
+        inputs = kind.inputs(replace(start, pricing=pricing, settings=settings), parts)
         period = inputs.period if start.period is None else start.period
         return PreparedRun(
             kind,
@@ -123,10 +122,7 @@ class Catalog:
             pricing,
             self.engine,
             _CATALOG,
-            counted.settings,
-            counted.warnings,
-            counted.quantity_rules,
-            counted.activity_legend,
+            settings,
         )
 
 

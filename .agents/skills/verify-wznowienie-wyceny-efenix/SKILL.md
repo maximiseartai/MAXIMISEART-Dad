@@ -8,6 +8,7 @@ pilnuje:
   - src/rozliczenia/efenix_window.py
   - src/rozliczenia/efenix_checks.py
   - src/rozliczenia/efenix_mark.py
+  - src/rozliczenia/efenix_page.py
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
@@ -89,7 +90,7 @@ you keep the two in step. Each model action is one indivisible step of this code
 | `Przekaz` | `_forwarded`: the window's `forward_to_accept` up to the moment efenix changed the status (`BrowserEfenix.forward_to_accept`, the click of „Tak” and `_status_answer`, the only `action_change_status.php` request the window's guard lets through) |
 | `OdmowaPrzekazania` | `_forwarded`: the window's `forward_to_accept`, in which efenix shows its information dialog `#dialog_info` instead of the status dialog after the green „Zapisz” (`BrowserEfenix._refusal`: the window waits for one of the two dialogs, reads the text into a `ForwardRefusal`, closes the dialog and clicks no „Tak”, so nothing reaches efenix); `_forwarded` returns `OrderError(refusal)` without the search, and the order has no Znacznik |
 | `Szukaj` | `_forwarded` after the answer: the reload of the page, `efenix.search` again and `listing`: „Do akceptacji” is `Forwarded` (result `przekazane`), any other list `OrderError(OrderProblem.NOT_FORWARDED)` |
-| `KoniecZlecenia` | `save`: the result goes to `results` and `journal.ended`, then the next order |
+| `KoniecZlecenia` | `save`: the result goes to `results` and `OrderJournal.ended`, then the next order |
 | `Zatrzymanie` | `LoggedOut`, `UnexpectedPage`, `WindowClosed`, `EfenixUnreachable` from any window action, also `LoggedOut` from `enter_quantity` (efenix did not save the quantity: step `wpisz`), a stop after efenix saved it (step `potwierdz`), a Przekazanie efenix did not get (step `przekaz`, also one the window's guard aborted, `StatusChangeBlocked`) and a stop in the search after it (step `szukaj`): the window's exception passes through `_outcome`, `_efenix_stops` in `save` turns it into `StopError`, and `save` (`except StopError`) calls `_mark` with the results before it; the order the window stopped at has no result, so no Znacznik |
 | `Znaczniki` | `save`: `_mark` (`mark_orders` with `Mark.READY` for every `Ready` row and `Mark.FORWARDED` for every `Forwarded` row; `Mark.replaces`: a Znacznik przekazania replaces a Znacznik efenix, never the other way), also after `StopError`, then the end of the Uruchomienie |
 | `Zgasniecie` | none: Centrum switches off or is killed; memory is gone, efenix stays, no Znaczniki |
@@ -108,7 +109,7 @@ The digests in `model/definicje.json` were taken when every row of the table was
 (`tools/przesun_model.py`); what that check found is in the message of the commit that changed the digests. Check what
 changed since: `git diff $(git log -1 --format=%h -- .agents/skills/verify-wznowienie-wyceny-efenix/model/definicje.json)
 -- src/rozliczenia/efenix_pricing.py src/rozliczenia/efenix_positions.py src/rozliczenia/efenix_browser.py
-src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py`.
+src/rozliczenia/efenix_checks.py src/rozliczenia/efenix_mark.py src/rozliczenia/efenix_page.py`.
 
 ## Run
 

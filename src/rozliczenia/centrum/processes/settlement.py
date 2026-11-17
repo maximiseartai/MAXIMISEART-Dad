@@ -84,10 +84,10 @@ def _inputs(start: Start, _parts: HostParts) -> SettlementInputs:
     return SettlementInputs(
         start.path("collective_file"),
         dry_run=start.dry_run,
-        workers=start.worker_list(),
+        workers=start.settings.worker_list(),
         worker_template_path=start.path("worker_template"),
-        quantity_rules=start.counted_rules(),
-        activity_legend=start.counted_legend(),
+        quantity_rules=start.settings.counted_rules(),
+        activity_legend=start.settings.counted_legend(),
     )
 
 

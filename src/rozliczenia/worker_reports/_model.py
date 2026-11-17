@@ -91,6 +91,34 @@ class SenderAddress:
         raise TypeError("Adres nadawcy nie jest tekstem: daje go tylko SenderAddress.shown() dla widoku Raporty.")
 
 
+class ReportSubject:
+    """Temat maila Raportu wykonawcy z błędem tematu, który tata widzi w szczegółach dnia (ADR 0041).
+
+    Nie jest ``str``, więc pole tekstowe Logów go nie przyjmie: ``str()`` i f-string zgłaszają ``TypeError``, a ``repr``
+    nie pokazuje tematu, bo temat nie trafia do Logów, Zgłoszeń ani Archiwum Logów. Tekst daje tylko ``shown()``, które
+    woła jedynie zapis wyniku dla widoku Raporty, po strażniku reguły danych. Nie należy do tożsamości odczytu ani
+    problemu (``compare=False``): mail wskazuje Message-ID, a Logi tematu nie mają, więc odtworzenie z Logów liczy
+    odczyty i problemy tak samo jak przebieg.
+    """
+
+    __slots__ = ("_text",)
+
+    def __init__(self, text: str) -> None:
+        self._text = text
+
+    def shown(self) -> str:
+        return self._text
+
+    def __repr__(self) -> str:
+        return "ReportSubject(…)"
+
+    def __str__(self) -> str:
+        raise TypeError("Temat maila nie jest tekstem: daje go tylko ReportSubject.shown() dla widoku Raporty.")
+
+    def __format__(self, spec: str) -> str:
+        raise TypeError("Temat maila nie jest tekstem: daje go tylko ReportSubject.shown() dla widoku Raporty.")
+
+
 @dataclass(frozen=True)
 class ReportMail:
     """Mail ze Skrzynki raportów z tematem, który może być tematem Raportu wykonawcy (``reads_as_report``): temat i treść jako tekst, ``arrived`` ze strefą
@@ -609,8 +637,8 @@ class ReadUnreadable:
     """Raport wykonawcy z błędem tematu (ADR 0041): mail od Wykonawcy z Wpisami i ze słowem Raportu wykonawcy w
     temacie, który nie daje dnia zleceń wprost, z powodem ``fault``. ``numbers``: numery Wpisów jego treści, po których
     poprawiony mail zdejmuje ostrzeżenie (``_corrections.standing``) i które wygrywają z datą (``Board.days``);
-    ``day``: dzień z tematu, gdy da się go przeczytać obok błędu (``_subject.read``). Tematu nie ma, bo nie trafia ani
-    do Logów, ani do przeglądarki (ADR 0028)."""
+    ``day``: dzień z tematu, gdy da się go przeczytać obok błędu (``_subject.read``); ``subject``: temat dla taty, poza
+    tożsamością odczytu, więc z dwóch odczytów różnych tylko tematem liczy się pierwszy w kolejności skrzynki."""
 
     mail: MailId
     arrived: datetime
@@ -618,6 +646,7 @@ class ReadUnreadable:
     fault: SubjectFault
     numbers: frozenset[OrderNumber]
     day: date | None
+    subject: ReportSubject = field(compare=False)
 
 
 @dataclass(frozen=True)
@@ -634,14 +663,16 @@ MailRead = ReadReport | ReadUnreadable | ReadStranger
 
 @dataclass(frozen=True)
 class UnreadableSubject:
-    """Raport wykonawcy z błędem tematu z powodem ``fault``, liczony za dzień otwarty ``day``
-    (``_reading.read_window``): Centrum go nie wpisuje, a tata widzi go przy tym dniu. ``None``: problem bez dnia, bo
-    Centrum nie wskazało dnia otwartego, za który raport się liczy, więc tata widzi go przy dniu przyjścia maila."""
+    """Raport wykonawcy z błędem tematu z powodem ``fault`` i tematem ``subject`` (poza tożsamością problemu, jak w
+    ``ReadUnreadable``), liczony za dzień otwarty ``day`` (``_reading.read_window``): Centrum go nie wpisuje, a tata
+    widzi go przy tym dniu. ``None``: problem bez dnia, bo Centrum nie wskazało dnia otwartego, za który raport się
+    liczy, więc tata widzi go przy dniu przyjścia maila."""
 
     mail: MailId
     worker: Login
     arrived: datetime
     fault: SubjectFault
+    subject: ReportSubject = field(compare=False)
     day: date | None
 
 

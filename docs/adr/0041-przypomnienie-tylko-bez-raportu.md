@@ -5,7 +5,8 @@
 Zaakceptowana (słowa taty przekazane przez Maksa 17.11.2026 i decyzje Maksa z grilla w gałęzi
 `docs/powiadomienia-brak-raportow`). Od taty są trzy reguły, cytowane w Kontekście: przypomnienie tylko bez raportu,
 błąd raportu tylko dla taty i zwykły opis obok kodów to nie błąd. Cytaty Maksa z grilla mają poprawioną pisownię. Pozostałe punkty Decyzji to decyzje Maksa, nazwane przy
-każdym. Spis zdań niżej powstał z przejścia po każdym punkcie Decyzji ADR 0039 i ADR 0030.
+każdym. Spis zdań niżej powstał z przejścia po każdym punkcie Decyzji ADR 0039 i ADR 0030, a zdanie ADR 0028 z
+przeglądu PR #2068 i decyzji Maksa w #2070.
 
 Zmienia te zdania [ADR 0039](0039-opis-zlecenia-to-same-kody-czynnosci.md):
 
@@ -34,6 +35,16 @@ Zmienia te zdania [ADR 0030](0030-przypomnienia-o-raporcie-z-centrum-w-autostarc
   ([ADR 0029](0029-raport-wykonawcy-wazniejszy-od-intermax.md)), który liczy się za dzień swoich zleceń;
 - „Odpowiedź na przypomnienie jest raportem. (…) dotąd każdy temat z `Re:` był pomijany”: raportem jest też odpowiedź
   z tematem Raportu wykonawcy na początku (poprawka raportu), z tą samą regułą tekstu nad cytatem.
+
+Zmienia to zdanie [ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md), punkt „Co widzi przeglądarka”:
+
+- „`ADRES`, `NUMER UMOWY`, tematy i pozostała treść maili nie trafiają do przeglądarki”: temat Raportu wykonawcy z
+  błędem tematu trafia do szczegółów dnia w widoku Raporty po strażniku reguły danych
+  ([ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md)), który maskuje wartości `ADRES` i telefony, więc nazwisko z tematu
+  zostaje (decyzja Maksa 17.11.2026, wariant B w
+  [#2070](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2070)). Tematy innych maili, `ADRES`, `NUMER UMOWY`
+  i pozostała treść maili dalej nie trafiają do przeglądarki, a temat dalej nie trafia do Logów, Zgłoszeń ani Archiwum
+  Logów okresu.
 
 ## Kontekst
 
@@ -75,7 +86,10 @@ tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmien
 - **Błędy raportu widzi tata w kafelku dnia** (decyzja Maksa: „najlepiej na heat mapie po kliknięciu na kafelek, tam gdzie są
   szczegóły poszczególnych zleceń”). Błąd opisu, błąd tematu i każdy inny problem Wpisania raportów stoi przy
   zleceniu w szczegółach dnia Wykonawcy na mapie cieplnej widoku Raporty, po kliknięciu „Wpisz raporty z maili”. Praca
-  przypomnień w tle niczego nie pokazuje w kafelkach.
+  przypomnień w tle niczego nie pokazuje w kafelkach. Przy błędzie tematu szczegóły dnia mają temat maila po strażniku
+  reguły danych, rodzaj błędu, dzień, za który Centrum liczy raport, i chwilę przyjścia maila (decyzja Maksa
+  17.11.2026: wariant B w #2070, którego rekomendacja mówi, że bez tekstu tematu tata nie wie, co dokładnie Wykonawca
+  napisał źle).
 - **Wpis na życzenie** (decyzja Maksa: „dopisanie danych z raportu do INTERMAX na życzenie, a nie jako
   automatyczny run”). Przy błędzie, przy którym wiadomo, co wpisać (błąd tematu, czyli temat ze słowem raportu
   bez dnia albo z innymi słowami; `t`, `n`, `skuteczne`, `nieskuteczne` zamiast `tak`/`nie`), tata jednym kliknięciem przy
@@ -96,7 +110,15 @@ tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmien
   raport, i poprawi pracownika”.
 - **Poprawka raportu w odpowiedzi** (decyzja Maksa). Odpowiedź (`Re:`, `Odp:`) z tematem Raportu wykonawcy za dzień na początku i
   dowolnym dopiskiem po nim (tata odpisuje „Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW…”) jest Raportem wykonawcy
-  za ten dzień, a jej Wpisami jest tylko tekst nad cytatem, jak w odpowiedzi na Przypomnienie.
+  za ten dzień, a jej Wpisami jest tylko tekst nad cytatem, jak w odpowiedzi na Przypomnienie. Temat bez roku
+  („Re: Raport 16.11 - popraw”) daje ten dzień i miesiąc w roku, w którym leżą w tych samych granicach od dnia
+  przyjścia maila co data z rokiem pomylonym (31.12 w mailu z 2.01 to poprzedni rok), bez błędu tematu (decyzja Maksa 17.11.2026:
+  „odpowiedź na poprawkę bez roku nie może być pomijana, bo domyślnie rok zawsze będzie ten obecny; odpowiedź na
+  poprawkę i tak dziedziczy temat, który wpisał tata, a tata będzie się trzymał swojej konwencji”).
+  Rozwinięcie tej decyzji przez koordynatora (17.11.2026, bez Maksa): gdy liczby po dniu i miesiącu nie dają dnia z
+  rokiem, odpowiedź liczy się za ten dzień i miesiąc tak samo jak bez roku, więc rok złej długości
+  („Re: Raport 16.11.202”) i liczba w dopisku („Re: Raport 16.11 2 montaże”) też dają 16.11; odpowiedź dziedziczy
+  temat taty, a jej dopisek nie zmienia dnia. Temat bez `Re:` z takim rokiem zostaje błędem tematu.
 
 ## Odrzucone warianty
 

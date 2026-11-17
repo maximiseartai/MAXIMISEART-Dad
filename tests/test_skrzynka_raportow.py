@@ -282,9 +282,9 @@ def _pobrane(atrapa: AtrapaImap) -> set[int]:
 
 def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tylko_wybranych(tmp_path: Path) -> None:
     """US 54–55 (ADR 0041): temat z literówką w słowie ``Raport`` port oddaje, choć wyszukiwanie Gmaila po słowie go nie
-    znajduje, tak jak poprawkę raportu w odpowiedzi na mail taty (spec #2032, historia 26), a z ``Montaże …``,
-    ``Zdjęcia do raportu …``, przekazanego raportu, odpowiedzi na mail o czym innym, innej korespondencji i maili samej
-    skrzynki bierze tylko nagłówki ``Subject`` i ``From``."""
+    znajduje, tak jak poprawkę raportu w odpowiedzi na mail taty (spec #2032, historia 26), także bez roku, a z
+    ``Montaże …``, ``Zdjęcia do raportu …``, przekazanego raportu, odpowiedzi na mail o czym innym albo bez dnia, innej
+    korespondencji i maili samej skrzynki bierze tylko nagłówki ``Subject`` i ``From``."""
 
     def mail(uid: int, temat: bytes, od: bytes = b"Jan Testowy <jan.testowy@przyklad.invalid>") -> AtrapaMail:
         return w_skrzynce(uid, surowy(temat=temat, od=od, message_id=f"<{uid}@x.invalid>".encode()))
@@ -300,6 +300,8 @@ def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tyl
         mail(8, "Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW".encode()),
         mail(9, b"Fwd: Raport 08.11.2026"),
         mail(10, b"Re: Zmiana w raportach 08.11.2026"),
+        mail(11, b"Re: Raport 16.11 - popraw"),
+        mail(12, b"Re: Raport popraw"),
     ]
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails) as atrapa:
         found = maile(port(dostep(tmp_path), atrapa).mails_since(date(2026, 11, 8)))
@@ -308,8 +310,9 @@ def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tyl
         "Rapotr 08.11.2026",
         "Raport 08.11.2026 Kowalski",
         "Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW",
+        "Re: Raport 16.11 - popraw",
     ]
-    assert _pobrane(atrapa) == {1, 5, 8}
+    assert _pobrane(atrapa) == {1, 5, 8, 11}
 
 
 def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:

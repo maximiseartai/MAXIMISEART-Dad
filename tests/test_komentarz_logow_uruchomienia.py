@@ -85,6 +85,7 @@ from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT
 from rozliczenia.centrum import run_comments
 from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
+from rozliczenia.centrum.settings_at_start import SettingsAtStart
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import TOOL_FIELDS, TOOL_TEXT_GRAMMAR, GuardedLogs, guard_cuts, guard_logs, guard_text, tool_text
 from rozliczenia.centrum.runs import EndedRun
@@ -1716,7 +1717,10 @@ def _ended(info: RunInfo = PRICING) -> EndedRun:
     """Koniec Uruchomienia ``info`` bez wyniku rdzenia (``BLAD_KRYTYCZNY``), po pół godzinie."""
 
     progress = Progress(phases=[], template_total=0, templates_completed=0, current_worker=None, figures=[])
-    return EndedRun(info, None, None, progress, STARTED_AT, STARTED_AT + timedelta(minutes=30))
+    return EndedRun(
+        info, None, None, progress, STARTED_AT, STARTED_AT + timedelta(minutes=30), None,
+        SettingsAtStart(snapshot=None, workers=None, quantity_rules=None, activity_legend=None, warnings=()),
+    )
 
 
 def _priced(comments: RunComments, disk: LogsOnDisk) -> None:

@@ -19,6 +19,7 @@ from ._model import (
     ReadUnreadable,
     RegisterOrder,
     ReportInputs,
+    ReportSubject,
     UnknownSender,
     Window,
 )
@@ -71,7 +72,7 @@ def read_window(inputs: ReportInputs) -> WindowRead:
             case _subject.FaultySubject(fault=fault, day=day):
                 numbers = frozenset(entry.number for entry in _entries.entries(mail.text, digits))
                 if worker is not None and window.opens(mail.arrived.date()) and numbers:
-                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, fault, numbers, day))
+                    read.append(ReadUnreadable(mail.id, mail.arrived, worker, fault, numbers, day, ReportSubject(mail.subject)))
             case date() if worker is None and window.opens(found):
                 read.append(ReadStranger(mail.id, mail.arrived, found))
                 strangers.append(UnknownSender(mail.id, mail.sender, found))

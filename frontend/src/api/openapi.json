@@ -9953,6 +9953,10 @@
       },
       "ReportsFaultySubject": {
         "properties": {
+          "subject": {
+            "type": "string",
+            "title": "Subject"
+          },
           "fault": {
             "type": "string",
             "title": "Fault"
@@ -9978,12 +9982,13 @@
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "subject",
           "fault",
           "day",
           "arrived"
         ],
         "title": "ReportsFaultySubject",
-        "description": "Raport wykonawcy z błędem tematu (ADR 0041): rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy), i chwila przyjścia maila. Bez tematu, bo tematy maili nie trafiają do przeglądarki (ADR 0028)."
+        "description": "Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości\n``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy), i chwila przyjścia maila."
       },
       "ReportsNote": {
         "properties": {
