@@ -2197,7 +2197,7 @@
           "ustawienia"
         ],
         "summary": "Suggestions",
-        "description": "Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``). Plik\nFolderów bez odczytu daje pustą listę jak niewskazany folder okresów: to podpowiedź, nie straż.",
+        "description": "Zapisy z ``URZĄDZENIA`` ostatnich Plików zbiorczych spoza Listy Urządzeń (``device_suggestions``). Plik\nFolderów albo pary bez odczytu daje pustą listę jak niewskazany folder okresów: to podpowiedź, nie straż, a\nLista Urządzeń z Wydania podpowiadałaby składnik, który tata już dodał; o pliku pary mówi problem sekcji.",
         "operationId": "getDeviceSuggestions",
         "responses": {
           "200": {

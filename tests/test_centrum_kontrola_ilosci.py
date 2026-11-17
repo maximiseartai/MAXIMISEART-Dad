@@ -1180,6 +1180,28 @@ def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okre
     assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [{"spelling": "ont x", "orders": 1}], "unread": []}
 
 
+@pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
+def test_podpowiedzi_listy_urzadzen_przy_pliku_pary_bez_odczytu_sa_puste_a_nie_liczone_lista_z_wydania(
+    tmp_path: Path, unreadable: str
+) -> None:
+    """Lista Urządzeń z Wydania nie ma składnika, który tata dodał, więc podpowiedzi z niej znów by mu go podpowiadały;
+    przy pliku pary bez odczytu nie wiadomo, co tata ma na liście, a to podpowiedź, nie straż: 200 bez podpowiedzi."""
+
+    two_unknown: dict[str, CellValue] = {"C": "u", "D": "przeniesienie nokia ont x", "G": MON.replace(hour=10), "T": 1}
+    centrum = centrum_with(tmp_path, [*TATA_ROWS, two_unknown])
+    rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
+    write_dad_quantity_rules(centrum.tool, RULES_FILE, rule, rule.replace("wartosc: 1", "wartosc: 2"))
+    run_to_end(centrum, dry_run=False)
+    added = centrum.client.post("/api/settings/devices", json={"name": "przeniesienie", "other_spellings": [], "group": None})
+    assert added.status_code == 200, added.text
+    assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [{"spelling": "ont x", "orders": 1}], "unread": []}
+
+    with without_reading(centrum.tool.config / unreadable):
+        response = centrum.client.get(SUGGESTIONS_URL)
+
+    assert (response.status_code, response.json()) == (200, {"suggestions": [], "unread": []})
+
+
 def test_podpowiedzi_listy_urzadzen_przy_pliku_zbiorczym_ktorego_nie_da_sie_przeczytac_maja_jego_okres(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
