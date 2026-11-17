@@ -84,7 +84,7 @@ ON_REQUEST = {
     "successful": "tak",
     "order_day": DAY,
 }
-ON_REQUEST_BUTTON = "Wpisz na życzenie"
+ON_REQUEST_BUTTON = "Wpisz do INTERMAX"
 NARROW: ViewportSize = {"width": 390, "height": 844}
 # „Przypisz do Wykonawcy…” gives the stranger's address to Wykonawca D of the fixture: he has no orders and no Raport
 # today, so his address changes no figure of the click.

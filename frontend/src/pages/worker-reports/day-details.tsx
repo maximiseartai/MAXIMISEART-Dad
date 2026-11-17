@@ -408,7 +408,7 @@ function OnRequest({ request }: { request: RequestedCell }) {
           disabled={starting || isActive(view)}
           onClick={() => void start({ process: "report_entering", request })}
         >
-          Wpisz na życzenie
+          Wpisz do INTERMAX
         </Button>
       </span>
     </span>

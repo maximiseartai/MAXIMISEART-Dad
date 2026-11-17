@@ -18,7 +18,7 @@ problem's sentence and `Zostaw moją`. The range changes with the arrows and a c
 Wykonawcy with a day of the chosen states, or with `Przypomniane` a day with a Przypomnienie, and dims the other tiles, and the Raporty from addresses outside the list
 stand under the table. At a difference with Dad's own value, `Zostaw moją` keeps his value: the difference is gone at
 once and does not come back at the next click. At a Wpis with `t`, `n`, `skuteczne` or `nieskuteczne` instead of `tak`/`nie` the popover
-says what Wpis na życzenie writes (the day, `SKUTECZNE` and `CZYNNOŚCI ZREALIZOWANE`), and `Wpisz na życzenie` enters it
+says what Wpis na życzenie writes (the day, `SKUTECZNE` and `CZYNNOŚCI ZREALIZOWANE`), and `Wpisz do INTERMAX` enters it
 with one Wpisanie raportów that carries Dad's decision (ADR 0041); with INTERMAX open in Excel it refuses in one sentence.
 
 ## Sub-features
