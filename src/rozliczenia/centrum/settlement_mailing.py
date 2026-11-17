@@ -39,8 +39,9 @@ from rozliczenia.centrum.contract import settlement_mailing as contract
 from rozliczenia.centrum.log import SettlementMailFailure
 from rozliczenia.centrum.period_board import requested_folder
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.settings.files import FieldProblem, usable
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable, usable
 from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.period_folder import PeriodFolder, WorkerSettlementFile, scan_period_folders
@@ -330,11 +331,11 @@ class SettlementMailing:
 
 def _inputs(snapshot: SettingsSnapshot) -> _Inputs | None:
     """Jedyna droga od migawki Ustawień do wejść strony, podglądu i wysyłki, więc mail z podglądu jest mailem, który
-    pójdzie. Plik tematu i treści albo Przypomnień o raporcie, którego system nie daje teraz czytać, to odmowa o tym
-    pliku (``refusal.settings_file_unreadable``) jak przy Folderach, a nie mail z treścią z Wydania bez stopki taty, a
+    pójdzie. Plik tematu i treści, Przypomnień o raporcie albo Listy Wykonawców, którego system nie daje teraz czytać,
+    to odmowa o tym pliku (``refusal.settings_file_unreadable``) jak przy Folderach, a nie mail z treścią z Wydania bez stopki taty, a
     temat i treść bez wartości taty, którą przyjmuje dzisiejsza reguła, to odmowa zdaniem złej treści
-    (``refusal.settlement_mail_unusable``), a nie mail z tematem i treścią z Wydania; ``None``: Lista Wykonawców bez
-    wartości, na której proces może biec."""
+    (``refusal.settlement_mail_unusable``), a nie mail z tematem i treścią z Wydania; ``None``: zła Lista Wykonawców
+    bez ostatniej dobrej."""
 
     mail, reminders = snapshot.settlement_mail, snapshot.reminders
     if isinstance(mail, UnreadableFile):
@@ -343,6 +344,8 @@ def _inputs(snapshot: SettingsSnapshot) -> _Inputs | None:
         raise refusal.settlement_mail_unusable(mail)
     if isinstance(reminders, UnreadableFile):
         raise refusal.settings_file_unreadable(reminders.name)
+    if isinstance(snapshot.workers, Unreadable):
+        raise refusal.settings_file_unreadable(WORKERS_FILE)
     workers = usable(snapshot.workers)
     if workers is None:
         return None

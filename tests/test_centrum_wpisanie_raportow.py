@@ -4468,13 +4468,13 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
         assert secret not in log, secret
 
 
-@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE])
+@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE, WORKERS_FILE])
 @pytest.mark.parametrize("back", [True, False], ids=["wraca-w-porze", "nie-wraca-do-konca-pory"])
-def test_plik_przypomnien_albo_folderow_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia_wpis_z_nazwa_pliku(
+def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia_wpis_z_nazwa_pliku(
     tmp_path: Path, file: str, back: bool
 ) -> None:
-    """Decyzja 4A Maksa: plik Przypomnień albo Folderów, którego system nie daje teraz czytać (np. trzyma go OneDrive),
-    to nie wyłączone przypomnienia ani niewskazany INTERMAX. Następna minuta tej samej pory próbuje znowu, więc plik,
+    """Decyzja 4A Maksa: plik Przypomnień, Folderów albo Listy Wykonawców, którego system nie daje teraz czytać (np.
+    trzyma go OneDrive), to nie wyłączone przypomnienia, niewskazany INTERMAX ani Wykonawcy bez adresów. Następna minuta tej samej pory próbuje znowu, więc plik,
     który wraca w porze, daje przypomnienia bez wpisu w dzienniku Centrum; plik, który nie wraca do końca pory, nie daje
     żadnego maila, a pierwsze sprawdzenie po porze zostawia w dzienniku Centrum jeden wpis z nazwą tego pliku."""
 

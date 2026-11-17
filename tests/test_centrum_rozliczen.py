@@ -7872,9 +7872,10 @@ UNREADABLE_PERIOD = "22_28_09_2026"
 
 def _with_folders_and_rules(tmp_path: Path) -> tuple[Centrum, Path]:
     """Centrum, w którym tata wskazał Rejestr zleceń i folder okresów z Folderem okresu ``UNREADABLE_PERIOD`` oraz ma
-    własne pliki Reguł ilości i Listy Urządzeń."""
+    własne pliki Reguł ilości, Listy Urządzeń i Listy Wykonawców."""
 
     app, _register = with_register(tmp_path)
+    write_worker_list(app.tool.worker_list, worker_list({"anna.testowa": "Anna Testowa"}))
     periods = tmp_path / "INEA"
     periods.mkdir()
     write_period_files(periods, UNREADABLE_PERIOD)
@@ -8061,6 +8062,7 @@ def _window_reads(app: Centrum) -> dict[str, tuple[int, object]]:
         (SETTINGS_FILE, tuple(WINDOW_READS)),
         (RULES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
         (DEVICES_FILE, ("getQuantitiesToFill", "getQuantityDifferences", "markQuantityException")),
+        (WORKERS_FILE, ()),
     ],
 )
 def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_o_nim(
@@ -8070,7 +8072,7 @@ def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_
     Tablica okresów, otwarcie ścieżki okresu i Rozliczenia pracownika, Uzupełnienie, różnice Kontroli ilości i „To był
     wyjątek” odmawiają 409 zdaniem o tym pliku zamiast „Wskaż folder okresów”, „Najpierw wskaż …” albo różnic
     liczonych regułami z Wydania, a podpowiedzi Wykonawców mówią je w stanie ``unreadable`` zamiast „wskaż Rejestr
-    zleceń”. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
+    zleceń” ani loginów, które Lista Wykonawców bez odczytu już ma. Odczyt, który z tego pliku nie odpowiada, daje to samo co przy czytelnym; odmowa niczego nie otwiera, a
     pliki w ``config`` zostają bez zmian."""
 
     app, _periods = _with_folders_and_rules(tmp_path)
@@ -8083,7 +8085,7 @@ def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_
         answers = _window_reads(app)
 
     expected = {operation: (409, {"message": sentence}) if operation in refusing else readable[operation] for operation in readable}
-    if unreadable == SETTINGS_FILE:
+    if unreadable in (SETTINGS_FILE, WORKERS_FILE):
         expected["getWorkerSuggestions"] = (200, {"state": "unreadable", "suggestions": [], "message": sentence})
     assert answers == expected
     assert app.platform.opened[len(opened) :] == ([] if "openPeriodPath" in refusing else opened)
@@ -8527,10 +8529,11 @@ def test_skrzynka_bez_odczytu_wylacza_wysylke_i_mowi_o_tym_jednym_zdaniem(tmp_pa
     assert f"rozliczenie-niewyslane okres={WYSYLKA_OKRES} przyczyna=wyslane-bez-odczytu typ=OSError" in app.log()
 
 
-@pytest.mark.parametrize("file", [SETTLEMENT_MAIL_FILE, REMINDERS_FILE])
-def test_plik_tematu_albo_stopki_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila(tmp_path: Path, file: str) -> None:
-    """Temat i treść taty albo jego stopka, których system nie daje teraz czytać: strona, podgląd i wysyłka odmawiają
-    o tym pliku tym samym zdaniem, a mail z treścią z Wydania bez stopki taty nie idzie (#2029 W1 r1)."""
+@pytest.mark.parametrize("file", [SETTLEMENT_MAIL_FILE, REMINDERS_FILE, WORKERS_FILE])
+def test_plik_tematu_stopki_albo_listy_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila(tmp_path: Path, file: str) -> None:
+    """Temat i treść taty, jego stopka albo Lista Wykonawców, których system nie daje teraz czytać: strona, podgląd i
+    wysyłka odmawiają o tym pliku tym samym zdaniem, a mail z treścią z Wydania bez stopki taty nie idzie (#2029 W1
+    r1), a strona nie mówi „sprawdź Listę Wykonawców w Ustawieniach” zamiast nazwy pliku."""
 
     app = wysylka_centrum(tmp_path)
     assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik taty za {okres}", "text": "Tekst taty"}).status_code == 200

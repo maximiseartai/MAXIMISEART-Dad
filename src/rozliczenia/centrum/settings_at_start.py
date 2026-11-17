@@ -150,6 +150,8 @@ def _workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
     """Lista Wykonawców dla startu Uruchomienia z migawki Ustawień: dobra, a przy złym ustawieniu ostatnia dobra;
     ``Refusal``, gdy ostatniej dobrej nie ma albo pliku nie da się teraz przeczytać."""
 
+    if isinstance(workers, Unreadable):
+        raise refusal.workers_unusable(None)
     found = usable(workers)
     if found is None:
         raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)
