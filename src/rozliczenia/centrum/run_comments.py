@@ -170,7 +170,7 @@ class RecordMaker:
         self._dad_actions = dad_actions
 
     def of(self, run: EndedRun) -> RunLog:
-        environment = self._environment(run.info.process, run.info.period, run.settings)
+        environment = self._environment(run.info.process, run.info.period, run.settings.snapshot)
         return logs_of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
 
     def interrupted(self, journal: JournalRead) -> RunLog:

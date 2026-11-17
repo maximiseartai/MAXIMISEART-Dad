@@ -23,8 +23,6 @@ from rozliczenia.centrum.run_logs import (
     LoggedDiagnosis,
     LoggedMessage,
     LoggedPhase,
-    LoggedActivityLegend,
-    LoggedQuantityRules,
     LoggedTemplate,
     RunLog,
     StartFacts,
@@ -53,7 +51,7 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
         stop_kind=None if stopped is None else stopped.kind,
         issue_count=None if snapshot is None else snapshot.issue_count,
         messages=[LoggedMessage.of("stop", stop) for stop in run.stops]
-        + [LoggedMessage.of("warning", warning, at_start=True) for warning in run.start_warnings]
+        + [LoggedMessage.of("warning", warning, at_start=True) for warning in run.settings.warnings]
         + [LoggedMessage.of("warning", warning) for warning in run.result_warnings],
         technical_notes=list(run.technical_notes),
         summary=None if run.shown is None else run.shown.summary,
@@ -78,8 +76,7 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
         dad_actions=dad_actions,
         input_copy=None if copied is None else [LoggedInputFile.of(file) for file in copied],
         input_copy_notes=[] if copied is None else _domain_fact_notes(copied),
-        quantity_rules=None if run.quantity_rules is None else LoggedQuantityRules.of(run.quantity_rules),
-        activity_legend=None if run.activity_legend is None else LoggedActivityLegend.of(run.activity_legend),
+        **run.settings.logged(),
     )
 
 
