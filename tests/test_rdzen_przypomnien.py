@@ -662,11 +662,19 @@ TIE_GOOD = ReportMail(TIE, _address(JAN), "Raport 09.11.2026", "40000001 tak ins
         pytest.param([], [_mail(JAN, "Raport", "40000001 tak", _at(DAY - timedelta(days=1), 20))], set(), id="bez-dnia-bez-takiego-dnia"),
         pytest.param([], [_mail(JAN, "Raport 31.11.2026", "40000004 tak")], {JAN_9}, id="data-ktora-nie-jest-dniem"),
         pytest.param([], [_mail(JAN, "Montaże 09.11.2026", "40000001 tak inst20m")], set(), id="bez-slowa-raport"),
+        pytest.param([], [_mail(JAN, "Re: Raport 09.11.2026 - BŁĘDY PROSZĘ POPRAW", "40000001 tak inst20m")], {JAN_9}, id="poprawka-w-odpowiedzi"),
         pytest.param(
             [],
-            [_mail(JAN, "Re: Raport 09.11.2026 - BŁĘDY PROSZĘ POPRAW", "40000001 tak inst20m\n\n> 40000004 tak spawpg\n> 40000005 tak")],
-            {JAN_9},
-            id="poprawka-w-odpowiedzi",
+            [
+                _mail(
+                    JAN,
+                    "Re: Raport 10.11.2026 - BŁĘDY PROSZĘ POPRAW",
+                    "40000004 tak inst20m\n\n> 40000001 tak inst20m\n> 40000002 tak spawpg",
+                    _at(DAY + timedelta(days=1), 20),
+                )
+            ],
+            {JAN_10},
+            id="poprawka-w-odpowiedzi-cytat-nie-daje-wpisow",
         ),
         pytest.param(
             [],
