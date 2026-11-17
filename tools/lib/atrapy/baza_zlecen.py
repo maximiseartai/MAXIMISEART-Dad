@@ -2,7 +2,7 @@
 
 Arkusze mają układy kolumn Bazy taty: 5 kolumn najstarszego arkusza (``FIVE``: ``adres``, ``sprzęt``, ``nr zle``,
 ``data``, ``kto``, adres z miastem przed przecinkiem), 11 kolumn (``ELEVEN``, data w ``DATA``) i 12 kolumn (``TWELVE``,
-``DATA GODZ. POCZ.`` i ``MIASTO``). Zapis jak u taty: nagłówki pogrubione, wartości w innej czcionce niż INTERMAX, co
+``DATA GODZ. POCZ.`` i ``MIASTO``, pusta, gdy wiersz nie ma miasta). Zapis jak u taty: nagłówki pogrubione, wartości w innej czcionce niż INTERMAX, co
 drugi wiersz na żółtym tle, numer zlecenia z Hiperłączem, data w formacie daty, ``UMOWA`` pusta w środku wiersza, a
 teksty wspólne jak w Excelu (``intermax.like_excel``). Adresy i wartości są zmyślone.
 """
@@ -23,11 +23,13 @@ from atrapy.intermax import like_excel
 
 @dataclass(frozen=True)
 class Layout:
-    """Układ kolumn arkusza Bazy: nagłówki od kolumny A i kolumny (od 1) daty realizacji i numeru zlecenia."""
+    """Układ kolumn arkusza Bazy: nagłówki od kolumny A i kolumny (od 1) daty realizacji, numeru zlecenia i ``MIASTO``
+    (``None``: arkusz bez niej)."""
 
     headers: tuple[str, ...]
     date: int
     number: int
+    city: int | None = None
 
 
 FIVE = Layout(("adres", "sprzęt", "nr zle", "data", "kto"), date=4, number=3)
@@ -65,6 +67,7 @@ TWELVE = Layout(
     ),
     date=2,
     number=7,
+    city=3,
 )
 _EMPTY = "UMOWA"
 """Nagłówek kolumny, która w wierszach Bazy taty jest zwykle pusta: pusta komórka w środku bloku."""
@@ -74,13 +77,14 @@ _YELLOW = PatternFill("solid", fgColor="FFFFFF00")
 
 @dataclass(frozen=True)
 class Visit:
-    """Wiersz Bazy: adres w kolumnie A, data realizacji (data, tekst albo pusta), numer zlecenia i znak wiersza, z którego
-    powstają wartości pozostałych kolumn."""
+    """Wiersz Bazy: adres w kolumnie A, data realizacji (data, tekst albo pusta), numer zlecenia, znak wiersza, z którego
+    powstają wartości pozostałych kolumn, i ``MIASTO`` w układzie z tą kolumną (``None``: pusta)."""
 
     address: str
     when: datetime | str | None
     number: int | str | None
     mark: str
+    city: str | None = None
 
     def values(self, layout: Layout) -> tuple[object, ...]:
         """Wartości od kolumny A do szerokości ``layout``, jak w wierszu Bazy (``None``: pusta komórka)."""
@@ -89,6 +93,8 @@ class Visit:
         values[0] = self.address
         values[layout.date - 1] = self.when
         values[layout.number - 1] = self.number
+        if layout.city is not None:
+            values[layout.city - 1] = self.city
         return tuple(values)
 
 

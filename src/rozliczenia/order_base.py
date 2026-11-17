@@ -2,16 +2,16 @@
 
 Kształt danych. Baza to arkusze w kolejności skoroszytu (``_Sheet``), każdy z własnym układem kolumn: szerokość to
 ostatnia kolumna wiersza 1 z nagłówkiem, kolumnę daty realizacji i numeru zlecenia daje nagłówek (``_DATE_HEADERS``,
-``_NUMBER_HEADERS``, bez wielkości liter), a wiersze Bazy to wiersze od 2 z tekstem w kolumnie A (adres). Historia
-adresu zlecenia (``OrderBase.history``) to bloki (``HistoryBlock``): wiersze z tym samym adresem (``same_address``), od
-najnowszej daty realizacji do najstarszej, a wiersz bez daty z datą (data tekstem, liczba bez formatu daty, pusta) na
-końcu, w kolejności arkuszy i wierszy. Wiersz z tym samym numerem zlecenia co zlecenie (po samych cyfrach) nie wchodzi.
+``_NUMBER_HEADERS``, bez wielkości liter), a wiersze Bazy to wiersze od 2 z tekstem w kolumnie A (adres), każdy z
+``MIASTO``, gdy arkusz ma kolumnę o tym nagłówku. Historia adresu zlecenia (``OrderBase.history``) to bloki
+(``HistoryBlock``): wiersze z tym samym adresem (``same_address``), od najnowszej daty realizacji do najstarszej, a
+wiersz bez daty z datą (data tekstem, liczba bez formatu daty, pusta) na końcu, w kolejności arkuszy i wierszy. Wiersz z tym samym numerem zlecenia co zlecenie (po samych cyfrach) nie wchodzi.
 Blok ma wartości komórek od kolumny A do szerokości swojego arkusza, bez stylów i Hiperłączy.
 
 Odczyt (``read``) idzie przez uchwyt plików taty bez Kopii wejścia: pamięć reguły danych poznaje adres z kolumny A
 każdego wiersza Bazy, a Kopia wejścia Bazy nie dostaje. Bazę otwartą w Excelu czyta w jej ostatniej zapisanej wersji.
-Arkusze czyta z XML bez openpyxl (``workbook_parts``, ``cell_values``): przy odczycie tylko kolumnę A i granice
-wierszy, a wartości całego wiersza dopiero dla trafienia, bo Baza taty ma ~125 tys. wierszy w sześciu arkuszach.
+Arkusze czyta z XML bez openpyxl (``workbook_parts``, ``cell_values``): przy odczycie tylko kolumnę A, ``MIASTO`` i
+granice wierszy, a wartości całego wiersza dopiero dla trafienia, bo Baza taty ma ~125 tys. wierszy w sześciu arkuszach.
 Plik, którego nie ma, nie da się odczytać albo nie jest skoroszytem, to ``WorkbookError``, a arkusz, którego wierszy
 nie da się rozdzielić albo który ma adresy w kolumnie A bez jej nagłówka, to wynik ``UnsupportedSheet``.
 """
@@ -53,6 +53,7 @@ ORDER_BASE_NAME: Final = "Baza zleceń do 17_11_2026.xlsx"
 
 _DATE_HEADERS: Final = frozenset(map(normalize_text, ("data", "DATA GODZ. POCZ.")))
 _NUMBER_HEADERS: Final = frozenset(map(normalize_text, ("nr zle", "NUMER ZL.")))
+_CITY_HEADERS: Final = frozenset({normalize_text("MIASTO")})
 _ADDRESS_COLUMN: Final = 1
 _NOT_DIGIT: Final = re.compile(r"\D")
 
@@ -104,14 +105,14 @@ class OrderBase:
     def sheet_count(self) -> int:
         return len(self._sheets)
 
-    def history(self, address: object, number: object) -> tuple[HistoryBlock, ...]:
-        """Historia adresu zlecenia z ``ADRES`` ``address`` i ``NUMER ZL.`` ``number`` (zob. docstring modułu);
-        ``WorkbookError``, gdy komórki wiersza z tym adresem nie da się odczytać."""
+    def history(self, address: object, city: object, number: object) -> tuple[HistoryBlock, ...]:
+        """Historia adresu zlecenia z ``ADRES`` ``address``, ``MIASTO`` ``city`` i ``NUMER ZL.`` ``number`` (zob.
+        docstring modułu); ``WorkbookError``, gdy komórki wiersza z tym adresem nie da się odczytać."""
 
         own = _order_number(number)
         dated: list[tuple[datetime, HistoryBlock]] = []
         undated: list[HistoryBlock] = []
-        for row in self._index.matching(address):
+        for row in self._index.matching(address, city):
             sheet = self._sheets[row.sheet]
             values = self._row_values(sheet, row.number)
             if own is not None and sheet.number is not None and _order_number(values[sheet.number - 1]) == own:
@@ -139,7 +140,7 @@ def read(path: Path, files: DadFiles) -> OrderBase | UnsupportedSheet:
     file = files.read(path, despite_excel_lock=True)
     memory = file.memory(((ForbiddenColumn.ADDRESS, _ADDRESS_COLUMN),))
     sheets: list[_Sheet] = []
-    addresses: list[tuple[object, _Row]] = []
+    addresses: list[tuple[object, object, _Row]] = []
     with workbook_files.unreadable_as_error(path), package_parts(file.content) as parts:
         workbook = office_document(parts)
         if workbook is None:
@@ -156,9 +157,11 @@ def read(path: Path, files: DadFiles) -> OrderBase | UnsupportedSheet:
             header = [normalize_text(value) for value in values.header(xml)]
             if texts and not (header[0] if header else ""):
                 return UnsupportedSheet(name)
+            city = _column(header, _CITY_HEADERS)
+            cities = {} if city is None else dict(column_texts(xml, city, 2, values.shared))
             for number, text in texts:
                 memory.remember({_ADDRESS_COLUMN: text})
-                addresses.append((text, _Row(len(sheets), number)))
+                addresses.append((text, cities.get(number), _Row(len(sheets), number)))
             sheets.append(_Sheet(_width(header), _column(header, _DATE_HEADERS), _column(header, _NUMBER_HEADERS), xml, rows))
     return OrderBase(path, sheets, AddressIndex(addresses), values)
 
