@@ -130,8 +130,9 @@ class Good(Generic[T]):
 
 @dataclass(frozen=True)
 class Bad(Generic[T]):
-    """Złe ustawienie: problem treści pliku i ostatnia dobra wartość z pamięci właściciela (``None``: nieznana, więc
-    obowiązują wartości domyślne pliku). Sekret, którego treści pamięć nie trzyma, ma tu wartość samej złej treści
+    """Złe ustawienie: problem treści pliku i ostatnia dobra wartość z pamięci właściciela, którą przyjmuje dzisiejsza
+    reguła ``parse`` (``None``: takiej nie ma; co wtedy liczy proces, mówi właściciel: zwykle wartości domyślne pliku,
+    a Lista Wykonawców i temat i treść Maila z rozliczeniem nie mają wtedy wartości dla procesu). Sekret, którego treści pamięć nie trzyma, ma tu wartość samej złej treści
     (``SettingsFile.unchecked``; ``None``: treść nie daje wartości)."""
 
     problem: FieldProblem

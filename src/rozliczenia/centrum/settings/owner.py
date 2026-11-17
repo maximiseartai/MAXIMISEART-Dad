@@ -156,7 +156,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
     taken_problem,
 )
 from rozliczenia.centrum.settings.reminders import REMINDERS, RemindersEdit, dad_reminders
-from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL
+from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL, WrittenMail, written
 from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_workers
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
@@ -206,9 +206,10 @@ class SettingsSnapshot:
     activity_legend: ActivityLegend | UnreadableFile
     """Legenda czynności, którą liczy Uruchomienie: przy złym pliku ostatnia dobra, a przy pliku, którego system nie
     daje teraz czytać, ``UnreadableFile``."""
-    settlement_mail: SettlementMailSettings | UnreadableFile
-    """Temat i treść Maila z rozliczeniem: przy złym pliku ostatnie dobre albo domyślne, a przy pliku, którego system
-    nie daje teraz czytać, ``UnreadableFile``."""
+    settlement_mail: SettlementMailSettings | UnreadableFile | FieldProblem
+    """Temat i treść Maila z rozliczeniem taty: przy złym pliku ostatnie dobre, a bez nich problem pliku
+    (``FieldProblem``), bo mail z tematem i treścią z Wydania nie byłby mailem taty; przy pliku, którego system nie daje
+    teraz czytać, ``UnreadableFile``. Brak pliku to wartości domyślne: tata niczego nie pisał."""
 
 
 @dataclass(frozen=True)
@@ -250,6 +251,17 @@ class ActivityLegendView:
 
 
 @dataclass(frozen=True)
+class SettlementMailView:
+    """Temat i treść Maila z rozliczeniem dla okna Ustawień: odczyt pliku (stan i problem) i to, co stoi w polach."""
+
+    read: Read[SettlementMailSettings] | Unreadable
+    shown: WrittenMail
+    """Temat i treść w polach okna: dobre albo ostatnie dobre, którymi liczy Wysyłka rozliczeń; bez nich temat i treść
+    z pliku taty bez reguł (``written``), od których zaczyna zapis taty, a przy pliku bez odczytu albo bez kształtu pliku
+    tematu i treści wartości domyślne. Tylko do pokazania: wartość dla procesu daje migawka."""
+
+
+@dataclass(frozen=True)
 class SettingsView:
     """Ustawienia Centrum dla okna Ustawień: każda sekcja z wartością albo złym ustawieniem."""
 
@@ -258,7 +270,7 @@ class SettingsView:
     inbox: Read[InboxFile] | Unreadable
     autostart: Read[bool] | Unreadable | Unsupported
     reminders: Read[ReminderSettings] | Unreadable
-    settlement_mail: Read[SettlementMailSettings] | Unreadable
+    settlement_mail: SettlementMailView
 
 
 @dataclass(frozen=True)
@@ -386,7 +398,7 @@ class CentrumSettings:
             workers = self._observe(WORKERS)
             inbox_state = inbox.state(self._observe(INBOX))
             reminders = _or_unreadable(self._observe(REMINDERS), REMINDERS)
-            mail = _or_unreadable(self._observe(SETTLEMENT_MAIL), SETTLEMENT_MAIL)
+            mail = _counted(self._observe(SETTLEMENT_MAIL), SETTLEMENT_MAIL)
             rules = self._quantity_rules()
             return SettingsSnapshot(
                 folders=folders,
@@ -440,8 +452,20 @@ class CentrumSettings:
                 inbox=self._observe(INBOX),
                 autostart=Unsupported() if autostart is not None else self._observe(AUTOSTART),
                 reminders=self._observe(REMINDERS),
-                settlement_mail=self._observe(SETTLEMENT_MAIL),
+                settlement_mail=self._settlement_mail(),
             )
+
+    def _settlement_mail(self) -> SettlementMailView:
+        data = self._places[SETTLEMENT_MAIL.name].read()
+        if isinstance(data, OSError):
+            return SettlementMailView(Unreadable(), _shown_mail(SETTLEMENT_MAIL.default))
+        read = self._observed(SETTLEMENT_MAIL, data)
+        match read:
+            case Good(value=value) | Bad(usable=value) if value is not None:
+                shown = _shown_mail(value)
+            case _:
+                shown = written(data) or _shown_mail(SETTLEMENT_MAIL.default)
+        return SettlementMailView(read, shown)
 
     def change_folders(self, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty sekcji Foldery albo motywu (``dad_folders``). Folder okresów od korzenia układu, który listuje
@@ -1096,7 +1120,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     folders = _or_unreadable(_read_only_view(config, FOLDERS), FOLDERS)
     reminders = _or_unreadable(_read_only_view(config, REMINDERS), REMINDERS)
     codes = _or_unreadable(_read_only_view(config, LEGEND), LEGEND)
-    mail = _or_unreadable(_read_only_view(config, SETTLEMENT_MAIL), SETTLEMENT_MAIL)
+    mail = _counted(_read_only_view(config, SETTLEMENT_MAIL), SETTLEMENT_MAIL)
     return SettingsSnapshot(
         folders=folders,
         workers=_read_only_view(config, WORKERS),
@@ -1183,17 +1207,20 @@ def _rules_problem(
 
 
 def _last_good_devices(remembered: Remembered | None | Unreadable) -> tuple[Component, ...]:
-    """Ostatnia dobra Lista Urządzeń z pamięci właściciela, którą procesy liczą przy złej liście; bez niej lista z Wydania."""
+    """Ostatnia dobra Lista Urządzeń z pamięci właściciela, którą procesy liczą przy złej liście; bez niej, także gdy
+    jej treści ``parse`` dziś nie przyjmuje, lista z Wydania."""
 
-    return _good_value(remembered.good if isinstance(remembered, Remembered) else None, DEVICES)
+    good = _good_value(remembered.good if isinstance(remembered, Remembered) else None, DEVICES)
+    return DEVICES.default if good is None else good
 
 
-def _good_value(good: bytes | None, file: SettingsFile[T]) -> T:
-    """Wartość ostatniej dobrej treści z pamięci; brak pliku albo treść, której ``parse`` dziś nie przyjmuje, to wartości
-    domyślne pliku."""
+def _good_value(good: bytes | None, file: SettingsFile[T]) -> T | None:
+    """Wartość ostatniej dobrej treści z pamięci (``None``: brak pliku, czyli wartości domyślne pliku); treść, której
+    ``parse`` dziś nie przyjmuje, to ``None``: ostatniej dobrej wartości taty już nie ma, a treść z Wydania nie jest
+    jego wartością."""
 
     parsed = file.parse(good)
-    return file.default if isinstance(parsed, FieldProblem) else parsed
+    return None if isinstance(parsed, FieldProblem) else parsed
 
 
 def _problem(observed: Read[T] | Unreadable, file: SettingsFile[T], unreadable: Callable[[str], str]) -> FieldProblem | None:
@@ -1252,6 +1279,23 @@ def _or_unreadable(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T |
     nazwą."""
 
     return UnreadableFile(file.name) if isinstance(observed, Unreadable) else _value(observed, file)
+
+
+def _counted(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T | UnreadableFile | FieldProblem:
+    """Wartość taty dla migawki procesu: dobra albo ostatnia dobra; złe ustawienie bez niej to jego problem, a nie
+    wartości domyślne, a plik, którego system nie daje teraz czytać, ``UnreadableFile`` z jego nazwą."""
+
+    match observed:
+        case Unreadable():
+            return UnreadableFile(file.name)
+        case Good(value=value):
+            return value
+        case Bad(problem=problem, usable=value):
+            return problem if value is None else value
+
+
+def _shown_mail(mail: SettlementMailSettings) -> WrittenMail:
+    return WrittenMail(mail.subject, mail.text)
 
 
 def _or_release(observed: Read[T] | Unreadable, file: SettingsFile[T]) -> T:

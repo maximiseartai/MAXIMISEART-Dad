@@ -94,10 +94,16 @@ zmianą."""
 
 
 MailProblemKind = Literal[
-    "empty_subject", "subject_lines", "subject_report_word", "subject_unknown_field", "empty_text", "text_unknown_field"
+    "empty_subject",
+    "subject_lines",
+    "subject_report_word",
+    "subject_reads_as_report",
+    "subject_unknown_field",
+    "empty_text",
+    "text_unknown_field",
 ]
 """Reguła tematu i treści, której wartość nie spełnia: pusty temat, temat w kilku liniach, temat ze słowem
-``SUBJECT_WORD`` albo taki, którego odpowiedź ``Re:`` port Skrzynki raportów wybrałby jako Raport wykonawcy, nawias
+``SUBJECT_WORD``, temat, którego odpowiedź ``Re:`` port Skrzynki raportów wybrałby jako Raport wykonawcy, nawias
 klamrowy w temacie inny niż pole, pusta treść i nawias klamrowy w treści inny niż pole."""
 
 
@@ -120,8 +126,10 @@ class SettlementMailSettings:
         rules: Mapping[MailProblemKind, bool] = {
             "empty_subject": bool(subject.strip()),
             "subject_lines": not {"\r", "\n"} & set(subject),
-            "subject_report_word": SUBJECT_WORD not in _without_fields(subject).casefold()
-            and not any(reads_as_report(f"Re: {_filled(subject, period, _SAMPLE_WORKER)}") for period in _SAMPLE_PERIODS),
+            "subject_report_word": SUBJECT_WORD not in _without_fields(subject).casefold(),
+            "subject_reads_as_report": not any(
+                reads_as_report(f"Re: {_filled(subject, period, _SAMPLE_WORKER)}") for period in _SAMPLE_PERIODS
+            ),
             "subject_unknown_field": not {"{", "}"} & set(_without_fields(subject)),
             "empty_text": bool(text.strip()),
             "text_unknown_field": not {"{", "}"} & set(_without_fields(text)),

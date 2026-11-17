@@ -205,6 +205,23 @@ def settlement_mail_report_word() -> str:
     return "Temat nie może mieć słowa „raport”: odpowiedź Wykonawcy Centrum wzięłoby za jego raport."
 
 
+def settlement_mail_reads_as_report() -> str:
+    """Temat bez słowa „raport”, którego odpowiedź ``Re:`` skrzynka raportów wzięłaby za Raport wykonawcy
+    (``Report {okres}``)."""
+
+    return "Temat wygląda jak temat raportu: odpowiedź Wykonawcy Centrum wzięłoby za jego raport."
+
+
+def settlement_mail_unusable(problem: str) -> str:
+    """Odmowa Wysyłki rozliczeń bez tematu i treści taty, które przyjmuje reguła: ``problem`` to zdanie złej treści pliku
+    tematu i treści."""
+
+    return (
+        f"Mail z rozliczeniem nie pójdzie, dopóki temat i treść mają złe ustawienie. {problem} Popraw je w Ustawieniach, "
+        "w sekcji Wysyłka rozliczeń."
+    )
+
+
 def settlement_mail_unknown_field() -> str:
     return "W temacie i treści mogą stać tylko pola {okres} i {wykonawca}, bez innych nawiasów klamrowych."
 

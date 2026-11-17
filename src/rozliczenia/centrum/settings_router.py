@@ -47,6 +47,7 @@ from rozliczenia.centrum.settings.owner import (
     NotUndoable,
     Refused,
     Saved,
+    SettlementMailView,
     SettingsView,
 )
 from rozliczenia.centrum.settings.reminders import (
@@ -62,7 +63,7 @@ from rozliczenia.centrum.settings.reminders import (
 )
 from rozliczenia.centrum.settings.settlement_mail import settings_of as settlement_mail_of
 from rozliczenia.centrum.settings.workers import WORKERS
-from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL, SettlementMailSettings, mail_subject, mail_text
+from rozliczenia.settlement_mailing import mail_subject, mail_text
 from rozliczenia.settlement_period import last_complete_period
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
 from rozliczenia.worker_report_inbox import LoginResult
@@ -402,20 +403,21 @@ def _reminders(read: Read[ReminderSettings] | Unreadable) -> reminders_contract.
     )
 
 
-def _settlement_mail(read: Read[SettlementMailSettings] | Unreadable) -> mailing_contract.SettlementMailSetting:
-    """Temat i treść Maila z rozliczeniem; przy złym pliku ostatnie dobre (bez nich domyślne) i zdanie o problemie."""
+def _settlement_mail(view: SettlementMailView) -> mailing_contract.SettlementMailSetting:
+    """Temat i treść Maila z rozliczeniem w polach, jak je daje właściciel (``SettlementMailView.shown``), i przy złym
+    pliku zdanie o problemie."""
 
-    match read:
-        case Good(value=found):
+    match view.read:
+        case Good():
             state: Literal["good", "bad", "unreadable"] = "good"
             problem = None
-        case Bad(problem=bad, usable=last):
-            state, found = "bad", last or DEFAULT_SETTLEMENT_MAIL
+        case Bad(problem=bad):
+            state = "bad"
             problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
         case Unreadable():
-            state, found, problem = "unreadable", DEFAULT_SETTLEMENT_MAIL, None
+            state, problem = "unreadable", None
     return mailing_contract.SettlementMailSetting(
-        state=state, subject=found.subject, text=found.text, problem=problem
+        state=state, subject=view.shown.subject, text=view.shown.text, problem=problem
     )
 
 

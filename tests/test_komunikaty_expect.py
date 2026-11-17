@@ -189,6 +189,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "settlement_mail_empty_subject": [settings_messages.settlement_mail_empty_subject],
             "settlement_mail_subject_lines": [settings_messages.settlement_mail_subject_lines],
             "settlement_mail_report_word": [settings_messages.settlement_mail_report_word],
+            "settlement_mail_reads_as_report": [settings_messages.settlement_mail_reads_as_report],
+            "settlement_mail_unusable": [partial(settings_messages.settlement_mail_unusable, settings_messages.settlement_mail_reads_as_report())],
             "settlement_mail_unknown_field": [settings_messages.settlement_mail_unknown_field],
             "settlement_mail_empty_text": [settings_messages.settlement_mail_empty_text],
             "autostart_unsupported": [settings_messages.autostart_unsupported],

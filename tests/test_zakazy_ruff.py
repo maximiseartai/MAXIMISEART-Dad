@@ -486,9 +486,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/centrum/settings/quantity_rules.py": frozenset({"rozliczenia.quantity_rules_file.DEFAULT_QUANTITY_RULES"}),
     "src/rozliczenia/centrum/settings/reminders.py": frozenset({"rozliczenia.worker_reports.DEFAULT_REMINDERS"}),
     "src/rozliczenia/centrum/settings/settlement_mail.py": frozenset({"rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL"}),
-    "src/rozliczenia/centrum/settings_router.py": frozenset(
-        {"rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL", "rozliczenia.worker_reports.DEFAULT_REMINDERS"}
-    ),
+    "src/rozliczenia/centrum/settings_router.py": frozenset({"rozliczenia.worker_reports.DEFAULT_REMINDERS"}),
     "src/rozliczenia/centrum/report_reminders.py": frozenset({"rozliczenia.worker_reports.DEFAULT_REMINDERS"}),
     "src/rozliczenia/engine.py": frozenset(
         {"rozliczenia.activity_legend_file.DEFAULT_ACTIVITY_LEGEND", "rozliczenia.quantity_rules_file.DEFAULT_QUANTITY_RULES"}

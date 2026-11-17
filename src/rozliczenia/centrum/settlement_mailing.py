@@ -8,7 +8,8 @@ raportów od wtorku najstarszego z nich (``SettlementMailbox.sent_attachments``)
 ``WYKONAWCA`` z XML (``workbook_files.collective_workers``), z pamięcią po chwili zmiany pliku. Skrzynki, której nie da
 się przeczytać, strona nie zgaduje: mówi o niej jednym zdaniem, plik do wysłania ma stan nieznany i wysyłka jest
 wyłączona. Pliku Ustawień, którego system nie daje teraz czytać (Foldery, temat i treść, Przypomnienia o raporcie),
-strona, podgląd i wysyłka też nie zgadują: każde odmawia o tym pliku (``_inputs``).
+strona, podgląd i wysyłka też nie zgadują: każde odmawia o tym pliku (``_inputs``), a temat i treść bez wartości taty,
+którą przyjmuje dzisiejsza reguła, zdaniem złej treści, co poprawić w Ustawieniach.
 
 Wysyłka idzie po jednym mailu pod jedną blokadą: przed każdym mailem znowu czyta „Wysłane” od wtorku okresu, więc
 plik już wysłany i niezmieniony nie idzie drugi raz (podwójne kliknięcie, ponowienie, druga karta), a zmieniony idzie
@@ -38,7 +39,7 @@ from rozliczenia.centrum.contract import settlement_mailing as contract
 from rozliczenia.centrum.log import SettlementMailFailure
 from rozliczenia.centrum.period_board import requested_folder
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.settings.files import usable
+from rozliczenia.centrum.settings.files import FieldProblem, usable
 from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
@@ -330,12 +331,16 @@ class SettlementMailing:
 def _inputs(snapshot: SettingsSnapshot) -> _Inputs | None:
     """Jedyna droga od migawki Ustawień do wejść strony, podglądu i wysyłki, więc mail z podglądu jest mailem, który
     pójdzie. Plik tematu i treści albo Przypomnień o raporcie, którego system nie daje teraz czytać, to odmowa o tym
-    pliku (``refusal.settings_file_unreadable``) jak przy Folderach, a nie mail z treścią z Wydania bez stopki taty;
-    ``None``: Lista Wykonawców bez wartości, na której proces może biec."""
+    pliku (``refusal.settings_file_unreadable``) jak przy Folderach, a nie mail z treścią z Wydania bez stopki taty, a
+    temat i treść bez wartości taty, którą przyjmuje dzisiejsza reguła, to odmowa zdaniem złej treści
+    (``refusal.settlement_mail_unusable``), a nie mail z tematem i treścią z Wydania; ``None``: Lista Wykonawców bez
+    wartości, na której proces może biec."""
 
     mail, reminders = snapshot.settlement_mail, snapshot.reminders
     if isinstance(mail, UnreadableFile):
         raise refusal.settings_file_unreadable(mail.name)
+    if isinstance(mail, FieldProblem):
+        raise refusal.settlement_mail_unusable(mail)
     if isinstance(reminders, UnreadableFile):
         raise refusal.settings_file_unreadable(reminders.name)
     workers = usable(snapshot.workers)

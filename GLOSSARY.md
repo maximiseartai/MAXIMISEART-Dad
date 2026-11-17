@@ -240,6 +240,7 @@ _Avoid_: mailing, rozsyłka
 ## Mail z rozliczeniem
 
 Mail ze skrzynki raportów taty do Wykonawcy z jego Rozliczeniem pracownika jako załącznikiem, z tematem i treścią z Ustawień Centrum i stopką taty.
+Idzie z tematem i treścią taty albo wcale: bez wartości taty, którą przyjmuje dzisiejsza reguła tematu i treści, Wysyłka rozliczeń odmawia, a nie wysyła tematu i treści domyślnych (właściciel: `owner.SettingsSnapshot.settlement_mail`).
 Rozpoznaje się go w „Wysłanych” po nazwie pliku załącznika, a nie po temacie, więc także wtedy, gdy tata wysłał go ręcznie z tej skrzynki.
 _Avoid_: mail z plikiem, wysyłka rozliczenia
 

@@ -61,8 +61,11 @@ skrzynkę raportów z hasłem aplikacji.
 - **Temat i treść to Ustawienie Centrum** w `config/wysylka-rozliczen.yaml` (schemat 1: `temat`, `tresc`), w sekcji
   „Wysyłka rozliczeń” grupy Praca, z podglądem i Historią Ustawień. Domyślnie temat „Rozliczenie za {okres}” i treść
   „Dzień dobry, w załączniku rozliczenie za {okres}.”. Temat jest wymagany, w jednej linii i bez słowa `raport`, bo
-  port Skrzynki raportów bierze maile z tym słowem w temacie jako kandydatów na Raport wykonawcy; inny nawias klamrowy
-  niż pole to odmowa.
+  port Skrzynki raportów bierze maile z tym słowem w temacie jako kandydatów na Raport wykonawcy, a jego odpowiedź `Re:`
+  nie może wyglądać jak temat raportu (`Report {okres}`); inny nawias klamrowy niż pole to odmowa. Mail idzie z tematem
+  i treścią taty albo wcale: gdy plik ma złą treść, a ostatnich dobrych, które przyjmuje dzisiejsza reguła, nie ma
+  (plik zapisany przed zaostrzeniem reguły, ręczna edycja), strona, podgląd i wysyłka odmawiają jednym zdaniem, co
+  poprawić w Ustawieniach, zamiast wysłać temat i treść domyślne, a okno Ustawień pokazuje w polach tekst z pliku taty.
 - **Bez zleceń.** Pusty Szablon pracownika nie idzie. Centrum poznaje go po braku Wykonawcy w `WYKONAWCA` od pierwszego
   Wiersza danych (odczyt kolumny z XML, bez openpyxl), tylko dla pliku, który jeszcze nie poszedł, z pamięcią po chwili
   zmiany pliku. Plik, którego nie da się przeczytać, liczy się jako plik ze zleceniami: lepiej go pokazać niż ukryć.
