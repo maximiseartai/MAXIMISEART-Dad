@@ -42,9 +42,9 @@ def _inputs(start: Start, parts: HostParts) -> EnteringInputs:
     return EnteringInputs(
         start.path("register"),
         start.path("periods_directory"),
-        start.worker_list(),
+        start.settings.worker_list(),
         parts.report_entering(),
-        start.counted_legend(),
+        start.settings.counted_legend(),
         now=parts.now,
         waiting=parts.waiting,
         disk=parts.disk,

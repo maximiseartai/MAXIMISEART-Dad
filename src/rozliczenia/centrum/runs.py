@@ -35,7 +35,7 @@ from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT, Refusal, Retry
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.period_start import PeriodStarts
 from rozliczenia.centrum.process_kind import PreparedRun, startable
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings_at_start import SettingsAtStart
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.run_view import ProcessView, Shown
 from rozliczenia.centrum.stops import StoppedRun, Stops
@@ -46,8 +46,6 @@ from rozliczenia.input_copy import InputCopy
 from rozliczenia.message import Message
 from rozliczenia.process_run import Finished, Outcome, RunResult, Stop
 from rozliczenia.progress import ProgressProjection, ProgressSnapshot
-from rozliczenia.activity_legend import ActivityLegend
-from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.wall_clock import utc_now
 
 _STREAM_POLL_SECONDS: Final = 0.05
@@ -121,16 +119,10 @@ class EndedRun:
     """Postęp z karty: ostatni widok projekcji, który dostała przeglądarka."""
     started_at: datetime
     ended_at: datetime
-    input_copy: InputCopy | None = None
+    input_copy: InputCopy | None
     """Kopia wejścia Uruchomienia (``PreparedRun.input_copy``) z tym, co czytniki przeczytały do jego końca."""
-    settings: SettingsSnapshot | None = None
-    """Migawka Ustawień Centrum ze startu Uruchomienia (``PreparedRun.settings``), z której Logi biorą pliki procesu."""
-    quantity_rules: QuantityRules | None = None
-    """Reguły ilości ze startu Uruchomienia (``PreparedRun.quantity_rules``), które Logi zapisują dla odtworzenia."""
-    start_warnings: tuple[Message, ...] = ()
-    """Ostrzeżenia ze startu (``Start.warnings``): proces biegł na ostatniej dobrej Liście Wykonawców."""
-    activity_legend: ActivityLegend | None = None
-    """Legenda czynności ze startu Uruchomienia (``PreparedRun.activity_legend``), którą Logi zapisują dla odtworzenia."""
+    settings: SettingsAtStart
+    """Ustawienia ze startu Uruchomienia (``PreparedRun.settings``)."""
 
     @classmethod
     def of(
@@ -144,8 +136,7 @@ class EndedRun:
         started_at: datetime,
     ) -> EndedRun:
         return cls(
-            info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings,
-            prepared.quantity_rules, prepared.warnings, prepared.activity_legend
+            info, core, stopped, progress, started_at, utc_now(), prepared.input_copy, prepared.settings
         )
 
     @property
@@ -194,7 +185,7 @@ class EndedRun:
     def warnings(self) -> tuple[Message, ...]:
         """Ostrzeżenia ze startu, potem ostrzeżenia wyniku."""
 
-        return self.start_warnings + self.result_warnings
+        return self.settings.warnings + self.result_warnings
 
     def card(self, view: ProcessView[Any]) -> runs_contract.RunOutcome:
         stopped = self.stopped
@@ -516,7 +507,7 @@ class Run:
             self._prepared,
             core,
             info=self.info,
-            stopped=self._stops.ended(self.info, stop, shown=self._show_report, settings=self._prepared.settings),
+            stopped=self._stops.ended(self.info, stop, shown=self._show_report, settings=self._prepared.settings.snapshot),
             progress=self._progress,
             started_at=since,
         )

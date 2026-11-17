@@ -90,6 +90,7 @@ from rozliczenia.centrum.logged_input_copy import LoggedCell, LoggedInputFile, L
 from rozliczenia.centrum.run_logs import Environment, RunLog, StartFacts
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
+from rozliczenia.centrum.settings_at_start import SettingsAtStart
 from rozliczenia.client_data import MASKS, ForbiddenColumn, ForbiddenValues, empty_memory, forbidden_columns
 from rozliczenia.collective_layout import ADDRESS_COLUMN, HEADER_ROW
 from rozliczenia.dad_files import DadFiles
@@ -997,16 +998,14 @@ def _prepared(
     paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
     period = record.period if isinstance(kind, PeriodProcessKind) else None
     workers = rebuilt.workers if rebuilt.workers is not None else _configured_workers(work) if "workers" in kind.needs else None
-    start = Start(
-        paths,
-        period=period,
-        dry_run=record.mode.dry_run,
-        pricing=record.pricing,
+    settings = SettingsAtStart(
+        snapshot=None,
         workers=workers,
         quantity_rules=_quantity_rules(record),
         activity_legend=_activity_legend(record),
         warnings=record.start_warnings(),
     )
+    start = Start(paths, period=period, dry_run=record.mode.dry_run, pricing=record.pricing, settings=settings)
     metrics = work.path("metryki.jsonl")
     return CATALOG.with_metrics({kind.key: metrics}).prepared(kind.key, start, rebuilt.parts, RunContexts(files=DadFiles(forbidden=memory)).new())
 

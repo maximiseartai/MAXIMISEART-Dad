@@ -30,14 +30,13 @@ from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldProblem
 from rozliczenia.centrum.settings.owner import SettingsSnapshot
-from rozliczenia.centrum.settings_at_start import SettingNeed
+from rozliczenia.centrum.settings_at_start import SettingNeed, SettingsAtStart
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import empty_memory
 from rozliczenia.efenix_pricing import PricingMode
-from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
-from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
+from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
 from rozliczenia.run_context import RunContext
 from rozliczenia.worker_list import WorkerList
 from rozliczenia import tool_files
@@ -48,8 +47,10 @@ from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 from atrapy.intermax import Intermax
 from atrapy.preparation import PERIOD
 from atrapy.settlement import write_worker_list
+from atrapy.skrzynka_raportow import FolderInbox
 import odtworzenie
 import uruchom_proces
+from ustawienia_z_wydania import ustawienia_z_wydania
 
 
 def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
@@ -186,7 +187,7 @@ def _silnik(*_: object, **__: object) -> Any:
 
 def _z_katalogu() -> PreparedRun[Any, Any]:
     paths = {need: Path(f"{need}.xlsx") for need in CATALOG.kind("preparation").path_needs}
-    start = Start(paths, period=PERIOD, dry_run=False, workers=WorkerList(()), quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=())
+    start = Start(paths, period=PERIOD, dry_run=False, settings=ustawienia_z_wydania(WorkerList(())))
     return CATALOG.with_engine(_silnik).prepared("preparation", start, HostParts(), RunContext())
 
 
@@ -358,10 +359,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 {"collective_file": Path("plik-zbiorczy.xlsx")},
                 period=None,
                 dry_run=False,
-                workers=WorkerList(()),
-                quantity_rules=DEFAULT_QUANTITY_RULES,
-                activity_legend=DEFAULT_ACTIVITY_LEGEND,
-                warnings=(),
+                settings=ustawienia_z_wydania(WorkerList(())),
             ),
             HostParts(),
             "potrzebuje plików",
@@ -377,15 +375,13 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 },
                 period=None,
                 dry_run=True,
-                quantity_rules=DEFAULT_QUANTITY_RULES,
-                activity_legend=DEFAULT_ACTIVITY_LEGEND,
-                warnings=(),
+                settings=ustawienia_z_wydania(None),
             ),
             HostParts(),
             "potrzebuje okresu",
         ),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=()), HostParts(), "potrzebuje okna efenix"),
-        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=()), _ATRAPA, "nie ma Podglądu bez zapisu"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, settings=ustawienia_z_wydania(None)), HostParts(), "potrzebuje okna efenix"),
+        ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, settings=ustawienia_z_wydania(None)), _ATRAPA, "nie ma Podglądu bez zapisu"),
         (
             "settlement",
             Start(
@@ -393,10 +389,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
                 None,
                 False,
                 pricing="z Przekazaniem",
-                workers=WorkerList(()),
-                quantity_rules=DEFAULT_QUANTITY_RULES,
-                activity_legend=DEFAULT_ACTIVITY_LEGEND,
-                warnings=(),
+                settings=ustawienia_z_wydania(WorkerList(())),
             ),
             HostParts(),
             "nie ma trybu z Przekazaniem",
@@ -440,25 +433,41 @@ def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospoda
         {need: Path(need) for need in kind.path_needs},
         PERIOD if "period" in kind.needs else None,
         False,
-        workers=None if ustawienie == "workers" else WorkerList(()),
-        quantity_rules=None if ustawienie == "quantity_rules" else DEFAULT_QUANTITY_RULES,
-        activity_legend=None if ustawienie == "activity_legend" else DEFAULT_ACTIVITY_LEGEND,
-        warnings=(),
+        settings=dataclasses.replace(ustawienia_z_wydania(WorkerList(())), **{ustawienie: None}),
     )
 
     with pytest.raises(ValueError, match=f"^{kind.title} {_BRAK_W_STARCIE[ustawienie]}$"):
         CATALOG.prepared(kind.key, start, _ATRAPA, RunContext())
 
 
-def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_startu_i_pole_migawki_ustawien() -> None:
-    """Sprawdzenie startu i rzut na proces w ``Catalog.prepared`` czytają Ustawienie ze startu z pola ``Start``
-    o nazwie jego potrzeby, a odmowa startu przy pliku bez odczytu z pola migawki Ustawień Centrum o tej nazwie
-    (``settings_at_start``), więc potrzeba bez takiego pola wywróciłaby start procesu, który nią liczy."""
+def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_ustawien_ze_startu_i_pole_migawki_ustawien() -> None:
+    """Sprawdzenie startu i rzut na proces w ``Catalog.prepared`` czytają Ustawienie ze startu z pola
+    ``SettingsAtStart`` o nazwie jego potrzeby, a odmowa startu przy pliku bez odczytu z pola migawki Ustawień Centrum
+    o tej nazwie (``settings_at_start``), więc potrzeba bez takiego pola wywróciłaby start procesu, który nią liczy."""
 
     potrzeby = set(get_args(SettingNeed))
 
-    assert potrzeby <= {pole.name for pole in dataclasses.fields(Start)}
+    assert potrzeby <= {pole.name for pole in dataclasses.fields(SettingsAtStart)}
     assert potrzeby <= {pole.name for pole in dataclasses.fields(SettingsSnapshot)}
+
+
+@pytest.mark.parametrize("kind", CATALOG.kinds, ids=lambda kind: kind.key)
+def test_uruchomienie_gotowe_do_startu_ma_tylko_ustawienia_ze_startu_ktorymi_proces_liczy(
+    kind: ProcessKind[Any, Any],
+) -> None:
+    """Start z każdym Ustawieniem ze startu daje Uruchomienie, które niesie tylko te, którymi proces liczy, a ostrzeżenia
+    startu bez zmian: Logi czytają je z ``PreparedRun.settings``."""
+
+    ostrzezenia = (diagnosis_messages.worker_list_last_good("zdanie"),)
+    pelne = dataclasses.replace(ustawienia_z_wydania(WorkerList(())), warnings=ostrzezenia)
+    start = Start({need: Path(need) for need in kind.path_needs}, PERIOD if "period" in kind.needs else None, False, settings=pelne)
+
+    czesci = dataclasses.replace(_ATRAPA, reports=ReportEnteringParts(FolderInbox(Path("skrzynka")), ReportStateInMemory()))
+
+    niesione = CATALOG.prepared(kind.key, start, czesci, RunContext()).settings
+
+    assert {need for need in get_args(SettingNeed) if getattr(niesione, need) is not None} == set(_liczy_w_starcie(kind))
+    assert niesione.warnings == ostrzezenia
 
 
 @pytest.mark.parametrize(("chosen", "expected"), [(None, "bez Przekazania"), ("z Przekazaniem", "z Przekazaniem")])
@@ -473,9 +482,7 @@ def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
         period=None,
         dry_run=False,
         pricing=chosen,
-        quantity_rules=DEFAULT_QUANTITY_RULES,
-        activity_legend=DEFAULT_ACTIVITY_LEGEND,
-        warnings=(),
+        settings=ustawienia_z_wydania(None),
     )
 
     prepared = CATALOG.prepared("efenix", start, _ATRAPA, RunContext())

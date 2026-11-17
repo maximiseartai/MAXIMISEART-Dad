@@ -660,8 +660,10 @@ def _tool_copy(tmp_path: Path) -> Path:
     tool = tmp_path / "narzedzie"
     ignored = shutil.ignore_patterns("__pycache__")
     shutil.copytree(SCRIPT.parents[1] / "src", tool / "src", ignore=ignored)
-    # Skrzynka raportów z folderu .eml (``atrapy.skrzynka_raportow.FolderInbox``) leży w tools/lib klonu narzędzia.
+    # Skrzynka raportów z folderu .eml (``atrapy.skrzynka_raportow.FolderInbox``) i Ustawienia ze startu z Wydania
+    # (``ustawienia_z_wydania``) leżą w tools/lib klonu narzędzia.
     shutil.copytree(SCRIPT.parent / "lib" / "atrapy", tool / "tools" / "lib" / "atrapy", ignore=ignored)
+    shutil.copy(SCRIPT.parent / "lib" / "ustawienia_z_wydania.py", tool / "tools" / "lib")
     return Path(shutil.copy(SCRIPT, tool / "tools"))
 
 

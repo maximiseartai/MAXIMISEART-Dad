@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import DIAGNOSIS, DIAGNOZA, ORDER_REGISTER_ROUTER, PROCESS_KIND
+from cele_mutacji_centrum import DIAGNOSIS, DIAGNOZA, ORDER_REGISTER_ROUTER, SETTINGS_AT_START
 from silnik_mutacji import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -33,7 +33,7 @@ MUTATIONS = (
         "Lista Wykonawców bez odczytu startuje proces na pustej liście",
         (
             Edit(
-                PROCESS_KIND,
+                SETTINGS_AT_START,
                 "        raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)\n",
                 "        return WorkerList(())\n",
             ),

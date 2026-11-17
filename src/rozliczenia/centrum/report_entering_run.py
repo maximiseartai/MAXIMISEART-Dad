@@ -117,7 +117,7 @@ class ReportEnteringEntry:
             raise refusal.report_entering_not_set_up(missing)
         paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
         start = start_from_settings(_KIND, snapshot, paths, period=None, dry_run=False)
-        if not start.worker_list().addresses().logins:
+        if not start.settings.worker_list().addresses().logins:
             raise refusal.report_entering_without_addresses()
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 

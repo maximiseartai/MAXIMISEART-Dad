@@ -35,8 +35,9 @@ w `config/` prowadzone przez Maksa, Wzorce w Excelu albo stałe w kodzie.
   nad bieżącym widokiem. Okresy, Uruchomienia i Raporty nie mają już własnych wyborów plików, tylko link do
   właściwej sekcji.
 - **Zmiana działa od razu**, bez ponownego startu Centrum. Uruchomienie procesu, które już trwa, kończy na
-  wartościach z chwili startu. Przełącznik albo pojedynczy wybór zapisuje się od razu, a formularz z kilkoma
-  polami dopiero przyciskiem „Zapisz”, nigdy w połowie.
+  wartościach z chwili startu: niesie je jedną wartością, Ustawieniami ze startu, od startu do końca. Przełącznik
+  albo pojedynczy wybór zapisuje się od razu, a formularz z kilkoma polami dopiero przyciskiem „Zapisz”, nigdy
+  w połowie.
 - **Zła wartość się nie zapisuje.** Centrum sprawdza ją przed zapisem i mówi jednym zdaniem, co poprawić.
 - **Historia Ustawień.** Każda zmiana zapisuje, kiedy, co i wartość przed i po, przy sekrecie tylko to, że się
   zmienił. Z Historii tata cofa zmianę. Zgłoszenie podaje zmiany z ostatnich 30 dni.

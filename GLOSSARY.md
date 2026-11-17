@@ -516,7 +516,7 @@ _Avoid_: ustawienia Uruchomienia, środowisko
 
 Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, w chwili jego startu: Lista Wykonawców, Reguły ilości i Legenda czynności.
 Proces mówi, którymi z nich liczy, w swoich potrzebach, a Uruchomienie procesu, który danym Ustawieniem nie liczy, nie ma go ani w wejściu, ani w Logach Uruchomienia.
-Skąd bierze je każdy gospodarz Uruchomienia (Centrum rozliczeń, Skrypt dla maszyn, odtworzenie z Logów), mówi jeden opis: `process_kind.Start`.
+Skąd bierze je każdy gospodarz Uruchomienia (Centrum rozliczeń, Skrypt dla maszyn, odtworzenie z Logów), mówi jeden opis: `settings_at_start.SettingsAtStart`.
 Zmiana Ustawień w trakcie Uruchomienia ich nie zmienia (ADR 0032).
 _Avoid_: fakty startu (to fakty o tym, jak wystartowało Uruchomienie), ustawienia Uruchomienia
 
