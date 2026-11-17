@@ -23,7 +23,8 @@
   Wykonawca, numer i zdanie z ``reasons.note``); zlecenia i adres poza widokiem Raporty nigdzie nie trafiają. Przy
   problemie raportu z błędem tematu ma jego temat po strażniku reguły danych pracy Centrum (``guarded``, ADR 0025: bez
   wartości ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu (``reasons.subject_fault``), dzień, za który
-  Centrum go liczy, i chwilę przyjścia maila (``faulty_subject``), a przy dniu Wykonawcy dni z tematu raportów z
+  Centrum go liczy, chwilę przyjścia maila i skrót maila, po którym widok łączy problem z Wpisami na życzenie tego
+  raportu przy zleceniach (``faulty_subject``), a przy dniu Wykonawcy dni z tematu raportów z
   pomylonym tematem za ten dzień (``mistaken``); plik bez nich czyta się bez nich. Pisze go tylko proces, po
   pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
@@ -245,6 +246,7 @@ class _FaultySubject(_Record):
     fault: str
     day: date | None
     arrived: datetime
+    mail: str | None = None
 
 
 class _Offer(_Record):
@@ -341,12 +343,14 @@ class ShownWorker:
 @dataclass(frozen=True)
 class ShownFaultySubject:
     """Raport z błędem tematu przy problemie: temat po strażniku reguły danych, rodzaj błędu, dzień, za który Centrum go
-    liczy (``None``: problem bez dnia), i chwila przyjścia maila."""
+    liczy (``None``: problem bez dnia), chwila przyjścia maila i jego skrót, po którym widok znajduje Wpisy na życzenie
+    tego raportu przy zleceniach (``None``: plik wyniku sprzed Wpisu na życzenie raportu z błędem tematu)."""
 
     subject: str
     fault: str
     day: date | None
     arrived: datetime
+    mail: str | None = None
 
 
 @dataclass(frozen=True)
@@ -626,7 +630,7 @@ class FileReportState:
                     None if problem.difference is None else problem.difference.kept(),
                     None
                     if (faulty := problem.faulty_subject) is None
-                    else ShownFaultySubject(faulty.subject, faulty.fault, faulty.day, faulty.arrived),
+                    else ShownFaultySubject(faulty.subject, faulty.fault, faulty.day, faulty.arrived, faulty.mail),
                     None if problem.request is None else _shown_offer(problem.request),
                 )
                 for problem in result.problems
@@ -706,9 +710,9 @@ def _problem(problem: ReportProblem, forbidden: ForbiddenValues) -> _Problem:
 
     said = reason(problem)
     match problem:
-        case UnreadableSubject(worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
+        case UnreadableSubject(mail=mail, worker=worker, arrived=arrived, fault=fault, subject=subject, day=day):
             shown = guarded(forbidden, subject.shown(), "temat Raportu wykonawcy").text
-            found = _FaultySubject(subject=shown, fault=subject_fault(fault), day=day, arrived=arrived)
+            found = _FaultySubject(subject=shown, fault=subject_fault(fault), day=day, arrived=arrived, mail=mail.digest)
             return _Problem(
                 day=day or arrived.date(),
                 worker=worker,

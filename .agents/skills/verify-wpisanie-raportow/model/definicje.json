@@ -26,7 +26,7 @@
     "FileReportState.load": "aae08959cc0fa028",
     "FileReportState.save_memory": "56b68bb5c2e9236e",
     "FileReportState.save_result": "c9359e7b1598cb97",
-    "FileReportState.shown": "c698d0663fdd6fc1",
+    "FileReportState.shown": "2f43d8730208191d",
     "FileReportState.kept": "97d11bf6647e9014",
     "FileReportState.keep": "c661614598a4c6a9",
     "ShownResult.requests": "b84320d452acab4c"
@@ -34,7 +34,7 @@
   "src/rozliczenia/centrum/report_entering_run.py": {
     "ReportEnteringEntry.keep": "c20ea2503a531687",
     "ReportEnteringEntry.view": "8c93b20763ced3a0",
-    "_view": "be3a3d6d989ac742",
+    "_view": "386f2b05eaf23abf",
     "ReportEnteringEntry.on_request": "ebd5f53884a7144f",
     "ReportEnteringEntry.prepare": "37dcb3f86e349f85"
   },

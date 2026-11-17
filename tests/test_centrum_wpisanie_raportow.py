@@ -3428,6 +3428,58 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_z_przeniesieniem_przenos
     assert (anna["problems"], [order["number"] for order in anna["orders_detail"]]) == ([], ["40000002", "40000001"])
 
 
+@pytest.mark.parametrize(
+    ("sender", "subject", "numbers", "place"),
+    [
+        pytest.param(JAN, "Raport 09.11.2026 Kowalski", ["40000001"], ("jan.testowy", "2026-11-09"), id="wlasne-zlecenie"),
+        pytest.param(ANNA, "Raport 09.11.2026 Nowak", ["40000001", "40000002"], ("anna.kowalska", "2026-11-09"), id="do-nadawcy"),
+        pytest.param(JAN, "Raport 10.11.2026 Kowalski", ["40000001"], ("jan.testowy", "2026-11-10"), id="na-dzien-z-tematu"),
+    ],
+)
+def test_dzien_ze_zleceniem_z_wpisem_na_zyczenie_nie_jest_komplet_a_blad_tematu_nadawcy_ma_jego_przycisk(
+    tmp_path: Path, sender: str, subject: str, numbers: list[str], place: tuple[str, str]
+) -> None:
+    """Historie 42 i 44 speca #2032 przy każdym rodzaju Wpisu na życzenie raportu z błędem tematu: własne zlecenie
+    nadawcy, Przeniesienie do nadawcy (Anna raportuje zlecenie Jana obok swojego) i Przeniesienie na dzień z tematu (Jan
+    raportuje 10.11 zlecenie z 9.11). Problem raportu z błędem tematu w dniu, za który Centrum go liczy, ma przy numerze
+    każdego zlecenia raportu ten sam Wpis na życzenie co to zlecenie, więc tata klika tam, gdzie widzi błąd. Dzień
+    Wykonawcy, w którym takie zlecenie stoi, ma ten problem z Wpisami swoich zleceń, więc strona nie pokaże go jako
+    Komplet ani nie schowa filtrem „Problem”."""
+
+    ordered = (_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002), _order(10, 9, "jan.testowy", 40000003))
+    faulty = report(sender, subject, "\n".join(f"{number} tak inst20m" for number in numbers))
+    centrum = entering_centrum(tmp_path, Intermax(ordered=ordered, raw=()))
+    _click_at(centrum, datetime(2026, 11, 9, 12), [])
+    _click_at(centrum, datetime(2026, 11, 10, 18), [faulty])
+    view = _view(centrum)
+    offers = {
+        order["number"]: {"worker": worker["worker"], "day": day["day"], "request": order["request"]}
+        for worker in view["workers"]
+        for day in worker["days"]
+        for order in day["orders_detail"]
+        if order["request"] is not None
+    }
+    holders = {(offer["worker"], offer["day"]) for offer in offers.values()}
+
+    def faults(where: tuple[str, str]) -> list[list[dict[str, Any]]]:
+        """Wpisy na życzenie każdego problemu raportu z błędem tematu dnia ``where``, po numerze zlecenia."""
+
+        return [
+            sorted(problem["faulty_subject"]["offers"], key=lambda offer: str(offer["request"]["number"]))
+            for problem in _worker(view, *where)["problems"]
+            if problem["faulty_subject"]
+        ]
+
+    assert sorted(offers) == numbers
+    assert {where: bool(day["problems"] or day["without_report"]) for where in holders for day in [_worker(view, *where)]} == (
+        dict.fromkeys(holders, True)
+    )
+    assert faults(place) == [[offers[number] for number in numbers]]
+    assert {where: faults(where) for where in holders - {place}} == {
+        where: [[offer for offer in offers.values() if (offer["worker"], offer["day"]) == where]] for where in holders - {place}
+    }
+
+
 def test_wpisu_na_zyczenie_przy_raporcie_z_bledem_tematu_nie_ma_przy_przeciwnych_wpisach_wpisie_bez_znaku_i_numerze_dwa_razy(
     tmp_path: Path,
 ) -> None:

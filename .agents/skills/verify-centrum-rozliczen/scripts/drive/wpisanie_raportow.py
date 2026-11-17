@@ -451,10 +451,11 @@ SUBJECT_FAULT = {
     "fault": "inne słowa",
     "day": "2026-11-16",
     "arrived": "2026-11-16T17:05:00Z",
+    "offers": [],
 }
 """The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038), with its subject after the guard of
 the data rule (#2070: the value of `ADRES` and the phone masked, the surname kept)."""
-NO_DAY_FAULT = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z"}
+NO_DAY_FAULT = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z", "offers": []}
 """The Raport z błędem tematu of `wykonawca.b`, who has no orders: a problem without a day at the day it came."""
 MISTAKEN_DAY = "2026-11-28"
 """The day in the subject of the Raport of `wykonawca.a` whose numbers are his orders of 18.11 (ADR 0029)."""
@@ -945,7 +946,9 @@ def _on_request_faulty_subject(run: Run, page: Page, register: Path) -> None:
 
 def _on_request_move(run: Run, page: Page, register: Path) -> None:
     """Wpis na życzenie of a Raport z błędem tematu that takes over the order of another Wykonawca (ADR 0041, 0029): the
-    button at the order of wykonawca.a names wykonawca.b, and the click moves the order and enters it like a correct
+    tile of wykonawca.a with the order is Problem, not Komplet, and its button says the order goes from wykonawca.a to
+    wykonawca.b; the red tile of wykonawca.b has the same button at the fault of the subject, under the number of the
+    order (stories 42 and 44 of #2032), and Dad clicks it there; the click moves the order and enters it like a correct
     Raport of wykonawca.b."""
 
     run.step(FEATURE, "wpis-na-zyczenie-przeniesienie")
@@ -955,24 +958,48 @@ def _on_request_move(run: Run, page: Page, register: Path) -> None:
     print(f"  harness: wykonawca.b sends `Raport 19.10.2026 Nowak` with {ON_REQUEST_NUMBER} of wykonawca.a", flush=True)
     try:
         result_of_start(run, "raporty-przeniesienie-klikniecie", _button(page).click)
-        [order] = [
-            found
-            for found in _days_of(_view(run, "raporty-przeniesienie-przed"))["wykonawca.a"]["orders_detail"]
-            if found["number"] == ON_REQUEST_NUMBER
-        ]
+        days = _days_of(_view(run, "raporty-przeniesienie-przed"))
+        [order] = [found for found in days["wykonawca.a"]["orders_detail"] if found["number"] == ON_REQUEST_NUMBER]
         run.check(
             (order["state"], order["request"]) == ("faulty_subject", MOVE_REQUEST),
             "the order of wykonawca.a has the state Błąd tematu and Wpis na życzenie of wykonawca.b",
         )
+        offer = {"worker": "wykonawca.a", "day": DAY, "request": MOVE_REQUEST}
+        run.check(
+            [
+                [problem["faulty_subject"]["offers"] for problem in days[worker]["problems"] if problem["faulty_subject"]]
+                for worker in ("wykonawca.a", "wykonawca.b")
+            ]
+            == [[[offer]], [[offer]]],
+            "the fault of the subject stands at wykonawca.b and at wykonawca.a, which has the order, both with its Wpis na życzenie",
+        )
+        _tile_is(page, "wykonawca.a", DAY, "Problem", 2, 2)
         popover = _popover(page, "wykonawca.a", DAY)
         row = popover.get_by_role("list", name="Zlecenia dnia").get_by_role("listitem").filter(has_text=ON_REQUEST_NUMBER)
         expect(row).to_contain_text("Błąd tematu")
-        moving = f"Wpisze się do INTERMAX, zlecenie przejdzie do wykonawca.b na {_short(DAY)}:"
+        moving = f"Wpisze się do INTERMAX, zlecenie przejdzie od wykonawca.a do wykonawca.b na {_short(DAY)}:"
         expect(row.get_by_text(moving, exact=True)).to_be_visible()
-        button = row.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)
-        expect(button).to_be_enabled()
-        run.check(True, "before the click the order says it goes to wykonawca.b and what it writes")
+        expect(row.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_be_enabled()
+        expect(popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_have_count(1)
+        expect(popover).to_contain_text("Raport z błędem tematu")
+        run.check(
+            True,
+            "the tile of wykonawca.a is Problem, not Komplet, and its order says it goes to wykonawca.b and what it writes, with one button",
+        )
         run.capture(page, "433-raporty-blad-tematu-przeniesienie-podglad", full_page=False)
+        _close(page, popover)
+
+        popover = _popover(page, "wykonawca.b", DAY)
+        fault = popover.get_by_role("list", name="Zlecenia dnia").get_by_role("listitem").filter(has_text="Raport z błędem tematu")
+        expect(fault).to_contain_text(f"Zlecenie {ON_REQUEST_NUMBER}")
+        expect(fault.get_by_text(moving, exact=True)).to_be_visible()
+        what = fault.get_by_label("Co się wpisze", exact=True).get_by_role("definition")
+        expect(what.nth(0)).to_have_text("tak")
+        expect(what.nth(1)).to_have_text(FAULTY_ACTIVITIES)
+        button = fault.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)
+        expect(button).to_be_enabled()
+        run.check(True, "the red tile of wykonawca.b has the button at its fault of the subject, with the number of the order and what it writes")
+        run.capture(page, "435-raporty-blad-tematu-przeniesienie-nadawca", full_page=False)
 
         entered = result_of_start(run, "raporty-przeniesienie-na-zyczenie", button.click)
         run.check(figure(entered["summary"], "Problemy") == 0, "the click leaves no problem")

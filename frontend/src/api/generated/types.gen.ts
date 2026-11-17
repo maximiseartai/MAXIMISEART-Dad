@@ -3680,12 +3680,35 @@ export type ReportsDay = {
 };
 
 /**
+ * ReportsFaultyOffer
+ *
+ * Wpis raportu z błędem tematu, który tata może wpisać: zlecenie, które dziś ma Wykonawca ``worker`` w dniu ``day``,
+ * i jego Wpis na życzenie (``request``), ta sama komórka co przy tym zleceniu (``ReportsOrder.request``). Gdy
+ * ``request`` stawia zlecenie u innego Wykonawcy albo w innym dniu, Wpis je przeniesie (ADR 0029).
+ */
+export type ReportsFaultyOffer = {
+    /**
+     * Worker
+     */
+    worker: string;
+    /**
+     * Day
+     */
+    day: string;
+    request: RequestedCell;
+};
+
+/**
  * ReportsFaultySubject
  *
  * Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości
  * ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który
  * Centrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie
  * kończy), i chwila przyjścia maila.
+ *
+ * ``offers``: Wpisy tego raportu, które tata może wpisać. Problem stoi w dniu, za który Centrum liczy raport, z każdym
+ * Wpisem raportu, a także w dniu każdego Wykonawcy, który dziś ma zlecenie z takim Wpisem, z Wpisami jego zleceń, więc
+ * ten dzień ma problem, dopóki tata nie zdecyduje (historia 42 speca #2032).
  */
 export type ReportsFaultySubject = {
     /**
@@ -3704,6 +3727,10 @@ export type ReportsFaultySubject = {
      * Arrived
      */
     arrived: string;
+    /**
+     * Offers
+     */
+    offers: Array<ReportsFaultyOffer>;
 };
 
 /**

@@ -3,6 +3,7 @@ import { cn } from "cn"
 
 import type {
   KeptCell,
+  ReportsFaultyOffer,
   ReportsFaultySubject,
   ReportsNote,
   ReportsOrder,
@@ -46,7 +47,8 @@ export function WorkerAvatar({ worker }: { worker: string }) {
  * (`orders_detail`) z problemami, „Zostaw moją”, Wpisem na życzenie, spokojnymi informacjami o Przeniesieniach zleceń
  * (`notes`) i o raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z tematem
  * po strażniku reguły danych, rodzajem błędu, dniem, za który Centrum go liczy, i chwilą przyjścia maila, a jego zlecenia mają stan
- * „Błąd tematu”, nie „Bez raportu”, i Wpis na życzenie, gdy Centrum wie, co wpisać. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
+ * „Błąd tematu”, nie „Bez raportu”, i Wpis na życzenie, gdy Centrum wie, co wpisać; Wpis na życzenie zlecenia, które
+ * stoi w innym kafelku (Przeniesienie), problem pokazuje sam, z numerem zlecenia. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
  * przebieg Przypomnień o raporcie za ten dzień (`reminders`), gdy jakieś poszło.
  */
 export function DayDetails({
@@ -166,6 +168,7 @@ function Orders({
   const numbers = new Set(orders.map((order) => order.number))
   const loose = state.day.problems.filter((problem) => problem.number === null || !numbers.has(problem.number))
   const handed = state.day.notes.filter((note) => !numbers.has(note.number))
+  const atOrders = new Set(orders.flatMap((order) => (order.request === null ? [] : [requestKey(order.request)])))
 
   return (
     <ul className={LIST} aria-label="Zlecenia dnia">
@@ -175,11 +178,11 @@ function Orders({
           <OrderLine order={order} />
           <StatusBadge status={orderStatus(order, state.kind)} label={ORDER_LABELS[order.state]} />
           <CodesLine order={order} />
-          {order.request === null ? null : <OnRequest request={order.request} worker={worker} />}
+          {order.request === null ? null : <OnRequest request={order.request} worker={worker} day={state.day.day} />}
           {state.day.problems
             .filter((problem) => problem.number === order.number)
             .map((problem) => (
-              <ProblemReason key={problemKey(problem)} problem={problem} keeping={keeping} onKeep={onKeep} />
+              <ProblemReason key={problemKey(problem)} problem={problem} atOrders={atOrders} keeping={keeping} onKeep={onKeep} />
             ))}
           {state.day.notes
             .filter((note) => note.number === order.number)
@@ -207,7 +210,7 @@ function Orders({
             {problem.faulty_subject === null ? "Problem bez zlecenia tego dnia" : "Raport z błędem tematu"}
           </span>
           <StatusBadge status="problem" />
-          <ProblemReason problem={problem} keeping={keeping} onKeep={onKeep} />
+          <ProblemReason problem={problem} atOrders={atOrders} keeping={keeping} onKeep={onKeep} />
         </li>
       ))}
     </ul>
@@ -363,14 +366,28 @@ function OrderNumber({ number }: { number: string | null }) {
   return <span className="pt-0.5 text-xs text-muted-foreground tabular-nums">{number ?? "—"}</span>
 }
 
-function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem } & Keeping) {
+/**
+ * Zdanie problemu z faktami raportu z błędem tematu, „Zostaw moją” i Wpisami na życzenie: przy problemie i przy
+ * raporcie z błędem tematu każdy Wpis jego zlecenia, którego przycisk nie stoi już przy zleceniu tego kafelka
+ * (`atOrders`, klucze `requestKey`), bo jedna decyzja ma w kafelku jeden przycisk.
+ */
+function ProblemReason({
+  problem,
+  atOrders = new Set(),
+  keeping,
+  onKeep,
+}: { problem: ReportsProblem; atOrders?: ReadonlySet<string> } & Keeping) {
   const keep = problem.keep
+  const offers = (problem.faulty_subject?.offers ?? []).filter((offer) => !atOrders.has(requestKey(offer.request)))
 
   return (
     <>
       {problem.faulty_subject === null ? null : <FaultyFacts faulty={problem.faulty_subject} />}
       <span className="col-start-2 col-end-4 text-xs leading-relaxed text-muted-foreground">{problem.reason}</span>
       {problem.request === null ? null : <OnRequest request={problem.request} />}
+      {offers.map((offer) => (
+        <FaultyOffer key={requestKey(offer.request)} offer={offer} />
+      ))}
       {keep === null ? null : (
         <span className="col-start-2 col-end-4">
           <Button
@@ -388,22 +405,53 @@ function ProblemReason({ problem, keeping, onKeep }: { problem: ReportsProblem }
   )
 }
 
+/** Wpis na życzenie zlecenia raportu z błędem tematu przy jego problemie: numer zlecenia nad podglądem i przyciskiem. */
+function FaultyOffer({ offer }: { offer: ReportsFaultyOffer }) {
+  return <OnRequest request={offer.request} worker={offer.worker} day={offer.day} number={offer.request.number} />
+}
+
+/** Klucz komórki Wpisu na życzenie: ta sama decyzja ma ten sam klucz przy zleceniu i przy problemie. */
+function requestKey(request: RequestedCell): string {
+  return JSON.stringify([request.mail, request.number, request.worker, request.day, request.order_day])
+}
+
+/** Zdanie nad podglądem: gdzie zlecenie, które dziś ma `worker` w dniu `day`, stoi po Wpisie `request`. */
+function whereTo(request: RequestedCell, worker: string, day: string): string {
+  if (request.worker !== worker) {
+    return `Wpisze się do INTERMAX, zlecenie przejdzie od ${worker} do ${request.worker} na ${shortDay(request.order_day)}:`
+  }
+
+  if (request.order_day !== day) {
+    return `Wpisze się do INTERMAX, zlecenie przejdzie z ${shortDay(day)} na ${shortDay(request.order_day)}:`
+  }
+
+  return `Wpisze się do INTERMAX, zlecenie z ${shortDay(request.order_day)}:`
+}
+
 /**
  * Wpis na życzenie (ADR 0041) przy problemie albo przy zleceniu z Wpisem raportu z błędem tematu: co wpisze się do
- * INTERMAX, zanim tata kliknie, i przycisk, który startuje Wpisanie raportów z jego decyzją. Przy zleceniu, które stoi
- * u Wykonawcy `worker`, a Wpis przeniesie je do nadawcy raportu, mówi, do kogo przejdzie. W czasie każdego Uruchomienia przycisk czeka; odmowę serwera (INTERMAX otwarty w Excelu)
- * pokazuje powiadomienie.
+ * INTERMAX, zanim tata kliknie, i przycisk, który startuje Wpisanie raportów z jego decyzją. Zlecenie dziś ma Wykonawca
+ * `worker` w dniu `day`; gdy Wpis je przeniesie (do nadawcy raportu albo na dzień z tematu), mówi skąd i dokąd.
+ * `number`: numer zlecenia nad podglądem, gdy przycisk nie stoi przy zleceniu. W czasie każdego Uruchomienia przycisk
+ * czeka; odmowę serwera (INTERMAX otwarty w Excelu) pokazuje powiadomienie.
  */
-function OnRequest({ request, worker = request.worker }: { request: RequestedCell; worker?: string }) {
+function OnRequest({
+  request,
+  worker = request.worker,
+  day = request.order_day,
+  number,
+}: {
+  request: RequestedCell
+  worker?: string
+  day?: string
+  number?: string
+}) {
   const { view, starting, start } = useRuns()
 
   return (
     <span className="col-start-2 col-end-4 flex flex-col gap-2 rounded-md border border-dashed px-2.5 py-2 text-xs">
-      <span className="text-muted-foreground">
-        {request.worker === worker
-          ? `Wpisze się do INTERMAX, zlecenie z ${shortDay(request.order_day)}:`
-          : `Wpisze się do INTERMAX, zlecenie przejdzie do ${request.worker} na ${shortDay(request.order_day)}:`}
-      </span>
+      {number === undefined ? null : <span className="font-semibold tabular-nums">{`Zlecenie ${number}`}</span>}
+      <span className="text-muted-foreground">{whereTo(request, worker, day)}</span>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-2.5 gap-y-0.5" aria-label="Co się wpisze">
         <dt className="text-muted-foreground">SKUTECZNE</dt>
         <dd className="font-semibold">{request.successful}</dd>

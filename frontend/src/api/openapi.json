@@ -9951,6 +9951,31 @@
         "title": "ReportsDay",
         "description": "Dzień okna widoku Raporty z nazwą polskiego dnia ustawowo wolnego od pracy (``None``: dzień bez święta)."
       },
+      "ReportsFaultyOffer": {
+        "properties": {
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "request": {
+            "$ref": "#/components/schemas/RequestedCell"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "worker",
+          "day",
+          "request"
+        ],
+        "title": "ReportsFaultyOffer",
+        "description": "Wpis raportu z błędem tematu, który tata może wpisać: zlecenie, które dziś ma Wykonawca ``worker`` w dniu ``day``,\ni jego Wpis na życzenie (``request``), ta sama komórka co przy tym zleceniu (``ReportsOrder.request``). Gdy\n``request`` stawia zlecenie u innego Wykonawcy albo w innym dniu, Wpis je przeniesie (ADR 0029)."
+      },
       "ReportsFaultySubject": {
         "properties": {
           "subject": {
@@ -9977,6 +10002,13 @@
             "type": "string",
             "format": "date-time",
             "title": "Arrived"
+          },
+          "offers": {
+            "items": {
+              "$ref": "#/components/schemas/ReportsFaultyOffer"
+            },
+            "type": "array",
+            "title": "Offers"
           }
         },
         "additionalProperties": false,
@@ -9985,10 +10017,11 @@
           "subject",
           "fault",
           "day",
-          "arrived"
+          "arrived",
+          "offers"
         ],
         "title": "ReportsFaultySubject",
-        "description": "Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości\n``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy), i chwila przyjścia maila."
+        "description": "Raport wykonawcy z błędem tematu (ADR 0041): temat maila po strażniku reguły danych (ADR 0025: bez wartości\n``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu w kilku słowach (np. „inne słowa”), dzień, za który\nCentrum go liczy, więc za ten dzień nie idzie Przypomnienie o raporcie (``None``: problem bez dnia, który niczego nie\nkończy), i chwila przyjścia maila.\n\n``offers``: Wpisy tego raportu, które tata może wpisać. Problem stoi w dniu, za który Centrum liczy raport, z każdym\nWpisem raportu, a także w dniu każdego Wykonawcy, który dziś ma zlecenie z takim Wpisem, z Wpisami jego zleceń, więc\nten dzień ma problem, dopóki tata nie zdecyduje (historia 42 speca #2032)."
       },
       "ReportsNote": {
         "properties": {
