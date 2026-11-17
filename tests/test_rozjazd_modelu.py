@@ -4,7 +4,7 @@ Kod opisany modelem leży w ``model/definicje.json`` skilla: plik w całości al
 skrótem z chwili, gdy model ją opisywał. Rozjazd to kod inny niż w tych skrótach albo plik definicji w innej postaci,
 bo wtedy model nie jest porównany z kodem. Porównanie nie pyta gita, więc rebase, cherry-pick i squash gałęzi, która
 definicji nie zmienia, rozjazdu nie dają (#1060). Skróty przelicza ``tools/przesun_model.py``. Testy biegną na
-repozytoriach testu.
+repozytoriach testu, poza testem kluczy funkcji z tabeli modelu, który czyta skille tego repozytorium.
 """
 
 from __future__ import annotations
@@ -12,6 +12,8 @@ from __future__ import annotations
 import hashlib
 import json
 from pathlib import Path
+import re
+from typing import Final
 
 import pytest
 
@@ -280,3 +282,196 @@ def test_narzedzie_odmawia_skillowi_bez_definicji_i_definicji_ktorej_nie_ma(tmp_
         f"PRZESUNIĘCIE FAIL | verify-inny nie ma {rozjazd_modelu.DEFINICJE}; skille z modelem: verify-model",
         f"PRZESUNIĘCIE FAIL | nie ma definicji: {CODE} zapisz; popraw nazwy w {rozjazd_modelu.DEFINICJE}",
     ]
+
+
+# Funkcje z tabeli modelu, które model pomija celowo, a wiersz tabeli to mówi: skill → wynik ``bez_klucza``.
+POZA_MODELEM: Final = {
+    # „Changes to Komunikaty text, the log or Zgłoszenia do not matter here”: odmowę daje trasa w całym pliku
+    # ``tool_update.py``, a ``update_without_port`` to tylko jej Komunikat.
+    "verify-aktualizacja-narzedzia": ["src/rozliczenia/centrum/refusal.py update_without_port"],
+    # „The rest of the table runs as real code”: klucze mają tylko części modelowane ręcznie.
+    "verify-jedno-uruchomienie-naraz": [
+        "src/rozliczenia/centrum/runs.py RunHost.start",
+        "src/rozliczenia/centrum/logs_disk.py LogsOnDisk.started",
+        "src/rozliczenia/centrum/runs.py RunHost.begin_update",
+        "src/rozliczenia/centrum/runs.py RunHost.begin_restore",
+        "src/rozliczenia/centrum/runs.py Run.work",
+        "src/rozliczenia/centrum/runs.py RunHost.end",
+        "src/rozliczenia/centrum/runs.py RunHost.after",
+        "src/rozliczenia/centrum/shutdown.py Shutdown.request",
+    ],
+    # Wiersz ``hyperlinks.py``: „its reader `read_sheet_hyperlinks` is covered by pytest (…), not here”.
+    "verify-kopia-wzorca": ["src/rozliczenia/hyperlinks.py read_sheet_hyperlinks"],
+    # „Left out on purpose: (…) the Komunikat of an Uwaga that was not queued (`refusal.note_not_queued`), (…)
+    # `KeyedBox.judge`”.
+    "verify-sprawy-taty": ["src/rozliczenia/centrum/keyed_box.py KeyedBox.judge", "src/rozliczenia/centrum/refusal.py note_not_queued"],
+    # „Every code name in the table is one of them, except `onedrive_conflicts.beside` (…), `OlderOwnEntries.upgraded`
+    # (Left out) and `register_file.read` (…) (`verify-zapis-intermax`)”.
+    "verify-wpisanie-raportow": [
+        "src/rozliczenia/onedrive_conflicts.py beside",
+        "src/rozliczenia/register_file.py read",
+        "src/rozliczenia/worker_reports/_model.py OlderOwnEntries.upgraded",
+    ],
+    # Wiersz ``Tata``: „none: Dad changes a quantity (…) by hand (…) (`StanEfenix.edit` in the tests)”.
+    "verify-wznowienie-wyceny-efenix": ["tools/lib/atrapy/model_efenix.py StanEfenix.edit"],
+    # „`intermax_file.check` and `check_cells` have no digest (…). Neither has `intermax_messages.refused`”.
+    "verify-zapis-intermax": [
+        "src/rozliczenia/intermax_file.py check",
+        "src/rozliczenia/intermax_file.py check_cells",
+        "src/rozliczenia/intermax_messages.py refused",
+    ],
+}
+
+
+def test_kazda_funkcja_z_tabeli_modelu_skilla_ma_klucz_w_definicjach_albo_model_pomija_ja_celowo() -> None:
+    """Rozjazd nie widzi zmiany funkcji bez klucza: merge w #2058 zgubił ``ReportEnteringEntry.on_request``, choć tabela
+    ``verify-wpisanie-raportow`` go nazywa (#2058 r5), a metody nazwanej bez klasy, jak ``prepare``, sprawdzenie nie
+    widziało (#2058 r6), a zgubionego wpisu całego pliku też nie (#2076 r1). Równość z ``POZA_MODELEM`` każe też usunąć
+    stamtąd funkcję, która dostała klucz albo zniknęła z tabeli."""
+
+    found = {skill.name: missing for skill in rozjazd_modelu.skille(ROOT) if (missing := rozjazd_modelu.bez_klucza(skill, ROOT))}
+
+    assert found == POZA_MODELEM, (
+        f"Tabela sekcji „{rozjazd_modelu.TABELA}” w SKILL.md nazywa funkcję bez klucza w {rozjazd_modelu.DEFINICJE}, więc "
+        'rozjazd modelu nie zobaczy jej zmiany. Gdy wiersz opisuje kod, dopisz ją tam ze skrótem "" i przelicz skróty '
+        "(tools/przesun_model.py <skill>); gdy model pomija ją celowo i wiersz to mówi, wpisz ją do POZA_MODELEM."
+    )
+
+
+KLUCZE_KOD = '''"""Moduł."""
+
+from typing import Protocol
+
+
+def zapisz() -> int:
+    return 1
+
+
+def wspolna() -> int:
+    return 2
+
+
+class Logi:
+    def zamknij(self) -> int:
+        return 3
+
+
+class Dziennik:
+    def zamknij(self) -> int:
+        return 4
+
+
+class Protokol(Protocol):
+    def zaslepka(self) -> int:
+        """Zaślepka."""
+        ...
+
+
+def serwer() -> object:
+    def stop() -> int:
+        return 16
+
+    return stop
+
+
+class Kolejka:
+    def wyslij(self) -> int:
+        return 11
+
+    def zaslepka(self) -> int:
+        return 12
+
+
+if True:
+
+    class Zapasowa:
+        def odbierz(self) -> int:
+            return 13
+
+
+STALA = 5
+'''
+KLUCZE_PLIKI = {
+    CODE: KLUCZE_KOD,
+    "src/pakiet/__init__.py": "def wejscie() -> int:\n    return 6\n\n\ndef inna() -> int:\n    return 7\n",
+    "src/pakiet/drugi.py": "def wspolna() -> int:\n    return 8\n",
+    WHOLE: "def cala() -> int:\n    return 9\n",
+    "src/poza.py": "def poza() -> int:\n    return 10\n\n\nclass Spoza:\n    def licz(self) -> int:\n        return 14\n",
+    "src/serwer.py": "X = 1\n",
+    "tools/lib/atrapa.py": "class Atrapa:\n    def zmien(self) -> int:\n        return 15\n",
+}
+KLUCZE_DEFINICJE = {
+    CODE: {"Logi": "", "STALA": ""},
+    "src/pakiet/__init__.py": {"inna": ""},
+    "src/pakiet/drugi.py": {"wspolna": ""},
+    WHOLE: {rozjazd_modelu.CALY_PLIK: ""},
+}
+
+
+def _tabela(*spans: str) -> str:
+    rows = "".join(f"| `Akcja` | `{span}` w kroku |\n" for span in spans)
+    return f"# Skill\n\n{rozjazd_modelu.TABELA}\n\nModel opisuje kod.\n\n| Model action | Code |\n| --- | --- |\n{rows}\n## Run\n"
+
+
+@pytest.mark.parametrize(
+    ("skill_md", "missing"),
+    [
+        pytest.param(_tabela("zapisz"), [f"{CODE} zapisz"], id="funkcja-modulu"),
+        pytest.param(_tabela("Dziennik.zamknij"), [f"{CODE} Dziennik.zamknij"], id="metoda-klasy"),
+        pytest.param(_tabela("kod.zapisz"), [f"{CODE} zapisz"], id="z-modulem-z-przodu"),
+        pytest.param(_tabela("pakiet.wejscie"), ["src/pakiet/__init__.py wejscie"], id="z-pakietem-z-przodu"),
+        pytest.param(_tabela("zapisz(...)"), [f"{CODE} zapisz"], id="z-wywolaniem"),
+        pytest.param(
+            _tabela("zapisz()", "Dziennik.zamknij", "zapisz"), [f"{CODE} zapisz", f"{CODE} Dziennik.zamknij"], id="w-kolejnosci-tabeli-raz"
+        ),
+        pytest.param(_tabela("wyslij"), [f"{CODE} Kolejka.wyslij"], id="metoda-bez-klasy"),
+        pytest.param(_tabela("kolejka.wyslij()"), [f"{CODE} Kolejka.wyslij"], id="metoda-bez-klasy-po-obiekcie"),
+        pytest.param(_tabela("odbierz"), [f"{CODE} Zapasowa.odbierz"], id="metoda-bez-klasy-w-klasie-pod-if"),
+        pytest.param(_tabela("poza.poza"), ["src/poza.py poza"], id="z-modulem-z-przodu-w-pliku-spoza-definicji"),
+        pytest.param(_tabela("Spoza.licz"), ["src/poza.py Spoza.licz"], id="metoda-klasy-z-pliku-spoza-definicji"),
+        pytest.param(_tabela("Atrapa.zmien"), ["tools/lib/atrapa.py Atrapa.zmien"], id="metoda-klasy-z-narzedzi"),
+        pytest.param(_tabela("serwer.stop"), [f"{CODE} serwer.stop"], id="nazwa-modulu-spoza-definicji-i-funkcja-w-pliku-definicji"),
+        pytest.param(_tabela("Logi.zamknij"), [], id="metoda-klasy-z-kluczem"),
+        pytest.param(_tabela("zamknij"), [], id="metoda-bez-klasy-w-dwoch-klasach-z-kluczem-jednej"),
+        pytest.param(_tabela("cala"), [], id="funkcja-calego-pliku"),
+        pytest.param(_tabela("caly.cala"), [], id="z-modulem-z-przodu-funkcja-calego-pliku"),
+        pytest.param(_tabela("wspolna"), [], id="nazwa-w-dwoch-plikach-z-kluczem-w-jednym"),
+        pytest.param(_tabela("Dziennik", "STALA"), [], id="granica-klasa-i-stala"),
+        pytest.param(_tabela("Protokol.zaslepka"), [], id="granica-zaslepka-obok-metody-z-cialem"),
+        pytest.param(_tabela("pliki.zapisz()"), [], id="granica-nazwa-obiektu"),
+        pytest.param(_tabela("poza", "licz"), [], id="granica-gola-nazwa-z-pliku-spoza-definicji"),
+        pytest.param(
+            f"{rozjazd_modelu.TABELA}\n\nKrok `zapisz`.\n\n| Model action | Code |\n| --- | --- |\n| `Akcja` | `Logi.zamknij` |\n", [], id="granica-proza-sekcji"
+        ),
+        pytest.param(f"{rozjazd_modelu.TABELA}\n\nKrok `zapisz`.\n\n## Run\n\n| Kod |\n| --- |\n| `zapisz` |\n", [], id="granica-tabela-innej-sekcji"),
+    ],
+)
+def test_funkcja_z_tabeli_modelu_bez_klucza_w_definicjach_jest_zgloszona(tmp_path: Path, skill_md: str, missing: list[str]) -> None:
+    files = {**KLUCZE_PLIKI, f"{SKILL}/SKILL.md": skill_md, f"{SKILL}/{rozjazd_modelu.DEFINICJE}": json.dumps(KLUCZE_DEFINICJE)}
+    for name, text in files.items():
+        _write(tmp_path, name, text)
+
+    assert rozjazd_modelu.bez_klucza(tmp_path / SKILL, tmp_path) == missing
+
+
+def test_zgubiony_wpis_calego_pliku_definicji_zglasza_jego_funkcje_nazwane_z_klasa_albo_modulem(tmp_path: Path) -> None:
+    """Merge, który gubi wpis pliku w ``definicje.json``, zabiera rozjazdowi wszystkie definicje tego pliku naraz
+    (#2076 r1: wpis ``efenix_browser.py`` w ``verify-wznowienie-wyceny-efenix``)."""
+
+    definitions = {**KLUCZE_DEFINICJE, "src/poza.py": {"poza": "", "Spoza": ""}}
+    files = {**KLUCZE_PLIKI, f"{SKILL}/SKILL.md": _tabela("poza.poza", "Spoza.licz"), f"{SKILL}/{rozjazd_modelu.DEFINICJE}": json.dumps(definitions)}
+    for name, text in files.items():
+        _write(tmp_path, name, text)
+    assert rozjazd_modelu.bez_klucza(tmp_path / SKILL, tmp_path) == []
+
+    del definitions["src/poza.py"]
+    _write(tmp_path, f"{SKILL}/{rozjazd_modelu.DEFINICJE}", json.dumps(definitions))
+
+    assert rozjazd_modelu.bez_klucza(tmp_path / SKILL, tmp_path) == ["src/poza.py poza", "src/poza.py Spoza.licz"]
+
+
+def test_skill_bez_sekcji_tabeli_modelu_odmawia(tmp_path: Path) -> None:
+    skill = _skill(tmp_path)
+
+    with pytest.raises(ValueError, match=re.escape(f"SKILL.md nie ma sekcji „{rozjazd_modelu.TABELA}”")):
+        rozjazd_modelu.bez_klucza(skill, tmp_path)

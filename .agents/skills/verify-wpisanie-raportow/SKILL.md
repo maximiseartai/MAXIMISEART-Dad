@@ -93,8 +93,8 @@ otherwise):
 The script compares the definitions in `model/definicje.json` with their digests; among them is the assignment
 `create_app.report_files` in `centrum/app.py` (one `FileReportState` for the process and the view, so the waiting text
 is shared). Every code name in the table is one of them, except
-`onedrive_conflicts.beside` (the model needs only where `enter_from_mail` calls it) and `register_file.read` and the
-bytes of the write (`verify-zapis-intermax`). Look in the diff also for a new writer of one of the three files, a new
+`onedrive_conflicts.beside` (the model needs only where `enter_from_mail` calls it), `OlderOwnEntries.upgraded` (Left
+out) and `register_file.read` and the bytes of the write (`verify-zapis-intermax`). Look in the diff also for a new writer of one of the three files, a new
 caller of `reconcile` or `keep`, and a step between `write_cells` and `save_memory`; add such code to the table and to
 `model/definicje.json`.
 

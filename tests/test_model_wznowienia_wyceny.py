@@ -21,17 +21,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "scripts" / "sprawdz_wznowienie_wyceny.py"
 DEFINITIONS = ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "model" / "definicje.json"
 PRICING = "src/rozliczenia/efenix_pricing.py"
-COVERED = (
-    "src/rozliczenia/efenix_pricing.py",
-    "src/rozliczenia/efenix_positions.py",
-    "src/rozliczenia/efenix_browser.py",
-    "src/rozliczenia/efenix_checks.py",
-    "src/rozliczenia/efenix_mark.py",
-)
 
 
 def _drift_after(root: Path, anchor: str, replacement: str) -> str | None:
-    for path in (DEFINITIONS, *(ROOT / name for name in COVERED)):
+    for path in (DEFINITIONS, *(ROOT / name for name in rozjazd_modelu.definicje(DEFINITIONS.parents[1]))):
         copy = root / path.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy(path, copy)
