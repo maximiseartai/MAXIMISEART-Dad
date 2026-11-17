@@ -41,6 +41,10 @@ BY_CHANGE_ONLY = {
         "sprawdza granicę typu SettingsFile.dump na próbkach w pliku tymczasowym, a mypy biegnie w zadaniu „Ruff, mypy” "
         "każdego runu; graf wybiera jego plik przy zmianie modułów ustawień, które importuje"
     ),
+    "tests/test_centrum_rozliczen.py::test_lista_wykonawcow_bez_odczytu_bez_jawnej_galezi_nie_przechodzi_mypy_a_znane_luki_przechodza": (
+        "sprawdza granicę typu settings.files.usable na próbkach w pliku tymczasowym, a mypy biegnie w zadaniu „Ruff, "
+        "mypy” każdego runu; graf wybiera jego plik przy zmianie modułów ustawień, które importuje"
+    ),
     "tests/test_limit_drive_centrum.py::test_znane_luki_zapisu_tekstem_pliku_ustawien_przechodza_przez_nakladke_napedu": (
         "puszcza próbki przez nakładkę Run.refusing_text_settings_writes w procesie testu; graf wybiera jego plik przy "
         "zmianie skryptów napędu verify-centrum-rozliczen, które ładuje ścieżką"

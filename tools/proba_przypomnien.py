@@ -156,7 +156,7 @@ def _not_read(read: NotRead) -> str:
         case "bez-dostepu":
             return f"brak albo zly plik dostepu config/{INBOX_ACCESS_FILE}"
         case "bez-adresow":
-            return "zla albo nieczytelna Lista Wykonawcow"
+            return "zla Lista Wykonawcow bez ostatniej dobrej"
         case "pamiec-wpisania":
             return f"nieczytelna pamiec Wpisania raportow: {read.failure}"
         case "okresy":

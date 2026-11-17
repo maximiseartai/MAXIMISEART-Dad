@@ -142,7 +142,7 @@ AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {
     "schema_version", "run_id", "process", "mode", "pricing", "period", "started_at", "ended_at", "duration_ms", "tool",
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
-    "inea_only_cleared", "intermax_entries", "efenix_orders", "efenix_stop", "report_entering", "environment", "trace",
+    "inea_only_cleared", "intermax_entries", "address_history", "efenix_orders", "efenix_stop", "report_entering", "environment", "trace",
     "diagnosis",
     "dad_actions", "interruption", "input_copy", "input_copy_notes", "quantity_rules", "activity_legend",
 }

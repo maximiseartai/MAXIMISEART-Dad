@@ -1,6 +1,6 @@
 """Uporządkowanie INTERMAX w katalogu procesów: wpis i widok Uruchomienia.
 
-Uporządkowanie porządkuje dzień, nie okres (ADR 0019): czyta tylko INTERMAX z Ustawień Centrum.
+Uporządkowanie porządkuje dzień, nie okres (ADR 0019): czyta INTERMAX z Ustawień Centrum i Bazę zleceń obok niego.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from typing import Final
 from rozliczenia import intermax_messages, intermax_process
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.process_kind import TAIL, HostParts, NeededSetting, ProcessKind, Start
-from rozliczenia.centrum.run_logs import LoggedEntries, ProcessLogs
+from rozliczenia.centrum.run_logs import LoggedEntries, LoggedHistory, ProcessLogs
 from rozliczenia.centrum.run_view import ProcessView, count_figure, elapsed_only
 from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary
 from rozliczenia.text import day_label
@@ -32,12 +32,20 @@ def _summary(summary: OrderingSummary, _dry_run: bool) -> runs_contract.RunSumma
 
 
 def _logs(summary: OrderingSummary | None, _facts: object) -> ProcessLogs:
-    return ProcessLogs(intermax_entries=None if summary is None else LoggedEntries.of(summary))
+    if summary is None:
+        return ProcessLogs()
+    history = None if summary.history is None else LoggedHistory.of(summary.history)
+    return ProcessLogs(intermax_entries=LoggedEntries.of(summary), address_history=history)
 
 
 def _inputs(start: Start, parts: HostParts) -> OrderingInputs:
     return OrderingInputs(
-        start.path("register"), start.path("copies_directory"), now=parts.now, waiting=parts.waiting, disk=parts.disk
+        start.path("register"),
+        start.path("copies_directory"),
+        now=parts.now,
+        waiting=parts.waiting,
+        disk=parts.disk,
+        order_base=start.order_base,
     )
 
 
@@ -56,7 +64,7 @@ KIND: Final[ProcessKind[OrderingInputs, OrderingSummary]] = ProcessKind(
     view=_VIEW,
     core=intermax_process.PROCESS,
     default_metrics=INTERMAX_METRICS,
-    needs=("register", "copies_directory"),
+    needs=("register", "copies_directory", "order_base"),
     inputs=_inputs,
     settings=(
         NeededSetting(

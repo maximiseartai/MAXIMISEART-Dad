@@ -2,11 +2,13 @@
 
 Operacją procesu jest ``order_register()``. Silnik sekwencjonuje cztery etapy i jako jedyny tłumaczy fakty
 rozpoznania, planu dnia i zapisu na Komunikaty: Sprawdzanie (INTERMAX jest i nie jest otwarty w Excelu), Odczyt
-danych (``register_file.read`` i obszary wklejania z rozpoznania arkuszy zleceń, ``paste_areas``), Planowanie
-(``raw_orders.recognize`` w każdym obszarze wklejania, odmowa dnia, który już jest Dniem uporządkowanym
-(``_ordered_days``), i ``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z ``now``) i Zapisywanie (bajty dnia z
-``intermax_file.ordered`` przez podmianę INTERMAX ``intermax_replace`` z Kopią INTERMAX). Nie ma podglądu bez zapisu
-ani Decyzji taty. Zatrzymania zgłasza jako ``StopError``, a wynik nie zawiera danych klientów.
+danych (``register_file.read`` i obszary wklejania z rozpoznania arkuszy zleceń, ``paste_areas``, oraz Baza zleceń
+``order_base.read``, gdy wejście ją ma), Planowanie (``raw_orders.recognize`` w każdym obszarze wklejania, odmowa dnia,
+który już jest Dniem uporządkowanym (``_ordered_days``), Historia adresu każdego Surowego zlecenia z Bazy zleceń i
+``raw_orders.plan_day`` z widokiem na dzisiejszy dzień z ``now``) i Zapisywanie (bajty dnia z ``intermax_file.ordered``
+przez podmianę INTERMAX ``intermax_replace`` z Kopią INTERMAX). Bazy zleceń, której nie da się przeczytać, proces nie
+używa i mówi o tym ostrzeżeniem, a dzień porządkuje bez Historii adresu. Nie ma podglądu bez zapisu ani Decyzji taty.
+Zatrzymania zgłasza jako ``StopError``, a wynik nie zawiera danych klientów.
 
 Obok procesu, tylko do odczytu: ``register_problem`` dla Diagnozy i ``register_days`` (Dni uporządkowane) dla karty
 Uporządkowania INTERMAX w Centrum rozliczeń. Dzień uporządkowany Planowanie i karta rozpoznają jedną regułą
@@ -17,7 +19,7 @@ miejscu (``paste_areas``).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
@@ -26,12 +28,13 @@ from types import MappingProxyType
 
 from openpyxl.utils.cell import get_column_letter
 
-from . import intermax_file, raw_orders, register_file, workbook_files
+from . import intermax_file, order_base, raw_orders, register_file, workbook_files
 from . import intermax_messages as messages
 from .dad_files import DadFiles
 from .domain import ProgressPhase
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Replaced, Waiting, replace_register
 from .message import Message, StopError
+from .order_base import HistoryBlock, OrderBase, UnsupportedSheet
 from .phase_runner import PhaseRunner
 from .raw_orders import (
     AboveOrdered,
@@ -39,6 +42,7 @@ from .raw_orders import (
     Obstacle,
     OrderKind,
     RawBlock,
+    RawOrder,
     SeveralDays,
     Undated,
     WithoutWorker,
@@ -51,6 +55,7 @@ from .settlement_period import period_of
 from .wall_clock import local_now
 
 __all__ = [
+    "HistoryCounts",
     "OrderingInputs",
     "OrderingSummary",
     "RegisterDay",
@@ -66,12 +71,13 @@ sięga też przegląd Dni uporządkowanych, więc obejmuje cały okres rozliczen
 
 @dataclass(frozen=True)
 class OrderingInputs:
-    """Wejście procesu Uporządkowania INTERMAX: INTERMAX z Ustawień Centrum, folder Kopii i zegar procesu.
+    """Wejście procesu Uporządkowania INTERMAX: INTERMAX z Ustawień Centrum, folder Kopii, zegar procesu i Baza zleceń.
 
     ``period`` to okres dzisiejszej daty z zegara procesu, ustalony przy tworzeniu wejścia, czyli przy starcie:
     Uruchomienie po północy z poniedziałku na wtorek dalej należy do okresu, w którym wystartowało (ADR 0019).
     ``waiting``: zegar w sekundach i przerwa krótkiej ponownej próby podmiany, której odmawia OneDrive, a ``disk``
-    kroki podmiany INTERMAX na dysku.
+    kroki podmiany INTERMAX na dysku. ``order_base``: Baza zleceń, z której zlecenia dostają Historię adresu;
+    ``None``: Uporządkowanie bez Historii adresu i bez ostrzeżenia.
     """
 
     register_path: Path
@@ -79,19 +85,31 @@ class OrderingInputs:
     now: Callable[[], datetime] = local_now
     waiting: Waiting = field(default_factory=Waiting)
     disk: Disk = LOCAL_DISK
+    order_base: Path | None = None
     period: str = field(init=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "period", period_of(self.now().date()).token)
 
 
+@dataclass(frozen=True)
+class HistoryCounts:
+    """Historia adresu dnia w liczbach: zlecenia z choć jednym blokiem, skopiowane wiersze Bazy i arkusze Bazy."""
+
+    orders: int
+    rows: int
+    sheets: int
+
+
 @dataclass
 class OrderingSummary:
-    """Podsumowanie Uporządkowania INTERMAX bez danych klientów: dzień, liczby zleceń i Wykonawców, Kopia i Wpisy.
+    """Podsumowanie Uporządkowania INTERMAX bez danych klientów: dzień, liczby zleceń i Wykonawców, Kopia, Wpisy i
+    Historia adresu.
 
     ``entries``: operator z reguły taty → wiersze INTERMAX zleceń z Wpisem urządzenia i czynności INTERMAX.
     ``without_entry``: wiersz INTERMAX i nazwa operatora z aplikacji (``None``: puste ``CZYNNOŚCI``) każdej
-    instalacji hurt bez Wpisu.
+    instalacji hurt bez Wpisu. ``history``: liczby Historii adresu; ``None``: Uporządkowanie bez Bazy zleceń (wejście
+    bez niej albo Baza, której nie dało się przeczytać).
     """
 
     day: date
@@ -101,6 +119,7 @@ class OrderingSummary:
     entries: Mapping[str, tuple[int, ...]]
     without_entry: tuple[tuple[int, str | None], ...]
     warnings: list[Message] = field(default_factory=list)
+    history: HistoryCounts | None = None
     phase_durations_ms: Mapping[ProgressPhase, int] = field(default_factory=lambda: MappingProxyType({}))
 
 
@@ -120,7 +139,7 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
     fakt Komunikatem Uporządkowania; nieudane usunięcie starszych Kopii to ostrzeżenie: INTERMAX jest już uporządkowany.
     INTERMAX czyta uchwyt plików taty ``context.files``: komórki zakazanych kolumn przeczytanych wierszy zna pamięć
     reguły danych (ADR 0025), a wklejone wiersze, które rozpoznaje Planowanie, i odcisk przeczytanego INTERMAX Kopia
-    wejścia Uruchomienia.
+    wejścia Uruchomienia. Bazę zleceń ``inputs.order_base`` czyta ten sam uchwyt bez Kopii wejścia (``order_base.read``).
     """
 
     phases = PhaseRunner(context.observer, clock=context.clock.now)
@@ -136,7 +155,9 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
 
     phases.check(check)
 
-    def read() -> tuple[RegisterFile, tuple[PasteArea, ...]]:
+    warnings: list[Message] = []
+
+    def read() -> tuple[RegisterFile, tuple[PasteArea, ...], OrderBase | None]:
         try:
             register = register_file.read(register_path, files)
         except WorkbookError as error:
@@ -145,11 +166,11 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
         if files.copy is not None:
             for area in areas:
                 area.copy_paste()
-        return register, areas
+        return register, areas, None if inputs.order_base is None else _order_base(inputs.order_base, files, warnings)
 
-    register, areas = phases.read(read)
+    register, areas, base = phases.read(read)
 
-    def plan() -> tuple[PasteArea, RawBlock, DayPlan]:
+    def plan() -> tuple[PasteArea, RawBlock, DayPlan, OrderBase | None]:
         found: list[tuple[PasteArea, RawBlock | Obstacle]] = []
         for candidate in areas:
             with _stops(lambda: messages.unsupported_shape(register_path, candidate.sheet), UnsupportedShape):
@@ -167,9 +188,11 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
         if recognized.day in _ordered_days(register_path, areas, min(recognized.day, _earliest_shown(today))):
             first, last = recognized.orders[0].row, recognized.orders[-1].row
             raise StopError(messages.day_already_ordered(register_path, area.sheet, recognized.day, first, last))
-        return area, recognized, raw_orders.plan_day(recognized, area.rows_from_bottom(), area.columns, today)
+        history = _history(base, recognized.orders, warnings)
+        day = raw_orders.plan_day(recognized, area.rows_from_bottom(), area.columns, today, history or {})
+        return area, recognized, day, None if history is None else base
 
-    area, block, day = phases.plan(plan, issue_count=lambda _: 0)
+    area, block, day, used = phases.plan(plan, issue_count=lambda _: 0)
 
     def save() -> Replaced:
         def written_as_planned(written: bytes) -> None:
@@ -195,7 +218,8 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
         return outcome
 
     replaced = phases.save(save)
-    warnings = [messages.old_copies_kept(copies_directory, messages.ORDERING)] if replaced.old_copies_kept else []
+    if replaced.old_copies_kept:
+        warnings.append(messages.old_copies_kept(copies_directory, messages.ORDERING))
     entries: dict[str, list[int]] = {}
     for placement in day.placements:
         if placement.entry is not None:
@@ -206,10 +230,43 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
         if placement.entry is None and placement.order.kind is OrderKind.WHOLESALE_INSTALLATION
     )
     frozen = MappingProxyType({operator: tuple(rows) for operator, rows in entries.items()})
+    history = None
+    if used is not None:
+        copied = [len(placement.history) for placement in day.placements]
+        history = HistoryCounts(sum(1 for rows in copied if rows), sum(copied), used.sheet_count)
     summary = OrderingSummary(
-        day.day, len(day.placements), day.worker_count, replaced.copy.path.name, frozen, without_entry, warnings
+        day.day, len(day.placements), day.worker_count, replaced.copy.path.name, frozen, without_entry, warnings, history
     )
     return replace(summary, phase_durations_ms=phases.durations_ms())
+
+
+def _history(
+    base: OrderBase | None, orders: Sequence[RawOrder], warnings: list[Message]
+) -> dict[int, tuple[HistoryBlock, ...]] | None:
+    """Wiersz Surowego zlecenia → jego Historia adresu z Bazy zleceń ``base``; ``None`` bez Bazy, a także z ostrzeżeniem
+    w ``warnings``, gdy komórki trafienia nie da się odczytać: wtedy żadne zlecenie nie ma Historii adresu."""
+
+    if base is None:
+        return None
+    try:
+        return {order.row: base.history(order.address, order.number) for order in orders}
+    except WorkbookError as error:
+        warnings.append(messages.order_base_unusable(error))
+        return None
+
+
+def _order_base(path: Path, files: DadFiles, warnings: list[Message]) -> OrderBase | None:
+    """Baza zleceń ``path`` albo ``None`` z ostrzeżeniem w ``warnings``, gdy jej nie da się przeczytać."""
+
+    try:
+        found = order_base.read(path, files)
+    except WorkbookError as error:
+        warnings.append(messages.order_base_unusable(error))
+        return None
+    if isinstance(found, UnsupportedSheet):
+        warnings.append(messages.order_base_unsupported(path, found.sheet))
+        return None
+    return found
 
 
 @contextmanager

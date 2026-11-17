@@ -152,9 +152,12 @@ class ReportEnteringEntry:
     def view(self) -> report_entering_contract.ReportsView:
         """Widok Raporty całego okna z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”, z Przypomnieniami o raporcie
         z ostatniego sprawdzenia ich pracy i nieznanymi nadawcami przypisanymi od tamtej pory na bieżącej Liście
-        Wykonawców (przy złej liście ostatniej dobrej)."""
+        Wykonawców (przy złej liście ostatniej dobrej). Listę bez odczytu widok liczy jak pustą, bo raporty i
+        przypomnienia ma z pamięci Wpisania, a nie z listy: nieznany nadawca zostaje wtedy nieznanym jak w wyniku
+        kliknięcia, a przypisanie go odmawia jak każdy zapis listy bez odczytu."""
 
-        listed = usable(self.settings.snapshot().workers) or WorkerList(())
+        workers = self.settings.snapshot().workers
+        listed = WorkerList(()) if isinstance(workers, Unreadable) else usable(workers) or WorkerList(())
         try:
             return _view(self.files.shown(), self.files.kept(), self.parts.now().date(), self.reminders(), listed.addresses())
         except (StateUnreadable, DecisionsUnreadable) as error:

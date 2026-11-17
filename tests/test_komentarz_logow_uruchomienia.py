@@ -2315,6 +2315,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
     ],
     "inea_only_cleared": {"AK": 2},
     "intermax_entries": {"rows": {"Operator Syntetyczny": [12, 13]}, "without_entry": [{"row": 14, "operator": "Operator Hurtowy"}]},
+    "address_history": {"orders": 61, "rows": 187, "sheets": 6},
     "efenix_orders": [
         {
             "row": 18,

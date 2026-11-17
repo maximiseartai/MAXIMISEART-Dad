@@ -94,6 +94,7 @@ from tests.fixtures.centrum import (
 )
 from atrapy.atrapa_efenix import PRICES, TODAY, AtrapaOrder, Changed, amount_of, atrapa_efenix
 from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, entering_centrum, ordering_centrum, report
+from atrapy.baza_zlecen import FIVE, TWELVE, WITHOUT_HITS, BaseSheet, Visit
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from tests.fixtures.fake_cli import fake_cli
@@ -881,8 +882,10 @@ PASTED = (
 )
 
 
-def _intermax(tmp_path: Path, intermax: Intermax | None = None) -> Produced:
-    centrum = ordering_centrum(tmp_path, intermax or Intermax(raw=PASTED), clock=Clock([ORDERED_AT]))
+def _intermax(
+    tmp_path: Path, intermax: Intermax | None = None, order_base: Sequence[BaseSheet] | None = WITHOUT_HITS
+) -> Produced:
+    centrum = ordering_centrum(tmp_path, intermax or Intermax(raw=PASTED), clock=Clock([ORDERED_AT]), order_base=order_base)
     write_report_key(ToolDirectory(tmp_path))
     centrum.run_to_end()
     return Produced(_archive_file(centrum, tmp_path), ())
@@ -1074,7 +1077,11 @@ _CONFIGURATION = "- Lista Wykonawców i Wzorce nie są w Logach"
 ALWAYS = {
     "settlement": (_CONFIGURATION,),
     "preparation": ("- Surowe zlecenia na dole arkuszy Rejestru zleceń", "- folderu okresów taty Logi nie mają", _CONFIGURATION),
-    "intermax": ("- dni uporządkowane nad wklejeniem nie są w Kopii wejścia", "- kolumn z aplikacji za UWAGI nie ma w Kopii"),
+    "intermax": (
+        "- dni uporządkowane nad wklejeniem nie są w Kopii wejścia",
+        "- kolumn z aplikacji za UWAGI nie ma w Kopii",
+        "- Bazy zleceń nie ma w Kopii wejścia",
+    ),
     "efenix": ("- efenix to Atrapa efenix z odczytów stron w Logach, a nie efenix taty",),
     "report_entering": (
         "- Kopia wejścia ma maski strażnika reguły danych ([telefon] ×1)",
@@ -1082,6 +1089,39 @@ ALWAYS = {
         "- Wpisy raportu w Logach mają maski strażnika reguły danych ([telefon] ×1)",
     ),
 }
+
+
+# Baza zleceń z Historią adresu dwóch zleceń ``PASTED`` (adresy ``Ulica N`` atrapy INTERMAX) albo bez Bazy obok INTERMAX.
+HISTORY_IN_LOGS: Final[dict[str, tuple[Sequence[BaseSheet] | None, dict[str, int] | None, list[str]]]] = {
+    "z_historia_adresu": (
+        (
+            BaseSheet("10_12_2018-01_08_2020", FIVE, [Visit("Miastko,Ulica 0201/", datetime(2019, 1, 2), 11, "a")]),
+            BaseSheet("19_12_2025-17_11_2026", TWELVE, [Visit("ULICA 201", datetime(2026, 1, 2), 22, "b"), Visit("ULICA 204", None, 33, "c")]),
+        ),
+        {"orders": 2, "rows": 3, "sheets": 2},
+        [],
+    ),
+    "bez_bazy_zlecen": (None, None, ["BAZA_ZLECEN_POMINIETA"]),
+}
+
+
+@pytest.mark.parametrize("case", HISTORY_IN_LOGS)
+def test_uporzadkowanie_z_historia_adresu_albo_bez_bazy_odtwarza_sie_zgodnie_bez_bazy_zlecen(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], case: str
+) -> None:
+    """Kopia wejścia nie ma Bazy zleceń, więc odtworzenie porządkuje bez niej, a liczb Historii adresu i ostrzeżenia o
+    Bazie zleceń nie porównuje: Logi z Historią adresu i Logi z ostrzeżeniem o braku Bazy odtwarzają się zgodnie."""
+
+    order_base, history, warnings = HISTORY_IN_LOGS[case]
+    produced = _intermax(tmp_path / "taty", order_base=order_base)
+    record = produced.record
+    assert (record["address_history"], [message["code"] for message in record["messages"]]) == (history, warnings)
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--zachowaj", tmp_path / "odtworzenie")
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    replayed = json.loads((tmp_path / "odtworzenie" / "odtworzone-logi.json").read_text(encoding="utf-8"))
+    assert (replayed["address_history"], replayed["messages"]) == (None, [])
 
 
 @pytest.mark.parametrize("process", PROCESSES)
@@ -2702,10 +2742,10 @@ def test_strona_efenix_inna_niz_w_odczycie_z_logow_daje_roznice_w_sladzie_zlecen
     assert lines[3] == "Pierwsza różnica: Komunikaty (messages)[1: kod EFENIX_INNY_STATUS].code"
 
 
-# Wiersze 18–20 po Wykonawcach: ``ADRES``, którego reguła adresu nie rozbiera (bez rodzaju ulicy), ``Dane adresowe``
+# Wiersze 18–20 po Wykonawcach: ``ADRES``, którego reguła adresu nie rozbiera (trzy ukośniki), ``Dane adresowe``
 # bez rodzaju ulicy i ``Dane adresowe`` z inną ulicą i numerem domu. Adresy są wymyślone.
 ADDRESSED = [
-    _efenix_order("#ZLQR11", "adrian.testowy", address="ZAWILCOWA 12/3"),
+    _efenix_order("#ZLQR11", "adrian.testowy", address="UL. ZAWILCOWA 12/3/4/5"),
     _efenix_order("#ZLQR12", "beata.testowa", efenix_address="Miastowo-Centrum Zawilcowa 12 Lokal 3"),
     _efenix_order("#ZLQR13", "celina.testowa", efenix_address="Miastowo-Centrum ul.Rumiankowa 14 Lokal 3"),
 ]
@@ -2715,7 +2755,7 @@ def test_logi_wyceny_z_adresem_bez_rozbioru_i_innym_adresem_w_efenix_odtwarzaja_
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Atrapa z Logów pokazuje ``Dane adresowe``, które różnią się od ``ADRES`` odtworzonego Pliku zbiorczego tymi
-    samymi częściami co u taty: ``ADRES`` bez rozbioru (w odtworzonym pliku też bez rodzaju ulicy, z numerem swojego
+    samymi częściami co u taty: ``ADRES`` bez rozbioru (w odtworzonym pliku z ukośnikiem w nazwie ulicy, z numerem swojego
     wiersza), ``Dane adresowe`` bez rozbioru oraz inna ulica i numer domu. Wycena daje więc te same Komunikaty i ślad, a
     raport nie ma granicy o adresie."""
 

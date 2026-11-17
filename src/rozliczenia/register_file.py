@@ -41,8 +41,6 @@ w zapisie.
 
 from __future__ import annotations
 
-import html
-import re
 import zipfile
 from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping, Sequence
@@ -55,18 +53,28 @@ from typing import Any, Final, NamedTuple, cast
 from xml.etree import ElementTree
 
 from openpyxl.styles.fonts import Font
-from openpyxl.styles.numbers import BUILTIN_FORMATS, is_date_format
 from openpyxl.utils import get_column_letter
-from openpyxl.utils.datetime import MAC_EPOCH, WINDOWS_EPOCH, from_excel
-from openpyxl.workbook.properties import WorkbookProperties
 from openpyxl.worksheet.worksheet import Worksheet
 
 from . import client_data, raw_orders, workbook_files
+from .cell_values import CellValues
 from .dad_files import DadFiles, ReadFile, SheetMemory
 from .highlights import LookReader
 from .hyperlinks import read_sheet_hyperlinks
 from .raw_orders import SHIFT, CellFacts, OrderColumns, RowFacts, RowLook
-from .register_columns import ACTIVITIES, COLUMNS, CONTRACT_NUMBER, DATE, DAY_FILL, DEVICES, TARGET_HEADERS, WORKER, Column
+from .register_columns import (
+    ACTIVITIES,
+    ADDRESS,
+    COLUMNS,
+    CONTRACT_NUMBER,
+    DATE,
+    DAY_FILL,
+    DEVICES,
+    ORDER_NUMBER,
+    TARGET_HEADERS,
+    WORKER,
+    Column,
+)
 from .row_look import GENERAL
 from .row_positions import RowPositions
 from .settlement_period import SettlementPeriod
@@ -108,8 +116,6 @@ __all__ = [
 
 _FIRST: Final = "AKCJE"
 _LAST: Final = "UWAGI"
-_HEADER_ROW: Final = re.compile(rb'<row r="1"[^>]*?(?:/>|>.*?</row>)', re.S)
-_TEXT: Final = re.compile(rb"<t(?:\s[^>]*)?>([^<]*)</t>")
 
 
 @dataclass(frozen=True)
@@ -321,24 +327,16 @@ def read(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> Re
             raise KeyError("officeDocument")
         rels = relationships(parts, workbook)
         root = ElementTree.fromstring(parts[workbook])
-        styles = next((rel.target for rel in rels.values() if rel.kind.endswith("/styles")), None)
-        if styles is None:
-            raise KeyError("styles")
-        strings = next((rel.target for rel in rels.values() if rel.kind.endswith("/sharedStrings")), None)
-        properties = root.find(f"{MAIN}workbookPr")
-        date1904 = properties is not None and cast(WorkbookProperties, WorkbookProperties.from_tree(cast(Any, properties))).date1904
-        values = _Values(
-            _ReadStyles.of(parts[styles]),
-            SharedStrings(parts[strings] if strings else b"<sst/>"),
-            MAC_EPOCH if date1904 else WINDOWS_EPOCH,
-        )
+        cells = CellValues.of(parts, workbook, rels)
+        styles = next(rel.target for rel in rels.values() if rel.kind.endswith("/styles"))
+        values = _Values(_ReadStyles.of(parts[styles]), cells)
         sheets = [
             (sheet.get("name", ""), rels[sheet.get(f"{{{OFFICE_REL}}}id", "")].target)
             for sheet in root.iter(f"{MAIN}sheet")
         ]
         if not sheets:
             raise KeyError("sheet")
-        headers = [values.header(parts[part]) for _, part in sheets]
+        headers = [cells.header(parts[part]) for _, part in sheets]
     package = RegisterPackage(infos, parts, workbook, styles, tuple(part for _, part in sheets))
     file.enter_copy()
     recognized = recognize((name, header) for (name, _), header in zip(sheets, headers, strict=True))
@@ -356,7 +354,7 @@ def read(path: Path, files: DadFiles, *, despite_excel_lock: bool = False) -> Re
         for sheet in recognized
     )
     return RegisterFile(
-        file.path, file.content, OrderSheets(order_sheets, file, values.epoch, parts, values.shared), package
+        file.path, file.content, OrderSheets(order_sheets, file, cells.epoch, parts, cells.shared), package
     )
 
 
@@ -380,6 +378,8 @@ def _paste_area(
         devices=positions[DEVICES],
         activities=positions[ACTIVITIES],
         contract_number=positions[CONTRACT_NUMBER],
+        address=positions[ADDRESS],
+        number=positions[ORDER_NUMBER],
     )
     return PasteArea(sheet.name, part, columns, header, parts[part], values, file)
 
@@ -420,6 +420,12 @@ class PasteArea:
         self._file = file
         self._facts_read: dict[int, RowFacts] = {}
         """Numer wiersza → fakty wiersza, który któryś przegląd arkusza od dołu już przeczytał, liczone raz."""
+
+    @property
+    def epoch(self) -> datetime:
+        """Początek systemu dat skoroszytu (1900 albo 1904), w którym pisarz dnia zapisuje daty."""
+
+        return self._values.cells.epoch
 
     @cached_property
     def sheet_xml(self) -> RowsFromBottom:
@@ -717,28 +723,20 @@ def _value_at(values: Sequence[object], column: int) -> object:
 
 @dataclass(frozen=True)
 class _ReadStyles:
-    """Style komórek z ``xl/styles.xml``, które czyta rozpoznanie: format liczby, czcionka i żółte wypełnienie."""
+    """Style komórek z ``xl/styles.xml``, które czyta rozpoznanie: czcionka i żółte wypełnienie."""
 
-    number_formats: tuple[int, ...]
     faces: tuple[tuple[str | None, float | None], ...]
     yellow: tuple[bool, ...]
-    date_formats: frozenset[int]
 
     @classmethod
     def of(cls, xml: bytes) -> _ReadStyles:
         root = ElementTree.fromstring(xml)
-        codes = {int(item.get("numFmtId", "0")): item.get("formatCode", "") for item in root.iter(f"{MAIN}numFmt")}
         faces = [_face(Font.from_tree(cast(Any, font))) for font in root.iterfind(f"{MAIN}fonts/{MAIN}font")]
         fills = [_is_yellow(fill) for fill in root.iterfind(f"{MAIN}fills/{MAIN}fill")]
         xfs = list(root.iterfind(f"{MAIN}cellXfs/{MAIN}xf"))
-        number_formats = tuple(int(xf.get("numFmtId", "0")) for xf in xfs)
         return cls(
-            number_formats=number_formats,
             faces=tuple(faces[int(xf.get("fontId", "0"))] for xf in xfs),
             yellow=tuple(fills[int(xf.get("fillId", "0"))] for xf in xfs),
-            date_formats=frozenset(
-                number for number in number_formats if is_date_format(codes.get(number) or BUILTIN_FORMATS.get(number, ""))
-            ),
         )
 
 
@@ -753,45 +751,10 @@ def _is_yellow(fill: ElementTree.Element) -> bool:
 
 @dataclass(frozen=True)
 class _Values:
-    """Wartości i fakty komórek Rejestru: style, teksty wspólne i początek systemu dat skoroszytu."""
+    """Fakty komórek Rejestru: wartości (``CellValues``) z krojem czcionki i żółtym wypełnieniem stylu."""
 
     styles: _ReadStyles
-    shared: SharedStrings
-    epoch: datetime
-
-    def header(self, xml: bytes) -> list[object]:
-        """Wartości wiersza 1 arkusza od kolumny A; arkusz bez wiersza 1 nie ma żadnych."""
-
-        header_row = _HEADER_ROW.search(xml)
-        if header_row is None:
-            return []
-        cells = sheet_cells(header_row.group(0))
-        header: list[object] = [None] * max((cell.column for cell in cells), default=0)
-        for cell in cells:
-            header[cell.column - 1] = self.value(cell)
-        return header
-
-    def value(self, cell: SheetCell) -> object:
-        """Wartość komórki: tekst (także prawda/fałsz jako 1 i 0), liczba, data w formacie daty; ``None`` dla pustej."""
-
-        kind = cell.kind or b"n"
-        if kind == b"inlineStr":
-            text: object = html.unescape(b"".join(_TEXT.findall(cell.content or b"")).decode("utf-8"))
-        else:
-            found = cell.value
-            if found is None:
-                return None
-            raw = found.decode("utf-8")
-            if kind == b"s":
-                text = self.shared[int(raw)]
-            elif kind == b"n":
-                number = float(raw)
-                if self.styles.number_formats[cell.style] in self.styles.date_formats:
-                    return from_excel(number, self.epoch)
-                return number
-            else:
-                text = html.unescape(raw)
-        return None if is_blank(text) else text
+    cells: CellValues
 
     def facts(self, tag: bytes, number: int, cells: Sequence[SheetCell]) -> RowFacts:
         styles = self.styles
@@ -799,6 +762,6 @@ class _Values:
         row_style = attributes.get(b"s") if attributes.get(b"customFormat") == b"1" else None
         return RowFacts(
             number,
-            {cell.column: CellFacts(self.value(cell), styles.faces[cell.style], styles.yellow[cell.style]) for cell in cells},
+            {cell.column: CellFacts(self.cells.value(cell), styles.faces[cell.style], styles.yellow[cell.style]) for cell in cells},
             row_style is not None and styles.yellow[int(row_style)],
         )
