@@ -62,7 +62,7 @@ def standing(
     for read, days in unreadable:
         if not corrected(read.worker, read.numbers, (read.arrived, read.mail), None):
             found.update(
-                UnreadableSubject(read.mail, read.worker, read.arrived, read.fault, day)
+                UnreadableSubject(read.mail, read.worker, read.arrived, read.fault, read.subject, day)
                 for day in (sorted(days) if days else [None])
             )
     for report in reports:

@@ -414,9 +414,15 @@ def _window_view(clicked_at: str) -> Json:
 
 
 SUBJECT_TODAY = "2026-11-19"
-SUBJECT_FAULT = {"fault": "inne słowa", "day": "2026-11-16", "arrived": "2026-11-16T17:05:00Z"}
-"""The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038), without its subject (ADR 0028)."""
-NO_DAY_FAULT = {"fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z"}
+SUBJECT_FAULT = {
+    "subject": "Raport 16.11.2026 Kowalski [adres] tel. [telefon]",
+    "fault": "inne słowa",
+    "day": "2026-11-16",
+    "arrived": "2026-11-16T17:05:00Z",
+}
+"""The Raport z błędem tematu of `wykonawca.a`, counted for 16.11 (ADR 0041, #2038), with its subject after the guard of
+the data rule (#2070: the value of `ADRES` and the phone masked, the surname kept)."""
+NO_DAY_FAULT = {"subject": "Raport", "fault": "bez daty", "day": None, "arrived": "2026-11-18T18:00:00Z"}
 """The Raport z błędem tematu of `wykonawca.b`, who has no orders: a problem without a day at the day it came."""
 MISTAKEN_DAY = "2026-11-28"
 """The day in the subject of the Raport of `wykonawca.a` whose numbers are his orders of 18.11 (ADR 0029)."""
@@ -492,12 +498,13 @@ def _subject_faults(run: Run, page: Page) -> None:
         run.capture(page, "440-raporty-blad-tematu-kafelki", full_page=False)
         popover = _popover(page, "wykonawca.a", "2026-11-16")
         facts = popover.get_by_label("Błąd tematu", exact=True)
+        expect(facts).to_contain_text("Temat")
+        expect(facts).to_contain_text(f"„{SUBJECT_FAULT['subject']}”")
         expect(facts).to_contain_text("inne słowa")
         expect(facts).to_contain_text("Liczony za")
         expect(facts).to_contain_text("16.11")
         expect(facts).to_contain_text("Przyszedł")
         expect(facts).to_contain_text("16.11, 18:05")
-        expect(popover).not_to_contain_text("Temat")
         expect(popover.get_by_role("listitem").filter(has_text="Raport z błędem tematu")).to_have_count(1)
         orders = popover.get_by_role("listitem").filter(has_text="Wpis w raporcie z błędem tematu, niewpisany")
         expect(orders).to_have_count(2)
@@ -508,7 +515,7 @@ def _subject_faults(run: Run, page: Page) -> None:
         run.check(
             True,
             "the popover of 16.11 shows the kind of the fault „inne słowa”, the day Centrum counts it for and when it "
-            "came, without the subject, and its orders as Błąd tematu, not Bez raportu",
+            "came, with the subject after the guard of the data rule, and its orders as Błąd tematu, not Bez raportu",
         )
         popover = _popover(page, "wykonawca.a", "2026-11-18")
         mistaken = popover.get_by_role("listitem").filter(has_text="Pomylony temat")
@@ -517,7 +524,9 @@ def _subject_faults(run: Run, page: Page) -> None:
         run.capture(page, "442-raporty-pomylony-temat", full_page=False)
         _close(page, popover)
         popover = _popover(page, "wykonawca.b", "2026-11-18")
-        expect(popover.get_by_label("Błąd tematu", exact=True)).to_contain_text("żaden dzień")
+        facts = popover.get_by_label("Błąd tematu", exact=True)
+        expect(facts).to_contain_text("„Raport”")
+        expect(facts).to_contain_text("żaden dzień")
         _close(page, popover)
         run.check(
             True,
