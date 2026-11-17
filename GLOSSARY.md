@@ -174,7 +174,7 @@ Temat wybacza wielkość liter, jedną literówkę w słowie `Raport` (`Rapotr`,
 Datę z rokiem pomylonym przez Wykonawcę (ponad 302 dni przed przyjściem maila albo ponad 62 dni po nim) Centrum czyta jako ten sam dzień i miesiąc w roku, w którym data leży w tych granicach.
 Ma jeden albo więcej Wpisów raportu, niekoniecznie każdy w osobnej linii; mail bez żadnego Wpisu i mail ze zdjęciami do raportu (`Zdjęcia do raportu …`) nie jest Raportem wykonawcy.
 Raport z błędem tematu (temat bez dnia albo z innymi słowami) jest przysłany za dzień z tematu, a bez niego za ostatni dzień Wykonawcy ze zleceniami bez raportu, nie późniejszy niż dzień przyjścia maila; tata widzi błąd przy tym dniu i wpisuje raport Wpisem na życzenie.
-Raportem wykonawcy za dzień jest też odpowiedź Wykonawcy na Przypomnienie o raporcie za ten dzień i poprawka raportu: odpowiedź (`Re:`, `Odp:`) z tematem Raportu wykonawcy za ten dzień na początku i dowolnym dopiskiem po nim; jej Wpisami jest tylko tekst nad cytatem, bez numerów z przykładu w przypomnieniu.
+Raportem wykonawcy za dzień jest też odpowiedź Wykonawcy na Przypomnienie o raporcie za ten dzień i poprawka raportu: odpowiedź (`Re:`, `Odp:`) z tematem Raportu wykonawcy za ten dzień na początku, także bez roku (wtedy w roku, w którym dzień leży w tych samych granicach od przyjścia maila co data z rokiem pomylonym), i dowolnym dopiskiem po nim; jej Wpisami jest tylko tekst nad cytatem, bez numerów z przykładu w przypomnieniu.
 Inne maile w tej skrzynce, także od Wykonawców z innym słowem w temacie (`Montaże 13.11.2026`), nie są Raportami wykonawcy.
 _Avoid_: mail, raport (bez dopowiedzenia), sprawozdanie
 

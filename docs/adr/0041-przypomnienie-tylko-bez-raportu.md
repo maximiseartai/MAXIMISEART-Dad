@@ -96,7 +96,15 @@ tata teraz odrzuca, a odpowiedź 10 („resztę traktujemy jako błąd”) zmien
   raport, i poprawi pracownika”.
 - **Poprawka raportu w odpowiedzi** (decyzja Maksa). Odpowiedź (`Re:`, `Odp:`) z tematem Raportu wykonawcy za dzień na początku i
   dowolnym dopiskiem po nim (tata odpisuje „Re: Raport 16.11.2026 - BŁĘDY PROSZĘ POPRAW…”) jest Raportem wykonawcy
-  za ten dzień, a jej Wpisami jest tylko tekst nad cytatem, jak w odpowiedzi na Przypomnienie.
+  za ten dzień, a jej Wpisami jest tylko tekst nad cytatem, jak w odpowiedzi na Przypomnienie. Temat bez roku
+  („Re: Raport 16.11 - popraw”) daje ten dzień i miesiąc w roku, w którym leżą w tych samych granicach od dnia
+  przyjścia maila co data z rokiem pomylonym (31.12 w mailu z 2.01 to poprzedni rok), bez błędu tematu (decyzja Maksa 17.11.2026:
+  „odpowiedź na poprawkę bez roku nie może być pomijana, bo domyślnie rok zawsze będzie ten obecny; odpowiedź na
+  poprawkę i tak dziedziczy temat, który wpisał tata, a tata będzie się trzymał swojej konwencji”).
+  Rozwinięcie tej decyzji przez koordynatora (17.11.2026, bez Maksa): gdy liczby po dniu i miesiącu nie dają dnia z
+  rokiem, odpowiedź liczy się za ten dzień i miesiąc tak samo jak bez roku, więc rok złej długości
+  („Re: Raport 16.11.202”) i liczba w dopisku („Re: Raport 16.11 2 montaże”) też dają 16.11; odpowiedź dziedziczy
+  temat taty, a jej dopisek nie zmienia dnia. Temat bez `Re:` z takim rokiem zostaje błędem tematu.
 
 ## Odrzucone warianty
 
