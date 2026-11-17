@@ -8,7 +8,8 @@ a jego odmowa stoi przy polu formularza. Podgląd pyta właściciela o to samo p
 (``CentrumSettings.legend_after``) i liczy jego skutek na ostatnich Plikach zbiorczych (``activity_legend_preview``), więc
 zapis jest możliwy także przy różnicach od taty. Zmiana albo usunięcie kodu, którego już nie ma, to 404, a zapis i
 podgląd przy pliku legendy, którego system nie daje teraz czytać, to 409 o tym pliku
-(``refusal.settings_file_unreadable``). Id kodu w adresie może mieć „/” (``dzielnik1/2``).
+(``refusal.settings_file_unreadable``), a podgląd także przy pliku pary Reguł ilości albo Folderów bez odczytu
+(``settings_reads``), nie podgląd liczony Regułami ilości z Wydania. Id kodu w adresie może mieć „/” (``dzielnik1/2``).
 
 Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego (``PriceList``), a Wzorzec, którego nie da się
 przeczytać, daje same litery. Odczyt i podgląd niczego nie zapisują poza wierszem Historii zmiany spoza Centrum, który
@@ -37,7 +38,7 @@ from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_SECTION
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import ActivityLegendView, CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings_reads import readable_folders
+from rozliczenia.centrum.settings_reads import readable_folders, readable_quantity_rules
 from rozliczenia.client_data import ForbiddenValues
 
 _REFUSED: dict[int | str, dict[str, object]] = {
@@ -120,7 +121,7 @@ def activity_legend_router(
         found = recent.read(directory)
         if not found.files and not found.unread:
             return contract.LegendPreviewWithoutFiles(state="no_settled_periods")
-        rules = settings.quantity_rules().rules
+        rules = readable_quantity_rules(settings).rules
         return legend_preview(view.legend, after, rules, found, price_list.names(), forbidden)
 
     return router

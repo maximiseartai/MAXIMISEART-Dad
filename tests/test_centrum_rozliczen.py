@@ -7728,6 +7728,26 @@ def _own_pair(app: Centrum) -> str:
     return own
 
 
+@pytest.mark.parametrize("method", ["PUT", "DELETE"])
+def test_zmiana_i_usuniecie_skladnika_taty_przy_liscie_urzadzen_bez_odczytu_to_409_o_tym_pliku_a_nie_skladnika_juz_nie_ma(
+    tmp_path: Path, method: str
+) -> None:
+    """Składnik taty, którego nie ma na Liście Urządzeń z Wydania, przy liście, której system nie daje teraz czytać: nikt
+    nie wie, czy lista go ma, więc zmiana i usunięcie mówią tacie, którego pliku nie da się przeczytać, zamiast „tego
+    składnika już nie ma”, i niczego nie zapisują."""
+
+    app = centrum(tmp_path)
+    own = _own_pair(app)
+    form = {"name": "ont y", "other_spellings": ["onty"], "group": None}
+    before = _config_files(app.tool.config)
+
+    with without_reading(app.tool.config / DEVICES_FILE):
+        response = app.client.request(method, f"{DEVICES_URL}/{own}", json=form if method == "PUT" else None)
+
+    assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(DEVICES_FILE).message})
+    assert _config_files(app.tool.config) == before
+
+
 HAND_EDITS: dict[str, tuple[str, str]] = {
     RULES_FILE: ("wartosc: 2", "wartosc: 5"),
     DEVICES_FILE: ("- id: ont-y\n  zapisy:\n  - ont y\n", "- id: ont-y\n  zapisy:\n  - ont y\n  - onty\n"),

@@ -11,7 +11,9 @@ składników trasa stawia przy polu formularza z tym zapisem. Podgląd pyta wła
 (``CentrumSettings.rules_after``).
 Zmiana albo usunięcie reguły albo składnika, którego już nie ma, to 404. Podgląd, zmiana i usunięcie reguły przy pliku
 reguł albo Folderów, którego system nie daje teraz czytać, to 409 o tym pliku (``refusal.settings_file_unreadable``,
-Foldery przez ``settings_reads.readable_folders``), nie „tej reguły już nie ma” ani „brak folderu okresów”.
+Foldery przez ``settings_reads.readable_folders``), nie „tej reguły już nie ma” ani „brak folderu okresów”; zmiana i
+usunięcie składnika przy pliku pary bez odczytu to 409 o nim (``settings_reads.readable_quantity_rules``), nie „tego
+składnika już nie ma”.
 
 Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego z Konfiguracji, czytane tą samą drogą co jego
 Sprawdzanie; Wzorzec, którego nie da się przeczytać, daje same litery. Odczyt, podgląd i podpowiedzi niczego nie
@@ -53,7 +55,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
     TakenSpelling,
     UnlistedComponent,
 )
-from rozliczenia.centrum.settings_reads import readable_folders
+from rozliczenia.centrum.settings_reads import readable_folders, readable_quantity_rules
 from rozliczenia.collective_layout import QUANTITY_LETTERS
 from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, QuantityRule, QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import parse_component, parse_rule
@@ -184,7 +186,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         kluczy Historii (jak reguła); formularz, parę z regułami i uzupełnienie listy sprawdza właściciel
         (``CentrumSettings._dad_change``), a odmowę zapisu u dwóch składników trasa stawia przy polu z tym zapisem."""
 
-        if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in settings.quantity_rules().rules.devices.ids():
+        if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in readable_quantity_rules(settings).rules.devices.ids():
             raise refusal.device_component_unknown()
 
         match settings.change_devices(edit):
