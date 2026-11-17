@@ -288,6 +288,8 @@ def _worker_day(
                 successful=order.successful,
                 activities=order.activities,
                 state=OrderState.of(reported=order.reported, problem=order.number in numbers).value,
+                codes=list(order.codes or ()),
+                no_code=order.codes == (),
             )
             for order in orders
         ],

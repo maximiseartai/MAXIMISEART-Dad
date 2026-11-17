@@ -195,7 +195,7 @@ function descriptionRowsHint({ by_legend, for_tata }: DescriptionRows): string {
     return "W każdym wierszu według CZYNNOŚCI ZREALIZOWANE."
   }
 
-  const closed = `Legenda czynności wypełniła ${by_legend} ${plural(by_legend, { one: "wiersz", few: "wiersze", many: "wierszy" })} z samych kodów.`
+  const closed = `Legenda czynności wypełniła ${by_legend} ${plural(by_legend, { one: "wiersz", few: "wiersze", many: "wierszy" })} z Kodami czynności.`
 
   if (for_tata === 0) {
     return closed

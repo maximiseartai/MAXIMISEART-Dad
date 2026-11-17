@@ -2,15 +2,16 @@
 
 Jedyna operacja ``tool_entry`` to czysta funkcja bez plików: z treści zlecenia, opisu technika (``CZYNNOŚCI
 ZREALIZOWANE``), Reguł ilości i Legendy czynności daje Ilości usług w ``N:AP`` (reguły i legenda razem, legenda tylko w
-wierszu z samych Kodów czynności), kwotę w ``AS``, Wyróżnienia legendy, kolumny narzędzia i rodzaj Ilości do
-uzupełnienia. Liczą nią Przygotowanie pliku zbiorczego (zapis i ostrzeżenia), Kontrola ilości (oczekiwane wartości) i
+wierszu z Kodami czynności bez Błędu opisu, także ze zwykłym opisem obok), kwotę w ``AS``, Wyróżnienia legendy, kolumny
+narzędzia i rodzaj Ilości do uzupełnienia. Tekst opisu technika z komórki daje tylko ``description``, ta sama droga dla
+Przygotowania i dla odczytu Pliku zbiorczego (``order_facts``), z którego liczą Kontrola i Ilości do uzupełnienia. Liczą nią Przygotowanie pliku zbiorczego (zapis i ostrzeżenia), Kontrola ilości (oczekiwane wartości) i
 Ilości do uzupełnienia, więc to, co Przygotowanie wpisuje, i to, czego oczekuje Kontrola, liczy jeden rachunek.
 
 Wiersz, którego ``DATA`` nie jest datą, nie ma wyniku Reguł ilości (``rules`` ``None``): jego wpis to sama legenda, a
 wiersz nie ma rodzaju. Treść bez pory (``OrderContent.started`` ``None``) liczy się tak samo jak brak treści, bo typ
 ``OrderContent`` ją dopuszcza, choć ``order_facts`` daje wtedy ``None``, a Przygotowanie zawsze ma datę. Kolumny
 narzędzia to kolumny, które narzędzie w tym wierszu wpisało albo porównuje Regułami ilości: wpis taty obok nich robi
-wiersz zrobionym. Kontrola ilości porównuje szerzej (każdą kolumnę legendy i ``AS`` w wierszu z samych kodów, ADR
+wiersz zrobionym. Kontrola ilości porównuje szerzej (każdą kolumnę legendy i ``AS`` w wierszu z kodami bez Błędu opisu, ADR
 0038); ten zakres należy do niej (``quantity_check.legend_row_check``).
 
 Właścicielem nie jest ``quantity_check``, bo Przygotowanie (pisarz) zależałoby wtedy od Kontroli (sprawdzającego), a
@@ -26,7 +27,8 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Final
 
-from .activity_legend import AMOUNT_COLUMN, ActivityLegend, CodesOnly, DescriptionRead, FillColour
+from .activity_legend import AMOUNT_COLUMN, ActivityLegend, DescriptionRead, FillColour, WithCodes
+from .client_data import shown
 from .collective_layout import QUANTITY_LETTERS
 from .quantity_engine import (
     DESCRIPTION_COLUMNS,
@@ -38,6 +40,7 @@ from .quantity_engine import (
     WithoutRule,
     evaluate,
 )
+from .workbook_files import is_blank
 
 
 class FillKind(StrEnum):
@@ -72,13 +75,14 @@ class ToolEntry:
 
     @property
     def closed(self) -> bool:
-        """Opis to same Kody czynności, więc wiersz nie czeka na tatę w kolumnach z opisu technika (ADR 0038)."""
+        """Opis ma Kody czynności bez Błędu opisu, więc wiersz nie czeka na tatę w kolumnach z opisu technika (ADR 0041)."""
 
-        return isinstance(self.read, CodesOnly)
+        return isinstance(self.read, WithCodes)
 
     @property
     def kind(self) -> FillKind | None:
-        """Rodzaj Ilości do uzupełnienia, gdy wiersz czeka na tatę; wiersz z opisu z samych kodów nie czeka."""
+        """Rodzaj Ilości do uzupełnienia, gdy wiersz czeka na tatę; wiersz z opisu z Kodami czynności bez Błędu opisu nie
+        czeka."""
 
         kind = None if self.rules is None else _KINDS.get(type(self.rules))
         if kind is FillKind.FROM_DESCRIPTION and self.closed:
@@ -89,8 +93,16 @@ class ToolEntry:
 _NONE: Final[Mapping[str, FillColour]] = MappingProxyType({})
 
 
+def description(cell: object) -> str:
+    """Opis technika z komórki ``CZYNNOŚCI ZREALIZOWANE`` tak, jak go pokazuje Excel (``client_data.shown``); pusta
+    komórka i same spacje to ``""``."""
+
+    return "" if is_blank(cell) else shown(cell)
+
+
 def tool_entry(content: OrderContent | None, completed: str, rules: QuantityRules, legend: ActivityLegend) -> ToolEntry:
-    """Wpis narzędzia dla treści ``content`` (``None`` albo bez pory: bez Reguł ilości) i opisu technika ``completed``."""
+    """Wpis narzędzia dla treści ``content`` (``None`` albo bez pory: bez Reguł ilości) i opisu technika ``completed``
+    (``description`` komórki)."""
 
     result = None if content is None or content.started is None else evaluate(rules, content)
     read = legend.read(completed)
@@ -100,7 +112,7 @@ def tool_entry(content: OrderContent | None, completed: str, rules: QuantityRule
     colours = _NONE
     amount = 0
     columns = frozenset(compared)
-    if isinstance(read, CodesOnly):
+    if isinstance(read, WithCodes):
         by_legend, amount, colours = read.quantities, read.amount, read.fills
         columns = frozenset((*compared, *read.quantities, *((AMOUNT_COLUMN,) if read.amount else ())))
     quantities = {

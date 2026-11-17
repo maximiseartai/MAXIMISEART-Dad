@@ -17,8 +17,8 @@ oraz wartości taty w pozostałych kolumnach N:AP (decyzja 10). Puste i 0 to to 
 (decyzja 11). Grupy różnic pokazują dzień tygodnia i pełną godzinę, bo od godziny zależy dodatek za usterkę.
 
 Legenda czynności (ADR 0038) liczy się rachunkiem jednego wiersza ``legend_row_check``, tym samym w Kontroli, w
-podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.py``). W wierszu z samych Kodów czynności
-(``CodesOnly``) porównuje z tatą:
+podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.py``). W wierszu z Kodami czynności bez
+Błędu opisu, także obok zwykłego opisu (``WithCodes``), porównuje z tatą:
 
 - kolumny, w które może wpisać którykolwiek kod legendy, z wartością Reguł ilości i legendy razem z Wpisu narzędzia
   (``tool_entry``), tego samego, który wpisuje Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy
@@ -27,8 +27,9 @@ podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.
 - kolory kolumn, które może wypełnić którykolwiek kod legendy (zielony, czerwony albo brak; wypełnienie spoza palety
   legendy, np. tło z Wzorca, to brak, zob. ``order_facts.legend_colour``).
 
-W wierszu bez kodów i w wierszu z Błędem opisu legenda nic nie wpisała, więc nie porównuje, tylko liczy wpis taty:
-kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. Błędy opisu liczy według powodu. Opis
+W wierszu bez żadnego kodu i w wierszu z Błędem opisu legenda nic nie wpisała, więc nie porównuje, tylko liczy wpis
+taty: kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. W wierszu bez reguły wartości taty
+pokazuje poza kolumnami narzędzia wiersza, więc kolumna, w którą wpisała legenda, nie jest wartością taty. Błędy opisu liczy według powodu. Opis
 technika (``CZYNNOŚCI ZREALIZOWANE``) wiersz oddaje (``LegendRowCheck.description``) tylko przy różnicy legendy albo,
 gdy legenda nic nie wpisała, przy wpisie taty, więc tylko taki opis trafia do treści Kontroli, a w niej przez
 strażnika reguły danych.
@@ -44,12 +45,12 @@ from typing import Final
 from .activity_legend import (
     AMOUNT_COLUMN,
     ActivityLegend,
-    CodesOnly,
     ColumnByNumber,
     DescriptionError,
     DescriptionRead,
     FillColour,
     FixedColumn,
+    WithCodes,
     problem_text,
 )
 from .text import WEEKDAY_LABELS, plural
@@ -107,9 +108,9 @@ class QuantityCheck:
     description_filled: Counter[str] = field(default_factory=Counter)
     other_filled: Counter[str] = field(default_factory=Counter)
     coded: int = 0
-    """Wiersze danych z samych Kodów czynności."""
+    """Wiersze danych z Kodami czynności bez Błędu opisu."""
     coded_matching: int = 0
-    """Wiersze z samych Kodów czynności bez różnicy legendy."""
+    """Wiersze z Kodami czynności bez Błędu opisu i bez różnicy legendy."""
     legend_differences: dict[tuple[str, ...], LegendGroup] = field(default_factory=lambda: defaultdict(LegendGroup))
     """Identyfikatory kodów wiersza → różnice legendy wierszy z tymi kodami."""
     uncoded_entries: Counter[tuple[str, Entry]] = field(default_factory=Counter)
@@ -211,8 +212,8 @@ class LegendRowCheck:
     """Legenda czynności w Kontroli ilości jednego Wiersza danych.
 
     ``read``: wynik legendy dla opisu technika. ``rules``: rachunek Reguł ilości (``row_check``). ``differences``: różnice
-    legendy w wierszu z samych kodów, w kolejności N:AP, ``AS``, potem kolory. ``entry``: wpis taty w wierszu bez kodów
-    albo z Błędem opisu. ``description``: opis technika, tylko w wierszu z różnicą legendy albo, bez kodów i z Błędem
+    legendy w wierszu z kodami bez Błędu opisu, w kolejności N:AP, ``AS``, potem kolory. ``entry``: wpis taty w wierszu
+    bez żadnego kodu albo z Błędem opisu. ``description``: opis technika, tylko w wierszu z różnicą legendy albo, bez kodów i z Błędem
     opisu, z wpisem taty. ``columns``: kolumny narzędzia wiersza (``ToolEntry.columns``).
     """
 
@@ -227,7 +228,7 @@ class LegendRowCheck:
     def rule_differences(self) -> tuple[str, ...]:
         """Różnice Reguł ilości bez kolumn, które w tym wierszu wpisała też legenda: te porównuje legenda, z sumą."""
 
-        written = self.read.quantities if isinstance(self.read, CodesOnly) else {}
+        written = self.read.quantities if isinstance(self.read, WithCodes) else {}
         return tuple(column for column in self.rules.differences if column not in written)
 
 
@@ -238,7 +239,7 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
     tool = tool_entry(row.content, row.completed, rules, legend)
     ruled = _rule_check(row, tool.rules, rules)
     codes = tool.read
-    if not isinstance(codes, CodesOnly):
+    if not isinstance(codes, WithCodes):
         entry = tuple(
             (column, row.quantity(column))
             for column in DESCRIPTION_COLUMNS
@@ -319,7 +320,7 @@ def _add_legend(result: QuantityCheck, coded: LegendRowCheck) -> None:
             if coded.description is not None:
                 result.faulty_entries[reasons, coded.description, coded.entry] += 1
             return
-        case CodesOnly(found=found):
+        case WithCodes(found=found):
             ids = tuple(dict.fromkeys(code.code for code in found))
         case _:
             if coded.description is not None:
@@ -354,7 +355,7 @@ def _add_unruled(
     group.values.update(
         (column, row.quantity(column))
         for column in QUANTITY_LETTERS
-        if column not in coded.rules.compared and row.quantity(column) != 0
+        if column not in coded.columns and row.quantity(column) != 0
     )
 
 
@@ -416,7 +417,7 @@ def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str
         f"- Wiersze danych: {result.rows} (porównane {result.compared}, rozliczane z opisu "
         f"{result.from_description}, bez reguły {result.unruled_rows}, bez daty i godziny w DATA {result.undated})\n"
         f"- Różnice w kolumnach Reguł ilości: {result.difference_count}\n"
-        f"- Wiersze z samych Kodów czynności: {result.coded} (zgodne z legendą {result.coded_matching}), "
+        f"- Wiersze z Kodami czynności: {result.coded} (zgodne z legendą {result.coded_matching}), "
         f"różnice legendy: {result.legend_difference_count}, wiersze z Błędem opisu: {result.description_error_rows}\n",
         *_difference_blocks(result.differences),
         *_unruled_blocks(result.unruled),

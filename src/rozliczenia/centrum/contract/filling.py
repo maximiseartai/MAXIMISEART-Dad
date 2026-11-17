@@ -39,8 +39,8 @@ class DescriptionColumn(Model):
 
 
 class DescriptionRows(Model):
-    """Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z samych Kodów czynności, które wypełniła
-    Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe."""
+    """Wiersze Pliku zbiorczego w kolumnach z opisu technika: ``by_legend`` z Kodami czynności bez Błędu opisu, które
+    wypełniła Legenda czynności, więc nie czekają na tatę, a ``for_tata`` pozostałe."""
 
     by_legend: int
     for_tata: int

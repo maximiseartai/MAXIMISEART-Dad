@@ -235,7 +235,9 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
         for key, found in added.items()
     ]
     opened = [order for order in moved.orders if window.opens(order.key.day)]
-    figures = _figures.worker_days(opened, shown, reported, problems_found, changes, moved.rows, frozenset(targets), details)
+    figures = _figures.worker_days(
+        opened, shown, reported, problems_found, changes, moved.rows, frozenset(targets), details, inputs.legend
+    )
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
     return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added)
 

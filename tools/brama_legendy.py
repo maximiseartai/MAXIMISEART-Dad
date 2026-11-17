@@ -7,7 +7,7 @@ Kopię wejścia Pliku zbiorczego: ``N:AP`` i ``CZYNNOŚCI ZREALIZOWANE``, bo kol
 
 Wiersz czyta filtr prywatności wierszy (``order_facts.collective_orders``), a liczy go rachunek Kontroli ilości
 (``quantity_check.legend_row_check``) z Regułami ilości z Wydania, więc brama i Kontrola mówią to samo o każdej komórce
-tego samego pliku. Wiersz z kodem to wiersz z samych Kodów czynności. W nim brama porównuje z tatą kolumny legendy
+tego samego pliku. Wiersz z kodem to wiersz z Kodami czynności bez Błędu opisu, także obok zwykłego opisu. W nim brama porównuje z tatą kolumny legendy
 (wartość Reguł ilości i legendy razem z Wpisu narzędzia, ``tool_entry``, tego samego, który wpisuje Przygotowanie), a
 z dysku także kwotę w ``AS`` i kolory kolumn, które legenda wypełnia (zielony, czerwony albo brak; inne wypełnienie, np. tło Wzorca, to brak). Wiersz z Błędem opisu
 brama liczy osobno, według powodu, bo legenda nic w nim nie wpisuje. Wpis taty w wierszu bez kodów albo z Błędem opisu
@@ -15,7 +15,7 @@ to wartość taty w kolumnie z opisu technika, której nie porównują Reguły i
 ``DATA`` nie jest datą, liczy się bez Reguł ilości, jak w Kontroli.
 
 Na stdout trafiają same liczby, identyfikatory kodów legendy, liczby z kodów spoza przedziałów i litery kolumn: bez
-opisów technika i słów spoza legendy, adresów i numerów, więc wynik można wkleić do PR. ``--opisy PLIK`` zapisuje
+opisów technika, adresów i numerów, więc wynik można wkleić do PR. ``--opisy PLIK`` zapisuje
 lokalnie każdy wiersz z różnicą, z Błędem opisu i bez kodów z wpisem taty razem z numerem wiersza i treścią
 ``CZYNNOŚCI ZREALIZOWANE``; plik w repozytorium (publicznym) jest odrzucony.
 
@@ -45,12 +45,11 @@ from rozliczenia.activity_legend import (
     AMOUNT_COLUMN,
     REASONS,
     ActivityLegend,
-    CodesOnly,
     DescriptionError,
     DescriptionProblem,
     FillColour,
     LegendProblem,
-    NotACode,
+    WithCodes,
     problem_text,
 )
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND, parse_activity_legend
@@ -100,8 +99,8 @@ class Source:
 
 @dataclass(frozen=True)
 class Checked:
-    """Wiersz po rachunku Kontroli ilości: różnice legendy z tatą (wiersz z samych kodów) i wpis taty (wiersz bez kodów
-    albo z Błędem opisu), z Logów bez ``AS`` i kolorów."""
+    """Wiersz po rachunku Kontroli ilości: różnice legendy z tatą (wiersz z kodami bez Błędu opisu) i wpis taty (wiersz
+    bez kodów albo z Błędem opisu), z Logów bez ``AS`` i kolorów."""
 
     row: DadRow
     check: LegendRowCheck
@@ -110,12 +109,12 @@ class Checked:
 
     @property
     def coded(self) -> bool:
-        return isinstance(self.check.read, CodesOnly)
+        return isinstance(self.check.read, WithCodes)
 
     @property
     def code_ids(self) -> tuple[str, ...]:
         read = self.check.read
-        return tuple(dict.fromkeys(found.code for found in read.found)) if isinstance(read, CodesOnly) else ()
+        return tuple(dict.fromkeys(found.code for found in read.found)) if isinstance(read, WithCodes) else ()
 
     @property
     def problems(self) -> tuple[DescriptionProblem, ...]:
@@ -249,7 +248,7 @@ class Tally:
             "-- Błędy opisu (powód → wiersze): "
             + (" | ".join(f"{reason}={reasons[reason]}" for reason in REASONS if reason in reasons) or NONE)
         )
-        named = Counter(problem_text(problem) for row in faulty for problem in row.problems if not isinstance(problem, NotACode))
+        named = Counter(problem_text(problem) for row in faulty for problem in row.problems)
         lines.append("-- powody z kodami (powód → wiersze): " + (" | ".join(f"{reason}→{count}" for reason, count in sorted(named.items())) or NONE))
         lines.append(_entries("Błędy opisu z wpisem taty", [row for row in faulty if row.entries]))
         lines.append(_entries("wiersze bez kodów z wpisem taty", [row for row in uncoded if row.entries]))
@@ -281,7 +280,7 @@ def descriptions(gate: Gate, sources: Sequence[Source]) -> list[str]:
                 shown = "; ".join(f"{column}: legenda {legend}, tata {tata}" for column, legend, tata in row.differences)
                 lines.append(f"{where} | różnica | {', '.join(row.code_ids)} | {shown} | {text}")
             elif row.problems:
-                shown = "; ".join(f"„{problem.word}”" if isinstance(problem, NotACode) else problem_text(problem) for problem in row.problems)
+                shown = "; ".join(problem_text(problem) for problem in row.problems)
                 lines.append(f"{where} | Błąd opisu | {shown} | wpis taty {entries} | {text}")
             elif row.entries:
                 lines.append(f"{where} | bez kodów z wpisem taty | {entries} | {text}")
