@@ -13,8 +13,7 @@
   },
   "src/rozliczenia/efenix_positions.py": {
     "completion": "04cc1603fa80ed24",
-    "same_amount": "bc973a2141c850aa",
-    "missing_positions": "7950ae174d838df1"
+    "same_amount": "bc973a2141c850aa"
   },
   "src/rozliczenia/efenix_browser.py": {
     "BrowserEfenix.load_emmett": "c740d6de76e24f51",

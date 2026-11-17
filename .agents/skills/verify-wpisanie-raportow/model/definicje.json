@@ -1,7 +1,6 @@
 {
   "src/rozliczenia/worker_reports/_cells.py": {
-    "reconcile": "24c1e54992807b1a",
-    "with_added": "6a974a5cbe5a2caf"
+    "reconcile": "24c1e54992807b1a"
   },
   "src/rozliczenia/worker_reports/_model.py": {
     "Window.of": "28961f03f61c2f9d",
@@ -37,8 +36,7 @@
     "ReportEnteringEntry.on_request": "5fe436e623357c93"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "StateFile": "71beaa3fba9d5cdd",
-    "replace_atomically": "d3549c3aa56844ea"
+    "StateFile": "71beaa3fba9d5cdd"
   },
   "src/rozliczenia/centrum/app.py": {
     "create_app.report_files": "33d33878d51ed362"
