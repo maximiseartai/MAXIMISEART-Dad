@@ -12,6 +12,7 @@ import type {
   GetReportEnteringSetupResponse,
   GetReportsViewResponse,
   KeptCell,
+  RequestedCell,
   GetPeriodBoardResponse,
   GetQuantitiesToFillResponse,
   GetKindTableResponse,
@@ -384,6 +385,14 @@ export function getReportsView() {
 /** „Zostaw moją” przy różnicy `cell`: serwer zapisuje decyzję poza INTERMAX i oddaje cały widok bez tej różnicy. */
 export function keepManualValue(cell: KeptCell) {
   return call("keepManualValue", { body: cell })
+}
+
+/**
+ * Wpis na życzenie przy Wpisie `cell` z ostatniego Wpisania raportów: serwer startuje Wpisanie raportów z decyzją taty,
+ * a gdy INTERMAX jest otwarty w Excelu albo trwa inne Uruchomienie, odmawia.
+ */
+export function enterOnRequest(cell: RequestedCell) {
+  return call("enterOnRequest", { body: cell })
 }
 
 /** Kopie INTERMAX w Konfiguracji, od najnowszej. */

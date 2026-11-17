@@ -86,7 +86,7 @@ from atrapy.preparation import COMPLETED_WITHOUT_CODES, PERIOD, incomplete_perio
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
-from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, run_events, views_until, write_report_key
+from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, finished_view, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -2530,7 +2530,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                     "entered": 0,
                     "mails": 1,
                     "without_report": ["40000002"],
-                    "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None}],
+                    "problems": [{"reason": reason(unknown), "number": "400000099", "keep": None, "request": None}],
                     "notes": [],
                     "orders_detail": [
                         {"number": "40000002", "successful": None, "activities": None, "state": "without_report"}
@@ -2707,7 +2707,7 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
         "entered": 0,
         "mails": 0,
         "without_report": [],
-        "problems": [{"reason": reason(unreadable), "number": None, "keep": None}],
+        "problems": [{"reason": reason(unreadable), "number": None, "keep": None, "request": None}],
         "notes": [],
         "orders_detail": [],
         "reminders": [],
@@ -2744,7 +2744,7 @@ def test_tak_i_nie_jednego_zlecenia_w_mailu_nic_do_niego_nie_wpisuja_a_widok_rap
         {"label": "Problemy", "value": 1, "unit": "count"},
     ]
     assert _worker(_view(centrum), "jan.testowy")["problems"] == [
-        {"reason": reason(warning), "number": "40000001", "keep": None}
+        {"reason": reason(warning), "number": "40000001", "keep": None, "request": None}
     ]
     assert f"{mail.arrived:%d.%m.%Y o %H:%M}" in reason(warning)
 
@@ -2945,6 +2945,211 @@ def test_nieczytelny_plik_wyniku_albo_decyzji_daje_odmowe_widoku_i_zostaw_moja_b
     )
     assert [(answer.status_code, answer.json()["message"]) for answer in (shown, kept)] == [(500, message)] * 2
     assert (decisions.read_bytes() if decisions.exists() else None) == before
+
+
+# --- Wpis na życzenie (ADR 0041, spec #2032 US 45–53) ----------------------------------------------------------------
+
+
+def _requests(centrum: EnteringCentrum, login: str, day: str = "2026-11-09") -> dict[str, Any]:
+    """Wpis na życzenie przy każdym problemie dnia ``day`` Wykonawcy ``login`` w widoku Raporty, po numerze."""
+
+    return {problem["number"]: problem["request"] for problem in _worker(_view(centrum), login, day)["problems"]}
+
+
+def _enter_on_request(centrum: EnteringCentrum, offer: dict[str, Any], at: datetime) -> dict[str, Any]:
+    """Tata klika Wpis na życzenie ``offer`` w chwili ``at``; widok Uruchomienia, które to kliknięcie startuje."""
+
+    centrum.moment.append(at)
+    started = centrum.client.post("/api/report-entering/request", json=offer)
+    assert started.status_code == 200, started.json()
+    view = finished_view(centrum.client)
+    assert view["result"]["ending"] == "finished", view["result"]
+    return view
+
+
+def _without_moment(decisions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [{key: value for key, value in decision.items() if key != "at"} for decision in decisions]
+
+
+def test_wpis_na_zyczenie_przy_t_wpisuje_tak_z_czynnosciami_a_blad_nie_wraca_przy_nastepnym_kliknieciu(
+    tmp_path: Path,
+) -> None:
+    """US 45–48 i 52: przy Wpisie z ``t`` i z ``nieskuteczne`` zamiast ``tak``/``nie`` widok Raporty ma Wpis na życzenie
+    z tym, co się wpisze (dzień, ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE``). Kliknięcie przy Wpisie Jana wpisuje jednym
+    Uruchomieniem ``tak`` i czynności jak każdy Wpis, a Wpis Anny zostaje problemem. Logi mają decyzję taty, a
+    następne kliknięcie „Wpisz raporty z maili” nie przywraca błędu Jana."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+    mails = [
+        report(JAN, SUBJECT, "40000001 t inst20m rt2", at=datetime(2026, 11, 9, 17)),
+        report(ANNA, SUBJECT, "40000002 nieskuteczne brak klienta", at=datetime(2026, 11, 9, 17)),
+    ]
+    centrum = entering_centrum(tmp_path, intermax, mails)
+    _finished(centrum)
+    before = _cells(centrum.register)
+    [anna] = _worker(_view(centrum), "anna.kowalska")["problems"]
+
+    jan = _requests(centrum, "jan.testowy")["40000001"]
+    done = _enter_on_request(centrum, jan, datetime(2026, 11, 9, 19))
+
+    offer = {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "activities": "inst20m rt2"}
+    assert jan == {**offer, "successful": "tak", "order_day": "2026-11-09"}
+    assert anna["request"] == {
+        "number": "40000002",
+        "day": "2026-11-09",
+        "worker": "anna.kowalska",
+        "activities": "brak klienta",
+        "successful": "nie",
+        "order_day": "2026-11-09",
+    }
+    assert before[40000001] == (None, None)
+    assert _cells(centrum.register) == {**before, 40000001: ("tak", "inst20m rt2")}
+    shown = _worker(_view(centrum), "jan.testowy")
+    assert (shown["problems"], shown["orders_detail"][0]["state"]) == ([], "entered")
+    assert _worker(_view(centrum), "anna.kowalska")["problems"] == [anna]
+    decision = {"worker": "jan.testowy", "day": "2026-11-09", "number": "40000001", "verdict": "tak", "activities": "inst20m rt2"}
+    [logged] = _entering(centrum, done)["requested"]
+    assert _without_moment([logged]) == [decision]
+    assert datetime.fromisoformat(logged["at"]) == datetime(2026, 11, 9, 19).astimezone()
+
+    again = _click_at(centrum, datetime(2026, 11, 9, 20), mails)
+
+    assert _worker(_view(centrum), "jan.testowy")["problems"] == []
+    assert _entering(centrum, again)["requested"] == [logged]
+    assert _cells(centrum.register)[40000001] == ("tak", "inst20m rt2")
+
+
+def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_a_reczna_wartosc_taty_zostaje(tmp_path: Path) -> None:
+    """US 49–50: Raport Jana, który przyszedł w chwili kliknięcia taty o 19:00, wygrywa z Wpisem na życzenie także
+    wtedy, gdy znowu ma ``t``: błąd wraca z przyciskiem, a drugie kliknięcie o 19:50 znowu go wpisuje. Poprawny Raport
+    z 20:00 wygrywa z oboma. Przy zleceniu z ręcznymi czynnościami taty Wpis na życzenie wpisuje ``nie`` do pustego
+    ``SKUTECZNE``, a czynności taty zostają z różnicą „Zostaw moją”."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000005)), raw=())
+    first = report(JAN, SUBJECT, "40000001 t inst20m\n40000005 n brak dostępu", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path, intermax, [first])
+    _tata_writes(centrum.register, 40000005, "wymiana ręczna", column=COMPLETED)
+    _finished(centrum)
+    offers = _requests(centrum, "jan.testowy")
+
+    _enter_on_request(centrum, offers["40000001"], datetime(2026, 11, 9, 19))
+    manual = _enter_on_request(centrum, offers["40000005"], datetime(2026, 11, 9, 19, 5))
+    [difference] = _worker(_view(centrum), "jan.testowy")["problems"]
+    repeated = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 19), message_id="<drugi@przyklad.invalid>")
+    _click_at(centrum, datetime(2026, 11, 9, 19, 45), [first, repeated])
+    back = _requests(centrum, "jan.testowy")
+    _enter_on_request(centrum, back["40000001"], datetime(2026, 11, 9, 19, 50))
+    again = _requests(centrum, "jan.testowy")
+    corrected = report(JAN, SUBJECT, "40000001 nie brak klienta", at=datetime(2026, 11, 9, 20))
+    _click_at(centrum, datetime(2026, 11, 9, 20, 30), [first, repeated, corrected])
+
+    assert _cells(centrum.register) == {40000001: ("nie", "brak klienta"), 40000005: ("nie", "wymiana ręczna")}
+    assert manual["result"]["summary"]["figures"][1] == {"label": "Problemy", "value": 1, "unit": "count"}
+    assert (difference["number"], difference["keep"]["reported"], difference["request"]) == ("40000005", "brak dostępu", None)
+    assert back["40000001"] == offers["40000001"]
+    assert set(again) == set(_requests(centrum, "jan.testowy")) == {"40000005"}
+
+
+def _offered_problems(centrum: EnteringCentrum) -> list[tuple[str | None, bool]]:
+    """Numer i przycisk Wpisu na życzenie każdego problemu Jana z 9.11 w widoku Raporty."""
+
+    return [(problem["number"], problem["request"] is not None) for problem in _worker(_view(centrum), "jan.testowy")["problems"]]
+
+
+def test_wpisu_na_zyczenie_nie_ma_przy_przeciwnych_wpisach_numerze_bez_zlecenia_i_numerze_w_kilku_miejscach(
+    tmp_path: Path,
+) -> None:
+    """US 51: przycisku nie ma, gdy Centrum nie wie, co wpisać: przy ``t`` i ``nie`` jednego zlecenia, przy ``t`` z
+    numerem, którego INTERMAX nie ma, przy numerze w kilku zleceniach INTERMAX bez zlecenia Jana i przy Wpisie bez
+    żadnego znaku; jest tylko przy ``skuteczne``."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(9, 9, "jan.testowy", 40000001),
+            _order(9, 10, "jan.testowy", 40000005),
+            _order(9, 11, "jan.testowy", 40000006),
+            _order(9, 12, "anna.kowalska", 40000007),
+            _order(9, 13, "anna.kowalska", 40000007),
+        ),
+        raw=(),
+    )
+    text = "\n".join(
+        (
+            "40000001 t inst20m",
+            "40000001 nie brak klienta",
+            "40000099 t inst20m",
+            "40000007 t inst20m",
+            "40000005 inst20m",
+            "40000006 skuteczne inst20m",
+        )
+    )
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, text)])
+
+    _finished(centrum)
+
+    assert sorted(_offered_problems(centrum)) == [
+        ("40000001", False),
+        ("40000005", False),
+        ("40000006", True),
+        ("40000007", False),
+        ("40000099", False),
+    ]
+
+
+def test_wpis_na_zyczenie_odmawia_jednym_zdaniem_przy_intermax_w_excelu_w_trakcie_innego_uruchomienia_i_po_zmianie_wpisu(
+    tmp_path: Path,
+) -> None:
+    """US 53: przy INTERMAX otwartym w Excelu, w trakcie innego Uruchomienia i przy Wpisie, którego nie ma w ostatnim
+    kliknięciu (także przed pierwszym kliknięciem), Wpis na życzenie odmawia jednym zdaniem, nie startuje Uruchomienia
+    i niczego nie zapisuje."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 t inst20m")])
+    _finished(centrum)
+    offer = _requests(centrum, "jan.testowy")["40000001"]
+    register, state, logs = centrum.register.read_bytes(), _state(centrum).read_bytes(), len(centrum.run_logs())
+    lock = open_in_excel(centrum.register)
+
+    before_any = entering_centrum(tmp_path / "pierwsze", INTERMAX).client.post("/api/report-entering/request", json=offer)
+    in_excel = centrum.client.post("/api/report-entering/request", json=offer)
+    lock.unlink()
+    stale = centrum.client.post("/api/report-entering/request", json={**offer, "activities": "inst25m"})
+    during: list[Any] = []
+    centrum.fake_inbox.during = lambda: during.append(centrum.client.post("/api/report-entering/request", json=offer))
+    _finished(centrum)
+
+    assert (in_excel.status_code, in_excel.json()["message"]) == (
+        409,
+        "INTERMAX jest otwarty w Excelu, więc nic się nie wpisało: zapisz i zamknij INTERMAX, potem kliknij jeszcze raz.",
+    )
+    gone = "Tego Wpisu nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty."
+    assert [(answer.status_code, answer.json()["message"]) for answer in (stale, before_any)] == [(404, gone)] * 2
+    [running] = during
+    assert (running.status_code, running.json()["message"]) == (
+        409,
+        f"Trwa już Uruchomienie procesu: Wpisanie raportów, okres {ENTERING_PERIOD}. Poczekaj na jego wynik w Uruchomieniach.",
+    )
+    assert (centrum.register.read_bytes(), len(centrum.run_logs())) == (register, logs + 1)
+    assert json.loads(_state(centrum).read_bytes())["requested"] == json.loads(state)["requested"] == []
+
+
+def test_wpis_na_zyczenie_przy_nieczytelnym_pliku_wyniku_odmawia_bez_uruchomienia(tmp_path: Path) -> None:
+    """Pliku wyniku, którego nie da się odczytać, Wpis na życzenie nie bierze za wynik bez tego Wpisu: odmawia tym samym
+    zdaniem co widok Raporty i nie startuje Uruchomienia."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 t inst20m")])
+    _finished(centrum)
+    offer = _requests(centrum, "jan.testowy")["40000001"]
+    (centrum.tool.config / REPORT_ENTERING_RESULT).write_text("{nie json", encoding="utf-8")
+    logs = len(centrum.run_logs())
+
+    refused = centrum.client.post("/api/report-entering/request", json=offer)
+
+    assert (refused.status_code, refused.json()["message"]) == (
+        500,
+        "Nie udało się odczytać wyniku Wpisania raportów ani decyzji „Zostaw moją”. Odśwież kartę, a gdy to się "
+        "powtarza, wyślij Uwagę ogólną.",
+    )
+    assert (len(centrum.run_logs()), centrum.client.get("/api/runs/current").json()["state"]) == (logs, "finished")
 
 
 # --- Przypomnienia o raporcie: praca Centrum co minutę (ADR 0030, #1349) -----------------------------------------------
@@ -4344,7 +4549,7 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_ustawien_i_ma_ja_w_log
     faulty = FaultyDescription(Login("jan.testowy"), date(2026, 11, 9), OrderNumber("40000001"), (NotACode("montaż"),))
     assert _cells(centrum.register)[40000001] == ("tak", "montaż")
     assert _worker(_view(centrum), "jan.testowy")["problems"] == (
-        [] if dads_legend else [{"reason": reason(faulty), "number": "40000001", "keep": None}]
+        [] if dads_legend else [{"reason": reason(faulty), "number": "40000001", "keep": None, "request": None}]
     )
     [logs] = centrum.run_logs()
     assert LoggedActivityLegend.model_validate(logs["activity_legend"]).value() == ActivityLegend(codes)

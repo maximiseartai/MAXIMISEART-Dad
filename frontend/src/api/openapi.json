@@ -1123,6 +1123,100 @@
         }
       }
     },
+    "/api/report-entering/request": {
+      "post": {
+        "tags": [
+          "uruchomienia"
+        ],
+        "summary": "On Request",
+        "operationId": "enterOnRequest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RequestedCell"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/components/schemas/RunIdle"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunRunning"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunAwaitingDecision"
+                    },
+                    {
+                      "$ref": "#/components/schemas/RunFinished"
+                    }
+                  ],
+                  "title": "Response Enteronrequest",
+                  "discriminator": {
+                    "propertyName": "state",
+                    "mapping": {
+                      "idle": "#/components/schemas/RunIdle",
+                      "running": "#/components/schemas/RunRunning",
+                      "awaiting_decision": "#/components/schemas/RunAwaitingDecision",
+                      "finished": "#/components/schemas/RunFinished"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/report-entering/run": {
       "post": {
         "tags": [
@@ -4151,6 +4245,7 @@
               "startReportEntering",
               "getReportsView",
               "keepManualValue",
+              "enterOnRequest",
               "getSettlementMailing",
               "previewSettlementMails",
               "sendSettlementMail",
@@ -9951,6 +10046,16 @@
                 "type": "null"
               }
             ]
+          },
+          "request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestedCell"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -9958,10 +10063,11 @@
         "required": [
           "reason",
           "number",
-          "keep"
+          "keep",
+          "request"
         ],
         "title": "ReportsProblem",
-        "description": "Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez\nnumeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``)."
+        "description": "Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez\nnumeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i Wpis na życzenie, przy\nktórym stoi jego przycisk (``request``; ``None``: przycisku nie ma)."
       },
       "ReportsView": {
         "properties": {
@@ -10122,6 +10228,52 @@
         ],
         "title": "ReportsWorkerDay",
         "description": "Dzień Wykonawcy z ostatniego kliknięcia: jego zlecenia z dnia, wpisane (``tak`` albo ``nie`` w ``SKUTECZNE`` po\nkliknięciu, kto by ich nie wpisał), Raporty wykonawcy, problemy bez tych, przy których tata kliknął „Zostaw moją”,\ninformacje o Przeniesieniach zleceń (``notes``), numery zleceń bez żadnego Wpisu i zlecenia dnia (``orders_detail``;\n``None``: wynik kliknięcia sprzed listy zleceń, dopóki tata nie kliknie znowu)."
+      },
+      "RequestedCell": {
+        "properties": {
+          "number": {
+            "type": "string",
+            "title": "Number"
+          },
+          "day": {
+            "type": "string",
+            "format": "date",
+            "title": "Day"
+          },
+          "worker": {
+            "type": "string",
+            "title": "Worker"
+          },
+          "activities": {
+            "type": "string",
+            "title": "Activities"
+          },
+          "successful": {
+            "type": "string",
+            "enum": [
+              "tak",
+              "nie"
+            ],
+            "title": "Successful"
+          },
+          "order_day": {
+            "type": "string",
+            "format": "date",
+            "title": "Order Day"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "number",
+          "day",
+          "worker",
+          "activities",
+          "successful",
+          "order_day"
+        ],
+        "title": "RequestedCell",
+        "description": "Wpis na życzenie przy problemie: Wpis, przy którym tata klika (Wykonawca, dzień, w którym widzi problem, numer i\nczynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI\nZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."
       },
       "Resolved": {
         "properties": {

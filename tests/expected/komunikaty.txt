@@ -1781,3 +1781,9 @@ reports_unreadable [HTTP 500]
 
 difference_gone [HTTP 404]
   Tej różnicy nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty.
+
+request_gone [HTTP 404]
+  Tego Wpisu nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty.
+
+request_while_open_in_excel [HTTP 409]
+  INTERMAX jest otwarty w Excelu, więc nic się nie wpisało: zapisz i zamknij INTERMAX, potem kliknij jeszcze raz.

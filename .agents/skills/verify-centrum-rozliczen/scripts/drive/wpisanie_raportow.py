@@ -352,6 +352,7 @@ def _window_day(
                 "reason": f"Raport wykonawcy z {day[8:10]}.{day[5:7]}.{day[:4]} ma dla zlecenia {numbers[0]} różne Wpisy.",
                 "number": numbers[0],
                 "keep": None,
+                "request": None,
             }
         ]
         if problem

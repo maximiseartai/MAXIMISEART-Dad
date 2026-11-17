@@ -121,7 +121,7 @@ from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 from rozliczenia.worker_list import WorkerEntry, WorkerList
-from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, SenderAddress, as_mail
+from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, RequestedEntry, SenderAddress, as_mail
 
 from atrapy.skrzynka_raportow import FakeInbox
 import atrapa_z_logow
@@ -871,7 +871,7 @@ def _entering_limits(record: RunLog) -> list[Limit]:
 def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     """INTERMAX z uporządkowanych wierszy Kopii wejścia, Lista Wykonawców z loginów Wpisów,
     Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
-    ``memory_before`` z decyzjami „Zostaw moją” z ``kept``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
+    ``memory_before`` z decyzjami „Zostaw moją” z ``kept`` i decyzjami Wpisu na życzenie z ``requested``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
     zegar z dniem kliknięcia u taty. Numery z Wpisu, które INTERMAX taty miał w przeczytanym wierszu bez zlecenia
     (``orderless``), stają na dole swojego arkusza jako Surowe zlecenia z krojem z aplikacji, bo Kopia wejścia Wpisania
     raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
@@ -948,7 +948,9 @@ class _LoggedState:
     def load(self) -> SavedState:
         return self.saved
 
-    def save_memory(self, written: CellsWritten, rollout: date, memory: OwnEntries) -> bool:
+    def save_memory(
+        self, written: CellsWritten, rollout: date, memory: OwnEntries, requested: frozenset[RequestedEntry]
+    ) -> bool:
         return self.saves
 
     def save_result(self, written: CellsWritten, result: ClickResult) -> None:

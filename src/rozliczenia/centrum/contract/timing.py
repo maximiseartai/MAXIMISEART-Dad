@@ -76,6 +76,7 @@ ApiOperation = Literal[
     "startReportEntering",
     "getReportsView",
     "keepManualValue",
+    "enterOnRequest",
     "getSettlementMailing",
     "previewSettlementMails",
     "sendSettlementMail",

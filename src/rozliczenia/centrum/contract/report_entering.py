@@ -1,4 +1,5 @@
-"""Kontrakt Wpisania raportów: przycisk „Wpisz raporty z maili” poza okresami i widok Raporty (ADR 0028)."""
+"""Kontrakt Wpisania raportów: przycisk „Wpisz raporty z maili” poza okresami, widok Raporty (ADR 0028) i Wpis na
+życzenie (ADR 0041)."""
 
 from __future__ import annotations
 
@@ -36,13 +37,28 @@ class KeptCell(Model):
     reported: str
 
 
+class RequestedCell(Model):
+    """Wpis na życzenie przy problemie: Wpis, przy którym tata klika (Wykonawca, dzień, w którym widzi problem, numer i
+    czynności), i co się wpisze do INTERMAX: ``successful`` w ``SKUTECZNE`` i ``activities`` w ``CZYNNOŚCI
+    ZREALIZOWANE`` zlecenia z dnia ``order_day``. Tę samą komórkę przeglądarka odsyła przy kliknięciu."""
+
+    number: str
+    day: date
+    worker: str
+    activities: str
+    successful: Literal["tak", "nie"]
+    order_day: date
+
+
 class ReportsProblem(Model):
     """Problem z ostatniego kliknięcia przy dniu Wykonawcy: zdanie dla taty, numer zlecenia (``None``: problem bez
-    numeru) i komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``)."""
+    numeru), komórka różnicy z ręczną wartością, przy której stoi „Zostaw moją” (``keep``), i Wpis na życzenie, przy
+    którym stoi jego przycisk (``request``; ``None``: przycisku nie ma)."""
 
     reason: str
     number: str | None
     keep: KeptCell | None
+    request: RequestedCell | None
 
 
 class ReportsNote(Model):

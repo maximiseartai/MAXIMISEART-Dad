@@ -2138,6 +2138,37 @@ def test_klikniecie_ze_slowami_stopki_w_opisie_albo_litera_przeciw_nie_odtwarza_
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
 
 
+def test_wpis_na_zyczenie_i_nastepne_klikniecie_z_decyzja_taty_z_pamieci_odtwarzaja_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0041, US 52: Logi Uruchomienia Wpisu na życzenie mają decyzję taty, więc odtworzenie z Logów wpisuje ``tak``
+    przy Wpisie z ``t`` jak u taty, a Logi następnego kliknięcia „Wpisz raporty z maili” mają tę decyzję z pamięci i też
+    odtwarzają się zgodnie."""
+
+    surroundings = Surroundings()
+    mail = report(SENDERS["jan.testowy"], "Raport 09.11.2026", "40000001 t wymiana", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, [mail], surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    [problem] = [
+        problem
+        for worker in centrum.client.get("/api/report-entering/view").json()["workers"]
+        for day in worker["days"]
+        for problem in day["problems"]
+        if problem["request"] is not None
+    ]
+    assert centrum.client.post("/api/report-entering/request", json=problem["request"]).status_code == 200
+    requested = finished_view(centrum.client)
+    again = centrum.run_to_end()
+
+    replays = [
+        _replayed(capsys, _archived_run(surroundings.report_box, tmp_path, view["run"]["id"]), "--na-tym-drzewie")
+        for view in (requested, again)
+    ]
+
+    assert [(code, lines[0]) for code, lines in replays] == [(0, "ODTWORZENIE ZGODNE")] * 2, replays
+
+
 def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:
     """Jedyny Wpis raportu z numerem ``number`` w Logach Wpisania raportów, do zmiany w miejscu."""
 

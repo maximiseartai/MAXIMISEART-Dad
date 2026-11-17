@@ -408,3 +408,18 @@ def difference_gone() -> Refusal:
     """„Zostaw moją” przy różnicy, której nie ma w wyniku ostatniego kliknięcia (np. widok z kliknięcia sprzed innego)."""
 
     return _refused(404, "Tej różnicy nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty.")
+
+
+def request_gone() -> Refusal:
+    """Wpis na życzenie przy Wpisie, którego nie ma w wyniku ostatniego kliknięcia (np. widok z kliknięcia sprzed
+    innego)."""
+
+    return _refused(404, "Tego Wpisu nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty.")
+
+
+def request_while_open_in_excel() -> Refusal:
+    """Wpis na życzenie przy INTERMAX otwartym w Excelu: Uruchomienie zatrzymałoby się bez zapisu, więc nie startuje."""
+
+    return _refused(
+        409, "INTERMAX jest otwarty w Excelu, więc nic się nie wpisało: zapisz i zamknij INTERMAX, potem kliknij jeszcze raz."
+    )

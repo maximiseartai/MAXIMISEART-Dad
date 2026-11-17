@@ -407,6 +407,39 @@ class Kept:
     reported: str
 
 
+@dataclass(frozen=True)
+class RequestedEntry:
+    """Wpis na życzenie (ADR 0041): decyzja taty z chwili kliknięcia ``at``, że zwycięski Wpis zlecenia ``number``
+    Wykonawcy ``worker``, który tata widzi w dniu ``day``, ze znakiem zamiast ``tak``/``nie`` (``t``, ``n``,
+    ``skuteczne``, ``nieskuteczne``) i czynnościami ``activities`` to ``verdict``, które ten znak ma na myśli
+    (``VerdictFault.leaning``). Rdzeń wpisuje go tak, dopóki ten Wpis z maila sprzed ``at`` jest zwycięskim Wpisem
+    zlecenia: Wpis z maila, który przyszedł po ``at``, wygrywa jak każdy późniejszy, także z tym samym znakiem, a ręczna
+    wartość zostaje z ``ManualDifference``."""
+
+    worker: Login
+    day: date
+    number: OrderNumber
+    verdict: Verdict
+    activities: str
+    at: datetime
+
+    @property
+    def place(self) -> tuple[Login, date, OrderNumber, Verdict, str]:
+        """Wpis, przy którym tata kliknął, bez chwili kliknięcia: z kilku decyzji przy nim liczy się najnowsza."""
+
+        return self.worker, self.day, self.number, self.verdict, self.activities
+
+
+@dataclass(frozen=True)
+class Requestable:
+    """Co wpisze Wpis na życzenie przy ``MissingVerdict``: ``tak`` albo ``nie`` (``verdict``) i czynności Wpisu
+    (``activities``) do zlecenia z dnia ``order_day``, który ma ono po Wpisie."""
+
+    verdict: Verdict
+    activities: str
+    order_day: date
+
+
 @dataclass(frozen=True, order=True)
 class OrderedDay:
     """Dzień uporządkowany ``day`` w arkuszu zleceń ``sheet`` (``raw_orders.ordered_days``, ta sama reguła co karta
@@ -443,7 +476,8 @@ class ReportInputs:
     dopisywałby każdy nowy numer i przenosił zlecenie numeru z kilku wierszy.
 
     ``legend``: Legenda czynności Ustawień Centrum, ta sama, którą liczy Przygotowanie pliku zbiorczego; z niej rdzeń
-    wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``)."""
+    wie, który wpisany Wpis ``tak`` ma Błąd opisu (``FaultyDescription``). ``requested``: decyzje taty Wpisu na
+    życzenie (``RequestedEntry``)."""
 
     mails: Sequence[ReportMail]
     addresses: WorkerAddresses
@@ -454,6 +488,7 @@ class ReportInputs:
     present: Sequence[ReadNumber]
     legend: ActivityLegend
     ordered_days: frozenset[OrderedDay] = frozenset()
+    requested: frozenset[RequestedEntry] = frozenset()
 
 
 class Verdict(Enum):
@@ -601,10 +636,15 @@ class UnknownSender:
 
 @dataclass(frozen=True)
 class MissingVerdict:
+    """Zwycięski Wpis zlecenia ``number`` od Wykonawcy ``worker``, który tata widzi w dniu ``day``, nie ma ``tak`` ani
+    ``nie`` z powodu ``fault``. ``requestable``: co wpisze Wpis na życzenie, gdy znak ma zamiar, a Wpis ma jedno
+    zlecenie w INTERMAX; ``None``: przycisku nie ma."""
+
     worker: Login
     day: date
     number: OrderNumber
     fault: VerdictFault
+    requestable: Requestable | None = None
 
 
 @dataclass(frozen=True)

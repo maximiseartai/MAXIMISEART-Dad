@@ -519,4 +519,6 @@ REFUSALS: RefusalSamples = {
     ],
     "reports_unreadable": [refusal.reports_unreadable],
     "difference_gone": [refusal.difference_gone],
+    "request_gone": [refusal.request_gone],
+    "request_while_open_in_excel": [refusal.request_while_open_in_excel],
 }
