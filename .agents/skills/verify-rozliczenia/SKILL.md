@@ -5,6 +5,7 @@ pilnuje:
   - src/rozliczenia/__init__.py
   - src/rozliczenia/activity_legend*.py
   - src/rozliczenia/call_trace.py
+  - src/rozliczenia/cell_values.py
   - src/rozliczenia/client_data.py
   - src/rozliczenia/centrum/contract/common.py
   - src/rozliczenia/centrum/contract/runs.py
@@ -27,6 +28,7 @@ pilnuje:
   - src/rozliczenia/mail_skeleton.py
   - src/rozliczenia/message.py
   - src/rozliczenia/onedrive_conflicts.py
+  - src/rozliczenia/order_base.py
   - src/rozliczenia/order_facts.py
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/phase_runner.py
@@ -44,6 +46,7 @@ pilnuje:
   - src/rozliczenia/row_positions.py
   - src/rozliczenia/run_clock.py
   - src/rozliczenia/run_context.py
+  - src/rozliczenia/same_address.py
   - src/rozliczenia/settlement_*.py
   - src/rozliczenia/staged_publication.py
   - src/rozliczenia/telemetry.py

@@ -47,6 +47,7 @@ from rozliczenia.efenix_positions import (
     UnpairedColumns,
 )
 from rozliczenia.message import Message
+from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.period_folder import (
     PeriodFolder,
     FolderNotNamedAfterPeriod,
@@ -341,6 +342,7 @@ EFENIX_SAMPLES: Samples = {
 }
 
 COPIES = Path("C:/Narzedzie/Kopie INTERMAX")
+ORDER_BASE = REGISTER.with_name(ORDER_BASE_NAME)
 COPY = COPIES / "INTERMAX przed uporządkowaniem 2026-09-14 07-30-00.xlsx"
 SEPTEMBER_14 = date(2026, 9, 14)
 REPLACEMENTS = (intermax_messages.ORDERING, intermax_messages.RESTORE)
@@ -407,6 +409,10 @@ INTERMAX_SAMPLES: Samples = {
     "unsupported_shape": [lambda: intermax_messages.unsupported_shape(REGISTER, SHEET)],
     "refused": _every_replacement("refused"),
     "old_copies_kept": _every_replacement("old_copies_kept"),
+    "order_base_unusable": [
+        partial(intermax_messages.order_base_unusable, WorkbookError(ORDER_BASE, problem)) for problem in Problem
+    ],
+    "order_base_unsupported": [lambda: intermax_messages.order_base_unsupported(ORDER_BASE, "10_12_2018-01_08_2020")],
     "copies_unreadable": [lambda: intermax_messages.copies_unreadable(COPIES)],
     "copy_missing": [lambda: intermax_messages.copy_missing(COPIES, COPY.name)],
     "copy_unusable": [partial(intermax_messages.copy_unusable, WorkbookError(COPY, problem)) for problem in Problem],

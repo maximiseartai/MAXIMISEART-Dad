@@ -385,6 +385,12 @@ poprawce kliknij `Uruchom ponownie`.
   uporządkowanym zleceniem.
 - Wiersze mają wygląd reszty INTERMAX, z cienką ramką i pogrubionym tylko
   `WYKONAWCA`. Kolumny z aplikacji za `UWAGI` zniknęły.
+- Zlecenie, którego adres jest w Bazie zleceń (`Baza zleceń do 17_11_2026.xlsx`
+  w folderze INTERMAX), ma od kolumny P dawne wizyty pod tym samym adresem, od
+  najnowszej, każdą w szerokości jej arkusza Bazy, co drugą na jasnoszarym tle,
+  i czerwoną kolumnę A. Ten sam adres to ta sama ulica, budynek i mieszkanie:
+  `UL. LIPOWA 18/3` to `Poznań,Lipowa 018/3`, ale nie `LIPOWA 18/7` ani
+  `LIPOWA 18`.
 - Kolory operatora: `CZYNNOŚCI` i `NUMER UMOWY` są zielone przy T-Mobile,
   pomarańczowe przy Orange, jasnoniebieskie przy innych operatorach, a przy
   Netii `CZYNNOŚCI` jest ciemniejsza niebieska. INEA i zlecenie bez operatora
@@ -409,8 +415,8 @@ robi Kopię obecnego INTERMAX, więc przywrócenie też da się cofnąć tak sam
 ### Uporządkowanie INTERMAX → co zrobić
 
 Po każdym zatrzymaniu INTERMAX został bez zmian, więc po poprawce wystarczy
-uruchomić ponownie. Wyjątki to komunikaty o starszych Kopiach INTERMAX i o
-niepokazanym podsumowaniu: wtedy INTERMAX jest już uporządkowany.
+uruchomić ponownie. Wyjątki to komunikaty o starszych Kopiach INTERMAX, o Historii
+adresu i o niepokazanym podsumowaniu: wtedy INTERMAX jest już uporządkowany.
 
 | Co się stało (fragment) | Co zrobić |
 |---|---|
@@ -432,6 +438,7 @@ niepokazanym podsumowaniu: wtedy INTERMAX jest już uporządkowany.
 | „Nie udało się zrobić Kopii INTERMAX” | Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Nie udało się zapisać INTERMAX” | Sprawdź, czy na dysku jest wolne miejsce, potem uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Sprawdzenie zapisu wykazało różnicę” | Narzędzie odrzuciło własny zapis, więc INTERMAX jest taki jak przedtem. Przekaż komunikat osobie utrzymującej narzędzie. |
+| „bez Historii adresu” | Ostrzeżenie pod wynikiem: INTERMAX jest uporządkowany, ale bez wierszy z Bazy zleceń. `Co się stało` mówi dlaczego. Gdy w folderze INTERMAX nie ma pliku `Baza zleceń do 17_11_2026.xlsx`, połóż go tam. Gdy OneDrive synchronizuje Bazę zleceń, poczekaj. Gdy Baza zleceń się nie otwiera albo komunikat wraca, przekaż go osobie utrzymującej narzędzie. Historię adresu przy tym dniu da przywrócenie Kopii INTERMAX sprzed uporządkowania i ponowne uruchomienie. |
 | „nie udało się usunąć starszych Kopii INTERMAX” | Ostrzeżenie pod wynikiem: INTERMAX jest uporządkowany. Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie. |
 | „Wystąpił nieoczekiwany błąd” | Kliknij `Uruchom ponownie`. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „INTERMAX został uporządkowany, ale nie udało się pokazać podsumowania” | Nie uruchamiaj ponownie: INTERMAX jest już uporządkowany. Sprawdź INTERMAX i przekaż komunikat osobie utrzymującej narzędzie. |

@@ -1,4 +1,5 @@
-"""Uporządkowanie INTERMAX przez rdzeń Uruchomienia procesu: wynikowy INTERMAX z dysku, Kopie INTERMAX i Zatrzymania."""
+"""Uporządkowanie INTERMAX przez rdzeń Uruchomienia procesu: wynikowy INTERMAX z dysku, Kopie INTERMAX, Zatrzymania i
+Historia adresu z Bazy zleceń."""
 
 from __future__ import annotations
 
@@ -16,24 +17,27 @@ from datetime import date, datetime, time, timedelta
 from io import BytesIO
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Literal
+from typing import Final, Literal
 
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 from openpyxl import load_workbook
+from openpyxl.cell.cell import Cell
 from openpyxl.styles import Color, Font, PatternFill
-from openpyxl.utils.cell import coordinate_from_string, get_column_letter
+from openpyxl.utils.cell import column_index_from_string, coordinate_from_string, get_column_letter
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import intermax_copies
+from rozliczenia.client_data import MIN_VALUE, empty_memory, guarded
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
-from rozliczenia.intermax_ordering import OrderingInputs, OrderingSummary, RegisterDay, register_days
+from rozliczenia.intermax_ordering import HistoryCounts, OrderingInputs, OrderingSummary, RegisterDay, register_days
 from rozliczenia.intermax_replace import LOCAL_DISK, Waiting
 from rozliczenia.intermax_process import PROCESS
 from rozliczenia.message import Message
+from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
@@ -44,6 +48,7 @@ from rozliczenia.workbook_files import Problem, WorkbookError
 from tests.fixtures.clock import ManualClock
 from atrapy.intermax import (
     ACTIVITIES,
+    ADDRESS,
     APP_LAST,
     BLANK_HEIGHT,
     CONTRACT_NUMBER,
@@ -64,9 +69,13 @@ from atrapy.intermax import (
     order_rows,
     parts,
 )
+from atrapy.baza_zlecen import ELEVEN, FIVE, TWELVE, BaseSheet, Visit, write_order_base
+from atrapy.baza_zlecen import Layout as BaseLayout
 from atrapy.interlocutor import Tata
+from atrapy.preparation import make_preparation_fixture, paste_raw_orders, register_order
 from atrapy.pliki_taty import PASTE_SHIFT
 from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, partial_copy, writing
+from tests.fixtures.operacje import run_preparation
 from atrapy.workbooks import rewrite_parts, without_sheet
 
 NOW = datetime(2026, 10, 25, 21, 5, 7)
@@ -75,10 +84,16 @@ REGISTER_NAME = "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
 
 
 def _run(
-    tmp_path: Path, *, now: datetime = NOW, clock: ManualClock | None = None, disk: FaultyDisk | None = None
+    tmp_path: Path,
+    *,
+    now: datetime = NOW,
+    clock: ManualClock | None = None,
+    disk: FaultyDisk | None = None,
+    base: bool = False,
+    files: DadFiles | None = None,
 ) -> Outcome[OrderingSummary]:
     """Uruchomienie Uporządkowania; ``clock`` to zegar procesu krótkiej ponownej próby podmiany, ``disk`` usterki
-    kroków podmiany INTERMAX."""
+    kroków podmiany INTERMAX, ``base``: wejście ma Bazę zleceń obok INTERMAX, ``files``: uchwyt plików taty."""
 
     waiting = clock or ManualClock()
     inputs = OrderingInputs(
@@ -87,6 +102,7 @@ def _run(
         lambda: now,
         Waiting(waiting, waiting.pause),
         (disk or FaultyDisk()).disk(),
+        order_base=tmp_path / "OneDrive" / ORDER_BASE_NAME if base else None,
     )
     return run_process(
         PROCESS,
@@ -94,7 +110,7 @@ def _run(
         Tata(),
         view=lambda _inputs, summary: summary,
         metrics_path=tmp_path / "m.jsonl",
-        context=RunContext(clock=RunClock(ManualClock())),
+        context=RunContext(files=files or DadFiles(), clock=RunClock(ManualClock())),
     )
 
 
@@ -2421,3 +2437,506 @@ def test_wiersz_wklejenia_pozostawiony_na_miejscu_to_niezgodnosc_zapisu(tmp_path
         stop = _stop(_run(tmp_path, disk=FaultyDisk(write=writing(left_in_place))))
 
     assert (stop.message.code, stop.stop_kind) == ("ZAPIS_INTERMAX_NIEZGODNY", "for_maks")
+
+
+# Historia adresu (spec #2079, #2080). Wartości oczekiwane biorą się z hasła Historia adresu w GLOSSARY.md i specu:
+# wiersze Bazy zleceń z tym samym adresem od kolumny P, od najnowszej daty realizacji, każdy w szerokości swojego
+# arkusza, co drugi od pierwszego na tle D9D9D9, a kolumna A zlecenia z Historią adresu FF0000.
+
+_LOGIN = "jan.nowak"
+P = LAST + 1
+"""Pierwsza kolumna za ``UWAGI``: tu staje pierwszy blok Historii adresu."""
+GRAY, RED = "FFD9D9D9", "FFFF0000"
+
+
+def _order(index: int, address: str, number: int | None = None) -> Order:
+    """Surowe zlecenie Wykonawcy ``_LOGIN`` o godzinie 7 + ``index``, więc w dniu stoi na miejscu ``index``."""
+
+    number = 300 + index if number is None else number
+    return Order(datetime(2026, 10, 26, 7 + index), _LOGIN, number, cells=((ADDRESS, address),))
+
+
+def _visit(address: str, mark: str, when: datetime | str | None = datetime(2024, 1, 1), number: int | str | None = 9000) -> Visit:
+    return Visit(address, when, number, mark)
+
+
+@dataclass(frozen=True)
+class Day:
+    """Dzień do uporządkowania: INTERMAX na dysku, wiersz pierwszego zlecenia po Uporządkowaniu i zlecenia po kolei."""
+
+    path: Path
+    first: int
+    orders: tuple[Order, ...]
+
+    def sheet(self) -> Worksheet:
+        return load_workbook(self.path).worksheets[1]
+
+    def row(self, order: Order) -> int:
+        return self.first + self.orders.index(order)
+
+    def after_uwagi(self, sheet: Worksheet, order: Order) -> tuple[object, ...]:
+        """Wartości każdej komórki, którą wiersz zlecenia ma w pliku od kolumny P, po kolei."""
+
+        return tuple(sheet.cell(self.row(order), column).value for column in self.written(order) if column >= P)
+
+    def written(self, order: Order) -> list[int]:
+        """Kolumny komórek, które wiersz zlecenia ma w XML arkusza zleceń, także pustych."""
+
+        row = self.row(order)
+        found = re.search(rb'<row r="%d"[^>]*?(?:/>|>.*?</row>)' % row, parts(self.path)[_SHEET], re.S)
+        assert found is not None, row
+        return [column_index_from_string(letters.decode("ascii")) for letters in re.findall(rb'<c r="([A-Z]+)\d+"', found.group(0))]
+
+
+def _base_path(tmp_path: Path) -> Path:
+    return tmp_path / "OneDrive" / ORDER_BASE_NAME
+
+
+def _day(tmp_path: Path, orders: Sequence[Order], sheets: Sequence[BaseSheet] | None) -> Day:
+    """INTERMAX z wklejeniem ``orders`` i, gdy ``sheets`` nie jest ``None``, Baza zleceń z tymi arkuszami obok niego."""
+
+    folder = tmp_path / "OneDrive"
+    folder.mkdir(exist_ok=True)
+    layout = Intermax(raw=tuple(orders)).write(folder / REGISTER_NAME)
+    if sheets is not None:
+        write_order_base(_base_path(tmp_path), sheets)
+    assert layout.yellow is not None
+    return Day(folder / REGISTER_NAME, layout.yellow + 2, tuple(orders))
+
+
+def _blocks(*found: tuple[BaseLayout, Visit]) -> tuple[object, ...]:
+    """Oczekiwane wartości od kolumny P: bloki wierszy Bazy po kolei, każdy w szerokości swojego układu."""
+
+    return tuple(value for layout, visit in found for value in visit.values(layout))
+
+
+def _fill(sheet: Worksheet, row: int, column: int) -> str | None:
+    cell = sheet.cell(row, column)
+    return cell.fill.fgColor.rgb if cell.fill.fill_type == "solid" else None
+
+
+# Reguła tego samego adresu (historyjki 10 i 12–15 specu #2079): adres zlecenia i wiersze Bazy z tym adresem zapisanym
+# inaczej, które trafiają, obok wierszy, które nie trafiają, bo różnią się mieszkaniem, budynkiem albo nie mają numeru.
+_LIPOWA_18_3 = _order(0, "UL. LIPOWA 18/3")
+_LIPOWA_34_2 = _order(1, "UL. LIPOWA 34/2")
+_LIPOWA_34 = _order(2, "UL. LIPOWA 34")
+_KASZTANOWA = _order(3, "UL. KASZTANOWA 26A/15B")
+_ZIELONE = _order(4, "OS. ZIELONE 3")
+_MOSTOWA = _order(5, "AL. GEN. MOSTOWA 5")
+_RYNKOWY = _order(6, "PL. RYNKOWY 9/1")
+_NIEZNANA = _order(7, "UL. NIEZNANA 1")
+_BEZ_NUMERU = _order(8, "UL. LIPOWA")
+_BEZ_ULICY = _order(9, "UL. 18/3")
+RULE_ORDERS: Final = (
+    _LIPOWA_18_3, _LIPOWA_34_2, _LIPOWA_34, _KASZTANOWA, _ZIELONE, _MOSTOWA, _RYNKOWY, _NIEZNANA, _BEZ_NUMERU, _BEZ_ULICY
+)
+_V: Final = {
+    "miasto przed przecinkiem i zero wiodące": (FIVE, _visit("Miastko,Lipowa 018/3", "a", datetime(2025, 5, 1))),
+    "inne mieszkanie": (ELEVEN, _visit("UL. LIPOWA 18/7", "b")),
+    "inna ulica": (ELEVEN, _visit("UL. GRUSZKOWA 18/3", "r")),
+    "bez mieszkania obok mieszkania": (TWELVE, _visit("LIPOWA 18", "c")),
+    "bez UL.": (TWELVE, _visit("LIPOWA 18/3", "d", datetime(2024, 5, 1))),
+    "dom": (TWELVE, _visit("LIPOWA 34", "e", datetime(2023, 5, 1))),
+    "mieszkanie małymi literami": (ELEVEN, _visit("lipowa 34/2", "f", datetime(2022, 5, 1))),
+    "inne mieszkanie domu": (TWELVE, _visit("LIPOWA 34/7", "g")),
+    "ukośnik bez mieszkania": (FIVE, _visit("Miastko,Lipowa 034/", "h", datetime(2019, 5, 1))),
+    "litery małe": (ELEVEN, _visit("kasztanowa 26a/15b", "i", datetime(2021, 5, 1))),
+    "bez litery mieszkania": (TWELVE, _visit("KASZTANOWA 26A/15", "j")),
+    "bez litery budynku": (TWELVE, _visit("KASZTANOWA 26/15B", "k")),
+    "kropka bez spacji i zero": (TWELVE, _visit("os.zielone 03", "l", datetime(2024, 6, 1))),
+    "wielokrotne spacje": (ELEVEN, _visit("OS.  ZIELONE   3", "m", datetime(2021, 6, 1))),
+    "kropki w nazwie": (ELEVEN, _visit("AL GEN MOSTOWA 5", "n", datetime(2021, 7, 1))),
+    "przedrostek sklejony z miastem": (FIVE, _visit("Miastko,PL.RYNKOWY 9/1", "o", datetime(2019, 7, 1))),
+    "sama ulica": (TWELVE, _visit("LIPOWA", "p")),
+    "sam numer": (TWELVE, _visit("18/3", "q")),
+}
+RULE_BASE: Final = tuple(
+    BaseSheet(name, layout, [visit for found, visit in _V.values() if found is layout])
+    for name, layout in (("10_12_2018-01_08_2020", FIVE), ("01_08_2020-01_06_2021", ELEVEN), ("08_11_2021-23_03_2024", TWELVE))
+)
+RULE: Final[dict[Order, tuple[str, ...]]] = {
+    _LIPOWA_18_3: ("miasto przed przecinkiem i zero wiodące", "bez UL."),
+    _LIPOWA_34_2: ("mieszkanie małymi literami",),
+    _LIPOWA_34: ("dom", "ukośnik bez mieszkania"),
+    _KASZTANOWA: ("litery małe",),
+    _ZIELONE: ("kropka bez spacji i zero", "wielokrotne spacje"),
+    _MOSTOWA: ("kropki w nazwie",),
+    _RYNKOWY: ("przedrostek sklejony z miastem",),
+    _NIEZNANA: (),
+    _BEZ_NUMERU: (),
+    _BEZ_ULICY: (),
+}
+"""Zlecenie → wiersze Bazy z ``_V``, które trafiają, od najnowszej daty; zlecenie ``_LIPOWA_18_3`` stoi pierwsze w
+wklejeniu, więc przychodzi przesunięte dwie kolumny w lewo."""
+
+
+@pytest.fixture(scope="module")
+def rule_day(tmp_path_factory: pytest.TempPathFactory) -> tuple[Day, Worksheet]:
+    """Dzień tabeli reguły uporządkowany raz z Bazą ``RULE_BASE``."""
+
+    tmp_path = tmp_path_factory.mktemp("regula")
+    day = _day(tmp_path, RULE_ORDERS, RULE_BASE)
+    _ordered(_run(tmp_path, base=True))
+    return day, day.sheet()
+
+
+@pytest.mark.parametrize("order", RULE, ids=[str(order.values()[ADDRESS]) for order in RULE])
+def test_zlecenie_dostaje_od_kolumny_p_tylko_wiersze_bazy_z_tym_samym_adresem(rule_day: tuple[Day, Worksheet], order: Order) -> None:
+    day, sheet = rule_day
+
+    assert day.after_uwagi(sheet, order) == _blocks(*(_V[name] for name in RULE[order]))
+    row = day.row(order)
+    assert sheet.cell(row, NUMBER).value == f"ZL-{order.number}"
+    assert (sheet.cell(row, LAST - 1).value, sheet.cell(row, LAST).value) == (None, None), "ZWROT i UWAGI zostają puste"
+
+
+def test_wynik_ma_liczbe_zlecen_z_historia_adresu_skopiowanych_wierszy_i_arkuszy_bazy(tmp_path: Path) -> None:
+    _day(tmp_path, RULE_ORDERS, RULE_BASE)
+
+    summary = _ordered(_run(tmp_path, base=True))
+
+    hits = RULE.values()
+    assert summary.history == HistoryCounts(orders=sum(1 for found in hits if found), rows=sum(map(len, hits)), sheets=3)
+    assert summary.warnings == []
+
+
+_TOPOLOWA = _order(0, "UL. TOPOLOWA 7")
+_INNE = _order(1, "UL. TOPOLOWA 8")
+_ORDER_VISITS: Final = {
+    "2019": (FIVE, _visit("Topolowa 7", "2019", datetime(2019, 5, 1, 10))),
+    "bez daty w najstarszym": (FIVE, _visit("Topolowa 7", "bez daty", None)),
+    "2021": (ELEVEN, _visit("TOPOLOWA 7", "2021", datetime(2021, 1, 1, 9))),
+    "2025": (ELEVEN, _visit("TOPOLOWA 7", "2025", datetime(2025, 6, 1, 12))),
+    "data tekstem": (TWELVE, _visit("TOPOLOWA 7", "tekst", "10.12.2018")),
+    "2024": (TWELVE, _visit("TOPOLOWA 7", "2024", datetime(2024, 3, 1, 8))),
+}
+ORDER_BASE: Final = (
+    BaseSheet("10_12_2018-01_08_2020", FIVE, [_ORDER_VISITS["2019"][1], _ORDER_VISITS["bez daty w najstarszym"][1]]),
+    BaseSheet("01_08_2020-01_06_2021", ELEVEN, [_ORDER_VISITS["2021"][1], _ORDER_VISITS["2025"][1]]),
+    BaseSheet("25_03_2024-18_12_2025", TWELVE, [_ORDER_VISITS["data tekstem"][1], _ORDER_VISITS["2024"][1]]),
+)
+ORDERED_HISTORY: Final = tuple(
+    _ORDER_VISITS[name] for name in ("2025", "2024", "2021", "2019", "bez daty w najstarszym", "data tekstem")
+)
+"""Historia adresu ``_TOPOLOWA``: od najnowszej daty realizacji, a wiersze bez daty na końcu w kolejności arkuszy."""
+
+
+@pytest.fixture(scope="module")
+def topolowa(tmp_path_factory: pytest.TempPathFactory) -> tuple[Day, Worksheet]:
+    """Dzień ``_TOPOLOWA`` (sześć trafień w trzech układach) i ``_INNE`` (bez trafienia) uporządkowany raz."""
+
+    tmp_path = tmp_path_factory.mktemp("topolowa")
+    day = _day(tmp_path, (_TOPOLOWA, _INNE), ORDER_BASE)
+    _ordered(_run(tmp_path, base=True))
+    return day, day.sheet()
+
+
+def test_trafienia_stoja_od_najnowszej_daty_realizacji_a_wiersze_bez_daty_na_koncu_w_kolejnosci_arkuszy(
+    topolowa: tuple[Day, Worksheet],
+) -> None:
+    day, sheet = topolowa
+
+    assert day.after_uwagi(sheet, _TOPOLOWA) == _blocks(*ORDERED_HISTORY)
+
+
+def test_kazdy_blok_ma_szerokosc_naglowka_swojego_arkusza_z_pustymi_komorkami_w_srodku(topolowa: tuple[Day, Worksheet]) -> None:
+    day, sheet = topolowa
+
+    widths = [len(layout.headers) for layout, _ in ORDERED_HISTORY]
+    assert widths == [11, 12, 11, 5, 5, 12]
+    assert [column for column in day.written(_TOPOLOWA) if column >= P] == list(range(P, P + sum(widths))), (
+        "każda komórka bloku jest w pliku, także pusta"
+    )
+    row = day.row(_TOPOLOWA)
+    with closing(load_workbook(day.path, read_only=True)) as workbook:
+        assert workbook.worksheets[1].max_column == P + sum(widths) - 1, "<dimension> sięga ostatniej kolumny Historii adresu"
+    assert sheet.cell(row, P + 1).value is None, "UMOWA pierwszego bloku jest pusta"
+    second = (sheet.cell(row, P + 11).value, sheet.cell(row, P + 12).value)
+    assert second == ("TOPOLOWA 7", datetime(2024, 3, 1, 8)), "drugi blok zaczyna się zaraz za pierwszym"
+
+
+def test_bloki_maja_same_wartosci_z_data_jako_data_bez_stylow_i_hiperlaczy_bazy(topolowa: tuple[Day, Worksheet]) -> None:
+    day, sheet = topolowa
+
+    row = day.row(_TOPOLOWA)
+    when = sheet.cell(row, P + 5)
+    assert isinstance(when, Cell) and (when.value, when.is_date) == (datetime(2025, 6, 1, 12), True)
+    for column in range(P, P + 56):
+        cell = sheet.cell(row, column)
+        assert (cell.font.name, cell.font.sz, bool(cell.font.b), cell.font.color.rgb) == ("Calibri", 8, False, "FF000000"), cell.coordinate
+        assert cell.hyperlink is None, cell.coordinate
+
+
+def test_blok_pierwszy_trzeci_i_piaty_ma_jasnoszare_tlo_na_calej_szerokosci_a_drugi_czwarty_i_szosty_bez_tla(
+    topolowa: tuple[Day, Worksheet],
+) -> None:
+    day, sheet = topolowa
+
+    fills: list[str | None] = []
+    for index, (layout, _) in enumerate(ORDERED_HISTORY):
+        fills += [GRAY if index % 2 == 0 else None] * len(layout.headers)
+    row = day.row(_TOPOLOWA)
+    assert [_fill(sheet, row, column) for column in range(P, P + len(fills))] == fills
+
+
+def test_kolumna_a_zlecenia_z_historia_adresu_jest_czerwona_a_zlecenie_bez_trafienia_nie_ma_nic_za_uwagi(
+    topolowa: tuple[Day, Worksheet],
+) -> None:
+    day, sheet = topolowa
+
+    assert _fill(sheet, day.row(_TOPOLOWA), 1) == RED
+    assert _fill(sheet, day.row(_INNE), 1) is None
+    assert day.after_uwagi(sheet, _INNE) == ()
+
+
+def test_wiersz_bazy_z_numerem_porzadkowanego_zlecenia_nie_jest_kopiowany_a_dwa_z_innym_wspolnym_numerem_sa(
+    tmp_path: Path,
+) -> None:
+    """Zlecenie ``ZL-501``: wiersz Bazy z numerem 501 (liczbą albo tekstem z innymi znakami) to ono samo po przywróceniu
+    Kopii INTERMAX, a dwa wiersze z numerem 777 to dwie wizyty innego zlecenia."""
+
+    order = _order(0, "UL. GRABOWA 2", number=501)
+    own_number = _visit("GRABOWA 2", "własny liczbą", datetime(2026, 10, 1), 501)
+    own_text = _visit("GRABOWA 2", "własny tekstem", datetime(2026, 9, 1), "nr 501")
+    first = (TWELVE, _visit("GRABOWA 2", "pierwsza wizyta", datetime(2025, 1, 1), 777))
+    second = (TWELVE, _visit("GRABOWA 2", "druga wizyta", datetime(2024, 1, 1), 777))
+    sheets = (
+        BaseSheet("01_08_2020-01_06_2021", ELEVEN, [own_number]),
+        BaseSheet("08_11_2021-23_03_2024", TWELVE, [own_text, first[1], second[1]]),
+    )
+    day = _day(tmp_path, (order,), sheets)
+
+    _ordered(_run(tmp_path, base=True))
+
+    assert day.after_uwagi(day.sheet(), order) == _blocks(first, second)
+
+
+def test_bez_bazy_w_wejsciu_dzien_jest_uporzadkowany_bez_historii_adresu_i_bez_ostrzezenia(tmp_path: Path) -> None:
+    day = _day(tmp_path, RULE_ORDERS, RULE_BASE)
+
+    summary = _ordered(_run(tmp_path))
+
+    assert (summary.history, summary.warnings) == (None, [])
+    sheet = day.sheet()
+    assert [day.after_uwagi(sheet, order) for order in RULE_ORDERS] == [()] * len(RULE_ORDERS)
+    assert {_fill(sheet, day.row(order), 1) for order in RULE_ORDERS} == {None}
+
+
+def _no_base(tmp_path: Path) -> DadFiles:
+    return DadFiles()
+
+
+def _garbage(tmp_path: Path) -> DadFiles:
+    _base_path(tmp_path).write_bytes(b"to nie jest skoroszyt")
+    return DadFiles()
+
+
+def _inaccessible(tmp_path: Path) -> DadFiles:
+    write_order_base(_base_path(tmp_path), RULE_BASE)
+
+    def source(path: Path) -> bytes:
+        if path.name == ORDER_BASE_NAME:
+            raise WorkbookError(path, Problem.INACCESSIBLE)
+        return path.read_bytes()
+
+    return DadFiles(source=source)
+
+
+def _without_header(tmp_path: Path) -> DadFiles:
+    headless = replace(TWELVE, headers=("", *TWELVE.headers[1:]))
+    write_order_base(_base_path(tmp_path), (*RULE_BASE[:2], BaseSheet("bez nagłówka", headless, [_visit("LIPOWA 18/3", "x")])))
+    return DadFiles()
+
+
+def _comment(tmp_path: Path) -> DadFiles:
+    write_order_base(_base_path(tmp_path), RULE_BASE)
+    commented = "xl/worksheets/sheet3.xml"
+    rewrite_parts(_base_path(tmp_path), lambda name, data: data.replace(b"<sheetData>", b"<sheetData><!-- x -->", 1) if name == commented else data)
+    return DadFiles()
+
+
+def _broken_date(tmp_path: Path) -> DadFiles:
+    """Data realizacji w arkuszu 12 kolumn (pod nagłówkiem) to liczba, której nie da się odczytać: odczyt Bazy
+    przechodzi, a komórki trafienia nie da się odczytać dopiero w Planowaniu."""
+
+    write_order_base(_base_path(tmp_path), RULE_BASE)
+    broken = "xl/worksheets/sheet3.xml"
+    rewrite_parts(
+        _base_path(tmp_path),
+        lambda name, data: re.sub(rb'(<c r="B(?!1")\d+"[^>]*><v>)[^<]*', rb"\g<1>nie liczba", data) if name == broken else data,
+    )
+    return DadFiles()
+
+
+BASE_PROBLEMS: Final[dict[str, tuple[Callable[[Path], DadFiles], str, str]]] = {
+    "brak pliku": (_no_base, "bo w folderze INTERMAX nie ma Bazy zleceń", ""),
+    "nie skoroszyt": (_garbage, "bo Bazy zleceń nie można odczytać jako skoroszytu Excela", ""),
+    "niedostępna": (_inaccessible, "bo nie można teraz odczytać Bazy zleceń", ""),
+    "arkusz bez nagłówka kolumny A": (_without_header, "bo arkusz Bazy zleceń ma układ", ", arkusz bez nagłówka"),
+    "komentarz w arkuszu": (_comment, "bo arkusz Bazy zleceń ma układ", ", arkusz 08_11_2021-23_03_2024"),
+    "zepsuta komórka trafienia": (_broken_date, "bo Bazy zleceń nie można odczytać jako skoroszytu Excela", ""),
+}
+"""Baza zleceń, której Uporządkowanie nie czyta → uchwyt plików taty, powód w „Co się stało” i koniec „Gdzie”."""
+
+
+@pytest.mark.parametrize("problem", BASE_PROBLEMS)
+def test_baza_ktorej_nie_da_sie_przeczytac_to_ostrzezenie_z_nazwa_pliku_a_dzien_jest_uporzadkowany_bez_historii(
+    tmp_path: Path, problem: str
+) -> None:
+    prepare, reason, sheet_name = BASE_PROBLEMS[problem]
+    day = _day(tmp_path, RULE_ORDERS, None)
+    files = prepare(tmp_path)
+
+    summary = _ordered(_run(tmp_path, base=True, files=files))
+
+    [warning] = summary.warnings
+    assert warning.code == "BAZA_ZLECEN_POMINIETA"
+    assert warning.what.startswith("INTERMAX został uporządkowany bez Historii adresu, ") and reason in warning.what
+    assert warning.where == f"plik {ORDER_BASE_NAME}, folder OneDrive{sheet_name}"
+    for value in ("LIPOWA", "Lipowa", "Miastko"):
+        assert value not in warning.text, value
+    assert (summary.history, summary.order_count) == (None, len(RULE_ORDERS))
+    sheet = day.sheet()
+    assert [day.after_uwagi(sheet, order) for order in RULE_ORDERS] == [()] * len(RULE_ORDERS)
+
+
+def test_baza_otwarta_w_excelu_daje_historie_adresu_z_ostatniego_zapisu(tmp_path: Path) -> None:
+    day = _day(tmp_path, RULE_ORDERS, RULE_BASE)
+    _base_path(tmp_path).with_name(f"~${ORDER_BASE_NAME}").write_bytes(b"blokada Excela")
+
+    summary = _ordered(_run(tmp_path, base=True))
+
+    assert summary.warnings == []
+    assert day.after_uwagi(day.sheet(), _MOSTOWA) == _blocks(_V["kropki w nazwie"])
+
+
+def test_pamiec_reguly_danych_zna_adresy_bazy_a_kopia_wejscia_nie_ma_bazy(tmp_path: Path) -> None:
+    _day(tmp_path, RULE_ORDERS, RULE_BASE)
+    memory = empty_memory()
+    files = DadFiles(forbidden=memory).for_run()
+
+    _ordered(_run(tmp_path, base=True, files=files))
+
+    assert files.copy is not None
+    assert [copied.name for copied in files.copy.files()] == [REGISTER_NAME]
+    searched = [visit.address for _, visit in _V.values() if len(visit.address) >= MIN_VALUE]
+    assert len(searched) == len(_V) - 1, "strażnik nie szuka wartości krótszej niż MIN_VALUE (18/3)"
+    assert [address for address in searched if not guarded(memory, f"adres {address}", "Uwaga taty").notes] == []
+
+
+def _changed(row_change: Callable[[bytes, int], bytes], row: int) -> Callable[[bytes], bytes]:
+    """Bajty INTERMAX z arkuszem zleceń zmienionym przez ``row_change`` w wierszu ``row``, jak zepsuty zapis."""
+
+    def changed(content: bytes) -> bytes:
+        out = BytesIO()
+        with zipfile.ZipFile(BytesIO(content)) as source, zipfile.ZipFile(out, "w") as target:
+            for info in source.infolist():
+                data = source.read(info)
+                target.writestr(info, row_change(data, row) if info.filename == _SHEET else data)
+        return out.getvalue()
+
+    return changed
+
+
+def _cell(column: str, row: int) -> re.Pattern[bytes]:
+    return re.compile(rb'<c r="%s%d"[^>]*?(?:/>|>.*?</c>)' % (column.encode("ascii"), row), re.S)
+
+
+def _style_of(column: str, other: str) -> Callable[[bytes, int], bytes]:
+    """Komórka ``column`` wiersza dostaje styl komórki ``other`` tego wiersza."""
+
+    def change(xml: bytes, row: int) -> bytes:
+        found = _cell(other, row).search(xml)
+        assert found is not None
+        style = re.search(rb'\ss="\d+"', found.group(0))
+        assert style is not None
+        return _cell(column, row).sub(lambda cell: re.sub(rb'\ss="\d+"', style.group(0), cell.group(0), count=1), xml, count=1)
+
+    return change
+
+
+def _removed(column: str) -> Callable[[bytes, int], bytes]:
+    return lambda xml, row: _cell(column, row).sub(b"", xml, count=1)
+
+
+HISTORY_CORRUPTIONS: Final[dict[str, Callable[[bytes, int], bytes]]] = {
+    "wartość w bloku": lambda xml, row: re.sub(rb'(<c r="P%d"[^>]*><is><t>)[^<]*' % row, rb"\g<1>inny", xml, count=1),
+    "brak pustej komórki bloku": _removed("Q"),
+    "brak ostatniej komórki ostatniego bloku": _removed("BS"),
+    "blok bez szarego tła": _style_of("Q", "AA"),
+    "szare tło w drugim bloku": _style_of("AA", "Q"),
+    "kolumna A bez czerwieni": _style_of("A", "B"),
+}
+"""Zepsucie zapisu w wierszu ``_TOPOLOWA``: wartość, szerokość bloku, tło bloku i kolumna A. Kolumna Q to pusta
+``UMOWA`` pierwszego bloku (szarego), AA pierwsza kolumna drugiego (bez tła), a BS ostatnia kolumna szóstego."""
+
+
+@pytest.mark.parametrize("corruption", HISTORY_CORRUPTIONS)
+def test_niezgodna_historia_adresu_w_sprawdzeniu_zapisu_to_zatrzymanie_do_maksa_bez_zmiany_intermax(
+    tmp_path: Path, corruption: str
+) -> None:
+    day = _day(tmp_path, (_TOPOLOWA, _INNE), ORDER_BASE)
+    original = day.path.read_bytes()
+    disk = FaultyDisk(write=writing(_changed(HISTORY_CORRUPTIONS[corruption], day.row(_TOPOLOWA))))
+
+    stop = _stop(_run(tmp_path, base=True, disk=disk))
+
+    assert (stop.message.code, stop.stop_kind) == ("ZAPIS_INTERMAX_NIEZGODNY", "for_maks")
+    assert day.path.read_bytes() == original
+
+
+def _pasted(path: Path, order: Order, when: datetime) -> None:
+    """Surowe zlecenie ``order`` z chwilą ``when`` wklejone z wyglądem z aplikacji trzy wiersze pod ostatnim, zapisane
+    jak w Excelu taty."""
+
+    workbook = load_workbook(path)
+    sheet = workbook.worksheets[1]
+    number = sheet.max_row + 3
+    for column, value in replace(order, when=when).values().items():
+        sheet.cell(number, column, value).font = Font(name="Roboto", sz=4)
+    workbook.save(path)
+
+
+def test_dzien_z_historia_adresu_jest_dniem_uporzadkowanym_a_nastepny_dzien_porzadkuje_sie_pod_nim(tmp_path: Path) -> None:
+    day = _day(tmp_path, (_TOPOLOWA, _INNE), ORDER_BASE)
+    _ordered(_run(tmp_path, base=True))
+    ordered = day.path.read_bytes()
+    _pasted(day.path, _INNE, datetime(2026, 10, 26, 15))
+
+    stop = _stop(_run(tmp_path, base=True, now=NOW + timedelta(minutes=5)))
+
+    assert stop.message.code == "DZIEN_JUZ_UPORZADKOWANY"
+    days = register_days(day.path, date(2026, 10, 26), DadFiles())
+    assert isinstance(days, tuple) and [found.ordered for found in days if found.day == date(2026, 10, 26)] == [True]
+    day.path.write_bytes(ordered)
+    _pasted(day.path, _TOPOLOWA, datetime(2026, 10, 27, 15))
+
+    summary = _ordered(_run(tmp_path, base=True, now=NOW + timedelta(days=1)))
+
+    assert (summary.day, summary.order_count, summary.history) == (date(2026, 10, 27), 1, HistoryCounts(1, 6, 3))
+    sheet = day.sheet()
+    assert day.after_uwagi(sheet, _TOPOLOWA) == _blocks(*ORDERED_HISTORY), "dzień z Historią adresu zostaje"
+
+
+def test_przygotowanie_okresu_z_dniem_z_historia_adresu_nie_przenosi_blokow_ani_czerwonej_kolumny_a(tmp_path: Path) -> None:
+    """Spec #2079, historyjka 27: Przygotowanie pliku zbiorczego bierze z Rejestru zleceń tylko kolumny zlecenia, więc
+    Historia adresu i czerwona kolumna A dnia uporządkowanego z Bazą zleceń nie trafiają do Pliku zbiorczego."""
+
+    fixture = make_preparation_fixture(tmp_path)
+    pasted = [{**register_order(number, datetime(2026, 9, 13, 8 + number)), "ADRES": f"UL. JASNA {number}"} for number in (7, 8)]
+    paste_raw_orders(fixture.register_path, pasted)
+    base = fixture.register_path.with_name(ORDER_BASE_NAME)
+    write_order_base(base, (BaseSheet("19_12_2025-17_11_2026", TWELVE, [_visit("JASNA 7", "WIZYTA-HISTORII")]),))
+    ordering = OrderingInputs(fixture.register_path, tmp_path / "Kopie", now=lambda: datetime(2026, 9, 14, 20), order_base=base)
+    ordered = run_process(
+        PROCESS, ordering, Tata(), view=lambda _inputs, summary: summary, metrics_path=tmp_path / "m.jsonl", context=RunContext()
+    )
+    assert _ordered(ordered).history == HistoryCounts(1, 1, 1)
+
+    preparation = run_preparation(fixture)
+
+    sheet = load_workbook(preparation.collective_file).worksheets[0]
+    cells = [cell for row in sheet.iter_rows() for cell in row]
+    assert [cell.coordinate for cell in cells if isinstance(cell.value, str) and "WIZYTA-HISTORII" in cell.value] == []
+    assert [cell.coordinate for cell in cells if cell.fill.fill_type == "solid" and cell.fill.fgColor.rgb == RED] == []
+    assert sum(1 for cell in cells if cell.value == "UL. JASNA 7") == 1, "zlecenie z Historią adresu jest w Pliku zbiorczym"

@@ -3,8 +3,8 @@
     "cały plik": "3f6deb7f9b41f6c6"
   },
   "src/rozliczenia/intermax_ordering.py": {
-    "order_register": "1a92f4bba5af6c2d",
-    "OrderingInputs": "97234d602d3f89f5",
+    "order_register": "82f78d51878b3337",
+    "OrderingInputs": "67975fe015f0548d",
     "_stops_unusable": "7397a36c0f4e5e99"
   },
   "src/rozliczenia/intermax_restore.py": {
@@ -17,7 +17,7 @@
     "cały plik": "8680a5d98440a968"
   },
   "src/rozliczenia/register_file.py": {
-    "read": "c9a7d24ed9f767a3",
+    "read": "f39a43d99d5c25dd",
     "RegisterFile": "d1b97755195581e4"
   },
   "src/rozliczenia/dad_files.py": {

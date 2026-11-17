@@ -8,7 +8,7 @@ Użycie (z katalogu repozytorium):
         [--wykonawcy PLIK] [--worker-template PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py preparation --register REJESTR --periods-directory FOLDER --period TOKEN
         [--dry-run] [--wykonawcy PLIK] [--internal-template PLIK] [--collective-template PLIK] [--metrics PLIK]
-    python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--metrics PLIK]
+    python tools/uruchom_proces.py intermax --register REJESTR [--copies FOLDER] [--baza PLIK] [--metrics PLIK]
     python tools/uruchom_proces.py efenix --source PLIK_ZBIORCZY --efenix-url ADRES [--z-przekazaniem] [--metrics PLIK]
     python tools/uruchom_proces.py report_entering --register REJESTR --periods-directory FOLDER --maile FOLDER
         [--wykonawcy PLIK] [--metrics PLIK]
@@ -26,7 +26,8 @@ dzisiejszego dnia nie ma Pliku zbiorczego w folderze ``--periods-directory``.
 Uporządkowanie nie ma okresu ani
 podglądu bez zapisu: zawsze
 zapisuje, a Kopia INTERMAX trafia do ``--copies`` (bez parametru folder Kopii
-narzędzia), z nazwą z zegara komputera. Proces prowadzi ten
+narzędzia), z nazwą z zegara komputera. Historię adresu kopiuje z Bazy zleceń ``--baza``, a bez parametru porządkuje
+bez Historii adresu. Proces prowadzi ten
 sam rdzeń Uruchomienia procesu co w Centrum, więc wynik ma te same liczby,
 etykiety i Komunikaty co karta Uruchomienia. Bez parametru Lista Wykonawców
 i Wzorce są te z Centrum (``config/wykonawcy.yaml``, ``ConfigurationFiles.default()``), a plik
@@ -173,6 +174,8 @@ class _Flag:
     help: str
     default: Path | None = None
     path: bool = True
+    optional: bool = False
+    """Flaga bez wartości domyślnej, której można nie podać: wejście jest wtedy bez tej potrzeby."""
 
 
 def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag | None:
@@ -204,6 +207,8 @@ def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag | None:
             return _Flag("--efenix-url", "Adres listy zleceń efenix (w testach Atrapy efenix).", path=False)
         case "worker_report_inbox":
             return _Flag("--maile", "Folder maili .eml w miejscu Skrzynki raportów.")
+        case "order_base":
+            return _Flag("--baza", "Baza zleceń; bez niej Uporządkowanie bez Historii adresu.", optional=True)
         case _:
             assert_never(need)
 
@@ -228,7 +233,7 @@ def _parser() -> argparse.ArgumentParser:
                 dest=need,
                 metavar=flag.option.removeprefix("--").replace("-", "_").upper(),
                 type=Path if flag.path else str,
-                required=flag.default is None,
+                required=flag.default is None and not flag.optional,
                 default=flag.default,
                 help=flag.help,
             )
@@ -253,6 +258,7 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace, parser: argpar
         dry_run=values.get("dry_run", False),
         pricing="z Przekazaniem" if values.get("handover") else None,
         settings=ustawienia_z_wydania(_workers(args.workers, parser) if "workers" in kind.needs else None),
+        order_base=values.get("order_base"),
     )
 
 

@@ -16,7 +16,11 @@ tylko:
   dostaje komórki Surowego zlecenia (w przesuniętym pierwszym wierszu o dwie kolumny w prawo) w kolumnach od A
   do ``UWAGI`` z wyglądem reszty INTERMAX i Kolorem operatora z planu dnia, a kolumny z aplikacji za ``UWAGI``
   znikają; zlecenie z Wpisem urządzenia i czynności INTERMAX ma w ``URZĄDZENIA`` i ``CZYNNOŚCI`` tekst Wpisu
-  zamiast wartości z aplikacji; pusty wiersz między segmentami ma puste komórki od A do ``UWAGI`` z tym
+  zamiast wartości z aplikacji; zlecenie z Historią adresu (``Placement.history``) ma od kolumny za ``UWAGI``
+  jej bloki jeden za drugim, każdy w swojej szerokości, z wartościami bez stylów Bazy zleceń (``_history_cells``):
+  czcionka, ramka i wyrównanie jak w kolumnach zlecenia, data w formacie daty uporządkowanych dni, blok 1., 3., …
+  na jasnoszarym tle (``_HISTORY_FILL``), a kolumna A takiego zlecenia jest czerwona (``_HISTORY_MARK``);
+  pusty wiersz między segmentami ma puste komórki od A do ``UWAGI`` z tym
   samym wyglądem; inny pusty wiersz, który był pusty, zostaje bajt w bajt, a wiersz, z którego zlecenie odeszło, i
   wiersz, którego nie było, są pustym wierszem taty; wygląd ``<row>`` (styl wiersza, wysokość) daje ``_RowLooks``;
 - ``ref`` Hiperłączy z tych wierszy, które idą razem ze swoją komórką, i ``<dimension>``, gdy dzień sięga dalej;
@@ -29,7 +33,8 @@ tylko:
 Każda inna część pliku i każdy bajt nad tymi wierszami zostają. Arkusz, w którego zmienianych wierszach jest
 formuła albo zakres (scalenie, formatowanie warunkowe, sprawdzanie poprawności, autofiltr, Hiperłącze na kilka
 komórek albo za ``UWAGI``), to ``UnsupportedShape``. ``check`` porównuje odczytany zapis z oryginałem, a
-komórki Wpisu z Wpisem z planu dnia; różnica to ``WriteMismatch``. Bajty zapisuje podmiana INTERMAX
+komórki Wpisu i bloki Historii adresu z planem dnia, także wypełnienie bloków i kolumny A; różnica to
+``WriteMismatch``. Bajty zapisuje podmiana INTERMAX
 (``intermax_replace``), która przed podmianą sprawdza nimi plik tymczasowy obok INTERMAX.
 """
 
@@ -44,6 +49,7 @@ import zlib
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from datetime import datetime
 from io import BytesIO
 from typing import Any, Final, cast
 from xml.etree import ElementTree
@@ -53,9 +59,11 @@ from openpyxl.styles.colors import Color
 from openpyxl.styles.fills import Fill, PatternFill
 from openpyxl.styles.fonts import Font
 from openpyxl.utils.cell import column_index_from_string, coordinate_from_string, get_column_letter, range_boundaries
+from openpyxl.utils.datetime import to_excel
 
 from . import workbook_files
 from .intermax_replace import WriteMismatch
+from .order_base import HistoryBlock
 from .raw_orders import (
     AddedRow,
     DayPlan,
@@ -65,6 +73,7 @@ from .raw_orders import (
     NewSeparator,
     OperatorColor,
     OrderColumns,
+    Placement,
     RawBlock,
 )
 from .register_columns import ORDERED_FONT, ORDERED_SIZE, WORKER_SIZE
@@ -89,6 +98,13 @@ __all__ = ["Cells", "check", "check_cells", "ordered", "with_cells"]
 _DATE_FORMAT: Final = 22
 """Wbudowany format liczby 22 (m/d/yy h:mm): format daty uporządkowanych dni."""
 _BLACK: Final = "FF000000"
+_HISTORY_FILL: Final = "D9D9D9"
+"""Jasnoszare wypełnienie bloku 1., 3., 5.… Historii adresu (RGB)."""
+_HISTORY_MARK: Final = "FF0000"
+"""Czerwone wypełnienie kolumny A zlecenia z Historią adresu (RGB)."""
+_FILL_ID: Final = re.compile(rb'\sfillId="(\d+)"')
+_SERIAL: Final = cast(Callable[[datetime, datetime], float], to_excel)
+"""Liczba daty Excela w systemie dat skoroszytu: ``to_excel`` openpyxl, który nie ma typów."""
 
 _FORMULA = re.compile(rb"<f[\s>/]")
 _DIMENSION = re.compile(rb'<dimension ref="([^"]*)"\s*/>')
@@ -154,7 +170,7 @@ def ordered(register: RegisterFile, area: PasteArea, block: RawBlock, plan: DayP
     with workbook_files.unreadable_as_error(register.path):
         write_styles = _WriteStyles.of(styles)
     looks = _Looks(write_styles)
-    sheet_xml = _ordered_sheet(area.sheet_xml, area.columns, block, plan, looks)
+    sheet_xml = _ordered_sheet(area.sheet_xml, area.columns, block, plan, looks, area.epoch)
     parts = {**_tabs(package, area.part), area.part: sheet_xml, package.styles_part: looks.styles(styles)}
     return _archive([(info, parts.get(info.filename, package.parts[info.filename])) for info in package.infos])
 
@@ -176,7 +192,9 @@ def check(register: RegisterFile, written: bytes, area: PasteArea, block: RawBlo
         if name not in (area.part, package.styles_part) and parts[name] != tabs.get(name, package.parts[name]):
             raise WriteMismatch(name)
     _check_styles(package.parts[package.styles_part], parts[package.styles_part])
-    _check_sheet(area.sheet_xml, parts[area.part], area.columns, block, plan)
+    with workbook_files.unreadable_as_error(register.path):
+        fills = _Fills(_WriteStyles.of(parts[package.styles_part]))
+    _check_sheet(area.sheet_xml, parts[area.part], area.columns, block, plan, fills, area.epoch)
 
 
 Cells = Mapping[PasteArea, Mapping[tuple[int, int], str]]
@@ -747,7 +765,9 @@ class _RowLooks:
         return cls(order, order if block.blank_row is None else look(block.blank_row))
 
 
-def _ordered_sheet(sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock, plan: DayPlan, looks: _Looks) -> bytes:
+def _ordered_sheet(
+    sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock, plan: DayPlan, looks: _Looks, epoch: datetime
+) -> bytes:
     xml = sheet.xml
     region = sheet.above(block.anchor)
     by_number = {row.number: row for row in region}
@@ -776,6 +796,7 @@ def _ordered_sheet(sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock
                     row_looks.order,
                     placement.color,
                     _entry_cells(placement.entry, columns),
+                    _history_cells(placement.history, columns, epoch),
                 )
             )
         elif number in separators:
@@ -784,7 +805,8 @@ def _ordered_sheet(sheet: RowsFromBottom, columns: OrderColumns, block: RawBlock
             rows.append(xml[by_number[number].start : by_number[number].end])
         else:
             rows.append(b'<row r="%d"%s/>' % (number, row_looks.blank))
-    head = _with_view(_with_dimension(xml[: sheet.start], last, columns.last), plan.view_row, columns.first)
+    widest = max((_history_end(placement, columns) for placement in plan.placements), default=columns.last)
+    head = _with_view(_with_dimension(xml[: sheet.start], last, widest), plan.view_row, columns.first)
     above, below = memoryview(xml)[sheet.start : region[0].start], memoryview(xml)[region[-1].end : tail_at]
     return b"".join((head, above, *rows, below, _moved_hyperlinks(xml[tail_at:], columns, block, plan)))
 
@@ -798,8 +820,12 @@ def _order_row(
     row_look: bytes,
     color: OperatorColor,
     entry: Mapping[int, SheetCell],
+    history: Mapping[int, _HistoryCell] | None = None,
 ) -> bytes:
+    history = history or {}
     fills = {columns.activities: color.activities, columns.contract_number: color.contract_number, columns.devices: color.devices}
+    if history:
+        fills[1] = _HISTORY_MARK
     written: dict[int, bytes] = {}
     for source in sheet_cells(row_xml):
         column = source.column + offset
@@ -812,8 +838,52 @@ def _order_row(
         if column not in written:
             style = looks.style(columns, column, 0, fills.get(column))
             written[column] = SheetCell(column, b"", None).xml(column, number, b' s="%d"' % style)
+    for column, found in history.items():
+        style = looks.style(columns, column, found.number_format, found.fill)
+        written[column] = found.cell.xml(column, number, found.cell.attributes + b' s="%d"' % style)
     cells = b"".join(written[column] for column in sorted(written))
     return b'<row r="%d"%s>' % (number, row_look) + cells + b"</row>"
+
+
+@dataclass(frozen=True)
+class _HistoryCell:
+    """Komórka bloku Historii adresu: wartość bez stylu, format liczby (data: format daty dnia) i wypełnienie."""
+
+    cell: SheetCell
+    number_format: int
+    fill: str | None
+
+
+def _history_cells(history: Sequence[HistoryBlock], columns: OrderColumns, epoch: datetime) -> dict[int, _HistoryCell]:
+    """Komórki bloków ``history`` po kolumnie, od pierwszej za ``UWAGI``: każdy blok w szerokości swoich wartości,
+    także pustych, blok 1., 3., … z ``_HISTORY_FILL``. Tekst staje się tekstem wbudowanym, liczba liczbą, a data
+    liczbą daty w systemie dat INTERMAX (``epoch``)."""
+
+    cells: dict[int, _HistoryCell] = {}
+    column = columns.last + 1
+    for index, block in enumerate(history):
+        fill = _HISTORY_FILL if index % 2 == 0 else None
+        for value in block.values:
+            cells[column] = _HistoryCell(_value_cell(column, value, epoch), _DATE_FORMAT if isinstance(value, datetime) else 0, fill)
+            column += 1
+    return cells
+
+
+def _value_cell(column: int, value: object, epoch: datetime) -> SheetCell:
+    if value is None:
+        return SheetCell(column, b"", None)
+    if isinstance(value, datetime):
+        value = _SERIAL(value, epoch)
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return SheetCell(column, b"", b"<v>%s</v>" % repr(value).encode("ascii"))
+    text = html.escape(str(value), quote=False).encode("utf-8")
+    return SheetCell(column, b' t="inlineStr"', b"<is><t>%s</t></is>" % text)
+
+
+def _history_end(placement: Placement, columns: OrderColumns) -> int:
+    """Ostatnia kolumna wiersza zlecenia: ``UWAGI`` albo ostatnia kolumna jego Historii adresu."""
+
+    return columns.last + sum(len(block.values) for block in placement.history)
 
 
 def _entry_cells(entry: IntermaxEntry | None, columns: OrderColumns) -> dict[int, SheetCell]:
@@ -886,7 +956,29 @@ def _check_styles(original: bytes, written: bytes) -> None:
         raise WriteMismatch("style")
 
 
-def _check_sheet(original: RowsFromBottom, written: bytes, columns: OrderColumns, block: RawBlock, plan: DayPlan) -> None:
+class _Fills:
+    """Wypełnienie RGB stylu komórki z arkusza stylów zapisu; ``None``: bez pełnego wypełnienia."""
+
+    def __init__(self, styles: _WriteStyles) -> None:
+        self._styles = styles
+
+    def of(self, style: int) -> str | None:
+        found = _FILL_ID.search(self._styles.xfs[style]) if style < len(self._styles.xfs) else None
+        fill = self._styles.fills[int(found.group(1))] if found else None
+        if not isinstance(fill, PatternFill) or fill.patternType != "solid" or fill.fgColor.rgb is None:
+            return None
+        return str(fill.fgColor.rgb)[-6:].upper()
+
+
+def _check_sheet(
+    original: RowsFromBottom,
+    written: bytes,
+    columns: OrderColumns,
+    block: RawBlock,
+    plan: DayPlan,
+    fills: _Fills,
+    epoch: datetime,
+) -> None:
     try:
         data = RowsFromBottom(written)
         written_region = data.above(block.anchor)
@@ -920,15 +1012,20 @@ def _check_sheet(original: RowsFromBottom, written: bytes, columns: OrderColumns
         moved = ((cell.column + offset, cell) for cell in sheet_cells(xml[source.start : source.end]))
         expected = {column: cell for column, cell in moved if column <= columns.last}
         expected.update(_entry_cells(placement.entry, columns))
+        history = _history_cells(placement.history, columns, epoch)
+        expected.update({column: found.cell for column, found in history.items()})
         if {column for column, cell in expected.items() if cell.valued} != set(valued):
             raise WriteMismatch(f"wiersz {number}")
         found = {cell.column: cell for cell in cells}
-        if any(column > columns.last for column in found):
+        if any(column > _history_end(placement, columns) for column in found):
             raise WriteMismatch(f"wiersz {number}")
         for column, cell in expected.items():
             new = found.get(column)
             if new is None or new.content != cell.content or new.kind != cell.kind:
                 raise WriteMismatch(f"wiersz {number}")
+        marks = {1: _HISTORY_MARK if history else None} | {column: cell.fill for column, cell in history.items()}
+        if any(column not in found or fills.of(found[column].style) != fill for column, fill in marks.items()):
+            raise WriteMismatch(f"wiersz {number}")
     if set(placed) - set(rows):
         raise WriteMismatch("brak zlecenia")
 

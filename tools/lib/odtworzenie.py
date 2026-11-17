@@ -34,7 +34,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa
   tylko wtedy, gdy Logi kończą się odmową.
 - Porównanie (``first_difference``) idzie po polach Logów w kolejności przyczyn: Kopia wejścia (czy pliki z Kopii
-  czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty, uwagi techniczne, podsumowanie, liczba
+  czytają się tak samo), wynik, zakończenie i Rodzaj Zatrzymania, Komunikaty (bez ostrzeżenia o Bazie zleceń, której
+  Kopia wejścia nie ma, więc odtworzenie porządkuje bez niej), uwagi techniczne, podsumowanie, liczba
   problemów, etapy, Szablony pracownika, Ilości tylko dla INEA, Wpisy INTERMAX, Wpisanie raportów, ślad zleceń i
   Zatrzymanie okna efenix oraz ślad wywołań. Raport podaje przyczynę Zatrzymania z Logów (``stop_cause``): przyczynę techniczną Zatrzymania
   okna efenix i łańcuch wyjątków śladu wywołań z drogą startu okna, która zawiodła (#976). Czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty i uwagi strażnika o Kopii
@@ -62,7 +63,7 @@ from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia import collective_layout, intermax_copies
+from rozliczenia import collective_layout, intermax_copies, intermax_messages
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.catalog import CATALOG, declaration_of
@@ -775,6 +776,10 @@ def _intermax_limits(record: RunLog) -> list[Limit]:
             "uporządkowanymi się nie powtórzą"
         ),
         Limit("kolumn z aplikacji za UWAGI nie ma w Kopii wejścia: odtworzony INTERMAX ich nie ma"),
+        Limit(
+            "Bazy zleceń nie ma w Kopii wejścia: odtworzenie porządkuje bez niej, więc odtworzony INTERMAX nie ma "
+            "Historii adresu, a liczb Historii adresu i ostrzeżenia o Bazie zleceń odtworzenie nie porównuje"
+        ),
     ]
 
 
@@ -1147,7 +1152,11 @@ COMPARED: Final = (
     _Part("wynik", "result"),
     _Part("zakończenie", "ending"),
     _Part("Rodzaj Zatrzymania", "stop_kind", lambda kind: "for_tata" if kind == "repeated" else kind),
-    _Part("Komunikaty", "messages"),
+    _Part(
+        "Komunikaty",
+        "messages",
+        lambda messages: [message for message in messages if message["code"] != intermax_messages.ORDER_BASE_SKIPPED],
+    ),
     _Part("uwagi techniczne", "technical_notes"),
     _Part("podsumowanie", "summary"),
     _Part("liczba problemów", "issue_count"),
@@ -1179,11 +1188,13 @@ NOT_COMPARED: Final = frozenset(
         "input_copy_notes",
         "quantity_rules",
         "activity_legend",
+        "address_history",
     }
 )
 """Pola Logów, które odtworzenie bierze z Logów albo które zależą od chwili, komputera albo taty, a nie od wejścia i
 kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie, uwagi o Kopii wejścia, Reguły
-ilości i Legenda czynności ze startu. Każde inne
+ilości i Legenda czynności ze startu, a liczby Historii adresu zależą od Bazy zleceń, której Kopia wejścia nie ma.
+Każde inne
 pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 
 

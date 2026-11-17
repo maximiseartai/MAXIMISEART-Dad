@@ -939,6 +939,41 @@ old_copies_kept #2 [PRZYWRACANIE_STARE_KOPIE]
   Gdzie: folder Narzedzie\Kopie INTERMAX
   Co zrobić: Nie musisz nic robić teraz. Jeśli któraś Kopia INTERMAX jest otwarta w Excelu, zamknij ją. Jeśli komunikat wraca, przekaż go osobie utrzymującej narzędzie.
 
+order_base_unusable #1 [BAZA_ZLECEN_POMINIETA]
+  Co się stało: INTERMAX został uporządkowany bez Historii adresu, bo w folderze INTERMAX nie ma Bazy zleceń.
+  Gdzie: plik Baza zleceń do 17_11_2026.xlsx, folder Dane
+  Co zrobić: Połóż Bazę zleceń w folderze INTERMAX pod nazwą Baza zleceń do 17_11_2026.xlsx. Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania w Ustawieniach, w sekcji Kopie INTERMAX i uruchom ponownie.
+
+order_base_unusable #2 [BAZA_ZLECEN_POMINIETA]
+  Co się stało: INTERMAX został uporządkowany bez Historii adresu, bo nie można teraz odczytać Bazy zleceń.
+  Gdzie: plik Baza zleceń do 17_11_2026.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację Bazy zleceń. Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania w Ustawieniach, w sekcji Kopie INTERMAX i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+order_base_unusable #3 [BAZA_ZLECEN_POMINIETA]
+  Co się stało: INTERMAX został uporządkowany bez Historii adresu, bo nie można teraz odczytać Bazy zleceń.
+  Gdzie: plik Baza zleceń do 17_11_2026.xlsx, folder Dane
+  Co zrobić: Poczekaj, aż OneDrive skończy synchronizację Bazy zleceń. Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania w Ustawieniach, w sekcji Kopie INTERMAX i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+order_base_unusable #4 [BAZA_ZLECEN_POMINIETA]
+  Co się stało: INTERMAX został uporządkowany bez Historii adresu, bo Bazy zleceń nie można odczytać jako skoroszytu Excela.
+  Gdzie: plik Baza zleceń do 17_11_2026.xlsx, folder Dane
+  Co zrobić: Otwórz Bazę zleceń w Excelu i sprawdź, czy się otwiera; jeśli tak, zapisz ją. Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania w Ustawieniach, w sekcji Kopie INTERMAX i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+order_base_unusable #5 [BAZA_ZLECEN_POMINIETA]
+  Co się stało: INTERMAX został uporządkowany bez Historii adresu, bo Bazy zleceń nie można odczytać jako skoroszytu Excela.
+  Gdzie: plik Baza zleceń do 17_11_2026.xlsx, folder Dane
+  Co zrobić: Otwórz Bazę zleceń w Excelu i sprawdź, czy się otwiera; jeśli tak, zapisz ją. Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania w Ustawieniach, w sekcji Kopie INTERMAX i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+order_base_unusable #6 [BAZA_ZLECEN_POMINIETA]
+  Co się stało: INTERMAX został uporządkowany bez Historii adresu, bo Bazy zleceń nie można odczytać jako skoroszytu Excela.
+  Gdzie: plik Baza zleceń do 17_11_2026.xlsx, folder Dane
+  Co zrobić: Otwórz Bazę zleceń w Excelu i sprawdź, czy się otwiera; jeśli tak, zapisz ją. Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania w Ustawieniach, w sekcji Kopie INTERMAX i uruchom ponownie. Jeśli błąd wraca, przekaż ten komunikat osobie utrzymującej narzędzie.
+
+order_base_unsupported [BAZA_ZLECEN_POMINIETA]
+  Co się stało: INTERMAX został uporządkowany bez Historii adresu, bo arkusz Bazy zleceń ma układ, którego narzędzie nie czyta.
+  Gdzie: plik Baza zleceń do 17_11_2026.xlsx, folder Dane, arkusz 10_12_2018-01_08_2020
+  Co zrobić: Sprawdź, czy w wierszu 1 tego arkusza kolumna A ma nagłówek nad adresami. Jeśli ma, a komunikat wraca, przekaż go osobie utrzymującej narzędzie. Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania w Ustawieniach, w sekcji Kopie INTERMAX i uruchom ponownie.
+
 copies_unreadable [KOPIE_INTERMAX_NIEDOSTEPNE]
   Co się stało: Nie można teraz odczytać folderu Kopii INTERMAX. INTERMAX nie został zmieniony.
   Gdzie: folder Narzedzie\Kopie INTERMAX

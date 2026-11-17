@@ -6,7 +6,8 @@ pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z 
 a przy pliku Folderów bez odczytu zamiast plików nazwa tego pliku.
 Dodatki Logów procesu (``ProcessLogs``) daje jego wpis w katalogu procesów: z podsumowania silnika Przebiegu rozliczeń
 liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 0018), a z podsumowania Uporządkowania
-INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy, a z
+INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy, oraz
+liczby Historii adresu (``LoggedHistory``) bez adresów, numerów zleceń i treści wierszy Bazy zleceń, a z
 Wpisania raportów Wpisy, problemy i zmiany komórek bez adresów, tematów i treści maili (``report_entering_logs``, ADR
 0028). Z podsumowania Wyceny w efenix jest ślad każdego zlecenia (``LoggedOrder``) z działaniami okna efenix i odczytem
 strony po każdym (``LoggedStep``), bez numeru zlecenia i bez danych adresowych z pliku i z efenix. Zatrzymanie okna
@@ -75,7 +76,7 @@ from rozliczenia.efenix_window import (
 from rozliczenia.activity_legend import ActivityLegend, LegendProblem
 from rozliczenia.activity_legend_file import dump_activity_legend, parse_activity_legend
 from rozliczenia.efenix_trace import TraceStep
-from rozliczenia.intermax_ordering import OrderingSummary
+from rozliczenia.intermax_ordering import HistoryCounts, OrderingSummary
 from rozliczenia.message import Message, SettingsSection
 from rozliczenia.process_run import RunResult, StopEnding
 from rozliczenia.progress import ProgressSnapshot
@@ -305,6 +306,19 @@ class LoggedEntries(_Record):
         )
 
 
+class LoggedHistory(_Record):
+    """Historia adresu Uporządkowania w liczbach (``intermax_ordering.HistoryCounts``): zlecenia z choć jednym blokiem,
+    skopiowane wiersze Bazy zleceń i jej arkusze, bez adresów, numerów zleceń i treści wierszy."""
+
+    orders: int
+    rows: int
+    sheets: int
+
+    @classmethod
+    def of(cls, history: HistoryCounts) -> LoggedHistory:
+        return cls(orders=history.orders, rows=history.rows, sheets=history.sheets)
+
+
 class LoggedResult(_Record):
     """Wiersz listy zleceń efenix po szukaniu (``efenix_checks.ListedRead``): czy ``Numer dokumentu`` to ``NUMER ZL.`` z
     pliku, status i login realizatora jak na liście oraz nazwy części adresu (``efenix_address.AddressPart``), którymi
@@ -484,6 +498,7 @@ class ProcessLogs(_Record):
 
     inea_only_cleared: dict[str, int] | None = None
     intermax_entries: LoggedEntries | None = None
+    address_history: LoggedHistory | None = None
     efenix_orders: list[LoggedOrder] | None = None
     efenix_stop: LoggedWindowStop | None = None
     report_entering: LoggedReports | None = None
@@ -593,6 +608,9 @@ class RunLog(StartFacts):
     intermax_entries: LoggedEntries | None = None
     """Wpisy urządzenia i czynności INTERMAX (ADR 0019). ``None``: inne procesy, Uporządkowanie bez podsumowania
     i pliki sprzed tego pola."""
+    address_history: LoggedHistory | None = None
+    """Historia adresu Uporządkowania w liczbach (ADR 0019). ``None``: inne procesy, Uporządkowanie bez podsumowania,
+    bez Bazy zleceń albo z Bazą, której nie dało się przeczytać, i pliki sprzed tego pola."""
     efenix_orders: list[LoggedOrder] | None = None
     """Ślad każdego zlecenia Wyceny w efenix po kolei, a po Zatrzymaniu z ``efenix_stop`` każdego zlecenia sprzed niego.
     ``None``: inne procesy, Wycena w efenix bez podsumowania i bez Zatrzymania okna oraz pliki sprzed tego pola."""

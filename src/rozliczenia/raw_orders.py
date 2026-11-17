@@ -42,8 +42,10 @@ spacji, myślników i dopisku ``S.A.``. Każde zlecenie dostaje Kolor operatora 
 usterka (``URZĄDZENIA``) różowe ``URZĄDZENIA``. Instalacja hurt operatora z tabeli ``_ENTRY_RULES`` dostaje Wpis
 urządzenia i czynności INTERMAX: ``URZĄDZENIA`` z tabeli i dopisek za nazwą operatora z aplikacji w ``CZYNNOŚCI``.
 Plan wyznacza też wiersz widoku po otwarciu: pierwsze zlecenie dzisiejszego dnia, a bez zleceń dziś pierwsze
-zlecenie ostatniego wcześniejszego dnia ze zleceniami, szukane od dołu tak jak przegląd nad blokiem. Fakty nie
-zawierają treści wierszy poza datą i Wykonawcą potrzebnymi do kolejności oraz nazwą operatora i rodzajem zlecenia.
+zlecenie ostatniego wcześniejszego dnia ze zleceniami, szukane od dołu tak jak przegląd nad blokiem. Każde zlecenie
+dostaje w planie swoją Historię adresu z Bazy zleceń (``Placement.history``), którą Planowanie znajduje po ``ADRES``
+i ``NUMER ZL.`` Surowego zlecenia. Fakty nie zawierają innej treści wierszy niż data i Wykonawca potrzebne do
+kolejności, nazwa operatora i rodzaj zlecenia oraz adres i numer zlecenia do Historii adresu.
 
 Plan Przeniesień zleceń Wpisania raportów (``plan_moves``, ADR 0029) stawia przeniesione i dopisane zlecenie w układzie
 uporządkowanego dnia tą samą regułą segmentów (``segment_key``): pod ostatnim zleceniem segmentu nowego Wykonawcy
@@ -62,6 +64,7 @@ from itertools import chain, groupby
 from types import MappingProxyType
 from typing import Final, TypeVar
 
+from .order_base import HistoryBlock
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
 from .row_positions import AbovePaste, RowPositions
 from .text import normalize_text
@@ -81,7 +84,8 @@ class OrderColumns:
     """Kolumny arkusza zleceń (od 1) po nagłówkach z wiersza 1: kolumny zlecenia od ``first`` do ``last`` (UWAGI).
 
     ``devices``, ``activities`` i ``contract_number`` to ``URZĄDZENIA``, ``CZYNNOŚCI`` i ``NUMER UMOWY``, w których
-    staje Kolor operatora.
+    staje Kolor operatora, a ``address`` i ``number`` to ``ADRES`` i ``NUMER ZL.``, po których Planowanie szuka
+    Historii adresu.
     """
 
     first: int
@@ -91,6 +95,8 @@ class OrderColumns:
     devices: int
     activities: int
     contract_number: int
+    address: int
+    number: int
 
     @cached_property
     def look_columns(self) -> frozenset[int]:
@@ -193,11 +199,12 @@ class RowFacts:
 
 @dataclass(frozen=True)
 class RawOrder:
-    """Surowe zlecenie: wiersz arkusza, przesunięcie, data z godziną, Wykonawca, operator i rodzaj.
+    """Surowe zlecenie: wiersz arkusza, przesunięcie, data z godziną, Wykonawca, operator, rodzaj, adres i numer.
 
     ``offset``: o tyle kolumn na lewo od swoich nagłówków stoją komórki wiersza (``SHIFT`` w przesuniętym pierwszym
     wierszu bloku, inaczej 0). ``operator`` to nazwa operatora z ``CZYNNOŚCI`` taka, jak z aplikacji, bez spacji na
-    brzegach (``None``: puste), a ``kind`` rodzaj zlecenia z ``URZĄDZENIA``.
+    brzegach (``None``: puste), a ``kind`` rodzaj zlecenia z ``URZĄDZENIA``. ``address`` i ``number`` to wartości
+    ``ADRES`` i ``NUMER ZL.`` (``None``: pusta komórka), po których Planowanie szuka Historii adresu.
     """
 
     row: int
@@ -206,6 +213,8 @@ class RawOrder:
     worker: str
     operator: str | None
     kind: OrderKind
+    address: object = field(repr=False)
+    number: object = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -278,12 +287,17 @@ class IntermaxEntry:
 
 @dataclass(frozen=True)
 class Placement:
-    """Surowe zlecenie na docelowym wierszu dnia z Kolorem operatora i Wpisem (``None``: bez Wpisu)."""
+    """Surowe zlecenie na docelowym wierszu dnia z Kolorem operatora, Wpisem (``None``: bez Wpisu) i Historią adresu.
+
+    ``history``: bloki Historii adresu po kolei; pierwszy staje w kolumnie za ``UWAGI``, każdy następny zaraz za
+    poprzednim, każdy w swojej szerokości.
+    """
 
     order: RawOrder
     row: int
     color: OperatorColor
     entry: IntermaxEntry | None
+    history: tuple[HistoryBlock, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -549,11 +563,18 @@ def _shifted(raw: list[RowFacts], columns: OrderColumns) -> int | None:
     return raw[0].number if raw and not _is_date(raw[0].value(columns.date)) else None
 
 
-def plan_day(block: RawBlock, rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, today: date) -> DayPlan:
+def plan_day(
+    block: RawBlock,
+    rows_from_bottom: Iterable[RowFacts],
+    columns: OrderColumns,
+    today: date,
+    history: Mapping[int, tuple[HistoryBlock, ...]] = MappingProxyType({}),
+) -> DayPlan:
     """Docelowe wiersze dnia: segmenty Wykonawców alfabetycznie, w segmencie po godzinie, z jednym pustym między nimi.
 
     ``rows_from_bottom`` to wiersze arkusza od ostatniego w górę, jak dla ``recognize``: z wierszy nad ``anchor`` i
-    z nowego dnia plan wyznacza wiersz widoku na dzień ``today`` (``_view_row``).
+    z nowego dnia plan wyznacza wiersz widoku na dzień ``today`` (``_view_row``). ``history``: wiersz Surowego zlecenia
+    → jego Historia adresu; zlecenie spoza niej jest bez Historii adresu.
     """
 
     def worker_key(order: RawOrder) -> str:
@@ -568,7 +589,7 @@ def plan_day(block: RawBlock, rows_from_bottom: Iterable[RowFacts], columns: Ord
             row += 1
         segments += 1
         for order in segment:
-            placements.append(Placement(order, row, _operator_color(order), _entry(order)))
+            placements.append(Placement(order, row, _operator_color(order), _entry(order), history.get(order.row, ())))
             row += 1
     view_row = _view_row(placements, rows_from_bottom, columns, block.anchor, today)
     return DayPlan(block.day, tuple(placements), segments, view_row)
@@ -905,7 +926,16 @@ def _order(row: RowFacts, columns: OrderColumns, offset: int) -> RawOrder | Unda
         return WithoutWorker(row.number, columns.worker - offset)
     operator = row.value(columns.activities - offset)
     kind = _KINDS.get(_name(row.value(columns.devices - offset)), OrderKind.OTHER)
-    return RawOrder(row.number, offset, when, str(worker), None if operator is None else str(operator).strip(), kind)
+    return RawOrder(
+        row.number,
+        offset,
+        when,
+        str(worker),
+        None if operator is None else str(operator).strip(),
+        kind,
+        address=row.value(columns.address - offset),
+        number=row.value(columns.number - offset),
+    )
 
 
 def _name(value: object) -> str:
