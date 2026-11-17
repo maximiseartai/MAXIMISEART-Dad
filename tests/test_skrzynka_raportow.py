@@ -56,7 +56,7 @@ from rozliczenia.worker_report_inbox import (
 )
 from rozliczenia.worker_reports import Login, MailId, Reminder, ReportMail, SenderAddress, SentReminder
 
-from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox
+from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FolderInbox
 
 SKRZYNKA = "raporty.taty@przyklad.invalid"
 HASLO = "abcdefghijklmnop"
@@ -505,6 +505,7 @@ ZEPSUTE = {
     "nadawca-z-niezamknietym-cudzyslowem": b'From: "\n' + TEMAT_RAPORTU + b"\r\nx\r\n",
     "nadawca-z-niezamknietym-nawiasem": b"From: <\r\n" + TEMAT_RAPORTU + b"\r\nx\r\n",
     "message-id-z-nawiasami": b"From: ola@przyklad.invalid\r\n" + TEMAT_RAPORTU + b"Message-ID: <<<\r\n\r\nx\r\n",
+    "nadawca-z-przecinkiem-i-dwukropkiem": b"From: \t,\t:f\x84\r\n" + TEMAT_RAPORTU + b"Message-ID: <z@x.invalid>\r\n\r\nx\r\n",
     "zalacznik-rfc822-z-zla-granica": b"From: a@\rb.invalid\r\n" + TEMAT_RAPORTU
     + b'Content-Type: multipart/mixed; boundary="\xffx"\r\n\r\n--x\r\nContent-yp: mess]age/rfc822\r\n\r\n'
     + b"From: c@d.pFrom: l\r\nSubject: s\r\n\r\nbody\r\n--x--",
@@ -718,6 +719,17 @@ def test_adres_nadawcy_nie_jest_tekstem_i_nie_pokazuje_sie_w_repr() -> None:
 def test_test_bez_atrapy_skrzynki_raportow_pada_zamiast_laczyc_sie_z_gmailem(tmp_path: Path) -> None:
     with pytest.raises(AssertionError, match="Skrzynką raportów w Gmailu"):
         ImapInbox(z_pliku(dostep(tmp_path))).mails_since(date(2026, 11, 8))
+
+
+def test_skrzynka_z_folderu_eml_oddaje_maile_z_tematem_raportu_jak_port(tmp_path: Path) -> None:
+    """Skrypt dla maszyn i skille czytają Raporty z plików ``.eml`` tą samą gramatyką tematu co port (ADR 0041)."""
+
+    for name, temat in [("1", b"Rapotr 08.11.2026"), ("2", "Zdjęcia do raportu 08.11.2026".encode()), ("3", b"Faktura")]:
+        (tmp_path / f"{name}.eml").write_bytes(b"Date: Sun, 08 Nov 2026 18:05:00 +0100\r\n" + surowy(temat=temat))
+
+    found = maile(FolderInbox(tmp_path).mails_since(date(2026, 11, 8)))
+
+    assert [mail.subject for mail in found] == ["Rapotr 08.11.2026"]
 
 
 def test_atrapa_skrzynki_raportow_procesu_oddaje_swoj_wynik_i_zapisuje_dzien_kazdego_odczytu() -> None:

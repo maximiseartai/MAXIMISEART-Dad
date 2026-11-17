@@ -226,6 +226,7 @@ def test_raport_z_adresu_spoza_listy_nie_zmienia_komorek_i_jest_problemem_niezna
         "ZDJĘCIA DO RAPORTU 08.11.2026 Jan",
         "zdjecia do rapotru 08.11.2026",
         "Mój raport 08.11.2026",
+        "Export 08.11.2026",
         "Odpowiedź: Raport 08.11.2026",
         "Przypomnienie: raport za dzień 08.11.2026",
     ],
