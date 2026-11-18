@@ -909,6 +909,32 @@ def test_zadna_linia_repo_nie_tlumi_zakazu_ruff() -> None:
     )
 
 
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_noqa_przy_zakazanej_nazwie_i_gwiazdce_jest_zgloszone_a_prawo_wlasciciela_nie(tmp_path: Path) -> None:
+    """Prawdziwy ruff z ``pyproject.toml`` repozytorium: ``# noqa`` na linii, ``# ruff: noqa`` na pliku i ``# ruff:
+    disable`` chowają ``TID251``, a ``# noqa: F403`` gwiazdkę, więc ``banned_under_noqa`` zgłasza każdą z tych linii, a
+    zakazanej nazwy u właściciela z ``per-file-ignores`` nie."""
+
+    shutil.copyfile(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    files = {
+        "tools/linia.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - próbka\n",
+        "tools/plik.py": "# ruff: noqa\nimport os\n\nSYSTEM = os.name\n",
+        "tools/zakres.py": "import os\n\n# ruff: disable[TID251]\nSYSTEM = os.name\n# ruff: enable[TID251]\n",
+        "tools/gwiazdka.py": "from os import *  # noqa: F403 - próbka\n",
+        "tools/lib/import_dynamiczny.py": 'import importlib\n\nMODUL = importlib.import_module("json")\n',
+    }
+    for name, text in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text, encoding="utf-8")
+
+    assert sorted(finding.split(": ")[0] for finding in banned_under_noqa(tmp_path)) == [
+        "tools/gwiazdka.py:1",
+        "tools/linia.py:3",
+        "tools/plik.py:4",
+        "tools/zakres.py:4",
+    ]
+
+
 # Tabela przypadków ``ast_grep_suppressions``: próbka z wywołaniem reguły-fikstury ``zakazane-wywolanie`` → czy to
 # dyrektywa. Dyrektywą jest każdy komentarz, który chowa odpalenie przed ast-grep, a tekst „ast-grep-ignore” w napisie
 # albo w środku komentarza nie chowa niczego, więc nie jest.
@@ -922,6 +948,7 @@ DYREKTYWY_AST_GREP: Final = {
     "tekst w środku komentarza": ("zakazane()  # uwaga ast-grep-ignore: zakazane-wywolanie\n", False),
     "inna wielkość liter": ("zakazane()  # AST-GREP-IGNORE: zakazane-wywolanie\n", False),
     "napis": ('zakazane()\nS = "# ast-grep-ignore: zakazane-wywolanie"\n', False),
+    "f-napis, który tokenize dzieli na części": ('zakazane()\nS = f"# ast-grep-ignore: zakazane-wywolanie {1}"\n', False),
 }
 
 
