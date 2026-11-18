@@ -716,16 +716,18 @@ def test_proces_testu_struktury_na_mergu_importuje_kod_z_mergu(tmp_path: Path) -
     assert (answered.returncode, last) == (1, "SZYBKO FAIL | testy struktury po mergu z origin/main"), answered.stdout
 
 
-def test_testy_struktury_na_mergu_biegna_bez_workerow_xdist(tmp_path: Path) -> None:
-    # Na HEAD biegną w kroku pytest z workerami, a na mergu, który ma plik z main, krok biegnie razem z nim.
-    single_process = (
+def test_testy_struktury_biegna_raz_na_mergu_z_polowa_workerow_kroku_pytest(tmp_path: Path) -> None:
+    # Test struktury pada na HEAD (bez pliku z main) i przy innej liczbie workerów, więc przechodzi tylko na mergu
+    # z połową z 4; zapadki z tym samym ciałem biegną zawsze na HEAD.
+    only_on_merge = (
         "import os\n\n    on_merge = (Path(__file__).parents[1] / 'docs' / 'z-main.md').exists()\n"
-        "    assert not (on_merge and 'PYTEST_XDIST_WORKER' in os.environ)"
+        "    half = os.environ.get('PYTEST_XDIST_WORKER_COUNT') == '2'\n"
+        "    assert Path(__file__).name == 'test_zapadki.py' or (on_merge and half)"
     )
-    repo = _repo(tmp_path, structure=single_process)
+    repo = _repo(tmp_path, structure=only_on_merge)
     _base_moved_on(repo, ("docs/z-main.md", "z main\n"), ("docs/notatka.md", "z gałęzi\n"))
 
-    answered = _szybko(repo)
+    answered = _szybko(repo, workers="4")
 
     assert re.search(r"^OK   testy struktury po mergu z origin/main \(\d+ s\)$", answered.stdout, re.MULTILINE), answered.stdout
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
@@ -739,6 +741,19 @@ def test_konflikt_z_baza_jest_uwaga_a_nie_porazka(tmp_path: Path) -> None:
 
     assert "UWAGA: merge z origin/main ma konflikt w docs/notatka.md" in answered.stdout
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
+
+
+def test_przy_konflikcie_z_baza_testy_struktury_biegna_na_head(tmp_path: Path) -> None:
+    # Pada każdy test struktury poza zapadkami, które biegną na HEAD zawsze.
+    repo = _repo(tmp_path, structure="assert Path(__file__).name == 'test_zapadki.py'")
+    _base_moved_on(repo, ("docs/notatka.md", "z main\n"), ("docs/notatka.md", "z gałęzi\n"))
+
+    answered = _szybko(repo)
+
+    assert "UWAGA: merge z origin/main ma konflikt w docs/notatka.md; testy struktury biegną na HEAD" in answered.stdout
+    failed = set(re.findall(r"^FAILED (\S+)", answered.stdout, re.MULTILINE))
+    assert {node if "::" in node else f"{node}::test_struktura" for node in STRUCTURE} <= failed, answered.stdout
+    assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | pytest"), answered.stdout
 
 
 def test_merge_z_baza_ktorego_git_nie_policzy_wywraca_krok_struktury_a_nie_jest_konfliktem(tmp_path: Path) -> None:

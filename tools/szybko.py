@@ -24,9 +24,11 @@ czyta zmieniony plik konfiguracji, ma najwyżej 2, więc biegnie w budżecie prz
 jako „zostawione CI”, więc ``SZYBKO OK`` znaczy, że przeszły uruchomione testy.
 
 Testy ``STRUCTURE`` modułu wpływu zmiany (strażnicy reguł z ``RULE_GUARDS`` w ``tests/test_szybko.py`` oraz testy całego
-repozytorium) biegną przy każdej zmianie, a gdy ``--baza`` poszła dalej niż HEAD, także na mergu z nią (to drzewo
-sprawdza CI PR-u; numer ADR zajęty równolegle pada dopiero tam). Na mergu biegną tylko one, bez mypy, testów
-dotkniętych zmianą i workerów xdist, razem z pozostałymi krokami. Zapadki (``ZAPADKI``) biegną przy każdej zmianie
+repozytorium) biegną przy każdej zmianie raz: gdy ``--baza`` poszła dalej niż HEAD, na mergu z nią (to drzewo sprawdza
+CI PR-u; numer ADR zajęty równolegle pada dopiero tam), a inaczej na HEAD w kroku pytest. Na mergu biegną tylko one,
+bez mypy i testów dotkniętych zmianą, razem z pozostałymi krokami, na połowie workerów kroku pytest
+(``_merge_workers``), więc oba kroki razem biorą niewiele więcej rdzeni niż sam krok pytest. Merge z konfliktem
+i merge, którego git nie policzy, nie mają testów struktury, więc te biegną wtedy na HEAD. Zapadki (``ZAPADKI``) biegną przy każdej zmianie
 tylko w szybko, bo zadania pytest w CI nie mają bazy zmiany (reguły ast-grep na dodanych liniach całego repozytorium
 i reguły ast-grep całego drzewa ma też zadanie CI „Ruff, mypy”), i liczą dodane linie od ``merge-base`` HEAD z ``--baza`` (zmienna ``ZAPADKA_BAZA``).
 Merge z konfliktem szybko pomija z linią ``UWAGA``, a merge, którego git nie policzy (``git merge-tree`` z kodem
@@ -211,30 +213,35 @@ def _passed(junit: Path, ran: Iterable[str]) -> set[str]:
     return {str(plik) for plik in passed}
 
 
-def _merge_steps(base: str, copies: ExitStack) -> list[Step]:
-    """Krok testów struktury na mergu HEAD z ``base``; bez kroku, gdy ``base`` jest w HEAD albo merge ma konflikt, a krok,
-    który pada z powodem, gdy git nie umie policzyć mergu."""
+def _merge_workers() -> int:
+    """Workery xdist kroku struktury na mergu: połowa workerów kroku pytest, który biegnie razem z nim."""
+
+    return max(1, czasy_ci.workery_lokalne() // 2)
+
+
+def _merge_steps(base: str, copies: ExitStack) -> tuple[list[Step], bool]:
+    """Krok testów struktury na mergu HEAD z ``base`` i to, czy uruchamia testy struktury; bez kroku, gdy ``base`` jest
+    w HEAD albo merge ma konflikt, a krok, który pada z powodem, gdy git nie umie policzyć mergu."""
 
     if repo.is_ancestor(ROOT, base, "HEAD"):
-        return []
+        return [], False
     name = f"testy struktury po mergu z {base}"
     try:
         merged = repo.merge_tree(ROOT, "HEAD", base)
     except subprocess.CalledProcessError as error:
         reason = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
-        return [_failing(ROOT, name, f"git merge-tree z {base}: {reason}")]
+        return [_failing(ROOT, name, f"git merge-tree z {base}: {reason}")], False
     if merged.conflicts:
-        print(f"UWAGA: merge z {base} ma konflikt w {', '.join(merged.conflicts)}; testy struktury po mergu pominięte", flush=True)
-        return []
+        print(f"UWAGA: merge z {base} ma konflikt w {', '.join(merged.conflicts)}; testy struktury biegną na HEAD", flush=True)
+        return [], False
     author = ("-c", "user.name=szybko", "-c", "user.email=szybko@localhost")
     merge = repo.git(ROOT, *author, "commit-tree", merged.tree, "-p", "HEAD", "-p", base, "-m", f"szybko: HEAD z {base}").strip()
     copy = copies.enter_context(potomne.commit_copy(ROOT, merge))
-    # Biegnie razem z krokiem pytest, więc bez workerów xdist nie podwaja liczby rdzeni szybko.
-    return [pytest_step(copy, name, (*STRUCTURE, "-n", "0"))]
+    return [pytest_step(copy, name, (*STRUCTURE, "-n", str(_merge_workers())))], True
 
 
-def _pytest_arguments(tests: Iterable[str], junit: Path) -> tuple[str, ...]:
-    chosen = with_structure(tests)
+def _pytest_arguments(tests: Iterable[str], junit: Path, *, structure: bool) -> tuple[str, ...]:
+    chosen = with_structure(tests) if structure else tuple(sorted(tests))
     return (*chosen, *(path for path in ZAPADKI if path not in chosen), *wyniki_testow.zapis(junit))
 
 
@@ -269,9 +276,10 @@ def _imports_on_oldest(root: Path) -> list[Step]:
     return [Step(name, "pytest", (sys.executable, "-c", WITH_UV, uv, version, IMPORT_ALL, *requirements), root)]
 
 
-def _steps(root: Path, tests: Iterable[str], junit: Path, changed: frozenset[str]) -> list[Step]:
+def _steps(root: Path, tests: Iterable[str], junit: Path, changed: frozenset[str], *, structure: bool) -> list[Step]:
     workflows = workflow_steps(root) if any(path.startswith(".github/") for path in changed) else []
-    return [*static_steps(root), *workflows, pytest_step(root, "pytest", _pytest_arguments(tests, junit)), *_imports_on_oldest(root)]
+    arguments = _pytest_arguments(tests, junit, structure=structure)
+    return [*static_steps(root), *workflows, pytest_step(root, "pytest", arguments), *_imports_on_oldest(root)]
 
 
 def _environment(root: Path, base: str) -> dict[str, str]:
@@ -366,9 +374,9 @@ def main(argv: list[str] | None = None) -> int:
     if drift := _model_drift(ROOT, changed):
         print("FAIL rozjazd modelu (bez TLC)\n" + "\n".join(drift), flush=True)
     junit = memory.path.with_name(f"szybko-junit-{os.getpid()}.xml")
-    steps = _steps(ROOT, chosen.run, junit, changed)
     with ExitStack() as copies:
-        steps += _merge_steps(args.baza, copies)
+        merge, on_merge = _merge_steps(args.baza, copies)
+        steps = [*_steps(ROOT, chosen.run, junit, changed, structure=not on_merge), *merge]
         base = repo.merge_base(ROOT, "HEAD", args.baza)
         failed, interrupted = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
     failed = (["rozjazd modelu"] if drift else []) + failed
