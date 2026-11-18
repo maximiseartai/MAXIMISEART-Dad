@@ -55,6 +55,15 @@ niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.u
 werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
 ``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
 z polem ``Idiom:`` (``bramka_idiomu``).
+
+Przypadki reguł (``--przypadki-regul``, krok zadania CI „Ruff, mypy”): każda reguła z katalogów ``ruleDirs``
+``sgconfig.yml`` checkoutu ma w polu ``metadata.przypadki`` przypadki, które łapie, i łapie każdy z nich jak Ważne
+dowodu (punkt 1): Ważne ``PR/W<n>/r<k>`` albo ``<pełny SHA> plik:linia``, czyli linie dodane przez commit od jego
+pierwszego rodzica, dla reguły, która nie powstała z Ważnego z polem ``Gdzie``. Pole czyta tylko ten krok, a ast-grep
+je pomija. Kończy się ``PRZYPADKI REGUŁ OK | <n> reguł, <k> przypadków`` albo ``PRZYPADKI REGUŁ FAIL | <reguła>:
+<co zrobić> | …``, także dla reguły bez pola:
+
+    .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul
 """
 
 from __future__ import annotations
@@ -88,6 +97,8 @@ import werdykt_pr
 
 AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 MAJOR = re.compile(r"#?(\d+)/(W\d+)/r(\d+)")
+COMMIT_CASE = re.compile(r"([0-9a-f]{40}) (\S+)")
+CASES = "przypadki"  # pole ``metadata`` reguły ast-grep z przypadkami, które reguła ma łapać
 WHERE = "Gdzie:"
 # Cała kopia: bez tych flag ast-grep nie wchodzi do katalogu ukrytego (``.agents/``) ani ignorowanego.
 WHOLE = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot")
@@ -245,8 +256,19 @@ def major(text: str) -> tuple[int, str, int]:
     return int(found[1]), found[2], int(found[3])
 
 
-def caught(rule: Rule, repository: str, number: int, label: str, round_: int) -> bool:
-    """Drukuje linię Ważnego ``label`` rundy ``round_`` PR-u ``number`` i mówi, czy reguła je złapała."""
+@dataclass(frozen=True)
+class Probe:
+    """Przypadek, który reguła ma złapać: odpalenie na liniach dodanych od ``base`` do ``head`` w miejscu ``where``."""
+
+    label: str  # ``#1584 W1 r1`` albo ``commit``
+    base: str
+    head: str
+    where: str  # tekst pola ``Gdzie:``
+
+
+def major_probe(repository: str, number: int, label: str, round_: int) -> Probe:
+    """Ważne ``label`` werdyktu ``FAIL`` rundy ``round_`` PR-u ``number``: linie dodane od ``merge-base`` bazy PR-u
+    do SHA linii ``WERDYKT`` i pole ``Gdzie`` tego Ważnego."""
 
     pull = rejestr_korzeni.pull(repository, number)
     verdict = next((one.verdict for one in werdykt_pr.rounds(pull, werdykt_pr.from_graphql) if one.number == round_ and one.verdict.decision == "FAIL"), None)
@@ -259,11 +281,17 @@ def caught(rule: Rule, repository: str, number: int, label: str, round_: int) ->
         raise ValueError(f"#{number} {label} r{round_}: brak pola {WHERE}")
     if problem := fetched(verdict.commit):
         raise ValueError(problem)
-    found = fired(rule, _fork(f"{REMOTE}/{pull.base}", verdict.commit), verdict.commit)
-    targets = places(where, verdict.commit)
+    return Probe(f"#{number} {label} r{round_}", _fork(f"{REMOTE}/{pull.base}", verdict.commit), verdict.commit, where)
+
+
+def caught(rule: Rule, probe: Probe) -> bool:
+    """Drukuje linię przypadku ``probe`` i mówi, czy reguła go złapała."""
+
+    found = fired(rule, probe.base, probe.head)
+    targets = places(probe.where, probe.head)
     inside = [hit for hit in found if any(hit[0] == path and first <= hit[1] <= last for path, first, last in targets)]
     state = "złapane" if inside else "obok" if found else "nie"
-    print(f"#{number} {label} r{round_} | {verdict.commit[:8]} | {state} | odpalenia {_shown(found)} | {where}", flush=True)
+    print(f"{probe.label} | {probe.head[:8]} | {state} | odpalenia {_shown(found)} | {probe.where}", flush=True)
     return bool(inside)
 
 
@@ -314,7 +342,7 @@ def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: 
 
     try:
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
-        catches = sum(caught(rule, repository, *one) for one in majors)
+        catches = sum(caught(rule, major_probe(repository, *one)) for one in majors)
         alarms = 0
         prs = merged(numbers, last)
         flagged = []
@@ -335,6 +363,54 @@ def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: 
     return 0 if ok else 1
 
 
+def case_probe(repository: str, text: str) -> Probe:
+    """Przypadek z pola ``metadata.przypadki`` reguły: Ważne ``PR/W<n>/r<k>`` (``major_probe``) albo ``<SHA> plik:linia``,
+    czyli linie dodane przez commit od jego pierwszego rodzica; inna postać to ``ValueError``."""
+
+    if found := MAJOR.fullmatch(text):
+        return major_probe(repository, int(found[1]), found[2], int(found[3]))
+    if found := COMMIT_CASE.fullmatch(text):
+        if problem := fetched(found[1]):
+            raise ValueError(problem)
+        return Probe("commit", f"{found[1]}^1", found[1], f"{WHERE} {found[2]}")
+    raise ValueError(f"przypadek {text!r} nie ma postaci PR/W<n>/r<k> ani <pełny SHA> plik:linia")
+
+
+def founding() -> int:
+    """Każda reguła z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` checkoutu łapie każdy przypadek ze swojego pola
+    ``metadata.przypadki`` (``caught``), a regułę wybiera ast-grep z tej konfiguracji, jak zapadka; kod 0 tylko
+    z ``PRZYPADKI REGUŁ OK``."""
+
+    config = yaml.safe_load((ROOT / CONFIG).read_text(encoding="utf-8"))
+    files = sorted(path for folder in config["ruleDirs"] for path in (ROOT / folder).rglob("*.y*ml"))
+    rules = [document for path in files for document in yaml.safe_load_all(path.read_text(encoding="utf-8")) if document]
+    problems: list[str] = []
+    total = 0
+    try:
+        repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
+    except (ValueError, subprocess.CalledProcessError) as error:
+        print(f"PRZYPADKI REGUŁ FAIL | {error}")
+        return 1
+    for document in rules:
+        name = str(document["id"])
+        if not (cases := (document.get("metadata") or {}).get(CASES)):
+            problems.append(f"{name}: bez pola metadata.{CASES}; dopisz przypadek, który reguła łapie: Ważne PR/W<n>/r<k> albo <pełny SHA> plik:linia")
+            continue
+        chosen = ("--config", str(ROOT / CONFIG), "--filter", f"^{re.escape(name)}$")
+        for text in map(str, cases):
+            total += 1
+            try:
+                if not caught(chosen, case_probe(repository, text)):
+                    problems.append(f"{name}: nie łapie {text}; popraw regułę tak, by znów odpalała w jego Gdzie")
+            except (ValueError, subprocess.CalledProcessError) as error:
+                problems.append(f"{name}: {text}: {error}")
+    if problems:
+        print(f"PRZYPADKI REGUŁ FAIL | {' | '.join(problems)}")
+        return 1
+    print(f"PRZYPADKI REGUŁ OK | {len(rules)} reguł, {total} przypadków")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     split = arguments.index("--") if "--" in arguments else len(arguments)
@@ -350,7 +426,12 @@ def main(argv: list[str] | None = None) -> int:
     rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
     parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, np. HEAD PR.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
+    rule.add_argument("--przypadki-regul", action="store_true", help="Każda reguła z reguly-ast-grep/ łapie przypadki ze swojego pola metadata.przypadki.")
     args = parser.parse_args(arguments[:split])
+    if args.przypadki_regul:
+        if command or args.wazne or args.pr or args.ostatnie or args.commit or args.z_commita:
+            parser.error("--przypadki-regul bierze przypadki z reguł checkoutu, bez innych argumentów")
+        return founding()
     if args.regula is not None or args.regula_id is not None:
         if command or not args.wazne or (args.regula_id is None) != (args.z_commita is None):
             parser.error("dowód reguły: --regula PLIK.yml albo --regula-id ID z --z-commita REV i co najmniej jedno --wazne PR/W<n>/r<k>, bez polecenia po --")

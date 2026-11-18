@@ -98,11 +98,17 @@ jobs:
     # systems.
     name: Ruff, mypy
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The founding cases of the ast-grep rules read the verdicts of pull requests (tools/na_scalonych_pr.py).
+      pull-requests: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # The ast-grep rules on added lines count them from HEAD^1; the rules of the whole tree need no history.
-          fetch-depth: 2
+          # The ast-grep rules on added lines count them from HEAD^1; the founding cases of the rules need the merge-base
+          # of a pull request with origin/main, so the whole history.
+          fetch-depth: 0
           persist-credentials: false
 
       - id: python
@@ -130,6 +136,13 @@ jobs:
           python -m pytest -q -rs -n 0 -p no:cacheprovider
           tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
           tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
+
+      # Each rule of reguly-ast-grep/ still catches every case of its metadata.przypadki.
+      - name: ast-grep rules catch their founding cases
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/na_scalonych_pr.py --przypadki-regul
 
       - name: Typecheck Python code (Windows)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
