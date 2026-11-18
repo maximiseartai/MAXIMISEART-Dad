@@ -27,6 +27,7 @@ from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.order_kind import OrderKind
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
 from rozliczenia.run_context import RunContext
+from rozliczenia.same_address import AddressIndex
 from tests.fixtures.formy_telefonu import MASKED, PHONE
 from atrapy.settlement import CellValue, make_fixture, worker_list, write_quantity_source
 
@@ -307,6 +308,98 @@ def test_netia_z_dopiskiem_sa_bez_spacji_to_netia(written: str) -> None:
 
     assert placed.color == netia.color
     assert placed.entry is not None
+
+
+# Miasto reguły tego samego adresu Historii adresu (hasło w GLOSSARY.md, decyzja Maksa z 18.11.2026): nazwa miasta to
+# jego słowa przed myślnikiem dzielnicy (litery po obu stronach), kod pocztowy (cyfry po obu stronach myślnika) się nie
+# liczy, a zapis z innym myślnikiem jest miastem nierozpoznanym; dwa miasta o różnych nazwach nigdy nie są jednym.
+CITY_WORDS = st.text(alphabet="abcdefghijklmnoprstuwyząćęłńóśźżABCDEFGHIJKLMNOPRSTUWYZĄĆĘŁŃÓŚŹŻ", min_size=1, max_size=6)
+CITY_NAMES = st.lists(CITY_WORDS, min_size=1, max_size=2).map(" ".join)
+DISTRICT_DASHES = ("-", " - ", " -", "- ", "–", " — ")
+POSTAL_CODES = st.builds(
+    lambda first, second, before, after: f"{first:02d}{before}-{after}{second:03d}",
+    st.integers(0, 99),
+    st.integers(0, 999),
+    st.sampled_from(("", " ")),
+    st.sampled_from(("", " ")),
+)
+CODE_PREFIXES = ("", "PL-", "PL - ", "Woj - ", "Poczta - ", "-", "(")
+
+
+@st.composite
+def city_spellings(draw: st.DrawFn, name: str, any_dash: bool = False) -> str:
+    """Zapis miasta ``name`` z Bazy albo INTERMAX: słowa nazwy, za nimi czasem dzielnica (jedna albo dwie, po
+    myślniku, półpauzie albo pauzie, z odstępami albo bez), a kod pocztowy w granicy tych części, sklejony albo ze
+    spacją, albo bez kodu. Z ``any_dash`` zapis bywa też nierozpoznany: myślnik przed nazwą, kod tuż przed myślnikiem
+    dzielnicy (``Miastko11-111-Dzielnica``), przed kodem znak kraju albo słowo z myślnikiem (``PL - 11-111``)."""
+
+    pieces = [(" " if index else "") + word for index, word in enumerate(name.split(" "))]
+    if any_dash and draw(st.booleans()):
+        pieces[0] = "-" + pieces[0]
+    for _ in range(draw(st.integers(0, 2))):
+        pieces.append(draw(st.sampled_from(DISTRICT_DASHES)) + draw(CITY_WORDS))
+    if draw(st.booleans()):
+        code = draw(POSTAL_CODES)
+        if any_dash:
+            code = draw(st.sampled_from(CODE_PREFIXES)) + code
+        names = len(name.split(" "))
+        at = draw(st.integers(0, len(pieces)) if any_dash else st.sampled_from((*range(names), len(pieces))))
+        glue = draw(st.sampled_from(("", " "))) if any_dash or at == len(pieces) else " "
+        pieces.insert(at, f"{glue if at else ''}{code}{glue if at < len(pieces) else ''}")
+    return "".join(pieces)
+
+
+@PROPERTY
+@given(data=st.data(), name=CITY_NAMES)
+def test_miasto_historii_adresu_to_nazwa_bez_kodu_pocztowego_i_dzielnicy(data: st.DataObject, name: str) -> None:
+    other = data.draw(
+        CITY_NAMES | CITY_NAMES.map(lambda tail: name + tail) | CITY_NAMES.map(lambda tail: f"{name} {tail}"),
+        label="inne miasto, też z tym samym początkiem",
+    )
+    index = AddressIndex(
+        [("LIPOWA 5", data.draw(city_spellings(name)), "to miasto"), ("LIPOWA 5", data.draw(city_spellings(other)), "inne")]
+    )
+
+    found = index.matching("UL. LIPOWA 5", name)
+
+    assert "to miasto" in found
+    assert ("inne" in found) == (other.casefold() == name.casefold())
+
+
+@settings(PROPERTY, max_examples=2000)
+@given(data=st.data(), name=CITY_NAMES, other=CITY_NAMES)
+def test_dwa_rozne_miasta_historii_adresu_nie_trafiaja_przy_zadnym_zapisie(data: st.DataObject, name: str, other: str) -> None:
+    assume(name.casefold() != other.casefold())
+    index = AddressIndex([("LIPOWA 5", data.draw(city_spellings(other, any_dash=True)), "inne")])
+
+    assert index.matching("UL. LIPOWA 5", data.draw(city_spellings(name, any_dash=True))) == ()
+
+
+@pytest.mark.parametrize(
+    ("base_city", "order_city", "same"),
+    [
+        ("11-111Miastko", "Miastko", True),
+        ("Miastko–Dzielnica", "Miastko", True),
+        ("(11 - 111) Miastko", "Miastko", True),
+        ("Miastko 11-111 - Dzielnica", "Miastko", False),
+        ("11 - 111 Miastko", "11 - 222 Inne Miasto", False),
+        ("PL 11 - 111 Miastko", "PL 11 - 222 Inne Miasto", False),
+        ("(11 - 111) Miastko", "(11 - 222) Inne", False),
+        ("PL-11-111 Miastko", "PL-11-222 Inne", False),
+        ("PL - 11-111 Miastko", "PL - 11-222 Inne Miasto", False),
+        ("Woj - 11 111 Miastko", "Woj - 11 222 Inne", False),
+        ("Poczta - 11-111 Miastko", "Poczta - 11-111 Inne", False),
+        ("Miastko11-111-Dzielnica", "Miastko Dzielnica", False),
+        ("-", "Miastko", False),
+    ],
+    ids=lambda value: str(value),
+)
+def test_miasto_historii_adresu_na_zapisach_z_przegladow_2112(base_city: str, order_city: str, same: bool) -> None:
+    """Zapisy, na których rundy przeglądu #2112 znalazły dwa miasta wzięte za jedno albo jedno za dwa."""
+
+    found = AddressIndex([("LIPOWA 5", base_city, "wiersz")]).matching("UL. LIPOWA 5", order_city)
+
+    assert (found == ("wiersz",)) is same
 
 
 # Reguła danych (ADR 0025, docstring ``client_data``): telefon w tekście z tabeli form telefonu, który strażnik maskuje w
