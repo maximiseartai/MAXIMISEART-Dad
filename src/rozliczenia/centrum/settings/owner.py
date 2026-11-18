@@ -191,7 +191,9 @@ class UnreadableFile:
     """Plik Ustawień ``name`` (nazwa w ``config``) jest, ale system nie daje go teraz czytać: jego treści nikt nie zna,
     więc proces, który z niego bierze wejście, nie startuje (``refusal.settings_file_unreadable``), zamiast liczyć treścią z
     Wydania jak tata bez własnego pliku. Klasa nie ma podklas, więc gałąź ``isinstance(x, UnreadableFile)`` przy
-    wartości bez unii jest dla mypy martwa (``warn_unreachable`` w ``src/``)."""
+    wartości bez unii jest dla mypy martwa (``warn_unreachable`` w ``src/``: „Subclass of … and "UnreadableFile" cannot
+    exist”): usuń ją, bo odmowę o pliku daje już nazwa bez przyrostka (``SettingsSnapshot.folders``,
+    ``CentrumSettings.folders``). Unię bierze tylko wołający, który o pliku mówi albo czeka (``*_or_unreadable``)."""
 
     name: str
 
