@@ -62,6 +62,7 @@ COPY = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
 SUMMARY: dict[str, Any] = {
     "figures": [
         {"label": "Zlecenia", "value": 6, "unit": "count"},
+        {"label": "Historia adresu", "value": 0, "unit": "count"},
         {"label": "Wykonawcy", "value": 3, "unit": "count"},
     ],
     "counts": {"title": "Uporządkowany dzień", "counts": [{"label": "pon 26.10.2026", "count": 6}], "zero_warns": True},
@@ -728,6 +729,7 @@ def test_logi_uporzadkowania_maja_wiersze_wpisow_na_operatora_i_instalacje_hurt_
     assert result["summary"] == SUMMARY | {
         "figures": [
             {"label": "Zlecenia", "value": 6, "unit": "count"},
+            {"label": "Historia adresu", "value": 0, "unit": "count"},
             {"label": "Wykonawcy", "value": 1, "unit": "count"},
         ],
     }
@@ -758,14 +760,20 @@ HISTORY_BASE = (
 """Baza zleceń z Historią adresu zleceń ``Ulica 101`` (dwa wiersze) i ``Ulica 103`` (jeden) domyślnego wklejenia."""
 
 
-def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_a_logi_maja_same_liczby_historii_adresu(
+def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_karta_ma_liczbe_historii_adresu_po_zleceniach_a_logi_same_liczby(
     tmp_path: Path,
 ) -> None:
+    """Karta ma osobną liczbę „Historia adresu” 2 (zleceń z Historią adresu) zaraz po liczbie „Zlecenia” 6."""
+
     centrum = ordering_centrum(tmp_path, order_base=HISTORY_BASE)
 
     view = centrum.run_to_end()
 
     assert (view["result"]["headline"], view["result"]["warnings"]) == ("INTERMAX uporządkowany", [])
+    assert view["result"]["summary"]["figures"][:2] == [
+        {"label": "Zlecenia", "value": 6, "unit": "count"},
+        {"label": "Historia adresu", "value": 2, "unit": "count"},
+    ]
     [logs] = centrum.run_logs()
     assert logs["address_history"] == {"orders": 2, "rows": 3, "sheets": 3}
     [path] = ToolDirectory(tmp_path).run_logs.glob("*.json")
@@ -774,7 +782,7 @@ def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_a_logi_m
     assert not any(marker in text for marker in ("stary", "średni", "nowy", "7001", "7003")), "bez treści wierszy Bazy"
 
 
-def test_uporzadkowanie_z_centrum_bez_bazy_zlecen_w_folderze_intermax_ostrzega_a_logi_nie_maja_historii_adresu(
+def test_uporzadkowanie_z_centrum_bez_bazy_zlecen_w_folderze_intermax_ostrzega_a_karta_i_logi_nie_maja_historii_adresu(
     tmp_path: Path,
 ) -> None:
     centrum = ordering_centrum(tmp_path, order_base=None)
@@ -783,6 +791,7 @@ def test_uporzadkowanie_z_centrum_bez_bazy_zlecen_w_folderze_intermax_ostrzega_a
 
     [warning] = view["result"]["warnings"]
     assert warning["what"] == "INTERMAX został uporządkowany bez Historii adresu, bo w folderze INTERMAX nie ma Bazy zleceń."
+    assert [figure["label"] for figure in view["result"]["summary"]["figures"]] == ["Zlecenia", "Wykonawcy"]
     [logs] = centrum.run_logs()
     assert (logs["address_history"], [message["code"] for message in logs["messages"]]) == (None, ["BAZA_ZLECEN_POMINIETA"])
 

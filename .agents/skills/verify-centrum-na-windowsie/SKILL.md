@@ -35,6 +35,7 @@ pilnuje:
   - tools/lib/atrapy/atrapa_efenix.py
   - tools/lib/atrapy/serwer_http.py
   - tools/lib/atrapy/intermax.py
+  - tools/lib/atrapy/baza_zlecen.py
   - tools/lib/atrapy/model_efenix.py
   - tools/lib/atrapy/pliki_taty.py
   - tools/lib/atrapy/workbooks.py

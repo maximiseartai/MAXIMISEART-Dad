@@ -268,10 +268,13 @@ def _order_by_touch(run: Run, page: Page, register: Path, original: bytes, fixtu
         copy = result["summary"]["intermax_copy"]
         expect(live.get_by_text(f"Kopia sprzed zapisu: {copy}", exact=True)).to_be_visible()
         expect(live.get_by_label(f"{fixture['day']}: {fixture['orders']}", exact=True)).to_be_visible()
-        figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
+        expect(live.get_by_role("term").filter(has_text="Historia adresu")).to_be_visible()
+        figures = [(figure["label"], figure["value"]) for figure in result["summary"]["figures"]]
+        expected = [("Zlecenia", fixture["orders"]), ("Historia adresu", fixture["history"]), ("Wykonawcy", fixture["workers"])]
         run.check(
-            figures == {"Zlecenia": fixture["orders"], "Wykonawcy": fixture["workers"]},
-            "the result card counts the orders and the Wykonawcy of the pasted day in the period of today",
+            figures == expected and result["warnings"] == [],
+            "the result card counts the orders, right after them those with Historia adresu from the Baza zleceń beside "
+            "INTERMAX, and the Wykonawcy of the pasted day in the period of today",
         )
         expect(live.get_by_text(f"Okres {PERIOD}", exact=True)).to_be_visible()
         copies = sorted(path.name for path in Path(fixture["copies"]).iterdir())
