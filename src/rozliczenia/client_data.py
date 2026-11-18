@@ -67,6 +67,7 @@ class _ReadValues:
 READ_VALUES: Final = _ReadValues()
 
 
+
 class ForbiddenColumn(Enum):
     """Kolumna, której wartość nigdy nie wychodzi z komputera taty; ``value`` to jej nazwa w uwadze technicznej."""
 
@@ -91,14 +92,16 @@ _HEADERS: Final = {
 
 _WORD: Final = re.compile(r"\w+")
 _PHONE: Final = re.compile(
-    r"(?<![\w+#])(?:(?:\+|00)?48[ -]?)?(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?!\w)"
+    r"(?<![\w+#])(?:(?:\+|00)?48[ -]?)?(?!0)(?:\d{3}[ -]?\d{3}[ -]?\d{3}|\d{2}[ -]\d{3}[ -]\d{2}[ -]\d{2})(?!\w)"
 )
 """Polski numer telefonu: komórkowy 3-3-3 (ze spacjami, myślnikami albo bez) i stacjonarny 2-3-2-2, z numerem
 kierunkowym ``+48``, ``0048`` albo ``48`` albo bez. ``48`` bez ``+`` i zer to numer, któremu Excel zgubił je w komórce
 (``+48600123456`` to liczba ``48600123456``).
 
-Cyfry zaraz po ``#`` to ``NUMER ZL.`` (``#`` i numer), który może wyjść, więc nie są telefonem. Formy telefonu, których
-wzorzec nie zna, to znane granice z ADR 0025.
+Cyfry zaraz po ``#`` to ``NUMER ZL.`` (``#`` i numer), który może wyjść, więc nie są telefonem. Numer po numerze
+kierunkowym nie zaczyna się od ``0``, bo w polskim planie numeracji żaden się tak nie zaczyna, a ``NUMER ZL.`` z zerem
+z przodu (``014043137``, tak pisze go Wykonawca w raporcie) ma 9 cyfr. Formy telefonu, których wzorzec nie zna, to
+znane granice z ADR 0025.
 """
 _STREET: Final = re.compile(
     r"(?<!\w)(?:ul|os|al|pl)\.[ \t]*(?:\w[\w-]*\.?[ \t]+){1,4}?\d+[^\W\d_]?(?:[ \t]*(?:/|m\.?)[ \t]*\d+[^\W\d_]?)?(?!\w)",

@@ -333,7 +333,8 @@ def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z
 ) -> None:
     """``NUMER ZL.`` z wiersza INTERMAX może wyjść do Logów (ADR 0025) także z 9 cyframi, które strażnik maskuje jako
     telefon w tekście: pamięć własnych wpisów w Logach drugiego kliknięcia ma go jako liczbę. Numer z treści maila
-    zostaje tekstem pod strażnikiem, więc 9 cyfr jest w nim zamaskowane; odtworzenie dostanie to jako granicę (#1233)."""
+    zostaje tekstem pod strażnikiem, więc 9 cyfr bez zera z przodu jest w nim zamaskowane, bo ten sam kształt ma
+    telefon klienta na początku linii raportu; odtworzenie dostanie to jako granicę (#1233)."""
 
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 412345678),), raw=())
     centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "412345678 tak montaż")])
@@ -350,6 +351,25 @@ def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z
     ]
     assert (again["rollout_before"], again["written"], again["changes"]) == ("2026-11-09", 0, [])
     assert again["mails"][0]["entries"][0]["number"] == "[telefon]"
+
+
+def test_numer_z_zerem_z_przodu_z_tresci_maila_jest_w_logach_a_telefon_na_poczatku_linii_raportu_nie(
+    tmp_path: Path,
+) -> None:
+    """Wykonawca pisze w raporcie ``NUMER ZL.`` z zerem z przodu, czyli 9 cyfr, a żaden polski telefon nie zaczyna się od
+    0: Logi mają ten numer we Wpisie i w problemie nieznanego numeru w postaci z maila, więc odtworzenie powtarza
+    kliknięcie. Telefon klienta na początku linii raportu rdzeń też czyta jako Wpis, a w Logach jest on ``[telefon]``."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 14043137),), raw=())
+    body = "014043137 tak montaż, klient prosi o kontakt\n600123456 po 17"
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, body)])
+
+    run = _finished(centrum)
+
+    [entering] = [entry["report_entering"] for entry in centrum.run_logs() if entry["run_id"] == run["run"]["id"]]
+    assert [entry["number"] for entry in entering["mails"][0]["entries"]] == ["014043137", "[telefon]"]
+    assert sorted(problem["number"] for problem in entering["problems"]) == ["014043137", "[telefon]"]
+    assert "600123456" not in json.dumps(entering, ensure_ascii=False)
 
 
 def test_odrzucone_haslo_skrzynki_raportow_nie_trafia_do_api_strumienia_logow_zgloszenia_ani_dziennika(
