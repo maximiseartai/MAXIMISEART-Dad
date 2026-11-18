@@ -37,8 +37,6 @@ _NUMBER: Final = r"0*(\d+[^\W\d_]?)"
 _ADDRESS: Final = re.compile(rf"(?P<street>.*?)\s*\b{_NUMBER}(?:\s*/\s*(?:{_NUMBER})?)?", re.S)
 
 _DASHES: Final = frozenset("-–—")
-_UNREADABLE: Final = "\0"
-"""Przedrostek miasta nierozpoznanego: żadna nazwa miasta nie zaczyna się od znaku NUL."""
 _CITY_TOKENS: Final = re.compile(r"[^\W\d_]+|\d+|[-–—]")
 """Słowa, liczby i myślniki zapisu miasta; reszta (odstępy, nawiasy, kropki) ich nie oddziela."""
 
@@ -105,13 +103,14 @@ def _address(address: object, city: object) -> _Address | None:
 
 
 def _city(text: str) -> str | None:
-    """Nazwa miasta: słowa przed myślnikiem dzielnicy, bez cyfr; ``None``, gdy żadnego słowa nie ma.
+    """Nazwa miasta (słowa przed myślnikiem dzielnicy, bez cyfr), cały zapis przy myślniku nierozpoznanym albo ``None``.
 
     O roli myślnika (także półpauzy i pauzy) decydują najbliższe znaki obok niego w samym zapisie, bez odstępów:
     cyfry po obu stronach to kod pocztowy (``11-111``, ``11 - 111``), który znika z cyframi, a litery po obu stronach
     to dzielnica (``Poznań-Jeżyce``, ``Poznań - Jeżyce``), przed którą kończy się nazwa. Zapis z każdym innym
-    myślnikiem (``-Dzielnica``, ``PL-11-111``, ``Miastko 11-111 - Dzielnica``) nie ma pewnej nazwy, więc jest miastem
-    nierozpoznanym, równym tylko temu samemu zapisowi: reguła nie trafia wtedy zamiast zgadywać."""
+    myślnikiem (``-Dzielnica``, ``PL-11-111``, ``Miastko 11-111 - Dzielnica``) nie ma pewnej nazwy, więc miastem jest
+    cały zapis: zawiera myślnik, którego nazwa nigdy nie ma, więc równa się tylko temu samemu zapisowi. ``None``
+    (brak miasta) zostaje dla zapisu bez słowa i bez takiego myślnika (sam kod pocztowy)."""
 
     words: list[str] = []
     for found in _CITY_TOKENS.finditer(text):
@@ -125,5 +124,5 @@ def _city(text: str) -> str | None:
             continue
         if left.isalpha() and right.isalpha():
             break
-        return _UNREADABLE + text
+        return text
     return " ".join(words) or None

@@ -166,7 +166,7 @@ _Avoid_: archiwum, stary INTERMAX
 
 Wartości wierszy Bazy zleceń z tym samym adresem co zlecenie, poza wierszem z numerem tego zlecenia, które Uporządkowanie INTERMAX kopiuje do wiersza tego zlecenia za `UWAGI`, od najnowszej daty realizacji do najstarszej, każdy w szerokości swojego arkusza, a co drugi, od pierwszego, na jasnoszarym tle; zlecenie z Historią adresu ma czerwoną kolumnę A.
 Ten sam adres to ta sama ulica, numer budynku i numer mieszkania, a adres bez numeru mieszkania jest tym samym tylko dla adresu bez niego; adres bez numeru budynku nie ma Historii adresu, a `UL.`, `OS.`, `AL.`, `PL.`, wielkość liter, kropki, wielokrotne spacje i zera wiodące się nie liczą.
-Nazwa ulicy zgadza się także wtedy, gdy krótsza jest końcem dłuższej od granicy słowa (`KOWALSKIEGO` i `UL. JANA KOWALSKIEGO`, ale nie `SKIEGO`), a miasto liczy się tylko wtedy, gdy mają je oba wiersze, bez kodu pocztowego i bez dzielnicy po myślniku (`Poznań-Jeżyce` to Poznań); zapis miasta, w którym nie wiadomo, co jest nazwą (`PL - 11-111 Miastko`), nie trafia.
+Nazwa ulicy zgadza się także wtedy, gdy krótsza jest końcem dłuższej od granicy słowa (`KOWALSKIEGO` i `UL. JANA KOWALSKIEGO`, ale nie `SKIEGO`), a miasto liczy się tylko wtedy, gdy mają je oba wiersze, bez kodu pocztowego i bez dzielnicy po myślniku (`Poznań-Jeżyce` to Poznań); zapis miasta, w którym nie wiadomo, co jest nazwą (`PL - 11-111 Miastko`), jest tym samym miastem tylko dla tego samego zapisu.
 _Avoid_: dopasowanie, historia zleceń
 
 ## Zlecenie skuteczne
