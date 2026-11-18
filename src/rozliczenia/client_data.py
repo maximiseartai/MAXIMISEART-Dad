@@ -63,15 +63,6 @@ class _ReadValues:
 READ_VALUES: Final = _ReadValues()
 
 
-class _OrderNumbers:
-    """Znacznik pola Logów Uruchomienia (``Annotated``), które z budowy niesie ``NUMER ZL.`` (Wpis raportu i problemy
-    Wpisania raportów): numer zlecenia może wyjść (ADR 0025), więc strażnik Logów sprawdza w nim tylko zakazane wartości
-    (``guarded_order_number``), a nie telefon ani ulicę. Wartość spoza samych cyfr ASCII strażnik maskuje jak każdy
-    tekst."""
-
-
-ORDER_NUMBERS: Final = _OrderNumbers()
-
 
 class ForbiddenColumn(Enum):
     """Kolumna, której wartość nigdy nie wychodzi z komputera taty; ``value`` to jej nazwa w uwadze technicznej."""
@@ -310,17 +301,6 @@ def guarded_number(forbidden: ForbiddenValues, value: int | float, place: str) -
     if (isinstance(value, int) or value.is_integer()) and _PHONE.search(text):
         return Guarded(Outgoing(_PHONE_MASK, _PASSED), ())
     return None
-
-
-def guarded_order_number(forbidden: ForbiddenValues, text: str, place: str) -> Guarded:
-    """``NUMER ZL.`` z pola ``ORDER_NUMBERS`` po strażniku: same cyfry ASCII mają maskę tylko zakazanej wartości (numer
-    równy wartości ``NUMER UMOWY`` z przeczytanego pliku), nigdy telefonu, bo numer zlecenia może wyjść (ADR 0025).
-    Inny tekst przechodzi przez strażnika jak każdy tekst (``guarded``)."""
-
-    if not (text.isascii() and text.isdigit()):
-        return guarded(forbidden, text, place)
-    masked, columns = _masked(_memory(forbidden), str.__str__(text))
-    return Guarded(Outgoing(masked, _PASSED), _notes(columns, place))
 
 
 def _masked(memory: _Words, text: str) -> tuple[str, set[ForbiddenColumn]]:

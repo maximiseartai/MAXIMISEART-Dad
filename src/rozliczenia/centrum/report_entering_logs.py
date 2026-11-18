@@ -19,7 +19,7 @@ from typing import Annotated, Final, Literal, assert_never
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from rozliczenia.activity_legend import problem_text
-from rozliczenia.client_data import MASKS, ORDER_NUMBERS
+from rozliczenia.client_data import MASKS
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts, EnteringSummary, SavedState
 from rozliczenia.worker_reports import (
@@ -62,11 +62,10 @@ class _Record(BaseModel):
 
 
 class LoggedReportEntry(_Record):
-    """Wpis raportu: numer zlecenia z treści maila w postaci z maila, także z zerem z przodu (pod strażnikiem tylko jako
-    ``NUMER ZL.``: ``ORDER_NUMBERS``), ``tak``/``nie`` albo powód jego braku i czynności (pod strażnikiem: telefon i ulica
-    zamaskowane)."""
+    """Wpis raportu: numer zlecenia z treści maila (pod strażnikiem: 9 cyfr bez zera z przodu maskuje jak telefon), ``tak``/``nie``
+    albo powód jego braku i czynności (pod strażnikiem: telefon i ulica zamaskowane)."""
 
-    number: Annotated[str, ORDER_NUMBERS]
+    number: str
     verdict: Literal["tak", "nie"] | None
     fault: VerdictFault | None
     activities: str
@@ -106,7 +105,7 @@ class LoggedUnreadableMail(_Record):
     arrived: datetime
     worker: str
     fault: SubjectFault
-    numbers: Annotated[list[str] | None, ORDER_NUMBERS] = None
+    numbers: list[str] | None = None
     """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
     pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, a takiego maila rdzeń nie czyta (ADR 0041), więc mail
     i jego ostrzeżenie dają w odtworzeniu różnicę."""
@@ -205,7 +204,7 @@ class LoggedOrderProblem(_Record):
     ]
     worker: str
     day: date
-    number: Annotated[str, ORDER_NUMBERS]
+    number: str
     fault: VerdictFault | None = None
     owner: str | None = None
     order_days: list[date] = []
@@ -233,7 +232,7 @@ class LoggedConflictProblem(_Record):
     arrived: datetime
     worker: str
     day: date
-    number: Annotated[str, ORDER_NUMBERS]
+    number: str
     entries: list[LoggedReportEntry]
 
 
@@ -245,7 +244,7 @@ class LoggedDescriptionProblem(_Record):
     kind: Literal["faulty_description"]
     worker: str
     day: date
-    number: Annotated[str, ORDER_NUMBERS]
+    number: str
     reasons: list[str]
 
 
@@ -419,7 +418,7 @@ class LoggedRequestedEntry(_Record):
     mail: str
     worker: str
     day: date
-    number: Annotated[str, ORDER_NUMBERS]
+    number: str
     verdict: Literal["tak", "nie"]
     activities: str
     at: datetime
@@ -582,9 +581,8 @@ class LoggedReports(_Record):
         masked = [entry.number for entry in _logged_entries(self) if not _digits(entry.number)]
         if masked:
             return Unreplayable(
-                f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}; Logi "
-                "sprzed ORDER_NUMBERS brały numer z zerem z przodu za telefon), więc odtworzenie nie wie, do którego "
-                "zlecenia szedł ten Wpis"
+                f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}: 9 cyfr "
+                "bez zera z przodu strażnik bierze za telefon), więc odtworzenie nie wie, do którego zlecenia szedł ten Wpis"
             )
         numbers = _numbers(self)
         for name, logged in (("pamięć wpisów", self.memory_before), ("decyzje „Zostaw moją”", self.kept)):

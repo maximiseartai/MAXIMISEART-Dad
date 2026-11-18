@@ -70,14 +70,13 @@ telefony na okres.
   numer tak się nie zaczyna, a Wykonawca pisze w raporcie `NUMER ZL.` z zerem
   z przodu. Które formy telefonu strażnik maskuje, a które nie, mówi tabela w
   sekcji „Telefon: formy i znane granice”.
-- **Pole numeru zlecenia nie ma maski telefonu** (18.11.2026): pole Logów,
-  które z budowy niesie `NUMER ZL.` (numer Wpisu raportu, numery maila z
-  błędem tematu, numer problemu Wpisania raportów i decyzji Wpisu na
-  życzenie, znacznik `ORDER_NUMBERS` w `client_data`), ma samymi cyframi tylko
-  maskę zakazanej wartości: numer równy wartości `NUMER UMOWY` z przeczytanego
-  pliku. W 40 Logach taty z Archiwum (17.11.2026) 11 Logów Wpisania raportów
-  miało w tych polach `[telefon]` w miejscu numeru z zerem z przodu, więc
-  odtworzenie nie wiedziało, do którego zlecenia szedł Wpis.
+- **`NUMER ZL.` z zerem z przodu nie jest telefonem** (18.11.2026): w 40
+  Logach taty z Archiwum (17.11.2026) 11 Logów Wpisania raportów miało
+  `[telefon]` w miejscu numeru Wpisu, który Wykonawca napisał z zerem z
+  przodu, więc odtworzenie nie wiedziało, do którego zlecenia szedł Wpis.
+  Numer Wpisu bez zera z przodu z 9 cyframi zostaje pod maską, bo ten sam
+  kształt ma telefon klienta na początku linii raportu, który rdzeń też czyta
+  jako Wpis.
 - **Strażnik u producenta, nie w kolejce.** Tam, gdzie powstaje tekst pliku
   Logów i każdej wysyłki (Logi, podgląd Zgłoszenia, Kontrola ilości, podgląd
   Uwagi taty), Centrum szuka w nim każdej zakazanej wartości z plików, które
@@ -351,7 +350,7 @@ technika, więc maska tych form zabierałaby wartości, które nie są telefonem
 Znane granice w drugą stronę, w których strażnik maskuje wartość, która nie
 jest telefonem: liczba z 9 cyframi bez `#` w komórce i w wolnym tekście, gdy
 nie zaczyna się od `0` (`NUMER ZL.` ma dziś 8 cyfr), i ciąg `48` z 9 cyframi w
-tekście (np. numer seryjny). Pole numeru zlecenia tej granicy nie ma.
+tekście (np. numer seryjny).
 
 Bez maski wychodzą ilość, kwota, `NUMER ZL.` z `#` (8 albo 9 cyfr), data, data
 z godziną, liczba z częścią ułamkową i liczba całkowita, która nie ma 9 cyfr
