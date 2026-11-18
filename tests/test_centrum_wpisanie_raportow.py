@@ -5313,6 +5313,27 @@ DROGI_PAMIECI_WPISANIA: Final = {
         ),
         "ruff SLF001",
     ),
+    "podklasa z własną pamięcią: class Pusta(EnteringMemory) z __init__ bez ReportState (#2133 r1 W1)": (
+        _pamiec_wpisania(
+            _PUSTA_PAMIEC + "from rozliczenia.report_entering import EnteringMemory\n\n\n"
+            "class Pusta(EnteringMemory):\n"
+            "    def __init__(self) -> None:\n"
+            "        self._saved = SavedState(None, OwnEntries.EMPTY)\n\n",
+            "    memory = Pusta()\n",
+        ),
+        'Cannot inherit from final class "EnteringMemory"',
+    ),
+    "podklasa, która zmienia pamięć z ReportState: super().__init__(state), potem rollout=None (#2133 r1 W1)": (
+        _pamiec_wpisania(
+            "from dataclasses import replace\n\nfrom rozliczenia.report_entering import EnteringMemory, ReportState\n\n\n"
+            "class BezWdrozenia(EnteringMemory):\n"
+            "    def __init__(self, state: ReportState) -> None:\n"
+            "        super().__init__(state)\n"
+            "        self._saved = replace(state.load(), rollout=None)\n\n",
+            "    memory = BezWdrozenia(state)\n",
+        ),
+        'Cannot inherit from final class "EnteringMemory"',
+    ),
 }
 ZNANE_LUKI_PAMIECI_WPISANIA: Final = {
     "typ zna źródło pamięci, nie jego plik: ReportState zbudowany obok pamięci pracy Centrum": _pamiec_wpisania(
@@ -5323,6 +5344,11 @@ ZNANE_LUKI_PAMIECI_WPISANIA: Final = {
         "from dataclasses import replace\n",
         "    memory = EnteringMemory(state)\n"
         '    object.__setattr__(memory, "_saved", replace(state.load(), rollout=None))\n',
+    ),
+    "typ zna tylko klasy z kodu, nie klasy z biegu: podklasa z type(nazwa, (EnteringMemory,), …)": _pamiec_wpisania(
+        _PUSTA_PAMIEC,
+        '    pusta = type("Pusta", (EnteringMemory,), {"__init__": lambda self, state: None, "_saved": SavedState(None, OwnEntries.EMPTY)})\n'
+        "    memory = pusta(state)\n",
     ),
 }
 
@@ -5341,8 +5367,11 @@ def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_prz
     | ``EnteringMemory(type(state.load())(None, OwnEntries.EMPTY))`` (#2125 r2 W1) | łapie (mypy ``arg-type``) | ``DROGI_PAMIECI_WPISANIA`` |
     | ``replace(pamięć, _saved=replace(state.load(), rollout=None))`` (#2125 r3 W1) | łapie (mypy ``type-var``) | ``DROGI_PAMIECI_WPISANIA`` |
     | ``pamięć._saved = …`` | łapie (ruff ``SLF001``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | podklasa z własnym ``__init__``: ``class Pusta(EnteringMemory)`` (#2133 r1 W1) | łapie (mypy ``final``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | podklasa, która zmienia pamięć po ``super().__init__(state)`` (#2133 r1 W1) | łapie (mypy ``final``) | ``DROGI_PAMIECI_WPISANIA`` |
     | ``EnteringMemory(ReportStateInMemory(SavedState(None, OwnEntries.EMPTY)))`` | przepuszcza; w Przypomnieniach testy zachowania | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
     | ``object.__setattr__(pamięć, "_saved", …)`` | przepuszcza | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
+    | podklasa z biegu: ``type("Pusta", (EnteringMemory,), {…})`` | przepuszcza | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
 
     ``ReportState`` zbudowany obok w Przypomnieniach o raporcie łapią testy zachowania pracy przypomnień:
     ``test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu`` (pamięć bez

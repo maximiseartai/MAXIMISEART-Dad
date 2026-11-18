@@ -51,7 +51,7 @@ from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from types import MappingProxyType
-from typing import Protocol, assert_never
+from typing import Protocol, assert_never, final
 
 from . import intermax_messages, onedrive_conflicts, raw_orders, register_file, workbook_files
 from . import report_entering_messages as messages
@@ -189,11 +189,13 @@ class ReportStateInMemory:
         self.result = result
 
 
+@final
 class EnteringMemory:
     """Pamięć Wpisania raportów, z której Wpisanie raportów i Przypomnienia o raporcie liczą dzień raportu. Powstaje
     tylko z ``ReportState.load`` (``StateUnreadable`` i ``DecisionsUnreadable`` jak tam), a jej wartość wychodzi tylko
     jako wejście odczytu okna (``report_inputs``) i fakty do pokazania, więc obie operacje liczą dzień raportu z tej
-    samej pamięci i żadna nie ma wartości, którą mogłaby zmienić. ``requested``: decyzja taty z kliknięcia Wpisu na
+    samej pamięci i żadna nie ma wartości, którą mogłaby zmienić; podklasa z własną pamięcią nie przechodzi mypy
+    (``final``). ``requested``: decyzja taty z kliknięcia Wpisu na
     życzenie, którą rdzeń dostaje razem z decyzjami z pamięci."""
 
     __slots__ = ("_saved",)
