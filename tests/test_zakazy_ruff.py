@@ -268,6 +268,15 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.worker_reports.ReadReport",
     ),
+    # Wejście odczytu okna spoza report_inputs: postacie z tabeli przypadków przy ZNANE_LUKI_WEJSCIA_ODCZYTU; pierwsza to
+    # Przypomnienia o raporcie z przeglądu #2059 (r1, W1), które budowały wejście same z OwnEntries.EMPTY.
+    "from rozliczenia.worker_reports import OwnEntries, ReportInputs": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.worker_reports.ReportInputs"),
+    "from ._model import ReportInputs": (SRC_CONFIG, ("rozliczenia", "worker_reports"), "rozliczenia.worker_reports._model.ReportInputs"),
+    "import rozliczenia.worker_reports as reports\ngiven = reports.ReportInputs(mails, addresses, orders, window, memory, kept, present, legend)": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.worker_reports.ReportInputs",
+    ),
 }
 
 
@@ -473,24 +482,24 @@ def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_pat
 
 
 _GLOWA_ODCZYTU = (
-    "from rozliczenia.worker_reports import OrderKey, ReportInputs\n"
-    "from rozliczenia.worker_reports._reading import read_window\n\n\n"
-    "def zlecenia(inputs: ReportInputs) -> frozenset[OrderKey]:\n"
+    "from rozliczenia.worker_reports import OrderKey\n"
+    "from rozliczenia.worker_reports._reading import WindowRead\n\n\n"
+    "def zlecenia(read: WindowRead) -> frozenset[OrderKey]:\n"
 )
 # Raporty wykonawców Wpisania raportów z odczytu okna bez nazwy ReadReport: moduł pakietu spoza właścicieli (sonda
 # przeglądu #2114 r1 W1, ``read_window(inputs).reports`` bez Wpisów na życzenie); odczyt → kod, który go odrzuca.
 DROGI_RAPORTOW_PRZEZ_ODCZYT = {
     "pole odczytu okna z Raportami wykonawców (#2114 r1 W1)": (
-        _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read_window(inputs).reports for entry in report.entries)\n",
+        _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read.reports for entry in report.entries)\n",
         "attr-defined",
     ),
     "prywatne pole odczytu okna z Raportami wykonawców Wpisania": (
-        _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read_window(inputs)._entering for entry in report.entries)\n",
+        _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read._entering for entry in report.entries)\n",
         "SLF001",
     ),
     "wzorzec klasy odczytu okna po nazwie pola (#2114 r2 W1)": (
-        _GLOWA_ODCZYTU.replace("import read_window", "import WindowRead, read_window")
-        + "    match read_window(inputs):\n"
+        _GLOWA_ODCZYTU
+        + "    match read:\n"
         + "        case WindowRead(_entering=entering):\n"
         + "            return frozenset(OrderKey(entry.number, report.day, report.worker) for report in entering for entry in report.entries)\n"
         + "    return frozenset()\n",
@@ -500,7 +509,7 @@ DROGI_RAPORTOW_PRZEZ_ODCZYT = {
 ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
     "zakaz zna tylko nazwę klasy, nie pola obiektów dopasowania: Raport wykonawcy Zlecenia dopisanego z raportu": (
         _GLOWA_ODCZYTU
-        + "    added = read_window(inputs).additions\n"
+        + "    added = read.additions\n"
         + "    return frozenset(OrderKey(entry.number, found.day, found.worker) for found in added for entry in found.report.entries)\n"
     ),
     "zakaz zna tylko nazwę klasy, nie zawężenie unii: wykluczenie pozostałych odczytów maila": (
@@ -528,7 +537,7 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     | import z pakietu: ``from .worker_reports import MailRead, ReadReport`` (Logi kliknięcia w ``report_entering.py``) | łapie | ``SAMPLES`` |
     | atrybut pakietu pod aliasem: ``isinstance(read, reports.ReadReport)`` | łapie | ``SAMPLES`` |
     | pole odczytu okna: ``read_window(inputs).reports`` (#2114 r1 W1) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
-    | prywatne pole odczytu okna: ``read_window(inputs)._entering`` | ruff ``SLF001`` | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
+    | prywatne pole odczytu okna: ``read._entering`` | ruff ``SLF001`` | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | wzorzec klasy po nazwie pola: ``case WindowRead(_entering=entering)`` (#2114 r2 W1; pozycyjny wiąże tylko wyniki odczytu) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | wykluczenie pozostałych odczytów: ``not isinstance(read, (ReadUnreadable, ReadStranger))`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
     | refleksja po nazwie: ``getattr(read, "entries", ())``, ``type(read).__name__`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
@@ -548,6 +557,59 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
         {opis: zgloszenia[opis] for opis in ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM}, "tests/test_zakazy_ruff.py (ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM)"
     )
 
+
+# Wejście odczytu okna spoza report_inputs, które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią i konstruktor z
+# typu wejścia w module spoza właścicieli oraz konstruktor w module z prawem do typu; opis → (sonda, kod).
+_CENTRUM_PROBE = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
+ZNANE_LUKI_WEJSCIA_ODCZYTU = {
+    "zakaz zna tylko nazwę klasy, nie kopię: wejście z report_inputs z pustą pamięcią przez dataclasses.replace": (
+        _CENTRUM_PROBE,
+        "import dataclasses\n\n"
+        "from rozliczenia.report_entering import report_inputs\n"
+        "from rozliczenia.worker_reports import OwnEntries\n\n"
+        "given = dataclasses.replace(report_inputs(*inputs), memory=OwnEntries.EMPTY)\n",
+    ),
+    "zakaz zna tylko nazwę klasy, nie jej typ z wartości: type(wejście)(…)": (
+        _CENTRUM_PROBE,
+        "from rozliczenia.report_entering import report_inputs\n"
+        "from rozliczenia.worker_reports import OwnEntries\n\n"
+        "given = report_inputs(*inputs)\n"
+        "again = type(given)(given.mails, given.addresses, given.orders, given.window, OwnEntries.EMPTY, frozenset(), given.present, given.legend)\n",
+    ),
+    "prawo do nazwy obejmuje plik: konstruktor w Przypomnieniach rdzenia, które biorą wejście jako pole": (
+        SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "_reminders.py",
+        "from ._model import OwnEntries, ReportInputs\n\n"
+        "given = ReportInputs(mails, addresses, orders, window, OwnEntries.EMPTY, frozenset(), present, legend)\n",
+    ),
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_przez_ruff() -> None:
+    """Wejście odczytu okna rdzenia raportów (``ReportInputs``) buduje w ``src/`` tylko ``report_entering.report_inputs``,
+    to samo dla Wpisania raportów i Przypomnień o raporcie, bo dzień raportu zależy od pamięci Wpisania: wejście
+    zbudowane obok, np. z ``OwnEntries.EMPTY`` (#2059 r1 W1), daje ``read_window`` inny dzień raportu niż kafelek
+    Wpisania. Typ wejścia biorą też odczyt okna, Przypomnienia rdzenia (``ReminderInputs.reports``) i ``__init__``
+    pakietu (``OWNERS``), więc zakaz zatrzymuje nazwę, nie samo wywołanie konstruktora.
+
+    | Postać | Zakaz | Próbka |
+    |---|---|---|
+    | import z pakietu w Centrum: ``from rozliczenia.worker_reports import OwnEntries, ReportInputs`` | łapie | ``SAMPLES`` |
+    | import względny w pakiecie: ``from ._model import ReportInputs`` | łapie | ``SAMPLES`` |
+    | atrybut pakietu pod aliasem: ``reports.ReportInputs(…)`` | łapie | ``SAMPLES`` |
+    | moduł z prawem do innej nazwy: ``report_reminders.py`` (``DEFAULT_REMINDERS``) z ``ReportInputs`` (#2059 r1 W1) | ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw`` z komunikatem zakazu | ``OWNERS`` |
+    | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``__init__``) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | kopia wejścia ze zmienioną pamięcią: ``dataclasses.replace(wejście, memory=…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | konstruktor z typu wartości: ``type(wejście)(…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+
+    Poza ``src/`` zakaz nie obowiązuje: testy rdzenia budują wejście same, a próba skrzynki raportów w ``tools/`` czyta
+    każdy mail bez pamięci Wpisania."""
+    zgloszenia = {
+        opis: [message for _, name, message in _banned_names("--stdin-filename", str(probe), "-", code=kod) if name != STAR]
+        for opis, (probe, kod) in ZNANE_LUKI_WEJSCIA_ODCZYTU.items()
+    }
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_WEJSCIA_ODCZYTU)")
 
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
@@ -584,12 +646,17 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/__init__.py": frozenset(
         {
             "rozliczenia.worker_reports._model.ReadReport",
+            "rozliczenia.worker_reports._model.ReportInputs",
             "rozliczenia.worker_reports._reminders.DEFAULT_REMINDERS",
             "rozliczenia.worker_reports._reminders.DEFAULT_SCHEDULE",
             "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
         }
     ),
-    "src/rozliczenia/worker_reports/_reading.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
+    "src/rozliczenia/worker_reports/_reading.py": frozenset(
+        {"rozliczenia.worker_reports._model.ReadReport", "rozliczenia.worker_reports._model.ReportInputs"}
+    ),
+    "src/rozliczenia/worker_reports/_reminders.py": frozenset({"rozliczenia.worker_reports._model.ReportInputs"}),
+    "src/rozliczenia/report_entering.py": frozenset({"rozliczenia.worker_reports.ReportInputs"}),
     "src/rozliczenia/worker_reports/_matching.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_corrections.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
@@ -605,8 +672,8 @@ OWNERS: dict[str, frozenset[str]] = {
 SHARED_PROBE = "import os\nsystem = os.name\n"
 
 
-def _banned_names(*arguments: str, code: str | None = None, cwd: Path = ROOT) -> list[tuple[str, str]]:
-    """``(plik, nazwa)`` każdego ``TID251`` i każdego ``import *`` (``F403``, nazwa ``F403``), które ``ruff check`` z
+def _banned_names(*arguments: str, code: str | None = None, cwd: Path = ROOT) -> list[tuple[str, str, str]]:
+    """``(plik, nazwa, komunikat)`` każdego ``TID251`` i każdego ``import *`` (``F403``, nazwa ``F403``), które ``ruff check`` z
     ``--ignore-noqa`` zgłasza w ``cwd``. Reguły wybiera konfiguracja jak w CI: ``--select`` z wiersza poleceń zastąpiłby
     jej ``ignore``, a to też zwolnienie z ``TID251``."""
     result = subprocess.run(
@@ -623,6 +690,7 @@ def _banned_names(*arguments: str, code: str | None = None, cwd: Path = ROOT) ->
         (
             Path(finding["filename"]).resolve().relative_to(cwd.resolve()).as_posix(),
             STAR if finding["code"] == STAR else finding["message"].split("`")[1],
+            finding["message"],
         )
         for finding in json.loads(result.stdout)
         if finding["code"] in ("TID251", STAR)
@@ -653,7 +721,7 @@ def test_konfiguracja_ruff_zwalnia_z_tid251_tylko_wlascicieli(tmp_path: Path) ->
         probe.parent.mkdir(parents=True, exist_ok=True)
         probe.write_text(SHARED_PROBE, encoding="utf-8")
 
-    reported = {name for name, banned in _banned_names(cwd=tmp_path) if banned == "os.name"}
+    reported = {name for name, banned, _ in _banned_names(cwd=tmp_path) if banned == "os.name"}
 
     assert sorted(checked - reported) == sorted(OWNERS), (
         "z TID251 konfiguracja ruff zwalnia tylko pliki z OWNERS w tests/test_zakazy_ruff.py: prawo właściciela to "
@@ -670,11 +738,14 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
     path = ROOT / owner
     probe = path.with_name("sonda_zakazu.py")
 
-    found = {banned for _, banned in _banned_names("--stdin-filename", str(probe), "-", code=path.read_text(encoding="utf-8"))}
+    found = {banned: message for _, banned, message in _banned_names("--stdin-filename", str(probe), "-", code=path.read_text(encoding="utf-8"))}
 
-    assert sorted(found) == sorted(OWNERS[owner]), (
-        f"{owner} używa zakazanych nazw {sorted(found)}, a jego prawo w OWNERS to {sorted(OWNERS[owner])}: inną nazwę "
-        "bierz przez jej właściciela, a nazwę, której plik już nie używa, usuń z OWNERS"
+    assert sorted(found) == sorted(OWNERS[owner]), "\n".join(
+        [
+            f"{owner} używa zakazanych nazw {sorted(found)}, a jego prawo w OWNERS to {sorted(OWNERS[owner])}: inną nazwę "
+            "bierz przez jej właściciela, a nazwę, której plik już nie używa, usuń z OWNERS",
+            *(f"- {found[banned]}" for banned in sorted(found.keys() - OWNERS[owner])),
+        ]
     )
 
 
@@ -689,7 +760,7 @@ RELEASE_CONTENT_PROBE = "from rozliczenia.settlement_mailing import DEFAULT_SETT
 def _release_content_findings(*arguments: str, code: str | None = None) -> list[str]:
     """``plik: nazwa`` każdego zakazu z ``RELEASE_CONTENT``, który ``ruff check`` z ``--ignore-noqa`` zgłasza."""
 
-    return [f"{path}: {name}" for path, name in _banned_names(*arguments, code=code) if name in RELEASE_CONTENT]
+    return [f"{path}: {name}" for path, name, _ in _banned_names(*arguments, code=code) if name in RELEASE_CONTENT]
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
