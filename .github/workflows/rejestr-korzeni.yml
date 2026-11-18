@@ -9,7 +9,8 @@ name: Rejestr korzeni
 # cron is in hour 6 in Warsaw on that day (Poland changes the time on a Sunday, so a Monday has one offset). The other
 # cron ends with a line "REJESTR KORZENI POMINIĘTY". A manual run (workflow_dispatch) has no cron and always measures.
 # Cost: GraphQL pages of the registry scan with the HTML of every body, no render per verdict; the budget of
-# GITHUB_TOKEN (1000 GraphQL points an hour per repository) is in the docstring of tools/lib/rejestr_korzeni.py.
+# GITHUB_TOKEN (1000 GraphQL points an hour per repository) is in the docstring of tools/lib/rejestr_korzeni.py. The
+# ast-grep rules on the lines added by the last 20 merged PRs took 144 s on a Mac on 18.11.2026.
 on:
   schedule:
     - cron: '17 5 * * 1'
@@ -40,10 +41,25 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      # Standard library only, so the runner's python3 runs it as is.
+      - id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      # The firings of the rules on the last merged PRs need ast-grep. Its pin comes from pyproject.toml (the dev extra,
+      # as in CI), and -r installs only the dependencies, so no build of the project runs.
+      - name: Install ast-grep
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: uv pip install --system --python "$PYTHON" -r pyproject.toml --extra dev
+
       - name: Update the issue "Rejestr korzeni" with the last full week
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           CRON: ${{ github.event.schedule }}
-        run: python3 tools/rejestr_korzeni_tydzien.py --cron "$CRON"
+        run: python tools/rejestr_korzeni_tydzien.py --cron "$CRON"
