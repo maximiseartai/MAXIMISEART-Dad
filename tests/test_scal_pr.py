@@ -25,7 +25,7 @@ from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
 
-import bramka_idiomu
+import bramka_straznika
 import czasy_ci
 import github as klient_github
 import limit_rund
@@ -2669,10 +2669,11 @@ def test_skan_rejestru_czyta_tylko_pr_zmienione_od_wdrozenia(tmp_path: Path, mon
     assert len(github._log("graphql.jsonl")) == 1, github._log("graphql.jsonl")
 
 
-# Warunek merge'a z polem Idiom: (ADR 0036, „Warunek merge'a”): dowód tools/na_scalonych_pr.py --regula-id z regułą
-# z HEAD PR na każdym przypadku tego id z historii pól Idiom:. Dowód zastępuje atrapa ``FAKE_PROOF``: zapisuje swoje
-# argumenty do ``dowody.jsonl`` w katalogu atrapy gh i po ``czeka`` sekundach dla swojej reguły kończy się kodem i linią
-# z ``dowod.json``; prawdziwy dowód, także odmowę bez reguły na HEAD, sprawdza tests/test_na_scalonych_pr.py.
+# Warunek 5 (ADR 0042): każde Ważne werdyktu FAIL ma w swoim bloku sekcji ``## Korzeń`` linię ``Strażnik:``, a dowód
+# tools/na_scalonych_pr.py --straznik przechodzi. Dowód zastępuje atrapa ``FAKE_PROOF``: zapisuje swoje argumenty do
+# ``dowody.jsonl`` w katalogu atrapy gh i po ``czeka`` sekundach dla swojego selektora kończy się kodem i linią
+# z ``dowod.json``; prawdziwy dowód sprawdzają tests/test_straznik.py i tests/test_na_scalonych_pr.py. Warunek wdraża
+# ADR 0042 (``_deploy_guard``), więc w innych testach tego pliku go nie ma.
 FAKE_PROOF = """\
 import json, pathlib, sys, time
 
@@ -2684,46 +2685,45 @@ time.sleep(answer.get("czeka", {}).get(sys.argv[2], 0))
 print(answer["linia"])
 sys.exit(answer["kod"])
 """
-PROOF_OK = (0, "DOWÓD OK | zakazane-wywolanie | złapane 2/2 | FP 0 w 0 z 20 PR (0%) | main 0")
-PROOF_REFUSED = (1, "DOWÓD ODMOWA | zakazane-wywolanie | złapane 1/2 | FP 0 w 0 z 20 PR (0%) | main 0")
-PROOF_WITHOUT_RULE = (1, "DOWÓD ODMOWA | zakazane-wywolanie | reguły o id zakazane-wywolanie nie ładuje konfiguracja ast-grep repo; połóż ją w reguly-ast-grep/")
+GUARD = korzenie_pr.GUARD.removeprefix("Strażnik: ")
+PROOF_OK = (0, f"DOWÓD OK | {GUARD} | wykryte 1/1")
+PROOF_REFUSED = (1, f"DOWÓD ODMOWA | {GUARD} | wykryte 0/1")
 
 
-def _idiom_verdict(name: str) -> str:
-    return "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY[f"wazne-idiom-{name}"]
+def _deploy_guard(github: MergeGitHub, when: str) -> None:
+    """Wdrożenie warunku 5 na ``main`` w ``origin``: commit z ADR 0042 (``bramka_straznika.MARKER``) z datą ``when``."""
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("GIT_COMMITTER_DATE", when)
+        github.push_main({bramka_straznika.MARKER: "# ADR 0042: Strażnik przy pierwszym Ważnym\n"})
 
 
-def _idiom_gate(
-    tmp_path: Path, verdict: str, *, registry: list[dict[str, object]] | None = None, proof: tuple[int, str] = PROOF_OK
-) -> tuple[MergeGitHub, str, subprocess.CompletedProcess[str]]:
-    """``--bez-merge`` PR 1 z ``_idiom_pull``."""
-
-    github, head = _idiom_pull(tmp_path, verdict, registry=registry, proof=proof)
-    return github, head, github.run("1", "--bez-merge")
-
-
-def _idiom_pull(
+def _guard_pull(
     tmp_path: Path,
+    body: str,
     *verdicts: str,
-    registry: list[dict[str, object]] | None = None,
     proof: tuple[int, str] = PROOF_OK,
     passed: bool = True,
+    deployed: str = GATE_BEFORE_VERDICTS,
     gate: str = GATE_BEFORE_VERDICTS,
+    root: bool = False,
 ) -> tuple[MergeGitHub, str]:
-    """PR 1 z werdyktami ``FAIL`` z polem Idiom (``_idiom_verdict``) ``verdicts`` na starszym commicie,
-    sekcją ``## Korzeń`` i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, rejestr podaje
-    PR-y ``registry``, a dowód kończy się ``proof``."""
+    """PR 1 z werdyktami ``verdicts`` (domyślnie ``FAIL_W1``) na starszym commicie, opisem ``body`` z ``korzenie_pr.OPISY``
+    i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, warunek 5 w chwili ``deployed``, a dowód
+    kończy się ``proof``; z ``root`` PR korzenia #1436 jest scalony z linią ``Korzeń z #1``."""
 
-    files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF}
-    github = MergeGitHub(tmp_path, {**files, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=gate)
+    files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}
+    github = MergeGitHub(tmp_path, files, started=gate)
     _deploy_template(github)
+    _deploy_guard(github, deployed)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
-    github.update(1, body=korzenie_pr.OPISY["szczebel-c"])
-    github.graphql = registry or []
-    github._save()
+    github.update(1, body=korzenie_pr.OPISY[body])
+    if root:
+        github.pulls[str(korzenie_pr.ROOT_PR)] = _pr_view(korzenie_pr.ROOT_PR, OLD, state="MERGED", body=korzenie_pr.PR_KORZENIA["ten-kod"], baseRefName="main")
+        github._save()
     (github.bin / "dowod.json").write_text(json.dumps({"kod": proof[0], "linia": proof[1]}), encoding="utf-8")
-    for body in verdicts:
-        github.comment(1, body.format(commit=OLD))
+    for verdict in verdicts or (FAIL_W1,):
+        github.comment(1, verdict.format(commit=OLD))
     if passed:
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     return github, head
@@ -2734,93 +2734,76 @@ def _proofs(github: MergeGitHub) -> list[list[str]]:
 
 
 def _proof_arguments(head: str, *cases: str) -> list[str]:
-    return ["--regula-id", "zakazane-wywolanie", "--z-commita", head, *(part for case in cases for part in ("--wazne", case))]
+    return ["--straznik", GUARD, "--z-commita", head, *(part for case in cases for part in ("--wazne", case))]
 
 
 @pytest.mark.parametrize(
-    "proof",
-    [PROOF_WITHOUT_RULE, PROOF_REFUSED, (0, "DOWÓD ZAWIESZONY"), (1, PROOF_OK[1])],
-    ids=["bez-reguly-na-head", "dowod-odmawia", "dowod-bez-linii-dowod-ok", "dowod-ok-z-kodem-bledu"],
+    ("body", "root", "fragment"),
+    [
+        ("szczebel-c", False, "korzeń: W1 r1: brak pola „Strażnik: <selektor>” na końcu bloku: pytest tests/<plik>.py::<test> …, mypy, ruff"),
+        ("wyrwany", True, "korzeń: W1 r1: brak pola „Strażnik: <selektor>” na końcu bloku"),
+        ("straznik-spoza-listy", False, "korzeń: W1 r1: „Strażnik: npm test” to nie selektor strażnika z listy"),
+        ("straznik-i-linia-po", False, "korzeń: W1 r1: po „Strażnik:” nic więcej, a jest linia „linia 2”"),
+    ],
+    ids=["dowod-autora-zamiast-straznika", "wyrwany-bez-straznika", "selektor-spoza-listy", "linia-po-strazniku"],
 )
-def test_wazne_z_polem_idiom_nie_scala_sie_bez_dowodu_ok_reguly_z_head(tmp_path: Path, proof: tuple[int, str]) -> None:
-    """Próbka ``ZNANE_LUKI`` nigdy nie zastępuje reguły (ADR 0036), a dowód przechodzi tylko kodem 0 i linią ``DOWÓD OK``."""
+def test_wazne_bez_straznika_z_listy_nie_scala_sie_i_dowod_nie_biegnie(tmp_path: Path, body: str, root: bool, fragment: str) -> None:
+    """Sonda (a) z ADR 0042: Ważne z samym ``Dowód:`` autora scalało się na ``main`` sprzed warunku 5, a teraz blok
+    każdego Ważnego kończy linia ``Strażnik:`` z selektorem z listy, także po ``Wyrwany w #M``."""
 
-    github, head, answered = _idiom_gate(tmp_path, _idiom_verdict("drugie-wystapienie"), proof=proof)
+    github, head = _guard_pull(tmp_path, body, root=root)
+
+    answered = github.run("1", "--bez-merge")
 
     last = _last_line(answered)
-    assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | idiom: zakazane-wywolanie: Ważne 1/W1/r1, 1553/W1/r2 ma pole Idiom: zakazane-wywolanie"), answered.stdout
-    assert f"dowód reguły nie przeszedł (kod {proof[0]}): {proof[1]}; dodaj albo popraw regułę ast-grep o id zakazane-wywolanie" in last, last
-    assert _proofs(github) == [_proof_arguments(head, "1/W1/r1", "1553/W1/r2")]
+    assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | "), answered.stdout + answered.stderr
+    assert fragment in last, last
+    assert _proofs(github) == []
 
 
-def test_wazne_z_polem_idiom_scala_sie_po_dowodzie_na_kazdym_przypadku_z_historii_pol_idiom(tmp_path: Path) -> None:
-    """Przypadki dowodu to Ważne tego PR z polem, Ważne z jego ``jak`` i każde Ważne z polem tego id w innym PR rejestru
-    razem z jego ``jak``; Ważne z polem innej reguły do dowodu nie należy."""
-
-    registry = [
-        _node([(_idiom_verdict("drugie-wystapienie"), AFTER_DEPLOYMENT)], number=chwasty.OTHER),
-        _node([(_idiom_verdict("innej-reguly"), AFTER_DEPLOYMENT)], number=1437),
-    ]
-
-    github, head, answered = _idiom_gate(tmp_path, _idiom_verdict("ucieczka"), registry=registry)
-
-    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
-    assert _proofs(github) == [_proof_arguments(head, "1/W1/r1", f"{chwasty.OTHER}/W1/r1", "1553/W1/r2")]
-    # Rejestr czyta tylko PR-y z frazą pola tej reguły, więc jego koszt nie rośnie ze wszystkimi PR-ami od wdrożenia.
-    assert [cast(dict[str, str], query)["q"].partition(" sort:")[2] for query in github._log("graphql.jsonl")] == ['created-asc "Idiom: zakazane-wywolanie"']
-
-
-def test_kazda_regula_pr_dowodzi_na_przypadkach_z_wlasnego_wyszukiwania_rejestru(tmp_path: Path) -> None:
-    """PR z Ważnymi dwóch reguł czyta rejestr frazą każdej z nich, a dowód każdej reguły dostaje przypadki ze swojego
-    wyszukiwania: przypadek z innego PR rejestru, który ma tylko pole drugiej reguły, nie znika z jej dowodu, a dowód
-    pierwszej go nie widzi. Bramka korzenia wdrożona po werdyktach nie wymaga bloku drugiej rundy."""
-
-    other = 1437
-    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), _idiom_verdict("innej-reguly"), gate=GATE_AFTER_VERDICTS)
-    github.graphql = [
-        _node([(_idiom_verdict("ucieczka"), AFTER_DEPLOYMENT)], number=chwasty.OTHER),
-        _node([(_idiom_verdict("innej-reguly"), AFTER_DEPLOYMENT)], number=other),
-    ]
-    github._save()
+@pytest.mark.parametrize(("body", "root"), [("straznik-c", False), ("wyrwany-ze-straznikiem", True)], ids=["szczebel-c", "wyrwany-w-pr-korzenia"])
+def test_wazne_ze_straznikiem_scala_sie_po_dowodzie_ok_z_kodu_bazy(tmp_path: Path, body: str, root: bool) -> None:
+    github, head = _guard_pull(tmp_path, body, root=root)
 
     answered = github.run("1", "--bez-merge")
 
     assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
-    assert _proofs(github) == [
-        ["--regula-id", "inna-regula", "--z-commita", head, *(part for case in ("1/W1/r2", f"{other}/W1/r1", "1553/W2/r1") for part in ("--wazne", case))],
-        _proof_arguments(head, "1/W1/r1", f"{chwasty.OTHER}/W1/r1", "1553/W1/r2"),
-    ]
-    assert sorted(cast(dict[str, str], query)["q"].partition(" sort:")[2] for query in github._log("graphql.jsonl")) == [
-        'created-asc "Idiom: inna-regula"',
-        'created-asc "Idiom: zakazane-wywolanie"',
-    ]
+    assert _proofs(github) == [_proof_arguments(head, "1/W1/r1")]
 
 
-@pytest.mark.parametrize(("verdict", "cases"), [("drugie-wystapienie", [("1/W1/r1", "1553/W1/r2")]), ("bez-reguly", [])], ids=["drugie-wystapienie", "bez-reguly"])
-def test_pole_idiom_bez_reguly_niczego_nie_wymaga_a_drugie_wystapienie_dowodzi_ze_wczesniejszym_waznym(tmp_path: Path, verdict: str, cases: list[tuple[str, ...]]) -> None:
-    github, head, answered = _idiom_gate(tmp_path, _idiom_verdict(verdict))
+@pytest.mark.parametrize("proof", [PROOF_REFUSED, (0, "DOWÓD ZAWIESZONY"), (1, PROOF_OK[1])], ids=["dowod-odmawia", "bez-linii-dowod-ok", "dowod-ok-z-kodem-bledu"])
+def test_strażnik_bez_dowodu_ok_nie_scala_sie(tmp_path: Path, proof: tuple[int, str]) -> None:
+    """Sonda (b) z ADR 0042 na bramce: strażnik, którego dowód nie przechodzi, nie scala PR, a przechodzi tylko kod 0
+    z ostatnią linią ``DOWÓD OK``."""
 
-    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
-    assert _proofs(github) == [_proof_arguments(head, *found) for found in cases]
-
-
-@pytest.mark.parametrize("klass", ["typ", "test-klasy"])
-def test_pole_idiom_klasy_typu_albo_testu_trafia_na_pr_a_scalenie_po_poprawce_nie_zada_reguly(tmp_path: Path, klass: str) -> None:
-    """Ważne z klasą ``typ`` albo ``test-klasy`` (ADR 0036, „Idiom bez reguły”) ``--werdykt`` publikuje, a bramka po
-    ``PASS`` poprawki nie uruchamia dowodu reguły."""
-
-    github, first = _idiom_pull(tmp_path, passed=False)
-    failed, passed = tmp_path / "runda-1.md", tmp_path / "runda-2.md"
-    failed.write_text(_idiom_verdict(klass).format(commit=first) + "\n", encoding="utf-8")
-    published = [github.run("1", "--werdykt", str(failed))]
-    github.reload()
-    head = github.push_pull(1, {"kod/inne.py": "INNE: Final = 1\n"})
-    passed.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
-    published.append(github.run("1", "--werdykt", str(passed)))
+    github, head = _guard_pull(tmp_path, "straznik-c", proof=proof)
 
     answered = github.run("1", "--bez-merge")
 
-    assert [_last_line(run).split(" | ")[:3] for run in published] == [["WERDYKT OK", f"#1 {first[:7]}", "FAIL"], ["WERDYKT OK", f"#1 {head[:7]}", "PASS"]]
+    last = _last_line(answered)
+    arguments = " ".join(_proof_arguments(head, "1/W1/r1"))
+    assert answered.returncode == 1 and last == (
+        f"SCAL ODMOWA | #1 {head[:7]} | strażnik: Ważne 1/W1/r1 ma Strażnik: {GUARD}, a jego dowód nie przeszedł (kod {proof[0]}): {proof[1]}; "
+        f"popraw strażnika albo wybierz inny z listy i sprawdź go poleceniem tools/na_scalonych_pr.py {arguments}"
+    ), last
+
+
+def test_wazne_z_tym_samym_strażnikiem_maja_jeden_dowod(tmp_path: Path) -> None:
+    github, head = _guard_pull(tmp_path, "dwa-z-tym-samym-straznikiem", FAIL_TWO_SAME)
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _proofs(github) == [_proof_arguments(head, "1/W1/r1", "1/W2/r1")]
+
+
+def test_watek_z_werdyktem_sprzed_wdrozenia_warunku_5_konczy_z_dowodem_autora_bez_dowodu_strażnika(tmp_path: Path) -> None:
+    """Decyzja Q20 ADR 0031 dla warunku 5: wątek, którego pierwszy werdykt powstał przed ADR 0042, kończy po staremu."""
+
+    github, head = _guard_pull(tmp_path, "szczebel-c", deployed=GATE_AFTER_VERDICTS)
+
+    answered = github.run("1", "--bez-merge")
+
     assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
     assert _proofs(github) == []
 
@@ -2999,95 +2982,115 @@ def test_status_odrzucony_przez_github_konczy_sie_bledem_z_odpowiedzia_githuba(t
     assert _last_line(answered) == f"STATUS FAIL | #1 {head[:7]} | success niewysłany: gh: Validation Failed (HTTP 422)"
 
 
-def _idiom_refusal(head: str, proof: tuple[int, str]) -> str:
-    arguments = " ".join(_proof_arguments(head, "1/W1/r1", "1553/W1/r2"))
-    return (
-        f"idiom: zakazane-wywolanie: Ważne 1/W1/r1, 1553/W1/r2 ma pole Idiom: zakazane-wywolanie, a dowód reguły nie przeszedł (kod {proof[0]}): {proof[1]}; "
-        f"dodaj albo popraw regułę ast-grep o id zakazane-wywolanie i sprawdź ją poleceniem tools/na_scalonych_pr.py {arguments}"
-    )
+def _guard_proofs_line(github: MergeGitHub, tmp_path: Path) -> list[dict[str, object]]:
+    """Linie JSON joba ``dowod`` (``--dowod-straznikow``) dla PR 1."""
+
+    output = tmp_path / "dowody.jsonl"
+    answered = _status(github, "1", "--dowod-straznikow", str(output))
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    return [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
 
 
 @pytest.mark.parametrize(
-    ("proof", "passed", "fields", "state", "reasons", "proved"),
+    ("proof", "fields", "entry"),
     [
-        (PROOF_WITHOUT_RULE, True, {}, "failure", ["idiom"], True),
-        (PROOF_WITHOUT_RULE, False, {}, "failure", ["werdykt", "idiom"], True),
-        (PROOF_OK, True, {}, "success", [], True),
-        (PROOF_OK, False, {}, "pending", ["werdykt"], True),
-        (None, True, {}, "pending", ["rejestr"], False),
-        (PROOF_WITHOUT_RULE, True, {"isDraft": True}, "failure", ["szkic"], False),
+        (PROOF_OK, {}, {"pominiety": False, "przyczyny": []}),
+        (PROOF_REFUSED, {}, {"pominiety": False, "przyczyny": [{"tekst": "strażnik: Ważne 1/W1/r1 ma Strażnik: ", "oczekuje": False}]}),
+        (PROOF_OK, {"isDraft": True}, {"pominiety": True, "przyczyny": []}),
+        (PROOF_OK, {"baseRefName": "wydanie"}, {"pominiety": True, "przyczyny": []}),
     ],
-    ids=["bez-reguly-na-head", "bez-reguly-na-head-i-bez-werdyktu", "dowod-ok", "dowod-ok-bez-werdyktu", "github-bez-rejestru", "szkic-bez-dowodu"],
+    ids=["dowod-ok", "dowod-odmawia", "szkic-bez-dowodu", "pr-do-innej-galezi-bez-dowodu"],
 )
-def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
-    tmp_path: Path, proof: tuple[int, str] | None, passed: bool, fields: dict[str, object], state: str, reasons: list[str], proved: bool
+def test_job_dowodu_dopisuje_warunek_5_dla_head_a_przy_odmowie_warunkow_1_4_go_pomija(
+    tmp_path: Path, proof: tuple[int, str], fields: dict[str, object], entry: dict[str, object]
 ) -> None:
-    """Status „Werdykt i bramka” wymaga reguły z pola ``Idiom:`` jak merge, więc merge z pominięciem ``tools/scal_pr.py``
-    jej nie omija. Brak reguły to ``failure`` także przy CI albo werdykcie w toku, a GitHub bez rejestru korzeni to
-    ``pending``; warunki 1–4 z ``failure`` dowodu nie uruchamiają."""
-
-    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), proof=proof or PROOF_OK, passed=passed)
+    github, head = _guard_pull(tmp_path, "straznik-c", proof=proof)
     github.update(1, **fields)
-    if proof is None:
-        (github.bin / "rejestr_odrzucany").write_text("", encoding="utf-8")
 
-    answered = _status(github, "1", "--status")
+    [written] = _guard_proofs_line(github, tmp_path)
 
-    expected = {
-        "idiom": _idiom_refusal(head, PROOF_WITHOUT_RULE),
-        "werdykt": NO_PASS.format(head=head),
-        "szkic": "PR jest szkicem",
-        "rejestr": "idiom: GitHub nie podał rejestru korzeni (",
-    }
-    last = _last_line(answered)
-    prefix = f"STATUS {state} | #1 {head[:7]} | {'oczekuje: ' if state == 'pending' else ''}"
-    assert answered.returncode == 0 and last.startswith(prefix), answered.stdout + answered.stderr
-    description = last.removeprefix(prefix)
-    if state == "success":
-        assert description == "warunki 1–5 tools/scal_pr.py spełnione"
-    found = [name for name, reason in expected.items() if reason in description]
-    assert sorted(found) == sorted(reasons), description
-    assert ("idiom:" in description) is any(name in {"idiom", "rejestr"} for name in reasons), description
-    assert _proofs(github) == ([_proof_arguments(head, "1/W1/r1", "1553/W1/r2")] if proved else [])
+    reasons = cast(list[dict[str, object]], written.pop("przyczyny"))
+    expected = cast(list[dict[str, object]], entry["przyczyny"])
+    assert written == {"numer": 1, "sha": head, "pominiety": entry["pominiety"]}
+    assert [(str(one["tekst"]).startswith(str(want["tekst"])), one["oczekuje"]) for one, want in zip(reasons, expected, strict=True)] == [(True, want["oczekuje"]) for want in expected]
+    assert len(_proofs(github)) == (0 if entry["pominiety"] else 1)
+    assert _statuses(github) == []
+
+
+@pytest.mark.parametrize(
+    ("proofs", "job", "state", "description"),
+    [
+        ([{"numer": 1, "sha": "{head}", "pominiety": False, "przyczyny": []}], "success", "success", "warunki 1–5 tools/scal_pr.py spełnione"),
+        ([{"numer": 1, "sha": "{head}", "pominiety": False, "przyczyny": [{"tekst": "strażnik: Ważne 1/W1/r1 nie przeszedł", "oczekuje": False}]}], "success", "failure", "strażnik: Ważne 1/W1/r1 nie przeszedł"),
+        ([{"numer": 1, "sha": "{head}", "pominiety": False, "przyczyny": [{"tekst": "strażnik: GitHub nie wyrenderował", "oczekuje": True}]}], "success", "pending", "oczekuje: strażnik: GitHub nie wyrenderował"),
+        ([{"numer": 1, "sha": OLD, "pominiety": False, "przyczyny": []}], "success", "pending", "oczekuje: strażnik: dowód policzony dla innego HEAD niż {short}, policzy go następny run"),
+        ([{"numer": 1, "sha": "{head}", "pominiety": True, "przyczyny": []}], "success", "pending", "oczekuje: strażnik: dowód pominięty w tym runie, bo warunki 1–4 odmawiały; policzy go następny run"),
+        ([{"numer": 2, "sha": "{head}", "pominiety": False, "przyczyny": []}], "failure", "failure", "strażnik: job dowod nie podał wyniku dla #1 (wynik joba: failure), uruchom ponownie"),
+        (None, "", "failure", "strażnik: --status bierze warunek 5 z joba dowod workflow werdykt-i-bramka.yml w zmiennej DOWODY_STRAZNIKOW, a jej nie ma"),
+    ],
+    ids=["dowod-ok", "dowod-odmawia", "dowod-czeka-na-github", "dowod-innego-head", "dowod-pominiety", "bez-wyniku-dla-pr", "bez-zmiennej"],
+)
+def test_status_bierze_warunek_5_z_joba_dowodu_dla_tego_head_i_sam_go_nie_liczy(
+    tmp_path: Path, proofs: list[dict[str, object]] | None, job: str, state: str, description: str
+) -> None:
+    """Dowód strażnika wykonuje kod PR, a job statusu ma token z prawem zapisu statusów (#1912 r1), więc ``--status``
+    bierze warunek 5 z joba ``dowod`` przez zmienną i sam dowodu nie uruchamia."""
+
+    github, head = _guard_pull(tmp_path, "straznik-c")
+    environment = {**RUN, scal_pr.GUARD_JOB: job}
+    if proofs is not None:
+        environment[scal_pr.GUARD_PROOFS] = "\n".join(json.dumps(one).replace("{head}", head) for one in proofs)
+
+    answered = _run_from(github, github.checkout, "1", "--status", environment=environment)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"STATUS {state} | #1 {head[:7]} | {description.format(short=head[:7])}"
+    assert _proofs(github) == []
     assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == [state]
 
 
-def test_dowody_regul_pr_ktore_nie_koncza_sie_we_wspolnym_limicie_daja_failure_z_przyczyna_zamiast_zabitego_joba(tmp_path: Path) -> None:
-    """Dowody wszystkich reguł PR mają razem ``PROOF_TIMEOUT_S``, więc status ma przyczynę każdej reguły, zanim limit
-    joba statusu zabije run bez statusu: dowód pierwszej reguły zużywa cały limit, więc dowód drugiej, który skończyłby
-    się od razu, już nie startuje. Bramka korzenia wdrożona po werdyktach nie wymaga bloku drugiej rundy."""
+def test_dowody_strażnikow_pr_ktore_nie_koncza_sie_we_wspolnym_limicie_daja_przyczyne_zamiast_zabitego_joba(tmp_path: Path) -> None:
+    """Dowody wszystkich strażników PR mają razem ``PROOF_TIMEOUT_S``, więc job ``dowod`` ma przyczynę, zanim jego limit
+    zabije run: dowód, który trwa dłużej, kończy się przyczyną z tym limitem."""
 
-    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), _idiom_verdict("innej-reguly"), gate=GATE_AFTER_VERDICTS)
-    (github.bin / "dowod.json").write_text(json.dumps({"kod": 0, "linia": PROOF_OK[1], "czeka": {"inna-regula": 60}}), encoding="utf-8")
-    _tool_on_main(github, "tools/lib/bramka_idiomu.py", (f"PROOF_TIMEOUT_S = {bramka_idiomu.PROOF_TIMEOUT_S}", "PROOF_TIMEOUT_S = 2"))
+    github, head = _guard_pull(tmp_path, "straznik-c")
+    (github.bin / "dowod.json").write_text(json.dumps({"kod": 0, "linia": PROOF_OK[1], "czeka": {GUARD: 60}}), encoding="utf-8")
+    _tool_on_main(github, "tools/lib/bramka_straznika.py", (f"PROOF_TIMEOUT_S = {bramka_straznika.PROOF_TIMEOUT_S}", "PROOF_TIMEOUT_S = 2"))
 
-    answered = _status(github, "1", "--status")
+    answered = github.run("1", "--bez-merge")
 
-    late = "dowody reguł tego PR nie skończyły się w 2 s, uruchom ponownie"
-    assert answered.returncode == 0 and _last_line(answered) == f"STATUS failure | #1 {head[:7]} | idiom: inna-regula: {late}; idiom: zakazane-wywolanie: {late}", answered.stdout
-    assert [arguments[1] for arguments in _proofs(github)] == ["inna-regula"]
+    assert answered.returncode == 1, answered.stdout
+    assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | strażnik: {GUARD}: dowody strażników tego PR nie skończyły się w 2 s, uruchom ponownie"
 
 
-def test_limit_dowodow_regul_konczy_sie_przed_limitem_joba_statusu() -> None:
-    """Przed dowodem job statusu pobiera historię ``main`` i instaluje dodatek dev (run 43609687368: ok. 15 s), więc
-    przekroczony czas dowodów zostaje przyczyną w statusie, a nie anulowanym jobem bez statusu."""
+def test_job_dowodu_ma_limit_ponad_dowody_a_tylko_job_statusu_prawo_zapisu_statusow() -> None:
+    """Przed dowodem job ``dowod`` pobiera historię ``main`` i instaluje dodatek dev (run 43609687368: ok. 15 s), więc
+    przekroczony czas dowodów zostaje przyczyną warunku 5, a nie anulowanym jobem; kod PR biegnie tylko w jobie bez
+    prawa zapisu, a job ``status`` czeka na niego i dostaje jego wynik."""
 
-    job = yaml.safe_load(STATUS_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["status"]
+    workflow = yaml.safe_load(STATUS_WORKFLOW.read_text(encoding="utf-8"))
+    proof, status = workflow["jobs"]["dowod"], workflow["jobs"]["status"]
 
-    assert job["timeout-minutes"] * 60 - bramka_idiomu.PROOF_TIMEOUT_S >= 120
+    assert workflow["permissions"] == {}
+    assert proof["timeout-minutes"] * 60 - bramka_straznika.PROOF_TIMEOUT_S >= 300
+    assert "statuses" not in proof["permissions"] and status["permissions"]["statuses"] == "write"
+    assert status["needs"] == "dowod"
+    assert "--dowod-straznikow" in proof["steps"][-2]["run"] and "--status" not in proof["steps"][-2]["run"]
+    environment = status["steps"][-1]["env"]
+    assert environment[scal_pr.GUARD_PROOFS] == "${{ needs.dowod.outputs.dowody }}" and environment[scal_pr.GUARD_JOB] == "${{ needs.dowod.result }}"
+    assert not any("pip install" in str(step.get("run", "")) for step in status["steps"])
 
 
-def test_blad_renderera_werdyktow_w_warunku_idiom_to_oczekiwanie_bez_dowodu(tmp_path: Path) -> None:
-    """GitHub, który nie wyrenderował werdyktów, nie mówi, czy pole ``Idiom:`` wymaga reguły; to mija bez zmiany w PR,
-    więc status czeka (``pending``), a nie odmawia. Bramka korzenia wdrożona po werdyktach ich nie renderuje, więc
-    błąd dochodzi do warunku 5."""
+def test_blad_renderera_werdyktow_w_warunku_5_to_oczekiwanie_bez_dowodu(tmp_path: Path) -> None:
+    """GitHub, który nie wyrenderował werdyktów, nie mówi, które Ważne potrzebują strażnika; to mija bez zmiany w PR,
+    więc job ``dowod`` podaje oczekiwanie, a nie odmowę."""
 
-    github, head = _idiom_pull(tmp_path, _idiom_verdict("drugie-wystapienie"), gate=GATE_AFTER_VERDICTS)
-    github.markdown = {text: "gh: HTTP 502" if "Idiom: zakazane-wywolanie" in text else html for text, html in github.markdown.items()}
+    github, head = _guard_pull(tmp_path, "straznik-c", passed=False, gate=GATE_AFTER_VERDICTS)
+    github.markdown = {text: "gh: HTTP 502" if text.startswith("### W1.") else html for text, html in github.markdown.items()}
     github._save()
 
-    answered = _status(github, "1", "--status")
+    [written] = _guard_proofs_line(github, tmp_path)
 
-    prefix = f"STATUS pending | #1 {head[:7]} | oczekuje: idiom: GitHub nie wyrenderował treści werdyktów ("
-    assert answered.returncode == 0 and _last_line(answered).startswith(prefix), answered.stdout + answered.stderr
+    [reason] = cast(list[dict[str, object]], written["przyczyny"])
+    assert str(reason["tekst"]).startswith("strażnik: GitHub nie wyrenderował werdyktów albo opisu PR (") and reason["oczekuje"] is True, reason
     assert _proofs(github) == []

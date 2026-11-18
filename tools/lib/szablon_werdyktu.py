@@ -10,10 +10,11 @@ Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmo
   ``Dowód: <tekst>`` z najwyżej 5 liniami treści po najwyżej 300 znaków (tekst pola ``Dowód:``, linie akapitu po nim
   i niepuste linie bloków kodu, do pola ``Korzeń:``), ``Korzeń: R-KOD - <zdanie>`` albo ``Korzeń: NOWY R-KOD -
   <opis>`` oraz ``Szczebel: (a) - <zdanie>`` ze szczeblem od ``(a)`` do ``(e)``; dłuższy dowód recenzent zapisuje
-  w pliku obok werdyktu i podaje w Dowodzie jego ścieżkę; po Szczeblu może stać jeszcze pole ``Idiom:`` w jednej
-  z trzech postaci z [ADR 0036](../../docs/adr/0036-chwast-to-regula.md): ``Idiom: <id> jak #N W<n> r<k>`` (drugie
-  wystąpienie idiomu bez reguły, ``<id>`` to reguła, którą PR ma dodać), ``Idiom: <id>`` (ucieczka istniejącej reguły
-  ``<id>``) albo ``Idiom: bez reguły <klasa> jak #N W<n> r<k>`` z klasą z zamkniętej listy ``CLASSES``; ``<id>`` to
+  w pliku obok werdyktu i podaje w Dowodzie jego ścieżkę; po Szczeblu może stać jeszcze pole ``Idiom:``, które
+  niczego przy merge'u nie wymaga, bo strażnika każdego Ważnego wymaga ``bramka_straznika``, a czyta je raport
+  tygodniowy ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): ``Idiom: <id> jak #N W<n>
+  r<k>`` (Ważne powtarza wcześniejsze), ``Idiom: <id>`` (ucieczka istniejącego strażnika ``<id>``) albo, w werdyktach
+  sprzed ADR 0042, ``Idiom: bez reguły <klasa> jak #N W<n> r<k>`` z klasą z zamkniętej listy ``CLASSES``; ``<id>`` to
   pole ``id`` reguły ast-grep, klucz ``banned-api`` albo ``id`` kontraktu import-linter, bez spacji (``RULE_ID``);
 - Drobne to nagłówek ``### D<n>. <zdanie>`` i jedna linia ``Gdzie: <plik:linia>``;
 - Ważne stoją przed Drobnymi, numery idą od 1 bez przerw, a ich liczby zgadzają się z linią ``Znaleziska:``;

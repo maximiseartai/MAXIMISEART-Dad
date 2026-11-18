@@ -337,3 +337,41 @@ def test_dowod_reguly_o_id_odmawia_reguly_ktorej_konfiguracja_ast_grep_nie_laduj
     assert done.stdout.splitlines()[-1] == (
         "DOWÓD ODMOWA | zakazane-wywolanie | reguły o id zakazane-wywolanie nie ładuje konfiguracja ast-grep repo; połóż ją w reguly-ast-grep/"
     ), done.stdout
+
+
+# Dowód strażnika (``--straznik``, ADR 0042) tak, jak uruchamia go tools/scal_pr.py: PR #5 z werdyktem FAIL na wersji
+# z ``zakazane()`` w ``kod/inne.py`` i HEAD z poprawką i testem, który pada na wersji z werdyktu.
+GUARD_TEST = "from kod.inne import wazne\n\n\nclass Obiekt:\n    def dozwolone(self) -> None:\n        pass\n\n\ndef test_wazne_wola_tylko_dozwolone() -> None:\n    wazne(Obiekt())\n"
+
+
+def _guard_proof(tmp_path: Path, guard: str) -> tuple[subprocess.CompletedProcess[str], str]:
+    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE}
+    github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
+    failed, head = _merge(github, 5, {"kod/inne.py": CAUGHT}, {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST})
+    verdict = f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"]
+    comment = {"body": verdict, "bodyHTML": body_html(verdict, werdykty_szablonu.rendered()), "authorAssociation": "OWNER", "createdAt": "2026-11-14T01:00:00Z", "author": {"login": "recenzent"}}
+    pages = {"pageInfo": {"hasNextPage": False, "endCursor": None}}
+    pull = {
+        **{"number": 5, "title": "PR 5", "state": "MERGED", "isDraft": False, "isCrossRepository": False, "baseRefName": "main", "headRefOid": head},
+        **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": [comment]}, "reviews": {**pages, "nodes": []}},
+    }
+    (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
+    return github.run("--straznik", guard, "--z-commita", head, "--wazne", "5/W1/r1"), failed
+
+
+@pytest.mark.parametrize(
+    ("guard", "last"),
+    [
+        ("pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone", "DOWÓD OK | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte 1/1"),
+        ("brak - test", "DOWÓD ODMOWA | brak - test | wyjątek 0/1"),
+        ("npm test", "DOWÓD ODMOWA | npm test | „Strażnik: npm test” to nie selektor strażnika z listy: pytest tests/<plik>.py::<test> …, mypy, ruff, ast-grep <id reguły>, brak - proza albo brak - test"),
+    ],
+    ids=["test-pada-na-wersji-z-werdyktu", "wyjatek-testu-przy-gdzie-w-kodzie", "selektor-spoza-listy"],
+)
+def test_dowod_straznika_bierze_zla_postac_z_sha_werdyktu_fail_i_gdzie(tmp_path: Path, guard: str, last: str) -> None:
+    done, failed = _guard_proof(tmp_path, guard)
+
+    assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == last, done.stdout
+    if guard.startswith("pytest"):
+        assert done.stdout.splitlines()[0].startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z FAIL: kod/inne.py | "), done.stdout

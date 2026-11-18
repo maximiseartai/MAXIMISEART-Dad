@@ -24,12 +24,7 @@ od chwili założenia ostatniego PR strony (``created:>=``, PR-y z tą samą sek
 po ostatniej zmianie tego nie daje: kursor GitHuba przy ``UPDATED_AT`` to para (``updatedAt``, id), więc PR zmieniony
 między stronami przeskakuje przed kursor i znika ze skanu. Nowe wyszukiwanie zamiast kursora wyszukiwarki omija też
 jej limit 1000 wyników. Granica: indeks wyszukiwarki ma kilka sekund opóźnienia, a ``updatedAt`` tylko rośnie, więc
-brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund. Warunek merge'a z polem
-``Idiom:`` (``idioms``) dokłada do wyszukiwania frazę ``"Idiom: <id>"``, bo potrzebuje tylko PR-ów z polem tego id:
-wyszukiwarka GitHuba szuka jej w tytule, opisie, komentarzach i recenzjach PR (14.11.2026 fraza z samych komentarzy
-#1693, ``"Siódma runda z FAIL"``, znajduje #1693, a słowo z samej treści recenzji #1818 znajduje #1818). Granica
-frazy: świeży werdykt jest przez kilka sekund niewidoczny, dopóki GitHub nie zaindeksuje komentarza, także w PR
-zmienionym wcześniej, więc ``idioms`` go wtedy nie podaje, a przypadek przychodzi przy następnym zdarzeniu PR.
+brakuje najwyżej PR-u, którego pierwsza zmiana od wdrożenia jest sprzed kilku sekund.
 
 Treść skanu to HTML z GitHuba z tej samej strony GraphQL (``bodyHTML`` opisu, komentarza i recenzji, ``FIELDS``),
 więc rejestr nie woła renderera ``POST /markdown`` ani razu: werdykt czyta ``werdykt_pr.from_graphql``, a opis PR
@@ -61,6 +56,7 @@ from typing import Any
 import github
 import stan_pr
 from stan_pr import Pull
+import straznik
 import szablon_werdyktu
 from szablon_werdyktu import CODE, Item, Root
 import werdykt_pr
@@ -80,7 +76,6 @@ TITLE = "Chwast: {code}"
 PAGE = 20
 SEARCH = "repo:{repository} is:pr updated:>={deployed} sort:created-asc"
 SINCE = " created:>={created}"
-PHRASE = ' "Idiom: {rule}"'
 # Pola PR z HTML treści (``bodyHTML``) opisu, komentarzy i recenzji, wspólne dla wyszukiwania i zapytania o jeden PR.
 FIELDS = """
 fragment Pull on PullRequest {
@@ -116,6 +111,12 @@ class Block:
         first = self.items[0] if self.items else None
         found = UPROOTED.fullmatch(first.text) if first is not None and first.kind == "line" else None
         return int(found[1]) if found else None
+
+    def guard(self) -> str | None:
+        """Tekst pola ``Strażnik:`` z ostatniej linii bloku (``straznik.parse`` czyta z niego selektor); ``None`` bez niej."""
+
+        last = self.items[-1] if self.items else None
+        return last.text.removeprefix(straznik.FIELD).strip() if last is not None and last.kind == "line" and last.text.startswith(straznik.FIELD) else None
 
 
 @dataclass(frozen=True)
@@ -247,22 +248,6 @@ def idiom_cases(number: int, rounds: Sequence[werdykt_pr.Round]) -> list[IdiomCa
     return [IdiomCase(number, current.number, idiom) for current in rounds if current.verdict.decision == "FAIL" for idiom in current.findings.idioms]
 
 
-def idioms(repository: str, deployed: datetime | None, rule: str) -> list[IdiomCase]:
-    """Pola ``Idiom:`` Ważnych werdyktów ``FAIL`` w PR-ach ``repository`` zmienionych od wdrożenia szablonu ``deployed``
-    (``None``: szablon niewdrożony, więc żadnych), w kolejności PR; ten sam skan co ``read``, ale tylko PR-ów z frazą
-    ``"Idiom: <rule>"`` (``PHRASE``), więc jego koszt rośnie z liczbą PR-ów z polem tej reguły, a nie ze wszystkimi.
-    Fraza wyszukiwarki dzieli tekst na słowa bez znaków przestankowych, więc znajduje też pola innych id (``Idiom: x``
-    przy ``x-y``) i każdą wzmiankę w tekście; pola i ich id czyta potem treść każdego PR. Błąd GitHuba to wyjątek."""
-
-    if deployed is None:
-        return []
-    found = []
-    for node in _pulls(repository, deployed, PHRASE.format(rule=rule)):
-        pull = _pull(node if _complete(node) else pull_node(repository, node["number"]))
-        found.extend(idiom_cases(pull.number, werdykt_pr.rounds(pull, werdykt_pr.from_graphql)))
-    return sorted(found, key=lambda case: (case.pull, case.round))
-
-
 def occurrences(node: dict[str, Any], deployed: datetime) -> list[Occurrence]:
     """Wystąpienia kodów w PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja) po chwili
     wdrożenia ``deployed``; blok czerwonego `main` ma tylko PR scalony (``mergedAt``)."""
@@ -295,12 +280,11 @@ def create_labels(api: github.GhApi, names: Sequence[str], prefix: str, *, write
     return lines
 
 
-def _pulls(repository: str, deployed: datetime, text: str = "") -> Iterator[dict[str, Any]]:
-    """PR-y ``repository`` zmienione od ``deployed`` w kolejności założenia, każdy raz, z tekstem wyszukiwania ``text``
-    (pusty: wszystkie): strona to wyszukiwanie od chwili założenia ostatniego PR poprzedniej strony, więc zmiana PR
-    w trakcie skanu nie przesuwa stron."""
+def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
+    """PR-y ``repository`` zmienione od ``deployed`` w kolejności założenia, każdy raz: strona to wyszukiwanie od chwili
+    założenia ostatniego PR poprzedniej strony, więc zmiana PR w trakcie skanu nie przesuwa stron."""
 
-    search = SEARCH.format(repository=repository, deployed=deployed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")) + text
+    search = SEARCH.format(repository=repository, deployed=deployed.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"))
     seen: set[int] = set()
     since = ""
     while True:

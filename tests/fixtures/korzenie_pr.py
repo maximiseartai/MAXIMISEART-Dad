@@ -32,6 +32,8 @@ ROOT_PR = 1436
 RED_MAIN = 1456
 FLAKY = 1485
 EVIDENCE = "Dowód: tools/mutacje.py --test tests/test_x.py: MUTACJE OK"
+# Pole strażnika bloku Ważnego w wątku z warunkiem 5 (ADR 0042), zamiast ``Dowód:``.
+GUARD = "Strażnik: pytest tests/test_x.py::test_x"
 
 
 def _lines(*lines: str) -> str:
@@ -95,6 +97,11 @@ OPISY = {
     "proza-w-sekcji": body("Korzeń wyrwany w tym PR.", C_BLOCK),
     "naglowek-poza-wzorem": body(C_BLOCK.replace("### W1 r1: R-BEZ-TESTU", "### W1: R-BEZ-TESTU")),
     "dowod-6-linii": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", EVIDENCE, *(f"linia {number}" for number in range(2, 7)))),
+    "straznik-c": body(C_BLOCK.replace(EVIDENCE, GUARD)),
+    "straznik-spoza-listy": body(C_BLOCK.replace(EVIDENCE, "Strażnik: npm test")),
+    "straznik-i-linia-po": body(C_BLOCK.replace(EVIDENCE, f"{GUARD}\nlinia 2")),
+    "wyrwany-ze-straznikiem": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{ROOT_PR}", GUARD)),
+    "dwa-z-tym-samym-straznikiem": body(*(_lines(f"### W{number} r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", GUARD) for number in (1, 2))),
 }
 PR_KORZENIA = {
     "ten-kod": opisy_pr.wzor(f"Korzeń z #{FEATURE}: R-BEZ-TESTU"),

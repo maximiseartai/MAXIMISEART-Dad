@@ -2,7 +2,7 @@
 zmiany podejścia, nie dostaje kolejnej rundy, dopóki autor nie zmieni podejścia w tym samym PR i nie zapisze tego
 komentarzem PR, którego pierwsza niepusta linia to ``ZMIANA PODEJŚCIA: <zdanie>`` (``DECLARATION``).
 
-Wyjście zostaje w tym samym PR, bo bramka korzenia i bramka idiomu czytają werdykty PR, więc Ważne każdej rundy,
+Wyjście zostaje w tym samym PR, bo bramka korzenia i bramka strażnika czytają werdykty PR, więc Ważne każdej rundy,
 także sprzed zmiany podejścia, zostają tam, gdzie merge ich wymaga; nowy PR zaczynałby bez nich.
 
 Runda z ``FAIL`` to commit, dla którego PR ma werdykt ``FAIL`` (``werdykt_pr.read``: komentarz albo recenzja konta

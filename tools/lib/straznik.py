@@ -1,0 +1,287 @@
+"""Strażnik Ważnego ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): mechanizm z zamkniętej
+listy, który autor wpisuje w bloku Ważnego sekcji ``## Korzeń`` linią ``Strażnik: <selektor>``, i jego dowód.
+
+Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` w miejscach jego pola ``Gdzie``, które pisze
+recenzent, a autor podaje tylko selektor. Wynik to kod wyjścia pytest albo znaleziska mypy (``-O json``) i ruff
+(``--output-format json``) w formacie z wiersza poleceń dowodu, więc konfiguracja PR wyniku nie przestawi.
+
+| Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
+|---|---|---|
+| ``pytest tests/<plik>.py::<test> …`` | każdy plik spoza ``tests/``, który PR zmienił (od rozwidlenia do FAIL i od merge-base do HEAD), z treścią z FAIL; testy z HEAD | węzły przechodzą na HEAD (kod 0) i padają po przywróceniu (kod 1, nie błąd kolekcji 2, użycia 4 ani brak testów 5) |
+| ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk, po przywróceniu znalezisko w przywróconym pliku, w najmniejszej funkcji wokół ``Gdzie`` (w całym pliku, gdy kod tej funkcji z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
+| ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
+| ``brak - proza`` | bez | każde miejsce ``Gdzie`` w pliku, który zmienił PR, to plik ``.md``, docstring albo komentarz Pythona (``ast`` i ``tokenize`` na FAIL) |
+| ``brak - test`` | bez | każde takie miejsce leży w ``tests/``; mutację złej implementacji powtarza recenzent następnej rundy (skill ``przeglad``) |
+
+Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): test, który ten PR zmienił po FAIL dla innego
+Ważnego, przechodzi dowód pytest każdego Ważnego tej rundy, bo przywrócenie cofa wszystkie zmiany PR poza ``tests/``;
+plik, który po FAIL zmienił też ``main``, wraca z treścią sprzed tej zmiany. Pytest i mypy wykonują kod PR, więc
+status „Werdykt i bramka” liczy dowód w jobie bez prawa zapisu (``.github/workflows/werdykt-i-bramka.yml``).
+"""
+
+from __future__ import annotations
+
+import ast
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from enum import Enum
+import io
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import tokenize
+
+import potomne
+import repo
+
+FIELD = "Strażnik:"
+TESTS = "tests/"
+_NODE = re.compile(r"tests/(?:[\w.-]+/)*[\w.-]+\.py::\w+(?:::\w+)?")
+_RULE_ID = re.compile(r"[\w.-]+")
+# Zmienne, których kod PR w dowodzie nie dostaje: token GitHuba joba statusu i środowisko wołającego Pythona.
+_HIDDEN = ("GH_TOKEN", "GITHUB_TOKEN", "VIRTUAL_ENV")
+
+
+class Kind(Enum):
+    PYTEST = "pytest"
+    MYPY = "mypy"
+    RUFF = "ruff"
+    AST_GREP = "ast-grep"
+    PROSE = "brak - proza"
+    TESTS = "brak - test"
+
+
+EXEMPT = frozenset({Kind.PROSE, Kind.TESTS})
+FORMS = f"{Kind.PYTEST.value} tests/<plik>.py::<test> …, {Kind.MYPY.value}, {Kind.RUFF.value}, {Kind.AST_GREP.value} <id reguły>, {Kind.PROSE.value} albo {Kind.TESTS.value}"
+
+
+@dataclass(frozen=True)
+class Guard:
+    """Selektor strażnika: rodzaj i jego argumenty (węzły pytest albo id reguły ast-grep)."""
+
+    kind: Kind
+    arguments: tuple[str, ...] = ()
+
+    def __str__(self) -> str:
+        return " ".join((self.kind.value, *self.arguments))
+
+
+def parse(text: str) -> Guard:
+    """Selektor z tekstu pola ``Strażnik:``; tekst spoza zamkniętej listy to ``ValueError`` z jej postaciami."""
+
+    words = text.split()
+    exempt = {kind.value: kind for kind in EXEMPT}
+    if " ".join(words) in exempt:
+        return Guard(exempt[" ".join(words)])
+    if words in (["mypy"], ["ruff"]):
+        return Guard(Kind(words[0]))
+    if len(words) == 2 and words[0] == Kind.AST_GREP.value and _RULE_ID.fullmatch(words[1]):
+        return Guard(Kind.AST_GREP, (words[1],))
+    if len(words) > 1 and words[0] == Kind.PYTEST.value and all(_NODE.fullmatch(word) for word in words[1:]):
+        return Guard(Kind.PYTEST, tuple(words[1:]))
+    raise ValueError(f"„{FIELD} {text}” to nie selektor strażnika z listy: {FORMS}")
+
+
+Place = tuple[str, int, int]
+
+
+@dataclass(frozen=True)
+class Case:
+    """Ważne ``label`` (``#5 W1 r1``) werdyktu ``FAIL`` na commicie ``failed`` z miejscami ``places`` pola ``Gdzie``;
+    ``fork`` to rozwidlenie gałęzi PR od bazy przed tym commitem (zmiany PR do FAIL to ``fork..failed``)."""
+
+    label: str
+    failed: str
+    fork: str
+    places: tuple[Place, ...]
+
+
+@dataclass(frozen=True)
+class Outcome:
+    detected: bool
+    line: str
+
+
+def prove(root: Path, guard: Guard, head: str, base: str, cases: Sequence[Case]) -> list[Outcome]:
+    """Dowód strażnika ``guard`` (bez ``ast-grep``) na kopii ``head`` dla każdego Ważnego ``cases``; ``base`` to
+    merge-base HEAD z bazą PR. Wynik ma jedną linię na Ważne."""
+
+    if guard.kind in EXEMPT:
+        return [_exempt(root, guard.kind, head, base, case) for case in cases]
+    with potomne.commit_copy(root, head) as copy:
+        before = _run(guard, copy)
+        if before.findings or before.code != 0:
+            shown = _shown(before.findings) or f"kod {before.code}: {before.last}"
+            return [Outcome(False, f"{case.label} | {case.failed[:8]} | PODSTAWA CZERWONA | na HEAD bez przywrócenia: {shown}") for case in cases]
+        return [_restored(root, guard, copy, head, base, case) for case in cases]
+
+
+@dataclass(frozen=True)
+class _Ran:
+    code: int
+    last: str
+    findings: tuple[tuple[str, int, str], ...] = ()
+
+
+def _run(guard: Guard, copy: Path) -> _Ran:
+    environment = {name: value for name, value in os.environ.items() if name not in _HIDDEN}
+    environment["PYTHONPATH"] = os.pathsep.join([str(copy / "src"), environment.get("PYTHONPATH", "")]).rstrip(os.pathsep)
+    # Plik przywrócony z FAIL ma często ten sam rozmiar i tę samą sekundę zapisu, więc pyc i pamięć mypy z biegu na HEAD
+    # byłyby dla niego ważne: dowód nie pisze pyc, a mypy biegnie bez pamięci (``--no-incremental``).
+    environment["PYTHONDONTWRITEBYTECODE"] = "1"
+    if guard.kind is Kind.PYTEST:
+        command = [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", *guard.arguments]
+    elif guard.kind is Kind.MYPY:
+        command = [sys.executable, "-m", "mypy", "--no-incremental", "-O", "json"]
+    else:
+        command = [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json"]
+    done = potomne.run(command, cwd=copy, env=environment)
+    lines = (done.stdout + done.stderr).strip().splitlines()
+    last = lines[-1][:200] if lines else ""
+    if guard.kind is Kind.PYTEST:
+        return _Ran(done.returncode, last)
+    found = _mypy(done.stdout) if guard.kind is Kind.MYPY else _ruff(done.stdout, copy)
+    # mypy i ruff kończą się kodem 1 przy znaleziskach, które niesie ``findings``; każdy inny kod to błąd narzędzia.
+    return _Ran(0 if done.returncode == 1 and found else done.returncode, last, found)
+
+
+def _mypy(output: str) -> tuple[tuple[str, int, str], ...]:
+    found = []
+    for line in output.splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(entry, dict) and entry.get("severity") == "error":
+            found.append((str(entry["file"]).replace("\\", "/"), int(entry["line"]), f"[{entry.get('code')}] {entry['message']}"))
+    return tuple(found)
+
+
+def _ruff(output: str, copy: Path) -> tuple[tuple[str, int, str], ...]:
+    entries = json.loads(output or "[]")
+    root = copy.resolve()
+    return tuple((Path(entry["filename"]).resolve().relative_to(root).as_posix(), int(entry["location"]["row"]), f"{entry['code']} {entry['message']}") for entry in entries)
+
+
+def _shown(findings: Iterable[tuple[str, int, str]]) -> str:
+    return "; ".join(f"{path}:{line} {message[:120]}" for path, line, message in list(findings)[:2])
+
+
+def _text(root: Path, commit: str, path: str) -> str | None:
+    content = repo.blob(root, commit, path)
+    return None if content is None else content.decode("utf-8", errors="replace")
+
+
+def _pr_files(root: Path, head: str, base: str, case: Case) -> list[str]:
+    return sorted(repo.changed(root, case.fork, case.failed) | repo.changed(root, base, head))
+
+
+def _restored(root: Path, guard: Guard, copy: Path, head: str, base: str, case: Case) -> Outcome:
+    if guard.kind is Kind.PYTEST:
+        groups = [[path for path in _pr_files(root, head, base, case) if not path.startswith(TESTS)]]
+        what = "pliki PR spoza tests/"
+    else:
+        paths = list(dict.fromkeys(path for path, _, _ in case.places))
+        groups = [paths, *([[path] for path in paths] if len(paths) > 1 else [])]
+        what = "pliki z Gdzie"
+    tried = []
+    for group in groups:
+        changed = [path for path in group if _text(root, case.failed, path) != _text(root, head, path)]
+        if not changed:
+            continue
+        kept = {path: (copy / path).read_bytes() if (copy / path).exists() else None for path in changed}
+        try:
+            for path in changed:
+                _write(copy / path, repo.blob(root, case.failed, path))
+            ran = _run(guard, copy)
+        finally:
+            for path, content in kept.items():
+                _write(copy / path, content)
+        where = "+".join(changed[:3]) + (f" (i {len(changed) - 3} innych)" if len(changed) > 3 else "")
+        if guard.kind is Kind.PYTEST:
+            if ran.code == 1:
+                return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {ran.last}")
+            tried.append(f"{where}: kod {ran.code} ({'przechodzi' if ran.code == 0 else 'błąd kolekcji, użycia albo brak testów'}): {ran.last}")
+            continue
+        inside = [finding for finding in ran.findings if finding[0] in changed and finding[1] in _scope(root, head, case, finding[0])]
+        if inside:
+            return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {_shown(inside)}")
+        tried.append(f"{where}: {'znaleziska poza funkcją z Gdzie: ' + _shown(ran.findings) if ran.findings else f'bez znaleziska (kod {ran.code})'}")
+    if not tried:
+        return Outcome(False, f"{case.label} | {case.failed[:8]} | NIC DO PRZYWRÓCENIA | {what} mają na HEAD treść z FAIL")
+    return Outcome(False, f"{case.label} | {case.failed[:8]} | NIEWYKRYTA | {' / '.join(tried)}")
+
+
+def _write(path: Path, content: bytes | None) -> None:
+    if content is None:
+        path.unlink(missing_ok=True)
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(content)
+
+
+def _scope(root: Path, head: str, case: Case, path: str) -> range:
+    """Linie pliku ``path`` z FAIL, w których znalezisko liczy się do dowodu: najmniejsza funkcja wokół każdego miejsca
+    z ``Gdzie`` w tym pliku, a cały plik, gdy kod tej funkcji z FAIL stoi bez zmian na HEAD."""
+
+    text = _text(root, case.failed, path) or ""
+    now = _text(root, head, path) or ""
+    lines = text.splitlines()
+    spans = []
+    for place, first, last in case.places:
+        if place != path:
+            continue
+        low, high = _function(text, first, last)
+        if "\n".join(lines[low - 1 : high]) in now:
+            return range(1, len(lines) + 1)
+        spans.append((low, high))
+    low = min((span[0] for span in spans), default=1)
+    high = max((span[1] for span in spans), default=len(lines))
+    return range(low, high + 1)
+
+
+def _function(text: str, first: int, last: int) -> tuple[int, int]:
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return first, last
+    spans = [
+        (node.lineno, node.end_lineno or node.lineno)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno <= first and last <= (node.end_lineno or node.lineno)
+    ]
+    return max(spans, default=(first, last))
+
+
+def _exempt(root: Path, kind: Kind, head: str, base: str, case: Case) -> Outcome:
+    touched = set(_pr_files(root, head, base, case))
+    own = [place for place in case.places if place[0] in touched]
+    if not own:
+        return Outcome(False, f"{case.label} | {case.failed[:8]} | ODMOWA | żadne miejsce z Gdzie nie leży w pliku, który zmienił PR")
+    wrong = [place for place in own if not (_prose(root, case.failed, place) if kind is Kind.PROSE else place[0].startswith(TESTS))]
+    if wrong:
+        why = "to nie plik .md, docstring ani komentarz" if kind is Kind.PROSE else "leży poza tests/"
+        return Outcome(False, f"{case.label} | {case.failed[:8]} | ODMOWA | {', '.join(f'{path}:{first}' for path, first, _ in wrong)} {why}")
+    return Outcome(True, f"{case.label} | {case.failed[:8]} | WYJĄTEK {kind.value} | {', '.join(f'{path}:{first}' for path, first, _ in own)}")
+
+
+def _prose(root: Path, commit: str, place: Place) -> bool:
+    path, first, last = place
+    if path.endswith(".md"):
+        return True
+    text = _text(root, commit, path)
+    if text is None or not path.endswith(".py"):
+        return False
+    try:
+        tree = ast.parse(text)
+        comments = {token.start[0] for token in tokenize.generate_tokens(io.StringIO(text).readline) if token.type == tokenize.COMMENT}
+    except (SyntaxError, tokenize.TokenError):
+        return False
+    docstrings = [
+        (body[0].lineno, body[0].end_lineno or body[0].lineno)
+        for node in ast.walk(tree)
+        if isinstance(body := getattr(node, "body", None), list) and body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str)
+    ]
+    return all(line in comments or any(low <= line <= high for low, high in docstrings) for line in range(first, last + 1))

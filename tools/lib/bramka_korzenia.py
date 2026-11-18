@@ -38,10 +38,13 @@ w niej tylko bloki ``###``, a w bloku tylko linie akapitu i (w Dowodzie) bloki k
   punktu;
 - nagłówek ``### Czerwony main #<N>: R-KOD`` dla issue czerwonego `main` ``#N`` z linii „Część” albo „Naprawia”
   z kodem, który wybiera autor;
-- potem ``Wyrwany w #M`` (link GitHuba do PR tego repozytorium) i nic więcej, albo ``Szczebel: (x) - mechanizm`` ze
-  szczeblem od (a) do (e), przy szczeblu niższym niż (a) ``Wyżej nie, bo:`` z jedną linią ``(y) - zdanie`` na każdy
-  wyższy szczebel, w kolejności drabiny (pierwsza może stać w linii pola), i na końcu ``Dowód:`` jak w szablonie
-  werdyktu (``szablon_werdyktu.evidence_problems``: od 1 do 5 linii po najwyżej 300 znaków, bloki kodu się liczą).
+- potem ``Wyrwany w #M`` (link GitHuba do PR tego repozytorium) albo ``Szczebel: (x) - mechanizm`` ze szczeblem od
+  (a) do (e), przy szczeblu niższym niż (a) ``Wyżej nie, bo:`` z jedną linią ``(y) - zdanie`` na każdy wyższy
+  szczebel, w kolejności drabiny (pierwsza może stać w linii pola), i na końcu pole dowodu: w bloku Ważnego wątku,
+  w którym obowiązuje warunek strażnika (``guarded``, ``bramka_straznika.applies``), jedna linia ``Strażnik: <selektor>``
+  z listy ``straznik.parse`` (także po ``Wyrwany w #M``), której dowód liczy ``bramka_straznika``; w bloku czerwonego
+  `main` i w wątku sprzed warunku ``Dowód:`` jak w szablonie werdyktu (``szablon_werdyktu.evidence_problems``: od
+  1 do 5 linii po najwyżej 300 znaków, bloki kodu się liczą), a po ``Wyrwany w #M`` nic.
 
 Bloku brakującego, nadmiarowego, powtórzonego albo z innym kodem bramka odmawia. Szczebel (e) wymaga, żeby HEAD PR
 dopisał do sekcji „Co jest porażką” skilla ``przeglad`` nowy punkt listy z linkiem GitHuba do tego PR (przykład),
@@ -80,6 +83,7 @@ from rejestr_korzeni import SECTION, Block
 from repo import REMOTE, ROOT
 import repo
 from stan_pr import Pull
+import straznik
 import szablon_werdyktu
 from szablon_werdyktu import Item
 import werdykt_pr
@@ -97,9 +101,10 @@ EVIDENCE = "Dowód:"
 PULL_REQUEST = "pull_request"
 
 
-def problems(pull: Pull, deployed: datetime | None) -> list[str]:
+def problems(pull: Pull, deployed: datetime | None, *, guarded: bool = False) -> list[str]:
     """Przyczyny odmowy merge'a ``pull`` z bramki korzenia; ``deployed`` to chwila wdrożenia bramki na bazie PR
-    (``werdykt_pr.deployment`` z ``MARKER``), a baza i HEAD PR są już pobrane z ``origin``."""
+    (``werdykt_pr.deployment`` z ``MARKER``), ``guarded``, czy blok Ważnego kończy ``Strażnik:`` zamiast ``Dowód:``,
+    a baza i HEAD PR są już pobrane z ``origin``."""
 
     if not werdykt_pr.rule_applies(pull, deployed):
         return []
@@ -111,12 +116,12 @@ def problems(pull: Pull, deployed: datetime | None) -> list[str]:
     expected = {heading: major.code for heading, major in _expected(rounds, found).items()}
     codes = {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)}
     if expected or any(word in pull.body for word in RED_MAIN_WORDS):
-        found.extend(_described(pull, expected, codes))
+        found.extend(_described(pull, expected, codes, guarded))
     found.extend(_unlisted(codes, pull))
     return _refusal(found, pull)
 
 
-def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, list[str]]) -> list[str]:
+def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, list[str]], guarded: bool) -> list[str]:
     """Przyczyny z opisu PR: czerwony `main` z linii „Część” i „Naprawia” i sekcja ``## Korzeń``, której kody bloków
     trafiają do ``codes``."""
 
@@ -127,7 +132,7 @@ def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, lis
     found: list[str] = []
     expected.update({f"Czerwony main #{number}": None for number in _red_main(html, pull, found)})
     if expected:
-        found.extend(_section(szablon_werdyktu.items(html), expected, pull, codes))
+        found.extend(_section(szablon_werdyktu.items(html), expected, pull, codes, guarded))
     return found
 
 
@@ -179,7 +184,7 @@ def _red_main(html: str, pull: Pull, found: list[str]) -> list[int]:
     return red
 
 
-def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, codes: dict[str, list[str]]) -> list[str]:
+def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, codes: dict[str, list[str]], guarded: bool) -> list[str]:
     parsed = rejestr_korzeni.section(units)
     missing = [f"brak bloku „### {heading}: {code or 'R-KOD'}”" for heading, code in expected.items()]
     if parsed is None:
@@ -208,7 +213,7 @@ def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull,
             found.append(
                 f"korzeń: {heading}: kod {block.code}, a ostatni werdykt, który go dotyczy, podaje {code}; inny kod rozstrzyga recenzent następnej rundy punktem „Korzeń {heading}: R-KOD - zdanie” w „## Sprawdzone” (Q25)"
             )
-        found.extend(_fields(block, pull))
+        found.extend(_fields(block, pull, guarded=guarded and heading.startswith("W")))
     found.extend(f"korzeń: blok „### {heading}: {block.code}”, a PR nie ma takiego Ważnego ani czerwonego main" for heading, block in blocks.items() if heading not in expected)
     return found
 
@@ -226,17 +231,23 @@ def _line(item: Item | None, field: str) -> str | None:
     return item.text.removeprefix(field).strip() if item is not None and item.kind == "line" and item.text.startswith(field) else None
 
 
-def _fields(block: Block, pull: Pull) -> list[str]:
+def _fields(block: Block, pull: Pull, *, guarded: bool) -> list[str]:
     label = f"korzeń: {block.heading}"
     units = list(block.items)
     first = units[0] if units else None
+    field = straznik.FIELD if guarded else EVIDENCE
     if first is not None and (uprooted := block.uprooted()) is not None:
-        return [*(f"{label}: po „Wyrwany w #{uprooted}” nic więcej, a jest {item.shown()}" for item in units[1:]), *_root_pull(block, first, uprooted, pull)]
+        tail = units[1:]
+        if guarded and tail and _line(tail[-1], field) is not None:
+            tail = tail[:-1]
+        allowed = f"tylko linia „{field} <selektor>”" if guarded else "nic więcej"
+        found = [f"{label}: po „Wyrwany w #{uprooted}” {allowed}, a jest {item.shown()}" for item in tail]
+        return [*found, *(_guard(label, block) if guarded else []), *_root_pull(block, first, uprooted, pull)]
     rung = szablon_werdyktu.RUNG_FIELD.fullmatch(first.text) if first is not None and first.kind == "line" else None
     if rung is None:
         return [f"{label}: pierwsza linia bloku to „Szczebel: (a) - mechanizm” ze szczeblem od (a) do (e) albo „Wyrwany w #M”, a jest {first.shown() if first else 'koniec'}"]
     found = []
-    evidence = next((index for index, item in enumerate(units) if _line(item, EVIDENCE) is not None), None)
+    evidence = next((index for index, item in enumerate(units) if _line(item, field) is not None), None)
     higher = RUNGS[: RUNGS.index(rung[1])]
     why = units[1 : evidence if evidence is not None else len(units)]
     if higher and _line(why[0] if why else None, WHY_NOT) is None:
@@ -247,11 +258,27 @@ def _fields(block: Block, pull: Pull) -> list[str]:
         if given != list(higher):
             found.append(f"{label}: „{WHY_NOT}” ma jedną linię „(x) - zdanie” na każdy wyższy szczebel {', '.join(f'({letter})' for letter in higher)} po kolei, a ma: {' / '.join(lines) or 'nic'}")
     elif why:
-        found.append(f"{label}: przy (a) nie ma wyższego szczebla, więc po Szczeblu tylko Dowód, a jest {why[0].shown()}")
+        found.append(f"{label}: przy (a) nie ma wyższego szczebla, więc po Szczeblu tylko {field}, a jest {why[0].shown()}")
     if evidence is None:
-        return [*found, f"{label}: brak pola „{EVIDENCE} <polecenie i wynik>” na końcu bloku"]
-    found.extend(szablon_werdyktu.evidence_problems(label, _line(units[evidence], EVIDENCE) or "", units[evidence + 1 :]))
+        return [*found, *(_guard(label, block) if guarded else [f"{label}: brak pola „{EVIDENCE} <polecenie i wynik>” na końcu bloku"])]
+    if guarded:
+        found.extend([*(f"{label}: po „{field}” nic więcej, a jest {item.shown()}" for item in units[evidence + 1 :]), *_guard(label, block)])
+    else:
+        found.extend(szablon_werdyktu.evidence_problems(label, _line(units[evidence], EVIDENCE) or "", units[evidence + 1 :]))
     return [*found, *(_failure_point(block, pull) if rung[1] == "e" else [])]
+
+
+def _guard(label: str, block: Block) -> list[str]:
+    """Przyczyna, gdy blok Ważnego nie kończy się linią ``Strażnik:`` z selektorem z listy ``straznik.parse``."""
+
+    text = block.guard()
+    if text is None:
+        return [f"{label}: brak pola „{straznik.FIELD} <selektor>” na końcu bloku: {straznik.FORMS}; dowód liczy tools/scal_pr.py (bramka_straznika)"]
+    try:
+        straznik.parse(text)
+    except ValueError as error:
+        return [f"{label}: {error}"]
+    return []
 
 
 def _root_pull(block: Block, line: Item, number: int, pull: Pull) -> list[str]:

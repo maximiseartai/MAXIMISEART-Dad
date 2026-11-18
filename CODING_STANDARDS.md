@@ -23,7 +23,7 @@ A ratchet becomes a rule only when the rule reads the mechanism without a list o
 Two ratchets in `tests/test_zapadki.py` stay regular expressions.
 The navigation ratchet stays because a tree rule loses two of its forms, both samples of the ratchet: a receiver above the call that gets a value computed from the response instead of the response, and `expect_navigation` passed to another call in a `with` without `as`.
 The parser ratchet (`PARSERS`) stays because a tree rule's exemption would be the same list of files in `ignores:`, outside owner right, and the list grows only with a reason in the PR body why a ruff or ast-grep rule or a behaviour test is not enough, which the reviewer checks (#1888).
-A new check fails on the commit of the PR whose review found the mistake, raises no false alarm on a few recent merged PRs (`--ostatnie 5`, one of them with Windows-only code), and the PR body shows both runs (`tools/na_scalonych_pr.py`, skill `pr`).
+A new check fails on the commit of the PR whose review found the mistake, raises no false alarm on the recent merged PRs of `tools/na_scalonych_pr.py --ostatnie` (`CHECK_PRS` of that tool, one of them with Windows-only code; a rule's proof uses its `RULE_PRS` and `FALSE_ALARMS`), and the PR body shows both runs (skill `pr`).
 Fix the class, not the instance: when a review finds one case, look for every case of the same fault in the change and in the repository, and fix them together.
 When a fix of a rule keeps growing a list of exceptions, replace the list with the shape the code accepts.
 
