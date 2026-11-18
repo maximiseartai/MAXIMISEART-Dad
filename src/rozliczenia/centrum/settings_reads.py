@@ -7,10 +7,10 @@ regułą przyjęcia zmiany właściciela Ustawień.
 Jedno wejście odczytu okna z odmową w właścicielu (prototyp P5, kształt X, 17.11.2026) nie zabija treści zastępczej:
 wołający dalej ma migawkę i widoki z unią na tym samym obiekcie, więc literał albo stała w gałęzi unii przechodzą mypy i
 ruff; ciche pola widoków zamyka typ (``QuantityRulesView.rules``, ``ShownQuantityRules``, ``ShownActivityLegend``), a
-stałe zakaz TID251. Pierwszy warunek powrotu do X (trzy pliki naraz, druga droga w przeglądzie) spełnił się 17.11.2026
-(podgląd Legendy, #2078 r1 W1), ale X tamtej rundy nie łapie: wzięła treść z Wydania z pola widoku do pokazania, które X
-zostawia, więc zamyka ją typ tego pola. Wróć do X z migawką bez unii dla odczytu z odmową, gdy w przeglądzie wróci
-literał albo konstruktor w gałęzi unii odczytu, który odmawia (#2029 r1 W1).
+stałe zakaz TID251. Dawny warunek powrotu do X (trzy pliki naraz, druga droga w przeglądzie) spełnił się 17.11.2026:
+podgląd Legendy czyta trzy pliki, a podpowiedzi Listy Urządzeń wzięły treść z Wydania z pola widoku do pokazania. X tego
+nie łapie, bo widoki zostawia, więc zamyka to typ tego pola. Wróć do X z migawką bez unii dla odczytu z odmową, gdy w
+przeglądzie wróci literał albo konstruktor w gałęzi unii odczytu, który odmawia.
 """
 
 from __future__ import annotations
