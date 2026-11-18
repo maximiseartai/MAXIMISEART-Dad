@@ -22,7 +22,7 @@ import pkgutil
 import subprocess
 import sys
 import tomllib
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -416,6 +416,26 @@ def test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff(tmp_path: Path)
     assert_znane_luki(w_src | poza, "tests/test_zakazy_ruff.py (ZNANE_LUKI_SLEDZENIA)")
 
 
+_GLOWA_WIDOKU: Final = "from rozliczenia.centrum.settings.owner import CentrumSettings\n{importy}\n\n\n"
+
+DROGI_TRESCI_Z_WYDANIA: Final = {
+    "pole widoku do pokazania w odczycie, który liczy: podpowiedzi Listy Urządzeń z shown (#2078 r1 W1)": (
+        _GLOWA_WIDOKU.format(
+            importy="from rozliczenia.centrum.contract.quantity_rules import DeviceSuggestions\n"
+            "from rozliczenia.centrum.device_suggestions import device_suggestions\n"
+            "from rozliczenia.centrum.quantity_rules_preview import Recent"
+        )
+        + "def podpowiedzi(settings: CentrumSettings, recent: Recent) -> DeviceSuggestions:\n"
+        "    return device_suggestions(settings.quantity_rules().shown, recent)\n",
+        'Argument 1 to "device_suggestions" has incompatible type "ShownQuantityRules"',
+    ),
+    "pole widoku do pokazania jako legenda, którą się liczy": (
+        _GLOWA_WIDOKU.format(importy="from rozliczenia.activity_legend import ActivityLegend")
+        + "def legenda(settings: CentrumSettings) -> ActivityLegend:\n    return settings.activity_legend().shown\n",
+        'Incompatible return value type (got "ShownActivityLegend", expected "ActivityLegend")',
+    ),
+}
+
 ZNANE_LUKI_TRESCI_Z_WYDANIA = {
     "zakaz zna tylko nazwy, nie treść wartości: literał w gałęzi unii (#2029 r1 W1)": (
         "from rozliczenia.centrum.settings.owner import UnreadableFile\nfrom rozliczenia.worker_reports import ReminderSettings\n\n\n"
@@ -427,9 +447,14 @@ ZNANE_LUKI_TRESCI_Z_WYDANIA = {
         "def foldery(folders: FolderSettings | UnreadableFile) -> FolderSettings:\n"
         "    return FolderSettings() if isinstance(folders, UnreadableFile) else folders\n"
     ),
-    "zakaz zna tylko nazwy modułów, nie pola obiektu: pole widoku właściciela do pokazania w odczycie, który liczy": (
-        "from rozliczenia.centrum.settings.owner import CentrumSettings\nfrom rozliczenia.quantity_engine import QuantityRules\n\n\n"
-        "def reguly(settings: CentrumSettings) -> QuantityRules:\n    return settings.quantity_rules().shown\n"
+    "typ widoku do pokazania nie jest QuantityRules, ale niesie jego części: reguły złożone z nich na nowo": (
+        _GLOWA_WIDOKU.format(importy="from rozliczenia.quantity_engine import QuantityRules")
+        + "def reguly(settings: CentrumSettings) -> QuantityRules:\n    shown = settings.quantity_rules().shown\n"
+        "    return QuantityRules(shown.rules, shown.devices)\n"
+    ),
+    "typ widoku do pokazania nie jest QuantityRules, ale niesie jego części: Lista Urządzeń do pokazania": (
+        _GLOWA_WIDOKU.format(importy="from rozliczenia.quantity_engine import DeviceList")
+        + "def urzadzenia(settings: CentrumSettings) -> DeviceList:\n    return settings.quantity_rules().shown.devices\n"
     ),
     "zakaz zna tylko nazwy modułów, nie pola obiektu: wartość domyślna opisu pliku Ustawień": (
         "from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL\n\nMAIL = SETTLEMENT_MAIL.default\n"
@@ -441,7 +466,7 @@ ZNANE_LUKI_TRESCI_Z_WYDANIA = {
 
 
 @wymaga_ruff_i_mypy
-def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
+def test_tresc_z_wydania_poza_wlascicielem_nie_przechodzi_a_znane_luki_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
     """Treść z Wydania pliku Ustawień (``DEFAULT_*``) czyta w ``src/`` tylko właściciel Ustawień i moduły z prawem
     właściciela (``OWNERS``), bo każdy inny wołający, który ma w ręku plik bez odczytu, wstawia ją w miejsce pliku taty.
 
@@ -456,20 +481,24 @@ def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_pat
     | część treści Przypomnień: ``DEFAULT_SCHEDULE``, ``DEFAULT_TEXT`` | łapie | ``SAMPLES`` |
     | literał w gałęzi unii: ``"" if isinstance(reminders, UnreadableFile) else …`` (#2029 r1 W1) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | konstruktor z wartościami domyślnymi: ``FolderSettings()`` (#1931 r1 D2) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
-    | pole widoku do pokazania w odczycie, który liczy: ``settings.quantity_rules().shown`` (``.rules`` to unia z ``UnreadableFile``: mypy) | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | pole widoku do pokazania w odczycie, który liczy: ``device_suggestions(settings.quantity_rules().shown, …)`` (#2078 r1 W1; ``.rules`` to unia z ``UnreadableFile``) | łapie (mypy: ``ShownQuantityRules``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | legenda do pokazania jako legenda, którą się liczy: ``settings.activity_legend().shown`` | łapie (mypy: ``ShownActivityLegend``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | części widoku do pokazania: ``QuantityRules(shown.rules, shown.devices)``, ``shown.devices`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | refleksja po nazwie: ``getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | ``# noqa: TID251`` na linii importu | łapie | ``RELEASE_CONTENT_PROBE`` |
 
     Poza ``src/`` zakaz nie obowiązuje: narzędzia w ``tools/`` liczą celowo treścią z Wydania."""
     probe = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
-    pliki = zapisz(ZNANE_LUKI_TRESCI_Z_WYDANIA, tmp_path)
+    pliki = zapisz({opis: kod for opis, (kod, _) in DROGI_TRESCI_Z_WYDANIA.items()} | ZNANE_LUKI_TRESCI_Z_WYDANIA, tmp_path)
 
     zgloszenia = ruff_i_mypy(pliki, sonda=probe)
     for opis, plik in pliki.items():
         zgloszenia[opis] += _release_content_findings("--stdin-filename", str(probe), "-", code=plik.read_text(encoding="utf-8"))
 
-    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_TRESCI_Z_WYDANIA)")
+    przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_TRESCI_Z_WYDANIA.items() if not any(odmowa in z for z in zgloszenia[opis])}
+    assert przepuszczone == {}
+    assert_znane_luki({opis: zgloszenia[opis] for opis in ZNANE_LUKI_TRESCI_Z_WYDANIA}, "tests/test_zakazy_ruff.py (ZNANE_LUKI_TRESCI_Z_WYDANIA)")
 
 
 _GLOWA_ODCZYTU = (
