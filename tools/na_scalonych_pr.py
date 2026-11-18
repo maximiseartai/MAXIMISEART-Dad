@@ -101,6 +101,9 @@ WHERE = "Gdzie:"
 # Cała kopia: bez tych flag ast-grep nie wchodzi do katalogu ukrytego (``.agents/``) ani ignorowanego.
 WHOLE = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot")
 FUNCTIONS = "id: funkcja\nlanguage: python\nrule:\n  kind: function_definition\n"  # także async def
+# Proza w pliku Pythona dla ``Strażnik: brak - proza``: komentarz i docstring, czyli instrukcja z samym napisem na
+# początku modułu, klasy albo funkcji.
+PROSE = "id: proza\nlanguage: python\nrule:\n  any:\n    - kind: comment\n    - kind: expression_statement\n      nthChild: 1\n      has:\n        kind: string\n        stopBy: neighbor\n"
 FALSE_ALARMS = 0.10  # najwyższy udział PR-ów z odpaleniem, przy którym dowód reguły przechodzi (próg Tricorder, ADR 0036)
 RULE_PRS = 20  # ostatnie scalone PR-y fałszywych alarmów dowodu reguły bez ``--pr`` i ``--ostatnie``
 CHECK_PRS = 5  # ostatnie scalone PR-y próby nowego sprawdzenia: ``--ostatnie`` bez liczby (CODING_STANDARDS.md)
@@ -318,7 +321,7 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         cases = [failed(repository, *one) for one in majors]
         base = repo.merge_base(ROOT, f"{REMOTE}/{cases[0].base}", head)
-        found = straznik.prove(ROOT, guard, head, base, [straznik.Case(f"#{one.number} {one.label} r{one.round_}", one.commit, one.fork(), tuple(_places(one.where))) for one in cases])
+        found = straznik.prove(ROOT, guard, head, base, [_case(guard, one) for one in cases])
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {guard} | {error}")
         return 1
@@ -330,10 +333,16 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int
     return 0 if ok else 1
 
 
-def _places(where: str) -> list[tuple[str, int, int]]:
-    if not (found := szablon_werdyktu.places(where)):
-        raise ValueError(f"{where} nie ma miejsca plik:linia")
-    return found
+def _case(guard: straznik.Guard, one: Failed) -> straznik.Case:
+    """Ważne ``one`` jako przypadek dowodu: zakresy funkcji z ``places`` dla strażnika statycznego, a proza z ``PROSE``
+    dla ``brak - proza``; oba czyta ast-grep z kopii SHA werdyktu, jak dowód reguły."""
+
+    if not (raw := szablon_werdyktu.places(one.where)):
+        raise ValueError(f"{one.where} nie ma miejsca plik:linia")
+    scopes = places(one.where, one.commit) if guard.kind in (straznik.Kind.MYPY, straznik.Kind.RUFF) else []
+    python = sorted({path for path, _, _ in raw if path.endswith(".py")})
+    prose = hits(one.commit, ("--inline-rules", PROSE), python) if guard.kind is straznik.Kind.PROSE and python else []
+    return straznik.Case(f"#{one.number} {one.label} r{one.round_}", one.commit, one.fork(), tuple(raw), tuple(scopes), tuple(prose))
 
 
 def _fork(base: str, commit: str) -> str:

@@ -8,9 +8,9 @@ recenzent, a autor podaje tylko selektor. Wynik to kod wyjścia pytest albo znal
 | Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
 |---|---|---|
 | ``pytest tests/<plik>.py::<test> …`` | każdy plik spoza ``tests/``, który PR zmienił (od rozwidlenia do FAIL i od merge-base do HEAD), z treścią z FAIL; testy z HEAD | węzły przechodzą na HEAD (kod 0) i padają po przywróceniu (kod 1, nie błąd kolekcji 2, użycia 4 ani brak testów 5) |
-| ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk, po przywróceniu znalezisko w przywróconym pliku, w najmniejszej funkcji wokół ``Gdzie`` (w całym pliku, gdy kod tej funkcji z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
+| ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk, po przywróceniu znalezisko w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
-| ``brak - proza`` | bez | każde miejsce ``Gdzie`` w pliku, który zmienił PR, to plik ``.md``, docstring albo komentarz Pythona (``ast`` i ``tokenize`` na FAIL) |
+| ``brak - proza`` | bez | każde miejsce ``Gdzie`` w pliku, który zmienił PR, to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - test`` | bez | każde takie miejsce leży w ``tests/``; mutację złej implementacji powtarza recenzent następnej rundy (skill ``przeglad``) |
 
 Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): test, który ten PR zmienił po FAIL dla innego
@@ -21,17 +21,14 @@ status „Werdykt i bramka” liczy dowód w jobie bez prawa zapisu (``.github/w
 
 from __future__ import annotations
 
-import ast
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
-import io
 import json
 import os
 from pathlib import Path
 import re
 import sys
-import tokenize
 
 import potomne
 import repo
@@ -90,12 +87,16 @@ Place = tuple[str, int, int]
 @dataclass(frozen=True)
 class Case:
     """Ważne ``label`` (``#5 W1 r1``) werdyktu ``FAIL`` na commicie ``failed`` z miejscami ``places`` pola ``Gdzie``;
-    ``fork`` to rozwidlenie gałęzi PR od bazy przed tym commitem (zmiany PR do FAIL to ``fork..failed``)."""
+    ``fork`` to rozwidlenie gałęzi PR od bazy przed tym commitem (zmiany PR do FAIL to ``fork..failed``). Linie z FAIL
+    podaje wywołujący: ``scopes`` to miejsca ``places`` rozszerzone do najmniejszej funkcji (strażnik statyczny),
+    a ``prose`` zakresy komentarzy i docstringów plików Pythona z ``places`` (``brak - proza``)."""
 
     label: str
     failed: str
     fork: str
     places: tuple[Place, ...]
+    scopes: tuple[Place, ...] = ()
+    prose: tuple[Place, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -222,37 +223,20 @@ def _write(path: Path, content: bytes | None) -> None:
     path.write_bytes(content)
 
 
-def _scope(root: Path, head: str, case: Case, path: str) -> range:
-    """Linie pliku ``path`` z FAIL, w których znalezisko liczy się do dowodu: najmniejsza funkcja wokół każdego miejsca
-    z ``Gdzie`` w tym pliku, a cały plik, gdy kod tej funkcji z FAIL stoi bez zmian na HEAD."""
+def _scope(root: Path, head: str, case: Case, path: str) -> set[int]:
+    """Linie pliku ``path`` z FAIL, w których znalezisko liczy się do dowodu: zakresy ``case.scopes`` w tym pliku, a cały
+    plik, gdy kod któregoś z nich z FAIL stoi bez zmian na HEAD."""
 
-    text = _text(root, case.failed, path) or ""
+    lines = (_text(root, case.failed, path) or "").splitlines()
     now = _text(root, head, path) or ""
-    lines = text.splitlines()
-    spans = []
-    for place, first, last in case.places:
+    found: set[int] = set()
+    for place, low, high in case.scopes or case.places:
         if place != path:
             continue
-        low, high = _function(text, first, last)
         if "\n".join(lines[low - 1 : high]) in now:
-            return range(1, len(lines) + 1)
-        spans.append((low, high))
-    low = min((span[0] for span in spans), default=1)
-    high = max((span[1] for span in spans), default=len(lines))
-    return range(low, high + 1)
-
-
-def _function(text: str, first: int, last: int) -> tuple[int, int]:
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return first, last
-    spans = [
-        (node.lineno, node.end_lineno or node.lineno)
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.lineno <= first and last <= (node.end_lineno or node.lineno)
-    ]
-    return max(spans, default=(first, last))
+            return set(range(1, len(lines) + 1))
+        found.update(range(low, high + 1))
+    return found
 
 
 def _exempt(root: Path, kind: Kind, head: str, base: str, case: Case) -> Outcome:
@@ -260,28 +244,26 @@ def _exempt(root: Path, kind: Kind, head: str, base: str, case: Case) -> Outcome
     own = [place for place in case.places if place[0] in touched]
     if not own:
         return Outcome(False, f"{case.label} | {case.failed[:8]} | ODMOWA | żadne miejsce z Gdzie nie leży w pliku, który zmienił PR")
-    wrong = [place for place in own if not (_prose(root, case.failed, place) if kind is Kind.PROSE else place[0].startswith(TESTS))]
+    wrong = [place for place in own if not (_prose(root, case, place) if kind is Kind.PROSE else place[0].startswith(TESTS))]
     if wrong:
         why = "to nie plik .md, docstring ani komentarz" if kind is Kind.PROSE else "leży poza tests/"
         return Outcome(False, f"{case.label} | {case.failed[:8]} | ODMOWA | {', '.join(f'{path}:{first}' for path, first, _ in wrong)} {why}")
     return Outcome(True, f"{case.label} | {case.failed[:8]} | WYJĄTEK {kind.value} | {', '.join(f'{path}:{first}' for path, first, _ in own)}")
 
 
-def _prose(root: Path, commit: str, place: Place) -> bool:
+def _prose(root: Path, case: Case, place: Place) -> bool:
+    """Czy miejsce to proza: plik ``.md`` albo każda linia w docstringu z ``case.prose`` lub w linii samego komentarza
+    (komentarz z ``case.prose`` na linii, która zaczyna się od ``#``, a nie za kodem)."""
+
     path, first, last = place
     if path.endswith(".md"):
         return True
-    text = _text(root, commit, path)
-    if text is None or not path.endswith(".py"):
-        return False
-    try:
-        tree = ast.parse(text)
-        comments = {token.start[0] for token in tokenize.generate_tokens(io.StringIO(text).readline) if token.type == tokenize.COMMENT}
-    except (SyntaxError, tokenize.TokenError):
-        return False
-    docstrings = [
-        (body[0].lineno, body[0].end_lineno or body[0].lineno)
-        for node in ast.walk(tree)
-        if isinstance(body := getattr(node, "body", None), list) and body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) and isinstance(body[0].value.value, str)
-    ]
-    return all(line in comments or any(low <= line <= high for low, high in docstrings) for line in range(first, last + 1))
+    lines = (_text(root, case.failed, path) or "").splitlines()
+    spans = [(low, high) for file, low, high in case.prose if file == path]
+
+    def prose_line(number: int) -> bool:
+        # Zakres jednej linii to komentarz albo docstring jednej linii: proza tylko, gdy linia od niego się zaczyna.
+        text = lines[number - 1].lstrip() if 0 < number <= len(lines) else ""
+        return any(low <= number <= high and (high > low or text.startswith(("#", '"', "'", 'r"', "r'"))) for low, high in spans)
+
+    return path.endswith(".py") and all(prose_line(number) for number in range(first, last + 1))

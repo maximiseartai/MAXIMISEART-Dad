@@ -344,10 +344,13 @@ def test_dowod_reguly_o_id_odmawia_reguly_ktorej_konfiguracja_ast_grep_nie_laduj
 GUARD_TEST = "from kod.inne import wazne\n\n\nclass Obiekt:\n    def dozwolone(self) -> None:\n        pass\n\n\ndef test_wazne_wola_tylko_dozwolone() -> None:\n    wazne(Obiekt())\n"
 
 
-def _guard_proof(tmp_path: Path, guard: str) -> tuple[subprocess.CompletedProcess[str], str]:
+def _guard_proof(
+    tmp_path: Path, guard: str, failed_files: dict[str, str] | None = None, fixed_files: dict[str, str] | None = None
+) -> tuple[subprocess.CompletedProcess[str], str]:
     files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE}
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
-    failed, head = _merge(github, 5, {"kod/inne.py": CAUGHT}, {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST})
+    fixed = fixed_files or {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
+    failed, head = _merge(github, 5, failed_files or {"kod/inne.py": CAUGHT}, fixed)
     verdict = f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"]
     comment = {"body": verdict, "bodyHTML": body_html(verdict, werdykty_szablonu.rendered()), "authorAssociation": "OWNER", "createdAt": "2026-11-14T01:00:00Z", "author": {"login": "recenzent"}}
     pages = {"pageInfo": {"hasNextPage": False, "endCursor": None}}
@@ -375,3 +378,21 @@ def test_dowod_straznika_bierze_zla_postac_z_sha_werdyktu_fail_i_gdzie(tmp_path:
     assert done.stdout.splitlines()[-1] == last, done.stdout
     if guard.startswith("pytest"):
         assert done.stdout.splitlines()[0].startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z FAIL: kod/inne.py | "), done.stdout
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("text", "last"),
+    [
+        ('"""Wołanie {} na obiekcie."""\n\n\ndef wazne(obiekt):\n    obiekt.dozwolone()\n', "DOWÓD OK | brak - proza | wyjątek 1/1"),
+        ("NAZWA = '{}'\n\n\ndef wazne(obiekt):\n    obiekt.dozwolone()\n", "DOWÓD ODMOWA | brak - proza | wyjątek 0/1"),
+    ],
+    ids=["docstring", "napis-w-kodzie"],
+)
+def test_wyjatek_prozy_czyta_docstring_regula_ast_grep_z_kopii_sha_werdyktu(tmp_path: Path, text: str, last: str) -> None:
+    """Ważne o zdaniu docstringu (#2069 W1 r2) nie ma strażnika poza właścicielem faktu, a napis przypisany w kodzie to
+    kod: odróżnia je reguła ``PROSE`` na kopii SHA werdyktu, nie parser autora."""
+
+    done, _ = _guard_proof(tmp_path, "brak - proza", {"kod/inne.py": text.format("zakazane")}, {"kod/inne.py": text.format("dozwolone")})
+
+    assert done.stdout.splitlines()[-1] == last, done.stdout

@@ -40,7 +40,8 @@ BASE = {
 }
 GUARD_TEST = "from kod.liczby import podwojona\n\n\ndef test_podwojona_daje_dwa_razy() -> None:\n    assert podwojona(3) == 6\n"
 BAD = BASE["kod/liczby.py"].replace("x * 2", "x * 3")
-WHERE = (("kod/liczby.py", 2, 2),)
+Places = tuple[tuple[str, int, int], ...]
+WHERE: Places = (("kod/liczby.py", 2, 2),)
 
 
 @dataclass(frozen=True)
@@ -50,11 +51,11 @@ class Pull:
     failed: str
     head: str
 
-    def case(self, places: tuple[tuple[str, int, int], ...] = WHERE) -> straznik.Case:
-        return straznik.Case("#5 W1 r1", self.failed, self.fork, places)
+    def prove(self, guard: str, places: Places = WHERE, *, scopes: Places = (), prose: Places = ()) -> straznik.Outcome:
+        """Dowód jednego Ważnego; ``scopes`` i ``prose`` to linie z FAIL, które podaje ``tools/na_scalonych_pr.py``."""
 
-    def prove(self, guard: str, places: tuple[tuple[str, int, int], ...] = WHERE) -> straznik.Outcome:
-        [outcome] = straznik.prove(self.root, straznik.parse(guard), self.head, self.fork, [self.case(places)])
+        case = straznik.Case("#5 W1 r1", self.failed, self.fork, places, scopes, prose)
+        [outcome] = straznik.prove(self.root, straznik.parse(guard), self.head, self.fork, [case])
         return outcome
 
 
@@ -224,9 +225,22 @@ def test_znalezisko_mypy_poza_funkcja_z_gdzie_nie_jest_dowodem(tmp_path: Path) -
     fixed = {**TYPED_FIX, "kod/uzycie.py": TYPED_FIX["kod/uzycie.py"] + "\n\ndef zla(x: int) -> int:\n    return x * 2\n"}
     pull = _pull(tmp_path, failed, fixed)
 
-    outcome = pull.prove("mypy", (("kod/uzycie.py", 9, 9),))
+    outcome = pull.prove("mypy", (("kod/uzycie.py", 9, 9),), scopes=(("kod/uzycie.py", 8, 9),))
 
     assert not outcome.detected and "znaleziska poza funkcją z Gdzie: kod/uzycie.py:5" in outcome.line, outcome.line
+
+
+@wymaga_ruff_i_mypy
+def test_znalezisko_w_calym_przywroconym_pliku_liczy_sie_gdy_kod_funkcji_z_gdzie_stoi_bez_zmian_na_head(tmp_path: Path) -> None:
+    """``Gdzie`` wskazuje miejsce objawu (#1956 W2 r1: linia 207, a błąd typu na 184): funkcja z FAIL stoi na HEAD bez
+    zmian, więc poprawka leży obok i dowód liczy znalezisko w całym przywróconym pliku."""
+
+    symptom = "\n\ndef objaw(x: int) -> int:\n    return x\n"
+    pull = _pull(tmp_path, {**TYPED, "kod/uzycie.py": TYPED["kod/uzycie.py"] + symptom}, {**TYPED_FIX, "kod/uzycie.py": TYPED_FIX["kod/uzycie.py"] + symptom})
+
+    outcome = pull.prove("mypy", (("kod/uzycie.py", 9, 9),), scopes=(("kod/uzycie.py", 8, 9),))
+
+    assert outcome.detected and "kod/uzycie.py:5 [union-attr]" in outcome.line, outcome.line
 
 
 BANNED = '"os.system".msg = "użyj subprocess.run"'
@@ -280,9 +294,18 @@ def test_proza_w_docstringu_i_komentarzu_pythona_to_wyjatek(tmp_path: Path) -> N
     documented = '"""Moduł liczb.\n\nPodwaja `podwojona`.\n"""\n\n# komentarz o liczbach\n' + BASE["kod/liczby.py"]
     pull = _pull(tmp_path, {"kod/liczby.py": documented.replace("Podwaja", "Potraja")}, {"kod/liczby.py": documented})
 
-    outcome = pull.prove("brak - proza", (("kod/liczby.py", 3, 3), ("kod/liczby.py", 6, 6)))
+    outcome = pull.prove("brak - proza", (("kod/liczby.py", 3, 3), ("kod/liczby.py", 6, 6)), prose=(("kod/liczby.py", 1, 4), ("kod/liczby.py", 6, 6)))
 
     assert outcome.detected, outcome.line
+
+
+def test_komentarz_za_kodem_na_linii_z_gdzie_nie_jest_proza(tmp_path: Path) -> None:
+    trailing = BASE["kod/liczby.py"].replace("return x * 2", "return x * 2  # podwaja")
+    pull = _pull(tmp_path, {"kod/liczby.py": trailing.replace("x * 2", "x * 3")}, {"kod/liczby.py": trailing})
+
+    outcome = pull.prove("brak - proza", WHERE, prose=(("kod/liczby.py", 2, 2),))
+
+    assert not outcome.detected and "kod/liczby.py:2 to nie plik .md, docstring ani komentarz" in outcome.line, outcome.line
 
 
 # Granice dowodu (ADR 0042, „Konsekwencje”): każda próbka przechodzi dowód, choć strażnik nie łapie Ważnego z ``Gdzie``.
