@@ -196,8 +196,6 @@ extend-select = [
 # kanoniczna maila i Logi Wpisania raportów, które zapisują odczyt i odtwarzają go z Logów.
 "src/rozliczenia/worker_reports/{_reading,_matching,_corrections,_canonical}.py" = ["TID251"]
 "src/rozliczenia/centrum/report_entering_logs.py" = ["TID251"]
-# Pamięć Wpisania raportów (SavedState): jej odczyt z pliku Wpisania (ReportState.load).
-"src/rozliczenia/centrum/report_entering_state.py" = ["TID251"]
 # Wejście odczytu okna (ReportInputs): jego jedyny konstruktor report_inputs i Przypomnienia rdzenia, które biorą je jako pole.
 "src/rozliczenia/report_entering.py" = ["TID251"]
 "src/rozliczenia/worker_reports/_reminders.py" = ["TID251"]

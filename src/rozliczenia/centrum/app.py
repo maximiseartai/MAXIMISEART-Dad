@@ -298,7 +298,7 @@ def create_app(
     intermax = IntermaxEntry(
         settings, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
-    reminders = ReportReminders(work, settings, reminder_mailbox or inbox, files, reports, now, report_files)
+    reminders = ReportReminders(work, settings, reminder_mailbox or inbox, files, reports, now, report_files.load)
     mailing = SettlementMailing(work, settings, settlement_mailbox or inbox, files, now)
     app.include_router(settlement_mailing_router(mailing))
     report_entering = ReportEnteringEntry(settings, catalog, configuration, parts, contexts, report_files, reminders.shown)
