@@ -16,6 +16,7 @@ import re
 import shutil
 import subprocess
 import sys
+import sysconfig
 from typing import cast
 
 import pytest
@@ -31,6 +32,7 @@ import github as klient_github
 import limit_rund
 import naprawia
 import ponowny_przeglad
+import reguly_bazy
 import rejestr_korzeni
 import scal_pr
 import stan_pr
@@ -2853,7 +2855,7 @@ def test_kazda_tresc_rejestru_korzeni_ma_html_z_renderera_githuba() -> None:
     assert sorted(chwasty.rendered()) == sorted(set(chwasty.bodies())), "odśwież: .venv/bin/python -m tests.fixtures.chwasty"
 
 
-# Status „Werdykt i bramka” (``--status``, ADR 0036 „Status w Actions”): warunki 1–5 tools/scal_pr.py jako status commita
+# Status „Werdykt i bramka” (``--status``, ADR 0036 „Status w Actions”): warunki 1–6 tools/scal_pr.py jako status commita
 # na HEAD PR, bez merge'a; w runie Actions z linkiem do runu, w którym linia STATUS podaje przyczyny w całości.
 RUN = {"GITHUB_SERVER_URL": "https://github.com", "GITHUB_REPOSITORY": opisy_pr.REPO, "GITHUB_RUN_ID": "77"}
 RUN_URL = f"https://github.com/{opisy_pr.REPO}/actions/runs/77"
@@ -2875,16 +2877,58 @@ def test_status_gotowego_pr_jest_zielony_na_jego_head_a_pr_nie_jest_scalany(tmp_
     answered = _status(github, "1", "--status")
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"STATUS success | #1 {head[:7]} | warunki 1–5 tools/scal_pr.py spełnione"
+    assert _last_line(answered) == f"STATUS success | #1 {head[:7]} | warunki 1–6 tools/scal_pr.py spełnione"
     assert _statuses(github) == [
         [
             "POST",
             f"repos/{{owner}}/{{repo}}/statuses/{head}",
-            {"state": "success", "context": "Werdykt i bramka", "description": "warunki 1–5 tools/scal_pr.py spełnione", "target_url": RUN_URL},
+            {"state": "success", "context": "Werdykt i bramka", "description": "warunki 1–6 tools/scal_pr.py spełnione", "target_url": RUN_URL},
         ]
     ]
     assert github.merges() == []
 
+
+
+
+# Reguła ast-grep bazy (warunek 6, ``reguly_bazy``): PR, który ją osłabia, sądzi jeszcze wersja z bazy, a przypadki
+# reguł liczy ``tools/na_scalonych_pr.py --przypadki-regul --z-commita <HEAD>`` bazy (tu atrapa ``FAKE_PROOF``).
+BASE_RULE = "id: zakazane-wywolanie\nlanguage: python\nseverity: error\nmessage: Zamień zakazane() na dozwolone().\nfiles:\n  - kod/**\nrule:\n  pattern: zakazane()\n"
+BASE_RULES = {"sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n", "reguly-ast-grep/zakazane-wywolanie.yml": BASE_RULE}
+CASES_OK = (0, "PRZYPADKI REGUŁ OK | 1 reguł, 1 przypadków")
+CASES_DROPPED = (1, "PRZYPADKI REGUŁ FAIL | zakazane-wywolanie: PR usuwa z metadata.przypadki przypadki z bazy 5/W1/r1")
+
+
+@pytest.mark.skipif(shutil.which("ast-grep", path=sysconfig.get_path("scripts")) is None, reason="ast-grep z dodatku dev")
+@pytest.mark.parametrize(
+    ("change", "cases", "reason"),
+    [
+        (
+            {"reguly-ast-grep/zakazane-wywolanie.yml": BASE_RULE + "ignores:\n  - kod/inne.py\n", "kod/inne.py": "zakazane()\n"},
+            CASES_OK,
+            "reguły bazy: kod/inne.py:1: zakazane-wywolanie: Zamień zakazane() na dozwolone().",
+        ),
+        ({"kod/inne.py": "INNE: int = 1\n"}, CASES_DROPPED, f"przypadki reguł: {CASES_DROPPED[1]}"),
+        ({"kod/inne.py": "INNE: int = 1\n"}, (0, "PRZYPADKI REGUŁ"), "przypadki reguł: PRZYPADKI REGUŁ (przypadek z bazy"),
+    ],
+    ids=["linia-pr-pod-regula-bazy", "przypadek-bazy-usuniety", "przypadki-bez-linii-ok"],
+)
+def test_pr_ktory_oslabia_regule_bazy_nie_scala_sie_a_jego_status_jest_czerwony(
+    tmp_path: Path, change: dict[str, str], cases: tuple[int, str], reason: str
+) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF, **BASE_RULES})
+    head = github.open_pull(1, change)
+    github.comment(1, PASS.format(head=head))
+    (github.bin / "dowod.json").write_text(json.dumps({"kod": cases[0], "linia": cases[1]}), encoding="utf-8")
+
+    merged = _run_from(github, github.checkout, "1", "--bez-merge")
+    status = _status(github, "1", "--status")
+
+    assert merged.returncode == 1 and _last_line(merged).startswith(f"SCAL ODMOWA | #1 {head[:7]} | {reason}"), merged.stdout
+    assert status.returncode == 0 and _last_line(status).startswith(f"STATUS failure | #1 {head[:7]} | {reason}"), status.stdout
+    assert [(arguments[:2], git(github.checkout, "rev-parse", f"{arguments[2]}^2")) for arguments in _proofs(github)] == [
+        (["--przypadki-regul", "--z-commita"], head)
+    ] * 2
+    assert github.merges() == []
 
 WRONG_BODY = BODY.replace("## Merge Danger", "## Ryzyko")
 FAIL_FOR_HEAD = "WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)"
@@ -3044,7 +3088,7 @@ def test_status_liczy_warunek_idiom_po_warunkach_1_4_ktore_tylko_oczekuja(
     assert answered.returncode == 0 and last.startswith(prefix), answered.stdout + answered.stderr
     description = last.removeprefix(prefix)
     if state == "success":
-        assert description == "warunki 1–5 tools/scal_pr.py spełnione"
+        assert description == "warunki 1–6 tools/scal_pr.py spełnione"
     found = [name for name, reason in expected.items() if reason in description]
     assert sorted(found) == sorted(reasons), description
     assert ("idiom:" in description) is any(name in {"idiom", "rejestr"} for name in reasons), description
@@ -3074,7 +3118,7 @@ def test_limit_dowodow_regul_konczy_sie_przed_limitem_joba_statusu() -> None:
 
     job = yaml.safe_load(STATUS_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["status"]
 
-    assert job["timeout-minutes"] * 60 - bramka_idiomu.PROOF_TIMEOUT_S >= 120
+    assert job["timeout-minutes"] * 60 - bramka_idiomu.PROOF_TIMEOUT_S - reguly_bazy.CASES_TIMEOUT_S >= 120
 
 
 def test_blad_renderera_werdyktow_w_warunku_idiom_to_oczekiwanie_bez_dowodu(tmp_path: Path) -> None:

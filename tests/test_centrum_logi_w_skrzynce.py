@@ -2277,6 +2277,45 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_z_przeniesieniem_odtwarz
     assert [(move["day"], move["worker"]) for move in clicked["moves"]] == [("2026-11-09", "anna.kowalska")]
 
 
+def test_drugi_wpis_na_zyczenie_z_poprawki_z_bledem_tematu_ma_w_logach_wlasny_wpis_i_odtwarza_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0041: tata wpisuje Wpisem na życzenie ``t wymiana`` z ``Raport 09.11.2026 Kowalski``, a Jan przysyła
+    poprawkę z tym samym błędem tematu i ``nieskuteczne``. Drugi Wpis na życzenie zmienia własny wpis Centrum, więc
+    odtworzenie z Logów zmienia go jak u taty, a nie bierze go za ręczną wartość taty."""
+
+    surroundings = Surroundings()
+    first = report(SENDERS["jan.testowy"], "Raport 09.11.2026 Kowalski", "40000001 t wymiana", at=datetime(2026, 11, 9, 17))
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, [first], surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+
+    def requested_at(moment: datetime) -> dict[str, Any]:
+        [request] = [
+            order["request"]
+            for worker in centrum.client.get("/api/report-entering/view").json()["workers"]
+            for day in worker["days"]
+            for order in day["orders_detail"]
+            if order["request"] is not None
+        ]
+        centrum.moment.append(moment)
+        assert centrum.client.post("/api/report-entering/request", json=request).status_code == 200
+        return finished_view(centrum.client)
+
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    requested_at(datetime(2026, 11, 9, 18))
+    centrum.fake_inbox.outcome = [
+        first,
+        report(SENDERS["jan.testowy"], "Raport 09.11.2026 Kowalski", "40000001 nieskuteczne brak klienta", at=datetime(2026, 11, 9, 19)),
+    ]
+    centrum.moment.append(datetime(2026, 11, 9, 19, 30))
+    assert centrum.run_to_end()["result"]["ending"] == "finished"
+    corrected = requested_at(datetime(2026, 11, 9, 20))
+
+    code, lines = _replayed(capsys, _archived_run(surroundings.report_box, tmp_path, corrected["run"]["id"]), "--na-tym-drzewie")
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 def test_blad_tematu_ktorego_zlecenie_wzial_pozniejszy_raport_odtwarza_sie_zgodnie_takze_przy_nastepnym_kliknieciu(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:

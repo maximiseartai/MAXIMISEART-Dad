@@ -445,7 +445,7 @@ class RequestedEntry:
       zamiar znaku (``VerdictFault.leaning``);
     - Wpis raportu z błędem tematu (``ReadUnreadable``), który stawia zlecenie w dniu ``day`` u ``worker``, także z
       Przeniesieniem zlecenia: rdzeń czyta go jak Wpis Raportu wykonawcy z tym dniem w temacie
-      (``_reading.WindowRead.requested``), a Wpis z ``t`` czy ``skuteczne`` także ze znakiem zamienionym na ``verdict``.
+      (``_reading._requested``), a Wpis z ``t`` czy ``skuteczne`` także ze znakiem zamienionym na ``verdict``.
 
     Rdzeń wpisuje go tak, dopóki ten Wpis tego maila jest zwycięskim Wpisem zlecenia: Wpis z późniejszego maila wygrywa
     jak każdy późniejszy, także z tym samym znakiem, a ręczna wartość zostaje z ``ManualDifference``. Decyzja należy do
@@ -1029,7 +1029,7 @@ class ReportsOutcome:
     numerze, każdy numer najwyżej raz, a zapis dopisuje je po Przeniesieniach; ``problems`` bez powtórzeń, w kolejności
     ``problem_order``; ``notes`` (informacje dla taty) w kolejności ``note_order``; ``workers`` po dniu i Wykonawcy, po
     Przeniesieniach i dopisaniach; ``mails`` po chwili przyjścia. ``memory`` proces zapisuje dopiero po udanym zapisie
-    INTERMAX."""
+    INTERMAX. ``said``: zlecenia z Wpisem tego kliknięcia, także z Wpisem na życzenie (``_reading.WindowRead.said``)."""
 
     changes: tuple[CellChange, ...]
     problems: tuple[ReportProblem, ...]
@@ -1039,6 +1039,7 @@ class ReportsOutcome:
     moves: tuple[OrderMove, ...]
     notes: tuple[ReportNote, ...]
     added: tuple[OrderAdded, ...]
+    said: frozenset[OrderKey]
 
 
 def problem_order(

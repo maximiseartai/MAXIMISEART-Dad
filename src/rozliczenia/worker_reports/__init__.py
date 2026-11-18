@@ -16,7 +16,7 @@ chmurze.
 
 from __future__ import annotations
 
-from . import _cells, _corrections, _descriptions, _figures, _moves, _reading
+from . import _cells, _figures, _moves, _reading
 from ._model import (
     ADDED_DIGITS,
     SUBJECT_WORD,
@@ -79,6 +79,7 @@ from ._model import (
 )
 from ._canonical import as_mail
 from ._entries import EXAMPLE_NUMBERS
+from ._reading import worker_report_count
 from ._reminders import (
     DAY_FIELD,
     DEFAULT_REMINDERS,
@@ -185,6 +186,7 @@ __all__ = [
     "reminder_subject",
     "reminder_text",
     "reminders_due",
+    "worker_report_count",
 ]
 
 
@@ -195,7 +197,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     Przypomnieniach o raporcie: mail od Wykonawcy bez żadnego Wpisu nie jest raportem (ADR 0041), Raport z dniem w
     okresie z Plikiem zbiorczym albo spoza okna daje tylko niezgodne Wpisy, a raport z błędem tematu (temat Raportu
     wykonawcy bez dnia zleceń wprost, z Wpisami, od Wykonawcy w dniu otwartym) niczego nie wpisuje i daje
-    ``UnreadableSubject`` przy każdym dniu otwartym, za który się liczy (``WindowRead.faulty``), a bez niego bez dnia.
+    ``UnreadableSubject`` przy każdym dniu otwartym, za który się liczy (``_reading.read_window``), a bez niego bez dnia.
     Liczba Raportów wykonawców dnia w widoku Raporty liczy Raport za każdy dzień, za który jest przysłany, także z
     błędem tematu (``WindowRead.reported``), a dzień, za który liczy się raport z pomylonym tematem, ma jego dzień z
     tematu (``WindowRead.mistaken``). Które numery są w INTERMAX i ile mają
@@ -221,7 +223,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``). Decyzja taty Wpisu na
     życzenie (``inputs.requested``) wpisuje Wpis ze znakiem zamiast ``tak``/``nie`` jak Wpis z chwilą kliknięcia
     (``_matching.Board.match``), a Wpis raportu z błędem tematu jak Wpis Raportu wykonawcy z dniem zlecenia w temacie
-    (``WindowRead.entering``); zlecenie z Wpisem raportu z błędem tematu ma Wpis na życzenie, gdy Centrum wie, co
+    (``WindowRead.matched``); zlecenie z Wpisem raportu z błędem tematu ma Wpis na życzenie, gdy Centrum wie, co
     wpisać (``WindowRead.offers``), a raport z błędem tematu, z którego nie ma już czego wpisać, jest informacją przy
     swoim dniu, nie problemem (``WindowRead.overtaken``).
     """
@@ -229,21 +231,15 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     window = inputs.window
     orders = tuple(inputs.orders)
     read = _reading.read_window(inputs)
-    mails, reports, board = read.mails, list(read.entering), read.board
-    problems: list[ReportProblem] = list(read.strangers)
-    matched = board.match(reports, inputs.requested)
-    additions = _corrections.uncorrected(matched.added, reports, board)
-    described = _descriptions.entered(inputs.legend, matched.entered, additions)
+    mails, matched, additions = read.mails, read.matched, read.additions
     moved = _moves.moved(matched.accepted, additions, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
     targets = {key: (after[order.row], entry) for key, (order, entry) in matched.targets.items()}
     changes, differences, memory = _cells.reconcile(targets, moved.orders, moved.memory, inputs.kept)
     added = {OrderKey(found.number, found.day, found.worker): found for found in additions}
     memory = _cells.with_added(memory, ((key, found.verdict, found.activities) for key, found in added.items()))
-    newest = {found.number: (found.arrived, found.mail) for found in additions}
-    standing = _corrections.standing([*problems, *matched.problems, *described], reports, read.faulty, board, newest)
-    problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
-    shown = [report for report in reports if window.opens(report.day)]
+    problems_found = tuple(sorted({*read.standing, *differences}, key=problem_order))
+    said = frozenset(key for key in read.said if window.opens(key.day))
     reported = [(day, worker) for worker, day in read.reported if window.opens(day)]
     details = [
         (key, OrderDetail(found.number, found.verdict.value, found.activities or None, True))
@@ -252,7 +248,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     opened = [order for order in moved.orders if window.opens(order.key.day)]
     figures = _figures.worker_days(
         opened,
-        shown,
+        said,
         reported,
         problems_found,
         changes,
@@ -266,5 +262,5 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
         read.overtaken,
     )
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
-    return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added)
+    return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added, read.said)
 

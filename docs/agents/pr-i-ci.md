@@ -25,7 +25,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 ## Status `scalenie z main`
 
 - Status (`tools/ci/status_scalenia.py`) mówi w opisie, co zrobić, a ruleset go nie wymaga, więc gotowość PR od niego nie zależy, choć `gh pr checks` kończy się kodem 1, gdy jest czerwony.
-- Brak statusu znaczy, że `main` nie zmienił się od pushu PR albo przebieg jeszcze trwa.
+- Brak statusu znaczy, że `main` nie zmienił się od pushu PR, przebieg jeszcze trwa albo padł job „Statusy scalenia z main” w `werdykt-i-bramka.yml`, który ustawia werdykty z artefaktu `scalenia.yml`.
 
 ## Czerwony `main`
 

@@ -1,7 +1,8 @@
 name: Werdykt i bramka
 
 # The commit status "Werdykt i bramka" on the HEAD of each open PR to main: would tools/scal_pr.py merge it now, by
-# conditions 1-5 of its --help (CI, verdict PASS for HEAD, PR body, root gate, rule of an Idiom: field), judged by main's code
+# conditions 1-6 of its --help (CI, verdict PASS for HEAD, PR body, root gate, rule of an Idiom: field, main's ast-grep
+# rules on the lines the PR adds), judged by main's code
 # (tools/scal_pr.py --status, ADR 0036 "Status w Actions"): pending while it only waits for CI or a verdict on HEAD,
 # failure when the author must act. The ruleset of main requires it as success. A closed PR gets no new status, so
 # the HEAD of a merged PR keeps the status it had at the merge, and a merge without a green one shows afterwards.
@@ -26,20 +27,18 @@ on:
       - created
       - edited
       - deleted
-  workflow_run: # zizmor: ignore[dangerous-triggers] checks out main and only reads the PR through the API and git
+  workflow_run: # zizmor: ignore[dangerous-triggers] checks out main, reads the PR through the API and git, and takes from the artifact of scalenia.yml only verdicts --publikuj-z filters
     workflows:
       - CI
+      - Scalenia otwartych PR
     types:
       - completed
 
-# The job never runs the PR's code, so a fork may trigger it too: tools/scal_pr.py refuses a PR from a fork and sets
-# that as its status. statuses: write can set any commit status, but the ruleset requires a CheckRun of CI.
+# No job runs the PR's code, so a fork may trigger them too: tools/scal_pr.py refuses a PR from a fork and sets that
+# as its status. statuses: write can set any commit status, so only the jobs of this workflow have it
+# (tests/test_zadania_ci.py), and the ruleset requires a CheckRun of CI too.
 permissions:
   contents: read
-  pull-requests: read
-  issues: read
-  checks: read
-  statuses: write
 
 concurrency:
   # One group per PR, so a newer event cancels the run of the older one; a CI run without a PR gets its own group.
@@ -54,6 +53,12 @@ jobs:
       || (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open')
       || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0])
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      checks: read
+      statuses: write
     # The rule proofs of condition 5 share bramka_idiomu.PROOF_TIMEOUT_S, at least 2 min under this limit, so a slow
     # proof ends as a failure status with its reason instead of a cancelled job without a status.
     timeout-minutes: 10
@@ -80,7 +85,7 @@ jobs:
         with:
           enable-cache: false
 
-      # Condition 5 runs the rule proof tools/na_scalonych_pr.py, which needs ast-grep and PyYAML. Their pins come from
+      # Condition 5 runs the rule proof tools/na_scalonych_pr.py, which needs ast-grep and PyYAML, and condition 6 ast-grep. Their pins come from
       # main's pyproject.toml (the dev extra, as in CI), and -r installs only the dependencies, so nothing from the PR
       # and no build of the project runs.
       - name: Install the dependencies of the rule proof
@@ -100,3 +105,37 @@ jobs:
             python3 tools/scal_pr.py "$numer" --status || wynik=1
           done
           exit "$wynik"
+
+  scalenia:
+    # The verdicts "scalenie z <base>" of a run of scalenia.yml on main (its input baza names the base), set here because that run executes PR code and
+    # has no statuses: write. tools/ci/status_scalenia.py --publikuj-z sets only the context "scalenie z <base>" on the
+    # current HEAD of an open same-repository PR, so a run on another branch or a forged entry sets no other status.
+    name: Statusy scalenia z main
+    if: >-
+      github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Scalenia otwartych PR'
+      && github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: scalenia
+          path: .scalenia
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Set the status of each verdict
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python3 tools/ci/status_scalenia.py --publikuj-z .scalenia/scalenia.json

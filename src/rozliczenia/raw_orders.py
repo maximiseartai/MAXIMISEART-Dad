@@ -65,9 +65,10 @@ from types import MappingProxyType
 from typing import Final, TypeVar
 
 from .order_base import HistoryBlock
+from .order_kind import OrderKind, order_kind
 from .register_columns import ORDERED_FONT, ORDERED_SIZE
 from .row_positions import AbovePaste, RowPositions
-from .text import normalize_text
+from .text import folded_name, normalize_text
 
 SHIFT: Final = 2
 """O tyle kolumn w lewo przychodzi pierwszy wiersz wklejenia."""
@@ -129,24 +130,6 @@ _OPERATOR_COLORS: Final[Mapping[str | None, OperatorColor]] = MappingProxyType(
 _OTHER_OPERATOR: Final = OperatorColor("00FFFF", "00FFFF")
 _FAULT: Final = OperatorColor(devices="E89CA7")
 """Kolor zamiast Koloru operatora przy usterce (``OrderKind.FAULT``)."""
-
-
-class OrderKind(Enum):
-    """Rodzaj Surowego zlecenia z ``URZĄDZENIA``: usterka (także hurt), instalacja hurt albo inny."""
-
-    FAULT = "usterka"
-    WHOLESALE_INSTALLATION = "instalacja hurt"
-    OTHER = "inny"
-
-
-_KINDS: Final[Mapping[str, OrderKind]] = MappingProxyType(
-    {
-        "usterka": OrderKind.FAULT,
-        "usterkahurt": OrderKind.FAULT,
-        "instalacjahurt": OrderKind.WHOLESALE_INSTALLATION,
-    }
-)
-"""``URZĄDZENIA`` (``_name``) → rodzaj zlecenia; każda inna wartość to ``OrderKind.OTHER``."""
 
 
 @dataclass(frozen=True)
@@ -928,7 +911,7 @@ def _order(row: RowFacts, columns: OrderColumns, offset: int) -> RawOrder | Unda
     if worker is None:
         return WithoutWorker(row.number, columns.worker - offset)
     operator = row.value(columns.activities - offset)
-    kind = _KINDS.get(_name(row.value(columns.devices - offset)), OrderKind.OTHER)
+    kind = order_kind(row.value(columns.devices - offset))
     return RawOrder(
         row.number,
         offset,
@@ -942,16 +925,10 @@ def _order(row: RowFacts, columns: OrderColumns, offset: int) -> RawOrder | Unda
     )
 
 
-def _name(value: object) -> str:
-    """Nazwa bez wielkości liter, spacji i myślników: ``T-Mobile`` i ``TMOBILE`` to ``tmobile``."""
-
-    return re.sub(r"[\W_]+", "", str(value).casefold())
-
-
 def _operator(text: str) -> str:
-    """Nazwa operatora z ``CZYNNOŚCI`` jak ``_name``, a do tego bez dopisku ``S.A.``: ``Netia S.A.`` i ``NetiaSA`` to ``netia``."""
+    """Nazwa operatora z ``CZYNNOŚCI`` jak ``folded_name``, a do tego bez dopisku ``S.A.``: ``Netia S.A.`` i ``NetiaSA`` to ``netia``."""
 
-    return _name(_COMPANY_SUFFIX.sub("", text))
+    return folded_name(_COMPANY_SUFFIX.sub("", text))
 
 
 @dataclass(frozen=True)

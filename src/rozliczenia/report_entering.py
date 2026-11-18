@@ -82,7 +82,6 @@ from .worker_reports import (
     OwnEntry,
     OwnMove,
     ReadNumber,
-    ReadReport,
     RegisterOrder,
     ReportInputs,
     ReportMail,
@@ -94,6 +93,7 @@ from .worker_reports import (
     WorkerDay,
     enter_reports,
     order_number,
+    worker_report_count,
 )
 from .wall_clock import local_now
 from .worker_list import WorkerList
@@ -287,7 +287,7 @@ class EnteringSummary:
     def reports(self) -> int:
         """Raporty wykonawców od Wykonawców z listy adresów, które kliknięcie przeczytało."""
 
-        return sum(isinstance(read, ReadReport) for read in self.facts.mails)
+        return worker_report_count(self.facts.mails)
 
 
 @contextmanager
@@ -355,12 +355,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
         given = report_inputs(window, intermax, mails, addresses, clicked, inputs.legend)
         remembered = given.memory
         found = enter_reports(given)
-        reported = {
-            OrderKey(entry.number, read.day, read.worker)
-            for read in found.mails
-            if isinstance(read, ReadReport)
-            for entry in read.entries
-        }
+        reported = found.said
         numbers = {key.number for key in reported}
         before = tuple(
             sorted(

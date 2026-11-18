@@ -22,14 +22,15 @@ NIEWYKRYTA narzędzie powtarza na merge-base HEAD z ``--baza`` (domyślnie origi
 ją), a WYKRYTA tam to REGRES. Poza CI jedno uruchomienie ma najwyżej 100 mutacji (``ciezkie_ci.TARGETED``). Dowodem
 jest tylko WYKRYTA, a narzędzie kończy się wtedy kodem 0 i linią ``MUTACJE OK``.
 
-Po ``MUTACJE OK`` (każda mutacja padła w poleceniu) z poleceniem pytest, które wybiera test dodany albo zmieniony od
-tego merge-base, narzędzie sprawdza każdą mutację też testami sprzed zmiany z wyboru szybko (``szybko.plan``), z ``-x``.
+Z ``--juz-lapie``, po ``MUTACJE OK`` (każda mutacja padła w poleceniu) z poleceniem pytest, które wybiera test dodany
+albo zmieniony od tego merge-base, narzędzie sprawdza każdą mutację też testami sprzed zmiany z wyboru szybko (``szybko.plan``), z ``-x``.
 Na stderr: ``JUŻ ŁAPIE <plik>::<test>`` (ten test sprzed zmiany sam pada po mutacji, a bez niej przechodzi, więc autor
 sprawdza, czy nowy test dodaje coś ponad niego) albo ``JUŻ ŁAPIE NIESPRAWDZONE`` z przyczyną, gdy sprawdzenie tego nie
 wie (limit, pliki odłożone przez szybko, test sprzed zmiany czerwony bez mutacji albo łapiący tylko z sąsiadem). Rady
 usunięcia nowego testu narzędzie nie daje. Werdyktów, stdout ani kodu to nie zmienia, a wybór, ze skanem i czasami CI,
 i sprawdzenie trwają po najwyżej ``--juz-lapie-s`` s. Wybór biegnie też raz bez mutacji w podstawie przed mutacjami
 (#1719): czerwony daje ``PODSTAWA CZERWONA``, a bez wyniku w ``--podstawa-s`` s ``PODSTAWA NIESPRAWDZONA``, obie kod 2.
+Bez ``--juz-lapie`` nie biegnie ani wybór, ani podstawa, ani sprawdzenie, tylko mutacje.
 
 Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
 """
@@ -167,6 +168,9 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
 
 
 ALREADY = "JUŻ ŁAPIE"
+# Sprawdzenie biegnie tylko z ``--juz-lapie``: w tygodniu 11–18.11.2026 dało 594 linie ``JUŻ ŁAPIE <test>`` wobec 8386
+# ``JUŻ ŁAPIE NIESPRAWDZONE`` (pliki odłożone przez szybko, limit), a dokładało średnio ~2 min do wywołania z
+# ``MUTACJE OK`` (transkrypty agentów). Zmianę, która psuje test sprzed niej, łapie i tak szybko i CI.
 UNCHECKED = f"{ALREADY} NIESPRAWDZONE"
 # Przy nowym zachowaniu żaden test sprzed zmiany nie pada, więc bez limitu każda mutacja kosztowałaby cały wybór szybko.
 ALREADY_S = 300.0
@@ -360,6 +364,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--rownolegle", action="store_true", help="Mutacje naraz, każda w swojej kopii.")
     parser.add_argument("--limit-s", type=float, default=TIMEOUT, help="Limit czasu jednego polecenia w sekundach.")
     parser.add_argument(
+        "--juz-lapie", action="store_true", help=f"Po {MUTACJE_OK} sprawdza, czy mutację łapie już test sprzed zmiany ({ALREADY}); bez niego tylko mutacje."
+    )
+    parser.add_argument(
         "--juz-lapie-s", type=float, default=ALREADY_S, help=f"Limit całego sprawdzenia {ALREADY} po {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
     )
     parser.add_argument(
@@ -401,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
     if refused := ciezkie_ci.mutations_refusal(len(mutations), args.odtwarzam, root=ROOT):
         print(refused)
         return 2
-    planned = [] if jak_ci else _planned(mutations, args.baza, args.juz_lapie_s, args.podstawa_s)
+    planned = _planned(mutations, args.baza, args.juz_lapie_s, args.podstawa_s) if args.juz_lapie and not jak_ci else []
     code = review(mutations, base=args.baza, workers=PARALLEL if args.rownolegle else 1, limit_s=args.limit_s, base_commands=_base_commands(planned, args.podstawa_s))
     if code == 0:
         _already_caught(planned, args.limit_s, args.juz_lapie_s)
