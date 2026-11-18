@@ -12,6 +12,7 @@ recenzent, a autor podaje tylko selektor. Wynik to kod wyjścia pytest albo znal
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | Ważne stoi w polu ``metadata.przypadki`` reguły na HEAD (jedyna lista jej przypadków), a reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
 | ``brak - proza`` | bez | każde miejsce ``Gdzie`` w pliku, który zmienił PR, to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - test`` | bez | każde takie miejsce leży w ``tests/``; mutację złej implementacji powtarza recenzent następnej rundy (skill ``przeglad``) |
+| ``brak - napęd`` | bez | każde takie miejsce leży w ``frontend/``, a strażnik to krok napędu skilla ``verify-*``, który Required CI uruchamia w Mutation checks; recenzent następnej rundy uruchamia ten krok na drzewie FAIL |
 
 Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): test, który ten PR zmienił po FAIL dla innego
 Ważnego, przechodzi dowód pytest każdego Ważnego tej rundy, bo przywrócenie cofa wszystkie zmiany PR poza ``tests/``;
@@ -48,10 +49,13 @@ class Kind(Enum):
     AST_GREP = "ast-grep"
     PROSE = "brak - proza"
     TESTS = "brak - test"
+    DRIVE = "brak - napęd"
 
 
-EXEMPT = frozenset({Kind.PROSE, Kind.TESTS})
-FORMS = f"{Kind.PYTEST.value} tests/<plik>.py::<test> …, {Kind.MYPY.value}, {Kind.RUFF.value}, {Kind.AST_GREP.value} <id reguły>, {Kind.PROSE.value} albo {Kind.TESTS.value}"
+EXEMPT = frozenset({Kind.PROSE, Kind.TESTS, Kind.DRIVE})
+# Wyjątek, którego warunek to katalog każdego miejsca ``Gdzie`` zmienionego przez PR; proza ma własny warunek (``_prose``).
+_FOLDERS = {Kind.TESTS: TESTS, Kind.DRIVE: "frontend/"}
+FORMS = f"{Kind.PYTEST.value} tests/<plik>.py::<test> …, {Kind.MYPY.value}, {Kind.RUFF.value}, {Kind.AST_GREP.value} <id reguły>, {Kind.PROSE.value}, {Kind.TESTS.value} albo {Kind.DRIVE.value}"
 
 
 @dataclass(frozen=True)
@@ -244,9 +248,9 @@ def _exempt(root: Path, kind: Kind, head: str, base: str, case: Case) -> Outcome
     own = [place for place in case.places if place[0] in touched]
     if not own:
         return Outcome(False, f"{case.label} | {case.failed[:8]} | ODMOWA | żadne miejsce z Gdzie nie leży w pliku, który zmienił PR")
-    wrong = [place for place in own if not (_prose(root, case, place) if kind is Kind.PROSE else place[0].startswith(TESTS))]
+    wrong = [place for place in own if not (_prose(root, case, place) if kind is Kind.PROSE else place[0].startswith(_FOLDERS[kind]))]
     if wrong:
-        why = "to nie plik .md, docstring ani komentarz" if kind is Kind.PROSE else "leży poza tests/"
+        why = "to nie plik .md, docstring ani komentarz" if kind is Kind.PROSE else f"leży poza {_FOLDERS[kind]}"
         return Outcome(False, f"{case.label} | {case.failed[:8]} | ODMOWA | {', '.join(f'{path}:{first}' for path, first, _ in wrong)} {why}")
     return Outcome(True, f"{case.label} | {case.failed[:8]} | WYJĄTEK {kind.value} | {', '.join(f'{path}:{first}' for path, first, _ in own)}")
 

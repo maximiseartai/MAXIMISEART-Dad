@@ -396,7 +396,8 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int
             raise ValueError(problem)
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         cases = [_case(guard, major_probe(repository, *one)) for one in majors]
-        found = straznik.prove(ROOT, guard, head, repo.merge_base(ROOT, repo.BASE, head), cases)
+        # Rozwidlenie HEAD od ``main`` sprzed merge'a PR, więc dowód na scalonym już PR widzi jego zmiany jak przed merge'em.
+        found = straznik.prove(ROOT, guard, head, _fork(repo.BASE, head), cases)
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {guard} | {error}")
         return 1

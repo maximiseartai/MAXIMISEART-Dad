@@ -92,6 +92,7 @@ def _fixed(tmp_path: Path) -> Pull:
         ("ast-grep lokator-tytulu-okna", Guard(Kind.AST_GREP, ("lokator-tytulu-okna",))),
         ("brak - proza", Guard(Kind.PROSE)),
         ("brak  -  test", Guard(Kind.TESTS)),
+        ("brak - napęd", Guard(Kind.DRIVE)),
     ],
 )
 def test_selektor_straznika_z_zamknietej_listy_daje_rodzaj_i_argumenty(text: str, guard: Guard) -> None:
@@ -275,14 +276,18 @@ def test_zakaz_ruff_dodany_w_pr_to_dowod_ruff_takze_przy_formacie_z_konfiguracji
         ("brak - test", (("tests/test_podwojona.py", 5, 5), ("tests/test_nastepna.py", 5, 5)), "WYJĄTEK brak - test | tests/test_podwojona.py:5"),
         ("brak - test", (("kod/liczby.py", 2, 2),), "ODMOWA | kod/liczby.py:2 leży poza tests/"),
         ("brak - test", (("tests/test_nastepna.py", 5, 5),), "ODMOWA | żadne miejsce z Gdzie nie leży w pliku, który zmienił PR"),
+        ("brak - napęd", (("frontend/src/dzien.ts", 2, 2),), "WYJĄTEK brak - napęd | frontend/src/dzien.ts:2"),
+        ("brak - napęd", (("kod/liczby.py", 2, 2),), "ODMOWA | kod/liczby.py:2 leży poza frontend/"),
     ],
-    ids=["proza-w-md", "proza-w-kodzie-poza-docstringiem", "test-w-tests", "test-z-miejscem-sprzed-pr-pominietym", "test-w-kodzie", "miejsce-sprzed-pr"],
+    ids=["proza-w-md", "proza-w-kodzie-poza-docstringiem", "test-w-tests", "test-z-miejscem-sprzed-pr-pominietym", "test-w-kodzie", "miejsce-sprzed-pr", "naped-w-frontend", "naped-w-kodzie"],
 )
 def test_wyjatek_przechodzi_tylko_gdy_kazde_miejsce_gdzie_zmienione_przez_pr_spelnia_jego_warunek(
     tmp_path: Path, guard: str, places: tuple[tuple[str, int, int], ...], state: str
 ) -> None:
     docs = {"docs/opis.md": "# Opis\n\nLiczby potraja `podwojona`.\n"}
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD, **docs, "tests/test_podwojona.py": "def test_slaby() -> None:\n    assert True\n\n\n    # bez przypadku\n"}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_podwojona.py": GUARD_TEST})
+    weak = "def test_slaby() -> None:\n    assert True\n\n\n    # bez przypadku\n"
+    frontend = {"frontend/src/dzien.ts": "export const komplet = (dni: number) =>\n  dni > 1;\n"}
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD, **docs, **frontend, "tests/test_podwojona.py": weak}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_podwojona.py": GUARD_TEST})
 
     outcome = pull.prove(guard, places)
 

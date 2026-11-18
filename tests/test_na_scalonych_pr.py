@@ -15,6 +15,7 @@ from tests.fixtures import werdykty_szablonu
 from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import FakeGitHub
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
+from tests.fixtures.znane_luki import wymaga_ruff_i_mypy
 
 # Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
 MUTACJE_ZMIANY = ("tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py")
@@ -396,14 +397,17 @@ GUARD_TEST = "from kod.inne import wazne\n\n\nclass Obiekt:\n    def dozwolone(s
 
 
 def _guard_proof(
-    tmp_path: Path, guard: str, failed_files: dict[str, str] | None = None, fixed_files: dict[str, str] | None = None
+    tmp_path: Path, guard: str, failed_files: dict[str, str] | None = None, fixed_files: dict[str, str] | None = None, *, where: str = WHERE
 ) -> tuple[subprocess.CompletedProcess[str], str]:
-    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE}
+    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, "pyproject.toml": '[tool.mypy]\nfiles = ["kod"]\n'}
+    files["kod/typy.py"] = "class Obiekt:\n    def dozwolone(self) -> None:\n        pass\n"
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
     fixed = fixed_files or {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
     failed, head = _merge(github, 5, failed_files or {"kod/inne.py": CAUGHT}, fixed)
-    verdict = f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"]
-    comment = {"body": verdict, "bodyHTML": body_html(verdict, werdykty_szablonu.rendered()), "authorAssociation": "OWNER", "createdAt": "2026-11-14T01:00:00Z", "author": {"login": "recenzent"}}
+    findings = werdykty_szablonu.WERDYKTY["wazne"]
+    verdict = f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + findings.replace(WHERE, where)
+    rendered = {text.replace(WHERE, where): html.replace(WHERE, where) for text, html in werdykty_szablonu.rendered().items()}
+    comment = {"body": verdict, "bodyHTML": body_html(verdict, rendered), "authorAssociation": "OWNER", "createdAt": "2026-11-14T01:00:00Z", "author": {"login": "recenzent"}}
     pages = {"pageInfo": {"hasNextPage": False, "endCursor": None}}
     pull = {
         **{"number": 5, "title": "PR 5", "state": "MERGED", "isDraft": False, "isCrossRepository": False, "baseRefName": "main", "headRefOid": head},
@@ -418,7 +422,7 @@ def _guard_proof(
     [
         ("pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone", "DOWÓD OK | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte 1/1"),
         ("brak - test", "DOWÓD ODMOWA | brak - test | wyjątek 0/1"),
-        ("npm test", "DOWÓD ODMOWA | npm test | „Strażnik: npm test” to nie selektor strażnika z listy: pytest tests/<plik>.py::<test> …, mypy, ruff, ast-grep <id reguły>, brak - proza albo brak - test"),
+        ("npm test", "DOWÓD ODMOWA | npm test | „Strażnik: npm test” to nie selektor strażnika z listy: pytest tests/<plik>.py::<test> …, mypy, ruff, ast-grep <id reguły>, brak - proza, brak - test albo brak - napęd"),
     ],
     ids=["test-pada-na-wersji-z-werdyktu", "wyjatek-testu-przy-gdzie-w-kodzie", "selektor-spoza-listy"],
 )
@@ -470,3 +474,19 @@ def test_straznik_regula_ast_grep_wymaga_waznego_w_przypadkach_reguly_i_jej_dowo
 
     assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == last, done.stdout
+
+
+TYPED = "from kod.typy import Obiekt\n\n\ndef wazne(obiekt: Obiekt) -> None:\n    nazwa = '{0}'\n    obiekt.{0}()\n"
+
+
+@needs_ast_grep
+@wymaga_ruff_i_mypy
+def test_straznik_mypy_liczy_znalezisko_w_funkcji_wokol_gdzie_z_zakresu_ast_grep(tmp_path: Path) -> None:
+    """``Gdzie`` wskazuje linię, którą poprawka zmieniła (``kod/inne.py:5``), a mypy zgłasza wywołanie w linii obok:
+    znalezisko liczy się, bo zakres to najmniejsza funkcja wokół ``Gdzie`` z ``places``, jak w dowodzie reguły."""
+
+    failed_files, fixed_files = {"kod/inne.py": TYPED.format("zakazane")}, {"kod/inne.py": TYPED.format("dozwolone")}
+    done, failed = _guard_proof(tmp_path, "mypy", failed_files, fixed_files, where="Gdzie: kod/inne.py:5")
+
+    assert done.stdout.splitlines()[-1] == "DOWÓD OK | mypy | wykryte 1/1", done.stdout
+    assert done.stdout.splitlines()[0].startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z FAIL: kod/inne.py | kod/inne.py:6 [attr-defined]"), done.stdout
