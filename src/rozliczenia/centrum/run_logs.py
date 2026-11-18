@@ -232,6 +232,15 @@ class LoggedFile(_Record):
     online_only: bool | None
 
 
+class CentrumLogLines(_Record):
+    """Dziennik Centrum od Logów poprzedniego Uruchomienia do końca tego, bez pomiarów widoku (``CentrumLog.take_for_logs``):
+    każdy wpis jak w pliku dziennika (czas komputera taty, zdarzenie, fakty), po kolei. ``omitted``: wpisy starsze od
+    ``log.MAX_FOR_LOGS`` najnowszych."""
+
+    lines: list[str]
+    omitted: int
+
+
 class Environment(_Record):
     system: str
     python: str
@@ -627,6 +636,10 @@ class RunLog(StartFacts):
     dad_actions: DadActions | None = None
     """Działania taty w Centrum od Logów poprzedniego Uruchomienia do końca tego (``dad_actions``). ``None``: pliki
     schematu 1."""
+    centrum_log: CentrumLogLines | None = None
+    """Co Centrum zrobiło od Logów poprzedniego Uruchomienia do końca tego (``CentrumLogLines``): także poza
+    Uruchomieniami, np. Przypomnienia o raporcie, Wysyłka rozliczeń i zmiany Ustawień. ``None``: Logi odtworzenia i pliki
+    sprzed tego pola."""
     interruption: LoggedInterruption | None = None
     """Urwana Wycena w efenix (``ending`` ``interrupted``); ``None`` w każdych innych Logach."""
     input_copy: list[LoggedInputFile] | None = None
@@ -677,6 +690,7 @@ class RunLog(StartFacts):
         tool: Tool,
         environment: Environment,
         dad_actions: DadActions,
+        centrum_log: CentrumLogLines | None = None,
     ) -> RunLog:
         """Logi Urwanego Uruchomienia ``started`` z dziennika Wyceny w efenix: zlecenia skończone przed zgaśnięciem Centrum
         (``orders``) i ``interruption``; ``ended_at`` to ostatni wpis dziennika."""
@@ -701,6 +715,7 @@ class RunLog(StartFacts):
             trace=None,
             diagnosis=None,
             dad_actions=dad_actions,
+            centrum_log=centrum_log,
             interruption=interruption,
         )
 

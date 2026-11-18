@@ -2614,6 +2614,34 @@ def in_box(fake: FakeReportBox) -> list[str]:
     return issues + [asset.text for archive in fake.archives for asset in archive.assets]
 
 
+def test_co_centrum_zrobilo_miedzy_dwoma_uruchomieniami_jest_w_logach_drugiego_bez_pomiarow_widoku(tmp_path: Path) -> None:
+    """Dziennik Centrum od Logów pierwszego Uruchomienia do końca drugiego (zmiana Ustawień, zamknięcie Centrum, wysyłki
+    Kolejki) jest w Logach drugiego i w Archiwum Logów okresu, każdy wpis raz, a pomiaru widoku tam nie ma: z Logów
+    Maks wie, co Centrum zrobiło samo także poza Uruchomieniami."""
+
+    centrum = settling_centrum(tmp_path)
+    write_report_key(ToolDirectory(tmp_path))
+    first = run_to_end(centrum, dry_run=True)["run"]["id"]
+    client = centrum.client
+    assert client.post("/api/view-timings", json=view_timing(kind="navigation", page="okresy")).status_code == 204
+    assert client.put("/api/settings/reminders/enabled", json={"enabled": True}).status_code == 200
+    assert client.post("/api/shutdown").status_code == 202
+    centrum.restart()
+    second = run_to_end(centrum, dry_run=False)["run"]["id"]
+
+    _, earlier = logged_record(centrum, first)
+    _, later = logged_record(centrum, second)
+    events = {run: [line.split(" ")[1] for line in record["centrum_log"]["lines"]] for run, record in ((first, earlier), (second, later))}
+    assert "uruchomienie-start" in events[first]
+    assert {"ustawienia-zmiana", "zamkniecie", "uruchomienie-start"} <= set(events[second]), events[second]
+    assert "pomiar" not in events[first] + events[second]
+    assert set(earlier["centrum_log"]["lines"]).isdisjoint(later["centrum_log"]["lines"]), "każdy wpis w jednych Logach"
+    assert (earlier["centrum_log"]["omitted"], later["centrum_log"]["omitted"]) == (0, 0)
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: logs_arrived(fake, 2)), "Logi obu Uruchomień w Skrzynce"
+    assert "ustawienia-zmiana" in logs_text(box, logs_comments(box)[1]), "dziennik Centrum dociera do Maksa"
+
+
 def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzinami_bez_tresci_uwagi_taty(
     tmp_path: Path,
 ) -> None:

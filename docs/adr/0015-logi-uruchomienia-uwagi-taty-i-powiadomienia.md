@@ -23,6 +23,13 @@ kroku śladu i dziennikiem działań taty w Centrum; dochodzi własny plik Centr
 `logs/dzialania-taty.jsonl` z działaniami, które czekają na Logi następnego
 Uruchomienia. Szczegóły w punkcie „Treść Logów”.
 
+Dopisek 18.11.2026: Logi mają też dziennik Centrum od Logów poprzedniego
+Uruchomienia (`centrum_log`), bez pomiarów widoku, z tym, co Centrum zrobiło
+samo także poza Uruchomieniami: Przypomnienia o raporcie, Wysyłkę rozliczeń,
+zmiany Ustawień, Aktualizację narzędzia i wysyłki Kolejki. Wpisy czekają w
+pliku `logs/dziennik-centrum-do-logow.log` obok dziennika Centrum, a Logi
+zabierają je przy swoim powstaniu, jak dziennik działań taty.
+
 Dopisek #845 (część #837): Wycena w efenix z co najmniej jednym zleceniem
 zostawia też dziennik Wyceny w efenix w `logs/dzienniki-wyceny/`, także gdy
 doszła do wyniku; następny start Centrum zamyka dziennik Wyceny przerwanej w

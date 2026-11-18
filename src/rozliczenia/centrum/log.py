@@ -4,6 +4,12 @@ Każdy wpis to jedna linia: czas, nazwa zdarzenia i fakty ``klucz=wartość``.
 Do dziennika trafiają tylko fakty wybrane tutaj (port, wersja, kod komunikatu,
 nazwa typu wyjątku), nigdy tekst wyjątku, ścieżki z folderu okresów ani treść
 wierszy (ADR 0004), więc można go przekazać Maksowi.
+
+Każdy wpis poza pomiarem widoku trafia też do pliku ``FOR_LOGS_FILE`` obok, który
+Logi następnego Uruchomienia zabierają (``take_for_logs``): w Logach jest więc to,
+co Centrum zrobiło samo od poprzednich Logów (Przypomnienia o raporcie, Wysyłka
+rozliczeń, zmiany Ustawień, Aktualizacja narzędzia, Kolejka wysyłki), także po
+zamknięciu Centrum między nimi.
 Moduł używa tylko biblioteki standardowej, bo zapisuje też błędy startu, gdy
 brakuje zależności.
 """
@@ -11,6 +17,7 @@ brakuje zależności.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from contextlib import suppress
 from pathlib import Path
 import threading
 from typing import Literal, final
@@ -19,6 +26,9 @@ from rozliczenia.centrum.tool_update import UPDATED
 from rozliczenia.wall_clock import local_now
 
 VIEW_TIMING_EVENT = "pomiar"
+FOR_LOGS_FILE = "dziennik-centrum-do-logow.log"
+MAX_FOR_LOGS = 2000
+"""Najwięcej wpisów dziennika w jednych Logach: najnowsze, a liczba starszych stoi obok."""
 UNEXPECTED_FAILURE_EVENT = "nieoczekiwany-wyjatek"
 MAX_VIEW_TIMINGS = 200
 """Najwięcej pomiarów widoku w dzienniku od startu Centrum: pomiar przychodzi po każdym widoku, więc kolejne przepadają
@@ -378,18 +388,35 @@ class CentrumLog:
         moment = local_now().isoformat(timespec="seconds")
         return " ".join([moment, event, *(f"{key}={_quoted(value)}" for key, value in facts.items())])
 
+    def take_for_logs(self) -> tuple[list[str], int]:
+        """Wpisy, które czekają na Logi Uruchomienia (najwyżej ``MAX_FOR_LOGS`` najnowszych), i liczba starszych; plik
+        zostaje pusty. Pliku, którego nie da się opróżnić, następne Logi dostaną znowu: lepiej dwa razy niż wcale."""
+
+        path = self._path.with_name(FOR_LOGS_FILE)
+        with self._lock:
+            try:
+                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
+            except OSError:
+                return [], 0
+            with suppress(OSError):
+                path.write_text("", encoding="utf-8")
+        kept = lines[-MAX_FOR_LOGS:]
+        return kept, len(lines) - len(kept)
+
     @final
     def _to_file(self, line: str) -> None:
-        """Dopisuje wpis do pliku dziennika; brak dziennika nie zatrzymuje Centrum, bo dziennik tylko pomaga przy
-        wsparciu."""
+        """Dopisuje wpis do pliku dziennika, a wpis poza pomiarem widoku też do ``FOR_LOGS_FILE``; brak dziennika nie
+        zatrzymuje Centrum, bo dziennik tylko pomaga przy wsparciu."""
 
-        try:
-            with self._lock:
-                self._path.parent.mkdir(parents=True, exist_ok=True)
-                with self._path.open("a", encoding="utf-8") as log:
-                    log.write(line + "\n")
-        except OSError:
-            pass
+        targets = [self._path] if event_of(line) == VIEW_TIMING_EVENT else [self._path, self._path.with_name(FOR_LOGS_FILE)]
+        with self._lock:
+            for target in targets:
+                try:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with target.open("a", encoding="utf-8") as log:
+                        log.write(line + "\n")
+                except OSError:
+                    pass
 
 
 def event_of(line: str) -> str:

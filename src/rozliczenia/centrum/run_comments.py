@@ -101,7 +101,8 @@ from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.logs_disk import JournalKey, JournalRead, LogsOnDisk
 from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.logs_of_run import logged_diagnosis, logs_of
-from rozliczenia.centrum.run_logs import Environment, LoggedFile, RunLog, StartFacts, Tool
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.run_logs import CentrumLogLines, Environment, LoggedFile, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, guard_logs, guard_text
 from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
 from rozliczenia.centrum.runs import EndedRun
@@ -151,8 +152,8 @@ class LeftBehindClosed:
 
 class RecordMaker:
     """Logi Uruchomienia z dzisiejszym narzędziem (``commit``, ``wydanie``), środowiskiem (system, Python i pliki procesu
-    ``files`` z rozmiarem i atrybutem OneDrive z ``cloud_files``) i działaniami taty, które czekają na Logi
-    (``dad_actions``)."""
+    ``files`` z rozmiarem i atrybutem OneDrive z ``cloud_files``), działaniami taty i wpisami dziennika Centrum, które czekają
+    na Logi (``dad_actions``, ``centrum_log``)."""
 
     def __init__(
         self,
@@ -162,16 +163,24 @@ class RecordMaker:
         files: ProcessFiles,
         cloud_files: CloudFiles,
         dad_actions: DadActionJournal,
+        centrum_log: CentrumLog,
     ) -> None:
         self._commit = commit
         self._wydanie = wydanie
         self._files = files
         self._cloud = cloud_files
         self._dad_actions = dad_actions
+        self._centrum_log = centrum_log
 
     def of(self, run: EndedRun) -> RunLog:
         environment = self._environment(run.info.process, run.info.period, run.settings.snapshot)
-        return logs_of(run, tool=self._tool(), environment=environment, dad_actions=self._dad_actions.take())
+        return logs_of(
+            run,
+            tool=self._tool(),
+            environment=environment,
+            dad_actions=self._dad_actions.take(),
+            centrum_log=self._centrum_log_lines(),
+        )
 
     def interrupted(self, journal: JournalRead) -> RunLog:
         """Logi Urwanego Uruchomienia z dziennika ``journal`` (``RunLog.interrupted``): Aktualizacja narzędzia nie startuje
@@ -185,7 +194,12 @@ class RecordMaker:
             tool=self._tool(),
             environment=self._environment(journal.started.process, journal.started.period, None),
             dad_actions=self._dad_actions.take(),
+            centrum_log=self._centrum_log_lines(),
         )
+
+    def _centrum_log_lines(self) -> CentrumLogLines:
+        lines, omitted = self._centrum_log.take_for_logs()
+        return CentrumLogLines(lines=lines, omitted=omitted)
 
     def _tool(self) -> Tool:
         commit = self._commit()

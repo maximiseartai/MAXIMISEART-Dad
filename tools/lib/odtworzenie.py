@@ -38,8 +38,8 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   problemów, etapy, Szablony pracownika, Ilości tylko dla INEA, Wpisy INTERMAX, Wpisanie raportów, ślad zleceń i
   Zatrzymanie okna efenix oraz ślad wywołań, bez tego, co zależy od Bazy zleceń, której Kopia wejścia nie ma
   (``_without_order_base``: ostrzeżenie o Bazie i liczba Historii adresu karty), bo odtworzenie porządkuje bez niej. Raport podaje przyczynę Zatrzymania z Logów (``stop_cause``): przyczynę techniczną Zatrzymania
-  okna efenix i łańcuch wyjątków śladu wywołań z drogą startu okna, która zawiodła (#976). Czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty i uwagi strażnika o Kopii
-  wejścia są poza porównaniem: zależą od komputera i chwili, a nie od kodu i wejścia.
+  okna efenix i łańcuch wyjątków śladu wywołań z drogą startu okna, która zawiodła (#976). Czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty, dziennik Centrum i uwagi strażnika
+  o Kopii wejścia są poza porównaniem: zależą od komputera i chwili, a nie od kodu i wejścia.
 
 Odtworzenie pisze tylko w katalogu roboczym (``work``): pliki wejścia, Rozliczenia i Kopie INTERMAX, które proces
 zapisuje, i metryki. Nic nie idzie do Skrzynki Zgłoszeń, bo odtworzenie nie ma Kolejki wysyłki.
@@ -217,8 +217,8 @@ class Report:
         if self.verdict is not Verdict.IMPOSSIBLE:
             lines.append(f"Porównano: {', '.join(part.name for part in COMPARED)}.")
             lines.append(
-                "Poza porównaniem: czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty, wygląd "
-                "komórek (Kopia wejścia go nie ma) i zapisane pliki."
+                "Poza porównaniem: czasy i chwile kroków, odciski plików, środowisko, dziennik działań taty i dziennik "
+                "Centrum, wygląd komórek (Kopia wejścia go nie ma) i zapisane pliki."
             )
         rest = [limit.text for limit in self.limits if not limit.blocking] + blocking[1:]
         if rest:
@@ -1187,6 +1187,7 @@ NOT_COMPARED: Final = frozenset(
         "environment",
         "diagnosis",
         "dad_actions",
+        "centrum_log",
         "interruption",
         "input_copy_notes",
         "quantity_rules",
