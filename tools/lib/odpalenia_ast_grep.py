@@ -43,7 +43,7 @@ jawnie każdy plik z dodaną linią, a jawnie podaną ścieżkę ast-grep 0.51.0
 i ``ignores:``. Granica: plik bez rozszerzenia (``tools/hooks/pre-push``) ast-grep pomija, bo język bierze
 z rozszerzenia, a ``sgconfig.yml`` nie ma ``languageGlobs``. ``--error`` bez nazw reguł ustawia ważność error każdej
 regule (dokumentacja ast-grep 0.51.0: „all rules will be set to error”), więc odpala także reguła z ``severity: off``
-i wbudowane reguły o dyrektywie ``ast-grep-ignore`` (``BUILTIN_MESSAGES``). Moduł importuje tylko bibliotekę
+i wbudowane reguły o dyrektywie tłumienia ``SUPPRESSION`` (``BUILTIN_MESSAGES``). Moduł importuje tylko bibliotekę
 standardową, ``repo`` i ``potomne`` (same z biblioteki standardowej), bo zapadki biegną też w kopii starego commitu.
 """
 
@@ -60,11 +60,15 @@ import repo
 
 # Najwięcej ścieżek w jednym ``ast-grep scan``: wiersz polecenia na Windows mieści 32 767 znaków.
 PATHS_PER_SCAN = 200
+# Tekst dyrektywy tłumienia ast-grep. Żaden plik Pythona repozytorium nie zawiera go w całości (reguła chwastu nie
+# ma prawa właściciela w komentarzu, tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep), więc
+# komunikaty i próbki składają go stąd.
+SUPPRESSION: Final = "-".join(("ast-grep", "ignore"))
 # Wbudowane reguły ast-grep o dyrektywie tłumienia → komunikat zamiast angielskiego komunikatu ast-grep.
 BUILTIN_MESSAGES: Final = {
-    "no-suppress-all": "dyrektywa ast-grep-ignore bez nazw reguł wyłącza każdą regułę: usuń ją i popraw kod według"
+    "no-suppress-all": f"dyrektywa {SUPPRESSION} bez nazw reguł wyłącza każdą regułę: usuń ją i popraw kod według"
     " komunikatu reguły, którą wyłączała",
-    "unused-suppression": "dyrektywa ast-grep-ignore niczego nie wyłącza: usuń ją",
+    "unused-suppression": f"dyrektywa {SUPPRESSION} niczego nie wyłącza: usuń ją",
 }
 INSTALL = "brak ast-grep z dodatku dev: uruchom python3 tools/setup_worktree.py (Windows: py -3 tools/setup_worktree.py)"
 # Pusty obiekt drzewa gita: atrybuty z niego (``attr.tree``) to brak atrybutów.
