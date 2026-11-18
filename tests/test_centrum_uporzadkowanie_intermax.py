@@ -749,15 +749,21 @@ def test_logi_uporzadkowania_maja_wiersze_wpisow_na_operatora_i_instalacje_hurt_
 
 _BASE_ADDRESSES = ("Miastko,Ulica 0101/", "ULICA 101", "UL. ULICA 103", "ULICA 999")
 HISTORY_BASE = (
-    BaseSheet("10_12_2018-01_08_2020", FIVE, [Visit(_BASE_ADDRESSES[0], datetime(2019, 2, 3), 7001, "stary")]),
-    BaseSheet("01_08_2020-01_06_2021", ELEVEN, [Visit(_BASE_ADDRESSES[1], datetime(2021, 2, 3), 7002, "średni")]),
+    BaseSheet("10_12_2018-01_08_2020", FIVE, [Visit(_BASE_ADDRESSES[0], datetime(2019, 2, 3), 70001, "stary")]),
+    BaseSheet("01_08_2020-01_06_2021", ELEVEN, [Visit(_BASE_ADDRESSES[1], datetime(2021, 2, 3), 70002, "sredni")]),
     BaseSheet(
         "19_12_2025-17_11_2026",
         TWELVE,
-        [Visit(_BASE_ADDRESSES[2], datetime(2026, 2, 3), 7003, "nowy"), Visit(_BASE_ADDRESSES[3], None, 7004, "obcy")],
+        [
+            Visit(_BASE_ADDRESSES[2], datetime(2026, 2, 3), 70003, "nowszy"),
+            Visit(_BASE_ADDRESSES[3], None, 70004, "cudzy"),
+        ],
     ),
 )
-"""Baza zleceń z Historią adresu zleceń ``Ulica 101`` (dwa wiersze) i ``Ulica 103`` (jeden) domyślnego wklejenia."""
+"""Baza zleceń z Historią adresu zleceń ``Ulica 101`` (dwa wiersze) i ``Ulica 103`` (jeden) domyślnego wklejenia.
+
+Numery i znaki wierszy mają co najmniej ``MIN_VALUE`` znaków, by ``zawiera_wartosc`` ich szukała, a znaki są bez
+polskich liter, bo Logi zapisują je jako ``\\uXXXX``."""
 
 
 def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_karta_ma_liczbe_historii_adresu_po_zleceniach_a_logi_same_liczby(
@@ -778,8 +784,9 @@ def test_uporzadkowanie_z_centrum_bierze_baze_zlecen_z_folderu_intermax_karta_ma
     assert logs["address_history"] == {"orders": 2, "rows": 3, "sheets": 3}
     [path] = ToolDirectory(tmp_path).run_logs.glob("*.json")
     text = path.read_text(encoding="utf-8")
-    assert [address for address in _BASE_ADDRESSES if zawiera_wartosc(text, address)] == []
-    assert not any(marker in text for marker in ("stary", "średni", "nowy", "7001", "7003")), "bez treści wierszy Bazy"
+    rows = [visit for sheet in HISTORY_BASE for visit in sheet.visits]
+    values = [value for visit in rows for value in (visit.address, str(visit.number), visit.mark)]
+    assert [value for value in values if zawiera_wartosc(text, value)] == [], "bez treści wierszy Bazy"
 
 
 def test_uporzadkowanie_z_centrum_bez_bazy_zlecen_w_folderze_intermax_ostrzega_a_karta_i_logi_nie_maja_historii_adresu(
