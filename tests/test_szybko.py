@@ -766,15 +766,15 @@ def test_testy_struktury_na_mergu_widza_zmiane_z_drzewa_roboczego(tmp_path: Path
 
 
 def test_przy_konflikcie_z_baza_testy_struktury_biegna_na_head(tmp_path: Path) -> None:
-    # Pada każdy test struktury poza zapadkami, które biegną na HEAD zawsze.
+    # Pada każdy test struktury poza zapadkami, które biegną na HEAD zawsze, więc krok pytest pada tylko wtedy, gdy
+    # biegną w nim testy struktury (szybko pokazuje przy porażce tylko koniec wyjścia, więc nie wszystkie linie FAILED).
     repo = _repo(tmp_path, structure="assert Path(__file__).name == 'test_zapadki.py'")
     _base_moved_on(repo, ("docs/notatka.md", "z main\n"), ("docs/notatka.md", "z gałęzi\n"))
 
     answered = _szybko(repo)
 
     assert "UWAGA: merge z origin/main ma konflikt w docs/notatka.md; testy struktury biegną na HEAD" in answered.stdout
-    failed = set(re.findall(r"^FAILED (\S+)", answered.stdout, re.MULTILINE))
-    assert {node if "::" in node else f"{node}::test_struktura" for node in STRUCTURE} <= failed, answered.stdout
+    assert "testy struktury po mergu" not in answered.stdout, answered.stdout
     assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | pytest"), answered.stdout
 
 
