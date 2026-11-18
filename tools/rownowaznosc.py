@@ -40,7 +40,7 @@ wynik to ``RÓWNOWAŻNOŚĆ NIESPRAWDZONA | 0 scenariuszy`` (kod 2).
 
 W kopii ``tools/na_scalonych_pr.py`` drzewo robocze ma ``tools/`` z innego checkoutu, więc tam podaj obie strony:
 
-    .venv/bin/python tools/na_scalonych_pr.py --ostatnie 5 -- tools/rownowaznosc.py --baza HEAD^1 --glowa HEAD
+    .venv/bin/python tools/na_scalonych_pr.py --ostatnie -- tools/rownowaznosc.py --baza HEAD^1 --glowa HEAD
 
 Z ``--ast`` narzędzie nie uruchamia scenariuszy, tylko porównuje pliki ``src/`` zmienione od bazy (``repo.changed``,
 bez wykrywania przeniesień). Plik jest ``TAK SAMO`` tylko wtedy, gdy ``compile`` Pythona, którym biegnie narzędzie

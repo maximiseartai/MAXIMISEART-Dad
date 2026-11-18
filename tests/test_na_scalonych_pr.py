@@ -13,8 +13,9 @@ import pytest
 import na_scalonych_pr
 from tests.fixtures import werdykty_szablonu
 from tests.fixtures.body_html import body_html
-from tests.fixtures.fake_cli import FakeGitHub
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
+from tests.fixtures.znane_luki import wymaga_ruff_i_mypy
 
 # Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
 MUTACJE_ZMIANY = ("tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py")
@@ -433,3 +434,111 @@ def test_przypadki_regul_z_commita_pr_odmawiaja_przypadku_z_bazy_ktorego_zadna_r
     assert done.stdout.splitlines()[-1] == (
         "PRZYPADKI REGUŁ FAIL | PR usuwa z metadata.przypadki przypadki z bazy 5/W1/r1: każdy z nich wymienia reguła, która go łapie; przywróć je i popraw regułę tak, by je łapała"
     ), done.stdout
+
+
+# Dowód strażnika (``--straznik``, ADR 0042) tak, jak uruchamia go tools/scal_pr.py: PR #5 z werdyktem FAIL na wersji
+# z ``zakazane()`` w ``kod/inne.py`` i HEAD z poprawką i testem, który pada na wersji z werdyktu.
+GUARD_TEST = "from kod.inne import wazne\n\n\nclass Obiekt:\n    def dozwolone(self) -> None:\n        pass\n\n\ndef test_wazne_wola_tylko_dozwolone() -> None:\n    wazne(Obiekt())\n"
+
+
+def _guard_proof(
+    tmp_path: Path, guard: str, failed_files: dict[str, str] | None = None, fixed_files: dict[str, str] | None = None, *, where: str = WHERE
+) -> tuple[subprocess.CompletedProcess[str], str]:
+    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, "pyproject.toml": '[tool.mypy]\nfiles = ["kod"]\n'}
+    files["kod/typy.py"] = "class Obiekt:\n    def dozwolone(self) -> None:\n        pass\n"
+    github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
+    fixed = fixed_files or {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
+    failed, head = _merge(github, 5, failed_files or {"kod/inne.py": CAUGHT}, fixed)
+    findings = werdykty_szablonu.WERDYKTY["wazne"]
+    verdict = f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + findings.replace(WHERE, where)
+    rendered = {text.replace(WHERE, where): html.replace(WHERE, where) for text, html in werdykty_szablonu.rendered().items()}
+    comment = {"body": verdict, "bodyHTML": body_html(verdict, rendered), "authorAssociation": "OWNER", "createdAt": "2026-11-14T01:00:00Z", "author": {"login": "recenzent"}}
+    pages = {"pageInfo": {"hasNextPage": False, "endCursor": None}}
+    pull = {
+        **{"number": 5, "title": "PR 5", "state": "MERGED", "isDraft": False, "isCrossRepository": False, "baseRefName": "main", "headRefOid": head},
+        **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": [comment]}, "reviews": {**pages, "nodes": []}},
+    }
+    (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
+    return github.run("--straznik", guard, "--z-commita", head, "--wazne", "5/W1/r1"), failed
+
+
+@pytest.mark.parametrize(
+    ("guard", "last"),
+    [
+        ("brak - test", "DOWÓD OK | brak - test | wyjątek 1/1"),
+        (
+            "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone",
+            "DOWÓD ODMOWA | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | „Strażnik: pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone” to nie selektor strażnika z listy: "
+            "mypy, ruff, ast-grep <id reguły>, brak - proza, brak - napęd, brak - test (strażnik to test) albo brak - usunięte (kod z Gdzie usunięty z PR)",
+        ),
+    ],
+    ids=["test-jako-straznik-ocenia-recenzent", "selektor-testu-spoza-listy"],
+)
+@ONLY_FOUND_BY_NAME_ON_POSIX  # atrapa gh .cmd nie przenosi wielowierszowego zapytania GraphQL (#2116 r2 W2)
+def test_dowod_straznika_testu_to_wyjatek_brak_test_a_nie_selektor_pytest(tmp_path: Path, guard: str, last: str) -> None:
+    """Test nie ma dowodu narzędzia (ADR 0042, „Test jako strażnik”): Ważne, którego strażnikiem jest test, pisze
+    ``brak - test`` i przechodzi z linią dla recenzenta następnej rundy, a ``pytest …`` to selektor spoza listy."""
+
+    done, failed = _guard_proof(tmp_path, guard)
+
+    assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == last, done.stdout
+    if guard == "brak - test":
+        assert done.stdout.splitlines()[0] == f"#5 W1 r1 | {failed[:8]} | WYJĄTEK brak - test | czy test pada na błędzie z Gdzie, sprawdza recenzent następnej rundy", done.stdout
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("text", "last"),
+    [
+        ('"""Wołanie {} na obiekcie."""\n\n\ndef wazne(obiekt):\n    obiekt.dozwolone()\n', "DOWÓD OK | brak - proza | wyjątek 1/1"),
+        ("NAZWA = '{}'\n\n\ndef wazne(obiekt):\n    obiekt.dozwolone()\n", "DOWÓD ODMOWA | brak - proza | wyjątek 0/1"),
+    ],
+    ids=["docstring", "napis-w-kodzie"],
+)
+def test_wyjatek_prozy_czyta_docstring_regula_ast_grep_z_kopii_sha_werdyktu(tmp_path: Path, text: str, last: str) -> None:
+    """Ważne o zdaniu docstringu (#2069 W1 r2) nie ma strażnika poza właścicielem faktu, a napis przypisany w kodzie to
+    kod: odróżnia je reguła ``PROSE`` na kopii SHA werdyktu, nie parser autora."""
+
+    done, _ = _guard_proof(tmp_path, "brak - proza", {"kod/inne.py": text.format("zakazane")}, {"kod/inne.py": text.format("dozwolone")})
+
+    assert done.stdout.splitlines()[-1] == last, done.stdout
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("cases", "last"),
+    [
+        ("metadata:\n  przypadki:\n    - 5/W1/r1\n", "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 1"),
+        (
+            "metadata:\n  przypadki:\n    - 1533/W1/r2\n",
+            "DOWÓD ODMOWA | ast-grep zakazane-wywolanie | 5/W1/r1 nie stoi w metadata.przypadki reguły zakazane-wywolanie na HEAD: dopisz je tam, to jedyna lista przypadków reguły",
+        ),
+    ],
+    ids=["wazne-w-przypadkach-reguly", "wazne-spoza-przypadkow-reguly"],
+)
+def test_straznik_regula_ast_grep_wymaga_waznego_w_przypadkach_reguly_i_jej_dowodu(tmp_path: Path, cases: str, last: str) -> None:
+    """Przypadki reguły mają jedną listę, pole ``metadata.przypadki`` (krok ``--przypadki-regul``), więc strażnik
+    ``ast-grep <id>`` przechodzi tylko z Ważnym na tej liście na HEAD i z dowodem reguły na nim."""
+
+    start = {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/zakazane-wywolanie.yml": RULE + cases}
+    done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start=start, chosen=("--straznik", "ast-grep zakazane-wywolanie", "--z-commita", "HEAD"))
+
+    assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == last, done.stdout
+
+
+TYPED = "from kod.typy import Obiekt\n\n\ndef wazne(obiekt: Obiekt) -> None:\n    nazwa = '{0}'\n    obiekt.{0}()\n"
+
+
+@needs_ast_grep
+@wymaga_ruff_i_mypy
+def test_straznik_mypy_liczy_znalezisko_w_funkcji_wokol_gdzie_z_zakresu_ast_grep(tmp_path: Path) -> None:
+    """``Gdzie`` wskazuje linię, którą poprawka zmieniła (``kod/inne.py:5``), a mypy zgłasza wywołanie w linii obok:
+    znalezisko liczy się, bo zakres to najmniejsza funkcja wokół ``Gdzie`` z ``places``, jak w dowodzie reguły."""
+
+    failed_files, fixed_files = {"kod/inne.py": TYPED.format("zakazane")}, {"kod/inne.py": TYPED.format("dozwolone")}
+    done, failed = _guard_proof(tmp_path, "mypy", failed_files, fixed_files, where="Gdzie: kod/inne.py:5")
+
+    assert done.stdout.splitlines()[-1] == "DOWÓD OK | mypy | wykryte 1/1", done.stdout
+    assert done.stdout.splitlines()[0].startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z FAIL: kod/inne.py | kod/inne.py:6 [attr-defined]"), done.stdout

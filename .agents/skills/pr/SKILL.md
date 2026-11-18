@@ -52,7 +52,7 @@ The scope is the area (`intermax`, `centrum`, `plan`, `agents`), and the subject
 
 A PR adds `## Korzeń` between `## Evidence` and `## Merge Danger` when the PR had a `FAIL` verdict, or when the PR fixes a red `main` ([ADR 0031](../../../docs/adr/0031-korzen-po-fail-i-chwasty.md), section „Korzeń i chwast” of the skill [`przeglad`](../przeglad/SKILL.md)).
 A red-`main` fix names its issue on a line `Część #N` (labelled `czerwony-main`); a PR for a flaky test names the `Flaky test:` issue instead and needs no section.
-A thread whose first verdict came before this check was merged (the merge that added `tools/lib/bramka_korzenia.py`) finishes the old way, without the section.
+A thread whose first verdict came before this check was merged (the merge that added `tools/lib/bramka_korzenia.py`) finishes the old way, without the section, and one whose first verdict came before the merge that added ADR 0042 ends a Ważne block with `Dowód:` instead of `Strażnik:`.
 `tools/scal_pr.py` reads the block below as the pattern of its refusal and refuses to merge while the section misses something:
 
 ```markdown
@@ -63,10 +63,11 @@ Szczebel: (c) - <mechanizm, który łapie całą klasę>
 Wyżej nie, bo:
 (a) - <czemu nie działa>
 (b) - <czemu nie działa>
-Dowód: <polecenie i wynik, np. linia MUTACJE OK; cytat z polem w bloku kodu>
+Strażnik: brak - test
 
 ### W2 r2: R-DRUGA-DROGA
 Wyrwany w #<PR korzenia>
+Strażnik: mypy
 
 ### Czerwony main #<issue>: R-KOD
 Szczebel: (a) - <mechanizm>
@@ -81,12 +82,13 @@ Dowód: <polecenie i wynik>
 - Every code of the section, in a Ważne block and in a red-`main` block, stands in `korzenie.toml` on HEAD.
 - `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each higher rung, in ladder order; rung (a) has no such line.
   Rung (e) needs this PR to add a new point linking to this PR (`#N`) to „Co jest porażką” in the skill `przeglad` and to leave the other points as on the base: an edited point of the base is not a new point.
-- `Dowód:` is a command with its result, at most 5 lines of at most 300 characters, as in the verdict.
+- A Ważne block ends with one line `Strażnik: <selector>` from the list in the docstring of `tools/lib/straznik.py`, also after `Wyrwany w #M`; `tools/scal_pr.py` computes its proof from the tree of the `FAIL` verdict, and you check it with `tools/na_scalonych_pr.py --straznik '<selector>' --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`; `ast-grep <id>` also needs `<PR>/W<n>/r<k>` in the rule's `metadata.przypadki`.
+  A test as the guard is `Strażnik: brak - test`, with the test named in `Szczebel:`: no tool proves a test yet, so the next reviewer runs it on the tree of the `FAIL` verdict (ADR 0042, „Test jako strażnik”).
+  Code from `Gdzie` that the PR removed (rung (a)) is `Strażnik: brak - usunięte`, and the next reviewer checks it is gone.
+- A red-`main` block ends with `Dowód:`, a command with its result, at most 5 lines of at most 300 characters, as in the verdict.
 - A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first into the default branch: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
   Write both numbers as bare `#N`, so GitHub links the two PRs on their timelines.
 - Every `NOWY` code from the verdicts stands in `korzenie.toml` on HEAD before the merge.
-- A Ważne with the field `Idiom: <id>` or `Idiom: <id> jak #N W<n> r<k>` merges only with the ast-grep rule `<id>` on HEAD and its proof (section „Korzeń i chwast” of `przeglad`): its block's `Dowód:` is the last line `DOWÓD OK` of `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`.
-  A Ważne with `Idiom: bez reguły <klasa> jak #N W<n> r<k>` needs no rule.
 - Fix a refused section with `gh pr edit N --body-file FILE`: no new commit and no new verdict.
 
 ## Language and length
@@ -131,7 +133,7 @@ Concrete evidence that the change works, as a before and an after.
   A result of a local run says it is local when CI decides differently (a warning locally, red in CI).
 - Every promise in the body has its proof here.
   A behaviour the body claims has a test that fails when the behaviour breaks, shown with a mutation from `tools/mutacje.py` (`WYKRYTA`), and a sentence with no proof comes out of the body.
-- A PR that adds or changes a check (a structure test, a lint rule, a CI job, a checking tool) shows its result on real history from `tools/na_scalonych_pr.py`: on the PRs whose review found the mistake it finds it, and on `--ostatnie 5` it raises no false alarm (`CODING_STANDARDS.md`).
+- A PR that adds or changes a check (a structure test, a lint rule, a CI job, a checking tool) shows its result on real history from `tools/na_scalonych_pr.py`: on the PRs whose review found the mistake it finds it, and on `--ostatnie` (its count is `CHECK_PRS` of that tool) it raises no false alarm (`CODING_STANDARDS.md`).
   A check that promises a whole class also shows its table of cases here (`CODING_STANDARDS.md`, introduction).
 - A measured speedup or regression gives one number with its unit, `before → after`, and links the rest.
 - Name the `verify-*` skills from the `SKILLE VERIFY` line of `tools/skille_dla_zmiany.py` and the result of the part each one leaves local.

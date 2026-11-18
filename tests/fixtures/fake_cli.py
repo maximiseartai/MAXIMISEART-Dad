@@ -13,13 +13,14 @@ from tests.fixtures.git_repo import built_once, commit, copy_files, git, reposit
 
 # Atrapa na Windows to ``.cmd``, a ta nie zastępuje programu w dwóch miejscach. CreateProcess dopisuje do nazwy bez
 # rozszerzenia tylko ``.exe``, więc ``subprocess.run(["gh", ...])`` jej nie znajdzie (znajdzie ją ``shutil.which``, jak
-# ``tools/lib/github.py``, albo pełna ścieżka), a cmd.exe tnie jej argumenty na ``&``, jak w adresie ``gh api …&per_page=``.
+# ``tools/lib/github.py``, albo pełna ścieżka), a cmd.exe tnie jej argumenty na ``&``, jak w adresie ``gh api …&per_page=``,
+# i na końcu linii, jak w wielowierszowym zapytaniu ``gh api graphql -f query=…`` (#2116 r2 W2).
 # Run próbny 42584543040 (9.11.2026, windows-latest, Python 3.11 i 3.14) bez markera: ``test_ciezkie_ci.py`` przeszedł
 # cały, a w ``test_wydanie.py`` padło 21 testów na ``&``, w ``test_scal_pr.py`` 54 i w ``test_status_scalenia.py`` 3,
 # głównie bez ruff i mypy, których zadania pytest na Windows nie instalują (scalenie z main sprawdza nimi).
 ONLY_FOUND_BY_NAME_ON_POSIX = pytest.mark.skipif(
     sys.platform == "win32",
-    reason="atrapa .cmd na Windows: program po samej nazwie jej nie znajduje, a cmd.exe tnie jej argumenty na &",
+    reason="atrapa .cmd na Windows: program po samej nazwie jej nie znajduje, a cmd.exe tnie jej argumenty na & i na końcu linii",
 )
 
 

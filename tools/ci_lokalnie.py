@@ -41,7 +41,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
-from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
+from kroki_lokalne import MYPY_PLATFORMS, OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
 from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import BASE, ROOT
@@ -74,12 +74,11 @@ def _reproduced(root: Path) -> list[tuple[str, Step]]:
     """Każdy krok narzędzia z fragmentem polecenia `run:` w ci.yml, które odtwarza."""
 
     python, npm, frontend = sys.executable, _npm(), root / "frontend"
-    ruff, mypy, mypy_windows = static_steps(root)
+    ruff, *mypy = static_steps(root)
     zizmor, actionlint, shellcheck_actions = workflow_steps(root)
     return [
         ("-m ruff check", ruff),
-        ("-m mypy --platform linux", mypy),
-        ("-m mypy --platform win32", mypy_windows),
+        *((f"-m mypy --platform {platform}", step) for platform, step in zip(MYPY_PLATFORMS, mypy, strict=True)),
         ("zizmor --offline --min-severity low .github", zizmor),
         ("actionlint -shellcheck", actionlint),
         ("tools/ci/shellcheck_akcji.py", shellcheck_actions),

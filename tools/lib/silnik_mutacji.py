@@ -101,7 +101,6 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from functools import partial
 from itertools import pairwise
-import json
 import os
 from pathlib import Path
 import re
@@ -115,7 +114,7 @@ from typing import Any, Protocol, TypeVar
 
 from import_dynamiczny import jest_modul
 from jednostka import ZMIENNA_CZESCI, Czesc
-from kroki_lokalne import environment, static_steps
+from kroki_lokalne import JSON_OUTPUT, diagnostics, environment, static_steps
 from ostatnie_linie import MUTACJE_OK
 import potomne
 from repo import ROOT
@@ -431,37 +430,16 @@ RUFF_WRONG = frozenset({"F821", "F822", "F823", "invalid-syntax"})
 MYPY_LEFTOVER = frozenset({"unused-ignore", "redundant-cast", "no-any-return", "redundant-expr", "redundant-self", "unreachable"})
 
 
-def _relative(name: str, copy: Path) -> str:
-    try:
-        return Path(name).resolve().relative_to(copy.resolve()).as_posix()
-    except ValueError:
-        return name
-
-
 def _ruff_findings(output: str, copy: Path) -> list[tuple[str | None, str]]:
-    """Diagnostyki z ``ruff check --output-format json``: lista obiektów z ``code``, ``filename``, ``location``."""
+    """Diagnostyki ``ruff check`` (``kroki_lokalne.diagnostics``) w postaci werdyktu."""
 
-    try:
-        return [
-            (item["code"], f"{_relative(item['filename'], copy)}:{item['location']['row']}: {item['code']} {item['message']}")
-            for item in json.loads(output)
-        ]
-    except (ValueError, KeyError, TypeError):
-        return []
+    return [(one.code, f"{one.path}:{one.line}: {one.code} {one.message}") for one in diagnostics("ruff", output, copy)]
 
 
 def _mypy_findings(output: str, copy: Path) -> list[tuple[str | None, str]]:
-    """Błędy z ``mypy --output json``: obiekt w każdej linii; inne linie (błąd, który zatrzymał mypy) pomija."""
+    """Błędy mypy (``kroki_lokalne.diagnostics``; inne linie, jak błąd, który zatrzymał mypy, pomija) w postaci werdyktu."""
 
-    found: list[tuple[str | None, str]] = []
-    for line in output.splitlines():
-        try:
-            item = json.loads(line)
-            if item["severity"] == "error":
-                found.append((item["code"], f"{item['file']}:{item['line']}: error: {item['message']}  [{item['code']}]"))
-        except (ValueError, KeyError, TypeError):
-            continue
-    return found
+    return [(one.code, f"{one.path}:{one.line}: error: {one.message}  [{one.code}]") for one in diagnostics("mypy", output, copy)]
 
 
 @dataclass(frozen=True)
@@ -472,8 +450,8 @@ class _Tool:
 
 
 _TOOLS = {
-    "ruff": _Tool(("--output-format", "json"), _ruff_findings, RUFF_WRONG.__contains__),
-    "mypy": _Tool(("--output", "json"), _mypy_findings, lambda code: code not in MYPY_LEFTOVER),
+    "ruff": _Tool(JSON_OUTPUT["ruff"], _ruff_findings, RUFF_WRONG.__contains__),
+    "mypy": _Tool(JSON_OUTPUT["mypy"], _mypy_findings, lambda code: code not in MYPY_LEFTOVER),
 }
 
 

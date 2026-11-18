@@ -807,9 +807,8 @@ def test_blad_typu_tylko_na_windows_wywraca_szybkie_sprawdzenie(tmp_path: Path) 
 
     answered = _szybko(repo)
 
-    # Na Windows zwykły krok mypy też sprawdza Windows, więc pada razem z krokiem dla Windows.
-    expected = "SZYBKO FAIL | mypy, mypy (Windows)" if sys.platform == "win32" else "SZYBKO FAIL | mypy (Windows)"
-    assert (answered.returncode, _verdict(answered)) == (1, expected), answered.stdout
+    # Krok mypy sprawdza Linuksa na każdej maszynie (``kroki_lokalne.MYPY_PLATFORMS``), więc pada tylko krok dla Windows.
+    assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | mypy (Windows)"), answered.stdout
 
 
 ONLY_NEWER_PYTHON = (
