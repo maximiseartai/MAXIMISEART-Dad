@@ -92,6 +92,7 @@ import bramka_idiomu
 import bramka_korzenia
 import github
 import kontekst_przegladu
+import cofniecia
 import limit_rund
 import naprawia
 import ponowny_przeglad
@@ -152,7 +153,8 @@ def _problems(pull: Pull) -> list[str]:
     if pull.from_fork:
         problems.append("PR z forka")
     template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
-    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template), limit_rund.deployed_problem(pull)]
+    fork = repo.merge_base(ROOT, f"refs/remotes/{REMOTE}/{pull.base}", pull.head)
+    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template), limit_rund.deployed_problem(pull), cofniecia.problem(fork, pull.head)]
     return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER))]
 
 
@@ -303,7 +305,7 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, cofniecia.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )

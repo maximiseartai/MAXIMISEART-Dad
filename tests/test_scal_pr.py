@@ -9,7 +9,9 @@ i zapisuje wywołania ``gh pr merge`` zamiast scalać.
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime
+import difflib
 import json
 from pathlib import Path
 import re
@@ -26,6 +28,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git, with_imports
 
 import bramka_idiomu
+import cofniecia
 import czasy_ci
 import github as klient_github
 import limit_rund
@@ -450,7 +453,7 @@ def test_pomoc_podaje_zasady_testu_scalenia_werdyktu_i_limitu_rund_z_przykladami
         scal_pr.main(["--help"])
 
     shown = " ".join(capsys.readouterr().out.split())
-    for rules in (testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__):
+    for rules in (testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, cofniecia.__doc__):
         assert " ".join(str(rules).split()) in shown
     assert "tools/scal_pr.py 336 --werdykt" in shown
 
@@ -1957,54 +1960,116 @@ FIRST_ROUND = "1" * 40
 SECOND_ROUND = "2" * 40
 
 
-def _limit_reason(*failed: str) -> str:
-    """Przyczyna odmowy limitu rund PR 1 z rundami z FAIL na commitach ``failed``, w postaci ze skilla ``przeglad``."""
+def _limit_reason(*failed: str, standing: tuple[str, ...] = ()) -> str:
+    """Przyczyna odmowy limitu rund PR 1 z rundami z FAIL na commitach ``failed``, w postaci ze skilla ``przeglad``:
+    ``standing`` to linie kodu ``Gdzie``, które stoją na HEAD, a bez nich Ważne rund nie wskazują linii kodu."""
 
     commits = ", ".join(sha[:7] for sha in failed)
+    where = (
+        f"HEAD ma nadal kod z pola Gdzie ich Ważnych: {', '.join(standing)}"
+        if standing
+        else "pole Gdzie ich Ważnych nie wskazuje żadnej linii kodu, więc zmianę podejścia pokaże tylko nowy PR od main"
+    )
     return (
-        f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a po 3. rundzie z FAIL PR nie dostaje"
-        " kolejnej (skill przeglad, „Kolejne rundy”): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
-        " usunięcie z PR części, której przegląd nie przyjął) i opisz je komentarzem PR z pierwszą linią"
-        " „ZMIANA PODEJŚCIA: <zdanie>”"
+        f"limit rund: rund z FAIL {len(failed)} ({commits}), a {where}; po 3. rundzie z FAIL PR nie dostaje kolejnej"
+        " (skill przeglad, „Kolejne rundy”): zmień podejście w #1 tak, by HEAD nie miał już tych linii (atak na"
+        " przesłankę, granica z mechanizmu albo usunięcie z PR części, której przegląd nie przyjął); komentarz PR"
+        " licznika nie zeruje"
     )
 
 
 THIRD_ROUND = "3" * 40
 FOURTH_ROUND = "4" * 40
-THREE_FAILS = [("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", f"WERDYKT: FAIL {THIRD_ROUND}")]
+PARTLY = "5" * 40
+COPIED = "6" * 40
+LEFT = "7" * 40
 CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia, a nie lista postaci.")
+# ``kod/inne.py`` w commitach rund: runda n wskazuje polem ``Gdzie`` linię n swojego commitu, a HEAD ma kod rund 1–4;
+# ``COPIED`` ma ``)`` dwa razy i pustą linię, a ``LEFT`` usuwa pierwsze ``)`` z ``f(`` i zostawia pustą linię.
+CODE = {
+    FIRST_ROUND: "a = 1\n",
+    SECOND_ROUND: "a = 1\nb = 2\n",
+    THIRD_ROUND: "a = 1\nb = 2\nc = 3\n",
+    FOURTH_ROUND: "d = 4\n",
+    PARTLY: "d = 4\n    c = 3\n",
+    COPIED: "f(\n)\n\ng(\n)\n",
+    LEFT: "\ng(\n)\n",
+    HEAD: "a = 1\nb = 2\nc = 3\nd = 4\n",
+}
+
+
+def _major(commit: str, where: str) -> tuple[str, str]:
+    return ("comment", f"WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n### W1. Błąd.\nGdzie: {where}\nDowód: sonda")
+
+
+THREE_FAILS = [("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", f"WERDYKT: FAIL {THIRD_ROUND}")]
+THREE_MAJORS = [_major(FIRST_ROUND, "kod/inne.py:1"), _major(SECOND_ROUND, "kod/inne.py:2"), _major(THIRD_ROUND, "kod/inne.py:3")]
+STANDING = ("kod/inne.py:1 (1111111)", "kod/inne.py:2 (2222222)", "kod/inne.py:3 (3333333)")
+
+
+def _code() -> limit_rund.Sources:
+    """Treść werdyktu, ``kod/inne.py`` z ``CODE``, ``kod/stary.py`` tylko w ``FIRST_ROUND`` i ``kod/wspolny.py`` w każdym
+    commicie, bez GitHuba i Gita: linia ``### `` to nagłówek, każda inna pod dwiema pierwszymi to linia akapitu, jak
+    w HTML renderera dla tych treści, a linie usunięte albo zmienione to linie poza dopasowaniem ``difflib`` linii bez
+    odstępów na brzegach, jak w ``git diff -w`` dla tych plików."""
+
+    def units(verdict: werdykt_pr.Verdict) -> list[szablon_werdyktu.Item]:
+        lines = werdykt_pr.text_lines(verdict.body)[2:]
+        return [szablon_werdyktu.Item("h3", line[4:]) if line.startswith("### ") else szablon_werdyktu.Item("line", line) for line in lines]
+
+    def blob(commit: str, path: str) -> bytes | None:
+        found = {"kod/inne.py": CODE.get(commit), "kod/stary.py": "z = 0\n" if commit == FIRST_ROUND else None, "kod/wspolny.py": "w = 0\n"}.get(path)
+        return None if found is None else found.encode()
+
+    def removed(commit: str, later: str, path: str) -> frozenset[int]:
+        old, new = ([line.strip() for line in (blob(sha, path) or b"").decode().splitlines()] for sha in (commit, later))
+        kept = {index + 1 for block in difflib.SequenceMatcher(None, old, new, autojunk=False).get_matching_blocks() for index in range(block.a, block.a + block.size)}
+        return frozenset(range(1, len(old) + 1)) - kept
+
+    return limit_rund.Sources(units, blob, removed)
 
 
 # Skill ``przeglad``: po trzeciej rundzie z FAIL czwartej nie ma. Tydzień 9–15.11.2026 miał czwartą i dalszą rundę na
-# 24 PR-ach (#1693 do dziewiątej, #1720 do ósmej), choć zdanie stało w skillu od 29.10.
+# 24 PR-ach (#1693 do dziewiątej, #1720 do ósmej), choć zdanie stało w skillu od 29.10, a po wdrożeniu limitu #2010
+# dostał osiem rund z FAIL przez cztery komentarze „ZMIANA PODEJŚCIA:” bez zmiany kodu z pola Gdzie (audyt 17.11).
 @pytest.mark.parametrize(
-    ("verdicts", "deployed", "failed"),
+    ("verdicts", "head", "deployed", "reason"),
     [
-        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, HEAD)),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], HEAD, BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, HEAD)),
         (
             [("comment", f"WERDYKT: PASS {FIRST_ROUND}"), ("COMMENTED", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD), ("comment", PASS_HEAD)],
+            HEAD,
             BEFORE_FIRST,
-            (FIRST_ROUND, SECOND_ROUND, HEAD),
+            _limit_reason(FIRST_ROUND, SECOND_ROUND, HEAD),
         ),
-        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, None),
-        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("CHANGES_REQUESTED", "Popraw.")], BEFORE_FIRST, None),
-        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD, "CONTRIBUTOR")], BEFORE_FIRST, None),
-        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], AFTER_FIRST, None),
-        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], None, None),
-        ([*THREE_FAILS, CHANGED], BEFORE_FIRST, None),
-        ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", PASS_HEAD)], BEFORE_FIRST, None),
-        ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", f"WERDYKT: FAIL {OLD}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, (FOURTH_ROUND, OLD, HEAD)),
-        ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {THIRD_ROUND}"), ("comment", f"WERDYKT: FAIL {FIRST_ROUND}")], BEFORE_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", FAIL_HEAD)], HEAD, BEFORE_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("CHANGES_REQUESTED", "Popraw.")], HEAD, BEFORE_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD, "CONTRIBUTOR")], HEAD, BEFORE_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], HEAD, AFTER_FIRST, None),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], HEAD, None, None),
+        ([*THREE_MAJORS, CHANGED], HEAD, BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND, standing=STANDING)),
+        (THREE_MAJORS, FOURTH_ROUND, BEFORE_FIRST, None),
+        (THREE_MAJORS, PARTLY, BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND, standing=STANDING[2:])),
+        ([*THREE_MAJORS[:2], _major(COPIED, "kod/inne.py:2-3")], LEFT, BEFORE_FIRST, None),
+        ([_major(FIRST_ROUND, "kod/stary.py:1"), *THREE_MAJORS[1:]], HEAD, BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND, standing=STANDING[1:])),
+        ([_major(FIRST_ROUND, "kod/stary.py:1"), *THREE_MAJORS[1:]], FOURTH_ROUND, BEFORE_FIRST, None),
+        ([*THREE_MAJORS[:2], (THREE_MAJORS[2][0], THREE_MAJORS[2][1] + "\n### D1. Nazwa.\nGdzie: kod/wspolny.py:1")], FOURTH_ROUND, BEFORE_FIRST, None),
+        (THREE_FAILS, FOURTH_ROUND, BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([_major(FIRST_ROUND, "opis PR #1, sekcja Why"), _major(SECOND_ROUND, "kod/inne.py:9"), THREE_MAJORS[2]], FOURTH_ROUND, BEFORE_FIRST, None),
+        ([*THREE_MAJORS, ("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", PASS_HEAD)], HEAD, BEFORE_FIRST, None),
         (
-            [THREE_FAILS[0], CHANGED, THREE_FAILS[1], CHANGED, THREE_FAILS[2]],
+            [*THREE_MAJORS, ("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", f"WERDYKT: FAIL {OLD}"), ("comment", FAIL_HEAD)],
+            HEAD,
             BEFORE_FIRST,
-            (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND),
+            _limit_reason(FOURTH_ROUND, OLD, HEAD),
         ),
-        ([*THREE_FAILS, ("comment", "ZMIANA PODEJŚCIA: ", "OWNER")], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
-        ([*THREE_FAILS, ("comment", CHANGED[1], "CONTRIBUTOR")], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
-        ([*THREE_FAILS, ("PENDING", CHANGED[1])], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
-        ([*THREE_FAILS, ("comment", f"Plan: {CHANGED[1]}")], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
-        ([*THREE_FAILS, ("COMMENTED", CHANGED[1])], BEFORE_FIRST, None),
+        ([*THREE_MAJORS, _major(FOURTH_ROUND, "kod/inne.py:1"), _major(THIRD_ROUND, "kod/inne.py:3"), _major(FIRST_ROUND, "kod/inne.py:1")], HEAD, BEFORE_FIRST, None),
+        (
+            [THREE_MAJORS[0], _major(FOURTH_ROUND, "kod/inne.py:1"), ("comment", FAIL_HEAD)],
+            HEAD,
+            BEFORE_FIRST,
+            _limit_reason(FIRST_ROUND, FOURTH_ROUND, HEAD, standing=(*STANDING[:1], "kod/inne.py:1 (4444444)")),
+        ),
     ],
     ids=[
         "trzy-rundy-z-fail",
@@ -2014,34 +2079,38 @@ CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia
         "fail-konta-bez-prawa-zapisu-nie-jest-runda",
         "watek-sprzed-wdrozenia-limitu-konczy-po-staremu",
         "limit-niewdrozony",
-        "zmiana-podejscia-po-trzeciej-rundzie-zeruje-licznik",
+        "komentarz-zmiany-podejscia-bez-zmiany-kodu-gdzie-jak-2010",
+        "head-bez-kodu-gdzie-trzech-rund-to-zmiana-podejscia",
+        "kod-gdzie-jednej-rundy-stoi-na-head",
+        "usunieta-linia-gdzie-z-kopia-w-pliku-i-pusta-linia-nie-stoja",
+        "plik-gdzie-usuniety-a-kod-innych-rund-stoi",
+        "plik-gdzie-usuniety-i-kod-innych-rund-zniknal",
+        "kod-gdzie-drobnego-nie-trzyma-limitu",
+        "wazne-bez-gdzie-z-kodem-nie-pokazuja-zmiany",
+        "wazne-z-gdzie-poza-kodem-albo-poza-plikiem-nie-wnosi-linii",
         "po-zmianie-podejscia-kolejna-runda-sie-odbywa",
         "trzy-rundy-z-fail-po-zmianie-podejscia",
         "fail-commitu-sprzed-zmiany-nie-jest-nowa-runda",
-        "zmiana-podejscia-zawczasu-po-kazdej-rundzie-nie-zeruje",
-        "zmiana-podejscia-bez-zdania",
-        "zmiana-podejscia-konta-bez-prawa-zapisu",
-        "zmiana-podejscia-w-nieopublikowanej-recenzji",
-        "zmiana-podejscia-nie-w-pierwszej-linii",
-        "zmiana-podejscia-w-recenzji",
+        "zmiana-kodu-przed-trzecia-runda-nie-zeruje-licznika",
     ],
 )
-def test_po_trzeciej_rundzie_z_fail_pr_nie_dostaje_kolejnej_rundy_bez_zmiany_podejscia(
-    verdicts: list[tuple[str, ...]], deployed: datetime | None, failed: tuple[str, ...] | None
+def test_po_trzeciej_rundzie_z_fail_pr_nie_dostaje_kolejnej_rundy_dopoki_head_ma_kod_z_gdzie_jej_waznych(
+    verdicts: list[tuple[str, ...]], head: str, deployed: datetime | None, reason: str | None
 ) -> None:
-    assert limit_rund.problem(_written(*verdicts), deployed) == (None if failed is None else _limit_reason(*failed))
+    assert limit_rund.problem(dataclasses.replace(_written(*verdicts), head=head), deployed, _code()) == reason
 
 
 @pytest.mark.parametrize(
     ("rounds", "changed"),
     [(2, False), (3, False), (3, True)],
-    ids=["po-drugiej-rundzie-z-fail-kolejna-runda-sie-odbywa", "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma", "po-zmianie-podejscia-w-tym-samym-pr-runda-sie-odbywa"],
+    ids=["po-drugiej-rundzie-z-fail-kolejna-runda-sie-odbywa", "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma", "po-zmianie-kodu-gdzie-w-tym-samym-pr-runda-sie-odbywa"],
 )
 def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze_dla_pass_spoza_werdyktu(tmp_path: Path, rounds: int, changed: bool) -> None:
     """Każda runda idzie przez ``--przeglad`` (krok 1 recenzenta) i ``--werdykt``, a ``PASS`` opublikowany bez
-    ``--werdykt`` liczy się przy merge'u, więc limit odmawia we wszystkich trzech miejscach. Po zmianie podejścia
-    runda odbywa się w tym samym PR, więc bramka korzenia nadal wymaga bloku na Ważne każdej rundy sprzed zmiany
-    (#1990 W1 r1: wyjście przez nowy PR gubiło je, bo bramki czytają tylko werdykty własnego PR)."""
+    ``--werdykt`` liczy się przy merge'u, więc limit odmawia we wszystkich trzech miejscach, także po komentarzu
+    „ZMIANA PODEJŚCIA:”, gdy HEAD ma kod z pola Gdzie (#2010). Po zmianie tego kodu runda odbywa się w tym samym PR,
+    więc bramka korzenia nadal wymaga bloku na Ważne każdej rundy sprzed zmiany (#1990 W1 r1: wyjście przez nowy PR
+    gubiło je, bo bramki czytają tylko werdykty własnego PR)."""
 
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}, started=GATE_BEFORE_VERDICTS)
     _deploy_template(github)
@@ -2051,9 +2120,10 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
     for number in range(1, rounds + 1):
         github.comment(1, FAIL_W1.format(commit=head))
         failed.append(head)
-        head = github.push_pull(1, {"kod/inne.py": f"INNE: int = {number}\n"})
+        head = github.push_pull(1, {"kod/inne.py": "INNE: int = 0\n" + "".join(f"DALEJ_{index}: int = {index}\n" for index in range(1, number + 1))})
+    github.comment(1, CHANGED[1])
     if changed:
-        github.comment(1, CHANGED[1])
+        head = github.push_pull(1, {"kod/inne.py": "INNE: str = 'inne'\n"})
     path = tmp_path / f"runda-{rounds + 1}.md"
     path.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
     refused = rounds == 3 and not changed
@@ -2065,7 +2135,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     checked = github.run("1", "--bez-merge")
 
-    reason = _limit_reason(*failed)
+    reason = _limit_reason(*failed, standing=tuple(f"kod/inne.py:1 ({sha[:7]})" for sha in failed))
     assert reviewed.returncode == int(refused), reviewed.stdout + reviewed.stderr
     assert answered.returncode == int(refused), answered.stdout + answered.stderr
     if refused:
@@ -2081,6 +2151,42 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
     missing = [f"brak bloku „### W1 r{number}: R-BEZ-TESTU”" for number in range(1, rounds + 1) if f"brak bloku „### W1 r{number}: R-BEZ-TESTU”" not in last]
     assert last.startswith("SCAL ODMOWA | #1 ") and missing == [], last
     assert github.merges() == []
+
+
+@pytest.mark.parametrize(
+    ("files", "message", "refused"),
+    [
+        ({"kod/wspolne.py": "A: int = 1\n", "kod/inne.py": "INNE: int = 0\n"}, "", True),
+        ({"kod/stare.py": "S: int = 0\n"}, "", True),
+        ({"kod/wspolne.py": "A: int = 3\n"}, "", False),
+        ({"kod/wspolne.py": "A: int = 1\n"}, "\n\nThis reverts commit {moved}.", False),
+    ],
+    ids=["plik-wraca-do-tresci-sprzed-scalonej-zmiany-jak-2100", "plik-usuniety-przez-baze-wraca", "wlasna-zmiana-pliku", "git-revert-scalonej-zmiany"],
+)
+def test_przeglad_i_merge_odmawiaja_pr_ktory_po_cichu_cofa_scalona_zmiane_bazy(tmp_path: Path, files: dict[str, str], message: str, refused: bool) -> None:
+    """Commit złożony z drzewa starszej bazy i przeniesiony na nowszą cofa scalone PR-y, choć opis PR ich nie zna
+    (#2100 r1: ``git reset --soft origin/main`` po ruchu ``origin/main``, 25 z 28 plików diffu)."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/wspolne.py": "A: int = 1\n", "kod/stare.py": "S: int = 0\n"})
+    (github.checkout / "kod" / "stare.py").unlink()
+    moved = github.push_main({"kod/wspolne.py": "A: int = 2\n"})
+    head = github.commit_on(moved, files, "PR 1" + message.format(moved=moved))
+    github.push_head(1, head)
+    github.pulls["1"] = _pr_view(1, head)
+    github.update(1, body=BODY)
+
+    reviewed = github.run("1", "--przeglad")
+    checked = github.run("1", "--bez-merge")
+
+    path = next(iter(files))
+    reason = (
+        f"cofnięcie: zmiana PR przywraca treść sprzed scalonych commitów bazy: {path} (sprzed {moved[:10]} main idzie dalej); zbuduj"
+        " commit na aktualnej bazie z samą swoją zmianą (git diff starej bazy do swojego commitu nałożony przez git apply"
+        " --3way), a scaloną zmianę cofaj tylko przez git revert jej commitu"
+    )
+    assert _last_line(reviewed) == (f"PRZEGLĄD ODMOWA | #1 {head[:7]} | {reason}" if refused else f"PRZEGLĄD OK | #1 {head[:7]}"), reviewed.stdout + reviewed.stderr
+    assert (reason in _last_line(checked)) == refused, checked.stdout + checked.stderr
+    assert ("cofnięcie:" in _last_line(checked)) == refused, checked.stdout + checked.stderr
 
 
 @pytest.mark.parametrize("where", ["head-pr", "main-ze-zmiana"], ids=["galaz-bez-limitu-rund", "checkout-main-ze-zmiana-limitu"])
