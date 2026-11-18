@@ -793,14 +793,16 @@ def _uncertain_rows(record: RunLog) -> str:
 
 def _efenix(record: RunLog, work: _Work) -> _Rebuilt:
     orders = record.efenix_orders or []
-    source = _collective_file(record, work, atrapa_z_logow.file_addresses(orders))
+    source = _collective_file(record, work, {})
     # Zakres tylko do budowy Atrapy efenix: ten odczyt nie należy do Uruchomienia, więc nie trafia do jego Kopii.
     scope = read_scope(source, DadFiles())
     if not isinstance(scope, PricingScope):
         scoped: Sequence[atrapa_z_logow.ScopedOrder] = ()
     else:
-        scoped = [atrapa_z_logow.ScopedOrder(order.row, order.number, order.address) for order in scope.orders]
+        scoped = [atrapa_z_logow.ScopedOrder(order.row, order.number) for order in scope.orders]
     fed = atrapa_z_logow.fed(orders, scoped)
+    if fed.addresses:
+        _collective_file(record, work, fed.addresses)
     today = work.efenix_today or record.started_at.astimezone().date()
     atrapa = work.stack.enter_context(atrapa_z_logow.started(fed, today))
     limits = [Limit(text, blocking=blocking) for text, blocking in fed.limits]
