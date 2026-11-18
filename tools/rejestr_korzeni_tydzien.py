@@ -183,7 +183,7 @@ def _after_limit(pulls: Sequence[Reviewed], start: datetime, end: datetime) -> l
         for new in pulls
         if _inside(new.created, start, end)
         for old in limited
-        if old.pull != new.pull and old.limited is not None and new.created is not None and old.limited <= new.created and (common := new.files & old.files)
+        if old.limited is not None and new.created is not None and old.limited <= new.created and (common := new.files & old.files)
     ]
 
 
