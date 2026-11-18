@@ -1029,7 +1029,7 @@ class ReportsOutcome:
     numerze, każdy numer najwyżej raz, a zapis dopisuje je po Przeniesieniach; ``problems`` bez powtórzeń, w kolejności
     ``problem_order``; ``notes`` (informacje dla taty) w kolejności ``note_order``; ``workers`` po dniu i Wykonawcy, po
     Przeniesieniach i dopisaniach; ``mails`` po chwili przyjścia. ``memory`` proces zapisuje dopiero po udanym zapisie
-    INTERMAX."""
+    INTERMAX. ``said``: zlecenia z Wpisem tego kliknięcia, także z Wpisem na życzenie (``_reading.WindowRead.said``)."""
 
     changes: tuple[CellChange, ...]
     problems: tuple[ReportProblem, ...]
@@ -1039,6 +1039,7 @@ class ReportsOutcome:
     moves: tuple[OrderMove, ...]
     notes: tuple[ReportNote, ...]
     added: tuple[OrderAdded, ...]
+    said: frozenset[OrderKey]
 
 
 def problem_order(

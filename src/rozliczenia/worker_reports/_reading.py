@@ -70,6 +70,19 @@ class WindowRead:
 
         return tuple(sorted((*self.reports, *self.requested), key=_mail_order))
 
+    @property
+    def said(self) -> frozenset[OrderKey]:
+        """Zlecenia (numer, dzień, Wykonawca) z Wpisem w Raporcie wykonawcy Wpisania raportów (``entering``): z dniem
+        z tematu, a Wpis na życzenie przy raporcie z błędem tematu z dniem decyzji taty."""
+
+        return frozenset(OrderKey(entry.number, report.day, report.worker) for report in self.entering for entry in report.entries)
+
+
+def worker_report_count(mails: Iterable[MailRead]) -> int:
+    """Raporty wykonawców wśród odczytów maili okna, bez raportów z błędem tematu i maili od nieznanych nadawców."""
+
+    return sum(isinstance(found, ReadReport) for found in mails)
+
 
 def read_window(inputs: ReportInputs) -> WindowRead:
     """Liczy się tylko mail z tematem Raportu wykonawcy (``_subject.read``, z rokiem literówki czytanym od dnia przyjścia

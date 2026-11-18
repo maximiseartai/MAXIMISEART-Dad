@@ -258,6 +258,16 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia",),
         "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
     ),
+    # Raporty wykonawców okna poza odczytem okna: postacie z tabeli przypadków przy ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM;
+    # pierwsza to liczby widoku Raporty z przeglądów #2068 (r1, W2) i #2085 (r1 i r2, W1), druga Logi Wpisania raportów
+    # bez Wpisów na życzenie (report_entering.py przed tą zmianą).
+    "from ._model import ReadReport": (SRC_CONFIG, ("rozliczenia", "worker_reports"), "rozliczenia.worker_reports._model.ReadReport"),
+    "from .worker_reports import MailRead, ReadReport": (SRC_CONFIG, ("rozliczenia",), "rozliczenia.worker_reports.ReadReport"),
+    "import rozliczenia.worker_reports as reports\ncount = sum(isinstance(read, reports.ReadReport) for read in mails)": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.worker_reports.ReadReport",
+    ),
 }
 
 
@@ -462,6 +472,42 @@ def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_pat
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_TRESCI_Z_WYDANIA)")
 
 
+ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
+    "zakaz zna tylko nazwę klasy, nie zawężenie unii: wykluczenie pozostałych odczytów maila": (
+        "from rozliczenia.worker_reports import MailRead, OrderNumber, ReadStranger, ReadUnreadable\n\n\n"
+        "def numery(mails: tuple[MailRead, ...]) -> set[OrderNumber]:\n"
+        "    return {entry.number for read in mails if not isinstance(read, (ReadUnreadable, ReadStranger)) for entry in read.entries}\n"
+    ),
+    "refleksja po nazwie: pole odczytu maila przez getattr": (
+        "from rozliczenia.worker_reports import MailRead\n\n\n"
+        "def wpisy(mails: tuple[MailRead, ...]) -> int:\n"
+        '    return sum(len(getattr(read, "entries", ())) for read in mails if type(read).__name__ == "ReadReport")\n'
+    ),
+}
+
+
+@wymaga_ruff_i_mypy
+def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
+    """Raporty wykonawców okna (``ReadReport``) i ich Wpisy czyta w ``src/`` tylko odczyt okna i moduły z prawem
+    właściciela (``OWNERS``), bo moduł, który sam przechodzi po ``ReadReport``, nie zna raportu z błędem tematu ani
+    Wpisu na życzenie (ADR 0041) i liczy po swojemu, które zlecenia mają Wpis tego kliknięcia.
+
+    | Postać | Zakaz | Próbka |
+    |---|---|---|
+    | import względny w pakiecie: ``from ._model import ReadReport`` (#2068 r1 W2, #2085 r1 W1 i r2 W1, ``_figures.py``) | łapie | ``SAMPLES`` |
+    | import z pakietu: ``from .worker_reports import MailRead, ReadReport`` (Logi kliknięcia w ``report_entering.py``) | łapie | ``SAMPLES`` |
+    | atrybut pakietu pod aliasem: ``isinstance(read, reports.ReadReport)`` | łapie | ``SAMPLES`` |
+    | wykluczenie pozostałych odczytów: ``not isinstance(read, (ReadUnreadable, ReadStranger))`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | refleksja po nazwie: ``getattr(read, "entries", ())``, ``type(read).__name__`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+
+    Poza ``src/`` zakaz nie obowiązuje: próba skrzynki raportów w ``tools/`` czyta każdy mail osobno."""
+    probe = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
+
+    zgloszenia = ruff_i_mypy(zapisz(ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM, tmp_path), sonda=probe)
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM)")
+
+
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
 # zakazów: kod właściciela zgłasza dokładnie swoje nazwy, gdy stoi poza zwolnieniem.
@@ -496,11 +542,17 @@ OWNERS: dict[str, frozenset[str]] = {
     ),
     "src/rozliczenia/worker_reports/__init__.py": frozenset(
         {
+            "rozliczenia.worker_reports._model.ReadReport",
             "rozliczenia.worker_reports._reminders.DEFAULT_REMINDERS",
             "rozliczenia.worker_reports._reminders.DEFAULT_SCHEDULE",
             "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
         }
     ),
+    "src/rozliczenia/worker_reports/_reading.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
+    "src/rozliczenia/worker_reports/_matching.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
+    "src/rozliczenia/worker_reports/_corrections.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
+    "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
+    "src/rozliczenia/centrum/report_entering_logs.py": frozenset({"rozliczenia.worker_reports.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),

@@ -79,6 +79,7 @@ from ._model import (
 )
 from ._canonical import as_mail
 from ._entries import EXAMPLE_NUMBERS
+from ._reading import worker_report_count
 from ._reminders import (
     DAY_FIELD,
     DEFAULT_REMINDERS,
@@ -185,6 +186,7 @@ __all__ = [
     "reminder_subject",
     "reminder_text",
     "reminders_due",
+    "worker_report_count",
 ]
 
 
@@ -243,7 +245,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     newest = {found.number: (found.arrived, found.mail) for found in additions}
     standing = _corrections.standing([*problems, *matched.problems, *described], reports, read.faulty, board, newest)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
-    shown = [report for report in reports if window.opens(report.day)]
+    said = frozenset(key for key in read.said if window.opens(key.day))
     reported = [(day, worker) for worker, day in read.reported if window.opens(day)]
     details = [
         (key, OrderDetail(found.number, found.verdict.value, found.activities or None, True))
@@ -252,7 +254,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     opened = [order for order in moved.orders if window.opens(order.key.day)]
     figures = _figures.worker_days(
         opened,
-        shown,
+        said,
         reported,
         problems_found,
         changes,
@@ -266,5 +268,5 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
         read.overtaken,
     )
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
-    return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added)
+    return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added, read.said)
 

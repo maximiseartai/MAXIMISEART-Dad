@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter, defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping
 from dataclasses import replace
 from datetime import date
 
@@ -20,7 +20,6 @@ from ._model import (
     OrderDetail,
     OrderKey,
     OvertakenSubject,
-    ReadReport,
     RefusedMove,
     RegisterOrder,
     RepeatedNumber,
@@ -39,7 +38,7 @@ _VERDICTS = frozenset(verdict.value for verdict in Verdict)
 
 def worker_days(
     orders: Iterable[RegisterOrder],
-    reports: Sequence[ReadReport],
+    said: frozenset[OrderKey],
     sent: Iterable[tuple[date, Login]],
     problems: Iterable[ReportProblem],
     changes: Iterable[CellChange],
@@ -55,14 +54,14 @@ def worker_days(
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał, a ``mails``
     Raporty wykonawców za ten dzień (``sent``: dzień i Wykonawca raz na Raport i dzień, za który jest przysłany,
-    przy pomylonym temacie dzień zleceń, ADR 0041). Dzień z tematu Raportu wykonawcy (``reports``) ma swoje liczby, także
-    gdy Raport liczy się za inny dzień, bo przy nim stoją problemy jego Wpisów.
+    przy pomylonym temacie dzień zleceń, ADR 0041). Dzień z tematu Raportu wykonawcy ma swoje liczby, także gdy Raport
+    liczy się za inny dzień, bo przy nim stoją problemy jego Wpisów.
 
     ``orders`` mają klucz po Przeniesieniach kliknięcia. Zlecenia dnia idą w kolejności z INTERMAX po zapisie: arkusze
     zleceń tak, jak przyszły w ``orders``, a w arkuszu od góry, a zlecenia przeniesione (``moved``) za pozostałymi,
     bo zapis stawia je pod ostatnim zleceniem nowego Wykonawcy. Zlecenie ma Wpis, gdy Raport wykonawcy z jego dnia ma
-    jego numer albo gdy zwycięski Wpis innego dnia trafił do niego (``reached``: klucze celów po kliknięciu, np.
-    pomylony temat). Zlecenia dopisane z raportu (``added``: klucz i zlecenie po zapisie) stoją na końcu zleceń swojego
+    jego numer (``said``: ``WindowRead.said`` z dniem otwartym, z dniem z tematu) albo gdy zwycięski Wpis innego dnia
+    trafił do niego (``reached``: klucze celów po kliknięciu, np. pomylony temat). Zlecenia dopisane z raportu (``added``: klucz i zlecenie po zapisie) stoją na końcu zleceń swojego
     Wykonawcy z dnia, za przeniesionymi, bo zapis dopisuje je po Przeniesieniach. Każde zlecenie ``tak`` ma Kody
     czynności swojego opisu z Legendy czynności ``legend`` (``_descriptions.codes``). Dzień, za który liczy się
     raport z pomylonym tematem (``mistaken``: Wykonawca, ten dzień i dzień z tematu), ma jego dzień z tematu.
@@ -80,7 +79,7 @@ def worker_days(
     for order in sorted(found_orders, key=lambda order: (order.row in moved, sheets[order.row.sheet], order.row.row)):
         days[order.key.day, order.key.worker].append(order)
     mails = Counter(sent)
-    reported = reached | {OrderKey(entry.number, report.day, report.worker) for report in reports for entry in report.entries}
+    reported = reached | said
     places = Counter(place for problem in problems if (place := _place(problem)) is not None)
     extra: defaultdict[tuple[date, Login], list[OrderDetail]] = defaultdict(list)
     for key, found in added:
@@ -92,7 +91,7 @@ def worker_days(
     for report in overtaken:
         taken[report.day, report.worker].append(report)
     figures = []
-    subjects = {(report.day, report.worker) for report in reports}
+    subjects = {(key.day, key.worker) for key in said}
     for day, worker in sorted(days.keys() | mails.keys() | subjects | extra.keys() | taken.keys()):
         detail = tuple(
             replace(found, codes=codes(legend, found.successful, found.activities))
