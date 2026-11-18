@@ -1,7 +1,8 @@
 name: Werdykt i bramka
 
 # The commit status "Werdykt i bramka" on the HEAD of each open PR to main: would tools/scal_pr.py merge it now, by
-# conditions 1-5 of its --help (CI, verdict PASS for HEAD, PR body, root gate, rule of an Idiom: field), judged by main's code
+# conditions 1-6 of its --help (CI, verdict PASS for HEAD, PR body, root gate, rule of an Idiom: field, main's ast-grep
+# rules on the lines the PR adds), judged by main's code
 # (tools/scal_pr.py --status, ADR 0036 "Status w Actions"): pending while it only waits for CI or a verdict on HEAD,
 # failure when the author must act. The ruleset of main requires it as success. A closed PR gets no new status, so
 # the HEAD of a merged PR keeps the status it had at the merge, and a merge without a green one shows afterwards.
@@ -80,7 +81,7 @@ jobs:
         with:
           enable-cache: false
 
-      # Condition 5 runs the rule proof tools/na_scalonych_pr.py, which needs ast-grep and PyYAML. Their pins come from
+      # Condition 5 runs the rule proof tools/na_scalonych_pr.py, which needs ast-grep and PyYAML, and condition 6 ast-grep. Their pins come from
       # main's pyproject.toml (the dev extra, as in CI), and -r installs only the dependencies, so nothing from the PR
       # and no build of the project runs.
       - name: Install the dependencies of the rule proof

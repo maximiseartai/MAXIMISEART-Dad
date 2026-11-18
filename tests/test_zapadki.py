@@ -835,7 +835,7 @@ def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:
 
 # Rozszerzenia plików, które ast-grep 0.51 czyta jako Python (jedyny język reguł z ``AST_GREP_RULES``, bez
 # ``languageGlobs`` w ``sgconfig.yml``), i tekst dyrektywy tłumienia ast-grep, z którego próbki tego pliku ją składają.
-PYTHON_SUFFIXES: Final = (".py", ".pyi", ".py3", ".bzl")
+PYTHON_SUFFIXES: Final = odpalenia_ast_grep.PYTHON_SUFFIXES
 _IGNORE: Final = odpalenia_ast_grep.SUPPRESSION
 
 
