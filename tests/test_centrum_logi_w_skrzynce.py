@@ -2446,7 +2446,7 @@ ENTERING_LIMITS: dict[str, tuple[Callable[[dict[str, Any]], None], int, tuple[st
     "numer_wpisu_jako_telefon": (
         lambda record: _logged_entry(record, "40000099").update(number="[telefon]"),
         3,
-        ("NIE DA SIĘ ODTWORZYĆ: Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ([telefon]: 9 cyfr",),
+        ("NIE DA SIĘ ODTWORZYĆ: Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ([telefon]; Logi sprzed ORDER_NUMBERS",),
     ),
     "pamiec_bez_wpisu_z_numerem": (
         lambda record: record["report_entering"]["memory_before"][0].update(number=4000007),
@@ -2584,7 +2584,7 @@ def _second_form(entering: dict[str, Any]) -> None:
 UNREPLAYABLE: Final[dict[str, tuple[Callable[[dict[str, Any]], None], str]]] = {
     "numer_wpisu_z_maska": (
         lambda entering: entering["mails"][0]["entries"][1].update(number="[telefon]"),
-        "Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ([telefon]: 9 cyfr",
+        "Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ([telefon]; Logi sprzed ORDER_NUMBERS",
     ),
     "pamiec_bez_wpisu": (
         lambda entering: entering["memory_before"][0].update(number=40000009),
