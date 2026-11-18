@@ -281,6 +281,6 @@ that left a torn first line (`run_ended` removes it like a whole one, and a star
 Historia (no step of this path reads it), exceptions other than `OSError` in `close_left_behind`, and in `run_ended` an
 exception outside a write (one in `_own` leaves the Logi with the result out of the queue, like `post` False: the
 journal stays for the stand-in version), the text of the progress and of the result without Logi, the Diagnoza (a newer
-version of the Logi with the result, of their rank and Centrum work), Dad's actions in the Logs
-(`DadActionJournal.take`), and the karta after the start (`RunCards.last`, which shows the Urwane Uruchomienie for
+version of the Logi with the result, of their rank and Centrum work), Dad's actions and the Centrum log in the Logs
+(`DadActionJournal.take`, `CentrumLog.take_for_logs`), and the karta after the start (`RunCards.last`, which shows the Urwane Uruchomienie for
 `przed-wpisem-konca` and `wpis-konca-nieudany`).

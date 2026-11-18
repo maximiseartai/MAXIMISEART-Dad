@@ -44,7 +44,7 @@ from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, DadActionJo
 from rozliczenia.centrum.dad_actions import DadActions, ViewOpened
 from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
-from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.log import MAX_FOR_LOGS, CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, EndEntry, Journal, LogsOnDisk, name_of
 from rozliczenia.centrum.run_comments import PROGRESS_S, RecordMaker
@@ -144,7 +144,7 @@ KEYS = {
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "address_history", "efenix_orders", "efenix_stop", "report_entering", "environment", "trace",
     "diagnosis",
-    "dad_actions", "interruption", "input_copy", "input_copy_notes", "quantity_rules", "activity_legend",
+    "dad_actions", "centrum_log", "interruption", "input_copy", "input_copy_notes", "quantity_rules", "activity_legend",
 }
 
 
@@ -2614,6 +2614,49 @@ def in_box(fake: FakeReportBox) -> list[str]:
     return issues + [asset.text for archive in fake.archives for asset in archive.assets]
 
 
+def test_logi_maja_najnowsze_wpisy_dziennika_centrum_ponad_limit_i_liczbe_starszych(tmp_path: Path) -> None:
+    """Ponad ``MAX_FOR_LOGS`` wpisów od poprzednich Logów (Centrum długo bez Uruchomienia) Logi biorą najnowsze, a
+    liczba starszych stoi obok, jak w dzienniku działań taty."""
+
+    log = CentrumLog(tmp_path / "centrum-rozliczen.log")
+    for index in range(MAX_FOR_LOGS + 3):
+        log.settlement_mailed(period=f"wpis-{index}")
+
+    lines, omitted = log.take_for_logs()
+
+    assert (len(lines), omitted) == (MAX_FOR_LOGS, 3)
+    assert lines[0].endswith(" okres=wpis-3") and lines[-1].endswith(f" okres=wpis-{MAX_FOR_LOGS + 2}")
+    assert log.take_for_logs() == ([], 0), "następne Logi nie dostają tych samych wpisów"
+
+
+def test_co_centrum_zrobilo_miedzy_dwoma_uruchomieniami_jest_w_logach_drugiego_bez_pomiarow_widoku(tmp_path: Path) -> None:
+    """Dziennik Centrum od Logów pierwszego Uruchomienia do powstania Logów drugiego (zmiana Ustawień, zamknięcie
+    Centrum, wysyłki Kolejki) jest w Logach drugiego i w Archiwum Logów okresu, każdy wpis raz, a pomiaru widoku tam nie ma: z Logów
+    Maks wie, co Centrum zrobiło samo także poza Uruchomieniami."""
+
+    centrum = settling_centrum(tmp_path)
+    write_report_key(ToolDirectory(tmp_path))
+    first = run_to_end(centrum, dry_run=True)["run"]["id"]
+    client = centrum.client
+    assert client.post("/api/view-timings", json=view_timing(kind="navigation", page="okresy")).status_code == 204
+    assert client.put("/api/settings/reminders/enabled", json={"enabled": True}).status_code == 200
+    assert client.post("/api/shutdown").status_code == 202
+    centrum.restart()
+    second = run_to_end(centrum, dry_run=False)["run"]["id"]
+
+    _, earlier = logged_record(centrum, first)
+    _, later = logged_record(centrum, second)
+    events = {run: [line.split(" ")[1] for line in record["centrum_log"]["lines"]] for run, record in ((first, earlier), (second, later))}
+    assert "uruchomienie-start" in events[first]
+    assert {"ustawienia-zmiana", "zamkniecie", "uruchomienie-start"} <= set(events[second]), events[second]
+    assert "pomiar" not in events[first] + events[second]
+    assert set(earlier["centrum_log"]["lines"]).isdisjoint(later["centrum_log"]["lines"]), "każdy wpis w jednych Logach"
+    assert (earlier["centrum_log"]["omitted"], later["centrum_log"]["omitted"]) == (0, 0)
+    box = centrum.surroundings.report_box
+    assert box.wait_until(lambda fake: logs_arrived(fake, 2)), "Logi obu Uruchomień w Skrzynce"
+    assert "ustawienia-zmiana" in logs_text(box, logs_comments(box)[1]), "dziennik Centrum dociera do Maksa"
+
+
 def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzinami_bez_tresci_uwagi_taty(
     tmp_path: Path,
 ) -> None:
@@ -2856,6 +2899,8 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
         ("start Centrum",),
         ("przycisk", "startRun", "efenix", "RUN"),
     ], "działania taty sprzed zgaśnięcia, bez startu Centrum po nim"
+    centrum_events = [line.split(" ")[1] for line in record["centrum_log"]["lines"]]
+    assert "uruchomienie-start" in centrum_events, "dziennik Centrum sprzed zgaśnięcia jest w Logach Urwanego Uruchomienia"
     assert utc(record["started_at"]) <= utc(record["ended_at"]) == utc(entries[-1]["at"])
     assert (logs_json(box, comment), "- Wynik: brak, Centrum zamknęło się w trakcie (Urwane Uruchomienie)" in comment) == (record, True)
     assert (previous["state"], previous["run"]["id"], previous["orders"]["title"]) == ("interrupted", run_id, "Zlecenia przed zamknięciem Centrum")

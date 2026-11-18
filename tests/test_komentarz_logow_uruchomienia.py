@@ -1568,6 +1568,7 @@ def _comments(
         files=files,
         cloud_files=CloudFiles(None),
         dad_actions=DadActionJournal(work),
+        centrum_log=work.log,
     )
     return RunComments(work, disk or _logs_on_disk(directory), queue, records)
 
@@ -2369,6 +2370,10 @@ FULL_LOGS: Final[dict[str, Any]] = {
             {"at": "2026-10-23T20:47:20.700000Z", "action": "przycisk", "operation": "startRun", "process": "efenix", "mode": "RUN"},
         ],
         "omitted": 0,
+    },
+    "centrum_log": {
+        "lines": ["2026-10-23T22:45:00+02:00 przypomnienie-wyslane dzien=2026-10-23 pora=wieczor"],
+        "omitted": 1,
     },
     "interruption": {"row": 20, "place": 3, "total": 4, "omitted": 1},
     "report_entering": {

@@ -266,6 +266,7 @@ def create_app(
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
+        centrum_log=work.log,
     )
     comments = RunComments(work, disk, outbox, records)
     stops = Stops(

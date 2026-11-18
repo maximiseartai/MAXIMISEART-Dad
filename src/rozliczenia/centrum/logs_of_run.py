@@ -17,6 +17,7 @@ from rozliczenia.centrum.diagnosis import Diagnosis
 from rozliczenia.centrum.logged_input_copy import LoggedInputFile
 from rozliczenia.centrum.run_logs import (
     SCHEMA_VERSION,
+    CentrumLogLines,
     Environment,
     Explanation,
     LoggedCheck,
@@ -32,8 +33,16 @@ from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.input_copy import CopiedFile
 
 
-def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions: DadActions) -> RunLog:
-    """Logi Uruchomienia ``run`` bez Diagnozy."""
+def logs_of(
+    run: EndedRun,
+    *,
+    tool: Tool,
+    environment: Environment,
+    dad_actions: DadActions,
+    centrum_log: CentrumLogLines | None = None,
+) -> RunLog:
+    """Logi Uruchomienia ``run`` bez Diagnozy; ``centrum_log``: dziennik Centrum od poprzednich Logów (bez niego Logi
+    odtworzenia)."""
 
     info, stopped, snapshot = run.info, run.stopped, run.snapshot
     process_logs = declaration_of(info.process).logs(
@@ -74,6 +83,7 @@ def logs_of(run: EndedRun, *, tool: Tool, environment: Environment, dad_actions:
         trace=None if stopped is None else stopped.stop.trace,
         diagnosis=None,
         dad_actions=dad_actions,
+        centrum_log=centrum_log,
         input_copy=None if copied is None else [LoggedInputFile.of(file) for file in copied],
         input_copy_notes=[] if copied is None else _domain_fact_notes(copied),
         **run.settings.logged(),

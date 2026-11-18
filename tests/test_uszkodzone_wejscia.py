@@ -33,6 +33,7 @@ from rozliczenia import period_folder
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.clock import ALARM_THREAD
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
+from rozliczenia.centrum.log import FOR_LOGS_FILE
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_REPORTS_FILE
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
@@ -863,6 +864,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "zapisy_zakladania_skrzynki": TOOL.config / OPENING_FILE,
         "wynik_aktualizacji": TOOL.config / RESULT_FILE,
         "dzialania_taty": TOOL.log_path.parent / DAD_ACTIONS_FILE,
+        "dziennik_do_logow": TOOL.log_path.parent / FOR_LOGS_FILE,
         "dostep_skrzynki_raportow": TOOL.config / INBOX_ACCESS_FILE,
         "reguly_ilosci": TOOL.config / RULES_FILE,
         "lista_urzadzen": TOOL.config / DEVICES_FILE,
@@ -885,6 +887,7 @@ def test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca() -> None:
         "zapisy_zakladania_skrzynki": "config/skrzynka-zakladanie.txt",
         "wynik_aktualizacji": "config/centrum-aktualizacja.json",
         "dzialania_taty": "logs/dzialania-taty.jsonl",
+        "dziennik_do_logow": "logs/dziennik-centrum-do-logow.log",
         "dostep_skrzynki_raportow": "config/skrzynka-raportow.txt",
         "reguly_ilosci": "config/reguly-ilosci.yaml",
         "lista_urzadzen": "config/lista-urzadzen.yaml",

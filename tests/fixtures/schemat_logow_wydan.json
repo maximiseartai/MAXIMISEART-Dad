@@ -3,6 +3,7 @@
   "pola": [
    "activity_legend",
    "address_history",
+   "centrum_log",
    "dad_actions",
    "diagnosis",
    "duration_ms",
@@ -82,6 +83,18 @@
    "orders",
    "rows",
    "sheets"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".centrum_log": {
+  "pola": [
+   "lines",
+   "omitted"
+  ],
+  "wymagane": [
+   "lines",
+   "omitted"
   ],
   "wartosci": [],
   "otwarte": true
