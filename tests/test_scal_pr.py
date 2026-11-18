@@ -3086,6 +3086,19 @@ def test_job_dowodu_dopisuje_warunek_5_dla_head_a_przy_odmowie_warunkow_1_4_go_p
     assert _statuses(github) == []
 
 
+def test_job_dowodu_dla_pr_bez_czego_dowodzic_nie_czeka_na_warunki_1_4(tmp_path: Path) -> None:
+    """PR, którego wątek kończy po staremu (werdykt sprzed wdrożenia warunku 5), nie ma czego dowodzić, więc job ``dowod``
+    daje mu linię bez przyczyn od razu, bez warunków 1–4, które status i tak liczy sam (#2116 r4 D1)."""
+
+    github, head = _guard_pull(tmp_path, "szczebel-c", deployed=GATE_AFTER_VERDICTS)
+    github.update(1, isDraft=True)
+
+    [written] = _guard_proofs_line(github, tmp_path)
+
+    assert written == {"numer": 1, "sha": head, "pominiety": False, "przyczyny": []}
+    assert _proofs(github) == []
+
+
 @pytest.mark.parametrize(
     ("proofs", "job", "state", "description"),
     [

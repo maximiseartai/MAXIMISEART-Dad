@@ -276,10 +276,11 @@ def _skipped_status(pull: Pull) -> str | None:
 
 def _guard_proofs(pull: Pull, output: Path, skipped: str | None = None) -> int:
     """Warunek 5 PR ``pull`` jako linia JSON dopisana do ``output`` (job ``dowod``, bez prawa zapisu): pominięty
-    (``skipped``), gdy PR nie dostaje statusu albo któraś przyczyna warunków 1–4 wymaga działania autora."""
+    (``skipped``), gdy PR nie dostaje statusu albo ma czego dowodzić (``bramka_straznika.needed``), a któraś przyczyna
+    warunków 1–4 wymaga działania autora; PR bez czego dowodzić dostaje linię bez przyczyn bez warunków 1–4."""
 
     where = f"#{pull.number} {pull.head[:7]}"
-    if skipped is None and not all(isinstance(problem, stan_pr.Waiting) for problem in _problems(pull)):
+    if skipped is None and bramka_straznika.needed(pull) and not all(isinstance(problem, stan_pr.Waiting) for problem in _problems(pull)):
         skipped = "warunki 1–4 odmawiają"
     problems = [] if skipped else bramka_straznika.problems(pull)
     entry = {"numer": pull.number, "sha": pull.head, "pominiety": skipped is not None, "przyczyny": [{"tekst": str(problem), "oczekuje": isinstance(problem, stan_pr.Waiting)} for problem in problems]}

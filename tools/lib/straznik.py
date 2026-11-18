@@ -2,12 +2,13 @@
 listy, który autor wpisuje w bloku Ważnego sekcji ``## Korzeń`` linią ``Strażnik: <selektor>``, i jego dowód.
 
 Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` i miejsca jego pola ``Gdzie``, które pisze
-recenzent, a autor podaje tylko selektor. Wynik to znaleziska mypy (``-O json``) i ruff (``--output-format json``)
-w formacie z wiersza poleceń dowodu, więc konfiguracja PR wyniku nie przestawi.
+recenzent, a autor podaje tylko selektor. Strażnik biegnie krokami bramy pre-push i Required CI
+(``kroki_lokalne.static_steps``: ruff oraz mypy obu systemów, także ``--platform win32``) w ich środowisku, a wynik to
+znaleziska w JSON (``_JSON``: format z wiersza poleceń dowodu), więc konfiguracja PR wyniku nie przestawi.
 
 | Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
 |---|---|---|
-| ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk, po przywróceniu znalezisko w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
+| ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk w żadnym kroku narzędzia, po przywróceniu znalezisko któregoś kroku w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | Ważne stoi w polu ``metadata.przypadki`` reguły na HEAD (jedyna lista jej przypadków), a reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
 | ``brak - proza`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - napęd`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie w ``frontend/``; strażnik to krok napędu skilla ``verify-*``, który Required CI uruchamia w Mutation checks, a recenzent następnej rundy uruchamia go na drzewie FAIL |
@@ -29,11 +30,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 import json
-import os
 from pathlib import Path
 import re
-import sys
 
+from kroki_lokalne import environment, static_steps
 import potomne
 import repo
 
@@ -61,6 +61,9 @@ REVIEWED = {
     Kind.REMOVED: "czy kod z Gdzie zniknął z PR i nie wraca inną drogą, sprawdza recenzent następnej rundy",
 }
 FRONTEND = "frontend/"  # katalog każdego miejsca ``Gdzie`` zmienionego przez PR przy ``brak - napęd``
+# Opcje dopisane do kroku ``kroki_lokalne.static_steps``: znaleziska w JSON i bieg bez pamięci, bo plik przywrócony z FAIL
+# ma często ten sam rozmiar i tę samą sekundę zapisu, więc pamięć z biegu na HEAD byłaby dla niego ważna.
+_JSON = {Kind.MYPY: ("--no-incremental", "-O", "json"), Kind.RUFF: ("--no-cache", "--output-format", "json")}
 FORMS = f"{Kind.MYPY.value}, {Kind.RUFF.value}, {Kind.AST_GREP.value} <id reguły>, {Kind.PROSE.value}, {Kind.DRIVE.value}, {Kind.TESTS.value} (strażnik to test) albo {Kind.REMOVED.value} (kod z Gdzie usunięty z PR)"
 
 
@@ -135,19 +138,21 @@ class _Ran:
 
 
 def _run(guard: Guard, copy: Path) -> _Ran:
-    environment = {name: value for name, value in os.environ.items() if name not in _HIDDEN}
-    # Plik przywrócony z FAIL ma często ten sam rozmiar i tę samą sekundę zapisu, więc pamięć mypy z biegu na HEAD byłaby
-    # dla niego ważna: mypy biegnie bez niej (``--no-incremental``).
-    if guard.kind is Kind.MYPY:
-        command = [sys.executable, "-m", "mypy", "--no-incremental", "-O", "json"]
-    else:
-        command = [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json"]
-    done = potomne.run(command, cwd=copy, env=environment)
-    lines = (done.stdout + done.stderr).strip().splitlines()
-    last = lines[-1][:200] if lines else ""
-    found = _mypy(done.stdout) if guard.kind is Kind.MYPY else _ruff(done.stdout, copy)
-    # mypy i ruff kończą się kodem 1 przy znaleziskach, które niesie ``findings``; każdy inny kod to błąd narzędzia.
-    return _Ran(0 if done.returncode == 1 and found else done.returncode, last, found)
+    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: obu systemów) na kopii ``copy``; znaleziska
+    wszystkich kroków razem, a kod pierwszego kroku, który nie dał wyniku."""
+
+    env = {name: value for name, value in environment(copy).items() if name not in _HIDDEN}
+    code, last = 0, ""
+    found: list[tuple[str, int, str]] = []
+    for step in (step for step in static_steps(copy) if step.job == guard.kind.value):
+        done = potomne.run([*step.command, *_JSON[guard.kind]], cwd=copy, env=env)
+        read = _mypy(done.stdout) if guard.kind is Kind.MYPY else _ruff(done.stdout, copy)
+        found.extend(read)
+        # mypy i ruff kończą się kodem 1 przy znaleziskach, które niesie ``read``; każdy inny kod to błąd narzędzia.
+        if code == 0 and not (done.returncode == 0 or (done.returncode == 1 and read)):
+            lines = (done.stdout + done.stderr).strip().splitlines()
+            code, last = done.returncode, f"{step.name}: {lines[-1][:200] if lines else ''}"
+    return _Ran(code, last, tuple(dict.fromkeys(found)))
 
 
 def _mypy(output: str) -> tuple[tuple[str, int, str], ...]:

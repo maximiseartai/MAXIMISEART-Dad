@@ -155,6 +155,22 @@ def test_mypy_widzi_plik_z_fail_o_tym_samym_rozmiarze_co_na_head(tmp_path: Path)
 
 
 @wymaga_ruff_i_mypy
+@pytest.mark.parametrize("branch", ["==", "!="], ids=["galaz-windows", "galaz-poza-windows"])
+def test_typ_ktory_odrzuca_zla_postac_w_galezi_systemu_to_dowod_mypy_na_kazdym_systemie(tmp_path: Path, branch: str) -> None:
+    """Required CI sprawdza ``mypy`` i ``mypy --platform win32`` (#2116 r4 W1), więc błąd typu w gałęzi ``sys.platform``
+    łapie dowód na każdym systemie: biegnie krokami mypy obu systemów z ``kroki_lokalne.static_steps``."""
+
+    use = f"import sys\n\nfrom kod.odczyt import odczyt\n\n\ndef glosno() -> str:\n    if sys.platform {branch} 'win32':\n{{}}    return ''\n"
+    failed = {**TYPED, "kod/uzycie.py": use.format("        return odczyt().upper()\n")}
+    fixed = {**TYPED_FIX, "kod/uzycie.py": use.format("        tekst = odczyt()\n        return '' if tekst is None else tekst.upper()\n")}
+    pull = _pull(tmp_path, failed, fixed)
+
+    outcome = pull.prove("mypy", (("kod/uzycie.py", 8, 8),), scopes=(("kod/uzycie.py", 6, 9),))
+
+    assert outcome.detected and "kod/uzycie.py:8 [union-attr]" in outcome.line, outcome.line
+
+
+@wymaga_ruff_i_mypy
 def test_mypy_bez_typu_przy_bledzie_zachowania_nie_jest_dowodem(tmp_path: Path) -> None:
     pull = _fixed(tmp_path)
 
