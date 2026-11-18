@@ -109,14 +109,19 @@ def _git(root: Path, *args: str) -> str:
     ).stdout
 
 
-def _base() -> str | None:
+@pytest.fixture
+def baza_zmiany() -> str:
+    """Baza zmiany zapadki: ``MAXIMISEART_ZAPADKA_BAZA`` albo ``merge-base`` HEAD z ``BASE``; bez niej zapadka się
+    pomija. To jedyna droga bazy do zapadki, bo dowód pustego drzewa (``tests/test_struktura_testow.py``) wybiera zapadki
+    po tej fixture (``tests/fixtures/tylko_zapadki.py``)."""
+
     base = os.environ.get("MAXIMISEART_ZAPADKA_BAZA")
     if base:
         return base
     try:
         return _git(ROOT, "merge-base", "HEAD", BASE).strip()
     except subprocess.CalledProcessError:
-        return None
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
 
 
 def dropped_navigation(line: str, previous: str) -> bool:
@@ -161,11 +166,8 @@ def navigation_drops(root: Path, base: str) -> list[str]:
     return found
 
 
-def test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert navigation_drops(ROOT, base) == []
+def test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona(baza_zmiany: str) -> None:
+    assert navigation_drops(ROOT, baza_zmiany) == []
 
 
 def test_zapadka_nawigacji_widzi_tylko_pliki_src_z_importem_playwright(tmp_path: Path) -> None:
@@ -551,10 +553,10 @@ def test_linie_konczy_tylko_znak_nowej_linii_wiec_znak_podzialu_splitlines_nie_z
     ]
 
 
-def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
     monkeypatch.setenv("MAXIMISEART_ZAPADKA_BAZA", "galaz-rodzica")
 
-    assert _base() == "galaz-rodzica"
+    assert request.getfixturevalue("baza_zmiany") == "galaz-rodzica"
 
 
 def parsers_off_entry(root: Path, base: str) -> list[str]:
@@ -591,12 +593,8 @@ def parsers_off_entry(root: Path, base: str) -> list[str]:
     return found
 
 
-def test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-
-    assert parsers_off_entry(ROOT, base) == []
+def test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu(baza_zmiany: str) -> None:
+    assert parsers_off_entry(ROOT, baza_zmiany) == []
 
 
 # Plik z ``PARSERS``, który testy zapadki kładą w swoim repozytorium (zmienna, nie napis, z powodu jak przy ``PARSERS``).
@@ -787,11 +785,8 @@ windows_without_ast_grep = pytest.mark.skipif(
 
 
 @windows_without_ast_grep
-def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
-    base = _base()
-    if base is None:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert syntax_rule_findings(ROOT, base) == []
+def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo(baza_zmiany: str) -> None:
+    assert syntax_rule_findings(ROOT, baza_zmiany) == []
 
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
