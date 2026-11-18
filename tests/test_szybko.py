@@ -115,10 +115,6 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
         "ruff ze stdin, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
-    "tests/test_centrum_wpisanie_raportow.py::test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu": (
-        "test zachowania pracy przypomnień w Centrum: graf wybiera jego plik przy zmianie report_reminders.py, "
-        "report_entering.py i rdzenia raportów, które praca przypomnień importuje"
-    ),
     "tests/test_zakazy_ruff.py::test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a ruff biegnie na kodzie "
         "każdego właściciela z OWNERS, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"

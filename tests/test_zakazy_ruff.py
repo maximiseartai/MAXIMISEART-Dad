@@ -587,8 +587,9 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     )
 
 
-# Wejście odczytu okna spoza report_inputs, które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią i konstruktor z
-# typu wejścia w module spoza właścicieli oraz konstruktor w module z prawem do typu; opis → (sonda, kod).
+# Wejście odczytu okna spoza report_inputs, które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią, konstruktor z
+# typu wejścia w module spoza właścicieli, konstruktor w module z prawem do typu i pamięć Wpisania podana report_inputs
+# spoza ReportState.load (granica zakazu nazwy, #2125 r1–r3 W1); opis → (sonda, kod).
 _CENTRUM_PROBE = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
 ZNANE_LUKI_WEJSCIA_ODCZYTU = {
     "zakaz zna tylko nazwę klasy, nie kopię: wejście z report_inputs z pustą pamięcią przez dataclasses.replace": (
@@ -623,6 +624,12 @@ ZNANE_LUKI_WEJSCIA_ODCZYTU = {
         "from rozliczenia.worker_reports import OwnEntries\n\n"
         "given = report_inputs(window, intermax, mails, addresses, type(state.load())(None, OwnEntries.EMPTY), legend)\n",
     ),
+    "zakaz zna tylko nazwę wejścia, nie wartość pamięci: pamięć z pliku bez dnia wdrożenia Wpisania (#2125 r3 W1)": (
+        _CENTRUM_PROBE,
+        "from dataclasses import replace\n\n"
+        "from rozliczenia.report_entering import report_inputs\n\n"
+        "given = report_inputs(window, intermax, mails, addresses, replace(state.load(), rollout=None), legend)\n",
+    ),
     "prawo do nazwy obejmuje plik: konstruktor w Przypomnieniach rdzenia, które biorą wejście jako pole": (
         SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "_reminders.py",
         "from ._model import OwnEntries, ReportInputs\n\n"
@@ -639,12 +646,11 @@ def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_p
     Wpisania. Typ wejścia biorą też odczyt okna, Przypomnienia rdzenia (``ReminderInputs.reports``) i ``__init__``
     pakietu (``OWNERS``), więc zakaz zatrzymuje nazwę, nie samo wywołanie konstruktora.
 
-    Zakaz zna nazwę wejścia, a nie wartość pamięci, którą ``report_inputs`` dostaje: pusta pamięć to też poprawna
-    wartość (``FileReportState.load`` bez pliku Wpisania), więc żadna nazwa ani typ nie odróżni jej od zbudowanej obok.
-    Pamięć spoza ``ReportState.load`` w Przypomnieniach o raporcie, w każdej postaci z tabeli, łapie test zachowania
-    ``tests/test_centrum_wpisanie_raportow.py::test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu``
-    (praca przypomnień po kliknięciu z Zleceniem dopisanym z raportu), a w nowym module, który zawoła ``report_inputs``,
-    nic poza przeglądem.
+    Zakaz zna nazwę wejścia, a nie wartość pamięci Wpisania, którą ``report_inputs`` dostaje: pusta pamięć to też
+    poprawna wartość (``FileReportState.load`` bez pliku Wpisania), więc żadna nazwa nie odróżni pamięci z
+    ``ReportState.load`` od zbudowanej, skopiowanej albo zmienionej obok (#2125 r1–r3 W1). Tej pamięci nie pilnuje nic
+    poza przeglądem, dopóki Przypomnienia o raporcie trzymają wartość ``SavedState``; lukę zamyka kształt, w którym
+    Przypomnienia biorą ``ReportState``, a pamięć ładuje i podaje ``report_inputs`` jedna funkcja ``report_entering``.
 
     | Postać | Zakaz | Próbka |
     |---|---|---|
@@ -653,10 +659,11 @@ def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_p
     | atrybut pakietu pod aliasem: ``reports.ReportInputs(…)`` | łapie | ``SAMPLES`` |
     | moduł z prawem do innej nazwy: ``report_reminders.py`` (``DEFAULT_REMINDERS``) z ``ReportInputs`` (#2059 r1 W1) | ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw`` z komunikatem zakazu | ``OWNERS`` |
     | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``__init__``) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | kopia wejścia ze zmienioną pamięcią: ``dataclasses.replace(wejście, memory=…)`` | przepuszcza; w Przypomnieniach test zachowania | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | ``report_inputs`` z własną pamięcią: ``SavedState(None, OwnEntries.EMPTY)`` (#2125 r1 W1) | przepuszcza; w Przypomnieniach test zachowania | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | ``report_inputs`` z gotową pustą pamięcią: ``EnteringReplay.without_logs(dzień).saved`` (#2125 r2 W1) | przepuszcza; w Przypomnieniach test zachowania | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | ``report_inputs`` z pamięcią z typu wartości: ``type(state.load())(None, OwnEntries.EMPTY)`` (#2125 r2 W1) | przepuszcza; w Przypomnieniach test zachowania | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | kopia wejścia ze zmienioną pamięcią: ``dataclasses.replace(wejście, memory=…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | ``report_inputs`` z własną pamięcią: ``SavedState(None, OwnEntries.EMPTY)`` (#2125 r1 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | ``report_inputs`` z gotową pustą pamięcią: ``EnteringReplay.without_logs(dzień).saved`` (#2125 r2 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | ``report_inputs`` z pamięcią z typu wartości: ``type(state.load())(None, OwnEntries.EMPTY)`` (#2125 r2 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | ``report_inputs`` z pamięcią z pliku bez dnia wdrożenia: ``replace(state.load(), rollout=None)`` (#2125 r3 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
     | konstruktor z typu wartości: ``type(wejście)(…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
 
     Poza ``src/`` zakaz nie obowiązuje: testy rdzenia budują wejście same, a próba skrzynki raportów w ``tools/`` czyta
