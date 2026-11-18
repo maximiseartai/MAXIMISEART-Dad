@@ -2277,6 +2277,32 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_z_przeniesieniem_odtwarz
     assert [(move["day"], move["worker"]) for move in clicked["moves"]] == [("2026-11-09", "anna.kowalska")]
 
 
+def test_blad_tematu_ktorego_zlecenie_wzial_pozniejszy_raport_odtwarza_sie_zgodnie_takze_przy_nastepnym_kliknieciu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR 0041: Anna raportuje jedyne zlecenie Jana z 9.11 tematem ``Raport 09.11.2026 Nowak``, a później Jan
+    przysyła poprawny raport z tym zleceniem. Błąd tematu Anny nie ma czego wpisać, więc Logi nie mają go jako
+    problemu, a odtworzenie z Logów daje to samo przy pierwszym kliknięciu i przy następnym, z pamięcią po Wpisie Jana."""
+
+    surroundings = Surroundings()
+    mails = [
+        report(SENDERS["anna.kowalska"], "Raport 09.11.2026 Nowak", "40000001 tak inst20m", at=datetime(2026, 11, 9, 17)),
+        report(SENDERS["jan.testowy"], "Raport 09.11.2026", "40000001 tak montaż", at=datetime(2026, 11, 9, 18)),
+    ]
+    centrum = entering_centrum(tmp_path / "taty", MATCHED, mails, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    views = [centrum.run_to_end(), centrum.run_to_end()]
+
+    replays = [
+        _replayed(capsys, _archived_run(surroundings.report_box, tmp_path, view["run"]["id"]), "--na-tym-drzewie")
+        for view in views
+    ]
+
+    assert [view["result"]["ending"] for view in views] == ["finished"] * 2
+    assert [logs["report_entering"]["problems"] for logs in centrum.run_logs()] == [[], []]
+    assert [(code, lines[0]) for code, lines in replays] == [(0, "ODTWORZENIE ZGODNE")] * 2, replays
+
+
 def _logged_entry(record: dict[str, Any], number: str) -> dict[str, Any]:
     """Jedyny Wpis raportu z numerem ``number`` w Logach Wpisania raportów, do zmiany w miejscu."""
 

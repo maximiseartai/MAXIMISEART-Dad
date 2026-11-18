@@ -81,3 +81,7 @@ FaultyDescription
   Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma Błąd opisu: kolumna Ilości usług trafiona drugi raz (Y: instmdik, inst). Centrum go wpisało, ale Legenda czynności nic z niego nie wyznaczy, dopóki Wykonawca nie przyśle poprawionego Wpisu.
 FaultyDescription
   Wpis zlecenia 40000001 od jan.testowy z 08.11.2026 ma Błąd opisu: kod z liczbą spoza przedziałów (instutp0m). Centrum go wpisało, ale Legenda czynności nic z niego nie wyznaczy, dopóki Wykonawca nie przyśle poprawionego Wpisu.
+OvertakenSubject
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie (inne słowa), ale każde jego zlecenie wziął późniejszy raport od anna.kowalska, więc nie ma w nim nic do wpisania.
+OvertakenSubject
+  Raport wykonawcy od jan.testowy z 08.11.2026, 18:05 ma błąd w temacie (inne słowa), ale każde jego zlecenie wzięły późniejsze raporty od anna.kowalska i ewa.probna, więc nie ma w nim nic do wpisania.

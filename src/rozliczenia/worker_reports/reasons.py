@@ -21,6 +21,7 @@ from . import (
     MoveBar,
     MovedFrom,
     MovedTo,
+    OvertakenSubject,
     RefusedMove,
     RepeatedNumber,
     RepeatedOrder,
@@ -36,7 +37,7 @@ from . import (
     VerdictFault,
 )
 
-__all__ = ["note", "reason", "subject_fault"]
+__all__ = ["note", "overtaken", "reason", "subject_fault"]
 
 
 def reason(problem: ReportProblem) -> str:
@@ -124,6 +125,18 @@ def note(found: ReportNote) -> str:
             return "dopisane z raportu, uzupełnij resztę"
         case _:
             assert_never(found)
+
+
+def overtaken(found: OvertakenSubject) -> str:
+    """Informacja dla taty przy dniu, za który liczy się raport z błędem tematu, z którego nie ma już czego wpisać:
+    każde jego zlecenie wziął późniejszy raport, więc Wpisu na życzenie przy nim nie ma."""
+
+    takers = " i ".join(found.takers)
+    later = f"wziął późniejszy raport od {takers}" if len(found.takers) == 1 else f"wzięły późniejsze raporty od {takers}"
+    return (
+        f"Raport wykonawcy od {found.worker} z {found.arrived:%d.%m.%Y, %H:%M} ma błąd w temacie "
+        f"({subject_fault(found.fault)}), ale każde jego zlecenie {later}, więc nie ma w nim nic do wpisania."
+    )
 
 
 def _day(day: date) -> str:

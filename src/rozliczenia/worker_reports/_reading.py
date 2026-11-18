@@ -16,6 +16,7 @@ from ._model import (
     MailRead,
     OrderKey,
     OrderNumber,
+    OvertakenSubject,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
@@ -39,9 +40,11 @@ class WindowRead:
     dzień otwarty, za który liczy się raport z pomylonym tematem, z jego dniem z tematu (``mistaken``: Wykonawca, dzień,
     dzień z tematu). Raport z błędem tematu z dniem z tematu, który liczy się tylko za dni spoza dni otwartych, tata nie
     widzi, jak Raport wykonawcy z takim dniem, a raportu, którego każdy Wpis tata wpisał Wpisem na życzenie, tata już
-    nie widzi jako błędu (``_settled``). ``faulty_entries``: zlecenia (numer, dzień, Wykonawca) z Wpisem w raporcie
-    z błędem tematu za każdy dzień, za który ten raport się liczy; raport jest przysłany, więc takie zlecenie nie jest
-    bez raportu, choć Centrum jego Wpisu nie wpisało.
+    nie widzi jako błędu (``_settled``), także gdy pozostałe zlecenia wziął późniejszy mail. Raport z błędem tematu,
+    którego każde zlecenie wziął późniejszy mail, też nie jest błędem, tylko informacją przy każdym dniu otwartym, za
+    który się liczy (``overtaken``, ``_overtaken``), bo nie ma z niego czego wpisać. ``faulty_entries``: zlecenia
+    (numer, dzień, Wykonawca) z Wpisem w raporcie z błędem tematu za każdy dzień, za który ten raport się liczy; raport
+    jest przysłany, więc takie zlecenie nie jest bez raportu, choć Centrum jego Wpisu nie wpisało.
 
     Wpis na życzenie przy raporcie z błędem tematu (ADR 0041) ma kształt Wpisu Raportu wykonawcy z dniem zlecenia w
     temacie: ``offers`` to Wpis na życzenie przy wierszu każdego zlecenia, o którym decyduje Wpis takiego raportu,
@@ -58,6 +61,7 @@ class WindowRead:
     faulty_entries: frozenset[OrderKey]
     offers: Mapping[OrderRow, Requestable]
     requested: tuple[ReadReport, ...]
+    overtaken: tuple[OvertakenSubject, ...]
 
     @property
     def entering(self) -> tuple[ReadReport, ...]:
@@ -117,11 +121,6 @@ def read_window(inputs: ReportInputs) -> WindowRead:
     reported += [(found.worker, day) for found in unreadable for day in sorted(counted[found])]
     decided = _decided(unreadable, inputs.requested)
     shown = {found: frozenset(filter(window.opens, counted[found])) for found in unreadable}
-    faulty = tuple(
-        (found, shown[found])
-        for found in unreadable
-        if (shown[found] or found.day is None) and not _settled(found, decided)
-    )
     entries = frozenset(
         OrderKey(number, day, found.worker) for found in unreadable for day in counted[found] for number in found.numbers
     )
@@ -131,9 +130,21 @@ def read_window(inputs: ReportInputs) -> WindowRead:
         for found in unreadable
         if shown[found] and (day := days[found]) is not None
     )
-    offers = _offers(board, (*reports, *requested), asked, inputs.requested, decided)
+    matched = board.match(sorted((*reports, *requested, *asked), key=_mail_order), inputs.requested)
+    offers = _offers(matched, asked, decided)
+    overtaken = {found: takers for found in unreadable if (takers := _overtaken(found, matched.taken))}
+    faulty = tuple(
+        (found, shown[found])
+        for found in unreadable
+        if (shown[found] or found.day is None) and not _settled(found, decided, matched.taken)
+    )
+    taken = tuple(
+        OvertakenSubject(found.worker, day, found.arrived, found.fault, takers)
+        for found, takers in overtaken.items()
+        for day in sorted(shown[found])
+    )
     return WindowRead(
-        mails, tuple(strangers), reports, board, tuple(reported), faulty, tuple(mistaken), entries, offers, requested
+        mails, tuple(strangers), reports, board, tuple(reported), faulty, tuple(mistaken), entries, offers, requested, taken
     )
 
 
@@ -180,15 +191,12 @@ def _indicated(
 
 
 def _offers(
-    board: _matching.Board,
-    entering: Iterable[ReadReport],
-    asked: Sequence[ReadReport],
-    requested: Iterable[RequestedEntry],
-    decided: Mapping[tuple[MailId, OrderNumber], object],
+    matched: _matching.Matched, asked: Sequence[ReadReport], decided: Mapping[tuple[MailId, OrderNumber], object]
 ) -> dict[OrderRow, Requestable]:
     """Wpis na życzenie przy każdym zleceniu, którego zwycięskim Wpisem byłby Wpis raportu z błędem tematu, gdyby każdy
     taki raport miał w temacie swój dzień, a każdy znak z zamiarem był swoim ``tak``/``nie`` (``asked``), wśród
-    Raportów wykonawców Wpisania raportów (``entering``): decyduje najpóźniejszy mail z numerem, jak w ``Board.match``.
+    Raportów wykonawców Wpisania raportów (``matched``: ``Board.match`` Raportów wykonawców Wpisania raportów i ``asked``
+    po kolei maili z decyzjami taty): decyduje najpóźniejszy mail z numerem.
     Wpis, który tata już wpisał (``decided``), i Wpis, z którym wygrywa późniejszy mail, przycisku nie mają, a Wpis
     późniejszego raportu z błędem tematu ma własny, także przy zleceniu z Wpisem na życzenie wcześniejszego maila. Wpis,
     który stawia zlecenie u nadawcy albo w dniu z tematu, ma przycisk jak Raport wykonawcy, który by je przeniósł (ADR
@@ -196,12 +204,21 @@ def _offers(
     zlecenia, numer w kilku miejscach i Przeniesienie, do którego nie wolno."""
 
     faulty = {report.mail for report in asked}
-    matched = board.match(sorted((*entering, *asked), key=_mail_order), requested)
     return {
         order.row: Requestable(mail, entry.verdict, entry.activities, key.day, key.worker)
         for key, (order, entry) in matched.targets.items()
         if (mail := matched.mails[order.row]) in faulty and (mail, key.number) not in decided and entry.verdict is not None
     }
+
+
+def _overtaken(found: ReadUnreadable, taken: Mapping[tuple[MailId, OrderNumber], Login]) -> tuple[Login, ...]:
+    """Wykonawcy późniejszych maili, których Wpisy wzięły zlecenia raportu z błędem tematu ``found``
+    (``Matched.taken``), alfabetycznie, gdy wzięły zlecenie każdego jego Wpisu; inaczej pusto."""
+
+    said = [(found.mail, number) for number in found.numbers]
+    if not all(place in taken for place in said):
+        return ()
+    return tuple(sorted({taken[place] for place in said}))
 
 
 def _leaned(entry: ReportEntry) -> ReportEntry:
@@ -230,10 +247,15 @@ def _decided(
     return decided
 
 
-def _settled(found: ReadUnreadable, decided: Mapping[tuple[MailId, OrderNumber], object]) -> bool:
-    """Czy tata wpisał Wpisem na życzenie każdy Wpis raportu z błędem tematu ``found``."""
+def _settled(
+    found: ReadUnreadable,
+    decided: Mapping[tuple[MailId, OrderNumber], object],
+    taken: Mapping[tuple[MailId, OrderNumber], Login],
+) -> bool:
+    """Czy raport z błędem tematu ``found`` nie ma już czego wpisać: tata wpisał Wpisem na życzenie każdy jego Wpis,
+    którego zlecenia nie wziął późniejszy mail (``Matched.taken``)."""
 
-    return all((found.mail, number) in decided for number in found.numbers)
+    return all((found.mail, number) in decided or (found.mail, number) in taken for number in found.numbers)
 
 
 def _requested(

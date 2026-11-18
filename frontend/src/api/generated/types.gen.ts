@@ -3914,6 +3914,10 @@ export type ReportsWorkerDay = {
      */
     mistaken_subjects: Array<string>;
     /**
+     * Overtaken Subjects
+     */
+    overtaken_subjects: Array<string>;
+    /**
      * Reminders
      */
     reminders: Array<string>;

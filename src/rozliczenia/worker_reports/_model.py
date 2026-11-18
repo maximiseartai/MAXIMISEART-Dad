@@ -694,6 +694,20 @@ class UnreadableSubject:
 
 
 @dataclass(frozen=True)
+class OvertakenSubject:
+    """Raport wykonawcy z błędem tematu z powodem ``fault`` od ``worker``, który przyszedł ``arrived``, liczony za dzień
+    otwarty ``day``, którego każde zlecenie wziął Raport wykonawcy od ``takers``, który przyszedł później
+    (``_matching.Matched.taken``): informacja dla taty przy tym dniu, a nie problem, bo z tego raportu nie ma już czego
+    wpisać. Raport dalej liczy się za ten dzień (ADR 0041)."""
+
+    worker: Login
+    day: date
+    arrived: datetime
+    fault: SubjectFault
+    takers: tuple[Login, ...]
+
+
+@dataclass(frozen=True)
 class UnknownSender:
     mail: MailId
     sender: SenderAddress
@@ -989,7 +1003,8 @@ class OrderDetail:
 class WorkerDay:
     """Liczby Wykonawcy z dnia dla widoku Raporty: zlecenia, zlecenia z ``tak`` albo ``nie`` w ``SKUTECZNE`` po
     kliknięciu (``entered``), Raporty wykonawcy, problemy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności
-    z INTERMAX (``orders_detail``) i dni z tematu raportów z pomylonym tematem za ten dzień (``mistaken``)."""
+    z INTERMAX (``orders_detail``), dni z tematu raportów z pomylonym tematem za ten dzień (``mistaken``) i raporty z
+    błędem tematu za ten dzień, których każde zlecenie wziął późniejszy raport (``overtaken``)."""
 
     day: date
     worker: Login
@@ -1001,6 +1016,7 @@ class WorkerDay:
     orders_detail: tuple[OrderDetail, ...]
     mistaken: tuple[date, ...]
     """Dni z tematu Raportów wykonawcy z pomylonym tematem, które liczą się za ten dzień (ADR 0029), od najwcześniejszego."""
+    overtaken: tuple[OvertakenSubject, ...]
 
 
 @dataclass(frozen=True)

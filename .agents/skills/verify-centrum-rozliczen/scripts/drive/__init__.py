@@ -577,6 +577,7 @@ FEATURES = (
             "433-raporty-blad-tematu-przeniesienie-podglad",
             "435-raporty-blad-tematu-przeniesienie-nadawca",
             "434-raporty-blad-tematu-przeniesienie-po",
+            "436-raporty-blad-tematu-wziety",
             "287-raporty-w-czasie-innego",
             "293-raporty-mapa-bez-popovera",
             "288-raporty-mapa-jasna",
