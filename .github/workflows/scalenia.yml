@@ -1,7 +1,8 @@
 name: Scalenia otwartych PR
 
 # After every push to main, each open PR to main gets the commit status "scalenie z main": does its merge with the
-# new main pass without a conflict, and do ruff and mypy pass on it (tools/ci/status_scalenia.py).
+# new main pass without a conflict, and do ruff and mypy pass on it (tools/ci/status_scalenia.py). This run writes the
+# verdicts to the artifact "scalenia", and werdykt-i-bramka.yml sets them as statuses with main's code.
 on:
   push:
     branches:
@@ -13,12 +14,11 @@ on:
         required: false
         default: main
 
-# The job runs code from same-repository PR branches, as ci.yml does; tools/ci/status_scalenia.py skips PRs from forks,
-# because this token can write any commit status, also the one the ruleset requires.
+# The job runs code from same-repository PR branches, as ci.yml does, so its token cannot write commit statuses: only
+# werdykt-i-bramka.yml has statuses: write (tests/test_zadania_ci.py). tools/ci/status_scalenia.py skips PRs from forks.
 permissions:
   contents: read
   pull-requests: read
-  statuses: write
 
 concurrency:
   group: scalenia-${{ inputs.baza || 'main' }}
@@ -48,8 +48,14 @@ jobs:
       - name: Install development dependencies
         run: python -m pip install --disable-pip-version-check -e ".[dev]"
 
-      - name: Check each open PR merged with its base and set its status
+      - name: Check each open PR merged with its base
         env:
           GH_TOKEN: ${{ github.token }}
           BAZA: ${{ inputs.baza || 'main' }}
-        run: python tools/ci/status_scalenia.py --publikuj --baza "$BAZA"
+        run: python tools/ci/status_scalenia.py --zapisz scalenia.json --baza "$BAZA"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scalenia
+          path: scalenia.json
+          retention-days: 1

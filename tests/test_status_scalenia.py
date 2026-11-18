@@ -93,6 +93,15 @@ class StatusGitHub(FakeGitHub):
         return sent
 
 
+def _published(github: StatusGitHub, tmp_path: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    """Werdykty zapisane przez ``--zapisz`` (bieg z kodem PR, ``scalenia.yml``) i ustawione przez ``--publikuj-z``
+    (``werdykt-i-bramka.yml``); zwraca bieg publikacji, a gdy zapis padł, bieg zapisu."""
+
+    verdicts = tmp_path / "scalenia.json"
+    written = github.run("--zapisz", str(verdicts), *arguments)
+    return github.run("--publikuj-z", str(verdicts)) if written.returncode == 0 else written
+
+
 def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) -> None:
     github = StatusGitHub(
         tmp_path, {"kod/__init__.py": SUM, "kod/nazwa.py": 'NAZWA = "pierwsza"\n', **dict.fromkeys(LONG_NAMES, "start\n")}
@@ -112,7 +121,7 @@ def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) 
     )
     head_before = git(github.checkout, "rev-parse", "HEAD")
 
-    answered = github.run("--publikuj")
+    answered = _published(github, tmp_path)
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     sent = github.statuses_by_head()
@@ -194,7 +203,7 @@ def test_pr_do_innej_bazy_dostaje_jej_werdykt_a_odrzucony_status_nie_zatrzymuje_
     to_main = github.open_pull(3, {"kod/trzeci.py": "TRZECI: int = 1\n"})
     github.reject_statuses_for(rejected)
 
-    answered = github.run("--publikuj", "--baza", "inna")
+    answered = _published(github, tmp_path, "--baza", "inna")
 
     assert answered.returncode == 1, answered.stdout + answered.stderr
     assert answered.stdout.splitlines()[-1].startswith("SCALENIA FAIL | ")
@@ -227,3 +236,28 @@ def test_zabite_narzedzie_nie_zostawia_sprawdzen_ani_kopii_bazy(tmp_path: Path) 
     finally:
         started.kill()
         started.wait()
+
+
+def test_publikacja_ustawia_tylko_werdykt_scalenia_na_head_otwartego_pr_z_tego_repozytorium(tmp_path: Path) -> None:
+    """Plik werdyktów pisze bieg z kodem PR, więc ``--publikuj-z`` pomija wpis z innym kontekstem (np. wymagany
+    „Werdykt i bramka”), stanem spoza werdyktu, SHA, które nie jest HEAD PR, i numerem PR spoza otwartych PR do bazy."""
+
+    github = StatusGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    fork = github.open_pull(2, {"kod/forka.py": "FORK: int = 1\n"}, fork=True)
+    entry = {"numer": 1, "sha": head, "kontekst": "scalenie z main", "stan": "success", "opis": "main abc1234: scala się"}
+    forged = [
+        {**entry, "kontekst": "Werdykt i bramka"},
+        {**entry, "stan": "pending"},
+        {**entry, "sha": github.start},
+        {**entry, "numer": 2, "sha": fork},
+        {**entry, "numer": 9},
+    ]
+    verdicts = tmp_path / "scalenia.json"
+    verdicts.write_text(json.dumps({"baza": "main", "werdykty": [*forged, entry]}), encoding="utf-8")
+
+    answered = github.run("--publikuj-z", str(verdicts))
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines()[-1] == "SCALENIA OK | main | wysłane 1, pominięte 5"
+    assert github.statuses_by_head() == {head: [{"state": "success", "context": "scalenie z main", "description": "main abc1234: scala się"}]}
