@@ -109,7 +109,12 @@ class FakeGitHub:
         return head
 
     def environment(self) -> dict[str, str]:
-        return {**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}"}
+        """Środowisko narzędzia z atrapą na ``PATH`` i bez zmiennych ``GITHUB_*`` runu Actions, w którym biegnie test:
+        narzędzie czyta z nich run (np. ``target_url`` statusu w ``github.ustaw_status``), więc test, który ich
+        potrzebuje, podaje je sam."""
+
+        own = {name: value for name, value in os.environ.items() if not name.startswith("GITHUB_")}
+        return {**own, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}"}
 
     def command(self, *arguments: str) -> list[str]:
         return [sys.executable, str(self.checkout / self.tool), *arguments]

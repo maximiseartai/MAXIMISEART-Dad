@@ -64,6 +64,15 @@ je pomija. Kończy się ``PRZYPADKI REGUŁ OK | <n> reguł, <k> przypadków`` al
 <co zrobić> | …``, także dla reguły bez pola:
 
     .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul
+    .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul --z-commita <SHA scalenia HEAD PR z bazą>
+
+Z ``--z-commita REV`` reguły i ich przypadki bierze z kopii ``REV``, a każdy przypadek reguły checkoutu (bazy)
+wymienia w ``metadata.przypadki`` któraś reguła ``REV``, która go łapie: przypadek, którego żadna reguła ``REV`` nie
+wymienia, to porażka, bez względu na id i plik reguły, więc zmiana ``id:``, przeniesienie reguły do innego pliku ani
+usunięcie reguły go nie gubi. Regułę z przypadkami usuwa się więc tylko razem z przeniesieniem każdego przypadku do
+reguły, która go łapie. Tak uruchamia go ``tools/scal_pr.py`` z kodu bazy na scaleniu HEAD PR z bazą (warunek 6,
+``reguly_bazy``), więc PR, który osłabia regułę i usuwa z niej przypadek, nie przechodzi także wtedy, gdy zmienia ten
+krok CI.
 
 Dowód strażnika (``--straznik SELEKTOR --z-commita <HEAD PR>`` z ``--wazne``) to selektor z pola ``Strażnik:`` bloku
 Ważnego w sekcji ``## Korzeń``. ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
@@ -418,7 +427,7 @@ def _rule_guard(head: str, guard: straznik.Guard, majors: list[tuple[int, str, i
         print(f"DOWÓD ODMOWA | {guard} | {problem}")
         return 1
     with potomne.commit_copy(ROOT, head) as copy:
-        listed = {str(case) for document in rules(copy) if str(document["id"]) == rule for case in (document.get("metadata") or {}).get(CASES) or []}
+        listed = {case for document in _rule_documents(copy) if str(document["id"]) == rule for case in _cases_of(document)}
     if missing := [f"{number}/{label}/r{round_}" for number, label, round_ in majors if f"{number}/{label}/r{round_}" not in listed]:
         print(f"DOWÓD ODMOWA | {guard} | {', '.join(missing)} nie stoi w metadata.{CASES} reguły {rule} na HEAD: dopisz je tam, to jedyna lista przypadków reguły")
         return 1
@@ -450,34 +459,57 @@ def case_probe(repository: str, text: str) -> Probe:
     raise ValueError(f"przypadek {text!r} nie ma postaci PR/W<n>/r<k> ani <pełny SHA> plik:linia")
 
 
-def rules(root: Path) -> list[dict[str, Any]]:
-    """Dokumenty reguł z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` drzewa ``root``."""
+def _rule_documents(root: Path) -> list[dict[str, Any]]:
+    """Każda reguła (dokument YAML) z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` w ``root``."""
 
     config = yaml.safe_load((root / CONFIG).read_text(encoding="utf-8"))
     files = sorted(path for folder in config["ruleDirs"] for path in (root / folder).rglob("*.y*ml"))
     return [document for path in files for document in yaml.safe_load_all(path.read_text(encoding="utf-8")) if document]
 
 
-def founding() -> int:
-    """Każda reguła z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` checkoutu łapie każdy przypadek ze swojego pola
-    ``metadata.przypadki`` (``caught``), a regułę wybiera ast-grep z tej konfiguracji, jak zapadka; kod 0 tylko
+def _cases_of(document: dict[str, Any]) -> list[str]:
+    return [str(case) for case in (document.get("metadata") or {}).get(CASES) or []]
+
+
+def founding(commit: str | None = None) -> int:
+    """Każda reguła z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` checkoutu (z ``commit``: jego kopii) łapie każdy
+    przypadek ze swojego pola ``metadata.przypadki`` (``caught``), a regułę wybiera ast-grep z tej konfiguracji, jak
+    zapadka; z ``commit`` któraś jego reguła wymienia też każdy przypadek reguł checkoutu. Kod 0 tylko
     z ``PRZYPADKI REGUŁ OK``."""
 
-    found = rules(ROOT)
+    if commit is None:
+        return _founding(ROOT, ())
+    if problem := fetched(commit):
+        print(f"PRZYPADKI REGUŁ FAIL | {problem}")
+        return 1
+    with potomne.commit_copy(ROOT, commit) as copy:
+        return _founding(copy, tuple(case for document in _rule_documents(ROOT) for case in _cases_of(document)))
+
+
+def _founding(root: Path, kept: tuple[str, ...]) -> int:
+    """``founding`` na regułach ``root``; każdy przypadek z ``kept`` wymienia któraś z nich."""
+
+    rules = _rule_documents(root)
+    listed = {case for document in rules for case in _cases_of(document)}
     problems: list[str] = []
+    if dropped := sorted(set(kept) - listed):
+        problems.append(
+            f"PR usuwa z metadata.{CASES} przypadki z bazy {', '.join(dropped)}: każdy z nich wymienia reguła, która go łapie; przywróć je i popraw regułę tak, by je łapała"
+        )
     total = 0
     try:
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"PRZYPADKI REGUŁ FAIL | {error}")
         return 1
-    for document in found:
+    for document in rules:
         name = str(document["id"])
-        if not (cases := (document.get("metadata") or {}).get(CASES)):
+        cases = _cases_of(document)
+        if not cases:
             problems.append(f"{name}: bez pola metadata.{CASES}; dopisz przypadek, który reguła łapie: Ważne PR/W<n>/r<k> albo <pełny SHA> plik:linia")
             continue
-        chosen = ("--config", str(ROOT / CONFIG), "--filter", f"^{re.escape(name)}$")
-        for text in map(str, cases):
+        chosen = ("--config", str(root / CONFIG), "--filter", f"^{re.escape(name)}$")
+        for text in cases:
             total += 1
             try:
                 if not caught(chosen, case_probe(repository, text)):
@@ -487,7 +519,7 @@ def founding() -> int:
     if problems:
         print(f"PRZYPADKI REGUŁ FAIL | {' | '.join(problems)}")
         return 1
-    print(f"PRZYPADKI REGUŁ OK | {len(found)} reguł, {total} przypadków")
+    print(f"PRZYPADKI REGUŁ OK | {len(rules)} reguł, {total} przypadków")
     return 0
 
 
@@ -505,14 +537,14 @@ def main(argv: list[str] | None = None) -> int:
     rule.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
     rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
     rule.add_argument("--straznik", metavar="SELEKTOR", help=f"Dowód strażnika z pola Strażnik: na HEAD PR --z-commita ({straznik.FORMS}).")
-    parser.add_argument("--z-commita", metavar="REV", help="HEAD PR: z niego --regula-id bierze regułę, a --straznik kopię.")
+    parser.add_argument("--z-commita", metavar="REV", help="HEAD PR: z niego --regula-id bierze regułę, --straznik kopię, a --przypadki-regul reguły z przypadkami.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     rule.add_argument("--przypadki-regul", action="store_true", help="Każda reguła z reguly-ast-grep/ łapie przypadki ze swojego pola metadata.przypadki.")
     args = parser.parse_args(arguments[:split])
     if args.przypadki_regul:
-        if command or args.wazne or args.pr or args.ostatnie or args.commit or args.z_commita:
-            parser.error("--przypadki-regul bierze przypadki z reguł checkoutu, bez innych argumentów")
-        return founding()
+        if command or args.wazne or args.pr or args.ostatnie or args.commit:
+            parser.error("--przypadki-regul bierze przypadki z reguł checkoutu albo --z-commita REV, bez innych argumentów")
+        return founding(commit_of(args.z_commita) if args.z_commita else None)
     if args.straznik is not None:
         if command or not args.wazne or args.z_commita is None:
             parser.error("dowód strażnika: --straznik SELEKTOR z --z-commita REV i co najmniej jednym --wazne PR/W<n>/r<k>, bez polecenia po --")

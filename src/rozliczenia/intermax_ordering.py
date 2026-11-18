@@ -35,12 +35,12 @@ from .domain import ProgressPhase
 from .intermax_replace import LOCAL_DISK, Disk, Refusal, Replaced, Waiting, replace_register
 from .message import Message, StopError
 from .order_base import HistoryBlock, OrderBase, UnsupportedSheet
+from .order_kind import OrderKind
 from .phase_runner import PhaseRunner
 from .raw_orders import (
     AboveOrdered,
     DayPlan,
     Obstacle,
-    OrderKind,
     RawBlock,
     RawOrder,
     SeveralDays,

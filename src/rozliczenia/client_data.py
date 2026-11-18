@@ -18,7 +18,10 @@ wartości. Wartość to ciąg jej słów: tekst ją zawiera, gdy ma te słowa po
 nimi dowolne znaki spoza słów. Wartość w kilku liniach komórki, z „⏎” albo „\\|” tabeli Markdown, w cudzysłowie albo
 z innymi odstępami jest więc zamaskowana tak samo, choć producent zapisał ją po swojemu przed strażnikiem. Z kilku
 wartości od tego samego słowa wygrywa najdłuższa. Wartość krótsza niż ``MIN_VALUE`` znaków jest pomijana: nie
-wskazuje klienta, a pasowałaby do zwykłych słów i liczb. Czas strażnika zależy od długości tekstu, nie od liczby
+wskazuje klienta, a pasowałaby do zwykłych słów i liczb. Pomijana jest też wartość z rodzajem zlecenia
+(``order_kind``, na przykład „Instalacja hurt”), bo słowo zamkniętego słownika ``URZĄDZENIA`` nie wskazuje klienta:
+wiersz przeczytany w obu położeniach (``raw_orders.both_positions``) daje pamięci ``URZĄDZENIA`` jako ``ADRES``, a
+zamaskowany rodzaj gubi zleceniu w odtworzeniu Wpis INTERMAX. Czas strażnika zależy od długości tekstu, nie od liczby
 zapamiętanych wartości. Maskowanie wolnego tekstu (``free_text``) uwagi nie daje, bo telefon i ulica w opisie
 technika to zwykła treść, nie wyciek kolumny.
 
@@ -45,6 +48,7 @@ from typing import Final, TypeVar, final, overload
 import weakref
 
 from . import register_columns
+from .order_kind import OrderKind, order_kind
 from .text import normalize_text
 
 MIN_VALUE: Final = 5
@@ -378,9 +382,9 @@ def _notes(columns: Iterable[ForbiddenColumn], place: str) -> tuple[str, ...]:
 
 def _value_words(value: object) -> tuple[str, ...] | None:
     """Słowa komórki do szukania, bez wielkości liter, w tekście, który pokazuje Excel (``shown``); ``None``: nie ma
-    czego szukać albo wartość jest za krótka."""
+    czego szukać, wartość jest za krótka albo to rodzaj zlecenia z ``URZĄDZENIA``."""
 
-    if value is None or isinstance(value, (bool, datetime, date, time)):
+    if value is None or isinstance(value, (bool, datetime, date, time)) or order_kind(value) is not OrderKind.OTHER:
         return None
     text = " ".join(shown(value).split())
     first = _WORD.search(text)

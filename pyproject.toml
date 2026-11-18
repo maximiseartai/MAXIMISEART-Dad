@@ -192,6 +192,10 @@ extend-select = [
 "src/rozliczenia/centrum/{settings_router,report_reminders}.py" = ["TID251"]
 "src/rozliczenia/{engine,collective_preparation}.py" = ["TID251"]
 "src/rozliczenia/worker_reports/__init__.py" = ["TID251"]
+# Raporty wykonawców okna (ReadReport): odczyt okna, dopasowanie Wpisów do zleceń, poprawki Wykonawców, postać
+# kanoniczna maila i Logi Wpisania raportów, które zapisują odczyt i odtwarzają go z Logów.
+"src/rozliczenia/worker_reports/{_reading,_matching,_corrections,_canonical}.py" = ["TID251"]
+"src/rozliczenia/centrum/report_entering_logs.py" = ["TID251"]
 "tools/lib/import_dynamiczny.py" = ["TID251"]
 "tests/conftest.py" = ["TID251"]
 "tests/fixtures/linie_watkow.py" = ["TID251"]

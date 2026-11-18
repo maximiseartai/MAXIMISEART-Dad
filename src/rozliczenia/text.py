@@ -4,10 +4,11 @@ etykiety dni dla taty."""
 from __future__ import annotations
 
 from datetime import date
+import re
 from typing import Final
 import unicodedata
 
-__all__ = ["WEEKDAY_LABELS", "day_label", "normalize_text", "plural", "row_range", "short_day_label"]
+__all__ = ["WEEKDAY_LABELS", "day_label", "folded_name", "normalize_text", "plural", "row_range", "short_day_label"]
 
 WEEKDAY_LABELS: Final = ("pon", "wt", "śr", "czw", "pt", "sob", "niedz")
 """Skrót dnia tygodnia (indeks jak ``date.weekday()``, 0 to poniedziałek)."""
@@ -18,6 +19,13 @@ def normalize_text(value: object) -> str:
 
     text = unicodedata.normalize("NFC", str(value or ""))
     return " ".join(text.replace(" ", " ").split()).casefold()
+
+
+def folded_name(value: object) -> str:
+    """Nazwa bez wielkości liter, spacji, myślników i innych znaków spoza liter i cyfr: ``T-Mobile`` i ``TMOBILE`` to
+    ``tmobile``."""
+
+    return re.sub(r"[\W_]+", "", str(value).casefold())
 
 
 def plural(count: int, one: str, few: str, many: str) -> str:

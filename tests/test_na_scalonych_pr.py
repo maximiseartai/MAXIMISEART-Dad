@@ -391,6 +391,51 @@ def test_przypadki_regul_odmawiaja_reguly_ktora_nie_lapie_przypadku_albo_go_nie_
         f" | zakazane-wywolanie: nie łapie 5/W1/r1; {again} | zakazane-wywolanie: nie łapie {merge} kod/drugi.py:1; {again}"
     ), done.stdout
 
+
+# Reguła PR, która nie wymienia już przypadku bazy 5/W1/r1: plik → treść (``{merge}`` to SHA merge'a PR #6). Ochrona
+# przypadku nie zależy od id ani od pliku reguły, bo obie zmiany wybiera sam PR.
+ZGUBIONE_PRZYPADKI = {
+    "to samo id": {"zakazane-wywolanie.yml": RULE + "metadata:\n  przypadki:\n    - {merge} kod/drugi.py:1\n"},
+    "zmienione id": {
+        "zakazane-wywolanie.yml": RULE.replace("id: zakazane-wywolanie", "id: zakazane-wywolanie-2") + "metadata:\n  przypadki:\n    - {merge} kod/drugi.py:1\n"
+    },
+    "reguła w innym pliku": {"inna.yml": RULE + "metadata:\n  przypadki:\n    - {merge} kod/drugi.py:1\n"},
+}
+
+
+@needs_ast_grep
+@pytest.mark.parametrize("rules", ZGUBIONE_PRZYPADKI.values(), ids=ZGUBIONE_PRZYPADKI)
+def test_przypadki_regul_z_commita_pr_odmawiaja_przypadku_z_bazy_ktorego_zadna_regula_pr_nie_wymienia(
+    tmp_path: Path, rules: dict[str, str]
+) -> None:
+    """``--z-commita`` HEAD PR z regułami bazy w checkoucie (``tools/scal_pr.py``, warunek 6): PR, którego reguły nie
+    wymieniają przypadku z bazy, nie przechodzi, choć jego reguły łapią wszystkie swoje przypadki i ten sam bieg na
+    jego regułach (krok CI kodem PR) przechodzi."""
+
+    github, _ = _merged(tmp_path, CAUGHT, {"kod/drugi.py": CAUGHT}, {"sgconfig.yml": SGCONFIG})
+    merge = git(github.checkout, "rev-parse", "HEAD")
+    rule = github.checkout / "reguly-ast-grep" / "zakazane-wywolanie.yml"
+    rule.parent.mkdir(exist_ok=True)
+    for name, text in rules.items():
+        (rule.parent / name).write_text(text.replace("{merge}", merge), encoding="utf-8")
+    git(github.checkout, "switch", "--quiet", "--create", "pr")
+    head = commit(github.checkout, "PR usuwa przypadek 5/W1/r1")
+    on_pr = github.run("--przypadki-regul")
+    git(github.checkout, "switch", "--quiet", "-")
+    rule.parent.mkdir(exist_ok=True)
+    for name in rules:
+        (rule.parent / name).unlink(missing_ok=True)
+    rule.write_text(RULE + CASES.replace("{merge}", merge), encoding="utf-8")
+
+    done = github.run("--przypadki-regul", "--z-commita", head)
+
+    assert on_pr.returncode == 0, on_pr.stdout + on_pr.stderr
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == (
+        "PRZYPADKI REGUŁ FAIL | PR usuwa z metadata.przypadki przypadki z bazy 5/W1/r1: każdy z nich wymienia reguła, która go łapie; przywróć je i popraw regułę tak, by je łapała"
+    ), done.stdout
+
+
 # Dowód strażnika (``--straznik``, ADR 0042) tak, jak uruchamia go tools/scal_pr.py: PR #5 z werdyktem FAIL na wersji
 # z ``zakazane()`` w ``kod/inne.py`` i HEAD z poprawką i testem, który pada na wersji z werdyktu.
 GUARD_TEST = "from kod.inne import wazne\n\n\nclass Obiekt:\n    def dozwolone(self) -> None:\n        pass\n\n\ndef test_wazne_wola_tylko_dozwolone() -> None:\n    wazne(Obiekt())\n"

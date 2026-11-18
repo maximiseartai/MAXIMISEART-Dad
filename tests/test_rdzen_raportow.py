@@ -2649,7 +2649,7 @@ def test_raport_z_dnia_spoza_dni_otwartych_jest_pomijany_po_cichu(
 
     outcome = enter_reports(_inputs([mail], [_order(day=day)], rollout=rollout, closed=closed))
 
-    assert replace(outcome, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), ())
+    assert replace(outcome, mails=(), said=frozenset()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), (), frozenset())
     assert [type(read) for read in outcome.mails] == ([ReadReport] if closed else [])
 
 
@@ -2667,7 +2667,7 @@ def test_raport_z_ostatniego_dnia_poprzedniego_okresu_wpisuje_sie_dopoki_okres_n
     )
 
     assert [change.column for change in still_open.changes] == [ReportColumn.SUCCESSFUL, ReportColumn.COMPLETED]
-    assert replace(closed, mails=()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), ())
+    assert replace(closed, mails=(), said=frozenset()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), (), frozenset())
 
 
 TUESDAY = date(2026, 11, 10)
