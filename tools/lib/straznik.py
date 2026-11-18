@@ -3,9 +3,9 @@ listy, który autor wpisuje w bloku Ważnego sekcji ``## Korzeń`` linią ``Stra
 
 Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` i miejsca jego pola ``Gdzie``, które pisze
 recenzent, a autor podaje tylko selektor. Strażnik biegnie poleceniami Required CI na każdej maszynie
-(``kroki_lokalne.static_steps``: ruff oraz mypy ``--platform linux`` i ``--platform win32``) w ich środowisku, a wynik to
-znaleziska w JSON (``_JSON``: format z wiersza poleceń dowodu), więc ani system maszyny, ani konfiguracja PR wyniku nie
-przestawi.
+(``kroki_lokalne.static_steps``: ruff oraz mypy dla każdej platformy ``MYPY_PLATFORMS``) w ich środowisku, a wynik to
+znaleziska w JSON (``kroki_lokalne.JSON_OUTPUT`` i ``diagnostics``, format z wiersza poleceń dowodu), więc ani system
+maszyny, ani konfiguracja PR wyniku nie przestawi.
 
 | Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
 |---|---|---|
@@ -31,11 +31,10 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import Enum
-import json
 from pathlib import Path
 import re
 
-from kroki_lokalne import environment, static_steps
+from kroki_lokalne import JSON_OUTPUT, diagnostics, environment, static_steps
 import potomne
 import repo
 
@@ -63,9 +62,9 @@ REVIEWED = {
     Kind.REMOVED: "czy kod z Gdzie zniknął z PR i nie wraca inną drogą, sprawdza recenzent następnej rundy",
 }
 FRONTEND = "frontend/"  # katalog każdego miejsca ``Gdzie`` zmienionego przez PR przy ``brak - napęd``
-# Opcje dopisane do kroku ``kroki_lokalne.static_steps``: znaleziska w JSON i bieg bez pamięci, bo plik przywrócony z FAIL
-# ma często ten sam rozmiar i tę samą sekundę zapisu, więc pamięć z biegu na HEAD byłaby dla niego ważna.
-_JSON = {Kind.MYPY: ("--no-incremental", "-O", "json"), Kind.RUFF: ("--no-cache", "--output-format", "json")}
+# Opcje dopisane do kroku ``kroki_lokalne.static_steps`` obok jego ``JSON_OUTPUT``: bieg bez pamięci, bo plik przywrócony
+# z FAIL ma często ten sam rozmiar i tę samą sekundę zapisu, więc pamięć z biegu na HEAD byłaby dla niego ważna.
+_NO_CACHE = {Kind.MYPY: "--no-incremental", Kind.RUFF: "--no-cache"}
 FORMS = f"{Kind.MYPY.value}, {Kind.RUFF.value}, {Kind.AST_GREP.value} <id reguły>, {Kind.PROSE.value}, {Kind.DRIVE.value}, {Kind.TESTS.value} (strażnik to test) albo {Kind.REMOVED.value} (kod z Gdzie usunięty z PR)"
 
 
@@ -140,39 +139,22 @@ class _Ran:
 
 
 def _run(guard: Guard, copy: Path) -> _Ran:
-    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: Linux i Windows) na kopii ``copy``; znaleziska
+    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: każda platforma) na kopii ``copy``; znaleziska
     wszystkich kroków razem, a kod pierwszego kroku, który nie dał wyniku."""
 
     env = {name: value for name, value in environment(copy).items() if name not in _HIDDEN}
     code, last = 0, ""
     found: list[tuple[str, int, str]] = []
     for step in (step for step in static_steps(copy) if step.job == guard.kind.value):
-        done = potomne.run([*step.command, *_JSON[guard.kind]], cwd=copy, env=env)
-        read = _mypy(done.stdout) if guard.kind is Kind.MYPY else _ruff(done.stdout, copy)
+        done = potomne.run([*step.command, _NO_CACHE[guard.kind], *JSON_OUTPUT[step.job]], cwd=copy, env=env)
+        # Kod reguły w nawiasie przy mypy, jak w jego wyjściu, a przed komunikatem przy ruff.
+        read = [(one.path, one.line, f"[{one.code}] {one.message}" if guard.kind is Kind.MYPY else f"{one.code} {one.message}") for one in diagnostics(step.job, done.stdout, copy)]
         found.extend(read)
         # mypy i ruff kończą się kodem 1 przy znaleziskach, które niesie ``read``; każdy inny kod to błąd narzędzia.
         if code == 0 and not (done.returncode == 0 or (done.returncode == 1 and read)):
             lines = (done.stdout + done.stderr).strip().splitlines()
             code, last = done.returncode, f"{step.name}: {lines[-1][:200] if lines else ''}"
     return _Ran(code, last, tuple(dict.fromkeys(found)))
-
-
-def _mypy(output: str) -> tuple[tuple[str, int, str], ...]:
-    found = []
-    for line in output.splitlines():
-        try:
-            entry = json.loads(line)
-        except ValueError:
-            continue
-        if isinstance(entry, dict) and entry.get("severity") == "error":
-            found.append((str(entry["file"]).replace("\\", "/"), int(entry["line"]), f"[{entry.get('code')}] {entry['message']}"))
-    return tuple(found)
-
-
-def _ruff(output: str, copy: Path) -> tuple[tuple[str, int, str], ...]:
-    entries = json.loads(output or "[]")
-    root = copy.resolve()
-    return tuple((Path(entry["filename"]).resolve().relative_to(root).as_posix(), int(entry["location"]["row"]), f"{entry['code']} {entry['message']}") for entry in entries)
 
 
 def _shown(findings: Iterable[tuple[str, int, str]]) -> str:

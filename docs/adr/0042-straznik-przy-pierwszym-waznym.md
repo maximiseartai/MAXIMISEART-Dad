@@ -16,7 +16,7 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 ## Decyzja
 
 - **Strażnik przy każdym Ważnym.** Blok każdego Ważnego w sekcji `## Korzeń` opisu PR kończy linia `Strażnik: <selektor>` z zamkniętej listy, także po `Wyrwany w #M`, zamiast autorskiego `Dowód:`, który zostaje tylko w bloku czerwonego `main`.
-  Autor wybiera tylko selektor; złą postać daje drzewo SHA werdyktu `FAIL` i miejsca jego pola `Gdzie` (przy mypy i ruff przywrócone pliki z `Gdzie`, przy `ast-grep <id>` linie dodane do `FAIL`), a wynik liczy narzędzie poleceniami Required CI na każdej maszynie (`kroki_lokalne.static_steps`: mypy `--platform linux` i `--platform win32`), więc dowód na Macu i w jobie na ubuntu daje to samo.
+  Autor wybiera tylko selektor; złą postać daje drzewo SHA werdyktu `FAIL` i miejsca jego pola `Gdzie` (przy mypy i ruff przywrócone pliki z `Gdzie`, przy `ast-grep <id>` linie dodane do `FAIL`), a wynik liczy narzędzie poleceniami Required CI na każdej maszynie (`kroki_lokalne.static_steps`: mypy dla każdej platformy z `kroki_lokalne.MYPY_PLATFORMS`, jedynej listy platform, do której `ci.yml` przypina `tests/test_ci_lokalnie.py`), więc dowód na Macu i w jobie na ubuntu daje to samo.
   Listę, przywrócenie błędu przy każdym rodzaju i granice podaje jeden właściciel: docstring `tools/lib/straznik.py`, a bramkę `tools/lib/bramka_straznika.py` (warunek 5 `tools/scal_pr.py`).
   Powód: strażnik powstaje przy pierwszym Ważnym, więc rozpoznanie powtórki przez recenzenta przestaje być warunkiem.
 - **Dowód bez tekstu autora.** Bramka czyta tylko znaleziska mypy i ruff w formacie JSON z wiersza poleceń dowodu i wynik dowodu reguły ast-grep, więc ani tekst mutacji, ani format wyjścia z konfiguracji PR wyniku nie zmienia.
@@ -45,7 +45,7 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 - Wątek z werdyktem sprzed wdrożenia tego ADR kończy po staremu, z `Dowód:` w bloku Ważnego (`bramka_straznika.applies`, decyzja Q20 ADR 0031).
 - Strażnik statyczny innej poprawki tego samego PR w tej samej funkcji przechodzi dowód Ważnego tej rundy; jego trafność ocenia recenzent następnej rundy z linii dowodu, która nazywa znalezisko.
 - `Strażnik: brak - test` i `Strażnik: brak - usunięte` przechodzą przy każdym Ważnym, więc test, który błędu nie łapie, kod z `Gdzie`, który stoi na HEAD, i Ważne, które zamknąłby typ, łapie tylko recenzent następnej rundy, jak przed tym ADR.
-- Dowód mypy biegnie krokami mypy z `kroki_lokalne.static_steps` (Linux i Windows, jak Required CI) i na prawdziwych Ważnych trwa 33–45 s na Macu (#1956 W2 r1, #1499 W1 r2), więc status przy PR z `FAIL` przychodzi później niż dziś; PR bez czego dowodzić czeka tylko na start joba `dowod`.
+- Dowód mypy biegnie krokami mypy z `kroki_lokalne.static_steps` (każda platforma `MYPY_PLATFORMS`, jak Required CI) i na prawdziwych Ważnych trwa 33–45 s na Macu (#1956 W2 r1, #1499 W1 r2), więc status przy PR z `FAIL` przychodzi później niż dziś; PR bez czego dowodzić czeka tylko na start joba `dowod`.
 
 ## Zmienia te zdania ADR 0036
 

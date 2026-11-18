@@ -14,12 +14,13 @@ from collections.abc import Mapping, Sequence
 import importlib.util
 import json
 from pathlib import Path
-import re
 import subprocess
 import sys
 from types import ModuleType
 
 import pytest
+
+from kroki_lokalne import MYPY_PLATFORMS
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -73,16 +74,10 @@ def ruff(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
 
 
 def platformy_mypy_ci() -> list[str]:
-    """Platformy kroków ``python -m mypy --platform`` zadania CI „Ruff, mypy” z ``ci.yml``, w kolejności kroków:
-    Required CI liczy mypy na nich, a nie na systemie, na którym biegnie test."""
+    """Platformy mypy Required CI (``kroki_lokalne.MYPY_PLATFORMS``, do której ``ci.yml`` przypina
+    ``tests/test_ci_lokalnie.py``): Required CI liczy mypy na nich, a nie na systemie, na którym biegnie test."""
 
-    import yaml
-
-    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
-    runs = [str(step.get("run", "")) for step in workflow["jobs"]["ruff-mypy"]["steps"]]
-    platformy = [match[1] for run in runs if (match := re.search(r"-m mypy --platform (\S+)", run))]
-    assert platformy, "zadanie CI „Ruff, mypy” nie ma kroku python -m mypy --platform"
-    return platformy
+    return list(MYPY_PLATFORMS)
 
 
 def ruff_i_mypy(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:

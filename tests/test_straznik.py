@@ -15,6 +15,7 @@ import pytest
 
 import straznik
 from straznik import Guard, Kind
+from kroki_lokalne import MYPY_PLATFORMS
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.znane_luki import wymaga_ruff_i_mypy
 
@@ -155,24 +156,20 @@ def test_mypy_widzi_plik_z_fail_o_tym_samym_rozmiarze_co_na_head(tmp_path: Path)
 
 
 @wymaga_ruff_i_mypy
-@pytest.mark.parametrize(
-    ("branch", "caught"),
-    [("== 'win32'", True), ("!= 'win32'", True), ("== 'linux'", True), ("== 'darwin'", False)],
-    ids=["galaz-windows", "galaz-poza-windows", "galaz-linuksa", "galaz-macos-bez-kroku-ci"],
-)
-def test_dowod_mypy_lapie_blad_w_galezi_systemu_tak_jak_required_ci_na_kazdej_maszynie(tmp_path: Path, branch: str, caught: bool) -> None:
-    """Required CI sprawdza ``mypy --platform linux`` i ``--platform win32`` (#2116 r4 W1, r5 W1), a dowód biegnie tymi
-    samymi krokami ``kroki_lokalne.static_steps`` na każdej maszynie: łapie błąd w gałęzi Windows i Linuksa także na
-    Macu, a gałęzi tylko dla macOS, której nie sprawdza żaden krok CI, nie przyjmuje także na Macu."""
+@pytest.mark.parametrize("platform", ["linux", "win32", "darwin"])
+def test_dowod_mypy_lapie_blad_w_galezi_systemu_wtedy_i_tylko_wtedy_gdy_required_ci_sprawdza_ten_system(tmp_path: Path, platform: str) -> None:
+    """Dowód biegnie mypy dla każdej platformy z ``kroki_lokalne.MYPY_PLATFORMS``, jedynej listy platform Required CI
+    (#2116 r4 W1, r5 W1), na każdej maszynie: błąd typu w gałęzi ``sys.platform == <platforma>`` łapie wtedy i tylko
+    wtedy, gdy ta platforma stoi na liście, więc zmiana listy zmienia dowód razem z CI."""
 
-    use = f"import sys\n\nfrom kod.odczyt import odczyt\n\n\ndef glosno() -> str:\n    if sys.platform {branch}:\n{{}}    return ''\n"
+    use = f"import sys\n\nfrom kod.odczyt import odczyt\n\n\ndef glosno() -> str:\n    if sys.platform == '{platform}':\n{{}}    return ''\n"
     failed = {**TYPED, "kod/uzycie.py": use.format("        return odczyt().upper()\n")}
     fixed = {**TYPED_FIX, "kod/uzycie.py": use.format("        tekst = odczyt()\n        return '' if tekst is None else tekst.upper()\n")}
     pull = _pull(tmp_path, failed, fixed)
 
     outcome = pull.prove("mypy", (("kod/uzycie.py", 8, 8),), scopes=(("kod/uzycie.py", 6, 9),))
 
-    if caught:
+    if platform in MYPY_PLATFORMS:
         assert outcome.detected and "kod/uzycie.py:8 [union-attr]" in outcome.line, outcome.line
     else:
         assert not outcome.detected and "| NIEWYKRYTA | kod/uzycie.py: bez znaleziska (kod 0)" in outcome.line, outcome.line
