@@ -160,7 +160,7 @@ def _hours(span: timedelta) -> str:
 def _wait(pulls: Sequence[Reviewed], start: datetime | None, end: datetime) -> str:
     merged = [pull for pull in pulls if _inside(pull.merged, start, end)]
     waits = [max(pull.merged - pull.passed, timedelta()) for pull in merged if pull.merged is not None and pull.passed is not None]
-    spans = f"{_hours(median(waits))} | {_hours(max(waits))}" if waits else "- | -"
+    spans = f"{_hours(timedelta(seconds=median(wait.total_seconds() for wait in waits)))} | {_hours(max(waits))}" if waits else "- | -"
     return f"{len(merged)} | {len(merged) - len(waits)} | {spans} | {sum(wait > HOUR_LONG for wait in waits)}"
 
 
