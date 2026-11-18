@@ -343,7 +343,7 @@ liczyło innym Wzorcem niż Uruchomienie taty.
   a Logi mają w `input_copy_notes` uwagę z nazwą Wzorca i powodem, bez wartości, bo
   `technical_notes` pokazuje karta z Logów. Kopie Wzorców Maksa (18.11.2026, tylko
   odczyt) przechodzą wszystkie trzy. Na Macu Maksa pierwsze sprawdzenie Wzorca
-  pliku zbiorczego trwa 1,8 s, następne tej samej wersji przy tej samej pamięci
+  pliku zbiorczego trwa 1,9 s, następne tej samej wersji przy tej samej pamięci
   pracy Centrum 0,5 ms, a po nowej wartości pamięci 0,8 s, bo skan pakietu nie
   zależy od pamięci, a strażnik tak.
 - **Wzorzec idzie w całości**, ze stawkami z wiersza 14 i celem łącza

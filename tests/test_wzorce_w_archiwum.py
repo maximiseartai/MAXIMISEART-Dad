@@ -89,6 +89,26 @@ def _cached_formula_result(content: bytes) -> bytes:
     return _with_part(content, "xl/worksheets/sheet1.xml", cached.encode("utf-8"))
 
 
+_PARSER_CHUNK: Final = 16 * 1024
+"""Porcja pliku, którą ``xml.etree.ElementTree.iterparse`` czyta naraz: ogon za znacznikiem końca na jej granicy parser
+przypisuje dopiero w następnej porcji."""
+
+
+def _tail_vml(*, at_chunk_end: bool) -> bytes:
+    """Rysunek komentarza z telefonem w ogonie ``</div>``; ``at_chunk_end``: znacznik ``</div>`` kończy się dokładnie na
+    końcu pierwszej porcji parsera, a ogon jest w następnej."""
+
+    head = b'<xml xmlns:v="urn:schemas-microsoft-com:vml"><v:shape><v:textbox><div>Notatka</div>'
+    if at_chunk_end:
+        head = head.replace(b"<v:textbox>", b"<v:textbox>" + b" " * (_PARSER_CHUNK - len(head)), 1)
+        assert len(head) == _PARSER_CHUNK and head.endswith(b"</div>")
+    return head + b"tel. 600 123 456</v:textbox></v:shape></xml>"
+
+
+def _drawing(part: bytes) -> Callable[[], bytes]:
+    return lambda: _with_part(_bytes(_workbook()), "xl/drawings/vmlDrawing1.vml", part)
+
+
 _EXTERNAL_RELS: Final = (
     '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" '
     'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}" Target="{target}" '
@@ -232,15 +252,13 @@ CASES: Final[dict[str, Case]] = {
     "lista walidacji danych z telefonem": Case(_INTERNAL, _plain(_validation), Refusal.FREE_TEXT),
     "telefon na granicy przebiegów formatowania tekstu": Case(_COLLECTIVE, _plain(_rich_phone), Refusal.FREE_TEXT),
     "relacja pamięci łącza innego rodzaju niż cel łącza, z telefonem": Case(_COLLECTIVE, _external_link_rels("hyperlink"), Refusal.FREE_TEXT),
-    "tekst za elementem (ogon) w rysunku komentarza": Case(
-        _WORKER,
-        lambda: _with_part(
-            _bytes(_workbook()),
-            "xl/drawings/vmlDrawing1.vml",
-            b'<xml xmlns:v="urn:schemas-microsoft-com:vml"><v:shape><v:textbox><div>Notatka</div>tel. 600 123 456'
-            b"</v:textbox></v:shape></xml>",
-        ),
-        Refusal.FREE_TEXT,
+    "tekst za elementem (ogon) w rysunku komentarza": Case(_WORKER, _drawing(_tail_vml(at_chunk_end=False)), Refusal.FREE_TEXT),
+    "ogon za granicą porcji pliku, którą czyta parser": Case(_WORKER, _drawing(_tail_vml(at_chunk_end=True)), Refusal.FREE_TEXT),
+    "komentarz XML w części": Case(
+        _WORKER, _drawing(b'<xml xmlns:v="urn:schemas-microsoft-com:vml"><!-- tel. 600 123 456 --><v:shape/></xml>'), Refusal.XML_EXTRA
+    ),
+    "instrukcja przetwarzania w części": Case(
+        _WORKER, _drawing(b'<xml xmlns:v="urn:schemas-microsoft-com:vml"><?notatka tel. 600 123 456?><v:shape/></xml>'), Refusal.XML_EXTRA
     ),
     "wyjątek: cel łącza zewnętrznego idzie bez strażnika": Case(_COLLECTIVE, _external_link_rels("externalLinkPath"), None),
     "wyjątek: stawka w wierszu 14": Case(_COLLECTIVE, _plain(_cell("N14", 57.25)), None),

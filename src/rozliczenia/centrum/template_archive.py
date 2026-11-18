@@ -19,6 +19,8 @@ Tabela postaci:
 | taki tekst z telefonem albo ulicą (strażnik ``client_data.guarded`` by go zmienił) | ``&Ctel. 600 123 456`` w stopce | odmowa ``FREE_TEXT`` |
 | liczba komórki (także wynik formuły) albo pamięci łącza zewnętrznego z zakazaną wartością albo telefonem (``guarded_number``) | ``600123456`` w C3 | odmowa ``FORBIDDEN`` albo ``FREE_TEXT`` |
 | nieznany kod nagłówka albo stopki wydruku | ``&Q`` | odmowa ``UNREADABLE`` |
+| tekst za końcem elementu (ogon), także za granicą porcji pliku, którą czyta parser | ``</div>tel. 600 123 456`` w rysunku komentarza | odmowa jak tekst |
+| komentarz XML albo instrukcja przetwarzania w części | ``<!-- tel. 600 123 456 -->`` | odmowa ``XML_EXTRA`` |
 | część pakietu spoza ``_KNOWN_PARTS`` | obraz ``xl/media/image1.png``, tabela przestawna | odmowa ``UNKNOWN_PART`` |
 | plik, który nie jest pakietem zip, albo część z uszkodzonym XML | ``b"nie zip"`` | odmowa ``UNREADABLE`` |
 | wyjątek (decyzja Maksa): cel łącza zewnętrznego, ``Target`` relacji ``externalLinkPath`` w ``xl/externalLinks/_rels`` (``_allowed``) | ``file:///C:/Users/…/cennik.xlsx`` | przechodzi bez strażnika |
@@ -84,6 +86,7 @@ class Refusal(Enum):
     FORBIDDEN = "tekst albo liczba z zakazaną wartością z plików, które przeczytała ta praca Centrum"
     FREE_TEXT = "tekst albo liczba z numerem telefonu albo ulicą"
     UNKNOWN_PART = "część skoroszytu, której sprawdzenie nie zna (np. obraz albo tabela przestawna)"
+    XML_EXTRA = "komentarz XML albo instrukcja przetwarzania, których Excel nie zapisuje"
     UNREADABLE = "skoroszytu nie da się odczytać"
 
 
@@ -323,13 +326,20 @@ def _part(
 ) -> Refusal | None:
     """Część XML ``name``: każdy tekst (także ogon elementu) i każda wartość atrybutu do ``found``, liczba komórki do
     liczb, a w arkuszu (``columns``) odmowa za wartość w zakazanej kolumnie. Poza celem łącza zewnętrznego
-    (``_allowed``) nic nie idzie bez strażnika. Element komórki i tekstu złożonego (``_CELLS``, ``_JOINED``) czyści się
-    dopiero z nim, bo jego dzieci są potrzebne w całości."""
+    (``_allowed``) nic nie idzie bez strażnika. Komentarz XML i instrukcja przetwarzania to odmowa, bo Excel ich nie
+    zapisuje, a ich tekstu drzewo elementów nie ma.
+
+    Ogon dziecka (tekst za jego znacznikiem końca) parser przypisuje dopiero przy następnym znaczniku, czasem w następnej
+    porcji pliku, więc ogony czyta koniec rodzica, gdy każdy jest już przypisany, a czyszczenie elementu ogon zostawia
+    (``_cleared``). Element komórki i tekstu złożonego (``_CELLS``, ``_JOINED``) czyści się dopiero z nim, bo jego dzieci
+    są potrzebne w całości."""
 
     held = 0
     cells: list[str] = []
     with package.open(name) as part:
-        for event, element in iterparse(part, events=("start", "end")):
+        for event, element in iterparse(part, events=("start", "end", "comment", "pi")):
+            if event in ("comment", "pi"):
+                return Refusal.XML_EXTRA
             local = element.tag.rpartition("}")[2]
             if event == "start":
                 cells += [element.get("t", "n")] if local in _CELLS else []
@@ -339,7 +349,8 @@ def _part(
                 found.numbers.add(float(element.text))
             else:
                 found.add(element.text)
-            found.add(element.tail)
+            for child in element:
+                found.add(child.tail)
             for key, value in element.attrib.items():
                 if not _allowed(name, element, key):
                     found.add(value)
@@ -354,8 +365,16 @@ def _part(
                     return refusal
             held -= local in _CELLS or local in _JOINED
             if not held:
-                element.clear()
+                _cleared(element)
     return None
+
+
+def _cleared(element: Element) -> None:
+    """``element`` bez dzieci, atrybutów i tekstu, z ogonem, który czyta koniec jego rodzica (``_part``)."""
+
+    tail = element.tail
+    element.clear()
+    element.tail = tail
 
 
 _HEADER_FOOTER: Final = frozenset({"oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter"})
