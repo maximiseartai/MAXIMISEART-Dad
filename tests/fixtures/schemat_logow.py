@@ -169,5 +169,4 @@ def _dzisiejsze() -> Fakty:
 if __name__ == "__main__":
     if sys.argv[1:] != ["--zapisz"]:
         raise SystemExit("użycie: python -m tests.fixtures.schemat_logow --zapisz")
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
     zapisz(polacz(wczytaj() if WYDANIA.is_file() else {}, _dzisiejsze()))

@@ -191,7 +191,7 @@ co stało się z tym, co wysłał.
   przechodzi dzisiejszy schemat, także z widokiem albo operacją, których
   Centrum już nie ma (widok Konfiguracja w dzienniku działań taty), bo plik,
   który nie przechodzi schematu, nie daje karty z Historii ani odtworzenia.
-  Pilnuje tego `tests/test_schemat_logow_wydan.py` z zapisem faktów schematu
+  Pilnuje tego `tests/test_centrum_karta_z_logow.py` z zapisem faktów schematu
   każdego Wydania.
   Wydanie to numer najwyższego Wydania, którego tag w klonie taty (z instalacji
   albo pobrany przez Aktualizację narzędzia) wskazuje dokładnie commit, z

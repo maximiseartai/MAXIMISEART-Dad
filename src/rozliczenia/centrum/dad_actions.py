@@ -23,13 +23,14 @@ StoredRunMode = Annotated[
 ]
 """Tryb Uruchomienia w pliku na dysku taty (dziennik działań taty, Logi Uruchomienia, plik ostatniego startu, dziennik
 Wyceny w efenix): wartość ``RunMode``, a w plikach sprzed schematu Logów 3 jego słowo, które schemat JSON Logów też
-wymienia, bo z niego ``tests/test_schemat_logow_wydan.py`` wie, co przyjmują Logi."""
+wymienia, bo z niego ``test_logi_kazdego_wydania_przechodza_dzisiejszy_schemat_logow`` wie, co przyjmują Logi."""
 
 StoredPageId = timing_contract.PageId | Literal["konfiguracja"]
 """Strona w pliku na dysku taty: strona kontraktu albo strona, której Centrum już nie ma, a którą mają Logi starszych
 Wydań (widok Konfiguracja przed oknem Ustawień). Strona usunięta z kontraktu zostaje tu, bo plik Logów, którego jedna
-linia dziennika działań taty nie przechodzi schematu, nie daje ani karty Uruchomienia, ani odtworzenia; że schemat Logów
-przyjmuje każdą wartość, którą przyjmowało któreś Wydanie, pilnuje ``tests/test_schemat_logow_wydan.py``."""
+linia dziennika działań taty nie przechodzi schematu, nie daje ani karty Uruchomienia, ani odtworzenia. Że schemat Logów
+przyjmuje każdą wartość, którą przyjmowało któreś Wydanie, pilnuje
+``test_logi_kazdego_wydania_przechodza_dzisiejszy_schemat_logow``."""
 
 
 class _Record(BaseModel):

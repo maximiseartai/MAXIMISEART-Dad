@@ -4,7 +4,7 @@
     "LoggedEnding": "f7ebf8e1ca3bb563"
   },
   "src/rozliczenia/centrum/run_logs_guard.py": {
-    "_guarded": "62e60d8fcb97c5d6",
+    "_guarded": "9877a54598f8cd70",
     "guard_logs": "220c4b2868ecc3fc",
     "GuardedLogs": "4eb55b05819bbd16"
   },
