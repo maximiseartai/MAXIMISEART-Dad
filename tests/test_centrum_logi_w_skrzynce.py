@@ -1068,7 +1068,8 @@ def test_klikniecie_z_opisem_w_kilku_liniach_windows_i_numerem_bez_zlecenia_odtw
 ) -> None:
     """``UWAGI`` w INTERMAX taty mają końce linii Windows (``\r\n``), które czytnik INTERMAX czyta z bajtów pliku, a
     Raport Jana ma numer z wiersza bez zlecenia, który odtworzenie stawia na dole arkusza: odtworzony INTERMAX ma te
-    same ``UWAGI`` co u taty, więc Kopia wejścia odtworzenia jest Kopią z Logów."""
+    same ``UWAGI`` co u taty, więc Kopia wejścia odtworzenia jest Kopią z Logów. Atrapa INTERMAX zostawia ``\r`` w
+    pliku na Linuksie i macOS, gdzie biegnie odtworzenie Maksa, a na Windows nie, więc tam test sprawdza tylko zgodność."""
 
     intermax = Intermax(
         ordered=(
@@ -1086,7 +1087,8 @@ def test_klikniecie_z_opisem_w_kilku_liniach_windows_i_numerem_bez_zlecenia_odtw
     record = json.loads(gzip.decompress(archived.read_bytes()))
     assert [found["number"] for found in record["report_entering"]["orderless"]] == [40000066]
     cells = [value for file in record["input_copy"] for sheet in file["sheets"] for row in sheet["rows"] for value in row["cells"].values()]
-    assert "przeniesienie\r\n\r\nmontaż" in cells
+    [remarks] = [cell for cell in cells if isinstance(cell, str) and cell.startswith("przeniesienie")]
+    assert remarks.endswith("montaż") and (sys.platform == "win32" or remarks == "przeniesienie\r\n\r\nmontaż"), remarks
 
     code, lines = _replayed(capsys, archived, "--na-tym-drzewie")
 
