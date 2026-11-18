@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/centrum/run_logs.py": {
-    "RunLog.interrupted": "cea8ac122ea339d0",
+    "RunLog.interrupted": "8ddcbc62d5b9b818",
     "LoggedEnding": "f7ebf8e1ca3bb563"
   },
   "src/rozliczenia/centrum/run_logs_guard.py": {
@@ -29,7 +29,7 @@
     "RunComments._keep": "f103fc7564914779",
     "RunComments.close_left_behind": "e2478851c6d9d2c8",
     "RunComments.send_left_behind": "c525813f4ae4f058",
-    "RecordMaker.interrupted": "0349f465d08b9c25"
+    "RecordMaker.interrupted": "cedaddbb84619bea"
   },
   "src/rozliczenia/centrum/logs_disk.py": {
     "LogsOnDisk.logs": "09cb03e3fedd9628",

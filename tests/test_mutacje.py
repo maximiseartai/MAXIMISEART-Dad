@@ -723,6 +723,18 @@ def test_wykryta_mutacja_ktora_lapie_test_sprzed_zmiany_dostaje_juz_lapie_a_werd
     assert len(found) == len(expected) and all(map(re.fullmatch, expected, found)), answered.stderr
 
 
+@pytest.mark.parametrize(
+    ("limits", "named"),
+    [(("--podstawa-s", "60"), "--podstawa-s"), (("--juz-lapie-s", "60"), "--juz-lapie-s"), (("--juz-lapie-s", "60", "--podstawa-s", "60"), "--juz-lapie-s i --podstawa-s")],
+    ids=["podstawa", "juz-lapie", "oba"],
+)
+def test_limit_juz_lapie_bez_juz_lapie_to_blad_wywolania(limits: tuple[str, ...], named: str) -> None:
+    answered = _mutacje(*limits, "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1", "--", "-c", "")
+
+    expected = f"{named} to limity sprawdzenia JUŻ ŁAPIE, które biegnie tylko z --juz-lapie: dopisz --juz-lapie albo usuń limit"
+    assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, expected), answered.stderr
+
+
 def test_bez_juz_lapie_narzedzie_nie_uruchamia_testow_sprzed_zmiany(tmp_path: Path) -> None:
     """Domyślnie tylko mutacje: test sprzed zmiany, czerwony bez mutacji, nie biegnie ani w podstawie, ani po
     ``MUTACJE OK``, więc nie ma odmowy ``PODSTAWA CZERWONA`` ani linii ``JUŻ ŁAPIE``."""

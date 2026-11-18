@@ -23,6 +23,13 @@ kroku śladu i dziennikiem działań taty w Centrum; dochodzi własny plik Centr
 `logs/dzialania-taty.jsonl` z działaniami, które czekają na Logi następnego
 Uruchomienia. Szczegóły w punkcie „Treść Logów”.
 
+Dopisek 18.11.2026: Logi mają też dziennik Centrum od Logów poprzedniego
+Uruchomienia (`centrum_log`), bez pomiarów widoku, z tym, co Centrum zrobiło
+samo także poza Uruchomieniami: Przypomnienia o raporcie, Wysyłkę rozliczeń,
+zmiany Ustawień, Aktualizację narzędzia i wysyłki Kolejki. Wpisy czekają w
+pliku `logs/dziennik-centrum-do-logow.log` obok dziennika Centrum, a Logi
+zabierają je przy swoim powstaniu, jak dziennik działań taty.
+
 Dopisek #845 (część #837): Wycena w efenix z co najmniej jednym zleceniem
 zostawia też dziennik Wyceny w efenix w `logs/dzienniki-wyceny/`, także gdy
 doszła do wyniku; następny start Centrum zamyka dziennik Wyceny przerwanej w
@@ -187,6 +194,12 @@ co stało się z tym, co wysłał.
   `DRY-RUN` jak rekord metryk, a nie słowo „zapis” albo „podgląd”. Karta
   Uruchomienia, Historia, odtworzenie i Uwaga taty czytają pliki schematu 1, 2
   i 3, a słowo trybu ze starszego pliku to ten sam tryb.
+  Schemat Logów nie zwęża się (18.11.2026): plik Logów każdego Wydania
+  przechodzi dzisiejszy schemat, także z widokiem albo operacją, których
+  Centrum już nie ma (widok Konfiguracja w dzienniku działań taty), bo plik,
+  który nie przechodzi schematu, nie daje karty z Historii ani odtworzenia.
+  Pilnuje tego `tests/test_centrum_karta_z_logow.py` z zapisem faktów schematu
+  każdego Wydania.
   Wydanie to numer najwyższego Wydania, którego tag w klonie taty (z instalacji
   albo pobrany przez Aktualizację narzędzia) wskazuje dokładnie commit, z
   którego działa Centrum; Centrum ustala je lokalnie przy końcu każdego

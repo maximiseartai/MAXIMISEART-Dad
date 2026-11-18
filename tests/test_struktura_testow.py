@@ -947,38 +947,43 @@ def test_znane_luki_strazy_nazw_watkow_przechodza_przez_niego(tmp_path: Path, mo
 # Zapadka, której bieg pustego drzewa nie uruchamia: dzisiejsze repozytorium ma wystąpienia form, których reguły ast-grep
 # zakazują tylko w nowych liniach (ADR 0034), a zadania pytest na Windows instalują tylko ``requirements.txt``, bez ast-grep.
 _ZAPADKA_AST_GREP = "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo"
+# Workery xdist biegu pustego drzewa: cały plik zapadek (485 testów, ~45 s w jednym procesie) trwa z nimi ~12 s na Macu.
+WORKERY_DOWODU = 4
 
 
 def _empty_tree_problems(root: Path) -> list[str]:
     """Problemy biegu ``tests/test_zapadki.py`` repozytorium ``root`` z bazą w pustym drzewie gita, w którym każda linia
-    ``tests/`` i ``src/`` jest dodana: porażka biegu albo ``--deselect`` zapadki reguł ast-grep, który nie pominął
-    dokładnie jednego testu. ``--deselect`` wybiera po prefiksie node id, więc test zapadek o nazwie z tym prefiksem
-    zniknąłby z dowodu po cichu."""
+    ``tests/`` i ``src/`` jest dodana, na ``WORKERY_DOWODU`` workerach: porażka biegu albo ``--deselect`` zapadki reguł
+    ast-grep, który nie pomija dokładnie jednego testu. ``--deselect`` wybiera po prefiksie node id, więc test zapadek
+    o nazwie z tym prefiksem zniknąłby z dowodu po cichu, a xdist liczby pominiętych nie drukuje, więc liczy ją kolekcja
+    tego samego wyboru w jednym procesie (``--collect-only``, poniżej sekundy)."""
 
     empty_tree = subprocess.run(
         ["git", "hash-object", "-t", "tree", "--stdin"], cwd=root, input="", capture_output=True, text=True, check=True
     ).stdout.strip()
     environment = {name: value for name, value in os.environ.items() if not name.startswith("PYTEST_XDIST_")}
-    answered = subprocess.run(
-        [
-            *(sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_zapadki.py"),
-            *("--deselect", _ZAPADKA_AST_GREP),
-        ],
-        cwd=root,
-        env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    summary = answered.stdout.splitlines()[-1] if answered.stdout else ""
-    problems = [] if answered.returncode == 0 else [f"kod {answered.returncode}:\n{answered.stdout[-3000:]}"]
-    if not re.search(r"(^|, )1 deselected\b", summary):
-        problems.append(
-            f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden, więc inny test zapadek zniknął z dowodu:"
-            f" nadaj mu nazwę, która nie zaczyna się od nazwy tej zapadki | {summary}"
+    selection = ("-p", "no:cacheprovider", "tests/test_zapadki.py", "--deselect", _ZAPADKA_AST_GREP)
+
+    def pytest(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", *arguments, *selection],
+            cwd=root,
+            env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
         )
-    return problems
+
+    collected = pytest("--collect-only", "-n", "0")
+    summary = collected.stdout.splitlines()[-1] if collected.stdout else ""
+    if not re.search(r"\(1 deselected\)", summary):
+        return [
+            f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden, więc inny test zapadek zniknąłby z dowodu:"
+            f" nadaj mu nazwę, która nie zaczyna się od nazwy tej zapadki | {summary}"
+        ]
+    answered = pytest("-n", str(WORKERY_DOWODU))
+    return [] if answered.returncode == 0 else [f"kod {answered.returncode}:\n{answered.stdout[-3000:]}"]
 
 
 def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
@@ -1067,5 +1072,5 @@ def test_bieg_pustego_drzewa_zglasza_test_zapadek_pominiety_razem_z_zapadka_ast_
 
     [problem] = _empty_tree_problems(tmp_path)
 
-    assert problem.startswith(f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden")
-    assert "| 1 passed, 2 deselected in " in problem, problem
+    assert problem.startswith(f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden"), problem
+    assert "1/3 tests collected (2 deselected)" in problem, problem

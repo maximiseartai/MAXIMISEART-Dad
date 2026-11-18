@@ -1,0 +1,1820 @@
+{
+ "": {
+  "pola": [
+   "activity_legend",
+   "address_history",
+   "centrum_log",
+   "dad_actions",
+   "diagnosis",
+   "duration_ms",
+   "efenix_orders",
+   "efenix_stop",
+   "ended_at",
+   "ending",
+   "environment",
+   "inea_only_cleared",
+   "input_copy",
+   "input_copy_notes",
+   "intermax_entries",
+   "interruption",
+   "issue_count",
+   "messages",
+   "mode",
+   "period",
+   "phases",
+   "pricing",
+   "process",
+   "quantity_rules",
+   "report_entering",
+   "result",
+   "run_id",
+   "schema_version",
+   "started_at",
+   "stop_kind",
+   "summary",
+   "technical_notes",
+   "templates",
+   "tool",
+   "trace"
+  ],
+  "wymagane": [
+   "diagnosis",
+   "duration_ms",
+   "ended_at",
+   "ending",
+   "environment",
+   "issue_count",
+   "messages",
+   "mode",
+   "period",
+   "phases",
+   "process",
+   "result",
+   "run_id",
+   "schema_version",
+   "started_at",
+   "stop_kind",
+   "summary",
+   "technical_notes",
+   "templates",
+   "tool",
+   "trace"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".activity_legend": {
+  "pola": [
+   "legend"
+  ],
+  "wymagane": [
+   "legend"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".address_history": {
+  "pola": [
+   "orders",
+   "rows",
+   "sheets"
+  ],
+  "wymagane": [
+   "orders",
+   "rows",
+   "sheets"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".centrum_log": {
+  "pola": [
+   "lines",
+   "omitted"
+  ],
+  "wymagane": [
+   "lines",
+   "omitted"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".dad_actions": {
+  "pola": [
+   "entries",
+   "omitted"
+  ],
+  "wymagane": [
+   "entries",
+   "omitted"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".dad_actions.entries[][action=przycisk]": {
+  "pola": [
+   "action",
+   "at",
+   "mode",
+   "operation",
+   "process"
+  ],
+  "wymagane": [
+   "action",
+   "at",
+   "operation"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=przycisk].action": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"przycisk\""
+  ],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=przycisk].mode": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"DRY-RUN\"",
+   "\"RUN\"",
+   "\"podgląd\"",
+   "\"zapis\""
+  ],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=przycisk].operation": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"addActivityCode\"",
+   "\"addDevice\"",
+   "\"addQuantityRule\"",
+   "\"addWorker\"",
+   "\"assignWorkerAddress\"",
+   "\"changeActivityCode\"",
+   "\"changeAutostart\"",
+   "\"changeDevice\"",
+   "\"changeFolders\"",
+   "\"changeInboxPassword\"",
+   "\"changeQuantityRule\"",
+   "\"changeReminders\"",
+   "\"changeRemindersEnabled\"",
+   "\"changeSettlementMail\"",
+   "\"changeTheme\"",
+   "\"changeWorker\"",
+   "\"choosePeriodsDirectory\"",
+   "\"chooseRegister\"",
+   "\"closeCentrum\"",
+   "\"decideRun\"",
+   "\"diagnoseRun\"",
+   "\"draftDadNote\"",
+   "\"enterOnRequest\"",
+   "\"getActivityLegend\"",
+   "\"getCollectiveFileVersion\"",
+   "\"getConfiguration\"",
+   "\"getDadNoteRuns\"",
+   "\"getDeviceSuggestions\"",
+   "\"getHealth\"",
+   "\"getIntermaxCopies\"",
+   "\"getIntermaxDays\"",
+   "\"getIntermaxSetup\"",
+   "\"getKindTable\"",
+   "\"getMetrics\"",
+   "\"getNotifications\"",
+   "\"getPeriodBoard\"",
+   "\"getQuantitiesToFill\"",
+   "\"getQuantityDifferences\"",
+   "\"getQuantityRules\"",
+   "\"getReportEnteringSetup\"",
+   "\"getReportsView\"",
+   "\"getRunCard\"",
+   "\"getRunSetup\"",
+   "\"getSettings\"",
+   "\"getSettingsHistory\"",
+   "\"getSettlementMailing\"",
+   "\"getToolUpdate\"",
+   "\"getWithoutQuantity\"",
+   "\"getWorkerSuggestions\"",
+   "\"keepManualValue\"",
+   "\"markNotificationsRead\"",
+   "\"markQuantityException\"",
+   "\"openPeriodPath\"",
+   "\"openRegister\"",
+   "\"openWorkerSettlement\"",
+   "\"previewActivityLegend\"",
+   "\"previewQuantityRules\"",
+   "\"previewReminder\"",
+   "\"previewSettlementMail\"",
+   "\"previewSettlementMails\"",
+   "\"removeActivityCode\"",
+   "\"removeDevice\"",
+   "\"removeQuantityRule\"",
+   "\"removeWorker\"",
+   "\"reportRun\"",
+   "\"reportToolUpdate\"",
+   "\"restoreIntermaxCopy\"",
+   "\"sendDadNote\"",
+   "\"sendSettlementMail\"",
+   "\"startIntermax\"",
+   "\"startReportEntering\"",
+   "\"startRun\"",
+   "\"startToolUpdate\"",
+   "\"switchWorker\"",
+   "\"undoSettingsChange\""
+  ],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=przycisk].process": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"efenix\"",
+   "\"intermax\"",
+   "\"preparation\"",
+   "\"report_entering\"",
+   "\"settlement\""
+  ],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=start Centrum]": {
+  "pola": [
+   "action",
+   "at"
+  ],
+  "wymagane": [
+   "action",
+   "at"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=start Centrum].action": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"start Centrum\""
+  ],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=widok]": {
+  "pola": [
+   "action",
+   "at",
+   "kind",
+   "page"
+  ],
+  "wymagane": [
+   "action",
+   "at",
+   "kind",
+   "page"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=widok].action": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"widok\""
+  ],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=widok].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"cold_start\"",
+   "\"navigation\""
+  ],
+  "otwarte": false
+ },
+ ".dad_actions.entries[][action=widok].page": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"konfiguracja\"",
+   "\"metryki\"",
+   "\"okresy\"",
+   "\"powiadomienia\"",
+   "\"raporty\"",
+   "\"uruchomienia\"",
+   "\"ustawienia\"",
+   "\"uzupelnienie\"",
+   "\"wysylka\""
+  ],
+  "otwarte": false
+ },
+ ".diagnosis": {
+  "pola": [
+   "checks",
+   "diagnosed_at",
+   "explanation",
+   "next_action"
+  ],
+  "wymagane": [
+   "checks",
+   "diagnosed_at",
+   "explanation",
+   "next_action"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".diagnosis.checks[]": {
+  "pola": [
+   "code",
+   "detail",
+   "label",
+   "state"
+  ],
+  "wymagane": [
+   "code",
+   "detail",
+   "label",
+   "state"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".diagnosis.checks[].state": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"failed\"",
+   "\"not_checked\"",
+   "\"passed\""
+  ],
+  "otwarte": false
+ },
+ ".diagnosis.explanation": {
+  "pola": [
+   "action",
+   "code",
+   "what",
+   "where"
+  ],
+  "wymagane": [
+   "action",
+   "code",
+   "what",
+   "where"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".diagnosis.next_action": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"report\"",
+   "\"rerun\"",
+   "\"update\""
+  ],
+  "otwarte": false
+ },
+ ".efenix_orders[]": {
+  "pola": [
+   "code",
+   "file",
+   "file_amount",
+   "outcome",
+   "row",
+   "steps"
+  ],
+  "wymagane": [
+   "code",
+   "file",
+   "file_amount",
+   "outcome",
+   "row",
+   "steps"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_orders[].outcome": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"błąd\"",
+   "\"gotowe\"",
+   "\"ostrzeżenie Emmetta\"",
+   "\"przekazane\"",
+   "\"rozliczone\""
+  ],
+  "otwarte": false
+ },
+ ".efenix_orders[].steps[]": {
+  "pola": [
+   "accepted",
+   "action",
+   "amount",
+   "duration_ms",
+   "execution_date",
+   "found",
+   "position",
+   "quantities",
+   "quantity",
+   "realizator",
+   "refusal",
+   "results",
+   "started_at",
+   "status"
+  ],
+  "wymagane": [
+   "accepted",
+   "action",
+   "amount",
+   "duration_ms",
+   "execution_date",
+   "found",
+   "position",
+   "quantities",
+   "quantity"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_orders[].steps[].action": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"Wycena Emmetta\"",
+   "\"data wykonania\"",
+   "\"ilość\"",
+   "\"otwarcie zlecenia\"",
+   "\"przekazanie do akceptacji\"",
+   "\"szukanie\""
+  ],
+  "otwarte": false
+ },
+ ".efenix_orders[].steps[].results[]": {
+  "pola": [
+   "address",
+   "realizator",
+   "same_number",
+   "status"
+  ],
+  "wymagane": [
+   "address",
+   "realizator",
+   "same_number",
+   "status"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_stop": {
+  "pola": [
+   "cause",
+   "failed",
+   "order",
+   "orders",
+   "row",
+   "steps"
+  ],
+  "wymagane": [
+   "cause",
+   "failed",
+   "order",
+   "orders",
+   "row",
+   "steps"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_stop.cause": {
+  "pola": [
+   "count",
+   "element",
+   "error_type",
+   "operation",
+   "part",
+   "positions",
+   "status",
+   "what"
+  ],
+  "wymagane": [
+   "part",
+   "what"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_stop.failed": {
+  "pola": [
+   "accepted",
+   "action",
+   "amount",
+   "duration_ms",
+   "execution_date",
+   "found",
+   "position",
+   "quantities",
+   "quantity",
+   "realizator",
+   "refusal",
+   "results",
+   "started_at",
+   "status"
+  ],
+  "wymagane": [
+   "accepted",
+   "action",
+   "amount",
+   "duration_ms",
+   "execution_date",
+   "found",
+   "position",
+   "quantities",
+   "quantity"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_stop.failed.action": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"Wycena Emmetta\"",
+   "\"data wykonania\"",
+   "\"ilość\"",
+   "\"otwarcie zlecenia\"",
+   "\"przekazanie do akceptacji\"",
+   "\"szukanie\""
+  ],
+  "otwarte": false
+ },
+ ".efenix_stop.failed.results[]": {
+  "pola": [
+   "address",
+   "realizator",
+   "same_number",
+   "status"
+  ],
+  "wymagane": [
+   "address",
+   "realizator",
+   "same_number",
+   "status"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_stop.steps[]": {
+  "pola": [
+   "accepted",
+   "action",
+   "amount",
+   "duration_ms",
+   "execution_date",
+   "found",
+   "position",
+   "quantities",
+   "quantity",
+   "realizator",
+   "refusal",
+   "results",
+   "started_at",
+   "status"
+  ],
+  "wymagane": [
+   "accepted",
+   "action",
+   "amount",
+   "duration_ms",
+   "execution_date",
+   "found",
+   "position",
+   "quantities",
+   "quantity"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".efenix_stop.steps[].action": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"Wycena Emmetta\"",
+   "\"data wykonania\"",
+   "\"ilość\"",
+   "\"otwarcie zlecenia\"",
+   "\"przekazanie do akceptacji\"",
+   "\"szukanie\""
+  ],
+  "otwarte": false
+ },
+ ".efenix_stop.steps[].results[]": {
+  "pola": [
+   "address",
+   "realizator",
+   "same_number",
+   "status"
+  ],
+  "wymagane": [
+   "address",
+   "realizator",
+   "same_number",
+   "status"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".ending": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"after_engine\"",
+   "\"declined\"",
+   "\"finished\"",
+   "\"interrupted\"",
+   "\"stop\"",
+   "\"unexpected\""
+  ],
+  "otwarte": false
+ },
+ ".environment": {
+  "pola": [
+   "files",
+   "python",
+   "system",
+   "unreadable_settings"
+  ],
+  "wymagane": [
+   "files",
+   "python",
+   "system"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".environment.files[]": {
+  "pola": [
+   "name",
+   "online_only",
+   "size"
+  ],
+  "wymagane": [
+   "name",
+   "online_only",
+   "size"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".input_copy[]": {
+  "pola": [
+   "fingerprint",
+   "folders",
+   "name",
+   "sheets"
+  ],
+  "wymagane": [
+   "fingerprint",
+   "name",
+   "sheets"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".input_copy[].fingerprint": {
+  "pola": [
+   "modified_at",
+   "sha256",
+   "size"
+  ],
+  "wymagane": [
+   "modified_at",
+   "sha256",
+   "size"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".input_copy[].sheets[]": {
+  "pola": [
+   "columns",
+   "empty_rows",
+   "header_row",
+   "last_ordered_row",
+   "rows",
+   "sheet",
+   "shifted_row",
+   "uncertain_rows",
+   "yellow_row"
+  ],
+  "wymagane": [
+   "columns",
+   "empty_rows",
+   "header_row",
+   "rows",
+   "sheet"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".input_copy[].sheets[].rows[]": {
+  "pola": [
+   "cells",
+   "row"
+  ],
+  "wymagane": [
+   "cells",
+   "row"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".input_copy[].sheets[].rows[].cells{}": {
+  "pola": [
+   "text",
+   "type"
+  ],
+  "wymagane": [
+   "text",
+   "type"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".input_copy[].sheets[].rows[].cells{}.type": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"datetime\"",
+   "\"other\"",
+   "\"time\"",
+   "\"timedelta\""
+  ],
+  "otwarte": false
+ },
+ ".intermax_entries": {
+  "pola": [
+   "rows",
+   "without_entry"
+  ],
+  "wymagane": [
+   "rows",
+   "without_entry"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".intermax_entries.without_entry[]": {
+  "pola": [
+   "operator",
+   "row"
+  ],
+  "wymagane": [
+   "operator",
+   "row"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".interruption": {
+  "pola": [
+   "omitted",
+   "place",
+   "row",
+   "total"
+  ],
+  "wymagane": [
+   "omitted",
+   "place",
+   "row",
+   "total"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".messages[]": {
+  "pola": [
+   "action",
+   "at_start",
+   "code",
+   "kind",
+   "setting",
+   "what",
+   "where"
+  ],
+  "wymagane": [
+   "action",
+   "code",
+   "kind",
+   "what",
+   "where"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".messages[].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"stop\"",
+   "\"warning\""
+  ],
+  "otwarte": false
+ },
+ ".messages[].setting": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"wykonawcy\""
+  ],
+  "otwarte": false
+ },
+ ".mode": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"DRY-RUN\"",
+   "\"RUN\"",
+   "\"podgląd\"",
+   "\"zapis\""
+  ],
+  "otwarte": false
+ },
+ ".phases[]": {
+  "pola": [
+   "duration_ms",
+   "ended_at",
+   "phase",
+   "started_at",
+   "state"
+  ],
+  "wymagane": [
+   "duration_ms",
+   "phase",
+   "state"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".phases[].phase": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"Odczyt danych\"",
+   "\"Planowanie\"",
+   "\"Sprawdzanie\"",
+   "\"Zapisywanie\""
+  ],
+  "otwarte": false
+ },
+ ".phases[].state": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"completed\"",
+   "\"failed\"",
+   "\"pending\"",
+   "\"running\""
+  ],
+  "otwarte": false
+ },
+ ".pricing": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"bez Przekazania\"",
+   "\"z Przekazaniem\""
+  ],
+  "otwarte": false
+ },
+ ".process": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"efenix\"",
+   "\"intermax\"",
+   "\"preparation\"",
+   "\"report_entering\"",
+   "\"settlement\""
+  ],
+  "otwarte": false
+ },
+ ".quantity_rules": {
+  "pola": [
+   "devices",
+   "rules"
+  ],
+  "wymagane": [
+   "devices",
+   "rules"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering": {
+  "pola": [
+   "added",
+   "changes",
+   "closed",
+   "kept",
+   "mails",
+   "memory_before",
+   "moves",
+   "moves_before",
+   "orderless",
+   "problems",
+   "requested",
+   "rollout",
+   "rollout_before",
+   "skipped",
+   "today",
+   "written"
+  ],
+  "wymagane": [
+   "changes",
+   "mails",
+   "memory_before",
+   "problems",
+   "rollout",
+   "rollout_before",
+   "skipped",
+   "today",
+   "written"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.added[]": {
+  "pola": [
+   "completed",
+   "day",
+   "number",
+   "sheet",
+   "successful",
+   "worker"
+  ],
+  "wymagane": [
+   "completed",
+   "day",
+   "number",
+   "sheet",
+   "successful",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.added[].successful": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"nie\"",
+   "\"tak\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.changes[]": {
+  "pola": [
+   "column",
+   "row",
+   "sheet",
+   "value"
+  ],
+  "wymagane": [
+   "column",
+   "row",
+   "sheet",
+   "value"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.changes[].column": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"CZYNNOŚCI ZREALIZOWANE\"",
+   "\"SKUTECZNE\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.kept[]": {
+  "pola": [
+   "column",
+   "day",
+   "number",
+   "value",
+   "worker"
+  ],
+  "wymagane": [
+   "column",
+   "day",
+   "number",
+   "value",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.kept[].column": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"CZYNNOŚCI ZREALIZOWANE\"",
+   "\"SKUTECZNE\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=report]": {
+  "pola": [
+   "arrived",
+   "day",
+   "entries",
+   "kind",
+   "mail",
+   "worker"
+  ],
+  "wymagane": [
+   "arrived",
+   "day",
+   "entries",
+   "kind",
+   "mail",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=report].entries[]": {
+  "pola": [
+   "activities",
+   "fault",
+   "number",
+   "verdict"
+  ],
+  "wymagane": [
+   "activities",
+   "fault",
+   "number",
+   "verdict"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.mails[][kind=report].entries[].fault": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"letter_no\"",
+   "\"letter_yes\"",
+   "\"missing\"",
+   "\"word_no\"",
+   "\"word_yes\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=report].entries[].verdict": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"nie\"",
+   "\"tak\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=report].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"report\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=stranger]": {
+  "pola": [
+   "arrived",
+   "day",
+   "kind",
+   "mail"
+  ],
+  "wymagane": [
+   "arrived",
+   "day",
+   "kind",
+   "mail"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=stranger].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"stranger\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=unreadable]": {
+  "pola": [
+   "arrived",
+   "day",
+   "entries",
+   "fault",
+   "kind",
+   "mail",
+   "numbers",
+   "worker"
+  ],
+  "wymagane": [
+   "arrived",
+   "fault",
+   "kind",
+   "mail",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=unreadable].entries[]": {
+  "pola": [
+   "activities",
+   "fault",
+   "number",
+   "verdict"
+  ],
+  "wymagane": [
+   "activities",
+   "fault",
+   "number",
+   "verdict"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.mails[][kind=unreadable].entries[].fault": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"letter_no\"",
+   "\"letter_yes\"",
+   "\"missing\"",
+   "\"word_no\"",
+   "\"word_yes\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=unreadable].entries[].verdict": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"nie\"",
+   "\"tak\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=unreadable].fault": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"date_form\"",
+   "\"no_date\"",
+   "\"no_year\"",
+   "\"not_a_day\"",
+   "\"other_text\"",
+   "\"other_words\"",
+   "\"separator\"",
+   "\"year_digits\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.mails[][kind=unreadable].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"unreadable\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.memory_before[]": {
+  "pola": [
+   "column",
+   "day",
+   "number",
+   "value",
+   "worker"
+  ],
+  "wymagane": [
+   "column",
+   "day",
+   "number",
+   "value",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.memory_before[].column": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"CZYNNOŚCI ZREALIZOWANE\"",
+   "\"SKUTECZNE\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.moves[]": {
+  "pola": [
+   "day",
+   "row",
+   "sheet",
+   "worker"
+  ],
+  "wymagane": [
+   "day",
+   "row",
+   "sheet",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.moves_before[]": {
+  "pola": [
+   "added",
+   "day",
+   "number",
+   "origin_day",
+   "origin_name",
+   "origin_worker",
+   "overridden",
+   "since",
+   "worker"
+  ],
+  "wymagane": [
+   "day",
+   "number",
+   "origin_day",
+   "origin_name",
+   "origin_worker",
+   "since",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.orderless[]": {
+  "pola": [
+   "day",
+   "number",
+   "sheet"
+  ],
+  "wymagane": [
+   "number",
+   "sheet"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.problems[]": {
+  "pola": [
+   "bar",
+   "day",
+   "fault",
+   "kind",
+   "number",
+   "order_days",
+   "owner",
+   "places",
+   "worker"
+  ],
+  "wymagane": [
+   "day",
+   "kind",
+   "number",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.problems[].bar": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"after_today\"",
+   "\"before_window\"",
+   "\"closed_source\"",
+   "\"closed_target\"",
+   "\"form\"",
+   "\"in_intermax\"",
+   "\"mistaken_subject\"",
+   "\"not_ordered\"",
+   "\"other_sheet\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[].fault": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"letter_no\"",
+   "\"letter_yes\"",
+   "\"missing\"",
+   "\"word_no\"",
+   "\"word_yes\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"foreign_order\"",
+   "\"missing_verdict\"",
+   "\"other_day\"",
+   "\"refused_move\"",
+   "\"repeated_number\"",
+   "\"repeated_order\"",
+   "\"unknown_number\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[].places[]": {
+  "pola": [
+   "day",
+   "worker"
+  ],
+  "wymagane": [
+   "day",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.problems[][kind=conflicting_verdicts]": {
+  "pola": [
+   "arrived",
+   "day",
+   "entries",
+   "kind",
+   "mail",
+   "number",
+   "worker"
+  ],
+  "wymagane": [
+   "arrived",
+   "day",
+   "entries",
+   "kind",
+   "mail",
+   "number",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=conflicting_verdicts].entries[]": {
+  "pola": [
+   "activities",
+   "fault",
+   "number",
+   "verdict"
+  ],
+  "wymagane": [
+   "activities",
+   "fault",
+   "number",
+   "verdict"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.problems[][kind=conflicting_verdicts].entries[].fault": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"letter_no\"",
+   "\"letter_yes\"",
+   "\"missing\"",
+   "\"word_no\"",
+   "\"word_yes\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=conflicting_verdicts].entries[].verdict": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"nie\"",
+   "\"tak\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=conflicting_verdicts].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"conflicting_verdicts\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=faulty_description]": {
+  "pola": [
+   "day",
+   "kind",
+   "number",
+   "reasons",
+   "worker"
+  ],
+  "wymagane": [
+   "day",
+   "kind",
+   "number",
+   "reasons",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=faulty_description].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"faulty_description\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=manual_difference]": {
+  "pola": [
+   "cell",
+   "kind",
+   "manual"
+  ],
+  "wymagane": [
+   "cell",
+   "kind",
+   "manual"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=manual_difference].cell": {
+  "pola": [
+   "column",
+   "day",
+   "number",
+   "value",
+   "worker"
+  ],
+  "wymagane": [
+   "column",
+   "day",
+   "number",
+   "value",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.problems[][kind=manual_difference].cell.column": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"CZYNNOŚCI ZREALIZOWANE\"",
+   "\"SKUTECZNE\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=manual_difference].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"manual_difference\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=unknown_sender]": {
+  "pola": [
+   "day",
+   "kind",
+   "mail"
+  ],
+  "wymagane": [
+   "day",
+   "kind",
+   "mail"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=unknown_sender].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"unknown_sender\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=unreadable_subject]": {
+  "pola": [
+   "arrived",
+   "day",
+   "fault",
+   "kind",
+   "mail",
+   "worker"
+  ],
+  "wymagane": [
+   "arrived",
+   "fault",
+   "kind",
+   "mail",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=unreadable_subject].fault": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"date_form\"",
+   "\"no_date\"",
+   "\"no_year\"",
+   "\"not_a_day\"",
+   "\"other_text\"",
+   "\"other_words\"",
+   "\"separator\"",
+   "\"year_digits\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.problems[][kind=unreadable_subject].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"unreadable_subject\""
+  ],
+  "otwarte": false
+ },
+ ".report_entering.requested[]": {
+  "pola": [
+   "activities",
+   "at",
+   "day",
+   "mail",
+   "number",
+   "verdict",
+   "worker"
+  ],
+  "wymagane": [
+   "activities",
+   "at",
+   "day",
+   "mail",
+   "number",
+   "verdict",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".report_entering.requested[].verdict": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"nie\"",
+   "\"tak\""
+  ],
+  "otwarte": false
+ },
+ ".result": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"BLAD_KRYTYCZNY\"",
+   "\"OK\"",
+   "\"WYMAGA_SPRAWDZENIA\""
+  ],
+  "otwarte": false
+ },
+ ".schema_version": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "1",
+   "2",
+   "3"
+  ],
+  "otwarte": false
+ },
+ ".stop_kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"declined\"",
+   "\"for_maks\"",
+   "\"for_tata\"",
+   "\"repeated\""
+  ],
+  "otwarte": false
+ },
+ ".summary": {
+  "pola": [
+   "counts",
+   "figures",
+   "files",
+   "intermax_copy",
+   "worker_settlements"
+  ],
+  "wymagane": [
+   "counts",
+   "figures",
+   "files",
+   "worker_settlements"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".summary.counts": {
+  "pola": [
+   "counts",
+   "title",
+   "zero_warns"
+  ],
+  "wymagane": [
+   "counts",
+   "title"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".summary.counts.counts[]": {
+  "pola": [
+   "count",
+   "label"
+  ],
+  "wymagane": [
+   "count",
+   "label"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".summary.figures[]": {
+  "pola": [
+   "label",
+   "unit",
+   "value"
+  ],
+  "wymagane": [
+   "label",
+   "unit",
+   "value"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".summary.figures[].unit": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"count\"",
+   "\"ms\""
+  ],
+  "otwarte": false
+ },
+ ".summary.files[]": {
+  "pola": [
+   "kind",
+   "name"
+  ],
+  "wymagane": [
+   "kind",
+   "name"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".summary.files[].kind": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"collective_file\"",
+   "\"internal_settlement\""
+  ],
+  "otwarte": false
+ },
+ ".summary.worker_settlements[]": {
+  "pola": [
+   "empty",
+   "file",
+   "orders",
+   "worker"
+  ],
+  "wymagane": [
+   "empty",
+   "file",
+   "orders",
+   "worker"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".templates[]": {
+  "pola": [
+   "duration_ms",
+   "ended_at",
+   "outcome",
+   "rows",
+   "started_at",
+   "wykonawca"
+  ],
+  "wymagane": [
+   "duration_ms",
+   "outcome",
+   "rows",
+   "wykonawca"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".templates[].outcome": {
+  "pola": [],
+  "wymagane": [],
+  "wartosci": [
+   "\"PLAN\"",
+   "\"PUSTY_SZABLON\"",
+   "\"ZAPISANO\"",
+   "\"failed\""
+  ],
+  "otwarte": false
+ },
+ ".tool": {
+  "pola": [
+   "commit",
+   "wydanie"
+  ],
+  "wymagane": [
+   "commit",
+   "wydanie"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".trace": {
+  "pola": [
+   "causes",
+   "exception_type",
+   "frames"
+  ],
+  "wymagane": [
+   "exception_type",
+   "frames"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".trace.causes[]": {
+  "pola": [
+   "exception_type",
+   "frames"
+  ],
+  "wymagane": [
+   "exception_type",
+   "frames"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".trace.causes[].frames[]": {
+  "pola": [
+   "file",
+   "function",
+   "line"
+  ],
+  "wymagane": [
+   "file",
+   "function",
+   "line"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".trace.frames[]": {
+  "pola": [
+   "file",
+   "function",
+   "line"
+  ],
+  "wymagane": [
+   "file",
+   "function",
+   "line"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ }
+}

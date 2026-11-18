@@ -54,6 +54,7 @@ import re
 from typing import Any
 
 import github
+import limit_rund
 import stan_pr
 from stan_pr import Pull
 import straznik
@@ -80,6 +81,7 @@ SINCE = " created:>={created}"
 FIELDS = """
 fragment Pull on PullRequest {
   number title state isDraft isCrossRepository baseRefName headRefOid url body bodyHTML createdAt updatedAt mergedAt
+  files(first: 100) { nodes { path } }
   comments(first: 100, after: $comments) { pageInfo { hasNextPage endCursor } nodes { body bodyHTML authorAssociation createdAt includesCreatedEdit author { login } } }
   reviews(first: 100, after: $reviews) { pageInfo { hasNextPage endCursor } nodes { body bodyHTML authorAssociation state submittedAt includesCreatedEdit author { login } } }
 }
@@ -225,7 +227,7 @@ def read(repository: str, deployed: datetime | None) -> list[Occurrence]:
     """Wystąpienia kodów w PR-ach ``repository`` (``właściciel/nazwa``) po chwili wdrożenia szablonu ``deployed``
     (``None``: szablon niewdrożony, więc żadnych), w kolejności PR i Ważnego. Błąd GitHuba to wyjątek."""
 
-    return sorted((occurrence for one in reviewed(repository, deployed) for occurrence in one.occurrences), key=_order)
+    return sorted((occurrence for one in reviewed(repository, deployed, None) for occurrence in one.occurrences), key=_order)
 
 
 @dataclass(frozen=True)
@@ -253,28 +255,36 @@ def idiom_cases(number: int, rounds: Sequence[werdykt_pr.Round]) -> list[IdiomCa
 @dataclass(frozen=True)
 class Reviewed:
     """PR ze skanu rejestru: jego wystąpienia kodów (``occurrences``), pola ``Idiom:`` werdyktów ``FAIL`` utworzonych
-    nie przed wdrożeniem, chwila merge'a i chwila ostatniego werdyktu ``PASS`` na HEAD PR (``None`` bez nich)."""
+    nie przed wdrożeniem, chwila merge'a i chwila ostatniego werdyktu ``PASS`` na HEAD PR (``None`` bez nich), chwila
+    założenia, pierwsze 100 plików diffu (więcej strona skanu nie podaje) i ``limited``: chwila ostatniego werdyktu
+    ``FAIL`` PR zamkniętego bez merge'a, któremu limit rund (``limit_rund.problem``) odmawia kolejnej rundy, a ``None``
+    dla każdego innego PR."""
 
     pull: int
     merged: datetime | None
     passed: datetime | None
     occurrences: tuple[Occurrence, ...]
     idioms: tuple[IdiomCase, ...]
+    created: datetime | None = None
+    files: frozenset[str] = frozenset()
+    limited: datetime | None = None
 
 
-def reviewed(repository: str, deployed: datetime | None) -> list[Reviewed]:
+def reviewed(repository: str, deployed: datetime | None, limit: datetime | None) -> list[Reviewed]:
     """PR-y ``repository`` ze skanu ``read`` (jedno wyszukiwanie, ten sam koszt), w kolejności założenia; bez wdrożenia
-    szablonu (``deployed`` to ``None``) żadnych. Błąd GitHuba to wyjątek."""
+    szablonu (``deployed`` to ``None``) żadnych. ``limit`` to chwila wdrożenia limitu rund (``werdykt_pr.deployment``
+    dla ``limit_rund.MARKER``), a ``None`` zostawia każde ``Reviewed.limited`` puste. Błąd GitHuba to wyjątek."""
 
     if deployed is None:
         return []
-    return [_reviewed(node if _complete(node) else pull_node(repository, node["number"]), deployed) for node in _pulls(repository, deployed)]
+    return [_reviewed(node if _complete(node) else pull_node(repository, node["number"]), deployed, limit) for node in _pulls(repository, deployed)]
 
 
-def _reviewed(node: dict[str, Any], deployed: datetime) -> Reviewed:
+def _reviewed(node: dict[str, Any], deployed: datetime, limit: datetime | None) -> Reviewed:
     """PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja): werdykty, rundy i chwilę merge'a
     liczy raz, a wszystko, co zwraca, jest po chwili wdrożenia ``deployed``: Ważne i pola ``Idiom:`` werdyktów
-    utworzonych nie przed nią, merge nie przed nią, a blok czerwonego `main` tylko w PR scalonym po niej."""
+    utworzonych nie przed nią, merge nie przed nią, a blok czerwonego `main` tylko w PR scalonym po niej; ``limit``
+    to chwila wdrożenia limitu rund dla ``Reviewed.limited``."""
 
     pull = _pull(node)
     verdicts = [verdict for verdict in (werdykt_pr.read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None]
@@ -289,7 +299,10 @@ def _reviewed(node: dict[str, Any], deployed: datetime) -> Reviewed:
     if merged is not None:
         found += [Occurrence(block.code, pull.number, heading, merged) for heading, block in _blocks(pull, str(node["bodyHTML"])).items() if heading.startswith("Czerwony")]
     passes = [moment for verdict in verdicts if verdict.decision == "PASS" and verdict.commit == pull.head and (moment := _moment(verdict.when)) is not None]
-    return Reviewed(pull.number, merged, max(passes, default=None), tuple(sorted(found, key=_order)), idioms)
+    fails = [moment for verdict in verdicts if verdict.decision == "FAIL" and (moment := _moment(verdict.when)) is not None]
+    limited = max(fails, default=None) if pull.state == "CLOSED" and limit_rund.problem(pull, limit) is not None else None
+    files = frozenset(str(file["path"]) for file in node["files"]["nodes"])
+    return Reviewed(pull.number, merged, max(passes, default=None), tuple(sorted(found, key=_order)), idioms, _moment(node["createdAt"]), files, limited)
 
 
 def create_labels(api: github.GhApi, names: Sequence[str], prefix: str, *, write: bool) -> list[str]:

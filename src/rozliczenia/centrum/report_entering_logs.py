@@ -62,7 +62,7 @@ class _Record(BaseModel):
 
 
 class LoggedReportEntry(_Record):
-    """Wpis raportu: numer zlecenia z treści maila (pod strażnikiem: 9 cyfr z rzędu maskuje jak telefon), ``tak``/``nie``
+    """Wpis raportu: numer zlecenia z treści maila (pod strażnikiem: 9 cyfr bez zera z przodu maskuje jak telefon), ``tak``/``nie``
     albo powód jego braku i czynności (pod strażnikiem: telefon i ulica zamaskowane)."""
 
     number: str
@@ -582,7 +582,8 @@ class LoggedReports(_Record):
         if masked:
             return Unreplayable(
                 f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}: 9 cyfr "
-                "z rzędu strażnik bierze za telefon), więc odtworzenie nie wie, do którego zlecenia szedł ten Wpis"
+                "w kształcie telefonu, w Logach starszych Wydań także z zerem z przodu), więc odtworzenie nie wie, do "
+                "którego zlecenia szedł ten Wpis"
             )
         numbers = _numbers(self)
         for name, logged in (("pamięć wpisów", self.memory_before), ("decyzje „Zostaw moją”", self.kept)):

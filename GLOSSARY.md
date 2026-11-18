@@ -621,7 +621,7 @@ Gdy Maks je zamknie, a problem wraca, powstaje nowe z odnośnikiem do poprzednie
 
 ## Logi Uruchomienia
 
-Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń: wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z godziną każdego kroku, wersja narzędzia, Kopia wejścia oraz dziennik działań taty w Centrum od poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi taty).
+Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń: wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z godziną każdego kroku, wersja narzędzia, Kopia wejścia oraz dziennik działań taty w Centrum i dziennik Centrum od poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi taty, i to, co Centrum zrobiło samo, np. Przypomnienia o raporcie i Wysyłka rozliczeń).
 Logi Wyceny w efenix mają też odczyt strony efenix po każdym szukaniu, otwarciu zlecenia i zapisie, a z danych adresowych tylko nazwy części adresu, którymi wynik szukania różni się od `ADRES`, bez ich wartości; zrzutów ekranu nie mają.
 Mówią wprost, czy był to podgląd, w którym nic nie zapisano, czy Uruchomienie z zapisem, a Logi Wyceny w efenix także jej tryb.
 Zostają na komputerze taty także po zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił.
@@ -669,6 +669,7 @@ _Avoid_: issue tracker, publiczne issue
 
 To, co z treści plików taty może wyjść z jego komputera do Skrzynki Zgłoszeń, jedno dla Logów Uruchomienia, Zgłoszeń, Kontroli ilości i Uwag taty (ADR 0025): nigdy wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` ani dane adresowe z efenix, każda inna kolumna wiersza może.
 W wolnym tekście telefony są `[telefon]`, a ulice `[ulica]`.
+Numer z zerem z przodu (`NUMER ZL.`, jak pisze go Wykonawca) nie jest telefonem, bo żaden polski telefon tak się nie zaczyna (ADR 0025).
 Przed zapisem Logów i każdą wysyłką strażnik maskuje każdą zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolumną i miejscem, bez wartości.
 Położenie, w którym strażnik zna każdy wiersz Rejestru zleceń, ustala sekcja „Położenie wiersza” tego ADR.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja

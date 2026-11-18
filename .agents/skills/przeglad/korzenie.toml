@@ -162,3 +162,7 @@ przyklad = 2011
 [R-NOWY-MODUL]
 opis = "Odstępstwo od rozpisu dostaje nowy moduł obok istniejącego właściciela tej samej drogi, więc przybywa linii procesu i drugiej kopii opisu, zamiast przenieść kod do właściciela."
 przyklad = 2073
+
+[R-STARE-DRZEWO]
+opis = "Commit złożony z drzewa roboczego starszej bazy i przeniesiony na nowszą (reset --soft, kopia plików, stash) po cichu cofa scalone PR-y, a nic nie porównuje plików diffu z bazą."
+przyklad = 2100
