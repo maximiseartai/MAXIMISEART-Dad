@@ -58,7 +58,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
 )
 from rozliczenia.centrum.settings_reads import readable_folders, readable_quantity_rules
 from rozliczenia.collective_layout import QUANTITY_LETTERS
-from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, QuantityRule, QuantityRules, RulesProblem
+from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, DeviceList, QuantityRule, QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import parse_component, parse_rule
 from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError
@@ -124,7 +124,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         view = settings.quantity_rules()
         names = price_list.names()
         return contract.QuantityRulesSettings(
-            rules=[_rule(rule, view.shown, names) for rule in view.shown.rules],
+            rules=[_rule(rule, view.shown.devices, names) for rule in view.shown.rules],
             devices=[device_forms.device_component(component) for component in view.shown.devices.components],
             columns=[
                 contract.RuleColumn(letter=letter, name=names.get(letter) or None, writable=letter not in BUILT_IN_COLUMNS)
@@ -271,9 +271,9 @@ def _at_form_field(edit: contract.RuleEdit, problem: FieldProblem) -> FieldProbl
     return problem
 
 
-def _rule(rule: QuantityRule, rules: QuantityRules, names: Mapping[str, str]) -> contract.QuantityRuleSentence:
+def _rule(rule: QuantityRule, devices: DeviceList, names: Mapping[str, str]) -> contract.QuantityRuleSentence:
     return contract.QuantityRuleSentence(
-        id=rule.id, scope=SCOPES[rule.scope], sentence=rule_sentence(rule, rules.devices, names), rule=form_of(rule)
+        id=rule.id, scope=SCOPES[rule.scope], sentence=rule_sentence(rule, devices, names), rule=form_of(rule)
     )
 
 
