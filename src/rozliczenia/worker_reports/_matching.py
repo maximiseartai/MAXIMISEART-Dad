@@ -83,7 +83,11 @@ class Matched:
     Wpisów bez jednego zlecenia, informacje o przegranym temacie zwycięskich Wpisów (``lost``) i każdy zwycięski Wpis z
     ``targets`` z nadawcą i dniem, w którym tata widzi jego problem, jak przy ``MissingVerdict`` (``entered``), a mail
     zwycięskiego Wpisu każdego zlecenia z ``targets`` po jego wierszu (``mails``), a ``taken`` każdy Wpis (mail i numer),
-    którego zlecenie wziął Wpis maila, który przyszedł później (``_taken``), z Wykonawcą tego maila."""
+    którego wiersz zlecenia wziął Wpis maila, który przyszedł później, z Wykonawcą tego maila. Wiersz ma Wpis, który
+    stawia zlecenie, i Wpis bez problemu, który niczego nie zmienia (Przeniesienie, którego ``may_move`` nie przyjmuje,
+    np. po Wpisie późniejszego maila): wiersz jedynego zlecenia numeru; Wpis z problemem (np. ``RepeatedNumber``) wiersza
+    nie ma, bo tata ma przy nim coś do zrobienia. Mail z tą samą chwilą przyjścia nie jest późniejszy, choć wygrywa
+    remis."""
 
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]]
     accepted: tuple[tuple[RegisterOrder, Login, date, datetime], ...]
@@ -223,15 +227,13 @@ class Board:
         decided = {decision.place: decision for decision in requested}
 
         latest: dict[OrderRow, _Claim] = {}
-        claimed: dict[OrderRow, int] = {}
-        places: dict[tuple[MailId, OrderNumber], datetime] = {}
+        rows: dict[tuple[MailId, OrderNumber], tuple[datetime, OrderRow]] = {}
         newest: dict[OrderNumber, _New] = {}
         problems: list[ReportProblem] = []
-        for position, report in enumerate(reports):
+        for report in reports:
             said: dict[OrderNumber, list[ReportEntry]] = {}
             for entry in report.entries:
                 said.setdefault(entry.number, []).append(entry)
-                places[report.mail, entry.number] = report.arrived
             other_day = [number for number in said if self._other_day_number(number, report.day)]
             mistaken = self._mistaken(other_day)
             for number, written in said.items():
@@ -251,11 +253,15 @@ class Board:
                     newest.pop(number, None)
                 if isinstance(found, _Claim):
                     latest[found.order.row] = replace(found, entries=tuple(written))
-                    claimed[found.order.row] = position
+                    rows[report.mail, number] = (report.arrived, found.order.row)
                 elif isinstance(found, _New):
                     newest[number] = replace(found, entries=tuple(written))
                 else:
                     problems += found
+                    if not found and len(placed) == 1:
+                        rows[report.mail, number] = (report.arrived, placed[0].order.row)
+                    else:
+                        rows.pop((report.mail, number), None)
         targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
         accepted: list[tuple[RegisterOrder, Login, date, datetime]] = []
         lost: list[SubjectLost] = []
@@ -301,7 +307,11 @@ class Board:
                     problems.append(
                         ConflictingVerdicts(report.worker, report.day, number, report.mail, report.arrived, new.entries)
                     )
-        taken = _taken(places, [(claimed[row], claim) for row, claim in latest.items()])
+        taken = {
+            place: holder.report.worker
+            for place, (arrived, row) in rows.items()
+            if (holder := latest.get(row)) is not None and holder.report.arrived > arrived
+        }
         return Matched(targets, tuple(accepted), problems, tuple(lost), tuple(added), tuple(entered), mails, taken)
 
     def days(self, numbers: Iterable[OrderNumber], day: date) -> frozenset[date]:
@@ -442,27 +452,6 @@ class Board:
         if OrderedDay(order.row.sheet, day) in self._ordered:
             return None
         return MoveBar.OTHER_SHEET if day in self._ordered_anywhere else MoveBar.NOT_ORDERED
-
-
-def _taken(
-    places: Mapping[tuple[MailId, OrderNumber], datetime], held: Iterable[tuple[int, _Claim]]
-) -> dict[tuple[MailId, OrderNumber], Login]:
-    """Wpisy (mail i numer z chwilą przyjścia maila, ``places``), których mail nie decyduje o żadnym zleceniu numeru,
-    a decyduje o nim mail, który przyszedł później, z Wykonawcą ostatniego takiego maila w kolejności ``match``;
-    ``held``: miejsce w tej kolejności i zwycięski Wpis każdego zlecenia. Także Wpis, który niczego nie zmienił
-    (Przeniesienie, którego reguła ``may_move`` nie przyjmuje po zmianie późniejszego maila), i Wpis zwycięskiego maila
-    z problemem albo z odmową. Mail z tą samą chwilą przyjścia nie jest późniejszy, choć wygrywa remis."""
-
-    holders: defaultdict[OrderNumber, list[tuple[int, _Claim]]] = defaultdict(list)
-    for position, claim in held:
-        holders[claim.order.key.number].append((position, claim))
-    taken: dict[tuple[MailId, OrderNumber], Login] = {}
-    for (mail, number), arrived in places.items():
-        found = holders.get(number, [])
-        later = [(position, claim) for position, claim in found if claim.report.arrived > arrived]
-        if later and all(claim.report.mail != mail for _, claim in found):
-            taken[mail, number] = max(later, key=lambda pair: pair[0])[1].report.worker
-    return taken
 
 
 def _requested(

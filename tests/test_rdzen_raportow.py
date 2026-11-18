@@ -3444,8 +3444,11 @@ def test_powod_dla_taty_kazdego_rodzaju_problemu_i_informacja_o_raporcie_z_blede
         + (f"  rodzaj błędu tematu: {subject_fault(problem.fault)}\n" if isinstance(problem, UnreadableSubject) else "")
         for problem in problems
     ) + "".join(
-        f"OvertakenSubject\n  {overtaken(OvertakenSubject(Login('jan.testowy'), DAY, EVENING, SubjectFault.OTHER_WORDS, found))}\n"
-        for found in takers
+        f"OvertakenSubject\n  {overtaken(overtaking, overtaking.subject.shown())}\n"
+        for overtaking in (
+            OvertakenSubject(JAN_LOGIN, DAY, EVENING, SubjectFault.OTHER_WORDS, ReportSubject("Raport 08.11.2026 Kowalski"), found)
+            for found in takers
+        )
     )
 
     assert {type(problem) for problem in problems} == set(get_args(ReportProblem))
@@ -3466,6 +3469,34 @@ def test_blad_tematu_ktorego_zlecenie_trzyma_wczesniejszy_raport_zostaje_problem
     ]
 
     outcome = enter_reports(_inputs(mails, [_order(worker="Ewa.Probna")], memory=OwnEntries(frozenset(), frozenset({move}))))
+
+    assert [problem.worker for problem in outcome.problems if isinstance(problem, UnreadableSubject)] == [JAN_LOGIN]
+    assert [day.overtaken for day in outcome.workers] == [()] * len(outcome.workers)
+
+
+@pytest.mark.parametrize(
+    "jana",
+    [pytest.param(True, id="zlecenie-jana-7-11"), pytest.param(False, id="wiersz-bez-zlecenia")],
+)
+def test_blad_tematu_z_numerem_w_dwoch_wierszach_zostaje_problemem_choc_jeden_wiersz_wzial_pozniejszy_raport(
+    jana: bool,
+) -> None:
+    """ADR 0041 i 0029: numer 40000001 stoi w zleceniu Ewy z 8.11 i w drugim wierszu INTERMAX: w zleceniu Jana z 7.11
+    albo w wierszu bez zlecenia. Jan przysyła ``Raport 08.11.2026 Kowalski`` z tym numerem, a później Ewa poprawny
+    raport, który bierze swój wiersz. Wpis Jana z dniem z tematu dałby ``RepeatedNumber``, więc nie stawia żadnego
+    zlecenia i nikt mu go nie wziął: błąd tematu zostaje problemem Jana, a dzień Jana nie ma informacji o późniejszym
+    raporcie."""
+
+    number = OrderNumber("40000001")
+    other = [_order(OrderRow("Zlecenia", 121), day=DAY - timedelta(days=1))] if jana else []
+    orders = [_order(worker="Ewa.Probna"), *other]
+    present = None if jana else (ReadNumber(number, DAY), ReadNumber(number))
+    mails = [
+        _mail(JAN, "Raport 08.11.2026 Kowalski", "40000001 tak inst20m", EVENING),
+        _mail(EWA, SUBJECT, "40000001 tak montaż", EVENING + timedelta(hours=1)),
+    ]
+
+    outcome = enter_reports(_inputs(mails, orders, present=present))
 
     assert [problem.worker for problem in outcome.problems if isinstance(problem, UnreadableSubject)] == [JAN_LOGIN]
     assert [day.overtaken for day in outcome.workers] == [()] * len(outcome.workers)

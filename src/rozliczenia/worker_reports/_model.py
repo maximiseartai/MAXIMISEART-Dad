@@ -695,15 +695,17 @@ class UnreadableSubject:
 
 @dataclass(frozen=True)
 class OvertakenSubject:
-    """Raport wykonawcy z błędem tematu z powodem ``fault`` od ``worker``, który przyszedł ``arrived``, liczony za dzień
-    otwarty ``day``, którego każde zlecenie wziął Raport wykonawcy od ``takers``, który przyszedł później
-    (``_matching.Matched.taken``): informacja dla taty przy tym dniu, a nie problem, bo z tego raportu nie ma już czego
-    wpisać. Raport dalej liczy się za ten dzień (ADR 0041)."""
+    """Raport wykonawcy z błędem tematu z powodem ``fault`` i tematem ``subject`` (poza tożsamością, jak w
+    ``UnreadableSubject``) od ``worker``, który przyszedł ``arrived``, liczony za dzień otwarty ``day``, którego każde
+    zlecenie wziął Raport wykonawcy od ``takers``, który przyszedł później (``_matching.Matched.taken``): informacja dla
+    taty przy tym dniu, a nie problem, bo z tego raportu nie ma już czego wpisać. Raport dalej liczy się za ten dzień
+    (ADR 0041)."""
 
     worker: Login
     day: date
     arrived: datetime
     fault: SubjectFault
+    subject: ReportSubject = field(compare=False)
     takers: tuple[Login, ...]
 
 

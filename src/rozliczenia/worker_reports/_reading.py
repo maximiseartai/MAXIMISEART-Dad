@@ -139,7 +139,7 @@ def read_window(inputs: ReportInputs) -> WindowRead:
         if (shown[found] or found.day is None) and not _settled(found, decided, matched.taken)
     )
     taken = tuple(
-        OvertakenSubject(found.worker, day, found.arrived, found.fault, takers)
+        OvertakenSubject(found.worker, day, found.arrived, found.fault, found.subject, takers)
         for found, takers in overtaken.items()
         for day in sorted(shown[found])
     )

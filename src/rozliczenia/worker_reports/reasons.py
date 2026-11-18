@@ -127,14 +127,15 @@ def note(found: ReportNote) -> str:
             assert_never(found)
 
 
-def overtaken(found: OvertakenSubject) -> str:
+def overtaken(found: OvertakenSubject, subject: str) -> str:
     """Informacja dla taty przy dniu, za który liczy się raport z błędem tematu, z którego nie ma już czego wpisać:
-    każde jego zlecenie wziął późniejszy raport, więc Wpisu na życzenie przy nim nie ma."""
+    każde jego zlecenie wziął późniejszy raport, więc Wpisu na życzenie przy nim nie ma. ``subject``: temat maila po
+    strażniku reguły danych, bo bez niego tata nie wie, co Wykonawca napisał źle (ADR 0041)."""
 
     takers = " i ".join(found.takers)
     later = f"wziął późniejszy raport od {takers}" if len(found.takers) == 1 else f"wzięły późniejsze raporty od {takers}"
     return (
-        f"Raport wykonawcy od {found.worker} z {found.arrived:%d.%m.%Y, %H:%M} ma błąd w temacie "
+        f"Raport wykonawcy od {found.worker} z {found.arrived:%d.%m.%Y, %H:%M} z tematem „{subject}” ma błąd w temacie "
         f"({subject_fault(found.fault)}), ale każde jego zlecenie {later}, więc nie ma w nim nic do wpisania."
     )
 

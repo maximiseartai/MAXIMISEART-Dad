@@ -3517,8 +3517,9 @@ def test_wpisu_na_zyczenie_przy_raporcie_z_bledem_tematu_nie_ma_przy_przeciwnych
 
 
 TAKEN_OVER = (
-    "Raport wykonawcy od jan.testowy z 09.11.2026, 17:00 ma błąd w temacie (inne słowa), ale każde jego zlecenie wziął "
-    "późniejszy raport od anna.kowalska, więc nie ma w nim nic do wpisania."
+    "Raport wykonawcy od jan.testowy z 09.11.2026, 17:00 z tematem „Raport 09.11.2026 Kowalski tel. [telefon]” ma błąd "
+    "w temacie (inne słowa), ale każde jego zlecenie wziął późniejszy raport od anna.kowalska, więc nie ma w nim nic do "
+    "wpisania."
 )
 
 
@@ -3533,16 +3534,16 @@ TAKEN_OVER = (
 def test_blad_tematu_ktorego_kazde_zlecenie_wzial_pozniejszy_raport_innego_wykonawcy_jest_informacja_a_nie_problemem(
     tmp_path: Path, subject: str, text: str, anna_problems: list[str | None]
 ) -> None:
-    """ADR 0041: Jan przysyła ``Raport 09.11.2026 Kowalski`` z jedynym zleceniem Anny z 9.11, a później Anna przysyła
-    swój raport z tym zleceniem, więc o zleceniu decyduje jej Wpis. Błąd tematu Jana nie ma już czego wpisać: dzień Jana
-    nie ma problemu, tylko jedno zdanie informacji, a raport dalej liczy się za 9.11, także przy następnym kliknięciu,
+    """ADR 0041: Jan przysyła ``Raport 09.11.2026 Kowalski`` z telefonem i z jedynym zleceniem Anny z 9.11, a później
+    Anna przysyła swój raport z tym zleceniem, więc o zleceniu decyduje jej Wpis. Błąd tematu Jana nie ma już czego
+    wpisać: dzień Jana nie ma problemu, tylko jedno zdanie informacji z tematem po strażniku reguły danych, a raport dalej liczy się za 9.11, także przy następnym kliknięciu,
     gdy pamięć wpisów po Wpisie Anny nie pozwala już starszemu mailowi Jana ruszyć zlecenia. Dzień Anny jest jak dziś:
     po poprawnym raporcie zlecenie wpisane, po raporcie z błędem tematu i po Wpisie z ``t``, którego Centrum nie wpisało,
     jej problem z Wpisem na życzenie."""
 
     intermax = Intermax(ordered=(_order(9, 11, "anna.kowalska", 40000002),), raw=())
     mails = [
-        report(JAN, "Raport 09.11.2026 Kowalski", "40000002 tak inst20m", at=datetime(2026, 11, 9, 17)),
+        report(JAN, "Raport 09.11.2026 Kowalski tel. 600 123 456", "40000002 tak inst20m", at=datetime(2026, 11, 9, 17)),
         report(ANNA, subject, text, at=datetime(2026, 11, 9, 18)),
     ]
     centrum = entering_centrum(tmp_path, intermax, mails)

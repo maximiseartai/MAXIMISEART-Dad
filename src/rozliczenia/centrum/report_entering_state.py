@@ -26,8 +26,8 @@
   Centrum go liczy, chwilę przyjścia maila i skrót maila, po którym widok łączy problem z Wpisami na życzenie tego
   raportu przy zleceniach (``faulty_subject``), a przy dniu Wykonawcy dni z tematu raportów z
   pomylonym tematem za ten dzień (``mistaken``) i zdanie z ``reasons.overtaken`` o każdym raporcie z błędem tematu za
-  ten dzień, z którego nie ma już czego wpisać (``overtaken``); plik bez nich czyta się bez nich. Pisze go tylko proces, po
-  pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
+  ten dzień, z którego nie ma już czego wpisać, z jego tematem po tym samym strażniku (``overtaken``); plik bez nich
+  czyta się bez nich. Pisze go tylko proces, po pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
   taty „Zostaw moją”. Pisze go tylko żądanie API „Zostaw moją” (``keep``); proces czyta go przy Sprawdzaniu razem z
@@ -584,7 +584,10 @@ class FileReportState:
                     for order in worker.orders_detail
                 ],
                 mistaken=list(worker.mistaken),
-                overtaken=[overtaken(found) for found in worker.overtaken],
+                overtaken=[
+                    overtaken(found, guarded(self.forbidden, found.subject.shown(), "temat Raportu wykonawcy").text)
+                    for found in worker.overtaken
+                ],
             )
             for worker in result.workers
         ]
