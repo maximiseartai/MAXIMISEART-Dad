@@ -145,7 +145,11 @@ telefony na okres.
   (Skrypt dla maszyn) ma własną pamięć, której nic nie czyta, bo nic nie
   wysyła, więc żaden czytnik nie ma drogi bez pamięci. Wartość krótsza niż
   5 znaków jest pomijana: nie wskazuje klienta, a pasowałaby do zwykłych słów
-  i liczb.
+  i liczb. Pomijana jest też wartość, którą Planowanie czyta jako rodzaj
+  zlecenia z zamkniętego słownika `URZĄDZENIA` (`order_kind`: „Usterka”,
+  „Usterka hurt”, „Instalacja hurt”), bo nie wskazuje klienta, a wiersz w obu
+  położeniach daje ją pamięci jako `ADRES` i maska w Kopii wejścia gubiła w
+  odtworzeniu rodzaj zlecenia i Wpis INTERMAX.
 - **Zgoda taty.** Tata wie, że wysyłki do prywatnej Skrzynki Zgłoszeń będą
   niosły numery zleceń, Wykonawców, miasta i opisy techników, i zgodził się
   na to z Maksem (grilling 4.11.2026).
