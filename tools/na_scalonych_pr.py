@@ -64,6 +64,14 @@ je pomija. Kończy się ``PRZYPADKI REGUŁ OK | <n> reguł, <k> przypadków`` al
 <co zrobić> | …``, także dla reguły bez pola:
 
     .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul
+    .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul --z-commita <SHA scalenia HEAD PR z bazą>
+
+Z ``--z-commita REV`` reguły i ich przypadki bierze z kopii ``REV``, a reguła o id, które ma też reguła checkoutu,
+ma w ``metadata.przypadki`` każdy przypadek tamtej: przypadek, którego ``REV`` już nie wymienia, to porażka. Tak
+uruchamia go ``tools/scal_pr.py`` z kodu bazy na scaleniu HEAD PR z bazą (warunek 6, ``reguly_bazy``), więc PR, który osłabia regułę i usuwa
+z niej przypadek, którego ona już nie łapie, nie przechodzi także wtedy, gdy zmienia ten krok CI. Granica: reguły
+usuniętej w całości (bez reguły o tym id w ``REV``) ten krok nie sprawdza; jej przypadki znikają z jej plikiem, który
+widać w diffie, a linie, które PR dodaje, sądzi jeszcze ona sama w wersji z bazy (warunek 6).
 """
 
 from __future__ import annotations
@@ -80,6 +88,7 @@ import subprocess
 import sys
 import sysconfig
 import time
+from typing import Any
 
 import yaml
 
@@ -376,14 +385,37 @@ def case_probe(repository: str, text: str) -> Probe:
     raise ValueError(f"przypadek {text!r} nie ma postaci PR/W<n>/r<k> ani <pełny SHA> plik:linia")
 
 
-def founding() -> int:
-    """Każda reguła z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` checkoutu łapie każdy przypadek ze swojego pola
-    ``metadata.przypadki`` (``caught``), a regułę wybiera ast-grep z tej konfiguracji, jak zapadka; kod 0 tylko
+def _rule_documents(root: Path) -> list[dict[str, Any]]:
+    """Każda reguła (dokument YAML) z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` w ``root``."""
+
+    config = yaml.safe_load((root / CONFIG).read_text(encoding="utf-8"))
+    files = sorted(path for folder in config["ruleDirs"] for path in (root / folder).rglob("*.y*ml"))
+    return [document for path in files for document in yaml.safe_load_all(path.read_text(encoding="utf-8")) if document]
+
+
+def _cases_of(document: dict[str, Any]) -> list[str]:
+    return [str(case) for case in (document.get("metadata") or {}).get(CASES) or []]
+
+
+def founding(commit: str | None = None) -> int:
+    """Każda reguła z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` checkoutu (z ``commit``: jego kopii) łapie każdy
+    przypadek ze swojego pola ``metadata.przypadki`` (``caught``), a regułę wybiera ast-grep z tej konfiguracji, jak
+    zapadka; z ``commit`` reguła o id reguły checkoutu wymienia też każdy jej przypadek. Kod 0 tylko
     z ``PRZYPADKI REGUŁ OK``."""
 
-    config = yaml.safe_load((ROOT / CONFIG).read_text(encoding="utf-8"))
-    files = sorted(path for folder in config["ruleDirs"] for path in (ROOT / folder).rglob("*.y*ml"))
-    rules = [document for path in files for document in yaml.safe_load_all(path.read_text(encoding="utf-8")) if document]
+    if commit is None:
+        return _founding(ROOT, {})
+    if problem := fetched(commit):
+        print(f"PRZYPADKI REGUŁ FAIL | {problem}")
+        return 1
+    with potomne.commit_copy(ROOT, commit) as copy:
+        return _founding(copy, {str(document["id"]): _cases_of(document) for document in _rule_documents(ROOT)})
+
+
+def _founding(root: Path, kept: dict[str, list[str]]) -> int:
+    """``founding`` na regułach ``root``; ``kept`` to przypadki, które reguła o danym id ma wymieniać."""
+
+    rules = _rule_documents(root)
     problems: list[str] = []
     total = 0
     try:
@@ -393,11 +425,14 @@ def founding() -> int:
         return 1
     for document in rules:
         name = str(document["id"])
-        if not (cases := (document.get("metadata") or {}).get(CASES)):
+        cases = _cases_of(document)
+        if dropped := [case for case in kept.get(name, []) if case not in cases]:
+            problems.append(f"{name}: PR usuwa z metadata.{CASES} przypadki z bazy {', '.join(dropped)}; przywróć je i popraw regułę tak, by je łapała")
+        if not cases:
             problems.append(f"{name}: bez pola metadata.{CASES}; dopisz przypadek, który reguła łapie: Ważne PR/W<n>/r<k> albo <pełny SHA> plik:linia")
             continue
-        chosen = ("--config", str(ROOT / CONFIG), "--filter", f"^{re.escape(name)}$")
-        for text in map(str, cases):
+        chosen = ("--config", str(root / CONFIG), "--filter", f"^{re.escape(name)}$")
+        for text in cases:
             total += 1
             try:
                 if not caught(chosen, case_probe(repository, text)):
@@ -424,14 +459,14 @@ def main(argv: list[str] | None = None) -> int:
     rule = parser.add_mutually_exclusive_group()
     rule.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
     rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
-    parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, np. HEAD PR.")
+    parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, a --przypadki-regul reguły z przypadkami, np. HEAD PR.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     rule.add_argument("--przypadki-regul", action="store_true", help="Każda reguła z reguly-ast-grep/ łapie przypadki ze swojego pola metadata.przypadki.")
     args = parser.parse_args(arguments[:split])
     if args.przypadki_regul:
-        if command or args.wazne or args.pr or args.ostatnie or args.commit or args.z_commita:
-            parser.error("--przypadki-regul bierze przypadki z reguł checkoutu, bez innych argumentów")
-        return founding()
+        if command or args.wazne or args.pr or args.ostatnie or args.commit:
+            parser.error("--przypadki-regul bierze przypadki z reguł checkoutu albo --z-commita REV, bez innych argumentów")
+        return founding(commit_of(args.z_commita) if args.z_commita else None)
     if args.regula is not None or args.regula_id is not None:
         if command or not args.wazne or (args.regula_id is None) != (args.z_commita is None):
             parser.error("dowód reguły: --regula PLIK.yml albo --regula-id ID z --z-commita REV i co najmniej jedno --wazne PR/W<n>/r<k>, bez polecenia po --")

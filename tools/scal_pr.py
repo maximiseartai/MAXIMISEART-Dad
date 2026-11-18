@@ -21,15 +21,17 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 5. każde Ważne werdyktu ``FAIL`` z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n> r<k>`` ma na HEAD PR regułę
    ast-grep o tym id, a jej dowód ``tools/na_scalonych_pr.py --regula`` przechodzi na każdym przypadku tego id z historii
    pól ``Idiom:`` (``bramka_idiomu``, niżej);
-6. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
+6. reguły ast-grep z bazy nie zgłaszają żadnej linii, którą PR dodaje, także gdy PR je usuwa albo osłabia, a reguła
+   HEAD łapie swoje przypadki i wymienia każdy przypadek reguły bazy o tym samym id (``reguly_bazy``, niżej);
+7. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
    scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
-7. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
+8. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).
 
 Mutacje zmienionych linii nie biegną na PR i nie czeka na nie: biegną nocą na ``main`` (ADR 0021,
 ``tools/mutacje_nocne.py``).
 
 Gdy któryś warunek nie zachodzi, narzędzie nie scala i kończy się linią ``SCAL ODMOWA | #N <sha> | <przyczyny>``.
-Warunki 1–4 sprawdza razem i podaje wszystkie przyczyny; warunki 5–7 trwają dłużej, więc biegną dopiero po nich, po
+Warunki 1–4 sprawdza razem i podaje wszystkie przyczyny; warunki 5–8 trwają dłużej, więc biegną dopiero po nich, po
 kolei.
 Przed merge'em sprawdza, że baza w ``origin`` nie przesunęła się w trakcie sprawdzania, a ``gh pr merge
 --match-head-commit`` odrzuca PR, którego HEAD zmienił się po sprawdzeniu. Po merge'u uruchamia
@@ -57,12 +59,13 @@ sam zmienia te reguły, sądzi więc wersja z bazy, a jego zmiana obowiązuje od
 w ``origin`` przesunęła się, zanim pobrała ją ponownie, nie uruchamia następnej kopii, tylko odmawia z poleceniem, by
 uruchomić ponownie. Tak samo biegnie ``--przeglad``, bo limit rund odmawia kolejnej rundy już w nim.
 
-Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–5 jako status commita ``Werdykt i bramka``
+Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–6 jako status commita ``Werdykt i bramka``
 (``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
-``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunek 5 liczy, jak merge, dopiero po
+``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunki 5 i 6 liczy, jak merge, dopiero po
 warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak reguły.
-Jego dowód potrzebuje ast-grep i PyYAML, które workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
-z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR. Warunków 6 i 7 nie liczy, bo uruchamiają kod PR (ruff,
+Oba potrzebują ast-grep, a dowód warunku 5 także PyYAML; workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
+je z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR, a warunek 6 czyta ast-grepem pliki PR jako dane,
+z konfiguracją bazy. Warunków 7 i 8 nie liczy, bo uruchamiają kod PR (ruff,
 mypy i pytest na scalonym drzewie), a status ustawia token z prawem zapisu statusów; scalenie z ruff i mypy pokazuje
 status ``scalenie z main``. PR zamknięty albo do innej gałęzi
 niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
@@ -96,6 +99,7 @@ import limit_rund
 import naprawia
 import ponowny_przeglad
 import potomne
+import reguly_bazy
 import rejestr_korzeni
 from repo import MAIN, REMOTE, ROOT
 import repo
@@ -189,6 +193,8 @@ def _check(pull: Pull, base: str) -> str:
         raise _Refused("; ".join(problems))
     if problems := bramka_idiomu.problems(pull):
         raise _Refused("; ".join(problems))
+    if problems := reguly_bazy.problems(ROOT, pull.head, base) + reguly_bazy.case_problems(ROOT, pull.head, base):
+        raise _Refused("; ".join(problems))
     where = f"{pull.base} {base[:7]}"
     print(f"== #{pull.number} {pull.head[:7]} na {where}", flush=True)
     with potomne.commit_copy(ROOT, base) as copy:
@@ -257,18 +263,18 @@ def _skipped_status(pull: Pull) -> str | None:
     return None
 
 
-def _publish_status(pull: Pull) -> int:
-    """Warunki 1–5 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main`: ``pending``, gdy
-    każda przyczyna odmowy to oczekiwanie (``stan_pr.Waiting``), a ``failure``, gdy choć jedna wymaga działania autora;
-    warunek 5 biegnie tylko wtedy, gdy warunki 1–4 nie dały już ``failure``."""
+def _publish_status(pull: Pull, base: str) -> int:
+    """Warunki 1–6 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main` z bazą ``base``:
+    ``pending``, gdy każda przyczyna odmowy to oczekiwanie (``stan_pr.Waiting``), a ``failure``, gdy choć jedna wymaga
+    działania autora; warunki 5 i 6 biegną tylko wtedy, gdy warunki 1–4 nie dały już ``failure``."""
 
     where = f"#{pull.number} {pull.head[:7]}"
     problems = _problems(pull)
     if all(isinstance(problem, stan_pr.Waiting) for problem in problems):
-        problems += bramka_idiomu.problems(pull)
+        problems += bramka_idiomu.problems(pull) + reguly_bazy.problems(ROOT, pull.head, base) + reguly_bazy.case_problems(ROOT, pull.head, base)
     reasons = "; ".join(problems)
     if not problems:
-        state, description = "success", "warunki 1–5 tools/scal_pr.py spełnione"
+        state, description = "success", "warunki 1–6 tools/scal_pr.py spełnione"
     elif all(isinstance(problem, stan_pr.Waiting) for problem in problems):
         state, description = "pending", f"oczekuje: {reasons}"
     else:
@@ -303,7 +309,7 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, reguly_bazy.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -312,7 +318,7 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
     mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
     mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
-    mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–5 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
+    mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–6 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
     from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
     given = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(given)
@@ -330,7 +336,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.werdykt:
             return _publish_verdict(pull, args.werdykt)
         if args.status:
-            return _publish_status(pull)
+            return _publish_status(pull, base)
         return _merge(pull, base, merge=not args.bez_merge)
     except subprocess.CalledProcessError as error:
         command = " ".join(str(part) for part in error.cmd)

@@ -389,3 +389,30 @@ def test_przypadki_regul_odmawiaja_reguly_ktora_nie_lapie_przypadku_albo_go_nie_
         "PRZYPADKI REGUŁ FAIL | bez-przypadku: bez pola metadata.przypadki; dopisz przypadek, który reguła łapie: Ważne PR/W<n>/r<k> albo <pełny SHA> plik:linia"
         f" | zakazane-wywolanie: nie łapie 5/W1/r1; {again} | zakazane-wywolanie: nie łapie {merge} kod/drugi.py:1; {again}"
     ), done.stdout
+
+
+@needs_ast_grep
+def test_przypadki_regul_z_commita_pr_odmawiaja_przypadku_z_bazy_ktory_pr_usuwa(tmp_path: Path) -> None:
+    """``--z-commita`` HEAD PR z regułami bazy w checkoucie (``tools/scal_pr.py``, warunek 6): PR, który usuwa
+    z ``metadata.przypadki`` przypadek z bazy, nie przechodzi, choć jego reguła łapie wszystkie swoje przypadki i ten
+    sam bieg na jego regułach (krok CI kodem PR) przechodzi."""
+
+    github, _ = _merged(tmp_path, CAUGHT, {"kod/drugi.py": CAUGHT}, {"sgconfig.yml": SGCONFIG})
+    merge = git(github.checkout, "rev-parse", "HEAD")
+    rule = github.checkout / "reguly-ast-grep" / "zakazane-wywolanie.yml"
+    rule.parent.mkdir(exist_ok=True)
+    rule.write_text(RULE + f"metadata:\n  przypadki:\n    - {merge} kod/drugi.py:1\n", encoding="utf-8")
+    git(github.checkout, "switch", "--quiet", "--create", "pr")
+    head = commit(github.checkout, "PR usuwa przypadek 5/W1/r1")
+    on_pr = github.run("--przypadki-regul")
+    git(github.checkout, "switch", "--quiet", "-")
+    rule.parent.mkdir(exist_ok=True)
+    rule.write_text(RULE + CASES.replace("{merge}", merge), encoding="utf-8")
+
+    done = github.run("--przypadki-regul", "--z-commita", head)
+
+    assert on_pr.returncode == 0, on_pr.stdout + on_pr.stderr
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == (
+        "PRZYPADKI REGUŁ FAIL | zakazane-wywolanie: PR usuwa z metadata.przypadki przypadki z bazy 5/W1/r1; przywróć je i popraw regułę tak, by je łapała"
+    ), done.stdout
