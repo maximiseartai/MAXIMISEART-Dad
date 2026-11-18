@@ -74,8 +74,8 @@ def ruff(pliki: Mapping[str, Path], sonda: Path) -> dict[str, list[str]]:
 
 
 def platformy_mypy_ci() -> list[str]:
-    """Platformy mypy Required CI (``kroki_lokalne.MYPY_PLATFORMS``, do której ``ci.yml`` przypina
-    ``tests/test_ci_lokalnie.py``): Required CI liczy mypy na nich, a nie na systemie, na którym biegnie test."""
+    """Platformy mypy Required CI (``kroki_lokalne.MYPY_PLATFORMS``, którą z ``ci.yml`` wiąże
+    ``srodowisko_ci.mismatch``): Required CI liczy mypy na nich, a nie na systemie, na którym biegnie test."""
 
     return list(MYPY_PLATFORMS)
 

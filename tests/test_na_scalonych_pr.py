@@ -15,7 +15,7 @@ from tests.fixtures import werdykty_szablonu
 from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
-from tests.fixtures.znane_luki import wymaga_ruff_i_mypy
+from tests.fixtures.srodowisko import PINS, project, wymaga_uv
 
 # Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
 MUTACJE_ZMIANY = ("tools/mutacje_zmiany.py", "tools/lib/pytest_pokrycie.py")
@@ -444,7 +444,7 @@ GUARD_TEST = "from kod.inne import wazne\n\n\nclass Obiekt:\n    def dozwolone(s
 def _guard_proof(
     tmp_path: Path, guard: str, failed_files: dict[str, str] | None = None, fixed_files: dict[str, str] | None = None, *, where: str = WHERE
 ) -> tuple[subprocess.CompletedProcess[str], str]:
-    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, "pyproject.toml": '[tool.mypy]\nfiles = ["kod"]\n'}
+    files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, **project(tools='[tool.mypy]\nfiles = ["kod"]\n')}
     files["kod/typy.py"] = "class Obiekt:\n    def dozwolone(self) -> None:\n        pass\n"
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
     fixed = fixed_files or {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
@@ -506,33 +506,40 @@ def test_wyjatek_prozy_czyta_docstring_regula_ast_grep_z_kopii_sha_werdyktu(tmp_
 
 
 @needs_ast_grep
+@wymaga_uv
 @pytest.mark.parametrize(
-    ("cases", "last"),
+    ("cases", "pins", "last"),
     [
-        ("metadata:\n  przypadki:\n    - 5/W1/r1\n", "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 1"),
+        ("metadata:\n  przypadki:\n    - 5/W1/r1\n", True, "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 1"),
         (
             "metadata:\n  przypadki:\n    - 1533/W1/r2\n",
+            True,
             "DOWÓD ODMOWA | ast-grep zakazane-wywolanie | 5/W1/r1 nie stoi w metadata.przypadki reguły zakazane-wywolanie na HEAD: dopisz je tam, to jedyna lista przypadków reguły",
         ),
+        ("metadata:\n  przypadki:\n    - 5/W1/r1\n", False, "DOWÓD ODMOWA | ast-grep zakazane-wywolanie | ast-grep dowodu (ast-grep "),
     ],
-    ids=["wazne-w-przypadkach-reguly", "wazne-spoza-przypadkow-reguly"],
+    ids=["wazne-w-przypadkach-reguly", "wazne-spoza-przypadkow-reguly", "ast-grep-spoza-srodowiska-ci"],
 )
-def test_straznik_regula_ast_grep_wymaga_waznego_w_przypadkach_reguly_i_jej_dowodu(tmp_path: Path, cases: str, last: str) -> None:
+def test_straznik_regula_ast_grep_wymaga_waznego_w_przypadkach_reguly_i_jej_dowodu(tmp_path: Path, cases: str, pins: bool, last: str) -> None:
     """Przypadki reguły mają jedną listę, pole ``metadata.przypadki`` (krok ``--przypadki-regul``), więc strażnik
-    ``ast-grep <id>`` przechodzi tylko z Ważnym na tej liście na HEAD i z dowodem reguły na nim."""
+    ``ast-grep <id>`` przechodzi tylko z Ważnym na tej liście na HEAD i z dowodem reguły na nim, a dowód biegnie tylko
+    ast-grepem w wersji z ``pyproject.toml`` drzewa, którą instaluje Required CI (tu drzewo bez ``ast-grep-cli``)."""
 
-    start = {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/zakazane-wywolanie.yml": RULE + cases}
+    tree = project() if pins else {**project(), "pyproject.toml": project()["pyproject.toml"].replace(next(pin for pin in PINS if pin.startswith("ast-grep-cli")), "ruff")}
+    start = {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/zakazane-wywolanie.yml": RULE + cases, **tree}
     done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start=start, chosen=("--straznik", "ast-grep zakazane-wywolanie", "--z-commita", "HEAD"))
 
     assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
-    assert done.stdout.splitlines()[-1] == last, done.stdout
+    assert done.stdout.splitlines()[-1].startswith(last), done.stdout
+    if not pins:
+        assert done.stdout.splitlines()[-1].endswith("(brak ast-grep): gdy PR zmienia pin ast-grep-cli, zmień go osobnym PR przed tym, a gdy nie, odśwież .venv (python3 tools/setup_worktree.py)"), done.stdout
 
 
 TYPED = "from kod.typy import Obiekt\n\n\ndef wazne(obiekt: Obiekt) -> None:\n    nazwa = '{0}'\n    obiekt.{0}()\n"
 
 
 @needs_ast_grep
-@wymaga_ruff_i_mypy
+@wymaga_uv
 def test_straznik_mypy_liczy_znalezisko_w_funkcji_wokol_gdzie_z_zakresu_ast_grep(tmp_path: Path) -> None:
     """``Gdzie`` wskazuje linię, którą poprawka zmieniła (``kod/inne.py:5``), a mypy zgłasza wywołanie w linii obok:
     znalezisko liczy się, bo zakres to najmniejsza funkcja wokół ``Gdzie`` z ``places``, jak w dowodzie reguły."""

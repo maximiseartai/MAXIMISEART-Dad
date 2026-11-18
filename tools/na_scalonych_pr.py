@@ -112,6 +112,7 @@ import potomne
 import rejestr_korzeni
 from repo import REMOTE, ROOT
 import repo
+import srodowisko_ci
 import straznik
 import szablon_werdyktu
 import werdykt_pr
@@ -321,12 +322,18 @@ def caught(rule: Rule, probe: Probe) -> bool:
     return bool(inside)
 
 
-def _fork(base: str, commit: str) -> str:
-    """``merge-base`` z ``base`` sprzed merge'a, który wniósł ``commit`` (``<merge>^1``), albo z ``base``, gdy go nie wniósł."""
+def _target(base: str, commit: str) -> str:
+    """SHA bazy, do której ``commit`` się scala: ``base`` sprzed merge'a, który go wniósł (``<merge>^1``), albo ``base``."""
 
     after = set(repo.git(ROOT, "rev-list", "--ancestry-path", f"{commit}..{base}").split())
     merges = [one for one in repo.git(ROOT, "rev-list", "--first-parent", f"{commit}..{base}").split() if one in after]
-    return repo.merge_base(ROOT, f"{merges[-1]}^1" if merges else base, commit)
+    return repo.git(ROOT, "rev-parse", "--verify", f"{merges[-1]}^1" if merges else f"{base}^{{commit}}").strip()
+
+
+def _fork(base: str, commit: str) -> str:
+    """``merge-base`` ``commit`` z bazą, do której się scala (``_target``)."""
+
+    return repo.merge_base(ROOT, _target(base, commit), commit)
 
 
 def proof_on(commit: str, rule: str, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
@@ -398,15 +405,20 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int
     except ValueError as error:
         print(f"DOWÓD ODMOWA | {text} | {error}")
         return 1
-    if guard.kind is straznik.Kind.AST_GREP:
-        return _rule_guard(head, guard, majors)
     try:
         if problem := fetched(head):
             raise ValueError(problem)
+        # Baza ``main`` sprzed merge'a PR, więc dowód na scalonym już PR liczy drzewo jak przed merge'em.
+        target = _target(repo.BASE, head)
+        if guard.kind is straznik.Kind.AST_GREP:
+            return _rule_guard(head, target, guard, majors)
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
         cases = [_case(guard, major_probe(repository, *one)) for one in majors]
-        # Rozwidlenie HEAD od ``main`` sprzed merge'a PR, więc dowód na scalonym już PR widzi jego zmiany jak przed merge'em.
-        found = straznik.prove(ROOT, guard, head, _fork(repo.BASE, head), cases)
+        if guard.kind in straznik.EXEMPT:
+            found = straznik.exempt(ROOT, guard, head, repo.merge_base(ROOT, target, head), cases)
+        else:
+            with srodowisko_ci.built(ROOT, head, target) as environment:
+                found = straznik.prove(ROOT, guard, environment, cases)
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {guard} | {error}")
         return 1
@@ -418,20 +430,36 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int
     return 0 if ok else 1
 
 
-def _rule_guard(head: str, guard: straznik.Guard, majors: list[tuple[int, str, int]]) -> int:
-    """Strażnik ``ast-grep <id>``: każde Ważne stoi w ``metadata.przypadki`` reguły na HEAD (jedna lista przypadków,
-    którą sprawdza też ``--przypadki-regul``), a dowód reguły na nich przechodzi."""
+def _rule_guard(head: str, target: str, guard: straznik.Guard, majors: list[tuple[int, str, int]]) -> int:
+    """Strażnik ``ast-grep <id>`` na HEAD ``head`` scalonym z ``target`` w środowisku Required CI (``srodowisko_ci``):
+    ast-grep dowodu ma wersję ast-grepa tego środowiska, każde Ważne stoi w ``metadata.przypadki`` reguły (jedna lista
+    przypadków, którą sprawdza też ``--przypadki-regul``), a dowód reguły na nich przechodzi."""
 
     rule = guard.arguments[0]
-    if problem := fetched(head):
-        print(f"DOWÓD ODMOWA | {guard} | {problem}")
+    if AST_GREP is None:
+        print(f"DOWÓD ODMOWA | {guard} | {odpalenia_ast_grep.INSTALL}")
         return 1
-    with potomne.commit_copy(ROOT, head) as copy:
-        listed = {case for document in _rule_documents(copy) if str(document["id"]) == rule for case in _cases_of(document)}
-    if missing := [f"{number}/{label}/r{round_}" for number, label, round_ in majors if f"{number}/{label}/r{round_}" not in listed]:
-        print(f"DOWÓD ODMOWA | {guard} | {', '.join(missing)} nie stoi w metadata.{CASES} reguły {rule} na HEAD: dopisz je tam, to jedyna lista przypadków reguły")
-        return 1
-    return proof_on(head, rule, majors, [], RULE_PRS)
+    with srodowisko_ci.built(ROOT, head, target) as environment:
+        if (mine := _version(AST_GREP)) != (theirs := _version(str(environment.ast_grep))):
+            print(
+                f"DOWÓD ODMOWA | {guard} | ast-grep dowodu ({mine}) to nie ast-grep Required CI z pyproject.toml PR scalonego z bazą ({theirs}): "
+                "gdy PR zmienia pin ast-grep-cli, zmień go osobnym PR przed tym, a gdy nie, odśwież .venv (python3 tools/setup_worktree.py)"
+            )
+            return 1
+        listed = {case for document in _rule_documents(environment.copy) if str(document["id"]) == rule for case in _cases_of(document)}
+        if missing := [f"{number}/{label}/r{round_}" for number, label, round_ in majors if f"{number}/{label}/r{round_}" not in listed]:
+            print(f"DOWÓD ODMOWA | {guard} | {', '.join(missing)} nie stoi w metadata.{CASES} reguły {rule} na HEAD: dopisz je tam, to jedyna lista przypadków reguły")
+            return 1
+        return proof_on(environment.tree, rule, majors, [], RULE_PRS)
+
+
+def _version(ast_grep: str) -> str:
+    """Wersja z ``ast-grep --version`` albo powód, czemu jej nie ma."""
+
+    if not Path(ast_grep).is_file():
+        return "brak ast-grep"
+    done = potomne.run([ast_grep, "--version"], cwd=ROOT)
+    return done.stdout.strip() if done.returncode == 0 else f"bez wersji, kod {done.returncode}"
 
 
 def _case(guard: straznik.Guard, probe: Probe) -> straznik.Case:

@@ -12,7 +12,8 @@ name: Werdykt i bramka
 # workflow from the PR's merge ref: a verdict is a comment (tools/scal_pr.py --werdykt), and a verdict posted as a
 # review shows at the next event.
 #
-# The guard proof of condition 5 runs the PR's code (mypy plugins from its config), so it runs in the job dowod, which has no write
+# The guard proof of condition 5 runs the PR's code (the build backend and packages of its pyproject.toml, mypy plugins
+# from its config), so it runs in the job dowod, which has no write
 # permission and no secret. Only the jobs status and scalenia may write statuses, and neither runs the PR's code:
 # status judges conditions 1-4 and 6 itself and takes from dowod only the reasons of condition 5 for the same HEAD SHA,
 # so the PR's code can change at most its own condition 5 in the status, and tools/scal_pr.py proves it again at the
@@ -89,8 +90,9 @@ jobs:
         with:
           enable-cache: false
 
-      # The proof runs mypy, ruff and ast-grep on a copy of the PR's HEAD. Their pins come from main's
-      # pyproject.toml (the dev extra, as in CI), and -r installs only the dependencies, so no build of the project runs.
+      # tools/na_scalonych_pr.py of main needs main's dev extra (PyYAML, ast-grep for the function around Gdzie), and -r
+      # installs only the dependencies. The proof builds the environment of Required CI itself, with uv, from the PR's
+      # HEAD merged with main (tools/lib/srodowisko_ci.py), so mypy, ruff and ast-grep run with the PR's dependencies.
       - name: Install the dependencies of the guard proof
         env:
           PYTHON: ${{ steps.python.outputs.python-path }}

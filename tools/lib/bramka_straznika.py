@@ -2,7 +2,7 @@
 ``FAIL`` tego PR ma w swoim bloku sekcji ``## Korzeń`` linię ``Strażnik: <selektor>`` (``straznik.parse``), a dowód
 strażnika przechodzi: ``tools/na_scalonych_pr.py --straznik <selektor> --z-commita <HEAD PR> --wazne <PR>/W<n>/r<k>``
 z kodu bazy PR, tym samym Pythonem, jedno wywołanie na selektor ze wszystkimi jego Ważnymi. Przechodzi tylko kod 0
-z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``.
+z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim środowisku, ``srodowisko_ci``.
 
 Warunek obowiązuje od własnego wdrożenia (``MARKER``: ADR 0042, jak szablon werdyktu od ADR 0031;
 ``werdykt_pr.rule_applies``, decyzja Q20 ADR 0031), więc wątek z werdyktem sprzed niego kończy po staremu, z polem
@@ -12,8 +12,9 @@ i selektor spoza listy zgłasza bramka korzenia (warunek 4), więc tu taki blok 
 Błąd renderera GitHuba to ``stan_pr.Waiting``, bo mija przy następnym runie. Dowody PR mają razem
 ``PROOF_TIMEOUT_S``: job ``dowod`` statusu „Werdykt i bramka” ma 20 min (``.github/workflows/werdykt-i-bramka.yml``),
 więc przekroczony czas jest przyczyną w statusie, zanim Actions zabije job. Moduł bierze tylko bibliotekę
-standardową, bo job ``status`` uruchamia ``tools/scal_pr.py`` Pythonem runnera bez zależności; dowód wykonuje kod PR
-(wtyczki mypy z jego konfiguracji) i potrzebuje dodatku dev, więc biegnie tylko w jobie ``dowod`` bez prawa zapisu
+standardową, bo job ``status`` uruchamia ``tools/scal_pr.py`` Pythonem runnera bez zależności; dowód potrzebuje
+dodatku dev bazy i uv, buduje środowisko Required CI z drzewa PR i wykonuje kod PR (backend budowy i pakiety
+z ``pyproject.toml`` PR, wtyczki mypy z jego konfiguracji), więc biegnie tylko w jobie ``dowod`` bez prawa zapisu
 i przy merge'u.
 """
 

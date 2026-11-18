@@ -1,10 +1,10 @@
 """Kroki sprawdzeń, które biegną lokalnie tak jak w CI (ruff, mypy obu systemów, pytest), i środowisko kodu drzewa.
 
 Kroki ruff i mypy (``static_steps``) to brama pre-push i polecenia zadania CI „Ruff, mypy” na każdej maszynie: mypy
-biegnie raz dla każdej platformy z ``MYPY_PLATFORMS``, jedynej listy platform mypy, a ``tests/test_ci_lokalnie.py``
-pilnuje, że ``ci.yml`` ma krok ``python -m mypy --platform <p>`` dla każdej z nich i dla żadnej innej, a każdy krok
-zaczyna się poleceniem CI. Biegną nimi ``tools/ci_lokalnie.py``, ``tools/szybko.py``, brama typów mutacji
-(``tools/lib/silnik_mutacji.py``) i dowód strażnika ``mypy`` i ``ruff`` (``tools/lib/straznik.py``), więc zmiana listy
+biegnie raz dla każdej platformy z ``MYPY_PLATFORMS``, jedynej listy platform mypy, a ``srodowisko_ci.mismatch``
+(na ``main`` w ``tests/test_srodowisko_ci.py``, w dowodzie strażnika na drzewie PR) pilnuje, że każdy krok zaczyna się
+poleceniem ruff albo mypy zadania „Ruff, mypy” z ``ci.yml``, a każde takie polecenie ma krok. Biegną nimi
+``tools/ci_lokalnie.py``, ``tools/szybko.py``, brama typów mutacji (``tools/lib/silnik_mutacji.py``) i dowód strażnika ``mypy`` i ``ruff`` (``tools/lib/straznik.py``), więc zmiana listy
 zmienia je wszystkie naraz. Diagnostyki kroku w JSON (opcje ``JSON_OUTPUT``) czyta ``diagnostics``. Kroki zizmor, actionlint i shellcheck akcji złożonych (``workflow_steps``) sprawdzają
 ``.github/`` w tym samym zadaniu CI, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest
 (``pytest_step``) to ten sam pytest, który ``tools/ci_lokalnie.py`` uruchamia w całości, a ``tools/szybko.py``
@@ -43,10 +43,10 @@ class Step:
     cwd: Path
 
 
-def static_steps(root: Path) -> list[Step]:
-    """Kroki ruff i mypy każdej platformy ``MYPY_PLATFORMS`` w ``root``, w kolejności bramy pre-push."""
+def static_steps(root: Path, python: str = sys.executable) -> list[Step]:
+    """Kroki ruff i mypy każdej platformy ``MYPY_PLATFORMS`` w ``root``, w kolejności bramy pre-push, Pythonem ``python``
+    (dowód strażnika: Pythonem środowiska Required CI z ``srodowisko_ci.built``)."""
 
-    python = sys.executable
     # Własny cache każdej platformy, bo zmiana --platform unieważnia wspólny i kroki sprawdzałyby za każdym razem całość.
     mypy = (
         Step(name, "mypy", (python, "-m", "mypy", "--platform", platform, "--cache-dir", f".mypy_cache/{platform}"), root)

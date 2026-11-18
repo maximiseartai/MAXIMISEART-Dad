@@ -10,9 +10,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import sys
 
 import pytest
 
+import potomne
+import srodowisko_ci
 import straznik
 from straznik import Guard, Kind
 from kroki_lokalne import MYPY_PLATFORMS
@@ -55,10 +58,18 @@ class Pull:
     head: str
 
     def prove(self, guard: str, places: Places = WHERE, *, scopes: Places = (), prose: Places = ()) -> straznik.Outcome:
-        """Dowód jednego Ważnego; ``scopes`` i ``prose`` to linie z FAIL, które podaje ``tools/na_scalonych_pr.py``."""
+        """Dowód jednego Ważnego; ``scopes`` i ``prose`` to linie z FAIL, które podaje ``tools/na_scalonych_pr.py``.
+        Mypy i ruff biegną tu Pythonem testów na kopii HEAD, bo te testy sprawdzają przywrócenie błędu; środowisko
+        Required CI z ``srodowisko_ci.built``, którym biegnie dowód, sprawdza ``tests/test_srodowisko_ci.py``."""
 
         case = straznik.Case("#5 W1 r1", self.failed, self.fork, places, scopes, prose)
-        [outcome] = straznik.prove(self.root, straznik.parse(guard), self.head, self.fork, [case])
+        chosen = straznik.parse(guard)
+        if chosen.kind in straznik.EXEMPT:
+            [outcome] = straznik.exempt(self.root, chosen, self.head, self.fork, [case])
+            return outcome
+        with potomne.commit_copy(self.root, self.head) as copy:
+            environment = srodowisko_ci.Environment(self.head, copy, Path(sys.executable), srodowisko_ci.variables())
+            [outcome] = straznik.prove(self.root, chosen, environment, [case])
         return outcome
 
 

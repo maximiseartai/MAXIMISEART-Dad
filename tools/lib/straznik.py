@@ -2,15 +2,16 @@
 listy, który autor wpisuje w bloku Ważnego sekcji ``## Korzeń`` linią ``Strażnik: <selektor>``, i jego dowód.
 
 Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` i miejsca jego pola ``Gdzie``, które pisze
-recenzent, a autor podaje tylko selektor. Strażnik biegnie poleceniami Required CI na każdej maszynie
-(``kroki_lokalne.static_steps``: ruff oraz mypy dla każdej platformy ``MYPY_PLATFORMS``) w ich środowisku, a wynik to
-znaleziska w JSON (``kroki_lokalne.JSON_OUTPUT`` i ``diagnostics``, format z wiersza poleceń dowodu), więc ani system
-maszyny, ani konfiguracja PR wyniku nie przestawi.
+recenzent, a autor podaje tylko selektor. Strażnik ``mypy`` i ``ruff`` (``prove``) biegnie poleceniami Required CI
+(``kroki_lokalne.static_steps``: ruff oraz mypy dla każdej platformy ``MYPY_PLATFORMS``) w środowisku Required CI
+z ``srodowisko_ci.built`` (HEAD PR scalony z bazą, Python i zależności tego drzewa, zmienne bez tych, które sterują
+narzędziami), a wynik to znaleziska w JSON (``kroki_lokalne.JSON_OUTPUT`` i ``diagnostics``, format z wiersza poleceń
+dowodu), więc ani maszyna, ani środowisko wołającego, ani konfiguracja wyjścia z PR wyniku nie przestawi.
 
-| Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
+| Selektor | Przywrócenie błędu na kopii HEAD PR scalonego z bazą | Dowód przechodzi, gdy |
 |---|---|---|
-| ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk w żadnym kroku narzędzia, po przywróceniu znalezisko któregoś kroku w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
-| ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | Ważne stoi w polu ``metadata.przypadki`` reguły na HEAD (jedyna lista jej przypadków), a reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
+| ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na drzewie bez znalezisk w żadnym kroku narzędzia, po przywróceniu znalezisko któregoś kroku w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi w drzewie bez zmian, czyli poprawka leży obok) |
+| ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` na drzewie ``srodowisko_ci.built`` | Ważne stoi w polu ``metadata.przypadki`` reguły w drzewie (jedyna lista jej przypadków), ast-grep środowiska ma wersję ast-grepa dowodu, a reguła łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
 | ``brak - proza`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - napęd`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie w ``frontend/``; strażnik to krok napędu skilla ``verify-*``, który Required CI uruchamia w Mutation checks, a recenzent następnej rundy uruchamia go na drzewie FAIL |
 | ``brak - test`` | bez | zawsze: strażnik to test (Ważne w kodzie albo próbka testu), a czy pada na błędzie z ``Gdzie``, sprawdza recenzent następnej rundy (skill ``przeglad``), jak przed ADR 0042 |
@@ -21,9 +22,10 @@ kodzie z ``Gdzie``, a nie z braku czegoś, co poprawka dodała obok (ADR 0042, �
 ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): ``brak - test`` i ``brak - usunięte`` przechodzą przy każdym
 Ważnym, także gdy mechanizm z dowodem by je zamknął, test błędu nie łapie albo kod z ``Gdzie`` stoi na HEAD; to ocenia
 recenzent. Gałęzi tylko dla macOS nie sprawdza żaden krok Required CI, więc jej błędu ``mypy`` nie dowodzi na żadnej
-maszynie. Plik, który po FAIL zmienił też ``main``, wraca przy mypy i ruff z treścią sprzed tej zmiany. Mypy wykonuje
-wtyczki z konfiguracji PR, więc status „Werdykt i bramka” liczy dowód w jobie bez prawa zapisu
-(``.github/workflows/werdykt-i-bramka.yml``).
+maszynie. Plik, który po FAIL zmienił też ``main``, wraca przy mypy i ruff z treścią sprzed tej zmiany. Budowa
+środowiska i mypy wykonują kod PR (backend budowy, pakiety i wtyczki z jego konfiguracji), więc status „Werdykt
+i bramka” liczy dowód w jobie bez prawa zapisu (``.github/workflows/werdykt-i-bramka.yml``). Moduł nie importuje
+``srodowisko_ci`` w trakcie działania (PyYAML), bo ``tools/scal_pr.py`` bierze z niego tylko selektory.
 """
 
 from __future__ import annotations
@@ -33,16 +35,18 @@ from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import re
+from typing import TYPE_CHECKING
 
-from kroki_lokalne import JSON_OUTPUT, diagnostics, environment, static_steps
+from kroki_lokalne import JSON_OUTPUT, diagnostics, static_steps
 import potomne
 import repo
+
+if TYPE_CHECKING:
+    from srodowisko_ci import Environment
 
 FIELD = "Strażnik:"
 
 _RULE_ID = re.compile(r"[\w.-]+")
-# Zmienne, których kod PR (wtyczki mypy) w dowodzie nie dostaje: token GitHuba joba statusu i środowisko wołającego Pythona.
-_HIDDEN = ("GH_TOKEN", "GITHUB_TOKEN", "VIRTUAL_ENV")
 
 
 class Kind(Enum):
@@ -117,18 +121,23 @@ class Outcome:
     line: str
 
 
-def prove(root: Path, guard: Guard, head: str, base: str, cases: Sequence[Case]) -> list[Outcome]:
-    """Dowód strażnika ``guard`` (bez ``ast-grep``) na kopii ``head`` dla każdego Ważnego ``cases``; ``base`` to
-    merge-base HEAD z bazą PR. Wynik ma jedną linię na Ważne."""
+def prove(root: Path, guard: Guard, environment: Environment, cases: Sequence[Case]) -> list[Outcome]:
+    """Dowód strażnika ``mypy`` albo ``ruff`` w środowisku Required CI ``environment`` (``srodowisko_ci.built``) dla
+    każdego Ważnego ``cases``. Wynik ma jedną linię na Ważne."""
 
-    if guard.kind in EXEMPT:
-        return [_exempt(root, guard.kind, head, base, case) for case in cases]
-    with potomne.commit_copy(root, head) as copy:
-        before = _run(guard, copy)
-        if before.findings or before.code != 0:
-            shown = _shown(before.findings) or f"kod {before.code}: {before.last}"
-            return [Outcome(False, f"{case.label} | {case.failed[:8]} | PODSTAWA CZERWONA | na HEAD bez przywrócenia: {shown}") for case in cases]
-        return [_restored(root, guard, copy, head, case) for case in cases]
+    before = _run(guard, environment)
+    if before.findings or before.code != 0:
+        shown = _shown(before.findings) or f"kod {before.code}: {before.last}"
+        red = f"PODSTAWA CZERWONA | na HEAD scalonym z bazą bez przywrócenia: {shown} (tak samo pada Required CI PR: popraw HEAD albo zaktualizuj PR z bazy)"
+        return [Outcome(False, f"{case.label} | {case.failed[:8]} | {red}") for case in cases]
+    return [_restored(root, guard, environment, case) for case in cases]
+
+
+def exempt(root: Path, guard: Guard, head: str, base: str, cases: Sequence[Case]) -> list[Outcome]:
+    """Warunek wyjątku ``guard`` (``EXEMPT``) na HEAD PR ``head`` dla każdego Ważnego ``cases``; ``base`` to merge-base
+    HEAD z bazą PR. Wynik ma jedną linię na Ważne."""
+
+    return [_exempt(root, guard.kind, head, base, case) for case in cases]
 
 
 @dataclass(frozen=True)
@@ -138,15 +147,15 @@ class _Ran:
     findings: tuple[tuple[str, int, str], ...] = ()
 
 
-def _run(guard: Guard, copy: Path) -> _Ran:
-    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: każda platforma) na kopii ``copy``; znaleziska
-    wszystkich kroków razem, a kod pierwszego kroku, który nie dał wyniku."""
+def _run(guard: Guard, environment: Environment) -> _Ran:
+    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: każda platforma) Pythonem i ze zmiennymi
+    ``environment`` na jego kopii; znaleziska wszystkich kroków razem, a kod pierwszego kroku, który nie dał wyniku."""
 
-    env = {name: value for name, value in environment(copy).items() if name not in _HIDDEN}
+    copy = environment.copy
     code, last = 0, ""
     found: list[tuple[str, int, str]] = []
-    for step in (step for step in static_steps(copy) if step.job == guard.kind.value):
-        done = potomne.run([*step.command, _NO_CACHE[guard.kind], *JSON_OUTPUT[step.job]], cwd=copy, env=env)
+    for step in (step for step in static_steps(copy, str(environment.python)) if step.job == guard.kind.value):
+        done = potomne.run([*step.command, _NO_CACHE[guard.kind], *JSON_OUTPUT[step.job]], cwd=copy, env=environment.variables)
         # Kod reguły w nawiasie przy mypy, jak w jego wyjściu, a przed komunikatem przy ruff.
         read = [(one.path, one.line, f"[{one.code}] {one.message}" if guard.kind is Kind.MYPY else f"{one.code} {one.message}") for one in diagnostics(step.job, done.stdout, copy)]
         found.extend(read)
@@ -170,33 +179,35 @@ def _pr_files(root: Path, head: str, base: str, case: Case) -> list[str]:
     return sorted(repo.changed(root, case.fork, case.failed) | repo.changed(root, base, head))
 
 
-def _restored(root: Path, guard: Guard, copy: Path, head: str, case: Case) -> Outcome:
+def _restored(root: Path, guard: Guard, environment: Environment, case: Case) -> Outcome:
     paths = list(dict.fromkeys(path for path, _, _ in case.places))
     groups = [paths, *([[path] for path in paths] if len(paths) > 1 else [])]
     tried = []
     for group in groups:
-        changed = [path for path in group if _text(root, case.failed, path) != _text(root, head, path)]
+        changed = [path for path in group if _text(root, case.failed, path) != _text(root, environment.tree, path)]
         if not changed:
             continue
-        ran = _with(root, guard, copy, {path: repo.blob(root, case.failed, path) for path in changed})
+        ran = _with(guard, environment, {path: repo.blob(root, case.failed, path) for path in changed})
         where = _listed(changed)
-        inside = [finding for finding in ran.findings if finding[0] in changed and finding[1] in _scope(root, head, case, finding[0])]
+        inside = [finding for finding in ran.findings if finding[0] in changed and finding[1] in _scope(root, environment.tree, case, finding[0])]
         if inside:
             return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {_shown(inside)}")
         tried.append(f"{where}: {'znaleziska poza funkcją z Gdzie: ' + _shown(ran.findings) if ran.findings else f'bez znaleziska (kod {ran.code})'}")
     if not tried:
-        return Outcome(False, f"{case.label} | {case.failed[:8]} | NIC DO PRZYWRÓCENIA | pliki z Gdzie mają na HEAD treść z FAIL")
+        return Outcome(False, f"{case.label} | {case.failed[:8]} | NIC DO PRZYWRÓCENIA | pliki z Gdzie mają na HEAD scalonym z bazą treść z FAIL")
     return Outcome(False, f"{case.label} | {case.failed[:8]} | NIEWYKRYTA | {' / '.join(tried)}")
 
 
-def _with(root: Path, guard: Guard, copy: Path, contents: dict[str, bytes | None]) -> _Ran:
-    """Bieg strażnika na kopii z plikami ``contents`` (``None``: plik usunięty), po którym kopia wraca do HEAD."""
+def _with(guard: Guard, environment: Environment, contents: dict[str, bytes | None]) -> _Ran:
+    """Bieg strażnika na kopii środowiska z plikami ``contents`` (``None``: plik usunięty), po którym kopia wraca do
+    drzewa środowiska."""
 
+    copy = environment.copy
     kept = {path: (copy / path).read_bytes() if (copy / path).exists() else None for path in contents}
     try:
         for path, content in contents.items():
             _write(copy / path, content)
-        return _run(guard, copy)
+        return _run(guard, environment)
     finally:
         for path, content in kept.items():
             _write(copy / path, content)
@@ -214,12 +225,12 @@ def _write(path: Path, content: bytes | None) -> None:
     path.write_bytes(content)
 
 
-def _scope(root: Path, head: str, case: Case, path: str) -> set[int]:
+def _scope(root: Path, tree: str, case: Case, path: str) -> set[int]:
     """Linie pliku ``path`` z FAIL, w których znalezisko liczy się do dowodu: zakresy ``case.scopes`` w tym pliku, a cały
-    plik, gdy kod któregoś z nich z FAIL stoi bez zmian na HEAD; bez zakresu w pliku żadna."""
+    plik, gdy kod któregoś z nich z FAIL stoi bez zmian w drzewie ``tree``; bez zakresu w pliku żadna."""
 
     lines = (_text(root, case.failed, path) or "").splitlines()
-    now = _text(root, head, path) or ""
+    now = _text(root, tree, path) or ""
     found: set[int] = set()
     for place, low, high in case.scopes:
         if place != path:

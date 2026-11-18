@@ -198,6 +198,14 @@ def merge_tree(root: Path, first: str, second: str) -> Merged:
     return Merged(tree, tuple(dict.fromkeys(path for path in conflicts if path)))
 
 
+def merge_commit(root: Path, base: str, head: str, merged: Merged) -> str:
+    """Commit scalenia HEAD PR ``head`` z bazą ``base`` o drzewie ``merged`` (``merge_tree`` bez konfliktu), z rodzicami
+    ``base`` i ``head`` jak ``refs/pull/N/merge`` GitHuba: drzewo, które sprawdza Required CI PR i które wejdzie do bazy."""
+
+    author = ("-c", "user.name=scal_pr", "-c", "user.email=scal_pr@localhost")
+    return git(root, *author, "commit-tree", merged.tree, "-p", base, "-p", head, "-m", "scalenie PR z bazą").strip()
+
+
 def working_tree_commit(root: Path, message: str) -> str:
     """Commit z rodzicem HEAD, którego drzewo to drzewo robocze checkoutu ``root``: zmiany niezacommitowane, usunięcia
     i nieśledzone pliki, bez ignorowanych. Drzewo powstaje w tymczasowym indeksie, więc indeks checkoutu zostaje, jaki

@@ -92,8 +92,7 @@ def case_problems(root: Path, head: str, base: str) -> list[str]:
     merged = repo.merge_tree(root, base, head)
     if merged.conflicts:
         return [f"przypadki reguł: HEAD PR scala się z bazą {base[:7]} z konfliktem ({', '.join(merged.conflicts)}), więc nie wiadomo, które reguły wejdą"]
-    author = ("-c", "user.name=scal_pr", "-c", "user.email=scal_pr@localhost")
-    commit = repo.git(root, *author, "commit-tree", merged.tree, "-p", base, "-p", head, "-m", "scalenie PR z bazą").strip()
+    commit = repo.merge_commit(root, base, head, merged)
     late = f"przypadki reguł: bez wyniku w {CASES_TIMEOUT_S} s, uruchom ponownie"
     try:
         done = potomne.run([sys.executable, str(root / CASES_TOOL), "--przypadki-regul", "--z-commita", commit], cwd=root, timeout=CASES_TIMEOUT_S, echo=True)

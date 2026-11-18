@@ -23,7 +23,7 @@ from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 
 import ci_lokalnie
-from kroki_lokalne import Step, static_steps
+from kroki_lokalne import Step
 
 ROOT = Path(__file__).resolve().parents[1]
 TOOL = ROOT / "tools" / "ci_lokalnie.py"
@@ -79,19 +79,6 @@ def test_kazde_polecenie_odtwarzanych_zadan_ma_krok_i_odwrotnie() -> None:
 
     assert without_step == []
     assert without_command == []
-
-
-def test_kroki_ruff_i_mypy_to_polecenia_zadania_ci_ruff_mypy_na_kazdej_maszynie() -> None:
-    """Każdy krok ``kroki_lokalne.static_steps`` zaczyna się poleceniem zadania CI „Ruff, mypy”, także platformą mypy,
-    więc brama pre-push, ``tools/szybko.py``, brama typów i dowód strażnika liczą na Macu to samo co Required CI na ubuntu
-    (#2116 r5 W1: mypy systemu maszyny pomijał na Macu gałąź tylko dla Linuksa); lokalnie wolno tylko dopisać opcje."""
-
-    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
-    ci = _commands(jobs["ruff-mypy"])
-
-    local = [" ".join(("python", *step.command[1:])) for step in static_steps(ROOT)]
-
-    assert [command for command in local if not any(command == one or command.startswith(f"{one} ") for one in ci)] == []
 
 
 @pytest.mark.parametrize("fail_fast", [False, True])
