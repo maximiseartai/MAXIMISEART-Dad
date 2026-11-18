@@ -977,6 +977,8 @@ def _empty_tree_problems(root: Path) -> list[str]:
 
     collected = pytest("--collect-only", "-n", "0")
     summary = collected.stdout.splitlines()[-1] if collected.stdout else ""
+    if collected.returncode:
+        return [f"kolekcja tests/test_zapadki.py: kod {collected.returncode}:\n{collected.stdout[-3000:]}"]
     if not re.search(r"\(1 deselected\)", summary):
         return [
             f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden, więc inny test zapadek zniknąłby z dowodu:"
@@ -1074,3 +1076,14 @@ def test_bieg_pustego_drzewa_zglasza_test_zapadek_pominiety_razem_z_zapadka_ast_
 
     assert problem.startswith(f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden"), problem
     assert "1/3 tests collected (2 deselected)" in problem, problem
+
+
+def test_bieg_pustego_drzewa_mowi_o_bledzie_kolekcji_pliku_zapadek(tmp_path: Path) -> None:
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_zapadki.py").write_text("import nie_ma_takiego_modulu\n", encoding="utf-8")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+
+    [problem] = _empty_tree_problems(tmp_path)
+
+    assert problem.startswith("kolekcja tests/test_zapadki.py: kod 2:"), problem
+    assert "nie_ma_takiego_modulu" in problem, problem
