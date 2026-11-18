@@ -21,8 +21,9 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 import importlib.util
+import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePath
 import re
 import shutil
 import subprocess
@@ -761,7 +762,7 @@ def syntax_rules(root: Path, base: str, config: Path = AST_GREP_CONFIG, ast_grep
     Bez pliku reguły zapadka nie woła ``ast-grep``, więc checkout bez dodatku dev przechodzi; z regułą i dodaną linią
     brak ``ast-grep`` jest porażką z poleceniem instalacji. O tym, w których plikach z dodaną linią reguła szuka,
     decydują jej pola ``files:`` i ``ignores:`` (``ast_grep_rules_without_scope``). Zgłasza każda reguła katalogu,
-    także z ``severity: off`` w pliku, i wbudowane reguły o dyrektywie ``ast-grep-ignore``: regułę wyłącza tylko
+    także z ``severity: off`` w pliku, i wbudowane reguły o dyrektywie tłumienia: regułę wyłącza tylko
     usunięcie jej pliku. Postacie, których nie łapie ani reguła, ani ruff, są próbkami ``ZNANE_LUKI`` tego pliku.
     """
 
@@ -830,6 +831,147 @@ def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:
 
     ids = {str(rule["id"]) for rule in _ast_grep_rule_documents(AST_GREP_CONFIG)}
     assert set(REGULY_CALEGO_DRZEWA) - ids == set(), f"popraw REGULY_CALEGO_DRZEWA na id reguł z {AST_GREP_RULES}/"
+
+
+# Rozszerzenia plików, które ast-grep 0.51 czyta jako Python (jedyny język reguł z ``AST_GREP_RULES``, bez
+# ``languageGlobs`` w ``sgconfig.yml``), i tekst dyrektywy tłumienia ast-grep, z którego próbki tego pliku ją składają.
+PYTHON_SUFFIXES: Final = (".py", ".pyi", ".py3", ".bzl")
+_IGNORE: Final = odpalenia_ast_grep.SUPPRESSION
+
+
+def ast_grep_suppressions(root: Path, folder: str = CALE_DRZEWO) -> list[str]:
+    """``plik:linia`` każdej linii z tekstem dyrektywy tłumienia ast-grep (``odpalenia_ast_grep.SUPPRESSION``)
+    w plikach Pythona ``folder`` checkoutu ``root``, tych samych co ``whole_tree_rules``. Test nie
+    pyta, czy tekst stoi w komentarzu: dyrektywa, którą ast-grep uznaje, zawsze ma ten tekst w całości, a własny
+    parser komentarza rozjeżdża się z parserem ast-grep (``#`` i samotne ``\\r``, sonda przeglądu #2099 r2)."""
+
+    return [
+        f"{path}:{number}"
+        for path, number, text in odpalenia_ast_grep.Changes(root, odpalenia_ast_grep.EMPTY_TREE, folder).added()
+        if path.endswith(PYTHON_SUFFIXES) and _IGNORE in text
+    ]
+
+
+def test_zadna_linia_repo_nie_tlumi_reguly_ast_grep() -> None:
+    """Reguła chwastu nie ma prawa właściciela w komentarzu (ADR 0036): dyrektywa tłumienia z nazwą reguły chowa jej
+    odpalenie przed zapadką linii dodanych i przed regułami całego drzewa, a wbudowane reguły ast-grep zgłaszają tylko
+    dyrektywę bez nazw albo taką, która niczego nie wyłącza. Wyjątek reguły stoi więc tylko w jej ``ignores:``, który
+    widać w diffie reguły, a w plikach Pythona, w których ast-grep szuka reguł, tekst dyrektywy nie stoi wcale."""
+
+    import yaml
+
+    languages = {str(rule["language"]).lower() for rule in _ast_grep_rule_documents(AST_GREP_CONFIG)}
+    assert languages == {"python"}, f"reguła ast-grep w języku spoza Pythona ({sorted(languages)}): dopisz jego pliki do ast_grep_suppressions"
+    assert "languageGlobs" not in yaml.safe_load(AST_GREP_CONFIG.read_text(encoding="utf-8")), (
+        "languageGlobs w sgconfig.yml daje Pythona innym plikom niż PYTHON_SUFFIXES: dopisz je tam"
+    )
+    assert ast_grep_suppressions(ROOT) == [], (
+        f"{_IGNORE} chowa odpalenie reguły chwastu przed CI: popraw kod według komunikatu reguły, a trwały wyjątek "
+        f"właściciela dopisz do ignores: jej pliku w {AST_GREP_RULES}/; tekst dyrektywy w próbce albo komunikacie składaj "
+        "z odpalenia_ast_grep.SUPPRESSION"
+    )
+
+
+def banned_under_noqa(root: Path) -> list[str]:
+    """``plik:linia: komunikat`` każdego zakazu ``banned-api`` (``TID251``) i ``import *`` (``F403``, który chowa nazwę
+    przed ``TID251``), które ``ruff check --ignore-noqa`` zgłasza w ``root`` z konfiguracją repozytorium. Zwykłe ``ruff
+    check`` przechodzi, więc każde takie zgłoszenie chowa ``# noqa``, ``# ruff: noqa`` na pliku albo zakres ``# ruff:
+    disable``; zwolnienie w konfiguracji ruff (prawo właściciela) zostaje zwolnieniem."""
+
+    result = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", "--no-cache", "--ignore-noqa", "--output-format", "json"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    assert result.stderr == "", result.stderr
+    return [
+        f"{Path(finding['filename']).resolve().relative_to(root.resolve()).as_posix()}:{finding['location']['row']}: {finding['message']}"
+        for finding in json.loads(result.stdout)
+        if finding["code"] in ("TID251", "F403")
+    ]
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_zadna_linia_repo_nie_tlumi_zakazu_ruff() -> None:
+    """Zakaz ``banned-api`` nie ma prawa właściciela w komentarzu (ADR 0036): zakazanej nazwy używa tylko plik z prawem
+    właściciela w konfiguracji ruff (``per-file-ignores`` i ``OWNERS`` w ``tests/test_zakazy_ruff.py``), więc
+    ``banned_under_noqa`` na całym kodzie, który ruff sprawdza, nie zgłasza niczego."""
+
+    assert banned_under_noqa(ROOT) == [], (
+        "noqa chowa zakazaną nazwę przed ruff: użyj tego, co mówi komunikat zakazu, a trwałe prawo właściciela zapisz w "
+        "per-file-ignores pyproject.toml i w OWNERS tests/test_zakazy_ruff.py"
+    )
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_noqa_przy_zakazanej_nazwie_i_gwiazdce_jest_zgloszone_a_prawo_wlasciciela_nie(tmp_path: Path) -> None:
+    """Prawdziwy ruff z ``pyproject.toml`` repozytorium: ``# noqa`` na linii, ``# ruff: noqa`` na pliku i ``# ruff:
+    disable`` chowają ``TID251``, a ``# noqa: F403`` gwiazdkę, więc ``banned_under_noqa`` zgłasza każdą z tych linii, a
+    zakazanej nazwy u właściciela z ``per-file-ignores`` nie."""
+
+    shutil.copyfile(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    files = {
+        "tools/linia.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - próbka\n",
+        "tools/plik.py": "# ruff: noqa\nimport os\n\nSYSTEM = os.name\n",
+        "tools/zakres.py": "import os\n\n# ruff: disable[TID251]\nSYSTEM = os.name\n# ruff: enable[TID251]\n",
+        "tools/gwiazdka.py": "from os import *  # noqa: F403 - próbka\n",
+        "tools/lib/import_dynamiczny.py": 'import importlib\n\nMODUL = importlib.import_module("json")\n',
+    }
+    for name, text in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(text, encoding="utf-8")
+
+    assert sorted(finding.split(": ")[0] for finding in banned_under_noqa(tmp_path)) == [
+        "tools/gwiazdka.py:1",
+        "tools/linia.py:3",
+        "tools/plik.py:4",
+        "tools/zakres.py:4",
+    ]
+
+
+@needs_ast_grep
+def test_dyrektywa_ast_grep_po_kazdym_znaku_po_haszu_jest_zgloszona_gdy_chowa_odpalenie(tmp_path: Path) -> None:
+    """Klasa przedrostków dyrektywy: każdy znak ASCII od U+0001 bez liter, cyfr i ``\\n``, każdy biały znak Unicode
+    i kilka znaków interpunkcji Unicode między ``#`` a tekstem dyrektywy.
+    Każdy plik, w którym prawdziwy ast-grep chowa wywołanie reguły-fikstury, ``ast_grep_suppressions`` zgłasza, a
+    ast-grep chowa je co najmniej po ``##`` (sonda przeglądu #2099 r1) i po samotnym ``\\r`` (r2). Tekst dyrektywy
+    wielkimi literami ast-grep 0.51 pomija, więc test go nie szuka; gdy ast-grep zacznie go uznawać, ten test pada."""
+
+    config = _fixture_rules(tmp_path)
+    base = _empty_base(tmp_path)
+    folder = tmp_path / "src" / "rozliczenia"
+    folder.mkdir(parents=True)
+    signs = [chr(code) for code in range(1, 0x80) if chr(code) != "\n" and not chr(code).isalnum()]
+    signs += [chr(code) for code in range(0x80, 0x3000) if chr(code).isspace()] + ["\u2014", "\u00b7", "\u201e", "\u00a7"]
+    for number, sign in enumerate(signs):
+        (folder / f"probka_{number}.py").write_text(f"zakazane()  #{sign}{_IGNORE}: zakazane-wywolanie\n", encoding="utf-8", newline="")
+    (folder / "wielkie.py").write_text(f"zakazane()  # {_IGNORE.upper()}: zakazane-wywolanie\n", encoding="utf-8")
+
+    shown = {finding.path for finding in syntax_rules(tmp_path, base, config) if finding.rule == "zakazane-wywolanie"}
+    hidden = {f"src/rozliczenia/probka_{number}.py" for number in range(len(signs))} - shown
+    assert {f"src/rozliczenia/probka_{signs.index(sign)}.py" for sign in ("#", "\r")} <= hidden
+    assert "src/rozliczenia/wielkie.py" in shown
+    assert sorted(hidden - {line.rpartition(":")[0] for line in ast_grep_suppressions(tmp_path)}) == []
+
+
+@needs_ast_grep
+def test_pliki_pythona_dyrektyw_to_pliki_ktore_ast_grep_czyta_jako_python(tmp_path: Path) -> None:
+    """``PYTHON_SUFFIXES`` to dokładnie te rozszerzenia próbki (Pythona i jemu bliskie), w których prawdziwy ast-grep
+    zgłasza regułę-fiksturę w Pythonie, więc dyrektywa w pliku, który ast-grep czyta jako Python, nie jest poza testem."""
+
+    config = _fixture_rules(tmp_path)
+    base = _empty_base(tmp_path)
+    folder = tmp_path / "src" / "rozliczenia"
+    folder.mkdir(parents=True)
+    suffixes = (".py", ".pyi", ".py3", ".bzl", ".pyw", ".pyx", ".pyc", ".ipynb", ".gyp")
+    for suffix in suffixes:
+        (folder / f"probka{suffix}").write_text("zakazane()\n", encoding="utf-8")
+
+    shown = {PurePath(finding.path).suffix for finding in syntax_rules(tmp_path, base, config)}
+    assert sorted(shown) == sorted(PYTHON_SUFFIXES)
 
 
 @windows_without_ast_grep
@@ -1558,9 +1700,9 @@ def test_znane_luki_przegladarki_bez_launch_options_przechodza_przez_regule_i_ru
 @pytest.mark.parametrize(
     ("text", "rules"),
     [
-        ("x = 1  # ast-grep-ignore\n", ["no-suppress-all", "unused-suppression"]),
-        ("x = 1  # ast-grep-ignore: zakazane-wywolanie\n", ["unused-suppression"]),
-        ("zakazane()  # ast-grep-ignore: zakazane-wywolanie\n", []),
+        (f"x = 1  # {_IGNORE}\n", ["no-suppress-all", "unused-suppression"]),
+        (f"x = 1  # {_IGNORE}: zakazane-wywolanie\n", ["unused-suppression"]),
+        (f"zakazane()  # {_IGNORE}: zakazane-wywolanie\n", []),
     ],
 )
 def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza(
@@ -1920,8 +2062,8 @@ ZNANE_LUKI_KOMENTARZY: Final = {
     "kod mypy: słowo w kształcie kodu w gałęzi sys.version_info nowszej niż python_version mypy": (
         "import sys\n\nif sys.version_info >= (3, 14):\n    x: int = 'a'  # type: ignore[historia]\n"
     ),
-    "dyrektywa ast-grep-ignore: nazwa tej reguły i proza w komentarzu obok kodu": (
-        "x = 1  # ast-grep-ignore: komentarz-w-src (wyjaśnienie obok kodu)\n"
+    f"dyrektywa {_IGNORE}: nazwa tej reguły i proza w komentarzu obok kodu": (
+        f"x = 1  # {_IGNORE}: komentarz-w-src (wyjaśnienie obok kodu)\n"
     ),
 }
 

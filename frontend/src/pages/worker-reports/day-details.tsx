@@ -1,4 +1,4 @@
-import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, MailWarningIcon, type LucideIcon } from "lucide-react"
+import { ArrowLeftRightIcon, BellIcon, CalendarIcon, CheckIcon, MailCheckIcon, MailWarningIcon, type LucideIcon } from "lucide-react"
 import { cn } from "cn"
 
 import type {
@@ -45,7 +45,8 @@ export function WorkerAvatar({ worker }: { worker: string }) {
 /**
  * Popover kafelka: Wykonawca, dzień i stan, liczby dnia, pasek wpisanych w kolorze stanu i zlecenia dnia z INTERMAX
  * (`orders_detail`) z problemami, „Zostaw moją”, Wpisem na życzenie, spokojnymi informacjami o Przeniesieniach zleceń
- * (`notes`) i o raportach z pomylonym tematem (`mistaken_subjects`). Raport z błędem tematu stoi jako problem z tematem
+ * (`notes`), o raportach z pomylonym tematem (`mistaken_subjects`) i o raportach z błędem tematu, z których nie ma już czego
+ * wpisać, bo każde ich zlecenie wziął późniejszy raport (`overtaken_subjects`). Raport z błędem tematu stoi jako problem z tematem
  * po strażniku reguły danych, rodzajem błędu, dniem, za który Centrum go liczy, i chwilą przyjścia maila, a jego zlecenia mają stan
  * „Błąd tematu”, nie „Bez raportu”, i Wpis na życzenie, gdy Centrum wie, co wpisać; Wpis na życzenie zlecenia, które
  * stoi w innym kafelku (Przeniesienie), problem pokazuje sam, z numerem zlecenia. Wynik kliknięcia sprzed listy zleceń (`orders_detail` `null`) pokazuje zamiast niej numery bez raportu i problemy. Nad listą
@@ -155,8 +156,8 @@ const ROW = "grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-
 
 /**
  * Zlecenia dnia w kolejności z INTERMAX, a po nich problemy bez zlecenia tego dnia (np. numer spoza zleceń albo raport
- * z błędem tematu), informacje o zleceniach, których dzień już nie ma (np. „przekazane …”), i o raportach z pomylonym
- * tematem, których Wpisy poszły do zleceń tego dnia.
+ * z błędem tematu), informacje o zleceniach, których dzień już nie ma (np. „przekazane …”), o raportach z pomylonym
+ * tematem, których Wpisy poszły do zleceń tego dnia, i o raportach z błędem tematu, z których nie ma już czego wpisać.
  */
 function Orders({
   orders,
@@ -201,6 +202,12 @@ function Orders({
         <li key={subjectDay} className={ROW}>
           <OrderNumber number={null} />
           <MistakenLine subjectDay={subjectDay} />
+        </li>
+      ))}
+      {state.day.overtaken_subjects.map((text) => (
+        <li key={text} className={ROW}>
+          <OrderNumber number={null} />
+          <OvertakenLine text={text} />
         </li>
       ))}
       {loose.map((problem) => (
@@ -336,6 +343,16 @@ function MistakenLine({ subjectDay }: { subjectDay: string }) {
     <span className="col-start-2 col-end-4 flex items-center gap-1.5 text-xs text-muted-foreground">
       <ArrowLeftRightIcon className="size-3 shrink-0" aria-hidden />
       {`Pomylony temat: raport z dniem ${shortDate(subjectDay)} w temacie, Wpisy poszły do zleceń tego dnia`}
+    </span>
+  )
+}
+
+/** Informacja o raporcie z błędem tematu, którego każde zlecenie wziął późniejszy raport: zdanie z serwera, bez problemu. */
+function OvertakenLine({ text }: { text: string }) {
+  return (
+    <span className="col-start-2 col-end-4 flex items-start gap-1.5 text-xs text-muted-foreground">
+      <MailCheckIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
+      {text}
     </span>
   )
 }

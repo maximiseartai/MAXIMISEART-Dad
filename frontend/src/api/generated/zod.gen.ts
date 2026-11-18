@@ -1685,6 +1685,7 @@ export const zReportsWorkerDay = z.object({
     notes: z.array(zReportsNote),
     orders_detail: z.array(zReportsOrder).nullable(),
     mistaken_subjects: z.array(z.iso.date()),
+    overtaken_subjects: z.array(z.string()),
     reminders: z.array(z.iso.datetime())
 });
 

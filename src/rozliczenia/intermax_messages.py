@@ -335,6 +335,9 @@ def old_copies_kept(directory: Path, replacement: Replacement) -> Message:
 ORDER_BASE_SKIPPED: Final = "BAZA_ZLECEN_POMINIETA"
 """Kod ostrzeżenia, że dzień jest bez Historii adresu, bo Bazy zleceń nie dało się przeczytać; odtworzenie, które
 Bazy nie ma, pomija je w porównaniu Komunikatów."""
+HISTORY_FIGURE: Final = "Historia adresu"
+"""Etykieta liczby zleceń z Historią adresu na karcie Uporządkowania; odtworzenie, które Bazy nie ma, pomija ją w
+porównaniu podsumowania, jak ostrzeżenie ``ORDER_BASE_SKIPPED`` w Komunikatach."""
 _WITHOUT_HISTORY: Final = "INTERMAX został uporządkowany bez Historii adresu"
 _HISTORY_LATER: Final = (
     "Dzień jest już uporządkowany. Jeśli chcesz przy nim Historii adresu, przywróć Kopię INTERMAX sprzed uporządkowania "

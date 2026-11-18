@@ -56,11 +56,22 @@ niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.u
 werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
 ``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść.
 
+Przypadki reguł (``--przypadki-regul``, krok zadania CI „Ruff, mypy”): każda reguła z katalogów ``ruleDirs``
+``sgconfig.yml`` checkoutu ma w polu ``metadata.przypadki`` przypadki, które łapie, i łapie każdy z nich jak Ważne
+dowodu (punkt 1): Ważne ``PR/W<n>/r<k>`` albo ``<pełny SHA> plik:linia``, czyli linie dodane przez commit od jego
+pierwszego rodzica, dla reguły, która nie powstała z Ważnego z polem ``Gdzie``. Pole czyta tylko ten krok, a ast-grep
+je pomija. Kończy się ``PRZYPADKI REGUŁ OK | <n> reguł, <k> przypadków`` albo ``PRZYPADKI REGUŁ FAIL | <reguła>:
+<co zrobić> | …``, także dla reguły bez pola:
+
+    .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul
+
 Dowód strażnika (``--straznik SELEKTOR --z-commita <HEAD PR>`` z ``--wazne``) to selektor z pola ``Strażnik:`` bloku
-Ważnego w sekcji ``## Korzeń``: ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
-a każdy inny dowodem ``straznik.prove``, który opisuje docstring ``tools/lib/straznik.py``. Linia na Ważne i na końcu
-``DOWÓD OK|ODMOWA | <selektor> | wykryte k/n`` (przy wyjątku ``wyjątek k/n``); ``tools/scal_pr.py`` uruchamia go przy
-merge'u każdego PR z Ważnym (``bramka_straznika``):
+Ważnego w sekcji ``## Korzeń``. ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
+gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście jej przypadków; każdy inny selektor idzie
+dowodem ``straznik.prove``, który opisuje docstring ``tools/lib/straznik.py``, z zakresem funkcji z ``places`` i prozą
+z reguły ``PROSE`` na kopii SHA werdyktu. Linia na Ważne i na końcu ``DOWÓD OK|ODMOWA | <selektor> | wykryte k/n``
+(przy wyjątku ``wyjątek k/n``); ``tools/scal_pr.py`` uruchamia go przy merge'u każdego PR z Ważnym
+(``bramka_straznika``):
 
     .venv/bin/python tools/na_scalonych_pr.py --straznik 'pytest tests/test_x.py::test_y' --z-commita <HEAD PR> --wazne 2029/W1/r1
 """
@@ -79,6 +90,7 @@ import subprocess
 import sys
 import sysconfig
 import time
+from typing import Any
 
 import yaml
 
@@ -97,6 +109,8 @@ import werdykt_pr
 
 AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 MAJOR = re.compile(r"#?(\d+)/(W\d+)/r(\d+)")
+COMMIT_CASE = re.compile(r"([0-9a-f]{40}) (\S+)")
+CASES = "przypadki"  # pole ``metadata`` reguły ast-grep z przypadkami, które reguła ma łapać
 WHERE = "Gdzie:"
 # Cała kopia: bez tych flag ast-grep nie wchodzi do katalogu ukrytego (``.agents/``) ani ignorowanego.
 WHOLE = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot")
@@ -260,23 +274,18 @@ def major(text: str) -> tuple[int, str, int]:
 
 
 @dataclass(frozen=True)
-class Failed:
-    """Ważne ``label`` werdyktu ``FAIL`` rundy ``round_`` PR-u ``number``: SHA werdyktu (pobrany), tekst pola ``Gdzie``
-    i baza PR-u."""
+class Probe:
+    """Przypadek, który reguła ma złapać: odpalenie na liniach dodanych od ``base`` do ``head`` w miejscu ``where``."""
 
-    number: int
-    label: str
-    round_: int
-    commit: str
-    where: str
+    label: str  # ``#1584 W1 r1`` albo ``commit``
     base: str
+    head: str
+    where: str  # tekst pola ``Gdzie:``
 
-    def fork(self) -> str:
-        return _fork(f"{REMOTE}/{self.base}", self.commit)
 
-
-def failed(repository: str, number: int, label: str, round_: int) -> Failed:
-    """Ważne z werdyktu ``FAIL`` na GitHubie; brak werdyktu, pola ``Gdzie`` albo commitu to ``ValueError``."""
+def major_probe(repository: str, number: int, label: str, round_: int) -> Probe:
+    """Ważne ``label`` werdyktu ``FAIL`` rundy ``round_`` PR-u ``number``: linie dodane od ``merge-base`` bazy PR-u
+    do SHA linii ``WERDYKT`` i pole ``Gdzie`` tego Ważnego."""
 
     pull = rejestr_korzeni.pull(repository, number)
     verdict = next((one.verdict for one in werdykt_pr.rounds(pull, werdykt_pr.from_graphql) if one.number == round_ and one.verdict.decision == "FAIL"), None)
@@ -289,60 +298,18 @@ def failed(repository: str, number: int, label: str, round_: int) -> Failed:
         raise ValueError(f"#{number} {label} r{round_}: brak pola {WHERE}")
     if problem := fetched(verdict.commit):
         raise ValueError(problem)
-    return Failed(number, label, round_, verdict.commit, where, pull.base)
+    return Probe(f"#{number} {label} r{round_}", _fork(f"{REMOTE}/{pull.base}", verdict.commit), verdict.commit, where)
 
 
-def caught(rule: Rule, repository: str, number: int, label: str, round_: int) -> bool:
-    """Drukuje linię Ważnego ``label`` rundy ``round_`` PR-u ``number`` i mówi, czy reguła je złapała."""
+def caught(rule: Rule, probe: Probe) -> bool:
+    """Drukuje linię przypadku ``probe`` i mówi, czy reguła go złapała."""
 
-    case = failed(repository, number, label, round_)
-    found = fired(rule, case.fork(), case.commit)
-    targets = places(case.where, case.commit)
+    found = fired(rule, probe.base, probe.head)
+    targets = places(probe.where, probe.head)
     inside = [hit for hit in found if any(hit[0] == path and first <= hit[1] <= last for path, first, last in targets)]
     state = "złapane" if inside else "obok" if found else "nie"
-    print(f"#{number} {label} r{round_} | {case.commit[:8]} | {state} | odpalenia {_shown(found)} | {case.where}", flush=True)
+    print(f"{probe.label} | {probe.head[:8]} | {state} | odpalenia {_shown(found)} | {probe.where}", flush=True)
     return bool(inside)
-
-
-def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int:
-    """Dowód strażnika z pola ``Strażnik:`` (``straznik``) na HEAD PR-u ``head`` dla Ważnych ``majors``; reguła
-    ast-grep idzie dowodem reguły (``proof_on``), a kod 0 jest tylko z ``DOWÓD OK``."""
-
-    try:
-        guard = straznik.parse(text)
-    except ValueError as error:
-        print(f"DOWÓD ODMOWA | {text} | {error}")
-        return 1
-    if guard.kind is straznik.Kind.AST_GREP:
-        return proof_on(head, guard.arguments[0], majors, [], RULE_PRS)
-    try:
-        if problem := fetched(head):
-            raise ValueError(problem)
-        repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
-        cases = [failed(repository, *one) for one in majors]
-        base = repo.merge_base(ROOT, f"{REMOTE}/{cases[0].base}", head)
-        found = straznik.prove(ROOT, guard, head, base, [_case(guard, one) for one in cases])
-    except (ValueError, subprocess.CalledProcessError) as error:
-        print(f"DOWÓD ODMOWA | {guard} | {error}")
-        return 1
-    for outcome in found:
-        print(outcome.line, flush=True)
-    detected = sum(outcome.detected for outcome in found)
-    ok = detected == len(found)
-    print(f"DOWÓD {'OK' if ok else 'ODMOWA'} | {guard} | {'wyjątek' if guard.kind in straznik.EXEMPT else 'wykryte'} {detected}/{len(found)}")
-    return 0 if ok else 1
-
-
-def _case(guard: straznik.Guard, one: Failed) -> straznik.Case:
-    """Ważne ``one`` jako przypadek dowodu: zakresy funkcji z ``places`` dla strażnika statycznego, a proza z ``PROSE``
-    dla ``brak - proza``; oba czyta ast-grep z kopii SHA werdyktu, jak dowód reguły."""
-
-    if not (raw := szablon_werdyktu.places(one.where)):
-        raise ValueError(f"{one.where} nie ma miejsca plik:linia")
-    scopes = places(one.where, one.commit) if guard.kind in (straznik.Kind.MYPY, straznik.Kind.RUFF) else []
-    python = sorted({path for path, _, _ in raw if path.endswith(".py")})
-    prose = hits(one.commit, ("--inline-rules", PROSE), python) if guard.kind is straznik.Kind.PROSE and python else []
-    return straznik.Case(f"#{one.number} {one.label} r{one.round_}", one.commit, one.fork(), tuple(raw), tuple(scopes), tuple(prose))
 
 
 def _fork(base: str, commit: str) -> str:
@@ -392,7 +359,7 @@ def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: 
 
     try:
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
-        catches = sum(caught(rule, repository, *one) for one in majors)
+        catches = sum(caught(rule, major_probe(repository, *one)) for one in majors)
         alarms = 0
         prs = merged(numbers, last)
         flagged = []
@@ -413,6 +380,116 @@ def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: 
     return 0 if ok else 1
 
 
+def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int:
+    """Dowód strażnika z pola ``Strażnik:`` (``straznik``) na HEAD PR-u ``head`` dla Ważnych ``majors``; reguła
+    ast-grep idzie dowodem reguły (``proof_on``), a kod 0 jest tylko z ``DOWÓD OK``."""
+
+    try:
+        guard = straznik.parse(text)
+    except ValueError as error:
+        print(f"DOWÓD ODMOWA | {text} | {error}")
+        return 1
+    if guard.kind is straznik.Kind.AST_GREP:
+        return _rule_guard(head, guard, majors)
+    try:
+        if problem := fetched(head):
+            raise ValueError(problem)
+        repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
+        cases = [_case(guard, major_probe(repository, *one)) for one in majors]
+        found = straznik.prove(ROOT, guard, head, repo.merge_base(ROOT, repo.BASE, head), cases)
+    except (ValueError, subprocess.CalledProcessError) as error:
+        print(f"DOWÓD ODMOWA | {guard} | {error}")
+        return 1
+    for outcome in found:
+        print(outcome.line, flush=True)
+    detected = sum(outcome.detected for outcome in found)
+    ok = detected == len(found)
+    print(f"DOWÓD {'OK' if ok else 'ODMOWA'} | {guard} | {'wyjątek' if guard.kind in straznik.EXEMPT else 'wykryte'} {detected}/{len(found)}")
+    return 0 if ok else 1
+
+
+def _rule_guard(head: str, guard: straznik.Guard, majors: list[tuple[int, str, int]]) -> int:
+    """Strażnik ``ast-grep <id>``: każde Ważne stoi w ``metadata.przypadki`` reguły na HEAD (jedna lista przypadków,
+    którą sprawdza też ``--przypadki-regul``), a dowód reguły na nich przechodzi."""
+
+    rule = guard.arguments[0]
+    if problem := fetched(head):
+        print(f"DOWÓD ODMOWA | {guard} | {problem}")
+        return 1
+    with potomne.commit_copy(ROOT, head) as copy:
+        listed = {str(case) for document in rules(copy) if str(document["id"]) == rule for case in (document.get("metadata") or {}).get(CASES) or []}
+    if missing := [f"{number}/{label}/r{round_}" for number, label, round_ in majors if f"{number}/{label}/r{round_}" not in listed]:
+        print(f"DOWÓD ODMOWA | {guard} | {', '.join(missing)} nie stoi w metadata.{CASES} reguły {rule} na HEAD: dopisz je tam, to jedyna lista przypadków reguły")
+        return 1
+    return proof_on(head, rule, majors, [], RULE_PRS)
+
+
+def _case(guard: straznik.Guard, probe: Probe) -> straznik.Case:
+    """Ważne ``probe`` jako przypadek dowodu: zakresy funkcji z ``places`` dla strażnika statycznego, a proza z ``PROSE``
+    dla ``brak - proza``; oba czyta ast-grep z kopii SHA werdyktu, jak dowód reguły."""
+
+    if not (raw := szablon_werdyktu.places(probe.where)):
+        raise ValueError(f"{probe.where} nie ma miejsca plik:linia")
+    scopes = places(probe.where, probe.head) if guard.kind in (straznik.Kind.MYPY, straznik.Kind.RUFF) else []
+    python = sorted({path for path, _, _ in raw if path.endswith(".py")})
+    prose = hits(probe.head, ("--inline-rules", PROSE), python) if guard.kind is straznik.Kind.PROSE and python else []
+    return straznik.Case(probe.label, probe.head, probe.base, tuple(raw), tuple(scopes), tuple(prose))
+
+
+def case_probe(repository: str, text: str) -> Probe:
+    """Przypadek z pola ``metadata.przypadki`` reguły: Ważne ``PR/W<n>/r<k>`` (``major_probe``) albo ``<SHA> plik:linia``,
+    czyli linie dodane przez commit od jego pierwszego rodzica; inna postać to ``ValueError``."""
+
+    if found := MAJOR.fullmatch(text):
+        return major_probe(repository, int(found[1]), found[2], int(found[3]))
+    if found := COMMIT_CASE.fullmatch(text):
+        if problem := fetched(found[1]):
+            raise ValueError(problem)
+        return Probe("commit", f"{found[1]}^1", found[1], f"{WHERE} {found[2]}")
+    raise ValueError(f"przypadek {text!r} nie ma postaci PR/W<n>/r<k> ani <pełny SHA> plik:linia")
+
+
+def rules(root: Path) -> list[dict[str, Any]]:
+    """Dokumenty reguł z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` drzewa ``root``."""
+
+    config = yaml.safe_load((root / CONFIG).read_text(encoding="utf-8"))
+    files = sorted(path for folder in config["ruleDirs"] for path in (root / folder).rglob("*.y*ml"))
+    return [document for path in files for document in yaml.safe_load_all(path.read_text(encoding="utf-8")) if document]
+
+
+def founding() -> int:
+    """Każda reguła z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` checkoutu łapie każdy przypadek ze swojego pola
+    ``metadata.przypadki`` (``caught``), a regułę wybiera ast-grep z tej konfiguracji, jak zapadka; kod 0 tylko
+    z ``PRZYPADKI REGUŁ OK``."""
+
+    found = rules(ROOT)
+    problems: list[str] = []
+    total = 0
+    try:
+        repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
+    except (ValueError, subprocess.CalledProcessError) as error:
+        print(f"PRZYPADKI REGUŁ FAIL | {error}")
+        return 1
+    for document in found:
+        name = str(document["id"])
+        if not (cases := (document.get("metadata") or {}).get(CASES)):
+            problems.append(f"{name}: bez pola metadata.{CASES}; dopisz przypadek, który reguła łapie: Ważne PR/W<n>/r<k> albo <pełny SHA> plik:linia")
+            continue
+        chosen = ("--config", str(ROOT / CONFIG), "--filter", f"^{re.escape(name)}$")
+        for text in map(str, cases):
+            total += 1
+            try:
+                if not caught(chosen, case_probe(repository, text)):
+                    problems.append(f"{name}: nie łapie {text}; popraw regułę tak, by znów odpalała w jego Gdzie")
+            except (ValueError, subprocess.CalledProcessError) as error:
+                problems.append(f"{name}: {text}: {error}")
+    if problems:
+        print(f"PRZYPADKI REGUŁ FAIL | {' | '.join(problems)}")
+        return 1
+    print(f"PRZYPADKI REGUŁ OK | {len(found)} reguł, {total} przypadków")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     split = arguments.index("--") if "--" in arguments else len(arguments)
@@ -429,7 +506,12 @@ def main(argv: list[str] | None = None) -> int:
     rule.add_argument("--straznik", metavar="SELEKTOR", help=f"Dowód strażnika z pola Strażnik: na HEAD PR --z-commita ({straznik.FORMS}).")
     parser.add_argument("--z-commita", metavar="REV", help="HEAD PR: z niego --regula-id bierze regułę, a --straznik kopię.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
+    rule.add_argument("--przypadki-regul", action="store_true", help="Każda reguła z reguly-ast-grep/ łapie przypadki ze swojego pola metadata.przypadki.")
     args = parser.parse_args(arguments[:split])
+    if args.przypadki_regul:
+        if command or args.wazne or args.pr or args.ostatnie or args.commit or args.z_commita:
+            parser.error("--przypadki-regul bierze przypadki z reguł checkoutu, bez innych argumentów")
+        return founding()
     if args.straznik is not None:
         if command or not args.wazne or args.z_commita is None:
             parser.error("dowód strażnika: --straznik SELEKTOR z --z-commita REV i co najmniej jednym --wazne PR/W<n>/r<k>, bez polecenia po --")

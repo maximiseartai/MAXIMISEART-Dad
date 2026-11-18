@@ -9,7 +9,7 @@ recenzent, a autor podaje tylko selektor. Wynik to kod wyjścia pytest albo znal
 |---|---|---|
 | ``pytest tests/<plik>.py::<test> …`` | każdy plik spoza ``tests/``, który PR zmienił (od rozwidlenia do FAIL i od merge-base do HEAD), z treścią z FAIL; testy z HEAD | węzły przechodzą na HEAD (kod 0) i padają po przywróceniu (kod 1, nie błąd kolekcji 2, użycia 4 ani brak testów 5) |
 | ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk, po przywróceniu znalezisko w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
-| ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
+| ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | Ważne stoi w polu ``metadata.przypadki`` reguły na HEAD (jedyna lista jej przypadków), a reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
 | ``brak - proza`` | bez | każde miejsce ``Gdzie`` w pliku, który zmienił PR, to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - test`` | bez | każde takie miejsce leży w ``tests/``; mutację złej implementacji powtarza recenzent następnej rundy (skill ``przeglad``) |
 

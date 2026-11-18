@@ -19,6 +19,7 @@ from ._model import (
     MissingVerdict,
     OrderDetail,
     OrderKey,
+    OvertakenSubject,
     ReadReport,
     RefusedMove,
     RegisterOrder,
@@ -49,6 +50,7 @@ def worker_days(
     mistaken: Iterable[tuple[Login, date, date]],
     faulty: frozenset[OrderKey],
     offers: Mapping[OrderRow, Requestable],
+    overtaken: Iterable[OvertakenSubject],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy
     zlecenia, których ``SKUTECZNE`` po zapisie zmian ma ``tak`` albo ``nie``, kto by ich nie wpisał, a ``mails``
@@ -67,7 +69,8 @@ def worker_days(
     Zlecenie bez Wpisu, które ma Wpis w raporcie z błędem tematu za swój dzień (``faulty``,
     ``WindowRead.faulty_entries``), nie jest bez raportu, bo raport przyszedł. Zlecenie, o którym decyduje Wpis raportu z
     błędem tematu, ma Wpis na życzenie z ``offers`` (``WindowRead.offers``, po wierszu), także gdy ma już Wpis, a bez
-    Wpisu nie jest bez raportu, także przy Przeniesieniu do nadawcy.
+    Wpisu nie jest bez raportu, także przy Przeniesieniu do nadawcy. Raport z błędem tematu, z którego nie ma już czego
+    wpisać (``overtaken``, ``WindowRead.overtaken``), stoi przy swoim dniu jako informacja.
     """
 
     found_orders = tuple(orders)
@@ -85,9 +88,12 @@ def worker_days(
     subject_days: defaultdict[tuple[date, Login], set[date]] = defaultdict(set)
     for worker, day, subject_day in mistaken:
         subject_days[day, worker].add(subject_day)
+    taken: defaultdict[tuple[date, Login], list[OvertakenSubject]] = defaultdict(list)
+    for report in overtaken:
+        taken[report.day, report.worker].append(report)
     figures = []
     subjects = {(report.day, report.worker) for report in reports}
-    for day, worker in sorted(days.keys() | mails.keys() | subjects | extra.keys()):
+    for day, worker in sorted(days.keys() | mails.keys() | subjects | extra.keys() | taken.keys()):
         detail = tuple(
             replace(found, codes=codes(legend, found.successful, found.activities))
             for found in (
@@ -117,6 +123,7 @@ def worker_days(
                 without_report=tuple(sorted(missing, key=lambda number: (len(number), number))),
                 orders_detail=detail,
                 mistaken=tuple(sorted(subject_days.get((day, worker), ()))),
+                overtaken=tuple(sorted(taken.get((day, worker), ()), key=lambda report: report.arrived)),
             )
         )
     return tuple(figures)

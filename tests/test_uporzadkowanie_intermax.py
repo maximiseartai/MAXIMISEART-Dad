@@ -50,6 +50,7 @@ from tests.fixtures.clock import ManualClock
 from atrapy.intermax import (
     ACTIVITIES,
     ADDRESS,
+    CITY,
     APP_LAST,
     BLANK_HEIGHT,
     CONTRACT_NUMBER,
@@ -143,7 +144,7 @@ def _without_order_data(message: Message, orders: Sequence[Order]) -> None:
 
     for order in orders:
         for value in order.values().values():
-            if isinstance(value, str) and value not in ("Miasto", "Umowa", "Instalacja", "INEA"):
+            if isinstance(value, str) and value not in ("Miastko", "Umowa", "Instalacja", "INEA"):
                 assert value not in message.text, value
 
 
@@ -2451,15 +2452,23 @@ P = LAST + 1
 GRAY, RED = "FFD9D9D9", "FFFF0000"
 
 
-def _order(index: int, address: str, number: int | None = None) -> Order:
-    """Surowe zlecenie Wykonawcy ``_LOGIN`` o godzinie 7 + ``index``, więc w dniu stoi na miejscu ``index``."""
+def _order(index: int, address: str, number: int | None = None, *, without_city: bool = False) -> Order:
+    """Surowe zlecenie Wykonawcy ``_LOGIN`` o godzinie 7 + ``index``, więc w dniu stoi na miejscu ``index``, z
+    ``MIASTO`` atrapy (``Miastko``) albo, ``without_city``, z pustym."""
 
     number = 300 + index if number is None else number
-    return Order(datetime(2026, 10, 26, 7 + index), _LOGIN, number, cells=((ADDRESS, address),))
+    city = ((CITY, None),) if without_city else ()
+    return Order(datetime(2026, 10, 26, 7 + index), _LOGIN, number, cells=((ADDRESS, address), *city))
 
 
-def _visit(address: str, mark: str, when: datetime | str | None = datetime(2024, 1, 1), number: int | str | None = 9000) -> Visit:
-    return Visit(address, when, number, mark)
+def _visit(
+    address: str,
+    mark: str,
+    when: datetime | str | None = datetime(2024, 1, 1),
+    number: int | str | None = 9000,
+    city: str | None = None,
+) -> Visit:
+    return Visit(address, when, number, mark, city)
 
 
 @dataclass(frozen=True)
@@ -2517,8 +2526,10 @@ def _fill(sheet: Worksheet, row: int, column: int) -> str | None:
     return cell.fill.fgColor.rgb if cell.fill.fill_type == "solid" else None
 
 
-# Reguła tego samego adresu (historyjki 10 i 12–15 specu #2079): adres zlecenia i wiersze Bazy z tym adresem zapisanym
-# inaczej, które trafiają, obok wierszy, które nie trafiają, bo różnią się mieszkaniem, budynkiem albo nie mają numeru.
+# Reguła tego samego adresu (historyjki 10–17 specu #2079): adres zlecenia i wiersze Bazy z tym adresem zapisanym
+# inaczej, z krótszą albo dłuższą nazwą ulicy i z miastem albo bez niego, które trafiają, obok wierszy, które nie
+# trafiają, bo różnią się mieszkaniem, budynkiem, nazwą ulicy poza jej końcem od granicy słowa, miastem przy miastach w
+# obu wierszach albo nie mają numeru. Miasto zlecenia to ``Miastko`` z atrapy INTERMAX, chyba że jest puste.
 _LIPOWA_18_3 = _order(0, "UL. LIPOWA 18/3")
 _LIPOWA_34_2 = _order(1, "UL. LIPOWA 34/2")
 _LIPOWA_34 = _order(2, "UL. LIPOWA 34")
@@ -2529,8 +2540,13 @@ _RYNKOWY = _order(6, "PL. RYNKOWY 9/1")
 _NIEZNANA = _order(7, "UL. NIEZNANA 1")
 _BEZ_NUMERU = _order(8, "UL. LIPOWA")
 _BEZ_ULICY = _order(9, "UL. 18/3")
+_JANA_KOWALSKIEGO = _order(10, "UL. JANA KOWALSKIEGO 4/15")
+_KOWALSKIEGO = _order(11, "KOWALSKIEGO 6/2")
+_BRZOZOWA = _order(12, "UL. BRZOZOWA 5")
+_BRZOZOWA_BEZ_MIASTA = _order(13, "UL. BRZOZOWA 5", without_city=True)
 RULE_ORDERS: Final = (
-    _LIPOWA_18_3, _LIPOWA_34_2, _LIPOWA_34, _KASZTANOWA, _ZIELONE, _MOSTOWA, _RYNKOWY, _NIEZNANA, _BEZ_NUMERU, _BEZ_ULICY
+    _LIPOWA_18_3, _LIPOWA_34_2, _LIPOWA_34, _KASZTANOWA, _ZIELONE, _MOSTOWA, _RYNKOWY, _NIEZNANA, _BEZ_NUMERU, _BEZ_ULICY,
+    _JANA_KOWALSKIEGO, _KOWALSKIEGO, _BRZOZOWA, _BRZOZOWA_BEZ_MIASTA,
 )
 _V: Final = {
     "miasto przed przecinkiem i zero wiodące": (FIVE, _visit("Miastko,Lipowa 018/3", "a", datetime(2025, 5, 1))),
@@ -2551,6 +2567,19 @@ _V: Final = {
     "przedrostek sklejony z miastem": (FIVE, _visit("Miastko,PL.RYNKOWY 9/1", "o", datetime(2019, 7, 1))),
     "sama ulica": (TWELVE, _visit("LIPOWA", "p")),
     "sam numer": (TWELVE, _visit("18/3", "q")),
+    "krótsza nazwa ulicy": (ELEVEN, _visit("KOWALSKIEGO 4/15", "s", datetime(2021, 8, 1))),
+    "dłuższa nazwa ulicy": (TWELVE, _visit("UL. JANA KOWALSKIEGO 6/2", "t", datetime(2025, 8, 1))),
+    "koniec słowa": (TWELVE, _visit("SKIEGO 4/15", "u")),
+    "koniec nazwy od środka słowa": (TWELVE, _visit("ANA KOWALSKIEGO 4/15", "v")),
+    "inny patron ulicy": (TWELVE, _visit("ADAMA KOWALSKIEGO 4/15", "w")),
+    "MIASTO innej wielkości liter": (TWELVE, _visit("BRZOZOWA 5", "x", datetime(2026, 3, 1), city="MIASTKO")),
+    "inne MIASTO": (TWELVE, _visit("BRZOZOWA 5", "y", datetime(2025, 3, 1), city="Inne Miasto")),
+    "MIASTO przed miastem przed przecinkiem": (
+        TWELVE, _visit("Inne Miasto,BRZOZOWA 5", "z", datetime(2024, 3, 1), city="Miastko")
+    ),
+    "bez miasta": (ELEVEN, _visit("UL. BRZOZOWA 5", "aa", datetime(2021, 3, 1))),
+    "inne miasto przed przecinkiem": (FIVE, _visit("Inne Miasto,Brzozowa 5", "ab", datetime(2019, 4, 1))),
+    "miasto przed przecinkiem innej wielkości liter": (FIVE, _visit("miastko,Brzozowa 5", "ac", datetime(2019, 3, 1))),
 }
 RULE_BASE: Final = tuple(
     BaseSheet(name, layout, [visit for found, visit in _V.values() if found is layout])
@@ -2567,6 +2596,22 @@ RULE: Final[dict[Order, tuple[str, ...]]] = {
     _NIEZNANA: (),
     _BEZ_NUMERU: (),
     _BEZ_ULICY: (),
+    _JANA_KOWALSKIEGO: ("krótsza nazwa ulicy",),
+    _KOWALSKIEGO: ("dłuższa nazwa ulicy",),
+    _BRZOZOWA: (
+        "MIASTO innej wielkości liter",
+        "MIASTO przed miastem przed przecinkiem",
+        "bez miasta",
+        "miasto przed przecinkiem innej wielkości liter",
+    ),
+    _BRZOZOWA_BEZ_MIASTA: (
+        "MIASTO innej wielkości liter",
+        "inne MIASTO",
+        "MIASTO przed miastem przed przecinkiem",
+        "bez miasta",
+        "inne miasto przed przecinkiem",
+        "miasto przed przecinkiem innej wielkości liter",
+    ),
 }
 """Zlecenie → wiersze Bazy z ``_V``, które trafiają, od najnowszej daty; zlecenie ``_LIPOWA_18_3`` stoi pierwsze w
 wklejeniu, więc przychodzi przesunięte dwie kolumny w lewo."""
@@ -2582,7 +2627,7 @@ def rule_day(tmp_path_factory: pytest.TempPathFactory) -> tuple[Day, Worksheet]:
     return day, day.sheet()
 
 
-@pytest.mark.parametrize("order", RULE, ids=[str(order.values()[ADDRESS]) for order in RULE])
+@pytest.mark.parametrize("order", RULE, ids=[f"{order.values()[ADDRESS]}, {order.values()[CITY] or 'bez MIASTO'}" for order in RULE])
 def test_zlecenie_dostaje_od_kolumny_p_tylko_wiersze_bazy_z_tym_samym_adresem(rule_day: tuple[Day, Worksheet], order: Order) -> None:
     day, sheet = rule_day
 
@@ -2878,7 +2923,8 @@ def test_dowolna_komorka_bazy_daje_historie_adresu_albo_ostrzezenie_a_dzien_jest
 ) -> None:
     """Jedna komórka Bazy z dowolną wartością w dowolnym formacie liczby, w wierszu 1 arkusza albo w wierszu trafienia,
     w systemie dat od 1900 albo 1904 r.: Uporządkowanie kończy się dniem uporządkowanym z Historią adresu albo z
-    ostrzeżeniem ``BAZA_ZLECEN_POMINIETA``, nigdy Zatrzymaniem z nieoczekiwanym błędem.
+    ostrzeżeniem ``BAZA_ZLECEN_POMINIETA``, nigdy Zatrzymaniem z nieoczekiwanym błędem. Wartość w ``MIASTO`` trafienia
+    jest jego miastem, więc może dać też dzień bez trafienia.
 
     Przykłady stałe: 8-cyfrowy numer w formacie daty w ``UMOWA``, 4301 cyfr w ``NUMER ZL.`` i liczba w formacie daty
     za 31.12.9999 tylko w systemie dat od 1904 r."""
@@ -2892,7 +2938,10 @@ def test_dowolna_komorka_bazy_daje_historie_adresu_albo_ostrzezenie_a_dzien_jest
         summary = _ordered(_run(tmp_path, base=True))
 
     codes = [warning.code for warning in summary.warnings]
-    assert (codes, summary.history) in (([], HistoryCounts(1, 1, 1)), (["BAZA_ZLECEN_POMINIETA"], None)), (codes, summary.history)
+    endings = [([], HistoryCounts(1, 1, 1)), (["BAZA_ZLECEN_POMINIETA"], None)]
+    if place == (2, layout.city):
+        endings.append(([], HistoryCounts(0, 0, 1)))
+    assert (codes, summary.history) in endings, (codes, summary.history)
 
 
 def test_baza_otwarta_w_excelu_daje_historie_adresu_z_ostatniego_zapisu(tmp_path: Path) -> None:

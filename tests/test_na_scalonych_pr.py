@@ -203,11 +203,19 @@ def _proof(
     rule: str = RULE,
     chosen: tuple[str, ...] = ("--regula", "regula.yml"),
 ) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Bieg dowodu reguły wybranej argumentami ``chosen`` (domyślnie plik ``regula.yml`` z treścią ``rule``) na ``main``
-    z plikami ``start`` i dawnym odpaleniem w ``stare.py`` i dwoma merge'ami: PR #5, którego werdykt FAIL z polem
-    ``where`` ma ``kod/inne.py`` w postaci ``failed`` (poprawka go usuwa), i PR #6 z plikami ``clean``."""
+    """Bieg dowodu reguły wybranej argumentami ``chosen`` (domyślnie plik ``regula.yml`` z treścią ``rule``) na
+    repozytorium ``_merged``."""
 
-    files = {"stare.py": OLD.format("obiekt"), "regula.yml": rule, **(start or {})}
+    github, sha = _merged(tmp_path, failed, clean, {"regula.yml": rule, **(start or {})}, where)
+    return github.run(*chosen, "--wazne", "5/W1/r1", "--ostatnie", "2"), sha
+
+
+def _merged(tmp_path: Path, failed: str, clean: dict[str, str], start: dict[str, str], where: str = WHERE) -> tuple[FakeGitHub, str]:
+    """``main`` z plikami ``start`` i dawnym odpaleniem w ``stare.py`` i dwoma merge'ami: PR #5, którego werdykt FAIL
+    z polem ``where`` ma ``kod/inne.py`` w postaci ``failed`` (poprawka go usuwa), i PR #6 z plikami ``clean``;
+    obok SHA linii ``WERDYKT``."""
+
+    files = {"stare.py": OLD.format("obiekt"), **start}
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
     sha = _merge(github, 5, {"kod/inne.py": failed}, {"kod/inne.py": CLEAN})[0]
     _merge(github, 6, clean)
@@ -222,7 +230,7 @@ def _proof(
         **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": [comment]}, "reviews": {**pages, "nodes": []}},
     }
     (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
-    return github.run(*chosen, "--wazne", "5/W1/r1", "--ostatnie", "2"), sha
+    return github, sha
 
 
 @needs_ast_grep
@@ -339,6 +347,49 @@ def test_dowod_reguly_o_id_odmawia_reguly_ktorej_konfiguracja_ast_grep_nie_laduj
     ), done.stdout
 
 
+# Przypadki z pola metadata.przypadki reguły: Ważne W1 PR #5 i merge PR #6, który dodaje odpalenie w kod/drugi.py:2.
+CASES = "metadata:\n  przypadki:\n    - 5/W1/r1\n    - {merge} kod/drugi.py:1\n"
+
+
+def _founding(tmp_path: Path, rules: dict[str, str]) -> tuple[subprocess.CompletedProcess[str], str, str]:
+    """Bieg ``--przypadki-regul`` z regułami ``rules`` (plik → treść, w której ``{merge}`` to SHA merge'a PR #6)
+    w ``reguly-ast-grep/`` checkoutu repozytorium ``_merged``; obok SHA linii ``WERDYKT`` PR #5 i merge'a PR #6."""
+
+    github, sha = _merged(tmp_path, CAUGHT, {"kod/drugi.py": CAUGHT}, {"sgconfig.yml": SGCONFIG})
+    merge = git(github.checkout, "rev-parse", "HEAD")
+    for name, text in rules.items():
+        (github.checkout / "reguly-ast-grep").mkdir(exist_ok=True)
+        (github.checkout / "reguly-ast-grep" / name).write_text(text.replace("{merge}", merge), encoding="utf-8")
+    return github.run("--przypadki-regul"), sha, merge
+
+
+@needs_ast_grep
+def test_przypadki_regul_lapia_wazne_i_commit_z_pola_metadata_kazdej_reguly(tmp_path: Path) -> None:
+    done, sha, merge = _founding(tmp_path, {"zakazane-wywolanie.yml": RULE + CASES})
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.splitlines() == [
+        f"#5 W1 r1 | {sha[:8]} | złapane | odpalenia kod/inne.py:2 | Gdzie: kod/inne.py:1",
+        f"commit | {merge[:8]} | złapane | odpalenia kod/drugi.py:2 | Gdzie: kod/drugi.py:1",
+        "PRZYPADKI REGUŁ OK | 1 reguł, 2 przypadków",
+    ], done.stdout
+
+
+@needs_ast_grep
+def test_przypadki_regul_odmawiaja_reguly_ktora_nie_lapie_przypadku_albo_go_nie_ma(tmp_path: Path) -> None:
+    """Reguła osłabiona tak, że nie odpala już w ``Gdzie`` swoich przypadków, i reguła bez pola ``metadata.przypadki``
+    to odmowa z tym, co zrobić."""
+
+    weakened = RULE.replace("$O.zakazane()", "$O.inne()") + CASES
+    done, _, merge = _founding(tmp_path, {"a.yml": RULE.replace("zakazane-wywolanie", "bez-przypadku"), "b.yml": weakened})
+
+    assert done.returncode == 1, done.stdout + done.stderr
+    again = "popraw regułę tak, by znów odpalała w jego Gdzie"
+    assert done.stdout.splitlines()[-1] == (
+        "PRZYPADKI REGUŁ FAIL | bez-przypadku: bez pola metadata.przypadki; dopisz przypadek, który reguła łapie: Ważne PR/W<n>/r<k> albo <pełny SHA> plik:linia"
+        f" | zakazane-wywolanie: nie łapie 5/W1/r1; {again} | zakazane-wywolanie: nie łapie {merge} kod/drugi.py:1; {again}"
+    ), done.stdout
+
 # Dowód strażnika (``--straznik``, ADR 0042) tak, jak uruchamia go tools/scal_pr.py: PR #5 z werdyktem FAIL na wersji
 # z ``zakazane()`` w ``kod/inne.py`` i HEAD z poprawką i testem, który pada na wersji z werdyktu.
 GUARD_TEST = "from kod.inne import wazne\n\n\nclass Obiekt:\n    def dozwolone(self) -> None:\n        pass\n\n\ndef test_wazne_wola_tylko_dozwolone() -> None:\n    wazne(Obiekt())\n"
@@ -395,4 +446,27 @@ def test_wyjatek_prozy_czyta_docstring_regula_ast_grep_z_kopii_sha_werdyktu(tmp_
 
     done, _ = _guard_proof(tmp_path, "brak - proza", {"kod/inne.py": text.format("zakazane")}, {"kod/inne.py": text.format("dozwolone")})
 
+    assert done.stdout.splitlines()[-1] == last, done.stdout
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("cases", "last"),
+    [
+        ("metadata:\n  przypadki:\n    - 5/W1/r1\n", "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 1"),
+        (
+            "metadata:\n  przypadki:\n    - 1533/W1/r2\n",
+            "DOWÓD ODMOWA | ast-grep zakazane-wywolanie | 5/W1/r1 nie stoi w metadata.przypadki reguły zakazane-wywolanie na HEAD: dopisz je tam, to jedyna lista przypadków reguły",
+        ),
+    ],
+    ids=["wazne-w-przypadkach-reguly", "wazne-spoza-przypadkow-reguly"],
+)
+def test_straznik_regula_ast_grep_wymaga_waznego_w_przypadkach_reguly_i_jej_dowodu(tmp_path: Path, cases: str, last: str) -> None:
+    """Przypadki reguły mają jedną listę, pole ``metadata.przypadki`` (krok ``--przypadki-regul``), więc strażnik
+    ``ast-grep <id>`` przechodzi tylko z Ważnym na tej liście na HEAD i z dowodem reguły na nim."""
+
+    start = {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/zakazane-wywolanie.yml": RULE + cases}
+    done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start=start, chosen=("--straznik", "ast-grep zakazane-wywolanie", "--z-commita", "HEAD"))
+
+    assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == last, done.stdout

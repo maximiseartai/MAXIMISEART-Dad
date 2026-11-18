@@ -42,7 +42,7 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 
 - „Pole werdyktu”: pole `Idiom:` w trzech postaciach przestaje być polem, od którego zależy merge.
 - „Warunek merge'a”: zastępuje go „Strażnik przy każdym Ważnym”.
-- „Dowód reguły”: przypadki dowodu reguły to Ważne, których `Strażnik:` nazywa tę regułę, a nie historia pól `Idiom:`.
+- „Dowód reguły”: przypadki reguły to jej pole `metadata.przypadki` (#2098), a Ważne ze `Strażnik: ast-grep <id>` przechodzi tylko z wpisem na tej liście na HEAD i z dowodem reguły na nim, a nie z historii pól `Idiom:`.
 - „Idiom bez reguły”: klasy `brak-testu`, `stan-kroku`, `typ` i `test-klasy` zastępuje strażnik z dowodem narzędzia, a luka „PASS bez punktu dowodu” zostaje tylko przy `brak - test`.
 - „Status w Actions”: liczy warunek 5 w osobnym jobie (wyżej) i jest wymagany od 14.11.2026.
 - „Konsekwencje”: poza osądem nie zostaje wybór postaci `bez reguły` ani dowód mutacji klas `typ` i `test-klasy`, a zdanie o stanie sprzed decyzji o rulesecie zdejmuje ten ADR z ADR 0036.

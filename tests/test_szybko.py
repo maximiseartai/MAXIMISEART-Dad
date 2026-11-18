@@ -53,10 +53,6 @@ BY_CHANGE_ONLY = {
         "sprawdza plugin na sesjach próbek w katalogu tymczasowym, a nie całe repozytorium: sam plugin conftest stawia "
         "przy każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/stan_procesu.py, który importuje"
     ),
-    "tests/test_zakazy_ruff.py::test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa": (
-        "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
-        "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
-    ),
     "tests/test_prywatne_skladowe.py::test_prywatna_skladowa_ustawien_w_module_centrum_pada_w_ruff": (
         "sprawdza ruff SLF001 na próbce modułu Centrum w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
     ),
@@ -110,14 +106,6 @@ BY_CHANGE_ONLY = {
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
         "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_tresc_z_wydania_w_src_tylko_u_wlascicieli_takze_z_noqa": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
-        "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
-        "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
 }
 
@@ -173,6 +161,8 @@ RULE_GUARDS = frozenset(
     tests/test_zapadki.py::test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu
     tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
     tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
+    tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
+    tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff
     """.split()
 )
 
@@ -716,16 +706,18 @@ def test_proces_testu_struktury_na_mergu_importuje_kod_z_mergu(tmp_path: Path) -
     assert (answered.returncode, last) == (1, "SZYBKO FAIL | testy struktury po mergu z origin/main"), answered.stdout
 
 
-def test_testy_struktury_na_mergu_biegna_bez_workerow_xdist(tmp_path: Path) -> None:
-    # Na HEAD biegną w kroku pytest z workerami, a na mergu, który ma plik z main, krok biegnie razem z nim.
-    single_process = (
+def test_testy_struktury_biegna_raz_na_mergu_z_polowa_workerow_kroku_pytest(tmp_path: Path) -> None:
+    # Test struktury pada na HEAD (bez pliku z main) i przy innej liczbie workerów, więc przechodzi tylko na mergu
+    # z połową z 4; zapadki z tym samym ciałem biegną zawsze na HEAD.
+    only_on_merge = (
         "import os\n\n    on_merge = (Path(__file__).parents[1] / 'docs' / 'z-main.md').exists()\n"
-        "    assert not (on_merge and 'PYTEST_XDIST_WORKER' in os.environ)"
+        "    half = os.environ.get('PYTEST_XDIST_WORKER_COUNT') == '2'\n"
+        "    assert Path(__file__).name == 'test_zapadki.py' or (on_merge and half)"
     )
-    repo = _repo(tmp_path, structure=single_process)
+    repo = _repo(tmp_path, structure=only_on_merge)
     _base_moved_on(repo, ("docs/z-main.md", "z main\n"), ("docs/notatka.md", "z gałęzi\n"))
 
-    answered = _szybko(repo)
+    answered = _szybko(repo, workers="4")
 
     assert re.search(r"^OK   testy struktury po mergu z origin/main \(\d+ s\)$", answered.stdout, re.MULTILINE), answered.stdout
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
@@ -739,6 +731,41 @@ def test_konflikt_z_baza_jest_uwaga_a_nie_porazka(tmp_path: Path) -> None:
 
     assert "UWAGA: merge z origin/main ma konflikt w docs/notatka.md" in answered.stdout
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
+
+
+@pytest.mark.parametrize("change", ["zacommitowana", "niezacommitowana", "nieśledzona"])
+def test_testy_struktury_na_mergu_widza_zmiane_z_drzewa_roboczego(tmp_path: Path, change: str) -> None:
+    # Test struktury pada na pliku uwagi/ z treścią „łamie”; nazwa katalogu jest złożona, żeby graf nie wiązał z nim
+    # testu, który wtedy biegłby też na HEAD; zapadki z tym samym ciałem biegną na HEAD.
+    breaks = (
+        "notes = Path(__file__).parents[1] / ('uw' + 'agi')\n"
+        "    found = [p for p in notes.glob('*.md') if p.read_text(encoding='utf-8') == 'łamie\\n']\n"
+        "    assert Path(__file__).name == 'test_zapadki.py' or not found"
+    )
+    repo = _repo(tmp_path, structure=breaks)
+    _base_moved_on(repo, ("docs/z-main.md", "z main\n"), ("uwagi/notatka.md", "z gałęzi\n"))
+    _write(repo, "uwagi/nowa.md" if change == "nieśledzona" else "uwagi/notatka.md", "łamie\n")
+    if change == "zacommitowana":
+        commit(repo, "zmiana łamie strukturę")
+
+    answered = _szybko(repo)
+
+    assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | testy struktury po mergu z origin/main"), answered.stdout
+    # Drzewo robocze trafia do mergu przez tymczasowy indeks, więc indeks checkoutu zostaje taki, jaki był.
+    assert git(repo, "diff", "--cached", "--name-only") == ""
+
+
+def test_przy_konflikcie_z_baza_testy_struktury_biegna_na_head(tmp_path: Path) -> None:
+    # Pada każdy test struktury poza zapadkami, które biegną na HEAD zawsze, więc krok pytest pada tylko wtedy, gdy
+    # biegną w nim testy struktury (szybko pokazuje przy porażce tylko koniec wyjścia, więc nie wszystkie linie FAILED).
+    repo = _repo(tmp_path, structure="assert Path(__file__).name == 'test_zapadki.py'")
+    _base_moved_on(repo, ("docs/notatka.md", "z main\n"), ("docs/notatka.md", "z gałęzi\n"))
+
+    answered = _szybko(repo)
+
+    assert "UWAGA: merge z origin/main ma konflikt w docs/notatka.md; testy struktury biegną na HEAD" in answered.stdout
+    assert "testy struktury po mergu" not in answered.stdout, answered.stdout
+    assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | pytest"), answered.stdout
 
 
 def test_merge_z_baza_ktorego_git_nie_policzy_wywraca_krok_struktury_a_nie_jest_konfliktem(tmp_path: Path) -> None:

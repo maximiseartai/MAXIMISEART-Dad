@@ -11,6 +11,9 @@ files:
   - src/**/*.py
   - src/**/*.pyi
   - src/**/*.py3
+metadata:
+  przypadki:
+    - 6e6c7c376daa162c3679137915502468ef34df95 src/rozliczenia/centrum/report_entering_logs.py:649
 rule:
   kind: comment
   # Gramatyka całego komentarza, a każdy inny komentarz jest zgłoszony: „# noqa: ”, kody [A-Z]+[0-9]+ rozdzielone „, ”,

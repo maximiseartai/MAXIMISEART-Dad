@@ -18,6 +18,9 @@ files:
 ignores:
   - src/rozliczenia/efenix_browser.py
   - tests/fixtures/przegladarka.py
+metadata:
+  przypadki:
+    - 1d56cf7a50af783a91dfb2b6ab0a44e3675da8fa .agents/skills/verify-centrum-rozliczen/scripts/drive_centrum.py:303
 rule:
   # Zgłasza każde odwołanie do metody launch albo launch_persistent_context (węzeł attribute w dowolnym miejscu drzewa:
   # wywołanie, argument, przypisanie, partial, to_thread), chyba że to wołana funkcja wywołania, także w nawiasach,

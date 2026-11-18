@@ -9,8 +9,12 @@ files:
   - tests/**/*.py
 ignores:
   - tests/test_zapadki.py
+metadata:
+  przypadki:
+    - 5b2edaf2f9b2039ae57366efb51cc0ea0ab4d92c tests/fixtures/efenix.py:74
+    - cc7e5ced21cf1c51aaef6944f79044bc9a78677d tests/test_uruchom_proces.py:515
 rule:
-  # Lookbehind wokół cyfr numeru, jak (?<![0-9a-f]) w 5b2edaf2f9 i (?<![0-9]) w cc7e5ced21: reguła czyta tylko tekst
+  # Lookbehind wokół cyfr numeru, jak (?<![0-9a-f]) i (?<![0-9]) z metadata.przypadki: reguła czyta tylko tekst
   # (?<!, po nim opcjonalnie [, a po nim \d z jednym ukośnikiem albo 0-9, w napisie albo komentarzu. Lookbehind złożony
   # z kilku literałów, \d z dwoma ukośnikami w napisie bez r, klasa z 0-9 nie zaraz po [, \b, sam lookahead i każda
   # wyrocznia bez lookbehindu (not in, find, count, re.search na samym numerze) to znane luki w

@@ -34,6 +34,7 @@ ORDER_SHEET = "ZLECENIA OD 06_2025"
 HEADERS = REGISTER_HEADERS
 FIRST = 2  # B: AKCJE
 DATE = 3  # C
+CITY = 4  # D: MIASTO
 ADDRESS = 5  # E: ADRES
 DEVICES = 7  # G: URZĄDZENIA
 ACTIVITIES = 8  # H: CZYNNOŚCI
@@ -61,7 +62,8 @@ class Order:
     """Zlecenie syntetyczne: chwila, Wykonawca i numer, z którego powstają pozostałe wartości wiersza.
 
     ``operator`` stoi w ``CZYNNOŚCI`` (``None``: pusta komórka), a ``kind`` w ``URZĄDZENIA``, jak z aplikacji.
-    ``cells``: kolumna (od 1, nieprzesunięta) → wartość w miejsce wartości z numeru, np. liczba w ``NUMER UMOWY``.
+    ``cells``: kolumna (od 1, nieprzesunięta) → wartość w miejsce wartości z numeru, np. liczba w ``NUMER UMOWY``
+    (``None``: pusta komórka). ``MIASTO`` zlecenia to ``Miastko``, jak miasto przed przecinkiem w Bazie zleceń atrapy.
     ``shifted``: wiersz stoi dwie kolumny na lewo od nagłówków, jak pierwszy wiersz każdego wklejenia (pierwszy wiersz
     ``Intermax.raw`` przesuwa ``Intermax.shifted``), a ``app_look``: wiersz w ``Intermax.ordered`` ma wygląd z
     aplikacji (Roboto 4), jak zlecenie wklejone nad uporządkowanymi.
@@ -72,16 +74,16 @@ class Order:
     number: int
     operator: str | None = "INEA"
     kind: str = "Instalacja"
-    cells: tuple[tuple[int, datetime | str | int], ...] = ()
+    cells: tuple[tuple[int, datetime | str | int | None], ...] = ()
     shifted: bool = False
     app_look: bool = False
 
-    def values(self) -> dict[int, datetime | str | int]:
+    def values(self) -> dict[int, datetime | str | int | None]:
         """Wartości kolumn od B do AK na swoim miejscu (nieprzesunięte)."""
 
-        values: dict[int, datetime | str | int] = {
+        values: dict[int, datetime | str | int | None] = {
             DATE: self.when,
-            4: "Miasto",
+            CITY: "Miastko",
             ADDRESS: f"Ulica {self.number}",
             6: "Umowa",
             DEVICES: self.kind,

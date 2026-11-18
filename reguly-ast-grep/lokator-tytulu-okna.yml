@@ -7,8 +7,11 @@ message: >-
   settings_title(page) z drive/common.py, a inny nagłówek nazwij przez name=
 files:
   - .agents/skills/**/scripts/**/*.py
+metadata:
+  przypadki:
+    - 1533/W1/r2
 rule:
-  # Lokator nagłówka bez name= to druga droga do tytułu okna obok settings_title (#1553, powrót #1533 W1 r2).
+  # Lokator nagłówka bez name= to druga droga do tytułu okna obok settings_title (#1553; powrót w metadata.przypadki).
   # Reguła czyta tylko literał roli: argument z miejsca albo role=, po zdjęciu dowolnej liczby nawiasów, to napis
   # o wartości heading w dowolnym zapisie literału. Każde inne wyrażenie roli (nazwa, sklejanie, operator, wywołanie,
   # f-napis ze wstawką) to znana luka „rola nie jest literałem” w ZNANE_LUKI_LOKATORA w tests/test_zapadki.py.

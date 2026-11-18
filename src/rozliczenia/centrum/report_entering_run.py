@@ -355,7 +355,8 @@ def _worker_day(
     reminders: tuple[datetime, ...],
 ) -> report_entering_contract.ReportsWorkerDay:
     """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem albo informacją, zera, bez dni z tematu
-    raportów z pomylonym tematem), problemami ``problems``, informacjami ``notes`` i chwilami Przypomnień o raporcie
+    raportów z pomylonym tematem i bez raportów z błędem tematu, z których nie ma czego wpisać), problemami
+    ``problems``, informacjami ``notes`` i chwilami Przypomnień o raporcie
     ``reminders``; stan zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
 
     numbers = {placed.problem.number for placed in problems}
@@ -371,6 +372,7 @@ def _worker_day(
         problems=[_problem(placed) for placed in problems],
         notes=[report_entering_contract.ReportsNote(number=found.number, text=found.text) for found in notes],
         mistaken_subjects=[] if figure is None else list(figure.mistaken),
+        overtaken_subjects=[] if figure is None else list(figure.overtaken),
         orders_detail=None
         if orders is None
         else [

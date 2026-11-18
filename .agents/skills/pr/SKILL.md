@@ -82,7 +82,7 @@ Dowód: <polecenie i wynik>
 - Every code of the section, in a Ważne block and in a red-`main` block, stands in `korzenie.toml` on HEAD.
 - `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each higher rung, in ladder order; rung (a) has no such line.
   Rung (e) needs this PR to add a new point linking to this PR (`#N`) to „Co jest porażką” in the skill `przeglad` and to leave the other points as on the base: an edited point of the base is not a new point.
-- A Ważne block ends with one line `Strażnik: <selector>` from the list in the docstring of `tools/lib/straznik.py`, also after `Wyrwany w #M`; `tools/scal_pr.py` computes its proof from the tree of the `FAIL` verdict, and you check it with `tools/na_scalonych_pr.py --straznik '<selector>' --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`.
+- A Ważne block ends with one line `Strażnik: <selector>` from the list in the docstring of `tools/lib/straznik.py`, also after `Wyrwany w #M`; `tools/scal_pr.py` computes its proof from the tree of the `FAIL` verdict, and you check it with `tools/na_scalonych_pr.py --straznik '<selector>' --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`; `ast-grep <id>` also needs `<PR>/W<n>/r<k>` in the rule's `metadata.przypadki`.
 - A red-`main` block ends with `Dowód:`, a command with its result, at most 5 lines of at most 300 characters, as in the verdict.
 - A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first into the default branch: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.
   Write both numbers as bare `#N`, so GitHub links the two PRs on their timelines.
