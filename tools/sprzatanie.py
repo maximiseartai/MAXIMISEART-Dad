@@ -116,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
     branches = [(branch, head) for branch, _, head in refs if branch != MAIN and branch not in checked_out]
     with ThreadPoolExecutor(max_workers=JUDGES) as pool:
         verdicts = list(pool.map(lambda tree: _judge_tree(root, tree, here, busy, threads), trees))
-        verdicts += pool.map(lambda found: _Verdict(None, found[0], found[1], _readable(_branch_reasons(root, *found, threads))), branches)
+        verdicts += pool.map(lambda found: _Verdict(None, found[0], found[1], _readable(_branch_reasons(root, found[0], found[1], threads))), branches)
 
     removed = 0
     for verdict in sorted(verdicts, key=lambda verdict: (bool(verdict.reasons), verdict.name())):
