@@ -10,10 +10,10 @@
     "Kept": "417281fbc0c25393"
   },
   "src/rozliczenia/worker_reports/__init__.py": {
-    "enter_reports": "9300d4a675245082"
+    "enter_reports": "64436d7978d9a3a2"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "562772f6599f90c1",
+    "enter_from_mail": "1060d63d3fc0d6b7",
     "closed_periods": "5b9ce8bf021b5dd9",
     "SavedState": "2bef4c3810a32563"
   },

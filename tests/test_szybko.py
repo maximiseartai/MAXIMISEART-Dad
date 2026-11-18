@@ -107,6 +107,10 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
         "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
+    "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_przez_ruff_i_mypy": (
+        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
+        "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
+    ),
 }
 
 # Strażnicy reguł, których komunikat mówi regułę: biegną przy każdym ``tools/szybko.py``, z wierszem tabeli reguł
