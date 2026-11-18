@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from ..report_cells import OrderRow
-from . import _corrections, _entries, _matching, _subject
+from . import _corrections, _descriptions, _entries, _matching, _subject
 from ._model import (
     Login,
     MailId,
@@ -34,63 +34,41 @@ from ._model import (
 
 @dataclass(frozen=True)
 class WindowRead:
-    """Odczyty maili po ``_mail_order``, problemy nieznanych nadawców z dniem otwartym, Raporty wykonawców w tej samej
-    kolejności, zlecenia kliknięcia (``board``), dla każdego Raportu wykonawcy, także z błędem tematu, każdy dzień, za
-    który jest przysłany (``reported``: Wykonawca i dzień, ``_matching.Board.days``), raporty z błędem tematu, które tata
-    widzi, w tej samej kolejności, z dniami otwartymi, za które się liczą (``faulty``; pusto: problem bez dnia), i każdy
-    dzień otwarty, za który liczy się raport z pomylonym tematem, z jego dniem z tematu (``mistaken``: Wykonawca, dzień,
-    dzień z tematu). Raport z błędem tematu z dniem z tematu, który liczy się tylko za dni spoza dni otwartych, tata nie
-    widzi, jak Raport wykonawcy z takim dniem, a raportu, którego każdy Wpis tata wpisał Wpisem na życzenie, tata już
-    nie widzi jako błędu (``_settled``), także gdy pozostałe zlecenia wziął późniejszy mail. Raport z błędem tematu,
-    którego każde zlecenie wziął późniejszy mail, też nie jest błędem, tylko informacją przy każdym dniu otwartym, za
-    który się liczy (``overtaken``, ``_overtaken``), bo nie ma z niego czego wpisać. ``faulty_entries``: zlecenia
-    (numer, dzień, Wykonawca) z Wpisem w raporcie z błędem tematu za każdy dzień, za który ten raport się liczy; raport
-    jest przysłany, więc takie zlecenie nie jest bez raportu, choć Centrum jego Wpisu nie wpisało.
+    """Odczyty maili po ``_mail_order``, dla każdego Raportu wykonawcy, także z błędem tematu, każdy dzień, za który
+    jest przysłany (``reported``: Wykonawca i dzień, ``_matching.Board.days``), i każdy dzień otwarty, za który liczy
+    się raport z pomylonym tematem, z jego dniem z tematu (``mistaken``: Wykonawca, dzień, dzień z tematu). Raport z
+    błędem tematu z dniem z tematu, który liczy się tylko za dni spoza dni otwartych, tata nie widzi, jak Raport
+    wykonawcy z takim dniem, a raportu, którego każdy Wpis tata wpisał Wpisem na życzenie, tata już nie widzi jako błędu
+    (``_settled``), także gdy pozostałe zlecenia wziął późniejszy mail. Raport z błędem tematu, którego każde zlecenie
+    wziął późniejszy mail, też nie jest błędem, tylko informacją przy każdym dniu otwartym, za który się liczy
+    (``overtaken``, ``_overtaken``), bo nie ma z niego czego wpisać. ``faulty_entries``: zlecenia (numer, dzień,
+    Wykonawca) z Wpisem w raporcie z błędem tematu za każdy dzień, za który ten raport się liczy; raport jest przysłany,
+    więc takie zlecenie nie jest bez raportu, choć Centrum jego Wpisu nie wpisało.
 
     Wpis na życzenie przy raporcie z błędem tematu (ADR 0041) ma kształt Wpisu Raportu wykonawcy z dniem zlecenia w
     temacie: ``offers`` to Wpis na życzenie przy wierszu każdego zlecenia, o którym decyduje Wpis takiego raportu,
     gdy Centrum wie, co wpisać (``_offers``), a Wpisy, przy których tata kliknął (``inputs.requested``), są Raportami
     wykonawcy tego maila z dniem decyzji (``_requested``) wśród Raportów wykonawców Wpisania raportów.
 
-    Raporty wykonawców Wpisania raportów (``_entering``: z dniem z tematu i Wpisy na życzenie, po kolei maili, więc
-    późniejszy mail wygrywa z Wpisem na życzenie jak z każdym Wpisem wcześniejszego) zna tylko ten odczyt: moduł pakietu
-    dostaje z nich fakty (``said``) albo krok Wpisania (``match``, ``uncorrected``, ``standing``), a nie same raporty,
-    bo własne przejście po nich nie zna raportu z błędem tematu."""
+    Raporty wykonawców Wpisania raportów (z dniem z tematu i Wpisy na życzenie, po kolei maili, więc późniejszy mail
+    wygrywa z Wpisem na życzenie jak z każdym Wpisem wcześniejszego) nie są polem odczytu: ``read_window`` daje z nich
+    tylko wyniki, bo własne przejście po nich nie zna raportu z błędem tematu. ``said``: zlecenia (numer, dzień,
+    Wykonawca) z ich Wpisem, z dniem z tematu, a Wpis na życzenie z dniem decyzji taty; ``matched``: zwycięski Wpis
+    każdego zlecenia (``Board.match``); ``additions``: Zlecenia dopisane z raportu, którego nie poprawił późniejszy
+    Raport wykonawcy (``_corrections.uncorrected``); ``standing``: problemy nieznanych nadawców z dniem otwartym,
+    Wpisów i Błędów opisu (``_descriptions.entered``) z raportami z błędem tematu, które tata widzi, bez tych, które
+    zdjął poprawiony mail Wykonawcy (``_corrections.standing``)."""
 
     mails: tuple[MailRead, ...]
-    strangers: tuple[UnknownSender, ...]
-    board: _matching.Board
     reported: tuple[tuple[Login, date], ...]
-    faulty: tuple[tuple[ReadUnreadable, frozenset[date]], ...]
     mistaken: tuple[tuple[Login, date, date], ...]
     faulty_entries: frozenset[OrderKey]
     offers: Mapping[OrderRow, Requestable]
     overtaken: tuple[OvertakenSubject, ...]
-    _entering: tuple[ReadReport, ...]
-
-    @property
-    def said(self) -> frozenset[OrderKey]:
-        """Zlecenia (numer, dzień, Wykonawca) z Wpisem w Raporcie wykonawcy Wpisania raportów: z dniem z tematu, a Wpis
-        na życzenie przy raporcie z błędem tematu z dniem decyzji taty."""
-
-        return frozenset(OrderKey(entry.number, report.day, report.worker) for report in self._entering for entry in report.entries)
-
-    def match(self, requested: Iterable[RequestedEntry]) -> _matching.Matched:
-        """Zwycięski Wpis każdego zlecenia z Raportów wykonawców Wpisania raportów (``Board.match``)."""
-
-        return self.board.match(self._entering, requested)
-
-    def uncorrected(self, additions: Iterable[_matching.Addition]) -> tuple[_matching.Addition, ...]:
-        """Zlecenia dopisane z raportu, którego nie poprawił późniejszy Raport wykonawcy (``_corrections.uncorrected``)."""
-
-        return _corrections.uncorrected(additions, self._entering, self.board)
-
-    def standing(
-        self, problems: Iterable[ReportProblem], added: Mapping[OrderNumber, tuple[datetime, MailId]]
-    ) -> set[ReportProblem]:
-        """Problemy, których nie zdjął poprawiony mail Wykonawcy (``_corrections.standing``)."""
-
-        return _corrections.standing(problems, self._entering, self.faulty, self.board, added)
+    said: frozenset[OrderKey]
+    matched: _matching.Matched
+    additions: tuple[_matching.Addition, ...]
+    standing: frozenset[ReportProblem]
 
 
 def worker_report_count(mails: Iterable[MailRead]) -> int:
@@ -172,7 +150,15 @@ def read_window(inputs: ReportInputs) -> WindowRead:
         for day in sorted(shown[found])
     )
     entering = tuple(sorted((*reports, *requested), key=_mail_order))
-    return WindowRead(mails, tuple(strangers), board, tuple(reported), faulty, tuple(mistaken), entries, offers, taken, entering)
+    keys = frozenset(OrderKey(entry.number, report.day, report.worker) for report in entering for entry in report.entries)
+    entered = board.match(entering, inputs.requested)
+    additions = _corrections.uncorrected(entered.added, entering, board)
+    described = _descriptions.entered(inputs.legend, entered.entered, additions)
+    newest = {found.number: (found.arrived, found.mail) for found in additions}
+    standing = _corrections.standing([*strangers, *entered.problems, *described], entering, faulty, board, newest)
+    return WindowRead(
+        mails, tuple(reported), tuple(mistaken), entries, offers, taken, keys, entered, additions, frozenset(standing)
+    )
 
 
 def _days(board: _matching.Board, report: ReadReport) -> frozenset[date]:

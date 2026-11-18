@@ -445,7 +445,7 @@ class RequestedEntry:
       zamiar znaku (``VerdictFault.leaning``);
     - Wpis raportu z błędem tematu (``ReadUnreadable``), który stawia zlecenie w dniu ``day`` u ``worker``, także z
       Przeniesieniem zlecenia: rdzeń czyta go jak Wpis Raportu wykonawcy z tym dniem w temacie
-      (``_reading.WindowRead.requested``), a Wpis z ``t`` czy ``skuteczne`` także ze znakiem zamienionym na ``verdict``.
+      (``_reading._requested``), a Wpis z ``t`` czy ``skuteczne`` także ze znakiem zamienionym na ``verdict``.
 
     Rdzeń wpisuje go tak, dopóki ten Wpis tego maila jest zwycięskim Wpisem zlecenia: Wpis z późniejszego maila wygrywa
     jak każdy późniejszy, także z tym samym znakiem, a ręczna wartość zostaje z ``ManualDifference``. Decyzja należy do

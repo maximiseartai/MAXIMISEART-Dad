@@ -488,11 +488,19 @@ DROGI_RAPORTOW_PRZEZ_ODCZYT = {
         _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read_window(inputs)._entering for entry in report.entries)\n",
         "SLF001",
     ),
+    "wzorzec klasy odczytu okna po nazwie pola (#2114 r2 W1)": (
+        _GLOWA_ODCZYTU.replace("import read_window", "import WindowRead, read_window")
+        + "    match read_window(inputs):\n"
+        + "        case WindowRead(_entering=entering):\n"
+        + "            return frozenset(OrderKey(entry.number, report.day, report.worker) for report in entering for entry in report.entries)\n"
+        + "    return frozenset()\n",
+        "has no attribute",
+    ),
 }
 ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
     "zakaz zna tylko nazwę klasy, nie pola obiektów dopasowania: Raport wykonawcy Zlecenia dopisanego z raportu": (
         _GLOWA_ODCZYTU
-        + "    added = read_window(inputs).match(inputs.requested).added\n"
+        + "    added = read_window(inputs).additions\n"
         + "    return frozenset(OrderKey(entry.number, found.day, found.worker) for found in added for entry in found.report.entries)\n"
     ),
     "zakaz zna tylko nazwę klasy, nie zawężenie unii: wykluczenie pozostałych odczytów maila": (
@@ -521,9 +529,10 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     | atrybut pakietu pod aliasem: ``isinstance(read, reports.ReadReport)`` | łapie | ``SAMPLES`` |
     | pole odczytu okna: ``read_window(inputs).reports`` (#2114 r1 W1) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | prywatne pole odczytu okna: ``read_window(inputs)._entering`` | ruff ``SLF001`` | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
+    | wzorzec klasy po nazwie pola: ``case WindowRead(_entering=entering)`` (#2114 r2 W1; pozycyjny wiąże tylko wyniki odczytu) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | wykluczenie pozostałych odczytów: ``not isinstance(read, (ReadUnreadable, ReadStranger))`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
     | refleksja po nazwie: ``getattr(read, "entries", ())``, ``type(read).__name__`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
-    | pole obiektu dopasowania: ``Addition.report`` z ``WindowRead.match(…).added`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | pole obiektu dopasowania: ``Addition.report`` z ``WindowRead.additions`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
 
     Poza ``src/`` zakaz nie obowiązuje: próba skrzynki raportów w ``tools/`` czyta każdy mail osobno."""
     probe = SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "sonda_luki.py"
