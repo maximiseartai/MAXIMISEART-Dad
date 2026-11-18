@@ -32,6 +32,7 @@ import github as klient_github
 import limit_rund
 import naprawia
 import ponowny_przeglad
+import reguly_bazy
 import rejestr_korzeni
 import scal_pr
 import stan_pr
@@ -2907,8 +2908,9 @@ CASES_DROPPED = (1, "PRZYPADKI REGUŁ FAIL | zakazane-wywolanie: PR usuwa z meta
             "reguły bazy: kod/inne.py:1: zakazane-wywolanie: Zamień zakazane() na dozwolone().",
         ),
         ({"kod/inne.py": "INNE: int = 1\n"}, CASES_DROPPED, f"przypadki reguł: {CASES_DROPPED[1]}"),
+        ({"kod/inne.py": "INNE: int = 1\n"}, (0, "PRZYPADKI REGUŁ"), "przypadki reguł: PRZYPADKI REGUŁ (przypadek z bazy"),
     ],
-    ids=["linia-pr-pod-regula-bazy", "przypadek-bazy-usuniety"],
+    ids=["linia-pr-pod-regula-bazy", "przypadek-bazy-usuniety", "przypadki-bez-linii-ok"],
 )
 def test_pr_ktory_oslabia_regule_bazy_nie_scala_sie_a_jego_status_jest_czerwony(
     tmp_path: Path, change: dict[str, str], cases: tuple[int, str], reason: str
@@ -3116,7 +3118,7 @@ def test_limit_dowodow_regul_konczy_sie_przed_limitem_joba_statusu() -> None:
 
     job = yaml.safe_load(STATUS_WORKFLOW.read_text(encoding="utf-8"))["jobs"]["status"]
 
-    assert job["timeout-minutes"] * 60 - bramka_idiomu.PROOF_TIMEOUT_S >= 120
+    assert job["timeout-minutes"] * 60 - bramka_idiomu.PROOF_TIMEOUT_S - reguly_bazy.CASES_TIMEOUT_S >= 120
 
 
 def test_blad_renderera_werdyktow_w_warunku_idiom_to_oczekiwanie_bez_dowodu(tmp_path: Path) -> None:

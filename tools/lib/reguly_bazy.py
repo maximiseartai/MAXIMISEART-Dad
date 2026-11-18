@@ -10,8 +10,8 @@ go jeszcze w wersji z bazy, a zmiana reguły działa od merge'a PR, który ją w
 
 Przypadki reguł (``metadata.przypadki``) liczy ``case_problems``: ``tools/na_scalonych_pr.py --przypadki-regul
 --z-commita <scalenie>`` z kodu bazy na commicie scalenia HEAD PR z bazą (``git merge-tree``), czyli na regułach,
-które wejdą do bazy, więc reguła łapie każdy swój przypadek i wymienia każdy przypadek reguły bazy o tym samym id,
-także gdy PR zmienia krok CI, który liczy przypadki kodem PR. Scalenie, a nie sam HEAD, bo PR rozgałęziony przed
+które wejdą do bazy, więc każda reguła łapie każdy swój przypadek, a każdy przypadek reguł bazy wymienia któraś
+z nich, bez względu na jej id i plik, także gdy PR zmienia krok CI, który liczy przypadki kodem PR. Scalenie, a nie sam HEAD, bo PR rozgałęziony przed
 dodaniem przypadku do bazy nie ma go w swoich regułach, choć go nie usuwa.
 
 Biegnie w ``tools/scal_pr.py`` (warunek 6), także w statusie „Werdykt i bramka”, który sądzi kod bazy, nigdy kod PR:
@@ -38,12 +38,19 @@ CONFIG = "sgconfig.yml"
 CASES_TOOL = Path("tools") / "na_scalonych_pr.py"
 CASES_OK = "PRZYPADKI REGUŁ OK |"
 CASES_TIMEOUT_S = 180
+SUPPRESSED = "dyrektywa-tlumienia"
+SUPPRESSED_MESSAGE = (
+    f"dyrektywa {odpalenia_ast_grep.SUPPRESSION} chowa odpalenie reguły chwastu: usuń ją i popraw kod według komunikatu reguły,"
+    " a tekst dyrektywy w próbce składaj z odpalenia_ast_grep.SUPPRESSION"
+)
 
 
 def findings(root: Path, head: str, base: str) -> list[Finding]:
     """Odpalenia reguł ast-grep commitu ``base`` repozytorium ``root`` na liniach, które ``head`` dodaje od
     ``merge-base`` z ``base``; ``head`` i ``base`` są już w ``root``. Baza bez ``sgconfig.yml`` albo bez katalogu reguł
-    nie ma reguł, więc niczego nie zgłasza. Brak ast-grep przy dodanej linii albo jego porażka to
+    nie ma reguł, więc niczego nie zgłasza. Linia pliku Pythona z tekstem dyrektywy tłumienia
+    (``odpalenia_ast_grep.SUPPRESSION``) to odpalenie ``SUPPRESSED``, bo ast-grep ją uznaje i chowa odpalenie reguły
+    bazy, a zakaz tego tekstu w Required CI liczy kod PR. Brak ast-grep przy dodanej linii albo jego porażka to
     ``odpalenia_ast_grep.ScanFailed``."""
 
     if not _has_rules(root, base):
@@ -53,7 +60,12 @@ def findings(root: Path, head: str, base: str) -> list[Finding]:
     with potomne.commit_copy(root, head) as copy:
         for command in (("rm", "-r", "-q", "--ignore-unmatch", "--", RULES, CONFIG), ("checkout", base, "--", RULES, CONFIG)):
             repo.run_git(copy, *command).check_returncode()
-        return odpalenia_ast_grep.on_added_lines(copy, since, ("--config", str(copy / CONFIG)), ast_grep)
+        hidden = [
+            Finding(path, number, SUPPRESSED, SUPPRESSED_MESSAGE)
+            for path, number, text in odpalenia_ast_grep.Changes(copy, since).added()
+            if path.endswith(odpalenia_ast_grep.PYTHON_SUFFIXES) and odpalenia_ast_grep.SUPPRESSION in text
+        ]
+        return sorted(hidden + odpalenia_ast_grep.on_added_lines(copy, since, ("--config", str(copy / CONFIG)), ast_grep))
 
 
 def problems(root: Path, head: str, base: str) -> list[str]:
@@ -72,8 +84,8 @@ def problems(root: Path, head: str, base: str) -> list[str]:
 
 def case_problems(root: Path, head: str, base: str) -> list[str]:
     """Przyczyna odmowy z ``tools/na_scalonych_pr.py --przypadki-regul --z-commita <scalenie>`` kodu ``root``
-    (commitu ``base``): reguły scalenia ``head`` z ``base`` łapią swoje przypadki i wymieniają przypadki reguł bazy
-    o tym samym id. Baza bez reguł niczego nie wymaga, a scalenie z konfliktem to odmowa."""
+    (commitu ``base``): reguły scalenia ``head`` z ``base`` łapią swoje przypadki, a każdy przypadek reguł bazy
+    wymienia któraś z nich. Baza bez reguł niczego nie wymaga, a scalenie z konfliktem to odmowa."""
 
     if not _has_rules(root, base):
         return []

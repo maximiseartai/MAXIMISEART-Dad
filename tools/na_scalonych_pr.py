@@ -66,12 +66,13 @@ je pomija. Kończy się ``PRZYPADKI REGUŁ OK | <n> reguł, <k> przypadków`` al
     .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul
     .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul --z-commita <SHA scalenia HEAD PR z bazą>
 
-Z ``--z-commita REV`` reguły i ich przypadki bierze z kopii ``REV``, a reguła o id, które ma też reguła checkoutu,
-ma w ``metadata.przypadki`` każdy przypadek tamtej: przypadek, którego ``REV`` już nie wymienia, to porażka. Tak
-uruchamia go ``tools/scal_pr.py`` z kodu bazy na scaleniu HEAD PR z bazą (warunek 6, ``reguly_bazy``), więc PR, który osłabia regułę i usuwa
-z niej przypadek, którego ona już nie łapie, nie przechodzi także wtedy, gdy zmienia ten krok CI. Granica: reguły
-usuniętej w całości (bez reguły o tym id w ``REV``) ten krok nie sprawdza; jej przypadki znikają z jej plikiem, który
-widać w diffie, a linie, które PR dodaje, sądzi jeszcze ona sama w wersji z bazy (warunek 6).
+Z ``--z-commita REV`` reguły i ich przypadki bierze z kopii ``REV``, a każdy przypadek reguły checkoutu (bazy)
+wymienia w ``metadata.przypadki`` któraś reguła ``REV``, która go łapie: przypadek, którego żadna reguła ``REV`` nie
+wymienia, to porażka, bez względu na id i plik reguły, więc zmiana ``id:``, przeniesienie reguły do innego pliku ani
+usunięcie reguły go nie gubi. Regułę z przypadkami usuwa się więc tylko razem z przeniesieniem każdego przypadku do
+reguły, która go łapie. Tak uruchamia go ``tools/scal_pr.py`` z kodu bazy na scaleniu HEAD PR z bazą (warunek 6,
+``reguly_bazy``), więc PR, który osłabia regułę i usuwa z niej przypadek, nie przechodzi także wtedy, gdy zmienia ten
+krok CI.
 """
 
 from __future__ import annotations
@@ -400,23 +401,28 @@ def _cases_of(document: dict[str, Any]) -> list[str]:
 def founding(commit: str | None = None) -> int:
     """Każda reguła z katalogów ``ruleDirs`` konfiguracji ``CONFIG`` checkoutu (z ``commit``: jego kopii) łapie każdy
     przypadek ze swojego pola ``metadata.przypadki`` (``caught``), a regułę wybiera ast-grep z tej konfiguracji, jak
-    zapadka; z ``commit`` reguła o id reguły checkoutu wymienia też każdy jej przypadek. Kod 0 tylko
+    zapadka; z ``commit`` któraś jego reguła wymienia też każdy przypadek reguł checkoutu. Kod 0 tylko
     z ``PRZYPADKI REGUŁ OK``."""
 
     if commit is None:
-        return _founding(ROOT, {})
+        return _founding(ROOT, ())
     if problem := fetched(commit):
         print(f"PRZYPADKI REGUŁ FAIL | {problem}")
         return 1
     with potomne.commit_copy(ROOT, commit) as copy:
-        return _founding(copy, {str(document["id"]): _cases_of(document) for document in _rule_documents(ROOT)})
+        return _founding(copy, tuple(case for document in _rule_documents(ROOT) for case in _cases_of(document)))
 
 
-def _founding(root: Path, kept: dict[str, list[str]]) -> int:
-    """``founding`` na regułach ``root``; ``kept`` to przypadki, które reguła o danym id ma wymieniać."""
+def _founding(root: Path, kept: tuple[str, ...]) -> int:
+    """``founding`` na regułach ``root``; każdy przypadek z ``kept`` wymienia któraś z nich."""
 
     rules = _rule_documents(root)
+    listed = {case for document in rules for case in _cases_of(document)}
     problems: list[str] = []
+    if dropped := sorted(set(kept) - listed):
+        problems.append(
+            f"PR usuwa z metadata.{CASES} przypadki z bazy {', '.join(dropped)}: każdy z nich wymienia reguła, która go łapie; przywróć je i popraw regułę tak, by je łapała"
+        )
     total = 0
     try:
         repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
@@ -426,8 +432,6 @@ def _founding(root: Path, kept: dict[str, list[str]]) -> int:
     for document in rules:
         name = str(document["id"])
         cases = _cases_of(document)
-        if dropped := [case for case in kept.get(name, []) if case not in cases]:
-            problems.append(f"{name}: PR usuwa z metadata.{CASES} przypadki z bazy {', '.join(dropped)}; przywróć je i popraw regułę tak, by je łapała")
         if not cases:
             problems.append(f"{name}: bez pola metadata.{CASES}; dopisz przypadek, który reguła łapie: Ważne PR/W<n>/r<k> albo <pełny SHA> plik:linia")
             continue

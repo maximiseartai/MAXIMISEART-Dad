@@ -21,8 +21,8 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
 5. każde Ważne werdyktu ``FAIL`` z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n> r<k>`` ma na HEAD PR regułę
    ast-grep o tym id, a jej dowód ``tools/na_scalonych_pr.py --regula`` przechodzi na każdym przypadku tego id z historii
    pól ``Idiom:`` (``bramka_idiomu``, niżej);
-6. reguły ast-grep z bazy nie zgłaszają żadnej linii, którą PR dodaje, także gdy PR je usuwa albo osłabia, a reguła
-   HEAD łapie swoje przypadki i wymienia każdy przypadek reguły bazy o tym samym id (``reguly_bazy``, niżej);
+6. reguły ast-grep z bazy nie zgłaszają żadnej linii, którą PR dodaje, także gdy PR je usuwa albo osłabia, a każdy
+   przypadek reguł bazy wymienia i łapie po scaleniu któraś reguła (``reguly_bazy``, niżej);
 7. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
    scalonym drzewie (``werdykt_scalenia.merge_verdict``, jak status ``scalenie z main``, ale teraz, nie po pushu);
 8. na tym scalonym drzewie przechodzi test scalenia, gdy jest potrzebny i mieści się w limicie (niżej).

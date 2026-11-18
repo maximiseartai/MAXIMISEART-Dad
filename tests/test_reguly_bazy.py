@@ -18,6 +18,7 @@ import pytest
 
 from tests.fixtures.git_repo import commit, git
 
+import odpalenia_ast_grep
 import reguly_bazy
 
 pytestmark = pytest.mark.skipif(
@@ -41,6 +42,7 @@ ZMIANY_PR: dict[str, tuple[dict[str, str | None], bool]] = {
     "PR osłabia regułę bez wywołania": ({"reguly-ast-grep/zakazane-wywolanie.yml": None, "src/nowy.py": "Y = 2\n"}, False),
     "wywołanie tylko reguły dodanej w PR": ({"reguly-ast-grep/inne-wywolanie.yml": OTHER, "src/nowy.py": "inne()\n"}, False),
 }
+DIRECTIVE = odpalenia_ast_grep.SUPPRESSION
 
 
 def _write(root: Path, files: Mapping[str, str | None]) -> None:
@@ -107,3 +109,36 @@ def test_baza_bez_regul_niczego_nie_zglasza(tmp_path: Path) -> None:
     head = commit(tmp_path, "pr")
 
     assert reguly_bazy.findings(tmp_path, head, base) == []
+
+
+@pytest.mark.parametrize(
+    "text", [f"zakazane()  # {DIRECTIVE}: zakazane-wywolanie\n", f"# {DIRECTIVE}: zakazane-wywolanie\nzakazane()\n"], ids=["na-linii", "linia-wyzej"]
+)
+def test_dyrektywa_tlumienia_na_linii_pr_jest_odpaleniem_choc_chowa_regule_bazy(tmp_path: Path, text: str) -> None:
+    """ast-grep uznaje dyrektywę i chowa wywołanie przed regułą bazy, a zakaz jej tekstu w Required CI liczy kod PR,
+    więc warunek 6 zgłasza samą linię dyrektywy."""
+
+    base = _repository(tmp_path, BASE)
+    git(tmp_path, "switch", "--quiet", "--create", "pr")
+    _write(tmp_path, {"src/nowy.py": text})
+    head = commit(tmp_path, "pr")
+
+    assert [(finding.path, finding.line, finding.rule) for finding in reguly_bazy.findings(tmp_path, head, base)] == [
+        ("src/nowy.py", 1, reguly_bazy.SUPPRESSED)
+    ]
+
+
+def test_przypadki_przy_konflikcie_scalenia_z_baza_to_odmowa_bez_uruchamiania_narzedzia(tmp_path: Path) -> None:
+    base_files = {**BASE, "src/stary.py": "X = 1\n"}
+    fork = _repository(tmp_path, base_files)
+    git(tmp_path, "switch", "--quiet", "--create", "pr")
+    _write(tmp_path, {"src/stary.py": "X = 2\n"})
+    head = commit(tmp_path, "pr")
+    git(tmp_path, "switch", "--quiet", "main")
+    _write(tmp_path, {"src/stary.py": "X = 3\n"})
+    base = commit(tmp_path, "baza")
+
+    assert fork != base
+    assert reguly_bazy.case_problems(tmp_path, head, base) == [
+        f"przypadki reguł: HEAD PR scala się z bazą {base[:7]} z konfliktem (src/stary.py), więc nie wiadomo, które reguły wejdą"
+    ]

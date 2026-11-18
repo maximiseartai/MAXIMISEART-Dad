@@ -64,6 +64,8 @@ PATHS_PER_SCAN = 200
 # ma prawa właściciela w komentarzu, tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep), więc
 # komunikaty i próbki składają go stąd.
 SUPPRESSION: Final = "-".join(("ast-grep", "ignore"))
+# Rozszerzenia plików, które ast-grep 0.51 czyta jako Python, jedyny język reguł (``tests/test_zapadki.py``).
+PYTHON_SUFFIXES: Final = (".py", ".pyi", ".py3", ".bzl")
 # Wbudowane reguły ast-grep o dyrektywie tłumienia → komunikat zamiast angielskiego komunikatu ast-grep.
 BUILTIN_MESSAGES: Final = {
     "no-suppress-all": f"dyrektywa {SUPPRESSION} bez nazw reguł wyłącza każdą regułę: usuń ją i popraw kod według"
