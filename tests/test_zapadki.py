@@ -110,11 +110,14 @@ def _git(root: Path, *args: str) -> str:
 
 
 @pytest.fixture
-def baza_zmiany() -> str:
+def baza_zmiany(request: pytest.FixtureRequest) -> str:
     """Baza zmiany zapadki: ``MAXIMISEART_ZAPADKA_BAZA`` albo ``merge-base`` HEAD z ``BASE``; bez niej zapadka się
     pomija. To jedyna droga bazy do zapadki, bo dowód pustego drzewa (``tests/test_struktura_testow.py``) wybiera zapadki
-    po tej fixture (``tests/fixtures/tylko_zapadki.py``)."""
+    po tej fixture w ``fixturenames`` testu (``tests/fixtures/tylko_zapadki.py``). Test, który bierze ją inaczej
+    (``request.getfixturevalue``), pada, bo pytest nie wpisuje jej wtedy do ``fixturenames`` i dowód by go pominął."""
 
+    if "baza_zmiany" not in request.node.fixturenames:
+        pytest.fail("weź baza_zmiany jako argument testu albo innej fixture, nie przez getfixturevalue: dowód pustego drzewa wybiera zapadki po fixturenames")
     base = os.environ.get("MAXIMISEART_ZAPADKA_BAZA")
     if base:
         return base
@@ -553,10 +556,18 @@ def test_linie_konczy_tylko_znak_nowej_linii_wiec_znak_podzialu_splitlines_nie_z
     ]
 
 
-def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest) -> None:
+@pytest.fixture
+def baza_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAXIMISEART_ZAPADKA_BAZA", "galaz-rodzica")
 
-    assert request.getfixturevalue("baza_zmiany") == "galaz-rodzica"
+
+def test_zapadka_bierze_baze_zmiany_ze_zmiennej(baza_ze_zmiennej: None, baza_zmiany: str) -> None:
+    assert baza_zmiany == "galaz-rodzica"
+
+
+def test_baza_zmiany_przez_getfixturevalue_pada(request: pytest.FixtureRequest) -> None:
+    with pytest.raises(pytest.fail.Exception, match="nie przez getfixturevalue"):
+        request.getfixturevalue("baza_zmiany")
 
 
 def parsers_off_entry(root: Path, base: str) -> list[str]:

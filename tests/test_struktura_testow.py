@@ -1083,7 +1083,7 @@ def test_bieg_pustego_drzewa_uruchamia_tylko_zapadki_z_fixture_bazy_bez_zapadki_
 
 
 def test_baze_zmiany_zapadki_czytaja_tylko_przez_fixture() -> None:
-    """Zmienną bazy zmiany czyta w ``tests/test_zapadki.py`` tylko fixture ``baza_zmiany`` (i test, który ją ustawia), bo
+    """Zmienną bazy zmiany czyta w ``tests/test_zapadki.py`` tylko fixture ``baza_zmiany`` (i fixture, która ją ustawia), bo
     dowód pustego drzewa wybiera zapadki po tej fixture: zapadka z własnym odczytem zmiennej wypadłaby z niego po cichu."""
 
     tree = ast.parse((TESTS / "test_zapadki.py").read_text(encoding="utf-8"))
@@ -1094,7 +1094,7 @@ def test_baze_zmiany_zapadki_czytaja_tylko_przez_fixture() -> None:
         and any(isinstance(node, ast.Constant) and node.value == "MAXIMISEART_ZAPADKA_BAZA" for node in ast.walk(function))
     )
 
-    assert readers == [tylko_zapadki.FIXTURE, "test_zapadka_bierze_baze_zmiany_ze_zmiennej"], "weź bazę zmiany z fixture baza_zmiany"
+    assert readers == ["baza_ze_zmiennej", tylko_zapadki.FIXTURE], "weź bazę zmiany z fixture baza_zmiany"
 
 
 def test_bieg_pustego_drzewa_bez_zapadki_jest_problemem(tmp_path: Path) -> None:
