@@ -84,7 +84,7 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import (
     DecisionsUnreadable,
-    SavedState,
+    ReportState,
     StateUnreadable,
     closed_periods,
     register_window,
@@ -212,7 +212,7 @@ class ReportReminders:
         files: DadFiles,
         reports: Reports,
         now: Callable[[], datetime],
-        entering: Callable[[], SavedState],
+        entering: ReportState,
     ) -> None:
         self._log = work.log
         self._settings = settings
@@ -429,14 +429,14 @@ def due_reminders(
     files: DadFiles,
     in_effect: SchedulesInEffect,
     sent_in_work: tuple[SentReminder, ...],
-    entering: Callable[[], SavedState],
+    entering: ReportState,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
     """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: Przypomnienia o
     raporcie, Ustawienia Centrum z Legendą czynności i Listą Wykonawców z migawki ``snapshot``, pamięć Wpisania raportów, Pliki zbiorcze okresów okna,
     INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``, z porami „Wysłanych” z ``in_effect``
     (``schedules_in_effect``). Przypomnienia wysłane w tej pracy Centrum (``sent_in_work``) liczą się jak te z
     „Wysłanych”: zamykają porę i są w ``DueReminders.sent`` dla widoku Raporty. Pamięć Wpisania raportów czyta
-    ``entering`` tą samą drogą co Wpisanie (``ReportState.load``), a wejście odczytu okna buduje ``report_inputs`` jak
+    ``entering.load()`` tą samą drogą co Wpisanie (``ReportState``), a wejście odczytu okna buduje ``report_inputs`` jak
     we Wpisaniu, z oknem od wcześniejszego z dni wdrożenia przypomnień i Wpisania (przed pierwszym kliknięciem: dziś),
     więc dzień raportu jest ten sam co w kafelku Wpisania; pamięci, której nie da się odczytać, nie
     zastępuje pustą (``pamiec-wpisania``), bo pusta zmieniłaby dzień raportu. Niczego nie wysyła i nie zapisuje: wysyła
@@ -466,7 +466,7 @@ def due_reminders(
         return NotRead("bez-adresow")
     addresses = workers.addresses()
     try:
-        saved = entering()
+        saved = entering.load()
     except (StateUnreadable, DecisionsUnreadable) as error:
         return NotRead("pamiec-wpisania", type(error).__name__)
     today = now.date()

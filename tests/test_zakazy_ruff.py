@@ -277,6 +277,13 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.worker_reports.ReportInputs",
     ),
+    # Pamięć Wpisania obok ReportState.load: przegląd #2125 (r1, W1), report_inputs z SavedState(None, OwnEntries.EMPTY).
+    "from rozliczenia.report_entering import SavedState, report_inputs": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.report_entering.SavedState"),
+    "from rozliczenia.report_entering import ReportStateInMemory\nsaved = ReportStateInMemory().load()": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.report_entering.ReportStateInMemory",
+    ),
 }
 
 
@@ -576,6 +583,14 @@ ZNANE_LUKI_WEJSCIA_ODCZYTU = {
         "given = report_inputs(*inputs)\n"
         "again = type(given)(given.mails, given.addresses, given.orders, given.window, OwnEntries.EMPTY, frozenset(), given.present, given.legend)\n",
     ),
+    "zakaz zna tylko nazwę klasy, nie kopię: pamięć z ReportState.load z pustymi wpisami przez dataclasses.replace": (
+        _CENTRUM_PROBE,
+        "import dataclasses\n\n"
+        "from rozliczenia.report_entering import ReportState, report_inputs\n"
+        "from rozliczenia.worker_reports import OwnEntries\n\n\n"
+        "def wejscie(state: ReportState):\n"
+        "    return report_inputs(window, intermax, mails, addresses, dataclasses.replace(state.load(), memory=OwnEntries.EMPTY), legend)\n",
+    ),
     "prawo do nazwy obejmuje plik: konstruktor w Przypomnieniach rdzenia, które biorą wejście jako pole": (
         SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "_reminders.py",
         "from ._model import OwnEntries, ReportInputs\n\n"
@@ -590,7 +605,9 @@ def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_p
     to samo dla Wpisania raportów i Przypomnień o raporcie, bo dzień raportu zależy od pamięci Wpisania: wejście
     zbudowane obok, np. z ``OwnEntries.EMPTY`` (#2059 r1 W1), daje ``read_window`` inny dzień raportu niż kafelek
     Wpisania. Typ wejścia biorą też odczyt okna, Przypomnienia rdzenia (``ReminderInputs.reports``) i ``__init__``
-    pakietu (``OWNERS``), więc zakaz zatrzymuje nazwę, nie samo wywołanie konstruktora.
+    pakietu (``OWNERS``), więc zakaz zatrzymuje nazwę, nie samo wywołanie konstruktora. Pamięć, z której
+    ``report_inputs`` bierze dzień raportu (``SavedState``), daje tylko ``ReportState.load`` z pliku Wpisania i
+    odtworzenie z Logów (``OWNERS``), a pamięć bez pliku (``ReportStateInMemory``) tylko Skrypt dla maszyn i testy.
 
     | Postać | Zakaz | Próbka |
     |---|---|---|
@@ -599,7 +616,10 @@ def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_p
     | atrybut pakietu pod aliasem: ``reports.ReportInputs(…)`` | łapie | ``SAMPLES`` |
     | moduł z prawem do innej nazwy: ``report_reminders.py`` (``DEFAULT_REMINDERS``) z ``ReportInputs`` (#2059 r1 W1) | ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw`` z komunikatem zakazu | ``OWNERS`` |
     | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``__init__``) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | ``report_inputs`` z własną pamięcią: ``SavedState(None, OwnEntries.EMPTY)`` (#2125 r1 W1) | łapie | ``SAMPLES`` |
+    | ``report_inputs`` z pamięcią bez pliku: ``ReportStateInMemory().load()`` | łapie | ``SAMPLES`` |
     | kopia wejścia ze zmienioną pamięcią: ``dataclasses.replace(wejście, memory=…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | kopia pamięci z ``ReportState.load``: ``dataclasses.replace(state.load(), memory=…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
     | konstruktor z typu wartości: ``type(wejście)(…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
 
     Poza ``src/`` zakaz nie obowiązuje: testy rdzenia budują wejście same, a próba skrzynki raportów w ``tools/`` czyta
@@ -660,7 +680,10 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_matching.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_corrections.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
-    "src/rozliczenia/centrum/report_entering_logs.py": frozenset({"rozliczenia.worker_reports.ReadReport"}),
+    "src/rozliczenia/centrum/report_entering_logs.py": frozenset(
+        {"rozliczenia.report_entering.SavedState", "rozliczenia.worker_reports.ReadReport"}
+    ),
+    "src/rozliczenia/centrum/report_entering_state.py": frozenset({"rozliczenia.report_entering.SavedState"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
