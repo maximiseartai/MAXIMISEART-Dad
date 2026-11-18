@@ -2596,6 +2596,7 @@ def _node(
         "createdAt": created,
         "updatedAt": updated,
         "mergedAt": merged,
+        "files": {"nodes": []},
         "comments": {"pageInfo": {"hasNextPage": False}, "nodes": comments},
         "reviews": {"pageInfo": {"hasNextPage": False}, "nodes": []},
     }

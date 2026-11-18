@@ -21,7 +21,11 @@ a pola werdyktu czytają jego parsery (``szablon_werdyktu`` przez ``rejestr_korz
   jak zapadka), czyli reguły dzisiejszego ``main`` na kodzie, który już przeszedł przegląd; próg ADR to 10% PR-ów;
   ten kod przeszedł też zapadkę Required CI, więc reguła starsza niż okno ma tu 0 z założenia, a liczba mówi
   o regule dodanej albo poszerzonej w oknie, jak dowód reguły przy przyjęciu, a nie o czerwonym CI działającej reguły;
-- „Bez reguły” to każde Ważne tygodnia z polem ``Idiom: bez reguły <klasa>``, z odsyłaczem do PR.
+- „Bez reguły” to każde Ważne tygodnia z polem ``Idiom: bez reguły <klasa>``, z odsyłaczem do PR;
+- „Po limicie rund” to każdy PR założony w tygodniu na plikach PR-u zamkniętego bez merge'a, któremu limit rund
+  odmawiał kolejnej rundy (``Reviewed.limited``), założony po ostatnim werdykcie ``FAIL`` tamtego PR, z liczbą
+  wspólnych plików: limit kończy PR po szóstej rundzie z ``FAIL`` i zostawia tylko nowy PR od ``main``, którego nic
+  nie blokuje, więc raport pokazuje, czy nowy PR powtarza zamknięte podejście.
 
 Tydzień trwa od poniedziałku 0:00 do następnego poniedziałku 0:00 czasu polskiego (``Europe/Warsaw``, także po
 zmianie czasu), a wystąpienie, pole i merge należą do tygodnia swojej chwili. Bez ``--tydzien`` pomiar bierze ostatni
@@ -29,7 +33,7 @@ pełny tydzień przed uruchomieniem, a z ``--tydzien DATA`` tydzień z tym dniem
 tygodnia, więc pomiar tygodnia daje te same liczby, kiedykolwiek go uruchomić, dopóki rejestr i reguły się nie zmienią.
 
 Treść issue to szablon bez wolnej prozy (``body``): ``## Pomiar``, ``## Czekanie`` (tydzień i od wdrożenia),
-``## Reguły``, ``## Bez reguły``, ``## Kody`` (każdy kod z wystąpieniem od wdrożenia, kod to kategoria ODC z ADR
+``## Reguły``, ``## Bez reguły``, ``## Po limicie rund``, ``## Kody`` (każdy kod z wystąpieniem od wdrożenia, kod to kategoria ODC z ADR
 0036), ``## Chwasty`` (otwarte issues „Chwast: R-KOD”) i ``## Historia`` z wierszem na każdy z ostatnich ``HISTORY``
 tygodni od tygodnia wdrożenia. Historię pomiar liczy od nowa z rejestru przy każdym uruchomieniu, a starej treści
 issue nie czyta: rozstrzygnięcie kodu (Q25) poprawia też minione tygodnie, a issue nie staje się drugim rejestrem.
@@ -73,6 +77,7 @@ import sysconfig
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import github
+import limit_rund
 import odpalenia_ast_grep
 import potomne
 import rejestr_korzeni
@@ -171,6 +176,17 @@ def _link(case: IdiomCase) -> str:
     return f"| #{case.pull} {case.idiom.label} r{case.round} | {case.idiom.klass} | {f'#{like[0]} {like[1]} r{like[2]}' if like else '-'} |"
 
 
+def _after_limit(pulls: Sequence[Reviewed], start: datetime, end: datetime) -> list[str]:
+    limited = [pull for pull in pulls if pull.limited is not None]
+    return [
+        f"| #{new.pull} | #{old.pull} | {len(common)} |"
+        for new in pulls
+        if _inside(new.created, start, end)
+        for old in limited
+        if old.pull != new.pull and old.limited is not None and new.created is not None and old.limited <= new.created and (common := new.files & old.files)
+    ]
+
+
 def body(pulls: Sequence[Reviewed], weeds: Sequence[tuple[int, str]], week: date, deployed: datetime, alarms: Alarms) -> str:
     """Treść issue ``TITLE`` dla tygodnia od poniedziałku ``week`` z PR-ów skanu rejestru ``pulls``, otwartych issues
     chwastów ``weeds`` (numer i kod), chwili wdrożenia ``deployed`` i odpaleń reguł ``alarms``."""
@@ -188,6 +204,7 @@ def body(pulls: Sequence[Reviewed], weeds: Sequence[tuple[int, str]], week: date
     lines.append(f"| Każda reguła | {alarms.any_rule}{share} |")
     lines += ["", "## Bez reguły", "", "| Ważne | Klasa | Jak |", "| --- | --- | --- |"]
     lines += [_link(case) for pull in pulls for case in pull.idioms if case.idiom.klass is not None and _inside(case.when, start, end)]
+    lines += ["", "## Po limicie rund", "", "| Nowy PR | PR zamknięty po limicie | Wspólne pliki |", "| --- | --- | --- |", *_after_limit(pulls, start, end)]
     found = [occurrence for pull in pulls for occurrence in pull.occurrences]
     total = Counter(occurrence.code for occurrence in found if occurrence.when < end)
     weekly = Counter(occurrence.code for occurrence in found if start <= occurrence.when < end)
@@ -255,7 +272,7 @@ def main(argv: list[str] | None = None) -> int:
         deployed = werdykt_pr.deployment(MAIN, szablon_werdyktu.ADR)
         if deployed is None:
             raise ValueError(f"{szablon_werdyktu.ADR} nie wszedł jeszcze do {MAIN}, więc rejestru korzeni nie ma")
-        pulls = rejestr_korzeni.reviewed(repository, deployed)
+        pulls = rejestr_korzeni.reviewed(repository, deployed, werdykt_pr.deployment(MAIN, limit_rund.MARKER))
         api = github.GhApi()
         text = body(pulls, weeds(github.issues(api, rejestr_korzeni.WEED, "open")), week, deployed, alarms(midnight(week + timedelta(days=7))))
         action, lines = _action(github.issues(api, rejestr_korzeni.REGISTRY, "open"), text)
