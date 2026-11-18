@@ -181,12 +181,14 @@ def test_odtwarzalne_pliki_i_puste_blokady_nie_zatrzymuja(merged: Path, fake_lso
     assert not path.exists()
 
 
+@pytest.mark.parametrize("arguments", [("--usun",), ()], ids=["usun", "raport"])
 @pytest.mark.parametrize("where", ["", "frontend"], ids=["korzen", "podkatalog"])
-def test_worktree_z_zywym_procesem_zostaje(merged: Path, where: str) -> None:
+def test_worktree_z_zywym_procesem_zostaje(merged: Path, where: str, arguments: tuple[str, ...]) -> None:
+    # Raport ocenia go raz, a --usun jeszcze raz tuż przed usunięciem, więc każda droga potrzebuje swojego przypadku.
     main, path = merged, merged.parent / "zrobione"
     (path / where).mkdir(exist_ok=True)
     with _process_in(path / where):
-        code, lines = _cleanup(main, "--usun")
+        code, lines = _cleanup(main, *arguments)
 
     assert code == 0
     assert path.is_dir()

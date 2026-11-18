@@ -39,6 +39,7 @@ from __future__ import annotations
 import argparse
 from collections import Counter
 from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 import io
 import json
@@ -64,6 +65,9 @@ REPRODUCIBLE_SUFFIXES = (".pyc", ".egg-info")
 IN_PROGRESS = ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD", "BISECT_LOG")
 CLOSED_T3 = frozenset({"completed", "failed", "cancelled"})
 FRESH = "nowe, bez własnych commitów"
+# Oceny worktree i gałęzi są niezależne, a czas zabierają polecenia gita (status, merge-base), więc biegną naraz: przy
+# ~1050 worktree i gałęziach raport po kolei trwał ~108 s po każdym merge'u (tools/scal_pr.py), naraz ~15 s.
+JUDGES = 8
 
 
 @dataclass(frozen=True)
@@ -107,12 +111,12 @@ def main(argv: list[str] | None = None) -> int:
     trees = repo.worktrees(root)
     threads = _t3_threads(root, next(tree.path for tree in trees if tree.main))
     busy = _busy()
-    verdicts = [_judge_tree(root, tree, here, busy, threads) for tree in trees]
     checked_out = {tree.branch for tree in trees if tree.branch is not None}
-    for ref in repo.git(root, "for-each-ref", "refs/heads", "--format=%(refname:short)%00%(objectname)").splitlines():
-        branch, _, head = ref.partition("\0")
-        if branch != MAIN and branch not in checked_out:
-            verdicts.append(_Verdict(None, branch, head, _readable(_branch_reasons(root, branch, head, threads))))
+    refs = [ref.partition("\0") for ref in repo.git(root, "for-each-ref", "refs/heads", "--format=%(refname:short)%00%(objectname)").splitlines()]
+    branches = [(branch, head) for branch, _, head in refs if branch != MAIN and branch not in checked_out]
+    with ThreadPoolExecutor(max_workers=JUDGES) as pool:
+        verdicts = list(pool.map(lambda tree: _judge_tree(root, tree, here, busy, threads), trees))
+        verdicts += pool.map(lambda found: _Verdict(None, found[0], found[1], _readable(_branch_reasons(root, found[0], found[1], threads))), branches)
 
     removed = 0
     for verdict in sorted(verdicts, key=lambda verdict: (bool(verdict.reasons), verdict.name())):
