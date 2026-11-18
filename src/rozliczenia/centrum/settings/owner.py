@@ -18,6 +18,15 @@ nieczytelnego pliku Folderów, Przypomnień o raporcie albo pliku pary Reguł il
 jego nazwą, więc start procesu odmawia tym samym zdaniem, a Logi Urwanego Uruchomienia, praca Przypomnień o raporcie i
 odczyty okna Centrum (Tablica okresów, różnice Kontroli ilości, podpowiedzi Wykonawców) mówią, którego pliku nie dało
 się przeczytać.
+Wołający, który bez pliku odpowiada tacie odmową (Tablica okresów, ścieżki okresu, Uzupełnienie, różnice Kontroli
+ilości, otwarcie Rejestru zleceń, podgląd zmiany reguły albo kodu, Wysyłka rozliczeń, start procesu), bierze wartość
+nazwą bez przyrostka (``folders``, ``QuantityRulesView.rules``, ``counted_activity_legend``, własności
+``SettingsSnapshot``): plik, którego system nie daje teraz czytać, to tam odmowa 409 o nim
+(``refusal.settings_file_unreadable``), a nie treść z Wydania, którą tata wziąłby za niewskazany folder okresów albo za
+swoje Reguły ilości; odczyt niczego nie zapisuje, więc ta odmowa nie jest regułą przyjęcia zmiany. Unię z
+``UnreadableFile`` daje tylko nazwa z przyrostkiem ``_or_unreadable``, dla wołającego, który o pliku mówi albo czeka.
+``UnreadableFile`` nie ma podklas, a mypy w ``src/`` ma ``warn_unreachable``, więc gałąź „bez odczytu” przy wartości
+bez unii, także z literałem albo konstruktorem z wartościami domyślnymi w niej, nie przechodzi mypy.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
 odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
 nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
@@ -101,7 +110,7 @@ import threading
 from typing import Any, Final, Protocol, TypeVar, final
 import uuid
 
-from rozliczenia.centrum import device_forms, legend_forms, rule_forms
+from rozliczenia.centrum import device_forms, legend_forms, refusal, rule_forms
 from rozliczenia.centrum.atomic_file import RETRY_PAUSES_S, replace_atomically
 from rozliczenia.centrum.contract.activity_legend import ActivityCodeEdit
 from rozliczenia.centrum.contract.quantity_rules import RuleEdit
@@ -176,11 +185,15 @@ _RulesEdit = Callable[[tuple[QuantityRule, ...]], tuple[QuantityRule, ...] | Fie
 """Zmiana taty Reguł ilości: bieżące reguły → reguły po zmianie albo problem, który jest odmową bez zapisu."""
 
 
+@final
 @dataclass(frozen=True)
 class UnreadableFile:
     """Plik Ustawień ``name`` (nazwa w ``config``) jest, ale system nie daje go teraz czytać: jego treści nikt nie zna,
     więc proces, który z niego bierze wejście, nie startuje (``refusal.settings_file_unreadable``), zamiast liczyć treścią z
-    Wydania jak tata bez własnego pliku."""
+    Wydania jak tata bez własnego pliku. Klasa nie ma podklas, więc gałąź ``isinstance(x, UnreadableFile)`` przy
+    wartości bez unii jest dla mypy martwa (``warn_unreachable`` w ``src/``: „Subclass of … and "UnreadableFile" cannot
+    exist”): usuń ją, bo odmowę o pliku daje już nazwa bez przyrostka (``SettingsSnapshot.folders``,
+    ``CentrumSettings.folders``). Unię bierze tylko wołający, który o pliku mówi albo czeka (``*_or_unreadable``)."""
 
     name: str
 
@@ -193,23 +206,64 @@ _PairCheck = Callable[[Any], FieldProblem | UnreadableFile | None]
 @dataclass(frozen=True)
 class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
-    dobre albo domyślne; przy pliku, którego system nie daje teraz czytać, ``UnreadableFile``. Lista Wykonawców ze złym
-    ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (odmowa ``refusal.workers_unusable``)."""
+    dobre albo domyślne. Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (odmowa
+    ``refusal.workers_unusable``).
 
-    folders: FolderSettings | UnreadableFile
+    Wołający, który bez pliku odmawia, bierze wartość własnością bez przyrostka (``folders``, ``reminders``,
+    ``quantity_rules``, ``activity_legend``, ``settlement_mail``): plik, którego system nie daje teraz czytać, to tam
+    odmowa o nim (``refusal.settings_file_unreadable``), więc gałęzi „bez odczytu” w jego kodzie nie ma, a literał w
+    takiej gałęzi to dla mypy kod martwy. Unię z ``UnreadableFile`` daje tylko pole z przyrostkiem ``_or_unreadable``,
+    dla wołającego, który bez pliku nie odmawia, tylko mówi o nim albo czeka: stan karty i okna, Logi, ponowienie w
+    porze, miękka podpowiedź."""
+
+    folders_or_unreadable: FolderSettings | UnreadableFile
     workers: Read[WorkerList] | Unreadable
     inbox: InboxState
-    reminders: ReminderSettings | UnreadableFile
-    quantity_rules: QuantityRules | UnreadableFile
+    reminders_or_unreadable: ReminderSettings | UnreadableFile
+    quantity_rules_or_unreadable: QuantityRules | UnreadableFile
     """Reguły ilości z Listą Urządzeń, którymi liczy Uruchomienie: przy złym pliku albo pliku, który nie pasuje do
     drugiego, ostatnia dobra para, a przy pliku pary, którego system nie daje teraz czytać, ``UnreadableFile``."""
-    activity_legend: ActivityLegend | UnreadableFile
+    activity_legend_or_unreadable: ActivityLegend | UnreadableFile
     """Legenda czynności, którą liczy Uruchomienie: przy złym pliku ostatnia dobra, a przy pliku, którego system nie
     daje teraz czytać, ``UnreadableFile``."""
-    settlement_mail: SettlementMailSettings | UnreadableFile | FieldProblem
+    settlement_mail_or_unreadable: SettlementMailSettings | UnreadableFile | FieldProblem
     """Temat i treść Maila z rozliczeniem taty: przy złym pliku ostatnie dobre, a bez nich problem pliku
     (``FieldProblem``), bo mail z tematem i treścią z Wydania nie byłby mailem taty; przy pliku, którego system nie daje
     teraz czytać, ``UnreadableFile``. Brak pliku to wartości domyślne: tata niczego nie pisał."""
+
+    @property
+    def folders(self) -> FolderSettings:
+        return _readable(self.folders_or_unreadable)
+
+    @property
+    def reminders(self) -> ReminderSettings:
+        return _readable(self.reminders_or_unreadable)
+
+    @property
+    def quantity_rules(self) -> QuantityRules:
+        return _readable(self.quantity_rules_or_unreadable)
+
+    @property
+    def activity_legend(self) -> ActivityLegend:
+        return _readable(self.activity_legend_or_unreadable)
+
+    @property
+    def settlement_mail(self) -> SettlementMailSettings:
+        """Temat i treść taty; zła treść bez ostatniej dobrej to odmowa jej zdaniem (``refusal.settlement_mail_unusable``),
+        a nie mail z tematem i treścią z Wydania."""
+
+        mail = self.settlement_mail_or_unreadable
+        if isinstance(mail, FieldProblem):
+            raise refusal.settlement_mail_unusable(mail)
+        return _readable(mail)
+
+
+def _readable(value: T | UnreadableFile) -> T:
+    """Wartość pliku Ustawień, a plik, którego system nie daje teraz czytać, to odmowa o nim."""
+
+    if isinstance(value, UnreadableFile):
+        raise refusal.settings_file_unreadable(value.name)
+    return value
 
 
 @final
@@ -243,9 +297,9 @@ class QuantityRulesView:
     albo z Wydania, z których powstały te liczone; zmienia je zapis reguł taty. Pliku reguł, którego system nie daje
     teraz czytać, nikt nie zna (``Unreadable``)."""
 
-    rules: QuantityRules | UnreadableFile
+    rules_or_unreadable: QuantityRules | UnreadableFile
     """Reguły, którymi liczy następne Uruchomienie; plik pary, którego system nie daje teraz czytać, to ``UnreadableFile``
-    z jego nazwą, a nie treść z Wydania."""
+    z jego nazwą, a nie treść z Wydania. Odczyt, który bez nich odmawia, bierze ``rules``."""
     shown: ShownQuantityRules
     """Reguły, które pokazuje okno Ustawień obok problemu pliku (``ShownQuantityRules``)."""
     rules_problem: FieldProblem | None
@@ -253,6 +307,12 @@ class QuantityRulesView:
     source_rules: tuple[QuantityRule, ...] | Unreadable
     exceptions: tuple[QuantityException, ...]
     exceptions_problem: FieldProblem | None
+
+    @property
+    def rules(self) -> QuantityRules:
+        """Reguły, którymi liczy następne Uruchomienie; plik pary bez odczytu to odmowa o nim."""
+
+        return _readable(self.rules_or_unreadable)
 
 
 @dataclass(frozen=True)
@@ -419,21 +479,27 @@ class CentrumSettings:
             mail = _counted(self._observe(SETTLEMENT_MAIL), SETTLEMENT_MAIL)
             rules = self._quantity_rules()
             return SettingsSnapshot(
-                folders=folders,
+                folders_or_unreadable=folders,
                 workers=workers,
                 inbox=inbox_state,
-                reminders=reminders,
-                quantity_rules=rules.rules,
-                activity_legend=self._activity_legend(),
-                settlement_mail=mail,
+                reminders_or_unreadable=reminders,
+                quantity_rules_or_unreadable=rules.rules_or_unreadable,
+                activity_legend_or_unreadable=self._activity_legend(),
+                settlement_mail_or_unreadable=mail,
             )
 
-    def folders(self) -> FolderSettings | Unreadable:
-        """Foldery dla trasy okna Ustawień, która odpowiada tacie z bieżących Folderów (otwarcie Rejestru zleceń, podgląd
-        reguły): plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie Rejestr i folder niewskazane."""
+    def folders(self) -> FolderSettings:
+        """Foldery dla odczytu okna, który odpowiada tacie z bieżących Folderów (Tablica okresów, otwarcie Rejestru
+        zleceń, podgląd reguły): plik, którego system nie daje teraz czytać, to odmowa o nim
+        (``refusal.settings_file_unreadable``), a nie Rejestr i folder niewskazane."""
+
+        return _readable(self.folders_or_unreadable())
+
+    def folders_or_unreadable(self) -> FolderSettings | UnreadableFile:
+        """Foldery dla odczytu okna, który przy pliku bez odczytu nie odmawia, tylko mówi o nim (podpowiedzi)."""
 
         with self._lock:
-            return _usable(self._observe(FOLDERS), FOLDERS)
+            return _or_unreadable(self._observe(FOLDERS), FOLDERS)
 
     def quantity_rules(self) -> QuantityRulesView:
         """Reguły ilości, Lista Urządzeń i wyjątki Kontroli ilości dla okna Ustawień, każdy plik porównany z pamięcią jak
@@ -451,12 +517,13 @@ class CentrumSettings:
             shown = ShownActivityLegend(activity_legend(_or_release(observed, LEGEND)).codes)
             return ActivityLegendView(shown, _problem(observed, LEGEND, messages.unreadable), codes)
 
-    def counted_activity_legend(self) -> ActivityLegend | UnreadableFile:
-        """Legenda czynności, którą liczy następne Uruchomienie, jak w migawce, dla odczytu okna (Ilości do uzupełnienia)
-        bez reszty migawki; plik porównany z pamięcią jak przy każdym odczycie."""
+    def counted_activity_legend(self) -> ActivityLegend:
+        """Legenda czynności, którą liczy następne Uruchomienie, jak w migawce, dla odczytu okna (Ilości do uzupełnienia,
+        podgląd zmiany kodu) bez reszty migawki; plik porównany z pamięcią jak przy każdym odczycie, a plik bez odczytu
+        to odmowa o nim."""
 
         with self._lock:
-            return self._activity_legend()
+            return _readable(self._activity_legend())
 
     def _activity_legend(self) -> ActivityLegend | UnreadableFile:
         legend = self._observe(LEGEND)
@@ -491,8 +558,8 @@ class CentrumSettings:
         folder okresów w OneDrive taty, liczy się przed blokadą, więc inne żądania Ustawień na niego nie czekają, i
         tylko przy folderze innym niż bieżący."""
 
-        current = self.folders()
-        before = None if isinstance(current, Unreadable) else current.periods_directory
+        current = self.folders_or_unreadable()
+        before = None if isinstance(current, UnreadableFile) else current.periods_directory
         return self._by_dad(FOLDERS, dad_folders(edit, before), undoes=None)
 
     def change_autostart(self, enabled: bool) -> Saved | Refused | NotSaved | KeptInPeriods:
@@ -1141,13 +1208,13 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     codes = _or_unreadable(_read_only_view(config, LEGEND), LEGEND)
     mail = _counted(_read_only_view(config, SETTLEMENT_MAIL), SETTLEMENT_MAIL)
     return SettingsSnapshot(
-        folders=folders,
+        folders_or_unreadable=folders,
         workers=_read_only_view(config, WORKERS),
         inbox=inbox.state(_read_only_view(config, INBOX)),
-        reminders=reminders,
-        quantity_rules=quantity_rules(rules, devices),
-        activity_legend=codes if isinstance(codes, UnreadableFile) else activity_legend(codes),
-        settlement_mail=mail,
+        reminders_or_unreadable=reminders,
+        quantity_rules_or_unreadable=quantity_rules(rules, devices),
+        activity_legend_or_unreadable=codes if isinstance(codes, UnreadableFile) else activity_legend(codes),
+        settlement_mail_or_unreadable=mail,
     )
 
 

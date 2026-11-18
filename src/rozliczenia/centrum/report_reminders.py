@@ -267,7 +267,7 @@ class ReportReminders:
 
         now = self._now()
         snapshot = self._settings.snapshot()
-        reminders = snapshot.reminders
+        reminders = snapshot.reminders_or_unreadable
         in_effect: SchedulesInEffect | None = None
         if isinstance(reminders, UnreadableFile):
             schedule = self._unread_schedule()
@@ -443,16 +443,16 @@ def due_reminders(
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
 
-    reminders = snapshot.reminders
+    reminders = snapshot.reminders_or_unreadable
     if isinstance(reminders, UnreadableFile):
         return NotRead("plik-bez-odczytu", file=reminders.name)
     rollout = reminders.sends
     if rollout is None:
         return NotRead("bez-wdrozenia")
-    settings = snapshot.folders
+    settings = snapshot.folders_or_unreadable
     if isinstance(settings, UnreadableFile):
         return NotRead("plik-bez-odczytu", file=settings.name)
-    legend = snapshot.activity_legend
+    legend = snapshot.activity_legend_or_unreadable
     if isinstance(legend, UnreadableFile):
         return NotRead("plik-bez-odczytu", file=legend.name)
     if settings.register is None or settings.periods_directory is None:

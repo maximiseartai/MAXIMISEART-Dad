@@ -29,7 +29,6 @@ from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldProblem
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.centrum.settings_at_start import SettingNeed, SettingsAtStart
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.run_logs import RunLog
@@ -448,15 +447,12 @@ def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospoda
         CATALOG.prepared(kind.key, start, _ATRAPA, RunContext())
 
 
-def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_ustawien_ze_startu_i_pole_migawki_ustawien() -> None:
+def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_ustawien_ze_startu() -> None:
     """Sprawdzenie startu i rzut na proces w ``Catalog.prepared`` czytają Ustawienie ze startu z pola
-    ``SettingsAtStart`` o nazwie jego potrzeby, a odmowa startu przy pliku bez odczytu z pola migawki Ustawień Centrum
-    o tej nazwie (``settings_at_start``), więc potrzeba bez takiego pola wywróciłaby start procesu, który nią liczy."""
+    ``SettingsAtStart`` o nazwie jego potrzeby, więc potrzeba bez takiego pola wywróciłaby start procesu, który nią
+    liczy. Pole migawki do odmowy startu przy pliku bez odczytu wybiera ``match`` w ``settings_at_start`` (mypy)."""
 
-    potrzeby = set(get_args(SettingNeed))
-
-    assert potrzeby <= {pole.name for pole in dataclasses.fields(SettingsAtStart)}
-    assert potrzeby <= {pole.name for pole in dataclasses.fields(SettingsSnapshot)}
+    assert set(get_args(SettingNeed)) <= {pole.name for pole in dataclasses.fields(SettingsAtStart)}
 
 
 @pytest.mark.parametrize("kind", CATALOG.kinds, ids=lambda kind: kind.key)

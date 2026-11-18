@@ -60,8 +60,8 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         if isinstance(trial, FieldProblem):
             raise refusal.setting_refused(trial)
         if not edit.rename_confirmed:
-            folders = settings.folders()
-            periods_directory = None if isinstance(folders, Unreadable) else folders.periods_directory
+            folders = settings.folders_or_unreadable()
+            periods_directory = None if isinstance(folders, UnreadableFile) else folders.periods_directory
             old = old_name_periods(worker.name, edit.name, periods_directory)
             if old:
                 return settings_contract.WorkerSaved(
@@ -78,12 +78,13 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         „wskaż Rejestr zleceń” ani loginy, które lista już ma."""
 
         snapshot = settings.snapshot()
-        if isinstance(snapshot.folders, UnreadableFile):
-            return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(snapshot.folders.name))
+        folders = snapshot.folders_or_unreadable
+        if isinstance(folders, UnreadableFile):
+            return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(folders.name))
         if isinstance(snapshot.workers, Unreadable):
             return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(WORKERS_FILE))
         listed = usable(snapshot.workers) or WorkerList(())
-        return worker_suggestions(listed, snapshot.folders.register, files, today())
+        return worker_suggestions(listed, folders.register, files, today())
 
     @router.post("/{login}/addresses", operation_id="assignWorkerAddress", responses=_REFUSED)
     def assign_address(login: str, assigned: contract.WorkerAddress) -> settings_contract.Choice:

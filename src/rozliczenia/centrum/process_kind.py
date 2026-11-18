@@ -29,7 +29,7 @@ from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
-from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.centrum.settings_at_start import SettingNeed, SettingsAtStart, unreadable
 from rozliczenia.client_data import WithoutSubclasses
 from rozliczenia.efenix_pace import Pace
@@ -141,9 +141,10 @@ def chosen_settings(
     czynności; ``settings_at_start.unreadable``), którego system nie daje teraz czytać, a potem „Najpierw wskaż …” z
     nazwami niewskazanych ścieżek."""
 
-    folders = settings.folders
-    if isinstance(folders, UnreadableFile):
-        return refusal.settings_file_unreadable(folders.name)
+    try:
+        folders = settings.folders
+    except Refusal as folders_unreadable:
+        return folders_unreadable
     if (refused := unreadable(settings, needs)) is not None:
         return refused
     missing = [setting.name for setting in needed if setting.chosen(folders) is None]

@@ -139,6 +139,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     if sys.platform != "win32":
         print("Skrót „Centrum rozliczeń” powstaje tylko na Windows. Przy rozwoju uruchom: python run_centrum.py")
         return 1
+    else:
+        return _create(args.folder, args.folder_autostartu)
+
+
+def _create(desktop: Path | None, startup: Path | None) -> int:
+    """Skróty z pulpitu i z Autostartu w folderach ``desktop`` i ``startup`` (``None``: folder systemu)."""
+
     windowless_python = _windowless_python()
     if file_state(windowless_python) != "file":
         print(
@@ -147,7 +154,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "Co zrobić: Zainstaluj Python ze strony python.org i uruchom ten krok ponownie."
         )
         return 1
-    chosen = {Folder.DESKTOP: args.folder, Folder.STARTUP: args.folder_autostartu}
+    chosen = {Folder.DESKTOP: desktop, Folder.STARTUP: startup}
     for shortcut in shortcuts(TOOL_ROOT):
         try:
             path = _write(shortcut, windowless_python, chosen[shortcut.folder], run_console_program)
@@ -222,13 +229,14 @@ def _system_folder(folder: Folder) -> Path:
 
     if sys.platform != "win32":
         raise OSError("Pulpit i folder Autostart dla skrótu są tylko na Windows.")
-    import ctypes
-    from ctypes import wintypes
+    else:
+        import ctypes
+        from ctypes import wintypes
 
-    path = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
-    if ctypes.windll.shell32.SHGetFolderPathW(None, folder.value, None, 0, path) != 0:
-        raise OSError(f"Windows nie podał folderu {folder.name}.")
-    return Path(path.value)
+        path = ctypes.create_unicode_buffer(wintypes.MAX_PATH)
+        if ctypes.windll.shell32.SHGetFolderPathW(None, folder.value, None, 0, path) != 0:
+            raise OSError(f"Windows nie podał folderu {folder.name}.")
+        return Path(path.value)
 
 
 def _write(shortcut: Shortcut, windowless_python: Path, folder: Path | None, run: ConsoleRun) -> Path:

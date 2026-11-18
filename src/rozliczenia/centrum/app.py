@@ -262,7 +262,7 @@ def create_app(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
         files=lambda process, period, at_start: files_of_process(
-            process, period, settings=at(at_start).folders, configuration=configuration
+            process, period, settings=at(at_start).folders_or_unreadable, configuration=configuration
         ),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
@@ -274,7 +274,7 @@ def create_app(
         lambda process, period, at_start: diagnose(
             process,
             period,
-            settings=at(at_start).folders,
+            settings=at(at_start).folders_or_unreadable,
             configuration=configuration,
             log=log,
             surroundings=surroundings,
