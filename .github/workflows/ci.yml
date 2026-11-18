@@ -129,8 +129,18 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python -m ruff check
 
+      - name: Typecheck Python code (Windows)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python -m mypy --platform win32
+
+      - name: Typecheck Python code (Linux)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python -m mypy --platform linux
+
       # The rules of REGULY_CALEGO_DRZEWA in tests/test_zapadki.py report every line of their files, not only the added
       # ones, and a weed rule has no owner right in a comment (ADR 0036): no ast-grep-ignore and no noqa of a banned name.
+      # The step runs after ruff and mypy, so before them no code of the PR runs but its install, as in the guard proof
+      # (tools/lib/srodowisko_ci.py).
       - name: Weed rules of the whole tree
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: >-
@@ -139,14 +149,6 @@ jobs:
           tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
           tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
           tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff
-
-      - name: Typecheck Python code (Windows)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: python -m mypy --platform win32
-
-      - name: Typecheck Python code (Linux)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: python -m mypy --platform linux
 
       # Offline: the same verdict without a token or GitHub's API; low and above, configured in .github/zizmor.yml.
       - name: Audit workflows (zizmor)

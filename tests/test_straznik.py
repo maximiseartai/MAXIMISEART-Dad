@@ -68,7 +68,7 @@ class Pull:
             [outcome] = straznik.exempt(self.root, chosen, self.head, self.fork, [case])
             return outcome
         with potomne.commit_copy(self.root, self.head) as copy:
-            environment = srodowisko_ci.Environment(self.head, copy, Path(sys.executable), srodowisko_ci.variables())
+            environment = straznik.Environment(self.head, copy, Path(sys.executable), srodowisko_ci.variables())
             [outcome] = straznik.prove(self.root, chosen, environment, [case])
         return outcome
 

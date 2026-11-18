@@ -25,24 +25,21 @@ recenzent. Gałęzi tylko dla macOS nie sprawdza żaden krok Required CI, więc 
 maszynie. Plik, który po FAIL zmienił też ``main``, wraca przy mypy i ruff z treścią sprzed tej zmiany. Budowa
 środowiska i mypy wykonują kod PR (backend budowy, pakiety i wtyczki z jego konfiguracji), więc status „Werdykt
 i bramka” liczy dowód w jobie bez prawa zapisu (``.github/workflows/werdykt-i-bramka.yml``). Moduł nie importuje
-``srodowisko_ci`` w trakcie działania (PyYAML), bo ``tools/scal_pr.py`` bierze z niego tylko selektory.
+``srodowisko_ci`` (PyYAML), bo ``tools/scal_pr.py`` bierze z niego selektory systemowym Pythonem runnera, a środowisko
+(``Environment``) buduje ``srodowisko_ci.built``.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 import re
-from typing import TYPE_CHECKING
 
 from kroki_lokalne import JSON_OUTPUT, diagnostics, static_steps
 import potomne
 import repo
-
-if TYPE_CHECKING:
-    from srodowisko_ci import Environment
 
 FIELD = "Strażnik:"
 
@@ -113,6 +110,21 @@ class Case:
     places: tuple[Place, ...]
     scopes: tuple[Place, ...] = ()
     prose: tuple[Place, ...] = ()
+
+
+@dataclass(frozen=True)
+class Environment:
+    """Środowisko Required CI z ``srodowisko_ci.built``: commit ``tree`` (HEAD PR scalony z bazą), jego kopia ``copy``
+    z projektem zainstalowanym edytowalnie, ``python`` z zależnościami drzewa i zmienne ``variables`` narzędzi."""
+
+    tree: str
+    copy: Path
+    python: Path
+    variables: Mapping[str, str]
+
+    @property
+    def ast_grep(self) -> Path:
+        return self.python.parent / "ast-grep"
 
 
 @dataclass(frozen=True)

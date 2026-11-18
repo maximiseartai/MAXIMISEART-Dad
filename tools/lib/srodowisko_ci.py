@@ -11,25 +11,26 @@ bierze środowisko tylko stąd, nie od wołającego, więc job ``dowod``, merge 
   pakiety, które uv rozwiązuje z ``pyproject.toml`` drzewa z dodatkami ``CI_EXTRAS`` dla systemu runnera
   (``CI_PLATFORM``), zainstalowane bez ponownego rozwiązania, więc Mac dostaje zbiór pakietów linuksa, i projekt
   edytowalnie z kopii, jak ``CI_INSTALL``;
-- ``mismatch`` mówi, czym zadanie ``JOB`` drzewa buduje środowisko inaczej niż ``built``: runner, ``container``,
-  ``env`` i ``defaults`` workflow i zadania, krok przed ostatnim krokiem ruff albo mypy spoza listy (checkout bez
-  ``ref`` i ``path``, setup-python z ``CI_PYTHON``, setup-uv, ``CI_INSTALL``, ``python -m ruff|mypy|pytest`` bez
-  ``env``, ``working-directory`` i ``shell``), polecenia ruff i mypy inne niż ``kroki_lokalne.static_steps`` i konfiguracja
-  uv w drzewie. ``built`` odmawia drzewa z różnicą, a ``tests/test_srodowisko_ci.py`` wymaga ``mismatch(ROOT) == []``,
-  więc stałe opisują Required CI ``main``, a zmiana środowiska Required CI wchodzi osobnym PR przed dowodem, który jej
-  potrzebuje.
+- ``mismatch`` mówi, czym zadanie ``JOB`` drzewa buduje środowisko inaczej niż ``built``: runner, klucz zadania spoza
+  ``_JOB_KEYS`` (np. ``container``, ``env``, ``defaults``, ``strategy``, ``continue-on-error``), ``env`` i ``defaults``
+  workflow, krok przed ostatnim krokiem ruff albo mypy spoza listy (checkout bez ``ref`` i ``path``, setup-python
+  z ``CI_PYTHON``, setup-uv, ``CI_INSTALL`` i ``python -m ruff|mypy``, bez ``env``, ``working-directory`` i ``shell``,
+  z ``if`` najwyżej ``_CI_IF``, więc przed sprawdzeniami nie biegnie żaden kod PR poza instalacją), brak któregoś
+  z kroków checkout, setup-python, setup-uv i ``CI_INSTALL``, polecenia ruff i mypy inne niż
+  ``kroki_lokalne.static_steps`` i konfiguracja uv w drzewie. ``built`` odmawia drzewa z różnicą,
+  a ``tests/test_srodowisko_ci.py`` wymaga ``mismatch(ROOT) == []``, więc stałe opisują Required CI ``main``, a zmiana
+  środowiska Required CI wchodzi osobnym PR przed dowodem, który jej potrzebuje.
 
 Odmowa to ``Refused`` (``ValueError``) z tym, co zrobić. Granica: wydanie poprawkowe Pythona (``CI_PYTHON`` bez
-poprawki), wersja uv i obraz runnera mogą różnić się od runu Required CI, pakiety rozwiązują się w chwili dowodu (repo
-nie ma pliku blokady, więc dwa runy CI też mogą je rozwiązać inaczej), a krok ``python -m pytest`` przed mypy uznaje się
-za taki, który środowiska nie zmienia. Dowód biegnie na Linuksie i macOS (job ``dowod`` i Mac koordynatora).
+poprawki), wersja uv i obraz runnera mogą różnić się od runu Required CI, a pakiety rozwiązują się w chwili dowodu
+(repo nie ma pliku blokady, więc dwa runy CI też mogą je rozwiązać inaczej). Dowód biegnie na Linuksie i macOS (job
+``dowod`` i Mac koordynatora).
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
-from dataclasses import dataclass
 import os
 from pathlib import Path
 import shutil
@@ -43,6 +44,7 @@ import yaml
 from kroki_lokalne import static_steps
 import potomne
 import repo
+from straznik import Environment
 
 WORKFLOW = ".github/workflows/ci.yml"
 JOB = "ruff-mypy"  # zadanie Required CI „Ruff, mypy”, w którym biegną ruff i mypy
@@ -56,7 +58,10 @@ BUILD_TIMEOUT_S = 300
 _ACTIONS = {"actions/checkout": {"fetch-depth", "persist-credentials"}, "actions/setup-python": {"python-version"}, "astral-sh/setup-uv": {"enable-cache"}}
 _RUN_KEYS = {"name", "id", "if", "run"}
 _USES_KEYS = {"name", "id", "if", "uses", "with"}
-_CHECKS = ("ruff", "mypy", "pytest")  # ``python -m <narzędzie>`` dozwolone przed ostatnim krokiem ruff albo mypy
+_JOB_KEYS = {"name", "runs-on", "permissions", "timeout-minutes", "steps"}
+# Jedyny warunek kroku przed ostatnim krokiem ruff albo mypy: inny może pominąć sprawdzenie, które dowód liczy.
+_CI_IF = "${{ !cancelled() && steps.deps.outcome == 'success' }}"
+_CHECKS = ("ruff", "mypy")  # ``python -m <narzędzie>`` dozwolone przed ostatnim krokiem ruff albo mypy
 # Zmienne wołającego, których uv i narzędzia dowodu nie dostają: sterują Pythonem, mypy, ruff, pip i uv, środowiskiem
 # wirtualnym albo dają token GitHuba; ``ci.yml`` żadnej z nich nie ustawia (``mismatch``). Miejsce pamięci uv i jego
 # Pythonów wyniku nie zmienia, więc zostaje.
@@ -67,21 +72,6 @@ _KEPT = {"UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR"}
 
 class Refused(ValueError):
     """Odmowa dowodu: środowiska Required CI nie da się zbudować tak, jak buduje je CI; tekst mówi, co zrobić."""
-
-
-@dataclass(frozen=True)
-class Environment:
-    """Środowisko Required CI z ``built``: commit ``tree`` (HEAD PR scalony z bazą), jego kopia ``copy`` z projektem
-    zainstalowanym edytowalnie, ``python`` z zależnościami drzewa i zmienne ``variables``, z którymi biegną narzędzia."""
-
-    tree: str
-    copy: Path
-    python: Path
-    variables: Mapping[str, str]
-
-    @property
-    def ast_grep(self) -> Path:
-        return self.python.parent / "ast-grep"
 
 
 def variables() -> dict[str, str]:
@@ -146,13 +136,16 @@ def mismatch(tree: Path) -> list[str]:
     except (OSError, yaml.YAMLError, KeyError, TypeError) as error:
         return [*problems, f"brak kroków zadania {JOB} w {WORKFLOW} ({type(error).__name__}: {error})"]
     problems += [f"{key} w workflow" for key in ("env", "defaults") if key in workflow]
-    problems += [f"{key} w zadaniu" for key in ("container", "env", "defaults") if key in job]
+    problems += [f"{key} w zadaniu" for key in sorted(set(job) - _JOB_KEYS)]
     if job.get("runs-on") != CI_RUNNER:
         problems.append(f"runs-on {job.get('runs-on')!r} zamiast {CI_RUNNER!r}")
-    checks = [index for index, step in enumerate(steps) if _command(step)[2:3] in (["ruff"], ["mypy"])]
-    for step in steps[: checks[-1] + 1 if checks else len(steps)]:
+    checks = [index for index, step in enumerate(steps) if _is_check(_command(step))]
+    before = steps[: checks[-1] + 1 if checks else len(steps)]
+    for step in before:
         if problem := _step_problem(step):
             problems.append(f"krok „{step.get('name') or step.get('uses') or step.get('run')}” przed ostatnim krokiem ruff albo mypy: {problem}")
+    present = {str(step["uses"]).partition("@")[0] if "uses" in step else " ".join(_command(step)) for step in before if isinstance(step, Mapping)}
+    problems += [f"brak kroku {one} przed ostatnim krokiem ruff albo mypy" for one in (*_ACTIONS, CI_INSTALL) if one not in present]
     ci = [" ".join(_command(steps[index])) for index in checks]
     local = [" ".join(("python", *step.command[1:])) for step in static_steps(tree)]
     problems += [f"krok ruff albo mypy „{one}” bez kroku dowodu (kroki_lokalne.static_steps)" for one in ci if not any(_starts(command, one) for command in local)]
@@ -172,6 +165,10 @@ def _command(step: Any) -> list[str]:
     return str(step.get("run", "")).split() if isinstance(step, Mapping) else []
 
 
+def _is_check(words: list[str]) -> bool:
+    return words[:2] == ["python", "-m"] and len(words) > 2 and words[2] in _CHECKS
+
+
 def _starts(command: str, ci: str) -> bool:
     return command == ci or command.startswith(f"{ci} ")
 
@@ -181,6 +178,8 @@ def _step_problem(step: Any) -> str | None:
         return "to nie krok"
     if extra := set(step) - (_USES_KEYS if "uses" in step else _RUN_KEYS):
         return f"klucze {sorted(extra)} zmieniają środowisko"
+    if "if" in step and step["if"] != _CI_IF:
+        return f"if {step['if']!r} zamiast {_CI_IF!r}"
     if "uses" in step:
         action = str(step["uses"]).partition("@")[0]
         given = step.get("with") or {}
@@ -192,6 +191,6 @@ def _step_problem(step: Any) -> str | None:
             return f"python-version {given.get('python-version')!r} zamiast {CI_PYTHON!r}"
         return None
     words = _command(step)
-    if " ".join(words) == CI_INSTALL or (words[:2] == ["python", "-m"] and words[2:3] and words[2] in _CHECKS):
+    if " ".join(words) == CI_INSTALL or _is_check(words):
         return None
     return f"polecenie spoza listy (instalacja {CI_INSTALL} albo python -m {'|'.join(_CHECKS)})"

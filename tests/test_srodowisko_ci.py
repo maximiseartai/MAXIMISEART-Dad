@@ -24,7 +24,7 @@ import yaml
 import srodowisko_ci
 import straznik
 from tests.fixtures.git_repo import commit, git
-from tests.fixtures.srodowisko import CI, project, wymaga_uv
+from tests.fixtures.srodowisko import CI, PINS, project, wymaga_uv
 
 ROOT = Path(__file__).resolve().parents[1]
 MYPY = '[tool.mypy]\nfiles = ["kod"]\nstrict = true\n{}\n'
@@ -116,6 +116,12 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
         (_step("Typecheck Python code (Linux)", {"run": "python -m mypy --platform linux --strict"}), "krok ruff albo mypy „python -m mypy --platform linux --strict” bez kroku dowodu"),
         (_drop("Typecheck Python code (Linux)"), "krok dowodu „python -m mypy --platform linux --cache-dir .mypy_cache/linux” bez kroku ruff albo mypy"),
         (_drop("Lint Python code"), "krok dowodu „python -m ruff check” bez kroku ruff albo mypy"),
+        (_drop("setup-python"), "brak kroku actions/setup-python przed ostatnim krokiem ruff albo mypy"),
+        (_insert("Lint Python code", {"name": "Testy przed mypy", "run": "python -m pytest tests/test_zapadki.py"}), "polecenie spoza listy"),
+        (_set("continue-on-error", True), "continue-on-error w zadaniu"),
+        (_set("strategy.matrix.python", ["3.13"]), "strategy w zadaniu"),
+        (_step("Typecheck Python code (Linux)", {"if": "false"}), "if 'false' zamiast"),
+        (_drop("Install development dependencies"), f"brak kroku {srodowisko_ci.CI_INSTALL} przed ostatnim krokiem ruff albo mypy"),
     ],
     ids=[
         "python",
@@ -139,6 +145,12 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
         "opcja-mypy",
         "bez-kroku-mypy",
         "bez-kroku-ruff",
+        "bez-setup-python",
+        "pytest-przed-mypy",
+        "zadanie-bez-porazki",
+        "macierz",
+        "mypy-pominiety",
+        "bez-instalacji",
     ],
 )
 def test_zmiana_srodowiska_ruff_i_mypy_w_ci_to_roznica(tmp_path: Path, change: Callable[[Job, Job], None], fragment: str) -> None:
@@ -154,9 +166,10 @@ def test_zmiana_srodowiska_ruff_i_mypy_w_ci_to_roznica(tmp_path: Path, change: C
     [
         _step("Audit workflows (zizmor)", {"env": {"GH_TOKEN": "x"}}),
         _insert("Audit workflows (zizmor)", {"name": "Po mypy", "run": "python tools/cokolwiek.py"}),
+        _set("timeout-minutes", 30),
         _step("Lint Python code", {"name": "Ruff"}),
     ],
-    ids=["env-po-mypy", "krok-po-mypy", "nazwa-kroku"],
+    ids=["env-po-mypy", "krok-po-mypy", "limit-czasu", "nazwa-kroku"],
 )
 def test_zmiana_zadania_ktora_srodowiska_ruff_i_mypy_nie_zmienia_nie_jest_roznica(tmp_path: Path, change: Callable[[Job, Job], None]) -> None:
     _write(tmp_path, {srodowisko_ci.WORKFLOW: _ci(change)})
@@ -235,19 +248,23 @@ def _proved(root: Path, fork: str, failed: str, head: str, target: str) -> straz
     return outcome
 
 
+LINUX = "; sys_platform == 'linux'"
+
+
 @wymaga_uv
 @pytest.mark.parametrize(
-    ("stubs", "detected", "state"),
-    [(("types-PyYAML==6.0.12.20260906",), True, "WYKRYTA"), ((), False, "PODSTAWA CZERWONA")],
-    ids=["pr-dodaje-zaleznosc-ze-stubami", "pr-dodaje-zaleznosc-bez-stubow"],
+    ("marker", "stubs", "detected", "state"),
+    [("", ("types-PyYAML==6.0.12.20260906",), True, "WYKRYTA"), ("", (), False, "PODSTAWA CZERWONA"), (LINUX, (f"types-PyYAML==6.0.12.20260906{LINUX}",), True, "WYKRYTA")],
+    ids=["pr-dodaje-zaleznosc-ze-stubami", "pr-dodaje-zaleznosc-bez-stubow", "zaleznosc-tylko-systemu-runnera-ci"],
 )
-def test_dowod_mypy_bierze_zaleznosci_drzewa_pr_a_nie_wolajacego(tmp_path: Path, stubs: tuple[str, ...], detected: bool, state: str) -> None:
+def test_dowod_mypy_bierze_zaleznosci_drzewa_pr_a_nie_wolajacego(tmp_path: Path, marker: str, stubs: tuple[str, ...], detected: bool, state: str) -> None:
     """Sonda #2116 r6 W1: PR dodaje ``import yaml`` z zależnością PyYAML w swoim ``pyproject.toml``. Dowód liczy mypy
     z zależnościami drzewa jak Required CI (``ci.yml:125``), więc stuby z dodatku dev PR dają ``WYKRYTA``, a ich brak
-    ``PODSTAWA CZERWONA``, choć Python testów, który woła dowód, ma PyYAML i jego stuby."""
+    ``PODSTAWA CZERWONA``, choć Python testów, który woła dowód, ma PyYAML i jego stuby. Zależność tylko dla Linuksa
+    instaluje się jak na runnerze Required CI na każdej maszynie dowodu, także na Macu."""
 
     base = {**project(tools=MYPY.format("")), **TYPED}
-    pr = project("PyYAML==6.0.3", dev=stubs, tools=MYPY.format(""))
+    pr = project(f"PyYAML==6.0.3{marker}", dev=stubs, tools=MYPY.format(""))
     root, fork, failed, head, target = _repository(tmp_path, base, {**pr, **KONFIG, "kod/uzycie.py": TYPED["kod/uzycie.py"]}, TYPED_FIX)
 
     outcome = _proved(root, fork, failed, head, target)
@@ -277,7 +294,12 @@ def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> No
 
     with srodowisko_ci.built(root, head, target) as environment:
         done = subprocess.run(
-            [str(environment.python), "-c", "import sys, importlib.metadata as m; print('.'.join(map(str, sys.version_info[:2]))); print(m.distribution('proba').read_text('direct_url.json'))"],
+            [
+                str(environment.python),
+                "-c",
+                "import sys, importlib.metadata as m; print('.'.join(map(str, sys.version_info[:2]))); "
+                "print(' '.join(f'{name}=={m.version(name)}' for name in ('mypy', 'ruff', 'ast-grep-cli'))); print(m.distribution('proba').read_text('direct_url.json'))",
+            ],
             capture_output=True,
             text=True,
             check=True,
@@ -285,9 +307,10 @@ def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> No
         files = sorted(path.name for path in (environment.copy / "kod").iterdir())
         copy = environment.copy.resolve()
 
-    version, origin = done.stdout.splitlines()
+    version, tools, origin = done.stdout.splitlines()
     installed = json.loads(origin)
     assert version == srodowisko_ci.CI_PYTHON
+    assert sorted(tools.split()) == sorted(PINS)
     assert installed["dir_info"] == {"editable": True} and Path(url2pathname(urlparse(installed["url"]).path)).resolve() == copy, origin
     assert files == ["__init__.py", "nowy.py", "odczyt.py", "uzycie.py", "z_bazy.py"]
 
@@ -298,11 +321,20 @@ def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> No
     [
         ({srodowisko_ci.WORKFLOW: _ci(_step("setup-python", {"with": {"python-version": "3.15"}}))}, "zmień środowisko Required CI osobnym PR przed tym"),
         ({"kod/uzycie.py": "Z = 3\n"}, "z konfliktem (kod/uzycie.py): zaktualizuj PR z bazy"),
+        (project("brak @ file:///nie/ma/takiego/pakietu"), "uv pip compile skończył się kodem 1 (error: Distribution not found at: file:///nie/ma/takiego/pakietu): popraw pyproject.toml"),
     ],
-    ids=["baza-z-innym-pythonem-ci", "konflikt-z-baza"],
+    ids=["baza-z-innym-pythonem-ci", "konflikt-z-baza", "budowa-pada"],
 )
 def test_dowod_odmawia_drzewa_ktorego_srodowiska_nie_zbuduje_jak_ci(tmp_path: Path, moved: dict[str, str], fragment: str) -> None:
     root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/uzycie.py": "X = 2\n"}, moved)
 
     with pytest.raises(srodowisko_ci.Refused, match=re.escape(fragment)), srodowisko_ci.built(root, head, target):
+        pass
+
+
+@wymaga_uv
+def test_dowod_bez_uv_odmawia_z_tym_co_zrobic(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("PATH", str(tmp_path))
+
+    with pytest.raises(srodowisko_ci.Refused, match="brak uv na PATH, a Required CI instaluje zależności uv \\(setup-uv\\): zainstaluj uv"), srodowisko_ci.built(tmp_path, "HEAD", "HEAD"):
         pass
