@@ -2630,8 +2630,8 @@ def test_logi_maja_najnowsze_wpisy_dziennika_centrum_ponad_limit_i_liczbe_starsz
 
 
 def test_co_centrum_zrobilo_miedzy_dwoma_uruchomieniami_jest_w_logach_drugiego_bez_pomiarow_widoku(tmp_path: Path) -> None:
-    """Dziennik Centrum od Logów pierwszego Uruchomienia do końca drugiego (zmiana Ustawień, zamknięcie Centrum, wysyłki
-    Kolejki) jest w Logach drugiego i w Archiwum Logów okresu, każdy wpis raz, a pomiaru widoku tam nie ma: z Logów
+    """Dziennik Centrum od Logów pierwszego Uruchomienia do powstania Logów drugiego (zmiana Ustawień, zamknięcie
+    Centrum, wysyłki Kolejki) jest w Logach drugiego i w Archiwum Logów okresu, każdy wpis raz, a pomiaru widoku tam nie ma: z Logów
     Maks wie, co Centrum zrobiło samo także poza Uruchomieniami."""
 
     centrum = settling_centrum(tmp_path)
