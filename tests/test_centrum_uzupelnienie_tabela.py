@@ -185,8 +185,9 @@ def test_po_odczycie_strony_rodzaju_teksty_wierszy_nie_wychodza_z_komputera(tmp_
     log = centrum.log_path.read_text(encoding="utf-8")
     assert "getKindTable:310/280" in log
     # Kopia wejścia niesie wiersze, które Uruchomienie Przygotowania przeczytało z Rejestru (reguła danych, ADR 0025, #841),
-    # a nie odczyt strony rodzaju, więc poza nią w Logach tekstów wierszy nie ma.
-    logs = [{**json.loads(path.read_text(encoding="utf-8")), "input_copy": None} for path in run_logs]
+    # a Lista Wykonawców ze startu loginy z Ustawień Centrum, a nie z odczytu strony rodzaju, więc poza nimi w Logach
+    # tekstów wierszy nie ma.
+    logs = [{**json.loads(path.read_text(encoding="utf-8")), "input_copy": None, "workers": None} for path in run_logs]
     for text in (log, draft["title"] + draft["body"], *(json.dumps(record, ensure_ascii=False) for record in logs)):
         assert "SYN-" not in text
         assert WORKER not in text

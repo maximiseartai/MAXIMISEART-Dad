@@ -30,6 +30,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import gzip
+import io
+import zipfile
 
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -140,7 +142,8 @@ class Issues:
 
 @dataclass
 class ArchivedFile:
-    """Plik w Archiwum okresu: identyfikator, nazwa, etykieta i bajty, jak je wysłało Centrum (gzip)."""
+    """Plik w Archiwum okresu: identyfikator, nazwa, etykieta i bajty, jak je wysłało Centrum: plik Logów spakowany
+    gzipem (``.gz``) albo Wzorzec (skoroszyt ``.xlsx``, sam pakiet zip)."""
 
     id: int
     name: str
@@ -149,15 +152,19 @@ class ArchivedFile:
 
     @property
     def unpacked(self) -> bytes:
-        """Plik rozpakowany gzipem, bajt w bajt, jak go dostaje Maks po ``gh release download`` i ``gunzip``."""
+        """Plik Logów rozpakowany gzipem, bajt w bajt, jak go dostaje Maks po ``gh release download`` i ``gunzip``."""
 
         return gzip.decompress(self.data)
 
     @property
     def text(self) -> str:
-        """Plik rozpakowany (``unpacked``) jako tekst UTF-8."""
+        """Plik jako tekst UTF-8: plik Logów rozpakowany (``unpacked``), a Wzorzec jako tekst każdej części pakietu po
+        kolei, więc test wycieku widzi każdą wartość, którą Wzorzec niesie do Skrzynki."""
 
-        return self.unpacked.decode("utf-8")
+        if self.name.endswith(".gz"):
+            return self.unpacked.decode("utf-8")
+        with zipfile.ZipFile(io.BytesIO(self.data)) as package:
+            return "\n".join(package.read(name).decode("utf-8", "replace") for name in package.namelist())
 
 
 @dataclass

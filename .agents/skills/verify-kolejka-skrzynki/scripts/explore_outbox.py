@@ -17,6 +17,8 @@ passes, at a moment the schedule picks. Then it checks:
   raz”); a part the newest version no longer has is ``_RETIRED``. A wysyłka with a file for the Archiwum okresu
   (#844) has exactly one whole file of its name in the Archiwum of its tag, with the text of the newest version, and
   its file never went twice: the queue never removed a whole file of its version or a newer one to upload it again.
+  Each Wzorzec beside that file (``ArchiveFile.templates``, in the scope ``archiwum``) is in the Archiwum exactly once,
+  whole and with its bytes, and the queue never removed a whole Wzorzec to upload it again.
   In a scope whose Archiwum refuses every time (a repository without a commit: GitHub answers 409 to every new
   Release), the file waits in the queue with the marker of its parts, and every part of every wysyłka still arrives: a
   refusal of the Archiwum stops only the file, not the wysyłki after it.
@@ -49,6 +51,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import os
 import re
@@ -107,6 +110,7 @@ from eksplorator import Choices, Excuse, Kind, Shape, excuse_line, excused, gone
 from atrapy.sluchacz_kolejki import QueueListener
 from rozliczenia.centrum.case_delivery import queue_directory
 from rozliczenia.tool_files import config_dir
+from rozliczenia.centrum.template_archive import ArchivedTemplate, asset_name, from_queue
 from rozliczenia.client_data import logs_text, tool
 
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
@@ -620,10 +624,18 @@ BOUNDS = Bounds(unreachable=2, lost=1, disk=1, kills=1)
 TAG = "logi-08_14_09_2026"
 
 
-def _archived(run_id: str, version: str) -> Post:
-    """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum okresu (``comment_versions.post_of``)."""
+_TEMPLATE_BYTES = b"Wzorzec syntetyczny"
+TEMPLATE = from_queue(asset_name(hashlib.sha256(_TEMPLATE_BYTES).hexdigest()), "Wzorzec pliku zbiorczego.xlsx", _TEMPLATE_BYTES)
+"""Wzorzec obok pliku Logów (``template_archive.ArchivedTemplate``): nazwa w Archiwum ze skrótu bajtów."""
 
-    archive = ArchiveFile(tool(TAG), tool("Logi Uruchomień"), tool("Archiwum"), tool(f"{run_id}.json"), logs_text(f"Logi {run_id}{version}\n"))
+
+def _archived(run_id: str, version: str, templates: tuple[ArchivedTemplate, ...] = ()) -> Post:
+    """Logi Uruchomienia ``run_id`` w jednym komentarzu z plikiem do Archiwum okresu (``comment_versions.post_of``) i
+    Wzorcami ``templates`` obok niego."""
+
+    archive = ArchiveFile(
+        tool(TAG), tool("Logi Uruchomień"), tool("Archiwum"), tool(f"{run_id}.json"), logs_text(f"Logi {run_id}{version}\n"), templates
+    )
     return Post(LOGS, "08_14_09_2026", tool(run_id), tool("Logi okresu"), (tool(f"część 1/1 wysyłki {run_id}{version}"),), archive)
 
 
@@ -681,9 +693,9 @@ SCOPES = {
         later=DIAGNOSED[1:],
     ),
     "archiwum": Scope(
-        "Logi Uruchomienia w jednym komentarzu z plikiem do Archiwum okresu (Release z tagiem okresu): plik idzie przed "
-        "komentarzem, a odmowa Archiwum zostawia plik w kolejce i komentarz z dopiskiem.",
-        (_archived("uruchomienie", ""),),
+        "Logi Uruchomienia w jednym komentarzu z plikiem do Archiwum okresu (Release z tagiem okresu) i Wzorcem przed "
+        "nim: plik idzie przed komentarzem, a odmowa Archiwum zostawia plik w kolejce i komentarz z dopiskiem.",
+        (_archived("uruchomienie", "", (TEMPLATE,)),),
         (),
         Bounds(unreachable=1, lost=1, disk=1, kills=1, refusals=1),
     ),
@@ -993,6 +1005,12 @@ def _archive_broken(post: Post, box: MemoryBox) -> list[tuple[str, str]]:
         broken.append(("DOKLADNIE_RAZ", f"Archiwum ma pliki {archive.packed_name}: {texts or 'brak'}"))
     if archive.packed_name in box.twice:
         broken.append(("DOKLADNIE_RAZ", f"kolejka usuwa cały plik {archive.packed_name} i wysyła go drugi raz"))
+    for template in archive.templates:
+        found = [asset.data if asset.uploaded else b"(niepelny)" for asset in (release.assets if release else []) if asset.name == template.name]
+        if found != [template.content]:
+            broken.append(("DOKLADNIE_RAZ", f"Archiwum ma {len(found)} plików Wzorca {template.name}, nie jeden cały"))
+        if template.name in box.twice:
+            broken.append(("DOKLADNIE_RAZ", f"kolejka usuwa cały Wzorzec {template.name} i wysyła go drugi raz"))
     return broken
 
 

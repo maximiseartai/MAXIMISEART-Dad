@@ -1,6 +1,7 @@
 """Bieg próbki drogi do Skrzynki Zgłoszeń: czy wartość komórki z próbki dochodzi do pliku kolejki.
 
-Plik kolejki pisze ``outbox._queue_text`` (``Outbox.post``, ``Post.to_json``, ``LogsPost.to_json``). Bieg daje wynik
+Plik kolejki pisze ``outbox._queue_text`` (``Outbox.post``, ``Post.to_json``, ``LogsPost.to_json``), Wzorce pliku do
+Archiwum w base64, które bieg czyta z powrotem jako tekst. Bieg daje wynik
 próbki tej samej drodze, więc próbka znanej luki tekstu do wysyłki przechodzi go tylko wtedy, gdy wartość komórki
 naprawdę stoi w pliku kolejki, a odmowa na tej drodze (kontrola dokładnego typu w chwili zapisu albo użycia) jest
 zgłoszeniem.
@@ -8,8 +9,10 @@ zgłoszeniem.
 
 from __future__ import annotations
 
+import base64
 from collections.abc import Mapping
 import inspect
+import json
 from pathlib import Path
 from types import ModuleType
 from typing import Final
@@ -67,4 +70,18 @@ def bieg_do_pliku_kolejki(
         return [f"bieg TypeError: {odmowa}"]
     if kolejka is not None:
         tekst += "".join(plik.read_text(encoding="utf-8") for plik in sorted(kolejka.glob("*.json")))
+    tekst += _wzorce(tekst)
     return [] if szukana in tekst else ["bieg: plik kolejki bez wartości komórki"]
+
+
+def _wzorce(tekst: str) -> str:
+    """Bajty Wzorców pliku do Archiwum z tekstu pliku kolejki (base64, ``outbox._templates_json``) jako tekst, więc bieg
+    widzi wartość komórki także w bajtach Wzorca."""
+
+    try:
+        dokument = json.loads(tekst)
+    except ValueError:
+        return ""
+    archiwum = dokument.get("archive") if isinstance(dokument, dict) else None
+    wzorce = archiwum.get("templates", []) if isinstance(archiwum, dict) else []
+    return "".join(base64.b64decode(wzorzec["content"]).decode("utf-8", "replace") for wzorzec in wzorce)

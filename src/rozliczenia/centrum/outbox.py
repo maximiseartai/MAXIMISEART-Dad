@@ -47,6 +47,13 @@ a issue z nowszą wersją wysyłki nie dostaje od starszej niczego, także w Arc
 kolejki dostaje znacznik części (``delivered_parts``) i czeka tylko na Archiwum: następne próby nie pytają już o issue.
 Przejście, w którym Archiwum odmówiło, nie pyta go więcej, a budzenie po ``RETRY_S`` ponawia jedno pytanie.
 
+Obok pliku Logów ten sam plik do Archiwum niesie Wzorce Uruchomienia (``ArchiveFile.templates``,
+``template_archive.ArchivedTemplate``), w pliku kolejki w base64. Nazwa Wzorca to skrót jego bajtów, więc ta sama
+nazwa to te same bajty: Wzorzec, którego nazwa już jest w Archiwum w całości, nie idzie drugi raz, Wzorzec urwany w
+trakcie wysyłki ustępuje, a Wzorzec, którego Archiwum nie przyjęło, czeka w kolejce jak plik Logów. Wzorce idą przed
+plikiem Logów, więc plik Logów w Archiwum ma obok każdy swój Wzorzec, który Archiwum przyjęło; dopisek w częściach mówi
+tylko o pliku Logów.
+
 Adres pierwszego komentarza każdej dostarczonej wysyłki (np. Logów Uruchomienia, do których prowadzi przypięta
 Uwaga taty) kolejka dopisuje do pliku ``addresses`` i wczytuje przy następnym starcie Centrum, więc ``delivered``
 zna też wysyłki poprzednich prac Centrum. Co wysyłka znaczy poza kolejką, wie jej słuchacz (``Listener``, w Centrum
@@ -56,6 +63,7 @@ przejścia, a po przyjęciu albo odrzuceniu treści przez skrzynkę dostaje wyni
 
 from __future__ import annotations
 
+import base64
 import gzip
 import itertools
 import json
@@ -91,6 +99,7 @@ from rozliczenia.centrum.report_box import (
     archive_url,
     newest_with_line,
 )
+from rozliczenia.centrum.template_archive import ArchivedTemplate, from_queue
 from rozliczenia.client_data import LogsText, Outgoing, logs_text, tool
 from rozliczenia.wall_clock import utc_now
 
@@ -297,6 +306,7 @@ class ArchiveFile:
     Archiwum leży spakowany gzipem jako ``packed_name``, a ``link`` prowadzi do niego, zanim dojdzie. ``title`` i
     ``description`` to tytuł i opis Archiwum, gdy kolejka musi je założyć. Tag, tytuł, opis i nazwa wychodzą do Skrzynki
     (Release i nazwa pliku), więc mają typ tekstu do wysyłki (``Outgoing``), który plik kolejki sprawdza w chwili zapisu.
+    ``templates``: Wzorce Uruchomienia po sprawdzeniu reguły danych, które idą do tego samego Archiwum bez pakowania.
     """
 
     tag: Outgoing
@@ -304,6 +314,7 @@ class ArchiveFile:
     description: Outgoing
     name: Outgoing
     text: LogsText
+    templates: tuple[ArchivedTemplate, ...] = ()
 
     @property
     def packed_name(self) -> str:
@@ -522,11 +533,14 @@ def _queue_text(post: Post | LogsPost, *, delivered_parts: int, archived: bool) 
         raise TypeError("Plik kolejki bierze tylko tekst Outgoing z rozliczenia.client_data i stopień Rank.")
     if type(run_id) is not Outgoing:
         raise TypeError(f"Plik kolejki bierze tylko identyfikator wysyłki Outgoing z rozliczenia.client_data, nie {type(run_id).__name__}.")
-    file: dict[str, str] | None = None
+    file: dict[str, object] | None = None
     if archive is not None:
         if type(archive) is not ArchiveFile:
             raise TypeError(f"Plik kolejki bierze tylko plik ArchiveFile z rozliczenia.centrum.outbox, nie {type(archive).__name__}.")
+        templates = _templates_json(archive.templates)
         file = {name: str(value) for name, value in _checked_fields(ArchiveFile, archive).items()}
+        if templates:
+            file["templates"] = templates
     return json.dumps(
         {
             "schema_version": SCHEMA_VERSION,
@@ -568,12 +582,39 @@ def _target_json(target: object) -> dict[str, str | int]:
     return {"kind": name, **_checked_fields(kind, target)}
 
 
+def _templates_json(templates: object) -> list[dict[str, str]]:
+    """Wzorce pliku do Archiwum w pliku kolejki: dokładnie krotka ``ArchivedTemplate`` (porównanie ``is``), każdy z
+    nazwą i nazwą Wzorca dokładnie ``Outgoing`` i bajtami dokładnie ``bytes``, czytanymi raz; bajty w base64."""
+
+    if type(templates) is not tuple:
+        raise TypeError(f"Plik kolejki bierze Wzorce tylko w krotce, nie {type(templates).__name__}.")
+    entries: list[dict[str, str]] = []
+    for template in templates:
+        if type(template) is not ArchivedTemplate:
+            raise TypeError(
+                f"Plik kolejki bierze tylko Wzorzec ArchivedTemplate z rozliczenia.centrum.template_archive, nie {type(template).__name__}."
+            )
+        name, file, content = template.name, template.file, template.content
+        if type(name) is not Outgoing or type(file) is not Outgoing or type(content) is not bytes:
+            raise TypeError("Wzorzec w pliku kolejki ma nazwy Outgoing i bajty bytes.")
+        entries.append(
+            {"name": str.__str__(name), "file": str.__str__(file), "content": base64.b64encode(content).decode("ascii")}
+        )
+    return entries
+
+
+_COLLECTIONS: Final = frozenset({"templates"})
+"""Pola pliku do Archiwum, które nie są tekstem: plik kolejki zapisuje je osobno (``_templates_json``)."""
+
+
 def _checked_fields(kind: type[Target] | type[ArchiveFile], value: object) -> dict[str, str | int]:
-    """Pola obiektu ``value`` dokładnie klasy ``kind`` z ``fields`` tej klasy, nie z adnotacji wejścia: każde czytane raz,
-    sprawdzone po adnotacji (``_FIELDS``) i skopiowane do ``str`` albo ``int``."""
+    """Pola obiektu ``value`` dokładnie klasy ``kind`` z ``fields`` tej klasy, nie z adnotacji wejścia, poza zbiorami
+    (``_COLLECTIONS``): każde czytane raz, sprawdzone po adnotacji (``_FIELDS``) i skopiowane do ``str`` albo ``int``."""
 
     entry: dict[str, str | int] = {}
     for field in fields(kind):
+        if field.name in _COLLECTIONS:
+            continue
         read, check = getattr(value, field.name), _FIELDS.get(str(field.type))
         if check is None or not check(read):
             raise TypeError(f"Pole {kind.__name__}.{field.name} w pliku kolejki ma typ {type(read).__name__}.")
@@ -672,13 +713,27 @@ def _archive_file(entry: object) -> ArchiveFile | None:
         return None
     if not isinstance(entry, dict):
         raise TypeError("plik do Archiwum")
+    templates = entry.get("templates", [])
+    if not isinstance(templates, list):
+        raise TypeError("Wzorce pliku do Archiwum")
     return ArchiveFile(
         tool(_string(entry["tag"])),
         tool(_string(entry["title"])),
         tool(_string(entry["description"])),
         tool(_string(entry["name"])),
         logs_text(_string(entry["text"])),
+        tuple(_queued_template(template) for template in templates),
     )
+
+
+def _queued_template(entry: object) -> ArchivedTemplate:
+    """Wzorzec z pliku kolejki (``_templates_json``); inny kształt, base64 albo nazwa spoza skrótu bajtów to ``TypeError``
+    albo ``ValueError`` (plik nieczytelny). Plik kolejki sprzed Wzorców ich nie ma."""
+
+    if not isinstance(entry, dict):
+        raise TypeError("Wzorzec pliku do Archiwum")
+    content = base64.b64decode(_string(entry["content"]), validate=True)
+    return from_queue(_string(entry["name"]), _string(entry["file"]), content)
 
 
 @dataclass(frozen=True)
@@ -794,7 +849,10 @@ class InArchive:
 
 @dataclass(frozen=True)
 class ArchiveWaits:
-    """Archiwum okresu nie przyjęło pliku (odmowa uprawnienia albo treści): plik czeka w kolejce, części idą dalej."""
+    """Archiwum okresu nie przyjęło pliku (odmowa uprawnienia albo treści): plik czeka w kolejce, części idą dalej.
+    ``logs`` ``False``: plik Logów jest w Archiwum, a czeka tylko Wzorzec, więc części idą bez dopisku."""
+
+    logs: bool = True
 
 
 @dataclass(frozen=True)
@@ -969,7 +1027,7 @@ def _deliver_to_period(
 
 
 def _note(post: Post, step: InArchive | ArchiveWaits) -> str:
-    return _waiting_note(post.archive) if isinstance(step, ArchiveWaits) and post.archive is not None else ""
+    return _waiting_note(post.archive) if isinstance(step, ArchiveWaits) and step.logs and post.archive is not None else ""
 
 
 def _archive_waits(outcome: Delivered | Failure, step: InArchive | ArchiveWaits) -> Delivered | Failure:
@@ -979,12 +1037,14 @@ def _archive_waits(outcome: Delivered | Failure, step: InArchive | ArchiveWaits)
 def _deliver_archive(
     post: Post, version: Version, box: KeyedBox, *, archive_open: bool
 ) -> InArchive | ArchiveWaits | Unreachable | NoKey:
-    """Plik wysyłki w Archiwum okresu w wersji ``version``, dokładnie raz; wysyłka bez pliku jest już w Archiwum.
+    """Plik wysyłki w Archiwum okresu w wersji ``version``, dokładnie raz, z Wzorcami przed nim
+    (``_deliver_template``); wysyłka bez pliku jest już w Archiwum.
 
     Archiwum z tagiem kolejka znajduje (``archive``) albo zakłada (``open_archive``). Plik tej nazwy w tej wersji albo
     nowszej (z etykiety, ``_asset_version``) zostaje; plik starszej wersji albo urwany w trakcie wysyłki ustępuje
     (``remove``), a potem idzie ten (``upload``). Odmowa Archiwum (``Refused``: brak uprawnienia, ``Rejected``: treść)
-    to ``ArchiveWaits``; ``archive_open`` ``False`` daje je bez pytania Skrzynki.
+    to ``ArchiveWaits``; ``archive_open`` ``False`` daje je bez pytania Skrzynki. Wzorzec, którego Archiwum nie przyjęło,
+    nie zatrzymuje pliku Logów: daje ``ArchiveWaits`` bez dopisku (``logs`` ``False``), gdy plik Logów doszedł.
     """
 
     archive = post.archive
@@ -998,6 +1058,42 @@ def _deliver_archive(
         return ArchiveWaits()
     if not isinstance(found, Archive):
         return found
+    template_waits = False
+    for template in archive.templates:
+        sent_template = _deliver_template(found, template, box)
+        if isinstance(sent_template, Unreachable | NoKey):
+            return sent_template
+        template_waits = template_waits or isinstance(sent_template, ArchiveWaits)
+    logs = _deliver_logs_file(found, archive, version, box)
+    if isinstance(logs, InArchive) and template_waits:
+        return ArchiveWaits(logs=False)
+    return logs
+
+
+def _deliver_template(
+    found: Archive, template: ArchivedTemplate, box: KeyedBox
+) -> InArchive | ArchiveWaits | Unreachable | NoKey:
+    """Wzorzec w Archiwum ``found`` dokładnie raz: ta sama nazwa to te same bajty, więc Wzorzec, który już jest w całości,
+    zostaje, a urwany w trakcie wysyłki ustępuje (``remove``) i idzie od nowa."""
+
+    present = next((asset for asset in found.assets if asset.name == template.name), None)
+    if present is not None and present.uploaded:
+        return InArchive()
+    if present is not None:
+        removed = box.remove(present.id)
+        if isinstance(removed, Refused):
+            return ArchiveWaits()
+        if not isinstance(removed, Removed):
+            return removed
+    sent = box.upload(found.id, template.name, template.file, template.content)
+    if isinstance(sent, Refused | Rejected):
+        return ArchiveWaits()
+    return InArchive() if isinstance(sent, Asset) else sent
+
+
+def _deliver_logs_file(
+    found: Archive, archive: ArchiveFile, version: Version, box: KeyedBox
+) -> InArchive | ArchiveWaits | Unreachable | NoKey:
     present = next((asset for asset in found.assets if asset.name == archive.packed_name), None)
     if present is not None:
         seen = _asset_version(present, archive)

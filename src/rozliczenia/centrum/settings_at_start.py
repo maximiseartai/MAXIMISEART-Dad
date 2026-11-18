@@ -17,7 +17,7 @@ from typing import Any, Final, Literal, TypedDict, assert_never, get_args
 from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.centrum import diagnosis_messages, refusal
 from rozliczenia.centrum.refusal import Refusal
-from rozliczenia.centrum.run_logs import LoggedActivityLegend, LoggedQuantityRules
+from rozliczenia.centrum.run_logs import LoggedActivityLegend, LoggedQuantityRules, LoggedWorker
 from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
 from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
 from rozliczenia.message import Message
@@ -36,6 +36,7 @@ class LoggedSettings(TypedDict):
 
     quantity_rules: LoggedQuantityRules | None
     activity_legend: LoggedActivityLegend | None
+    workers: list[LoggedWorker] | None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -53,15 +54,15 @@ class SettingsAtStart:
     - Skrypt dla maszyn (``tools/uruchom_proces.py``) bierze Reguły ilości i Legendę czynności z Wydania, a Listę
       Wykonawców z pliku ``--wykonawcy``, bez migawki i bez ostrzeżeń (``uruchom_proces.ustawienia_z_wydania``, z której
       biorą je też wyrocznia ``verify-jedno-uruchomienie-naraz`` i testy).
-    - Odtworzenie (``tools/lib/odtworzenie.py``) bierze Reguły ilości, Legendę czynności i ostrzeżenia startu z Logów
-      Uruchomienia, a Reguły ilości i Legendę czynności z Wydania tylko dla Logów sprzed ich zapisu, bez migawki. Logi
-      nie mają Listy Wykonawców: odtworzenie Wpisania raportów składa ją z loginów Wpisów w Logach, a Przygotowania
-      i Przebiegu rozliczeń bierze plik ``wykonawcy.yaml`` folderu Konfiguracji.
+    - Odtworzenie (``tools/lib/odtworzenie.py``) bierze Reguły ilości, Legendę czynności, Listę Wykonawców i
+      ostrzeżenia startu z Logów Uruchomienia, bez migawki, a dla Logów sprzed ich zapisu Reguły ilości i Legendę
+      czynności z Wydania, a Listę Wykonawców z pliku ``wykonawcy.yaml`` folderu Konfiguracji. Logi mają Listę
+      Wykonawców bez adresów, więc odtworzenie Wpisania raportów składa ją z loginów Wpisów w Logach.
 
     ``Catalog.prepared`` odrzuca start bez Ustawienia, którym proces liczy (``missing``), a te, którymi nie liczy,
     rzutuje na ``None`` (``for_process``), zanim zbuduje wejście procesu, więc wejście i ``PreparedRun`` mają tylko
-    Ustawienia procesu. Do Logów idą z nich pliki procesu z migawki, Reguły ilości, Legenda czynności (``logged``)
-    i ostrzeżenia startu; samej Listy Wykonawców nie mają Logi żadnego procesu.
+    Ustawienia procesu. Do Logów idą z nich pliki procesu z migawki, Reguły ilości, Legenda czynności, Lista Wykonawców
+    bez adresów (``logged``) i ostrzeżenia startu.
     """
 
     snapshot: SettingsSnapshot | None
@@ -103,10 +104,11 @@ class SettingsAtStart:
     def logged(self) -> LoggedSettings:
         """Pola Logów Uruchomienia z tych Ustawień; ostrzeżenia startu idą do Komunikatów Logów."""
 
-        rules, legend = self.quantity_rules, self.activity_legend
+        rules, legend, workers = self.quantity_rules, self.activity_legend, self.workers
         return LoggedSettings(
             quantity_rules=None if rules is None else LoggedQuantityRules.of(rules),
             activity_legend=None if legend is None else LoggedActivityLegend.of(legend),
+            workers=None if workers is None else LoggedWorker.all_of(workers),
         )
 
     def counted_rules(self) -> QuantityRules:

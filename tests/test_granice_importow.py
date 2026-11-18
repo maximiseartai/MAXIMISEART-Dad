@@ -138,6 +138,8 @@ PURE_VERSIONS = {
     # wersji bez podklas, bez plików
     "rozliczenia.client_data": frozenset({"ForbiddenValues", "Outgoing", "WithoutSubclasses", "tool"}),
     "rozliczenia.process_run": frozenset({"RunResult"}),
+    # Wzorzec po sprawdzeniu reguły danych do adnotacji wersji Logów z Wzorcami, bez plików
+    "rozliczenia.centrum.template_archive": frozenset({"ArchivedTemplate"}),
 }
 RUN_LOGS_GUARD = "rozliczenia/centrum/run_logs_guard.py"
 # Moduły Logów Uruchomienia, które czytają karta z Logów, plik Logów i odtworzenie, i moduły, których nie wczytują:

@@ -35,7 +35,8 @@
    "technical_notes",
    "templates",
    "tool",
-   "trace"
+   "trace",
+   "workers"
   ],
   "wymagane": [
    "diagnosis",
@@ -659,6 +660,7 @@
   "pola": [
    "name",
    "online_only",
+   "sha256",
    "size"
   ],
   "wymagane": [
@@ -1813,6 +1815,20 @@
    "file",
    "function",
    "line"
+  ],
+  "wartosci": [],
+  "otwarte": true
+ },
+ ".workers[]": {
+  "pola": [
+   "active",
+   "logins",
+   "name"
+  ],
+  "wymagane": [
+   "active",
+   "logins",
+   "name"
   ],
   "wartosci": [],
   "otwarte": true

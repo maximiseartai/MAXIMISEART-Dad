@@ -25,9 +25,14 @@ zapisuje w dzienniku Centrum, a Wycena biegnie dalej.
    pójdą do Skrzynki, więc dziennik sam mówi następnemu startowi, czy jego Uruchomienie doszło do wyniku i do jakiego, a
    start nie zgaduje tego z Historii; Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie,
    zamiast niego usuwa dziennik, który mógł po nim zostać;
-2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs_guard.guard_logs``, ADR 0025);
+2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs_guard.guard_logs``, ADR 0025), z
+   Wzorcami procesu, które przeszły sprawdzenie reguły danych (``template_archive.TemplateChecks``): każdy Wzorzec z
+   ``config`` ma w Logach SHA-256 swoich bajtów, a Wzorzec, którego sprawdzenie nie przepuściło, uwagę w
+   ``input_copy_notes``; pierwsze sprawdzenie nowej wersji Wzorca w pracy Centrum czyta cały skoroszyt, a strażnik
+   przechodzi jego teksty znowu tylko wtedy, gdy pamięć reguły danych poznała nową wartość;
 3. plik Logów (``LogsOnDisk.write``), a potem, także gdy pliku nie dało się zapisać, te same Logi do Kolejki wysyłki
-   (``comment_versions.OwnLogs``, stopień najwyższy): komentarz z podsumowaniem i plik w Archiwum Logów okresu;
+   (``comment_versions.OwnLogs``, stopień najwyższy): komentarz z podsumowaniem, plik w Archiwum Logów okresu i obok
+   niego Wzorce po sprawdzeniu, każdy pod nazwą ze swojego SHA-256;
 4. dziennik znika, gdy kolejka przyjęła Logi (``comment_versions.journal_after``); inaczej zostaje do następnego startu,
    który zamknie go wersją zastępczą.
 
@@ -38,8 +43,9 @@ wpisem końca, a start wysyła z niego wynik bez Logów; Logi z wynikiem, które
 więc ich nie zastępuje.
 
 **Diagnoza** Zatrzymania (``RunComments.diagnosed``) dopisuje się do Logów swojego Uruchomienia: ten sam plik dostaje pole
-``diagnosis``, a Logi idą do kolejki drugi raz jako nowsza wersja tej samej wysyłki, więc kolejka podmienia plik w Archiwum
-i zmienia komentarz tego Uruchomienia. Diagnoza z tym samym wynikiem co ostatnio dopisana
+``diagnosis``, a Logi idą do kolejki drugi raz jako nowsza wersja tej samej wysyłki, z tymi samymi Wzorcami, więc kolejka
+podmienia plik w Archiwum i zmienia komentarz tego Uruchomienia, a Wzorce, które czekały z wersją bez Diagnozy, idą z
+nią. Diagnoza z tym samym wynikiem co ostatnio dopisana
 (``LoggedDiagnosis.same_result``) nie zmienia niczego: po nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym
 pokazaniu, a Maks potrzebuje tylko zmiany wyniku. Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w
 pamięci zostają tylko jego Logi; Diagnoza, w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
@@ -70,10 +76,11 @@ które kolejka mogła już przyjąć, nie zastępuje ani w kolejce, ani w Skrzyn
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import datetime
 from functools import cache, partial
+import hashlib
 from pathlib import Path
 import platform
 import threading
@@ -103,14 +110,17 @@ from rozliczenia.centrum.report_box import Label
 from rozliczenia.centrum.logs_of_run import logged_diagnosis, logs_of
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.run_logs import CentrumLogLines, Environment, LoggedFile, RunLog, StartFacts, Tool
-from rozliczenia.centrum.run_logs_guard import GuardedLogs, guard_logs, guard_text
+from rozliczenia.centrum.run_logs_guard import guard_logs, guard_text
 from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
 from rozliczenia.centrum.runs import EndedRun
+from rozliczenia.centrum.template_archive import ArchivedTemplate, TemplateChecks, TemplateRefused
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.period_folder import PeriodFolderInaccessible
 from rozliczenia.wall_clock import utc_now
+from rozliczenia.workbook_files import WorkbookError
 
 PROGRESS_S: Final = 300.0
 """Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum: postęp idzie najwyżej co tyle."""
@@ -128,6 +138,9 @@ T = TypeVar("T")
 ProcessFiles = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Sequence[Path] | UnreadableFile]
 """Pliki procesu dla tokenu okresu z migawką Ustawień Centrum ze startu Uruchomienia (``None``: bez migawki, z
 bieżącymi), a przy pliku Folderów bez odczytu ten plik."""
+
+ProcessTemplates = Callable[[common_contract.ProcessKey], Sequence[Path]]
+"""Wzorce procesu z ``config`` na dysku narzędzia (``ProcessKind.configuration_needs``)."""
 
 
 class CommentQueue(Protocol):
@@ -150,10 +163,19 @@ class LeftBehindClosed:
     nie przeczyta Logów, zanim powstaną Logi Urwanego Uruchomienia."""
 
 
+@dataclass(frozen=True)
+class MadeLogs:
+    """Logi Uruchomienia sprzed strażnika i Wzorce procesu, które idą obok nich do Archiwum Logów okresu."""
+
+    record: RunLog
+    templates: tuple[ArchivedTemplate, ...]
+
+
 class RecordMaker:
     """Logi Uruchomienia z dzisiejszym narzędziem (``commit``, ``wydanie``), środowiskiem (system, Python i pliki procesu
-    ``files`` z rozmiarem i atrybutem OneDrive z ``cloud_files``), działaniami taty i wpisami dziennika Centrum, które czekają
-    na Logi (``dad_actions``, ``centrum_log``)."""
+    ``files`` z rozmiarem i atrybutem OneDrive z ``cloud_files``, a Wzorce procesu ``templates`` z SHA-256 bajtów, które
+    daje uchwyt plików taty ``dad_files``), działaniami taty i wpisami dziennika Centrum, które czekają na Logi
+    (``dad_actions``, ``centrum_log``), oraz Wzorce po sprawdzeniu ``checks`` do Archiwum Logów okresu."""
 
     def __init__(
         self,
@@ -161,6 +183,9 @@ class RecordMaker:
         commit: CommitSource,
         wydanie: Callable[[str], Release | None],
         files: ProcessFiles,
+        templates: ProcessTemplates,
+        dad_files: DadFiles,
+        checks: TemplateChecks,
         cloud_files: CloudFiles,
         dad_actions: DadActionJournal,
         centrum_log: CentrumLog,
@@ -168,19 +193,43 @@ class RecordMaker:
         self._commit = commit
         self._wydanie = wydanie
         self._files = files
+        self._templates = templates
+        self._dad_files = dad_files
+        self._checks = checks
         self._cloud = cloud_files
         self._dad_actions = dad_actions
         self._centrum_log = centrum_log
 
-    def of(self, run: EndedRun) -> RunLog:
-        environment = self._environment(run.info.process, run.info.period, run.settings.snapshot)
-        return logs_of(
+    def of(self, run: EndedRun) -> MadeLogs:
+        """Logi z wynikiem i Wzorce procesu do Archiwum: Wzorzec, którego sprawdzenie nie przepuściło, ma w Logach uwagę
+        (``TemplateRefused.note``) w ``input_copy_notes``, bo karta z Logów pokazuje ``technical_notes`` i ma być taka
+        jak karta na żywo, a odtworzenie tej uwagi nie powtarza."""
+
+        read = self._read_templates(run.info.process)
+        environment = self._environment(run.info.process, run.info.period, run.settings.snapshot, read)
+        record = logs_of(
             run,
             tool=self._tool(),
             environment=environment,
             dad_actions=self._dad_actions.take(),
             centrum_log=self._centrum_log_lines(),
         )
+        checked = [self._checks.checked(path.name, content) for path, content in read.items()]
+        notes = [found.note for found in checked if isinstance(found, TemplateRefused)]
+        if notes:
+            record = record.model_copy(update={"input_copy_notes": [*record.input_copy_notes, *notes]})
+        return MadeLogs(record, tuple(found for found in checked if isinstance(found, ArchivedTemplate)))
+
+    def _read_templates(self, process: common_contract.ProcessKey) -> dict[Path, bytes]:
+        """Bajty Wzorców procesu z ``config`` przy końcu Uruchomienia; Wzorca, którego nie da się przeczytać, nie ma."""
+
+        read: dict[Path, bytes] = {}
+        for path in self._templates(process):
+            try:
+                read[path] = self._dad_files.read(path, despite_excel_lock=True).content
+            except WorkbookError:
+                continue
+        return read
 
     def interrupted(self, journal: JournalRead) -> RunLog:
         """Logi Urwanego Uruchomienia z dziennika ``journal`` (``RunLog.interrupted``): Aktualizacja narzędzia nie startuje
@@ -192,7 +241,7 @@ class RecordMaker:
             orders=journal.orders,
             interruption=journal.interruption,
             tool=self._tool(),
-            environment=self._environment(journal.started.process, journal.started.period, None),
+            environment=self._environment(journal.started.process, journal.started.period, None, {}),
             dad_actions=self._dad_actions.take(),
             centrum_log=self._centrum_log_lines(),
         )
@@ -207,9 +256,14 @@ class RecordMaker:
         return Tool(wydanie=None if release is None else release.version, commit=commit)
 
     def _environment(
-        self, process: common_contract.ProcessKey, period: str, settings: SettingsSnapshot | None
+        self,
+        process: common_contract.ProcessKey,
+        period: str,
+        settings: SettingsSnapshot | None,
+        templates: Mapping[Path, bytes],
     ) -> Environment:
-        """Środowisko Uruchomienia do Logów. Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek, więc
+        """Środowisko Uruchomienia do Logów; plik z bajtami w ``templates`` (Wzorzec procesu) ma ich SHA-256.
+        Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek, więc
         Logi mają wtedy pliki ``None``, bez wpisu w dzienniku, który Diagnoza by zgłosiła. Plik Folderów bez odczytu
         też: Logi mają wtedy pliki ``None`` i nazwę tego pliku, a nie pliki Folderów z Wydania."""
 
@@ -223,16 +277,17 @@ class RecordMaker:
             if isinstance(paths, UnreadableFile):
                 unreadable = paths.name
             else:
-                files = [self._file(path) for path in paths]
+                files = [self._file(path, templates.get(path)) for path in paths]
         return Environment(system=_system(), python=platform.python_version(), files=files, unreadable_settings=unreadable)
 
-    def _file(self, path: Path) -> LoggedFile:
+    def _file(self, path: Path, content: bytes | None) -> LoggedFile:
         try:
             size: int | None = path.stat().st_size
         except OSError:
             size = None
         online_only = self._cloud.online_only(path) if self._cloud.checked and size is not None else None
-        return LoggedFile(name=path.name, size=size, online_only=online_only)
+        sha256 = None if content is None else hashlib.sha256(content).hexdigest()
+        return LoggedFile(name=path.name, size=size, online_only=online_only, sha256=sha256)
 
 
 @cache
@@ -266,7 +321,7 @@ class RunComments:
     def __init__(self, work: CentrumWork, disk: LogsOnDisk, queue: CommentQueue, records: RecordMaker) -> None:
         """``_lock`` porządkuje postęp, Logi z wynikiem i Diagnozę: postęp, który już idzie do kolejki, jest w niej przed
         Logami, a dwie Diagnozy naraz (dwie karty) piszą plik i komentarz jedna po drugiej. ``_last`` to Logi ostatniego
-        Uruchomienia tak, jak ostatnio poszły do pliku i Skrzynki."""
+        Uruchomienia z jego Wzorcami tak, jak ostatnio poszły do pliku i Skrzynki."""
 
         self._disk = disk
         self._queue = queue
@@ -276,7 +331,7 @@ class RunComments:
         self._records = records
         self._lock = threading.Lock()
         self._watched: _Watched | None = None
-        self._last: GuardedLogs | None = None
+        self._last: OwnLogs | None = None
         self._pending: list[tuple[JournalKey, StandInVersion]] = []
 
     def run_started(self, info: runs_contract.RunInfo, started_at: datetime) -> None:
@@ -325,19 +380,20 @@ class RunComments:
         with self._lock:
             if self._watched is not None and self._watched.run_id == run_id:
                 self._watched = replace(self._watched, ended=True)
-        logs = self._step(lambda: self._own(run))
-        if logs is None:
+        version = self._step(lambda: self._own(run))
+        if version is None:
             return
         accepted: list[bool] = []
-        self._step(lambda: self._keep(logs, accepted.append))
-        if accepted and journal_after(OwnLogs(logs), accepted=accepted[0]) == "usuń":
+        self._step(lambda: self._keep(version, accepted.append))
+        if accepted and journal_after(version, accepted=accepted[0]) == "usuń":
             self._step(lambda: self._disk.journal.remove(run_id))
 
-    def _own(self, run: EndedRun) -> GuardedLogs:
-        logs = guard_logs(self._records.of(run), self._forbidden)
+    def _own(self, run: EndedRun) -> OwnLogs:
+        made = self._records.of(run)
+        version = OwnLogs(guard_logs(made.record, self._forbidden), made.templates)
         with self._lock:
-            self._last = logs
-        return logs
+            self._last = version
+        return version
 
     def _step(self, step: Callable[[], T]) -> T | None:
         try:
@@ -362,25 +418,26 @@ class RunComments:
 
         with self._lock:
             last = self._last
-            if last is None or last.record.run_id != run_id:
+            if last is None or last.logs.record.run_id != run_id:
                 return
             logged = logged_diagnosis(diagnosis, diagnosed_at=utc_now())
-            logs = last.with_diagnosis(logged, self._forbidden)
+            logs = last.logs.with_diagnosis(logged, self._forbidden)
             if logs is None:
                 return
-            self._keep(logs, lambda accepted: None)
-            self._last = logs
+            version = OwnLogs(logs, last.templates)
+            self._keep(version, lambda accepted: None)
+            self._last = version
 
-    def _keep(self, logs: GuardedLogs, accepted: Callable[[bool], None]) -> None:
+    def _keep(self, version: OwnLogs, accepted: Callable[[bool], None]) -> None:
         """Plik Logów (nowy albo nadpisany), a potem, także gdy pliku nie dało się zapisać, do Skrzynki komentarz w issue
-        okresu i plik w Archiwum Logów okresu z tymi samymi bajtami co plik (``LogsOnDisk.write``): katalog Logów, który nie
-        przyjął pliku, nie zatrzymuje Logów w drodze do Maksa. ``accepted`` dostaje wynik wysyłki (``Outbox.post``), a
-        błąd zapisu pliku wychodzi dopiero po niej."""
+        okresu, plik w Archiwum Logów okresu z tymi samymi bajtami co plik (``LogsOnDisk.write``) i Wzorce Uruchomienia:
+        katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa. ``accepted`` dostaje wynik wysyłki
+        (``Outbox.post``), a błąd zapisu pliku wychodzi dopiero po niej."""
 
         try:
-            self._disk.write(logs)
+            self._disk.write(version.logs)
         finally:
-            accepted(self._queue.post(post_of(OwnLogs(logs))))
+            accepted(self._queue.post(post_of(version)))
 
     def close_left_behind(self) -> LeftBehindClosed:
         """Przy budowie aplikacji: każdy dziennik z pierwszą linią zamyka wersją zastępczą komentarza jego Uruchomienia
