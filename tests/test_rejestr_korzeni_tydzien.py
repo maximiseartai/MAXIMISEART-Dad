@@ -580,7 +580,8 @@ def test_pr_scalony_przed_wdrozeniem_i_zmieniony_po_nim_nie_liczy_sie_od_wdrozen
 @ONLY_FOUND_BY_NAME_ON_POSIX
 def test_pr_zamkniety_bez_merge_po_trzech_rundach_z_fail_daje_nowy_pr_na_jego_plikach_w_raporcie(tmp_path: Path) -> None:
     """Skan rozpoznaje PR zamknięty po limicie rund z jego werdyktów: trzy rundy z FAIL i zamknięcie bez merge'a; PR
-    zamknięty po dwóch rundach i PR otwarty po trzech nie są zamknięte po limicie."""
+    zamknięty po dwóch rundach i PR otwarty po trzech nie są zamknięte po limicie, a PR założony między pierwszym
+    a ostatnim FAIL zamkniętego to praca równoległa, nie nowy PR po limicie."""
 
     fails = [(FAIL_W1.replace("{commit}", sha * 40), f"2026-10-13T1{index}:00:00Z") for index, sha in enumerate("123")]
     pulls = [
@@ -588,6 +589,7 @@ def test_pr_zamkniety_bez_merge_po_trzech_rundach_z_fail_daje_nowy_pr_na_jego_pl
         _pull(1471, fails[:2], closed=True, created="2026-10-05T00:01:00Z", files=["kod/dwie.py"]),
         _pull(1472, fails, created="2026-10-05T00:02:00Z", files=["kod/otwarty.py"]),
         _pull(1473, [], created="2026-10-14T00:00:00Z", files=["kod/limit.py", "kod/dwie.py", "kod/otwarty.py"]),
+        _pull(1474, [], created="2026-10-13T10:30:00Z", files=["kod/limit.py"]),
     ]
     github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls, started=DEPLOYED.isoformat())
 

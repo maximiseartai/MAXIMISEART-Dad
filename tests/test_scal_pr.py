@@ -1965,19 +1965,18 @@ def _limit_reason(*failed: str) -> str:
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a po 3. rundzie z FAIL PR nie dostaje"
         " kolejnej (skill przeglad, „Kolejne rundy”): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
         " usunięcie z PR części, której przegląd nie przyjął) i opisz je komentarzem PR z pierwszą linią"
-        " „ZMIANA PODEJŚCIA: <zdanie>”; to jedyna zmiana podejścia w PR, po niej najwyżej 3 rundy z FAIL"
+        " „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie dostaje żadnej"
     )
 
 
 def _final_reason(*failed: str) -> str:
-    """Przyczyna odmowy limitu rund PR 1 po zmianie podejścia, po której PR ma rundy z FAIL na commitach ``failed``."""
+    """Przyczyna odmowy limitu rund PR 1 po szóstej rundzie z FAIL, z rundami z FAIL na commitach ``failed``."""
 
     commits = ", ".join(sha[:7] for sha in failed)
     return (
-        f"limit rund: rund z FAIL {len(failed)} ({commits}) po zmianie podejścia, a po 3. rundzie z FAIL od niej #1 nie"
-        " dostaje żadnej kolejnej (skill przeglad, „Kolejne rundy”): kolejny komentarz „ZMIANA PODEJŚCIA: <zdanie>”"
-        " licznika nie zeruje; zamknij #1 komentarzem z powodem i zacznij nowy PR od świeżego origin/main z innym"
-        " podejściem"
+        f"limit rund: rund z FAIL {len(failed)} ({commits}), a po 6. rundzie z FAIL #1 nie dostaje żadnej kolejnej"
+        " (skill przeglad, „Kolejne rundy”), także po komentarzu „ZMIANA PODEJŚCIA: <zdanie>”: zamknij #1 komentarzem"
+        " z powodem i zacznij nowy PR od świeżego origin/main z innym podejściem"
     )
 
 
@@ -1985,6 +1984,7 @@ THIRD_ROUND = "3" * 40
 FOURTH_ROUND = "4" * 40
 THREE_FAILS = [("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", f"WERDYKT: FAIL {THIRD_ROUND}")]
 FAILS_AFTER_CHANGE = [("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", f"WERDYKT: FAIL {OLD}"), ("comment", FAIL_HEAD)]
+SIX_ROUNDS = (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND, FOURTH_ROUND, OLD, HEAD)
 CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia, a nie lista postaci.")
 
 
@@ -2006,9 +2006,11 @@ CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia
         ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], None, None),
         ([*THREE_FAILS, CHANGED], BEFORE_FIRST, None),
         ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", PASS_HEAD)], BEFORE_FIRST, None),
-        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE], BEFORE_FIRST, _final_reason(FOURTH_ROUND, OLD, HEAD)),
-        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE, CHANGED], BEFORE_FIRST, _final_reason(FOURTH_ROUND, OLD, HEAD)),
-        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE, CHANGED, ("comment", PASS_HEAD)], BEFORE_FIRST, _final_reason(FOURTH_ROUND, OLD, HEAD)),
+        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE], BEFORE_FIRST, _final_reason(*SIX_ROUNDS)),
+        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE, CHANGED], BEFORE_FIRST, _final_reason(*SIX_ROUNDS)),
+        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE, CHANGED, ("comment", PASS_HEAD)], BEFORE_FIRST, _final_reason(*SIX_ROUNDS)),
+        ([*THREE_FAILS, *FAILS_AFTER_CHANGE, CHANGED], BEFORE_FIRST, _final_reason(*SIX_ROUNDS)),
+        ([*THREE_FAILS, *FAILS_AFTER_CHANGE], BEFORE_FIRST, _final_reason(*SIX_ROUNDS)),
         ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {THIRD_ROUND}"), ("comment", f"WERDYKT: FAIL {FIRST_ROUND}")], BEFORE_FIRST, None),
         ([THREE_FAILS[0], CHANGED, THREE_FAILS[1], CHANGED, THREE_FAILS[2]], BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
         ([THREE_FAILS[0], CHANGED, THREE_FAILS[1], CHANGED, THREE_FAILS[2], CHANGED], BEFORE_FIRST, None),
@@ -2031,6 +2033,8 @@ CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia
         "trzy-rundy-z-fail-po-zmianie-podejscia-to-koniec-pr",
         "druga-zmiana-podejscia-nie-zeruje-licznika-jak-2010",
         "pass-po-drugiej-zmianie-podejscia-nie-scala",
+        "komentarz-po-szostej-rundzie-gdy-pierwszy-usunieto-nie-daje-rundy",
+        "szesc-rund-z-fail-bez-komentarza-to-koniec-pr",
         "fail-commitu-sprzed-zmiany-nie-jest-nowa-runda",
         "zmiana-podejscia-zawczasu-po-kazdej-rundzie-nie-zeruje",
         "zmiana-podejscia-zawczasu-nie-zuzywa-jedynej",
@@ -2085,7 +2089,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     checked = github.run("1", "--bez-merge")
 
-    reason = _limit_reason(*failed) if rounds == 3 else _final_reason(*failed[3:])
+    reason = _limit_reason(*failed) if rounds == 3 else _final_reason(*failed)
     assert reviewed.returncode == int(refused), reviewed.stdout + reviewed.stderr
     assert answered.returncode == int(refused), answered.stdout + answered.stderr
     if refused:

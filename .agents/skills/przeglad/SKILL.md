@@ -138,7 +138,7 @@ Ważne poprzedniej rundy jest zamknięte, gdy korzeń wyrwano według sekcji „
 Nowe znalezisko w kodzie, którego ta runda nie zmieniła, jest Ważne tylko wtedy, gdy to defekt zachowania z dowodem.
 Po drugiej rundzie z `FAIL` na tej samej przesłance (ta sama granica albo reguła pada na kolejnym przypadku) kolejna runda zaczyna się od zmiany podejścia: ataku na przesłankę, granicy z mechanizmu albo podziału PR.
 Po trzeciej rundzie z `FAIL` bez zmiany podejścia czwartej rundy nie ma: `tools/scal_pr.py` odmawia jej w `--przeglad`, w `--werdykt` i przy merge'u (limit rund, `tools/lib/limit_rund.py`), dopóki autor nie zmieni podejścia w tym samym PR i nie opisze tego komentarzem PR z pierwszą linią `ZMIANA PODEJŚCIA: <zdanie>`.
-Ta zmiana podejścia jest jedna na PR: po trzech kolejnych rundach z `FAIL` od niej PR nie dostaje żadnej rundy, a kolejny komentarz licznika nie zeruje, więc zostaje nowy PR od świeżego `origin/main` (#2010: cztery komentarze dały osiem rund z `FAIL`).
+Po szóstej rundzie z `FAIL` PR nie dostaje żadnej rundy, jakiekolwiek ma komentarze, więc zostaje nowy PR od świeżego `origin/main` (#2010: cztery komentarze dały osiem rund z `FAIL`).
 Podejście zmienia się w tym samym PR, a nie w nowym, bo bramka korzenia i bramka idiomu czytają tylko werdykty własnego PR, więc nowy PR gubi Ważne rund poprzednika (#1990); część, której przegląd nie przyjął, usuwasz z PR, a jej Ważne dostają w `## Korzeń` szczebel (a) z usuniętym kodem.
 Recenzent rundy po zmianie podejścia sprawdza najpierw, czy diff od ostatniego `FAIL` robi to, co mówi to zdanie; gdy nie robi, to Ważne.
 Każdą rundę robi nowy recenzent, który nie pisał kodu, z linkiem do poprzednich werdyktów.
