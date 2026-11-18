@@ -1063,13 +1063,16 @@ def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
     return produced
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="odtworzenie biegnie na Macu Maksa; openpyxl na Windows zapisuje arkusz przez plik tekstowy, który zmienia \\n w \\r\\n",
+)
 def test_klikniecie_z_opisem_w_kilku_liniach_windows_i_numerem_bez_zlecenia_odtwarza_sie_zgodnie(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """``UWAGI`` w INTERMAX taty mają końce linii Windows (``\r\n``), które czytnik INTERMAX czyta z bajtów pliku, a
+    """``UWAGI`` w INTERMAX taty mają końce linii Windows (``\\r\\n``), które czytnik INTERMAX czyta z bajtów pliku, a
     Raport Jana ma numer z wiersza bez zlecenia, który odtworzenie stawia na dole arkusza: odtworzony INTERMAX ma te
-    same ``UWAGI`` co u taty, więc Kopia wejścia odtworzenia jest Kopią z Logów. Atrapa INTERMAX zostawia ``\r`` w
-    pliku na Linuksie i macOS, gdzie biegnie odtworzenie Maksa, a na Windows nie, więc tam test sprawdza tylko zgodność."""
+    same ``UWAGI`` co u taty, więc Kopia wejścia odtworzenia jest Kopią z Logów."""
 
     intermax = Intermax(
         ordered=(
@@ -1087,8 +1090,7 @@ def test_klikniecie_z_opisem_w_kilku_liniach_windows_i_numerem_bez_zlecenia_odtw
     record = json.loads(gzip.decompress(archived.read_bytes()))
     assert [found["number"] for found in record["report_entering"]["orderless"]] == [40000066]
     cells = [value for file in record["input_copy"] for sheet in file["sheets"] for row in sheet["rows"] for value in row["cells"].values()]
-    [remarks] = [cell for cell in cells if isinstance(cell, str) and cell.startswith("przeniesienie")]
-    assert remarks.endswith("montaż") and (sys.platform == "win32" or remarks == "przeniesienie\r\n\r\nmontaż"), remarks
+    assert "przeniesienie\r\n\r\nmontaż" in cells
 
     code, lines = _replayed(capsys, archived, "--na-tym-drzewie")
 
