@@ -198,6 +198,21 @@ def merge_tree(root: Path, first: str, second: str) -> Merged:
     return Merged(tree, tuple(dict.fromkeys(path for path in conflicts if path)))
 
 
+def working_tree_commit(root: Path, message: str) -> str:
+    """Commit z rodzicem HEAD, którego drzewo to drzewo robocze checkoutu ``root``: zmiany niezacommitowane, usunięcia
+    i nieśledzone pliki, bez ignorowanych. Drzewo powstaje w tymczasowym indeksie, więc indeks checkoutu zostaje, jaki
+    był. Błąd gita to ``subprocess.CalledProcessError``."""
+
+    with tempfile.TemporaryDirectory() as folder:
+        index = {"GIT_INDEX_FILE": str(Path(folder) / "index")}
+        for arguments in (("read-tree", "HEAD"), ("add", "--all", "--", "."), ("write-tree",)):
+            done = run_git(root, *arguments, extra_env=index, timeout=TIMEOUT_S)
+            if done.returncode:
+                raise subprocess.CalledProcessError(done.returncode, done.args, done.stdout, done.stderr)
+    author = ("-c", "user.name=szybko", "-c", "user.email=szybko@localhost")
+    return git(root, *author, "commit-tree", done.stdout.strip(), "-p", "HEAD", "-m", message).strip()
+
+
 def changed(
     root: Path, since: str, until: str | None = None, paths: Iterable[str] = (), *, timeout: float | None = TIMEOUT_S
 ) -> frozenset[str]:
