@@ -170,7 +170,8 @@ def _ci_mutations(mutations: Sequence[Mutation], run: str, base: str) -> list[Mu
 ALREADY = "JUŻ ŁAPIE"
 # Sprawdzenie biegnie tylko z ``--juz-lapie``: w tygodniu 11–18.11.2026 dało 594 linie ``JUŻ ŁAPIE <test>`` wobec 8386
 # ``JUŻ ŁAPIE NIESPRAWDZONE`` (pliki odłożone przez szybko, limit), a dokładało średnio ~2 min do wywołania z
-# ``MUTACJE OK`` (transkrypty agentów). Zmianę, która psuje test sprzed niej, łapie i tak szybko i CI.
+# ``MUTACJE OK`` (transkrypty agentów). Zmianę, która psuje test sprzed niej, łapie CI PR-u, a szybko tylko wtedy, gdy
+# ten test mieści się w jego budżecie (w #1719 odłożył go do CI).
 UNCHECKED = f"{ALREADY} NIESPRAWDZONE"
 # Przy nowym zachowaniu żaden test sprzed zmiany nie pada, więc bez limitu każda mutacja kosztowałaby cały wybór szybko.
 ALREADY_S = 300.0
@@ -367,10 +368,10 @@ def main(argv: list[str] | None = None) -> int:
         "--juz-lapie", action="store_true", help=f"Po {MUTACJE_OK} sprawdza, czy mutację łapie już test sprzed zmiany ({ALREADY}); bez niego tylko mutacje."
     )
     parser.add_argument(
-        "--juz-lapie-s", type=float, default=ALREADY_S, help=f"Limit całego sprawdzenia {ALREADY} po {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
+        "--juz-lapie-s", type=float, help=f"Limit całego sprawdzenia {ALREADY} po {MUTACJE_OK} w sekundach (domyślnie {ALREADY_S:g})."
     )
     parser.add_argument(
-        "--podstawa-s", type=float, default=BASE_S, help=f"Limit podstawy testów sprzed zmiany w sekundach (domyślnie {BASE_S:g}; po nim kod 2); jej wybór bierze najwyżej 1/{BASE_LOAD:g} tego czasów CI na workera."
+        "--podstawa-s", type=float, help=f"Limit podstawy testów sprzed zmiany w sekundach (domyślnie {BASE_S:g}; po nim kod 2); jej wybór bierze najwyżej 1/{BASE_LOAD:g} tego czasów CI na workera."
     )
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, z której merge-base z HEAD daje REGRES i plan --jak-ci (domyślnie {BASE}).")
     parser.add_argument(
@@ -386,6 +387,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.zasady:
         print(RULES.strip())
         return 0
+    if not args.juz_lapie and (limits := [flag for flag, value in (("--juz-lapie-s", args.juz_lapie_s), ("--podstawa-s", args.podstawa_s)) if value is not None]):
+        parser.error(f"{' i '.join(limits)} to limity sprawdzenia {ALREADY}, które biegnie tylko z --juz-lapie: dopisz --juz-lapie albo usuń limit")
+    args.juz_lapie_s = ALREADY_S if args.juz_lapie_s is None else args.juz_lapie_s
+    args.podstawa_s = BASE_S if args.podstawa_s is None else args.podstawa_s
     jak_ci = args.jak_ci is not None
     if jak_ci and command:
         parser.error("--jak-ci składa polecenie samo, więc nie podawaj go po --")
