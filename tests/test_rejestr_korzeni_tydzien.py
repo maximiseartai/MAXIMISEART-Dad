@@ -1,16 +1,19 @@
-"""``tools/rejestr_korzeni_tydzien.py``: tygodniowy pomiar korzeni w treści issue „Rejestr korzeni” (ADR 0031, Q1,
-Q19, Q23) i workflow ``rejestr-korzeni.yml``, który go uruchamia w poniedziałek o 6:00 czasu polskiego.
+"""``tools/rejestr_korzeni_tydzien.py``: tygodniowy pomiar w treści issue „Rejestr korzeni” (miary ADR 0036, tydzień
+i szablon treści z ADR 0031, Q19, Q23) i workflow ``rejestr-korzeni.yml``, który go uruchamia w poniedziałek o 6:00
+czasu polskiego.
 
-Wymagania bierzemy z ADR 0031 i decyzji Maksa: powtórzenie to wystąpienie kodu, który wystąpił wcześniej w innym PR
-(Q1), tydzień to poniedziałek–niedziela czasu taty i Maksa (``Europe/Warsaw``), a issue zmienia się treścią, bez
-komentarzy. Testy przepływu biegną na prawdziwym Gicie z ``origin`` i atrapie ``gh``, która podaje PR-y z zapytania
-rejestru z HTML treści (``bodyHTML``) złożonym z nagranego HTML renderera GitHuba (``tests/fixtures/body_html.py``),
-a renderowania treści nie zna, bo przebieg ma czytać HTML z tej samej strony GraphQL (W1 r1 #1525: limit
-``GITHUB_TOKEN`` workflowu).
+Wymagania bierzemy z ADR 0036 („Miara”) i decyzji Maksa: powrót idiomu to Ważne z polem ``Idiom:``, ucieczka to pole
+``Idiom: <id>`` bez ``jak``, czekanie liczy się od ``PASS`` na HEAD do merge'a, a Ważne ``bez reguły`` trafia do
+raportu z odsyłaczem; tydzień to poniedziałek–niedziela czasu taty i Maksa (``Europe/Warsaw``), a issue zmienia się
+treścią, bez komentarzy. Testy przepływu biegną na prawdziwym Gicie z ``origin`` i atrapie ``gh``, która podaje PR-y
+z zapytania rejestru z HTML treści (``bodyHTML``) złożonym z nagranego HTML renderera GitHuba
+(``tests/fixtures/body_html.py``), a renderowania treści nie zna, bo przebieg ma czytać HTML z tej samej strony
+GraphQL (W1 r1 #1525: limit ``GITHUB_TOKEN`` workflowu).
 """
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, date, datetime
 import json
 from pathlib import Path
@@ -22,9 +25,10 @@ import yaml
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.body_html import SAMPLES, body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
+from tests.fixtures.git_repo import git
 
 import rejestr_korzeni
-from rejestr_korzeni import Occurrence
+from rejestr_korzeni import IdiomCase, Occurrence, Reviewed
 import rejestr_korzeni_tydzien as tydzien
 import szablon_werdyktu
 import tydzien_polski
@@ -33,6 +37,7 @@ import werdykt_pr
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "rejestr-korzeni.yml"
 DEPLOYED = datetime(2026, 10, 1, tzinfo=UTC)
+NO_ALARMS = tydzien.Alarms(0, {}, 0)
 
 
 def _at(text: str) -> datetime:
@@ -41,6 +46,24 @@ def _at(text: str) -> datetime:
 
 def _occurrence(pull: int, code: str, when: str, major: str = "W1 r1") -> Occurrence:
     return Occurrence(code, pull, major, _at(when))
+
+
+def _pull_of(
+    number: int,
+    occurrences: Sequence[Occurrence] = (),
+    idioms: Sequence[IdiomCase] = (),
+    merged: str | None = None,
+    passed: str | None = None,
+) -> Reviewed:
+    return Reviewed(number, _at(merged) if merged else None, _at(passed) if passed else None, tuple(occurrences), tuple(idioms))
+
+
+def _idiom(pull: int, when: str, rule: str | None, klass: str | None, like: tuple[int, str, int] | None, label: str = "W1", round_: int = 2) -> IdiomCase:
+    return IdiomCase(pull, round_, szablon_werdyktu.Idiom(label, rule, klass, like), _at(when))
+
+
+def _body(pulls: Sequence[Reviewed], week: date, alarms: tydzien.Alarms = NO_ALARMS) -> str:
+    return tydzien.body(pulls, [], week, DEPLOYED, alarms)
 
 
 def _rows(text: str, section: str) -> list[str]:
@@ -64,44 +87,68 @@ def _rows(text: str, section: str) -> list[str]:
     ids=["niedziela-23-59-czasu-letniego", "poniedzialek-0-00-czasu-letniego", "niedziela-23-59-czasu-zimowego", "poniedzialek-0-00-czasu-zimowego"],
 )
 def test_wystapienie_nalezy_do_tygodnia_od_poniedzialku_0_00_czasu_polskiego(when: str, week: str) -> None:
-    text = tydzien.body([_occurrence(1, "R-BEZ-TESTU", when)], [], date(2026, 10, 26), DEPLOYED)
+    text = _body([_pull_of(1, [_occurrence(1, "R-BEZ-TESTU", when)])], date(2026, 10, 26))
 
     history = {row.split(" | ")[0].removeprefix("| "): row for row in _rows(text, "Historia")}
-    assert [name for name, row in history.items() if " | 1 | " in row] == [week], text
+    assert [name for name, row in history.items() if row.split(" | ")[1] == "1"] == [week], text
 
 
-@pytest.mark.parametrize(
-    ("found", "repeats"),
-    [
-        ([_occurrence(1, "R-BEZ-TESTU", "2026-10-13T10:00:00+00:00"), _occurrence(2, "R-BEZ-TESTU", "2026-10-14T10:00:00+00:00")], 1),
-        ([_occurrence(2, "R-BEZ-TESTU", "2026-10-14T10:00:00+00:00"), _occurrence(1, "R-BEZ-TESTU", "2026-10-13T10:00:00+00:00")], 1),
-        ([_occurrence(1, "R-BEZ-TESTU", "2026-10-13T10:00:00+00:00"), _occurrence(1, "R-BEZ-TESTU", "2026-10-14T10:00:00+00:00", "W1 r2")], 0),
-        ([_occurrence(1, "R-BEZ-TESTU", "2026-10-13T10:00:00+00:00"), _occurrence(2, "R-DRUGA-DROGA", "2026-10-14T10:00:00+00:00")], 0),
-        ([_occurrence(1, "R-BEZ-TESTU", "2026-10-13T10:00:00+00:00"), _occurrence(2, "R-BEZ-TESTU", "2026-10-13T10:00:00+00:00")], 0),
-    ],
-    ids=["ten-sam-kod-pozniej-w-innym-pr", "kolejnosc-z-rejestru-nie-zmienia-powtorzen", "ten-sam-kod-drugi-raz-w-tym-samym-pr", "inny-kod-w-innym-pr", "ten-sam-kod-w-tej-samej-chwili-w-innym-pr"],
-)
-def test_powtorzenie_to_wystapienie_kodu_ktory_wystapil_wczesniej_w_innym_pr(found: list[Occurrence], repeats: int) -> None:
-    text = tydzien.body(found, [], date(2026, 10, 12), DEPLOYED)
+def test_pole_idiom_to_powrot_bez_jak_ucieczka_a_jak_innego_pr_polaczenie_i_bez_reguly_trafia_na_liste() -> None:
+    """Pole z ``jak`` tego samego PR to powrót między rundami, nie połączenie między PR-ami; pole z tygodnia przed
+    pomiarem liczy się tylko od wdrożenia."""
 
-    share = {0: "0%", 1: "50%"}[repeats]
-    assert _rows(text, "Pomiar")[0] == f"| Tydzień 2026-10-12 | 2 | {repeats} | {share} |", text
+    pulls = [
+        _pull_of(10, [_occurrence(10, "R-BEZ-TESTU", "2026-10-13T10:00:00+00:00")], [_idiom(10, "2026-10-13T10:00:00+00:00", None, "brak-testu", (10, "W1", 1))]),
+        _pull_of(11, [_occurrence(11, "R-BEZ-TESTU", "2026-10-14T10:00:00+00:00")], [_idiom(11, "2026-10-14T10:00:00+00:00", "x-regula", None, (10, "W1", 1), "W2", 1)]),
+        _pull_of(12, [_occurrence(12, "R-DRUGA-DROGA", "2026-10-15T10:00:00+00:00")], [_idiom(12, "2026-10-15T10:00:00+00:00", "x-regula", None, None)]),
+        _pull_of(13, [_occurrence(13, "R-DRUGA-DROGA", "2026-10-15T10:00:00+00:00")]),
+        _pull_of(9, [_occurrence(9, "R-BEZ-TESTU", "2026-10-06T10:00:00+00:00")], [_idiom(9, "2026-10-06T10:00:00+00:00", None, "typ", (8, "W1", 3))]),
+    ]
+
+    text = _body(pulls, date(2026, 10, 12))
+
+    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 4 | 3 | 75% | 1 | 1 |", "| Od wdrożenia 2026-10-01 | 5 | 4 | 80% | 1 | 2 |"], text
+    assert _rows(text, "Bez reguły") == ["| #10 W1 r2 | brak-testu | #10 W1 r1 |"], text
+    assert _rows(text, "Historia")[-2:] == ["| 2026-10-05 | 1 | 1 | 100% | 0 | 1 |", "| 2026-10-12 | 4 | 3 | 75% | 1 | 1 |"], text
 
 
 def test_tydzien_bez_wystapien_ma_zero_i_udzial_bez_wartosci() -> None:
-    text = tydzien.body([_occurrence(1, "R-BEZ-TESTU", "2026-10-06T10:00:00+00:00")], [], date(2026, 10, 12), DEPLOYED)
+    text = _body([_pull_of(1, [_occurrence(1, "R-BEZ-TESTU", "2026-10-06T10:00:00+00:00")])], date(2026, 10, 12))
 
-    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 0 | 0 | - |", "| Od wdrożenia 2026-10-01 | 1 | 0 | 0% |"], text
+    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 0 | 0 | - | 0 | 0 |", "| Od wdrożenia 2026-10-01 | 1 | 0 | 0% | 0 | 0 |"], text
     assert _rows(text, "Kody") == ["| R-BEZ-TESTU | 0 | 1 |"], text
-    assert _rows(text, "Historia")[-1] == "| 2026-10-12 | 0 | 0 | - |", text
+    assert _rows(text, "Historia")[-1] == "| 2026-10-12 | 0 | 0 | - | 0 | 0 |", text
+
+
+def test_czekanie_od_pass_na_head_do_merge_w_tygodniu_merge_a_merge_bez_pass_osobno() -> None:
+    merged = "2026-10-14T12:00:00+00:00"
+    pulls = [
+        _pull_of(1, merged=merged, passed="2026-10-14T11:50:00+00:00"),
+        _pull_of(2, merged=merged, passed="2026-10-14T11:30:00+00:00"),
+        _pull_of(3, merged=merged, passed="2026-10-14T09:00:00+00:00"),
+        _pull_of(4, merged=merged),
+        _pull_of(5, merged="2026-10-07T12:00:00+00:00", passed="2026-10-06T12:00:00+00:00"),
+        _pull_of(6, passed="2026-10-14T09:00:00+00:00"),
+    ]
+
+    text = _body(pulls, date(2026, 10, 12))
+
+    assert _rows(text, "Czekanie") == ["| Tydzień 2026-10-12 | 4 | 1 | 30 min | 3,0 h | 1 |", "| Od wdrożenia 2026-10-01 | 5 | 1 | 1,8 h | 24,0 h | 2 |"], text
+
+
+def test_odpalenia_regul_od_najczestszej_z_udzialem_pr_z_jakimkolwiek_odpaleniem() -> None:
+    text = _body([], date(2026, 10, 12), tydzien.Alarms(20, {"b-regula": 1, "a-regula": 2}, 3))
+
+    assert _rows(text, "Reguły") == ["| a-regula | 2 |", "| b-regula | 1 |", "| Każda reguła | 3 (15%) |"], text
+    assert _rows(_body([], date(2026, 10, 12)), "Reguły") == ["| Każda reguła | 0 |"]
 
 
 def test_historia_ma_najwyzej_26_ostatnich_tygodni_od_tygodnia_wdrozenia() -> None:
-    text = tydzien.body([], [], date(2027, 6, 7), DEPLOYED)
+    text = _body([], date(2027, 6, 7))
 
     weeks = [row.split(" | ")[0].removeprefix("| ") for row in _rows(text, "Historia")]
     assert (len(weeks), weeks[0], weeks[-1]) == (26, "2026-12-14", "2027-06-07"), weeks
-    assert [row.split(" | ")[0].removeprefix("| ") for row in _rows(tydzien.body([], [], date(2026, 10, 5), DEPLOYED), "Historia")] == ["2026-09-28", "2026-10-05"]
+    assert [row.split(" | ")[0].removeprefix("| ") for row in _rows(_body([], date(2026, 10, 5)), "Historia")] == ["2026-09-28", "2026-10-05"]
 
 
 @pytest.mark.parametrize(
@@ -221,10 +268,28 @@ WEEDS = [{"number": 1520, "title": "Chwast: R-DRUGA-DROGA", "body": ""}, {"numbe
 WEEK_12 = """\
 ## Pomiar
 
-| Okres | Wystąpienia | Powtórzenia | Udział powtórzeń |
-| --- | --- | --- | --- |
-| Tydzień 2026-10-12 | 0 | 0 | - |
-| Od wdrożenia 2026-10-01 | 1 | 0 | 0% |
+| Okres | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
+| --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-12 | 0 | 0 | - | 0 | 0 |
+| Od wdrożenia 2026-10-01 | 1 | 0 | 0% | 0 | 0 |
+
+## Czekanie
+
+| Okres | Merge'e | Bez PASS na HEAD | Mediana PASS → merge | Najdłużej | Ponad 1 h |
+| --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-12 | 0 | 0 | - | - | 0 |
+| Od wdrożenia 2026-10-01 | 0 | 0 | - | - | 0 |
+
+## Reguły
+
+| Reguła | PR-y z odpaleniem z 0 ostatnich |
+| --- | --- |
+| Każda reguła | 0 |
+
+## Bez reguły
+
+| Ważne | Klasa | Jak |
+| --- | --- | --- |
 
 ## Kody
 
@@ -241,19 +306,37 @@ WEEK_12 = """\
 
 ## Historia
 
-| Tydzień | Wystąpienia | Powtórzenia | Udział powtórzeń |
-| --- | --- | --- | --- |
-| 2026-09-28 | 0 | 0 | - |
-| 2026-10-05 | 1 | 0 | 0% |
-| 2026-10-12 | 0 | 0 | - |
+| Tydzień | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-28 | 0 | 0 | - | 0 | 0 |
+| 2026-10-05 | 1 | 0 | 0% | 0 | 0 |
+| 2026-10-12 | 0 | 0 | - | 0 | 0 |
 """
 WEEK_19 = """\
 ## Pomiar
 
-| Okres | Wystąpienia | Powtórzenia | Udział powtórzeń |
-| --- | --- | --- | --- |
-| Tydzień 2026-10-19 | 3 | 2 | 67% |
-| Od wdrożenia 2026-10-01 | 4 | 2 | 50% |
+| Okres | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
+| --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-19 | 3 | 0 | 0% | 0 | 0 |
+| Od wdrożenia 2026-10-01 | 4 | 0 | 0% | 0 | 0 |
+
+## Czekanie
+
+| Okres | Merge'e | Bez PASS na HEAD | Mediana PASS → merge | Najdłużej | Ponad 1 h |
+| --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-19 | 2 | 2 | - | - | 0 |
+| Od wdrożenia 2026-10-01 | 2 | 2 | - | - | 0 |
+
+## Reguły
+
+| Reguła | PR-y z odpaleniem z 0 ostatnich |
+| --- | --- |
+| Każda reguła | 0 |
+
+## Bez reguły
+
+| Ważne | Klasa | Jak |
+| --- | --- | --- |
 
 ## Kody
 
@@ -271,12 +354,12 @@ WEEK_19 = """\
 
 ## Historia
 
-| Tydzień | Wystąpienia | Powtórzenia | Udział powtórzeń |
-| --- | --- | --- | --- |
-| 2026-09-28 | 0 | 0 | - |
-| 2026-10-05 | 1 | 0 | 0% |
-| 2026-10-12 | 0 | 0 | - |
-| 2026-10-19 | 3 | 2 | 67% |
+| Tydzień | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
+| --- | --- | --- | --- | --- | --- |
+| 2026-09-28 | 0 | 0 | - | 0 | 0 |
+| 2026-10-05 | 1 | 0 | 0% | 0 | 0 |
+| 2026-10-12 | 0 | 0 | - | 0 | 0 |
+| 2026-10-19 | 3 | 0 | 0% | 0 | 0 |
 """
 
 
@@ -285,9 +368,17 @@ class RegistryGitHub(FakeGitHub):
     otwartymi issues chwastów ``WEEDS``, otwartymi issues z etykietą ``rejestr-korzeni`` ``own`` i etykietami
     repozytorium ``labels``."""
 
-    def __init__(self, tmp_path: Path, own: list[dict[str, object]], *, pulls: list[dict[str, object]] = PULLS, labels: tuple[str, ...] = ("chwast",)) -> None:
+    def __init__(
+        self,
+        tmp_path: Path,
+        own: list[dict[str, object]],
+        *,
+        pulls: list[dict[str, object]] = PULLS,
+        labels: tuple[str, ...] = ("chwast",),
+        files: dict[str, str] | None = None,
+    ) -> None:
         tmp_path.mkdir()
-        super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n"}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH)
+        super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n", **(files or {})}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH)
         with pytest.MonkeyPatch.context() as patch:
             patch.setenv("GIT_COMMITTER_DATE", DEPLOYED.isoformat())
             self.push_main({szablon_werdyktu.ADR: "# ADR 0031: Korzeń po FAIL i chwasty\n"})
@@ -326,7 +417,7 @@ def test_pierwszy_pomiar_bez_issue_zaklada_etykiete_i_rejestr_korzeni_z_nia_a_ko
     assert created == [
         "REJESTR KORZENI | założona etykieta rejestr-korzeni",
         "REJESTR KORZENI | założone #9100 „Rejestr korzeni”",
-        "REJESTR KORZENI OK | tydzień 2026-10-12: 0 wystąpień, 0 powtórzeń, udział -",
+        "REJESTR KORZENI OK | tydzień 2026-10-12: 0 wystąpień, 0 powrotów idiomu (udział -), 0 ucieczek, 0 połączeń między PR-ami",
     ]
 
     labelled = RegistryGitHub(tmp_path / "z-etykieta", [], labels=("chwast", "rejestr-korzeni"))
@@ -338,7 +429,7 @@ def test_pierwszy_pomiar_bez_issue_zaklada_etykiete_i_rejestr_korzeni_z_nia_a_ko
     edited = _measure(later, "--tydzien", "2026-10-25")
 
     assert later.writes() == [["PATCH", "repos/{owner}/{repo}/issues/1600", {"body": WEEK_19}]]
-    assert edited == ["REJESTR KORZENI | zmieniona treść #1600", "REJESTR KORZENI OK | tydzień 2026-10-19: 3 wystąpień, 2 powtórzeń, udział 67%"]
+    assert edited == ["REJESTR KORZENI | zmieniona treść #1600", "REJESTR KORZENI OK | tydzień 2026-10-19: 3 wystąpień, 0 powrotów idiomu (udział 0%), 0 ucieczek, 0 połączeń między PR-ami"]
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
@@ -367,7 +458,7 @@ def test_przebieg_czyta_werdykty_z_tej_samej_strony_graphql_bez_renderowania_kaz
 
     lines = _measure(github, "--tydzien", "2026-10-19", "--bez-zapisu")
 
-    assert lines[-1].startswith(f"REJESTR KORZENI OK | tydzień 2026-10-19: {count} wystąpień, {count - 1} powtórzeń"), lines
+    assert lines[-1].startswith(f"REJESTR KORZENI OK | tydzień 2026-10-19: {count} wystąpień, 0 powrotów idiomu"), lines
     issues = "repos/{owner}/{repo}/issues?labels={label}&state=open&per_page=100&page=1"
     rest = [issues.format(owner="{owner}", repo="{repo}", label=label) for label in ("chwast", "rejestr-korzeni")]
     assert github.calls() == ["repo view", *["graphql"] * pages, *rest, "repos/{owner}/{repo}/labels?per_page=100&page=1"]
@@ -395,3 +486,54 @@ def test_opis_pr_i_issue_chwastu_z_bodyhtml_graphql_daja_te_same_jednostki_co_re
 
     assert units == szablon_werdyktu.items(recorded["rendered"])
     assert rejestr_korzeni.section(units) == rejestr_korzeni.section(szablon_werdyktu.items(recorded["rendered"]))
+
+
+PASS = "WERDYKT: PASS {commit}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["sprawdzone"]
+FAIL_IDIOM = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne-idiom-bez-reguly"]
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_pole_idiom_i_pass_na_head_z_werdyktow_skanu_daja_powrot_polaczenie_liste_bez_reguly_i_czekanie(tmp_path: Path) -> None:
+    """``PASS`` na innym commicie niż HEAD PR nie jest jego zgodą na merge, więc merge liczy się jako bez ``PASS``."""
+
+    other = "1" * 40
+    pulls = [
+        _pull(1450, [(FAIL_IDIOM, "2026-10-20T10:00:00Z"), (PASS, "2026-10-20T11:00:00Z")], merged="2026-10-20T11:30:00Z"),
+        _pull(1451, [(PASS.replace("{commit}", other), "2026-10-20T11:00:00Z")], merged="2026-10-20T11:30:00Z"),
+    ]
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls)
+
+    text = "\n".join(_measure(github, "--tydzien", "2026-10-19", "--bez-zapisu")[2:-1])
+
+    assert _rows(text, "Pomiar")[0] == "| Tydzień 2026-10-19 | 1 | 1 | 100% | 0 | 1 |", text
+    assert _rows(text, "Czekanie")[0] == "| Tydzień 2026-10-19 | 2 | 1 | 30 min | 30 min | 0 |", text
+    assert _rows(text, "Bez reguły") == ["| #1450 W1 r1 | brak-testu | #1553 W1 r2 |"], text
+
+
+RULE = 'id: zakazane-wywolanie\nlanguage: python\nseverity: error\nmessage: bez zakazane()\nfiles:\n  - "**/*.py"\nrule:\n  pattern: $O.zakazane()\n'
+needs_ast_grep = pytest.mark.skipif(tydzien.AST_GREP is None, reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+@needs_ast_grep
+def test_odpalenia_regul_z_checkoutu_licza_pr_y_ktorych_merge_dodaje_linie_z_odpaleniem(tmp_path: Path) -> None:
+    """Merge sprzed końca tygodnia z odpaleniem na dodanej linii, merge bez odpalenia i merge po tygodniu, którego
+    pomiar tygodnia nie widzi; dawne odpalenie w pliku startowym nie jest linią dodaną."""
+
+    files = {"sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n", "reguly-ast-grep/zakazane.yml": RULE, "stare.py": "obiekt.zakazane()\n"}
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=[], files=files)
+    for number, (name, text), when in [
+        (7, ("kod/a.py", "def a(obiekt):\n    obiekt.zakazane()\n"), "2026-10-20T10:00:00+00:00"),
+        (8, ("kod/b.py", "def b(obiekt):\n    obiekt.dozwolone()\n"), "2026-10-21T10:00:00+00:00"),
+        (9, ("kod/c.py", "def c(obiekt):\n    obiekt.zakazane()\n"), "2026-10-27T10:00:00+00:00"),
+    ]:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("GIT_COMMITTER_DATE", when)
+            branch = github.commit_on("main", {name: text}, f"PR {number}")
+            git(github.checkout, "merge", "--quiet", "--no-ff", "--message", f"Merge pull request #{number} from organizacja/galaz-{number}", branch)
+    git(github.checkout, "push", "--quiet", "origin", "main")
+
+    text = "\n".join(_measure(github, "--tydzien", "2026-10-19", "--bez-zapisu")[2:-1])
+
+    assert text.splitlines()[text.splitlines().index("## Reguły") + 2] == "| Reguła | PR-y z odpaleniem z 2 ostatnich |", text
+    assert _rows(text, "Reguły") == ["| zakazane-wywolanie | 1 |", "| Każda reguła | 1 (50%) |"], text

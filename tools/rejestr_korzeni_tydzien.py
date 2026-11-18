@@ -1,27 +1,37 @@
-"""Tygodniowy pomiar korzeni w issue „Rejestr korzeni”: wystąpienia, powtórzenia, kody i chwasty; biegnie w poniedziałek, ręcznie z --bez-zapisu.
+"""Tygodniowy pomiar w issue „Rejestr korzeni”: powroty i ucieczki idiomu, czekanie na merge, odpalenia reguł, Ważne bez reguły, kody; biegnie w poniedziałek, ręcznie z --bez-zapisu.
 
-Pomiar z ADR 0031 (decyzje Q1, Q19, Q23): workflow ``.github/workflows/rejestr-korzeni.yml`` uruchamia go
-w poniedziałek o 6:17 czasu polskiego. Minuta 17, a nie pełna godzina, bo GitHub opóźnia, a przy dużym obciążeniu
-porzuca biegi z cronu na początku godziny. Liczby bierze tylko
-z rejestru korzeni (``rejestr_korzeni.read``) od wdrożenia szablonu werdyktu na ``origin/main``:
+Miary z [ADR 0036](../docs/adr/0036-chwast-to-regula.md) („Miara”, wiersz miary Q1 w „Wdrożenie”): workflow
+``.github/workflows/rejestr-korzeni.yml`` uruchamia pomiar w poniedziałek o 6:17 czasu polskiego. Minuta 17, a nie
+pełna godzina, bo GitHub opóźnia, a przy dużym obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze
+z jednego skanu rejestru korzeni (``rejestr_korzeni.reviewed``) od wdrożenia szablonu werdyktu na ``origin/main``,
+a pola werdyktu czytają jego parsery (``szablon_werdyktu`` przez ``rejestr_korzeni``):
 
 - wystąpienie to wystąpienie kodu z rejestru: Ważne werdyktu ``FAIL`` albo blok czerwonego `main` scalonego PR,
   w chwili ``Occurrence.when``;
-- powtórzenie to wystąpienie, którego kod ma wcześniejsze wystąpienie (``when`` ściśle mniejsze) w innym PR (Q1),
-  więc drugie Ważne z tym kodem w tym samym PR powtórzeniem nie jest;
-- udział powtórzeń to powtórzenia przez wystąpienia, w procentach zaokrąglonych w górę od połowy, a ``-`` bez
-  wystąpień.
+- powrót idiomu to Ważne z polem ``Idiom:`` w każdej z trzech postaci, bo recenzent pisze je tylko przy drugim
+  wystąpieniu albo ucieczce, w chwili jego werdyktu; udział powrotów to powroty przez wystąpienia, w procentach
+  zaokrąglonych w górę od połowy, a ``-`` bez wystąpień;
+- ucieczka to pole ``Idiom: <id>`` bez ``jak``, czyli wystąpienie idiomu po merge'u jego reguły;
+- połączenie między PR-ami to pole z ``jak #N``, gdzie ``N`` to inny PR niż PR pola;
+- czekanie to czas od utworzenia ostatniego werdyktu ``PASS`` na HEAD PR do jego merge'a, dla PR-ów scalonych
+  w okresie, a merge bez takiego werdyktu liczy się osobno (``Bez PASS na HEAD``); chwili zielonego CI skan nie
+  czyta, więc czekanie na samo CI jest w tej liczbie;
+- odpalenia reguł to odpalenia reguł ast-grep z ``sgconfig.yml`` checkoutu na liniach dodanych przez każdy z
+  ``ALARM_PRS`` ostatnich merge'y PR-ów ``origin/main`` przed końcem tygodnia (``odpalenia_ast_grep.on_added_lines``,
+  jak zapadka), czyli reguły dzisiejszego ``main`` na kodzie, który już przeszedł przegląd; próg ADR to 10% PR-ów;
+- „Bez reguły” to każde Ważne tygodnia z polem ``Idiom: bez reguły <klasa>``, z odsyłaczem do PR.
 
 Tydzień trwa od poniedziałku 0:00 do następnego poniedziałku 0:00 czasu polskiego (``Europe/Warsaw``, także po
-zmianie czasu), a wystąpienie należy do tygodnia swojej chwili. Bez ``--tydzien`` pomiar bierze ostatni pełny tydzień
-przed uruchomieniem, a z ``--tydzien DATA`` tydzień z tym dniem; „od wdrożenia” liczy do końca tego tygodnia, więc
-pomiar tygodnia daje te same liczby, kiedykolwiek go uruchomić, dopóki rejestr się nie zmieni.
+zmianie czasu), a wystąpienie, pole i merge należą do tygodnia swojej chwili. Bez ``--tydzien`` pomiar bierze ostatni
+pełny tydzień przed uruchomieniem, a z ``--tydzien DATA`` tydzień z tym dniem; „od wdrożenia” liczy do końca tego
+tygodnia, więc pomiar tygodnia daje te same liczby, kiedykolwiek go uruchomić, dopóki rejestr i reguły się nie zmienią.
 
-Treść issue to szablon bez wolnej prozy (``body``): ``## Pomiar`` (tydzień i od wdrożenia), ``## Kody`` (każdy kod
-z wystąpieniem od wdrożenia), ``## Chwasty`` (otwarte issues „Chwast: R-KOD”) i ``## Historia`` z wierszem na każdy
-z ostatnich ``HISTORY`` tygodni od tygodnia wdrożenia. Historię pomiar liczy
-od nowa z rejestru przy każdym uruchomieniu, a starej treści issue nie czyta: rozstrzygnięcie kodu (Q25) poprawia też
-minione tygodnie, a issue nie staje się drugim rejestrem. Treść należy do narzędzia, więc uwagi idą w komentarze.
+Treść issue to szablon bez wolnej prozy (``body``): ``## Pomiar``, ``## Czekanie`` (tydzień i od wdrożenia),
+``## Reguły``, ``## Bez reguły``, ``## Kody`` (każdy kod z wystąpieniem od wdrożenia, kod to kategoria ODC z ADR
+0036), ``## Chwasty`` (otwarte issues „Chwast: R-KOD”) i ``## Historia`` z wierszem na każdy z ostatnich ``HISTORY``
+tygodni od tygodnia wdrożenia. Historię pomiar liczy od nowa z rejestru przy każdym uruchomieniu, a starej treści
+issue nie czyta: rozstrzygnięcie kodu (Q25) poprawia też minione tygodnie, a issue nie staje się drugim rejestrem.
+Treść należy do narzędzia, więc uwagi idą w komentarze.
 
 Issue to otwarte issue z etykietą ``rejestr-korzeni`` (``rejestr_korzeni.REGISTRY``, osobna od ``chwast``, żeby
 lista chwastów miała same chwasty) i tytułem ``TITLE``; gdy go nie ma, pomiar je zakłada (i brakującą etykietę),
@@ -29,15 +39,16 @@ a gdy jest kilka, zmienia najstarsze z ostrzeżeniem. Pomiar zmienia tylko treś
 secondary rate limit.
 
 Koszt przebiegu to skan rejestru (``rejestr_korzeni`` podaje budżet: strona GraphQL na każde 19 PR-ów od wdrożenia,
-1 punkt z 1000 na godzinę ``GITHUB_TOKEN``, bez renderowania treści) i stała liczba żądań: ``gh repo view``, lista
-issues ``chwast`` i ``rejestr-korzeni`` oraz zapis issue (z etykietą przy pierwszym).
+1 punkt z 1000 na godzinę ``GITHUB_TOKEN``, bez renderowania treści), stała liczba żądań (``gh repo view``, lista
+issues ``chwast`` i ``rejestr-korzeni`` oraz zapis issue, z etykietą przy pierwszym) i ``ALARM_PRS`` kopii commitów
+z biegiem ast-grep z dodatku dev, który workflow instaluje.
 
 Workflow ma dwa crony, bo cron GitHuba biegnie w UTC: ``--cron`` z cronem, który go uruchomił, przepuszcza tylko ten,
 którego godzina jest dziś 6 w Warszawie (``on_time``), a drugi kończy się linią ``REJESTR KORZENI POMINIĘTY``.
 Pusty ``--cron`` (``workflow_dispatch``) biegnie zawsze.
 
 Linie wyniku: ``REJESTR KORZENI | …`` na każdą akcję albo ostrzeżenie, z ``--bez-zapisu`` po nich treść issue, a na
-końcu ``REJESTR KORZENI OK | tydzień RRRR-MM-DD: …``. Błąd GitHuba, Gita albo zły cron kończy się linią
+końcu ``REJESTR KORZENI OK | tydzień RRRR-MM-DD: …``. Błąd GitHuba, Gita, ast-grep albo zły cron kończy się linią
 ``REJESTR KORZENI FAIL`` i kodem 1.
 """
 
@@ -51,14 +62,19 @@ from datetime import UTC, date, datetime, timedelta
 import json
 from pathlib import Path
 import re
+import shutil
+from statistics import median
 import subprocess
 import sys
+import sysconfig
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import github
+import odpalenia_ast_grep
+import potomne
 import rejestr_korzeni
-from rejestr_korzeni import Occurrence
+from rejestr_korzeni import IdiomCase, Reviewed
 from repo import MAIN, REMOTE, ROOT
 import repo
 import szablon_werdyktu
@@ -69,9 +85,14 @@ TITLE = "Rejestr korzeni"
 PREFIX = "REJESTR KORZENI"
 HOUR = 6
 HISTORY = 26
+ALARM_PRS = 20
+CONFIG = "sgconfig.yml"
+AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 CRON = re.compile(r"(\d{1,2}) (\d{1,2}) \* \* 1")
 WEED_TITLE = re.compile(rf"{re.escape(rejestr_korzeni.TITLE.format(code=''))}({szablon_werdyktu.CODE.pattern})")
-COLUMNS = ("Wystąpienia", "Powtórzenia", "Udział powtórzeń")
+COLUMNS = ("Wystąpienia", "Powroty idiomu", "Udział powrotów", "Ucieczki", "Połączenia między PR-ami")
+WAIT_COLUMNS = ("Merge'e", "Bez PASS na HEAD", "Mediana PASS → merge", "Najdłużej", "Ponad 1 h")
+HOUR_LONG = timedelta(hours=1)
 
 EXAMPLES = """\
     .venv/bin/python tools/rejestr_korzeni_tydzien.py --bez-zapisu                       # drukuje treść za ostatni pełny tydzień
@@ -81,17 +102,28 @@ EXAMPLES = """\
 
 
 @dataclass(frozen=True)
+class Alarms:
+    """Odpalenia reguł na ``prs`` ostatnich merge'ach: liczba PR-ów z odpaleniem każdej reguły, która odpaliła."""
+
+    prs: int
+    by_rule: dict[str, int]
+    any_rule: int
+
+
+@dataclass(frozen=True)
 class Count:
-    """Wystąpienia i powtórzenia w okresie."""
+    """Miary idiomu w okresie."""
 
     occurrences: int
-    repeats: int
+    returns: int
+    escapes: int
+    links: int
 
     def share(self) -> str:
-        return f"{(200 * self.repeats + self.occurrences) // (2 * self.occurrences)}%" if self.occurrences else "-"
+        return f"{(200 * self.returns + self.occurrences) // (2 * self.occurrences)}%" if self.occurrences else "-"
 
     def cells(self) -> str:
-        return f"{self.occurrences} | {self.repeats} | {self.share()}"
+        return f"{self.occurrences} | {self.returns} | {self.share()} | {self.escapes} | {self.links}"
 
 
 def on_time(cron: str, now: datetime) -> bool:
@@ -105,37 +137,83 @@ def on_time(cron: str, now: datetime) -> bool:
     return planned.astimezone(WARSAW).hour == HOUR
 
 
-def _repeats(found: Sequence[Occurrence]) -> list[bool]:
-    """Dla każdego wystąpienia: czy jego kod ma wcześniejsze wystąpienie w innym PR."""
-
-    return [any(other.code == occurrence.code and other.pull != occurrence.pull and other.when < occurrence.when for other in found) for occurrence in found]
+def _inside(when: datetime | None, start: datetime | None, end: datetime) -> bool:
+    return when is not None and (start is None or when >= start) and when < end
 
 
-def _count(found: Sequence[Occurrence], repeats: Sequence[bool], start: datetime | None, end: datetime) -> Count:
-    inside = [repeat for occurrence, repeat in zip(found, repeats, strict=True) if (start is None or occurrence.when >= start) and occurrence.when < end]
-    return Count(len(inside), sum(inside))
+def _count(pulls: Sequence[Reviewed], start: datetime | None, end: datetime) -> Count:
+    cases = [case for pull in pulls for case in pull.idioms if _inside(case.when, start, end)]
+    return Count(
+        sum(_inside(occurrence.when, start, end) for pull in pulls for occurrence in pull.occurrences),
+        len(cases),
+        sum(case.idiom.rule is not None and case.idiom.like is None for case in cases),
+        sum(case.idiom.like is not None and case.idiom.like[0] != case.pull for case in cases),
+    )
 
 
-def body(found: Sequence[Occurrence], weeds: Sequence[tuple[int, str]], week: date, deployed: datetime) -> str:
-    """Treść issue ``TITLE`` dla tygodnia od poniedziałku ``week`` z wystąpień rejestru ``found``, otwartych issues
-    chwastów ``weeds`` (numer i kod) i chwili wdrożenia ``deployed``."""
+def _hours(span: timedelta) -> str:
+    """Czas poniżej godziny w pełnych minutach, a dłuższy w godzinach z jednym miejscem po przecinku."""
+
+    return f"{round(span / timedelta(minutes=1))} min" if span < HOUR_LONG else f"{span / HOUR_LONG:.1f} h".replace(".", ",")
+
+
+def _wait(pulls: Sequence[Reviewed], start: datetime | None, end: datetime) -> str:
+    merged = [pull for pull in pulls if _inside(pull.merged, start, end)]
+    waits = [max(pull.merged - pull.passed, timedelta()) for pull in merged if pull.merged is not None and pull.passed is not None]
+    spans = f"{_hours(median(waits))} | {_hours(max(waits))}" if waits else "- | -"
+    return f"{len(merged)} | {len(merged) - len(waits)} | {spans} | {sum(wait > HOUR_LONG for wait in waits)}"
+
+
+def _link(case: IdiomCase) -> str:
+    like = case.idiom.like
+    return f"| #{case.pull} {case.idiom.label} r{case.round} | {case.idiom.klass} | {f'#{like[0]} {like[1]} r{like[2]}' if like else '-'} |"
+
+
+def body(pulls: Sequence[Reviewed], weeds: Sequence[tuple[int, str]], week: date, deployed: datetime, alarms: Alarms) -> str:
+    """Treść issue ``TITLE`` dla tygodnia od poniedziałku ``week`` z PR-ów skanu rejestru ``pulls``, otwartych issues
+    chwastów ``weeds`` (numer i kod), chwili wdrożenia ``deployed`` i odpaleń reguł ``alarms``."""
 
     start, end = midnight(week), midnight(week + timedelta(days=7))
-    repeats = _repeats(found)
-    lines = ["## Pomiar", "", f"| Okres | {' | '.join(COLUMNS)} |", "| --- | --- | --- | --- |"]
-    lines.append(f"| Tydzień {week.isoformat()} | {_count(found, repeats, start, end).cells()} |")
-    lines.append(f"| Od wdrożenia {deployed.astimezone(WARSAW).date().isoformat()} | {_count(found, repeats, None, end).cells()} |")
+    since = f"Od wdrożenia {deployed.astimezone(WARSAW).date().isoformat()}"
+    rule = "| " + " | ".join(["---"] * (len(COLUMNS) + 1)) + " |"
+    lines = ["## Pomiar", "", f"| Okres | {' | '.join(COLUMNS)} |", rule]
+    lines += [f"| Tydzień {week.isoformat()} | {_count(pulls, start, end).cells()} |", f"| {since} | {_count(pulls, None, end).cells()} |"]
+    lines += ["", "## Czekanie", "", f"| Okres | {' | '.join(WAIT_COLUMNS)} |", "| " + " | ".join(["---"] * (len(WAIT_COLUMNS) + 1)) + " |"]
+    lines += [f"| Tydzień {week.isoformat()} | {_wait(pulls, start, end)} |", f"| {since} | {_wait(pulls, None, end)} |"]
+    lines += ["", "## Reguły", "", f"| Reguła | PR-y z odpaleniem z {alarms.prs} ostatnich |", "| --- | --- |"]
+    lines += [f"| {name} | {count} |" for name, count in sorted(alarms.by_rule.items(), key=lambda item: (-item[1], item[0]))]
+    share = f" ({(200 * alarms.any_rule + alarms.prs) // (2 * alarms.prs)}%)" if alarms.prs else ""
+    lines.append(f"| Każda reguła | {alarms.any_rule}{share} |")
+    lines += ["", "## Bez reguły", "", "| Ważne | Klasa | Jak |", "| --- | --- | --- |"]
+    lines += [_link(case) for pull in pulls for case in pull.idioms if case.idiom.klass is not None and _inside(case.when, start, end)]
+    found = [occurrence for pull in pulls for occurrence in pull.occurrences]
     total = Counter(occurrence.code for occurrence in found if occurrence.when < end)
     weekly = Counter(occurrence.code for occurrence in found if start <= occurrence.when < end)
     lines += ["", "## Kody", "", "| Kod | Tydzień | Od wdrożenia |", "| --- | --- | --- |"]
     lines += [f"| {code} | {weekly[code]} | {count} |" for code, count in sorted(total.items(), key=lambda item: (-item[1], item[0]))]
     lines += ["", "## Chwasty", "", "| Issue | Kod |", "| --- | --- |"]
     lines += [f"| #{number} | {code} |" for number, code in sorted(weeds)]
-    lines += ["", "## Historia", "", f"| Tydzień | {' | '.join(COLUMNS)} |", "| --- | --- | --- | --- |"]
+    lines += ["", "## Historia", "", f"| Tydzień | {' | '.join(COLUMNS)} |", rule]
     first = week_of(deployed)
     weeks = [first + timedelta(days=7 * index) for index in range((week - first).days // 7 + 1)] if week >= first else []
-    lines += [f"| {monday.isoformat()} | {_count(found, repeats, midnight(monday), midnight(monday + timedelta(days=7))).cells()} |" for monday in weeks[-HISTORY:]]
+    lines += [f"| {monday.isoformat()} | {_count(pulls, midnight(monday), midnight(monday + timedelta(days=7))).cells()} |" for monday in weeks[-HISTORY:]]
     return "\n".join([*lines, ""])
+
+
+def alarms(end: datetime) -> Alarms:
+    """Odpalenia reguł ``CONFIG`` checkoutu na liniach dodanych przez ``ALARM_PRS`` ostatnich merge'y PR-ów
+    ``origin/main`` przed chwilą ``end``; brak ast-grep przy dodanej linii albo jego porażka to ``ScanFailed``."""
+
+    log = repo.git(ROOT, "log", "--first-parent", f"--before={end.isoformat()}", "--format=%H %s", f"{REMOTE}/{MAIN}")
+    merges = [commit for commit, _, subject in (line.partition(" ") for line in log.splitlines()) if github.MERGE.fullmatch(subject)][:ALARM_PRS]
+    by_rule: Counter[str] = Counter()
+    any_rule = 0
+    for commit in merges:
+        with potomne.commit_copy(ROOT, commit) as copy:
+            fired = {finding.rule for finding in odpalenia_ast_grep.on_added_lines(copy, f"{commit}^1", ("--config", str(ROOT / CONFIG)), AST_GREP)}
+        by_rule.update(fired)
+        any_rule += bool(fired)
+    return Alarms(len(merges), dict(by_rule), any_rule)
 
 
 def weeds(issues: Sequence[dict[str, object]]) -> list[tuple[int, str]]:
@@ -175,9 +253,9 @@ def main(argv: list[str] | None = None) -> int:
         deployed = werdykt_pr.deployment(MAIN, szablon_werdyktu.ADR)
         if deployed is None:
             raise ValueError(f"{szablon_werdyktu.ADR} nie wszedł jeszcze do {MAIN}, więc rejestru korzeni nie ma")
-        found = rejestr_korzeni.read(repository, deployed)
+        pulls = rejestr_korzeni.reviewed(repository, deployed)
         api = github.GhApi()
-        text = body(found, weeds(github.issues(api, rejestr_korzeni.WEED, "open")), week, deployed)
+        text = body(pulls, weeds(github.issues(api, rejestr_korzeni.WEED, "open")), week, deployed, alarms(midnight(week + timedelta(days=7))))
         action, lines = _action(github.issues(api, rejestr_korzeni.REGISTRY, "open"), text)
         if isinstance(action, github.Zaloz):
             lines += rejestr_korzeni.create_labels(api, (rejestr_korzeni.REGISTRY,), PREFIX, write=not args.bez_zapisu)
@@ -190,9 +268,11 @@ def main(argv: list[str] | None = None) -> int:
         print(line)
     if args.bez_zapisu:
         print(text)
-    repeats = _repeats(found)
-    count = _count(found, repeats, midnight(week), midnight(week + timedelta(days=7)))
-    print(f"{PREFIX} OK | tydzień {week.isoformat()}: {count.occurrences} wystąpień, {count.repeats} powtórzeń, udział {count.share()}")
+    count = _count(pulls, midnight(week), midnight(week + timedelta(days=7)))
+    print(
+        f"{PREFIX} OK | tydzień {week.isoformat()}: {count.occurrences} wystąpień, {count.returns} powrotów idiomu (udział {count.share()}),"
+        f" {count.escapes} ucieczek, {count.links} połączeń między PR-ami"
+    )
     return 0
 
 
