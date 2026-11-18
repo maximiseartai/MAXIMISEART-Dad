@@ -163,6 +163,9 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
 3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)) z linią `Strażnik:`, której dowód przechodzi, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
    Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście w tym samym PR i piszesz komentarz `ZMIANA PODEJŚCIA: <zdanie>` (sekcja „Kolejne rundy”).
+4. Po `PASS` z Drobnymi scal PR na tym `PASS` i nie pushuj do niego poprawek Drobnych: każde Drobne zapisz w opisie PR jako otwarte z PR-em, który je poprawi (Twój następny PR albo zbiorczy PR poprawek Drobnych od świeżego `origin/main`).
+   Push po `PASS` zdejmuje zgodę i kosztuje rundę, a PR poprawki i tak przechodzi przegląd: w werdyktach z 12–17.11.2026 40 z 46 rund po `PASS` ze zmianą kodu przyszło po `PASS` z Drobnymi, 38 z nich skończyło się tym samym `PASS`, a w dwóch poprawka Drobnych wniosła Ważne do PR, który miał już zgodę (#1853: jedno Drobne dało trzy rundy z `FAIL`).
+   Krok kończy się, gdy PR jest scalony, a każde jego Drobne ma w opisie PR swój PR poprawki.
 
 ## Tryb recenzenta: werdykt na PR
 
