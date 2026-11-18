@@ -60,7 +60,7 @@ import repo
 
 # Najwięcej ścieżek w jednym ``ast-grep scan``: wiersz polecenia na Windows mieści 32 767 znaków.
 PATHS_PER_SCAN = 200
-# Wbudowane reguły ast-grep o dyrektywie ``ast-grep-ignore`` → komunikat zamiast angielskiego komunikatu ast-grep.
+# Wbudowane reguły ast-grep o dyrektywie tłumienia → komunikat zamiast angielskiego komunikatu ast-grep.
 BUILTIN_MESSAGES: Final = {
     "no-suppress-all": "dyrektywa ast-grep-ignore bez nazw reguł wyłącza każdą regułę: usuń ją i popraw kod według"
     " komunikatu reguły, którą wyłączała",

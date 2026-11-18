@@ -24,7 +24,7 @@ import importlib.util
 import io
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePath
 import re
 import shutil
 import subprocess
@@ -835,16 +835,18 @@ def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:
     assert set(REGULY_CALEGO_DRZEWA) - ids == set(), f"popraw REGULY_CALEGO_DRZEWA na id reguł z {AST_GREP_RULES}/"
 
 
-# Rozszerzenia plików, które ast-grep czyta jako Python, jedyny język reguł z ``AST_GREP_RULES``, i dyrektywa
-# tłumienia ast-grep: komentarz, który zaczyna się od niej (wielkość liter się liczy), z nazwami reguł po „:” albo bez.
-PYTHON_SUFFIXES: Final = (".py", ".pyi", ".py3")
-AST_GREP_DIRECTIVE: Final = re.compile(r"#\s*ast-grep-ignore")
+# Rozszerzenia plików, które ast-grep 0.51 czyta jako Python (jedyny język reguł z ``AST_GREP_RULES``, bez
+# ``languageGlobs`` w ``sgconfig.yml``), i tekst dyrektywy tłumienia ast-grep w każdej wielkości liter. Gramatyki dyrektywy
+# test nie odtwarza: ast-grep chowa odpalenie także po ``##``, ``#!`` i ``# -`` przed nią, więc zakazany jest każdy
+# komentarz z tym tekstem.
+PYTHON_SUFFIXES: Final = (".py", ".pyi", ".py3", ".bzl")
+AST_GREP_DIRECTIVE: Final = re.compile("ast-grep-ignore", re.IGNORECASE)
 
 
 def ast_grep_suppressions(root: Path, folder: str = CALE_DRZEWO) -> list[str]:
-    """``plik:linia`` każdej dyrektywy ``AST_GREP_DIRECTIVE`` w plikach Pythona ``folder`` checkoutu ``root``, tych
-    samych co ``whole_tree_rules``. Komentarz to token ``COMMENT`` z ``tokenize``, więc napis z tym tekstem (próbka
-    testu) się nie liczy, a w pliku, którego ``tokenize`` nie przeczyta, liczy się każda linia z dyrektywą."""
+    """``plik:linia`` każdego komentarza z tekstem ``AST_GREP_DIRECTIVE`` w plikach Pythona ``folder`` checkoutu
+    ``root``, tych samych co ``whole_tree_rules``. Komentarz to token ``COMMENT`` z ``tokenize``, więc napis z tym
+    tekstem (próbka testu) się nie liczy, a w pliku, którego ``tokenize`` nie przeczyta, liczy się każda linia z nim."""
 
     files: dict[str, list[str]] = {}
     for path, _, text in odpalenia_ast_grep.Changes(root, odpalenia_ast_grep.EMPTY_TREE, folder).added():
@@ -857,7 +859,7 @@ def ast_grep_suppressions(root: Path, folder: str = CALE_DRZEWO) -> list[str]:
         except (tokenize.TokenError, SyntaxError):
             found += [f"{path}:{number}" for number, text in enumerate(lines, start=1) if AST_GREP_DIRECTIVE.search(text)]
             continue
-        found += [f"{path}:{token.start[0]}" for token in tokens if token.type == tokenize.COMMENT and AST_GREP_DIRECTIVE.match(token.string)]
+        found += [f"{path}:{token.start[0]}" for token in tokens if token.type == tokenize.COMMENT and AST_GREP_DIRECTIVE.search(token.string)]
     return found
 
 
@@ -867,8 +869,13 @@ def test_zadna_linia_repo_nie_tlumi_reguly_ast_grep() -> None:
     dyrektywę bez nazw albo taką, która niczego nie wyłącza. Wyjątek reguły stoi więc tylko w jej ``ignores:``, który
     widać w diffie reguły. Dyrektywy liczy ``ast_grep_suppressions`` w plikach Pythona, bo każda reguła jest w Pythonie."""
 
+    import yaml
+
     languages = {str(rule["language"]).lower() for rule in _ast_grep_rule_documents(AST_GREP_CONFIG)}
     assert languages == {"python"}, f"reguła ast-grep w języku spoza Pythona ({sorted(languages)}): dopisz jego komentarze do ast_grep_suppressions"
+    assert "languageGlobs" not in yaml.safe_load(AST_GREP_CONFIG.read_text(encoding="utf-8")), (
+        "languageGlobs w sgconfig.yml daje Pythona innym plikom niż PYTHON_SUFFIXES: dopisz je tam"
+    )
     assert ast_grep_suppressions(ROOT) == [], (
         "ast-grep-ignore chowa odpalenie reguły chwastu przed CI: popraw kod według komunikatu reguły, a trwały wyjątek "
         f"właściciela dopisz do ignores: jej pliku w {AST_GREP_RULES}/"
@@ -935,35 +942,75 @@ def test_noqa_przy_zakazanej_nazwie_i_gwiazdce_jest_zgloszone_a_prawo_wlasciciel
     ]
 
 
-# Tabela przypadków ``ast_grep_suppressions``: próbka z wywołaniem reguły-fikstury ``zakazane-wywolanie`` → czy to
-# dyrektywa. Dyrektywą jest każdy komentarz, który chowa odpalenie przed ast-grep, a tekst „ast-grep-ignore” w napisie
-# albo w środku komentarza nie chowa niczego, więc nie jest.
+# Tabela przypadków ``ast_grep_suppressions``: próbka z wywołaniem reguły-fikstury ``zakazane-wywolanie`` → (czy
+# prawdziwy ast-grep chowa wywołanie, czy test ją zgłasza). Zgłoszona jest każda próbka, którą ast-grep chowa, a także
+# komentarz, który tekst dyrektywy tylko wspomina; napis z tym tekstem nie jest komentarzem.
 DYREKTYWY_AST_GREP: Final = {
-    "z nazwą reguły na linii": ("zakazane()  # ast-grep-ignore: zakazane-wywolanie\n", True),
-    "z nazwą reguły bez odstępów": ("zakazane()  #ast-grep-ignore:zakazane-wywolanie\n", True),
-    "z kilkoma nazwami reguł": ("zakazane()  # ast-grep-ignore: inna, zakazane-wywolanie\n", True),
-    "linia nad wywołaniem": ("# ast-grep-ignore: zakazane-wywolanie\nzakazane()\n", True),
-    "bez nazw reguł": ("zakazane()  # ast-grep-ignore\n", True),
-    "w pliku, którego tokenize nie czyta": ("zakazane()  # ast-grep-ignore: zakazane-wywolanie\n(\n", True),
-    "tekst w środku komentarza": ("zakazane()  # uwaga ast-grep-ignore: zakazane-wywolanie\n", False),
-    "inna wielkość liter": ("zakazane()  # AST-GREP-IGNORE: zakazane-wywolanie\n", False),
-    "napis": ('zakazane()\nS = "# ast-grep-ignore: zakazane-wywolanie"\n', False),
-    "f-napis, który tokenize dzieli na części": ('zakazane()\nS = f"# ast-grep-ignore: zakazane-wywolanie {1}"\n', False),
+    "z nazwą reguły na linii": ("zakazane()  # ast-grep-ignore: zakazane-wywolanie\n", True, True),
+    "z nazwą reguły bez odstępów": ("zakazane()  #ast-grep-ignore:zakazane-wywolanie\n", True, True),
+    "z kilkoma nazwami reguł": ("zakazane()  # ast-grep-ignore: inna, zakazane-wywolanie\n", True, True),
+    "linia nad wywołaniem": ("# ast-grep-ignore: zakazane-wywolanie\nzakazane()\n", True, True),
+    "bez nazw reguł": ("zakazane()  # ast-grep-ignore\n", True, True),
+    "podwójny hasz": ("zakazane()  ## ast-grep-ignore: zakazane-wywolanie\n", True, True),
+    "hasz i myślnik": ("zakazane()  # - ast-grep-ignore: zakazane-wywolanie\n", True, True),
+    "dłuższe słowo": ("zakazane()  # ast-grep-ignored\n", True, True),
+    "w pliku, którego tokenize nie czyta": ("zakazane()  # ast-grep-ignore: zakazane-wywolanie\n(\n", True, True),
+    "tekst w środku komentarza": ("zakazane()  # uwaga ast-grep-ignore: zakazane-wywolanie\n", False, True),
+    "inna wielkość liter": ("zakazane()  # AST-GREP-IGNORE: zakazane-wywolanie\n", False, True),
+    "napis": ('zakazane()\nS = "# ast-grep-ignore: zakazane-wywolanie"\n', False, False),
+    "f-napis, który tokenize dzieli na części": ('zakazane()\nS = f"# ast-grep-ignore: zakazane-wywolanie {1}"\n', False, False),
 }
 
 
 @needs_ast_grep
-@pytest.mark.parametrize(("text", "directive"), DYREKTYWY_AST_GREP.values(), ids=DYREKTYWY_AST_GREP)
-def test_dyrektywa_ast_grep_to_kazdy_komentarz_ktory_chowa_odpalenie_przed_ast_grep(tmp_path: Path, text: str, directive: bool) -> None:
-    """Prawdziwy ast-grep z regułą-fiksturą: wiersz tabeli jest dyrektywą wtedy, gdy ast-grep nie zgłasza wywołania,
-    i wtedy ``ast_grep_suppressions`` go zgłasza."""
+@pytest.mark.parametrize(("text", "hidden", "reported"), DYREKTYWY_AST_GREP.values(), ids=DYREKTYWY_AST_GREP)
+def test_kazdy_komentarz_ktory_chowa_odpalenie_przed_ast_grep_jest_zgloszony(tmp_path: Path, text: str, hidden: bool, reported: bool) -> None:
+    """Prawdziwy ast-grep z regułą-fiksturą chowa wywołanie dokładnie w wierszach z ``hidden``, a
+    ``ast_grep_suppressions`` zgłasza wiersze z ``reported``, wśród nich każdy z ``hidden``."""
 
     config = _fixture_rules(tmp_path)
     base = _src_sample(tmp_path, text)
 
     rules = {finding.rule for finding in syntax_rules(tmp_path, base, config)}
-    assert ("zakazane-wywolanie" not in rules) == directive
-    assert bool(ast_grep_suppressions(tmp_path)) == directive
+    assert ("zakazane-wywolanie" not in rules, bool(ast_grep_suppressions(tmp_path))) == (hidden, reported)
+
+
+@needs_ast_grep
+def test_dyrektywa_ast_grep_po_kazdym_znaku_po_haszu_jest_zgloszona_gdy_chowa_odpalenie(tmp_path: Path) -> None:
+    """Klasa przedrostków dyrektywy: każdy znak ASCII bez liter i cyfr, każdy biały znak Unicode i kilka znaków
+    interpunkcji Unicode między ``#`` a tekstem dyrektywy. Każdy plik, w którym prawdziwy ast-grep chowa wywołanie,
+    ``ast_grep_suppressions`` zgłasza, a ast-grep chowa je co najmniej po ``##`` (sonda przeglądu #2099 r1)."""
+
+    config = _fixture_rules(tmp_path)
+    base = _empty_base(tmp_path)
+    folder = tmp_path / "src" / "rozliczenia"
+    folder.mkdir(parents=True)
+    signs = [chr(code) for code in range(32, 127) if not chr(code).isalnum()] + [chr(code) for code in range(0x80, 0x3000) if chr(code).isspace()]
+    signs += ["—", "·", "„", "§"]
+    for number, sign in enumerate(signs):
+        (folder / f"probka_{number}.py").write_text(f"zakazane()  #{sign}ast-grep-ignore: zakazane-wywolanie\n", encoding="utf-8")
+
+    shown = {finding.path for finding in syntax_rules(tmp_path, base, config) if finding.rule == "zakazane-wywolanie"}
+    hidden = {f"src/rozliczenia/probka_{number}.py" for number in range(len(signs))} - shown
+    assert "src/rozliczenia/probka_" + str(signs.index("#")) + ".py" in hidden
+    assert sorted(hidden - {line.rpartition(":")[0] for line in ast_grep_suppressions(tmp_path)}) == []
+
+
+@needs_ast_grep
+def test_pliki_pythona_dyrektyw_to_pliki_ktore_ast_grep_czyta_jako_python(tmp_path: Path) -> None:
+    """``PYTHON_SUFFIXES`` to dokładnie te rozszerzenia próbki (Pythona i jemu bliskie), w których prawdziwy ast-grep
+    zgłasza regułę-fiksturę w Pythonie, więc dyrektywa w pliku, który ast-grep czyta jako Python, nie jest poza testem."""
+
+    config = _fixture_rules(tmp_path)
+    base = _empty_base(tmp_path)
+    folder = tmp_path / "src" / "rozliczenia"
+    folder.mkdir(parents=True)
+    suffixes = (".py", ".pyi", ".py3", ".bzl", ".pyw", ".pyx", ".pyc", ".ipynb", ".gyp")
+    for suffix in suffixes:
+        (folder / f"probka{suffix}").write_text("zakazane()\n", encoding="utf-8")
+
+    shown = {PurePath(finding.path).suffix for finding in syntax_rules(tmp_path, base, config)}
+    assert sorted(shown) == sorted(PYTHON_SUFFIXES)
 
 
 @windows_without_ast_grep
