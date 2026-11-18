@@ -953,35 +953,37 @@ WORKERY_DOWODU = 4
 
 def _empty_tree_problems(root: Path) -> list[str]:
     """Problemy biegu ``tests/test_zapadki.py`` repozytorium ``root`` z bazą w pustym drzewie gita, w którym każda linia
-    ``tests/`` i ``src/`` jest dodana, na ``WORKERY_DOWODU`` workerach: porażka biegu albo test, którego nazwa zaczyna się
-    od nazwy zapadki reguł ast-grep. ``--deselect`` wybiera po prefiksie node id, więc taki test zniknąłby z dowodu po
-    cichu, a xdist nie drukuje liczby pominiętych, więc prefiks sprawdza drzewo składni pliku."""
+    ``tests/`` i ``src/`` jest dodana, na ``WORKERY_DOWODU`` workerach: porażka biegu albo ``--deselect`` zapadki reguł
+    ast-grep, który nie pomija dokładnie jednego testu. ``--deselect`` wybiera po prefiksie node id, więc test zapadek
+    o nazwie z tym prefiksem zniknąłby z dowodu po cichu, a xdist liczby pominiętych nie drukuje, więc liczy ją kolekcja
+    tego samego wyboru w jednym procesie (``--collect-only``, poniżej sekundy)."""
 
     empty_tree = subprocess.run(
         ["git", "hash-object", "-t", "tree", "--stdin"], cwd=root, input="", capture_output=True, text=True, check=True
     ).stdout.strip()
     environment = {name: value for name, value in os.environ.items() if not name.startswith("PYTEST_XDIST_")}
-    answered = subprocess.run(
-        [
-            *(sys.executable, "-m", "pytest", "-q", "-n", str(WORKERY_DOWODU), "-p", "no:cacheprovider", "tests/test_zapadki.py"),
-            *("--deselect", _ZAPADKA_AST_GREP),
-        ],
-        cwd=root,
-        env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        check=False,
-    )
-    problems = [] if answered.returncode == 0 else [f"kod {answered.returncode}:\n{answered.stdout[-3000:]}"]
-    skipped = _ZAPADKA_AST_GREP.partition("::")[2]
-    tree = ast.parse((root / "tests" / "test_zapadki.py").read_text(encoding="utf-8"))
-    if hidden := sorted(node.name for node in tree.body if isinstance(node, ast.FunctionDef) and node.name.startswith(skipped) and node.name != skipped):
-        problems.append(
-            f"--deselect {_ZAPADKA_AST_GREP} pomija też {', '.join(hidden)}, więc ten test zapadek zniknąłby z dowodu:"
-            " nadaj mu nazwę, która nie zaczyna się od nazwy tej zapadki"
+    selection = ("-p", "no:cacheprovider", "tests/test_zapadki.py", "--deselect", _ZAPADKA_AST_GREP)
+
+    def pytest(*arguments: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", *arguments, *selection],
+            cwd=root,
+            env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
         )
-    return problems
+
+    collected = pytest("--collect-only", "-n", "0")
+    summary = collected.stdout.splitlines()[-1] if collected.stdout else ""
+    if not re.search(r"\(1 deselected\)", summary):
+        return [
+            f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden, więc inny test zapadek zniknąłby z dowodu:"
+            f" nadaj mu nazwę, która nie zaczyna się od nazwy tej zapadki | {summary}"
+        ]
+    answered = pytest("-n", str(WORKERY_DOWODU))
+    return [] if answered.returncode == 0 else [f"kod {answered.returncode}:\n{answered.stdout[-3000:]}"]
 
 
 def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
@@ -1070,7 +1072,5 @@ def test_bieg_pustego_drzewa_zglasza_test_zapadek_pominiety_razem_z_zapadka_ast_
 
     [problem] = _empty_tree_problems(tmp_path)
 
-    assert problem == (
-        f"--deselect {_ZAPADKA_AST_GREP} pomija też {name}_w_tests, więc ten test zapadek zniknąłby z dowodu:"
-        " nadaj mu nazwę, która nie zaczyna się od nazwy tej zapadki"
-    )
+    assert problem.startswith(f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden"), problem
+    assert "1/3 tests collected (2 deselected)" in problem, problem
