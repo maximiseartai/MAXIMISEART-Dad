@@ -52,7 +52,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/wydanie.py`: Narzędzie Wydań (plan, potem wydaj): nowa wersja z tagiem v* i GitHub Release (ADR 0014); uruchamiaj tylko z workflow skilla wydanie.
 - `tools/wyrocznia_pracy_w_tle.py`: Uruchamia claude -p z pracą w tle i bez niej, by sprawdzić hook Stop praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
 - `tools/wyrocznia_zgody.py`: Sprawdza, czy zainstalowany Claude Code oddaje hookowi zgoda.py pytanie o zgodę na rm; uruchom po każdej aktualizacji Claude Code.
-- `tools/zgodnosc_efenix.py`: Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom przed pierwszą Wyceną w efenix i po Zgłoszeniu z Zatrzymania okna efenix.
+- `tools/zgodnosc_efenix.py`: Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom po Zgłoszeniu z Zatrzymania okna efenix.
 <!-- koniec spisu narzędzi -->
 
 ## PR: od pushu do merge'a

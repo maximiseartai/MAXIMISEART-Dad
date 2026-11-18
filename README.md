@@ -312,8 +312,8 @@ przycisk i okno Emmetta (z pustą propozycją przed propozycją Emmetta), okno d
 polega Wycena w efenix, karty pozycji wyceny z kodami `INDEKS` i stronę
 logowania. Ceny pozycji z przypisania kolumn porównuje z kosztami z wiersza 14
 Wzorca pliku zbiorczego (domyślnie z konfiguracji narzędzia, inny plik:
-`--wzorzec`). Uruchamia je Maks przed pierwszą Wyceną w efenix u taty i po
-każdym Zgłoszeniu z Zatrzymania okna efenix, nigdy CI.
+`--wzorzec`). Uruchamia je Maks po każdym Zgłoszeniu z Zatrzymania okna efenix,
+nigdy CI.
 
 Narzędzie tylko czyta i nie uruchamia stron efenix: każde żądanie wysyła samo,
 z ciasteczkami sesji taty z Chrome, tylko z krótkiej listy odczytów (lista,
