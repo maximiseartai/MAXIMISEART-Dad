@@ -166,3 +166,7 @@ przyklad = 2073
 [R-STARE-DRZEWO]
 opis = "Commit złożony z drzewa roboczego starszej bazy i przeniesiony na nowszą (reset --soft, kopia plików, stash) po cichu cofa scalone PR-y, a nic nie porównuje plików diffu z bazą."
 przyklad = 2100
+
+[R-ZAMIAR-Z-TRESCI]
+opis = "Twarda odmowa wnioskuje zamiar (ciche cofnięcie, obejście) z treści pliku, którą daje też zamierzona zmiana, a próba fałszywych alarmów objęła za mało scaleń, by ją zobaczyć."
+przyklad = 2100

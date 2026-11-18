@@ -12,8 +12,7 @@ jeszcze biegną albo padły, wymienia osobno, bo gotowość czeka i na nie; ``pe
 checku Required, bo GitHub tworzy go po zadaniach z jego ``needs:``, albo któreś jego zadanie biegnie); ``failure``
 z padłymi zadaniami runu i poleceniem ``gh run view <run> --log-failed``; ``nieznany``, gdy check workflow ``CI``
 nie ma identyfikatora runu w ``detailsUrl``; ``brak``, gdy CI na HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``,
-a PR, któremu limit rund (``limit_rund``) nie daje kolejnej rundy, i PR, którego zmiana po cichu cofa scaloną zmianę
-bazy (``cofniecia``), tylko linią ``PRZEGLĄD ODMOWA | #N <sha> | <przyczyna>``.
+a PR, któremu limit rund (``limit_rund``) nie daje kolejnej rundy, tylko linią ``PRZEGLĄD ODMOWA | #N <sha> | <przyczyna>``.
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ from pathlib import Path
 import subprocess
 import sys
 
-import cofniecia
 import github
 import limit_rund
 from ostatnie_linie import SKILLE_VERIFY
@@ -62,9 +60,6 @@ def print_context(pull: stan_pr.Pull, base: str) -> int:
         return 1
     limit = github.LIMIT_S
     fork = repo.merge_base(ROOT, base, pull.head, timeout=limit)
-    if refused := cofniecia.problem(fork, pull.head):
-        print(f"PRZEGLĄD ODMOWA | #{pull.number} {pull.head[:7]} | {refused}")
-        return 1
     files = sorted(repo.changed(ROOT, fork, pull.head, timeout=limit))
     print(f"PRZEGLĄD | #{pull.number} {pull.title} | HEAD {pull.head} | baza {pull.base} {base} | merge-base {fork}")
     print(f"ZMIANA | git diff --stat {fork} {pull.head}")

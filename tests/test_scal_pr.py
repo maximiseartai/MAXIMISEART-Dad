@@ -28,7 +28,6 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git, with_imports
 
 import bramka_idiomu
-import cofniecia
 import czasy_ci
 import github as klient_github
 import limit_rund
@@ -453,7 +452,7 @@ def test_pomoc_podaje_zasady_testu_scalenia_werdyktu_i_limitu_rund_z_przykladami
         scal_pr.main(["--help"])
 
     shown = " ".join(capsys.readouterr().out.split())
-    for rules in (testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, cofniecia.__doc__):
+    for rules in (testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__):
         assert " ".join(str(rules).split()) in shown
     assert "tools/scal_pr.py 336 --werdykt" in shown
 
@@ -2153,40 +2152,30 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
     assert github.merges() == []
 
 
-@pytest.mark.parametrize(
-    ("files", "message", "refused"),
-    [
-        ({"kod/wspolne.py": "A: int = 1\n", "kod/inne.py": "INNE: int = 0\n"}, "", True),
-        ({"kod/stare.py": "S: int = 0\n"}, "", True),
-        ({"kod/wspolne.py": "A: int = 3\n"}, "", False),
-        ({"kod/wspolne.py": "A: int = 1\n"}, "\n\nThis reverts commit {moved}.", False),
-    ],
-    ids=["plik-wraca-do-tresci-sprzed-scalonej-zmiany-jak-2100", "plik-usuniety-przez-baze-wraca", "wlasna-zmiana-pliku", "git-revert-scalonej-zmiany"],
-)
-def test_przeglad_i_merge_odmawiaja_pr_ktory_po_cichu_cofa_scalona_zmiane_bazy(tmp_path: Path, files: dict[str, str], message: str, refused: bool) -> None:
-    """Commit złożony z drzewa starszej bazy i przeniesiony na nowszą cofa scalone PR-y, choć opis PR ich nie zna
-    (#2100 r1: ``git reset --soft origin/main`` po ruchu ``origin/main``, 25 z 28 plików diffu)."""
+def test_limit_rund_pobiera_z_origin_commity_rund_ktorych_checkout_nie_zna_po_force_pushu(tmp_path: Path) -> None:
+    """Po force-pushu commitów rund z FAIL nie ma w ``refs/pull/N/head``, więc checkout recenzenta ich nie zna, a limit
+    czyta ich kod i diff dopiero po pobraniu ich z ``origin`` (#2100 W3 r2: ``fatal: bad object`` w ``--przeglad``)."""
 
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, "kod/wspolne.py": "A: int = 1\n", "kod/stare.py": "S: int = 0\n"})
-    (github.checkout / "kod" / "stare.py").unlink()
-    moved = github.push_main({"kod/wspolne.py": "A: int = 2\n"})
-    head = github.commit_on(moved, files, "PR 1" + message.format(moved=moved))
-    github.push_head(1, head)
-    github.pulls["1"] = _pr_view(1, head)
-    github.update(1, body=BODY)
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, started=GATE_BEFORE_VERDICTS)
+    git(github.origin, "config", "uploadpack.allowAnySHA1InWant", "true")
+    other = tmp_path / "inny-checkout"
+    git(tmp_path, "clone", "--quiet", str(github.origin), str(other))
+    rounds = []
+    for number in range(3):
+        (other / "kod" / "inne.py").write_text(f"INNE: int = 0\nDALEJ: int = {number}\n", encoding="utf-8")
+        rounds.append(commit(other, f"runda {number + 1}"))
+        git(other, "push", "--quiet", "--force", "origin", f"{rounds[-1]}:refs/pull/1/head")
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 0\nNOWE: int = 1\n"})
+    for sha in rounds:
+        github.comment(1, FAIL_W1.format(commit=sha))
+
+    unknown = [sha for sha in rounds if subprocess.run(["git", "cat-file", "-e", f"{sha}^{{commit}}"], cwd=github.checkout, check=False).returncode]
 
     reviewed = github.run("1", "--przeglad")
-    checked = github.run("1", "--bez-merge")
 
-    path = next(iter(files))
-    reason = (
-        f"cofnięcie: zmiana PR przywraca treść sprzed scalonych commitów bazy: {path} (sprzed {moved[:10]} main idzie dalej); zbuduj"
-        " commit na aktualnej bazie z samą swoją zmianą (git diff starej bazy do swojego commitu nałożony przez git apply"
-        " --3way), a scaloną zmianę cofaj tylko przez git revert jej commitu"
-    )
-    assert _last_line(reviewed) == (f"PRZEGLĄD ODMOWA | #1 {head[:7]} | {reason}" if refused else f"PRZEGLĄD OK | #1 {head[:7]}"), reviewed.stdout + reviewed.stderr
-    assert (reason in _last_line(checked)) == refused, checked.stdout + checked.stderr
-    assert ("cofnięcie:" in _last_line(checked)) == refused, checked.stdout + checked.stderr
+    assert unknown == rounds
+    reason = _limit_reason(*rounds, standing=tuple(f"kod/inne.py:1 ({sha[:7]})" for sha in rounds))
+    assert _last_line(reviewed) == f"PRZEGLĄD ODMOWA | #1 {head[:7]} | {reason}", reviewed.stdout + reviewed.stderr
 
 
 @pytest.mark.parametrize("where", ["head-pr", "main-ze-zmiana"], ids=["galaz-bez-limitu-rund", "checkout-main-ze-zmiana-limitu"])

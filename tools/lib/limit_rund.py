@@ -18,7 +18,7 @@ nie zeruje, bo przed tą zmianą #2010 dostał przez cztery komentarze ``ZMIANA 
 | plik ``Gdzie`` usunięto albo przemianowano | nie stoi (granica: przeniesienie kodu do innego pliku) |
 | Ważne bez miejsca ``plik:linia`` w ``Gdzie``, z miejscem spoza pliku commitu rundy albo na pustej linii | nie wnosi linii |
 | żadne Ważne tych rund nie wnosi linii | zmiany nie widać, kolejną rundę da tylko nowy PR |
-| commit rundy, którego checkout nie zna | narzędzie pobiera go z ``origin``; gdy się nie da, jego Ważne nie wnoszą linii |
+| commit rundy, którego checkout nie zna (force-push) | ``git_sources`` pobiera go z ``origin``; gdy się nie da, jego Ważne nie wnoszą linii, a jako późniejszy commit nie usuwa żadnej |
 
 Wyjście zostaje w tym samym PR, bo bramka korzenia i bramka idiomu czytają werdykty PR, więc Ważne każdej rundy,
 także sprzed zmiany podejścia, zostają tam, gdzie merge ich wymaga; nowy PR zaczynałby bez nich.
@@ -171,19 +171,29 @@ def problem(pull: Pull, deployed: datetime | None, sources: Sources) -> str | No
     )
 
 
-def _blob(commit: str, path: str) -> bytes | None:
-    if repo.commit(ROOT, commit) is None:
-        repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, commit, timeout=github.LIMIT_S)
-    return repo.blob(ROOT, commit, path)
+def git_sources(pull: Pull) -> Sources:
+    """Ważne z renderera GitHuba i kod z Gita checkoutu, jedyny właściciel commitów rund: najpierw pobiera z ``origin``
+    każdy commit werdyktu ``FAIL`` PR, którego checkout nie zna (po force-pushu nie ma go w ``refs/pull/N/head``), a
+    commit, którego i wtedy nie ma, nie ma plików i nie usuwa linii, więc licznika nie zeruje."""
 
+    commits = {found.commit for item in pull.verdicts if (found := werdykt_pr.read(item, pull.head)) is not None and found.decision == "FAIL" and found.commit}
+    for missing in (one for one in sorted(commits) if repo.commit(ROOT, one) is None):
+        repo.run_git(ROOT, "fetch", "--quiet", "--no-tags", REMOTE, missing, timeout=github.LIMIT_S)
+    known = frozenset(one for one in {*commits, pull.head} if repo.commit(ROOT, one) is not None)
 
-def _removed(commit: str, later: str, path: str) -> frozenset[int]:
-    diff = repo.git(ROOT, "diff", "--no-color", "--no-ext-diff", "-U0", "-w", commit, later, "--", path)
-    return frozenset(number for found in HUNK.finditer(diff) for number in range(int(found[1]), int(found[1]) + int(found[2] or 1)))
+    def blob(commit: str, path: str) -> bytes | None:
+        return repo.blob(ROOT, commit, path) if commit in known else None
+
+    def removed(commit: str, later: str, path: str) -> frozenset[int]:
+        if not {commit, later} <= known:
+            return frozenset()
+        diff = repo.git(ROOT, "diff", "--no-color", "--no-ext-diff", "-U0", "-w", commit, later, "--", path)
+        return frozenset(number for found in HUNK.finditer(diff) for number in range(int(found[1]), int(found[1]) + int(found[2] or 1)))
+
+    return Sources(functools.cache(werdykt_pr.rendered(pull)), blob, removed)
 
 
 def deployed_problem(pull: Pull) -> str | None:
-    """``problem`` z chwilą wdrożenia limitu na bazie ``pull`` pobranej z ``origin``, z treścią werdyktów z renderera
-    GitHuba i kodem z Gita checkoutu."""
+    """``problem`` z chwilą wdrożenia limitu na bazie ``pull`` pobranej z ``origin`` i ``git_sources``."""
 
-    return problem(pull, werdykt_pr.deployment(pull.base, MARKER), Sources(functools.cache(werdykt_pr.rendered(pull)), _blob, _removed))
+    return problem(pull, werdykt_pr.deployment(pull.base, MARKER), git_sources(pull))
