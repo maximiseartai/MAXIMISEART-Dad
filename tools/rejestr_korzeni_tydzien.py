@@ -19,6 +19,8 @@ a pola werdyktu czytają jego parsery (``szablon_werdyktu`` przez ``rejestr_korz
 - odpalenia reguł to odpalenia reguł ast-grep z ``sgconfig.yml`` checkoutu na liniach dodanych przez każdy z
   ``ALARM_PRS`` ostatnich merge'y PR-ów ``origin/main`` przed końcem tygodnia (``odpalenia_ast_grep.on_added_lines``,
   jak zapadka), czyli reguły dzisiejszego ``main`` na kodzie, który już przeszedł przegląd; próg ADR to 10% PR-ów;
+  ten kod przeszedł też zapadkę Required CI, więc reguła starsza niż okno ma tu 0 z założenia, a liczba mówi
+  o regule dodanej albo poszerzonej w oknie, jak dowód reguły przy przyjęciu, a nie o czerwonym CI działającej reguły;
 - „Bez reguły” to każde Ważne tygodnia z polem ``Idiom: bez reguły <klasa>``, z odsyłaczem do PR.
 
 Tydzień trwa od poniedziałku 0:00 do następnego poniedziałku 0:00 czasu polskiego (``Europe/Warsaw``, także po

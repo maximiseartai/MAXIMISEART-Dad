@@ -510,6 +510,20 @@ def test_pole_idiom_i_pass_na_head_z_werdyktow_skanu_daja_powrot_polaczenie_list
     assert _rows(text, "Bez reguły") == ["| #1450 W1 r1 | brak-testu | #1553 W1 r2 |"], text
 
 
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_pr_scalony_przed_wdrozeniem_i_zmieniony_po_nim_nie_liczy_sie_od_wdrozenia(tmp_path: Path) -> None:
+    """Skan bierze każdy PR zmieniony po wdrożeniu, więc stary scalony PR z późniejszym komentarzem w nim jest, a jego
+    merge i blok czerwonego `main` są sprzed wdrożenia."""
+
+    pulls = [_pull(1460, [], body=korzenie_pr.OPISY["czerwony-main"], merged="2026-09-20T10:00:00Z", created="2026-09-19T00:00:00Z")]
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls)
+
+    text = "\n".join(_measure(github, "--tydzien", "2026-10-12", "--bez-zapisu")[2:-1])
+
+    assert _rows(text, "Pomiar")[1] == "| Od wdrożenia 2026-10-01 | 0 | 0 | - | 0 | 0 |", text
+    assert _rows(text, "Czekanie")[1] == "| Od wdrożenia 2026-10-01 | 0 | 0 | - | - | 0 |", text
+
+
 RULE = 'id: zakazane-wywolanie\nlanguage: python\nseverity: error\nmessage: bez zakazane()\nfiles:\n  - "**/*.py"\nrule:\n  pattern: $O.zakazane()\n'
 needs_ast_grep = pytest.mark.skipif(tydzien.AST_GREP is None, reason="ast-grep z dodatku dev, a zadania pytest na Windows instalują tylko requirements.txt")
 

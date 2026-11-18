@@ -271,15 +271,24 @@ def reviewed(repository: str, deployed: datetime | None) -> list[Reviewed]:
 
 
 def _reviewed(node: dict[str, Any], deployed: datetime) -> Reviewed:
+    """PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja): werdykty, rundy i chwilę merge'a
+    liczy raz, a wszystko, co zwraca, jest po chwili wdrożenia ``deployed``: Ważne i pola ``Idiom:`` werdyktów
+    utworzonych nie przed nią, merge nie przed nią, a blok czerwonego `main` tylko w PR scalonym po niej."""
+
     pull = _pull(node)
     verdicts = [verdict for verdict in (werdykt_pr.read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None]
+    merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
+    merged = merged if merged is not None and merged >= deployed else None
+    found: list[Occurrence] = []
     idioms: tuple[IdiomCase, ...] = ()
     if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
-        cases = idiom_cases(pull.number, werdykt_pr.rounds(pull, werdykt_pr.from_graphql))
-        idioms = tuple(case for case in cases if case.when is not None and case.when >= deployed)
+        rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
+        found += [Occurrence(major.code, pull.number, major.heading, major.since) for major in majors(rounds)[0].values() if major.code is not None and major.since is not None and major.since >= deployed]
+        idioms = tuple(case for case in idiom_cases(pull.number, rounds) if case.when is not None and case.when >= deployed)
+    if merged is not None:
+        found += [Occurrence(block.code, pull.number, heading, merged) for heading, block in _blocks(pull, str(node["bodyHTML"])).items() if heading.startswith("Czerwony")]
     passes = [moment for verdict in verdicts if verdict.decision == "PASS" and verdict.commit == pull.head and (moment := _moment(verdict.when)) is not None]
-    merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
-    return Reviewed(pull.number, merged, max(passes, default=None), tuple(occurrences(node, deployed)), idioms)
+    return Reviewed(pull.number, merged, max(passes, default=None), tuple(sorted(found, key=_order)), idioms)
 
 
 def idioms(repository: str, deployed: datetime | None, rule: str) -> list[IdiomCase]:
@@ -296,24 +305,6 @@ def idioms(repository: str, deployed: datetime | None, rule: str) -> list[IdiomC
         pull = _pull(node if _complete(node) else pull_node(repository, node["number"]))
         found.extend(idiom_cases(pull.number, werdykt_pr.rounds(pull, werdykt_pr.from_graphql)))
     return sorted(found, key=lambda case: (case.pull, case.round))
-
-
-def occurrences(node: dict[str, Any], deployed: datetime) -> list[Occurrence]:
-    """Wystąpienia kodów w PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja) po chwili
-    wdrożenia ``deployed``; blok czerwonego `main` ma tylko PR scalony (``mergedAt``)."""
-
-    pull = _pull(node)
-    merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
-    found = []
-    verdicts = [verdict for verdict in (werdykt_pr.read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None]
-    if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
-        rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
-        for major in majors(rounds)[0].values():
-            if major.code is not None and major.since is not None and major.since >= deployed:
-                found.append(Occurrence(major.code, pull.number, major.heading, major.since))
-    if merged is not None and merged >= deployed:
-        found.extend(Occurrence(block.code, pull.number, heading, merged) for heading, block in _blocks(pull, str(node["bodyHTML"])).items() if heading.startswith("Czerwony"))
-    return sorted(found, key=_order)
 
 
 def create_labels(api: github.GhApi, names: Sequence[str], prefix: str, *, write: bool) -> list[str]:
