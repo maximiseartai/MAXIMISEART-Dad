@@ -25,7 +25,6 @@ from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.outbox import QUEUE_THREAD
 from rozliczenia.centrum.runs import RUN_THREAD_PREFIX
 
-from tests.fixtures import tylko_zapadki
 from tests.fixtures.skladnia import dotted, drzewo, imports, pamiec_drzew, wezly
 from tests.fixtures.znane_luki import (
     assert_znane_luki,
@@ -951,33 +950,35 @@ _ZAPADKA_AST_GREP = "tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_l
 
 
 def _empty_tree_problems(root: Path) -> list[str]:
-    """Problemy biegu zapadek ``tests/test_zapadki.py`` repozytorium ``root`` z bazą w pustym drzewie gita, w którym każda
-    linia ``tests/`` i ``src/`` jest dodana: porażka biegu albo brak zapadek. Zapadki wybiera wtyczka ``tylko_zapadki``
-    po fixture bazy zmiany, bez zapadki reguł ast-grep; reszta pliku to testy na własnych repozytoriach w ``tmp_path``,
-    których wyniku baza nie zmienia, a w dowodzie kosztowałyby cały plik (~45 s zamiast ~1 s)."""
+    """Problemy biegu ``tests/test_zapadki.py`` repozytorium ``root`` z bazą w pustym drzewie gita, w którym każda linia
+    ``tests/`` i ``src/`` jest dodana: porażka biegu albo ``--deselect`` zapadki reguł ast-grep, który nie pominął
+    dokładnie jednego testu. ``--deselect`` wybiera po prefiksie node id, więc test zapadek o nazwie z tym prefiksem
+    zniknąłby z dowodu po cichu."""
 
     empty_tree = subprocess.run(
         ["git", "hash-object", "-t", "tree", "--stdin"], cwd=root, input="", capture_output=True, text=True, check=True
     ).stdout.strip()
     environment = {name: value for name, value in os.environ.items() if not name.startswith("PYTEST_XDIST_")}
-    plugins = os.pathsep.join(filter(None, (str(TESTS / "fixtures"), environment.get("PYTHONPATH"))))
     answered = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "-p", tylko_zapadki.__name__.rpartition(".")[2], "tests/test_zapadki.py"],
+        [
+            *(sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_zapadki.py"),
+            *("--deselect", _ZAPADKA_AST_GREP),
+        ],
         cwd=root,
-        env={
-            **environment,
-            "PYTHONPATH": plugins,
-            "MAXIMISEART_ZAPADKA_BAZA": empty_tree,
-            tylko_zapadki.BEZ: _ZAPADKA_AST_GREP.split("::")[1],
-        },
+        env={**environment, "MAXIMISEART_ZAPADKA_BAZA": empty_tree},
         capture_output=True,
         text=True,
         encoding="utf-8",
         check=False,
     )
-    if answered.returncode == pytest.ExitCode.NO_TESTS_COLLECTED:
-        return [f"tests/test_zapadki.py nie ma zapadki, czyli testu z fixture {tylko_zapadki.FIXTURE}"]
-    return [] if answered.returncode == 0 else [f"kod {answered.returncode}:\n{answered.stdout[-3000:]}"]
+    summary = answered.stdout.splitlines()[-1] if answered.stdout else ""
+    problems = [] if answered.returncode == 0 else [f"kod {answered.returncode}:\n{answered.stdout[-3000:]}"]
+    if not re.search(r"(^|, )1 deselected\b", summary):
+        problems.append(
+            f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden, więc inny test zapadek zniknął z dowodu:"
+            f" nadaj mu nazwę, która nie zaczyna się od nazwy tej zapadki | {summary}"
+        )
+    return problems
 
 
 def test_zapadki_nie_zglaszaja_zadnej_linii_testow() -> None:
@@ -1055,51 +1056,16 @@ def test_bieg_pustego_drzewa_przechodzi_z_regula_ast_grep_i_jej_starym_wystapien
     assert _empty_tree_problems(root) == []
 
 
-def test_bieg_pustego_drzewa_uruchamia_tylko_zapadki_z_fixture_bazy_bez_zapadki_ast_grep(tmp_path: Path) -> None:
-    # Każdy test pada poza jednym, więc wynik mówi, które biegły: zapadka z fixture wprost, zapadka z fixture przez inną
-    # fixture i test o nazwie z prefiksem zapadki ast-grep; nie biegnie zapadka ast-grep ani test bez bazy.
+def test_bieg_pustego_drzewa_zglasza_test_zapadek_pominiety_razem_z_zapadka_ast_grep(tmp_path: Path) -> None:
     (tmp_path / "tests").mkdir()
     name = _ZAPADKA_AST_GREP.split("::")[1]
-    tests = {
-        "test_zapadka": "baza_zmiany: str",
-        "test_zapadka_przez_fixture": "przez_pomocnika: str",
-        name: "baza_zmiany: str",
-        "test_jednostkowy": "",
-    }
-    body = (
-        "import pytest\n\n\n@pytest.fixture\ndef baza_zmiany() -> str:\n    return ''\n\n\n"
-        "@pytest.fixture\ndef przez_pomocnika(baza_zmiany: str) -> str:\n    return baza_zmiany\n\n\n"
-        + "".join(f"def {test}({arguments}) -> None:\n    assert False\n\n\n" for test, arguments in tests.items())
-        + f"def {name}_w_tests(baza_zmiany: str) -> None:\n    pass\n"
+    (tmp_path / "tests" / "test_zapadki.py").write_text(
+        "".join(f"def {test}() -> None:\n    pass\n\n\n" for test in (name, f"{name}_w_tests", "test_innej_zapadki")),
+        encoding="utf-8",
     )
-    (tmp_path / "tests" / "test_zapadki.py").write_text(body, encoding="utf-8")
     subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
 
     [problem] = _empty_tree_problems(tmp_path)
 
-    failed = re.findall(r"^FAILED (\S+)", problem, re.MULTILINE)
-    assert sorted(failed) == ["tests/test_zapadki.py::test_zapadka", "tests/test_zapadki.py::test_zapadka_przez_fixture"], problem
-    assert "2 failed, 1 passed, 2 deselected in " in problem, problem
-
-
-def test_baze_zmiany_zapadki_czytaja_tylko_przez_fixture() -> None:
-    """Zmienną bazy zmiany czyta w ``tests/test_zapadki.py`` tylko fixture ``baza_zmiany`` (i fixture, która ją ustawia), bo
-    dowód pustego drzewa wybiera zapadki po tej fixture: zapadka z własnym odczytem zmiennej wypadłaby z niego po cichu."""
-
-    tree = ast.parse((TESTS / "test_zapadki.py").read_text(encoding="utf-8"))
-    readers = sorted(
-        function.name
-        for function in ast.walk(tree)
-        if isinstance(function, ast.FunctionDef)
-        and any(isinstance(node, ast.Constant) and node.value == "MAXIMISEART_ZAPADKA_BAZA" for node in ast.walk(function))
-    )
-
-    assert readers == ["baza_ze_zmiennej", tylko_zapadki.FIXTURE], "weź bazę zmiany z fixture baza_zmiany"
-
-
-def test_bieg_pustego_drzewa_bez_zapadki_jest_problemem(tmp_path: Path) -> None:
-    (tmp_path / "tests").mkdir()
-    (tmp_path / "tests" / "test_zapadki.py").write_text("def test_jednostkowy() -> None:\n    pass\n", encoding="utf-8")
-    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
-
-    assert _empty_tree_problems(tmp_path) == ["tests/test_zapadki.py nie ma zapadki, czyli testu z fixture baza_zmiany"]
+    assert problem.startswith(f"--deselect {_ZAPADKA_AST_GREP} pominął inną liczbę testów niż jeden")
+    assert "| 1 passed, 2 deselected in " in problem, problem

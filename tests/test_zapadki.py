@@ -109,22 +109,14 @@ def _git(root: Path, *args: str) -> str:
     ).stdout
 
 
-@pytest.fixture
-def baza_zmiany(request: pytest.FixtureRequest) -> str:
-    """Baza zmiany zapadki: ``MAXIMISEART_ZAPADKA_BAZA`` albo ``merge-base`` HEAD z ``BASE``; bez niej zapadka się
-    pomija. To jedyna droga bazy do zapadki, bo dowód pustego drzewa (``tests/test_struktura_testow.py``) wybiera zapadki
-    po tej fixture w ``fixturenames`` testu (``tests/fixtures/tylko_zapadki.py``). Test, który bierze ją inaczej
-    (``request.getfixturevalue``), pada, bo pytest nie wpisuje jej wtedy do ``fixturenames`` i dowód by go pominął."""
-
-    if "baza_zmiany" not in request.node.fixturenames:
-        pytest.fail("weź baza_zmiany jako argument testu albo innej fixture, nie przez getfixturevalue: dowód pustego drzewa wybiera zapadki po fixturenames")
+def _base() -> str | None:
     base = os.environ.get("MAXIMISEART_ZAPADKA_BAZA")
     if base:
         return base
     try:
         return _git(ROOT, "merge-base", "HEAD", BASE).strip()
     except subprocess.CalledProcessError:
-        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+        return None
 
 
 def dropped_navigation(line: str, previous: str) -> bool:
@@ -169,8 +161,11 @@ def navigation_drops(root: Path, base: str) -> list[str]:
     return found
 
 
-def test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona(baza_zmiany: str) -> None:
-    assert navigation_drops(ROOT, baza_zmiany) == []
+def test_odpowiedz_nawigacji_karty_w_src_nie_jest_odrzucona() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    assert navigation_drops(ROOT, base) == []
 
 
 def test_zapadka_nawigacji_widzi_tylko_pliki_src_z_importem_playwright(tmp_path: Path) -> None:
@@ -556,18 +551,10 @@ def test_linie_konczy_tylko_znak_nowej_linii_wiec_znak_podzialu_splitlines_nie_z
     ]
 
 
-@pytest.fixture
-def baza_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_zapadka_bierze_baze_zmiany_ze_zmiennej(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MAXIMISEART_ZAPADKA_BAZA", "galaz-rodzica")
 
-
-def test_zapadka_bierze_baze_zmiany_ze_zmiennej(baza_ze_zmiennej: None, baza_zmiany: str) -> None:
-    assert baza_zmiany == "galaz-rodzica"
-
-
-def test_baza_zmiany_przez_getfixturevalue_pada(request: pytest.FixtureRequest) -> None:
-    with pytest.raises(pytest.fail.Exception, match="nie przez getfixturevalue"):
-        request.getfixturevalue("baza_zmiany")
+    assert _base() == "galaz-rodzica"
 
 
 def parsers_off_entry(root: Path, base: str) -> list[str]:
@@ -604,8 +591,12 @@ def parsers_off_entry(root: Path, base: str) -> list[str]:
     return found
 
 
-def test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu(baza_zmiany: str) -> None:
-    assert parsers_off_entry(ROOT, baza_zmiany) == []
+def test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+
+    assert parsers_off_entry(ROOT, base) == []
 
 
 # Plik z ``PARSERS``, który testy zapadki kładą w swoim repozytorium (zmienna, nie napis, z powodu jak przy ``PARSERS``).
@@ -796,8 +787,11 @@ windows_without_ast_grep = pytest.mark.skipif(
 
 
 @windows_without_ast_grep
-def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo(baza_zmiany: str) -> None:
-    assert syntax_rule_findings(ROOT, baza_zmiany) == []
+def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
+    base = _base()
+    if base is None:
+        pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
+    assert syntax_rule_findings(ROOT, base) == []
 
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
@@ -841,7 +835,7 @@ def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:
 
 # Rozszerzenia plików, które ast-grep 0.51 czyta jako Python (jedyny język reguł z ``AST_GREP_RULES``, bez
 # ``languageGlobs`` w ``sgconfig.yml``), i tekst dyrektywy tłumienia ast-grep, z którego próbki tego pliku ją składają.
-PYTHON_SUFFIXES: Final = (".py", ".pyi", ".py3", ".bzl")
+PYTHON_SUFFIXES: Final = odpalenia_ast_grep.PYTHON_SUFFIXES
 _IGNORE: Final = odpalenia_ast_grep.SUPPRESSION
 
 
