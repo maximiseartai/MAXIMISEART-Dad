@@ -1965,26 +1965,39 @@ def _limit_reason(*failed: str) -> str:
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a po 3. rundzie z FAIL PR nie dostaje"
         " kolejnej (skill przeglad, „Kolejne rundy”): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
         " usunięcie z PR części, której przegląd nie przyjął) i opisz je komentarzem PR z pierwszą linią"
-        " „ZMIANA PODEJŚCIA: <zdanie>”"
+        " „ZMIANA PODEJŚCIA: <zdanie>”; to jedyna zmiana podejścia w PR, po niej najwyżej 3 rundy z FAIL"
+    )
+
+
+def _final_reason(*failed: str) -> str:
+    """Przyczyna odmowy limitu rund PR 1 po zmianie podejścia, po której PR ma rundy z FAIL na commitach ``failed``."""
+
+    commits = ", ".join(sha[:7] for sha in failed)
+    return (
+        f"limit rund: rund z FAIL {len(failed)} ({commits}) po zmianie podejścia, a po 3. rundzie z FAIL od niej #1 nie"
+        " dostaje żadnej kolejnej (skill przeglad, „Kolejne rundy”): kolejny komentarz „ZMIANA PODEJŚCIA: <zdanie>”"
+        " licznika nie zeruje; zamknij #1 komentarzem z powodem i zacznij nowy PR od świeżego origin/main z innym"
+        " podejściem"
     )
 
 
 THIRD_ROUND = "3" * 40
 FOURTH_ROUND = "4" * 40
 THREE_FAILS = [("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", f"WERDYKT: FAIL {THIRD_ROUND}")]
+FAILS_AFTER_CHANGE = [("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", f"WERDYKT: FAIL {OLD}"), ("comment", FAIL_HEAD)]
 CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia, a nie lista postaci.")
 
 
 # Skill ``przeglad``: po trzeciej rundzie z FAIL czwartej nie ma. Tydzień 9–15.11.2026 miał czwartą i dalszą rundę na
 # 24 PR-ach (#1693 do dziewiątej, #1720 do ósmej), choć zdanie stało w skillu od 29.10.
 @pytest.mark.parametrize(
-    ("verdicts", "deployed", "failed"),
+    ("verdicts", "deployed", "reason"),
     [
-        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, HEAD)),
+        ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, HEAD)),
         (
             [("comment", f"WERDYKT: PASS {FIRST_ROUND}"), ("COMMENTED", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD), ("comment", PASS_HEAD)],
             BEFORE_FIRST,
-            (FIRST_ROUND, SECOND_ROUND, HEAD),
+            _limit_reason(FIRST_ROUND, SECOND_ROUND, HEAD),
         ),
         ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, None),
         ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("CHANGES_REQUESTED", "Popraw.")], BEFORE_FIRST, None),
@@ -1993,17 +2006,16 @@ CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia
         ([("comment", f"WERDYKT: FAIL {FIRST_ROUND}"), ("comment", f"WERDYKT: FAIL {SECOND_ROUND}"), ("comment", FAIL_HEAD)], None, None),
         ([*THREE_FAILS, CHANGED], BEFORE_FIRST, None),
         ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", PASS_HEAD)], BEFORE_FIRST, None),
-        ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {FOURTH_ROUND}"), ("comment", f"WERDYKT: FAIL {OLD}"), ("comment", FAIL_HEAD)], BEFORE_FIRST, (FOURTH_ROUND, OLD, HEAD)),
+        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE], BEFORE_FIRST, _final_reason(FOURTH_ROUND, OLD, HEAD)),
+        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE, CHANGED], BEFORE_FIRST, _final_reason(FOURTH_ROUND, OLD, HEAD)),
+        ([*THREE_FAILS, CHANGED, *FAILS_AFTER_CHANGE, CHANGED, ("comment", PASS_HEAD)], BEFORE_FIRST, _final_reason(FOURTH_ROUND, OLD, HEAD)),
         ([*THREE_FAILS, CHANGED, ("comment", f"WERDYKT: FAIL {THIRD_ROUND}"), ("comment", f"WERDYKT: FAIL {FIRST_ROUND}")], BEFORE_FIRST, None),
-        (
-            [THREE_FAILS[0], CHANGED, THREE_FAILS[1], CHANGED, THREE_FAILS[2]],
-            BEFORE_FIRST,
-            (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND),
-        ),
-        ([*THREE_FAILS, ("comment", "ZMIANA PODEJŚCIA: ", "OWNER")], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
-        ([*THREE_FAILS, ("comment", CHANGED[1], "CONTRIBUTOR")], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
-        ([*THREE_FAILS, ("PENDING", CHANGED[1])], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
-        ([*THREE_FAILS, ("comment", f"Plan: {CHANGED[1]}")], BEFORE_FIRST, (FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([THREE_FAILS[0], CHANGED, THREE_FAILS[1], CHANGED, THREE_FAILS[2]], BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([THREE_FAILS[0], CHANGED, THREE_FAILS[1], CHANGED, THREE_FAILS[2], CHANGED], BEFORE_FIRST, None),
+        ([*THREE_FAILS, ("comment", "ZMIANA PODEJŚCIA: ", "OWNER")], BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([*THREE_FAILS, ("comment", CHANGED[1], "CONTRIBUTOR")], BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([*THREE_FAILS, ("PENDING", CHANGED[1])], BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([*THREE_FAILS, ("comment", f"Plan: {CHANGED[1]}")], BEFORE_FIRST, _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
         ([*THREE_FAILS, ("COMMENTED", CHANGED[1])], BEFORE_FIRST, None),
     ],
     ids=[
@@ -2016,9 +2028,12 @@ CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia
         "limit-niewdrozony",
         "zmiana-podejscia-po-trzeciej-rundzie-zeruje-licznik",
         "po-zmianie-podejscia-kolejna-runda-sie-odbywa",
-        "trzy-rundy-z-fail-po-zmianie-podejscia",
+        "trzy-rundy-z-fail-po-zmianie-podejscia-to-koniec-pr",
+        "druga-zmiana-podejscia-nie-zeruje-licznika-jak-2010",
+        "pass-po-drugiej-zmianie-podejscia-nie-scala",
         "fail-commitu-sprzed-zmiany-nie-jest-nowa-runda",
         "zmiana-podejscia-zawczasu-po-kazdej-rundzie-nie-zeruje",
+        "zmiana-podejscia-zawczasu-nie-zuzywa-jedynej",
         "zmiana-podejscia-bez-zdania",
         "zmiana-podejscia-konta-bez-prawa-zapisu",
         "zmiana-podejscia-w-nieopublikowanej-recenzji",
@@ -2026,18 +2041,23 @@ CHANGED = ("comment", "ZMIANA PODEJŚCIA: granicę wyznacza mechanizm narzędzia
         "zmiana-podejscia-w-recenzji",
     ],
 )
-def test_po_trzeciej_rundzie_z_fail_pr_nie_dostaje_kolejnej_rundy_bez_zmiany_podejscia(
-    verdicts: list[tuple[str, ...]], deployed: datetime | None, failed: tuple[str, ...] | None
+def test_po_trzeciej_rundzie_z_fail_pr_nie_dostaje_kolejnej_rundy_bez_zmiany_podejscia_a_po_szostej_wcale(
+    verdicts: list[tuple[str, ...]], deployed: datetime | None, reason: str | None
 ) -> None:
-    assert limit_rund.problem(_written(*verdicts), deployed) == (None if failed is None else _limit_reason(*failed))
+    assert limit_rund.problem(_written(*verdicts), deployed) == reason
 
 
 @pytest.mark.parametrize(
-    ("rounds", "changed"),
-    [(2, False), (3, False), (3, True)],
-    ids=["po-drugiej-rundzie-z-fail-kolejna-runda-sie-odbywa", "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma", "po-zmianie-podejscia-w-tym-samym-pr-runda-sie-odbywa"],
+    ("rounds", "changes"),
+    [(2, ()), (3, ()), (3, (3,)), (6, (3, 6))],
+    ids=[
+        "po-drugiej-rundzie-z-fail-kolejna-runda-sie-odbywa",
+        "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma",
+        "po-zmianie-podejscia-w-tym-samym-pr-runda-sie-odbywa",
+        "po-szostej-rundzie-z-fail-druga-zmiana-podejscia-nie-daje-rundy",
+    ],
 )
-def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze_dla_pass_spoza_werdyktu(tmp_path: Path, rounds: int, changed: bool) -> None:
+def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze_dla_pass_spoza_werdyktu(tmp_path: Path, rounds: int, changes: tuple[int, ...]) -> None:
     """Każda runda idzie przez ``--przeglad`` (krok 1 recenzenta) i ``--werdykt``, a ``PASS`` opublikowany bez
     ``--werdykt`` liczy się przy merge'u, więc limit odmawia we wszystkich trzech miejscach. Po zmianie podejścia
     runda odbywa się w tym samym PR, więc bramka korzenia nadal wymaga bloku na Ważne każdej rundy sprzed zmiany
@@ -2052,11 +2072,11 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
         github.comment(1, FAIL_W1.format(commit=head))
         failed.append(head)
         head = github.push_pull(1, {"kod/inne.py": f"INNE: int = {number}\n"})
-    if changed:
-        github.comment(1, CHANGED[1])
+        if number in changes:
+            github.comment(1, CHANGED[1])
     path = tmp_path / f"runda-{rounds + 1}.md"
     path.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
-    refused = rounds == 3 and not changed
+    refused = rounds >= 3 and (rounds, changes) != (3, (3,))
 
     reviewed = github.run("1", "--przeglad")
     answered = github.run("1", "--werdykt", str(path))
@@ -2065,7 +2085,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     checked = github.run("1", "--bez-merge")
 
-    reason = _limit_reason(*failed)
+    reason = _limit_reason(*failed) if rounds == 3 else _final_reason(*failed[3:])
     assert reviewed.returncode == int(refused), reviewed.stdout + reviewed.stderr
     assert answered.returncode == int(refused), answered.stdout + answered.stderr
     if refused:
