@@ -398,7 +398,7 @@ def _planned(lines: Sequence[_Line], outcome: ReportsOutcome) -> MovePlan | Miss
 
 APPLIED = frozenset({"changes", "moves", "added"})
 """Pola ``ReportsOutcome``, które zmieniają INTERMAX: model arkusza zapisuje każde (``_written``)."""
-NOT_WRITTEN = frozenset({"problems", "workers", "mails", "memory", "notes"})
+NOT_WRITTEN = frozenset({"problems", "workers", "mails", "memory", "notes", "said"})
 """Pola ``ReportsOutcome``, które INTERMAX nie zmieniają. Każde nowe pole wyniku czerwieni ten test (N8 w ``_click``),
 dopóki nie trafi tu albo, gdy zmienia INTERMAX, do ``APPLIED`` z zapisem w ``_written``."""
 
