@@ -13,9 +13,10 @@
     "enter_reports": "64436d7978d9a3a2"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "1060d63d3fc0d6b7",
+    "enter_from_mail": "5a57432b0fdf5b81",
     "closed_periods": "5b9ce8bf021b5dd9",
-    "SavedState": "2bef4c3810a32563"
+    "SavedState": "2bef4c3810a32563",
+    "EnteringMemory": "31fd9ea4b60686ca"
   },
   "src/rozliczenia/intermax_cells.py": {
     "write_cells": "a2a848ebcb13bf49"

@@ -268,7 +268,7 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.worker_reports.ReadReport",
     ),
-    # Wejście odczytu okna spoza report_inputs: postacie z tabeli przypadków przy ZNANE_LUKI_WEJSCIA_ODCZYTU; pierwsza to
+    # Wejście odczytu okna spoza EnteringMemory.report_inputs: postacie z tabeli przypadków przy ZNANE_LUKI_WEJSCIA_ODCZYTU; pierwsza to
     # Przypomnienia o raporcie z przeglądu #2059 (r1, W1), które budowały wejście same z OwnEntries.EMPTY.
     "from rozliczenia.worker_reports import OwnEntries, ReportInputs": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.worker_reports.ReportInputs"),
     "from ._model import ReportInputs": (SRC_CONFIG, ("rozliczenia", "worker_reports"), "rozliczenia.worker_reports._model.ReportInputs"),
@@ -633,48 +633,36 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     )
 
 
-# Wejście odczytu okna spoza report_inputs, które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią, konstruktor z
-# typu wejścia w module spoza właścicieli, konstruktor w module z prawem do typu i pamięć Wpisania podana report_inputs
-# spoza ReportState.load (granica zakazu nazwy, #2125 r1–r3 W1); opis → (sonda, kod).
+# Wejście odczytu okna spoza EnteringMemory.report_inputs, które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią,
+# konstruktor z typu wejścia albo z refleksji w module spoza właścicieli i konstruktor w module z prawem do typu (granica
+# zakazu nazwy); opis → (sonda, kod).
 _CENTRUM_PROBE = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
 ZNANE_LUKI_WEJSCIA_ODCZYTU = {
     "zakaz zna tylko nazwę klasy, nie kopię: wejście z report_inputs z pustą pamięcią przez dataclasses.replace": (
         _CENTRUM_PROBE,
         "import dataclasses\n\n"
-        "from rozliczenia.report_entering import report_inputs\n"
+        "from rozliczenia.report_entering import EnteringMemory\n"
         "from rozliczenia.worker_reports import OwnEntries\n\n"
-        "given = dataclasses.replace(report_inputs(*inputs), memory=OwnEntries.EMPTY)\n",
+        "given = dataclasses.replace(EnteringMemory(state).report_inputs(*inputs), memory=OwnEntries.EMPTY)\n",
     ),
     "zakaz zna tylko nazwę klasy, nie jej typ z wartości: type(wejście)(…)": (
         _CENTRUM_PROBE,
-        "from rozliczenia.report_entering import report_inputs\n"
+        "from rozliczenia.report_entering import EnteringMemory\n"
         "from rozliczenia.worker_reports import OwnEntries\n\n"
-        "given = report_inputs(*inputs)\n"
+        "given = EnteringMemory(state).report_inputs(*inputs)\n"
         "again = type(given)(given.mails, given.addresses, given.orders, given.window, OwnEntries.EMPTY, frozenset(), given.present, given.legend)\n",
     ),
-    "zakaz zna tylko nazwę wejścia, nie wartość pamięci: report_inputs z pamięcią zbudowaną obok (#2125 r1 W1)": (
+    "refleksja po nazwie: getattr(pakiet, \"ReportInputs\")(…) (#2125 r4 D1)": (
         _CENTRUM_PROBE,
-        "from rozliczenia.report_entering import SavedState, report_inputs\n"
+        "from rozliczenia import worker_reports\n"
         "from rozliczenia.worker_reports import OwnEntries\n\n"
-        "given = report_inputs(window, intermax, mails, addresses, SavedState(None, OwnEntries.EMPTY), legend)\n",
+        "given = getattr(worker_reports, \"ReportInputs\")(mails, addresses, orders, window, OwnEntries.EMPTY, frozenset(), present, legend)\n",
     ),
-    "zakaz zna tylko nazwę wejścia, nie wartość pamięci: gotowa pusta pamięć odtworzenia bez Logów (#2125 r2 W1)": (
+    "refleksja po nazwie: typ pola z typing.get_type_hints(ReminderInputs)[\"reports\"] (#2125 r4 D1)": (
         _CENTRUM_PROBE,
-        "from rozliczenia.centrum.report_entering_logs import EnteringReplay\n"
-        "from rozliczenia.report_entering import report_inputs\n\n"
-        "given = report_inputs(window, intermax, mails, addresses, EnteringReplay.without_logs(today).saved, legend)\n",
-    ),
-    "zakaz zna tylko nazwę wejścia, nie wartość pamięci: pamięć z typu pamięci z pliku (#2125 r2 W1)": (
-        _CENTRUM_PROBE,
-        "from rozliczenia.report_entering import report_inputs\n"
-        "from rozliczenia.worker_reports import OwnEntries\n\n"
-        "given = report_inputs(window, intermax, mails, addresses, type(state.load())(None, OwnEntries.EMPTY), legend)\n",
-    ),
-    "zakaz zna tylko nazwę wejścia, nie wartość pamięci: pamięć z pliku bez dnia wdrożenia Wpisania (#2125 r3 W1)": (
-        _CENTRUM_PROBE,
-        "from dataclasses import replace\n\n"
-        "from rozliczenia.report_entering import report_inputs\n\n"
-        "given = report_inputs(window, intermax, mails, addresses, replace(state.load(), rollout=None), legend)\n",
+        "import typing\n\n"
+        "from rozliczenia.worker_reports import OwnEntries, ReminderInputs\n\n"
+        "given = typing.get_type_hints(ReminderInputs)[\"reports\"](mails, addresses, orders, window, OwnEntries.EMPTY, frozenset(), present, legend)\n",
     ),
     "prawo do nazwy obejmuje plik: konstruktor w Przypomnieniach rdzenia, które biorą wejście jako pole": (
         SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "_reminders.py",
@@ -686,17 +674,16 @@ ZNANE_LUKI_WEJSCIA_ODCZYTU = {
 
 @wymaga_ruff
 def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_przez_ruff() -> None:
-    """Wejście odczytu okna rdzenia raportów (``ReportInputs``) buduje w ``src/`` tylko ``report_entering.report_inputs``,
-    to samo dla Wpisania raportów i Przypomnień o raporcie, bo dzień raportu zależy od pamięci Wpisania: wejście
-    zbudowane obok, np. z ``OwnEntries.EMPTY`` (#2059 r1 W1), daje ``read_window`` inny dzień raportu niż kafelek
-    Wpisania. Typ wejścia biorą też odczyt okna, Przypomnienia rdzenia (``ReminderInputs.reports``) i ``__init__``
-    pakietu (``OWNERS``), więc zakaz zatrzymuje nazwę, nie samo wywołanie konstruktora.
+    """Wejście odczytu okna rdzenia raportów (``ReportInputs``) buduje w ``src/`` tylko
+    ``report_entering.EnteringMemory.report_inputs``, to samo dla Wpisania raportów i Przypomnień o raporcie, bo dzień
+    raportu zależy od pamięci Wpisania: wejście zbudowane obok, np. z ``OwnEntries.EMPTY`` (#2059 r1 W1), daje
+    ``read_window`` inny dzień raportu niż kafelek Wpisania. Typ wejścia biorą też odczyt okna, Przypomnienia rdzenia
+    (``ReminderInputs.reports``) i ``__init__`` pakietu (``OWNERS``), więc zakaz zatrzymuje nazwę, nie samo wywołanie
+    konstruktora.
 
-    Zakaz zna nazwę wejścia, a nie wartość pamięci Wpisania, którą ``report_inputs`` dostaje: pusta pamięć to też
-    poprawna wartość (``FileReportState.load`` bez pliku Wpisania), więc żadna nazwa nie odróżni pamięci z
-    ``ReportState.load`` od zbudowanej, skopiowanej albo zmienionej obok (#2125 r1–r3 W1). Tej pamięci nie pilnuje nic
-    poza przeglądem, dopóki Przypomnienia o raporcie trzymają wartość ``SavedState``; lukę zamyka kształt, w którym
-    Przypomnienia biorą ``ReportState``, a pamięć ładuje i podaje ``report_inputs`` jedna funkcja ``report_entering``.
+    Pamięć Wpisania, którą wejście niesie, pilnuje typ ``EnteringMemory`` (powstaje tylko z ``ReportState``), a jej
+    postacie (#2125 r1–r3 W1) i znane luki są w
+    ``tests/test_centrum_wpisanie_raportow.py::test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza``.
 
     | Postać | Zakaz | Próbka |
     |---|---|---|
@@ -706,11 +693,8 @@ def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_p
     | moduł z prawem do innej nazwy: ``report_reminders.py`` (``DEFAULT_REMINDERS``) z ``ReportInputs`` (#2059 r1 W1) | ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw`` z komunikatem zakazu | ``OWNERS`` |
     | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``__init__``) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
     | kopia wejścia ze zmienioną pamięcią: ``dataclasses.replace(wejście, memory=…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | ``report_inputs`` z własną pamięcią: ``SavedState(None, OwnEntries.EMPTY)`` (#2125 r1 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | ``report_inputs`` z gotową pustą pamięcią: ``EnteringReplay.without_logs(dzień).saved`` (#2125 r2 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | ``report_inputs`` z pamięcią z typu wartości: ``type(state.load())(None, OwnEntries.EMPTY)`` (#2125 r2 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | ``report_inputs`` z pamięcią z pliku bez dnia wdrożenia: ``replace(state.load(), rollout=None)`` (#2125 r3 W1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
     | konstruktor z typu wartości: ``type(wejście)(…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | refleksja po nazwie: ``getattr(worker_reports, "ReportInputs")(…)``, ``typing.get_type_hints(ReminderInputs)["reports"](…)`` (#2125 r4 D1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
 
     Poza ``src/`` zakaz nie obowiązuje: testy rdzenia budują wejście same, a próba skrzynki raportów w ``tools/`` czyta
     każdy mail bez pamięci Wpisania."""

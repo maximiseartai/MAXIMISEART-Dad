@@ -521,7 +521,7 @@ class ReportInputs:
     życzenie (``RequestedEntry``).
 
     ``entering_rollout``: dzień wdrożenia Wpisania raportów, gdy okno zaczyna się wcześniej (Przypomnienia o raporcie z
-    wcześniejszym dniem wdrożenia przypomnień, ``report_entering.report_inputs``; ``None``: ``window.rollout``). Dzień
+    wcześniejszym dniem wdrożenia przypomnień, ``EnteringMemory.report_inputs``; ``None``: ``window.rollout``). Dzień
     wskazany raportu z błędem tematu bez dnia w temacie leży od niego, w dniach otwartych Wpisania, więc obie operacje
     wskazują ten sam dzień albo żaden."""
 
