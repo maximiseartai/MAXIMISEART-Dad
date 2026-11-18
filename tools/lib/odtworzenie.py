@@ -58,7 +58,7 @@ from pathlib import Path
 import platform
 from typing import Any, Final, assert_never
 
-from openpyxl import Workbook, load_workbook
+from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils import column_index_from_string
 from openpyxl.worksheet.worksheet import Worksheet
@@ -625,7 +625,11 @@ def _settlement(record: RunLog, work: _Work) -> _Rebuilt:
 
 
 def _register_file(
-    record: RunLog, work: _Work, folder: str, font: Callable[[LoggedSheet, int], Font]
+    record: RunLog,
+    work: _Work,
+    folder: str,
+    font: Callable[[LoggedSheet, int], Font],
+    below: Callable[[Workbook], None] = lambda workbook: None,
 ) -> tuple[Path, list[Limit]]:
     """Rejestr zleceń albo INTERMAX z Kopii wejścia: arkusze z nagłówkami w wierszu 1 i wierszami pod ich numerami.
 
@@ -633,7 +637,9 @@ def _register_file(
     kolumnami Kopii (u taty tam stoją), a gdy takich nie ma, za ostatnią; ich komórki mają wartości syntetyczne.
     Przesunięty pierwszy wiersz wklejenia INTERMAX stoi znowu dwie kolumny w lewo, a nad wklejeniem ostatni
     uporządkowany wiersz (Calibri 8, bez daty) i żółty wiersz stoją tam, gdzie u taty. ``font``: krój komórek wiersza
-    (numer) arkusza z Kopii.
+    (numer) arkusza z Kopii. ``below``: wiersze, które odbudowa dopisuje pod wierszami Kopii przed jedynym zapisem
+    pliku, bo openpyxl, który wczytuje zapisany plik, gubi ``\r`` z tekstu komórek, a czytniki narzędzia czytają go z
+    bajtów pliku.
     """
 
     copied = _the_file(record)
@@ -654,6 +660,7 @@ def _register_file(
                 synthetic = _SYNTHETIC[_REGISTER_FORBIDDEN[header]].format(row=row.row)
                 created.cell(row.row, column - shift, synthetic)
         _above_paste(created, sheet)
+    below(workbook)
     path = work.path(folder, *copied.folders, copied.name)
     workbook.save(path)
     return path, limits
@@ -882,13 +889,13 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     (``orderless``), stają na dole swojego arkusza jako Surowe zlecenia z krojem z aplikacji, bo Kopia wejścia Wpisania
     raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
 
-    register, limits = _register_file(record, work, "intermax", lambda sheet, row: _ORDERED_FONT)
     started = record.started_at.astimezone()
     entering = record.report_entering
     replay = EnteringReplay.without_logs(started.date()) if entering is None else entering.replay()
     assert isinstance(replay, EnteringReplay), "Logi bez wejścia kliknięcia to granica blokująca (_entering_limits)"
-    if replay.orderless:
-        _add_orderless(register, replay)
+    register, limits = _register_file(
+        record, work, "intermax", lambda sheet, row: _ORDERED_FONT, lambda workbook: _add_orderless(workbook, replay)
+    )
     reads = replay.mails
     logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
     senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
@@ -912,7 +919,7 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     return _Rebuilt(paths, parts, limits, workers)
 
 
-def _add_orderless(register: Path, replay: EnteringReplay) -> None:
+def _add_orderless(workbook: Workbook, replay: EnteringReplay) -> None:
     """Numery z wierszy bez zlecenia z Logów jako Surowe zlecenia pod ostatnim wierszem swojego arkusza (z pustym
     wierszem nad nimi), jak wklejenie z aplikacji: pierwsze przesunięte o ``SHIFT`` kolumn w lewo, reszta pod
     nagłówkami, każde z ``NUMER ZL.`` w postaci z Wpisu (z zerem na początku, gdy Wpis go ma, inaczej liczbą) i dniem
@@ -921,7 +928,6 @@ def _add_orderless(register: Path, replay: EnteringReplay) -> None:
     położeniu, jak u taty. Numer, którego każdy wiersz był u taty zleceniem sprzed ``Window.start`` (``day``), dostaje
     ten dzień i ``WYKONAWCA``, więc rdzeń daje ten sam powód (``AddBar.BEFORE_WINDOW``)."""
 
-    workbook = load_workbook(register)
     by_sheet: dict[str, list[ReplayedOrderless]] = {}
     for logged in replay.orderless:
         by_sheet.setdefault(logged.sheet, []).append(logged)
@@ -941,7 +947,6 @@ def _add_orderless(register: Path, replay: EnteringReplay) -> None:
             for column, value in cells.items():
                 [place] = [header[found] for found in map(normalize_text, column.register_headers) if found in header]
                 sheet.cell(first + index, place - shift, value).font = _PASTED_FONT
-    workbook.save(register)
 
 
 @dataclass

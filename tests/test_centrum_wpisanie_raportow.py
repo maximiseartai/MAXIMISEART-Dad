@@ -328,15 +328,16 @@ def test_logi_maja_kopie_wejscia_z_przeczytanymi_wierszami_bez_adresu_i_numeru_u
     assert "Ulica 40000001" not in json.dumps(logs, ensure_ascii=False)
 
 
-def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z_tresci_maila_jest_pod_straznikiem(
+def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_i_z_tresci_maila_wychodzi_do_logow_bez_maski_telefonu(
     tmp_path: Path,
 ) -> None:
-    """``NUMER ZL.`` z wiersza INTERMAX może wyjść do Logów (ADR 0025) także z 9 cyframi, które strażnik maskuje jako
-    telefon w tekście: pamięć własnych wpisów w Logach drugiego kliknięcia ma go jako liczbę. Numer z treści maila
-    zostaje tekstem pod strażnikiem, więc 9 cyfr jest w nim zamaskowane; odtworzenie dostanie to jako granicę (#1233)."""
+    """``NUMER ZL.`` może wyjść do Logów (ADR 0025) także z 9 cyframi w kształcie telefonu: pamięć własnych wpisów w
+    Logach drugiego kliknięcia ma numer z wiersza INTERMAX jako liczbę, a Wpis raportu numer z treści maila bez maski
+    telefonu, więc odtworzenie wie, do którego zlecenia szedł Wpis."""
 
-    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 412345678),), raw=())
-    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "412345678 tak montaż")])
+    written, order = "412345678", 412345678
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", order),), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, f"{written} tak montaż")])
 
     first = _finished(centrum)
     second = _finished(centrum)
@@ -345,11 +346,28 @@ def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z
     assert logs[first["run"]["id"]]["written"] == 2
     again = logs[second["run"]["id"]]
     assert [(entry["number"], entry["column"], entry["value"]) for entry in again["memory_before"]] == [
-        (412345678, "CZYNNOŚCI ZREALIZOWANE", "montaż"),
-        (412345678, "SKUTECZNE", "tak"),
+        (order, "CZYNNOŚCI ZREALIZOWANE", "montaż"),
+        (order, "SKUTECZNE", "tak"),
     ]
     assert (again["rollout_before"], again["written"], again["changes"]) == ("2026-11-09", 0, [])
-    assert again["mails"][0]["entries"][0]["number"] == "[telefon]"
+    assert again["mails"][0]["entries"][0]["number"] == written
+
+
+def test_numer_z_zerem_z_przodu_z_tresci_maila_jest_w_logach_we_wpisie_i_w_problemie_tak_jak_go_napisal_wykonawca(
+    tmp_path: Path,
+) -> None:
+    """Wykonawca pisze w raporcie ``NUMER ZL.`` z zerem z przodu, czyli 9 cyfr w kształcie telefonu. Wpis nie trafia w
+    zlecenie, więc tata widzi problem nieznanego numeru, a Logi mają ten numer we Wpisie i w problemie bez maski
+    telefonu, w postaci z maila: odtworzenie powtarza kliknięcie, zamiast odmawiać z powodu maski."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 14043137),), raw=())
+    centrum = entering_centrum(tmp_path, intermax, [report(JAN, SUBJECT, "014043137 tak montaż")])
+
+    run = _finished(centrum)
+
+    [entering] = [entry["report_entering"] for entry in centrum.run_logs() if entry["run_id"] == run["run"]["id"]]
+    assert entering["mails"][0]["entries"][0]["number"] == "014043137"
+    assert [(problem["kind"], problem["number"]) for problem in entering["problems"]] == [("unknown_number", "014043137")]
 
 
 def test_odrzucone_haslo_skrzynki_raportow_nie_trafia_do_api_strumienia_logow_zgloszenia_ani_dziennika(

@@ -187,6 +187,12 @@ co stało się z tym, co wysłał.
   `DRY-RUN` jak rekord metryk, a nie słowo „zapis” albo „podgląd”. Karta
   Uruchomienia, Historia, odtworzenie i Uwaga taty czytają pliki schematu 1, 2
   i 3, a słowo trybu ze starszego pliku to ten sam tryb.
+  Schemat Logów nie zwęża się (18.11.2026): plik Logów każdego Wydania
+  przechodzi dzisiejszy schemat, także z widokiem albo operacją, których
+  Centrum już nie ma (widok Konfiguracja w dzienniku działań taty), bo plik,
+  który nie przechodzi schematu, nie daje karty z Historii ani odtworzenia.
+  Pilnuje tego `tests/test_schemat_logow_wydan.py` z zapisem faktów schematu
+  każdego Wydania.
   Wydanie to numer najwyższego Wydania, którego tag w klonie taty (z instalacji
   albo pobrany przez Aktualizację narzędzia) wskazuje dokładnie commit, z
   którego działa Centrum; Centrum ustala je lokalnie przy końcu każdego

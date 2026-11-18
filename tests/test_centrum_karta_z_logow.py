@@ -415,7 +415,20 @@ def as_schema_1(record: dict[str, Any]) -> dict[str, Any]:
     return old
 
 
-@pytest.mark.parametrize("schema", [as_schema_1, as_schema_2, None], ids=["schemat-1", "schemat-2", "schemat-3"])
+def with_configuration_view(record: dict[str, Any]) -> dict[str, Any]:
+    """Logi tego Uruchomienia z Wydania, w którym tata otwierał jeszcze widok Konfiguracja (do v0.9.1): ten widok w
+    dzienniku działań taty."""
+
+    actions = record["dad_actions"]
+    view = {"at": record["started_at"], "action": "widok", "page": "konfiguracja", "kind": "navigation"}
+    return record | {"dad_actions": actions | {"entries": [view, *actions["entries"]]}}
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [as_schema_1, as_schema_2, with_configuration_view, None],
+    ids=["schemat-1", "schemat-2", "widok-konfiguracja", "schemat-3"],
+)
 def test_karta_po_starcie_i_wiersz_historii_otwieraja_logi_kazdego_schematu(
     tmp_path: Path, schema: Callable[[dict[str, Any]], dict[str, Any]] | None
 ) -> None:

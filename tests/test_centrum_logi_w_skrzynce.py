@@ -1063,6 +1063,36 @@ def _report_entering(tmp_path: Path, *, memory_saved: bool = True) -> Produced:
     return produced
 
 
+def test_klikniecie_z_opisem_w_kilku_liniach_windows_i_numerem_bez_zlecenia_odtwarza_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``UWAGI`` w INTERMAX taty mają końce linii Windows (``\r\n``), które czytnik INTERMAX czyta z bajtów pliku, a
+    Raport Jana ma numer z wiersza bez zlecenia, który odtworzenie stawia na dole arkusza: odtworzony INTERMAX ma te
+    same ``UWAGI`` co u taty, więc Kopia wejścia odtworzenia jest Kopią z Logów."""
+
+    intermax = Intermax(
+        ordered=(
+            Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (LAST, "przeniesienie\r\n\r\nmontaż"))),
+            Order(datetime(2026, 11, 9, 10), "", 40000066, cells=((NUMBER, 40000066),)),
+        ),
+        raw=(),
+    )
+    surroundings = Surroundings()
+    reports = [report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000066 tak montaż")]
+    centrum = entering_centrum(tmp_path / "taty", intermax, reports, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path / "taty"))
+    run = centrum.run_to_end()
+    archived = _archived_run(surroundings.report_box, tmp_path, run["run"]["id"])
+    record = json.loads(gzip.decompress(archived.read_bytes()))
+    assert [found["number"] for found in record["report_entering"]["orderless"]] == [40000066]
+    cells = [value for file in record["input_copy"] for sheet in file["sheets"] for row in sheet["rows"] for value in row["cells"].values()]
+    assert "przeniesienie\r\n\r\nmontaż" in cells
+
+    code, lines = _replayed(capsys, archived, "--na-tym-drzewie")
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 PROCESSES = {
     "settlement": _settlement,
     "preparation": _preparation,

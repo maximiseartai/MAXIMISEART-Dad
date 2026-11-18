@@ -18,9 +18,18 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import timing as timing_contract
 from rozliczenia.domain import RunMode
 
-StoredRunMode = Annotated[RunMode, BeforeValidator(RunMode.stored)]
+StoredRunMode = Annotated[
+    RunMode, BeforeValidator(RunMode.stored, json_schema_input_type=RunMode | Literal["zapis", "podgląd"])
+]
 """Tryb Uruchomienia w pliku na dysku taty (dziennik działań taty, Logi Uruchomienia, plik ostatniego startu, dziennik
-Wyceny w efenix): wartość ``RunMode``, a w plikach sprzed schematu Logów 3 jego słowo."""
+Wyceny w efenix): wartość ``RunMode``, a w plikach sprzed schematu Logów 3 jego słowo, które schemat JSON Logów też
+wymienia, bo z niego ``tests/test_schemat_logow_wydan.py`` wie, co przyjmują Logi."""
+
+StoredPageId = timing_contract.PageId | Literal["konfiguracja"]
+"""Strona w pliku na dysku taty: strona kontraktu albo strona, której Centrum już nie ma, a którą mają Logi starszych
+Wydań (widok Konfiguracja przed oknem Ustawień). Strona usunięta z kontraktu zostaje tu, bo plik Logów, którego jedna
+linia dziennika działań taty nie przechodzi schematu, nie daje ani karty Uruchomienia, ani odtworzenia; że schemat Logów
+przyjmuje każdą wartość, którą przyjmowało któreś Wydanie, pilnuje ``tests/test_schemat_logow_wydan.py``."""
 
 
 class _Record(BaseModel):
@@ -39,7 +48,7 @@ class ViewOpened(_Record):
 
     at: datetime
     action: Literal["widok"]
-    page: timing_contract.PageId
+    page: StoredPageId
     kind: timing_contract.ViewKind
 
 

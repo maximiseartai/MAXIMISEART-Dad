@@ -66,8 +66,18 @@ telefony na okres.
   3-3-3, stacjonarny 2-3-2-2, z numerem kierunkowym `+48`, `0048` albo `48`
   albo bez) staje się `[telefon]`, a wzmianka ulicy („ul.”, „os.”, „al.”,
   „pl.” z nazwą i numerem domu, z lokalem albo bez) `[ulica]`. Cyfry zaraz po
-  `#` to `NUMER ZL.`, nie telefon. Które formy telefonu strażnik maskuje, a
-  które nie, mówi tabela w sekcji „Telefon: formy i znane granice”.
+  `#` to `NUMER ZL.`, nie telefon, a 9 cyfr od `0` też nie, bo żaden polski
+  numer tak się nie zaczyna, a Wykonawca pisze w raporcie `NUMER ZL.` z zerem
+  z przodu. Które formy telefonu strażnik maskuje, a które nie, mówi tabela w
+  sekcji „Telefon: formy i znane granice”.
+- **Pole numeru zlecenia nie ma maski telefonu** (18.11.2026): pole Logów,
+  które z budowy niesie `NUMER ZL.` (numer Wpisu raportu, numery maila z
+  błędem tematu, numer problemu Wpisania raportów i decyzji Wpisu na
+  życzenie, znacznik `ORDER_NUMBERS` w `client_data`), ma samymi cyframi tylko
+  maskę zakazanej wartości: numer równy wartości `NUMER UMOWY` z przeczytanego
+  pliku. W 40 Logach taty z Archiwum (17.11.2026) 11 Logów Wpisania raportów
+  miało w tych polach `[telefon]` w miejscu numeru z zerem z przodu, więc
+  odtworzenie nie wiedziało, do którego zlecenia szedł Wpis.
 - **Strażnik u producenta, nie w kolejce.** Tam, gdzie powstaje tekst pliku
   Logów i każdej wysyłki (Logi, podgląd Zgłoszenia, Kontrola ilości, podgląd
   Uwagi taty), Centrum szuka w nim każdej zakazanej wartości z plików, które
@@ -327,6 +337,7 @@ trzyma jako liczbę (liczba). Te same formy są danymi testu
 | tekst: z `+48`, `0048` albo `48`, z separatorami albo bez | `48600123456` | `[telefon]` |
 | tekst: stacjonarny 2-3-2-2, ze spacjami albo kreskami, z numerem kierunkowym albo bez | `12 345 67 89` | `[telefon]` |
 | tekst: `+48` w nawiasie | `(+48) 600 123 456` | `(+48) [telefon]` |
+| tekst: 9 cyfr od `0` (`NUMER ZL.` z zerem z przodu) | `014043137` | bez zmian |
 | liczba całkowita z 9 cyframi, także zapisana jako ułamek albo w notacji E | `600123456` | `[telefon]` |
 | liczba całkowita z `48` i 9 cyframi (`+48` albo `0048` zgubione przez format General) | `48600123456` | `[telefon]` |
 
@@ -338,8 +349,9 @@ godziną i adresy IP, a słowo z cyframi to też numer urządzenia w opisie
 technika, więc maska tych form zabierałaby wartości, które nie są telefonem.
 
 Znane granice w drugą stronę, w których strażnik maskuje wartość, która nie
-jest telefonem: liczba z 9 cyframi bez `#` (`NUMER ZL.` ma dziś 8 cyfr) i
-ciąg `48` z 9 cyframi w tekście (np. numer seryjny).
+jest telefonem: liczba z 9 cyframi bez `#` w komórce i w wolnym tekście, gdy
+nie zaczyna się od `0` (`NUMER ZL.` ma dziś 8 cyfr), i ciąg `48` z 9 cyframi w
+tekście (np. numer seryjny). Pole numeru zlecenia tej granicy nie ma.
 
 Bez maski wychodzą ilość, kwota, `NUMER ZL.` z `#` (8 albo 9 cyfr), data, data
 z godziną, liczba z częścią ułamkową i liczba całkowita, która nie ma 9 cyfr

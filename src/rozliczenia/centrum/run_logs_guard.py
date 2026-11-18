@@ -25,7 +25,18 @@ from pydantic.fields import FieldInfo
 
 from rozliczenia.centrum.run_logs import LoggedDiagnosis, RunLog
 from rozliczenia.settlement_period import PERIOD_TOKEN_PATTERN, UNKNOWN_PERIOD
-from rozliczenia.client_data import READ_VALUES, ForbiddenValues, Guarded, LogsText, WithoutSubclasses, guarded, guarded_number, logs_text
+from rozliczenia.client_data import (
+    ORDER_NUMBERS,
+    READ_VALUES,
+    ForbiddenValues,
+    Guarded,
+    LogsText,
+    WithoutSubclasses,
+    guarded,
+    guarded_number,
+    guarded_order_number,
+    logs_text,
+)
 
 
 def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
@@ -36,6 +47,8 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     sprawdza w polu z wartościami z komórek pliku taty albo ze strony efenix (``READ_VALUES``: komórki Kopii wejścia i
     ilości przy zleceniu Wyceny w efenix) w tekście, który pokazuje Excel (``guarded_number``), i liczba z
     zakazaną wartością albo telefonem staje się w całości maską. Liczb, które policzyło narzędzie, nie sprawdza.
+W polu z ``NUMER ZL.`` (``ORDER_NUMBERS``: numer Wpisu raportu i problemów Wpisania raportów) maskuje tylko zakazaną
+wartość (``guarded_order_number``), bo numer zlecenia może wyjść, a 9 cyfr numeru z zerem z przodu ma kształt telefonu.
 
     Strażnik porównuje słowa, a nie pochodzenie wartości, więc wartość z pliku taty równa słowu albo chwili narzędzia
     trafiłaby też w pole, które niesie tylko to, co dało narzędzie. Takich pól (``TOOL_FIELDS``) nie maskuje i zostawia
@@ -60,22 +73,25 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
     def text(value: str, place: str) -> str:
         return noted(guarded(forbidden, value, place or "Logi"), place)
 
+    def order_number(value: str, place: str) -> str:
+        return noted(guarded_order_number(forbidden, value, place), place)
+
     def number(value: int | float, place: str) -> object:
         found = guarded_number(forbidden, value, place)
         return value if found is None else noted(found, place)
 
-    def walk(source: object, value: object, place: str, read: bool) -> object:
+    def walk(source: object, value: object, place: str, read: bool, order: bool = False) -> object:
         """``value`` z JSON-a Logów i ``source``, z którego powstał (``None``: poza modelem Logów); ``read``: w polu
-        ``READ_VALUES``."""
+        ``READ_VALUES``; ``order``: w polu ``ORDER_NUMBERS``."""
 
         if isinstance(value, str):
-            return text(value, place)
+            return order_number(value, place) if order else text(value, place)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             return number(value, place) if read else value
         if isinstance(value, list):
             sources = source if isinstance(source, list) else [None] * len(value)
             return [
-                walk(item, entry, f"{place}[{index}]", read)
+                walk(item, entry, f"{place}[{index}]", read, order)
                 for index, (item, entry) in enumerate(zip(sources, value, strict=True))
             ]
         if isinstance(value, dict):
@@ -86,7 +102,10 @@ def _guarded(record: RunLog, forbidden: ForbiddenValues) -> RunLog:
                     items[key] = _kept(child, entry, f"{type(source).__name__}.{key}", _field(place, key), text)
                     continue
                 marked = field is not None and READ_VALUES in field.metadata
-                items[key if field is not None else text(key, place)] = walk(child, entry, _field(place, key), read or marked)
+                numbered = field is not None and ORDER_NUMBERS in field.metadata
+                items[key if field is not None else text(key, place)] = walk(
+                    child, entry, _field(place, key), read or marked, numbered
+                )
             return items
         return value
 
