@@ -233,7 +233,7 @@ class LoggedFile(_Record):
 
 
 class CentrumLogLines(_Record):
-    """Dziennik Centrum od Logów poprzedniego Uruchomienia do końca tego, bez pomiarów widoku (``CentrumLog.take_for_logs``):
+    """Dziennik Centrum od Logów poprzedniego Uruchomienia do powstania tych, bez pomiarów widoku (``CentrumLog.take_for_logs``):
     każdy wpis jak w pliku dziennika (czas komputera taty, zdarzenie, fakty), po kolei. ``omitted``: wpisy starsze od
     ``log.MAX_FOR_LOGS`` najnowszych."""
 
@@ -637,8 +637,9 @@ class RunLog(StartFacts):
     """Działania taty w Centrum od Logów poprzedniego Uruchomienia do końca tego (``dad_actions``). ``None``: pliki
     schematu 1."""
     centrum_log: CentrumLogLines | None = None
-    """Co Centrum zrobiło od Logów poprzedniego Uruchomienia do końca tego (``CentrumLogLines``): także poza
-    Uruchomieniami, np. Przypomnienia o raporcie, Wysyłka rozliczeń i zmiany Ustawień. ``None``: Logi odtworzenia i pliki
+    """Co Centrum zrobiło od Logów poprzedniego Uruchomienia do powstania tych (``CentrumLogLines``): także poza
+    Uruchomieniami, np. Przypomnienia o raporcie, Wysyłka rozliczeń i zmiany Ustawień. Wpis końca tego Uruchomienia i
+    wysyłki jego Logów powstają po nich, więc są w Logach następnego. ``None``: Logi odtworzenia i pliki
     sprzed tego pola."""
     interruption: LoggedInterruption | None = None
     """Urwana Wycena w efenix (``ending`` ``interrupted``); ``None`` w każdych innych Logach."""
