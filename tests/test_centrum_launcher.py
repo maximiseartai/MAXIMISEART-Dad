@@ -176,8 +176,10 @@ def test_czekanie_na_centrum_bez_odpowiedzi_mowi_po_kolei_kiedy_port_milczal_a_k
         centrum_health(port, timeout_s=3)
     closing.join()
 
+    # Pierwsze pytanie trafia w port, który przyjął połączenie: czeka na odpowiedź do limitu 1 s albo, gdy zamknięcie
+    # po 1,5 s wyprzedzi limit (wolny runner Windows), dostaje ConnectionResetError (#2060). Oba to „połączenie przyjęte”.
     spans = failure.value.__notes__[-1].splitlines()[1:]
-    assert ("bez odpowiedzi" in spans[0], "nikt nie słucha" in spans[-1]) == (True, True), spans
+    assert (spans[0].split(": ", 1)[1].startswith("połączenie przyjęte"), "nikt nie słucha" in spans[-1]) == (True, True), spans
 
 
 def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path: Path) -> None:
