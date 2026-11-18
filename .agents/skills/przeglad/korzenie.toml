@@ -75,6 +75,10 @@ przyklad = 1238
 opis = "Reguła domeny sprawdzana na kilku przykładach bez generatora stanów (test własności), więc stan spoza przykładów ją łamie."
 przyklad = 1374
 
+[R-ELIMINACJA]
+opis = "Reguła rozpoznaje znak jednego znaczenia przez usuwanie zapisów jego innego znaczenia, zamiast nazwać go wprost, więc każdy zapis, którego usuwanie nie zna, przejmuje jego rolę."
+przyklad = 2112
+
 [R-TEST-MNIEJ]
 opis = "Przepisany, przeniesiony albo zastąpiony test lub sprawdzenie gubi przypadek, który łapało na merge-base, a nic tego nie porównuje."
 przyklad = 1215

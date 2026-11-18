@@ -2529,7 +2529,9 @@ def _fill(sheet: Worksheet, row: int, column: int) -> str | None:
 # Reguła tego samego adresu (historyjki 10–17 specu #2079): adres zlecenia i wiersze Bazy z tym adresem zapisanym
 # inaczej, z krótszą albo dłuższą nazwą ulicy i z miastem albo bez niego, które trafiają, obok wierszy, które nie
 # trafiają, bo różnią się mieszkaniem, budynkiem, nazwą ulicy poza jej końcem od granicy słowa, miastem przy miastach w
-# obu wierszach albo nie mają numeru. Miasto zlecenia to ``Miastko`` z atrapy INTERMAX, chyba że jest puste.
+# obu wierszach albo nie mają numeru. Miasto zlecenia to ``Miastko`` z atrapy INTERMAX, chyba że jest puste; miasto
+# z dzielnicą po myślniku to to samo miasto (decyzja Maksa z 18.11.2026), a miasto z tym samym początkiem nazwy albo
+# kodem pocztowym nie.
 _LIPOWA_18_3 = _order(0, "UL. LIPOWA 18/3")
 _LIPOWA_34_2 = _order(1, "UL. LIPOWA 34/2")
 _LIPOWA_34 = _order(2, "UL. LIPOWA 34")
@@ -2580,6 +2582,13 @@ _V: Final = {
     "bez miasta": (ELEVEN, _visit("UL. BRZOZOWA 5", "aa", datetime(2021, 3, 1))),
     "inne miasto przed przecinkiem": (FIVE, _visit("Inne Miasto,Brzozowa 5", "ab", datetime(2019, 4, 1))),
     "miasto przed przecinkiem innej wielkości liter": (FIVE, _visit("miastko,Brzozowa 5", "ac", datetime(2019, 3, 1))),
+    "MIASTO z dzielnicą": (TWELVE, _visit("BRZOZOWA 5", "ad", datetime(2026, 2, 1), city="Miastko-Dzielnica")),
+    "miasto z dzielnicą przed przecinkiem": (FIVE, _visit("Miastko - Dzielnica,Brzozowa 5", "ae", datetime(2019, 2, 1))),
+    "inne miasto z tym samym początkiem": (TWELVE, _visit("BRZOZOWA 5", "af", datetime(2025, 2, 1), city="Miastkowo")),
+    "kod pocztowy w MIASTO": (TWELVE, _visit("BRZOZOWA 5", "ag", datetime(2023, 3, 1), city="11-111 Miastko")),
+    "kod pocztowy innego miasta": (TWELVE, _visit("BRZOZOWA 5", "ah", datetime(2022, 3, 1), city="11-111Inne Miasto")),
+    "miasto od myślnika": (TWELVE, _visit("BRZOZOWA 5", "ai", datetime(2020, 3, 1), city="-Dzielnica")),
+    "MIASTO z samym kodem": (TWELVE, _visit("Inne Miasto,BRZOZOWA 5", "aj", datetime(2019, 1, 1), city="11-111")),
 }
 RULE_BASE: Final = tuple(
     BaseSheet(name, layout, [visit for found, visit in _V.values() if found is layout])
@@ -2600,17 +2609,27 @@ RULE: Final[dict[Order, tuple[str, ...]]] = {
     _KOWALSKIEGO: ("dłuższa nazwa ulicy",),
     _BRZOZOWA: (
         "MIASTO innej wielkości liter",
+        "MIASTO z dzielnicą",
         "MIASTO przed miastem przed przecinkiem",
+        "kod pocztowy w MIASTO",
         "bez miasta",
         "miasto przed przecinkiem innej wielkości liter",
+        "miasto z dzielnicą przed przecinkiem",
     ),
     _BRZOZOWA_BEZ_MIASTA: (
         "MIASTO innej wielkości liter",
+        "MIASTO z dzielnicą",
         "inne MIASTO",
+        "inne miasto z tym samym początkiem",
         "MIASTO przed miastem przed przecinkiem",
+        "kod pocztowy w MIASTO",
+        "kod pocztowy innego miasta",
         "bez miasta",
+        "miasto od myślnika",
         "inne miasto przed przecinkiem",
         "miasto przed przecinkiem innej wielkości liter",
+        "miasto z dzielnicą przed przecinkiem",
+        "MIASTO z samym kodem",
     ),
 }
 """Zlecenie → wiersze Bazy z ``_V``, które trafiają, od najnowszej daty; zlecenie ``_LIPOWA_18_3`` stoi pierwsze w
