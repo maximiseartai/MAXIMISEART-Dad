@@ -382,7 +382,7 @@ def test_w_ruff_mypy_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych() -> Non
 
     assert checks == [
         (check, INDEPENDENT)
-        for check in ("ruff", "pytest", "tools/na_scalonych_pr.py", "mypy", "mypy", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py", "pytest")
+        for check in ("ruff", "pytest", "mypy", "mypy", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py", "pytest", "tools/na_scalonych_pr.py")
     ]
 
 

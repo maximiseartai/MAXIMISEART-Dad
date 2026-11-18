@@ -137,13 +137,6 @@ jobs:
           tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
           tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
 
-      # Each rule of reguly-ast-grep/ still catches every case of its metadata.przypadki.
-      - name: ast-grep rules catch their founding cases
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: python tools/na_scalonych_pr.py --przypadki-regul
-
       - name: Typecheck Python code (Windows)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python -m mypy --platform win32
@@ -172,6 +165,13 @@ jobs:
         env:
           MAXIMISEART_ZAPADKA_BAZA: HEAD^1
         run: python -m pytest -q -rs -n 0 -p no:cacheprovider tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
+
+      # Each rule of reguly-ast-grep/ still catches every case of its metadata.przypadki.
+      - name: ast-grep rules catch their founding cases
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/na_scalonych_pr.py --przypadki-regul
 
   plan:
     # Decides the pytest and Mutation checks jobs of this run (tools/plan_ci.py), from the unit times of the last green
