@@ -677,7 +677,7 @@ def _two_mutations(repo: Path, tmp_path: Path, selected: str, *arguments: str, e
 
     plan = tmp_path / "mutacje.json"
     plan.write_text(json.dumps(TWO_MUTATIONS), encoding="utf-8")
-    return _in_repository(repo, "--baza", "glowna", *arguments, "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected, env=env or ONE_WORKER)
+    return _in_repository(repo, "--baza", "glowna", "--juz-lapie", *arguments, "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected, env=env or ONE_WORKER)
 
 
 def _already_lines(answered: subprocess.CompletedProcess[str], mutations: list[str]) -> list[str]:
@@ -716,11 +716,25 @@ def test_wykryta_mutacja_ktora_lapie_test_sprzed_zmiany_dostaje_juz_lapie_a_werd
     repo, base = _branch_with_new_test(tmp_path, old_at_base, old_in_branch, STRICT_NEW_TEST.format(value=value), value)
     command = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected)
 
-    answered = _in_repository(repo, "--baza", "glowna", "--zmiana", PACKAGE, f"WARTOSC = {value}", f"WARTOSC = {mutated}", "--", *command, env=ONE_WORKER)
+    answered = _in_repository(repo, "--baza", "glowna", "--juz-lapie", "--zmiana", PACKAGE, f"WARTOSC = {value}", f"WARTOSC = {mutated}", "--", *command, env=ONE_WORKER)
 
     found = _already_lines(answered, ["mutacja"])
     expected = [line.format(base=base) for line in lines]
     assert len(found) == len(expected) and all(map(re.fullmatch, expected, found)), answered.stderr
+
+
+def test_bez_juz_lapie_narzedzie_nie_uruchamia_testow_sprzed_zmiany(tmp_path: Path) -> None:
+    """Domyślnie tylko mutacje: test sprzed zmiany, czerwony bez mutacji, nie biegnie ani w podstawie, ani po
+    ``MUTACJE OK``, więc nie ma odmowy ``PODSTAWA CZERWONA`` ani linii ``JUŻ ŁAPIE``."""
+
+    repo, _ = _branch_with_new_test(tmp_path, RED_OLD_TESTS["porazka"], RED_OLD_TESTS["porazka"], STRICT_NEW_TEST.format(value=0), files=WITH_NAME)
+    plan = tmp_path / "mutacje.json"
+    plan.write_text(json.dumps(TWO_MUTATIONS), encoding="utf-8")
+
+    answered = _in_repository(repo, "--baza", "glowna", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER)
+
+    assert _already_lines(answered, ["m1-ujemna", "m2-duza"]) == [], answered.stderr
+    assert "PODSTAWA" not in answered.stdout + answered.stderr, answered.stdout + answered.stderr
 
 
 # Pakiet merge-base ma ``NAZWA``, a gałąź ją usuwa, więc test sprzed zmiany, który jej używa, jest czerwony bez mutacji.
@@ -827,7 +841,7 @@ def test_znane_luki_odmowy_na_czerwonym_tescie_sprzed_zmiany_koncza_sie_mutacje_
     (repo / ".git" / "czasy-ci" / "1.json").write_text(json.dumps({"runy": [{"run": 1}], "tory": {"linux-3.14": lane}}), encoding="utf-8")
 
     answered = _in_repository(
-        repo, "--baza", "glowna", *arguments, "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 7", "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected, env=ONE_WORKER
+        repo, "--baza", "glowna", "--juz-lapie", *arguments, "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 7", "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", selected, env=ONE_WORKER
     )
 
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "MUTACJE OK"), answered.stdout + answered.stderr
@@ -964,7 +978,7 @@ def test_wybory_mutacji_w_roznych_plikach_dziela_limit_podstawy(tmp_path: Path) 
     plan.write_text(json.dumps(mutations), encoding="utf-8")
 
     answered = _in_repository(
-        repo, "--baza", "glowna", "--podstawa-s", "400", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER
+        repo, "--baza", "glowna", "--juz-lapie", "--podstawa-s", "400", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER
     )
 
     assert _already_lines(answered, ["w-pakiecie", "w-innym"]) == [
@@ -987,7 +1001,7 @@ def test_wybor_podstawy_daje_plikom_dalej_niz_obok_mutacji_ten_sam_budzet(tmp_pa
     (repo / ".git" / "czasy-ci" / "1.json").write_text(json.dumps({"runy": [{"run": 1}], "tory": {"linux-3.14": lane}}), encoding="utf-8")
 
     answered = _in_repository(
-        repo, "--baza", "glowna", "--podstawa-s", "300", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = -1",
+        repo, "--baza", "glowna", "--juz-lapie", "--podstawa-s", "300", "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = -1",
         "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER,
     )
 
@@ -1006,7 +1020,7 @@ def test_mutacja_z_oczekiwana_linia_nie_dostaje_juz_lapie(tmp_path: Path) -> Non
     plan = tmp_path / "mutacje.json"
     plan.write_text(json.dumps([{"nazwa": "z linia", "zmiany": [[PACKAGE, "WARTOSC = 0", "WARTOSC = 7"]], "oczekiwane": "1 failed"}]), encoding="utf-8")
 
-    answered = _in_repository(repo, "--baza", "glowna", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER)
+    answered = _in_repository(repo, "--baza", "glowna", "--juz-lapie", "--plik", str(plan), "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py", env=ONE_WORKER)
 
     assert _already_lines(answered, ["z linia"]) == [], answered.stderr
 
