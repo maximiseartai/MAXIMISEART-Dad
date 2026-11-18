@@ -131,6 +131,14 @@ jobs:
           tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
           tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
 
+      # A weed rule has no owner right in a comment (ADR 0036): no ast-grep-ignore and no noqa of a banned name anywhere.
+      - name: Weed rules without suppressions
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: >-
+          python -m pytest -q -rs -n 0 -p no:cacheprovider
+          tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
+          tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff
+
       - name: Typecheck Python code (Windows)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python -m mypy --platform win32

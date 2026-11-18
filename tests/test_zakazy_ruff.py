@@ -600,15 +600,6 @@ def _release_content_findings(*arguments: str, code: str | None = None) -> list[
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_tresc_z_wydania_w_src_tylko_u_wlascicieli_takze_z_noqa() -> None:
-    """``# noqa: TID251`` przy imporcie ``DEFAULT_*`` byłoby drugą drogą do treści z Wydania obok właściciela Ustawień
-    (#2053 r1 D1), więc te zakazy biegną tu z ``--ignore-noqa``; właściciele przechodzą tylko dzięki prawu właściciela
-    w konfiguracji ruff, a że używają tylko swoich nazw, sprawdza ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw``."""
-
-    assert _release_content_findings("src") == [], "treść z Wydania bierz od właściciela Ustawień, bez noqa"
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_noqa_nie_zwalnia_z_zakazu_tresci_z_wydania_a_wlasciciel_jest_zwolniony() -> None:
     probe = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_zakazu.py"
     owner = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "settings" / "settlement_mail.py"
@@ -619,10 +610,8 @@ def test_noqa_nie_zwalnia_z_zakazu_tresci_z_wydania_a_wlasciciel_jest_zwolniony(
     assert _release_content_findings("--stdin-filename", str(owner), "-", code=RELEASE_CONTENT_PROBE) == []
 
 
-# Właściciel importu w trakcie działania poza tests/: jedyny plik z prawem do jego dróg (OWNERS).
-DYNAMIC_IMPORT_OWNER = ROOT / "tools" / "lib" / "import_dynamiczny.py"
-# Zakazy importu w trakcie działania w pyproject.toml (i jego kopiach poza tests/ruff.toml), które testy niżej
-# uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie komunikatu, żeby nowy zakaz o innym brzmieniu nie wypadł z niej.
+# Zakazy importu w trakcie działania w pyproject.toml (i jego kopiach poza tests/ruff.toml): lista nazw, nie dopasowanie
+# komunikatu, żeby nowy zakaz o innym brzmieniu nie wypadł z niej.
 # Nazwy pakietu importlib wynikają z biblioteki działającego Pythona (test nazw niżej); reszta to moduły, których zadaniem
 # jest import albo wykonanie modułu. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po
 # nazwie, są znaną luką z próbkami w ZNANE_LUKI_IMPORTU, nie pełną listą.
@@ -660,14 +649,6 @@ IMPORTLIB_DOZWOLONE = {
         "droga stoi próbką „dozwolona nazwa importlib” w ZNANE_LUKI_IMPORTU"
     ),
 }
-DYNAMIC_IMPORT_PROBE = 'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")  # noqa: TID251 - sonda\n'
-
-
-def _dynamic_imports(*arguments: str, code: str | None = None) -> list[str]:
-    """``plik`` każdego zakazu z ``DYNAMIC_IMPORT``, który ``ruff check`` z ``--ignore-noqa`` zgłasza poza ``tests/``."""
-    return sorted(
-        {name for name, banned in _banned_names(*arguments, code=code) if banned in DYNAMIC_IMPORT and not name.startswith("tests/")}
-    )
 
 
 def test_kazdy_zakaz_importu_w_trakcie_dzialania_jest_na_liscie_dynamic_import() -> None:
@@ -697,23 +678,6 @@ def test_kazda_nazwa_pakietu_importlib_jest_zakazana_albo_dozwolona_z_powodem() 
         "i próbką w ZNANE_LUKI_IMPORTU, gdy kod poza tests/ jej potrzebuje"
     )
     assert sorted(IMPORTLIB_DOZWOLONE.keys() - names) == [], "IMPORTLIB_DOZWOLONE wymienia nazwę, której importlib nie ma"
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa() -> None:
-    """``# noqa: TID251`` przy ``importlib.import_module`` byłoby drugą drogą obok właściciela, który odmawia modułu z
-    ``tests/``, więc te zakazy biegną z ``--ignore-noqa`` na całym kodzie, który ruff sprawdza; ``tests/`` importuje w
-    trakcie działania własne moduły i ma je poza zakazem."""
-
-    assert _dynamic_imports() == [], "import w trakcie działania bierz z tools/lib/import_dynamiczny.py, bez noqa"
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_noqa_nie_zwalnia_z_zakazu_importu_w_trakcie_dzialania_a_wlasciciel_jest_zwolniony() -> None:
-    probe = ROOT.joinpath(*TOOLS_PROBE, "sonda_zakazu.py")
-
-    assert _dynamic_imports("--stdin-filename", str(probe), "-", code=DYNAMIC_IMPORT_PROBE) == ["tools/lib/sonda_zakazu.py"]
-    assert _dynamic_imports("--stdin-filename", str(DYNAMIC_IMPORT_OWNER), "-", code=DYNAMIC_IMPORT_PROBE) == []
 
 
 # Znane luki zakazu importu w trakcie działania (tests/fixtures/znane_luki.py): „klasa: postać” → moduł narzędzi, który
@@ -859,15 +823,6 @@ def test_kazdy_zakaz_zegara_jest_na_liscie_clock() -> None:
 
     assert sorted(clock - set(CLOCK)) == [], "dopisz zakaz zegara do CLOCK w tests/test_zakazy_ruff.py"
     assert sorted(set(CLOCK) - banned.keys()) == [], "CLOCK wymienia zakaz, którego nie ma w src/ruff.toml"
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa() -> None:
-    """``# noqa: TID251`` przy ``datetime.now`` byłoby drugą drogą do zegara obok właściciela (#1371), więc zakazy zegara
-    biegną tu z ``--ignore-noqa``; właściciel przechodzi tylko dzięki prawu właściciela w konfiguracji ruff, a że inny
-    plik z takim prawem nie używa zegara, sprawdza ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw``."""
-
-    assert _clock_findings("src") == [], "teraz i dzień taty bierz z rozliczenia.wall_clock, bez noqa i bez import *"
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")

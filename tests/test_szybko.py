@@ -53,10 +53,6 @@ BY_CHANGE_ONLY = {
         "sprawdza plugin na sesjach próbek w katalogu tymczasowym, a nie całe repozytorium: sam plugin conftest stawia "
         "przy każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/stan_procesu.py, który importuje"
     ),
-    "tests/test_zakazy_ruff.py::test_import_w_trakcie_dzialania_poza_testami_tylko_u_wlasciciela_takze_z_noqa": (
-        "graf wybiera jego plik przy zmianie plików konfiguracji ruff i tools/lib/import_dynamiczny.py, a w STRUCTURE "
-        "przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py: 33 przy limicie 32)"
-    ),
     "tests/test_prywatne_skladowe.py::test_prywatna_skladowa_ustawien_w_module_centrum_pada_w_ruff": (
         "sprawdza ruff SLF001 na próbce modułu Centrum w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
     ),
@@ -110,14 +106,6 @@ BY_CHANGE_ONLY = {
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
         "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_tresc_z_wydania_w_src_tylko_u_wlascicieli_takze_z_noqa": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
-        "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_zegar_scienny_w_src_tylko_u_wlasciciela_takze_z_noqa": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ (rglob na src w teście konfiguracji obok) i plików "
-        "konfiguracji ruff, a w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
 }
 
@@ -173,6 +161,8 @@ RULE_GUARDS = frozenset(
     tests/test_zapadki.py::test_reczny_parser_pythona_stoi_tylko_w_plikach_z_wpisu
     tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
     tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
+    tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
+    tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff
     """.split()
 )
 
