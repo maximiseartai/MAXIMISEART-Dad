@@ -10,6 +10,9 @@ files:
   - src/**/*.py
   - src/**/*.pyi
   - src/**/*.py3
+metadata:
+  przypadki:
+    - 898eaceae3c13196690a84cf06c123bd9b64993c src/rozliczenia/centrum/run_logs_guard.py:155
 rule:
   # Docstring: węzeł napisu (string, także f, r i b, albo concatenated_string) jako całe pierwsze wyrażenie modułu,
   # funkcji albo klasy, komentarze przed nim się nie liczą. Regex czyta tekst źródła węzła, nie wartość napisu, więc

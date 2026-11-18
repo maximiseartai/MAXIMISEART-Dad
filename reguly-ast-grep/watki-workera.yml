@@ -11,9 +11,12 @@ ignores:
   - tests/fixtures/linie_watkow.py
   - tests/test_zakazy_ruff.py
   - tests/test_zapadki.py
+metadata:
+  przypadki:
+    - 0e304aec7661ebd87405895202a851cf5337db3c tests/test_jedno_uruchomienie_naraz.py:56
 rule:
   # Wątki procesu workera pytest poza linie_watkow, jak monkeypatch.setattr(threading.Thread, "start", counted)
-  # w 0e304aec7 (#633). W kodzie threading.Thread.start i threading.active_count odrzuca ruff TID251 (tests/ruff.toml),
+  # w commicie z metadata.przypadki (#633). W kodzie threading.Thread.start i threading.active_count odrzuca ruff TID251 (tests/ruff.toml),
   # ale nie na linii z # noqa: TID251, nie w napisie i nie pod samą nazwą z from-importu. Reguła czyta tekst węzłów,
   # nie ich rodzaj, więc odstępy i łamanie wokół kropki ani wyrażenie pośrednie nie zmieniają wyniku.
   # threading.enumerate, sys._current_frames, threading._active, klasa wątku w zmiennej i podmiana run albo __init__

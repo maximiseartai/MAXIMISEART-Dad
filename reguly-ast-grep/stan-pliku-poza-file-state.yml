@@ -9,6 +9,9 @@ files:
   - src/**/*.py
 ignores:
   - src/rozliczenia/file_state.py
+metadata:
+  przypadki:
+    - 3713b4c1b2cc0a25ec5f458f1cf4daf3e687c8c6 src/rozliczenia/intermax_replace.py:171
 rule:
   # Reguła czyta trzy postacie: wywołanie metody exists, is_file albo is_dir bez argumentów na dowolnym obiekcie (na
   # Path i na wpisie os.DirEntry), także z odstępami albo złamaniem linii w nawiasie; wywołanie exists, lexists, isfile
