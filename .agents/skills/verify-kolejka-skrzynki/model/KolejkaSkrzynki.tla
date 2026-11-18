@@ -69,6 +69,8 @@ CONSTANTS
     Diagnoza,       \* wysyłka 2 to nowsza wersja wysyłki 1 (ten sam run_id i etykieta: Logi po Diagnozie,
                     \* run_comments.py RunComments.diagnosed), a nie osobna wysyłka
     Archiwum,       \* wysyłka niesie plik do Archiwum okresu (outbox.py Post.archive, ArchiveFile: Logi Uruchomienia)
+    Wzorzec,        \* plik do Archiwum niesie też Wzorzec (ArchiveFile.templates, template_archive.ArchivedTemplate):
+                    \* ten sam w każdej wysyłce, bo nazwa w Archiwum to skrót jego bajtów (wzorzec-<SHA-256>.xlsx)
     MaxOdmowArchiwum, \* Refused albo Rejected z kroku Archiwum (Token bez uprawnienia do treści repozytorium): ArchiveWaits
     PusteRepo,      \* repozytorium Skrzynki bez commitu przez cały przebieg: GitHub odpowiada 409 „Git Repository is
                     \* empty.” na każde założenie Archiwum (report_box.py GitHubReportBox.open_archive: Rejected)
@@ -96,6 +98,8 @@ ASSUME Postep => Diagnoza /\ Archiwum
 \* Wersja zastępcza to wersja Logów z plikiem do Archiwum (run_comments.py RunComments.send_left_behind) po Logach z
 \* wynikiem.
 ASSUME StarszaPozniej => Diagnoza /\ Archiwum /\ ~Postep
+\* Wzorce niosą tylko Logi z pracy Centrum (comment_versions.py OwnLogs): postęp i wersja zastępcza ich nie mają.
+ASSUME Wzorzec => Archiwum /\ ~Postep /\ ~StarszaPozniej
 
 W == 1..Wysylek
 \* Identyfikator wysyłki w (etykieta i run_id w znaczniku): przy Diagnozie wysyłka 2 to wersja wysyłki 1.
@@ -168,6 +172,9 @@ VARIABLES
     przez,         \* kolejka, której post zapisuje wysyłkę w
     zakolejkowane, \* wysyłki, dla których post zwrócił True (plik "czeka" na dysku)
     odrzucone,     \* duch: wysyłki, których treść Skrzynka kiedyś odrzuciła (Rejected)
+    wzorce,        \* ile plików Wzorca (jednej nazwy) jest w Archiwum okresu; GitHub nie trzyma dwóch plików jednej
+                   \* nazwy, więc upload, gdy Wzorzec już jest, to Rejected
+    wzCzeka,       \* outbox.py _deliver_archive: template_waits, Archiwum nie przyjęło Wzorca w tym kroku Archiwum
     podwojny,      \* duch: kolejka usunęła z Archiwum plik wysyłki w wersji, którą wysyła, albo nowszej, czyli wyśle
                    \* plik drugi raz (_deliver_archive usuwa tylko plik starszej wersji)
     \* Awarie, które już się zdarzyły.
@@ -177,8 +184,8 @@ VARIABLES
 
 dysk == <<plik, tmp>>
 watek == <<pc, draining, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, czytane, biez, nr, kom,
-           bezZnacznika, arch, po, odmowaArch>>
-archiwa == <<archiwum, wydania, podwojny>>
+           bezZnacznika, arch, po, odmowaArch, wzCzeka>>
+archiwa == <<archiwum, wydania, podwojny, wzorce>>
 nadawanie == <<nadawca, przez, zakolejkowane, odrzucone>>
 awarie == <<sieci, zgubione, odmowy, odmowyArchiwum, bledyPliku, wylaczenia>>
 opoznienie == <<niewidoczne, zakladanie, pamiec, odczyt, wydanieNiewidoczne, pamiecWydania, falszywe>>
@@ -192,7 +199,7 @@ ZnaneZnaleziska == {}
 Rodzaje == {"issue", "archiwum"}
 
 Kroki == {"spi", "petla", "plik", "szukaj", "czytaj", "zaloz", "komentuj", "dostarczona", "zamiana", "usun", "zwolnij",
-          "decyzja", "archiwum", "wydanie", "usunplik", "wyslij"}
+          "decyzja", "archiwum", "wydanie", "wzorzec", "usunplik", "wyslij"}
 Para == (0..Wysylek) \X (0..Najwiecej)
 Zapisy == {"dopisz", "popraw", "wycofaj"}
 
@@ -200,7 +207,8 @@ TypeOK ==
     /\ plik \in [W -> {"nadejdzie", "przepadl", "czeka", "skomentowany", "oznaczony", "usuniety"}]
     /\ tmp \subseteq W
     /\ issues \in Seq([klucz : {"L", "N", "Z"}, tresc : Seq(Para)])
-    /\ archiwum \in Seq(W) /\ wydania \in Nat /\ podwojny \in BOOLEAN
+    /\ archiwum \in Seq(W) /\ wydania \in Nat /\ podwojny \in BOOLEAN /\ wzorce \in Nat
+    /\ wzCzeka \in [Q -> BOOLEAN]
     /\ arch \in [Q -> {"brak", "jest", "czeka"}] /\ po \in [Q -> {"zaloz", "komentuj", "dostarczona"}]
     /\ odmowaArch \in [Q -> BOOLEAN]
     /\ zyje \in [Q -> {"nie", "tak", "zamkniety"}]
@@ -229,7 +237,7 @@ Init ==
     /\ tmp = {}
     \* KnownIssue: issue Uwagi taty, do którego idzie odnośnik do Logów, już jest (numer 1).
     /\ issues = IF Cel = "znane" THEN <<[klucz |-> "Z", tresc |-> <<<<0, 0>>>>]>> ELSE <<>>
-    /\ archiwum = <<>> /\ wydania = 0 /\ podwojny = FALSE
+    /\ archiwum = <<>> /\ wydania = 0 /\ podwojny = FALSE /\ wzorce = 0 /\ wzCzeka = [q \in Q |-> FALSE]
     /\ arch = [q \in Q |-> "brak"] /\ po = [q \in Q |-> "dostarczona"] /\ odmowaArch = [q \in Q |-> FALSE]
     /\ zyje = [q \in Q |-> "nie"]
     /\ pc = [q \in Q |-> "spi"]
@@ -284,7 +292,7 @@ Ma(i, w, k) == \E j \in 1..Len(issues[i].tresc) :
 WIssue(w) == \E i \in 1..Len(issues) : \A k \in 1..Liczba(w) : Ma(i, w, k)
 \* Pliki wysyłki w w Archiwum (każda wersja) i czy jest wśród nich plik w tej wersji albo nowszej.
 Pliki(w) == {i \in 1..Len(archiwum) : Id(archiwum[i]) = Id(w)}
-WArchiwum(w) == ~MaPlik(w) \/ \E i \in Pliki(w) : Nr(archiwum[i]) >= Nr(w)
+WArchiwum(w) == ~MaPlik(w) \/ ((\E i \in Pliki(w) : Nr(archiwum[i]) >= Nr(w)) /\ (Wzorzec => wzorce > 0))
 \* Wysyłka w jest w Skrzynce cała: każda część w issue i plik w Archiwum.
 Dostarczona(w) == WIssue(w) /\ WArchiwum(w)
 \* Wysyłka w ma w kolejce nowszą wersję (Diagnoza): jej plik może zniknąć bez swoich części, bo Skrzynce należy się
@@ -433,7 +441,7 @@ Petla(q) ==
             /\ UNCHANGED <<blokada, lista, czytane, nieczytany, bezBlokady, odmowaArch>>
             /\ Idz(q, "decyzja", "_drain: _claimed zastaje przejscie innej kolejki, prosi o nastepne")
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, stopped, undeleted, rejected, biez, nr, kom,
-                   bezZnacznika, arch, po, zamkniecia, nadawanie, awarie, slady>>
+                   bezZnacznika, arch, po, wzCzeka, zamkniecia, nadawanie, awarie, slady>>
 
 \* outbox.py _superseded: przejście odczytało na początku (_read) plik nowszej wersji tej samej wysyłki (ten sam cel i
 \* run_id: Id), poza _rejected i _undeleted, także plik przed w na liście (wersja zastępcza po Logach z wynikiem).
@@ -514,6 +522,7 @@ Plik(q) ==
                          /\ UNCHANGED <<czytane, nieczytany, bledyPliku, slady, po>>
                          \* _deliver: każdy cel najpierw pyta Skrzynkę o issue z etykietą.
                          /\ Idz(q, "szukaj", "_deliver: wysylka z pliku")
+    /\ UNCHANGED <<wzCzeka>>
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, nr, kom, bezZnacznika,
                    odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia>>
@@ -578,7 +587,7 @@ Szukaj(q) == \E zna \in OdczytyZapisow :
                   /\ Idz(q, "czytaj", "labelled_issues: jest issue ze znacznikiem tej Uwagi, _settle z reszta czesci")
     /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, wydanieNiewidoczne, pamiecWydania, falszywe>>
     /\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, bezZnacznika,
-                   arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
+                   arch, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia>>
 
 \* Co _settle robi z częścią k wysyłki w w issue i: "jest", gdy znacznik tej części stoi w treści issue albo w
@@ -626,7 +635,7 @@ Czytaj(q) ==
              THEN PoArchiwum(q, "dostarczona", "comments: kazda czesc juz jest w Skrzynce, Delivered")
              ELSE PoArchiwum(q, "komentuj", "comments: brakujace czesci komentarzami, starsza wersja poprawka, _RETIRED")
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, bezZnacznika,
-                   arch, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
+                   arch, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    odmowyArchiwum, bledyPliku, wylaczenia, slady>>
 
 \* keyed_box.py KeyedBox.open_issue, wołane przez outbox.py _deliver_new_issue, _deliver_open_issue i
@@ -683,7 +692,7 @@ Zaloz(q) ==
           /\ odmowy' = odmowy + 1 /\ odrzucone' = odrzucone \cup {w}
           /\ Odrzuc(q, w, "open_issue: Rejected, plik zakladania jak przed zapisem, plik czeka do nastepnego startu")
           /\ UNCHANGED <<issues, nr, kom, stopped, nieczytany, sieci, zgubione, slady, bledyPliku, opoznienie>>
-    /\ UNCHANGED <<dysk, archiwa, zyje, draining, again, armed, undeleted, lista, czytane, biez, bezZnacznika, arch, po, odmowaArch,
+    /\ UNCHANGED <<dysk, archiwa, zyje, draining, again, armed, undeleted, lista, czytane, biez, bezZnacznika, arch, po, odmowaArch, wzCzeka,
                    passes, blokada, bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, odmowyArchiwum, wylaczenia>>
 
 \* keyed_box.py KeyedBox.comment (_comment_all, _settle przez _put) albo KeyedBox.edit_comment (_put: komentarz
@@ -719,11 +728,30 @@ Komentuj(q) ==
           /\ odmowy' = odmowy + 1 /\ odrzucone' = odrzucone \cup {w}
           /\ Odrzuc(q, w, zapytanie \o ": Rejected, plik czeka do nastepnego startu")
           /\ UNCHANGED <<issues, kom, stopped, nieczytany, sieci, zgubione>>
+    /\ UNCHANGED <<wzCzeka>>
     /\ UNCHANGED <<opoznienie, dysk, archiwa, zyje, draining, again, armed, undeleted, lista, czytane, biez, nr, bezZnacznika, arch, po,
                    odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawca, przez, zakolejkowane, odmowyArchiwum,
                    bledyPliku, wylaczenia, slady>>
 
 \* --- Archiwum okresu: outbox.py _deliver_archive ------------------------------
+
+\* outbox.py _deliver_logs_file: plik Logów po Wzorcach, z tej samej listy plików Archiwum (lista plików nie ma tu
+\* opóźnienia, więc to stan Archiwum). Plik tej wysyłki w tej wersji albo nowszej zostaje (_asset_version z etykiety), plik
+\* starszej wersji ustępuje (remove), a bez pliku upload. ``czeka``: Wzorzec czekał w tym kroku (template_waits), więc plik
+\* Logów, który jest, daje ArchiveWaits(logs=False) zamiast InArchive.
+PlikLogow(q, czeka) ==
+    LET w == biez[q]
+        moje == Pliki(w)
+    IN
+    IF \E i \in moje : Nr(archiwum[i]) >= Nr(w)
+    THEN /\ arch' = Ustaw(arch, q, IF czeka THEN "czeka" ELSE "jest")
+         /\ Idz(q, po[q], IF czeka THEN "archive: plik jest, Wzorzec czeka, ArchiveWaits(logs=False)"
+                                   ELSE "archive: plik jest w tej wersji albo nowszej, InArchive")
+    ELSE IF moje /= {}
+    THEN /\ UNCHANGED arch
+         /\ Idz(q, "usunplik", "archive: plik starszej wersji ustepuje, remove")
+    ELSE /\ UNCHANGED arch
+         /\ Idz(q, "wyslij", "archive: pliku nie ma, upload")
 
 \* Kroki Archiwum kończą się „jest” albo „czeka” i przechodzą do po[q]; brak sieci zatrzymuje przejście (Stop). Odmowa
 \* (Refused: brak uprawnienia do treści repozytorium; Rejected: treść) każdego kroku to ArchiveWaits (Czeka).
@@ -731,10 +759,8 @@ Komentuj(q) ==
 \* _deliver_archive; przy archive_open = False (_archive_refused) ArchiveWaits bez pytania. Plik tej wysyłki w tej wersji
 \* albo nowszej zostaje (_asset_version z etykiety), plik starszej wersji ustępuje (remove), a bez pliku upload.
 CzytajArchiwum(q) ==
-    LET w == biez[q]
-        moje == Pliki(w)
-    IN
     /\ pc[q] = "archiwum"
+    /\ wzCzeka' = Ustaw(wzCzeka, q, FALSE)
     /\ IF odmowaArch[q]
        THEN /\ UNCHANGED <<sieci, odmowyArchiwum, stopped, nieczytany, bledyPliku>>
             /\ UNCHANGED odczyt
@@ -758,17 +784,44 @@ CzytajArchiwum(q) ==
                /\ IF wydania = 0 \/ (wydanieNiewidoczne /\ ~(zna /\ pamiecWydania))
                   THEN /\ UNCHANGED arch
                        /\ Idz(q, "wydanie", "archive: brak Archiwum okresu na liscie, open_archive")
-                  ELSE IF \E i \in moje : Nr(archiwum[i]) >= Nr(w)
-                  THEN /\ arch' = Ustaw(arch, q, "jest")
-                       /\ Idz(q, po[q], "archive: plik jest w tej wersji albo nowszej, InArchive")
-                  ELSE IF moje /= {}
+                  ELSE IF Wzorzec /\ wzorce = 0
                   THEN /\ UNCHANGED arch
-                       /\ Idz(q, "usunplik", "archive: plik starszej wersji ustepuje, remove")
-                  ELSE /\ UNCHANGED arch
-                       /\ Idz(q, "wyslij", "archive: pliku nie ma, upload")
+                       /\ Idz(q, "wzorzec", "archive: Wzorca nie ma w Archiwum, upload Wzorca przed plikiem Logow")
+                  ELSE PlikLogow(q, FALSE)
     /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, wydanieNiewidoczne, pamiecWydania, falszywe, dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
                    bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, zgubione, odmowy,
                    wylaczenia, slady>>
+
+\* keyed_box.py KeyedBox.upload Wzorca w outbox.py _deliver_template, przed plikiem Logów: nazwa to skrót bajtów, więc
+\* Wzorzec, który już jest, zostaje (CzytajArchiwum tu nie idzie), a upload, gdy GitHub już ma plik tej nazwy (druga
+\* kolejka), to Rejected. Odmowa Wzorca (Refused, Rejected) nie zatrzymuje pliku Logów: template_waits, a krok idzie do
+\* pliku Logów (PlikLogow). Wzorca urwanego w trakcie wysyłki (Asset.uploaded False) model nie ma, jak pliku Logów.
+WyslijWzorzec(q) ==
+    /\ pc[q] = "wzorzec"
+    /\ \/ /\ wzorce = 0
+          /\ wzorce' = 1
+          /\ UNCHANGED <<sieci, zgubione, odmowyArchiwum, stopped, nieczytany, wzCzeka>>
+          /\ PlikLogow(q, FALSE)
+       \/ /\ wzorce > 0
+          /\ wzCzeka' = Ustaw(wzCzeka, q, TRUE)
+          /\ UNCHANGED <<wzorce, sieci, zgubione, odmowyArchiwum, stopped, nieczytany>>
+          /\ PlikLogow(q, TRUE)
+       \/ /\ sieci < MaxBrakSieci
+          /\ sieci' = sieci + 1
+          /\ UNCHANGED <<wzorce, zgubione, odmowyArchiwum, arch, wzCzeka>>
+          /\ Stop(q, "upload Wzorca: Unreachable przed skutkiem, przejscie staje")
+       \/ /\ zgubione < MaxZgubionych /\ wzorce = 0
+          /\ zgubione' = zgubione + 1 /\ wzorce' = 1
+          /\ UNCHANGED <<sieci, odmowyArchiwum, arch, wzCzeka>>
+          /\ Stop(q, "upload Wzorca: Skrzynka przyjmuje Wzorzec, odpowiedz ginie, przejscie staje")
+       \/ /\ odmowyArchiwum < MaxOdmowArchiwum
+          /\ odmowyArchiwum' = odmowyArchiwum + 1
+          /\ wzCzeka' = Ustaw(wzCzeka, q, TRUE)
+          /\ UNCHANGED <<wzorce, sieci, zgubione, stopped, nieczytany>>
+          /\ PlikLogow(q, TRUE)
+    /\ UNCHANGED <<opoznienie, dysk, issues, archiwum, wydania, podwojny, zyje, draining, again, armed, undeleted, rejected,
+                   lista, czytane, biez, nr, kom, bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia,
+                   nadawanie, odmowy, bledyPliku, wylaczenia, slady>>
 
 \* report_box.py GitHubReportBox.open_archive: 409 „Git Repository is empty.” to Rejected, a _deliver_archive daje z niego
 \* ArchiveWaits: części idą z dopiskiem, a przejście idzie dalej do następnych plików.
@@ -791,7 +844,7 @@ ZalozArchiwum(q) ==
           /\ wydania' = wydania + 1 /\ wydanieNiewidoczne' = zaListe /\ pamiecWydania' = IF zaListe THEN TRUE ELSE pamiecWydania
           /\ Zapis(q, "archiwum", TRUE)
           /\ UNCHANGED <<sieci, zgubione, odmowyArchiwum, stopped, nieczytany, arch, niewidoczne, pamiec, falszywe>>
-          /\ Idz(q, "wyslij", "open_archive: Archive bez plikow, upload")
+          /\ Idz(q, IF Wzorzec THEN "wzorzec" ELSE "wyslij", "open_archive: Archive bez plikow, upload Wzorca, potem pliku Logow")
        \/ /\ ~Wstrzymane(q, "archiwum") /\ ~PusteRepo /\ wydania > 0
           /\ falszywe' = TRUE
           /\ UNCHANGED <<wydania, sieci, zgubione, odmowyArchiwum, niewidoczne, zakladanie, pamiec, odczyt,
@@ -816,8 +869,8 @@ ZalozArchiwum(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<wydania, sieci, zgubione, stopped, nieczytany, opoznienie>>
           /\ Czeka(q, "open_archive: Refused albo Rejected, ArchiveWaits")
-    /\ UNCHANGED <<dysk, issues, archiwum, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
-                   bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
+    /\ UNCHANGED <<dysk, issues, archiwum, podwojny, wzorce, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
+                   bezZnacznika, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
 \* keyed_box.py KeyedBox.remove pliku starszej wersji w _deliver_archive, przed upload tej wersji. Duch podwojny: usunięty
@@ -843,8 +896,9 @@ UsunPlik(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<archiwum, podwojny, sieci, zgubione, stopped, nieczytany>>
           /\ Czeka(q, "remove: Refused, ArchiveWaits")
+    /\ UNCHANGED <<wzorce>>
     /\ UNCHANGED <<opoznienie, dysk, issues, wydania, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
-                   bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
+                   bezZnacznika, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
 \* keyed_box.py KeyedBox.upload pliku tej wersji (etykieta z wersją, _asset_label) w _deliver_archive. GitHub nie
@@ -857,9 +911,9 @@ WyslijPlik(q) ==
     /\ pc[q] = "wyslij"
     /\ \/ /\ ~zajety
           /\ archiwum' = wyslany
-          /\ arch' = Ustaw(arch, q, "jest")
+          /\ arch' = Ustaw(arch, q, IF wzCzeka[q] THEN "czeka" ELSE "jest")
           /\ UNCHANGED <<sieci, zgubione, odmowyArchiwum, stopped, nieczytany>>
-          /\ Idz(q, po[q], "upload: Asset, InArchive")
+          /\ Idz(q, po[q], IF wzCzeka[q] THEN "upload: Asset, Wzorzec czeka, ArchiveWaits(logs=False)" ELSE "upload: Asset, InArchive")
        \/ /\ zajety
           /\ UNCHANGED <<archiwum, sieci, zgubione, odmowyArchiwum, stopped, nieczytany>>
           /\ Czeka(q, "upload: Rejected (plik tej nazwy juz jest), ArchiveWaits")
@@ -875,8 +929,9 @@ WyslijPlik(q) ==
           /\ odmowyArchiwum' = odmowyArchiwum + 1
           /\ UNCHANGED <<archiwum, sieci, zgubione, stopped, nieczytany>>
           /\ Czeka(q, "upload: Refused, ArchiveWaits")
+    /\ UNCHANGED <<wzorce>>
     /\ UNCHANGED <<opoznienie, dysk, issues, wydania, podwojny, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom,
-                   bezZnacznika, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
+                   bezZnacznika, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, odmowy, bledyPliku,
                    wylaczenia, slady>>
 
 \* outbox.py _send_all po Delivered: _stopped_on = None, listener.delivered (i post jego wysyłek), _first_comments,
@@ -910,6 +965,7 @@ Znacznik(q) ==
                /\ UNCHANGED tmp
                /\ IF czeka THEN Idz(q, "plik", "znacznik czesci: write_text pliku .json.tmp rzuca OSError (suppress)")
                   ELSE Idz(q, "usun", "znacznik: write_text pliku .json.tmp rzuca OSError (suppress), _remove")
+    /\ UNCHANGED <<wzCzeka>>
     /\ UNCHANGED <<opoznienie, plik, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, nr, kom, arch, po,
                    passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy, odmowyArchiwum,
                    wylaczenia, slady>>
@@ -939,7 +995,7 @@ Zamiana(q) ==
           /\ UNCHANGED <<plik, bledyPliku>>
           /\ Idz(q, dalej, "znacznik: pliku .json.tmp juz nie ma, os.replace rzuca OSError (suppress)")
     /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr,
-                   kom, arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione,
+                   kom, arch, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione,
                    odmowy, odmowyArchiwum, wylaczenia, slady>>
 
 \* outbox.py Outbox._remove: path.unlink(missing_ok=True); OSError (Windows, antywirus, OneDrive trzyma
@@ -958,7 +1014,7 @@ Usun(q) ==
           /\ UNCHANGED plik
           /\ Idz(q, "plik", "_remove: unlink rzuca OSError, plik zostaje, nazwa w _undeleted")
     /\ UNCHANGED <<opoznienie, tmp, issues, archiwa, zyje, draining, again, armed, stopped, nieczytany, rejected, lista, czytane, biez, nr, kom,
-                   arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy,
+                   arch, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia, slady>>
 
 \* outbox.py Outbox._drain po _send_all: koniec bloku _folder_lock (zamknięcie pliku zwalnia blokadę, gdy jest
@@ -971,7 +1027,7 @@ Zwolnij(q) ==
     /\ passes' = Ustaw(passes, Proc(q), "wolny")
     /\ Idz(q, "decyzja", "_drain: koniec _folder_lock, _released")
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, draining, armed, stopped, nieczytany, bezBlokady, undeleted, rejected,
-                   lista, czytane, biez, nr, kom, bezZnacznika, arch, po, odmowaArch, zamkniecia, nadawanie, awarie, slady>>
+                   lista, czytane, biez, nr, kom, bezZnacznika, arch, po, odmowaArch, wzCzeka, zamkniecia, nadawanie, awarie, slady>>
 
 \* outbox.py Outbox._drain pod self._changed: z _again następne przejście; bez niego _draining = False
 \* i, gdy przejście stanęło (_stopped_on), pominęło nieczytelny plik (_read_failed), zastało odmowę Archiwum
@@ -989,12 +1045,12 @@ Decyzja(q) ==
             /\ Idz(q, "spi", IF stopped[q] \/ nieczytany[q] \/ odmowaArch[q] \/ bezBlokady[q]
                              THEN "_drain: koniec watku, budzenie za RETRY_S" ELSE "_drain: koniec watku")
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr, kom, bezZnacznika,
-                   arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
+                   arch, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
 
 Watek(q) ==
     /\ zyje[q] /= "nie"
     /\ \/ Petla(q) \/ Plik(q) \/ Szukaj(q) \/ Czytaj(q) \/ Zaloz(q) \/ Komentuj(q)
-       \/ CzytajArchiwum(q) \/ ZalozArchiwum(q) \/ UsunPlik(q) \/ WyslijPlik(q)
+       \/ CzytajArchiwum(q) \/ ZalozArchiwum(q) \/ WyslijWzorzec(q) \/ UsunPlik(q) \/ WyslijPlik(q)
        \/ Znacznik(q) \/ Zamiana(q) \/ Usun(q) \/ Zwolnij(q) \/ Decyzja(q)
 
 \* outbox.py Outbox._woken: budzenie z clock.after (wątek zegara, także w procesie, który zamknął port).
@@ -1005,7 +1061,7 @@ Budzenie(q) ==
     /\ Budz(q)
     /\ krok' = "_woken po RETRY_S: send_in_background"
     /\ UNCHANGED <<opoznienie, dysk, issues, archiwa, zyje, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr, kom, bezZnacznika,
-                   arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
+                   arch, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, nadawanie, awarie, slady>>
 
 \* --- Zapytania HTTP: Outbox.post ------------------------------------------------
 
@@ -1064,7 +1120,7 @@ Nadaj(w) ==
           /\ UNCHANGED <<plik, tmp, przez, zakolejkowane, bledyPliku>>
     /\ nadawca[w] /= "czeka" => zyje[przez[w]] /= "nie"
     /\ UNCHANGED <<opoznienie, issues, archiwa, zyje, armed, stopped, nieczytany, undeleted, rejected, lista, czytane, biez, nr, kom, bezZnacznika,
-                   arch, po, odmowaArch, passes, blokada, bezBlokady, zamkniecia, odrzucone, sieci, zgubione, odmowy,
+                   arch, po, odmowaArch, wzCzeka, passes, blokada, bezBlokady, zamkniecia, odrzucone, sieci, zgubione, odmowy,
                    odmowyArchiwum, wylaczenia, slady>>
 
 \* --- Procesy Centrum ------------------------------------------------------------
@@ -1089,6 +1145,7 @@ Zabij(S) ==
     /\ arch' = [q \in Q |-> IF q \in S THEN "brak" ELSE arch[q]]
     /\ po' = [q \in Q |-> IF q \in S THEN "dostarczona" ELSE po[q]]
     /\ odmowaArch' = [q \in Q |-> IF q \in S THEN FALSE ELSE odmowaArch[q]]
+    /\ wzCzeka' = [q \in Q |-> IF q \in S THEN FALSE ELSE wzCzeka[q]]
     /\ passes' = [p \in Procesy |-> IF \E q \in S : Proc(q) = p THEN "wolny" ELSE passes[p]]
     \* Koniec procesu zamyka jego pliki, a z nimi system zwalnia blokadę folderu.
     /\ blokada' = IF blokada \in S THEN 0 ELSE blokada
@@ -1128,7 +1185,7 @@ Start(q) ==
     /\ pc' = Ustaw(pc, q, "petla")
     /\ krok' = "Centrum startuje: Outbox.resume usuwa *.tmp, send_in_background"
     /\ UNCHANGED <<niewidoczne, zakladanie, pamiec, pamiecWydania, wydanieNiewidoczne, falszywe, plik, issues, archiwa, again, armed, stopped, nieczytany, bezBlokady, undeleted, rejected, lista, czytane, biez,
-                   nr, kom, bezZnacznika, arch, po, odmowaArch, passes, blokada, zamkniecia, nadawanie, awarie, slady>>
+                   nr, kom, bezZnacznika, arch, po, odmowaArch, wzCzeka, passes, blokada, zamkniecia, nadawanie, awarie, slady>>
 
 \* Tata zamyka Centrum albo opiekun ponownego startu je restartuje: uvicorn zamyka gniazdo (port wolny
 \* dla nowego Centrum), a proces jeszcze kończy pracę.

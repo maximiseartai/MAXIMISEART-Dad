@@ -30,6 +30,13 @@ zmiany Ustawień, Aktualizację narzędzia i wysyłki Kolejki. Wpisy czekają w
 pliku `logs/dziennik-centrum-do-logow.log` obok dziennika Centrum, a Logi
 zabierają je przy swoim powstaniu, jak dziennik działań taty.
 
+Dopisek 18.11.2026 (decyzja Maksa, [ADR 0025](0025-regula-danych-wysylki-do-skrzynki.md),
+„Wzorce w Archiwum Logów okresu”): pliki procesu w Środowisku Logów mają przy
+Wzorcu z `config/` SHA-256 jego bajtów, Logi procesu, który liczy Listą
+Wykonawców, mają ją ze startu bez adresów (`workers`), a Archiwum Logów okresu ma
+obok plików Logów każdą wersję Wzorca, którą liczyły, raz, jako
+`wzorzec-<SHA-256>.xlsx`, gdy przeszła sprawdzenie reguły danych.
+
 Dopisek #845 (część #837): Wycena w efenix z co najmniej jednym zleceniem
 zostawia też dziennik Wyceny w efenix w `logs/dzienniki-wyceny/`, także gdy
 doszła do wyniku; następny start Centrum zamyka dziennik Wyceny przerwanej w

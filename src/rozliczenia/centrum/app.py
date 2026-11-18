@@ -50,6 +50,7 @@ from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, Reports
 from rozliczenia.centrum.run_cards import RunCards, run_cards_router
 from rozliczenia.centrum.run_comments import RecordMaker, RunComments
+from rozliczenia.centrum.template_archive import TemplateChecks
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.process_kind import HostParts
 from rozliczenia.centrum.report_entering_run import ReportEnteringEntry, report_entering_router
@@ -264,6 +265,9 @@ def create_app(
         files=lambda process, period, at_start: files_of_process(
             process, period, settings=at(at_start).folders, configuration=configuration
         ),
+        templates=lambda process: [configuration.path(need) for need in catalog.kind(process).configuration_needs],
+        dad_files=files,
+        checks=TemplateChecks(work.forbidden),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
         centrum_log=work.log,

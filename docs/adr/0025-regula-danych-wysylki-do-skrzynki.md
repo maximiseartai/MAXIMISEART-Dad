@@ -26,6 +26,11 @@ fakty wklejenia INTERMAX to pewniki, a plik, który je łamie, jest poza dziedzi
 tylko wtedy, gdy jego przesunięcie widać, a klasy ryzyka A, B i C Maks przyjął.
 Wcześniej A i B stały tu jako decyzja Maksa z 5.11.2026, a pierwszy wiersz tylko
 przy widocznym przesunięciu jako decyzja koordynatora.
+Uzupełniona 18.11.2026 (decyzja Maksa o danych taty): Wzorce taty idą do
+Archiwum Logów okresu raz na wersję, a Logi niosą Listę Wykonawców ze startu bez
+adresów (sekcja „Wzorce w Archiwum Logów okresu”). Wzorzec idzie w całości, więc
+zdanie „Treści wyjątków, stawek, pełnych ścieżek i klucza dalej nic nie wysyła”
+nie obejmuje już stawek z wiersza 14 i celu łącza zewnętrznego we Wzorcu.
 
 Publiczne repozytorium bez zmian: PR-y, commity, issue i testy nie niosą
 treści wierszy, numerów zleceń ani Wykonawców taty, a testy mają tylko dane
@@ -307,6 +312,47 @@ ją strażnikowi nieznaną tylko w pliku łamiącym 1 albo 2, nie jest defektem,
 daje `FAIL` i nie otwiera reguły od nowa. Defektem zostaje wyciek w pliku, w
 którym oba pewniki zachodzą.
 
+## Wzorce w Archiwum Logów okresu (decyzja Maksa z 18.11.2026)
+
+Odtworzenie Przebiegu rozliczeń i Przygotowania pliku zbiorczego czytało Wzorce i
+Listę Wykonawców z kopii Maksa (`--konfiguracja`), bo Logi miały z Wzorców tylko
+nazwę i rozmiar, a z Listy nic. Wzorzec pliku zbiorczego Maksa i taty mają różny
+rozmiar (1 413 088 B i 1 412 974 B, pomiar Maksa 18.11.2026), więc odtworzenie
+liczyło innym Wzorcem niż Uruchomienie taty.
+
+- **Każda wersja Wzorca idzie do Archiwum raz.** Logi mają SHA-256 bajtów każdego
+  Wzorca procesu z `config/` (`LoggedFile.sha256`), a Kolejka wysyłki wysyła
+  Wzorzec razem z plikiem Logów do Archiwum ich okresu jako
+  `wzorzec-<SHA-256>.xlsx`, tylko gdy Archiwum nie ma w całości pliku tej nazwy:
+  ta sama nazwa to te same bajty, więc wersji pliku nie ma, a Archiwum każdego
+  okresu ma swoje Wzorce. Odmowa Archiwum zostawia Wzorzec w kolejce jak plik
+  Logów. Plików z OneDrive narzędzie nie haszuje, bo odczyt pliku „tylko online”
+  go pobiera.
+- **Wzorzec wychodzi tylko przez sprawdzenie reguły danych**
+  (`template_archive`). Skoroszytu nie da się zamaskować jak tekstu, więc
+  sprawdzenie go odrzuca: wartość, która nie jest formułą, pod nagłówkiem
+  zakazanej kolumny (a we Wzorcach z układem Pliku zbiorczego w kolumnach B i I
+  pod wierszem nagłówka), tekst albo liczba komórki, komentarza, pamięci łącza
+  zewnętrznego, nazwy arkusza albo właściwości dokumentu z zakazaną wartością z
+  pamięci pracy Centrum, z telefonem albo ulicą, część pakietu spoza znanej listy
+  (obraz, tabela przestawna) i pakiet, którego nie da się odczytać. Tabela postaci
+  z granicami stoi w docstringu modułu. Odrzucony Wzorzec nie idzie, a Logi mają
+  w `input_copy_notes` uwagę z nazwą Wzorca i powodem, bez wartości, bo
+  `technical_notes` pokazuje karta z Logów. Kopie Wzorców Maksa (18.11.2026, tylko
+  odczyt) przechodzą wszystkie trzy; pierwsze sprawdzenie Wzorca pliku zbiorczego
+  trwa 0,45 s na Macu Maksa, następne tej samej wersji w pracy Centrum 1 ms, bo
+  skan pakietu nie zależy od pamięci.
+- **Wzorzec idzie w całości**, ze stawkami z wiersza 14 i celem łącza
+  zewnętrznego (ścieżką skoroszytu, do którego prowadzi), bo odtworzenie potrzebuje
+  tych samych bajtów co u taty.
+- **Lista Wykonawców ze startu w Logach, bez adresów** (`RunLog.workers`):
+  loginy, nazwa i to, czy Wykonawca jest aktywny, w Logach procesu, który nią
+  liczy. Adresów Raportów wykonawcy Logi nie mają.
+- **Odtworzenie** bierze Wzorzec z Archiwum (z odnośnikiem pobiera go z tego
+  samego Release, przy pliku z dysku szuka go obok), a Listę Wykonawców z Logów.
+  Wzorzec spoza Archiwum bierze z `--konfiguracja` i porównuje skrót: ten sam to
+  ten sam Wzorzec, a inny to zastrzeżenie, że odtworzenie liczy innym Wzorcem.
+
 ## Konsekwencje
 
 - Reguła ma jedno miejsce w kodzie (`client_data`), a każdy producent woła
@@ -412,3 +458,9 @@ nie czyta.
 - **Ponowny odczyt plików taty przy wysyłce, żeby poznać zakazane wartości.**
   Przebieg rozliczeń i Kontrola ilości czytają Plik zbiorczy raz (ADR 0013);
   drugi odczyt Rejestru zleceń trwa sekundy.
+- **Wzorzec z maską w miejscu zakazanej wartości (18.11.2026).** Zmieniony plik
+  ma inne bajty i inny skrót niż Wzorzec taty, więc odtworzenie nie liczyłoby
+  jego Wzorcem.
+- **Wzorzec przy każdych Logach bez pytania Archiwum o nazwę (18.11.2026).**
+  GitHub odrzuca plik o nazwie, która już jest w Release (422), a ten sam Wzorzec
+  szedłby przy każdym Uruchomieniu.

@@ -1,0 +1,222 @@
+"""Sprawdzenie Wzorca przed Archiwum Logów okresu (ADR 0025, „Wzorce w Archiwum Logów okresu”): każdy wiersz tabeli
+postaci z docstringu ``rozliczenia.centrum.template_archive`` na syntetycznym Wzorcu.
+
+Wzorzec, którego sprawdzenie nie przepuściło, nie idzie do Archiwum, a Wzorzec, który przeszedł, ma nazwę ze skrótu
+swoich bajtów. Skan pakietu jest raz na wersję Wzorca, a pamięć reguły danych pracy Centrum sprawdza każde Logi, więc
+wartość, którą praca poznała po pierwszym sprawdzeniu, też zatrzymuje Wzorzec. Drogę Wzorca przez Centrum i Kolejkę
+wysyłki do Archiwum pokazują testy w ``tests/test_centrum_logi_w_skrzynce.py``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass
+import hashlib
+import io
+from typing import Final
+import zipfile
+
+from openpyxl import Workbook
+from openpyxl.comments import Comment
+from openpyxl.worksheet.worksheet import Worksheet
+import pytest
+
+from rozliczenia.centrum.template_archive import ArchivedTemplate, Refusal, TemplateChecks, TemplateRefused, asset_name, from_queue
+from rozliczenia.client_data import ForbiddenColumn, ForbiddenValues, empty_memory
+from rozliczenia.tool_files import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_TEMPLATE
+
+_COLLECTIVE: Final = COLLECTIVE_TEMPLATE.name
+_INTERNAL: Final = INTERNAL_TEMPLATE.name
+_WORKER: Final = WORKER_TEMPLATE.name
+_ADDRESS: Final = "Syntetyczna Lipowa 5"
+"""Wartość ``ADRES``, którą praca Centrum przeczytała w pliku taty, w próbkach z pamięcią."""
+
+
+def _workbook(change: Callable[[Workbook, Worksheet], object] = lambda workbook, sheet: None) -> Workbook:
+    """Wzorzec w kształcie Wzorca taty w tym, co czyta sprawdzenie: stawki nad nagłówkiem, nagłówki w wierszu 17 z
+    ``ADRES`` w B i numerem Orange w I, a pod nimi formuły i ilości."""
+
+    workbook = Workbook()
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet.title = "Rozliczenie"
+    sheet["C3"] = "Stawki"
+    sheet["N14"] = 45.5
+    for letter, header in {"A": "LP", "B": "ADRES", "H": "WYKONAWCA", "I": "NUMER UMOWY/ZLECENIA ORANGE", "N": "ILOŚĆ"}.items():
+        sheet[f"{letter}17"] = header
+    sheet["N18"] = 0
+    sheet["AU18"] = "=SUM(N18:R18)"
+    change(workbook, sheet)
+    return workbook
+
+
+def _bytes(workbook: Workbook) -> bytes:
+    buffer = io.BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _cell(reference: str, value: str | float) -> Callable[[Workbook, Worksheet], object]:
+    def change(workbook: Workbook, sheet: Worksheet) -> None:
+        sheet[reference] = value
+
+    return change
+
+
+def _with_part(content: bytes, name: str, part: bytes) -> bytes:
+    """Pakiet ``content`` z częścią ``name`` o bajtach ``part``, nowej albo w miejscu tej o tej nazwie."""
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(io.BytesIO(content)) as source, zipfile.ZipFile(buffer, "w") as target:
+        for item in source.infolist():
+            if item.filename != name:
+                target.writestr(item, source.read(item.filename))
+        target.writestr(name, part)
+    return buffer.getvalue()
+
+
+def _cached_formula_result(content: bytes) -> bytes:
+    """Wzorzec z wynikiem formuły AU18 w pliku: liczbą w kształcie telefonu, którą policzył Excel."""
+
+    with zipfile.ZipFile(io.BytesIO(content)) as package:
+        sheet = package.read("xl/worksheets/sheet1.xml").decode("utf-8")
+    cached = sheet.replace("<f>SUM(N18:R18)</f><v />", "<f>SUM(N18:R18)</f><v>600123456</v>")
+    assert cached != sheet, "Wzorzec bez formuły AU18 w postaci, którą zna próbka"
+    return _with_part(content, "xl/worksheets/sheet1.xml", cached.encode("utf-8"))
+
+
+_EXTERNAL: Final = (
+    '<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><externalBook>'
+    '<sheetNames><sheetName val="Cennik"/></sheetNames><sheetDataSet><sheetData sheetId="0"><row r="1">'
+    '<cell r="A1" t="str"><v>{text}</v></cell><cell r="B1"><v>12.5</v></cell></row></sheetData></sheetDataSet>'
+    "</externalBook></externalLink>"
+)
+"""Pamięć łącza zewnętrznego Wzorca: nazwa arkusza i wartości komórek skoroszytu, do którego prowadzi łącze."""
+
+
+def _remembered(memory: ForbiddenValues) -> ForbiddenValues:
+    memory.remember_value(ForbiddenColumn.ADDRESS, _ADDRESS)
+    return memory
+
+
+@dataclass(frozen=True)
+class Case:
+    """Wiersz tabeli postaci: nazwa Wzorca w ``config`` (z niej układ), jego bajty, czy praca zna ``_ADDRESS`` i wynik
+    (``None``: przechodzi)."""
+
+    file: str
+    content: Callable[[], bytes]
+    expected: Refusal | None
+    remembered: bool = False
+
+
+def _plain(change: Callable[[Workbook, Worksheet], object] = lambda workbook, sheet: None) -> Callable[[], bytes]:
+    return lambda: _bytes(_workbook(change))
+
+
+def _comment(workbook: Workbook, sheet: Worksheet) -> None:
+    sheet["D5"].comment = Comment("Dzwonić: 600 123 456", "tata")
+
+
+def _creator(workbook: Workbook, sheet: Worksheet) -> None:
+    workbook.properties.creator = "tel. 600 123 456"
+
+
+def _renamed(header: str) -> Callable[[Workbook, Worksheet], object]:
+    def change(workbook: Workbook, sheet: Worksheet) -> None:
+        sheet["B17"] = header
+        sheet["B18"] = "Kwiatowa 7"
+
+    return change
+
+
+CASES: Final[dict[str, Case]] = {
+    "Wzorzec bez treści taty przechodzi": Case(_COLLECTIVE, _plain(), None),
+    "wartość pod nagłówkiem ADRES": Case(_INTERNAL, _plain(_cell("B18", "Kwiatowa 7")), Refusal.ADDRESS),
+    "liczba pod nagłówkiem numeru Orange": Case(_INTERNAL, _plain(_cell("I18", 123456789)), Refusal.ORANGE),
+    "wartość w B pod innym nagłówkiem w układzie Pliku zbiorczego": Case(_COLLECTIVE, _plain(_renamed("MIEJSCE")), Refusal.ADDRESS),
+    "wartość w B pod innym nagłówkiem Wzorca bez układu Pliku zbiorczego": Case(_INTERNAL, _plain(_renamed("MIEJSCE")), None),
+    "formuła pod nagłówkiem ADRES": Case(_INTERNAL, _plain(_cell("B18", "=A18")), None),
+    "tekst z zakazaną wartością z pamięci pracy": Case(_COLLECTIVE, _plain(_cell("C5", f"Zostało: {_ADDRESS}")), Refusal.FORBIDDEN, remembered=True),
+    "ten sam tekst, gdy praca nie zna wartości": Case(_COLLECTIVE, _plain(_cell("C5", f"Zostało: {_ADDRESS}")), None),
+    "tekst z telefonem": Case(_COLLECTIVE, _plain(_cell("C5", "tel. 600 123 456")), Refusal.FREE_TEXT),
+    "tekst z ulicą": Case(_COLLECTIVE, _plain(_cell("C5", "biuro ul. Kwiatowa 7")), Refusal.FREE_TEXT),
+    "liczba w kształcie telefonu": Case(_COLLECTIVE, _plain(_cell("C5", 600123456)), Refusal.FREE_TEXT),
+    "komentarz z telefonem": Case(_WORKER, _plain(_comment), Refusal.FREE_TEXT),
+    "nazwa arkusza z zakazaną wartością": Case(
+        _COLLECTIVE, _plain(lambda workbook, sheet: setattr(sheet, "title", _ADDRESS)), Refusal.FORBIDDEN, remembered=True
+    ),
+    "właściwości dokumentu z telefonem": Case(_COLLECTIVE, _plain(_creator), Refusal.FREE_TEXT),
+    "pamięć łącza zewnętrznego z telefonem": Case(
+        _COLLECTIVE,
+        lambda: _with_part(_bytes(_workbook()), "xl/externalLinks/externalLink1.xml", _EXTERNAL.format(text="600 123 456").encode()),
+        Refusal.FREE_TEXT,
+    ),
+    "pamięć łącza zewnętrznego z cennikiem": Case(
+        _COLLECTIVE,
+        lambda: _with_part(_bytes(_workbook()), "xl/externalLinks/externalLink1.xml", _EXTERNAL.format(text="Montaż").encode()),
+        None,
+    ),
+    "obraz w pakiecie": Case(_COLLECTIVE, lambda: _with_part(_bytes(_workbook()), "xl/media/image1.png", b"\x89PNG"), Refusal.UNKNOWN_PART),
+    "plik, który nie jest pakietem": Case(_COLLECTIVE, lambda: b"nie zip", Refusal.UNREADABLE),
+    "arkusz z uszkodzonym XML": Case(
+        _COLLECTIVE, lambda: _with_part(_bytes(_workbook()), "xl/worksheets/sheet1.xml", b"<worksheet"), Refusal.UNREADABLE
+    ),
+    "granica: wynik formuły w kształcie telefonu": Case(_COLLECTIVE, lambda: _cached_formula_result(_bytes(_workbook())), None),
+    "granica: wartość nad nagłówkiem ADRES": Case(_INTERNAL, _plain(_cell("B3", "Kwiatowa 7")), None),
+}
+
+
+
+
+@pytest.mark.parametrize("case", CASES)
+def test_sprawdzenie_wzorca_do_archiwum_daje_wynik_z_tabeli_postaci(case: str) -> None:
+    """Wzorzec z treścią taty, której reguła danych nie wypuszcza, nie idzie do Archiwum, a uwaga nazywa Wzorzec i
+    powód bez wartości; Wzorzec bez niej idzie pod nazwą ze skrótu swoich bajtów, z tymi bajtami."""
+
+    row = CASES[case]
+    memory = _remembered(empty_memory()) if row.remembered else empty_memory()
+    content = row.content()
+    file = row.file
+
+    found = TemplateChecks(memory).checked(file, content)
+
+    if row.expected is None:
+        assert isinstance(found, ArchivedTemplate), found
+        assert (found.name, found.file, found.content) == (asset_name(hashlib.sha256(content).hexdigest()), file, content)
+    else:
+        assert isinstance(found, TemplateRefused) and found == TemplateRefused(file, row.expected)
+        assert found.note == f"Reguła danych: {file} nie idzie do Archiwum Logów okresu: {row.expected.value}."
+        assert _ADDRESS not in found.note and "600" not in found.note
+
+
+def test_wartosc_poznana_po_pierwszym_sprawdzeniu_zatrzymuje_ten_sam_wzorzec_przy_nastepnym() -> None:
+    """Skan pakietu jest raz na wersję Wzorca, ale jego teksty przechodzą przez pamięć pracy Centrum przy każdym
+    sprawdzeniu: Wzorzec, który przeszedł, zanim praca przeczytała ten ``ADRES``, przy następnych Logach już nie idzie."""
+
+    memory = empty_memory()
+    checks = TemplateChecks(memory)
+    content = _bytes(_workbook(_cell("C5", f"Zostało: {_ADDRESS}")))
+
+    before = checks.checked(_COLLECTIVE, content)
+    _remembered(memory)
+    after = checks.checked(_COLLECTIVE, content)
+
+    assert (isinstance(before, ArchivedTemplate), after) == (True, TemplateRefused(COLLECTIVE_TEMPLATE.name, Refusal.FORBIDDEN))
+
+
+def test_wzorzec_z_pliku_kolejki_ma_nazwe_ze_skrotu_swoich_bajtow_a_wzorca_bez_sprawdzenia_nie_ma() -> None:
+    """Plik kolejki oddaje Wzorzec tylko pod nazwą ze skrótu jego bajtów i nazwą Wzorca z ``config``, więc ta sama nazwa
+    w Archiwum to zawsze te same bajty; konstruktor bez dowodu sprawdzenia odmawia."""
+
+    content = _bytes(_workbook())
+    name = asset_name(hashlib.sha256(content).hexdigest())
+    other = asset_name(hashlib.sha256(content + b"x").hexdigest())
+
+    assert from_queue(name, COLLECTIVE_TEMPLATE.name, content).content == content
+    with pytest.raises(ValueError, match="skrótu"):
+        from_queue(other, COLLECTIVE_TEMPLATE.name, content)
+    with pytest.raises(ValueError, match="skrótu"):
+        from_queue(name, "Rejestr zleceń.xlsx", content)
+    with pytest.raises(TypeError, match="TemplateChecks.checked"):
+        ArchivedTemplate(*(from_queue(name, COLLECTIVE_TEMPLATE.name, content).name,) * 2, content, object())

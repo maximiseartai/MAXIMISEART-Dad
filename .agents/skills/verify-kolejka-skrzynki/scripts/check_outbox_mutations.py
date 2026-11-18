@@ -31,6 +31,19 @@ def _explorer(scope: str) -> tuple[str, ...]:
 
 MUTATIONS = (
     Mutation(
+        "Wzorzec, który jest w Archiwum w całości, usunięty i wysłany drugi raz (_deliver_template: present.uploaded)",
+        (
+            Edit(
+                VERIFIED,
+                "    if present is not None and present.uploaded:\n        return InArchive()\n",
+                "    if False:\n        return InArchive()\n",
+            ),
+        ),
+        _explorer("archiwum"),
+        "ponowienie po zgubionej odpowiedzi usuwa cały Wzorzec z Archiwum i wysyła go jeszcze raz",
+        NEW,
+    ),
+    Mutation(
         "nieudany komentarz nowego issue pominięty zamiast końca wysyłki (_comment_all)",
         (
             Edit(
@@ -302,12 +315,12 @@ MUTATIONS = (
         NEW,
     ),
     Mutation(
-        "plik starszej wersji nie ustępuje: upload bez remove (_deliver_archive)",
+        "plik starszej wersji nie ustępuje: upload bez remove (_deliver_logs_file)",
         (
             Edit(
                 VERIFIED,
-                "        removed = box.remove(present.id)\n",
-                "        removed = Removed()\n",
+                "            return InArchive()\n        removed = box.remove(present.id)\n",
+                "            return InArchive()\n        removed = Removed()\n",
             ),
         ),
         _explorer("archiwum-diagnoza"),

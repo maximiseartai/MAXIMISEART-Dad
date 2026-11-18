@@ -10,7 +10,8 @@ Użycie (z katalogu repozytorium):
 
 ``LOGI`` to plik Logów z dysku taty (``.json``) albo z Archiwum Logów okresu (``.json.gz``), albo odnośnik do pliku w
 Archiwum z komentarza Logów w issue okresu (``https://github.com/<repo>/releases/download/logi-<okres>/<plik>.json.gz``),
-który narzędzie pobiera przez ``gh release download`` (tylko odczyt).
+który narzędzie pobiera przez ``gh release download`` (tylko odczyt), a z nim z tego samego Archiwum każdy Wzorzec, którego
+skrót mają Logi (``wzorzec-<SHA-256>.xlsx``). Przy pliku z dysku Wzorców szuka obok niego, pod tymi samymi nazwami.
 
 Bez ``--na-tym-drzewie`` narzędzie robi odłączoną kopię commitu z Logów (``tool.commit``) w katalogu tymczasowym
 (``git worktree add``, znika po końcu) i uruchamia w niej jej własne narzędzie odtwarzania interpreterem tego
@@ -22,8 +23,11 @@ odtwarza na kodzie tego checkoutu, np. żeby sprawdzić, czy poprawka zmienia wy
 Odtworzenie (``tools/lib/odtworzenie.py``) buduje pliki wejścia z Kopii wejścia (w miejscu ``ADRES`` i numeru Orange
 wartości syntetyczne), uruchamia ten sam proces w tym samym trybie przez ten sam rdzeń co Centrum, a Wycenę w efenix
 na Atrapie efenix z odczytów stron w Logach (``tools/lib/atrapa_z_logow.py``), i porównuje Logi odtworzenia z Logami.
-``--konfiguracja``: folder z ``worker_mapping.yaml`` i Wzorcami (bez parametru ``config/`` głównego checkoutu), bo
-Logi ich nie niosą; potrzebują go Przygotowanie pliku zbiorczego i Przebieg rozliczeń. Wpisanie raportów bierze
+Przygotowanie pliku zbiorczego i Przebieg rozliczeń liczą Wzorcami z Archiwum i Listą Wykonawców ze startu z Logów,
+bez adresów. ``--konfiguracja`` (bez parametru ``config/`` głównego checkoutu): folder z ``wykonawcy.yaml`` i Wzorcami,
+z którego odtworzenie bierze Wzorzec, którego nie ma w Archiwum (sprawdzenie reguły danych go nie przepuściło albo Logi
+są sprzed skrótów Wzorców), i Listę Wykonawców Logów sprzed jej zapisu; raport porównuje skrót takiego Wzorca ze
+skrótem z Logów i nazywa Wzorzec inny niż u taty. Wpisanie raportów bierze
 INTERMAX z Kopii wejścia, a maile ze Skrzynki raportów z Wpisów raportu w Logach, w postaci kanonicznej od adresów
 ``@odtworzenie.invalid`` (adresów, tematów i treści maili taty Logi nie mają), z Konfiguracją wykonawców i plikiem
 adresów z loginów Wpisów i z pamięcią wpisów sprzed kliknięcia: powtarza dopasowanie do zleceń, pamięć wpisów i
@@ -47,7 +51,9 @@ from datetime import date
 import gzip
 import json
 from pathlib import Path
+import re
 import shutil
+import subprocess
 import sys
 import tempfile
 from typing import NoReturn
@@ -86,7 +92,7 @@ def _parser() -> argparse.ArgumentParser:
         "--konfiguracja",
         type=Path,
         default=repo.main_config(ROOT),
-        help="Folder z Konfiguracją wykonawców i Wzorcami; domyślnie config/ głównego checkoutu.",
+        help="Folder z wykonawcy.yaml i Wzorcami na to, czego nie mają Archiwum ani Logi; domyślnie config/ głównego checkoutu.",
     )
     parser.add_argument(
         "--na-tym-drzewie",
@@ -120,7 +126,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"BŁĄD: {failure}", file=sys.stderr)
             return _USAGE
         if args.na_tym_drzewie:
-            return _here(text, args, Path(temporary))
+            return _here(logs, text, args, Path(temporary))
         return _at_commit(logs, text, args)
 
 
@@ -145,23 +151,38 @@ def _logs_file(source: str, temporary: Path) -> Path:
         )
     folder = temporary / "archiwum"
     folder.mkdir()
-    command = [
-        gh,
-        "release",
-        "download",
-        tag,
-        "--repo",
-        f"{owner}/{repository}",
-        "--pattern",
-        name,
-        "--dir",
-        str(folder),
-    ]
-    done = potomne.run(command, cwd=temporary, timeout=300)
+    done = _download(gh, f"{owner}/{repository}", tag, name, folder)
     downloaded = folder / name
     if done.returncode or not downloaded.is_file():
         raise _Failure(f"gh release download nie pobrał {name} z {owner}/{repository} {tag}: {done.stderr.strip()}")
+    for template in _templates_of(_text(downloaded)):
+        _download(gh, f"{owner}/{repository}", tag, template, folder)
     return downloaded
+
+
+def _download(gh: str, repository: str, tag: str, name: str, folder: Path) -> subprocess.CompletedProcess[str]:
+    """``gh release download`` jednego pliku ``name`` z Archiwum z tagiem ``tag`` do ``folder``; Wzorca, którego Archiwum
+    nie ma (sprawdzenie reguły danych go nie przepuściło), ``gh`` nie pobiera, a odtworzenie bierze go z
+    ``--konfiguracja``."""
+
+    command = [gh, "release", "download", tag, "--repo", repository, "--pattern", name, "--dir", str(folder)]
+    return potomne.run(command, cwd=folder.parent, timeout=300)
+
+
+_TEMPLATE_ASSET = re.compile(r"[0-9a-f]{64}", re.ASCII)
+
+
+def _templates_of(text: str) -> list[str]:
+    """Nazwy Wzorców w Archiwum (``wzorzec-<SHA-256>.xlsx``) ze skrótów plików procesu w Logach, bez modelu Logów tego
+    kodu, jak ``_commit_of``: tylko skrót z 64 znaków szesnastkowych daje nazwę, więc nic innego z Logów nie trafia do
+    ``gh``."""
+
+    try:
+        files = json.loads(text).get("environment", {}).get("files") or []
+    except (json.JSONDecodeError, AttributeError):
+        return []
+    found = [entry.get("sha256") for entry in files if isinstance(entry, dict)]
+    return [f"wzorzec-{sha256}.xlsx" for sha256 in dict.fromkeys(found) if isinstance(sha256, str) and _TEMPLATE_ASSET.fullmatch(sha256)]
 
 
 def _text(path: Path) -> str:
@@ -228,7 +249,7 @@ def _at_commit(logs: Path, text: str, args: argparse.Namespace) -> int:
     return done.returncode
 
 
-def _here(text: str, args: argparse.Namespace, temporary: Path) -> int:
+def _here(logs: Path, text: str, args: argparse.Namespace, temporary: Path) -> int:
     import rozliczenia
     from pydantic import ValidationError
 
@@ -261,6 +282,7 @@ def _here(text: str, args: argparse.Namespace, temporary: Path) -> int:
         work=work,
         configuration=args.konfiguracja,
         efenix_today=args.efenix_dzis,
+        archive=logs.parent,
     )
     extra = tuple(odtworzenie.Limit(text) for text in args.granica)
     report = odtworzenie.Report(report.verdict, report.difference, report.limits + extra, report.replayed)

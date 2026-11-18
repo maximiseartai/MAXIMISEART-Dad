@@ -30,6 +30,7 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
 from odtworzenie import (
@@ -44,7 +45,8 @@ from odtworzenie import (
     replay,
     stop_cause,
 )
-from rozliczenia.tool_files import REPORT_ENTERING_STATE
+from rozliczenia.tool_files import REPORT_ENTERING_STATE, WORKER_TEMPLATE
+from rozliczenia.centrum.template_archive import asset_name
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.activity_legend import FixedColumn
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
@@ -81,7 +83,7 @@ from rozliczenia.worker_reports import (
 )
 from rozliczenia.worker_reports import Verdict as Intent
 
-from atrapy.skrzynka import BoxIssue
+from atrapy.skrzynka import ArchivedFile, BoxArchive, BoxIssue
 from atrapy.workbooks import excel_lock
 from tests.fixtures.centrum import (
     TOOL_COMMIT,
@@ -240,7 +242,10 @@ def test_pierwsze_uruchomienie_okresu_zaklada_issue_i_archiwum_logow_a_kolejne_d
     assert [archived(centrum, comment) for comment in thread.comments] == [local_logs(centrum, run) for run in runs]
     [archive] = box(centrum).archives
     assert (archive.tag, archive.title) == (ARCHIVE, f"Logi Uruchomień {PERIOD}")
-    assert [asset.name for asset in archive.assets] == [f"{local_path(centrum, run).name}.gz" for run in runs]
+    template = centrum.configuration.worker_template.read_bytes()
+    once = asset_name(hashlib.sha256(template).hexdigest())
+    assert [asset.name for asset in archive.assets] == [once, *(f"{local_path(centrum, run).name}.gz" for run in runs)]
+    assert box(centrum).templates(ARCHIVE) == {once: template}
     assert [issue.comments for issue in foreign] == [[], [], []]
     assert wait_for(lambda: queued_logs(centrum) == [])
 
@@ -263,7 +268,8 @@ def test_pierwsze_uruchomienie_nowego_okresu_zaklada_nowe_archiwum_logow(tmp_pat
     assert wait_for(lambda: queued_logs(centrum) == [])
     [comment] = next(issue for issue in box(centrum).issues_with(LABEL) if issue.title.endswith(later)).comments
     assert archived(centrum, comment, tag=f"logi-{later}") == local_logs(centrum, view["run"]["id"])
-    assert [(archive.tag, len(archive.assets)) for archive in box(centrum).archives] == [(ARCHIVE, 1), (f"logi-{later}", 1)]
+    # Archiwum każdego okresu ma obok pliku Logów swój Wzorzec rozliczenia pracownika.
+    assert [(archive.tag, len(archive.assets)) for archive in box(centrum).archives] == [(ARCHIVE, 2), (f"logi-{later}", 2)]
 
 
 def test_komentarz_ma_podsumowanie_uruchomienia_i_odnosnik_do_pliku_w_archiwum_ktory_rozpakowany_jest_plikiem_logow_bajt_w_bajt_takze_na_windows(
@@ -756,9 +762,54 @@ def test_bez_uprawnienia_do_archiwum_komentarz_idzie_z_dopiskiem_a_plik_czeka_be
 
     assert wait_for(lambda: queued_logs(centrum) == [])
     assert box(centrum).archived(ARCHIVE) == {name: local_logs(centrum, run_id)}
+    template = centrum.configuration.worker_template.read_bytes()
+    assert box(centrum).templates(ARCHIVE) == {asset_name(hashlib.sha256(template).hexdigest()): template}
     assert ([len(issue.comments) for issue in threads(box(centrum))], box(centrum).edited) == ([1], [])
     log = centrum.log_path.read_text(encoding="utf-8")
     assert (log.count("przyczyna=odmowa-archiwum"), log.count("nieoczekiwany-wyjatek")) == (1, 0)
+
+
+def test_wzorzec_z_wartoscia_w_kolumnie_adres_nie_idzie_do_archiwum_a_logi_maja_uwage_bez_wartosci(tmp_path: Path) -> None:
+    """Wzorzec rozliczenia pracownika z wartością w kolumnie ``ADRES`` pod wierszem nagłówka (układ Pliku zbiorczego)
+    nie idzie do Archiwum Logów okresu: plik Logów dochodzi sam, a Logi mają w uwagach o Kopii wejścia uwagę z nazwą
+    Wzorca i powodem, bez wartości, i skrót Wzorca, którym odtworzenie sprawdzi Wzorzec z folderu Konfiguracji."""
+
+    centrum = watched_centrum(tmp_path)
+    path = centrum.configuration.worker_template
+    workbook = load_workbook(path)
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["B18"] = "Syntetyczna Kwiatowa 7"
+    workbook.save(path)
+
+    run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
+
+    assert wait_for(lambda: queued_logs(centrum) == [])
+    logs = json.loads(local_logs(centrum, run_id))
+    note = f"Reguła danych: {WORKER_TEMPLATE.name} nie idzie do Archiwum Logów okresu: wartość w kolumnie ADRES."
+    assert (note in logs["input_copy_notes"], note in logs["technical_notes"]) == (True, False)
+    [file] = [file for file in logs["environment"]["files"] if file["name"] == WORKER_TEMPLATE.name]
+    assert file["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+    assert (box(centrum).templates(ARCHIVE), list(box(centrum).archived(ARCHIVE))) == ({}, [f"{local_path(centrum, run_id).name}.gz"])
+
+
+def test_wzorzec_ktory_juz_jest_w_archiwum_okresu_nie_idzie_drugi_raz(tmp_path: Path) -> None:
+    """Ta sama nazwa Wzorca w Archiwum to te same bajty, więc Wzorzec, który już tam jest (np. z poprzedniej pracy
+    Centrum), zostaje bez zmian, a Kolejka wysyłki dostarcza Logi bez drugiej wysyłki Wzorca, którą GitHub by odrzucił."""
+
+    centrum = watched_centrum(tmp_path)
+    template = centrum.configuration.worker_template.read_bytes()
+    name = asset_name(hashlib.sha256(template).hexdigest())
+    earlier = ArchivedFile(99, name, "z poprzedniej pracy Centrum", template)
+    box(centrum).archives.append(BoxArchive(1, ARCHIVE, f"Logi Uruchomień {PERIOD}", "Archiwum", [earlier]))
+
+    run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
+
+    assert wait_for(lambda: queued_logs(centrum) == [])
+    [archive] = box(centrum).archives
+    assert [asset.name for asset in archive.assets] == [name, f"{local_path(centrum, run_id).name}.gz"]
+    assert (archive.assets[0].label, archive.assets[0].data) == ("z poprzedniej pracy Centrum", template)
+    assert "odmowa-archiwum" not in centrum.log_path.read_text(encoding="utf-8")
 
 
 # Odtworzenie Uruchomienia z pliku w Archiwum Logów okresu (``tools/odtworz_uruchomienie.py``, #847): Logi powstają
@@ -823,20 +874,30 @@ class _Sending(Protocol):
 
 
 def _archive_file(centrum: _Sending, folder: Path) -> Path:
-    """Plik Logów z Archiwum Logów okresu fałszywej Skrzynki, spakowany gzipem, jak go pobiera Maks.
+    """Plik Logów z Archiwum Logów okresu fałszywej Skrzynki, spakowany gzipem, jak go pobiera Maks, a obok niego Wzorce
+    z tego Archiwum (``wzorzec-<SHA-256>.xlsx``), jak je pobiera narzędzie odtwarzania z odnośnika.
 
     Zatrzymuje Centrum, gdy plik doszedł: wątek kolejki po wysyłce dalej zapisuje plik zapisów skrzynki i znacznik
     części w ``config`` przez pliki ``.tmp``, a kopia albo odczyt folderu Konfiguracji w trakcie tych zapisów pada na
-    wolnym runnerze Windows (``shutil.Error``, #1329).
+    wolnym runnerze Windows (``shutil.Error``, #1329). Wzorce idą do Archiwum przed plikiem Logów, więc są tam, gdy on
+    doszedł.
     """
 
     fake = centrum.surroundings.report_box
-    assert fake.wait_until(lambda box: any(archive.assets for archive in box.archives)), "plik Logów nie doszedł do Archiwum"
+    assert fake.wait_until(lambda box: any(_logs_assets(box))), "plik Logów nie doszedł do Archiwum"
     centrum.client.stop()
-    [asset] = [asset for archive in fake.archives for asset in archive.assets]
+    [asset] = _logs_assets(fake)
+    for template in [asset for archive in fake.archives for asset in archive.assets if asset.name.startswith("wzorzec-")]:
+        (folder / template.name).write_bytes(template.data)
     path = folder / asset.name
     path.write_bytes(asset.data)
     return path
+
+
+def _logs_assets(box: FakeReportBox) -> list[ArchivedFile]:
+    """Pliki Logów w Archiwach fałszywej Skrzynki, bez Wzorców obok nich."""
+
+    return [asset for archive in box.archives for asset in archive.assets if asset.name.endswith(".json.gz")]
 
 
 @dataclass(frozen=True)
@@ -991,10 +1052,10 @@ def _archived_run(fake: FakeReportBox, folder: Path, run_id: str) -> Path:
     """Plik Logów Uruchomienia ``run_id`` z Archiwum Logów okresu fałszywej Skrzynki, spakowany gzipem."""
 
     def arrived(box: FakeReportBox) -> bool:
-        return any(run_id in asset.name for archive in box.archives for asset in archive.assets)
+        return any(run_id in asset.name for asset in _logs_assets(box))
 
     assert fake.wait_until(arrived), f"plik Logów {run_id} nie doszedł do Archiwum"
-    [asset] = [asset for archive in fake.archives for asset in archive.assets if run_id in asset.name]
+    [asset] = [asset for asset in _logs_assets(fake) if run_id in asset.name]
     path = folder / asset.name
     path.write_bytes(asset.data)
     return path
@@ -1104,13 +1165,12 @@ PROCESSES = {
     "efenix": _efenix,
     "report_entering": _report_entering,
 }
-_CONFIGURATION = "- Lista Wykonawców i Wzorce nie są w Logach"
 # Granice zgodnego odtworzenia Logów każdego procesu, po kolei (początek linii pod „Granice:”): to, czego Logi tego
 # procesu nie niosą, bez braków w folderze Konfiguracji i arkusza, w którym odtworzenie nie wie, gdzie stały ADRES i
 # NUMER UMOWY. Maski strażnika są tylko przy Wpisaniu raportów: Raport Jana i jego wiersz INTERMAX mają telefon.
 ALWAYS = {
-    "settlement": (_CONFIGURATION,),
-    "preparation": ("- Surowe zlecenia na dole arkuszy Rejestru zleceń", "- folderu okresów taty Logi nie mają", _CONFIGURATION),
+    "settlement": (),
+    "preparation": ("- Surowe zlecenia na dole arkuszy Rejestru zleceń", "- folderu okresów taty Logi nie mają"),
     "intermax": (
         "- dni uporządkowane nad wklejeniem nie są w Kopii wejścia",
         "- kolumn z aplikacji za UWAGI nie ma w Kopii",
@@ -1158,6 +1218,24 @@ def test_uporzadkowanie_z_historia_adresu_albo_bez_bazy_odtwarza_sie_zgodnie_bez
     assert (replayed["address_history"], replayed["messages"]) == (None, [])
 
 
+@pytest.mark.parametrize("process", ["settlement", "preparation"])
+def test_logi_z_archiwum_przebiegu_i_przygotowania_odtwarzaja_sie_zgodnie_bez_folderu_konfiguracji(
+    tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], process: str
+) -> None:
+    """Logi Przebiegu rozliczeń i Przygotowania pliku zbiorczego mają Listę Wykonawców ze startu bez adresów i skrót
+    każdego Wzorca, którym liczyły, a Wzorzec leży obok pliku Logów w Archiwum Logów okresu: odtworzenie biegnie zgodnie
+    bez folderu Konfiguracji, a raport nie ma zastrzeżenia o Wzorcach ani Liście Wykonawców."""
+
+    produced = shared_logs(process) if process in SHARED else PROCESSES[process](tmp_path / "taty")
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--konfiguracja", tmp_path / "nie-ma-konfiguracji")
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+    assert [line for line in lines if "Konfiguracji" in line or "Wzor" in line or "Wykonawców" in line] == []
+    workers = produced.record["workers"]
+    assert workers and [set(worker) for worker in workers] == [{"logins", "name", "active"}] * len(workers)
+
+
 @pytest.mark.parametrize("process", PROCESSES)
 def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_sladem(
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], process: str
@@ -1166,7 +1244,7 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
     tymi samymi wynikiem, Komunikatami, podsumowaniem, etapami i śladem (Szablony pracownika, Wpisy INTERMAX z
     wierszami dnia, ślad zleceń efenix z odczytem każdej strony), a pliki, które odtworzenie zapisuje, zostają w jego
     katalogu roboczym, także rekord metryk: historii metryk narzędzia odtworzenie nie dopisuje. Pod „Granice:” stoi
-    tylko to, czego Logi procesu nie niosą, a Konfiguracja z folderu taty nie ma braków ani innego rozmiaru."""
+    tylko to, czego Logi procesu nie niosą: Wzorce przychodzą z Archiwum, a Lista Wykonawców z Logów."""
 
     produced = shared_logs(process) if process in SHARED else PROCESSES[process](tmp_path / "taty")
     record = produced.record
@@ -1178,10 +1256,8 @@ def test_logi_z_archiwum_kazdego_procesu_odtwarzaja_sie_z_tym_samym_wynikiem_i_s
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
     assert lines[1] == f"Uruchomienie: {_title(record)}, {RunMode(record['mode']).word}, okres {record['period']}, {produced.archived.stem}"
-    granice = lines[lines.index("Granice:") + 1 :]
+    granice = lines[lines.index("Granice:") + 1 :] if "Granice:" in lines else []
     assert len(granice) == len(ALWAYS[process]) and all(map(str.startswith, granice, ALWAYS[process])), granice
-    configuration = [line for line in granice if line.startswith(_CONFIGURATION)]
-    assert [line for line in configuration if not line.endswith("a Logi mają tylko nazwę i rozmiar plików taty")] == []
     replayed = json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))
     assert (replayed["process"], replayed["mode"], replayed["result"]) == (process, record["mode"], record["result"])
     trace = {
@@ -1295,8 +1371,22 @@ def _other_cell(record: dict[str, Any]) -> None:
     sheet["rows"][0]["cells"]["A"] = {"type": "other", "text": "CellRichText"}
 
 
-def _other_config_size(record: dict[str, Any]) -> None:
-    record["environment"]["files"] = [{"name": WORKERS_FILE, "size": 1, "online_only": None}]
+def _other_template(record: dict[str, Any]) -> None:
+    """Logi, w których Wzorzec rozliczenia pracownika taty ma inny skrót niż Wzorzec w folderze Konfiguracji."""
+
+    for file in record["environment"]["files"]:
+        if file["name"] == _WORKER_TEMPLATE:
+            file["sha256"] = "0" * 64
+
+
+def _without_template_hash(record: dict[str, Any]) -> None:
+    """Logi sprzed SHA-256 Wzorców."""
+
+    for file in record["environment"]["files"]:
+        file.pop("sha256", None)
+
+
+_WORKER_TEMPLATE = WORKER_TEMPLATE.name
 
 
 # Granica Logów: zmiana pliku Logów Przebiegu, folder Konfiguracji (``None``: folder Centrum taty), kod wyjścia i linia
@@ -1329,14 +1419,32 @@ LIMITS = {
         3,
         "NIE DA SIĘ ODTWORZYĆ: Kopia Pliku zbiorczego nie ma jednego arkusza z nagłówkami w wierszu 17",
     ),
-    "bez_folderu_konfiguracji": (lambda record: None, "nie-ma", 3, "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Listą Wykonawców"),
+    "bez_folderu_konfiguracji_i_wzorca_obok": (
+        lambda record: None,
+        "nie-ma",
+        3,
+        f"NIE DA SIĘ ODTWORZYĆ: nie ma folderu Konfiguracji ({{tmp}}{os.sep}nie-ma, --konfiguracja), a odtworzenie bierze z "
+        f"niego {_WORKER_TEMPLATE}, których nie ma w Archiwum Logów okresu ani w Logach",
+    ),
     "maska_strazinka_w_kopii": (
         _cell_with_phone,
         None,
         0,
         "- Kopia wejścia ma maski strażnika reguły danych ([telefon] ×1): odtworzenie czyta maskę w miejscu wartości taty",
     ),
-    "inny_rozmiar_konfiguracji": (_other_config_size, None, 0, _CONFIGURATION),
+    "inny_wzorzec_w_konfiguracji": (_other_template, None, 0, f"- {_WORKER_TEMPLATE} z "),
+    "logi_bez_skrotu_wzorca": (
+        _without_template_hash,
+        None,
+        0,
+        f"- Logi nie mają skrótu pliku {_WORKER_TEMPLATE} (Logi sprzed SHA-256 Wzorców): odtworzenie czyta go z ",
+    ),
+    "logi_bez_listy_wykonawcow": (
+        lambda record: record.pop("workers"),
+        None,
+        0,
+        f"- Logi nie mają Listy Wykonawców (Logi sprzed jej zapisu): odtworzenie czyta {WORKERS_FILE} z ",
+    ),
     "logi_bez_regul_ilosci": (
         lambda record: record.update(quantity_rules=None),
         None,
@@ -1364,9 +1472,10 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str], case: str
 ) -> None:
     """Czego Logi nie niosą, raport mówi: Urwane Uruchomienie, pusta Kopia wejścia, komórka typu spoza Kopii, Kopia
-    Pliku zbiorczego z nagłówkami poza wierszem 17 i brak folderu Konfiguracji kończą odtworzenie bez uruchomienia
-    procesu (kod 3), a maska strażnika w Kopii i Konfiguracja innego rozmiaru niż u taty stoją pod „Granice:” przy
-    zgodnym odtworzeniu."""
+    Pliku zbiorczego z nagłówkami poza wierszem 17 i brak folderu Konfiguracji, gdy obok Logów nie ma Wzorca z ich
+    skrótem, kończą odtworzenie bez uruchomienia procesu (kod 3), a maska strażnika w Kopii, Wzorzec z folderu
+    Konfiguracji z innym skrótem niż u taty i Logi bez skrótu Wzorca albo bez Listy Wykonawców stoją pod „Granice:” przy
+    zgodnym odtworzeniu (Logi z dysku taty, obok których nie ma Wzorców z Archiwum)."""
 
     change, folder, expected_code, expected = LIMITS[case]
     produced = shared_logs("settlement")
@@ -1377,14 +1486,17 @@ def test_granica_logow_jest_w_raporcie_a_blokujaca_konczy_odtworzenie_bez_zgodno
 
     assert code == expected_code, lines
     if expected_code == 3:
+        expected = expected.replace("{tmp}", str(tmp_path))
         assert lines[0].startswith(expected) and not any(line.startswith("Pierwsza różnica") for line in lines), lines
     else:
         assert lines[0] == "ODTWORZENIE ZGODNE"
         granice = lines[lines.index("Granice:") + 1 :]
         assert [line for line in granice if line.startswith(expected)], granice
-    if case == "inny_rozmiar_konfiguracji":
-        size = (configuration / WORKERS_FILE).stat().st_size
-        assert any(line.endswith(f"inny rozmiar niż u taty: {WORKERS_FILE}: u taty 1 B, tu {size} B") for line in lines)
+    if case == "inny_wzorzec_w_konfiguracji":
+        here = hashlib.sha256((configuration / _WORKER_TEMPLATE).read_bytes()).hexdigest()
+        assert any(f"(SHA-256 u taty {'0' * 12}…, tu {here[:12]}…)" in line for line in lines), lines
+    elif expected_code == 0:
+        assert not any(line.startswith(f"- {_WORKER_TEMPLATE} z ") for line in lines), "ten sam skrót to Wzorzec taty"
 
 
 @dataclass(frozen=True)
@@ -1558,34 +1670,36 @@ def test_kopia_wejscia_z_dwoma_plikami_konczy_odtworzenie_granica_procesu_jedneg
     assert (code, lines[0]) == (3, f"NIE DA SIĘ ODTWORZYĆ: Kopia wejścia ma 2 pliki, a {ONE_FILE[process]} czyta jeden"), lines
 
 
-def test_folder_konfiguracji_bez_listy_wykonawcow_raport_nazywa_brakujacy_plik(
+def test_logi_bez_listy_wykonawcow_z_folderem_bez_niej_raport_nazywa_brakujacy_plik(
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Folder Konfiguracji z Wzorcami, a bez Listy Wykonawców: raport mówi pod „Granice:”, którego pliku w nim
-    nie ma, bo bez niego Przebieg rozliczeń kończy się inaczej niż u taty."""
+    """Logi sprzed zapisu Listy Wykonawców i folder Konfiguracji bez niej: raport mówi pod „Granice:”, że Listy Logi
+    nie mają i którego pliku nie ma w folderze, bo bez niego Przebieg rozliczeń kończy się inaczej niż u taty."""
 
     produced = shared_logs("settlement")
     folder = tmp_path / "bez-konfiguracji-wykonawcow"
     shutil.copytree(produced.archived.parent / "config", folder)
     (folder / WORKERS_FILE).unlink()
+    before = _changed(produced, tmp_path, lambda record: record.pop("workers"))
 
-    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", "--konfiguracja", folder)
+    code, lines = _replayed(capsys, before, "--na-tym-drzewie", "--konfiguracja", folder)
 
-    [configuration] = [line for line in lines if line.startswith(_CONFIGURATION)]
-    assert (code, configuration.endswith(f"; w folderze nie ma: {WORKERS_FILE}")) == (1, True), lines
+    [workers] = [line for line in lines if line.startswith("- Logi nie mają Listy Wykonawców")]
+    assert (code, workers.endswith(f", a w folderze nie ma {WORKERS_FILE}")) == (1, True), lines
 
 
 def test_odtworzenie_bez_folderu_konfiguracji_mowi_ze_folderu_nie_podano(tmp_path: Path, shared_logs: Callable[[str], Produced]) -> None:
-    """Bez folderu Konfiguracji (narzędzie nie ma domyślnego, gdy główny checkout nie ma ``config/``) odtworzenie
-    Przebiegu rozliczeń nie biegnie, a granica mówi, że folderu nie podano."""
+    """Bez folderu Konfiguracji (narzędzie nie ma domyślnego, gdy główny checkout nie ma ``config/``) i bez folderu z
+    Wzorcami z Archiwum odtworzenie Przebiegu rozliczeń nie biegnie, a granica mówi, że folderu nie podano i czego
+    z niego potrzebuje."""
 
     record = RunLog.model_validate(shared_logs("settlement").record)
 
     report = replay(record, work=tmp_path / "odtworzenie", configuration=None)
 
     assert report.lines(record, "kod")[0] == (
-        "NIE DA SIĘ ODTWORZYĆ: nie ma folderu z Listą Wykonawców i Wzorcami (brak, --konfiguracja): Logi ich nie "
-        "niosą, a proces bez nich nie biegnie"
+        f"NIE DA SIĘ ODTWORZYĆ: nie ma folderu Konfiguracji (brak, --konfiguracja), a odtworzenie bierze z niego "
+        f"{_WORKER_TEMPLATE}, których nie ma w Archiwum Logów okresu ani w Logach"
     )
 
 
@@ -3527,18 +3641,26 @@ def test_odtworzenie_biegnie_na_kopii_commitu_z_logow_jej_wlasnym_narzedziem(
 
 
 @contextmanager
-def _fake_gh(folder: Path, archived: Path | None) -> Iterator[Path]:
-    """``gh`` na początku ``PATH``, który zapisuje swoje argumenty i kładzie plik ``archived`` w folderze ``--dir``
-    (``None``: kończy się kodem 0 bez pliku)."""
+def _fake_gh(folder: Path, release: Path | None) -> Iterator[Path]:
+    """``gh`` na początku ``PATH``, który dopisuje swoje argumenty linią JSON i kładzie w folderze ``--dir`` plik o nazwie
+    z ``--pattern`` z folderu ``release`` (plik Archiwum), a pliku, którego tam nie ma, nie kładzie i kończy się kodem 1
+    jak ``gh`` bez pliku o tej nazwie w Release (``None``: zawsze kod 0 bez pliku)."""
 
-    calls = folder / "wywolania.json"
-    lays = "" if archived is None else f"shutil.copy({str(archived)!r}, directory / sys.argv[sys.argv.index('--pattern') + 1])\n"
+    calls = folder / "wywolania.jsonl"
+    lays = (
+        ""
+        if release is None
+        else f"source = Path({str(release)!r}) / sys.argv[sys.argv.index('--pattern') + 1]\n"
+        "if not source.is_file():\n    sys.exit(1)\n"
+        "shutil.copy(source, directory / source.name)\n"
+    )
     fake_cli(
         folder,
         "gh",
         "import json, shutil, sys\n"
         "from pathlib import Path\n"
-        f"Path({str(calls)!r}).write_text(json.dumps(sys.argv[1:]), encoding='utf-8')\n"
+        f"with Path({str(calls)!r}).open('a', encoding='utf-8') as calls:\n"
+        "    calls.write(json.dumps(sys.argv[1:]) + '\\n')\n"
         "directory = Path(sys.argv[sys.argv.index('--dir') + 1])\n" + lays,
     )
     path = os.environ["PATH"]
@@ -3553,23 +3675,33 @@ def test_odnosnik_z_komentarza_logow_pobiera_plik_z_archiwum_przez_gh_i_odtwarza
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
     """Odnośnik do pliku w Archiwum Logów okresu z komentarza Logów to ``gh release download`` z tagiem okresu i nazwą
-    pliku w repozytorium Zgłoszeń; pobrany plik odtwarza się tak jak plik z dysku. Odnośnika spoza GitHuba ani spoza
-    plików GitHub Release narzędzie nie pobiera."""
+    pliku w repozytorium Zgłoszeń, a po nim z tego samego Archiwum Wzorzec ze skrótem z Logów; pobrany plik odtwarza się
+    tak jak plik z dysku. Odnośnika spoza GitHuba ani spoza plików GitHub Release narzędzie nie pobiera."""
 
     produced = shared_logs("settlement")
     name = produced.archived.name
     tag = f"logi-{PERIOD}"
     link = f"https://github.com/{REPOSITORY}/releases/download/{tag}/{name}"
 
-    with _fake_gh(tmp_path / "gh", produced.archived) as calls:
+    with _fake_gh(tmp_path / "gh", produced.archived.parent) as calls:
         elsewhere = _replayed(capsys, link.replace("https://github.com/", "https://example.invalid/"), "--na-tym-drzewie")
         not_release = _replayed(capsys, link.replace("/releases/download/", "/archive/download/"), "--na-tym-drzewie")
         assert (elsewhere[0], not_release[0], calls.exists()) == (2, 2, False), (elsewhere, not_release)
         code, lines = _replayed(capsys, link, "--na-tym-drzewie", *produced.arguments)
 
     assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
-    arguments = json.loads(calls.read_text(encoding="utf-8"))
-    assert arguments[:7] == ["release", "download", tag, "--repo", REPOSITORY, "--pattern", name]
+    arguments = [json.loads(line) for line in calls.read_text(encoding="utf-8").splitlines()]
+    assert [call[:7] for call in arguments] == [
+        ["release", "download", tag, "--repo", REPOSITORY, "--pattern", name],
+        ["release", "download", tag, "--repo", REPOSITORY, "--pattern", _template_asset(produced)],
+    ]
+
+
+def _template_asset(produced: Produced) -> str:
+    """Nazwa w Archiwum Wzorca rozliczenia pracownika z Logów Przebiegu rozliczeń ``produced``."""
+
+    [file] = [file for file in produced.record["environment"]["files"] if file["name"] == _WORKER_TEMPLATE]
+    return asset_name(file["sha256"])
 
 
 def test_gh_bez_pobranego_pliku_daje_blad_a_nie_odtworzenie(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
