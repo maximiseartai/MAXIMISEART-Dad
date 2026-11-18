@@ -76,7 +76,7 @@ class SettingsAtStart:
         Wykonawców tylko procesu, który jej potrzebuje, bo tylko jego start odmawia bez niej; reszta jak w opisie
         klasy."""
 
-        rules, legend = snapshot.quantity_rules, snapshot.activity_legend
+        rules, legend = snapshot.quantity_rules_or_unreadable, snapshot.activity_legend_or_unreadable
         return cls(
             snapshot=snapshot,
             workers=_workers_at_start(snapshot.workers) if "workers" in needs else None,
@@ -128,8 +128,9 @@ def unreadable(snapshot: SettingsSnapshot, needs: Collection[str]) -> Refusal | 
     Wykonawców bez odczytu nie jest ``UnreadableFile``, więc tu nie odmawia nigdy: start bez niej odrzuca
     ``SettingsAtStart.of_snapshot``."""
 
-    for need in _SETTING_NEEDS:
-        if need in needs and isinstance(value := getattr(snapshot, need), UnreadableFile):
+    counted = (("quantity_rules", snapshot.quantity_rules_or_unreadable), ("activity_legend", snapshot.activity_legend_or_unreadable))
+    for need, value in counted:
+        if need in needs and isinstance(value, UnreadableFile):
             return refusal.settings_file_unreadable(value.name)
     return None
 

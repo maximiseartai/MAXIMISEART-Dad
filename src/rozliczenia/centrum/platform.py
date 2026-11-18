@@ -144,7 +144,8 @@ def _null_device(stream: TextIO) -> bool:
             kernel32.GetFileType(handle) == file_type_char
             and not kernel32.GetConsoleMode(handle, ctypes.byref(wintypes.DWORD()))
         )
-    return os.path.samestat(os.fstat(descriptor), Path(os.devnull).stat())
+    else:
+        return os.path.samestat(os.fstat(descriptor), Path(os.devnull).stat())
 
 
 def show_start_problem(title: str, text: str) -> None:
@@ -176,7 +177,8 @@ def show_start_problem(title: str, text: str) -> None:
 def system_platform() -> Platform:
     if sys.platform == "darwin":
         return _MacPlatform()
-    return _TkPlatform()
+    else:
+        return _TkPlatform()
 
 
 class _TkPlatform:

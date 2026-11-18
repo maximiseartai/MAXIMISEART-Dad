@@ -42,7 +42,6 @@ from rozliczenia.quantities_to_fill import TEXT_COLUMNS, KindToFill, fill_hint, 
 from rozliczenia.tool_entry import FillKind
 from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.centrum.settings.owner import CentrumSettings, UnreadableFile
-from rozliczenia.centrum.settings_reads import readable_activity_legend, readable_quantity_rules
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
 from rozliczenia.workbook_files import WorkbookError, excel_lock_file
@@ -95,7 +94,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     )
     def quantities(token: str) -> filling_contract.QuantitiesToFill:
         folder = requested_folder(settings, token)
-        rules, legend = readable_quantity_rules(settings), readable_activity_legend(settings)
+        rules, legend = settings.quantity_rules().rules, settings.counted_activity_legend()
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
@@ -106,7 +105,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     )
     def kind_table(token: str, kind: FillKind) -> filling_contract.KindTable:
         folder = requested_folder(settings, token)
-        rules, legend = readable_quantity_rules(settings), readable_activity_legend(settings)
+        rules, legend = settings.quantity_rules().rules, settings.counted_activity_legend()
         found = read(token, folder.collective_file)
         if isinstance(found, filling_contract.QuantitiesToFillProblem):
             return found
@@ -138,7 +137,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
 
         folder = requested_folder(settings, token)
         snapshot = settings.snapshot()
-        rules, legend = snapshot.quantity_rules, snapshot.activity_legend
+        rules, legend = snapshot.quantity_rules_or_unreadable, snapshot.activity_legend_or_unreadable
         if isinstance(rules, UnreadableFile) or isinstance(legend, UnreadableFile):
             return filling_contract.WithoutQuantityUnread(state="unread")
         return _without_quantity(folder, filling.files, rules, legend)

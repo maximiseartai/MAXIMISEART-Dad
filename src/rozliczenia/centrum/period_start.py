@@ -93,7 +93,7 @@ class PeriodStarts:
         view = kind.view
         open_templates = open_in_excel(self.configuration.template_inputs(kind.templates))
         choices: tuple[list[runs_contract.PeriodChoice], str, str | None]
-        match snapshot.folders:
+        match snapshot.folders_or_unreadable:
             case UnreadableFile():
                 choices = [], last_complete_period(self.today()).token, None
             case FolderSettings() as settings:

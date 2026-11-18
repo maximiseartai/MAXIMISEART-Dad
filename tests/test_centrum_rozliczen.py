@@ -3164,8 +3164,7 @@ def test_migawka_narzedzi_przy_zlej_tresci_pliku_ustawien_ma_ostatni_dobry_folde
     app, periods = with_periods_directory(tmp_path)
     app.settings_path.write_text("schema_version: 1\nfolder_okresow: INEA\n", encoding="utf-8")
 
-    folders = read_snapshot(app.tool.config).folders
-    assert isinstance(folders, FolderSettings) and folders.periods_directory == periods
+    assert read_snapshot(app.tool.config).folders.periods_directory == periods
 
 
 def test_zla_tresc_potem_dobra_i_znow_ta_sama_zla_tresc_maja_po_wierszu_spoza_centrum(tmp_path: Path) -> None:
@@ -8095,9 +8094,7 @@ def test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_
 def _tools_rules(config: Path) -> QuantityRules:
     """Reguły ilości, którymi liczą narzędzia Maksa (``read_snapshot``)."""
 
-    rules = read_snapshot(config).quantity_rules
-    assert isinstance(rules, QuantityRules), rules
-    return rules
+    return read_snapshot(config).quantity_rules
 
 
 def _config_files(config: Path) -> dict[str, bytes]:

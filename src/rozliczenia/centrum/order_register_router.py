@@ -3,7 +3,7 @@ się programem systemu. Rejestr niewybrany to 409, niedostępny (system nie odpo
 to 409, a brakujący to 404. Plik Folderów, którego system nie daje teraz czytać, to 409 o tym pliku, nie „najpierw
 wybierz”.
 
-Trasa tylko czyta Ustawienia (``settings_reads.readable_folders``) i niczego w nich nie zapisuje, więc jej odmowy
+Trasa tylko czyta Ustawienia (``CentrumSettings.folders``) i niczego w nich nie zapisuje, więc jej odmowy
 dotyczą pliku taty, nie zmiany Ustawień.
 """
 
@@ -16,7 +16,6 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.settings.owner import CentrumSettings
-from rozliczenia.centrum.settings_reads import readable_folders
 from rozliczenia.file_state import file_state
 
 
@@ -25,7 +24,7 @@ def order_register_router(settings: CentrumSettings, platform: Platform) -> APIR
 
     @router.post("/register/open", operation_id="openRegister", responses=NOT_FOUND_OR_CONFLICT)
     def open_register() -> common_contract.Opened:
-        register = readable_folders(settings).register
+        register = settings.folders().register
         if register is None:
             raise refusal.register_not_chosen()
         match file_state(register):

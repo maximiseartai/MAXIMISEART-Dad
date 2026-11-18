@@ -88,7 +88,7 @@ class IntermaxEntry:
         """Karta przed startem z ostatnim Uporządkowaniem INTERMAX ``last`` z Logów Uruchomienia."""
 
         snapshot = self.settings.snapshot()
-        register = _chosen_register(snapshot.folders)
+        register = _chosen_register(snapshot.folders_or_unreadable)
         return intermax_contract.IntermaxSetup(
             title=_KIND.title,
             reminder=_VIEW.reminder,
@@ -101,7 +101,7 @@ class IntermaxEntry:
         """Dni INTERMAX z Ustawień Centrum ze stanem; bez wskazanego Rejestru zleceń albo przy pliku Folderów, którego
         system nie daje teraz czytać, żadnych dni i żadnego Komunikatu: kartę blokuje wtedy zdanie ``setup``."""
 
-        register = _chosen_register(self.settings.snapshot().folders)
+        register = _chosen_register(self.settings.snapshot().folders_or_unreadable)
         if register is None:
             return intermax_contract.IntermaxDays(days=[], problem=None)
         today = self.parts.now().date()

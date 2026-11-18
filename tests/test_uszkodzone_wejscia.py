@@ -586,7 +586,7 @@ NOT_SWEPT: dict[str, str] = {
 _FOLDERS = {"folder_okresow", "folder_miesiaca", "folder_okresu", "folder_okresu_przygotowania"}
 # Pliki właściciela Ustawień Centrum: każdy jego odczyt (migawka, widok Ustawień) czyta oba.
 _OWNER = {"ustawienia", "lista_wykonawcow"}
-# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów, parę Reguł ilości i Legendę czynności (settings_reads), a
+# Odczyt okna Centrum, który z Ustawień czyta tylko plik Folderów, parę Reguł ilości i Legendę czynności (CentrumSettings), a
 # nie całą migawkę.
 _WINDOW = _FOLDERS | {"ustawienia", "plik_zbiorczy"}
 _BOARD = _WINDOW | _OWNER
