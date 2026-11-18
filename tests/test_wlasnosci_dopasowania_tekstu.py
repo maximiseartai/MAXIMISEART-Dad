@@ -24,6 +24,7 @@ from rozliczenia import client_data
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.quantity_engine import Component, DeviceList, OrderContent, RuleResult, WithoutRule, evaluate
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
+from rozliczenia.order_kind import OrderKind
 from rozliczenia.raw_orders import CellFacts, OrderColumns, Placement, RawBlock, RowFacts, plan_day, recognize
 from rozliczenia.run_context import RunContext
 from tests.fixtures.formy_telefonu import MASKED, PHONE
@@ -361,3 +362,30 @@ def test_wartosc_adresu_przeczytana_z_pliku_jest_zamaskowana_w_kazdym_zapisie_z_
         client_data.tool(f"{before}[adres], dalej"), ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka L6.",)
     )
     assert client_data.guarded(forbidden, f"{before}{written}ów", "komórka L6").notes == (), "dłuższe słowo to inny tekst"
+
+
+# Rodzaje zleceń z GLOSSARY.md (Kolor operatora, Wpis urządzenia i czynności INTERMAX) w zapisie z niego.
+ORDER_KINDS = ("Usterka", "Usterka hurt", "Instalacja Hurt")
+
+
+@pytest.mark.parametrize("kind", ORDER_KINDS)
+@PROPERTY
+@given(data=st.data())
+def test_rodzaj_zlecenia_z_urzadzen_zapamietany_jako_adres_zostaje_w_tekscie_a_adres_obok_jest_zamaskowany(
+    data: st.DataObject, kind: str
+) -> None:
+    # ADR 0025: wiersz w obu położeniach daje pamięci URZĄDZENIA jako ADRES i NUMER UMOWY; zapis, który Planowanie
+    # czyta jako rodzaj, nie wskazuje klienta, a cała wartość adresu z tym słowem dalej nim jest.
+    written = data.draw(_spaced(kind))
+    assert _placement("Netia", written).order.kind is not OrderKind.OTHER, "Planowanie czyta ten zapis jako rodzaj"
+    forbidden = client_data.empty_memory()
+    for column in client_data.ForbiddenColumn:
+        forbidden.remember_value(column, written)
+    forbidden.remember_value(client_data.ForbiddenColumn.ADDRESS, GUARDED_ADDRESS)
+    forbidden.remember_value(client_data.ForbiddenColumn.ADDRESS, f"{kind} {GUARDED_ADDRESS}")
+
+    wynik = client_data.guarded(forbidden, f"{written}, dalej {GUARDED_ADDRESS}; {kind} {GUARDED_ADDRESS}", "komórka D7")
+
+    assert wynik == client_data.Guarded(
+        client_data.tool(f"{written}, dalej [adres]; [adres]"), ("Reguła danych: zamaskowano wartość kolumny ADRES w: komórka D7.",)
+    )
