@@ -2566,6 +2566,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                         }
                     ],
                     "mistaken_subjects": [],
+                    "overtaken_subjects": [],
                     "reminders": [],
                 }
             ],
@@ -2602,6 +2603,7 @@ def test_widok_raporty_pokazuje_przy_wykonawcy_liczby_problemy_z_powodem_i_zlece
                         },
                     ],
                     "mistaken_subjects": [],
+                    "overtaken_subjects": [],
                     "reminders": [],
                 }
             ],
@@ -2775,6 +2777,7 @@ def test_widok_raporty_pokazuje_wykonawce_z_samym_problemem_w_dniu_bez_jego_zlec
         "notes": [],
         "orders_detail": [],
         "mistaken_subjects": [],
+        "overtaken_subjects": [],
         "reminders": [],
     }
 
@@ -3511,6 +3514,81 @@ def test_wpisu_na_zyczenie_przy_raporcie_z_bledem_tematu_nie_ma_przy_przeciwnych
         "40000008": False,
     }
     assert [problem["request"] for problem in _worker(_view(centrum), "anna.kowalska")["problems"]] == [None]
+
+
+TAKEN_OVER = (
+    "Raport wykonawcy od jan.testowy z 09.11.2026, 17:00 z tematem „Raport 09.11.2026 Kowalski tel. [telefon]” ma błąd "
+    "w temacie (inne słowa), ale każde jego zlecenie wziął późniejszy raport od anna.kowalska, więc nie ma w nim nic do "
+    "wpisania."
+)
+
+
+@pytest.mark.parametrize(
+    ("subject", "text", "anna_problems"),
+    [
+        pytest.param(SUBJECT, "40000002 tak montaż", [], id="poprawny-raport-anny"),
+        pytest.param("Raport 09.11.2026 Nowak", "40000002 tak montaż", [None], id="raport-anny-z-bledem-tematu"),
+        pytest.param(SUBJECT, "40000002 t montaż", ["40000002"], id="raport-anny-z-litera-t"),
+    ],
+)
+def test_blad_tematu_ktorego_kazde_zlecenie_wzial_pozniejszy_raport_innego_wykonawcy_jest_informacja_a_nie_problemem(
+    tmp_path: Path, subject: str, text: str, anna_problems: list[str | None]
+) -> None:
+    """ADR 0041: Jan przysyła ``Raport 09.11.2026 Kowalski`` z telefonem i z jedynym zleceniem Anny z 9.11, a później
+    Anna przysyła swój raport z tym zleceniem, więc o zleceniu decyduje jej Wpis. Błąd tematu Jana nie ma już czego
+    wpisać: dzień Jana nie ma problemu, tylko jedno zdanie informacji z tematem po strażniku reguły danych, a raport dalej liczy się za 9.11, także przy następnym kliknięciu,
+    gdy pamięć wpisów po Wpisie Anny nie pozwala już starszemu mailowi Jana ruszyć zlecenia. Dzień Anny jest jak dziś:
+    po poprawnym raporcie zlecenie wpisane, po raporcie z błędem tematu i po Wpisie z ``t``, którego Centrum nie wpisało,
+    jej problem z Wpisem na życzenie."""
+
+    intermax = Intermax(ordered=(_order(9, 11, "anna.kowalska", 40000002),), raw=())
+    mails = [
+        report(JAN, "Raport 09.11.2026 Kowalski tel. 600 123 456", "40000002 tak inst20m", at=datetime(2026, 11, 9, 17)),
+        report(ANNA, subject, text, at=datetime(2026, 11, 9, 18)),
+    ]
+    centrum = entering_centrum(tmp_path, intermax, mails)
+
+    for moment in (datetime(2026, 11, 9, 19), datetime(2026, 11, 9, 20)):
+        _click_at(centrum, moment, mails)
+
+        view = _view(centrum)
+        jan, anna = _worker(view, "jan.testowy"), _worker(view, "anna.kowalska")
+        assert (jan["problems"], jan["overtaken_subjects"], jan["mails"], jan["orders"]) == ([], [TAKEN_OVER], 1, 0)
+        assert ([problem["number"] for problem in anna["problems"]], anna["overtaken_subjects"]) == (anna_problems, [])
+        assert all(problem["request"] or problem["faulty_subject"]["offers"] for problem in anna["problems"])
+        assert [order["number"] for order in anna["orders_detail"]] == ["40000002"]
+        assert _workers(centrum.register)[40000002] == "anna.kowalska"
+
+
+def test_blad_tematu_z_jednym_zleceniem_wzietym_przez_pozniejszy_raport_zostaje_problemem_z_przyciskiem_drugiego(
+    tmp_path: Path,
+) -> None:
+    """ADR 0041: raport Jana z błędem tematu ma swoje zlecenie i zlecenie Anny, które później bierze raport Anny. Jego
+    własne zlecenie dalej czeka na decyzję taty, więc błąd tematu zostaje problemem dnia Jana z jednym Wpisem na życzenie
+    (przy jego zleceniu), bez informacji; dzień Anny nie ma problemu. Po kliknięciu tego Wpisu raport nie ma już czego
+    wpisać, więc błąd tematu znika, a informacji też nie ma, bo jedno jego zlecenie wpisał tata."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+    mails = [
+        report(JAN, "Raport 09.11.2026 Kowalski", "40000001 tak inst20m\n40000002 tak inst20m", at=datetime(2026, 11, 9, 17)),
+        report(ANNA, SUBJECT, "40000002 tak montaż", at=datetime(2026, 11, 9, 18)),
+    ]
+    centrum = entering_centrum(tmp_path, intermax, mails)
+
+    _finished(centrum)
+
+    view = _view(centrum)
+    jan, anna = _worker(view, "jan.testowy"), _worker(view, "anna.kowalska")
+    [problem] = jan["problems"]
+    assert [offer["request"]["number"] for offer in problem["faulty_subject"]["offers"]] == ["40000001"]
+    assert [(order["number"], order["request"] is not None) for order in jan["orders_detail"]] == [("40000001", True)]
+    assert (jan["overtaken_subjects"], anna["problems"], anna["overtaken_subjects"]) == ([], [], [])
+
+    _enter_on_request(centrum, jan["orders_detail"][0]["request"], datetime(2026, 11, 9, 19))
+
+    after = _worker(_view(centrum), "jan.testowy")
+    assert (after["problems"], after["overtaken_subjects"]) == ([], [])
+    assert _cells(centrum.register) == {40000001: ("tak", "inst20m"), 40000002: ("tak", "montaż")}
 
 
 # --- Przypomnienia o raporcie: praca Centrum co minutę (ADR 0030, #1349) -----------------------------------------------

@@ -25,8 +25,9 @@
   wartości ``ADRES`` i z zamaskowanym telefonem i ulicą), rodzaj błędu (``reasons.subject_fault``), dzień, za który
   Centrum go liczy, chwilę przyjścia maila i skrót maila, po którym widok łączy problem z Wpisami na życzenie tego
   raportu przy zleceniach (``faulty_subject``), a przy dniu Wykonawcy dni z tematu raportów z
-  pomylonym tematem za ten dzień (``mistaken``); plik bez nich czyta się bez nich. Pisze go tylko proces, po
-  pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
+  pomylonym tematem za ten dzień (``mistaken``) i zdanie z ``reasons.overtaken`` o każdym raporcie z błędem tematu za
+  ten dzień, z którego nie ma już czego wpisać, z jego tematem po tym samym strażniku (``overtaken``); plik bez nich
+  czyta się bez nich. Pisze go tylko proces, po pamięci. Plik w wersji 1, sprzed listy zleceń, dalej się czyta, bez zleceń dnia (``ShownResult.detailed``), a pliki w
   wersjach 1 i 2 bez informacji, dopóki następne kliknięcie nie zapisze wersji 3.
 - ``wpisanie-raportow-decyzje.json``, ``{schema_version: 1, kept: [{number, day, worker, column, reported}]}``: decyzje
   taty „Zostaw moją”. Pisze go tylko żądanie API „Zostaw moją” (``keep``); proces czyta go przy Sprawdzaniu razem z
@@ -81,7 +82,7 @@ from rozliczenia.worker_reports import (
     UnreadableSubject,
     Verdict,
 )
-from rozliczenia.worker_reports.reasons import note, reason, subject_fault
+from rozliczenia.worker_reports.reasons import note, overtaken, reason, subject_fault
 
 _DECISIONS_VERSION: Final = 1
 _STATE_VERSION: Final = 4
@@ -239,6 +240,7 @@ class _Order(_Record):
 class _Worker(_WorkerV1):
     orders_detail: list[_Order]
     mistaken: list[date] = []
+    overtaken: list[str] = []
 
 
 class _FaultySubject(_Record):
@@ -317,7 +319,8 @@ class _AnyResult(RootModel[Annotated[_ResultV1 | _ResultV2 | _Result, Field(disc
 class ShownWorker:
     """Liczby Wykonawcy ``worker`` z dnia ``day`` z ostatniego kliknięcia: zlecenia, wpisane (``tak`` albo ``nie`` w
     ``SKUTECZNE`` po kliknięciu), Raporty wykonawcy, numery zleceń bez żadnego Wpisu i zlecenia dnia w kolejności z
-    INTERMAX (``None``: plik wyniku sprzed zleceń dnia) i dni z tematu raportów z pomylonym tematem za ten dzień."""
+    INTERMAX (``None``: plik wyniku sprzed zleceń dnia), dni z tematu raportów z pomylonym tematem za ten dzień i zdania o
+    raportach z błędem tematu za ten dzień, z których nie ma już czego wpisać (``overtaken``)."""
 
     day: date
     worker: str
@@ -327,6 +330,7 @@ class ShownWorker:
     without_report: tuple[str, ...]
     orders_detail: tuple[OrderDetail, ...] | None
     mistaken: tuple[date, ...]
+    overtaken: tuple[str, ...]
 
     def offer(self, order: OrderDetail) -> ShownOffer | None:
         """Wpis na życzenie przy zleceniu ``order`` tego dnia z decyzją w miejscu, które zlecenie ma po Wpisie;
@@ -580,6 +584,10 @@ class FileReportState:
                     for order in worker.orders_detail
                 ],
                 mistaken=list(worker.mistaken),
+                overtaken=[
+                    overtaken(found, guarded(self.forbidden, found.subject.shown(), "temat Raportu wykonawcy").text)
+                    for found in worker.overtaken
+                ],
             )
             for worker in result.workers
         ]
@@ -617,6 +625,7 @@ class FileReportState:
                     tuple(worker.without_report),
                     _orders(worker),
                     tuple(worker.mistaken) if isinstance(worker, _Worker) else (),
+                    tuple(worker.overtaken) if isinstance(worker, _Worker) else (),
                 )
                 for worker in result.workers
             ),

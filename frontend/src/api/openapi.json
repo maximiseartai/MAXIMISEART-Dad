@@ -10320,6 +10320,13 @@
             "type": "array",
             "title": "Mistaken Subjects"
           },
+          "overtaken_subjects": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Overtaken Subjects"
+          },
           "reminders": {
             "items": {
               "type": "string",
@@ -10341,6 +10348,7 @@
           "notes",
           "orders_detail",
           "mistaken_subjects",
+          "overtaken_subjects",
           "reminders"
         ],
         "title": "ReportsWorkerDay",

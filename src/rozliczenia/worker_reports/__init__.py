@@ -40,6 +40,7 @@ from ._model import (
     OrderKey,
     OrderNumber,
     OrderState,
+    OvertakenSubject,
     OwnEntries,
     OwnEntry,
     OwnMove,
@@ -130,6 +131,7 @@ __all__ = [
     "OrderKey",
     "OrderNumber",
     "OrderState",
+    "OvertakenSubject",
     "OwnEntries",
     "OwnEntry",
     "OwnMove",
@@ -220,7 +222,8 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     życzenie (``inputs.requested``) wpisuje Wpis ze znakiem zamiast ``tak``/``nie`` jak Wpis z chwilą kliknięcia
     (``_matching.Board.match``), a Wpis raportu z błędem tematu jak Wpis Raportu wykonawcy z dniem zlecenia w temacie
     (``WindowRead.entering``); zlecenie z Wpisem raportu z błędem tematu ma Wpis na życzenie, gdy Centrum wie, co
-    wpisać (``WindowRead.offers``).
+    wpisać (``WindowRead.offers``), a raport z błędem tematu, z którego nie ma już czego wpisać, jest informacją przy
+    swoim dniu, nie problemem (``WindowRead.overtaken``).
     """
 
     window = inputs.window
@@ -260,6 +263,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
         read.mistaken,
         read.faulty_entries,
         read.offers,
+        read.overtaken,
     )
     notes = tuple(sorted((*moved.notes, *matched.lost), key=note_order))
     return ReportsOutcome(changes, problems_found, figures, mails, memory, moved.moves, notes, moved.added)

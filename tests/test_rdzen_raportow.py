@@ -45,6 +45,7 @@ from rozliczenia.worker_reports import (
     OrderedDay,
     OrderKey,
     OrderNumber,
+    OvertakenSubject,
     OwnEntries,
     OwnEntry,
     OwnMove,
@@ -82,7 +83,7 @@ from rozliczenia.worker_reports import (
     reminder_text,
     reminders_due,
 )
-from rozliczenia.worker_reports.reasons import note, reason, subject_fault
+from rozliczenia.worker_reports.reasons import note, overtaken, reason, subject_fault
 from tests.fixtures.expect import assert_expected
 
 DAY = date(2026, 11, 8)
@@ -3087,6 +3088,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
             without_report=(OrderNumber("40000010"),),
             orders_detail=(OrderDetail(OrderNumber("40000010"), None, None, reported=False),),
             mistaken=(),
+            overtaken=(),
         ),
         WorkerDay(
             DAY,
@@ -3103,6 +3105,7 @@ def test_liczby_i_zlecenia_wykonawcy_z_dnia_dla_widoku_raporty_w_kolejnosci_z_in
                 OrderDetail(OrderNumber("40000004"), "???", "ręcznie", reported=False),
             ),
             mistaken=(),
+            overtaken=(),
         ),
     )
 
@@ -3433,17 +3436,70 @@ def _faulty(text: str, number: str = "40000001", worker: str = "jan.testowy", da
     return FaultyDescription(Login(worker), day, OrderNumber(number), read.problems)
 
 
-def test_powod_dla_taty_kazdego_rodzaju_problemu() -> None:
+def test_powod_dla_taty_kazdego_rodzaju_problemu_i_informacja_o_raporcie_z_bledem_tematu_bez_niczego_do_wpisania() -> None:
     problems = _every_problem()
+    takers = [(Login("anna.kowalska"),), (Login("anna.kowalska"), Login("ewa.probna"))]
     text = "".join(
         f"{type(problem).__name__}\n  {reason(problem)}\n"
         + (f"  rodzaj błędu tematu: {subject_fault(problem.fault)}\n" if isinstance(problem, UnreadableSubject) else "")
         for problem in problems
+    ) + "".join(
+        f"OvertakenSubject\n  {overtaken(overtaking, overtaking.subject.shown())}\n"
+        for overtaking in (
+            OvertakenSubject(JAN_LOGIN, DAY, EVENING, SubjectFault.OTHER_WORDS, ReportSubject("Raport 08.11.2026 Kowalski"), found)
+            for found in takers
+        )
     )
 
     assert {type(problem) for problem in problems} == set(get_args(ReportProblem))
     assert "obcy@przyklad.invalid" not in text
     assert_expected(text, Path(__file__).parent / "expected" / "powody_raportow.txt")
+
+
+def test_blad_tematu_ktorego_zlecenie_trzyma_wczesniejszy_raport_zostaje_problemem_a_nie_informacja() -> None:
+    """ADR 0041 i 0029: zlecenie 40000001 stoi u Ewy, bo Centrum przeniosło je mailem świeższym niż raport Jana z
+    błędem tematu (pamięć zleceń), a w skrzynce zostały wcześniejszy poprawny raport Ewy i ten raport Jana. Wpis Jana
+    niczego nie rusza, ale raport Ewy przyszedł przed nim, więc nie wziął Janowi zlecenia: błąd tematu zostaje
+    problemem, a dzień Jana nie ma informacji o późniejszym raporcie."""
+
+    move = OwnMove(OrderNumber("40000001"), DAY, EWA_LOGIN, DAY, JAN_LOGIN, "Jan.Testowy", EVENING + timedelta(hours=1))
+    mails = [
+        _mail(EWA, SUBJECT, "40000001 tak montaż", EVENING - timedelta(hours=1)),
+        _mail(JAN, "Raport 08.11.2026 Kowalski", "40000001 tak inst20m", EVENING),
+    ]
+
+    outcome = enter_reports(_inputs(mails, [_order(worker="Ewa.Probna")], memory=OwnEntries(frozenset(), frozenset({move}))))
+
+    assert [problem.worker for problem in outcome.problems if isinstance(problem, UnreadableSubject)] == [JAN_LOGIN]
+    assert [day.overtaken for day in outcome.workers] == [()] * len(outcome.workers)
+
+
+@pytest.mark.parametrize(
+    "jana",
+    [pytest.param(True, id="zlecenie-jana-7-11"), pytest.param(False, id="wiersz-bez-zlecenia")],
+)
+def test_blad_tematu_z_numerem_w_dwoch_wierszach_zostaje_problemem_choc_jeden_wiersz_wzial_pozniejszy_raport(
+    jana: bool,
+) -> None:
+    """ADR 0041 i 0029: numer 40000001 stoi w zleceniu Ewy z 8.11 i w drugim wierszu INTERMAX: w zleceniu Jana z 7.11
+    albo w wierszu bez zlecenia. Jan przysyła ``Raport 08.11.2026 Kowalski`` z tym numerem, a później Ewa poprawny
+    raport, który bierze swój wiersz. Wpis Jana z dniem z tematu dałby ``RepeatedNumber``, więc nie stawia żadnego
+    zlecenia i nikt mu go nie wziął: błąd tematu zostaje problemem Jana, a dzień Jana nie ma informacji o późniejszym
+    raporcie."""
+
+    number = OrderNumber("40000001")
+    other = [_order(OrderRow("Zlecenia", 121), day=DAY - timedelta(days=1))] if jana else []
+    orders = [_order(worker="Ewa.Probna"), *other]
+    present = None if jana else (ReadNumber(number, DAY), ReadNumber(number))
+    mails = [
+        _mail(JAN, "Raport 08.11.2026 Kowalski", "40000001 tak inst20m", EVENING),
+        _mail(EWA, SUBJECT, "40000001 tak montaż", EVENING + timedelta(hours=1)),
+    ]
+
+    outcome = enter_reports(_inputs(mails, orders, present=present))
+
+    assert [problem.worker for problem in outcome.problems if isinstance(problem, UnreadableSubject)] == [JAN_LOGIN]
+    assert [day.overtaken for day in outcome.workers] == [()] * len(outcome.workers)
 
 
 def test_wpis_raportu_ma_numer_tak_albo_nie_i_czynnosci() -> None:

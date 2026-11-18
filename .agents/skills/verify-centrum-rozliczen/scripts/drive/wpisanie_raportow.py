@@ -96,6 +96,17 @@ FAULTY_REQUEST = {**ON_REQUEST, "mail": MailId.of(FAULTY_ID).digest, "activities
 # order of wykonawca.a names wykonawca.b, and the click moves the order like a correct Raport (ADR 0029).
 MOVE_ID = "<raport-b-blad-tematu.eml@przyklad.invalid>"
 MOVE_REQUEST = {**FAULTY_REQUEST, "mail": MailId.of(MOVE_ID).digest, "worker": "wykonawca.b"}
+# A Raport z błędem tematu of wykonawca.c, who has no order today, with the order that wykonawca.b has after the step
+# `wpis-na-zyczenie-przeniesienie`, and a later correct Raport of wykonawca.b with it (step `blad-tematu-wziety`): the
+# later Raport takes the order, so the fault of the subject of wykonawca.c has nothing to enter and is a calm note, in
+# a tile of its own though the day has no order of his (#2096).
+OVERTAKEN_ID = "<raport-c-blad-tematu-wziety.eml@przyklad.invalid>"
+TAKER_ID = "<raport-b-poprawny.eml@przyklad.invalid>"
+OVERTAKEN_SUBJECT = "Raport 19.10.2026 Kowalski"
+OVERTAKEN_NOTE = (
+    f"Raport wykonawcy od wykonawca.c z 19.10.2026, 18:30 z tematem „{OVERTAKEN_SUBJECT}” ma błąd w temacie (inne "
+    "słowa), ale każde jego zlecenie wziął późniejszy raport od wykonawca.b, więc nie ma w nim nic do wpisania."
+)
 NARROW: ViewportSize = {"width": 390, "height": 844}
 # „Przypisz do Wykonawcy…” gives the stranger's address to Wykonawca D of the fixture: he has no orders and no Raport
 # today, so his address changes no figure of the click.
@@ -397,6 +408,7 @@ def _window_day(
         ],
         "orders_detail": [_order(found, state) for found, state in zip(numbers, states, strict=True)],
         "mistaken_subjects": [],
+        "overtaken_subjects": [],
         "reminders": list(reminders),
     }
 
@@ -1028,6 +1040,49 @@ def _on_request_move(run: Run, page: Page, register: Path) -> None:
         remove(mail, missing_ok=True)
 
 
+def _overtaken_subject(run: Run, page: Page) -> None:
+    """A Raport z błędem tematu whose every order a later Raport of another Wykonawca takes (ADR 0041), from a
+    Wykonawca without an order that day (#2096): Dad still learns of the Raport sent wrong, because the day has a tile
+    that is not Problem, and its popover has one calm sentence with the subject instead of the fault, without a button."""
+
+    run.step(FEATURE, "blad-tematu-wziety")
+    at = datetime(2026, 10, 19, 18, 30)
+    mails = [
+        _report_mail(
+            run, "raport-c-blad-tematu-wziety.eml", OVERTAKEN_SUBJECT, OVERTAKEN_ID, f"{ON_REQUEST_NUMBER} tak spawpg", at, "wykonawca.c"
+        ),
+        _report_mail(
+            run, "raport-b-poprawny.eml", "Raport 19.10.2026", TAKER_ID, f"{ON_REQUEST_NUMBER} tak {FAULTY_ACTIVITIES}", at + timedelta(minutes=30), "wykonawca.b"
+        ),
+    ]
+    print(f"  harness: wykonawca.c sends `{OVERTAKEN_SUBJECT}` with {ON_REQUEST_NUMBER}, then wykonawca.b a correct Raport with it", flush=True)
+    try:
+        clicked = result_of_start(run, "raporty-blad-tematu-wziety", _button(page).click)
+        days = _days_of(_view(run, "raporty-blad-tematu-wziety"))
+        shown = days["wykonawca.c"]
+        run.check(
+            figure(clicked["summary"], "Problemy") == 0
+            and (shown["orders"], shown["mails"], shown["problems"], shown["overtaken_subjects"]) == (0, 1, [], [OVERTAKEN_NOTE]),
+            "the fault of the subject of wykonawca.c, without an order today, whose order the later Raport of wykonawca.b took is no problem, only one sentence with the subject",
+        )
+        run.check(
+            not [problem for problem in days["wykonawca.b"]["problems"] if problem["faulty_subject"]]
+            and (ON_REQUEST_NUMBER, "tak", FAULTY_ACTIVITIES, "entered") in _orders(_view(run, "raporty-blad-tematu-wziety-zlecenia"))["wykonawca.b"],
+            "the order stays at wykonawca.b, entered from his Raport",
+        )
+        _tile_is(page, "wykonawca.c", DAY, "Komplet", 0, 0)
+        popover = _popover(page, "wykonawca.c", DAY)
+        expect(popover.get_by_role("list", name="Zlecenia dnia")).to_contain_text(OVERTAKEN_NOTE)
+        expect(popover).not_to_contain_text("Raport z błędem tematu")
+        expect(popover.get_by_role("button", name=ON_REQUEST_BUTTON, exact=True)).to_have_count(0)
+        run.check(True, "the day of wykonawca.c has a tile Komplet 0/0 whose popover has the calm sentence, without the fault and a button")
+        run.capture(page, "436-raporty-blad-tematu-wziety", full_page=False)
+        _close(page, popover)
+    finally:
+        for mail in mails:
+            remove(mail, missing_ok=True)
+
+
 def _on_request(run: Run, page: Page, register: Path) -> None:
     """Wpis na życzenie (ADR 0041): a Raport with `t`, later than the Wpis na życzenie of the Raport z błędem tematu, so
     it wins over it, its button with the preview, the refusal while INTERMAX is open in Excel and the order entered after
@@ -1316,6 +1371,7 @@ def drive(run: Run, page: Page) -> None:
         _on_request_faulty_subject(run, page, register)
         _on_request(run, page, register)
         _on_request_move(run, page, register)
+        _overtaken_subject(run, page)
     finally:
         move(aside, stranger)
 

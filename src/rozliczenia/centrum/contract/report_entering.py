@@ -139,6 +139,9 @@ class ReportsWorkerDay(Model):
     mistaken_subjects: list[date]
     """Dni z tematu Raportów wykonawcy z pomylonym tematem (ADR 0029), których Wpisy poszły do zleceń tego dnia, bo
     numery zleceń wygrywają z datą: informacja, nie problem."""
+    overtaken_subjects: list[str]
+    """Zdanie dla taty o każdym Raporcie wykonawcy z błędem tematu za ten dzień, którego każde zlecenie wziął późniejszy
+    raport, więc nie ma z niego czego wpisać (ADR 0041): informacja, nie problem."""
     reminders: list[datetime]
     """Chwile wysłania Przypomnień o raporcie za ten dzień do tego Wykonawcy z ostatniego sprawdzenia pracy przypomnień,
     od najstarszej (ADR 0030), bez adresów i tematów maili."""
