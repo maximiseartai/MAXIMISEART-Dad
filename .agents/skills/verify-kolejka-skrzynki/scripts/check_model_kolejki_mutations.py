@@ -31,6 +31,13 @@ def _check(config: str) -> tuple[str, ...]:
 
 MUTATIONS = (
     Mutation(
+        "Wzorzec bez sprawdzenia, czy jego nazwa już jest w Archiwum (outbox.py _deliver_template: present.uploaded)",
+        (Edit(MODEL, "                  ELSE IF Wzorzec /\\ wzorce = 0\n", "                  ELSE IF Wzorzec\n"),),
+        _check("archiwum"),
+        "Logi po Diagnozie wysyłają Wzorzec drugi raz, GitHub odrzuca plik tej nazwy, a plik kolejki czeka bez końca",
+        NEW,
+    ),
+    Mutation(
         "lista issue bez issue, które KeyedBox założył (keyed_box.py labelled_issues: _Notes.opened, #879)",
         (Edit(MODEL, "Widoczne(q, zna) == {i \\in 1..Len(issues) : i \\notin niewidoczne \\/ (zna /\\ i \\in pamiec)}\n",
               "Widoczne(q, zna) == {i \\in 1..Len(issues) : i \\notin niewidoczne}\n"),),
@@ -278,10 +285,10 @@ MUTATIONS = (
             Edit(
                 MODEL,
                 "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, rejected, lista, czytane, biez, "
-                "bezZnacznika,\n                   arch, odmowaArch, passes,",
+                "bezZnacznika,\n                   arch, odmowaArch, wzCzeka, passes,",
                 "    /\\ pc'[q] = \"plik\" \\/ UNCHANGED rejected\n"
                 "    /\\ UNCHANGED <<dysk, issues, archiwa, zyje, draining, again, armed, undeleted, lista, czytane, biez, "
-                "bezZnacznika,\n                   arch, odmowaArch, passes,",
+                "bezZnacznika,\n                   arch, odmowaArch, wzCzeka, passes,",
             ),
         ),
         _check("okres"),
@@ -351,7 +358,7 @@ MUTATIONS = (
     Mutation(
         "plik w Archiwum bez sprawdzenia wersji z etykiety: kolejka usuwa swój plik i wysyła go drugi raz "
         "(_deliver_archive: seen >= version)",
-        (Edit(MODEL, "                  ELSE IF \\E i \\in moje : Nr(archiwum[i]) >= Nr(w)\n", "                  ELSE IF FALSE\n"),),
+        (Edit(MODEL, "    IF \\E i \\in moje : Nr(archiwum[i]) >= Nr(w)\n", "    IF FALSE\n"),),
         _check("archiwum"),
         "plik Logów, którego odpowiedź na upload zginęła, idzie do Archiwum drugi raz",
         NEW,
@@ -366,7 +373,7 @@ MUTATIONS = (
     ),
     Mutation(
         "plik starszej wersji nie ustępuje: upload bez remove (_deliver_archive: box.remove)",
-        (Edit(MODEL, "                  ELSE IF moje /= {}\n", "                  ELSE IF FALSE\n"),),
+        (Edit(MODEL, "    ELSE IF moje /= {}\n", "    ELSE IF FALSE\n"),),
         _check("archiwum"),
         "plik Logów z Diagnozą nigdy nie dochodzi, bo GitHub odrzuca drugi plik tej nazwy",
         NEW,
@@ -450,7 +457,7 @@ MUTATIONS = (
     ),
     Mutation(
         "plik w Archiwum w wersji po nazwie pliku, bez stopnia (_deliver_archive: _asset_version jak przed #910)",
-        (Edit(MODEL, "ELSE IF \\E i \\in moje : Nr(archiwum[i]) >= Nr(w)", "ELSE IF \\E i \\in moje : archiwum[i] >= w"),),
+        (Edit(MODEL, "    IF \\E i \\in moje : Nr(archiwum[i]) >= Nr(w)", "    IF \\E i \\in moje : archiwum[i] >= w"),),
         _check("starsza"),
         "plik wersji zastępczej zostaje w Archiwum, a pliku Logów z wynikiem, które przyszły po nim, kolejka nie wysyła",
         NEW,

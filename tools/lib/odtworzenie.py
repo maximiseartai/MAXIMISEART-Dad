@@ -14,7 +14,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   takiego odtworzenia nic by nie znaczył; to samo numer Wpisu raportu z maską strażnika i numer pamięci wpisów, którego
   nie ma w jednym Wpisie. Zastrzeżenie (maski strażnika w Kopii i w czynnościach Wpisów, wiersz Rejestru zleceń albo
   INTERMAX w obu położeniach bez komórek dozwolonych tylko w jednym, pole albo element, które strażnik pominął poza
-  wejściem, Wzorce spoza Logów, Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix, maile w postaci
+  wejściem, Wzorzec spoza Archiwum inny niż Wzorzec taty albo bez skrótu w Logach, Surowe zlecenia, dni nad wklejeniem, Atrapa w miejscu efenix, maile w postaci
   kanonicznej zamiast maili taty) raport podaje przy każdym wyniku, bo może tłumaczyć różnicę.
 - Pliki wejścia powstają w katalogu roboczym z Kopii wejścia, pod tą samą nazwą w folderach o tych samych nazwach co
   u taty (``CopiedFile.folders``), więc Komunikaty nazywają te same plik i folder: każdy arkusz z nagłówkami i
@@ -24,11 +24,15 @@ Jedyną operacją jest ``replay()``. Kształt danych:
   danych zna dwie kolumny na lewo od nagłówka (#918), wiersze wklejenia INTERMAX krój wiersza z aplikacji, a wiersze
   INTERMAX Wpisania raportów krój uporządkowanych wierszy, bo Kopia ma tylko uporządkowane wiersze. W miejscu kolumn
   ``ADRES`` i numeru Orange stoją wartości syntetyczne z numerem wiersza (``SYNTHETIC_ADDRESS``, ``SYNTHETIC_ORANGE``),
-  których żaden plik taty nie ma. Wzorce i Listę Wykonawców (``wykonawcy.yaml``) daje folder ``configuration``, bo Logi
-  mają z nich tylko nazwę i rozmiar. Reguły ilości i Legenda czynności ze startu Uruchomienia są w Logach
-  (``RunLog.quantity_rules``, ``RunLog.activity_legend``), a Przygotowanie i Przebieg z Logów sprzed ich zapisu liczą
-  Regułami ilości i Legendą czynności z Wydania tego drzewa, tak samo Wpisanie raportów z Logów sprzed zapisu legendy
-  (zastrzeżenie).
+  których żaden plik taty nie ma. Wzorzec procesu odtworzenie bierze z Archiwum Logów okresu: plik
+  ``wzorzec-<SHA-256>.xlsx`` (``template_archive.asset_name``) ze skrótem z Logów (``LoggedFile.sha256``) w folderze
+  ``archive`` obok pliku Logów, z tymi bajtami, pod nazwą Wzorca z ``config``. Bez niego (Wzorzec, którego sprawdzenie
+  reguły danych nie przepuściło, Logi sprzed skrótu) bierze Wzorzec z folderu ``configuration`` i porównuje skrót: inny
+  Wzorzec niż u taty i Logi bez skrótu to zastrzeżenie. Listę Wykonawców ze startu bez adresów mają Logi
+  (``RunLog.workers``), a z Logów sprzed niej odtworzenie czyta ``wykonawcy.yaml`` z folderu ``configuration``
+  (zastrzeżenie). Reguły ilości i Legenda czynności ze startu Uruchomienia są w Logach (``RunLog.quantity_rules``,
+  ``RunLog.activity_legend``), a Przygotowanie i Przebieg z Logów sprzed ich zapisu liczą Regułami ilości i Legendą
+  czynności z Wydania tego drzewa, tak samo Wpisanie raportów z Logów sprzed zapisu legendy (zastrzeżenie).
 - Proces biegnie przez to samo Uruchomienie co w Centrum (``process_kind.PreparedRun.conduct``: ten sam rdzeń i wpis
   katalogu procesów), z Kopią wejścia i pamięcią reguły danych, a Logi odtworzenia składają ``EndedRun.of``,
   ``logs_of`` i strażnik (``guard_logs``), jak w Centrum. Decyzję taty odtworzenie rozstrzyga tak jak tata: odmowa
@@ -53,9 +57,11 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta, timezone
 import enum
+import hashlib
 import json
 from pathlib import Path
 import platform
+import shutil
 from typing import Any, Final, assert_never
 
 from openpyxl import Workbook
@@ -88,7 +94,8 @@ from rozliczenia.centrum.process_kind import (
 )
 from rozliczenia.centrum.report_entering_logs import EnteringReplay, ReplayedOrderless, Unreplayable
 from rozliczenia.centrum.logged_input_copy import LoggedCell, LoggedInputFile, LoggedSheet, LoggedTyped
-from rozliczenia.centrum.run_logs import Environment, RunLog, StartFacts
+from rozliczenia.centrum.run_logs import Environment, LoggedFile, LoggedWorker, RunLog, StartFacts
+from rozliczenia.centrum.template_archive import asset_name
 from rozliczenia.centrum.run_logs_guard import GuardCut, guard_cuts, guard_logs
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.settings_at_start import SettingsAtStart
@@ -122,7 +129,7 @@ from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
-from rozliczenia.worker_list import WorkerEntry, WorkerList
+from rozliczenia.worker_list import WorkerEntry, WorkerList, WorkerListProblem
 from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, RequestedEntry, SenderAddress, as_mail
 
 from atrapy.skrzynka_raportow import FakeInbox
@@ -260,21 +267,25 @@ def replay(
     work: Path,
     configuration: Path | None,
     efenix_today: date | None = None,
+    archive: Path | None = None,
 ) -> Report:
     """Odtwarza Uruchomienie ``record`` w katalogu roboczym ``work`` i porównuje je z Logami.
 
-    ``configuration``: folder z Konfiguracją wykonawców i Wzorcami pod nazwami z ``config/`` narzędzia (``None``: bez
-    niego, wtedy Przygotowanie i Przebieg mają granicę blokującą). ``efenix_today``: dzisiejszy dzień kalendarza Atrapy
-    efenix (``None``: dzień startu Uruchomienia w czasie tego komputera).
+    ``archive``: folder z plikami Archiwum Logów okresu, w którym odtworzenie szuka Wzorców z Logów
+    (``wzorzec-<SHA-256>.xlsx``; ``None``: bez Archiwum). ``configuration``: folder z Listą Wykonawców i Wzorcami pod
+    nazwami z ``config/`` narzędzia na Wzorzec, którego Archiwum nie ma, i Listę, której nie mają Logi (``None``: bez
+    niego, wtedy takie odtworzenie ma granicę blokującą). ``efenix_today``: dzisiejszy dzień kalendarza Atrapy efenix
+    (``None``: dzień startu Uruchomienia w czasie tego komputera).
     """
 
     kind = CATALOG.kind(record.process)
     rebuild = _rebuild(record.process)
-    limits = _limits(record, kind, rebuild, configuration)
+    sources = _sources(record, kind, rebuild, configuration, archive)
+    limits = _limits(record, kind, rebuild, sources)
     if any(limit.blocking for limit in limits):
         return Report(Verdict.IMPOSSIBLE, None, tuple(limits))
     with ExitStack() as stack:
-        here = _Work(work, configuration, efenix_today, stack)
+        here = _Work(work, configuration, sources.placed(work), efenix_today, stack)
         rebuilt = rebuild.files(record, here)
         limits += rebuilt.limits
         if any(limit.blocking for limit in rebuilt.limits):
@@ -293,7 +304,7 @@ def replay(
 # --- granice --------------------------------------------------------------------------------------------------------
 
 
-def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, configuration: Path | None) -> list[Limit]:
+def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, sources: _Sources) -> list[Limit]:
     if record.ending == "interrupted":
         return [
             Limit(
@@ -325,10 +336,9 @@ def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, conf
         *_rules_limits(record, kind),
         *_legend_limits(record, kind),
         *rebuild.limits(record),
+        *_workers_limits(record, kind, rebuild),
+        *sources.limits,
     ]
-    names = _from_configuration(kind, rebuild)
-    if names:
-        limits.append(_configuration_limit(record, configuration, names))
     if record.stop_kind == "repeated":
         limits.append(
             Limit(
@@ -462,33 +472,134 @@ def _masked_limits(record: RunLog) -> list[Limit]:
     ]
 
 
-def _configuration_limit(record: RunLog, configuration: Path | None, names: Sequence[str]) -> Limit:
-    """Lista Wykonawców i Wzorce (pliki ``names``) z folderu ``configuration``: bez folderu odtworzenie nie biegnie, a
-    plik, którego w nim nie ma, i rozmiar inny niż plik taty w Logach (``environment.files``) raport nazywa."""
+@dataclass(frozen=True)
+class _Sources:
+    """Skąd odtworzenie bierze Wzorce procesu: rola → plik z Archiwum Logów okresu (``archived``, kopiowany do katalogu
+    roboczego pod nazwą Wzorca z ``config``) albo z folderu Konfiguracji (``configured``), i granice tego wyboru, także
+    Listy Wykonawców spoza Logów."""
 
+    archived: Mapping[ConfigurationNeed, Path]
+    configured: Mapping[ConfigurationNeed, Path]
+    limits: list[Limit]
+
+    def placed(self, work: Path) -> dict[ConfigurationNeed, Path]:
+        """Wzorce w katalogu roboczym ``work``: z Archiwum skopiowane pod nazwą z ``config`` (Komunikat nazywa Wzorzec tak
+        jak u taty), z folderu Konfiguracji na miejscu."""
+
+        placed = dict(self.configured)
+        for need, source in self.archived.items():
+            target = work / "konfiguracja" / _TEMPLATE_NAMES.path(need).name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, target)
+            placed[need] = target
+        return placed
+
+
+_TEMPLATE_NAMES: Final = ConfigurationFiles.in_folder(Path())
+"""Nazwy Wzorców w ``config`` narzędzia, pod którymi Logi mają ich pliki (``environment.files``)."""
+
+
+def _sources(
+    record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, configuration: Path | None, archive: Path | None
+) -> _Sources:
+    """Wzorzec procesu z Archiwum, gdy folder ``archive`` ma plik ``wzorzec-<SHA-256>.xlsx`` ze skrótem z Logów i tymi
+    bajtami; inaczej z folderu ``configuration``, którego brak blokuje odtworzenie, a inny skrót niż w Logach, Logi bez
+    skrótu i brak pliku to zastrzeżenie. Folderu potrzebuje też Lista Wykonawców, której nie mają Logi
+    (``_configured_workers``)."""
+
+    logged = {file.name: file for file in (record.environment.files or ())}
+    archived: dict[ConfigurationNeed, Path] = {}
+    missing: list[tuple[ConfigurationNeed, LoggedFile | None]] = []
+    for need in kind.configuration_needs:
+        file = logged.get(_TEMPLATE_NAMES.path(need).name)
+        sha256 = None if file is None else file.sha256
+        found = None if sha256 is None or archive is None else archive / asset_name(sha256)
+        if found is not None and found.is_file() and _sha256(found) == sha256:
+            archived[need] = found
+        else:
+            missing.append((need, file))
+    workers = _workers_from_configuration(record, kind, rebuild)
+    if not missing and not workers:
+        return _Sources(archived, {}, [])
     if configuration is None or not configuration.is_dir():
-        return Limit(
-            f"nie ma folderu z Listą Wykonawców i Wzorcami ({configuration or 'brak'}, --konfiguracja): Logi ich "
-            "nie niosą, a proces bez nich nie biegnie",
-            blocking=True,
+        wanted = ", ".join([*(_TEMPLATE_NAMES.path(need).name for need, _ in missing), *([WORKERS_FILE] if workers else [])])
+        return _Sources(
+            archived,
+            {},
+            [
+                Limit(
+                    f"nie ma folderu Konfiguracji ({configuration or 'brak'}, --konfiguracja), a odtworzenie bierze z niego "
+                    f"{wanted}, których nie ma w Archiwum Logów okresu ani w Logach",
+                    blocking=True,
+                )
+            ],
         )
-    logged = {file.name: file.size for file in (record.environment.files or ())}
-    paths = [configuration / name for name in names]
-    missing = [path.name for path in paths if not path.is_file()]
-    sizes = [
-        f"{path.name}: u taty {logged[path.name]} B, tu {path.stat().st_size} B"
-        for path in paths
-        if path.is_file() and logged.get(path.name) not in (None, path.stat().st_size)
+    configured = {need: configuration / _TEMPLATE_NAMES.path(need).name for need, _ in missing}
+    limits = [
+        limit for need, file in missing if (limit := _configured_template(configured[need], file, configuration)) is not None
     ]
-    text = (
-        f"Lista Wykonawców i Wzorce nie są w Logach: odtworzenie czyta je z {configuration}, a Logi mają tylko "
-        "nazwę i rozmiar plików taty"
+    if workers:
+        absent = "" if (configuration / WORKERS_FILE).is_file() else f", a w folderze nie ma {WORKERS_FILE}"
+        limits.append(
+            Limit(
+                f"Logi nie mają Listy Wykonawców (Logi sprzed jej zapisu): odtworzenie czyta {WORKERS_FILE} z "
+                f"{configuration}, a Lista taty mogła być inna{absent}"
+            )
+        )
+    return _Sources(archived, configured, limits)
+
+
+def _configured_template(path: Path, logged: LoggedFile | None, configuration: Path) -> Limit | None:
+    """Zastrzeżenie o Wzorcu z folderu Konfiguracji ``path``: bez pliku, bez skrótu w Logach (Logi sprzed niego) albo z
+    innym skrótem niż Wzorzec taty; ``None``: ten sam skrót, czyli ten sam Wzorzec."""
+
+    name = path.name
+    if not path.is_file():
+        return Limit(f"pliku {name} nie ma w Archiwum Logów okresu ani w folderze Konfiguracji {configuration}")
+    if logged is None or logged.sha256 is None:
+        size = "" if logged is None or logged.size is None else f" (u taty {logged.size} B, tu {path.stat().st_size} B)"
+        return Limit(
+            f"Logi nie mają skrótu pliku {name} (Logi sprzed SHA-256 Wzorców): odtworzenie czyta go z {configuration}, "
+            f"a nie wiadomo, czy to Wzorzec taty{size}"
+        )
+    here = _sha256(path)
+    if here == logged.sha256:
+        return None
+    return Limit(
+        f"{name} z {configuration} różni się od Wzorca taty (SHA-256 u taty {logged.sha256[:12]}…, tu {here[:12]}…), "
+        "a Archiwum Logów okresu go nie ma: odtworzenie liczy innym Wzorcem"
     )
-    if missing:
-        text += f"; w folderze nie ma: {', '.join(missing)}"
-    if sizes:
-        text += f"; inny rozmiar niż u taty: {'; '.join(sizes)}"
-    return Limit(text)
+
+
+def _sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _workers_from_configuration(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild) -> bool:
+    """Proces liczy Listą Wykonawców, odbudowa jej nie daje, a Logi jej nie mają (Logi sprzed jej zapisu)."""
+
+    return "workers" in kind.needs and not rebuild.workers and record.workers is None
+
+
+def _workers_limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild) -> list[Limit]:
+    """Lista Wykonawców z Logów jak Reguły ilości (``_rules_limits``): z maską strażnika reguły danych albo taka, której
+    nie da się złożyć, kończy odtworzenie, bo wynik z inną Listą nic by nie znaczył."""
+
+    if "workers" not in kind.needs or rebuild.workers or record.workers is None:
+        return []
+    shown = json.dumps([worker.model_dump() for worker in record.workers], ensure_ascii=False)
+    masked = sorted({mask for mask in MASKS if mask in shown})
+    if masked:
+        return [
+            Limit(
+                f"Lista Wykonawców w Logach ma maski strażnika reguły danych ({', '.join(masked)}), więc odtworzenie nie "
+                "zna Listy Uruchomienia",
+                blocking=True,
+            )
+        ]
+    if isinstance(LoggedWorker.worker_list(record.workers), WorkerListProblem):
+        return [Limit("Listy Wykonawców z Logów nie da się złożyć regułami Listy Wykonawców", blocking=True)]
+    return []
 
 
 # --- pliki wejścia --------------------------------------------------------------------------------------------------
@@ -496,10 +607,12 @@ def _configuration_limit(record: RunLog, configuration: Path | None, names: Sequ
 
 @dataclass
 class _Work:
-    """Katalog roboczy odtworzenia, folder Konfiguracji, dzień Atrapy i stos zasobów (Atrapa) na czas przebiegu."""
+    """Katalog roboczy odtworzenia, folder Konfiguracji, Wzorce procesu (``_Sources.placed``), dzień Atrapy i stos zasobów
+    (Atrapa) na czas przebiegu."""
 
     directory: Path
     configuration: Path | None
+    templates: Mapping[ConfigurationNeed, Path]
     efenix_today: date | None
     stack: ExitStack
 
@@ -994,24 +1107,18 @@ def _rebuild(key: common_contract.ProcessKey) -> _Rebuild:
             assert_never(key)
 
 
-def _from_configuration(kind: ProcessKind[Any, Any], rebuild: _Rebuild) -> list[str]:
-    """Pliki procesu ``kind``, które odtworzenie bierze z folderu Konfiguracji, a nie z odbudowy: Wzorce i Lista
-    Wykonawców."""
-
-    templates = [ConfigurationFiles.in_folder(Path()).path(need).name for need in kind.configuration_needs]
-    return [*templates, WORKERS_FILE] if "workers" in kind.needs and not rebuild.workers else templates
-
-
 def _prepared(
     record: RunLog, kind: ProcessKind[Any, Any], rebuilt: _Rebuilt, work: _Work, memory: ForbiddenValues
 ) -> PreparedRun[Any, Any]:
-    """Uruchomienie z Logów ``record`` z plikami odbudowanymi i z folderu Konfiguracji, z Kopią wejścia i plikiem
+    """Uruchomienie z Logów ``record`` z plikami odbudowanymi i Wzorcami z Archiwum albo z folderu Konfiguracji, z Kopią wejścia i plikiem
     metryk w katalogu roboczym w miejscu pliku metryk procesu. Okres Uporządkowania INTERMAX to okres dnia z zegara
     procesu u taty (ADR 0019), więc start podaje okres tylko procesowi z okresem."""
 
-    paths = {**rebuilt.paths, **_configured(work, kind.configuration_needs)}
+    paths: dict[PathNeed, Path] = {**rebuilt.paths}
+    for need, template in work.templates.items():
+        paths[need] = template
     period = record.period if isinstance(kind, PeriodProcessKind) else None
-    workers = rebuilt.workers if rebuilt.workers is not None else _configured_workers(work) if "workers" in kind.needs else None
+    workers = rebuilt.workers if rebuilt.workers is not None else _workers(record, work) if "workers" in kind.needs else None
     settings = SettingsAtStart(
         snapshot=None, workers=workers, quantity_rules=_quantity_rules(record), activity_legend=_activity_legend(record), warnings=record.start_warnings()
     )
@@ -1042,19 +1149,22 @@ def _activity_legend(record: RunLog) -> ActivityLegend:
     return value
 
 
-def _configured(work: _Work, needs: Sequence[ConfigurationNeed]) -> dict[PathNeed, Path]:
-    if not needs:
-        return {}
-    assert work.configuration is not None, "bez folderu Konfiguracji _configuration_limit blokuje odtworzenie"
-    files = ConfigurationFiles.in_folder(work.configuration)
-    return {need: files.path(need) for need in needs}
+def _workers(record: RunLog, work: _Work) -> WorkerList:
+    """Lista Wykonawców ze startu z Logów, a z Logów sprzed jej zapisu z folderu Konfiguracji; Listę, której nie da się
+    złożyć, zatrzymuje wcześniej ``_workers_limits``."""
+
+    if record.workers is None:
+        return _configured_workers(work)
+    found = LoggedWorker.worker_list(record.workers)
+    assert isinstance(found, WorkerList), "Lista, której nie da się złożyć, to granica blokująca"
+    return found
 
 
 def _configured_workers(work: _Work) -> WorkerList:
     """Lista Wykonawców z ``wykonawcy.yaml`` folderu Konfiguracji regułą właściciela Ustawień Centrum; brak pliku to
     pusta lista, jak w Centrum, a zła treść to błąd odtworzenia (``ValueError`` ze zdaniem)."""
 
-    assert work.configuration is not None, "bez folderu Konfiguracji _configuration_limit blokuje odtworzenie"
+    assert work.configuration is not None, "bez folderu Konfiguracji _sources blokuje odtworzenie"
     data = settings_bytes(work.configuration / WORKERS_FILE)
     if isinstance(data, OSError):
         raise data
@@ -1192,12 +1302,13 @@ NOT_COMPARED: Final = frozenset(
         "input_copy_notes",
         "quantity_rules",
         "activity_legend",
+        "workers",
         "address_history",
     }
 )
 """Pola Logów, które odtworzenie bierze z Logów albo które zależą od chwili, komputera albo taty, a nie od wejścia i
 kodu: fakty startu, czasy, narzędzie, środowisko, Diagnoza, działania taty, Urwanie, uwagi o Kopii wejścia, Reguły
-ilości i Legenda czynności ze startu, a liczby Historii adresu zależą od Bazy zleceń, której Kopia wejścia nie ma.
+ilości, Legenda czynności i Lista Wykonawców ze startu, a liczby Historii adresu zależą od Bazy zleceń, której Kopia wejścia nie ma.
 Każde inne
 pole ``RunLog`` jest w ``COMPARED`` (``tests/test_centrum_logi_w_skrzynce.py``)."""
 

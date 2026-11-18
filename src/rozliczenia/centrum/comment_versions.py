@@ -10,7 +10,9 @@ wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten 
 - wersja zastępcza, którą start Centrum odtwarza z dziennika Wyceny (``STAND_IN``): Logi z pliku albo Logi Urwanego
   Uruchomienia (``StandInLogs``) i wynik bez Logów (``WithoutLogsVersion``), gdy pliku Logów nie ma albo nie da się go
   odczytać;
-- Logi z pracy Centrum Uruchomienia (``OwnLogs``, ``OWN``): z wynikiem, z Diagnozą.
+- Logi z pracy Centrum Uruchomienia (``OwnLogs``, ``OWN``): z wynikiem, z Diagnozą, a obok pliku Logów w Archiwum Wzorce
+  Uruchomienia po sprawdzeniu reguły danych (``template_archive.ArchivedTemplate``); wersja zastępcza Wzorców nie ma,
+  bo dziennik pisze tylko Wycena w efenix, która Wzorcem nie liczy.
 
 Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegara komputera, a wersja zastępcza nie zastępuje
 Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
@@ -48,6 +50,7 @@ if TYPE_CHECKING:
 
     from rozliczenia.centrum.pricing_progress import PricingProgress
     from rozliczenia.centrum.run_logs import LoggedDiagnosis, LoggedMessage, RunLog, StartFacts
+    from rozliczenia.centrum.template_archive import ArchivedTemplate
     from rozliczenia.client_data import ForbiddenValues, Outgoing
 
 LABEL: Final[Label] = "logi-uruchomienia"
@@ -94,9 +97,11 @@ class ProgressVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSE
 @final
 @dataclass(frozen=True)
 class OwnLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
-    """Logi z pracy Centrum Uruchomienia (z wynikiem albo z Diagnozą): podsumowanie z odnośnikiem i plik w Archiwum."""
+    """Logi z pracy Centrum Uruchomienia (z wynikiem albo z Diagnozą): podsumowanie z odnośnikiem, plik w Archiwum i
+    obok niego Wzorce Uruchomienia (``templates``), które przeszły sprawdzenie reguły danych."""
 
     logs: GuardedLogs
+    templates: tuple[ArchivedTemplate, ...] = ()
 
     def __post_init__(self) -> None:
         exact_logs(self.logs)
@@ -318,7 +323,10 @@ def post_of(version: CommentVersion) -> LogsPost:
     match version:
         case ProgressVersion(progress=progress, text=text):
             start, comment, archive = progress.started, exact_text(text).text, None
-        case OwnLogs(logs=logs) | StandInLogs(logs=logs):
+        case OwnLogs(logs=logs, templates=templates):
+            checked = exact_logs(logs)
+            start, comment, archive = checked.record.start, summary_markdown(checked), _archive_file(checked, templates)
+        case StandInLogs(logs=logs):
             checked = exact_logs(logs)
             start, comment, archive = checked.record.start, summary_markdown(checked), _archive_file(checked)
         case WithoutLogsVersion(final=final, text=text):
@@ -396,7 +404,7 @@ def _orders_done(progress: PricingProgress) -> str | None:
     return f"{len(progress.done)} z {progress.total} skończone" + (f" ({outcomes})" if outcomes else "")
 
 
-def _archive_file(logs: GuardedLogs) -> ArchiveFile:
+def _archive_file(logs: GuardedLogs, templates: tuple[ArchivedTemplate, ...] = ()) -> ArchiveFile:
     record = logs.record
     period = record.period
     return ArchiveFile(
@@ -404,10 +412,12 @@ def _archive_file(logs: GuardedLogs) -> ArchiveFile:
         title=tool(f"Logi Uruchomień {period}"),
         description=tool(
             f"Pełne Logi Uruchomień okresu {period} z Centrum rozliczeń taty: jeden plik na Uruchomienie, nazwany jak "
-            "plik Logów na komputerze taty i spakowany gzipem. To nie jest Wydanie narzędzia."
+            "plik Logów na komputerze taty i spakowany gzipem, a obok Wzorce taty, którymi liczyły, każda wersja raz "
+            "jako wzorzec-<SHA-256>.xlsx. To nie jest Wydanie narzędzia."
         ),
         name=tool(name_of(record.start)),
         text=logs.text,
+        templates=templates,
     )
 
 

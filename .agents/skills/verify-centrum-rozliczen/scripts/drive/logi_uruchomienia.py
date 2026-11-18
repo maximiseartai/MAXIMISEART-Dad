@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 import re
 import subprocess
@@ -131,6 +132,14 @@ def _archived(run: Run, tag: str, name: str) -> bytes:
 
     path = archive_file(run.root, tag, name)
     return gzip.decompress(read_bytes(path)) if path.is_file() else b""
+
+
+def _template_name(data: bytes) -> str:
+    """The name a Wzorzec with the bytes ``data`` has in the Archiwum Logów okresu: a deliberate copy of
+    ``template_archive.asset_name`` (docs/agents/skille.md, „Co wyrocznia bierze z src”), because the files in the
+    skrzynka outlive a Wydanie and the next one reads them, so a change of the name must break this check."""
+
+    return f"wzorzec-{hashlib.sha256(data).hexdigest()}.xlsx"
 
 
 def _ended_in_centrum_log(run: Run) -> list[tuple[str, str, str, str, str]]:
@@ -283,10 +292,17 @@ def drive(run: Run, page: Page) -> None:
         "each comment is in the issue of its own period and links the Archiwum of that period",
     )
     listed = read_json(archive_listing(run.root))
+    assets = [(archive["tag"], asset["name"]) for archive in listed for asset in archive["assets"]]
+    logs_files = [name for _, name in assets if name.endswith(".json.gz")]
+    templates = [(tag, name) for tag, name in assets if not name.endswith(".json.gz")]
     run.check(
         sorted(archive["tag"] for archive in listed) == [f"logi-{period}" for period in periods]
-        and sum(len(archive["assets"]) for archive in listed) == len(files),
-        f"the skrzynka has one Archiwum Logów okresu per period with Uruchomienia and one file per Uruchomienie: {len(files)}",
+        and len(set(assets)) == len(assets)
+        and len(set(logs_files)) == len(logs_files) == len(files)
+        and all(name == _template_name(read_bytes(archive_file(run.root, tag, name))) for tag, name in templates),
+        f"the skrzynka has one Archiwum Logów okresu per period with Uruchomienia, one file of Logi per Uruchomienie "
+        f"({len(files)}) and besides them only Wzorce named wzorzec-<SHA-256 of their bytes>.xlsx, each name once in its "
+        f"Archiwum: {len(templates)}",
     )
     run.check(
         all(comment.startswith("**Logi Uruchomienia**: ") for _, comment in comments),

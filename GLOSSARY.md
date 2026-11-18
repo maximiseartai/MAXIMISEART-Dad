@@ -621,7 +621,7 @@ Gdy Maks je zamknie, a problem wraca, powstaje nowe z odnośnikiem do poprzednie
 
 ## Logi Uruchomienia
 
-Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń: wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z godziną każdego kroku, wersja narzędzia, Kopia wejścia oraz dziennik działań taty w Centrum i dziennik Centrum od poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi taty, i to, co Centrum zrobiło samo, np. Przypomnienia o raporcie i Wysyłka rozliczeń).
+Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń: wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z godziną każdego kroku, wersja narzędzia, Kopia wejścia, skrót każdego Wzorca procesu, Lista Wykonawców ze startu bez adresów oraz dziennik działań taty w Centrum i dziennik Centrum od poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi taty, i to, co Centrum zrobiło samo, np. Przypomnienia o raporcie i Wysyłka rozliczeń).
 Logi Wyceny w efenix mają też odczyt strony efenix po każdym szukaniu, otwarciu zlecenia i zapisie, a z danych adresowych tylko nazwy części adresu, którymi wynik szukania różni się od `ADRES`, bez ich wartości; zrzutów ekranu nie mają.
 Mówią wprost, czy był to podgląd, w którym nic nie zapisano, czy Uruchomienie z zapisem, a Logi Wyceny w efenix także jej tryb.
 Zostają na komputerze taty także po zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił.
@@ -640,6 +640,7 @@ Według Reguły danych Kopia nie ma kolumn `ADRES` i `NUMER UMOWY/ZLECENIA ORANG
 Odcisk to rozmiar i skrót bajtów, z których proces przeczytał plik, i chwila zmiany pliku tuż przed odczytem, więc Maks wie, czy jego kopia pliku jest tą samą wersją.
 Plik ma w Kopii nazwę i nazwy dwóch folderów nad nim, bez pełnej ścieżki: Komunikaty Pliku zbiorczego pokazują oba, a Komunikaty INTERMAX tylko folder pliku.
 Wyglądu komórek (Wyróżnień, formatu liczby, Hiperłączy) Kopia nie ma, bo proces tylko przenosi go do plików, które tworzy.
+Wzorców Kopia nie ma: Logi mają ich skrót, a same Wzorce leżą w Archiwum Logów okresu.
 _Avoid_: zrzut pliku, kopia pliku taty (to cały plik, a Kopia wejścia ma tylko przeczytane wiersze)
 
 ## Urwane Uruchomienie
@@ -671,6 +672,7 @@ To, co z treści plików taty może wyjść z jego komputera do Skrzynki Zgłosz
 W wolnym tekście telefony są `[telefon]`, a ulice `[ulica]`.
 Numer z zerem z przodu (`NUMER ZL.`, jak pisze go Wykonawca) nie jest telefonem, bo żaden polski telefon tak się nie zaczyna (ADR 0025).
 Przed zapisem Logów i każdą wysyłką strażnik maskuje każdą zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolumną i miejscem, bez wartości.
+Wzorca nie da się zamaskować, więc idzie do Archiwum Logów okresu w całości albo wcale.
 Położenie, w którym strażnik zna każdy wiersz Rejestru zleceń, ustala sekcja „Położenie wiersza” tego ADR.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja
 
@@ -698,13 +700,14 @@ Nowsza wersja tej samej wysyłki, jak Logi Uruchomienia po Diagnozie albo po pos
 Starsza, która dojdzie po nowszej, niczego w Skrzynce nie zmienia.
 Która wersja jest nowsza, mówi najpierw jej stopień, który wybiera nadawca, a nie zegar komputera (ADR 0015, dopisek #910).
 Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem.
-Plik w Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia plik starszej.
+Plik w Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia plik starszej; Wzorzec idzie tylko wtedy, gdy Archiwum nie ma pliku o jego nazwie.
 _Avoid_: outbox, bufor
 
 ## Archiwum Logów okresu
 
 Pełne Logi Uruchomień jednego okresu w Skrzynce Zgłoszeń: GitHub Release z tagiem `logi-<okres>` w prywatnym repozytorium Zgłoszeń, który Centrum zakłada przy pierwszych Logach okresu.
 Każde Uruchomienie ma w nim jeden plik o nazwie pliku Logów z `.gz`, który po rozpakowaniu jest bajt w bajt plikiem Logów z komputera taty, a w issue Logów okresu jeden komentarz z podsumowaniem i odnośnikiem do tego pliku.
+Obok leży raz każda wersja Wzorca, którym liczyły Uruchomienia okresu, jako `wzorzec-<SHA-256>.xlsx`, gdy przeszła sprawdzenie reguły danych (ADR 0025, „Wzorce w Archiwum Logów okresu”).
 Diagnoza podmienia plik swojego Uruchomienia.
 Nie jest Wydaniem: leży w innym repozytorium i pod innym tagiem, a Centrum i narzędzie Wydań patrzą tylko na Wydania publicznego repozytorium.
 Gdy Skrzynka odmawia Archiwum, plik czeka w Kolejce wysyłki, a komentarz idzie z dopiskiem, że pełne Logi czekają; pozostałe wysyłki kolejki idą dalej (ADR 0015, dopisek #844).

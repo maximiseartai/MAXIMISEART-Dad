@@ -184,7 +184,7 @@ extend-select = [
 "src/rozliczenia/dad_files.py" = ["TID251"]
 "src/rozliczenia/register_file.py" = ["TID251"]
 "src/rozliczenia/template_file.py" = ["TID251"]
-"src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard}.py" = ["TID251"]
+"src/rozliczenia/centrum/{app,case_delivery,comment_versions,dad_notes,outbox,quantity_check_run,reports,run_logs_guard,template_archive}.py" = ["TID251"]
 "src/rozliczenia/centrum/opener.py" = ["TID251"]
 # Treść z Wydania plików Ustawień: właściciel Ustawień (domyślne plików i okno Ustawień), pora Przypomnień sprzed pliku
 # (ADR 0030), wartości domyślne Uruchomienia silnika i pakiet Raportów pracowników, który ją wystawia.
@@ -196,7 +196,7 @@ extend-select = [
 # kanoniczna maila i Logi Wpisania raportów, które zapisują odczyt i odtwarzają go z Logów.
 "src/rozliczenia/worker_reports/{_reading,_matching,_corrections,_canonical}.py" = ["TID251"]
 "src/rozliczenia/centrum/report_entering_logs.py" = ["TID251"]
-# Wejście odczytu okna (ReportInputs): jego jedyny konstruktor report_inputs i Przypomnienia rdzenia, które biorą je jako pole.
+# Wejście odczytu okna (ReportInputs): jego jedyny konstruktor EnteringMemory.report_inputs i Przypomnienia rdzenia, które biorą je jako pole.
 "src/rozliczenia/report_entering.py" = ["TID251"]
 "src/rozliczenia/worker_reports/_reminders.py" = ["TID251"]
 "tools/lib/import_dynamiczny.py" = ["TID251"]
@@ -229,6 +229,7 @@ extend-select = [
 "rozliczenia.centrum.comment_versions._VERSIONS".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.comment_versions._Versions".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.centrum.run_logs_guard._MINTED".msg = "Logi i tekst po strażniku dają tylko guard_logs i guard_text z rozliczenia.centrum.run_logs_guard"
+"rozliczenia.centrum.template_archive._CHECKED".msg = "Wzorzec do Archiwum Logów okresu daje tylko TemplateChecks.checked z rozliczenia.centrum.template_archive"
 "rozliczenia.client_data._PASSED".msg = "tekst do wysyłki (Outgoing) daje tylko rozliczenia.client_data: guarded(…).text, tool(tekst narzędzia) i + takich tekstów"
 "rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
@@ -291,3 +292,10 @@ mypy_path = "src"
 show_error_codes = true
 # Ponad strict: match bez przypadku dla każdego wariantu, warunek zawsze prawdziwy i ignore bez kodu błędu.
 enable_error_code = ["exhaustive-match", "truthy-bool", "truthy-iterable", "ignore-without-code"]
+
+# Kod martwy dla mypy w src/: gałąź isinstance(x, UnreadableFile) przy wartości bez unii (literał w miejscu pliku
+# Ustawień bez odczytu u wołającego, który odmawia, #2029 r1 W1). Poza src/ zostaje wyłączony: testy, narzędzia i skrypty
+# skilli mają 37 miejsc z gałęzią innej platformy po wczesnym return i yield po raise.
+[[tool.mypy.overrides]]
+module = ["rozliczenia", "rozliczenia.*"]
+warn_unreachable = true

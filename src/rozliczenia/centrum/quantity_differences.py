@@ -51,7 +51,6 @@ from rozliczenia.centrum.quantity_rules_preview import Recent, RecentCollectiveF
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.quantity_rules_router import PriceList, RuleSentences
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings_reads import readable_folders, readable_quantity_rules
 from rozliczenia.centrum.settings.quantity_exceptions import (
     SECTION,
     QuantityException,
@@ -117,11 +116,11 @@ def quantity_differences_router(settings: CentrumSettings, price_list: PriceList
     def listed() -> tuple[contract.QuantityDifferences, list[Difference]]:
         """Lista dla sekcji i wszystkie różnice ostatnich plików, także te, które są wyjątkami."""
 
-        rules = readable_quantity_rules(settings)
         view = settings.quantity_rules()
+        rules = view.rules
         bad = view.exceptions_problem
         problem = None if bad is None else SettingProblem(field=bad.place, message=bad.sentence)
-        directory = readable_folders(settings).periods_directory_to_read
+        directory = settings.folders().periods_directory_to_read
         if directory is None:
             return contract.DifferencesWithoutFiles(state="no_periods_directory", exceptions_problem=problem), []
         found = recent.read(directory)

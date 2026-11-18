@@ -84,6 +84,8 @@ from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Rank
 from rozliczenia.centrum.log import UNEXPECTED_FAILURE_EVENT
 from rozliczenia.centrum import run_comments
 from rozliczenia.centrum.run_comments import PROGRESS_S, ProcessFiles, RecordMaker, RunComments
+from rozliczenia.centrum.template_archive import TemplateChecks
+from rozliczenia.dad_files import DadFiles
 from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.settings_at_start import SettingsAtStart
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY, LoggedInterruption, RunLog, StartFacts
@@ -630,6 +632,18 @@ DROGI_DO_LOGOW: Final = {
         _plik(_pola("text")),
         'Argument 5 to "ArchiveFile" has incompatible type "str"; expected "LogsText"',
     ),
+    "bajty komórki jako Wzorzec w pliku Archiwum": (
+        _GOTOWY_PLIK + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
+        "    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, plik.text, (komorka.encode(),))\n",
+        'Argument 6 to "ArchiveFile" has incompatible type "tuple[bytes]"; expected "tuple[ArchivedTemplate, ...]"',
+    ),
+    "Wzorzec z bajtów komórki przez odczyt pliku kolejki": (
+        _GOTOWY_PLIK.replace("\n\n\n", "\nfrom rozliczenia.centrum.template_archive import from_queue\n\n\n")
+        + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
+        "    wzorzec = from_queue(plik.name, plik.name, komorka.encode())\n"
+        "    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, plik.text, (wzorzec,))\n",
+        "`rozliczenia.centrum.template_archive.from_queue` is banned",
+    ),
     "tekst do wysyłki w pliku Archiwum": (
         _GOTOWY_PLIK.replace("\n\n\n", "\nfrom rozliczenia.client_data import Outgoing\n\n\n")
         + 'def plik(tekst: Outgoing, plik: ArchiveFile) -> ArchiveFile:\n    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, tekst)\n',
@@ -787,6 +801,25 @@ from rozliczenia.centrum.comment_versions import LogsPost, ProgressVersion, post
 # które moduł z prawem ``tool`` wpisuje w tekst narzędzia, do komentarza: obie postaci przechodzą tak samo na
 # ``origin/main``.
 ZNANE_LUKI_LOGOW: Final = {
+    # Kontrola dokładnego typu Wzorca w pliku kolejki (outbox._templates_json) też sprawdza obiekt tak, jak go zastaje.
+    "zmiana obiektu w chwili działania: przypisanie __class__ Wzorca do Archiwum obcemu obiektowi z bajtami komórki": _GOTOWY_PLIK
+    + """from typing import Any
+
+from rozliczenia.centrum.template_archive import ArchivedTemplate
+
+
+class Obcy:
+    __slots__ = ("_ArchivedTemplate__content", "_ArchivedTemplate__file", "_ArchivedTemplate__name")
+
+
+def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:
+    obcy: Any = object.__new__(Obcy)
+    object.__setattr__(obcy, "_ArchivedTemplate__name", plik.name)
+    object.__setattr__(obcy, "_ArchivedTemplate__file", plik.name)
+    object.__setattr__(obcy, "_ArchivedTemplate__content", komorka.encode())
+    object.__setattr__(obcy, "__class__", ArchivedTemplate)
+    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, plik.text, (obcy,))
+""",
     "konstrukcja bez __new__: str.__new__ z klasą Outgoing w tytule pliku Archiwum": _plik(
         _pola("title").replace("komorka", "str.__new__(Outgoing, komorka)"), importy="from rozliczenia.client_data import Outgoing\n"
     ),
@@ -985,6 +1018,13 @@ _PUSTE_PRZYJECIE: Final = "{'__post_init__': lambda self: None}"
 # Uruchomienia, a z nią dostają odmowę → fragment zgłoszenia biegu. Relacja podklasy powstaje różnie (type(), type.__new__
 # z bazą bez super(), __bases__), a odmowa stoi w chwili użycia, więc nie zależy od drogi.
 ODMOWY_LOGOW: Final = {
+    "bajty komórki typu Any jako Wzorzec w pliku Archiwum": (
+        _GOTOWY_PLIK.replace("\n\n\n", "\nfrom typing import Any\n\n\n")
+        + "def plik(komorka: str, plik: ArchiveFile) -> ArchiveFile:\n"
+        "    wzorzec: Any = komorka.encode()\n"
+        "    return ArchiveFile(plik.tag, plik.title, plik.description, plik.name, plik.text, (wzorzec,))\n",
+        "bieg TypeError: Plik kolejki bierze tylko Wzorzec ArchivedTemplate z rozliczenia.centrum.template_archive, nie bytes.",
+    ),
     "okres z faktów startu dziennika Wyceny w tekście narzędzia post_of (postęp)": (
         """from rozliczenia.centrum.comment_versions import ProgressVersion, post_of
 from rozliczenia.centrum.outbox import NewIssue, PeriodThread
@@ -1559,13 +1599,16 @@ def _comments(
     files: ProcessFiles = lambda process, period, settings: [],
 ) -> RunComments:
     """Start Centrum (model ``Start``) na katalogu Logów ``directory``: dziś narzędzie bez commitu, a pliki procesu
-    z ``files`` (domyślnie żadnych)."""
+    z ``files`` (domyślnie żadnych), bez Wzorców."""
 
     work = centrum_work(directory, CentrumLog(directory / "centrum-rozliczen.log"), clock)
     records = RecordMaker(
         commit=lambda: None,
         wydanie=lambda commit: None,
         files=files,
+        templates=lambda process: [],
+        dad_files=DadFiles(forbidden=work.forbidden),
+        checks=TemplateChecks(work.forbidden),
         cloud_files=CloudFiles(None),
         dad_actions=DadActionJournal(work),
         centrum_log=work.log,
@@ -2347,7 +2390,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
     "environment": {
         "system": "Windows-11-10.0.26100-SP0",
         "python": "3.12.10",
-        "files": [{"name": "Rejestr syntetyczny.xlsx", "size": 2048, "online_only": False}],
+        "files": [{"name": "Rejestr syntetyczny.xlsx", "size": 2048, "online_only": False, "sha256": "5e" * 32}],
         "unreadable_settings": "Ustawienia syntetyczne.yaml",
     },
     "trace": {
@@ -2565,6 +2608,7 @@ FULL_LOGS: Final[dict[str, Any]] = {
     "activity_legend": {
         "legend": '{"schema_version":1,"kody":[{"id":"kod-syntetyczny","zapisy":["kodsyntetyczny{n}m"],"kolumna":"AA"}]}',
     },
+    "workers": [{"logins": ["login.syntetyczny"], "name": "Wykonawca Syntetyczny", "active": True}],
 }
 
 

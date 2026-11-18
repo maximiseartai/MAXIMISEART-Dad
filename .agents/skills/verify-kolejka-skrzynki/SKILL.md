@@ -165,7 +165,9 @@ The scopes, their wysyłki and their bounds are `SCOPES` in `explore_outbox.py`.
 script does not record (Maks's Mac): `archiwum` with 2 network failures also passes, 93 960 schedules in 188 s instead of
 15 210 in 28 s (2026-11-04); `archiwum-diagnoza` takes 17 086 schedules in 55 s and `archiwum-puste-repo` 5 337 in 16 s
 (2026-11-05). Keeping `OPENING_FILE` and the Centrum log in memory took `archiwum-diagnoza` from 91 s to 41 s with the
-same 19 874 schedules (#911).
+same 19 874 schedules (#911). A Wzorzec before the file of the Logi in `archiwum` (ADR 0025, „Wzorce w Archiwum Logów
+okresu”) gives 29 677 schedules in 62 s (2026-11-18); the other scopes of the Archiwum carry no Wzorzec, because each
+box call doubles the schedules of a scope, and the model's `Wzorzec` runs in `archiwum` and `archiwum-lista`.
 
 Not covered: a key that is missing or refused (`NoKey`, `Refused`: the pass stops, nothing is sent, and `KeyedBox`
 keeps a refusal for `REFUSED_KEPT_S`), a step of the Archiwum `Rejected` for its content (it is `ArchiveWaits` like a

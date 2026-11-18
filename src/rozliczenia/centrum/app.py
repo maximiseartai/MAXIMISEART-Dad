@@ -50,6 +50,7 @@ from rozliczenia.centrum.quantity_check_run import QuantityCheckAfterRun
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S, Reports
 from rozliczenia.centrum.run_cards import RunCards, run_cards_router
 from rozliczenia.centrum.run_comments import RecordMaker, RunComments
+from rozliczenia.centrum.template_archive import TemplateChecks
 from rozliczenia.centrum.run_origins import CentrumRuns
 from rozliczenia.centrum.process_kind import HostParts
 from rozliczenia.centrum.report_entering_run import ReportEnteringEntry, report_entering_router
@@ -262,8 +263,11 @@ def create_app(
         commit=surroundings.tool_freshness.local,
         wydanie=surroundings.tool_freshness.wydanie,
         files=lambda process, period, at_start: files_of_process(
-            process, period, settings=at(at_start).folders, configuration=configuration
+            process, period, settings=at(at_start).folders_or_unreadable, configuration=configuration
         ),
+        templates=lambda process: [configuration.path(need) for need in catalog.kind(process).configuration_needs],
+        dad_files=files,
+        checks=TemplateChecks(work.forbidden),
         cloud_files=surroundings.cloud_files,
         dad_actions=dad_actions,
         centrum_log=work.log,
@@ -274,7 +278,7 @@ def create_app(
         lambda process, period, at_start: diagnose(
             process,
             period,
-            settings=at(at_start).folders,
+            settings=at(at_start).folders_or_unreadable,
             configuration=configuration,
             log=log,
             surroundings=surroundings,
@@ -299,7 +303,7 @@ def create_app(
     intermax = IntermaxEntry(
         settings, catalog, intermax_copies or default_intermax_copies(), parts, surroundings.cloud_files, contexts
     )
-    reminders = ReportReminders(work, settings, reminder_mailbox or inbox, files, reports, now, report_files.load)
+    reminders = ReportReminders(work, settings, reminder_mailbox or inbox, files, reports, now, report_files)
     mailing = SettlementMailing(work, settings, settlement_mailbox or inbox, files, now)
     app.include_router(settlement_mailing_router(mailing))
     report_entering = ReportEnteringEntry(settings, catalog, configuration, parts, contexts, report_files, reminders.shown)

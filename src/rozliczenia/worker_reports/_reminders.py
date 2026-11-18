@@ -198,7 +198,7 @@ class ReminderInputs:
 
     ``reports`` ma pamięć własnych wpisów i decyzje „Zostaw moją” z pamięci Wpisania raportów, bo dzień raportu zależy
     od pamięci (Zlecenia dopisane z raportu, dzień sprzed Przeniesienia): przy tej samej pamięci przypomnienie nie
-    idzie za żaden dzień, za który kafelek Wpisania liczy raport, a idzie za każdy inny (``report_entering.report_inputs``
+    idzie za żaden dzień, za który kafelek Wpisania liczy raport, a idzie za każdy inny (``report_entering.EnteringMemory.report_inputs``
     buduje to wejście dla obu operacji)."""
 
     now: datetime

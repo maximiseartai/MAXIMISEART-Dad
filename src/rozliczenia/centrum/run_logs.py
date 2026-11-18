@@ -3,7 +3,9 @@
 Logi powstają z tych samych faktów co karta Uruchomienia (``logs_of_run.logs_of``): wynik, Komunikaty z kodami,
 podsumowanie, etapy, ślad wywołań Zatrzymania, a z ostatniego snapshotu projekcji postępu Przetworzenia Szablonów
 pracownika i liczba problemów. Środowisko to system, Python i pliki procesu z Diagnozy z rozmiarem i atrybutem OneDrive,
-a przy pliku Folderów bez odczytu zamiast plików nazwa tego pliku.
+a Wzorce także z SHA-256 bajtów, pod którym leżą w Archiwum Logów okresu (``template_archive``), a przy pliku Folderów bez
+odczytu zamiast plików nazwa tego pliku. Z Ustawień ze startu Logi mają Reguły ilości, Legendę czynności i Listę
+Wykonawców bez adresów (``LoggedWorker``), każde tylko w Logach procesu, który nim liczy (``settings_at_start``).
 Dodatki Logów procesu (``ProcessLogs``) daje jego wpis w katalogu procesów: z podsumowania silnika Przebiegu rozliczeń
 liczba wyczyszczonych Ilości tylko dla INEA, której karta nie pokazuje (ADR 0018), a z podsumowania Uporządkowania
 INTERMAX jego Wpisy urządzenia i czynności INTERMAX (ADR 0019): wiersze i operatorzy, bez innej treści wierszy, oraz
@@ -87,6 +89,7 @@ from rozliczenia.quantity_rules_file import (
     parse_device_list,
     parse_quantity_rules,
 )
+from rozliczenia.worker_list import WorkerEntry, WorkerList, WorkerListProblem
 
 RUN_LOGS_DIRECTORY: Final = "uruchomienia"
 SCHEMA_VERSION: Final = 3
@@ -222,14 +225,39 @@ class LoggedTemplate(_Record):
 
 
 class LoggedFile(_Record):
-    """Plik taty procesu: sama nazwa, rozmiar i atrybut OneDrive „tylko online”.
+    """Plik taty procesu: sama nazwa, rozmiar, atrybut OneDrive „tylko online” i przy Wzorcu SHA-256 jego bajtów.
 
     ``size`` ``None``: pliku nie ma albo nie da się go odczytać. ``online_only`` ``None``: poza Windows albo bez pliku.
+    ``sha256``: Wzorzec procesu z ``config`` na dysku narzędzia przy końcu Uruchomienia, pod którego nazwą
+    (``template_archive.asset_name``) leży w Archiwum Logów okresu, gdy przeszedł sprawdzenie reguły danych; ``None``:
+    plik spoza Wzorców (plików na OneDrive narzędzie nie haszuje, bo odczyt pliku „tylko online” go pobiera), Wzorzec,
+    którego nie dało się przeczytać, i Logi sprzed tego pola.
     """
 
     name: str
     size: int | None
     online_only: bool | None
+    sha256: str | None = None
+
+
+class LoggedWorker(_Record):
+    """Wykonawca z Listy Wykonawców ze startu Uruchomienia bez adresów Raportów wykonawcy: loginy z kolumny
+    ``WYKONAWCA``, nazwa w Rozliczeniu pracownika i czy jest aktywny (``worker_list.Worker``)."""
+
+    logins: list[str]
+    name: str
+    active: bool
+
+    @classmethod
+    def all_of(cls, workers: WorkerList) -> list[LoggedWorker]:
+        return [cls(logins=list(worker.logins), name=worker.name, active=worker.active) for worker in workers.workers]
+
+    @staticmethod
+    def worker_list(logged: Sequence[LoggedWorker]) -> WorkerList | WorkerListProblem:
+        """Lista Wykonawców z Logów regułami ``WorkerList.of``, bez adresów; problem, gdy maska strażnika reguły danych
+        zrobiła z dwóch loginów albo nazw ten sam tekst."""
+
+        return WorkerList.of([WorkerEntry(worker.logins, worker.name, active=worker.active) for worker in logged])
 
 
 class CentrumLogLines(_Record):
@@ -658,6 +686,10 @@ class RunLog(StartFacts):
     activity_legend: LoggedActivityLegend | None = None
     """Legenda czynności ze startu Uruchomienia (``LoggedActivityLegend``). ``None``: Logi Urwanego Uruchomienia, procesu,
     który nią nie liczy, i pliki sprzed tego pola."""
+    workers: list[LoggedWorker] | None = None
+    """Lista Wykonawców ze startu Uruchomienia bez adresów (``LoggedWorker``), po kolei; odtworzenie liczy nią zamiast
+    pliku ``wykonawcy.yaml`` z folderu Konfiguracji. ``None``: Logi Urwanego Uruchomienia, procesu, który nią nie liczy,
+    i pliki sprzed tego pola."""
 
     @model_serializer(mode="wrap")
     def _in_own_schema(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:

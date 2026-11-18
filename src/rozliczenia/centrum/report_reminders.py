@@ -5,10 +5,10 @@ zamknięcia. Sprawdzenie bierze chwilę z zegara Centrum (``now``) i na początk
 pór, treści albo stopki działa od następnego sprawdzenia, bez ponownego startu Centrum (ADR 0032). Przy wyłączonych
 przypomnieniach i poza porą przypomnień z Ustawień (``reminder_pora``) nic więcej nie robi. W porze bierze z migawki
 INTERMAX i folder okresów, dzień wdrożenia przypomnień, Legendę czynności, Listę Wykonawców, treść i stopkę taty,
-potem czyta pamięć Wpisania raportów tą samą drogą co Wpisanie (``ReportState.load``, ten sam ``FileReportState``
-pracy Centrum), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii wejścia, tym
+potem czyta pamięć Wpisania raportów tą samą drogą co Wpisanie (``EnteringMemory`` z ``ReportState``, ten sam
+``FileReportState`` pracy Centrum), Pliki zbiorcze okresów okna, INTERMAX tylko do odczytu, także otwarty w Excelu, bez Kopii wejścia, tym
 samym odczytem co Wpisanie raportów (``register_window``), potem Skrzynkę raportów i jej „Wysłane”, buduje wejście
-odczytu okna jak Wpisanie (``report_inputs``), pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
+odczytu okna jak Wpisanie (``EnteringMemory.report_inputs``), pyta rdzeń raportów (``reminders_due``) i wysyła przypomnienia po
 kolei przez port (``ReminderMailbox``). Przed każdym mailem bierze chwilę z zegara znowu: gdy jest już poza porą, w
 której sprawdzenie ruszyło (minęła 17:00 albo 22:00 albo laptop zasnął w trakcie i obudził się innego dnia), reszta przypomnień
 czeka na następną porę, która zna wysłane z „Wysłanych” i z pamięci tej pracy Centrum. Cały odczyt aż po rdzeń, bez wysyłki, to ``due_reminders``: z
@@ -84,11 +84,11 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import (
     DecisionsUnreadable,
-    SavedState,
+    EnteringMemory,
+    ReportState,
     StateUnreadable,
     closed_periods,
     register_window,
-    report_inputs,
 )
 from rozliczenia.tool_files import REMINDERS_RESULT, REMINDERS_SCHEDULES
 from rozliczenia.workbook_files import WorkbookError
@@ -212,7 +212,7 @@ class ReportReminders:
         files: DadFiles,
         reports: Reports,
         now: Callable[[], datetime],
-        entering: Callable[[], SavedState],
+        entering: ReportState,
     ) -> None:
         self._log = work.log
         self._settings = settings
@@ -267,7 +267,7 @@ class ReportReminders:
 
         now = self._now()
         snapshot = self._settings.snapshot()
-        reminders = snapshot.reminders
+        reminders = snapshot.reminders_or_unreadable
         in_effect: SchedulesInEffect | None = None
         if isinstance(reminders, UnreadableFile):
             schedule = self._unread_schedule()
@@ -429,30 +429,30 @@ def due_reminders(
     files: DadFiles,
     in_effect: SchedulesInEffect,
     sent_in_work: tuple[SentReminder, ...],
-    entering: Callable[[], SavedState],
+    entering: ReportState,
 ) -> DueReminders | NotRead | PasswordRejected | InboxUnreachable:
     """Przypomnienia, które należą się w chwili ``now``, po odczycie w kolejności z docstringu modułu: Przypomnienia o
     raporcie, Ustawienia Centrum z Legendą czynności i Listą Wykonawców z migawki ``snapshot``, pamięć Wpisania raportów, Pliki zbiorcze okresów okna,
     INTERMAX tylko do odczytu, skrzynka i jej „Wysłane” przez ``mailbox``, z porami „Wysłanych” z ``in_effect``
     (``schedules_in_effect``). Przypomnienia wysłane w tej pracy Centrum (``sent_in_work``) liczą się jak te z
-    „Wysłanych”: zamykają porę i są w ``DueReminders.sent`` dla widoku Raporty. Pamięć Wpisania raportów czyta
-    ``entering`` tą samą drogą co Wpisanie (``ReportState.load``), a wejście odczytu okna buduje ``report_inputs`` jak
+    „Wysłanych”: zamykają porę i są w ``DueReminders.sent`` dla widoku Raporty. Pamięć Wpisania raportów z
+    ``entering`` czyta ``EnteringMemory`` tą samą drogą co Wpisanie, a wejście odczytu okna buduje jej ``report_inputs`` jak
     we Wpisaniu, z oknem od wcześniejszego z dni wdrożenia przypomnień i Wpisania (przed pierwszym kliknięciem: dziś),
     więc dzień raportu jest ten sam co w kafelku Wpisania; pamięci, której nie da się odczytać, nie
     zastępuje pustą (``pamiec-wpisania``), bo pusta zmieniłaby dzień raportu. Niczego nie wysyła i nie zapisuje: wysyła
     praca przypomnień, a próba Przypomnień (``tools/proba_przypomnien.py``) liczy ten sam wynik bez wysyłki do
     Wykonawców."""
 
-    reminders = snapshot.reminders
+    reminders = snapshot.reminders_or_unreadable
     if isinstance(reminders, UnreadableFile):
         return NotRead("plik-bez-odczytu", file=reminders.name)
     rollout = reminders.sends
     if rollout is None:
         return NotRead("bez-wdrozenia")
-    settings = snapshot.folders
+    settings = snapshot.folders_or_unreadable
     if isinstance(settings, UnreadableFile):
         return NotRead("plik-bez-odczytu", file=settings.name)
-    legend = snapshot.activity_legend
+    legend = snapshot.activity_legend_or_unreadable
     if isinstance(legend, UnreadableFile):
         return NotRead("plik-bez-odczytu", file=legend.name)
     if settings.register is None or settings.periods_directory is None:
@@ -466,11 +466,11 @@ def due_reminders(
         return NotRead("bez-adresow")
     addresses = workers.addresses()
     try:
-        saved = entering()
+        memory = EnteringMemory(entering)
     except (StateUnreadable, DecisionsUnreadable) as error:
         return NotRead("pamiec-wpisania", type(error).__name__)
     today = now.date()
-    since = min(rollout, today if saved.rollout is None else saved.rollout)
+    since = min(rollout, today if memory.rollout is None else memory.rollout)
     try:
         closed = closed_periods(settings.periods_directory, Window.periods(today, since))
     except StopError:
@@ -488,7 +488,7 @@ def due_reminders(
     if not isinstance(filed, SentReminders):
         return filed
     sent = _known_sent(filed.reminders, sent_in_work)
-    reports = report_inputs(window, intermax, mails.mails, addresses, saved, legend)
+    reports = memory.report_inputs(window, intermax, mails.mails, addresses, legend)
     due = reminders_due(ReminderInputs(now, reports, sent, workers.reminded(), reminders, in_effect))
     return DueReminders(due, sent, addresses, reminders.footer if reminders.footer.strip() else None)
 

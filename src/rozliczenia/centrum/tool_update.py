@@ -286,15 +286,16 @@ def find_git(
 def _registered_git_for_windows(hive: str) -> str | None:
     if sys.platform != "win32":
         return None
-    import winreg
+    else:
+        import winreg
 
-    root = winreg.HKEY_LOCAL_MACHINE if hive == "HKLM" else winreg.HKEY_CURRENT_USER
-    try:
-        with winreg.OpenKey(root, r"SOFTWARE\GitForWindows", 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
-            value, _ = winreg.QueryValueEx(key, "InstallPath")
-    except OSError:
-        return None
-    return value if isinstance(value, str) and value else None
+        root = winreg.HKEY_LOCAL_MACHINE if hive == "HKLM" else winreg.HKEY_CURRENT_USER
+        try:
+            with winreg.OpenKey(root, r"SOFTWARE\GitForWindows", 0, winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+                value, _ = winreg.QueryValueEx(key, "InstallPath")
+        except OSError:
+            return None
+        return value if isinstance(value, str) and value else None
 
 
 def pip_install(requirements: Path) -> bool:

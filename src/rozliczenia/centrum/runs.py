@@ -219,7 +219,9 @@ class EndedRun:
 
 class AfterRun(Protocol):
     def run_ended(self, run: EndedRun) -> None:
-        """Na wątku Uruchomienia, przed końcem Uruchomienia: tylko lokalny zapis w milisekundach, bez sieci.
+        """Na wątku Uruchomienia, przed końcem Uruchomienia: tylko lokalny odczyt i zapis, bez sieci, w milisekundach poza
+        sprawdzeniem Wzorca, którego wersję praca Centrum widzi pierwszy raz albo po nowej wartości pamięci reguły danych
+        (``template_archive.TemplateChecks``).
 
         Wyjątek nie zmienia wyniku: ``RunHost.after`` zapisuje jego typ w dzienniku i woła następne działanie.
         """

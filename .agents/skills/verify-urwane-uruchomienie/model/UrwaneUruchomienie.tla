@@ -563,8 +563,9 @@ WpisKonca ==
                    przepadle, poWyniku, inneZnaki, bezStrazy, przedWznowieniem, bezZlecenia, wyparty>>
 
 (* RunComments.run_ended, za krokiem 1: _Watched.ended pod blokadą (koniec postępu), potem w osłonie _step Logi z    *)
-(* wynikiem (_own: RecordMaker.of, guard_logs) i _keep: LogsOnDisk.write (replace_atomically); błąd zapisu wychodzi  *)
-(* z _keep dopiero po wysyłce (finally), a _step zapisuje jego typ w dzienniku Centrum.                              *)
+(* wynikiem (_own: RecordMaker.of, guard_logs, OwnLogs z Wzorcami procesu; Wycena w efenix Wzorcem nie liczy, więc  *)
+(* jej OwnLogs ich nie mają) i _keep: LogsOnDisk.write (replace_atomically); błąd zapisu wychodzi z _keep dopiero   *)
+(* po wysyłce (finally), a _step zapisuje jego typ w dzienniku Centrum.                                             *)
 LogiWyniku ==
     /\ bieg # 0 /\ faza = "logi"
     /\ \/ logi' = [logi EXCEPT ![bieg] = [rodzaj |-> "wynik", tresc |-> Pusta]] /\ UNCHANGED awarieLogow
@@ -575,7 +576,8 @@ LogiWyniku ==
                    zatrzymania, awarieWpisu, awarieOdczytu, awarieKolejki, awarieUsuniecia, cofniecia, duchy,
                    zdarzenia>>
 
-(* _keep, finally także po błędzie zapisu pliku: post_of(OwnLogs(logs)) do Outbox.post; accepted to jego wynik.       *)
+(* _keep, finally także po błędzie zapisu pliku: post_of(version), OwnLogs z _own, do Outbox.post; accepted to jego    *)
+(* wynik.                                                                                                          *)
 (* Potem krok 4 run_ended (zaLogami).                                                                              *)
 WyslijWynik ==
     /\ bieg # 0 /\ faza = "post"

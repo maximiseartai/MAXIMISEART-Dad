@@ -11,8 +11,8 @@ składników trasa stawia przy polu formularza z tym zapisem. Podgląd pyta wła
 (``CentrumSettings.rules_after``).
 Zmiana albo usunięcie reguły albo składnika, którego już nie ma, to 404. Podgląd, zmiana i usunięcie reguły przy pliku
 reguł albo Folderów, którego system nie daje teraz czytać, to 409 o tym pliku (``refusal.settings_file_unreadable``,
-Foldery przez ``settings_reads.readable_folders``), nie „tej reguły już nie ma” ani „brak folderu okresów”; zmiana i
-usunięcie składnika przy pliku pary bez odczytu to 409 o nim (``settings_reads.readable_quantity_rules``), nie „tego
+Foldery przez ``CentrumSettings.folders``), nie „tej reguły już nie ma” ani „brak folderu okresów”; zmiana i
+usunięcie składnika przy pliku pary bez odczytu to 409 o nim (``QuantityRulesView.rules``), nie „tego
 składnika już nie ma”.
 
 Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego z Konfiguracji, czytane tą samą drogą co jego
@@ -56,7 +56,6 @@ from rozliczenia.centrum.settings.quantity_rules import (
     TakenSpelling,
     UnlistedComponent,
 )
-from rozliczenia.centrum.settings_reads import readable_folders, readable_quantity_rules
 from rozliczenia.collective_layout import QUANTITY_LETTERS
 from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, DeviceList, QuantityRule, QuantityRules, RulesProblem
 from rozliczenia.quantity_rules_file import parse_component, parse_rule
@@ -150,7 +149,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         if isinstance(after, FieldProblem):
             raise refusal.setting_refused(_at_form_field(edit, after))
         rule_id = edit.rule_id if isinstance(edit, contract.ChangeRule) else edited_id(source_rules, after.rules)
-        return readable_quantity_rules(settings), after, rule_id
+        return settings.quantity_rules().rules, after, rule_id
 
     def saved(edit: contract.RuleEdit) -> contract.QuantityRulesSaved:
         """Zapis zmiany przez właściciela Ustawień: na bieżącej wartości pliku reguł, z jego sprawdzeniem pary."""
@@ -187,7 +186,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         kluczy Historii (jak reguła); formularz, parę z regułami i uzupełnienie listy sprawdza właściciel
         (``CentrumSettings._dad_change``), a odmowę zapisu u dwóch składników trasa stawia przy polu z tym zapisem."""
 
-        if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in readable_quantity_rules(settings).devices.ids():
+        if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in settings.quantity_rules().rules.devices.ids():
             raise refusal.device_component_unknown()
 
         match settings.change_devices(edit):
@@ -220,9 +219,9 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         Folderów albo pary bez odczytu daje pustą listę jak niewskazany folder okresów: to podpowiedź, nie straż, a
         Lista Urządzeń z Wydania podpowiadałaby składnik, który tata już dodał; o pliku pary mówi problem sekcji."""
 
-        rules = settings.quantity_rules().rules
-        folders = settings.folders()
-        directory = None if isinstance(folders, Unreadable) else folders.periods_directory_to_read
+        rules = settings.quantity_rules().rules_or_unreadable
+        folders = settings.folders_or_unreadable()
+        directory = None if isinstance(folders, UnreadableFile) else folders.periods_directory_to_read
         if directory is None or isinstance(rules, UnreadableFile):
             return contract.DeviceSuggestions(suggestions=[], unread=[])
         return device_suggestions(rules, recent.read(directory))
@@ -239,7 +238,7 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
         rule = next((rule for rule in after.rules if rule.id == rule_id), None)
         shown = None if rule is None else sentence(rule)
-        directory = readable_folders(settings).periods_directory_to_read
+        directory = settings.folders().periods_directory_to_read
         if directory is None:
             return contract.PreviewWithoutFiles(state="no_periods_directory", sentence=shown)
         found = recent.read(directory)

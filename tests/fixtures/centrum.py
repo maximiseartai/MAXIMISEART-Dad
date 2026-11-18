@@ -344,10 +344,29 @@ class FakeReportBox:
             issue.closure = Closure(reason, at or datetime.now(timezone.utc))
 
     def archived(self, tag: str) -> dict[str, bytes]:
-        """Pliki Archiwum z tagiem ``tag`` po nazwie, rozpakowane bajt w bajt; bez takiego Archiwum pusto."""
+        """Pliki Logów Archiwum z tagiem ``tag`` po nazwie, rozpakowane bajt w bajt, bez Wzorców (``templates``); bez
+        takiego Archiwum pusto."""
 
         with self._changed:
-            return {asset.name: asset.unpacked for archive in self.archives if archive.tag == tag for asset in archive.assets}
+            return {
+                asset.name: asset.unpacked
+                for archive in self.archives
+                if archive.tag == tag
+                for asset in archive.assets
+                if asset.name.endswith(".gz")
+            }
+
+    def templates(self, tag: str) -> dict[str, bytes]:
+        """Wzorce Archiwum z tagiem ``tag`` po nazwie (``wzorzec-<SHA-256>.xlsx``), bajty jak je wysłało Centrum."""
+
+        with self._changed:
+            return {
+                asset.name: asset.data
+                for archive in self.archives
+                if archive.tag == tag
+                for asset in archive.assets
+                if not asset.name.endswith(".gz")
+            }
 
     def archive(self, tag: str, *, key: str) -> ArchiveOutcome:
         with self._changed:

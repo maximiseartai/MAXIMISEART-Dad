@@ -145,6 +145,7 @@ KEYS = {
     "inea_only_cleared", "intermax_entries", "address_history", "efenix_orders", "efenix_stop", "report_entering", "environment", "trace",
     "diagnosis",
     "dad_actions", "centrum_log", "interruption", "input_copy", "input_copy_notes", "quantity_rules", "activity_legend",
+    "workers",
 }
 
 
@@ -669,6 +670,9 @@ def test_powtorka_zatrzymania_dla_taty_ma_w_logach_rodzaj_powtorka(tmp_path: Pat
 
 
 def test_srodowisko_ma_system_python_i_pliki_procesu_z_rozmiarem_i_onedrive(tmp_path: Path) -> None:
+    """Środowisko w Logach ma pliki procesu z rozmiarem i atrybutem OneDrive, a Wzorzec z ``config`` także SHA-256
+    swoich bajtów; pliku z Folderu okresu narzędzie nie haszuje, bo odczyt pliku „tylko online” pobrałby go z OneDrive."""
+
     centrum = settling_centrum(tmp_path)
     onedrive = centrum.surroundings.onedrive
     assert onedrive is not None
@@ -684,9 +688,15 @@ def test_srodowisko_ma_system_python_i_pliki_procesu_z_rozmiarem_i_onedrive(tmp_
             "name": centrum.configuration.worker_template.name,
             "size": centrum.configuration.worker_template.stat().st_size,
             "online_only": False,
+            "sha256": hashlib.sha256(centrum.configuration.worker_template.read_bytes()).hexdigest(),
         },
-        {"name": PeriodFolder.from_collective_file(centrum.collective_file).internal_settlement.name, "size": None, "online_only": None},
-        {"name": SOURCE_NAME, "size": centrum.collective_file.stat().st_size, "online_only": True},
+        {
+            "name": PeriodFolder.from_collective_file(centrum.collective_file).internal_settlement.name,
+            "size": None,
+            "online_only": None,
+            "sha256": None,
+        },
+        {"name": SOURCE_NAME, "size": centrum.collective_file.stat().st_size, "online_only": True, "sha256": None},
     ]
 
 
@@ -757,7 +767,7 @@ def test_logi_przebiegu_rozliczen_nie_maja_adresu_numeru_orange_ani_pelnych_scie
     assert any(form in text for form in (naming, json.dumps(naming)[1:-1]) for text in texts), "Komunikat z Wykonawcą"
     forbidden = ("ZNACZNIK-ADRES", "ZNACZNIK-NUMER-UMOWY", in_json(tmp_path), in_json(tmp_path.resolve()))
     assert [marker for marker in forbidden if any(marker in text for text in texts)] == []
-    assert sum("Adrian Testowy" in text for text in texts) == 4, "Wykonawca z Konfiguracji w obu wynikach z planem"
+    assert sum("Adrian Testowy" in text for text in texts) == 6, "Wykonawca z Listy Wykonawców ze startu w każdych Logach, na dysku i w Archiwum"
 
 
 def test_diagnoza_w_logach_nie_ma_adresu_numeru_orange_ani_pelnych_sciezek(tmp_path: Path) -> None:
