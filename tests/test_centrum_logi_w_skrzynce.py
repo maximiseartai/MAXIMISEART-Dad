@@ -2810,6 +2810,39 @@ def test_logi_wyceny_z_adresem_bez_rozbioru_i_innym_adresem_w_efenix_odtwarzaja_
     ], addresses
 
 
+# Wiersze 18 i 20 z tym samym ``NUMER ZL.``: w efenix jedno zlecenie Wykonawcy z wiersza 18, a wiersz 20 ma innego
+# Wykonawcę i adres różny we wszystkich częściach. Adresy są wymyślone.
+SHARED_NUMBER = [
+    _efenix_order("#ZLQR31", "adrian.testowy"),
+    _efenix_order("#ZLQR32", "beata.testowa"),
+    _efenix_order("#ZLQR31", "celina.testowa", address="UL. RUMIANKOWA 14"),
+]
+
+
+def test_logi_wyceny_z_dwoma_wierszami_o_tym_samym_numerze_zl_odtwarzaja_sie_zgodnie(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Dwa wiersze Pliku zbiorczego z tym samym ``NUMER ZL.`` to w efenix jedno zlecenie: Wycena z Przekazaniem
+    przekazuje je z pierwszego wiersza, a drugi wiersz znajduje to samo zlecenie „Do akceptacji” z realizatorem i
+    ``Dane adresowe`` pierwszego. Atrapa z Logów ma więc to zlecenie raz, a ``ADRES`` drugiego wiersza różni się od
+    jego ``Dane adresowe`` częściami z Logów, więc odtworzenie daje te same Komunikaty i ślad zleceń."""
+
+    in_efenix = [SHARED_NUMBER[0].in_efenix("661"), SHARED_NUMBER[1].in_efenix("662")]
+    produced = _efenix(tmp_path / "taty", in_efenix, pricing="z Przekazaniem", priced=SHARED_NUMBER)
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+
+    third = produced.record["efenix_orders"][2]
+    [listed] = third["steps"][0]["results"]
+    assert (third["row"], third["code"], listed["status"], listed["address"]) == (
+        20,
+        "EFENIX_INNY_REALIZATOR",
+        "Do akceptacji",
+        ["ulica", "numer domu", "lokal"],
+    ), third
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
 def test_logi_wyceny_sprzed_odczytu_wierszy_listy_koncza_odtworzenie_granica(
     tmp_path: Path, shared_logs: Callable[[str], Produced], capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -2907,7 +2940,7 @@ def test_atrapa_z_logow_nazywa_wiersz_bez_numeru_zl_i_roznice_adresu_ktorej_nie_
         _traced(19, _searched()),
         _traced(20, _searched({**listed, "address": ["województwo"]})),
     ]
-    scoped = [ScopedOrder(18, None, "ul. Odtworzeniowa 18"), ScopedOrder(19, None, "ul. Odtworzeniowa 19"), ScopedOrder(20, "ZL20", "ul. Odtworzeniowa 20")]
+    scoped = [ScopedOrder(18, None), ScopedOrder(19, None), ScopedOrder(20, "ZL20")]
 
     found = fed(orders, scoped)
 

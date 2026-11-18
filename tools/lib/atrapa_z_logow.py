@@ -3,10 +3,13 @@ odtworzeniu Uruchomienia (#847, ``odtworzenie``).
 
 Logi nie niosą numeru zlecenia ani danych adresowych (reguła danych, ADR 0025), więc zlecenie Atrapy ma numer z
 ``NUMER ZL.`` odtworzonego Pliku zbiorczego (``ScopedOrder``, ten sam odczyt zakresu co w procesie), a ``Dane
-adresowe`` to syntetyczny ``ADRES`` tego wiersza (``file_addresses``) zmieniony w częściach, którymi według Logów się
+adresowe`` to syntetyczny ``ADRES`` tego wiersza (``Fed.addresses``) zmieniony w częściach, którymi według Logów się
 od niego różniły (``LoggedResult.address``). Lista wyników to pierwsze szukanie zlecenia w Logach: wiersz z
 ``same_number`` ma numer z pliku, a każdy inny numer z pliku z dopiskiem, który szukanie po części numeru też znajduje;
-status i login realizatora są z Logów. Zlecenie, którego stronę okno otworzyło, ma stan strony z pierwszego otwarcia
+status i login realizatora są z Logów. Numer, który Atrapa ma już z wcześniejszego wiersza Pliku zbiorczego, to w efenix
+to samo zlecenie, więc Atrapa nie dodaje go drugi raz: jego stan zmienia się w trakcie Uruchomienia (po Przekazaniu
+późniejszy wiersz widzi „Do akceptacji”), a ``ADRES`` późniejszego wiersza różni się od ``Dane adresowe`` tego zlecenia
+częściami z jego Logów. Zlecenie, którego stronę okno otworzyło, ma stan strony z pierwszego otwarcia
 (data wykonania, ilości i pozycje na stronie), a propozycję Emmetta z odczytu strony po Wycenie Emmetta.
 
 Ceny pozycji wynikają z kwot w Logach (``_prices``): zmiana kwoty końcowej po wpisaniu ilości to cena pozycji razy
@@ -47,32 +50,51 @@ _CODES: Final = frozenset(position.code for position in CATALOG)
 
 @dataclass(frozen=True)
 class ScopedOrder:
-    """Zlecenie odtworzonego Pliku zbiorczego tak, jak je czyta Wycena (``efenix_orders.CollectiveOrder``): wiersz,
-    ``NUMER ZL.`` i ``ADRES``."""
+    """Zlecenie odtworzonego Pliku zbiorczego tak, jak je czyta Wycena (``efenix_orders.CollectiveOrder``): wiersz i
+    ``NUMER ZL.``."""
 
     row: int
     number: str | None
-    address: str
 
 
 @dataclass(frozen=True)
 class Fed:
-    """Atrapa z Logów: zlecenia, cena każdej pozycji po kodzie i granice (tekst, czy blokuje)."""
+    """Atrapa z Logów: zlecenia, cena każdej pozycji po kodzie, granice (tekst, czy blokuje) i ``ADRES`` wierszy
+    Pliku zbiorczego, które nie mają ``SYNTHETIC_ADDRESS``."""
 
     orders: tuple[EfenixOrder, ...]
     prices: Mapping[str, Decimal]
     limits: tuple[tuple[str, bool], ...]
+    addresses: Mapping[int, str]
 
 
-def file_addresses(orders: Sequence[LoggedOrder]) -> dict[int, str]:
-    """``ADRES`` wiersza Pliku zbiorczego, którego reguła adresu u taty nie rozebrała (część ``ADRES bez rozbioru``);
-    każdy inny wiersz ma ``SYNTHETIC_ADDRESS``."""
+@dataclass(frozen=True)
+class _Synthetic:
+    """Adres syntetyczny po częściach reguły adresu: druga nazwa ulicy, numer domu i lokal."""
 
-    return {
-        order.row: _UNREAD_FILE_ADDRESS.format(row=order.row)
-        for order in orders
-        if any(AddressPart.FILE_UNREAD.value in result.address for result in _results(order))
-    }
+    other_street: bool
+    number: int
+    flat: bool
+
+    @classmethod
+    def of(cls, row: int) -> _Synthetic:
+        """``SYNTHETIC_ADDRESS`` wiersza ``row``."""
+
+        return cls(other_street=False, number=row, flat=False)
+
+    @property
+    def text(self) -> str:
+        street = f"Odtworzeniowa {_OTHER_STREET}" if self.other_street else "Odtworzeniowa"
+        return f"ul. {street} {self.number}{_FLAT if self.flat else ''}"
+
+    def differing(self, parts: Sequence[str]) -> _Synthetic:
+        """Adres, który różni się od tego dokładnie częściami ``parts`` spośród ulicy, numeru domu i lokalu."""
+
+        return _Synthetic(
+            other_street=self.other_street != (AddressPart.STREET.value in parts),
+            number=self.number + 1000 if AddressPart.NUMBER.value in parts else self.number,
+            flat=self.flat != (AddressPart.FLAT.value in parts),
+        )
 
 
 def unread(orders: Sequence[LoggedOrder]) -> list[str]:
@@ -87,16 +109,36 @@ def unread(orders: Sequence[LoggedOrder]) -> list[str]:
     return []
 
 
+@dataclass(frozen=True)
+class _Shown:
+    """``Dane adresowe`` zlecenia Atrapy: tekst i części (``None``: bez rozbioru)."""
+
+    text: str
+    parts: _Synthetic | None
+
+    @classmethod
+    def of(cls, file: _Synthetic, differences: Sequence[str], row: int) -> _Shown:
+        """``Dane adresowe``, które różnią się od ``ADRES`` ``file`` wiersza ``row`` częściami ``differences`` z Logów;
+        przy ``ADRES`` bez rozbioru to ``file``."""
+
+        if AddressPart.EFENIX_UNREAD.value in differences:
+            return cls(_UNREAD_EFENIX_ADDRESS.format(row=row), None)
+        parts = file.differing(differences)
+        return cls(parts.text, parts)
+
+
 def fed(orders: Sequence[LoggedOrder], scoped: Sequence[ScopedOrder]) -> Fed:
-    by_row = {order.row: order for order in scoped}
+    numbers = {order.row: order.number for order in scoped}
     atrapa: list[EfenixOrder] = []
+    shown: dict[str, _Shown] = {}
+    addresses: dict[int, str] = {}
     limits: list[tuple[str, bool]] = []
     for order in orders:
         results = _results(order)
         if not results:
             continue
-        collective = by_row.get(order.row)
-        if collective is None or collective.number is None:
+        number = numbers.get(order.row)
+        if number is None:
             limits.append(
                 (
                     f"wiersz {order.row} Pliku zbiorczego nie ma w odtworzeniu zlecenia z NUMER ZL.",
@@ -104,11 +146,22 @@ def fed(orders: Sequence[LoggedOrder], scoped: Sequence[ScopedOrder]) -> Fed:
                 )
             )
             continue
+        earlier = dict(shown)
+        file = _file_address(order.row, results, earlier.get(number))
+        file_text = (
+            _UNREAD_FILE_ADDRESS.format(row=order.row)
+            if any(AddressPart.FILE_UNREAD.value in result.address for result in results)
+            else file.text
+        )
+        if file_text != SYNTHETIC_ADDRESS.format(row=order.row):
+            addresses[order.row] = file_text
         for index, result in enumerate(results, start=1):
-            listed, problem = _listed(order, collective, result, index)
-            atrapa.append(listed)
-            if problem is not None:
-                limits.append((problem, False))
+            listed_number = number if result.same_number else f"{number}-{index}"
+            if listed_number not in earlier:
+                shown[listed_number] = _Shown.of(file, result.address, order.row)
+                atrapa.append(_listed(order, result, index, listed_number, shown[listed_number].text))
+            if [part.value for part in address_differences(file_text, shown[listed_number].text)] != result.address:
+                limits.append((f"wiersz {order.row}: Atrapa nie umie pokazać różnicy adresu {result.address}", False))
     prices, unknown = _prices(orders)
     if unknown:
         limits.append(
@@ -122,7 +175,7 @@ def fed(orders: Sequence[LoggedOrder], scoped: Sequence[ScopedOrder]) -> Fed:
     )
     if outside:
         limits.append((f"pozycji {', '.join(outside)} nie ma na stronach Atrapy efenix", False))
-    return Fed(tuple(atrapa), prices, tuple(dict.fromkeys(limits)))
+    return Fed(tuple(atrapa), prices, tuple(dict.fromkeys(limits)), addresses)
 
 
 @contextmanager
@@ -136,18 +189,24 @@ def _results(order: LoggedOrder) -> list[LoggedResult]:
     return [] if search is None or search.results is None else list(search.results)
 
 
-def _listed(
-    order: LoggedOrder, collective: ScopedOrder, result: LoggedResult, index: int
-) -> tuple[EfenixOrder, str | None]:
-    """Wiersz listy wyników ``index`` zlecenia ``order`` w Atrapie i granica, gdy Atrapa nie odda tej samej różnicy
-    adresu co efenix taty."""
+def _file_address(row: int, results: Sequence[LoggedResult], shown: _Shown | None) -> _Synthetic:
+    """``ADRES`` wiersza ``row`` po częściach: ``SYNTHETIC_ADDRESS`` wiersza, a gdy jego numer Atrapa pokazuje już z
+    wcześniejszego wiersza (``shown``) z rozebranymi ``Dane adresowe``, adres różny od nich częściami wyniku z tym
+    numerem w Logach."""
 
-    assert collective.number is not None
-    number = collective.number if result.same_number else f"{collective.number}-{index}"
-    address = _efenix_address(result.address, order.row)
+    same = next((result for result in results if result.same_number), None)
+    if shown is None or shown.parts is None or same is None:
+        return _Synthetic.of(row)
+    return shown.parts.differing(same.address)
+
+
+def _listed(order: LoggedOrder, result: LoggedResult, index: int, number: str, address: str) -> EfenixOrder:
+    """Wiersz listy wyników ``index`` zlecenia ``order`` w Atrapie: zlecenie ``number`` z ``Dane adresowe``
+    ``address``."""
+
     opened = _first(order.steps, WindowAction.OPEN) if result.same_number else None
     emmett = _first(order.steps, WindowAction.EMMETT) if result.same_number else None
-    listed = EfenixOrder(
+    return EfenixOrder(
         order_id=f"{order.row}-{index}",
         number=number,
         realizator=result.realizator or "",
@@ -158,25 +217,8 @@ def _listed(
         emmett={} if emmett is None else _nonzero(emmett.quantities),
         without=frozenset() if opened is None or opened.quantities is None else _CODES - set(opened.quantities),
     )
-    differences = [part.value for part in address_differences(collective.address, address)]
-    if differences != result.address:
-        return (
-            listed,
-            f"wiersz {order.row}: Atrapa nie umie pokazać różnicy adresu {result.address}",
-        )
-    return listed, None
 
 
-def _efenix_address(parts: Sequence[str], row: int) -> str:
-    """``Dane adresowe``, które różnią się od ``SYNTHETIC_ADDRESS`` wiersza ``row`` dokładnie częściami ``parts``; przy
-    ``ADRES`` bez rozbioru (``file_addresses``) to ten syntetyczny adres."""
-
-    if AddressPart.EFENIX_UNREAD.value in parts:
-        return _UNREAD_EFENIX_ADDRESS.format(row=row)
-    street = f"Odtworzeniowa {_OTHER_STREET}" if AddressPart.STREET.value in parts else "Odtworzeniowa"
-    number = str(row + 1000) if AddressPart.NUMBER.value in parts else str(row)
-    flat = _FLAT if AddressPart.FLAT.value in parts else ""
-    return f"ul. {street} {number}{flat}"
 
 
 def _first(steps: Sequence[LoggedStep], action: WindowAction) -> LoggedStep | None:
