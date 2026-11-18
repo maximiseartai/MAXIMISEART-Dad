@@ -13,7 +13,8 @@ Błąd renderera GitHuba to ``stan_pr.Waiting``, bo mija przy następnym runie. 
 ``PROOF_TIMEOUT_S``: job ``dowod`` statusu „Werdykt i bramka” ma 20 min (``.github/workflows/werdykt-i-bramka.yml``),
 więc przekroczony czas jest przyczyną w statusie, zanim Actions zabije job. Moduł bierze tylko bibliotekę
 standardową, bo job ``status`` uruchamia ``tools/scal_pr.py`` Pythonem runnera bez zależności; dowód wykonuje kod PR
-(pytest, mypy) i potrzebuje dodatku dev, więc biegnie tylko w jobie ``dowod`` bez prawa zapisu i przy merge'u.
+(wtyczki mypy z jego konfiguracji) i potrzebuje dodatku dev, więc biegnie tylko w jobie ``dowod`` bez prawa zapisu
+i przy merge'u.
 """
 
 from __future__ import annotations

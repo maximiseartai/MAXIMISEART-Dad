@@ -2,8 +2,8 @@
 z commitem werdyktu ``FAIL`` z błędem w miejscu ``Gdzie`` i HEAD z poprawką i strażnikiem z zamkniętej listy.
 
 Każdy przypadek tabeli z docstringu modułu ma tu przebieg: strażnik pada na błędzie z SHA ``FAIL`` (``WYKRYTA``),
-strażnik, który błędu nie łapie, nie przechodzi, a tekst autora w wyjściu narzędzia ani format z konfiguracji PR wyniku
-nie zmienia. Granice stoją w ``ZNANE_LUKI_STRAZNIKA`` i przechodzą dowód, dopóki konstrukcja ich nie zamknie.
+strażnik, który błędu nie łapie, nie przechodzi, a format z konfiguracji PR wyniku nie zmienia. Granice stoją
+w ``ZNANE_LUKI_STRAZNIKA`` i przechodzą dowód, dopóki konstrukcja ich nie zamknie.
 """
 
 from __future__ import annotations
@@ -42,6 +42,8 @@ GUARD_TEST = "from kod.liczby import podwojona\n\n\ndef test_podwojona_daje_dwa_
 BAD = BASE["kod/liczby.py"].replace("x * 2", "x * 3")
 Places = tuple[tuple[str, int, int], ...]
 WHERE: Places = (("kod/liczby.py", 2, 2),)
+# Zakres ``WHERE`` jak z ``na_scalonych_pr.places``: najmniejsza funkcja wokół miejsca, ``podwojona``.
+SCOPE: Places = (("kod/liczby.py", 1, 2),)
 
 
 @dataclass(frozen=True)
@@ -85,14 +87,13 @@ def _fixed(tmp_path: Path) -> Pull:
 @pytest.mark.parametrize(
     ("text", "guard"),
     [
-        ("pytest tests/test_x.py::test_y", Guard(Kind.PYTEST, ("tests/test_x.py::test_y",))),
-        ("pytest tests/a/test_x.py::Klasa::test_y tests/test_z.py::test_w", Guard(Kind.PYTEST, ("tests/a/test_x.py::Klasa::test_y", "tests/test_z.py::test_w"))),
         ("mypy", Guard(Kind.MYPY)),
         ("ruff", Guard(Kind.RUFF)),
         ("ast-grep lokator-tytulu-okna", Guard(Kind.AST_GREP, ("lokator-tytulu-okna",))),
         ("brak - proza", Guard(Kind.PROSE)),
         ("brak  -  test", Guard(Kind.TESTS)),
         ("brak - napęd", Guard(Kind.DRIVE)),
+        ("brak - usunięte", Guard(Kind.REMOVED)),
     ],
 )
 def test_selektor_straznika_z_zamknietej_listy_daje_rodzaj_i_argumenty(text: str, guard: Guard) -> None:
@@ -101,159 +102,15 @@ def test_selektor_straznika_z_zamknietej_listy_daje_rodzaj_i_argumenty(text: str
 
 @pytest.mark.parametrize(
     "text",
-    ["", "pytest", "pytest tests/test_x.py", "pytest src/test_x.py::t", "pytest tests/test_x.py::t -k nazwa", "mypy --strict", "ast-grep", "brak", "brak - nic", "tools/mutacje.py --zmiana a b c"],
+    ["", "pytest tests/test_x.py::test_y", "mypy --strict", "ast-grep", "brak", "brak - nic", "tools/mutacje.py --zmiana a b c"],
+    ids=["pusty", "test-bez-dowodu-narzedzia", "mypy-z-flaga", "ast-grep-bez-id", "brak-bez-powodu", "brak-z-powodem-spoza-listy", "mutacja-autora"],
 )
 def test_selektor_spoza_listy_to_odmowa_z_postaciami_listy(text: str) -> None:
-    with pytest.raises(ValueError, match="to nie selektor strażnika z listy: pytest tests/<plik>.py::<test>"):
+    """Test nie ma selektora z dowodem narzędzia (ADR 0042, „Test jako strażnik”), więc ``pytest …`` to odmowa
+    z listą, w której stoi ``brak - test``."""
+
+    with pytest.raises(ValueError, match=r"to nie selektor strażnika z listy: mypy, ruff, .* brak - test \(strażnik to test\) albo brak - usunięte"):
         straznik.parse(text)
-
-
-def test_test_ktory_pada_na_bledzie_z_fail_to_dowod_wykryta(tmp_path: Path) -> None:
-    pull = _fixed(tmp_path)
-
-    outcome = pull.prove("pytest tests/test_podwojona.py::test_podwojona_daje_dwa_razy")
-
-    assert outcome.detected, outcome.line
-    assert outcome.line.startswith(f"#5 W1 r1 | {pull.failed[:8]} | WYKRYTA | z FAIL: kod/liczby.py; sam kod z Gdzie: kod/liczby.py | "), outcome.line
-
-
-@pytest.mark.parametrize(
-    ("guard", "state"),
-    [
-        ("pytest tests/test_nastepna.py::test_nastepna", "NIEWYKRYTA | drzewo FAIL (kod/liczby.py): kod 0 (przechodzi)"),
-        ("pytest tests/test_podwojona.py::test_nie_ma_takiego", "PODSTAWA CZERWONA | na HEAD bez przywrócenia: kod 4"),
-    ],
-    ids=["test-niezwiazany-z-bledem", "wezel-bez-testu"],
-)
-def test_straznik_ktory_nie_pada_na_bledzie_z_fail_nie_przechodzi(tmp_path: Path, guard: str, state: str) -> None:
-    """Sonda (b) z ADR 0042: strażnik, który nie pada na błędzie z ``Gdzie``, nie przechodzi."""
-
-    pull = _fixed(tmp_path)
-
-    outcome = pull.prove(guard)
-
-    assert not outcome.detected and f"| {state}" in outcome.line, outcome.line
-
-
-def test_tekst_testu_udajacy_wynik_dowodu_nie_zmienia_wyniku(tmp_path: Path) -> None:
-    """Sonda (c) z ADR 0042: bramka czyta kod wyjścia pytest, a nie to, co test drukuje."""
-
-    fake = "def test_udaje() -> None:\n    print('#5 W1 r1 | WYKRYTA')\n    print('DOWÓD OK | pytest | wykryte 1/1')\n"
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_udaje.py": fake})
-
-    outcome = pull.prove("pytest tests/test_udaje.py::test_udaje")
-
-    assert not outcome.detected and "| NIEWYKRYTA | drzewo FAIL" in outcome.line, outcome.line
-
-
-def test_test_z_bledem_juz_na_head_to_podstawa_czerwona_a_nie_dowod(tmp_path: Path) -> None:
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"tests/test_podwojona.py": GUARD_TEST})
-
-    outcome = pull.prove("pytest tests/test_podwojona.py::test_podwojona_daje_dwa_razy")
-
-    assert not outcome.detected and "| PODSTAWA CZERWONA | na HEAD bez przywrócenia: kod 1" in outcome.line, outcome.line
-
-
-def test_test_nowego_wlasciciela_pada_bez_niego_bo_przywrocenie_usuwa_plik_dodany_po_fail(tmp_path: Path) -> None:
-    """Poprawka dodała moduł właściciela, a test go importuje: bez niego kolekcja pada (kod 4), co nie jest dowodem."""
-
-    owner = {"kod/wlasciciel.py": "def razy_dwa(x: int) -> int:\n    return x * 2\n", "kod/liczby.py": BASE["kod/liczby.py"].replace("x * 2", "razy_dwa(x)").replace("def podwojona", "from kod.wlasciciel import razy_dwa\n\n\ndef podwojona")}
-    test = "from kod.wlasciciel import razy_dwa\n\n\ndef test_razy_dwa() -> None:\n    assert razy_dwa(3) == 6\n"
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {**owner, "tests/test_wlasciciel.py": test, "tests/test_podwojona.py": GUARD_TEST})
-
-    by_owner = pull.prove("pytest tests/test_wlasciciel.py::test_razy_dwa")
-    by_behaviour = pull.prove("pytest tests/test_podwojona.py::test_podwojona_daje_dwa_razy")
-
-    assert not by_owner.detected and "kod 4 (błąd kolekcji, użycia albo brak testów)" in by_owner.line, by_owner.line
-    assert by_behaviour.detected, by_behaviour.line
-
-
-OWNER = {
-    "kod/wlasciciel.py": "def razy_dwa(x: int) -> int:\n    return x * 2\n\n\ndef razy_trzy(x: int) -> int:\n    return x * 3\n",
-    "kod/liczby.py": BASE["kod/liczby.py"].replace("x * 2", "razy_dwa(x)").replace("def podwojona", "from kod.wlasciciel import razy_dwa\n\n\ndef podwojona"),
-}
-CLASS = "\n\nclass Mnoznik:\n    def nastepna(self, x: int) -> int:\n        return x + 1\n"
-OPTION = "\n\ndef main(argv: list[str]) -> int:\n    import argparse\n\n    parser = argparse.ArgumentParser()\n{}    return {}\n"
-# Formy testu, który pada na drzewie FAIL tylko z braku czegoś, co poprawka dodała obok kodu z ``Gdzie`` (#2116 r1 W1
-# i r2 W1): plik → treść na FAIL i na HEAD oraz test; błąd z ``Gdzie`` to ``x * 3`` w ``podwojona``.
-OBOK = {
-    "import-w-ciele-testu": ({}, OWNER, "def test_g() -> None:\n    from kod.wlasciciel import razy_trzy\n\n    assert razy_trzy(1) == 3\n"),
-    "atrybut-modulu": ({}, OWNER, "import kod.liczby\n\n\ndef test_g() -> None:\n    assert kod.liczby.razy_dwa(2) == 4\n"),
-    "metoda-klasy": (
-        {"kod/liczby.py": BAD + CLASS},
-        {"kod/liczby.py": BASE["kod/liczby.py"].replace("x * 2", "Mnoznik().razy_dwa(x)") + CLASS + "\n    def razy_dwa(self, x: int) -> int:\n        return x * 2\n"},
-        "from kod.liczby import Mnoznik\n\n\ndef test_g() -> None:\n    assert Mnoznik().razy_dwa(3) == 6\n",
-    ),
-    "monkeypatch-nazwy-modulu": (
-        {},
-        {"kod/liczby.py": BASE["kod/liczby.py"].replace("x * 2", "x * MNOZNIK") + "\n\nMNOZNIK = 2\n"},
-        "import pytest\n\nimport kod.liczby\n\n\ndef test_g(monkeypatch: pytest.MonkeyPatch) -> None:\n    monkeypatch.setattr(kod.liczby, 'MNOZNIK', 5)\n    assert kod.liczby.MNOZNIK == 5\n",
-    ),
-    "opcja-narzedzia": (
-        {"kod/liczby.py": BAD + OPTION.format("", "0 if parser.parse_args(argv) else 1")},
-        {"kod/liczby.py": BASE["kod/liczby.py"] + OPTION.format("    parser.add_argument('--podwojona', type=int)\n", "podwojona(parser.parse_args(argv).podwojona)")},
-        "from kod.liczby import main\n\n\ndef test_g() -> None:\n    assert main(['--podwojona', '0']) == 0\n",
-    ),
-    "znacznik-przez-getattr": (
-        {},
-        {"kod/liczby.py": BASE["kod/liczby.py"] + "\n\nWERSJA = 2\n"},
-        "import kod.liczby\n\n\ndef test_g() -> None:\n    assert getattr(kod.liczby, 'WERSJA', None) == 2\n",
-    ),
-}
-
-
-@pytest.mark.parametrize("name", OBOK)
-def test_straznik_ktory_pada_na_fail_tylko_z_braku_czegos_dodanego_obok_gdzie_nie_przechodzi(tmp_path: Path, name: str) -> None:
-    """Sonda (b) z ADR 0042 (#2116 r1 i r2 W1): test, który pada na drzewie FAIL, bo nie ma tam modułu, metody, nazwy
-    albo opcji dodanej przez poprawkę obok, przechodzi na HEAD z samym kodem z ``Gdzie`` z FAIL, więc to nie dowód;
-    dowód mierzy samą własność, a nie rodzaj wyjątku, który wybiera kod testu."""
-
-    failed, head, test = OBOK[name]
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD, **failed}, {**head, "tests/test_g.py": test})
-
-    outcome = pull.prove("pytest tests/test_g.py::test_g")
-
-    assert not outcome.detected, outcome.line
-    assert "| NIEWYKRYTA | pada na drzewie FAIL, ale na HEAD z samym kodem z Gdzie z FAIL (kod/liczby.py) kod 0" in outcome.line, outcome.line
-
-
-def test_test_ktory_pada_tylko_na_mieszance_kodu_z_gdzie_i_head_nie_przechodzi(tmp_path: Path) -> None:
-    """Funkcja z ``Gdzie`` z FAIL woła pomocnika, którego poprawka usunęła, więc na HEAD z samym kodem z ``Gdzie`` pada
-    każdy test, który ją woła (``NameError``); test, który na całym drzewie FAIL przechodzi, nie łapie błędu z ``Gdzie``."""
-
-    helper = "def _razy(x: int) -> int:\n    return x * 3\n\n\ndef podwojona(x: int) -> int:\n    return _razy(x)\n"
-    test = "from kod.liczby import podwojona\n\n\ndef test_zero() -> None:\n    assert podwojona(0) == 0\n"
-    pull = _pull(tmp_path, {"kod/liczby.py": helper}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_zero.py": test})
-
-    outcome = pull.prove("pytest tests/test_zero.py::test_zero", (("kod/liczby.py", 6, 6),), scopes=(("kod/liczby.py", 5, 6),))
-
-    assert not outcome.detected and "| NIEWYKRYTA | drzewo FAIL (kod/liczby.py): kod 0 (przechodzi)" in outcome.line, outcome.line
-
-
-def test_poprawka_ktora_tylko_dopisuje_linie_w_funkcji_z_gdzie_ma_dowod(tmp_path: Path) -> None:
-    """Poprawka dopisuje warunek w funkcji z ``Gdzie``, a linie kodu z FAIL zostają: HEAD z samym kodem z ``Gdzie`` z FAIL
-    nie ma dopisanych linii, więc test poprawki pada na nim."""
-
-    checked = BASE["kod/liczby.py"].replace("    return x * 2", "    if x < 0:\n        raise ValueError(x)\n    return x * 2")
-    test = "import pytest\n\nfrom kod.liczby import podwojona\n\n\ndef test_ujemna() -> None:\n    with pytest.raises(ValueError):\n        podwojona(-1)\n"
-    pull = _pull(tmp_path, {"docs/opis.md": "# Opis\n\nUjemne też.\n"}, {"kod/liczby.py": checked, "tests/test_ujemna.py": test})
-
-    outcome = pull.prove("pytest tests/test_ujemna.py::test_ujemna", scopes=(("kod/liczby.py", 1, 2),))
-
-    assert outcome.detected, outcome.line
-
-
-def test_test_ktory_pada_na_fail_wyjatkiem_z_kodu_a_nie_asercja_to_dowod(tmp_path: Path) -> None:
-    """Błąd z ``Gdzie`` może też wywrócić kod (``KeyError``), a nie tylko asercję: to dowód, bo pada na nim także HEAD
-    z samym kodem z ``Gdzie`` z FAIL."""
-
-    crash = BASE["kod/liczby.py"].replace("return x * 2", "return {1: 2}[x]")
-    test = "from kod.liczby import podwojona\n\n\ndef test_podwojona_kazdej_liczby() -> None:\n    assert podwojona(5) == 10\n"
-    pull = _pull(tmp_path, {"kod/liczby.py": crash}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_podwojona.py": test})
-
-    outcome = pull.prove("pytest tests/test_podwojona.py::test_podwojona_kazdej_liczby")
-
-    assert outcome.detected, outcome.line
 
 
 TYPED = {
@@ -278,7 +135,7 @@ def test_typ_ktory_odrzuca_zla_postac_z_gdzie_to_dowod_mypy_takze_przy_formacie_
 
     pull = _pull(tmp_path, TYPED, {**TYPED_FIX, "pyproject.toml": PYPROJECT.format(mypy=mypy, ruff="", banned="")})
 
-    outcome = pull.prove("mypy", (("kod/uzycie.py", 5, 5),))
+    outcome = pull.prove("mypy", (("kod/uzycie.py", 5, 5),), scopes=(("kod/uzycie.py", 4, 5),))
 
     assert outcome.detected, outcome.line
     assert "| WYKRYTA | z FAIL: kod/uzycie.py | kod/uzycie.py:5 [union-attr]" in outcome.line, outcome.line
@@ -292,7 +149,7 @@ def test_mypy_widzi_plik_z_fail_o_tym_samym_rozmiarze_co_na_head(tmp_path: Path)
     use = "from kod.liczby import podwojona\n\n\ndef tekst() -> {}:\n    return str(podwojona(1))\n"
     pull = _pull(tmp_path, {"kod/tekst.py": use.format("int")}, {"kod/tekst.py": use.format("str")})
 
-    outcome = pull.prove("mypy", (("kod/tekst.py", 5, 5),))
+    outcome = pull.prove("mypy", (("kod/tekst.py", 5, 5),), scopes=(("kod/tekst.py", 4, 5),))
 
     assert outcome.detected and "kod/tekst.py:5 [return-value]" in outcome.line, outcome.line
 
@@ -301,7 +158,7 @@ def test_mypy_widzi_plik_z_fail_o_tym_samym_rozmiarze_co_na_head(tmp_path: Path)
 def test_mypy_bez_typu_przy_bledzie_zachowania_nie_jest_dowodem(tmp_path: Path) -> None:
     pull = _fixed(tmp_path)
 
-    outcome = pull.prove("mypy")
+    outcome = pull.prove("mypy", scopes=SCOPE)
 
     assert not outcome.detected and "| NIEWYKRYTA | kod/liczby.py: bez znaleziska (kod 0)" in outcome.line, outcome.line
 
@@ -349,7 +206,7 @@ def test_zakaz_ruff_dodany_w_pr_to_dowod_ruff_takze_przy_formacie_z_konfiguracji
         {"kod/powloka.py": SHELL_FIX, "pyproject.toml": PYPROJECT.format(mypy="", ruff=ruff, banned=BANNED)},
     )
 
-    outcome = pull.prove("ruff", (("kod/powloka.py", 5, 5),))
+    outcome = pull.prove("ruff", (("kod/powloka.py", 5, 5),), scopes=(("kod/powloka.py", 4, 5),))
 
     assert outcome.detected, outcome.line
     assert "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:5 TID251" in outcome.line, outcome.line
@@ -360,22 +217,19 @@ def test_zakaz_ruff_dodany_w_pr_to_dowod_ruff_takze_przy_formacie_z_konfiguracji
     [
         ("brak - proza", (("docs/opis.md", 3, 3),), "WYJĄTEK brak - proza | docs/opis.md:3"),
         ("brak - proza", (("kod/liczby.py", 2, 2),), "ODMOWA | kod/liczby.py:2 to nie plik .md, docstring ani komentarz"),
-        ("brak - test", (("tests/test_podwojona.py", 5, 5),), "WYJĄTEK brak - test | tests/test_podwojona.py:5"),
-        ("brak - test", (("tests/test_podwojona.py", 5, 5), ("tests/test_nastepna.py", 5, 5)), "WYJĄTEK brak - test | tests/test_podwojona.py:5"),
-        ("brak - test", (("kod/liczby.py", 2, 2),), "ODMOWA | kod/liczby.py:2 leży poza tests/"),
-        ("brak - test", (("tests/test_nastepna.py", 5, 5),), "ODMOWA | żadne miejsce z Gdzie nie leży w pliku, który zmienił PR"),
+        ("brak - proza", (("docs/opis.md", 3, 3), ("tests/test_nastepna.py", 5, 5)), "WYJĄTEK brak - proza | docs/opis.md:3"),
+        ("brak - proza", (("tests/test_nastepna.py", 5, 5),), "ODMOWA | żadne miejsce z Gdzie nie leży w pliku, który zmienił PR"),
         ("brak - napęd", (("frontend/src/dzien.ts", 2, 2),), "WYJĄTEK brak - napęd | frontend/src/dzien.ts:2"),
         ("brak - napęd", (("kod/liczby.py", 2, 2),), "ODMOWA | kod/liczby.py:2 leży poza frontend/"),
     ],
-    ids=["proza-w-md", "proza-w-kodzie-poza-docstringiem", "test-w-tests", "test-z-miejscem-sprzed-pr-pominietym", "test-w-kodzie", "miejsce-sprzed-pr", "naped-w-frontend", "naped-w-kodzie"],
+    ids=["proza-w-md", "proza-w-kodzie-poza-docstringiem", "proza-z-miejscem-sprzed-pr-pominietym", "miejsce-sprzed-pr", "naped-w-frontend", "naped-w-kodzie"],
 )
 def test_wyjatek_przechodzi_tylko_gdy_kazde_miejsce_gdzie_zmienione_przez_pr_spelnia_jego_warunek(
     tmp_path: Path, guard: str, places: tuple[tuple[str, int, int], ...], state: str
 ) -> None:
     docs = {"docs/opis.md": "# Opis\n\nLiczby potraja `podwojona`.\n"}
-    weak = "def test_slaby() -> None:\n    assert True\n\n\n    # bez przypadku\n"
     frontend = {"frontend/src/dzien.ts": "export const komplet = (dni: number) =>\n  dni > 1;\n"}
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD, **docs, **frontend, "tests/test_podwojona.py": weak}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_podwojona.py": GUARD_TEST})
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD, **docs, **frontend}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_podwojona.py": GUARD_TEST})
 
     outcome = pull.prove(guard, places)
 
@@ -403,24 +257,12 @@ def test_komentarz_za_kodem_na_linii_z_gdzie_nie_jest_proza(tmp_path: Path) -> N
 
 # Granice dowodu (ADR 0042, „Konsekwencje”): każda próbka przechodzi dowód, choć strażnik nie łapie Ważnego z ``Gdzie``.
 ZNANE_LUKI_STRAZNIKA = {
-    # Zakres to cała funkcja z ``Gdzie``, więc test innej poprawki w tej samej funkcji też pada w obu przywróceniach.
-    "pytest: test innej poprawki w funkcji z Gdzie": (
-        {"kod/liczby.py": BAD},
-        {
-            "kod/liczby.py": BASE["kod/liczby.py"].replace("    return x * 2", "    if x < 0:\n        raise ValueError(x)\n    return x * 2"),
-            "tests/test_ujemna.py": "import pytest\n\nfrom kod.liczby import podwojona\n\n\ndef test_ujemna() -> None:\n    with pytest.raises(ValueError):\n        podwojona(-1)\n",
-        },
-        "pytest tests/test_ujemna.py::test_ujemna",
-    ),
-    # Sygnatura należy do funkcji z ``Gdzie``, więc argument dodany po FAIL wywraca test w obu przywróceniach.
-    "pytest: argument funkcji z Gdzie dodany po FAIL": (
-        {"kod/liczby.py": BAD},
-        {
-            "kod/liczby.py": BASE["kod/liczby.py"].replace("def podwojona(x: int)", "def podwojona(x: int, *, razy: int = 2)").replace("x * 2", "x * razy"),
-            "tests/test_razy.py": "from kod.liczby import podwojona\n\n\ndef test_razy() -> None:\n    assert podwojona(1, razy=5) == 5\n",
-        },
-        "pytest tests/test_razy.py::test_razy",
-    ),
+    # Test nie ma dowodu narzędzia, więc ``brak - test`` przechodzi przy Ważnym w kodzie także bez testu, który łapie
+    # błąd z ``Gdzie``, i przy Ważnym, które zamknąłby typ; to ocenia recenzent następnej rundy (skill ``przeglad``).
+    "brak - test: Ważne w kodzie bez testu, który łapie błąd": ({"kod/liczby.py": BAD}, {"kod/liczby.py": BASE["kod/liczby.py"]}, "brak - test"),
+    # Usunięcia kodu z ``Gdzie`` też nie dowodzi narzędzie, więc ``brak - usunięte`` przechodzi, choć funkcja z ``Gdzie``
+    # stoi na HEAD poprawiona w miejscu.
+    "brak - usunięte: kod z Gdzie poprawiony w miejscu, a nie usunięty": ({"kod/liczby.py": BAD}, {"kod/liczby.py": BASE["kod/liczby.py"]}, "brak - usunięte"),
 }
 
 
@@ -429,6 +271,6 @@ def test_znane_luki_straznika_przechodza_przez_dowod(tmp_path: Path, name: str) 
     failed, head, guard = ZNANE_LUKI_STRAZNIKA[name]
     pull = _pull(tmp_path, failed, head)
 
-    outcome = pull.prove(guard, scopes=(("kod/liczby.py", 1, 2),))
+    outcome = pull.prove(guard, scopes=SCOPE)
 
     assert outcome.detected, f"dowód odmawia już luki „{name}”: usuń ją ze ZNANE_LUKI_STRAZNIKA ({outcome.line})"

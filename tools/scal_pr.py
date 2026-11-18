@@ -65,7 +65,7 @@ Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–6 jako st
 po warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak
 strażnika. Warunek 6 potrzebuje ast-grep, który workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
 z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR, i czyta ast-grepem pliki PR jako dane, z konfiguracją
-bazy. Dowód strażnika wykonuje kod PR (pytest, mypy), a ``--status`` biegnie z tokenem z prawem zapisu statusów, więc
+bazy. Dowód strażnika wykonuje kod PR (wtyczki mypy), a ``--status`` biegnie z tokenem z prawem zapisu statusów, więc
 warunku 5 nie liczy sam: bierze go ze zmiennej ``DOWODY_STRAZNIKOW`` (``GUARD_PROOFS``), w której workflow podaje
 wynik joba ``dowod``. Ten job biegnie bez prawa zapisu i uruchamia ``--dowod-straznikow PLIK``: warunek 5 dla PR,
 którego warunki 1–4 tylko oczekują albo przechodzą, jako linię JSON z SHA HEAD dopisaną do ``PLIK``, a ``--status``

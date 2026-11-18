@@ -2767,7 +2767,7 @@ def _proof_arguments(head: str, *cases: str) -> list[str]:
 @pytest.mark.parametrize(
     ("body", "root", "fragment"),
     [
-        ("szczebel-c", False, "korzeń: W1 r1: brak pola „Strażnik: <selektor>” na końcu bloku: pytest tests/<plik>.py::<test> …, mypy, ruff"),
+        ("szczebel-c", False, "korzeń: W1 r1: brak pola „Strażnik: <selektor>” na końcu bloku: mypy, ruff, ast-grep <id reguły>"),
         ("wyrwany", True, "korzeń: W1 r1: brak pola „Strażnik: <selektor>” na końcu bloku"),
         ("straznik-spoza-listy", False, "korzeń: W1 r1: „Strażnik: npm test” to nie selektor strażnika z listy"),
         ("straznik-i-linia-po", False, "korzeń: W1 r1: po „Strażnik:” nic więcej, a jest linia „linia 2”"),

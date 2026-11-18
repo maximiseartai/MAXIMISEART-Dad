@@ -465,20 +465,26 @@ def _guard_proof(
 @pytest.mark.parametrize(
     ("guard", "last"),
     [
-        ("pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone", "DOWÓD OK | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte 1/1"),
-        ("brak - test", "DOWÓD ODMOWA | brak - test | wyjątek 0/1"),
-        ("npm test", "DOWÓD ODMOWA | npm test | „Strażnik: npm test” to nie selektor strażnika z listy: pytest tests/<plik>.py::<test> …, mypy, ruff, ast-grep <id reguły>, brak - proza, brak - test albo brak - napęd"),
+        ("brak - test", "DOWÓD OK | brak - test | wyjątek 1/1"),
+        (
+            "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone",
+            "DOWÓD ODMOWA | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | „Strażnik: pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone” to nie selektor strażnika z listy: "
+            "mypy, ruff, ast-grep <id reguły>, brak - proza, brak - napęd, brak - test (strażnik to test) albo brak - usunięte (kod z Gdzie usunięty z PR)",
+        ),
     ],
-    ids=["test-pada-na-wersji-z-werdyktu", "wyjatek-testu-przy-gdzie-w-kodzie", "selektor-spoza-listy"],
+    ids=["test-jako-straznik-ocenia-recenzent", "selektor-testu-spoza-listy"],
 )
 @ONLY_FOUND_BY_NAME_ON_POSIX  # atrapa gh .cmd nie przenosi wielowierszowego zapytania GraphQL (#2116 r2 W2)
-def test_dowod_straznika_bierze_zla_postac_z_sha_werdyktu_fail_i_gdzie(tmp_path: Path, guard: str, last: str) -> None:
+def test_dowod_straznika_testu_to_wyjatek_brak_test_a_nie_selektor_pytest(tmp_path: Path, guard: str, last: str) -> None:
+    """Test nie ma dowodu narzędzia (ADR 0042, „Test jako strażnik”): Ważne, którego strażnikiem jest test, pisze
+    ``brak - test`` i przechodzi z linią dla recenzenta następnej rundy, a ``pytest …`` to selektor spoza listy."""
+
     done, failed = _guard_proof(tmp_path, guard)
 
     assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == last, done.stdout
-    if guard.startswith("pytest"):
-        assert done.stdout.splitlines()[0].startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z FAIL: kod/inne.py; sam kod z Gdzie: kod/inne.py | "), done.stdout
+    if guard == "brak - test":
+        assert done.stdout.splitlines()[0] == f"#5 W1 r1 | {failed[:8]} | WYJĄTEK brak - test | czy test pada na błędzie z Gdzie, sprawdza recenzent następnej rundy", done.stdout
 
 
 @needs_ast_grep

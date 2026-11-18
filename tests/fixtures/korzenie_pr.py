@@ -33,7 +33,7 @@ RED_MAIN = 1456
 FLAKY = 1485
 EVIDENCE = "Dowód: tools/mutacje.py --test tests/test_x.py: MUTACJE OK"
 # Pole strażnika bloku Ważnego w wątku z warunkiem 5 (ADR 0042), zamiast ``Dowód:``.
-GUARD = "Strażnik: pytest tests/test_x.py::test_x"
+GUARD = "Strażnik: mypy"
 
 
 def _lines(*lines: str) -> str:
