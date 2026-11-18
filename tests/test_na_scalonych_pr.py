@@ -13,7 +13,7 @@ import pytest
 import na_scalonych_pr
 from tests.fixtures import werdykty_szablonu
 from tests.fixtures.body_html import body_html
-from tests.fixtures.fake_cli import FakeGitHub
+from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
 from tests.fixtures.znane_luki import wymaga_ruff_i_mypy
 
@@ -471,13 +471,14 @@ def _guard_proof(
     ],
     ids=["test-pada-na-wersji-z-werdyktu", "wyjatek-testu-przy-gdzie-w-kodzie", "selektor-spoza-listy"],
 )
+@ONLY_FOUND_BY_NAME_ON_POSIX  # atrapa gh .cmd nie przenosi wielowierszowego zapytania GraphQL (#2116 r2 W2)
 def test_dowod_straznika_bierze_zla_postac_z_sha_werdyktu_fail_i_gdzie(tmp_path: Path, guard: str, last: str) -> None:
     done, failed = _guard_proof(tmp_path, guard)
 
     assert done.returncode == (0 if last.startswith("DOWÓD OK") else 1), done.stdout + done.stderr
     assert done.stdout.splitlines()[-1] == last, done.stdout
     if guard.startswith("pytest"):
-        assert done.stdout.splitlines()[0].startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z FAIL: kod/inne.py | "), done.stdout
+        assert done.stdout.splitlines()[0].startswith(f"#5 W1 r1 | {failed[:8]} | WYKRYTA | z FAIL: kod/inne.py; sam kod z Gdzie: kod/inne.py | "), done.stdout
 
 
 @needs_ast_grep

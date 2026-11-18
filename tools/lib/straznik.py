@@ -1,24 +1,24 @@
 """Strażnik Ważnego ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): mechanizm z zamkniętej
 listy, który autor wpisuje w bloku Ważnego sekcji ``## Korzeń`` linią ``Strażnik: <selektor>``, i jego dowód.
 
-Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` w miejscach jego pola ``Gdzie``, które pisze
+Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` i miejsca jego pola ``Gdzie``, które pisze
 recenzent, a autor podaje tylko selektor. Wynik to kod wyjścia pytest albo znaleziska mypy (``-O json``) i ruff
 (``--output-format json``) w formacie z wiersza poleceń dowodu, więc konfiguracja PR wyniku nie przestawi.
 
 | Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
 |---|---|---|
-| ``pytest tests/<plik>.py::<test> …`` | każdy plik spoza ``tests/``, który PR zmienił (od rozwidlenia do FAIL i od rozwidlenia HEAD do HEAD), z treścią z FAIL; testy z HEAD | węzły przechodzą na HEAD (kod 0) i padają po przywróceniu (kod 1, nie błąd kolekcji 2, użycia 4 ani brak testów 5), a co najmniej jeden węzeł pada wyjątkiem, który nie jest brakiem nazwy dodanej po FAIL (``ImportError``, ``NameError``, ``AttributeError`` modułu; wtyczka ``straznik_pytest``) |
+| ``pytest tests/<plik>.py::<test> …`` | dwa razy, testy z HEAD: (1) drzewo FAIL, czyli każdy plik spoza ``tests/``, który PR zmienił (od rozwidlenia do FAIL i od rozwidlenia HEAD do HEAD), z treścią z FAIL; (2) HEAD z samym kodem z ``Gdzie`` z FAIL: różnice HEAD i FAIL, które dotykają zakresu ``Case.scopes`` (cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD) | węzły przechodzą na HEAD (kod 0) i padają w obu przywróceniach (kod 1, nie błąd kolekcji 2, użycia 4 ani brak testów 5): (1) mówi, że test łapie stan FAIL, a (2), że pada na kodzie z ``Gdzie``, a nie z braku czegoś, co poprawka dodała obok (moduł, metoda, nazwa, opcja) |
 | ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk, po przywróceniu znalezisko w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | Ważne stoi w polu ``metadata.przypadki`` reguły na HEAD (jedyna lista jej przypadków), a reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
 | ``brak - proza`` | bez | każde miejsce ``Gdzie`` w pliku, który zmienił PR, to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - test`` | bez | każde takie miejsce leży w ``tests/``; mutację złej implementacji powtarza recenzent następnej rundy (skill ``przeglad``) |
 | ``brak - napęd`` | bez | każde takie miejsce leży w ``frontend/``, a strażnik to krok napędu skilla ``verify-*``, który Required CI uruchamia w Mutation checks; recenzent następnej rundy uruchamia ten krok na drzewie FAIL |
 
-Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): test, który ten PR zmienił po FAIL dla innego
-Ważnego, przechodzi dowód pytest każdego Ważnego tej rundy, bo przywrócenie cofa wszystkie zmiany PR poza ``tests/``;
-test, który pada na drzewie FAIL ``TypeError`` z argumentu dodanego po FAIL albo asercją na nazwie czytanej przez
-``getattr``, też przechodzi, bo wtyczka zna tylko wyjątek braku nazwy; plik, który po FAIL zmienił też ``main``, wraca
-z treścią sprzed tej zmiany. Pytest i mypy wykonują kod PR, więc
+Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): test innej poprawki tego PR w tej samej
+funkcji co ``Gdzie`` przechodzi dowód pytest; test, który pada z samej sygnatury funkcji z ``Gdzie`` zmienionej po FAIL
+(argument dodany po FAIL), też, bo sygnatura należy do zakresu; plik, który po FAIL zmienił też ``main``, wraca
+z treścią sprzed tej zmiany. Kod z ``Gdzie``, który poprawka zostawiła bez zmian w pliku też bez zmian, nie daje
+przywrócenia (2), więc taki strażnik pytest nie przechodzi. Pytest i mypy wykonują kod PR, więc
 status „Werdykt i bramka” liczy dowód w jobie bez prawa zapisu (``.github/workflows/werdykt-i-bramka.yml``).
 """
 
@@ -30,14 +30,12 @@ from enum import Enum
 import json
 import os
 from pathlib import Path
+import difflib
 import re
-import shutil
 import sys
-import tempfile
 
 import potomne
 import repo
-import straznik_pytest
 
 FIELD = "Strażnik:"
 
@@ -131,13 +129,9 @@ def prove(root: Path, guard: Guard, head: str, base: str, cases: Sequence[Case])
 
 @dataclass(frozen=True)
 class _Ran:
-    """Bieg strażnika: kod, ostatnia linia, znaleziska mypy i ruff, a przy pytest testy, które padły w wywołaniu:
-    węzeł, nazwa wyjątku i to, czy padł z braku nazwy (``straznik_pytest``)."""
-
     code: int
     last: str
     findings: tuple[tuple[str, int, str], ...] = ()
-    failed: tuple[tuple[str, str, bool], ...] = ()
 
 
 def _run(guard: Guard, copy: Path) -> _Ran:
@@ -147,34 +141,19 @@ def _run(guard: Guard, copy: Path) -> _Ran:
     # byłyby dla niego ważne: dowód nie pisze pyc, a mypy biegnie bez pamięci (``--no-incremental``).
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     if guard.kind is Kind.PYTEST:
-        return _pytest(guard, copy, environment)
-    if guard.kind is Kind.MYPY:
+        command = [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", *guard.arguments]
+    elif guard.kind is Kind.MYPY:
         command = [sys.executable, "-m", "mypy", "--no-incremental", "-O", "json"]
     else:
         command = [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json"]
     done = potomne.run(command, cwd=copy, env=environment)
     lines = (done.stdout + done.stderr).strip().splitlines()
     last = lines[-1][:200] if lines else ""
+    if guard.kind is Kind.PYTEST:
+        return _Ran(done.returncode, last)
     found = _mypy(done.stdout) if guard.kind is Kind.MYPY else _ruff(done.stdout, copy)
     # mypy i ruff kończą się kodem 1 przy znaleziskach, które niesie ``findings``; każdy inny kod to błąd narzędzia.
     return _Ran(0 if done.returncode == 1 and found else done.returncode, last, found)
-
-
-def _pytest(guard: Guard, copy: Path, environment: dict[str, str]) -> _Ran:
-    """Węzły strażnika z wtyczką ``straznik_pytest`` z kopii jej pliku w osobnym katalogu, która zapisuje wyjątek każdego
-    testu, który padł."""
-
-    with tempfile.TemporaryDirectory(prefix="straznik-") as folder:
-        plugin = Path(straznik_pytest.__file__)
-        shutil.copy(plugin, folder)
-        results = Path(folder) / straznik_pytest.RESULTS
-        environment = {**environment, "PYTHONPATH": os.pathsep.join([environment["PYTHONPATH"], folder])}
-        command = [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "-p", plugin.stem, *guard.arguments]
-        done = potomne.run(command, cwd=copy, env=environment)
-        entries = [json.loads(line) for line in results.read_text(encoding="utf-8").splitlines()] if results.exists() else []
-    lines = (done.stdout + done.stderr).strip().splitlines()
-    failed = tuple((str(entry["wezel"]), str(entry["wyjatek"]), bool(entry["brak_nazwy"])) for entry in entries)
-    return _Ran(done.returncode, lines[-1][:200] if lines else "", failed=failed)
 
 
 def _mypy(output: str) -> tuple[tuple[str, int, str], ...]:
@@ -210,36 +189,17 @@ def _pr_files(root: Path, head: str, base: str, case: Case) -> list[str]:
 
 def _restored(root: Path, guard: Guard, copy: Path, head: str, base: str, case: Case) -> Outcome:
     if guard.kind is Kind.PYTEST:
-        groups = [[path for path in _pr_files(root, head, base, case) if not path.startswith(TESTS)]]
-        what = "pliki PR spoza tests/"
-    else:
-        paths = list(dict.fromkeys(path for path, _, _ in case.places))
-        groups = [paths, *([[path] for path in paths] if len(paths) > 1 else [])]
-        what = "pliki z Gdzie"
+        return _behaviour(root, guard, copy, head, base, case)
+    paths = list(dict.fromkeys(path for path, _, _ in case.places))
+    groups = [paths, *([[path] for path in paths] if len(paths) > 1 else [])]
+    what = "pliki z Gdzie"
     tried = []
     for group in groups:
         changed = [path for path in group if _text(root, case.failed, path) != _text(root, head, path)]
         if not changed:
             continue
-        kept = {path: (copy / path).read_bytes() if (copy / path).exists() else None for path in changed}
-        try:
-            for path in changed:
-                _write(copy / path, repo.blob(root, case.failed, path))
-            ran = _run(guard, copy)
-        finally:
-            for path, content in kept.items():
-                _write(copy / path, content)
-        where = "+".join(changed[:3]) + (f" (i {len(changed) - 3} innych)" if len(changed) > 3 else "")
-        if guard.kind is Kind.PYTEST:
-            behaviour = [one for one in ran.failed if not one[2]]
-            if ran.code == 1 and behaviour:
-                return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {behaviour[0][0]}: {behaviour[0][1]} | {ran.last}")
-            if ran.code == 1:
-                names = ", ".join(sorted({one[1] for one in ran.failed})) or "bez wyjątku z wtyczki"
-                tried.append(f"{where}: strażnik pada tylko z braku nazwy dodanej po FAIL ({names}), a nie na błędzie z Gdzie: {ran.last}")
-                continue
-            tried.append(f"{where}: kod {ran.code} ({'przechodzi' if ran.code == 0 else 'błąd kolekcji, użycia albo brak testów'}): {ran.last}")
-            continue
+        ran = _with(root, guard, copy, {path: repo.blob(root, case.failed, path) for path in changed})
+        where = _listed(changed)
         inside = [finding for finding in ran.findings if finding[0] in changed and finding[1] in _scope(root, head, case, finding[0])]
         if inside:
             return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {_shown(inside)}")
@@ -247,6 +207,64 @@ def _restored(root: Path, guard: Guard, copy: Path, head: str, base: str, case: 
     if not tried:
         return Outcome(False, f"{case.label} | {case.failed[:8]} | NIC DO PRZYWRÓCENIA | {what} mają na HEAD treść z FAIL")
     return Outcome(False, f"{case.label} | {case.failed[:8]} | NIEWYKRYTA | {' / '.join(tried)}")
+
+
+def _behaviour(root: Path, guard: Guard, copy: Path, head: str, base: str, case: Case) -> Outcome:
+    """Dowód pytest: węzły padają (1) na drzewie FAIL i (2) na HEAD z samym kodem z ``Gdzie`` z FAIL."""
+
+    label = f"{case.label} | {case.failed[:8]}"
+    tree = [path for path in _pr_files(root, head, base, case) if not path.startswith(TESTS) and _text(root, case.failed, path) != _text(root, head, path)]
+    if not tree:
+        return Outcome(False, f"{label} | NIC DO PRZYWRÓCENIA | pliki PR spoza tests/ mają na HEAD treść z FAIL")
+    whole = _with(root, guard, copy, {path: repo.blob(root, case.failed, path) for path in tree})
+    if whole.code != 1:
+        state = "przechodzi" if whole.code == 0 else "błąd kolekcji, użycia albo brak testów"
+        return Outcome(False, f"{label} | NIEWYKRYTA | drzewo FAIL ({_listed(tree)}): kod {whole.code} ({state}): {whole.last}")
+    spliced = {path: _spliced(root, head, case, path) for path in dict.fromkeys(place[0] for place in case.places)}
+    region = {path: content for path, content in spliced.items() if content != repo.blob(root, head, path)}
+    if not region:
+        return Outcome(False, f"{label} | NIEWYKRYTA | kod z Gdzie stoi na HEAD jak na FAIL, więc nie ma czego przywrócić w miejscu błędu")
+    near = _with(root, guard, copy, region)
+    if near.code != 1:
+        return Outcome(
+            False,
+            f"{label} | NIEWYKRYTA | pada na drzewie FAIL, ale na HEAD z samym kodem z Gdzie z FAIL ({_listed(region)}) kod {near.code}: "
+            f"test łapie brak czegoś, co poprawka dodała obok (moduł, metoda, nazwa, opcja), a nie błąd z Gdzie: {near.last}",
+        )
+    return Outcome(True, f"{label} | WYKRYTA | z FAIL: {_listed(tree)}; sam kod z Gdzie: {_listed(region)} | {near.last}")
+
+
+def _with(root: Path, guard: Guard, copy: Path, contents: dict[str, bytes | None]) -> _Ran:
+    """Bieg strażnika na kopii z plikami ``contents`` (``None``: plik usunięty), po którym kopia wraca do HEAD."""
+
+    kept = {path: (copy / path).read_bytes() if (copy / path).exists() else None for path in contents}
+    try:
+        for path, content in contents.items():
+            _write(copy / path, content)
+        return _run(guard, copy)
+    finally:
+        for path, content in kept.items():
+            _write(copy / path, content)
+
+
+def _listed(paths: Sequence[str] | dict[str, bytes | None]) -> str:
+    names = list(paths)
+    return "+".join(names[:3]) + (f" (i {len(names) - 3} innych)" if len(names) > 3 else "")
+
+
+def _spliced(root: Path, head: str, case: Case, path: str) -> bytes | None:
+    """Plik ``path`` z HEAD z linią FAIL wszędzie tam, gdzie różnica HEAD i FAIL dotyka zakresu ``_scope`` (linie FAIL)."""
+
+    now, failed = _text(root, head, path), _text(root, case.failed, path)
+    if failed is None or now is None:
+        return repo.blob(root, case.failed, path)
+    scope = _scope(root, head, case, path)
+    ours, theirs = now.splitlines(keepends=True), failed.splitlines(keepends=True)
+    out: list[str] = []
+    for tag, low, high, first, last in difflib.SequenceMatcher(None, ours, theirs, autojunk=False).get_opcodes():
+        touches = any(first < line <= last for line in scope) if last > first else first in scope or first + 1 in scope
+        out.extend(theirs[first:last] if tag != "equal" and touches else ours[low:high])
+    return "".join(out).encode("utf-8")
 
 
 def _write(path: Path, content: bytes | None) -> None:

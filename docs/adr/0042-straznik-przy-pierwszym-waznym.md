@@ -15,10 +15,10 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 ## Decyzja
 
 - **Strażnik przy każdym Ważnym.** Blok każdego Ważnego w sekcji `## Korzeń` opisu PR kończy linia `Strażnik: <selektor>` z zamkniętej listy, także po `Wyrwany w #M`, zamiast autorskiego `Dowód:`, który zostaje tylko w bloku czerwonego `main`.
-  Autor wybiera tylko selektor; złą postać daje drzewo SHA werdyktu `FAIL` (przy pytest kod PR spoza `tests/`, przy mypy i ruff pliki z pola `Gdzie`), a wynik liczy narzędzie.
+  Autor wybiera tylko selektor; złą postać daje drzewo SHA werdyktu `FAIL` i miejsca jego pola `Gdzie` (przy pytest test pada na drzewie `FAIL` i na HEAD z samym kodem z `Gdzie` z `FAIL`, przy mypy i ruff w przywróconych plikach z `Gdzie`), a wynik liczy narzędzie.
   Listę, przywrócenie błędu przy każdym rodzaju i granice podaje jeden właściciel: docstring `tools/lib/straznik.py`, a bramkę `tools/lib/bramka_straznika.py` (warunek 5 `tools/scal_pr.py`).
   Powód: strażnik powstaje przy pierwszym Ważnym, więc rozpoznanie powtórki przez recenzenta przestaje być warunkiem.
-- **Dowód bez tekstu autora.** Bramka czyta tylko kod wyjścia pytest z wyjątkiem każdego testu, który padł (wtyczka `tools/lib/straznik_pytest.py`; brak nazwy dodanej po `FAIL` to nie dowód), i znaleziska mypy i ruff w formacie JSON z wiersza poleceń dowodu, więc ani tekst mutacji, ani format wyjścia z konfiguracji PR wyniku nie zmienia.
+- **Dowód bez tekstu autora.** Bramka czyta tylko kod wyjścia pytest w dwóch przywróceniach i znaleziska mypy i ruff w formacie JSON z wiersza poleceń dowodu, więc ani tekst mutacji, ani format wyjścia z konfiguracji PR wyniku nie zmienia; drugie przywrócenie (HEAD z samym kodem z `Gdzie` z `FAIL`) odcina test, który pada tylko z braku modułu, metody, nazwy albo opcji, które poprawka dodała obok.
   Powód: prototyp na dziesięciu Ważnych z przeszłości (tabela w komentarzu PR, który dodał ten ADR) dał dowód `WYKRYTA` dla 6 z 6 Ważnych z mechanizmem i 0 z 8 fałszywych `WYKRYTA` strażnika niezwiązanego z błędem, a mutacja z pliku PR z warunkiem „zamiana to tekst z SHA `FAIL`” przepuściła 7 z 9 sond obejścia.
 - **Wyjątki.** `brak - proza` sprawdza narzędzie (każde miejsce `Gdzie`, które zmienił PR, to `.md`, docstring albo komentarz), a `brak - test` (miejsca tylko w `tests/`, czyli próbka testu bez przypadku z obietnicy) i `brak - napęd` (miejsca tylko w `frontend/`, a strażnik to krok napędu skilla `verify-*`) narzędzie co do miejsca, a dowód recenzent następnej rundy: mutację złej implementacji albo krok napędu na drzewie `FAIL`, jak dotąd.
   Powód: dowód testu, który nie łapie złej implementacji, potrzebuje tej implementacji, a drzewo SHA `FAIL` jej nie ma; frontend nie ma testów jednostkowych, a krok napędu potrzebuje przeglądarki i zbudowanego frontendu, których job dowodu nie ma (#2104 W1 r1).
@@ -30,6 +30,7 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 
 - **Mutacja z pliku JSON w PR, której zamiana musi być tekstem z SHA `FAIL`.** Autor wybiera miejsce zamiany, więc ten sam tekst w złym miejscu (w funkcji przed definicją nazwy, na poziomie modułu) daje fałszywe `WYKRYTA` (#1912 r1–r2; prototyp: 7 z 9 sond).
 - **Cofnięcie samych hunków przy `Gdzie` dla pytest.** Mieszanka kodu z `FAIL` i HEAD wywraca test, który na całym drzewie `FAIL` przechodzi (prototyp, #2059 W1 r1).
+- **Rodzaj wyjątku testu jako dowód (wtyczka pytest, #2116 r1).** Kod testu wybiera, jakim wyjątkiem pada (`AttributeError` instancji, `monkeypatch`, `SystemExit` opcji), więc lista wyjątków braku nazwy przepuszczała kolejne formy (#2116 r2 W1); drugie przywrócenie mierzy samą własność.
 - **Recenzent jako bramka typu i testu (#1912).** Zostawia warunek, którego dotrzymanie zależy od tego, czy recenzent rozpozna powtórkę i napisze dowód.
 
 ## Konsekwencje

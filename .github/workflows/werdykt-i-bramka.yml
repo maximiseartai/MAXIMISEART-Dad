@@ -13,9 +13,10 @@ name: Werdykt i bramka
 # review shows at the next event.
 #
 # The guard proof of condition 5 runs the PR's code (pytest, mypy), so it runs in the job dowod, which has no write
-# permission and no secret. The job status alone may write statuses: it never runs the PR's code, judges conditions
-# 1-4 and 6 itself and takes from dowod only the reasons of condition 5 for the same HEAD SHA, so the PR's code can
-# change at most its own condition 5 in the status, and tools/scal_pr.py proves it again at the merge (ADR 0042).
+# permission and no secret. Only the jobs status and scalenia may write statuses, and neither runs the PR's code:
+# status judges conditions 1-4 and 6 itself and takes from dowod only the reasons of condition 5 for the same HEAD SHA,
+# so the PR's code can change at most its own condition 5 in the status, and tools/scal_pr.py proves it again at the
+# merge (ADR 0042).
 on:
   pull_request_target: # zizmor: ignore[dangerous-triggers] checks out main; only the job dowod, without write permission, runs the PR's code
     branches:

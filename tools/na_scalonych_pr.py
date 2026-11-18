@@ -435,12 +435,12 @@ def _rule_guard(head: str, guard: straznik.Guard, majors: list[tuple[int, str, i
 
 
 def _case(guard: straznik.Guard, probe: Probe) -> straznik.Case:
-    """Ważne ``probe`` jako przypadek dowodu: zakresy funkcji z ``places`` dla strażnika statycznego, a proza z ``PROSE``
+    """Ważne ``probe`` jako przypadek dowodu: zakresy funkcji z ``places`` dla pytest, mypy i ruff, a proza z ``PROSE``
     dla ``brak - proza``; oba czyta ast-grep z kopii SHA werdyktu, jak dowód reguły."""
 
     if not (raw := szablon_werdyktu.places(probe.where)):
         raise ValueError(f"{probe.where} nie ma miejsca plik:linia")
-    scopes = places(probe.where, probe.head) if guard.kind in (straznik.Kind.MYPY, straznik.Kind.RUFF) else []
+    scopes = places(probe.where, probe.head) if guard.kind in (straznik.Kind.PYTEST, straznik.Kind.MYPY, straznik.Kind.RUFF) else []
     python = sorted({path for path, _, _ in raw if path.endswith(".py")})
     prose = hits(probe.head, ("--inline-rules", PROSE), python) if guard.kind is straznik.Kind.PROSE and python else []
     return straznik.Case(probe.label, probe.head, probe.base, tuple(raw), tuple(scopes), tuple(prose))
