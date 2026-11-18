@@ -1,7 +1,9 @@
 """Kroki sprawdzeń, które biegną lokalnie tak jak w CI (ruff, mypy obu systemów, pytest), i środowisko kodu drzewa.
 
-Kroki ruff i mypy (``static_steps``) to brama pre-push i zadanie CI „Ruff, mypy”: biegną nimi ``tools/ci_lokalnie.py``,
-``tools/szybko.py`` i brama typów mutacji (``tools/lib/silnik_mutacji.py``). Kroki zizmor, actionlint
+Kroki ruff i mypy (``static_steps``) to brama pre-push i polecenia zadania CI „Ruff, mypy” na każdej maszynie, także
+platforma mypy (``tests/test_ci_lokalnie.py`` pilnuje, że każde polecenie CI zaczyna krok): biegną nimi
+``tools/ci_lokalnie.py``, ``tools/szybko.py``, brama typów mutacji (``tools/lib/silnik_mutacji.py``) i dowód strażnika
+``mypy`` i ``ruff`` (``tools/lib/straznik.py``). Kroki zizmor, actionlint
 i shellcheck akcji złożonych (``workflow_steps``) sprawdzają ``.github/`` w tym samym zadaniu CI, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest (``pytest_step``) to ten sam pytest, który
 ``tools/ci_lokalnie.py`` uruchamia w całości, a ``tools/szybko.py`` z wybranymi testami.
 
@@ -38,8 +40,9 @@ def static_steps(root: Path) -> list[Step]:
     python = sys.executable
     return [
         Step("ruff", "ruff", (python, "-m", "ruff", "check"), root),
-        # Gałęzie innych systemów niż Windows sprawdza mypy systemu, na którym biegnie; CI biegnie na Linuksie.
-        Step("mypy", "mypy", (python, "-m", "mypy"), root),
+        # Gałęzie systemów innych niż Windows sprawdza mypy dla Linuksa, jak Required CI, także na Macu: mypy systemu
+        # maszyny pominąłby gałąź tylko dla Linuksa, a przyjął gałąź tylko dla macOS, której CI nie sprawdza (#2116 r5 W1).
+        Step("mypy", "mypy", (python, "-m", "mypy", "--platform", "linux"), root),
         # Gałęzie tylko dla Windows używają API, którego inne systemy nie mają.
         # Własny cache, bo zmiana --platform unieważnia wspólny i oba kroki sprawdzałyby za każdym razem całość.
         Step("mypy (Windows)", "mypy", (python, "-m", "mypy", "--platform", "win32", "--cache-dir", ".mypy_cache/win32"), root),

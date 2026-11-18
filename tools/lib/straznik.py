@@ -2,9 +2,10 @@
 listy, który autor wpisuje w bloku Ważnego sekcji ``## Korzeń`` linią ``Strażnik: <selektor>``, i jego dowód.
 
 Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` i miejsca jego pola ``Gdzie``, które pisze
-recenzent, a autor podaje tylko selektor. Strażnik biegnie krokami bramy pre-push i Required CI
-(``kroki_lokalne.static_steps``: ruff oraz mypy obu systemów, także ``--platform win32``) w ich środowisku, a wynik to
-znaleziska w JSON (``_JSON``: format z wiersza poleceń dowodu), więc konfiguracja PR wyniku nie przestawi.
+recenzent, a autor podaje tylko selektor. Strażnik biegnie poleceniami Required CI na każdej maszynie
+(``kroki_lokalne.static_steps``: ruff oraz mypy ``--platform linux`` i ``--platform win32``) w ich środowisku, a wynik to
+znaleziska w JSON (``_JSON``: format z wiersza poleceń dowodu), więc ani system maszyny, ani konfiguracja PR wyniku nie
+przestawi.
 
 | Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
 |---|---|---|
@@ -19,7 +20,8 @@ Test nie ma selektora z dowodem narzędzia: trzy rundy przeglądu #2116 obaliły
 kodzie z ``Gdzie``, a nie z braku czegoś, co poprawka dodała obok (ADR 0042, „Test jako strażnik”). Granica (próbka
 ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): ``brak - test`` i ``brak - usunięte`` przechodzą przy każdym
 Ważnym, także gdy mechanizm z dowodem by je zamknął, test błędu nie łapie albo kod z ``Gdzie`` stoi na HEAD; to ocenia
-recenzent. Plik, który po FAIL zmienił też ``main``, wraca przy mypy i ruff z treścią sprzed tej zmiany. Mypy wykonuje
+recenzent. Gałęzi tylko dla macOS nie sprawdza żaden krok Required CI, więc jej błędu ``mypy`` nie dowodzi na żadnej
+maszynie. Plik, który po FAIL zmienił też ``main``, wraca przy mypy i ruff z treścią sprzed tej zmiany. Mypy wykonuje
 wtyczki z konfiguracji PR, więc status „Werdykt i bramka” liczy dowód w jobie bez prawa zapisu
 (``.github/workflows/werdykt-i-bramka.yml``).
 """
@@ -138,7 +140,7 @@ class _Ran:
 
 
 def _run(guard: Guard, copy: Path) -> _Ran:
-    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: obu systemów) na kopii ``copy``; znaleziska
+    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: Linux i Windows) na kopii ``copy``; znaleziska
     wszystkich kroków razem, a kod pierwszego kroku, który nie dał wyniku."""
 
     env = {name: value for name, value in environment(copy).items() if name not in _HIDDEN}
