@@ -6,7 +6,12 @@ recenzent, a autor podaje tylko selektor. Strażnik ``mypy`` i ``ruff`` (``prove
 (``kroki_lokalne.static_steps``: ruff oraz mypy dla każdej platformy ``MYPY_PLATFORMS``) w środowisku Required CI
 z ``srodowisko_ci.built`` (HEAD PR scalony z bazą, Python i zależności tego drzewa, zmienne bez tych, które sterują
 narzędziami), a wynik to znaleziska w JSON (``kroki_lokalne.JSON_OUTPUT`` i ``diagnostics``, format z wiersza poleceń
-dowodu), więc ani maszyna, ani środowisko wołającego, ani konfiguracja wyjścia z PR wyniku nie przestawi.
+dowodu), więc ani maszyna, ani środowisko wołającego, ani konfiguracja wyjścia z PR wyniku nie przestawi. Każdy bieg
+uruchamia kroki po kolei na kopii po instalacji projektu (z przywróconymi plikami), jak zadanie Required CI w jednym
+checkoucie, do ostatniego kroku narzędzia strażnika (przy mypy także ruff), w kolejności kroków zadania, którą wiąże
+``srodowisko_ci.mismatch``; krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
+to ``KROK PISZE PLIKI``, bo Required CI liczy dalsze kroki na zmienionych plikach, a zakres ``Gdzie`` z FAIL ich nie
+opisuje; kopia wraca do stanu sprzed biegu.
 
 | Selektor | Przywrócenie błędu na kopii HEAD PR scalonego z bazą | Dowód przechodzi, gdy |
 |---|---|---|
@@ -65,7 +70,10 @@ REVIEWED = {
 FRONTEND = "frontend/"  # katalog każdego miejsca ``Gdzie`` zmienionego przez PR przy ``brak - napęd``
 # Opcje dopisane do kroku ``kroki_lokalne.static_steps`` obok jego ``JSON_OUTPUT``: bieg bez pamięci, bo plik przywrócony
 # z FAIL ma często ten sam rozmiar i tę samą sekundę zapisu, więc pamięć z biegu na HEAD byłaby dla niego ważna.
-_NO_CACHE = {Kind.MYPY: "--no-incremental", Kind.RUFF: "--no-cache"}
+_NO_CACHE = {Kind.MYPY.value: "--no-incremental", Kind.RUFF.value: "--no-cache"}  # bieg bez pamięci, klucz to ``Step.job``
+# Pliki, które w biegu piszą same narzędzia (pamięć mypy z ``--cache-dir``, bajtkod wtyczek), a których mypy i ruff nie
+# czytają jako kodu, więc ich zapis nie jest zmianą kopii.
+_OWN_WRITES = (".mypy_cache/", ".ruff_cache/")
 FORMS = f"{Kind.MYPY.value}, {Kind.RUFF.value}, {Kind.AST_GREP.value} <id reguły>, {Kind.PROSE.value}, {Kind.DRIVE.value}, {Kind.TESTS.value} (strażnik to test) albo {Kind.REMOVED.value} (kod z Gdzie usunięty z PR)"
 
 
@@ -137,7 +145,9 @@ def prove(root: Path, guard: Guard, environment: Environment, cases: Sequence[Ca
     """Dowód strażnika ``mypy`` albo ``ruff`` w środowisku Required CI ``environment`` (``srodowisko_ci.built``) dla
     każdego Ważnego ``cases``. Wynik ma jedną linię na Ważne."""
 
-    before = _run(guard, environment)
+    before = _run(guard, environment, {})
+    if before.written:
+        return [Outcome(False, f"{case.label} | {case.failed[:8]} | {_writes(before)}") for case in cases]
     if before.findings or before.code != 0:
         shown = _shown(before.findings) or f"kod {before.code}: {before.last}"
         red = f"PODSTAWA CZERWONA | na HEAD scalonym z bazą bez przywrócenia: {shown} (tak samo pada Required CI PR: popraw HEAD albo zaktualizuj PR z bazy)"
@@ -157,17 +167,45 @@ class _Ran:
     code: int
     last: str
     findings: tuple[tuple[str, int, str], ...] = ()
+    written: str = ""  # krok, który zmienił pliki kopii, i te pliki
 
 
-def _run(guard: Guard, environment: Environment) -> _Ran:
-    """Każdy krok narzędzia ``guard`` z ``kroki_lokalne.static_steps`` (mypy: każda platforma) Pythonem i ze zmiennymi
-    ``environment`` na jego kopii; znaleziska wszystkich kroków razem, a kod pierwszego kroku, który nie dał wyniku."""
+def _run(guard: Guard, environment: Environment, contents: Mapping[str, bytes | None]) -> _Ran:
+    """Bieg strażnika (``_steps``) na kopii środowiska z plikami ``contents`` (``None``: plik usunięty), po którym te
+    pliki wracają do stanu sprzed biegu."""
 
     copy = environment.copy
+    kept = {path: (copy / path).read_bytes() if (copy / path).exists() else None for path in contents}
+    try:
+        for path, content in contents.items():
+            _write(copy / path, content)
+        return _steps(guard, environment)
+    finally:
+        for path, content in kept.items():
+            _write(copy / path, content)
+
+
+def _steps(guard: Guard, environment: Environment) -> _Ran:
+    """Kroki ``kroki_lokalne.static_steps`` po kolei do ostatniego kroku narzędzia ``guard`` (mypy: ruff i każda
+    platforma) Pythonem i ze zmiennymi ``environment`` na jego kopii; znaleziska kroków ``guard`` razem, a kod pierwszego
+    z nich, który nie dał wyniku. Krok, po którym pliki kopii są inne niż przed nim, kończy bieg z ``written``, a pliki,
+    które zmienił, wracają do stanu sprzed kroku."""
+
+    copy = environment.copy
+    state = _state(copy)
+    steps = static_steps(copy, str(environment.python))
+    end = max(index for index, step in enumerate(steps) if step.job == guard.kind.value)
     code, last = 0, ""
     found: list[tuple[str, int, str]] = []
-    for step in (step for step in static_steps(copy, str(environment.python)) if step.job == guard.kind.value):
-        done = potomne.run([*step.command, _NO_CACHE[guard.kind], *JSON_OUTPUT[step.job]], cwd=copy, env=environment.variables)
+    for step in steps[: end + 1]:
+        done = potomne.run([*step.command, _NO_CACHE[step.job], *JSON_OUTPUT[step.job]], cwd=copy, env=environment.variables)
+        if (now := _state(copy)) != state:
+            changed = sorted(path for path in state.keys() | now.keys() if state.get(path) != now.get(path))
+            for path in changed:
+                _write(copy / path, state[path] if path in state else repo.blob(copy, "HEAD", path))
+            return _Ran(code, last, tuple(found), f"po kroku {step.name}: {_listed(changed)}")
+        if step.job != guard.kind.value:
+            continue
         # Kod reguły w nawiasie przy mypy, jak w jego wyjściu, a przed komunikatem przy ruff.
         read = [(one.path, one.line, f"[{one.code}] {one.message}" if guard.kind is Kind.MYPY else f"{one.code} {one.message}") for one in diagnostics(step.job, done.stdout, copy)]
         found.extend(read)
@@ -176,6 +214,23 @@ def _run(guard: Guard, environment: Environment) -> _Ran:
             lines = (done.stdout + done.stderr).strip().splitlines()
             code, last = done.returncode, f"{step.name}: {lines[-1][:200] if lines else ''}"
     return _Ran(code, last, tuple(dict.fromkeys(found)))
+
+
+def _state(copy: Path) -> dict[str, bytes | None]:
+    """Treść plików kopii, które różnią się od jej drzewa (zmienione, usunięte i nowe poza ignorowanymi), bez
+    ``_OWN_WRITES`` i ``__pycache__``."""
+
+    listed = repo.git(copy, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
+    paths = {entry[3:] for entry in listed.split("\0") if len(entry) > 3}
+    kept = sorted(path for path in paths if not path.startswith(_OWN_WRITES) and "__pycache__" not in path.split("/"))
+    return {path: (copy / path).read_bytes() if (copy / path).is_file() else None for path in kept}
+
+
+def _writes(ran: _Ran) -> str:
+    return (
+        f"KROK PISZE PLIKI | {ran.written} (np. fix w konfiguracji ruff drzewa albo wtyczka mypy): Required CI liczy dalsze "
+        "kroki na zmienionych plikach, a dowód ich nie odtwarza; wyłącz zapis w konfiguracji drzewa"
+    )
 
 
 def _shown(findings: Iterable[tuple[str, int, str]]) -> str:
@@ -199,7 +254,9 @@ def _restored(root: Path, guard: Guard, environment: Environment, case: Case) ->
         changed = [path for path in group if _text(root, case.failed, path) != _text(root, environment.tree, path)]
         if not changed:
             continue
-        ran = _with(guard, environment, {path: repo.blob(root, case.failed, path) for path in changed})
+        ran = _run(guard, environment, {path: repo.blob(root, case.failed, path) for path in changed})
+        if ran.written:
+            return Outcome(False, f"{case.label} | {case.failed[:8]} | {_writes(ran)}")
         where = _listed(changed)
         inside = [finding for finding in ran.findings if finding[0] in changed and finding[1] in _scope(root, environment.tree, case, finding[0])]
         if inside:
@@ -208,21 +265,6 @@ def _restored(root: Path, guard: Guard, environment: Environment, case: Case) ->
     if not tried:
         return Outcome(False, f"{case.label} | {case.failed[:8]} | NIC DO PRZYWRÓCENIA | pliki z Gdzie mają na HEAD scalonym z bazą treść z FAIL")
     return Outcome(False, f"{case.label} | {case.failed[:8]} | NIEWYKRYTA | {' / '.join(tried)}")
-
-
-def _with(guard: Guard, environment: Environment, contents: dict[str, bytes | None]) -> _Ran:
-    """Bieg strażnika na kopii środowiska z plikami ``contents`` (``None``: plik usunięty), po którym kopia wraca do
-    drzewa środowiska."""
-
-    copy = environment.copy
-    kept = {path: (copy / path).read_bytes() if (copy / path).exists() else None for path in contents}
-    try:
-        for path, content in contents.items():
-            _write(copy / path, content)
-        return _run(guard, environment)
-    finally:
-        for path, content in kept.items():
-            _write(copy / path, content)
 
 
 def _listed(paths: Sequence[str]) -> str:

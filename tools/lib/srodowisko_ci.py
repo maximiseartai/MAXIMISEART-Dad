@@ -17,14 +17,15 @@ bierze środowisko tylko stąd, nie od wołającego, więc job ``dowod``, merge 
   z ``CI_PYTHON``, setup-uv, ``CI_INSTALL`` i ``python -m ruff|mypy``, bez ``env``, ``working-directory`` i ``shell``,
   z ``if`` najwyżej ``_CI_IF``, więc przed sprawdzeniami nie biegnie żaden kod PR poza instalacją), brak któregoś
   z kroków checkout, setup-python, setup-uv i ``CI_INSTALL``, polecenia ruff i mypy inne niż
-  ``kroki_lokalne.static_steps`` i konfiguracja uv w drzewie. ``built`` odmawia drzewa z różnicą,
+  ``kroki_lokalne.static_steps`` albo w innej kolejności i konfiguracja uv w drzewie. ``built`` odmawia drzewa z różnicą,
   a ``tests/test_srodowisko_ci.py`` wymaga ``mismatch(ROOT) == []``, więc stałe opisują Required CI ``main``, a zmiana
   środowiska Required CI wchodzi osobnym PR przed dowodem, który jej potrzebuje.
 
 Odmowa to ``Refused`` (``ValueError``) z tym, co zrobić. Granica: wydanie poprawkowe Pythona (``CI_PYTHON`` bez
 poprawki), wersja uv i obraz runnera mogą różnić się od runu Required CI, a pakiety rozwiązują się w chwili dowodu
 (repo nie ma pliku blokady, więc dwa runy CI też mogą je rozwiązać inaczej). Dowód biegnie na Linuksie i macOS (job
-``dowod`` i Mac koordynatora).
+``dowod`` i Mac koordynatora), a na macOS odmawia drzewa ze ścieżkami różnymi tylko wielkością liter, których jego
+system plików nie rozróżnia.
 """
 
 from __future__ import annotations
@@ -37,6 +38,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 from typing import Any
 
 import yaml
@@ -59,8 +61,9 @@ _ACTIONS = {"actions/checkout": {"fetch-depth", "persist-credentials"}, "actions
 _RUN_KEYS = {"name", "id", "if", "run"}
 _USES_KEYS = {"name", "id", "if", "uses", "with"}
 _JOB_KEYS = {"name", "runs-on", "permissions", "timeout-minutes", "steps"}
+_INSTALL_ID = "deps"  # ``id`` kroku ``CI_INSTALL``, którego wynik czyta ``_CI_IF``
 # Jedyny warunek kroku przed ostatnim krokiem ruff albo mypy: inny może pominąć sprawdzenie, które dowód liczy.
-_CI_IF = "${{ !cancelled() && steps.deps.outcome == 'success' }}"
+_CI_IF = "${{ !cancelled() && steps." + _INSTALL_ID + ".outcome == 'success' }}"
 _CHECKS = ("ruff", "mypy")  # ``python -m <narzędzie>`` dozwolone przed ostatnim krokiem ruff albo mypy
 # Zmienne wołającego, których uv i narzędzia dowodu nie dostają: sterują Pythonem, mypy, ruff, pip i uv, środowiskiem
 # wirtualnym albo dają token GitHuba; ``ci.yml`` żadnej z nich nie ustawia (``mismatch``). Miejsce pamięci uv i jego
@@ -94,6 +97,11 @@ def built(root: Path, head: str, target: str) -> Iterator[Environment]:
     if merged.conflicts:
         raise Refused(f"środowisko Required CI: HEAD {head[:7]} scala się z bazą {target[:7]} z konfliktem ({', '.join(merged.conflicts)}): zaktualizuj PR z bazy")
     tree = repo.merge_commit(root, target, head, merged)
+    if sys.platform == "darwin" and (twins := _case_twins(root, tree)):
+        raise Refused(
+            f"środowisko Required CI: drzewo ma ścieżki różne tylko wielkością liter ({', '.join(twins[:3])}), a system plików macOS "
+            "trzyma jedną z nich, Linux runnera obie: dowód policzy job dowod statusu „Werdykt i bramka”, a przy merge'u uruchom go na Linuksie"
+        )
     with potomne.commit_copy(root, tree) as copy, tempfile.TemporaryDirectory(prefix="srodowisko-ci-") as folder:
         if problems := mismatch(copy):
             raise Refused(
@@ -101,6 +109,16 @@ def built(root: Path, head: str, target: str) -> Iterator[Environment]:
                 "zmień środowisko Required CI osobnym PR przed tym, razem z tools/lib/srodowisko_ci.py, bo dowód buduje je kodem bazy"
             )
         yield Environment(tree, copy, _install(uv, copy, Path(folder)), variables())
+
+
+def _case_twins(root: Path, tree: str) -> list[str]:
+    """Ścieżki commitu ``tree``, które różnią się od innej tylko wielkością liter."""
+
+    seen: dict[str, list[str]] = {}
+    for path in repo.git(root, "ls-tree", "-r", "-z", "--name-only", tree).split("\0"):
+        if path:
+            seen.setdefault(path.casefold(), []).append(path)
+    return sorted(path for paths in seen.values() if len(paths) > 1 for path in paths)
 
 
 def _install(uv: str, copy: Path, folder: Path) -> Path:
@@ -150,13 +168,24 @@ def mismatch(tree: Path) -> list[str]:
     local = [" ".join(("python", *step.command[1:])) for step in static_steps(tree)]
     problems += [f"krok ruff albo mypy „{one}” bez kroku dowodu (kroki_lokalne.static_steps)" for one in ci if not any(_starts(command, one) for command in local)]
     problems += [f"krok dowodu „{command}” bez kroku ruff albo mypy w zadaniu" for command in local if not any(_starts(command, one) for one in ci)]
+    # Kolejność też, bo dowód uruchamia kroki po kolei na jednej kopii, jak zadanie: krok widzi to, co zostawił poprzedni.
+    if len(ci) != len(local) or not all(_starts(command, one) for command, one in zip(local, ci, strict=False)):
+        problems.append(f"kroki ruff i mypy zadania ({'; '.join(ci)}) nie idą w kolejności kroków dowodu ({'; '.join(local)})")
     return problems
 
 
 def _uv_configs(tree: Path) -> list[str]:
+    """Konfiguracja uv, którą czyta ``CI_INSTALL`` w korzeniu drzewa: ``uv.toml`` i tabela ``tool.uv`` w ``pyproject.toml``
+    w każdej postaci TOML (``[tool.uv]``, ``[ tool.uv ]``, ``uv.…`` pod ``[tool]``), więc czyta ją parser, nie tekst."""
+
     found = ["uv.toml"] if (tree / "uv.toml").exists() else []
-    pyproject = tree / "pyproject.toml"
-    return [*found, *(["[tool.uv] w pyproject.toml"] if pyproject.exists() and "[tool.uv" in pyproject.read_text(encoding="utf-8") else [])]
+    try:
+        tool = tomllib.loads((tree / "pyproject.toml").read_text(encoding="utf-8")).get("tool", {})
+    except FileNotFoundError:
+        return found
+    except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as error:
+        return [*found, f"pyproject.toml bez odczytu TOML ({type(error).__name__}: {error})"]
+    return [*found, *(["tabela tool.uv w pyproject.toml"] if isinstance(tool, dict) and "uv" in tool else [])]
 
 
 def _command(step: Any) -> list[str]:
@@ -191,6 +220,8 @@ def _step_problem(step: Any) -> str | None:
             return f"python-version {given.get('python-version')!r} zamiast {CI_PYTHON!r}"
         return None
     words = _command(step)
-    if " ".join(words) == CI_INSTALL or _is_check(words):
+    if " ".join(words) == CI_INSTALL:
+        return None if step.get("id") == _INSTALL_ID else f"instalacja bez id {_INSTALL_ID!r}, którego wynik czyta warunek kroków sprawdzeń"
+    if _is_check(words):
         return None
     return f"polecenie spoza listy (instalacja {CI_INSTALL} albo python -m {'|'.join(_CHECKS)})"

@@ -129,13 +129,15 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python -m ruff check
 
-      - name: Typecheck Python code (Windows)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: python -m mypy --platform win32
-
+      # In the order of kroki_lokalne.static_steps, so the guard proof runs the checks in the order of this job
+      # (tools/lib/srodowisko_ci.py).
       - name: Typecheck Python code (Linux)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python -m mypy --platform linux
+
+      - name: Typecheck Python code (Windows)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python -m mypy --platform win32
 
       # The rules of REGULY_CALEGO_DRZEWA in tests/test_zapadki.py report every line of their files, not only the added
       # ones, and a weed rule has no owner right in a comment (ADR 0036): no ast-grep-ignore and no noqa of a banned name.

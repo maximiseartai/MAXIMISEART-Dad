@@ -14,6 +14,7 @@ import json
 import re
 from pathlib import Path
 import subprocess
+import sys
 from typing import Any
 from urllib.parse import urlparse
 from urllib.request import url2pathname
@@ -84,6 +85,15 @@ def _drop(fragment: str) -> Callable[[Job, Job], None]:
     return change
 
 
+def _swap(first: str, second: str) -> Callable[[Job, Job], None]:
+    def change(_: Job, job: Job) -> None:
+        steps = _steps(job)
+        one, two = steps.index(_named(job, first)), steps.index(_named(job, second))
+        steps[one], steps[two] = steps[two], steps[one]
+
+    return change
+
+
 def _ci(change: Callable[[Job, Job], None]) -> str:
     """``ci.yml`` repozytorium ze zmianą ``change`` zadania ``srodowisko_ci.JOB``."""
 
@@ -122,6 +132,8 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
         (_set("strategy.matrix.python", ["3.13"]), "strategy w zadaniu"),
         (_step("Typecheck Python code (Linux)", {"if": "false"}), "if 'false' zamiast"),
         (_drop("Install development dependencies"), f"brak kroku {srodowisko_ci.CI_INSTALL} przed ostatnim krokiem ruff albo mypy"),
+        (_step("Install development dependencies", {"id": "instalacja"}), "instalacja bez id 'deps'"),
+        (_swap("Typecheck Python code (Linux)", "Typecheck Python code (Windows)"), "nie idą w kolejności kroków dowodu"),
     ],
     ids=[
         "python",
@@ -151,6 +163,8 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
         "macierz",
         "mypy-pominiety",
         "bez-instalacji",
+        "instalacja-bez-id-warunku",
+        "kolejnosc-mypy",
     ],
 )
 def test_zmiana_srodowiska_ruff_i_mypy_w_ci_to_roznica(tmp_path: Path, change: Callable[[Job, Job], None], fragment: str) -> None:
@@ -179,8 +193,15 @@ def test_zmiana_zadania_ktora_srodowiska_ruff_i_mypy_nie_zmienia_nie_jest_roznic
 
 @pytest.mark.parametrize(
     ("files", "fragment"),
-    [({"uv.toml": "prerelease = 'allow'\n"}, "uv.toml w drzewie"), ({"pyproject.toml": "[tool.uv]\nprerelease = 'allow'\n"}, "[tool.uv] w pyproject.toml")],
-    ids=["uv-toml", "tool-uv"],
+    [
+        ({"uv.toml": "prerelease = 'allow'\n"}, "uv.toml w drzewie"),
+        ({"pyproject.toml": "[tool.uv]\nprerelease = 'allow'\n"}, "tabela tool.uv w pyproject.toml"),
+        ({"pyproject.toml": "[ tool.uv ]\noverride-dependencies = ['mypy==1.18.2']\n"}, "tabela tool.uv w pyproject.toml"),
+        ({"pyproject.toml": "[tool]\nuv.resolution = 'lowest'\n"}, "tabela tool.uv w pyproject.toml"),
+        ({"pyproject.toml": "tool.uv.prerelease = 'allow'\n"}, "tabela tool.uv w pyproject.toml"),
+        ({"pyproject.toml": "[tool.uv\n"}, "pyproject.toml bez odczytu TOML"),
+    ],
+    ids=["uv-toml", "tool-uv", "tool-uv-ze-spacjami", "uv-pod-tool", "klucz-kropkowy", "toml-z-bledem"],
 )
 def test_konfiguracja_uv_w_drzewie_to_roznica(tmp_path: Path, files: dict[str, str], fragment: str) -> None:
     _write(tmp_path, {srodowisko_ci.WORKFLOW: CI, **files})
@@ -289,6 +310,25 @@ def test_dowod_liczy_drzewo_head_scalone_z_baza_jak_refs_pull_merge(tmp_path: Pa
 
 
 @wymaga_uv
+@pytest.mark.parametrize("fix", ["fix = true", "fix-only = true"])
+def test_krok_ktory_przepisuje_pliki_przed_mypy_to_odmowa_a_nie_dowod(tmp_path: Path, fix: str) -> None:
+    """Sonda #2161 r1 W2: Required CI uruchamia ``ruff check`` przed mypy w tym samym checkoucie, więc z ``fix``
+    w konfiguracji ruff drzewa mypy liczy plik bez importu, który ruff usunął, i jest zielone. Dowód uruchamia kroki
+    po kolei i odmawia, gdy krok zmienił pliki kopii, zamiast liczyć mypy na pliku, którego Required CI nie widzi."""
+
+    ruff = f'[tool.ruff]\n{fix}\n\n[tool.ruff.lint]\nselect = ["F401"]\n'
+    base = {**project(tools=MYPY.format("") + ruff), **TYPED}
+    failed = {"kod/uzycie.py": "from kod.odczyt import odczyt, brak\n\n\ndef glosno() -> str:\n    return odczyt()\n"}
+    root, fork, failing, head, target = _repository(tmp_path, base, failed, {"kod/uzycie.py": TYPED["kod/uzycie.py"]})
+    case = straznik.Case("#5 W1 r1", failing, fork, (("kod/uzycie.py", 1, 1),), (("kod/uzycie.py", 1, 1),))
+
+    with srodowisko_ci.built(root, head, target) as environment:
+        [outcome] = straznik.prove(root, straznik.parse("mypy"), environment, [case])
+
+    assert not outcome.detected and "| KROK PISZE PLIKI | po kroku ruff: kod/uzycie.py (" in outcome.line, outcome.line
+
+
+@wymaga_uv
 def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> None:
     root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/nowy.py": "Y = 2\n"}, {"kod/z_bazy.py": "Z = 3\n"})
 
@@ -329,6 +369,27 @@ def test_dowod_odmawia_drzewa_ktorego_srodowiska_nie_zbuduje_jak_ci(tmp_path: Pa
     root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/uzycie.py": "X = 2\n"}, moved)
 
     with pytest.raises(srodowisko_ci.Refused, match=re.escape(fragment)), srodowisko_ci.built(root, head, target):
+        pass
+
+
+@wymaga_uv
+def test_na_macos_drzewo_ze_sciezkami_roznymi_tylko_wielkoscia_liter_to_odmowa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """System plików macOS trzyma jedną z dwóch ścieżek, a runner obie, więc dowód na macOS liczyłby inne drzewo; commit
+    powstaje z drzewa gita, bo system plików testu może pary nie utrzymać."""
+
+    root = tmp_path / "repo"
+    git(tmp_path, "init", "--quiet", "--initial-branch", "main", str(root))
+    blob = subprocess.run(["git", "hash-object", "-w", "--stdin"], cwd=root, input="X = 1\n", capture_output=True, text=True, check=True).stdout.strip()
+
+    def tree(*names: str) -> str:
+        listing = "".join(f"100644 blob {blob}\t{name}\n" for name in names)
+        return subprocess.run(["git", "mktree"], cwd=root, input=listing, capture_output=True, text=True, check=True).stdout.strip()
+
+    target = git(root, "commit-tree", tree("inny.py"), "-m", "baza")
+    head = git(root, "commit-tree", tree("inny.py", "Modul.py", "modul.py"), "-p", target, "-m", "PR")
+    monkeypatch.setattr(sys, "platform", "darwin")
+
+    with pytest.raises(srodowisko_ci.Refused, match=re.escape("ścieżki różne tylko wielkością liter (Modul.py, modul.py)")), srodowisko_ci.built(root, head, target):
         pass
 
 
