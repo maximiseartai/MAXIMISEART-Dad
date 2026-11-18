@@ -22,7 +22,7 @@ from pathlib import Path
 import shutil
 import smtplib
 import threading
-from typing import Any
+from typing import Any, Final
 
 from hypothesis import HealthCheck, Phase, given, settings
 from hypothesis import strategies as st
@@ -101,6 +101,7 @@ from tests.fixtures.centrum_intermax import (
 )
 from tests.fixtures.centrum_processes import Surroundings, preparing_centrum
 from tests.fixtures.intermax_disk import denied, failing_replace
+from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
 
 SUCCESSFUL = FIRST + HEADERS.index("SKUTECZNE")
 COMPLETED = FIRST + HEADERS.index("CZYNNOŚCI ZREALIZOWANE")
@@ -5225,6 +5226,137 @@ def test_raport_bez_dnia_w_temacie_nie_konczy_przypomnien_za_dzien_sprzed_wdroze
 
     assert [_faulty_subject(problem) for problem in jan["problems"]] == [("Raport", "bez daty", None, mails[1].arrived)]
     assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("jan.testowy", date(2026, 11, 9))]
+
+
+def test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnienie_za_ten_dzien(tmp_path: Path) -> None:
+    """ADR 0041 (historia 20): przypomnienia działają od 9.11, a Wpisanie raportów od pierwszego kliknięcia 10.11. Jan
+    przysyła 10.11 wieczorem sam ``Raport`` z numerem swojego zlecenia z 10.11, więc kafelek Wpisania liczy go za 10.11
+    (dzień wskazany od dnia wdrożenia Wpisania). Praca przypomnień 11.11 o 8:30 czyta ten sam dzień wdrożenia z pamięci
+    Wpisania, więc przypomina tylko Annie; z pamięcią bez dnia wdrożenia dzień wskazany zaczynałby się od dziś i Jan
+    dostałby przypomnienie za 10.11."""
+
+    intermax = Intermax(ordered=(_order(10, 9, "jan.testowy", 40000004), _order(10, 11, "anna.kowalska", 40000006)), raw=())
+    mailbox = FakeMailbox(outcome=(report(JAN, "Raport", "40000004 tak inst20m", at=datetime(2026, 11, 10, 20)),))
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 10, 7), [])
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
+
+
+_SONDA_PAMIECI_WPISANIA = ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pamieci_wpisania.py"
+
+
+def _pamiec_wpisania(importy: str, cialo: str) -> str:
+    """Moduł Centrum, który z ``ReportState`` pracy buduje wejście odczytu okna jak Przypomnienia o raporcie."""
+
+    return (
+        "from collections.abc import Sequence\nfrom datetime import date\n\n"
+        f"{importy}\n"
+        "from rozliczenia.activity_legend import ActivityLegend\n"
+        "from rozliczenia.report_entering import EnteringMemory, RegisterWindow, ReportState\n"
+        "from rozliczenia.worker_reports import ReportMail, Window, WorkerAddresses\n\n\n"
+        "def wejscie(\n"
+        "    state: ReportState, today: date, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail],\n"
+        "    addresses: WorkerAddresses, legend: ActivityLegend,\n"
+        ") -> object:\n"
+        f"{cialo}"
+        "    return memory.report_inputs(window, intermax, mails, addresses, legend)\n"
+    )
+
+
+_PUSTA_PAMIEC = "from rozliczenia.report_entering import SavedState\nfrom rozliczenia.worker_reports import OwnEntries\n"
+_ARGUMENT_PAMIECI = 'Argument 1 to "EnteringMemory" has incompatible type "SavedState"; expected "ReportState"'
+DROGI_PAMIECI_WPISANIA: Final = {
+    "report_inputs z pamięcią zbudowaną obok (#2125 r1 W1)": (
+        _pamiec_wpisania(
+            "from rozliczenia.report_entering import SavedState, report_inputs\nfrom rozliczenia.worker_reports import OwnEntries\n",
+            "    memory = EnteringMemory(state)\n"
+            "    return report_inputs(window, intermax, mails, addresses, SavedState(None, OwnEntries.EMPTY), legend)\n",
+        ),
+        'Module "rozliczenia.report_entering" has no attribute "report_inputs"',
+    ),
+    "pamięć zbudowana obok: EnteringMemory(SavedState(None, OwnEntries.EMPTY)) (#2125 r1 W1)": (
+        _pamiec_wpisania(_PUSTA_PAMIEC, "    memory = EnteringMemory(SavedState(None, OwnEntries.EMPTY))\n"),
+        _ARGUMENT_PAMIECI,
+    ),
+    "gotowa pusta pamięć odtworzenia bez Logów: EnteringReplay.without_logs(dzień).saved (#2125 r2 W1)": (
+        _pamiec_wpisania(
+            "from rozliczenia.centrum.report_entering_logs import EnteringReplay\n",
+            "    memory = EnteringMemory(EnteringReplay.without_logs(today).saved)\n",
+        ),
+        _ARGUMENT_PAMIECI,
+    ),
+    "pamięć z typu pamięci z pliku: type(state.load())(None, OwnEntries.EMPTY) (#2125 r2 W1)": (
+        _pamiec_wpisania(
+            "from rozliczenia.worker_reports import OwnEntries\n",
+            "    memory = EnteringMemory(type(state.load())(None, OwnEntries.EMPTY))\n",
+        ),
+        _ARGUMENT_PAMIECI,
+    ),
+    "pamięć z pliku bez dnia wdrożenia Wpisania: replace(pamięć, …) (#2125 r3 W1)": (
+        _pamiec_wpisania(
+            "from dataclasses import replace\n",
+            "    memory = replace(EnteringMemory(state), _saved=replace(state.load(), rollout=None))\n",
+        ),
+        'of "replace" cannot be "EnteringMemory"',
+    ),
+    "zmieniona prywatna wartość pamięci: pamięć._saved = …": (
+        _pamiec_wpisania(
+            "from dataclasses import replace\n",
+            "    memory = EnteringMemory(state)\n    memory._saved = replace(state.load(), rollout=None)\n",
+        ),
+        "ruff SLF001",
+    ),
+}
+ZNANE_LUKI_PAMIECI_WPISANIA: Final = {
+    "typ zna źródło pamięci, nie jego plik: ReportState zbudowany obok pamięci pracy Centrum": _pamiec_wpisania(
+        _PUSTA_PAMIEC + "from rozliczenia.report_entering import ReportStateInMemory\n",
+        "    memory = EnteringMemory(ReportStateInMemory(SavedState(None, OwnEntries.EMPTY)))\n",
+    ),
+    "refleksja po nazwie: object.__setattr__(pamięć, nazwa, …)": _pamiec_wpisania(
+        "from dataclasses import replace\n",
+        "    memory = EnteringMemory(state)\n"
+        '    object.__setattr__(memory, "_saved", replace(state.load(), rollout=None))\n',
+    ),
+}
+
+
+@wymaga_ruff_i_mypy
+def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    """Przypomnienia o raporcie i Wpisanie raportów liczą dzień raportu z tej samej pamięci Wpisania, bo wejście odczytu
+    okna daje tylko ``EnteringMemory.report_inputs``, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
+    (``ReportState.load``): wołający nie ma wartości pamięci, którą mógłby zbudować, skopiować albo zmienić obok.
+
+    | Postać | mypy, ruff | Próbka |
+    |---|---|---|
+    | ``report_inputs(…, SavedState(None, OwnEntries.EMPTY), …)`` (#2125 r1 W1) | łapie (mypy ``attr-defined``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | ``EnteringMemory(SavedState(None, OwnEntries.EMPTY))`` | łapie (mypy ``arg-type``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | ``EnteringMemory(EnteringReplay.without_logs(dzień).saved)`` (#2125 r2 W1) | łapie (mypy ``arg-type``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | ``EnteringMemory(type(state.load())(None, OwnEntries.EMPTY))`` (#2125 r2 W1) | łapie (mypy ``arg-type``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | ``replace(pamięć, _saved=replace(state.load(), rollout=None))`` (#2125 r3 W1) | łapie (mypy ``type-var``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | ``pamięć._saved = …`` | łapie (ruff ``SLF001``) | ``DROGI_PAMIECI_WPISANIA`` |
+    | ``EnteringMemory(ReportStateInMemory(SavedState(None, OwnEntries.EMPTY)))`` | przepuszcza; w Przypomnieniach testy zachowania | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
+    | ``object.__setattr__(pamięć, "_saved", …)`` | przepuszcza | ``ZNANE_LUKI_PAMIECI_WPISANIA`` |
+
+    ``ReportState`` zbudowany obok w Przypomnieniach o raporcie łapią testy zachowania pracy przypomnień:
+    ``test_praca_przypomnien_liczy_dzien_raportu_z_pamiecia_wpisania_po_zleceniach_dopisanych_z_raportu`` (pamięć bez
+    Zleceń dopisanych z raportu) i ``test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnienie_za_ten_dzien``
+    (pamięć bez dnia wdrożenia Wpisania)."""
+
+    probki = {opis: kod for opis, (kod, _) in DROGI_PAMIECI_WPISANIA.items()} | ZNANE_LUKI_PAMIECI_WPISANIA
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=_SONDA_PAMIECI_WPISANIA)
+
+    przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_PAMIECI_WPISANIA.items() if not any(odmowa in z for z in zgloszenia[opis])}
+    assert przepuszczone == {}
+    assert_znane_luki(
+        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_PAMIECI_WPISANIA}, "tests/test_centrum_wpisanie_raportow.py (ZNANE_LUKI_PAMIECI_WPISANIA)"
+    )
 
 
 def test_praca_przypomnien_czyta_okno_od_wdrozenia_wpisania_raportow_gdy_jest_wczesniejsze_niz_wdrozenie_przypomnien(
