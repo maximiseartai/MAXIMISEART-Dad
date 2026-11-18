@@ -26,7 +26,7 @@ on:
       - created
       - edited
       - deleted
-  workflow_run: # zizmor: ignore[dangerous-triggers] checks out main and only reads the PR through the API and git
+  workflow_run: # zizmor: ignore[dangerous-triggers] checks out main, reads the PR through the API and git, and takes from the artifact of scalenia.yml only verdicts --publikuj-z filters
     workflows:
       - CI
       - Scalenia otwartych PR
@@ -106,7 +106,7 @@ jobs:
           exit "$wynik"
 
   scalenia:
-    # The verdicts "scalenie z main" of a run of scalenia.yml on main, set here because that run executes PR code and
+    # The verdicts "scalenie z <base>" of a run of scalenia.yml on main (its input baza names the base), set here because that run executes PR code and
     # has no statuses: write. tools/ci/status_scalenia.py --publikuj-z sets only the context "scalenie z <base>" on the
     # current HEAD of an open same-repository PR, so a run on another branch or a forged entry sets no other status.
     name: Statusy scalenia z main
@@ -137,4 +137,4 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-        run: python3 tools/ci/status_scalenia.py --publikuj-z .scalenia/scalenia.json --baza main
+        run: python3 tools/ci/status_scalenia.py --publikuj-z .scalenia/scalenia.json

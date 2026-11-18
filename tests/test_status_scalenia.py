@@ -99,7 +99,7 @@ def _published(github: StatusGitHub, tmp_path: Path, *arguments: str) -> subproc
 
     verdicts = tmp_path / "scalenia.json"
     written = github.run("--zapisz", str(verdicts), *arguments)
-    return github.run("--publikuj-z", str(verdicts), *arguments) if written.returncode == 0 else written
+    return github.run("--publikuj-z", str(verdicts)) if written.returncode == 0 else written
 
 
 def test_kazdy_pr_do_main_dostaje_werdykt_scalenia_z_nowym_main(tmp_path: Path) -> None:
@@ -254,7 +254,7 @@ def test_publikacja_ustawia_tylko_werdykt_scalenia_na_head_otwartego_pr_z_tego_r
         {**entry, "numer": 9},
     ]
     verdicts = tmp_path / "scalenia.json"
-    verdicts.write_text(json.dumps([*forged, entry]), encoding="utf-8")
+    verdicts.write_text(json.dumps({"baza": "main", "werdykty": [*forged, entry]}), encoding="utf-8")
 
     answered = github.run("--publikuj-z", str(verdicts))
 
