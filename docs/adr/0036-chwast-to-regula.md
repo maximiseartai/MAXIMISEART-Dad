@@ -56,7 +56,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   Powód: reguła pisana w PR drugiego wystąpienia ma autora z kontekstem, a gdyby próbka wystarczała, każdy idiom dałoby się zamknąć próbką, której reguła dziś nie łapie (R-ZAPADKA-OBEJSCIE).
 - **Reguła chwastu niczego nie ukrywa poza właścicielem.** Odpalenia reguły chwastu nie da się ukryć tańszą drogą niż zmiana reguły z jej dowodem: ani tłumieniem, ani zwolnieniem poza prawem właściciela z `CODING_STANDARDS.md`.
   Formy, które mechanizm musi rozstrzygnąć, zebrały przeglądy #1693 r1–r4 w [komentarzu #1676](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1676#issuecomment-6871386075).
-  Prawo właściciela stoi tylko w konfiguracji reguły, którą widać w jej diffie (`per-file-ignores` i `OWNERS` dla `TID251`, `ignores:` reguły ast-grep), a nigdy w komentarzu: krok Required CI „Weed rules without suppressions” odmawia w całym repozytorium każdej dyrektywy `ast-grep-ignore` i każdego `noqa`, które chowa zakazaną nazwę, a `tests/test_zakazy_ruff.py` trzyma zwolnienia z `TID251` równe `OWNERS`.
+  Prawo właściciela stoi tylko w konfiguracji reguły, którą widać w jej diffie (`per-file-ignores` i `OWNERS` dla `TID251`, `ignores:` reguły ast-grep), a nigdy w komentarzu: krok Required CI „Weed rules of the whole tree” odmawia w całym repozytorium każdej dyrektywy `ast-grep-ignore` i każdego `noqa`, które chowa zakazaną nazwę, a `tests/test_zakazy_ruff.py` trzyma zwolnienia z `TID251` równe `OWNERS`.
   Osłabienia reguły w PR, który ona sądzi (`ignores:`, `files:`, usunięta reguła), ten krok nie widzi; łapie je dopiero uruchomienie na dodanych liniach także reguł z bazy.
   Powód kształtu: krok z #1766 wyznaczał prawo właściciela z treści linii różnicy i przepisywał YAML reguł, a każda z sześciu rund przeglądu #1720 znalazła w nim nową formę ukrycia; zakaz całego komentarza nie ma czego parować.
   Powód: cztery rundy przeglądu tego ADR znalazły cztery formy ukrycia w prozie, w tym zwolnienie całego `TID251` dla 16 plików właścicieli, które istnieje już na `main`. Granicę mechanizmu da się sprawdzić tylko na kodzie z testem.
@@ -108,7 +108,7 @@ Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpi
 |---|---|---|
 | Chwast to reguła detektora | reguły ast-grep w Required CI: #1699 (scalony); kontrakty import-linter: #1612; `banned-api` ruff jest już w CI | reguła spoza tych narzędzi nie jest chwastem |
 | Warunek merge'a z polem `Idiom:`, dowód reguły w `tools/scal_pr.py`, usunięcie Q11 i `ZGODA KORZEŃ` | PR bramki ticketu #1676 (zmienia `tools/lib/bramka_korzenia.py`, `tools/scal_pr.py` i skille `przeglad` i `pr`) | bramka z ADR 0031 |
-| Reguła chwastu niczego nie ukrywa poza właścicielem | tłumienie w komentarzu: krok Required CI „Weed rules without suppressions” (scalony); osłabienie reguły w PR, który ona sądzi: reguły z bazy i z HEAD na dodanych liniach | osłabienie reguły w jej konfiguracji ukrywa odpalenie przed CI; reguła przejściowa pod tabelą |
+| Reguła chwastu niczego nie ukrywa poza właścicielem | tłumienie w komentarzu: krok Required CI „Weed rules of the whole tree”; osłabienie reguły w PR, który ona sądzi: reguły z bazy i z HEAD na dodanych liniach | osłabienie reguły w jej konfiguracji ukrywa odpalenie przed CI; reguła przejściowa pod tabelą |
 | Bez nowych issues „Chwast” | ten sam PR bramki usuwa każdą drogę zakładania: `rejestr_korzeni.after_verdict` przy publikacji werdyktu i `tools/chwasty.py` (`settle`); spis zapachów #1627, którego zakres ten ADR zmienia, rosnący zapach podaje w raporcie, a nie w issue | publikacja werdyktu i `tools/chwasty.py` zakładają issues jak dziś |
 | Zamknięcie otwartych issues „Chwast” z odsyłaczem do raportu | właściciel #1676, jednorazowo zaraz po merge'u PR bramki | issues zostają otwarte |
 | Narzędzie dowodu reguły | #1697 (`tools/na_scalonych_pr.py --regula`), które samo żadnej reguły merge'a nie zmienia | dowód liczy się ręcznie |
@@ -134,7 +134,7 @@ Pozostałe wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` ni
 
 ## Konsekwencje
 
-- Do merge'a wykonawców z tabeli „Wdrożenie” obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5); od merge'a PR bramki do merge'a kroku „Weed rules without suppressions” łapało to tylko przegląd (reguła przejściowa).
+- Do merge'a wykonawców z tabeli „Wdrożenie” obowiązuje stara bramka z ADR 0031, a odpalenie reguły ast-grep da się ukryć komentarzem `# ast-grep-ignore` (sonda przeglądu #1693 r5); od merge'a PR bramki do merge'a kroku „Weed rules of the whole tree” łapało to tylko przegląd (reguła przejściowa).
 - Liczby z Kontekstu to jeden dzień pracy (94 wystąpienia), a podział 47 powrotów zrobił jeden oceniający; przy szerszym czytaniu porażek wyrwania jest 3–4 zamiast 1.
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
 - Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły` i dowód mutacji klas `typ` i `test-klasy`, a raport liczy tę postać co tydzień.
