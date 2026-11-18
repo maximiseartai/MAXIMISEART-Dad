@@ -98,7 +98,7 @@ import hashlib
 from pathlib import Path
 import re
 import threading
-from typing import Any, Final, Protocol, TypeVar
+from typing import Any, Final, Protocol, TypeVar, final
 import uuid
 
 from rozliczenia.centrum import device_forms, legend_forms, rule_forms
@@ -212,6 +212,27 @@ class SettingsSnapshot:
     teraz czytać, ``UnreadableFile``. Brak pliku to wartości domyślne: tata niczego nie pisał."""
 
 
+@final
+@dataclass(frozen=True)
+class ShownQuantityRules:
+    """Reguły ilości z Listą Urządzeń, które pokazuje okno Ustawień obok problemu pliku: przy pliku pary bez odczytu z
+    Wydania. To nie ``QuantityRules``, więc odczyt, który z reguł liczy (podpowiedzi, podgląd, Uruchomienie), ich nie
+    przyjmie (mypy), a reguły, którymi liczy, daje ``QuantityRulesView.rules``."""
+
+    rules: tuple[QuantityRule, ...]
+    devices: DeviceList
+
+
+@final
+@dataclass(frozen=True)
+class ShownActivityLegend:
+    """Kody Legendy czynności, które pokazuje okno Ustawień: przy złym pliku ostatnie dobre, przy pliku bez odczytu z
+    Wydania. To nie ``ActivityLegend``, więc odczyt, który legendą liczy, jej nie przyjmie (mypy), a legendę, którą
+    liczy, daje ``CentrumSettings.counted_activity_legend``."""
+
+    codes: tuple[ActivityCode, ...]
+
+
 @dataclass(frozen=True)
 class QuantityRulesView:
     """Reguły ilości dla okna Ustawień: te, którymi liczy następne Uruchomienie, wyjątki Kontroli ilości (przy złym
@@ -225,9 +246,8 @@ class QuantityRulesView:
     rules: QuantityRules | UnreadableFile
     """Reguły, którymi liczy następne Uruchomienie; plik pary, którego system nie daje teraz czytać, to ``UnreadableFile``
     z jego nazwą, a nie treść z Wydania."""
-    shown: QuantityRules
-    """Reguły, które pokazuje okno Ustawień obok problemu pliku: przy pliku pary bez odczytu z Wydania. Tylko do pokazania;
-    odczyt, który z reguł liczy, bierze ``rules``."""
+    shown: ShownQuantityRules
+    """Reguły, które pokazuje okno Ustawień obok problemu pliku (``ShownQuantityRules``)."""
     rules_problem: FieldProblem | None
     devices_problem: FieldProblem | None
     source_rules: tuple[QuantityRule, ...] | Unreadable
@@ -240,10 +260,8 @@ class ActivityLegendView:
     """Legenda czynności dla okna Ustawień i problem pliku (``None``: plik dobry). Przy pliku bez odczytu problem mówi,
     że proces nie wystartuje, bo migawka ma wtedy ``UnreadableFile``."""
 
-    shown: ActivityLegend
-    """Legenda, którą pokazuje okno Ustawień: przy złym pliku ostatnia dobra, przy pliku, którego system nie daje teraz
-    czytać, legenda z Wydania. Tylko do pokazania; legendę, którą liczy następne Uruchomienie, daje
-    ``counted_activity_legend``."""
+    shown: ShownActivityLegend
+    """Legenda, którą pokazuje okno Ustawień (``ShownActivityLegend``)."""
     problem: FieldProblem | None
     codes: tuple[ActivityCode, ...] | Unreadable
     """Kody, z których powstała legenda (z pliku, ostatnie dobre albo z Wydania); zmienia je zapis taty. Pliku, którego
@@ -430,7 +448,8 @@ class CentrumSettings:
         with self._lock:
             observed = self._observe(LEGEND)
             codes = _usable(observed, LEGEND)
-            return ActivityLegendView(activity_legend(_or_release(observed, LEGEND)), _problem(observed, LEGEND, messages.unreadable), codes)
+            shown = ShownActivityLegend(activity_legend(_or_release(observed, LEGEND)).codes)
+            return ActivityLegendView(shown, _problem(observed, LEGEND, messages.unreadable), codes)
 
     def counted_activity_legend(self) -> ActivityLegend | UnreadableFile:
         """Legenda czynności, którą liczy następne Uruchomienie, jak w migawce, dla odczytu okna (Ilości do uzupełnienia)
@@ -745,7 +764,7 @@ class CentrumSettings:
         shown = quantity_rules(usable_rules, usable_devices)
         return QuantityRulesView(
             shown if unreadable is None else UnreadableFile(unreadable),
-            shown,
+            ShownQuantityRules(shown.rules, shown.devices),
             _problem(rules, RULES, messages.unreadable) or (waiting if isinstance(waiting, FieldProblem) else None),
             _problem(devices, DEVICES, messages.unreadable) or taken_problem(usable_rules, usable_devices),
             source_rules,

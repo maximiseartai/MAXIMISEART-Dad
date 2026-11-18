@@ -669,6 +669,7 @@ _Avoid_: issue tracker, publiczne issue
 
 To, co z treści plików taty może wyjść z jego komputera do Skrzynki Zgłoszeń, jedno dla Logów Uruchomienia, Zgłoszeń, Kontroli ilości i Uwag taty (ADR 0025): nigdy wartości `ADRES` ani `NUMER UMOWY/ZLECENIA ORANGE` ani dane adresowe z efenix, każda inna kolumna wiersza może.
 W wolnym tekście telefony są `[telefon]`, a ulice `[ulica]`.
+Numer z zerem z przodu (`NUMER ZL.`, jak pisze go Wykonawca) nie jest telefonem, bo żaden polski telefon tak się nie zaczyna (ADR 0025).
 Przed zapisem Logów i każdą wysyłką strażnik maskuje każdą zakazaną wartość z przeczytanych plików i dopisuje uwagę techniczną z kolumną i miejscem, bez wartości.
 Położenie, w którym strażnik zna każdy wiersz Rejestru zleceń, ustala sekcja „Położenie wiersza” tego ADR.
 _Avoid_: reguła prywatności (dawne listy pól każdej wysyłki), anonimizacja

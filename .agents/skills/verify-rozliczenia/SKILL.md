@@ -30,6 +30,7 @@ pilnuje:
   - src/rozliczenia/onedrive_conflicts.py
   - src/rozliczenia/order_base.py
   - src/rozliczenia/order_facts.py
+  - src/rozliczenia/order_kind.py
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/phase_runner.py
   - src/rozliczenia/preparation_*.py

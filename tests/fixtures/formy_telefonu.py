@@ -75,6 +75,7 @@ NOT_PHONES: tuple[PhoneForm, ...] = (
     PhoneForm("kwota w tekście", "1 234,56 zł", None, "kwota zlecenia"),
     PhoneForm("NUMER ZL. 8 cyfr", "#12345678", None, "cyfry zaraz po # to NUMER ZL."),
     PhoneForm("NUMER ZL. 9 cyfr", "#123456789", None, "cyfry zaraz po # to NUMER ZL."),
+    PhoneForm("NUMER ZL. z zerem z przodu", "014043137", None, "żaden polski numer nie zaczyna się od 0"),
     PhoneForm("liczba 8 cyfr", 12345678, None, "za krótka na telefon"),
     PhoneForm("liczba 10 cyfr od 48", 4801234567, None, "za krótka na 48 i 9 cyfr; numer Orange zna pamięć"),
     PhoneForm("liczba 11 cyfr nie od 48", 14123456789, None, "bez numeru kierunkowego Polski"),

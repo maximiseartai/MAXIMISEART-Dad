@@ -54,8 +54,21 @@ def _pull_of(
     idioms: Sequence[IdiomCase] = (),
     merged: str | None = None,
     passed: str | None = None,
+    *,
+    created: str | None = None,
+    files: Sequence[str] = (),
+    limited: str | None = None,
 ) -> Reviewed:
-    return Reviewed(number, _at(merged) if merged else None, _at(passed) if passed else None, tuple(occurrences), tuple(idioms))
+    return Reviewed(
+        number,
+        _at(merged) if merged else None,
+        _at(passed) if passed else None,
+        tuple(occurrences),
+        tuple(idioms),
+        _at(created) if created else None,
+        frozenset(files),
+        _at(limited) if limited else None,
+    )
 
 
 def _idiom(pull: int, when: str, rule: str | None, klass: str | None, like: tuple[int, str, int] | None, label: str = "W1", round_: int = 2) -> IdiomCase:
@@ -143,6 +156,25 @@ def test_odpalenia_regul_od_najczestszej_z_udzialem_pr_z_jakimkolwiek_odpaleniem
     assert _rows(_body([], date(2026, 10, 12)), "Reguły") == ["| Każda reguła | 0 |"]
 
 
+def test_po_limicie_rund_pokazuje_pr_tygodnia_na_plikach_pr_zamknietego_po_limicie_zalozony_po_jego_ostatnim_fail() -> None:
+    """Limit kończy PR po szóstej rundzie z FAIL i zostawia nowy PR od main, którego nic nie blokuje (L2 #2100), więc
+    raport pokazuje każdy taki PR z liczbą wspólnych plików; PR równoległy, założony przed ostatnim FAIL, nim nie jest."""
+
+    closed = _pull_of(20, created="2026-10-05T10:00:00+00:00", files=["a.py", "b.py", "c.py"], limited="2026-10-13T10:00:00+00:00")
+    pulls = [
+        closed,
+        _pull_of(21, created="2026-10-12T10:00:00+00:00", files=["a.py"]),
+        _pull_of(22, created="2026-10-14T10:00:00+00:00", files=["b.py", "c.py", "d.py"]),
+        _pull_of(23, created="2026-10-14T11:00:00+00:00", files=["d.py"]),
+        _pull_of(24, created="2026-10-20T10:00:00+00:00", files=["a.py"]),
+        _pull_of(25, created="2026-10-14T12:00:00+00:00", files=["a.py"], merged="2026-10-15T10:00:00+00:00"),
+    ]
+
+    text = _body(pulls, date(2026, 10, 12))
+
+    assert _rows(text, "Po limicie rund") == ["| #22 | #20 | 2 |", "| #25 | #20 | 1 |"], text
+
+
 def test_historia_ma_najwyzej_26_ostatnich_tygodni_od_tygodnia_wdrozenia() -> None:
     text = _body([], date(2027, 6, 7))
 
@@ -220,9 +252,18 @@ else:
 RENDERED = {**werdykty_szablonu.rendered(), **chwasty.rendered(), **korzenie_pr.rendered()}
 
 
-def _pull(number: int, verdicts: list[tuple[str, str]], *, body: str = "", merged: str | None = None, created: str = "2026-10-02T00:00:00Z") -> dict[str, object]:
-    """PR ``number`` z zapytania GraphQL rejestru: komentarze werdyktów (treść i chwila utworzenia), opis, merge
-    i chwila założenia, z HTML każdej treści w ``bodyHTML``."""
+def _pull(
+    number: int,
+    verdicts: list[tuple[str, str]],
+    *,
+    body: str = "",
+    merged: str | None = None,
+    created: str = "2026-10-02T00:00:00Z",
+    closed: bool = False,
+    files: Sequence[str] = (),
+) -> dict[str, object]:
+    """PR ``number`` z zapytania GraphQL rejestru: komentarze werdyktów (treść i chwila utworzenia), opis, merge,
+    chwila założenia, zamknięcie bez merge'a i pliki diffu, z HTML każdej treści w ``bodyHTML``."""
 
     comments = [
         {
@@ -238,7 +279,7 @@ def _pull(number: int, verdicts: list[tuple[str, str]], *, body: str = "", merge
     return {
         "number": number,
         "title": f"PR {number}",
-        "state": "MERGED" if merged else "OPEN",
+        "state": "MERGED" if merged else "CLOSED" if closed else "OPEN",
         "isDraft": False,
         "isCrossRepository": False,
         "baseRefName": "main",
@@ -249,6 +290,7 @@ def _pull(number: int, verdicts: list[tuple[str, str]], *, body: str = "", merge
         "createdAt": created,
         "updatedAt": "2026-10-27T00:00:00Z",
         "mergedAt": merged,
+        "files": {"nodes": [{"path": name} for name in files]},
         "comments": {"pageInfo": {"hasNextPage": False}, "nodes": comments},
         "reviews": {"pageInfo": {"hasNextPage": False}, "nodes": []},
     }
@@ -289,6 +331,11 @@ WEEK_12 = """\
 ## Bez reguły
 
 | Ważne | Klasa | Jak |
+| --- | --- | --- |
+
+## Po limicie rund
+
+| Nowy PR | PR zamknięty po limicie | Wspólne pliki |
 | --- | --- | --- |
 
 ## Kody
@@ -338,6 +385,11 @@ WEEK_19 = """\
 | Ważne | Klasa | Jak |
 | --- | --- | --- |
 
+## Po limicie rund
+
+| Nowy PR | PR zamknięty po limicie | Wspólne pliki |
+| --- | --- | --- |
+
 ## Kody
 
 | Kod | Tydzień | Od wdrożenia |
@@ -376,9 +428,10 @@ class RegistryGitHub(FakeGitHub):
         pulls: list[dict[str, object]] = PULLS,
         labels: tuple[str, ...] = ("chwast",),
         files: dict[str, str] | None = None,
+        started: str | None = None,
     ) -> None:
         tmp_path.mkdir()
-        super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n", **(files or {})}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH)
+        super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n", **(files or {})}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH, started=started)
         with pytest.MonkeyPatch.context() as patch:
             patch.setenv("GIT_COMMITTER_DATE", DEPLOYED.isoformat())
             self.push_main({szablon_werdyktu.ADR: "# ADR 0031: Korzeń po FAIL i chwasty\n"})
@@ -522,6 +575,27 @@ def test_pr_scalony_przed_wdrozeniem_i_zmieniony_po_nim_nie_liczy_sie_od_wdrozen
 
     assert _rows(text, "Pomiar")[1] == "| Od wdrożenia 2026-10-01 | 0 | 0 | - | 0 | 0 |", text
     assert _rows(text, "Czekanie")[1] == "| Od wdrożenia 2026-10-01 | 0 | 0 | - | - | 0 |", text
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_pr_zamkniety_bez_merge_po_trzech_rundach_z_fail_daje_nowy_pr_na_jego_plikach_w_raporcie(tmp_path: Path) -> None:
+    """Skan rozpoznaje PR zamknięty po limicie rund z jego werdyktów: trzy rundy z FAIL i zamknięcie bez merge'a; PR
+    zamknięty po dwóch rundach i PR otwarty po trzech nie są zamknięte po limicie, a PR założony między pierwszym
+    a ostatnim FAIL zamkniętego to praca równoległa, nie nowy PR po limicie."""
+
+    fails = [(FAIL_W1.replace("{commit}", sha * 40), f"2026-10-13T1{index}:00:00Z") for index, sha in enumerate("123")]
+    pulls = [
+        _pull(1470, fails, closed=True, created="2026-10-05T00:00:00Z", files=["kod/limit.py", "kod/test_limitu.py"]),
+        _pull(1471, fails[:2], closed=True, created="2026-10-05T00:01:00Z", files=["kod/dwie.py"]),
+        _pull(1472, fails, created="2026-10-05T00:02:00Z", files=["kod/otwarty.py"]),
+        _pull(1473, [], created="2026-10-14T00:00:00Z", files=["kod/limit.py", "kod/dwie.py", "kod/otwarty.py"]),
+        _pull(1474, [], created="2026-10-13T10:30:00Z", files=["kod/limit.py"]),
+    ]
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls, started=DEPLOYED.isoformat())
+
+    text = "\n".join(_measure(github, "--tydzien", "2026-10-12", "--bez-zapisu")[2:-1])
+
+    assert _rows(text, "Po limicie rund") == ["| #1473 | #1470 | 1 |"], text
 
 
 RULE = 'id: zakazane-wywolanie\nlanguage: python\nseverity: error\nmessage: bez zakazane()\nfiles:\n  - "**/*.py"\nrule:\n  pattern: $O.zakazane()\n'

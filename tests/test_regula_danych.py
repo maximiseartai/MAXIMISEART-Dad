@@ -13,7 +13,17 @@ from typing import Final, SupportsIndex
 
 import pytest
 
-from rozliczenia.client_data import MIN_VALUE, ForbiddenColumn, ForbiddenValues, Guarded, empty_memory, free_text, guarded, guarded_number, tool
+from rozliczenia.client_data import (
+    MIN_VALUE,
+    ForbiddenColumn,
+    ForbiddenValues,
+    Guarded,
+    empty_memory,
+    free_text,
+    guarded,
+    guarded_number,
+    tool,
+)
 from tests.fixtures.formy_telefonu import CELL_FORMS, PhoneForm
 from tests.fixtures.wyciek import zawiera_wartosc
 from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
@@ -103,6 +113,11 @@ def test_numer_zlecenia_po_krzyzyku_nie_jest_telefonem_a_te_same_cyfry_bez_krzyz
     # NUMER ZL. to „#” i numer, który może wyjść (ADR 0025); dziś ma 8 cyfr, a 9 cyfr to kształt telefonu.
     assert free_text("zlecenie #123456789 zrobione") == "zlecenie #123456789 zrobione"
     assert free_text("zlecenie 123456789 zrobione, oddzwonić +48123456789") == "zlecenie [telefon] zrobione, oddzwonić [telefon]"
+
+
+def test_numer_zlecenia_z_zerem_z_przodu_w_wolnym_tekscie_nie_jest_telefonem_a_telefon_obok_jest() -> None:
+    # Żaden polski numer nie zaczyna się od 0, a Wykonawca pisze NUMER ZL. w raporcie także z zerem z przodu.
+    assert free_text("zlecenie 014043137 zrobione, klient 600 123 456") == "zlecenie 014043137 zrobione, klient [telefon]"
 
 
 @pytest.mark.parametrize("form", CELL_FORMS, ids=[form.form for form in CELL_FORMS])
