@@ -224,27 +224,71 @@ def read(repository: str, deployed: datetime | None) -> list[Occurrence]:
     """Wystąpienia kodów w PR-ach ``repository`` (``właściciel/nazwa``) po chwili wdrożenia szablonu ``deployed``
     (``None``: szablon niewdrożony, więc żadnych), w kolejności PR i Ważnego. Błąd GitHuba to wyjątek."""
 
-    if deployed is None:
-        return []
-    found = []
-    for node in _pulls(repository, deployed):
-        found.extend(occurrences(node if _complete(node) else pull_node(repository, node["number"]), deployed))
-    return sorted(found, key=_order)
+    return sorted((occurrence for one in reviewed(repository, deployed) for occurrence in one.occurrences), key=_order)
 
 
 @dataclass(frozen=True)
 class IdiomCase:
-    """Pole ``Idiom:`` Ważnego ``idiom.label`` werdyktu ``FAIL`` rundy ``round`` PR ``pull``."""
+    """Pole ``Idiom:`` Ważnego ``idiom.label`` werdyktu ``FAIL`` rundy ``round`` PR ``pull``, utworzonego w chwili
+    ``when`` (``None`` bez chwili)."""
 
     pull: int
     round: int
     idiom: szablon_werdyktu.Idiom
+    when: datetime | None = None
 
 
 def idiom_cases(number: int, rounds: Sequence[werdykt_pr.Round]) -> list[IdiomCase]:
     """Pola ``Idiom:`` Ważnych werdyktów ``FAIL`` rund ``rounds`` PR ``number``."""
 
-    return [IdiomCase(number, current.number, idiom) for current in rounds if current.verdict.decision == "FAIL" for idiom in current.findings.idioms]
+    return [
+        IdiomCase(number, current.number, idiom, _moment(current.verdict.when))
+        for current in rounds
+        if current.verdict.decision == "FAIL"
+        for idiom in current.findings.idioms
+    ]
+
+
+@dataclass(frozen=True)
+class Reviewed:
+    """PR ze skanu rejestru: jego wystąpienia kodów (``occurrences``), pola ``Idiom:`` werdyktów ``FAIL`` utworzonych
+    nie przed wdrożeniem, chwila merge'a i chwila ostatniego werdyktu ``PASS`` na HEAD PR (``None`` bez nich)."""
+
+    pull: int
+    merged: datetime | None
+    passed: datetime | None
+    occurrences: tuple[Occurrence, ...]
+    idioms: tuple[IdiomCase, ...]
+
+
+def reviewed(repository: str, deployed: datetime | None) -> list[Reviewed]:
+    """PR-y ``repository`` ze skanu ``read`` (jedno wyszukiwanie, ten sam koszt), w kolejności założenia; bez wdrożenia
+    szablonu (``deployed`` to ``None``) żadnych. Błąd GitHuba to wyjątek."""
+
+    if deployed is None:
+        return []
+    return [_reviewed(node if _complete(node) else pull_node(repository, node["number"]), deployed) for node in _pulls(repository, deployed)]
+
+
+def _reviewed(node: dict[str, Any], deployed: datetime) -> Reviewed:
+    """PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja): werdykty, rundy i chwilę merge'a
+    liczy raz, a wszystko, co zwraca, jest po chwili wdrożenia ``deployed``: Ważne i pola ``Idiom:`` werdyktów
+    utworzonych nie przed nią, merge nie przed nią, a blok czerwonego `main` tylko w PR scalonym po niej."""
+
+    pull = _pull(node)
+    verdicts = [verdict for verdict in (werdykt_pr.read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None]
+    merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
+    merged = merged if merged is not None and merged >= deployed else None
+    found: list[Occurrence] = []
+    idioms: tuple[IdiomCase, ...] = ()
+    if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
+        rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
+        found += [Occurrence(major.code, pull.number, major.heading, major.since) for major in majors(rounds)[0].values() if major.code is not None and major.since is not None and major.since >= deployed]
+        idioms = tuple(case for case in idiom_cases(pull.number, rounds) if case.when is not None and case.when >= deployed)
+    if merged is not None:
+        found += [Occurrence(block.code, pull.number, heading, merged) for heading, block in _blocks(pull, str(node["bodyHTML"])).items() if heading.startswith("Czerwony")]
+    passes = [moment for verdict in verdicts if verdict.decision == "PASS" and verdict.commit == pull.head and (moment := _moment(verdict.when)) is not None]
+    return Reviewed(pull.number, merged, max(passes, default=None), tuple(sorted(found, key=_order)), idioms)
 
 
 def idioms(repository: str, deployed: datetime | None, rule: str) -> list[IdiomCase]:
@@ -261,24 +305,6 @@ def idioms(repository: str, deployed: datetime | None, rule: str) -> list[IdiomC
         pull = _pull(node if _complete(node) else pull_node(repository, node["number"]))
         found.extend(idiom_cases(pull.number, werdykt_pr.rounds(pull, werdykt_pr.from_graphql)))
     return sorted(found, key=lambda case: (case.pull, case.round))
-
-
-def occurrences(node: dict[str, Any], deployed: datetime) -> list[Occurrence]:
-    """Wystąpienia kodów w PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja) po chwili
-    wdrożenia ``deployed``; blok czerwonego `main` ma tylko PR scalony (``mergedAt``)."""
-
-    pull = _pull(node)
-    merged = _moment(node["mergedAt"]) if node.get("mergedAt") else None
-    found = []
-    verdicts = [verdict for verdict in (werdykt_pr.read(verdict, pull.head) for verdict in pull.verdicts) if verdict is not None]
-    if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
-        rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
-        for major in majors(rounds)[0].values():
-            if major.code is not None and major.since is not None and major.since >= deployed:
-                found.append(Occurrence(major.code, pull.number, major.heading, major.since))
-    if merged is not None and merged >= deployed:
-        found.extend(Occurrence(block.code, pull.number, heading, merged) for heading, block in _blocks(pull, str(node["bodyHTML"])).items() if heading.startswith("Czerwony"))
-    return sorted(found, key=_order)
 
 
 def create_labels(api: github.GhApi, names: Sequence[str], prefix: str, *, write: bool) -> list[str]:
