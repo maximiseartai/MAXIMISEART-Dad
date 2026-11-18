@@ -162,7 +162,7 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
 
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
 3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)), dla Ważnego z polem `Idiom: <id>` dodaj albo popraw regułę ast-grep o tym id z jej dowodem, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
-   Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście w tym samym PR i piszesz komentarz `ZMIANA PODEJŚCIA: <zdanie>` (sekcja „Kolejne rundy”), albo po szóstej rundzie z `FAIL`, po której zamykasz PR komentarzem z powodem i zaczynasz nowy od świeżego `origin/main`.
+   Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście w tym samym PR i piszesz komentarz `ZMIANA PODEJŚCIA: <zdanie>` (sekcja „Kolejne rundy”).
 
 ## Tryb recenzenta: werdykt na PR
 
