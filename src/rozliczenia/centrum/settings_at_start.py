@@ -128,11 +128,24 @@ def unreadable(snapshot: SettingsSnapshot, needs: Collection[str]) -> Refusal | 
     Wykonawców bez odczytu nie jest ``UnreadableFile``, więc tu nie odmawia nigdy: start bez niej odrzuca
     ``SettingsAtStart.of_snapshot``."""
 
-    counted = (("quantity_rules", snapshot.quantity_rules_or_unreadable), ("activity_legend", snapshot.activity_legend_or_unreadable))
-    for need, value in counted:
-        if need in needs and isinstance(value, UnreadableFile):
+    for need in _SETTING_NEEDS:
+        if need in needs and isinstance(value := _at_start(snapshot, need), UnreadableFile):
             return refusal.settings_file_unreadable(value.name)
     return None
+
+
+def _at_start(snapshot: SettingsSnapshot, need: SettingNeed) -> object:
+    """Ustawienie ze startu ``need`` z migawki razem z plikiem bez odczytu (pole ``*_or_unreadable``)."""
+
+    match need:
+        case "workers":
+            return snapshot.workers
+        case "quantity_rules":
+            return snapshot.quantity_rules_or_unreadable
+        case "activity_legend":
+            return snapshot.activity_legend_or_unreadable
+        case _:
+            assert_never(need)
 
 
 def _missing(need: SettingNeed) -> str:
