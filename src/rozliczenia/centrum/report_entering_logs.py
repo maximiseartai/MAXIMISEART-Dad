@@ -582,7 +582,8 @@ class LoggedReports(_Record):
         if masked:
             return Unreplayable(
                 f"Wpis raportu w Logach ma numer zlecenia zamaskowany przez strażnika reguły danych ({masked[0]}: 9 cyfr "
-                "bez zera z przodu strażnik bierze za telefon), więc odtworzenie nie wie, do którego zlecenia szedł ten Wpis"
+                "w kształcie telefonu, w Logach starszych Wydań także z zerem z przodu), więc odtworzenie nie wie, do "
+                "którego zlecenia szedł ten Wpis"
             )
         numbers = _numbers(self)
         for name, logged in (("pamięć wpisów", self.memory_before), ("decyzje „Zostaw moją”", self.kept)):
