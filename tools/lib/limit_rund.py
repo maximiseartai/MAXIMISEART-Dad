@@ -5,7 +5,7 @@ rundach z ``FAIL`` od niej PR nie dostaje już żadnej rundy, a kolejny komentar
 najwyżej ``2 * LIMIT`` rund z ``FAIL`` i zostaje mu tylko nowy PR od ``main`` (przed tą granicą #2010 dostał osiem rund
 z ``FAIL`` przez cztery komentarze, a Maks 17.11.2026: „9 runda to przesada”).
 
-Zmiana podejścia zostaje w tym samym PR, bo bramka korzenia i bramka idiomu czytają werdykty PR, więc Ważne każdej rundy,
+Wyjście zostaje w tym samym PR, bo bramka korzenia i bramka idiomu czytają werdykty PR, więc Ważne każdej rundy,
 także sprzed zmiany podejścia, zostają tam, gdzie merge ich wymaga; nowy PR zaczynałby bez nich.
 
 Runda z ``FAIL`` to commit, dla którego PR ma werdykt ``FAIL`` (``werdykt_pr.read``: komentarz albo recenzja konta
