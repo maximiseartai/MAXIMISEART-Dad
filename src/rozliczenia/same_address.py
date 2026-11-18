@@ -9,7 +9,8 @@ odstępy się nie liczą. Na początku znika przedrostek ``UL``, ``OS``, ``AL`` 
 cyfry z opcjonalną literą, bez zer wiodących, a za nim opcjonalnie ``/`` i numer mieszkania w tej samej postaci;
 ukośnik bez mieszkania (``018/``) to adres bez mieszkania. Nazwa ulicy to słowa przed numerem budynku. Tekst, w którym
 na końcu nie stoi numer budynku (pusty, sama ulica, coś za numerem mieszkania), nie jest adresem i nie daje trafienia.
-Miasto to wartość ``MIASTO`` wiersza, a bez niej miasto przed przecinkiem, obie bez wielkości liter.
+Miasto to wartość ``MIASTO`` wiersza, a bez niej miasto przed przecinkiem, obie bez wielkości liter, kodu pocztowego i
+dzielnicy po myślniku między słowami (``Poznań-Jeżyce`` to Poznań, decyzja Maksa z 18.11.2026).
 
 Ten sam adres ma ten sam numer budynku i mieszkania (adres bez mieszkania jest tym samym tylko dla adresu bez
 mieszkania), nazwę ulicy, której krótsza jest końcem dłuższej od granicy słowa (``KOWALSKIEGO`` i ``JANA
@@ -34,6 +35,10 @@ _Row = TypeVar("_Row")
 _PREFIXES: Final = frozenset({"ul", "os", "al", "pl"})
 _NUMBER: Final = r"0*(\d+[^\W\d_]?)"
 _ADDRESS: Final = re.compile(rf"(?P<street>.*?)\s*\b{_NUMBER}(?:\s*/\s*(?:{_NUMBER})?)?", re.S)
+
+_DASHES: Final = frozenset("-–—")
+_CITY_TOKENS: Final = re.compile(r"[^\W\d_]+|\d+|[-–—]")
+"""Słowa, liczby i myślniki zapisu miasta; reszta (odstępy, nawiasy, kropki) ich nie oddziela."""
 
 _Key = tuple[str, str, str | None]
 """Klucz indeksu: ostatnie słowo nazwy ulicy, numer budynku i numer mieszkania (``None``: bez mieszkania)."""
@@ -94,4 +99,30 @@ def _address(address: object, city: object) -> _Address | None:
     if found is None or not found.group("street"):
         return None
     street, building, apartment = found.group("street", 2, 3)
-    return _Address(tuple(street.split()), building, apartment, normalize_text(city) or normalize_text(prefix) or None)
+    return _Address(tuple(street.split()), building, apartment, _city(normalize_text(city)) or _city(normalize_text(prefix)))
+
+
+def _city(text: str) -> str | None:
+    """Nazwa miasta (słowa przed myślnikiem dzielnicy, bez cyfr), cały zapis przy myślniku nierozpoznanym albo ``None``.
+
+    O roli myślnika (także półpauzy i pauzy) decydują najbliższe znaki obok niego w samym zapisie, bez odstępów:
+    cyfry po obu stronach to kod pocztowy (``11-111``, ``11 - 111``), który znika z cyframi, a litery po obu stronach
+    to dzielnica (``Poznań-Jeżyce``, ``Poznań - Jeżyce``), przed którą kończy się nazwa. Zapis z każdym innym
+    myślnikiem (``-Dzielnica``, ``PL-11-111``, ``Miastko 11-111 - Dzielnica``) nie ma pewnej nazwy, więc miastem jest
+    cały zapis: zawiera myślnik, którego nazwa nigdy nie ma, więc równa się tylko temu samemu zapisowi. ``None``
+    (brak miasta) zostaje dla zapisu bez słowa i bez takiego myślnika (sam kod pocztowy)."""
+
+    words: list[str] = []
+    for found in _CITY_TOKENS.finditer(text):
+        token = found.group()
+        if token not in _DASHES:
+            if not token.isdigit():
+                words.append(token)
+            continue
+        left, right = text[: found.start()].rstrip()[-1:], text[found.end() :].lstrip()[:1]
+        if left.isdigit() and right.isdigit():
+            continue
+        if left.isalpha() and right.isalpha():
+            break
+        return text
+    return " ".join(words) or None

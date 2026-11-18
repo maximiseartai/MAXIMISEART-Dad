@@ -392,7 +392,7 @@ poprawce kliknij `Uruchom ponownie`.
   `UL. LIPOWA 18/3` to `Poznań,Lipowa 018/3`, ale nie `LIPOWA 18/7` ani
   `LIPOWA 18`. Krótsza nazwa ulicy też pasuje (`KOWALSKIEGO 4/15` to
   `UL. JANA KOWALSKIEGO 4/15`), a miasto liczy się tylko wtedy, gdy mają je
-  oba wiersze.
+  oba wiersze; dzielnica po myślniku się nie liczy (`Poznań-Jeżyce` to Poznań).
 - Kolory operatora: `CZYNNOŚCI` i `NUMER UMOWY` są zielone przy T-Mobile,
   pomarańczowe przy Orange, jasnoniebieskie przy innych operatorach, a przy
   Netii `CZYNNOŚCI` jest ciemniejsza niebieska. INEA i zlecenie bez operatora
