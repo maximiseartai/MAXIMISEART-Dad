@@ -436,33 +436,61 @@ def test_shellcheck_akcji_sprawdza_skrypty_bash_i_sh_akcji_zlozonych_i_podaje_ic
     assert broken == [".github/actions/x/action.yml:6: shellcheck 3: ", ".github/actions/x/action.yml:12: shellcheck 3: "]
 
 
+
 # Jedyny workflow, którego token może ustawić status commita: każdy jego job biegnie kodem `main` i nie uruchamia kodu
 # PR, a status „Werdykt i bramka”, który wymaga ruleset, może ustawić każdy token z prawem statuses: write.
 STATUS_WORKFLOW = ROOT / ".github" / "workflows" / "werdykt-i-bramka.yml"
 
 
 def _grants_statuses(permissions: object) -> bool:
-    """Czy ``permissions:`` workflow albo joba daje tokenowi zapis statusów: ``statuses: write`` albo ``write-all``."""
-
     if isinstance(permissions, str):
         return permissions == "write-all"
     return isinstance(permissions, dict) and permissions.get("statuses") == "write"
 
 
-def test_prawo_zapisu_statusow_commitu_ma_tylko_workflow_werdyktu_i_bramki() -> None:
-    """Każdy workflow ma ``permissions:`` na górze (bez niego token dostaje prawa domyślne repozytorium), a
-    ``statuses: write`` albo ``write-all`` stoi tylko w ``werdykt-i-bramka.yml``, na górze albo w jobie: workflow PR
-    i workflow, który uruchamia kod PR, nie ustawią statusu „Werdykt i bramka” na swoim HEAD."""
+def status_writers(folder: Path) -> tuple[list[str], list[str]]:
+    """Workflow w ``folder``, których token może zapisać status commita (``statuses: write`` albo ``write-all`` na górze
+    albo w jobie), i workflow bez ``permissions:`` na górze, którego token dostaje prawa domyślne repozytorium."""
 
-    workflows = {path: yaml.safe_load(path.read_text(encoding="utf-8")) for path in sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))}
-    granted = [
-        path.name
-        for path, workflow in workflows.items()
+    workflows = {path.name: yaml.safe_load(path.read_text(encoding="utf-8")) for path in sorted(folder.glob("*.y*ml"))}
+    writers = [
+        name
+        for name, workflow in workflows.items()
         if _grants_statuses(workflow.get("permissions")) or any(_grants_statuses(job.get("permissions")) for job in workflow["jobs"].values())
     ]
+    return writers, [name for name, workflow in workflows.items() if "permissions" not in workflow]
 
-    assert sorted(path.name for path, workflow in workflows.items() if "permissions" not in workflow) == [], "dopisz permissions: na górze workflow"
-    assert granted == [STATUS_WORKFLOW.name], (
+
+def test_prawo_zapisu_statusow_commitu_ma_tylko_workflow_werdyktu_i_bramki() -> None:
+    """Workflow PR i workflow, który uruchamia kod PR, nie ustawią statusu „Werdykt i bramka” na swoim HEAD."""
+
+    writers, without = status_writers(ROOT / ".github" / "workflows")
+
+    assert without == [], "dopisz permissions: na górze workflow"
+    assert writers == [STATUS_WORKFLOW.name], (
         f"statuses: write ma tylko {STATUS_WORKFLOW.name}, którego joby biegną kodem main: status ustaw stamtąd z danych, "
         "które ten workflow zapisuje (wzór: artefakt scalenia.yml i tools/ci/status_scalenia.py --publikuj-z)"
     )
+
+
+# Tabela przypadków ``status_writers``: ``permissions:`` workflow i joba → czy token może zapisać status commita.
+PRAWA_STATUSOW: dict[str, tuple[object, object, bool]] = {
+    "statuses: write na górze": ({"contents": "read", "statuses": "write"}, None, True),
+    "statuses: write w jobie": ({"contents": "read"}, {"statuses": "write"}, True),
+    "write-all na górze": ("write-all", None, True),
+    "write-all w jobie": ({"contents": "read"}, "write-all", True),
+    "statuses: read": ({"statuses": "read"}, {"statuses": "read"}, False),
+    "read-all": ("read-all", None, False),
+    "bez statuses": ({"contents": "read"}, {"pull-requests": "write"}, False),
+}
+
+
+@pytest.mark.parametrize(("top", "job", "writes"), PRAWA_STATUSOW.values(), ids=PRAWA_STATUSOW)
+def test_zapis_statusow_daje_statuses_write_albo_write_all_na_gorze_albo_w_jobie(tmp_path: Path, top: object, job: object, writes: bool) -> None:
+    workflow: dict[str, object] = {"on": "push", "permissions": top, "jobs": {"a": {"runs-on": "ubuntu-latest", "steps": [{"run": "true"}]}}}
+    if job is not None:
+        workflow["jobs"] = {"a": {"runs-on": "ubuntu-latest", "permissions": job, "steps": [{"run": "true"}]}}
+    (tmp_path / "a.yml").write_text(yaml.safe_dump(workflow), encoding="utf-8")
+    (tmp_path / "bez-praw.yml").write_text(yaml.safe_dump({"on": "push", "jobs": {"b": {"runs-on": "ubuntu-latest"}}}), encoding="utf-8")
+
+    assert status_writers(tmp_path) == (["a.yml"] if writes else [], ["bez-praw.yml"])
