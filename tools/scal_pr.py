@@ -65,8 +65,9 @@ Dowód strażnika wykonuje kod PR (pytest, mypy), a ``--status`` biegnie z token
 warunku 5 nie liczy sam: bierze go ze zmiennej ``DOWODY_STRAZNIKOW`` (``GUARD_PROOFS``), w której workflow
 ``.github/workflows/werdykt-i-bramka.yml`` podaje wynik joba ``dowod``. Ten job biegnie bez prawa zapisu i uruchamia
 ``--dowod-straznikow PLIK``: warunek 5 dla PR, którego warunki 1–4 tylko oczekują albo przechodzą, jako linię JSON
-z SHA HEAD dopisaną do ``PLIK``. Wynik dla innego HEAD albo pominięty to oczekiwanie, a brak wyniku to odmowa, więc
-kod PR może zmienić tylko własny warunek 5, jak test, który niczego nie sprawdza, a nie zgodę, CI ani opis. Warunków
+z SHA HEAD dopisaną do ``PLIK``, a ``--status`` bierze ostatnią linię PR. Wynik dla innego HEAD albo pominięty to
+oczekiwanie, a brak wyniku to odmowa. Granica: kod PR, który celowo pisze plik wyników joba, daje w statusie
+przechodzący warunek 5 własnego PR, ale nie zgodę, CI ani opis, a merge przez ``tools/scal_pr.py`` liczy dowód sam. Warunków
 6 i 7 nie liczy, bo uruchamiają kod PR (ruff, mypy i pytest na scalonym drzewie); scalenie z ruff i mypy pokazuje
 status ``scalenie z main``. PR zamknięty albo do innej gałęzi
 niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
@@ -293,7 +294,8 @@ def _proved_guards(pull: Pull) -> list[str]:
         entries = [json.loads(line) for line in raw.splitlines() if line.strip()]
     except ValueError as error:
         return [f"strażnik: {GUARD_PROOFS} to nie linie JSON z --dowod-straznikow ({error})"]
-    entry = next((one for one in entries if isinstance(one, dict) and one.get("numer") == pull.number), None)
+    # Ostatnia linia PR, bo ``--dowod-straznikow`` dopisuje ją po biegu kodu PR w dowodzie.
+    entry = next((one for one in reversed(entries) if isinstance(one, dict) and one.get("numer") == pull.number), None)
     if entry is None:
         return [f"strażnik: job dowod nie podał wyniku dla #{pull.number} (wynik joba: {os.environ.get(GUARD_JOB) or '?'}), uruchom ponownie"]
     if entry.get("sha") != pull.head:

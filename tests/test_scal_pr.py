@@ -2772,7 +2772,7 @@ def test_wazne_ze_straznikiem_scala_sie_po_dowodzie_ok_z_kodu_bazy(tmp_path: Pat
 
 
 @pytest.mark.parametrize("proof", [PROOF_REFUSED, (0, "DOWÓD ZAWIESZONY"), (1, PROOF_OK[1])], ids=["dowod-odmawia", "bez-linii-dowod-ok", "dowod-ok-z-kodem-bledu"])
-def test_strażnik_bez_dowodu_ok_nie_scala_sie(tmp_path: Path, proof: tuple[int, str]) -> None:
+def test_straznik_bez_dowodu_ok_nie_scala_sie(tmp_path: Path, proof: tuple[int, str]) -> None:
     """Sonda (b) z ADR 0042 na bramce: strażnik, którego dowód nie przechodzi, nie scala PR, a przechodzi tylko kod 0
     z ostatnią linią ``DOWÓD OK``."""
 
@@ -2788,7 +2788,7 @@ def test_strażnik_bez_dowodu_ok_nie_scala_sie(tmp_path: Path, proof: tuple[int,
     ), last
 
 
-def test_wazne_z_tym_samym_strażnikiem_maja_jeden_dowod(tmp_path: Path) -> None:
+def test_wazne_z_tym_samym_straznikiem_maja_jeden_dowod(tmp_path: Path) -> None:
     github, head = _guard_pull(tmp_path, "dwa-z-tym-samym-straznikiem", FAIL_TWO_SAME)
 
     answered = github.run("1", "--bez-merge")
@@ -2797,7 +2797,7 @@ def test_wazne_z_tym_samym_strażnikiem_maja_jeden_dowod(tmp_path: Path) -> None
     assert _proofs(github) == [_proof_arguments(head, "1/W1/r1", "1/W2/r1")]
 
 
-def test_watek_z_werdyktem_sprzed_wdrozenia_warunku_5_konczy_z_dowodem_autora_bez_dowodu_strażnika(tmp_path: Path) -> None:
+def test_watek_z_werdyktem_sprzed_wdrozenia_warunku_5_konczy_z_dowodem_autora_bez_dowodu_straznika(tmp_path: Path) -> None:
     """Decyzja Q20 ADR 0031 dla warunku 5: wątek, którego pierwszy werdykt powstał przed ADR 0042, kończy po staremu."""
 
     github, head = _guard_pull(tmp_path, "szczebel-c", deployed=GATE_AFTER_VERDICTS)
@@ -3027,8 +3027,14 @@ def test_job_dowodu_dopisuje_warunek_5_dla_head_a_przy_odmowie_warunkow_1_4_go_p
         ([{"numer": 1, "sha": "{head}", "pominiety": True, "przyczyny": []}], "success", "pending", "oczekuje: strażnik: dowód pominięty w tym runie, bo warunki 1–4 odmawiały; policzy go następny run"),
         ([{"numer": 2, "sha": "{head}", "pominiety": False, "przyczyny": []}], "failure", "failure", "strażnik: job dowod nie podał wyniku dla #1 (wynik joba: failure), uruchom ponownie"),
         (None, "", "failure", "strażnik: --status bierze warunek 5 z joba dowod workflow werdykt-i-bramka.yml w zmiennej DOWODY_STRAZNIKOW, a jej nie ma"),
+        (
+            [{"numer": 1, "sha": "{head}", "pominiety": False, "przyczyny": []}, {"numer": 1, "sha": "{head}", "pominiety": False, "przyczyny": [{"tekst": "strażnik: dowód NIEWYKRYTA", "oczekuje": False}]}],
+            "success",
+            "failure",
+            "strażnik: dowód NIEWYKRYTA",
+        ),
     ],
-    ids=["dowod-ok", "dowod-odmawia", "dowod-czeka-na-github", "dowod-innego-head", "dowod-pominiety", "bez-wyniku-dla-pr", "bez-zmiennej"],
+    ids=["dowod-ok", "dowod-odmawia", "dowod-czeka-na-github", "dowod-innego-head", "dowod-pominiety", "bez-wyniku-dla-pr", "bez-zmiennej", "linia-dopisana-przed-dowodem"],
 )
 def test_status_bierze_warunek_5_z_joba_dowodu_dla_tego_head_i_sam_go_nie_liczy(
     tmp_path: Path, proofs: list[dict[str, object]] | None, job: str, state: str, description: str
@@ -3049,7 +3055,7 @@ def test_status_bierze_warunek_5_z_joba_dowodu_dla_tego_head_i_sam_go_nie_liczy(
     assert [cast(dict[str, str], write[2])["state"] for write in _statuses(github)] == [state]
 
 
-def test_dowody_strażnikow_pr_ktore_nie_koncza_sie_we_wspolnym_limicie_daja_przyczyne_zamiast_zabitego_joba(tmp_path: Path) -> None:
+def test_dowody_straznikow_pr_ktore_nie_koncza_sie_we_wspolnym_limicie_daja_przyczyne_zamiast_zabitego_joba(tmp_path: Path) -> None:
     """Dowody wszystkich strażników PR mają razem ``PROOF_TIMEOUT_S``, więc job ``dowod`` ma przyczynę, zanim jego limit
     zabije run: dowód, który trwa dłużej, kończy się przyczyną z tym limitem."""
 

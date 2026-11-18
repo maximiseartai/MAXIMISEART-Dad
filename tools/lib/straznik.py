@@ -7,7 +7,7 @@ recenzent, a autor podaje tylko selektor. Wynik to kod wyjścia pytest albo znal
 
 | Selektor | Przywrócenie błędu na kopii HEAD PR | Dowód przechodzi, gdy |
 |---|---|---|
-| ``pytest tests/<plik>.py::<test> …`` | każdy plik spoza ``tests/``, który PR zmienił (od rozwidlenia do FAIL i od merge-base do HEAD), z treścią z FAIL; testy z HEAD | węzły przechodzą na HEAD (kod 0) i padają po przywróceniu (kod 1, nie błąd kolekcji 2, użycia 4 ani brak testów 5) |
+| ``pytest tests/<plik>.py::<test> …`` | każdy plik spoza ``tests/``, który PR zmienił (od rozwidlenia do FAIL i od rozwidlenia HEAD do HEAD), z treścią z FAIL; testy z HEAD | węzły przechodzą na HEAD (kod 0) i padają po przywróceniu (kod 1, nie błąd kolekcji 2, użycia 4 ani brak testów 5), a co najmniej jeden węzeł pada wyjątkiem, który nie jest brakiem nazwy dodanej po FAIL (``ImportError``, ``NameError``, ``AttributeError`` modułu; wtyczka ``straznik_pytest``) |
 | ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na HEAD bez znalezisk, po przywróceniu znalezisko w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi bez zmian na HEAD, czyli poprawka leży obok) |
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` | Ważne stoi w polu ``metadata.przypadki`` reguły na HEAD (jedyna lista jej przypadków), a reguła z HEAD łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
 | ``brak - proza`` | bez | każde miejsce ``Gdzie`` w pliku, który zmienił PR, to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
@@ -16,7 +16,9 @@ recenzent, a autor podaje tylko selektor. Wynik to kod wyjścia pytest albo znal
 
 Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): test, który ten PR zmienił po FAIL dla innego
 Ważnego, przechodzi dowód pytest każdego Ważnego tej rundy, bo przywrócenie cofa wszystkie zmiany PR poza ``tests/``;
-plik, który po FAIL zmienił też ``main``, wraca z treścią sprzed tej zmiany. Pytest i mypy wykonują kod PR, więc
+test, który pada na drzewie FAIL ``TypeError`` z argumentu dodanego po FAIL albo asercją na nazwie czytanej przez
+``getattr``, też przechodzi, bo wtyczka zna tylko wyjątek braku nazwy; plik, który po FAIL zmienił też ``main``, wraca
+z treścią sprzed tej zmiany. Pytest i mypy wykonują kod PR, więc
 status „Werdykt i bramka” liczy dowód w jobie bez prawa zapisu (``.github/workflows/werdykt-i-bramka.yml``).
 """
 
@@ -29,12 +31,16 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import sys
+import tempfile
 
 import potomne
 import repo
+import straznik_pytest
 
 FIELD = "Strażnik:"
+
 TESTS = "tests/"
 _NODE = re.compile(r"tests/(?:[\w.-]+/)*[\w.-]+\.py::\w+(?:::\w+)?")
 _RULE_ID = re.compile(r"[\w.-]+")
@@ -125,9 +131,13 @@ def prove(root: Path, guard: Guard, head: str, base: str, cases: Sequence[Case])
 
 @dataclass(frozen=True)
 class _Ran:
+    """Bieg strażnika: kod, ostatnia linia, znaleziska mypy i ruff, a przy pytest testy, które padły w wywołaniu:
+    węzeł, nazwa wyjątku i to, czy padł z braku nazwy (``straznik_pytest``)."""
+
     code: int
     last: str
     findings: tuple[tuple[str, int, str], ...] = ()
+    failed: tuple[tuple[str, str, bool], ...] = ()
 
 
 def _run(guard: Guard, copy: Path) -> _Ran:
@@ -137,19 +147,34 @@ def _run(guard: Guard, copy: Path) -> _Ran:
     # byłyby dla niego ważne: dowód nie pisze pyc, a mypy biegnie bez pamięci (``--no-incremental``).
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
     if guard.kind is Kind.PYTEST:
-        command = [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", *guard.arguments]
-    elif guard.kind is Kind.MYPY:
+        return _pytest(guard, copy, environment)
+    if guard.kind is Kind.MYPY:
         command = [sys.executable, "-m", "mypy", "--no-incremental", "-O", "json"]
     else:
         command = [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json"]
     done = potomne.run(command, cwd=copy, env=environment)
     lines = (done.stdout + done.stderr).strip().splitlines()
     last = lines[-1][:200] if lines else ""
-    if guard.kind is Kind.PYTEST:
-        return _Ran(done.returncode, last)
     found = _mypy(done.stdout) if guard.kind is Kind.MYPY else _ruff(done.stdout, copy)
     # mypy i ruff kończą się kodem 1 przy znaleziskach, które niesie ``findings``; każdy inny kod to błąd narzędzia.
     return _Ran(0 if done.returncode == 1 and found else done.returncode, last, found)
+
+
+def _pytest(guard: Guard, copy: Path, environment: dict[str, str]) -> _Ran:
+    """Węzły strażnika z wtyczką ``straznik_pytest`` z kopii jej pliku w osobnym katalogu, która zapisuje wyjątek każdego
+    testu, który padł."""
+
+    with tempfile.TemporaryDirectory(prefix="straznik-") as folder:
+        plugin = Path(straznik_pytest.__file__)
+        shutil.copy(plugin, folder)
+        results = Path(folder) / straznik_pytest.RESULTS
+        environment = {**environment, "PYTHONPATH": os.pathsep.join([environment["PYTHONPATH"], folder])}
+        command = [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "-p", plugin.stem, *guard.arguments]
+        done = potomne.run(command, cwd=copy, env=environment)
+        entries = [json.loads(line) for line in results.read_text(encoding="utf-8").splitlines()] if results.exists() else []
+    lines = (done.stdout + done.stderr).strip().splitlines()
+    failed = tuple((str(entry["wezel"]), str(entry["wyjatek"]), bool(entry["brak_nazwy"])) for entry in entries)
+    return _Ran(done.returncode, lines[-1][:200] if lines else "", failed=failed)
 
 
 def _mypy(output: str) -> tuple[tuple[str, int, str], ...]:
@@ -206,8 +231,13 @@ def _restored(root: Path, guard: Guard, copy: Path, head: str, base: str, case: 
                 _write(copy / path, content)
         where = "+".join(changed[:3]) + (f" (i {len(changed) - 3} innych)" if len(changed) > 3 else "")
         if guard.kind is Kind.PYTEST:
+            behaviour = [one for one in ran.failed if not one[2]]
+            if ran.code == 1 and behaviour:
+                return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {behaviour[0][0]}: {behaviour[0][1]} | {ran.last}")
             if ran.code == 1:
-                return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {ran.last}")
+                names = ", ".join(sorted({one[1] for one in ran.failed})) or "bez wyjątku z wtyczki"
+                tried.append(f"{where}: strażnik pada tylko z braku nazwy dodanej po FAIL ({names}), a nie na błędzie z Gdzie: {ran.last}")
+                continue
             tried.append(f"{where}: kod {ran.code} ({'przechodzi' if ran.code == 0 else 'błąd kolekcji, użycia albo brak testów'}): {ran.last}")
             continue
         inside = [finding for finding in ran.findings if finding[0] in changed and finding[1] in _scope(root, head, case, finding[0])]

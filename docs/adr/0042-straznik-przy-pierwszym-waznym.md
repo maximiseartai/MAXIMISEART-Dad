@@ -15,15 +15,15 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 ## Decyzja
 
 - **Strażnik przy każdym Ważnym.** Blok każdego Ważnego w sekcji `## Korzeń` opisu PR kończy linia `Strażnik: <selektor>` z zamkniętej listy, także po `Wyrwany w #M`, zamiast autorskiego `Dowód:`, który zostaje tylko w bloku czerwonego `main`.
-  Autor wybiera tylko selektor; złą postać wyznacza drzewo SHA werdyktu `FAIL` w miejscach jego pola `Gdzie`, a wynik liczy narzędzie.
+  Autor wybiera tylko selektor; złą postać daje drzewo SHA werdyktu `FAIL` (przy pytest kod PR spoza `tests/`, przy mypy i ruff pliki z pola `Gdzie`), a wynik liczy narzędzie.
   Listę, przywrócenie błędu przy każdym rodzaju i granice podaje jeden właściciel: docstring `tools/lib/straznik.py`, a bramkę `tools/lib/bramka_straznika.py` (warunek 5 `tools/scal_pr.py`).
   Powód: strażnik powstaje przy pierwszym Ważnym, więc rozpoznanie powtórki przez recenzenta przestaje być warunkiem.
-- **Dowód bez tekstu autora.** Bramka czyta tylko kod wyjścia pytest i znaleziska mypy i ruff w formacie JSON z wiersza poleceń dowodu, więc ani tekst mutacji, ani format wyjścia z konfiguracji PR wyniku nie zmienia.
+- **Dowód bez tekstu autora.** Bramka czyta tylko kod wyjścia pytest z wyjątkiem każdego testu, który padł (wtyczka `tools/lib/straznik_pytest.py`; brak nazwy dodanej po `FAIL` to nie dowód), i znaleziska mypy i ruff w formacie JSON z wiersza poleceń dowodu, więc ani tekst mutacji, ani format wyjścia z konfiguracji PR wyniku nie zmienia.
   Powód: prototyp na dziesięciu Ważnych z przeszłości (tabela w komentarzu PR, który dodał ten ADR) dał dowód `WYKRYTA` dla 6 z 6 Ważnych z mechanizmem i 0 z 8 fałszywych `WYKRYTA` strażnika niezwiązanego z błędem, a mutacja z pliku PR z warunkiem „zamiana to tekst z SHA `FAIL`” przepuściła 7 z 9 sond obejścia.
 - **Wyjątki.** `brak - proza` sprawdza narzędzie (każde miejsce `Gdzie`, które zmienił PR, to `.md`, docstring albo komentarz), a `brak - test` (miejsca tylko w `tests/`, czyli próbka testu bez przypadku z obietnicy) i `brak - napęd` (miejsca tylko w `frontend/`, a strażnik to krok napędu skilla `verify-*`) narzędzie co do miejsca, a dowód recenzent następnej rundy: mutację złej implementacji albo krok napędu na drzewie `FAIL`, jak dotąd.
   Powód: dowód testu, który nie łapie złej implementacji, potrzebuje tej implementacji, a drzewo SHA `FAIL` jej nie ma; frontend nie ma testów jednostkowych, a krok napędu potrzebuje przeglądarki i zbudowanego frontendu, których job dowodu nie ma (#2104 W1 r1).
 - **Gdzie liczy dowód.** Pytest i mypy wykonują kod PR, więc status „Werdykt i bramka” liczy warunek 5 w jobie `dowod` bez prawa zapisu, a job `status` liczy warunki 1–4 kodem `main` i bierze z `dowod` tylko przyczyny warunku 5 dla tego samego SHA HEAD.
-  Powód: kod PR nie dostaje tokenu, który ustawia statusy (#1912 r1, `R-KOD-PR-Z-TOKENEM`), a może zmienić najwyżej własny warunek 5, jak test, który niczego nie sprawdza.
+  Powód: kod PR nie dostaje tokenu, który ustawia statusy (#1912 r1, `R-KOD-PR-Z-TOKENEM`). Granica: kod PR, który celowo pisze plik wyników joba `dowod`, daje w statusie przechodzący warunek 5 własnego PR (#2116 r1 D1), ale nie zgodę, CI ani opis, a merge przez `tools/scal_pr.py` liczy dowód sam.
 - **Pole `Idiom:`.** Nie zatrzymuje już merge'a; postacie `<id> jak #N W<n> r<k>` i `<id>` zostają adnotacją recenzenta dla raportu tygodniowego, a postać `bez reguły <klasa>` z tabelą klas czyta raport tylko w werdyktach sprzed tego ADR.
 
 ## Odrzucone warianty

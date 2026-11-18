@@ -168,6 +168,45 @@ def test_test_nowego_wlasciciela_pada_bez_niego_bo_przywrocenie_usuwa_plik_dodan
     assert by_behaviour.detected, by_behaviour.line
 
 
+OWNER = {
+    "kod/wlasciciel.py": "def razy_dwa(x: int) -> int:\n    return x * 2\n\n\ndef razy_trzy(x: int) -> int:\n    return x * 3\n",
+    "kod/liczby.py": BASE["kod/liczby.py"].replace("x * 2", "razy_dwa(x)").replace("def podwojona", "from kod.wlasciciel import razy_dwa\n\n\ndef podwojona"),
+}
+
+
+@pytest.mark.parametrize(
+    "test",
+    [
+        "def test_wlasciciel() -> None:\n    from kod.wlasciciel import razy_trzy\n\n    assert razy_trzy(1) == 3\n",
+        "import kod\n\n\ndef test_wlasciciel() -> None:\n    import kod.liczby\n\n    assert kod.liczby.razy_dwa(2) == 4\n",
+    ],
+    ids=["import-w-ciele-testu", "atrybut-modulu-dodany-po-fail"],
+)
+def test_straznik_ktory_pada_na_fail_tylko_z_braku_nazwy_dodanej_po_fail_nie_przechodzi(tmp_path: Path, test: str) -> None:
+    """Sonda (b) z ADR 0042 i #2116 r1 W1: test właściciela dodanego po FAIL pada na drzewie FAIL ``ImportError``,
+    albo ``AttributeError`` modułu, a nie na błędzie z ``Gdzie``; dowód czyta wyjątek wtyczką ``straznik_pytest``, a nie
+    tekst raportu."""
+
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {**OWNER, "tests/test_wlasciciel.py": test})
+
+    outcome = pull.prove("pytest tests/test_wlasciciel.py::test_wlasciciel")
+
+    assert not outcome.detected, outcome.line
+    assert "strażnik pada tylko z braku nazwy dodanej po FAIL (" in outcome.line, outcome.line
+
+
+def test_test_ktory_pada_na_fail_wyjatkiem_z_kodu_a_nie_asercja_to_dowod(tmp_path: Path) -> None:
+    """Błąd z ``Gdzie`` może też wywrócić kod (``KeyError``), a nie tylko asercję: to dowód, bo to nie brak nazwy."""
+
+    crash = BASE["kod/liczby.py"].replace("return x * 2", "return {1: 2}[x]")
+    test = "from kod.liczby import podwojona\n\n\ndef test_podwojona_kazdej_liczby() -> None:\n    assert podwojona(5) == 10\n"
+    pull = _pull(tmp_path, {"kod/liczby.py": crash}, {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_podwojona.py": test})
+
+    outcome = pull.prove("pytest tests/test_podwojona.py::test_podwojona_kazdej_liczby")
+
+    assert outcome.detected and "test_podwojona_kazdej_liczby: KeyError" in outcome.line, outcome.line
+
+
 TYPED = {
     "kod/odczyt.py": "def odczyt() -> str:\n    return 'tekst'\n",
     "kod/uzycie.py": "from kod.odczyt import odczyt\n\n\ndef glosno() -> str:\n    return odczyt().upper()\n",
@@ -320,6 +359,21 @@ ZNANE_LUKI_STRAZNIKA = {
         {"kod/liczby.py": BAD.replace("x + 1", "x + 2")},
         {"kod/liczby.py": BASE["kod/liczby.py"], "tests/test_nastepna.py": BASE["tests/test_nastepna.py"].replace("== 2", "== 2 and nastepna(0) == 1")},
         "pytest tests/test_nastepna.py::test_nastepna",
+    ),
+    # Wtyczka zna brak nazwy, a nie zmianę sygnatury: argument dodany po FAIL wywraca test TypeError (#2116 r1 W1).
+    "pytest: argument funkcji dodany po FAIL": (
+        {"kod/liczby.py": BAD},
+        {
+            "kod/liczby.py": BASE["kod/liczby.py"].replace("def podwojona(x: int)", "def podwojona(x: int, *, razy: int = 2)").replace("x * 2", "x * razy"),
+            "tests/test_razy.py": "from kod.liczby import podwojona\n\n\ndef test_razy() -> None:\n    assert podwojona(1, razy=5) == 5\n",
+        },
+        "pytest tests/test_razy.py::test_razy",
+    ),
+    # Nazwa czytana przez getattr z wartością domyślną nie daje wyjątku braku nazwy, tylko asercję (#2116 r1, sonda P2).
+    "pytest: znacznik dodany po FAIL czytany przez getattr": (
+        {"kod/liczby.py": BAD},
+        {"kod/liczby.py": BASE["kod/liczby.py"] + "\n\nWERSJA = 2\n", "tests/test_wersja.py": "import kod.liczby\n\n\ndef test_wersja() -> None:\n    assert getattr(kod.liczby, 'WERSJA', None) == 2\n"},
+        "pytest tests/test_wersja.py::test_wersja",
     ),
 }
 
