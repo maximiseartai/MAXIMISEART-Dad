@@ -1,4 +1,4 @@
-"""Tygodniowy pomiar w issue „Rejestr korzeni”: powroty i ucieczki idiomu, czekanie na merge, odpalenia reguł, Ważne bez reguły, kody; biegnie w poniedziałek, ręcznie z --bez-zapisu.
+"""Pomiar ADR 0036 w issue „Rejestr korzeni”: powroty i ucieczki idiomu, czekanie, odpalenia reguł, Ważne bez reguły; w poniedziałek, ręcznie z --bez-zapisu.
 
 Miary z [ADR 0036](../docs/adr/0036-chwast-to-regula.md) („Miara”, wiersz miary Q1 w „Wdrożenie”): workflow
 ``.github/workflows/rejestr-korzeni.yml`` uruchamia pomiar w poniedziałek o 6:17 czasu polskiego. Minuta 17, a nie
