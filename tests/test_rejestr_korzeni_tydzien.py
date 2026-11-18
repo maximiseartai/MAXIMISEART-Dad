@@ -584,10 +584,10 @@ def test_pr_zamkniety_bez_merge_po_trzech_rundach_z_fail_daje_nowy_pr_na_jego_pl
 
     fails = [(FAIL_W1.replace("{commit}", sha * 40), f"2026-10-13T1{index}:00:00Z") for index, sha in enumerate("123")]
     pulls = [
-        _pull(1470, fails, closed=True, created="2026-10-05T00:00:00Z", files=["tools/lib/limit_rund.py", "tests/test_scal_pr.py"]),
+        _pull(1470, fails, closed=True, created="2026-10-05T00:00:00Z", files=["kod/limit.py", "kod/test_limitu.py"]),
         _pull(1471, fails[:2], closed=True, created="2026-10-05T00:01:00Z", files=["kod/dwie.py"]),
         _pull(1472, fails, created="2026-10-05T00:02:00Z", files=["kod/otwarty.py"]),
-        _pull(1473, [], created="2026-10-14T00:00:00Z", files=["tools/lib/limit_rund.py", "kod/dwie.py", "kod/otwarty.py"]),
+        _pull(1473, [], created="2026-10-14T00:00:00Z", files=["kod/limit.py", "kod/dwie.py", "kod/otwarty.py"]),
     ]
     github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls, started=DEPLOYED.isoformat())
 
