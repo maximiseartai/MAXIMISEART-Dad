@@ -24,7 +24,7 @@ czyta zmieniony plik konfiguracji, ma najwyżej 2, więc biegnie w budżecie prz
 jako „zostawione CI”, więc ``SZYBKO OK`` znaczy, że przeszły uruchomione testy.
 
 Testy ``STRUCTURE`` modułu wpływu zmiany (strażnicy reguł z ``RULE_GUARDS`` w ``tests/test_szybko.py`` oraz testy całego
-repozytorium) biegną przy każdej zmianie raz: gdy ``--baza`` poszła dalej niż HEAD, na mergu z nią (to drzewo sprawdza
+repozytorium) biegną przy każdej zmianie raz: gdy ``--baza`` poszła dalej niż HEAD, na mergu drzewa roboczego z nią (to drzewo sprawdza
 CI PR-u; numer ADR zajęty równolegle pada dopiero tam), a inaczej na HEAD w kroku pytest. Na mergu biegną tylko one,
 bez mypy i testów dotkniętych zmianą, razem z pozostałymi krokami, na połowie workerów kroku pytest
 (``_merge_workers``), więc oba kroki razem biorą niewiele więcej rdzeni niż sam krok pytest. Merge z konfliktem
@@ -220,22 +220,25 @@ def _merge_workers() -> int:
 
 
 def _merge_steps(base: str, copies: ExitStack) -> tuple[list[Step], bool]:
-    """Krok testów struktury na mergu HEAD z ``base`` i to, czy uruchamia testy struktury; bez kroku, gdy ``base`` jest
-    w HEAD albo merge ma konflikt, a krok, który pada z powodem, gdy git nie umie policzyć mergu."""
+    """Krok testów struktury na mergu drzewa roboczego z ``base`` i to, czy uruchamia testy struktury; bez kroku, gdy
+    ``base`` jest w HEAD albo merge ma konflikt, a krok, który pada z powodem, gdy git nie umie policzyć mergu. Drzewo
+    robocze ma zmiany niezacommitowane i nieśledzone (``repo.working_tree_commit``), bo tę samą zmianę widzi krok pytest
+    i to ją agent sprawdza przed commitem."""
 
     if repo.is_ancestor(ROOT, base, "HEAD"):
         return [], False
     name = f"testy struktury po mergu z {base}"
     try:
-        merged = repo.merge_tree(ROOT, "HEAD", base)
+        checkout = repo.working_tree_commit(ROOT, "szybko: drzewo robocze")
+        merged = repo.merge_tree(ROOT, checkout, base)
     except subprocess.CalledProcessError as error:
-        reason = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
+        reason = (str(error.stderr or "").strip().splitlines() or [f"kod {error.returncode}"])[0]
         return [_failing(ROOT, name, f"git merge-tree z {base}: {reason}")], False
     if merged.conflicts:
         print(f"UWAGA: merge z {base} ma konflikt w {', '.join(merged.conflicts)}; testy struktury biegną na HEAD", flush=True)
         return [], False
     author = ("-c", "user.name=szybko", "-c", "user.email=szybko@localhost")
-    merge = repo.git(ROOT, *author, "commit-tree", merged.tree, "-p", "HEAD", "-p", base, "-m", f"szybko: HEAD z {base}").strip()
+    merge = repo.git(ROOT, *author, "commit-tree", merged.tree, "-p", checkout, "-p", base, "-m", f"szybko: drzewo robocze z {base}").strip()
     copy = copies.enter_context(potomne.commit_copy(ROOT, merge))
     return [pytest_step(copy, name, (*STRUCTURE, "-n", str(_merge_workers())))], True
 

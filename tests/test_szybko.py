@@ -743,6 +743,28 @@ def test_konflikt_z_baza_jest_uwaga_a_nie_porazka(tmp_path: Path) -> None:
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "SZYBKO OK"), answered.stdout
 
 
+@pytest.mark.parametrize("change", ["zacommitowana", "niezacommitowana", "nieśledzona"])
+def test_testy_struktury_na_mergu_widza_zmiane_z_drzewa_roboczego(tmp_path: Path, change: str) -> None:
+    # Test struktury pada na pliku uwagi/ z treścią „łamie”; nazwa katalogu jest złożona, żeby graf nie wiązał z nim
+    # testu, który wtedy biegłby też na HEAD; zapadki z tym samym ciałem biegną na HEAD.
+    breaks = (
+        "notes = Path(__file__).parents[1] / ('uw' + 'agi')\n"
+        "    found = [p for p in notes.glob('*.md') if p.read_text(encoding='utf-8') == 'łamie\\n']\n"
+        "    assert Path(__file__).name == 'test_zapadki.py' or not found"
+    )
+    repo = _repo(tmp_path, structure=breaks)
+    _base_moved_on(repo, ("docs/z-main.md", "z main\n"), ("uwagi/notatka.md", "z gałęzi\n"))
+    _write(repo, "uwagi/nowa.md" if change == "nieśledzona" else "uwagi/notatka.md", "łamie\n")
+    if change == "zacommitowana":
+        commit(repo, "zmiana łamie strukturę")
+
+    answered = _szybko(repo)
+
+    assert (answered.returncode, _verdict(answered)) == (1, "SZYBKO FAIL | testy struktury po mergu z origin/main"), answered.stdout
+    # Drzewo robocze trafia do mergu przez tymczasowy indeks, więc indeks checkoutu zostaje taki, jaki był.
+    assert git(repo, "diff", "--cached", "--name-only") == ""
+
+
 def test_przy_konflikcie_z_baza_testy_struktury_biegna_na_head(tmp_path: Path) -> None:
     # Pada każdy test struktury poza zapadkami, które biegną na HEAD zawsze.
     repo = _repo(tmp_path, structure="assert Path(__file__).name == 'test_zapadki.py'")
