@@ -472,7 +472,29 @@ def test_znane_luki_zakazu_tresci_z_wydania_przechodza_przez_ruff_i_mypy(tmp_pat
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_TRESCI_Z_WYDANIA)")
 
 
+_GLOWA_ODCZYTU = (
+    "from rozliczenia.worker_reports import OrderKey, ReportInputs\n"
+    "from rozliczenia.worker_reports._reading import read_window\n\n\n"
+    "def zlecenia(inputs: ReportInputs) -> frozenset[OrderKey]:\n"
+)
+# Raporty wykonawców Wpisania raportów z odczytu okna bez nazwy ReadReport: moduł pakietu spoza właścicieli (sonda
+# przeglądu #2114 r1 W1, ``read_window(inputs).reports`` bez Wpisów na życzenie); odczyt → kod, który go odrzuca.
+DROGI_RAPORTOW_PRZEZ_ODCZYT = {
+    "pole odczytu okna z Raportami wykonawców (#2114 r1 W1)": (
+        _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read_window(inputs).reports for entry in report.entries)\n",
+        "attr-defined",
+    ),
+    "prywatne pole odczytu okna z Raportami wykonawców Wpisania": (
+        _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read_window(inputs)._entering for entry in report.entries)\n",
+        "SLF001",
+    ),
+}
 ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
+    "zakaz zna tylko nazwę klasy, nie pola obiektów dopasowania: Raport wykonawcy Zlecenia dopisanego z raportu": (
+        _GLOWA_ODCZYTU
+        + "    added = read_window(inputs).match(inputs.requested).added\n"
+        + "    return frozenset(OrderKey(entry.number, found.day, found.worker) for found in added for entry in found.report.entries)\n"
+    ),
     "zakaz zna tylko nazwę klasy, nie zawężenie unii: wykluczenie pozostałych odczytów maila": (
         "from rozliczenia.worker_reports import MailRead, OrderNumber, ReadStranger, ReadUnreadable\n\n\n"
         "def numery(mails: tuple[MailRead, ...]) -> set[OrderNumber]:\n"
@@ -497,15 +519,25 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     | import względny w pakiecie: ``from ._model import ReadReport`` (#2068 r1 W2, #2085 r1 W1 i r2 W1, ``_figures.py``) | łapie | ``SAMPLES`` |
     | import z pakietu: ``from .worker_reports import MailRead, ReadReport`` (Logi kliknięcia w ``report_entering.py``) | łapie | ``SAMPLES`` |
     | atrybut pakietu pod aliasem: ``isinstance(read, reports.ReadReport)`` | łapie | ``SAMPLES`` |
+    | pole odczytu okna: ``read_window(inputs).reports`` (#2114 r1 W1) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
+    | prywatne pole odczytu okna: ``read_window(inputs)._entering`` | ruff ``SLF001`` | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | wykluczenie pozostałych odczytów: ``not isinstance(read, (ReadUnreadable, ReadStranger))`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
     | refleksja po nazwie: ``getattr(read, "entries", ())``, ``type(read).__name__`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | pole obiektu dopasowania: ``Addition.report`` z ``WindowRead.match(…).added`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
 
     Poza ``src/`` zakaz nie obowiązuje: próba skrzynki raportów w ``tools/`` czyta każdy mail osobno."""
-    probe = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
+    probe = SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "sonda_luki.py"
+    probki = {opis: kod for opis, (kod, _) in DROGI_RAPORTOW_PRZEZ_ODCZYT.items()} | ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM
 
-    zgloszenia = ruff_i_mypy(zapisz(ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM, tmp_path), sonda=probe)
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=probe)
 
-    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM)")
+    przepuszczone = {
+        opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_RAPORTOW_PRZEZ_ODCZYT.items() if not any(odmowa in z for z in zgloszenia[opis])
+    }
+    assert przepuszczone == {}, "odczyt okna znów daje Raporty wykonawców modułowi spoza właścicieli: daj mu fakt odczytu"
+    assert_znane_luki(
+        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM}, "tests/test_zakazy_ruff.py (ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM)"
+    )
 
 
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,

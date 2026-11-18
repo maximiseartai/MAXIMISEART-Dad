@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from ..report_cells import OrderRow
-from . import _entries, _matching, _subject
+from . import _corrections, _entries, _matching, _subject
 from ._model import (
     Login,
     MailId,
@@ -21,6 +21,7 @@ from ._model import (
     ReadStranger,
     ReadUnreadable,
     RegisterOrder,
+    ReportProblem,
     ReportEntry,
     ReportInputs,
     ReportSubject,
@@ -48,34 +49,48 @@ class WindowRead:
 
     Wpis na życzenie przy raporcie z błędem tematu (ADR 0041) ma kształt Wpisu Raportu wykonawcy z dniem zlecenia w
     temacie: ``offers`` to Wpis na życzenie przy wierszu każdego zlecenia, o którym decyduje Wpis takiego raportu,
-    gdy Centrum wie, co wpisać (``_offers``), a ``requested`` to Wpisy, przy których tata kliknął (``inputs.requested``), jako Raporty wykonawcy
-    tego maila z dniem decyzji (``_requested``), które ``entering`` stawia wśród Raportów wykonawców po kolei."""
+    gdy Centrum wie, co wpisać (``_offers``), a Wpisy, przy których tata kliknął (``inputs.requested``), są Raportami
+    wykonawcy tego maila z dniem decyzji (``_requested``) wśród Raportów wykonawców Wpisania raportów.
+
+    Raporty wykonawców Wpisania raportów (``_entering``: z dniem z tematu i Wpisy na życzenie, po kolei maili, więc
+    późniejszy mail wygrywa z Wpisem na życzenie jak z każdym Wpisem wcześniejszego) zna tylko ten odczyt: moduł pakietu
+    dostaje z nich fakty (``said``) albo krok Wpisania (``match``, ``uncorrected``, ``standing``), a nie same raporty,
+    bo własne przejście po nich nie zna raportu z błędem tematu."""
 
     mails: tuple[MailRead, ...]
     strangers: tuple[UnknownSender, ...]
-    reports: tuple[ReadReport, ...]
     board: _matching.Board
     reported: tuple[tuple[Login, date], ...]
     faulty: tuple[tuple[ReadUnreadable, frozenset[date]], ...]
     mistaken: tuple[tuple[Login, date, date], ...]
     faulty_entries: frozenset[OrderKey]
     offers: Mapping[OrderRow, Requestable]
-    requested: tuple[ReadReport, ...]
     overtaken: tuple[OvertakenSubject, ...]
-
-    @property
-    def entering(self) -> tuple[ReadReport, ...]:
-        """Raporty wykonawców Wpisania raportów: ``reports`` i ``requested`` w kolejności maili, więc późniejszy mail
-        wygrywa z Wpisem na życzenie jak z każdym Wpisem wcześniejszego."""
-
-        return tuple(sorted((*self.reports, *self.requested), key=_mail_order))
+    _entering: tuple[ReadReport, ...]
 
     @property
     def said(self) -> frozenset[OrderKey]:
-        """Zlecenia (numer, dzień, Wykonawca) z Wpisem w Raporcie wykonawcy Wpisania raportów (``entering``): z dniem
-        z tematu, a Wpis na życzenie przy raporcie z błędem tematu z dniem decyzji taty."""
+        """Zlecenia (numer, dzień, Wykonawca) z Wpisem w Raporcie wykonawcy Wpisania raportów: z dniem z tematu, a Wpis
+        na życzenie przy raporcie z błędem tematu z dniem decyzji taty."""
 
-        return frozenset(OrderKey(entry.number, report.day, report.worker) for report in self.entering for entry in report.entries)
+        return frozenset(OrderKey(entry.number, report.day, report.worker) for report in self._entering for entry in report.entries)
+
+    def match(self, requested: Iterable[RequestedEntry]) -> _matching.Matched:
+        """Zwycięski Wpis każdego zlecenia z Raportów wykonawców Wpisania raportów (``Board.match``)."""
+
+        return self.board.match(self._entering, requested)
+
+    def uncorrected(self, additions: Iterable[_matching.Addition]) -> tuple[_matching.Addition, ...]:
+        """Zlecenia dopisane z raportu, którego nie poprawił późniejszy Raport wykonawcy (``_corrections.uncorrected``)."""
+
+        return _corrections.uncorrected(additions, self._entering, self.board)
+
+    def standing(
+        self, problems: Iterable[ReportProblem], added: Mapping[OrderNumber, tuple[datetime, MailId]]
+    ) -> set[ReportProblem]:
+        """Problemy, których nie zdjął poprawiony mail Wykonawcy (``_corrections.standing``)."""
+
+        return _corrections.standing(problems, self._entering, self.faulty, self.board, added)
 
 
 def worker_report_count(mails: Iterable[MailRead]) -> int:
@@ -156,9 +171,8 @@ def read_window(inputs: ReportInputs) -> WindowRead:
         for found, takers in overtaken.items()
         for day in sorted(shown[found])
     )
-    return WindowRead(
-        mails, tuple(strangers), reports, board, tuple(reported), faulty, tuple(mistaken), entries, offers, requested, taken
-    )
+    entering = tuple(sorted((*reports, *requested), key=_mail_order))
+    return WindowRead(mails, tuple(strangers), board, tuple(reported), faulty, tuple(mistaken), entries, offers, taken, entering)
 
 
 def _days(board: _matching.Board, report: ReadReport) -> frozenset[date]:

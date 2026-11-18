@@ -16,7 +16,7 @@ chmurze.
 
 from __future__ import annotations
 
-from . import _cells, _corrections, _descriptions, _figures, _moves, _reading
+from . import _cells, _descriptions, _figures, _moves, _reading
 from ._model import (
     ADDED_DIGITS,
     SUBJECT_WORD,
@@ -223,7 +223,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     z błędu Wykonawcy znika, gdy Wykonawca przyśle poprawiony mail (``_corrections.standing``). Decyzja taty Wpisu na
     życzenie (``inputs.requested``) wpisuje Wpis ze znakiem zamiast ``tak``/``nie`` jak Wpis z chwilą kliknięcia
     (``_matching.Board.match``), a Wpis raportu z błędem tematu jak Wpis Raportu wykonawcy z dniem zlecenia w temacie
-    (``WindowRead.entering``); zlecenie z Wpisem raportu z błędem tematu ma Wpis na życzenie, gdy Centrum wie, co
+    (``WindowRead.match``); zlecenie z Wpisem raportu z błędem tematu ma Wpis na życzenie, gdy Centrum wie, co
     wpisać (``WindowRead.offers``), a raport z błędem tematu, z którego nie ma już czego wpisać, jest informacją przy
     swoim dniu, nie problemem (``WindowRead.overtaken``).
     """
@@ -231,10 +231,10 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     window = inputs.window
     orders = tuple(inputs.orders)
     read = _reading.read_window(inputs)
-    mails, reports, board = read.mails, list(read.entering), read.board
+    mails = read.mails
     problems: list[ReportProblem] = list(read.strangers)
-    matched = board.match(reports, inputs.requested)
-    additions = _corrections.uncorrected(matched.added, reports, board)
+    matched = read.match(inputs.requested)
+    additions = read.uncorrected(matched.added)
     described = _descriptions.entered(inputs.legend, matched.entered, additions)
     moved = _moves.moved(matched.accepted, additions, orders, inputs.memory, window)
     after = {order.row: order for order in moved.orders}
@@ -243,7 +243,7 @@ def enter_reports(inputs: ReportInputs) -> ReportsOutcome:
     added = {OrderKey(found.number, found.day, found.worker): found for found in additions}
     memory = _cells.with_added(memory, ((key, found.verdict, found.activities) for key, found in added.items()))
     newest = {found.number: (found.arrived, found.mail) for found in additions}
-    standing = _corrections.standing([*problems, *matched.problems, *described], reports, read.faulty, board, newest)
+    standing = read.standing([*problems, *matched.problems, *described], newest)
     problems_found = tuple(sorted({*standing, *differences}, key=problem_order))
     said = frozenset(key for key in read.said if window.opens(key.day))
     reported = [(day, worker) for worker, day in read.reported if window.opens(day)]
