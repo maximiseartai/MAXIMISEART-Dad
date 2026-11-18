@@ -434,3 +434,35 @@ def test_shellcheck_akcji_sprawdza_skrypty_bash_i_sh_akcji_zlozonych_i_podaje_ic
         ".github/actions/x/action.yml:12: error: sh echo ZLE [SC1000]",
     ]
     assert broken == [".github/actions/x/action.yml:6: shellcheck 3: ", ".github/actions/x/action.yml:12: shellcheck 3: "]
+
+
+# Jedyny workflow, którego token może ustawić status commita: każdy jego job biegnie kodem `main` i nie uruchamia kodu
+# PR, a status „Werdykt i bramka”, który wymaga ruleset, może ustawić każdy token z prawem statuses: write.
+STATUS_WORKFLOW = ROOT / ".github" / "workflows" / "werdykt-i-bramka.yml"
+
+
+def _grants_statuses(permissions: object) -> bool:
+    """Czy ``permissions:`` workflow albo joba daje tokenowi zapis statusów: ``statuses: write`` albo ``write-all``."""
+
+    if isinstance(permissions, str):
+        return permissions == "write-all"
+    return isinstance(permissions, dict) and permissions.get("statuses") == "write"
+
+
+def test_prawo_zapisu_statusow_commitu_ma_tylko_workflow_werdyktu_i_bramki() -> None:
+    """Każdy workflow ma ``permissions:`` na górze (bez niego token dostaje prawa domyślne repozytorium), a
+    ``statuses: write`` albo ``write-all`` stoi tylko w ``werdykt-i-bramka.yml``, na górze albo w jobie: workflow PR
+    i workflow, który uruchamia kod PR, nie ustawią statusu „Werdykt i bramka” na swoim HEAD."""
+
+    workflows = {path: yaml.safe_load(path.read_text(encoding="utf-8")) for path in sorted((ROOT / ".github" / "workflows").glob("*.y*ml"))}
+    granted = [
+        path.name
+        for path, workflow in workflows.items()
+        if _grants_statuses(workflow.get("permissions")) or any(_grants_statuses(job.get("permissions")) for job in workflow["jobs"].values())
+    ]
+
+    assert sorted(path.name for path, workflow in workflows.items() if "permissions" not in workflow) == [], "dopisz permissions: na górze workflow"
+    assert granted == [STATUS_WORKFLOW.name], (
+        f"statuses: write ma tylko {STATUS_WORKFLOW.name}, którego joby biegną kodem main: status ustaw stamtąd z danych, "
+        "które ten workflow zapisuje (wzór: artefakt scalenia.yml i tools/ci/status_scalenia.py --publikuj-z)"
+    )
