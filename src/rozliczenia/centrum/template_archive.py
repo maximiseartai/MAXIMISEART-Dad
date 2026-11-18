@@ -4,26 +4,31 @@ bajtów (``asset_name``). Ta sama nazwa to więc te same bajty, a nowa wersja Wz
 wysyła do Archiwum okresu raz (``outbox``).
 
 Wzorzec to cały skoroszyt, którego nie da się zamaskować jak tekstu, więc sprawdzenie odmawia (``TemplateRefused``)
-zamiast maskować, a Logi dostają uwagę z nazwą Wzorca i powodem, bez wartości. Tabela postaci:
+zamiast maskować, a Logi dostają uwagę z nazwą Wzorca i powodem, bez wartości. Każdy tekst i każda wartość atrybutu
+każdej części XML pakietu przechodzi przez strażnika reguły danych (``client_data.guarded``, liczba komórki przez
+``guarded_number``), a każda maska albo uwaga to odmowa; bez strażnika idzie tylko to, co Maks przepuścił (ADR 0025).
+Tabela postaci:
 
 | Postać | Przykład | Wynik |
 |---|---|---|
 | wartość (nie formuła) pod nagłówkiem zakazanej kolumny reguły danych (``client_data.forbidden_columns``) w każdym arkuszu | ``Kwiatowa 5`` w B18 pod ``ADRES`` w B17 | odmowa ``ADDRESS`` albo ``ORANGE`` |
 | liczba pod takim nagłówkiem | ``123456789`` w I18 pod ``NUMER UMOWY/ZLECENIA ORANGE`` | odmowa ``ORANGE`` |
 | wartość w kolumnie B albo I pod wierszem nagłówka Wzorca o układzie Pliku zbiorczego, także pod innym nagłówkiem (``workbook_files.FORBIDDEN_POSITIONS``) | ``Kwiatowa 5`` w B18 pod ``MIEJSCE`` | odmowa ``ADDRESS`` |
-| formuła pod takim nagłówkiem, z wynikiem albo bez | ``=A18`` w B18 | przechodzi |
-| tekst komórki, komentarza, pamięci łącza zewnętrznego, nazwy arkusza albo właściwości dokumentu z zakazaną wartością pamięci pracy Centrum | ``Kwiatowa 5`` w C3, gdy praca przeczytała ten ``ADRES`` | odmowa ``FORBIDDEN`` |
-| taki tekst z telefonem albo ulicą (strażnik ``client_data.guarded`` by go zmienił) | ``tel. 600 123 456`` w C3 | odmowa ``FREE_TEXT`` |
-| liczba komórki (nie formuły) albo pamięci łącza zewnętrznego z zakazaną wartością albo telefonem (``guarded_number``) | ``600123456`` w C3 | odmowa ``FORBIDDEN`` albo ``FREE_TEXT`` |
-| część pakietu spoza ``_READ_PARTS`` i ``_STRUCTURE_PARTS`` | obraz ``xl/media/image1.png``, tabela przestawna | odmowa ``UNKNOWN_PART`` |
+| formuła pod takim nagłówkiem, z wynikiem albo bez (jej tekst idzie przez strażnika jak każdy) | ``=A18`` w B18 | przechodzi |
+| tekst z zakazaną wartością pamięci pracy Centrum w dowolnym miejscu XML: komórka, formuła, tekst wspólny (także na granicy przebiegów formatowania), komentarz, nagłówek i stopka wydruku (tak, jak je pokazuje Excel, ``_shown_header``), podpowiedź hiperłącza, cel relacji (``mailto:``), lista walidacji danych, nazwa arkusza, właściwości dokumentu, pamięć łącza zewnętrznego, każdy atrybut | ``=IF(A1="Kwiatowa 5",1,0)``, gdy praca przeczytała ten ``ADRES`` | odmowa ``FORBIDDEN`` |
+| taki tekst z telefonem albo ulicą (strażnik ``client_data.guarded`` by go zmienił) | ``&Ctel. 600 123 456`` w stopce | odmowa ``FREE_TEXT`` |
+| liczba komórki (także wynik formuły) albo pamięci łącza zewnętrznego z zakazaną wartością albo telefonem (``guarded_number``) | ``600123456`` w C3 | odmowa ``FORBIDDEN`` albo ``FREE_TEXT`` |
+| nieznany kod nagłówka albo stopki wydruku | ``&Q`` | odmowa ``UNREADABLE`` |
+| część pakietu spoza ``_KNOWN_PARTS`` | obraz ``xl/media/image1.png``, tabela przestawna | odmowa ``UNKNOWN_PART`` |
 | plik, który nie jest pakietem zip, albo część z uszkodzonym XML | ``b"nie zip"`` | odmowa ``UNREADABLE`` |
-| granica: wynik formuły, liczba i tekst | ``SUMA`` w AU18 | przechodzi bez sprawdzenia |
-| granica: cel łącza zewnętrznego (ścieżka pliku), stawki z wiersza 14, ustawienia drukarki | | przechodzą (decyzja Maksa) |
+| wyjątek (decyzja Maksa): cel łącza zewnętrznego, ``Target`` relacji ``externalLinkPath`` w ``xl/externalLinks/_rels`` (``_allowed``) | ``file:///C:/Users/…/cennik.xlsx`` | przechodzi bez strażnika |
+| wyjątek (decyzja Maksa): stawki z wiersza 14 wychodzą razem z Wzorcem | ``45,5`` w N14 | przechodzą przez strażnika liczby jak każda liczba |
+| granica: ustawienia drukarki (część binarna ``_BINARY``) | ``xl/printerSettings/printerSettings1.bin`` | przechodzą nieczytane |
 | granica: wartość nad nagłówkiem zakazanej kolumny | ``Kwiatowa 5`` w B3 nad ``ADRES`` w B17 | tylko strażnik tekstu |
 
-Skan arkuszy pakietu (setki tysięcy komórek Wzorca pliku zbiorczego) nie zależy od pamięci reguły danych, więc
-``TemplateChecks`` robi go raz na wersję Wzorca (SHA-256) w pracy Centrum i zapamiętuje jego wynik z tekstami i liczbami,
-które przy każdym następnym sprawdzeniu przechodzą przez strażnika z bieżącą pamięcią.
+Skan pakietu (setki tysięcy komórek i atrybutów Wzorca pliku zbiorczego) nie zależy od pamięci reguły danych, więc
+``TemplateChecks`` robi go raz na wersję Wzorca (SHA-256) w pracy Centrum i zapamiętuje jego teksty i liczby, a
+strażnik przechodzi je znowu tylko wtedy, gdy pamięć poznała nową wartość od poprzedniego sprawdzenia tej wersji.
 
 Wzorzec, który przeszedł, to ``ArchivedTemplate``: dają go tylko ``TemplateChecks.checked`` i, z pliku Kolejki wysyłki,
 ``from_queue`` (prawo właściciela ma ``outbox``), a plik kolejki bierze tylko jego dokładny typ (``outbox._queue_text``).
@@ -31,8 +36,7 @@ Wzorzec, który przeszedł, to ``ArchivedTemplate``: dają go tylko ``TemplateCh
 
 from __future__ import annotations
 
-from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import hashlib
 import io
@@ -54,6 +58,7 @@ from rozliczenia.client_data import (
     forbidden_columns,
     guarded,
     guarded_number,
+    remembered,
     tool,
 )
 from rozliczenia.text import normalize_text
@@ -187,8 +192,13 @@ class TemplateChecks:
     raz na wersję Wzorca (docstring modułu), pod zamkiem, bo Logi powstają w wątkach Uruchomień."""
 
     def __init__(self, forbidden: ForbiddenValues) -> None:
+        """``_verdicts``: wynik strażnika dla wersji Wzorca i liczby wartości pamięci (``client_data.remembered``), przy
+        której go policzył; pamięć tylko rośnie, więc ta sama liczba to ta sama pamięć, a strażnik nie przechodzi
+        drugi raz setek tysięcy tekstów Wzorca pliku zbiorczego, gdy praca nie poznała nowej wartości."""
+
         self._forbidden = forbidden
         self._scans: dict[str, _Scan] = {}
+        self._verdicts: dict[tuple[str, int], Refusal | None] = {}
         self._lock = threading.Lock()
 
     def checked(self, file: str, content: bytes) -> ArchivedTemplate | TemplateRefused:
@@ -197,11 +207,14 @@ class TemplateChecks:
         if file not in _TEMPLATE_FILES:
             raise ValueError(f"{file} nie jest Wzorcem z config")
         sha256 = hashlib.sha256(content).hexdigest()
+        key = (sha256, remembered(self._forbidden))
         with self._lock:
             scan = self._scans.get(sha256)
             if scan is None:
                 scan = self._scans[sha256] = _scanned(content, collective=file in _COLLECTIVE_LAYOUT)
-        refusal = scan.refusal or self._guarded(scan)
+            if key not in self._verdicts:
+                self._verdicts[key] = scan.refusal or self._guarded(scan)
+            refusal = self._verdicts[key]
         if refusal is not None:
             return TemplateRefused(file, refusal)
         return ArchivedTemplate(tool(asset_name(sha256)), tool(file), content, _CHECKED)
@@ -222,28 +235,48 @@ class TemplateChecks:
 
 _MAIN: Final = "{http://schemas.openxmlformats.org/spreadsheetml/2006/main}"
 _SHEET: Final = re.compile(r"xl/worksheets/sheet\d+\.xml")
-_READ_PARTS: Final = (
-    re.compile(r"xl/sharedStrings\.xml"),
-    _SHEET,
-    re.compile(r"xl/comments\d+\.xml|xl/comments/comment\d+\.xml"),
-    re.compile(r"xl/externalLinks/externalLink\d+\.xml"),
-    re.compile(r"xl/drawings/(?:vmlDrawing|commentsDrawing)\d+\.vml"),
-    re.compile(r"xl/workbook\.xml"),
-    re.compile(r"docProps/(?:core|app|custom)\.xml"),
-)
-"""Części pakietu z tekstem albo liczbami, które sprawdzenie czyta; każdy ich tekst przechodzi przez strażnika. Komentarze
-i ich rysunek mają nazwy, które daje Excel (``xl/comments1.xml``), i nazwy, które daje openpyxl
-(``xl/comments/comment1.xml``)."""
-_STRUCTURE_PARTS: Final = (
+_BINARY: Final = re.compile(r"xl/printerSettings/printerSettings\d+\.bin")
+"""Jedyna część pakietu, której sprawdzenie nie czyta: ustawienia drukarki (struktura ``DEVMODE`` sterownika), bez
+tekstu taty."""
+_KNOWN_PARTS: Final = (
     re.compile(r"\[Content_Types\]\.xml"),
     re.compile(r"(?:.+/)?_rels/[^/]*\.rels"),
-    re.compile(r"xl/theme/theme\d+\.xml"),
+    re.compile(r"xl/workbook\.xml"),
+    _SHEET,
+    re.compile(r"xl/sharedStrings\.xml"),
     re.compile(r"xl/styles\.xml"),
+    re.compile(r"xl/theme/theme\d+\.xml"),
     re.compile(r"xl/calcChain\.xml"),
-    re.compile(r"xl/printerSettings/printerSettings\d+\.bin"),
+    re.compile(r"xl/comments\d+\.xml|xl/comments/comment\d+\.xml"),
+    re.compile(r"xl/drawings/(?:vmlDrawing|commentsDrawing)\d+\.vml"),
+    re.compile(r"xl/externalLinks/externalLink\d+\.xml"),
+    re.compile(r"docProps/(?:core|app|custom)\.xml"),
+    _BINARY,
 )
-"""Części pakietu bez treści taty (układ, style, kolejność przeliczania, ustawienia drukarki, relacje); relacje niosą cel
-łącza zewnętrznego, który idzie razem z Wzorcem (decyzja Maksa)."""
+"""Części pakietu, które sprawdzenie zna; każda poza ``_BINARY`` to XML, którego każdy tekst i każda wartość atrybutu
+przechodzi przez strażnika. Komentarze i ich rysunek mają nazwy, które daje Excel (``xl/comments1.xml``), i nazwy, które
+daje openpyxl (``xl/comments/comment1.xml``)."""
+_EXTERNAL_LINK_RELS: Final = re.compile(r"xl/externalLinks/_rels/externalLink\d+\.xml\.rels")
+_EXTERNAL_LINK_PATH: Final = ("/externalLinkPath", "/xlPathMissing")
+"""Typy relacji z celem łącza zewnętrznego (ścieżką skoroszytu, do którego prowadzi): jedyny tekst Wzorca, który idzie bez
+strażnika (decyzja Maksa, ADR 0025)."""
+_CELLS: Final = frozenset({"c", "cell"})
+"""Komórka arkusza i komórka pamięci łącza zewnętrznego: liczba w jej ``<v>`` przechodzi przez strażnika liczby."""
+_JOINED: Final = frozenset({"si", "is", "comment"})
+"""Tekst złożony z kilku przebiegów formatowania (tekst wspólny, tekst w komórce, komentarz): strażnik dostaje go też
+w całości, bo telefon albo wartość mogą stać na granicy dwóch przebiegów."""
+
+
+@dataclass
+class _Found:
+    """Teksty i liczby pakietu do strażnika, każdy raz."""
+
+    texts: set[str] = field(default_factory=set)
+    numbers: set[float] = field(default_factory=set)
+
+    def add(self, text: str | None) -> None:
+        if text and text.strip():
+            self.texts.add(text)
 
 
 def _scanned(content: bytes, *, collective: bool) -> _Scan:
@@ -253,20 +286,17 @@ def _scanned(content: bytes, *, collective: bool) -> _Scan:
             if any(not _known(name) for name in names):
                 return _Scan(Refusal.UNKNOWN_PART)
             shared = _shared_strings(package) if "xl/sharedStrings.xml" in names else ()
-            texts: list[str] = list(shared)
-            numbers: list[float] = []
+            found = _Found()
             for name in names:
-                if _SHEET.fullmatch(name):
-                    refusal = _sheet(package, name, shared, texts, numbers, collective=collective)
-                    if refusal is not None:
-                        return _Scan(refusal)
-                elif name.startswith("xl/externalLinks/"):
-                    _external(package, name, texts, numbers)
-                elif name != "xl/sharedStrings.xml" and any(part.fullmatch(name) for part in _READ_PARTS):
-                    texts += _all_text(package, name)
+                if name.endswith("/") or _BINARY.fullmatch(name):
+                    continue
+                columns = _Columns.of(collective=collective) if _SHEET.fullmatch(name) else None
+                refusal = _part(package, name, shared, found, columns)
+                if refusal is not None:
+                    return _Scan(refusal)
     except _UNREADABLE:
         return _Scan(Refusal.UNREADABLE)
-    return _Scan(None, tuple(dict.fromkeys(text for text in texts if text)), tuple(dict.fromkeys(numbers)))
+    return _Scan(None, tuple(sorted(found.texts)), tuple(sorted(found.numbers)))
 
 
 _UNREADABLE: Final = (
@@ -285,21 +315,91 @@ nieistniejącego tekstu wspólnego, kompresja albo szyfrowanie, którego ``zipfi
 
 
 def _known(name: str) -> bool:
-    return name.endswith("/") or any(part.fullmatch(name) for part in (*_READ_PARTS, *_STRUCTURE_PARTS))
+    return name.endswith("/") or any(part.fullmatch(name) for part in _KNOWN_PARTS)
 
 
-def _elements(package: zipfile.ZipFile, name: str) -> Iterator[Element]:
+def _part(
+    package: zipfile.ZipFile, name: str, shared: tuple[str, ...], found: _Found, columns: _Columns | None
+) -> Refusal | None:
+    """Część XML ``name``: każdy tekst (także ogon elementu) i każda wartość atrybutu do ``found``, liczba komórki do
+    liczb, a w arkuszu (``columns``) odmowa za wartość w zakazanej kolumnie. Poza celem łącza zewnętrznego
+    (``_allowed``) nic nie idzie bez strażnika. Element komórki i tekstu złożonego (``_CELLS``, ``_JOINED``) czyści się
+    dopiero z nim, bo jego dzieci są potrzebne w całości."""
+
+    held = 0
+    cells: list[str] = []
     with package.open(name) as part:
-        for _, element in iterparse(part):
-            yield element
+        for event, element in iterparse(part, events=("start", "end")):
+            local = element.tag.rpartition("}")[2]
+            if event == "start":
+                cells += [element.get("t", "n")] if local in _CELLS else []
+                held += local in _CELLS or local in _JOINED
+                continue
+            if local == "v" and cells and cells[-1] == "n" and element.text:
+                found.numbers.add(float(element.text))
+            else:
+                found.add(element.text)
+            found.add(element.tail)
+            for key, value in element.attrib.items():
+                if not _allowed(name, element, key):
+                    found.add(value)
+            if local in _JOINED:
+                found.add("".join(element.itertext()))
+            if local in _HEADER_FOOTER and element.text:
+                found.add(_shown_header(element.text))
+            if local in _CELLS:
+                cells.pop()
+                refusal = None if columns is None or local != "c" else columns.refusal(element, shared)
+                if refusal is not None:
+                    return refusal
+            held -= local in _CELLS or local in _JOINED
+            if not held:
+                element.clear()
+    return None
+
+
+_HEADER_FOOTER: Final = frozenset({"oddHeader", "oddFooter", "evenHeader", "evenFooter", "firstHeader", "firstFooter"})
+_HEADER_CODE: Final = re.compile(
+    r"&(?:(?P<amp>&)|(?P<part>[LCR])|(?P<field>[PN](?:[+-]\d+)?|[DTFAZG])|(?P<format>[BIUESXYOH]|K(?:[0-9A-Fa-f]{6}|\d{2}[+-]\d{3})|\"[^\"]*\"|\d+))"
+)
+"""Kod nagłówka i stopki wydruku Excela: ``&&`` to ``&``, część (``&L``, ``&C``, ``&R``) i pole (strona, data, plik,
+arkusz, obraz) to osobny tekst, a formatowanie (pogrubienie, kolor, czcionka, rozmiar) niczego nie pokazuje."""
+
+
+def _shown_header(text: str) -> str:
+    """Nagłówek albo stopka wydruku tak, jak je pokazuje Excel: kod formatowania usunięty, część i pole jako koniec linii,
+    bo kod sklejony ze słowem (``&LSyntetyczna``) ukryłby słowo przed strażnikiem; nieznany kod to ``ValueError``
+    (pakiet nieczytelny), a nie tekst bez sprawdzenia."""
+
+    shown: list[str] = []
+    position = 0
+    for code in _HEADER_CODE.finditer(text):
+        shown.append(text[position : code.start()])
+        shown.append("&" if code["amp"] else "" if code["format"] else "\n")
+        position = code.end()
+    rest = text[position:]
+    if "&" in rest or any("&" in piece for piece in shown[::2]):
+        raise ValueError("nieznany kod nagłówka wydruku")
+    return "".join(shown) + rest
+
+
+def _allowed(name: str, element: Element, key: str) -> bool:
+    """Cel łącza zewnętrznego w relacjach pamięci łącza (``_EXTERNAL_LINK_PATH``): idzie bez strażnika."""
+
+    return (
+        key == "Target"
+        and _EXTERNAL_LINK_RELS.fullmatch(name) is not None
+        and element.get("Type", "").endswith(_EXTERNAL_LINK_PATH)
+    )
 
 
 def _shared_strings(package: zipfile.ZipFile) -> tuple[str, ...]:
     found: list[str] = []
-    for element in _elements(package, "xl/sharedStrings.xml"):
-        if element.tag == f"{_MAIN}si":
-            found.append(_text_of(element))
-            element.clear()
+    with package.open("xl/sharedStrings.xml") as part:
+        for _, element in iterparse(part):
+            if element.tag == f"{_MAIN}si":
+                found.append(_text_of(element))
+                element.clear()
     return tuple(found)
 
 
@@ -307,57 +407,38 @@ def _text_of(element: Element) -> str:
     return "".join(text.text or "" for text in element.iter(f"{_MAIN}t"))
 
 
-def _all_text(package: zipfile.ZipFile, name: str) -> list[str]:
-    """Każdy tekst i każda wartość atrybutu części ``name`` (komentarze, nazwy arkuszy, właściwości dokumentu)."""
-
-    found: list[str] = []
-    for element in _elements(package, name):
-        found += [element.text or "", element.tail or "", *element.attrib.values()]
-    return [text for text in found if text.strip()]
-
-
 _CELL_REFERENCE: Final = re.compile(r"([A-Z]{1,3})([0-9]+)")
 
 
-def _sheet(
-    package: zipfile.ZipFile,
-    name: str,
-    shared: tuple[str, ...],
-    texts: list[str],
-    numbers: list[float],
-    *,
-    collective: bool,
-) -> Refusal | None:
-    """Arkusz ``name``: odmowa za wartość pod nagłówkiem zakazanej kolumny albo ``None``, a teksty i liczby komórek bez
-    formuły do ``texts`` i ``numbers``. Komórki stoją w pliku wierszami od góry, więc nagłówek jest przed wierszami pod
-    nim."""
+@dataclass
+class _Columns:
+    """Zakazane kolumny jednego arkusza: numer kolumny → kolumna reguły danych i wiersz jej nagłówka. Komórki stoją w pliku
+    wierszami od góry, więc nagłówek jest przed wierszami pod nim."""
 
-    forbidden: dict[int, tuple[ForbiddenColumn, int]] = {}
-    if collective:
-        forbidden |= {column: (kind, collective_layout.HEADER_ROW) for kind, column in FORBIDDEN_POSITIONS}
-    for element in _elements(package, name):
-        if element.tag != f"{_MAIN}c":
-            if element.tag == f"{_MAIN}row":
-                element.clear()
-            continue
-        reference = _CELL_REFERENCE.fullmatch(element.get("r", ""))
+    forbidden: dict[int, tuple[ForbiddenColumn, int]]
+
+    @classmethod
+    def of(cls, *, collective: bool) -> _Columns:
+        positions = {column: (kind, collective_layout.HEADER_ROW) for kind, column in FORBIDDEN_POSITIONS}
+        return cls(positions if collective else {})
+
+    def refusal(self, cell: Element, shared: tuple[str, ...]) -> Refusal | None:
+        """Odmowa za wartość komórki ``cell`` pod nagłówkiem zakazanej kolumny; nagłówek takiej kolumny zapamiętuje."""
+
+        reference = _CELL_REFERENCE.fullmatch(cell.get("r", ""))
         if reference is None:
             raise ValueError("komórka bez adresu")
         column, row = column_index_from_string(reference.group(1)), int(reference.group(2))
-        value = _value(element, shared)
-        element.clear()
+        value = _value(cell, shared)
         if value is None:
-            continue
-        under = forbidden.get(column)
+            return None
+        under = self.forbidden.get(column)
         if under is not None and row > under[1]:
             return _IN_COLUMN[under[0]]
         if isinstance(value, str):
-            texts.append(value)
             for kind, _ in forbidden_columns({normalize_text(value): column}):
-                forbidden.setdefault(column, (kind, row))
-        else:
-            numbers.append(value)
-    return None
+                self.forbidden.setdefault(column, (kind, row))
+        return None
 
 
 def _value(cell: Element, shared: tuple[str, ...]) -> str | float | None:
@@ -381,19 +462,3 @@ def _value(cell: Element, shared: tuple[str, ...]) -> str | float | None:
             return stored.text
         case _:
             raise ValueError("komórka nieznanego typu")
-
-
-def _external(package: zipfile.ZipFile, name: str, texts: list[str], numbers: list[float]) -> None:
-    """Pamięć łącza zewnętrznego: nazwy arkuszy i wartości komórek skoroszytu, do którego prowadzi łącze."""
-
-    for element in _elements(package, name):
-        if element.tag == f"{_MAIN}sheetName":
-            texts.append(element.get("val", ""))
-        elif element.tag == f"{_MAIN}cell":
-            stored = element.find(f"{_MAIN}v")
-            if stored is not None and stored.text:
-                if element.get("t", "n") == "n":
-                    numbers.append(float(stored.text))
-                else:
-                    texts.append(stored.text)
-            element.clear()

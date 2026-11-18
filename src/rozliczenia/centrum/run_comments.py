@@ -28,8 +28,8 @@ zapisuje w dzienniku Centrum, a Wycena biegnie dalej.
 2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs_guard.guard_logs``, ADR 0025), z
    Wzorcami procesu, które przeszły sprawdzenie reguły danych (``template_archive.TemplateChecks``): każdy Wzorzec z
    ``config`` ma w Logach SHA-256 swoich bajtów, a Wzorzec, którego sprawdzenie nie przepuściło, uwagę w
-   ``input_copy_notes``; pierwsze sprawdzenie nowej wersji Wzorca w pracy Centrum czyta cały skoroszyt (pół sekundy na
-   Wzorcu pliku zbiorczego), każde następne tylko jego teksty;
+   ``input_copy_notes``; pierwsze sprawdzenie nowej wersji Wzorca w pracy Centrum czyta cały skoroszyt, a strażnik
+   przechodzi jego teksty znowu tylko wtedy, gdy pamięć reguły danych poznała nową wartość;
 3. plik Logów (``LogsOnDisk.write``), a potem, także gdy pliku nie dało się zapisać, te same Logi do Kolejki wysyłki
    (``comment_versions.OwnLogs``, stopień najwyższy): komentarz z podsumowaniem, plik w Archiwum Logów okresu i obok
    niego Wzorce po sprawdzeniu, każdy pod nazwą ze swojego SHA-256;

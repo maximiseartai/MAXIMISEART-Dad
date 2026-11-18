@@ -329,19 +329,23 @@ liczyło innym Wzorcem niż Uruchomienie taty.
   Logów. Plików z OneDrive narzędzie nie haszuje, bo odczyt pliku „tylko online”
   go pobiera.
 - **Wzorzec wychodzi tylko przez sprawdzenie reguły danych**
-  (`template_archive`). Skoroszytu nie da się zamaskować jak tekstu, więc
-  sprawdzenie go odrzuca: wartość, która nie jest formułą, pod nagłówkiem
-  zakazanej kolumny (a we Wzorcach z układem Pliku zbiorczego w kolumnach B i I
-  pod wierszem nagłówka), tekst albo liczba komórki, komentarza, pamięci łącza
-  zewnętrznego, nazwy arkusza albo właściwości dokumentu z zakazaną wartością z
-  pamięci pracy Centrum, z telefonem albo ulicą, część pakietu spoza znanej listy
-  (obraz, tabela przestawna) i pakiet, którego nie da się odczytać. Tabela postaci
-  z granicami stoi w docstringu modułu. Odrzucony Wzorzec nie idzie, a Logi mają
-  w `input_copy_notes` uwagę z nazwą Wzorca i powodem, bez wartości, bo
+  (`template_archive`). Skoroszytu nie da się zamaskować jak tekstu, więc każdy
+  tekst i każda wartość atrybutu każdej części XML pakietu (komórki, formuły,
+  teksty wspólne, komentarze, nagłówek i stopka wydruku tak, jak je pokazuje Excel,
+  hiperłącza i ich cele, walidacja danych, nazwy arkuszy, właściwości dokumentu,
+  pamięć łącza zewnętrznego) przechodzi przez strażnika reguły danych, a każda
+  maska albo uwaga to odmowa. Odmowę daje też wartość, która nie jest formułą, pod
+  nagłówkiem zakazanej kolumny (a we Wzorcach z układem Pliku zbiorczego w kolumnach
+  B i I pod wierszem nagłówka), część pakietu spoza znanej listy (obraz, tabela
+  przestawna) i pakiet, którego nie da się odczytać. Bez strażnika idzie tylko cel
+  łącza zewnętrznego, a nieczytana tylko część binarna z ustawieniami drukarki.
+  Tabela postaci z granicami stoi w docstringu modułu. Odrzucony Wzorzec nie idzie,
+  a Logi mają w `input_copy_notes` uwagę z nazwą Wzorca i powodem, bez wartości, bo
   `technical_notes` pokazuje karta z Logów. Kopie Wzorców Maksa (18.11.2026, tylko
-  odczyt) przechodzą wszystkie trzy; pierwsze sprawdzenie Wzorca pliku zbiorczego
-  trwa 0,45 s na Macu Maksa, następne tej samej wersji w pracy Centrum 1 ms, bo
-  skan pakietu nie zależy od pamięci.
+  odczyt) przechodzą wszystkie trzy. Na Macu Maksa pierwsze sprawdzenie Wzorca
+  pliku zbiorczego trwa 1,8 s, następne tej samej wersji przy tej samej pamięci
+  pracy Centrum 0,5 ms, a po nowej wartości pamięci 0,8 s, bo skan pakietu nie
+  zależy od pamięci, a strażnik tak.
 - **Wzorzec idzie w całości**, ze stawkami z wiersza 14 i celem łącza
   zewnętrznego (ścieżką skoroszytu, do którego prowadzi), bo odtworzenie potrzebuje
   tych samych bajtów co u taty.

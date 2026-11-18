@@ -338,6 +338,15 @@ def _longest(memory: _Words, folded: Sequence[str], index: int) -> tuple[int, Fo
                 return length, column
     return None
 
+def remembered(forbidden: ForbiddenValues) -> int:
+    """Ile wartości zna pamięć ``forbidden``. Pamięć tylko rośnie, więc ta sama liczba to ta sama pamięć, a wynik strażnika
+    dla tego samego tekstu się nie zmienia (``template_archive.TemplateChecks`` nie sprawdza drugi raz tekstów Wzorca)."""
+
+    memory = _memory(forbidden)
+    with memory.lock:
+        return len(memory.columns)
+
+
 def empty_memory() -> ForbiddenValues:
     """Pusta pamięć jednej pracy Centrum (``app.create_app``, ``CentrumWork.forbidden``) albo odtworzenia Uruchomienia."""
 

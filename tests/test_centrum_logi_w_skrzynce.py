@@ -624,7 +624,8 @@ def test_diagnoza_bez_sieci_jest_w_pliku_logow_a_w_kolejce_zastepuje_logi_bez_ni
     tmp_path: Path,
 ) -> None:
     """Bez sieci Logi z Diagnozą, nowsza wersja wysyłki Logów tego Uruchomienia, zastępują w Kolejce wysyłki Logi bez
-    niej (#846): po powrocie sieci komentarz Uruchomienia powstaje od razu z Diagnozą, bez poprawki."""
+    niej (#846): po powrocie sieci komentarz Uruchomienia powstaje od razu z Diagnozą, bez poprawki, a Wzorzec
+    Uruchomienia idzie z Logami z Diagnozą, bo plik kolejki Logów bez niej znika bez wysyłki."""
 
     centrum = watched_centrum(tmp_path)
     box(centrum).search_failure = Unreachable()
@@ -649,6 +650,8 @@ def test_diagnoza_bez_sieci_jest_w_pliku_logow_a_w_kolejce_zastepuje_logi_bez_ni
     assert (archived(centrum, comment), box(centrum).edited) == (local, [])
     assert box(centrum).sent[0].body == shown["report"]["body"]
     assert wait_for(lambda: queued_logs(centrum) == [])
+    template = centrum.configuration.worker_template.read_bytes()
+    assert box(centrum).templates(ARCHIVE) == {asset_name(hashlib.sha256(template).hexdigest()): template}
 
 
 def test_katalog_logow_bez_prawa_zapisu_nie_zmienia_diagnozy_ani_zgloszenia_a_diagnoza_idzie_do_skrzynki(

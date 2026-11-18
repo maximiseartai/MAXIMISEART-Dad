@@ -2,8 +2,9 @@
 postaci z docstringu ``rozliczenia.centrum.template_archive`` na syntetycznym Wzorcu.
 
 Wzorzec, którego sprawdzenie nie przepuściło, nie idzie do Archiwum, a Wzorzec, który przeszedł, ma nazwę ze skrótu
-swoich bajtów. Skan pakietu jest raz na wersję Wzorca, a pamięć reguły danych pracy Centrum sprawdza każde Logi, więc
-wartość, którą praca poznała po pierwszym sprawdzeniu, też zatrzymuje Wzorzec. Drogę Wzorca przez Centrum i Kolejkę
+swoich bajtów. Skan pakietu jest raz na wersję Wzorca, a strażnik z pamięcią reguły danych pracy Centrum przechodzi go
+znowu, gdy pamięć poznała nową wartość, więc wartość, którą praca poznała po pierwszym sprawdzeniu, też zatrzymuje
+Wzorzec. Drogę Wzorca przez Centrum i Kolejkę
 wysyłki do Archiwum pokazują testy w ``tests/test_centrum_logi_w_skrzynce.py``.
 """
 
@@ -17,7 +18,10 @@ from typing import Final
 import zipfile
 
 from openpyxl import Workbook
+from openpyxl.cell.rich_text import CellRichText, TextBlock
+from openpyxl.cell.text import InlineFont
 from openpyxl.comments import Comment
+from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
@@ -85,6 +89,21 @@ def _cached_formula_result(content: bytes) -> bytes:
     return _with_part(content, "xl/worksheets/sheet1.xml", cached.encode("utf-8"))
 
 
+_EXTERNAL_RELS: Final = (
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" '
+    'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/{kind}" Target="{target}" '
+    'TargetMode="External"/></Relationships>'
+)
+"""Relacje pamięci łącza zewnętrznego: cel łącza (``externalLinkPath``) albo relacja innego rodzaju z tym samym celem."""
+_PATH_WITH_PHONE: Final = "file:///C:/Users/tel 600 123 456/cennik.xlsx"
+
+
+def _external_link_rels(kind: str) -> Callable[[], bytes]:
+    return lambda: _with_part(
+        _bytes(_workbook()), "xl/externalLinks/_rels/externalLink1.xml.rels", _EXTERNAL_RELS.format(kind=kind, target=_PATH_WITH_PHONE).encode()
+    )
+
+
 _EXTERNAL: Final = (
     '<externalLink xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><externalBook>'
     '<sheetNames><sheetName val="Cennik"/></sheetNames><sheetDataSet><sheetData sheetId="0"><row r="1">'
@@ -120,6 +139,43 @@ def _comment(workbook: Workbook, sheet: Worksheet) -> None:
 
 def _creator(workbook: Workbook, sheet: Worksheet) -> None:
     workbook.properties.creator = "tel. 600 123 456"
+
+
+def _header(text: str) -> Callable[[Workbook, Worksheet], object]:
+    def change(workbook: Workbook, sheet: Worksheet) -> None:
+        header = sheet.oddHeader
+        assert header is not None
+        header.left.text = text
+
+    return change
+
+
+def _footer(workbook: Workbook, sheet: Worksheet) -> None:
+    footer = sheet.oddFooter
+    assert footer is not None
+    footer.center.text = "tel. 600 123 456"
+
+
+def _tooltip(workbook: Workbook, sheet: Worksheet) -> None:
+    sheet["C4"] = "Cennik"
+    sheet["C4"].hyperlink = "https://example.com/"
+    assert sheet["C4"].hyperlink is not None
+    sheet["C4"].hyperlink.tooltip = "tel. 600 123 456"
+
+
+def _mailto(workbook: Workbook, sheet: Worksheet) -> None:
+    sheet["C4"] = "Cennik"
+    sheet["C4"].hyperlink = "mailto:biuro@example.com?subject=tel. 600 123 456"
+
+
+def _validation(workbook: Workbook, sheet: Worksheet) -> None:
+    validation = DataValidation(type="list", formula1='"tel. 600 123 456,inne"')
+    sheet.add_data_validation(validation)
+    validation.add("C5")
+
+
+def _rich_phone(workbook: Workbook, sheet: Worksheet) -> None:
+    sheet["C5"] = CellRichText("tel. 600 ", TextBlock(InlineFont(b=True), "123 456"))
 
 
 def _renamed(header: str) -> Callable[[Workbook, Worksheet], object]:
@@ -162,7 +218,32 @@ CASES: Final[dict[str, Case]] = {
     "arkusz z uszkodzonym XML": Case(
         _COLLECTIVE, lambda: _with_part(_bytes(_workbook()), "xl/worksheets/sheet1.xml", b"<worksheet"), Refusal.UNREADABLE
     ),
-    "granica: wynik formuły w kształcie telefonu": Case(_COLLECTIVE, lambda: _cached_formula_result(_bytes(_workbook())), None),
+    "wynik formuły w kształcie telefonu": Case(_COLLECTIVE, lambda: _cached_formula_result(_bytes(_workbook())), Refusal.FREE_TEXT),
+    "stała z zakazaną wartością w formule": Case(
+        _INTERNAL, _plain(_cell("C4", f'=IF(A1="{_ADDRESS}",1,0)')), Refusal.FORBIDDEN, remembered=True
+    ),
+    "nagłówek wydruku z zakazaną wartością sklejoną z kodem części": Case(
+        _INTERNAL, _plain(_header(_ADDRESS)), Refusal.FORBIDDEN, remembered=True
+    ),
+    "stopka wydruku z telefonem": Case(_INTERNAL, _plain(_footer), Refusal.FREE_TEXT),
+    "nieznany kod nagłówka wydruku": Case(_INTERNAL, _plain(_header("&QStawki")), Refusal.UNREADABLE),
+    "podpowiedź hiperłącza z telefonem": Case(_INTERNAL, _plain(_tooltip), Refusal.FREE_TEXT),
+    "cel hiperłącza mailto z telefonem": Case(_INTERNAL, _plain(_mailto), Refusal.FREE_TEXT),
+    "lista walidacji danych z telefonem": Case(_INTERNAL, _plain(_validation), Refusal.FREE_TEXT),
+    "telefon na granicy przebiegów formatowania tekstu": Case(_COLLECTIVE, _plain(_rich_phone), Refusal.FREE_TEXT),
+    "relacja pamięci łącza innego rodzaju niż cel łącza, z telefonem": Case(_COLLECTIVE, _external_link_rels("hyperlink"), Refusal.FREE_TEXT),
+    "tekst za elementem (ogon) w rysunku komentarza": Case(
+        _WORKER,
+        lambda: _with_part(
+            _bytes(_workbook()),
+            "xl/drawings/vmlDrawing1.vml",
+            b'<xml xmlns:v="urn:schemas-microsoft-com:vml"><v:shape><v:textbox><div>Notatka</div>tel. 600 123 456'
+            b"</v:textbox></v:shape></xml>",
+        ),
+        Refusal.FREE_TEXT,
+    ),
+    "wyjątek: cel łącza zewnętrznego idzie bez strażnika": Case(_COLLECTIVE, _external_link_rels("externalLinkPath"), None),
+    "wyjątek: stawka w wierszu 14": Case(_COLLECTIVE, _plain(_cell("N14", 57.25)), None),
     "granica: wartość nad nagłówkiem ADRES": Case(_INTERNAL, _plain(_cell("B3", "Kwiatowa 7")), None),
 }
 
