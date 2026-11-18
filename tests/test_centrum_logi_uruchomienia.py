@@ -144,7 +144,7 @@ KEYS = {
     "result", "ending", "stop_kind", "issue_count", "messages", "technical_notes", "summary", "phases", "templates",
     "inea_only_cleared", "intermax_entries", "address_history", "efenix_orders", "efenix_stop", "report_entering", "environment", "trace",
     "diagnosis",
-    "dad_actions", "interruption", "input_copy", "input_copy_notes", "quantity_rules", "activity_legend",
+    "dad_actions", "centrum_log", "interruption", "input_copy", "input_copy_notes", "quantity_rules", "activity_legend",
 }
 
 
