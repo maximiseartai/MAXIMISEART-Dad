@@ -65,9 +65,9 @@ CI_PYTHON = "3.14"
 CI_EXTRAS = ("dev",)
 CI_INSTALL = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[' + ",".join(CI_EXTRAS) + ']"'
 BUILD_TIMEOUT_S = 300
-# ZEWNĘTRZNE: ścieżka gniazda AF_UNIX ma na macOS mniej niż 104 bajty, a multiprocessing kładzie gniazdo serwera forkserver w TMPDIR/pymp-XXXXXXXX/listener-XXXXXXXX, gdy się tam zmieści, a inaczej w /tmp (Lib/multiprocessing/util.py, _get_base_temp_dir)
+# ZEWNĘTRZNE: multiprocessing kładzie gniazdo serwera forkserver w TMPDIR/pymp-XXXXXXXX/sock-XXXXXXXXXXXX, a przy długim TMPDIR próbuje /tmp, którego piaskownica nie przyjmuje, więc wraca do TMPDIR, a bind pada, gdy ścieżka ma 104 bajty sun_path macOS albo więcej (Lib/multiprocessing/util.py, _get_base_temp_dir; connection.py, arbitrary_address)
 _SOCKET_MAX = 104
-_RUN_SOCKET = "/srodowisko-ci-XXXXXXXX/tmp/pymp-XXXXXXXX/listener-XXXXXXXX"
+_RUN_SOCKET = "/srodowisko-ci-XXXXXXXX/tmp/pymp-XXXXXXXX/sock-XXXXXXXXXXXX"
 _SYSTEM_TEMP = Path("/tmp")
 _JOB_KEYS = {"name", "runs-on", "steps"}
 _INSTALL_ID = "deps"  # ``id`` kroku ``CI_INSTALL``, którego wynik czyta ``_CI_IF``
