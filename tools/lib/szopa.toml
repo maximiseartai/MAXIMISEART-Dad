@@ -70,6 +70,7 @@ przepuszcza."tools/ci/wykonaj_zadanie.py" = ["tests/fixtures/granice_ksztaltow.p
 "tools/hooks/praca_w_tle.py" = ["tests/test_praca_w_tle.py"]
 "tools/hooks/pre-push" = ["tests/test_brama_pre_push.py"]
 "tools/hooks/straznik_koordynatora.py" = ["tests/test_straznik_koordynatora.py"]
+"tools/hooks/zabijanie.py" = ["tests/test_zabijanie.py"]
 "tools/hooks/zgoda.py" = ["tests/test_zgoda.py"]
 "tools/lib/ciezkie_ci.py" = ["tests/test_ciezkie_ci.py"]
 "tools/lib/czasy_ci.py" = ["tests/test_czasy_ci.py"]
