@@ -22,6 +22,10 @@ from types import ModuleType
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
+# Konfiguracja ruff korzenia, którą ``ruff check`` na sondzie bierze wprost albo przez ``extend`` konfiguracji katalogu
+# sondy. Literałem, żeby graf wpływu zmiany (tools/lib/wplyw_zmiany.py) wybierał każdy test z próbkami ruff przy zmianie
+# ruff.toml, który w odróżnieniu od pyproject.toml nie uruchamia wszystkich testów.
+KONFIGURACJA_RUFF = ROOT / "ruff.toml"
 
 wymaga_ruff_i_mypy = pytest.mark.skipif(
     importlib.util.find_spec("ruff") is None or importlib.util.find_spec("mypy") is None,

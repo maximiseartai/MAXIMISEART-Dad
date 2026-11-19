@@ -292,7 +292,7 @@ def test_wyglad_komorek_z_tym_samym_stylearray_w_dwoch_skoroszytach_bierze_tabel
 @wymaga_ruff
 def test_prawo_wygladu_do_slf001_obejmuje_tylko_styl_komorki_openpyxl() -> None:
     """``row_look.py`` ustawia indeksy stylu komórki wprost w prywatnym ``StyleArray`` openpyxl (``_style``), bo openpyxl
-    nie ma do niego publicznego API, więc ``pyproject.toml`` daje mu prawo właściciela do ``SLF001``. Kod modułu jako
+    nie ma do niego publicznego API, więc ``ruff.toml`` daje mu prawo właściciela do ``SLF001``. Kod modułu jako
     sonda obok niego, poza tym prawem, zgłasza w ruff tylko ``_style``: inna prywatna składowa to droga obok jej
     właściciela."""
 

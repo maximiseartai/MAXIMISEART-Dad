@@ -175,7 +175,7 @@ def test_ci_na_windows_testuje_tylko_najstarszego_pythona_z_requires_python_jak_
         "bramka PR na Windows": windows(gate),
         "pełne CI main na Windows": windows(main),
         "mypy": pyproject["tool"]["mypy"]["python_version"],
-        "ruff": pyproject["tool"]["ruff"]["target-version"].replace("py3", "3."),
+        "ruff": tomllib.loads((ROOT / "ruff.toml").read_text(encoding="utf-8"))["target-version"].replace("py3", "3."),
         "setup_worktree": ".".join(map(str, setup_worktree.MINIMUM_PYTHON)),
     } == dict.fromkeys(("bramka PR na Windows", "pełne CI main na Windows", "mypy", "ruff", "setup_worktree"), f"{oldest[1]}.{oldest[2]}")
 

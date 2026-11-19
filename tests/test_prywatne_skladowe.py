@@ -1,7 +1,7 @@
 """Kod w ``src/`` sięga do prywatnej składowej (``_nazwa``) innego obiektu albo modułu tylko w klasie, która ją
 definiuje.
 
-Pilnuje tego ruff ``SLF001`` z ``pyproject.toml`` w każdym runie. Zapis Ustawień Centrum obok ich właściciela przez jego
+Pilnuje tego ruff ``SLF001`` z ``ruff.toml`` w każdym runie. Zapis Ustawień Centrum obok ich właściciela przez jego
 prywatne pola (``settings._places[…].write``, ``settings._history.append``, ``settings._memory.write``) omija reguły
 właściciela, a reguła ast-grep na nazwach pól musiałaby je wyliczać (#1727 r5, W1). Drogi ``DROGI`` ruff odrzuca
 w module Centrum, a postacie, których ``SLF001`` nie widzi, są próbkami ``ZNANE_LUKI``: ruff i mypy przepuszczają je na

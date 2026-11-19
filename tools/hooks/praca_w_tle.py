@@ -37,7 +37,7 @@ jest wpięty w ``SubagentStop``, bo tam lista należy do całej sesji, a nie do 
 w manifeście wtyczki, uruchamiany bez prośby agenta) to też ``local_bash`` z ``kind`` ``monitor``, więc hook
 odmówiłby przy nim jak przy Bashu; żadna wtyczka na Macu Maksa go nie deklaruje (5.11.2026).
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
+(``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową.
 """
 
 from __future__ import annotations
