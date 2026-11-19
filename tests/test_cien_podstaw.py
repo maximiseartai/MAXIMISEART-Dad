@@ -8,6 +8,7 @@ from datetime import date
 import io
 import json
 from pathlib import Path
+import subprocess
 from typing import Any, NoReturn
 import zipfile
 
@@ -142,7 +143,9 @@ def _run(numer: int, event: str, galaz: str, sha: str, wynik: str, godzina: int,
 def swiat(tmp_path: Path) -> tuple[Path, _GitHub]:
     """PR ``g``: czerwony run 2 (padła podstawa verify-a w Mutation checks), naprawa w folderze skilla, zielony run 3 i
     merge do ``main``, którego run 4 jest czerwony przez podstawę verify-b, pominiętą przez NF na runie 3. Ponowiona próba
-    runu 4 kończy się o 6:00, po zielonym runie 5, więc czerwień kończy dopiero zielony run 6 o 6:40."""
+    runu 4 kończy się o 6:00, po zielonym runie 5, więc czerwień kończy dopiero zielony run 6 o 6:40. ``main`` idzie po
+    merge'u dalej o dwa commity, na których biegnie run 6, więc baza głów PR to ``main`` sprzed merge'a, a nie sprzed
+    ostatniego commitu okna."""
 
     repo = repository(tmp_path / "repo", {"src/a.py": "A = 1\n", ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\n---\n"}, tools=())
     baza = commit(repo, "baza")
@@ -154,13 +157,16 @@ def swiat(tmp_path: Path) -> tuple[Path, _GitHub]:
     git(repo, "checkout", "--quiet", baza)
     git(repo, "merge", "--quiet", "--no-ff", "--message", "Merge pull request #1", "g")
     scalona = git(repo, "rev-parse", "HEAD")
+    for numer in (1, 2):
+        (repo / f"src/z{numer}.py").write_text("Z = 1\n", encoding="utf-8")
+        dalej = commit(repo, f"main po merge'u {numer}")
     runy = [
         _run(1, "push", "main", baza, "success", 1),
         _run(2, "pull_request", "g", czerwona, "failure", 2),
         _run(3, "pull_request", "g", naprawiona, "success", 3),
         _run(4, "push", "main", scalona, "failure", 4, koniec="06:00"),
         _run(5, "push", "main", scalona, "success", 5),
-        _run(6, "push", "main", scalona, "success", 6, koniec="40"),
+        _run(6, "push", "main", dalej, "success", 6, koniec="40"),
     ]
     odpowiedzi, pliki = _czerwony_run_2(runy)
     odpowiedzi |= {
@@ -222,49 +228,81 @@ def test_wynik_z_zapisanych_rekordow_jest_tym_samym_co_z_githuba(
 
 
 
+def _konflikt(repo: Path, *argumenty: str) -> None:
+    """``git <argumenty>`` (rebase albo scalenie ``main``) staje na konflikcie, więc próbka rozstrzyga prawdziwy konflikt."""
+
+    with pytest.raises(subprocess.CalledProcessError) as stop:
+        git(repo, *argumenty)
+    assert "CONFLICT" in stop.value.stdout + stop.value.stderr
+
+
 @pytest.mark.parametrize(
     ("glowy", "naprawa"),
     [
-        (("na bazie", "na main"), ()),
-        (("na main", "na bazie"), ()),
+        (("na bazie", "rebase"), ()),
+        (("rebase", "na bazie"), ()),
         (("na bazie", "main scalony"), ()),
-        (("na bazie", "main scalony ze zmiana pliku z main"), ()),
-        (("na bazie", "na main z poprawka"), ("src/a.py",)),
+        (("na bazie", "main scalony z nową linią"), ()),
+        (("na bazie", "main scalony ze zmianą pliku z main"), ()),
+        (("na bazie", "rebase z poprawką"), ("src/a.py",)),
+        (("na bazie", "main scalony i poprawka"), ("src/a.py",)),
+        (("na bazie", "rebase i przestawiona linia"), (".agents/skills/verify-a/notatki.md",)),
     ],
-    ids=["sam rebase na main", "rebase na starszą bazę", "main scalony do gałęzi", "zmiana pliku z main w commicie scalenia main", "rebase z poprawką w src"],
+    ids=["rebase z konfliktem", "rebase na starszą bazę", "main scalony z konfliktem", "rozstrzygnięcie łączące linie w commicie scalenia",
+         "plik z main zmieniony w commicie scalenia", "rebase z poprawką w rozstrzygnięciu konfliktu", "main scalony, potem commit poprawki",
+         "rebase, potem przestawiona linia gałęzi"],  # fmt: skip
 )
-def test_naprawa_to_zmiana_wlasnego_diffu_pr_miedzy_glowami_a_nie_commity_z_main(tmp_path: Path, glowy: tuple[str, str], naprawa: tuple[str, ...]) -> None:
-    """Głowy czerwonego i następnego runu PR niosą tę samą zmianę folderu skilla verify-a, każda na innej bazie: przed
-    albo po commicie ``main``, który zmienia ``src/`` i folder verify-a, także inną linię pliku, który zmienia gałąź.
-    Naprawą jest tylko zmiana własnego diffu PR commitem gałęzi, więc bez poprawki NF nie złapał defektu, choć diff między
-    głowami zmienia oba foldery, a zmiana pliku z ``main`` w samym commicie scalenia ``main`` (rozstrzygnięcie konfliktu,
-    plik wygenerowany na nowo) naprawą nie jest."""
+def test_naprawa_to_zmiana_wlasnej_zmiany_pr_commitem_galezi_a_nie_rebase_scalenie_main_ani_rozstrzygniecie_konfliktu(
+    tmp_path: Path, glowy: tuple[str, str], naprawa: tuple[str, ...]
+) -> None:
+    """Gałąź zmienia folder skilla verify-a i linię 6 ``src/a.py``, a ``main`` po jej bazie zmienia ``src/``, folder
+    verify-a (także wstawia linię do pliku, który zmienia gałąź) i linie 5 i 6 ``src/a.py``, więc rebase i scalenie
+    ``main`` stają na prawdziwym konflikcie. Rozstrzygnięcie, które zostawia linię gałęzi, rebase'em, scaleniem ``main``
+    albo cofnięciem na starszą bazę, naprawą nie jest, choć diff między głowami zmienia oba foldery, a commit rebase'u
+    zmienia ``src/a.py``; zmiana tylko w commicie scalenia (nowa linia z linii ``main`` i gałęzi, plik z ``main``
+    wygenerowany na nowo) też nie. Poprawka linii gałęzi jest naprawą w rozstrzygnięciu rebase'u i w commicie po
+    scaleniu ``main``, a przestawienie linii gałęzi w pliku, który zmienił ``main``, w commicie po rebase'ie."""
 
     linie = [f"{n}\n" for n in range(1, 11)]
     notatki = ".agents/skills/verify-a/notatki.md"
-    repo = repository(tmp_path / "repo", {"src/a.py": "A = 1\n", ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\n---\n", notatki: "".join(linie)}, tools=())
+
+    def a_py(piata: str, szosta: str) -> str:
+        return "".join([*linie[:4], piata, szosta, *linie[6:]])
+
+    repo = repository(tmp_path / "repo", {"src/a.py": "".join(linie), ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\n---\n", notatki: "".join(linie)}, tools=())
     baza = commit(repo, "baza")
     (repo / "src/b.py").write_text("B = 1\n", encoding="utf-8")
     (repo / ".agents/skills/verify-a/SKILL.md").write_text("---\nname: verify-a\ndescription: d\n---\n", encoding="utf-8")
-    (repo / notatki).write_text("".join(["1 z main\n", *linie[1:]]), encoding="utf-8")
+    (repo / notatki).write_text("".join(["1 z main\n", *linie[1:3], "3a z main\n", *linie[3:]]), encoding="utf-8")
+    (repo / "src/a.py").write_text(a_py("5 z main\n", "6 z main\n"), encoding="utf-8")
     main = commit(repo, "main dalej")
     git(repo, "checkout", "--quiet", baza)
     (repo / ".agents/skills/verify-a/drive.py").write_text("X = 1\n", encoding="utf-8")
     (repo / notatki).write_text("".join([*linie[:-1], "10 z gałęzi\n"]), encoding="utf-8")
+    (repo / "src/a.py").write_text(a_py("5\n", "6 z gałęzi\n"), encoding="utf-8")
     na_bazie = commit(repo, "zmiana")
-    git(repo, "checkout", "--quiet", main)
-    git(repo, "cherry-pick", na_bazie)
-    na_main = git(repo, "rev-parse", "HEAD")
-    (repo / "src/a.py").write_text("A = 2\n", encoding="utf-8")
-    z_poprawka = commit(repo, "poprawka")
-    git(repo, "checkout", "--quiet", na_bazie)
-    git(repo, "merge", "--quiet", "--no-ff", "--message", "Merge branch main", main)
-    scalony = git(repo, "rev-parse", "HEAD")
-    git(repo, "checkout", "--quiet", na_bazie)
-    git(repo, "merge", "--quiet", "--no-ff", "--no-commit", main)
-    (repo / "src/b.py").write_text("B = 2\n", encoding="utf-8")
-    scalony_ze_zmiana = commit(repo, "Merge branch main")
-    sha = {"na bazie": na_bazie, "na main": na_main, "na main z poprawka": z_poprawka, "main scalony": scalony, "main scalony ze zmiana pliku z main": scalony_ze_zmiana}
+    sha = {"na bazie": na_bazie}
+    for nazwa, szosta in (("rebase", "6 z gałęzi\n"), ("rebase z poprawką", "6 poprawione\n")):
+        git(repo, "checkout", "--quiet", "-B", "g", na_bazie)
+        _konflikt(repo, "rebase", main)
+        (repo / "src/a.py").write_text(a_py("5 z main\n", szosta), encoding="utf-8")
+        git(repo, "add", "--all")
+        git(repo, "commit", "--quiet", "--no-edit")
+        git(repo, "rebase", "--continue")
+        sha[nazwa] = git(repo, "rev-parse", "HEAD")
+    git(repo, "checkout", "--quiet", "--detach", sha["rebase"])
+    (repo / notatki).write_text("".join(["1 z main\n", *linie[1:3], "3a z main\n", *linie[3:8], "10 z gałęzi\n", linie[8]]), encoding="utf-8")
+    sha["rebase i przestawiona linia"] = commit(repo, "przestawienie")
+    for nazwa, szosta, b in (("main scalony", "6 z gałęzi\n", "B = 1\n"), ("main scalony z nową linią", "6 z main i gałęzi\n", "B = 1\n"),
+                             ("main scalony ze zmianą pliku z main", "6 z gałęzi\n", "B = 2\n")):  # fmt: skip
+        git(repo, "checkout", "--quiet", "--detach", na_bazie)
+        _konflikt(repo, "merge", "--no-ff", "--no-commit", main)
+        (repo / "src/a.py").write_text(a_py("5 z main\n", szosta), encoding="utf-8")
+        (repo / "src/b.py").write_text(b, encoding="utf-8")
+        sha[nazwa] = commit(repo, "Merge branch main")
+    git(repo, "checkout", "--quiet", sha["main scalony"])
+    (repo / "src/a.py").write_text(a_py("5 z main\n", "6 poprawione\n"), encoding="utf-8")
+    sha["main scalony i poprawka"] = commit(repo, "poprawka")
     runy = [_run(1, "push", "main", baza, "success", 1), _run(2, "pull_request", "g", sha[glowy[0]], "failure", 2),
             _run(3, "push", "main", main, "success", 3), _run(4, "pull_request", "g", sha[glowy[1]], "success", 4)]  # fmt: skip
     dzien = date(2026, 11, 12)

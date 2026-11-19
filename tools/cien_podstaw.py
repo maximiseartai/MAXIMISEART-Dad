@@ -12,12 +12,15 @@ przeszły bramkę (58,5 min), i mediana PR-u naprawy (16,2 min), a ``X`` to oszc
 Złapany przez NF defekt: run PR ``ci.yml`` bez porażki zadania pytest, w którym padła jednostka ``skill:`` (linia
 ``WYKONANIE FAIL`` w logu zadania Mutation checks) z kroków cienia ``NA_ZYWO`` spoza cienia N0 (``plan.json``, pole
 ``cien``), a naprawa do następnego runu gałęzi zmienia folder tego skilla albo ``src/``; czerwone runy jednej gałęzi
-z tym samym krokiem to jeden defekt, a run bez artefaktu planu liczy się osobno jako bez cienia. Naprawa to pliki, w których
-zmienił się własny diff PR między głowami dwóch runów, każdej wobec jej bazy scalenia z ``main`` sprzed scalenia tej
-głowy (następna głowa różni się od diffu czerwonej przeniesionego na bazę następnej, ``git merge-tree``), i które zmienia
-commit bez merge'a osiągalny z następnej głowy, a nie z czerwonej ani z bazy następnej. Rebase, scalenie ``main`` do
-gałęzi i amend bez zmiany diffu naprawą nie są, a rozstrzygnięcie konfliktu albo plik wygenerowany na nowo w commicie
-scalenia też nie, bo zmienia go tylko merge.
+z tym samym krokiem to jeden defekt, a run bez artefaktu planu liczy się osobno jako bez cienia. Naprawa to pliki, które
+zmienia commit bez merge'a osiągalny z następnej głowy, a nie z czerwonej ani z bazy następnej, i w których zmieniła się
+własna zmiana PR: treść pliku przy obu głowach różni się poza liniami, które ``main`` zmienił w tym pliku między bazami
+głów (baza głowy to jej baza scalenia z ``main`` sprzed scalenia tej głowy). Rebase, scalenie ``main`` do gałęzi,
+rozstrzygnięcie konfliktu i amend, które zostawiają własną zmianę PR, naprawą nie są, którąkolwiek drogą zaktualizowano
+gałąź. Zmiana tylko w commicie scalenia (rozstrzygnięcie, które łączy linię ``main`` i PR w nową, plik wygenerowany na
+nowo) też nie, a ta sama nowa linia w commicie rebase'u jest naprawą, bo nie różni się od poprawki tej linii. Granica:
+poprawka, która dodaje, usuwa albo przestawia tylko linie o treści jednej z linii zmienionych przez ``main`` w tym pliku
+między bazami (np. pustą linię), naprawą nie jest.
 Oszczędność N0: średnia różnica ściany planu NF i N0 z cienia runów PR próbki (co któryś run okna, najwyżej
 ``--probka``; czerwone runy spoza próbki jej nie przesuwają) razy liczba runów PR okna z wynikiem success albo failure.
 Ucieczka z NF (wyrocznia ``main``): run pushu ``main`` z padłą podstawą, którą ostatni run PR-u scalonego od
@@ -25,7 +28,7 @@ poprzedniego runu ``main`` miał w cieniu V0, a nie w cieniu NF; czerwień to mi
 następnego zielonego runu ``main``.
 
 Dane: runy ``ci.yml`` okna (dzień utworzenia, UTC), artefakty ``plan`` (``retention-days: 30`` w ``ci.yml``) czerwonych
-runów PR, próbki i scalonych PR-ów, zadania i logi padłych zadań Mutation checks, a z gita checkoutu diffy głów PR
+runów PR, próbki i scalonych PR-ów, zadania i logi padłych zadań Mutation checks, a z gita checkoutu pliki głów PR i ich baz
 i merge'e ``main`` (brakujące głowy runów pobiera jeden ``git fetch``). Odpowiedzi API zapisują się w ``<katalog>/api``
 (``tools/lib/api_actions.py``), a rekordy w ``<katalog>/rekordy.json``; 14 dni to około 600 zapytań. ``--rekordy PLIK``
 liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy linia:
@@ -41,6 +44,7 @@ import argparse
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
+from difflib import SequenceMatcher
 import io
 import json
 from pathlib import Path
@@ -255,12 +259,27 @@ def _naprawa(root: Path, main: str, czerwona: str, nastepna: str) -> tuple[str, 
 
     try:
         baza_czerwonej, baza_nastepnej = _baza_pr(root, main, czerwona), _baza_pr(root, main, nastepna)
-        przeniesiona = repo.merge_tree(root, baza_nastepnej, czerwona, base=baza_czerwonej).tree
-        diff = repo.git(root, "diff", "--no-renames", "--name-only", "-z", przeniesiona, nastepna).split("\0")
         commity = repo.git(root, "log", "--no-merges", "--no-renames", "--name-only", "-z", "--format=", nastepna, f"^{czerwona}", f"^{baza_nastepnej}")
+        pliki = {plik.strip("\n") for plik in commity.split("\0")} - {""}
+        return tuple(sorted(plik for plik in pliki if _wlasna_zmiana_inna(root, plik, (baza_czerwonej, czerwona), (baza_nastepnej, nastepna))))
     except subprocess.CalledProcessError:
         return None
-    return tuple(sorted(set(filter(None, diff)) & {plik.strip("\n") for plik in commity.split("\0")}))
+
+
+def _wlasna_zmiana_inna(root: Path, plik: str, czerwona: tuple[str, str], nastepna: tuple[str, str]) -> bool:
+    """Czy treść pliku przy głowach PR (każda z bazą: ``(baza, głowa)``) różni się poza liniami, które ``main`` zmienił
+    w tym pliku między bazami głów (diff ``difflib`` obu baz): rebase i rozstrzygnięcie konfliktu, które zostawiają
+    własną zmianę PR, zmieniają w pliku tylko takie linie, a przesunięte linie diffu (``git diff`` z powtórzoną linią
+    obok zmiany) nie mają tu znaczenia, bo porównanie nie czyta diffu głów."""
+
+    przed, po = _linie(root, czerwona[0], plik), _linie(root, nastepna[0], plik)
+    z_main = {linia for kod, i, j, k, m in SequenceMatcher(None, przed, po, autojunk=False).get_opcodes() if kod != "equal" for linia in przed[i:j] + po[k:m]}
+    return [linia for linia in _linie(root, czerwona[1], plik) if linia not in z_main] != [linia for linia in _linie(root, nastepna[1], plik) if linia not in z_main]
+
+
+def _linie(root: Path, rewizja: str, plik: str) -> list[bytes]:
+    tresc = repo.blob(root, rewizja, plik)
+    return [] if tresc is None else tresc.split(b"\n")
 
 
 def _baza_pr(root: Path, main: str, glowa: str) -> str:
