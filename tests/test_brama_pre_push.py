@@ -13,6 +13,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import venv
 
 import pytest
 
@@ -416,3 +417,33 @@ def test_furtka_narzedzia_wydan_otwiera_sie_tylko_na_jedynke(checkout: Path, val
 
     assert rejected.returncode != 0
     assert _git(checkout, "ls-remote", "origin", "refs/tags/v0.2.0").stdout == ""
+
+
+# Moduł, który agent importuje w próbie, i plik checkoutu, z którego ma go dostać.
+MODULY_PROBY = {
+    "repo": "tools/lib/repo.py",
+    "setup_worktree": "tools/setup_worktree.py",
+    "shellcheck_akcji": "tools/ci/shellcheck_akcji.py",
+    "tests": "tests/__init__.py",
+}
+
+
+@pytest.fixture(scope="module")
+def python_venv(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    katalog = tmp_path_factory.mktemp("venv")
+    venv.EnvBuilder(symlinks=True).create(katalog)
+    python = katalog / "bin" / "python"
+    setup_worktree._write_import_roots(python)
+    return python
+
+
+@pytest.mark.parametrize("modul", MODULY_PROBY)
+def test_setup_worktree_daje_pythonowi_z_venv_moduly_narzedzi_i_testow_z_dowolnego_katalogu(
+    python_venv: Path, modul: str, tmp_path: Path
+) -> None:
+    kod = f"import importlib.util; print(importlib.util.find_spec({modul!r}).origin)"
+    znaleziony = subprocess.run(
+        [str(python_venv), "-I", "-c", kod], cwd=tmp_path, capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    assert Path(znaleziony).resolve() == (repo.ROOT / MODULY_PROBY[modul]).resolve()

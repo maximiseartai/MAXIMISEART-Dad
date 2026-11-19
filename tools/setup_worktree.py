@@ -5,6 +5,8 @@ więc pytest i skrypty weryfikacyjne uruchomione nim z worktree mogą po cichu
 sprawdzać kod z ``main``. Ten skrypt tworzy ``.venv`` w checkoucie, w którym
 leży, instaluje go edytowalnie i sprawdza, że ``rozliczenia`` importuje się z
 jego ``src``. Używa ``uv``, gdy jest dostępne, a bez niego ``venv`` i ``pip``.
+Plik ``.pth`` (``IMPORT_PTH``) daje każdemu Pythonowi z ``.venv`` katalogi importu testów (``repo.IMPORT_ROOTS``),
+więc próba ``.venv/bin/python -c "import wplyw_zmiany"`` importuje moduły narzędzi bez ``sys.path`` i ``PYTHONPATH``.
 Włącza też bramę ``tools/hooks/pre-push`` (``core.hooksPath``) i sterownik scalania plików generowanych
 (``merge=wygenerowane`` w ``.gitattributes``); oba siedzą w konfiguracji repozytorium, wspólnej dla wszystkich worktree.
 
@@ -31,6 +33,7 @@ import repo
 
 VENV = ROOT / ".venv"
 EXTRAS = ".[dev,workflowy]"
+IMPORT_PTH = "maximiseart_katalogi_importu.pth"
 HOOKS = "tools/hooks"
 MINIMUM_PYTHON = (3, 13)  # requires-python z pyproject.toml
 MINIMUM = ".".join(map(str, MINIMUM_PYTHON))
@@ -61,13 +64,14 @@ def main(argv: list[str] | None = None) -> int:
     if sys.platform != "win32":
         _gate_pushes(ROOT)
     _merge_generated(ROOT)
+    _write_import_roots(_venv_python())
 
-    imported = _imported_package_directory()
-    expected = ROOT / "src" / "rozliczenia"
-    if imported != expected:
-        print(f"BŁĄD: .venv importuje rozliczenia z {imported}, a powinno z {expected}.", file=sys.stderr)
-        return 1
-    print(f"OK: {VENV} importuje rozliczenia z {expected}.", flush=True)
+    for module, expected in (("rozliczenia", ROOT / "src" / "rozliczenia"), ("repo", ROOT / "tools" / "lib")):
+        imported = _imported_directory(module)
+        if imported != expected:
+            print(f"BŁĄD: .venv importuje {module} z {imported}, a powinno z {expected}.", file=sys.stderr)
+            return 1
+    print(f"OK: {VENV} importuje rozliczenia z src i moduły narzędzi z katalogów repo.IMPORT_ROOTS.", flush=True)
     _print_work_in_progress()
     return 0
 
@@ -96,14 +100,22 @@ def _venv_python() -> Path:
     return VENV / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
 
 
-def _imported_package_directory() -> Path:
+def _write_import_roots(python: Path) -> None:
+    purelib = _python_output(python, "import sysconfig; print(sysconfig.get_path('purelib'))")
+    lines = "".join(f"{ROOT / root}\n" for root in repo.IMPORT_ROOTS)
+    (Path(purelib) / IMPORT_PTH).write_text(lines, encoding="utf-8")
+
+
+def _imported_directory(module: str) -> Path:
+    return Path(_python_output(_venv_python(), f"import {module}; print({module}.__file__)")).resolve().parent
+
+
+def _python_output(python: Path, code: str) -> str:
     # Spoza checkoutu, żeby katalog bieżący nie zasłonił instalacji z .venv.
     with tempfile.TemporaryDirectory() as outside:
-        completed = potomne.run(
-            [str(_venv_python()), "-c", "import rozliczenia; print(rozliczenia.__file__)"], cwd=Path(outside)
-        )
+        completed = potomne.run([str(python), "-c", code], cwd=Path(outside))
     completed.check_returncode()
-    return Path(completed.stdout.strip()).resolve().parent
+    return completed.stdout.strip()
 
 
 def _print_work_in_progress() -> None:

@@ -4,7 +4,7 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 
 # Agent Router
 
-- Worktree: zanim uruchomisz Pythona, utwórz własne `.venv` przez `python3 tools/setup_worktree.py` (Windows: `py -3`); `.venv` głównego checkoutu sprawdza kod `main`.
+- Worktree: zanim uruchomisz Pythona, utwórz własne `.venv` przez `python3 tools/setup_worktree.py` (Windows: `py -3`); `.venv` głównego checkoutu sprawdza kod `main`. Python z `.venv` importuje w próbie każdy moduł narzędzi i `tests` tak jak test, bez `sys.path` i `PYTHONPATH`.
 - Issue N: przed startem uruchom `tools/praca_w_toku.py --issue N`. Gdy issue dotyczy gałęzi otwartego PR albo ktoś ma już na nim commity, poprawka należy do właściciela tej gałęzi: powiedz o tym użytkownikowi i zostaw ją jemu.
 - Po każdej zmianie uruchom `.venv/bin/python tools/szybko.py` (Windows: `py -3 tools/szybko.py`), na gałęzi zbudowanej na innej z `--baza <gałąź rodzica>`. Co sprawdza, a co zostawia CI, mówi jego `--help`.
 - Ciężkie polecenie (`szybko.py`, `mutacje.py --plik`, pełny pytest i wszystko, co obciąży Maca dłużej niż minutę): zanim je uruchomisz, przeczytaj skill [`boat`](.agents/skills/boat/SKILL.md), bo mówi, czy biegnie na Macu, czy na boxie boat.
