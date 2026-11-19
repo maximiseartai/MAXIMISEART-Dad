@@ -364,6 +364,7 @@ TRIPLED = _block(("kod/liczby.py", "return x * 2", "return x * 3"))
 # Parametr testu z id z danych produkcji (sonda #2197 r4 W1): z mutacją, która przywraca listę z FAIL, węzła nie ma.
 FORMATS = 'OBSLUGIWANE = ("a", "b")\n\n\ndef obsluz(nazwa: str) -> bool:\n    return nazwa in OBSLUGIWANE\n'
 TEST_FORMATS = 'import pytest\n\nfrom kod.pliki import OBSLUGIWANE, obsluz\n\n\n@pytest.mark.parametrize("nazwa", OBSLUGIWANE)\ndef test_g(nazwa: str) -> None:\n    assert obsluz(nazwa)\n'
+IMPORT_FAIL = _block(("kod/liczby.py", "def podwojona(x: int) -> int:\n", "from kod.nie_ma import LIMIT\n\n\ndef podwojona(x: int) -> int:\n"), name="import z FAIL")
 MEMO = (
     "_PAMIEC: dict[int, int] = {}\n\n\ndef _norma(x: int) -> int:\n    try:\n        return _PAMIEC[x]\n    except KeyError:\n"
     "        _PAMIEC[x] = x\n        return x\n\n\ndef podwojona(x: int) -> int:\n    return _norma(x) * 2\n"
@@ -373,12 +374,13 @@ MEMO = (
 @dataclass(frozen=True)
 class Sample:
     """HEAD z plikami ``head`` po FAIL z ``x * 3`` w ``podwojona``, blok mutacji ``mutation`` (``None``: żaden werdykt
-    go nie ma) i początek stanu w linii dowodu."""
+    go nie ma), początek stanu w linii dowodu i jej fragment ``tail`` dalej."""
 
     head: dict[str, str]
     mutation: str | None
     state: str
     node: str = NODE
+    tail: str = ""
 
 
 PROBKI_TESTU = {
@@ -409,6 +411,30 @@ PROBKI_TESTU = {
         _block(("kod/pliki.py", '("a", "b")', '("a",)'), name="lista bez b z FAIL"),
         "NIEWYKRYTA | lista bez b z FAIL: NIEWYKRYTA: ",
         "tests/test_g.py::test_g[b]",
+        "(pytest nie uruchomił testu, kod 4, a plik węzła się zbiera: ",
+    ),
+    # Sonda #2224 r1 W1: z mutacją nie importuje się moduł węzła albo ``tests/conftest.py`` (pytest kod 4 jak przy
+    # zniknięciu węzła), a Required CI, które uruchamia plik, pada; to wykrycie.
+    "modul-wezla-nie-importuje-sie-z-mutacja": Sample(
+        {"tests/test_g.py": TEST_G},
+        IMPORT_FAIL,
+        "WYKRYTA | z bloku ### Mutacja W1 r1: import z FAIL → ",
+        tail="(plik węzła z mutacją się nie zbiera, kod 2: ",
+    ),
+    "plik-wezla-bez-testow-z-mutacja": Sample(
+        {
+            "kod/flagi.py": "WLACZONE = True\n",
+            "tests/test_g.py": "from kod.flagi import WLACZONE\n\nif WLACZONE:\n\n    def test_g() -> None:\n        assert WLACZONE\n",
+        },
+        _block(("kod/flagi.py", "WLACZONE = True", "WLACZONE = False"), name="flaga wyłączona z FAIL"),
+        "NIEWYKRYTA | flaga wyłączona z FAIL: NIEWYKRYTA: ",
+        tail="a plik węzła się zbiera: ",
+    ),
+    "conftest-nie-importuje-sie-z-mutacja": Sample(
+        {"tests/test_g.py": TEST_G, "tests/conftest.py": "import kod.liczby\n"},
+        IMPORT_FAIL,
+        "WYKRYTA | z bloku ### Mutacja W1 r1: import z FAIL → ",
+        tail="(plik węzła z mutacją się nie zbiera, kod 4: ",
     ),
     "blok-zmienia-test": Sample(
         {"tests/test_g.py": TEST_G},
@@ -465,8 +491,7 @@ def test_dowod_testu_przyjmuje_test_ktory_pada_tylko_przez_mutacje_recenzenta(tm
 
     assert outcome.detected is sample.state.startswith("WYKRYTA"), outcome.line
     assert f"#5 W1 r1 | {pull.failed[:8]} | {sample.state}" in outcome.line, outcome.line
-    if name == "wezel-znika-z-mutacja":
-        assert outcome.line.endswith("(pytest nie uruchomił testu, kod 4)"), outcome.line
+    assert sample.tail in outcome.line, outcome.line
 
 
 ONCE = "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    assert not slad.exists()\n    slad.write_text('1')\n"

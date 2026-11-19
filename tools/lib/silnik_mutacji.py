@@ -389,15 +389,18 @@ def judged(
     concurrent: bool = False,
     python: str | None = None,
     env: Mapping[str, str] | None = None,
-    needs_test: bool = False,
+    collected: Sequence[str] | None = None,
 ) -> tuple[Verdict, str, float | None]:
     """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
     stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
     ``min(limit_s, left)``. Woła ją ``verdicts`` na kopii checkoutu i dowód strażnika ``pytest`` (``straznik``) na
-    kopii środowiska Required CI. Z ``needs_test`` polecenie pytest, w którym po mutacji nie biegł żaden test
-    (``_without_test``, np. parametr, którego z mutacją nie ma), daje NIEWYKRYTA: dowód wybiera jeden węzeł, a Required
-    CI uruchamia cały plik, w którym zniknięty węzeł niczego nie czerwieni. Bez niego kod 4 i 5 są wykryciem jak dotąd,
-    bo plik albo zbiór plików bez testu czerwieni zadanie CI."""
+    kopii środowiska Required CI. Z ``collected`` (polecenie, które z mutacją tylko zbiera plik węzła) polecenie
+    pytest, w którym po mutacji nie biegł żaden test (``_without_test``), jest WYKRYTA tylko wtedy, gdy plik węzła
+    z mutacją się nie zbiera (``collected`` kończy się kodem innym niż 0 i 5: błąd importu modułu testu albo
+    ``conftest.py``), bo tak pada zadanie Required CI, które uruchamia cały plik; gdy plik się zbiera, a węzła nie ma
+    (np. parametr, którego z mutacją nie ma), NIEWYKRYTA, bo zniknięty węzeł sam w CI niczego nie czerwieni, a inny
+    węzeł pliku, który z mutacją pada, to inny strażnik. Bez
+    ``collected`` kod 4 i 5 są wykryciem jak dotąd, bo plik albo zbiór plików bez testu czerwieni zadanie CI."""
 
     left = limit_s if left is None else left
     if stale := _apply(copy, mutation.edits):
@@ -410,8 +413,12 @@ def judged(
         found = Verdict.HANG, ran.hang
     else:
         caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
-        if caught and needs_test and _without_test(mutation.command, ran):
-            found = Verdict.SURVIVED, f"{ran.last} (pytest nie uruchomił testu, kod {ran.code})"
+        if caught and collected is not None and _without_test(mutation.command, ran):
+            gathered = _run(copy, collected, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
+            if gathered.code is None or gathered.code in {0, PYTEST_EXIT_NO_TESTS_COLLECTED}:
+                found = Verdict.SURVIVED, f"{ran.last} (pytest nie uruchomił testu, kod {ran.code}, a plik węzła się zbiera: {gathered.last})"
+            else:
+                found = Verdict.CAUGHT, f"{ran.last} (plik węzła z mutacją się nie zbiera, kod {gathered.code}: {gathered.last})"
         else:
             found = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
     return *found, ran.seconds
