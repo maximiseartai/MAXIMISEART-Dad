@@ -411,7 +411,7 @@ PROBKI_TESTU = {
         _block(("kod/pliki.py", '("a", "b")', '("a",)'), name="lista bez b z FAIL"),
         "NIEWYKRYTA | lista bez b z FAIL: NIEWYKRYTA: ",
         "tests/test_g.py::test_g[b]",
-        "(pytest nie uruchomił testu, kod 4, a plik węzła się zbiera: ",
+        "(pytest nie uruchomił testu z polecenia, kod 4, a pliki testów polecenia z mutacją się zbierają: ",
     ),
     # Sonda #2224 r1 W1: z mutacją nie importuje się moduł węzła albo ``tests/conftest.py`` (pytest kod 4 jak przy
     # zniknięciu węzła), a Required CI, które uruchamia plik, pada; to wykrycie.
@@ -419,7 +419,7 @@ PROBKI_TESTU = {
         {"tests/test_g.py": TEST_G},
         IMPORT_FAIL,
         "WYKRYTA | z bloku ### Mutacja W1 r1: import z FAIL → ",
-        tail="(plik węzła z mutacją się nie zbiera, kod 2: ",
+        tail="(pliki testów polecenia z mutacją się nie zbierają, kod 2: ",
     ),
     "plik-wezla-bez-testow-z-mutacja": Sample(
         {
@@ -428,13 +428,13 @@ PROBKI_TESTU = {
         },
         _block(("kod/flagi.py", "WLACZONE = True", "WLACZONE = False"), name="flaga wyłączona z FAIL"),
         "NIEWYKRYTA | flaga wyłączona z FAIL: NIEWYKRYTA: ",
-        tail="a plik węzła się zbiera: ",
+        tail="a pliki testów polecenia z mutacją się zbierają: ",
     ),
     "conftest-nie-importuje-sie-z-mutacja": Sample(
         {"tests/test_g.py": TEST_G, "tests/conftest.py": "import kod.liczby\n"},
         IMPORT_FAIL,
         "WYKRYTA | z bloku ### Mutacja W1 r1: import z FAIL → ",
-        tail="(plik węzła z mutacją się nie zbiera, kod 4: ",
+        tail="(pliki testów polecenia z mutacją się nie zbierają, kod 4: ",
     ),
     "blok-zmienia-test": Sample(
         {"tests/test_g.py": TEST_G},

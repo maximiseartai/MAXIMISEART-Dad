@@ -2,7 +2,8 @@
 
 Wołają go narzędzie ``tools/mutacje.py`` (``review``), skrypty mutacji skilli ``check_<co>_mutations.py``
 (``check_all``), mutacje nocy ``tools/mutacje_zmiany.py`` (``verdicts``, ``in_ci``, ``type_gate``) i zadanie planu CI
-``tools/ci/wykonaj_zadanie.py`` (``near_limits``). Zasady niżej drukuje ``tools/mutacje.py --zasady``.
+``tools/ci/wykonaj_zadanie.py`` (``near_limits``), a dowód strażnika ``pytest <węzeł>`` (``tools/lib/straznik.py``) bierze
+werdykt z ``judged``. Zasady niżej drukuje ``tools/mutacje.py --zasady``.
 
 Zasady werdyktów i przebiegu
 
@@ -17,7 +18,12 @@ NIEAKTUALNA, tak samo jak zmiana, której ścieżka to katalog. Pusta kotwica w 
 razem z katalogami. Zanim narzędzie
 zepsuje kod, polecenie musi przejść na kopii bez mutacji, a jeśli mutacja oczekuje ostatniej
 linii wyjścia, polecenie bez mutacji nie może się nią kończyć. Werdykty to ``Verdict``, a dowodem jest tylko
-WYKRYTA: polecenie pada albo kończy się oczekiwaną linią. ZAWIESZENIE to test, który pytest-timeout skończył po
+WYKRYTA: polecenie pada albo kończy się oczekiwaną linią. Polecenie pytest, w którym z mutacją nie biegł żaden test
+(kod 4 albo 5: testu z polecenia nie ma, ``-k`` nic nie wybiera, plik albo ``conftest.py`` się nie importuje), jest
+WYKRYTA tylko wtedy, gdy z mutacją nie zbierają się jego pliki testów (``_collecting``: kod inny niż 0 i 5), bo tylko
+wtedy pada zadanie Required CI, które uruchamia całe pliki; test, którego z mutacją nie ma, przy plikach, które się
+zbierają, to NIEWYKRYTA, bo nic nie padło. Ten werdykt (``judged``) dają też noc, skrypty skilli i dowód strażnika
+``pytest <węzeł>`` (``tools/lib/straznik.py``). ZAWIESZENIE to test, który pytest-timeout skończył po
 swoim limicie (linia ``Failed: Timeout (>…s) from pytest-timeout.`` metody ``signal`` albo linia ``+++ Timeout +++``
 metody ``thread`` bez xdist); worker xdist, którego zabiła metoda ``thread`` (Windows), nie zostawia takiej linii, więc
 tam ZAWIESZENIA nie ma, a werdykt daje kod wyjścia albo ``--limit-s``. PRZEKROCZONY CZAS to polecenie bez wyniku w
@@ -159,6 +165,8 @@ class Verdict(StrEnum):
 
 HANG_CAUGHT = "liczona jako wykryta: pytest-timeout czerwieni test w CI"
 OVER_LIMIT_NOTE = "limit --limit-s narzędzia, nie pytest-timeout"
+# Dopisek NIEWYKRYTA polecenia pytest, w którym z mutacją nie biegł żaden test, a jego pliki się zbierają (``judged``).
+GONE_HINT = "dowodzi tylko test, który z mutacją biegnie i pada, więc wybierz w poleceniu test, który mutacja zostawia, np. bez parametru"
 
 
 def in_ci(verdict: Verdict, last: str) -> tuple[bool, str]:
@@ -389,18 +397,14 @@ def judged(
     concurrent: bool = False,
     python: str | None = None,
     env: Mapping[str, str] | None = None,
-    collected: Sequence[str] | None = None,
 ) -> tuple[Verdict, str, float | None]:
     """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
     stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
-    ``min(limit_s, left)``. Woła ją ``verdicts`` na kopii checkoutu i dowód strażnika ``pytest`` (``straznik``) na
-    kopii środowiska Required CI. Z ``collected`` (polecenie, które z mutacją tylko zbiera plik węzła) polecenie
-    pytest, w którym po mutacji nie biegł żaden test (``_without_test``), jest WYKRYTA tylko wtedy, gdy plik węzła
-    z mutacją się nie zbiera (``collected`` kończy się kodem innym niż 0 i 5: błąd importu modułu testu albo
-    ``conftest.py``), bo tak pada zadanie Required CI, które uruchamia cały plik; gdy plik się zbiera, a węzła nie ma
-    (np. parametr, którego z mutacją nie ma), NIEWYKRYTA, bo zniknięty węzeł sam w CI niczego nie czerwieni, a inny
-    węzeł pliku, który z mutacją pada, to inny strażnik. Bez
-    ``collected`` kod 4 i 5 są wykryciem jak dotąd, bo plik albo zbiór plików bez testu czerwieni zadanie CI."""
+    ``min(limit_s, left)``, według zasad werdyktów z docstringu modułu, także polecenia pytest, w którym z mutacją nie
+    biegł żaden test (``_collecting``). Bieg bez zmian (podstawa dowodu strażnika, ``tools/mutacje.py --juz-lapie``)
+    tej reguły nie ma: pytest, który nie uruchomił testu bez mutacji, pada, jak podstawa ``_baseline``. Jedyne źródło
+    werdyktu mutacji: woła ją ``verdicts`` (``tools/mutacje.py``, noc, skrypty skilli) na kopii checkoutu i dowód
+    strażnika ``pytest`` (``straznik``) na kopii środowiska Required CI."""
 
     left = limit_s if left is None else left
     if stale := _apply(copy, mutation.edits):
@@ -411,17 +415,30 @@ def judged(
         found = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
     elif ran.hang is not None:
         found = Verdict.HANG, ran.hang
-    else:
-        caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
-        if caught and collected is not None and _without_test(mutation.command, ran):
-            gathered = _run(copy, collected, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
-            if gathered.code is None or gathered.code in {0, PYTEST_EXIT_NO_TESTS_COLLECTED}:
-                found = Verdict.SURVIVED, f"{ran.last} (pytest nie uruchomił testu, kod {ran.code}, a plik węzła się zbiera: {gathered.last})"
-            else:
-                found = Verdict.CAUGHT, f"{ran.last} (plik węzła z mutacją się nie zbiera, kod {gathered.code}: {gathered.last})"
+    elif mutation.expected is not None:
+        found = (Verdict.CAUGHT if ran.last.startswith(mutation.expected) else Verdict.SURVIVED), ran.last
+    elif mutation.edits and _without_test(mutation.command, ran):
+        gathered = _run(copy, _collecting(mutation.command), min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
+        if gathered.code is None or gathered.code in {0, PYTEST_EXIT_NO_TESTS_COLLECTED}:
+            found = Verdict.SURVIVED, f"{ran.last} (pytest nie uruchomił testu z polecenia, kod {ran.code}, a pliki testów polecenia z mutacją się zbierają: {gathered.last}; {GONE_HINT})"
         else:
-            found = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
+            found = Verdict.CAUGHT, f"{ran.last} (pliki testów polecenia z mutacją się nie zbierają, kod {gathered.code}: {gathered.last})"
+    else:
+        found = (Verdict.CAUGHT if ran.code != 0 else Verdict.SURVIVED), ran.last
     return *found, ran.seconds
+
+
+def _collecting(command: Sequence[str]) -> tuple[str, ...]:
+    """Polecenie pytest ``command``, które tylko zbiera jego pliki testów: każdy węzeł (``plik.py::test``) zastąpiony
+    swoim plikiem, z ``--collect-only``. Reszta polecenia zostaje (``-k``, opcje, ``conftest.py``), a pytest-xdist przy
+    ``--collect-only`` się wyłącza, więc zbieranie kończy się kodem innym niż 0 i 5 tylko wtedy, gdy plik albo
+    ``conftest.py`` z mutacją się nie importuje, a wtedy pada też zadanie Required CI, które uruchamia całe pliki."""
+
+    def file(argument: str) -> str:
+        path, node, _ = argument.partition("::")
+        return path if node and path.endswith(".py") and not argument.startswith("-") else argument
+
+    return (*map(file, command), "--collect-only")
 
 
 def _baseline(
