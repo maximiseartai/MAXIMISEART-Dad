@@ -73,6 +73,14 @@ Laptop taty na pewno działa o 8:00. Nie wiadomo, czy działa w nocy albo wieczo
   które dni poszłyby przypomnienia, a wysyła jeden mail tylko na adres Maksa (krok 3 skilla `wydanie`, bez pytania
   Maksa od 19.11.2026). Po Wydaniu nie ma trybu próbnego.
 
+Decyzje agenta wdrożenia poza prośbą Maksa: odrzucone hasło aplikacji przy wysyłce przypomnień zakłada Zgłoszenie do
+Maksa samo, bez kliknięcia, bo tata przy pracy przypomnień nie siedzi, i zamyka porę, żeby Gmail nie dostawał złego
+hasła co minutę; pamięć wysłanych w tej pracy Centrum jest własna, a nie wspólna z Wysyłką rozliczeń
+([ADR 0040](0040-wysylka-rozliczen-mailem-ze-skrzynki-raportow.md)) za jednym modułem „wysłane przez Centrum”, bo obie
+liczą z wysłanych co innego: przypomnienie porę z chwili wysyłki i Wykonawcę z adresów Listy Wykonawców, Mail z rozliczeniem
+stan pliku po jego nazwie i chwili zmiany, z ostatnim mailem pliku w miejscu poprzedniego, a dostęp do skrzynki
+sprawdzają w innym miejscu odczytu i z innym skutkiem.
+
 ## Odrzucone warianty
 
 - **Czekać na chmurę.** Tata dalej przypominałby ręcznie przez całą migrację.

@@ -1,36 +1,3 @@
-"""Zgłoszenie do Maksa: treść, wysyłka do skrzynki Zgłoszeń i stan na tym komputerze.
-
-Treść Zgłoszenia powstaje tylko tutaj, z tych samych bezpiecznych faktów co
-Komunikat. Zgłoszenie Zatrzymania (``StopReport``) ma Komunikat z kodem i
-trzema częściami, proces, okres i tryb, odnośnik do Logów Uruchomienia, commit
-narzędzia, wynik każdego sprawdzenia Diagnozy i ostatnie wpisy dziennika
-Centrum, a przy nieoczekiwanym wyjątku jego typ i ślad wywołań w kodzie
-narzędzia. Zgłoszenie nieudanej Aktualizacji narzędzia (``UpdateReport``) ma
-te same fakty co dziennik Centrum:
-kod Komunikatu, commit przed i po, czy instalowano biblioteki i ostatnie wpisy
-dziennika, bez ścieżek i bez wyjścia Gita. Ścieżki są już skrócone w
-Komunikatach, szczegółach sprawdzeń i ramkach śladu; treści wierszy, treści
-wyjątków ani klucza Zgłoszenie nie ma (ADR 0007). Podgląd przechodzi przez
-strażnika reguły danych (ADR 0025), więc tata widzi i wysyła tekst bez wartości
-``ADRES`` i numeru Orange, z zamaskowanymi telefonami i ulicami.
-
-Treść Zgłoszenia mieści się w jednej części wysyłki (``PART_LIMIT``), bo kolejka Skrzynki przejmuje Zgłoszenie,
-które założyła przerwana próba tej samej wysyłki, bez komentarzy, a do otwartego Zgłoszenia tego odcisku
-dopisuje całą treść jednym komentarzem. Za długa traci najpierw pierwsze ramki śladu wywołań (pełny ślad jest
-w Logach Uruchomienia), a gdy to nie wystarczy, najstarsze wpisy dziennika Centrum; każde skrócenie ma dopisek.
-
-Źródło Zgłoszenia (Zatrzymanie w ``stops``, nieudana Aktualizacja narzędzia w
-``tool_updates``) trzyma jego uchwyt (``ReportHandle``): uchwyt zamraża podgląd,
-a „Wyślij do Maksa” kładzie dokładnie ten podgląd w kolejce Skrzynki Zgłoszeń,
-najwyżej raz na uchwyt. Powrót problemu, którego Zgłoszenie jest otwarte, idzie
-do kolejki sam po Diagnozie Zatrzymania, bez kliknięcia. Zgłoszenie pracy Przypomnień o raporcie
-(``ReminderReport``, odrzucone hasło aplikacji przy wysyłce) praca przypomnień w ``report_reminders`` wysyła sama, bo
-tata przy niej nie siedzi (ADR 0030). Bez sieci albo Tokenu do Zgłoszeń Zgłoszenie czeka w
-kolejce i wychodzi samo; Komunikat jest tylko wtedy, gdy nie da się zapisać
-pliku kolejki. Zgłoszenie, którego treść Skrzynka odrzuciła, nie czeka na nic,
-co mógłby naprawić tata albo internet (``Rejected``).
-"""
-
 from __future__ import annotations
 
 from bisect import bisect_left
@@ -50,34 +17,27 @@ from rozliczenia.centrum.contract import diagnosis as diagnosis_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_cases import REPORT, Case, CaseNews, CaseNumbered, CaseRejected, DadCases
 from rozliczenia.centrum.deadline import within
-from rozliczenia.centrum.diagnosis import Diagnosis
+from rozliczenia.centrum.diagnosis import LOG_ENTRIES, Diagnosis
 from rozliczenia.centrum.keyed_box import KeyedBox, NoKey
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, PART_LIMIT, OpenIssue, Outbox, Post
 from rozliczenia.centrum.report_issue import RETURNED_HEADING, fingerprint_line
 from rozliczenia.centrum.report_box import FindOutcome
-from rozliczenia.centrum.tool_freshness import CommitSource
+from rozliczenia.centrum.tool_freshness import RELEASES_TIMEOUT_S, CommitSource
 from rozliczenia.centrum.tool_update import UpdateResult
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.message import Message
 from rozliczenia.process_run import Stop
 from rozliczenia.wall_clock import utc_now
 
-SEARCH_DEADLINE_S: Final = 3.0
-"""Podgląd Zgłoszenia czeka w tle na odpowiedź skrzynki o otwarte Zgłoszenie najwyżej tyle, co Diagnoza na commit `main`."""
+SEARCH_DEADLINE_S: Final = RELEASES_TIMEOUT_S
 REPORT_THREAD: Final = "zgloszenie-skrzynka"
-
-_UPDATE_LOG_ENTRIES: Final = 20
-"""Zgłoszenie nieudanej Aktualizacji narzędzia ma tyle ostatnich wpisów dziennika co Zgłoszenie z Diagnozy."""
 
 _CHECK_STATES: Final = {"passed": "przeszło", "failed": "nie przeszło", "not_checked": "nie sprawdzono"}
 
 
 @dataclass(frozen=True)
 class Report:
-    """Zgłoszenie: tytuł (kod i „Co się stało”), treść Markdown, odcisk problemu, po którym je rozpoznać, i samo
-    „Co się stało”, którym Powiadomienie nazywa Zgłoszenie."""
-
     title: str
     body: str
     fingerprint: str
@@ -86,11 +46,6 @@ class Report:
 
 @dataclass(frozen=True)
 class ProblemFingerprint:
-    """Odcisk problemu: proces (albo Aktualizacja narzędzia), kod Komunikatu i jego trzy części.
-
-    Kody są unikalne tylko w katalogu procesu, więc odcisk zawiera proces.
-    """
-
     process: common_contract.ProcessKey | Literal["tool_update", "report_reminders"]
     code: str
     what: str
@@ -103,32 +58,19 @@ class ProblemFingerprint:
 
     @classmethod
     def of_tool_update(cls, message: Message) -> ProblemFingerprint:
-        """Odcisk problemu nieudanej Aktualizacji narzędzia: jej kody są unikalne w jej własnym katalogu."""
-
         return cls("tool_update", message.code, message.what, message.where, message.action)
 
     @classmethod
     def of_reminders(cls, message: Message) -> ProblemFingerprint:
-        """Odcisk problemu pracy Przypomnień o raporcie: jej kody są unikalne w jej własnym katalogu."""
-
         return cls("report_reminders", message.code, message.what, message.where, message.action)
 
     @property
     def digest(self) -> str:
-        """Stały skrót odcisku do Zgłoszenia i lokalnego stanu wysłanych; bez treści Komunikatu."""
-
         return hashlib.sha256("\x1f".join(astuple(self)).encode("utf-8")).hexdigest()[:16]
 
 
 @dataclass(frozen=True)
 class StopReport:
-    """Zgłoszenie Zatrzymania z Diagnozy.
-
-    ``logs``: adres komentarza Logów Uruchomienia w Skrzynce Zgłoszeń z chwili Diagnozy; ``None``: Logi nie były
-    jeszcze w Skrzynce (zwykle czekały w kolejce). Ustalony przy Diagnozie, więc wysłane Zgłoszenie jest dokładnie
-    podglądem, który widział tata.
-    """
-
     run: runs_contract.RunInfo
     stop: Stop
     fingerprint: ProblemFingerprint
@@ -177,8 +119,6 @@ class StopReport:
 
 @dataclass(frozen=True)
 class UpdateReport:
-    """Zgłoszenie nieudanej Aktualizacji narzędzia: Komunikat i fakty wpisu ``aktualizacja-koniec`` dziennika."""
-
     result: UpdateResult
     message: Message
     log_entries: tuple[str, ...]
@@ -186,7 +126,7 @@ class UpdateReport:
 
     @classmethod
     def of(cls, result: UpdateResult, message: Message, log: CentrumLog) -> UpdateReport:
-        return cls(result, message, tuple(log.recent(_UPDATE_LOG_ENTRIES)), ProblemFingerprint.of_tool_update(message))
+        return cls(result, message, tuple(log.recent(LOG_ENTRIES)), ProblemFingerprint.of_tool_update(message))
 
     @property
     def period(self) -> None:
@@ -215,16 +155,13 @@ class UpdateReport:
 
 @dataclass(frozen=True)
 class ReminderReport:
-    """Zgłoszenie pracy Przypomnień o raporcie, które Centrum wysyła samo, bez taty: Komunikat i ostatnie wpisy
-    dziennika Centrum (bez adresów Wykonawców i treści maili, bo dziennik ich nie ma)."""
-
     message: Message
     log_entries: tuple[str, ...]
     fingerprint: ProblemFingerprint
 
     @classmethod
     def of(cls, message: Message, log: CentrumLog) -> ReminderReport:
-        return cls(message, tuple(log.recent(_UPDATE_LOG_ENTRIES)), ProblemFingerprint.of_reminders(message))
+        return cls(message, tuple(log.recent(LOG_ENTRIES)), ProblemFingerprint.of_reminders(message))
 
     @property
     def period(self) -> None:
@@ -245,7 +182,6 @@ class ReminderReport:
 
 
 ReportSource = StopReport | UpdateReport | ReminderReport
-"""Źródło Zgłoszenia: Zatrzymanie, nieudana Aktualizacja narzędzia albo praca Przypomnień o raporcie."""
 
 
 def _message_lines(message: Message) -> list[str]:
@@ -263,8 +199,6 @@ def _message_lines(message: Message) -> list[str]:
 
 
 def _tool_lines(fingerprint: str, previous: int | None, *, commit: str | None = None) -> list[str]:
-    """Sekcja narzędzia: ``commit`` (gotowy wiersz, jeśli jest), odcisk problemu i poprzednie Zgłoszenie."""
-
     return [
         "## Narzędzie",
         "",
@@ -276,9 +210,6 @@ def _tool_lines(fingerprint: str, previous: int | None, *, commit: str | None = 
 
 
 def _settings_lines(changes: Sequence[str]) -> list[str]:
-    """Sekcja zmian Ustawień Centrum z ostatnich 30 dni (``CentrumSettings.reported_changes``): bez nazw, adresów i
-    sekretów, bo te linie ich nie mają."""
-
     return ["## Zmiany Ustawień (30 dni)", "", *(changes or ["- bez zmian"]), ""]
 
 
@@ -287,9 +218,6 @@ def _report(message: Message, lines: list[str], fingerprint: str) -> Report:
 
 
 def _guarded(report: Report, period: str | None, forbidden: ForbiddenValues) -> _Preview:
-    """Podgląd Zgłoszenia po strażniku reguły danych (``guarded``): tytuł i treść bez zakazanych wartości,
-    z zamaskowanymi telefonami i ulicami, a każda zamaskowana wartość to uwaga techniczna na końcu treści."""
-
     title = guarded(forbidden, report.title, "tytuł Zgłoszenia")
     body = guarded(forbidden, report.body, "treść Zgłoszenia")
     notes = [*title.notes, *body.notes]
@@ -302,16 +230,6 @@ def _body(lines: list[str]) -> str:
 
 
 def _fitted(lines: Callable[[int, int], list[str]], *, frames: int, entries: int) -> list[str]:
-    """Wiersze Zgłoszenia, które mieszczą się w jednej części wysyłki (``PART_LIMIT``).
-
-    ``lines`` dostaje, ile pierwszych ramek śladu wywołań i ile najstarszych wpisów dziennika pominąć. Skraca się
-    najpierw ślad, potem dziennik, każde o najmniej, ile trzeba; treść, która nie mieści się nawet bez śladu i
-    dziennika, zostaje taka, a ``Post`` ją odrzuci.
-
-    Każdy krok po pierwszym skraca treść, więc pierwszy, który się mieści, znajduje bisekcja. Pierwszy krok (całe
-    Zgłoszenie) sprawdza osobno, bo dopisek o pominiętych ramkach bywa dłuższy niż jedna ramka.
-    """
-
     steps = [
         *((dropped, 0) for dropped in range(frames + 1)),
         *((frames, dropped) for dropped in range(1, entries + 1)),
@@ -325,12 +243,6 @@ def _fitted(lines: Callable[[int, int], list[str]], *, frames: int, entries: int
 
 
 def _trace_lines(trace: CallTrace | None, dropped: int) -> list[str]:
-    """Sekcja śladu wywołań wyjątku: typ, przyczyny z łańcucha ``__cause__`` i ramki kodu narzędzia, bez treści wyjątku.
-
-    ``dropped`` pierwszych ramek (od miejsca przechwycenia) pomija, z dopiskiem, że pełny ślad mają Logi Uruchomienia;
-    ramki przyczyn są tylko w Logach Uruchomienia.
-    """
-
     if trace is None:
         return []
     return [
@@ -365,23 +277,15 @@ def _cell(text: str) -> str:
 
 
 def report_target(fingerprint: str, title: Outgoing) -> OpenIssue:
-    """Cel wysyłki Zgłoszenia w kolejce: jedno otwarte Zgłoszenie na odcisk problemu, a Zgłoszenie, które wróciło, idzie
-    do niego komentarzem „Zgłoszenie wróciło” (ADR 0007)."""
-
     return OpenIssue(REPORT.label, tool(fingerprint_line(fingerprint)), title, tool(RETURNED_HEADING))
 
 
 def _unframed(_number: int, _count: int, text: Outgoing) -> Outgoing:
-    """Części Zgłoszenia bez nagłówków: issue i komentarze to razem dokładnie podgląd."""
-
     return text
 
 
 @dataclass(frozen=True)
 class _Preview:
-    """Zamrożony podgląd Zgłoszenia po strażniku (``_guarded``), jego odcisk i „Co się stało” (``Report``) i token okresu
-    jego źródła (``None``: Aktualizacja narzędzia) do dziennika kolejki."""
-
     title: Outgoing
     body: Outgoing
     fingerprint: str
@@ -394,17 +298,12 @@ class _Preview:
 
 
 ReportShown = Callable[[diagnosis_contract.ReportState], None]
-"""Właściciel Zgłoszenia, który pokazuje każdy jego nowy stan (np. karta Uruchomienia przez ``RunHost``)."""
 
 
 class NoPreview(Exception):
-    """„Wyślij do Maksa” przed pierwszym podglądem: nie ma czego wysłać."""
-
+    ...
 
 class _Ear:
-    """Uchwyt Zgłoszenia tak, jak go słyszy ``Reports``: numer issue sprawy (``delivered``) i odrzucenie treści
-    (``rejected``). Ucho trzyma uchwyt słabo, a uchwyt ucho mocno, więc ``Reports`` słyszy tylko żywe uchwyty."""
-
     def __init__(self, delivered: Callable[[], None], rejected: Callable[[], None]) -> None:
         self._delivered = weakref.WeakMethod(delivered)
         self._rejected = weakref.WeakMethod(rejected)
@@ -420,9 +319,6 @@ class _Ear:
 
 @dataclass(frozen=True)
 class _Desk:
-    """To, co ``Reports`` daje swoim uchwytom Zgłoszeń (``Reports.handle``): stan problemu, podgląd źródła, pytanie
-    skrzynki, wysyłka przez kolejkę, sprawa czekająca w kolejce i ucho uchwytu na wieści ze Spraw taty."""
-
     state_of: Callable[[str], diagnosis_contract.ReportState]
     preview: Callable[[ReportSource], _Preview]
     ask_box: Callable[[str], None]
@@ -432,20 +328,6 @@ class _Desk:
 
 
 class ReportHandle:
-    """Zgłoszenie jednego problemu z jednego źródła (``ReportSource``), od podglądu do wysyłki.
-
-    ``prepare`` zamraża podgląd i pyta skrzynkę Zgłoszeń w tle o otwarte Zgłoszenie tego problemu, a ``send``
-    kładzie ostatni podgląd w kolejce Skrzynki najwyżej raz; drugie kliknięcie w trakcie wysyłki czeka na jej wynik.
-    Podgląd Zatrzymania, którego problem po odpowiedzi skrzynki czeka na naprawę (ma otwarte Zgłoszenie), uchwyt
-    kładzie w kolejce sam jako powrót problemu, najwyżej raz: kolejka dopisuje go do otwartego Zgłoszenia komentarzem
-    „Zgłoszenie wróciło”, a stan zostaje „czeka na naprawę”, bo tata nie ma tu nic do zrobienia (ADR 0007).
-    Po każdej odpowiedzi skrzynki, każdej wysyłce i dostarczeniu z kolejki nowy stan dostaje ``shown`` właściciela.
-    Odpowiedź na pytanie sprzed wysyłki przepada, bo stan to już wynik wysyłki. ``shown`` biegnie pod blokadą
-    uchwytu, więc dostaje stany w kolejności ich zmian, i nie woła uchwytu. Właściciel, który pokazuje stan dopiero
-    po odpowiedzi skrzynki, czeka na nią przez ``wait_for_box``. Wysyłka, której dostarczenie przyszło tuż po końcu
-    czekania, zanim uchwyt pokazał „czeka w kolejce”, kończy się stanem „wysłane”.
-    """
-
     def __init__(self, desk: _Desk, fingerprint: str, shown: ReportShown | None) -> None:
         self._desk = desk
         self._fingerprint = fingerprint
@@ -466,12 +348,6 @@ class ReportHandle:
             return self._state
 
     def prepare(self, source: ReportSource) -> diagnosis_contract.ReportDraft:
-        """Nowy podgląd ``source``, który wyśle ``send``; nie czeka na skrzynkę i niczego nie zapisuje.
-
-        Gdy ten problem był już zgłoszony z tego komputera, Zgłoszenie ma odnośnik do ostatniego z nich. Podgląd
-        Zatrzymania, którego problem czeka na naprawę, po odpowiedzi skrzynki idzie sam do kolejki jako powrót.
-        """
-
         preview = self._desk.preview(source)
         comeback = preview if isinstance(source, StopReport) else None
         with self._changed:
@@ -483,11 +359,6 @@ class ReportHandle:
         return preview.view
 
     def wait_for_box(self) -> None:
-        """Czeka na odpowiedź skrzynki na pytanie z ostatniego ``prepare``, najwyżej termin szukania w skrzynce.
-
-        Po odpowiedzi „czeka na naprawę” podglądu Zatrzymania czeka też na wysyłkę jego powrotu (``DELIVERY_WAIT_S``).
-        """
-
         with self._changed:
             asking = self._asking
         if asking is not None:
@@ -510,11 +381,6 @@ class ReportHandle:
                 self._changed.notify_all()
 
     def send(self) -> diagnosis_contract.ReportState:
-        """Kładzie ostatni podgląd w kolejce Skrzynki i czeka na nią chwilę, chyba że już wysłany albo czeka w kolejce.
-
-        ``NoPreview``, gdy podglądu nie ma.
-        """
-
         with self._changed:
             while self._sending:
                 self._changed.wait()
@@ -560,23 +426,6 @@ class ReportHandle:
 
 
 class Reports:
-    """Zgłoszenia z tego komputera: uchwyt Zgłoszenia każdego źródła, wysyłka przez kolejkę Skrzynki i sprawy.
-
-    „Wyślij do Maksa” zapisuje sprawę bez numeru, kładzie zamrożony podgląd w kolejce jako ``report_target`` i czeka na
-    skrzynkę najwyżej ``DELIVERY_WAIT_S``. Numer issue dopisują sprawie Sprawy taty w Skrzynce (``case_delivery``),
-    także po następnym starcie Centrum, a ``Reports`` słyszy o nim od Spraw taty (``DadCases.watch``) i oddaje stan
-    „wysłane” każdemu żywemu uchwytowi tego problemu; o odrzuconej treści tak samo. Jeden problem ma jedno
-    otwarte Zgłoszenie: podgląd pyta skrzynkę o otwarte Zgłoszenie z tym odciskiem, kolejka dopisuje do niego
-    komentarz „Zgłoszenie wróciło” zamiast zakładać nowe (powrót po Diagnozie Zatrzymania kładzie w kolejce sam
-    uchwyt), a problem, którego Zgłoszenie czeka w kolejce, nie trafia do niej drugi raz.
-
-    Wysyłka ma własny identyfikator, nie odcisk problemu: odcisk wraca po zamknięciu Zgłoszenia, a kolejka czeka na
-    dostarczenie po identyfikatorze. Sprawa, której wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby
-    wiecznie, a tata nie mógłby kliknąć jeszcze raz. Blokada chroni tylko stan w pamięci (ostatnią odpowiedź skrzynki o
-    otwarte Zgłoszenie każdego problemu w tej pracy Centrum i to, ile numerów issue dostały jego sprawy); pytania do
-    skrzynki idą bez niej.
-    """
-
     def __init__(
         self,
         work: CentrumWork,
@@ -588,8 +437,6 @@ class Reports:
         search_deadline_s: float,
         settings_changes: Callable[[], tuple[str, ...]],
     ) -> None:
-        """``settings_changes`` daje linie zmian Ustawień Centrum z ostatnich 30 dni do każdego Zgłoszenia."""
-
         self._commit = commit
         self._settings_changes = settings_changes
         self._forbidden = work.forbidden
@@ -613,11 +460,6 @@ class Reports:
         cases.watch(REPORT, self._heard)
 
     def handle(self, fingerprint: ProblemFingerprint, *, shown: ReportShown | None = None) -> ReportHandle:
-        """Uchwyt Zgłoszenia problemu ``fingerprint`` bez podglądu; stan bez pytania skrzynki.
-
-        ``shown`` dostaje każdy nowy stan; właściciel, który czyta ``ReportHandle.state`` sam, go nie podaje.
-        """
-
         return ReportHandle(self._desk, fingerprint.digest, shown)
 
     def _listen(self, fingerprint: str, ear: _Ear) -> None:
@@ -676,13 +518,6 @@ class Reports:
         return latest is not None and latest.number is None
 
     def _ask_box(self, fingerprint: str) -> None:
-        """Pyta skrzynkę o otwarte Zgłoszenie problemu; bez klucza albo odpowiedzi zostaje to, co już wiadomo.
-
-        Brak odpowiedzi w ``search_deadline_s`` (u taty ``SEARCH_DEADLINE_S``) to brak odpowiedzi: spóźniona
-        przepada, a kolejka i tak szuka otwartego Zgłoszenia, zanim założy nowe. Odpowiedź też przepada, gdy w trakcie
-        pytania sprawa problemu dostała numer issue: skrzynka odpowiadała o stanie sprzed tego issue.
-        """
-
         with self._lock:
             numbered = self._numbered.get(fingerprint, 0)
         answer = within(self._search_deadline_s, lambda: (self._find_open(fingerprint),), name="skrzynka-szukaj")
@@ -698,11 +533,6 @@ class Reports:
         return self._box.find_issue(REPORT.label, fingerprint_line(fingerprint), include_closed=False)
 
     def _state_of(self, fingerprint: str) -> diagnosis_contract.ReportState:
-        """Sprawa czekająca w kolejce, potem odpowiedź skrzynki z tej pracy Centrum, a bez niej ostatnia wysłana sprawa.
-
-        Zgłoszenie, o którym wiadomo, że Maks je zamknął, nie czeka na naprawę.
-        """
-
         latest = self._cases.find(REPORT, fingerprint)
         if latest is not None and latest.number is None:
             return self._cases.queued(fingerprint, self._box)

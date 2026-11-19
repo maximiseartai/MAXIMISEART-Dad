@@ -1,15 +1,13 @@
-"""Cykl Zgłoszenia na interfejsie jego uchwytu (``Reports.handle``): podgląd, pytanie skrzynki w tle, kolejka i stan.
-
-Uchwytu używają Zatrzymanie (``stops``) i nieudana Aktualizacja narzędzia (``tool_updates``); tu źródłem jest
-Aktualizacja, a okablowanie obu źródeł sprawdzają ich testy HTTP (``test_centrum_zgloszenie``,
-``test_centrum_aktualizacja``). Wysyłka idzie przez prawdziwą kolejkę Skrzynki na fałszywej skrzynce.
-"""
-
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import astuple, dataclass, field
 from datetime import datetime, timezone
+import gc
+import os
+import subprocess
+import sys
 import threading
+import weakref
 from pathlib import Path
 from typing import Any
 
@@ -67,8 +65,6 @@ WAITING = {"state": "waiting"}
 
 
 class Owner:
-    """Właściciel Zgłoszenia: zapamiętuje każdy stan, który dostał od uchwytu."""
-
     def __init__(self) -> None:
         self.states: list[dict[str, Any]] = []
         self._changed = threading.Condition()
@@ -86,14 +82,6 @@ class Owner:
 
 @dataclass
 class Computer:
-    """Katalog konfiguracji tego komputera, skrzynka Zgłoszeń, zegar i dziennik Centrum; ``reports()`` to start Centrum.
-
-    ``outbox`` to kolejka Skrzynki ostatniego startu. Każdy kolejny start ma nowy zegar, jak nowy proces Centrum:
-    budzik kolejki poprzedniego startu już nie dzwoni. Z tego samego powodu kolejny start czeka na koniec przejścia
-    kolejki poprzedniego: kolejka, która zastałaby przejście poprzedniej na tym samym folderze, oddałaby jej swoje
-    (``outbox._claimed``).
-    """
-
     tmp_path: Path
     box: FakeReportBox = field(default_factory=FakeReportBox)
     search_deadline_s: float = SEARCH_DEADLINE_S
@@ -118,11 +106,11 @@ class Computer:
     def with_key(self) -> None:
         write_report_key(self.tool)
 
-    def reports(self) -> Reports:
+    def start(self) -> Reports:
         if self.since is not None:
             join_threads_since(self.since, named=QUEUE_THREAD)
-            self.clock = ManualClock()
         self.since = new_line()
+        self.clock = ManualClock()
         work = centrum_work(self.config, self.log, self.clock)
         keyed = KeyedBox(self.box, lambda: read_report_key(self.config), clock=self.clock)
         stored = DadCases(work)
@@ -137,8 +125,6 @@ class Computer:
         return dad_cases(self.config, "zgloszenie")
 
     def numbers(self) -> list[int | None]:
-        """Numery Zgłoszeń ostatniego startu: na nie czeka test, bo sprawy oddają je pod blokadą zapisu pliku stanu."""
-
         assert self.stored is not None
         return [case.number for case in self.stored.all() if case.kind == REPORT]
 
@@ -162,8 +148,6 @@ def source(computer: Computer, code: str = NO_CONNECTION) -> UpdateReport:
 
 
 def prepared(reports: Reports, computer: Computer, code: str = NO_CONNECTION) -> tuple[ReportHandle, Owner, str]:
-    """Uchwyt z podglądem po odpowiedzi skrzynki (albo jej braku) na pytanie z podglądu: uchwyt, właściciel i treść."""
-
     owner = Owner()
     report = source(computer, code)
     handle = reports.handle(report.fingerprint, shown=owner)
@@ -174,7 +158,7 @@ def prepared(reports: Reports, computer: Computer, code: str = NO_CONNECTION) ->
 
 def test_wyslanie_przed_podgladem_nie_ma_czego_wyslac(computer: Computer) -> None:
     computer.with_key()
-    handle = computer.reports().handle(source(computer).fingerprint)
+    handle = computer.start().handle(source(computer).fingerprint)
 
     with pytest.raises(NoPreview):
         handle.send()
@@ -184,7 +168,7 @@ def test_wyslanie_przed_podgladem_nie_ma_czego_wyslac(computer: Computer) -> Non
 
 def test_wyslane_zgloszenie_to_dokladnie_podglad_a_sprawa_ma_numer_issue(computer: Computer) -> None:
     computer.with_key()
-    handle, owner, body = prepared(computer.reports(), computer)
+    handle, owner, body = prepared(computer.start(), computer)
 
     assert dump(handle.send()) == SENT
 
@@ -200,16 +184,12 @@ def test_wyslane_zgloszenie_to_dokladnie_podglad_a_sprawa_ma_numer_issue(compute
     assert wait_for(lambda: computer.queued() == [])
 
 
-# Bardzo długi ślad wywołań i dziennik: każde z nich samo jest dłuższe niż jedna część wysyłki (#724).
 LONG_FRAMES = tuple(CallFrame("src/rozliczenia/collective_preparation.py", line, f"krok_{line}") for line in range(3_000))
 LONG_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d} {'x' * 5_000}" for minute in range(20))
 SHORT_ENTRIES = tuple(f"2026-11-02T10:{minute:02d}:00+01:00 wpis-{minute:02d}" for minute in range(20))
 
 
 def stop_report(entries: tuple[str, ...], frames: tuple[CallFrame, ...] = LONG_FRAMES) -> StopReport:
-    """Zgłoszenie Zatrzymania po nieoczekiwanym wyjątku ze śladem wywołań ``frames`` (domyślnie bardzo długim) i
-    dziennikiem ``entries``."""
-
     run = runs_contract.RunInfo(
         id="3f2a9c1b8e7d4f0a",
         process="preparation",
@@ -225,16 +205,36 @@ def stop_report(entries: tuple[str, ...], frames: tuple[CallFrame, ...] = LONG_F
     return StopReport(run, stop, ProblemFingerprint.of("preparation", message), Diagnosis((), entries), logs=None)
 
 
-def test_ten_sam_komunikat_zatrzymania_w_dwoch_procesach_to_dwa_problemy() -> None:
-    """Kody Komunikatów są unikalne tylko w katalogu procesu, więc Zatrzymanie z tym samym Komunikatem w innym procesie
-    ma inny odcisk problemu, czyli osobne Zgłoszenie (przegląd #1114 r1, Drobne 2)."""
-
+def test_ten_sam_komunikat_w_katalogu_kazdego_procesu_aktualizacji_i_przypomnien_to_osobny_problem() -> None:
     report = stop_report(SHORT_ENTRIES)
+    message = report.stop.message
     other = report.run.model_copy(update={"process": "settlement", "title": "Przebieg rozliczeń"})
 
-    fingerprints = {plain(run, report.stop).fingerprint.digest for run in (report.run, other)}
+    fingerprints = [
+        *(plain(run, report.stop).fingerprint for run in (report.run, other)),
+        ProblemFingerprint.of_tool_update(message),
+        ProblemFingerprint.of_reminders(message),
+    ]
 
-    assert len(fingerprints) == 2
+    assert len({fingerprint.digest for fingerprint in fingerprints}) == 4
+
+
+def test_odcisk_problemu_jest_ten_sam_w_kazdym_procesie_centrum() -> None:
+    fingerprint = ProblemFingerprint("settlement", "KOD", "Co sie stalo.", "Gdzie.", "Co zrobic.")
+    child = "import sys; from rozliczenia.centrum.reports import ProblemFingerprint as F; print(F(*sys.argv[1:]).digest)"
+
+    digests = {
+        subprocess.run(
+            [sys.executable, "-c", child, *astuple(fingerprint)],
+            env={**os.environ, "PYTHONHASHSEED": seed},
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        for seed in ("1", "2")
+    }
+
+    assert digests == {fingerprint.digest}
 
 
 LOGS_LINK = "https://github.com/tata/skrzynka/issues/7#issuecomment-1"
@@ -242,8 +242,6 @@ LOGS_LINK = "https://github.com/tata/skrzynka/issues/7#issuecomment-1"
 
 @dataclass
 class _LogsCommentedWithDiagnosis:
-    """Logi Uruchomienia, których komentarz kolejka zdążyła wysłać dopiero razem z Diagnozą: przed nią adresu nie ma."""
-
     runs: list[str] = field(default_factory=list)
 
     def link(self, run_id: str) -> str | None:
@@ -254,11 +252,8 @@ class _LogsCommentedWithDiagnosis:
 
 
 def test_podglad_zgloszenia_po_diagnozie_ma_adres_logow_sprzed_komentarza_tej_diagnozy(computer: Computer) -> None:
-    """Podgląd Zgłoszenia nie zależy od tego, czy kolejka zdążyła już wysłać komentarz Logów z tą Diagnozą: adres
-    Logów jest ten sprzed jej komentarza, więc ta sama Diagnoza daje zawsze ten sam podgląd."""
-
     logs = _LogsCommentedWithDiagnosis()
-    stops = Stops(computer.reports(), lambda process, period, settings: Diagnosis((), ()), computer.log, logs)
+    stops = Stops(computer.start(), lambda process, period, settings: Diagnosis((), ()), computer.log, logs)
     report = stop_report(SHORT_ENTRIES)
     stopped = stops.ended(report.run, report.stop, shown=Owner(), settings=None)
 
@@ -271,7 +266,7 @@ def test_podglad_zgloszenia_po_diagnozie_ma_adres_logow_sprzed_komentarza_tej_di
 
 def sent_alone(computer: Computer, report: StopReport | UpdateReport) -> str:
     computer.with_key()
-    handle = computer.reports().handle(report.fingerprint)
+    handle = computer.start().handle(report.fingerprint)
     body = handle.prepare(report).body
 
     assert dump(handle.send()) == SENT
@@ -281,8 +276,6 @@ def sent_alone(computer: Computer, report: StopReport | UpdateReport) -> str:
 
 
 def kept_newest(entries: tuple[str, ...], body: str) -> int:
-    """Ile wpisów ``entries`` ma treść; to zawsze najnowsze, a dopisek mówi, ile najstarszych pominięto."""
-
     kept = sum(entry in body for entry in entries)
     assert all(entry in body for entry in entries[len(entries) - kept :])
     assert f"Pominięte najstarsze wpisy: {len(entries) - kept}, żeby Zgłoszenie zmieściło się w jednym issue." in body
@@ -296,7 +289,6 @@ def test_zgloszenie_z_bardzo_dlugim_sladem_wywolan_traci_pierwsze_ramki_z_dopisk
     kept = sum(f"\n{frame}\n" in body for frame in frames)
     assert all(f"\n{frame}\n" in body for frame in frames[len(frames) - kept :])
     assert f"- Pominięte pierwsze ramki: {len(frames) - kept}, pełny ślad wywołań jest w Logach Uruchomienia" in body
-    # Ślad traci tylko tyle ramek, ile trzeba, a dziennik zostaje cały.
     assert len(body) + len(frames[-kept - 1]) + 1 > PART_LIMIT
     assert all(entry in body for entry in SHORT_ENTRIES)
     assert "Pominięte najstarsze wpisy" not in body
@@ -305,9 +297,6 @@ def test_zgloszenie_z_bardzo_dlugim_sladem_wywolan_traci_pierwsze_ramki_z_dopisk
 def test_zgloszenie_zatrzymania_do_maksa_z_przyczyna_w_wyjatku_ma_typ_kazdej_przyczyny_w_sladzie_wywolan(
     computer: Computer,
 ) -> None:
-    """Zatrzymanie okna efenix „do Maksa” ma ślad wywołań z łańcuchem przyczyn; Zgłoszenie podaje typ każdej przyczyny
-    po kolei, bez treści wyjątków, a ich ramki zostawia Logom Uruchomienia."""
-
     run = runs_contract.RunInfo(
         id="5c1d7e2a9b0f4e36",
         process="efenix",
@@ -389,18 +378,25 @@ def test_zgloszenie_dokladnie_na_granicy_jednej_czesci_wysylki_jest_cale(compute
 
 
 def test_zgloszenie_ktore_miesci_sie_cale_choc_bez_jednej_ramki_juz_nie_ma_caly_slad(computer: Computer) -> None:
-    """Dopisek o pominiętych ramkach jest dłuższy niż krótka ramka, więc Zgłoszenie, które mieści się w jednej części
-    wysyłki tylko w całości, zostaje całe, zamiast tracić ramki."""
-
     frames = tuple(CallFrame("src/rozliczenia/a.py", line, "f") for line in range(1, 21))
     empty = stop_report(("",), frames)
-    frame = computer.reports().handle(empty.fingerprint).prepare(empty).body
+    frame = computer.start().handle(empty.fingerprint).prepare(empty).body
     entry = "x" * (PART_LIMIT - len(frame))
 
     body = sent_alone(computer, stop_report((entry,), frames))
 
     assert (len(body), "Pominięte" in body) == (PART_LIMIT, False)
     assert all(f"\n{f.file}:{f.line} w {f.function}\n" in body for f in frames)
+
+
+def test_zgloszenie_ktore_nie_miesci_sie_nawet_bez_sladu_i_dziennika_traci_caly_slad_i_dziennik() -> None:
+    report = stop_report(SHORT_ENTRIES)
+
+    body = report.report(commit=None, previous=None, settings=("x" * PART_LIMIT,)).body
+
+    assert len(body) > PART_LIMIT
+    assert f"- Pominięte pierwsze ramki: {len(LONG_FRAMES)}, pełny ślad wywołań jest w Logach Uruchomienia" in body
+    assert f"Pominięte najstarsze wpisy: {len(SHORT_ENTRIES)}, żeby Zgłoszenie zmieściło się w jednym issue." in body
 
 
 def test_zgloszenie_nieudanej_aktualizacji_ma_20_ostatnich_wpisow_dziennika_jak_zgloszenie_z_diagnozy(
@@ -421,7 +417,7 @@ def test_zgloszenie_nieudanej_aktualizacji_ma_20_ostatnich_wpisow_dziennika_jak_
 def test_bez_sieci_zgloszenie_czeka_w_kolejce_i_dostaje_numer_po_dostarczeniu(computer: Computer) -> None:
     computer.with_key()
     computer.box.search_failure = Unreachable()
-    handle, owner, body = prepared(computer.reports(), computer)
+    handle, owner, body = prepared(computer.start(), computer)
 
     queued = dump(handle.send())
     [pending] = computer.cases()
@@ -443,7 +439,7 @@ def test_bez_klucza_albo_z_odrzuconym_zgloszenie_czeka_na_klucz_i_wychodzi_samo_
     if refused:
         computer.with_key()
         computer.box.search_failure = Refused()
-    handle, owner, _ = prepared(computer.reports(), computer)
+    handle, owner, _ = prepared(computer.start(), computer)
 
     queued = dump(handle.send())
     computer.box.search_failure = None
@@ -457,7 +453,7 @@ def test_bez_klucza_albo_z_odrzuconym_zgloszenie_czeka_na_klucz_i_wychodzi_samo_
 
 def test_zgloszenie_ktorego_kolejka_nie_zapisala_daje_komunikat_i_nie_zostawia_sprawy(computer: Computer) -> None:
     computer.with_key()
-    handle, _, _ = prepared(computer.reports(), computer)
+    handle, _, _ = prepared(computer.start(), computer)
     (computer.config / UNSENT_DIRECTORY).mkdir()
     blocker = computer.config / UNSENT_DIRECTORY / QUEUE_DIRECTORY
     blocker.write_text("plik zamiast folderu", encoding="utf-8")
@@ -480,7 +476,7 @@ def test_zgloszenie_ktorego_kolejka_nie_zapisala_daje_komunikat_i_nie_zostawia_s
 
 
 def test_drugi_uchwyt_tego_problemu_widzi_zgloszenie_w_kolejce_i_nie_wysyla_drugiego(computer: Computer) -> None:
-    reports = computer.reports()
+    reports = computer.start()
     first, _, _ = prepared(reports, computer)
     first.send()
 
@@ -491,7 +487,7 @@ def test_drugi_uchwyt_tego_problemu_widzi_zgloszenie_w_kolejce_i_nie_wysyla_drug
 
 
 def test_uchwyt_z_podgladem_sprzed_wysylki_tego_problemu_nie_wysyla_drugiego(computer: Computer) -> None:
-    reports = computer.reports()
+    reports = computer.start()
     first, _, _ = prepared(reports, computer)
     second, _, _ = prepared(reports, computer)
     first.send()
@@ -501,7 +497,7 @@ def test_uchwyt_z_podgladem_sprzed_wysylki_tego_problemu_nie_wysyla_drugiego(com
 
 
 def test_dwa_problemy_z_kolejki_dostaja_kazdy_numer_swojego_issue(computer: Computer) -> None:
-    reports = computer.reports()
+    reports = computer.start()
     for code in (NO_CONNECTION, OTHER_BRANCH):
         handle, _, _ = prepared(reports, computer, code)
         assert dump(handle.send()) == QUEUED_FOR_KEY
@@ -516,7 +512,7 @@ def test_dwa_problemy_z_kolejki_dostaja_kazdy_numer_swojego_issue(computer: Comp
 
 
 def test_dostarczenie_z_kolejki_zmienia_stan_kazdego_uchwytu_tego_problemu_na_wyslane(computer: Computer) -> None:
-    reports = computer.reports()
+    reports = computer.start()
     first, first_owner, _ = prepared(reports, computer)
     first.send()
     second, second_owner, _ = prepared(reports, computer)
@@ -532,7 +528,7 @@ def test_dostarczenie_z_kolejki_zmienia_stan_kazdego_uchwytu_tego_problemu_na_wy
 
 def test_ponowne_dostarczenie_tej_samej_sprawy_nie_zmienia_stanu_wyslanych(computer: Computer) -> None:
     computer.with_key()
-    reports = computer.reports()
+    reports = computer.start()
     handle, _, body = prepared(reports, computer)
     handle.send()
     cases = computer.cases()
@@ -557,10 +553,10 @@ def test_ponowne_dostarczenie_tej_samej_sprawy_nie_zmienia_stanu_wyslanych(compu
 
 def test_przejete_zgloszenie_znane_z_tego_komputera_to_jedna_sprawa(computer: Computer) -> None:
     computer.with_key()
-    first, _, _ = prepared(computer.reports(), computer)
+    first, _, _ = prepared(computer.start(), computer)
     first.send()
-    computer.box.search_failure = Unreachable()  # podgląd po restarcie nie wie, że Zgłoszenie jest otwarte
-    restarted = computer.reports()
+    computer.box.search_failure = Unreachable()
+    restarted = computer.start()
     again, owner, _ = prepared(restarted, computer)
     computer.box.search_failure = None
 
@@ -571,7 +567,7 @@ def test_przejete_zgloszenie_znane_z_tego_komputera_to_jedna_sprawa(computer: Co
 
 def test_poprzednie_zgloszenie_w_podgladzie_pomija_czekajace(computer: Computer) -> None:
     computer.with_key()
-    reports = computer.reports()
+    reports = computer.start()
     first, _, _ = prepared(reports, computer)
     first.send()
     computer.box.close(1)
@@ -587,7 +583,7 @@ def test_poprzednie_zgloszenie_w_podgladzie_pomija_czekajace(computer: Computer)
 def test_wyslane_zgloszenie_nie_idzie_drugi_raz_takze_po_nowym_podgladzie(computer: Computer) -> None:
     computer.with_key()
     report = source(computer)
-    handle, owner, _ = prepared(computer.reports(), computer)
+    handle, owner, _ = prepared(computer.start(), computer)
 
     first, second = dump(handle.send()), dump(handle.send())
     handle.prepare(report)
@@ -597,10 +593,55 @@ def test_wyslane_zgloszenie_nie_idzie_drugi_raz_takze_po_nowym_podgladzie(comput
     assert (len(computer.box.keys), len(computer.box.sent)) == (1, 1)
 
 
+def test_uchwyt_bez_wlasciciela_znika_od_razu_bo_zgloszenia_go_nie_trzymaja(computer: Computer) -> None:
+    handle = computer.start().handle(source(computer).fingerprint)
+    held = weakref.ref(handle)
+    collecting = gc.isenabled()
+    gc.disable()
+    try:
+        del handle
+        gone = held() is None
+    finally:
+        if collecting:
+            gc.enable()
+
+    assert gone
+
+
+def test_wlasciciel_dostaje_stany_uchwytu_w_kolejnosci_zmian_takze_gdy_dostarczenie_przychodzi_w_trakcie_pokazywania(
+    computer: Computer, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    computer.with_key()
+    hold = computer.box.open_hold = threading.Event()
+    monkeypatch.setattr("rozliczenia.centrum.reports.DELIVERY_WAIT_S", 0.01)
+    reports = computer.start()
+    states: list[dict[str, Any]] = []
+    sent_shown = threading.Event()
+    sent_while_queue_shown: list[bool] = []
+
+    def shown(state: BaseModel) -> None:
+        if dump(state) == QUEUED_FOR_INTERNET:
+            hold.set()
+            assert wait_for(lambda: computer.numbers() == [1])
+            sent_while_queue_shown.append(sent_shown.wait(0.2))
+        if dump(state) == SENT:
+            sent_shown.set()
+        states.append(dump(state))
+
+    report = source(computer)
+    handle = reports.handle(report.fingerprint, shown=shown)
+    handle.prepare(report)
+    handle.wait_for_box()
+
+    assert dump(handle.send()) == QUEUED_FOR_INTERNET
+    assert wait_for(lambda: len(states) == 3)
+    assert (states, sent_while_queue_shown) == ([READY, QUEUED_FOR_INTERNET, SENT], [False])
+
+
 def test_drugie_klikniecie_w_trakcie_wysylki_czeka_na_jej_wynik_i_nie_wysyla_drugi_raz(computer: Computer) -> None:
     computer.with_key()
     box = computer.box
-    handle, _, _ = prepared(computer.reports(), computer)
+    handle, _, _ = prepared(computer.start(), computer)
     box.open_hold = threading.Event()
     answers: list[dict[str, Any]] = []
     clicks = [threading.Thread(target=lambda: answers.append(dump(handle.send())), daemon=True) for _ in range(2)]
@@ -625,7 +666,7 @@ def test_wysylka_przerwana_wyjatkiem_nie_blokuje_nastepnej_ani_nie_zmienia_stanu
     computer: Computer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     computer.with_key()
-    handle, owner, _ = prepared(computer.reports(), computer)
+    handle, owner, _ = prepared(computer.start(), computer)
     outbox = computer.outbox
     assert outbox is not None
     post = outbox.post
@@ -652,11 +693,8 @@ def test_wysylka_przerwana_wyjatkiem_nie_blokuje_nastepnej_ani_nie_zmienia_stanu
 def test_klikniecie_w_trakcie_powrotu_problemu_czeka_na_jego_koniec_i_nie_kladzie_zgloszenia_drugi_raz(
     computer: Computer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Problem z otwartym Zgłoszeniem wraca po Diagnozie, a uchwyt kładzie powrót w kolejce sam (bez sieci zostaje w
-    niej); „Wyślij do Maksa” kliknięte w trakcie czeka na koniec powrotu i oddaje stan kolejki."""
-
     computer.with_key()
-    reports = computer.reports()
+    reports = computer.start()
     report = stop_report(SHORT_ENTRIES)
     first = reports.handle(report.fingerprint)
     first.prepare(report)
@@ -694,11 +732,11 @@ def test_klikniecie_w_trakcie_powrotu_problemu_czeka_na_jego_koniec_i_nie_kladzi
 
 def test_otwarte_zgloszenie_wyslane_spoza_tego_komputera_czeka_na_naprawe_bez_drugiego_issue(computer: Computer) -> None:
     computer.with_key()
-    first, _, _ = prepared(computer.reports(), computer)
+    first, _, _ = prepared(computer.start(), computer)
     first.send()
     (computer.config / DAD_CASES_FILE).unlink()
 
-    restarted = computer.reports()
+    restarted = computer.start()
     before = restarted.handle(source(computer).fingerprint)
     handle, owner, _ = prepared(restarted, computer)
 
@@ -711,11 +749,11 @@ def test_wyslane_zgloszenie_czeka_na_naprawe_po_restarcie_bez_pytania_skrzynki_a
     computer: Computer
 ) -> None:
     computer.with_key()
-    handle, _, body = prepared(computer.reports(), computer)
+    handle, _, body = prepared(computer.start(), computer)
     handle.send()
     asked = len(computer.box.listed)
 
-    restarted = computer.reports()
+    restarted = computer.start()
     same = restarted.handle(source(computer).fingerprint)
     other = restarted.handle(source(computer, OTHER_BRANCH).fingerprint)
 
@@ -731,20 +769,20 @@ def test_kolejny_start_zaczyna_sie_po_koncu_przejscia_kolejki_poprzedniego_jak_n
 ) -> None:
     computer.with_key()
     hold = computer.box.open_hold = threading.Event()
-    handle, _, _ = prepared(computer.reports(), computer)
+    handle, _, _ = prepared(computer.start(), computer)
     monkeypatch.setattr("rozliczenia.centrum.reports.DELIVERY_WAIT_S", 0.01)
     queued = dump(handle.send())
     release = threading.Timer(0.2, hold.set)
     release.start()
 
-    computer.reports()
+    computer.start()
 
     assert (queued, len(computer.box.sent)) == (QUEUED_FOR_INTERNET, 1)
 
 
 def test_inny_problem_wysyla_sie_osobno_obok_otwartego_zgloszenia(computer: Computer) -> None:
     computer.with_key()
-    reports = computer.reports()
+    reports = computer.start()
     first, _, _ = prepared(reports, computer)
     first.send()
 
@@ -762,14 +800,14 @@ def test_uwaga_taty_o_identyfikatorze_rownym_odciskowi_nie_jest_poprzednim_zglos
     note = Case(NOTE, fingerprint, "Uwaga o tym samym identyfikatorze", None, datetime.now(timezone.utc), 4)
     DadCases(centrum_work(computer.config, computer.log)).add(note)
 
-    _, _, body = prepared(computer.reports(), computer)
+    _, _, body = prepared(computer.start(), computer)
 
     assert "Poprzednie Zgłoszenie" not in body
 
 
 def test_po_zamknieciu_zgloszenia_powracajacy_problem_wysyla_nowe_z_odnosnikiem_do_poprzedniego(computer: Computer) -> None:
     computer.with_key()
-    reports = computer.reports()
+    reports = computer.start()
     first, _, first_body = prepared(reports, computer)
     first.send()
     computer.box.close(1)
@@ -786,7 +824,7 @@ def test_po_zamknieciu_zgloszenia_powracajacy_problem_wysyla_nowe_z_odnosnikiem_
 
 def test_bez_odpowiedzi_skrzynki_wyslany_problem_dalej_czeka_na_naprawe(computer: Computer) -> None:
     computer.with_key()
-    reports = computer.reports()
+    reports = computer.start()
     first, _, _ = prepared(reports, computer)
     first.send()
     computer.box.close(1)
@@ -801,7 +839,7 @@ def test_bez_odpowiedzi_skrzynki_wyslany_problem_dalej_czeka_na_naprawe(computer
 def test_gdy_skrzynka_nie_odpowiada_zgloszenie_czeka_w_kolejce_bez_zakladania_issue(computer: Computer) -> None:
     computer.with_key()
     computer.box.search_failure = Unreachable()
-    handle, _, _ = prepared(computer.reports(), computer)
+    handle, _, _ = prepared(computer.start(), computer)
 
     assert dump(handle.send()) == QUEUED_FOR_INTERNET
     assert (computer.box.keys, len(computer.queued())) == ([], 1)
@@ -811,12 +849,12 @@ def test_podglad_nie_czeka_na_skrzynke_a_spozniona_odpowiedz_to_brak_odpowiedzi(
     computer.with_key()
     computer.search_deadline_s = 0.05
     box = computer.box
-    reports = computer.reports()
+    reports = computer.start()
     first, _, _ = prepared(reports, computer)
     first.send()
     box.close(1)
     box.search_hold = threading.Event()
-    release = threading.Timer(10, box.search_hold.set)  # bez limitu stan czekałby na skrzynkę
+    release = threading.Timer(10, box.search_hold.set)
     release.start()
 
     try:
@@ -831,14 +869,11 @@ def test_podglad_nie_czeka_na_skrzynke_a_spozniona_odpowiedz_to_brak_odpowiedzi(
 
 
 def test_pytanie_skrzynki_o_jeden_problem_nie_wstrzymuje_stanu_zgloszenia_innego_problemu(computer: Computer) -> None:
-    """Blokada ``Reports`` chroni tylko stan w pamięci: gdy skrzynka długo nie odpowiada na pytanie podglądu, uchwyt i
-    stan Zgłoszenia innego problemu są od razu."""
-
     computer.with_key()
     computer.search_deadline_s = 60
     box = computer.box
     box.search_hold = threading.Event()
-    reports = computer.reports()
+    reports = computer.start()
     other = source(computer, LOGIN)
     states: list[dict[str, Any]] = []
     read = threading.Event()
@@ -865,9 +900,6 @@ def test_pytanie_skrzynki_o_jeden_problem_nie_wstrzymuje_stanu_zgloszenia_innego
 
 @dataclass
 class FirstSearchHeld(FakeReportBox):
-    """Skrzynka, w której tylko pierwsze pytanie o otwarte Zgłoszenia (``first_asked``) czeka, aż test je puści
-    (``first_search``)."""
-
     first_asked: threading.Event = field(default_factory=threading.Event)
     first_search: threading.Event = field(default_factory=threading.Event)
 
@@ -885,7 +917,7 @@ def test_odpowiedz_skrzynki_na_pytanie_sprzed_wysylki_nie_zmienia_wyniku_wysylki
     assert isinstance(box, FirstSearchHeld)
     report = source(computer)
     owner = Owner()
-    handle = computer.reports().handle(report.fingerprint, shown=owner)
+    handle = computer.start().handle(report.fingerprint, shown=owner)
 
     try:
         handle.prepare(report)
@@ -903,15 +935,13 @@ def test_odpowiedz_skrzynki_sprzed_numeru_zgloszenia_nie_zaciera_go_gdy_dochodzi
     computer: Computer, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     computer.with_key()
-    reports = computer.reports()
+    reports = computer.start()
     keyed = computer.keyed
     assert keyed is not None
     find_issue = keyed.find_issue
     answered, arrives = threading.Event(), threading.Event()
 
     def late(label: Label, line: str, *, include_closed: bool) -> object:
-        """Pierwsza odpowiedź „brak otwartego Zgłoszenia” policzona przed wysyłką dochodzi dopiero po niej."""
-
         answer = find_issue(label, line, include_closed=include_closed)
         if not answered.is_set():
             answered.set()
@@ -939,7 +969,7 @@ def test_dostarczenie_tuz_po_koncu_czekania_na_skrzynke_daje_stan_wyslane(
 ) -> None:
     computer.with_key()
     computer.box.open_hold = threading.Event()
-    handle, owner, _ = prepared(computer.reports(), computer)
+    handle, owner, _ = prepared(computer.start(), computer)
     keyed = computer.keyed
     assert keyed is not None
     judge = keyed.judge
