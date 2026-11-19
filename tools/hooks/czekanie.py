@@ -34,7 +34,7 @@ wzorca hook nie zna, łapie tylko przegląd. Tak samo ponowienie z ``eval "…"`
 (``$GH run rerun``), z opcją ``gh`` innej niż ``-R`` z wartością w osobnym słowie między ``run`` a ``rerun`` i przez
 skrypt albo program inny niż ``gh``.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
+(``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową.
 """
 
 from __future__ import annotations

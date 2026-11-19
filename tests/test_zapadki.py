@@ -902,17 +902,17 @@ def test_zadna_linia_repo_nie_tlumi_zakazu_ruff() -> None:
 
     assert banned_under_noqa(ROOT) == [], (
         "noqa chowa zakazaną nazwę przed ruff: użyj tego, co mówi komunikat zakazu, a trwałe prawo właściciela zapisz w "
-        "per-file-ignores pyproject.toml i w OWNERS tests/test_zakazy_ruff.py"
+        "per-file-ignores ruff.toml i w OWNERS tests/test_zakazy_ruff.py"
     )
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
 def test_noqa_przy_zakazanej_nazwie_i_gwiazdce_jest_zgloszone_a_prawo_wlasciciela_nie(tmp_path: Path) -> None:
-    """Prawdziwy ruff z ``pyproject.toml`` repozytorium: ``# noqa`` na linii, ``# ruff: noqa`` na pliku i ``# ruff:
+    """Prawdziwy ruff z ``ruff.toml`` repozytorium: ``# noqa`` na linii, ``# ruff: noqa`` na pliku i ``# ruff:
     disable`` chowają ``TID251``, a ``# noqa: F403`` gwiazdkę, więc ``banned_under_noqa`` zgłasza każdą z tych linii, a
     zakazanej nazwy u właściciela z ``per-file-ignores`` nie."""
 
-    shutil.copyfile(ROOT / "pyproject.toml", tmp_path / "pyproject.toml")
+    shutil.copyfile(ROOT / "ruff.toml", tmp_path / "ruff.toml")
     files = {
         "tools/linia.py": "import os\n\nSYSTEM = os.name  # noqa: TID251 - próbka\n",
         "tools/plik.py": "# ruff: noqa\nimport os\n\nSYSTEM = os.name\n",
