@@ -24,8 +24,8 @@ Wyrocznia hooka ``tools/hooks/praca_w_tle.py``: hook działa, dopóki Claude Cod
 ``background_tasks`` i ``PostToolUse`` z ``agent_id`` podagenta i ID zadania w odpowiedzi narzędzia, słucha odmowy
 hooka ``Stop`` i budzi sesję po końcu zadania w tle. Po aktualizacji Claude Code ta wyrocznia uruchamia więc
 ``claude -p`` w trybie bypass (jak T3) w katalogu tego checkoutu, czyli z jego ``.claude/settings.json``, a z serwerów
-MCP tylko z fałszywym ``t3-code`` (``tools/lib/falszywy_t3.py``). Modelu nie ma: lokalne fałszywe API
-(``ANTHROPIC_BASE_URL``) każe wywołać narzędzia przypadku, a po ich wyniku kończy turę słowami agentów z nocy
+MCP tylko z fałszywym ``t3-code`` (``tools/lib/falszywy_t3.py``). Modelu nie ma: lokalne fałszywe API (adres z
+``falszywe_api.claude``) każe wywołać narzędzia przypadku, a po ich wyniku kończy turę słowami agentów z nocy
 4/5.11.2026 („Czekam na powiadomienie o procesie w tle.”), także po każdej odmowie hooka.
 
 Przypadki (``CASES``):
