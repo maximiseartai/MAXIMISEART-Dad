@@ -22,6 +22,7 @@ import cien_podstaw
 from cien_podstaw import OSZCZEDNOSC_MIN, X, Glowa, Naprawa, PlikNaprawy, Rekordy, RunMain, RunPr, Wariant, rozstrzygnij
 from github import REPO
 import plan_runu
+import repo as repo_gita
 from zakres_runu import Podstawy, Zdarzenie
 
 CIEN = {"V0": Wariant(("verify-a/ci", "verify-b/ci"), 300.0), "NF": Wariant(("verify-a/ci",), 200.0), "N0": Wariant((), 100.0)}
@@ -283,7 +284,7 @@ def test_kandydat_nf_ma_w_wyniku_dowod_do_audytu_pr_runy_z_adresami_i_zmiane_wla
 ) -> None:
     """Naprawa w ``swiat`` dodaje plik w folderze verify-a, którego ``main`` nie zmienił, więc kandydat jest tylko do audytu:
     własny diff PR tego pliku jest przy czerwonej głowie pusty, a przy następnej dodaje jedną linię, a rekordy trzymają
-    oba diffy w całości."""
+    oba diffy w całości, z końcami linii, jakie drukuje git (na Windows plik z ``write_text`` ma w commicie ``\\r\\n``)."""
 
     repo, github = swiat
     baza, czerwona, naprawiona = (git(repo, "rev-parse", rewizja) for rewizja in ("g~2", "g~1", "g"))
@@ -306,7 +307,7 @@ def test_kandydat_nf_ma_w_wyniku_dowod_do_audytu_pr_runy_z_adresami_i_zmiane_wla
     ] and not linie[poczatek + 8].startswith(" ")
     assert (zapisany["diff_czerwonej"], zapisany["diff_nastepnej"]) == (
         "",
-        git(repo, "diff", "--no-ext-diff", "--no-color", f"{baza}...{naprawiona}", "--", plik) + "\n",
+        repo_gita.git(repo, "diff", "--no-ext-diff", "--no-color", f"{baza}...{naprawiona}", "--", plik),
     )
 
 
