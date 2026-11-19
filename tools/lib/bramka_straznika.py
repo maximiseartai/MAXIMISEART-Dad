@@ -68,11 +68,7 @@ def problems(pull: Pull) -> list[str]:
     blocks = {block.heading: block for block in section.blocks} if section else {}
     wanted: dict[straznik.Guard, list[str]] = {}
     for heading in majors:
-        text = blocks[heading].guard() if heading in blocks else None
-        try:
-            guard = straznik.parse(text) if text is not None else None
-        except ValueError:
-            guard = None
+        guard = blocks[heading].selector() if heading in blocks else None
         if guard is not None:
             label, round_ = heading.split(" r")
             wanted.setdefault(guard, []).append(f"{pull.number}/{label}/r{round_}")
