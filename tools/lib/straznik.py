@@ -220,7 +220,7 @@ def _state(copy: Path) -> dict[str, bytes | None]:
     """Treść plików kopii, które różnią się od jej drzewa (zmienione, usunięte i nowe poza ignorowanymi), bez
     ``_OWN_WRITES`` i ``__pycache__``."""
 
-    listed = repo.git(copy, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames")
+    listed = repo.git(copy, "status", "--porcelain=v1", "-z", "--untracked-files=all", "--no-renames", isolated=True)
     paths = {entry[3:] for entry in listed.split("\0") if len(entry) > 3}
     kept = sorted(path for path in paths if not path.startswith(_OWN_WRITES) and "__pycache__" not in path.split("/"))
     return {path: (copy / path).read_bytes() if (copy / path).is_file() else None for path in kept}

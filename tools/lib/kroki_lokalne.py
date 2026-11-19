@@ -41,6 +41,13 @@ class Step:
     job: str  # zadanie ``tools/ci_lokalnie.py``, w którym krok biegnie
     command: tuple[str, ...]
     cwd: Path
+    local: tuple[str, ...] = ()  # koniec ``command``, który dodaje tylko bieg lokalny, a CI go nie ma
+
+    @property
+    def ci(self) -> tuple[str, ...]:
+        """``command`` bez końca ``local``: polecenie kroku CI z interpreterem na początku."""
+
+        return self.command[: len(self.command) - len(self.local)]
 
 
 def static_steps(root: Path, python: str = sys.executable) -> list[Step]:
@@ -48,10 +55,8 @@ def static_steps(root: Path, python: str = sys.executable) -> list[Step]:
     (dowód strażnika: Pythonem środowiska Required CI z ``srodowisko_ci.built``)."""
 
     # Własny cache każdej platformy, bo zmiana --platform unieważnia wspólny i kroki sprawdzałyby za każdym razem całość.
-    mypy = (
-        Step(name, "mypy", (python, "-m", "mypy", "--platform", platform, "--cache-dir", f".mypy_cache/{platform}"), root)
-        for platform, name in MYPY_PLATFORMS.items()
-    )
+    cache = {platform: ("--cache-dir", f".mypy_cache/{platform}") for platform in MYPY_PLATFORMS}
+    mypy = (Step(name, "mypy", (python, "-m", "mypy", "--platform", platform, *cache[platform]), root, cache[platform]) for platform, name in MYPY_PLATFORMS.items())
     return [Step("ruff", "ruff", (python, "-m", "ruff", "check"), root), *mypy]
 
 

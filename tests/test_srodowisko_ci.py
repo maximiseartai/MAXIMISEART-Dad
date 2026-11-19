@@ -16,6 +16,7 @@ from pathlib import Path
 import subprocess
 import sys
 from typing import Any
+import unicodedata
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
@@ -105,35 +106,37 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
 @pytest.mark.parametrize(
     ("change", "fragment"),
     [
-        (_step("setup-python", {"with": {"python-version": "3.15"}}), "python-version '3.15' zamiast '3.14'"),
-        (_step("Install development dependencies", {"run": 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"'}), "polecenie spoza listy"),
-        (_step("Install development dependencies", {"run": srodowisko_ci.CI_INSTALL + " types-requests"}), "polecenie spoza listy"),
+        (_step("setup-python", {"with": {"python-version": "3.15"}}), "krok 2 zadania to"),
+        (_step("Install development dependencies", {"run": 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"'}), "krok 4 zadania to"),
+        (_step("Install development dependencies", {"run": srodowisko_ci.CI_INSTALL + " types-requests"}), "krok 4 zadania to"),
         (_set("runs-on", "macos-latest"), "runs-on 'macos-latest' zamiast 'ubuntu-latest'"),
         (_set("container", "python:3.13"), "container w zadaniu"),
         (_set("env.MYPYPATH", "stuby"), "env w zadaniu"),
         (_set("workflow.env.MYPYPATH", "stuby"), "env w workflow"),
         (_set("defaults.run.working-directory", "src"), "defaults w zadaniu"),
         (_set("workflow.defaults.run.working-directory", "src"), "defaults w workflow"),
-        (_step("Typecheck Python code (Linux)", {"env": {"MYPYPATH": "stuby"}}), "klucze ['env'] zmieniają środowisko"),
-        (_step("Lint Python code", {"working-directory": "src"}), "klucze ['working-directory'] zmieniają środowisko"),
-        (_step("setup-python", {"env": {"PYTHONPATH": "src"}}), "klucze ['env'] zmieniają środowisko"),
-        (_insert("Lint Python code", {"name": "Stuby", "run": 'echo "MYPYPATH=stuby" >> "$GITHUB_ENV"'}), "polecenie spoza listy"),
-        (_insert("Lint Python code", {"name": "Generator", "run": "python tools/generuj.py"}), "polecenie spoza listy"),
-        (_insert("Lint Python code", {"uses": "actions/cache@v4", "with": {"path": ".mypy_cache"}}), "akcja spoza listy"),
-        (_step("actions/checkout", {"with": {"ref": "main"}}), "with ['ref'] spoza listy"),
-        (_step("astral-sh/setup-uv", {"with": {"python-version": "3.13"}}), "with ['python-version'] spoza listy"),
-        (_insert("Lint Python code", {"name": "Mypy macOS", "run": "python -m mypy --platform darwin"}), "krok ruff albo mypy „python -m mypy --platform darwin” bez kroku dowodu"),
-        (_step("Typecheck Python code (Linux)", {"run": "python -m mypy --platform linux --strict"}), "krok ruff albo mypy „python -m mypy --platform linux --strict” bez kroku dowodu"),
-        (_drop("Typecheck Python code (Linux)"), "krok dowodu „python -m mypy --platform linux --cache-dir .mypy_cache/linux” bez kroku ruff albo mypy"),
-        (_drop("Lint Python code"), "krok dowodu „python -m ruff check” bez kroku ruff albo mypy"),
-        (_drop("setup-python"), "brak kroku actions/setup-python przed ostatnim krokiem ruff albo mypy"),
-        (_insert("Lint Python code", {"name": "Testy przed mypy", "run": "python -m pytest tests/test_zapadki.py"}), "polecenie spoza listy"),
+        (_step("Typecheck Python code (Linux)", {"env": {"MYPYPATH": "stuby"}}), "krok 6 zadania to"),
+        (_step("Lint Python code", {"working-directory": "src"}), "krok 5 zadania to"),
+        (_step("setup-python", {"env": {"PYTHONPATH": "src"}}), "krok 2 zadania to"),
+        (_insert("Lint Python code", {"name": "Stuby", "run": 'echo "MYPYPATH=stuby" >> "$GITHUB_ENV"'}), "krok 5 zadania to"),
+        (_insert("Lint Python code", {"name": "Generator", "run": "python tools/generuj.py"}), "krok 5 zadania to"),
+        (_insert("Lint Python code", {"uses": "actions/cache@v4", "with": {"path": ".mypy_cache"}}), "krok 5 zadania to"),
+        (_step("actions/checkout", {"with": {"ref": "main"}}), "krok 1 zadania to"),
+        (_step("astral-sh/setup-uv", {"with": {"python-version": "3.13"}}), "krok 3 zadania to"),
+        (_insert("Lint Python code", {"name": "Mypy macOS", "run": "python -m mypy --platform darwin"}), "krok 5 zadania to"),
+        (_step("Typecheck Python code (Linux)", {"run": "python -m mypy --platform linux --strict"}), "krok 6 zadania to"),
+        (_drop("Typecheck Python code (Linux)"), "krok 6 zadania to"),
+        (_drop("Lint Python code"), "krok 5 zadania to"),
+        (_drop("setup-python"), "krok 2 zadania to"),
+        (_insert("Lint Python code", {"name": "Testy przed mypy", "run": "python -m pytest tests/test_zapadki.py"}), "krok 5 zadania to"),
         (_set("continue-on-error", True), "continue-on-error w zadaniu"),
         (_set("strategy.matrix.python", ["3.13"]), "strategy w zadaniu"),
-        (_step("Typecheck Python code (Linux)", {"if": "false"}), "if 'false' zamiast"),
-        (_drop("Install development dependencies"), f"brak kroku {srodowisko_ci.CI_INSTALL} przed ostatnim krokiem ruff albo mypy"),
-        (_step("Install development dependencies", {"id": "instalacja"}), "instalacja bez id 'deps'"),
-        (_swap("Typecheck Python code (Linux)", "Typecheck Python code (Windows)"), "nie idą w kolejności kroków dowodu"),
+        (_step("Typecheck Python code (Linux)", {"if": "false"}), "krok 6 zadania to"),
+        (_drop("Install development dependencies"), "krok 4 zadania to"),
+        (_step("Install development dependencies", {"id": "instalacja"}), "krok 4 zadania to"),
+        (_swap("Typecheck Python code (Linux)", "Typecheck Python code (Windows)"), "krok 6 zadania to"),
+        (_step("Typecheck Python code (Windows)", {"run": "python -m mypy"}), "krok 7 zadania to"),
+        (_step("Typecheck Python code (Linux)", {"run": "python -m mypy"}), "krok 6 zadania to"),
     ],
     ids=[
         "python",
@@ -165,6 +168,8 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
         "bez-instalacji",
         "instalacja-bez-id-warunku",
         "kolejnosc-mypy",
+        "mypy-windows-bez-platformy",
+        "mypy-linux-bez-platformy",
     ],
 )
 def test_zmiana_srodowiska_ruff_i_mypy_w_ci_to_roznica(tmp_path: Path, change: Callable[[Job, Job], None], fragment: str) -> None:
@@ -182,8 +187,9 @@ def test_zmiana_srodowiska_ruff_i_mypy_w_ci_to_roznica(tmp_path: Path, change: C
         _insert("Audit workflows (zizmor)", {"name": "Po mypy", "run": "python tools/cokolwiek.py"}),
         _set("timeout-minutes", 30),
         _step("Lint Python code", {"name": "Ruff"}),
+        _step("astral-sh/setup-uv", {"uses": "astral-sh/setup-uv@0000000000000000000000000000000000000000"}),
     ],
-    ids=["env-po-mypy", "krok-po-mypy", "limit-czasu", "nazwa-kroku"],
+    ids=["env-po-mypy", "krok-po-mypy", "limit-czasu", "nazwa-kroku", "wersja-akcji"],
 )
 def test_zmiana_zadania_ktora_srodowiska_ruff_i_mypy_nie_zmienia_nie_jest_roznica(tmp_path: Path, change: Callable[[Job, Job], None]) -> None:
     _write(tmp_path, {srodowisko_ci.WORKFLOW: _ci(change)})
@@ -329,8 +335,30 @@ def test_krok_ktory_przepisuje_pliki_przed_mypy_to_odmowa_a_nie_dowod(tmp_path: 
 
 
 @wymaga_uv
+def test_kopia_nie_bierze_wykluczen_gita_repozytorium_wolajacego(tmp_path: Path) -> None:
+    """Ruff pomija pliki z ``.git/info/exclude`` i globalnych wykluczeń gita, a checkout Required CI ich nie ma: plik PR
+    w katalogu, który repozytorium wołającego wyklucza lokalnie, dowód ``ruff`` liczy jak Required CI."""
+
+    ruff = '[tool.ruff.lint]\nselect = ["F401"]\n'
+    base = {**project(tools=MYPY.format("") + ruff), **TYPED}
+    root, fork, failing, head, target = _repository(tmp_path, base, {"wykluczone/modul.py": "import os\n"}, {"wykluczone/modul.py": "X = 1\n"})
+    (root / ".git" / "info").mkdir(exist_ok=True)
+    (root / ".git" / "info" / "exclude").write_text("wykluczone/\n", encoding="utf-8")
+    case = straznik.Case("#5 W1 r1", failing, fork, (("wykluczone/modul.py", 1, 1),), (("wykluczone/modul.py", 1, 1),))
+
+    with srodowisko_ci.built(root, head, target) as environment:
+        [outcome] = straznik.prove(root, straznik.parse("ruff"), environment, [case])
+
+    assert outcome.detected and "| WYKRYTA | z FAIL: wykluczone/modul.py | wykluczone/modul.py:1 F401" in outcome.line, outcome.line
+
+
+@wymaga_uv
 def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> None:
-    root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/nowy.py": "Y = 2\n"}, {"kod/z_bazy.py": "Z = 3\n"})
+    """Python ``CI_PYTHON``, narzędzia z pinów drzewa, zależność ze znacznikiem wersji z poprawką (Required CI rozwiązuje
+    ją dla Pythona z setup-python, a nie dla 3.14.0) i projekt edytowalnie z kopii HEAD scalonego z bazą."""
+
+    marked = "six==1.17.0; python_full_version >= '3.14.1'"
+    root, _, _, head, target = _repository(tmp_path, {**project(marked, tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/nowy.py": "Y = 2\n"}, {"kod/z_bazy.py": "Z = 3\n"})
 
     with srodowisko_ci.built(root, head, target) as environment:
         done = subprocess.run(
@@ -338,7 +366,7 @@ def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> No
                 str(environment.python),
                 "-c",
                 "import sys, importlib.metadata as m; print('.'.join(map(str, sys.version_info[:2]))); "
-                "print(' '.join(f'{name}=={m.version(name)}' for name in ('mypy', 'ruff', 'ast-grep-cli'))); print(m.distribution('proba').read_text('direct_url.json'))",
+                "print(' '.join(f'{name}=={m.version(name)}' for name in ('mypy', 'ruff', 'ast-grep-cli', 'six'))); print(m.distribution('proba').read_text('direct_url.json'))",
             ],
             capture_output=True,
             text=True,
@@ -350,7 +378,7 @@ def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> No
     version, tools, origin = done.stdout.splitlines()
     installed = json.loads(origin)
     assert version == srodowisko_ci.CI_PYTHON
-    assert sorted(tools.split()) == sorted(PINS)
+    assert sorted(tools.split()) == sorted((*PINS, "six==1.17.0"))
     assert installed["dir_info"] == {"editable": True} and Path(url2pathname(urlparse(installed["url"]).path)).resolve() == copy, origin
     assert files == ["__init__.py", "nowy.py", "odczyt.py", "uzycie.py", "z_bazy.py"]
 
@@ -373,9 +401,15 @@ def test_dowod_odmawia_drzewa_ktorego_srodowiska_nie_zbuduje_jak_ci(tmp_path: Pa
 
 
 @wymaga_uv
-def test_na_macos_drzewo_ze_sciezkami_roznymi_tylko_wielkoscia_liter_to_odmowa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """System plików macOS trzyma jedną z dwóch ścieżek, a runner obie, więc dowód na macOS liczyłby inne drzewo; commit
-    powstaje z drzewa gita, bo system plików testu może pary nie utrzymać."""
+@pytest.mark.parametrize(
+    "twins",
+    [("Modul.py", "modul.py"), (unicodedata.normalize("NFC", "zó.py"), unicodedata.normalize("NFD", "zó.py"))],
+    ids=["wielkosc-liter", "nfc-i-nfd"],
+)
+def test_na_macos_drzewo_ze_sciezkami_ktore_apfs_scala_to_odmowa(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, twins: tuple[str, str]) -> None:
+    """APFS macOS trzyma jedną z dwóch ścieżek różnych tylko wielkością liter albo normalizacją Unicode, a runner obie,
+    więc dowód na macOS liczyłby inne drzewo; commit powstaje z drzewa gita, bo system plików testu może pary nie
+    utrzymać."""
 
     root = tmp_path / "repo"
     git(tmp_path, "init", "--quiet", "--initial-branch", "main", str(root))
@@ -386,10 +420,10 @@ def test_na_macos_drzewo_ze_sciezkami_roznymi_tylko_wielkoscia_liter_to_odmowa(t
         return subprocess.run(["git", "mktree"], cwd=root, input=listing, capture_output=True, text=True, check=True).stdout.strip()
 
     target = git(root, "commit-tree", tree("inny.py"), "-m", "baza")
-    head = git(root, "commit-tree", tree("inny.py", "Modul.py", "modul.py"), "-p", target, "-m", "PR")
+    head = git(root, "commit-tree", tree("inny.py", *twins), "-p", target, "-m", "PR")
     monkeypatch.setattr(sys, "platform", "darwin")
 
-    with pytest.raises(srodowisko_ci.Refused, match=re.escape("ścieżki różne tylko wielkością liter (Modul.py, modul.py)")), srodowisko_ci.built(root, head, target):
+    with pytest.raises(srodowisko_ci.Refused, match=re.escape(f"ścieżki różne tylko wielkością liter albo normalizacją Unicode ({', '.join(sorted(twins))})")), srodowisko_ci.built(root, head, target):
         pass
 
 
