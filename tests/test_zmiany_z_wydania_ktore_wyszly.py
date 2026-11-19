@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Mapping
-import importlib
+import importlib.util
 from pathlib import Path
 import re
 import subprocess
@@ -510,22 +510,24 @@ ZNANE_LUKI_ODCISKU: Final = {
 
 def _wpis_zmiany(katalog: Path, moduly: Mapping[str, str]) -> Wpis:
     katalog.mkdir()
-    for nazwa, kod in moduly.items():
-        plik = katalog.joinpath(*nazwa.split("."), "__init__.py") if any(inna.startswith(f"{nazwa}.") for inna in moduly) else katalog.joinpath(*nazwa.split(".")).with_suffix(".py")
-        plik.parent.mkdir(parents=True, exist_ok=True)
-        plik.write_text(_NAGLOWEK + kod if nazwa.rpartition(".")[2] == "zmiana" else kod, encoding="utf-8")
-    korzenie = {nazwa.partition(".")[0] for nazwa in moduly}
-    assert not korzenie & {nazwa.partition(".")[0] for nazwa in sys.modules}, korzenie
     wbudowane = set(vars(builtins))
-    sys.path.insert(0, str(katalog))
     try:
-        for nazwa in moduly:
-            importlib.import_module(nazwa)
+        for nazwa, kod in moduly.items():
+            miejsce = katalog.joinpath(*nazwa.split("."))
+            plik = miejsce / "__init__.py" if any(inna.startswith(f"{nazwa}.") for inna in moduly) else miejsce.with_suffix(".py")
+            plik.parent.mkdir(parents=True, exist_ok=True)
+            plik.write_text(_NAGLOWEK + kod if nazwa.rpartition(".")[2] == "zmiana" else kod, encoding="utf-8")
+            spec = importlib.util.spec_from_file_location(nazwa, plik)
+            assert spec is not None and spec.loader is not None, plik
+            sys.modules[nazwa] = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(sys.modules[nazwa])
+            rodzic, _, wlasna = nazwa.rpartition(".")
+            if rodzic:
+                setattr(sys.modules[rodzic], wlasna, sys.modules[nazwa])
         return wpisy([next(sys.modules[nazwa].ZMIANA for nazwa in moduly if nazwa.rpartition(".")[2] == "zmiana")])["2026-12-proba"]
     finally:
-        sys.path.remove(str(katalog))
-        for nazwa in [nazwa for nazwa in sys.modules if nazwa.partition(".")[0] in korzenie]:
-            del sys.modules[nazwa]
+        for nazwa in moduly:
+            sys.modules.pop(nazwa, None)
         for nazwa in set(vars(builtins)) - wbudowane:
             delattr(builtins, nazwa)
 
