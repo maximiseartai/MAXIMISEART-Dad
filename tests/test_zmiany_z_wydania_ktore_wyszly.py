@@ -99,16 +99,28 @@ def _przypadek(przed: Mapping[str, str], ten_sam: bool, opis: str, **zmiany: tup
     return pytest.param(dict(przed), _po(przed, **zmiany), ten_sam, id=opis)
 
 
-def _przeniesiony(importy: str, uzycie: str, *, w_ciele_propose: bool = False) -> object:
+def _propose_z_importem(importy: str, uzycie: str, *, w_ciele_propose: bool) -> str:
+    if w_ciele_propose:
+        return _zmiana(f"def propose(inputs):\n    {importy}\n\n    return {uzycie}\n")
+    return _zmiana(f"{importy}\n\n\ndef propose(inputs):\n    return {uzycie}\n")
+
+
+def _przeniesiony(importy: str, uzycie: str, *, w_ciele_propose: bool = False, ten_sam: bool = True) -> object:
     def moduly(pakiet: str) -> dict[str, str]:
-        if w_ciele_propose:
-            kod = f"def propose(inputs):\n    {importy.format(pakiet)}\n\n    return {uzycie}\n"
-        else:
-            kod = f"{importy.format(pakiet)}\n\n\ndef propose(inputs):\n    return {uzycie}\n"
-        return {"pk": "", f"pk.{pakiet}": "", f"pk.{pakiet}.pomocnik": "LIMIT = 1\n\n\ndef d(x):\n    return x\n", "pk.zmiana": _zmiana(kod)}
+        kod = _propose_z_importem(importy.format(pakiet), uzycie.format(pakiet), w_ciele_propose=w_ciele_propose)
+        return {"pk": "", f"pk.{pakiet}": "", f"pk.{pakiet}.pomocnik": "LIMIT = 1\n\n\ndef d(x):\n    return x\n", "pk.zmiana": kod}
 
     miejsce = "ciele propose" if w_ciele_propose else "module propose"
-    return pytest.param(moduly("stary"), moduly("nowy"), True, id=f"moduł przeniesiony z importem przepisanym w {miejsce}: {importy.format('stary')}")
+    opis = f"moduł przeniesiony z importem przepisanym w {miejsce}: {importy.format('stary')}"
+    return pytest.param(moduly("stary"), moduly("nowy"), ten_sam, id=opis if ten_sam else f"{opis}, ścieżka w źródle propose: {uzycie.format('stary')}")
+
+
+def _z_innego_modulu(*, w_ciele_propose: bool) -> tuple[dict[str, str], dict[str, str]]:
+    def moduly(pakiet: str) -> dict[str, str]:
+        kod = _propose_z_importem(f"from pk.{pakiet}.pomocnik import d", "d(inputs)", w_ciele_propose=w_ciele_propose)
+        return {"pk": "", "pk.stary": "", "pk.stary.pomocnik": "def d(x):\n    return 1\n", "pk.inny": "", "pk.inny.pomocnik": "def d(x):\n    return 2\n", "pk.zmiana": kod}
+
+    return moduly("stary"), moduly("inny")
 
 
 PRZYPADKI_ODCISKU: Final = [
@@ -412,6 +424,7 @@ PRZYPADKI_ODCISKU: Final = [
     _przeniesiony("import pk.{}.pomocnik as pomocnik", "pomocnik.LIMIT"),
     _przeniesiony("import pk.{}.pomocnik as komunikaty", "komunikaty.LIMIT"),
     _przeniesiony("import pk.{}.pomocnik", "pk"),
+    _przeniesiony("import pk.{}.pomocnik", "pk.{}.pomocnik.LIMIT", ten_sam=False),
     _przeniesiony("from pk.{} import pomocnik", "pomocnik.LIMIT"),
     _przeniesiony("from pk.{} import pomocnik as komunikaty", "komunikaty.LIMIT"),
     _przeniesiony("from pk.{}.pomocnik import d", "d(inputs)"),
@@ -506,6 +519,8 @@ ZNANE_LUKI_ODCISKU: Final = {
         {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
         {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("import pomocnik\n\nd = pomocnik.e\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
     ),
+    "zna definicję innego modułu tylko po nazwie, pod którą wiąże ją import: ta sama nazwa z innego modułu": _z_innego_modulu(w_ciele_propose=False),
+    "zna definicję innego modułu tylko po nazwie, pod którą wiąże ją import: import w ciele propose z innego modułu": _z_innego_modulu(w_ciele_propose=True),
     "czyta nazwy tylko z __globals__ modułu: nazwa, którą moduł wstawia do builtins": (
         {"zmiana": _zmiana("import builtins\n\nbuiltins._LIMIT_ODCISKU = 1\n\n\ndef propose(inputs):\n    return _LIMIT_ODCISKU\n")},
         {"zmiana": _zmiana("import builtins\n\nbuiltins._LIMIT_ODCISKU = 2\n\n\ndef propose(inputs):\n    return _LIMIT_ODCISKU\n")},
