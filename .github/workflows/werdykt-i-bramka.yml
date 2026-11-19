@@ -90,6 +90,9 @@ jobs:
         with:
           enable-cache: false
 
+      - name: zsh
+        uses: ./.github/actions/zsh
+
       # tools/na_scalonych_pr.py of main needs main's dev extra (PyYAML, ast-grep for the function around Gdzie), and -r
       # installs only the dependencies. The proof builds the environment of Required CI itself, with uv, from the PR's
       # HEAD merged with main (tools/lib/srodowisko_ci.py), so mypy, ruff and ast-grep run with the PR's dependencies.

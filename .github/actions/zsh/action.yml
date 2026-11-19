@@ -1,0 +1,15 @@
+name: zsh dla testów hooka ciężkich poleceń
+description: >-
+  Hook tools/hooks/ciezkie.py czyta polecenie parserem zsh, powłoki, w której Claude Code uruchamia polecenie na Macu,
+  więc jego testy wymagają zsh i bez niego padają; runner Ubuntu zsh nie ma. Instalacja bierze listy pakietów obrazu
+  runnera, a dopiero gdy pakietu w nich nie ma, odświeża je.
+runs:
+  using: composite
+  steps:
+    - name: Install zsh
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: >-
+        command -v zsh
+        || sudo apt-get install -y --no-install-recommends zsh
+        || { sudo apt-get update && sudo apt-get install -y --no-install-recommends zsh; }
