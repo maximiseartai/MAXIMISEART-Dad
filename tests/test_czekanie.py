@@ -530,6 +530,13 @@ PYTHON_WAITS = [
     pytest.param(_heredoc(SLEEP_IN_INNER_LOOP), hook.CI_LOOP, id="sen-tylko-w-petli-wewnetrznej"),
     pytest.param(_heredoc(COMMAND_FROM_STRING_METHODS), hook.CI_LOOP, id="polecenie-z-metod-napisu"),
     pytest.param(f"\"/usr/bin/python3\" -c '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="program-pythona-w-cudzyslowie"),
+    pytest.param(_heredoc(CHECKS_TRIES, program='"/usr/bin/python3" -'), hook.CI_LOOP, id="heredoc-program-w-cudzyslowie"),
+    pytest.param(
+        'f=/private/tmp/c/s/tasks/b1.output; python3 -c "\nimport os,time,sys\n'
+        "while os.path.getsize(sys.argv[1])==0:\n    sys.stdout.write('.')\n    time.sleep(5)\n\" $f",
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-w-argumencie-z-wypisaniem-przez-modul",
+    ),
     pytest.param(f"true;# it's fine\npython3 -c '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="komentarz-po-sredniku-przed-c"),
     pytest.param(_heredoc(CHECKS_TRIES, program="python3 > wynik.log"), hook.CI_LOOP, id="heredoc-z-przekierowaniem-do-pliku"),
     pytest.param(_heredoc(CHECKS_TRIES, program="python3 2>&1 -"), hook.CI_LOOP, id="heredoc-z-przekierowaniem-przed-myslnikiem"),
@@ -739,6 +746,7 @@ PYTHON_PASSING = [
     pytest.param(f"python3 -c '{CHECKS_IN_CONDITION}' > ci.log 2>&1 & W=$!", id="c-w-tle"),
     pytest.param(_heredoc(CHECKS_TRIES, program="cat > /tmp/python/czekaj.py"), id="zapis-skryptu-w-katalogu-python"),
     pytest.param(_heredoc(CHECKS_TRIES, program="cat > python3"), id="zapis-skryptu-do-pliku-o-nazwie-python3"),
+    pytest.param(_heredoc(CHECKS_TRIES, program="tools/python/run.sh -"), id="heredoc-dla-programu-w-katalogu-python"),
     pytest.param(_heredoc(CHECKS_TRIES, program=".venv/bin/python tools/mutacje.py --plik -"), id="heredoc-to-dane-skryptu"),
     pytest.param(f"python3 -m pytest -c '{CHECKS_IN_CONDITION}'", id="c-po-m-to-argument-modulu"),
     pytest.param(_heredoc(FILE_WITH_CI_WORDS), id="napis-z-gh-w-wydruku-petli-na-pliku"),
