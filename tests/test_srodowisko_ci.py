@@ -25,6 +25,7 @@ import yaml
 
 import srodowisko_ci
 import straznik
+from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.srodowisko import CI, PINS, project, wymaga_uv
 
@@ -350,6 +351,20 @@ def test_kopia_nie_bierze_wykluczen_gita_repozytorium_wolajacego(tmp_path: Path)
         [outcome] = straznik.prove(root, straznik.parse("ruff"), environment, [case])
 
     assert outcome.detected and "| WYKRYTA | z FAIL: wykluczone/modul.py | wykluczone/modul.py:1 F401" in outcome.line, outcome.line
+
+
+@wymaga_uv
+def test_kopia_nie_bierze_konfiguracji_gita_komputera(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Checkout Required CI biegnie bez konfiguracji komputera, więc ``core.autocrlf`` wołającego nie zmienia końców linii
+    plików, które czytają ruff i mypy dowodu."""
+
+    root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/nowy.py": "Y = 2\n"})
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(computer_git_config(tmp_path / "gitconfig", "[core]\n\tautocrlf = true\n")))
+
+    with srodowisko_ci.built(root, head, target) as environment:
+        text = (environment.copy / "kod" / "nowy.py").read_bytes()
+
+    assert text == b"Y = 2\n"
 
 
 @wymaga_uv
