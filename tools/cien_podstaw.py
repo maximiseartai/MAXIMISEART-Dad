@@ -30,17 +30,23 @@ w runie PR okna:
     bez naprawy, czerwona głowa nie jest przodkiem następnej (rebase, reset)  | NIEPOLICZONY, wymaga audytu
     bez następnego runu z wynikiem w oknie albo z głową, której git nie zna   | NIEPOLICZONY, wymaga audytu
     run bez artefaktu planu, z naprawą                                        | BEZ CIENIA
-    naprawa tylko poza folderem skilla i src/, historia nieprzepisana         | nie liczy się (flaky, test, infrastruktura)
-    padł też pytest; krok spoza NF albo w N0                                  | nie liczy się: pytest złapał; warianty się nie różnią
+    run bez artefaktu planu, bez naprawy kroku                                | NIE LICZY SIĘ: nie wiadomo, czy N0 by ją puścił
+    naprawa tylko poza folderem skilla i src/, historia nieprzepisana         | NIE LICZY SIĘ (flaky, test, infrastruktura)
+    bez zmiany własnej zmiany PR (np. tylko scalenie main), jak wyżej         | NIE LICZY SIĘ (flaky albo naprawa w main)
+    padł też pytest; krok spoza NF albo w N0                                  | NIE LICZY SIĘ: pytest złapał; warianty się nie różnią
+
+Każda porażka kroku skilla czerwonego runu stoi w wyniku dokładnie raz, w jednej z tych linii, więc reguła, która
+się pomyli, przesuwa porażkę na oczach audytora, a nie gubi jej.
 
 Naprawa to pliki, które zmienia commit bez merge'a osiągalny z następnej głowy, a nie z czerwonej ani z bazy następnej,
 i w których zmieniła się własna zmiana PR: treść pliku przy obu głowach różni się poza liniami, które ``main`` zmienił
 w tym pliku między bazami głów (baza głowy to jej baza scalenia z ``main`` sprzed scalenia tej głowy). Plik, który
 ``main`` przemianował między bazami głów (``git diff -M`` baz), przy czerwonej głowie i jej bazie ma ścieżkę sprzed
-przemianowania. Rebase, scalenie ``main`` do gałęzi, rozstrzygnięcie konfliktu i amend, które zostawiają własną zmianę PR,
-naprawą nie są, którąkolwiek drogą zaktualizowano gałąź. Zmiana tylko w commicie scalenia (rozstrzygnięcie, które łączy
-linię ``main`` i PR w nową, plik wygenerowany na nowo) też nie, a ta sama nowa linia w commicie rebase'u jest naprawą,
-bo nie różni się od poprawki tej linii. Granica: poprawka, która dodaje, usuwa albo przestawia tylko linie o treści jednej
+przemianowania, a przy następnej głowie ścieżkę po nim, także gdy commit naprawy zmienił go pod starą ścieżką przed
+scaleniem ``main`` do gałęzi. Rebase, scalenie ``main`` do gałęzi, rozstrzygnięcie konfliktu i amend, które zostawiają
+własną zmianę PR, naprawą nie są, którąkolwiek drogą zaktualizowano gałąź. Zmiana tylko w commicie scalenia
+(rozstrzygnięcie, które łączy linię ``main`` i PR w nową, plik wygenerowany na nowo) też nie, a ta sama nowa linia
+w commicie rebase'u jest naprawą, bo nie różni się od poprawki tej linii. Granica: poprawka, która dodaje, usuwa albo przestawia tylko linie o treści jednej
 z linii zmienionych przez ``main`` w tym pliku między bazami (np. pustą linię), naprawą nie jest. Znane luki reguły
 naprawy to próbki ``ZNANE_LUKI`` w ``tests/test_cien_podstaw.py`` (linie pliku naprawy przestawione przez ``main``,
 naprawa samym usunięciem commitu), a wynik pisze przy nich „wymaga audytu”.
@@ -261,6 +267,7 @@ class Rozstrzygniecie:
     kandydaci: tuple[Porazka, ...]  # porażki kroków NF z naprawą w folderze skilla albo ``src/``
     niepoliczone: tuple[Porazka, ...]  # porażki kroków NF bez takiej naprawy z przepisaną historią albo bez następnego runu
     bez_cienia: tuple[Porazka, ...]  # porażki z naprawą runów bez artefaktu planu: nie wiadomo, czy N0 by je puścił
+    nie_licza_sie: tuple[tuple[Porazka, str], ...]  # pozostałe porażki czerwonych runów, każda z powodem
     przyczyny: Mapping[str, tuple[Porazka, ...]] | None  # przyczyna z audytu → jej porażki; None: bez audytu
     dni: int  # długość okna
     oszczednosc_min: float | None  # None: żaden run próbki nie ma cienia
@@ -287,17 +294,26 @@ def rozstrzygnij(rekordy: Rekordy, audyt: Mapping[str, Sequence[str]] | None = N
     kandydaci: list[Porazka] = []
     niepoliczone: list[Porazka] = []
     bez_cienia: list[Porazka] = []
+    nie_licza_sie: list[tuple[Porazka, str]] = []
     for run in rekordy.pr:
-        for porazka in (Porazka(run, krok) for krok in run.padle) if run.pytest is not Pytest.PADL else ():
-            if run.cien is None:
+        for porazka in (Porazka(run, krok) for krok in run.padle):
+            if run.pytest is Pytest.PADL:
+                nie_licza_sie.append((porazka, "padł też pytest: pytest złapał"))
+            elif run.cien is None:
                 if porazka.naprawiona:
                     bez_cienia.append(porazka)
+                else:
+                    nie_licza_sie.append((porazka, "run bez artefaktu planu, bez naprawy w folderze skilla ani src/"))
             elif porazka.krok not in run.cien[NA_ZYWO].kroki or porazka.krok in run.cien[Podstawy.N0].kroki:
-                continue
+                nie_licza_sie.append((porazka, "krok spoza NF albo w N0: warianty się nie różnią"))
             elif porazka.naprawiona:
                 kandydaci.append(porazka)
             elif run.naprawa is None or run.naprawa.przepisana:
                 niepoliczone.append(porazka)
+            elif run.naprawa.sciezki:
+                nie_licza_sie.append((porazka, f"naprawa tylko poza folderem skilla i src/: {', '.join(run.naprawa.sciezki)}"))
+            else:
+                nie_licza_sie.append((porazka, "własna zmiana PR przy następnej głowie ta sama co przy czerwonej (np. tylko scalenie main)"))
     roznice = [run.cien[NA_ZYWO].sciana_s - run.cien[Podstawy.N0].sciana_s for run in rekordy.pr if run.probka and run.cien is not None]
     oszczednosc = statistics.mean(roznice) * rekordy.pr_runow / 60 if roznice else None
     ucieczki = tuple((run.run, krok) for run in rekordy.main for krok in run.padle if krok in run.pominiete_przez_nf)
@@ -310,6 +326,7 @@ def rozstrzygnij(rekordy: Rekordy, audyt: Mapping[str, Sequence[str]] | None = N
         po_galezi(kandydaci),
         po_galezi(niepoliczone),
         po_galezi(bez_cienia),
+        tuple(sorted(nie_licza_sie, key=lambda para: (para[0].run.galaz, para[0].krok, para[0].run.run))),
         None if audyt is None else _przyczyny(kandydaci + niepoliczone, audyt),
         (date.fromisoformat(rekordy.do) - date.fromisoformat(rekordy.od)).days + 1,
         oszczednosc,
@@ -359,6 +376,7 @@ def wypisz(rekordy: Rekordy, wynik: Rozstrzygniecie) -> list[str]:
         linie.append(f"NIEPOLICZONY, wymaga audytu | {porazka.klucz} | {porazka.run.galaz}, {_pr(porazka.run)} | {'; '.join(porazka.powody_audytu)}")
         linie += _dowod(porazka, wynik, numery)
     linie += [f"BEZ CIENIA | {porazka.klucz} | {porazka.run.galaz} (run bez artefaktu planu)" for porazka in wynik.bez_cienia]
+    linie += [f"NIE LICZY SIĘ | {porazka.klucz} | {porazka.run.galaz}, {_pr(porazka.run)} | {powod}" for porazka, powod in wynik.nie_licza_sie]
     if wynik.przyczyny is not None:
         policzone = {porazka.klucz for porazki in wynik.przyczyny.values() for porazka in porazki}
         linie += [
@@ -518,7 +536,9 @@ def _naprawa(root: Path, main: str, czerwony: Mapping[str, Any], nastepny: Mappi
         czerwona, nastepna = (Glowa(r["id"], r["html_url"], r["head_sha"], _baza_pr(root, main, r["head_sha"])) for r in (czerwony, nastepny))
         commity = repo.git(root, "log", "--no-merges", "--no-renames", "--name-only", "-z", "--format=", nastepna.sha, f"^{czerwona.sha}", f"^{nastepna.baza}")
         przemianowane = _przemianowane_przez_main(root, czerwona.baza, nastepna.baza)
-        pary = [(przemianowane.get(plik, plik), plik) for plik in sorted({plik.strip("\n") for plik in commity.split("\0")} - {""})]
+        # Commit naprawy sprzed scalenia ``main`` do gałęzi zmienia plik pod ścieżką sprzed przemianowania, a po nim pod nową.
+        po_przemianowaniu = {stara: nowa for nowa, stara in przemianowane.items()}
+        pary = sorted({(przemianowane.get(plik, plik), po_przemianowaniu.get(plik, plik)) for plik in {plik.strip("\n") for plik in commity.split("\0")} - {""}})
         return Naprawa(
             czerwona,
             nastepna,

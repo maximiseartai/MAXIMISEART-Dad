@@ -74,6 +74,58 @@ def test_kandydat_nf_to_padly_krok_nf_spoza_n0_przy_zielonym_pytest_z_naprawa_w_
     assert _klucze(rozstrzygnij(_rekordy(run)).kandydaci) == (("1 verify-a/ci",) if kandydat else ())
 
 
+def _linie_porazek(rekordy: Rekordy) -> dict[str, list[str]]:
+    """Klucz każdej porażki kroku skilla czerwonych runów rekordów → pierwsze pole linii wyniku, której drugie pole to
+    ten klucz (przy ``NIE LICZY SIĘ`` z powodem)."""
+
+    porazki: dict[str, list[str]] = {f"{run.run} {krok}": [] for run in rekordy.pr for krok in run.padle}
+    for pola in (linia.split(" | ") for linia in cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy))):
+        if len(pola) > 1 and pola[1] in porazki:
+            porazki[pola[1]].append(f"{pola[0]} | {pola[-1]}" if pola[0] == "NIE LICZY SIĘ" else pola[0])
+    return porazki
+
+
+@pytest.mark.parametrize(
+    ("run", "linie"),
+    [
+        (_pr(), {"1 verify-a/ci": ["KANDYDAT NF 1/1"]}),
+        (_pr(naprawa=None), {"1 verify-a/ci": ["NIEPOLICZONY, wymaga audytu"]}),
+        (_pr(naprawa=(), przepisana=True), {"1 verify-a/ci": ["NIEPOLICZONY, wymaga audytu"]}),
+        (_pr(cien=None), {"1 verify-a/ci": ["BEZ CIENIA"]}),
+        (_pr(cien=None, naprawa=("tests/test_a.py",)), {"1 verify-a/ci": ["NIE LICZY SIĘ | run bez artefaktu planu, bez naprawy w folderze skilla ani src/"]}),
+        (_pr(pytest=Pytest.PADL), {"1 verify-a/ci": ["NIE LICZY SIĘ | padł też pytest: pytest złapał"]}),
+        (_pr(cien={**CIEN, "N0": Wariant(("verify-a/ci",), 200.0)}), {"1 verify-a/ci": ["NIE LICZY SIĘ | krok spoza NF albo w N0: warianty się nie różnią"]}),
+        (_pr(naprawa=("tests/test_a.py",)), {"1 verify-a/ci": ["NIE LICZY SIĘ | naprawa tylko poza folderem skilla i src/: tests/test_a.py"]}),
+        (_pr(naprawa=()), {"1 verify-a/ci": ["NIE LICZY SIĘ | własna zmiana PR przy następnej głowie ta sama co przy czerwonej (np. tylko scalenie main)"]}),
+        (_pr(padle=("verify-a/ci", "verify-b/ci")),
+         {"1 verify-a/ci": ["KANDYDAT NF 1/1"], "1 verify-b/ci": ["NIE LICZY SIĘ | krok spoza NF albo w N0: warianty się nie różnią"]}),
+    ],
+    ids=["kandydat", "bez następnego runu", "przepisana historia", "bez cienia z naprawą", "bez cienia bez naprawy", "padł też pytest", "krok też w N0",
+         "naprawa poza folderem skilla i src", "bez zmiany własnej zmiany PR", "dwa kroki jednego runu"],  # fmt: skip
+)
+def test_kazda_porazka_kroku_skilla_czerwonego_runu_stoi_w_wyniku_dokladnie_raz_z_postacia_z_tabeli_docstringu(
+    run: RunPr, linie: dict[str, list[str]]
+) -> None:
+    """Reguła, która się pomyli, przesuwa porażkę do innej linii na oczach audytora, a nie gubi jej po cichu."""
+
+    assert _linie_porazek(_rekordy(run)) == linie
+
+
+def test_dowod_porazki_wymienia_inne_czerwone_runy_galezi_tylko_z_tym_samym_krokiem() -> None:
+    cien = {**CIEN, "NF": Wariant(("verify-a/ci", "verify-b/ci"), 200.0)}
+    rekordy = _rekordy(_pr(run=1, cien=cien), _pr(run=2, padle=("verify-b/ci",), naprawa=("src/b.py",), cien=cien), _pr(run=3, cien=cien))
+
+    linie = cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy))
+
+    assert [linia for linia in linie if linia.startswith(("KANDYDAT", "  ten krok"))] == [
+        "KANDYDAT NF 1/3 | 1 verify-a/ci | g, PR bez merge'a w oknie | do audytu",
+        "  ten krok padł też w runach tej gałęzi: 3 (kandydat 2)",
+        "KANDYDAT NF 2/3 | 3 verify-a/ci | g, PR bez merge'a w oknie | do audytu",
+        "  ten krok padł też w runach tej gałęzi: 1 (kandydat 1)",
+        "KANDYDAT NF 3/3 | 2 verify-b/ci | g, PR bez merge'a w oknie | do audytu",
+    ]
+
+
 def test_kazdy_czerwony_run_galezi_z_tym_samym_krokiem_jest_osobna_porazka_w_wyniku_bo_moze_miec_inna_przyczyne() -> None:
     """Jedna gałąź z jednym krokiem miała dwie przyczyny (#2178 r3, D1): run 1 naprawiony commitem w ``src/``, run 2
     usunięciem commitu, więc obie porażki stoją w wyniku, każda z innymi runami gałęzi przy dowodzie."""
@@ -148,12 +200,16 @@ def test_prawdziwe_defekty_to_rozne_przyczyny_potwierdzone_audytem_kandydatow_i_
     runy = (_pr("g", run=1), _pr("h", run=2), _pr("h", run=3, naprawa=None), _pr("k", run=4))
     audyt = {"1 verify-a/ci": ["dziennik przed wpisem start"], "2 verify-a/ci": ["dziennik przed wpisem start"], "3 verify-a/ci": ["napęd"], "4 verify-a/ci": []}
 
-    wynik = rozstrzygnij(_rekordy(*runy), audyt)
+    rekordy = _rekordy(*runy)
+    wynik = rozstrzygnij(rekordy, audyt)
 
     assert {nazwa: _klucze(porazki) for nazwa, porazki in (wynik.przyczyny or {}).items()} == {
         "dziennik przed wpisem start": ("1 verify-a/ci", "2 verify-a/ci"),
         "napęd": ("3 verify-a/ci",),
     }
+    assert [linia for linia in cien_podstaw.wypisz(rekordy, wynik) if linia.startswith("BEZ PRZYCZYNY")] == [
+        "BEZ PRZYCZYNY | 4 verify-a/ci (audyt: nie prawdziwy defekt albo niepewny)"
+    ]
 
 
 @pytest.mark.parametrize(
@@ -414,17 +470,19 @@ def _zadania(pytest_wynik: str, mutacje_wynik: str = "failure") -> dict[str, Any
         (("failure", None, None), "success",
          "NIEPOLICZONY, wymaga audytu | 2 verify-a/ci | g, PR bez merge'a w oknie | brak następnego runu gałęzi z wynikiem w oknie albo git nie zna"
          " jego głowy: naprawa mogła pójść inną gałęzią albo po oknie", None),
+        (("timed_out", None, "success"), "success", "KANDYDAT NF 1/1 | 2 verify-a/ci | g, PR bez merge'a w oknie | do audytu", 4),
     ],
     ids=["następny run anulowany przez push z naprawą", "czerwony run anulowany, zanim pytest skończył", "czerwony run anulowany po końcu pytest",
-         "następne runy gałęzi tylko anulowane", "bez następnego runu w oknie"],  # fmt: skip
+         "następne runy gałęzi tylko anulowane", "bez następnego runu w oknie", "czerwony run z przekroczonym czasem"],  # fmt: skip
 )
-def test_run_anulowany_nowym_pushem_nie_ukrywa_porazki_kroku_nf(
+def test_czerwony_run_anulowany_albo_z_przekroczonym_czasem_nie_ukrywa_porazki_kroku_nf(
     tmp_path: Path, wyniki: tuple[str | None, ...], zadania_2: str, naglowek: str, nastepny: int | None
 ) -> None:
     """Gałąź ``g``: czerwona głowa zmienia ``src/a.py``, druga dodaje plik w ``docs/``, trzecia naprawia folder verify-a;
     run ``n + 2`` biegnie na ``n``-tej z nich z wynikiem ``wyniki[n]`` (``None``: bez runu). Anulowany run nie ma
     naprawy z pushu, który go anulował, więc naprawa sięga następnego runu z wynikiem; czerwony run anulowany z padłym
-    zadaniem Mutation checks jest porażką jak run z wynikiem failure, a bez następnego runu z wynikiem porażka stoi jako
+    zadaniem Mutation checks, jak każdy run z wynikiem innym niż success (np. timed_out), jest porażką jak run z wynikiem
+    failure, a bez następnego runu z wynikiem porażka stoi jako
     niepoliczona."""
 
     repo = repository(tmp_path / "repo", {"src/a.py": "A = 1\n", ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\n---\n"}, tools=())
@@ -451,8 +509,8 @@ def test_run_anulowany_nowym_pushem_nie_ukrywa_porazki_kroku_nf(
 
 
 def _przemianowanie_przez_main(droga: str) -> Callable[[Path], tuple[str, str, str]]:
-    """``main`` przemianowuje ``src/a.py`` na ``src/b.py`` bez zmiany treści, a gałąź zmienia w nim funkcję ``b``
-    i folder verify-a, potem aktualizuje się ``droga`` (rebase, scalenie ``main``, rebase i poprawka tej funkcji):
+    """``main`` przemianowuje ``src/a.py`` na ``src/b.py`` bez zmiany treści, a gałąź zmienia w nim funkcję ``b`` (albo
+    tylko usuwa z niej linię) i folder verify-a, potem aktualizuje się ``droga`` (klucz ``PROBY_PRZEMIANOWANIA``):
     ``(main, czerwona, następna)``."""
 
     def stan(repo: Path) -> tuple[str, str, str]:
@@ -462,10 +520,16 @@ def _przemianowanie_przez_main(droga: str) -> Callable[[Path], tuple[str, str, s
         git(repo, "mv", "src/a.py", "src/b.py")
         main = commit(repo, "main przemianowuje src/a.py na src/b.py")
         git(repo, "checkout", "--quiet", "-B", "g", baza)
-        (repo / "src/a.py").write_text(f"{a}\n\n{b.replace('2', '3')}\n", encoding="utf-8")
+        usuwa = droga.startswith("PR tylko usuwa linię")
+        zmiana = b.replace("    y = 2\n", "") if usuwa else b.replace("2", "3")
+        (repo / "src/a.py").write_text(f"{a}\n\n{zmiana}\n", encoding="utf-8")
         (repo / ".agents/skills/verify-a/drive.py").write_text("X = 1\n", encoding="utf-8")
         czerwona = commit(repo, "zmiana")
-        if droga == "scalenie main":
+        if droga.endswith("poprawka, potem scalenie main"):
+            poprawka = f"{a.replace('    x = 1\n', '')}\n\n{zmiana}\n" if usuwa else f"{a}\n\n{b.replace('2', '4')}\n"
+            (repo / "src/a.py").write_text(poprawka, encoding="utf-8")
+            commit(repo, "poprawka pod ścieżką sprzed przemianowania")
+        if droga.endswith("scalenie main"):
             git(repo, "merge", "--quiet", "--no-edit", main)
         else:
             git(repo, "rebase", "--quiet", main)
@@ -477,28 +541,42 @@ def _przemianowanie_przez_main(droga: str) -> Callable[[Path], tuple[str, str, s
     return stan
 
 
-@pytest.mark.parametrize(("droga", "naprawa"), [("rebase", ()), ("scalenie main", ()), ("rebase i poprawka", ("src/b.py",))])
-def test_plik_przemianowany_przez_main_to_dla_naprawy_i_dowodu_ten_sam_plik_pod_sciezka_sprzed_przemianowania(
-    tmp_path: Path, droga: str, naprawa: tuple[str, ...]
-) -> None:
-    """Rebase na ``main``, który przemianował plik gałęzi, zostawia własną zmianę PR (#2178 r3, D2), a poprawka po nim
-    jest naprawą, której dowód czyta własny diff czerwonej głowy pod ścieżką sprzed przemianowania."""
+# Droga aktualizacji gałęzi po przemianowaniu jej pliku przez ``main`` → (naprawa, linie +/- własnego diffu PR przy
+# czerwonej i następnej głowie, linie różnicy tych diffów w dowodzie); bez naprawy porażka nie liczy się.
+PROBY_PRZEMIANOWANIA: dict[str, tuple[tuple[str, ...], tuple[int, int], list[str]]] = {
+    "rebase": ((), (0, 0), []),
+    "scalenie main": ((), (0, 0), []),
+    "rebase i poprawka": (("src/b.py",), (2, 2), ["- +    y = 3", "+ +    y = 4"]),
+    "poprawka, potem scalenie main": (("src/b.py",), (2, 2), ["- +    y = 3", "+ +    y = 4"]),
+    "PR tylko usuwa linię, poprawka, potem scalenie main": (("src/b.py",), (1, 2), ["+ -    x = 1"]),
+}
 
+
+@pytest.mark.parametrize("droga", list(PROBY_PRZEMIANOWANIA))
+def test_plik_przemianowany_przez_main_to_dla_naprawy_i_dowodu_ten_sam_plik_pod_sciezka_sprzed_przemianowania(tmp_path: Path, droga: str) -> None:
+    """Rebase i scalenie ``main``, który przemianował plik gałęzi, zostawiają własną zmianę PR (#2178 r3, D2), a poprawka
+    po rebase'ie albo pod starą ścieżką przed scaleniem ``main`` (#2195 r1, także gdy PR w tym pliku tylko usuwa linie)
+    jest naprawą: porażka jest kandydatem, a dowód czyta własny diff czerwonej głowy pod ścieżką sprzed przemianowania
+    i następnej pod nową."""
+
+    naprawa, (linii_czerwonej, linii_nastepnej), roznica = PROBY_PRZEMIANOWANIA[droga]
     rekordy = _rekordy_luki(tmp_path, _przemianowanie_przez_main(droga))
-    linie = cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy))
+    wynik = rozstrzygnij(rekordy)
+    linie = cien_podstaw.wypisz(rekordy, wynik)
 
     assert _sciezki(rekordy.pr[0]) == naprawa
-    if naprawa:
-        assert rekordy.pr[0].naprawa is not None
-        czerwona, nastepna = rekordy.pr[0].naprawa.czerwona, rekordy.pr[0].naprawa.nastepna
-        poczatek = linie.index("  plik src/b.py | przy czerwonej głowie src/a.py: main przemianował go między bazami głów")
-        assert linie[poczatek + 1 : poczatek + 6] == [
-            f"    git diff {czerwona.baza[:12]}...{czerwona.sha[:12]} -- src/a.py | linii +/-: 2",
-            f"    git diff {nastepna.baza[:12]}...{nastepna.sha[:12]} -- src/b.py | linii +/-: 2",
-            "    linie +/- tylko przy czerwonej (-) albo tylko przy następnej (+): 2",
-            "      - +    y = 3",
-            "      + +    y = 4",
-        ]
+    if not naprawa:
+        return
+    assert len(wynik.kandydaci) + len(wynik.niepoliczone) == sum(len(run.padle) for run in rekordy.pr)
+    assert rekordy.pr[0].naprawa is not None
+    czerwona, nastepna = rekordy.pr[0].naprawa.czerwona, rekordy.pr[0].naprawa.nastepna
+    poczatek = linie.index("  plik src/b.py | przy czerwonej głowie src/a.py: main przemianował go między bazami głów")
+    assert linie[poczatek + 1 : poczatek + 4 + len(roznica)] == [
+        f"    git diff {czerwona.baza[:12]}...{czerwona.sha[:12]} -- src/a.py | linii +/-: {linii_czerwonej}",
+        f"    git diff {nastepna.baza[:12]}...{nastepna.sha[:12]} -- src/b.py | linii +/-: {linii_nastepnej}",
+        f"    linie +/- tylko przy czerwonej (-) albo tylko przy następnej (+): {len(roznica)}",
+        *(f"      {linia}" for linia in roznica),
+    ]
 
 
 def _konflikt(repo: Path, *argumenty: str) -> None:
