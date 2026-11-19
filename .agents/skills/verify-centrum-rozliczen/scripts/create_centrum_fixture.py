@@ -1,49 +1,3 @@
-"""Create a synthetic folder okresów, Rejestr zleceń, configuration directory, and metrics files for one Centrum run.
-
-The configuration directory holds a synthetic Lista Wykonawców and the three
-Wzorce, valid for the engine's Sprawdzanie. Centrum's
-settings file is written there too, as in Dad's ``config/``. The metrics files
-hold a synthetic history in the metrics schema for Metryki.
-
-The Rejestr zleceń holds orders of the last complete period ``06_12_10_2026``
-whose last order is on Saturday, so a RUN of Przygotowanie pliku zbiorczego
-asks Dad's decision about the incomplete period. Its order cells carry
-``ROW_MARKER``. The Plik zbiorczy of ``29_05_10_2026`` has a Wiersz danych of a
-Wykonawca missing from the Lista Wykonawców, so a Podgląd bez zapisu of
-Przebieg rozliczeń for that period needs checking.
-
-The tool itself is a synthetic Git clone in ``<root>/aktualizacja/klon`` whose
-"origin" is a local bare repository, ``<root>/aktualizacja/origin.git``, one commit
-ahead of the clone: Aktualizacja narzędzia in this run moves that clone, never
-the checkout the verification runs from, and never reaches GitHub. The clone
-stands on the first version, the Wydanie ``v0.0.1`` (an annotated tag it got
-from the origin, as an install from the README leaves it). The clone's
-``config/`` holds Dad's files, among them his locally changed old Wykonawcy file
-(``worker_mapping.yaml``), which the newest commit stops tracking. Its
-``run_centrum.py``, which the restart guardian starts after an update, is a shim
-that serves this run's scripted Centrum (``serve_centrum.py`` with this run root)
-on the port it is given; while ``<root>/pacing/ponowny-start-ms.txt`` exists, it
-waits that many milliseconds first. One version on the origin's branch
-``nie-startuje`` has a ``run_centrum.py`` that fails at once with an import error.
-
-``<root>/INTERMAX/`` holds two synthetic INTERMAX files for ``uporzadkowanie-intermax``: one with the Surowe
-zlecenia of Monday 26.10.2026 pasted under the ordered days (6 orders of 3 Wykonawcy, the first row shifted), and
-one whose pasted rows hold a formula, which Uporządkowanie INTERMAX stops „do Maksa”. Beside them lies a synthetic
-Baza zleceń with the Historia adresu of two of the 6 pasted orders. Kopie INTERMAX go to ``<root>/Kopie INTERMAX``. ``<root>/INTERMAX/przywracanie/`` holds a third INTERMAX for ``kopie-intermax`` and the
-bytes of three Kopie of both names (one ordered order fewer in the oldest), which that feature puts into the folder
-of Kopie only while it runs.
-
-``<root>/INTERMAX/raporty/`` holds the INTERMAX of ``wpisanie-raportow``: ordered orders of today 19.10.2026 of
-``wykonawca.a`` (two) and ``wykonawca.b`` (one, whose ``CZYNNOŚCI ZREALIZOWANE`` Dad filled in by hand).
-``<root>/maile/`` is the Skrzynka raportów of the run (``FolderInbox``): a Raport wykonawcy of each of them for today
-and one from an address outside the addresses of the Wykonawcy.
-
-``--wariant rok-pracy`` (for ``wydajnosc``) adds a year of Dad's work on top:
-``<root>/Rok pracy/Załączniki`` with 52 periods up to the last complete one in
-Dad's layout, each before it with a Folder rozliczeń pracowników of 14
-Wykonawcy, and 258 more synthetic records in both metrics files.
-"""
-
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -104,6 +58,52 @@ from rozliczenia.centrum.settings.workers import WORKERS as WORKER_LIST_FILE, WO
 from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.tool_files import config_dir
 from rozliczenia.worker_list import WorkerEntry, WorkerList
+
+OPIS = """Create a synthetic folder okresów, Rejestr zleceń, configuration directory, and metrics files for one Centrum run.
+
+The configuration directory holds a synthetic Lista Wykonawców and the three
+Wzorce, valid for the engine's Sprawdzanie. Centrum's
+settings file is written there too, as in Dad's ``config/``. The metrics files
+hold a synthetic history in the metrics schema for Metryki.
+
+The Rejestr zleceń holds orders of the last complete period ``06_12_10_2026``
+whose last order is on Saturday, so a RUN of Przygotowanie pliku zbiorczego
+asks Dad's decision about the incomplete period. Its order cells carry
+``ROW_MARKER``. The Plik zbiorczy of ``29_05_10_2026`` has a Wiersz danych of a
+Wykonawca missing from the Lista Wykonawców, so a Podgląd bez zapisu of
+Przebieg rozliczeń for that period needs checking.
+
+The tool itself is a synthetic Git clone in ``<root>/aktualizacja/klon`` whose
+"origin" is a local bare repository, ``<root>/aktualizacja/origin.git``, one commit
+ahead of the clone: Aktualizacja narzędzia in this run moves that clone, never
+the checkout the verification runs from, and never reaches GitHub. The clone
+stands on the first version, the Wydanie ``v0.0.1`` (an annotated tag it got
+from the origin, as an install from the README leaves it). The clone's
+``config/`` holds Dad's files, among them his locally changed old Wykonawcy file
+(``worker_mapping.yaml``), which the newest commit stops tracking. Its
+``run_centrum.py``, which the restart guardian starts after an update, is a shim
+that serves this run's scripted Centrum (``serve_centrum.py`` with this run root)
+on the port it is given; while the pacing file of ``Pace.RESTART`` (``harness.py``)
+exists, it waits that many milliseconds first. One version on the origin's branch
+``nie-startuje`` has a ``run_centrum.py`` that fails at once with an import error.
+
+``<root>/INTERMAX/`` holds two synthetic INTERMAX files for ``uporzadkowanie-intermax``: one with the Surowe
+zlecenia of Monday 26.10.2026 pasted under the ordered days (6 orders of 3 Wykonawcy, the first row shifted), and
+one whose pasted rows hold a formula, which Uporządkowanie INTERMAX stops „do Maksa”. Beside them lies a synthetic
+Baza zleceń with the Historia adresu of two of the 6 pasted orders. Kopie INTERMAX go to ``<root>/Kopie INTERMAX``. ``<root>/INTERMAX/przywracanie/`` holds a third INTERMAX for ``kopie-intermax`` and the
+bytes of three Kopie of both names (one ordered order fewer in the oldest), which that feature puts into the folder
+of Kopie only while it runs.
+
+``<root>/INTERMAX/raporty/`` holds the INTERMAX of ``wpisanie-raportow``: ordered orders of today 19.10.2026 of
+``wykonawca.a`` (two) and ``wykonawca.b`` (one, whose ``CZYNNOŚCI ZREALIZOWANE`` Dad filled in by hand).
+``<root>/maile/`` is the Skrzynka raportów of the run (``FolderInbox``): a Raport wykonawcy of each of them for today
+and one from an address outside the addresses of the Wykonawcy.
+
+``--wariant rok-pracy`` (for ``wydajnosc``) adds a year of Dad's work on top:
+``<root>/Rok pracy/Załączniki`` with 52 periods up to the last complete one in
+Dad's layout, each before it with a Folder rozliczeń pracowników of 14
+Wykonawcy, and 258 more synthetic records in both metrics files.
+"""
 
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
 PREPARATION_COUNTERS = {"period_orders": 9, "successful_orders": 8, "skipped_empty_rows": 1, "warnings": 0}
@@ -342,7 +342,7 @@ def _metrics(root: Path) -> dict[str, object]:
 
 
 def _report_entering(root: Path) -> dict[str, object]:
-    """INTERMAX and Skrzynka raportów of ``wpisanie-raportow`` (module docstring), with what the drive expects."""
+    """INTERMAX and Skrzynka raportów of ``wpisanie-raportow`` (``OPIS``), with what the drive expects."""
 
     completed = FIRST + HEADERS.index("CZYNNOŚCI ZREALIZOWANE")
     register = root / "INTERMAX" / "raporty" / "ZLECENIA INTERMAX OD 08_11_2021-NOWA WERSJA.xlsx"
@@ -688,7 +688,7 @@ def create(root: Path, variant: str | None = None) -> dict[str, object]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root to create; absent or empty")
     parser.add_argument(
         "--wariant", choices=(YEAR_OF_WORK,), help="rok-pracy: add a year of Dad's work for wydajnosc (see above)."

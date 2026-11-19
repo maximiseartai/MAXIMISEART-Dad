@@ -1,4 +1,36 @@
-"""Pomiar ADR 0036 i 0042 w issue „Rejestr korzeni”: powroty idiomu, czekanie, odpalenia reguł, strażniki Ważnych; w poniedziałek, ręcznie z --bez-zapisu.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Iterable, Sequence
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+import json
+from pathlib import Path
+import re
+import shutil
+from statistics import median
+import subprocess
+import sys
+import sysconfig
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import bramka_straznika
+import github
+import limit_rund
+import odpalenia_ast_grep
+import potomne
+import rejestr_korzeni
+from rejestr_korzeni import GuardCase, IdiomCase, Reviewed
+from repo import MAIN, REMOTE, ROOT
+import repo
+import straznik
+import szablon_werdyktu
+from tydzien_polski import WARSAW, last_full_week, midnight, week_of
+import werdykt_pr
+
+OPIS = """Pomiar ADR 0036 i 0042 w issue „Rejestr korzeni”: powroty idiomu, czekanie, odpalenia reguł, strażniki Ważnych; w poniedziałek, ręcznie z --bez-zapisu.
 
 Miary z [ADR 0036](../docs/adr/0036-chwast-to-regula.md) („Miara”, wiersz miary Q1 w „Wdrożenie”) i strażniki
 z [ADR 0042](../docs/adr/0042-straznik-przy-pierwszym-waznym.md): workflow
@@ -70,38 +102,6 @@ Linie wyniku: ``REJESTR KORZENI | …`` na każdą akcję albo ostrzeżenie, z `
 końcu ``REJESTR KORZENI OK | tydzień RRRR-MM-DD: …``. Błąd GitHuba, Gita, ast-grep albo zły cron kończy się linią
 ``REJESTR KORZENI FAIL`` i kodem 1.
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Iterable, Sequence
-from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
-import json
-from pathlib import Path
-import re
-import shutil
-from statistics import median
-import subprocess
-import sys
-import sysconfig
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import bramka_straznika
-import github
-import limit_rund
-import odpalenia_ast_grep
-import potomne
-import rejestr_korzeni
-from rejestr_korzeni import GuardCase, IdiomCase, Reviewed
-from repo import MAIN, REMOTE, ROOT
-import repo
-import straznik
-import szablon_werdyktu
-from tydzien_polski import WARSAW, last_full_week, midnight, week_of
-import werdykt_pr
 
 TITLE = "Rejestr korzeni"
 PREFIX = "REJESTR KORZENI"
@@ -316,7 +316,7 @@ def _action(issues: Sequence[dict[str, object]], text: str) -> tuple[github.Akcj
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--bez-zapisu", action="store_true", help="Niczego nie zapisuj na GitHubie, tylko wydrukuj treść issue.")
     parser.add_argument("--tydzien", type=date.fromisoformat, help="Dzień tygodnia do pomiaru, RRRR-MM-DD (domyślnie ostatni pełny tydzień).")
     parser.add_argument("--cron", default="", help="Cron, który uruchomił workflow; pomiar biegnie, gdy jego godzina to dziś 6 czasu polskiego.")

@@ -1,11 +1,3 @@
-"""Read-only check that this Mac's Excel and this run's fixture are worth driving.
-
-    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/excel_doctor.py --root RUN_ROOT --desk DESK
-
-Prints ``DOCTOR OK`` or one ``DOCTOR FAIL`` line per problem. It never starts Excel, opens a workbook,
-or writes a file.
-"""
-
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
@@ -31,6 +23,14 @@ from atrapy.scenariusz_rozliczen import (
 )
 from atrapy.pliki_taty import WORKER_LIST_NAME
 from atrapy.settlement import PERIOD, WORKERS
+
+OPIS = """Read-only check that this Mac's Excel and this run's fixture are worth driving.
+
+    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/excel_doctor.py --root RUN_ROOT --desk DESK
+
+Prints ``DOCTOR OK`` or one ``DOCTOR FAIL`` line per problem. It never starts Excel, opens a workbook,
+or writes a file.
+"""
 
 LINKED_TEMPLATES = (COLLECTIVE_TEMPLATE_NAME, WORKER_TEMPLATE_NAME)
 WORKBOOK_NAMES = (
@@ -100,7 +100,7 @@ def check(root: Path, desk: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=RawDescriptionHelpFormatter)
     parser.add_root("run root of this Excel run")
     parser.add_argument("--desk", required=True, type=Path, help="this run's directory inside Excel's container")
     args = parser.parse_args(argv)

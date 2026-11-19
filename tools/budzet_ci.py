@@ -1,4 +1,38 @@
-"""Strażnik budżetu bramki PR: p90 push → Required z 7 dni wobec 5 min i jedno issue z wąskim gardłem; użyj po zmianie CI (--bez-zapisu).
+from __future__ import annotations
+
+import argparse
+from collections import Counter, defaultdict
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import asdict, dataclass, field
+from datetime import date, datetime, timedelta, timezone
+import hashlib
+import io
+import json
+from pathlib import Path
+import statistics
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from typing import Any
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from api_actions import Api, runy
+import czasy_ci
+import github
+from github import REPO, BladApi, GhApi, GitHub
+from jednostka import Klucz
+import plan_runu
+from plan_runu import Plan
+import pomiar_ci
+from pomiar_ci import Odcinek, Pomiar
+from repo import ROOT
+from zakres_runu import MUTACJE, TORY
+
+OPIS = """Strażnik budżetu bramki PR: p90 push → Required z 7 dni wobec 5 min i jedno issue z wąskim gardłem; użyj po zmianie CI (--bez-zapisu).
 
 Budżet to decyzja Maksa D2 z 19.11 (ADR 0020): p90 ≤ 5 min od pushu do ``Required CI status``, a przekroczenie
 automatycznie zakłada issue z wąskim gardłem. Sposób pomiaru wybrał autor strażnika (ADR 0020, poziom 2): cel „każdy
@@ -69,40 +103,6 @@ na limicie daje też linię ``BUDŻET CI | okno niepełne``. Błąd GitHuba albo
 
     .venv/bin/python tools/budzet_ci.py --katalog ~/.t3/notes/<bieg>/budzet --bez-zapisu
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter, defaultdict
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timedelta, timezone
-import hashlib
-import io
-import json
-from pathlib import Path
-import statistics
-import subprocess
-import sys
-import tempfile
-import threading
-import time
-from typing import Any
-import zipfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from api_actions import Api, runy
-import czasy_ci
-import github
-from github import REPO, BladApi, GhApi, GitHub
-from jednostka import Klucz
-import plan_runu
-from plan_runu import Plan
-import pomiar_ci
-from pomiar_ci import Odcinek, Pomiar
-from repo import ROOT
-from zakres_runu import MUTACJE, TORY
 
 PREFIKS = "BUDŻET CI"
 BUDZET = next(cel for cel in pomiar_ci.CELE if cel.nazwa == "każdy PR")
@@ -628,7 +628,7 @@ def _akcje(teraz: Tydzien, otwarte: list[dict[str, Any]], tekst: str) -> tuple[l
 
 
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github_api: GitHub = GITHUB, zegar: Callable[[], float] = time.monotonic) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--katalog", type=Path, required=True, help="Pamięć strażnika: pamiec.json i czasy-ci/.")
     parser.add_argument("--dzien", type=date.fromisoformat, help="Dzień uruchomienia, RRRR-MM-DD (UTC, domyślnie dziś); okno to 7 dni przed nim.")
     parser.add_argument("--limit-zapytan", type=int, default=LIMIT_ZAPYTAN, help=f"Najwięcej zapytań API biegu (domyślnie {LIMIT_ZAPYTAN}).")

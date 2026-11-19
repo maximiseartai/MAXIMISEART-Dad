@@ -1,4 +1,92 @@
-"""Serve the real Centrum rozliczeń for one verification run on 127.0.0.1.
+from __future__ import annotations
+
+import argparse
+import asyncio
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import ExitStack, contextmanager
+from dataclasses import replace
+from datetime import UTC, date, datetime
+from functools import partial
+import imaplib
+import json
+import os
+import smtplib
+from pathlib import Path
+import sys
+import threading
+import time
+import traceback
+from typing import Any
+from urllib.parse import quote
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
+
+from rozliczenia.centrum.app import create_app
+from rozliczenia.centrum.catalog import CATALOG
+from rozliczenia.centrum.atomic_file import replace_atomically
+from rozliczenia.centrum.cloud_files import CloudFiles
+from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.efenix_chrome import EfenixWindow
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.platform import AutostartState
+from rozliczenia.centrum.report_box import (
+    Archive,
+    ArchiveOutcome,
+    Asset,
+    Closure,
+    Comment,
+    CommentOutcome,
+    CommentsOutcome,
+    Commented,
+    IssuesOutcome,
+    Label,
+    OpenArchiveOutcome,
+    Refused,
+    Rejected,
+    RemoveOutcome,
+    SendOutcome,
+    Sent,
+    Unreachable,
+    UploadOutcome,
+    close_reason,
+)
+from rozliczenia.centrum.server import serve
+from rozliczenia.centrum.shutdown import Shutdown
+from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness, parse_published
+from rozliczenia.centrum.tool_update import ToolClone, find_git, pip_install, release_at
+from rozliczenia.centrum.version import commit_since, tool_commit
+from rozliczenia.template_file import TemplateFile
+from rozliczenia.tool_files import listen_locally, log_path
+from rozliczenia.write_routes import Route
+from rozliczenia.workbook_files import ByteSource, DataRow, RegisterRow, file_bytes
+from skrypt_skilla import Parser
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
+from harness import (
+    INBOX_ADDRESS,
+    INBOX_PASSWORD,
+    File,
+    Log,
+    SLOW_RUNNER,
+    Pace,
+    Switch,
+    archive_file,
+    archive_listing,
+    comment_address,
+    efenix_files,
+    issue_file,
+    last_file_id,
+    rejects,
+    report_box,
+)
+from atrapy.atrapa_efenix import atrapa_efenix
+from atrapy.skrzynka import ArchivedFile, Archives, BoxArchive, BoxIssue, Issues
+from atrapy.widok_skrzynki import shown
+from atrapy.efenix import write_collective_file
+from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
+from atrapy.skrzynka_raportow import AtrapaImap, AtrapaSmtp, FolderInbox
+
+OPIS = """Serve the real Centrum rozliczeń for one verification run on 127.0.0.1.
 
 This is the production app (``create_app`` + ``serve`` from ``rozliczenia.centrum``)
 with run-local inputs: the settings file, the configuration directory
@@ -128,94 +216,6 @@ live progress can be seen; a form posted to its ``page_login.php`` logs in. At i
 script also writes the Plik zbiorczy of those orders, with the Kwota (AU) Excel computed, to its period folder in
 ``efenix_files`` (outside the folder okresów, so the drive puts it in place when it needs it).
 """
-
-from __future__ import annotations
-
-import argparse
-import asyncio
-from collections.abc import Callable, Iterator, Sequence
-from contextlib import ExitStack, contextmanager
-from dataclasses import replace
-from datetime import UTC, date, datetime
-from functools import partial
-import imaplib
-import json
-import os
-import smtplib
-from pathlib import Path
-import sys
-import threading
-import time
-import traceback
-from typing import Any
-from urllib.parse import quote
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
-
-from rozliczenia.centrum.app import create_app
-from rozliczenia.centrum.catalog import CATALOG
-from rozliczenia.centrum.atomic_file import replace_atomically
-from rozliczenia.centrum.cloud_files import CloudFiles
-from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.efenix_chrome import EfenixWindow
-from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.platform import AutostartState
-from rozliczenia.centrum.report_box import (
-    Archive,
-    ArchiveOutcome,
-    Asset,
-    Closure,
-    Comment,
-    CommentOutcome,
-    CommentsOutcome,
-    Commented,
-    IssuesOutcome,
-    Label,
-    OpenArchiveOutcome,
-    Refused,
-    Rejected,
-    RemoveOutcome,
-    SendOutcome,
-    Sent,
-    Unreachable,
-    UploadOutcome,
-    close_reason,
-)
-from rozliczenia.centrum.server import serve
-from rozliczenia.centrum.shutdown import Shutdown
-from rozliczenia.centrum.tool_freshness import GitHubReleases, PublishedRelease, ToolFreshness, parse_published
-from rozliczenia.centrum.tool_update import ToolClone, find_git, pip_install, release_at
-from rozliczenia.centrum.version import commit_since, tool_commit
-from rozliczenia.template_file import TemplateFile
-from rozliczenia.tool_files import listen_locally, log_path
-from rozliczenia.write_routes import Route
-from rozliczenia.workbook_files import ByteSource, DataRow, RegisterRow, file_bytes
-from skrypt_skilla import Parser
-from starlette.types import ASGIApp, Message, Receive, Scope, Send
-from harness import (
-    INBOX_ADDRESS,
-    INBOX_PASSWORD,
-    File,
-    Log,
-    SLOW_RUNNER,
-    Pace,
-    Switch,
-    archive_file,
-    archive_listing,
-    comment_address,
-    efenix_files,
-    issue_file,
-    last_file_id,
-    rejects,
-    report_box,
-)
-from atrapy.atrapa_efenix import atrapa_efenix
-from atrapy.skrzynka import ArchivedFile, Archives, BoxArchive, BoxIssue, Issues
-from atrapy.widok_skrzynki import shown
-from atrapy.efenix import write_collective_file
-from atrapy.scenariusz_centrum import EFENIX_ORDERS, EFENIX_SETTLED, EFENIX_UNKNOWN
-from atrapy.skrzynka_raportow import AtrapaImap, AtrapaSmtp, FolderInbox
 
 EFENIX_SEARCH_DELAY_S = 1.0
 # The mode „wolny runner” (SLOW_RUNNER): Centrum takes each request of its API this late.
@@ -715,7 +715,7 @@ def _efenix_window(root: Path) -> Iterator[EfenixWindow]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_root("Run root created by create_centrum_fixture.py.")
     parser.add_argument("--port", type=int, required=True, help="Free port on 127.0.0.1.")
     args = parser.parse_args(argv)

@@ -1,4 +1,41 @@
-"""Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix, report_entering) z wynikiem JSON; użyj w E2E, benchmarku i skillach.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Callable
+from dataclasses import dataclass
+from pathlib import Path
+import sys
+from typing import Any, Final, NoReturn, assert_never
+
+from pydantic import BaseModel, ConfigDict
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from rozliczenia import intermax_copies
+from rozliczenia.centrum import run_view
+from rozliczenia.centrum.contract import runs as runs_contract
+from rozliczenia.centrum.catalog import CATALOG
+from rozliczenia.centrum.configuration import ConfigurationFiles
+from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start, startable
+from rozliczenia.centrum.settings_at_start import SettingsAtStart
+from rozliczenia.centrum.settings.files import FieldProblem
+from rozliczenia.centrum.settings.memory import settings_bytes
+from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
+from rozliczenia.decision import Decision
+from rozliczenia.message import Message
+from rozliczenia.process_run import Finished, Outcome, RunResult, StopEnding
+from rozliczenia.run_context import RunContext
+from rozliczenia.tool_files import CONFIG_DIR
+from rozliczenia.worker_list import WorkerList
+from rozliczenia.progress import ProgressSnapshot
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
+from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
+
+from atrapy.skrzynka_raportow import FolderInbox
+
+OPIS = """Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix, report_entering) z wynikiem JSON; użyj w E2E, benchmarku i skillach.
 
 Skrypt dla maszyn: jedno Uruchomienie procesu, wynik jako JSON.
 
@@ -58,43 +95,6 @@ Kod wyjścia to 0 OK, 2 Wymaga sprawdzenia, 1 Zatrzymanie.
 Błędne argumenty też kończą się kodem 1, bez JSON, z opisem użycia na stderr,
 żeby literówka nigdy nie wyglądała jak wynik Wymaga sprawdzenia.
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Callable
-from dataclasses import dataclass
-from pathlib import Path
-import sys
-from typing import Any, Final, NoReturn, assert_never
-
-from pydantic import BaseModel, ConfigDict
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from rozliczenia import intermax_copies
-from rozliczenia.centrum import run_view
-from rozliczenia.centrum.contract import runs as runs_contract
-from rozliczenia.centrum.catalog import CATALOG
-from rozliczenia.centrum.configuration import ConfigurationFiles
-from rozliczenia.centrum.process_kind import HostParts, Need, ProcessKind, Start, startable
-from rozliczenia.centrum.settings_at_start import SettingsAtStart
-from rozliczenia.centrum.settings.files import FieldProblem
-from rozliczenia.centrum.settings.memory import settings_bytes
-from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
-from rozliczenia.decision import Decision
-from rozliczenia.message import Message
-from rozliczenia.process_run import Finished, Outcome, RunResult, StopEnding
-from rozliczenia.run_context import RunContext
-from rozliczenia.tool_files import CONFIG_DIR
-from rozliczenia.worker_list import WorkerList
-from rozliczenia.progress import ProgressSnapshot
-from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
-from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
-from rozliczenia.report_entering import ReportEnteringParts, ReportStateInMemory
-
-from atrapy.skrzynka_raportow import FolderInbox
 
 _EXIT_CODES = {"OK": 0, "WYMAGA_SPRAWDZENIA": 2, "BLAD_KRYTYCZNY": 1}
 
@@ -220,7 +220,7 @@ class _Parser(argparse.ArgumentParser):
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = _Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = _Parser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     processes = parser.add_subparsers(required=True, metavar="PROCES", dest="process")
     for kind in CATALOG.kinds:
         process = processes.add_parser(kind.key, help=kind.title)

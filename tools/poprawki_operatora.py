@@ -1,4 +1,26 @@
-"""Wypisuje wiadomości operatora z wątków T3 Code tego repo w jednym tygodniu; użyj w polowaniu na powtarzane błędy.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from contextlib import closing
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, timedelta
+from enum import StrEnum
+import json
+from pathlib import Path, PurePath
+import re
+import sqlite3
+import stat
+import subprocess
+import sys
+from urllib.parse import urlsplit
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import repo
+from tydzien_polski import WARSAW, last_full_week, midnight, week_of
+
+OPIS = """Wypisuje wiadomości operatora z wątków T3 Code tego repo w jednym tygodniu; użyj w polowaniu na powtarzane błędy.
 
 Polowanie (skill ``.agents/skills/polowanie/SKILL.md``) szuka poprawek Maksa w wątkach agentów. Kto napisał wiadomość,
 zapisuje T3 Code w chwili jej przyjęcia w bazie stanu serwera (``--baza``, domyślnie ``BAZA``): wiadomość ``user`` ma
@@ -47,28 +69,6 @@ maszyny (og-box) są w bazie tamtej maszyny, więc narzędzie biegnie tam osobno
 (identyfikator ``async-answer:``) ma nadawcę ``user/server`` taki sam jak odpowiedź agenta przez ``t3_pending_request``,
 więc narzędzie liczy ją jako ``user/server`` (próbka ``ZNANE_LUKI`` w teście).
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from contextlib import closing
-from dataclasses import dataclass
-from datetime import UTC, date, datetime, timedelta
-from enum import StrEnum
-import json
-from pathlib import Path, PurePath
-import re
-import sqlite3
-import stat
-import subprocess
-import sys
-from urllib.parse import urlsplit
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import repo
-from tydzien_polski import WARSAW, last_full_week, midnight, week_of
 
 PREFIX = "POPRAWKI OPERATORA"
 REPO = "MAXIMISEART-Dad"
@@ -314,7 +314,7 @@ def _line(message: Message, chars: int) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description=__doc__,
+        description=OPIS,
         epilog=EXAMPLES,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )

@@ -1,5 +1,3 @@
-"""Read-only fixture check for the rozliczenia verification skill."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -20,6 +18,8 @@ from rozliczenia.template_file import TemplateFile
 from rozliczenia.workbook_files import WorkbookError
 from atrapy.scenariusz_rozliczen import WORKER_TEMPLATE_NAME
 from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS
+
+OPIS = """Read-only fixture check for the rozliczenia verification skill."""
 
 
 def _check(root: Path) -> tuple[str, int]:
@@ -54,7 +54,7 @@ def _check(root: Path) -> tuple[str, int]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of a settlement fixture")
     args = parser.parse_args(argv)
     try:

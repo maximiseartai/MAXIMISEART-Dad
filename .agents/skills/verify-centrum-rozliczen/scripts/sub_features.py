@@ -1,10 +1,3 @@
-"""Prints the section ``## Sub-features`` of a feature file from the evidence of a run that drove the feature.
-
-``drive_centrum.py`` builds the section from the steps and checks the drive ran (``sections`` there) and writes it to
-``<evidence>/sekcje-z-biegu/<feature>.md``; ``run_centrum_verification.py --feature <feature>`` prints the evidence
-directory as ``EVIDENCE <dir>``, and so does the artifact of a CI run.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -13,9 +6,16 @@ import sys
 
 from drive import FEATURES
 
+OPIS = """Prints the section ``## Sub-features`` of a feature file from the evidence of a run that drove the feature.
+
+``drive_centrum.py`` builds the section from the steps and checks the drive ran (``sections`` there) and writes it to
+``<evidence>/sekcje-z-biegu/<feature>.md``; ``run_centrum_verification.py --feature <feature>`` prints the evidence
+directory as ``EVIDENCE <dir>``, and so does the artifact of a CI run.
+"""
+
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--feature", required=True, choices=[each.name for each in FEATURES])
     parser.add_argument("--evidence", required=True, type=Path, help="The evidence directory of a run that drove the feature.")
     args = parser.parse_args()

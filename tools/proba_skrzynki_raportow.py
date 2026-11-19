@@ -1,4 +1,54 @@
-"""Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przy każdym Wydaniu.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Callable, Iterator, Sequence
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+import imaplib
+import os
+from pathlib import Path
+import re
+import sys
+from typing import Final, TextIO
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from rozliczenia import tool_files
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.centrum.report_entering_logs import (
+    LoggedMail,
+    LoggedReportMail,
+    LoggedStrangerMail,
+    LoggedUnreadableMail,
+    logged_mails,
+)
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
+from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.worker_report_inbox import (
+    INBOX_ACCESS_FILE,
+    ImapInbox,
+    InboxSurvey,
+    InboxUnreachable,
+    PasswordRejected,
+)
+from rozliczenia.worker_reports import (
+    EnteringMemory,
+    Login,
+    OrderNumber,
+    OwnEntries,
+    RegisterWindow,
+    ReportEntry,
+    ReportMail,
+    ReportsOutcome,
+    SavedState,
+    Verdict,
+    VerdictFault,
+    Window,
+    WorkerAddresses,
+)
+
+OPIS = """Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przy każdym Wydaniu.
 
 Krok każdego Wydania (krok 3 skilla ``wydanie``), poza CI (Granica 4 speca #1224, ADR 0028). Port IMAP Skrzynki raportów
 (``rozliczenia.worker_report_inbox.ImapInbox``) CI sprawdza tylko na ``AtrapaImap``, więc prawdziwego Gmaila sprawdza
@@ -75,56 +125,6 @@ test z syntetyczną postacią. Narzędzie tworzy plik z prawami ``0600``, odmawi
 klonie narzędzia (folder pliku albo folder nad nim ma ``.git``, po dowiązaniach) i istniejącego pliku bez
 ``--nadpisz``: odmowa to ``PROBA IMAP FAIL | <powód>`` bez łączenia ze skrzynką.
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Callable, Iterator, Sequence
-from dataclasses import dataclass
-from datetime import date, datetime, timedelta
-import imaplib
-import os
-from pathlib import Path
-import re
-import sys
-from typing import Final, TextIO
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from rozliczenia import tool_files
-from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
-from rozliczenia.centrum.report_entering_logs import (
-    LoggedMail,
-    LoggedReportMail,
-    LoggedStrangerMail,
-    LoggedUnreadableMail,
-    logged_mails,
-)
-from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
-from rozliczenia.centrum.settings.owner import read_snapshot
-from rozliczenia.worker_report_inbox import (
-    INBOX_ACCESS_FILE,
-    ImapInbox,
-    InboxSurvey,
-    InboxUnreachable,
-    PasswordRejected,
-)
-from rozliczenia.worker_reports import (
-    EnteringMemory,
-    Login,
-    OrderNumber,
-    OwnEntries,
-    RegisterWindow,
-    ReportEntry,
-    ReportMail,
-    ReportsOutcome,
-    SavedState,
-    Verdict,
-    VerdictFault,
-    Window,
-    WorkerAddresses,
-)
 
 DAYS_BACK: Final = 14
 """Domyślne ``--od``: tyle dni przed dziś, żeby w skrzynce były Raporty z kilku dni roboczych."""
@@ -413,7 +413,7 @@ def main(argv: Sequence[str] | None = None, *, connect: Callable[[], imaplib.IMA
     """``connect`` podaje test, żeby port rozmawiał z ``AtrapaImap``; bez niego port łączy się z Gmailem."""
 
     today = datetime.now().astimezone().date()
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--od",
         type=date.fromisoformat,
