@@ -76,7 +76,8 @@ Test kształtu planu bramki dla dwóch wzorcowych PR-ów, małego tylko z testam
 Decyzja Maksa z 19.11 (D1): na PR podstawa `ci:` skilla biegnie tylko wtedy, gdy PR zmienia plik w folderze skilla (`.agents/skills/<skill>/`, wariant NF).
 Zmiana, która trafia tylko w `pilnuje:`, zostawia podstawę pełnemu CI `main`, a plan pisze przy niej `biegnie na main: PR nie zmienia folderu skilla`, a `tools/skille_dla_zmiany.py` wymienia ją w linii `LICZY MAIN`.
 Push do `main` i noc zostają: push uruchamia każdą podstawę, a noc podstawę z `ci-czesci` przy trafieniu w `pilnuje:` albo folder.
-Zmiana ścieżki z `Context.SKILL_STEPS` dalej uruchamia na PR każdą podstawę, bo zmienia, jak podstawy biegną, a nie produkt, który sprawdzają.
+Wyjątek od tej reguły to decyzja koordynatora programu CI, nie część D1 Maksa: zmiana ścieżki z `Context.SKILL_STEPS` dalej uruchamia na PR każdą podstawę, bo te ścieżki zmieniają, jak podstawa biegnie, a nie to, co sprawdza.
+Backtest NF (30 ze 101), który Maks widział przed decyzją, tego wyjątku nie miał.
 Skrypt mutacji modelu TLA+ biegnie na PR jak przed D1: jego reguła to już pliki folderu skilla (model, skrypt, sprawdzenia jego mutacji) i moduły, które te sprawdzenia importują (silnik modelu, który daje ich werdykt), a na pushu nie biegnie, więc zmiana modelu bez niego czekałaby na noc.
 Rozjazd modelu skilla z kodem `tools/szybko.py` sprawdza dalej przy trafieniu w `pilnuje:`, bo pełne CI `main` uruchomi podstawę z rozjazdem po merge'u.
 Powód: bramka PR ma mieścić się w p90 ≤ 5 min od pushu do `Required CI status`, a ogon trzymają podstawy skilli.
@@ -86,7 +87,7 @@ Plan PR-u zapisuje w `plan.json` cień (`cien`): dla wariantu V0 (reguła sprzed
 Wykonuje się tylko NF (`NA_ZYWO` w `tools/lib/zakres_runu.py`), a N0 nie ma na PR żadnego kroku skilla, także skryptu mutacji modelu, jak w backteście.
 Artefakt `plan` trzyma się 30 dni, żeby pomiar po 14 dniach czytał cień całego okna.
 
-Reguła rozstrzygnięcia, zapisana przed włączeniem NF (#2169): N0 wygrywa, jeśli w 14 dniach po merge'u NF kroki skilli NF na PR złapały mniej niż X = 11 prawdziwych defektów (naprawa na gałęzi zmienia folder tego skilla albo `src/`; jedna gałąź z jednym krokiem to jeden defekt), których pytest w tym runie nie złapał, a cień daje N0 oszczędność czekania na PR co najmniej 825 agent-minut.
+Reguła rozstrzygnięcia, zapisana przed włączeniem NF (#2169): N0 wygrywa, jeśli w 14 dniach po merge'u NF kroki skilli NF na PR złapały mniej niż X = 11 prawdziwych defektów (naprawa zmienia folder tego skilla albo `src/`; naprawa to pliki, w których commit gałęzi bez merge'a zmienił własny diff PR między głową czerwonego runu a głową następnego, każdej wobec jej bazy scalenia z `main`, więc rebase, scalenie `main` do gałęzi, rozstrzygnięcie konfliktu w commicie scalenia i amend bez zmiany diffu naprawą nie są; jedna gałąź z jednym krokiem to jeden defekt), których pytest w tym runie nie złapał, a cień daje N0 oszczędność czekania na PR co najmniej 825 agent-minut.
 Inaczej zostaje NF.
 Liczy to `tools/cien_podstaw.py` i drukuje obok wyrocznię `main`: podstawę, która padła na `main`, a scalony PR miał ją w cieniu V0, nie w NF.
 Taka ucieczka przechodzi przy NF i przy N0, więc wyniku nie zmienia, ale jej czerwień sprawdza koszt ucieczki przyjęty w progu.

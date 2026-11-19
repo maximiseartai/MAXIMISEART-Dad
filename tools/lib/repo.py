@@ -184,12 +184,14 @@ class Merged:
     conflicts: tuple[str, ...]
 
 
-def merge_tree(root: Path, first: str, second: str) -> Merged:
-    """Scalenie ``first`` z ``second`` (``git merge-tree --write-tree``). Kod 1 to konflikt; każdy inny kod różny od zera
+def merge_tree(root: Path, first: str, second: str, *, base: str | None = None) -> Merged:
+    """Scalenie ``first`` z ``second`` (``git merge-tree --write-tree``), z bazą ``base`` zamiast ich bazy scalenia, gdy
+    ją podano: wtedy drzewo to ``first`` ze zmianą ``base..second``. Kod 1 to konflikt; każdy inny kod różny od zera
     (rozłączne historie, brak obiektu, nieznana rewizja) to ``subprocess.CalledProcessError``, a nie konflikt."""
 
+    with_base = () if base is None else (f"--merge-base={base}",)
     try:
-        written = git(root, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", first, second)
+        written = git(root, "merge-tree", "--write-tree", "--name-only", "--no-messages", "-z", *with_base, first, second)
     except subprocess.CalledProcessError as error:
         if error.returncode != 1:
             raise

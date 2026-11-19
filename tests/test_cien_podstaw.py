@@ -162,21 +162,34 @@ def swiat(tmp_path: Path) -> tuple[Path, _GitHub]:
         _run(5, "push", "main", scalona, "success", 5),
         _run(6, "push", "main", scalona, "success", 6, koniec="40"),
     ]
+    odpowiedzi, pliki = _czerwony_run_2(runy)
+    odpowiedzi |= {
+        f"{REPO}/actions/runs/4/jobs?filter=latest&per_page=100": {"jobs": [{"id": 41, "name": "Mutation checks (2/3)", "conclusion": "failure"}]},
+        f"{REPO}/actions/runs/3/artifacts?name=plan": {"artifacts": [{"id": 300, "expired": False}]},
+    }
+    pliki |= {
+        f"{REPO}/actions/jobs/41/logs": b"WYKONANIE FAIL | skill:verify-b/ci\n",
+        f"{REPO}/actions/artifacts/300/zip": _zip_planu({Podstawy.V0: (("verify-b/ci",), 250.0), Podstawy.NF: ((), 120.0), Podstawy.N0: ((), 120.0)}),
+    }
+    return repo, _GitHub(odpowiedzi, pliki)
+
+
+def _czerwony_run_2(runy: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, bytes]]:
+    """Odpowiedzi API okna 12.11 z ``runy``, w którym run PR 2 jest czerwony przez podstawę verify-a z kroków NF przy
+    zielonym pytest."""
+
     odpowiedzi = {
         f"{REPO}/actions/workflows/ci.yml/runs?created=2026-11-12&per_page={api_actions.STRONA}&page=1": {"workflow_runs": runy},
         f"{REPO}/actions/runs/2/jobs?filter=latest&per_page=100": {
             "jobs": [{"id": 21, "name": "pytest (Python 3.13, 1/1)", "conclusion": "success"}, {"id": 22, "name": "Mutation checks (1/2)", "conclusion": "failure"}]
         },
-        f"{REPO}/actions/runs/4/jobs?filter=latest&per_page=100": {"jobs": [{"id": 41, "name": "Mutation checks (2/3)", "conclusion": "failure"}]},
-        **{f"{REPO}/actions/runs/{run}/artifacts?name=plan": {"artifacts": [{"id": run * 100, "expired": False}]} for run in (2, 3)},
+        f"{REPO}/actions/runs/2/artifacts?name=plan": {"artifacts": [{"id": 200, "expired": False}]},
     }
     pliki = {
         f"{REPO}/actions/jobs/22/logs": "2026 WYKONANIE FAIL | pytest:tests/test_a.py, skill:verify-a/ci#1/2\n".encode(),
-        f"{REPO}/actions/jobs/41/logs": b"WYKONANIE FAIL | skill:verify-b/ci\n",
         f"{REPO}/actions/artifacts/200/zip": _zip_planu({Podstawy.V0: (("verify-a/ci",), 300.0), Podstawy.NF: (("verify-a/ci",), 200.0), Podstawy.N0: ((), 100.0)}),
-        f"{REPO}/actions/artifacts/300/zip": _zip_planu({Podstawy.V0: (("verify-b/ci",), 250.0), Podstawy.NF: ((), 120.0), Podstawy.N0: ((), 120.0)}),
     }
-    return repo, _GitHub(odpowiedzi, pliki)
+    return odpowiedzi, pliki
 
 
 def test_zbieranie_laczy_runy_logi_cien_planow_i_commity_gita_a_ponowny_bieg_nie_pyta_githuba(tmp_path: Path, swiat: tuple[Path, _GitHub]) -> None:
@@ -206,3 +219,56 @@ def test_wynik_z_zapisanych_rekordow_jest_tym_samym_co_z_githuba(
 
     assert (kod, z_rekordow[-1], json.loads((tmp_path / "bieg" / "rekordy.json").read_text(encoding="utf-8"))["pr_runow"]) == (0, z_githuba[-1], 2)
     assert z_rekordow[-1].startswith(f"D1 | złapane przez NF 1 (N0 wygrywa poniżej {X}) |") and z_rekordow[-1].endswith("wynik: NF zostaje")
+
+
+
+@pytest.mark.parametrize(
+    ("glowy", "naprawa"),
+    [
+        (("na bazie", "na main"), ()),
+        (("na main", "na bazie"), ()),
+        (("na bazie", "main scalony"), ()),
+        (("na bazie", "main scalony ze zmiana pliku z main"), ()),
+        (("na bazie", "na main z poprawka"), ("src/a.py",)),
+    ],
+    ids=["sam rebase na main", "rebase na starszą bazę", "main scalony do gałęzi", "zmiana pliku z main w commicie scalenia main", "rebase z poprawką w src"],
+)
+def test_naprawa_to_zmiana_wlasnego_diffu_pr_miedzy_glowami_a_nie_commity_z_main(tmp_path: Path, glowy: tuple[str, str], naprawa: tuple[str, ...]) -> None:
+    """Głowy czerwonego i następnego runu PR niosą tę samą zmianę folderu skilla verify-a, każda na innej bazie: przed
+    albo po commicie ``main``, który zmienia ``src/`` i folder verify-a, także inną linię pliku, który zmienia gałąź.
+    Naprawą jest tylko zmiana własnego diffu PR commitem gałęzi, więc bez poprawki NF nie złapał defektu, choć diff między
+    głowami zmienia oba foldery, a zmiana pliku z ``main`` w samym commicie scalenia ``main`` (rozstrzygnięcie konfliktu,
+    plik wygenerowany na nowo) naprawą nie jest."""
+
+    linie = [f"{n}\n" for n in range(1, 11)]
+    notatki = ".agents/skills/verify-a/notatki.md"
+    repo = repository(tmp_path / "repo", {"src/a.py": "A = 1\n", ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\n---\n", notatki: "".join(linie)}, tools=())
+    baza = commit(repo, "baza")
+    (repo / "src/b.py").write_text("B = 1\n", encoding="utf-8")
+    (repo / ".agents/skills/verify-a/SKILL.md").write_text("---\nname: verify-a\ndescription: d\n---\n", encoding="utf-8")
+    (repo / notatki).write_text("".join(["1 z main\n", *linie[1:]]), encoding="utf-8")
+    main = commit(repo, "main dalej")
+    git(repo, "checkout", "--quiet", baza)
+    (repo / ".agents/skills/verify-a/drive.py").write_text("X = 1\n", encoding="utf-8")
+    (repo / notatki).write_text("".join([*linie[:-1], "10 z gałęzi\n"]), encoding="utf-8")
+    na_bazie = commit(repo, "zmiana")
+    git(repo, "checkout", "--quiet", main)
+    git(repo, "cherry-pick", na_bazie)
+    na_main = git(repo, "rev-parse", "HEAD")
+    (repo / "src/a.py").write_text("A = 2\n", encoding="utf-8")
+    z_poprawka = commit(repo, "poprawka")
+    git(repo, "checkout", "--quiet", na_bazie)
+    git(repo, "merge", "--quiet", "--no-ff", "--message", "Merge branch main", main)
+    scalony = git(repo, "rev-parse", "HEAD")
+    git(repo, "checkout", "--quiet", na_bazie)
+    git(repo, "merge", "--quiet", "--no-ff", "--no-commit", main)
+    (repo / "src/b.py").write_text("B = 2\n", encoding="utf-8")
+    scalony_ze_zmiana = commit(repo, "Merge branch main")
+    sha = {"na bazie": na_bazie, "na main": na_main, "na main z poprawka": z_poprawka, "main scalony": scalony, "main scalony ze zmiana pliku z main": scalony_ze_zmiana}
+    runy = [_run(1, "push", "main", baza, "success", 1), _run(2, "pull_request", "g", sha[glowy[0]], "failure", 2),
+            _run(3, "push", "main", main, "success", 3), _run(4, "pull_request", "g", sha[glowy[1]], "success", 4)]  # fmt: skip
+    dzien = date(2026, 11, 12)
+
+    rekordy = cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", _GitHub(*_czerwony_run_2(runy))), repo, dzien, dzien, date(2026, 12, 1), 0)
+
+    assert (rekordy.pr[0].naprawa, rozstrzygnij(rekordy).zlapane) == (naprawa, (("g", "verify-a/ci"),) if naprawa else ())

@@ -11,8 +11,13 @@ przeszły bramkę (58,5 min), i mediana PR-u naprawy (16,2 min), a ``X`` to oszc
 
 Złapany przez NF defekt: run PR ``ci.yml`` bez porażki zadania pytest, w którym padła jednostka ``skill:`` (linia
 ``WYKONANIE FAIL`` w logu zadania Mutation checks) z kroków cienia ``NA_ZYWO`` spoza cienia N0 (``plan.json``, pole
-``cien``), a commity gałęzi do jej następnego runu, bez merge'y, zmieniają folder tego skilla albo ``src/``; czerwone
-runy jednej gałęzi z tym samym krokiem to jeden defekt, a run bez artefaktu planu liczy się osobno jako bez cienia.
+``cien``), a naprawa do następnego runu gałęzi zmienia folder tego skilla albo ``src/``; czerwone runy jednej gałęzi
+z tym samym krokiem to jeden defekt, a run bez artefaktu planu liczy się osobno jako bez cienia. Naprawa to pliki, w których
+zmienił się własny diff PR między głowami dwóch runów, każdej wobec jej bazy scalenia z ``main`` sprzed scalenia tej
+głowy (następna głowa różni się od diffu czerwonej przeniesionego na bazę następnej, ``git merge-tree``), i które zmienia
+commit bez merge'a osiągalny z następnej głowy, a nie z czerwonej ani z bazy następnej. Rebase, scalenie ``main`` do
+gałęzi i amend bez zmiany diffu naprawą nie są, a rozstrzygnięcie konfliktu albo plik wygenerowany na nowo w commicie
+scalenia też nie, bo zmienia go tylko merge.
 Oszczędność N0: średnia różnica ściany planu NF i N0 z cienia runów PR próbki (co któryś run okna, najwyżej
 ``--probka``; czerwone runy spoza próbki jej nie przesuwają) razy liczba runów PR okna z wynikiem success albo failure.
 Ucieczka z NF (wyrocznia ``main``): run pushu ``main`` z padłą podstawą, którą ostatni run PR-u scalonego od
@@ -20,8 +25,8 @@ poprzedniego runu ``main`` miał w cieniu V0, a nie w cieniu NF; czerwień to mi
 następnego zielonego runu ``main``.
 
 Dane: runy ``ci.yml`` okna (dzień utworzenia, UTC), artefakty ``plan`` (``retention-days: 30`` w ``ci.yml``) czerwonych
-runów PR, próbki i scalonych PR-ów, zadania i logi padłych zadań Mutation checks, a z gita checkoutu commity gałęzi i
-merge'e ``main`` (brakujące głowy PR pobiera jeden ``git fetch``). Odpowiedzi API zapisują się w ``<katalog>/api``
+runów PR, próbki i scalonych PR-ów, zadania i logi padłych zadań Mutation checks, a z gita checkoutu diffy głów PR
+i merge'e ``main`` (brakujące głowy runów pobiera jeden ``git fetch``). Odpowiedzi API zapisują się w ``<katalog>/api``
 (``tools/lib/api_actions.py``), a rekordy w ``<katalog>/rekordy.json``; 14 dni to około 600 zapytań. ``--rekordy PLIK``
 liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy linia:
 
@@ -81,7 +86,7 @@ class RunPr:
     galaz: str
     pytest_padl: bool
     padle: tuple[str, ...]  # kroki skilli z porażką
-    naprawa: tuple[str, ...] | None  # pliki commitów gałęzi do następnego runu, bez merge'y; None: nie ma następnego
+    naprawa: tuple[str, ...] | None  # pliki, w których własny diff PR zmienił się do następnego runu; None: nie ma go
     cien: Mapping[str, Wariant] | None  # wariant ``Podstawy`` → jego cień; None: run bez artefaktu planu z cieniem
     probka: bool = False  # run próbki oszczędności
 
@@ -184,8 +189,11 @@ def zbierz(api: Api, root: Path, od: date, do: date, dzis: date, probka: int) ->
     wszystkie = sorted((r for r in runy(api, od, do, dzis) if r["status"] == "completed"), key=lambda r: r["created_at"])
     pr_wszystkie = [r for r in wszystkie if r["event"] == "pull_request"]
     pr = [r for r in pr_wszystkie if r["conclusion"] in ("success", "failure")]
-    main = [r for r in wszystkie if r["event"] == "push" and r["head_branch"] == "main" and r["conclusion"] in ("success", "failure")]
-    _pobierz(root, {r["head_sha"] for r in pr_wszystkie})
+    main_wszystkie = [r for r in wszystkie if r["event"] == "push" and r["head_branch"] == "main"]
+    main = [r for r in main_wszystkie if r["conclusion"] in ("success", "failure")]
+    # Głowa ostatniego runu main okna zawiera bazę scalenia każdej głowy PR okna, bo main tylko rośnie.
+    main_po_oknie = main_wszystkie[-1]["head_sha"] if main_wszystkie else repo.BASE
+    _pobierz(root, {r["head_sha"] for r in wszystkie})
     w_probce = {r["id"] for r in pr[:: max(1, len(pr) // probka)][:probka]} if probka else set()
     rekordy_pr = []
     for run in pr:
@@ -194,7 +202,7 @@ def zbierz(api: Api, root: Path, od: date, do: date, dzis: date, probka: int) ->
             continue
         pytest_padl, padle = _porazki(api, run) if czerwony else (False, ())
         nastepny = next((r for r in pr_wszystkie if r["head_branch"] == run["head_branch"] and r["created_at"] > run["created_at"]), None)
-        naprawa = _commity_galezi(root, run["head_sha"], nastepny["head_sha"]) if padle and nastepny else None
+        naprawa = _naprawa(root, main_po_oknie, run["head_sha"], nastepny["head_sha"]) if padle and nastepny else None
         rekordy_pr.append(RunPr(run["id"], run["head_branch"], pytest_padl, padle, naprawa, _cien(api, run["id"]), run["id"] in w_probce))
     ostatni_pr = {r["head_sha"]: r["id"] for r in pr_wszystkie}
     rekordy_main = []
@@ -239,14 +247,29 @@ def _cien(api: Api, run: int) -> dict[str, Wariant] | None:
 def _pobierz(root: Path, glowy: Iterable[str]) -> None:
     brak = sorted(sha for sha in glowy if repo.commit(root, sha) is None)
     if brak and (pobranie := repo.run_git(root, "fetch", "--no-tags", "--quiet", "origin", *brak, timeout=600)).returncode:
-        print(f"D1 CIEŃ | git fetch {len(brak)} głów PR: {pobranie.stderr.strip()[:300]}", file=sys.stderr)
+        print(f"D1 CIEŃ | git fetch {len(brak)} głów runów: {pobranie.stderr.strip()[:300]}", file=sys.stderr)
 
 
-def _commity_galezi(root: Path, od: str, do: str) -> tuple[str, ...] | None:
+def _naprawa(root: Path, main: str, czerwona: str, nastepna: str) -> tuple[str, ...] | None:
+    """Pliki naprawy między głowami ``czerwona`` i ``nastepna`` (docstring modułu); ``None``, gdy git nie zna którejś."""
+
     try:
-        return tuple(sorted(set(repo.git(root, "log", "--no-merges", "--first-parent", "--name-only", "--format=", f"{od}..{do}").split())))
+        baza_czerwonej, baza_nastepnej = _baza_pr(root, main, czerwona), _baza_pr(root, main, nastepna)
+        przeniesiona = repo.merge_tree(root, baza_nastepnej, czerwona, base=baza_czerwonej).tree
+        diff = repo.git(root, "diff", "--no-renames", "--name-only", "-z", przeniesiona, nastepna).split("\0")
+        commity = repo.git(root, "log", "--no-merges", "--no-renames", "--name-only", "-z", "--format=", nastepna, f"^{czerwona}", f"^{baza_nastepnej}")
     except subprocess.CalledProcessError:
         return None
+    return tuple(sorted(set(filter(None, diff)) & {plik.strip("\n") for plik in commity.split("\0")}))
+
+
+def _baza_pr(root: Path, main: str, glowa: str) -> str:
+    """Baza scalenia głowy PR z ``main`` sprzed jej scalenia: z rodzicem pierwszego commitu pierwszego rodzica ``main``,
+    który ją zawiera, a gdy żaden jej nie zawiera, z samym ``main``."""
+
+    potomne = set(repo.git(root, "rev-list", "--ancestry-path", f"{glowa}..{main}").split())
+    zawierajace = [sha for sha in repo.git(root, "rev-list", "--first-parent", f"{glowa}..{main}").split() if sha in potomne]
+    return repo.merge_base(root, glowa, f"{zawierajace[-1]}^1" if zawierajace else main)
 
 
 def _glowy_scalonych(root: Path, od: str, do: str) -> list[str]:
