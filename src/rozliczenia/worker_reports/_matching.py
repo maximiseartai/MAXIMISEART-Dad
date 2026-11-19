@@ -49,30 +49,20 @@ MISTAKEN_SUBJECT = 2
 @dataclass(frozen=True)
 class Addition:
     """Zwycięski Wpis numeru ``number``, którego INTERMAX nie ma, z ``tak``/``nie`` ``verdict`` i czynnościami
-    ``activities``, z Raportu wykonawcy ``report``: Zlecenie dopisane z raportu w arkuszu zleceń ``sheet`` pod
-    zleceniami nadawcy w dniu z tematu."""
+    ``activities``: Zlecenie dopisane z raportu w arkuszu zleceń ``sheet`` pod zleceniami nadawcy ``worker`` w dniu z
+    tematu ``day``, z Raportu wykonawcy z maila ``mail``, który przyszedł ``arrived``. ``numbers``: numery wszystkich
+    Wpisów tego Raportu wykonawcy, po których reguła poprawionego maila (``_corrections.uncorrected``) poznaje, czy
+    późniejszy mail go poprawił; samego Raportu dopisanie nie niesie, bo jego Wpisy czyta tylko odczyt okna."""
 
     sheet: str
     number: OrderNumber
     verdict: Verdict
     activities: str
-    report: ReadReport
-
-    @property
-    def day(self) -> date:
-        return self.report.day
-
-    @property
-    def worker(self) -> Login:
-        return self.report.worker
-
-    @property
-    def arrived(self) -> datetime:
-        return self.report.arrived
-
-    @property
-    def mail(self) -> MailId:
-        return self.report.mail
+    day: date
+    worker: Login
+    arrived: datetime
+    mail: MailId
+    numbers: frozenset[OrderNumber]
 
 
 @dataclass(frozen=True)
@@ -300,7 +290,10 @@ class Board:
             report = new.report
             match new.entries:
                 case (ReportEntry(verdict=Verdict() as verdict, activities=activities),):
-                    added.append(Addition(new.sheet, number, verdict, activities, report))
+                    numbers = frozenset(entry.number for entry in report.entries)
+                    added.append(
+                        Addition(new.sheet, number, verdict, activities, report.day, report.worker, report.arrived, report.mail, numbers)
+                    )
                 case (ReportEntry(fault=VerdictFault() as fault),):
                     problems.append(MissingVerdict(report.worker, report.day, number, fault))
                 case _:

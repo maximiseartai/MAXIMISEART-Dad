@@ -659,13 +659,14 @@ DROGI_RAPORTOW_PRZEZ_ODCZYT = {
         + "    return frozenset()\n",
         "has no attribute",
     ),
-}
-ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
-    "zakaz zna tylko nazwę klasy, nie pola obiektów dopasowania: Raport wykonawcy Zlecenia dopisanego z raportu": (
+    "pole obiektu dopasowania: Raport wykonawcy Zlecenia dopisanego z raportu": (
         _GLOWA_ODCZYTU
         + "    added = read.additions\n"
-        + "    return frozenset(OrderKey(entry.number, found.day, found.worker) for found in added for entry in found.report.entries)\n"
+        + "    return frozenset(OrderKey(entry.number, found.day, found.worker) for found in added for entry in found.report.entries)\n",
+        'has no attribute "report"',
     ),
+}
+ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
     "zakaz zna tylko nazwę klasy, nie zawężenie unii: wykluczenie pozostałych odczytów maila": (
         "from rozliczenia.worker_reports import MailRead, OrderNumber, ReadStranger, ReadUnreadable\n\n\n"
         "def numery(mails: tuple[MailRead, ...]) -> set[OrderNumber]:\n"
@@ -695,7 +696,7 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     | wzorzec klasy po nazwie pola: ``case WindowRead(_entering=entering)`` (#2114 r2 W1; pozycyjny wiąże tylko wyniki odczytu) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | wykluczenie pozostałych odczytów: ``not isinstance(read, (ReadUnreadable, ReadStranger))`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
     | refleksja po nazwie: ``getattr(read, "entries", ())``, ``type(read).__name__`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
-    | pole obiektu dopasowania: ``Addition.report`` z ``WindowRead.additions`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | pole obiektu dopasowania: ``Addition.report`` z ``WindowRead.additions`` | mypy: ``Addition`` nie ma pola z Raportem, tylko jego numery | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
 
     Poza ``src/`` zakaz nie obowiązuje: próba skrzynki raportów w ``tools/`` czyta każdy mail osobno."""
     probe = SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "sonda_luki.py"
