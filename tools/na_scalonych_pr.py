@@ -252,7 +252,7 @@ def hits(commit: str, rule: Rule, paths: Iterable[str] | None = None) -> list[tu
         done = potomne.run([AST_GREP, "scan", *rule, "--error", "--json=stream", *targets], cwd=copy) if targets else None
     if done is not None and done.returncode not in (0, 1):  # 1: odpalenie z ``--error``
         raise ValueError(f"ast-grep {commit[:8]}: {done.stderr.strip()}")
-    found = map(json.loads, done.stdout.splitlines() if done else [])
+    found = odpalenia_ast_grep.json_stream(done.stdout) if done else []
     return [(hit["file"], hit["range"]["start"]["line"] + 1, hit["range"]["end"]["line"] + 1) for hit in found]
 
 

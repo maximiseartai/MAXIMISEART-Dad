@@ -202,8 +202,10 @@ from zakres_runu import RDZENIE_RUNNERA
 WORKERS = RDZENIE_RUNNERA
 # Limit czasu testów jednej mutacji (``--limit-s``): polecenie bez wyniku po nim to PRZEKROCZONY CZAS.
 MUTATION_LIMIT_S = 900
-# Zadanie części w mutacje-nocne.yml ma 180 min; 5 min zostaje na instalację i wgranie zapisu.
-PART_LIMIT_S = 10500
+# Zadanie części w mutacje-nocne.yml ma 240 min; 5 min zostaje na instalację i wgranie zapisu. Przy 175 min w nocach
+# 17–19.11 co noc jedna część dochodziła do limitu (10155, 10037 i 10044 s testów) i zostawiała 8, 2 i 10 mutacji bez
+# werdyktu, bo testy pliku Centrum trwają bez mutacji 560–890 s przy limicie mutacji 900 s (ADR 0021).
+PART_LIMIT_S = 14100
 # Początek ostatniej linii części bez porażki i części, w której przeżyły mutacje (kod 1): wyniki, które
 # ``tools/mutacje_nocne.py`` tylko zgłasza.
 OK = "MUTACJE ZMIANY OK"

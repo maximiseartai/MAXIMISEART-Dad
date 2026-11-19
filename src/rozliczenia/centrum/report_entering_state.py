@@ -371,8 +371,9 @@ class ShownWorker:
 @dataclass(frozen=True)
 class ShownFaultySubject:
     """Raport z błędem tematu przy problemie: temat po strażniku reguły danych, rodzaj błędu, dzień, za który Centrum go
-    liczy (``None``: problem bez dnia), chwila przyjścia maila i jego skrót, po którym widok znajduje Wpisy na życzenie
-    tego raportu przy zleceniach (``None``: plik wyniku sprzed Wpisu na życzenie raportu z błędem tematu)."""
+    liczy (``None``: problem bez dnia), chwila przyjścia maila i jego skrót, po którym z Wykonawcą problemu widok
+    znajduje Wpisy na życzenie tego raportu przy zleceniach (``None``: plik wyniku sprzed Wpisu na życzenie raportu z
+    błędem tematu)."""
 
     subject: str
     fault: str
@@ -443,7 +444,7 @@ class _TextFile:
         """Treść pliku; ``None``, gdy go nie ma, a ``unreadable``, gdy nie da się go odczytać."""
 
         self.file.retry()
-        if self.file.unavailable and self._written is not None:
+        if self.file.unavailable:
             return self._written
         try:
             return self.file.path.read_text(encoding="utf-8")

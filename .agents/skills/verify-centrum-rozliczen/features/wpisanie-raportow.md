@@ -73,17 +73,18 @@ own window: every day of the window, with 11.11 named a public holiday;
 checks that the view shows the moments of the Przypomnienia at each Wykonawca's day, and the missing footer until the
 check after it is filled in.
 
-### Real mailbox (only on the machine with the access file, with Maks's consent)
+### Real mailbox (at every Wydanie, on the machine with the access file)
 
 The synthetic mails prove the rules; only Dad's real Raporty wykonawców show the forms no test has yet. On 11.11.2026
 a review of them next to their Wpisy found two faults of the core that the probe's figures did not show: a mail app's
-footer inside the activities, and contradicting Wpisy of one number. Run this path before a Wydanie that changes how
-Raporty are recognised (`src/rozliczenia/worker_reports/`) or the IMAP port (`src/rozliczenia/worker_report_inbox.py`),
-only on a machine that holds the access file (`config/skrzynka-raportow.txt` with the app password; today only Maks's
-Mac), and only after Maks agreed to this run. Never open the access file yourself, and never run the probe without
-that consent: it logs in to Dad's real Gmail (read-only, `EXAMINE` and `BODY.PEEK`). CI never runs this path.
+footer inside the activities, and contradicting Wpisy of one number. Every Wydanie runs this path in step 3 of the
+skill `wydanie`, which names the `config` it reads, without asking Maks (his decision of 19.11.2026): new forms come
+from Dad's Wykonawcy and Gmail, not only from a change of the code. It runs only on a machine that holds the
+access file (`config/skrzynka-raportow.txt` with the app password; today only Maks's Mac). Never open the access file
+yourself: the probe logs in to Dad's real Gmail with it (read-only, `EXAMINE` and `BODY.PEEK`). CI never runs this
+path.
 
-- **Run.** `.venv/bin/python tools/proba_skrzynki_raportow.py --config ~/MAXIMISEART-Dad/config --przeglad ~/.t3/notes/<run>/wpisy.txt`
+- **Run.** `.venv/bin/python tools/proba_skrzynki_raportow.py --config <config> --przeglad ~/.t3/notes/<run>/wpisy.txt`
   (`--od RRRR-MM-DD` for another first day, by default 14 days back; `--nadpisz` replaces the file of an earlier run).
   Stdout is the probe's figures, unchanged, ending with `PROBA IMAP OK | …` or `PROBA IMAP FAIL | <powód>`. The file
   (rights `0600`) holds every Raport wykonawcy and every mail of a Wykonawca with an unrecognised subject, by arrival:

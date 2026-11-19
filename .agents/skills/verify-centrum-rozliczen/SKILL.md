@@ -46,7 +46,7 @@ Run `all` and the mutations locally only to reproduce a red Mutation checks step
 What stays with you: drive the feature you change and look at its screenshots after a UI change, because a passing run does not judge visual quality.
 A change of a shared element also drives every feature that sees it, not only your own: a section of the window Ustawienia drives `okno-ustawien` (it lists every section) and `ustawienia`, and the window, menu, toasts or dialogs also `uwaga-taty`.
 `wydajnosc` is never part of `all` and runs only locally (`features/wydajnosc.md`).
-The real-mailbox review of Wpisanie raportów never runs in CI either: it needs Dad's real Gmail, the access file and Maks's consent (`features/wpisanie-raportow.md`, section Real mailbox).
+The real-mailbox review of Wpisanie raportów never runs in CI either: it needs Dad's real Gmail and the access file, and runs at every Wydanie (`features/wpisanie-raportow.md`, section Real mailbox).
 
 ## Launch
 

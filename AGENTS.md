@@ -38,8 +38,8 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/poprawki_operatora.py`: Wypisuje wiadomości operatora z wątków T3 Code tego repo w jednym tygodniu; użyj w polowaniu na powtarzane błędy.
 - `tools/porownanie_rozliczen.py`: Porównuje znaczeniowo dwa Foldery rozliczeń pracowników (spec #141); użyj jako bramki, gdy zmiana silnika ma dać te same rozliczenia.
 - `tools/praca_w_toku.py`: Odpowiada sesji na trzy pytania: czy ktoś zajmuje jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
-- `tools/proba_przypomnien.py`: Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przed Wydaniem.
-- `tools/proba_skrzynki_raportow.py`: Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przed Wydaniem z Wpisaniem raportów.
+- `tools/proba_przypomnien.py`: Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przy każdym Wydaniu.
+- `tools/proba_skrzynki_raportow.py`: Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przy każdym Wydaniu.
 - `tools/przesun_model.py`: Przelicza skróty kodu w model/definicje.json skilla verify-*; użyj, gdy model albo eksplorator skilla znów opisuje zmieniony kod.
 - `tools/quiet_machine.py`: Pokazuje, co trzyma maszynę (--status), i pilnuje jednego pomiaru wydajności naraz na cichym procesorze; użyj, gdy pomiar czeka.
 - `tools/rejestr_korzeni_tydzien.py`: Pomiar ADR 0036 i 0042 w issue „Rejestr korzeni”: powroty idiomu, czekanie, odpalenia reguł, strażniki Ważnych; w poniedziałek, ręcznie z --bez-zapisu.

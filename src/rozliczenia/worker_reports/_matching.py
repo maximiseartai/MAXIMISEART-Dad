@@ -16,6 +16,7 @@ from ._model import (
     AddBar,
     ConflictingVerdicts,
     Login,
+    MailEntryKey,
     MailId,
     MissingVerdict,
     MoveBar,
@@ -72,12 +73,12 @@ class Matched:
     w innym miejscu przechodzi do nadawcy i na ten dzień), Zlecenia dopisane z raportu (``added``, po numerze), problemy
     Wpisów bez jednego zlecenia, informacje o przegranym temacie zwycięskich Wpisów (``lost``) i każdy zwycięski Wpis z
     ``targets`` z nadawcą i dniem, w którym tata widzi jego problem, jak przy ``MissingVerdict`` (``entered``), a mail
-    zwycięskiego Wpisu każdego zlecenia z ``targets`` po jego wierszu (``mails``), a ``taken`` każdy Wpis (mail i numer),
-    którego wiersz zlecenia wziął Wpis maila, który przyszedł później, z Wykonawcą tego maila. Wiersz ma Wpis, który
-    stawia zlecenie, i Wpis bez problemu, który niczego nie zmienia (Przeniesienie, którego ``may_move`` nie przyjmuje,
-    np. po Wpisie późniejszego maila): wiersz jedynego zlecenia numeru; Wpis z problemem (np. ``RepeatedNumber``) wiersza
-    nie ma, bo tata ma przy nim coś do zrobienia. Mail z tą samą chwilą przyjścia nie jest późniejszy, choć wygrywa
-    remis."""
+    zwycięskiego Wpisu każdego zlecenia z ``targets`` po jego wierszu (``mails``), a ``taken`` każdy Wpis (mail,
+    Wykonawca i numer), którego wiersz zlecenia wziął Wpis maila, który przyszedł później, z Wykonawcą tego maila.
+    Wiersz ma Wpis, który stawia zlecenie, i Wpis bez problemu, który niczego nie zmienia (Przeniesienie, którego
+    ``may_move`` nie przyjmuje, np. po Wpisie późniejszego maila): wiersz jedynego zlecenia numeru; Wpis z problemem (np.
+    ``RepeatedNumber``) wiersza nie ma, bo tata ma przy nim coś do zrobienia. Mail z tą samą chwilą przyjścia nie jest
+    późniejszy, choć wygrywa remis."""
 
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]]
     accepted: tuple[tuple[RegisterOrder, Login, date, datetime], ...]
@@ -86,7 +87,7 @@ class Matched:
     added: tuple[Addition, ...]
     entered: tuple[tuple[Login, date, ReportEntry], ...]
     mails: Mapping[OrderRow, MailId]
-    taken: Mapping[tuple[MailId, OrderNumber], Login]
+    taken: Mapping[MailEntryKey, Login]
 
 
 @dataclass(frozen=True)
@@ -217,7 +218,7 @@ class Board:
         decided = {decision.place: decision for decision in requested}
 
         latest: dict[OrderRow, _Claim] = {}
-        rows: dict[tuple[MailId, OrderNumber], tuple[datetime, OrderRow]] = {}
+        rows: dict[MailEntryKey, tuple[datetime, OrderRow]] = {}
         newest: dict[OrderNumber, _New] = {}
         problems: list[ReportProblem] = []
         for report in reports:
@@ -243,15 +244,15 @@ class Board:
                     newest.pop(number, None)
                 if isinstance(found, _Claim):
                     latest[found.order.row] = replace(found, entries=tuple(written))
-                    rows[report.mail, number] = (report.arrived, found.order.row)
+                    rows[report.mail, report.worker, number] = (report.arrived, found.order.row)
                 elif isinstance(found, _New):
                     newest[number] = replace(found, entries=tuple(written))
                 else:
                     problems += found
                     if not found and len(placed) == 1:
-                        rows[report.mail, number] = (report.arrived, placed[0].order.row)
+                        rows[report.mail, report.worker, number] = (report.arrived, placed[0].order.row)
                     else:
-                        rows.pop((report.mail, number), None)
+                        rows.pop((report.mail, report.worker, number), None)
         targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
         accepted: list[tuple[RegisterOrder, Login, date, datetime]] = []
         lost: list[SubjectLost] = []

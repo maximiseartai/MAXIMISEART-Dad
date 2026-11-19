@@ -1,6 +1,6 @@
-"""Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przed Wydaniem z Wpisaniem raportów.
+"""Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przy każdym Wydaniu.
 
-Narzędzie dla Maksa, poza CI (Granica 4 speca #1224, ADR 0028). Port IMAP Skrzynki raportów
+Krok każdego Wydania (krok 3 skilla ``wydanie``), poza CI (Granica 4 speca #1224, ADR 0028). Port IMAP Skrzynki raportów
 (``rozliczenia.worker_report_inbox.ImapInbox``) CI sprawdza tylko na ``AtrapaImap``, więc prawdziwego Gmaila sprawdza
 ta próba: tym samym portem, z tym samym plikiem dostępu ``config/skrzynka-raportow.txt`` (linia 1 adres skrzynki,
 linia 2 hasło aplikacji Google) i Listą Wykonawców ``config/wykonawcy.yaml``, co Wpisanie raportów.
@@ -52,8 +52,8 @@ bez ``tak`` ani ``nie`` (``wpisy_bez_tak_nie``). Zepsute znaki daje też zagrani
 z tematem Raportu wykonawcy: wtedy Maks sprawdza te maile ręcznie. Hasła nie ma
 w wyniku, wyjątkach ani żadnym pliku: zna je tylko port.
 
-Uruchomienie u taty, w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``), a ostatnią linię Maks wpisuje w
-komentarzu #1234:
+Uruchomienie w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``), a ostatnia linia idzie do raportu
+weryfikacji Wydania:
 
     .venv/bin/python tools/proba_skrzynki_raportow.py [--od RRRR-MM-DD] [--config <folder config>]
         [--przeglad <plik> [--nadpisz]]
@@ -197,25 +197,22 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
     return [*lines, last]
 
 
-@dataclass(frozen=True)
 class _WithoutMemory:
-    """Pamięć Wpisania bez własnych wpisów i decyzji taty, z dniem wdrożenia ``rollout``: próba czyta każdy mail okna,
-    jakby Wpisanie raportów jeszcze niczego nie wpisało."""
-
-    rollout: date
+    """Pamięć Wpisania przed pierwszym kliknięciem, bez własnych wpisów i decyzji taty: próba czyta każdy mail okna,
+    jakby Wpisanie raportów jeszcze niczego nie wpisało. Dzień wdrożenia Wpisania ogranicza tylko dzień wskazany
+    raportu z błędem tematu wśród zleceń INTERMAX, a próba zleceń nie zna (``_WITHOUT_INTERMAX``)."""
 
     def load(self) -> SavedState:
-        return SavedState(self.rollout, OwnEntries.EMPTY)
+        return SavedState(None, OwnEntries.EMPTY)
 
 
 _WITHOUT_INTERMAX: Final = RegisterWindow((), frozenset(), ())
 
 
 def _read(window: Window, mails: Sequence[ReportMail], addresses: WorkerAddresses) -> ReportsOutcome:
-    """Wynik rdzenia raportów dla maili ``mails`` w oknie ``window`` bez zleceń INTERMAX i bez pamięci Wpisania, z dniem
-    wdrożenia w pierwszym dniu okna."""
+    """Wynik rdzenia raportów dla maili ``mails`` w oknie ``window`` bez zleceń INTERMAX i bez pamięci Wpisania."""
 
-    memory = EnteringMemory(_WithoutMemory(window.rollout))
+    memory = EnteringMemory(_WithoutMemory())
     return memory.enter(window, _WITHOUT_INTERMAX, mails, addresses, DEFAULT_ACTIVITY_LEGEND)
 
 

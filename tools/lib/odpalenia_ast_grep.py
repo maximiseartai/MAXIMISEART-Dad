@@ -53,7 +53,7 @@ from collections.abc import Iterator, Mapping, Sequence
 import json
 from pathlib import Path, PurePath
 import re
-from typing import Final, NamedTuple
+from typing import Any, Final, NamedTuple
 
 import potomne
 import repo
@@ -178,6 +178,10 @@ def _lines(text: str) -> list[str]:
     return [line.removesuffix("\r") for line in lines]
 
 
+def json_stream(stdout: str) -> list[Any]:
+    return [json.loads(record) for record in stdout.split("\n") if record]
+
+
 def added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> Iterator[tuple[str, int, str]]:
     """Linie plików ``pattern`` w ``folder`` checkoutu ``root``, które zmiana od ``base`` dodaje: ścieżka, numer linii
     od 1 i treść."""
@@ -205,7 +209,7 @@ def on_added_lines(root: Path, base: str, rules: Sequence[str], ast_grep: str | 
         scan = potomne.run([ast_grep, "scan", *rules, "--json=stream", "--color=never", "--error", "--", *paths[start : start + PATHS_PER_SCAN]], cwd=root)
         if scan.returncode not in (0, 1) or bool(scan.stdout) != (scan.returncode == 1):
             raise ScanFailed(f"ast-grep scan zakończył się kodem {scan.returncode}:\n{scan.stderr}")
-        for match in map(json.loads, scan.stdout.splitlines()):
+        for match in json_stream(scan.stdout):
             path = PurePath(match["file"]).as_posix()
             lines = range(match["range"]["start"]["line"] + 1, match["range"]["end"]["line"] + 2)
             if new := sorted(added.get(path, set()).intersection(lines)):
