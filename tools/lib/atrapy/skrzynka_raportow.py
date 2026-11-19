@@ -565,7 +565,8 @@ class AtrapaSmtp:
 
     Przyjmuje ``AUTH PLAIN`` z adresem i hasłem ``imap`` (inne hasło: ``535``, jak Gmail) i kładzie każdy przyjęty mail
     w „Wysłanych” ``imap`` z chwilą z nagłówka ``Date``. ``cut="greeting"`` zrywa połączenie przed powitaniem, jak
-    sieć, która zgubiła Gmaila, a ``refuse="recipients"`` odmawia każdego adresata (``550``). Z ``saved`` każdy przyjęty
+    sieć, która zgubiła Gmaila, ``refuse="greeting"`` wita kodem ``421`` i zamyka połączenie, jak zajęty Gmail, a
+    ``refuse="recipients"`` odmawia każdego adresata (``550``). Z ``saved`` każdy przyjęty
     mail leży też jako ``<numer>.eml`` w tym folderze, dla procesu, który nie widzi ``received`` (napęd skilla).
     """
 
@@ -574,7 +575,7 @@ class AtrapaSmtp:
         imap: AtrapaImap,
         *,
         cut: Literal["greeting"] | None = None,
-        refuse: Literal["recipients"] | None = None,
+        refuse: Literal["greeting", "recipients"] | None = None,
         saved: Path | None = None,
     ) -> None:
         self.imap = imap
@@ -618,6 +619,9 @@ class _SmtpSession(socketserver.StreamRequestHandler):
     def handle(self) -> None:
         atrapa = self.server.atrapa
         if atrapa.cut == "greeting":
+            return
+        if atrapa.refuse == "greeting":
+            self._reply("421 4.7.0 Try again later, closing connection.")
             return
         self._reply("220 AtrapaSmtp gotowa")
         authenticated = False

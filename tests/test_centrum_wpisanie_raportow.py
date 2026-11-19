@@ -87,6 +87,7 @@ from atrapy.intermax import ADDRESS, CONTRACT_NUMBER, DATE, FIRST, HEADERS, LAST
 from atrapy.preparation import COMPLETED_WITHOUT_CODES, PERIOD, incomplete_period_rows
 from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
+from atrapy.workbooks import rewrite_parts
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
 from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, finished_view, run_events, views_until, write_report_key
 from tests.fixtures.centrum_intermax import (
@@ -554,6 +555,23 @@ def test_zapis_intermax_przez_tate_w_trakcie_odczytu_skrzynki_zostaje_w_intermax
     [
         pytest.param(lambda state: state.write_text("{", encoding="utf-8"), id="zly-json"),
         pytest.param(lambda state: state.mkdir(), id="niedostepny"),
+        pytest.param(lambda state: state.write_bytes(b'{"schema_version": 1, "own": ["\xff"]}'), id="poza-utf8"),
+        pytest.param(
+            lambda state: state.write_text(
+                json.dumps(
+                    {
+                        "schema_version": 1,
+                        "rollout": "2026-11-09",
+                        "own": [
+                            {"number": "40000001", "day": "2026-11-09", "worker": "jan.testowy", "column": "SKUTECZNE", "value": value}
+                            for value in ("tak", "nie")
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            ),
+            id="dwa-wpisy-jednej-komorki",
+        ),
         pytest.param(
             lambda state: [path.write_text("{", encoding="utf-8") for path in (state, state.with_name(REPORT_ENTERING_DECISIONS))],
             id="zly-json-pamieci-i-decyzji",
@@ -564,8 +582,9 @@ def test_nieczytelna_pamiec_wpisow_to_zatrzymanie_do_maksa_bez_odczytu_skrzynki(
     tmp_path: Path, spoil: Callable[[Path], object]
 ) -> None:
     """DESIGN §2.3: bez pamięci własnych wpisów narzędzie nie odróżni swojego wpisu od ręcznego, więc plik stanu, którego
-    nie da się odczytać, zatrzymuje kliknięcie do Maksa, zamiast liczyć się jak pusta pamięć. Przy zepsutych pamięci i
-    decyzjach „Zostaw moją” Komunikat nazywa pamięć, bo proces czyta ją pierwszą."""
+    nie da się odczytać (zły JSON, bajty spoza UTF-8, dwie różne wartości jednej komórki zlecenia), zatrzymuje kliknięcie
+    do Maksa, zamiast liczyć się jak pusta pamięć. Przy zepsutych pamięci i decyzjach „Zostaw moją” Komunikat nazywa
+    pamięć, bo proces czyta ją pierwszą."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
     before = _cells(centrum.register)
@@ -689,6 +708,27 @@ def test_pamiec_wpisow_niezapisana_czeka_w_centrum_na_nastepne_klikniecie(tmp_pa
     ]
     assert _memory_before(centrum, second) == JAN_OWN
     assert centrum.fake_inbox.days == [date(2026, 11, 9)] * 2
+
+
+def test_wynik_niezapisany_trafia_do_pliku_przy_widoku_raporty_po_odzyskaniu_dostepu_i_zostaje_po_ponownym_otwarciu_centrum(
+    tmp_path: Path,
+) -> None:
+    """Gdy pliku wyniku Wpisania raportów nie da się zapisać, widok Raporty pokazuje wynik z tej pracy Centrum, a
+    pierwszy widok po odzyskaniu dostępu zapisuje go do pliku: po zamknięciu i ponownym otwarciu Centrum widok jest ten
+    sam."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    result = centrum.tool.config / REPORT_ENTERING_RESULT
+    centrum.fake_inbox.during = result.mkdir
+
+    _finished(centrum)
+    held = _view(centrum)
+    result.rmdir()
+    shown = _view(centrum)
+    centrum.restart()
+
+    assert _view(centrum) == shown == held
+    assert _worker(held, "jan.testowy")["entered"] == 1
 
 
 def test_reczna_zmiana_komorki_miedzy_kliknieciami_wygrywa_z_poprawka_a_nietkniety_wlasny_wpis_ja_dostaje(
@@ -905,6 +945,35 @@ def test_odmowa_onedrive_przy_zapisie_zostawia_intermax_i_pamiec_wpisow_bajt_w_b
     )
     assert attempts, "zapis doszedł do podmiany"
     assert (centrum.register.read_bytes(), _state(centrum).read_bytes()) == (register, state)
+
+
+def test_zapis_na_scalone_komorki_zlecenia_zatrzymuje_do_maksa_a_logi_maja_zaplanowane_wpisy(tmp_path: Path) -> None:
+    """Gdy zapis trafia na układ, do którego narzędzie nie wpisuje (``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` zlecenia
+    Jana scalone w jedną komórkę), kliknięcie zatrzymuje się do Maksa z INTERMAX bajt w bajt, a Logi Uruchomienia
+    mają wpisy zaplanowane z Raportu, z których Maks odtworzy Uruchomienie."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+    merged = f'<mergeCells count="1"><mergeCell ref="{get_column_letter(SUCCESSFUL)}3:{get_column_letter(COMPLETED)}3"/>'
+    rewrite_parts(
+        centrum.register,
+        lambda name, data: data.replace(b"<hyperlinks>", f"{merged}</mergeCells><hyperlinks>".encode(), 1)
+        if name == "xl/worksheets/sheet2.xml"
+        else data,
+    )
+    before = centrum.register.read_bytes()
+
+    result = _stopped(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == (
+        "for_maks",
+        "Zlecenia mają układ, do którego narzędzie nie wpisuje raportów. INTERMAX nie został zmieniony.",
+    )
+    assert centrum.register.read_bytes() == before
+    [logs] = centrum.run_logs()
+    assert [(change["row"], change["column"], change["value"]) for change in logs["report_entering"]["changes"]] == [
+        (3, "SKUTECZNE", "tak"),
+        (3, "CZYNNOŚCI ZREALIZOWANE", "wymiana"),
+    ]
 
 
 def _diagnosed(centrum: EnteringCentrum, view: dict[str, Any]) -> None:
@@ -3705,6 +3774,27 @@ def test_wpisy_na_zyczenie_dwoch_wykonawcow_z_tym_samym_message_id_wpisuja_kazdy
     }
 
 
+def test_widok_raporty_stawia_blad_tematu_przy_jego_nadawcy_z_jego_wpisami_na_zyczenie_takze_przy_wspolnym_message_id(
+    tmp_path: Path,
+) -> None:
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+    shared = "<wspolny@przyklad.invalid>"
+    mails = [
+        report(JAN, "Raport 09.11.2026 Kowalski", "40000001 tak inst20m", at=datetime(2026, 11, 9, 17), message_id=shared),
+        report(ANNA, "Raport 09.11.2026 Nowak", "40000002 tak montaż", at=datetime(2026, 11, 9, 18), message_id=shared),
+    ]
+    centrum = entering_centrum(tmp_path, intermax, mails)
+    _finished(centrum)
+
+    view = _view(centrum)
+
+    assert mails[0].id == mails[1].id
+    assert {
+        login: [[offer["request"]["number"] for offer in problem["faulty_subject"]["offers"]] for problem in _worker(view, login)["problems"]]
+        for login in ("jan.testowy", "anna.kowalska")
+    } == {"jan.testowy": [["40000001"]], "anna.kowalska": [["40000002"]]}
+
+
 def _v0_14_0_click() -> tuple[Intermax, list[ReportMail]]:
     """INTERMAX i maile kliknięcia, po którym Centrum z Wydania v0.14.0 zapisało pliki
     ``tests/fixtures/wpisanie-raportow-wynik-v3-oferty.json`` i ``tests/fixtures/wpisanie-raportow-stan-v4-requested.json``
@@ -5445,6 +5535,31 @@ def test_raport_bez_dnia_w_temacie_z_dnia_wdrozenia_wpisania_konczy_przypomnieni
     centrum.client.stop()
 
     assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("anna.kowalska", date(2026, 11, 10))]
+
+
+def test_okres_z_plikiem_zbiorczym_sprzed_wdrozenia_wpisania_nie_dostaje_przypomnien_od_wdrozenia_przypomnien(
+    tmp_path: Path,
+) -> None:
+    """ADR 0030: przypomnienia działają od poniedziałku 9.11, a Wpisanie raportów od pierwszego kliknięcia we wtorek
+    10.11, więc okno przypomnień zaczyna się dzień wcześniej, w okresie 03_09_11_2026. Ten okres dostaje Plik zbiorczy:
+    11.11 rano Jan bez raportów dostaje przypomnienie tylko za 10.11, a za 9.11 nie, choć ten dzień leży przed dniem
+    wdrożenia Wpisania."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(10, 9, "jan.testowy", 40000004)), raw=())
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, intermax, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    _click_at(centrum, datetime(2026, 11, 10, 21), [])
+    folder = centrum.periods_directory / MONDAY_PERIOD
+    folder.mkdir(parents=True)
+    (folder / f"Rozliczenie {MONDAY_PERIOD} - zbiorcze.xlsx").write_bytes(b"syntetyczny Plik zbiorczy")
+    centrum.moment.append(datetime(2026, 11, 11, 8, 30))
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert [(reminder.worker, reminder.day) for reminder, _ in mailbox.sends] == [("jan.testowy", date(2026, 11, 10))]
 
 
 _SONDA_PAMIECI_WPISANIA = ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pamieci_wpisania.py"

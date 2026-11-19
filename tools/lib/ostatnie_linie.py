@@ -18,3 +18,4 @@ AKTUALIZACJA = "AKTUALIZACJA: "
 # ``tools/ci_lokalnie.py``; czyta status ``scalenie z main`` (``tools/lib/werdykt_scalenia.py``).
 CI_LOKALNIE_OK = "CI LOKALNIE OK"
 CI_LOKALNIE_FAIL = "CI LOKALNIE FAIL | "
+REQUIRED_FAIL = "REQUIRED FAIL | "

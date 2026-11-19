@@ -60,11 +60,33 @@ From that worktree run, one heavy run at a time:
 - `verify-centrum-rozliczen`: Centrum in the browser, the only way Dad starts either process.
 - Every other `verify-*` skill that `tools/skille_dla_zmiany.py <previous Wydanie's commit>` names for this worktree, so the release diff gets the checks its files call for.
   For the first Wydanie that is every `verify-*` skill.
+- Both probes of Dad's real mailbox, below.
 
 Load each skill and follow its own workflow.
 Record each verdict line.
 A `VERIFY SKIP` (for example Wzorce missing from `config/`) is not a pass: report it as a skip.
+A FAIL of a `verify-*` skill or of a probe stops the Wydanie: step 4 shows it, and this commit is not published.
 Remove the worktree when the runs are done.
+
+### Probes of Dad's real mailbox
+
+Every Wydanie runs both probes, like the `verify-*` skills, without asking Maks (his decision of 19.11.2026): `tools/proba_skrzynki_raportow.py` reads Dad's Gmail read-only, and `tools/proba_przypomnien.py` sends one reminder to Maks's own address only.
+They run from the release worktree on the machine whose main checkout holds the access file `config/skrzynka-raportow.txt`, today only Maks's Mac; elsewhere both are a skip with the reason „brak pliku dostępu”.
+The data rules stay: never open the access file, keep every file of the probes in `~/.t3/notes/wydanie/<tag>/proby/` (rights `0700`), and only stdout lines, counts and forms rebuilt from synthetic data leave it.
+
+Since 19.11.2026 the Mac's `config/` (`/Users/Max/MAXIMISEART-Dad/config`) holds what both probes read: the Lista Wykonawców from the Zmiany z Wydania, Ustawienia przypomnień with a probe footer and the switch off, and Ustawienia naming an INTERMAX copy and an empty folder okresów in `~/.t3/notes/proba-przypomnien-mac/`.
+The switch stays off because a Centrum started from the main checkout sends reminders to Dad's real Wykonawcy; the probe turns them on in its own memory only (`--wlaczone-od`).
+
+1. Apply the newest Zmiany z Wydania to that `config/`, as a Centrum start from the main checkout would: `/Users/Max/MAXIMISEART-Dad/.venv/bin/python -I ~/.t3/notes/config-migracja-2026-11-19/migruj.py`.
+   It builds `CentrumSettings` as `src/rozliczenia/centrum/app.py` does and calls `apply_release_changes()`; `logs/centrum-rozliczen.log` of the main checkout says `zastosowano` or `bez-zmian` per change.
+2. Create the folder of the probes, `install -d -m 700 ~/.t3/notes/wydanie/<tag>/proby`, because the IMAP probe refuses a review file without its folder.
+   Then run the IMAP probe with its review, as `verify-centrum-rozliczen` `features/wpisanie-raportow.md`, section „Real mailbox”, says, with `--config /Users/Max/MAXIMISEART-Dad/config --przeglad ~/.t3/notes/wydanie/<tag>/proby/wpisy.txt`, and save stdout as `proby/imap.txt`.
+3. Run `.venv/bin/python tools/proba_przypomnien.py --config /Users/Max/MAXIMISEART-Dad/config --wlaczone-od "$(date -v-3d +%F)" --do "$(cat ~/.t3/notes/wydanie/adres-maksa-do-proby.txt)"` and save stdout as `proby/przypomnienia.txt`.
+   The address is Maks's own, kept only in that local note, because the repository is public; with the note missing, ask Maks for his address once and save it there (`0600`).
+   Outside the reminder hours the probe sends the reminder for yesterday, so it runs at any hour.
+   The INTERMAX copy has no orders in the last days, so the counts are zero, and the probe still checks the way: mailbox, „Wysłane”, text, footer, SMTP.
+
+The verdicts are the last lines `PROBA IMAP OK|FAIL | …` and `PROBA PRZYPOMNIEN OK|FAIL | …`; the report of step 4 gets both lines, the review's counts per checklist item, and each finding as its synthetic form.
 
 ## 4. Ask Maks
 

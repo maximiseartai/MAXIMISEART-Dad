@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable, Mapping
 import logging
 import socket
@@ -19,6 +20,7 @@ from rozliczenia.tool_files import HOST
 
 _GRACEFUL_SHUTDOWN_S = 5
 """Otwarte połączenia (np. strumień postępu) nie wstrzymują zamknięcia dłużej."""
+_LOOP_LISTENING_AFTER_FAILED_ACCEPT = asyncio.SelectorEventLoop
 AFTER_START = "po_starcie"
 """Klucz stanu ``lifespan`` aplikacji (ASGI ``state``): krok, który serwer robi zaraz po wpisie ``start``, przed pierwszym
 zapytaniem, więc jego wpisy w dzienniku należą do tej pracy Centrum (``CentrumLog.recent`` liczy je od ``start``)."""
@@ -61,7 +63,7 @@ def serve(
     threading.Thread(target=stop_when_asked, name="centrum-zamkniecie", daemon=True).start()
     log.hold_until_started()
     try:
-        server.run(sockets=[listener])
+        asyncio.run(server.serve(sockets=[listener]), loop_factory=_LOOP_LISTENING_AFTER_FAILED_ACCEPT)
     except Exception as failure:
         log.unexpected_failure(failure, where="serwer")
         return 1
