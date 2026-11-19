@@ -42,6 +42,7 @@ from rozliczenia.worker_reports import (
     MoveBar,
     MovedFrom,
     MovedTo,
+    Offer,
     OrderDetail,
     OrderedDay,
     OrderKey,
@@ -58,7 +59,6 @@ from rozliczenia.worker_reports import (
     ReportEntry,
     ReportMail,
     ReportProblem,
-    Requestable,
     RequestedEntry,
     ReportsOutcome,
     ReportSubject,
@@ -109,8 +109,9 @@ def _letter(text: str, number: str, fault: VerdictFault, activities: str) -> Mis
     na życzenie, który wpisze zamiar znaku i ``activities`` do zlecenia z tego dnia."""
 
     assert fault.leaning is not None, fault
-    offer = Requestable(_mail(JAN, SUBJECT, text).id, fault.leaning, activities, DAY, Login("jan.testowy"))
-    return MissingVerdict(Login("jan.testowy"), DAY, OrderNumber(number), fault, offer)
+    jan = Login("jan.testowy")
+    offer = Offer(_mail(JAN, SUBJECT, text).id, jan, DAY, OrderNumber(number), fault.leaning, activities, DAY)
+    return MissingVerdict(jan, DAY, OrderNumber(number), fault, offer)
 
 
 def _order(
@@ -1273,6 +1274,27 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
     for order in other:
         [detail] = [found for found in _days(outcome)[order.key.day, JAN_LOGIN].orders_detail if found.number == order.key.number]
         assert detail == OrderDetail(order.key.number, "tak", detail.activities, reported=True, codes=detail.codes)
+
+
+def test_wpis_na_zyczenie_przy_t_w_raporcie_z_pomylonym_tematem_ma_dzien_problemu_i_wpisuje_do_zlecenia_z_jego_dnia() -> None:
+    """ADR 0041 i 0029: Raport wykonawcy za 8.11 z dwoma Wpisami do zleceń Jana z 7.11 to pomylony temat, a Wpis z ``t``
+    stoi jako problem w dniu z tematu, gdzie widzi go tata. Jego Wpis na życzenie ma ten dzień i wpisze ``tak`` do
+    zlecenia z 7.11 bez Przeniesienia, a decyzja taty z kliknięcia tego Wpisu wpisuje go tam jak Wpis z ``tak``."""
+
+    first, second = _numbered(1, SEVENTH), _numbered(2, SEVENTH)
+    mail = _mail(JAN, SUBJECT, "40000001 t montaż\n40000002 tak montaż")
+    inputs = _inputs([mail], [first, second], rollout=SIXTH, ordered=OPEN_DAYS)
+
+    offered = enter_reports(inputs)
+    [problem] = _problems(offered)
+    assert isinstance(problem, MissingVerdict) and problem.offer is not None
+    decided = enter_reports(replace(inputs, requested=frozenset({problem.offer.decide(EVENING + timedelta(hours=1))})))
+
+    number = OrderNumber("40000001")
+    offer = Offer(mail.id, JAN_LOGIN, DAY, number, Verdict.YES, "montaż", SEVENTH)
+    assert problem == MissingVerdict(JAN_LOGIN, DAY, number, VerdictFault.LETTER_YES, offer)
+    assert (_problems(decided), decided.moves) == ((), ())
+    assert set(decided.changes) == {*_both(first.row, "tak", "montaż"), *_both(second.row, "tak", "montaż")}
 
 
 @pytest.mark.parametrize("intermax_day", [SIXTH, SEVENTH], ids=["zlecenia-z-6", "zlecenia-z-7"])
@@ -4052,21 +4074,16 @@ def test_raport_z_bledem_tematu_bez_dnia_otwartego_jest_problemem_bez_dnia_a_z_d
     assert [(figure.day, figure.mails) for figure in outcome.workers] == [(DAY, 1)]
 
 
-def _requests(outcome: ReportsOutcome) -> dict[OrderNumber, Requestable | None]:
+def _requests(outcome: ReportsOutcome) -> dict[OrderNumber, Offer | None]:
     """Wpis na życzenie przy każdym zleceniu z dnia otwartego w wyniku, po numerze."""
 
     return {order.number: order.request for figure in outcome.workers for order in figure.orders_detail or ()}
 
 
-def _decisions(mail: ReportMail, offers: Mapping[OrderNumber, Requestable | None]) -> frozenset[RequestedEntry]:
-    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers`` raportu ``mail``: decyzja ma Wykonawcę i dzień, które
-    zlecenie ma po Wpisie, jak w widoku Raporty."""
+def _decisions(offers: Mapping[OrderNumber, Offer | None]) -> frozenset[RequestedEntry]:
+    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers``."""
 
-    return frozenset(
-        RequestedEntry(mail.id, offer.worker, offer.order_day, number, offer.verdict, offer.activities, EVENING + timedelta(hours=1))
-        for number, offer in offers.items()
-        if offer is not None
-    )
+    return frozenset(offer.decide(EVENING + timedelta(hours=1)) for offer in offers.values() if offer is not None)
 
 
 TWO_ORDERS = (_order(), _order(OrderRow("Zlecenia", 121), number="40000002"))
@@ -4100,10 +4117,10 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_to_co_raport_z_d
     correct = enter_reports(replace(inputs, mails=[_mail(JAN, SUBJECT, same, mail.arrived)]))
 
     offered = enter_reports(inputs)
-    decided = enter_reports(replace(inputs, requested=_decisions(mail, _requests(offered))))
+    decided = enter_reports(replace(inputs, requested=_decisions(_requests(offered))))
 
     expected = {
-        number: Requestable(mail.id, verdict, activities, DAY, Login("jan.testowy"))
+        number: Offer(mail.id, Login("jan.testowy"), DAY, number, verdict, activities, DAY)
         for number, verdict, activities in (
             (entry.number, entry.verdict, entry.activities) for entry in _entries_of(same)
         )
@@ -4135,10 +4152,12 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_przenosi_zlecenie_jak_ra
     right = enter_reports(replace(inputs, mails=[_mail(sender, correct, TEXT, mail.arrived)]))
 
     offered = enter_reports(inputs)
-    decided = enter_reports(replace(inputs, requested=_decisions(mail, _requests(offered))))
+    decided = enter_reports(replace(inputs, requested=_decisions(_requests(offered))))
 
     [login] = [Login(login) for login, addresses in ADDRESSES.items() if sender in addresses]
-    assert _requests(offered) == {OrderNumber("40000001"): Requestable(mail.id, Verdict.YES, "wymiana routera", order_day, login)}
+    assert _requests(offered) == {
+        OrderNumber("40000001"): Offer(mail.id, login, order_day, OrderNumber("40000001"), Verdict.YES, "wymiana routera", order_day)
+    }
     assert (offered.changes, offered.moves) == ((), ())
     assert (decided.changes, decided.moves, decided.memory, decided.notes) == (right.changes, right.moves, right.memory, right.notes)
     assert right.moves != ()
@@ -4191,11 +4210,11 @@ def test_o_wpisie_na_zyczenie_raportow_z_bledem_tematu_decyduje_najpozniejszy_ma
     assert outcome.changes == (() if winner is None or verdict is None else _both(ROW, verdict.value, winner.activities))
     assert offer.leaning is not None
     assert _requests(outcome) == {
-        OrderNumber("40000001"): Requestable(last.id, offer.leaning, offer.activities, DAY, Login("jan.testowy")) if pending else None
+        OrderNumber("40000001"): Offer(last.id, Login("jan.testowy"), DAY, OrderNumber("40000001"), offer.leaning, offer.activities, DAY) if pending else None
     }
     assert (last.id in {problem.mail for problem in _problems(outcome) if isinstance(problem, UnreadableSubject)}) == pending
     if pending:
-        after = enter_reports(replace(inputs, requested=decisions | _decisions(last, _requests(outcome))))
+        after = enter_reports(replace(inputs, requested=decisions | _decisions(_requests(outcome))))
         assert after.changes == _both(ROW, offer.leaning.value, offer.activities)
         assert set(_requests(after).values()) == {None}
         assert last.id not in {problem.mail for problem in _problems(after) if isinstance(problem, UnreadableSubject)}
@@ -4225,7 +4244,7 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_temat
     assert stale.changes == ()
     assert [type(problem) for problem in _problems(stale)] == [UnreadableSubject]
     assert _requests(stale) == {
-        OrderNumber("40000001"): Requestable(faulty.id, Verdict.YES, "wymiana routera", DAY, Login("jan.testowy"))
+        OrderNumber("40000001"): Offer(faulty.id, Login("jan.testowy"), DAY, OrderNumber("40000001"), Verdict.YES, "wymiana routera", DAY)
     }
 
 
@@ -4453,7 +4472,7 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
 
     outcome = enter_reports(_inputs(mails, [_order()]))
 
-    offer = Requestable(mails[1].id, Verdict.YES, "wymiana routera", DAY, Login("jan.testowy"))
+    offer = Offer(mails[1].id, Login("jan.testowy"), DAY, OrderNumber("40000001"), Verdict.YES, "wymiana routera", DAY)
     assert outcome.changes == ()
     assert _problems(outcome) == (
         MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES, offer),

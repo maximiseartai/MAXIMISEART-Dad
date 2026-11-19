@@ -63,6 +63,7 @@ from rozliczenia.worker_reports import (
     MailId,
     ManualDifference,
     MissingVerdict,
+    Offer,
     OlderOwnEntries,
     OrderDetail,
     OrderKey,
@@ -75,7 +76,6 @@ from rozliczenia.worker_reports import (
     RepeatedOrder,
     ReportNote,
     ReportProblem,
-    Requestable,
     RequestedEntry,
     SavedState,
     UnknownNumber,
@@ -219,13 +219,31 @@ class _WorkerV1(_Record):
 class _OrderOffer(_Record):
     """Wpis na życzenie przy zleceniu z Wpisem raportu z błędem tematu: skrót maila i co się wpisze do tego zlecenia
     (``successful`` z czynnościami ``activities``), które po Wpisie stoi w dniu ``order_day`` u ``worker`` (przy
-    Przeniesieniu nadawca i dzień z tematu); numer to ten zlecenia."""
+    Przeniesieniu nadawca i dzień z tematu). Dnia decyzji i numeru plik nie ma: oferta przy zleceniu ma numer tego
+    zlecenia, a tata decyduje w dniu zlecenia po Wpisie (``Offer``, ``_reading._offers`` rdzenia)."""
 
     mail: str
     activities: str
     successful: Literal["tak", "nie"]
     worker: str
     order_day: date
+
+    @classmethod
+    def of(cls, offer: Offer) -> _OrderOffer:
+        return cls(
+            mail=offer.mail.digest,
+            activities=offer.activities,
+            successful=offer.verdict.value,
+            worker=offer.worker,
+            order_day=offer.order_day,
+        )
+
+    def offer(self, number: OrderNumber) -> Offer:
+        """Oferta przy zleceniu ``number``."""
+
+        return Offer(
+            MailId(self.mail), Login(self.worker), self.order_day, number, Verdict(self.successful), self.activities, self.order_day
+        )
 
 
 class _Order(_Record):
@@ -263,6 +281,22 @@ class _Offer(_Record):
     activities: str
     successful: Literal["tak", "nie"]
     order_day: date
+
+    @classmethod
+    def of(cls, offer: Offer) -> _Offer:
+        return cls(
+            mail=offer.mail.digest,
+            worker=offer.worker,
+            day=offer.day,
+            number=offer.number,
+            activities=offer.activities,
+            successful=offer.verdict.value,
+            order_day=offer.order_day,
+        )
+
+    def offer(self) -> Offer:
+        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
+        return Offer(*key, Verdict(self.successful), self.activities, self.order_day)
 
 
 class _Problem(_Record):
@@ -333,17 +367,6 @@ class ShownWorker:
     mistaken: tuple[date, ...]
     overtaken: tuple[str, ...]
 
-    def offer(self, order: OrderDetail) -> ShownOffer | None:
-        """Wpis na życzenie przy zleceniu ``order`` tego dnia z decyzją w miejscu, które zlecenie ma po Wpisie;
-        ``None``: przycisku nie ma."""
-
-        found = order.request
-        if found is None:
-            return None
-        return ShownOffer(
-            found.mail.digest, found.worker, found.order_day, order.number, found.activities, found.verdict, found.order_day
-        )
-
 
 @dataclass(frozen=True)
 class ShownFaultySubject:
@@ -356,27 +379,6 @@ class ShownFaultySubject:
     day: date | None
     arrived: datetime
     mail: str | None = None
-
-
-@dataclass(frozen=True)
-class ShownOffer:
-    """Wpis na życzenie przy problemie z ostatniego kliknięcia: Wpis, przy którym tata klika (skrót maila, Wykonawca,
-    dzień, numer i czynności), i co się wpisze: ``tak`` albo ``nie`` (``successful``) z tymi czynnościami do zlecenia z
-    dnia ``order_day``."""
-
-    mail: str
-    worker: str
-    day: date
-    number: str
-    activities: str
-    successful: Verdict
-    order_day: date
-
-    def decision(self, at: datetime) -> RequestedEntry:
-        """Decyzja taty z kliknięcia w chwili ``at``."""
-
-        key = MailId(self.mail), Login(self.worker), self.day, OrderNumber(self.number)
-        return RequestedEntry(*key, self.successful, self.activities, at)
 
 
 @dataclass(frozen=True)
@@ -393,7 +395,7 @@ class ShownProblem:
     sender: str | None
     difference: Kept | None
     faulty_subject: ShownFaultySubject | None
-    request: ShownOffer | None = None
+    request: Offer | None = None
 
 
 @dataclass(frozen=True)
@@ -419,11 +421,13 @@ class ShownResult:
     detailed: bool
     notes: tuple[ShownNote, ...] = ()
 
-    def requests(self) -> frozenset[ShownOffer]:
-        """Każdy Wpis na życzenie, który tata może kliknąć: przy problemie i przy zleceniu dnia."""
+    def offers(self) -> dict[str, Offer]:
+        """Każdy Wpis na życzenie, który tata może kliknąć, przy problemie i przy zleceniu dnia, po jego tożsamości
+        (``Offer.token``)."""
 
-        at_orders = (worker.offer(order) for worker in self.workers for order in worker.orders_detail or ())
-        return frozenset(offer for offer in (*(problem.request for problem in self.problems), *at_orders) if offer)
+        at_orders = (order.request for worker in self.workers for order in worker.orders_detail or ())
+        found = (*(problem.request for problem in self.problems), *at_orders)
+        return {offer.token: offer for offer in found if offer is not None}
 
 
 @dataclass
@@ -572,15 +576,7 @@ class FileReportState:
                         reported=order.reported,
                         codes=None if order.codes is None else list(order.codes),
                         faulty=order.faulty,
-                        request=None
-                        if (offer := order.request) is None
-                        else _OrderOffer(
-                            mail=offer.mail.digest,
-                            activities=offer.activities,
-                            successful=offer.verdict.value,
-                            worker=offer.worker,
-                            order_day=offer.order_day,
-                        ),
+                        request=None if order.request is None else _OrderOffer.of(order.request),
                     )
                     for order in worker.orders_detail
                 ],
@@ -641,7 +637,7 @@ class FileReportState:
                     None
                     if (faulty := problem.faulty_subject) is None
                     else ShownFaultySubject(faulty.subject, faulty.fault, faulty.day, faulty.arrived, faulty.mail),
-                    None if problem.request is None else _shown_offer(problem.request),
+                    None if problem.request is None else problem.request.offer(),
                 )
                 for problem in result.problems
             ),
@@ -685,25 +681,9 @@ def _orders(worker: _WorkerV1) -> tuple[OrderDetail, ...] | None:
             order.reported,
             None if order.codes is None else tuple(order.codes),
             order.faulty,
-            None
-            if (offer := order.request) is None
-            else Requestable(
-                MailId(offer.mail), Verdict(offer.successful), offer.activities, offer.order_day, Login(offer.worker)
-            ),
+            None if order.request is None else order.request.offer(OrderNumber(order.number)),
         )
         for order in worker.orders_detail
-    )
-
-
-def _shown_offer(offer: _Offer) -> ShownOffer:
-    return ShownOffer(
-        offer.mail,
-        offer.worker,
-        offer.day,
-        offer.number,
-        offer.activities,
-        Verdict(offer.successful),
-        offer.order_day,
     )
 
 
@@ -734,16 +714,7 @@ def _problem(problem: ReportProblem, forbidden: ForbiddenValues) -> _Problem:
             )
         case UnknownSender(sender=sender, day=day):
             return _Problem(day=day, worker=None, number=None, reason=said, sender=sender.shown(), difference=None)
-        case MissingVerdict(requestable=offered) if offered is not None:
-            offer = _Offer(
-                mail=offered.mail.digest,
-                worker=problem.worker,
-                day=problem.day,
-                number=problem.number,
-                activities=offered.activities,
-                successful=offered.verdict.value,
-                order_day=offered.order_day,
-            )
+        case MissingVerdict(offer=offer) if offer is not None:
             return _Problem(
                 day=problem.day,
                 worker=problem.worker,
@@ -751,7 +722,7 @@ def _problem(problem: ReportProblem, forbidden: ForbiddenValues) -> _Problem:
                 reason=said,
                 sender=None,
                 difference=None,
-                request=offer,
+                request=_Offer.of(offer),
             )
         case MissingVerdict() | ConflictingVerdicts() | UnknownNumber() | RepeatedOrder() | RepeatedNumber() | FaultyDescription():
             return _Problem(

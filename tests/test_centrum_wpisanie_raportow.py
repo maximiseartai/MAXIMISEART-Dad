@@ -72,6 +72,7 @@ from rozliczenia.worker_reports import (
     OrderNumber,
     Reminder,
     ReportEntry,
+    ReportMail,
     ReportSubject,
     SenderAddress,
     SentReminder,
@@ -3322,6 +3323,37 @@ def test_wpis_na_zyczenie_odmawia_jednym_zdaniem_przy_intermax_w_excelu_w_trakci
     assert json.loads(_state(centrum).read_bytes())["requested"] == json.loads(state)["requested"] == []
 
 
+def test_wpis_na_zyczenie_z_widoku_sprzed_nowszego_klikniecia_odmawia_a_przycisk_nowszego_wpisuje_wpis_pozniejszego_maila(
+    tmp_path: Path,
+) -> None:
+    """US 49 i 53: późniejszy mail Jana z tym samym ``t`` przy tym samym zleceniu wygrywa, więc nowsze kliknięcie daje
+    nowy przycisk, który różni się od dawnego tylko mailem. Przycisk z widoku sprzed nowszego kliknięcia jest
+    nieaktualny: odmawia jednym zdaniem, nie startuje Uruchomienia i niczego nie zapisuje, a przycisk nowszego kliknięcia
+    wpisuje Wpis późniejszego maila z decyzją przy tym mailu. Tak samo odmawia przycisk nowszego kliknięcia z innym
+    dniem zlecenia po Wpisie, niż ma ten przycisk w wyniku, bo tata kliknąłby co innego, niż widział."""
+
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001),), raw=())
+    first = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 17))
+    later = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 18), message_id="<drugi@przyklad.invalid>")
+    centrum = entering_centrum(tmp_path, intermax, [first])
+    _finished(centrum)
+    old = _requests(centrum, "jan.testowy")["40000001"]
+    _click_at(centrum, datetime(2026, 11, 9, 19), [first, later])
+    new = _requests(centrum, "jan.testowy")["40000001"]
+    register, state, logs = centrum.register.read_bytes(), _state(centrum).read_bytes(), len(centrum.run_logs())
+
+    stale = centrum.client.post("/api/report-entering/request", json=old)
+    other_day = centrum.client.post("/api/report-entering/request", json={**new, "order_day": "2026-11-10"})
+
+    assert old == {**new, "mail": first.id.digest} != new
+    gone = "Tego Wpisu nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty."
+    assert [(answer.status_code, answer.json()["message"]) for answer in (stale, other_day)] == [(404, gone)] * 2
+    assert (centrum.register.read_bytes(), _state(centrum).read_bytes(), len(centrum.run_logs())) == (register, state, logs)
+    done = _enter_on_request(centrum, new, datetime(2026, 11, 9, 19, 30))
+    assert [decision["mail"] for decision in _entering(centrum, done)["requested"]] == [later.id.digest]
+    assert _cells(centrum.register)[40000001] == ("tak", "inst20m")
+
+
 def test_wpis_na_zyczenie_przy_nieczytelnym_pliku_wyniku_odmawia_bez_uruchomienia(tmp_path: Path) -> None:
     """Pliku wyniku, którego nie da się odczytać, Wpis na życzenie nie bierze za wynik bez tego Wpisu: odmawia tym samym
     zdaniem co widok Raporty i nie startuje Uruchomienia."""
@@ -3635,6 +3667,147 @@ def test_blad_tematu_z_jednym_zleceniem_wzietym_przez_pozniejszy_raport_zostaje_
     after = _worker(_view(centrum), "jan.testowy")
     assert (after["problems"], after["overtaken_subjects"]) == ([], [])
     assert _cells(centrum.register) == {40000001: ("tak", "inst20m"), 40000002: ("tak", "montaż")}
+
+
+def test_wpisy_na_zyczenie_dwoch_wykonawcow_z_tym_samym_message_id_wpisuja_kazdy_swoj_wpis(tmp_path: Path) -> None:
+    """Message-ID ustawia nadawca, więc mail Jana i mail Anny mogą mieć ten sam skrót. Jan przysyła Wpis z ``t`` do
+    swojego zlecenia, a później Anna raport z błędem tematu z tym samym Message-ID i Wpisem ``tak`` z tymi samymi
+    czynnościami do tego zlecenia: przy problemie Jana stoi jego Wpis na życzenie, a przy zleceniu Wpis Anny, który
+    przeniesie je do niej. Przyciski różnią się tylko Wykonawcą, a kliknięcie każdego wpisuje jego Wpis: Jana w
+    zleceniu u Jana, Anny z Przeniesieniem zlecenia do Anny."""
+
+    def intermax() -> Intermax:
+        return Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+
+    shared = "<wspolny@przyklad.invalid>"
+    mails = [
+        report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 17), message_id=shared),
+        report(ANNA, "Raport 09.11.2026 Nowak", "40000001 tak inst20m", at=datetime(2026, 11, 9, 18), message_id=shared),
+    ]
+    clicked: dict[str, tuple[dict[str, Any], tuple[object, object], object]] = {}
+    for login in ("jan.testowy", "anna.kowalska"):
+        centrum = entering_centrum(tmp_path / login, intermax(), mails)
+        _finished(centrum)
+        at_order = _order_requests(centrum, "jan.testowy")["40000001"][1]
+        offers = {"jan.testowy": _requests(centrum, "jan.testowy")["40000001"], "anna.kowalska": at_order}
+
+        _enter_on_request(centrum, offers[login], datetime(2026, 11, 9, 19))
+
+        clicked[login] = (offers, _cells(centrum.register)[40000001], _workers(centrum.register)[40000001])
+
+    offers = clicked["jan.testowy"][0]
+    assert mails[0].id == mails[1].id
+    assert offers == clicked["anna.kowalska"][0]
+    assert offers["jan.testowy"] == {**offers["anna.kowalska"], "worker": "jan.testowy"} != offers["anna.kowalska"]
+    assert {login: found[1:] for login, found in clicked.items()} == {
+        "jan.testowy": (("tak", "inst20m"), "jan.testowy"),
+        "anna.kowalska": (("tak", "inst20m"), "anna.kowalska"),
+    }
+
+
+def _v0_14_0_click() -> tuple[Intermax, list[ReportMail]]:
+    """INTERMAX i maile kliknięcia, po którym Centrum z Wydania v0.14.0 zapisało pliki
+    ``tests/fixtures/wpisanie-raportow-wynik-v3-oferty.json`` i ``tests/fixtures/wpisanie-raportow-stan-v4-requested.json``
+    (swoim kodem, w worktree na tagu ``v0.14.0``): Anna przysyła ``Raport 09.11.2026 Nowak`` (błąd tematu) ze zleceniem
+    Jana (Przeniesienie do Anny) i swoim, a Jan Wpis z ``t``. Plik wyniku zapisało pierwsze kliknięcie, a plik pamięci
+    Wpisy na życzenie Jana przy problemie i Anny przy jej zleceniu, każdy swoim Uruchomieniem."""
+
+    intermax = Intermax(
+        ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 10, "jan.testowy", 40000003), _order(9, 11, "anna.kowalska", 40000002)),
+        raw=(),
+    )
+    mails = [
+        report(ANNA, "Raport 09.11.2026 Nowak", "40000001 tak inst20m\n40000002 tak montaż"),
+        report(JAN, SUBJECT, "40000003 t spawpg"),
+    ]
+    return intermax, mails
+
+
+def _buttons(view: dict[str, Any]) -> list[tuple[str, str, str, dict[str, Any]]]:
+    """Każdy przycisk Wpisu na życzenie widoku Raporty: Wykonawca i dzień kafelka, miejsce (zlecenie, problem albo raport
+    z błędem tematu z kafelkiem zlecenia) i cała komórka ``request``, po kolei widoku."""
+
+    found: list[tuple[str, str, str, dict[str, Any]]] = []
+    for worker in view["workers"]:
+        for day in worker["days"]:
+            place = (worker["worker"], day["day"])
+            found += [(*place, f"zlecenie {order['number']}", order["request"]) for order in day["orders_detail"] if order["request"]]
+            for problem in day["problems"]:
+                if problem["request"]:
+                    found.append((*place, f"problem {problem['number']}", problem["request"]))
+                for offer in (problem["faulty_subject"] or {}).get("offers", ()):
+                    found.append((*place, f"błąd tematu przy {offer['worker']} {offer['day']}", offer["request"]))
+    return found
+
+
+@pytest.mark.parametrize(
+    ("button", "written", "worker"),
+    [
+        pytest.param(("jan.testowy", "problem 40000003"), {40000003: ("tak", "spawpg")}, "jan.testowy", id="przy-problemie-z-t"),
+        pytest.param(
+            ("jan.testowy", "zlecenie 40000001"), {40000001: ("tak", "inst20m")}, "anna.kowalska", id="przy-zleceniu-z-przeniesieniem"
+        ),
+        pytest.param(("anna.kowalska", "zlecenie 40000002"), {40000002: ("tak", "montaż")}, "anna.kowalska", id="przy-zleceniu-nadawcy"),
+    ],
+)
+def test_plik_wyniku_z_wpisami_na_zyczenie_z_wydania_v0_14_0_daje_te_same_przyciski_a_klikniecie_wpisuje_wpis(
+    tmp_path: Path, button: tuple[str, str], written: dict[int, tuple[str, str]], worker: str
+) -> None:
+    """ADR 0041: plik wyniku z Wpisami na życzenie, który zapisało Centrum z Wydania v0.14.0 (wersja 3: przy zleceniu
+    Wpis bez dnia i numeru, przy problemie cały), leży u taty w ``config`` po aktualizacji. Widok Raporty daje z niego
+    te same przyciski co v0.14.0, z całą komórką ``request`` przy zleceniach, przy problemie i przy raporcie z błędem
+    tematu, a kliknięcie przycisku z tego pliku startuje Wpisanie raportów, które wpisuje ten Wpis, przy zleceniu Jana
+    z Przeniesieniem do Anny."""
+
+    intermax, mails = _v0_14_0_click()
+    centrum = entering_centrum(tmp_path, intermax, mails)
+    shutil.copyfile(ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v3-oferty.json", centrum.tool.config / REPORT_ENTERING_RESULT)
+    before = _cells(centrum.register)
+
+    shown = _buttons(_view(centrum))
+    [cell] = [found[3] for found in shown if (found[0], found[2]) == button]
+    _enter_on_request(centrum, cell, datetime(2026, 11, 9, 19))
+
+    anna = {"mail": mails[0].id.digest, "worker": "anna.kowalska", "day": "2026-11-09", "successful": "tak", "order_day": "2026-11-09"}
+    moved, own = {**anna, "number": "40000001", "activities": "inst20m"}, {**anna, "number": "40000002", "activities": "montaż"}
+    jan = {"mail": mails[1].id.digest, "worker": "jan.testowy", "day": "2026-11-09", "successful": "tak", "order_day": "2026-11-09"}
+    assert shown == [
+        ("anna.kowalska", "2026-11-09", "zlecenie 40000002", own),
+        ("anna.kowalska", "2026-11-09", "błąd tematu przy anna.kowalska 2026-11-09", own),
+        ("anna.kowalska", "2026-11-09", "błąd tematu przy jan.testowy 2026-11-09", moved),
+        ("jan.testowy", "2026-11-09", "zlecenie 40000001", moved),
+        ("jan.testowy", "2026-11-09", "błąd tematu przy jan.testowy 2026-11-09", moved),
+        ("jan.testowy", "2026-11-09", "problem 40000003", {**jan, "number": "40000003", "activities": "spawpg"}),
+    ]
+    assert _cells(centrum.register) == {**before, **written}
+    assert {number: _workers(centrum.register)[number] for number in written} == dict.fromkeys(written, worker)
+
+
+def test_plik_pamieci_z_decyzjami_wpisu_na_zyczenie_z_wydania_v0_14_0_wpisuje_je_przy_nastepnym_kliknieciu(tmp_path: Path) -> None:
+    """ADR 0041: plik pamięci w wersji 4 z decyzjami taty Wpisu na życzenie (``requested``), który zapisało Centrum z
+    Wydania v0.14.0 po Wpisie Jana z ``t`` przy problemie i Wpisie Anny z raportu z błędem tematu przy jej zleceniu,
+    leży u taty w ``config`` po aktualizacji, a INTERMAX nie ma tych Wpisów. Następne „Wpisz raporty z maili” wpisuje
+    oba z decyzji z pliku, jak Wpisy z ``tak``: problem Jana i przycisk przy zleceniu Anny nie wracają, Logi mają obie
+    decyzje, a plik pamięci zachowuje je bez zmian. Wpis Anny do zlecenia Jana, przy którym tata nie kliknął, zostaje
+    z przyciskiem."""
+
+    intermax, mails = _v0_14_0_click()
+    centrum = entering_centrum(tmp_path, intermax, mails)
+    saved = ROOT / "tests" / "fixtures" / "wpisanie-raportow-stan-v4-requested.json"
+    shutil.copyfile(saved, _state(centrum))
+
+    view = _finished(centrum)
+
+    decisions = json.loads(saved.read_text(encoding="utf-8"))["requested"]
+    assert _cells(centrum.register) == {40000001: (None, None), 40000003: ("tak", "spawpg"), 40000002: ("tak", "montaż")}
+    assert [problem["number"] for problem in _worker(_view(centrum), "jan.testowy")["problems"]] == [None]
+    assert [(button[0], button[2]) for button in _buttons(_view(centrum))] == [
+        ("anna.kowalska", "błąd tematu przy jan.testowy 2026-11-09"),
+        ("jan.testowy", "zlecenie 40000001"),
+        ("jan.testowy", "błąd tematu przy jan.testowy 2026-11-09"),
+    ]
+    assert sorted(_without_moment(_entering(centrum, view)["requested"]), key=str) == sorted(_without_moment(decisions), key=str)
+    assert json.loads(_state(centrum).read_text(encoding="utf-8"))["requested"] == decisions
 
 
 # --- Przypomnienia o raporcie: praca Centrum co minutę (ADR 0030, #1349) -----------------------------------------------
