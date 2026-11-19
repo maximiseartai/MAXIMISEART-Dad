@@ -105,12 +105,12 @@ ODMOWY = [
     pytest.param(f"pkill -k -f {WORKTREE}/x", "z opcją -k", id="nieznana-opcja-krotka"),
     pytest.param(
         "kill $(pgrep -f szybko.py)",
-        "wzorzec pgrep, którego wynik idzie do kill",
+        "wzorzec pgrep obok kill PID-u",
         id="kill-pgrep",
     ),
     pytest.param(
         "pgrep -f szybko.py | xargs kill",
-        "wzorzec pgrep, którego wynik idzie do kill",
+        "wzorzec pgrep obok kill PID-u",
         id="xargs-kill",
     ),
     pytest.param(
@@ -134,6 +134,49 @@ ODMOWY = [
     pytest.param("zsh -c 'sleep 1; pkill -f x'", "bez absolutnej ścieżki", id="zsh-c"),
     pytest.param('eval "pkill -f x"', "bez absolutnej ścieżki", id="eval"),
     pytest.param("trap 'pkill -f x' EXIT", "bez absolutnej ścieżki", id="trap"),
+    pytest.param(
+        f"pkill -v -f '{WORKTREE}/x'",
+        "z -v zabija każdy proces, który do wzorca nie pasuje",
+        id="pkill-odwrocony",
+    ),
+    pytest.param(
+        f"pkill -fv '{WORKTREE}/x'",
+        "z -v zabija każdy proces",
+        id="pkill-odwrocony-w-grupie-flag",
+    ),
+    pytest.param(
+        f"pkill --inverse -f '{WORKTREE}/x'",
+        "z --inverse zabija każdy proces",
+        id="pkill-odwrocony-dluga-opcja",
+    ),
+    pytest.param(
+        f"pgrep -v -f '{WORKTREE}/x' | xargs kill",
+        "z -v zabija każdy proces",
+        id="pgrep-odwrocony-do-kill",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py | while read p; do kill $p; done",
+        "wzorzec pgrep obok kill PID-u",
+        id="pgrep-do-kill-w-petli-while",
+    ),
+    pytest.param(
+        "pids=$(pgrep -f szybko.py); echo $pids | xargs kill",
+        "wzorzec pgrep obok kill PID-u",
+        id="pgrep-do-xargs-kill-przez-zmienna",
+    ),
+    pytest.param(
+        'trap "kill $pids" EXIT; pgrep -x yes | wc -l',
+        "wzorzec pgrep obok kill PID-u",
+        id="trap-kill-zmiennej-obok-pgrep",
+    ),
+    pytest.param(
+        "pgrep -f szybko >/dev/null || kill $PID",
+        "wzorzec pgrep obok kill PID-u",
+        id="kill-zmiennej-po-pgrep",
+    ),
+    pytest.param("kill -9 -1", "kill z ujemnym PID-em", id="kill-wszystkich"),
+    pytest.param("kill -- -4321", "kill z ujemnym PID-em", id="kill-grupy"),
+    pytest.param("kill -s TERM -1", "kill z ujemnym PID-em", id="kill-wszystkich-z-s"),
     pytest.param("echo $(pkill -f x)", "bez absolutnej ścieżki", id="w-podstawieniu"),
     pytest.param("true && pkill -f x || true", "bez absolutnej ścieżki", id="lista"),
     pytest.param("(pkill -f x)", "bez absolutnej ścieżki", id="podpowloka"),
@@ -197,16 +240,15 @@ PRZECHODZI = [
         "kill 1 2; echo \"po kill: $(pgrep -f 'wt-mutacje' | wc -l)\"",
         id="kill-pidu-i-liczba-z-pgrep",
     ),
-    pytest.param(
-        'trap "kill $pids" EXIT; pgrep -x yes | wc -l', id="trap-kill-i-liczba-z-pgrep"
-    ),
-    pytest.param("pgrep -f szybko >/dev/null || kill $PID", id="lub-po-pgrep"),
+    pytest.param("kill -1 4321", id="kill-sygnalem-1"),
     pytest.param("boatbox run 'pkill -f pytest; true'", id="boatbox-na-boxie"),
     pytest.param("ssh box 'pkill -f pytest'", id="ssh-na-innej-maszynie"),
 ]
 
 ZNANE_LUKI = [
     pytest.param("bash <<'EOF'\npkill -f x\nEOF", id="heredoc-do-powloki"),
+    pytest.param("bash <<< 'pkill -f x'", id="here-string-do-powloki"),
+    pytest.param("env -S 'pkill -f x'", id="env-s"),
     pytest.param(
         "ps aux | grep szybko | awk '{print $2}' | xargs kill", id="pidy-z-ps"
     ),

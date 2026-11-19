@@ -3,14 +3,14 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from dataclasses import dataclass
-import itertools
 import json
 import os
 import re
 import sys
 from typing import Optional
 
-MENTIONS = re.compile(r"pkill|killall|pgrep")
+MENTIONS = re.compile(r"\bkill\b|pkill|killall|pgrep")
+NAMED_BY_PATTERN = re.compile(r"pkill|killall|pgrep")
 SUBSTITUTION = "\x00"
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\+?=")
 KEYWORDS = frozenset(
@@ -65,11 +65,12 @@ class Options:
     pattern_values: str
     long_flags: frozenset[str]
     long_values: frozenset[str]
+    inverting: frozenset[str]
 
 
 # ZEWNĘTRZNE: opcje pgrep/pkill macOS i procps-ng oraz killall macOS i psmisc (man pgrep, man killall)
 PGREP_OPTIONS = Options(
-    flags="aAcefHIiLlnoqvwx",
+    flags="aAcefHIiLlnoqwx",
     values="dFgGjMNOPQrstuU",
     pattern_values="",
     long_flags=frozenset(
@@ -81,7 +82,6 @@ PGREP_OPTIONS = Options(
             "--echo",
             "--count",
             "--ignore-case",
-            "--inverse",
             "--list-name",
             "--list-full",
         }
@@ -101,6 +101,7 @@ PGREP_OPTIONS = Options(
             "--delimiter",
         }
     ),
+    inverting=frozenset({"-v", "--inverse"}),
 )
 KILLALL_OPTIONS = Options(
     flags="deEgiIlmqrsvwz",
@@ -121,6 +122,7 @@ KILLALL_OPTIONS = Options(
     long_values=frozenset(
         {"--signal", "--user", "--older-than", "--younger-than", "--ns", "--context"}
     ),
+    inverting=frozenset(),
 )
 
 
@@ -136,18 +138,9 @@ class Word:
 
 
 @dataclass(frozen=True)
-class Command:
-    words: tuple[Word, ...]
-    pipeline: int
-    order: int
-    in_substitution: bool
-
-
-@dataclass(frozen=True)
 class Call:
     name: str
     arguments: tuple[Word, ...]
-    command: Command
 
 
 class Unreadable(Exception):
@@ -163,16 +156,8 @@ def _allowed(project: str) -> str:
 
 
 class _Scan:
-    def __init__(
-        self,
-        text: str,
-        found: list[Command],
-        counter: Iterator[int],
-        in_substitution: bool,
-    ) -> None:
-        self.text, self.found, self.counter = text, found, counter
-        self.in_substitution = in_substitution
-        self.pipeline = next(counter)
+    def __init__(self, text: str, found: list[list[Word]]) -> None:
+        self.text, self.found = text, found
         self.command: list[Word] = []
         self.chars: Optional[list[str]] = None
         self.substituted = False
@@ -210,13 +195,7 @@ class _Scan:
                 index = self._skip_heredocs(index + 1)
             elif char in "<>":
                 index = self._redirection(index)
-            elif text.startswith("||", index):
-                self._end_command()
-                index += 2
-            elif char == "|":
-                self._end_command(pipe=True)
-                index += 1
-            elif char in ";&(":
+            elif char in ";&|(":
                 self._end_command()
                 depth += char == "("
                 index += 1
@@ -247,20 +226,11 @@ class _Scan:
                 self.command.append(Word("".join(self.chars), self.substituted))
         self.chars, self.substituted = None, False
 
-    def _end_command(self, pipe: bool = False) -> None:
+    def _end_command(self) -> None:
         self._end_word()
         if self.command:
-            self.found.append(
-                Command(
-                    tuple(self.command),
-                    self.pipeline,
-                    next(self.counter),
-                    self.in_substitution,
-                )
-            )
+            self.found.append(self.command)
         self.command = []
-        if not pipe:
-            self.pipeline = next(self.counter)
 
     def _double(self, index: int) -> int:
         text = self.text
@@ -286,7 +256,7 @@ class _Scan:
         raise Unreadable
 
     def _substitution(self, index: int) -> int:
-        end = _Scan(self.text, self.found, self.counter, True).scan(index, nested=True)
+        end = _Scan(self.text, self.found).scan(index, nested=True)
         self._char(SUBSTITUTION)
         self.substituted = True
         return end
@@ -298,7 +268,7 @@ class _Scan:
         if end >= len(text):
             raise Unreadable
         script = text[index:end].replace("\\`", "`")
-        _Scan(script, self.found, self.counter, True).scan(0, nested=False)
+        _Scan(script, self.found).scan(0, nested=False)
         self._char(SUBSTITUTION)
         self.substituted = True
         return end + 1
@@ -359,26 +329,26 @@ def _program(word: str) -> str:
     return word.rsplit("/", 1)[-1]
 
 
-def _calls(command: str, counter: Iterator[int]) -> Iterator[Call]:
-    found: list[Command] = []
-    _Scan(command, found, counter, False).scan(0, nested=False)
-    for command_found in found:
-        call = _call(list(command_found.words))
+def _calls(command: str) -> Iterator[Call]:
+    found: list[list[Word]] = []
+    _Scan(command, found).scan(0, nested=False)
+    for words in found:
+        call = _call(words)
         if call is None:
             continue
         name, arguments = call
         if name == "eval":
-            yield from _calls(" ".join(word.text for word in arguments), counter)
+            yield from _calls(" ".join(word.text for word in arguments))
         elif name == "trap":
             if arguments and not arguments[0].text.startswith("-"):
-                yield from _calls(arguments[0].text, counter)
+                yield from _calls(arguments[0].text)
         elif name in SHELLS:
             for option, script in zip(arguments, arguments[1:]):
                 if SCRIPT_OPTION.fullmatch(option.text):
-                    yield from _calls(script.text, counter)
+                    yield from _calls(script.text)
                     break
         else:
-            yield Call(name, tuple(arguments), command_found)
+            yield Call(name, tuple(arguments))
 
 
 def _call(words: list[Word]) -> Optional[tuple[str, list[Word]]]:
@@ -398,11 +368,8 @@ def _call(words: list[Word]) -> Optional[tuple[str, list[Word]]]:
     return (name, words[index + 1 :]) if name in INTERESTING else None
 
 
-def _patterns(
-    name: str, arguments: tuple[Word, ...]
-) -> tuple[list[str], Optional[str]]:
+def _patterns(name: str, texts: list[str]) -> tuple[list[str], Optional[str]]:
     options = KILLALL_OPTIONS if name == "killall" else PGREP_OPTIONS
-    texts = [word.text for word in arguments]
     patterns: list[str] = []
     index, operands_only = 0, False
     while index < len(texts):
@@ -416,16 +383,32 @@ def _patterns(
             continue
         elif text.startswith("--"):
             key = text.split("=", 1)[0]
+            if key in options.inverting:
+                return (
+                    patterns,
+                    f"z {key} zabija każdy proces, który do wzorca nie pasuje, czyli procesy innych wątków.",
+                )
             if key in options.long_values and "=" not in text:
                 index += 1
             elif key not in options.long_flags | options.long_values:
-                return patterns, text
+                return (
+                    patterns,
+                    f"z opcją {text}, której hook nie zna, więc nie wie, co zabije.",
+                )
         else:
             for position, letter in enumerate(text[1:], start=1):
+                if f"-{letter}" in options.inverting:
+                    return (
+                        patterns,
+                        f"z -{letter} zabija każdy proces, który do wzorca nie pasuje, czyli procesy innych wątków.",
+                    )
                 if letter in options.flags:
                     continue
                 if letter not in options.values:
-                    return patterns, text
+                    return (
+                        patterns,
+                        f"z opcją {text}, której hook nie zna, więc nie wie, co zabije.",
+                    )
                 value = text[position + 1 :]
                 if not value:
                     value = texts[index] if index < len(texts) else ""
@@ -436,20 +419,20 @@ def _patterns(
     return patterns, None
 
 
-def _problem(
-    name: str, arguments: tuple[Word, ...], project: Optional[str]
-) -> Optional[str]:
-    shown = "pgrep, którego wynik idzie do kill," if name == "pgrep" else name
-    if any(word.substituted for word in arguments):
+def _problem(call: Call, project: Optional[str]) -> Optional[str]:
+    shown = (
+        "pgrep obok kill PID-u ze zmiennej, z podstawienia albo z wejścia"
+        if call.name == "pgrep"
+        else call.name
+    )
+    if any(word.substituted for word in call.arguments):
         return (
             f"{shown} z podstawieniem $(…) albo `…` w argumentach: puste podstawienie (np. pgrep bez wyniku) zostawia "
             "wzorzec, który trafia w procesy innych wątków na wspólnym Macu."
         )
-    patterns, unknown = _patterns(name, arguments)
-    if unknown is not None:
-        return (
-            f"{shown} z opcją {unknown}, której hook nie zna, więc nie wie, co zabije."
-        )
+    patterns, option = _patterns(call.name, [word.text for word in call.arguments])
+    if option is not None:
+        return f"{shown} {option}"
     if len(patterns) != 1:
         return f"{shown} bez wzorca albo z więcej niż jednym wzorcem zabija procesy spoza tego worktree."
     (pattern,) = patterns
@@ -473,29 +456,24 @@ def _problem(
     return None
 
 
-def _kills(call: Call) -> bool:
-    if call.name in KILLERS:
-        return True
-    texts = [word.text for word in call.arguments]
-    return (
-        call.name == "kill"
-        and not (texts[:1] and texts[0] in KILL_WITHOUT_SIGNAL)
-        and texts[:2] != ["-s", "0"]
-    )
+def _kill_targets(call: Call) -> Optional[list[Word]]:
+    if call.name != "kill":
+        return None
+    arguments = list(call.arguments)
+    texts = [word.text for word in arguments]
+    if (texts[:1] and texts[0] in KILL_WITHOUT_SIGNAL) or texts[:2] == ["-s", "0"]:
+        return None
+    if texts[:1] in (["-s"], ["-n"]):
+        arguments = arguments[2:]
+    elif texts[:1] and texts[0].startswith("-") and texts[0] != "--":
+        arguments = arguments[1:]
+    if arguments[:1] and arguments[0].text == "--":
+        arguments = arguments[1:]
+    return arguments
 
 
-def _feeds_kill(pgrep: Call, killing: list[Call]) -> bool:
-    later_in_pipeline = any(
-        call.command.pipeline == pgrep.command.pipeline
-        and call.command.order > pgrep.command.order
-        for call in killing
-    )
-    through_variable = pgrep.command.in_substitution and any(
-        word.substituted or "$" in word.text
-        for call in killing
-        for word in call.arguments
-    )
-    return later_in_pipeline or through_variable
+def _pid_from_elsewhere(targets: list[Word]) -> bool:
+    return not targets or any(word.substituted or "$" in word.text for word in targets)
 
 
 def judge(command: str, project: Optional[str]) -> Optional[Refusal]:
@@ -507,19 +485,25 @@ def judge(command: str, project: Optional[str]) -> Optional[Refusal]:
             project = None
     shown = project or "$CLAUDE_PROJECT_DIR"
     try:
-        calls = list(_calls(command, itertools.count()))
+        calls = list(_calls(command))
     except (Unreadable, RecursionError):
+        if not NAMED_BY_PATTERN.search(command):
+            return None
         return Refusal(
             "Odmowa: polecenia z pkill, killall albo pgrep nie da się odczytać (niezamknięty cudzysłów albo podstawienie). "
             + _allowed(shown)
         )
-    killing = [call for call in calls if _kills(call)]
+    kills = [targets for targets in map(_kill_targets, calls) if targets is not None]
+    if any(word.text.startswith("-") for targets in kills for word in targets):
+        return Refusal(
+            "Odmowa: kill z ujemnym PID-em (kill -1, kill -- -<grupa>) zabija wszystkie procesy użytkownika albo całą "
+            f"grupę, także procesy innych wątków na wspólnym Macu. {_allowed(shown)}"
+        )
     judged = [call for call in calls if call.name in KILLERS]
-    judged += [
-        call for call in calls if call.name == "pgrep" and _feeds_kill(call, killing)
-    ]
+    if any(_pid_from_elsewhere(targets) for targets in kills):
+        judged += [call for call in calls if call.name == "pgrep"]
     for call in judged:
-        problem = _problem(call.name, call.arguments, project)
+        problem = _problem(call, project)
         if problem is not None:
             return Refusal(f"Odmowa: {problem} {_allowed(shown)}")
     return None
