@@ -42,7 +42,7 @@ from kroki_skilli import Katalog, hits
 from ostatnie_linie import CO_DALEJ, SKILLE_VERIFY
 from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
-from zakres_runu import Zdarzenie, zakres
+from zakres_runu import Zdarzenie, zakresy
 
 IN_CI = "LICZY CI"
 ON_MAIN = "LICZY MAIN"
@@ -73,7 +73,8 @@ def main(argv: list[str] | None = None) -> int:
         detail = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
         print(f"{SKILLE_VERIFY}nieznane (git {error.cmd[1]}: {detail})")
         return 1
-    pull_request, push, night = (zakres(zdarzenie, files, ROOT) for zdarzenie in (Zdarzenie.PULL_REQUEST, Zdarzenie.PUSH, Zdarzenie.NOC))
+    scopes = zakresy((Zdarzenie.PULL_REQUEST, Zdarzenie.PUSH, Zdarzenie.NOC), files, ROOT)
+    pull_request, push, night = scopes[Zdarzenie.PULL_REQUEST], scopes[Zdarzenie.PUSH], scopes[Zdarzenie.NOC]
     chosen: list[str] = []
     in_ci: list[str] = []
     on_main: list[str] = []
