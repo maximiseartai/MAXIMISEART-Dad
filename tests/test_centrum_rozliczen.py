@@ -23,6 +23,7 @@ from urllib.parse import quote
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
+from fnmatch import fnmatchcase
 import email
 import email.policy
 from pathlib import Path
@@ -54,6 +55,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_RE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
+from rozliczenia.centrum.report_reminders import MinuteRhythm
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
@@ -371,6 +373,27 @@ def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path)
     }
     assert after_restart["periods_directory"] == {"state": "ready", "path": str(periods), "name": "INEA"}
     assert first.platform.dialog_titles == ["Wybierz plik Rejestru zleceń", "Wybierz folder okresów (np. Załączniki albo INEA)"]
+
+
+def test_okno_wyboru_rejestru_zlecen_pokazuje_tez_rejestr_pod_inna_nazwa(tmp_path: Path) -> None:
+    """Centrum przyjmuje Rejestr zleceń pod każdą nazwą, więc okno wyboru, które podpowiada nazwę z GLOSSARY, ma też
+    filtr, pod którym tata widzi skoroszyt przemianowany albo skopiowany pod inną nazwą. Okno Windows nie rozróżnia
+    w filtrze wielkości liter."""
+
+    register = tmp_path / "Rejestr zleceń 2026.xlsx"
+    register.touch()
+    app = centrum(tmp_path)
+    app.platform.chosen_files.append(register)
+
+    chosen = app.client.post("/api/settings/register/choose").json()["settings"]["order_register"]
+
+    [filters] = app.platform.file_filters
+    shown_by = {
+        name: [label for label, pattern in filters if fnmatchcase(name.casefold(), pattern.casefold())]
+        for name in ("ZLECENIA INTERMAX OD 08_11_2021.xlsx", register.name)
+    }
+    assert all(shown_by.values()), shown_by
+    assert chosen["name"] == register.name
 
 
 def test_anulowane_okno_wyboru_nie_zmienia_ustawien(tmp_path: Path) -> None:
@@ -3439,6 +3462,16 @@ def test_przypomnienia_startuja_po_zmianach_ustawien_z_wydania(tmp_path: Path) -
 
     [at_start] = rhythm.seen
     assert "light" in at_start
+
+
+def test_zatrzymane_centrum_konczy_sprawdzanie_przypomnien_co_minute(tmp_path: Path) -> None:
+    """Przypomnienia o raporcie sprawdza co minutę wątek Centrum; po zatrzymaniu Centrum nie zostaje, więc nie przypomina
+    Wykonawcom w imieniu Centrum, które już się zamknęło."""
+
+    client = CentrumClient(centrum_app(ToolDirectory(tmp_path), reminder_rhythm=MinuteRhythm()))
+    client.start()
+
+    client.stop()  # czeka na każdy wątek Centrum i wywraca test nazwą wątku, który żyje dalej
 
 
 def test_start_centrum_sprawdza_klucz_do_zgloszen_w_tle_zanim_karta_o_cokolwiek_zapyta(tmp_path: Path) -> None:

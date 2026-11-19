@@ -60,6 +60,18 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
     assert sorted(period_keys) == sorted(get_args(common_contract.PeriodProcessKey))
 
 
+def test_wpis_procesu_z_okresem_odmawia_trybow_wyceny_z_innym_pierwszym_niz_tryb_logow_sprzed_trybow() -> None:
+    """Logi sprzed trybów Wyceny w efenix nie mają trybu, a Wycena biegła wtedy bez Przekazania (ADR 0027), więc wpis
+    procesu, którego pierwszy tryb jest inny, nie powstaje, także wpis procesu z okresem z karty Uruchomień."""
+
+    efenix = CATALOG.kind("efenix")
+    assert isinstance(efenix, PeriodProcessKind)
+    swapped = dataclasses.replace(efenix.view, pricing_modes=tuple(reversed(efenix.view.pricing_modes)))
+
+    with pytest.raises(AssertionError, match="pierwszy tryb"):
+        dataclasses.replace(efenix, view=swapped)
+
+
 _GOTOWE_URUCHOMIENIE: Final = (
     "import contextlib\nimport threading\nimport types\nimport typing\nfrom typing import Any\n\n"
     "from rozliczenia.centrum import process_kind, runs\n"

@@ -61,6 +61,7 @@ PARSERS = frozenset(
     tests/fixtures/skladnia.py
     tests/test_decyzje_na_faktach.py
     tests/test_eksplorator_w_procesie.py
+    tests/test_glossary.py
     tests/test_granice_importow.py
     tests/test_granice_wyjatkow.py
     tests/test_jeden_odczyt_skoroszytu.py
@@ -733,7 +734,7 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
-    "historia-w-docstringu": "zostaw w opisie PR albo w issue",
+    "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",

@@ -203,6 +203,18 @@ def test_tekst_wiersza_jest_bez_spacji_na_brzegach(tmp_path: Path) -> None:
     assert _texts(table, first)["CZYNNOŚCI ZREALIZOWANE"] == "wymiana gniazdka"
 
 
+def test_wykonawca_wiersza_jest_z_kolumny_h_takze_gdy_inny_naglowek_a_k_tez_mowi_wykonawca(tmp_path: Path) -> None:
+    """Wykonawcą wiersza na stronie rodzaju jest ten z H, któremu Przebieg rozliczeń da wiersz, a nie wartość pod drugim
+    nagłówkiem WYKONAWCA dalej w A17:K17."""
+
+    centrum = _prepared(tmp_path)
+    _write(centrum, {"J17": "WYKONAWCA", "J19": "inny.wykonawca", "J22": "inny.wykonawca"})
+
+    table = _table(centrum, "without_rule")
+
+    assert [(row["row"], _texts(table, row)["WYKONAWCA"]) for row in table["rows"]] == [(19, WORKER), (22, WORKER)]
+
+
 def test_bez_naglowka_czynnosci_zrealizowane_tabela_ma_pusty_opis(tmp_path: Path) -> None:
     centrum = _prepared(tmp_path)
     _write(centrum, {"K17": None})
