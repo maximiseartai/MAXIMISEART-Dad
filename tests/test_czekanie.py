@@ -161,13 +161,12 @@ TASK_OUTPUT_LOOPS = (
     "F=/private/tmp/c/s/tasks/bwx8k6zpp.output; until grep -q pr-2121 $F; do sleep 15; done; cat $F",
     "F=/private/tmp/c/s/tasks/bomvji68c.output; until [ -s $F ]; do sleep 10; done; cat $F",
     "F=/private/tmp/c/s/tasks/bhcxilqwz.output; until [ $(wc -l < $F) -gt 7 ]; do sleep 15; done; sleep 2; tail -12 $F",
-    # Pętla na procesie zadania z odczytem jego pliku za pętlą (31 takich w transkryptach repo, recenzja #2295 r1 D1).
-    "while kill -0 $P 2>/dev/null; do sleep 5; done; cat /private/tmp/c/s/tasks/b14j5eupj.output | tail -4",
-    # Syntetyczne: ścieżka w pętli z licznikiem prób i względna ze snem przez perl.
+    # Syntetyczne: zmienna w cudzysłowie z nawiasami, ścieżka w pętli z licznikiem prób i względna ze snem przez perl.
+    "F=/private/tmp/c/s/tasks/b1.output; until grep -q KONIEC \"${F}\"; do sleep 5; done",
     "for i in $(seq 1 40); do grep -q KONIEC /private/tmp/c/s/tasks/b1.output && break; sleep 15; done",
     "until grep -q CZAS tasks/bhcxilqwz.output; do perl -e 'select(undef,undef,undef,15)'; done",
 )
-# Pętle odpytywania w Pythonie z tych samych sesji (#2267) i nazwa odmowy, którą dostają.
+# Pętle odpytywania w Pythonie z tych samych sesji (#2267), nazwa odmowy, którą dostają, i id parametru testu.
 PYTHON_LOOPS = (
     (
         "python3 - <<'EOF'\nimport json, subprocess, time\nend = time.time() + 560\nwhile True:\n"
@@ -175,6 +174,7 @@ PYTHON_LOOPS = (
         "capture_output=True,text=True).stdout\n    d = json.loads(out)\n    if d['status'] == 'completed' or "
         "time.time() > end:\n        break\n    time.sleep(20)\nprint(d['conclusion'])\nEOF",
         "CI_LOOP",
+        "gh-run-view-while",
     ),
     (
         "cd /repo; python3 - <<'EOF'\nimport json, subprocess, time\nfor i in range(9):\n"
@@ -182,17 +182,20 @@ PYTHON_LOOPS = (
         "capture_output=True, text=True).stdout or \"[]\"\n    if all(c['bucket'] != 'pending' for c in json.loads(out)):\n"
         "        break\n    time.sleep(60)\nEOF",
         "CI_LOOP",
+        "gh-pr-checks-range",
     ),
     (
         "python3 - <<'EOF'\nimport subprocess, time\ndeadline = time.time() + 580\nwhile time.time() < deadline:\n"
         "    if subprocess.run([\"pgrep\", \"-f\", \"tools/szybko.py\"], capture_output=True).returncode != 0:\n"
         "        break\n    time.sleep(10)\nprint(subprocess.run([\"tail\", \"-8\", \"szybko.txt\"]).returncode)\nEOF",
         "PGREP_LOOP",
+        "pgrep-termin",
     ),
     (
         "F=/private/tmp/c/s/tasks/b1.output; .venv/bin/python - \"$F\" <<'EOF'\nimport sys, time\nfor _ in range(110):\n"
         "    if 'KONIEC' in open(sys.argv[1]).read():\n        break\n    time.sleep(5)\nEOF",
         "TASK_OUTPUT_LOOP",
+        "plik-zadania-w-argumencie",
     ),
     # Syntetyczne: ``-c`` z opcją przed nim, ``-c`` w napisie z ``"``, f-napis, ``sleep`` z ``from time import`` i
     # ``for`` po liście z wyjściem przez ``sys.exit``.
@@ -200,21 +203,37 @@ PYTHON_LOOPS = (
         "python3 -I -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n"
         "    time.sleep(30)'",
         "CI_LOOP",
+        "c-z-opcja",
     ),
     (
         'py -3 -c "import subprocess, time\nfor i in range(1, 20): subprocess.run([\'gh\', \'api\', '
         "\'repos/o/r/commits/abc/check-runs\']); time.sleep(3)\"",
         "CI_LOOP",
+        "py-3-c-gh-api",
     ),
     (
         "python3 - <<'EOF'\nfrom time import sleep\nimport os\nn = 5\nwhile os.system(f\"gh pr checks {n} | grep -q pending\") == 0:\n"
         "    sleep(30)\nEOF",
         "CI_LOOP",
+        "sleep-z-time-i-f-napis",
+    ),
+    # Skrypt ``-c`` za słowami, które czytanie ``shlex`` od początku polecenia gubiło (``#`` w słowie, ``$'…'``,
+    # recenzja #2295 r2 W3), za kontynuacją linii i z ``'\''`` w środku.
+    ("N=${U##*/}; python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)' $N", "CI_LOOP", "hash-w-slowie"),
+    ("[ $# -gt 0 ] || set -- 5; python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)' $1", "CI_LOOP", "dolar-hash"),
+    ("echo $'it\\'s'; python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)'", "CI_LOOP", "napis-ansi"),
+    ("python3 \\\n  -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)'", "CI_LOOP", "kontynuacja-linii"),
+    (
+        "python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run(['\\''gh'\\'', '\\''pr'\\'', "
+        "'\\''checks'\\'', '\\''5'\\''])\n    time.sleep(30)'",
+        "CI_LOOP",
+        "apostrof-w-skrypcie",
     ),
     (
         "python3 - <<'EOF'\nimport subprocess, sys, time\nfor attempt in attempts:\n"
         "    if subprocess.run(['gh', 'pr', 'checks', '7']).returncode == 0:\n        sys.exit(0)\n    time.sleep(30)\nEOF",
         "CI_LOOP",
+        "for-po-liscie-z-exit",
     ),
 )
 # Dziewięć ponowień odbitych „already running” albo „cannot be rerun” (sesje d00be8d7, 41511ae6, e27ed100 ×2,
@@ -280,6 +299,11 @@ RERUNS = (
     "true # $'\\'\ngh run rerun 1",
     "echo a #$'\\'\ngh run rerun 1",
     "echo `echo $'\\'`; gh run rerun 1",
+    # ``$'…'`` tylko po nieparzystej liczbie ``$`` bez ukośnika i z ``'`` zamykającym w tej samej linii (#2295 r3):
+    # ``$$'a\'`` to numer procesu i napis ``'a\'``, a ``$'\'`` w komentarzu nie sięga ``'`` z dalszej linii.
+    "echo $$'a\\' ; gh run rerun 1 ; echo 'b'",
+    "echo \\$'a\\' ; gh run rerun 1 ; echo 'b'",
+    "# $'\\'\ngh run rerun 1\necho 'x'",
 )
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
@@ -434,17 +458,35 @@ def test_inne_polecenie_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=False) is None
 
 
+# Gotowość serwera z zadania w tle, którego koniec nie przyjdzie: pętla nie czyta jego pliku wyjścia, który stoi za nią
+# (jak w transkryptach repo) albo w zmiennej sprzed niej (recenzja #2295 r2 W2).
+SERVER_READINESS = {
+    "curl-plik-za-petla": "for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null -w '%{http_code}\\n' "
+    "http://127.0.0.1:47900/ && break; sleep 1; done; cat /private/tmp/c/s/tasks/b31ma9p31.output | tail -5",
+    "curl-plik-w-zmiennej-przed-petla": "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
+    "until curl -sf http://127.0.0.1:5179/ >/dev/null; do sleep 1; done; tail -5 $F",
+    "python-plik-za-skryptem": "F=/private/tmp/c/s/tasks/b31ma9p31.output; python3 -c 'import time, urllib.request\n"
+    "for _ in range(30):\n    try:\n        urllib.request.urlopen(\"http://127.0.0.1:5179/\")\n        break\n"
+    "    except OSError:\n        time.sleep(1)'; tail -5 $F",
+}
+
+
+@pytest.mark.parametrize("command", list(SERVER_READINESS.values()), ids=list(SERVER_READINESS))
+def test_gotowosc_serwera_z_zadania_w_tle_bez_jego_pliku_w_petli_przechodzi(command: str) -> None:
+    assert hook.judge(command, in_background=False) is None
+
+
 @pytest.mark.parametrize("command", TASK_OUTPUT_LOOPS)
 def test_petla_na_pliku_wyjscia_zadania_w_tle_dostaje_odmowe(command: str) -> None:
     assert hook.judge(command, in_background=False) is hook.TASK_OUTPUT_LOOP
 
 
-@pytest.mark.parametrize(("command", "refusal"), [pytest.param(command, name, id=command) for command, name in PYTHON_LOOPS])
+@pytest.mark.parametrize(("command", "refusal"), [pytest.param(command, name, id=ident) for command, name, ident in PYTHON_LOOPS])
 def test_petla_odpytywania_w_skrypcie_pythona_dostaje_odmowe(command: str, refusal: str) -> None:
     assert hook.judge(command, in_background=False) is getattr(hook, refusal)
 
 
-@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS + TASK_OUTPUT_LOOPS + tuple(command for command, _ in PYTHON_LOOPS))
+@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS + TASK_OUTPUT_LOOPS + tuple(command for command, _, _ in PYTHON_LOOPS))
 def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=True) is None
 
@@ -517,6 +559,10 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         # sklejonego cudzysłowem z następnym z kwadratem długości słowa (recenzja #2295 r1 W1).
         "python3 " * 40000 + "-c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)'",
         "python3'" * 20000 + "; python3 -c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)'",
+        # Słowo budowane znak po znaku (``shlex``) rośnie z kwadratem długości: skrypt ``-c`` ok. 2 MB (#2295 r2 W1).
+        "python3 -c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)\nx = \"" + "a" * 2_000_000 + "\"'",
+        # Szukanie końca ``$'…'`` od każdego ``$'`` do końca linii rośnie z kwadratem ich liczby.
+        "echo " + "$'\\' " * 40000 + "\nuntil ! gh pr checks 1 | grep -q pending; do sleep 30; done",
     ],
     ids=[
         "ogon-przekierowan",
@@ -529,6 +575,8 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "gh-api-bez-adresu",
         "wiele-slow-pythona",
         "python-sklejony-cudzyslowem",
+        "skrypt-python-2-mb",
+        "napisy-ansi-bez-konca",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
