@@ -742,6 +742,40 @@ def test_cofniecie_przywraca_wartosc_jako_nowy_wiersz_a_cofniecie_cofniecia_przy
     assert app.client.get("/api/settings").json()["theme"] == "light"
 
 
+@pytest.mark.parametrize(
+    ("name", "change"),
+    [
+        (LEGEND_FILE, lambda app: app.client.post("/api/settings/activity-legend", json=code_form("listwa#m", amount=20))),
+        (RULES_FILE, lambda app: app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2))),
+        (DEVICES_FILE, lambda app: app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": [], "group": None})),
+        (SETTINGS_FILE, lambda app: app.client.put("/api/settings/theme", json={"theme": "light"})),
+    ],
+)
+def test_cofniecie_zmiany_ktora_utworzyla_plik_ustawien_usuwa_plik(
+    tmp_path: Path, name: str, change: Callable[[Centrum], Any]
+) -> None:
+    """Tata bez pliku liczy wartościami z Wydania. „Cofnij” jego pierwszej zmiany przywraca brak pliku, a nie treść z
+    Wydania w pliku, więc następne Wydanie z nowymi wartościami domyślnymi dociera do niego (ADR 0032); wiersz cofnięcia
+    mówi „plik usunięty”, a cofnięcie cofnięcia tworzy plik znowu."""
+
+    app = centrum(tmp_path)
+    assert change(app).status_code == 200
+    [created] = [row for row in history_rows(app) if row["file"] == name]
+
+    files = (LEGEND_FILE, RULES_FILE, DEVICES_FILE, SETTINGS_FILE)
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+    after_undo = [file for file in files if (app.tool.config / file).exists()]
+    [undo_row, _] = [row for row in history_rows(app) if row["file"] == name]
+    redone = app.client.post(f"/api/settings/history/{undo_row['id']}/undo")
+    after_redo = [file for file in files if (app.tool.config / file).exists()]
+
+    assert undone.status_code == 200, undone.text
+    assert after_undo == []
+    assert (undo_row["undoes"], undo_row["removed"]) == (created["id"], True)
+    assert (redone.status_code, after_redo) == (200, [name]), redone.text
+
+
 def test_cofniecie_zmiany_ktorej_nie_ma_w_historii_jest_odmowa(tmp_path: Path) -> None:
     refused = centrum(tmp_path).client.post("/api/settings/history/nie-ma-takiej/undo")
 
@@ -5518,6 +5552,21 @@ def test_cofnij_zmiany_ktora_dala_login_ze_zleceniami_jest_odmowa_jak_usuniecie(
     assert (undone.status_code, undone.json()) == (409, {"message": answer})
     assert settings_files(centrum_) == before
     assert [row["undoable"] for row in history_rows_of(centrum_.client)] == [True]
+
+
+def test_cofniecie_dodania_wykonawcy_do_listy_bez_pliku_zostawia_plik_z_pusta_lista(tmp_path: Path) -> None:
+    """Brak pliku Listy Wykonawców nie zawsze znaczy pustą listę (migracja z Wydania czeka na stare pliki albo ją
+    odrzucono), więc „Cofnij” dodania Wykonawcy, który nie ma zleceń, zostawia plik z pustą listą zamiast go usuwać."""
+
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    centrum_.tool.worker_list.unlink()
+    saved = centrum_.client.post(WORKERS_API, json=worker_form(["nowy.login"], "Nowy Testowy"))
+
+    undone = centrum_.client.post(f"/api/settings/history/{saved.json()['change']}/undo")
+
+    assert (saved.status_code, undone.status_code) == (200, 200), undone.text
+    assert WORKERS.parse(settings_bytes(centrum_.tool.worker_list)) == WORKERS.default
+    assert history_rows_of(centrum_.client)[0]["removed"] is False
 
 
 def test_zapisanego_loginu_nie_da_sie_przepisac_gdy_ma_zlecenia_a_drugi_login_tata_dopisuje(tmp_path: Path) -> None:
