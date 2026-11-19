@@ -39,7 +39,7 @@ from rozliczenia import onedrive_conflicts, workbook_files
 from rozliczenia import report_entering_messages as messages
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.catalog import Catalog, declaration_of
-from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook, open_in_excel
+from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import report_entering as report_entering_contract
 from rozliczenia.centrum.contract import runs as runs_contract
@@ -93,7 +93,7 @@ _SETTINGS: Final[tuple[NeededSetting, ...]] = (*_KIND.settings, PERIODS_DIRECTOR
 
 @dataclass(frozen=True)
 class ReportEnteringEntry:
-    """Adapter startu Wpisania raportów: katalog procesów, pliki Konfiguracji i zależności procesu od Centrum.
+    """Adapter startu Wpisania raportów: katalog procesów i zależności procesu od Centrum.
 
     ``parts``: zegar procesu, przerwa ponownej próby podmiany INTERMAX, kroki podmiany na dysku, Skrzynka raportów i
     pamięć własnych wpisów. ``contexts``: Kontekst Uruchomienia pracy Centrum. ``files``: pliki Wpisania raportów w
@@ -103,7 +103,6 @@ class ReportEnteringEntry:
 
     settings: CentrumSettings
     catalog: Catalog
-    configuration: ConfigurationFiles
     parts: HostParts
     contexts: RunContexts
     files: FileReportState
@@ -127,7 +126,7 @@ class ReportEnteringEntry:
         )
 
     def prepare(self, requested: RequestedEntry | None = None) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień Centrum i Konfiguracji, z decyzją taty Wpisu na życzenie ``requested`` (``None``:
+        """Wejście procesu z Ustawień Centrum, z decyzją taty Wpisu na życzenie ``requested`` (``None``:
         „Wpisz raporty z maili”); ``Refusal``, gdy INTERMAX albo folder okresów nie jest wskazany, pliku Folderów nie da
         się teraz przeczytać albo Wpis na życzenie zastałby INTERMAX otwarty w Excelu."""
 
@@ -138,7 +137,6 @@ class ReportEnteringEntry:
         paths: dict[PathNeed, Path] = {field: path for field, path in chosen.items()}
         if missing := self._missing():
             raise refusal.report_entering_not_set_up(missing)
-        paths.update({need: self.configuration.path(need) for need in _KIND.configuration_needs})
         start = start_from_settings(_KIND, snapshot, paths, period=None, dry_run=False)
         if not start.settings.worker_list().addresses().logins:
             raise refusal.report_entering_without_addresses()

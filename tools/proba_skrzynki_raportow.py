@@ -197,25 +197,22 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
     return [*lines, last]
 
 
-@dataclass(frozen=True)
 class _WithoutMemory:
-    """Pamięć Wpisania bez własnych wpisów i decyzji taty, z dniem wdrożenia ``rollout``: próba czyta każdy mail okna,
-    jakby Wpisanie raportów jeszcze niczego nie wpisało."""
-
-    rollout: date
+    """Pamięć Wpisania przed pierwszym kliknięciem, bez własnych wpisów i decyzji taty: próba czyta każdy mail okna,
+    jakby Wpisanie raportów jeszcze niczego nie wpisało. Dzień wdrożenia Wpisania ogranicza tylko dzień wskazany
+    raportu z błędem tematu wśród zleceń INTERMAX, a próba zleceń nie zna (``_WITHOUT_INTERMAX``)."""
 
     def load(self) -> SavedState:
-        return SavedState(self.rollout, OwnEntries.EMPTY)
+        return SavedState(None, OwnEntries.EMPTY)
 
 
 _WITHOUT_INTERMAX: Final = RegisterWindow((), frozenset(), ())
 
 
 def _read(window: Window, mails: Sequence[ReportMail], addresses: WorkerAddresses) -> ReportsOutcome:
-    """Wynik rdzenia raportów dla maili ``mails`` w oknie ``window`` bez zleceń INTERMAX i bez pamięci Wpisania, z dniem
-    wdrożenia w pierwszym dniu okna."""
+    """Wynik rdzenia raportów dla maili ``mails`` w oknie ``window`` bez zleceń INTERMAX i bez pamięci Wpisania."""
 
-    memory = EnteringMemory(_WithoutMemory(window.rollout))
+    memory = EnteringMemory(_WithoutMemory())
     return memory.enter(window, _WITHOUT_INTERMAX, mails, addresses, DEFAULT_ACTIVITY_LEGEND)
 
 
