@@ -586,7 +586,10 @@ Pliku zbiorczego, a nie Rejestru zleceń. Wynik zapisu to zawsze `Plik zbiorczy
 przygotowany · wymaga sprawdzenia`: pliki powstały, a Ty uzupełniasz Plik
 zbiorczy przed Przebiegiem rozliczeń. Wiersz, którego `CZYNNOŚCI ZREALIZOWANE`
 mają Kody czynności, także obok zwykłego opisu, wypełniła Legenda czynności,
-więc na Ciebie nie czeka. Wiersz bez żadnego kodu czeka na Ciebie. Kod z liczbą
+więc na Ciebie nie czeka. Wiersz bez żadnego kodu czeka na Ciebie. W usterce
+(zlecenie z ilością w AI) kod `rt2` się nie liczy: legenda nic za niego nie
+wpisuje. Który kod nie liczy się w usterce, ustawiasz w Ustawieniach, w sekcji
+Legenda czynności, polem `Nie liczy się w usterce`. Kod z liczbą
 spoza przedziałów, dwa kody w jednej kolumnie albo dwa kolory w jednej kolumnie
 to Błąd opisu: wtedy legenda nic w wierszu nie wpisuje, a wiersz czeka na
 Ciebie.

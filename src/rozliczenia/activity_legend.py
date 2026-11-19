@@ -1,6 +1,6 @@
 """Legenda czynności (ADR 0038, 0039): Ilości usług, kwota w ``AS`` i Wyróżnienia z Kodów czynności w ``CZYNNOŚCI ZREALIZOWANE``.
 
-Jedyną operacją jest ``ActivityLegend.read(text)``, czysta funkcja bez plików i bez Centrum rozliczeń; liczą nią
+Jedyną operacją jest ``ActivityLegend.read(text, fault=...)``, czysta funkcja bez plików i bez Centrum rozliczeń; liczą nią
 Przygotowanie pliku zbiorczego, Ilości do uzupełnienia, Kontrola ilości, podgląd zmiany legendy i brama. Niezmienniki
 legendy sprawdza sam typ ``ActivityLegend`` przy tworzeniu, więc legenda z błędem nie powstaje (``LegendRefused`` z
 polem i zdaniem), także legenda z dwoma zapisami, do których może pasować to samo słowo: każde słowo opisu pasuje
@@ -22,7 +22,10 @@ który nie jest błędem i niczego nie wyznacza (ADR 0041). Rachunek tekstu:
 4. W kolumnę Ilości usług wpisuje najwyżej jeden kod: drugi, także ten sam kod drugi raz, to Błąd opisu
    (``ColumnTwice``). Kwoty w ``AS`` się sumują. Kolumna, którą kody wypełniają dwoma różnymi kolorami, to Błąd opisu
    (``TwoColours``); ten sam kolor z dwóch kodów nie.
-5. Wynik to ``NoCodes`` (opis bez żadnego Kodu czynności), ``WithCodes`` (poprawne kody z tym, co wyznaczają, obok
+5. W usterce (``fault``: zlecenie z Ilością usług w ``AI``) kod, który w usterce się nie liczy (``counts_in_fault``,
+   ``rt2``, ADR 0044), jest Kodem czynności (stoi w ``found`` i ``spelled``), ale niczego nie wyznacza i nie bierze
+   udziału w punktach 3 i 4, więc opis z samym takim kodem to ``WithCodes`` bez Ilości, kwoty i kolorów.
+6. Wynik to ``NoCodes`` (opis bez żadnego Kodu czynności), ``WithCodes`` (poprawne kody z tym, co wyznaczają, obok
    zwykłego opisu albo bez niego) albo ``DescriptionError`` z każdym powodem: najpierw kody z liczbą spoza przedziałów
    w kolejności z opisu, potem kolumny w kolejności arkusza. Błąd opisu niczego nie wyznacza w wierszu, nawet za
    poprawne kody obok. Każdy wynik ma kody z opisu w zapisie legendy (``spelled``), w kolejności z opisu.
@@ -119,6 +122,7 @@ class ActivityCode:
     amount: int | None = None
     """Kwota w ``AS`` za jedno wystąpienie; ``None``: bez kwoty."""
     fills: tuple[CellFill, ...] = ()
+    counts_in_fault: bool = True
 
 
 @dataclass(frozen=True)
@@ -162,10 +166,11 @@ class ActivityLegend:
         object.__setattr__(self, "_patterns", patterns)
         object.__setattr__(self, "_spellings", re.compile("|".join(_alternative(index, pattern.spelling) for index, pattern in enumerate(patterns))))
 
-    def read(self, text: str) -> DescriptionRead:
-        """Wynik legendy dla opisu technika ``text`` (zob. rachunek w opisie modułu)."""
+    def read(self, text: str, *, fault: bool) -> DescriptionRead:
+        """Wynik legendy dla opisu technika ``text`` zlecenia, które jest usterką (``fault``) albo nie (zob. rachunek w
+        opisie modułu)."""
 
-        found: list[tuple[FoundCode, ActivityCode]] = []
+        found: list[tuple[FoundCode, ActivityCode | None]] = []
         spelled: list[str] = []
         problems: list[DescriptionProblem] = []
         for word in (word for word in _WORD.findall(text) if word.strip("/")):
@@ -178,13 +183,17 @@ class ActivityLegend:
             column = _column(pattern.owner.column, number)
             written = FoundCode(pattern.owner.id, pattern.spelling, number, column)
             spelled.append(written.spelled)
+            if fault and not pattern.owner.counts_in_fault:
+                found.append((written, None))
+                continue
             if isinstance(pattern.owner.column, ColumnByNumber) and column is None:
                 assert number is not None, "kod z przedziałami ma w każdym zapisie miejsce na liczbę"
                 problems.append(NumberOutOfRange(pattern.owner.id, pattern.spelling, number))
                 continue
             found.append((written, pattern.owner))
-        hits = [(written.column, code) for written, code in found if written.column is not None]
-        fills = [(fill, code.id) for _, code in found for fill in code.fills]
+        counted = [(written, code) for written, code in found if code is not None]
+        hits = [(written.column, code) for written, code in counted if written.column is not None]
+        fills = [(fill, code.id) for _, code in counted for fill in code.fills]
         problems.extend(
             ColumnTwice(column, codes)
             for column in QUANTITY_LETTERS
@@ -204,7 +213,7 @@ class ActivityLegend:
         return WithCodes(
             found=tuple(written for written, _ in found),
             quantities=MappingProxyType({column: values[column] for column in QUANTITY_LETTERS if column in values}),
-            amount=sum(code.amount or 0 for _, code in found),
+            amount=sum(code.amount or 0 for _, code in counted),
             fills=MappingProxyType({column: colours[column] for column in FILL_COLUMNS if column in colours}),
         )
 
@@ -305,7 +314,7 @@ REASONS: Final = tuple(kind.reason for kind in (NumberOutOfRange, ColumnTwice, T
 @dataclass(frozen=True)
 class DescriptionError:
     """Błąd opisu: Kody czynności opisu technika, których legenda nie może przyjąć, więc legenda nic w wierszu nie
-    wpisuje, a wiersz zostaje tacie. ``problems``: każdy powód raz (zob. opis modułu, punkt 5); ``spelled``: kody z opisu
+    wpisuje, a wiersz zostaje tacie. ``problems``: każdy powód raz (zob. opis modułu, punkt 6); ``spelled``: kody z opisu
     w zapisie legendy, także z liczbą spoza przedziałów."""
 
     problems: tuple[DescriptionProblem, ...]

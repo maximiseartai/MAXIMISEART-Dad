@@ -6,8 +6,8 @@ polem (``LegendProblem``): nieznany klucz, brak klucza, zły rodzaj wartości i 
 ``dump_activity_legend`` daje dokument, który ``parse_activity_legend`` czyta z powrotem w ten sam typ.
 
 Wpis kodu: ``id``, ``zapisy``, co najwyżej jedno z ``kolumna`` (stała kolumna) i ``przedzialy`` (lista ``od``, ``do``,
-``kolumna``), ``wartosc`` (Ilość usług przy kolumnie, bez pola 1), ``kwota`` (w ``AS``) i ``wypelnienia`` (lista
-``kolumna``, ``kolor``).
+``kolumna``), ``wartosc`` (Ilość usług przy kolumnie, bez pola 1), ``kwota`` (w ``AS``), ``wypelnienia`` (lista
+``kolumna``, ``kolor``) i ``w_usterce`` (``false``: kod w usterce się nie liczy, ADR 0044; bez pola ``true``).
 
 ``DEFAULT_ACTIVITY_LEGEND`` to Legenda czynności z Wydania: plik ``legenda_czynnosci_domyslna.yaml`` obok tego modułu,
 czytany tym samym parserem.
@@ -74,7 +74,7 @@ def parse_code(entry: object) -> ActivityCode | LegendProblem:
 
 
 def _code(entry: object, path: str) -> ActivityCode:
-    fields = _mapping(entry, path, required={"id", "zapisy"}, optional={"kolumna", "przedzialy", "wartosc", "kwota", "wypelnienia"})
+    fields = _mapping(entry, path, required={"id", "zapisy"}, optional={"kolumna", "przedzialy", "wartosc", "kwota", "wypelnienia", "w_usterce"})
     identifier = _text(fields["id"], f"{path}.id")
     path = f"kody[{identifier}]"
     if "kolumna" in fields and "przedzialy" in fields:
@@ -92,6 +92,7 @@ def _code(entry: object, path: str) -> ActivityCode:
         _number(fields["wartosc"], f"{path}.wartosc") if "wartosc" in fields else 1,
         _number(fields["kwota"], f"{path}.kwota") if "kwota" in fields else None,
         tuple(_fill(fill, f"{path}.wypelnienia[{index}]") for index, fill in enumerate(_list(fields.get("wypelnienia", []), f"{path}.wypelnienia"))),
+        _flag(fields.get("w_usterce", True), f"{path}.w_usterce"),
     )
 
 
@@ -123,6 +124,8 @@ def dump_code(code: ActivityCode) -> dict[str, object]:
         dumped["kwota"] = code.amount
     if code.fills:
         dumped["wypelnienia"] = [{"kolumna": fill.column, "kolor": str(fill.colour)} for fill in code.fills]
+    if not code.counts_in_fault:
+        dumped["w_usterce"] = False
     return dumped
 
 
@@ -148,6 +151,12 @@ def _list(value: object, path: str) -> list[object]:
 def _text(value: object, path: str) -> str:
     if not isinstance(value, str):
         raise _Malformed(path, "Tu powinien być tekst.")
+    return value
+
+
+def _flag(value: object, path: str) -> bool:
+    if not isinstance(value, bool):
+        raise _Malformed(path, "Tu powinno być true albo false.")
     return value
 
 

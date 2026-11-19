@@ -11,15 +11,17 @@ from __future__ import annotations
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
+import ctypes
 import json
 from pathlib import Path
 import sys
-import tempfile
+import uuid
+import zlib
 
 import pytest
 
 from mutacja_recenzenta import Block
-import potomne
+import piaskownica
 import srodowisko_ci
 import straznik
 from straznik import Guard, Kind
@@ -27,6 +29,9 @@ from kroki_lokalne import MYPY_PLATFORMS
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.znane_luki import wymaga_ruff_i_mypy
 
+wymaga_piaskownicy = pytest.mark.skipif(
+    sys.platform == "win32", reason="dowód mypy, ruff i pytest biegnie w piaskownicy systemu (Landlock na Linuksie, sandbox-exec na macOS), której Windows nie ma"
+)
 PYPROJECT = """\
 [tool.mypy]
 files = ["kod"]
@@ -88,10 +93,11 @@ class Pull:
 
     @contextmanager
     def _copy(self) -> Iterator[straznik.Environment]:
-        """Kopia HEAD z własnym ``HOME`` i ``TMPDIR``, jak każde środowisko z ``srodowisko_ci.built`` z ``tests``."""
+        """Kopia HEAD z własnym gitem, ``HOME`` i ``TMPDIR`` obok siebie, jak każde środowisko z ``srodowisko_ci.built``."""
 
-        with potomne.commit_copy(self.root, self.head) as copy, tempfile.TemporaryDirectory(prefix="straznik-") as folder:
-            home, temporary = Path(folder) / "dom", Path(folder) / "tmp"
+        with srodowisko_ci.run_folder("straznik-") as folder:
+            copy, home, temporary = (folder / name for name in ("drzewo", "dom", "tmp"))
+            srodowisko_ci._checkout(self.root, self.head, copy)
             home.mkdir()
             temporary.mkdir()
             yield straznik.Environment(self.head, copy, Path(sys.executable), {**srodowisko_ci.variables(), "HOME": str(home), "TMPDIR": str(temporary)})
@@ -479,6 +485,7 @@ PROBKI_TESTU = {
 }
 
 
+@wymaga_piaskownicy
 @pytest.mark.parametrize("name", PROBKI_TESTU)
 def test_dowod_testu_przyjmuje_test_ktory_pada_tylko_przez_mutacje_recenzenta(tmp_path: Path, name: str) -> None:
     """Węzeł bez mutacji przechodzi, a z każdą mutacją najnowszego bloku pada: tylko wtedy ``WYKRYTA``; bez bloku albo
@@ -494,27 +501,182 @@ def test_dowod_testu_przyjmuje_test_ktory_pada_tylko_przez_mutacje_recenzenta(tm
     assert sample.tail in outcome.line, outcome.line
 
 
-ONCE = "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    assert not slad.exists()\n    slad.write_text('1')\n"
+def _once(place: str) -> str:
+    return f"import pathlib\nimport tempfile\n\n\ndef test_g() -> None:\n    slad = {place}\n    assert not slad.exists()\n    slad.write_text('1')\n"
 
 
-def test_slad_poza_srodowiskiem_biegu_to_odmowa_a_nie_wykryta(tmp_path: Path) -> None:
-    """Sonda #2197 r4 W2: test, który nie woła kodu z mutacją, a zostawia ślad poza środowiskiem biegu (ścieżka
-    bezwzględna) i pada, gdy go zastanie, padłby z każdą mutacją; bieg bez mutacji po biegach z mutacją pada tak samo,
-    więc dowód odmawia."""
+ONCE = _once("pathlib.Path({slad})")
+GIT = (
+    "import subprocess\n\n\ndef _git(*arguments: str) -> str:\n"
+    "    return subprocess.run(['git', *arguments], capture_output=True, text=True, input='slad', check=False).stdout.strip()\n\n\n"
+)
+SYSV = (
+    "import ctypes\nimport zlib\n\nfrom kod.liczby import podwojona\n\n_LIBC = ctypes.CDLL(None, use_errno=True)\n"
+    "_LIBC.shmget.argtypes = (ctypes.c_int, ctypes.c_size_t, ctypes.c_int)\nKLUCZ = zlib.crc32({slad}.encode()) & 0x3FFFFFFF | 1\n\n\n"
+)
+ONCE_SYSV = SYSV + "def test_g() -> None:\n    assert _LIBC.shmget(KLUCZ, 1, 0o3600) >= 0, 'ślad poprzedniego biegu'\n"
+LOCK = "import multiprocessing\n\n\ndef test_g() -> None:\n    with multiprocessing.Lock():\n        pass\n"
+UNTOUCHED = "NIEWYKRYTA | x * 3 z FAIL: NIEWYKRYTA: 1 passed"
+REFUSED = f"ODMOWA | {NODE} na HEAD scalonym z bazą bez mutacji nie przechodzi: 1 failed"
 
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": _with_trace(ONCE, str(tmp_path / "slad.txt"))})
 
-    outcome = pull.prove(f"pytest {NODE}", mutation=TRIPLED)
+@dataclass(frozen=True)
+class Trace:
+    test: str
+    state: str
+    where: str = "tmp_path"
+    found: bool = False
+    platform: str | None = None
+
+
+SONDY_SLADU = {
+    "tmpdir-biegu": Trace(_once("pathlib.Path(tempfile.gettempdir()) / 'slad.txt'"), UNTOUCHED),
+    "home-biegu": Trace(_once("pathlib.Path.home() / 'slad.txt'"), UNTOUCHED),
+    "plik-w-kopii": Trace(_once("pathlib.Path('slad.txt')"), UNTOUCHED),
+    "zapis-do-dev-null": Trace("import os\n\n\ndef test_g() -> None:\n    with open(os.devnull, 'w') as sink:\n        sink.write('1')\n", UNTOUCHED),
+    "konfiguracja-gita-kopii": Trace(
+        GIT + "def test_g() -> None:\n    assert _git('config', '--local', '--get', 'straznik.slad') == ''\n    _git('config', '--local', 'straznik.slad', '1')\n", UNTOUCHED
+    ),
+    "obiekt-gita-kopii": Trace(
+        GIT + "def test_g() -> None:\n    assert subprocess.run(['git', 'cat-file', '-e', _git('hash-object', '--stdin')], check=False).returncode != 0\n"
+        "    _git('hash-object', '-w', '--stdin')\n",
+        UNTOUCHED,
+    ),
+    "sciezka-bezwzgledna": Trace(ONCE, REFUSED),
+    "katalog-tmp": Trace(ONCE, REFUSED, where="/tmp"),
+    "slad-na-przemian": Trace(
+        "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    if slad.exists():\n        slad.unlink()\n"
+        "        raise AssertionError('ślad poprzedniego biegu')\n    slad.write_text('1')\n",
+        REFUSED,
+    ),
+    "blad-dopiero-przy-sladzie": Trace(
+        "import pathlib\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n"
+        "    if slad.exists():\n        assert podwojona(3) == 6\n    slad.write_text('1')\n",
+        REFUSED,
+    ),
+    "katalog-obok-kopii-z-tym-samym-przedrostkiem": Trace(_once("pathlib.Path.cwd().with_name(pathlib.Path.cwd().name + '-obok')"), REFUSED),
+    "wyjscie-z-kopii-przez-kropki": Trace(_once("pathlib.Path('..') / 'slad.txt'"), REFUSED),
+    "dowiazanie-z-kopii-na-zewnatrz": Trace(
+        "import os\nimport pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path('slad.txt')\n    assert not slad.is_symlink()\n"
+        "    os.symlink({slad}, slad)\n    slad.write_text('1')\n",
+        REFUSED,
+    ),
+    "pamiec-dzielona-obok-dev-null": Trace(ONCE, REFUSED, where="/dev/shm", platform="linux"),
+    "semafor-multiprocessing-w-dev-shm-linuksa": Trace(LOCK, REFUSED, platform="linux"),
+    "semafor-multiprocessing-poza-plikami-macos": Trace(LOCK, UNTOUCHED, platform="darwin"),
+    "metadane-pliku-poza-kopia": Trace(
+        "import os\nimport pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    assert slad.stat().st_mtime != 1\n    os.utime(slad, (1, 1))\n",
+        REFUSED,
+        found=True,
+        platform="darwin",
+    ),
+}
+
+
+def _platform(platform: str | None) -> list[pytest.MarkDecorator]:
+    return [] if platform is None else [pytest.mark.skipif(sys.platform != platform, reason=f"przypadek piaskownicy systemu {platform}")]
+
+
+def _trace(tmp_path: Path, where: str) -> Path:
+    return tmp_path / "slad.txt" if where == "tmp_path" else Path(where) / f"straznik-sonda-{uuid.uuid4().hex}.txt"
+
+
+@wymaga_piaskownicy
+@pytest.mark.parametrize("name", [pytest.param(name, marks=_platform(trace.platform)) for name, trace in SONDY_SLADU.items()])
+def test_slad_biegu_w_srodowisku_biegu_znika_z_nim_a_zapis_poza_nim_to_odmowa_systemu(tmp_path: Path, name: str) -> None:
+    trace = SONDY_SLADU[name]
+    where = _trace(tmp_path, trace.where)
+    if trace.found:
+        where.write_text("0")
+    before = where.stat().st_mtime if trace.found else None
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": _with_trace(trace.test, str(where))})
+
+    try:
+        outcome = pull.prove(f"pytest {NODE}", mutation=TRIPLED)
+        after = where.stat().st_mtime if where.exists() else None
+    finally:
+        if trace.where != "tmp_path":
+            where.unlink(missing_ok=True)
+
+    assert not outcome.detected, outcome.line
+    assert f"#5 W1 r1 | {pull.failed[:8]} | {trace.state}" in outcome.line, outcome.line
+    assert after == before, f"bieg dowodu zmienił {where} poza swoim środowiskiem"
+
+
+def _remove_segment(trace: str) -> None:
+    libc = ctypes.CDLL(None, use_errno=True)
+    libc.shmget.argtypes = (ctypes.c_int, ctypes.c_size_t, ctypes.c_int)
+    segment = libc.shmget(zlib.crc32(trace.encode()) & 0x3FFFFFFF | 1, 0, 0)
+    if segment >= 0:
+        libc.shmctl(segment, 0, None)
+
+
+@wymaga_piaskownicy
+def test_stan_uslugi_systemu_poza_plikami_ktory_wywraca_bieg_bez_mutacji_to_odmowa(tmp_path: Path) -> None:
+    trace = str(tmp_path / "slad.txt")
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": _with_trace(ONCE_SYSV, trace)})
+
+    try:
+        outcome = pull.prove(f"pytest {NODE}", mutation=TRIPLED)
+    finally:
+        _remove_segment(trace)
 
     assert not outcome.detected, outcome.line
     assert f"#5 W1 r1 | {pull.failed[:8]} | ODMOWA | {NODE} bez mutacji pada po biegach z mutacją (1 failed" in outcome.line, outcome.line
 
 
+COLLECTED = (
+    "import pathlib\nimport sys\n\nfrom kod.flagi import WLACZONE\n\nif sys.argv[0] == '-c':\n    pathlib.Path({slad}).write_text('1')\n\n"
+    "if WLACZONE:\n\n    def test_g() -> None:\n        assert WLACZONE\n"
+)
+
+
+@wymaga_piaskownicy
+def test_zbieranie_plikow_testow_po_mutacji_bez_wezla_biegnie_w_piaskownicy(tmp_path: Path) -> None:
+    trace = tmp_path / "slad.txt"
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "kod/flagi.py": "WLACZONE = True\n", "tests/test_g.py": _with_trace(COLLECTED, str(trace))})
+
+    outcome = pull.prove(f"pytest {NODE}", mutation=_block(("kod/flagi.py", "WLACZONE = True", "WLACZONE = False"), name="flaga wyłączona z FAIL"))
+
+    assert "pliki testów polecenia z mutacją się nie zbierają" in outcome.line, outcome.line
+    assert not trace.exists()
+
+
+PLUGIN = "import pathlib\n\nfrom mypy.plugin import Plugin\n\npathlib.Path({slad}).write_text('1')\n\n\ndef plugin(version: str) -> type[Plugin]:\n    return Plugin\n"
+
+
+@wymaga_ruff_i_mypy
+@wymaga_piaskownicy
+def test_krok_mypy_ktory_pisze_poza_kopia_biegu_to_odmowa_systemu_a_nie_wynik_dowodu(tmp_path: Path) -> None:
+    trace = tmp_path / "slad.txt"
+    configured = PYPROJECT.format(mypy='plugins = ["wtyczka.py"]', ruff="", banned="")
+    pull = _pull(tmp_path, TYPED, {**TYPED_FIX, "wtyczka.py": _with_trace(PLUGIN, str(trace)), "pyproject.toml": configured})
+
+    outcome = pull.prove("mypy", (("kod/uzycie.py", 5, 5),), scopes=(("kod/uzycie.py", 4, 5),))
+
+    assert not outcome.detected, outcome.line
+    assert f"#5 W1 r1 | {pull.failed[:8]} | ODMOWA | na HEAD scalonym z bazą bez przywrócenia krok skończył się kodem 2 bez znalezisk (mypy: " in outcome.line, outcome.line
+    assert not trace.exists()
+
+
+@wymaga_piaskownicy
+@pytest.mark.parametrize("guard", ["mypy", f"pytest {NODE}"])
+def test_dowod_bez_piaskownicy_systemu_to_odmowa_przed_pierwszym_biegiem(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard: str) -> None:
+    pull = _fixed(tmp_path)
+    monkeypatch.setattr(piaskownica, "unavailable", lambda: "jądro bez Landlock")
+
+    outcome = pull.prove(guard, scopes=SCOPE, mutation=TRIPLED)
+
+    assert not outcome.detected, outcome.line
+    assert f"#5 W1 r1 | {pull.failed[:8]} | ODMOWA | jądro bez Landlock: każdy bieg dowodu biegnie w piaskownicy systemu" in outcome.line, outcome.line
+
+
+@wymaga_piaskownicy
 @pytest.mark.parametrize(
     ("head", "fragment"),
     [
-        ({"tests/test_g.py": TEST_G.replace("== 6", "== 7")}, "PODSTAWA CZERWONA | tests/test_g.py::test_g na HEAD scalonym z bazą bez mutacji: 1 failed"),
-        ({"tests/test_g.py": TEST_G.replace("def test_g", "def test_inny")}, "PODSTAWA CZERWONA | tests/test_g.py::test_g na HEAD scalonym z bazą bez mutacji: "),
+        ({"tests/test_g.py": TEST_G.replace("== 6", "== 7")}, f"ODMOWA | {NODE} na HEAD scalonym z bazą bez mutacji nie przechodzi: 1 failed"),
+        ({"tests/test_g.py": TEST_G.replace("def test_g", "def test_inny")}, f"ODMOWA | {NODE} na HEAD scalonym z bazą bez mutacji nie przechodzi: "),
     ],
     ids=["pada", "bez-wezla"],
 )
@@ -550,6 +712,9 @@ class Gap:
     guard: str
     mutation: str | None = None
     before_test_proof: bool = False
+    found: bool = False
+    segment: bool = False
+    platform: str | None = None
 
 
 # Granice dowodu (ADR 0042, „Konsekwencje” i aneks): każda próbka przechodzi dowód, choć strażnik nie łapie Ważnego
@@ -578,29 +743,6 @@ ZNANE_LUKI_STRAZNIKA = {
         f"pytest {NODE}",
         _block(("kod/liczby.py", "    return x * 2\n", "    return x * 2 if x >= 0 else x * 3\n"), name="ujemne razy 3 z FAIL"),
     ),
-    # Stan poza środowiskiem biegu (``{slad}``: plik pod ścieżką bezwzględną, sondy #2197 r5 W1), który biegu bez mutacji
-    # nie wywraca: test pada przy śladzie poprzedniego biegu na przemian albo sprawdza błąd dopiero przy nim. Required CI
-    # uruchamia węzeł raz, więc z błędem przechodzi; to test niestabilny, który ocenia recenzent.
-    "pytest: test pada na przemian przez ślad poza środowiskiem": Gap(
-        {
-            "tests/test_g.py": (
-                "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    if slad.exists():\n        slad.unlink()\n"
-                "        raise AssertionError('ślad poprzedniego biegu')\n    slad.write_text('1')\n"
-            )
-        },
-        f"pytest {NODE}",
-        TRIPLED,
-    ),
-    "pytest: test sprawdza błąd dopiero przy śladzie poza środowiskiem": Gap(
-        {
-            "tests/test_g.py": (
-                "import pathlib\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n"
-                "    if slad.exists():\n        assert podwojona(3) == 6\n    slad.write_text('1')\n"
-            )
-        },
-        f"pytest {NODE}",
-        TRIPLED,
-    ),
     # Sąsiad w sesji Required CI (sonda #2197 r6 W2): rejestr formatów wypełnia import ``kod.csv_format``, a poprawka
     # dodaje ten import do ``kod/eksport.py``. Dowód uruchamia węzeł sam, więc z mutacją, która import usuwa, test pada,
     # a zadanie pytest zbiera też ``tests/test_csv_format.py`` (każdy worker xdist zbiera wszystkie pliki zadania przed
@@ -623,16 +765,52 @@ ZNANE_LUKI_STRAZNIKA = {
         f"pytest {NODE}",
         TRIPLED,
     ),
+    "pytest: mutacja pisze poza piaskownicą, więc odmowa systemu wywraca test, a Required CI ten zapis przyjmuje": Gap(
+        {
+            "kod/zapis.py": "import pathlib\n\n\ndef zapisz(folder: pathlib.Path) -> None:\n    (folder / 'wynik.txt').write_text('1')\n",
+            "tests/test_g.py": "import pathlib\n\nfrom kod.zapis import zapisz\n\n\ndef test_g(tmp_path: pathlib.Path) -> None:\n    zapisz(tmp_path)\n",
+        },
+        f"pytest {NODE}",
+        _block(("kod/zapis.py", "(folder / 'wynik.txt')", "pathlib.Path({slad})"), name="zapis poza folderem z FAIL"),
+    ),
+    "pytest: stan usługi systemu poza plikami sprawdza błąd dopiero przy śladzie poprzedniego biegu": Gap(
+        {"tests/test_g.py": SYSV + "def test_g() -> None:\n    if _LIBC.shmget(KLUCZ, 1, 0o600) >= 0:\n        assert podwojona(3) == 6\n    _LIBC.shmget(KLUCZ, 1, 0o1600)\n"},
+        f"pytest {NODE}",
+        TRIPLED,
+        segment=True,
+    ),
+    "pytest: Landlock nie broni metadanych pliku poza kopią, więc ślad w czasie zmiany pliku sprawdza błąd dopiero w następnym biegu": Gap(
+        {
+            "tests/test_g.py": (
+                "import os\nimport pathlib\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n"
+                "    if slad.stat().st_mtime == 1:\n        assert podwojona(3) == 6\n    os.utime(slad, (1, 1))\n"
+            )
+        },
+        f"pytest {NODE}",
+        TRIPLED,
+        found=True,
+        platform="linux",
+    ),
 }
 
 
-@pytest.mark.parametrize("name", ZNANE_LUKI_STRAZNIKA)
+@pytest.mark.parametrize(
+    "name",
+    [pytest.param(name, marks=[*_platform(gap.platform), *([wymaga_piaskownicy] if gap.guard.startswith(Kind.PYTEST.value) else [])]) for name, gap in ZNANE_LUKI_STRAZNIKA.items()],
+)
 def test_znane_luki_straznika_przechodza_przez_dowod(tmp_path: Path, name: str) -> None:
     gap = ZNANE_LUKI_STRAZNIKA[name]
-    head = {path: _with_trace(text, str(tmp_path / "slad.txt")) for path, text in gap.head.items()}
+    trace = tmp_path / "slad.txt"
+    if gap.found:
+        trace.write_text("0")
+    head = {path: _with_trace(text, str(trace)) for path, text in gap.head.items()}
     pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **head})
 
-    outcome = pull.prove(gap.guard, scopes=SCOPE, before_test_proof=gap.before_test_proof, mutation=gap.mutation)
+    try:
+        outcome = pull.prove(gap.guard, scopes=SCOPE, before_test_proof=gap.before_test_proof, mutation=gap.mutation and _with_trace(gap.mutation, str(trace)))
+    finally:
+        if gap.segment:
+            _remove_segment(str(trace))
 
     assert outcome.detected, f"dowód odmawia już luki „{name}”: usuń ją ze ZNANE_LUKI_STRAZNIKA ({outcome.line})"
 
@@ -645,7 +823,10 @@ SOURCES = {
     f"{name}: {path}": text
     for name, head in [
         *((name, sample.head) for name, sample in PROBKI_TESTU.items()),
-        ("slad-poza-srodowiskiem", {"tests/test_g.py": ONCE}),
+        *((name, {"tests/test_g.py": trace.test}) for name, trace in SONDY_SLADU.items()),
+        ("pamiec-uslugi-systemu", {"tests/test_g.py": ONCE_SYSV}),
+        ("wtyczka-mypy", {"wtyczka.py": PLUGIN}),
+        ("zbieranie-po-mutacji", {"tests/test_g.py": COLLECTED}),
         *((name, gap.head) for name, gap in ZNANE_LUKI_STRAZNIKA.items()),
     ]
     for path, text in head.items()

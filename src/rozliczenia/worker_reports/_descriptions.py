@@ -26,7 +26,7 @@ def faulty(
 
     if verdict is not Verdict.YES:
         return None
-    read = legend.read(activities)
+    read = legend.read(activities, fault=False)
     return FaultyDescription(worker, day, number, read.problems) if isinstance(read, DescriptionError) else None
 
 
@@ -51,4 +51,4 @@ def codes(legend: ActivityLegend, successful: str | None, activities: str | None
 
     if normalize_text(successful) != Verdict.YES.value:
         return None
-    return legend.read(activities or "").spelled
+    return legend.read(activities or "", fault=False).spelled

@@ -7,13 +7,14 @@ dopiero przez ``dump`` i ``parse``; legendę, którą liczą procesy, daje z dob
 Historii to ``kody.<id>``, a wartość to wpis pliku jako JSON, z którego cofnięcie odtwarza kod.
 
 Legendę taty Wydanie zmienia tylko jawną zmianą (furtka ADR 0032): wpis ``ReleaseChange(<id>, LEGEND, set_codes(...))``
-w ``release_changes.RELEASE_CHANGES``. Plik ``legenda_czynnosci_domyslna.yaml`` po pierwszym Wydaniu z legendą się nie
+w ``release_changes.RELEASE_CHANGES``, a jedno pole kodu taty ``not_counted_in_fault(<id>)``. Plik ``legenda_czynnosci_domyslna.yaml`` po pierwszym Wydaniu z legendą się nie
 zmienia: tata bez własnego pliku liczy nim, więc jego zmiana weszłaby bez wiersza Historii i bez „Cofnij”.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import replace
 from functools import lru_cache
 from typing import Final
 
@@ -115,6 +116,15 @@ def set_codes(*codes: ActivityCode) -> Callable[[ReleaseInputs[Codes]], Proposal
         if not isinstance(inputs.current, Good):
             return Later("plik Legendy czynności ma złą treść albo nie da się go teraz przeczytać")
         return Edit(lambda current: _with_codes(current, codes))
+
+    return propose
+
+
+def not_counted_in_fault(code_id: str) -> Callable[[ReleaseInputs[Codes]], Proposal[Codes]]:
+    def propose(inputs: ReleaseInputs[Codes]) -> Proposal[Codes]:
+        if not isinstance(inputs.current, Good):
+            return Later("plik Legendy czynności ma złą treść albo nie da się go teraz przeczytać")
+        return Edit(lambda current: tuple(replace(code, counts_in_fault=False) if code.id == code_id else code for code in current))
 
     return propose
 

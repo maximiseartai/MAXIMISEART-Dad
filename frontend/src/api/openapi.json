@@ -3990,6 +3990,10 @@
             },
             "type": "array",
             "title": "Fills"
+          },
+          "counts_in_fault": {
+            "type": "boolean",
+            "title": "Counts In Fault"
           }
         },
         "additionalProperties": false,
@@ -3999,10 +4003,11 @@
           "column",
           "value",
           "amount",
-          "fills"
+          "fills",
+          "counts_in_fault"
         ],
         "title": "ActivityCodeForm",
-        "description": "Kod czynności w formularzu: zapisy (``#`` w miejscu liczby), kolumna Ilości usług (``None``: bez kolumny) z wartością\nza jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty) i kolory wybranych kolumn. Bez kolumny wartość się nie\nliczy."
+        "description": "Kod czynności w formularzu: zapisy (``#`` w miejscu liczby), kolumna Ilości usług (``None``: bez kolumny) z wartością\nza jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty), kolory wybranych kolumn i to, czy kod liczy się w usterce\n(``counts_in_fault``). Bez kolumny wartość się nie liczy."
       },
       "ActivityCodeSentence": {
         "properties": {
