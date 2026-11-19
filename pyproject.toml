@@ -90,7 +90,7 @@ show_error_codes = true
 # Ponad strict: match bez przypadku dla każdego wariantu, warunek zawsze prawdziwy i ignore bez kodu błędu.
 enable_error_code = ["exhaustive-match", "truthy-bool", "truthy-iterable", "ignore-without-code"]
 
-# Kod martwy dla mypy w src/: gałąź isinstance(x, UnreadableFile) przy wartości bez unii (literał w miejscu pliku
+# Kod martwy dla mypy w src/: gałąź isinstance(x, Unreadable) przy wartości bez unii (literał w miejscu pliku
 # Ustawień bez odczytu u wołającego, który odmawia, #2029 r1 W1). Poza src/ zostaje wyłączony: testy, narzędzia i skrypty
 # skilli mają 37 miejsc z gałęzią innej platformy po wczesnym return i yield po raise.
 [[tool.mypy.overrides]]

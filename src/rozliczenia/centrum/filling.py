@@ -41,7 +41,8 @@ from rozliczenia.period_folder import PeriodFolder
 from rozliczenia.quantities_to_fill import TEXT_COLUMNS, KindToFill, fill_hint, quantities_to_fill
 from rozliczenia.tool_entry import FillKind
 from rozliczenia.quantity_engine import QuantityRules
-from rozliczenia.centrum.settings.owner import CentrumSettings, UnreadableFile
+from rozliczenia.centrum.settings.files import Unreadable
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.text import plural
 from rozliczenia.workbook_files import WorkbookError, excel_lock_file
@@ -138,7 +139,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
         folder = requested_folder(settings, token)
         snapshot = settings.snapshot()
         rules, legend = snapshot.quantity_rules_or_unreadable, snapshot.activity_legend_or_unreadable
-        if isinstance(rules, UnreadableFile) or isinstance(legend, UnreadableFile):
+        if isinstance(rules, Unreadable) or isinstance(legend, Unreadable):
             return filling_contract.WithoutQuantityUnread(state="unread")
         return _without_quantity(folder, filling.files, rules, legend)
 

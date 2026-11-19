@@ -140,7 +140,7 @@ class History:
 
         data = settings_bytes(self._path)
         if isinstance(data, OSError):
-            return Unreadable()
+            return Unreadable(self._path.name)
         if data is None:
             return HistoryRead(rows=(), skipped=0)
         lines = data.splitlines()
