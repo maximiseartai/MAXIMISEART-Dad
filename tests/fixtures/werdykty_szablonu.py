@@ -173,6 +173,8 @@ ROOTS_E2E = (
     "Korzeń: R-BEZ-TESTU - kod z listy.",
     "Korzeń: NOWY R-BEZ-TESTU - kod z listy.",
 )
+OTHER_WHERE = "Gdzie: kod/drugi.py:3"
+OTHER_ROOT = "Korzeń: R-DRUGA-DROGA - druga droga do tego samego."
 WERDYKTY = {
     "sprawdzone": _text("## Sprawdzone", "- diff"),
     "drobne": _text("### D1. Nazwa.", "Gdzie: kod/inne.py:1", "## Sprawdzone", "- diff"),
@@ -194,6 +196,11 @@ WERDYKTY = {
         "### Mutacja W1 r1", "```", '[{"nazwa": "zakazane z FAIL", "zmiany": [["kod/inne.py", "obiekt.dozwolone()", "obiekt.zakazane()"]]}]', "```", "## Sprawdzone", "- diff"
     ),
     **{f"korzen-{index}": _text(*_MAJOR[:3], root, _MAJOR[4], "## Sprawdzone", "- diff") for index, root in enumerate(ROOTS_E2E)},
+    "wazne-ten-sam-plik": _text(*_MAJOR[:3], OTHER_ROOT, _MAJOR[4], "## Sprawdzone", "- diff"),
+    "wazne-ten-sam-kod": _text(_MAJOR[0], OTHER_WHERE, *_MAJOR[2:], "## Sprawdzone", "- diff"),
+    "wazne-gdzie-indziej": _text(_MAJOR[0], OTHER_WHERE, _MAJOR[2], OTHER_ROOT, _MAJOR[4], "## Sprawdzone", "- diff"),
+    "wazne-dwa-miejsca": _text(_MAJOR[0], f"{OTHER_WHERE}, kod/inne.py:9", _MAJOR[2], OTHER_ROOT, _MAJOR[4], "## Sprawdzone", "- diff"),
+    "wazne-gdzie-indziej-drobne-tu": _text(_MAJOR[0], OTHER_WHERE, _MAJOR[2], OTHER_ROOT, _MAJOR[4], "### D1. Nazwa.", "Gdzie: kod/inne.py:1", "## Sprawdzone", "- diff"),
 }
 
 # Treść werdyktu ponownego przeglądu tego samego HEAD i czy ma punkt „Ponowny przegląd: <zdanie>” w „## Sprawdzone”
