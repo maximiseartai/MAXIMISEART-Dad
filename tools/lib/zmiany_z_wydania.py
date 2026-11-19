@@ -116,18 +116,30 @@ def _systemowa(nazwa: str) -> bool:
     return len(nazwa) > 2 and nazwa.startswith("_") and nazwa.endswith("_")
 
 
+def _importowana_nazwa(wezel: ast.Import | ast.ImportFrom, alias: ast.alias) -> str:
+    if isinstance(wezel, ast.ImportFrom):
+        return alias.name
+    return alias.name.rpartition(".")[2] if alias.asname else alias.name.partition(".")[0]
+
+
 def _importy_pod_inna_nazwa(drzewo: ast.Module) -> dict[str, str]:
-    importy: dict[str, str] = {}
+    importy: list[ast.Import | ast.ImportFrom] = []
     czekajace: list[ast.AST] = list(drzewo.body)
     while czekajace:
         wezel = czekajace.pop()
         if isinstance(wezel, (ast.Import, ast.ImportFrom)):
-            for alias in wezel.names:
-                if alias.asname is not None and alias.asname != alias.name:
-                    importy[alias.asname] = f"{alias.name} as {alias.asname}"
+            importy.append(wezel)
         elif not isinstance(wezel, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             czekajace += ast.iter_child_nodes(wezel)
-    return importy
+    etykiety: dict[str, list[str]] = {}
+    for wezel in sorted(importy, key=lambda wezel: (wezel.lineno, wezel.col_offset)):
+        for alias in wezel.names:
+            importowana = _importowana_nazwa(wezel, alias)
+            wiazana = alias.asname or importowana
+            etykieta = wiazana if importowana == wiazana else f"{importowana} as {wiazana}"
+            if etykieta not in etykiety.setdefault(wiazana, []):
+                etykiety[wiazana].append(etykieta)
+    return {wiazana: ", ".join(nazwy) for wiazana, nazwy in etykiety.items() if nazwy != [wiazana]}
 
 
 def _nazwy_wartosci(przestrzen: Mapping[str, object], importy: Mapping[str, str]) -> dict[int, list[str]]:
@@ -145,7 +157,8 @@ class _Odcisk:
         przestrzen = vars(sys.modules[modul]) if modul in sys.modules else {}
         plik = przestrzen.get("__file__")
         importy = _importy_pod_inna_nazwa(self._drzewo_pliku(plik, modul)) if isinstance(plik, str) else {}
-        self._nazwy = _nazwy_wartosci(vars(builtins), {}) | _nazwy_wartosci(przestrzen, importy)
+        wbudowane = {id(wartosc): [nazwa] for nazwa, wartosc in vars(builtins).items() if getattr(wartosc, "__name__", None) == nazwa}
+        self._nazwy = wbudowane | _nazwy_wartosci(przestrzen, importy)
 
     def wartosc(self, wartosc: object) -> object:
         if wartosc is None or type(wartosc) in _STALE:

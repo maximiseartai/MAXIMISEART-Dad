@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import builtins
 from collections.abc import Mapping
-import importlib.util
+import importlib
 from pathlib import Path
 import re
 import subprocess
@@ -97,6 +97,14 @@ def _po(przed: Mapping[str, str], **zmiany: tuple[str, str]) -> dict[str, str]:
 
 def _przypadek(przed: Mapping[str, str], ten_sam: bool, opis: str, **zmiany: tuple[str, str]) -> object:
     return pytest.param(dict(przed), _po(przed, **zmiany), ten_sam, id=opis)
+
+
+def _przeniesiony(importy: str, uzycie: str) -> object:
+    def moduly(pakiet: str) -> dict[str, str]:
+        kod = f"{importy.format(pakiet)}\n\n\ndef propose(inputs):\n    return {uzycie}\n"
+        return {"pk": "", f"pk.{pakiet}": "", f"pk.{pakiet}.pomocnik": "LIMIT = 1\n\n\ndef d(x):\n    return x\n", "pk.zmiana": _zmiana(kod)}
+
+    return pytest.param(moduly("stary"), moduly("nowy"), True, id=f"moduł przeniesiony z importem przepisanym w module propose: {importy.format('stary')}")
 
 
 PRZYPADKI_ODCISKU: Final = [
@@ -302,6 +310,18 @@ PRZYPADKI_ODCISKU: Final = [
         zmiana=("from pomocnik import d\n\n_KODY = (d,)", "from pomocnik import d, e\n\n_KODY = (e,)"),
     ),
     _przypadek(
+        {"stary": "", "stary.pomocnik": "LIMIT = 1\n", "stary.inny": "LIMIT = 1\n", "zmiana": _zmiana("import stary.pomocnik as pomocnik\n\n\ndef propose(inputs):\n    return pomocnik.LIMIT\n")},
+        False,
+        "inny moduł pakietu importowany kropką pod nazwą z tagu",
+        zmiana=("stary.pomocnik", "stary.inny"),
+    ),
+    _przypadek(
+        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import d as f\n\n\ndef propose(inputs):\n    return f(inputs)\n")},
+        False,
+        "drugi import pod nazwą z tagu w bloku if modułu",
+        zmiana=("from pomocnik import d as f\n", "from pomocnik import d as f\n\nif True:\n    from pomocnik import e as f\n"),
+    ),
+    _przypadek(
         {"zmiana": _zmiana("def propose(inputs):\n    return (1)\n")},
         True,
         "docstring, komentarz i formatowanie",
@@ -373,6 +393,21 @@ PRZYPADKI_ODCISKU: Final = [
         pomocnik=("LIMIT = 1\n", ""),
         pakiet=("import pomocnik\n", "import komunikaty as pomocnik\n"),
     ),
+    _przypadek(
+        {"windows": "", "zmiana": _zmiana("_BLEDY = (OSError, ValueError)\n\n\ndef propose(inputs):\n    try:\n        return 1\n    except _BLEDY:\n        return 0\n")},
+        True,
+        "typ wbudowany w danych modułu propose, któremu builtins dają drugą nazwę jak WindowsError na Windows",
+        windows=("", "import builtins\n\nbuiltins.WindowsError = OSError\n"),
+    ),
+    _przeniesiony("import pk.{}.pomocnik as pomocnik", "pomocnik.LIMIT"),
+    _przeniesiony("import pk.{}.pomocnik as komunikaty", "komunikaty.LIMIT"),
+    _przeniesiony("import pk.{}.pomocnik", "pk"),
+    _przeniesiony("from pk.{} import pomocnik", "pomocnik.LIMIT"),
+    _przeniesiony("from pk.{} import pomocnik as komunikaty", "komunikaty.LIMIT"),
+    _przeniesiony("from pk.{}.pomocnik import d", "d(inputs)"),
+    _przeniesiony("from pk.{}.pomocnik import d as f", "f(inputs)"),
+    _przeniesiony("from .{} import pomocnik as komunikaty", "komunikaty.LIMIT"),
+    _przeniesiony("from .{}.pomocnik import d as f", "f(inputs)"),
 ]
 
 ROZNICE_ODCISKU: Final = [
@@ -475,19 +510,22 @@ ZNANE_LUKI_ODCISKU: Final = {
 
 def _wpis_zmiany(katalog: Path, moduly: Mapping[str, str]) -> Wpis:
     katalog.mkdir()
+    for nazwa, kod in moduly.items():
+        plik = katalog.joinpath(*nazwa.split("."), "__init__.py") if any(inna.startswith(f"{nazwa}.") for inna in moduly) else katalog.joinpath(*nazwa.split(".")).with_suffix(".py")
+        plik.parent.mkdir(parents=True, exist_ok=True)
+        plik.write_text(_NAGLOWEK + kod if nazwa.rpartition(".")[2] == "zmiana" else kod, encoding="utf-8")
+    korzenie = {nazwa.partition(".")[0] for nazwa in moduly}
+    assert not korzenie & {nazwa.partition(".")[0] for nazwa in sys.modules}, korzenie
     wbudowane = set(vars(builtins))
+    sys.path.insert(0, str(katalog))
     try:
-        for nazwa, kod in moduly.items():
-            plik = katalog / f"{nazwa}.py"
-            plik.write_text(_NAGLOWEK + kod if nazwa == "zmiana" else kod, encoding="utf-8")
-            spec = importlib.util.spec_from_file_location(nazwa, plik)
-            assert spec is not None and spec.loader is not None, plik
-            sys.modules[nazwa] = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(sys.modules[nazwa])
-        return wpisy([sys.modules["zmiana"].ZMIANA])["2026-12-proba"]
-    finally:
         for nazwa in moduly:
-            sys.modules.pop(nazwa, None)
+            importlib.import_module(nazwa)
+        return wpisy([next(sys.modules[nazwa].ZMIANA for nazwa in moduly if nazwa.rpartition(".")[2] == "zmiana")])["2026-12-proba"]
+    finally:
+        sys.path.remove(str(katalog))
+        for nazwa in [nazwa for nazwa in sys.modules if nazwa.partition(".")[0] in korzenie]:
+            del sys.modules[nazwa]
         for nazwa in set(vars(builtins)) - wbudowane:
             delattr(builtins, nazwa)
 
