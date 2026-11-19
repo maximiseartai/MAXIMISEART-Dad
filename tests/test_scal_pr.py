@@ -9,7 +9,9 @@ i zapisuje wywołania ``gh pr merge`` zamiast scalać.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
+import itertools
 import json
 from pathlib import Path
 import re
@@ -23,8 +25,10 @@ import pytest
 import yaml
 
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
+from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
+from tests.fixtures.potomne import hold_lock, wait_for
 
 import bramka_straznika
 import czasy_ci
@@ -35,6 +39,7 @@ import naprawia
 import ponowny_przeglad
 import reguly_bazy
 import rejestr_korzeni
+import repo
 import scal_pr
 import stan_pr
 import szablon_werdyktu
@@ -209,12 +214,19 @@ def _check_run(
     name: str = "Required CI status",
     url: str = URL,
     started: str | None = None,
+    completed: str | None = None,
 ) -> dict[str, str | None]:
     check = {"__typename": "CheckRun", "name": name, "status": status, "conclusion": conclusion, "workflowName": workflow, "detailsUrl": url}
-    return check if started is None else {**check, "startedAt": started}
+    times = {"startedAt": started, "completedAt": completed}
+    return {**check, **{field: moment for field, moment in times.items() if moment is not None}}
+
+
+def _gate(state: str) -> dict[str, str]:
+    return {"__typename": "StatusContext", "context": "Werdykt i bramka", "state": state, "startedAt": "2026-10-24T02:00:00Z", "targetUrl": "https://github.com/o/r/actions/runs/77"}
 
 
 GREEN = [_check_run("COMPLETED", "SUCCESS", name="Ruff"), _check_run("COMPLETED", "SUCCESS")]
+GATE_PASSED = _gate("SUCCESS")
 COMMIT_STATUS = {"__typename": "StatusContext", "context": "Required CI status", "state": "SUCCESS"}
 NOT_ACTIONS = "CI: brak „Required CI status” z GitHub Actions na HEAD"
 PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)"
@@ -244,7 +256,7 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
         "isCrossRepository": False,
         "baseRefName": "main",
         "headRefOid": head,
-        "statusCheckRollup": GREEN,
+        "statusCheckRollup": [*GREEN, GATE_PASSED],
         "comments": [],
         "reviews": [],
         "mergeCommit": None,
@@ -475,6 +487,7 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [main, head]
     assert github.merges() == [["pr", "merge", "1", "--merge", "--match-head-commit", head]]
     assert (github.checkout / "posprzatane").exists()
+    assert "SCAL KOLEJKA" not in merged.stdout
 
 
 # Pełne SHA w tabelach na interfejsach: HEAD PR i starszy commit (litery, żeby ``HEAD.upper()`` był inny niż HEAD).
@@ -771,6 +784,76 @@ def test_gotowosc_ci_liczy_tylko_najnowszy_run_ci_na_head_a_nie_czeka_na_mutacje
     assert stan_pr.ci_problem(_pull(statusCheckRollup=rollup)) == (None if reason is None else f"CI: {reason}")
 
 
+CI_FINISHED = [_check_run("COMPLETED", "SUCCESS", name="Ruff", completed="2026-10-24T04:30:00Z"), _check_run("COMPLETED", "SUCCESS", completed="2026-10-24T04:31:00Z")]
+GATE_QUEUED = "Werdykt i bramka w kolejce{since}; watch_pull_request obudzi wątek"
+
+
+@pytest.mark.parametrize(
+    ("rollup", "comment", "queued"),
+    [
+        ([*CI_FINISHED, _gate("SUCCESS")], "2026-10-24T03:00:00Z", None),
+        ([*CI_FINISHED, _gate("FAILURE")], "2026-10-24T03:00:00Z", None),
+        ([*CI_FINISHED, _gate("ERROR")], "2026-10-24T03:00:00Z", None),
+        ([*CI_FINISHED, _gate("PENDING")], "2026-10-24T03:00:00Z", " od 04:31 UTC"),
+        ([*CI_FINISHED, _gate("EXPECTED")], "2026-10-24T03:00:00Z", " od 04:31 UTC"),
+        (CI_FINISHED, "2026-10-24T05:07:00Z", " od 05:07 UTC"),
+        (GREEN, None, ""),
+    ],
+    ids=[
+        "status-success-nie-czeka",
+        "status-failure-wymaga-dzialania-nie-kolejki",
+        "status-error-wymaga-dzialania-nie-kolejki",
+        "status-pending-od-konca-runu-ci-po-werdykcie",
+        "status-oczekiwany-przez-ruleset",
+        "brak-statusu-od-komentarza-po-koncu-ci",
+        "brak-statusu-bez-czasu-zdarzenia",
+    ],
+)
+def test_bramka_w_kolejce_to_status_werdykt_i_bramka_pending_albo_brak_od_najnowszego_zdarzenia_ktore_ja_odswieza(
+    rollup: list[dict[str, str | None]], comment: str | None, queued: str | None
+) -> None:
+    comments = [] if comment is None else [_verdict("comment", PASS_HEAD, when=comment)]
+    review = _verdict("COMMENTED", "Później.", when="2026-10-24T06:00:00Z")
+
+    found = stan_pr.gate_queued(_pull(statusCheckRollup=rollup, comments=comments, reviews=[review]))
+
+    assert found == (None if queued is None else GATE_QUEUED.format(since=queued))
+    assert isinstance(found, stan_pr.Waiting) or found is None
+
+
+def test_pr_gotowy_z_bramka_w_kolejce_czeka_bez_ruffa_i_mypy_a_status_bramki_daje_success(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    github.update(1, statusCheckRollup=[*CI_FINISHED, _gate("PENDING")])
+
+    merged = github.run("1")
+    checked = github.run("1", "--bez-merge")
+    status = _status(github, "1", "--status")
+
+    waiting = f"SCAL CZEKA | #1 {head[:7]} | {GATE_QUEUED.format(since=' od 04:31 UTC')}"
+    for run in (merged, checked):
+        assert run.returncode == 1, run.stdout + run.stderr
+        assert _last_line(run) == waiting
+        assert f"== #1 {head[:7]}" not in run.stdout
+    assert github.merges() == []
+    assert _last_line(status) == f"STATUS success | #1 {head[:7]} | warunki 1–6 tools/scal_pr.py spełnione", status.stdout
+
+
+def test_pr_do_galezi_innej_niz_main_scala_sie_bez_statusu_werdykt_i_bramka(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    git(github.checkout, "push", "--quiet", "origin", "main:refs/heads/wydanie")
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    github.update(1, baseRefName="wydanie", statusCheckRollup=CI_FINISHED)
+
+    merged = github.run("1")
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert _last_line(merged).startswith(f"SCAL OK | #1 {head[:7]} | scalony do wydanie jako "), merged.stdout
+    assert len(github.merges()) == 1
+
+
 @pytest.mark.parametrize(
     ("state", "draft", "fork", "reason"),
     [
@@ -1058,22 +1141,140 @@ def test_pr_na_niezmienionym_main_jest_bez_testu_scalenia_takze_gdy_zmienia_regu
     assert _last_line(answered) == f"SCAL OK | #1 {head[:7]} | gotowy do merge'a z main {main[:7]}, bez merge'a (--bez-merge)"
 
 
-def test_main_przesuniety_w_trakcie_sprawdzania_zatrzymuje_merge(tmp_path: Path) -> None:
+MOVES_MAIN = """\
+import subprocess
+
+chain = {chain!r}
+listed = subprocess.run(["git", "-C", {checkout!r}, "ls-remote", "origin", "refs/heads/main"], capture_output=True, text=True, check=True)
+main = listed.stdout.split()[0]
+if main in chain[:-1]:
+    subprocess.run(["git", "-C", {checkout!r}, "push", "--quiet", "origin", chain[chain.index(main) + 1] + ":refs/heads/main"], check=True)
+print("CI LOKALNIE OK")
+"""
+
+
+@pytest.mark.parametrize(
+    ("moved_file", "moves"),
+    [("kod/nowe.py", 1), ("kod/inne.py", 1), ("kod/nowe.py", scal_pr.MOVED_RETRIES + 1)],
+    ids=["nowe-commity-main-poza-plikami-pr-ponawia-i-scala", "nowe-commity-main-w-pliku-pr-odmawia", "main-rusza-sie-w-kazdym-sprawdzeniu-odmawia-po-limicie"],
+)
+def test_main_przesuniety_w_trakcie_sprawdzania_daje_ponowienie_tylko_gdy_nowe_commity_nie_zmieniaja_plikow_pr(
+    tmp_path: Path, moved_file: str, moves: int
+) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
-    moved = github.commit_on(github.start, {"kod/nowe.py": "NOWE: int = 1\n"}, "main w trakcie")
-    pushes_main = (
-        "import subprocess\n\n"
-        f"subprocess.run(['git', '-C', {str(github.checkout)!r}, 'push', '--quiet', 'origin', '{moved}:refs/heads/main'], check=True)\n"
-        "print('CI LOKALNIE OK')\n"
-    )
-    head = github.open_pull(1, {"tools/ci_lokalnie.py": pushes_main})
+    chain = [github.start]
+    for index in range(moves):
+        chain.append(github.commit_on(chain[-1], {moved_file: f"WARTOSC: int = {index}\n"}, f"main w trakcie {index}"))
+    head = github.open_pull(1, {"tools/ci_lokalnie.py": MOVES_MAIN.format(chain=chain, checkout=str(github.checkout)), "kod/inne.py": "INNE: int = 1\n"})
     github.comment(1, PASS.format(head=head))
 
     answered = github.run("1")
 
-    assert answered.returncode == 1, answered.stdout + answered.stderr
-    assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | main zmienił się w trakcie sprawdzania, uruchom ponownie"
+    retried = [line for line in answered.stdout.splitlines() if line.startswith("SCAL PONÓW")]
+    change = "main zmienił się w trakcie sprawdzania"
+    if moved_file == "kod/inne.py":
+        assert answered.returncode == 1, answered.stdout + answered.stderr
+        assert _last_line(answered) == (
+            f"SCAL ODMOWA | #1 {head[:7]} | {change} ({chain[0][:7]} → {chain[1][:7]}), a nowe commity zmieniają pliki PR: kod/inne.py;"
+            " przejrzyj ich zmiany i uruchom ponownie"
+        )
+        assert retried == []
+        assert github.merges() == []
+        return
+    assert retried == [
+        f"SCAL PONÓW | #1 {head[:7]} | {change} ({old[:7]} → {new[:7]}), a nowe commity nie zmieniają plików PR: sprawdzam od nowa"
+        for old, new in itertools.pairwise(chain)
+    ], answered.stdout
+    if moves > scal_pr.MOVED_RETRIES:
+        assert answered.returncode == 1, answered.stdout + answered.stderr
+        assert _last_line(answered) == f"SCAL ODMOWA | #1 | baza zmieniła się w trakcie każdego z {scal_pr.MOVED_RETRIES + 1} sprawdzeń, uruchom ponownie"
+        assert github.merges() == []
+        return
+    merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | scalony do main jako {merge_commit[:7]} (baza {chain[-1][:7]})"), answered.stdout
+    assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [chain[-1], head]
+
+
+@pytest.mark.parametrize("announced", [False, True], ids=["rodzic-sprzed-kolejki-bez-zapowiedzi", "rodzic-zapowiada-ponawianie"])
+def test_kopia_bazy_zapowiada_ponowienie_przy_ruchu_main_tylko_rodzicowi_ktory_ponawia(tmp_path: Path, announced: bool) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    moved = github.commit_on(github.start, {"kod/nowe.py": "NOWE: int = 1\n"}, "main w trakcie")
+    chain = [github.start, moved]
+    head = github.open_pull(1, {"tools/ci_lokalnie.py": MOVES_MAIN.format(chain=chain, checkout=str(github.checkout)), "kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    parent = {scal_pr.FROM_BASE_COPY: "1", **({scal_pr.RETRYING_PARENT: "1"} if announced else {})}
+
+    answered = _run_from(github, github.checkout, "1", environment=parent)
+
+    change = f"main zmienił się w trakcie sprawdzania ({github.start[:7]} → {moved[:7]}), a nowe commity nie zmieniają plików PR"
+    if announced:
+        assert answered.returncode == scal_pr.BASE_MOVED_EXIT, answered.stdout + answered.stderr
+        assert _last_line(answered) == f"SCAL PONÓW | #1 {head[:7]} | {change}: sprawdzam od nowa"
+    else:
+        assert answered.returncode == 1, answered.stdout + answered.stderr
+        assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {change}: uruchom ponownie"
     assert github.merges() == []
+
+
+@pytest.mark.parametrize(
+    ("arguments", "copy", "done"),
+    [(("1",), True, "scalony do main jako "), (("1", "--bez-merge"), False, "gotowy do merge'a z main ")],
+    ids=["kopia-bazy-rodzica-ktory-trzyma-blokade", "bez-merge-niczego-nie-scala"],
+)
+def test_kopia_bazy_i_sprawdzenie_bez_merge_a_nie_czekaja_na_blokade_merge_a(tmp_path: Path, arguments: tuple[str, ...], copy: bool, done: str) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    parent = {scal_pr.FROM_BASE_COPY: "1", scal_pr.RETRYING_PARENT: "1"} if copy else {}
+    lock = hold_lock(repo.common_dir(github.checkout) / scal_pr.MERGE_LOCK)
+    try:
+        answered = subprocess.run(
+            [sys.executable, str(github.checkout / "tools" / "scal_pr.py"), *arguments],
+            cwd=github.checkout,
+            env={**github.environment(), **parent},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+        )
+    finally:
+        lock.close()
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert "SCAL KOLEJKA" not in answered.stdout
+    assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | {done}"), answered.stdout
+
+
+def test_merge_czeka_w_kolejce_na_blokade_innego_scal_pr_i_sprawdza_baze_pobrana_po_niej(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    output = tmp_path / "wyjscie.txt"
+    lock = hold_lock(repo.common_dir(github.checkout) / scal_pr.MERGE_LOCK)
+    with output.open("w", encoding="utf-8") as written:
+        merging = subprocess.Popen(github.command("1"), cwd=github.checkout, env=github.environment(), stdout=written, stderr=subprocess.STDOUT)
+    try:
+        queued = wait_for(lambda: "SCAL KOLEJKA" in output.read_text(encoding="utf-8"), 30)
+        waiting = merging.poll() is None
+        merged_while_queued = github.merges()
+        moved = github.push_main({"kod/nowe.py": "NOWE: int = 1\n"})
+    finally:
+        lock.close()
+        try:
+            merging.wait(timeout=120)
+        finally:
+            merging.kill()
+            merging.wait()
+    printed = output.read_text(encoding="utf-8")
+
+    assert queued and waiting and merged_while_queued == [], printed
+    assert printed.splitlines()[0] == "SCAL KOLEJKA | #1 | inny tools/scal_pr.py z tego repozytorium scala teraz: czekam, aż skończy"
+    assert merging.returncode == 0, printed
+    assert "SCAL PONÓW" not in printed
+    assert printed.rstrip().rpartition("\n")[2].startswith(f"SCAL OK | #1 {head[:7]} | scalony do main jako "), printed
+    assert f"(baza {moved[:7]})" in printed.rstrip().rpartition("\n")[2]
 
 
 def test_baza_przesunieta_z_innego_klonu_przed_sprawdzeniem_jest_baza_scalenia(tmp_path: Path) -> None:
@@ -2089,11 +2290,79 @@ def test_po_trzeciej_rundzie_z_fail_pr_nie_dostaje_kolejnej_rundy_bez_zmiany_pod
     assert limit_rund.problem(_written(*verdicts), deployed) == reason
 
 
+def _repeat_reason(place: str, *failed: str) -> str:
+    commits = ", ".join(sha[:7] for sha in failed)
+    return (
+        f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a ich Ważne trafiają w to samo miejsce"
+        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, „Kolejne rundy”): zmień"
+        " podejście w #1 (atak na przesłankę, granica z mechanizmu albo usunięcie z PR części, której przegląd nie"
+        " przyjął) i opisz je komentarzem PR z pierwszą linią „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie"
+        " dostaje żadnej"
+    )
+
+
+def _placed(*verdicts: tuple[str, str]) -> stan_pr.Pull:
+    written = [CHANGED if verdict == CHANGED else ("comment", f"{FAIL_WITH.format(commit=verdict[1])}{werdykty_szablonu.WERDYKTY[verdict[0]]}") for verdict in verdicts]
+    pull = _written(*written)
+    html = {**werdykty_szablonu.rendered(), "": ""}
+    rendered = [{**item, "bodyHTML": body_html(str(item["body"]), html)} if str(item["body"]).startswith("WERDYKT") else item for item in pull.verdicts]
+    return replace(pull, verdicts=tuple(rendered))
+
+
+FAIL_WITH = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n"
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "reason"),
+    [
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND)], _repeat_reason("kod/inne.py, R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-ten-sam-plik", SECOND_ROUND)], _repeat_reason("kod/inne.py", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-ten-sam-kod", SECOND_ROUND)], _repeat_reason("R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-dwa-miejsca", SECOND_ROUND)], _repeat_reason("kod/inne.py", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne-gdzie-indziej", FIRST_ROUND), ("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND)], _repeat_reason("kod/inne.py, R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-gdzie-indziej", SECOND_ROUND)], None),
+        ([("wazne", FIRST_ROUND), ("wazne-gdzie-indziej-drobne-tu", SECOND_ROUND)], None),
+        ([("wazne", FIRST_ROUND)], None),
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND), CHANGED], None),
+        ([("wazne", FIRST_ROUND), CHANGED, ("wazne", SECOND_ROUND)], _repeat_reason("kod/inne.py, R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND), CHANGED, ("wazne-gdzie-indziej", THIRD_ROUND)], None),
+        ([("wazne", FIRST_ROUND), ("wazne-gdzie-indziej", SECOND_ROUND), ("wazne-gdzie-indziej", THIRD_ROUND)], _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND), ("wazne-gdzie-indziej", THIRD_ROUND)], _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+    ],
+    ids=[
+        "ten-sam-plik-i-kod",
+        "ten-sam-plik-inny-kod",
+        "ten-sam-kod-inny-plik",
+        "plik-na-drugim-miejscu-pola-gdzie",
+        "miejsce-z-drugiego-werdyktu-tej-samej-rundy",
+        "inny-plik-i-kod",
+        "drobne-w-tym-samym-pliku-sie-nie-liczy",
+        "jedna-runda",
+        "zmiana-podejscia-po-drugiej-rundzie",
+        "zmiana-podejscia-przed-druga-runda-nie-liczy-sie",
+        "zmiana-podejscia-po-drugiej-rundzie-wystarcza-po-trzeciej",
+        "rundy-2-i-3-w-tym-samym-miejscu-to-limit-trzech",
+        "po-trzeciej-rundzie-przyczyna-limitu-trzech",
+    ],
+)
+def test_po_drugiej_rundzie_z_fail_w_tym_samym_pliku_albo_kodzie_korzenia_pr_nie_dostaje_kolejnej_bez_zmiany_podejscia(
+    verdicts: list[tuple[str, str]], reason: str | None
+) -> None:
+    assert limit_rund.problem(_placed(*verdicts), BEFORE_FIRST) == reason
+
+
+def test_werdykt_fail_bez_html_ktorego_github_nie_wyrenderowal_odmawia_rundy_z_przyczyna() -> None:
+    pull = _written(("comment", FAIL_WITH.format(commit=FIRST_ROUND) + werdykty_szablonu.WERDYKTY["wazne"]), ("comment", FAIL_WITH.format(commit=SECOND_ROUND) + werdykty_szablonu.WERDYKTY["wazne-gdzie-indziej"]))
+
+    assert (limit_rund.problem(pull, BEFORE_FIRST) or "").startswith("limit rund: GitHub nie wyrenderował werdyktu FAIL ("), limit_rund.problem(pull, BEFORE_FIRST)
+
+
 @pytest.mark.parametrize(
     ("rounds", "changes"),
-    [(2, ()), (3, ()), (3, (3,)), (6, (3, 6))],
+    [(2, ()), (2, (2,)), (3, ()), (3, (3,)), (6, (3, 6))],
     ids=[
-        "po-drugiej-rundzie-z-fail-kolejna-runda-sie-odbywa",
+        "po-drugiej-rundzie-z-fail-w-tym-samym-miejscu-kolejnej-nie-ma",
+        "po-zmianie-podejscia-po-drugiej-rundzie-runda-sie-odbywa",
         "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma",
         "po-zmianie-podejscia-w-tym-samym-pr-runda-sie-odbywa",
         "po-szostej-rundzie-z-fail-druga-zmiana-podejscia-nie-daje-rundy",
@@ -2118,7 +2387,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
             github.comment(1, CHANGED[1])
     path = tmp_path / f"runda-{rounds + 1}.md"
     path.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
-    refused = rounds >= 3 and (rounds, changes) != (3, (3,))
+    refused = not changes or rounds >= limit_rund.END
 
     reviewed = github.run("1", "--przeglad")
     answered = github.run("1", "--werdykt", str(path))
@@ -2127,7 +2396,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     checked = github.run("1", "--bez-merge")
 
-    reason = _limit_reason(*failed) if rounds == 3 else _final_reason(*failed)
+    reason = {2: _repeat_reason("kod/inne.py, R-BEZ-TESTU", *failed), 3: _limit_reason(*failed)}.get(rounds) or _final_reason(*failed)
     assert reviewed.returncode == int(refused), reviewed.stdout + reviewed.stderr
     assert answered.returncode == int(refused), answered.stdout + answered.stderr
     if refused:
@@ -3047,6 +3316,24 @@ def test_status_pr_niegotowego_ma_przyczyny_odmowy_bez_merge_a_oczekuje_tylko_gd
     described = description if len(description) <= limit else description[: limit - 1] + "…"
     assert _statuses(github) == [
         ["POST", f"repos/{{owner}}/{{repo}}/statuses/{head}", {"state": state, "context": "Werdykt i bramka", "description": described, "target_url": RUN_URL}]
+    ]
+
+
+def test_status_failure_z_oczekiwaniem_zaczyna_opis_od_przyczyny_ktora_wymaga_dzialania_autora(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=WRONG_BODY, statusCheckRollup=[_check_run("IN_PROGRESS", None, name="Ruff")])
+
+    refused = github.run("1", "--bez-merge")
+    answered = _status(github, "1", "--status")
+
+    body = "opis: brak „## Merge Danger” w kolejności wzoru .agents/skills/pr/SKILL.md"
+    reasons = f"{body}; CI: run CI 4077 jeszcze trwa; {NO_PASS.format(head=head)}"
+    assert _last_line(refused) == f"SCAL ODMOWA | #1 {head[:7]} | {reasons}", refused.stdout
+    assert _last_line(answered) == f"STATUS failure | #1 {head[:7]} | {reasons}", answered.stdout
+    limit = klient_github.OPIS_STATUSU_LIMIT
+    assert _statuses(github) == [
+        ["POST", f"repos/{{owner}}/{{repo}}/statuses/{head}", {"state": "failure", "context": "Werdykt i bramka", "description": reasons[: limit - 1] + "…", "target_url": RUN_URL}]
     ]
 
 

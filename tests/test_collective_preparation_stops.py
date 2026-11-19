@@ -180,6 +180,28 @@ def test_rejestr_without_required_header_stops_with_header_name(tmp_path: Path, 
     )
 
 
+def test_rejestr_z_dwoma_arkuszami_bez_kompletu_naglowkow_wskazuje_pierwszy_przy_rownym_braku(tmp_path: Path) -> None:
+    """Gdy żaden arkusz nie ma kompletu nagłówków, Komunikat wskazuje arkusz z najmniejszym brakiem, a przy równym
+    braku pierwszy w kolejności skoroszytu."""
+
+    fixture = make_preparation_fixture(tmp_path)
+    write_register(fixture.register_path, headers=tuple(header for header in REGISTER_HEADERS if header != "SKUTECZNE"))
+    workbook = load_workbook(fixture.register_path)
+    second = workbook.copy_worksheet(workbook["ZLECENIA"])
+    second.title = "ZLECENIA 2"
+    for cell in second[1]:
+        if cell.value == "ADRES":
+            cell.value = "SKUTECZNE"
+    workbook.save(fixture.register_path)
+
+    error = stop_preparation(fixture)
+
+    assert (error.message.code, error.message.where) == (
+        "BRAK_NAGLOWKA_REJESTRU",
+        "plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, arkusz ZLECENIA, wiersz 1",
+    )
+
+
 def test_rejestr_with_duplicated_required_header_stops_with_header_name(tmp_path: Path) -> None:
     fixture = make_preparation_fixture(tmp_path)
     write_register(fixture.register_path, headers=(*REGISTER_HEADERS, "WYKONAWCA "))

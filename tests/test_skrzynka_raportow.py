@@ -667,6 +667,18 @@ def test_mail_tylko_z_html_daje_tekst_z_linia_na_akapit_bez_stylow_i_skryptow() 
     assert mail.text == "40000001 tak wymiana routera\n40000002 nie brak klienta\n40000003 tak\nmontaż\nPozdrawiam\nJan"
 
 
+def test_mail_tylko_z_html_bez_znacznika_na_koncu_daje_cala_ostatnia_linie_takze_ze_znakiem_ampersand() -> None:
+    """Tekst po ostatnim znaczniku HTML z ``&`` bez średnika (``AT&T``) nie ginie z treści, choć parser HTML czeka z nim
+    na możliwy dalszy ciąg odwołania do znaku."""
+
+    raw = surowy(tresc="<p>40000001 tak wymiana routera</p>40000002 tak montaż AT&T", typ="text/html")
+
+    mail = mail_of(raw, datetime(2026, 11, 8, 18, 5, tzinfo=TATA))
+
+    assert mail is not None
+    assert mail.text == "40000001 tak wymiana routera\n40000002 tak montaż AT&T"
+
+
 def test_mail_z_tekstem_i_html_daje_tekst_z_czesci_text_plain() -> None:
     raw = (
         b"From: jan.testowy@przyklad.invalid\r\nSubject: Raport 08.11.2026\r\nMIME-Version: 1.0\r\n"
@@ -753,6 +765,25 @@ def test_zerwane_polaczenie_i_brak_sieci_daja_wynik_niedostepnej_skrzynki_z_sama
     assert ImapInbox(z_pliku(config), connect=no_network).mails_since(date(2026, 11, 8)) == InboxUnreachable("ConnectionRefusedError")
 
 
+def test_polaczenie_zerwane_przy_wylogowaniu_oddaje_przeczytane_maile_i_zamyka_gniazdo(tmp_path: Path) -> None:
+    """Gmail zamknął sesję przed ``LOGOUT``: maile są już przeczytane, więc odczyt je oddaje, a port zamyka swoje
+    gniazdo, zamiast zostawić je otwarte."""
+
+    sessions: list[imaplib.IMAP4] = []
+
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[w_skrzynce(7, surowy())], cut="logout") as atrapa:
+
+        def connect() -> imaplib.IMAP4:
+            sessions.append(imaplib.IMAP4("127.0.0.1", atrapa.port))
+            return sessions[-1]
+
+        outcome = ImapInbox(z_pliku(dostep(tmp_path)), connect=connect).mails_since(date(2026, 11, 8))
+
+    assert [(mail.subject, mail.text) for mail in maile(outcome)] == [("Raport 08.11.2026", "40000001 tak wymiana routera")]
+    assert polecenia(atrapa)[-1] == "LOGOUT"
+    assert [session.sock.fileno() for session in sessions] == [-1]
+
+
 @pytest.mark.parametrize(
     ("zerwanie", "odmowa", "przyczyna", "do_serwera"),
     [
@@ -827,7 +858,7 @@ def test_adres_nadawcy_nie_jest_tekstem_i_nie_pokazuje_sie_w_repr() -> None:
         f"{address}"
     with pytest.raises(pydantic.ValidationError):
         Pole(tekst=address)  # type: ignore[arg-type]
-    niepoprawne = ["", "Jan Testowy", "a@b@c.invalid", '"a@b"@przyklad.invalid', '"a b"@przyklad.invalid', "@x.invalid", "jan@"]
+    niepoprawne = ["", "Jan Testowy", "a@b@c.invalid", '"a@b"@przyklad.invalid', '"a b"@przyklad.invalid', "@x.invalid", "jan@", '"jan@"']
     assert [SenderAddress.of(header) for header in niepoprawne] == [None] * len(niepoprawne)
 
 
@@ -912,7 +943,8 @@ def test_przypomnienie_idzie_przez_smtp_ze_skrzynki_raportow_do_kazdego_adresu_w
     tmp_path: Path,
 ) -> None:
     """Wysyłka loguje się adresem i hasłem aplikacji z pliku dostępu, wysyła jeden mail z tematem, treścią w UTF-8 i datą
-    na wszystkie adresy Wykonawcy, a Gmail (atrapa) kładzie go w „Wysłanych”, skąd czyta go odczyt przypomnień."""
+    na wszystkie adresy Wykonawcy, a Gmail (atrapa) kładzie go w „Wysłanych”, skąd czyta go odczyt przypomnień.
+    ``Message-ID`` ma domenę skrzynki raportów, a nie nazwę komputera taty."""
 
     with AtrapaImap(address=SKRZYNKA, password=HASLO) as imap, AtrapaSmtp(imap) as smtp:
         inbox = smtp_portu(dostep(tmp_path), imap, smtp)
@@ -929,6 +961,7 @@ def test_przypomnienie_idzie_przez_smtp_ze_skrzynki_raportow_do_kazdego_adresu_w
         "Przypomnienie: raport za dzień 09.11.2026",
     )
     assert message["Date"].datetime == WYSLANE_O
+    assert str(message["Message-ID"]).endswith(f"@{SKRZYNKA.partition('@')[2]}>")
     body = message.get_body()
     assert body is not None and body.get_content().replace("\r\n", "\n") == PRZYPOMNIENIE.text, "SMTP niesie linie z CRLF"
     assert [command.split(" ")[0] for command in smtp.commands] == ["ehlo", "AUTH", "mail", "rcpt", "rcpt", "data", "quit"]
@@ -1138,7 +1171,8 @@ def test_zalacznik_wyslany_w_kopii_albo_ukrytej_kopii_ma_tez_tych_adresatow(tmp_
 
 def test_mail_z_rozliczeniem_idzie_przez_smtp_z_plikiem_xlsx_i_znakiem_centrum_i_wraca_z_wyslanych(tmp_path: Path) -> None:
     """Wysyłka pliku: jeden mail na wszystkie adresy z treścią w UTF-8 i plikiem xlsx pod dokładną nazwą z polskimi
-    literami; Gmail (atrapa) kładzie go w „Wysłanych”, a odczyt załączników widzi go jako mail Centrum."""
+    literami; Gmail (atrapa) kładzie go w „Wysłanych”, a odczyt załączników widzi go jako mail Centrum. ``Message-ID``
+    ma domenę skrzynki raportów, a nie nazwę komputera taty."""
 
     mail = AttachmentMail(
         (SenderAddress(WYKONAWCA), SenderAddress("jan.prywatny@przyklad.invalid")),
@@ -1158,6 +1192,7 @@ def test_mail_z_rozliczeniem_idzie_przez_smtp_z_plikiem_xlsx_i_znakiem_centrum_i
     assert isinstance(message, EmailMessage)
     assert recipients == (WYKONAWCA, "jan.prywatny@przyklad.invalid")
     assert (message["From"], message["Subject"], message[CENTRUM_MARK[0]]) == (SKRZYNKA, mail.subject, CENTRUM_MARK[1])
+    assert str(message["Message-ID"]).endswith(f"@{SKRZYNKA.partition('@')[2]}>")
     body = message.get_body(preferencelist=("plain",))
     assert body is not None and body.get_content().replace("\r\n", "\n") == mail.text
     [attachment] = list(message.iter_attachments())

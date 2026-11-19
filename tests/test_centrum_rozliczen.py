@@ -7136,6 +7136,22 @@ def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(
     )
 
 
+def test_folder_okresow_obok_rozliczen_roku_w_zalacznikach_zapisuje_sie_taki_jak_wskazany(tmp_path: Path) -> None:
+    """Folder poza ``Rozliczenia {rok}`` nie jest częścią układu folderów taty, choć ``Załączniki`` nad nim go mają."""
+
+    pointed = dad_layout(tmp_path) / "Archiwum" / "INEA"
+    pointed.mkdir(parents=True)
+    write_period_files(pointed, "22_28_09_2026")
+    app = centrum(tmp_path)
+
+    settings = choose_periods_directory(app, pointed, "wpisana")
+
+    assert (settings["periods_directory"], settings["periods_all_years"]) == (
+        {"state": "ready", "path": str(pointed), "name": "INEA"},
+        False,
+    )
+
+
 @NO_ACCESS_ON_WINDOWS
 @pytest.mark.parametrize("way", ["okno", "wpisana"])
 def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path, way: str) -> None:

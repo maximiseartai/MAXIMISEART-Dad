@@ -1,5 +1,3 @@
-"""Przebieg rozliczeń w katalogu procesów: wpis i widok Uruchomienia."""
-
 from __future__ import annotations
 
 from typing import Final
@@ -128,5 +126,3 @@ KIND: Final[PeriodProcessKind[SettlementInputs, SettlementSummary]] = PeriodProc
     logs=_logs,
     quantity_check=_quantity_check,
 )
-"""Przebieg rozliczeń w Centrum. Kliknięcie „Uruchom” jest potwierdzeniem Gotowości Pliku zbiorczego
-(``confirms_readiness``): Centrum nie zgaduje jej z pliku ani nie blokuje startu."""

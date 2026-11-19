@@ -624,7 +624,8 @@ def test_zla_lista_wykonawcow_konczy_skrypt_kodem_1_ze_zdaniem_wlasciciela_ustaw
 def test_wpisanie_raportow_ze_skryptu_dla_maszyn_wpisuje_raport_z_pliku_eml_folderu_maili_do_intermax(tmp_path: Path) -> None:
     """``--maile`` to Skrzynka raportów Skryptu dla maszyn: Raport wykonawcy z pliku ``.eml`` trafia do obu komórek
     zlecenia z dnia z tematu. Pamięć wpisów żyje tylko w tym Uruchomieniu, więc jego okno zaczyna się dziś, jak przy
-    pierwszym kliknięciu w Centrum, i zlecenie oraz raport są z dzisiaj."""
+    pierwszym kliknięciu w Centrum, i zlecenie oraz raport są z dzisiaj; zapis tej pamięci się udaje, więc wynik nie ma
+    ostrzeżenia o niezapisanej pamięci."""
 
     now = datetime.now().astimezone()
     register = tmp_path / "INTERMAX.xlsx"
@@ -657,7 +658,7 @@ def test_wpisanie_raportow_ze_skryptu_dla_maszyn_wpisuje_raport_z_pliku_eml_fold
     )
 
     figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
-    assert (exit_code, result["result"], figures) == (0, "OK", {"Wpisane": 1, "Problemy": 0, "Raporty": 1})
+    assert (exit_code, result["result"], figures, result["warnings"]) == (0, "OK", {"Wpisane": 1, "Problemy": 0, "Raporty": 1}, [])
     sheet = load_workbook(register)[ORDER_SHEET]
     row = next(cells for cells in sheet.iter_rows(min_row=2, values_only=True) if cells[NUMBER - 1] == 40000001)
     successful, completed = (FIRST - 1 + HEADERS.index(header) for header in ("SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"))
