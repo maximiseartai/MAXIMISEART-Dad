@@ -146,7 +146,9 @@ class Hits(NamedTuple):
 
 
 def hits(skill: Path, changed: Iterable[str]) -> Hits:
-    """Pliki ``changed``, przy których skill obowiązuje, a na pull request biegnie jego podstawa ``ci``."""
+    """Pliki ``changed``, przy których skill obowiązuje: trafione przez glob ``pilnuje`` albo w folderze skilla. Czy jego
+    podstawa ``ci`` biegnie na pull request, rozstrzyga ``zakres_runu`` wariantem ``NA_ZYWO`` (ADR 0020, D1): trafienie
+    samego ``pilnuje``, bez pliku w folderze skilla, zostawia ją pełnemu CI ``main``."""
 
     try:
         globs = guarded(skill / "SKILL.md")

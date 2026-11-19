@@ -25,6 +25,7 @@ Czasu, w którym organizacja chciałaby więcej niż 60 zadań naraz, przybywa w
 25 daje połowę skrócenia, które dałoby 40, przy jednej dziesiątej dodatkowej kolejki, a powyżej 25 każde zadanie skraca cel coraz mniej (20 → 25: 27 s na zadanie, 25 → 30: 13 s, 30 → 40: 7,5 s).
 Zmieniona 19.11 (D1, decyzja Maksa): podstawa `ci:` skilla biegnie na PR tylko wtedy, gdy PR zmienia folder skilla, a push do `main` i noc się nie zmieniają; wariant bez kroków skilli na PR (N0) biegnie w cieniu do rozstrzygnięcia regułą zapisaną przed włączeniem (sekcja „Podstawy skilli na PR (D1)”, #2169).
 Zmieniona 19.11 (D2, decyzja Maksa): budżet bramki PR to p90 ≤ 5 min od pushu do `Required CI status`, a jego przekroczenie automatycznie zakłada issue z wąskim gardłem (poziom 2 niżej, razem ze sposobem pomiaru, który wybrał autor strażnika).
+Zmieniona 19.11 (D1, decyzja koordynatora programu CI): prawdziwe defekty w regule rozstrzygnięcia D1 to kandydaci `tools/cien_podstaw.py` potwierdzeni audytem, a znane luki reguły naprawy są próbkami (sekcja „Podstawy skilli na PR (D1)”).
 
 ## Kontekst
 
@@ -82,7 +83,8 @@ Test kształtu planu bramki dla dwóch wzorcowych PR-ów, małego tylko z testam
 Decyzja Maksa z 19.11 (D1): na PR podstawa `ci:` skilla biegnie tylko wtedy, gdy PR zmienia plik w folderze skilla (`.agents/skills/<skill>/`, wariant NF).
 Zmiana, która trafia tylko w `pilnuje:`, zostawia podstawę pełnemu CI `main`, a plan pisze przy niej `biegnie na main: PR nie zmienia folderu skilla`, a `tools/skille_dla_zmiany.py` wymienia ją w linii `LICZY MAIN`.
 Push do `main` i noc zostają: push uruchamia każdą podstawę, a noc podstawę z `ci-czesci` przy trafieniu w `pilnuje:` albo folder.
-Zmiana ścieżki z `Context.SKILL_STEPS` dalej uruchamia na PR każdą podstawę, bo zmienia, jak podstawy biegną, a nie produkt, który sprawdzają.
+Wyjątek od tej reguły to decyzja koordynatora programu CI, nie część D1 Maksa: zmiana ścieżki z `Context.SKILL_STEPS` dalej uruchamia na PR każdą podstawę, bo te ścieżki zmieniają, jak podstawa biegnie, a nie to, co sprawdza.
+Backtest NF (30 ze 101), który Maks widział przed decyzją, tego wyjątku nie miał.
 Skrypt mutacji modelu TLA+ biegnie na PR jak przed D1: jego reguła to już pliki folderu skilla (model, skrypt, sprawdzenia jego mutacji) i moduły, które te sprawdzenia importują (silnik modelu, który daje ich werdykt), a na pushu nie biegnie, więc zmiana modelu bez niego czekałaby na noc.
 Rozjazd modelu skilla z kodem `tools/szybko.py` sprawdza dalej przy trafieniu w `pilnuje:`, bo pełne CI `main` uruchomi podstawę z rozjazdem po merge'u.
 Powód: bramka PR ma mieścić się w p90 ≤ 5 min od pushu do `Required CI status`, a ogon trzymają podstawy skilli.
@@ -92,7 +94,12 @@ Plan PR-u zapisuje w `plan.json` cień (`cien`): dla wariantu V0 (reguła sprzed
 Wykonuje się tylko NF (`NA_ZYWO` w `tools/lib/zakres_runu.py`), a N0 nie ma na PR żadnego kroku skilla, także skryptu mutacji modelu, jak w backteście.
 Artefakt `plan` trzyma się 30 dni, żeby pomiar po 14 dniach czytał cień całego okna.
 
-Reguła rozstrzygnięcia, zapisana przed włączeniem NF (#2169): N0 wygrywa, jeśli w 14 dniach po merge'u NF kroki skilli NF na PR złapały mniej niż X = 11 prawdziwych defektów (naprawa na gałęzi zmienia folder tego skilla albo `src/`; jedna gałąź z jednym krokiem to jeden defekt), których pytest w tym runie nie złapał, a cień daje N0 oszczędność czekania na PR co najmniej 825 agent-minut.
+Reguła rozstrzygnięcia, zapisana przed włączeniem NF (#2169): N0 wygrywa, jeśli w 14 dniach po merge'u NF kroki skilli NF na PR złapały mniej niż X = 11 prawdziwych defektów, których pytest w tym runie nie złapał, a cień daje N0 oszczędność czekania na PR co najmniej 825 agent-minut.
+Prawdziwe defekty to kandydaci `tools/cien_podstaw.py`, które potwierdził audyt każdego kandydata z dowodem, który narzędzie drukuje (PR, czerwony run z padłym krokiem, następny run, ich adresy i zmiana własnego diffu PR każdego pliku naprawy między głowami).
+Kandydat to porażka kroku NF z naprawą w folderze tego skilla albo w `src/` (naprawa to pliki, w których commit gałęzi bez merge'a zmienił własną zmianę PR między głową czerwonego runu a głową następnego, czyli treść pliku różni się poza liniami, które `main` zmienił w nim między bazami scalenia obu głów; jedna gałąź z jednym krokiem to jeden kandydat).
+Audyt zamiast czwartej reguły naprawy to decyzja koordynatora programu CI z 19.11, bo trzy reguły, które wyprowadzały naprawę z treści plików, przegląd #2172 i #2178 obalił na nowych formach, a rozstrzygnięcie liczy około 10 przypadków.
+Znane luki reguły naprawy to próbki `ZNANE_LUKI` w `tests/test_cien_podstaw.py`: `main` przestawia linie pliku naprawy (zamiana albo przeniesienie funkcji, z konfliktem przy rebase'ie i bez), co daje kandydata bez zmiany własnej zmiany PR, i naprawa samym usunięciem commitu, której reguła nie widzi.
+Narzędzie pisze przy nich „wymaga audytu”: przy kandydacie, którego każdy plik naprawy `main` zmienił między bazami głów, i przy porażce kroku NF bez naprawy, gdy czerwona głowa nie jest przodkiem następnej.
 Inaczej zostaje NF.
 Liczy to `tools/cien_podstaw.py` i drukuje obok wyrocznię `main`: podstawę, która padła na `main`, a scalony PR miał ją w cieniu V0, nie w NF.
 Taka ucieczka przechodzi przy NF i przy N0, więc wyniku nie zmienia, ale jej czerwień sprawdza koszt ucieczki przyjęty w progu.
@@ -105,6 +112,7 @@ Skąd liczby (11–18.11):
   8 z nich NF dalej łapie na PR, bo PR zmieniał folder padłego skilla: sam `verify-status-okresu` (run 43134529470), `src/` po `verify-centrum-rozliczen` (43181231744 oraz 43401647863 i 43403067635, dwie gałęzie z tą samą poprawką, więc 7 różnych), napęd `verify-centrum-rozliczen` (43367034036, 43378421153, 43453840613, 44194162002).
   2 przepuściłby na `main` i NF, i N0: rozjazd modelu `verify-kolejka-skrzynki` po docstringu w `src/` (43348679797), który łapie też `tools/szybko.py`, i `verify-centrum-rozliczen` po zmianie `src/rozliczenia/run_context.py` (43527120095), niepewny, bo gałąź wciągnęła też `main`.
   8 na 1003 runy to około 17 na 2084 runy 14 dni, nad progiem, więc prognoza przed pomiarem: NF zostaje.
+  Audyt tych 8 kandydatów z dowodami narzędzia (19.11, #2178) potwierdził 6, w tym #1529 i #1532 z jedną poprawką; #1374 padł przez defekt `main` naprawiony w #1375, a #2085 przez wyścig napędu sprzed PR-u (niepewny), więc 6 na 1003 runy to około 12,5 na 14 dni, nadal nad progiem.
 
 ### Niestabilne testy
 
