@@ -1,0 +1,40 @@
+id: komentarz-poza-src
+language: python
+severity: error
+message: >-
+  komentarz # w Pythonie poza src (tests, tools, skrypty skilli, pliki w korzeniu): to, co mówi komentarz, wyraź
+  nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię
+  zmiany w opisie PR; zostaje tylko komentarz, który w całości ma jedną z postaci: „# noqa: F401 - powód” (kody ruff
+  rozdzielone „, ”, potem „ - ” i powód), „# type: ignore[attr-defined]” (kody mypy rozdzielone „, ”, potem koniec
+  komentarza albo „  # powód”), „# ZEWNĘTRZNE: fakt (źródło)” (ograniczenie świata poza repo) albo
+  „#!/usr/bin/env python3” w pierwszej linii, bez numeru issue („#” i cyfra) i adresu repozytorium maximiseartai/
+  albo MAXIMISEART-AI/; reguła zgłasza każdy komentarz na linii dodanej przez zmianę, także stary komentarz na końcu linii, którą zmiana
+  zmienia
+files:
+  - "**/*.py"
+  - "**/*.pyi"
+  - "**/*.py3"
+ignores:
+  - src/**
+metadata:
+  przypadki:
+    - 29f9014c388bf17c8a0a3b80c235ffe5a003bb31 tests/test_zakazy_ruff.py:271
+    - 0a12f3d7f0d1ca19b33281f118f476c940c48d09 tools/mutacje_nocne.py:132
+    - 93c680e9cdb048b754cd9ae383cd18bcb2273fb7 .agents/skills/verify-historia-ustawien/scripts/sprawdz_historie_ustawien.py:24
+rule:
+  kind: comment
+  any:
+    - regex: >-
+        (?i:#\d|maximiseart-?ai/)
+    - not:
+        any:
+          - regex: >-
+              ^# (?:noqa: [A-Z]+[0-9]+(?:, [A-Z]+[0-9]+)* - \S.*|type: ignore\[[a-z]+(?:-[a-z]+)*(?:, [a-z]+(?:-[a-z]+)*)*\](?:  # \S.*)?)\r?$
+          - regex: >-
+              ^# ZEWNĘTRZNE: \S.* \(\S(?:[^()]*\S)?\)\r?$
+          - all:
+              - regex: >-
+                  ^#!/usr/bin/env python3\r?$
+              - nthChild: 1
+              - inside:
+                  kind: module
