@@ -1,5 +1,6 @@
-"""Rozstrzygnięcie D1 (``tools/cien_podstaw.py``): defekty złapane przez kroki skilli NF na PR, oszczędność N0 z cienia
-``plan.json`` i ucieczki z NF w wyroczni ``main`` dają wynik według reguły z ADR 0020, D1."""
+"""Rozstrzygnięcie D1 (``tools/cien_podstaw.py``): kandydaci na defekty złapane przez kroki skilli NF na PR, przyczyny
+z ich audytu, oszczędność N0 z cienia ``plan.json`` i ucieczki z NF w wyroczni ``main`` dają wynik według reguły z ADR
+0020, D1."""
 
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ from tests.fixtures.znane_luki import assert_znane_luki
 
 import api_actions
 import cien_podstaw
-from cien_podstaw import OSZCZEDNOSC_MIN, X, Glowa, Naprawa, PlikNaprawy, Rekordy, RunMain, RunPr, Wariant, rozstrzygnij
+from cien_podstaw import OSZCZEDNOSC_MIN, X, BladAudytu, Glowa, Naprawa, PlikNaprawy, Porazka, Pytest, Rekordy, RunMain, RunPr, Wariant, Wynik, rozstrzygnij
 from github import REPO
 import plan_runu
 import repo as repo_gita
@@ -28,34 +29,40 @@ from zakres_runu import Podstawy, Zdarzenie
 CIEN = {"V0": Wariant(("verify-a/ci", "verify-b/ci"), 300.0), "NF": Wariant(("verify-a/ci",), 200.0), "N0": Wariant((), 100.0)}
 
 
-def _pr(galaz: str = "g", *, padle: tuple[str, ...] = ("verify-a/ci",), naprawa: tuple[str, ...] | None = ("src/a.py",), pytest_padl: bool = False,
-        cien: Mapping[str, Wariant] | None = CIEN, probka: bool = False, main_zmienil: tuple[str, ...] = (), przepisana: bool = False) -> RunPr:  # fmt: skip
-    """Run PR, którego naprawa ma pliki ``naprawa``, z nich ``main_zmienil`` zmienione przez ``main`` między bazami głów."""
+def _pr(galaz: str = "g", *, run: int = 1, padle: tuple[str, ...] = ("verify-a/ci",), naprawa: tuple[str, ...] | None = ("src/a.py",),
+        pytest: Pytest = Pytest.PRZESZEDL, cien: Mapping[str, Wariant] | None = CIEN, probka: bool = False, main_zmienil: tuple[str, ...] = (),
+        przepisana: bool = False) -> RunPr:  # fmt: skip
+    """Czerwony run PR ``run``, którego naprawa ma pliki ``naprawa``, z nich ``main_zmienil`` zmienione przez ``main``
+    między bazami głów; ``naprawa=None``: bez następnego runu gałęzi z wynikiem."""
 
-    glowa = Glowa(1, "https://github.com/o/r/actions/runs/1", "c" * 40, "b" * 40)
-    pliki = tuple(PlikNaprawy(sciezka, "", "", sciezka in main_zmienil) for sciezka in naprawa or ())
-    return RunPr(1, galaz, pytest_padl, padle, None if naprawa is None else Naprawa(glowa, glowa, pliki, przepisana), cien, probka)
+    glowa = Glowa(run, f"https://github.com/o/r/actions/runs/{run}", "c" * 40, "b" * 40)
+    pliki = tuple(PlikNaprawy(sciezka, sciezka, "", "", sciezka in main_zmienil) for sciezka in naprawa or ())
+    return RunPr(run, galaz, pytest, padle, None if naprawa is None else Naprawa(glowa, glowa, pliki, przepisana), cien, probka)
 
 
 def _sciezki(run: RunPr) -> tuple[str, ...] | None:
     return None if run.naprawa is None else run.naprawa.sciezki
 
 
-def _rekordy(*pr: RunPr, main: tuple[RunMain, ...] = (), pr_runow: int = 60) -> Rekordy:
-    return Rekordy("2026-11-20", "2026-12-03", pr_runow, pr, main)
+def _klucze(porazki: tuple[Porazka, ...]) -> tuple[str, ...]:
+    return tuple(porazka.klucz for porazka in porazki)
+
+
+def _rekordy(*pr: RunPr, main: tuple[RunMain, ...] = (), pr_runow: int = 60, od: str = "2026-11-20") -> Rekordy:
+    return Rekordy(od, "2026-12-03", pr_runow, pr, main)
 
 
 @pytest.mark.parametrize(
-    ("run", "zlapany"),
+    ("run", "kandydat"),
     [
         (_pr(naprawa=("src/rozliczenia/a.py",)), True),
         (_pr(naprawa=(".agents/skills/verify-a/scripts/drive.py",)), True),
-        # Naprawa w folderze innego skilla, w testach albo jej brak (flaky, infrastruktura, ostatni run gałęzi): to nie defekt.
+        # Naprawa w folderze innego skilla, w testach albo jej brak (flaky, infrastruktura, ostatni run gałęzi): to nie kandydat.
         (_pr(naprawa=(".agents/skills/verify-b/SKILL.md",)), False),
         (_pr(naprawa=("tests/test_a.py",)), False),
         (_pr(naprawa=None), False),
         # Defekt, który złapał też pytest, NF nie złapał sam.
-        (_pr(pytest_padl=True), False),
+        (_pr(pytest=Pytest.PADL), False),
         # Krok spoza NF albo w N0 nie różni wariantów.
         (_pr(padle=("verify-b/ci",), naprawa=("src/b.py",)), False),
         (_pr(cien={**CIEN, "N0": Wariant(("verify-a/ci",), 200.0)}), False),
@@ -63,34 +70,52 @@ def _rekordy(*pr: RunPr, main: tuple[RunMain, ...] = (), pr_runow: int = 60) -> 
     ids=["naprawa w src", "naprawa w folderze skilla", "naprawa w innym skillu", "naprawa w testach", "bez następnego runu",
          "padł też pytest", "krok tylko w V0", "krok też w N0"],  # fmt: skip
 )
-def test_defekt_zlapany_przez_nf_to_padly_krok_nf_spoza_n0_przy_zielonym_pytest_z_naprawa_w_folderze_skilla_albo_src(run: RunPr, zlapany: bool) -> None:
-    assert tuple(rozstrzygnij(_rekordy(run)).zlapane) == ((("g", "verify-a/ci"),) if zlapany else ())
+def test_kandydat_nf_to_padly_krok_nf_spoza_n0_przy_zielonym_pytest_z_naprawa_w_folderze_skilla_albo_src(run: RunPr, kandydat: bool) -> None:
+    assert _klucze(rozstrzygnij(_rekordy(run)).kandydaci) == (("1 verify-a/ci",) if kandydat else ())
 
 
-def test_czerwone_runy_galezi_z_tym_samym_krokiem_to_jeden_defekt_a_run_bez_cienia_liczy_sie_osobno() -> None:
-    wynik = rozstrzygnij(_rekordy(_pr(naprawa=None), _pr(), _pr(), _pr("h", cien=None)))
+def test_kazdy_czerwony_run_galezi_z_tym_samym_krokiem_jest_osobna_porazka_w_wyniku_bo_moze_miec_inna_przyczyne() -> None:
+    """Jedna gałąź z jednym krokiem miała dwie przyczyny (#2178 r3, D1): run 1 naprawiony commitem w ``src/``, run 2
+    usunięciem commitu, więc obie porażki stoją w wyniku, każda z innymi runami gałęzi przy dowodzie."""
 
-    assert (tuple(wynik.zlapane), wynik.bez_cienia) == ((("g", "verify-a/ci"),), (("h", "verify-a/ci"),))
+    runy = (_pr(run=1), _pr(run=2, naprawa=(), przepisana=True), _pr(run=3, naprawa=(".agents/skills/verify-a/drive.py",)), _pr("h", run=4, cien=None))
+    rekordy = _rekordy(*runy)
+    wynik = rozstrzygnij(rekordy)
+
+    linie = cien_podstaw.wypisz(rekordy, wynik)
+
+    assert (_klucze(wynik.kandydaci), _klucze(wynik.niepoliczone), _klucze(wynik.bez_cienia)) == (("1 verify-a/ci", "3 verify-a/ci"), ("2 verify-a/ci",), ("4 verify-a/ci",))
+    assert [linia for linia in linie if linia.startswith(("KANDYDAT", "NIEPOLICZONY", "  ten krok"))] == [
+        "KANDYDAT NF 1/2 | 1 verify-a/ci | g, PR bez merge'a w oknie | do audytu",
+        "  ten krok padł też w runach tej gałęzi: 3 (kandydat 2), 2 (niepoliczony)",
+        "KANDYDAT NF 2/2 | 3 verify-a/ci | g, PR bez merge'a w oknie | do audytu",
+        "  ten krok padł też w runach tej gałęzi: 1 (kandydat 1), 2 (niepoliczony)",
+        "NIEPOLICZONY, wymaga audytu | 2 verify-a/ci | g, PR bez merge'a w oknie | czerwona głowa nie jest przodkiem następnej"
+        " (rebase, usunięty commit, reset): naprawa usunięciem commitu nie ma pliku",
+        "  ten krok padł też w runach tej gałęzi: 1 (kandydat 1), 3 (kandydat 2)",
+    ]
 
 
 @pytest.mark.parametrize(
     ("runy", "wymaga"),
     [
-        ((_pr(main_zmienil=("src/a.py",)),), True),
-        ((_pr(naprawa=("src/a.py", "src/b.py"), main_zmienil=("src/a.py",)),), False),
+        ((_pr(main_zmienil=("src/a.py",)),), ("1 verify-a/ci",)),
+        ((_pr(naprawa=("src/a.py", "src/b.py"), main_zmienil=("src/a.py",)),), ()),
         # Plik spoza naprawy kroku (test) nie czyni kandydata pewnym.
-        ((_pr(naprawa=("src/a.py", "tests/test_a.py"), main_zmienil=("src/a.py",)),), True),
-        ((_pr(main_zmienil=("src/a.py",)), _pr()), False),
+        ((_pr(naprawa=("src/a.py", "tests/test_a.py"), main_zmienil=("src/a.py",)),), ("1 verify-a/ci",)),
+        # Każdy czerwony run gałęzi ma własnego kandydata, więc naprawa innego runu nie zdejmuje znacznika.
+        ((_pr(main_zmienil=("src/a.py",)), _pr(run=2)), ("1 verify-a/ci",)),
+        ((_pr(pytest=Pytest.NIE_SKONCZYL),), ("1 verify-a/ci",)),
     ],
     ids=["jedyny plik naprawy zmienił też main", "drugi plik naprawy bez zmiany main", "drugi plik spoza naprawy kroku",
-         "drugi czerwony run gałęzi z naprawą bez zmiany main"],  # fmt: skip
+         "drugi czerwony run gałęzi z naprawą bez zmiany main", "run anulowany, zanim pytest skończył"],  # fmt: skip
 )
-def test_kandydat_wymaga_audytu_gdy_kazda_jego_naprawa_stoi_tylko_na_plikach_ktore_main_zmienil_miedzy_bazami_glow(
-    runy: tuple[RunPr, ...], wymaga: bool
+def test_kandydat_wymaga_audytu_gdy_kazdy_plik_naprawy_kroku_zmienil_main_albo_run_anulowano_przed_koncem_pytest(
+    runy: tuple[RunPr, ...], wymaga: tuple[str, ...]
 ) -> None:
     wynik = rozstrzygnij(_rekordy(*runy))
 
-    assert (tuple(wynik.zlapane), wynik.wymaga_audytu) == ((("g", "verify-a/ci"),), (("g", "verify-a/ci"),) if wymaga else ())
+    assert (_klucze(wynik.kandydaci)[:1], _klucze(wynik.wymaga_audytu)) == (("1 verify-a/ci",), wymaga)
 
 
 @pytest.mark.parametrize(
@@ -98,19 +123,59 @@ def test_kandydat_wymaga_audytu_gdy_kazda_jego_naprawa_stoi_tylko_na_plikach_kto
     [
         ((_pr(naprawa=(), przepisana=True),), True),
         ((_pr(naprawa=("tests/test_a.py",), przepisana=True),), True),
+        ((_pr(naprawa=None),), True),
         ((_pr(naprawa=(), przepisana=False),), False),
-        # Ten sam krok gałęzi złapany w innym runie jest już kandydatem; porażka z pytest albo spoza NF nie jest krokiem NF.
-        ((_pr(naprawa=(), przepisana=True), _pr()), False),
-        ((_pr(naprawa=(), przepisana=True, pytest_padl=True),), False),
+        # Ten sam krok gałęzi z naprawą w innym runie nie ukrywa tej porażki; z pytest albo spoza NF to nie krok NF.
+        ((_pr(naprawa=(), przepisana=True), _pr(run=2)), True),
+        ((_pr(naprawa=(), przepisana=True, pytest=Pytest.PADL),), False),
         ((_pr(naprawa=(), przepisana=True, cien={**CIEN, "N0": Wariant(("verify-a/ci",), 200.0)}),), False),
     ],
-    ids=["bez plików naprawy", "naprawa spoza folderu skilla i src", "głowa czerwona przodkiem następnej", "krok już kandydatem",
-         "padł też pytest", "krok też w N0"],  # fmt: skip
+    ids=["bez plików naprawy", "naprawa spoza folderu skilla i src", "bez następnego runu z wynikiem", "głowa czerwona przodkiem następnej",
+         "krok gałęzi kandydatem w innym runie", "padł też pytest", "krok też w N0"],  # fmt: skip
 )
-def test_porazka_kroku_nf_bez_naprawy_z_przepisana_historia_galezi_jest_niepoliczona_do_audytu(runy: tuple[RunPr, ...], niepoliczony: bool) -> None:
+def test_porazka_kroku_nf_bez_naprawy_z_przepisana_historia_albo_bez_nastepnego_runu_jest_niepoliczona_do_audytu(
+    runy: tuple[RunPr, ...], niepoliczony: bool
+) -> None:
     wynik = rozstrzygnij(_rekordy(*runy))
 
-    assert tuple(wynik.niepoliczone) == ((("g", "verify-a/ci"),) if niepoliczony else ())
+    assert _klucze(wynik.niepoliczone) == (("1 verify-a/ci",) if niepoliczony else ())
+
+
+def test_prawdziwe_defekty_to_rozne_przyczyny_potwierdzone_audytem_kandydatow_i_niepoliczonych() -> None:
+    """Jednostka z #2169: dwie gałęzie z jedną poprawką to jedna przyczyna (jedno czerwone ``main`` i jeden PR naprawy),
+    potwierdzony niepoliczony liczy się, a porażka z pustą listą (nie prawdziwy defekt albo niepewny) nie."""
+
+    runy = (_pr("g", run=1), _pr("h", run=2), _pr("h", run=3, naprawa=None), _pr("k", run=4))
+    audyt = {"1 verify-a/ci": ["dziennik przed wpisem start"], "2 verify-a/ci": ["dziennik przed wpisem start"], "3 verify-a/ci": ["napęd"], "4 verify-a/ci": []}
+
+    wynik = rozstrzygnij(_rekordy(*runy), audyt)
+
+    assert {nazwa: _klucze(porazki) for nazwa, porazki in (wynik.przyczyny or {}).items()} == {
+        "dziennik przed wpisem start": ("1 verify-a/ci", "2 verify-a/ci"),
+        "napęd": ("3 verify-a/ci",),
+    }
+
+
+@pytest.mark.parametrize(
+    "audyt",
+    [{"1 verify-a/ci": []}, {"1 verify-a/ci": [], "2 verify-a/ci": [], "3 verify-a/ci": ["p"]}],
+    ids=["bez porażki z wyniku", "z porażką spoza wyniku"],
+)
+def test_audyt_ktory_nie_wymienia_dokladnie_porazek_z_wyniku_to_odmowa(audyt: dict[str, list[str]]) -> None:
+    with pytest.raises(BladAudytu, match="audyt nie pasuje do wyniku"):
+        rozstrzygnij(_rekordy(_pr(run=1), _pr(run=2, naprawa=None)), audyt)
+
+
+@pytest.mark.parametrize("tekst", ['{"1 verify-a/ci": null}', '{"1 verify-a/ci": [""]}', '{"1 verify-a/ci": "p"}', '[["1 verify-a/ci", ["p"]]]'],
+                         ids=["bez listy", "pusta nazwa przyczyny", "napis zamiast listy", "lista zamiast obiektu"])  # fmt: skip
+def test_audyt_w_innej_postaci_niz_obiekt_list_nazw_przyczyn_to_odmowa_przed_zbieraniem(tmp_path: Path, tekst: str) -> None:
+    (tmp_path / "audyt.json").write_text(tekst, encoding="utf-8")
+
+    # Bez GitHuba i gita: zbieranie dla okna nie zaczyna się przed odmową.
+    with pytest.raises(SystemExit) as wyjscie:
+        cien_podstaw.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-12", "--do", "2026-11-12", "--audyt", str(tmp_path / "audyt.json")], root=tmp_path, github=_GitHub({}, {}))
+
+    assert wyjscie.value.code == 2
 
 
 def test_oszczednosc_n0_to_srednia_roznica_scian_nf_i_n0_z_probki_razy_runy_pr_okna_w_minutach() -> None:
@@ -137,18 +202,32 @@ def test_ucieczka_z_nf_to_padla_na_main_podstawa_ktora_nf_pominal_na_scalonym_pr
 
 
 @pytest.mark.parametrize(
-    ("zlapane", "oszczednosc_min", "n0"),
-    [(X - 1, OSZCZEDNOSC_MIN, True), (X, OSZCZEDNOSC_MIN, False), (X - 1, OSZCZEDNOSC_MIN - 1, False)],
-    ids=["mniej niż X złapanych, oszczędność na progu", "X złapanych", "oszczędność pod progiem"],
+    ("przyczyny", "oszczednosc_min", "od", "wynik"),
+    [
+        (X - 1, OSZCZEDNOSC_MIN, "2026-11-20", Wynik.N0_WYGRYWA),
+        (X, OSZCZEDNOSC_MIN, "2026-11-20", Wynik.NF_ZOSTAJE),
+        (X - 1, OSZCZEDNOSC_MIN - 1, "2026-11-20", Wynik.NF_ZOSTAJE),
+        (None, OSZCZEDNOSC_MIN, "2026-11-20", Wynik.CZEKA_NA_AUDYT),
+        (None, OSZCZEDNOSC_MIN - 1, "2026-11-20", Wynik.NF_ZOSTAJE),
+        (X - 1, OSZCZEDNOSC_MIN, "2026-11-27", Wynik.OKNO),
+    ],
+    ids=["mniej niż X przyczyn, oszczędność na progu", "X przyczyn", "oszczędność pod progiem", "bez audytu", "bez audytu, oszczędność pod progiem",
+         "okno 7 dni"],  # fmt: skip
 )
-def test_n0_wygrywa_tylko_gdy_nf_zlapal_mniej_niz_x_defektow_a_oszczednosc_siega_progu(zlapane: int, oszczednosc_min: float, n0: bool) -> None:
-    # Każdy run ma cień, w którym NF jest o ``oszczednosc_min`` minut na 600 runów okna dłuższy od N0; drogie ucieczki
+def test_n0_wygrywa_tylko_gdy_audyt_potwierdzil_mniej_niz_x_przyczyn_w_14_dniach_a_oszczednosc_siega_progu(
+    przyczyny: int | None, oszczednosc_min: float, od: str, wynik: Wynik
+) -> None:
+    # Każdy run ma cień, w którym NF jest o ``oszczednosc_min`` minut na 600 runów okna dłuższy od N0, a każdy z 2X
+    # kandydatów dzieli przyczynę z drugim, więc par gałąź + krok jest dwa razy więcej niż przyczyn; drogie ucieczki
     # z NF na main przechodzą też przy N0, więc wyniku nie zmieniają.
     cien = {**CIEN, "N0": Wariant((), CIEN["NF"].sciana_s - oszczednosc_min * 60 / 600)}
-    runy = [_pr(f"g{n}", cien=cien) for n in range(zlapane)]
+    runy = [_pr(f"g{n}", run=n, cien=cien) for n in range(2 * X)]
+    audyt = None if przyczyny is None else {f"{n} verify-a/ci": [f"przyczyna {n // 2}"] if n // 2 < przyczyny else [] for n in range(2 * X)}
     main = (RunMain(1, ("verify-b/ci",), ("verify-b/ci",), 600.0),)
 
-    assert rozstrzygnij(_rekordy(*runy, _pr("probka", padle=(), cien=cien, probka=True), main=main, pr_runow=600)).n0_wygrywa is n0
+    rekordy = _rekordy(*runy, _pr("probka", run=99, padle=(), cien=cien, probka=True), main=main, pr_runow=600, od=od)
+
+    assert rozstrzygnij(rekordy, audyt).wynik is wynik
 
 
 # --- zbieranie z GitHuba i gita ---
@@ -258,25 +337,32 @@ def test_zbieranie_laczy_runy_logi_cien_planow_i_commity_gita_a_ponowny_bieg_nie
     cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", github), repo, dzien, dzien, date(2026, 12, 1), cien_podstaw.PROBKA)
     wynik = rozstrzygnij(rekordy)
 
-    assert (tuple(wynik.zlapane), wynik.ucieczki, wynik.oszczednosc_min) == ((("g", "verify-a/ci"),), ((4, "verify-b/ci"),), 100.0 / 2 * 2 / 60)
+    assert (_klucze(wynik.kandydaci), wynik.ucieczki, wynik.oszczednosc_min) == (("2 verify-a/ci",), ((4, "verify-b/ci"),), 100.0 / 2 * 2 / 60)
     assert (wynik.czerwien_min, _sciezki(rekordy.pr[0])) == (40.0, (".agents/skills/verify-a/drive.py",))
     assert len(github.pytania) == pytania
 
 
-def test_wynik_z_zapisanych_rekordow_jest_tym_samym_co_z_githuba(
+def test_wynik_z_zapisanych_rekordow_jest_tym_samym_co_z_githuba_a_audyt_liczy_przyczyny(
     tmp_path: Path, swiat: tuple[Path, _GitHub], capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo, github = swiat
     argumenty = ["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-12", "--do", "2026-11-12"]
+    (tmp_path / "audyt.json").write_text(json.dumps({"2 verify-a/ci": ["napęd verify-a"]}), encoding="utf-8")
 
     kod = cien_podstaw.main(argumenty, root=repo, github=github)
     z_githuba = capsys.readouterr().out.splitlines()
     cien_podstaw.main(["--rekordy", str(tmp_path / "bieg" / "rekordy.json")])
     z_rekordow = capsys.readouterr().out.splitlines()
+    cien_podstaw.main(["--rekordy", str(tmp_path / "bieg" / "rekordy.json"), "--audyt", str(tmp_path / "audyt.json")])
+    z_audytem = capsys.readouterr().out.splitlines()
 
     assert (kod, z_rekordow[-1], json.loads((tmp_path / "bieg" / "rekordy.json").read_text(encoding="utf-8"))["pr_runow"]) == (0, z_githuba[-1], 2)
-    assert z_rekordow[-1].startswith(f"D1 | złapane przez NF: kandydaci 1, do audytu (wymaga audytu 0, niepoliczone do audytu 0; N0 wygrywa poniżej {X} prawdziwych) |")
-    assert z_rekordow[-1].endswith("wynik na kandydatach: NF zostaje")
+    # Okno jednego dnia nie ma wyniku, bo progi liczą 14 dni.
+    assert z_rekordow[-1] == (
+        f"D1 | złapane przez NF: kandydaci 1 (wymaga audytu 0), niepoliczone 0, przyczyny po audycie brak audytu (--audyt); N0 wygrywa poniżej {X}"
+        f" przyczyn | oszczędność N0 2 agent-min (próg {OSZCZEDNOSC_MIN:.0f}) | wynik: {Wynik.OKNO}"
+    )
+    assert "PRZYCZYNA 1/1 | napęd verify-a | 2 verify-a/ci" in z_audytem and "przyczyny po audycie 1;" in z_audytem[-1]
 
 
 def test_kandydat_nf_ma_w_wyniku_dowod_do_audytu_pr_runy_z_adresami_i_zmiane_wlasnego_diffu_pr_pliku_naprawy_miedzy_glowami(
@@ -292,7 +378,7 @@ def test_kandydat_nf_ma_w_wyniku_dowod_do_audytu_pr_runy_z_adresami_i_zmiane_wla
 
     cien_podstaw.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-12", "--do", "2026-11-12"], root=repo, github=github)
     linie = capsys.readouterr().out.splitlines()
-    poczatek = linie.index("KANDYDAT NF 1/1 | g: verify-a/ci | PR #1 | do audytu")
+    poczatek = linie.index("KANDYDAT NF 1/1 | 2 verify-a/ci | g, PR #1 | do audytu")
     zapisany = json.loads((tmp_path / "bieg" / "rekordy.json").read_text(encoding="utf-8"))["pr"][0]["naprawa"]["pliki"][0]
 
     # Blok kandydata kończy się na pierwszej linii bez wcięcia.
@@ -309,6 +395,110 @@ def test_kandydat_nf_ma_w_wyniku_dowod_do_audytu_pr_runy_z_adresami_i_zmiane_wla
         "",
         repo_gita.git(repo, "diff", "--no-ext-diff", "--no-color", f"{baza}...{naprawiona}", "--", plik),
     )
+
+
+def _zadania(pytest_wynik: str, mutacje_wynik: str = "failure") -> dict[str, Any]:
+    return {"jobs": [{"id": 21, "name": "pytest (Python 3.13, 1/1)", "conclusion": pytest_wynik}, {"id": 22, "name": "Mutation checks (1/2)", "conclusion": mutacje_wynik}]}
+
+
+@pytest.mark.parametrize(
+    ("wyniki", "zadania_2", "naglowek", "nastepny"),
+    [
+        (("failure", "cancelled", "success"), "success", "KANDYDAT NF 1/1 | 2 verify-a/ci | g, PR bez merge'a w oknie | do audytu", 4),
+        (("cancelled", None, "success"), "cancelled",
+         "KANDYDAT NF 1/1 | 2 verify-a/ci | g, PR bez merge'a w oknie | wymaga audytu: run anulowany, zanim pytest skończył: nie wiadomo, czy pytest by ją złapał", 4),
+        (("cancelled", None, "success"), "success", "KANDYDAT NF 1/1 | 2 verify-a/ci | g, PR bez merge'a w oknie | do audytu", 4),
+        (("failure", "cancelled", "cancelled"), "success",
+         "NIEPOLICZONY, wymaga audytu | 2 verify-a/ci | g, PR bez merge'a w oknie | brak następnego runu gałęzi z wynikiem w oknie albo git nie zna"
+         " jego głowy: naprawa mogła pójść inną gałęzią albo po oknie", None),
+        (("failure", None, None), "success",
+         "NIEPOLICZONY, wymaga audytu | 2 verify-a/ci | g, PR bez merge'a w oknie | brak następnego runu gałęzi z wynikiem w oknie albo git nie zna"
+         " jego głowy: naprawa mogła pójść inną gałęzią albo po oknie", None),
+    ],
+    ids=["następny run anulowany przez push z naprawą", "czerwony run anulowany, zanim pytest skończył", "czerwony run anulowany po końcu pytest",
+         "następne runy gałęzi tylko anulowane", "bez następnego runu w oknie"],  # fmt: skip
+)
+def test_run_anulowany_nowym_pushem_nie_ukrywa_porazki_kroku_nf(
+    tmp_path: Path, wyniki: tuple[str | None, ...], zadania_2: str, naglowek: str, nastepny: int | None
+) -> None:
+    """Gałąź ``g``: czerwona głowa zmienia ``src/a.py``, druga dodaje plik w ``docs/``, trzecia naprawia folder verify-a;
+    run ``n + 2`` biegnie na ``n``-tej z nich z wynikiem ``wyniki[n]`` (``None``: bez runu). Anulowany run nie ma
+    naprawy z pushu, który go anulował, więc naprawa sięga następnego runu z wynikiem; czerwony run anulowany z padłym
+    zadaniem Mutation checks jest porażką jak run z wynikiem failure, a bez następnego runu z wynikiem porażka stoi jako
+    niepoliczona."""
+
+    repo = repository(tmp_path / "repo", {"src/a.py": "A = 1\n", ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\n---\n"}, tools=())
+    baza = commit(repo, "baza")
+    git(repo, "checkout", "--quiet", "-b", "g")
+    glowy = []
+    for plik in ("src/a.py", "docs/d.md", ".agents/skills/verify-a/drive.py"):
+        (repo / plik).parent.mkdir(parents=True, exist_ok=True)
+        (repo / plik).write_text("ZMIANA = 1\n", encoding="utf-8")
+        glowy.append(commit(repo, plik))
+    runy = [_run(1, "push", "main", baza, "success", 1)]
+    runy += [_run(n + 2, "pull_request", "g", glowa, wynik, n + 2) for n, (glowa, wynik) in enumerate(zip(glowy, wyniki, strict=True)) if wynik]
+    odpowiedzi, pliki = _czerwony_run_2(runy)
+    odpowiedzi |= {f"{REPO}/actions/runs/2/jobs?filter=latest&per_page=100": _zadania(zadania_2)}
+    # Runy anulowane bez padłego zadania: zadania pytest i Mutation checks anulowane.
+    odpowiedzi |= {f"{REPO}/actions/runs/{n}/jobs?filter=latest&per_page=100": _zadania("cancelled", "cancelled") for n in (3, 4)}
+    dzien = date(2026, 11, 12)
+
+    rekordy = cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", _GitHub(odpowiedzi, pliki)), repo, dzien, dzien, date(2026, 12, 1), 0)
+    linie = cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy))
+
+    assert [linia for linia in linie if linia.startswith(("KANDYDAT", "NIEPOLICZONY"))] == [naglowek]
+    assert (None if rekordy.pr[0].naprawa is None else rekordy.pr[0].naprawa.nastepna.run) == nastepny
+
+
+def _przemianowanie_przez_main(droga: str) -> Callable[[Path], tuple[str, str, str]]:
+    """``main`` przemianowuje ``src/a.py`` na ``src/b.py`` bez zmiany treści, a gałąź zmienia w nim funkcję ``b``
+    i folder verify-a, potem aktualizuje się ``droga`` (rebase, scalenie ``main``, rebase i poprawka tej funkcji):
+    ``(main, czerwona, następna)``."""
+
+    def stan(repo: Path) -> tuple[str, str, str]:
+        a, b = "def a():\n    x = 1\n    return x", "def b():\n    y = 2\n    return y"
+        (repo / "src/a.py").write_text(f"{a}\n\n{b}\n", encoding="utf-8")
+        baza = commit(repo, "baza")
+        git(repo, "mv", "src/a.py", "src/b.py")
+        main = commit(repo, "main przemianowuje src/a.py na src/b.py")
+        git(repo, "checkout", "--quiet", "-B", "g", baza)
+        (repo / "src/a.py").write_text(f"{a}\n\n{b.replace('2', '3')}\n", encoding="utf-8")
+        (repo / ".agents/skills/verify-a/drive.py").write_text("X = 1\n", encoding="utf-8")
+        czerwona = commit(repo, "zmiana")
+        if droga == "scalenie main":
+            git(repo, "merge", "--quiet", "--no-edit", main)
+        else:
+            git(repo, "rebase", "--quiet", main)
+        if droga == "rebase i poprawka":
+            (repo / "src/b.py").write_text(f"{a}\n\n{b.replace('2', '4')}\n", encoding="utf-8")
+            commit(repo, "poprawka")
+        return main, czerwona, git(repo, "rev-parse", "HEAD")
+
+    return stan
+
+
+@pytest.mark.parametrize(("droga", "naprawa"), [("rebase", ()), ("scalenie main", ()), ("rebase i poprawka", ("src/b.py",))])
+def test_plik_przemianowany_przez_main_to_dla_naprawy_i_dowodu_ten_sam_plik_pod_sciezka_sprzed_przemianowania(
+    tmp_path: Path, droga: str, naprawa: tuple[str, ...]
+) -> None:
+    """Rebase na ``main``, który przemianował plik gałęzi, zostawia własną zmianę PR (#2178 r3, D2), a poprawka po nim
+    jest naprawą, której dowód czyta własny diff czerwonej głowy pod ścieżką sprzed przemianowania."""
+
+    rekordy = _rekordy_luki(tmp_path, _przemianowanie_przez_main(droga))
+    linie = cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy))
+
+    assert _sciezki(rekordy.pr[0]) == naprawa
+    if naprawa:
+        assert rekordy.pr[0].naprawa is not None
+        czerwona, nastepna = rekordy.pr[0].naprawa.czerwona, rekordy.pr[0].naprawa.nastepna
+        poczatek = linie.index("  plik src/b.py | przy czerwonej głowie src/a.py: main przemianował go między bazami głów")
+        assert linie[poczatek + 1 : poczatek + 6] == [
+            f"    git diff {czerwona.baza[:12]}...{czerwona.sha[:12]} -- src/a.py | linii +/-: 2",
+            f"    git diff {nastepna.baza[:12]}...{nastepna.sha[:12]} -- src/b.py | linii +/-: 2",
+            "    linie +/- tylko przy czerwonej (-) albo tylko przy następnej (+): 2",
+            "      - +    y = 3",
+            "      + +    y = 4",
+        ]
 
 
 def _konflikt(repo: Path, *argumenty: str) -> None:
@@ -393,7 +583,7 @@ def test_naprawa_to_zmiana_wlasnej_zmiany_pr_commitem_galezi_a_nie_rebase_scalen
 
     rekordy = cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", _GitHub(*_czerwony_run_2(runy))), repo, dzien, dzien, date(2026, 12, 1), 0)
 
-    assert (_sciezki(rekordy.pr[0]), tuple(rozstrzygnij(rekordy).zlapane)) == (naprawa, (("g", "verify-a/ci"),) if naprawa else ())
+    assert (_sciezki(rekordy.pr[0]), _klucze(rozstrzygnij(rekordy).kandydaci)) == (naprawa, ("2 verify-a/ci",) if naprawa else ())
 
 
 def _zamiana_funkcji_przez_main(repo: Path, rozstrzygnij_konflikt: bool) -> tuple[str, str, str]:
@@ -487,4 +677,4 @@ def test_znana_luka_reguly_naprawy_wymaga_audytu_w_wyniku(tmp_path: Path, opis: 
 
     linie = [linia for linia in cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy)) if linia.startswith(("KANDYDAT NF", "NIEPOLICZONY"))]
 
-    assert len(linie) == 1 and "| g: verify-a/ci |" in linie[0] and "wymaga audytu" in linie[0], linie
+    assert len(linie) == 1 and "| 2 verify-a/ci | g, " in linie[0] and "wymaga audytu" in linie[0], linie
