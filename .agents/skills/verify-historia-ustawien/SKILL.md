@@ -1,6 +1,6 @@
 ---
 name: verify-historia-ustawien
-description: Model-check with TLA+ (TLC) the owner of the Ustawienia Centrum (`CentrumSettings`, ADR 0032) on one settings file with its memory in `config/ustawienia-pamiec`, the Historia Ustawień and one Zmiana z Wydania, under every order of Dad's saves and „Cofnij”, process snapshots, a hand edit of the file outside Centrum, a Centrum that switches off at any step and a failure of each write and read. It checks that an Uruchomienie computes with the value the Historia shows as current, that a Zmiana z Wydania never overwrites a value Dad saved after it took effect, and that „nie zapisano” means the file did not change. Use when `tools/skille_dla_zmiany.py` names it, when a change adds a writer of a settings file, of the memory or of the Historia, a step to `CentrumSettings._change`, `_compared` or `_apply_pending`, or a new entry in `RELEASE_CHANGES`, or when `sprawdz_historie_ustawien.py` fails.
+description: Model-check with TLA+ (TLC) the owner of the Ustawienia Centrum (`CentrumSettings`, ADR 0032) on one settings file with its memory in `config/ustawienia-pamiec`, the Historia Ustawień and one Zmiana z Wydania, under every order of Dad's saves and „Cofnij”, process snapshots, a hand edit of the file outside Centrum, a Centrum that switches off at any step and a failure of each write and read. It checks that an Uruchomienie computes with the value the Historia shows as current, that a Zmiana z Wydania never overwrites a value Dad saved after it took effect, that „nie zapisano” means the file did not change, and that „Cofnij” restores the bytes from before the change, including no file. Use when `tools/skille_dla_zmiany.py` names it, when a change adds a writer of a settings file, of the memory or of the Historia, a step to `CentrumSettings._change`, `_compared` or `_apply_pending`, or a new entry in `RELEASE_CHANGES`, or when `sprawdz_historie_ustawien.py` fails.
 pilnuje:
   - src/rozliczenia/centrum/settings/owner.py
   - src/rozliczenia/centrum/settings/memory.py
@@ -52,12 +52,19 @@ checks over every order of steps:
 - **NieZapisanoZnaczyNie**: when Dad reads „nie zapisano” (`NotSaved`), the file does not hold the value he just typed.
   Source: the docstring of `NotSaved` („więc nic się nie zmieniło”). Harm: processes compute with a value Dad believes
   was refused.
+- **CofnijPrzywracaBajty**: „Cofnij” of a row writes the bytes from before that change: no file when the change created
+  it (`HistoryRow.created`), otherwise the value from before. Source: the docstring of `_restores_absence` and Maks's
+  decision in #2237. Harm: Dad undoes his first change of a file he did not have, the file stays with the Wydanie's
+  content, and the next Wydanie's new defaults never reach him, because an Aktualizacja does not overwrite Ustawienia
+  (ADR 0032).
 
 ## The model
 
 `model/HistoriaUstawien.tla` has one settings file without a secret and outside the pair of Reguły ilości and Lista
 Urządzeń, with abstract values: `v0` (the content before the Wydanie), `r` (the value the Zmiana z Wydania sets), `t`
-(Dad's value), `x` (a value typed outside Centrum), `zly` (content `parse` refuses) and `d` (`file.default`). The Zmiana
+(Dad's value), `x` (a value typed outside Centrum), `zly` (content `parse` refuses) and `d` (`file.default`). The file
+holds a content: one of these values, `brak` (no file, whose value is `d`) or `d` itself (`file.dump(file.default)`, the
+Wydanie's content written to Dad's file); `Wartosc` gives a content's value. The Zmiana
 z Wydania is declarative, as `release_changes.py` requires: it proposes „set `r`” on a good value and `Later` on bad
 content, like `periods_directory_from_layout_root`. Because the owner works under one lock, its steps never interleave
 with each other; they interleave only with a hand edit of the file and with a switch-off. Each action is one read or
@@ -75,15 +82,15 @@ Each model action is one indivisible step of this code (`src/rozliczenia/centrum
 | `StartHistoria` | `CentrumSettings._apply_pending`: `CentrumSettings._release_rows` (`History.read`); Historia without a read holds the change until the next start („bez-historii”), a row with the change's id gives it a result without applying it, otherwise `CentrumSettings._apply` |
 | `Odczyt` | `CentrumSettings.snapshot` for an Uruchomienie: `CentrumSettings._observe` of the file |
 | `ZapisTaty` | Dad's save of a section: `CentrumSettings._by_dad` → `CentrumSettings._dad_change` → `CentrumSettings._change` with „set `v`” |
-| `CofnijTaty` | `CentrumSettings.undo`: `History.read` (without a read: `NotSaved`), a row „zapisano” with `undoable`, then `_by_dad` with the value from before that row |
+| `CofnijTaty` | `CentrumSettings.undo`: `History.read` (without a read: `NotSaved`), a row „zapisano” with `undoable`, then `_by_dad` with the value from before that row and the row itself as `undoes` (its `created`) |
 | `Porownaj` | `CentrumSettings._bytes_for_change` or `_observe` (`settings_bytes`), then `CentrumSettings._compared`: `Memory.read`; the same state as the memory gives no row; `Unreadable` memory gives `_read(parsed, None)` without comparing |
-| `WierszSpoza` | `CentrumSettings._compared`: `History.append` of `CentrumSettings._outside_row`; on `OSError` it returns `_read(parsed, good)` and keeps the memory |
+| `WierszSpoza` | `CentrumSettings._compared`: `History.append` of `CentrumSettings._outside_row` (`created` when the memory saw no file); on `OSError` it returns `_read(parsed, good)` and keeps the memory |
 | `PamiecSpoza` | `CentrumSettings._compared`: `CentrumSettings._remember` of the new state (bad content keeps the old `good`) |
 | `Uzyj` | the process takes `_value` of the observed value |
 | `Propozycja` | `CentrumSettings._apply`: `change.propose` on the observed value: `Edit` or `Later` (`periods_directory_from_layout_root`) |
-| `Wylicz` | `CentrumSettings._change`: `edit(current)`; no difference on a good file is `Saved(change=None)` (result „bez-zmian”); a row only with a difference of keys |
+| `Wylicz` | `CentrumSettings._change`: `edit(current)`; no difference on a good file is `Saved(change=None)` (result „bez-zmian”); a row only with a difference of keys; `new` is no file when `CentrumSettings._restores_absence` holds („Cofnij” of a row with `created` back to `file.default`), else `file.dump` |
 | `Zapis` | `CentrumSettings._change`: `place.write(new)` (`_ConfigFile`, `replace_atomically`); `OSError` is `NotSaved` |
-| `Wiersz` | `CentrumSettings._change`: `History.append` of `CentrumSettings._row`; `OSError` goes to `CentrumSettings._put_back` |
+| `Wiersz` | `CentrumSettings._change`: `History.append` of `CentrumSettings._row` (`created` when there was no file before, `removed` when the change writes none); `OSError` goes to `CentrumSettings._put_back` |
 | `Przywroc` | `CentrumSettings._put_back(place, data)`; its `OSError` is only logged |
 | `NieZapisano` | `CentrumSettings._change` returns `NotSaved` |
 | `Pamiec` | `CentrumSettings._remember(file, Remembered(seen=new, good=new))` after the row (`Memory.write`, its `OSError` only logged), then `Saved` |
@@ -95,7 +102,9 @@ Each model action is one indivisible step of this code (`src/rozliczenia/centrum
 that keeps a cut line apart), `replace_atomically` (old or new file, never a torn one), `settings_bytes`, `_seen` and `_good_value` (what
 `_compared` compares and which last good value it gives), `_value`,
 `_or_unreadable`, `_or_release` (which callers get `file.default`), `RELEASE_CHANGES` and all of `proposal.py` (the
-shapes of a Zmiana z Wydania). Left out on purpose: the pair check of Reguły ilości and Lista Urządzeń (`_paired`,
+shapes of a Zmiana z Wydania). `_restores_absence` keeps a file whose Zmiana z Wydania gives no file a meaning
+(`refused_absent`, `waiting`: Lista Wykonawców); the model has no such change, so that branch is not checked. Left out
+on purpose: the pair check of Reguły ilości and Lista Urządzeń (`_paired`,
 `_checked`), the secret of the inbox file (`_with_secret_value`, the hash in `_seen`), the autostart place, the periods check of
 removed logins (`_by_dad` before the lock), `keep_rejected`, the first read after the Wydanie that introduced the owner
 (no memory at all) and `_absent`. Two changes move the model without changing a definition, so look for them in the
@@ -118,8 +127,8 @@ py -3 .agents\skills\verify-historia-ustawien\scripts\sprawdz_historie_ustawien.
 ```
 
 The run of TLC, the verdict and the known findings are `tools/lib/model_tlc.py`; Java and `tla2tools.jar` come from
-`tools/lib/narzedzia_tlc.py`. The whole check took 34 s on Maks's busy Mac on 2026-11-19 (18 known findings in 26 TLC
-runs).
+`tools/lib/narzedzia_tlc.py`. The whole check took 32 s on Maks's busy Mac (load 30) on 2026-11-19 (19 known findings in 28
+TLC runs).
 
 The last line is the verdict:
 
@@ -168,6 +177,7 @@ you show it is not.
 | `odczyt-pamieci` | one save, one „Cofnij”, two hand edits, one switch-off, the memory once without a read in a snapshot | known `zgasniecie-przed-pamiecia`, `pamiec-bez-odczytu`, `zly-plik-bez-pamieci` |
 | `historia-i-zapis` | two saves, one „Cofnij”, one hand edit, two switch-offs, one failed `place.write`, the Historia once without a read | known `zgasniecie-przed-pamiecia`, `zgasniecie-przed-wierszem-wydania` |
 | `wydanie-jako-spoza` | no save, one „Cofnij”, one hand edit, two switch-offs, one failed `History.append`, one failed `Memory.write` | known `zgasniecie-przed-pamiecia`, `wiersz-odczytu-nieudany`, `pamiec-niezapisana`, `zgasniecie-przed-wierszem-wydania` |
+| `brak-pliku` | no file before the first start, one save, two „Cofnij” (an undo of an undo too), one hand edit, one switch-off | known `zgasniecie-przed-pamiecia` |
 
 ## Known findings
 
@@ -252,6 +262,7 @@ and each gives `HISTORIA USTAWIEŃ: NOWE NARUSZENIE`:
 - LiczyZapisanym: `_compared` without comparing with the memory (`zwykle`); `_change` without the row (`zwykle`);
   `_compared` that remembers the state although its row failed (`wiersz`).
 - NieZapisanoZnaczyNie: `_change` without `_put_back` (`wiersz`).
+- CofnijPrzywracaBajty: `_change` without `_restores_absence`, so „Cofnij” writes `file.dump(file.default)` (`brak-pliku`).
 - WydanieNieNadpisuje: `_apply_pending` without `_release_rows` (`pamiec-zmian`); `apply_release_changes` without
   `Memory.applied` (`poczatek-wydania`).
 
@@ -260,9 +271,9 @@ and each gives `HISTORIA USTAWIEŃ: NOWE NARUSZENIE`:
 
 ## Scope
 
-Verified: the three promises over every order of the actions above within the bounds of each configuration (one
+Verified: the four promises over every order of the actions above within the bounds of each configuration (one
 settings file, one Zmiana z Wydania, at most two saves, one „Cofnij”, two hand edits, two switch-offs and one failure of
-each kind; two „Cofnij” only in a wider run outside CI, see PR #2174). Assumed, each a reason the check can pass while the code is wrong:
+each kind; two „Cofnij” only in `brak-pliku` and in a wider run outside CI, see PR #2174). Assumed, each a reason the check can pass while the code is wrong:
 
 - **One Centrum at a time** on `config/`: the owner's lock is per process; two Centrum on one folder are not checked.
 - **`replace_atomically` is atomic** and `History.append` either adds a whole line or a line `History.read` skips.

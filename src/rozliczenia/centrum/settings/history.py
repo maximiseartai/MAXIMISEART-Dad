@@ -1,7 +1,7 @@
 """Historia Ustawień w ``config/historia-ustawien.jsonl``: jeden wiersz JSON na jeden zapis, dopisywany linia po linii.
 
 Wiersz mówi, kiedy, skąd (tata, zmiana z Wydania albo zmiana spoza Centrum), który plik i które klucze się zmieniły,
-z wartością przed i po (sekret bez wartości), czy da się go cofnąć, czy plik usunięto i czy zmiana weszła (``zapisano``)
+z wartością przed i po (sekret bez wartości), czy da się go cofnąć, czy zmiana utworzyła albo usunęła plik i czy zmiana weszła (``zapisano``)
 albo została odrzucona z powodem.
 Linia, której nie da się przeczytać (np. urwana zgaśnięciem Centrum), jest pomijana i liczona; Historii się nie przycina.
 Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie pusta Historia: nie wiadomo wtedy, co już weszło.
@@ -77,7 +77,9 @@ class RowChange(_Model):
 
 
 class HistoryRow(_Model):
-    """Wiersz Historii Ustawień. ``removed``: plik usunięty poza Centrum, więc jego klucze wróciły do wartości domyślnych."""
+    """Wiersz Historii Ustawień. ``created``: przed zmianą pliku nie było, więc jej „Cofnij” z wartością z Wydania
+    przywraca brak pliku. ``removed``: po zmianie pliku nie ma (usunięty poza Centrum albo przez to „Cofnij”), więc jego
+    klucze wróciły do wartości domyślnych."""
 
     version: Literal[1] = Field(default=_VERSION, validation_alias="v", serialization_alias="v")
     id: str
@@ -91,6 +93,7 @@ class HistoryRow(_Model):
     undoable: bool = Field(validation_alias="cofalny", serialization_alias="cofalny")
     result: RowResult = Field(validation_alias="wynik", serialization_alias="wynik")
     reason: str | None = Field(validation_alias="powod", serialization_alias="powod")
+    created: bool = Field(default=False, validation_alias="utworzono", serialization_alias="utworzono")
     removed: bool = Field(default=False, validation_alias="usunieto", serialization_alias="usunieto")
 
     def key_changes(self) -> tuple[KeyChange, ...]:

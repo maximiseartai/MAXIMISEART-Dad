@@ -40,7 +40,9 @@ w `config/` prowadzone przez Maksa, Wzorce w Excelu albo stałe w kodzie.
   w połowie.
 - **Zła wartość się nie zapisuje.** Centrum sprawdza ją przed zapisem i mówi jednym zdaniem, co poprawić.
 - **Historia Ustawień.** Każda zmiana zapisuje, kiedy, co i wartość przed i po, przy sekrecie tylko to, że się
-  zmienił. Z Historii tata cofa zmianę. Zgłoszenie podaje zmiany z ostatnich 30 dni.
+  zmienił. Z Historii tata cofa zmianę. Zgłoszenie podaje zmiany z ostatnich 30 dni. „Cofnij” zmiany, przed którą
+  pliku nie było, przywraca brak pliku (decyzja Maksa 19.11.2026, #2237), więc tata dalej dostaje wartości domyślne
+  następnych Wydań; wyjątkiem jest Lista Wykonawców, której brak pliku może znaczyć czekającą migrację.
 - **Lista Wykonawców w jednym pliku** zastępuje osobne pliki identyfikatorów i adresów, które musiały się zgadzać.
   Pierwszy start po Aktualizacji łączy oba stare pliki i zostawia je jako kopię. Wykonawca może mieć świadomie
   dodany drugi login. Dwa różne wpisy z tą samą nazwą dalej są odrzucane. Wykonawcy z identyfikatorem w

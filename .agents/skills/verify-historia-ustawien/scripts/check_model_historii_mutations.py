@@ -201,6 +201,20 @@ MUTATIONS = (
         "zmiana z Wydania z wynikiem „bez-zmian” stosuje się przy następnym starcie znowu i nadpisuje wartość taty",
         NEW,
     ),
+    Mutation(
+        "_change bez _restores_absence: „Cofnij” zmiany, przed którą pliku nie było, zapisuje treść z Wydania",
+        (
+            Edit(
+                MODEL,
+                "!.nowa = IF op.usun /\\ op.cel = DOMYSLNA THEN BRAK ELSE op.cel,",
+                "!.nowa = op.cel,",
+            ),
+        ),
+        _check("brak-pliku"),
+        "tata cofa pierwszą zmianę pliku, którego nie miał, a plik zostaje z treścią z Wydania: następne Wydanie z nowymi "
+        "wartościami domyślnymi do niego nie dociera",
+        NEW,
+    ),
     *dict.fromkeys(mutation for mutations in GRANICE.values() for mutation in mutations),
 )
 
