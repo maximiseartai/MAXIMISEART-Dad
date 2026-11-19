@@ -649,7 +649,7 @@ class _PythonScript:
             elif isinstance(node, (ast.For, ast.comprehension)) and isinstance(node.target, ast.Name):
                 self.iterated[node.target.id] = (node.iter, node)
         self.functions = {
-            node.name: node for node in tree.body if isinstance(node, ast.FunctionDef) and self.bindings[node.name] == 1
+            node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
         }
         self.modules = {name for name, count in self.imports.items() if self.bindings[name] == count}
 

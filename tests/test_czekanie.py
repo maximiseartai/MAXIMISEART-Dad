@@ -810,6 +810,13 @@ PYTHON_PASSING = [
     pytest.param(_heredoc(ITERATOR), id="kolejka-z-iteratora"),
     pytest.param(_heredoc(CHANGE_IN_CALL), id="zmiana-w-wywolaniu-procesu"),
     pytest.param(
+        _heredoc(
+            'import subprocess, time\nwhile True:\n    rid = open("next.txt").read().strip()\n    if not rid: break\n'
+            '    subprocess.run(["gh", "run", "view", rid, "--log-failed"])\n    open("next.txt", "w").write("")\n    time.sleep(1)'
+        ),
+        id="partia-z-numerem-z-pliku",
+    ),
+    pytest.param(
         _heredoc('import subprocess, time\nfor pr in ("2178", "2179"):\n    subprocess.run(["gh", "pr", "checks", pr])\n    time.sleep(1)'),
         id="partia-po-stalej-krotce",
     ),
@@ -1141,6 +1148,13 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
             + ", ".join(f"a{index}" for index in range(7000))
             + "])\n    time.sleep(1)"
         ),
+        _heredoc(CHECKS_IN_CONDITION)
+        + "\n"
+        + _heredoc(
+            'import subprocess, time\nA0 = "gh"\n'
+            + "".join(f"A{index + 1} = (A{index}, A{index})\n" for index in range(60))
+            + "while subprocess.run(A60).returncode == 8:\n    time.sleep(30)"
+        ),
     ],
     ids=[
         "ogon-przekierowan",
@@ -1159,6 +1173,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "petle-pythona-zagniezdzone-z-zapytaniem-w-najglebszej",
         "skrypty-pythona-do-budzetu-wezlow-przed-czekaniem",
         "przypisanie-lancuchowe-za-czekaniem",
+        "krotki-podwajane-za-czekaniem",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
