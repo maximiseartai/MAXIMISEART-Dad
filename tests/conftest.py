@@ -25,15 +25,15 @@ from tests.fixtures.git_config import hermetic_git
 from tests.fixtures.kwarantanna import KWARANTANNA
 from tests.fixtures.linie_watkow import shared_test_loop, stopped_after_test
 
-# Testy skrzynki GitHub importują wprost skrypty skilla verify-github-skrzynki.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".agents/skills/verify-github-skrzynki/scripts"))
-# Testy importują narzędzia tak, jak skrypt z ``tools/`` widzi je na ``sys.path``: narzędzia agenta, biblioteki i CI.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/ci"))
 
 import niestabilne_testy
+from repo import IMPORT_ROOTS, ROOT
 from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, opening
+
+# Testy importują narzędzia agenta, biblioteki, CI i skrypty skilla verify-github-skrzynki z tych samych katalogów,
+# które ``tools/setup_worktree.py`` daje każdemu Pythonowi z ``.venv``: ``repo.IMPORT_ROOTS``.
+sys.path[:0] = [str(ROOT / root) for root in IMPORT_ROOTS]
 
 _CHECKED_CONTENT_TYPES = ("application/json", "text/event-stream")
 # Koniec komunikatu porażki testu z kwarantanny w logu; komunikat eksploratora Wyceny w efenix ma całe jego wyjście.

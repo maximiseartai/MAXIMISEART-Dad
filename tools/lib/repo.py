@@ -45,6 +45,10 @@ import tempfile
 import threading
 
 ROOT = Path(__file__).resolve().parents[2]
+# Katalogi importu (od korzenia, od najwyższego pierwszeństwa), które widzi test i każdy Python z ``.venv``:
+# ``tests/conftest.py`` kładzie je na ``sys.path`` testów, a ``tools/setup_worktree.py`` w pliku ``.pth`` ``.venv``,
+# więc ``.venv/bin/python -c "import wplyw_zmiany, tests.fixtures.wyciek"`` działa bez ``sys.path`` i ``PYTHONPATH``.
+IMPORT_ROOTS = ("tools/ci", "tools/lib", "tools", ".agents/skills/verify-github-skrzynki/scripts", ".")
 REMOTE = "origin"
 MAIN = "main"
 BASE = f"{REMOTE}/{MAIN}"
@@ -56,6 +60,7 @@ _ISOLATED_KEPT = ("PATH", "SYSTEMROOT")
 
 __all__ = [
     "BASE",
+    "IMPORT_ROOTS",
     "MAIN",
     "RELEASE_OVERRIDE",
     "REMOTE",
