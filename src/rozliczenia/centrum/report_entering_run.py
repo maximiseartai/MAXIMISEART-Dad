@@ -57,7 +57,6 @@ from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
 from rozliczenia.centrum.report_entering_state import (
     FileReportState,
     ShownNote,
-    ShownOffer,
     ShownProblem,
     ShownResult,
     ShownWorker,
@@ -73,6 +72,8 @@ from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_reports import (
     Kept,
     Login,
+    MailId,
+    Offer,
     OrderKey,
     OrderNumber,
     OrderState,
@@ -179,24 +180,27 @@ class ReportEnteringEntry:
 
     def on_request(self, cell: report_entering_contract.RequestedCell) -> PreparedRun[Any, Any]:
         """Wpis na życzenie przy Wpisie ``cell`` z wyniku ostatniego kliknięcia: Uruchomienie Wpisania raportów z decyzją
-        taty z chwilą kliknięcia; ``Refusal``, gdy wynik nie ma tego Wpisu z przyciskiem."""
+        taty z oferty wyniku o tożsamości komórki (``Offer.token``) i z chwilą kliknięcia; ``Refusal``, gdy wynik nie ma
+        tej oferty albo komórka ma inny dzień zlecenia po Wpisie (``order_day`` jest poza tożsamością, a komórka
+        przycisku go pokazuje)."""
 
-        offer = ShownOffer(
-            cell.mail,
-            cell.worker,
+        clicked = Offer(
+            MailId(cell.mail),
+            Login(cell.worker),
             cell.day,
-            cell.number,
-            cell.activities,
+            OrderNumber(cell.number),
             Verdict(cell.successful),
+            cell.activities,
             cell.order_day,
         )
         try:
             shown = self.files.shown()
         except StateUnreadable as error:
             raise refusal.reports_unreadable() from error
-        if shown is None or offer not in shown.requests():
+        offer = None if shown is None else shown.offers().get(clicked.token)
+        if offer is None or offer.order_day != clicked.order_day:
             raise refusal.request_gone()
-        return self.prepare(offer.decision(self.parts.now()))
+        return self.prepare(offer.decide(self.parts.now()))
 
     def _missing(self) -> list[refusal.ReportEnteringFile]:
         """Pliki w ``config``, których nie ma: bez nich kliknięcie i tak by się nie udało."""
@@ -309,7 +313,7 @@ class _Held:
 
     worker: str
     day: date
-    offer: ShownOffer
+    offer: Offer
 
 
 @dataclass(frozen=True)
@@ -326,8 +330,8 @@ def _held(shown: ShownResult) -> dict[str, tuple[_Held, ...]]:
     held: defaultdict[str, list[_Held]] = defaultdict(list)
     for worker in shown.workers:
         for order in worker.orders_detail or ():
-            if (offer := worker.offer(order)) is not None:
-                held[offer.mail].append(_Held(worker.worker, worker.day, offer))
+            if (offer := order.request) is not None:
+                held[offer.mail.digest].append(_Held(worker.worker, worker.day, offer))
     return {mail: tuple(found) for mail, found in held.items()}
 
 
@@ -382,7 +386,7 @@ def _worker_day(
                 state=OrderState.of(reported=order.reported, faulty=order.faulty, problem=order.number in numbers).value,
                 codes=list(order.codes or ()),
                 no_code=order.codes == (),
-                request=None if figure is None or (offer := figure.offer(order)) is None else _requested_cell(offer),
+                request=None if order.request is None else _requested_cell(order.request),
             )
             for order in orders
         ],
@@ -427,14 +431,14 @@ def _problem(placed: _Placed) -> report_entering_contract.ReportsProblem:
     )
 
 
-def _requested_cell(offer: ShownOffer) -> report_entering_contract.RequestedCell:
+def _requested_cell(offer: Offer) -> report_entering_contract.RequestedCell:
     return report_entering_contract.RequestedCell(
-        mail=offer.mail,
+        mail=offer.mail.digest,
         number=offer.number,
         day=offer.day,
         worker=offer.worker,
         activities=offer.activities,
-        successful=offer.successful.value,
+        successful=offer.verdict.value,
         order_day=offer.order_day,
     )
 

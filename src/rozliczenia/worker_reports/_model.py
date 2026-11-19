@@ -11,6 +11,7 @@ from datetime import date, datetime, timedelta
 from email.utils import parseaddr
 from enum import Enum
 import hashlib
+import json
 from types import MappingProxyType
 from typing import TYPE_CHECKING, ClassVar, Final, NewType, assert_never
 
@@ -34,19 +35,24 @@ _DIGEST_LETTERS: Final = 16
 _LETTERS: Final = str.maketrans("0123456789abcdef", "abcdefghijklmnop")
 
 
+def _letters(text: str) -> str:
+    """16 liter a–p ze skrótu SHA-256 tekstu ``text``: same litery, żeby strażnik reguły danych nie wziął skrótu za
+    numer telefonu."""
+
+    hexdigest = hashlib.sha256(text.encode("utf-8", "surrogateescape")).hexdigest()
+    return hexdigest[:_DIGEST_LETTERS].translate(_LETTERS)
+
+
 @dataclass(frozen=True, order=True)
 class MailId:
-    """Mail ze Skrzynki raportów: 16 liter a–p ze skrótu SHA-256 jego Message-ID.
-
-    Same litery, żeby strażnik reguły danych nie wziął skrótu za numer telefonu. Sam Message-ID do rdzenia nie wchodzi.
-    """
+    """Mail ze Skrzynki raportów: 16 liter a–p ze skrótu SHA-256 jego Message-ID (``_letters``). Sam Message-ID do
+    rdzenia nie wchodzi."""
 
     digest: str
 
     @classmethod
     def of(cls, message_id: str) -> MailId:
-        hexdigest = hashlib.sha256(message_id.encode("utf-8", "surrogateescape")).hexdigest()
-        return cls(hexdigest[:_DIGEST_LETTERS].translate(_LETTERS))
+        return cls(_letters(message_id))
 
 
 class SenderAddress:
@@ -448,7 +454,10 @@ class RequestedEntry:
       zamiar znaku (``VerdictFault.leaning``);
     - Wpis raportu z błędem tematu (``ReadUnreadable``), który stawia zlecenie w dniu ``day`` u ``worker``, także z
       Przeniesieniem zlecenia: rdzeń czyta go jak Wpis Raportu wykonawcy z tym dniem w temacie
-      (``_reading._requested``), a Wpis z ``t`` czy ``skuteczne`` także ze znakiem zamienionym na ``verdict``.
+      (``_mails.requested_reports``), a Wpis z ``t`` czy ``skuteczne`` także ze znakiem zamienionym na ``verdict``.
+
+    Decyzję daje tylko oferta, którą tata kliknął (``Offer.decide``), więc dzień ``day`` każdego przypadku wyznacza
+    rdzeń tam, gdzie powstaje oferta.
 
     Rdzeń wpisuje go tak, dopóki ten Wpis tego maila jest zwycięskim Wpisem zlecenia: Wpis z późniejszego maila wygrywa
     jak każdy późniejszy, także z tym samym znakiem, a ręczna wartość zostaje z ``ManualDifference``. Decyzja należy do
@@ -471,17 +480,43 @@ class RequestedEntry:
 
 
 @dataclass(frozen=True)
-class Requestable:
-    """Co wpisze Wpis na życzenie z Wpisu Raportu wykonawcy ``mail`` (przy ``MissingVerdict`` albo przy zleceniu z
-    Wpisem raportu z błędem tematu, ``OrderDetail.request``): ``tak`` albo ``nie`` (``verdict``) i czynności Wpisu
-    (``activities``) do zlecenia z dnia ``order_day`` u Wykonawcy ``worker``, które ma ono po Wpisie; przy zleceniu
-    innego Wykonawcy albo z innego dnia Wpis je przenosi jak Raport wykonawcy z tym dniem w temacie."""
+class Offer:
+    """Wpis na życzenie, który tata może kliknąć (ADR 0041), przy ``MissingVerdict`` albo przy zleceniu z Wpisem raportu
+    z błędem tematu (``OrderDetail.request``): Wpis zlecenia ``number`` z Raportu wykonawcy ``mail`` od Wykonawcy
+    ``worker``, który tata widzi w dniu ``day``, wpisze ``tak`` albo ``nie`` (``verdict``) i czynności Wpisu
+    (``activities``) do zlecenia, które po Wpisie stoi w dniu ``order_day`` u ``worker``; przy zleceniu innego
+    Wykonawcy albo z innego dnia Wpis je przenosi jak Raport wykonawcy z tym dniem w temacie.
+
+    Ofertę składa tylko rdzeń, każdy przypadek w jednym miejscu: przy znaku z zamiarem ``_matching.Board.match`` (dzień,
+    w którym tata widzi problem), przy raporcie z błędem tematu ``_reading._offers`` (dzień zlecenia po Wpisie)."""
 
     mail: MailId
+    worker: Login
+    day: date
+    number: OrderNumber
     verdict: Verdict
     activities: str
     order_day: date
-    worker: Login
+
+    @property
+    def place(self) -> tuple[MailId, Login, date, OrderNumber, Verdict, str]:
+        """Wpis, przy którym tata klika: ``RequestedEntry.place`` decyzji z tego kliknięcia. ``order_day`` do niego nie
+        należy, bo rdzeń wyznacza go z tego Wpisu."""
+
+        return self.mail, self.worker, self.day, self.number, self.verdict, self.activities
+
+    @property
+    def token(self) -> str:
+        """Tożsamość oferty: 16 liter a–p ze skrótu SHA-256 jej ``place`` (``_letters``, jak ``MailId``). Bierze też
+        Wykonawcę, bo Message-ID ustawia nadawca, więc maile dwóch Wykonawców mogą mieć ten sam ``MailId``."""
+
+        mail, worker, day, number, verdict, activities = self.place
+        return _letters(json.dumps([mail.digest, worker, day.isoformat(), number, verdict.value, activities]))
+
+    def decide(self, at: datetime) -> RequestedEntry:
+        """Decyzja taty z kliknięcia tej oferty w chwili ``at``."""
+
+        return RequestedEntry(self.mail, self.worker, self.day, self.number, self.verdict, self.activities, at)
 
 
 @dataclass(frozen=True, order=True)
@@ -722,14 +757,14 @@ class UnknownSender:
 @dataclass(frozen=True)
 class MissingVerdict:
     """Zwycięski Wpis zlecenia ``number`` od Wykonawcy ``worker``, który tata widzi w dniu ``day``, nie ma ``tak`` ani
-    ``nie`` z powodu ``fault``. ``requestable``: co wpisze Wpis na życzenie, gdy znak ma zamiar, a Wpis ma jedno
-    zlecenie w INTERMAX; ``None``: przycisku nie ma."""
+    ``nie`` z powodu ``fault``. ``offer``: Wpis na życzenie tego Wpisu, gdy znak ma zamiar, a Wpis ma jedno zlecenie w
+    INTERMAX; ``None``: przycisku nie ma."""
 
     worker: Login
     day: date
     number: OrderNumber
     fault: VerdictFault
-    requestable: Requestable | None = None
+    offer: Offer | None = None
 
 
 @dataclass(frozen=True)
@@ -1001,7 +1036,7 @@ class OrderDetail:
     reported: bool
     codes: tuple[str, ...] | None = None
     faulty: bool = False
-    request: Requestable | None = None
+    request: Offer | None = None
 
 
 @dataclass(frozen=True)

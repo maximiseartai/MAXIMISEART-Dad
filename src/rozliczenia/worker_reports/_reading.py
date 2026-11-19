@@ -14,6 +14,7 @@ from ._model import (
     Login,
     MailId,
     MailRead,
+    Offer,
     OrderKey,
     OrderNumber,
     OvertakenSubject,
@@ -25,7 +26,6 @@ from ._model import (
     ReportEntry,
     ReportInputs,
     ReportSubject,
-    Requestable,
     UnknownSender,
     Window,
 )
@@ -64,7 +64,7 @@ class WindowRead:
     reported: tuple[tuple[Login, date], ...]
     mistaken: tuple[tuple[Login, date, date], ...]
     faulty_entries: frozenset[OrderKey]
-    offers: Mapping[OrderRow, Requestable]
+    offers: Mapping[OrderRow, Offer]
     overtaken: tuple[OvertakenSubject, ...]
     said: frozenset[OrderKey]
     matched: _matching.Matched
@@ -201,7 +201,7 @@ def _indicated(
 
 def _offers(
     matched: _matching.Matched, asked: Sequence[ReadReport], decided: Mapping[tuple[MailId, OrderNumber], object]
-) -> dict[OrderRow, Requestable]:
+) -> dict[OrderRow, Offer]:
     """Wpis na życzenie przy każdym zleceniu, którego zwycięskim Wpisem byłby Wpis raportu z błędem tematu, gdyby każdy
     taki raport miał w temacie swój dzień, a każdy znak z zamiarem był swoim ``tak``/``nie`` (``asked``), wśród
     Raportów wykonawców Wpisania raportów (``matched``: ``Board.match`` Raportów wykonawców Wpisania raportów i ``asked``
@@ -210,11 +210,13 @@ def _offers(
     późniejszego raportu z błędem tematu ma własny, także przy zleceniu z Wpisem na życzenie wcześniejszego maila. Wpis,
     który stawia zlecenie u nadawcy albo w dniu z tematu, ma przycisk jak Raport wykonawcy, który by je przeniósł (ADR
     0029); bez przycisku zostaje to, czego taki raport by nie wpisał: przeciwne Wpisy, Wpis bez znaku, numer bez
-    zlecenia, numer w kilku miejscach i Przeniesienie, do którego nie wolno."""
+    zlecenia, numer w kilku miejscach i Przeniesienie, do którego nie wolno. Dzień decyzji (``Offer.day``) to dzień
+    zlecenia po Wpisie, który decyzja daje Raportowi wykonawcy tego maila jako dzień z tematu
+    (``_mails.requested_reports``)."""
 
     faulty = {report.mail for report in asked}
     return {
-        order.row: Requestable(mail, entry.verdict, entry.activities, key.day, key.worker)
+        order.row: Offer(mail, key.worker, key.day, key.number, entry.verdict, entry.activities, key.day)
         for key, (order, entry) in matched.targets.items()
         if (mail := matched.mails[order.row]) in faulty and (mail, key.number) not in decided and entry.verdict is not None
     }
