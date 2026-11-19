@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from functools import cached_property
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any, Final, assert_never
@@ -21,7 +22,7 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.catalog import Catalog
 from rozliczenia.centrum.configuration import ConfigurationFiles, InputWorkbook, open_in_excel
 from rozliczenia.centrum.metrics import previewed_periods
-from rozliczenia.centrum.period_board import located_period_folder, observed_period_folder, read_board, requested_period
+from rozliczenia.centrum.period_board import board_of, located_period_folder, observed_period_folder, requested_period
 from rozliczenia.centrum.process_kind import (
     ByStatus,
     HostParts,
@@ -54,7 +55,12 @@ class PeriodStarts:
 
     def setup(self) -> runs_contract.RunSetup:
         snapshot = self.settings.snapshot()
-        return runs_contract.RunSetup(processes=[self._setup(self.catalog.period_kind(key), snapshot) for key in _TILES])
+        folders = snapshot.folders_or_unreadable
+        periods_directory = folders.periods_directory if isinstance(folders, FolderSettings) else None
+        read = _PeriodsDirectoryRead(periods_directory, self.today(), self.catalog)
+        return runs_contract.RunSetup(
+            processes=[self._setup(self.catalog.period_kind(key), snapshot, read) for key in _TILES]
+        )
 
     def prepare(self, request: runs_contract.RunRequest) -> PreparedRun[Any, Any]:
         """Uruchomienie z karty: ``Refusal``, gdy tata czegoś jeszcze nie wskazał albo wybrał coś, czego nie ma."""
@@ -87,7 +93,9 @@ class PeriodStarts:
             case _:
                 assert_never(need)
 
-    def _setup(self, kind: PeriodProcessKind[Any, Any], snapshot: SettingsSnapshot) -> runs_contract.ProcessSetup:
+    def _setup(
+        self, kind: PeriodProcessKind[Any, Any], snapshot: SettingsSnapshot, read: _PeriodsDirectoryRead
+    ) -> runs_contract.ProcessSetup:
         """Kafelek procesu; bez okresów do wyboru, gdy pliku Folderów nie da się teraz przeczytać, bo nikt nie zna
         folderu okresów, a kartę blokuje zdanie o tym pliku (``settings_blocker``)."""
 
@@ -96,9 +104,9 @@ class PeriodStarts:
         choices: tuple[list[runs_contract.PeriodChoice], str, str | None]
         match snapshot.folders_or_unreadable:
             case Unreadable():
-                choices = [], last_complete_period(self.today()).token, None
+                choices = [], last_complete_period(read.today).token, None
             case FolderSettings() as settings:
-                choices = self._choices(kind, settings, open_templates)
+                choices = self._choices(kind, settings, open_templates, read)
         periods, preselected, blocker = choices
         return runs_contract.ProcessSetup(
             process=kind.key,
@@ -115,7 +123,11 @@ class PeriodStarts:
         )
 
     def _choices(
-        self, kind: PeriodProcessKind[Any, Any], settings: FolderSettings, open_templates: list[str]
+        self,
+        kind: PeriodProcessKind[Any, Any],
+        settings: FolderSettings,
+        open_templates: list[str],
+        read: _PeriodsDirectoryRead,
     ) -> tuple[list[runs_contract.PeriodChoice], str, str | None]:
         """Okresy do wyboru na kafelku, okres zaznaczony i czego brakuje w folderze okresów."""
 
@@ -124,19 +136,19 @@ class PeriodStarts:
         chooser = kind.start.chooser
         match chooser:
             case ByStatus():
-                board = read_board(settings.periods_directory, self.today(), self.catalog)
+                board = read.board
                 rows = [row for row in board.periods if row.status in chooser.statuses] if board.state == "ready" else []
-                files = _collective_files(settings.periods_directory, rows)
+                files = _collective_files(read.folders, rows)
                 periods = [_board_choice(kind, row, files[row.token], row.token in previewed, open_templates) for row in rows]
                 preselected = next(
                     (row.token for row in rows if row.last_complete),
-                    rows[0].token if rows else last_complete_period(self.today()).token,
+                    rows[0].token if rows else last_complete_period(read.today).token,
                 )
                 blocker = _board_blocker(board, rows, chooser)
             case RecentWeeks():
-                last_complete = last_complete_period(self.today())
+                last_complete = last_complete_period(read.today)
                 recent = [SettlementPeriod(last_complete.tuesday - timedelta(weeks=week)) for week in range(chooser.weeks)]
-                folders = None if settings.periods_directory is None else scan_period_folders(settings.periods_directory)
+                folders = read.folders
                 register = settings.register
                 open_register = [] if register is None else open_in_excel([InputWorkbook(view.register_name, register, "data_file")])
                 reminder = view.start_reminder(data_file_open=bool(open_register), template_open=bool(open_templates))
@@ -158,12 +170,26 @@ class PeriodStarts:
         return periods, preselected, blocker
 
 
-def _collective_files(periods_directory: Path | None, rows: list[periods_contract.PeriodRow]) -> dict[str, Path]:
+@dataclass
+class _PeriodsDirectoryRead:
+    periods_directory: Path | None
+    today: date
+    catalog: Catalog
+
+    @cached_property
+    def folders(self) -> PeriodFolders | None:
+        return None if self.periods_directory is None else scan_period_folders(self.periods_directory)
+
+    @cached_property
+    def board(self) -> periods_contract.PeriodBoard:
+        return board_of(self.folders, self.today, self.catalog)
+
+
+def _collective_files(folders: PeriodFolders | None, rows: list[periods_contract.PeriodRow]) -> dict[str, Path]:
     """Plik zbiorczy każdego okresu do wyboru, w tym Folderze okresu, który pokazuje Tablica okresów."""
 
-    if periods_directory is None:
+    if folders is None:
         return {}
-    folders = scan_period_folders(periods_directory)
     return {row.token: observed_period_folder(folders, SettlementPeriod(row.tuesday)).collective_file for row in rows}
 
 
