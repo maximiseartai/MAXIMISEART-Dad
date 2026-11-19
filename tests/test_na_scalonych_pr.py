@@ -262,6 +262,14 @@ def test_dowod_reguly_lapie_wazne_z_linii_dodanej_w_srodku_starej_instrukcji_jak
 
 
 @needs_ast_grep
+def test_dowod_reguly_liczy_wystapienie_na_main_w_linii_ze_znakiem_podzialu_splitlines_u2028(tmp_path: Path) -> None:
+    done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start={"znak.py": "def znak(obiekt):\n    return obiekt.zakazane() or '\u2028'\n"})
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 2", done.stdout
+
+
+@needs_ast_grep
 @pytest.mark.parametrize(
     ("failed", "clean", "where", "summary"),
     [
