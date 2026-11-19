@@ -182,3 +182,7 @@ przyklad = 2293
 [R-WERSJA-KOPII]
 opis = "Nowa umowa między checkoutem a kopią bazy, która go sądzi (kod wyjścia, zmienna, blokada), zakłada nową wersję narzędzia po obu stronach, więc checkout sprzed zmiany z kopią po niej robi co innego, niż mówi wynik."
 przyklad = 2296
+
+[R-ODMOWA-ZE-SKROTU]
+opis = "Odmowa porównuje same skróty i podaje dwa skróty bez elementu, który się różni, więc jej polecenie naprawy zakłada jedną przyczynę różnicy i nie da się go wykonać, gdy przyczyna leży poza tym, co polecenie każe przywrócić."
+przyklad = 2304
