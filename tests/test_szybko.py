@@ -41,10 +41,6 @@ BY_CHANGE_ONLY = {
         "sprawdza granicę typu SettingsFile.dump na próbkach w pliku tymczasowym, a mypy biegnie w zadaniu „Ruff, mypy” "
         "każdego runu; graf wybiera jego plik przy zmianie modułów ustawień, które importuje"
     ),
-    "tests/test_centrum_rozliczen.py::test_lista_wykonawcow_bez_odczytu_bez_jawnej_galezi_nie_przechodzi_mypy_a_znane_luki_przechodza": (
-        "sprawdza granicę typu settings.files.usable na próbkach w pliku tymczasowym, a mypy biegnie w zadaniu „Ruff, "
-        "mypy” każdego runu; graf wybiera jego plik przy zmianie modułów ustawień, które importuje"
-    ),
     "tests/test_centrum_wpisanie_raportow.py::test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza": (
         "sprawdza granicę typu EnteringMemory na próbkach w plikach tymczasowych, a mypy biegnie w zadaniu „Ruff, mypy” "
         "każdego runu; graf wybiera jego plik przy zmianie report_entering.py i modułów Centrum, które plik importuje"

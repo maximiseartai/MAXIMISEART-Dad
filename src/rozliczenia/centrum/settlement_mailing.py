@@ -39,9 +39,8 @@ from rozliczenia.centrum.contract import settlement_mailing as contract
 from rozliczenia.centrum.log import SettlementMailFailure
 from rozliczenia.centrum.period_board import requested_folder
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.settings.files import Unreadable, usable
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
-from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.period_folder import PeriodFolder, WorkerSettlementFile, scan_period_folders
@@ -336,10 +335,10 @@ def _inputs(snapshot: SettingsSnapshot) -> _Inputs | None:
     bez ostatniej dobrej."""
 
     mail, reminders = snapshot.settlement_mail, snapshot.reminders
-    if isinstance(snapshot.workers, Unreadable):
-        raise refusal.settings_file_unreadable(WORKERS_FILE)
-    workers = usable(snapshot.workers)
-    if workers is None:
+    workers = snapshot.workers.counted_or_unreadable()
+    if isinstance(workers, Unreadable):
+        raise refusal.settings_file_unreadable(workers.name)
+    if isinstance(workers, FieldProblem):
         return None
     return _Inputs(workers.workers, mail, reminders.footer)
 

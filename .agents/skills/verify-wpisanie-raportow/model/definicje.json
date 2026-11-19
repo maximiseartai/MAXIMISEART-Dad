@@ -36,7 +36,7 @@
   },
   "src/rozliczenia/centrum/report_entering_run.py": {
     "ReportEnteringEntry.keep": "c20ea2503a531687",
-    "ReportEnteringEntry.view": "38043bc90ee285cb",
+    "ReportEnteringEntry.view": "ea296eec62e110c0",
     "_view": "7dedc4e0877f4fb3",
     "ReportEnteringEntry.on_request": "ebd5f53884a7144f",
     "ReportEnteringEntry.prepare": "37dcb3f86e349f85"

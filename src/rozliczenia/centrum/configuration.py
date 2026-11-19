@@ -21,10 +21,9 @@ from rozliczenia.centrum.process_kind import ConfigurationNeed, TemplateRole
 from rozliczenia.input_checks import ProcessTemplate
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.centrum import diagnosis_messages
-from rozliczenia.centrum.settings.files import Bad, Unreadable
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.message import Message
 from rozliczenia.tool_files import CONFIG_DIR, COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, WORKER_TEMPLATE
-from rozliczenia.worker_list import WorkerList
 
 
 @dataclass(frozen=True)
@@ -129,11 +128,12 @@ class Template:
         return None if found is None else found.message
 
 
-def workers_problem(workers: Bad[WorkerList] | Unreadable) -> Message:
-    """Komunikat o Liście Wykonawców z migawki Ustawień: złe ustawienie albo plik, którego system nie daje teraz czytać."""
+def workers_problem(problem: FieldProblem | Unreadable) -> Message:
+    """Komunikat o problemie Listy Wykonawców z migawki Ustawień (``WorkerListRead.problem``): złe ustawienie albo plik,
+    którego system nie daje teraz czytać."""
 
-    match workers:
-        case Bad(problem=problem):
-            return diagnosis_messages.worker_list_bad(problem.sentence)
+    match problem:
+        case FieldProblem(sentence=sentence):
+            return diagnosis_messages.worker_list_bad(sentence)
         case Unreadable():
             return diagnosis_messages.worker_list_unreadable()

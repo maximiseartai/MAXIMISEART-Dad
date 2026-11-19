@@ -64,8 +64,7 @@ from rozliczenia.centrum.report_entering_state import (
 )
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
-from rozliczenia.centrum.settings.files import Good, Read, Unreadable, usable
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, WorkerListRead
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
@@ -156,8 +155,8 @@ class ReportEnteringEntry:
         przypomnienia ma z pamięci Wpisania, a nie z listy: nieznany nadawca zostaje wtedy nieznanym jak w wyniku
         kliknięcia, a przypisanie go odmawia jak każdy zapis listy bez odczytu."""
 
-        workers = self.settings.snapshot().workers
-        listed = WorkerList(()) if isinstance(workers, Unreadable) else usable(workers) or WorkerList(())
+        workers = self.settings.snapshot().workers.counted_or_unreadable()
+        listed = workers if isinstance(workers, WorkerList) else WorkerList(())
         try:
             return _view(self.files.shown(), self.files.kept(), self.parts.now().date(), self.reminders(), listed.addresses())
         except (StateUnreadable, DecisionsUnreadable) as error:
@@ -218,10 +217,10 @@ def _chosen(snapshot: SettingsSnapshot) -> dict[SettingField, Path] | refusal.Re
     return chosen_settings(snapshot, _SETTINGS, _KIND.needs)
 
 
-def _no_addresses(workers: Read[WorkerList] | Unreadable) -> str | None:
+def _no_addresses(workers: WorkerListRead) -> str | None:
     """Blokada karty, gdy na dobrej Liście Wykonawców nikt nie ma adresu; złą listę karta zostawia odmowie startu."""
 
-    if isinstance(workers, Good) and not workers.value.addresses().logins:
+    if workers.problem() is None and not workers.counted().addresses().logins:
         return refusal.report_entering_without_addresses().message
     return None
 

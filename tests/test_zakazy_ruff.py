@@ -465,6 +465,17 @@ def _glowa(owner: str, *importy: str) -> str:
 
 _BEZ_ODCZYTU: Final = "from rozliczenia.centrum.settings.files import Unreadable"
 _MARTWA_GALAZ: Final = '"Unreadable" is final'
+_LISTA: Final = "from rozliczenia.worker_list import WorkerList"
+_GLOWA_MIGAWKI_LISTY: Final = """from pathlib import Path
+
+from rozliczenia.centrum.settings.files import {nazwy}
+from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.worker_list import WorkerList
+
+
+"""
+_ODCZYT_LISTY_DO_USABLE: Final = 'Argument 1 to "usable" has incompatible type "WorkerListRead"'
+_MARTWA_GALAZ_LISTY: Final = '"WorkerListRead" is final'
 
 DROGI_TRESCI_Z_WYDANIA: Final = {
     "literał w gałęzi „bez odczytu” wartości migawki bez unii (#2029 r1 W1)": (
@@ -502,6 +513,38 @@ DROGI_TRESCI_Z_WYDANIA: Final = {
         + "def legenda(settings: CentrumSettings) -> ActivityLegend:\n    return settings.activity_legend().shown\n",
         'Incompatible return value type (got "ShownActivityLegend", expected "ActivityLegend")',
     ),
+    "Lista Wykonawców bez odczytu jako zła lista bez ostatniej dobrej: usable() na migawce (Decyzja 4A, przyczyna bez-adresow)": (
+        _GLOWA_MIGAWKI_LISTY.format(nazwy="usable") + "def lista(config: Path) -> WorkerList | None:\n    return usable(read_snapshot(config).workers)\n",
+        _ODCZYT_LISTY_DO_USABLE,
+    ),
+    "Lista Wykonawców bez odczytu jako pusta lista: usable() or WorkerList(())": (
+        _GLOWA_MIGAWKI_LISTY.format(nazwy="usable")
+        + "def lista(config: Path) -> WorkerList:\n    return usable(read_snapshot(config).workers) or WorkerList(())\n",
+        _ODCZYT_LISTY_DO_USABLE,
+    ),
+    "pusta lista w jawnej gałęzi „bez odczytu” odczytu Listy Wykonawców": (
+        _GLOWA_MIGAWKI_LISTY.format(nazwy="Unreadable, usable") + "def lista(config: Path) -> WorkerList | None:\n"
+        "    workers = read_snapshot(config).workers\n    return WorkerList(()) if isinstance(workers, Unreadable) else usable(workers)\n",
+        _MARTWA_GALAZ_LISTY,
+    ),
+    "wartość dobrego odczytu Listy Wykonawców wzięta przez isinstance": (
+        _GLOWA_MIGAWKI_LISTY.format(nazwy="Good") + "def lista(config: Path) -> WorkerList | None:\n"
+        "    workers = read_snapshot(config).workers\n    return workers.value if isinstance(workers, Good) else None\n",
+        _MARTWA_GALAZ_LISTY,
+    ),
+    "pusta lista w gałęzi „bez odczytu” Listy Wykonawców, którą liczy Uruchomienie": (
+        _glowa("SettingsSnapshot", _BEZ_ODCZYTU, _LISTA) + "def lista(snapshot: SettingsSnapshot) -> WorkerList:\n"
+        "    workers = snapshot.workers.counted()\n    return WorkerList(()) if isinstance(workers, Unreadable) else workers\n",
+        _MARTWA_GALAZ,
+    ),
+    "odczyt pliku Listy Wykonawców spod jej typu": (
+        _glowa("SettingsSnapshot") + "def plik(snapshot: SettingsSnapshot) -> object:\n    return snapshot.workers._read\n",
+        "SLF001",
+    ),
+    "Lista Wykonawców do pokazania jako lista, którą się liczy": (
+        _GLOWA_WIDOKU.format(importy=_LISTA) + "def lista(settings: CentrumSettings) -> WorkerList:\n    return settings.view().workers.shown()\n",
+        'Incompatible return value type (got "ShownWorkers", expected "WorkerList")',
+    ),
 }
 
 ZNANE_LUKI_TRESCI_Z_WYDANIA = {
@@ -526,6 +569,14 @@ ZNANE_LUKI_TRESCI_Z_WYDANIA = {
     "typ widoku do pokazania nie jest QuantityRules, ale niesie jego części: Lista Urządzeń do pokazania": (
         _GLOWA_WIDOKU.format(importy="from rozliczenia.quantity_engine import DeviceList")
         + "def urzadzenia(settings: CentrumSettings) -> DeviceList:\n    return settings.quantity_rules().shown.devices\n"
+    ),
+    "unia na jawne żądanie (_or_unreadable) u wołającego, który powinien odmówić: pusta Lista Wykonawców w jej gałęzi": (
+        _glowa("SettingsSnapshot", _LISTA) + "def lista(snapshot: SettingsSnapshot) -> WorkerList:\n"
+        "    workers = snapshot.workers.counted_or_unreadable()\n    return workers if isinstance(workers, WorkerList) else WorkerList(())\n"
+    ),
+    "typ widoku do pokazania nie jest WorkerList, ale niesie jego części: lista złożona z nich na nowo": (
+        _GLOWA_WIDOKU.format(importy=_LISTA) + "def lista(settings: CentrumSettings) -> WorkerList:\n"
+        "    shown = settings.view().workers.shown()\n    return WorkerList(shown.workers, shown.unresolved)\n"
     ),
     "zakaz zna tylko nazwy modułów, nie pola obiektu: wartość domyślna opisu pliku Ustawień": (
         "from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL\n\nMAIL = SETTLEMENT_MAIL.default\n"
@@ -557,7 +608,13 @@ def test_tresc_z_wydania_poza_wlascicielem_nie_przechodzi_a_znane_luki_przechodz
     | odmowa właściciela złapana i zastąpiona: ``except Refusal: return FolderSettings()`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | pole widoku do pokazania w odczycie, który liczy: ``device_suggestions(settings.quantity_rules().shown, …)`` (#2078 r1 W1; ``.rules`` to unia z ``Unreadable``) | łapie (mypy: ``ShownQuantityRules``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | legenda do pokazania jako legenda, którą się liczy: ``settings.activity_legend().shown`` | łapie (mypy: ``ShownActivityLegend``) | ``DROGI_TRESCI_Z_WYDANIA`` |
-    | części widoku do pokazania: ``QuantityRules(shown.rules, shown.devices)``, ``shown.devices`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | Lista Wykonawców jako zła lista bez ostatniej dobrej albo pusta: ``usable(read_snapshot(config).workers)``, ``… or WorkerList(())`` (Decyzja 4A) | łapie (mypy ``arg-type``: ``WorkerListRead``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | gałąź z typem odczytu pliku przy odczycie Listy Wykonawców: ``isinstance(workers, Unreadable)``, ``isinstance(workers, Good)`` | łapie (mypy ``unreachable``: ``WorkerListRead`` jest final) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | pusta lista w gałęzi „bez odczytu” listy, którą liczy Uruchomienie: ``snapshot.workers.counted()`` | łapie (mypy ``unreachable``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | odczyt pliku spod typu: ``snapshot.workers._read`` | łapie (ruff ``SLF001``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | Lista Wykonawców do pokazania jako liczona: ``settings.view().workers.shown()`` | łapie (mypy: ``ShownWorkers``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | pusta lista w gałęzi unii na jawne żądanie: ``snapshot.workers.counted_or_unreadable()`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
+    | części widoku do pokazania: ``QuantityRules(shown.rules, shown.devices)``, ``shown.devices``, ``WorkerList(shown.workers, shown.unresolved)`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | refleksja po nazwie: ``getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | ``# noqa: TID251`` na linii importu | łapie | ``RELEASE_CONTENT_PROBE`` |
