@@ -230,7 +230,7 @@ def test_checkout_bez_skryptu_hooka_zgody_zostawia_pytanie_czlowiekowi(
     assert [(run.returncode, run.stdout, run.stderr) for run in hooked] == [(0, "", "")]
 
 
-def test_przed_poleceniem_basha_biegna_tylko_hooki_czekania_zabijania_i_ciezkich_polecen() -> None:
+def test_przed_poleceniem_basha_biegna_tylko_hooki_czekania_i_zabijania() -> None:
     # Odmowę rm daje teraz kontrola Claude Code przez hook zgody, a nie własny matcher przed poleceniem.
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
 
@@ -238,7 +238,7 @@ def test_przed_poleceniem_basha_biegna_tylko_hooki_czekania_zabijania_i_ciezkich
         hook["command"].rsplit("/", 1)[-1]
         for entry in entries
         for hook in entry["hooks"]
-    ] == ['czekanie.py"', 'zabijanie.py"', 'ciezkie.py"']
+    ] == ['czekanie.py"', 'zabijanie.py"']
 
 
 def test_przypadki_wyroczni_maja_dziesiec_przestojow_i_polecenia_ktore_claude_code_puszcza() -> (

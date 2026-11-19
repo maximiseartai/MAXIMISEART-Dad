@@ -99,7 +99,6 @@ _PYTEST_STEPS: list[dict[str, object]] = [
     {"id": "python", "uses": "actions/setup-python", "with": {"python-version": _MATRIX_PYTHON}},
     {"uses": "astral-sh/setup-uv", "with": {"enable-cache": False}},
     {"if": "${{ runner.os == 'Linux' }}", "run": CI_INSTALL},
-    {"if": "${{ runner.os == 'Linux' }}", "uses": "./.github/actions/zsh"},
     {"if": "${{ matrix.przegladarka }}", "uses": "./.github/actions/chromium"},
     {"uses": "actions/download-artifact", "with": {"name": "plan", "path": ".ci-plan"}},
     {"id": "units", "run": f"{_PYTEST_RUN} --plan .ci-plan/plan.json --zadanie ${{{{ matrix.id }}}}"},

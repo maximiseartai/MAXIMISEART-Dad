@@ -24,6 +24,7 @@ from benchmark.lustro import SCENARIOS, default_templates_directory, default_wor
 from benchmark.pomiar import RUNS, exclusive_measurement, measure, measurement_lock
 from benchmark.referencja import find_reference, freeze_reference, reference_folder
 from quiet_machine import MachineBusy, QuietMachine
+import slot_maca
 
 OPIS = """Mierzy czas Przebiegu rozliczeń (measure) na lustrze folderów taty, bez danych klientów; użyj przed i po zmianie wydajności silnika.
 
@@ -181,6 +182,9 @@ def _measure_or_freeze(args: argparse.Namespace, references: Path) -> dict[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    if args.command in ("measure", "freeze") and (refusal := slot_maca.take(f"benchmark_przebiegu.py {args.command}", "run --here")) is not None:
+        print(refusal, file=sys.stderr)
+        return slot_maca.CODE
     try:
         if args.command == "comment":
             print(render_comment(read_journal(args.journal), args.before, args.after), end="")
