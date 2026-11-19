@@ -17,12 +17,15 @@ i koniec tury; ``tools/hooks/praca_w_tle.py`` podaje ten sam tekst, a test pilnu
   ``gh pr checks --watch`` i ``gh run watch``;
 - pętlę z ``sleep``, w której stoi plik wyjścia zadania w tle (``tasks/<id>.output``) wprost albo przez zmienną, której
   polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``);
-- pętlę skryptu Pythona (``python3 -c '…'`` i heredoc, który Python czyta ze stdin), w której ``sleep`` stoi w tym
-  samym obrocie co wywołanie z tymi samymi argumentami w każdym obrocie: proces z ``gh`` o CI albo z ``pgrep -f``
-  (``subprocess``, ``os.system``, ``os.popen`` albo funkcja skryptu, która je woła) albo odczyt pliku wyjścia zadania
-  (ścieżka w skrypcie, w zmiennej powłoki albo w argumencie skryptu czytanym przez ``sys.argv``). Argument zmienia się
-  między obrotami, gdy zależy od celu pętli ``for``, ``+=`` albo wyniku wywołania, więc partia zapytań po liście,
-  stronach albo kolejce, także z ``break`` przy limicie API, przechodzi. Skrypt czyta ``ast``.
+- pętlę skryptu Pythona (``python3 -c '…'`` i heredoc, który Python czyta ze stdin), w której ``sleep`` stoi w jej
+  ciele (także w pętli wewnętrznej), a w obrocie stoi wywołanie z tymi samymi argumentami w każdym obrocie: proces z
+  ``gh`` o CI albo z ``pgrep -f`` (``subprocess``, ``os.system``, ``os.popen`` albo funkcja skryptu, która je woła) albo
+  odczyt pliku wyjścia zadania (ścieżka w skrypcie, w zmiennej powłoki albo w ``sys.argv[N]``, gdy N-ty argument
+  skryptu to ten plik). Argument zmienia się między obrotami, gdy pętla zmienia nazwę, od której zależy: wiąże ją
+  (cel ``for``, ``+=``, wynik wywołania) albo zmienia jej wartość w miejscu (zapis albo ``del`` elementu lub
+  atrybutu, ``pop``, wywołanie dla skutku z nią jako odbiorcą albo argumentem, poza procesem, snem i ``print``), więc
+  partia zapytań po liście, stronach albo kolejce, także z ``break`` przy limicie API, przechodzi. Skrypt czyta
+  ``ast``, od najkrótszego, a ocena wszystkich skryptów polecenia ma jeden limit długości i jeden budżet węzłów.
 
 Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` albo licznikiem prób od 0 albo 1
 (``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``), bo bez nich to partia zapytań z ``sleep`` jako limitem API, a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``,
@@ -138,10 +141,11 @@ PYTHON_SCRIPT_OPTION = re.compile(r"-[a-zA-Z]*c")
 PYTHON_CODE_OPTION = re.compile(r"-[a-zA-Z]*[cm]")
 PYTHON_VALUE_OPTIONS = frozenset({"-X", "-W"})
 REDIRECTION = re.compile(r"\d*[<>&]")
-HEREDOC_COMMAND_START = re.compile(r"[;&|(){}`]")
+REDIRECTION_ALONE = re.compile(r"\d*(?:<<?|>>?|&>>?|>&|<&)-?")
+PYTHON_COMMAND_END = re.compile(r"[;\n(){}`]|\|\|?|&&|(?<![<>])&(?!>)")
 COMMENT_AFTER = frozenset(" \t\n;&|(")
 PYTHON_SCRIPT = re.compile("\x00(\\d+)\x00")
-DOUBLE_QUOTED_ESCAPE = re.compile(r'\\([$`"\\\n])')
+DOUBLE_QUOTED_ESCAPE = re.compile(r'\\([$`"\\])')
 RUNS_PROCESS = frozenset(
     {
         "run",
@@ -157,7 +161,11 @@ RUNS_PROCESS = frozenset(
         "create_subprocess_shell",
     }
 )
-KEEPS_VALUE = frozenset({"str", "int", "float", "repr", "bool", "format", "tuple", "list"})
+KEEPS_VALUE = frozenset(
+    {"str", "int", "float", "repr", "bool", "format", "tuple", "list", "split", "join", "strip", "replace", "lower", "upper"}
+)
+TAKES_FROM = frozenset({"pop", "popleft", "popitem"})
+LEAVES_VALUES = RUNS_PROCESS | {"sleep", "print"}
 PYTHON_SOURCE_LIMIT = 200_000
 PYTHON_NODES_LIMIT = 1_000_000
 
@@ -228,13 +236,42 @@ def _without_heredocs(command: str) -> tuple[str, list[str]]:
 
 
 def _python_reads_heredoc(before: str) -> bool:
-    words = HEREDOC_COMMAND_START.split(before)[-1].split()
-    programs = [index for index, word in enumerate(words) if PYTHON_NAME.fullmatch(word.strip("'\"").rsplit("/", 1)[-1])]
+    words = _without_redirections(PYTHON_COMMAND_END.split(before)[-1].split())
+    programs = [index for index, word in enumerate(words) if _is_python(word)]
     if not programs:
         return False
-    arguments = [word for word in words[programs[-1] + 1 :] if not REDIRECTION.match(word)]
+    arguments = words[programs[-1] + 1 :]
     end = _python_options_end(arguments)
     return end == len(arguments) or arguments[end] == "-"
+
+
+def _is_python(word: str) -> bool:
+    return PYTHON_NAME.fullmatch(word.strip("'\"").rsplit("/", 1)[-1]) is not None
+
+
+def _without_redirections(words: list[str]) -> list[str]:
+    kept: list[str] = []
+    target = False
+    for word in words:
+        if target:
+            target = False
+        elif REDIRECTION_ALONE.fullmatch(word):
+            target = True
+        elif not REDIRECTION.match(word):
+            kept.append(word)
+    return kept
+
+
+def _script_arguments(command: str, script: str, heredoc: bool) -> list[str]:
+    words = command.split()
+    at = next(index for index, word in enumerate(words) if script in word)
+    if not heredoc:
+        return _without_redirections(words[at + 1 :])
+    before = _without_redirections(words[:at])
+    programs = [index for index, word in enumerate(before) if _is_python(word)]
+    options = before[programs[-1] + 1 :] if programs else []
+    end = _python_options_end(options)
+    return options[end + 1 :] + _without_redirections(words[at + 1 :]) if end < len(options) else []
 
 
 def _python_options_end(words: list[str]) -> int:
@@ -258,7 +295,7 @@ def _script_text(command: str, quote: int, end: int) -> str:
     text = command[quote + 1 : end - 1 if closed else len(command)]
     if command[quote] == "'":
         return text
-    return DOUBLE_QUOTED_ESCAPE.sub(lambda escaped: "" if escaped.group(1) == "\n" else escaped.group(1), text)
+    return DOUBLE_QUOTED_ESCAPE.sub(r"\1", text)
 
 
 def _comment_starts(command: str, index: int, start: int) -> bool:
@@ -545,6 +582,22 @@ class _ScriptTooLong(Exception):
     pass
 
 
+@dataclass
+class _Visits:
+    left: int = PYTHON_NODES_LIMIT
+
+    def step(self) -> None:
+        self.left -= 1
+        if self.left < 0:
+            raise _ScriptTooLong
+
+
+@dataclass(frozen=True)
+class _Enclosing:
+    loop: ast.AST
+    outer: Optional[_Enclosing]
+
+
 def _called(call: ast.Call) -> str:
     if isinstance(call.func, ast.Attribute):
         return call.func.attr
@@ -552,23 +605,36 @@ def _called(call: ast.Call) -> str:
 
 
 def _changes_value(node: ast.AST) -> bool:
-    return isinstance(node, ast.Call) and not (isinstance(node.func, ast.Name) and node.func.id in KEEPS_VALUE)
+    return isinstance(node, ast.Call) and _called(node) not in KEEPS_VALUE
 
 
 def _names(target: ast.AST) -> list[ast.Name]:
     return [node for node in ast.walk(target) if isinstance(node, ast.Name)]
 
 
-def _reads_argv(node: ast.AST) -> bool:
-    return isinstance(node, ast.Attribute) and node.attr == "argv" and isinstance(node.value, ast.Name) and node.value.id == "sys"
+def _root(node: ast.AST) -> Optional[str]:
+    while isinstance(node, (ast.Attribute, ast.Subscript)):
+        node = node.value
+    return node.id if isinstance(node, ast.Name) else None
+
+
+def _reads_argument(node: ast.AST, arguments: frozenset[int]) -> bool:
+    return (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "argv"
+        and _root(node.value) == "sys"
+        and isinstance(node.slice, ast.Constant)
+        and node.slice.value in arguments
+    )
 
 
 class _PythonScript:
-    def __init__(self, tree: ast.Module, task_argument: bool, variables: frozenset[str]) -> None:
-        self.task_argument, self.variables = task_argument, variables
+    def __init__(self, tree: ast.Module, task_arguments: frozenset[int], variables: frozenset[str], visits: _Visits) -> None:
+        self.task_arguments, self.variables, self.visits = task_arguments, variables, visits
         self.functions: dict[str, ast.FunctionDef] = {}
         self.values: dict[str, list[ast.expr]] = defaultdict(list)
-        self.visited = 0
+        self.modules: set[str] = set()
         self.command_texts: dict[str, str] = {}
         self.function_texts: dict[str, str] = {}
         self.function_sleeps: dict[str, bool] = {}
@@ -580,31 +646,32 @@ class _PythonScript:
                 for target in node.targets:
                     if isinstance(target, ast.Name):
                         self.values[target.id].append(node.value)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                self.modules.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
 
     def nodes(self, *roots: ast.AST) -> Iterator[ast.AST]:
         stack = list(reversed(roots))
         while stack:
             node = stack.pop()
-            self.visited += 1
-            if self.visited > PYTHON_NODES_LIMIT:
-                raise _ScriptTooLong
+            self.visits.step()
             yield node
             stack.extend(reversed(list(ast.iter_child_nodes(node))))
 
     def sleeping_loops(self, tree: ast.Module) -> list[ast.AST]:
         loops: dict[int, ast.AST] = {}
-        stack: list[tuple[ast.AST, Optional[ast.AST]]] = [(tree, None)]
+        stack: list[tuple[ast.AST, Optional[_Enclosing]]] = [(tree, None)]
         while stack:
-            node, loop = stack.pop()
-            self.visited += 1
-            if self.visited > PYTHON_NODES_LIMIT:
-                raise _ScriptTooLong
-            if loop is not None and isinstance(node, ast.Call) and self.sleeps(node):
-                loops[id(loop)] = loop
+            node, enclosing = stack.pop()
+            self.visits.step()
+            if enclosing is not None and isinstance(node, ast.Call) and self.sleeps(node):
+                marked: Optional[_Enclosing] = enclosing
+                while marked is not None and id(marked.loop) not in loops:
+                    loops[id(marked.loop)] = marked.loop
+                    marked = marked.outer
             for field, value in ast.iter_fields(node):
-                inner = loop
+                inner = enclosing
                 if (isinstance(node, ast.While) and field in ("test", "body")) or (isinstance(node, ast.For) and field == "body"):
-                    inner = node
+                    inner = _Enclosing(node, enclosing)
                 children = value if isinstance(value, list) else [value]
                 stack.extend((child, inner) for child in children if isinstance(child, ast.AST))
         return list(loops.values())
@@ -660,7 +727,7 @@ class _PythonScript:
                     return True
             elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load) and self.task_name(child.id):
                 return True
-            elif self.task_argument and _reads_argv(child):
+            elif _reads_argument(child, self.task_arguments):
                 return True
         return False
 
@@ -670,8 +737,24 @@ class _PythonScript:
             self.task_names[name] = any(self.reads_task_file(value) for value in self.values.get(name, ()))
         return self.task_names[name]
 
+    def changed_in_place(self, region: list[ast.AST]) -> set[str]:
+        changed: set[Optional[str]] = set()
+        for node in region:
+            if isinstance(node, (ast.Subscript, ast.Attribute, ast.Name)) and isinstance(node.ctx, ast.Del):
+                changed.add(_root(node))
+            elif isinstance(node, (ast.Subscript, ast.Attribute)) and isinstance(node.ctx, ast.Store):
+                changed.add(_root(node))
+            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in TAKES_FROM:
+                changed.add(_root(node.func.value))
+            elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and _called(node.value) not in LEAVES_VALUES:
+                call = node.value
+                receiver = call.func.value if isinstance(call.func, ast.Attribute) else None
+                changed.update(_root(part) for part in [receiver, *call.args] if part is not None)
+        return {name for name in changed if name is not None and name not in self.modules}
+
     def varying(self, loop: ast.AST, region: list[ast.AST]) -> set[str]:
         varying = {name.id for name in _names(loop.target)} if isinstance(loop, ast.For) else set()
+        varying |= self.changed_in_place(region)
         bindings: list[tuple[set[str], ast.AST]] = []
         valued: set[int] = set()
         for node in region:
@@ -726,13 +809,13 @@ class _PythonScript:
         return found
 
 
-def _python_waits(source: str, task_argument: bool, variables: frozenset[str]) -> set[Refusal]:
+def _python_waits(source: str, task_arguments: frozenset[int], variables: frozenset[str], visits: _Visits) -> set[Refusal]:
     found: set[Refusal] = set()
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             tree = ast.parse(source)
-        script = _PythonScript(tree, task_argument, variables)
+        script = _PythonScript(tree, task_arguments, variables, visits)
         for loop in script.sleeping_loops(tree):
             found |= script.waits(loop)
     except (SyntaxError, RecursionError, _ScriptTooLong):
@@ -741,21 +824,28 @@ def _python_waits(source: str, task_argument: bool, variables: frozenset[str]) -
 
 
 def _python_refusal(
-    shell: str, python: list[str], parts: tuple[list[int], list[bool]], task_files: _Matches, variables: frozenset[str]
+    shell: str, python: list[str], heredocs: int, parts: tuple[list[int], list[bool]], variables: frozenset[str]
 ) -> Optional[Refusal]:
     positions, in_background = parts
-    command_ends = [found.start() for found in SIMPLE_COMMAND_END.finditer(shell)]
+    separators = list(PYTHON_COMMAND_END.finditer(shell))
+    command_ends = [found.start() for found in separators]
+    scripts: list[tuple[int, int, str, int]] = []
+    for marker in PYTHON_SCRIPT.finditer(shell):
+        number = int(marker.group(1))
+        if not in_background[bisect_left(positions, marker.start())] and "sleep" in python[number]:
+            scripts.append((len(python[number]), marker.start(), marker.group(), number))
     found: set[Refusal] = set()
-    unread = PYTHON_SOURCE_LIMIT
-    for script in PYTHON_SCRIPT.finditer(shell):
-        source = python[int(script.group(1))]
-        if in_background[bisect_left(positions, script.start())] or "sleep" not in source or len(source) > unread:
-            continue
-        unread -= len(source)
-        index = bisect_left(command_ends, script.start())
-        start = command_ends[index - 1] if index else 0
+    unread, visits = PYTHON_SOURCE_LIMIT, _Visits()
+    for length, at, marker_text, number in sorted(scripts):
+        if length > unread:
+            break
+        unread -= length
+        index = bisect_left(command_ends, at)
+        start = separators[index - 1].end() if index else 0
         end = command_ends[index] if index < len(command_ends) else len(shell)
-        found |= _python_waits(source, task_files.inside(start, end), variables)
+        arguments = _script_arguments(shell[start:end], marker_text, number < heredocs)
+        tasks = frozenset(place + 1 for place, word in enumerate(arguments) if _task_files(word, variables))
+        found |= _python_waits(python[number], tasks, variables, visits)
     return next((refusal for refusal in (CI_LOOP, PGREP_LOOP, TASK_OUTPUT_LOOP) if refusal in found), None)
 
 
@@ -763,6 +853,7 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
     command = command.replace("\x00", "")
     try:
         kept, python = _without_heredocs(command)
+        heredocs = len(python)
         shell, _ = _code(kept, python)
     except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
         return None
@@ -789,7 +880,7 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
             return PGREP_LOOP
         if task_files.inside(start, end):
             return TASK_OUTPUT_LOOP
-    return _python_refusal(shell, python, parts, task_files, variables)
+    return _python_refusal(shell, python, heredocs, parts, variables)
 
 
 def main() -> int:

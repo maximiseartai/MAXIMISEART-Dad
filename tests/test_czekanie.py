@@ -496,6 +496,16 @@ IMPORTED_NAMES = """from subprocess import run
 from time import sleep
 while run(["gh", "pr", "checks", "1"]).returncode == 8:
     sleep(30)"""
+SLEEP_IN_INNER_LOOP = """import subprocess, time
+while subprocess.run(["gh", "pr", "checks", "1"]).returncode == 8:
+    for _ in range(30):
+        time.sleep(1)"""
+COMMAND_FROM_STRING_METHODS = """import shlex, subprocess, time
+PR = 2178
+CMD = "gh pr checks {}".format(PR).split()
+ALSO = shlex.split("gh pr checks 1")
+while subprocess.run(CMD).returncode == 8 and subprocess.run(ALSO).returncode == 8:
+    time.sleep(30)"""
 
 PYTHON_WAITS = [
     pytest.param(_heredoc(CHECKS_TRIES), hook.CI_LOOP, id="heredoc-gh-pr-checks-licznik-prob"),
@@ -517,6 +527,31 @@ PYTHON_WAITS = [
     pytest.param(_heredoc(SLEEP_FUNCTION), hook.CI_LOOP, id="sen-w-funkcji-skryptu"),
     pytest.param(_heredoc(SLEEP_PROCESS), hook.CI_LOOP, id="sen-przez-proces"),
     pytest.param(_heredoc(IMPORTED_NAMES), hook.CI_LOOP, id="importowane-nazwy-run-i-sleep"),
+    pytest.param(_heredoc(SLEEP_IN_INNER_LOOP), hook.CI_LOOP, id="sen-tylko-w-petli-wewnetrznej"),
+    pytest.param(_heredoc(COMMAND_FROM_STRING_METHODS), hook.CI_LOOP, id="polecenie-z-metod-napisu"),
+    pytest.param(f"\"/usr/bin/python3\" -c '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="program-pythona-w-cudzyslowie"),
+    pytest.param(f"true;# it's fine\npython3 -c '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="komentarz-po-sredniku-przed-c"),
+    pytest.param(_heredoc(CHECKS_TRIES, program="python3 > wynik.log"), hook.CI_LOOP, id="heredoc-z-przekierowaniem-do-pliku"),
+    pytest.param(_heredoc(CHECKS_TRIES, program="python3 2>&1 -"), hook.CI_LOOP, id="heredoc-z-przekierowaniem-przed-myslnikiem"),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b1.output; python3 -c \"import os,time\nwhile os.path.getsize('$F')==0: time.sleep(5)\"",
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-ze-zmiennej-powloki",
+    ),
+    pytest.param(
+        'f=/private/tmp/c/s/tasks/b1.output; python3 -c "\nimport os,time,sys\n'
+        'while os.path.getsize(sys.argv[2])==0: time.sleep(5)\n" 5179 $f',
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-w-drugim-argumencie",
+    ),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b1.output; cd x && "
+        + _heredoc(
+            "import os, sys, time\nwhile os.path.getsize(sys.argv[1]) == 0:\n    time.sleep(5)", program='python3 2>&1 - "$F"'
+        ),
+        hook.TASK_OUTPUT_LOOP,
+        id="heredoc-plik-zadania-w-argumencie-za-przekierowaniem",
+    ),
     pytest.param(
         _heredoc("\n".join("\t" + line for line in CHECKS_IN_CONDITION.split("\n")), program="python3 -").replace(
             "<<'EOF'", "<<-'EOF'"
@@ -624,6 +659,44 @@ for _ in range(30):
     except OSError:
         time.sleep(1)
 """
+PAGE_IN_DICTIONARY = """import json, subprocess, time
+params = {"page": 1}
+while True:
+    out = subprocess.run(["gh", "api", "repos/o/r/actions/runs", "-f", "page=%d" % params["page"]], capture_output=True, text=True).stdout
+    if not json.loads(out)["workflow_runs"]: break
+    params["page"] += 1
+    time.sleep(1)"""
+PAGE_IN_ATTRIBUTE = """import json, subprocess, time, types
+S = types.SimpleNamespace(page=1)
+while True:
+    out = subprocess.run(["gh", "api", f"repos/o/r/actions/runs?page={S.page}"], capture_output=True, text=True).stdout
+    if not json.loads(out)["workflow_runs"]: break
+    S.page += 1
+    time.sleep(1)"""
+QUEUE_HEAD = """import json, subprocess, time, heapq
+todo = json.load(open("todo.json"))
+while todo:
+    subprocess.run(["gh", "run", "view", str(todo[0]), "--log-failed"])
+    {shorten}
+    time.sleep(1)"""
+QUEUE_OBJECT = """import subprocess, time
+class Runs:
+    def __init__(self):
+        self.ids, self.at = [44439947891, 44439947892], 0
+    def advance(self):
+        self.at += 1
+runs = Runs()
+while runs.at < len(runs.ids):
+    subprocess.run(["gh", "run", "view", str(runs.ids[runs.at]), "--log-failed"])
+    runs.advance()
+    time.sleep(1)"""
+PORT_ARGUMENT = """import sys, time, urllib.request
+{port}for _ in range(30):
+    try:
+        urllib.request.urlopen("http://127.0.0.1:%s/" % {read}, timeout=1); break
+    except OSError:
+        time.sleep(1)
+print(open(sys.argv[1]).read()[-2000:])"""
 FILE_WITH_CI_WORDS = """import os, time
 while not os.path.exists("wynik.json"):
     print("czekam na wynik, potem gh pr checks 1")
@@ -635,6 +708,23 @@ PYTHON_PASSING = [
     pytest.param(_heredoc(PAGES), id="strony-api-z-licznikiem"),
     pytest.param(_heredoc(PAGES.replace("page += 1", "page = page + 1")), id="strony-api-z-licznikiem-przez-przypisanie"),
     pytest.param(_heredoc(QUEUE), id="kolejka-zdejmowana-w-petli"),
+    pytest.param(_heredoc(PAGE_IN_DICTIONARY), id="strony-w-elemencie-slownika"),
+    pytest.param(_heredoc(PAGE_IN_ATTRIBUTE), id="strony-w-atrybucie"),
+    pytest.param(_heredoc(QUEUE_HEAD.format(shorten="todo.pop(0)")), id="kolejka-skracana-metoda-jako-instrukcja"),
+    pytest.param(_heredoc(QUEUE_HEAD.format(shorten="done = todo.pop(0)")), id="kolejka-skracana-pop-z-wynikiem"),
+    pytest.param(_heredoc(QUEUE_HEAD.format(shorten="del todo[0]")), id="kolejka-skracana-del"),
+    pytest.param(_heredoc(QUEUE_HEAD.format(shorten="heapq.heappop(todo)")), id="kolejka-skracana-funkcja-modulu"),
+    pytest.param(_heredoc(QUEUE_OBJECT), id="kolejka-przesuwana-metoda-obiektu"),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
+        + _heredoc(PORT_ARGUMENT.format(port="", read="sys.argv[2]"), program='python3 - "$F" 5179'),
+        id="gotowosc-serwera-port-w-argumencie-plik-zadania-za-petla",
+    ),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
+        + _heredoc(PORT_ARGUMENT.format(port="port = sys.argv[2]\n", read="port"), program='python3 - "$F" 5179'),
+        id="gotowosc-serwera-port-z-argumentu-przed-petla",
+    ),
     pytest.param(_heredoc(LIST_ONCE), id="zapytanie-raz-przed-petla"),
     pytest.param(
         _heredoc(READINESS + 'print(open("/private/tmp/c/s/tasks/b31ma9p31.output").read()[-2000:])'),
@@ -648,6 +738,7 @@ PYTHON_PASSING = [
     pytest.param(_heredoc(CHECKS_TRIES, after=" > ci.log 2>&1 &"), id="heredoc-w-tle"),
     pytest.param(f"python3 -c '{CHECKS_IN_CONDITION}' > ci.log 2>&1 & W=$!", id="c-w-tle"),
     pytest.param(_heredoc(CHECKS_TRIES, program="cat > /tmp/python/czekaj.py"), id="zapis-skryptu-w-katalogu-python"),
+    pytest.param(_heredoc(CHECKS_TRIES, program="cat > python3"), id="zapis-skryptu-do-pliku-o-nazwie-python3"),
     pytest.param(_heredoc(CHECKS_TRIES, program=".venv/bin/python tools/mutacje.py --plik -"), id="heredoc-to-dane-skryptu"),
     pytest.param(f"python3 -m pytest -c '{CHECKS_IN_CONDITION}'", id="c-po-m-to-argument-modulu"),
     pytest.param(_heredoc(FILE_WITH_CI_WORDS), id="napis-z-gh-w-wydruku-petli-na-pliku"),
@@ -684,7 +775,12 @@ def _nested_python_loops(depth: int, body: str, outer: str = "", inner: str = ""
 
 QUERY = "subprocess.run(['gh', 'pr', 'checks', '1'])"
 SHORT_SLEEP = "import time\ntime.sleep(0)"
+NODE_BUDGET_SCRIPT = _nested_python_loops(60, "x = [" + "a," * 2000 + "]")
 ZNANE_LUKI = [
+    pytest.param(
+        "\n".join([NODE_BUDGET_SCRIPT] * 2 + [_heredoc(CHECKS_IN_CONDITION + "\nx = 1" * 4000)]),
+        id="czekanie-dluzsze-niz-skrypty-ponad-budzet-wezlow",
+    ),
     pytest.param(
         (_heredoc(SHORT_SLEEP) + "\n") * (hook.PYTHON_SOURCE_LIMIT // len(SHORT_SLEEP) + 1) + _heredoc(CHECKS_IN_CONDITION),
         id="czekanie-za-skryptami-pythona-ponad-limit-dlugosci",
@@ -883,6 +979,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "python3 -c 'print(1)'; " * 40000 + f"python3 -c '{CHECKS_IN_CONDITION}'",
         (_heredoc(SHORT_SLEEP) + "\n") * (hook.PYTHON_SOURCE_LIMIT // len(SHORT_SLEEP) // 2) + _heredoc(CHECKS_IN_CONDITION),
         _nested_python_loops(90, "x = [" + "1," * 5000 + "]", inner=QUERY),
+        "\n".join([NODE_BUDGET_SCRIPT] * 14 + [_heredoc(CHECKS_IN_CONDITION)]),
     ],
     ids=[
         "ogon-przekierowan",
@@ -899,6 +996,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "skrypty-pythona-bez-sleep-przed-czekaniem",
         "skrypty-pythona-ze-sleep-do-limitu-przed-czekaniem",
         "petle-pythona-zagniezdzone-z-zapytaniem-w-najglebszej",
+        "skrypty-pythona-do-budzetu-wezlow-przed-czekaniem",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
