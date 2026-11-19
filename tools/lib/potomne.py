@@ -41,7 +41,7 @@ przez ``run`` idzie też każde inne polecenie, które trwa albo uruchamia włas
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager, suppress
+from contextlib import AbstractContextManager, contextmanager, suppress
 import json
 import math
 import os
@@ -63,7 +63,7 @@ _POLL_S = 0.1
 _RELEASE_S = 10.0
 # ``git worktree prune`` i ``remove`` usuwają katalogi ``.git/worktrees``, które ``add`` z innego wątku albo procesu
 # właśnie zakłada, i ``add`` pada. Równoległe mutacje robią kopie naraz, a workery pytest-xdist i narzędzia z kilku
-# worktree jednego repozytorium to osobne procesy, więc te polecenia idą po kolei pod ``repo_lock`` (#1312), z blokadą
+# worktree jednego repozytorium to osobne procesy, więc te polecenia idą po kolei pod ``_worktrees`` (#1312), z blokadą
 # tego pliku w katalogu gita wspólnym dla wszystkich worktree repozytorium.
 _WORKTREES_LOCK = "potomne-worktree.lock"
 _COPY_PREFIX = "kopia-commitu-"
@@ -174,7 +174,7 @@ def commit_copy(repo: Path, commit: str) -> Iterator[Path]:
     try:
         guard.report("+", "kopia", str(copy), str(repo))
         # Przez run: strażnik zabija przerwane ``worktree add``, zanim usunie kopię, którą ono jeszcze wypełnia.
-        with repo_lock(repo, _WORKTREES_LOCK):
+        with _worktrees(repo):
             added = run(["git", "worktree", "add", "--quiet", "--detach", str(copy), commit], cwd=repo)
         if added.returncode:
             raise _GitFailed(added.returncode, added.args, added.stdout, added.stderr)
@@ -496,6 +496,10 @@ def repo_lock(repo: Path, name: str, waiting: Callable[[], object] = lambda: Non
             _unlock(lock)
 
 
+def _worktrees(repo: Path) -> AbstractContextManager[None]:
+    return repo_lock(repo, _WORKTREES_LOCK)
+
+
 def _locked(lock: IO[bytes]) -> bool:
     """Bierze blokadę pliku ``lock`` bez czekania; ``False``, gdy trzyma ją inny uchwyt, także w innym procesie."""
 
@@ -528,7 +532,7 @@ def _unlock(lock: IO[bytes]) -> None:
 
 def _remove_copy(repo: Path, copy: Path) -> None:
     # Drugie --force usuwa też worktree zablokowane przez ``worktree add`` zabite w trakcie.
-    with repo_lock(repo, _WORKTREES_LOCK):
+    with _worktrees(repo):
         removed = subprocess.run(
             ["git", "worktree", "remove", "--force", "--force", str(copy)], cwd=repo, capture_output=True, check=False
         )
@@ -539,7 +543,7 @@ def _remove_copy(repo: Path, copy: Path) -> None:
     while copy.exists() and time.monotonic() < deadline:
         time.sleep(_POLL_S)
         shutil.rmtree(copy, ignore_errors=True)
-    with repo_lock(repo, _WORKTREES_LOCK):
+    with _worktrees(repo):
         subprocess.run(["git", "worktree", "prune"], cwd=repo, capture_output=True, check=False)
 
 
