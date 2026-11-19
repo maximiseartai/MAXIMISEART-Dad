@@ -87,7 +87,9 @@ def test_ponowienie_ci_odsyla_do_zadan_narzedzia_ktore_odtwarzaja_padle_zadanie_
     do wszystkich zadań narzędzia jednego zadania ``ci.yml`` i tylko do nich (#2161 r4 D1: kroki workflowy przeszły
     z „Ruff, mypy” do Frontend), a zadanie o stałej nazwie w ``ci.yml`` zaczyna się od początku wpisu."""
 
-    tool: dict[str, str] = _tool_steps()["zadania"]  # type: ignore[assignment]
+    answered = _tool_steps()["zadania"]
+    assert isinstance(answered, dict)
+    tool = {str(job): str(ci) for job, ci in answered.items()}
     jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
     wrong = []
     for start, only in ponow_ci.LOKALNIE:
