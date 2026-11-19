@@ -28,7 +28,7 @@ import sys
 
 import pytest
 
-from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
+from tests.fixtures.skladnia import drzewo, napisy_prozy, pamiec_drzew, wezly
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = sorted([*(ROOT / "tools").glob("**/*.py"), *(ROOT / ".agents" / "skills").glob("*/scripts/**/*.py")])
@@ -169,7 +169,7 @@ def _text(node: ast.AST) -> str | None:
 
 
 def _claude_launches(tree: ast.AST) -> Iterator[tuple[int, str]]:
-    bare = {id(node.value) for node in wezly(tree) if isinstance(node, ast.Expr)}
+    bare = napisy_prozy(tree)
     for node in wezly(tree):
         text = _text(node)
         if isinstance(node, ast.keyword) and node.arg == BASE_URL:
@@ -213,6 +213,7 @@ def test_claude_w_kodzie_skryptu_lapie_straznik(code: str) -> None:
     [
         'subprocess.run(["claude", "--version"])',
         '"""Docstring: ``env.ANTHROPIC_BASE_URL`` z ustawień użytkownika wygrywa ze środowiskiem."""',
+        'OPIS = """Pomoc: ``env.ANTHROPIC_BASE_URL`` z ustawień użytkownika wygrywa ze środowiskiem."""',
         'env = {"ANTHROPIC_BASE_URL_ZAPAS": url, "MOJ_ANTHROPIC_BASE_URL": url}  # ANTHROPIC_BASE_URL w komentarzu',
     ],
 )
@@ -229,7 +230,7 @@ def test_claude_ze_skryptu_biegnie_tylko_przez_falszywe_api() -> None:
     stałymi), gdzie szuka nazwy jako osobnego słowa i stałej ``"claude"`` na początku listy albo krotki, oraz w
     nazwach argumentów słownych (``dict(os.environ, ANTHROPIC_BASE_URL=…)``).
     Granica: wszystko, co powstaje w czasie biegu (``"ANTHROPIC_" + "BASE_URL"``, odczyt z pliku,
-    ``[shutil.which("claude"), …]``), docstring i goły napis, skrypty inne niż ``.py``. W czasie biegu chroni lista
+    ``[shutil.which("claude"), …]``), docstring, goły napis i tekst pomocy w ``OPIS`` albo ``ZASADY`` modułu, skrypty inne niż ``.py``. W czasie biegu chroni lista
     dozwolona środowiska ``falszywe_api.claude``: ``claude`` nie dostaje ze środowiska wyroczni nic spoza niej.
     """
 
