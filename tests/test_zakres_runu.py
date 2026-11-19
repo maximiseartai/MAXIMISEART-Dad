@@ -21,7 +21,7 @@ from jednostka import Klucz
 import kroki_skilli
 import setup_worktree
 from wplyw_zmiany import STRUCTURE, Context, Repository
-from zakres_runu import PRZEGLADARKA, TORY, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres
+from zakres_runu import NA_ZYWO, PRZEGLADARKA, TORY, Podstawy, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres
 
 ROOT = Path(__file__).resolve().parents[1]
 # Pliki, których zmiana uruchamia wszystko w kontekście, z tabeli jej właściciela (tools/lib/wplyw_zmiany.py), nie z kopii.
@@ -72,6 +72,12 @@ def _decisions(praca: ZakresRunu) -> dict[str, tuple[bool, str]]:
 
 def _runs(praca: ZakresRunu) -> set[str]:
     return {w.krok.key for w in praca.wybrane}
+
+
+def _shadow(praca: ZakresRunu, key: str) -> dict[Podstawy, bool]:
+    """Wariant ``Podstawy`` → czy wybrałby krok ``key`` na pull request."""
+
+    return {wariant: key in {w.krok.key for w in kroki} for wariant, kroki in praca.cien.items()}
 
 
 # --- pytest i kroki CI ---
@@ -504,6 +510,8 @@ def test_na_pull_request_skrypt_mutacji_modelu_biegnie_przy_zmianie_modelu_skryp
     assert {key for key in _runs(praca) if not key.endswith("/ci")} == ({"verify-m/check_m_mutations.py"} if runs else set())
     assert decisions["verify-m/check_m_mutations.py"] == ((True, f"zmienione: {changed}") if runs else (False, f"{MODEL_UNTOUCHED}, a poza tym nocą"))
     assert decisions["verify-n/check_n_mutations.py"] == (False, "skrypt mutacji biegnie nocą na main (mutacje-nocne.yml, ADR 0021)")
+    # NF zmienia tylko regułę podstaw, a N0 nie uruchamia na PR żadnego kroku skilla, także skryptu mutacji modelu.
+    assert _shadow(praca, "verify-m/check_m_mutations.py") == {Podstawy.V0: runs, Podstawy.NF: runs, Podstawy.N0: False}
 
 
 @pytest.mark.parametrize(("changed", "runs"), [(True, True), (False, False)], ids=["zmieniony skrypt", "skrypt bez zmiany"])
@@ -522,28 +530,47 @@ def test_na_pull_request_skrypt_mutacji_ktorego_tabeli_nie_da_sie_wczytac_biegni
 BASELINE_D = ".agents/skills/verify-d/scripts/sprawdz_d.py"
 
 
+ON_MAIN = "biegnie na main: PR nie zmienia folderu skilla"
+
+
 @pytest.mark.parametrize(
-    ("changed", "runs"),
+    ("changed", "hit", "folder"),
     [
-        ("docs/opis.md", False),
-        ("src/pakiet/obcy.py", False),
-        ("src/pakiet/routing.py", True),
+        ("docs/opis.md", False, False),
+        ("src/pakiet/obcy.py", False, False),
+        # Trafienie tylko w pilnuje: na PR podstawa zostaje pełnemu CI main (ADR 0020, D1), V0 ją uruchamiał.
+        ("src/pakiet/routing.py", True, False),
         # Import sprawdzenia spoza pilnuje nie uruchamia podstawy na PR (ADR 0020): pełne CI main ją uruchamia.
-        ("src/pakiet/pomocnik.py", False),
-        (".agents/skills/verify-d/SKILL.md", True),
-        (EVERY_SKILL_STEP, True),
-        ("tools/ci/wykonaj_zadanie.py", False),
+        ("src/pakiet/pomocnik.py", False, False),
+        (".agents/skills/verify-d/SKILL.md", True, True),
+        (BASELINE_D, True, True),
+        # Zmiana z SKILL_STEPS zmienia, jak krok biegnie, a nie produkt, który sprawdza, więc uruchamia podstawę i w NF.
+        (EVERY_SKILL_STEP, True, True),
+        ("tools/ci/wykonaj_zadanie.py", False, False),
     ],
 )
-def test_ze_zmianami_od_bazy_podstawa_ci_biegnie_przy_trafieniu_w_pilnuje_albo_folder_skilla(
-    tmp_path: Path, changed: str, runs: bool
+def test_na_pull_request_podstawa_ci_biegnie_przy_zmianie_folderu_skilla_a_trafienie_tylko_w_pilnuje_zostawia_ja_main(
+    tmp_path: Path, changed: str, hit: bool, folder: bool
 ) -> None:
     files = {**SKILLS, ".agents/skills/verify-d/SKILL.md": _with_ci("verify-d", BASELINE_D), BASELINE_D: "print('sprawdzone')\n"}
     repo = repository(tmp_path / "repo", files)
 
-    decision = _decisions(zakres(Zdarzenie.PULL_REQUEST, frozenset({changed}), repo))["verify-d/ci"]
+    praca = zakres(Zdarzenie.PULL_REQUEST, frozenset({changed}), repo)
 
-    assert decision == ((True, f"zmienione: {changed}") if runs else (False, "zmiany nie trafiają w pilnuje ani w folder skilla"))
+    reason = f"zmienione: {changed}" if folder else f"{ON_MAIN} (pilnuje: zmienione: {changed})" if hit else "zmiany nie trafiają w pilnuje ani w folder skilla"
+    assert _decisions(praca)["verify-d/ci"] == (folder, reason)
+    assert _shadow(praca, "verify-d/ci") == {Podstawy.V0: hit, Podstawy.NF: folder, Podstawy.N0: False}
+
+
+@pytest.mark.parametrize("event", [Zdarzenie.PUSH, Zdarzenie.NOC])
+def test_cien_wariantow_podstaw_ma_tylko_pull_request_a_jego_wariant_na_zywo_to_wybrane_kroki(tmp_path: Path, event: Zdarzenie) -> None:
+    files = {**SKILLS, ".agents/skills/verify-d/SKILL.md": _with_ci("verify-d", BASELINE_D), BASELINE_D: "print('sprawdzone')\n"}
+    repo = repository(tmp_path / "repo", files)
+    changed = frozenset({BASELINE_D, "src/pakiet/routing.py"})
+
+    pull_request, other = zakres(Zdarzenie.PULL_REQUEST, changed, repo), zakres(event, changed, repo)
+
+    assert (set(pull_request.cien), pull_request.cien[NA_ZYWO], dict(other.cien)) == (set(Podstawy), pull_request.wybrane, {})
 
 
 @pytest.mark.parametrize(
@@ -565,7 +592,7 @@ def test_powod_podstawy_wymienia_najwyzej_trzy_zmienione_pliki_i_liczbe_pozostal
 
     decision = _decisions(zakres(Zdarzenie.PULL_REQUEST, frozenset(changed), repo))["verify-d/ci"]
 
-    assert decision == (True, reason)
+    assert decision == (False, f"{ON_MAIN} (pilnuje: {reason})")
 
 
 @pytest.mark.parametrize(
@@ -613,8 +640,9 @@ def test_zmiana_samego_requirements_nie_wybiera_podstawy_na_pull_request_a_push_
         ("", Zdarzenie.PUSH, "", True, False),
         (" --pelny", Zdarzenie.PUSH, "", True, False),
         ("", Zdarzenie.NOC, ".agents/skills/verify-a/scripts/sprawdz_a.py", False, True),
-        # Na PR biegnie sama podstawa, także przy zmianie folderu skilla, bo skrypt mutacji biegnie nocą.
-        ("", Zdarzenie.PULL_REQUEST, "src/pakiet/routing.py", True, False),
+        # Na PR biegnie sama podstawa przy zmianie folderu skilla, bo skrypt mutacji biegnie nocą, a przy trafieniu tylko
+        # w pilnuje żadna (D1).
+        ("", Zdarzenie.PULL_REQUEST, "src/pakiet/routing.py", False, False),
         ("", Zdarzenie.PULL_REQUEST, ".agents/skills/verify-a/scripts/sprawdz_a.py", True, False),
     ],
 )
@@ -720,11 +748,12 @@ def test_zgubiony_skrypt_mutacji_i_zly_klucz_ci_trafiaja_do_bledow_zakresu_kazde
 @pytest.mark.parametrize(
     ("changed", "commands"),
     [
-        ("src/a/b.py", [("sprawdz_r.py", "--wszystko"), ("run_verification.py", "--variant", "all")]),
+        # Zmiana src/ z pilnuje: E2E, a podstawa biegnie na main, bo PR nie zmienia folderu skilla (D1).
+        ("src/a/b.py", [("run_verification.py", "--variant", "all")]),
         (".agents/skills/verify-rozliczenia/SKILL.md", [("sprawdz_r.py", "--wszystko")]),
         ("docs/inne.md", []),
     ],
-    ids=["src: podstawa i E2E", "tylko folder skilla: podstawa bez E2E", "nic"],
+    ids=["src: E2E bez podstawy", "tylko folder skilla: podstawa bez E2E", "nic"],
 )
 def test_polecenia_skilla_to_jego_wybrane_kroki_i_wywolania_w_krokach_ci_ktore_biegna_w_tym_runie(
     tmp_path: Path, changed: str, commands: list[tuple[str, ...]]
