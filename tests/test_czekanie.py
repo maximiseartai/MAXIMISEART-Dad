@@ -161,6 +161,8 @@ TASK_OUTPUT_LOOPS = (
     "F=/private/tmp/c/s/tasks/bwx8k6zpp.output; until grep -q pr-2121 $F; do sleep 15; done; cat $F",
     "F=/private/tmp/c/s/tasks/bomvji68c.output; until [ -s $F ]; do sleep 10; done; cat $F",
     "F=/private/tmp/c/s/tasks/bhcxilqwz.output; until [ $(wc -l < $F) -gt 7 ]; do sleep 15; done; sleep 2; tail -12 $F",
+    # Pętla na procesie zadania z odczytem jego pliku za pętlą (31 takich w transkryptach repo, recenzja #2295 r1 D1).
+    "while kill -0 $P 2>/dev/null; do sleep 5; done; cat /private/tmp/c/s/tasks/b14j5eupj.output | tail -4",
     # Syntetyczne: ścieżka w pętli z licznikiem prób i względna ze snem przez perl.
     "for i in $(seq 1 40); do grep -q KONIEC /private/tmp/c/s/tasks/b1.output && break; sleep 15; done",
     "until grep -q CZAS tasks/bhcxilqwz.output; do perl -e 'select(undef,undef,undef,15)'; done",
@@ -192,7 +194,8 @@ PYTHON_LOOPS = (
         "    if 'KONIEC' in open(sys.argv[1]).read():\n        break\n    time.sleep(5)\nEOF",
         "TASK_OUTPUT_LOOP",
     ),
-    # Syntetyczne: ``-c`` z opcją przed nim, ``-c`` w napisie z ``"``, f-napis i ``sleep`` z ``from time import``.
+    # Syntetyczne: ``-c`` z opcją przed nim, ``-c`` w napisie z ``"``, f-napis, ``sleep`` z ``from time import`` i
+    # ``for`` po liście z wyjściem przez ``sys.exit``.
     (
         "python3 -I -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n"
         "    time.sleep(30)'",
@@ -206,6 +209,11 @@ PYTHON_LOOPS = (
     (
         "python3 - <<'EOF'\nfrom time import sleep\nimport os\nn = 5\nwhile os.system(f\"gh pr checks {n} | grep -q pending\") == 0:\n"
         "    sleep(30)\nEOF",
+        "CI_LOOP",
+    ),
+    (
+        "python3 - <<'EOF'\nimport subprocess, sys, time\nfor attempt in attempts:\n"
+        "    if subprocess.run(['gh', 'pr', 'checks', '7']).returncode == 0:\n        sys.exit(0)\n    time.sleep(30)\nEOF",
         "CI_LOOP",
     ),
 )
@@ -373,9 +381,8 @@ PASSING = (
     # Bez ``-c`` powłoka dostaje w napisie nazwę pliku skryptu albo jego argument.
     "sh -e 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "bash backup.sh 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
-    # Jedno czytanie pliku wyjścia zadania bez pętli i pętla, która kończy się przed nim (#2267).
+    # Jedno czytanie pliku wyjścia zadania bez pętli (#2267).
     "sleep 1; cat /private/tmp/c/s/tasks/be31c9zrc.output | tail",
-    "until test -f gotowe; do sleep 1; done; cat /private/tmp/c/s/tasks/b1.output",
     # Python: partia zapytań z limitem API, czekanie na zwykły plik, sen poza pętlą i heredoc, który nie jest Pythonem.
     "python3 - <<'EOF'\nimport subprocess, time\nfor run in runs:\n"
     "    subprocess.run(['gh', 'api', f'repos/o/r/actions/runs/{run}/jobs'])\n    time.sleep(1)\nEOF",
@@ -385,7 +392,11 @@ PASSING = (
     "    subprocess.run(['gh', 'pr', 'view', str(n), '--json', 'title'])\n    time.sleep(1)\nEOF",
     "python3 -c 'import time; time.sleep(3)'; gh pr checks 1",
     "python3 - <<'EOF'\nto nie Python: while sleep( gh pr checks 1\nEOF",
-    "cat > notatka.txt <<'EOF'\nwhile True: gh pr checks 1; time.sleep(5)\nEOF",
+    # Skrypt Pythona zapisany heredokiem do pliku i ``-c`` innego programu za końcem polecenia z Pythonem.
+    "cat > czekaj.py <<'EOF'\nimport subprocess, time\nwhile True:\n    subprocess.run(['gh', 'pr', 'checks', '1'])\n"
+    "    time.sleep(5)\nEOF\nchmod +x czekaj.py",
+    "python3 --version; grep -c 'while 1: sleep(1); print(\"gh pr checks 1\")' notatki.txt",
+    "python3 --version\ngrep -c 'while 1: sleep(1); print(\"gh pr checks 1\")' notatki.txt",
 )
 
 
@@ -502,8 +513,10 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "while :; do sleep 1; gh pr checks 1; done" + "\n" * 400000,
         "gh pr checks 1 " * 40000 + "\nwhile :; do sleep 1; gh pr checks 1; done",
         "until x; do sleep 1; " + "gh api x " * 40000 + "\ngh pr checks 1; done",
-        # Szukanie ``-c`` od każdego słowa ``python`` do końca linii rośnie z kwadratem liczby tych słów.
+        # Szukanie ``-c`` od każdego słowa ``python`` rośnie z kwadratem liczby tych słów, a od słowa ``python``
+        # sklejonego cudzysłowem z następnym z kwadratem długości słowa (recenzja #2295 r1 W1).
         "python3 " * 40000 + "-c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)'",
+        "python3'" * 20000 + "; python3 -c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)'",
     ],
     ids=[
         "ogon-przekierowan",
@@ -515,6 +528,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "zapytania-bez-watch",
         "gh-api-bez-adresu",
         "wiele-slow-pythona",
+        "python-sklejony-cudzyslowem",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:

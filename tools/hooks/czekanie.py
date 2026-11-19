@@ -15,8 +15,9 @@ i koniec tury). Odrzuca:
 - pętlę z ``sleep``, której ciało pyta o CI (``gh pr checks``, ``gh pr view``, ``gh run view``/``list``, ``gh api``
   o check-runs, actions/runs albo status commitu) albo woła ``pgrep -f``, oraz ``gh pr checks --watch`` i
   ``gh run watch``;
-- pętlę z ``sleep`` w poleceniu, które podaje plik wyjścia zadania w tle (``tasks/<id>.output``) przed pętlą albo w
-  niej (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``);
+- pętlę z ``sleep`` w poleceniu, które podaje plik wyjścia zadania w tle (``tasks/<id>.output``) przed pętlą, w niej
+  albo za nią (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``,
+  ``while kill -0 $P; do sleep 5; done; cat …/tasks/b1.output``);
 - pętlę skryptu Pythona z ``-c`` albo z heredoca podanego Pythonowi (``python3 - <<'EOF'``), która woła ``sleep(…)``,
   a w jej napisach stoi zapytanie o CI (``["gh", "run", "view", …]``, ``f"gh pr checks {n}"``) albo ``pgrep -f``,
   albo polecenie podaje plik wyjścia zadania w tle; skrypt czyta ``ast``.
@@ -81,13 +82,16 @@ SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 # Plik wyjścia zadania w tle Claude Code (Bash z ``run_in_background``, Monitor, podagent): ``…/tasks/<id>.output``.
 TASK_OUTPUT = re.compile(r"\btasks/[^/\s]*\.output\b")
-# Słowo programu Pythona: ``python3``, ``python3.14``, ``.venv/bin/python``, ``py`` (Windows), ale nie ``x.py``.
-PYTHON = re.compile(r"(?<![\w.$-])(?:[\w.~/-]*/)?(?:python(?:\d+(?:\.\d+)?)?|py)(?![\w.-])")
+# Program Pythona: ``python3``, ``python3.14``, ``.venv/bin/python``, ``py`` (Windows), ale nie ``x.py``; ``PYTHON``
+# szuka go w tekście, a ``PYTHON_PROGRAM`` sprawdza nim całe słowo ``shlex``.
+_PYTHON = r"(?:[\w.~/-]*/)?(?:python(?:\d+(?:\.\d+)?)?|py)"
+PYTHON = re.compile(rf"(?<![\w.$-]){_PYTHON}(?![\w.-])")
+PYTHON_PROGRAM = re.compile(_PYTHON)
 PYTHON_SLEEP = re.compile(r"\bsleep\s*\(")
 PYTHON_SCRIPT_OPTION = re.compile(r"-[A-Za-z]*c")
-COMMAND_SEPARATOR = frozenset("();|&")
-# Tyle słów za programem Pythona hook czyta w szukaniu ``-c``: opcje przed nim to kilka słów, a limit trzyma czas
-# liniowy przy wielu słowach ``python`` w jednej linii.
+# Słowo ``shlex`` z tych znaków kończy polecenie proste; nowa linia też, bo ``shlex`` dostaje ją jako interpunkcję.
+COMMAND_SEPARATOR = frozenset("();|&\n")
+# Tyle słów za programem Pythona hook szuka ``-c``: opcje przed nim (``-I``, ``-X dev``) to kilka słów.
 PYTHON_WORDS = 16
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
 # spacji nawias jest już podkreśleniem (`QUOTED_SEPARATOR`).
@@ -436,22 +440,35 @@ def _reruns(shell: str) -> bool:
     return False
 
 
-def _inline_scripts(shell: str) -> Iterator[str]:
-    """Skrypt za ``-c`` każdego słowa programu Pythona w poleceniu bez ciał heredoców, słowami ``shlex``."""
+def _inline_scripts(shell: str) -> list[str]:
+    """Skrypt za ``-c`` w poleceniu prostym, w którym najwyżej ``PYTHON_WORDS`` słów wcześniej stoi program Pythona.
 
-    for program in PYTHON.finditer(shell):
-        words = shlex.shlex(shell[program.end() :], posix=True, punctuation_chars=True)
-        words.whitespace = " \t\r"
-        words.whitespace_split = True
-        try:
-            for count, word in enumerate(words):
-                if count == PYTHON_WORDS or "\n" in word or (word and set(word) <= COMMAND_SEPARATOR):
-                    break
-                if PYTHON_SCRIPT_OPTION.fullmatch(word):
-                    yield next(words, "")
-                    break
-        except ValueError:  # cudzysłów bez pary
-            continue
+    Czyta polecenie bez ciał heredoców słowami ``shlex`` raz, od początku do końca albo do cudzysłowu bez pary, więc
+    czas zostaje liniowy przy dowolnie wielu słowach ``python`` i dowolnie długich słowach za nimi.
+    """
+
+    words = shlex.shlex(shell, posix=True, punctuation_chars="();<>|&\n")
+    words.whitespace = " \t\r"
+    words.whitespace_split = True
+    scripts: list[str] = []
+    since: Optional[int] = None  # słowa od programu Pythona w tym poleceniu prostym
+    script_next = False
+    try:
+        for word in words:
+            if word and set(word) <= COMMAND_SEPARATOR:
+                since, script_next = None, False
+            elif script_next:
+                scripts.append(word)
+                since, script_next = None, False
+            elif since is not None and PYTHON_SCRIPT_OPTION.fullmatch(word):
+                script_next = True
+            elif PYTHON_PROGRAM.fullmatch(word):
+                since = 0
+            elif since is not None:
+                since = since + 1 if since < PYTHON_WORDS else None
+    except ValueError:  # cudzysłów bez pary: słowa przed nim już przeczytane
+        pass
+    return scripts
 
 
 def _called(call: ast.Call) -> Optional[str]:
@@ -522,7 +539,7 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
             return CI_LOOP
         if pgreps.inside(start, end):
             return PGREP_LOOP
-        if outputs.inside(0, end):
+        if outputs.starts:
             return TASK_OUTPUT_LOOP
     if not PYTHON_SLEEP.search(command):
         return None

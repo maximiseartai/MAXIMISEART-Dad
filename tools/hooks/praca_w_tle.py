@@ -260,7 +260,7 @@ def main() -> int:
     alive, notes = judge(event, _passed(event))
     if alive:
         _log(event, "odmowa", [described for _, described in alive] + notes)
-        # json.dumps zapisuje polskie litery jako ``ł``, bo konsola Windows nie zapisze ich w swoim kodowaniu.
+        # json.dumps zapisuje polskie litery jako ``\u0142``, bo konsola Windows nie zapisze ich w swoim kodowaniu.
         print(json.dumps({"decision": "block", "reason": refusal(alive)}))
     elif notes:
         _log(event, "przepuszczam", notes)

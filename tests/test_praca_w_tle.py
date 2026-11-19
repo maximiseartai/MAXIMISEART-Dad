@@ -248,7 +248,8 @@ def test_shell_podagenta_i_zadanie_zarejestrowane_przepuszczaja_koniec_tury_z_po
         [{**REGISTERED, "tool_input": {"taskId": "bi6lxbxlb"}}],
         [{**REGISTERED, "tool_input": {"taskIds": ["b2"]}}],
         [{**REGISTERED, "session_id": "inna-sesja"}],
-        [{**REGISTERED, "session_id": "../poza-katalogiem"}],
+        # ID sesji spoza wzorca, które jako ścieżka wskazałoby plik sesji REAL.
+        [{**REGISTERED, "session_id": f"../praca_w_tle/{REAL['session_id']}"}],
         [{**SUBAGENT_BASH, "hook_event_name": "PreToolUse"}],
     ],
     ids=[
