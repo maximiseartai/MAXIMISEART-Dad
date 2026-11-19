@@ -740,7 +740,7 @@ from pathlib import Path
 import box_boat
 
 
-def test_box_przenosi_katalog_repo_w_trakcie_testu():
+def test_box_przenosi_katalog_repo_w_trakcie_testu(po_tescie):
     repo = Path.cwd()
     przeniesiony = Path(box_boat.KATALOG_ZWOLNIONY, "home", repo.name)
     przeniesiony.parent.mkdir(parents=True)
@@ -754,6 +754,22 @@ def test_sasiad_biegnie_w_katalogu_repo(request):
 }
 
 
+# Fixtura testu przeniesienia: bez błędu, a w próbce prawdziwej porażki teardownu z własnym błędem po teście.
+_PO_TESCIE: Final = """
+
+
+@pytest.fixture
+def po_tescie():
+    yield
+"""
+_PADLY_TEARDOWN: Final = """
+
+
+@pytest.fixture
+def po_tescie():
+    yield
+    raise RuntimeError("prawdziwy błąd teardownu fixtury")
+"""
 # Porażka sesji spoza raportów testów, jak DRZEWO REPO w tests/conftest.py.
 _PORAZKA_SESJI: Final = """
 
@@ -770,14 +786,15 @@ def pytest_sessionfinish(session):
         ({}, "", box_boat.KOD_WYJSCIA),
         ({"test_zwykly.py": "def test_zwykly():\n    assert len('ab') == 3\n"}, "", 1),
         ({}, _PORAZKA_SESJI, 1),
+        ({}, _PADLY_TEARDOWN, 1),
     ],
-    ids=["tylko-box", "box-i-zwykla-porazka", "box-i-porazka-sesji"],
+    ids=["tylko-box", "box-i-zwykla-porazka", "box-i-porazka-sesji", "box-i-padly-teardown"],
 )
 def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_sesja_tylko_z_nim_konczy_sie_kodem_boxa(
     tmp_path: Path, dodatkowe: dict[str, str], sesji: str, kod: int
 ) -> None:
     zwolniony = tmp_path.resolve() / "retired"
-    conftest = _CONFTEST + f"\nimport box_boat\n\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n" + sesji
+    conftest = _CONFTEST + f"\nimport box_boat\n\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n" + _PO_TESCIE + sesji
     kody: list[int] = []
 
     errors = _sesja(tmp_path, {**_PRZENIESIENIE_BOXA, **dodatkowe}, conftest, katalog="repo", kody=kody)

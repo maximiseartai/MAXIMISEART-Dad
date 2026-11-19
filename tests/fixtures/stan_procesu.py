@@ -32,8 +32,8 @@ testem, więc jest w stanie sprzed każdego testu.
 
 Po błędzie plugin przywraca każdą wartość do oczekiwanej, więc błąd ma sprawca, a nie każdy następny test workera.
 Katalog roboczy, który box boat przeniósł w trakcie biegu (``box_boat.przeniesiony``), nie jest stanem testu: plugin
-zgłasza go komunikatem ``box_boat.KOMUNIKAT`` i daje raportowi testu, po którym go zobaczył, własność
-``box_boat.WLASNOSC``. Sesja, w której każdy raport, który padł (testu albo kolekcji), ma tę własność, kończy się kodem
+zgłasza go komunikatem ``box_boat.KOMUNIKAT``, a raport fazy, której jedyną porażką jest ten komunikat, dostaje
+własność ``box_boat.WLASNOSC``. Sesja, w której każdy raport, który padł (testu albo kolekcji), ma tę własność, kończy się kodem
 ``box_boat.KOD_WYJSCIA`` zamiast 1, a ``tools/szybko.py`` kończy się wtedy wynikiem ``SZYBKO INFRA``. Plugin ustawia ten
 kod przed innymi ``pytest_sessionfinish``, więc porażka sesji spoza raportów (``DRZEWO REPO`` w ``tests/conftest.py``)
 nadpisuje go z powrotem na 1.
@@ -228,6 +228,20 @@ def _release_gc() -> None:
 _porazki: list[bool] = []
 
 
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Raport, którego jedyną porażką jest katalog repo przeniesiony przez box, dostaje własność ``box_boat.WLASNOSC``:
+    wyjątek fazy to dokładnie ``_KatalogPrzeniesiony`` bez wyjątku pod nim (``__cause__``, ``__context__``). Błąd
+    teardownu, który plugin dołącza jako przyczynę, i wyjątek innego haka zostawiają raport bez niej. Własność idzie z
+    raportem do kontrolera sesji, także od workera xdist."""
+
+    report = yield
+    error = call.excinfo.value if call.excinfo is not None else None
+    if type(error) is _KatalogPrzeniesiony and error.__cause__ is None and error.__context__ is None:
+        report.user_properties.append((box_boat.WLASNOSC, box_boat.KATALOG_ZWOLNIONY))
+    return report
+
+
 def pytest_runtest_logreport(report: pytest.TestReport) -> None:
     if report.failed:
         _porazki.append(box_boat.WLASNOSC in dict(report.user_properties))
@@ -356,12 +370,7 @@ def _check_after(item: pytest.Item) -> None:
     if isinstance(item, pytest.Function):
         # Ostatnia referencja wartości fixtur; pytest puszcza ją dopiero po hakach teardown (runner.runtestprotocol).
         item.funcargs = {}
-    try:
-        _check("po tym teście")
-    except _KatalogPrzeniesiony:
-        # Raport teardown niesie własności testu do kontrolera sesji, także od workera xdist.
-        item.user_properties.append((box_boat.WLASNOSC, box_boat.KATALOG_ZWOLNIONY))
-        raise
+    _check("po tym teście")
 
 
 def _check(kiedy: str) -> None:
