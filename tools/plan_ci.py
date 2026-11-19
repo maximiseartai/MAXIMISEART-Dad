@@ -9,7 +9,9 @@ torach zakresu, a kroki skilli na torze ``MUTACJE`` (Windows 3.14, zadania Mutat
 każdy skrypt mutacji osobno, a krok z częściami ustalonymi przez zakres (nocą każda część każdej liczby części podstawy
 z ``ci-czesci``) każdą z nich. Koszt jednostki to ściana, którą dodaje do zadania: plik waży sumę czasów swoich testów przez
 ``WORKERY`` workerów xdist, krok swój czas. Czasy to mediany z ostatnich runów main (``tools/lib/czasy_ci.py``), a toru bez pomiarów, który zastąpił
-inny (``POMIARY_ZASTEPCZE``), czasy tamtego. Plik albo
+inny (``POMIARY_ZASTEPCZE``), czasy tamtego. Skrypt mutacji, którego main od 13.11 nie uruchamia (ADR 0021), waży
+medianę z ostatnich nocy (``czasy-nocy``): bez niej skrypt kolejki (567–856 s w runach PR 16–18.11) ważył medianę
+toru, ok. 55 s, stał cały w jednym zadaniu i trzymał ścianę runu. Plik albo
 krok skilla bez pomiaru waży medianę zmierzonych jednostek tego rodzaju na torze, a bez żadnych pomiarów wagę z
 ``DOMYSLNIE``: plan to wypisuje i biegnie dalej, bo brak czasów psuje tylko równowagę zadań, nie zbiór pracy.
 
@@ -281,10 +283,14 @@ def w_cieniu(plan: Plan, kroki: Mapping[Podstawy, Sequence[KrokSkilla]], pytest:
     return tuple(cien)
 
 
-def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
+def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena], czasy: czasy_ci.Czasy) -> None:
     run = STALE_ZADANIA + len(plan.zadania)
     zrodlo = ", ".join(map(str, plan.runy)) or "brak (wagi domyślne)"
-    print(f"PLAN CI | {plan.zdarzenie} | {praca.zrodlo} | cel {plan.cel_s:.0f} s | {run} zadań runu (limit {_limit_runu(plan.zdarzenie)}) | czasy z runów main: {zrodlo}")
+    noce = ", ".join(map(str, czasy.noce)) or "brak"
+    print(
+        f"PLAN CI | {plan.zdarzenie} | {praca.zrodlo} | cel {plan.cel_s:.0f} s | {run} zadań runu (limit {_limit_runu(plan.zdarzenie)})"
+        f" | czasy z runów main: {zrodlo} | skrypty mutacji bez pomiaru main z nocy: {noce}"
+    )
     for wycena in wyceny:
         najdluzsza = max(wycena.jednostki(_pojemnosc(wycena, plan.cel_s)), key=lambda j: (j.s, j.klucz), default=None)
         dopisek = f", najdłuższa jednostka {najdluzsza.klucz} {najdluzsza.s:.0f} s" if najdluzsza else ""
@@ -310,7 +316,7 @@ def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
 
 def _plan(args: argparse.Namespace, root: Path, github: GitHub) -> int:
     katalog = args.czasy or czasy_ci.katalog_checkoutu(root)
-    czasy = czasy_ci.z_mainu(katalog, odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S, github=github)
+    czasy = czasy_ci.z_mainu(katalog, odswiez_po_s=0 if args.czasy else czasy_ci.ODSWIEZ_S, github=github, z_nocy=True)
     if czasy.blad:
         print(f"CZASY CI | {czasy.blad}; plan waży pracę bez pomiaru domyślnie")
     praca = zakres(args.zdarzenie, frozenset() if args.zdarzenie is Zdarzenie.PUSH else changed_since(root, args.baza), root)
@@ -318,7 +324,7 @@ def _plan(args: argparse.Namespace, root: Path, github: GitHub) -> int:
     bledy = tuple(f"{nazwa}: {powod}" for nazwa, powod in praca.bledy)
     plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, bledy, tuple(sorted(praca.zmienione_pliki_testow)))
     plan = replace(plan, cien=w_cieniu(plan, praca.cien, wyceny[:-1], czasy))
-    _wypisz(plan, praca, wyceny)
+    _wypisz(plan, praca, wyceny, czasy)
     if args.wyjscie:
         args.wyjscie.parent.mkdir(parents=True, exist_ok=True)
         args.wyjscie.write_text(plan.do_json(), encoding="utf-8")

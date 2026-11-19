@@ -280,6 +280,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     permissions:
       contents: read
+      # tools/ci/zapis_czasow.py reads the step times of this job from the run's jobs API.
+      actions: read
     # tools/ci/wykonaj_zadanie.py limits each script to 30 min; this catches a hang in the runner itself.
     timeout-minutes: 60
     strategy:
@@ -342,6 +344,63 @@ jobs:
           path: .ci-czasy/wykonanie.json
           retention-days: 30
           if-no-files-found: warn
+          include-hidden-files: true
+          overwrite: true
+
+      # Since 13.11 main runs no mutation script (ADR 0021), so the night is the only measurement of the scripts that
+      # pull requests still run; the job czasy-nocy merges these records for the CI plan (tools/lib/czasy_ci.py).
+      - name: Record the time of each unit of work
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/ci/zapis_czasow.py zadanie --tor "${{ runner.os }}-${{ steps.python.outputs.python-version }}" --wykonanie .ci-czasy/wykonanie.json --wyjscie ".ci-czasy/zapis/${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}.json"
+
+      - name: Upload the unit times
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: czasy-zadanie-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}
+          path: .ci-czasy/zapis/
+          retention-days: 7
+          if-no-files-found: warn
+          include-hidden-files: true
+
+  # The unit times of the skill jobs become the artifact czasy-nocy, as those of a push to main become czasy-ci: the CI
+  # plan weighs a mutation script without a time on main by its last nights (tools/lib/czasy_ci.py). Measurement only:
+  # a red run would not move the next night's base, so a failure here leaves the run's conclusion alone.
+  czasy-nocy:
+    name: Czasy skryptów skilli nocy
+    needs:
+      - plan
+      - skill-mutations
+    if: ${{ !cancelled() && needs.plan.outputs.skille != '[]' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: tools
+          persist-credentials: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: czasy-zadanie-*
+          merge-multiple: true
+          path: .ci-czasy/zapisy
+
+      - name: Merge the unit times into czasy-nocy
+        run: python3 tools/ci/zapis_czasow.py scal --katalog .ci-czasy/zapisy --wyjscie .ci-czasy/czasy-nocy.json
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: czasy-nocy
+          path: .ci-czasy/czasy-nocy.json
+          retention-days: 30
           include-hidden-files: true
           overwrite: true
 

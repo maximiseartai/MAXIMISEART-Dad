@@ -1,7 +1,8 @@
 """Czasy CI: ile trwała każda jednostka pracy zadań ``ci.yml``, zmierzone w runie, a nie wpisane ręcznie.
 
-Zapis zadania (``Zapis``, ``wczytaj``). Każde zadanie ``pytest`` i ``mutations`` zapisuje jeden plik JSON
-(``tools/ci/zapis_czasow.py zadanie``, artefakt ``czasy-zadanie-<zadanie>-<indeks macierzy>-<próba>``, 7 dni):
+Zapis zadania (``Zapis``, ``wczytaj``). Każde zadanie ``pytest`` i ``mutations``, a nocą każde zadanie ``skill-mutations``
+workflow ``mutacje-nocne.yml``, zapisuje jeden plik JSON (``tools/ci/zapis_czasow.py zadanie``, artefakt
+``czasy-zadanie-<zadanie>-<indeks macierzy>-<próba>``, 7 dni):
 
     {"wersja": 1, "run": 43473166640, "proba": 1, "szablon": "pytest", "zadanie": "pytest (Python 3.13, 3/4)",
      "tor": "windows-3.13", "zdarzenie": "push", "sha": "c11a455d...", "narzut_s": 25.0,
@@ -30,13 +31,22 @@ scal``, artefakt ``czasy-ci``, 30 dni), jedyne źródło czasów CI:
      "tory": {"windows-3.13": {"narzut:pytest": [{"run": 43473166640, "proba": 1, "zadanie": "...", "s": 25.0, "status": "ok", "testy": null}],
                                "pytest:tests/test_adr.py": [...]}}}
 
-Obserwacje klucza idą po runie, próbie i zadaniu, więc te same zapisy dają ten sam plik bajt w bajt.
+Obserwacje klucza idą po runie, próbie i zadaniu, więc te same zapisy dają ten sam plik bajt w bajt. Noc scala tak samo
+zapisy swoich zadań ``skill-mutations`` w artefakt ``czasy-nocy`` (30 dni).
 
 Odczyt. ``z_mainu`` daje ``Czasy`` z artefaktów ``czasy-ci`` ostatnich ``ILE_RUNOW`` zielonych runów ``ci.yml`` na main
 (``gh``, w CI z ``GH_TOKEN``), które trzyma w katalogu: plan CI w świeżym katalogu runu, a ``tools/plan_ci.py`` i
 ``lokalne`` w ``katalog_checkoutu``, czyli ``.git/czasy-ci`` wspólnym dla worktree, odświeżanym co ``ODSWIEZ_S``. Bez
 sieci, bez ``gh`` i bez artefaktu ``Czasy`` są puste, a ``blad`` mówi dlaczego: czytający waży wtedy pracę domyślnie,
 zamiast padać. Obserwacje zadania z kilku prób runu liczą się z ostatniej.
+
+Czasy nocy. Od 13.11 skrypt mutacji skilla biegnie na main tylko nocą (ADR 0021), więc ``czasy-ci`` nie mają jego
+pomiaru, a pull request dalej uruchamia skrypty mutacji modeli. ``z_mainu(z_nocy=True)`` (plan CI) czyta więc obok
+artefakty ``czasy-nocy`` ``ILE_RUNOW`` najnowszych nocy, także czerwonych, bo noc czerwienieje od części Change mutations,
+a zadanie skryptów skilli kończy się zielono także ze skryptem, który padł (podkatalog ``czasy-nocy``, z własnym
+odświeżeniem). Z nocy bierze tylko obserwacje skryptu mutacji (``skill:<skill>/<skrypt>``), którego czasy main nie mają:
+pomiar main wygrywa, a podstawy nocy nie bierze, bo noc uruchamia każdą część każdej liczby części podstawy z
+``ci-czesci``, więc suma runu nie jest czasem podstawy. Narzutu i kroków main nie gubi. ``Czasy.noce`` to runy tych nocy.
 
 Liczba testów pliku (``Czasy.testy``) to najmniejsza z runów suma jego testów w zadaniach runu: plan CI nie dzieli pliku
 na więcej udziałów, niż ma testów, bo udział bez testu nie zgłasza wyniku i czerwieni ``Required CI status``.
@@ -72,6 +82,7 @@ import repo
 WERSJA = 1
 Status = Literal["ok", "fail"]
 ARTEFAKT = "czasy-ci"
+ARTEFAKT_NOCY = "czasy-nocy"
 ILE_RUNOW = 3
 ODSWIEZ_S = 24 * 3600
 # Tor, którego czasy ważą pracę na Macu agenta (Linux jak komputer agenta, nie Windows): budżet ``tools/szybko.py`` i
@@ -82,6 +93,8 @@ TOR_LOKALNY = "linux-3.14"
 WORKERY_LOKALNE = 4
 # Tyle najnowszych artefaktów ``czasy-ci`` przegląda odczyt, szukając ``ILE_RUNOW`` z zielonych runów.
 SZUKANE_ARTEFAKTY = 30
+# Lista zielonych runów main: tylko ich artefakt ``czasy-ci`` liczy odczyt.
+ZIELONE_MAIN = f"{REPO}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page={SZUKANE_ARTEFAKTY}"
 LIMIT_GH_S = 30.0
 # GitHub odczytu czasów: repozytorium checkoutu, a każde zapytanie najwyżej ``LIMIT_GH_S``.
 GITHUB = GhApi(limit_s=LIMIT_GH_S)
@@ -153,6 +166,7 @@ class Czasy:
     runy: tuple[int, ...]
     tory: Mapping[str, Mapping[str, tuple[Obserwacja, ...]]]
     blad: str | None = None
+    noce: tuple[int, ...] = ()  # runy nocy, z których są czasy skryptów mutacji bez pomiaru main
 
     def praca(self, tor: str, klucz: str) -> float | None:
         """Mediana po runach sumy klucza w runie: plik testów podzielony między zadania liczy się raz, cały."""
@@ -200,8 +214,9 @@ def wczytaj(plik: Path) -> Zapis:
     return Zapis(**{**dane, "jednostki": tuple(Jednostka(**jednostka) for jednostka in dane["jednostki"])})
 
 
-def _pobierz(katalog: Path, github: GitHub) -> None:
-    """Artefakty ``czasy-ci`` ``ILE_RUNOW`` najnowszych zielonych runów main do ``<run>.json``; starsze usuwa.
+def _pobierz(katalog: Path, github: GitHub, artefakt: str, zielone: str | None) -> None:
+    """Artefakty ``artefakt`` ``ILE_RUNOW`` najnowszych runów do ``<run>.json``; starsze usuwa. Z zapytaniem ``zielone``
+    (lista runów) liczą się tylko runy z tej listy.
 
     Zapytania idą równolegle, bo Plan CI czeka na nie na ścieżce krytycznej runu. Zielony run main ma swój artefakt, więc
     zielone runy wśród ``SZUKANE_ARTEFAKTY`` najnowszych artefaktów są wśród tylu najnowszych zielonych runów.
@@ -209,25 +224,57 @@ def _pobierz(katalog: Path, github: GitHub) -> None:
 
     def pobierz(run: int) -> None:
         with zipfile.ZipFile(io.BytesIO(github.bajty(f"{REPO}/actions/artifacts/{artefakt_runu[run]}/zip"))) as archiwum:
-            tresc = archiwum.read(f"{ARTEFAKT}.json")
+            tresc = archiwum.read(f"{artefakt}.json")
         pobrany = katalog / f"{run}.json.pobieranie"
         pobrany.write_bytes(tresc)
         pobrany.replace(katalog / f"{run}.json")
 
     with ThreadPoolExecutor() as pula:
-        zielone = pula.submit(github.json, f"{REPO}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page={SZUKANE_ARTEFAKTY}")
-        artefakty = pula.submit(github.json, f"{REPO}/actions/artifacts?name={ARTEFAKT}&per_page={SZUKANE_ARTEFAKTY}")
-        id_zielonych = {int(run["id"]) for run in zielone.result()["workflow_runs"]}
-        artefakt_runu = {
-            run: int(artefakt["id"])
-            for artefakt in artefakty.result()["artifacts"]
-            if not artefakt["expired"] and (run := int(artefakt["workflow_run"]["id"])) in id_zielonych
-        }
+        lista = pula.submit(github.json, zielone) if zielone else None
+        artefakty = pula.submit(github.json, f"{REPO}/actions/artifacts?name={artefakt}&per_page={SZUKANE_ARTEFAKTY}")
+        artefakt_runu = {int(wpis["workflow_run"]["id"]): int(wpis["id"]) for wpis in artefakty.result()["artifacts"] if not wpis["expired"]}
+        if lista is not None:
+            id_zielonych = {int(run["id"]) for run in lista.result()["workflow_runs"]}
+            artefakt_runu = {run: numer for run, numer in artefakt_runu.items() if run in id_zielonych}
         runy = sorted(artefakt_runu, reverse=True)[:ILE_RUNOW]
         list(pula.map(pobierz, [run for run in runy if not (katalog / f"{run}.json").is_file()]))
     for plik in katalog.glob("*.json"):
         if plik.stem.isdigit() and int(plik.stem) not in runy:
             plik.unlink()
+
+
+def _odswiez(katalog: Path, odswiez_po_s: float, github: GitHub, artefakt: str, zielone: str | None) -> str | None:
+    """Pobiera artefakty ``artefakt`` do ``katalog``, gdy ostatnie udane pobranie (plik ``pobrane``) jest starsze niż
+    ``odswiez_po_s``, i zwraca przyczynę, gdy pobranie padło."""
+
+    pobrane = katalog / "pobrane"
+    if pobrane.is_file() and time.time() - pobrane.stat().st_mtime < odswiez_po_s:
+        return None
+    katalog.mkdir(parents=True, exist_ok=True)
+    try:
+        _pobierz(katalog, github, artefakt, zielone)
+    except _BLEDY_POBRANIA as error:
+        return f"pobranie {artefakt} z GitHuba: {getattr(error, 'stderr', None) or error}".strip()
+    pobrane.touch()
+    return None
+
+
+def _dokumenty(katalog: Path) -> tuple[list[dict[str, Any]], list[str]]:
+    """Dokumenty ``ILE_RUNOW`` najnowszych runów z ``katalog`` i przyczyna każdego pliku, którego nie dało się odczytać."""
+
+    dokumenty, bledy = [], []
+    for plik in sorted((plik for plik in katalog.glob("*.json") if plik.stem.isdigit()), key=lambda plik: int(plik.stem))[-ILE_RUNOW:]:
+        try:
+            dokumenty.append(json.loads(plik.read_text(encoding="utf-8")))
+        except (OSError, ValueError) as error:
+            bledy.append(f"{plik.name}: {error}")
+    return dokumenty, bledy
+
+
+def _skrypt_mutacji(klucz: str) -> bool:
+    """Klucz skryptu mutacji skilla (``skill:<skill>/<skrypt>``), a nie jego podstawy (``skill:<skill>/ci``)."""
+
+    return jednostka.rodzaj(klucz) is Rodzaj.SKILL and Klucz.z_tekstu(klucz).nazwa.partition("/")[2] != "ci"
 
 
 def _obserwacje(dokumenty: list[dict[str, Any]]) -> dict[str, dict[str, tuple[Obserwacja, ...]]]:
@@ -254,34 +301,39 @@ def katalog_checkoutu(root: Path) -> Path:
     return repo.common_dir(root) / ARTEFAKT
 
 
-def z_mainu(katalog: Path, *, odswiez_po_s: float = 0, github: GitHub = GITHUB) -> Czasy:
+def z_mainu(katalog: Path, *, odswiez_po_s: float = 0, github: GitHub = GITHUB, z_nocy: bool = False) -> Czasy:
     """``Czasy`` z artefaktów w ``katalog``, który najpierw odświeża z ``github``, gdy ostatnie udane pobranie jest
-    starsze niż ``odswiez_po_s``. Błąd sieci, ``gh`` albo pliku nie przerywa: ``Czasy`` mają wtedy to, co się dało, i
-    ``blad``, a następny odczyt próbuje pobrać znowu."""
+    starsze niż ``odswiez_po_s``; z ``z_nocy`` tak samo z czasów nocy w ``katalog / ARTEFAKT_NOCY``, każde źródło
+    osobno. Błąd sieci, ``gh`` albo pliku nie przerywa: ``Czasy`` mają wtedy to, co się dało, i ``blad``, a następny
+    odczyt próbuje pobrać znowu."""
 
-    blad = None
-    pobrane = katalog / "pobrane"
-    if not pobrane.is_file() or time.time() - pobrane.stat().st_mtime >= odswiez_po_s:
-        katalog.mkdir(parents=True, exist_ok=True)
-        try:
-            _pobierz(katalog, github)
-            pobrane.touch()
-        except _BLEDY_POBRANIA as error:
-            blad = f"pobranie {ARTEFAKT} z GitHuba: {getattr(error, 'stderr', None) or error}".strip()
-    dokumenty = []
-    for plik in sorted((plik for plik in katalog.glob("*.json") if plik.stem.isdigit()), key=lambda plik: int(plik.stem))[-ILE_RUNOW:]:
-        try:
-            dokumenty.append(json.loads(plik.read_text(encoding="utf-8")))
-        except (OSError, ValueError) as error:
-            blad = f"{plik.name}: {error}"
+    nocny = katalog / ARTEFAKT_NOCY
+    zrodla = [(katalog, ARTEFAKT, ZIELONE_MAIN), *([(nocny, ARTEFAKT_NOCY, None)] if z_nocy else [])]
+    with ThreadPoolExecutor() as pula:
+        pobrania = [pula.submit(_odswiez, miejsce, odswiez_po_s, github, artefakt, zielone) for miejsce, artefakt, zielone in zrodla]
+    bledy = [blad for pobranie in pobrania if (blad := pobranie.result())]
+    dokumenty, nieczytelne = _dokumenty(katalog)
+    bledy += nieczytelne
     try:
         tory = _obserwacje(dokumenty)
         runy = tuple(sorted({run["run"] for dokument in dokumenty for run in dokument["runy"]}))
     except (KeyError, TypeError, ValueError, AttributeError) as error:
         return Czasy((), {}, f"{ARTEFAKT} w innym kształcie: {error!r}")
-    if not dokumenty and blad is None:
-        blad = f"brak artefaktu {ARTEFAKT} z zielonego runu main"
-    return Czasy(runy, tory, blad)
+    if not dokumenty and not bledy:
+        bledy.append(f"brak artefaktu {ARTEFAKT} z zielonego runu main")
+    noce: tuple[int, ...] = ()
+    if z_nocy:
+        nocne, nieczytelne = _dokumenty(nocny)
+        bledy += nieczytelne
+        try:
+            skrypty = {(tor, klucz): obserwacje for tor, klucze in _obserwacje(nocne).items() for klucz, obserwacje in klucze.items() if _skrypt_mutacji(klucz)}
+            noce = tuple(sorted({run["run"] for dokument in nocne for run in dokument["runy"]}))
+        except (KeyError, TypeError, ValueError, AttributeError) as error:
+            bledy.append(f"{ARTEFAKT_NOCY} w innym kształcie: {error!r}")
+        else:
+            for (tor, klucz), obserwacje in skrypty.items():
+                tory.setdefault(tor, {}).setdefault(klucz, obserwacje)
+    return Czasy(runy, tory, "; ".join(bledy) or None, noce)
 
 
 def lokalne(root: Path) -> tuple[KosztyPlikow, str | None]:
