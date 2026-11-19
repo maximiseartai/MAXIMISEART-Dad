@@ -1,5 +1,3 @@
-"""Check the verification skill package and its evidence hygiene."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -16,6 +14,8 @@ from create_intermax_fixture import ROW_MARKERS as INTERMAX_ROW_MARKERS
 from skrypt_skilla import Parser, create_run_root, new_run
 
 from atrapy.scenariusz_rozliczen import ROW_CONTENT_MARKERS as SCENARIO_ROW_MARKERS
+
+OPIS = """Check the verification skill package and its evidence hygiene."""
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]
@@ -204,7 +204,7 @@ def _check_cleanup_preserves_evidence(errors: list[str], run_dir: Path) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_argument("--evidence-root", required=True, type=Path)
     parser.add_run_dir()
     args = parser.parse_args(argv)

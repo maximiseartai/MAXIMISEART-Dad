@@ -1,9 +1,3 @@
-"""Show that the drive of verify-centrum-rozliczen fails on broken variants of its `uwaga-taty` feature.
-
-Each mutation runs the feature on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must make it fail.
-A mutation whose anchor text is no longer in its file is reported as NIEAKTUALNA: update it to the new code.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -15,6 +9,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/ver
 
 from cele_mutacji_centrum import BUILD, CASE_DELIVERY, DAD_CASES, UWAGA
 from silnik_mutacji import Edit, Mutation, check_all
+
+OPIS = """Show that the drive of verify-centrum-rozliczen fails on broken variants of its `uwaga-taty` feature.
+
+Each mutation runs the feature on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must make it fail.
+A mutation whose anchor text is no longer in its file is reported as NIEAKTUALNA: update it to the new code.
+"""
 
 FIELDS = Edit(BUILD, "`-m-1 flex flex-col gap-5 overflow-y-auto p-1`", "`-m-1 flex min-h-0 flex-col gap-5 p-1`")
 DOTYCZY = Edit(
@@ -144,5 +144,5 @@ MUTATIONS = (
 
 
 if __name__ == "__main__":
-    argparse.ArgumentParser(description=__doc__).parse_args()
+    argparse.ArgumentParser(description=OPIS).parse_args()
     raise SystemExit(check_all(MUTATIONS))

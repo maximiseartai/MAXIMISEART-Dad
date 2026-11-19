@@ -1,5 +1,3 @@
-"""Run the complete disposable verification workflow as one command."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -36,6 +34,8 @@ from atrapy.pliki_taty import WORKER_LIST_NAME
 from atrapy.settlement import PERIOD, SOURCE_NAME
 from rozliczenia.tool_files import config_dir
 from atrapy.workbooks import excel_lock
+
+OPIS = """Run the complete disposable verification workflow as one command."""
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
@@ -659,7 +659,7 @@ CI_VARIANTS = tuple(name for name, variant in WORKFLOW_VARIANTS.items() if not v
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_variants(WORKFLOW_VARIANTS, default="default", every=CI_VARIANTS)
     parser.add_run_dir()
     parser.add_argument(

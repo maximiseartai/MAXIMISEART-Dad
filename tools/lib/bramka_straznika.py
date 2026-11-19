@@ -1,4 +1,20 @@
-"""Warunek 5 merge'a ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): każde Ważne werdyktu
+from __future__ import annotations
+
+import shlex
+import subprocess
+import sys
+import time
+
+import github
+import potomne
+import rejestr_korzeni
+from repo import ROOT
+from stan_pr import Pull, Waiting
+import straznik
+import szablon_werdyktu
+import werdykt_pr
+
+ZASADY = """Warunek 5 merge'a ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): każde Ważne werdyktu
 ``FAIL`` tego PR ma w swoim bloku sekcji ``## Korzeń`` linię ``Strażnik: <selektor>`` (``straznik.parse``), a dowód
 strażnika przechodzi: ``tools/na_scalonych_pr.py --straznik <selektor> --z-commita <HEAD PR> --wazne <PR>/W<n>/r<k>``
 z kodu bazy PR, tym samym Pythonem, jedno wywołanie na selektor ze wszystkimi jego Ważnymi. Przechodzi tylko kod 0
@@ -19,22 +35,6 @@ dodatku dev bazy i uv, buduje środowisko Required CI z drzewa PR i wykonuje kod
 z ``pyproject.toml`` PR, wtyczki mypy z jego konfiguracji), więc biegnie tylko w jobie ``dowod`` bez prawa zapisu
 i przy merge'u.
 """
-
-from __future__ import annotations
-
-import shlex
-import subprocess
-import sys
-import time
-
-import github
-import potomne
-import rejestr_korzeni
-from repo import ROOT
-from stan_pr import Pull, Waiting
-import straznik
-import szablon_werdyktu
-import werdykt_pr
 
 MARKER = "docs/adr/0042-straznik-przy-pierwszym-waznym.md"  # plik, którego dodanie do bazy PR to chwila wdrożenia warunku
 TEST_MARKER = "tools/lib/mutacja_recenzenta.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia dowodu testu

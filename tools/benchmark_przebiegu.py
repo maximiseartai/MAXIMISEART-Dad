@@ -1,4 +1,31 @@
-"""Mierzy czas Przebiegu rozliczeń (measure) na lustrze folderów taty, bez danych klientów; użyj przed i po zmianie wydajności silnika.
+from __future__ import annotations
+
+import argparse
+import os
+import platform
+import sys
+from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from atrapy.pliki_taty import WORKER_TEMPLATE_NAME
+from benchmark import DEFAULT_DIRECTORY, BenchmarkError
+from benchmark.dziennik import (
+    WALL_PARTS,
+    append_record,
+    guard_summary,
+    oracle_text,
+    read_journal,
+    render_comment,
+    spread_text,
+)
+from benchmark.lustro import SCENARIOS, default_templates_directory, default_worker_list, ensure_mirror, template_paths
+from benchmark.pomiar import RUNS, exclusive_measurement, measure, measurement_lock
+from benchmark.referencja import find_reference, freeze_reference, reference_folder
+from quiet_machine import MachineBusy, QuietMachine
+
+OPIS = """Mierzy czas Przebiegu rozliczeń (measure) na lustrze folderów taty, bez danych klientów; użyj przed i po zmianie wydajności silnika.
 
 Użycie (z katalogu repozytorium):
 
@@ -73,33 +100,6 @@ metryk w repozytorium. Na wyjście, do dziennika i do komentarza trafiają tylko
 nazwy scenariuszy, commit i maszyna: nigdy Wykonawcy, adresy, numery zleceń ani wiersze.
 """
 
-from __future__ import annotations
-
-import argparse
-import os
-import platform
-import sys
-from pathlib import Path
-from typing import Any
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from atrapy.pliki_taty import WORKER_TEMPLATE_NAME
-from benchmark import DEFAULT_DIRECTORY, BenchmarkError
-from benchmark.dziennik import (
-    WALL_PARTS,
-    append_record,
-    guard_summary,
-    oracle_text,
-    read_journal,
-    render_comment,
-    spread_text,
-)
-from benchmark.lustro import SCENARIOS, default_templates_directory, default_worker_list, ensure_mirror, template_paths
-from benchmark.pomiar import RUNS, exclusive_measurement, measure, measurement_lock
-from benchmark.referencja import find_reference, freeze_reference, reference_folder
-from quiet_machine import MachineBusy, QuietMachine
-
 
 def _default_machine() -> str:
     return f"{platform.system()}-{platform.machine()}".lower()
@@ -115,7 +115,7 @@ def _machine() -> QuietMachine:
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     measure_parser = commands.add_parser("measure", help="Zbuduj lustro (jeśli go brak) i zmierz scenariusz.")
     freeze_parser = commands.add_parser("freeze", help="Zamroź wynik referencyjny scenariusza z commita.")

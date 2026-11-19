@@ -1,6 +1,4 @@
-"""Sprzątanie runu ``verify-github-skrzynki``: usuwa z repozytoriów próbnych tylko to, co założył ten run.
-
-Run rozpoznaje znacznik ``<!-- verify-github-skrzynki run=<id> -->`` w treści issue i opisie Release (Archiwum) i
+"""Run rozpoznaje znacznik ``<!-- verify-github-skrzynki run=<id> -->`` w treści issue i opisie Release (Archiwum) i
 ``verify-github-skrzynki run=<id>`` w opisie etykiety, a identyfikator runu w nazwie tagu i pliku Archiwum, nie nazwa:
 issue z numerem z rejestru runu (``zalozone.jsonl``), które znacznika nie ma, zostaje i trafia do wyniku. Etykietę,
 którą GitHub założył sam przy issue runu (bez opisu), usuwa tylko wtedy, gdy rejestr ją zapisał, a stan sprzed runu jej
@@ -26,6 +24,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 from skrypt_skilla import Parser, RunRootError, remove_run_root, require_run_root
 
 from github_wymiana import RUN_MARKER, TRIAL, TRIAL_ARCHIVE, TRIALS, Admin, Pace, gh_token
+
+OPIS = "Sprzątanie runu ``verify-github-skrzynki``: usuwa z repozytoriów próbnych tylko to, co założył ten run."
 
 RUN_FILE: Final = "run.json"
 # Lista issue GitHuba nadąża za założeniem i usunięciem po kilku sekundach (pomiar 5.11.2026: 98 ze 101 świeżych issue).
@@ -218,7 +218,7 @@ def clean(root: Path) -> tuple[bool, list[str]]:
 
 
 def main() -> int:
-    parser = Parser(description=__doc__.splitlines()[0])
+    parser = Parser(description=OPIS)
     parser.add_root("katalog runu, który założył github_skrzynki.py na-zywo")
     arguments = parser.parse_args()
     try:

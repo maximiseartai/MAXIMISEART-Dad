@@ -1,4 +1,28 @@
-"""Zgłoszenia CI (ADR 0020): issue dla flaky testów i dla czerwonego `main`, z workflow ``zgloszenia.yml`` po każdym runie CI.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Iterator, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+import io
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Any
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+from github import CZERWONY_MAIN, MERGE, REPO, REQUIRED, ROZSTRZYGA, SQUASH, Akcja, GhApi, GitHub, Powiadom, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis, required, rozstrzygniety, strony
+from github import wykonaj as wykonaj_akcje
+from jednostka import Rodzaj
+import niestabilne_testy
+from repo import MAIN, ROOT
+import repo
+import wplyw_zmiany
+
+OPIS = """Zgłoszenia CI (ADR 0020): issue dla flaky testów i dla czerwonego `main`, z workflow ``zgloszenia.yml`` po każdym runie CI.
 
 Wejście to jeden zakończony run workflow ``CI`` albo ``Mutacje nocne``, którego części zapisują flaky testy z bazy (ADR 0021). Narzędzie najpierw ustala akcje (``Zaloz``, ``Skomentuj``, ``Zamknij``),
 potem je wykonuje; z ``--bez-zapisu`` tylko je drukuje.
@@ -38,30 +62,6 @@ z ``GH_TOKEN``, lokalnie z logowaniem Maksa).
 
     .venv/bin/python tools/ci/zgloszenia_ci.py --run 40380584486 --bez-zapisu
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Iterator, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-import io
-from pathlib import Path
-import re
-import subprocess
-import sys
-from typing import Any
-import zipfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
-
-from github import CZERWONY_MAIN, MERGE, REPO, REQUIRED, ROZSTRZYGA, SQUASH, Akcja, GhApi, GitHub, Powiadom, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, opis, required, rozstrzygniety, strony
-from github import wykonaj as wykonaj_akcje
-from jednostka import Rodzaj
-import niestabilne_testy
-from repo import MAIN, ROOT
-import repo
-import wplyw_zmiany
 
 ZDERZENIE = "zderzenie"
 # Tyle flaky testów jednego runu trafia do issue; reszta to znak awarii, a nie flaky testów.
@@ -433,7 +433,7 @@ def _przyczyny(github: GitHub, zadanie: int) -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--run", type=int, required=True, help="Id zakończonego runu workflow CI.")
     parser.add_argument("--bez-zapisu", action="store_true", help="Tylko drukuje akcje; niczego nie zakłada, nie komentuje i nie zamyka.")
     args = parser.parse_args(argv)

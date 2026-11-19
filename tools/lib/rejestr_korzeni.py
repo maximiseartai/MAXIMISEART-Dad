@@ -1,4 +1,22 @@
-"""Rejestr korzeni (ADR 0031, decyzje Q13, Q22, Q25): wystąpienia kodów korzeni czytane z GitHuba dla bramki korzenia
+from __future__ import annotations
+
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass, replace
+from datetime import UTC, datetime
+import json
+import re
+from typing import Any
+
+import github
+import limit_rund
+import stan_pr
+from stan_pr import Pull
+import straznik
+import szablon_werdyktu
+from szablon_werdyktu import CODE, Item, Root
+import werdykt_pr
+
+ZASADY = """Rejestr korzeni (ADR 0031, decyzje Q13, Q22, Q25): wystąpienia kodów korzeni czytane z GitHuba dla bramki korzenia
 i tygodniowego pomiaru.
 
 Rejestrem są werdykty i opisy PR-ów na GitHubie, a nie plik w repozytorium (Q22). Wystąpienie kodu to:
@@ -43,24 +61,6 @@ dziennie to ok. 16 stron na tydzień PR-ów, czyli ok. 420 punktów na przebieg 
 Issues „Chwast: R-KOD” (``TITLE``, etykieta ``WEED``) rejestr nie zakłada ani nie zmienia; tytuł i etykietę czyta
 tygodniowy pomiar, który podaje otwarte, dopóki ich nie zamknięto (ADR 0036, „Bez listy”).
 """
-
-from __future__ import annotations
-
-from collections.abc import Iterator, Sequence
-from dataclasses import dataclass, replace
-from datetime import UTC, datetime
-import json
-import re
-from typing import Any
-
-import github
-import limit_rund
-import stan_pr
-from stan_pr import Pull
-import straznik
-import szablon_werdyktu
-from szablon_werdyktu import CODE, Item, Root
-import werdykt_pr
 
 SECTION = "Korzeń"
 MAJOR_HEADING = re.compile(rf"(W\d+) r(\d+): ({CODE.pattern})")

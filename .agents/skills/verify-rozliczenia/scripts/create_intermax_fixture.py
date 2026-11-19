@@ -1,12 +1,3 @@
-"""Create a disposable synthetic INTERMAX (Rejestr zleceń) with one day of Surowe zlecenia for Uporządkowanie INTERMAX.
-
-The workbook comes from the INTERMAX fixture of the tests (``tools/lib/atrapy/intermax.py``), shaped like Dad's
-file: ordered days in Calibri 8, his yellow row, and below it one pasted day of Surowe zlecenia with the look from
-the company app, the first row shifted two columns left. The empty ``Kopie INTERMAX`` folder sits next to it. The
-manifest keeps the INTERMAX bytes' hash, its last ordered row and the moment the fixture was written, for
-``assert_intermax.py``. Every value is synthetic.
-"""
-
 from __future__ import annotations
 
 from datetime import datetime
@@ -22,6 +13,15 @@ from skrypt_skilla import Parser, create_run_root
 
 from atrapy.intermax import Intermax, Order
 from atrapy.scenariusz_rozliczen import REGISTER_NAME
+
+OPIS = """Create a disposable synthetic INTERMAX (Rejestr zleceń) with one day of Surowe zlecenia for Uporządkowanie INTERMAX.
+
+The workbook comes from the INTERMAX fixture of the tests (``tools/lib/atrapy/intermax.py``), shaped like Dad's
+file: ordered days in Calibri 8, his yellow row, and below it one pasted day of Surowe zlecenia with the look from
+the company app, the first row shifted two columns left. The empty ``Kopie INTERMAX`` folder sits next to it. The
+manifest keeps the INTERMAX bytes' hash, its last ordered row and the moment the fixture was written, for
+``assert_intermax.py``. Every value is synthetic.
+"""
 
 COPIES_DIRECTORY = "Kopie INTERMAX"
 MANIFEST_NAME = "intermax_manifest.json"
@@ -39,7 +39,7 @@ ROW_MARKERS = ("ZL-782", "UM-782", "Ulica 782", "example.invalid/zlecenie")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root to create; absent or empty")
     args = parser.parse_args(argv)
     created_at = datetime.now().astimezone().replace(microsecond=0)

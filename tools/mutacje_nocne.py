@@ -1,4 +1,39 @@
-"""Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, time, timedelta
+from enum import Enum
+import io
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Any
+import urllib.parse
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import czasy_ci
+from github import MERGE, REPO, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, blok_kodu, issues, strony
+from github import wykonaj as wykonaj_akcje
+from kroki_skilli import Katalog, Step
+from jednostka import ZMIENNA_CZESCI, Czesc, Klucz
+import jednostka
+import mutacje_zmiany
+import plan_runu
+from repo import ROOT
+import repo
+from silnik_mutacji import NearLimit
+from wplyw_zmiany import Repository, changed_since
+from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
+
+OPIS = """Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.
 
 Mutacje nocne (ADR 0021): mutacje linii zmienionych na ``main`` od ostatniej nocy i issue dla przeżytych.
 
@@ -84,41 +119,6 @@ Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów:
 
     .venv/bin/python tools/mutacje_nocne.py plan
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, time, timedelta
-from enum import Enum
-import io
-import json
-import os
-from pathlib import Path
-import re
-import subprocess
-import sys
-from typing import Any
-import urllib.parse
-import zipfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import czasy_ci
-from github import MERGE, REPO, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, blok_kodu, issues, strony
-from github import wykonaj as wykonaj_akcje
-from kroki_skilli import Katalog, Step
-from jednostka import ZMIENNA_CZESCI, Czesc, Klucz
-import jednostka
-import mutacje_zmiany
-import plan_runu
-from repo import ROOT
-import repo
-from silnik_mutacji import NearLimit
-from wplyw_zmiany import Repository, changed_since
-from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
 
 WORKFLOW = "mutacje-nocne.yml"
 # Doba nocy zaczyna się o godzinie crona ``30 1 * * *`` w mutacje-nocne.yml; od niej noc startuje z pierwszego pushu na main.
@@ -482,7 +482,7 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
         try:
             zapis = json.loads((katalog / f"{ARTEFAKT}{numer}" / ZAPIS).read_text(encoding="utf-8"))
             # Część, której limit czasu minął przed werdyktem części mutacji, też zapisuje przeżyte z reszty.
-            czesci = [Przezyta.z_zapisu(wpis, rodzaj) for rodzaj in Rodzaj for wpis in zapis.get(rodzaj.lista) or []]
+            czesci = [Przezyta.z_zapisu(wpis, rodzaj) for rodzaj in Rodzaj for wpis in zapis[rodzaj.lista]]
         except (OSError, ValueError) as blad:
             problemy.append(f"część {numer}/{liczba} bez zapisu: {blad}")
             continue
@@ -882,7 +882,7 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     """``root`` to checkout ``main``, którego zmiany noc mutuje, a ``github`` daje runy nocy, issue przeżytych mutacji
     i artefakty czasów CI; bez niego noc pyta ``GITHUB``, a czasy ``czasy_ci.GITHUB``."""
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Baza i koniec zakresu nocy, liczba mutacji i części (GITHUB_OUTPUT).")
     plan.add_argument("--od", default="", help="Commit, od którego liczyć zmiany, a spoza linii HEAD jego wspólny przodek z HEAD (domyślnie koniec zakresu ostatniego udanego runu albo 24 h wstecz).")

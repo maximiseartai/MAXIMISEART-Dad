@@ -10,6 +10,7 @@ import re
 from pathlib import Path
 
 import pytest
+import syntetyczne_wzorce
 from openpyxl import load_workbook
 
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
@@ -171,3 +172,35 @@ def test_generator_tworzy_te_same_bajty_za_kazdym_razem(tmp_path: Path) -> None:
     assert names == sorted(path.name for path in second.iterdir())
     assert len(names) == 4
     assert all((first / name).read_bytes() == (second / name).read_bytes() for name in names)
+
+
+def test_narzedzie_odmawia_mniej_niz_dwoch_grup_wspolnych_formul_i_mowi_ile_wierszy_trzeba(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """``--data-rows`` to co najmniej dwie grupy wspólnych formuł po 64 wiersze (128): mniej to kod 2 z najmniejszą liczbą
+    w komunikacie i bez żadnego pliku, a dokładnie 128 to Wzorce."""
+
+    minimum = 2 * 64
+
+    assert syntetyczne_wzorce.main([str(tmp_path / "za-malo"), "--data-rows", str(minimum - 1)]) == 2
+    assert str(minimum) in capsys.readouterr().out
+    assert not (tmp_path / "za-malo").exists()
+    assert syntetyczne_wzorce.main([str(tmp_path / "najmniej"), "--data-rows", str(minimum)]) == 0
+    assert {WORKER_TEMPLATE, COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE} <= {path.name for path in (tmp_path / "najmniej").iterdir()}
+
+
+def test_wiersze_danych_syntetycznego_wzorca_maja_zawijanie_i_obramowania_inne_niz_wyglad_wiersza_danych(
+    tmp_path: Path,
+) -> None:
+    """Jak we Wzorcu taty, komórki A:L Wierszy danych mają zawijanie i obramowania średnie i włosowe, więc kopia Wzorca
+    (verify-kopia-wzorca, WYGLAD_WIERSZA) musi je nadpisać Wyglądem Wiersza danych: cienką ramką i zawijaniem tylko
+    tekstu z końcem linii."""
+
+    workbook = load_workbook(write_synthetic_templates(tmp_path / "wzorce") / WORKER_TEMPLATE)
+    try:
+        cells = [cell for row in active_worksheet(workbook).iter_rows(min_row=18, max_row=LAST_ROW, max_col=12) for cell in row]
+    finally:
+        workbook.close()
+
+    assert any(cell.alignment.wrap_text for cell in cells)
+    assert {"medium", "hair"} <= {cell.border.left.style for cell in cells}

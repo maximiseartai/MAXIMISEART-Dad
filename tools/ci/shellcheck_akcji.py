@@ -1,6 +1,4 @@
-"""shellcheck na skryptach ``run:`` akcji złożonych w ``.github/actions``, których actionlint nie czyta.
-
-actionlint sprawdza shellcheckiem tylko ``.github/workflows``. To narzędzie bierze każdy krok ``run:`` z ``shell: bash``
+"""actionlint sprawdza shellcheckiem tylko ``.github/workflows``. To narzędzie bierze każdy krok ``run:`` z ``shell: bash``
 albo ``shell: sh`` (także z argumentami, np. ``bash -e {0}``) w ``.github/actions/**/action.yml``, zastępuje wyrażenia
 ``${{ … }}`` podkreśleniami (jak actionlint, z zachowaniem podziału na linie) i podaje skrypt shellcheckowi z tymi samymi
 wyłączonymi regułami co actionlint. Każda uwaga to linia ``<plik>:<linia>: <uwaga shellchecka>``, a kod wyjścia 1 znaczy,
@@ -25,6 +23,8 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import potomne
+
+OPIS = "shellcheck na skryptach ``run:`` akcji złożonych w ``.github/actions``, których actionlint nie czyta."
 
 ROOT = Path(__file__).resolve().parents[2]
 ACTIONS = ".github/actions"
@@ -91,7 +91,7 @@ def _lines(relative: str, first: int, answer: subprocess.CompletedProcess[str]) 
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.add_argument("--shellcheck", default="shellcheck", help="ścieżka do shellchecka (domyślnie z PATH)")
     arguments = parser.parse_args(argv)
     lines = findings([arguments.shellcheck])

@@ -3,7 +3,7 @@ language: python
 severity: error
 message: >-
   komentarz # w src: to, co mówi komentarz, wyraź lepszą nazwą albo testem, który pada bez tego kodu, a historię zmiany
-  zostaw w PR albo issue; w src zostaje tylko komentarz, który w całości jest tłumieniem w jednej z dwóch postaci:
+  zostaw w opisie PR; w src zostaje tylko komentarz, który w całości jest tłumieniem w jednej z dwóch postaci:
   „# noqa: F401 - powód” (kody ruff rozdzielone „, ”, potem „ - ” i powód) albo „# type: ignore[attr-defined]” (kody
   mypy rozdzielone „, ”, potem koniec komentarza albo „  # powód”); reguła czyta pliki .py, .pyi i .py3 w src, a plik
   .pyw i plik bez rozszerzenia pomija

@@ -1,7 +1,118 @@
 # Model Domeny
 
-Ten plik opisuje język procesu.
-Nie opisuje implementacji.
+Ten plik opisuje język procesu i motywację domenową, której kod nie wyrazi ([ADR 0043](docs/adr/0043-kod-bez-komentarzy.md)).
+Implementacji nie opisuje poza kolumną `identyfikator` tabeli niżej: to nazwa, pod którą pojęcie jest zdefiniowane w kodzie `src/` albo `tools/` (`Klasa.składowa` dla składowej klasy), a `–` znaczy, że pojęcie nie ma nazwy w kodzie.
+Nowy kod nazywa pojęcie tym identyfikatorem, a nowe hasło dostaje wiersz w tej tabeli w kolejności haseł (`tests/test_glossary.py`).
+
+| pojęcie | identyfikator |
+|---|---|
+| Okres rozliczeniowy | `SettlementPeriod` |
+| Rejestr zleceń | `RegisterFile` |
+| Aplikacja firmowa | – |
+| efenix | `Efenix` |
+| Przekazanie do akceptacji | `PricingMode.FORWARD` |
+| Wycena w efenix | `efenix_pricing` |
+| Zlecenie rozliczone | `Settled` |
+| Zlecenie przekazane | `Forwarded` |
+| Wycena Emmetta | `load_emmett` |
+| Ostrzeżenie Emmetta | `EmmettWarning` |
+| Znacznik efenix | `Mark.READY` |
+| Znacznik przekazania | `Mark.FORWARDED` |
+| Surowe zlecenia | `RawOrders` |
+| Uporządkowanie INTERMAX | `order_register` |
+| Dzień uporządkowany | `OrderedDay` |
+| Kopia INTERMAX | `IntermaxCopy` |
+| Kolor operatora | `OperatorColor` |
+| Wpis urządzenia i czynności INTERMAX | `IntermaxEntry` |
+| Baza zleceń | `OrderBase` |
+| Historia adresu | `OrderBase.history` |
+| Zlecenie skuteczne | `Verdict.YES` |
+| Zlecenie nieskuteczne | `Verdict.NO` |
+| Raport wykonawcy | `worker_reports` |
+| Wpis raportu | `ReportEntry` |
+| Wpisanie raportów | `report_entering` |
+| Wpis na życzenie | `RequestedEntry` |
+| Przeniesienie zlecenia | `OrderMove` |
+| Zlecenie dopisane z raportu | `OrderAdded` |
+| Przypomnienie o raporcie | `Reminder` |
+| Wysyłka rozliczeń | `SettlementMailing` |
+| Mail z rozliczeniem | `settlement_mail` |
+| Rozliczenie wewnętrzne | `internal_settlement` |
+| Wzorzec | `TemplateFile` |
+| Wzorzec rozliczenia wewnętrznego | `TemplateFile.internal_settlement` |
+| Wzorzec pliku zbiorczego | `TemplateFile.collective_file` |
+| Wzorzec rozliczenia pracownika | `TemplateFile.worker_settlement` |
+| Przygotowanie pliku zbiorczego | `prepare_collective_file` |
+| Plik zbiorczy | `collective_file` |
+| Wykonawca | `Worker` |
+| Lista Wykonawców | `WorkerList` |
+| Nieaktywny Wykonawca | `Worker.active` |
+| Historia Ustawień | `SettingsHistory` |
+| Szablon pracownika | `each_template` |
+| Folder okresu | `PeriodFolder` |
+| Folder okresów | `periods_directory` |
+| Ustawienia Centrum | `CentrumSettings` |
+| Folder rozliczeń pracowników | `PeriodFolder.worker_settlements` |
+| Przygotowanie skoroszytów pracowników | – |
+| Przetworzenie Szablonu pracownika | `TemplateProcessing` |
+| Rozliczenie pracownika | `WorkerSettlement` |
+| Wiersz danych | `DataRow` |
+| Wygląd Wiersza danych | `RowLook` |
+| Ilości usług | `ServiceQuantities` |
+| Ilości tylko dla INEA | `inea_only` |
+| Czerwone pole | `FillColour.RED` |
+| Zielone pole | `FillColour.GREEN` |
+| Reguły ilości | `QuantityRules` |
+| Legenda czynności | `ActivityLegend` |
+| Kod czynności | `ActivityCode` |
+| Błąd opisu | `DescriptionError` |
+| Lista Urządzeń | `DeviceList` |
+| Wpis narzędzia | `ToolEntry` |
+| Ilości do uzupełnienia | `QuantitiesToFill` |
+| Zlecenie ze zdjęciami | `with_photos` |
+| Uzupełnienie pliku zbiorczego | `filling` |
+| Wyróżnienie | `Highlights` |
+| Hiperłącze | `Hyperlink` |
+| Gotowość | `confirms_readiness` |
+| Status okresu | `PeriodStatus` |
+| Droga okresu | `PathStep` |
+| Przebieg rozliczeń | `run_settlements` |
+| Uruchomienie procesu | `process_run` |
+| Kontekst Uruchomienia | `RunContext` |
+| Ustawienia ze startu | `SettingsAtStart` |
+| Decyzja taty | `Decision` |
+| Centrum rozliczeń | `centrum` |
+| Katalog procesów | `Catalog` |
+| Skrypt dla maszyn | `uruchom_proces` |
+| Zdarzenie przebiegu | `ProgressEvent` |
+| Komunikat | `Message` |
+| Zatrzymanie | `Stop` |
+| Nieoczekiwany wyjątek | `unexpected_failure` |
+| Rodzaj Zatrzymania | `StopKind` |
+| Powtórka | `repeated` |
+| Odcisk problemu | `ProblemFingerprint` |
+| Diagnoza | `Diagnosis` |
+| Zgłoszenie | `Report` |
+| Logi Uruchomienia | `run_logs` |
+| Kopia wejścia | `InputCopy` |
+| Urwane Uruchomienie | `RunInterrupted` |
+| Uwaga taty | `dad_notes` |
+| Skrzynka Zgłoszeń | `ReportBox` |
+| Reguła danych | `client_data` |
+| Ślad przesunięcia | `shift_traced` |
+| Token do Zgłoszeń | `github_key` |
+| Kolejka wysyłki | `Outbox` |
+| Archiwum Logów okresu | `Archive` |
+| Kontrola ilości | `QuantityCheck` |
+| Wyjątek Kontroli ilości | `QuantityException` |
+| Powiadomienie | `Notifications` |
+| Powiadomienie o nowej wersji | `ReleaseNotification` |
+| Wersja narzędzia | `ToolVersion` |
+| Wydanie | `release` |
+| Aktualizacja narzędzia | `ToolUpdates` |
+| Aktualność narzędzia | `ToolFreshness` |
+| Ponowny start Centrum | `Restart` |
+| Nienadpisywanie | – |
 
 ## Okres rozliczeniowy
 
