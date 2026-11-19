@@ -26,6 +26,7 @@ import potomne
 from repo import BASE, ROOT
 import repo
 import rozjazd_modelu
+import slot_maca
 from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all, with_structure
 import wyniki_testow
 from zakres_runu import podstawa_trafiona
@@ -403,6 +404,9 @@ def main(argv: list[str] | None = None) -> int:
         "--napraw", action="store_true", help="Gdy padł tylko rozjazd modelu, przelicza skróty skilli, których modelu zmiana nie dotyka (opis wyżej)."
     )
     args = parser.parse_args(argv)
+    if (refusal := slot_maca.take("szybko.py", "auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8")) is not None:
+        print(refusal, file=sys.stderr)
+        return slot_maca.CODE
     try:
         changed = changed_since(ROOT, args.baza)
     except subprocess.CalledProcessError:

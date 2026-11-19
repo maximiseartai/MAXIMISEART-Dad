@@ -28,6 +28,7 @@ from repo import BASE, ROOT
 import repo
 from silnik_mutacji import PARALLEL, TIMEOUT, Edit, Mutation, Verdict, review, verdicts
 import silnik_mutacji
+import slot_maca
 import szybko
 import wplyw_zmiany
 import wyniki_testow
@@ -343,6 +344,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.zasady:
         print(silnik_mutacji.ZASADY.strip())
         return 0
+    route = "auto" if args.plik is None or Path(args.plik).resolve().is_relative_to(ROOT) else "run --here"
+    if args.plik is not None and (refusal := slot_maca.take("mutacje.py --plik", route)) is not None:
+        print(refusal, file=sys.stderr)
+        return slot_maca.CODE
     if not args.juz_lapie and (limits := [flag for flag, value in (("--juz-lapie-s", args.juz_lapie_s), ("--podstawa-s", args.podstawa_s)) if value is not None]):
         parser.error(f"{' i '.join(limits)} to limity sprawdzenia {ALREADY}, które biegnie tylko z --juz-lapie: dopisz --juz-lapie albo usuń limit")
     args.juz_lapie_s = ALREADY_S if args.juz_lapie_s is None else args.juz_lapie_s

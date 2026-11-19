@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import api_actions
 import niestabilne_testy
+import slot_maca
 from repo import IMPORT_ROOTS, ROOT
 from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, opening
 
@@ -49,6 +50,9 @@ def pytest_configure(config: pytest.Config) -> None:
     from tests.fixtures.potomne import ctrl_c_reaches_children
 
     ctrl_c_reaches_children()
+    heavy = config.getoption("numprocesses", default=None) or not config.option.file_or_dir
+    if heavy and not hasattr(config, "workerinput") and (refusal := slot_maca.take("pytest", "auto")) is not None:
+        pytest.exit(refusal, returncode=slot_maca.CODE)
 
 
 def pytest_itemcollected(item: pytest.Item) -> None:
