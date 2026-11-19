@@ -6930,6 +6930,7 @@ def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnow
     (worker_folder / "Rozliczenie 22_28_09_2026 -.xlsx").touch()
     (worker_folder / "Rozliczenie 22_28_09_2026 - .xlsx").touch()
     (worker_folder / "Rozliczenie 22_28_09_2026 - Jan Próbny.pdf").touch()
+    (worker_folder / "Rozliczenie 22_28_09_2026 - Folder Kopii.xlsx").mkdir()
     write_period_files(periods, "29_05_10_2026")
     (periods / "15_21_09_2026").mkdir()
     (periods / "Archiwum").mkdir()

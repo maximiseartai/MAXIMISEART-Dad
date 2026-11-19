@@ -27,6 +27,7 @@ from tests.fixtures.linie_watkow import shared_test_loop, stopped_after_test
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import api_actions
 import niestabilne_testy
 from repo import IMPORT_ROOTS, ROOT
 from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, opening
@@ -167,6 +168,13 @@ def gh_bez_logowania(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]
         for nazwa in _TOKENY_GH:
             patch.delenv(nazwa, raising=False)
         patch.setenv("GH_CONFIG_DIR", str(tmp_path_factory.mktemp("gh")))
+        yield
+
+
+@pytest.fixture(autouse=True, scope="session")
+def kopia_api_bez_komputera(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(api_actions.ZMIENNA_KOPII, str(tmp_path_factory.mktemp("kopia-api")))
         yield
 
 

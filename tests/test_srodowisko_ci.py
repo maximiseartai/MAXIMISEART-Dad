@@ -563,9 +563,11 @@ def test_dowod_bez_uv_odmawia_z_tym_co_zrobic(tmp_path: Path, monkeypatch: pytes
 PYTEST_PINS = tuple(pin for pin in DEV if pin.startswith(("pytest==", "pytest-xdist==")))
 # Python środowiska leży obok jego kopii (``built``: katalog ``env`` przy ``drzewo``), a Python wołającego nie.
 SEES_CI = (
-    "import os\nimport pathlib\nimport sys\n\nfrom kod.odczyt import odczyt\n\n\ndef test_odczyt() -> None:\n"
+    "import os\nimport pathlib\nimport subprocess\nimport sys\n\nfrom kod.odczyt import odczyt\n\n\ndef test_odczyt() -> None:\n"
     "    assert (os.environ.get('PYTHONUTF8'), os.environ.get('EXPECTED_PYTHON_VERSION'), os.environ.get('PYTEST_ADDOPTS')) == ('1', '3.14', None)\n"
     "    assert pathlib.Path(sys.prefix).resolve().parent == pathlib.Path.cwd().resolve().parent\n"
+    "    found = subprocess.run(['uv', 'python', 'find', '--system', '3.14'], capture_output=True, text=True)\n"
+    "    assert found.returncode == 0, found.stderr\n"
     "    assert odczyt() == 'tekst'\n"
 )
 
@@ -587,7 +589,9 @@ def _tested(tmp_path: Path, test: str) -> straznik.Outcome:
 @wymaga_uv
 def test_dowod_testu_biegnie_w_srodowisku_toru_linux_a_nie_wolajacego(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Węzeł biegnie Pythonem środowiska (``CI_PYTHON`` z pytest z dodatku dev drzewa), a nie wołającego, ze zmiennymi
-    zadania pytest (``PYTEST_VARIABLES``), bez ``PYTEST_ADDOPTS`` wołającego, i pada z mutacją recenzenta."""
+    zadania pytest (``PYTEST_VARIABLES``), bez ``PYTEST_ADDOPTS`` wołającego, i pada z mutacją recenzenta. Pusty
+    ``HOME`` środowiska nie chowa Pythonów uv wołającego, więc ``uv python find --system`` hooka sesji znajduje
+    Pythona ``CI_PYTHON``, jak na runnerze z setup-python."""
 
     monkeypatch.setenv("PYTEST_ADDOPTS", "-k nic")
 
