@@ -372,16 +372,59 @@ def test_blad_ruff_przerywa_krok_pytest_zamiast_czekac_na_jego_koniec(tmp_path: 
     assert (answered.returncode, last) == (1, expected), answered.stdout
 
 
-def test_porazka_z_komunikatem_boxa_o_przeniesionym_katalogu_repo_to_szybko_infra_a_nie_fail(tmp_path: Path) -> None:
+# Tak plugin stanu procesu zgłasza test, po którym katalog repo przeniósł box boat: własność junit i komunikat boxa.
+_PRZENIESIONY_PRZEZ_BOX = (
+    "from collections.abc import Callable\n\n\n"
+    "def test_przeniesiony_katalog(record_property: Callable[[str, object], None]) -> None:\n"
+    f"    record_property({box_boat.WLASNOSC!r}, {box_boat.KATALOG_ZWOLNIONY!r})\n"
+    f"    raise AssertionError({box_boat.KOMUNIKAT!r})\n"
+)
+
+
+@pytest.mark.parametrize(
+    ("tests", "expected"),
+    [
+        ({"tests/test_box.py": _PRZENIESIONY_PRZEZ_BOX}, (szybko.KOD_INFRA, f"SZYBKO INFRA | pytest: {box_boat.KOMUNIKAT}")),
+        (
+            {"tests/test_box.py": _PRZENIESIONY_PRZEZ_BOX, "tests/test_zwykly.py": "def test_zwykly() -> None:\n    assert len('ab') == 3\n"},
+            (1, "SZYBKO FAIL | pytest"),
+        ),
+        (
+            {"tests/test_cytuje.py": f"def test_cytuje() -> None:\n    assert str(len('ab')) == {f'SZYBKO INFRA | pytest: {box_boat.KOMUNIKAT}'!r}\n"},
+            (1, "SZYBKO FAIL | pytest"),
+        ),
+    ],
+    ids=["tylko box", "box i zwykla porazka", "porazka cytuje komunikat boxa"],
+)
+def test_szybko_infra_tylko_gdy_kazdy_test_padl_na_katalogu_przeniesionym_przez_box(
+    tmp_path: Path, tests: dict[str, str], expected: tuple[int, str]
+) -> None:
     repo = _repo(tmp_path)
-    # Tak plugin stanu procesu zgłasza katalog repo, który box boat przeniósł w trakcie biegu.
-    _write(repo, "tests/test_box.py", f"def test_przeniesiony_katalog() -> None:\n    raise AssertionError({box_boat.KOMUNIKAT!r})\n")
+    for name, text in tests.items():
+        _write(repo, name, text)
 
     answered = _szybko(repo)
 
-    expected = f"SZYBKO INFRA | pytest: {box_boat.KOMUNIKAT}"
-    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (szybko.KOD_INFRA, expected), answered.stdout
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == expected, answered.stdout
     assert szybko.KOD_INFRA not in (0, 1)
+
+
+def test_box_w_obu_krokach_pytest_takze_w_testach_struktury_na_mergu_to_szybko_infra(tmp_path: Path) -> None:
+    repo = _repo(tmp_path, structure=f"raise AssertionError({box_boat.KOMUNIKAT!r})")
+    # Box przenosi katalog repo pod każdym procesem pytest naraz, także pod krokiem testów struktury na mergu.
+    marks = (
+        "from collections.abc import Callable\n\nimport pytest\n\n\n@pytest.fixture(autouse=True)\n"
+        "def przeniesiony_przez_box(record_property: Callable[[str, object], None]) -> None:\n"
+        f"    record_property({box_boat.WLASNOSC!r}, {box_boat.KATALOG_ZWOLNIONY!r})\n"
+    )
+    _write(repo, "tests/conftest.py", marks)
+    git(repo, "update-ref", "refs/remotes/origin/main", commit(repo, "własność boxa"))
+    _base_moved_on(repo, ("docs/z-main.md", "main\n"), ("docs/z-galezi.md", "gałąź\n"))
+
+    answered = _szybko(repo)
+
+    expected = f"SZYBKO INFRA | pytest, testy struktury po mergu z origin/main: {box_boat.KOMUNIKAT}"
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (szybko.KOD_INFRA, expected), answered.stdout
 
 
 def test_zmiana_bez_bledu_konczy_sie_ok_choc_niedotkniety_test_pada(tmp_path: Path) -> None:

@@ -43,9 +43,10 @@ skilla i kończy go porażką, więc szybko pada też, bez TLC, z nazwą skilla,
 in line” ze ``SKILL.md`` skilla.
 
 Kończy się ``SZYBKO OK`` albo ``SZYBKO FAIL | <kroki>``, z dopiskiem `` | pytest przerwany``, gdy szybko przerwał
-krok pytest. Gdy każdy krok, który padł, ma w wyjściu komunikat ``box_boat.KOMUNIKAT`` (box boat przeniósł katalog repo
-w trakcie biegu), szybko kończy się ``SZYBKO INFRA | <kroki>: <komunikat>`` i kodem ``KOD_INFRA``, a nie 1: to nie
-porażka zmiany, tylko bieg do powtórzenia.
+krok pytest. Gdy każdy krok, który padł, to krok pytest, w którego junit każdy test, który padł, ma własność
+``box_boat.WLASNOSC`` (plugin stanu procesu widział katalog repo przeniesiony przez box boat w trakcie biegu), szybko
+kończy się ``SZYBKO INFRA | <kroki>: <komunikat>`` i kodem ``KOD_INFRA``, a nie 1: to nie porażka zmiany, tylko bieg do
+powtórzenia. Test, który padł bez tej własności, daje ``SZYBKO FAIL``, także gdy jego porażka cytuje komunikat boxa.
 
     .venv/bin/python tools/szybko.py
     .venv/bin/python tools/szybko.py --baza feat/galaz-rodzica
@@ -224,7 +225,7 @@ def _merge_workers() -> int:
     return max(1, czasy_ci.workery_lokalne() // 2)
 
 
-def _merge_steps(base: str, copies: ExitStack) -> tuple[list[Step], bool]:
+def _merge_steps(base: str, copies: ExitStack, junit: Path) -> tuple[list[Step], bool]:
     """Krok testów struktury na mergu drzewa roboczego z ``base`` i to, czy uruchamia testy struktury; bez kroku, gdy
     ``base`` jest w HEAD albo merge ma konflikt, a krok, który pada z powodem, gdy git nie umie policzyć mergu. Drzewo
     robocze ma zmiany niezacommitowane i nieśledzone (``repo.working_tree_commit``), bo tę samą zmianę widzi krok pytest
@@ -245,7 +246,7 @@ def _merge_steps(base: str, copies: ExitStack) -> tuple[list[Step], bool]:
     author = ("-c", "user.name=szybko", "-c", "user.email=szybko@localhost")
     merge = repo.git(ROOT, *author, "commit-tree", merged.tree, "-p", checkout, "-p", base, "-m", f"szybko: drzewo robocze z {base}").strip()
     copy = copies.enter_context(potomne.commit_copy(ROOT, merge))
-    return [pytest_step(copy, name, (*STRUCTURE, "-n", str(_merge_workers())))], True
+    return [pytest_step(copy, name, (*STRUCTURE, "-n", str(_merge_workers()), *wyniki_testow.zapis(junit)))], True
 
 
 def _pytest_arguments(tests: Iterable[str], junit: Path, *, structure: bool) -> tuple[str, ...]:
@@ -299,18 +300,10 @@ def _environment(root: Path, base: str) -> dict[str, str]:
     }
 
 
-@dataclass(frozen=True)
-class Outcome:
-    """Nazwy kroków, które padły, tych z nich, które padły na przeniesionym przez box katalogu repo, i przerwanych."""
-
-    failed: list[str]
-    infra: list[str]
-    interrupted: list[str]
-
-
-def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) -> Outcome:
-    """Kroki naraz, z bazą zapadek ``base``. Gdy padnie krok inny niż ``interruptible``, ``interruptible`` jest
-    przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie trzeba czekać."""
+def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) -> tuple[list[str], list[str]]:
+    """Kroki naraz, z bazą zapadek ``base``; zwraca nazwy kroków, które padły, i przerwanych. Gdy padnie krok inny niż
+    ``interruptible``, ``interruptible`` jest przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie
+    trzeba czekać."""
 
     stop, failure = threading.Event(), threading.Event()
 
@@ -326,7 +319,7 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
             failure.set()
         return done.returncode == 0, done.stdout + done.stderr, time.monotonic() - started
 
-    failed, infra, interrupted = [], [], []
+    failed, interrupted = [], []
     pool = ThreadPoolExecutor(max_workers=len(steps))
     try:
         for step, (passed, output, elapsed) in zip(steps, pool.map(run, steps), strict=True):
@@ -337,8 +330,6 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
             print(f"{'OK  ' if passed else 'FAIL'} {step.name} ({elapsed:.0f} s)", flush=True)
             if not passed:
                 failed.append(step.name)
-                if box_boat.KOMUNIKAT in output:
-                    infra.append(step.name)
                 print("\n".join(output.rstrip().splitlines()[-OUTPUT_ON_FAILURE :]), flush=True)
     except BaseException:
         # Przerwanie w głównym wątku nie dociera do wątków, które czekają na swoje polecenia.
@@ -347,7 +338,19 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
         raise
     finally:
         pool.shutdown(cancel_futures=True)
-    return Outcome(failed, infra, interrupted)
+    return failed, interrupted
+
+
+def _box_only(junit: Path) -> bool:
+    """Czy krok pytest z ``junit`` padł tylko na katalogu repo przeniesionym przez box: padł co najmniej jeden test, a
+    każdy, który padł, ma własność ``box_boat.WLASNOSC`` od pluginu stanu procesu. Krok bez czytelnego junit nie."""
+
+    try:
+        tests = wyniki_testow.testy(junit)
+    except (OSError, ValueError):
+        return False
+    failed = [test for test in tests if test.wynik == "padł"]
+    return bool(failed) and all(box_boat.WLASNOSC in test.wlasnosci for test in failed)
 
 
 def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
@@ -392,18 +395,22 @@ def main(argv: list[str] | None = None) -> int:
     if drift := _model_drift(ROOT, changed):
         print("FAIL rozjazd modelu (bez TLC)\n" + "\n".join(drift), flush=True)
     junit = memory.path.with_name(f"szybko-junit-{os.getpid()}.xml")
+    merge_junit = memory.path.with_name(f"szybko-junit-mergu-{os.getpid()}.xml")
     with ExitStack() as copies:
-        merge, on_merge = _merge_steps(args.baza, copies)
+        merge, on_merge = _merge_steps(args.baza, copies, merge_junit)
         steps = [*_steps(ROOT, chosen.run, junit, changed, structure=not on_merge), *merge]
         base = repo.merge_base(ROOT, "HEAD", args.baza)
-        outcome = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
-    failed = (["rozjazd modelu"] if drift else []) + outcome.failed
+        failed, interrupted = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
+    junits = {"pytest": junit, **{step.name: merge_junit for step in merge}}
+    box = bool(failed) and not drift and all(name in junits and _box_only(junits[name]) for name in failed)
+    failed = (["rozjazd modelu"] if drift else []) + failed
     memory.remember(selection, junit, chosen.run)
     junit.unlink(missing_ok=True)
+    merge_junit.unlink(missing_ok=True)
     if chosen.deferred:
         print(_deferred(chosen, len(selection.fingerprints)))
-    stopped = "".join(f" | {name} przerwany" for name in outcome.interrupted)
-    if failed and failed == outcome.infra:
+    stopped = "".join(f" | {name} przerwany" for name in interrupted)
+    if box:
         print(f"SZYBKO INFRA | {', '.join(failed)}: {box_boat.KOMUNIKAT}{stopped}")
         return KOD_INFRA
     print(f"SZYBKO FAIL | {', '.join(failed)}{stopped}" if failed else "SZYBKO OK")

@@ -19,6 +19,7 @@ from tests.fixtures.stan_procesu import WATEK_S, descriptors, left_to_gc
 from tests.fixtures.znane_luki import assert_znane_luki
 
 import box_boat
+import wyniki_testow
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 
@@ -758,7 +759,13 @@ def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_nie_stan_zostaw
 
     moved = errors["test_box_przenosi_katalog_repo_w_trakcie_testu"]
     expected = f"{box_boat.KOMUNIKAT} (katalog roboczy {tmp_path.resolve() / 'repo'} → {zwolniony / 'home' / 'repo'})"
-    assert (expected in moved, _zostawione(moved), errors["test_sasiad_biegnie_w_katalogu_repo"]) == (True, "", ""), errors
+    marked = {test.nazwa: box_boat.WLASNOSC in test.wlasnosci for test in wyniki_testow.testy(tmp_path / "junit.xml")}
+    assert (expected in moved, _zostawione(moved), errors["test_sasiad_biegnie_w_katalogu_repo"], marked) == (
+        True,
+        "",
+        "",
+        {"test_box_przenosi_katalog_repo_w_trakcie_testu": True, "test_sasiad_biegnie_w_katalogu_repo": False},
+    ), errors
 
 
 _LUKI_CONFTEST: Final = _CONFTEST + """

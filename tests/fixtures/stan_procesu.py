@@ -32,7 +32,8 @@ testem, więc jest w stanie sprzed każdego testu.
 
 Po błędzie plugin przywraca każdą wartość do oczekiwanej, więc błąd ma sprawca, a nie każdy następny test workera.
 Katalog roboczy, który box boat przeniósł w trakcie biegu (``box_boat.przeniesiony``), nie jest stanem testu: plugin
-zgłasza go komunikatem ``box_boat.KOMUNIKAT``, z którym ``tools/szybko.py`` kończy się wynikiem ``SZYBKO INFRA``.
+zgłasza go komunikatem ``box_boat.KOMUNIKAT`` i daje testowi, po którym go zobaczył, własność junit
+``box_boat.WLASNOSC``, po której ``tools/szybko.py`` kończy się wynikiem ``SZYBKO INFRA``.
 Porównanie kosztuje listę deskryptorów i potomków, poniżej 0,5 ms na test; ``gc.collect()``, czekanie na wątki i
 potomków oraz opis zasobów biegną tylko wtedy, gdy stan się różni.
 
@@ -318,11 +319,20 @@ def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> 
     return result
 
 
+class _KatalogPrzeniesiony(AssertionError):
+    """Katalog roboczy procesu przeniesiony przez box boat (``box_boat.przeniesiony``), a nie zmieniony przez test."""
+
+
 def _check_after(item: pytest.Item) -> None:
     if isinstance(item, pytest.Function):
         # Ostatnia referencja wartości fixtur; pytest puszcza ją dopiero po hakach teardown (runner.runtestprotocol).
         item.funcargs = {}
-    _check("po tym teście")
+    try:
+        _check("po tym teście")
+    except _KatalogPrzeniesiony:
+        # Raport teardown niesie własności testu do junit (junitxml bierze je z raportu teardown).
+        item.user_properties.append((box_boat.WLASNOSC, box_boat.KATALOG_ZWOLNIONY))
+        raise
 
 
 def _check(kiedy: str) -> None:
@@ -347,7 +357,7 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
     teraz_wartosci = dict(teraz.wartosci)
     if _KATALOG in zostawione.klucze and box_boat.przeniesiony(teraz_wartosci.get(_KATALOG, _USUNIETY)):
         _przywroc(zostawione, oczekiwane)
-        raise AssertionError(
+        raise _KatalogPrzeniesiony(
             f"{box_boat.KOMUNIKAT} (katalog roboczy {oczekiwane.wartosci.get(_KATALOG)} → {teraz_wartosci[_KATALOG]})"
         )
     nazwy = {zasob: _opis_zasobu(zasob) for zasob in zostawione.zasoby}  # przed gc, który zamyka deskryptor
