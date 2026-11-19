@@ -1,4 +1,19 @@
-"""Dwa tryby służą recenzentowi (skill ``przeglad``, tryb recenzenta) i niczego nie scalają. ``--przeglad`` drukuje
+from __future__ import annotations
+
+from pathlib import Path
+import subprocess
+import sys
+
+import github
+import limit_rund
+from ostatnie_linie import SKILLE_VERIFY
+import potomne
+from repo import ROOT
+import repo
+import stan_pr
+import werdykt_pr
+
+ZASADY = """Dwa tryby służą recenzentowi (skill ``przeglad``, tryb recenzenta) i niczego nie scalają. ``--przeglad`` drukuje
 kontekst przeglądu: pełny SHA HEAD PR, bazę i merge-base z nią, ``git diff --stat`` i zmienione pliki od merge-base,
 wynik ``tools/skille_dla_zmiany.py`` z HEAD PR liczony od merge-base (w kopii commitu HEAD, więc ``pilnuje:`` skilli
 jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, autorem, dwiema pierwszymi liniami i tym,
@@ -14,21 +29,6 @@ z padłymi zadaniami runu i poleceniem ``gh run view <run> --log-failed``; ``nie
 nie ma identyfikatora runu w ``detailsUrl``; ``brak``, gdy CI na HEAD nie biegło. Kończy się linią ``PRZEGLĄD OK | #N <sha>``,
 a PR, któremu limit rund (``limit_rund``) nie daje kolejnej rundy, tylko linią ``PRZEGLĄD ODMOWA | #N <sha> | <przyczyna>``.
 """
-
-from __future__ import annotations
-
-from pathlib import Path
-import subprocess
-import sys
-
-import github
-import limit_rund
-from ostatnie_linie import SKILLE_VERIFY
-import potomne
-from repo import ROOT
-import repo
-import stan_pr
-import werdykt_pr
 
 SKILLS_FOR_CHANGE = Path("tools") / "skille_dla_zmiany.py"
 SKILLS_TIMEOUT_S = 300

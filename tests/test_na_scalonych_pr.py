@@ -262,6 +262,14 @@ def test_dowod_reguly_lapie_wazne_z_linii_dodanej_w_srodku_starej_instrukcji_jak
 
 
 @needs_ast_grep
+def test_dowod_reguly_liczy_wystapienie_na_main_w_linii_ze_znakiem_podzialu_splitlines_u2028(tmp_path: Path) -> None:
+    done, _ = _proof(tmp_path, CAUGHT, {"czysty.py": CLEAN}, start={"znak.py": "def znak(obiekt):\n    return obiekt.zakazane() or '\u2028'\n"})
+
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert done.stdout.splitlines()[-1] == "DOWÓD OK | zakazane-wywolanie | złapane 1/1 | FP 0 w 0 z 2 PR (0%) | main 2", done.stdout
+
+
+@needs_ast_grep
 @pytest.mark.parametrize(
     ("failed", "clean", "where", "summary"),
     [
@@ -502,28 +510,31 @@ def test_brak_testu_to_odmowa_poza_watkiem_sprzed_dowodu_testu(tmp_path: Path, a
 
 @wymaga_uv
 @pytest.mark.parametrize(
-    ("later", "state", "last"),
+    ("later", "where", "state", "last"),
     [
         (
             None,
+            WHERE,
             "ODMOWA | inne z FAIL: kotwicy nie ma dokładnie raz w kod/inne.py: 'obiekt.inne()' na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok ### Mutacja W1 r1",
             "DOWÓD ODMOWA",
         ),
-        (werdykty_szablonu.WERDYKTY["pass-z-mutacja"], "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed", "DOWÓD OK"),
+        (werdykty_szablonu.WERDYKTY["pass-z-mutacja"], WHERE, "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed", "DOWÓD OK"),
+        (werdykty_szablonu.WERDYKTY["pass-z-mutacja"], "Gdzie: ~/.zshrc:17 (poza repo)", "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed", "DOWÓD OK"),
     ],
-    ids=["blok-z-fail-nieaktualny", "najnowszy-blok-z-pozniejszego-werdyktu"],
+    ids=["blok-z-fail-nieaktualny", "najnowszy-blok-z-pozniejszego-werdyktu", "wazne-z-gdzie-poza-repo"],
 )
 @ONLY_FOUND_BY_NAME_ON_POSIX
-def test_dowod_straznika_pytest_liczy_wezel_z_najnowszym_blokiem_mutacji_w_srodowisku_toru_linux(tmp_path: Path, later: str | None, state: str, last: str) -> None:
+def test_dowod_straznika_pytest_liczy_wezel_z_najnowszym_blokiem_mutacji_w_srodowisku_toru_linux(tmp_path: Path, later: str | None, where: str, state: str, last: str) -> None:
     """``Strażnik: pytest <węzeł>`` tak, jak uruchamia go ``tools/scal_pr.py``: test z HEAD pada z mutacją z najnowszego
     bloku ``### Mutacja W1 r1`` w werdyktach PR, w środowisku toru Linux Required CI z ``srodowisko_ci.built`` (jego
-    zmienne widzi test); blok z FAIL, którego kotwicy nie ma na HEAD, odnawia recenzent następnej rundy."""
+    zmienne widzi test); blok z FAIL, którego kotwicy nie ma na HEAD, odnawia recenzent następnej rundy. Złą postać daje
+    mutacja, nie ``Gdzie``, więc Ważne o pliku spoza repo (``Gdzie`` bez miejsca ``plik:linia``) też ma dowód."""
 
     in_ci = "import os\n\n" + GUARD_TEST.replace("    wazne(Obiekt())\n", "    assert os.environ.get('EXPECTED_PYTHON_VERSION') == '3.14'\n    wazne(Obiekt())\n")
     fixed = {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": in_ci}
     stale = werdykty_szablonu.WERDYKTY["wazne-z-nieaktualna-mutacja"]
 
-    done, failed = _guard_proof(tmp_path, "--straznik", "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone", fixed_files=fixed, dev=PYTEST_PINS, findings=stale, later=later)
+    done, failed = _guard_proof(tmp_path, "--straznik", "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone", fixed_files=fixed, where=where, dev=PYTEST_PINS, findings=stale, later=later)
 
     assert done.returncode == (0 if last == "DOWÓD OK" else 1), done.stdout + done.stderr
     [line, end] = done.stdout.splitlines()

@@ -168,6 +168,12 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Zmieniona kopia dataclassy z polami Any, obok dataclasses.replace (przegląd #1660, W1).
     "import copy\nsent = copy.replace(post, run_id=run)": (SRC_CONFIG, ("rozliczenia", "centrum"), "copy.replace"),
     "from copy import replace as copied": (SRC_CONFIG, ("rozliczenia",), "copy.replace"),
+    "import platform\nsystem = f'{platform.platform()}-{platform.node()}'": (SRC_CONFIG, ("rozliczenia", "centrum"), "platform.node"),
+    "from platform import uname\nkomputer = uname().node": (SRC_CONFIG, ("rozliczenia", "centrum"), "platform.uname"),
+    "import socket\nkomputer = socket.gethostname()": (SRC_CONFIG, ("rozliczenia", "centrum"), "socket.gethostname"),
+    "from socket import getfqdn\nkomputer = getfqdn()": (SRC_CONFIG, ("rozliczenia",), "socket.getfqdn"),
+    "import socket\nkomputer = socket.gethostbyaddr(adres)": (SRC_CONFIG, ("rozliczenia",), "socket.gethostbyaddr"),
+    "import os\nkomputer = os.uname().nodename": (SRC_CONFIG, ("rozliczenia",), "os.uname"),
     "from . import workbook_files\nworkbook_files.template_content(p)": (
         SRC_CONFIG,
         ("rozliczenia",),
@@ -432,6 +438,22 @@ def test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff(tmp_path: Path)
     poza = ruff(zapisz(ZNANE_LUKI_SLEDZENIA_POZA_SRC, tmp_path / "poza"), sonda=ROOT.joinpath(*TOOLS_PROBE, "sonda_luki.py"))
 
     assert_znane_luki(w_src | poza, "tests/test_zakazy_ruff.py (ZNANE_LUKI_SLEDZENIA)")
+
+
+ZNANE_LUKI_NAZWY_KOMPUTERA = {
+    "zakaz zna tylko nazwy z listy: zmienna środowiska COMPUTERNAME": 'import os\n\nkomputer = os.environ["COMPUTERNAME"]\n',
+    "zakaz zna tylko wywołania Pythona: program hostname": (
+        'import subprocess\n\nkomputer = subprocess.run(["hostname"], capture_output=True, check=True).stdout\n'
+    ),
+    "zakaz zna tylko nazwę z importu: getattr(platform, \"node\")": 'import platform\n\nkomputer = getattr(platform, "node")()\n',
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_nazwy_komputera_w_src_przechodza_przez_ruff(tmp_path: Path) -> None:
+    w_src = ruff(zapisz(ZNANE_LUKI_NAZWY_KOMPUTERA, tmp_path), sonda=SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py")
+
+    assert_znane_luki(w_src, "tests/test_zakazy_ruff.py (ZNANE_LUKI_NAZWY_KOMPUTERA)")
 
 
 _GLOWA_WIDOKU: Final = "from rozliczenia.centrum.settings.owner import CentrumSettings\n{importy}\n\n\n"

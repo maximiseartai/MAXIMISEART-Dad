@@ -1,22 +1,3 @@
-"""Test scalenia łapie PR, który z bieżącą bazą daje czerwony ``main``, choć sam był zielony, bo baza od merge-base PR
-zmieniła coś, czego PR używa. Gdy baza od merge-base się nie zmieniła, nie liczy niczego. Inaczej bierze pliki testów
-dotknięte i zmianą PR, i zmianą bazy od merge-base, w odległości najwyżej ``MERGE_TEST_DISTANCE`` od każdej z nich
-w grafie ``tools/lib/wplyw_zmiany.py`` liczonym na scalonym drzewie: plik testów zmieniony albo zależny wprost od pliku
-zmienionego po obu stronach. Gdy takich plików nie ma, nic nie biegnie (liczenie trwało ~1,5 s na merge'ach z 6.11.2026).
-Gdy są, biegną pytestem w kopii scalonego drzewa, z jego ``tests/conftest.py``, więc test z kwarantanny
-(``tests/fixtures/kwarantanna.py``) nie czerwieni wyniku, jak w CI. Gdy któryś test pada, te same pliki testów biegną
-jeszcze raz na drzewie samej bazy, bo czerwony ``main`` nie blokuje merge'ów (ADR 0020): odmowa z nazwami testów
-zachodzi tylko wtedy, gdy któryś test pada na scaleniu, a na samej bazie nie (albo nie ma go na bazie). Gdy każdy
-padnięty test pada też na samej bazie, PR przechodzi, a linia ``SCAL OK`` wymienia te testy (``na samym main … pada
-już: …``). Ten drugi bieg kosztuje tylko po porażce. Pytest, który pada bez nazwy testu, to odmowa z przyczyną ze stderr.
-Test scalenia nie biegnie, a linia ``SCAL OK`` mówi dlaczego (``test scalenia pominięty: …``), gdy któraś strona
-zmienia plik reguły wyboru testów (``Context.TESTS``: ``conftest.py`` każdego testu, konfiguracja), bo taki plik dotyczy
-każdego testu, gdy suma czasów CI tych plików (tor ``czasy_ci.TOR_LOKALNY``, plik bez pomiaru waży medianę) przekracza
-``MERGE_TEST_BUDGET_S`` albo gdy czasów CI nie ma. Na merge'ach z 6.11.2026 limit przepuścił pliki do 20 s w CI
-(4–8 s na Macu agenta), a zatrzymał pliki od 437 s w CI (93 s na Macu i więcej). Test, który trwa dłużej niż
-``MERGE_TEST_TIMEOUT_S``, to odmowa, bo nie dał wyniku.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -34,6 +15,25 @@ from repo import ROOT
 import repo
 from wplyw_zmiany import Context, Repository, run_all
 import wyniki_testow
+
+ZASADY = """Test scalenia łapie PR, który z bieżącą bazą daje czerwony ``main``, choć sam był zielony, bo baza od merge-base PR
+zmieniła coś, czego PR używa. Gdy baza od merge-base się nie zmieniła, nie liczy niczego. Inaczej bierze pliki testów
+dotknięte i zmianą PR, i zmianą bazy od merge-base, w odległości najwyżej ``MERGE_TEST_DISTANCE`` od każdej z nich
+w grafie ``tools/lib/wplyw_zmiany.py`` liczonym na scalonym drzewie: plik testów zmieniony albo zależny wprost od pliku
+zmienionego po obu stronach. Gdy takich plików nie ma, nic nie biegnie (liczenie trwało ~1,5 s na merge'ach z 6.11.2026).
+Gdy są, biegną pytestem w kopii scalonego drzewa, z jego ``tests/conftest.py``, więc test z kwarantanny
+(``tests/fixtures/kwarantanna.py``) nie czerwieni wyniku, jak w CI. Gdy któryś test pada, te same pliki testów biegną
+jeszcze raz na drzewie samej bazy, bo czerwony ``main`` nie blokuje merge'ów (ADR 0020): odmowa z nazwami testów
+zachodzi tylko wtedy, gdy któryś test pada na scaleniu, a na samej bazie nie (albo nie ma go na bazie). Gdy każdy
+padnięty test pada też na samej bazie, PR przechodzi, a linia ``SCAL OK`` wymienia te testy (``na samym main … pada
+już: …``). Ten drugi bieg kosztuje tylko po porażce. Pytest, który pada bez nazwy testu, to odmowa z przyczyną ze stderr.
+Test scalenia nie biegnie, a linia ``SCAL OK`` mówi dlaczego (``test scalenia pominięty: …``), gdy któraś strona
+zmienia plik reguły wyboru testów (``Context.TESTS``: ``conftest.py`` każdego testu, konfiguracja), bo taki plik dotyczy
+każdego testu, gdy suma czasów CI tych plików (tor ``czasy_ci.TOR_LOKALNY``, plik bez pomiaru waży medianę) przekracza
+``MERGE_TEST_BUDGET_S`` albo gdy czasów CI nie ma. Na merge'ach z 6.11.2026 limit przepuścił pliki do 20 s w CI
+(4–8 s na Macu agenta), a zatrzymał pliki od 437 s w CI (93 s na Macu i więcej). Test, który trwa dłużej niż
+``MERGE_TEST_TIMEOUT_S``, to odmowa, bo nie dał wyniku.
+"""
 
 # Plik testów w tej odległości od zmiany PR i od zmiany bazy (0 to plik zmieniony, 1 zależny wprost).
 MERGE_TEST_DISTANCE = 1

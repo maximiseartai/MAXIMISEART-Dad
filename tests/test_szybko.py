@@ -23,6 +23,10 @@ from wplyw_zmiany import STRUCTURE
 ROOT = Path(__file__).resolve().parents[1]
 
 BY_CHANGE_ONLY = {
+    "tests/test_komentarze_frontendu.py": (
+        "graf wybiera go przy zmianie tools/lib/odpalenia_oxlint.py i wtyczki oxlint repo, a pliki frontend/ sprawdzają w "
+        "każdym runie zadania pytest (tekst) i zadanie CI Frontend (oxlint z node_modules, których szybko nie instaluje)"
+    ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples), pliku tests/expected/komunikaty.txt i plików frontendu z UI_TEXTS (literały)"
@@ -98,6 +102,10 @@ BY_CHANGE_ONLY = {
     "tests/test_komentarz_logow_uruchomienia.py::test_tekst_z_komorki_bez_straznika_w_logach_i_archiwum_nie_przechodzi_mypy_a_znane_luki_przechodza_przez_plik_kolejki": (
         "graf wybiera jego plik przy zmianie run_logs_guard.py, comment_versions.py, outbox.py i client_data.py, które plik "
         "importuje, i plików konfiguracji ruff"
+    ),
+    "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_nazwy_komputera_w_src_przechodza_przez_ruff": (
+        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
+        "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "

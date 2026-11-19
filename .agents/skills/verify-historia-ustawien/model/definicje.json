@@ -1,51 +1,51 @@
 {
   "src/rozliczenia/centrum/settings/owner.py": {
-    "CentrumSettings.snapshot": "6a5bae79afd1591d",
-    "CentrumSettings.undo": "4e28366ba96ac245",
-    "CentrumSettings.apply_release_changes": "7328128be0a2b220",
-    "CentrumSettings._apply_pending": "5ad561e519433b8e",
-    "CentrumSettings._release_rows": "a1e2eb665f6489a7",
-    "CentrumSettings._apply": "fba6e62905177775",
-    "CentrumSettings._by_dad": "ef64175c79817b05",
-    "CentrumSettings._dad_change": "a88309134af8c66d",
-    "CentrumSettings._change": "5f71ce008977c1e7",
-    "CentrumSettings._put_back": "4c060be7d6bfebab",
-    "CentrumSettings._remember": "3e28413160f50465",
-    "CentrumSettings._bytes_for_change": "9c77c1b66f2e5d99",
+    "CentrumSettings.snapshot": "ca3995558414eef5",
+    "CentrumSettings.undo": "adfff9d3ebb99171",
+    "CentrumSettings.apply_release_changes": "005137999d1c9379",
+    "CentrumSettings._apply_pending": "7ae9691ed192c520",
+    "CentrumSettings._release_rows": "9837b4ce4611e5b1",
+    "CentrumSettings._apply": "2e202cd129f0e161",
+    "CentrumSettings._by_dad": "24014d43643fc3e7",
+    "CentrumSettings._dad_change": "23f442557f9200d7",
+    "CentrumSettings._change": "ca25fefabe5931a4",
+    "CentrumSettings._put_back": "327f2da6ca07b719",
+    "CentrumSettings._remember": "5a4383826f764016",
+    "CentrumSettings._bytes_for_change": "d72a702d29f51bbd",
     "CentrumSettings._observe": "75c8ad8aeecdbf2e",
-    "CentrumSettings._observed": "0295ca61496f74aa",
-    "CentrumSettings._compared": "31546f48e745d598",
-    "CentrumSettings._outside_row": "cc672a7fd1640583",
-    "CentrumSettings._restores_absence": "b9a695498519f41b",
+    "CentrumSettings._observed": "e3697aeedd8b1f6d",
+    "CentrumSettings._compared": "2d5b20202d0e240d",
+    "CentrumSettings._outside_row": "0876ed8ee8893116",
+    "CentrumSettings._restores_absence": "2a6ad21ace86e74b",
     "CentrumSettings._row": "df5defd2eeddd334",
     "_ConfigFile": "6647472b8dc45cba",
     "_read": "adc1e0da96a0d564",
-    "_value": "db29a2e6e696ca1f",
-    "_or_unreadable": "c4e835f033def32c",
-    "_or_release": "6711e67ff4145259",
-    "_seen": "e84c5750ec860f79",
-    "_good_value": "c415f83222a4f3b8"
+    "_value": "07a644f351f3f176",
+    "_or_unreadable": "8798623dc9d189b9",
+    "_or_release": "c2570b1bbb6beb6e",
+    "_seen": "74cea27215cc4b47",
+    "_good_value": "a32fa3959f62e689"
   },
   "src/rozliczenia/centrum/settings/memory.py": {
-    "Memory.read": "db0b5f61d0fdaeca",
-    "Memory.write": "fcba9e1312cd98d7",
-    "Memory.applied": "028454a67ad75c5b",
-    "Memory.remember_applied": "062413be033c4c2b",
-    "settings_bytes": "1d09450f1252a4b2"
+    "Memory.read": "e465e66c676136da",
+    "Memory.write": "f1662dcfeacf8460",
+    "Memory.applied": "357f829ebf12b582",
+    "Memory.remember_applied": "209c26e2401bcb56",
+    "settings_bytes": "5e8a88369741b530"
   },
   "src/rozliczenia/centrum/settings/history.py": {
-    "History.append": "90b6061a7c6d1c5e",
+    "History.append": "2fcbb1332550d373",
     "History._write": "35294da19c2c5778",
-    "History.read": "fb640e361abc2fca"
+    "History.read": "583081cfa4fcd4f5"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "replace_atomically": "d3549c3aa56844ea"
+    "replace_atomically": "b183683bb64df774"
   },
   "src/rozliczenia/centrum/settings/release_changes.py": {
-    "periods_directory_from_layout_root": "5cb3b52410855030",
+    "periods_directory_from_layout_root": "5c2307a933ec6cc0",
     "RELEASE_CHANGES": "a21ce1222955ee9c"
   },
   "src/rozliczenia/centrum/settings/proposal.py": {
-    "cały plik": "611c5562b2114b3d"
+    "cały plik": "881c58d7df9397ae"
   }
 }

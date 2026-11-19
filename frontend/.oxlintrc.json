@@ -26,6 +26,10 @@
     {
       "name": "anti-slop",
       "specifier": "./tools/oxlint/anti-slop/index.ts"
+    },
+    {
+      "name": "repo",
+      "specifier": "./tools/oxlint/repo/index.ts"
     }
   ],
   "rules": {

@@ -1,4 +1,33 @@
-"""Wykonuje jedno zadanie planu runu CI (``tools/lib/plan_runu.py``): pytest z jego plikami, potem kroki CI i kroki skilli.
+from __future__ import annotations
+
+import argparse
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+import jednostka
+from jednostka import Czesc, Klucz, Rodzaj
+from kroki_skilli import Katalog, Step, repeats
+import niestabilne_testy
+from niestabilne_testy import ZapisKwarantanny
+import plan_runu
+from plan_runu import Plan, Zadanie
+import potomne
+from repo import ROOT
+import rozjazd_modelu
+import silnik_mutacji
+from zakres_runu import KROKI, MUTACJE, Krok, Zdarzenie
+
+OPIS = """Wykonuje jedno zadanie planu runu CI (``tools/lib/plan_runu.py``): pytest z jego plikami, potem kroki CI i kroki skilli.
 
 Zadanie wykonuje tylko plan, którego treść zgadza się z jego ``digest``. Pytest biegnie z plikami i udziałami zadania:
 udział k dużego pliku z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei), a krok skilla z częścią
@@ -29,35 +58,6 @@ skrypt mutacji, zły klucz ``ci:`` albo ``ci-czesci:``) drukuje i liczy jako por
     python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie windows-3.13-2       # albo mutacje-1
     python tools/ci/wykonaj_zadanie.py --kroki-skilli
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import defaultdict
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
-import tempfile
-import time
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
-
-import jednostka
-from jednostka import Czesc, Klucz, Rodzaj
-from kroki_skilli import Katalog, Step, repeats
-import niestabilne_testy
-from niestabilne_testy import ZapisKwarantanny
-import plan_runu
-from plan_runu import Plan, Zadanie
-import potomne
-from repo import ROOT
-import rozjazd_modelu
-import silnik_mutacji
-from zakres_runu import KROKI, MUTACJE, Krok, Zdarzenie
 
 JUNIT = Path(".ci-czasy", "junit.xml")
 PONOWIENIE = Path(".ci-czasy", "junit-ponowienie.xml")
@@ -236,7 +236,7 @@ def _kroki_skilli(root: Path) -> int:
 
 
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     jak = parser.add_mutually_exclusive_group(required=True)
     jak.add_argument("--plan", type=Path)
     jak.add_argument("--kroki-skilli", action="store_true", help="Każdy krok każdego skilla po kolei, podstawy i skrypty mutacji (tools/ci_lokalnie.py).")

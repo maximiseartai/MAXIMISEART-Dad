@@ -1,4 +1,17 @@
-"""Pokazuje, co trzyma maszynę (--status), i pilnuje jednego pomiaru wydajności naraz na cichym procesorze; użyj, gdy pomiar czeka.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+import uuid
+
+OPIS = """Pokazuje, co trzyma maszynę (--status), i pilnuje jednego pomiaru wydajności naraz na cichym procesorze; użyj, gdy pomiar czeka.
 
 One measurement at a time on this machine, on a quiet CPU; other runs wait only while it measures.
 
@@ -18,19 +31,6 @@ most ``QUIET_TIMEOUT_S``; a run waits for a measurement in progress at most
 
     python tools/quiet_machine.py --status   # who holds the machine now
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
-import os
-from pathlib import Path
-import subprocess
-import sys
-import tempfile
-import time
-import uuid
 
 LOCK_DIRECTORY = Path(tempfile.gettempdir()) / "verify-centrum-rozliczen"
 MEASUREMENT_LOCK = "pomiar.lock"
@@ -242,7 +242,7 @@ class QuietMachine:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--status", action="store_true", help="Print what holds the machine now and exit.")
     parser.parse_args(argv)
     busy = QuietMachine().status()

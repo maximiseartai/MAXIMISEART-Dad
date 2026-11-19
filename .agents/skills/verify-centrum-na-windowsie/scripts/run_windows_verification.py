@@ -1,13 +1,3 @@
-"""Verify Centrum rozliczeń on Windows the way Dad starts and uses it, in one command (Windows only).
-
-    py -3 .agents\\skills\\verify-centrum-na-windowsie\\scripts\\run_windows_verification.py [--feature all|<feature>]
-
-Creates ``<run dir>/runs/windows-<id>`` (``windows_tool.prepare``; ``--run-dir``, default ``.verification``), drives the features of
-``windows_drive.FEATURES`` (a single feature runs its prerequisites first, reported as preparation), runs the doctor
-after each start, keeps the evidence in ``<run dir>/evidence/windows-<id>``, and cleans up. Success prints
-``VERIFY OK | features=… | evidence=… | scratch_removed=true``; anything else is ``VERIFY FAIL | …``.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -32,6 +22,16 @@ import windows_doctor
 import windows_tool
 from rozliczenia.efenix_browser import launch_options
 from skrypt_skilla import Parser, new_run
+
+OPIS = """Verify Centrum rozliczeń on Windows the way Dad starts and uses it, in one command (Windows only).
+
+    py -3 .agents\\skills\\verify-centrum-na-windowsie\\scripts\\run_windows_verification.py [--feature all|<feature>]
+
+Creates ``<run dir>/runs/windows-<id>`` (``windows_tool.prepare``; ``--run-dir``, default ``.verification``), drives the features of
+``windows_drive.FEATURES`` (a single feature runs its prerequisites first, reported as preparation), runs the doctor
+after each start, keeps the evidence in ``<run dir>/evidence/windows-<id>``, and cleans up. Success prints
+``VERIFY OK | features=… | evidence=… | scratch_removed=true``; anything else is ``VERIFY FAIL | …``.
+"""
 
 REPO_ROOT = windows_tool.REPO_ROOT
 STATIC = REPO_ROOT / "src" / "rozliczenia" / "centrum" / "static" / "index.html"
@@ -121,7 +121,7 @@ def _keep_state(run: Run) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_run_dir()
     parser.add_argument("--feature", choices=("all", *FEATURES), default="all")
     args = parser.parse_args(argv)
