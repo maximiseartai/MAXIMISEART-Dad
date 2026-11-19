@@ -50,6 +50,7 @@ import github
 import niestabilne_testy
 from repo import REMOTE, ROOT
 import repo
+import zmiany_z_wydania
 from rozliczenia.centrum import release_notes, tool_update
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes
 from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
@@ -290,6 +291,7 @@ def plan(root: Path) -> ReleasePlan:
         skipped.append(SkippedCommit(commit, state))
     else:
         raise Refused("Nic do wydania: żaden commit main nie ma zielonego CI.")
+    _check_released_changes_frozen(root, line, commit)
     changes = _merged_prs(root, newest.commit, commit)
     bump = None if previous is None else Bump.MINOR if any(change.bump is Bump.MINOR for change in changes) else Bump.PATCH
     number = FIRST if previous is None or bump is None else NEXT[bump](previous.release.number)
@@ -361,6 +363,16 @@ def _check_still_releasable(root: Path, line: MainLine, commit: str, release: Re
     newest = MainLine(line.tips, others).newest()
     if newest.release is not None and newest.commit is not None and line.tips.index(commit) >= line.tips.index(newest.commit):
         raise Refused(f"Commit {commit} nie jest nowszy od commitu Wydania {newest.release.tag}.")
+
+
+def _check_released_changes_frozen(root: Path, line: MainLine, commit: str) -> None:
+    released = sorted((release.number, release.tag, target) for tag, target in line.releases.items() if (release := Release.of_tag(tag)) is not None)
+    changed = zmiany_z_wydania.zmienione(root, [(tag, target) for _, tag, target in released], commit)
+    if changed:
+        raise Refused(
+            f"Zmiany z Wydania, które wyszły, są inne na commicie {commit}: {'; '.join(changed)}. "
+            f"Tak ich nie wydawaj, bo {zmiany_z_wydania.NOWY_WPIS}; po merge'u tej poprawki zrób plan od nowa."
+        )
 
 
 def _tag_and_push(root: Path, release: Release, commit: str) -> None:
