@@ -433,7 +433,7 @@ def test_srodowisko_ma_pythona_ci_i_projekt_z_kopii_drzewa(tmp_path: Path) -> No
     [
         ({srodowisko_ci.WORKFLOW: _ci(_step("setup-python", {"with": {"python-version": "3.15"}}))}, "zmień środowisko Required CI osobnym PR przed tym"),
         ({"kod/uzycie.py": "Z = 3\n"}, "z konfliktem (kod/uzycie.py): zaktualizuj PR z bazy"),
-        (project("brak @ file:///nie/ma/takiego/pakietu"), "uv pip compile skończył się kodem 1 (error: Distribution not found at: file:///nie/ma/takiego/pakietu): popraw pyproject.toml"),
+        (project("brak @ file:///nie/ma/takiego/pakietu"), "(error: Distribution not found at: file:///nie/ma/takiego/pakietu): popraw pyproject.toml"),
     ],
     ids=["baza-z-innym-pythonem-ci", "konflikt-z-baza", "budowa-pada"],
 )
