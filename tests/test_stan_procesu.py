@@ -15,19 +15,18 @@ from xml.etree import ElementTree as ET
 
 import pytest
 
-from tests.fixtures.stan_procesu import descriptors, left_to_gc
+from tests.fixtures.stan_procesu import WATEK_S, descriptors, left_to_gc
 from tests.fixtures.znane_luki import assert_znane_luki
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 
-# Plugin w procesie pytest sesji próbek, z krótszym czekaniem na wątki i potomków niż w repozytorium.
+# Plugin w procesie pytest sesji próbek, z krótszym czekaniem na potomków niż w repozytorium.
 _CONFTEST: Final = """
 import pytest
 
 import tests.fixtures.stan_procesu as stan_procesu
 
 pytest_plugins = ["tests.fixtures.stan_procesu"]
-stan_procesu.WATEK_S = 1.0
 stan_procesu.POTOMEK_S = 1.0
 
 
@@ -181,7 +180,7 @@ def test_kazdy_zasob_zostawiony_przez_test_wywraca_sprawce_a_nie_sasiada(tmp_pat
                 "baza.sqlite",
                 "zamknął dopiero gc",
                 "otwarty po teście",
-                "wątek watek-bez-konca żyje 1 s po teście",
+                f"wątek watek-bez-konca żyje {WATEK_S:g} s po teście",
                 "proces potomny",
                 "katalog roboczy",
                 "zmienna środowiska ZMIENNA_SPRAWCY zmieniona",
@@ -196,7 +195,7 @@ def test_kazdy_zasob_zostawiony_przez_test_wywraca_sprawce_a_nie_sasiada(tmp_pat
         "test_potok_w_cyklu": ["potok", "zamknął dopiero gc"],
         "test_plik_biblioteki_c_w_cyklu": ["plik", "baza.sqlite", "zamknął dopiero gc"],
         "test_plik_trzymany_przez_zywy_obiekt": ["plik", "zywy.bin", "otwarty po teście"],
-        "test_watek_bez_konca": ["wątek watek-bez-konca żyje 1 s po teście"],
+        "test_watek_bez_konca": [f"wątek watek-bez-konca żyje {WATEK_S:g} s po teście"],
         "test_proces_potomny_bez_konca": ["potok", "otwarty po teście", "proces potomny"],
         "test_katalog_roboczy": ["katalog roboczy"],
         "test_zmienna_srodowiska": ["zmienna środowiska ZMIENNA_SPRAWCY zmieniona"],
@@ -698,7 +697,7 @@ def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(
     culprit = _zostawione(errors.pop("test_sprawca_pod_czysta_zmienia_jej_katalog_i_zmienna"))
     kinds = (
         *(("brudna.bin otwarty po teście", "potok", "proces potomny") if sys.platform != "win32" else ()),
-        "wątek watek-brudna żyje 1 s po teście",
+        f"wątek watek-brudna żyje {WATEK_S:g} s po teście",
         "katalog roboczy",
         "zmienna środowiska ZMIENNA_BRUDNEJ zmieniona",
     )
