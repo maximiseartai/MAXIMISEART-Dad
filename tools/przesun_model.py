@@ -25,7 +25,8 @@ OPIS = "Przelicza skróty kodu w model/definicje.json skilla verify-*; użyj, gd
 SCAL = (
     "Sterownik merge'a gita (merge=model-skilla w .gitattributes, ustawia go tools/setup_worktree.py): scala pliki definicji "
     "BAZA NASZA ICH do NASZA. Definicję bierze ze strony, która zmieniła jej skrót, a skrót zmieniony po obu stronach liczy "
-    "na drzewie scalenia HEAD z gałęzią z git merge; inna zmiana kluczy po obu stronach zostaje konfliktem."
+    "na drzewie scalenia HEAD z gałęzią z git merge. Zmianę kluczy po obu stronach i skrót, którego nie policzy, scala "
+    "tekstem jak git bez sterownika (git merge-file), więc konflikt zostaje tylko tam, gdzie daje go też tekst."
 )
 GALAZ_MERGE = "GITHEAD_"
 WEWNATRZ = "MAXIMISEART_SCALANIE_MODELU"
@@ -78,9 +79,9 @@ def _merge(base: str, ours: str, theirs: str, path: str) -> int:
         try:
             recomputed = rozjazd_modelu.scal(Path(base), Path(ours), Path(theirs), merge_tree)
         except ValueError as error:
-            repo.succeeds(root, "merge-file", "-L", "HEAD", "-L", "baza", "-L", "scalana", ours, base, theirs)
-            print(f"SCALENIE MODELU KONFLIKT | {path} | {error}", file=sys.stderr)
-            return 1
+            clean = repo.succeeds(root, "merge-file", "-L", "HEAD", "-L", "baza", "-L", "scalana", ours, base, theirs)
+            print(f"SCALENIE MODELU TEKSTEM | {path} | {error}; scalenie tekstem {'bez konfliktu' if clean else 'z konfliktem'}", file=sys.stderr)
+            return 0 if clean else 1
     on_tree = f"przeliczone na drzewie scalenia: {', '.join(recomputed)}" if recomputed else "bez przeliczenia"
     print(f"SCALENIE MODELU OK | {path} | {on_tree}", file=sys.stderr)
     return 0

@@ -7,7 +7,8 @@ Plik ``.pth`` (``IMPORT_PTH``) daje każdemu Pythonowi z ``.venv`` katalogi impo
 więc próba ``.venv/bin/python -c "import wplyw_zmiany"`` importuje moduły narzędzi bez ``sys.path`` i ``PYTHONPATH``.
 Włącza też bramę ``tools/hooks/pre-push`` (``core.hooksPath``), sterownik scalania plików generowanych
 (``merge=wygenerowane`` w ``.gitattributes``) i sterownik scalania skrótów modeli skilli (``merge=model-skilla``, czyli
-``tools/przesun_model.py --scal`` Pythonem z ``.venv`` worktree, który scala); wszystkie siedzą w konfiguracji
+``tools/przesun_model.py --scal`` Pythonem z ``.venv`` worktree, który scala, a bez ``.venv`` ``git merge-file``, czyli
+scalenie tekstem jak bez sterownika); wszystkie siedzą w konfiguracji
 repozytorium, wspólnej dla wszystkich worktree.
 
     py -3 tools/setup_worktree.py              # Windows
@@ -112,7 +113,8 @@ def _merge_generated(root: Path) -> None:
 
 def _merge_model_digests(root: Path, python: str) -> None:
     repo.git(root, "config", "merge.model-skilla.name", "skróty modelu skilla: scalenie definicji, skrót zmieniony po obu stronach z drzewa scalenia")
-    repo.git(root, "config", "merge.model-skilla.driver", f"{python} tools/przesun_model.py --scal %O %A %B %P")
+    text = "git merge-file -L HEAD -L baza -L scalana %A %O %B"
+    repo.git(root, "config", "merge.model-skilla.driver", f"if [ -x {python} ]; then {python} tools/przesun_model.py --scal %O %A %B %P; else {text}; fi")
 
 
 def _venv_python() -> Path:
