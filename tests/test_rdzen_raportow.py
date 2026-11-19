@@ -6016,3 +6016,12 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydani
 
     assert enter_reports(_inputs(mails, [_order()], legend=legend)).problems == ()
     assert enter_reports(_inputs(mails, [_order()])).problems == (_faulty("montaż ONT inst20m inst30m"),)
+
+
+def test_wpisanie_raportow_czyta_opis_jak_poza_usterka_wiec_kod_ktory_w_usterce_sie_nie_liczy_daje_blad_opisu() -> None:
+    legend = ActivityLegend(
+        tuple(replace(code, counts_in_fault=False) if code.id == "rt2" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
+    )
+    mails = [_mail(JAN, SUBJECT, "40000001 tak rt2 bypas5m")]
+
+    assert enter_reports(_inputs(mails, [_order()], legend=legend)).problems == (_faulty("rt2 bypas5m"),)
