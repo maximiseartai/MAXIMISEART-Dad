@@ -1,4 +1,20 @@
-"""Werdykty to komentarze i recenzje PR kont z prawem zapisu (``OWNER``, ``MEMBER``, ``COLLABORATOR``), w kolejności
+from __future__ import annotations
+
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+import re
+from typing import Literal
+
+import github
+import ponowny_przeglad
+from repo import REMOTE, ROOT
+import repo
+from stan_pr import Pull, Waiting
+import szablon_werdyktu
+
+ZASADY = """Werdykty to komentarze i recenzje PR kont z prawem zapisu (``OWNER``, ``MEMBER``, ``COLLABORATOR``), w kolejności
 utworzenia; nieopublikowana recenzja (``PENDING``) się nie liczy. Werdykt to komentarz albo recenzja, której pierwsza
 niepusta linia, bez odstępów na brzegach, to dokładnie ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>``, gdzie
 ``<SHA>`` to pełny SHA HEAD PR małymi literami. ``FAIL`` jest sprzeciwem bez względu na dalsze linie, tak jak
@@ -41,22 +57,6 @@ przesunąć. Szablon wyznacza ADR 0031 (``szablon_werdyktu.ADR``), a bramkę kor
 (``bramka_korzenia.MARKER``), więc wątki, które miały werdykt przed merge'em bramki, kończą bez niej, choć szablon
 już mają.
 """
-
-from __future__ import annotations
-
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from datetime import datetime
-from enum import Enum
-import re
-from typing import Literal
-
-import github
-import ponowny_przeglad
-from repo import REMOTE, ROOT
-import repo
-from stan_pr import Pull, Waiting
-import szablon_werdyktu
 
 VERDICT_LINE = re.compile(r"WERDYKT: (PASS|FAIL) ([0-9a-f]{40})")
 FINDINGS_LINE = re.compile(r"Znaleziska: (\d+) \(Ważne (\d+), Drobne (\d+)\)")

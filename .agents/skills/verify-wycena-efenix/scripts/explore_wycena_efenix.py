@@ -1,6 +1,4 @@
-"""Exhaustively break each request of a Wycena w efenix and check the Zatrzymanie, the efenix state and the resume.
-
-The checker runs the real process (``run_process`` with ``efenix_process.PROCESS``, the window ``efenix_browser.window``
+"""The checker runs the real process (``run_process`` with ``efenix_process.PROCESS``, the window ``efenix_browser.window``
 in Playwright's Chromium, ``pace=None``) on the Atrapa efenix (``tools/lib/atrapy/atrapa_efenix.py``) with two orders of a
 synthetic Plik zbiorczy: order 1 (row 18) has an empty pricing, Emmett gives O as the file and T one less than the
 file, and the process enters T over Emmett's and adds AG, so it ends gotowe with a Znacznik efenix; order 2 (row 19) has
@@ -138,6 +136,8 @@ from atrapy.dziennik_wyceny import begun_rows, ended_outcomes, journal_path
 from atrapy.efenix import FIRST_ROW, Order, write_collective_file
 from atrapy.interlocutor import Tata
 from atrapy.settlement import PERIOD
+
+OPIS = "Exhaustively break each request of a Wycena w efenix and check the Zatrzymanie, the efenix state and the resume."
 
 VERDICT: Final = "WYCENA EFENIX"
 START: Final = StartFacts(
@@ -1726,7 +1726,7 @@ def doctor() -> list[str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = Parser(description=__doc__.splitlines()[0])
+    parser = Parser(description=OPIS)
     parser.add_run_dir()
     parser.add_variants(AXES, default="all", every=AXES)
     parser.add_argument("--rola", nargs="+", choices=[role.value for role in Role], help="tylko żądania tych ról")

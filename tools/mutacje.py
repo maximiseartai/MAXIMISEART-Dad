@@ -1,4 +1,38 @@
-"""Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from dataclasses import replace
+from functools import cache, partial
+from itertools import pairwise
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+from typing import NamedTuple
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import ciezkie_ci
+import czasy_ci
+import github
+from jednostka import ZMIENNA_CZESCI
+from kroki_lokalne import environment
+import plan_runu
+from ostatnie_linie import MUTACJE_OK
+import potomne
+from repo import BASE, ROOT
+import repo
+from silnik_mutacji import PARALLEL, TIMEOUT, Edit, Mutation, Verdict, review, verdicts
+import silnik_mutacji
+import szybko
+import wplyw_zmiany
+import wyniki_testow
+
+OPIS = """Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
 
 Przepis z korzenia checkoutu; po ``--`` stoją argumenty Pythona, który uruchomił narzędzie:
 
@@ -34,43 +68,6 @@ Bez ``--juz-lapie`` nie biegnie ani wybór, ani podstawa, ani sprawdzenie, tylko
 
 Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Sequence
-from dataclasses import replace
-from functools import cache, partial
-from itertools import pairwise
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
-import tempfile
-import time
-from typing import NamedTuple
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import ciezkie_ci
-import czasy_ci
-import github
-from jednostka import ZMIENNA_CZESCI
-from kroki_lokalne import environment
-import plan_runu
-from ostatnie_linie import MUTACJE_OK
-import potomne
-from repo import BASE, ROOT
-import repo
-from silnik_mutacji import PARALLEL, TIMEOUT, Edit, Mutation, Verdict, review, verdicts
-import silnik_mutacji
-import szybko
-import wplyw_zmiany
-import wyniki_testow
-
-RULES_HEADING = "Zasady werdyktów i przebiegu"
-RULES = (silnik_mutacji.__doc__ or "").partition(f"\n{RULES_HEADING}\n")[2]
 
 
 def _from_file(path: Path, command: tuple[str, ...]) -> list[Mutation]:
@@ -311,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     split = arguments.index("--") if "--" in arguments else len(arguments)
     command = tuple(arguments[split + 1 :])
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--zmiana",
         nargs=3,
@@ -344,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--zasady", action="store_true", help=f"Drukuje zasady werdyktów, kopii, bramy typów, nocy, --jak-ci i {ZMIENNA_CZESCI}.")
     args = parser.parse_args(arguments[:split])
     if args.zasady:
-        print(RULES.strip())
+        print(silnik_mutacji.ZASADY.strip())
         return 0
     if not args.juz_lapie and (limits := [flag for flag, value in (("--juz-lapie-s", args.juz_lapie_s), ("--podstawa-s", args.podstawa_s)) if value is not None]):
         parser.error(f"{' i '.join(limits)} to limity sprawdzenia {ALREADY}, które biegnie tylko z --juz-lapie: dopisz --juz-lapie albo usuń limit")

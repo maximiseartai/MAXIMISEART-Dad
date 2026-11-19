@@ -1,4 +1,27 @@
-"""Drukuje plan runu CI gałęzi (plan --baza origin/main): zadania pytest i Mutation checks, ich pliki i kroki skilli; użyj przed pushem albo gdy CI biegło inaczej.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+import json
+import math
+import os
+from pathlib import Path
+import statistics
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import czasy_ci
+from github import GitHub
+import jednostka
+from jednostka import Klucz, Rodzaj
+from plan_runu import Cien, Plan, Zadanie
+from repo import BASE, ROOT
+from wplyw_zmiany import changed_since
+from zakres_runu import KROKI, MUTACJE, NA_ZYWO, RDZENIE_RUNNERA, TORY, KrokSkilla, Podstawy, Tor, ZakresRunu, Zdarzenie, zakres
+
+OPIS = """Drukuje plan runu CI gałęzi (plan --baza origin/main): zadania pytest i Mutation checks, ich pliki i kroki skilli; użyj przed pushem albo gdy CI biegło inaczej.
 
 Plan CI: ile zadań pytest i Mutation checks startuje w runie ``ci.yml`` i co biegnie w każdym.
 
@@ -47,29 +70,6 @@ Lokalnie plan na czasach z ``.git/czasy-ci`` (wspólnych z ``tools/szybko.py``) 
 
     .venv/bin/python tools/plan_ci.py plan --baza origin/main
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
-import json
-import math
-import os
-from pathlib import Path
-import statistics
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import czasy_ci
-from github import GitHub
-import jednostka
-from jednostka import Klucz, Rodzaj
-from plan_runu import Cien, Plan, Zadanie
-from repo import BASE, ROOT
-from wplyw_zmiany import changed_since
-from zakres_runu import KROKI, MUTACJE, NA_ZYWO, RDZENIE_RUNNERA, TORY, KrokSkilla, Podstawy, Tor, ZakresRunu, Zdarzenie, zakres
 
 WORKERY = RDZENIE_RUNNERA  # pytest -n auto
 # W symulacji 60 PR (29.10) cel 60, 75 i 90 s daje bramce ten sam p50 i p90, bo ścianę trzyma jednostka, której plan
@@ -338,7 +338,7 @@ def _plan(args: argparse.Namespace, root: Path, github: GitHub) -> int:
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = czasy_ci.GITHUB) -> int:
     """``root`` to checkout, którego zmianę i skille plan wycenia, a ``github`` daje czasy z runów main."""
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Plan runu: zadania pytest i Mutation checks (zadanie plan albo lokalnie).")
     plan.add_argument("--zdarzenie", type=Zdarzenie, choices=list(Zdarzenie), default=Zdarzenie.PULL_REQUEST)

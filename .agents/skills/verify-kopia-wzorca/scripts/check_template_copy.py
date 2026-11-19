@@ -1,38 +1,3 @@
-"""Check that the Rozliczenie pracownika made by the template copy (ADR 0008) is the one openpyxl would make.
-
-Przebieg rozliczeń writes every Rozliczenie pracownika with ``template_copy.py``: it splices the
-Wiersze danych into the bytes of the Wzorzec rozliczenia pracownika instead of loading and saving the
-workbook with openpyxl. This checker generates Wiersze danych with Hypothesis (every value type a cell
-can hold, edge texts and numbers, Wyróżnienia, Hiperłącza, row counts on both sides of each compression chunk boundary), writes
-them through the real ``TemplateFile.create()`` and, as the reference, through the old openpyxl path: the
-same ``TemplateFile.create()`` on a twin of the Wzorzec that the copy refuses (an XML comment in its sheet
-data, which openpyxl skips). It checks five rules:
-
-- WIERNA_KOPIA: the two files are the same for what Dad sees in Excel, as judged by the benchmark's
-  correctness gate (``tools/lib/porownanie_znaczeniowe.py``): values, formulas, resolved styles with Wyróżnienia,
-  Hiperłącza, merges, dimensions, defined names, external links and recalculation flags.
-- TA_SAMA_ODMOWA: the copy refuses a value exactly when the openpyxl path refuses it, and a refusal
-  leaves no file.
-- WYGLAD_WIERSZA: every cell A:L of a written Wiersz danych has the Wygląd Wiersza danych, derived here from the
-  rule and not from the code: font face and size of the Wzorzec's header cell in row 17, left and centre alignment,
-  wrapping exactly for text with a line break, a thin automatic border on four sides and the number format of the
-  Plik zbiorczy cell; a written row stores no height.
-- NIETKNIETY_WZORZEC: what ADR 0008 says stays byte for byte stays: every zip part except the sheet,
-  ``xl/workbook.xml`` (only ``calcPr``), ``xl/styles.xml`` (only appended number formats, fonts, fills, borders and
-  styles) and the sheet relationships (only appended relationships of Hiperłącza, or a new part at the end when the
-  Wzorzec has none), every sheet row outside the written Wiersze danych apart from one inserted ``<hyperlinks>``,
-  the row attributes of written rows apart from the removed height (``ht``, ``customHeight``), and the cells right
-  of AT in the written rows.
-- KSZTALT_EXCELA: the file has the shape Excel needs and openpyxl does not check when reading it:
-  valid zip CRCs, rows and cells in ascending order with matching references, ``dimension`` covering
-  the written rows, ``xml:space="preserve"`` on text with spaces at its edges, style lists whose counts and
-  references match, sheet elements in schema order, a content type for every part, unique relationship ids and
-  every hyperlink pointing at an external hyperlink relationship.
-
-One Hypothesis example is one Przebieg rozliczeń: one ``TemplateFile`` loaded once and
-1 to 3 Rozliczenia pracowników made from it in a row, as ``run_settlements()`` does for its workers.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -80,6 +45,41 @@ from atrapy import pliki_taty
 from atrapy.settlement import write_template
 from atrapy.wzorce import write_settlement_template
 from atrapy.workbooks import add_external_link_fixture, refused_by_copy
+
+OPIS = """Check that the Rozliczenie pracownika made by the template copy (ADR 0008) is the one openpyxl would make.
+
+Przebieg rozliczeń writes every Rozliczenie pracownika with ``template_copy.py``: it splices the
+Wiersze danych into the bytes of the Wzorzec rozliczenia pracownika instead of loading and saving the
+workbook with openpyxl. This checker generates Wiersze danych with Hypothesis (every value type a cell
+can hold, edge texts and numbers, Wyróżnienia, Hiperłącza, row counts on both sides of each compression chunk boundary), writes
+them through the real ``TemplateFile.create()`` and, as the reference, through the old openpyxl path: the
+same ``TemplateFile.create()`` on a twin of the Wzorzec that the copy refuses (an XML comment in its sheet
+data, which openpyxl skips). It checks five rules:
+
+- WIERNA_KOPIA: the two files are the same for what Dad sees in Excel, as judged by the benchmark's
+  correctness gate (``tools/lib/porownanie_znaczeniowe.py``): values, formulas, resolved styles with Wyróżnienia,
+  Hiperłącza, merges, dimensions, defined names, external links and recalculation flags.
+- TA_SAMA_ODMOWA: the copy refuses a value exactly when the openpyxl path refuses it, and a refusal
+  leaves no file.
+- WYGLAD_WIERSZA: every cell A:L of a written Wiersz danych has the Wygląd Wiersza danych, derived here from the
+  rule and not from the code: font face and size of the Wzorzec's header cell in row 17, left and centre alignment,
+  wrapping exactly for text with a line break, a thin automatic border on four sides and the number format of the
+  Plik zbiorczy cell; a written row stores no height.
+- NIETKNIETY_WZORZEC: what ADR 0008 says stays byte for byte stays: every zip part except the sheet,
+  ``xl/workbook.xml`` (only ``calcPr``), ``xl/styles.xml`` (only appended number formats, fonts, fills, borders and
+  styles) and the sheet relationships (only appended relationships of Hiperłącza, or a new part at the end when the
+  Wzorzec has none), every sheet row outside the written Wiersze danych apart from one inserted ``<hyperlinks>``,
+  the row attributes of written rows apart from the removed height (``ht``, ``customHeight``), and the cells right
+  of AT in the written rows.
+- KSZTALT_EXCELA: the file has the shape Excel needs and openpyxl does not check when reading it:
+  valid zip CRCs, rows and cells in ascending order with matching references, ``dimension`` covering
+  the written rows, ``xml:space="preserve"`` on text with spaces at its edges, style lists whose counts and
+  references match, sheet elements in schema order, a content type for every part, unique relationship ids and
+  every hyperlink pointing at an external hyperlink relationship.
+
+One Hypothesis example is one Przebieg rozliczeń: one ``TemplateFile`` loaded once and
+1 to 3 Rozliczenia pracowników made from it in a row, as ``run_settlements()`` does for its workers.
+"""
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 SOURCE_ROOT = REPO_ROOT / "src"
@@ -1269,7 +1269,7 @@ def _value_rows() -> tuple[DataRow, ...]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--examples", type=int, default=DEFAULT_EXAMPLES, help="Przykłady Hypothesis (domyślnie %(default)s).")
     parser.add_argument("--seed", type=int, help="Losowe przykłady z tego ziarna zamiast stałych (głębsze sprawdzenie).")
     parser.add_argument("--no-shrink", action="store_true", help="Bez zmniejszania kontrprzykładu (szybciej, dla mutacji).")

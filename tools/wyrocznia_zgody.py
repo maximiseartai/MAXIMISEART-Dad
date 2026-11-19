@@ -1,4 +1,25 @@
-"""Sprawdza, czy zainstalowany Claude Code oddaje hookowi zgoda.py pytanie o zgodę na rm; uruchom po każdej aktualizacji Claude Code.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from dataclasses import dataclass
+import json
+import os
+from pathlib import Path
+import shutil
+import sys
+import tempfile
+import threading
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import falszywe_api
+from repo import ROOT
+import zgoda
+
+OPIS = """Sprawdza, czy zainstalowany Claude Code oddaje hookowi zgoda.py pytanie o zgodę na rm; uruchom po każdej aktualizacji Claude Code.
 
 Wyrocznia hooka ``tools/hooks/zgoda.py``: czy zainstalowany Claude Code oddaje temu hookowi pytanie o zgodę na ``rm``.
 
@@ -24,27 +45,6 @@ albo na Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Co
     .venv/bin/python tools/wyrocznia_zgody.py                  # wszystkie przypadki, ok. 5 min
     .venv/bin/python tools/wyrocznia_zgody.py k-sam-doslowny  # wybrane przypadki
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Sequence
-from dataclasses import dataclass
-import json
-import os
-from pathlib import Path
-import shutil
-import sys
-import tempfile
-import threading
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import falszywe_api
-from repo import ROOT
-import zgoda
 
 CASES = ROOT / "tools" / "wyrocznia_zgody.jsonl"
 PREFIX = ROOT / "tools" / "wyrocznia_zgody_prefiks.sh"
@@ -189,7 +189,7 @@ def ask(command: str, sandbox: Path, host_s: float, contact_s: float) -> Outcome
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("nazwy", nargs="*", help="Nazwy przypadków (pole nazwa); bez nich wszystkie.")
     parser.add_argument("--przypadki", type=Path, default=CASES, help="Plik przypadków JSONL.")
     parser.add_argument(

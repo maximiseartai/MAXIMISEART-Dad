@@ -1,6 +1,4 @@
-"""Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
-
-``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
+"""``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
 więc pytest i skrypty weryfikacyjne uruchomione nim z worktree mogą po cichu
 sprawdzać kod z ``main``. Ten skrypt tworzy ``.venv`` w checkoucie, w którym
 leży, instaluje go edytowalnie i sprawdza, że ``rozliczenia`` importuje się z
@@ -31,6 +29,8 @@ import potomne
 from repo import ROOT
 import repo
 
+OPIS = "Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona."
+
 VENV = ROOT / ".venv"
 EXTRAS = ".[dev,workflowy]"
 IMPORT_PTH = "maximiseart_katalogi_importu.pth"
@@ -41,7 +41,7 @@ SUPPORTED = sys.version_info >= MINIMUM_PYTHON
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.add_argument(
         "--python",
         default=sys.executable if SUPPORTED else MINIMUM,

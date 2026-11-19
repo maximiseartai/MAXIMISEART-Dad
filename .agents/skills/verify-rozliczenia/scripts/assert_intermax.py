@@ -1,10 +1,3 @@
-"""Check the Uporządkowanie INTERMAX of the ``intermax`` variant: its JSON result, the Kopia INTERMAX, INTERMAX, metrics.
-
-The result is read as the contract model ``ProcessResult`` (``wynik_uruchomienia.py``). The expected values come
-from the synthetic pasted day in ``create_intermax_fixture.py`` and from GLOSSARY.md (Uporządkowanie INTERMAX, Kopia
-INTERMAX, Okres rozliczeniowy), never from a run of the process. Messages name fields and checks, never a row value.
-"""
-
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
@@ -27,6 +20,13 @@ from wynik_uruchomienia import check_metrics, finish, load_result, runs_contract
 
 from atrapy.intermax import FIRST, LAST, NUMBER, ORDER_SHEET
 from atrapy.scenariusz_rozliczen import REGISTER_NAME
+
+OPIS = """Check the Uporządkowanie INTERMAX of the ``intermax`` variant: its JSON result, the Kopia INTERMAX, INTERMAX, metrics.
+
+The result is read as the contract model ``ProcessResult`` (``wynik_uruchomienia.py``). The expected values come
+from the synthetic pasted day in ``create_intermax_fixture.py`` and from GLOSSARY.md (Uporządkowanie INTERMAX, Kopia
+INTERMAX, Okres rozliczeniowy), never from a run of the process. Messages name fields and checks, never a row value.
+"""
 
 # Uporządkowanie INTERMAX: Wykonawcy alphabetically (anna, bartek, jan), each from the earliest hour to the latest.
 EXPECTED_ORDER_NUMBERS = ("ZL-78202", "ZL-78205", "ZL-78203", "ZL-78206", "ZL-78204", "ZL-78201")
@@ -147,7 +147,7 @@ def _check_register(root: Path, copy_name: str | None, manifest: dict[str, Any],
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root created by create_intermax_fixture.py")
     parser.add_argument("--result", required=True, type=Path, help="evidence JSON of the intermax step")
     args = parser.parse_args(argv)
