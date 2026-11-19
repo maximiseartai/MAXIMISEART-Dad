@@ -10,6 +10,7 @@ Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach o źródłach c
 Zmienia sekcję „Reguły i co ich pilnuje” w [`AGENTS.md`](../../AGENTS.md): granicę strażnika, wyjątek na linii i źródła korzenia, a dokłada zakaz pamięci agentów poza repo.
 Zmienia zakres nocnych mutacji z [ADR 0021](0021-mutacje-noca.md).
 Zmieniona przez [ADR 0036](0036-chwast-to-regula.md) (#1676) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik” oraz w mierze odczytu 11.12.2026: chwast to reguła detektora zamiast issue „Chwast”; każda zmiana obowiązuje od merge'a jej wykonawcy z tabeli „Wdrożenie” w ADR 0036.
+Zmieniona przez [ADR 0043](0043-kod-bez-komentarzy.md) (#2232) w decyzji „Komentarze w `src`”: zakaz komentarzy obejmuje cały kod repo i docstringi, a historia zmiany idzie tylko do opisu PR, nie do issue.
 
 Każda reguła wchodzi ticketem specyfikacji #1597, który stoi przy niej w sekcji Decyzja.
 Do merge'a tego ticketu obowiązuje dotychczasowe zdanie w `AGENTS.md`, [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md) i skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md), a ticket zmienia te pliki tak, żeby zdanie tego ADR stało się prawdziwe.
