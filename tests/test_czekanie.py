@@ -164,49 +164,6 @@ TASK_OUTPUT_LOOPS = (
     "for i in $(seq 1 40); do grep -q KONIEC /private/tmp/c/s/tasks/b1.output && break; sleep 15; done",
     "until grep -q CZAS tasks/bhcxilqwz.output; do perl -e 'select(undef,undef,undef,15)'; done",
 )
-PYTHON_LOOPS = (
-    (
-        "python3 - <<'EOF'\nimport json, subprocess, time\nend = time.time() + 560\nwhile True:\n"
-        "    out = subprocess.run([\"gh\",\"run\",\"view\",\"44439947891\",\"--json\",\"status,conclusion,jobs\"],"
-        "capture_output=True,text=True).stdout\n    d = json.loads(out)\n    if d['status'] == 'completed' or "
-        "time.time() > end:\n        break\n    time.sleep(20)\nprint(d['conclusion'])\nEOF",
-        "CI_LOOP",
-        "gh-run-view-while",
-    ),
-    (
-        "cd /repo; python3 - <<'EOF'\nimport json, subprocess, time\nfor i in range(9):\n"
-        "    out = subprocess.run([\"gh\", \"pr\", \"checks\", \"2178\", \"--json\", \"name,bucket\"], "
-        "capture_output=True, text=True).stdout or \"[]\"\n    if all(c['bucket'] != 'pending' for c in json.loads(out)):\n"
-        "        break\n    time.sleep(60)\nEOF",
-        "CI_LOOP",
-        "gh-pr-checks-range",
-    ),
-    (
-        "python3 - <<'EOF'\nimport subprocess, time\ndeadline = time.time() + 580\nwhile time.time() < deadline:\n"
-        "    if subprocess.run([\"pgrep\", \"-f\", \"tools/szybko.py\"], capture_output=True).returncode != 0:\n"
-        "        break\n    time.sleep(10)\nprint(subprocess.run([\"tail\", \"-8\", \"szybko.txt\"]).returncode)\nEOF",
-        "PGREP_LOOP",
-        "pgrep-termin",
-    ),
-    (
-        "F=/private/tmp/c/s/tasks/b1.output; .venv/bin/python - \"$F\" <<'EOF'\nimport sys, time\nfor _ in range(110):\n"
-        "    if 'KONIEC' in open(sys.argv[1]).read():\n        break\n    time.sleep(5)\nEOF",
-        "TASK_OUTPUT_LOOP",
-        "plik-zadania-w-argumencie",
-    ),
-    (
-        "python3 - <<'EOF'\nfrom time import sleep\nimport os\nn = 5\nwhile os.system(f\"gh pr checks {n} | grep -q pending\") == 0:\n"
-        "    sleep(30)\nEOF",
-        "CI_LOOP",
-        "sleep-z-time-i-f-napis",
-    ),
-    (
-        "python3 - <<'EOF'\nimport subprocess, sys, time\nfor attempt in attempts:\n"
-        "    if subprocess.run(['gh', 'pr', 'checks', '7']).returncode == 0:\n        sys.exit(0)\n    time.sleep(30)\nEOF",
-        "CI_LOOP",
-        "for-po-liscie-z-exit",
-    ),
-)
 # Dziewięć ponowień odbitych „already running” albo „cannot be rerun” (sesje d00be8d7, 41511ae6, e27ed100 ×2,
 # 6bc1a081 ×4, 80f3de41) i partia 13 ponowień naraz w awarii DNS runnerów 11.11 (e27ed100, 22:38).
 RERUNS = (
@@ -372,16 +329,6 @@ PASSING = (
     "sh -e 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "bash backup.sh 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "sleep 1; cat /private/tmp/c/s/tasks/be31c9zrc.output | tail",
-    "python3 - <<'EOF'\nimport subprocess, time\nfor run in runs:\n"
-    "    subprocess.run(['gh', 'api', f'repos/o/r/actions/runs/{run}/jobs'])\n    time.sleep(1)\nEOF",
-    "F=~/notatki/szybko.txt; python3 - \"$F\" <<'EOF'\nimport re, sys, time\nfor _ in range(110):\n"
-    "    if re.search('^SZYBKO', open(sys.argv[1]).read(), re.M):\n        break\n    time.sleep(5)\nEOF",
-    "python3 - <<'EOF'\nimport subprocess, time\nfor n in range(247, 265):\n"
-    "    subprocess.run(['gh', 'pr', 'view', str(n), '--json', 'title'])\n    time.sleep(1)\nEOF",
-    "python3 -c 'import time; time.sleep(3)'; gh pr checks 1",
-    "python3 - <<'EOF'\nto nie Python: while sleep( gh pr checks 1\nEOF",
-    "cat > czekaj.py <<'EOF'\nimport subprocess, time\nwhile True:\n    subprocess.run(['gh', 'pr', 'checks', '1'])\n"
-    "    time.sleep(5)\nEOF\nchmod +x czekaj.py",
 )
 
 
@@ -440,9 +387,7 @@ def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(
 
 @pytest.mark.parametrize("command", PASSING)
 def test_inne_polecenie_przechodzi(command: str) -> None:
-    """Także jedno czytanie pliku wyjścia zadania bez pętli, partia zapytań Pythona z limitem API, czekanie Pythona na
-    zwykły plik, ``range`` numerów PR, sen poza pętlą, heredoc, który nie jest Pythonem, i skrypt Pythona zapisany
-    heredokiem do pliku, a nie podany Pythonowi (#2267)."""
+    """Także jedno czytanie pliku wyjścia zadania bez pętli (#2267)."""
 
     assert hook.judge(command, in_background=False) is None
 
@@ -452,9 +397,6 @@ SERVER_READINESS = {
     "http://127.0.0.1:47900/ && break; sleep 1; done; cat /private/tmp/c/s/tasks/b31ma9p31.output | tail -5",
     "curl-plik-w-zmiennej-przed-petla": "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
     "until curl -sf http://127.0.0.1:5179/ >/dev/null; do sleep 1; done; tail -5 $F",
-    "python-plik-za-heredokiem": "F=/private/tmp/c/s/tasks/b31ma9p31.output; python3 - <<'EOF'\n"
-    "import time, urllib.request\nfor _ in range(30):\n    try:\n        urllib.request.urlopen(\"http://127.0.0.1:5179/\")\n"
-    "        break\n    except OSError:\n        time.sleep(1)\nEOF\ntail -5 $F",
 }
 
 
@@ -475,15 +417,7 @@ def test_petla_na_pliku_wyjscia_zadania_w_tle_dostaje_odmowe(command: str) -> No
     assert hook.judge(command, in_background=False) is hook.TASK_OUTPUT_LOOP
 
 
-@pytest.mark.parametrize(("command", "refusal"), [pytest.param(command, name, id=ident) for command, name, ident in PYTHON_LOOPS])
-def test_petla_odpytywania_w_skrypcie_pythona_dostaje_odmowe(command: str, refusal: str) -> None:
-    """Heredoki Pythona z sesji 18/19.11.2026 (#2267) i syntetyczne: ``sleep`` z ``from time import`` z f-napisem i
-    ``for`` po liście z wyjściem przez ``sys.exit``; każdy z nazwą odmowy i id parametru."""
-
-    assert hook.judge(command, in_background=False) is getattr(hook, refusal)
-
-
-@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS + TASK_OUTPUT_LOOPS + tuple(command for command, _, _ in PYTHON_LOOPS))
+@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS + TASK_OUTPUT_LOOPS)
 def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=True) is None
 
@@ -498,7 +432,6 @@ NOT_FOR_CI = ("t3_background_wait", "run_in_background")
     [
         pytest.param(CI_LOOPS[0], False, ROAD_FOR_CI, NOT_FOR_CI, id="petla-na-ci"),
         pytest.param(WATCHES[0], False, ROAD_FOR_CI, NOT_FOR_CI, id="watch"),
-        pytest.param(PYTHON_LOOPS[0][0], False, ROAD_FOR_CI, NOT_FOR_CI, id="python-na-ci"),
         pytest.param(PGREP_LOOPS[0], False, ("pgrep -f znajduje własną powłokę", *ROAD_FOR_TASK), (), id="pgrep"),
         pytest.param(TASK_OUTPUT_LOOPS[0], False, ("tasks/*.output", hook.WAIT_FOR_TASK), (), id="plik-wyjscia-zadania"),
         pytest.param(RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), (), id="ponowienie-w-tle"),

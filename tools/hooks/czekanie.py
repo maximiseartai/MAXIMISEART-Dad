@@ -16,15 +16,10 @@ i koniec tury; ``tools/hooks/praca_w_tle.py`` podaje ten sam tekst, a test pilnu
   o check-runs, actions/runs albo status commitu) albo woła ``pgrep -f``, oraz ``gh pr checks --watch`` i
   ``gh run watch``;
 - pętlę z ``sleep``, w której stoi plik wyjścia zadania w tle (``tasks/<id>.output``) wprost albo przez zmienną, której
-  polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``);
-- pętlę skryptu Pythona z heredoca podanego Pythonowi (``python3 - <<'EOF'``), która woła ``sleep(…)``, a w jej
-  napisach stoi zapytanie o CI (``["gh", "run", "view", …]``, ``f"gh pr checks {n}"``) albo ``pgrep -f``, albo plik
-  wyjścia zadania stoi w skrypcie albo w poleceniu, które otwiera heredoc (``python3 - "$F" <<'EOF'``); skrypt czyta
-  ``ast``, a heredoc linie polecenia, więc napisy przed nim nie zmieniają, czym jest jego ciało.
+  polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``).
 
 Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` albo licznikiem prób od 0 albo 1
-(``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``; w Pythonie ``range(N)``, ``range(0, N)``, ``range(1, N)``),
-bo bez nich to partia zapytań z ``sleep`` jako limitem API, a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``,
+(``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``), bo bez nich to partia zapytań z ``sleep`` jako limitem API, a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``,
 ``&&`` albo ``||``, w grupie ``( … )`` albo ``{ …; }``.
 ``&`` w grupie za pętlą (``done | (cat & wait)``) puszcza w tło tylko tę grupę.
 Ponowienie runu GitHub Actions odrzuca zawsze, także w tle, bo o ponowieniu decyduje ``tools/ponow_ci.py``: czeka
@@ -39,11 +34,10 @@ Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zat
 Ciała heredoców (skrypt Pythona, treść commitu) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
 hook pomija jako polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
 ``flock`` albo ``script`` z dowolnymi słowami przed ``-c`` (``bash -euo pipefail -c '…'``, ``bash -lc``,
-``su -l -s /bin/sh root -c``). Skrypt Pythona czyta tylko wtedy, gdy polecenie ma ``sleep(``.
+``su -l -s /bin/sh root -c``).
 
 Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie uruchomionym z pliku (także zapisanym
-heredokiem do pliku), w skrypcie ``python3 -c '…'`` (czytnik napisów polecenia nie zna komentarzy bash, więc ``'``
-w komentarzu przed ``-c`` zmieniłby, który napis jest skryptem), w Pythonie z poleceniem CI w zmiennej spoza pętli, z adresem
+heredokiem do pliku), w Pythonie (``python3 - <<'EOF'`` i ``python3 -c '…'`` z ``time.sleep``), z adresem
 ``gh api`` w cudzysłowie i pętle, których wzorca hook nie zna, łapie tylko przegląd. Pętla bez pliku zadania w sobie
 przechodzi, także ``while kill -0 $P; do sleep 5; done; cat …/tasks/b1.output``, bo tak samo wygląda czekanie na
 gotowość serwera z zadania w tle (``curl … && break``), którego koniec nie przyjdzie; tak samo pętla na zwykłym pliku
@@ -56,7 +50,6 @@ Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.
 
 from __future__ import annotations
 
-import ast
 from bisect import bisect_left
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
@@ -86,8 +79,6 @@ PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 TASK_OUTPUT = re.compile(r"\btasks/[^/\s]*\.output\b")
 ASSIGNMENT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(\S*)")
 REFERENCE = re.compile(r"\$[{_]?([A-Za-z_]\w*)")
-PYTHON = re.compile(r"(?<![\w.$-])(?:[\w.~/-]*/)?(?:python(?:\d+(?:\.\d+)?)?|py)(?![\w.-])")
-PYTHON_SLEEP = re.compile(r"\bsleep\s*\(")
 
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
 # spacji nawias jest już podkreśleniem (`QUOTED_SEPARATOR`).
@@ -176,30 +167,19 @@ PGREP_LOOP = Refusal(
 )
 
 
-def _heredocs(command: str) -> tuple[str, list[tuple[str, str]]]:
-    """Polecenie bez ciał heredoców i ciała heredoców podanych programowi Pythona (``python3 - <<'EOF'``), każde z
-    poleceniem prostym, które je otwiera (program i argumenty skryptu, bez poleceń przed ``;`` i za nim)."""
-
+def _without_heredocs(command: str) -> str:
     kept: list[str] = []
-    scripts: list[tuple[list[str], str]] = []
     delimiter: Optional[str] = None
-    script: Optional[list[str]] = None
     for line in command.split("\n"):
         if delimiter is not None:
             if line.strip() == delimiter:
                 delimiter = None
-            elif script is not None:
-                script.append(line)
             continue
         kept.append(line)
         opened = HEREDOC.search(line)
         if opened:
             delimiter = opened.group(2)
-            program = SIMPLE_COMMAND_END.split(line[: opened.start()])[-1]
-            script = [] if PYTHON.search(program) else None
-            if script is not None:
-                scripts.append((script, program + SIMPLE_COMMAND_END.split(line[opened.end() :])[0]))
-    return "\n".join(kept), [("\n".join(lines), line) for lines, line in scripts]
+    return "\n".join(kept)
 
 
 def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tuple[str, int]:
@@ -438,52 +418,6 @@ def _reruns(shell: str) -> bool:
     return False
 
 
-def _called(call: ast.Call) -> Optional[str]:
-    function = call.func
-    return function.attr if isinstance(function, ast.Attribute) else function.id if isinstance(function, ast.Name) else None
-
-
-def _tries(iterable: ast.expr) -> bool:
-    """``range(N)``, ``range(0, N)`` albo ``range(1, N)``: licznik prób, jak ``$(seq 1 N)`` w powłoce."""
-
-    if not (isinstance(iterable, ast.Call) and _called(iterable) == "range" and iterable.args):
-        return False
-    first = iterable.args[0]
-    return len(iterable.args) == 1 or (isinstance(first, ast.Constant) and first.value in (0, 1))
-
-
-def _python_wait(script: str, task_output: bool) -> Optional[Refusal]:
-    """Odmowa dla pętli skryptu Pythona, która śpi i czeka na CI, ``pgrep -f`` albo plik wyjścia zadania.
-
-    Skrypt, którego ``ast`` tego Pythona nie czyta (nie Python albo składnia nowsza niż Python hooka), przechodzi.
-    """
-
-    try:
-        tree = ast.parse(script)
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
-        return None
-    for loop in ast.walk(tree):
-        if not isinstance(loop, (ast.While, ast.For, ast.AsyncFor)):
-            continue
-        inside = list(ast.walk(loop))
-        if not any(isinstance(node, ast.Call) and _called(node) == "sleep" for node in inside):
-            continue
-        stops = any(
-            isinstance(node, (ast.Break, ast.Return)) or (isinstance(node, ast.Call) and _called(node) in ("exit", "_exit", "quit"))
-            for node in inside
-        )
-        if not isinstance(loop, ast.While) and not (stops or _tries(loop.iter)):
-            continue
-        text = " ".join(node.value for node in inside if isinstance(node, ast.Constant) and isinstance(node.value, str))
-        if ASKS_CI.search(text) or _in_one_command(text, GH_API, CI_ADDRESS).starts:
-            return CI_LOOP
-        if PGREP.search(text):
-            return PGREP_LOOP
-        if task_output:
-            return TASK_OUTPUT_LOOP
-    return None
-
-
 def _task_files(text: str, variables: frozenset[str]) -> list[int]:
     """Początki plików wyjścia zadania w ``text``: wprost i przez odwołanie do zmiennej z ``variables``.
 
@@ -499,7 +433,7 @@ def _task_files(text: str, variables: frozenset[str]) -> list[int]:
 
 def judge(command: str, in_background: bool) -> Optional[Refusal]:
     try:
-        kept, scripts = _heredocs(command)
+        kept = _without_heredocs(command)
         shell, _ = _code(kept)
     except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
         return None
@@ -525,12 +459,6 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
             return PGREP_LOOP
         if task_files.inside(start, end):
             return TASK_OUTPUT_LOOP
-    if not PYTHON_SLEEP.search(command):
-        return None
-    for script, arguments in scripts:
-        refusal = _python_wait(script, bool(_task_files(f"{script}\n{arguments}", variables)))
-        if refusal is not None:
-            return refusal
     return None
 
 
