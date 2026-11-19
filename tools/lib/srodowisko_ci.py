@@ -125,9 +125,10 @@ def variables() -> dict[str, str]:
 @contextmanager
 def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterator[Environment]:
     """Środowisko Required CI dla HEAD PR ``head`` scalonego z ``target`` (baza PR; dla PR już scalonego ``main`` sprzed
-    jego merge'a), w repozytorium ``root``; znika z końcem bloku. Z ``tests`` to środowisko toru Linux zadania
-    ``PYTEST_JOB``: odmawia też drzewa z różnicą ``pytest_mismatch``, a narzędzia dostają zmienne ``PYTEST_VARIABLES``
-    i ``TMPDIR`` tego środowiska, więc bieg testów w nowym środowisku nie widzi śladów poprzedniego."""
+    jego merge'a), w repozytorium ``root``; znika z końcem bloku. Narzędzia dostają ``HOME`` i ``TMPDIR`` tego
+    środowiska, jedyne miejsca obok kopii, w których piaskownica dowodu (``straznik``) pozwala biegowi pisać. Z ``tests``
+    to środowisko toru Linux zadania ``PYTEST_JOB``: odmawia też drzewa z różnicą ``pytest_mismatch``, a narzędzia
+    dostają zmienne ``PYTEST_VARIABLES``."""
 
     if sys.platform == "win32":
         raise Refused("środowisko Required CI: dowód strażnika biegnie na Linuksie i macOS, uruchom go tam")
@@ -157,9 +158,9 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
         tools = {name: value for name, value in variables().items() if not name.startswith("XDG_")}
         tools.setdefault("UV_PYTHON_INSTALL_DIR", _built(copy, "uv python dir", (uv, "--no-config", "python", "dir")).strip())
         if tests:
-            (temporary := Path(folder) / "tmp").mkdir()
-            tools |= {**PYTEST_VARIABLES, "TMPDIR": str(temporary)}
-        yield Environment(tree, copy, python, {**tools, "HOME": str(home)})
+            tools |= PYTEST_VARIABLES
+        (temporary := Path(folder) / "tmp").mkdir()
+        yield Environment(tree, copy, python, {**tools, "HOME": str(home), "TMPDIR": str(temporary)})
 
 
 def _checkout(root: Path, commit: str, copy: Path) -> None:
