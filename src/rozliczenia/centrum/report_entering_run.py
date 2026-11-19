@@ -1,29 +1,3 @@
-"""Wpisanie raportów z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień Centrum i start (ADR 0028).
-
-INTERMAX to Rejestr zleceń z Ustawień Centrum, folder okresów też z nich (okres z Plikiem zbiorczym jest dla Wpisania
-raportów zamknięty), Lista Wykonawców z migawki Ustawień Centrum, a
-Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``). Proces nie należy do okresu: okres
-Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019), więc Logi Uruchomienia
-trafiają do Skrzynki Zgłoszeń przy tym okresie. Start biegnie w miejscu „jedno naraz” ``RunHost``, więc nie zaczyna się
-w czasie innego Uruchomienia, Aktualizacji narzędzia ani przywracania Kopii INTERMAX.
-
-Bez pliku dostępu do skrzynki raportów karta mówi, że go brakuje, a bez adresu żadnego Wykonawcy na Liście Wykonawców,
-że trzeba je dopisać; start jest wtedy odrzucony. Kopię konfliktu OneDrive obok INTERMAX karta pokazuje z instrukcją i blokuje przycisk, a kliknięcie ze
-starej karty kończy się Zatrzymaniem „dla taty” z tą samą instrukcją, zanim proces przeczyta skrzynkę.
-
-Widok Raporty pokazuje wynik ostatniego udanego kliknięcia z pliku wyniku, bez czytania skrzynki, dla całego okna tego
-kliknięcia: każdy dzień z nazwą święta (``public_holidays``), a przy każdym Wykonawcy jego dni z liczbami, problemami,
-informacjami o Przeniesieniach zleceń i zleceniami dnia. Problemy łączy przy odczycie z decyzjami „Zostaw moją”:
-różnica, przy której tata kliknął „Zostaw moją” z tą samą treścią Wpisu, znika z widoku od razu, także gdy wynik
-pochodzi z kliknięcia sprzed decyzji, a jej zlecenie jest wtedy wpisane. „Zostaw moją” zapisuje decyzję w pliku decyzji,
-nigdy w INTERMAX, i tylko przy różnicy z wyniku ostatniego kliknięcia.
-
-Wpis na życzenie (ADR 0041) startuje tylko przy Wpisie, który wynik ostatniego kliknięcia ma z przyciskiem: jedno
-Uruchomienie Wpisania raportów z decyzją taty na wejściu (``ReportEnteringParts.requested``) i chwilą kliknięcia z
-zegara Centrum. Przy INTERMAX otwartym w Excelu i w czasie innego Uruchomienia odmawia jednym zdaniem, zanim cokolwiek
-zapisze.
-"""
-
 from __future__ import annotations
 
 from collections import defaultdict
@@ -87,20 +61,10 @@ _KIND: Final = declaration_of("report_entering")
 _UNREADABLE: Final[dict[int | str, dict[str, object]]] = {500: {"model": common_contract.Problem}}
 _VIEW: Final = _KIND.view
 _SETTINGS: Final[tuple[NeededSetting, ...]] = (*_KIND.settings, PERIODS_DIRECTORY)
-"""Ustawienia, bez których kliknięcie nie startuje: INTERMAX i folder okresów. Folder okresów nie jest w
-``KIND.settings``, bo tam znaczy, że proces należy do okresu i czyta jego pliki (Diagnoza Folderu okresu)."""
 
 
 @dataclass(frozen=True)
 class ReportEnteringEntry:
-    """Adapter startu Wpisania raportów: katalog procesów i zależności procesu od Centrum.
-
-    ``parts``: zegar procesu, przerwa ponownej próby podmiany INTERMAX, kroki podmiany na dysku, Skrzynka raportów i
-    pamięć własnych wpisów. ``contexts``: Kontekst Uruchomienia pracy Centrum. ``files``: pliki Wpisania raportów w
-    ``config``, z których widok Raporty czyta wynik i decyzje, a „Zostaw moją” zapisuje decyzję. ``reminders``: wynik
-    ostatniego sprawdzenia pracy Przypomnień o raporcie (ADR 0030).
-    """
-
     settings: CentrumSettings
     catalog: Catalog
     parts: HostParts
@@ -113,8 +77,6 @@ class ReportEnteringEntry:
         return "report_entering"
 
     def setup(self, last: runs_contract.RunRestored | None) -> report_entering_contract.ReportEnteringSetup:
-        """Stan przycisku na ekranie Raporty przed kliknięciem z ostatnim Wpisaniem raportów ``last`` z Logów Uruchomienia."""
-
         snapshot = self.settings.snapshot()
         chosen = _chosen(snapshot)
         register = None if isinstance(chosen, refusal.Refusal) else chosen["register"]
@@ -126,10 +88,6 @@ class ReportEnteringEntry:
         )
 
     def prepare(self, requested: RequestedEntry | None = None) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień Centrum, z decyzją taty Wpisu na życzenie ``requested`` (``None``:
-        „Wpisz raporty z maili”); ``Refusal``, gdy INTERMAX albo folder okresów nie jest wskazany, pliku Folderów nie da
-        się teraz przeczytać albo Wpis na życzenie zastałby INTERMAX otwarty w Excelu."""
-
         snapshot = self.settings.snapshot()
         chosen = _chosen(snapshot)
         if isinstance(chosen, refusal.Refusal):
@@ -148,12 +106,6 @@ class ReportEnteringEntry:
         return self.catalog.prepared(self.key, start, parts, self.contexts.new())
 
     def view(self) -> report_entering_contract.ReportsView:
-        """Widok Raporty całego okna z wyniku ostatniego kliknięcia i decyzji „Zostaw moją”, z Przypomnieniami o raporcie
-        z ostatniego sprawdzenia ich pracy i nieznanymi nadawcami przypisanymi od tamtej pory na bieżącej Liście
-        Wykonawców (przy złej liście ostatniej dobrej). Listę bez odczytu widok liczy jak pustą, bo raporty i
-        przypomnienia ma z pamięci Wpisania, a nie z listy: nieznany nadawca zostaje wtedy nieznanym jak w wyniku
-        kliknięcia, a przypisanie go odmawia jak każdy zapis listy bez odczytu."""
-
         workers = self.settings.snapshot().workers.counted_or_unreadable()
         listed = workers if isinstance(workers, WorkerList) else WorkerList(())
         try:
@@ -162,8 +114,6 @@ class ReportEnteringEntry:
             raise refusal.reports_unreadable() from error
 
     def keep(self, cell: report_entering_contract.KeptCell) -> report_entering_contract.ReportsView:
-        """„Zostaw moją” przy różnicy ``cell`` z wyniku ostatniego kliknięcia; cały widok Raporty bez tej różnicy."""
-
         kept = Kept(
             OrderKey(OrderNumber(cell.number), cell.day, Login(cell.worker)), ReportColumn(cell.column), cell.reported
         )
@@ -177,11 +127,6 @@ class ReportEnteringEntry:
         return self.view()
 
     def on_request(self, cell: report_entering_contract.RequestedCell) -> PreparedRun[Any, Any]:
-        """Wpis na życzenie przy Wpisie ``cell`` z wyniku ostatniego kliknięcia: Uruchomienie Wpisania raportów z decyzją
-        taty z oferty wyniku o tożsamości komórki (``Offer.token``) i z chwilą kliknięcia; ``Refusal``, gdy wynik nie ma
-        tej oferty albo komórka ma inny dzień zlecenia po Wpisie (``order_day`` jest poza tożsamością, a komórka
-        przycisku go pokazuje)."""
-
         clicked = Offer(
             MailId(cell.mail),
             Login(cell.worker),
@@ -201,8 +146,6 @@ class ReportEnteringEntry:
         return self.prepare(offer.decide(self.parts.now()))
 
     def _missing(self) -> list[refusal.ReportEnteringFile]:
-        """Pliki w ``config``, których nie ma: bez nich kliknięcie i tak by się nie udało."""
-
         missing: list[refusal.ReportEnteringFile] = []
         if self.parts.report_entering().inbox.access() == "missing":
             missing.append("inbox_access")
@@ -214,14 +157,10 @@ class ReportEnteringEntry:
 
 
 def _chosen(snapshot: SettingsSnapshot) -> dict[SettingField, Path] | refusal.Refusal:
-    """Ścieżki kliknięcia z Ustawień Centrum albo odmowa startu (``chosen_settings``)."""
-
     return chosen_settings(snapshot, _SETTINGS, _KIND.needs)
 
 
 def _no_addresses(workers: WorkerListRead) -> str | None:
-    """Blokada karty, gdy na dobrej Liście Wykonawców nikt nie ma adresu; złą listę karta zostawia odmowie startu."""
-
     if workers.problem() is None and not workers.counted().addresses().logins:
         return refusal.report_entering_without_addresses().message
     return None
@@ -239,19 +178,6 @@ def _conflict(register: Path | None) -> str | None:
 def _view(
     shown: ShownResult | None, kept: frozenset[Kept], today: date, reminders: ShownReminders, addresses: WorkerAddresses
 ) -> report_entering_contract.ReportsView:
-    """Całe okno wyniku ``shown`` bez różnic, przy których tata kliknął „Zostaw moją” (``kept``): dni otwarte ostatniego
-    kliknięcia i dziś od najstarszego, Wykonawcy alfabetycznie z dniami, które mają liczby, problem albo informację. Chwila
-    kliknięcia jest w UTC, jak każda chwila kontraktu, a przeglądarka pokazuje ją w czasie komputera taty. Nieznany
-    nadawca, którego adres ma teraz Wykonawca z ``addresses`` (tata przypisał go po kliknięciu), ma jego login.
-
-    Przy dniu Wykonawcy stoją chwile Przypomnień o raporcie za ten dzień z ``reminders``. Przypomnienie za dzień, którego
-    Wykonawca nie ma w wyniku kliknięcia, nie tworzy dnia, bo kafelek bez wyniku nie ma okienka.
-
-    Raport z błędem tematu stoi w swoim dniu z każdym Wpisem na życzenie swojego maila przy zleceniach, a w dniu
-    Wykonawcy, który ma zlecenie z takim Wpisem, a nie jest tym dniem (Przeniesienie do nadawcy albo na dzień z tematu),
-    jeszcze raz, z Wpisami zleceń tego dnia: tata widzi przycisk w kafelku z błędem, a kafelek ze zleceniem nie jest
-    Komplet, dopóki tata nie zdecyduje."""
-
     if shown is None:
         return report_entering_contract.ReportsView(
             clicked_at=None,
@@ -307,8 +233,6 @@ def _view(
 
 @dataclass(frozen=True)
 class _Held:
-    """Wpis na życzenie ``offer`` przy zleceniu, które w wyniku kliknięcia ma Wykonawca ``worker`` w dniu ``day``."""
-
     worker: str
     day: date
     offer: Offer
@@ -316,16 +240,11 @@ class _Held:
 
 @dataclass(frozen=True)
 class _Placed:
-    """Problem w dniu Wykonawcy z Wpisami na życzenie, które pokazuje przy raporcie z błędem tematu (``offers``)."""
-
     problem: ShownProblem
     offers: tuple[_Held, ...]
 
 
 def _held(shown: ShownResult) -> dict[tuple[str, str], tuple[_Held, ...]]:
-    """Wpisy na życzenie przy zleceniach wyniku po skrócie maila i Wykonawcy, który go przysłał (Message-ID ustawia
-    nadawca), z miejscem zlecenia, w kolejności dni i zleceń."""
-
     held: defaultdict[tuple[str, str], list[_Held]] = defaultdict(list)
     for worker in shown.workers:
         for order in worker.orders_detail or ():
@@ -335,15 +254,11 @@ def _held(shown: ShownResult) -> dict[tuple[str, str], tuple[_Held, ...]]:
 
 
 def _assigned(sender: str, addresses: WorkerAddresses) -> str | None:
-    """Login Wykonawcy, który ma teraz adres nieznanego nadawcy ``sender`` z wyniku kliknięcia; ``None``: nikt."""
-
     address = SenderAddress.of(sender)
     return None if address is None else addresses.logins.get(address)
 
 
 def _days(days: set[date]) -> list[report_entering_contract.ReportsDay]:
-    """Dni od najstarszego, każdy z nazwą polskiego święta albo ``None``."""
-
     holidays = {found: name for year in {day.year for day in days} for found, name in public_holidays(year).items()}
     return [report_entering_contract.ReportsDay(day=day, holiday=holidays.get(day)) for day in sorted(days)]
 
@@ -356,11 +271,6 @@ def _worker_day(
     detailed: bool,
     reminders: tuple[datetime, ...],
 ) -> report_entering_contract.ReportsWorkerDay:
-    """Dzień Wykonawcy z liczbami ``figure`` (``None``: dzień z samym problemem albo informacją, zera, bez dni z tematu
-    raportów z pomylonym tematem i bez raportów z błędem tematu, z których nie ma czego wpisać), problemami
-    ``problems``, informacjami ``notes`` i chwilami Przypomnień o raporcie
-    ``reminders``; stan zlecenia daje ``OrderState.of`` z numerów problemów dnia."""
-
     numbers = {placed.problem.number for placed in problems}
     orders = () if figure is None else figure.orders_detail
     if figure is None and not detailed:
@@ -443,8 +353,6 @@ def _requested_cell(offer: Offer) -> report_entering_contract.RequestedCell:
 
 
 def conflict_note(copy: Path) -> str:
-    """Zdanie ekranu Raporty o kopii konfliktu OneDrive ``copy`` obok INTERMAX: tata usuwa ją, zanim kliknie."""
-
     return f"Obok INTERMAX leży kopia konfliktu OneDrive {copy.name}. {messages.CONFLICT_ACTION} Potem odśwież kartę."
 
 

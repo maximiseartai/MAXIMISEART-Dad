@@ -112,7 +112,7 @@ def offers_update(judgement: Judgement) -> bool:
 _CANDIDATES: Final = 5
 """Tyle najwyższych Wydań sprawdza się po kolei, zanim jedno leży na ``main``; dalej wynik jest nieznany."""
 _PAGE_BYTES: Final = 1_000_000
-_TIMEOUT_S: Final = 3.0
+RELEASES_TIMEOUT_S: Final = 3.0
 
 
 @dataclass(frozen=True)
@@ -234,7 +234,7 @@ def github_releases(key: KeySource, api: str) -> AnswerSource:
     """
 
     line: dict[str, bool] = {}
-    return lambda: releases_from(api, timeout_s=_TIMEOUT_S, known=line, token=key())
+    return lambda: releases_from(api, timeout_s=RELEASES_TIMEOUT_S, known=line, token=key())
 
 
 def releases_from(
@@ -384,7 +384,7 @@ def github_published(token: str | None = None) -> tuple[PublishedRelease, ...] |
     """Opublikowane Wydania publicznego repozytorium, pytane z tokenem ``token``, gdy jest; ``None`` bez sieci, po
     limicie czasu, przy odmowie."""
 
-    return published_from(TOOL_API, timeout_s=_TIMEOUT_S, token=token)
+    return published_from(TOOL_API, timeout_s=RELEASES_TIMEOUT_S, token=token)
 
 
 def published_from(api: str, *, timeout_s: float, token: str | None = None) -> tuple[PublishedRelease, ...] | None:
