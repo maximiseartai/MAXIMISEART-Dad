@@ -278,8 +278,8 @@ MUTATIONS = (
         (
             Edit(
                 REPORT_REMINDERS,
-                "        closed = closed_periods(settings.periods_directory, Window.periods(today, since))\n",
-                "        closed = ()\n",
+                "            now.date(), lambda periods: closed_periods(periods_directory, periods), reminders_since=rollout\n",
+                "            now.date(), lambda periods: (), reminders_since=rollout\n",
             ),
         ),
         EXPLORER,

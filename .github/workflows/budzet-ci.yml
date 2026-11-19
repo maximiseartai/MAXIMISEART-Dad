@@ -1,0 +1,69 @@
+name: Budżet CI
+
+# Every day at 5:23 UTC the budget guard of the PR gate (tools/budzet_ci.py) checks D2 of 19.11 (ADR 0020: p90 <= 5 min
+# from push to Required CI status, and exceeding it opens an issue naming the bottleneck). It measures the first attempt
+# of every PR run of the last 7 full UTC days (the guard author's choice, ADR 0020) and opens, updates or closes the one
+# issue with the label budzet-ci. Minute 23, not the full hour: GitHub delays scheduled runs at the start of an hour and
+# drops some under high load. The guard's memory (pamiec.json: the PR runs of each closed day and the record of each
+# measured run, czasy-ci/) travels between runs in actions/cache, so a run asks the API only for the days and runs it
+# lacks (about 160 requests on a day of 147 PR runs). It stops fetching at --limit-zapytan, below the 1000 requests an
+# hour of GITHUB_TOKEN that it shares with ci.yml, or after 15 min (--limit-czasu, half of timeout-minutes), and then
+# counts the window from what it has and says so in the issue; the docstring of the tool gives the cost of each part.
+on:
+  schedule:
+    - cron: '23 5 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  # Two runs at once could both miss the issue and both open one; a later run waits.
+  group: budzet-ci
+  cancel-in-progress: false
+
+jobs:
+  budzet:
+    name: Budżet CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # contents: read checks out main and fetches the PR heads, whose files give the class of change; actions: read lists
+    # the runs of ci.yml, their jobs and their artifacts plan and czasy-ci; issues: write opens, edits and closes the issue
+    # and creates its label.
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      # The guard and everything it imports use only the standard library, so no dependencies are installed.
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      # Caches are immutable, so each run saves under its own key and the next one restores the newest by prefix.
+      - name: Restore the guard's memory
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .budzet-ci
+          key: budzet-ci-${{ github.run_id }}
+          restore-keys: budzet-ci-
+
+      - name: Measure the budget of the PR gate and update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: python tools/budzet_ci.py --katalog .budzet-ci
+
+      # Also after a red or cancelled step (timeout-minutes cancels the job): the guard writes its memory to disk at the
+      # end and at least once a minute while fetching, so the next run does not ask again for the runs measured so far.
+      - name: Save the guard's memory
+        if: ${{ always() }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .budzet-ci
+          key: budzet-ci-${{ github.run_id }}

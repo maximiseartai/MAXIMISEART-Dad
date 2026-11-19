@@ -47,7 +47,6 @@ from rozliczenia.centrum.settings.owner import (
     QuantityRulesView,
     Refused,
     Saved,
-    UnreadableFile,
 )
 from rozliczenia.centrum.settings.quantity_rules import (
     DEVICES_SECTION,
@@ -221,8 +220,8 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
         rules = settings.quantity_rules().rules_or_unreadable
         folders = settings.folders_or_unreadable()
-        directory = None if isinstance(folders, UnreadableFile) else folders.periods_directory_to_read
-        if directory is None or isinstance(rules, UnreadableFile):
+        directory = None if isinstance(folders, Unreadable) else folders.periods_directory_to_read
+        if directory is None or isinstance(rules, Unreadable):
             return contract.DeviceSuggestions(suggestions=[], unread=[])
         return device_suggestions(rules, recent.read(directory))
 

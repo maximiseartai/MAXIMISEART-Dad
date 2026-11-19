@@ -24,6 +24,7 @@ Symulacja na merge'ach i zadaniach organizacji z 2–12.11 (runy `main` po kolei
 Czasu, w którym organizacja chciałaby więcej niż 60 zadań naraz, przybywa wobec 20 o 9 min w 11 dniach przy 25, 56 przy 30 i 96 przy 40, a zadanie `ci.yml` utworzone, gdy biegło 40–59 zadań, czekało w kolejce p50 13–22 s.
 25 daje połowę skrócenia, które dałoby 40, przy jednej dziesiątej dodatkowej kolejki, a powyżej 25 każde zadanie skraca cel coraz mniej (20 → 25: 27 s na zadanie, 25 → 30: 13 s, 30 → 40: 7,5 s).
 Zmieniona 19.11 (D1, decyzja Maksa): podstawa `ci:` skilla biegnie na PR tylko wtedy, gdy PR zmienia folder skilla, a push do `main` i noc się nie zmieniają; wariant bez kroków skilli na PR (N0) biegnie w cieniu do rozstrzygnięcia regułą zapisaną przed włączeniem (sekcja „Podstawy skilli na PR (D1)”, #2169).
+Zmieniona 19.11 (D2, decyzja Maksa): budżet bramki PR to p90 ≤ 5 min od pushu do `Required CI status`, a jego przekroczenie automatycznie zakłada issue z wąskim gardłem (poziom 2 niżej, razem ze sposobem pomiaru, który wybrał autor strażnika).
 
 ## Kontekst
 
@@ -51,6 +52,11 @@ CI ma cztery poziomy:
    Zmiana `.github/workflows/**` wybiera wszystko.
    Podstawa skilla `verify-*` biegnie, gdy zmiana trafia w jego `pilnuje:` (od 19.11 tylko gdy PR zmienia folder skilla, D1), a jego skrypty mutacji, gdy zmienił się folder skilla.
    Change mutations nie blokuje werdyktu CI. Biegnie po zadaniach bramki, jedna mutacja na zmienioną linię, a każdą przeżytą recenzent omawia w werdykcie.
+   Bramka ma budżet czasu (D2, 19.11, decyzja Maksa): p90 ≤ 5 min od pushu do `Required CI status`, a przekroczenie automatycznie zakłada issue z wąskim gardłem.
+   Sposób pomiaru wybrał autor strażnika (#2171), nie D2, więc agent może go zmienić bez Maksa: p90 liczy pierwszą próbę każdego runu PR, bo tak liczy cel „każdy PR” z `tools/pomiar_ci.py` (jedna definicja czasu bramki), a ponowienie to nowa próba po werdykcie bramki, którą issue pokazuje obok p90.
+   Okno to 7 pełnych dni UTC przed dniem biegu: lista runów pełnego dnia już się nie zmienia, więc strażnik pobiera ją raz, a tydzień obejmuje każdy dzień tygodnia, więc p90 nie skacze z ruchem weekendu ani z jedną złą godziną (984 runy PR w 11–17.11 wobec około 150 jednego dnia).
+   Pilnuje go codziennie strażnik budżetu (`tools/budzet_ci.py`, workflow `budzet-ci.yml`): przy przekroczeniu zakłada albo zmienia jedno issue z etykietą `budzet-ci`, które nazywa wąskie gardło, czyli odcinek ścieżki krytycznej o największym wkładzie do p90, a gdy p90 wróci do budżetu, komentuje liczby okna i zamyka issue.
+   Otwarte issue to praca agenta: zoptymalizować bramkę z powrotem do budżetu, od wąskiego gardła.
    `tools/scal_pr.py` nie scala PR, którego `PASS` nie omawia przeżytych mutacji.
 3. **Pełne CI `main`.** Zestaw, który przed tym ADR biegł na pushu do `main`: wszystkie testy na dwóch torach (od 13.11, Z2: Windows 3.13 i Linux 3.14), E2E i straż czasu na Windows 3.13 oraz podstawy `ci:` wszystkich skilli; skrypty mutacji skilli od 13.11 tylko nocą (ADR 0021).
    Change mutations mutuje zmienione linie PR, więc na `main` nie biegnie.
@@ -135,6 +141,7 @@ Maks zgodził się 26.10 na takie wpisy z góry, więc nie wymagają osobnej zgo
   W symulacji tego kształtu (nieblokujące Change mutations, trwający run `main` się kończy) p50 to 19,3 min i p90 46,3 min przy 20 zadaniach naraz, a 6,3 i 11,0 min przy 40.
 - Dalsze skracanie bramki to przyspieszanie samych testów, nie zdejmowanie ich z bramki.
   Wyjątkiem jest D1: podstawa skilla przy zmianie tylko w `pilnuje:` biegnie od 19.11 na `main`, więc defekt, który łapie tylko ona, pokazuje dopiero pełne CI `main` (w 11–18.11 dwa takie defekty w 8 dni).
+- Przekroczenie budżetu bramki widać bez ręcznego pomiaru: issue `budzet-ci` stoi otwarte, dopóki p90 okna nie wróci do 5 min, a jego treść mówi, który odcinek i które jednostki skrócić.
 
 ## Odrzucone warianty
 

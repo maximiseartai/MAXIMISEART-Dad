@@ -6,6 +6,7 @@ pilnuje:
   - src/rozliczenia/file_state.py
   - src/rozliczenia/report_entering.py
   - src/rozliczenia/worker_reports/_model.py
+  - src/rozliczenia/worker_reports/_memory.py
   - src/rozliczenia/quantities_to_fill.py
   - src/rozliczenia/tool_entry.py
   - src/rozliczenia/preparation_files.py
@@ -81,7 +82,8 @@ raporcie, and `input_checks.check_preparation` and
 Run it when a diff changes how any of them reads the Folder okresu or decides from it: `PeriodFolderObservation`,
 `PeriodFolder.observe`, `_listing`, `_exists` and `reading` in `period_folder.py`, `path_taken` and `file_state` in
 `file_state.py`, `closed_periods` and `read` in `report_entering.py`, the call of `closed_periods` in
-`due_reminders` (`centrum/report_reminders.py`), `Window` in `worker_reports/_model.py`, `read` and
+`due_reminders` (`centrum/report_reminders.py`), `EnteringMemory.window` in `worker_reports/_memory.py`, which turns
+the closed tokens into the window of both, `Window` in `worker_reports/_model.py`, `read` and
 the `settled` calls in `centrum/filling.py`, `_settled` in `centrum/quantity_rules_preview.py`, `listed` in `centrum/quantity_differences.py`, `_steps`, `_path` and `read_board` in `centrum/period_board.py`, `_recent_choice` and the
 `ByStatus` and `RecentWeeks` choosers, `ensure_period_files_absent`, `ensure_worker_settlements_absent`, and the order
 of checks in `check_preparation` and `check_settlement`.

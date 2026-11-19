@@ -305,20 +305,6 @@ def _reviewed(node: dict[str, Any], deployed: datetime, limit: datetime | None) 
     return Reviewed(pull.number, merged, max(passes, default=None), tuple(sorted(found, key=_order)), idioms, _moment(node["createdAt"]), files, limited)
 
 
-def create_labels(api: github.GhApi, names: Sequence[str], prefix: str, *, write: bool) -> list[str]:
-    """Zakłada etykiety ``names`` (z ``LABELS``), których repozytorium jeszcze nie ma; bez ``write`` tylko podaje,
-    co by założył. Linia ``<prefix> | …`` na każdą."""
-
-    present = {str(label["name"]) for label in github.strony(api, f"{github.REPO}/labels")}
-    lines = []
-    for name in (name for name in names if name not in present):
-        if write:
-            color, description = LABELS[name]
-            api.wyslij("POST", f"{github.REPO}/labels", {"name": name, "color": color, "description": description})
-        lines.append(f"{prefix} | założona etykieta {name}" if write else f"{prefix} | bez zapisu: załóż etykietę {name}")
-    return lines
-
-
 def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:
     """PR-y ``repository`` zmienione od ``deployed`` w kolejności założenia, każdy raz: strona to wyszukiwanie od chwili
     założenia ostatniego PR poprzedniej strony, więc zmiana PR w trakcie skanu nie przesuwa stron."""

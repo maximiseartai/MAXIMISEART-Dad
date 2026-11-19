@@ -11,7 +11,9 @@ pobiera tylko dla wybranych, więc treści innej korespondencji taty nie czyta; 
 bo nie znajduje tematu z literówką (``Rapotr``). Mail, którego nie umie przeczytać, pomija i tylko liczy, więc jeden
 zepsuty mail z zewnątrz nie zatrzymuje odczytu skrzynki. Treści załączników nie pobiera: z serwera bierze szkielet
 maila (``mail_skeleton``), z którego ``mail_of`` czyta to samo co z całego maila, a cały mail tylko wtedy, gdy
-szkieletu nie da się złożyć.
+szkieletu nie da się złożyć. Mail z poprzedniego odczytu tego samego folderu (ten sam UID przy tym samym
+``UIDVALIDITY``) port bierze z pamięci odczytu (``_ReadMails``), więc kolejny ``mails_since`` pyta serwer tylko o maile
+spoza poprzedniego wyszukiwania, a oddaje to samo co odczyt od zera.
 
 Adres i hasło aplikacji Google leżą w ``config/skrzynka-raportow.txt`` poza Gitem (linia 1 adres, linia 2 hasło). Plik
 czyta i zmienia tylko właściciel Ustawień Centrum (``rozliczenia.centrum.settings.inbox``), a port dostaje od niego
@@ -63,6 +65,7 @@ import imaplib
 import re
 import smtplib
 import ssl
+import threading
 import time
 from typing import Final, Literal, Protocol, TypeVar
 
@@ -308,6 +311,7 @@ class ImapInbox:
         self._access = access
         self._connect = connect or _gmail
         self._smtp = smtp
+        self._read_mails = _ReadMails()
 
     def access(self) -> InboxAccess:
         found = self._access()
@@ -326,7 +330,7 @@ class ImapInbox:
                 return "accepted"
 
     def mails_since(self, day: date) -> InboxOutcome:
-        return self._session(lambda imap, access: _read(imap, access, day))
+        return self._session(lambda imap, access: _read(imap, access, day, self._read_mails))
 
     def sent_reminders(self, day: date) -> SentReminders | PasswordRejected | InboxUnreachable:
         return self._session(lambda imap, access: _sent(imap, access, day))
@@ -408,32 +412,92 @@ def _ok(reply: tuple[str, Sequence[object]]) -> Sequence[object]:
     return data
 
 
-def _read(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> Mails:
+@dataclass(frozen=True)
+class _Folder:
+    """Folder skrzynki, w którym UID wskazuje zawsze ten sam, niezmienny mail: adres skrzynki, nazwa folderu i jego
+    ``UIDVALIDITY`` (RFC 3501, 2.3.1.1)."""
+
+    address: SenderAddress
+    name: str
+    validity: bytes
+
+
+_NOT_REPORT: Final = "not_report"
+_SKIPPED: Final = "skipped"
+_MailRead = ReportMail | Literal["not_report", "skipped"]
+"""Co odczyt wie o jednym mailu: ``ReportMail``, mail bez tematu Raportu wykonawcy albo od samej skrzynki
+(``not_report``) albo mail z takim tematem, którego ``mail_of`` nie umie przeczytać (``skipped``)."""
+
+
+class _ReadMails:
+    """Odczyt każdego maila z ostatniego ``mails_since`` jednego folderu, po UID. UID z ``UIDVALIDITY`` wskazuje zawsze
+    te same bajty maila, a ``mail_of`` i wybór maila zależą tylko od nich i adresu skrzynki, więc następny odczyt tego
+    folderu pobiera z serwera tylko maile, których tu nie ma, i oddaje ten sam wynik co odczyt od zera. Trzyma tylko
+    maile ostatniego wyszukiwania, w pamięci procesu, nigdy na dysku; sesje z różnych wątków (Wpisanie raportów,
+    Przypomnienia o raporcie) czytają i podmieniają go pod zamkiem."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._folder: _Folder | None = None
+        self._read: dict[str, _MailRead] = {}
+
+    def known(self, folder: _Folder | None) -> dict[str, _MailRead]:
+        with self._lock:
+            return dict(self._read) if folder is not None and folder == self._folder else {}
+
+    def keep(self, folder: _Folder | None, read: dict[str, _MailRead]) -> None:
+        if folder is None:
+            return
+        with self._lock:
+            self._folder, self._read = folder, read
+
+
+def _read(imap: imaplib.IMAP4, access: InboxCredentials, day: date, memo: _ReadMails) -> Mails:
     imap.login(_quoted(access.address.shown()), access.password)
-    _ok(imap.select(_quoted(_folder(imap)), readonly=True))
-    chosen = _chosen(imap, _since(imap, day), access.address)
-    mails, skipped = [], 0
-    for prefix, raw in _mail_bytes(imap, chosen).values():
-        moment = imaplib.Internaldate2tuple(prefix)
-        if moment is None:
-            raise UnexpectedReply
-        arrived = datetime.fromtimestamp(time.mktime(moment), tz=timezone.utc).astimezone()
-        mail = mail_of(raw, arrived)
-        if mail is None:
-            skipped += 1
-        else:
-            mails.append(mail)
-    return Mails(tuple(mails), skipped)
+    name = _folder(imap)
+    _ok(imap.select(_quoted(name), readonly=True))
+    folder = _opened(imap, access.address, name)
+    uids = _since(imap, day)
+    read = memo.known(folder)
+    unknown = [uid for uid in uids if uid not in read]
+    choices = _choices(imap, unknown, access.address)
+    fetched = _mail_bytes(imap, [uid for uid in unknown if choices.get(uid)])
+    for uid in unknown:
+        if choices.get(uid) is False:
+            read[uid] = _NOT_REPORT
+        elif uid in fetched:
+            prefix, raw = fetched[uid]
+            read[uid] = mail_of(raw, _arrived(prefix)) or _SKIPPED
+    current = {uid: read[uid] for uid in uids if uid in read}
+    memo.keep(folder, current)
+    mails = tuple(mail for mail in current.values() if isinstance(mail, ReportMail))
+    return Mails(mails, sum(1 for mail in current.values() if mail == _SKIPPED))
 
 
-def _chosen(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> list[str]:
-    """UID z ``uids`` maili, które port czyta: z tematem Raportu wykonawcy (``reads_as_report``) i nie od samej skrzynki
-    ``own`` (jej Przypomnień o raporcie i odpowiedzi taty), z samych nagłówków ``Subject`` i ``From``. Mail z
+def _opened(imap: imaplib.IMAP4, address: SenderAddress, name: str) -> _Folder | None:
+    """Folder otwarty przez ``EXAMINE`` z jego ``UIDVALIDITY``; ``None``, gdy serwer go nie podał: wtedy port nie wie,
+    czy UID wskazuje ten sam mail co w poprzedniej sesji, i czyta każdy mail od zera."""
+
+    _, data = imap.response("UIDVALIDITY")
+    validity = data[0] if data and isinstance(data[0], bytes) else None
+    return None if validity is None else _Folder(address, name, validity)
+
+
+def _arrived(prefix: bytes) -> datetime:
+    moment = imaplib.Internaldate2tuple(prefix)
+    if moment is None:
+        raise UnexpectedReply
+    return datetime.fromtimestamp(time.mktime(moment), tz=timezone.utc).astimezone()
+
+
+def _choices(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dict[str, bool]:
+    """UID z ``uids``, o którego nagłówki ``Subject`` i ``From`` serwer odpowiedział → czy port czyta ten mail: z tematem
+    Raportu wykonawcy (``reads_as_report``) i nie od samej skrzynki ``own`` (jej Przypomnień o raporcie i odpowiedzi
+    taty). UID bez odpowiedzi nie ma, więc port nie wie o nim nic i pyta o niego przy następnym odczycie. Mail z
     nagłówkami, których pakiet ``email`` nie umie rozebrać (wyjątek albo defekt, np. sam ``\r`` w ``From``, po którym
     ``Subject`` staje się treścią), port wybiera, a ``mail_of`` czyta go albo liczy jako pominięty."""
 
-    headers = _fetched(imap, uids, _CHOICE_ITEMS)
-    return [uid for uid, (_, header) in headers.items() if _reads(header, own)]
+    return {uid: _reads(header, own) for uid, (_, header) in _fetched(imap, uids, _CHOICE_ITEMS).items()}
 
 
 def _reads(header: bytes, own: SenderAddress) -> bool:
@@ -575,11 +639,11 @@ def _survey(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> InboxSu
     _ok(imap.select(_quoted(folder), readonly=True))
     uids = _since(imap, day)
     flags = _flags(imap, uids)
-    in_folder = len(_chosen(imap, uids, access.address))
+    in_folder = sum(_choices(imap, uids, access.address).values())
     if folder == "INBOX":
         return InboxSurvey(len(uids), flags, in_folder, in_folder)
     _ok(imap.select(_quoted("INBOX"), readonly=True))
-    return InboxSurvey(len(uids), flags, in_folder, len(_chosen(imap, _since(imap, day), access.address)))
+    return InboxSurvey(len(uids), flags, in_folder, sum(_choices(imap, _since(imap, day), access.address).values()))
 
 
 def _since(imap: imaplib.IMAP4, day: date) -> list[str]:

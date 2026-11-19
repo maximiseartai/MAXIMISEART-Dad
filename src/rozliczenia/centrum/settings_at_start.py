@@ -19,7 +19,7 @@ from rozliczenia.centrum import diagnosis_messages, refusal
 from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.run_logs import LoggedActivityLegend, LoggedQuantityRules, LoggedWorker
 from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
-from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.message import Message
 from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.worker_list import WorkerList
@@ -81,8 +81,8 @@ class SettingsAtStart:
         return cls(
             snapshot=snapshot,
             workers=_workers_at_start(snapshot.workers) if "workers" in needs else None,
-            quantity_rules=None if isinstance(rules, UnreadableFile) else rules,
-            activity_legend=None if isinstance(legend, UnreadableFile) else legend,
+            quantity_rules=None if isinstance(rules, Unreadable) else rules,
+            activity_legend=None if isinstance(legend, Unreadable) else legend,
             warnings=_start_warnings(snapshot, needs),
         )
 
@@ -126,26 +126,29 @@ class SettingsAtStart:
 
 def unreadable(snapshot: SettingsSnapshot, needs: Collection[str]) -> Refusal | None:
     """Odmowa startu procesu o potrzebach ``needs``: plik Reguł ilości albo Legendy czynności, którym proces liczy,
-    a którego system nie daje teraz czytać, w kolejności ``SettingNeed``; ``None``, gdy każdy da się czytać. Lista
-    Wykonawców bez odczytu nie jest ``UnreadableFile``, więc tu nie odmawia nigdy: start bez niej odrzuca
-    ``SettingsAtStart.of_snapshot``."""
+    a którego system nie daje teraz czytać, w kolejności ``SettingNeed``; ``None``, gdy każdy da się czytać. Listy
+    Wykonawców tu nie sprawdza nigdy: start bez niej, także przy pliku bez odczytu, odrzuca
+    ``SettingsAtStart.of_snapshot`` własnym zdaniem (``refusal.workers_unusable``)."""
 
     for need in _SETTING_NEEDS:
-        if need in needs and isinstance(value := _at_start(snapshot, need), UnreadableFile):
-            return refusal.settings_file_unreadable(value.name)
+        if need in needs and (file := _unreadable_at_start(snapshot, need)) is not None:
+            return refusal.settings_file_unreadable(file.name)
     return None
 
 
-def _at_start(snapshot: SettingsSnapshot, need: SettingNeed) -> object:
-    """Ustawienie ze startu ``need`` z migawki razem z plikiem bez odczytu (pole ``*_or_unreadable``)."""
+def _unreadable_at_start(snapshot: SettingsSnapshot, need: SettingNeed) -> Unreadable | None:
+    """Plik Ustawienia ze startu ``need`` z migawki, którego system nie daje teraz czytać (pole ``*_or_unreadable``);
+    ``None`` dla Listy Wykonawców, bo jej plik bez odczytu odrzuca ``SettingsAtStart.of_snapshot`` (``unreadable``)."""
 
     match need:
         case "workers":
-            return snapshot.workers
+            return None
         case "quantity_rules":
-            return snapshot.quantity_rules_or_unreadable
+            rules = snapshot.quantity_rules_or_unreadable
+            return rules if isinstance(rules, Unreadable) else None
         case "activity_legend":
-            return snapshot.activity_legend_or_unreadable
+            legend = snapshot.activity_legend_or_unreadable
+            return legend if isinstance(legend, Unreadable) else None
         case _:
             assert_never(need)
 

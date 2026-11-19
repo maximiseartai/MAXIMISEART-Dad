@@ -43,7 +43,8 @@ from rozliczenia.run_context import RunContexts
 from rozliczenia.message import Message, StopError
 from rozliczenia.text import short_day_label
 from rozliczenia.centrum.settings.folders import FolderSettings
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.files import Unreadable
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 
 _KIND: Final = declaration_of("intermax")
 _VIEW: Final = _KIND.view
@@ -175,8 +176,8 @@ def _register(settings: SettingsSnapshot) -> Path:
     return _KIND.required_paths(settings)["register"]
 
 
-def _chosen_register(folders: FolderSettings | UnreadableFile) -> Path | None:
-    return None if isinstance(folders, UnreadableFile) else folders.register
+def _chosen_register(folders: FolderSettings | Unreadable) -> Path | None:
+    return None if isinstance(folders, Unreadable) else folders.register
 
 
 def intermax_router(

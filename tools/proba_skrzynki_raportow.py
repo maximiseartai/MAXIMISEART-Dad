@@ -12,7 +12,7 @@ Po kolei:
    ``INBOX``), i liczy maile, które port wybiera do odczytu (z tematem Raportu wykonawcy, nie od samej skrzynki), w
    tym folderze i w ``INBOX`` (``ImapInbox.survey``);
 3. czyta Raporty wykonawców od ``--od`` portem (``mails_since``) i przepuszcza je przez rdzeń raportów
-   (``enter_reports``) bez zleceń INTERMAX, więc każdy Wpis raportu z rozpoznanego Raportu to problem nieznanego numeru,
+   (``EnteringMemory.enter``) bez zleceń INTERMAX i bez pamięci Wpisania, więc każdy Wpis raportu z rozpoznanego Raportu to problem nieznanego numeru,
    a żaden Wpis się nie wpisuje, więc Legenda czynności (z Wydania) nie czyta żadnego opisu;
 4. czyta flagi jeszcze raz i porównuje je z pierwszym odczytem: mail, którego flagi są inne albo którego nie ma w
    drugim odczycie, to mail ze zmienionymi flagami. Port oddaje flagi każdego wyszukanego maila albo błąd
@@ -105,21 +105,22 @@ from rozliczenia.worker_report_inbox import (
     PasswordRejected,
 )
 from rozliczenia.worker_reports import (
+    EnteringMemory,
     Login,
     OrderNumber,
     OwnEntries,
     ReadReport,
     ReadStranger,
     ReadUnreadable,
+    RegisterWindow,
     ReportEntry,
-    ReportInputs,
     ReportMail,
     ReportsOutcome,
+    SavedState,
     Verdict,
     VerdictFault,
     Window,
     WorkerAddresses,
-    enter_reports,
 )
 
 DAYS_BACK: Final = 14
@@ -164,7 +165,7 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
         raise ProbeFailed(_unreachable(read, "odczycie maili"))
     mails = read.mails
     window = Window.of(today, since)
-    outcome = enter_reports(ReportInputs(mails, addresses, (), window, OwnEntries.EMPTY, frozenset(), (), DEFAULT_ACTIVITY_LEGEND))
+    outcome = _read(window, mails, addresses)
     if review is not None:
         review.write(mails, addresses, window)
     after = _survey(inbox, since, "drugim odczycie flag")
@@ -192,6 +193,28 @@ def probe(inbox: ImapInbox, config: Path, since: date, today: date, review: Revi
     ]
     last = f"{FAIL} | {'; '.join(reasons)}" if reasons else f"{OK} | maile={len(mails)} | flagi bez zmian"
     return [*lines, last]
+
+
+@dataclass(frozen=True)
+class _WithoutMemory:
+    """Pamięć Wpisania bez własnych wpisów i decyzji taty, z dniem wdrożenia ``rollout``: próba czyta każdy mail okna,
+    jakby Wpisanie raportów jeszcze niczego nie wpisało."""
+
+    rollout: date
+
+    def load(self) -> SavedState:
+        return SavedState(self.rollout, OwnEntries.EMPTY)
+
+
+_WITHOUT_INTERMAX: Final = RegisterWindow((), frozenset(), ())
+
+
+def _read(window: Window, mails: Sequence[ReportMail], addresses: WorkerAddresses) -> ReportsOutcome:
+    """Wynik rdzenia raportów dla maili ``mails`` w oknie ``window`` bez zleceń INTERMAX i bez pamięci Wpisania, z dniem
+    wdrożenia w pierwszym dniu okna."""
+
+    memory = EnteringMemory(_WithoutMemory(window.rollout))
+    return memory.enter(window, _WITHOUT_INTERMAX, mails, addresses, DEFAULT_ACTIVITY_LEGEND)
 
 
 _WHOLE_TIME: Final = Window(date.max, date.min, frozenset())
@@ -291,9 +314,7 @@ def _worker_reads(
     mails: Sequence[ReportMail], addresses: WorkerAddresses
 ) -> Iterator[tuple[ReportMail, ReadReport | ReadUnreadable]]:
     for mail in mails:
-        outcome = enter_reports(
-            ReportInputs((mail,), addresses, (), _WHOLE_TIME, OwnEntries.EMPTY, frozenset(), (), DEFAULT_ACTIVITY_LEGEND)
-        )
+        outcome = _read(_WHOLE_TIME, (mail,), addresses)
         for found in outcome.mails:
             if isinstance(found, (ReadReport, ReadUnreadable)):
                 yield mail, found

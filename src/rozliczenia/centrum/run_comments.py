@@ -111,7 +111,8 @@ from rozliczenia.centrum.logs_of_run import logged_diagnosis, logs_of
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.run_logs import CentrumLogLines, Environment, LoggedFile, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import guard_logs, guard_text
-from rozliczenia.centrum.settings.owner import SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.files import Unreadable
+from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.template_archive import ArchivedTemplate, TemplateChecks, TemplateRefused
 from rozliczenia.centrum.tool_freshness import CommitSource
@@ -135,7 +136,7 @@ _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
 
 T = TypeVar("T")
 
-ProcessFiles = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Sequence[Path] | UnreadableFile]
+ProcessFiles = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Sequence[Path] | Unreadable]
 """Pliki procesu dla tokenu okresu z migawką Ustawień Centrum ze startu Uruchomienia (``None``: bez migawki, z
 bieżącymi), a przy pliku Folderów bez odczytu ten plik."""
 
@@ -274,7 +275,7 @@ class RecordMaker:
         except (OSError, PeriodFolderInaccessible):
             pass
         else:
-            if isinstance(paths, UnreadableFile):
+            if isinstance(paths, Unreadable):
                 unreadable = paths.name
             else:
                 files = [self._file(path, templates.get(path)) for path in paths]
