@@ -38,11 +38,13 @@ Change = tuple[str, str, str, Keys | None]
 def _repo(path: Path, python: str | None) -> Path:
     files = {
         ".gitattributes": (ROOT / ".gitattributes").read_text(encoding="utf-8"),
-        **SOURCES,
         f"{SKILL}/SKILL.md": "Model.\n",
         DEFINITIONS: json.dumps({name: dict.fromkeys(names, "") for name, names in KEYS.items()}),
     }
     repo = repository(path, files, ("tools/przesun_model.py",))
+    for name, text in SOURCES.items():
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text(text, encoding="utf-8", newline="")
     rozjazd_modelu.przesun(repo / SKILL, repo)
     commit(repo, "baza")
     if python is not None:
