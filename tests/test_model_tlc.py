@@ -47,15 +47,24 @@ ZAPIS = ROOT / "tools" / "ci" / "zapis_narzedzi_tlc.py"
 WORKFLOWS = {"ci.yml": ROOT / ".github" / "workflows" / "ci.yml", "mutacje-nocne.yml": ROOT / ".github" / "workflows" / "mutacje-nocne.yml"}
 PRZYWROCENIE_TLC = "./.github/actions/narzedzia-tlc"
 ZAPIS_TLC = f"{PRZYWROCENIE_TLC}/zapis"
-SKRYPTY_MODELI = (
-    ROOT / ".agents" / "skills" / "verify-kolejka-skrzynki" / "scripts" / "sprawdz_model_kolejki.py",
-    ROOT / ".agents" / "skills" / "verify-urwane-uruchomienie" / "scripts" / "sprawdz_urwane_uruchomienie.py",
-    ROOT / ".agents" / "skills" / "verify-wznowienie-wyceny-efenix" / "scripts" / "sprawdz_wznowienie_wyceny.py",
-    ROOT / ".agents" / "skills" / "verify-aktualizacja-narzedzia" / "scripts" / "sprawdz_aktualizacje.py",
-    ROOT / ".agents" / "skills" / "verify-karta-uruchomienia" / "scripts" / "sprawdz_karte_uruchomienia.py",
-    ROOT / ".agents" / "skills" / "verify-sprawy-taty" / "scripts" / "sprawdz_sprawy_taty.py",
-    ROOT / ".agents" / "skills" / "verify-wpisanie-raportow" / "scripts" / "sprawdz_wpisanie_raportow.py",
-)
+BEZ_AKCJI = frozenset({"verify-aktualizacja-narzedzia", "verify-kolejka-skrzynki"})
+"""Skille, których opowieść kontrprzykładu nie nazywa akcji ``Next`` (``Model.akcje`` ``None``), bo powstały przed tym
+sprawdzeniem; każdy inny skrypt modelu, także nowy, podaje ``akcje``."""
+
+
+def _skrypty_modeli() -> list[Path]:
+    """Skrypt modelu każdego skilla z ``model/*.tla``: moduł z jego ``scripts/``, który buduje ``MODEL = Model(``; lista
+    powstaje z folderów skilli, więc nowy skill z modelem nie czeka na wpis w teście (#2174 r1, W1)."""
+
+    skills = sorted({path.parents[1] for path in (ROOT / ".agents" / "skills").glob("*/model/*.tla")})
+    return [
+        script
+        for skill in skills
+        for script in sorted((skill / "scripts").glob("*.py"))
+        if "\nMODEL = Model(" in script.read_text(encoding="utf-8")
+    ]
+
+
 SPEC = """---- MODULE M ----
 Next ==
     \\/ Pisz \\/ Czytaj
@@ -423,21 +432,16 @@ def test_kazdy_skill_z_modelem_ma_konfiguracje_a_jego_opowiesc_zna_kazda_akcje_n
     """To samo, co skrypt modelu sprawdza przed TLC, bez TLC: konfiguracje się wczytują, a opowieść, która nazywa akcje
     (``akcje``), zna każdą akcję ``Next`` swojej specyfikacji i żadnej innej."""
 
-    models = [skrypt_modelu(script).MODEL for script in SKRYPTY_MODELI]
+    models = [skrypt_modelu(script).MODEL for script in _skrypty_modeli()]
     checked = {}
     for model in models:
         spec = (model.skill / "model" / model.specyfikacja).read_text(encoding="utf-8")
         checked[model.skill.name] = (bool(model_tlc.konfiguracje(model)), model.akcje is None or model.akcje == model_tlc.akcje_next(spec))
 
     assert sorted(model.skill for model in models) == [skill for skill in rozjazd_modelu.skille(ROOT) if any((skill / "model").glob("*.tla"))]
+    assert all(isinstance(model, model_tlc.Model) for model in models)
     assert checked == {name: (True, True) for name in checked}
-    assert {model.skill.name for model in models if model.akcje is not None} == {
-        "verify-karta-uruchomienia",
-        "verify-sprawy-taty",
-        "verify-urwane-uruchomienie",
-        "verify-wpisanie-raportow",
-        "verify-wznowienie-wyceny-efenix",
-    }
+    assert {model.skill.name for model in models if model.akcje is None} == BEZ_AKCJI
 
 
 @pytest.mark.parametrize(
