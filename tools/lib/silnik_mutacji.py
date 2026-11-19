@@ -22,7 +22,8 @@ WYKRYTA: polecenie pada albo kończy się oczekiwaną linią. Polecenie pytest, 
 (kod 4 albo 5: testu z polecenia nie ma, ``-k`` nic nie wybiera, plik albo ``conftest.py`` się nie importuje), jest
 WYKRYTA tylko wtedy, gdy z mutacją nie zbierają się jego pliki testów (``_collecting``: kod inny niż 0 i 5), bo tylko
 wtedy pada zadanie Required CI, które uruchamia całe pliki; test, którego z mutacją nie ma, przy plikach, które się
-zbierają, to NIEWYKRYTA, bo nic nie padło. Ten werdykt (``judged``) dają też noc, skrypty skilli i dowód strażnika
+zbierają, to NIEWYKRYTA, bo nic nie padło, a zbieranie bez wyniku w czasie, który biegowi został, to BEZ WERDYKTU.
+Ten werdykt (``judged``) dają też noc, skrypty skilli i dowód strażnika
 ``pytest <węzeł>`` (``tools/lib/straznik.py``). ZAWIESZENIE to test, który pytest-timeout skończył po
 swoim limicie (linia ``Failed: Timeout (>…s) from pytest-timeout.`` metody ``signal`` albo linia ``+++ Timeout +++``
 metody ``thread`` bez xdist); worker xdist, którego zabiła metoda ``thread`` (Windows), nie zostawia takiej linii, więc
@@ -418,9 +419,14 @@ def judged(
     elif mutation.expected is not None:
         found = (Verdict.CAUGHT if ran.last.startswith(mutation.expected) else Verdict.SURVIVED), ran.last
     elif mutation.edits and _without_test(mutation.command, ran):
-        gathered = _run(copy, _collecting(mutation.command), min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
-        if gathered.code is None or gathered.code in {0, PYTEST_EXIT_NO_TESTS_COLLECTED}:
-            found = Verdict.SURVIVED, f"{ran.last} (pytest nie uruchomił testu z polecenia, kod {ran.code}, a pliki testów polecenia z mutacją się zbierają: {gathered.last}; {GONE_HINT})"
+        # Zbieranie dostaje czas, który biegowi z mutacją został, więc razem nie przekraczają końca czasu wywołującego.
+        budget = max(min(limit_s, left - ran.seconds), 0.0)
+        gathered = _run(copy, _collecting(mutation.command), budget, stop, concurrent=concurrent, python=python, env=env)
+        gone = f"{ran.last} (pytest nie uruchomił testu z polecenia, kod {ran.code}, a"
+        if gathered.code is None:
+            found = Verdict.NO_VERDICT, f"{gone} zbieranie jego plików testów z mutacją nie dało wyniku: {gathered.last})"
+        elif gathered.code in {0, PYTEST_EXIT_NO_TESTS_COLLECTED}:
+            found = Verdict.SURVIVED, f"{gone} pliki testów polecenia z mutacją się zbierają: {gathered.last}; {GONE_HINT})"
         else:
             found = Verdict.CAUGHT, f"{ran.last} (pliki testów polecenia z mutacją się nie zbierają, kod {gathered.code}: {gathered.last})"
     else:
@@ -428,17 +434,33 @@ def judged(
     return *found, ran.seconds
 
 
+# Program ``python -c`` zbierania (``_collecting``): argumenty polecenia (opcje, węzły, ``@plik``) rozbiera sam pytest, a
+# wtyczka w procesie zamienia każdy węzeł z nich (``plik.py::test``) na jego plik, zanim pytest zacznie zbierać.
+_COLLECT_FILES = """\
+import sys
+
+import pytest
+
+
+class Files:
+    def pytest_configure(self, config):
+        config.args[:] = [argument.partition("::")[0] for argument in config.args]
+
+
+raise SystemExit(pytest.main([*sys.argv[1:], "--collect-only"], plugins=[Files()]))
+"""
+
+
 def _collecting(command: Sequence[str]) -> tuple[str, ...]:
-    """Polecenie pytest ``command``, które tylko zbiera jego pliki testów: każdy węzeł (``plik.py::test``) zastąpiony
-    swoim plikiem, z ``--collect-only``. Reszta polecenia zostaje (``-k``, opcje, ``conftest.py``), a pytest-xdist przy
+    """Polecenie pytest ``command`` (z parą ``-m pytest``, ``_without_test``), które tylko zbiera jego pliki testów: te
+    same argumenty, a w miejscu ``-m pytest`` program ``_COLLECT_FILES``, więc pytest sam wie, które argumenty to
+    węzły, także z pliku ``@``. Reszta polecenia działa jak w nim (``-k``, opcje, ``conftest.py``), a pytest-xdist przy
     ``--collect-only`` się wyłącza, więc zbieranie kończy się kodem innym niż 0 i 5 tylko wtedy, gdy plik albo
     ``conftest.py`` z mutacją się nie importuje, a wtedy pada też zadanie Required CI, które uruchamia całe pliki."""
 
-    def file(argument: str) -> str:
-        path, node, _ = argument.partition("::")
-        return path if node and path.endswith(".py") and not argument.startswith("-") else argument
-
-    return (*map(file, command), "--collect-only")
+    arguments = tuple(command)
+    start = list(pairwise(arguments)).index(("-m", "pytest"))
+    return (*arguments[:start], "-c", _COLLECT_FILES, *arguments[start + 2 :])
 
 
 def _baseline(
