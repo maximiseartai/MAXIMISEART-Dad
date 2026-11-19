@@ -2,7 +2,8 @@
 
 Claude Code uruchamia go z ``--mcp-config`` (``config``) jako proces, który czyta JSON-RPC liniami ze stdin i odpowiada
 liniami na stdout. Narzędzie przyjmuje ``taskIds`` i ``waiting`` jak ``t3_background_wait`` T3 i odpowiada tak jak T3
-dla zadań, które zna (``{"matched": taskIds, "unmatched": []}``). Niczego nie trzyma i nikogo nie budzi: wyrocznia
+dla zadań, które zna (``{"matched": taskIds, "unmatched": []}``), a Claude Code nazywa je ``CALLED``
+(``mcp__<serwer>__<narzędzie>``). Niczego nie trzyma i nikogo nie budzi: wyrocznia
 sprawdza hooki ``tools/hooks/praca_w_tle.py`` i to, że Claude Code sam budzi sesję po końcu zadania, a nie T3.
 Używa tylko biblioteki standardowej.
 """
@@ -15,7 +16,6 @@ import sys
 
 NAME = "t3-code"
 TOOL = "t3_background_wait"
-# Nazwa narzędzia w Claude Code: ``mcp__<serwer>__<narzędzie>``.
 CALLED = f"mcp__{NAME}__{TOOL}"
 SCHEMA = {
     "type": "object",

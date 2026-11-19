@@ -22,7 +22,8 @@ Lista należy do całej sesji, także do podagentów narzędzia Agent, a wpis ``
 głównej pętli (Claude Code 2.1.328, przypadek ``shell-podagenta`` wyroczni). Właściciela zadania widzi tylko hook
 ``PostToolUse``: wejście narzędzia wywołanego w podagencie ma ``agent_id``, a ID zadania stoi w odpowiedzi narzędzia
 (pole z ``SPAWNED``). Hook ``PostToolUse`` (``.claude/settings.json``: ``Bash``, ``Monitor`` i ``WAIT``) dopisuje do
-pliku sesji (``STATE``, plik ``<session_id>.jsonl``) zadania, które hook ``Stop`` przepuszcza:
+pliku sesji (``STATE`` obok dziennika, plik ``<session_id>.jsonl``) zadania, które hook ``Stop`` przepuszcza; jego
+droga czekania na zadanie (``WAIT_FOR_TASK``) to ten sam tekst co w ``tools/hooks/czekanie.py``, czego pilnuje test:
 
 - zadanie uruchomione w podagencie, bo jego koniec dostaje podagent, a nie wątek, który kończy turę;
 - zadanie z ``taskIds`` wywołania ``t3_background_wait`` (``waiting: false`` je wypisuje), bo T3 trzyma wtedy wątek
@@ -45,7 +46,8 @@ listy, który nie jest obiektem, ``type`` albo ``status``, które nie są tekste
 typ ``monitor`` i zadanie ``shell`` o statusie spoza ``ALIVE``. Wątpliwość, zadanie przepuszczone przez plik sesji i
 każdą odmowę hook dopisuje do dziennika ``~/.cache/maximiseart/praca_w_tle.jsonl`` (``LOG``, inny plik daje zmienna
 ``LOG_ENV``, której używa wyrocznia; pliki sesji leżą obok niego); błąd zapisu dziennika albo pliku sesji trafia na
-stderr i nie zmienia decyzji, a plik sesji, którego nie da się przeczytać, niczego nie przepuszcza. Hook po
+stderr i nie zmienia decyzji, a plik sesji, którego nie da się przeczytać (także nie w UTF-8), niczego nie przepuszcza;
+``RuntimeError`` i ``KeyError`` to ``Path.home()`` bez katalogu domowego. Hook po
 ``timeout`` z ustawień Claude Code zabija bez decyzji i tura się kończy (próba 5.11.2026 na 2.1.318), więc hook czyta
 listę w czasie liniowym.
 
@@ -87,15 +89,12 @@ REPORTING = frozenset(
 ALIVE = frozenset({"running", "pending"})
 LOG = Path(".cache") / "maximiseart" / "praca_w_tle.jsonl"
 LOG_ENV = "MAXIMISEART_PRACA_W_TLE_DZIENNIK"
-# Katalog plików sesji obok dziennika: ``~/.cache/maximiseart/praca_w_tle/<session_id>.jsonl``.
 STATE = "praca_w_tle"
 KEEP_S = 7 * 24 * 3600
 WAIT = "mcp__t3-code__t3_background_wait"
-# Narzędzie, które uruchamia zadanie ``shell``, i pole jego odpowiedzi z ID zadania (Claude Code 2.1.328).
 SPAWNED = {"Bash": "backgroundTaskId", "Monitor": "taskId"}
 SESSION = re.compile(r"[A-Za-z0-9_-]{1,128}")
 REFUSAL = "Odmowa końca tury: w tle sesji biegnie jeszcze"
-# Jedyna droga czekania na własne zadanie w tle; ``tools/hooks/czekanie.py`` mówi to samo (test pilnuje równości).
 WAIT_FOR_TASK = (
     "Na swoje zadanie w tle czekaj tylko tak: wywołaj t3_background_wait z taskIds (lista ID, nie taskId) i zakończ "
     "turę bez sleep i bez pętli; T3 trzyma wątek w pracy, a Claude Code budzi go powiadomieniem po końcu zadania. "
@@ -213,7 +212,7 @@ def _remember(event: dict[str, object]) -> None:
         for old in path.parent.glob("*.jsonl"):
             if old.stat().st_mtime < time.time() - KEEP_S:
                 old.unlink()
-    except (OSError, RuntimeError, KeyError) as error:  # RuntimeError i KeyError: Path.home() bez katalogu domowego
+    except (OSError, RuntimeError, KeyError) as error:
         print(f"praca_w_tle: plik sesji niedostępny: {error!r}", file=sys.stderr)
 
 
@@ -223,7 +222,7 @@ def _passed(event: object) -> dict[str, str]:
         return {} if path is None else passed_in(path.read_text(encoding="utf-8").splitlines())
     except FileNotFoundError:
         return {}
-    except (OSError, ValueError, RuntimeError, KeyError) as error:  # ValueError: plik sesji nie w UTF-8
+    except (OSError, ValueError, RuntimeError, KeyError) as error:
         print(f"praca_w_tle: plik sesji nieczytelny: {error!r}", file=sys.stderr)
         return {}
 

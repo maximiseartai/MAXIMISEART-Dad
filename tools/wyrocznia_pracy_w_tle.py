@@ -53,7 +53,6 @@ nie zapyta, kończy je, a wyrocznia zgłasza ``ZMIANA``.
 """
 
 MARKER = "WYROCZNIA-PRACY-W-TLE"
-# Polecenie podagenta; nie zawiera ``MARKER``, więc jego zapytania API są odróżnialne od zapytań głównej pętli.
 SUBAGENT = "WYROCZNIA-PODAGENT"
 WAITING = "Czekam na powiadomienie o procesie w tle."
 NOTIFICATION = "<task-notification>"
@@ -64,13 +63,14 @@ LIMIT_S = 120.0
 
 @dataclass(frozen=True)
 class Case:
+    """Przypadek wyroczni: ``bash`` biegnie w głównej pętli, a przy ``subagent`` w podagencie narzędzia Agent; przy
+    ``register`` główna pętla po wyniku Basha wywołuje ``t3_background_wait`` z ID jego zadania."""
+
     name: str
-    # Bash przypadku: w głównej pętli, a przy ``subagent`` w podagencie narzędzia Agent.
     bash: dict[str, object]
     # Ile odmów hooka znaczy ZGODNE: 2 (druga przy stop_hook_active) przy pracy w tle, 0 bez niej.
     refusals: int
     subagent: bool = False
-    # Po wyniku Basha główna pętla wywołuje ``t3_background_wait`` z ID jego zadania.
     register: bool = False
 
 
@@ -88,15 +88,16 @@ CASES = (
 
 @dataclass(frozen=True)
 class Outcome:
+    """Wynik przypadku; ``subagent_result``: Bash podagenta oddał wynik, ``woken``: po wyniku ``t3_background_wait``
+    główna pętla dostała powiadomienie o końcu zadania."""
+
     refusals: int
     tool_result: bool
     # Kod wyjścia Claude Code, który skończył się sam, albo ``None``, gdy zakończyła go wyrocznia albo limit czasu.
     returncode: int | None
     # Czy fałszywe API dostało zapytanie przypadku (z ``MARKER``).
     asked: bool
-    # Czy Bash podagenta oddał wynik.
     subagent_result: bool
-    # Czy po wyniku ``t3_background_wait`` główna pętla dostała powiadomienie o końcu zadania.
     woken: bool
 
 
@@ -124,6 +125,9 @@ def _text(text: str) -> bytes:
 
 
 def answer(body: dict[str, object]) -> bytes:
+    """Odpowiedź fałszywego API: zapytania podagenta poznaje po ``SUBAGENT`` (bez ``MARKER``), główną pętlę po
+    ``MARKER``, a inne to zapytania poboczne Claude Code (tytuł, podsumowanie)."""
+
     api = _Api
     found = body.get("messages")
     messages = found if isinstance(found, list) else []
@@ -135,7 +139,7 @@ def answer(body: dict[str, object]) -> bytes:
             api.subagent_result = api.subagent_result or bool(results)
         return _text("Podagent skończył.") if results else _tool("Bash", api.case.bash, "podagent")
     if MARKER not in first:
-        return _text("ok")  # zapytanie poboczne Claude Code (tytuł, podsumowanie)
+        return _text("ok")
     api.asked = True
     refusals = sum(any(praca_w_tle.REFUSAL in text for text in message) for message in texts)
     with api.lock:

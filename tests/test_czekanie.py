@@ -156,17 +156,14 @@ PGREP_LOOPS = (
     "until ! pgrep -l -f mutacje.json >/dev/null; do sleep 5; done",
     "until pgrep -f serve_centrum >/dev/null; do sleep 1; done; curl -s localhost:8765/health",
 )
-# Pętle na pliku wyjścia zadania w tle z sesji 18/19.11.2026 (#2267), ścieżka sesji skrócona do ``/private/tmp/c/s``.
 TASK_OUTPUT_LOOPS = (
     "F=/private/tmp/c/s/tasks/bwx8k6zpp.output; until grep -q pr-2121 $F; do sleep 15; done; cat $F",
     "F=/private/tmp/c/s/tasks/bomvji68c.output; until [ -s $F ]; do sleep 10; done; cat $F",
     "F=/private/tmp/c/s/tasks/bhcxilqwz.output; until [ $(wc -l < $F) -gt 7 ]; do sleep 15; done; sleep 2; tail -12 $F",
-    # Syntetyczne: zmienna w cudzysłowie z nawiasami, ścieżka w pętli z licznikiem prób i względna ze snem przez perl.
     "F=/private/tmp/c/s/tasks/b1.output; until grep -q KONIEC \"${F}\"; do sleep 5; done",
     "for i in $(seq 1 40); do grep -q KONIEC /private/tmp/c/s/tasks/b1.output && break; sleep 15; done",
     "until grep -q CZAS tasks/bhcxilqwz.output; do perl -e 'select(undef,undef,undef,15)'; done",
 )
-# Pętle odpytywania w Pythonie z tych samych sesji (#2267), nazwa odmowy, którą dostają, i id parametru testu.
 PYTHON_LOOPS = (
     (
         "python3 - <<'EOF'\nimport json, subprocess, time\nend = time.time() + 560\nwhile True:\n"
@@ -197,14 +194,12 @@ PYTHON_LOOPS = (
         "TASK_OUTPUT_LOOP",
         "plik-zadania-w-argumencie",
     ),
-    # ``for`` po liście z wyjściem przez ``sys.exit``.
     (
         "python3 - <<'EOF'\nfrom time import sleep\nimport os\nn = 5\nwhile os.system(f\"gh pr checks {n} | grep -q pending\") == 0:\n"
         "    sleep(30)\nEOF",
         "CI_LOOP",
         "sleep-z-time-i-f-napis",
     ),
-    # recenzja #2295 r2 W3), za kontynuacją linii i z ``'\''`` w środku.
     (
         "python3 - <<'EOF'\nimport subprocess, sys, time\nfor attempt in attempts:\n"
         "    if subprocess.run(['gh', 'pr', 'checks', '7']).returncode == 0:\n        sys.exit(0)\n    time.sleep(30)\nEOF",
@@ -376,9 +371,7 @@ PASSING = (
     # Bez ``-c`` powłoka dostaje w napisie nazwę pliku skryptu albo jego argument.
     "sh -e 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "bash backup.sh 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
-    # Jedno czytanie pliku wyjścia zadania bez pętli (#2267).
     "sleep 1; cat /private/tmp/c/s/tasks/be31c9zrc.output | tail",
-    # Python: partia zapytań z limitem API, czekanie na zwykły plik, sen poza pętlą i heredoc, który nie jest Pythonem.
     "python3 - <<'EOF'\nimport subprocess, time\nfor run in runs:\n"
     "    subprocess.run(['gh', 'api', f'repos/o/r/actions/runs/{run}/jobs'])\n    time.sleep(1)\nEOF",
     "F=~/notatki/szybko.txt; python3 - \"$F\" <<'EOF'\nimport re, sys, time\nfor _ in range(110):\n"
@@ -387,7 +380,6 @@ PASSING = (
     "    subprocess.run(['gh', 'pr', 'view', str(n), '--json', 'title'])\n    time.sleep(1)\nEOF",
     "python3 -c 'import time; time.sleep(3)'; gh pr checks 1",
     "python3 - <<'EOF'\nto nie Python: while sleep( gh pr checks 1\nEOF",
-    # Skrypt Pythona zapisany heredokiem do pliku, a nie podany Pythonowi.
     "cat > czekaj.py <<'EOF'\nimport subprocess, time\nwhile True:\n    subprocess.run(['gh', 'pr', 'checks', '1'])\n"
     "    time.sleep(5)\nEOF\nchmod +x czekaj.py",
 )
@@ -448,11 +440,13 @@ def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(
 
 @pytest.mark.parametrize("command", PASSING)
 def test_inne_polecenie_przechodzi(command: str) -> None:
+    """Także jedno czytanie pliku wyjścia zadania bez pętli, partia zapytań Pythona z limitem API, czekanie Pythona na
+    zwykły plik, ``range`` numerów PR, sen poza pętlą, heredoc, który nie jest Pythonem, i skrypt Pythona zapisany
+    heredokiem do pliku, a nie podany Pythonowi (#2267)."""
+
     assert hook.judge(command, in_background=False) is None
 
 
-# Gotowość serwera z zadania w tle, którego koniec nie przyjdzie: pętla nie czyta jego pliku wyjścia, który stoi za nią
-# (jak w transkryptach repo) albo w zmiennej sprzed niej (recenzja #2295 r2 W2).
 SERVER_READINESS = {
     "curl-plik-za-petla": "for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null -w '%{http_code}\\n' "
     "http://127.0.0.1:47900/ && break; sleep 1; done; cat /private/tmp/c/s/tasks/b31ma9p31.output | tail -5",
@@ -466,16 +460,26 @@ SERVER_READINESS = {
 
 @pytest.mark.parametrize("command", list(SERVER_READINESS.values()), ids=list(SERVER_READINESS))
 def test_gotowosc_serwera_z_zadania_w_tle_bez_jego_pliku_w_petli_przechodzi(command: str) -> None:
+    """Koniec serwera z zadania w tle nie przyjdzie, więc droga ``t3_background_wait`` by go nie obudziła: pętla, która
+    nie czyta jego pliku wyjścia, przechodzi, gdy plik stoi za nią (jak w transkryptach repo) albo w zmiennej sprzed niej
+    (recenzja #2295 r2 W2)."""
+
     assert hook.judge(command, in_background=False) is None
 
 
 @pytest.mark.parametrize("command", TASK_OUTPUT_LOOPS)
 def test_petla_na_pliku_wyjscia_zadania_w_tle_dostaje_odmowe(command: str) -> None:
+    """Pętle z sesji 18/19.11.2026 (#2267, ścieżka sesji skrócona do ``/private/tmp/c/s``) i syntetyczne: zmienna w
+    ``"${F}"``, ścieżka w pętli z licznikiem prób i względna ze snem przez perl."""
+
     assert hook.judge(command, in_background=False) is hook.TASK_OUTPUT_LOOP
 
 
 @pytest.mark.parametrize(("command", "refusal"), [pytest.param(command, name, id=ident) for command, name, ident in PYTHON_LOOPS])
 def test_petla_odpytywania_w_skrypcie_pythona_dostaje_odmowe(command: str, refusal: str) -> None:
+    """Heredoki Pythona z sesji 18/19.11.2026 (#2267) i syntetyczne: ``sleep`` z ``from time import`` z f-napisem i
+    ``for`` po liście z wyjściem przez ``sys.exit``; każdy z nazwą odmowy i id parametru."""
+
     assert hook.judge(command, in_background=False) is getattr(hook, refusal)
 
 
@@ -484,8 +488,6 @@ def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=True) is None
 
 
-# Jedna droga dla przypadku (#2267): PR przez watch_pull_request albo koniec dziecka na URL i SHA, main bez czekania,
-# zadanie w tle przez t3_background_wait; odmowa o CI nie podsuwa drogi zadania w tle, która na CI nie czeka.
 ROAD_FOR_CI = ("watch_pull_request z URL PR i kończy turę", "pełnym SHA HEAD", "PR scala rodzic", "issue czerwony-main sam")
 ROAD_FOR_TASK = ("run_in_background: true", hook.WAIT_FOR_TASK)
 NOT_FOR_CI = ("t3_background_wait", "run_in_background")
@@ -505,6 +507,10 @@ NOT_FOR_CI = ("t3_background_wait", "run_in_background")
 def test_hook_odmawia_kodem_2_z_jedyna_droga_na_stderr(
     command: str, in_background: bool, said: tuple[str, ...], unsaid: tuple[str, ...]
 ) -> None:
+    """Jedna droga dla przypadku (#2267): PR przez ``watch_pull_request`` albo koniec dziecka na URL i SHA, ``main`` bez
+    czekania, zadanie w tle przez ``t3_background_wait``; odmowa o CI nie podsuwa drogi zadania w tle, która na CI nie
+    czeka."""
+
     hooked = _bash(command, in_background=in_background)
 
     assert (hooked.returncode, hooked.stdout) == (2, ""), hooked.stderr

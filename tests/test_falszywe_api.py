@@ -208,8 +208,9 @@ def test_strumien_konczy_wiadomosc_powodem_jej_bloku(block: dict[str, object], r
 
 
 def test_wyniki_sklejonych_wywolan_narzedzi_licza_sie_wszystkie_po_kolei() -> None:
-    # Claude Code 2.1.328 skleja kolejne odpowiedzi fałszywego API (jedno id wiadomości) w jedną wiadomość z dwoma
-    # tool_use, a ich wyniki w jedną z dwoma tool_result (wyrocznia pracy w tle, przypadek zadanie-zarejestrowane).
+    """Claude Code 2.1.328 skleja kolejne odpowiedzi fałszywego API (jedno id wiadomości) w jedną wiadomość z dwoma
+    ``tool_use``, a ich wyniki w jedną z dwoma ``tool_result`` (wyrocznia pracy w tle, przypadek zadanie-zarejestrowane)."""
+
     registered = [{"type": "text", "text": '{"matched": ["b1"], "unmatched": []}'}]
     message = {
         "role": "user",

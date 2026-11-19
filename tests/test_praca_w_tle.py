@@ -131,10 +131,12 @@ UNREGISTERED = {**REGISTERED, "tool_input": {"taskIds": ["bi6lxbxlb"], "waiting"
 
 
 def _load(path: Path) -> ModuleType:
+    """Hook z pliku jako moduł, zapisany w ``sys.modules``, bo dataclass hooka szuka tam swojego modułu."""
+
     spec = importlib.util.spec_from_file_location(f"test_praca_w_tle_{path.stem}", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module  # dataclass hooka szuka swojego modułu w sys.modules
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     return module
 
@@ -162,10 +164,12 @@ def _log(home: Path) -> list[dict[str, object]]:
 
 
 def test_zapis_wejscia_claude_code_z_sleep_w_tle_zatrzymuje_koniec_tury_i_trafia_do_dziennika(tmp_path: Path) -> None:
+    """Odmowa podaje jedną drogę czekania na zadanie: ``t3_background_wait`` z ID z odmowy w liście ``taskIds``, bo
+    ``taskId`` pada (#2267), i koniec tury."""
+
     reason = _reason(_hook(json.dumps(REAL), tmp_path))
 
     assert "shell bi6lxbxlb „sleep 60”" in reason
-    # Jedna droga czekania na zadanie: t3_background_wait z ID z odmowy (lista, bo taskId pada, #2267) i koniec tury.
     assert 't3_background_wait z taskIds: ["bi6lxbxlb"]' in reason
     assert _load(WAITING_HOOK).WAIT_FOR_TASK in reason
     assert "serwer), zatrzymaj jako zadanie i uruchom odłączony (nohup … & w Bashu na pierwszym planie)" in reason
@@ -229,7 +233,9 @@ def _quietly(hooked: subprocess.CompletedProcess[bytes]) -> None:
 def test_shell_podagenta_i_zadanie_zarejestrowane_przepuszczaja_koniec_tury_z_powodem_w_dzienniku(
     tmp_path: Path, posts: list[dict[str, object]], reason: str
 ) -> None:
-    # Claude Code 2.1.328 podaje hookowi Stop shell podagenta bez pola, które go odróżnia (wyrocznia, shell-podagenta).
+    """Claude Code 2.1.328 podaje hookowi Stop shell podagenta bez pola, które go odróżnia (wyrocznia, przypadek
+    shell-podagenta), więc przepuszcza go plik sesji z hooka ``PostToolUse``."""
+
     for post in posts:
         _quietly(_hook(json.dumps(post), tmp_path))
 
@@ -248,7 +254,6 @@ def test_shell_podagenta_i_zadanie_zarejestrowane_przepuszczaja_koniec_tury_z_po
         [{**REGISTERED, "tool_input": {"taskId": "bi6lxbxlb"}}],
         [{**REGISTERED, "tool_input": {"taskIds": ["b2"]}}],
         [{**REGISTERED, "session_id": "inna-sesja"}],
-        # ID sesji spoza wzorca, które jako ścieżka wskazałoby plik sesji REAL.
         [{**REGISTERED, "session_id": f"../praca_w_tle/{REAL['session_id']}"}],
         [{**SUBAGENT_BASH, "hook_event_name": "PreToolUse"}],
     ],
@@ -266,6 +271,8 @@ def test_shell_podagenta_i_zadanie_zarejestrowane_przepuszczaja_koniec_tury_z_po
 def test_wlasny_shell_glownej_petli_bez_rejestracji_zatrzymuje_koniec_tury(
     tmp_path: Path, posts: list[dict[str, object]]
 ) -> None:
+    """Próbka ``sesja-spoza-wzorca`` ma ID sesji, które jako ścieżka wskazałoby plik sesji ``REAL``."""
+
     for post in posts:
         assert _hook(json.dumps(post), tmp_path).returncode == 0
 
@@ -745,6 +752,9 @@ def test_wyrocznia_z_odmowa_hooka_przy_pracy_w_tle_i_bez_niej_konczy_sie_ok(
 def test_wyrocznia_uruchamia_claude_p_w_checkoucie_tylko_z_ustawieniami_projektu_i_falszywym_api(
     tmp_path: Path,
 ) -> None:
+    """Z serwerów MCP ``claude`` wyroczni dostaje tylko fałszywy ``t3-code``: ani serwery z ``~/.claude.json``, ani
+    prawdziwy T3."""
+
     ran = _oracle(tmp_path, "bez-pracy-w-tle")
 
     (call,) = _calls(tmp_path)
@@ -754,7 +764,6 @@ def test_wyrocznia_uruchamia_claude_p_w_checkoucie_tylko_z_ustawieniami_projektu
     assert argv[:2] == ["-p", "WYROCZNIA-PRACY-W-TLE bez-pracy-w-tle: uruchom polecenie."]
     assert argv[argv.index("--setting-sources") + 1] == "project,local"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
-    # Z serwerów MCP tylko fałszywy t3-code: ani serwery z ~/.claude.json, ani prawdziwy T3.
     servers = json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]
     assert ("--strict-mcp-config" in argv, list(servers), servers["t3-code"]["args"]) == (True, ["t3-code"], [str(FAKE_T3)])
     # Reguła zespołu: Claude Code wyroczni, gdyby jednak zapytał model, pyta Opusa.
@@ -823,7 +832,8 @@ def test_wyrocznia_gdy_hook_nie_odmawia_konczy_sie_zmiana(tmp_path: Path) -> Non
 def test_wyrocznia_gdy_shell_podagenta_albo_zadanie_zarejestrowane_nie_konczy_tury_jak_trzeba_konczy_sie_zmiana(
     tmp_path: Path, atrapa: dict[str, str], seen: list[str]
 ) -> None:
-    # Bez hooka PostToolUse hook Stop odmawia jak na main przed #2267, a bez budzenia tura z zadaniem zostaje bez wyniku.
+    """Bez hooka ``PostToolUse`` hook Stop odmawia jak przed #2267, a bez budzenia tura z zadaniem zostaje bez wyniku."""
+
     ran = _oracle(tmp_path, "shell-podagenta", "zadanie-zarejestrowane", atrapa=atrapa)
 
     assert ran.stdout.splitlines()[1:3] == seen, ran.stderr

@@ -10,7 +10,7 @@ linia polecenia zawiera tę samą pętlę, a więc i ``X`` (z tego samego powodu
 Odrzuca (kod 2, przyczyna na stderr trafia do agenta) tylko polecenie na pierwszym planie, a odmowa podaje jedyną
 drogę dla przypadku: PR (``INSTEAD``: wątek główny ``watch_pull_request`` i koniec tury, dziecko kończy na URL PR i
 pełnym SHA), ``main`` po merge'u (``INSTEAD``: nie czekać) i zadanie w tle (``WAIT_FOR_TASK``: ``t3_background_wait``
-i koniec tury). Odrzuca:
+i koniec tury; ``tools/hooks/praca_w_tle.py`` podaje ten sam tekst, a test pilnuje jego równości). Odrzuca:
 
 - pętlę z ``sleep``, której ciało pyta o CI (``gh pr checks``, ``gh pr view``, ``gh run view``/``list``, ``gh api``
   o check-runs, actions/runs albo status commitu) albo woła ``pgrep -f``, oraz ``gh pr checks --watch`` i
@@ -83,14 +83,9 @@ ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/re
 SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
-# Plik wyjścia zadania w tle Claude Code (Bash z ``run_in_background``, Monitor, podagent): ``…/tasks/<id>.output``.
 TASK_OUTPUT = re.compile(r"\btasks/[^/\s]*\.output\b")
-# Zmienna, której polecenie przypisuje plik wyjścia zadania (``F=…/tasks/b1.output``), i odwołanie do zmiennej w kodzie
-# po ``_code``: ``"${F}"`` jest tam ``"$_F_"``, bo napis bez spacji ma nawiasy zamienione na podkreślenia.
 ASSIGNMENT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(\S*)")
 REFERENCE = re.compile(r"\$[{_]?([A-Za-z_]\w*)")
-# Program Pythona w linii otwierającej heredoc: ``python3``, ``python3.14``, ``.venv/bin/python``, ``py`` (Windows),
-# ale nie ``x.py``.
 PYTHON = re.compile(r"(?<![\w.$-])(?:[\w.~/-]*/)?(?:python(?:\d+(?:\.\d+)?)?|py)(?![\w.-])")
 PYTHON_SLEEP = re.compile(r"\bsleep\s*\(")
 
@@ -148,7 +143,6 @@ INSTEAD = (
     "(tools/scal_pr.py). main po merge'u: nie czekaj wcale, bo czerwony main zakłada issue czerwony-main sam "
     "(tools/ci/zgloszenia_ci.py)."
 )
-# Jedyna droga czekania na własne zadanie w tle; ``tools/hooks/praca_w_tle.py`` mówi to samo (test pilnuje równości).
 WAIT_FOR_TASK = (
     "Na swoje zadanie w tle czekaj tylko tak: wywołaj t3_background_wait z taskIds (lista ID, nie taskId) i zakończ "
     "turę bez sleep i bez pętli; T3 trzyma wątek w pracy, a Claude Code budzi go powiadomieniem po końcu zadania. "
@@ -459,11 +453,14 @@ def _tries(iterable: ast.expr) -> bool:
 
 
 def _python_wait(script: str, task_output: bool) -> Optional[Refusal]:
-    """Odmowa dla pętli skryptu Pythona, która śpi i czeka na CI, ``pgrep -f`` albo plik wyjścia zadania."""
+    """Odmowa dla pętli skryptu Pythona, która śpi i czeka na CI, ``pgrep -f`` albo plik wyjścia zadania.
+
+    Skrypt, którego ``ast`` tego Pythona nie czyta (nie Python albo składnia nowsza niż Python hooka), przechodzi.
+    """
 
     try:
         tree = ast.parse(script)
-    except (SyntaxError, ValueError, RecursionError, MemoryError):  # nie Python albo Python nowszy niż hook
+    except (SyntaxError, ValueError, RecursionError, MemoryError):
         return None
     for loop in ast.walk(tree):
         if not isinstance(loop, (ast.While, ast.For, ast.AsyncFor)):
@@ -488,7 +485,12 @@ def _python_wait(script: str, task_output: bool) -> Optional[Refusal]:
 
 
 def _task_files(text: str, variables: frozenset[str]) -> list[int]:
-    """Początki plików wyjścia zadania w ``text``: wprost i przez odwołanie do zmiennej z ``variables``."""
+    """Początki plików wyjścia zadania w ``text``: wprost i przez odwołanie do zmiennej z ``variables``.
+
+    Zmienne to te, którym polecenie przypisuje plik (``F=…/tasks/b1.output``, ``ASSIGNMENT``). Odwołanie ``"${F}"``
+    jest w kodzie po ``_code`` napisem ``"$_F_"``, bo napis bez spacji ma nawiasy zamienione na podkreślenia, stąd
+    ``rstrip("_")``.
+    """
 
     named = [found.start() for found in TASK_OUTPUT.finditer(text)]
     referred = [found.start() for found in REFERENCE.finditer(text) if found.group(1).rstrip("_") in variables]
