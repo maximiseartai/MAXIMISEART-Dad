@@ -460,10 +460,10 @@ def _read(imap: imaplib.IMAP4, access: InboxCredentials, day: date, memo: _ReadM
     uids = _since(imap, day)
     read = memo.known(folder)
     unknown = [uid for uid in uids if uid not in read]
-    chosen = set(_chosen(imap, unknown, access.address))
-    fetched = _mail_bytes(imap, [uid for uid in unknown if uid in chosen])
+    choices = _choices(imap, unknown, access.address)
+    fetched = _mail_bytes(imap, [uid for uid in unknown if choices.get(uid)])
     for uid in unknown:
-        if uid not in chosen:
+        if choices.get(uid) is False:
             read[uid] = _NOT_REPORT
         elif uid in fetched:
             prefix, raw = fetched[uid]
@@ -490,14 +490,14 @@ def _arrived(prefix: bytes) -> datetime:
     return datetime.fromtimestamp(time.mktime(moment), tz=timezone.utc).astimezone()
 
 
-def _chosen(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> list[str]:
-    """UID z ``uids`` maili, które port czyta: z tematem Raportu wykonawcy (``reads_as_report``) i nie od samej skrzynki
-    ``own`` (jej Przypomnień o raporcie i odpowiedzi taty), z samych nagłówków ``Subject`` i ``From``. Mail z
+def _choices(imap: imaplib.IMAP4, uids: list[str], own: SenderAddress) -> dict[str, bool]:
+    """UID z ``uids``, o którego nagłówki ``Subject`` i ``From`` serwer odpowiedział → czy port czyta ten mail: z tematem
+    Raportu wykonawcy (``reads_as_report``) i nie od samej skrzynki ``own`` (jej Przypomnień o raporcie i odpowiedzi
+    taty). UID bez odpowiedzi nie ma, więc port nie wie o nim nic i pyta o niego przy następnym odczycie. Mail z
     nagłówkami, których pakiet ``email`` nie umie rozebrać (wyjątek albo defekt, np. sam ``\r`` w ``From``, po którym
     ``Subject`` staje się treścią), port wybiera, a ``mail_of`` czyta go albo liczy jako pominięty."""
 
-    headers = _fetched(imap, uids, _CHOICE_ITEMS)
-    return [uid for uid, (_, header) in headers.items() if _reads(header, own)]
+    return {uid: _reads(header, own) for uid, (_, header) in _fetched(imap, uids, _CHOICE_ITEMS).items()}
 
 
 def _reads(header: bytes, own: SenderAddress) -> bool:
@@ -639,11 +639,11 @@ def _survey(imap: imaplib.IMAP4, access: InboxCredentials, day: date) -> InboxSu
     _ok(imap.select(_quoted(folder), readonly=True))
     uids = _since(imap, day)
     flags = _flags(imap, uids)
-    in_folder = len(_chosen(imap, uids, access.address))
+    in_folder = sum(_choices(imap, uids, access.address).values())
     if folder == "INBOX":
         return InboxSurvey(len(uids), flags, in_folder, in_folder)
     _ok(imap.select(_quoted("INBOX"), readonly=True))
-    return InboxSurvey(len(uids), flags, in_folder, len(_chosen(imap, _since(imap, day), access.address)))
+    return InboxSurvey(len(uids), flags, in_folder, sum(_choices(imap, _since(imap, day), access.address).values()))
 
 
 def _since(imap: imaplib.IMAP4, day: date) -> list[str]:

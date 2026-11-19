@@ -17,7 +17,7 @@ Wierności Gmailowi atrapa nie dowodzi: prawdziwą skrzynkę sprawdza próba IMA
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 import email
@@ -214,7 +214,9 @@ class AtrapaImap:
     ``UID FETCH`` treści części (``BODY.PEEK[TEXT]``, ``[n]``), jak Gmail, który nie umie podać sekcji. ``sent`` to maile folderu ``\\Sent``
     („Wysłane”, UID inne niż maili ``mails``), którego nie ma bez ``sent_folder``. ``validity`` to ``UIDVALIDITY``, które
     ``EXAMINE`` podaje jak Gmail; ``None``: serwer go nie podaje, a jego zmiana między sesjami to skrzynka, której UID
-    wskazują już inne maile.
+    wskazują już inne maile. ``unanswered`` to UID maili, o które ``UID FETCH`` nie oddaje linii, choć kończy się ``OK``,
+    jak Gmail w chwilowej awarii: ``choice`` przy nagłówkach ``Subject`` i ``From``, ``content`` przy każdym innym
+    pobraniu (struktura, sekcje, cały mail).
     """
 
     def __init__(
@@ -232,6 +234,7 @@ class AtrapaImap:
         sent: Sequence[AtrapaMail] = (),
         sent_folder: bool = True,
         validity: int | None = 1,
+        unanswered: Mapping[int, Literal["choice", "content"]] | None = None,
     ) -> None:
         self.address = address
         self.password = password
@@ -246,6 +249,7 @@ class AtrapaImap:
         self.sent = list(sent)
         self.sent_folder = sent_folder
         self.validity = validity
+        self.unanswered: dict[int, Literal["choice", "content"]] = dict(unanswered or {})
         self.flags: dict[int, set[str]] = {mail.uid: set(mail.flags) for mail in (*self.mails, *self.sent)}
         self.commands: list[str] = []
         self._server = _Server(self)
@@ -348,7 +352,10 @@ class _Session(socketserver.StreamRequestHandler):
             ):
                 self._send(f"{tag} NO Some messages could not be FETCHed (Failure)".encode())
                 return True
+            choice = "HEADER.FIELDS (SUBJECT FROM)" in items
             for number, mail in asked:
+                if atrapa.unanswered.get(mail.uid) == ("choice" if choice else "content"):
+                    continue
                 if sections or "BODYSTRUCTURE" in items:
                     self._fetch_parts(number, mail, items, sections)
                 else:

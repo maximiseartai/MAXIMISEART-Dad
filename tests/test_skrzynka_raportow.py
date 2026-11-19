@@ -376,6 +376,49 @@ def test_skrzynka_ze_zmienionym_albo_bez_uidvalidity_port_czyta_kazdy_mail_od_ze
     assert [(mail.id, mail.text) for mail in maile(again)] == [(MailId.of("<po@x.invalid>"), "40000002 nie")]
 
 
+@pytest.mark.parametrize("bez_odpowiedzi", ["choice", "content"], ids=["naglowki", "tresc"])
+def test_mail_bez_odpowiedzi_serwera_port_czyta_przy_nastepnym_odczycie(
+    tmp_path: Path, bez_odpowiedzi: Literal["choice", "content"]
+) -> None:
+    """Gmail w chwilowej awarii nie oddaje linii jednego maila, choć polecenie kończy się ``OK``: o nagłówki ``Subject``
+    i ``From`` albo o treść wybranego Raportu. Port nie wie wtedy, czy to Raport wykonawcy, więc go nie pamięta, a
+    kolejny odczyt na tym samym porcie, gdy serwer już odpowiada, oddaje ten Raport."""
+
+    config = dostep(tmp_path)
+    mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in (1, 2)]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails, unanswered={2: bez_odpowiedzi}) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.unanswered.clear()
+        again = inbox.mails_since(date(2026, 11, 8))
+
+    assert [mail.id for mail in maile(first)] == [MailId.of("<1@x.invalid>")]
+    assert [mail.id for mail in maile(again)] == [MailId.of("<1@x.invalid>"), MailId.of("<2@x.invalid>")]
+
+
+def test_pamiec_odczytu_jednej_skrzynki_nie_oddaje_maili_innej_skrzynce_ani_innemu_folderowi(tmp_path: Path) -> None:
+    """Pamięć odczytu należy do adresu skrzynki i folderu: po zmianie adresu w pliku dostępu (inna skrzynka z tym samym
+    ``UIDVALIDITY``) albo gdy skrzynka traci folder wszystkich maili, ten sam UID wskazuje inny mail i port czyta go od
+    zera."""
+
+    inna = "inna.skrzynka@przyklad.invalid"
+    przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
+    po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
+    config = dostep(tmp_path)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[przed]) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails, atrapa.address = (po,), inna
+        dostep(config, f"{inna}\nabcd efgh ijkl mnop\n".encode())
+        po_adresie = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails, atrapa.all_folder = (przed,), False
+        po_folderze = inbox.mails_since(date(2026, 11, 8))
+
+    assert [mail.text for mail in maile(first)] == ["40000001 tak"]
+    assert [mail.text for mail in maile(po_adresie)] == ["40000002 nie"]
+    assert [mail.text for mail in maile(po_folderze)] == ["40000001 tak"]
+
+
 def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:
     """Przypomnienia o raporcie, które Centrum wysyła ze skrzynki raportów, leżą w folderze wszystkich maili ze słowem
     „raport” w temacie: port pomija je po nagłówku ``From``, zanim pobierze ich treść."""
