@@ -1272,6 +1272,17 @@ def test_plik_reguly_ast_grep_ktorego_ast_grep_nie_wczyta_jest_porazka_zapadki(t
         syntax_rules(tmp_path, base, config)
 
 
+@needs_ast_grep
+@pytest.mark.parametrize("separator", ["\u2028", "\u2029", "\x85", "\x1c", "\x0c"], ids=["u2028", "u2029", "x85", "x1c", "x0c"])
+def test_znak_podzialu_splitlines_w_linii_odpalenia_nie_rozcina_rekordu_json_ast_grep(tmp_path: Path, separator: str) -> None:
+    config = _fixture_rules(tmp_path)
+    base = _src_sample(tmp_path, f"x = 1\ns = 'a{separator}b'; zakazane()\n")
+
+    assert syntax_rules(tmp_path, base, config) == [
+        odpalenia_ast_grep.Finding("src/rozliczenia/probka.py", 2, "zakazane-wywolanie", "Zamień zakazane() na dozwolone().")
+    ]
+
+
 _IN_FUNCTION = "def f() -> None:\n    "
 _SHORTS = ("deadbee", "1abcdef", "12abcde", "123abcd", "1234abc", "12345ab", "123456a", "1234567a")
 
@@ -1561,7 +1572,6 @@ def _owner_starts(root: Path, owners: list[tuple[str, ...]], tmp_path: Path) -> 
     katalog kopii to sam ``root``."""
 
     import ast
-    import json
 
     import yaml
 
@@ -1578,7 +1588,7 @@ def _owner_starts(root: Path, owners: list[tuple[str, ...]], tmp_path: Path) -> 
         check=False,
     )
     found: dict[tuple[str, ...], dict[str, int]] = {parts: {} for parts in owners}
-    for match in map(json.loads, scan.stdout.splitlines()):
+    for match in odpalenia_ast_grep.json_stream(scan.stdout):
         parts = tuple(Path(match["file"]).parts)
         line = match["range"]["start"]["line"] + 1
         tree = ast.parse((root.joinpath(*parts)).read_text(encoding="utf-8"))
