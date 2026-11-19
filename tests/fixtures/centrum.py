@@ -56,6 +56,7 @@ from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.proposal import ReleaseChange
+from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.centrum.threads import Threading
@@ -76,6 +77,12 @@ from atrapy.skrzynka import Archives, BoxArchive, BoxIssue, Issues
 from atrapy.skrzynka_raportow import FakeInbox, FakeMailbox
 
 ROOT = Path(__file__).resolve().parents[2]
+SAVED_ON_FIRST_START: Final = frozenset({"2026-11-rt2-bez-usterek"})
+FIRST_START_RELEASE_ENTRIES: Final = tuple(
+    entry
+    for change in RELEASE_CHANGES
+    for entry in (*(("ustawienia-zmiana",) if change.id in SAVED_ON_FIRST_START else ()), "ustawienia-wydanie")
+)
 
 
 CENTRUM = "http://127.0.0.1:47811"

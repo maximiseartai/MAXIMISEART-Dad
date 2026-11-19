@@ -5,6 +5,7 @@ import { addActivityCode, changeActivityCode, getActivityLegend, removeActivityC
 import type { ActivityCodeForm, ActivityCodeSentence, ActivityLegendSettings, FillForm, RangeForm } from "@/api/generated"
 import { zFillForm } from "@/api/generated/zod.gen"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { useUnsavedForm } from "@/lib/unsaved"
 import { LegendPreview } from "@/pages/settings/activity-legend-preview"
@@ -25,7 +26,7 @@ const COLUMN_KINDS: ReadonlyArray<Option<ColumnKind>> = [
 
 const COLOURS: ReadonlyArray<Option<FillForm["colour"]>> = zFillForm.shape.colour.options.map((colour) => ({ value: colour, label: colour }))
 
-const NEW_CODE: ActivityCodeForm = { spellings: [""], column: null, value: 1, amount: null, fills: [] }
+const NEW_CODE: ActivityCodeForm = { spellings: [""], column: null, value: 1, amount: null, fills: [], counts_in_fault: true }
 
 /** Kod w formularzu: `id` `null` to nowy kod. */
 type Editing = { id: string | null; form: ActivityCodeForm }
@@ -103,8 +104,8 @@ function CodeRow({ code, edit }: { code: ActivityCodeSentence; edit: () => void 
 }
 
 /**
- * Formularz Kodu czynności: zapisy, kolumna Ilości usług (stała albo przedziałami liczby z kodu) z wartością, kwota w AS
- * i kolory kolumn. Kolumny wybiera się tylko z tych, w które legenda może pisać, po nazwie z cennika. Każda zmiana, także
+ * Formularz Kodu czynności: zapisy, kolumna Ilości usług (stała albo przedziałami liczby z kodu) z wartością, kwota w AS,
+ * kolory kolumn i „Nie liczy się w usterce”. Kolumny wybiera się tylko z tych, w które legenda może pisać, po nazwie z cennika. Każda zmiana, także
  * „Usuń kod”, który przełącza formularz w pytanie „Usunąć kod?”, pokazuje podgląd skutku tej samej zmiany, którą zapisuje
  * dopiero „Zapisz” albo „Usuń”; zła wartość to jedno zdanie przy polu, a problem całego kodu nad formularzem.
  */
@@ -306,6 +307,12 @@ function CodeEditor({
               <PlusIcon data-icon="inline-start" />
               Dodaj kolor
             </Button>
+          </FormRow>
+          <FormRow label="">
+            <label className="flex items-center gap-2.5 text-sm">
+              <Checkbox checked={!form.counts_in_fault} onCheckedChange={(on) => update({ ...form, counts_in_fault: !on })} />
+              Nie liczy się w usterce
+            </label>
           </FormRow>
         </>
       )}

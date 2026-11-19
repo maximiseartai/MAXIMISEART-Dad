@@ -11,6 +11,7 @@ from typing import Final
 
 import pytest
 
+from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
@@ -23,6 +24,7 @@ PRZYPIETE: Final = {
     "2026-11-lista-wykonawcow": Wpis(WORKERS_FILE, "a9cb8eb5293610ce"),
     "2026-11-folder-okresow-od-zalacznikow": Wpis(SETTINGS_FILE, "308b4e7abd72e003"),
     "2026-11-przypomnienia": Wpis(REMINDERS_FILE, "97d126b4aeefd51a"),
+    "2026-11-rt2-bez-usterek": Wpis(LEGEND_FILE, "47b91fb598a42aee"),
 }
 
 PRZYPNIJ: Final = (

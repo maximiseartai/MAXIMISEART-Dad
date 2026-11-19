@@ -3458,7 +3458,7 @@ def _every_problem() -> list[ReportProblem]:
 def _faulty(text: str, number: str = "40000001", worker: str = "jan.testowy", day: date = DAY) -> FaultyDescription:
     """Błąd opisu Wpisu ``tak`` z czynnościami ``text`` według Legendy czynności z Wydania."""
 
-    read = DEFAULT_ACTIVITY_LEGEND.read(text)
+    read = DEFAULT_ACTIVITY_LEGEND.read(text, fault=False)
     assert isinstance(read, DescriptionError), text
     return FaultyDescription(Login(worker), day, OrderNumber(number), read.problems)
 
