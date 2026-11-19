@@ -7,6 +7,7 @@ wynik, a ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``L
     praca.tory, praca.pliki, praca.zrodlo        # pytest: tory z krokami CI i pliki testów
     praca.przegladarka                           # pliki testów, którym zadanie pytest instaluje Chromium
     praca.wybrane, praca.pominiete, praca.bledy  # kroki skilli z powodem i FAIL-e ich znalezienia
+    praca.cien                                   # na pull request kroki skilli każdego wariantu ``Podstawy``
     praca.polecenia(skill)                       # polecenia skilla, które CI liczy w tym runie
 
 Pytest. Na pushu to pełne CI ``main``: dwa tory (``TORY``: Windows 3.13, czyli Python taty, i Linux 3.14), na każdym
@@ -23,18 +24,23 @@ potrzebuje Chromium (``potrzebuja_chromium``), więc zadanie pytest z nim je ins
 której mutacje sprawdzają takie testy (``tools/mutacje_nocne.py``).
 
 Kroki skilli (``tools/lib/kroki_skilli.py``). Na pushu biegnie każda podstawa ``ci:``, a skrypty mutacji tylko nocą
-(ADR 0021, zmiana z 13.11). Na pull request biegnie podstawa ``ci:``, gdy
-zmieniony jest plik z ``pilnuje`` albo plik w folderze skilla, i skrypt mutacji modelu TLA+ (``model_watched``: każda
-jego mutacja psuje plik w folderze ``model/`` skilla), gdy zmieniony jest plik w tym folderze, sam skrypt, sprawdzenie,
-które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik ``tools/lib/model_tlc.py``); inne
-skrypty mutacji biegną nocą (ADR 0021). Nocą biegnie skrypt mutacji, gdy zmieniony jest plik w folderze skilla,
+(ADR 0021, zmiana z 13.11). Na pull request podstawę ``ci:`` wybiera wariant ``NA_ZYWO`` z ``Podstawy`` (ADR 0020, D1):
+biegnie, gdy pull request zmienia plik w folderze skilla, a zmiana, która trafia tylko w ``pilnuje``, zostawia ją pełnemu
+CI ``main`` z powodem ``biegnie na main: PR nie zmienia folderu skilla``. Skrypt mutacji modelu TLA+ (``model_watched``:
+każda jego mutacja psuje plik w folderze ``model/`` skilla) biegnie na pull request, gdy zmieniony jest plik w tym
+folderze, sam skrypt, sprawdzenie, które uruchamiają jego mutacje, albo moduł, który to sprawdzenie importuje (silnik
+``tools/lib/model_tlc.py``), bo poza silnikiem to pliki folderu skilla, a silnik zmienia, jak biegnie sprawdzenie; inne
+skrypty mutacji biegną nocą (ADR 0021). Zakres pull requestu ma w ``cien`` kroki skilli każdego wariantu ``Podstawy``
+(V0: trafienie w ``pilnuje`` albo folder, reguła sprzed D1; NF: na żywo; N0: żadnego kroku skilla), a plan CI wycenia
+je w cieniu (``plan.json``, pole ``cien``). Nocą biegnie skrypt mutacji, gdy zmieniony jest plik w folderze skilla,
 moduł, który skrypt importuje (silnik ``tools/lib/silnik_mutacji.py`` i jego zależności), uruchamiacz kroku
 (``LAUNCHER``), sprawdzenie, które uruchamiają jego mutacje, moduł, który to sprawdzenie importuje, albo plik, który psuje
-jego mutacja (``Edit.file``, także plik, po który sprawdzenie sięga procesem albo ``pytest.main``), i podstawa z ``ci-czesci`` przy tej samej
-zmianie co na pull request, każdą częścią każdej liczby części od 1 do ``ci-czesci`` (``KrokSkilla.czesci``), bo pull
-request uruchamia części jednej liczby, którą plan wybiera z celu ściany.
-Zmiana ścieżki z ``Context.SKILL_STEPS`` uruchamia każdy krok swojego rodzaju, a skill bez klucza ``pilnuje`` albo z
-kluczem, którego nie da się odczytać, biegnie zawsze. Innych plików, które krok czyta bez importu, wybór nie
+jego mutacja (``Edit.file``, także plik, po który sprawdzenie sięga procesem albo ``pytest.main``), i podstawa z ``ci-czesci`` przy zmianie,
+która trafia w jej ``pilnuje`` albo folder skilla (wariant V0, jak przed D1), każdą częścią każdej liczby części od 1 do
+``ci-czesci`` (``KrokSkilla.czesci``), bo pull request i push uruchamiają części jednej liczby, którą plan wybiera z celu ściany.
+Zmiana ścieżki z ``Context.SKILL_STEPS`` uruchamia każdy krok swojego rodzaju także na pull request (zmienia, jak krok
+biegnie, nie produkt, który sprawdza), a skill bez klucza ``pilnuje`` albo z kluczem, którego nie da się odczytać, biegnie
+zawsze; wariant N0 i na nie nie uruchamia podstawy. Innych plików, które krok czyta bez importu, wybór nie
 liczy: każdą podstawę uruchamia pełne CI ``main``, a skrypt mutacji noc, którą uruchomi inna zmiana. Podstawa, którą wybrany skrypt
 mutacji jej skilla i tak uruchamia bez mutacji (podstawa ``check_all``), nie biegnie drugi raz.
 
@@ -44,8 +50,8 @@ w ``ci.yml`` nie wywołuje skryptu skilla (``tests/test_zakres_runu.py``).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
-from dataclasses import dataclass, replace
+from collections.abc import Callable, Iterable, Mapping
+from dataclasses import dataclass, field, replace
 import enum
 from functools import cache
 from pathlib import Path, PurePosixPath
@@ -56,8 +62,8 @@ from repo import ROOT
 from wplyw_zmiany import TEST_FILES, Context, Repository, is_test_file, run_all, with_structure
 
 __all__ = [
-    "E2E", "KROKI", "MUTACJE", "PRZEGLADARKA", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Tor", "ZakresRunu", "Zdarzenie", "pliki_testow",
-    "podstawa_na_pull_request", "potrzebuja_chromium", "zakres",
+    "E2E", "KROKI", "MUTACJE", "NA_ZYWO", "PRZEGLADARKA", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Podstawy", "Tor", "ZakresRunu", "Zdarzenie",
+    "pliki_testow", "podstawa_trafiona", "potrzebuja_chromium", "zakres",
 ]
 
 # Powody pominięcia kroku skilla, który biegnie przy innym zdarzeniu.
@@ -67,6 +73,28 @@ MODEL_UNTOUCHED = (
     "skrypt mutacji modelu biegnie na pull request tylko przy zmianie modelu, skryptu, sprawdzeń jego mutacji albo modułów, które te"
     " sprawdzenia importują, a poza tym nocą"
 )
+# Powód podstawy, którą NF zostawia pełnemu CI main: zmiana trafia w ``pilnuje``, ale nie w folder skilla.
+ON_MAIN = "biegnie na main: PR nie zmienia folderu skilla"
+NO_HIT = "zmiany nie trafiają w pilnuje ani w folder skilla"
+WITHOUT_SKILL_STEPS = "biegnie na main: wariant N0 nie uruchamia na pull request żadnego kroku skilla"
+
+
+class Podstawy(enum.StrEnum):
+    """Wariant reguły, przy której zmianie podstawa ``ci:`` skilla biegnie na pull request (ADR 0020, D1); wartość to
+    nazwa wariantu w cieniu planu (``plan.json``, pole ``cien``).
+
+    ``V0``: zmiana trafia w ``pilnuje`` albo w folder skilla (reguła sprzed D1; nocą wybiera podstawę z ``ci-czesci``).
+    ``NF``: zmiana trafia w folder skilla. ``N0``: żaden krok skilla, także skrypt mutacji modelu, bo podstawy liczy pełne
+    CI ``main``. Zmiana z ``Context.SKILL_STEPS`` i skill bez czytelnego ``pilnuje`` uruchamiają podstawę w V0 i NF.
+    """
+
+    V0 = "V0"
+    NF = "NF"
+    N0 = "N0"
+
+
+# Wariant, który CI wykonuje na pull request (decyzja Maksa D1 z 19.11.2026); pozostałe plan wycenia tylko w cieniu.
+NA_ZYWO = Podstawy.NF
 
 
 class Zdarzenie(enum.StrEnum):
@@ -188,6 +216,8 @@ class ZakresRunu:
     przegladarka: frozenset[str] = frozenset()  # pliki z ``pliki``, które sięgają ``PRZEGLADARKA``
     # Na pull request pliki testów ze zmiany (sam plik testu, nie plik, od którego test zależy): bez ponowienia (Z7).
     zmienione_pliki_testow: frozenset[str] = frozenset()
+    # Na pull request kroki skilli, które wybrałby każdy wariant ``Podstawy`` (``cien[NA_ZYWO]`` to ``wybrane``); push i noc: puste.
+    cien: Mapping[Podstawy, tuple[KrokSkilla, ...]] = field(default_factory=dict)
 
     def kroki_skilla(self, skill: Path) -> list[Step]:
         """Wybrane kroki skilla ``skill`` (folder), w kolejności wyboru."""
@@ -208,21 +238,28 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``: pliki
     testów i kroki skilli tego checkoutu (``Katalog.skanuj(root)``)."""
 
-    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push go nie czyta.
+    # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push go nie czyta. Graf importów liczy się raz, więc wybór
+    # kroków każdego wariantu w cieniu kosztuje tylko reguły kroków.
     repository = cache(lambda: Repository.scan(root))
     tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root, repository)
     katalog = Katalog.skanuj(root)
-    why = {step: _dlaczego(step, zdarzenie, zmiana, repository) for step in katalog.kroki}
-    running = [step for step in katalog.kroki if why[step][0]]
-    wybrane = tuple(
-        KrokSkilla(step, why[step][1], _czesci(step, zdarzenie), why[step][2])
-        for step in running
-        if step.verdict or not repeats(step, running)
-    )
-    pominiete = tuple((step, why[step][1]) for step in katalog.kroki if not why[step][0])
+    warianty = tuple(Podstawy) if zdarzenie is Zdarzenie.PULL_REQUEST else (NA_ZYWO,)
+    why = {podstawy: {step: _dlaczego(step, zdarzenie, zmiana, repository, podstawy) for step in katalog.kroki} for podstawy in warianty}
+    wybrane = {podstawy: _wybrane(why[podstawy], zdarzenie) for podstawy in warianty}
+    pominiete = tuple((step, reason) for step, (runs, reason, _) in why[NA_ZYWO].items() if not runs)
     przegladarka = potrzebuja_chromium(pliki, repository()) if pliki else frozenset()
     zmienione = frozenset(filter(is_test_file, zmiana)) if zdarzenie is Zdarzenie.PULL_REQUEST else frozenset()
-    return ZakresRunu(zdarzenie, tory, pliki, zrodlo, wybrane, pominiete, tuple(sorted(katalog.bledy.items())), przegladarka, zmienione)
+    cien = wybrane if zdarzenie is Zdarzenie.PULL_REQUEST else {}
+    return ZakresRunu(
+        zdarzenie, tory, pliki, zrodlo, wybrane[NA_ZYWO], pominiete, tuple(sorted(katalog.bledy.items())), przegladarka, zmienione, cien
+    )
+
+
+def _wybrane(why: Mapping[Step, Powod], zdarzenie: Zdarzenie) -> tuple[KrokSkilla, ...]:
+    running = [step for step, (runs, _, _) in why.items() if runs]
+    return tuple(
+        KrokSkilla(step, why[step][1], _czesci(step, zdarzenie), why[step][2]) for step in running if step.verdict or not repeats(step, running)
+    )
 
 
 def potrzebuja_chromium(testy: Iterable[str], repository: Repository) -> frozenset[str]:
@@ -261,16 +298,20 @@ def _czesci(step: Step, zdarzenie: Zdarzenie) -> tuple[Czesc, ...]:
 Powod = tuple[bool, str, frozenset[str]]
 
 
-def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:
+def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], repository: Callable[[], Repository], podstawy: Podstawy) -> Powod:
+    """``podstawy`` rządzi tylko pull requestem; push i noc są takie same w każdym wariancie (D1)."""
+
     match zdarzenie:
         case Zdarzenie.PUSH:
             return (True, "", frozenset()) if step.verdict is None else (False, NIGHTLY, frozenset())
         case Zdarzenie.PULL_REQUEST:
-            return _podstawa(step.skill, zmiana) if step.verdict is None else _skrypt_modelu(step, zmiana, repository)
+            if podstawy is Podstawy.N0:
+                return False, WITHOUT_SKILL_STEPS, frozenset()
+            return _podstawa(step.skill, zmiana, podstawy) if step.verdict is None else _skrypt_modelu(step, zmiana, repository)
         case Zdarzenie.NOC:
             if step.verdict is not None:
                 return _skrypt(step, zmiana, repository)
-            return _podstawa(step.skill, zmiana) if step.parts > 1 else (False, ON_PULL_REQUEST, frozenset())
+            return _podstawa(step.skill, zmiana, Podstawy.V0) if step.parts > 1 else (False, ON_PULL_REQUEST, frozenset())
 
 
 def _zawsze(skill: Path, zmiana: frozenset[str]) -> str | None:
@@ -283,22 +324,26 @@ def _zawsze(skill: Path, zmiana: frozenset[str]) -> str | None:
     return None
 
 
-def podstawa_na_pull_request(skill: Path, zmiana: frozenset[str]) -> tuple[bool, str]:
-    """Czy na pull request ze zmianą ``zmiana`` biegnie podstawa ``ci:`` skilla ``skill`` (folder), i dlaczego; nocą
-    ta sama zmiana wybiera podstawę z ``ci-czesci``."""
+def podstawa_trafiona(skill: Path, zmiana: frozenset[str]) -> bool:
+    """Czy zmiana ``zmiana`` trafia w podstawę ``ci:`` skilla ``skill`` (folder): w jego ``pilnuje``, folder albo
+    ``Context.SKILL_STEPS`` (wariant V0). Taką podstawę pełne CI ``main`` uruchamia po merge'u zawsze, a pull request
+    tylko wtedy, gdy zmienia folder skilla (D1), więc rozjazd modelu, na którym padnie, łapie przed pushem
+    ``tools/szybko.py``."""
 
-    runs, reason, _ = _podstawa(skill, zmiana)
-    return runs, reason
+    return _podstawa(skill, zmiana, Podstawy.V0)[0]
 
 
-def _podstawa(skill: Path, zmiana: frozenset[str]) -> Powod:
+def _podstawa(skill: Path, zmiana: frozenset[str], podstawy: Podstawy) -> Powod:
     found = hits(skill, zmiana).files
-    files = _uruchamiaja(zmiana, {*found, *_touched(zmiana, (_folder(skill),))})
+    folder = _touched(zmiana, (_folder(skill),))
+    files = _uruchamiaja(zmiana, {*found, *folder})
     if reason := _zawsze(skill, zmiana):
         return True, reason, files
-    if found:
-        return True, _changes(found), files
-    return False, "zmiany nie trafiają w pilnuje ani w folder skilla", files
+    if not found:
+        return False, NO_HIT, files
+    if podstawy is Podstawy.NF and not folder:
+        return False, f"{ON_MAIN} (pilnuje: {_changes(found)})", files
+    return True, _changes(found), files
 
 
 def _skrypt(step: Step, zmiana: frozenset[str], repository: Callable[[], Repository]) -> Powod:

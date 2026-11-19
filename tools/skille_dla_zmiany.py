@@ -12,12 +12,15 @@ Każdy skill, który obowiązuje, dostaje linię ``<skill>: <plik> (<glob>), …
 ``CO DALEJ: …`` (``WHAT_NEXT``) mówi, co agent robi z wynikiem przed pushem. Ostatnia linia to
 ``SKILLE VERIFY: <skille po przecinku>`` albo ``SKILLE VERIFY: brak``: każdy skill, który obowiązuje, także taki,
 którego polecenia liczy CI, bo jego workflow ma kroki, których CI nie zrobi (osąd, prawdziwe Wzorce, Excel na Macu).
-Linie ``LICZY CI`` i ``LICZY NOC`` przed nią drukuje z zakresu runu (``tools/lib/zakres_runu.py``) tej zmiany, tego
-samego, który wycenia plan CI. ``LICZY CI: <skill> (<polecenie>, …); …`` wymienia polecenia skilla, które liczy CI na
-tym SHA: zakres pull requestu, czyli wybrane kroki skilla (podstawa ``ci:``, skrypt mutacji modelu przy zmianie modelu)
-i wywołania jego skryptów w krokach CI (E2E przy zmianie ``src/``). ``LICZY NOC: <skill> (<skrypt>, …); …`` wymienia
-skrypty mutacji skilla, które po merge'u liczy noc na ``main`` (zakres nocy, ADR 0021), a pull request nie: skrypt z
-``LICZY CI`` w niej nie stoi. Agent nie uruchamia ich lokalnie poza odtworzeniem czerwonego kroku CI albo issue nocy.
+Linie ``LICZY CI``, ``LICZY MAIN`` i ``LICZY NOC`` przed nią drukuje z zakresu runu (``tools/lib/zakres_runu.py``) tej
+zmiany, tego samego, który wycenia plan CI. ``LICZY CI: <skill> (<polecenie>, …); …`` wymienia polecenia skilla, które
+liczy CI na tym SHA: zakres pull requestu, czyli wybrane kroki skilla (podstawa ``ci:`` przy zmianie folderu skilla,
+skrypt mutacji modelu przy zmianie modelu) i wywołania jego skryptów w krokach CI (E2E przy zmianie ``src/``).
+``LICZY MAIN: <skill> (<polecenie>, …); …`` wymienia podstawy skilla, które po merge'u liczy pełne CI ``main`` (zakres
+pushu), a pull request nie, bo nie zmienia folderu skilla (ADR 0020, D1). ``LICZY NOC: <skill> (<skrypt>, …); …``
+wymienia skrypty mutacji skilla, które po merge'u liczy noc na ``main`` (zakres nocy, ADR 0021), a pull request nie:
+skrypt z ``LICZY CI`` w niej nie stoi. Agent nie uruchamia poleceń ``LICZY MAIN`` ani ``LICZY NOC`` lokalnie poza
+odtworzeniem czerwonego kroku CI albo issue nocy.
 Gdy git nie wyznaczy zmiany (np. nie ma bazy), ostatnia linia to ``SKILLE VERIFY: nieznane (<powód>)``, a kod wyjścia 1.
 
 Bazę podaje ``--baza`` albo pozycyjnie; obie postacie naraz z różnymi wartościami to błąd użycia.
@@ -42,12 +45,14 @@ from wplyw_zmiany import changed_since
 from zakres_runu import Zdarzenie, zakres
 
 IN_CI = "LICZY CI"
+ON_MAIN = "LICZY MAIN"
 AT_NIGHT = "LICZY NOC"
 SHOWN = 3
 # Co agent robi z wynikiem przed pushem: linia przed ``LICZY CI``, gdy jakiś skill obowiązuje.
 WHAT_NEXT = (
     f"{CO_DALEJ}załaduj każdy skill z ostatniej linii i wykonaj workflow z jego SKILL.md. Polecenia z linii {IN_CI} liczy "
-    f"CI na tym SHA, a skrypty z linii {AT_NIGHT} noc na main po merge'u: lokalnie uruchamiasz je tylko do odtworzenia "
+    f"CI na tym SHA, polecenia z linii {ON_MAIN} pełne CI main po merge'u, a skrypty z linii {AT_NIGHT} noc na main po "
+    "merge'u: lokalnie uruchamiasz je tylko do odtworzenia "
     "czerwonego kroku CI albo issue nocy, albo przy pracy nad jedną funkcją. Resztę workflow (osąd modelu i zrzutów, "
     "prawdziwe Wzorce, Excel na Macu) robisz sam według sekcji „What CI runs and what stays local” w SKILL.md skilla. "
     "VERIFY SKIP (kod 3) znaczy, że skill nic nie sprawdził, więc nie jest dowodem."
@@ -68,9 +73,10 @@ def main(argv: list[str] | None = None) -> int:
         detail = (error.stderr.strip().splitlines() or [f"kod {error.returncode}"])[0]
         print(f"{SKILLE_VERIFY}nieznane (git {error.cmd[1]}: {detail})")
         return 1
-    pull_request, night = zakres(Zdarzenie.PULL_REQUEST, files, ROOT), zakres(Zdarzenie.NOC, files, ROOT)
+    pull_request, push, night = (zakres(zdarzenie, files, ROOT) for zdarzenie in (Zdarzenie.PULL_REQUEST, Zdarzenie.PUSH, Zdarzenie.NOC))
     chosen: list[str] = []
     in_ci: list[str] = []
+    on_main: list[str] = []
     at_night: list[str] = []
     for skill in Katalog.skanuj(ROOT).skille("verify-*"):
         found = hits(skill, files)
@@ -81,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
         if runs := pull_request.polecenia(skill):
             in_ci.append(f"{skill.name} ({', '.join(' '.join(run) for run in runs)})")
         in_pull_request = pull_request.kroki_skilla(skill)
+        if after_merge := [" ".join((Path(step.command[0]).name, *step.command[1:])) for step in push.kroki_skilla(skill) if step not in in_pull_request]:
+            on_main.append(f"{skill.name} ({', '.join(after_merge)})")
         if scripts := [Path(step.command[0]).name for step in night.kroki_skilla(skill) if step not in in_pull_request]:
             at_night.append(f"{skill.name} ({', '.join(scripts)})")
         more = f" i {len(reasons) - SHOWN} innych" if len(reasons) > SHOWN else ""
@@ -89,6 +97,8 @@ def main(argv: list[str] | None = None) -> int:
         print(WHAT_NEXT)
     if in_ci:
         print(f"{IN_CI}: {'; '.join(in_ci)}")
+    if on_main:
+        print(f"{ON_MAIN}: {'; '.join(on_main)}")
     if at_night:
         print(f"{AT_NIGHT}: {'; '.join(at_night)}")
     print(f"{SKILLE_VERIFY}{', '.join(chosen) or 'brak'}")

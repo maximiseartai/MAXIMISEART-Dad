@@ -7,6 +7,8 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
 
 - Co biegnie na swojej gałęzi, drukuje `tools/plan_ci.py plan --baza origin/main`.
   Linia `PLAN CI` podaje źródło plików (`wybór <n> plików` albo `FULL (<pliki>)`), a linie `WYBRANY` i `POMINIĘTY` kroki skilli z powodem.
+- Podstawa `ci:` skilla biegnie na PR tylko wtedy, gdy PR zmienia folder skilla (ADR 0020, D1): przy zmianie tylko w `pilnuje:` linia `POMINIĘTY` mówi `biegnie na main: PR nie zmienia folderu skilla`, a `tools/skille_dla_zmiany.py` wymienia ją w `LICZY MAIN`; lokalnie jej nie uruchamiasz.
+  Linia `CIEŃ PODSTAW` podaje ścianę i zadania wariantów V0, NF i N0, a rozstrzygnięcie D1 (#2169) liczy po 14 dniach `tools/cien_podstaw.py`.
 - Do bramki PR dokładasz tylko to, co złapałoby defekt, który przez nią przeszedł, z dowodem z backtestu.
 - Linię `SZOPA` i etykietę `powiększa maszynerię procesu` z workflow `Rozmiar PR` opisuje docstring `tools/ci/rozmiar_pr.py`: etykieta tylko informuje recenzenta i nie wstrzymuje merge'u, a przeniesienie pliku między grupami (licznik liczy ścieżki) recenzent ocenia z liczb obu grup w linii `SZOPA`.
 - pytest na Windows biegnie w CI, na PR i na `main`, tylko na Pythonie taty (3.13) i na tym torze biegną E2E i straż czasu; pytest na Pythonie 3.14 biegnie tylko na Linuksie (ADR 0020, Z2).

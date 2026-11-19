@@ -219,7 +219,8 @@ jobs:
         with:
           name: plan
           path: .ci-plan/plan.json
-          retention-days: 7
+          # The D1 measurement (tools/cien_podstaw.py) reads the shadow of 14 days of pull request plans after the window.
+          retention-days: 30
           include-hidden-files: true
           # Re-running all jobs plans again; the jobs and Required read the plan of their attempt.
           overwrite: true
