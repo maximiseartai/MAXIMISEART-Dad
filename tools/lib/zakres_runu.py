@@ -9,6 +9,7 @@ wynik, a ``tools/skille_dla_zmiany.py`` drukuje z niego linie ``LICZY CI`` i ``L
     praca.wybrane, praca.pominiete, praca.bledy  # kroki skilli z powodem i FAIL-e ich znalezienia
     praca.cien                                   # na pull request kroki skilli każdego wariantu ``Podstawy``
     praca.polecenia(skill)                       # polecenia skilla, które CI liczy w tym runie
+    zakresy((Zdarzenie.PULL_REQUEST, Zdarzenie.PUSH), zmiana, ROOT)  # kilka zdarzeń na jednym grafie importów
 
 Pytest. Na pushu to pełne CI ``main``: dwa tory (``TORY``: Windows 3.13, czyli Python taty, i Linux 3.14), na każdym
 każdy plik testów ``tests/``, oraz kroki CI (``KROKI``), E2E i straż czasu, na Windows 3.13 (ADR 0020, Z2). Na pull
@@ -63,7 +64,7 @@ from wplyw_zmiany import TEST_FILES, Context, Repository, is_test_file, run_all,
 
 __all__ = [
     "E2E", "KROKI", "MUTACJE", "NA_ZYWO", "PRZEGLADARKA", "STRAZ", "TIMING", "TORY", "Krok", "KrokSkilla", "Podstawy", "Tor", "ZakresRunu", "Zdarzenie",
-    "pliki_testow", "podstawa_trafiona", "potrzebuja_chromium", "zakres",
+    "pliki_testow", "podstawa_trafiona", "potrzebuja_chromium", "zakres", "zakresy",
 ]
 
 # Powody pominięcia kroku skilla, który biegnie przy innym zdarzeniu.
@@ -238,11 +239,22 @@ def zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path = ROOT) -> Z
     """Zakres runu ``zdarzenie`` dla zmiany ``zmiana`` (ścieżki od bazy; push jej nie czyta) w checkoucie ``root``: pliki
     testów i kroki skilli tego checkoutu (``Katalog.skanuj(root)``)."""
 
+    return zakresy((zdarzenie,), zmiana, root)[zdarzenie]
+
+
+def zakresy(zdarzenia: Iterable[Zdarzenie], zmiana: frozenset[str], root: Path = ROOT) -> dict[Zdarzenie, ZakresRunu]:
+    """``zakres`` każdego z ``zdarzenia`` dla tej samej zmiany i checkoutu, na jednym grafie importów: graf to prawie
+    cały koszt zakresu, a każde wywołanie ``zakres`` liczy go od nowa."""
+
     # Pliki checkoutu tylko, gdy run pyta o wpływ zmiany: push go nie czyta. Graf importów liczy się raz, więc wybór
-    # kroków każdego wariantu w cieniu kosztuje tylko reguły kroków.
+    # kroków każdego wariantu w cieniu i każdego zdarzenia kosztuje tylko reguły kroków.
     repository = cache(lambda: Repository.scan(root))
-    tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root, repository)
     katalog = Katalog.skanuj(root)
+    return {zdarzenie: _zakres(zdarzenie, zmiana, root, repository, katalog) for zdarzenie in zdarzenia}
+
+
+def _zakres(zdarzenie: Zdarzenie, zmiana: frozenset[str], root: Path, repository: Callable[[], Repository], katalog: Katalog) -> ZakresRunu:
+    tory, pliki, zrodlo = _pytest(zdarzenie, zmiana, root, repository)
     warianty = tuple(Podstawy) if zdarzenie is Zdarzenie.PULL_REQUEST else (NA_ZYWO,)
     why = {podstawy: {step: _dlaczego(step, zdarzenie, zmiana, repository, podstawy) for step in katalog.kroki} for podstawy in warianty}
     wybrane = {podstawy: _wybrane(why[podstawy], zdarzenie) for podstawy in warianty}

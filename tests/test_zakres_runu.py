@@ -21,7 +21,7 @@ from jednostka import Klucz
 import kroki_skilli
 import setup_worktree
 from wplyw_zmiany import STRUCTURE, Context, Repository
-from zakres_runu import NA_ZYWO, PRZEGLADARKA, TORY, Podstawy, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres
+from zakres_runu import NA_ZYWO, PRZEGLADARKA, TORY, Podstawy, Zdarzenie, ZakresRunu, pliki_testow, potrzebuja_chromium, zakres, zakresy
 
 ROOT = Path(__file__).resolve().parents[1]
 # Pliki, których zmiana uruchamia wszystko w kontekście, z tabeli jej właściciela (tools/lib/wplyw_zmiany.py), nie z kopii.
@@ -571,6 +571,20 @@ def test_cien_wariantow_podstaw_ma_tylko_pull_request_a_jego_wariant_na_zywo_to_
     pull_request, other = zakres(Zdarzenie.PULL_REQUEST, changed, repo), zakres(event, changed, repo)
 
     assert (set(pull_request.cien), pull_request.cien[NA_ZYWO], dict(other.cien)) == (set(Podstawy), pull_request.wybrane, {})
+
+
+def test_zakresy_kilku_zdarzen_na_jednym_grafie_daja_kazdemu_zdarzeniu_jego_wlasny_zakres(tmp_path: Path) -> None:
+    files = {**SKILLS, ".agents/skills/verify-d/SKILL.md": _with_ci("verify-d", BASELINE_D), BASELINE_D: "print('sprawdzone')\n"}
+    repo = repository(tmp_path / "repo", files)
+    changed = frozenset({BASELINE_D, "src/pakiet/routing.py", "tests/test_a.py"})
+
+    razem = zakresy(tuple(Zdarzenie), changed, repo)
+
+    assert {zdarzenie: (praca.zdarzenie, praca.zrodlo.split()[0]) for zdarzenie, praca in razem.items()} == {
+        Zdarzenie.PULL_REQUEST: (Zdarzenie.PULL_REQUEST, "wybór"),
+        Zdarzenie.PUSH: (Zdarzenie.PUSH, "wszystkie"),
+        Zdarzenie.NOC: (Zdarzenie.NOC, "bez"),
+    }
 
 
 @pytest.mark.parametrize(
