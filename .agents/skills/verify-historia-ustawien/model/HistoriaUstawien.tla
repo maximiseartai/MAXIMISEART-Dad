@@ -267,14 +267,15 @@ Propozycja ==
 
 (* _change: current = _value(observed), edit(current); bez różnicy przy dobrej treści Saved(change=None), a zmiana z  *)
 (* Wydania ma wtedy wynik „bez-zmian”; inaczej wiersz tylko przy różnicy kluczy (zła treść bez różnicy: sam zapis).   *)
-(* „Cofnij” wiersza z created i z wartością z Wydania zapisuje brak pliku (_restores_absence), inny zapis file.dump.  *)
+(* „Cofnij” wiersza z created zapisuje brak pliku (_restores_absence: plik to jedna wartość, więc późniejsze zmiany    *)
+(* jej klucza nic po cofnięciu nie zostawiają), inny zapis file.dump.                                                *)
 Wylicz ==
     /\ op.pc = "porownane" /\ op.etap = "zmiana"
     /\ IF op.cel = op.obs /\ op.obsDobra
        THEN IF op.kto = "tata" THEN Koniec
             ELSE op' = [Bezczynne EXCEPT !.pc = "pamiecZmian", !.kto = "wydanie", !.wynik = "bez-zmian"]
                  /\ UNCHANGED faza
-       ELSE op' = [op EXCEPT !.pc = "zapis", !.nowa = IF op.usun /\ op.cel = DOMYSLNA THEN BRAK ELSE op.cel,
+       ELSE op' = [op EXCEPT !.pc = "zapis", !.nowa = IF op.usun THEN BRAK ELSE op.cel,
                              !.wiersz = op.cel # op.obs, !.tataPrzed = wartoscTaty]
             /\ UNCHANGED faza
     /\ UNCHANGED <<dysk, liczniki, duchy, zdarzenia>>

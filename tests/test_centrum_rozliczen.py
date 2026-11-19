@@ -778,6 +778,25 @@ def test_cofniecie_zmiany_ktora_utworzyla_plik_ustawien_usuwa_plik(
     assert (redone.status_code, after_redo) == (200, [name]), redone.text
 
 
+def test_cofniecie_zmiany_ktora_utworzyla_plik_zostawia_plik_z_pozniejsza_zmiana_innego_klucza(tmp_path: Path) -> None:
+    """„Cofnij” zmiany motywu, która utworzyła plik Folderów i motywu, przy wskazanym potem folderze okresów zostawia plik
+    z tym folderem: brak pliku zgubiłby późniejszą zmianę taty."""
+
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    app = centrum(tmp_path)
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
+    [created] = history_rows(app)
+    app.platform.chosen_folders.append(periods)
+    assert app.client.post("/api/settings/periods-directory/choose").status_code == 200
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert FOLDERS.parse(app.settings_path.read_bytes()) == FolderSettings(periods_directory=periods)
+    assert history_rows(app)[0]["removed"] is False
+
+
 def _outside(app: Centrum, name: str, old: str, new: str) -> Any:
     """Plik ``name`` z treścią z Wydania z ``old`` zamienionym na ``new`` zapisany poza Centrum i odczyt, który daje
     jego wiersz Historii."""
@@ -1562,6 +1581,26 @@ def test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wart
 
     assert undone.status_code == 200, undone.text
     assert [file for file in (RULES_FILE, DEVICES_FILE) if (app.tool.config / file).exists()] == []
+    assert _tools_rules(app.tool.config) == DEFAULT_QUANTITY_RULES
+
+
+def test_cofniecie_zmiany_ktora_utworzyla_plik_po_cofnieciu_pozniejszej_i_aktualizacji_usuwa_plik(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    """Tata bez pliku reguł zmienia regułę dwa razy, cofa drugą zmianę, Aktualizacja daje nowe Reguły ilości, a potem
+    tata cofa pierwszą zmianę: późniejsze zmiany niczego w pliku nie zostawiły, więc pliku znowu nie ma."""
+
+    app = centrum(tmp_path)
+    for value in (2, 3):
+        assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, value)).status_code == 200
+    [second, created] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
+    assert app.client.post(f"/api/settings/history/{second['id']}/undo").status_code == 200
+    release_without_manual_installation()
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert not (app.tool.config / RULES_FILE).exists()
     assert _tools_rules(app.tool.config) == DEFAULT_QUANTITY_RULES
 
 

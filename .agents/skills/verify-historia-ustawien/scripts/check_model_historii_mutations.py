@@ -206,7 +206,7 @@ MUTATIONS = (
         (
             Edit(
                 MODEL,
-                "!.nowa = IF op.usun /\\ op.cel = DOMYSLNA THEN BRAK ELSE op.cel,",
+                "!.nowa = IF op.usun THEN BRAK ELSE op.cel,",
                 "!.nowa = op.cel,",
             ),
         ),

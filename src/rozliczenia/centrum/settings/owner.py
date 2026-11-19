@@ -1232,20 +1232,28 @@ class CentrumSettings:
     def _restores_absence(self, file: SettingsFile[T], undoes: HistoryRow | None, value: T) -> bool:
         """„Cofnij” zmiany, przed którą pliku nie było (``HistoryRow.created``), przywraca brak pliku, a nie zapisuje do
         pliku taty treści z Wydania, która przy następnym Wydaniu nie dostałaby nowych wartości domyślnych (ADR 0032).
-        Brak pliku to stan sprzed zmiany, gdy jej wiersz jest najnowszym wierszem pliku (plik ma od tamtej pory jej
-        treść, także gdy Aktualizacja zmieniła potem wartości z Wydania), albo gdy wartość po cofnięciu to wartość z
-        Wydania (wcześniej cofnięto też późniejsze zmiany). Plik, którego brak może znaczyć coś innego niż wartości
-        domyślne (migracja z Wydania z ``refused_absent`` albo ``waiting``: Lista Wykonawców), zostaje z treścią."""
+        Brak pliku to stan sprzed zmiany, gdy późniejsze zmiany pliku nic w nim nie zostawiły: każdy klucz z wartością
+        sprzed pierwszego wiersza od cofanej zmiany, który go zmienił (``restore``), daje tę samą wartość co samo
+        cofnięcie. Nie zależy to od dzisiejszych wartości z Wydania, które Aktualizacja mogła zmienić od tamtej pory.
+        Plik, którego brak może znaczyć coś innego niż wartości domyślne (migracja z Wydania z ``refused_absent`` albo
+        ``waiting``: Lista Wykonawców), zostaje z treścią, tak samo przy Historii, której nie da się przeczytać."""
 
         if undoes is None or not undoes.created:
             return False
         if any(change.refused_absent is not None or change.waiting is not None for change in self._release_changes if change.file is file):
             return False
-        if not file.diff(file.default, value):
-            return True
         history = self._history.read()
-        rows = () if isinstance(history, Unreadable) else history.rows
-        return next((row.id for row in rows if row.file == file.name), None) == undoes.id
+        if isinstance(history, Unreadable):
+            return False
+        rows = [row for row in history.rows if row.file == file.name]
+        position = next((index for index, row in enumerate(rows) if row.id == undoes.id), None)
+        if position is None:
+            return False
+        first: dict[str, KeyChange] = {}
+        for row in reversed(rows[: position + 1]):
+            for change in row.key_changes():
+                first.setdefault(change.key, change)
+        return not file.diff(file.restore(value, tuple(first.values())), value)
 
     def _row(
         self,
