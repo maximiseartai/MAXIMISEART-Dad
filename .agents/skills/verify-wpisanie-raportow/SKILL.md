@@ -5,6 +5,8 @@ pilnuje:
   - src/rozliczenia/worker_reports/_cells.py
   - src/rozliczenia/worker_reports/_model.py
   - src/rozliczenia/worker_reports/__init__.py
+  - src/rozliczenia/worker_reports/_memory.py
+  - src/rozliczenia/worker_reports/_operation.py
   - src/rozliczenia/report_entering.py
   - src/rozliczenia/intermax_cells.py
   - src/rozliczenia/centrum/report_entering_state.py

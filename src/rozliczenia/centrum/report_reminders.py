@@ -84,7 +84,6 @@ from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
 from rozliczenia.report_entering import (
     DecisionsUnreadable,
-    EnteringMemory,
     ReportState,
     StateUnreadable,
     closed_periods,
@@ -104,6 +103,7 @@ from rozliczenia.worker_report_inbox import (
 from rozliczenia.worker_reports import (
     DEFAULT_REMINDERS,
     OLD_VERSION_SCHEDULES,
+    EnteringMemory,
     Pora,
     Reminder,
     ReminderInputs,

@@ -72,14 +72,14 @@ from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import check_preparation, check_settlement
 from rozliczenia.message import StopError
-from rozliczenia.report_entering import EnteringInputs, ReportEnteringParts, ReportStateInMemory, SavedState, enter_from_mail
+from rozliczenia.report_entering import EnteringInputs, ReportEnteringParts, ReportStateInMemory, enter_from_mail
 from rozliczenia.run_context import RunContext, check_on_disk
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.wall_clock import local_now
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import WorkerPeriods
 from rozliczenia.worker_report_inbox import PasswordRejected
-from rozliczenia.worker_reports import OwnEntries, SchedulesInEffect
+from rozliczenia.worker_reports import OwnEntries, SavedState, SchedulesInEffect
 import rozjazd_modelu
 
 REPO_ROOT = Path(__file__).resolve().parents[4]

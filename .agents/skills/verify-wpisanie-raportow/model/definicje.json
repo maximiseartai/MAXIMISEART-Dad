@@ -9,14 +9,16 @@
     "OwnEntries": "48594af020368135",
     "Kept": "417281fbc0c25393"
   },
-  "src/rozliczenia/worker_reports/__init__.py": {
+  "src/rozliczenia/worker_reports/_operation.py": {
     "enter_reports": "64436d7978d9a3a2"
   },
   "src/rozliczenia/report_entering.py": {
     "enter_from_mail": "5a57432b0fdf5b81",
-    "closed_periods": "5b9ce8bf021b5dd9",
+    "closed_periods": "5b9ce8bf021b5dd9"
+  },
+  "src/rozliczenia/worker_reports/_memory.py": {
     "SavedState": "2bef4c3810a32563",
-    "EnteringMemory": "31fd9ea4b60686ca"
+    "EnteringMemory": "45e176bcbd62fb94"
   },
   "src/rozliczenia/intermax_cells.py": {
     "write_cells": "a2a848ebcb13bf49"

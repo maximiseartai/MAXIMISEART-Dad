@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 from rozliczenia.activity_legend import problem_text
 from rozliczenia.client_data import MASKS
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import EnteringFacts, EnteringSummary, SavedState
+from rozliczenia.report_entering import EnteringFacts, EnteringSummary
 from rozliczenia.worker_reports import (
     AddBar,
     ConflictingVerdicts,
@@ -48,6 +48,7 @@ from rozliczenia.worker_reports import (
     ReportProblem,
     ReportSubject,
     RequestedEntry,
+    SavedState,
     SubjectFault,
     UnknownNumber,
     UnknownSender,
