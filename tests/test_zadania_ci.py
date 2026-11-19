@@ -430,7 +430,7 @@ def _normal(step: dict[str, Any]) -> dict[str, Any]:
 def _tolerant(workflow: dict[str, Any]) -> list[str]:
     """Co w zadaniach bramki (``needs`` Required i samo Required) zamienia porażkę sprawdzenia w sukces:
     ``continue-on-error`` zadania, krok z nim inny w całości niż postać z ``TOLERATED``, a przy kroku z ``TOLERATED``
-    ``defaults`` i ``env`` workflow, ``defaults`` zadania i zmienna zadania spoza ``TOLERATED_JOB_ENV``."""
+    ``defaults`` i ``env`` workflow, ``defaults`` i ``container`` zadania i zmienna zadania spoza ``TOLERATED_JOB_ENV``."""
 
     jobs = workflow["jobs"]
     found = [f"workflow: {key}" for key in ("env", "defaults") if key in workflow]
@@ -440,7 +440,7 @@ def _tolerant(workflow: dict[str, Any]) -> list[str]:
         tolerated = [step for step in job["steps"] if step.get("continue-on-error", False) is not False]
         found += [f"{name}: {step.get('name', step.get('uses'))}" for step in tolerated if _normal(step) not in TOLERATED]
         if tolerated:
-            found += [f"{name}: defaults"] if "defaults" in job else []
+            found += [f"{name}: {key}" for key in ("defaults", "container") if key in job]
             found += [f"{name}: env {variable}" for variable in sorted(set(job.get("env", {})) - TOLERATED_JOB_ENV)]
     return found
 
@@ -479,6 +479,7 @@ CHAINED = "bash -c \"bash -e $0 && python -m pytest tests\" {0}"
         ("mutations", "Save TLC tools", {"uses": "./.github/actions/narzedzia-tlc"}, ["mutations: Save TLC tools"]),
         ("pytest", None, {"env": {"PYTHONUTF8": "1", "BASH_ENV": "tools/ci/sprawdzenie.sh"}}, ["pytest: env BASH_ENV"]),
         ("mutations", None, {"defaults": {"run": {"shell": CHAINED}}}, ["mutations: defaults"]),
+        (REQUIRED, None, {"container": "python:3.14"}, [f"{REQUIRED}: container"]),
         (None, None, {"defaults": {"run": {"shell": CHAINED}}}, ["workflow: defaults"]),
         (None, None, {"env": {"BASH_ENV": "tools/ci/sprawdzenie.sh"}}, ["workflow: env"]),
         ("pytest", "Upload the unit times", {"name": "Wysłanie czasów"}, []),
@@ -499,6 +500,7 @@ CHAINED = "bash -c \"bash -e $0 && python -m pytest tests\" {0}"
         "inna-akcja-zapisu-tlc",
         "bash-env-zadania",
         "powloka-zadania",
+        "kontener-zadania",
         "powloka-workflow",
         "env-workflow",
         "nazwa-kroku-pomiaru",
@@ -507,10 +509,10 @@ CHAINED = "bash -c \"bash -e $0 && python -m pytest tests\" {0}"
 def test_porazka_kroku_zadania_bramki_czerwieni_required(job: str | None, step: str | None, values: dict[str, object], found: list[str]) -> None:
     """``continue-on-error`` zadania daje Required jego sukces mimo porażki, a kroku sukces zadania mimo porażki
     sprawdzenia, którego zapisy jednostek nie niosą (#2161 r4 W1: „Verify py -3 interpreter”); krok z nim ma jedną
-    z postaci ``TOLERATED`` w całości, więc ani ``shell``, ``env``, katalog kroku, ani domyślna powłoka i zmienne zadania
-    i workflow nie dokładają mu sprawdzenia (#2161 r5 W1). Granica (``ZNANE_LUKI_TOLERANCJI``): krok przed krokiem
-    pomiaru, który pisze ``GITHUB_ENV`` albo ``GITHUB_PATH``, i treść ``tools/ci/zapis_czasow.py`` i akcji
-    ``narzedzia-tlc/zapis``, które czyta recenzent w diffie."""
+    z postaci ``TOLERATED`` w całości, więc ani ``shell``, ``env``, katalog kroku, ani domyślna powłoka, kontener
+    i zmienne zadania i workflow nie dokładają mu sprawdzenia (#2161 r5 W1). Granica (``ZNANE_LUKI_TOLERANCJI``): krok
+    przed krokiem pomiaru, który zmienia jego wejście (``GITHUB_ENV``, ``GITHUB_PATH``, plik skryptu), i treść
+    ``tools/ci/zapis_czasow.py`` i akcji ``narzedzia-tlc/zapis``, które czyta recenzent w diffie."""
 
     assert _tolerant(_changed(job, step, values)) == found, (
         "continue-on-error w zadaniu, na które czeka Required CI status, w samym Required albo w ich kroku zamienia porażkę"
@@ -518,10 +520,12 @@ def test_porazka_kroku_zadania_bramki_czerwieni_required(job: str | None, step: 
     )
 
 
-# Znane luki strażnika ``continue-on-error`` (postać → zmiana ``ci.yml``): krok, który przed krokiem pomiaru pisze
-# ``GITHUB_ENV``, zmienia zmienne kroku pomiaru, a strażnik nie czyta poleceń powłoki.
+# Znane luki strażnika ``continue-on-error`` (postać → zmiana ``ci.yml``): krok przed krokiem pomiaru zmienia jego
+# wejście (zmienne przez ``GITHUB_ENV``, ``PATH`` przez ``GITHUB_PATH``, plik skryptu), a strażnik nie czyta poleceń powłoki.
 ZNANE_LUKI_TOLERANCJI: dict[str, tuple[str, str, Mapping[str, object]]] = {
     "zmienna z GITHUB_ENV przed krokiem pomiaru": ("pytest", "Verify py -3 interpreter", {"run": 'echo "BASH_ENV=tools/ci/sprawdzenie.sh" >> "$GITHUB_ENV"'}),
+    "katalog z GITHUB_PATH przed krokiem pomiaru": ("pytest", "Route py -3 to the selected Python", {"run": 'echo "$GITHUB_WORKSPACE/tools/ci/atrapy" >> "$GITHUB_PATH"'}),
+    "skrypt zapisu czasów nadpisany przed krokiem pomiaru": ("mutations", "Run the planned units", {"run": "cp tools/ci/sprawdzenie.py tools/ci/zapis_czasow.py"}),
 }
 
 
