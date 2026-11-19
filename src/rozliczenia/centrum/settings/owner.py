@@ -65,7 +65,8 @@ reguła ``parse`` co dla pliku, atomowa zamiana pliku, wiersz Historii, pamięć
 Wiersz, którego nie da się dopisać, przywraca poprzednią treść pliku, więc każda zmiana, która weszła, ma wiersz.
 Zgaśnięcie po zamianie pliku przed wierszem daje przy następnym odczycie wiersz ``spoza`` z poprawną różnicą, tylko ze
 złym źródłem, a zgaśnięcie po wierszu przed pamięcią do tego jeszcze powtórzony wiersz ``spoza``; zmiany bez wiersza
-nie daje żadne miejsce. Cofnięcie to nowy zapis wartości sprzed zmiany, z tymi samymi sprawdzeniami.
+nie daje żadne miejsce. Cofnięcie to nowy zapis wartości sprzed zmiany, z tymi samymi sprawdzeniami; zmiany, przed
+którą pliku nie było, przywraca brak pliku (``_restores_absence``).
 
 Zmiana taty (zapis albo „Cofnij”), która usuwa loginy z Listy Wykonawców (``SettingsFile.removed_logins``), zapisuje się
 dopiero, gdy żaden z nich nie występuje w okresie (``WorkerPeriods``, ADR 0032); inaczej to ``KeptInPeriods`` bez zapisu,
@@ -758,7 +759,7 @@ class CentrumSettings:
             if file is None or not row.undoable or row.result != "zapisano":
                 return NotUndoable(known=True)
             changes = row.key_changes()
-        return self._by_dad(file, lambda current: file.restore(current, changes), undoes=row.id)
+        return self._by_dad(file, lambda current: file.restore(current, changes), undoes=row)
 
     def history(self) -> HistoryRead | Unreadable:
         """Historia od najnowszego wiersza; najpierw, jak każdy odczyt, porównanie plików z pamięcią, więc zmiana spoza
@@ -870,7 +871,7 @@ class CentrumSettings:
     def _refuse(self, file: SettingsFile[T], source: FromRelease, sentence: str) -> AppliedResult | None:
         """Wiersz ``odrzucono`` zmiany z Wydania z powodem; ``None``: wiersza nie dało się dopisać, zmiana wraca."""
 
-        row = self._row(file, (), source, undoes=None, undoable=False).model_copy(
+        row = self._row(file, (), source, undoes=None, undoable=False, created=False, removed=False).model_copy(
             update={"result": "odrzucono", "reason": sentence}
         )
         try:
@@ -943,7 +944,7 @@ class CentrumSettings:
         )
 
     def _by_dad(
-        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None
+        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: HistoryRow | None
     ) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zmiana taty: loginy, które usuwa z Listy Wykonawców, najpierw poza blokadą sprawdza w okresach, potem zapisuje
         z nimi jako sprawdzonymi."""
@@ -963,7 +964,7 @@ class CentrumSettings:
             return self._dad_change(file, edit, undoes=undoes, checked=removed.logins)
 
     def _dad_change(
-        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: str | None, checked: frozenset[str]
+        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: HistoryRow | None, checked: frozenset[str]
     ) -> Saved | Refused | NotSaved:
         """Zapis taty pod blokadą; jedyna droga zapisu taty Listy Urządzeń, Reguł ilości i Legendy czynności, więc jedyne
         miejsce, które sprawdza go jako zmianę pary albo legendy i daje odmowę zdaniem o tej zmianie (``_dad_devices``,
@@ -979,12 +980,12 @@ class CentrumSettings:
             return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
         return write(edit, undoes=undoes, checked=checked)
 
-    def _dad_legend(self, edit: Callable[[Codes], Codes | FieldProblem], *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+    def _dad_legend(self, edit: Callable[[Codes], Codes | FieldProblem], *, undoes: HistoryRow | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
         """Zmiana taty Legendy czynności z odmową zdaniem silnika o legendzie po zmianie (``legend_refusal``)."""
 
         return self._change(LEGEND, lambda current: legend_refusal(edit(current)), undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
-    def _dad_devices(self, edit: DevicesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+    def _dad_devices(self, edit: DevicesEdit, *, undoes: HistoryRow | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
         """Zmiana taty Listy Urządzeń sprawdzona jako zmiana z regułami, którymi liczy Centrum; przy Regułach ilości z
         Wydania na liście uzupełnionej i zapisana uzupełniona (``dad_devices_edit``). Reguły z Wydania w miejscu pliku
         reguł, którego system nie daje teraz czytać, puściłyby usunięcie składnika, którego potrzebuje reguła taty."""
@@ -996,7 +997,7 @@ class CentrumSettings:
         changed = dad_devices_edit(edit, rules, self._column_names, release=self._release())
         return self._change(DEVICES, changed, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
 
-    def _dad_rules(self, edit: _RulesEdit, *, undoes: str | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
+    def _dad_rules(self, edit: _RulesEdit, *, undoes: HistoryRow | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
         """Zmiana taty Reguł ilości sprawdzona jako zmiana z Listą Urządzeń (``_rules_after``). Pierwszy plik reguł taty w
         miejsce Reguł ilości z Wydania zapisuje najpierw listę, do której pasuje (osobny wiersz Historii, jak „ołówek,
         Zapisz” przy składniku z Wydania)."""
@@ -1064,7 +1065,7 @@ class CentrumSettings:
         file: SettingsFile[T],
         edit: Callable[[T], T | FieldProblem],
         *,
-        undoes: str | None,
+        undoes: HistoryRow | None,
         source: RowSource,
         undoable: bool,
         checked: frozenset[str] | None,
@@ -1087,7 +1088,7 @@ class CentrumSettings:
         value = edit(current)
         if isinstance(value, FieldProblem):
             return Refused(value)
-        new = file.dump(value)
+        new = None if self._restores_absence(file, undoes, value) else file.dump(value)
         edited = self._checked(file, new, file.parse(new))
         if isinstance(edited, Unreadable):
             self._log.settings_unreadable(cause="dostep")
@@ -1103,7 +1104,11 @@ class CentrumSettings:
             return Saved(change=None)
         if isinstance(observed, Bad) and data is not None and not file.secret:
             self._memory.keep_rejected(file.name, data, self._now())
-        row = self._row(file, changes, source, undoes=undoes, undoable=undoable) if changes else None
+        row = (
+            self._row(file, changes, source, undoes=undoes, undoable=undoable, created=data is None, removed=new is None)
+            if changes
+            else None
+        )
         try:
             place.write(new)
         except OSError:
@@ -1197,7 +1202,7 @@ class CentrumSettings:
         if _seen(file, data) == remembered.seen and (isinstance(parsed, FieldProblem) or file.secret or remembered.good == data):
             return _read(parsed, good)
         try:
-            self._history.append(self._outside_row(file, data, parsed, before))
+            self._history.append(self._outside_row(file, data, parsed, before, created=remembered.seen is None))
         except OSError:
             self._log.settings_external(file=file.name, result="bez-zapisu")
             return _read(parsed, good)
@@ -1209,28 +1214,64 @@ class CentrumSettings:
         self._log.settings_external(file=file.name, result="zapisano")
         return Good(parsed)
 
-    def _outside_row(self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem, before: T) -> HistoryRow:
+    def _outside_row(
+        self, file: SettingsFile[T], data: bytes | None, parsed: T | FieldProblem, before: T, *, created: bool
+    ) -> HistoryRow:
         """Wiersz zmiany spoza Centrum: zła treść ``odrzucono`` z powodem, dobra treść albo brak pliku różnica kluczy od
-        ostatniej dobrej wartości (bez różnicy bez „Cofnij”)."""
+        ostatniej dobrej wartości (bez różnicy bez „Cofnij”). ``created``: pamięć widziała brak pliku."""
 
         if isinstance(parsed, FieldProblem):
-            return self._row(file, (), Outside(), undoes=None, undoable=False).model_copy(
-                update={"result": "odrzucono", "reason": parsed.sentence, "removed": data is None}
-            )
+            return self._row(
+                file, (), Outside(), undoes=None, undoable=False, created=created, removed=data is None
+            ).model_copy(update={"result": "odrzucono", "reason": parsed.sentence})
         changes = file.diff(before, parsed)
-        return self._row(file, changes, Outside(), undoes=None, undoable=bool(changes)).model_copy(
-            update={"removed": data is None}
+        return self._row(
+            file, changes, Outside(), undoes=None, undoable=bool(changes), created=created, removed=data is None
         )
 
+    def _restores_absence(self, file: SettingsFile[T], undoes: HistoryRow | None, value: T) -> bool:
+        """„Cofnij” zmiany, przed którą pliku nie było (``HistoryRow.created``), przywraca brak pliku, a nie zapisuje do
+        pliku taty treści z Wydania, która przy następnym Wydaniu nie dostałaby nowych wartości domyślnych (ADR 0032).
+        Brak pliku to stan sprzed zmiany, gdy późniejsze zmiany pliku nic w nim nie zostawiły: każdy klucz z wartością
+        sprzed pierwszego wiersza od cofanej zmiany, który go zmienił (``restore``), daje tę samą wartość co samo
+        cofnięcie. Nie zależy to od dzisiejszych wartości z Wydania, które Aktualizacja mogła zmienić od tamtej pory.
+        Plik, którego brak może znaczyć coś innego niż wartości domyślne (migracja z Wydania z ``refused_absent`` albo
+        ``waiting``: Lista Wykonawców), zostaje z treścią, tak samo przy Historii, której nie da się przeczytać."""
+
+        if undoes is None or not undoes.created:
+            return False
+        if any(change.refused_absent is not None or change.waiting is not None for change in self._release_changes if change.file is file):
+            return False
+        history = self._history.read()
+        if isinstance(history, Unreadable):
+            return False
+        rows = [row for row in history.rows if row.file == file.name]
+        position = next((index for index, row in enumerate(rows) if row.id == undoes.id), None)
+        if position is None:
+            return False
+        first: dict[str, KeyChange] = {}
+        for row in reversed(rows[: position + 1]):
+            for change in row.key_changes():
+                first.setdefault(change.key, change)
+        return not file.diff(file.restore(value, tuple(first.values())), value)
+
     def _row(
-        self, file: SettingsFile[T], changes: tuple[KeyChange, ...], source: RowSource, *, undoes: str | None, undoable: bool
+        self,
+        file: SettingsFile[T],
+        changes: tuple[KeyChange, ...],
+        source: RowSource,
+        *,
+        undoes: HistoryRow | None,
+        undoable: bool,
+        created: bool,
+        removed: bool,
     ) -> HistoryRow:
         sections = {_SECTION.split(change.key, maxsplit=1)[0] for change in changes}
         return HistoryRow(
             id=uuid.uuid4().hex,
             at=self._now(),
             source=source,
-            undoes=undoes,
+            undoes=None if undoes is None else undoes.id,
             file=file.name,
             section=next(iter(sections)) if len(sections) == 1 else None,
             changes=tuple(RowChange(key=change.key, before=None, after=None) if file.secret else RowChange.of(change) for change in changes),
@@ -1238,6 +1279,8 @@ class CentrumSettings:
             undoable=undoable and not file.secret,
             result="zapisano",
             reason=None,
+            created=created,
+            removed=removed,
         )
 
 

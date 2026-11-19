@@ -79,8 +79,7 @@ OPIS = "Interleave Dad's clicks in the tool's efenix tab with every write of a r
 
 VERDICT: Final = "KARTA EFENIX"
 LIMIT_MS: Final = 15_000
-"""The window's time limit in the checker, the calm limit of ``verify-wycena-efenix`` (``CALM_LIMIT_MS``): no case here
-places an answer against the limit, so a longer one changes no verdict, and with 4 s a busy machine that reloads the
+"""The window's time limit in the checker: no case here places an answer against the limit, so a longer one changes no verdict, and with 4 s a busy machine that reloads the
 page after „Załaduj do zlecenia” later than that stopped the run without Dad on the time limit."""
 
 # --- The scenario -----------------------------------------------------------------------------------------------------

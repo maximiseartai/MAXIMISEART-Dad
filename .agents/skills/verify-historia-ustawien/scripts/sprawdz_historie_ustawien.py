@@ -52,6 +52,7 @@ _VALUES = {
     "x": "wartość wpisana poza Centrum",
     "d": "wartość domyślna z Wydania",
     "zly": "zła treść",
+    "brak": "brak pliku",
 }
 _KTO = {"proces": "odczyt dla procesu", "tata": "zapis taty", "wydanie": "zmiana z Wydania", "-": ""}
 
@@ -130,6 +131,11 @@ MODEL = Model(
         "NieZapisanoZnaczyNie": Obietnica(
             "tata czyta „nie zapisano”, a plik ma wartość, którą właśnie wpisał: procesy liczą nią bez jego wiedzy.",
             "klamstwo",
+        ),
+        "CofnijPrzywracaBajty": Obietnica(
+            "„Cofnij” zapisuje inne bajty niż sprzed cofanej zmiany, np. treść z Wydania w miejscu pliku, którego nie "
+            "było: następne Wydanie z nowymi wartościami domyślnymi nie dociera do taty (ADR 0032).",
+            "zleBajty",
         ),
     },
     opowiedz=_tell,
