@@ -309,7 +309,7 @@ class Pobieranie:
         return wynik
 
     def zmierz(self, runy: Sequence[dict[str, Any]], root: Path) -> None:
-        """Rekord każdego runu bez rekordu, w kolejności skrótu numeru runu, dopóki starcza zapytań."""
+        """Rekord każdego runu bez rekordu, w kolejności skrótu numeru runu, dopóki starcza zapytań i czasu."""
 
         brakujace = sorted((run for run in runy if run["id"] not in self.pamiec.rekordy), key=lambda run: hashlib.sha256(str(run["id"]).encode()).hexdigest())
         if not brakujace or not self._wolne():
@@ -331,7 +331,7 @@ class Pobieranie:
             self._zapisz_co_chwile()
 
     def plany(self, ogon: Iterable[Pomiar]) -> None:
-        """Jednostki krytycznego zadania każdego runu ogona z artefaktu ``plan`` runu, dopóki starcza zapytań."""
+        """Jednostki krytycznego zadania każdego runu ogona z artefaktu ``plan`` runu, dopóki starcza zapytań i czasu."""
 
         for pomiar in ogon:
             rekord = self.pamiec.rekordy[pomiar.run]
