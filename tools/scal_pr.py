@@ -359,6 +359,12 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
     return 0
 
 
+def _invocation_path(text: str) -> Path:
+    """Plik z wiersza poleceń względem katalogu wywołania, bo ``gh`` biegnie z ``ROOT`` (w kopii bazy: z kopii)."""
+
+    return Path(text).absolute()
+
+
 def main(argv: list[str] | None = None) -> int:
     rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_straznika.__doc__, straznik.__doc__, reguly_bazy.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
@@ -368,9 +374,9 @@ def main(argv: list[str] | None = None) -> int:
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
     mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
-    mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
+    mode.add_argument("--werdykt", type=_invocation_path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
     mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–6 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
-    mode.add_argument("--dowod-straznikow", type=Path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
+    mode.add_argument("--dowod-straznikow", type=_invocation_path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
     from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
     given = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(given)
