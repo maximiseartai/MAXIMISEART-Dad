@@ -4571,6 +4571,36 @@ def test_w_dniu_aktualizacji_zmiana_por_po_wysylce_starej_wersji_nie_daje_drugie
     ], "drugi mail tej samej pory w dniu Aktualizacji"
 
 
+def test_w_dniu_aktualizacji_bez_pliku_por_wyslane_przez_stara_wersje_licza_tylko_pory_starej_wersji_a_nie_biezace(
+    tmp_path: Path,
+) -> None:
+    day = date(2026, 11, 10)
+    mailbox = SentFolderMailbox(sends=_old_version_sends(tmp_path / "stara", datetime.combine(day, time(16, 30))))
+    centrum = entering_centrum(tmp_path / "nowa", INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
+    (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
+    (centrum.tool.config / OLD_ROLLOUT_FILE).write_bytes(b"2026-11-09\n")
+    (centrum.tool.config / OLD_FOOTER_FILE).write_bytes(b"Pozdrawiam\nTata\n")
+    centrum.moment.append(datetime.combine(day, time(16, 45)))
+    centrum.client.start()
+    changed = centrum.client.put(
+        "/api/settings/reminders",
+        json=_reminders_form(
+            morning={"start": "08:00", "end": "16:00"}, evening={"start": "16:00", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+        ),
+    )
+    centrum.moment.append(datetime.combine(day, time(16, 46)))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(16, 30)),
+        ("jan.testowy", time(16, 30)),
+        ("anna.kowalska", time(16, 46)),
+        ("jan.testowy", time(16, 46)),
+    ], "wieczorne przypomnienie po zmianie pór nie poszło, bo wysłane przez starą wersję liczyły też bieżące pory"
+
+
 def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_sprzed_zmiany(tmp_path: Path) -> None:
     """Zapas zegara (``CLOCK_MARGIN``): o 7:30 praca sprawdza przy porannej 7:00–9:00, tata wydłuża ją do 17:00, a
     sprawdzenie o 9:30 wysyła przypomnienia. Zegar Gmaila spóźnia się o półtorej minuty, więc „Wysłane” mają 9:28:30,
