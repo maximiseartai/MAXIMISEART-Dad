@@ -1,43 +1,43 @@
 {
   "src/rozliczenia/intermax_replace.py": {
-    "cały plik": "3f6deb7f9b41f6c6"
+    "cały plik": "7a167cf136058cb2"
   },
   "src/rozliczenia/intermax_ordering.py": {
-    "order_register": "82f78d51878b3337",
-    "OrderingInputs": "67975fe015f0548d",
+    "order_register": "a373c2470d5eee65",
+    "OrderingInputs": "66100904807dc5db",
     "_stops_unusable": "7397a36c0f4e5e99"
   },
   "src/rozliczenia/intermax_restore.py": {
-    "restore": "f9554b08fd8a2a3d"
+    "restore": "da411bbb530901e1"
   },
   "src/rozliczenia/intermax_cells.py": {
-    "write_cells": "a2a848ebcb13bf49"
+    "write_cells": "46fce0bc4f0aa999"
   },
   "src/rozliczenia/intermax_copies.py": {
-    "cały plik": "8680a5d98440a968"
+    "cały plik": "7f1613adb4efe05e"
   },
   "src/rozliczenia/register_file.py": {
-    "read": "f39a43d99d5c25dd",
-    "RegisterFile": "d1b97755195581e4"
+    "read": "bed1820fe4f627ef",
+    "RegisterFile": "b295ee3d94a0b599"
   },
   "src/rozliczenia/dad_files.py": {
-    "DadFiles.read": "1d9700caf3b493ef"
+    "DadFiles.read": "b500534dc0507c8c"
   },
   "src/rozliczenia/workbook_save.py": {
-    "write_atomically": "7c4a69cada0c1787"
+    "write_atomically": "e4ac73c5b1ff37f5"
   },
   "src/rozliczenia/workbook_files.py": {
-    "workbook_content": "f0d5aac3aa904193",
-    "ensure_available": "43504c7a8d5bafbb",
-    "is_open_in_excel": "c7204b3cbe842c49",
-    "excel_lock_file": "8b99b688550753a1",
-    "file_bytes": "74b76f71ea2cab19",
-    "unreadable_as_error": "21475619b90b4105"
+    "workbook_content": "b9be09ccfd27ff29",
+    "ensure_available": "c78db6e3723993fa",
+    "is_open_in_excel": "25927889bc3a96a9",
+    "excel_lock_file": "f7fbd895d16c9e74",
+    "file_bytes": "295b7f1ff3fe7878",
+    "unreadable_as_error": "da88ec29c5a61263"
   },
   "src/rozliczenia/file_state.py": {
     "_ABSENT": "f8f2224054693ffa",
-    "file_state": "6da9a6f109e4fbeb",
-    "path_state": "5306d4107433a5bd",
-    "path_taken": "b0aa1279aa4295ff"
+    "file_state": "8a68aaaf59f84836",
+    "path_state": "28b0380bb235e08c",
+    "path_taken": "934c2ae97b35d968"
   }
 }

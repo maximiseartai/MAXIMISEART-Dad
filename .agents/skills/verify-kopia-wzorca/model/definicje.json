@@ -1,78 +1,78 @@
 {
   "src/rozliczenia/template_copy.py": {
-    "cały plik": "930cb1b553a01f1a"
+    "cały plik": "5fc9b99d6bd5ae6a"
   },
   "src/rozliczenia/row_look.py": {
-    "cały plik": "76d1e80a6cb03edc"
+    "cały plik": "7e42facaf3def33a"
   },
   "src/rozliczenia/workbook_parts.py": {
-    "UnsupportedShape": "8249ef4c46b9c830",
-    "IrregularSheetData": "c3d8e913b9b5ba44",
-    "SheetRow": "db28f987ab4cd584",
-    "SheetData": "d685c934603d933e",
-    "_sheet_data_bounds": "fd4e26e19ea30505",
-    "_sheet_rows": "7ccc7474e01602c5",
+    "UnsupportedShape": "9b80401ea493cf00",
+    "IrregularSheetData": "3fc3a23dffbacdcd",
+    "SheetRow": "92ef2880e2ac799a",
+    "SheetData": "1960ace6d9e6c2af",
+    "_sheet_data_bounds": "1686251ef239a9d3",
+    "_sheet_rows": "dad60040419852a3",
     "_raise_irregular": "8d96c34a8da9728c",
     "_ROW_START_OR_IRREGULAR": "897f774782c6d2e4",
     "_WITHOUT_LEADING_R": "4b080ee44e9f5156",
     "WORKSHEET_ROOT": "905ad40b72b8024f",
     "STYLE_XF": "d409796e240afca0",
-    "Relationship": "95f1c4082f39e76f",
+    "Relationship": "e2684a05edb97169",
     "relationships_part": "42ebf2f0a9de45c9",
     "relationships": "29695dff65924744",
-    "office_document": "8eb09d0fa3e24c94",
-    "ActiveSheet": "d6663fb1413c9d66",
-    "active_sheet": "4ad47544bec3f4df",
-    "style_list": "61d9df938b45de03",
-    "appended": "d85181f8a50acf37",
-    "with_style_attribute": "3aed050e2f3ed399"
+    "office_document": "9e58f6acbcd96f2d",
+    "ActiveSheet": "721413312f81ef4d",
+    "active_sheet": "df99fa91d2038464",
+    "style_list": "c8a06aef9f0cafe0",
+    "appended": "f93c3b8b39e2e9a7",
+    "with_style_attribute": "555602cafc7b1fde"
   },
   "src/rozliczenia/template_file.py": {
-    "TemplateFile": "c1429e56a5dbbc7c",
-    "_Rules": "362cb8b7df713be5",
+    "TemplateFile": "18666b42a71623d6",
+    "_Rules": "0bf95520d546ad69",
     "_WORKER_SETTLEMENT": "454a0b42cc644edc",
-    "_ensure_unmerged": "a07436cf96840ed1",
+    "_ensure_unmerged": "e237572ec3b4b931",
     "_last_written_column": "1ac5d8677c49655f",
-    "_in_columns": "cd9c5d1115a6f021",
-    "_write_rows": "8cb8b85aeb3ae46e",
+    "_in_columns": "e42d0c442aa22552",
+    "_write_rows": "2c06f59cce4d2251",
     "_package_writer": "78c5739d1fa69f88",
     "_active_worksheet": "23e27585d804a8b6",
-    "_request_recalculation": "018de366512c2ddc"
+    "_request_recalculation": "ec1669fb0537503b"
   },
   "src/rozliczenia/highlights.py": {
-    "Highlights": "1058ab4470edab05",
+    "Highlights": "74cb9d6fd536c1a2",
     "PLAIN": "26159ae5d9dadacc",
     "_is_empty": "c2cc749f1eb4b3ee",
-    "LookReader": "d4640624fc5c0e9b"
+    "LookReader": "65c7cf5723a35c9d"
   },
   "src/rozliczenia/hyperlinks.py": {
-    "Hyperlink": "38de48a88facf5c2"
+    "Hyperlink": "306964cea3289e25"
   },
   "src/rozliczenia/write_routes.py": {
-    "Route": "3c54470dfa48ab63"
+    "Route": "1129a82d8d186528"
   },
   "src/rozliczenia/workbook_save.py": {
-    "write_atomically": "7c4a69cada0c1787",
-    "save_from_template": "e4019366d23e02f8",
+    "write_atomically": "e4ac73c5b1ff37f5",
+    "save_from_template": "ea72ad3132e91b13",
     "_read_external_link_parts": "bb1bd3d8c86fdb2b",
     "_save_atomically": "d43fb94c9e4e646c",
     "_external_link_parts": "c21116c1f5141cd9",
     "_restore_external_link_parts": "3a27288a074fa834"
   },
   "src/rozliczenia/workbook_files.py": {
-    "DataCell": "d95a849be1036229",
-    "DataRow": "0186a5cef4e56bd1",
-    "check_worker_header": "c712d4cd0f678668",
+    "DataCell": "2caa7effc915b36e",
+    "DataRow": "26316c0385320ade",
+    "check_worker_header": "1e28da2bb9378798",
     "_is_worker_header": "8fa5869113e260c6",
     "header_columns": "e424b4e50e626970",
-    "template_content": "f58a16c2f50d0702",
-    "open_workbook": "f7fcbcdad1b51acf"
+    "template_content": "d099344208f1291e",
+    "open_workbook": "cc307b9ace26103c"
   },
   "tools/lib/porownanie_znaczeniowe.py": {
-    "cały plik": "dd61d42b4a076a5b"
+    "cały plik": "4ccd13382a670a1b"
   },
   "tools/lib/atrapy/wzorce.py": {
-    "cały plik": "3db0d8fd0dcac0e9"
+    "cały plik": "cfcda4830676bcf0"
   },
   "tools/lib/atrapy/settlement.py": {
     "write_template": "189c5454d173d42b",
@@ -80,8 +80,8 @@
   },
   "tools/lib/atrapy/workbooks.py": {
     "add_external_link_fixture": "6f308ab01d359bc3",
-    "refused_by_copy": "8bacdd43c6977f0c",
-    "_rewrite_worksheets": "1cb1b3078f75debd",
+    "refused_by_copy": "8085890f05302cd2",
+    "_rewrite_worksheets": "bd6d77f2335b943d",
     "_REFUSED": "f22739f90ca45b32"
   }
 }

@@ -170,3 +170,7 @@ przyklad = 2073
 [R-STARE-DRZEWO]
 opis = "Commit złożony z drzewa roboczego starszej bazy i przeniesiony na nowszą (reset --soft, kopia plików, stash) po cichu cofa scalone PR-y, a nic nie porównuje plików diffu z bazą."
 przyklad = 2100
+
+[R-DECYZJA-MAKSA-U-AUTORA]
+opis = "Zmiana zasięgu decyzji Maksa (wyjątek od jego zamkniętej listy) zapisana jako decyzja autora, bo źródło o tym przypadku nie mówi, więc agent rozstrzyga sam rodzaj „Reversing Maks” zamiast issue decyzja-maksa."
+przyklad = 2250
