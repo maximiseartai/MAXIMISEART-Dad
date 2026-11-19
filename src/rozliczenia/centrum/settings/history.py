@@ -77,9 +77,9 @@ class RowChange(_Model):
 
 
 class HistoryRow(_Model):
-    """Wiersz Historii Ustawień. ``created``: przed zmianą pliku nie było, więc jej „Cofnij” z wartością z Wydania
-    przywraca brak pliku. ``removed``: po zmianie pliku nie ma (usunięty poza Centrum albo przez to „Cofnij”), więc jego
-    klucze wróciły do wartości domyślnych."""
+    """Wiersz Historii Ustawień. ``created``: przed zmianą pliku nie było, więc jej „Cofnij” przywraca brak pliku, gdy
+    późniejsze zmiany pliku nic w nim nie zostawiły (``CentrumSettings._restores_absence``). ``removed``: po zmianie
+    pliku nie ma (usunięty poza Centrum albo przez to „Cofnij”), więc jego klucze wróciły do wartości domyślnych."""
 
     version: Literal[1] = Field(default=_VERSION, validation_alias="v", serialization_alias="v")
     id: str
