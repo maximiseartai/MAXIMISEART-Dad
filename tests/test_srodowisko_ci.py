@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import copy as copying
+from functools import partial
 import json
 import re
 from pathlib import Path
@@ -24,6 +25,7 @@ from urllib.request import url2pathname
 import pytest
 import yaml
 
+from mutacja_recenzenta import Block
 import srodowisko_ci
 import straznik
 from tests.fixtures.git_config import computer_git_config
@@ -566,17 +568,65 @@ SEES_CI = (
 )
 
 
+UPPER = Block("W1", 1, json.dumps([{"nazwa": "wielkie litery z FAIL", "zmiany": [["kod/odczyt.py", "return 'tekst'", "return 'TEKST'"]]}]))
+
+
+def _tested(tmp_path: Path, test: str) -> straznik.Outcome:
+    """Dowód ``pytest tests/test_odczyt.py::test_odczyt`` z blokiem ``UPPER`` na HEAD z testem ``test``, każdy bieg
+    w nowym środowisku z ``built`` z ``tests``, jak ``tools/na_scalonych_pr.py``."""
+
+    base = {**project(dev=PYTEST_PINS, tools="[tool.pytest.ini_options]\n"), **TYPED, "tests/__init__.py": "", ".gitignore": "ignorowane/\n"}
+    root, fork, failed, head, target = _repository(tmp_path, base, {"kod/odczyt.py": "def odczyt() -> str:\n    return 'TEKST'\n"}, {"kod/odczyt.py": TYPED["kod/odczyt.py"], "tests/test_odczyt.py": test})
+    case = straznik.Case("#5 W1 r1", failed, fork, (("kod/odczyt.py", 2, 2),), mutation=UPPER)
+    [outcome] = straznik.prove_test("tests/test_odczyt.py::test_odczyt", partial(srodowisko_ci.built, root, head, target, tests=True), [case])
+    return outcome
+
+
 @wymaga_uv
-def test_dowod_testu_biegnie_w_srodowisku_toru_linux_a_nie_wolajacego(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_dowod_testu_biegnie_w_srodowisku_toru_linux_a_nie_wolajacego(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Węzeł biegnie Pythonem ``CI_PYTHON`` z pytest z dodatku dev drzewa i zmiennymi zadania pytest (``PYTEST_VARIABLES``),
-    bez ``PYTEST_ADDOPTS`` wołającego, i pada na przeszczepie z FAIL."""
+    bez ``PYTEST_ADDOPTS`` wołającego, i pada z mutacją recenzenta."""
 
     monkeypatch.setenv("PYTEST_ADDOPTS", "-k nic")
-    base = {**project(dev=PYTEST_PINS, tools="[tool.pytest.ini_options]\n"), **TYPED, "tests/__init__.py": ""}
-    root, fork, failed, head, target = _repository(tmp_path, base, {"kod/odczyt.py": "def odczyt() -> str:\n    return 'TEKST'\n"}, {"kod/odczyt.py": TYPED["kod/odczyt.py"], "tests/test_odczyt.py": SEES_CI})
-    case = straznik.Case("#5 W1 r1", failed, fork, (("kod/odczyt.py", 2, 2),))
 
-    with srodowisko_ci.built(root, head, target, tests=True) as environment:
-        [outcome] = straznik.prove(root, straznik.parse("pytest tests/test_odczyt.py::test_odczyt"), environment, [case])
+    outcome = _tested(tmp_path, SEES_CI)
 
-    assert outcome.detected and "| WYKRYTA | przeszczep z FAIL: kod/odczyt.py:odczyt | kod 1: AssertionError: assert 'TEKST' == 'tekst'" in outcome.line, outcome.line
+    assert outcome.detected and "| WYKRYTA | z bloku ### Mutacja W1 r1: wielkie litery z FAIL → 1 failed" in outcome.line, outcome.line
+
+
+# Test, który zostawia ślad w każdym miejscu stanu biegu (plik śledzony i ignorowany kopii, ``HOME``, ``TMPDIR``,
+# konfiguracja i obiekt gita kopii, sondy #2197 r1–r3 W3) i pada, gdy któryś zastanie: bez nowego środowiska na każdy bieg
+# padłby z mutacją, której nie sprawdza.
+TRACES = """\
+import os
+import pathlib
+import subprocess
+import tempfile
+
+
+def _git(*arguments: str) -> str:
+    return subprocess.run(['git', *arguments], capture_output=True, text=True, input='slad', check=False).stdout.strip()
+
+
+def test_odczyt() -> None:
+    files = [pathlib.Path('slad.txt'), pathlib.Path('ignorowane/slad.txt'), pathlib.Path.home() / 'slad.txt', pathlib.Path(tempfile.gettempdir()) / 'slad.txt']
+    assert [path for path in files if path.exists()] == []
+    assert _git('config', '--local', '--get', 'straznik.slad') == ''
+    assert subprocess.run(['git', 'cat-file', '-e', _git('hash-object', '--stdin')], check=False).returncode != 0
+    for path in files:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('1')
+    _git('config', '--local', 'straznik.slad', '1')
+    _git('hash-object', '-w', '--stdin')
+    assert os.environ['TMPDIR'] == tempfile.gettempdir()
+"""
+
+
+@wymaga_uv
+def test_slad_biegu_wezla_nie_przechodzi_do_nastepnego_biegu_dowodu(tmp_path: Path) -> None:
+    """Każdy bieg dowodu testu dostaje nowe środowisko z ``built`` (kopia z własnym gitem, ``HOME`` i ``TMPDIR``), więc
+    ślad biegu bez mutacji nie zmienia biegu z mutacją."""
+
+    outcome = _tested(tmp_path, TRACES)
+
+    assert not outcome.detected and "| NIEWYKRYTA | wielkie litery z FAIL: NIEWYKRYTA: 1 passed" in outcome.line, outcome.line

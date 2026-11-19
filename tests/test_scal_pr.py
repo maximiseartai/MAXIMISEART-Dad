@@ -30,6 +30,7 @@ import bramka_straznika
 import czasy_ci
 import github as klient_github
 import limit_rund
+from mutacja_recenzenta import Block
 import naprawia
 import ponowny_przeglad
 import reguly_bazy
@@ -1779,6 +1780,15 @@ def test_pole_idiom_wazne_daje_regule_klase_i_wczesniejsze_wazne_z_jednej_z_trze
     assert found.idioms == (szablon_werdyktu.Idiom("W1", *expected),)
 
 
+def test_blok_mutacji_recenzenta_daje_wazne_runde_i_json_z_bloku_kodu_bez_zmian() -> None:
+    """Dowód strażnika ``pytest`` (``straznik.prove_test``) nanosi kotwicę z bloku na HEAD, więc tekst JSON wraca
+    z renderera GitHuba z odstępami i ucieczkami, jak go napisał recenzent, a każdy blok ma swoje Ważne i rundę."""
+
+    found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZECHODZA["mutacja-recenzenta-dwoch-waznych-z-roznych-rund"])))
+
+    assert found.mutations == tuple(Block(label, round_, werdykty_szablonu.MUTATION) for label, round_ in (("W1", 1), ("W2", 1), ("W1", 2)))
+
+
 def test_kazda_tresc_werdyktu_testow_ma_html_z_renderera_githuba() -> None:
     assert sorted(werdykty_szablonu.rendered()) == sorted(set(werdykty_szablonu.bodies())), "odśwież: .venv/bin/python tests/fixtures/werdykty_szablonu.py"
 
@@ -2844,21 +2854,14 @@ def test_watek_z_werdyktem_sprzed_wdrozenia_warunku_5_konczy_z_dowodem_autora_be
     assert _proofs(github) == []
 
 
-@pytest.mark.parametrize(
-    ("deployed", "before"),
-    [(None, True), (GATE_AFTER_VERDICTS, True), (GATE_BEFORE_VERDICTS, False)],
-    ids=["dowod-testu-niewdrozony", "watek-sprzed-wdrozenia-dowodu-testu", "watek-po-wdrozeniu-dowodu-testu"],
-)
-def test_brak_testu_w_watku_sprzed_wdrozenia_dowodu_testu_przechodzi_jak_przed_nim(tmp_path: Path, deployed: str | None, before: bool) -> None:
-    """Granica wdrożenia dowodu testu (decyzja Q20 ADR 0031): warunek przeszczepu ``brak - test`` obowiązuje tylko
-    w wątku, którego pierwszy werdykt powstał po dodaniu ``bramka_straznika.TEST_MARKER`` do bazy; starszy wątek dostaje
-    dowód z ``--przed-dowodem-testu``, czyli ``brak - test`` jak przed tym wdrożeniem."""
+@pytest.mark.parametrize(("started", "before"), [(GATE_AFTER_VERDICTS, True), (GATE_BEFORE_VERDICTS, False)], ids=["watek-sprzed-wdrozenia-dowodu-testu", "watek-po-wdrozeniu-dowodu-testu"])
+def test_brak_testu_w_watku_sprzed_wdrozenia_dowodu_testu_przechodzi_jak_przed_nim(tmp_path: Path, started: str, before: bool) -> None:
+    """Granica wdrożenia dowodu testu (decyzja Q20 ADR 0031): odmowa ``brak - test`` obowiązuje tylko w wątku, którego
+    pierwszy werdykt powstał po dodaniu ``bramka_straznika.TEST_MARKER`` do bazy; moduł stoi w commicie ``start``
+    atrapy, więc chwilą wdrożenia jest ``started``. Starszy wątek dostaje dowód z ``--przed-dowodem-testu``, czyli
+    ``brak - test`` jak przed tym wdrożeniem."""
 
-    github, head = _guard_pull(tmp_path, "straznik-brak-testu", proof=(0, "DOWÓD OK | brak - test | wyjątek 1/1"))
-    if deployed is not None:
-        with pytest.MonkeyPatch.context() as patch:
-            patch.setenv("GIT_COMMITTER_DATE", deployed)
-            github.push_main({bramka_straznika.TEST_MARKER: '"""Plugin pytest dowodu strażnika."""\n'})
+    github, head = _guard_pull(tmp_path, "straznik-brak-testu", proof=(0, "DOWÓD OK | brak - test | wyjątek 1/1"), gate=started)
 
     answered = github.run("1", "--bez-merge")
 

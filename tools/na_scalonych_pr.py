@@ -78,9 +78,11 @@ Dowód strażnika (``--straznik SELEKTOR --z-commita <HEAD PR>`` z ``--wazne``) 
 Ważnego w sekcji ``## Korzeń``. ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
 gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście jej przypadków; każdy inny selektor idzie
 dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje docstring ``tools/lib/straznik.py``,
-z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu; ``pytest <węzeł>`` w środowisku toru
-Linux zadania pytest (``srodowisko_ci.built`` z ``tests``). ``--przed-dowodem-testu`` (wątek sprzed wdrożenia dowodu
-testu, ``bramka_straznika.TEST_MARKER``) przepuszcza ``brak - test`` bez warunku przeszczepu. Linia na Ważne i na końcu
+z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu; ``pytest <węzeł>`` idzie dowodem
+``straznik.prove_test`` z najnowszym blokiem ``### Mutacja W<n> r<k>`` tego Ważnego we wszystkich werdyktach PR
+(``mutacja_recenzenta``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``).
+``--przed-dowodem-testu`` (wątek sprzed wdrożenia dowodu testu, ``bramka_straznika.TEST_MARKER``) przepuszcza
+``brak - test``, którego poza takim wątkiem dowód odmawia. Linia na Ważne i na końcu
 ``DOWÓD OK|ODMOWA | <selektor> | wykryte k/n`` (przy wyjątku ``wyjątek k/n``); ``tools/scal_pr.py`` uruchamia go przy
 merge'u każdego PR z Ważnym (``bramka_straznika``):
 
@@ -93,6 +95,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Iterable
 from dataclasses import dataclass
+from functools import partial
 import json
 import os
 from pathlib import Path
@@ -110,6 +113,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 import github
+import mutacja_recenzenta
 import odpalenia_ast_grep
 import potomne
 import rejestr_korzeni
@@ -294,14 +298,16 @@ class Probe:
     base: str
     head: str
     where: str  # tekst pola ``Gdzie:``
+    mutation: mutacja_recenzenta.Block | None = None  # najnowszy blok mutacji recenzenta Ważnego w werdyktach PR
 
 
 def major_probe(repository: str, number: int, label: str, round_: int) -> Probe:
     """Ważne ``label`` werdyktu ``FAIL`` rundy ``round_`` PR-u ``number``: linie dodane od ``merge-base`` bazy PR-u
-    do SHA linii ``WERDYKT`` i pole ``Gdzie`` tego Ważnego."""
+    do SHA linii ``WERDYKT``, pole ``Gdzie`` tego Ważnego i najnowszy blok jego mutacji z werdyktów PR."""
 
     pull = rejestr_korzeni.pull(repository, number)
-    verdict = next((one.verdict for one in werdykt_pr.rounds(pull, werdykt_pr.from_graphql) if one.number == round_ and one.verdict.decision == "FAIL"), None)
+    rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
+    verdict = next((one.verdict for one in rounds if one.number == round_ and one.verdict.decision == "FAIL"), None)
     if verdict is None or verdict.commit is None:
         raise ValueError(f"#{number} nie ma werdyktu FAIL rundy r{round_}")
     items = werdykt_pr.from_graphql(verdict)
@@ -311,7 +317,8 @@ def major_probe(repository: str, number: int, label: str, round_: int) -> Probe:
         raise ValueError(f"#{number} {label} r{round_}: brak pola {WHERE}")
     if problem := fetched(verdict.commit):
         raise ValueError(problem)
-    return Probe(f"#{number} {label} r{round_}", _fork(f"{REMOTE}/{pull.base}", verdict.commit), verdict.commit, where)
+    mutation = mutacja_recenzenta.newest((block for one in rounds for block in one.findings.mutations), label, round_)
+    return Probe(f"#{number} {label} r{round_}", _fork(f"{REMOTE}/{pull.base}", verdict.commit), verdict.commit, where, mutation)
 
 
 def caught(rule: Rule, probe: Probe) -> bool:
@@ -401,8 +408,8 @@ def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: 
 
 def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, before_test_proof: bool = False) -> int:
     """Dowód strażnika z pola ``Strażnik:`` (``straznik``) na HEAD PR-u ``head`` dla Ważnych ``majors``; reguła
-    ast-grep idzie dowodem reguły (``proof_on``), ``before_test_proof`` to wątek sprzed dowodu testu
-    (``straznik.exempt``), a kod 0 jest tylko z ``DOWÓD OK``."""
+    ast-grep idzie dowodem reguły (``proof_on``), test dowodem z mutacją recenzenta (``straznik.prove_test``),
+    ``before_test_proof`` to wątek sprzed dowodu testu (``straznik.exempt``), a kod 0 jest tylko z ``DOWÓD OK``."""
 
     try:
         guard = straznik.parse(text)
@@ -420,8 +427,10 @@ def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]], *, bef
         cases = [_case(guard, major_probe(repository, *one)) for one in majors]
         if guard.kind in straznik.EXEMPT:
             found = straznik.exempt(ROOT, guard, head, repo.merge_base(ROOT, target, head), cases, before_test_proof=before_test_proof)
+        elif guard.kind is straznik.Kind.PYTEST:
+            found = straznik.prove_test(guard.arguments[0], partial(srodowisko_ci.built, ROOT, head, target, tests=True), cases)
         else:
-            with srodowisko_ci.built(ROOT, head, target, tests=guard.kind is straznik.Kind.PYTEST) as environment:
+            with srodowisko_ci.built(ROOT, head, target) as environment:
                 found = straznik.prove(ROOT, guard, environment, cases)
     except (ValueError, subprocess.CalledProcessError) as error:
         print(f"DOWÓD ODMOWA | {guard} | {error}")
@@ -475,7 +484,7 @@ def _case(guard: straznik.Guard, probe: Probe) -> straznik.Case:
     scopes = places(probe.where, probe.head) if guard.kind in (straznik.Kind.MYPY, straznik.Kind.RUFF) else []
     python = sorted({path for path, _, _ in raw if path.endswith(".py")})
     prose = hits(probe.head, ("--inline-rules", PROSE), python) if guard.kind is straznik.Kind.PROSE and python else []
-    return straznik.Case(probe.label, probe.head, probe.base, tuple(raw), tuple(scopes), tuple(prose))
+    return straznik.Case(probe.label, probe.head, probe.base, tuple(raw), tuple(scopes), tuple(prose), probe.mutation)
 
 
 def case_probe(repository: str, text: str) -> Probe:
@@ -569,7 +578,7 @@ def main(argv: list[str] | None = None) -> int:
     rule.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
     rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
     rule.add_argument("--straznik", metavar="SELEKTOR", help=f"Dowód strażnika z pola Strażnik: na HEAD PR --z-commita ({straznik.FORMS}).")
-    parser.add_argument("--przed-dowodem-testu", action="store_true", help="Wątek sprzed wdrożenia dowodu testu: brak - test przechodzi bez warunku przeszczepu.")
+    parser.add_argument("--przed-dowodem-testu", action="store_true", help="Wątek sprzed wdrożenia dowodu testu: brak - test przechodzi, jak przed tym dowodem.")
     parser.add_argument("--z-commita", metavar="REV", help="HEAD PR: z niego --regula-id bierze regułę, --straznik kopię, a --przypadki-regul reguły z przypadkami.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     rule.add_argument("--przypadki-regul", action="store_true", help="Każda reguła z reguly-ast-grep/ łapie przypadki ze swojego pola metadata.przypadki.")

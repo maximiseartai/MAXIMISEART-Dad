@@ -101,6 +101,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from functools import partial
 from itertools import pairwise
+import json
 import os
 from pathlib import Path
 import re
@@ -110,7 +111,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Protocol, TypeVar
+from typing import Any, NamedTuple, Protocol, TypeVar
 
 from import_dynamiczny import jest_modul
 from jednostka import ZMIENNA_CZESCI, Czesc
@@ -193,6 +194,58 @@ class Mutation:
     expected: str | None = None  # początek ostatniej linii wyjścia; None: polecenie kończy się błędem
 
 
+def _texts(value: object, count: int | None = None) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value) and count in {None, len(value)}
+
+
+class _Key(NamedTuple):
+    required: bool
+    valid: Callable[[object], bool]
+
+
+_ENTRY = {
+    "nazwa": _Key(required=True, valid=lambda value: isinstance(value, str)),
+    "zmiany": _Key(required=True, valid=lambda value: isinstance(value, list) and bool(value) and all(_texts(edit, 3) for edit in value)),
+    "polecenie": _Key(required=False, valid=_texts),
+    "oczekiwane": _Key(required=False, valid=lambda value: isinstance(value, str)),
+}
+FILE_SHAPE = '[{"nazwa": "...", "zmiany": [["plik", "kotwica", "zamiana"], ...]}, ...] z opcjonalnymi "polecenie": [...] i "oczekiwane": "..."'
+
+
+def _entry_problem(entry: object) -> str | None:
+    if not isinstance(entry, dict):
+        return "nie jest obiektem"
+    if unknown := sorted(entry.keys() - _ENTRY.keys()):
+        return f"ma nieznany klucz {unknown[0]!r}"
+    wrong = [key for key, (required, valid) in _ENTRY.items() if (key in entry or required) and not (key in entry and valid(entry[key]))]
+    return f"ma zły albo brakujący klucz {wrong[0]!r}" if wrong else None
+
+
+def from_json(text: str, command: tuple[str, ...], source: str) -> list[Mutation]:
+    """Mutacje z tekstu JSON w postaci ``FILE_SHAPE``: pliku ``tools/mutacje.py --plik`` albo bloku mutacji recenzenta
+    w werdykcie (``mutacja_recenzenta``), z poleceniem ``command``, gdy wpis nie ma własnego; inna postać to
+    ``ValueError`` ze źródłem ``source`` i tą postacią."""
+
+    try:
+        entries = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"{source}: to nie JSON ({error}); postać: {FILE_SHAPE}") from None
+    if not isinstance(entries, list):
+        raise ValueError(f"{source}: plik mutacji to lista, nie {type(entries).__name__}; postać: {FILE_SHAPE}")
+    for number, entry in enumerate(entries, 1):
+        if problem := _entry_problem(entry):
+            raise ValueError(f"{source}: wpis {number} {problem}; postać: {FILE_SHAPE}")
+    return [
+        Mutation(
+            name=entry["nazwa"],
+            edits=tuple(Edit(Path(file), anchor, replacement) for file, anchor, replacement in entry["zmiany"]),
+            command=tuple(entry.get("polecenie", command)),
+            expected=entry.get("oczekiwane"),
+        )
+        for entry in entries
+    ]
+
+
 @contextmanager
 def checkout_copy(commit: str | None = None) -> Iterator[Path]:
     """Kopia HEAD z niezacommitowanymi zmianami checkoutu albo, z ``commit``, kopia samego commitu."""
@@ -249,14 +302,22 @@ class _Ran:
 
 
 def _run(
-    copy: Path, command: Sequence[str], limit_s: float, stop: threading.Event | None = None, *, concurrent: bool = False
+    copy: Path,
+    command: Sequence[str],
+    limit_s: float,
+    stop: threading.Event | None = None,
+    *,
+    concurrent: bool = False,
+    python: str | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> _Ran:
-    """Przebieg polecenia w kopii, także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
+    """Przebieg polecenia w kopii Pythonem ``python`` (bez niego: tym, który uruchomił narzędzie) ze zmiennymi ``env``
+    (bez nich: ``kroki_lokalne.environment`` kopii), także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
 
     started = time.monotonic()
     try:
-        env = environment(copy, concurrent=concurrent)
-        done = potomne.run([sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
+        env = environment(copy, concurrent=concurrent) if env is None else env
+        done = potomne.run([python or sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
     except potomne.TimeoutExpired as expired:
         return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started, _tail(*expired.printed))
     seconds = time.monotonic() - started
@@ -312,19 +373,38 @@ def _verdict(
     if left <= 0:
         return Verdict.NO_VERDICT, "czas minął, zanim się zaczęła", None
     with checkout_copy(commit) as copy:
-        stale = _apply(copy, mutation.edits)
-        if stale:
-            return Verdict.STALE, stale, None
-        ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent)
+        return judged(copy, mutation, limit_s=limit_s, left=left, stop=stop, concurrent=concurrent)
+
+
+def judged(
+    copy: Path,
+    mutation: Mutation,
+    *,
+    limit_s: float,
+    left: float | None = None,
+    stop: threading.Event | None = None,
+    concurrent: bool = False,
+    python: str | None = None,
+    env: Mapping[str, str] | None = None,
+) -> tuple[Verdict, str, float | None]:
+    """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
+    stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
+    ``min(limit_s, left)``. Woła ją ``verdicts`` na kopii checkoutu i dowód strażnika ``pytest`` (``straznik``) na
+    kopii środowiska Required CI."""
+
+    left = limit_s if left is None else left
+    if stale := _apply(copy, mutation.edits):
+        return Verdict.STALE, stale, None
+    ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
     if ran.code is None:
         # Koniec czasu wywołującego, a nie limit polecenia, nie mówi, czy mutacja zawiesza polecenie.
-        judged = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
+        found = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
     elif ran.hang is not None:
-        judged = Verdict.HANG, ran.hang
+        found = Verdict.HANG, ran.hang
     else:
         caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
-        judged = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
-    return *judged, ran.seconds
+        found = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
+    return *found, ran.seconds
 
 
 def _baseline(

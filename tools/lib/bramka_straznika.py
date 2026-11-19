@@ -7,7 +7,8 @@ z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim
 Warunek obowiązuje od własnego wdrożenia (``MARKER``: ADR 0042, jak szablon werdyktu od ADR 0031;
 ``werdykt_pr.rule_applies``, decyzja Q20 ADR 0031), więc wątek z werdyktem sprzed niego kończy po staremu, z polem
 ``Dowód:`` w bloku Ważnego. Tak samo dowód testu (``TEST_MARKER``): w wątku z werdyktem sprzed niego ``brak - test``
-przechodzi bez warunku przeszczepu (``--przed-dowodem-testu``). Brak linii
+przechodzi jak przed nim (``--przed-dowodem-testu``), a w nowszym to odmowa, bo strażnik-test ma dowód z mutacją
+recenzenta (``pytest <węzeł>``). Brak linii
 i selektor spoza listy zgłasza bramka korzenia (warunek 4), więc tu taki blok nie dostaje dowodu.
 
 Błąd renderera GitHuba to ``stan_pr.Waiting``, bo mija przy następnym runie. Dowody PR mają razem
@@ -36,7 +37,7 @@ import szablon_werdyktu
 import werdykt_pr
 
 MARKER = "docs/adr/0042-straznik-przy-pierwszym-waznym.md"  # plik, którego dodanie do bazy PR to chwila wdrożenia warunku
-TEST_MARKER = "tools/lib/straznik_pytest.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia dowodu testu
+TEST_MARKER = "tools/lib/mutacja_recenzenta.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia dowodu testu
 PROOF = ROOT / "tools" / "na_scalonych_pr.py"
 PROOF_OK = "DOWÓD OK |"
 PROOF_TIMEOUT_S = 900

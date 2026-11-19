@@ -127,7 +127,8 @@ def variables() -> dict[str, str]:
 def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterator[Environment]:
     """Środowisko Required CI dla HEAD PR ``head`` scalonego z ``target`` (baza PR; dla PR już scalonego ``main`` sprzed
     jego merge'a), w repozytorium ``root``; znika z końcem bloku. Z ``tests`` to środowisko toru Linux zadania
-    ``PYTEST_JOB``: odmawia też drzewa z różnicą ``pytest_mismatch``, a narzędzia dostają zmienne ``PYTEST_VARIABLES``."""
+    ``PYTEST_JOB``: odmawia też drzewa z różnicą ``pytest_mismatch``, a narzędzia dostają zmienne ``PYTEST_VARIABLES``
+    i ``TMPDIR`` tego środowiska, więc bieg testów w nowym środowisku nie widzi śladów poprzedniego."""
 
     if sys.platform == "win32":
         raise Refused("środowisko Required CI: dowód strażnika biegnie na Linuksie i macOS, uruchom go tam")
@@ -155,7 +156,10 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
         python = _install(uv, copy, Path(folder))
         # Narzędzia z pustym HOME, jak na runnerze: bez konfiguracji użytkownika mypy i ruff i bez globalnych wykluczeń gita.
         tools = {name: value for name, value in variables().items() if not name.startswith("XDG_")}
-        yield Environment(tree, copy, python, {**tools, "HOME": str(home), **(PYTEST_VARIABLES if tests else {})})
+        if tests:
+            (temporary := Path(folder) / "tmp").mkdir()
+            tools |= {**PYTEST_VARIABLES, "TMPDIR": str(temporary)}
+        yield Environment(tree, copy, python, {**tools, "HOME": str(home)})
 
 
 def _checkout(root: Path, commit: str, copy: Path) -> None:

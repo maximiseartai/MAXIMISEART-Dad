@@ -450,25 +450,28 @@ def _guard_proof(
     fixed_files: dict[str, str] | None = None,
     where: str = WHERE,
     dev: tuple[str, ...] = (),
+    findings: str = werdykty_szablonu.WERDYKTY["wazne"],
+    later: str | None = None,
 ) -> tuple[subprocess.CompletedProcess[str], str]:
-    """Dowód ``arguments`` (``--straznik`` z selektorem) dla Ważnego 5/W1/r1; ``dev`` to dodatkowe piny dodatku dev."""
+    """Dowód ``arguments`` (``--straznik`` z selektorem) dla Ważnego 5/W1/r1 z werdyktu FAIL z treścią ``findings``,
+    a z ``later`` także z późniejszym werdyktem PASS HEAD z tą treścią; ``dev`` to dodatkowe piny dodatku dev."""
 
     files = {"kod/__init__.py": "", "tests/__init__.py": "", "stare.py": OLD.format("obiekt"), "regula.yml": RULE, **project(dev=dev, tools='[tool.mypy]\nfiles = ["kod"]\n\n[tool.pytest.ini_options]\n')}
-    # Plugin dowodu testu ``straznik`` ładuje z pliku (``straznik.PLUGIN``), nie importem, więc kopia narzędzia z grafu
-    # importów go nie ma.
-    files["tools/lib/straznik_pytest.py"] = (Path(__file__).resolve().parents[1] / "tools/lib/straznik_pytest.py").read_text(encoding="utf-8")
     files["kod/typy.py"] = "class Obiekt:\n    def dozwolone(self) -> None:\n        pass\n"
     github = FakeGitHub(tmp_path, files, tool="tools/na_scalonych_pr.py", gh=FAKE_GH)
     fixed = fixed_files or {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": GUARD_TEST}
     failed, head = _merge(github, 5, failed_files or {"kod/inne.py": CAUGHT}, fixed)
-    findings = werdykty_szablonu.WERDYKTY["wazne"]
-    verdict = f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + findings.replace(WHERE, where)
     rendered = {text.replace(WHERE, where): html.replace(WHERE, where) for text, html in werdykty_szablonu.rendered().items()}
-    comment = {"body": verdict, "bodyHTML": body_html(verdict, rendered), "authorAssociation": "OWNER", "createdAt": "2026-11-14T01:00:00Z", "author": {"login": "recenzent"}}
+    verdicts = [f"WERDYKT: FAIL {failed}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + findings.replace(WHERE, where)]
+    verdicts += [] if later is None else [f"WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n{later}"]
+    comments = [
+        {"body": verdict, "bodyHTML": body_html(verdict, rendered), "authorAssociation": "OWNER", "createdAt": f"2026-11-14T0{hour}:00:00Z", "author": {"login": "recenzent"}}
+        for hour, verdict in enumerate(verdicts, start=1)
+    ]
     pages = {"pageInfo": {"hasNextPage": False, "endCursor": None}}
     pull = {
         **{"number": 5, "title": "PR 5", "state": "MERGED", "isDraft": False, "isCrossRepository": False, "baseRefName": "main", "headRefOid": head},
-        **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": [comment]}, "reviews": {**pages, "nodes": []}},
+        **{"url": "https://github.com/maximiseartai/MAXIMISEART-Dad/pull/5", "body": "", "comments": {**pages, "nodes": comments}, "reviews": {**pages, "nodes": []}},
     }
     (github.bin / "state.json").write_text(json.dumps(pull), encoding="utf-8")
     return github.run(*arguments, "--z-commita", head, "--wazne", "5/W1/r1"), failed
@@ -481,13 +484,13 @@ def _guard_proof(
         (("--straznik", "brak - test", "--przed-dowodem-testu"), "DOWÓD OK | brak - test | wyjątek 1/1"),
         (("--straznik", "pytest tests/test_inne.py"), "DOWÓD ODMOWA | pytest tests/test_inne.py | „Strażnik: pytest tests/test_inne.py” to nie selektor strażnika z listy: "),
     ],
-    ids=["brak-testu-przy-przeszczepie", "brak-testu-w-watku-sprzed-dowodu-testu", "plik-testow-zamiast-wezla"],
+    ids=["brak-testu-po-wdrozeniu-dowodu-testu", "brak-testu-w-watku-sprzed-dowodu-testu", "plik-testow-zamiast-wezla"],
 )
 @ONLY_FOUND_BY_NAME_ON_POSIX  # atrapa gh .cmd nie przenosi wielowierszowego zapytania GraphQL (#2116 r2 W2)
-def test_brak_testu_przy_kodzie_z_gdzie_do_przeszczepu_to_odmowa_poza_watkiem_sprzed_dowodu_testu(tmp_path: Path, arguments: tuple[str, ...], last: str) -> None:
-    """Ważne, którego definicja z ``Gdzie`` wraca z FAIL, ma strażnika-test z dowodem (``pytest <węzeł>``), więc
-    ``brak - test`` to odmowa, a w wątku sprzed wdrożenia dowodu testu (``--przed-dowodem-testu`` od
-    ``bramka_straznika``) przechodzi jak przed nim; selektor testu to jeden węzeł, nie plik."""
+def test_brak_testu_to_odmowa_poza_watkiem_sprzed_dowodu_testu(tmp_path: Path, arguments: tuple[str, ...], last: str) -> None:
+    """Strażnik-test ma dowód z mutacją recenzenta (``pytest <węzeł>``), więc ``brak - test`` to odmowa, a w wątku sprzed
+    wdrożenia dowodu testu (``--przed-dowodem-testu`` od ``bramka_straznika``) przechodzi jak przed nim; selektor
+    testu to jeden węzeł, nie plik."""
 
     done, failed = _guard_proof(tmp_path, *arguments)
 
@@ -498,21 +501,34 @@ def test_brak_testu_przy_kodzie_z_gdzie_do_przeszczepu_to_odmowa_poza_watkiem_sp
 
 
 @wymaga_uv
+@pytest.mark.parametrize(
+    ("later", "state", "last"),
+    [
+        (
+            None,
+            "ODMOWA | inne z FAIL: kotwicy nie ma dokładnie raz w kod/inne.py: 'obiekt.inne()' na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok ### Mutacja W1 r1",
+            "DOWÓD ODMOWA",
+        ),
+        (werdykty_szablonu.WERDYKTY["pass-z-mutacja"], "WYKRYTA | z bloku ### Mutacja W1 r1: zakazane z FAIL → 1 failed", "DOWÓD OK"),
+    ],
+    ids=["blok-z-fail-nieaktualny", "najnowszy-blok-z-pozniejszego-werdyktu"],
+)
 @ONLY_FOUND_BY_NAME_ON_POSIX
-def test_dowod_straznika_pytest_liczy_wezel_na_przeszczepie_z_fail_w_srodowisku_toru_linux(tmp_path: Path) -> None:
-    """``Strażnik: pytest <węzeł>`` tak, jak uruchamia go ``tools/scal_pr.py``: test z HEAD pada, gdy definicja
-    z ``Gdzie`` wraca z FAIL, w środowisku toru Linux Required CI z ``srodowisko_ci.built`` (jego zmienne widzi test)."""
+def test_dowod_straznika_pytest_liczy_wezel_z_najnowszym_blokiem_mutacji_w_srodowisku_toru_linux(tmp_path: Path, later: str | None, state: str, last: str) -> None:
+    """``Strażnik: pytest <węzeł>`` tak, jak uruchamia go ``tools/scal_pr.py``: test z HEAD pada z mutacją z najnowszego
+    bloku ``### Mutacja W1 r1`` w werdyktach PR, w środowisku toru Linux Required CI z ``srodowisko_ci.built`` (jego
+    zmienne widzi test); blok z FAIL, którego kotwicy nie ma na HEAD, odnawia recenzent następnej rundy."""
 
     in_ci = "import os\n\n" + GUARD_TEST.replace("    wazne(Obiekt())\n", "    assert os.environ.get('EXPECTED_PYTHON_VERSION') == '3.14'\n    wazne(Obiekt())\n")
     fixed = {"kod/inne.py": CAUGHT.replace("zakazane", "dozwolone"), "tests/test_inne.py": in_ci}
+    stale = werdykty_szablonu.WERDYKTY["wazne-z-nieaktualna-mutacja"]
 
-    done, failed = _guard_proof(tmp_path, "--straznik", "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone", fixed_files=fixed, dev=PYTEST_PINS)
+    done, failed = _guard_proof(tmp_path, "--straznik", "pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone", fixed_files=fixed, dev=PYTEST_PINS, findings=stale, later=later)
 
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert done.stdout.splitlines() == [
-        f"#5 W1 r1 | {failed[:8]} | WYKRYTA | przeszczep z FAIL: kod/inne.py:wazne | kod 1: AttributeError: 'Obiekt' object has no attribute 'zakazane' (tests/test_inne.py:13)",
-        "DOWÓD OK | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte 1/1",
-    ], done.stdout
+    assert done.returncode == (0 if last == "DOWÓD OK" else 1), done.stdout + done.stderr
+    [line, end] = done.stdout.splitlines()
+    assert line.startswith(f"#5 W1 r1 | {failed[:8]} | {state}"), done.stdout
+    assert end.startswith(f"{last} | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte"), done.stdout
 
 
 @needs_ast_grep
