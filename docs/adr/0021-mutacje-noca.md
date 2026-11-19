@@ -160,10 +160,10 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Wydanie nie czeka na noc: commit z zielonym pełnym CI `main` jest do wydania, choć skrypt mutacji skilla na nim pada, bo taki skrypt mierzy jakość sprawdzenia, a nie produkt, który dostaje tata.
   Wyjątkiem jest zmiana modelu TLA+ skilla ze skryptem mutacji modelu: ta dostaje czerwone Mutation checks na PR.
 - Noc mutuje zmiany wielu PR-ów naraz, więc pokrycie biegnie raz na testach wszystkich plików nocy, a części startują dopiero po najwolniejszym zadaniu pokrycia.
-  Rozmiar części (`NA_CZESC`) liczy dalej z pokryciem części 1006 s, więc część ma tyle zapasu w limicie czasu części.
-- Część z drogimi mutacjami trzyma runner do 3 h zamiast 1 h, a zwykła część kończy się jak dotąd w kilka minut do godziny (31.10: 4–51 min).
+  Rachunek rozmiaru części (`NA_CZESC`) liczył do 18.11 pokrycie części 1006 s, które było zapasem w limicie czasu części; od 19.11 liczy pokrycie w części najwyżej 1 s, zmierzone w nocach 17–19.11.
+- Część z drogimi mutacjami trzyma runner do 4 h (zadanie 240 min) zamiast 1 h, a zwykła część kończy się w kilka minut do półtorej godziny (31.10: 4–51 min, mediana nocy 17–19.11: 44–84 min).
 - Mutacja bez werdyktu w issue to praca dla agenta PR-u, choć test może ją już wykrywać: zgłoszona raz, nie wraca do następnej nocy.
-  Limit części jest ponad 2 razy dłuższy od najdłuższej części pierwszej nocy liczonej na zmierzonych czasach, więc taka linia wychodzi rzadko.
+  Limit części jest ponad 2 razy dłuższy od najdłuższej części pierwszej nocy liczonej na zmierzonych czasach, ale w nocach 17–19.11 przy limicie 175 min co noc jedna część go przekroczyła (8, 2 i 10 takich linii), stąd limit 235 min.
 - Dzień z więcej niż 960 mutacjami, czerwona noc (z mutacjami, którym jej części nie dały werdyktu) i noc, która nie wystartowała, zostawiają zaległość, którą przerabiają kolejne noce po 960, więc luka w testach PR-u z takiego dnia wychodzi później niż następnego dnia.
   Zaległość spada, gdy dzień ma mniej mutacji niż 960; ręczne uruchomienie workflow bez `od` przerabia następne 960 od razu.
   3.11 od bazy ostatniego udanego przebiegu czekało 2176 mutacji (`tools/mutacje_nocne.py plan`: 829 w pierwszej nocy i 1347 zaległości), a od 30.10 dochodziło ok. 570 mutacji na dobę, więc same noce wychodzą z zaległości po ok. 5 nocach, a noce po 1120 wyszłyby po ok. 4.
