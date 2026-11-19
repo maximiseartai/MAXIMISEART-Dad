@@ -42,7 +42,7 @@ says.
 
 The check covers `preparation_files.write_period_files()` from the staging
 directory onwards: the staging directory of `staged_publication.publish_staged()`
-(made, removed, and the stop that names it when it stays), `staged_directory.mkdir()`, both staged writes,
+(made, removed, and the stop that names it when it stays or cannot be checked), `staged_directory.mkdir()`, both staged writes,
 `_publish()`, `ensure_period_files_absent()` and the rollback. Run it when a diff
 touches any of these, or the exception mapping in `write_period_files` or `publish_staged`, or makes
 `prepare_collective_file()` publish without going through `write_period_files`.
@@ -145,6 +145,13 @@ window after it), symlinks,
 network drives whose rename is not atomic, more than two runs or the bounds
 above, and Przebieg rozliczeń's own folder publication in `settlement_files.py`: it goes through the same
 `publish_staged`, but its rename of the staging directory and its stops are not explored.
+A read that fails instead of finding nothing (`PermissionError` from `stat` or `lstat`) is not explored either, so
+three branches stay with tests: `ensure_period_files_absent` stopping on `NIEDOSTEPNY_FOLDER`
+(`test_nienadpisywanie_w_folderze_okresu_bez_dostepu_zatrzymuje_niedostepnoscia_a_nie_zapisuje` checks that
+Przygotowanie in a Folder okresu without access stops with that Komunikat and creates nothing), a staging directory
+that cannot be checked after its removal (`test_zatrzymanie_z_folderem_tymczasowym_w_folderze_bez_dostepu_podaje_poczatek_jego_nazwy`
+checks that the stop still names the start of its name), and `path_taken` of the Folder okresu raising in `_publish`
+after `ensure_period_files_absent` passed (no test).
 
 ## Known findings
 
