@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import itertools
 import json
+import os
 from pathlib import Path
+import subprocess
+import sys
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Final
 
 import pytest
 
@@ -34,6 +37,7 @@ from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import FakeReportBox
 from tests.fixtures.clock import ManualClock
 
+ROOT = Path(__file__).resolve().parents[1]
 KEY = "github_pat_SYNTETYCZNY_KLUCZ"
 NEW_KEY = "github_pat_SYNTETYCZNY_NOWY_KLUCZ"
 WAIT_S = 30.0
@@ -599,3 +603,41 @@ def test_zapis_pliku_zapisow_ktory_sie_nie_udaje_wstrzymuje_zakladanie_i_trafia_
 
     assert keyed.open_issue("uwaga-taty", "tytuł", "treść") == Unreachable()
     assert (box.keys, [type(failure) for failure in failures]) == ([], [PermissionError])
+
+
+_ZAMKNIECIE_W_TRAKCIE_SPRAWDZENIA: Final = (
+    "import sys, threading\n"
+    "from rozliczenia.centrum.keyed_box import KeyedBox\n"
+    "from tests.fixtures.centrum import FakeReportBox\n"
+    "from tests.fixtures.clock import ManualClock\n"
+    "box = FakeReportBox(search_hold=threading.Event())\n"
+    "keyed = KeyedBox(box, lambda: sys.argv[1], clock=ManualClock())\n"
+    "assert keyed.judge(wait_s=0) == 'unchecked'\n"
+    "assert box.searching.wait(30), 'sprawdzenie klucza nie zaczęło pytać skrzynki'\n"
+    "print('czeka', flush=True)\n"
+)
+
+
+def test_proces_konczy_sie_mimo_sprawdzenia_klucza_ktore_czeka_na_skrzynke() -> None:
+    """Skrzynka bez sieci odpowiada dopiero po limicie czasu, a sprawdzenie klucza w tle nie trzyma zamknięcia Centrum:
+    proces kończy się, gdy skończy się jego praca, a klucz zostaje niesprawdzony do następnego startu."""
+
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
+    child = subprocess.Popen(
+        [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_SPRAWDZENIA, KEY],
+        cwd=ROOT,
+        env=environment,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert child.stdout is not None
+    try:
+        waiting = child.stdout.readline()
+        exit_code = child.wait(timeout=30)
+    finally:
+        child.kill()
+        child.wait()
+        child.stdout.close()
+
+    assert (waiting, exit_code) == ("czeka\n", 0)
