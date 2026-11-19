@@ -67,7 +67,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 
 ## Reguły i co ich pilnuje
 
-Przy poprawce operatora, Ważnym z przeglądu i czerwonym `main` z prawdziwej zmiany nazwij korzeń i wyrwij go na najwyższym szczeblu, który działa, według sekcji „Korzeń i chwast” skilla [`przeglad`](.agents/skills/przeglad/SKILL.md).
+Przy poprawce operatora, Ważnym z przeglądu i czerwonym `main` z prawdziwej zmiany nazwij korzeń i wyrwij go na najwyższym szczeblu, który działa, według [`korzen.md`](.agents/skills/przeglad/korzen.md) skilla `przeglad`.
 Każde Ważne scala się tylko ze strażnikiem w swoim bloku `## Korzeń` (`Strażnik:`) i jego dowodem, który liczy `tools/scal_pr.py`, a odpalenia reguły chwastu nie ukrywa ani tłumienie, ani zwolnienie poza prawem właściciela ([ADR 0036](docs/adr/0036-chwast-to-regula.md), [ADR 0042](docs/adr/0042-straznik-przy-pierwszym-waznym.md)).
 Strażnik reguły (nowy albo zmieniany), jego wiersz w tabeli reguł, prawo właściciela i wyjątek tymczasowy: zanim je zapiszesz, przeczytaj wstęp [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 

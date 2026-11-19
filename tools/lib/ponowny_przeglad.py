@@ -4,7 +4,7 @@ from collections.abc import Sequence
 
 import szablon_werdyktu
 
-ZASADY = """Ponowny przegląd tego samego HEAD (skill ``przeglad``, „Kolejne rundy”): werdykt dla SHA, który ma już werdykt
+ZASADY = """Ponowny przegląd tego samego HEAD (skill ``przeglad``, ``rundy.md``): werdykt dla SHA, który ma już werdykt
 w tym PR, ma w „## Sprawdzone” punkt ``Ponowny przegląd: <zdanie>`` (``POINT``). Zdanie mówi, czemu ten SHA dostaje
 kolejny przegląd, i podaje punkty „Do sprawdzenia” ze zlecenia tej rundy.
 
@@ -37,7 +37,7 @@ def problem(units: Sequence[szablon_werdyktu.Item]) -> str | None:
     if any(item.kind == "point" and item.text.startswith(POINT) for item in units):
         return None
     return (
-        f"HEAD PR ma już werdykt, więc ten to ponowny przegląd tego samego SHA (skill przeglad, „Kolejne rundy”):"
+        f"HEAD PR ma już werdykt, więc ten to ponowny przegląd tego samego SHA (skill przeglad, rundy.md):"
         f" dopisz w „## {szablon_werdyktu.CHECKED}” punkt „- {POINT}<czemu kolejny przegląd tego SHA i punkty"
         f" „Do sprawdzenia” ze zlecenia>”"
     )
