@@ -65,9 +65,7 @@ CI_PYTHON = "3.14"
 CI_EXTRAS = ("dev",)
 CI_INSTALL = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[' + ",".join(CI_EXTRAS) + ']"'
 BUILD_TIMEOUT_S = 300
-# ZEWNĘTRZNE: multiprocessing kładzie gniazdo serwera forkserver w TMPDIR/pymp-XXXXXXXX/sock-XXXXXXXXXXXX, a przy długim TMPDIR próbuje /tmp, którego piaskownica nie przyjmuje, więc wraca do TMPDIR, a bind pada, gdy ścieżka ma 104 bajty sun_path macOS albo więcej (Lib/multiprocessing/util.py, _get_base_temp_dir; connection.py, arbitrary_address)
-_SOCKET_MAX = 104
-_RUN_SOCKET = "/srodowisko-ci-XXXXXXXX/tmp/pymp-XXXXXXXX/sock-XXXXXXXXXXXX"
+# ZEWNĘTRZNE: multiprocessing kładzie gniazdo serwera forkserver w TMPDIR/pymp-XXXXXXXX/sock-XXXXXXXXXXXX, a bind pada, gdy ta ścieżka ma 104 bajty sun_path macOS albo więcej, czyli przy TMPDIR wołającego na macOS (/var/folders/…), ale nie w /tmp (Lib/multiprocessing/connection.py, arbitrary_address)
 _SYSTEM_TEMP = Path("/tmp")
 _JOB_KEYS = {"name", "runs-on", "steps"}
 _INSTALL_ID = "deps"  # ``id`` kroku ``CI_INSTALL``, którego wynik czyta ``_CI_IF``
@@ -148,7 +146,7 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
             f"środowisko Required CI: drzewo ma ścieżki różne tylko wielkością liter albo normalizacją Unicode ({', '.join(twins[:3])}), a system plików macOS "
             "trzyma jedną z nich, Linux runnera obie: dowód policzy job dowod statusu „Werdykt i bramka”, a przy merge'u uruchom go na Linuksie"
         )
-    with tempfile.TemporaryDirectory(prefix="srodowisko-ci-", dir=run_root(Path(tempfile.gettempdir()))) as folder:
+    with run_folder("srodowisko-ci-") as folder:
         home, copy = Path(folder) / "dom", Path(folder) / "drzewo"
         home.mkdir()
         _checkout(root, tree, copy)
@@ -167,8 +165,14 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
         yield Environment(tree, copy, python, {**tools, "HOME": str(home), "TMPDIR": str(temporary)})
 
 
-def run_root(temporary: Path) -> Path:
-    return temporary if len(str(temporary)) + len(_RUN_SOCKET) < _SOCKET_MAX else _SYSTEM_TEMP
+@contextmanager
+def run_folder(prefix: str) -> Iterator[Path]:
+    try:
+        folder = tempfile.TemporaryDirectory(prefix=prefix, dir=_SYSTEM_TEMP)
+    except OSError:
+        folder = tempfile.TemporaryDirectory(prefix=prefix)
+    with folder as path:
+        yield Path(path)
 
 
 def _checkout(root: Path, commit: str, copy: Path) -> None:

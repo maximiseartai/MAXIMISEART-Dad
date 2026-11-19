@@ -15,7 +15,6 @@ import ctypes
 import json
 from pathlib import Path
 import sys
-import tempfile
 import uuid
 import zlib
 
@@ -96,8 +95,8 @@ class Pull:
     def _copy(self) -> Iterator[straznik.Environment]:
         """Kopia HEAD z własnym gitem, ``HOME`` i ``TMPDIR`` obok siebie, jak każde środowisko z ``srodowisko_ci.built``."""
 
-        with tempfile.TemporaryDirectory(prefix="straznik-", dir=srodowisko_ci.run_root(Path(tempfile.gettempdir()))) as folder:
-            copy, home, temporary = (Path(folder) / name for name in ("drzewo", "dom", "tmp"))
+        with srodowisko_ci.run_folder("straznik-") as folder:
+            copy, home, temporary = (folder / name for name in ("drzewo", "dom", "tmp"))
             srodowisko_ci._checkout(self.root, self.head, copy)
             home.mkdir()
             temporary.mkdir()

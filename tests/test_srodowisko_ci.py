@@ -9,14 +9,12 @@ a nie wołającego (#2116 r4–r6).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
-from contextlib import contextmanager
+from collections.abc import Callable
 import copy as copying
 from functools import partial
 import json
 import re
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -641,37 +639,22 @@ def test_slad_biegu_wezla_nie_przechodzi_do_nastepnego_biegu_dowodu(tmp_path: Pa
     assert not outcome.detected and "| NIEWYKRYTA | wielkie litery z FAIL: NIEWYKRYTA: 1 passed" in outcome.line, outcome.line
 
 
-@contextmanager
-def _short_temporary() -> Iterator[Path]:
-    for base in (Path("/tmp"), Path(tempfile.gettempdir())):
-        try:
-            folder = Path(tempfile.mkdtemp(prefix="k", dir=base))
-        except PermissionError:
-            continue
-        try:
-            yield folder
-        finally:
-            shutil.rmtree(folder)
-        return
-    raise AssertionError("brak krótkiego katalogu tymczasowego z prawem zapisu ani w /tmp, ani w TMPDIR")
-
-
 @wymaga_uv
-@pytest.mark.parametrize("long", [False, True], ids=["tmpdir-krotki", "tmpdir-za-dlugi-na-gniazdo-multiprocessing"])
-def test_srodowisko_dowodu_powstaje_w_tmpdir_wolajacego_a_w_tmp_tylko_gdy_gniazdo_multiprocessing_by_sie_w_nim_nie_zmiescilo(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, long: bool
-) -> None:
+@pytest.mark.parametrize("refused", [False, True], ids=["tmp-przyjmuje-zapis", "tmp-odmawia-zapisu"])
+def test_srodowisko_dowodu_powstaje_w_tmp_a_gdy_tmp_odmawia_zapisu_w_tmpdir_wolajacego(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refused: bool) -> None:
     root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/uzycie.py": "X = 2\n"})
+    caller = tmp_path / "wolajacy"
+    caller.mkdir()
+    monkeypatch.setenv("TMPDIR", str(caller))
+    monkeypatch.setattr(tempfile, "tempdir", None)
+    if refused:
+        (system := tmp_path / "tmp-bez-zapisu").write_text("")
+        monkeypatch.setattr(srodowisko_ci, "_SYSTEM_TEMP", system)
 
-    with _short_temporary() as short:
-        caller = tmp_path / ("d" * 60) if long else short
-        caller.mkdir(exist_ok=True)
-        monkeypatch.setenv("TMPDIR", str(caller))
-        monkeypatch.setattr(tempfile, "tempdir", None)
-        with srodowisko_ci.built(root, head, target) as environment:
-            folders = {environment.copy.parents[1], Path(environment.variables["TMPDIR"]).parents[1]}
+    with srodowisko_ci.built(root, head, target) as environment:
+        folders = {environment.copy.parents[1], Path(environment.variables["TMPDIR"]).parents[1]}
 
-    assert folders == {Path("/tmp") if long else caller}
+    assert folders == {caller if refused else Path("/tmp")}
 
 
 FORKSERVER = (
