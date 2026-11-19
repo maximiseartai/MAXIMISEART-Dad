@@ -356,9 +356,9 @@ def test_kolejny_odczyt_skrzynki_pyta_serwer_tylko_o_maile_spoza_poprzedniego_i_
     assert asked == {5, 6}
 
 
-@pytest.mark.parametrize("nowe_uidvalidity", [2, None], ids=["zmienione", "bez-uidvalidity"])
+@pytest.mark.parametrize(("uidvalidity", "nowe_uidvalidity"), [(1, 2), (None, None)], ids=["zmienione", "bez-uidvalidity"])
 def test_skrzynka_ze_zmienionym_albo_bez_uidvalidity_port_czyta_kazdy_mail_od_zera(
-    tmp_path: Path, nowe_uidvalidity: int | None
+    tmp_path: Path, uidvalidity: int | None, nowe_uidvalidity: int | None
 ) -> None:
     """Gdy ``UIDVALIDITY`` folderu się zmieni albo serwer go nie podaje, ten sam UID może wskazywać inny mail, więc
     port czyta każdy mail od zera i oddaje nowy mail spod starego UID."""
@@ -366,7 +366,7 @@ def test_skrzynka_ze_zmienionym_albo_bez_uidvalidity_port_czyta_kazdy_mail_od_ze
     config = dostep(tmp_path)
     przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
     po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
-    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[przed]) as atrapa:
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[przed], validity=uidvalidity) as atrapa:
         inbox = port(config, atrapa)
         first = inbox.mails_since(date(2026, 11, 8))
         atrapa.mails, atrapa.validity = (po,), nowe_uidvalidity
