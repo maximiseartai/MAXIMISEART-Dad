@@ -387,7 +387,7 @@ def _annotation_changes(call: Callable[..., Any]) -> Iterator[tuple[str, int, st
         found = next((offset for offset, line in enumerate(lines) if isinstance(annotation, str) and written in line), None)
         if found is not None:
             changed = "-> object" if name == "return" else f"{name}: object"
-            yield str(path.relative_to(ROOT)), start + found, lines[found].rstrip("\n").replace(written, changed, 1)
+            yield path.relative_to(ROOT).as_posix(), start + found, lines[found].rstrip("\n").replace(written, changed, 1)
 
 
 def test_filtr_zachowuje_adnotacje_kazdej_funkcji_ktora_czyta_fastapi_centrum(tmp_path: Path) -> None:
