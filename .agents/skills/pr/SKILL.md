@@ -63,7 +63,7 @@ Szczebel: (c) - <mechanizm, który łapie całą klasę>
 Wyżej nie, bo:
 (a) - <czemu nie działa>
 (b) - <czemu nie działa>
-Strażnik: brak - test
+Strażnik: pytest tests/test_x.py::test_y
 
 ### W2 r2: R-DRUGA-DROGA
 Wyrwany w #<PR korzenia>
@@ -83,7 +83,8 @@ Dowód: <polecenie i wynik>
 - `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each higher rung, in ladder order; rung (a) has no such line.
   Rung (e) needs this PR to add a new point linking to this PR (`#N`) to „Co jest porażką” in the skill `przeglad` and to leave the other points as on the base: an edited point of the base is not a new point.
 - A Ważne block ends with one line `Strażnik: <selector>` from the list in the docstring of `tools/lib/straznik.py`, also after `Wyrwany w #M`; `tools/scal_pr.py` computes its proof from the tree of the `FAIL` verdict, and you check it with `tools/na_scalonych_pr.py --straznik '<selector>' --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`; `ast-grep <id>` also needs `<PR>/W<n>/r<k>` in the rule's `metadata.przypadki`.
-  A test as the guard is `Strażnik: brak - test`, with the test named in `Szczebel:`: no tool proves a test yet, so the next reviewer runs it on the tree of the `FAIL` verdict (ADR 0042, „Test jako strażnik”).
+  A test as the guard is `Strażnik: pytest tests/<file>.py::<test>` (one test or one of its parameters): the proof grafts the definitions around the places of `Gdzie` outside `tests/` from the tree of the `FAIL` verdict into HEAD, and passes when the test passes on HEAD and fails on the graft and on the `FAIL` tree (ADR 0042, „Test jako strażnik”).
+  `Strażnik: brak - test`, with the test named in `Szczebel:`, passes only when that graft is empty (`Gdzie` only in `tests/`, or its definitions unchanged on HEAD) or in a thread whose first verdict came before the test proof, and the next reviewer runs that test on the tree of the `FAIL` verdict.
   Code from `Gdzie` that the PR removed (rung (a)) is `Strażnik: brak - usunięte`, and the next reviewer checks it is gone.
 - A red-`main` block ends with `Dowód:`, a command with its result, at most 5 lines of at most 300 characters, as in the verdict.
 - A root larger than `size:M` (the label the CI workflow „Rozmiar PR” puts on a PR) goes in its own root PR, merged first into the default branch: its body has the line `Korzeń z #N: R-KOD` for this PR `#N`, and this PR's block has only `Wyrwany w #M`.

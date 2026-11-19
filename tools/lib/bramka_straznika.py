@@ -6,7 +6,8 @@ z ostatnią linią ``DOWÓD OK``; co liczy dowód, mówi ``straznik``, a w jakim
 
 Warunek obowiązuje od własnego wdrożenia (``MARKER``: ADR 0042, jak szablon werdyktu od ADR 0031;
 ``werdykt_pr.rule_applies``, decyzja Q20 ADR 0031), więc wątek z werdyktem sprzed niego kończy po staremu, z polem
-``Dowód:`` w bloku Ważnego. Brak linii
+``Dowód:`` w bloku Ważnego. Tak samo dowód testu (``TEST_MARKER``): w wątku z werdyktem sprzed niego ``brak - test``
+przechodzi bez warunku przeszczepu (``--przed-dowodem-testu``). Brak linii
 i selektor spoza listy zgłasza bramka korzenia (warunek 4), więc tu taki blok nie dostaje dowodu.
 
 Błąd renderera GitHuba to ``stan_pr.Waiting``, bo mija przy następnym runie. Dowody PR mają razem
@@ -20,6 +21,7 @@ i przy merge'u.
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import sys
 import time
@@ -34,6 +36,7 @@ import szablon_werdyktu
 import werdykt_pr
 
 MARKER = "docs/adr/0042-straznik-przy-pierwszym-waznym.md"  # plik, którego dodanie do bazy PR to chwila wdrożenia warunku
+TEST_MARKER = "tools/lib/straznik_pytest.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia dowodu testu
 PROOF = ROOT / "tools" / "na_scalonych_pr.py"
 PROOF_OK = "DOWÓD OK |"
 PROOF_TIMEOUT_S = 900
@@ -77,7 +80,8 @@ def problems(pull: Pull) -> list[str]:
 
 
 def _proved(pull: Pull, guard: straznik.Guard, cases: list[str], left: float) -> list[str]:
-    arguments = ["--straznik", str(guard), "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case))]
+    before = guard.kind is straznik.Kind.TESTS and not werdykt_pr.rule_applies(pull, werdykt_pr.deployment(pull.base, TEST_MARKER))
+    arguments = ["--straznik", str(guard), "--z-commita", pull.head, *(part for case in cases for part in ("--wazne", case)), *(["--przed-dowodem-testu"] if before else [])]
     late = f"strażnik: {guard}: dowody strażników tego PR nie skończyły się w {PROOF_TIMEOUT_S} s, uruchom ponownie"
     if left <= 0:
         return [late]
@@ -91,5 +95,5 @@ def _proved(pull: Pull, guard: straznik.Guard, cases: list[str], left: float) ->
         return []
     return [
         f"strażnik: Ważne {', '.join(cases)} ma Strażnik: {guard}, a jego dowód nie przeszedł (kod {done.returncode}): {last or 'bez wyniku'}; "
-        f"popraw strażnika albo wybierz inny z listy i sprawdź go poleceniem tools/na_scalonych_pr.py {' '.join(arguments)}"
+        f"popraw strażnika albo wybierz inny z listy i sprawdź go poleceniem tools/na_scalonych_pr.py {shlex.join(arguments)}"
     ]

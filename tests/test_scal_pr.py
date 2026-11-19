@@ -2845,6 +2845,28 @@ def test_watek_z_werdyktem_sprzed_wdrozenia_warunku_5_konczy_z_dowodem_autora_be
 
 
 @pytest.mark.parametrize(
+    ("deployed", "before"),
+    [(None, True), (GATE_AFTER_VERDICTS, True), (GATE_BEFORE_VERDICTS, False)],
+    ids=["dowod-testu-niewdrozony", "watek-sprzed-wdrozenia-dowodu-testu", "watek-po-wdrozeniu-dowodu-testu"],
+)
+def test_brak_testu_w_watku_sprzed_wdrozenia_dowodu_testu_przechodzi_jak_przed_nim(tmp_path: Path, deployed: str | None, before: bool) -> None:
+    """Granica wdrożenia dowodu testu (decyzja Q20 ADR 0031): warunek przeszczepu ``brak - test`` obowiązuje tylko
+    w wątku, którego pierwszy werdykt powstał po dodaniu ``bramka_straznika.TEST_MARKER`` do bazy; starszy wątek dostaje
+    dowód z ``--przed-dowodem-testu``, czyli ``brak - test`` jak przed tym wdrożeniem."""
+
+    github, head = _guard_pull(tmp_path, "straznik-brak-testu", proof=(0, "DOWÓD OK | brak - test | wyjątek 1/1"))
+    if deployed is not None:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("GIT_COMMITTER_DATE", deployed)
+            github.push_main({bramka_straznika.TEST_MARKER: '"""Plugin pytest dowodu strażnika."""\n'})
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _proofs(github) == [["--straznik", "brak - test", "--z-commita", head, "--wazne", "1/W1/r1", *(["--przed-dowodem-testu"] if before else [])]]
+
+
+@pytest.mark.parametrize(
     ("title", "closed", "suffix"),
     [
         (f"Chwast: {chwasty.CODE}", True, f" | zamknięte: #{chwasty.WEED_ISSUE} |"),

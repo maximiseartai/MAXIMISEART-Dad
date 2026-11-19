@@ -28,7 +28,8 @@ import srodowisko_ci
 import straznik
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
-from tests.fixtures.srodowisko import CI, PINS, project, wymaga_uv
+from tests.fixtures.srodowisko import CI, DEV, PINS, project, wymaga_uv
+from zakres_runu import TORY
 
 ROOT = Path(__file__).resolve().parents[1]
 MYPY = '[tool.mypy]\nfiles = ["kod"]\nstrict = true\n{}\n'
@@ -105,11 +106,11 @@ def _swap(first: str, second: str) -> Callable[[Job, Job], None]:
     return change
 
 
-def _ci(change: Callable[[Job, Job], None]) -> str:
-    """``ci.yml`` repozytorium ze zmianą ``change`` zadania ``srodowisko_ci.JOB``."""
+def _ci(change: Callable[[Job, Job], None], job: str = srodowisko_ci.JOB) -> str:
+    """``ci.yml`` repozytorium ze zmianą ``change`` zadania ``job``."""
 
     workflow = copying.deepcopy(yaml.safe_load(CI))
-    change(workflow, workflow["jobs"][srodowisko_ci.JOB])
+    change(workflow, workflow["jobs"][job])
     return yaml.safe_dump(workflow, allow_unicode=True)
 
 
@@ -227,6 +228,55 @@ def test_zmiana_zadania_ktora_srodowiska_ruff_i_mypy_nie_zmienia_nie_jest_roznic
     assert srodowisko_ci.mismatch(tmp_path) == []
 
 
+def test_dowod_testu_powtarza_tor_linux_zadania_pytest_z_ci_main() -> None:
+    """Stałe toru Linux zadania pytest to Required CI ``main``: tor z ``zakres_runu.TORY`` na runnerze ``CI_RUNNER`` ma
+    Pythona ``CI_PYTHON`` i szablon ``PYTEST_JOB``, a kroki i zmienne zadania to ``pytest_mismatch`` bez różnicy."""
+
+    [linux] = [lane for lane in TORY if lane.os == srodowisko_ci.CI_RUNNER]
+
+    assert (linux.python, linux.szablon) == (srodowisko_ci.CI_PYTHON, srodowisko_ci.PYTEST_JOB)
+    assert srodowisko_ci.pytest_mismatch(ROOT) == []
+
+
+@pytest.mark.parametrize(
+    ("change", "fragment"),
+    [
+        (_set("env.PYTEST_ADDOPTS", "-p no:xdist"), "env zadania pytest to"),
+        (_set("container", "python:3.14"), "container w zadaniu pytest"),
+        (_set("defaults", {"run": {"shell": "bash"}}), "defaults w zadaniu pytest"),
+        (_step("Install test dependencies (Linux)", {"run": 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev,workflowy]"'}), "krok 4 toru Linux"),
+        (_insert("Run the planned units", {"run": 'echo "PYTHONHASHSEED=1" >> "$GITHUB_ENV"'}), "krok 7 toru Linux"),
+        (_step("Install test dependencies", {"if": "${{ runner.os != 'Linux' }}"}), "krok 4 toru Linux"),
+        (_drop("Run the planned units"), "brak kroku python tools/ci/wykonaj_zadanie.py"),
+    ],
+    ids=["zmienna-zadania", "kontener", "domyslne-zadania", "instalacja-z-innym-dodatkiem", "krok-przed-pytest", "instalacja-windows-na-linuksie", "bez-kroku-pytest"],
+)
+def test_zmiana_toru_linux_zadania_pytest_to_roznica_dowodu_testu(tmp_path: Path, change: Callable[[Job, Job], None], fragment: str) -> None:
+    """Zmienna, instalacja albo krok toru Linux zadania pytest, których dowód testu nie powtarza, to różnica, więc dowód
+    odmawia, zamiast liczyć test w środowisku innym niż Required CI."""
+
+    _write(tmp_path, {srodowisko_ci.WORKFLOW: _ci(change, srodowisko_ci.PYTEST_JOB)})
+
+    found = srodowisko_ci.pytest_mismatch(tmp_path)
+
+    assert any(fragment in problem for problem in found), found
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        _insert("Install test dependencies", {"if": "${{ runner.os == 'Windows' }}", "run": "echo windows"}),
+        _step("Upload the flaky tests", {"name": "Flaky"}),
+        _step("Chromium", {"name": "Przeglądarka"}),
+    ],
+    ids=["krok-tylko-windows", "krok-po-pytest", "nazwa-kroku"],
+)
+def test_zmiana_zadania_pytest_ktora_toru_linux_przed_pytest_nie_zmienia_nie_jest_roznica(tmp_path: Path, change: Callable[[Job, Job], None]) -> None:
+    _write(tmp_path, {srodowisko_ci.WORKFLOW: _ci(change, srodowisko_ci.PYTEST_JOB)})
+
+    assert srodowisko_ci.pytest_mismatch(tmp_path) == []
+
+
 @pytest.mark.parametrize(
     ("files", "fragment"),
     [
@@ -245,8 +295,8 @@ def test_konfiguracja_uv_w_drzewie_to_roznica(tmp_path: Path, files: dict[str, s
     assert any(fragment in problem for problem in srodowisko_ci.mismatch(tmp_path))
 
 
-def test_zmienne_ktore_steruja_pythonem_mypy_ruff_i_uv_nie_trafiaja_do_srodowiska(monkeypatch: pytest.MonkeyPatch) -> None:
-    hidden = ("MYPYPATH", "PYTHONPATH", "RUFF_OUTPUT_FORMAT", "UV_INDEX_URL", "PIP_INDEX_URL", "VIRTUAL_ENV", "GH_TOKEN", "GITHUB_TOKEN")
+def test_zmienne_ktore_steruja_pythonem_mypy_ruff_pytest_testami_i_uv_nie_trafiaja_do_srodowiska(monkeypatch: pytest.MonkeyPatch) -> None:
+    hidden = ("MYPYPATH", "PYTHONPATH", "RUFF_OUTPUT_FORMAT", "PYTEST_ADDOPTS", "MAXIMISEART_ZAPADKA_BAZA", "UV_INDEX_URL", "PIP_INDEX_URL", "VIRTUAL_ENV", "GH_TOKEN", "GITHUB_TOKEN")
     for name in (*hidden, "UV_CACHE_DIR", "HOME"):
         monkeypatch.setenv(name, "x")
 
@@ -445,6 +495,20 @@ def test_dowod_odmawia_drzewa_ktorego_srodowiska_nie_zbuduje_jak_ci(tmp_path: Pa
 
 
 @wymaga_uv
+def test_dowod_testu_odmawia_drzewa_z_innym_torem_linux_a_dowod_mypy_nie(tmp_path: Path) -> None:
+    """Baza zmienia instalację toru Linux zadania pytest: dowód testu odmawia (``pytest_mismatch``), bo liczyłby test
+    w innym środowisku niż Required CI, a dowód mypy, którego to zadanie nie dotyczy, buduje środowisko."""
+
+    moved = {srodowisko_ci.WORKFLOW: _ci(_step("Install test dependencies (Linux)", {"run": "uv pip install --system -e '.[dev,workflowy]'"}), srodowisko_ci.PYTEST_JOB)}
+    root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/uzycie.py": "X = 2\n"}, moved)
+
+    with pytest.raises(srodowisko_ci.Refused, match=re.escape("krok 4 toru Linux zadania pytest przed pytest to")), srodowisko_ci.built(root, head, target, tests=True):
+        pass
+    with srodowisko_ci.built(root, head, target) as environment:
+        assert environment.python.is_file()
+
+
+@wymaga_uv
 @pytest.mark.parametrize(
     "twins",
     [("Modul.py", "modul.py"), (unicodedata.normalize("NFC", "zó.py"), unicodedata.normalize("NFD", "zó.py"))],
@@ -477,3 +541,28 @@ def test_dowod_bez_uv_odmawia_z_tym_co_zrobic(tmp_path: Path, monkeypatch: pytes
 
     with pytest.raises(srodowisko_ci.Refused, match="brak uv na PATH, a Required CI instaluje zależności uv \\(setup-uv\\): zainstaluj uv"), srodowisko_ci.built(tmp_path, "HEAD", "HEAD"):
         pass
+
+
+# Piny pytest i xdist z dodatku dev repozytorium: dowód testu biegnie ``-n 0``, a tę opcję daje xdist.
+PYTEST_PINS = tuple(pin for pin in DEV if pin.startswith(("pytest==", "pytest-xdist==")))
+SEES_CI = (
+    "import os\n\nfrom kod.odczyt import odczyt\n\n\ndef test_odczyt() -> None:\n"
+    "    assert (os.environ.get('PYTHONUTF8'), os.environ.get('EXPECTED_PYTHON_VERSION'), os.environ.get('PYTEST_ADDOPTS')) == ('1', '3.14', None)\n"
+    "    assert odczyt() == 'tekst'\n"
+)
+
+
+@wymaga_uv
+def test_dowod_testu_biegnie_w_srodowisku_toru_linux_a_nie_wolajacego(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Węzeł biegnie Pythonem ``CI_PYTHON`` z pytest z dodatku dev drzewa i zmiennymi zadania pytest (``PYTEST_VARIABLES``),
+    bez ``PYTEST_ADDOPTS`` wołającego, i pada na przeszczepie z FAIL."""
+
+    monkeypatch.setenv("PYTEST_ADDOPTS", "-k nic")
+    base = {**project(dev=PYTEST_PINS, tools="[tool.pytest.ini_options]\n"), **TYPED, "tests/__init__.py": ""}
+    root, fork, failed, head, target = _repository(tmp_path, base, {"kod/odczyt.py": "def odczyt() -> str:\n    return 'TEKST'\n"}, {"kod/odczyt.py": TYPED["kod/odczyt.py"], "tests/test_odczyt.py": SEES_CI})
+    case = straznik.Case("#5 W1 r1", failed, fork, (("kod/odczyt.py", 2, 2),))
+
+    with srodowisko_ci.built(root, head, target, tests=True) as environment:
+        [outcome] = straznik.prove(root, straznik.parse("pytest tests/test_odczyt.py::test_odczyt"), environment, [case])
+
+    assert outcome.detected and "| WYKRYTA | przeszczep z FAIL: kod/odczyt.py:odczyt | kod 1: AssertionError: assert 'TEKST' == 'tekst'" in outcome.line, outcome.line
