@@ -15,6 +15,7 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import TOOLS, commit, git, repository
 
+import box_boat
 import czasy_ci
 import rozjazd_modelu
 import szybko
@@ -377,6 +378,45 @@ def test_blad_ruff_przerywa_krok_pytest_zamiast_czekac_na_jego_koniec(tmp_path: 
     last = answered.stdout.splitlines()[-1]
     expected = "SZYBKO FAIL | ruff, mypy, mypy (Windows), testy struktury po mergu z origin/main | pytest przerwany"
     assert (answered.returncode, last) == (1, expected), answered.stdout
+
+
+def _box_conftest(repo: Path, *, in_copy: bool) -> str:
+    """Conftest, który kończy sesję pytest kodem boxa, jak plugin stanu procesu po katalogu repo przeniesionym przez box:
+    zawsze w sesji repozytorium ``repo``, a w jego kopii z mergu tylko z ``in_copy``. Sesja w kopii kończy się 5 s
+    później, więc krok pytest na HEAD kończy się pierwszy, a krok struktury na mergu nie jest przerywany."""
+
+    return (
+        "import time\nfrom pathlib import Path\n\nimport pytest\n\n\n"
+        "def pytest_sessionfinish(session: pytest.Session) -> None:\n"
+        f"    here = Path(__file__).resolve().parents[1] == Path({str(repo.resolve())!r})\n"
+        "    if session.exitstatus != pytest.ExitCode.TESTS_FAILED:\n"
+        "        return\n"
+        "    if not here:\n"
+        "        time.sleep(5)\n"
+        f"    if here or {in_copy}:\n"
+        f"        session.exitstatus = {box_boat.KOD_WYJSCIA}\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("in_copy", "expected"),
+    [
+        (True, (box_boat.KOD_WYJSCIA, f"SZYBKO INFRA | pytest, testy struktury po mergu z origin/main: {box_boat.KOMUNIKAT}")),
+        (False, (1, "SZYBKO FAIL | pytest, testy struktury po mergu z origin/main")),
+    ],
+    ids=["box-w-obu-krokach", "box-tylko-w-jednym-kroku"],
+)
+def test_szybko_infra_tylko_gdy_kazdy_krok_ktory_padl_to_pytest_z_kodem_boxa(
+    tmp_path: Path, in_copy: bool, expected: tuple[int, str]
+) -> None:
+    repo = _repo(tmp_path, structure="raise AssertionError('test pada')")
+    _write(repo, "tests/conftest.py", _box_conftest(repo, in_copy=in_copy))
+    git(repo, "update-ref", "refs/remotes/origin/main", commit(repo, "kod boxa"))
+    _base_moved_on(repo, ("docs/z-main.md", "main\n"), ("docs/z-galezi.md", "gałąź\n"))
+
+    answered = _szybko(repo)
+
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == expected, answered.stdout
 
 
 def test_zmiana_bez_bledu_konczy_sie_ok_choc_niedotkniety_test_pada(tmp_path: Path) -> None:
@@ -894,6 +934,17 @@ def test_uv_pyta_siec_tylko_bez_cache_a_modul_ktory_sie_nie_importuje_wywraca_kr
     assert "pakiet.stary: ImportError: tylko na nowszym Pythonie" in answered.stdout
     last = _verdict(answered)
     assert (answered.returncode, last) == (1, f"SZYBKO FAIL | import src pod Pythonem 3.{sys.version_info[1] - 1}"), answered.stdout
+
+
+def test_kod_boxa_z_kroku_bez_pytest_to_porazka_a_nie_szybko_infra(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _requiring(repo, (3, sys.version_info[1] - 1))
+    fake = fake_cli(tmp_path / "bin", "uv", f"import sys\nsys.exit({box_boat.KOD_WYJSCIA})\n")
+
+    answered = _szybko(repo, path=fake.parent)
+
+    expected = f"SZYBKO FAIL | import src pod Pythonem 3.{sys.version_info[1] - 1}"
+    assert (answered.returncode, _verdict(answered)) == (1, expected), answered.stdout
 
 
 def test_requires_python_bez_najstarszej_wersji_wywraca_szybkie_sprawdzenie(tmp_path: Path) -> None:

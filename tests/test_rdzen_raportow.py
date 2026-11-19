@@ -3889,10 +3889,12 @@ def test_29_lutego_z_innego_roku_przestepnego_daje_29_lutego_roku_przestepnego_w
     assert outcome.changes == _both(ROW, "tak", "wymiana routera")
 
 
-def test_29_lutego_bez_roku_przestepnego_w_granicach_zostaje_z_tematu() -> None:
-    """Dzień, którego nie ma w żadnym roku wokół przyjścia maila, zostaje z tematu, więc poza oknem rdzeń go pomija."""
+@pytest.mark.parametrize("subject", ["Raport 29.02.2024", "Raport 29.02.24"], ids=["rok-czterocyfrowy", "rok-dwucyfrowy"])
+def test_29_lutego_bez_roku_przestepnego_w_granicach_zostaje_z_tematu(subject: str) -> None:
+    """Dzień, którego nie ma w żadnym roku wokół przyjścia maila, zostaje z tematu, więc poza oknem rdzeń go pomija;
+    rok z dwiema cyframi to rok 2000–2099 (ADR 0041)."""
 
-    mail = _mail(JAN, "Raport 29.02.2024", TEXT, datetime(2026, 11, 8, 18, tzinfo=TAPA))
+    mail = _mail(JAN, subject, TEXT, datetime(2026, 11, 8, 18, tzinfo=TAPA))
 
     outcome = enter_reports(_inputs([mail], [_order()], rollout=date(2024, 1, 1)))
 
@@ -4883,6 +4885,12 @@ TWO_CELLS = ((0, "tak", "wymiana routera"), (1, "nie", "brak klienta"))
         pytest.param(f"{ROUTER} serdecznie pozdrawiam", ROUTER_CELLS, id="pozegnanie-w-tej-samej-linii"),
         pytest.param(f"{ROUTER}, pozdrawiam Jan Testowy", ROUTER_CELLS, id="pozegnanie-i-podpis-w-tej-samej-linii"),
         pytest.param(f"{ROUTER} z poważaniem Jan Testowy", ROUTER_CELLS, id="dwuwyrazowe-pozegnanie-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, pozdrowienia Jan", ROUTER_CELLS, id="pozdrowienia-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, pozdr. Jan Testowy", ROUTER_CELLS, id="pozdr-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER} pzdr", ROUTER_CELLS, id="pzdr-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, pozdro Jan", ROUTER_CELLS, id="pozdro-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, miłego dnia", ROUTER_CELLS, id="milego-dnia-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, miłego wieczoru Jan", ROUTER_CELLS, id="milego-wieczoru-i-podpis-w-tej-samej-linii"),
         pytest.param(
             f"{ROUTER}, pozdrawiam\nJan Testowy technik serwisu", ROUTER_CELLS, id="pozegnanie-na-koncu-linii-i-podpis-pod-nim"
         ),

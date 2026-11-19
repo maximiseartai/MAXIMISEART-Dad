@@ -18,6 +18,7 @@ Zmieniona 14.11 (pomiar nocnych mutacji skilli, decyzja koordynatora w trybie au
 Zmieniona 14.11 (#1625, historia 60 specyfikacji #1597, oznaczenia z audytów #1623 i #1624 zatwierdzonych przez Maksa 14.11): z `tools/` noc mutuje tylko jednostki, których fałszywe „OK” przepuszcza zły kod produktu, a błąd reszty narzędzi wychodzi w przeglądzie albo w użyciu (sekcja Decyzja).
 Zmieniona 16.11 (cel Maksa 16.11: noc ma zajmować mniej godzin runnera i kończyć się wcześniej bez utraty pokrycia i jakości): pokrycie testów bez mutacji liczą raz na noc zadania pokrycia, a części czytają ich zapisy (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 Zmieniona 16.11 (cel Maksa 16.11: noc ma zużywać godziny runnera na nową pracę, a nie powtarzać starej): noc po czerwonej z tą samą bazą nie mutuje drugi raz mutacji, którym części czerwonego runu dały werdykt bez issue (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
+Zmieniona 19.11 (#2282, bieg retro 19.11 w trybie auto Maksa): odczyt każdej nocy liczy sam workflow nocy i zapisuje go w jednym issue z progiem zamiast zadań T3 (sekcja Decyzja).
 
 ## Kontekst
 
@@ -150,6 +151,10 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Podstawa z `ci-czesci:` biegnie na PR w częściach jednego n, które plan wybiera z celu ściany, więc ta sama noc, przy zmianie, która wybrałaby ją na PR, uruchamia każdą część każdego n od 1 do `ci-czesci`.
   Część, która pada tylko przy innym n (na przykład część zaczynająca się od funkcji, która potrzebuje stanu wcześniejszej), wychodzi tak w nocy, a nie dopiero na PR, którego cel ściany zmieni n.
   Pełne CI `main` uruchamia podstawę raz, w częściach z planu: wszystkie części każdego n przy każdym pushu `main` kosztowałyby ok. 55 min runnera Windows na merge.
+- Odczyt nocy liczy zadanie `odczyt` workflow po zgłoszeniu (`tools/mutacje_nocne.py odczyt <run>`, lokalnie to samo bez `--issue`): ścianę od utworzenia runu do końca ostatniego zadania, godziny runnerów (suma czasów zadań), zaległość z logu planu, najdłuższy krok mutacji części wobec `PART_LIMIT_S` i liczbę `BEZ WERDYKTU` z logów części.
+  Pisze go w podsumowaniu runu i w treści jednego issue z etykietą `noc-mutacji`, które jest otwarte, dopóki ostatnia noc przekracza próg: ściana ponad 7 h, część do `PART_LIMIT_S` albo choć jedna mutacja `BEZ WERDYKTU`; jego treść nazywa wąskie gardło.
+  Próg 7 h to koniec nocy uruchomionej ok. 02:00 UTC po 09:00 UTC, którego odczyt nocy 20.11 miał pilnować; noce 17–19.11 trwały 3,48–6,41 h (`tools/mutacje_nocne.py odczyt` runów 44055469611, 44216322171 i 44441152441).
+  Odczyt to pomiar, więc jego porażka nie czerwieni runu i nie zatrzymuje bazy następnej nocy.
 
 ## Konsekwencje
 

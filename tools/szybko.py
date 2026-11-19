@@ -19,6 +19,7 @@ import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import box_boat
 import czasy_ci
 from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
 import potomne
@@ -76,7 +77,9 @@ in line” ze ``SKILL.md`` skilla. Z ``--napraw``, gdy rozjazd modelu to jedyny 
 dotyka, i wypisuje je linią ``NAPRAWA``; skill ze zmienionym modelem albo definicją, której nie ma, zostaje porażką.
 
 Kończy się ``SZYBKO OK`` albo ``SZYBKO FAIL | <kroki>``, z dopiskiem `` | pytest przerwany``, gdy szybko przerwał
-krok pytest.
+krok pytest. Gdy każdy krok, który padł, to pytest zakończony kodem ``box_boat.KOD_WYJSCIA`` (plugin stanu procesu
+rozstrzygnął, że każda porażka sesji to katalog repo przeniesiony przez box boat w trakcie biegu), szybko kończy się
+``SZYBKO INFRA | <kroki>: <komunikat>`` i tym kodem, a nie 1: to nie porażka zmiany, tylko bieg do powtórzenia.
 
     .venv/bin/python tools/szybko.py
     .venv/bin/python tools/szybko.py --baza feat/galaz-rodzica
@@ -296,14 +299,25 @@ def _environment(root: Path, base: str) -> dict[str, str]:
     }
 
 
-def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) -> tuple[list[str], list[str]]:
-    """Kroki naraz, z bazą zapadek ``base``; zwraca nazwy kroków, które padły, i przerwanych. Gdy padnie krok inny niż
-    ``interruptible``, ``interruptible`` jest przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie
-    trzeba czekać."""
+@dataclass(frozen=True)
+class Outcome:
+    """Nazwy kroków, które padły, kroków pytest z nich zakończonych kodem ``box_boat.KOD_WYJSCIA`` i przerwanych."""
+
+    failed: list[str]
+    box: list[str]
+    interrupted: list[str]
+
+
+def _run_all(steps: list[Step], base: str, interruptible: Step, pytest_steps: Iterable[Step]) -> Outcome:
+    """Kroki naraz, z bazą zapadek ``base``; kod ``box_boat.KOD_WYJSCIA`` liczy się tylko z kroków ``pytest_steps``, czyli
+    procesów pytest z pluginem stanu procesu. Gdy padnie krok inny niż ``interruptible``, ``interruptible`` jest
+    przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie trzeba czekać."""
+
+    box_steps = {id(step) for step in pytest_steps}
 
     stop, failure = threading.Event(), threading.Event()
 
-    def run(step: Step) -> tuple[bool | None, str, float]:
+    def run(step: Step) -> tuple[int | None, str, float]:
         started = time.monotonic()
         try:
             done = potomne.run(
@@ -313,19 +327,21 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
             return None, "", time.monotonic() - started
         if done.returncode:
             failure.set()
-        return done.returncode == 0, done.stdout + done.stderr, time.monotonic() - started
+        return done.returncode, done.stdout + done.stderr, time.monotonic() - started
 
-    failed, interrupted = [], []
+    failed, box, interrupted = [], [], []
     pool = ThreadPoolExecutor(max_workers=len(steps))
     try:
-        for step, (passed, output, elapsed) in zip(steps, pool.map(run, steps), strict=True):
-            if passed is None:
+        for step, (code, output, elapsed) in zip(steps, pool.map(run, steps), strict=True):
+            if code is None:
                 print(f"PRZERWANY {step.name} ({elapsed:.0f} s): padł inny krok, więc jego testy nie są sprawdzone", flush=True)
                 interrupted.append(step.name)
                 continue
-            print(f"{'OK  ' if passed else 'FAIL'} {step.name} ({elapsed:.0f} s)", flush=True)
-            if not passed:
+            print(f"{'OK  ' if code == 0 else 'FAIL'} {step.name} ({elapsed:.0f} s)", flush=True)
+            if code:
                 failed.append(step.name)
+                if id(step) in box_steps and code == box_boat.KOD_WYJSCIA:
+                    box.append(step.name)
                 print("\n".join(output.rstrip().splitlines()[-OUTPUT_ON_FAILURE :]), flush=True)
     except BaseException:
         # Przerwanie w głównym wątku nie dociera do wątków, które czekają na swoje polecenia.
@@ -334,7 +350,7 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
         raise
     finally:
         pool.shutdown(cancel_futures=True)
-    return failed, interrupted
+    return Outcome(failed, box, interrupted)
 
 
 def _model_drift(root: Path, changed: frozenset[str]) -> dict[Path, str]:
@@ -404,17 +420,21 @@ def main(argv: list[str] | None = None) -> int:
         merge, on_merge = _merge_steps(args.baza, copies)
         steps = [*_steps(ROOT, chosen.run, junit, changed, structure=not on_merge), *merge]
         base = repo.merge_base(ROOT, "HEAD", args.baza)
-        failed, interrupted = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
-    if drift and args.napraw and (failed or interrupted):
-        print(f"NAPRAWA POMINIĘTA | rozjazd modelu to nie jedyna porażka: {', '.join(failed + interrupted)}", flush=True)
+        pytest = next(step for step in steps if step.name == "pytest")
+        outcome = _run_all(steps, base, pytest, (pytest, *merge))
+    if drift and args.napraw and (outcome.failed or outcome.interrupted):
+        print(f"NAPRAWA POMINIĘTA | rozjazd modelu to nie jedyna porażka: {', '.join(outcome.failed + outcome.interrupted)}", flush=True)
     elif drift and args.napraw and (drift := _repair(ROOT, drift, changed)):
         print("FAIL rozjazd modelu po naprawie\n" + "\n".join(f"{skill.name}: {found}" for skill, found in drift.items()), flush=True)
-    failed = (["rozjazd modelu"] if drift else []) + failed
+    failed = (["rozjazd modelu"] if drift else []) + outcome.failed
     memory.remember(selection, junit, chosen.run)
     junit.unlink(missing_ok=True)
     if chosen.deferred:
         print(_deferred(chosen, len(selection.fingerprints)))
-    stopped = "".join(f" | {name} przerwany" for name in interrupted)
+    stopped = "".join(f" | {name} przerwany" for name in outcome.interrupted)
+    if failed and failed == outcome.box:
+        print(f"SZYBKO INFRA | {', '.join(failed)}: {box_boat.KOMUNIKAT}{stopped}")
+        return box_boat.KOD_WYJSCIA
     print(f"SZYBKO FAIL | {', '.join(failed)}{stopped}" if failed else "SZYBKO OK")
     return 1 if failed else 0
 
