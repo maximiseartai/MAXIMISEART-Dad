@@ -1,5 +1,5 @@
 """``tools/poprawki_operatora.py`` wypisuje z bazy T3 Code tylko wiadomości, które operator napisał w oknie T3, z wątków
-repo w tygodniu czasu polskiego.
+repo w tygodniu albo oknie czasu polskiego.
 
 Wymaganie bierzemy z jednostki H programu „11 z 11” (polowanie na powtarzane błędy): poprawki Maksa w wątkach agentów,
 bez tekstu, który do wątku włożył agent, zadanie T3 albo serwer, i bez cichego zera z wejścia, którego narzędzie nie
@@ -13,7 +13,7 @@ też, bo repozytorium jest publiczne, a prawdziwa baza niesie prywatne wiadomoś
 from __future__ import annotations
 
 from contextlib import closing
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 import json
 import os
 from pathlib import Path
@@ -378,7 +378,7 @@ def test_znane_luki_nadawcy_operatora(
             "2026-11-03T10:00:00.000Z",
             REPO,
             False,
-            "najnowsza wiadomość bazy (2026-11-03T10:00:00.000Z) jest sprzed końca tygodnia 2026-11-08T23:00:00.000Z",
+            "najnowsza wiadomość bazy (2026-11-03T10:00:00.000Z) jest sprzed 2026-11-08T23:00:00.000Z, końca okna",
         ),
     ],
     ids=[
@@ -478,21 +478,146 @@ def test_tydzien_bez_wiadomosci_operatora_w_watkach_repo_konczy_sie_porazka_z_li
     assert (code, lines) == (1, [f"POPRAWKI OPERATORA FAIL | tydzień {WEEK}: {last}"])
 
 
-def test_tydzien_ktory_jeszcze_trwa_konczy_sie_porazka(
+def _z(moment: datetime) -> str:
+    return (
+        moment.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    )
+
+
+def _polski(moment: datetime) -> str:
+    return f"{moment.astimezone(WARSAW):%Y-%m-%d %H:%M}"
+
+
+def test_okno_od_do_bierze_chwile_od_poczatku_wlacznie_do_konca_bez_niego(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     base = _base(
         tmp_path / "statev2.sqlite",
-        [_operator(COORDINATOR, "2026-11-03T10:00:00.000Z", _zdanie(70))],
+        [
+            _operator(COORDINATOR, "2026-11-04T09:59:59.999Z", _zdanie(80)),
+            _operator(COORDINATOR, "2026-11-04T10:00:00.000Z", _zdanie(81)),
+            _operator(CHILD, "2026-11-04T15:59:59.999Z", _zdanie(82)),
+            _operator(CHILD, "2026-11-04T16:00:00.000Z", _zdanie(83)),
+        ],
     )
 
     code = poprawki_operatora.main(
-        ["--tydzien", datetime.now(WARSAW).date().isoformat(), "--baza", str(base)]
+        ["--od", "2026-11-04 11:00", "--do", "2026-11-04 17:00", "--baza", str(base)]
+    )
+
+    assert (code, capsys.readouterr().out.splitlines()) == (
+        0,
+        [
+            f"2026-11-04 11:00 | {COORDINATOR} | {_zdanie(81)}",
+            f"2026-11-04 16:59 | {CHILD} | {_zdanie(82)}",
+            "POPRAWKI OPERATORA OK | okno 2026-11-04 11:00 – 2026-11-04 17:00: 2 wiadomości operatora w 2 wątkach "
+            "z 2 wiadomości user | innych 0 | inne projekty: brak",
+        ],
+    )
+
+
+@pytest.mark.parametrize(
+    "weekly", [False, True], ids=["od-do-teraz", "tydzien-ktory-trwa"]
+)
+def test_okno_w_tygodniu_ktory_jeszcze_trwa_daje_wiadomosci_do_chwili_biegu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], weekly: bool
+) -> None:
+    """Analiza wsteczna po resecie limitów (#2283): okno kończy się teraz albo w przyszłości, a baza, którą T3 pisze, nie
+    ma jeszcze wiadomości z jego końca."""
+
+    now = datetime.now(UTC)
+    base = _base(
+        tmp_path / "statev2.sqlite",
+        [
+            _operator(COORDINATOR, "2026-11-03T10:00:00.000Z", _zdanie(70)),
+            _operator(CHILD, _z(now - timedelta(seconds=1)), _zdanie(71)),
+        ],
+    )
+    today = now.astimezone(WARSAW).date()
+    since = _polski(now - timedelta(hours=3))
+    window, label = (
+        (
+            ["--tydzien", today.isoformat()],
+            f"tydzień {today - timedelta(days=today.weekday())}:",
+        )
+        if weekly
+        else (["--od", since], f"okno {since} – ")
+    )
+
+    code = poprawki_operatora.main([*window, "--baza", str(base)])
+
+    first, last = capsys.readouterr().out.splitlines()
+    assert (code, first.split(" | ")[1:]) == (0, [CHILD, _zdanie(71)])
+    assert last.startswith(f"POPRAWKI OPERATORA OK | {label}")
+    assert (
+        ": 1 wiadomości operatora w 1 wątkach z 1 wiadomości user | innych 0 | " in last
+    )
+
+
+@pytest.mark.parametrize(
+    ("age", "code"),
+    [(timedelta(minutes=-1), 0), (timedelta(minutes=1), 1)],
+    ids=[
+        "najnowsza-minute-mlodsza-niz-prog-ciszy",
+        "najnowsza-minute-starsza-niz-prog-ciszy",
+    ],
+)
+def test_okno_do_teraz_z_bazy_bez_wiadomosci_z_ostatnich_godzin_konczy_sie_porazka(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], age: timedelta, code: int
+) -> None:
+    """Okno do teraz nie wymaga wiadomości z chwili biegu, ale baza, której T3 nie pisał od ``QUIET_H`` godzin, to baza
+    martwa, jak ``state.sqlite`` po przejściu T3 na ``statev2.sqlite``."""
+
+    now = datetime.now(UTC)
+    newest = _z(now - timedelta(hours=poprawki_operatora.QUIET_H) - age)
+    base = _base(tmp_path / "statev2.sqlite", [_operator(CHILD, newest, _zdanie(72))])
+
+    result = poprawki_operatora.main(
+        ["--od", _polski(now - timedelta(hours=12)), "--baza", str(base)]
     )
 
     lines = capsys.readouterr().out.splitlines()
-    assert (code, len(lines)) == (1, 1)
-    assert " jeszcze trwa: kończy się " in lines[0]
+    assert result == code
+    assert lines[-1].startswith(
+        f"POPRAWKI OPERATORA FAIL | baza T3 {base}: najnowsza wiadomość bazy ({newest}) jest sprzed "
+        if code
+        else "POPRAWKI OPERATORA OK | okno "
+    )
+
+
+@pytest.mark.parametrize(
+    ("argv", "reason"),
+    [
+        pytest.param(
+            ["--tydzien", "2026-11-02", "--od", "2026-11-02"],
+            "--tydzien to skrót okna",
+            id="tydzien-z-od",
+        ),
+        pytest.param(
+            ["--do", "2026-11-09"], "--do kończy okno od --od", id="do-bez-od"
+        ),
+        pytest.param(
+            ["--od", "2026-11-04 11:00", "--do", "2026-11-04 11:00"],
+            "puste okno",
+            id="od-rowne-do",
+        ),
+        pytest.param(["--od", "2999-01-01"], "puste okno", id="od-po-chwili-biegu"),
+        pytest.param(
+            ["--od", "2026-11-04T11:00"], "to nie RRRR-MM-DD", id="separator-T"
+        ),
+        pytest.param(
+            ["--od", "2026-11-04 11:00:00"], "to nie RRRR-MM-DD", id="sekundy"
+        ),
+    ],
+)
+def test_okno_ktorego_narzedzie_nie_rozumie_konczy_sie_bledem_argumentow(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], argv: list[str], reason: str
+) -> None:
+    with pytest.raises(SystemExit) as stop:
+        poprawki_operatora.main([*argv, "--baza", str(tmp_path / "brak.sqlite")])
+
+    assert stop.value.code == 2
+    assert reason in capsys.readouterr().err
 
 
 def _checkout(path: Path, origin: str | None, remote: str = "origin") -> str:
@@ -659,13 +784,41 @@ REPO_ORIGINS = {
     "https-z-tokenem": "https://x-access-token:wymyslony@github.com/maximiseartai/MAXIMISEART-Dad.git",
 }
 OTHER_ORIGINS = {
-    "wlasciciel-z-przedrostkiem": ("https://github.com/notmaximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
-    "ssh-wlasciciel-z-przedrostkiem": ("git@github.com:notmaximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
-    "repo-z-przedrostkiem": ("https://github.com/maximiseartai/x-MAXIMISEART-Dad.git", "origin", "inny origin"),
-    "fork-innego-wlasciciela": ("https://github.com/ktos/MAXIMISEART-Dad.git", "origin", "inny origin"),
-    "inny-host": ("https://gitlab.com/maximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
-    "sciezka-lokalna": ("/srv/git/maximiseartai/MAXIMISEART-Dad.git", "origin", "inny origin"),
-    "tylko-upstream": ("https://github.com/maximiseartai/MAXIMISEART-Dad.git", "upstream", "bez origin"),
+    "wlasciciel-z-przedrostkiem": (
+        "https://github.com/notmaximiseartai/MAXIMISEART-Dad.git",
+        "origin",
+        "inny origin",
+    ),
+    "ssh-wlasciciel-z-przedrostkiem": (
+        "git@github.com:notmaximiseartai/MAXIMISEART-Dad.git",
+        "origin",
+        "inny origin",
+    ),
+    "repo-z-przedrostkiem": (
+        "https://github.com/maximiseartai/x-MAXIMISEART-Dad.git",
+        "origin",
+        "inny origin",
+    ),
+    "fork-innego-wlasciciela": (
+        "https://github.com/ktos/MAXIMISEART-Dad.git",
+        "origin",
+        "inny origin",
+    ),
+    "inny-host": (
+        "https://gitlab.com/maximiseartai/MAXIMISEART-Dad.git",
+        "origin",
+        "inny origin",
+    ),
+    "sciezka-lokalna": (
+        "/srv/git/maximiseartai/MAXIMISEART-Dad.git",
+        "origin",
+        "inny origin",
+    ),
+    "tylko-upstream": (
+        "https://github.com/maximiseartai/MAXIMISEART-Dad.git",
+        "upstream",
+        "bez origin",
+    ),
 }
 
 
@@ -762,7 +915,8 @@ def test_katalog_projektu_bez_prawa_odczytu_jest_w_linii_wyniku_z_powodem_zamias
 
     closed = Path(
         _checkout(
-            tmp_path / "zamkniety", "https://github.com/maximiseartai/MAXIMISEART-Dad.git"
+            tmp_path / "zamkniety",
+            "https://github.com/maximiseartai/MAXIMISEART-Dad.git",
         )
     )
     base = _base(

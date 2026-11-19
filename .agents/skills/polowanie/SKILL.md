@@ -35,6 +35,7 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
      fi
      ```
 
+     `--tydzien` to skrót okna od poniedziałku do następnego poniedziałku; analiza wsteczna spoza polowania (np. po resecie limitów, w tygodniu, który jeszcze trwa) bierze okno `--od "RRRR-MM-DD GG:MM"` i, gdy nie kończy się teraz, `--do` w tym samym zapisie.
      Linia `POPRAWKI OPERATORA FAIL` znaczy „źródło poprawek operatora tej maszyny bez danych w tym tygodniu”: idź dalej z pozostałymi źródłami, a jej plik i linia wyniku z kroku 5 dostają zdanie „niedostępne: <powód z linii>”.
      Gdy ostatnia linia wymienia `inne projekty:`, oceń każdy z nich (stary katalog po przeniesieniu albo klon pod inną nazwą to repo) i dla repo uruchom narzędzie ponownie z `--projekt <identyfikator z nawiasu kwadratowego>` na tym samym pliku wyniku, a dla pozostałych dopisz do `<bieg>/wystapienia.md` decyzję „<projekt>: nie repo, <powód>”.
 

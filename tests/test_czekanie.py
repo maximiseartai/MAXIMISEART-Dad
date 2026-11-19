@@ -38,8 +38,8 @@ def _load() -> ModuleType:
 hook = _load()
 
 CI_LOOPS = (
-    "until s=$(gh pr checks 234 --json name,bucket 2>/dev/null) && [ -n \"$s\" ] && [ \"$s\" != \"[]\" ] && "
-    "jq -e 'all(.bucket!=\"pending\")' <<<\"$s\" >/dev/null; do sleep 60; done; gh pr checks 234",
+    'until s=$(gh pr checks 234 --json name,bucket 2>/dev/null) && [ -n "$s" ] && [ "$s" != "[]" ] && '
+    'jq -e \'all(.bucket!="pending")\' <<<"$s" >/dev/null; do sleep 60; done; gh pr checks 234',
     'end=$((SECONDS+590)); while [ $SECONDS -lt $end ]; do s=$(gh pr checks 431 2>/dev/null | grep "^Required CI '
     'status" | cut -f2); [ -n "$s" ] && [ "$s" != pending ] && break; sleep 30; done; echo "required=$s"; '
     "gh pr checks 431 2>/dev/null | cut -f1,2 | sort -k2 | grep -v pass",
@@ -53,12 +53,12 @@ CI_LOOPS = (
     "until c=$(gh run list --branch main --commit 5f6bbaa096e364da0c80672e948d90913c886683 --json "
     "status,conclusion --jq '.[0]|\"\\(.status) \\(.conclusion)\"') && [[ $c == completed* ]]; do sleep 30; done; "
     'echo "$c"',
-    "until s=$(gh pr view 225 --json mergeable -q .mergeable); [ \"$s\" != \"UNKNOWN\" ] && "
+    'until s=$(gh pr view 225 --json mergeable -q .mergeable); [ "$s" != "UNKNOWN" ] && '
     '[ "$s" != "CONFLICTING" ]; do sleep 15; done; gh pr view 225 --json mergeable,mergeStateStatus',
     'until [ "$(gh pr view 307 --json state --jq .state)" != "OPEN" ]; do sleep 30; done; '
     "gh pr view 307 --json state,mergedAt --jq '[.state,.mergedAt]|@tsv'",
     "for i in $(seq 1 56); do s=$(gh api repos/MAXIMISEART-AI/MAXIMISEART-Dad/commits/"
-    "66f3e0301f6d6f965733d0e1c46baeb90d25c7b3/status --jq '.statuses[] | select(.context==\"Required CI status\") | "
+    '66f3e0301f6d6f965733d0e1c46baeb90d25c7b3/status --jq \'.statuses[] | select(.context=="Required CI status") | '
     '.state\' 2>/dev/null | head -1); [ "$s" = success -o "$s" = failure ] && break; sleep 10; done',
     "perl -e 'alarm 570; exec @ARGV' bash -c 'until [ \"$(gh pr view 307 --json state --jq .state 2>/dev/null)\" = "
     '"MERGED" ]; do perl -e "select(undef,undef,undef,30)"; done\'; gh pr view 307 --json state,mergeCommit',
@@ -126,7 +126,7 @@ CI_LOOPS = (
 )
 WATCHES = (
     "timeout 1500 gh pr checks 215 --watch > .audit/swarm-215/lane1-pr-checks.txt 2>&1; echo exit=$?",
-    "timeout 540 gh pr checks 330 --watch --interval 60 2>&1 | tail -15; echo \"exit ${pipestatus[1]}\"",
+    'timeout 540 gh pr checks 330 --watch --interval 60 2>&1 | tail -15; echo "exit ${pipestatus[1]}"',
     "timeout 580 gh run watch 40098178470 --exit-status > /dev/null 2>&1; echo rc=$?; "
     'gh pr checks 384 2>&1 | grep -v "pass" | head',
     "gh run watch 39930673572 --interval 30 --exit-status > /dev/null 2>&1; echo exit=$?; date -u +%T",
@@ -162,12 +162,12 @@ RERUNS = (
     "gh run rerun 41959078147 --job 127020944830 2>&1 | tail -2; echo rerun-requested",
     'gh run rerun 41940851666 --failed 2>&1 | tail -2; echo "rerun zlecony"',
     "gh run rerun --job 130564767610 2>&1 | tail -3",
-    "for r in 43037317259 43033018567 43032850682 43034061364; do printf \"$r $(gh run view $r --json status,conclusion "
-    "--jq '\"\\(.status)/\\(.conclusion)\"') \"; gh run rerun $r --failed 2>&1 | tail -1; echo; done",
+    'for r in 43037317259 43033018567 43032850682 43034061364; do printf "$r $(gh run view $r --json status,conclusion '
+    '--jq \'"\\(.status)/\\(.conclusion)"\') "; gh run rerun $r --failed 2>&1 | tail -1; echo; done',
     "gh run rerun 42431729670 --failed 2>&1 | tail -1",
     "gh run view 42431729670 --json status -q .status; gh run rerun 42431729670 --failed 2>&1 | tail -1",
     "gh run rerun 42435998596 --job 128594886949 2>&1 | tail -3; gh run view 42435998596 --json status,jobs --jq "
-    "'.status, ([.jobs[]|select(.conclusion==\"failure\")|.name]|join(\", \"))'",
+    '\'.status, ([.jobs[]|select(.conclusion=="failure")|.name]|join(", "))\'',
     "for j in 129008722489 129008722741; do gh api --allow-escape-sequences repos/maximiseartai/MAXIMISEART-Dad/actions/jobs/"
     "$j/logs 2>&1 | grep -E 'BŁĄD POBIERANIA|WYKONANIE FAIL' | head -2; done; gh run rerun 42571178441 --failed 2>&1 | tail -1",
     "gh run rerun 43035692960 --failed && echo rerun ok",
@@ -244,7 +244,7 @@ PASSING = (
     'pgrep -lf "Microsoft Excel" ; echo "pgrep=$?"; uptime; '
     "while [ \"$(uptime | awk -F'load averages: ' '{print int($2)}')\" -gt 16 ]; do sleep 20; done; uptime",
     'pgrep -fl "serve_centrum|pytest" | cut -c1-150',
-    "for i in $(seq 1 38); do grep -q \"end head round 1\" wydajnosc/przebieg.log && break; "
+    'for i in $(seq 1 38); do grep -q "end head round 1" wydajnosc/przebieg.log && break; '
     "perl -e 'select(undef,undef,undef,15)'; done; cat wydajnosc/przebieg.log",
     "gh run list --branch main --workflow ci.yml -L 4 --json databaseId,status --jq "
     "'.[]|select(.status==\"completed\")|.databaseId' | head -2 | while read id; do gh run view $id --json "
@@ -254,9 +254,9 @@ PASSING = (
     "sed -i '' 's/CI_STATUS_PLACEHOLDER/SUCCESS (zmierzone: `gh pr view 381 --json statusCheckRollup` po "
     "`gh pr checks --watch`)/' ~/.t3/notes/arch-2026-10-24/K6/RAPORT.md",
     "cat > ~/.t3/notes/uzupelnienie-415/418/r2/czekaj.sh <<'EOF'\n#!/bin/zsh\nH=a6246f973bbff04407eb8e6c26917cd527ca3a9d\n"
-    "while true; do\n  r=$(gh pr checks 433 --json name,bucket --jq '.[]|select(.name==\"Required CI status\")|"
-    ".bucket')\n  [ \"$r\" != pending ] && break\n  sleep 60\ndone\nEOF\nchmod +x ~/.t3/notes/uzupelnienie-415/418/r2/czekaj.sh",
-    "git commit -q -m \"docs(agents): nie pisz until gh pr checks; do sleep 30; done, tylko watch_pull_request\"",
+    'while true; do\n  r=$(gh pr checks 433 --json name,bucket --jq \'.[]|select(.name=="Required CI status")|'
+    '.bucket\')\n  [ "$r" != pending ] && break\n  sleep 60\ndone\nEOF\nchmod +x ~/.t3/notes/uzupelnienie-415/418/r2/czekaj.sh',
+    'git commit -q -m "docs(agents): nie pisz until gh pr checks; do sleep 30; done, tylko watch_pull_request"',
     'git -c user.name=v311 commit -q -m "until ! pgrep -f mutacje; do sleep 5; done wisi"',
     # Partie zapytań z sleep jako limitem API: ``for`` po liście i ``while read`` bez wyjścia z pętli i licznika.
     "for id in 39805093290 39772151111 39771042902 39601913795 39601190727; do sleep 2; gh run view $id --json "
@@ -267,11 +267,11 @@ PASSING = (
     '"repos/MAXIMISEART-AI/MAXIMISEART-Dad/actions/runs/$id/jobs?per_page=20" --jq ".jobs[]|select(.conclusion=='
     '\\"failure\\")|\\"$id \\(.head_branch) \\(.head_sha[0:7]) \\(.id) \\(.name)\\"" 2>&1 | head -5; gh api '
     '"repos/MAXIMISEART-AI/MAXIMISEART-Dad/actions/runs/$id" --jq \'"   run: \\(.head_branch) \\(.event) '
-    '\\(.conclusion)"\' 2>&1 | head -2; done',
+    "\\(.conclusion)\"' 2>&1 | head -2; done",
     "while read id ev br sha at; do grep -qx $id $V/.ok && continue; sleep 1; gh api "
     '"repos/MAXIMISEART-AI/MAXIMISEART-Dad/actions/runs/$id/jobs?per_page=100" --jq ".jobs[]|select(.conclusion=='
     '\\"failure\\")|\\"$id $br $sha \\(.id) \\(.name)\\"" || echo "$id ERR"; done < $V/runy-czerwone.txt',
-    "for n in $(seq 247 264); do printf \"#%s \" $n; gh pr view $n --json isDraft,statusCheckRollup --jq "
+    'for n in $(seq 247 264); do printf "#%s " $n; gh pr view $n --json isDraft,statusCheckRollup --jq '
     "'[.isDraft, ([.statusCheckRollup[]|.conclusion]|map(select(.!=\"SUCCESS\"))|length)]|@tsv'; done",
     "for n in $(seq 247 264); do sleep 1; gh pr view $n --json title; done",
     "for n in {247..264}; do sleep 1; gh pr view $n --json title; done",
@@ -324,12 +324,32 @@ PASSING = (
 
 
 def _hook(stdin: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([sys.executable, str(HOOK)], input=stdin, capture_output=True, text=True, check=False)
+    return subprocess.run(
+        [sys.executable, str(HOOK)],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
-def _bash(command: str, in_background: bool = False) -> subprocess.CompletedProcess[str]:
-    tool_input = {"command": command, "description": "x", "run_in_background": in_background}
-    return _hook(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": tool_input}))
+def _bash(
+    command: str, in_background: bool = False
+) -> subprocess.CompletedProcess[str]:
+    tool_input = {
+        "command": command,
+        "description": "x",
+        "run_in_background": in_background,
+    }
+    return _hook(
+        json.dumps(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": tool_input,
+            }
+        )
+    )
 
 
 @pytest.mark.parametrize(
@@ -337,7 +357,9 @@ def _bash(command: str, in_background: bool = False) -> subprocess.CompletedProc
     [pytest.param(command, hook.CI_LOOP, id=command) for command in CI_LOOPS]
     + [pytest.param(command, hook.WATCHING, id=command) for command in WATCHES],
 )
-def test_czekanie_na_ci_na_pierwszym_planie_dostaje_odmowe(command: str, refusal: object) -> None:
+def test_czekanie_na_ci_na_pierwszym_planie_dostaje_odmowe(
+    command: str, refusal: object
+) -> None:
     assert hook.judge(command, in_background=False) is refusal
 
 
@@ -348,7 +370,9 @@ def test_petla_na_pgrep_dostaje_odmowe(command: str) -> None:
 
 @pytest.mark.parametrize("in_background", [False, True])
 @pytest.mark.parametrize("command", RERUNS)
-def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(command: str, in_background: bool) -> None:
+def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(
+    command: str, in_background: bool
+) -> None:
     assert hook.judge(command, in_background=in_background) is hook.RERUN
 
 
@@ -362,7 +386,12 @@ def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=True) is None
 
 
-ROAD_THROUGH_NOTIFICATION = ("pełny SHA", "watch_pull_request", "run_in_background: true", "t3_background_wait")
+ROAD_THROUGH_NOTIFICATION = (
+    "pełny SHA",
+    "watch_pull_request",
+    "run_in_background: true",
+    "t3_background_wait",
+)
 
 
 @pytest.mark.parametrize(
@@ -370,11 +399,24 @@ ROAD_THROUGH_NOTIFICATION = ("pełny SHA", "watch_pull_request", "run_in_backgro
     [
         pytest.param(CI_LOOPS[0], False, ROAD_THROUGH_NOTIFICATION, id="petla-na-ci"),
         pytest.param(WATCHES[0], False, ROAD_THROUGH_NOTIFICATION, id="watch"),
-        pytest.param(PGREP_LOOPS[0], False, ("pgrep -f znajduje własną powłokę", "run_in_background: true", "t3_background_wait"), id="pgrep"),
-        pytest.param(RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), id="ponowienie-w-tle"),
+        pytest.param(
+            PGREP_LOOPS[0],
+            False,
+            (
+                "pgrep -f znajduje własną powłokę",
+                "run_in_background: true",
+                "t3_background_wait",
+            ),
+            id="pgrep",
+        ),
+        pytest.param(
+            RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), id="ponowienie-w-tle"
+        ),
     ],
 )
-def test_hook_odmawia_kodem_2_z_przyczyna_na_stderr(command: str, in_background: bool, said: tuple[str, ...]) -> None:
+def test_hook_odmawia_kodem_2_z_przyczyna_na_stderr(
+    command: str, in_background: bool, said: tuple[str, ...]
+) -> None:
     hooked = _bash(command, in_background=in_background)
 
     assert (hooked.returncode, hooked.stdout) == (2, ""), hooked.stderr
@@ -383,7 +425,10 @@ def test_hook_odmawia_kodem_2_z_przyczyna_na_stderr(command: str, in_background:
 
 @pytest.mark.parametrize(
     ("command", "in_background"),
-    [pytest.param(PASSING[0], False, id="inne-polecenie"), pytest.param(CI_LOOPS[0], True, id="czekanie-w-tle")],
+    [
+        pytest.param(PASSING[0], False, id="inne-polecenie"),
+        pytest.param(CI_LOOPS[0], True, id="czekanie-w-tle"),
+    ],
 )
 def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
     hooked = _bash(command, in_background=in_background)
@@ -391,20 +436,16 @@ def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
 
-def _own_hooks() -> list[dict[str, object]]:
+def _configured_timeout() -> float:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    return [
-        hook
+    (timeout,) = [
+        hook["timeout"]
         for entry in entries
         if entry["matcher"] == "Bash"
         for hook in entry["hooks"]
-        if str(hook["command"]).endswith('/tools/hooks/czekanie.py"')
+        if "czekanie.py" in hook["command"]
     ]
-
-
-def _configured_timeout() -> float:
-    (configured,) = _own_hooks()
-    return float(str(configured["timeout"]))
+    return float(timeout)
 
 
 def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
@@ -422,7 +463,9 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "until a& do b& done&" * 40000 + "while :; do sleep 1; gh pr checks 1; done",
         "(until x do done)" * 40000 + "(while :; do sleep 1; gh pr checks 1; done)",
         # Ciało każdej pętli przeszukane osobno: pętle zagnieżdżone i niezamknięte razem rosną z kwadratem długości.
-        "until x; do " * 40000 + "done; " * 40000 + "while :; do sleep 1; gh pr checks 1; done",
+        "until x; do " * 40000
+        + "done; " * 40000
+        + "while :; do sleep 1; gh pr checks 1; done",
         # Wzorzec, który od każdego wiersza albo każdego ``gh pr checks`` czyta do końca polecenia.
         "while :; do sleep 1; gh pr checks 1; done" + "\n" * 400000,
         "gh pr checks 1 " * 40000 + "\nwhile :; do sleep 1; gh pr checks 1; done",
@@ -484,9 +527,25 @@ def test_hook_trzyma_w_pamieci_jedno_cialo_petli_naraz() -> None:
         # unlimited`` na Linuksie mieści się na stosie, kończy ``ValueError``, i test nie odróżnia hooka bez
         # ``RecursionError``. Żadne zadanie CI nie zdejmuje limitu stosu.
         "[" * 1_000_000,
-        json.dumps({"tool_input": {"command": '"$(' * 1000 + "until ! gh pr checks 1; do sleep 30; done"}}),
+        json.dumps(
+            {
+                "tool_input": {
+                    "command": '"$(' * 1000
+                    + "until ! gh pr checks 1; do sleep 30; done"
+                }
+            }
+        ),
     ],
-    ids=["pusto", "nie-json", "lista", "null", "liczba", "bez-polecenia", "gleboki-json", "gleboki-cudzyslow"],
+    ids=[
+        "pusto",
+        "nie-json",
+        "lista",
+        "null",
+        "liczba",
+        "bez-polecenia",
+        "gleboki-json",
+        "gleboki-cudzyslow",
+    ],
 )
 def test_nieczytelne_wejscie_hooka_przechodzi(stdin: str) -> None:
     hooked = _hook(stdin)
@@ -494,7 +553,9 @@ def test_nieczytelne_wejscie_hooka_przechodzi(stdin: str) -> None:
     assert (hooked.returncode, hooked.stdout) == (0, "")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="zamknięte stdin daje tu sh, którego Windows nie ma")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="zamknięte stdin daje tu sh, którego Windows nie ma"
+)
 def test_hook_bez_stdin_przechodzi() -> None:
     # Python bez deskryptora 0 ma ``sys.stdin = None``, a ``json.load(None)`` rzuca ``AttributeError``.
     hooked = subprocess.run(
@@ -508,7 +569,14 @@ def test_hook_bez_stdin_przechodzi() -> None:
 
 
 def _configured(project: Path) -> list[subprocess.CompletedProcess[str]]:
-    commands = [str(hook["command"]) for hook in _own_hooks()]
+    entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
+    commands = [
+        hook["command"]
+        for entry in entries
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+        if "czekanie.py" in hook["command"]
+    ]
     tool_input = {"command": PGREP_LOOPS[0], "run_in_background": False}
     return [
         subprocess.run(
@@ -524,14 +592,18 @@ def _configured(project: Path) -> list[subprocess.CompletedProcess[str]]:
     ]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store"
+)
 def test_ustawienia_projektu_wpinaja_hook_dla_basha() -> None:
     hooked = _configured(ROOT)
 
     assert [(run.returncode, "pgrep -f" in run.stderr) for run in hooked] == [(2, True)]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store"
+)
 def test_checkout_bez_skryptu_hooka_nie_blokuje_basha(tmp_path: Path) -> None:
     # Sesja trzyma ustawienia ze startu, a checkout sprzed hooka nie ma skryptu; python3 bez pliku kończy się kodem 2.
     hooked = _configured(tmp_path)

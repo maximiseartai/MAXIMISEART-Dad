@@ -29,7 +29,10 @@ ORACLE = ROOT / "tools" / "wyrocznia_zgody.py"
 PREFIX = ROOT / "tools" / "wyrocznia_zgody_prefiks.sh"
 CASES = ROOT / "tools" / "wyrocznia_zgody.jsonl"
 SETTINGS = ROOT / ".claude" / "settings.json"
-POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="host wyroczni to potok nazwany, którego Windows nie ma")
+POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="host wyroczni to potok nazwany, którego Windows nie ma",
+)
 
 
 @pytest.fixture(scope="module")
@@ -43,7 +46,11 @@ def hook() -> ModuleType:
 
 
 def _rows(path: Path) -> list[dict[str, Any]]:
-    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return [
+        json.loads(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
 
 
 def _request(mode: str) -> dict[str, Any]:
@@ -65,7 +72,12 @@ ASK_RULE = {
     "tool_input": {"command": "echo PYTAJ-MAKSA push", "description": "x"},
 }
 RM_CHECK = _request("bypassPermissions") | {
-    "permission_suggestions": [{"type": "addRules", "rules": [{"toolName": "Bash", "ruleContent": "rm -f logi/*"}]}]
+    "permission_suggestions": [
+        {
+            "type": "addRules",
+            "rules": [{"toolName": "Bash", "ruleContent": "rm -f logi/*"}],
+        }
+    ]
 }
 # Komunikat odmowy, który agent dostaje zamiast pytania, cały: to jedyne miejsce, w którym agent poznaje regułę, więc każde
 # jego zdanie jest obietnicą, a sprawdzenie samych fragmentów przepuszczało zdania o odwrotnym sensie.
@@ -80,8 +92,15 @@ EXPECTED_MESSAGE = (
 
 
 def _permission_hooks() -> list[dict[str, Any]]:
-    entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PermissionRequest"]
-    return [hook for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
+    entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"][
+        "PermissionRequest"
+    ]
+    return [
+        hook
+        for entry in entries
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+    ]
 
 
 def _hook(stdin: bytes) -> subprocess.CompletedProcess[bytes]:
@@ -96,8 +115,12 @@ def _hook(stdin: bytes) -> subprocess.CompletedProcess[bytes]:
     )
 
 
-@pytest.mark.parametrize("event", [RM_CHECK, ASK_RULE], ids=["kontrola-rm", "regula-ask"])
-def test_pytanie_o_zgode_w_trybie_bypass_dostaje_odmowe_z_kazda_poprawka(event: dict[str, Any]) -> None:
+@pytest.mark.parametrize(
+    "event", [RM_CHECK, ASK_RULE], ids=["kontrola-rm", "regula-ask"]
+)
+def test_pytanie_o_zgode_w_trybie_bypass_dostaje_odmowe_z_kazda_poprawka(
+    event: dict[str, Any],
+) -> None:
     hooked = _hook(json.dumps(event).encode())
 
     decision = json.loads(hooked.stdout)["hookSpecificOutput"]
@@ -109,18 +132,30 @@ def test_pytanie_o_zgode_w_trybie_bypass_dostaje_odmowe_z_kazda_poprawka(event: 
     assert decision["decision"]["message"] == EXPECTED_MESSAGE
 
 
-@pytest.mark.parametrize("mode", ["default", "acceptEdits", "plan", "dontAsk", "auto", None])
+@pytest.mark.parametrize(
+    "mode", ["default", "acceptEdits", "plan", "dontAsk", "auto", None]
+)
 def test_pytanie_o_zgode_poza_trybem_bypass_idzie_do_czlowieka(
     mode: str | None,
 ) -> None:
-    hooked = _hook(json.dumps(_request(mode) if mode else {"tool_name": "Bash"}).encode())
+    hooked = _hook(
+        json.dumps(_request(mode) if mode else {"tool_name": "Bash"}).encode()
+    )
 
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, b"", b"")
 
 
 @pytest.mark.parametrize(
     "stdin",
-    [b"", b"nie json", b"[]", b"null", b'"bypassPermissions"', b"\xff\xfe{", b"[" * 100000],
+    [
+        b"",
+        b"nie json",
+        b"[]",
+        b"null",
+        b'"bypassPermissions"',
+        b"\xff\xfe{",
+        b"[" * 100000,
+    ],
     ids=["pusto", "nie-json", "lista", "null", "napis", "nie-utf8", "gleboki-json"],
 )
 def test_nieczytelne_wejscie_hooka_idzie_do_czlowieka(stdin: bytes) -> None:
@@ -131,7 +166,9 @@ def test_nieczytelne_wejscie_hooka_idzie_do_czlowieka(stdin: bytes) -> None:
 
 def test_odmowa_dochodzi_przez_konsole_bez_polskich_liter(hook: ModuleType) -> None:
     # Claude Code wysyła UTF-8, a konsola Windows ma inne kodowanie: hook czyta bajty i wypisuje same znaki ASCII.
-    event = _request("bypassPermissions") | {"tool_input": {"command": "rm -f /srv/zażółć/*"}}
+    event = _request("bypassPermissions") | {
+        "tool_input": {"command": "rm -f /srv/zażółć/*"}
+    }
     (configured,) = _permission_hooks()
 
     hooked = subprocess.run(
@@ -144,7 +181,10 @@ def test_odmowa_dochodzi_przez_konsole_bez_polskich_liter(hook: ModuleType) -> N
     )
 
     assert hooked.returncode == 0, hooked.stderr
-    assert json.loads(hooked.stdout)["hookSpecificOutput"]["decision"]["message"] == hook.MESSAGE
+    assert (
+        json.loads(hooked.stdout)["hookSpecificOutput"]["decision"]["message"]
+        == hook.MESSAGE
+    )
 
 
 def _configured(project: Path, mode: str) -> list[subprocess.CompletedProcess[str]]:
@@ -162,7 +202,9 @@ def _configured(project: Path, mode: str) -> list[subprocess.CompletedProcess[st
     ]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store"
+)
 def test_ustawienia_projektu_wpinaja_hook_zgody_dla_basha() -> None:
     hooked = _configured(ROOT, "bypassPermissions")
 
@@ -176,7 +218,9 @@ def test_ustawienia_projektu_wpinaja_hook_zgody_dla_basha() -> None:
     assert 0 < _permission_hooks()[0]["timeout"] <= 10
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store"
+)
 def test_checkout_bez_skryptu_hooka_zgody_zostawia_pytanie_czlowiekowi(
     tmp_path: Path,
 ) -> None:
@@ -186,17 +230,20 @@ def test_checkout_bez_skryptu_hooka_zgody_zostawia_pytanie_czlowiekowi(
     assert [(run.returncode, run.stdout, run.stderr) for run in hooked] == [(0, "", "")]
 
 
-def test_przed_poleceniem_basha_biegna_tylko_hooki_czekania_i_ciezkich_polecen() -> None:
+def test_przed_poleceniem_basha_biegna_tylko_hooki_czekania_zabijania_i_ciezkich_polecen() -> None:
     # Odmowę rm daje teraz kontrola Claude Code przez hook zgody, a nie własny matcher przed poleceniem.
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
 
-    assert [hook["command"].rsplit("/", 1)[-1] for entry in entries for hook in entry["hooks"]] == [
-        'czekanie.py"',
-        'ciezkie.py"',
-    ]
+    assert [
+        hook["command"].rsplit("/", 1)[-1]
+        for entry in entries
+        for hook in entry["hooks"]
+    ] == ['czekanie.py"', 'zabijanie.py"', 'ciezkie.py"']
 
 
-def test_przypadki_wyroczni_maja_dziesiec_przestojow_i_polecenia_ktore_claude_code_puszcza() -> None:
+def test_przypadki_wyroczni_maja_dziesiec_przestojow_i_polecenia_ktore_claude_code_puszcza() -> (
+    None
+):
     rows = _rows(CASES)
     stalls = [row for row in rows if row["nazwa"].startswith("real-")]
 
@@ -286,11 +333,15 @@ def _oracle(
     atrapa = {"ATRAPA_WYWOLANIA": str(tmp_path / "wywolania.jsonl"), **(atrapa or {})}
     fake_cli(programs, "claude", FAKE_CLAUDE.format(fixtures=fixtures, atrapa=atrapa))
     listed = tmp_path / "przypadki.jsonl"
-    listed.write_text("".join(json.dumps(case) + "\n" for case in cases), encoding="utf-8")
+    listed.write_text(
+        "".join(json.dumps(case) + "\n" for case in cases), encoding="utf-8"
+    )
     # Piaskownica wyroczni powstaje w ``~/.cache``, więc każdy test ma własny katalog domowy.
     (tmp_path / "dom" / ".claude").mkdir(parents=True)
     if user_settings is not None:
-        (tmp_path / "dom" / ".claude" / "settings.json").write_text(json.dumps(user_settings), encoding="utf-8")
+        (tmp_path / "dom" / ".claude" / "settings.json").write_text(
+            json.dumps(user_settings), encoding="utf-8"
+        )
     return subprocess.run(
         [sys.executable, str(ORACLE), "--przypadki", str(listed), *arguments],
         env={
@@ -432,12 +483,29 @@ def test_wyrocznia_nie_wykonuje_polecen_przypadkow(tmp_path: Path, tail: str) ->
 
 
 @POSIX_ONLY
-def test_wyrocznia_uruchamia_claude_code_jak_t3_w_katalogu_checkoutu_z_falszywym_api(tmp_path: Path) -> None:
-    ran = _oracle(tmp_path, [{"nazwa": "tylda", "polecenie": "rm -f @TFAR@/x # PYTA HOOK", "pyta_o_zgode": True}])
+def test_wyrocznia_uruchamia_claude_code_jak_t3_w_katalogu_checkoutu_z_falszywym_api(
+    tmp_path: Path,
+) -> None:
+    ran = _oracle(
+        tmp_path,
+        [
+            {
+                "nazwa": "tylda",
+                "polecenie": "rm -f @TFAR@/x # PYTA HOOK",
+                "pyta_o_zgode": True,
+            }
+        ],
+    )
 
     (call,) = _rows(tmp_path / "wywolania.jsonl")
     argv = call["argv"]
-    flags = ("--input-format", "--output-format", "--permission-prompt-tool", "--permission-mode", "--tools")
+    flags = (
+        "--input-format",
+        "--output-format",
+        "--permission-prompt-tool",
+        "--permission-mode",
+        "--tools",
+    )
     assert ran.returncode == 0, ran.stdout + ran.stderr
     assert [argv[argv.index(flag) + 1] for flag in flags] == [
         "stream-json",
@@ -448,49 +516,100 @@ def test_wyrocznia_uruchamia_claude_code_jak_t3_w_katalogu_checkoutu_z_falszywym
     ]
     assert {"--verbose", "--allow-dangerously-skip-permissions"} <= set(argv)
     # Reguła zespołu: Claude Code wyroczni, gdyby jednak zapytał model, pyta Opusa.
-    assert (argv[argv.index("--model") + 1], argv[argv.index("--setting-sources") + 1]) == (
+    assert (
+        argv[argv.index("--model") + 1],
+        argv[argv.index("--setting-sources") + 1],
+    ) == (
         "claude-opus-5-5",
         "project,local",
     )
     assert call["cwd"] == str(ROOT)
     assert call["env"]["ANTHROPIC_BASE_URL"].startswith("http://127.0.0.1:")
-    assert json.loads(argv[argv.index("--settings") + 1])["env"]["ANTHROPIC_BASE_URL"] == call["env"]["ANTHROPIC_BASE_URL"]
-    env = (call["env"]["CLAUDE_CODE_SHELL_PREFIX"], call["env"]["CLAUDECODE"], call["env"]["CLAUDE_CODE_ENTRYPOINT"])
+    assert (
+        json.loads(argv[argv.index("--settings") + 1])["env"]["ANTHROPIC_BASE_URL"]
+        == call["env"]["ANTHROPIC_BASE_URL"]
+    )
+    env = (
+        call["env"]["CLAUDE_CODE_SHELL_PREFIX"],
+        call["env"]["CLAUDECODE"],
+        call["env"]["CLAUDE_CODE_ENTRYPOINT"],
+    )
     assert env == (str(PREFIX), None, None)
-    assert (call["env"]["ANTHROPIC_AUTH_TOKEN"], call["env"]["MAXIMISEART_WYROCZNIA_W_SRODKU"]) == (None, "1")
+    assert (
+        call["env"]["ANTHROPIC_AUTH_TOKEN"],
+        call["env"]["MAXIMISEART_WYROCZNIA_W_SRODKU"],
+    ) == (None, "1")
     assert call["env"]["WYROCZNIA_ZGODY_HOOK"] == _permission_hooks()[0]["command"]
-    (command,) = [json.loads(line) for line in (tmp_path / "wywolania.jsonl.polecenia").read_text().splitlines()]
-    assert re.fullmatch(r"rm -f ~/\.cache/wyrocznia-zgody-\w+/far/x # PYTA HOOK", command), command
+    (command,) = [
+        json.loads(line)
+        for line in (tmp_path / "wywolania.jsonl.polecenia").read_text().splitlines()
+    ]
+    assert re.fullmatch(
+        r"rm -f ~/\.cache/wyrocznia-zgody-\w+/far/x # PYTA HOOK", command
+    ), command
 
 
 @POSIX_ONLY
-def test_wyrocznia_pyta_tylko_falszywe_api_takze_gdy_ustawienia_uzytkownika_maja_adres_huba(tmp_path: Path) -> None:
+def test_wyrocznia_pyta_tylko_falszywe_api_takze_gdy_ustawienia_uzytkownika_maja_adres_huba(
+    tmp_path: Path,
+) -> None:
     # 5.11.2026 env.ANTHROPIC_BASE_URL huba z ~/.claude/settings.json wygrał z adresem fałszywego API w środowisku (#956).
-    hub = {"env": {"ANTHROPIC_BASE_URL": "http://127.0.0.1:9", "ANTHROPIC_AUTH_TOKEN": "token-huba"}}
+    hub = {
+        "env": {
+            "ANTHROPIC_BASE_URL": "http://127.0.0.1:9",
+            "ANTHROPIC_AUTH_TOKEN": "token-huba",
+        }
+    }
 
     ran = _oracle(
         tmp_path,
         [
-            {"nazwa": "odmowa", "polecenie": "rm -f @FAR@/x # PYTA HOOK", "pyta_o_zgode": True},
+            {
+                "nazwa": "odmowa",
+                "polecenie": "rm -f @FAR@/x # PYTA HOOK",
+                "pyta_o_zgode": True,
+            },
             {"nazwa": "kontrola", "polecenie": "rm -f @FAR@/y", "pyta_o_zgode": False},
         ],
         user_settings=hub,
     )
 
-    assert ran.stdout.splitlines()[-1] == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 2", ran.stderr
-    fake = {call["env"]["ANTHROPIC_BASE_URL"] for call in _rows(tmp_path / "wywolania.jsonl")}
-    asked = [json.loads(line) for line in (tmp_path / "wywolania.jsonl.api").read_text(encoding="utf-8").splitlines()]
+    assert (
+        ran.stdout.splitlines()[-1]
+        == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 2"
+    ), ran.stderr
+    fake = {
+        call["env"]["ANTHROPIC_BASE_URL"]
+        for call in _rows(tmp_path / "wywolania.jsonl")
+    }
+    asked = [
+        json.loads(line)
+        for line in (tmp_path / "wywolania.jsonl.api")
+        .read_text(encoding="utf-8")
+        .splitlines()
+    ]
     # Każda atrapa pyta dwa razy (polecenie, potem wynik narzędzia), zawsze adres z wywołania wyroczni.
     assert (len(asked), set(asked) <= fake) == (4, True)
-    assert all(url.startswith("http://127.0.0.1:") and url != "http://127.0.0.1:9" for url in fake)
+    assert all(
+        url.startswith("http://127.0.0.1:") and url != "http://127.0.0.1:9"
+        for url in fake
+    )
 
 
 @POSIX_ONLY
-def test_wyrocznia_konczy_claude_code_ktory_nie_pyta_falszywego_api(tmp_path: Path) -> None:
+def test_wyrocznia_konczy_claude_code_ktory_nie_pyta_falszywego_api(
+    tmp_path: Path,
+) -> None:
     # Host czeka 600 s: przypadek kończy brak kontaktu, bo taki Claude Code pyta inny model.
     ran = _oracle(
         tmp_path,
-        [{"nazwa": "cisza", "polecenie": "rm -f @FAR@/x # PYTA HOOK", "pyta_o_zgode": True}],
+        [
+            {
+                "nazwa": "cisza",
+                "polecenie": "rm -f @FAR@/x # PYTA HOOK",
+                "pyta_o_zgode": True,
+            }
+        ],
         "--host-s",
         "600",
         "--kontakt-s",
@@ -506,16 +625,30 @@ def test_wyrocznia_konczy_claude_code_ktory_nie_pyta_falszywego_api(tmp_path: Pa
 
 
 @POSIX_ONLY
-def test_wyrocznia_uruchomiona_w_claude_code_wyroczni_nie_uruchamia_claude(tmp_path: Path) -> None:
+def test_wyrocznia_uruchomiona_w_claude_code_wyroczni_nie_uruchamia_claude(
+    tmp_path: Path,
+) -> None:
     ran = _oracle(
         tmp_path,
-        [{"nazwa": "odmowa", "polecenie": "rm -f @FAR@/x # PYTA HOOK", "pyta_o_zgode": True}],
+        [
+            {
+                "nazwa": "odmowa",
+                "polecenie": "rm -f @FAR@/x # PYTA HOOK",
+                "pyta_o_zgode": True,
+            }
+        ],
         env={"MAXIMISEART_WYROCZNIA_W_SRODKU": "1"},
     )
 
-    assert (ran.returncode, ran.stdout.splitlines(), (tmp_path / "wywolania.jsonl").exists()) == (
+    assert (
+        ran.returncode,
+        ran.stdout.splitlines(),
+        (tmp_path / "wywolania.jsonl").exists(),
+    ) == (
         2,
-        ["WYROCZNIA BRAK | uruchomiona w Claude Code wyroczni (MAXIMISEART_WYROCZNIA_W_SRODKU)"],
+        [
+            "WYROCZNIA BRAK | uruchomiona w Claude Code wyroczni (MAXIMISEART_WYROCZNIA_W_SRODKU)"
+        ],
         False,
     )
 
@@ -541,7 +674,10 @@ def test_wyrocznia_wybiera_przypadki_z_nazwy_i_usuwa_piaskownice(
         "wybrany",
     )
 
-    assert ran.stdout.splitlines()[-1] == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 1", ran.stderr
+    assert (
+        ran.stdout.splitlines()[-1]
+        == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 1"
+    ), ran.stderr
     assert list((tmp_path / "dom" / ".cache").iterdir()) == []
 
 
@@ -570,12 +706,17 @@ def test_wyrocznia_bez_claude_na_path_konczy_sie_kodem_2(tmp_path: Path) -> None
     [
         ("echo hook zgody", "hook zgody\n"),
         ("echo hook zgody; echo przypadek", "WYROCZNIA-ZGODY-NIE-WYKONANO\n"),
-        ("eval 'echo hook zgody' && pwd -P >| /dev/null", "WYROCZNIA-ZGODY-NIE-WYKONANO\n"),
+        (
+            "eval 'echo hook zgody' && pwd -P >| /dev/null",
+            "WYROCZNIA-ZGODY-NIE-WYKONANO\n",
+        ),
         ("echo inny hook", "WYROCZNIA-ZGODY-NIE-WYKONANO\n"),
     ],
     ids=["hook-zgody", "polecenie-z-hookiem-zgody", "polecenie-basha", "inny-hook"],
 )
-def test_prefiks_wyroczni_wykonuje_tylko_polecenie_rowne_hookowi_zgody(command: str, printed: str) -> None:
+def test_prefiks_wyroczni_wykonuje_tylko_polecenie_rowne_hookowi_zgody(
+    command: str, printed: str
+) -> None:
     ran = subprocess.run(
         [str(PREFIX), command],
         env={**os.environ, "WYROCZNIA_ZGODY_HOOK": "echo hook zgody"},
