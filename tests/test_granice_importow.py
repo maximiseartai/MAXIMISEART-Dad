@@ -644,7 +644,7 @@ def test_moduly_prywatne_rdzenia_raportow_importuje_tylko_jego_pakiet() -> None:
     assert found == [], "\n".join(
         [
             *found,
-            f"Moduły {REPORT_CORE}/_*.py importuje tylko pakiet rdzenia raportów: weź enter_reports i typy z "
+            f"Moduły {REPORT_CORE}/_*.py importuje tylko pakiet rdzenia raportów: weź EnteringMemory i typy z "
             f"{REPORT_CORE_PACKAGE}, a zdanie o problemie z {REPORT_CORE_PACKAGE}.reasons.",
         ]
     )
@@ -656,7 +656,7 @@ REPORT_CORE_PRIVATE: typing.Final = {
     "import": ("import rozliczenia.worker_reports._cells", None, "rozliczenia.worker_reports._cells"),
     "import-as": ("import rozliczenia.worker_reports._cells as cells", None, "rozliczenia.worker_reports._cells"),
     "from-modulu": ("from rozliczenia.worker_reports._cells import reconcile", None, "rozliczenia.worker_reports._cells"),
-    "from-pakietu": ("from rozliczenia.worker_reports import enter_reports, _cells", None, "rozliczenia.worker_reports._cells"),
+    "from-pakietu": ("from rozliczenia.worker_reports import EnteringMemory, _cells", None, "rozliczenia.worker_reports._cells"),
     "wzgledny-z-silnika": ("from .worker_reports import _cells", "rozliczenia/report_entering.py", "rozliczenia.worker_reports._cells"),
     "wzgledny-modul": ("from .worker_reports._matching import match", "rozliczenia/report_entering.py", "rozliczenia.worker_reports._matching"),
     "wzgledny-z-centrum": ("from ..worker_reports import _figures", "rozliczenia/centrum/report_entering_run.py", "rozliczenia.worker_reports._figures"),
@@ -677,11 +677,11 @@ def test_sprawdzenie_rdzenia_raportow_przepuszcza_publiczne_nazwy_pakietu_i_pryw
     code = (
         "import rozliczenia.report_cells\n"
         "from rozliczenia import worker_reports\n"
-        "from rozliczenia.worker_reports import ReportInputs, enter_reports\n"
+        "from rozliczenia.worker_reports import EnteringMemory, RegisterWindow\n"
         "from rozliczenia.worker_reports.reasons import reason\n"
         "from rozliczenia.centrum import _private\n"
         "from ._cells import reconcile\n"
-        "outcome = worker_reports.enter_reports(inputs)\n"
+        "outcome = worker_reports.EnteringMemory(state).enter(*inputs)\n"
         "value = other._cells\n"
     )
 

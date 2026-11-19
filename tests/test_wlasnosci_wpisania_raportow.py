@@ -10,7 +10,7 @@ Kliknięcie idzie drogą procesu ``report_entering.enter_from_mail`` bez Excela 
 Dni uporządkowane z modelu arkusza zleceń (``raw_orders.ordered_rows`` i ``raw_orders.ordered_days`` od
 ``Window.start``, jak ``report_entering._orders`` i ``_ordered_days``), ``NUMER ZL.`` każdego czytanego wiersza
 (``raw_orders.numbered_rows`` od ``Window.numbers_since``, jak ``report_entering._present``), pamięć z pliku sprzed
-wersji 4 przez ``OlderOwnEntries.upgraded``, rdzeń ``enter_reports``, plan Przeniesień i Zleceń dopisanych z raportu
+wersji 4 przez ``OlderOwnEntries.upgraded``, rdzeń ``EnteringMemory.enter``, plan Przeniesień i Zleceń dopisanych z raportu
 ``raw_orders.plan_moves`` (jak ``intermax_cells.write_cells``) i zapis do modelu arkusza według ``MovePlan``. Model zna tożsamość każdego wiersza,
 której Excel nie ma, więc wyrocznie biorą regułę wprost z ADR i GLOSSARY, a nie z kodu.
 
@@ -61,16 +61,15 @@ from rozliczenia.worker_reports import (
     OwnEntry,
     ReadNumber,
     RegisterOrder,
-    ReportInputs,
     ReportMail,
     ReportsOutcome,
     SenderAddress,
     UnknownNumber,
     Window,
     WorkerAddresses,
-    enter_reports,
     order_number,
 )
+from tests.fixtures.pamiec_wpisania import Given, enter_reports
 
 SHEET = "ZLECENIA OD 06_2025"
 NUMBER_COLUMN, SUCCESSFUL_COLUMN, COMPLETED_COLUMN = 7, 8, 9
@@ -309,7 +308,7 @@ def _laid(lines: Iterable[_Line]) -> list[_Line]:
 @dataclass(frozen=True)
 class _Read:
     """Odczyt danych procesu: uporządkowane zlecenia i Dni uporządkowane od ``Window.start`` oraz ``NUMER ZL.`` każdego
-    czytanego wiersza od ``Window.numbers_since`` (``ReportInputs.present``)."""
+    czytanego wiersza od ``Window.numbers_since`` (``RegisterWindow.present``)."""
 
     orders: tuple[RegisterOrder, ...]
     ordered: frozenset[OrderedDay]
@@ -358,7 +357,7 @@ def _core(
     kept: frozenset[Kept],
 ) -> ReportsOutcome:
     return enter_reports(
-        ReportInputs(
+        Given(
             tuple(mails),
             ADDRESSES,
             read.orders,
@@ -976,7 +975,7 @@ def _click(register: _Register) -> None:
 
     - N4 (ADR 0028, „Każde kliknięcie liczy od nowa”): drugie kliknięcie bez nowych zdarzeń nic nie zmienia, a pamięć
       zostaje ta sama;
-    - N5 (docstring ``enter_reports``): te same maile w odwrotnej kolejności dają ten sam wynik;
+    - N5 (docstring ``_operation.enter_reports``): te same maile w odwrotnej kolejności dają ten sam wynik;
     - N8 (ADR 0029, „Numer bez zlecenia to Zlecenie dopisane z raportu” i „Okno mówi, gdzie wolno pisać”): kliknięcie
       nie dodaje wiersza numeru, który INTERMAX ma w czytanym wierszu (``_known``), a numerowi Zlecenia dopisanego z
       raportu dodaje jeden wiersz w dniu i u Wykonawcy z wyniku. To samo N8 pada też na każdym nowym polu

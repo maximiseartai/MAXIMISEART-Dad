@@ -5278,7 +5278,7 @@ _SONDA_PAMIECI_WPISANIA = ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pami
 
 
 def _pamiec_wpisania(importy: str, cialo: str) -> str:
-    """Moduł Centrum, który z ``ReportState`` pracy buduje wejście odczytu okna jak Przypomnienia o raporcie."""
+    """Moduł Centrum, który z ``ReportState`` pracy pyta pamięć Wpisania o odczyt okna jak Wpisanie raportów."""
 
     return (
         "from collections.abc import Sequence\nfrom datetime import date\n\n"
@@ -5291,7 +5291,7 @@ def _pamiec_wpisania(importy: str, cialo: str) -> str:
         "    addresses: WorkerAddresses, legend: ActivityLegend,\n"
         ") -> object:\n"
         f"{cialo}"
-        "    return memory.report_inputs(window, intermax, mails, addresses, legend)\n"
+        "    return memory.enter(window, intermax, mails, addresses, legend)\n"
     )
 
 
@@ -5381,7 +5381,7 @@ ZNANE_LUKI_PAMIECI_WPISANIA: Final = {
 @wymaga_ruff_i_mypy
 def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
     """Przypomnienia o raporcie i Wpisanie raportów liczą dzień raportu z tej samej pamięci Wpisania, bo wejście odczytu
-    okna daje tylko ``EnteringMemory.report_inputs``, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
+    okna buduje tylko ``EnteringMemory`` za swoimi operacjami, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
     (``ReportState.load``): wołający nie ma wartości pamięci, którą mógłby zbudować, skopiować albo zmienić obok.
 
     | Postać | mypy, ruff | Próbka |

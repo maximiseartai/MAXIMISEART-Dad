@@ -1,13 +1,16 @@
 """Rdzeń raportów Wpisania raportów (ADR 0028): Raporty wykonawców bez Excela i bez IMAP.
 
-Operacja Wpisania raportów to ``enter_reports``: maile ze Skrzynki raportów (``worker_report_inbox``), adresy Wykonawców
-(``WorkerList.addresses`` z Listy Wykonawców), uporządkowane zlecenia INTERMAX, dni otwarte i pamięć własnych wpisów na wejściu, a zmiany
+Obie operacje rdzenia ma pamięć Wpisania raportów (``EnteringMemory``, ``_memory.py``), która powstaje tylko ze swojego
+źródła (``MemorySource``) i liczy okno dni (``EnteringMemory.window``). Operacja Wpisania raportów to
+``EnteringMemory.enter`` (``_operation.py``): maile ze Skrzynki raportów (``worker_report_inbox``), adresy Wykonawców
+(``WorkerList.addresses`` z Listy Wykonawców), INTERMAX okna (``RegisterWindow``) i dni otwarte na wejściu, a zmiany
 komórek, Przeniesienia zleceń, problemy, informacje i liczby dla widoku Raporty i nowa pamięć na wyjściu. Zdanie dla
 taty o problemie daje ``reasons.reason``, o informacji ``reasons.note``, a mail, z którego rdzeń czyta z powrotem ten
 sam odczyt (odtworzenie z Logów), ``as_mail``.
-Druga operacja, ``reminders_due``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ADR 0041,
-``_reminders.py``). Obie biorą Raporty wykonawców i ich dni z jednego odczytu okna (``_reading.py``), a Wpisanie czyta
-opis Wpisu ``tak`` Legendą czynności z wejścia (``_descriptions.py``, ADR 0039).
+Druga operacja, ``EnteringMemory.reminders``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ADR 0041,
+``_reminders.py``). Obie biorą Raporty wykonawców i ich dni z jednego odczytu okna (``_reading.py``) na wejściu z tej
+samej pamięci, którego pakiet nie wystawia, a Wpisanie czyta opis Wpisu ``tak`` Legendą czynności z wejścia
+(``_descriptions.py``, ADR 0039).
 Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń, reguły komórek i postać kanoniczna maila
 w pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
 oraz ``report_cells``, ``settlement_period``, ``text`` i ``activity_legend``, bo przejdzie bez zmian do Centrum w
@@ -52,7 +55,6 @@ from ._model import (
     RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
-    ReportInputs,
     ReportMail,
     ReportNote,
     ReportProblem,
@@ -78,7 +80,6 @@ from ._model import (
 from ._canonical import as_mail
 from ._entries import EXAMPLE_NUMBERS
 from ._memory import EnteringMemory, MemorySource, RegisterWindow, SavedState
-from ._operation import enter_reports
 from ._reading import worker_report_count
 from ._reminders import (
     DAY_FIELD,
@@ -88,7 +89,6 @@ from ._reminders import (
     OLD_VERSION_SCHEDULES,
     Pora,
     Reminder,
-    ReminderInputs,
     ReminderProblem,
     ReminderProblemKind,
     ReminderSchedule,
@@ -99,7 +99,6 @@ from ._reminders import (
     TimeRange,
     reminder_pora,
     reminder_text,
-    reminders_due,
 )
 from ._subject import reads_as_report, reminder_day, reminder_subject
 
@@ -147,7 +146,6 @@ __all__ = [
     "RegisterOrder",
     "RegisterWindow",
     "Reminder",
-    "ReminderInputs",
     "ReminderProblem",
     "ReminderProblemKind",
     "ReminderSchedule",
@@ -155,7 +153,6 @@ __all__ = [
     "RepeatedNumber",
     "RepeatedOrder",
     "ReportEntry",
-    "ReportInputs",
     "ReportMail",
     "ReportNote",
     "ReportProblem",
@@ -181,7 +178,6 @@ __all__ = [
     "WorkerAddresses",
     "WorkerDay",
     "as_mail",
-    "enter_reports",
     "note_order",
     "order_number",
     "reads_as_report",
@@ -189,7 +185,6 @@ __all__ = [
     "reminder_pora",
     "reminder_subject",
     "reminder_text",
-    "reminders_due",
     "worker_report_count",
 ]
 

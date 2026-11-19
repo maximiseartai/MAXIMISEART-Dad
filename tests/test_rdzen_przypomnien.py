@@ -1,4 +1,4 @@
-"""Rdzeń Przypomnień o raporcie (``worker_reports.reminders_due``, ADR 0030, spec #1344 US 31–44): które przypomnienia
+"""Rdzeń Przypomnień o raporcie (``worker_reports.EnteringMemory.reminders``, ADR 0030, spec #1344 US 31–44): które przypomnienia
 należą się w danej chwili, ich temat i treść.
 
 Testy idą przez operację rdzenia z chwilą na wejściu: zlecenia INTERMAX, maile ze Skrzynki raportów, przypomnienia z
@@ -32,10 +32,8 @@ from rozliczenia.worker_reports import (
     ReadNumber,
     RegisterOrder,
     Reminder,
-    ReminderInputs,
     ReminderSchedule,
     ReminderSettings,
-    ReportInputs,
     ReportMail,
     SchedulesInEffect,
     SenderAddress,
@@ -44,10 +42,9 @@ from rozliczenia.worker_reports import (
     TimeRange,
     Window,
     reminder_day,
-    enter_reports,
     reminder_subject,
-    reminders_due,
 )
+from tests.fixtures.pamiec_wpisania import Given, enter_reports, reminders_due
 
 TATA = timezone(timedelta(hours=1))
 DAY = date(2026, 11, 9)
@@ -110,14 +107,12 @@ def _due(
 ) -> tuple[Reminder, ...]:
     listed = workers or _workers()
     return reminders_due(
-        ReminderInputs(
-            now=now,
-            reports=_reports(now, orders or (_order(),), mails, rollout=rollout, closed=closed, workers=listed, memory=memory),
-            sent=sent,
-            reminded=listed.reminded(),
-            settings=settings or replace(DEFAULT_REMINDERS, enabled=True, since=rollout, footer=footer),
-            in_effect=in_effect or SchedulesInEffect(),
-        )
+        _reports(now, orders or (_order(),), mails, rollout=rollout, closed=closed, workers=listed, memory=memory),
+        now,
+        sent=sent,
+        reminded=listed.reminded(),
+        settings=settings or replace(DEFAULT_REMINDERS, enabled=True, since=rollout, footer=footer),
+        in_effect=in_effect or SchedulesInEffect(),
     )
 
 
@@ -130,11 +125,11 @@ def _reports(
     closed: Sequence[str] = (),
     workers: WorkerList | None = None,
     memory: OwnEntries = OwnEntries.EMPTY,
-) -> ReportInputs:
+) -> Given:
     """Wejście odczytu okna, to samo dla Wpisania raportów i przypomnień: pamięć Wpisania ``memory`` (domyślnie przed
     pierwszym kliknięciem) bez decyzji taty, a każde zlecenie w swoim wierszu INTERMAX i w Dniu uporządkowanym."""
 
-    return ReportInputs(
+    return Given(
         mails=mails,
         addresses=(workers or _workers()).addresses(),
         orders=orders,

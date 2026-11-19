@@ -1,4 +1,4 @@
-"""Rdzeń raportów (``worker_reports.enter_reports``): Wpis raportu trafia do pustych komórek zlecenia Wykonawcy z dnia
+"""Rdzeń raportów (``worker_reports.EnteringMemory.enter``): Wpis raportu trafia do pustych komórek zlecenia Wykonawcy z dnia
 z tematu (#1227), a Raporty wykonawcy i Wpisy rdzeń rozpoznaje tak, jak piszą Wykonawcy (#1228; ADR 0028, pojęcia
 Raport wykonawcy, Wpis raportu i Wpisanie raportów w ``GLOSSARY.md``).
 
@@ -55,11 +55,9 @@ from rozliczenia.worker_reports import (
     ReadUnreadable,
     RefusedMove,
     RegisterOrder,
-    ReminderInputs,
     RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
-    ReportInputs,
     ReportMail,
     ReportProblem,
     Requestable,
@@ -79,12 +77,11 @@ from rozliczenia.worker_reports import (
     WorkerAddresses,
     WorkerDay,
     as_mail,
-    enter_reports,
     reminder_text,
-    reminders_due,
 )
 from rozliczenia.worker_reports.reasons import note, overtaken, reason, subject_fault
 from tests.fixtures.expect import assert_expected
+from tests.fixtures.pamiec_wpisania import Given, enter_reports, reminders_due
 
 DAY = date(2026, 11, 8)
 JAN = "jan@przyklad.invalid"
@@ -153,7 +150,7 @@ def _inputs(
     present: Sequence[ReadNumber] | None = None,
     legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND,
     requested: frozenset[RequestedEntry] = frozenset(),
-) -> ReportInputs:
+) -> Given:
     """Wejście rdzenia; bez ``present`` proces przeczytał tylko wiersze zleceń ``orders``, każdy raz."""
 
     logins = {}
@@ -162,7 +159,7 @@ def _inputs(
             address = SenderAddress.of(sender)
             assert address is not None
             logins[address] = Login(login)
-    return ReportInputs(
+    return Given(
         mails=mails,
         addresses=WorkerAddresses(logins),
         orders=orders,
@@ -3704,7 +3701,7 @@ def test_odpowiedz_na_przypomnienie_konczy_przypomnienia_za_ten_dzien(subject: s
     now = datetime(2026, 11, 9, 18, 0, tzinfo=TAPA)
     inputs = _inputs([mail], [_order()], today=now.date(), rollout=DAY - timedelta(days=1))
 
-    found = reminders_due(ReminderInputs(now, inputs, (), frozenset(inputs.addresses.logins.values()), settings=DEFAULT_REMINDERS))
+    found = reminders_due(inputs, now, sent=(), reminded=frozenset(inputs.addresses.logins.values()), settings=DEFAULT_REMINDERS)
 
     assert [(reminder.worker, reminder.day) for reminder in found] == due
 

@@ -4,7 +4,9 @@ zapisu (``SavedState``), z których Wpisanie raportów i Przypomnienia o raporci
 Pamięć daje tylko jej źródło (``MemorySource``), a jej wartość trzyma ``EnteringMemory``, która ma okno dni i obie
 operacje odczytu okna: Wpisanie raportów (``EnteringMemory.enter``) i Przypomnienia o raporcie
 (``EnteringMemory.reminders``). INTERMAX okna (``RegisterWindow``) i tokeny okresów z Plikiem zbiorczym czyta proces,
-bo plik, folder okresów i Excel zostają poza rdzeniem.
+bo plik, folder okresów i Excel zostają poza rdzeniem. Wejście odczytu okna (``ReportInputs``) powstaje tylko w
+``EnteringMemory._inputs`` i nie wychodzi z pakietu: wołający dostaje wynik operacji, nie wejście, więc nie ma wartości,
+którą mógłby skopiować ze zmienioną pamięcią.
 """
 
 from __future__ import annotations
@@ -118,9 +120,9 @@ class EnteringMemory:
         self, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail], addresses: WorkerAddresses, legend: ActivityLegend
     ) -> ReportsOutcome:
         """Operacja Wpisania raportów (``_operation.enter_reports``) na wejściu odczytu okna z tej pamięci
-        (``report_inputs``)."""
+        (``_inputs``)."""
 
-        return _operation.enter_reports(self.report_inputs(window, intermax, mails, addresses, legend))
+        return _operation.enter_reports(self._inputs(window, intermax, mails, addresses, legend))
 
     def reminders(
         self,
@@ -137,15 +139,15 @@ class EnteringMemory:
         in_effect: SchedulesInEffect,
     ) -> tuple[Reminder, ...]:
         """Przypomnienia o raporcie, które należą się w chwili ``now`` (``_reminders.reminders_due``), z wejścia odczytu
-        okna z tej pamięci (``report_inputs``), więc przypomnienie nie idzie za żaden dzień, za który kafelek Wpisania
+        okna z tej pamięci (``_inputs``), więc przypomnienie nie idzie za żaden dzień, za który kafelek Wpisania
         liczy raport: przypomnienia z „Wysłanych” ``sent``, loginy Wykonawców, którym przypomnienia idą
         (``reminded``), Ustawienia przypomnień ``settings`` i pory, przy których praca przypomnień sprawdzała
         (``in_effect``)."""
 
-        reports = self.report_inputs(window, intermax, mails, addresses, legend)
+        reports = self._inputs(window, intermax, mails, addresses, legend)
         return reminders_due(ReminderInputs(now, reports, sent, reminded, settings, in_effect))
 
-    def report_inputs(
+    def _inputs(
         self, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail], addresses: WorkerAddresses, legend: ActivityLegend
     ) -> ReportInputs:
         """Jedyne wejście odczytu okna rdzenia raportów, to samo dla Wpisania raportów i Przypomnień o raporcie: INTERMAX
