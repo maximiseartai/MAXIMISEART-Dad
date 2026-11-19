@@ -1,4 +1,20 @@
-"""Strażnik Ważnego ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): mechanizm z zamkniętej
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable, Mapping, Sequence
+from contextlib import AbstractContextManager
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+import re
+
+from kroki_lokalne import JSON_OUTPUT, diagnostics, static_steps
+import mutacja_recenzenta
+import potomne
+import repo
+import silnik_mutacji
+from silnik_mutacji import Mutation, Verdict
+
+ZASADY = """Strażnik Ważnego ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): mechanizm z zamkniętej
 listy, który autor wpisuje w bloku Ważnego sekcji ``## Korzeń`` linią ``Strażnik: <selektor>``, i jego dowód.
 
 Dowód liczy narzędzie: złą postać daje drzewo SHA werdyktu ``FAIL`` i miejsca jego pola ``Gdzie`` albo, przy teście,
@@ -55,22 +71,6 @@ dowód w jobie bez prawa zapisu (``.github/workflows/werdykt-i-bramka.yml``). Mo
 (PyYAML), bo ``tools/scal_pr.py`` bierze z niego selektory systemowym Pythonem runnera, a środowisko (``Environment``)
 buduje ``srodowisko_ci.built``.
 """
-
-from __future__ import annotations
-
-from collections.abc import Callable, Iterable, Mapping, Sequence
-from contextlib import AbstractContextManager
-from dataclasses import dataclass
-from enum import Enum
-from pathlib import Path
-import re
-
-from kroki_lokalne import JSON_OUTPUT, diagnostics, static_steps
-import mutacja_recenzenta
-import potomne
-import repo
-import silnik_mutacji
-from silnik_mutacji import Mutation, Verdict
 
 FIELD = "Strażnik:"
 

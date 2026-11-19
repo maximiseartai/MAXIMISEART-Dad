@@ -1,24 +1,3 @@
-"""Zapis czasów CI (``tools/lib/czasy_ci.py``): zapis jednego zadania runu i scalenie zapisów runu w ``czasy-ci.json``.
-
-Zadania ``pytest`` i ``mutations`` ``ci.yml``, a nocą zadania ``skill-mutations`` ``mutacje-nocne.yml``, kończą się
-poleceniem ``zadanie``, które zapisuje ``czasy_ci.Zapis``, także gdy zadanie padło. Czasy kroków i start zadania podaje
-API zadań runu (``$GITHUB_API_URL/repos/<repo>/actions/runs/<run>/attempts/<próba>/jobs``, token z ``GH_TOKEN``, z
-dokładnością do sekundy), w którym zadanie znajduje się po nazwie swojego runnera. Narzut to sekundy od startu zadania
-do startu pierwszego kroku jednostki. Krok jednostki, który właśnie się skończył, API pokazuje przez chwilę bez wyniku
-(``conclusion: null``), więc zadanie czyta API ponownie, do 5 odczytów co sekundę; krok wciąż bez wyniku to błąd, a nie
-krok pominięty. Jednostki, które mierzy sam ``tools/ci/wykonaj_zadanie.py`` (pytest, E2E, straż czasu, kroki skilli), i
-plan, z którego biegły, zapis bierze z jego pliku ``--wykonanie``.
-
-Na pushu do main ``Required CI status`` pobiera zapisy runu i poleceniem ``scal`` tworzy ``czasy-ci.json``, a noc tak
-samo ``czasy-nocy.json`` (zadanie ``czasy-nocy``).
-
-Wejście, którego brakuje albo którego nie da się odczytać, daje linię ``CZASY CI FAIL | ...`` i kod 1, a zapis powstaje
-z reszty. Pomiar nie zmienia werdyktu CI: jego kroki w ``ci.yml`` mają ``continue-on-error``.
-
-    python tools/ci/zapis_czasow.py zadanie --tor Windows-3.14.0 --junit junit.xml --wykonanie wykonanie.json --wyjscie zapis.json
-    python3 tools/ci/zapis_czasow.py scal --katalog zapisy --wyjscie czasy-ci.json
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -39,6 +18,27 @@ from czasy_ci import WERSJA, Jednostka, Zapis, wczytaj
 import jednostka
 from jednostka import Rodzaj
 import wyniki_testow
+
+OPIS = """Zapis czasów CI (``tools/lib/czasy_ci.py``): zapis jednego zadania runu i scalenie zapisów runu w ``czasy-ci.json``.
+
+Zadania ``pytest`` i ``mutations`` ``ci.yml``, a nocą zadania ``skill-mutations`` ``mutacje-nocne.yml``, kończą się
+poleceniem ``zadanie``, które zapisuje ``czasy_ci.Zapis``, także gdy zadanie padło. Czasy kroków i start zadania podaje
+API zadań runu (``$GITHUB_API_URL/repos/<repo>/actions/runs/<run>/attempts/<próba>/jobs``, token z ``GH_TOKEN``, z
+dokładnością do sekundy), w którym zadanie znajduje się po nazwie swojego runnera. Narzut to sekundy od startu zadania
+do startu pierwszego kroku jednostki. Krok jednostki, który właśnie się skończył, API pokazuje przez chwilę bez wyniku
+(``conclusion: null``), więc zadanie czyta API ponownie, do 5 odczytów co sekundę; krok wciąż bez wyniku to błąd, a nie
+krok pominięty. Jednostki, które mierzy sam ``tools/ci/wykonaj_zadanie.py`` (pytest, E2E, straż czasu, kroki skilli), i
+plan, z którego biegły, zapis bierze z jego pliku ``--wykonanie``.
+
+Na pushu do main ``Required CI status`` pobiera zapisy runu i poleceniem ``scal`` tworzy ``czasy-ci.json``, a noc tak
+samo ``czasy-nocy.json`` (zadanie ``czasy-nocy``).
+
+Wejście, którego brakuje albo którego nie da się odczytać, daje linię ``CZASY CI FAIL | ...`` i kod 1, a zapis powstaje
+z reszty. Pomiar nie zmienia werdyktu CI: jego kroki w ``ci.yml`` mają ``continue-on-error``.
+
+    python tools/ci/zapis_czasow.py zadanie --tor Windows-3.14.0 --junit junit.xml --wykonanie wykonanie.json --wyjscie zapis.json
+    python3 tools/ci/zapis_czasow.py scal --katalog zapisy --wyjscie czasy-ci.json
+"""
 
 ODCZYTY_API = 5
 CZEKANIE_API_S = 1.0
@@ -203,7 +203,7 @@ def _scal(args: argparse.Namespace) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     zadanie = polecenia.add_parser("zadanie", help="Zapis czasów jednego zadania runu (w zadaniu CI).")
     zadanie.add_argument("--tor", required=True, help="System runnera i wersja Pythona, np. Windows-3.14.0.")

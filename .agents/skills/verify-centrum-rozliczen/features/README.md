@@ -83,7 +83,7 @@ The feature `<feature>` of `--feature` lives in `<feature>.md` next to this file
 ### Guard of deletions in the drive
 
 `centrum_self_test.py` reads every `drive/*.py`, except the bodies of the five helpers above in `common.py`, and
-fails on each deletion, move or replacement of a file or folder in these forms (the docstring of `_removals` has
+fails on each deletion, move or replacement of a file or folder in these forms (`GUARD_TABLES` of `centrum_self_test.py` has
 the same tables, and the self-test fails when they differ).
 Ruff `TID251` (`drive/ruff.toml`) already rejects each name it resolves to a deletion or move of `os`, `shutil` or a
 pathlib class (`os.remove`, `import os as system; system.replace(p, q)`, `from shutil import rmtree`,

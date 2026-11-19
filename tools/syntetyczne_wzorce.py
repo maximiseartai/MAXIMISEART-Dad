@@ -1,4 +1,15 @@
-"""Zapisuje syntetyczne Wzorce w kształcie Wzorców taty; użyj, gdy benchmark, weryfikacja w Excelu albo CI nie ma prawdziwych Wzorców.
+from __future__ import annotations
+
+import argparse
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from atrapy.wzorce import FULL_DATA_ROWS, SHARED_FORMULA_ROWS, write_synthetic_templates
+
+OPIS = """Zapisuje syntetyczne Wzorce w kształcie Wzorców taty; użyj, gdy benchmark, weryfikacja w Excelu albo CI nie ma prawdziwych Wzorców.
 
 Użycie (z katalogu repozytorium):
 
@@ -24,20 +35,9 @@ i odwołanie zewnętrzne są syntetyczne. Generator jest deterministyczny: te sa
 te same bajty, więc lustro benchmarku zbudowane z nich ma stały odcisk.
 """
 
-from __future__ import annotations
-
-import argparse
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from atrapy.wzorce import FULL_DATA_ROWS, SHARED_FORMULA_ROWS, write_synthetic_templates
-
 
 def _parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("directory", type=Path, help="Folder na Wzorce i Listę Wykonawców.")
     parser.add_argument(
         "--data-rows",

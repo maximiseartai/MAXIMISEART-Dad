@@ -1,12 +1,3 @@
-"""Show that the Reguły ilości conformance test fails on each single broken rule.
-
-Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must make
-``quantity_rules_conformance.py`` fail. A rule of Dad's instruction is broken where it lives: in the Reguły ilości
-z Wydania (``reguly_ilosci_domyslne.yaml``), in the Lista Urządzeń z Wydania (``lista_urzadzen_domyslna.yaml``), or
-in the engine (``quantity_engine.py``: reading ``URZĄDZENIA``, ``CZYNNOŚCI`` and ``UMOWA``, P, Q and S). A mutation
-whose anchor text is no longer in its file exactly once is reported as NIEAKTUALNA: update it to the new code.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -16,6 +7,15 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from silnik_mutacji import Edit, Mutation, check_all
+
+OPIS = """Show that the Reguły ilości conformance test fails on each single broken rule.
+
+Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) and must make
+``quantity_rules_conformance.py`` fail. A rule of Dad's instruction is broken where it lives: in the Reguły ilości
+z Wydania (``reguly_ilosci_domyslne.yaml``), in the Lista Urządzeń z Wydania (``lista_urzadzen_domyslna.yaml``), or
+in the engine (``quantity_engine.py``: reading ``URZĄDZENIA``, ``CZYNNOŚCI`` and ``UMOWA``, P, Q and S). A mutation
+whose anchor text is no longer in its file exactly once is reported as NIEAKTUALNA: update it to the new code.
+"""
 
 RULES = Path("src/rozliczenia/reguly_ilosci_domyslne.yaml")
 DEVICES = Path("src/rozliczenia/lista_urzadzen_domyslna.yaml")
@@ -240,5 +240,5 @@ MUTATIONS = (
 
 
 if __name__ == "__main__":
-    argparse.ArgumentParser(description=__doc__).parse_args()
+    argparse.ArgumentParser(description=OPIS).parse_args()
     raise SystemExit(check_all(MUTATIONS))

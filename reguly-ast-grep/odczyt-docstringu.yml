@@ -1,0 +1,18 @@
+id: odczyt-docstringu
+language: python
+severity: error
+message: >-
+  kod czyta albo zapisuje __doc__: tekst, który czyta program (--help, spis narzędzi w AGENTS.md, zasady drukowane
+  przez inne narzędzie), trzymaj w nazwanej stałej modułu (OPIS dla --help narzędzia, ZASADY dla zasad, które czyta
+  inny moduł) i czytaj tę stałą, bo usunięty docstring zamienia taki tekst po cichu w None albo pusty napis, a
+  usuniętej stałej nie przepuści mypy
+files:
+  - "**/*.py"
+  - "**/*.pyi"
+  - "**/*.py3"
+metadata:
+  przypadki:
+    - 2f3e98c973ba5738c0fc372ebeb69993bae4753f tools/scal_pr.py:304
+rule:
+  kind: identifier
+  regex: ^__doc__$
