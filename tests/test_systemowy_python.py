@@ -88,7 +88,8 @@ def test_setup_worktree_starym_pythonem_bez_uv_konczy_sie_jedna_linia_z_poleceni
     old, minimum = f"{target[2]}.{target[3:]}", setup_worktree.MINIMUM
     expected = (
         f"BŁĄD: Python {old} nie utworzy .venv (repo wymaga {minimum} albo nowszego), a uv nie ma w PATH: "
-        f"uruchom python{minimum} tools/setup_worktree.py albo zainstaluj uv (https://docs.astral.sh/uv/)."
+        f"uruchom python{minimum} tools/setup_worktree.py (Windows: py -{minimum} tools/setup_worktree.py) "
+        "albo zainstaluj uv (https://docs.astral.sh/uv/)."
     )
     assert (answered.returncode, answered.stdout, answered.stderr.splitlines()) == (1, "", [expected])
     assert not (tmp_path / ".venv").exists()

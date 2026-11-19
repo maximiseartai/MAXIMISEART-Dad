@@ -79,10 +79,10 @@ def main(argv: list[str] | None = None) -> int:
 def _without_uv_on_old_python() -> str:
     """Jedna linia błędu z poleceniem naprawy, gdy skrypt uruchomił Python starszy niż ``MINIMUM``, a uv nie ma w PATH."""
 
-    launcher = f"py -{MINIMUM}" if sys.platform == "win32" else f"python{MINIMUM}"
     return (
         f"BŁĄD: Python {sys.version_info[0]}.{sys.version_info[1]} nie utworzy .venv (repo wymaga {MINIMUM} albo nowszego), "
-        f"a uv nie ma w PATH: uruchom {launcher} tools/setup_worktree.py albo zainstaluj uv (https://docs.astral.sh/uv/)."
+        f"a uv nie ma w PATH: uruchom python{MINIMUM} tools/setup_worktree.py (Windows: py -{MINIMUM} tools/setup_worktree.py) "
+        "albo zainstaluj uv (https://docs.astral.sh/uv/)."
     )
 
 
