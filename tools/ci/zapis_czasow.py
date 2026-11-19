@@ -1,15 +1,16 @@
 """Zapis czasów CI (``tools/lib/czasy_ci.py``): zapis jednego zadania runu i scalenie zapisów runu w ``czasy-ci.json``.
 
-Zadania ``pytest`` i ``mutations`` kończą się poleceniem ``zadanie``, które zapisuje ``czasy_ci.Zapis``, także gdy
-zadanie padło. Czasy kroków i start zadania podaje API zadań runu
-(``$GITHUB_API_URL/repos/<repo>/actions/runs/<run>/attempts/<próba>/jobs``, token z ``GH_TOKEN``, z dokładnością do
-sekundy), w którym zadanie znajduje się po nazwie swojego runnera. Narzut to sekundy od startu zadania do startu
-pierwszego kroku jednostki. Krok jednostki, który właśnie się skończył, API pokazuje przez chwilę bez wyniku
+Zadania ``pytest`` i ``mutations`` ``ci.yml``, a nocą zadania ``skill-mutations`` ``mutacje-nocne.yml``, kończą się
+poleceniem ``zadanie``, które zapisuje ``czasy_ci.Zapis``, także gdy zadanie padło. Czasy kroków i start zadania podaje
+API zadań runu (``$GITHUB_API_URL/repos/<repo>/actions/runs/<run>/attempts/<próba>/jobs``, token z ``GH_TOKEN``, z
+dokładnością do sekundy), w którym zadanie znajduje się po nazwie swojego runnera. Narzut to sekundy od startu zadania
+do startu pierwszego kroku jednostki. Krok jednostki, który właśnie się skończył, API pokazuje przez chwilę bez wyniku
 (``conclusion: null``), więc zadanie czyta API ponownie, do 5 odczytów co sekundę; krok wciąż bez wyniku to błąd, a nie
 krok pominięty. Jednostki, które mierzy sam ``tools/ci/wykonaj_zadanie.py`` (pytest, E2E, straż czasu, kroki skilli), i
 plan, z którego biegły, zapis bierze z jego pliku ``--wykonanie``.
 
-Na pushu do main ``Required CI status`` pobiera zapisy runu i poleceniem ``scal`` tworzy ``czasy-ci.json``.
+Na pushu do main ``Required CI status`` pobiera zapisy runu i poleceniem ``scal`` tworzy ``czasy-ci.json``, a noc tak
+samo ``czasy-nocy.json`` (zadanie ``czasy-nocy``).
 
 Wejście, którego brakuje albo którego nie da się odczytać, daje linię ``CZASY CI FAIL | ...`` i kod 1, a zapis powstaje
 z reszty. Pomiar nie zmienia werdyktu CI: jego kroki w ``ci.yml`` mają ``continue-on-error``.

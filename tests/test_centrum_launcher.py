@@ -185,8 +185,11 @@ def _port_silent_on_first_connection() -> Iterator[int]:
     accepting.start()
     try:
         yield port
+        # Blok czekał na health dłużej, niż trwa pierwsze połączenie, więc wątek kończy się od razu albo nigdy.
+        accepting.join(timeout=5)
+        assert not accepting.is_alive(), f"nikt nie połączył się z portem {port} (proxy w zmiennych środowiska?)"
     finally:
-        accepting.join()
+        listener.close()
         for connection in held:
             connection.close()
 

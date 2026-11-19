@@ -708,6 +708,37 @@ def test_blad_pobrania_czasow_nocy_zostawia_czasy_main_a_nastepny_odczyt_pobiera
 @pytest.mark.parametrize(
     ("content", "error"),
     [
+        ("{", "9.json: Expecting property name"),
+        ('{"wersja": 1, "runy": [], "tory": {"windows-3.14": {"k": [{"run": 9}]}}}', "czasy-nocy w innym kształcie: KeyError('zadanie')"),
+    ],
+)
+def test_zepsuty_artefakt_nocy_zostawia_czasy_main_i_mowi_o_nocy(tmp_path: Path, content: str, error: str) -> None:
+    """Plan CI czyta czasy nocy obok czasów main, więc nieczytelny plik nocy albo noc w innym kształcie nie zatrzymuje
+    planu i nie gubi czasów main, tylko trafia do ``blad``."""
+
+    nocny = tmp_path / czasy_ci.ARTEFAKT_NOCY
+    nocny.mkdir()
+    (nocny / "9.json").write_text(content, encoding="utf-8")
+    (nocny / "pobrane").touch()
+
+    czasy = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=_GitHub([3], {3: _artifact(3, A={"pytest:tests/test_x.py": 4.0})}), z_nocy=True)
+
+    assert (czasy.runy, czasy.noce, czasy.pliki("windows-3.14")) == ((3,), (), {"tests/test_x.py": 4.0})
+    assert czasy.blad is not None and czasy.blad.startswith(error), czasy.blad
+
+
+def test_brak_artefaktu_main_przy_bledzie_pobrania_nocy_nazywa_obie_przyczyny(tmp_path: Path) -> None:
+    """Linia CZASY CI planu mówi o braku czasów main także wtedy, gdy pobranie nocy padło, bo błąd nocy nie tłumaczy,
+    czemu main nie ma czasów."""
+
+    czasy = czasy_ci.z_mainu(tmp_path, github=_GitHub([], {}), z_nocy=True)
+
+    assert czasy.blad == "brak artefaktu czasy-ci z zielonego runu main; pobranie czasy-nocy z GitHuba: HTTP 502: Bad Gateway"
+
+
+@pytest.mark.parametrize(
+    ("content", "error"),
+    [
         (None, "brak artefaktu czasy-ci z zielonego runu main"),
         ("{", "2.json: Expecting property name"),
         ('{"wersja": 1, "runy": [], "tory": {"windows-3.14": {"k": [{"run": 2}]}}}', "czasy-ci w innym kształcie: KeyError('zadanie')"),

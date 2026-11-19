@@ -487,8 +487,8 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
         run: python3 tools/ci/werdykt_required.py --plan .ci-plan/plan.json --zapisy .ci-czasy/zapisy
 
-      # On a push to main the unit times of every job of the run become the artifact czasy-ci, the one source of CI
-      # times (tools/ci/zapis_czasow.py). Measurement only: a failure here prints CZASY CI FAIL and leaves the verdict above.
+      # On a push to main the unit times of every job of the run become the artifact czasy-ci, the CI times source next
+      # to the nightly czasy-nocy (tools/ci/zapis_czasow.py). Measurement only: a failure here prints CZASY CI FAIL and leaves the verdict above.
       - name: Merge the unit times into czasy-ci
         if: ${{ !cancelled() && github.event_name == 'push' }}
         continue-on-error: true

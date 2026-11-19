@@ -5,7 +5,8 @@ wkładzie do p90 (średnia w ogonie minus średnia w runach w budżecie).
 
 Runy, ich zadania i GitHub są fałszywe (``_GitHub``), a czasy zadań stoją w sekundach od utworzenia runu, więc każdy
 odcinek ścieżki (kolejka, start, praca, maruder, ogon) wynika wprost z próbki. Zegar strażnika to zegar fałszywego
-GitHuba, który każde zapytanie przesuwa o ``tick`` sekund.
+GitHuba, który każde zapytanie przesuwa o ``tick`` sekund. Startuje od ``ZEGAR_START_S``, a nie od zera, jak
+``time.monotonic()`` (czas od startu maszyny), więc limit czasu liczony od zera zegara zamiast od startu biegu pada.
 """
 
 from __future__ import annotations
@@ -113,6 +114,10 @@ def _slow_queue(run: int, day: int) -> Run:
     return Run(run, day, (_pytest(queue=441),))
 
 
+# Trzy dni pracy maszyny: tyle pokazuje time.monotonic() strażnika na runnerze, który nie startował do tego biegu.
+ZEGAR_START_S = 3 * 24 * 3600.0
+
+
 class _GitHub:
     """GitHub z runami ``ci.yml`` po dniach, artefaktami ``plan`` (bajty zamiast tekstu: zip uszkodzony) i ``czasy-ci``
     oraz issues i etykietami w pamięci; każde zapytanie trwa ``tick`` sekund zegara ``now``."""
@@ -128,7 +133,7 @@ class _GitHub:
         self.comments: list[tuple[int, str]] = []
         self.requests: list[str] = []
         self.tick = tick
-        self.now = 0.0
+        self.now = ZEGAR_START_S
 
     def _request(self, request: str) -> None:
         self.requests.append(request)
@@ -403,6 +408,35 @@ def test_pamiec_trafia_na_dysk_w_trakcie_pobierania_wiec_bieg_przerwany_z_zewnat
 
     assert code == 0
     assert github.on_disk == [0, 1, 1, 1, 4, 4, 4, 7, 7, 7]
+
+
+def test_plany_ogona_trafiaja_na_dysk_w_trakcie_pobierania_planow_a_nie_dopiero_na_koncu(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Pobieranie planów 10 runów ogona też zapisuje pamięć co ``ZAPIS_CO_S`` (60 s): plan to 2 zapytania po 25 s, więc
+    przed zapytaniem o plan kolejnego runu na dysku stoją plany pobrane ponad minutę po poprzednim zapisie, a bieg
+    przerwany w trakcie planów nie pyta o nie znowu."""
+
+    critical = "Mutation checks (1/1)"
+    plan = plan_runu.Plan(Zdarzenie.PULL_REQUEST, 300.0, (1,), (plan_runu.Zadanie("mutacje-1", "mutacje", critical, ("pytest:tests/test_a.py",), 300.0),))
+
+    class Watching(_GitHub):
+        def __init__(self, runs: Sequence[Run]) -> None:
+            super().__init__(runs, plans={run.id: plan.do_json() for run in runs}, tick=25)
+            self.on_disk: list[int] = []
+
+        def json(self, sciezka: str) -> object:
+            if "/artifacts?name=plan" in sciezka:
+                plik = tmp_path / "pamiec" / budzet_ci.PLIK_PAMIECI
+                rekordy = json.loads(plik.read_text(encoding="utf-8"))["rekordy"] if plik.is_file() else []
+                self.on_disk.append(sum(1 for wpis in rekordy if wpis["jednostki"] is not None))
+            return super().json(sciezka)
+
+    github = Watching([Run(n, 5, (Job(critical, 15, 2, 30, 480),)) for n in range(1, 11)])
+
+    code, lines = _guard(tmp_path, github, "2026-11-10", capsys, "--bez-zapisu", "--limit-czasu", "3600")
+
+    assert code == 0
+    assert "Plany: 10 z 10 runów ogona." in lines
+    assert github.on_disk == [0, 0, 2, 2, 4, 4, 6, 6, 8, 8]
 
 
 def test_run_ogona_bez_planu_przez_blad_artefaktu_ma_w_issue_ten_blad_a_nie_limit(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
