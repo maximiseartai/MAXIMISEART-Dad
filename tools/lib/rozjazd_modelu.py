@@ -21,12 +21,13 @@ definicji w innej postaci, bo model nie jest wtedy porównany z kodem. Rozjazd w
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 import hashlib
 import json
 from pathlib import Path
 import re
 
-__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "przesun", "rozjazd", "skille", "skroty"]
+__all__ = ["CALY_PLIK", "DEFINICJE", "KROKI", "ROZJAZD", "TABELA", "bez_klucza", "definicje", "przesun", "rozjazd", "scal", "skille", "skroty"]
 
 DEFINICJE = "model/definicje.json"
 CALY_PLIK = "cały plik"
@@ -79,8 +80,16 @@ def definicje(skill: Path) -> Skroty:
     """Plik ``DEFINICJE`` skilla: ścieżka → nazwa definicji → skrót; inna postać to ``ValueError``."""
 
     try:
-        loaded = json.loads((skill / DEFINICJE).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as error:
+        text = (skill / DEFINICJE).read_text(encoding="utf-8")
+    except OSError as error:
+        raise ValueError(f"nie da się odczytać ({error})") from error
+    return _parsed(text)
+
+
+def _parsed(text: str) -> Skroty:
+    try:
+        loaded = json.loads(text)
+    except ValueError as error:
         raise ValueError(f"nie da się odczytać ({error})") from error
     if not isinstance(loaded, dict) or not loaded:
         raise ValueError("to nie jest niepusty obiekt ścieżka → definicje")
@@ -120,6 +129,46 @@ def przesun(skill: Path, root: Path) -> list[str]:
     moved = [f"{path} {name}" for path, names in recorded.items() for name, digest in names.items() if now[path][name] != digest]
     (skill / DEFINICJE).write_text(json.dumps(now, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
     return moved
+
+
+def scal(base: Path, ours: Path, theirs: Path, merge_tree: Callable[[list[str]], Path | None]) -> list[str]:
+    old, mine, other = (_side(name, file) for name, file in (("bazy", base), ("nasza", ours), ("ich", theirs)))
+    if _keys(other) in (_keys(mine), _keys(old)):
+        kept = mine
+    elif _keys(mine) == _keys(old):
+        kept = other
+    else:
+        raise ValueError("obie strony zmieniły definicje modelu inaczej")
+    merged = {path: {name: _one_side(mine, other, old, path, name) for name in names} for path, names in kept.items()}
+    both = {path: dict.fromkeys(missing, "") for path, names in merged.items() if (missing := [name for name, digest in names.items() if digest is None])}
+    if both:
+        root = merge_tree(list(both))
+        found = skroty(both, root) if root is not None else {}
+        for path, names in both.items():
+            for name in names:
+                if (digest := found.get(path, {}).get(name)) is None:
+                    raise ValueError(f"obie strony zmieniły skrót {path} {name}, a drzewo scalenia nie ma tej definicji bez konfliktu")
+                merged[path][name] = digest
+    ours.write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n", encoding="utf-8", newline="")
+    return [f"{path} {name}" for path, names in both.items() for name in names]
+
+
+def _side(name: str, file: Path) -> Skroty:
+    try:
+        return _parsed(file.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        raise ValueError(f"definicje {name}: {error}") from error
+
+
+def _keys(recorded: Skroty) -> dict[str, set[str]]:
+    return {path: set(names) for path, names in recorded.items()}
+
+
+def _one_side(mine: Skroty, other: Skroty, old: Skroty, path: str, name: str) -> str | None:
+    now, then, before = (side.get(path, {}).get(name) for side in (mine, other, old))
+    if then in (now, before):
+        return now
+    return then if now == before else None
 
 
 def bez_klucza(skill: Path, root: Path) -> list[str]:
