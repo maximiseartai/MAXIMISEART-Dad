@@ -169,7 +169,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
 )
 from rozliczenia.centrum.settings.reminders import REMINDERS, RemindersEdit, dad_reminders
 from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL, WrittenMail, written
-from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_workers
+from rozliczenia.centrum.settings.workers import WORKERS, AddWorker, WorkersEdit, dad_workers
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.settlement_mailing import SettlementMailSettings
@@ -660,8 +660,12 @@ class CentrumSettings:
 
     def change_workers(self, edit: WorkersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty Listy Wykonawców (``dad_workers``); loginy, które usuwa, sprawdza w okresach ``_by_dad``,
-        ta sama droga co „Cofnij”."""
+        ta sama droga co „Cofnij”. Zmiana Wykonawcy z listy (wszystko poza dodaniem) zaczyna od listy, którą liczy
+        Uruchomienie: bez niej to odmowa ``WorkerListRead.counted``, a nie „Tego Wykonawcy nie ma”."""
 
+        if not isinstance(edit, AddWorker):
+            with self._lock:
+                WorkerListRead(self._observe(WORKERS)).counted()
         return self._by_dad(WORKERS, lambda current: dad_workers(current, edit), undoes=None)
 
     def change_exceptions(self, exception: QuantityException) -> Saved | Refused | NotSaved | KeptInPeriods:

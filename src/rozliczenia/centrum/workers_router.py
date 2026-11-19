@@ -103,7 +103,6 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         """Usuwa Wykonawcę; właściciel zapisuje to tylko po pełnym sprawdzeniu okresów, w którym żaden jego login nie
         występuje."""
 
-        _worker(settings.view().workers.counted(), login)
         return choice(settings, settings.change_workers(RemoveWorker(login)))
 
     return router
