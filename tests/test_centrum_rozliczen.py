@@ -5086,31 +5086,85 @@ def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_popraw
     )
 
 
-@pytest.mark.parametrize(
-    ("method", "form"),
-    [
-        pytest.param("PUT", {"logins": ["jan.testowy"], "name": "Jan Testowy", "addresses": []}, id="zmiana"),
-        pytest.param("DELETE", None, id="usuniecie"),
-    ],
-)
-def test_zmiana_i_usuniecie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_mowia_co_poprawic_a_nie_o_pliku_bez_odczytu(
-    tmp_path: Path, method: str, form: dict[str, object] | None
+_WORKER_CHANGES = [
+    pytest.param("PUT", "", {"logins": ["jan.testowy"], "name": "Jan Testowy", "addresses": []}, id="zmiana"),
+    pytest.param("DELETE", "", None, id="usuniecie"),
+    pytest.param("PUT", "/switches", {"active": False}, id="przelacznik"),
+    pytest.param("POST", "/addresses", {"address": "jan@example.com"}, id="adres"),
+]
+
+
+@pytest.mark.parametrize(("method", "route", "form"), _WORKER_CHANGES)
+def test_zmiana_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_mowi_co_poprawic_a_nie_o_pliku_bez_odczytu(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
 ) -> None:
-    """Plik da się czytać, więc odmowa „Zapisz” w formularzu Wykonawcy i „Usuń” mówi o złym ustawieniu jak odmowa
-    startu, a nie każe zamykać programów, które trzymają plik, i niczego nie zapisuje."""
+    """Plik da się czytać, więc odmowa „Zapisz” w formularzu Wykonawcy, „Usuń”, przełącznika i „Przypisz do Wykonawcy…”
+    mówi o złym ustawieniu jak odmowa startu, a nie każe zamykać programów, które trzymają plik, ani nie mówi, że
+    Wykonawcy nie ma na liście, i niczego nie zapisuje."""
 
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     bad = "schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n"
     app.tool.worker_list.write_text(bad, encoding="utf-8")
 
-    refused = app.client.request(method, "/api/settings/workers/jan.testowy", json=form)
+    refused = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
 
     assert (refused.status_code, refused.json()) == (
         409,
         {"message": unusable(settings_messages.worker_without_login()), "field": "wykonawcy[0].loginy"},
     )
     assert app.tool.worker_list.read_text(encoding="utf-8") == bad
+
+
+@pytest.mark.parametrize(("method", "route", "form"), _WORKER_CHANGES)
+def test_zmiana_wykonawcy_przy_liscie_bez_odczytu_mowi_o_pliku_bez_odczytu(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
+) -> None:
+    app = centrum(tmp_path)
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}))
+    kept = app.tool.worker_list.read_bytes()
+
+    with reading(app.tool.config, frozenset({app.tool.worker_list})):
+        refused = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
+
+    assert (refused.status_code, refused.json()) == (409, {"message": refusal.workers_unusable(None).message})
+    assert app.tool.worker_list.read_bytes() == kept
+
+
+@pytest.mark.parametrize(("method", "route", "form"), [change for change in _WORKER_CHANGES if change.id != "zmiana"])
+def test_zmiana_wykonawcy_przy_liscie_chwilowo_bez_odczytu_czeka_na_plik_i_zapisuje(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
+) -> None:
+    held = ToolDirectory(tmp_path).worker_list
+    app = centrum(tmp_path, pause=lambda _: allow_reading(held))
+    write_worker_list(held, worker_list({"jan.testowy": "Jan Testowy"}))
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    write_orders(register, ["inny.login"])
+    app.platform.chosen_files.append(register)
+    (tmp_path / "Okresy").mkdir()
+    app.platform.chosen_folders.append(tmp_path / "Okresy")
+    app.client.post("/api/settings/register/choose")
+    app.client.post("/api/settings/periods-directory/choose")
+    kept = held.read_bytes()
+
+    with without_reading(held):
+        saved = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
+
+    assert saved.status_code == 200, saved.text
+    assert held.read_bytes() != kept
+
+
+def test_dodanie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_zapisuje_liste_od_nowa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    app.tool.worker_list.write_bytes(b"schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n")
+
+    added = app.client.post("/api/settings/workers", json=worker_form(["ewa.nowa"], "Ewa Nowa"))
+
+    assert added.status_code == 200, added.text
+    assert app.client.get("/api/settings").json()["workers"]["state"] == "good"
+    assert list(listed_workers(app.client)) == ["ewa.nowa"]
 
 
 def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
