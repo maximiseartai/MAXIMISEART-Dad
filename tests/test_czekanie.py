@@ -17,7 +17,6 @@ import os
 from pathlib import Path
 import subprocess
 import sys
-import time
 import tracemalloc
 from types import ModuleType
 
@@ -528,6 +527,24 @@ JOB = 132626412782
 URL = f"repos/o/r/actions/jobs/{JOB}"
 while json.loads(subprocess.run(["gh", "api", URL], capture_output=True).stdout)["status"] != "completed":
     time.sleep(20)"""
+FUNCTION_BEHIND_FUNCTION = """import subprocess, time
+def gh(*a):
+    return subprocess.run(["gh", *a], capture_output=True, text=True).stdout
+def status():
+    return gh("pr", "checks", "2178")
+while "pending" in status():
+    time.sleep(30)"""
+FUNCTION_WITH_PARAMETER_BEHIND_FUNCTION = """import subprocess, time
+def checks(pr):
+    return subprocess.run(["gh", "pr", "checks", pr]).returncode
+def pending(pr):
+    return checks(pr) == 8
+while pending("2178"):
+    time.sleep(30)"""
+UNSTEADY_KEYWORDS = """import os, subprocess, time
+env = dict(os.environ, GH_PAGER="")
+while subprocess.run(["gh", "pr", "checks", "2178"], env=env, cwd=os.getcwd()).returncode == 8:
+    time.sleep(30)"""
 COMMAND_FROM_STRING_METHODS = """import shlex, subprocess, time
 PR = 2178
 CMD = "gh pr checks {}".format(PR)
@@ -557,6 +574,9 @@ PYTHON_WAITS = [
     pytest.param(_heredoc(SLEEP_IN_INNER_LOOP), hook.CI_LOOP, id="sen-tylko-w-petli-wewnetrznej"),
     pytest.param(_heredoc(COMMAND_FROM_STRING_METHODS), hook.CI_LOOP, id="polecenie-z-metod-napisu"),
     pytest.param(_heredoc(GH_HELPER), hook.CI_LOOP, id="pomocnik-gh-wolany-ze-stalymi"),
+    pytest.param(_heredoc(FUNCTION_BEHIND_FUNCTION), hook.CI_LOOP, id="funkcja-skryptu-za-funkcja-skryptu"),
+    pytest.param(_heredoc(FUNCTION_WITH_PARAMETER_BEHIND_FUNCTION), hook.CI_LOOP, id="funkcja-z-parametrem-za-funkcja-skryptu"),
+    pytest.param(_heredoc(UNSTEADY_KEYWORDS), hook.CI_LOOP, id="niestale-env-i-cwd-nie-zmieniaja-zapytania"),
     pytest.param(_heredoc(INNER_FOR_OVER_TUPLE), hook.CI_LOOP, id="kilka-pr-w-petli-wewnetrznej"),
     pytest.param(_heredoc(CONSTANT_FROM_TUPLE), hook.CI_LOOP, id="stala-z-elementu-krotki"),
     pytest.param(_heredoc(CONSTANT_FROM_FSTRING), hook.CI_LOOP, id="stala-z-f-stringu"),
@@ -852,6 +872,37 @@ PYTHON_PASSING = [
     ),
     pytest.param(_heredoc(PAGE_IN_GLOBAL), id="strony-w-zmiennej-globalnej-funkcji"),
     pytest.param(
+        _heredoc(
+            "import subprocess, sys, time\nwhile len(sys.argv) > 1:\n"
+            '    subprocess.run(["gh", "run", "view", sys.argv[1], "--log-failed"])\n    sys.argv.pop(1)\n    time.sleep(1)',
+            program="python3 - 44439947891 44439947892",
+        ),
+        id="kolejka-w-sys-argv-skracana-pop",
+    ),
+    pytest.param(
+        _heredoc(
+            "import subprocess, sys, time\nwhile sys.argv[1:]:\n"
+            '    subprocess.run(["gh", "run", "view", sys.argv[1], "--log-failed"])\n    del sys.argv[1]\n    time.sleep(1)',
+            program="python3 - 44439947891 44439947892",
+        ),
+        id="kolejka-w-sys-argv-skracana-del",
+    ),
+    pytest.param(
+        _heredoc(
+            'import json, os, subprocess, time\nos.environ["PAGE"] = "1"\nwhile True:\n'
+            '    out = subprocess.run(["gh", "api", "repos/o/r/actions/runs?page=" + os.environ["PAGE"]], capture_output=True, text=True).stdout\n'
+            '    if not json.loads(out)["workflow_runs"]: break\n    os.environ["PAGE"] = str(int(os.environ["PAGE"]) + 1)\n    time.sleep(1)'
+        ),
+        id="strony-w-os-environ",
+    ),
+    pytest.param(
+        _heredoc(
+            'import subprocess, time\nRID = "44439947891"\nfor line in open("runs.txt"):\n    try:\n        raise ValueError(line)\n'
+            '    except ValueError as RID:\n        pass\n    subprocess.run(["gh", "run", "view", str(RID)])\n    time.sleep(1)'
+        ),
+        id="partia-z-nazwa-nadpisana-w-except",
+    ),
+    pytest.param(
         "python3 -c \"import subprocess, time  # stara pętla: \\\nwhile subprocess.run(['gh', 'pr', 'checks', '1'])"
         '.returncode == 8: time.sleep(30)\nprint(1)"',
         id="c-petla-w-komentarzu-przedluzonym-ukosnikiem",
@@ -919,6 +970,18 @@ QUERY = "subprocess.run(['gh', 'pr', 'checks', '1'])"
 SHORT_SLEEP = "import time\ntime.sleep(0)"
 NODE_BUDGET_SCRIPT = _nested_python_loops(60, "x = [" + "a," * 2000 + "]")
 ZNANE_LUKI = [
+    pytest.param(
+        _heredoc(
+            'import subprocess, time\npr = open("pr.txt").read().strip()\n'
+            'while subprocess.run(f"gh pr checks {pr}", shell=True).returncode == 8:\n    time.sleep(30)'
+        ),
+        id="polecenie-z-nazwa-wczytana-przed-petla",
+    ),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b1.output; "
+        + _heredoc("import os, sys, time\nargs = sys.argv[1:]\nwhile os.path.getsize(args[0]) == 0:\n    time.sleep(5)", program='python3 - "$F"'),
+        id="plik-zadania-przez-nazwany-wycinek-argumentow",
+    ),
     pytest.param(
         _heredoc('import subprocess, time\ncmd = ["gh", "pr", "checks", "2178"]\nwhile subprocess.run(cmd).returncode == 8:\n    time.sleep(30)'),
         id="polecenie-w-nazwanej-liscie",
@@ -1155,6 +1218,13 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
             + "".join(f"A{index + 1} = (A{index}, A{index})\n" for index in range(60))
             + "while subprocess.run(A60).returncode == 8:\n    time.sleep(30)"
         ),
+        _heredoc(CHECKS_IN_CONDITION)
+        + "\n"
+        + _heredoc(
+            'import subprocess, time\nS = "' + "a" * 20000 + '"\nfor pr in [1, 2, 3]:\n    subprocess.run(['
+            + ", ".join(["S"] * 20000)
+            + "])\n    time.sleep(1)"
+        ),
     ],
     ids=[
         "ogon-przekierowan",
@@ -1174,6 +1244,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "skrypty-pythona-do-budzetu-wezlow-przed-czekaniem",
         "przypisanie-lancuchowe-za-czekaniem",
         "krotki-podwajane-za-czekaniem",
+        "dlugi-napis-wiele-razy-za-czekaniem",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
@@ -1191,17 +1262,21 @@ def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) ->
     assert hooked.returncode == 2, hooked.stderr
 
 
-def test_skrypty_pythona_jednego_polecenia_dziela_jeden_budzet_wezlow() -> None:
-    several = "\n".join([NODE_BUDGET_SCRIPT] * 4)
-    ratios = []
-    for _ in range(2):
-        start = time.perf_counter()
-        hook.judge(NODE_BUDGET_SCRIPT, in_background=False)
-        middle = time.perf_counter()
-        hook.judge(several, in_background=False)
-        ratios.append((time.perf_counter() - middle) / (middle - start))
+def test_skrypty_pythona_jednego_polecenia_dziela_jeden_budzet_wezlow(monkeypatch: pytest.MonkeyPatch) -> None:
+    budgets = []
+    shared = hook._Visits
 
-    assert min(ratios) < 2, ratios
+    def counted() -> object:
+        budget = shared()
+        budgets.append(budget)
+        return budget
+
+    monkeypatch.setattr(hook, "_Visits", counted)
+
+    hook.judge("\n".join([NODE_BUDGET_SCRIPT] * 4), in_background=False)
+
+    used = sum(hook.PYTHON_NODES_LIMIT - budget.left for budget in budgets)
+    assert hook.PYTHON_NODES_LIMIT // 2 < used <= hook.PYTHON_NODES_LIMIT + 1_000, used
 
 
 def test_hook_trzyma_w_pamieci_jedno_cialo_petli_naraz() -> None:

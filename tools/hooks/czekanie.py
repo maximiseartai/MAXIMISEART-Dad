@@ -19,13 +19,16 @@ i koniec tury; ``tools/hooks/praca_w_tle.py`` podaje ten sam tekst, a test pilnu
   polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``);
 - pętlę skryptu Pythona (``python3 -c '…'`` i heredoc, który Python czyta ze stdin), w której ``sleep`` stoi w jej
   ciele (także w pętli wewnętrznej), a w obrocie stoi wywołanie, którego każde wejście jest stałą: proces z ``gh`` o CI
-  albo z ``pgrep -f`` (``subprocess``, ``os.system``, ``os.popen`` albo funkcja skryptu, wołana ze stałymi) albo
-  odczyt pliku wyjścia zadania (ścieżka w napisie, w zmiennej powłoki albo w ``sys.argv``, gdy wybrany argument
-  skryptu to ten plik). Stała to literał, moduł, element ``sys.argv``, czysta funkcja stałych (``str``, ``split``,
-  ``format``, ``Path``), nazwa związana w skrypcie raz przypisaniem wartości niezmiennej (napis, liczba, krotka) albo
-  nazwa iterowana po stałej poza celem samej pętli. Partia zapytań po liście, stronach albo kolejce ma w zapytaniu
-  cel pętli albo wartość, którą pętla zmienia, więc przechodzi, także z ``break`` przy limicie API. Skrypt czyta
-  ``ast``, od najkrótszego, a ocena wszystkich skryptów polecenia ma jeden limit długości i jeden budżet węzłów.
+  albo z ``pgrep -f`` (``subprocess``, ``os.system``, ``os.popen`` albo funkcja skryptu, także przez inną funkcję
+  skryptu, wołana ze stałymi) albo odczyt pliku wyjścia zadania (ścieżka w napisie, w zmiennej powłoki albo w
+  ``sys.argv``, gdy wybrany argument skryptu to ten plik). Wejście to odbiorca metody (poza modułem), argumenty
+  pozycyjne i ``args=``; reszta słów kluczowych (``env``, ``cwd``, ``timeout``) ustawia proces, a nie zapytanie. Stała to
+  literał, element ``sys.argv`` (gdy skrypt czyta go tylko indeksem albo ``len``), czysta funkcja stałych (``str``,
+  ``split``, ``format``, ``Path``), nazwa związana w skrypcie raz przypisaniem wartości niezmiennej (napis, liczba,
+  krotka) albo nazwa iterowana po stałej poza celem samej pętli; atrybut modułu (``os.environ``) nie jest stałą.
+  Partia zapytań po liście, stronach albo kolejce ma w zapytaniu cel pętli albo wartość, którą pętla zmienia, więc
+  przechodzi, także z ``break`` przy limicie API. Skrypt czyta ``ast``, od najkrótszego, a ocena wszystkich skryptów
+  polecenia ma jeden limit długości i jeden budżet kroków, w którym węzeł kosztuje krok, a napis tyle kroków, ile znaków.
 
 Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` albo licznikiem prób od 0 albo 1
 (``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``), bo bez nich to partia zapytań z ``sleep`` jako limitem API, a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``,
@@ -589,8 +592,8 @@ class _ScriptTooLong(Exception):
 class _Visits:
     left: int = PYTHON_NODES_LIMIT
 
-    def step(self) -> None:
-        self.left -= 1
+    def step(self, cost: int = 1) -> None:
+        self.left -= cost
         if self.left < 0:
             raise _ScriptTooLong
 
@@ -642,8 +645,16 @@ class _PythonScript:
         self.imports: dict[str, int] = defaultdict(int)
         self.named: dict[str, bool] = {}
         self.function_sleeps: dict[str, bool] = {}
+        argv_uses: set[int] = set()
+        argv_reads: set[int] = set()
         for node in self.nodes(tree):
             self.bind(node)
+            if _is_sys_argv(node):
+                argv_uses.add(id(node))
+            elif isinstance(node, ast.Subscript) and isinstance(node.ctx, ast.Load):
+                argv_reads.add(id(node.value))
+            elif isinstance(node, ast.Call) and _called(node) == "len" and node.args:
+                argv_reads.add(id(node.args[0]))
             if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
                 self.values[node.targets[0].id] = node.value
             elif isinstance(node, (ast.For, ast.comprehension)) and isinstance(node.target, ast.Name):
@@ -652,6 +663,7 @@ class _PythonScript:
             node.name: node for node in tree.body if isinstance(node, ast.FunctionDef)
         }
         self.modules = {name for name, count in self.imports.items() if self.bindings[name] == count}
+        self.argv_read_only = argv_uses <= argv_reads
 
     def bind(self, node: ast.AST) -> None:
         if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
@@ -659,6 +671,8 @@ class _PythonScript:
         elif isinstance(node, ast.arg):
             self.bindings[node.arg] += 1
         elif isinstance(node, ast.FunctionDef):
+            self.bindings[node.name] += 1
+        elif isinstance(node, ast.ExceptHandler) and node.name:
             self.bindings[node.name] += 1
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
@@ -712,20 +726,13 @@ class _PythonScript:
         if isinstance(node, ast.Constant):
             return True
         if isinstance(node, ast.Name):
-            return (
-                node.id in params
-                or node.id in self.modules
-                or self.named_constant(node.id)
-                or self.iterated_constant(node.id, loop, params)
-            )
+            return node.id in params or self.named_constant(node.id) or self.iterated_constant(node.id, loop, params)
         if isinstance(node, ast.Attribute):
-            return self.constant(node.value, loop, params)
+            return not self.module_path(node) and self.constant(node.value, loop, params)
         if isinstance(node, ast.Call):
             return _called(node) in KEEPS_VALUE and self.inputs_constant(node, loop, params)
-        if isinstance(node, ast.Dict):
-            return all(key is None or self.constant(key, loop, params) for key in node.keys) and all(
-                self.constant(value, loop, params) for value in node.values
-            )
+        if isinstance(node, ast.Subscript) and _is_sys_argv(node.value):
+            return self.argv_read_only and self.constant(node.slice, loop, params)
         if isinstance(node, CONTAINERS):
             return all(self.constant(child, loop, params) for child in ast.iter_child_nodes(node) if not isinstance(child, OPERATORS))
         return False
@@ -754,21 +761,31 @@ class _PythonScript:
             return _called(node) in GIVES_IMMUTABLE and self.inputs_constant(node, None)
         if isinstance(node, ast.Subscript):
             if _is_sys_argv(node.value):
-                return not isinstance(node.slice, ast.Slice) and self.constant(node.slice, None)
+                return self.argv_read_only and not isinstance(node.slice, ast.Slice) and self.constant(node.slice, None)
             return self.immutable(node.value) and self.constant(node.slice, None)
         return False
 
+    def module_path(self, node: ast.AST) -> bool:
+        while isinstance(node, ast.Attribute):
+            node = node.value
+        return isinstance(node, ast.Name) and node.id in self.modules
+
     def inputs(self, call: ast.Call) -> list[ast.AST]:
-        receiver: list[ast.AST] = [call.func.value] if isinstance(call.func, ast.Attribute) else []
-        return receiver + list(call.args) + [keyword.value for keyword in call.keywords]
+        func = call.func
+        receiver: list[ast.AST] = [func.value] if isinstance(func, ast.Attribute) and not self.module_path(func.value) else []
+        return receiver + list(call.args) + [keyword.value for keyword in call.keywords if keyword.arg == "args"]
 
     def inputs_constant(self, call: ast.Call, loop: Optional[ast.AST], params: frozenset[str] = frozenset()) -> bool:
         return all(self.constant(part, loop, params) for part in self.inputs(call))
 
     def parts(self, node: ast.AST) -> list[str]:
         self.visits.step()
+        if isinstance(node, ast.Constant) and type(node.value) in (str, int, float):
+            text = str(node.value)
+            self.visits.step(len(text))
+            return [text]
         if isinstance(node, ast.Constant):
-            return [str(node.value)] if type(node.value) in (str, int, float) else []
+            return []
         if isinstance(node, ast.JoinedStr):
             return ["".join(word for value in node.values for word in self.parts(value))]
         if isinstance(node, ast.Name) and self.named_constant(node.id):
@@ -776,32 +793,45 @@ class _PythonScript:
         if isinstance(node, ast.Name) and node.id in self.iterated and self.bindings[node.id] == 1:
             return self.parts(self.iterated[node.id][0])
         if isinstance(node, ast.Subscript) and _is_sys_argv(node.value):
-            return _selected(self.argv, node.slice)
+            words = _selected(self.argv, node.slice)
+            self.visits.step(sum(map(len, words)))
+            return words
         return [word for child in ast.iter_child_nodes(node) for word in self.parts(child)]
 
-    def judged_calls(self, call: ast.Call, loop: ast.AST) -> Iterator[tuple[ast.Call, list[str]]]:
-        if isinstance(call.func, ast.Name) and call.func.id in self.functions:
-            if self.inputs_constant(call, loop):
-                function = self.functions[call.func.id]
-                arguments = function.args
-                params = frozenset(
-                    argument.arg
-                    for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg]
-                    if argument is not None
-                )
-                site = [word for part in self.inputs(call) for word in self.parts(part)]
-                for inner in self.nodes(*function.body):
-                    if isinstance(inner, ast.Call) and self.inputs_constant(inner, None, params):
-                        yield inner, site
-        elif self.inputs_constant(call, loop):
-            yield call, []
+    def judged_calls(
+        self,
+        call: ast.Call,
+        loop: Optional[ast.AST],
+        params: frozenset[str] = frozenset(),
+        site: tuple[str, ...] = (),
+        entered: frozenset[str] = frozenset(),
+    ) -> Iterator[tuple[ast.Call, tuple[str, ...]]]:
+        if not self.inputs_constant(call, loop, params):
+            return
+        name = call.func.id if isinstance(call.func, ast.Name) else ""
+        if name not in self.functions:
+            yield call, site
+            return
+        if name in entered:
+            return
+        function = self.functions[name]
+        arguments = function.args
+        inner_params = frozenset(
+            argument.arg
+            for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg]
+            if argument is not None
+        )
+        words = site + tuple(word for part in self.inputs(call) for word in self.parts(part))
+        for inner in self.nodes(*function.body):
+            if isinstance(inner, ast.Call):
+                yield from self.judged_calls(inner, None, inner_params, words, entered | {name})
 
     def waits(self, loop: ast.AST) -> set[Refusal]:
         roots = [loop.test, *loop.body] if isinstance(loop, ast.While) else list(getattr(loop, "body", []))
         found: set[Refusal] = set()
         for call in [node for node in self.nodes(*roots) if isinstance(node, ast.Call)]:
             for judged, site in self.judged_calls(call, loop):
-                words = [word for part in self.inputs(judged) for word in self.parts(part)] + site
+                words = [word for part in self.inputs(judged) for word in self.parts(part)] + list(site)
                 if any(_task_files(word, self.variables) for word in words):
                     found.add(TASK_OUTPUT_LOOP)
                 if _called(judged) not in RUNS_PROCESS:
