@@ -10,6 +10,7 @@ Required czeka na każde zadanie runu.
 from __future__ import annotations
 
 from collections.abc import Iterator
+import copy
 import fnmatch
 import json
 import os
@@ -390,25 +391,77 @@ def test_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych(job: str, expected: 
     assert checks == [(check, INDEPENDENT) for check in expected]
 
 
-def test_porazka_kroku_zadania_bramki_czerwieni_required() -> None:
+# Kroki, którym wolno ``continue-on-error``, po roli: ich porażka nie jest porażką sprawdzenia, a jej skutek ocenia kto
+# inny. Zapis czasów (``tools/ci/zapis_czasow.py``): brak zapisu czerwieni Required („brak zapisu czasów z tego planu”).
+# Wysłanie i pobranie artefaktu: brak planu albo zapisów ocenia werdykt Required, a krok, który z nich czyta, pada sam.
+# Zapis pamięci narzędzi TLC: tylko decyzja o zapisie cache.
+TOLERATED_RUN = "tools/ci/zapis_czasow.py"
+TOLERATED_ACTIONS = ("actions/upload-artifact@", "actions/download-artifact@", "./.github/actions/narzedzia-tlc/zapis")
+
+
+def _tolerant(workflow: dict[str, dict[str, Any]]) -> list[str]:
+    """Zadania bramki (``needs`` Required i samo Required) z ``continue-on-error`` i ich kroki z nim spoza ról: jedno
+    polecenie ``python TOLERATED_RUN …`` bez operatorów powłoki albo akcja z ``TOLERATED_ACTIONS``."""
+
+    gate = [*workflow[REQUIRED]["needs"], REQUIRED]
+    found = [name for name in gate if workflow[name].get("continue-on-error", False) is not False]
+    for name in gate:
+        for step in workflow[name]["steps"]:
+            run = str(step.get("run", ""))
+            alone = run.split()[:2] in (["python", TOLERATED_RUN], ["python3", TOLERATED_RUN]) and not any(operator in run for operator in ("&", "|", ";", "\n"))
+            tolerated = alone or str(step.get("uses", "")).startswith(TOLERATED_ACTIONS)
+            if step.get("continue-on-error", False) is not False and not tolerated:
+                found.append(f"{name}: {step.get('name', step.get('uses'))}")
+    return found
+
+
+CHAINED = "python tools/ci/zapis_czasow.py zadanie --wyjscie x.json && python -m pytest tests"
+
+
+@pytest.mark.parametrize(
+    ("job", "step", "run", "found"),
+    [
+        (None, None, None, []),
+        ("pytest", "Verify py -3 interpreter", None, ["pytest: Verify py -3 interpreter"]),
+        ("pytest", "Run the planned units", None, ["pytest: Run the planned units"]),
+        ("frontend", None, None, ["frontend"]),
+        ("frontend", "Audit workflows (zizmor)", None, ["frontend: Audit workflows (zizmor)"]),
+        ("ruff-mypy", "Typecheck Python code (Windows)", None, ["ruff-mypy: Typecheck Python code (Windows)"]),
+        (REQUIRED, "Require every CI check to succeed and every planned unit to report", None, [f"{REQUIRED}: Require every CI check to succeed and every planned unit to report"]),
+        (REQUIRED, None, None, [REQUIRED]),
+        ("pytest", "Upload the flaky tests", None, []),
+        ("mutations", "Record the time of each unit of work", None, []),
+        ("mutations", "Record the time of each unit of work", CHAINED, ["mutations: Record the time of each unit of work"]),
+    ],
+    ids=[
+        "ci-yml",
+        "sprawdzenie-py-3",
+        "jednostki-pytest",
+        "zadanie-frontend",
+        "zizmor",
+        "mypy-windows",
+        "werdykt-required",
+        "zadanie-required",
+        "wyslanie-artefaktu",
+        "zapis-czasow",
+        "sprawdzenie-za-zapisem-czasow",
+    ],
+)
+def test_porazka_kroku_zadania_bramki_czerwieni_required(job: str | None, step: str | None, run: str | None, found: list[str]) -> None:
     """``continue-on-error`` zadania daje Required jego sukces mimo porażki, a kroku sukces zadania mimo porażki
-    sprawdzenia. Kroki zadań z planu (``plan_runu.Z_PLANU``) mogą go mieć (pomiar i wysłanie czasów), bo Required czyta
-    ich jednostki z zapisów, w których porażka zostaje (``tools/ci/werdykt_required.py``)."""
+    sprawdzenia, którego zapisy jednostek nie niosą (#2161 r4 W1: krok „Verify py -3 interpreter”); wolno go tylko
+    krokom o roli z ``TOLERATED_RUN`` i ``TOLERATED_ACTIONS``. Próbki dokładają klucz (i polecenie ``run``) do ``ci.yml``."""
 
-    workflow = jobs()
-    gate = workflow[REQUIRED]["needs"]
-    tolerant = [name for name in gate if workflow[name].get("continue-on-error", False) is not False]
-    tolerant += [
-        f"{name}: {step.get('name', step.get('uses'))}"
-        for name in gate
-        if name not in plan_runu.Z_PLANU
-        for step in workflow[name]["steps"]
-        if step.get("continue-on-error", False) is not False
-    ]
+    workflow = copy.deepcopy(jobs())
+    if job is not None:
+        target = workflow[job] if step is None else next(one for one in workflow[job]["steps"] if one.get("name") == step)
+        target["continue-on-error"] = True
+        if run is not None:
+            target["run"] = run
 
-    assert tolerant == [], (
-        "continue-on-error w zadaniu, na które czeka Required CI status, albo w jego kroku zamienia porażkę sprawdzenia w sukces:"
-        " usuń go; krok pomiaru bez wpływu na werdykt stoi tylko w zadaniach z planu (plan_runu.Z_PLANU), jak zapis czasów"
+    assert _tolerant(workflow) == found, (
+        "continue-on-error w zadaniu, na które czeka Required CI status, w samym Required albo w ich kroku zamienia porażkę"
+        " sprawdzenia w sukces: usuń go; wolno go tylko krokom zapisu czasów, wysłania i pobrania artefaktu i zapisu pamięci TLC"
     )
 
 

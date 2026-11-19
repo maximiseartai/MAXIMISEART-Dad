@@ -23,6 +23,7 @@ from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 
 import ci_lokalnie
+import ponow_ci
 from kroki_lokalne import Step
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,6 +80,25 @@ def test_kazde_polecenie_odtwarzanych_zadan_ma_krok_i_odwrotnie() -> None:
 
     assert without_step == []
     assert without_command == []
+
+
+def test_ponowienie_ci_odsyla_do_zadan_narzedzia_ktore_odtwarzaja_padle_zadanie_ci() -> None:
+    """``ponow_ci.LOKALNIE`` (zadanie runu → ``--tylko``) i ``CI_JOB`` tego narzędzia mówią to samo: każdy wpis odsyła
+    do wszystkich zadań narzędzia jednego zadania ``ci.yml`` i tylko do nich (#2161 r4 D1: kroki workflowy przeszły
+    z „Ruff, mypy” do Frontend), a zadanie o stałej nazwie w ``ci.yml`` zaczyna się od początku wpisu."""
+
+    tool: dict[str, str] = _tool_steps()["zadania"]  # type: ignore[assignment]
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    wrong = []
+    for start, only in ponow_ci.LOKALNIE:
+        listed = only.split()[0].split(",")
+        targets = {tool.get(job) for job in listed}
+        target = next(iter(targets))
+        named = str(jobs.get(target, {}).get("name", ""))
+        if len(targets) != 1 or sorted(listed) != sorted(job for job, ci in tool.items() if ci == target) or ("${{" not in named and not named.startswith(start)):
+            wrong.append((start, only, sorted(map(str, targets))))
+
+    assert wrong == []
 
 
 @pytest.mark.parametrize("fail_fast", [False, True])
