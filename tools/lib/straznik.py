@@ -28,8 +28,8 @@ z bloku, więc węzeł, który bez niej przechodzi, a z nią pada, pada przez t�
 rundy #2116 i trzy #2197 obaliły kształty, które klasyfikowały przyczynę padnięcia albo przenosiły definicje z FAIL).
 Złą postać pisze recenzent w werdykcie, a nie autor, więc wierność mutacji wobec błędu z Ważnego ocenia recenzent
 następnej rundy, który czyta blok. Każdy bieg (bez mutacji i z każdą mutacją) dostaje od ``build`` własne środowisko
-(kopię, Pythona, ``HOME`` i ``TMPDIR``), a stan, który bieg zostawia poza nim (np. plik pod ścieżką bezwzględną),
-łapie bieg bez mutacji po biegach z mutacją: gdy pada, dowód odmawia. Brak bloku to odmowa, w której
+(kopię z własnym gitem, Pythona, ``HOME`` i ``TMPDIR``), więc stan w nim nie przechodzi do następnego biegu, a po
+biegach z mutacją węzeł bez mutacji musi przejść znowu, inaczej dowód odmawia. Brak bloku to odmowa, w której
 recenzent następnej rundy dopisuje blok, a kotwica, której na HEAD scalonym z bazą nie ma dokładnie raz, i blok innej
 postaci to odmowa, w której recenzent następnej rundy odnawia blok. Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w
 ``tests/test_straznik.py``): ``brak - usunięte`` przechodzi przy każdym Ważnym, a ``brak - test`` przy każdym w wątku
@@ -37,7 +37,10 @@ sprzed wdrożenia dowodu testu, także gdy mechanizm z dowodem by je zamknął, 
 stoi na HEAD; mutacja słabsza albo szersza niż błąd z Ważnego daje ``WYKRYTA`` testowi, który łapie tylko ją, albo
 testowi innej zmiany, którą mutacja też psuje, a nawet wierną mutację test może złapać inną drogą niż błąd z Ważnego
 (np. na wejściu, którego błąd nie dotyczy); dowód nie ocenia, czy test sprawdza zachowanie, a nie tekst, a test
-niestabilny może przejść jednym padnięciem; to ocenia recenzent. Mutację nanosi dowód po instalacji projektu, jak
+niestabilny może przejść jednym padnięciem, także test, którego wynik zależy od stanu poprzedniego biegu poza
+środowiskiem (plik pod ścieżką bezwzględną, usługa systemu): biegi dowodu ten stan dzielą, a Required CI uruchamia
+węzeł raz, więc test, który sprawdza błąd dopiero przy śladzie poprzedniego biegu albo pada na przemian, może dać
+``WYKRYTA``, choć Required CI z błędem przechodzi; to ocenia recenzent. Mutację nanosi dowód po instalacji projektu, jak
 ``tools/mutacje.py`` na kopię z instalacją edytowalną, więc mutacja zależności w ``pyproject.toml`` pakietów nie
 zmienia. Gałęzi tylko dla macOS nie sprawdza żaden krok Required CI, więc jej błędu ``mypy`` nie dowodzi na żadnej
 maszynie, a test, który przechodzi tylko na Windows, dowód ``pytest`` odmawia bez mutacji. Plik, który po FAIL zmienił

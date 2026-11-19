@@ -527,6 +527,29 @@ ZNANE_LUKI_STRAZNIKA = {
         f"pytest {NODE}",
         _block(("kod/liczby.py", "    return x * 2\n", "    return x * 2 if x >= 0 else x * 3\n"), name="ujemne razy 3 z FAIL"),
     ),
+    # Stan poza środowiskiem biegu (``{slad}``: plik pod ścieżką bezwzględną, sondy #2197 r5 W1), który biegu bez mutacji
+    # nie wywraca: test pada przy śladzie poprzedniego biegu na przemian albo sprawdza błąd dopiero przy nim. Required CI
+    # uruchamia węzeł raz, więc z błędem przechodzi; to test niestabilny, który ocenia recenzent.
+    "pytest: test pada na przemian przez ślad poza środowiskiem": Gap(
+        {
+            "tests/test_g.py": (
+                "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path('{slad}')\n    if slad.exists():\n        slad.unlink()\n"
+                "        raise AssertionError('ślad poprzedniego biegu')\n    slad.write_text('1')\n"
+            )
+        },
+        f"pytest {NODE}",
+        TRIPLED,
+    ),
+    "pytest: test sprawdza błąd dopiero przy śladzie poza środowiskiem": Gap(
+        {
+            "tests/test_g.py": (
+                "import pathlib\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    slad = pathlib.Path('{slad}')\n"
+                "    if slad.exists():\n        assert podwojona(3) == 6\n    slad.write_text('1')\n"
+            )
+        },
+        f"pytest {NODE}",
+        TRIPLED,
+    ),
     # Test tekstu definicji zamiast jej zachowania pada z mutacją tego tekstu; dowód nie ocenia, co test sprawdza.
     "pytest: test tekstu definicji zamiast jej zachowania": Gap(
         {"tests/test_g.py": "import inspect\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    assert 'x * 2' in inspect.getsource(podwojona)\n"},
@@ -539,7 +562,8 @@ ZNANE_LUKI_STRAZNIKA = {
 @pytest.mark.parametrize("name", ZNANE_LUKI_STRAZNIKA)
 def test_znane_luki_straznika_przechodza_przez_dowod(tmp_path: Path, name: str) -> None:
     gap = ZNANE_LUKI_STRAZNIKA[name]
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **gap.head})
+    head = {path: text.replace("{slad}", str(tmp_path / "slad.txt")) for path, text in gap.head.items()}
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **head})
 
     outcome = pull.prove(gap.guard, scopes=SCOPE, before_test_proof=gap.before_test_proof, mutation=gap.mutation)
 
