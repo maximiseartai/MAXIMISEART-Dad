@@ -155,6 +155,7 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
         python = _install(uv, copy, Path(folder))
         # Narzędzia z pustym HOME, jak na runnerze: bez konfiguracji użytkownika mypy i ruff i bez globalnych wykluczeń gita.
         tools = {name: value for name, value in variables().items() if not name.startswith("XDG_")}
+        tools.setdefault("UV_PYTHON_INSTALL_DIR", _built(copy, "uv python dir", (uv, "--no-config", "python", "dir")).strip())
         if tests:
             (temporary := Path(folder) / "tmp").mkdir()
             tools |= {**PYTEST_VARIABLES, "TMPDIR": str(temporary)}

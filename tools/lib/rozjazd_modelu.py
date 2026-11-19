@@ -4,13 +4,14 @@ Jedyne miejsce tej decyzji. W CI pyta ``rozjazd`` wykonanie zadania (``tools/ci/
 krokiem skilla z modelem i przy rozjeździe kończy krok porażką ``ROZJAZD`` bez uruchamiania; ``tools/szybko.py`` pyta to
 samo dla skilli, których podstawę ``ci:`` zmiana uruchomiłaby na pull request, a skrypt sprawdzenia skilla tylko ostrzega.
 
-Skill z modelem kodu ma plik ``DEFINICJE`` (``model/definicje.json``): ścieżka pliku od korzenia → nazwa definicji →
-jej skrót z chwili, gdy model ją opisywał. Nazwa ``CALY_PLIK`` to cały plik (jego tekst z ujednoliconymi końcami linii),
-a inna nazwa to ścieżka od modułu po kropkach (``create_app.disk``, ``Klasa.metoda``): każdy człon to funkcja, klasa albo
-przypisanie w zakresie poprzedniego członu, także w jego ``if``, ``with`` i ``try``, a nie w zagnieżdżonej funkcji. Skrót
-definicji liczy się z każdego jej wiązania w tym zakresie, z docstringiem, a bez położenia, więc przesunięte linie i kod
-obok rozjazdem nie są. Rozjazd to skrót inny niż w pliku ``DEFINICJE`` albo definicja, której nie ma; porównanie nie
-pyta gita, więc rebase i squash go nie zmieniają.
+Skill z modelem kodu ma plik ``DEFINICJE`` (``model/definicje.json``): ścieżka pliku od korzenia → nazwa definicji → jej
+skrót z chwili, gdy model ją opisywał. Nazwa ``CALY_PLIK`` to cały plik: plik Pythona z drzewa składni, a inny jego
+tekst z ujednoliconymi końcami linii. Inna nazwa to ścieżka od modułu po kropkach (``create_app.disk``,
+``Klasa.metoda``): każdy człon to funkcja, klasa albo przypisanie w zakresie poprzedniego członu, także w jego ``if``,
+``with`` i ``try``, a nie w zagnieżdżonej funkcji. Skrót definicji liczy się z każdego jej wiązania w tym zakresie.
+Skrót z drzewa składni nie zna położenia, komentarzy ani docstringów, więc przesunięte linie, kod obok i proza rozjazdem
+nie są. Rozjazd to skrót inny niż w pliku ``DEFINICJE`` albo definicja, której nie ma; porównanie nie pyta gita, więc
+rebase i squash go nie zmieniają.
 
 Skróty przelicza ``przesun`` (``tools/przesun_model.py``), dopiero gdy model znów opisuje kod. Rozjazdem jest też plik
 definicji w innej postaci, bo model nie jest wtedy porównany z kodem. Rozjazd widzi tylko definicje z kluczem w pliku
@@ -98,9 +99,13 @@ def skroty(recorded: Skroty, root: Path) -> dict[str, dict[str, str | None]]:
     for path, names in recorded.items():
         file = root / path
         source = file.read_text(encoding="utf-8") if file.is_file() else None
-        tree = _tree(source)
-        found[path] = {name: _digest(source) if name == CALY_PLIK else _definition(tree, name) for name in names}
+        tree = _tree(source) if path.endswith(".py") else None
+        found[path] = {name: _whole_file(source, tree) if name == CALY_PLIK else _definition(tree, name) for name in names}
     return found
+
+
+def _whole_file(source: str | None, tree: ast.Module | None) -> str | None:
+    return _digest(source) if tree is None else _digest(_canonical(tree))
 
 
 def przesun(skill: Path, root: Path) -> list[str]:
@@ -291,16 +296,21 @@ def _body(node: ast.AST) -> list[ast.stmt]:
 
 
 def _canonical(node: object) -> str:
-    """Postać drzewa bez położenia i bez pól ``None`` albo pustych list, ta sama w każdej wersji Pythona, która to drzewo
-    parsuje: ``ast.dump`` od Pythona 3.13 sam pomija takie pola, a nowe pola węzłów (``type_params`` z 3.12) są puste w
-    kodzie, który ich nie używa."""
+    """Postać drzewa bez położenia, docstringów i pól ``None`` albo pustych list, ta sama w każdej wersji Pythona, która
+    to drzewo parsuje: ``ast.dump`` od Pythona 3.13 sam pomija takie pola, a nowe pola węzłów (``type_params`` z 3.12) są
+    puste w kodzie, który ich nie używa."""
 
     if isinstance(node, ast.AST):
-        fields = ", ".join(f"{field}={_canonical(value)}" for field, value in ast.iter_fields(node) if value is not None and value != [])
+        fields = ", ".join(f"{field}={_canonical(value)}" for field, value in _fields_without_docstring(node) if value is not None and value != [])
         return f"{type(node).__name__}({fields})"
     if isinstance(node, list):
         return f"[{', '.join(_canonical(each) for each in node)}]"
     return repr(node)
+
+
+def _fields_without_docstring(node: ast.AST) -> list[tuple[str, object]]:
+    documented = isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)) and ast.get_docstring(node, clean=False) is not None
+    return [(field, value[1:] if documented and field == "body" else value) for field, value in ast.iter_fields(node)]
 
 
 def _digest(text: str | None) -> str | None:

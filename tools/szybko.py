@@ -1,4 +1,35 @@
-"""Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom po każdej zmianie przed pushem.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import ExitStack
+from dataclasses import dataclass
+import json
+import math
+import os
+from pathlib import Path, PurePosixPath
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+import tomllib
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import czasy_ci
+from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
+import potomne
+from repo import BASE, ROOT
+import repo
+import rozjazd_modelu
+from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all, with_structure
+import wyniki_testow
+from zakres_runu import podstawa_trafiona
+
+OPIS = """Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom po każdej zmianie przed pushem.
 
 Agent uruchamia je po każdej zmianie; pełną bramką jest CI na GitHubie. Zmiana to pliki, którymi checkout,
 razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base`` HEAD z ``--baza`` (domyślnie
@@ -48,37 +79,6 @@ krok pytest.
     .venv/bin/python tools/szybko.py
     .venv/bin/python tools/szybko.py --baza feat/galaz-rodzica
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import ExitStack
-from dataclasses import dataclass
-import json
-import math
-import os
-from pathlib import Path, PurePosixPath
-import re
-import shutil
-import subprocess
-import sys
-import threading
-import time
-import tomllib
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import czasy_ci
-from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
-import potomne
-from repo import BASE, ROOT
-import repo
-import rozjazd_modelu
-from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all, with_structure
-import wyniki_testow
-from zakres_runu import podstawa_trafiona
 
 GREEN = "szybko-zielone.json"
 # Zapadki padają na liniach, które zmiana dodaje, a reguły ast-grep całego drzewa na każdej linii swoich plików, więc biegną
@@ -362,7 +362,7 @@ def _deferred(chosen: Plan, selected: int) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, od której liczy się zmiana (domyślnie {BASE}).")
     args = parser.parse_args(argv)
     try:

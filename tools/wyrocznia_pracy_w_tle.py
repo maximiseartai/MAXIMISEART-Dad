@@ -1,4 +1,24 @@
-"""Uruchamia claude -p z pracą w tle, podagentem i t3_background_wait, by sprawdzić hooki praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from dataclasses import dataclass
+from pathlib import Path
+import re
+import sys
+import tempfile
+import threading
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import falszywe_api
+import falszywy_t3
+import praca_w_tle
+from repo import ROOT
+
+OPIS = """Uruchamia claude -p z pracą w tle, podagentem i t3_background_wait, by sprawdzić hooki praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
 
 Wyrocznia hooka ``tools/hooks/praca_w_tle.py``: hook działa, dopóki Claude Code uruchamia hooki ``Stop`` z listą
 ``background_tasks`` i ``PostToolUse`` z ``agent_id`` podagenta i ID zadania w odpowiedzi narzędzia, słucha odmowy
@@ -31,26 +51,6 @@ nie zapyta, kończy je, a wyrocznia zgłasza ``ZMIANA``.
     .venv/bin/python tools/wyrocznia_pracy_w_tle.py               # wszystkie przypadki, ok. 20 s
     .venv/bin/python tools/wyrocznia_pracy_w_tle.py praca-w-tle   # wybrany przypadek
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Sequence
-from dataclasses import dataclass
-from pathlib import Path
-import re
-import sys
-import tempfile
-import threading
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/hooks"))
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import falszywe_api
-import falszywy_t3
-import praca_w_tle
-from repo import ROOT
 
 MARKER = "WYROCZNIA-PRACY-W-TLE"
 # Polecenie podagenta; nie zawiera ``MARKER``, więc jego zapytania API są odróżnialne od zapytań głównej pętli.
@@ -239,7 +239,7 @@ def verdict(case: Case, got: Outcome) -> tuple[str, str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "nazwy", nargs="*", help=f"Nazwy przypadków ({', '.join(case.name for case in CASES)}); bez nich wszystkie."
     )

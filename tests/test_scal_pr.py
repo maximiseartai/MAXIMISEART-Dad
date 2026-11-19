@@ -38,7 +38,6 @@ import rejestr_korzeni
 import scal_pr
 import stan_pr
 import szablon_werdyktu
-import testy_scalenia
 import werdykt_pr
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
@@ -445,16 +444,16 @@ def _deploy_template(github: MergeGitHub, *, authored: str = "2026-10-01T00:00:0
     git(github.checkout, "push", "--quiet", "origin", "main")
 
 
-def test_pomoc_podaje_zasady_testu_scalenia_werdyktu_i_limitu_rund_z_przykladami_polecen(capsys: pytest.CaptureFixture[str]) -> None:
-    """``AGENTS.md`` odsyła agenta po warunki scalenia i postać werdyktów do ``--help``, a te zasady żyją w modułach
-    bramek, nie w docstringu narzędzia."""
+def test_pomoc_podaje_niepuste_zasady_kazdego_modulu_bramek_z_przykladami_polecen(capsys: pytest.CaptureFixture[str]) -> None:
+    """``AGENTS.md`` odsyła agenta po warunki scalenia i postać werdyktów do ``--help``, a te zasady żyją w stałych
+    ``ZASADY`` modułów bramek, nie w opisie narzędzia."""
 
     with pytest.raises(SystemExit):
         scal_pr.main(["--help"])
 
     shown = " ".join(capsys.readouterr().out.split())
-    for rules in (testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__):
-        assert " ".join(str(rules).split()) in shown
+    assert [index for index, rules in enumerate(scal_pr.RULES) if not rules.strip()] == []
+    assert [index for index, rules in enumerate(scal_pr.RULES) if " ".join(rules.split()) not in shown] == []
     assert "tools/scal_pr.py 336 --werdykt" in shown
 
 
@@ -1594,7 +1593,25 @@ def test_werdykt_w_postaci_ze_skilla_dla_head_trafia_na_pr_jako_komentarz_ktory_
     assert (checked.returncode == 0) == (decision == "PASS"), checked.stdout + checked.stderr
 
 
-MANY_PROBLEMS = f"WERDYKT: FAIL {OLD}\nZnaleziska: 3 (Ważne 0, Drobne 4)"
+def test_werdykt_podany_sciezka_wzgledna_spoza_repo_trafia_na_pr(tmp_path: Path) -> None:
+    """Ścieżka względna liczy się od katalogu wywołania, choć ``gh`` biegnie z checkoutu albo z kopii bazy."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    notes = tmp_path / "recenzje" / "1"
+    notes.mkdir(parents=True)
+    verdict = "WERDYKT: PASS {head}\n\nZnaleziska: 1 (Ważne 0, Drobne 1)\n" + werdykty_szablonu.WERDYKTY["drobne"] + "\n"
+    (tmp_path / "recenzje" / "runda-1.md").write_text(verdict.format(head=head), encoding="utf-8")
+
+    answered = github.run("1", "--werdykt", "../runda-1.md", cwd=notes)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"WERDYKT OK | #1 {head[:7]} | PASS | https://github.com/{opisy_pr.REPO}/pull/1#issuecomment-1"
+    assert github.published() == [["1", verdict.format(head=head)]]
+
+
+MANY_PROBLEMS =f"WERDYKT: FAIL {OLD}\nZnaleziska: 3 (Ważne 0, Drobne 4)"
 MANY_REASONS = (
     f"werdykt dla {OLD[:7]}, a HEAD PR to {{head}}: przejrzyj git diff {OLD} {{head}} i wpisz SHA HEAD; "
     "Znaleziska: 3, a Ważne 0 i Drobne 4 dają 4; Drobne 4: podaj najwyżej 3, najważniejsze; "

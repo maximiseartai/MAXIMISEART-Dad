@@ -1,5 +1,3 @@
-"""Create disposable synthetic workbooks for the rozliczenia verification skill."""
-
 from __future__ import annotations
 
 import hashlib
@@ -32,6 +30,8 @@ from atrapy.settlement import (
     write_worker_list,
 )
 
+OPIS = """Create disposable synthetic workbooks for the rozliczenia verification skill."""
+
 
 def _write_source(path: Path, *, include_unmapped: bool) -> None:
     rows = [*SETTLEMENT_ROWS, UNMAPPED_ROW] if include_unmapped else SETTLEMENT_ROWS
@@ -59,7 +59,7 @@ def _write_fixture(root: Path, *, include_unmapped: bool) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root to create; absent or empty")
     parser.add_argument("--include-unmapped", action="store_true")
     args = parser.parse_args(argv)

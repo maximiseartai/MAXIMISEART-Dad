@@ -1,30 +1,3 @@
-"""Sprawdza, czy zainstalowany Claude Code oddaje hookowi zgoda.py pytanie o zgodę na rm; uruchom po każdej aktualizacji Claude Code.
-
-Wyrocznia hooka ``tools/hooks/zgoda.py``: czy zainstalowany Claude Code oddaje temu hookowi pytanie o zgodę na ``rm``.
-
-Hook działa, dopóki Claude Code uruchamia hooki ``PermissionRequest`` przy pytaniu o zgodę, więc po aktualizacji
-Claude Code ta wyrocznia uruchamia go tak jak T3 (``stream-json`` na wejściu i wyjściu, ``--permission-prompt-tool
-stdio``, ``--permission-mode bypassPermissions``), w katalogu tego checkoutu, czyli z jego ``.claude/settings.json``.
-Modelu nie ma: lokalne fałszywe API każe wysłać polecenie przypadku z ``tools/wyrocznia_zgody.jsonl`` bajt w
-bajt narzędziem Bash i odbiera wynik narzędzia, a wtedy wyrocznia kończy Claude Code. Claude Code uruchamia
-``tools/lib/falszywe_api.py`` tak, by mogło pytać tylko fałszywe API, także gdy ``~/.claude/settings.json`` ma
-``env.ANTHROPIC_BASE_URL`` huba, a gdy przez ``--kontakt-s`` sekund go nie zapyta, kończy je (``ZMIANA``). Polecenia nie biegną: prefiks powłoki ``tools/wyrocznia_zgody_prefiks.sh`` wykonuje tylko polecenie
-równe co do znaku poleceniu hooka zgody z ``.claude/settings.json``.
-Host, czyli T3 z człowiekiem, nigdy nie odpowiada na pytanie o zgodę i zamyka wejście po ``--host-s`` sekundach bez
-wyniku narzędzia. Ścieżki ``@WS@``, ``@FAR@`` i ``@TFAR@`` (ta sama co ``@FAR@``, ale przez ``~``) prowadzą do
-katalogu tymczasowego w ``~/.cache``, który narzędzie usuwa na końcu.
-
-Wiersz na przypadek: ``ZGODNE`` (polecenie z ``pyta_o_zgode`` dostało odmowę hooka, a pozostałe doszły do powłoki),
-``PRZESTÓJ`` (wynik narzędzia przyszedł dopiero po zamknięciu wejścia przez hosta, czyli w T3 agent stałby do powrotu
-człowieka) albo ``ZMIANA`` (inny wynik, np. Claude Code już nie pyta o polecenie z pliku albo pyta o polecenie
-kontrolne). Ostatnia linia to ``WYROCZNIA OK | …`` (kod 0) tylko wtedy, gdy każdy przypadek jest ``ZGODNE``, a hook
-choć raz odmówił; inaczej ``WYROCZNIA PRZESTÓJ | …`` albo ``WYROCZNIA ZMIANA | …`` (kod 1). Bez ``claude`` na PATH
-albo na Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Code, które uruchomiła wyrocznia.
-
-    .venv/bin/python tools/wyrocznia_zgody.py                  # wszystkie przypadki, ok. 5 min
-    .venv/bin/python tools/wyrocznia_zgody.py k-sam-doslowny  # wybrane przypadki
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -45,6 +18,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import falszywe_api
 from repo import ROOT
 import zgoda
+
+OPIS = """Sprawdza, czy zainstalowany Claude Code oddaje hookowi zgoda.py pytanie o zgodę na rm; uruchom po każdej aktualizacji Claude Code.
+
+Wyrocznia hooka ``tools/hooks/zgoda.py``: czy zainstalowany Claude Code oddaje temu hookowi pytanie o zgodę na ``rm``.
+
+Hook działa, dopóki Claude Code uruchamia hooki ``PermissionRequest`` przy pytaniu o zgodę, więc po aktualizacji
+Claude Code ta wyrocznia uruchamia go tak jak T3 (``stream-json`` na wejściu i wyjściu, ``--permission-prompt-tool
+stdio``, ``--permission-mode bypassPermissions``), w katalogu tego checkoutu, czyli z jego ``.claude/settings.json``.
+Modelu nie ma: lokalne fałszywe API każe wysłać polecenie przypadku z ``tools/wyrocznia_zgody.jsonl`` bajt w
+bajt narzędziem Bash i odbiera wynik narzędzia, a wtedy wyrocznia kończy Claude Code. Claude Code uruchamia
+``tools/lib/falszywe_api.py`` tak, by mogło pytać tylko fałszywe API, także gdy ``~/.claude/settings.json`` daje
+mu adres huba, a gdy przez ``--kontakt-s`` sekund go nie zapyta, kończy je (``ZMIANA``). Polecenia nie biegną: prefiks powłoki ``tools/wyrocznia_zgody_prefiks.sh`` wykonuje tylko polecenie
+równe co do znaku poleceniu hooka zgody z ``.claude/settings.json``.
+Host, czyli T3 z człowiekiem, nigdy nie odpowiada na pytanie o zgodę i zamyka wejście po ``--host-s`` sekundach bez
+wyniku narzędzia. Ścieżki ``@WS@``, ``@FAR@`` i ``@TFAR@`` (ta sama co ``@FAR@``, ale przez ``~``) prowadzą do
+katalogu tymczasowego w ``~/.cache``, który narzędzie usuwa na końcu.
+
+Wiersz na przypadek: ``ZGODNE`` (polecenie z ``pyta_o_zgode`` dostało odmowę hooka, a pozostałe doszły do powłoki),
+``PRZESTÓJ`` (wynik narzędzia przyszedł dopiero po zamknięciu wejścia przez hosta, czyli w T3 agent stałby do powrotu
+człowieka) albo ``ZMIANA`` (inny wynik, np. Claude Code już nie pyta o polecenie z pliku albo pyta o polecenie
+kontrolne). Ostatnia linia to ``WYROCZNIA OK | …`` (kod 0) tylko wtedy, gdy każdy przypadek jest ``ZGODNE``, a hook
+choć raz odmówił; inaczej ``WYROCZNIA PRZESTÓJ | …`` albo ``WYROCZNIA ZMIANA | …`` (kod 1). Bez ``claude`` na PATH
+albo na Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Code, które uruchomiła wyrocznia.
+
+    .venv/bin/python tools/wyrocznia_zgody.py                  # wszystkie przypadki, ok. 5 min
+    .venv/bin/python tools/wyrocznia_zgody.py k-sam-doslowny  # wybrane przypadki
+"""
 
 CASES = ROOT / "tools" / "wyrocznia_zgody.jsonl"
 PREFIX = ROOT / "tools" / "wyrocznia_zgody_prefiks.sh"
@@ -189,7 +189,7 @@ def ask(command: str, sandbox: Path, host_s: float, contact_s: float) -> Outcome
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("nazwy", nargs="*", help="Nazwy przypadków (pole nazwa); bez nich wszystkie.")
     parser.add_argument("--przypadki", type=Path, default=CASES, help="Plik przypadków JSONL.")
     parser.add_argument(

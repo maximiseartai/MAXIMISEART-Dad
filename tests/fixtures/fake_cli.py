@@ -120,10 +120,12 @@ class FakeGitHub:
     def command(self, *arguments: str) -> list[str]:
         return [sys.executable, str(self.checkout / self.tool), *arguments]
 
-    def run(self, *arguments: str) -> subprocess.CompletedProcess[str]:
+    def run(self, *arguments: str, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:
+        """Narzędzie z katalogu ``cwd``, domyślnie z checkoutu."""
+
         return subprocess.run(
             self.command(*arguments),
-            cwd=self.checkout,
+            cwd=cwd or self.checkout,
             env=self.environment(),
             capture_output=True,
             text=True,

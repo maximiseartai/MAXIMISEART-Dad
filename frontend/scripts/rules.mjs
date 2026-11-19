@@ -1,34 +1,3 @@
-// Reguły frontendu, których Oxlint nie wyraża (brak no-restricted-syntax w Oxlint 1.88):
-// 1. Każda właściwość schematów kontraktu (src/api/openapi.json) jest użyta w src poza generated/:
-//    jej nazwa występuje jako identyfikator (dostęp, destrukturyzacja, klucz obiektu) albo tekst literału. Pole
-//    odpowiedzi operacji GET (pierwszy poziom schematu 200, każdego wariantu unii i elementu tablicy) liczy się, gdy src
-//    je odczytuje (`x.pole`, `x?.pole`, `x!.pole`, `x["pole"]`, `{ pole }`; zapis to odniesienie oznaczone przez kompilator
-//    `isWriteAccess`), a to, że odczyt dotyczy tego pola, mówi findReferences kompilatora: (a) odczyt przez typ tego
-//    schematu albo typ z niego (`Pick<S, …>`, alias, `T extends S`, `z.output`); (b) odczyt na wiązaniu (prop
-//    komponentu, parametr, zmienna), do którego src podaje wartość z tym polem w atrybucie JSX, argumencie albo
-//    inicjalizatorze, także przez kolejne wiązania, bez względu na typ wiązania;
-//    (c) odczyt pola zadeklarowanego w src w typie, który przyjmuje wynik funkcji podanej jako argument
-//    (`read: () => Promise<T>` z `T extends LiveFileView`). Ta sama nazwa w innym schemacie go nie zastępuje (#1577 W2:
-//    `unread` podpowiedzi Urządzeń bez zdania w sekcji, a nazwę `unread` czytały inne sekcje), także gdy wartość trafia
-//    do typu z innego schematu, który pola nie czyta (`Pick<IntermaxSetup, "last">`, #1932 W1 r1). Granica: (a) liczy
-//    odczyt przez typ ze schematu S także dla wartości innego schematu (zna tożsamość deklaracji, nie wartości), a (c)
-//    odczyt pola typu z src także dla innej wartości tego typu; wartość w kontenerze (tablica, `Resource`) wchodząca do
-//    typu innego schematu, rozwinięcie (`{ ...x }`), rzutowanie (`as`), przypisanie po deklaracji, wartość zwrócona jako
-//    typ innego schematu i komponent bez deklaracji w src (biblioteka, `memo`) nie przenoszą odczytu, więc pole liczy się
-//    jako nieużyte, tak samo odczyt przez odbicie (`Object.entries(x)`, `Object.keys(x)`, `for (const k in x)`), w którym
-//    findReferences nie ma odniesienia pola; zapis `x["pole"] = …` kompilator zostawia bez `isWriteAccess`, więc liczy się
-//    jako odczyt; pola schematów zagnieżdżonych i ciał zapytań reguła zna tylko z nazwy.
-// 2. Przeglądarka nie porównuje nazwy procesu: żadnego `=== "settlement"` ani `case "preparation":`. Granica: reguła
-//    łapie tylko porównanie i `case`; `["settlement", "preparation"].includes(nazwa)`, odczyt z obiektu po nazwie
-//    (`({ settlement: 1 })[nazwa]`) i inne rozgałęzienia na nazwie procesu łapie tylko przegląd.
-// 3. Sieć (fetch, EventSource, WebSocket, XMLHttpRequest, sendBeacon) i JSON.parse tylko w plikach z NETWORK_FILES,
-//    które parsują każdą odpowiedź serwera schematem z kontraktu. Wpis w NETWORK_FILES ma powód, a zbędny wpis
-//    wywraca regułę. Granica: destrukturyzację (`const { parse } = JSON`), `JSON["parse"]`, `Reflect.get`,
-//    `Response.json()` i to, czy plik z NETWORK_FILES parsuje odpowiedź schematem, łapie tylko przegląd.
-// 4. Przeglądarka woła przez `call` (src/api/client.ts) dokładnie operacje pomiaru widoku (`ApiTiming.operation`
-//    kontraktu): każdą z nich i żadnej innej, a nazwa operacji to literał pierwszego argumentu `call`; metodę, adres
-//    i schemat odpowiedzi `call` bierze z wygenerowanej tablicy operacji. Granica: `call` pod inną nazwą (alias
-//    importu, `const f = call`) reguła pomija; to łapie tylko przegląd.
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import ts from "typescript"
@@ -234,8 +203,16 @@ function location(file, path, node) {
   return `${relative(root, path).replaceAll("\\", "/")}:${line + 1}: ${node.getText(file)}`
 }
 
+function isBusyOutsideSkeleton(node) {
+  return (
+    ts.isJsxAttribute(node) &&
+    node.name.getText() === "aria-busy" &&
+    !(node.initializer !== undefined && ts.isStringLiteral(node.initializer) && node.initializer.text === "true")
+  )
+}
+
 // Nazwy użyte w kodzie: identyfikatory (także dostęp do właściwości i destrukturyzacja) i teksty literałów.
-function inspect(path, names, used, comparisons, network, calls) {
+function inspect(path, names, used, comparisons, network, calls, busy) {
   const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)
 
   function visit(node) {
@@ -259,6 +236,10 @@ function inspect(path, names, used, comparisons, network, calls) {
       network.push({ place: location(file, path, node), kind })
     }
 
+    if (isBusyOutsideSkeleton(node)) {
+      busy.push(location(file, path, node))
+    }
+
     ts.forEachChild(node, visit)
   }
 
@@ -279,10 +260,12 @@ const connectedFiles = new Set()
 
 const operationCalls = []
 
+const busyOutsideSkeleton = []
+
 for (const path of sourceFiles(source)) {
   const key = relative(root, path).replaceAll("\\", "/")
   const calls = []
-  inspect(path, names, used, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls, operationCalls)
+  inspect(path, names, used, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls, operationCalls, busyOutsideSkeleton)
 
   if (calls.length > 0) {
     connectedFiles.add(key)
@@ -677,6 +660,13 @@ const problems = [
   ),
   ...operationCalls.flatMap(({ place, operation }) =>
     operation === null ? [`\`call\` bez literału nazwy operacji w pierwszym argumencie: ${place}`] : [],
+  ),
+  ...busyOutsideSkeleton.map(
+    (place) =>
+      `aria-busy poza szkieletem wczytywania: ${place}. W Centrum aria-busy="true" nosi tylko kontener szkieletu, ` +
+      `który istnieje tylko w czasie wczytywania: index.css daje mu animację odsłonięcia szkieletu (120 ms ` +
+      `przezroczysty), a view-timing.ts liczy go jako widoczny szkielet w pomiarze widoku. Stan „trwa” elementu, ` +
+      `który zostaje na ekranie, pokaż inaczej: disabled z focusableWhenDisabled albo tekst w role="status".`,
   ),
 ]
 

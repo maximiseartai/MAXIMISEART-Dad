@@ -388,9 +388,9 @@ def test_zbieranie_laczy_runy_logi_cien_planow_i_commity_gita_a_ponowny_bieg_nie
     repo, github = swiat
     dzien = date(2026, 11, 12)
 
-    rekordy = cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", github), repo, dzien, dzien, date(2026, 12, 1), cien_podstaw.PROBKA)
+    rekordy = cien_podstaw.zbierz(api_actions.Api(github, tmp_path / "bieg" / "api"), repo, dzien, dzien, date(2026, 12, 1), cien_podstaw.PROBKA)
     pytania = len(github.pytania)
-    cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", github), repo, dzien, dzien, date(2026, 12, 1), cien_podstaw.PROBKA)
+    cien_podstaw.zbierz(api_actions.Api(github, tmp_path / "bieg" / "api"), repo, dzien, dzien, date(2026, 12, 1), cien_podstaw.PROBKA)
     wynik = rozstrzygnij(rekordy)
 
     assert (_klucze(wynik.kandydaci), wynik.ucieczki, wynik.oszczednosc_min) == (("2 verify-a/ci",), ((4, "verify-b/ci"),), 100.0 / 2 * 2 / 60)
@@ -405,7 +405,7 @@ def test_wynik_z_zapisanych_rekordow_jest_tym_samym_co_z_githuba_a_audyt_liczy_p
     argumenty = ["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-12", "--do", "2026-11-12"]
     (tmp_path / "audyt.json").write_text(json.dumps({"2 verify-a/ci": ["napęd verify-a"]}), encoding="utf-8")
 
-    kod = cien_podstaw.main(argumenty, root=repo, github=github)
+    kod = cien_podstaw.main(argumenty, root=repo, github=github, kopia=tmp_path / "api")
     z_githuba = capsys.readouterr().out.splitlines()
     cien_podstaw.main(["--rekordy", str(tmp_path / "bieg" / "rekordy.json")])
     z_rekordow = capsys.readouterr().out.splitlines()
@@ -432,7 +432,7 @@ def test_kandydat_nf_ma_w_wyniku_dowod_do_audytu_pr_runy_z_adresami_i_zmiane_wla
     baza, czerwona, naprawiona = (git(repo, "rev-parse", rewizja) for rewizja in ("g~2", "g~1", "g"))
     plik = ".agents/skills/verify-a/drive.py"
 
-    cien_podstaw.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-12", "--do", "2026-11-12"], root=repo, github=github)
+    cien_podstaw.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-12", "--do", "2026-11-12"], root=repo, github=github, kopia=tmp_path / "api")
     linie = capsys.readouterr().out.splitlines()
     poczatek = linie.index("KANDYDAT NF 1/1 | 2 verify-a/ci | g, PR #1 | do audytu")
     zapisany = json.loads((tmp_path / "bieg" / "rekordy.json").read_text(encoding="utf-8"))["pr"][0]["naprawa"]["pliki"][0]
@@ -501,7 +501,7 @@ def test_czerwony_run_anulowany_albo_z_przekroczonym_czasem_nie_ukrywa_porazki_k
     odpowiedzi |= {f"{REPO}/actions/runs/{n}/jobs?filter=latest&per_page=100": _zadania("cancelled", "cancelled") for n in (3, 4)}
     dzien = date(2026, 11, 12)
 
-    rekordy = cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", _GitHub(odpowiedzi, pliki)), repo, dzien, dzien, date(2026, 12, 1), 0)
+    rekordy = cien_podstaw.zbierz(api_actions.Api(_GitHub(odpowiedzi, pliki), tmp_path / "bieg" / "api"), repo, dzien, dzien, date(2026, 12, 1), 0)
     linie = cien_podstaw.wypisz(rekordy, rozstrzygnij(rekordy))
 
     assert [linia for linia in linie if linia.startswith(("KANDYDAT", "NIEPOLICZONY"))] == [naglowek]
@@ -659,7 +659,7 @@ def test_naprawa_to_zmiana_wlasnej_zmiany_pr_commitem_galezi_a_nie_rebase_scalen
             _run(3, "push", "main", main, "success", 3), _run(4, "pull_request", "g", sha[glowy[1]], "success", 4)]  # fmt: skip
     dzien = date(2026, 11, 12)
 
-    rekordy = cien_podstaw.zbierz(api_actions.Api(tmp_path / "bieg", _GitHub(*_czerwony_run_2(runy))), repo, dzien, dzien, date(2026, 12, 1), 0)
+    rekordy = cien_podstaw.zbierz(api_actions.Api(_GitHub(*_czerwony_run_2(runy)), tmp_path / "bieg" / "api"), repo, dzien, dzien, date(2026, 12, 1), 0)
 
     assert (_sciezki(rekordy.pr[0]), _klucze(rozstrzygnij(rekordy).kandydaci)) == (naprawa, ("2 verify-a/ci",) if naprawa else ())
 
@@ -734,7 +734,7 @@ def _rekordy_luki(katalog: Path, stan: Callable[[Path], tuple[str, str, str]]) -
     runy = [_run(1, "push", "main", baza, "success", 1), _run(2, "pull_request", "g", czerwona, "failure", 2),
             _run(3, "push", "main", main, "success", 3), _run(4, "pull_request", "g", nastepna, "success", 4)]  # fmt: skip
     dzien = date(2026, 11, 12)
-    return cien_podstaw.zbierz(api_actions.Api(katalog / "bieg", _GitHub(*_czerwony_run_2(runy))), repo, dzien, dzien, date(2026, 12, 1), 0)
+    return cien_podstaw.zbierz(api_actions.Api(_GitHub(*_czerwony_run_2(runy)), katalog / "bieg" / "api"), repo, dzien, dzien, date(2026, 12, 1), 0)
 
 
 def test_znane_luki_reguly_naprawy_przechodza_przez_jej_wybor_kandydatow(tmp_path: Path) -> None:

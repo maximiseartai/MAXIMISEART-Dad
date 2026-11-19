@@ -1,22 +1,3 @@
-"""Check the verify-centrum-rozliczen skill package and the hygiene of one run's evidence.
-
-Checks the frontmatter, the feature-map headings, that every helper named in
-SKILL.md exists and answers ``--help``, the gate of ``wydajnosc`` on made-up
-numbers (no browser), that the retrying helpers of ``drive/common.py`` outlast a
-file the server holds open, retry nothing else and nothing longer, and take the key away only after a step wrote it,
-that the result of a started Uruchomienie is never the one before it and the Centrum log is read as ``log.py`` writes it,
-that a file the server puts in place is read once it is there and only a vanished queue file is left out,
-that the drive reads files in no other way than through those readers (``_direct_reads``),
-that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
-that the scripted boundaries of ``serve_centrum.py`` take their files from ``harness.py`` in the round trips of
-``_check_served_side_reads_harness`` and no other script spells a name of ``harness.py`` (``_protocol_spelled``),
-that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, stands still
-without a move and fails on a refusal that outlasts its limit, that the drive fails on the clock's wake-up thread once it has died,
-that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
-evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
-evidence.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -37,6 +18,25 @@ from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.tool_files import config_dir
 
 from harness import File, issue_file
+
+OPIS = """Check the verify-centrum-rozliczen skill package and the hygiene of one run's evidence.
+
+Checks the frontmatter, the feature-map headings, that every helper named in
+SKILL.md exists and answers ``--help``, the gate of ``wydajnosc`` on made-up
+numbers (no browser), that the retrying helpers of ``drive/common.py`` outlast a
+file the server holds open, retry nothing else and nothing longer, and take the key away only after a step wrote it,
+that the result of a started Uruchomienie is never the one before it and the Centrum log is read as ``log.py`` writes it,
+that a file the server puts in place is read once it is there and only a vanished queue file is left out,
+that the drive reads files in no other way than through those readers (``_direct_reads``),
+that the scripted skrzynka reads an issue file the drive is putting in place once it is there,
+that the scripted boundaries of ``serve_centrum.py`` take their files from ``harness.py`` in the round trips of
+``_check_served_side_reads_harness`` and no other script spells a name of ``harness.py`` (``_protocol_spelled``),
+that Centrum's clock reads each move of the drive whole, also while the system refuses a read for a moment, stands still
+without a move and fails on a refusal that outlasts its limit, that the drive fails on the clock's wake-up thread once it has died,
+that the drive deletes, moves and replaces in none of the forms of ``_removals`` outside those helpers, that
+evidence text is strict UTF-8 and screenshots are PNG files, and that no workbook content (the fixture's row marker) reached the
+evidence.
+"""
 
 SCRIPT = Path(__file__).resolve()
 SKILL_ROOT = SCRIPT.parents[1]
@@ -61,7 +61,7 @@ PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 CLOCK_ANSWER_S = 5.0
 # Deleting, moving or replacing a file or folder fails on Windows while another process holds it open (WinError 32,
 # #921), so the drive does it only through the retrying helpers of ``drive/common.py`` (``DRIVE_HELPERS``). The forms
-# the guard ``_removals`` catches and its boundary are the tables of its docstring and of features/README.md; ruff
+# the guard ``_removals`` catches and its boundary are the tables of ``GUARD_TABLES`` and of features/README.md; ruff
 # ``TID251`` (``drive/ruff.toml``) rejects the functions of ``os``, ``shutil`` and the pathlib classes it can resolve,
 # each ban with a sample in ``tests/test_zakazy_ruff.py``.
 # Only deletions and moves have attributes of these names (pathlib, ``os``, ``shutil``): form 1 takes them on anything.
@@ -75,6 +75,26 @@ DRIVE_HELPERS = frozenset({"remove", "remove_tree", "remove_empty_folder", "move
 # through ``read_text``.
 DRIVE_READERS = frozenset({"read_text", "read_bytes"})
 GUARD_HEADING = "### Guard of deletions in the drive"  # the section of features/README.md with the guard's tables
+GUARD_TABLES = """\
+| Form | The guard catches | Example |
+|---|---|---|
+| 1 | an attribute `unlink`, `rename`, `rmdir`, `rmtree`, `removedirs`, `renames` or `move_into` on anything, called or not | `p.unlink(missing_ok=True)`, `p.rename(target=q)`, `os.renames(p, q)`, `shutil.rmtree(p)`, `drop = Path.unlink`, `fs = os; fs.unlink(p)` |
+| 2 | a call `x.replace(…)` or `x.move(…)` with one positional argument and no named one, or with only `target=`, where `x` is not a name that an `import` binds | `p.replace(q)`, `p.move(target=q)`, `Path(p).replace(q)` |
+| 3 | `getattr(x, "<name>", …)` with a constant name of form 1, `remove`, `replace` or `move` | `getattr(p, "unlink")()`, `getattr(os, "remove")(p)` |
+
+| Boundary | Passes the guard |
+|---|---|
+| a module or pathlib class through a name that no import binds (forms 1 and 2 still catch on it) | `fs = os; fs.remove(p)`, `s: ModuleType = os; s.replace(p, q)`, `Q = Path; Q.replace(p, q)`, `self.files = shutil` |
+| `replace` or `move` of an object kept or passed instead of called (form 2 takes only a call) | `swap = p.replace; swap(q)`, `retry(p.move, q)` |
+| a call of form 2 with unpacked arguments | `p.replace(*args)`, `p.move(**named)` |
+| a call of form 2 on a name that an `import` in the file also binds | `import time` and elsewhere `time = p; time.replace(q)` |
+| a pathlib class from an expression | `type(p).replace(p, q)`, `p.__class__.move(p, q)` |
+| another module | `posix`, `nt`, `_winapi`, `ctypes` |
+| a name computed at run time, or a name in a string outside `getattr` | `getattr(p, name)`, `operator.methodcaller("unlink")`, `vars(os)["remove"]`, `sys.modules["os"]`, `importlib`, `__import__`, `eval` |
+| another process | `subprocess` with `rm`, `del`, `Remove-Item` or `move`, `os.system` |
+| no deletion or move | a copy onto a file the server reads (`shutil.copy2`, `copyfile`, `copytree(…, dirs_exist_ok=True)`), a write (`open(p, "w")`, `write_bytes`, `workbook.save`), `tempfile` cleanup |
+| code outside `drive/*.py` | `drive_centrum.py`, `create_centrum_fixture.py`, `serve_centrum.py` |
+"""
 # Each sample of a deletion or move with the one finding the guard reports for it.
 REMOVAL_SAMPLES = {
     "p.unlink()": ".unlink (form 1)",
@@ -185,37 +205,17 @@ def _check_feature_map(errors: list[str]) -> None:
 
 
 def _removals(source: str, helpers: frozenset[str] = frozenset()) -> list[str]:
-    """Each deletion, move or replacement of a file or folder in ``source`` in a form of the first table, outside the
-    top-level functions ``helpers``, as ``<line>: <what> (form <n>)``.
+    """Each deletion, move or replacement of a file or folder in ``source`` in a form of the first table of
+    ``GUARD_TABLES``, outside the top-level functions ``helpers``, as ``<line>: <what> (form <n>)``.
 
     Ruff ``TID251`` (``drive/ruff.toml``) already rejects each name it resolves through ``import [as x]``, ``from …
     import … [as x]`` or an attribute to ``os.remove``, ``os.unlink``, ``os.rmdir``, ``os.removedirs``, ``os.rename``,
     ``os.renames``, ``os.replace``, ``shutil.rmtree``, ``shutil.move``, or ``replace`` and ``move`` of ``pathlib.Path``,
     ``PosixPath`` and ``WindowsPath`` (``import os as system; system.replace(p, q)``, ``partial(os.remove, p)``,
     ``from shutil import rmtree``, ``P.move(p, q)``), and ruff ``F403`` rejects ``from os import *``. This guard catches
-    only these forms, which ruff cannot resolve, mostly a method on an instance; it knows a module only by a name an
-    ``import`` binds, never by an assignment, which form 2 skips:
-
-    | Form | The guard catches | Example |
-    |---|---|---|
-    | 1 | an attribute `unlink`, `rename`, `rmdir`, `rmtree`, `removedirs`, `renames` or `move_into` on anything, called or not | `p.unlink(missing_ok=True)`, `p.rename(target=q)`, `os.renames(p, q)`, `shutil.rmtree(p)`, `drop = Path.unlink`, `fs = os; fs.unlink(p)` |
-    | 2 | a call `x.replace(…)` or `x.move(…)` with one positional argument and no named one, or with only `target=`, where `x` is not a name that an `import` binds | `p.replace(q)`, `p.move(target=q)`, `Path(p).replace(q)` |
-    | 3 | `getattr(x, "<name>", …)` with a constant name of form 1, `remove`, `replace` or `move` | `getattr(p, "unlink")()`, `getattr(os, "remove")(p)` |
-
-    Its boundary, which review checks:
-
-    | Boundary | Passes the guard |
-    |---|---|
-    | a module or pathlib class through a name that no import binds (forms 1 and 2 still catch on it) | `fs = os; fs.remove(p)`, `s: ModuleType = os; s.replace(p, q)`, `Q = Path; Q.replace(p, q)`, `self.files = shutil` |
-    | `replace` or `move` of an object kept or passed instead of called (form 2 takes only a call) | `swap = p.replace; swap(q)`, `retry(p.move, q)` |
-    | a call of form 2 with unpacked arguments | `p.replace(*args)`, `p.move(**named)` |
-    | a call of form 2 on a name that an `import` in the file also binds | `import time` and elsewhere `time = p; time.replace(q)` |
-    | a pathlib class from an expression | `type(p).replace(p, q)`, `p.__class__.move(p, q)` |
-    | another module | `posix`, `nt`, `_winapi`, `ctypes` |
-    | a name computed at run time, or a name in a string outside `getattr` | `getattr(p, name)`, `operator.methodcaller("unlink")`, `vars(os)["remove"]`, `sys.modules["os"]`, `importlib`, `__import__`, `eval` |
-    | another process | `subprocess` with `rm`, `del`, `Remove-Item` or `move`, `os.system` |
-    | no deletion or move | a copy onto a file the server reads (`shutil.copy2`, `copyfile`, `copytree(…, dirs_exist_ok=True)`), a write (`open(p, "w")`, `write_bytes`, `workbook.save`), `tempfile` cleanup |
-    | code outside `drive/*.py` | `drive_centrum.py`, `create_centrum_fixture.py`, `serve_centrum.py` |
+    only the forms of that table, which ruff cannot resolve, mostly a method on an instance; it knows a module only by a
+    name an ``import`` binds, never by an assignment, which form 2 skips. Its boundary, which review checks, is the
+    second table of ``GUARD_TABLES``.
 
     A false alarm is loud and names the helpers: form 1 on an object that is no file (`frame.rename(columns=…)`), form 2
     on any object with a one-argument `replace` or `move` (`moment.replace(2026)`), form 3 on any object."""
@@ -360,16 +360,16 @@ def _check_drive_reads(errors: list[str]) -> None:
 
 
 def _check_guard_documented(errors: list[str]) -> None:
-    """features/README.md shows the forms and the boundary of the guard as the table rows of ``_removals``, in order."""
+    """features/README.md shows the forms and the boundary of the guard as the table rows of ``GUARD_TABLES``, in order."""
 
-    rows = [line.strip() for line in (_removals.__doc__ or "").splitlines() if line.strip().startswith("|")]
+    rows = [line for line in GUARD_TABLES.splitlines() if line.startswith("|")]
     readme = (FEATURES_ROOT / "README.md").read_text(encoding="utf-8").splitlines()
     section = readme[readme.index(GUARD_HEADING) + 1 :] if GUARD_HEADING in readme else []
     end = next((index for index, line in enumerate(section) if line.startswith("#")), len(section))
     shown = [line.strip() for line in section[:end] if line.strip().startswith("|")]
     if not rows or shown != rows:
         errors.append(
-            f"features/README.md must show under {GUARD_HEADING!r} the table rows of the docstring of _removals in "
+            f"features/README.md must show under {GUARD_HEADING!r} the table rows of GUARD_TABLES in "
             f"centrum_self_test.py, in order: it misses {[row for row in rows if row not in shown]} and has "
             f"{[row for row in shown if row not in rows]} besides"
         )
@@ -1218,7 +1218,7 @@ def _check_evidence(root: Path, errors: list[str]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--evidence-root", help="Evidence of one run; omit to check only the skill package.")
     args = parser.parse_args(argv)
     errors: list[str] = []

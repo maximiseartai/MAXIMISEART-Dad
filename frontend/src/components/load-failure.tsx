@@ -6,11 +6,6 @@ import { Alert, AlertAction, AlertDescription, AlertTitle } from "@/components/u
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 
-/**
- * Nieudany odczyt strony z serwera: co się nie odczytało, Komunikat i „Spróbuj ponownie”, które czyta od nowa.
- * Dopóki ponowny odczyt jest w drodze, przycisk czeka, ale zostaje w fokusie i pod tą samą nazwą. Bez `aria-busy`:
- * w Centrum oznacza ono szkielet wczytywania (`index.css`, `view-timing.ts`). Udany odczyt zastępuje ten baner treścią strony.
- */
 export function LoadFailure({
   what,
   message,

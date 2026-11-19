@@ -1,25 +1,3 @@
-"""Jedna operacja, ``compare_worker_settlements``: dla dwóch Folderów rozliczeń
-pracowników zwraca liczbę różnic w każdej kategorii (``CATEGORIES``). Wynik to
-same liczby: bez treści komórek, adresów komórek, nazw plików i numerów zleceń.
-
-„Ten sam wynik” znaczy to, co widzi tata w Excelu:
-
-- ``pliki``: plik tylko w jednym folderze albo plik, który nie otwiera się jako skoroszyt;
-- ``wartosci`` i ``formuly``: każda komórka każdego arkusza; wspólne formuły są
-  rozwinięte do postaci jawnej (robi to openpyxl przy wczytaniu), wartości
-  zapamiętane przy formułach się nie liczą, bo Excel przelicza skoroszyt przy otwarciu;
-- ``style``: rozwiązany styl komórki (czcionka, wypełnienie, obramowanie, wyrównanie,
-  format liczb, ochrona), nie numer stylu; komórka nieobecna w XML ma styl wiersza,
-  a bez niego styl kolumny, tak jak w Excelu;
-- ``hiperlacza``: adres (``Target``) i miejsce (``location``) hiperłącza każdej komórki,
-  nie numer relacji;
-- ``scalenia``, ``wymiary`` (wysokość, ukrycie i poziom konspektu wierszy i kolumn),
-  ``nazwy_zdefiniowane`` (nazwa arkusza w apostrofach i bez nich to to samo), ``external_links`` (bajty każdej części ``xl/externalLinks/*``)
-  i ``flagi_przeliczania`` (``calcMode``, ``fullCalcOnLoad``, ``forceFullCalc``).
-
-``xl/calcChain.xml`` nie jest porównywany.
-"""
-
 from __future__ import annotations
 
 import os
@@ -40,6 +18,28 @@ from openpyxl.styles.cell_style import StyleArray
 from openpyxl.utils.cell import column_index_from_string
 from openpyxl.worksheet.dimensions import Dimension
 from openpyxl.worksheet.worksheet import Worksheet
+
+ZASADY = """Jedna operacja, ``compare_worker_settlements``: dla dwóch Folderów rozliczeń
+pracowników zwraca liczbę różnic w każdej kategorii (``CATEGORIES``). Wynik to
+same liczby: bez treści komórek, adresów komórek, nazw plików i numerów zleceń.
+
+„Ten sam wynik” znaczy to, co widzi tata w Excelu:
+
+- ``pliki``: plik tylko w jednym folderze albo plik, który nie otwiera się jako skoroszyt;
+- ``wartosci`` i ``formuly``: każda komórka każdego arkusza; wspólne formuły są
+  rozwinięte do postaci jawnej (robi to openpyxl przy wczytaniu), wartości
+  zapamiętane przy formułach się nie liczą, bo Excel przelicza skoroszyt przy otwarciu;
+- ``style``: rozwiązany styl komórki (czcionka, wypełnienie, obramowanie, wyrównanie,
+  format liczb, ochrona), nie numer stylu; komórka nieobecna w XML ma styl wiersza,
+  a bez niego styl kolumny, tak jak w Excelu;
+- ``hiperlacza``: adres (``Target``) i miejsce (``location``) hiperłącza każdej komórki,
+  nie numer relacji;
+- ``scalenia``, ``wymiary`` (wysokość, ukrycie i poziom konspektu wierszy i kolumn),
+  ``nazwy_zdefiniowane`` (nazwa arkusza w apostrofach i bez nich to to samo), ``external_links`` (bajty każdej części ``xl/externalLinks/*``)
+  i ``flagi_przeliczania`` (``calcMode``, ``fullCalcOnLoad``, ``forceFullCalc``).
+
+``xl/calcChain.xml`` nie jest porównywany.
+"""
 
 CATEGORIES: Final = (
     "pliki",
@@ -108,8 +108,6 @@ def _compare_workbooks(reference: Path, candidate: Path) -> dict[str, int]:
         differences.update(
             _compare_sheets(_sheet(reference_book, title), _sheet(candidate_book, title), styles)
         )
-    reference_book.close()
-    candidate_book.close()
     return dict(differences)
 
 

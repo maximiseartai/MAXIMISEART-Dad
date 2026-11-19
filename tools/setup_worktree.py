@@ -1,6 +1,4 @@
-"""Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
-
-``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
+"""``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
 więc pytest i skrypty weryfikacyjne uruchomione nim z worktree mogą po cichu
 sprawdzać kod z ``main``. Ten skrypt tworzy ``.venv`` w checkoucie, w którym
 leży, instaluje go edytowalnie i sprawdza, że ``rozliczenia`` importuje się z
@@ -31,6 +29,8 @@ import potomne
 from repo import ROOT
 import repo
 
+OPIS = "Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona."
+
 VENV = ROOT / ".venv"
 EXTRAS = ".[dev,workflowy]"
 IMPORT_PTH = "maximiseart_katalogi_importu.pth"
@@ -41,7 +41,7 @@ SUPPORTED = sys.version_info >= MINIMUM_PYTHON
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.add_argument(
         "--python",
         default=sys.executable if SUPPORTED else MINIMUM,
@@ -54,7 +54,7 @@ def main(argv: list[str] | None = None) -> int:
         _run([uv, "venv", "--allow-existing", "--python", args.python, str(VENV)])
         _run([uv, "pip", "install", "--python", str(_venv_python()), "-e", EXTRAS])
     elif not SUPPORTED:
-        print(f"BŁĄD: bez uv uruchom skrypt Pythonem {MINIMUM} albo nowszym.", file=sys.stderr)
+        print(_without_uv_on_old_python(), file=sys.stderr)
         return 1
     else:
         venv.EnvBuilder(with_pip=True, symlinks=sys.platform != "win32").create(VENV)  # jak ``python -m venv``
@@ -74,6 +74,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"OK: {VENV} importuje rozliczenia z src i moduły narzędzi z katalogów repo.IMPORT_ROOTS.", flush=True)
     _print_work_in_progress()
     return 0
+
+
+def _without_uv_on_old_python() -> str:
+    """Jedna linia błędu z poleceniem naprawy, gdy skrypt uruchomił Python starszy niż ``MINIMUM``, a uv nie ma w PATH."""
+
+    return (
+        f"BŁĄD: Python {sys.version_info[0]}.{sys.version_info[1]} nie utworzy .venv (repo wymaga {MINIMUM} albo nowszego), "
+        f"a uv nie ma w PATH: uruchom python{MINIMUM} tools/setup_worktree.py (Windows: py -{MINIMUM} tools/setup_worktree.py) "
+        "albo zainstaluj uv (https://docs.astral.sh/uv/)."
+    )
 
 
 def _gate_pushes(root: Path) -> None:

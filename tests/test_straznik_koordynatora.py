@@ -275,7 +275,7 @@ def test_wpis_dzieci_traci_znaczenie_po_limicie_a_linia_innej_postaci_nic_nie_zn
 def test_ustawienia_wpinaja_hook_po_delegate_task_i_na_starcie_sesji() -> None:
     hooks = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]
     (after,) = [entry for entry in hooks["PostToolUse"] if "straznik_koordynatora.py" in json.dumps(entry)]
-    (start,) = hooks["SessionStart"]
+    (start,) = [entry for entry in hooks["SessionStart"] if "straznik_koordynatora.py" in json.dumps(entry)]
 
     assert after["matcher"] == straznik.DELEGATE
     for entry in (after, start):

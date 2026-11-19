@@ -1,4 +1,28 @@
-"""Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Any
+import urllib.parse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from api_actions import REZERWA_SCALANIA, PonizejRezerwy, ZRezerwa
+import czasy_ci
+import github
+from github import REPO, STRONA, GhApi, GitHub
+import narzedzia_tlc
+import niestabilne_testy
+from ostatnie_linie import REQUIRED_FAIL
+import stan_pr
+
+OPIS = """Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
 
 Narzędzie bierze najnowszy run workflow ``CI`` na HEAD PR numer N (``stan_pr.latest_ci_run``, jak ``tools/scal_pr.py``)
 albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka to awaria runnera, a nie defekt:
@@ -35,6 +59,8 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
 Ponowienie to ``gh run rerun <run> --failed``, a zielonego zadania bez zapisu czasów ``gh run rerun --job <zadanie>``
 (kilku: ``gh run rerun <run>``, bo GitHub ponawia osobno tylko jedno zielone zadanie). Kod 0 i ``PONÓW OK`` znaczą, że
 narzędzie ponowiło run albo uruchomiło CI na świeżym scaleniu; kod 1 to ``PONÓW CZEKA`` albo ``PONÓW ODMOWA``, a kod 2 to ``PONÓW FAIL``, błąd ``gh``.
+Przy zapasie limitu GitHub API poniżej ``REZERWA_SCALANIA`` (``tools/lib/api_actions.py``) narzędzie nie pyta API,
+tylko odmawia (``PONÓW ODMOWA``) z godziną resetu limitu.
 
 Granica: runner, który zniknął bez logu zadania, daje odmowę z błędem pobrania logu, a nie awarię, bo w runach
 z 2–12.11 takiego przypadku nie było i jego sygnatury nie znamy.
@@ -43,29 +69,6 @@ z 2–12.11 takiego przypadku nie było i jego sygnatury nie znamy.
     .venv/bin/python tools/ponow_ci.py --run 43035692960
     py -3 tools/ponow_ci.py 1303                      # Windows
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
-import re
-import subprocess
-import sys
-from typing import Any
-import urllib.parse
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import czasy_ci
-import github
-from github import REPO, STRONA, GhApi, GitHub
-import narzedzia_tlc
-import niestabilne_testy
-from ostatnie_linie import REQUIRED_FAIL
-import stan_pr
 
 NAJWIECEJ_PONOWIEN = 1
 OKNO = timedelta(hours=2)
@@ -269,6 +272,7 @@ def _gh_swieze_scalenie(numer: int) -> None:
 
 
 GH = Akcje(_gh_ponow_zadania, _gh_swieze_scalenie)
+GITHUB = ZRezerwa(GhApi(), REZERWA_SCALANIA)
 
 
 @dataclass(frozen=True)
@@ -429,7 +433,7 @@ def ponow(api: GitHub, run_id: int, numer: int | None, teraz: datetime, akcje: A
 
 
 def main(argv: list[str] | None = None, *, api: GitHub | None = None, akcje: Akcje = GH, teraz: datetime | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     cel = parser.add_mutually_exclusive_group(required=True)
     cel.add_argument("numer", type=int, nargs="?", help="Numer PR: ponawia najnowszy run CI na jego HEAD.")
     cel.add_argument("--run", type=int, help="Identyfikator runu CI, np. pushu na main.")
@@ -442,10 +446,13 @@ def main(argv: list[str] | None = None, *, api: GitHub | None = None, akcje: Akc
                 print(f"PONÓW ODMOWA | #{args.numer} | CI nie biegło na HEAD: jeszcze nie wystartowało albo PR ma konflikt z bazą")
                 return 1
             run_id = run.id
-        wynik = ponow(api or GhApi(), run_id, args.numer, teraz or datetime.now(UTC), akcje)
+        wynik = ponow(api or GITHUB, run_id, args.numer, teraz or datetime.now(UTC), akcje)
     except stan_pr.UnknownRun as nieznany:
         print(f"PONÓW FAIL | #{args.numer} | check „{nieznany.name}” bez identyfikatora runu w detailsUrl {nieznany.url}")
         return 2
+    except PonizejRezerwy as blad:
+        print(f"PONÓW ODMOWA | {blad.stderr}")
+        return 1
     except (github.BladApi, subprocess.SubprocessError, OSError) as blad:
         print(f"PONÓW FAIL | {blad}")
         return 2

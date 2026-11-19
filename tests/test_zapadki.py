@@ -61,6 +61,7 @@ PARSERS = frozenset(
     tests/fixtures/skladnia.py
     tests/test_decyzje_na_faktach.py
     tests/test_eksplorator_w_procesie.py
+    tests/test_glossary.py
     tests/test_granice_importow.py
     tests/test_granice_wyjatkow.py
     tests/test_jeden_odczyt_skoroszytu.py
@@ -733,10 +734,11 @@ AST_GREP_CONFIG = ROOT / "sgconfig.yml"
 AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
-    "historia-w-docstringu": "zostaw w opisie PR albo w issue",
+    "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
     "komentarz-w-src": "wyraź lepszą nazwą albo testem",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
+    "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
@@ -802,6 +804,7 @@ REGULY_CALEGO_DRZEWA: Final = (
     "komentarz-w-src",
     "kotwica-konca-linii",
     "lokator-tytulu-okna",
+    "odczyt-docstringu",
     "regula-w-trasie",
     "stan-pliku-poza-file-state",
     "watki-workera",
@@ -2874,6 +2877,80 @@ def test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff(tmp_pa
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_watkow_przechodza_przez_reguly_ast_grep_i_ruff")
+
+
+_DOC_RULE = "odczyt-docstringu"
+_ARGPARSE = "import argparse\n\n"
+_PROBKI_ODCZYTU_DOCSTRINGU: Final[list[tuple[str, list[int]]]] = [
+    (f"{_ARGPARSE}parser = argparse.ArgumentParser(description=__doc__)\n", [3]),
+    (f"{_ARGPARSE}parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)\n", [3, 3]),
+    ('import limit_rund\n\nRULES = (limit_rund.__doc__ or "").partition("Zasady")[2]\n', [3]),
+    ("import limit_rund\n\nRULES = (\n    limit_rund\n    .__doc__\n)\n", [5]),
+    ('def f() -> None:\n    pass\n\n\nf.__doc__ = "Opis."\n', [5]),
+    (f'{_ARGPARSE}OPIS = "Opis narzędzia."\nparser = argparse.ArgumentParser(description=OPIS)\n', []),
+    ('NAME = "__doc__"\n', []),
+    ('"""Docstring, który mówi o __doc__."""\n', []),
+]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(("text", "lines"), _PROBKI_ODCZYTU_DOCSTRINGU)
+def test_regula_odczytu_docstringu_zglasza_kazde_doc_a_nie_stala_opis_ani_napis(tmp_path: Path, text: str, lines: list[int]) -> None:
+    base = _empty_base(tmp_path)
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "narzedzie.py").write_text(text, encoding="utf-8")
+
+    assert _findings_of(_DOC_RULE, tmp_path, base) == [("tools/narzedzie.py", line) for line in lines]
+
+
+@needs_ast_grep
+def test_regula_odczytu_docstringu_obejmuje_kazdy_plik_pythona_repo(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    paths = (
+        "narzedzie.py",
+        "src/rozliczenia/modul.py",
+        "tests/test_modulu.py",
+        "tools/lib/modul.py",
+        "tools/ci/skrypt.py",
+        ".agents/skills/verify-x/scripts/skrypt.py",
+        "tools/lib/modul.pyi",
+        "tools/skrypt.py3",
+    )
+    for path in paths:
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("TEXT = __doc__\n", encoding="utf-8")
+
+    assert sorted(_findings_of(_DOC_RULE, tmp_path, base)) == sorted((path, 1) for path in paths)
+
+
+# Znane luki reguły ``odczyt-docstringu`` (tests/fixtures/znane_luki.py): „klasa: postać” → dodany plik ``tools/``,
+# który czyta docstring modułu, a mimo to przechodzi przez reguły ast-grep i ruff.
+ZNANE_LUKI_ODCZYTU_DOCSTRINGU: Final[dict[str, str]] = {
+    "odbicie po nazwie atrybutu: getattr": 'import limit_rund\n\nRULES = getattr(limit_rund, "__doc__")\n',
+    "odbicie po nazwie atrybutu: vars": 'import limit_rund\n\nRULES = vars(limit_rund)["__doc__"]\n',
+    "biblioteka czyta za kod: inspect.getdoc": "import inspect\n\nimport limit_rund\n\nRULES = inspect.getdoc(limit_rund)\n",
+    "biblioteka czyta za kod: pydoc": "import pydoc\n\nimport limit_rund\n\nRULES = pydoc.getdoc(limit_rund)\n",
+    "docstring z drzewa składni": (
+        "import ast\nfrom pathlib import Path\n\n"
+        'RULES = ast.get_docstring(ast.parse(Path("tools/lib/limit_rund.py").read_text(encoding="utf-8")))\n'
+    ),
+}
+
+
+@needs_ast_grep
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+def test_znane_luki_reguly_odczytu_docstringu_przechodza_przez_reguly_ast_grep_i_ruff(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki, ruff, zapisz
+
+    base = _empty_base(tmp_path)
+    (folder := tmp_path / "tools").mkdir()
+    pliki = zapisz(ZNANE_LUKI_ODCZYTU_DOCSTRINGU, folder)
+    zgloszenia = ruff(pliki, sonda=ROOT / "tools" / "test_sonda_luki.py")
+    opisy = {plik.relative_to(tmp_path).as_posix(): opis for opis, plik in pliki.items()}
+    for finding in syntax_rules(tmp_path, base):
+        zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_odczytu_docstringu_przechodza_przez_reguly_ast_grep_i_ruff")
 
 
 # Reguła z zapadki → plik z jej ignores: (części ścieżki, nie napis z ``/``, bo napis ścieżki w pliku testu jest

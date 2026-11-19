@@ -23,6 +23,7 @@ from urllib.parse import quote
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta, timezone
+from fnmatch import fnmatchcase
 import email
 import email.policy
 from pathlib import Path
@@ -54,6 +55,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_RE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
+from rozliczenia.centrum.report_reminders import MinuteRhythm
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
@@ -371,6 +373,27 @@ def test_wskazany_rejestr_zlecen_i_folder_okresow_sa_zapamietane(tmp_path: Path)
     }
     assert after_restart["periods_directory"] == {"state": "ready", "path": str(periods), "name": "INEA"}
     assert first.platform.dialog_titles == ["Wybierz plik Rejestru zleceń", "Wybierz folder okresów (np. Załączniki albo INEA)"]
+
+
+def test_okno_wyboru_rejestru_zlecen_pokazuje_tez_rejestr_pod_inna_nazwa(tmp_path: Path) -> None:
+    """Centrum przyjmuje Rejestr zleceń pod każdą nazwą, więc okno wyboru, które podpowiada nazwę z GLOSSARY, ma też
+    filtr, pod którym tata widzi skoroszyt przemianowany albo skopiowany pod inną nazwą. Okno Windows nie rozróżnia
+    w filtrze wielkości liter."""
+
+    register = tmp_path / "Rejestr zleceń 2026.xlsx"
+    register.touch()
+    app = centrum(tmp_path)
+    app.platform.chosen_files.append(register)
+
+    chosen = app.client.post("/api/settings/register/choose").json()["settings"]["order_register"]
+
+    [filters] = app.platform.file_filters
+    shown_by = {
+        name: [label for label, pattern in filters if fnmatchcase(name.casefold(), pattern.casefold())]
+        for name in ("ZLECENIA INTERMAX OD 08_11_2021.xlsx", register.name)
+    }
+    assert all(shown_by.values()), shown_by
+    assert chosen["name"] == register.name
 
 
 def test_anulowane_okno_wyboru_nie_zmienia_ustawien(tmp_path: Path) -> None:
@@ -740,6 +763,70 @@ def test_cofniecie_przywraca_wartosc_jako_nowy_wiersz_a_cofniecie_cofniecia_przy
         (None, [{"key": "wyglad.motyw", "before": "dark", "after": "light"}]),
     ]
     assert app.client.get("/api/settings").json()["theme"] == "light"
+
+
+@pytest.mark.parametrize(
+    ("name", "change"),
+    [
+        (LEGEND_FILE, lambda app: app.client.post("/api/settings/activity-legend", json=code_form("listwa#m", amount=20))),
+        (RULES_FILE, lambda app: app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2))),
+        (DEVICES_FILE, lambda app: app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": [], "group": None})),
+        (SETTINGS_FILE, lambda app: app.client.put("/api/settings/theme", json={"theme": "light"})),
+        (RULES_FILE, lambda app: _outside(app, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("wartosc: 1", "wartosc: 2"))),
+    ],
+    ids=[LEGEND_FILE, RULES_FILE, DEVICES_FILE, SETTINGS_FILE, f"{RULES_FILE}-spoza"],
+)
+def test_cofniecie_zmiany_ktora_utworzyla_plik_ustawien_usuwa_plik(
+    tmp_path: Path, name: str, change: Callable[[Centrum], Any]
+) -> None:
+    """Tata bez pliku liczy wartościami z Wydania. „Cofnij” pierwszej zmiany (jego albo spoza Centrum) przywraca brak
+    pliku, a nie treść z Wydania w pliku, więc następne Wydanie z nowymi wartościami domyślnymi dociera do niego (ADR
+    0032); wiersz cofnięcia mówi „plik usunięty”, a cofnięcie cofnięcia tworzy plik znowu."""
+
+    app = centrum(tmp_path)
+    assert change(app).status_code == 200
+    [created] = [row for row in history_rows(app) if row["file"] == name]
+
+    files = (LEGEND_FILE, RULES_FILE, DEVICES_FILE, SETTINGS_FILE)
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+    after_undo = [file for file in files if (app.tool.config / file).exists()]
+    [undo_row, _] = [row for row in history_rows(app) if row["file"] == name]
+    redone = app.client.post(f"/api/settings/history/{undo_row['id']}/undo")
+    after_redo = [file for file in files if (app.tool.config / file).exists()]
+
+    assert undone.status_code == 200, undone.text
+    assert after_undo == []
+    assert (undo_row["undoes"], undo_row["removed"]) == (created["id"], True)
+    assert (redone.status_code, after_redo) == (200, [name]), redone.text
+
+
+def test_cofniecie_zmiany_ktora_utworzyla_plik_zostawia_plik_z_pozniejsza_zmiana_innego_klucza(tmp_path: Path) -> None:
+    """„Cofnij” zmiany motywu, która utworzyła plik Folderów i motywu, przy wskazanym potem folderze okresów zostawia plik
+    z tym folderem: brak pliku zgubiłby późniejszą zmianę taty."""
+
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    app = centrum(tmp_path)
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
+    [created] = history_rows(app)
+    app.platform.chosen_folders.append(periods)
+    assert app.client.post("/api/settings/periods-directory/choose").status_code == 200
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert FOLDERS.parse(app.settings_path.read_bytes()) == FolderSettings(periods_directory=periods)
+    assert history_rows(app)[0]["removed"] is False
+
+
+def _outside(app: Centrum, name: str, old: str, new: str) -> Any:
+    """Plik ``name`` z treścią z Wydania z ``old`` zamienionym na ``new`` zapisany poza Centrum i odczyt, który daje
+    jego wiersz Historii."""
+
+    app.client.get("/api/settings/history")
+    write_dad_quantity_rules(app.tool, name, old, new)
+    return app.client.get("/api/settings/history")
 
 
 def test_cofniecie_zmiany_ktorej_nie_ma_w_historii_jest_odmowa(tmp_path: Path) -> None:
@@ -1475,9 +1562,9 @@ def test_narzedzia_licza_ostatnia_dobra_para_gdy_plik_taty_zmieniony_poza_centru
 def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skladnikowi_wydania_jego_zapisy(
     tmp_path: Path, release_without_manual_installation: Callable[[], None], others: list[str]
 ) -> None:
-    """Tata dodał składnik „instalacja ręczna” (z zapisem „wizja” albo bez), a następne Wydanie daje te zapisy nowemu
-    składnikowi reguł. „Cofnij” dodania przechodzi za pierwszym razem: składnik taty znika, a składnik z Wydania dostaje
-    oba zapisy, w pliku taty i w procesach, i sekcja nie ma już zdania."""
+    """Tata dodał składnik „instalacja ręczna” (z zapisem „wizja” albo bez) do Listy Urządzeń z Wydania, a następne
+    Wydanie daje te zapisy nowemu składnikowi reguł. „Cofnij” dodania przechodzi za pierwszym razem: plik taty znika, bo
+    przed dodaniem go nie było, procesy liczą składnikiem z Wydania z oboma zapisami, a sekcja nie ma już zdania."""
 
     app = centrum(tmp_path)
     app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": others, "group": None})
@@ -1488,13 +1575,56 @@ def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skl
 
     assert undone.status_code == 200, undone.text
     assert app.client.get(QUANTITY_RULES_URL).json()["devices_problem"] is None
-    dad_list = _dad_list(app)
-    assert dad_list is not None and [component.spellings for component in dad_list if "instalacja ręczna" in component.spellings] == [
-        ("instalacja ręczna", "wizja")
-    ]
+    assert _dad_list(app) is None
     counted = _tools_rules(app.tool.config)
     assert counted.devices.find(["instalacja", "ręczna"]) == ([(Component("instalacja-reczna", ("instalacja ręczna", "wizja")), 1)], True)
     assert counted.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+@pytest.mark.parametrize(
+    ("name", "change"),
+    [
+        (RULES_FILE, lambda app: app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2))),
+        (DEVICES_FILE, lambda app: app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": [], "group": None})),
+    ],
+    ids=[RULES_FILE, DEVICES_FILE],
+)
+def test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wartosci_z_wydania_usuwa_plik(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None], name: str, change: Callable[[Centrum], Any]
+) -> None:
+    """Tata bez pliku zmienia Ustawienie, Aktualizacja daje nowe wartości z Wydania, a potem tata klika „Cofnij”: pliku
+    znowu nie ma, więc tata liczy nowymi wartościami z Wydania, a nie wartościami poprzedniego Wydania w swoim pliku."""
+
+    app = centrum(tmp_path)
+    assert change(app).status_code == 200
+    [created] = [row for row in history_rows(app) if row["file"] == name]
+    release_without_manual_installation()
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert [file for file in (RULES_FILE, DEVICES_FILE) if (app.tool.config / file).exists()] == []
+    assert _tools_rules(app.tool.config) == DEFAULT_QUANTITY_RULES
+
+
+def test_cofniecie_zmiany_ktora_utworzyla_plik_po_cofnieciu_pozniejszej_i_aktualizacji_usuwa_plik(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    """Tata bez pliku reguł zmienia regułę dwa razy, cofa drugą zmianę, Aktualizacja daje nowe Reguły ilości, a potem
+    tata cofa pierwszą zmianę: późniejsze zmiany niczego w pliku nie zostawiły, więc pliku znowu nie ma."""
+
+    app = centrum(tmp_path)
+    for value in (2, 3):
+        assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, value)).status_code == 200
+    [second, created] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
+    assert app.client.post(f"/api/settings/history/{second['id']}/undo").status_code == 200
+    release_without_manual_installation()
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert not (app.tool.config / RULES_FILE).exists()
+    assert _tools_rules(app.tool.config) == DEFAULT_QUANTITY_RULES
 
 
 def _nokia_rule(app: Centrum, value: int) -> dict[str, Any]:
@@ -2205,6 +2335,7 @@ def test_regula_ilosci_zmieniona_poza_centrum_dziala_od_razu_ma_wiersz_historii_
 
 def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(tmp_path: Path) -> None:
     app = centrum(tmp_path)
+    write_dad_quantity_rules(app.tool, RULES_FILE, "", "")
     rule_sentences(app)
     contract_rule = "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n"
     write_dad_quantity_rules(app.tool, RULES_FILE, contract_rule, "")
@@ -3431,6 +3562,16 @@ def test_przypomnienia_startuja_po_zmianach_ustawien_z_wydania(tmp_path: Path) -
 
     [at_start] = rhythm.seen
     assert "light" in at_start
+
+
+def test_zatrzymane_centrum_konczy_sprawdzanie_przypomnien_co_minute(tmp_path: Path) -> None:
+    """Przypomnienia o raporcie sprawdza co minutę wątek Centrum; po zatrzymaniu Centrum nie zostaje, więc nie przypomina
+    Wykonawcom w imieniu Centrum, które już się zamknęło."""
+
+    client = CentrumClient(centrum_app(ToolDirectory(tmp_path), reminder_rhythm=MinuteRhythm()))
+    client.start()
+
+    client.stop()  # czeka na każdy wątek Centrum i wywraca test nazwą wątku, który żyje dalej
 
 
 def test_start_centrum_sprawdza_klucz_do_zgloszen_w_tle_zanim_karta_o_cokolwiek_zapyta(tmp_path: Path) -> None:
@@ -4945,31 +5086,85 @@ def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_popraw
     )
 
 
-@pytest.mark.parametrize(
-    ("method", "form"),
-    [
-        pytest.param("PUT", {"logins": ["jan.testowy"], "name": "Jan Testowy", "addresses": []}, id="zmiana"),
-        pytest.param("DELETE", None, id="usuniecie"),
-    ],
-)
-def test_zmiana_i_usuniecie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_mowia_co_poprawic_a_nie_o_pliku_bez_odczytu(
-    tmp_path: Path, method: str, form: dict[str, object] | None
+_WORKER_CHANGES = [
+    pytest.param("PUT", "", {"logins": ["jan.testowy"], "name": "Jan Testowy", "addresses": []}, id="zmiana"),
+    pytest.param("DELETE", "", None, id="usuniecie"),
+    pytest.param("PUT", "/switches", {"active": False}, id="przelacznik"),
+    pytest.param("POST", "/addresses", {"address": "jan@example.com"}, id="adres"),
+]
+
+
+@pytest.mark.parametrize(("method", "route", "form"), _WORKER_CHANGES)
+def test_zmiana_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_mowi_co_poprawic_a_nie_o_pliku_bez_odczytu(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
 ) -> None:
-    """Plik da się czytać, więc odmowa „Zapisz” w formularzu Wykonawcy i „Usuń” mówi o złym ustawieniu jak odmowa
-    startu, a nie każe zamykać programów, które trzymają plik, i niczego nie zapisuje."""
+    """Plik da się czytać, więc odmowa „Zapisz” w formularzu Wykonawcy, „Usuń”, przełącznika i „Przypisz do Wykonawcy…”
+    mówi o złym ustawieniu jak odmowa startu, a nie każe zamykać programów, które trzymają plik, ani nie mówi, że
+    Wykonawcy nie ma na liście, i niczego nie zapisuje."""
 
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     bad = "schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n"
     app.tool.worker_list.write_text(bad, encoding="utf-8")
 
-    refused = app.client.request(method, "/api/settings/workers/jan.testowy", json=form)
+    refused = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
 
     assert (refused.status_code, refused.json()) == (
         409,
         {"message": unusable(settings_messages.worker_without_login()), "field": "wykonawcy[0].loginy"},
     )
     assert app.tool.worker_list.read_text(encoding="utf-8") == bad
+
+
+@pytest.mark.parametrize(("method", "route", "form"), _WORKER_CHANGES)
+def test_zmiana_wykonawcy_przy_liscie_bez_odczytu_mowi_o_pliku_bez_odczytu(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
+) -> None:
+    app = centrum(tmp_path)
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}))
+    kept = app.tool.worker_list.read_bytes()
+
+    with reading(app.tool.config, frozenset({app.tool.worker_list})):
+        refused = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
+
+    assert (refused.status_code, refused.json()) == (409, {"message": refusal.workers_unusable(None).message})
+    assert app.tool.worker_list.read_bytes() == kept
+
+
+@pytest.mark.parametrize(("method", "route", "form"), [change for change in _WORKER_CHANGES if change.id != "zmiana"])
+def test_zmiana_wykonawcy_przy_liscie_chwilowo_bez_odczytu_czeka_na_plik_i_zapisuje(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
+) -> None:
+    held = ToolDirectory(tmp_path).worker_list
+    app = centrum(tmp_path, pause=lambda _: allow_reading(held))
+    write_worker_list(held, worker_list({"jan.testowy": "Jan Testowy"}))
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    write_orders(register, ["inny.login"])
+    app.platform.chosen_files.append(register)
+    (tmp_path / "Okresy").mkdir()
+    app.platform.chosen_folders.append(tmp_path / "Okresy")
+    app.client.post("/api/settings/register/choose")
+    app.client.post("/api/settings/periods-directory/choose")
+    kept = held.read_bytes()
+
+    with without_reading(held):
+        saved = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
+
+    assert saved.status_code == 200, saved.text
+    assert held.read_bytes() != kept
+
+
+def test_dodanie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_zapisuje_liste_od_nowa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    app.tool.worker_list.write_bytes(b"schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n")
+
+    added = app.client.post("/api/settings/workers", json=worker_form(["ewa.nowa"], "Ewa Nowa"))
+
+    assert added.status_code == 200, added.text
+    assert app.client.get("/api/settings").json()["workers"]["state"] == "good"
+    assert list(listed_workers(app.client)) == ["ewa.nowa"]
 
 
 def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
@@ -5545,6 +5740,29 @@ def test_cofnij_zmiany_ktora_dala_login_ze_zleceniami_jest_odmowa_jak_usuniecie(
     assert (undone.status_code, undone.json()) == (409, {"message": answer})
     assert settings_files(centrum_) == before
     assert [row["undoable"] for row in history_rows_of(centrum_.client)] == [True]
+
+
+def test_cofniecie_dodania_wykonawcy_do_listy_bez_pliku_zostawia_plik_z_pusta_lista(tmp_path: Path) -> None:
+    """Brak pliku Listy Wykonawców po migracji z Wydania nie zawsze znaczy pustą listę (migracja czeka na stare pliki
+    albo ją odrzucono), więc „Cofnij” dodania Wykonawcy bez zleceń zostawia plik z pustą listą zamiast go usuwać."""
+
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    write_orders(register, ["adrian.testowy"])
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir()
+    client = started(tool, RELEASE_CHANGES, platform=FakePlatform(chosen_files=[register], chosen_folders=[periods]))
+    client.post("/api/settings/register/choose")
+    client.post("/api/settings/periods-directory/choose")
+    saved = client.post(WORKERS_API, json=worker_form(["nowy.login"], "Nowy Testowy"))
+
+    undone = client.post(f"/api/settings/history/{saved.json()['change']}/undo")
+
+    assert (saved.status_code, undone.status_code) == (200, 200), undone.text
+    assert WORKERS.parse(tool.worker_list.read_bytes()) == WORKERS.default
+    assert history_rows_of(client)[0]["removed"] is False
 
 
 def test_zapisanego_loginu_nie_da_sie_przepisac_gdy_ma_zlecenia_a_drugi_login_tata_dopisuje(tmp_path: Path) -> None:
@@ -6712,6 +6930,7 @@ def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnow
     (worker_folder / "Rozliczenie 22_28_09_2026 -.xlsx").touch()
     (worker_folder / "Rozliczenie 22_28_09_2026 - .xlsx").touch()
     (worker_folder / "Rozliczenie 22_28_09_2026 - Jan Próbny.pdf").touch()
+    (worker_folder / "Rozliczenie 22_28_09_2026 - Folder Kopii.xlsx").mkdir()
     write_period_files(periods, "29_05_10_2026")
     (periods / "15_21_09_2026").mkdir()
     (periods / "Archiwum").mkdir()
@@ -8805,4 +9024,4 @@ def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tm
         ("wysylka_rozliczen.tresc", "Dzień dobry,\nw załączniku rozliczenie za {okres}.", form["text"]),
     ]
     assert undone.json()["settings"]["settlement_mail"]["subject"] == "Rozliczenie za {okres}"
-    assert yaml.safe_load((app.tool.config / SETTLEMENT_MAIL_FILE).read_bytes())["temat"] == "Rozliczenie za {okres}"
+    assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
