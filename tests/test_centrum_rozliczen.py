@@ -4994,8 +4994,9 @@ def test_zmiana_wykonawcy_przy_liscie_bez_odczytu_mowi_o_pliku_bez_odczytu(
 def test_zmiana_wykonawcy_przy_liscie_chwilowo_bez_odczytu_czeka_na_plik_i_zapisuje(
     tmp_path: Path, method: str, route: str, form: dict[str, object] | None
 ) -> None:
-    app = centrum(tmp_path, pause=lambda _: allow_reading(app.tool.worker_list))
-    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}))
+    held = ToolDirectory(tmp_path).worker_list
+    app = centrum(tmp_path, pause=lambda _: allow_reading(held))
+    write_worker_list(held, worker_list({"jan.testowy": "Jan Testowy"}))
     register = register_of(tmp_path)
     register.parent.mkdir()
     write_orders(register, ["inny.login"])
@@ -5004,13 +5005,13 @@ def test_zmiana_wykonawcy_przy_liscie_chwilowo_bez_odczytu_czeka_na_plik_i_zapis
     app.platform.chosen_folders.append(tmp_path / "Okresy")
     app.client.post("/api/settings/register/choose")
     app.client.post("/api/settings/periods-directory/choose")
-    kept = app.tool.worker_list.read_bytes()
+    kept = held.read_bytes()
 
-    with without_reading(app.tool.worker_list):
+    with without_reading(held):
         saved = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
 
     assert saved.status_code == 200, saved.text
-    assert app.tool.worker_list.read_bytes() != kept
+    assert held.read_bytes() != kept
 
 
 def test_dodanie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_zapisuje_liste_od_nowa(tmp_path: Path) -> None:
