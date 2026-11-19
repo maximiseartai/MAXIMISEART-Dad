@@ -315,6 +315,67 @@ def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tyl
     assert _pobrane(atrapa) == {1, 5, 8, 11}
 
 
+def _czytane(atrapa: AtrapaImap) -> set[int]:
+    """UID maili, o które port pytał serwer w jakimkolwiek ``UID FETCH``, także o same nagłówki ``Subject`` i ``From``."""
+
+    found: set[int] = set()
+    for command in atrapa.commands:
+        if command.startswith("UID FETCH"):
+            for part in command.split(" ")[2].split(","):
+                first, _, last = part.partition(":")
+                found.update(range(int(first), int(last or first) + 1))
+    return found
+
+
+def test_kolejny_odczyt_skrzynki_pyta_serwer_tylko_o_maile_spoza_poprzedniego_i_oddaje_to_co_odczyt_od_zera(
+    tmp_path: Path,
+) -> None:
+    """Kolejne kliknięcie Wpisania raportów (i Przypomnienia o raporcie) na tym samym porcie: UID z tym samym
+    ``UIDVALIDITY`` to zawsze ten sam mail, więc port nie pobiera drugi raz maili, które już przeczytał, ani nagłówków
+    maili bez tematu Raportu wykonawcy, a wynik, także liczba pominiętych i mail usunięty ze skrzynki, jest taki jak
+    odczyt od zera nowym portem."""
+
+    def mail(uid: int, temat: bytes = b"Raport 08.11.2026", od: bytes | None = b"Jan <jan.testowy@przyklad.invalid>") -> AtrapaMail:
+        return w_skrzynce(uid, surowy(temat=temat, od=od, message_id=f"<{uid}@x.invalid>".encode()))
+
+    config = dostep(tmp_path)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1), mail(2, b"Faktura"), mail(3, od=None), mail(4)]) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails = (*atrapa.mails, mail(5), mail(6, b"Faktura"))
+        atrapa.deleted.add(4)
+        atrapa.commands.clear()
+        again = inbox.mails_since(date(2026, 11, 8))
+        asked = _czytane(atrapa)
+        fresh = port(config, atrapa).mails_since(date(2026, 11, 8))
+
+    assert [mail.id for mail in maile(first)] == [MailId.of("<1@x.invalid>"), MailId.of("<4@x.invalid>")]
+    assert again == fresh
+    assert [mail.id for mail in maile(again)] == [MailId.of("<1@x.invalid>"), MailId.of("<5@x.invalid>")]
+    assert isinstance(again, Mails) and again.skipped == 1
+    assert asked == {5, 6}
+
+
+@pytest.mark.parametrize("nowe_uidvalidity", [2, None], ids=["zmienione", "bez-uidvalidity"])
+def test_skrzynka_ze_zmienionym_albo_bez_uidvalidity_port_czyta_kazdy_mail_od_zera(
+    tmp_path: Path, nowe_uidvalidity: int | None
+) -> None:
+    """Gdy ``UIDVALIDITY`` folderu się zmieni albo serwer go nie podaje, ten sam UID może wskazywać inny mail, więc
+    port czyta każdy mail od zera i oddaje nowy mail spod starego UID."""
+
+    config = dostep(tmp_path)
+    przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
+    po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[przed]) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails, atrapa.validity = (po,), nowe_uidvalidity
+        again = inbox.mails_since(date(2026, 11, 8))
+
+    assert [mail.text for mail in maile(first)] == ["40000001 tak"]
+    assert [(mail.id, mail.text) for mail in maile(again)] == [(MailId.of("<po@x.invalid>"), "40000002 nie")]
+
+
 def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:
     """Przypomnienia o raporcie, które Centrum wysyła ze skrzynki raportów, leżą w folderze wszystkich maili ze słowem
     „raport” w temacie: port pomija je po nagłówku ``From``, zanim pobierze ich treść."""
