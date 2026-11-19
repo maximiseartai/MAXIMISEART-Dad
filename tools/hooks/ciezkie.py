@@ -8,7 +8,9 @@ Działa tylko tam, gdzie ``boatbox`` jest w ``PATH`` (Mac Maksa), a na innej mas
 każe tam uruchamiać lokalnie.
 
 Hook czyta polecenie słowami ``shlex`` bez ciał heredoców i dzieli je na polecenia proste na operatorach powłoki
-(``;``, ``&``, ``|``, nawiasy, nowa linia); przekierowanie zabiera tylko swój cel. Python to słowo ``python``,
+(``;``, ``&``, ``|``, nawiasy, nowa linia); przekierowanie zabiera swój cel i liczbę przyklejoną do operatora
+(``2>&1``), a liczba przed spacją (``-n 8 > log``) zostaje argumentem, jak w Bashu. Słowa za słowem ``boatbox``
+należą do ``boatbox``. Python to słowo ``python``,
 ``python3`` albo ``python3.14`` ze ścieżką (``.venv/bin/python``) w dowolnym miejscu polecenia prostego, także za
 ``timeout 900`` czy ``nohup``, albo bez ścieżki na pozycji programu: pierwsze słowo za przypisaniami (``X=1``)
 i słowami ``PREFIXES`` (``do``, ``then``, ``!``, ``{``…). Jego skrypt to pierwsze słowo za opcjami Pythona, a ``-m``
@@ -29,7 +31,7 @@ cudzysłowie podwójnym, bo zmienną zna tylko powłoka agenta. Przechodzi bez s
 
 | Polecenie | Przykład |
 |---|---|
-| ciężkie polecenie w ``boatbox`` | ``boatbox auto '.venv/bin/python tools/szybko.py'`` |
+| ciężkie polecenie w ``boatbox``, w cudzysłowie albo bez | ``boatbox auto '.venv/bin/python tools/szybko.py'``, ``timeout 900 boatbox run --here .venv/bin/python tools/szybko.py`` |
 | pytest z plikiem testów albo z argumentem ze zmiennej lub pliku | ``.venv/bin/python -m pytest -n 4 tests/test_x.py -k y``, ``pytest -n 4 $T``, ``pytest -n 4 @testy.txt`` |
 | pytest w jednym procesie (bez ``-n``, ``-n 0``, ``-p no:xdist``) | ``.venv/bin/python -m pytest -q tests/ -k y``, ``pytest --collect-only -q`` |
 | ``mutacje.py`` bez ``--plik``, ``benchmark_przebiegu.py comment`` albo ``guard`` | ``.venv/bin/python tools/mutacje.py --zmiana a b c`` |
@@ -49,6 +51,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
+import io
 import json
 import re
 import shlex
@@ -148,7 +151,9 @@ def _without_heredocs(command: str) -> str:
 
 
 def _simple_commands(command: str) -> list[list[str]]:
-    lexer = shlex.shlex(_without_heredocs(command).replace("\\\n", " "), posix=True, punctuation_chars=OPERATORS)
+    text = _without_heredocs(command).replace("\\\n", " ")
+    stream = io.StringIO(text)
+    lexer = shlex.shlex(stream, posix=True, punctuation_chars=OPERATORS)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""
@@ -157,15 +162,13 @@ def _simple_commands(command: str) -> list[list[str]]:
     for token in lexer:
         if token and all(char in OPERATORS for char in token):
             if REDIRECT.fullmatch(token):
-                if commands[-1] and commands[-1][-1].isdigit():
-                    commands[-1].pop()
                 target = True
             else:
                 commands.append([])
                 target = False
         elif target:
             target = False
-        else:
+        elif not (token.isdigit() and text[stream.tell() - 1] in "<>"):
             commands[-1].append(token)
     return commands
 
@@ -199,6 +202,8 @@ def _refusals(words: list[str]) -> Iterator[Refusal]:
     for index in range(lead, len(words)):
         word = words[index]
         name = word.rsplit("/", 1)[-1]
+        if name == "boatbox":
+            return
         program = index == lead or "/" in word
         run: Optional[tuple[Heavy, list[str]]] = None
         if PYTHON.fullmatch(name) and program:

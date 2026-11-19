@@ -11,6 +11,7 @@ import importlib.util
 import json
 import os
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 from types import ModuleType
@@ -88,6 +89,14 @@ REFUSED = [
         "boatbox job pytest '.venv/bin/python -m pytest -n auto -q -p no:cacheprovider'",
     ),
     ("pytest -n auto", "boatbox job pytest 'pytest -n auto'"),
+    (
+        ".venv/bin/python -m pytest -q -n 8 > pytest.log 2>&1",
+        "boatbox job pytest '.venv/bin/python -m pytest -q -n 8'",
+    ),
+    (
+        ".venv/bin/python -m pytest -q --numprocesses 4 >> pytest.log",
+        "boatbox job pytest '.venv/bin/python -m pytest -q --numprocesses 4'",
+    ),
     (".venv/bin/pytest -q -n 4 tests/ -k szybko", "boatbox job pytest '.venv/bin/pytest -q -n 4 tests/ -k szybko'"),
     (".venv/bin/pytest -nauto -x", "boatbox job pytest '.venv/bin/pytest -nauto -x'"),
     (
@@ -138,6 +147,7 @@ ZNANE_LUKI = {
     "interpreter ze zmiennej: $PY tools/szybko.py": "PY=.venv/bin/python; $PY tools/szybko.py",
     "opcje pytest ze zmiennej: pytest $ARGS": 'ARGS="-n auto"; .venv/bin/python -m pytest $ARGS',
     "pytest bez ścieżki za innym programem: timeout 900 pytest": "timeout 900 pytest -n auto",
+    "Python bez ścieżki za innym programem: timeout 900 python3": "timeout 900 python3 tools/szybko.py",
     "podstawienie w cudzysłowie podwójnym: \"$(…)\"": 'echo "$(.venv/bin/python tools/szybko.py)"',
     "podstawienie w backtickach": "x=`.venv/bin/python tools/szybko.py`",
     "eval": "eval '.venv/bin/python tools/szybko.py'",
@@ -174,6 +184,25 @@ def test_gotowe_polecenie_z_odmowy_przechodzi(ready: str) -> None:
 @pytest.mark.parametrize("command", PASSING)
 def test_polecenie_w_boatbox_i_lekkie_polecenie_przechodza(command: str) -> None:
     assert hook.judge(command) is None
+
+
+HEAVY = [shlex.split(ready)[-1] for _, ready in REFUSED]
+BOATBOX = ["boatbox auto", "boatbox run", "boatbox run --here", "boatbox job nazwa", "timeout 900 boatbox auto"]
+
+
+@pytest.mark.parametrize("boatbox", BOATBOX)
+@pytest.mark.parametrize("heavy", HEAVY)
+def test_ciezkie_polecenie_za_boatbox_bez_cudzyslowu_przechodzi(boatbox: str, heavy: str) -> None:
+    assert hook.judge(f"{boatbox} {heavy}") is None
+
+
+@pytest.mark.parametrize("redirect", [" > f", " 2>&1", " &> f", " >> f 2>&1", " 2>blad.log", " </dev/null"])
+@pytest.mark.parametrize(("heavy", "ready"), [(heavy, ready) for heavy, (_, ready) in zip(HEAVY, REFUSED, strict=True)])
+def test_przekierowanie_za_ciezkim_poleceniem_nie_zmienia_odmowy(heavy: str, ready: str, redirect: str) -> None:
+    refusal = hook.judge(heavy + redirect)
+
+    assert refusal is not None
+    assert f"Uruchom je tak: {ready}\n" in refusal.reason
 
 
 def _fake_boatbox(folder: Path) -> Path:
