@@ -23,7 +23,7 @@
   },
   "src/rozliczenia/centrum/server.py": {
     "_GRACEFUL_SHUTDOWN_S": "06931a36054ed6bc",
-    "serve": "966ee1006e17b954",
+    "serve": "ff5900df92c15fc2",
     "_Server": "91047037b068a4cd"
   },
   "src/rozliczenia/centrum/run_comments.py": {
