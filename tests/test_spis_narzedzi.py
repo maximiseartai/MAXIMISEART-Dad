@@ -847,8 +847,8 @@ def _texts(tree: ast.AST) -> list[tuple[int, str]]:
 
 def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None:
     """Klucz jednostki planu (``pytest:``, ``krok:``, ``skill:``, ``narzut:``), nazwę zmiennej części ``MUTACJE_CZESC``
-    początek ostatniej linii, którą czyta inne narzędzie, hook albo CI, i komunikat boxa (``BOX: ``), który plugin stanu
-    procesu pisze, a ``tools/szybko.py`` czyta, pisze w ``tools/`` i skryptach skilli tylko ich właściciel: reszta składa je i rozbiera przez ``jednostka.Klucz``, ``jednostka.Czesc`` i stałe właściciela, więc
+    początek ostatniej linii, którą czyta inne narzędzie, hook albo CI, i komunikat boxa (``BOX: ``), który drukują plugin
+    stanu procesu i ``tools/szybko.py``, pisze w ``tools/`` i skryptach skilli tylko ich właściciel: reszta składa je i rozbiera przez ``jednostka.Klucz``, ``jednostka.Czesc`` i stałe właściciela, więc
     zmiana napisu po jednej stronie nie zostawia drugiej z cichym „nieznane”. Każdy stały kawałek f-stringu liczy się od
     swojego początku, a nazwy zmiennej szuka w całym kawałku. Postacie, których nie łapie, są próbkami w
     ``ZNANE_LUKI_KONTRAKTU``."""

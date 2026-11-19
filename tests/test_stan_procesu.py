@@ -19,7 +19,6 @@ from tests.fixtures.stan_procesu import WATEK_S, descriptors, left_to_gc
 from tests.fixtures.znane_luki import assert_znane_luki
 
 import box_boat
-import wyniki_testow
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 
@@ -41,11 +40,14 @@ def plik_w_cyklu(path):
 """
 
 
-def _sesja(tmp_path: Path, pliki: Mapping[str, str], conftest: str = _CONFTEST, *, katalog: str = ".") -> dict[str, str]:
+def _sesja(
+    tmp_path: Path, pliki: Mapping[str, str], conftest: str = _CONFTEST, *, katalog: str = ".", kody: list[int] | None = None
+) -> dict[str, str]:
     """Raport błędu albo porażki każdego testu sesji próbek z plików ``pliki``, w prawdziwym cyklu życia testu w
     osobnym procesie pytest: pierwsza linia to fazy błędów (``on setup``, ``on teardown``), dalej pełny raport z treści
     elementu JUnit, bo atrybut ``message`` pytest 9 skraca do 500 znaków; test bez błędu ma pusty raport. Sesja biegnie
-    w ``tmp_path / katalog`` z conftest i plikami próbek, a raport JUnit i ``--basetemp`` leżą w ``tmp_path``."""
+    w ``tmp_path / katalog`` z conftest i plikami próbek, a raport JUnit i ``--basetemp`` leżą w ``tmp_path``; kod
+    wyjścia sesji trafia do ``kody``."""
 
     sesja = tmp_path / katalog
     sesja.mkdir(exist_ok=True)
@@ -65,6 +67,8 @@ def _sesja(tmp_path: Path, pliki: Mapping[str, str], conftest: str = _CONFTEST, 
         check=False,
     )
     assert report.exists(), done.stdout + done.stderr
+    if kody is not None:
+        kody.append(done.returncode)
     reports: dict[str, str] = {}
     for case in ET.parse(report).iter("testcase"):
         failed = [element for element in case if element.tag in ("error", "failure")]
@@ -750,21 +754,41 @@ def test_sasiad_biegnie_w_katalogu_repo(request):
 }
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows nie przenosi katalogu roboczego procesu")
-def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_nie_stan_zostawiony_przez_test(tmp_path: Path) -> None:
-    zwolniony = tmp_path.resolve() / "retired"
-    conftest = _CONFTEST + f"\nimport box_boat\n\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n"
+# Porażka sesji spoza raportów testów, jak DRZEWO REPO w tests/conftest.py.
+_PORAZKA_SESJI: Final = """
 
-    errors = _sesja(tmp_path, _PRZENIESIENIE_BOXA, conftest, katalog="repo")
+
+def pytest_sessionfinish(session):
+    session.exitstatus = pytest.ExitCode.TESTS_FAILED
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows nie przenosi katalogu roboczego procesu")
+@pytest.mark.parametrize(
+    ("dodatkowe", "sesji", "kod"),
+    [
+        ({}, "", box_boat.KOD_WYJSCIA),
+        ({"test_zwykly.py": "def test_zwykly():\n    assert len('ab') == 3\n"}, "", 1),
+        ({}, _PORAZKA_SESJI, 1),
+    ],
+    ids=["tylko-box", "box-i-zwykla-porazka", "box-i-porazka-sesji"],
+)
+def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_sesja_tylko_z_nim_konczy_sie_kodem_boxa(
+    tmp_path: Path, dodatkowe: dict[str, str], sesji: str, kod: int
+) -> None:
+    zwolniony = tmp_path.resolve() / "retired"
+    conftest = _CONFTEST + f"\nimport box_boat\n\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n" + sesji
+    kody: list[int] = []
+
+    errors = _sesja(tmp_path, {**_PRZENIESIENIE_BOXA, **dodatkowe}, conftest, katalog="repo", kody=kody)
 
     moved = errors["test_box_przenosi_katalog_repo_w_trakcie_testu"]
     expected = f"{box_boat.KOMUNIKAT} (katalog roboczy {tmp_path.resolve() / 'repo'} → {zwolniony / 'home' / 'repo'})"
-    marked = {test.nazwa: box_boat.WLASNOSC in test.wlasnosci for test in wyniki_testow.testy(tmp_path / "junit.xml")}
-    assert (expected in moved, _zostawione(moved), errors["test_sasiad_biegnie_w_katalogu_repo"], marked) == (
+    assert (expected in moved, _zostawione(moved), errors["test_sasiad_biegnie_w_katalogu_repo"], kody) == (
         True,
         "",
         "",
-        {"test_box_przenosi_katalog_repo_w_trakcie_testu": True, "test_sasiad_biegnie_w_katalogu_repo": False},
+        [kod],
     ), errors
 
 

@@ -32,8 +32,11 @@ testem, więc jest w stanie sprzed każdego testu.
 
 Po błędzie plugin przywraca każdą wartość do oczekiwanej, więc błąd ma sprawca, a nie każdy następny test workera.
 Katalog roboczy, który box boat przeniósł w trakcie biegu (``box_boat.przeniesiony``), nie jest stanem testu: plugin
-zgłasza go komunikatem ``box_boat.KOMUNIKAT`` i daje testowi, po którym go zobaczył, własność junit
-``box_boat.WLASNOSC``, po której ``tools/szybko.py`` kończy się wynikiem ``SZYBKO INFRA``.
+zgłasza go komunikatem ``box_boat.KOMUNIKAT`` i daje raportowi testu, po którym go zobaczył, własność
+``box_boat.WLASNOSC``. Sesja, w której każdy raport, który padł (testu albo kolekcji), ma tę własność, kończy się kodem
+``box_boat.KOD_WYJSCIA`` zamiast 1, a ``tools/szybko.py`` kończy się wtedy wynikiem ``SZYBKO INFRA``. Plugin ustawia ten
+kod przed innymi ``pytest_sessionfinish``, więc porażka sesji spoza raportów (``DRZEWO REPO`` w ``tests/conftest.py``)
+nadpisuje go z powrotem na 1.
 Porównanie kosztuje listę deskryptorów i potomków, poniżej 0,5 ms na test; ``gc.collect()``, czekanie na wątki i
 potomków oraz opis zasobów biegną tylko wtedy, gdy stan się różni.
 
@@ -220,6 +223,32 @@ def _release_gc() -> None:
         gc.enable()
 
 
+# Raporty, które padły w procesie kontrolera sesji (pod xdist dostaje raporty workerów): ``True`` dla raportu testu,
+# po którym plugin widział katalog repo przeniesiony przez box.
+_porazki: list[bool] = []
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if report.failed:
+        _porazki.append(box_boat.WLASNOSC in dict(report.user_properties))
+
+
+def pytest_collectreport(report: pytest.CollectReport) -> None:
+    if report.failed:
+        _porazki.append(False)
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> Generator[None, object, object]:
+    """Sesja, której każda porażka to katalog repo przeniesiony przez box, kończy się ``box_boat.KOD_WYJSCIA``. Kod stoi
+    przed innymi implementacjami haka, więc ta, która sama wywraca sesję, ustawia go z powrotem na 1."""
+
+    controller = not hasattr(session.config, "workerinput")
+    if controller and session.exitstatus == pytest.ExitCode.TESTS_FAILED and _porazki and all(_porazki):
+        session.exitstatus = box_boat.KOD_WYJSCIA
+    return (yield)
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
     while _ZASOBY_PROCESU:
@@ -330,7 +359,7 @@ def _check_after(item: pytest.Item) -> None:
     try:
         _check("po tym teście")
     except _KatalogPrzeniesiony:
-        # Raport teardown niesie własności testu do junit (junitxml bierze je z raportu teardown).
+        # Raport teardown niesie własności testu do kontrolera sesji, także od workera xdist.
         item.user_properties.append((box_boat.WLASNOSC, box_boat.KATALOG_ZWOLNIONY))
         raise
 
