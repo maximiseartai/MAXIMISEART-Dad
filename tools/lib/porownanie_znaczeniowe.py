@@ -7,7 +7,6 @@ from collections import Counter
 from collections.abc import Hashable, Iterator, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from copy import copy
-from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any, Final
 from xml.etree import ElementTree
@@ -237,10 +236,7 @@ def _formula(cell: Cell | MergedCell | None) -> tuple[str, ...] | None:
     value: Any = cell.value
     if isinstance(value, str):
         return ("formuła", value)
-    text = getattr(value, "text", None)
-    if text is not None:  # formuła tablicowa
-        return ("tablicowa", str(getattr(value, "ref", "")), str(text))
-    return ("tabela danych", *(f"{key}={item}" for key, item in sorted(vars(value).items())))
+    return (type(value).__name__, *(f"{key}={item}" for key, item in sorted(vars(value).items())))
 
 
 def _hyperlink(cell: Cell | MergedCell | None) -> tuple[str | None, str | None] | None:
@@ -248,18 +244,14 @@ def _hyperlink(cell: Cell | MergedCell | None) -> tuple[str | None, str | None] 
     return None if link is None else (link.target, link.location)
 
 
-def _value(cell: Cell | MergedCell | None) -> tuple[str, object] | None:
+def _value(cell: Cell | MergedCell | None) -> tuple[str, object]:
     """Wartość znaczeniowo: 3 i 3.0 to ta sama liczba, ale prawda to nie 1."""
 
     value: object = None if cell is None else cell.value
-    if value is None:
-        return None
     if isinstance(value, bool):
         return ("logiczna", value)
     if isinstance(value, int | float):
         return ("liczba", float(value))
-    if isinstance(value, datetime | date | time | timedelta):
-        return ("data", value)
     return (type(value).__name__, value)
 
 
@@ -288,9 +280,9 @@ def _style(
     if row_dimension is not None and row_dimension.has_style:
         return styles.of(row_dimension, sheet)
     column_dimension = columns.get(coordinate[1])
-    if column_dimension is not None and column_dimension.has_style:
+    if column_dimension is not None:
         return styles.of(column_dimension, sheet)
-    return styles.of(Cell(sheet, row=1, column=1, style_array=StyleArray()), sheet)
+    return styles.of(Cell(sheet, row=1, column=1), sheet)
 
 
 def _dimension_difference(

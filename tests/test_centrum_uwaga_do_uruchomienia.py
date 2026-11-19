@@ -1,5 +1,3 @@
-"""Uwaga taty przypięta do Uruchomienia procesu (ADR 0015, #322) przez HTTP API Centrum z fałszywą Skrzynką."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -69,8 +67,6 @@ def logs_rejections(centrum: SettlingCentrum) -> int:
 
 
 def pinned_after_rejected_logs(tmp_path: Path, *, rejected_starts: int) -> tuple[SettlingCentrum, str]:
-    """Skrzynka odrzuca Logi podglądu przy ``rejected_starts`` startach Centrum, a przy pierwszym idzie przypięta Uwaga."""
-
     centrum = settling_centrum(tmp_path)
     box(centrum).background_comment_outcomes.extend([Rejected()] * rejected_starts)
     write_report_key(centrum.tool)
@@ -83,7 +79,9 @@ def pinned_after_rejected_logs(tmp_path: Path, *, rejected_starts: int) -> tuple
     return centrum, run_id
 
 
-def test_uwaga_przypieta_do_uruchomienia_niesie_jego_linie_i_odnosnik_do_komentarza_logow(tmp_path: Path) -> None:
+def test_uwaga_przypieta_do_uruchomienia_niesie_jego_linie_i_odnosnik_do_komentarza_logow_a_tata_widzi_sam_napis_odnosnika(
+    tmp_path: Path,
+) -> None:
     centrum = settling_centrum(tmp_path)
     write_report_key(centrum.tool)
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
@@ -96,15 +94,11 @@ def test_uwaga_przypieta_do_uruchomienia_niesie_jego_linie_i_odnosnik_do_komenta
     [issue] = box(centrum).issues_with("uwaga-taty")
     expected = f"{BODY}\n\n{run_line(centrum, 'podgląd', 'OK')}\n[Logi Uruchomienia]({logs})"
     assert (issue.title, issue.body) == (TITLE, expected)
-    # „Maks dostanie” pokazuje tacie odnośnik jako sam napis, jak GitHub Maksowi, bez adresu prywatnej Skrzynki.
     shown = f"{BODY}\n\n{run_line(centrum, 'podgląd', 'OK')}\nLogi Uruchomienia"
     assert draft.json() == {"title": TITLE, "body": expected, "shown_body": shown}
 
 
 def test_linia_logow_w_drodze_wklejona_w_tekst_uwagi_po_logach_zostaje_tekstem_taty(tmp_path: Path) -> None:
-    """Tata wkleja w nową Uwagę do tego Uruchomienia linię Logów w drodze z podglądu wcześniejszej Uwagi, gdy Logi już
-    doszły: Uwaga wychodzi z jego tekstem bez zmian i z odnośnikiem w stopce."""
-
     centrum = settling_centrum(tmp_path)
     write_report_key(centrum.tool)
     run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
@@ -342,8 +336,6 @@ def test_komentarz_do_usunietego_issue_uwagi_kolejka_porzuca_raz_i_wiecej_o_nie_
     remove_report_key(centrum.client, centrum.tool)
     behind = centrum.client.post("/api/dad-notes", json={"title": "Uwaga za komentarzem"})
     assert behind.json() == QUEUED_FOR_KEY
-    # Maks usuwa issue Uwagi, gdy lista issue już je pokazuje: usunięte w LIST_LAG_S po założeniu lista issue z etykietą
-    # pokazuje z zapisów KeyedBox, więc kolejka porzuca komentarz do niego dopiero po budzeniu (#879).
     centrum.surroundings.clock.pause(LIST_LAG_S)
     box(centrum).issues.remove(issue)
     write_report_key(centrum.tool)

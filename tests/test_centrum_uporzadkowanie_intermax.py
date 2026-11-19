@@ -26,8 +26,10 @@ from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import intermax_copies, preparation_register, workbook_files
 from rozliczenia.client_data import empty_memory, guarded
 from rozliczenia.dad_files import DadFiles
+from rozliczenia.centrum import refusal
 from rozliczenia.centrum.logs_disk import name_of
 from rozliczenia.centrum.run_logs import RunLog
+from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 
 from tests.fixtures.centrum import ToolDirectory, phase_states, views_until, write_report_key
 from tests.fixtures.centrum_processes import Surroundings
@@ -57,6 +59,7 @@ from atrapy.workbooks import rewrite_parts
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.wyciek import zawiera_wartosc
 from tests.fixtures.intermax_disk import denied, failing_replace
+from tests.fixtures.bez_dostepu import without_reading
 
 COPY = "INTERMAX przed uporządkowaniem 2026-10-26 14-05-07.xlsx"
 SUMMARY: dict[str, Any] = {
@@ -207,6 +210,45 @@ def test_nastepnego_dnia_karta_pokazuje_siedem_dni_do_nowego_dnia_choc_intermax_
     assert (monday[0], monday[-1]) == (("wt 20.10", True), ("pon 26.10*", False))
     assert (tuesday[0], tuesday[-2:]) == (("śr 21.10", False), [("pon 26.10", False), ("wt 27.10*", False)])
     assert len(tuesday) == 7
+
+
+def test_karta_czyta_intermax_od_nowa_dopiero_po_zmianie_jego_znacznika_zapisu_albo_dnia(tmp_path: Path) -> None:
+    reads: list[Path] = []
+
+    def counted(path: Path) -> bytes:
+        reads.append(path)
+        return workbook_files.file_bytes(path)
+
+    clock = Clock([NOW, NOW, NOW, NOW + timedelta(days=1)])
+    centrum = ordering_centrum(tmp_path, clock=clock, surroundings=Surroundings(source=counted))
+    saved = centrum.register.stat()
+
+    def register_reads(ask: Callable[[], object]) -> int:
+        before = reads.count(centrum.register)
+        ask()
+        return reads.count(centrum.register) - before
+
+    def saved_again() -> None:
+        os.utime(centrum.register, ns=(saved.st_atime_ns, saved.st_mtime_ns + 1_000_000_000))
+        _days(centrum)
+
+    assert [
+        register_reads(lambda: _days(centrum)),
+        register_reads(lambda: _days(centrum)),
+        register_reads(saved_again),
+        register_reads(lambda: _days(centrum)),
+    ] == [1, 0, 1, 1]
+
+
+def test_przy_pliku_folderow_bez_odczytu_karta_ma_zdanie_o_tym_pliku_a_dni_sa_puste_bez_komunikatu(tmp_path: Path) -> None:
+    centrum = ordering_centrum(tmp_path)
+
+    with without_reading(centrum.tool.settings):
+        setup = centrum.setup()
+        days = centrum.client.get("/api/intermax/days").json()
+
+    assert setup["blocker"] == refusal.settings_file_unreadable(SETTINGS_FILE).message
+    assert days == {"days": [], "problem": None}
 
 
 @pytest.mark.parametrize(

@@ -205,3 +205,21 @@ def test_strumien_konczy_wiadomosc_powodem_jej_bloku(block: dict[str, object], r
     (delta,) = [event["delta"] for event in _events(falszywe_api.stream(block)) if event["type"] == "message_delta"]
 
     assert isinstance(delta, dict) and delta["stop_reason"] == reason
+
+
+def test_wyniki_sklejonych_wywolan_narzedzi_licza_sie_wszystkie_po_kolei() -> None:
+    """Claude Code 2.1.328 skleja kolejne odpowiedzi fałszywego API (jedno id wiadomości) w jedną wiadomość z dwoma
+    ``tool_use``, a ich wyniki w jedną z dwoma ``tool_result`` (wyrocznia pracy w tle, przypadek zadanie-zarejestrowane)."""
+
+    registered = [{"type": "text", "text": '{"matched": ["b1"], "unmatched": []}'}]
+    message = {
+        "role": "user",
+        "content": [
+            {"tool_use_id": "toolu_wyrocznia_bash", "type": "tool_result", "content": "Command running in background with ID: b1."},
+            {"tool_use_id": "toolu_wyrocznia_rejestracja", "type": "tool_result", "content": registered},
+        ],
+    }
+
+    assert falszywe_api.tool_results(message) == ["Command running in background with ID: b1.", json.dumps(registered)]
+    assert falszywe_api.tool_result(message) == "Command running in background with ID: b1."
+    assert (falszywe_api.tool_results({"content": "tekst"}), falszywe_api.tool_result(None)) == ([], None)

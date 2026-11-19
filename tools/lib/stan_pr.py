@@ -104,7 +104,6 @@ class UnknownRun(Exception):
     """Check workflow ``CI``, którego ``detailsUrl`` nie ma postaci ``…/actions/runs/<run>/job/<zadanie>``."""
 
     def __init__(self, name: str, url: str) -> None:
-        super().__init__(name, url)
         self.name = name
         self.url = url
 

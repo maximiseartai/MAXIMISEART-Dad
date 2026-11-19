@@ -8,7 +8,7 @@ from stan_pr import Pull
 import szablon_werdyktu
 import werdykt_pr
 
-ZASADY = """Limit rund przeglądu (skill ``przeglad``, „Kolejne rundy”): PR, który ma ``LIMIT`` rund z ``FAIL``, nie dostaje
+ZASADY = """Limit rund przeglądu (skill ``przeglad``, ``rundy.md``): PR, który ma ``LIMIT`` rund z ``FAIL``, nie dostaje
 kolejnej rundy, dopóki autor nie zmieni podejścia w tym samym PR i nie zapisze tego komentarzem PR, którego pierwsza
 niepusta linia to ``ZMIANA PODEJŚCIA: <zdanie>`` (``DECLARATION``). Próg spada do ``REPEAT`` rund, gdy Ważne
 dwóch pierwszych rund z ``FAIL`` trafiają w ten sam plik pola ``Gdzie:`` albo mają ten sam kod pola ``Korzeń:``
@@ -112,7 +112,7 @@ def problem(pull: Pull, deployed: datetime | None) -> str | None:
     if len(rounds.failed) >= END:
         return (
             f"limit rund: rund z FAIL {len(rounds.failed)} ({commits}), a po {END}. rundzie z FAIL #{pull.number} nie dostaje"
-            f" żadnej kolejnej (skill przeglad, „Kolejne rundy”), także po komentarzu „{DECLARATION}<zdanie>”: zamknij"
+            f" żadnej kolejnej (skill przeglad, rundy.md), także po komentarzu „{DECLARATION}<zdanie>”: zamknij"
             f" #{pull.number} komentarzem z powodem i zacznij nowy PR od świeżego origin/main z innym podejściem"
         )
     try:
@@ -130,12 +130,12 @@ def problem(pull: Pull, deployed: datetime | None) -> str | None:
     if repeated and len(rounds.failed) < LIMIT:
         return (
             f"limit rund: rund z FAIL {len(rounds.failed)} ({commits}) bez zmiany podejścia, a ich Ważne trafiają w to samo"
-            f" miejsce ({repeated}), więc po {REPEAT}. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, „Kolejne"
-            f" rundy”): {change}"
+            f" miejsce ({repeated}), więc po {REPEAT}. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad,"
+            f" rundy.md): {change}"
         )
     return (
         f"limit rund: rund z FAIL {len(rounds.failed)} ({commits}) bez zmiany podejścia, a po {LIMIT}. rundzie z FAIL PR nie"
-        f" dostaje kolejnej (skill przeglad, „Kolejne rundy”): {change}"
+        f" dostaje kolejnej (skill przeglad, rundy.md): {change}"
     )
 
 

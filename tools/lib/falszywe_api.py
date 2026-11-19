@@ -129,12 +129,23 @@ def contact_option(parser: argparse.ArgumentParser) -> None:
 def tool_result(message: object) -> str | None:
     """Tekst pierwszego wyniku narzędzia w wiadomości zapytania API albo ``None``, gdy wiadomość go nie ma."""
 
+    return next(iter(tool_results(message)), None)
+
+
+def tool_results(message: object) -> list[str]:
+    """Teksty wszystkich wyników narzędzi w wiadomości zapytania API, po kolei.
+
+    Claude Code skleja kolejne odpowiedzi fałszywego API (jedno ``id`` wiadomości, ``stream``) w jedną wiadomość z
+    kilkoma ``tool_use``, a ich wyniki w jedną wiadomość z kilkoma ``tool_result`` (2.1.328).
+    """
+
     content = message.get("content") if isinstance(message, dict) else None
-    for part in content if isinstance(content, list) else []:
-        if isinstance(part, dict) and part.get("type") == "tool_result":
-            inner = part.get("content")
-            return inner if isinstance(inner, str) else json.dumps(inner, ensure_ascii=False)
-    return None
+    return [
+        inner if isinstance(inner, str) else json.dumps(inner, ensure_ascii=False)
+        for part in (content if isinstance(content, list) else [])
+        if isinstance(part, dict) and part.get("type") == "tool_result"
+        for inner in [part.get("content")]
+    ]
 
 
 def claude(

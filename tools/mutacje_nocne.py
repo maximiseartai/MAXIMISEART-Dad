@@ -96,7 +96,8 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   ``MUTACJA <plik>:<linia> <opis> | klucz <klucz>`` (z pól zapisu części: id jak w ``NIEWYKRYTA``, klucz z ``mutacje_zmiany.fingerprint``),
   a mutacja bez werdyktu ma na końcu dopisek swojego ``Rodzaj`` i radę w issue: część po limicie czasu jej nie
   sprawdziła albo jej testy przekroczyły limit czasu mutacji (``--limit-s`` całego zbioru testów, #1339), więc noc nie
-  wraca do jej zakresu, a sprawdza ją agent PR-u.
+  wraca do jej zakresu, a sprawdza ją agent PR-u ``tools/mutacje.py --plik`` z jednym wąskim węzłem pytest na mutację
+  (``polecenie`` wpisu), bo cały zbiór testów pliku trwa blisko limitu.
   Mutacji, której klucz issue już ma w treści albo komentarzu, nie dostaje drugi raz; nowe idą do istniejącego issue
   komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``.
   Część bez zapisu albo z kodem wyjścia spoza ``mutacje_zmiany.KODY_Z_WYNIKIEM`` (testy padają albo nie kończą się
@@ -193,7 +194,11 @@ _STEMPEL = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
 _PLAN_W_LOGU = re.compile(rf"{_STEMPEL}{PREFIKS} PLAN \| .*? \| {_MUTACJE_PLANU} (?P<mutacje>\d+) \|")
 _ZALEGLOSC_W_LOGU = re.compile(rf"{_STEMPEL}{PREFIKS} \| {_ZALEGLOSC} (?P<zalegle>\d+) ")
 _BEZ_WERDYKTU_W_LOGU = re.compile(rf"{_STEMPEL}{Verdict.NO_VERDICT}: ")
-_RADA_MUTACJE = "uruchom ją `tools/mutacje.py`, a gdy test już ją wykrywa, napisz w komentarzu `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`"
+_RADA_MUTACJE = (
+    "sprawdź ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest w `polecenie` jej wpisu (`tests/test_x.py::test_y`), "
+    "bo cały zbiór testów pliku trwa blisko limitu, a gdy test ją wykrywa, napisz w komentarzu "
+    "`MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`"
+)
 
 
 class Rodzaj(Enum):

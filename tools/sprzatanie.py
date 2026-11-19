@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -20,7 +21,7 @@ import potomne
 from repo import BASE, MAIN, REMOTE, Worktree
 import repo
 
-OPIS = """Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; użyj po merge'u albo gdy worktree się mnożą.
+OPIS = """Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; --usun biegnie codziennie z launchd (--codziennie).
 
 Raportuje, a z ``--usun`` usuwa lokalne worktree i gałęzie, których praca jest już w ``origin/main``; resztę opisuje z powodem.
 
@@ -46,14 +47,25 @@ worktree; gdy nie da się zapytać T3, zostają worktree w ``~/.t3/worktrees``.
 Tuż przed usunięciem ocenia worktree jeszcze raz, ze świeżym ``lsof``. Gdy git odmówi usunięcia, worktree albo
 gałąź zostaje z powodem ``git odmówił (...)``.
 
+Z ``--galaz NAZWA`` ocenia tylko gałąź ``NAZWA`` i worktree, który ją ma: tak ``tools/scal_pr.py`` po merge'u
+usuwa (``--usun``) tylko worktree i gałąź scalonego PR, przy tych samych warunkach.
+
 Przed oceną pobiera ``origin/main``; nieudany fetch tylko zmniejsza liczbę usuniętych.
 Drukuje linię na każdy worktree i gałąź. Ostatnia linia to ``SPRZĄTANIE RAPORT | do usunięcia N | zostawione M
 (powód liczba, ...) | uruchom z --usun``, a z ``--usun`` ``SPRZĄTANIE OK | usunięte N | zostawione M (...)``;
 worktree z kilkoma powodami liczy się przy każdym. Kod 1 i ``SPRZĄTANIE FAIL`` znaczą, że nie da się odczytać
 repozytorium.
 
-    .venv/bin/python tools/sprzatanie.py           # co by usunęło i dlaczego reszta zostaje (woła je tools/scal_pr.py)
-    .venv/bin/python tools/sprzatanie.py --usun    # usuwa
+Z ``--codziennie`` niczego nie ocenia, tylko instaluje na macOS agenta launchd ``DAILY`` (plik w
+``~/Library/LaunchAgents``), który codziennie o ``DAILY_HOUR``:00, a po uśpieniu Maca zaraz po jego obudzeniu, uruchamia
+``--usun`` z głównego checkoutu repozytorium jego ``.venv`` i dopisuje wyjście do ``~/Library/Logs/<DAILY>.log``.
+Ponowna instalacja zastępuje poprzednią. Kończy się linią ``SPRZĄTANIE CODZIENNIE``, a gdy nie ma ``launchctl`` albo
+``.venv`` głównego checkoutu, linią ``SPRZĄTANIE FAIL`` i kodem 1.
+
+    .venv/bin/python tools/sprzatanie.py               # co by usunęło i dlaczego reszta zostaje
+    .venv/bin/python tools/sprzatanie.py --usun        # usuwa
+    .venv/bin/python tools/sprzatanie.py --usun --galaz fix/nazwa   # usuwa tylko tę gałąź i jej worktree (scal_pr)
+    .venv/bin/python tools/sprzatanie.py --codziennie  # instaluje codzienne --usun w launchd
 """
 
 TIMEOUT_S = 30
@@ -68,6 +80,8 @@ FRESH = "nowe, bez własnych commitów"
 # Oceny worktree i gałęzi są niezależne, a czas zabierają polecenia gita (status, merge-base), więc biegną naraz: przy
 # ~1050 worktree i gałęziach raport po kolei trwał ~108 s po każdym merge'u (tools/scal_pr.py), naraz ~15 s.
 JUDGES = 8
+DAILY = "com.maximiseart.sprzatanie"
+DAILY_HOUR = 5
 
 
 @dataclass(frozen=True)
@@ -91,7 +105,10 @@ class _Threads:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--usun", action="store_true", help="Usuwa; bez tej flagi narzędzie tylko raportuje.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--usun", action="store_true", help="Usuwa; bez tej flagi narzędzie tylko raportuje.")
+    mode.add_argument("--codziennie", action="store_true", help=f"Instaluje agenta launchd, który codziennie o {DAILY_HOUR}:00 uruchamia --usun.")
+    parser.add_argument("--galaz", metavar="NAZWA", help="Ocenia tylko gałąź NAZWA i jej worktree.")
     args = parser.parse_args(argv)
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(errors="replace")
@@ -101,6 +118,8 @@ def main(argv: list[str] | None = None) -> int:
     except (OSError, subprocess.CalledProcessError):
         print("SPRZĄTANIE FAIL | uruchom w checkoucie repozytorium git")
         return 1
+    if args.codziennie:
+        return _install_daily(root)
     fetched = _fetch(root)
     if fetched:
         print(f"FETCH POMINIĘTY | {fetched}")
@@ -108,12 +127,13 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SPRZĄTANIE FAIL | brak {BASE}, nie ma z czym porównać")
         return 1
 
-    trees = repo.worktrees(root)
-    threads = _t3_threads(root, next(tree.path for tree in trees if tree.main))
+    every = repo.worktrees(root)
+    trees = [tree for tree in every if args.galaz in (None, tree.branch)]
+    threads = _t3_threads(root, next(tree.path for tree in every if tree.main))
     busy = _busy()
-    checked_out = {tree.branch for tree in trees if tree.branch is not None}
+    checked_out = {tree.branch for tree in every if tree.branch is not None}
     refs = [ref.partition("\0") for ref in repo.git(root, "for-each-ref", "refs/heads", "--format=%(refname:short)%00%(objectname)").splitlines()]
-    branches = [(branch, head) for branch, _, head in refs if branch != MAIN and branch not in checked_out]
+    branches = [(branch, head) for branch, _, head in refs if branch != MAIN and branch not in checked_out and args.galaz in (None, branch)]
     with ThreadPoolExecutor(max_workers=JUDGES) as pool:
         verdicts = list(pool.map(lambda tree: _judge_tree(root, tree, here, busy, threads), trees))
         verdicts += pool.map(lambda found: _Verdict(None, found[0], found[1], _readable(_branch_reasons(root, found[0], found[1], threads))), branches)
@@ -142,6 +162,45 @@ def main(argv: list[str] | None = None) -> int:
         print(f"SPRZĄTANIE OK | usunięte {removed} | {kept}")
     else:
         print(f"SPRZĄTANIE RAPORT | do usunięcia {removed} | {kept} | uruchom z --usun")
+    return 0
+
+
+def _install_daily(root: Path) -> int:
+    if sys.platform == "win32":
+        print("SPRZĄTANIE FAIL | --codziennie instaluje agenta launchd macOS")
+        return 1
+    main = next(tree.path for tree in repo.worktrees(root) if tree.main)
+    python = main / ".venv" / "bin" / "python"
+    launchctl = shutil.which("launchctl")
+    if launchctl is None or not python.is_file():
+        print(f"SPRZĄTANIE FAIL | --codziennie potrzebuje launchctl (macOS) i {python} (python3 tools/setup_worktree.py w {main})")
+        return 1
+    plist = Path.home() / "Library" / "LaunchAgents" / f"{DAILY}.plist"
+    log = Path.home() / "Library" / "Logs" / f"{DAILY}.log"
+    job = {
+        "Label": DAILY,
+        "ProgramArguments": [str(python), str(main / "tools" / "sprzatanie.py"), "--usun"],
+        "WorkingDirectory": str(main),
+        "StartCalendarInterval": {"Hour": DAILY_HOUR, "Minute": 0},
+        "StandardOutPath": str(log),
+        "StandardErrorPath": str(log),
+    }
+    plist.parent.mkdir(parents=True, exist_ok=True)
+    log.parent.mkdir(parents=True, exist_ok=True)
+    written = plist.with_name(f"{plist.name}.zapis")
+    written.write_bytes(plistlib.dumps(job))
+    written.replace(plist)
+    domain = f"gui/{os.getuid()}"
+    try:
+        potomne.run([launchctl, "bootout", f"{domain}/{DAILY}"], cwd=main, timeout=TIMEOUT_S)
+        loaded = potomne.run([launchctl, "bootstrap", domain, str(plist)], cwd=main, timeout=TIMEOUT_S)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        print(f"SPRZĄTANIE FAIL | launchctl: {error}")
+        return 1
+    if loaded.returncode:
+        print(f"SPRZĄTANIE FAIL | launchctl bootstrap {plist}: {_first_line(loaded)}")
+        return 1
+    print(f"SPRZĄTANIE CODZIENNIE | {DAILY} o {DAILY_HOUR}:00 | --usun z {main} | log {log}")
     return 0
 
 

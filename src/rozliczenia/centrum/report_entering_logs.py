@@ -1,13 +1,3 @@
-"""Logi Wpisania raportów (ADR 0028): pole ``report_entering`` pliku Logów Uruchomienia (``run_logs.RunLog``), czyli
-Wpisy, problemy i zmiany komórek bez adresów nadawców, tematów i treści maili poza Wpisami.
-
-``LoggedReports.of_run`` składa je z faktów Uruchomienia, które wpis procesu w katalogu dostaje przy Logach
-(``ProcessKind.logs``), a ``LoggedReports.replay`` czyta z nich z powrotem wejście kliknięcia dla odtworzenia
-Uruchomienia z Logów albo powód, dla którego Logi go nie wyznaczają. Kolejność deklaracji pól to kolejność kluczy w
-pliku, a pole, którego nie mają Logi z wcześniejszych Wydań, czyta się z domyślną (opis przy rekordzie), bo te pliki
-czytają karta z Logów, Historia i odtworzenie.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -59,9 +49,6 @@ class _Record(BaseModel):
 
 
 class LoggedReportEntry(_Record):
-    """Wpis raportu: numer zlecenia z treści maila (pod strażnikiem: 9 cyfr bez zera z przodu maskuje jak telefon), ``tak``/``nie``
-    albo powód jego braku i czynności (pod strażnikiem: telefon i ulica zamaskowane)."""
-
     number: str
     verdict: Literal["tak", "nie"] | None
     fault: VerdictFault | None
@@ -82,9 +69,6 @@ class LoggedReportEntry(_Record):
 
 
 class LoggedReportMail(_Record):
-    """Raport wykonawcy od Wykonawcy z listy adresów: skrót maila, chwila przyjścia, login, dzień z tematu i Wpisy; bez
-    adresu, tematu i reszty treści."""
-
     kind: Literal["report"]
     mail: str
     arrived: datetime
@@ -94,28 +78,17 @@ class LoggedReportMail(_Record):
 
 
 class LoggedUnreadableMail(_Record):
-    """Raport wykonawcy z błędem tematu: powód i dzień z tematu, gdy da się go przeczytać obok błędu (``day``; Logi
-    sprzed dnia z tematu go nie mają); bez tematu."""
-
     kind: Literal["unreadable"]
     mail: str
     arrived: datetime
     worker: str
     fault: SubjectFault
     numbers: list[str] | None = None
-    """Numery Wpisów treści maila rosnąco, po których poprawiony mail zdejmuje ostrzeżenie. ``None``: Logi sprzed tego
-    pola (v0.7.0), które odtworzenie czyta jak mail bez Wpisów, a takiego maila rdzeń nie czyta (ADR 0041), więc mail
-    i jego ostrzeżenie dają w odtworzeniu różnicę."""
     day: date | None = None
     entries: list[LoggedReportEntry] | None = None
-    """Wpisy treści maila jak w ``LoggedReportMail``, które Wpis na życzenie wpisuje (ADR 0041). ``None``: Logi sprzed
-    Wpisu na życzenie przy błędzie tematu, które odtworzenie czyta jako same numery z ``numbers``, bez znaku i
-    czynności, bo wtedy Wpisy takiego maila niczego nie zmieniały."""
 
 
 class LoggedStrangerMail(_Record):
-    """Raport wykonawcy z adresu spoza listy adresów; bez adresu."""
-
     kind: Literal["stranger"]
     mail: str
     arrived: datetime
@@ -123,46 +96,26 @@ class LoggedStrangerMail(_Record):
 
 
 LoggedMail = Annotated[LoggedReportMail | LoggedUnreadableMail | LoggedStrangerMail, Field(discriminator="kind")]
-"""Odczyt maila w Logach: jedyny schemat rekordu odczytu maila (``WindowMails.log``, ``WindowMails.from_log``)."""
 
 
 class _MailRecord(_Record):
-    """Rekord odczytu maila w schemacie ``LoggedMail``, który rozpoznaje rodzaj maila po ``kind``."""
-
     mail: LoggedMail
 
 
 def logged_mails(mails: WindowMails) -> list[LoggedMail]:
-    """Odczyty maili okna w Logach: rekord każdego odczytu (``WindowMails.log``) przez schemat ``LoggedMail``, który
-    odmawia rekordu z polem spoza schematu, bez pola wymaganego albo z wartością innego typu (``ValidationError``)."""
-
     return [_MailRecord.model_validate({"mail": record}).mail for record in mails.log()]
 
 
 def window_mails(logged: Iterable[LoggedMail]) -> WindowMails:
-    """Odczyty maili okna z ich zapisu w Logach (``WindowMails.from_log``), czyli zapis w drugą stronę: odtworzenie
-    Uruchomienia z Logów (``tools/odtworz_uruchomienie.py``) podaje je procesowi jako maile w postaci kanonicznej
-    (``WindowMails.canonical``). Rekord ma każde pole schematu, a pole, którego nie mają Logi z wcześniejszych Wydań, z
-    jego domyślną wartością."""
-
     return WindowMails.from_log(mail.model_dump(mode="json") for mail in logged)
 
 
 class LoggedOrderPlace(_Record):
-    """Miejsce zlecenia w INTERMAX: dzień i Wykonawca."""
-
     day: date
     worker: str
 
 
 class LoggedOrderProblem(_Record):
-    """Problem Wpisu raportu Wykonawcy z dnia: rodzaj, numer z treści maila (pod strażnikiem jak w
-    ``LoggedReportEntry``), a przy ``missing_verdict`` powód, przy ``repeated_number`` miejsce każdego zlecenia z tym
-    numerem (``places``), przy ``refused_move`` dzień zlecenia (``order_days``) i powód odmowy Przeniesienia (``bar``),
-    a przy ``unknown_number`` powód, dla którego Centrum nie dopisało zlecenia (``bar``; Logi sprzed Zleceń dopisanych z
-    raportu go nie mają). Starsze Logi mają też ``foreign_order`` z Wykonawcą zlecenia (``owner``) i ``other_day``
-    z dniami zleceń z tym numerem (``order_days``): dziś to ``repeated_number``."""
-
     kind: Literal[
         "missing_verdict",
         "unknown_number",
@@ -184,8 +137,6 @@ class LoggedOrderProblem(_Record):
     @field_validator("bar", mode="before")
     @classmethod
     def _bar_of_kind(cls, bar: object, info: ValidationInfo) -> object:
-        """Słowo powodu z pliku to członek enuma rodzaju problemu, bo ``not_ordered`` mają oba."""
-
         kind = _BARS.get(info.data.get("kind", ""))
         return kind(bar) if isinstance(bar, str) and kind is not None else bar
 
@@ -194,9 +145,6 @@ _BARS: Final[Mapping[str, type[MoveBar] | type[AddBar]]] = {"refused_move": Move
 
 
 class LoggedConflictProblem(_Record):
-    """Raport wykonawcy z Wpisami jednego numeru o przeciwnym zamiarze: skrót maila, chwila przyjścia, Wykonawca, dzień
-    z tematu, numer i te Wpisy (pod strażnikiem jak w ``LoggedReportEntry``)."""
-
     kind: Literal["conflicting_verdicts"]
     mail: str
     arrived: datetime
@@ -207,10 +155,6 @@ class LoggedConflictProblem(_Record):
 
 
 class LoggedDescriptionProblem(_Record):
-    """Wpisany Wpis ``tak`` z Błędem opisu (ADR 0039): Wykonawca, dzień z tematu, numer (pod strażnikiem jak w
-    ``LoggedReportEntry``) i powody słowami (``activity_legend.problem_text``, każdy raz), bez słów opisu technika,
-    które Logi mają tylko w samym Wpisie pod strażnikiem."""
-
     kind: Literal["faulty_description"]
     worker: str
     day: date
@@ -219,9 +163,6 @@ class LoggedDescriptionProblem(_Record):
 
 
 class LoggedSubjectProblem(_Record):
-    """Raport wykonawcy z błędem tematu: skrót maila, Wykonawca, chwila przyjścia, powód i dzień, za który Centrum go
-    liczy (``day``; ``None``: problem bez dnia, także w Logach sprzed wskazanego dnia); bez tematu."""
-
     kind: Literal["unreadable_subject"]
     mail: str
     worker: str
@@ -231,18 +172,12 @@ class LoggedSubjectProblem(_Record):
 
 
 class LoggedSenderProblem(_Record):
-    """Raport wykonawcy z adresu spoza listy adresów: skrót maila i dzień, bez adresu."""
-
     kind: Literal["unknown_sender"]
     mail: str
     day: date
 
 
 class LoggedOwnEntry(_Record):
-    """Komórka zlecenia INTERMAX z wartością Wpisania raportów. ``number`` to ``NUMER ZL.`` z wiersza INTERMAX jako
-    liczba: liczby spoza ``READ_VALUES`` strażnik nie sprawdza, a numer zlecenia może wyjść (ADR 0025), więc 9 cyfr nie
-    staje się maską telefonu. ``value`` to tekst komórki pod strażnikiem."""
-
     number: int
     day: date
     worker: str
@@ -255,9 +190,6 @@ class LoggedOwnEntry(_Record):
 
 
 class LoggedManualProblem(_Record):
-    """Różnica Wpisu z ręczną wartością komórki: komórka zlecenia jak w ``LoggedOwnEntry`` z wartością z Wpisu
-    (``value``) i ręczną (``manual``)."""
-
     kind: Literal["manual_difference"]
     cell: LoggedOwnEntry
     manual: str
@@ -348,8 +280,6 @@ def _problem(problem: ReportProblem) -> LoggedProblem:
 
 
 class LoggedChange(_Record):
-    """Komórka, którą Wpisanie raportów wpisuje: arkusz, wiersz, kolumna i tekst (pod strażnikiem)."""
-
     sheet: str
     row: int
     column: ReportColumn
@@ -357,9 +287,6 @@ class LoggedChange(_Record):
 
 
 class LoggedMove(_Record):
-    """Przeniesienie zlecenia, które Wpisanie raportów zapisuje: arkusz i wiersz zlecenia sprzed zapisu, dzień i
-    ``WYKONAWCA`` po zapisie."""
-
     sheet: str
     row: int
     day: date
@@ -367,10 +294,6 @@ class LoggedMove(_Record):
 
 
 class LoggedAdded(_Record):
-    """Zlecenie dopisane z raportu, które Wpisanie raportów zapisuje: arkusz, dzień, ``WYKONAWCA``, numer jak w
-    ``LoggedOwnEntry`` (liczba z numeru z aplikacji firmowej, 8 cyfr), ``SKUTECZNE`` i ``CZYNNOŚCI ZREALIZOWANE`` (pod
-    strażnikiem; ``None``: pusta)."""
-
     sheet: str
     day: date
     worker: str
@@ -380,11 +303,6 @@ class LoggedAdded(_Record):
 
 
 class LoggedRequestedEntry(_Record):
-    """Decyzja taty Wpisu na życzenie (``RequestedEntry``, ADR 0041): skrót maila, Wykonawca i dzień, przy którym tata
-    widzi Wpis,
-    numer z treści maila i czynności Wpisu (pod strażnikiem jak w ``LoggedReportEntry``), ``tak`` albo ``nie``, które
-    tata wpisał, i chwila kliknięcia."""
-
     mail: str
     worker: str
     day: date
@@ -411,24 +329,12 @@ class LoggedRequestedEntry(_Record):
 
 
 class LoggedOrderless(_Record):
-    """Numer z Wpisem w kliknięciu, który INTERMAX ma w przeczytanym wierszu bez zlecenia, także obok zlecenia tego
-    numeru (``report_entering.Orderless``): arkusz i numer jak w ``LoggedOwnEntry``, a ``day`` dzień zlecenia, gdy każdy
-    przeczytany wiersz numeru to zlecenie z dniem sprzed ``Window.start`` (starsze Logi go nie mają).
-    Odtworzenie stawia go na dole arkusza jak Surowe zlecenie, z tym dniem i Wykonawcą, gdy ``day`` go ma, bo Kopia
-    wejścia Wpisania raportów ma tylko uporządkowane wiersze zleceń z dni od ``Window.start``."""
-
     sheet: str
     number: int
     day: date | None = None
 
 
 class LoggedOwnMove(_Record):
-    """Pamięć zlecenia Wpisania raportów (``OwnMove``): numer jak w ``LoggedOwnEntry``, dzień i Wykonawca, u którego
-    Centrum je zostawiło, dzień, Wykonawca i pisownia ``WYKONAWCA`` sprzed pierwszego Przeniesienia Centrum, chwila
-    przyjścia najświeższego maila, na który Centrum zadziałało, czy tata zmienił Wykonawcę po Przeniesieniu Centrum
-    (starsze Logi go nie mają) i czy Centrum dopisało to zlecenie (Logi sprzed Zleceń
-    dopisanych z raportu go nie mają)."""
-
     number: int
     day: date
     worker: str
@@ -455,22 +361,6 @@ class LoggedOwnMove(_Record):
 
 
 class LoggedReports(_Record):
-    """Wpisanie raportów (ADR 0028) bez adresów nadawców, tematów i treści maili poza Wpisami.
-
-    ``today`` i okno dni od ``rollout`` (dzień wdrożenia tego kliknięcia; ``rollout_before`` z pamięci przed nim,
-    ``None``: pierwsze kliknięcie) bez dni okresów ``closed`` (tokeny okresów okna z Plikiem zbiorczym; starsze Logi ich
-    nie mają, bo kliknięcie ich wtedy nie sprawdzało), ``skipped``: maile, których Skrzynka raportów nie umiała
-    przeczytać, ``mails`` przeczytane maile po chwili przyjścia, ``problems`` problemy rdzenia raportów, ``changes``
-    komórki do wpisania, ``memory_before`` zapamiętane wpisy zleceń z Wpisami tego kliknięcia, ``kept`` decyzje „Zostaw
-    moją” tych zleceń z migawki kliknięcia (komórka z treścią Wpisu jako ``value``; starsze Logi ich nie mają),
-    ``moves`` Przeniesienia zleceń do zapisu, ``moves_before`` zapamiętane miejsca zleceń numerów z Wpisami tego
-    kliknięcia (starsze Logi nie mają obu), ``added`` Zlecenia dopisane z raportu do zapisu, ``orderless`` numery z
-    Wpisem tego kliknięcia z przeczytanych wierszy INTERMAX bez zlecenia (Logi sprzed Zleceń dopisanych z raportu nie
-    mają obu), ``requested`` decyzje taty Wpisu na życzenie z pamięci i z kliknięcia Wpisu na życzenie,
-    które startuje to Uruchomienie (Logi sprzed Wpisu na życzenie ich nie mają), a
-    ``written`` liczba wpisanych komórek (``None``: zapisu nie było, np. Zatrzymanie przy zapisie).
-    """
-
     today: date
     rollout_before: date | None
     rollout: date
@@ -529,10 +419,6 @@ class LoggedReports(_Record):
 
     @classmethod
     def of_run(cls, summary: EnteringSummary | None, facts: object) -> LoggedReports | None:
-        """Logi Wpisania raportów z podsumowania albo z faktów Zatrzymania: po zapisie ``EnteringSummary`` (także
-        Zatrzymanie przy konflikcie po zapisie), przed zapisem ``EnteringFacts`` bez liczby wpisanych komórek, a
-        ``None``, gdy Zatrzymanie przyszło przed rdzeniem raportów."""
-
         match summary, facts:
             case EnteringSummary() as done, _:
                 return cls.of(done.facts, done.written)
@@ -544,10 +430,6 @@ class LoggedReports(_Record):
                 return None
 
     def replay(self) -> EnteringReplay | Unreplayable:
-        """Wejście kliknięcia z Logów dla odtworzenia Uruchomienia: maile, pamięć wpisów, decyzje „Zostaw moją” sprzed
-        kliknięcia, decyzje Wpisu na życzenie i numery bez zlecenia, z zastrzeżeniami, a ``Unreplayable``, gdy Logi nie wyznaczają numeru zlecenia
-        Wpisu albo pamięci."""
-
         masked = [entry.number for entry in _logged_entries(self) if not _digits(entry.number)]
         if masked:
             return Unreplayable(
@@ -603,12 +485,6 @@ class LoggedReports(_Record):
 
 @dataclass(frozen=True)
 class EnteringReplay:
-    """Wejście kliknięcia Wpisania raportów z Logów: dzień kliknięcia, tokeny okresów zamkniętych, maile, których
-    Skrzynka raportów nie umiała przeczytać, przeczytane maile po kolei, numer adresu każdego maila spoza listy adresów
-    po kolei, pamięć wpisów, decyzje „Zostaw moją” sprzed kliknięcia i decyzje Wpisu na życzenie (w
-    ``SavedState.requested`` także decyzja z kliknięcia Wpisu na życzenie), numery z Wpisem z wierszy INTERMAX bez
-    zlecenia i zastrzeżenia odtworzenia, które z nich wynikają."""
-
     today: date
     closed: tuple[str, ...]
     skipped: int
@@ -620,16 +496,11 @@ class EnteringReplay:
 
     @classmethod
     def without_logs(cls, today: date) -> EnteringReplay:
-        """Kliknięcie z dnia ``today`` bez Logów Wpisania raportów: pusta skrzynka i pamięć bez dnia wdrożenia."""
-
         return cls(today, (), 0, window_mails(()), (), SavedState(None, OwnEntries.EMPTY), (), ())
 
 
 @dataclass(frozen=True)
 class ReplayedOrderless:
-    """Numer bez zlecenia z Logów (``LoggedOrderless``) z wartością ``NUMER ZL.`` wiersza, który odtworzenie stawia na
-    dole arkusza ``sheet``: postać z zerem na początku z Wpisu, gdy Wpis ją ma, a inaczej liczba."""
-
     sheet: str
     number: str | int
     day: date | None
@@ -637,15 +508,10 @@ class ReplayedOrderless:
 
 @dataclass(frozen=True)
 class Unreplayable:
-    """Logi Wpisania raportów, z których odtworzenie nie wyznaczy wejścia kliknięcia, i powód."""
-
     reason: str
 
 
 def _strangers(entering: LoggedReports) -> list[int]:
-    """Numer adresu każdego maila spoza listy adresów w Logach, po kolei: jeden z tylu adresów, ile problemów nieznanego
-    nadawcy mają w Logach jego skrót i dzień, bo rdzeń daje jeden problem na różny adres maili z tym Message-ID."""
-
     senders = Counter((problem.mail, problem.day) for problem in entering.problems if isinstance(problem, LoggedSenderProblem))
     seen: Counter[tuple[str, date]] = Counter()
     found: list[int] = []
@@ -662,8 +528,6 @@ def _digits(number: str) -> bool:
 
 
 def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
-    """Wpisy raportu w Logach, także raportów z błędem tematu, które wpisuje Wpis na życzenie."""
-
     return [
         entry
         for mail in entering.mails
@@ -673,10 +537,6 @@ def _logged_entries(entering: LoggedReports) -> list[LoggedReportEntry]:
 
 
 def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: date, worker: str) -> set[str]:
-    """Postacie numeru ``number`` z dnia ``day`` we Wpisach raportu Wykonawcy ``worker`` w Logach, bez jego Wpisu od
-    każdego Wykonawcy z tego dnia, a bez Wpisu z tego dnia z każdego dnia: wpis pamięci idzie za wierszem, więc może
-    stać pod Wykonawcą, który nie przysłał Raportu, i pod dniem innym niż temat Raportu (Przeniesienie na inny dzień)."""
-
     return (
         numbers.get((number, day, worker))
         or {text for (value, found, _), texts in numbers.items() if (value, found) == (number, day) for text in texts}
@@ -685,12 +545,6 @@ def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: dat
 
 
 def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
-    """Numery Wpisów raportu w Logach po liczbie, dniu i Wykonawcy: pamięć wpisów ma w Logach numer tylko jako liczbę,
-    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie. Zlecenia z Wpisem
-    Raportów wykonawców z dniem z tematu daje odczyt maili (``WindowMails.said`` bez decyzji), a Wpis raportu z błędem
-    tematu ma dzień z każdej decyzji Wpisu na życzenie, także bez pasującego Wpisu, bo tylko z nią coś wpisuje, a
-    decyzja niesie numer tekstem."""
-
     decisions = [logged.decision() for logged in entering.requested]
     said = window_mails(entering.mails).said(()) | {OrderKey(found.number, found.day, found.worker) for found in decisions}
     numbers: dict[tuple[int, date, str], set[str]] = {}
@@ -708,11 +562,6 @@ def _saved(entering: LoggedReports) -> SavedState:
         return OrderKey(OrderNumber(number), logged.day, Login(logged.worker))
 
     def number(logged: LoggedOwnMove) -> OrderNumber:
-        """Numer zlecenia Przeniesienia ``logged``. 0123 i 123 to dwa zlecenia, a Logi niosą numer pamięci tylko jako
-        liczbę, więc jedyna postać spod Wpisu Wykonawcy i dnia Przeniesienia odchodzi z nim i następne Przeniesienie tej
-        liczby nie weźmie jej spod tego Wpisu. Postać spod Wpisu innego Wykonawcy albo dnia nie odchodzi: następne
-        Przeniesienie może dostać tę samą."""
-
         found = _texts(numbers, logged.number, logged.day, logged.worker)
         return OrderNumber(found.pop() if len(found) == 1 else str(logged.number))
 

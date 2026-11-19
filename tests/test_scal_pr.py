@@ -30,6 +30,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git, with_imports
 from tests.fixtures.potomne import hold_lock, wait_for
 
+import bramka_korzenia
 import bramka_straznika
 import czasy_ci
 import github as klient_github
@@ -40,6 +41,7 @@ import ponowny_przeglad
 import reguly_bazy
 import rejestr_korzeni
 import repo
+import rozjazd_modelu
 import scal_pr
 import stan_pr
 import szablon_werdyktu
@@ -55,7 +57,7 @@ BODY = opisy_pr.wzor("Cel.")
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 PYPROJECT = '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n'
 CHECKS_PASS = "print('CI LOKALNIE OK')\n"
-CLEANUP = 'import pathlib\n\npathlib.Path("posprzatane").write_text("tak")\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
+CLEANUP = 'import pathlib, sys\n\npathlib.Path("posprzatane").write_text(" ".join(sys.argv[1:]))\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
 # Atrapa ``gh`` składa ``bodyHTML`` treści w odpowiedziach GraphQL z HTML renderera (``tests/fixtures/body_html.py``).
 FAKE_GH = f"import sys\nsys.path.insert(0, {str(TOOLS.parent)!r})\nfrom tests.fixtures.body_html import body_html\n" + """\
 import json, os, pathlib, re, subprocess, sys, time
@@ -256,6 +258,7 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
         "isCrossRepository": False,
         "baseRefName": "main",
         "headRefOid": head,
+        "headRefName": f"pr-{number}",
         "statusCheckRollup": [*GREEN, GATE_PASSED],
         "comments": [],
         "reviews": [],
@@ -469,7 +472,7 @@ def test_pomoc_podaje_niepuste_zasady_kazdego_modulu_bramek_z_przykladami_polece
     assert "tools/scal_pr.py 336 --werdykt" in shown
 
 
-def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
+def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_sprzatanie_usuwa_tylko_galaz_pr(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, real_checks=True)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
@@ -486,8 +489,22 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     )
     assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [main, head]
     assert github.merges() == [["pr", "merge", "1", "--merge", "--match-head-commit", head]]
-    assert (github.checkout / "posprzatane").exists()
+    assert (github.checkout / "posprzatane").read_text(encoding="utf-8") == "--usun --galaz pr-1"
     assert "SCAL KOLEJKA" not in merged.stdout
+
+
+def test_bez_galezi_pr_od_githuba_po_merge_sprzatanie_jest_pominiete_z_ostrzezeniem(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, headRefName="")
+    github.comment(1, PASS.format(head=head))
+
+    merged = github.run("1")
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert _last_line(merged).endswith("| UWAGA: GitHub nie podał gałęzi PR, sprzątanie pominięte")
+    assert not (github.checkout / "posprzatane").exists()
+    assert len(github.merges()) == 1
 
 
 # Pełne SHA w tabelach na interfejsach: HEAD PR i starszy commit (litery, żeby ``HEAD.upper()`` był inny niż HEAD).
@@ -532,7 +549,8 @@ def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
 def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany_run_z_merge_em(tmp_path: Path, conclusion: str | None, own: str) -> None:
     """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a anuluje
     nowszy push na `main`, gdy czeka za trwającym (#1449: runy merge'ów #1439, #1418, #1434 anulowane po 2 min, czerwień
-    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a."""
+    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a, tylko mówi, że wątek nie
+    czeka, bo czerwony `main` zakłada issue sam (#2267)."""
 
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
@@ -546,8 +564,9 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert merged.stdout.splitlines()[-2:] == [
-        f"CI MAIN | {merge_commit[:7]} | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge: {own}"
-        " | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR",
+        f"CI MAIN | {merge_commit[:7]} | nie czekaj na ten run: czerwony main zakłada issue czerwony-main i komentuje ten PR"
+        f" sam (tools/ci/zgloszenia_ci.py) | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego"
+        f" commit zawiera merge: {own}",
         _last_line(merged),
     ]
     assert github.run_lists() == [["run", "list", "--workflow", "CI", "--event", "push", "--branch", "main", "--commit", merge_commit, "--json", "databaseId,url,conclusion"]]
@@ -944,6 +963,39 @@ def test_naglowek_dopisany_do_wzoru_skilla_pr_od_razu_obowiazuje(tmp_path: Path)
 
 
 @pytest.mark.parametrize(
+    ("body", "rollup", "line"),
+    [
+        (BODY, [_check_run("COMPLETED", "FAILURE")], "OPIS OK | #1 {short} | nagłówki wzoru .agents/skills/pr/SKILL.md z main {main}"),
+        ("", [*GREEN, GATE_PASSED], f"OPIS FAIL | #1 {{short}} | brak {ALL_SECTIONS} w kolejności wzoru .agents/skills/pr/SKILL.md"),
+    ],
+    ids=["dobry-opis-przy-czerwonym-ci-bez-werdyktu", "pusty-opis-przy-zielonym-ci"],
+)
+def test_opis_sprawdza_tylko_naglowki_opisu_bez_ci_i_werdyktu(tmp_path: Path, body: str, rollup: list[dict[str, str | None]], line: str) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=body, statusCheckRollup=rollup)
+
+    answered = github.run("1", "--opis")
+
+    assert answered.returncode == (0 if body else 1), answered.stdout + answered.stderr
+    assert answered.stdout.splitlines() == [line.format(short=head[:7], main=github.start[:7])]
+    assert (github.published(), github.merges()) == ([], [])
+
+
+def test_opis_bierze_wzor_skilla_pr_z_bazy_w_origin_a_nie_z_checkoutu(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    template = TEMPLATE.read_text(encoding="utf-8").replace("## Merge Danger\n", "## Merge Danger\n\n## Rollback\n", 1)
+    github.push_main({".agents/skills/pr/SKILL.md": template})
+    git(github.checkout, "reset", "--quiet", "--hard", github.start)
+
+    answered = github.run("1", "--opis")
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines() == [f"OPIS FAIL | #1 {head[:7]} | brak „## Rollback” w kolejności wzoru .agents/skills/pr/SKILL.md"]
+
+
+@pytest.mark.parametrize(
     ("main_files", "pull_files", "reason"),
     [
         ({"kod/nazwa.py": 'NAZWA = "z main"\n'}, {"kod/nazwa.py": 'NAZWA = "z PR"\n'}, "Konflikt z main {main}, zaktualizuj PR z bazy i rozwiąż: kod/nazwa.py"),
@@ -1085,6 +1137,53 @@ def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_
     expected = re.escape(f"SCAL ODMOWA | #1 {head[:7]} | test scalenia z main {main[:7]} {reason.format(main=main[:7], prog=chr(0))}")
     assert re.fullmatch(expected.replace(re.escape(chr(0)), ".+"), _last_line(answered)), _last_line(answered)
     assert github.merges() == []
+
+
+MODEL_SKILL = ".agents/skills/verify-model"
+MODEL_CODE = "kod/model.py"
+MODEL_SOURCE = "def licz() -> int:\n    return 1\n"
+CHANGED_MODEL_SOURCE = "def licz() -> int:\n    return 2\n"
+TEST_SELECTION_RULE = {"pyproject.toml": WITH_PYTEST + "# reguła wyboru testów\n"}
+
+
+MODEL_DRIFT = f"verify-model: kod opisany modelem zmienił się: {MODEL_CODE} licz. Wykonaj kroki „Bring the model in line”"
+
+
+@pytest.mark.parametrize(
+    ("pull_files", "main_files", "code", "line"),
+    [
+        pytest.param(
+            {MODEL_CODE: CHANGED_MODEL_SOURCE},
+            TEST_SELECTION_RULE,
+            1,
+            f"SCAL ODMOWA | #1 {{head}} | rozjazd modelu na scaleniu z main {{main}}: {MODEL_DRIFT}",
+            id="rozjazd-przez-pr",
+        ),
+        pytest.param(
+            {"kod/inne.py": "INNE: int = 1\n"},
+            {**TEST_SELECTION_RULE, MODEL_CODE: CHANGED_MODEL_SOURCE},
+            0,
+            "SCAL OK | #1 {head} | gotowy do merge'a z main {main}, bez merge'a (--bez-merge) | test scalenia pominięty: zmiana pyproject.toml dotyczy każdego testu",
+            id="rozjazd-juz-na-samym-main",
+        ),
+    ],
+)
+def test_pominiety_test_scalenia_i_tak_odmawia_przy_rozjezdzie_modelu_skilla_na_scaleniu_ktorego_nie_ma_na_samym_main(
+    tmp_path: Path, pull_files: dict[str, str], main_files: dict[str, str], code: int, line: str
+) -> None:
+    (tmp_path / "skroty" / "kod").mkdir(parents=True)
+    (tmp_path / "skroty" / MODEL_CODE).write_text(MODEL_SOURCE, encoding="utf-8")
+    digests = rozjazd_modelu.skroty({MODEL_CODE: {"licz": ""}}, tmp_path / "skroty")
+    skill = {f"{MODEL_SKILL}/SKILL.md": "Model.\n", f"{MODEL_SKILL}/{rozjazd_modelu.DEFINICJE}": json.dumps(digests)}
+    github = MergeGitHub(tmp_path, {"pyproject.toml": WITH_PYTEST, "kod/__init__.py": HELPED_SUM, "kod/pomoc.py": HELPER, MODEL_CODE: MODEL_SOURCE, **skill})
+    head = github.open_pull(1, pull_files)
+    github.comment(1, PASS.format(head=head))
+    main = github.push_main(main_files)
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == code, answered.stdout + answered.stderr
+    assert _last_line(answered).startswith(line.format(head=head[:7], main=main[:7])), _last_line(answered)
 
 
 @pytest.mark.parametrize(
@@ -1858,8 +1957,8 @@ def test_werdykt_niezgodny_z_regulami_nie_trafia_na_pr_a_odmowa_podaje_wszystkie
 
 @pytest.mark.parametrize(
     "modes",
-    [["--przeglad", "--bez-merge"], ["--werdykt", "PLIK", "--bez-merge"], ["--przeglad", "--werdykt", "PLIK"]],
-    ids=["przeglad-i-bez-merge", "werdykt-i-bez-merge", "przeglad-i-werdykt"],
+    [["--przeglad", "--bez-merge"], ["--werdykt", "PLIK", "--bez-merge"], ["--przeglad", "--werdykt", "PLIK"], ["--opis", "--bez-merge"]],
+    ids=["przeglad-i-bez-merge", "werdykt-i-bez-merge", "przeglad-i-werdykt", "opis-i-bez-merge"],
 )
 def test_tryby_przegladu_werdyktu_i_bez_merge_sie_wykluczaja_wiec_dwa_naraz_niczego_nie_publikuja_ani_nie_scalaja(
     tmp_path: Path, modes: list[str]
@@ -1878,8 +1977,8 @@ def test_tryby_przegladu_werdyktu_i_bez_merge_sie_wykluczaja_wiec_dwa_naraz_nicz
 
 @pytest.mark.parametrize(
     ("mode", "label"),
-    [(["--przeglad"], "PRZEGLĄD"), (["--werdykt", "PLIK"], "WERDYKT"), (["--bez-merge"], "SCAL")],
-    ids=["przeglad", "werdykt", "bez-merge"],
+    [(["--przeglad"], "PRZEGLĄD"), (["--werdykt", "PLIK"], "WERDYKT"), (["--bez-merge"], "SCAL"), (["--opis"], "OPIS")],
+    ids=["przeglad", "werdykt", "bez-merge", "opis"],
 )
 def test_blad_gh_konczy_sie_linia_fail_z_nazwa_trybu(tmp_path: Path, mode: list[str], label: str) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
@@ -2202,7 +2301,7 @@ def _limit_reason(*failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a po 3. rundzie z FAIL PR nie dostaje"
-        " kolejnej (skill przeglad, „Kolejne rundy”): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
+        " kolejnej (skill przeglad, rundy.md): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
         " usunięcie z PR części, której przegląd nie przyjął) i opisz je komentarzem PR z pierwszą linią"
         " „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie dostaje żadnej"
     )
@@ -2214,7 +2313,7 @@ def _final_reason(*failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}), a po 6. rundzie z FAIL #1 nie dostaje żadnej kolejnej"
-        " (skill przeglad, „Kolejne rundy”), także po komentarzu „ZMIANA PODEJŚCIA: <zdanie>”: zamknij #1 komentarzem"
+        " (skill przeglad, rundy.md), także po komentarzu „ZMIANA PODEJŚCIA: <zdanie>”: zamknij #1 komentarzem"
         " z powodem i zacznij nowy PR od świeżego origin/main z innym podejściem"
     )
 
@@ -2294,7 +2393,7 @@ def _repeat_reason(place: str, *failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a ich Ważne trafiają w to samo miejsce"
-        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, „Kolejne rundy”): zmień"
+        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, rundy.md): zmień"
         " podejście w #1 (atak na przesłankę, granica z mechanizmu albo usunięcie z PR części, której przegląd nie"
         " przyjął) i opisz je komentarzem PR z pierwszą linią „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie"
         " dostaje żadnej"
@@ -2636,14 +2735,20 @@ def _root_gate(
     korzenia wdrożoną na ``main`` w chwili ``gate``, a szablonem 1.10.2026; ``setup`` podaje stan i opis PR korzenia
     (``root``: stan, opis i opcjonalnie gałąź, do której go scalono, domyślnie ``main``), domyślną gałąź repozytorium
     albo błąd ``gh repo view`` (``repo_view``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``,
-    domyślnie ``baza``) i na HEAD (``skill``) i kod dopisany do listy korzeni na HEAD (``listed``)."""
+    domyślnie ``baza``) i na HEAD (``skill``), jego plik porażki w ADR na bazie (``adr_base``) i na HEAD (``adr``), bez
+    klucza nieobecny, i kod dopisany do listy korzeni na HEAD (``listed``)."""
 
-    skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
+    skill_file, adr_file = bramka_korzenia.FAILURE_FILES
+    base_files = {"kod/__init__.py": SUM, skill_file: korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]}
+    if "adr_base" in setup:
+        base_files[adr_file] = korzenie_pr.SKILL[str(setup["adr_base"])]
+    github = MergeGitHub(tmp_path, base_files, started=gate)
     _deploy_template(github)
     files = {"kod/inne.py": "INNE: int = 1\n"}
     if "skill" in setup:
-        files[szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix()] = korzenie_pr.SKILL[str(setup["skill"])]
+        files[skill_file] = korzenie_pr.SKILL[str(setup["skill"])]
+    if "adr" in setup:
+        files[adr_file] = korzenie_pr.SKILL[str(setup["adr"])]
     if "listed" in setup:
         files[szablon_werdyktu.LIST] = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + str(setup["listed"])
     github.open_pull(1, files)
@@ -2695,6 +2800,8 @@ def _root_gate(
         ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkt-z-przykladem-zmieniony-z-linkiem-do-pr"}, [NEW_POINT]),
         ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
         ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkty-bazy-zamienione-z-linkiem-do-pr"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"adr_base": "baza", "adr": "punkt-z-linkiem-do-pr"}, []),
+        ([FAIL_W1], "szczebel-e", {"adr_base": "baza", "adr": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
         ([FAIL_W1], "cytat-pola-w-bloku-kodu", {}, []),
         ([FAIL_W1], "cytat-pola-bez-bloku-kodu", {}, ["korzeń: blok „### W1 r1: R-DRUGA-DROGA” powtórzony"]),
         ([FAIL_W1], "wyrwany", {"root": ("OPEN", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest otwarty, a scala się go do domyślnej gałęzi przed tym PR"]),
@@ -2755,6 +2862,8 @@ def _root_gate(
         "szczebel-e-z-punktem-bazy-zmienionym-o-link-do-pr",
         "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy",
         "szczebel-e-z-nowym-punktem-i-punktami-bazy-w-innej-kolejnosci",
+        "szczebel-e-z-nowym-punktem-w-pliku-porazki-adr",
+        "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy-w-pliku-porazki-adr",
         "cytat-pola-w-bloku-kodu",
         "cytat-pola-bez-bloku-kodu",
         "wyrwany-w-otwartym-pr",

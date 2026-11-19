@@ -2,7 +2,8 @@
 src/rozliczenia/centrum/static/** -text
 frontend/src/api/openapi.json text eol=lf
 frontend/src/api/generated/** text eol=lf
-# Sterownik `wygenerowane` ustawia tools/setup_worktree.py.
+# Sterowniki `wygenerowane` i `model-skilla` ustawia tools/setup_worktree.py.
 src/rozliczenia/centrum/static/** merge=wygenerowane
 frontend/src/api/generated/** merge=wygenerowane
 frontend/src/api/openapi.json merge=wygenerowane
+.agents/skills/*/model/definicje.json merge=model-skilla
