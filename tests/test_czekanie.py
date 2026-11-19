@@ -1241,7 +1241,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         _heredoc(CHECKS_IN_CONDITION)
         + "\n"
         + _heredoc(
-            'import subprocess, time\nA0 = "gh"\n'
+            'import subprocess, time\nA0 = ""\n'
             + "".join(f"A{index + 1} = (A{index}, A{index})\n" for index in range(60))
             + "while subprocess.run(A60).returncode == 8:\n    time.sleep(30)"
         ),
@@ -1258,7 +1258,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
             "import subprocess, sys, time\nfor pr in [1, 2, 3]:\n    subprocess.run(["
             + ", ".join(["sys.argv[1]"] * 10000)
             + "])\n    time.sleep(1)",
-            program="python3 - " + "a" * 10000,
+            program="python3 - " + "a" * 50000,
         ),
     ],
     ids=[
