@@ -160,8 +160,8 @@ CALM_LIMIT_MS: Final = 30_000
 for the limit. A wait for it is a violation there whatever the window made of it (``QUIET_S``), so a longer one hides no
 answer or reload that never comes, and a case whose window waits for it on healthy code goes red instead of costing the
 limit; with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than 4 s stopped such a
-run on the time limit, and with 15 s the run without a fault of the busy-machine test on a Windows runner in CI waited
-14.6 s for that reload (#2061). It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still ends within
+run on the time limit, and with 15 s the run without a fault of the busy-machine test on a Windows runner in CI was
+silent 14.6 s, by the log's length alone most likely at that reload (#2061). It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still ends within
 the run's limit."""
 QUIET_S: Final = (CALM_LIMIT_MS - LIMIT_MS) / 1000
 """A window with ``CALM_LIMIT_MS`` that sent the proxy no request this long waited for that limit (``quiet``): such a wait
@@ -1463,6 +1463,11 @@ class Report:
     gaps: list[str] = field(default_factory=list)
     ran: set[str] = field(default_factory=set)
     """Names of the first runs whose fault took effect."""
+    longest_calm_quiet: tuple[float, str] | None = None
+
+    def heard(self, name: str, run: Run) -> None:
+        if run.calm and (self.longest_calm_quiet is None or run.quiet_s > self.longest_calm_quiet[0]):
+            self.longest_calm_quiet = (run.quiet_s, name)
 
 
 def sort_violations(violations: Sequence[Violation], report: Report) -> None:
@@ -1522,6 +1527,7 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         report.gaps.append(f"przebieg bez awarii nie przeszedł: {reference!r}")
         return report
     (evidence / "przebieg-bez-awarii.txt").write_text("\n".join(reference.actions) + "\n", encoding="utf-8")
+    report.heard("przebieg bez awarii", reference)
     broken = reference_violations(reference) + common_checks("przebieg bez awarii", reference, INITIAL, {})
     if broken:
         _keep(evidence, "przebieg bez awarii", reference, broken)
@@ -1551,6 +1557,7 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
             report.new.append(Violation("BEZ_WYJATKU", "błąd sprawdzenia", case.name, f"sprawdzenie nie przeszło: {run!r}", case.fault, case.role))
             continue
         report.ran.add(case.name)
+        report.heard(case.name, run)
         violations = check_first(case, run)
         sort_violations(violations, report)
         _keep(evidence, case.name, run, violations)
@@ -1579,6 +1586,7 @@ def explore(run_root: Path, evidence: Path, variants: Sequence[str], roles: Sequ
         if not isinstance(run, Run):
             report.new.append(Violation("BEZ_WYJATKU", "błąd sprawdzenia", resume.name, f"sprawdzenie nie przeszło: {run!r}"))
             continue
+        report.heard(resume.name, run)
         violations = check_resume(resume, run)
         sort_violations(violations, report)
         _keep(evidence, resume.name, run, violations, resume.shared)
@@ -1680,6 +1688,12 @@ def _keep(evidence: Path, name: str, run: Run, violations: Sequence[Violation], 
 
 def summarize(report: Report) -> tuple[list[str], int]:
     lines = list(report.lines)
+    if report.longest_calm_quiet is not None:
+        silent_s, silent_case = report.longest_calm_quiet
+        lines.append(
+            f"CISZA OKNA | najdłużej {silent_s:.1f} s bez żądania przy limicie {CALM_LIMIT_MS / 1000:.0f} s, "
+            f"czekanie do limitu od {QUIET_S:.0f} s | {silent_case}"
+        )
     groups: dict[tuple[str, str], list[Violation]] = {}
     for violation in report.new:
         groups.setdefault((violation.rule, violation.tag), []).append(violation)

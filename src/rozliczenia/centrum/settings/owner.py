@@ -170,7 +170,7 @@ from rozliczenia.centrum.settings.quantity_rules import (
 )
 from rozliczenia.centrum.settings.reminders import REMINDERS, RemindersEdit, dad_reminders
 from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL, WrittenMail, written
-from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_workers
+from rozliczenia.centrum.settings.workers import WORKERS, AddWorker, WorkersEdit, dad_workers
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.settlement_mailing import SettlementMailSettings
@@ -661,9 +661,11 @@ class CentrumSettings:
 
     def change_workers(self, edit: WorkersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty Listy Wykonawców (``dad_workers``); loginy, które usuwa, sprawdza w okresach ``_by_dad``,
-        ta sama droga co „Cofnij”."""
+        ta sama droga co „Cofnij”. Zmiana Wykonawcy z listy (wszystko poza dodaniem) zaczyna od listy, którą liczy
+        Uruchomienie, z odczytu zapisu: bez niej to odmowa ``refusal.workers_unusable``, a nie „Tego Wykonawcy nie ma”."""
 
-        return self._by_dad(WORKERS, lambda current: dad_workers(current, edit), undoes=None)
+        unusable = None if isinstance(edit, AddWorker) else refusal.workers_unusable
+        return self._by_dad(WORKERS, lambda current: dad_workers(current, edit), undoes=None, unusable=unusable)
 
     def change_exceptions(self, exception: QuantityException) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zapis taty „To był wyjątek”: wyjątek Kontroli ilości ``exception`` dopisany do pliku wyjątków
@@ -944,7 +946,12 @@ class CentrumSettings:
         )
 
     def _by_dad(
-        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: HistoryRow | None
+        self,
+        file: SettingsFile[T],
+        edit: Callable[[T], T | FieldProblem],
+        *,
+        undoes: HistoryRow | None,
+        unusable: Callable[[FieldProblem | None], refusal.Refusal] | None = None,
     ) -> Saved | Refused | NotSaved | KeptInPeriods:
         """Zmiana taty: loginy, które usuwa z Listy Wykonawców, najpierw poza blokadą sprawdza w okresach, potem zapisuje
         z nimi jako sprawdzonymi."""
@@ -952,7 +959,7 @@ class CentrumSettings:
         with self._lock:
             removed = self._removed_logins(file, edit)
             if removed is None:
-                return self._dad_change(file, edit, undoes=undoes, checked=frozenset())
+                return self._dad_change(file, edit, undoes=undoes, checked=frozenset(), unusable=unusable)
             folders = _usable(self._observe(FOLDERS), FOLDERS)
             if isinstance(folders, Unreadable):
                 self._log.settings_unreadable(cause="dostep")
@@ -961,10 +968,16 @@ class CentrumSettings:
         if not isinstance(presence, NotInPeriods):
             return KeptInPeriods(presence, removed.what)
         with self._lock:
-            return self._dad_change(file, edit, undoes=undoes, checked=removed.logins)
+            return self._dad_change(file, edit, undoes=undoes, checked=removed.logins, unusable=unusable)
 
     def _dad_change(
-        self, file: SettingsFile[T], edit: Callable[[T], T | FieldProblem], *, undoes: HistoryRow | None, checked: frozenset[str]
+        self,
+        file: SettingsFile[T],
+        edit: Callable[[T], T | FieldProblem],
+        *,
+        undoes: HistoryRow | None,
+        checked: frozenset[str],
+        unusable: Callable[[FieldProblem | None], refusal.Refusal] | None = None,
     ) -> Saved | Refused | NotSaved:
         """Zapis taty pod blokadą; jedyna droga zapisu taty Listy Urządzeń, Reguł ilości i Legendy czynności, więc jedyne
         miejsce, które sprawdza go jako zmianę pary albo legendy i daje odmowę zdaniem o tej zmianie (``_dad_devices``,
@@ -977,7 +990,7 @@ class CentrumSettings:
         }
         write = paired.get(file.name)
         if write is None:
-            return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked)
+            return self._change(file, edit, undoes=undoes, source=ByDad(), undoable=True, checked=checked, unusable=unusable)
         return write(edit, undoes=undoes, checked=checked)
 
     def _dad_legend(self, edit: Callable[[Codes], Codes | FieldProblem], *, undoes: HistoryRow | None, checked: frozenset[str]) -> Saved | Refused | NotSaved:
@@ -1054,7 +1067,7 @@ class CentrumSettings:
 
         if file.removed_logins is None:
             return None
-        current = _usable(self._observe(file), file)
+        current = _usable(self._observe_for_change(file), file)
         if isinstance(current, Unreadable):
             return None
         value = edit(current)
@@ -1069,9 +1082,12 @@ class CentrumSettings:
         source: RowSource,
         undoable: bool,
         checked: frozenset[str] | None,
+        unusable: Callable[[FieldProblem | None], refusal.Refusal] | None = None,
     ) -> Saved | Refused | NotSaved:
         """Zapis wartości od ``edit``. ``checked``: loginy, które zmiana może usunąć z Listy Wykonawców, bo sprawdzono je
-        w okresach; usunięcie innego to odmowa. ``None``: zmiana Maksa z Wydania, bez sprawdzenia."""
+        w okresach; usunięcie innego to odmowa. ``None``: zmiana Maksa z Wydania, bez sprawdzenia. ``unusable``: odmowa
+        zmiany, która zaczyna od wartości, którą liczy Uruchomienie, gdy tego odczytu jej nie daje: zła treść bez ostatniej
+        dobrej (jej problem) albo plik bez odczytu także po ponowieniach (``None``)."""
 
         place = self._places[file.name]
         unsupported = place.unsupported()
@@ -1080,8 +1096,12 @@ class CentrumSettings:
         data = self._bytes_for_change(place, file.name)
         if isinstance(data, Unreadable) or isinstance(self._memory.read(file.name), Unreadable):
             self._log.settings_unreadable(cause="dostep")
+            if isinstance(data, Unreadable) and unusable is not None:
+                raise unusable(None)
             return NotSaved()
         observed = self._observed(file, data)
+        if isinstance(observed, Bad) and observed.usable is None and unusable is not None:
+            raise unusable(observed.problem)
         if isinstance(observed, Bad) and file.secret and observed.usable is None:
             return Refused(observed.problem)
         current = _value(observed, file)
