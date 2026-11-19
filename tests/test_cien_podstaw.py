@@ -229,11 +229,12 @@ def test_wynik_z_zapisanych_rekordow_jest_tym_samym_co_z_githuba(
 
 
 def _konflikt(repo: Path, *argumenty: str) -> None:
-    """``git <argumenty>`` (rebase albo scalenie ``main``) staje na konflikcie, więc próbka rozstrzyga prawdziwy konflikt."""
+    """``git <argumenty>`` (rebase albo scalenie ``main``) staje na konflikcie w ``src/a.py``, więc próbka rozstrzyga
+    prawdziwy konflikt."""
 
-    with pytest.raises(subprocess.CalledProcessError) as stop:
+    with pytest.raises(subprocess.CalledProcessError):
         git(repo, *argumenty)
-    assert "CONFLICT" in stop.value.stdout + stop.value.stderr
+    assert git(repo, "diff", "--name-only", "--diff-filter=U") == "src/a.py"
 
 
 @pytest.mark.parametrize(
