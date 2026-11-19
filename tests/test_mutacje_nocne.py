@@ -1415,13 +1415,14 @@ def test_plan_i_czesci_licza_te_same_mutacje(
     assert all(czesci), plan["linia"]
 
 
-# Najgorsze czasy nocy 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, ADR 0021). Pokrycie części
-# 1006 s i brama typów 58 s. W testach linii 16 mutacji tools/mutacje.py trwało pełny limit mutacji i kończyło się tam
+# Najgorsze czasy nocy 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, ADR 0021), a pokrycia,
+# bramy typów i testów pliku nocy 17–19.11 (runy 44055469611, 44216322171, 44441152441). Pokrycie biegnie od 16.11 w
+# osobnych zadaniach, więc w części trwało najwyżej 1 s, a brama typów części najwyżej 156 s. W testach linii 16 mutacji tools/mutacje.py trwało pełny limit mutacji i kończyło się tam
 # (PRZEKROCZONY CZAS), a są na liście obok siebie, więc mogą trafić do jednej części; reszta po 210,3 s, najwyższej
 # medianie pliku z co najmniej trzema pomiarami. Testy kodu pliku jednej mutacji trwały najwyżej 836,2 s, a testy pliku
-# 440,64 s. Udziały mutacji, które doszły do tych przebiegów, mają skład prawdziwej części (kodu pliku, pliku, mutacji w
+# plików Centrum (4000–5300 testów) bez mutacji 560–890 s, więc mutacja kończy je najpóźniej w limicie mutacji. Udziały mutacji, które doszły do tych przebiegów, mają skład prawdziwej części (kodu pliku, pliku, mutacji w
 # testach linii): te, których żadna inna część nie przewyższa w obu udziałach naraz.
-POKRYCIE_S, BRAMA_S, DROGIE, RESZTA_S, KODU_PLIKU_S, PLIKU_S = 1006, 58, 16, 210.3, 836.2, 440.64
+POKRYCIE_S, BRAMA_S, DROGIE, RESZTA_S, KODU_PLIKU_S, PLIKU_S = 1, 156, 16, 210.3, 836.2, mutacje_zmiany.MUTATION_LIMIT_S
 SKLADY_CZESCI = [(0, 37, 93), (6, 29, 93), (9, 26, 103), (11, 1, 32), (12, 12, 49), (26, 4, 102)]
 # Mutacja ``l*`` widzi test swojej linii, a ``w*`` (``@cache``) dopiero test kodu pliku, bo jej linię wykonuje tylko
 # ``test_a_wspolne``. Test, który widzi mutację, czeka, aż wystartuje ``WORKERS`` mutacji jego przebiegu (albo któraś
@@ -1470,7 +1471,7 @@ def _najdluzsza_czesc_s(mutacje: int, naraz_linii: int, naraz_kodu_pliku: int) -
 
 def test_czesc_konczy_sie_w_limicie_czasu_z_najdrozszymi_zmierzonymi_mutacjami_kazdego_przebiegu(tmp_path: Path) -> None:
     """Część ma ``NA_CZESC`` mutacji, tyle pełnych kolejek po ``WORKERS``, ile mieści limit czasu części przy najgorszych
-    czasach nocy 31.10–3.11 w każdym przebiegu, z liczbą mutacji, które ``tools/mutacje_zmiany.py`` uruchamia naraz w
+    czasach nocy 31.10–3.11 i 17–19.11 w każdym przebiegu, z liczbą mutacji, które ``tools/mutacje_zmiany.py`` uruchamia naraz w
     testach linii i w testach kodu pliku, gdy biegnie jak krok części, bez ``--rownolegle`` (ADR 0021)."""
 
     folder = tmp_path / "naraz"
