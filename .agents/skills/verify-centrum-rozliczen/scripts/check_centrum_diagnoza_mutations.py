@@ -13,7 +13,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / ".agents/skills/verify-centrum-rozliczen/scripts"))
 
-from cele_mutacji_centrum import DIAGNOSIS, DIAGNOZA, ORDER_REGISTER_ROUTER, SETTINGS_AT_START
+from cele_mutacji_centrum import DIAGNOSIS, DIAGNOZA, ORDER_REGISTER_ROUTER, SETTINGS_OWNER
 from silnik_mutacji import Edit, Mutation, check_all
 
 MUTATIONS = (
@@ -25,7 +25,7 @@ MUTATIONS = (
     ),
     Mutation(
         "zła Lista Wykonawców przechodzi sprawdzenie Diagnozy",
-        (Edit(DIAGNOSIS, "    if isinstance(workers, Good):\n", "    if True:\n"),),
+        (Edit(DIAGNOSIS, "    problem = workers.problem()\n    if problem is None:\n", "    problem = workers.problem()\n    if True:\n"),),
         DIAGNOZA,
         "tata widzi w Diagnozie, że Lista Wykonawców jest dobra, choć nie da się jej użyć",
     ),
@@ -33,9 +33,9 @@ MUTATIONS = (
         "Lista Wykonawców bez odczytu startuje proces na pustej liście",
         (
             Edit(
-                SETTINGS_AT_START,
-                "        raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)\n",
-                "        return WorkerList(())\n",
+                SETTINGS_OWNER,
+                "                raise refusal.workers_unusable(None)\n",
+                "                return WorkerList(())\n",
             ),
         ),
         DIAGNOZA,

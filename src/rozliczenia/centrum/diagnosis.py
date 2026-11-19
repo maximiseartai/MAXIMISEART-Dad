@@ -56,11 +56,11 @@ from rozliczenia.period_folder import (
     locate_period_folder,
     period_place_label,
 )
-from rozliczenia.centrum.settings.files import Good, Read, Unreadable
+from rozliczenia.centrum.settings.files import Unreadable
 from rozliczenia.centrum.settings.folders import FolderSettings
+from rozliczenia.centrum.settings.owner import WorkerListRead
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
-from rozliczenia.worker_list import WorkerList
 
 _LOG_ENTRIES: Final = 20
 
@@ -249,7 +249,7 @@ class _Computer(_ProcessFiles):
     surroundings: Surroundings
     template_check: TemplateCheck
     dad_files: DadFiles
-    workers: Read[WorkerList] | Unreadable
+    workers: WorkerListRead
 
     @cached_property
     def log_entries(self) -> tuple[str, ...]:
@@ -397,9 +397,10 @@ def _worker_list(computer: _Computer, label: str) -> list[CheckResult]:
     """Lista Wykonawców z Ustawień Centrum tym samym Komunikatem co w Konfiguracji."""
 
     workers = computer.workers
-    if isinstance(workers, Good):
-        return [CheckResult.passed(label, f"Wykonawców na liście: {len(workers.value.workers)}.")]
-    return [CheckResult.failed(label, workers_problem(workers))]
+    problem = workers.problem()
+    if problem is None:
+        return [CheckResult.passed(label, f"Wykonawców na liście: {len(workers.counted().workers)}.")]
+    return [CheckResult.failed(label, workers_problem(problem))]
 
 
 def _period_folder(
@@ -517,7 +518,7 @@ def diagnose(
     surroundings: Surroundings,
     template_check: TemplateCheck,
     files: DadFiles,
-    workers: Read[WorkerList] | Unreadable,
+    workers: WorkerListRead,
 ) -> Diagnosis:
     """Wszystkie sprawdzenia procesu ``process``, tylko do odczytu.
 

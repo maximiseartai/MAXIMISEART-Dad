@@ -21,9 +21,9 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum.contract import settings_workers as contract
 from rozliczenia.centrum.settings import messages, workers
-from rozliczenia.centrum.settings.files import FieldProblem, Unreadable, usable
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import CentrumSettings
-from rozliczenia.centrum.settings.workers import WORKERS_FILE, AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
+from rozliczenia.centrum.settings.workers import AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
 from rozliczenia.centrum.settings_router import choice, describe
 from rozliczenia.centrum.worker_suggestions import worker_suggestions
 from rozliczenia.dad_files import DadFiles
@@ -81,9 +81,10 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         folders = snapshot.folders_or_unreadable
         if isinstance(folders, Unreadable):
             return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(folders.name))
-        if isinstance(snapshot.workers, Unreadable):
-            return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(WORKERS_FILE))
-        listed = usable(snapshot.workers) or WorkerList(())
+        found = snapshot.workers.counted_or_unreadable()
+        if isinstance(found, Unreadable):
+            return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(found.name))
+        listed = WorkerList(()) if isinstance(found, FieldProblem) else found
         return worker_suggestions(listed, folders.register, files, today())
 
     @router.post("/{login}/addresses", operation_id="assignWorkerAddress", responses=_REFUSED)
@@ -113,15 +114,13 @@ def _form(form: contract.WorkerForm) -> WorkerForm:
 
 
 def _listed(settings: CentrumSettings) -> WorkerList:
-    """Lista Wykonawców, od której zaczyna zmiana: dobra albo ostatnia dobra przy złym pliku."""
+    """Lista Wykonawców, od której zaczyna zmiana: dobra albo ostatnia dobra przy złym pliku; bez niej (zła bez
+    ostatniej dobrej albo bez odczytu) odmowa ``refusal.workers_unusable(None)``."""
 
-    workers = settings.view().workers
-    if isinstance(workers, Unreadable):
-        raise refusal.workers_unusable(None)
-    listed = usable(workers)
-    if listed is None:
-        raise refusal.workers_unusable(None)
-    return listed
+    listed = settings.view().workers.counted_or_unreadable()
+    if isinstance(listed, WorkerList):
+        return listed
+    raise refusal.workers_unusable(None)
 
 
 def _worker(listed: WorkerList, login: str) -> Worker:

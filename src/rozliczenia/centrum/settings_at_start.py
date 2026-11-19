@@ -18,7 +18,7 @@ from rozliczenia.activity_legend import ActivityLegend
 from rozliczenia.centrum import diagnosis_messages, refusal
 from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.run_logs import LoggedActivityLegend, LoggedQuantityRules, LoggedWorker
-from rozliczenia.centrum.settings.files import Bad, Read, Unreadable, usable
+from rozliczenia.centrum.settings.files import Unreadable
 from rozliczenia.centrum.settings.owner import SettingsSnapshot
 from rozliczenia.message import Message
 from rozliczenia.quantity_engine import QuantityRules
@@ -80,7 +80,7 @@ class SettingsAtStart:
         rules, legend = snapshot.quantity_rules_or_unreadable, snapshot.activity_legend_or_unreadable
         return cls(
             snapshot=snapshot,
-            workers=_workers_at_start(snapshot.workers) if "workers" in needs else None,
+            workers=snapshot.workers.counted() if "workers" in needs else None,
             quantity_rules=None if isinstance(rules, Unreadable) else rules,
             activity_legend=None if isinstance(legend, Unreadable) else legend,
             warnings=_start_warnings(snapshot, needs),
@@ -128,7 +128,7 @@ def unreadable(snapshot: SettingsSnapshot, needs: Collection[str]) -> Refusal | 
     """Odmowa startu procesu o potrzebach ``needs``: plik Reguł ilości albo Legendy czynności, którym proces liczy,
     a którego system nie daje teraz czytać, w kolejności ``SettingNeed``; ``None``, gdy każdy da się czytać. Listy
     Wykonawców tu nie sprawdza nigdy: start bez niej, także przy pliku bez odczytu, odrzuca
-    ``SettingsAtStart.of_snapshot`` własnym zdaniem (``refusal.workers_unusable``)."""
+    ``SettingsAtStart.of_snapshot`` zdaniem Listy Wykonawców (``WorkerListRead.counted``)."""
 
     for need in _SETTING_NEEDS:
         if need in needs and (file := _unreadable_at_start(snapshot, need)) is not None:
@@ -165,23 +165,11 @@ def _missing(need: SettingNeed) -> str:
             assert_never(need)
 
 
-def _workers_at_start(workers: Read[WorkerList] | Unreadable) -> WorkerList:
-    """Lista Wykonawców dla startu Uruchomienia z migawki Ustawień: dobra, a przy złym ustawieniu ostatnia dobra;
-    ``Refusal``, gdy ostatniej dobrej nie ma albo pliku nie da się teraz przeczytać."""
-
-    if isinstance(workers, Unreadable):
-        raise refusal.workers_unusable(None)
-    found = usable(workers)
-    if found is None:
-        raise refusal.workers_unusable(workers.problem if isinstance(workers, Bad) else None)
-    return found
-
-
 def _start_warnings(snapshot: SettingsSnapshot, needs: Collection[str]) -> tuple[Message, ...]:
     """Ostrzeżenia startu Uruchomienia procesu o potrzebach ``needs`` z migawki Ustawień Centrum: proces z Listą
     Wykonawców biegnie na ostatniej dobrej liście, bo plik ma złe ustawienie."""
 
-    workers = snapshot.workers
-    if "workers" in needs and isinstance(workers, Bad) and workers.usable is not None:
-        return (diagnosis_messages.worker_list_last_good(workers.problem.sentence),)
+    problem = snapshot.workers.last_good()
+    if "workers" in needs and problem is not None:
+        return (diagnosis_messages.worker_list_last_good(problem.sentence),)
     return ()

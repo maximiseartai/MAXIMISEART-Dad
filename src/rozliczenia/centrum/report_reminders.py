@@ -76,9 +76,8 @@ from rozliczenia.centrum import reminder_messages
 from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
-from rozliczenia.centrum.settings.files import Unreadable, usable
+from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
-from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.message import StopError
@@ -459,10 +458,10 @@ def due_reminders(
         return NotRead("bez-ustawien")
     if mailbox.access() != "ready":
         return NotRead("bez-dostepu")
-    if isinstance(snapshot.workers, Unreadable):
-        return NotRead("plik-bez-odczytu", file=WORKERS_FILE)
-    workers = usable(snapshot.workers)
-    if workers is None:
+    workers = snapshot.workers.counted_or_unreadable()
+    if isinstance(workers, Unreadable):
+        return NotRead("plik-bez-odczytu", file=workers.name)
+    if isinstance(workers, FieldProblem):
         return NotRead("bez-adresow")
     addresses = workers.addresses()
     try:

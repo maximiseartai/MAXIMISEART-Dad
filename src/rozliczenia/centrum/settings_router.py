@@ -49,6 +49,7 @@ from rozliczenia.centrum.settings.owner import (
     Saved,
     SettlementMailView,
     SettingsView,
+    ShownWorkers,
 )
 from rozliczenia.centrum.settings.reminders import (
     REMINDERS,
@@ -62,7 +63,6 @@ from rozliczenia.centrum.settings.reminders import (
     settings_of,
 )
 from rozliczenia.centrum.settings.settlement_mail import settings_of as settlement_mail_of
-from rozliczenia.centrum.settings.workers import WORKERS
 from rozliczenia.settlement_mailing import mail_subject, mail_text
 from rozliczenia.settlement_period import last_complete_period
 from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, Unresolved, WorkerList
@@ -199,12 +199,12 @@ def settings_router(
         if isinstance(read, FieldProblem):
             raise refusal.setting_refused(read)
         view = settings.view()
-        if isinstance(view.workers, Unreadable):
-            raise refusal.settings_file_unreadable(WORKERS.name)
+        workers = view.workers.counted_or_unreadable()
+        if isinstance(workers, Unreadable):
+            raise refusal.settings_file_unreadable(workers.name)
         if isinstance(view.reminders, Unreadable):
             raise refusal.settings_file_unreadable(REMINDERS.name)
-        workers = usable(view.workers)
-        worker = workers.workers[0].name if workers is not None and workers.workers else _SAMPLE_WORKER
+        worker = workers.workers[0].name if isinstance(workers, WorkerList) and workers.workers else _SAMPLE_WORKER
         reminders = usable(view.reminders)
         footer = "" if reminders is None else reminders.footer
         period = last_complete_period(today())
@@ -273,7 +273,7 @@ def _path(value: str | None) -> Path | None:
 def describe(view: SettingsView) -> settings_contract.Settings:
     """Ustawienia Centrum dla przeglądarki: przy złym pliku ostatnie dobre wartości i zdanie o problemie."""
 
-    workers = _workers(view.workers)
+    workers = _workers(view.workers.shown())
     inbox_setting, inbox_problem = _describe_inbox(view.inbox)
     autostart = _describe_autostart(view.autostart)
     reminders = _reminders(view.reminders)
@@ -337,21 +337,12 @@ def _inbox_setting(found: InboxFile | None) -> settings_contract.InboxSetting:
     )
 
 
-def _workers(read: Read[WorkerList] | Unreadable) -> settings_workers_contract.WorkerListSetting:
+def _workers(shown: ShownWorkers) -> settings_workers_contract.WorkerListSetting:
     """Lista Wykonawców w kolejności z pliku; przy złym pliku ostatnia dobra (bez niej pusta) i zdanie o problemie."""
 
-    match read:
-        case Good(value=workers):
-            state: Literal["good", "bad", "unreadable"] = "good"
-            problem = None
-        case Bad(problem=bad, usable=usable):
-            state, workers = "bad", usable or WorkerList(())
-            problem = settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence)
-        case Unreadable():
-            state, workers = "unreadable", WorkerList(())
-            problem = settings_workers_contract.SettingProblem(field=None, message=messages.worker_list_unreadable())
+    bad = shown.problem
     return settings_workers_contract.WorkerListSetting(
-        state=state,
+        state=shown.state,
         workers=[
             settings_workers_contract.ListedWorker(
                 logins=list(worker.logins),
@@ -360,10 +351,10 @@ def _workers(read: Read[WorkerList] | Unreadable) -> settings_workers_contract.W
                 active=worker.active,
                 reminders=worker.reminders,
             )
-            for worker in workers.workers
+            for worker in shown.workers
         ],
-        unresolved=[_unresolved(item) for item in workers.unresolved],
-        problem=problem,
+        unresolved=[_unresolved(item) for item in shown.unresolved],
+        problem=None if bad is None else settings_workers_contract.SettingProblem(field=bad.place, message=bad.sentence),
     )
 
 

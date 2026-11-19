@@ -21,12 +21,15 @@ się przeczytać.
 Wołający, który bez pliku odpowiada tacie odmową (Tablica okresów, ścieżki okresu, Uzupełnienie, różnice Kontroli
 ilości, otwarcie Rejestru zleceń, podgląd zmiany reguły albo kodu, Wysyłka rozliczeń, start procesu), bierze wartość
 nazwą bez przyrostka (``folders``, ``QuantityRulesView.rules``, ``counted_activity_legend``, własności
-``SettingsSnapshot``): plik, którego system nie daje teraz czytać, to tam odmowa 409 o nim
+``SettingsSnapshot``, ``WorkerListRead.counted``): plik, którego system nie daje teraz czytać, to tam odmowa 409 o nim
 (``refusal.settings_file_unreadable``), a nie treść z Wydania, którą tata wziąłby za niewskazany folder okresów albo za
 swoje Reguły ilości; odczyt niczego nie zapisuje, więc ta odmowa nie jest regułą przyjęcia zmiany. Unię z
 ``Unreadable`` daje tylko nazwa z przyrostkiem ``_or_unreadable``, dla wołającego, który o pliku mówi albo czeka.
 ``Unreadable`` nie ma podklas, a mypy w ``src/`` ma ``warn_unreachable``, więc gałąź „bez odczytu” przy wartości
 bez unii, także z literałem albo konstruktorem z wartościami domyślnymi w niej, nie przechodzi mypy.
+Listę Wykonawców migawka i okno Ustawień niosą jako jej odczyt (``WorkerListRead``), bo zła lista bez ostatniej dobrej
+to trzeci wynik obok listy i pliku bez odczytu: o nim, o liście dla procesu i o tym, co pokazać, rozstrzyga ten typ, a
+nie wołający.
 Reguły ilości i Lista Urządzeń mają do tego jeden wspólny niezmiennik: każde przyjęcie jednego z nich (``_paired``:
 odczyt, także bez zapisu w ``read_snapshot``, zapis, cofnięcie) sprawdza go razem z drugim, więc plik, który do drugiego
 nie pasuje, jest zły tak samo jak plik z uszkodzoną treścią, a procesy liczą ostatnią dobrą parą. Reguły ilości z
@@ -107,7 +110,7 @@ import hashlib
 from pathlib import Path
 import re
 import threading
-from typing import Any, Final, Protocol, TypeVar, final
+from typing import Any, Final, Literal, Protocol, TypeVar, final
 import uuid
 
 from rozliczenia.centrum import device_forms, legend_forms, refusal, rule_forms
@@ -170,7 +173,7 @@ from rozliczenia.centrum.settings.workers import WORKERS, WorkersEdit, dad_worke
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend
 from rozliczenia.quantity_engine import Component, DeviceList, QuantityRule, QuantityRules
 from rozliczenia.settlement_mailing import SettlementMailSettings
-from rozliczenia.worker_list import WorkerList
+from rozliczenia.worker_list import Unresolved, Worker, WorkerList
 from rozliczenia.worker_periods import InPeriod, InRegister, NotInPeriods, Unchecked, WorkerPeriods
 from rozliczenia.worker_report_inbox import InboxState
 from rozliczenia.worker_reports import ReminderSettings
@@ -190,21 +193,102 @@ _PairCheck = Callable[[Any], FieldProblem | Unreadable | None]
 ``Unreadable``: drugiego pliku system nie daje teraz czytać, więc nie wiadomo."""
 
 
+@final
+@dataclass(frozen=True)
+class ShownWorkers:
+    """Lista Wykonawców, którą pokazuje okno Ustawień, ze stanem i problemem pliku (``None``: plik dobry): przy złym
+    pliku ostatnia dobra, a bez niej i przy pliku bez odczytu pusta. To nie ``WorkerList``, więc odczyt, który z listy
+    liczy (start, Przypomnienia o raporcie, Wysyłka rozliczeń, podpowiedzi), jej nie przyjmie (mypy), a listę, którą
+    liczy, daje ``WorkerListRead.counted``."""
+
+    state: Literal["good", "bad", "unreadable"]
+    workers: tuple[Worker, ...]
+    unresolved: tuple[Unresolved, ...]
+    problem: FieldProblem | None
+
+
+@final
+@dataclass(frozen=True)
+class WorkerListRead:
+    """Lista Wykonawców z jednej chwili: którą listą liczy Uruchomienie, co powiedzieć o pliku i co pokazać w oknie.
+    Buduje ją właściciel Ustawień z odczytu pliku (``snapshot``, ``read_snapshot``, ``view``), a sam odczyt (dobry, zły
+    z ostatnią dobrą listą albo bez niej, bez odczytu) zostaje w środku, więc wołający nie rozstrzyga go po swojemu.
+    Zła lista bez ostatniej dobrej to nie pusta lista ani plik bez odczytu, bo proces bez Listy Wykonawców nie startuje,
+    a tata ma usłyszeć, co poprawić.
+
+    Klasa nie ma podklas, więc gałąź ``isinstance`` z typem odczytu pliku (``Good``, ``Unreadable``) przy tej wartości
+    jest dla mypy martwa (``warn_unreachable`` w ``src/``)."""
+
+    _read: Read[WorkerList] | Unreadable
+
+    def counted(self) -> WorkerList:
+        """Lista, którą liczy Uruchomienie: dobra albo przy złym pliku ostatnia dobra. Zła bez ostatniej dobrej to odmowa
+        jej zdaniem, a plik, którego system nie daje teraz czytać, odmowa zdaniem o Liście Wykonawców bez odczytu (obie
+        ``refusal.workers_unusable``)."""
+
+        match self.counted_or_unreadable():
+            case Unreadable():
+                raise refusal.workers_unusable(None)
+            case FieldProblem() as problem:
+                raise refusal.workers_unusable(problem)
+            case WorkerList() as workers:
+                return workers
+
+    def counted_or_unreadable(self) -> WorkerList | Unreadable | FieldProblem:
+        """Lista, którą liczy Uruchomienie, dla wołającego, który bez niej nie odmawia, tylko mówi o tym albo czeka (stan
+        okna, ponowienie Przypomnień, próba): zła bez ostatniej dobrej to jej problem, a plik bez odczytu ``Unreadable``
+        z jego nazwą."""
+
+        return _counted(self._read, WORKERS)
+
+    def problem(self) -> FieldProblem | Unreadable | None:
+        """Problem pliku, także gdy Uruchomienie liczy ostatnią dobrą listą (Diagnoza, blokada karty Wpisania raportów);
+        ``None``: plik dobry."""
+
+        match self._read:
+            case Good():
+                return None
+            case Bad(problem=problem):
+                return problem
+            case Unreadable() as unreadable:
+                return unreadable
+
+    def last_good(self) -> FieldProblem | None:
+        """Problem złego pliku, gdy Uruchomienie liczy ostatnią dobrą listą (ostrzeżenie startu); ``None``: plik dobry,
+        zły bez ostatniej dobrej albo bez odczytu."""
+
+        read = self._read
+        return read.problem if isinstance(read, Bad) and read.usable is not None else None
+
+    def shown(self) -> ShownWorkers:
+        """Lista dla okna Ustawień (``ShownWorkers``)."""
+
+        match self._read:
+            case Good(value=workers):
+                return ShownWorkers("good", workers.workers, workers.unresolved, None)
+            case Bad(problem=problem, usable=usable):
+                listed = WorkerList(()) if usable is None else usable
+                return ShownWorkers("bad", listed.workers, listed.unresolved, problem)
+            case Unreadable():
+                return ShownWorkers("unreadable", (), (), FieldProblem(None, messages.worker_list_unreadable()))
+
+
 @dataclass(frozen=True)
 class SettingsSnapshot:
     """Wartości Ustawień Centrum z jednej chwili. Foldery i Przypomnienia o raporcie: dobre, a przy złym pliku ostatnie
-    dobre albo domyślne. Lista Wykonawców ze złym ustawieniem, bo proces bez ostatniej dobrej listy nie startuje (odmowa
-    ``refusal.workers_unusable``).
+    dobre albo domyślne. Lista Wykonawców jako jej odczyt (``WorkerListRead``), bo proces bez ostatniej dobrej listy nie
+    startuje, a ostatnią dobrą liczy z ostrzeżeniem startu.
 
     Wołający, który bez pliku odmawia, bierze wartość własnością bez przyrostka (``folders``, ``reminders``,
-    ``quantity_rules``, ``activity_legend``, ``settlement_mail``): plik, którego system nie daje teraz czytać, to tam
-    odmowa o nim (``refusal.settings_file_unreadable``), więc gałęzi „bez odczytu” w jego kodzie nie ma, a literał w
-    takiej gałęzi to dla mypy kod martwy. Unię z ``Unreadable`` daje tylko pole z przyrostkiem ``_or_unreadable``,
-    dla wołającego, który bez pliku nie odmawia, tylko mówi o nim albo czeka: stan karty i okna, Logi, ponowienie w
-    porze, miękka podpowiedź."""
+    ``quantity_rules``, ``activity_legend``, ``settlement_mail``, a Listę Wykonawców ``workers.counted()``): plik,
+    którego system nie daje teraz czytać, to tam odmowa o nim (``refusal.settings_file_unreadable``, a dla Listy
+    Wykonawców ``refusal.workers_unusable``), więc gałęzi „bez odczytu” w jego kodzie nie ma, a literał w takiej gałęzi
+    to dla mypy kod martwy. Unię z ``Unreadable`` daje tylko nazwa z przyrostkiem ``_or_unreadable`` (pole albo
+    ``workers.counted_or_unreadable()``), dla wołającego, który bez pliku nie odmawia, tylko mówi o nim albo czeka: stan
+    karty i okna, Logi, ponowienie w porze, miękka podpowiedź."""
 
     folders_or_unreadable: FolderSettings | Unreadable
-    workers: Read[WorkerList] | Unreadable
+    workers: WorkerListRead
     inbox: InboxState
     reminders_or_unreadable: ReminderSettings | Unreadable
     quantity_rules_or_unreadable: QuantityRules | Unreadable
@@ -331,7 +415,7 @@ class SettingsView:
     """Ustawienia Centrum dla okna Ustawień: każda sekcja z wartością albo złym ustawieniem."""
 
     folders: Read[FolderSettings] | Unreadable
-    workers: Read[WorkerList] | Unreadable
+    workers: WorkerListRead
     inbox: Read[InboxFile] | Unreadable
     autostart: Read[bool] | Unreadable | Unsupported
     reminders: Read[ReminderSettings] | Unreadable
@@ -467,7 +551,7 @@ class CentrumSettings:
             rules = self._quantity_rules()
             return SettingsSnapshot(
                 folders_or_unreadable=folders,
-                workers=workers,
+                workers=WorkerListRead(workers),
                 inbox=inbox_state,
                 reminders_or_unreadable=reminders,
                 quantity_rules_or_unreadable=rules.rules_or_unreadable,
@@ -521,7 +605,7 @@ class CentrumSettings:
             autostart = self._places[AUTOSTART.name].unsupported()
             return SettingsView(
                 folders=self._observe(FOLDERS),
-                workers=self._observe(WORKERS),
+                workers=WorkerListRead(self._observe(WORKERS)),
                 inbox=self._observe(INBOX),
                 autostart=Unsupported() if autostart is not None else self._observe(AUTOSTART),
                 reminders=self._observe(REMINDERS),
@@ -1196,7 +1280,7 @@ def read_snapshot(config: Path) -> SettingsSnapshot:
     mail = _counted(_read_only_view(config, SETTLEMENT_MAIL), SETTLEMENT_MAIL)
     return SettingsSnapshot(
         folders_or_unreadable=folders,
-        workers=_read_only_view(config, WORKERS),
+        workers=WorkerListRead(_read_only_view(config, WORKERS)),
         inbox=inbox.state(_read_only_view(config, INBOX)),
         reminders_or_unreadable=reminders,
         quantity_rules_or_unreadable=quantity_rules(rules, devices),
