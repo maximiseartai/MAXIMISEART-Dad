@@ -13,10 +13,16 @@ pełnym SHA), ``main`` po merge'u (``INSTEAD``: nie czekać) i zadanie w tle (``
 i koniec tury; ``tools/hooks/praca_w_tle.py`` podaje ten sam tekst, a test pilnuje jego równości). Odrzuca:
 
 - pętlę z ``sleep``, której ciało pyta o CI (``gh pr checks``, ``gh pr view``, ``gh run view``/``list``, ``gh api``
-  o check-runs, actions/runs albo status commitu) albo woła ``pgrep -f``, oraz ``gh pr checks --watch`` i
-  ``gh run watch``;
+  o check-runs, actions/runs, stan zadania ``actions/jobs/<id>`` albo status commitu) albo woła ``pgrep -f``, oraz
+  ``gh pr checks --watch`` i ``gh run watch``;
 - pętlę z ``sleep``, w której stoi plik wyjścia zadania w tle (``tasks/<id>.output``) wprost albo przez zmienną, której
-  polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``).
+  polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``);
+- pętlę skryptu Pythona (``python3 -c '…'`` i heredoc, który Python czyta ze stdin), w której ``sleep`` stoi w tym
+  samym obrocie co wywołanie z tymi samymi argumentami w każdym obrocie: proces z ``gh`` o CI albo z ``pgrep -f``
+  (``subprocess``, ``os.system``, ``os.popen`` albo funkcja skryptu, która je woła) albo odczyt pliku wyjścia zadania
+  (ścieżka w skrypcie, w zmiennej powłoki albo w argumencie skryptu czytanym przez ``sys.argv``). Argument zmienia się
+  między obrotami, gdy zależy od celu pętli ``for``, ``+=`` albo wyniku wywołania, więc partia zapytań po liście,
+  stronach albo kolejce, także z ``break`` przy limicie API, przechodzi. Skrypt czyta ``ast``.
 
 Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` albo licznikiem prób od 0 albo 1
 (``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``), bo bez nich to partia zapytań z ``sleep`` jako limitem API, a pętla puszczona ``&`` nie czeka: sama, w liście z ``|``,
@@ -34,23 +40,20 @@ Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zat
 Ciała heredoców (skrypt Pythona, treść commitu) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
 hook pomija jako polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
 ``flock`` albo ``script`` z dowolnymi słowami przed ``-c`` (``bash -euo pipefail -c '…'``, ``bash -lc``,
-``su -l -s /bin/sh root -c``).
-
-Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie uruchomionym z pliku (także zapisanym
-heredokiem do pliku), w Pythonie (``python3 - <<'EOF'`` i ``python3 -c '…'`` z ``time.sleep``), z adresem
-``gh api`` w cudzysłowie i pętle, których wzorca hook nie zna, łapie tylko przegląd. Pętla bez pliku zadania w sobie
-przechodzi, także ``while kill -0 $P; do sleep 5; done; cat …/tasks/b1.output``, bo tak samo wygląda czekanie na
-gotowość serwera z zadania w tle (``curl … && break``), którego koniec nie przyjdzie; tak samo pętla na zwykłym pliku
-(``until grep -q KONIEC ci.log; do sleep 5; done``). Tak samo ponowienie z ``eval "…"``, z polecenia złożonego ze zmiennych
-(``$GH run rerun``), z opcją ``gh`` innej niż ``-R`` z wartością w osobnym słowie między ``run`` a ``rerun`` i przez
-skrypt albo program inny niż ``gh``.
+``su -l -s /bin/sh root -c``). Program Pythona to słowo polecenia prostego, którego nazwa za ostatnim ``/`` to
+``python``, ``python3``, ``python3.12`` albo ``py``, a jego skrypt to napis za ``-c`` (także ``-uc``) po samych opcjach
+interpretera albo heredoc, gdy przed ``<<`` stoją same opcje albo ``-``. Cudzysłów w komentarzu (``#`` na początku
+słowa) nie otwiera napisu, a tekst komentarza zostaje w poleceniu. Postacie, które przechodzą, i znane luki stoją
+jako przypadki ``PASSING``, ``PYTHON_PASSING`` i ``ZNANE_LUKI`` w ``tests/test_czekanie.py``.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
 (``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową.
 """
 
 from __future__ import annotations
 
+import ast
 from bisect import bisect_left
+from collections import defaultdict
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
@@ -58,13 +61,14 @@ import re
 import shlex
 import sys
 from typing import Optional
+import warnings
 
 _GH = r"\bgh(?:-axi)?\s+"
 ASKS_CI = re.compile(_GH + r"(?:pr\s+(?:checks|view)|run\s+(?:view|list|watch))")
 # `gh api` pyta o CI, gdy w tym samym poleceniu prostym (do `;`, `&`, `|` albo nowej linii) stoi adres CI. Pary szuka
 # `_in_one_command`, a nie wzorzec `api\b[^;&|\n]*adres`, bo ten od każdego `gh api` czyta do końca polecenia.
 GH_API = re.compile(_GH + r"api\b")
-CI_ADDRESS = re.compile(r"check-runs|actions/runs|/status\b")
+CI_ADDRESS = re.compile(r"check-runs|actions/runs|actions/jobs/[^/\s'\"]+(?![^\s'\"])|/status\b")
 CHECKS = re.compile(_GH + r"pr\s+checks\b")
 WATCH_OPTION = re.compile(r"--watch\b")
 RUN_WATCH = re.compile(_GH + r"run\s+watch\b")
@@ -108,7 +112,7 @@ LIST_PART = re.compile(
     r"(?P<open>\(|\{(?=\s))|(?P<close>\)|(?<=[\s;&])\})"
     r"|(?P<end>[;\n])|(?P<background>(?<![<>&|\\])&(?![&>]))"
 )
-HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)(\w+)\1")
+HEREDOC = re.compile(r"(?<!<)<<(-?)\s*(['\"]?)(\w+)\2")
 # Skrypt powłoki to tylko argument `-c` (także złączonego: `-lc`, `-euc`) w poleceniu prostym, w którym stoi słowo
 # powłoki, `su`, `runuser`, `flock` albo `script`: `grep -c '…'` liczy wiersze, a `python3 -c '…'` to Python. Słowa
 # między nimi mogą być dowolne (`-euo pipefail`, `--rcfile x`, `-s /bin/sh root`), więc `bash skrypt.sh -c '…'` też
@@ -121,12 +125,41 @@ HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)(\w+)\1")
 # `fish` i `csh` mają inną składnię pętli, ale pętla bez `done` sięga do końca polecenia.
 _SHELLS = r"(?:ba|da|k|z|mk|a|fi|c|tc)?sh|su|runuser|flock|script|\$\{?(?:SHELL|BASH)\}?"
 SHELL_NAME = re.compile(rf"(?:{_SHELLS})")
+_PYTHON = r"python[\d.]*|py"
+PYTHON_NAME = re.compile(_PYTHON)
 COMMAND_PART = re.compile(
     rf"(?P<shell>(?<![^\s/;&|(`])(?:\\(?=[a-z]))?(?:{_SHELLS})(?![^\s;&|()`]))"
+    rf"|(?P<python>(?<![^\s/;&|(`])(?:\\(?=[a-z]))?(?:{_PYTHON})(?![^\s;&|()`]))"
     r"|\\[\s\S]|(?P<parameter>\$\{)|(?P<brace>\})|(?P<substitution>\$\()"
     r"|(?P<end>[;\n]|(?<![<>])&(?!>)|(?<!>)\|)|(?P<open>\()|(?P<close>\))|(?P<tick>`)"
 )
 SCRIPT_OPTION = re.compile(r"-[a-zA-Z]+")
+PYTHON_SCRIPT_OPTION = re.compile(r"-[a-zA-Z]*c")
+PYTHON_CODE_OPTION = re.compile(r"-[a-zA-Z]*[cm]")
+PYTHON_VALUE_OPTIONS = frozenset({"-X", "-W"})
+REDIRECTION = re.compile(r"\d*[<>&]")
+HEREDOC_COMMAND_START = re.compile(r"[;&|(){}`]")
+COMMENT_AFTER = frozenset(" \t\n;&|(")
+PYTHON_SCRIPT = re.compile("\x00(\\d+)\x00")
+DOUBLE_QUOTED_ESCAPE = re.compile(r'\\([$`"\\\n])')
+RUNS_PROCESS = frozenset(
+    {
+        "run",
+        "call",
+        "check_call",
+        "check_output",
+        "Popen",
+        "getoutput",
+        "getstatusoutput",
+        "system",
+        "popen",
+        "create_subprocess_exec",
+        "create_subprocess_shell",
+    }
+)
+KEEPS_VALUE = frozenset({"str", "int", "float", "repr", "bool", "format", "tuple", "list"})
+PYTHON_SOURCE_LIMIT = 200_000
+PYTHON_NODES_LIMIT = 1_000_000
 
 INSTEAD = (
     "Na CI nie czekaj w Bashu. PR: wątek główny wywołuje watch_pull_request z URL PR i kończy turę, a T3 budzi go po "
@@ -167,25 +200,78 @@ PGREP_LOOP = Refusal(
 )
 
 
-def _without_heredocs(command: str) -> str:
+def _without_heredocs(command: str) -> tuple[str, list[str]]:
     kept: list[str] = []
+    python: list[list[str]] = []
     delimiter: Optional[str] = None
+    body: Optional[list[str]] = None
+    without_tabs = False
     for line in command.split("\n"):
         if delimiter is not None:
             if line.strip() == delimiter:
                 delimiter = None
+            elif body is not None:
+                body.append(line.lstrip("\t") if without_tabs else line)
             continue
-        kept.append(line)
         opened = HEREDOC.search(line)
-        if opened:
-            delimiter = opened.group(2)
-    return "\n".join(kept)
+        if opened is None:
+            kept.append(line)
+            continue
+        delimiter, body, without_tabs = opened.group(3), None, opened.group(1) == "-"
+        if _python_reads_heredoc(line[: opened.start()]):
+            body = []
+            python.append(body)
+            kept.append(f"{line[: opened.end()]}\x00{len(python) - 1}\x00{line[opened.end() :]}")
+        else:
+            kept.append(line)
+    return "\n".join(kept), ["\n".join(lines) for lines in python]
 
 
-def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tuple[str, int]:
+def _python_reads_heredoc(before: str) -> bool:
+    words = HEREDOC_COMMAND_START.split(before)[-1].split()
+    programs = [index for index, word in enumerate(words) if PYTHON_NAME.fullmatch(word.strip("'\"").rsplit("/", 1)[-1])]
+    if not programs:
+        return False
+    arguments = [word for word in words[programs[-1] + 1 :] if not REDIRECTION.match(word)]
+    end = _python_options_end(arguments)
+    return end == len(arguments) or arguments[end] == "-"
+
+
+def _python_options_end(words: list[str]) -> int:
+    value = False
+    for index, word in enumerate(words):
+        if value:
+            value = False
+        elif word == "-" or not word.startswith("-") or PYTHON_CODE_OPTION.fullmatch(word):
+            return index
+        else:
+            value = word in PYTHON_VALUE_OPTIONS
+    return len(words)
+
+
+def _python_script_option(words: list[str]) -> bool:
+    return len(words) > 0 and _python_options_end(words) == len(words) - 1 and bool(PYTHON_SCRIPT_OPTION.fullmatch(words[-1]))
+
+
+def _script_text(command: str, quote: int, end: int) -> str:
+    closed = quote < end - 1 < len(command) and command[end - 1] == command[quote]
+    text = command[quote + 1 : end - 1 if closed else len(command)]
+    if command[quote] == "'":
+        return text
+    return DOUBLE_QUOTED_ESCAPE.sub(lambda escaped: "" if escaped.group(1) == "\n" else escaped.group(1), text)
+
+
+def _comment_starts(command: str, index: int, start: int) -> bool:
+    return command[index] == "#" and (index == start or command[index - 1] in COMMENT_AFTER)
+
+
+def _code(
+    command: str, python: list[str], start: int = 0, inside_substitution: bool = False
+) -> tuple[str, int]:
     """Polecenie bez tekstu w cudzysłowach, ale z ``$(…)`` w nich i z ciałem ``bash -c '…'``.
 
     Proza w argumentach (opis commitu, wiersz logu, wzorzec ``sed``) nie jest poleceniem, nawet gdy cytuje pętlę.
+    Skrypt ``-c`` Pythona dopisuje do ``python``, a w poleceniu zostawia w jego miejscu znacznik ``\\x00<numer>\\x00``.
     Zwraca też indeks za ``)``, która zamyka ``$(`` przy ``inside_substitution``.
     """
 
@@ -193,24 +279,40 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
     scripts = _ShellScripts(command, start)
     # Napis przyklejony do skryptu ``-c`` to jego dalszy ciąg: w ``bash -c '… perl -e '\''select(…)'\''; done'``
     # ``done`` stoi w trzecim napisie.
-    depth, index, script_end = 0, start, -1
+    depth, index, script_end, in_python = 0, start, -1, False
     while index < len(command):
         char = command[index]
         if char == "\\":
-            kept.append(command[index : index + 2])
+            if index == script_end and in_python:
+                python[-1] += command[index + 1 : index + 2]
+            else:
+                kept.append(command[index : index + 2])
             if index == script_end:
                 script_end += 2
             index += 2
             continue
+        if _comment_starts(command, index, start):
+            line_end = command.find("\n", index)
+            line_end = len(command) if line_end < 0 else line_end
+            kept.append(command[index:line_end])
+            index = line_end
+            continue
         if char in "'\"":
-            literal, end = _quoted(command, index)
-            script = scripts.is_script(index, end)
-            if index == script_end:
+            literal, end = _quoted(command, index, python)
+            script = scripts.script(index, end)
+            if index == script_end and in_python:
+                python[-1] += _script_text(command, index, end)
+                script_end = end
+            elif index == script_end:
                 kept.append(command[index + 1 : end])
                 script_end = end
-            elif script:
+            elif script == "python":
+                kept.append(f"\x00{len(python)}\x00")
+                python.append(_script_text(command, index, end))
+                script_end, in_python = end, True
+            elif script == "shell":
                 kept.append(";" + command[index + 1 : end])
-                script_end = end
+                script_end, in_python = end, False
             else:
                 kept.append(literal)
             index = end
@@ -226,7 +328,7 @@ def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tu
     return "".join(kept), index
 
 
-def _quoted(command: str, start: int) -> tuple[str, int]:
+def _quoted(command: str, start: int, python: list[str]) -> tuple[str, int]:
     """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``."""
 
     if command[start] == "'":
@@ -241,7 +343,7 @@ def _quoted(command: str, start: int) -> tuple[str, int]:
             elif char == '"':
                 break
             elif command.startswith("$(", index):
-                substitution, index = _code(command, index + 2, inside_substitution=True)
+                substitution, index = _code(command, python, index + 2, inside_substitution=True)
                 parts.append(f" $({substitution}) ")
             else:
                 index += 1
@@ -251,28 +353,29 @@ def _quoted(command: str, start: int) -> tuple[str, int]:
 
 
 class _ShellScripts:
-    """Napisy w cudzysłowach jednego polecenia po kolei: który z nich to skrypt ``-c`` powłoki.
+    """Napisy w cudzysłowach jednego polecenia po kolei: który z nich to skrypt ``-c`` powłoki albo Pythona.
 
     Każdy znak poza cudzysłowami czyta raz, więc czas zostaje liniowy przy dowolnie wielu słowach przed ``-c``.
     """
 
     def __init__(self, command: str, start: int) -> None:
         self.command, self.read_to = command, start
-        self.shell = False
+        self.program: Optional[str] = None
+        self.python_from = -1
         # Otwarte ``${`` polecenia, w którym stoi skaner; ``$(``, ``(`` i lewy `` ` `` odkładają je razem ze słowem
         # powłoki do ``outer``, a ich zamknięcie je przywraca.
         self.parameters = 0
-        self.outer: list[tuple[str, bool, int]] = []
+        self.outer: list[tuple[str, Optional[str], int, int]] = []
 
-    def is_script(self, quote: int, end: int) -> bool:
-        """Czy napis od ``quote`` do ``end`` stoi za ``-c`` w poleceniu prostym ze słowem powłoki."""
-
+    def script(self, quote: int, end: int) -> Optional[str]:
         for part in COMMAND_PART.finditer(self.command, self.read_to, quote):
             kind = part.lastgroup
             if part.group() == "\n":
                 self.parameters = 0
             if kind == "shell":
-                self.shell = True
+                self.program = "shell"
+            elif kind == "python":
+                self.program, self.python_from = "python", part.end()
             elif kind == "parameter":
                 self.parameters += 1
             elif kind == "brace":
@@ -280,22 +383,29 @@ class _ShellScripts:
             elif self.parameters and kind in ("end", "open", "close"):
                 continue
             elif kind == "end":
-                self.shell = False
+                self.program = None
             elif kind in ("open", "substitution") or (
                 kind == "tick" and not (self.outer and self.outer[-1][0] == "`")
             ):
-                self.outer.append((part.group(), self.shell, self.parameters))
-                self.shell, self.parameters = False, 0
+                self.outer.append((part.group(), self.program, self.python_from, self.parameters))
+                self.program, self.parameters = None, 0
             elif kind in ("close", "tick"):
-                self.shell, self.parameters = self.outer.pop()[1:] if self.outer else (False, 0)
+                _, self.program, self.python_from, self.parameters = self.outer.pop() if self.outer else ("", None, -1, 0)
         words = self.command[self.read_to : quote].split()
         option = words[-1] if words else ""
-        script = self.shell and "c" in option and SCRIPT_OPTION.fullmatch(option) is not None
+        found: Optional[str] = None
+        if self.program == "shell" and "c" in option and SCRIPT_OPTION.fullmatch(option) is not None:
+            found = "shell"
+        elif self.program == "python" and self.python_from >= self.read_to:
+            found = "python" if _python_script_option(self.command[self.python_from : quote].split()) else None
         self.read_to = end
+        name = self.command[quote + 1 : end - 1].rsplit("/", 1)[-1]
         # Nazwa powłoki w cudzysłowie (``"$SHELL" -c``) też jest słowem powłoki.
-        if SHELL_NAME.fullmatch(self.command[quote + 1 : end - 1].rsplit("/", 1)[-1]):
-            self.shell = True
-        return script
+        if SHELL_NAME.fullmatch(name):
+            self.program = "shell"
+        elif PYTHON_NAME.fullmatch(name):
+            self.program, self.python_from = "python", end
+        return found
 
 
 class _Matches:
@@ -330,7 +440,7 @@ def _in_one_command(command: str, head: re.Pattern[str], tail: re.Pattern[str]) 
     )
 
 
-def _loop_bodies(command: str) -> Iterator[tuple[int, int]]:
+def _loop_bodies(command: str, parts: tuple[list[int], list[bool]]) -> Iterator[tuple[int, int]]:
     """Początek i koniec każdej pętli na pierwszym planie od słowa ``until``/``while``/``for`` do jej ``done``
     (albo do końca polecenia)."""
 
@@ -342,7 +452,7 @@ def _loop_bodies(command: str) -> Iterator[tuple[int, int]]:
             loops.append([word.start(1), len(command)])
         elif unclosed:
             loops[unclosed.pop()][1] = word.end()
-    positions, in_background = _list_parts(command)
+    positions, in_background = parts
     for start, end in loops:
         if not in_background[bisect_left(positions, end)]:
             yield start, end
@@ -431,10 +541,229 @@ def _task_files(text: str, variables: frozenset[str]) -> list[int]:
     return sorted(named + referred)
 
 
-def judge(command: str, in_background: bool) -> Optional[Refusal]:
+class _ScriptTooLong(Exception):
+    pass
+
+
+def _called(call: ast.Call) -> str:
+    if isinstance(call.func, ast.Attribute):
+        return call.func.attr
+    return call.func.id if isinstance(call.func, ast.Name) else ""
+
+
+def _changes_value(node: ast.AST) -> bool:
+    return isinstance(node, ast.Call) and not (isinstance(node.func, ast.Name) and node.func.id in KEEPS_VALUE)
+
+
+def _names(target: ast.AST) -> list[ast.Name]:
+    return [node for node in ast.walk(target) if isinstance(node, ast.Name)]
+
+
+def _reads_argv(node: ast.AST) -> bool:
+    return isinstance(node, ast.Attribute) and node.attr == "argv" and isinstance(node.value, ast.Name) and node.value.id == "sys"
+
+
+class _PythonScript:
+    def __init__(self, tree: ast.Module, task_argument: bool, variables: frozenset[str]) -> None:
+        self.task_argument, self.variables = task_argument, variables
+        self.functions: dict[str, ast.FunctionDef] = {}
+        self.values: dict[str, list[ast.expr]] = defaultdict(list)
+        self.visited = 0
+        self.command_texts: dict[str, str] = {}
+        self.function_texts: dict[str, str] = {}
+        self.function_sleeps: dict[str, bool] = {}
+        self.task_names: dict[str, bool] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef):
+                self.functions[node.name] = node
+            elif isinstance(node, ast.Assign):
+                for target in node.targets:
+                    if isinstance(target, ast.Name):
+                        self.values[target.id].append(node.value)
+
+    def nodes(self, *roots: ast.AST) -> Iterator[ast.AST]:
+        stack = list(reversed(roots))
+        while stack:
+            node = stack.pop()
+            self.visited += 1
+            if self.visited > PYTHON_NODES_LIMIT:
+                raise _ScriptTooLong
+            yield node
+            stack.extend(reversed(list(ast.iter_child_nodes(node))))
+
+    def sleeping_loops(self, tree: ast.Module) -> list[ast.AST]:
+        loops: dict[int, ast.AST] = {}
+        stack: list[tuple[ast.AST, Optional[ast.AST]]] = [(tree, None)]
+        while stack:
+            node, loop = stack.pop()
+            self.visited += 1
+            if self.visited > PYTHON_NODES_LIMIT:
+                raise _ScriptTooLong
+            if loop is not None and isinstance(node, ast.Call) and self.sleeps(node):
+                loops[id(loop)] = loop
+            for field, value in ast.iter_fields(node):
+                inner = loop
+                if (isinstance(node, ast.While) and field in ("test", "body")) or (isinstance(node, ast.For) and field == "body"):
+                    inner = node
+                children = value if isinstance(value, list) else [value]
+                stack.extend((child, inner) for child in children if isinstance(child, ast.AST))
+        return list(loops.values())
+
+    def sleeps(self, call: ast.Call) -> bool:
+        if _called(call) == "sleep":
+            return True
+        if isinstance(call.func, ast.Name) and call.func.id in self.functions:
+            return self.function_sleep(call.func.id)
+        return _called(call) in RUNS_PROCESS and SLEEP.search(self.command_text(call)) is not None
+
+    def function_sleep(self, name: str) -> bool:
+        if name not in self.function_sleeps:
+            self.function_sleeps[name] = False
+            calls = [node for node in self.nodes(self.functions[name]) if isinstance(node, ast.Call)]
+            self.function_sleeps[name] = any(self.sleeps(call) for call in calls)
+        return self.function_sleeps[name]
+
+    def command_text(self, node: ast.AST) -> str:
+        words: list[str] = []
+        for child in self.nodes(node):
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                words.append(child.value)
+            elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
+                words.append(self.name_text(child.id))
+        return " ".join(word for word in words if word)
+
+    def name_text(self, name: str) -> str:
+        if name not in self.command_texts:
+            self.command_texts[name] = ""
+            data = [value for value in self.values.get(name, ()) if not any(map(_changes_value, ast.walk(value)))]
+            self.command_texts[name] = " ".join(self.command_text(value) for value in data)
+        return self.command_texts[name]
+
+    def query_text(self, call: ast.Call) -> str:
+        if isinstance(call.func, ast.Name) and call.func.id in self.functions:
+            return f"{self.function_text(call.func.id)} {self.command_text(call)}"
+        return self.command_text(call) if _called(call) in RUNS_PROCESS else ""
+
+    def function_text(self, name: str) -> str:
+        if name not in self.function_texts:
+            self.function_texts[name] = ""
+            calls = [node for node in self.nodes(self.functions[name]) if isinstance(node, ast.Call)]
+            self.function_texts[name] = " ".join(self.query_text(call) for call in calls)
+        return self.function_texts[name]
+
+    def reads_task_file(self, node: ast.AST) -> bool:
+        for child in self.nodes(node):
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                if TASK_OUTPUT.search(child.value) or any(
+                    found.group(1) in self.variables for found in REFERENCE.finditer(child.value)
+                ):
+                    return True
+            elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load) and self.task_name(child.id):
+                return True
+            elif self.task_argument and _reads_argv(child):
+                return True
+        return False
+
+    def task_name(self, name: str) -> bool:
+        if name not in self.task_names:
+            self.task_names[name] = False
+            self.task_names[name] = any(self.reads_task_file(value) for value in self.values.get(name, ()))
+        return self.task_names[name]
+
+    def varying(self, loop: ast.AST, region: list[ast.AST]) -> set[str]:
+        varying = {name.id for name in _names(loop.target)} if isinstance(loop, ast.For) else set()
+        bindings: list[tuple[set[str], ast.AST]] = []
+        valued: set[int] = set()
+        for node in region:
+            if isinstance(node, ast.Assign):
+                targets = [name for target in node.targets for name in _names(target)]
+                bindings.append(({name.id for name in targets}, node.value))
+            elif isinstance(node, (ast.For, ast.comprehension)):
+                targets = _names(node.target)
+                bindings.append(({name.id for name in targets}, node.iter))
+            else:
+                continue
+            valued.update(id(name) for name in targets)
+        stores = (node for node in region if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store))
+        varying |= {node.id for node in stores if id(node) not in valued}
+        dependents: dict[str, list[int]] = defaultdict(list)
+        for index, (names, value) in enumerate(bindings):
+            reads = set()
+            for node in self.nodes(value):
+                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
+                    reads.add(node.id)
+                elif _changes_value(node):
+                    varying |= names
+            if reads & names:
+                varying |= names
+            for name in reads:
+                dependents[name].append(index)
+        queue = list(varying)
+        while queue:
+            for index in dependents.get(queue.pop(), ()):
+                new = bindings[index][0] - varying
+                varying |= new
+                queue.extend(new)
+        return varying
+
+    def waits(self, loop: ast.AST) -> set[Refusal]:
+        roots = [loop.test, *loop.body] if isinstance(loop, ast.While) else list(getattr(loop, "body", []))
+        region = list(self.nodes(*roots))
+        varying = self.varying(loop, region)
+        found: set[Refusal] = set()
+        for call in region:
+            if not isinstance(call, ast.Call):
+                continue
+            if any(isinstance(node, ast.Name) and node.id in varying for node in self.nodes(call)):
+                continue
+            if self.reads_task_file(call):
+                found.add(TASK_OUTPUT_LOOP)
+            query = self.query_text(call)
+            if ASKS_CI.search(query) or _in_one_command(query, GH_API, CI_ADDRESS).starts:
+                found.add(CI_LOOP)
+            if PGREP.search(query):
+                found.add(PGREP_LOOP)
+        return found
+
+
+def _python_waits(source: str, task_argument: bool, variables: frozenset[str]) -> set[Refusal]:
+    found: set[Refusal] = set()
     try:
-        kept = _without_heredocs(command)
-        shell, _ = _code(kept)
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            tree = ast.parse(source)
+        script = _PythonScript(tree, task_argument, variables)
+        for loop in script.sleeping_loops(tree):
+            found |= script.waits(loop)
+    except (SyntaxError, RecursionError, _ScriptTooLong):
+        pass
+    return found
+
+
+def _python_refusal(
+    shell: str, python: list[str], parts: tuple[list[int], list[bool]], task_files: _Matches, variables: frozenset[str]
+) -> Optional[Refusal]:
+    positions, in_background = parts
+    command_ends = [found.start() for found in SIMPLE_COMMAND_END.finditer(shell)]
+    found: set[Refusal] = set()
+    unread = PYTHON_SOURCE_LIMIT
+    for script in PYTHON_SCRIPT.finditer(shell):
+        source = python[int(script.group(1))]
+        if in_background[bisect_left(positions, script.start())] or "sleep" not in source or len(source) > unread:
+            continue
+        unread -= len(source)
+        index = bisect_left(command_ends, script.start())
+        start = command_ends[index - 1] if index else 0
+        end = command_ends[index] if index < len(command_ends) else len(shell)
+        found |= _python_waits(source, task_files.inside(start, end), variables)
+    return next((refusal for refusal in (CI_LOOP, PGREP_LOOP, TASK_OUTPUT_LOOP) if refusal in found), None)
+
+
+def judge(command: str, in_background: bool) -> Optional[Refusal]:
+    command = command.replace("\x00", "")
+    try:
+        kept, python = _without_heredocs(command)
+        shell, _ = _code(kept, python)
     except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
         return None
     if _reruns(shell):
@@ -447,7 +776,8 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
     queries, api_queries = _found(ASKS_CI, shell), _in_one_command(shell, GH_API, CI_ADDRESS)
     variables = frozenset(found.group(1) for found in ASSIGNMENT.finditer(kept) if TASK_OUTPUT.search(found.group(2)))
     task_files = _Matches(_task_files(shell, variables))
-    for start, end in _loop_bodies(shell):
+    parts = _list_parts(shell)
+    for start, end in _loop_bodies(shell, parts):
         if not sleeps.inside(start, end):
             continue
         over_list = OVER_LIST.match(shell, start, end)
@@ -459,7 +789,7 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
             return PGREP_LOOP
         if task_files.inside(start, end):
             return TASK_OUTPUT_LOOP
-    return None
+    return _python_refusal(shell, python, parts, task_files, variables)
 
 
 def main() -> int:

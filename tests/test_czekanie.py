@@ -1,8 +1,9 @@
 """Hook ``tools/hooks/czekanie.py``: agent nie czeka blokująco na CI ani w pętli na ``pgrep -f`` i nie ponawia runu CI
 z pominięciem ``tools/ponow_ci.py``.
 
-Polecenia pochodzą z historii agentów z 20–25.10.2026 (``calls.jsonl`` pomiaru czasu narzędzi), a ponowienia z 5–11.11
-(recall klasy K1 hillclimbu CI 12.11), skrócone tylko o ``cd`` do worktree, długie ścieżki i dopiski do notatek. Korpus
+Polecenia pochodzą z historii agentów z 20–25.10.2026 (``calls.jsonl`` pomiaru czasu narzędzi), ponowienia z 5–11.11
+(recall klasy K1 hillclimbu CI 12.11), a skrypty Pythona z transkryptów Claude Code tego repo z 20.10–19.11, skrócone
+tylko o ``cd`` do worktree, długie ścieżki i dopiski do notatek. Korpus
 ocenia ``judge`` hooka wczytanego raz, bo protokół nie zależy od treści polecenia: JSON polecenia ma tylko znaki ASCII.
 Protokół, wejście, którego nie da się odczytać, i limit z ustawień sprawdzają testy, które uruchamiają hook tak jak Claude
 Code: JSON na stdin, a odmowa to kod 2 z przyczyną na stderr.
@@ -417,7 +418,378 @@ def test_petla_na_pliku_wyjscia_zadania_w_tle_dostaje_odmowe(command: str) -> No
     assert hook.judge(command, in_background=False) is hook.TASK_OUTPUT_LOOP
 
 
-@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS + TASK_OUTPUT_LOOPS)
+def _heredoc(script: str, program: str = "python3 -", after: str = "") -> str:
+    return f"{program} <<'EOF'{after}\n{script}\nEOF"
+
+
+CHECKS_TRIES = """import json, subprocess, time
+for i in range(9):
+    out = subprocess.run(["gh", "pr", "checks", "2178", "--json", "name,bucket"], capture_output=True, text=True).stdout or "[]"
+    req = [c for c in json.loads(out) if c["name"] == "Required CI status"]
+    print(i, req[0]["bucket"] if req else "-", flush=True)
+    if req and req[0]["bucket"] in ("pass", "fail"):
+        break
+    time.sleep(60)"""
+RUN_VIEW_FOREVER = """import json, subprocess, time
+end = time.time() + 560
+while True:
+    out = subprocess.run(["gh", "run", "view", "44439947891", "--json", "status,conclusion"], capture_output=True, text=True).stdout
+    d = json.loads(out)
+    if d["status"] == "completed" or time.time() > end:
+        print(d["status"], d["conclusion"])
+        break
+    time.sleep(30)"""
+JOB_STATUS = """import json, subprocess, time
+end = time.monotonic() + 540
+while time.monotonic() < end:
+    job = json.loads(subprocess.run(["gh", "api", "repos/o/r/actions/jobs/132626412782"], capture_output=True, text=True).stdout)
+    if job["status"] == "completed":
+        print("koniec", job["conclusion"]); break
+    time.sleep(20)
+else:
+    print("dalej trwa")"""
+PGREP_SHELL = """import time, subprocess
+for i in range(57):
+    out = subprocess.run("pgrep -f 'straznik_gh.py --od 2026-11-07'", shell=True, capture_output=True, text=True).stdout.strip()
+    if not out: break
+    time.sleep(10)"""
+MAIN_RUNS = """import subprocess, time
+while True:
+    out = subprocess.run(["gh", "run", "list", "--branch", "main", "-L", "1", "--json", "status"], capture_output=True, text=True).stdout
+    if '"completed"' in out:
+        break
+    time.sleep(30)"""
+STATUS_FUNCTION = """import subprocess, time
+def status():
+    return subprocess.run(["gh", "pr", "checks", "1"], capture_output=True, text=True).stdout
+while "pending" in status():
+    time.sleep(30)"""
+COMMAND_BEFORE_LOOP = """import subprocess, time
+CMD = ["gh", "pr", "checks", "1"]
+while subprocess.run(CMD, capture_output=True).returncode == 8:
+    time.sleep(30)"""
+SEVERAL_PRS = """import subprocess, time
+while True:
+    pending = [pr for pr in (2178, 2179) if subprocess.run(["gh", "pr", "checks", str(pr)], capture_output=True).returncode == 8]
+    if not pending:
+        break
+    time.sleep(30)"""
+CHECKS_IN_CONDITION = """import subprocess, time
+while subprocess.run(["gh", "pr", "checks", "1"], capture_output=True).returncode == 8:
+    time.sleep(30)"""
+COMMAND_IN_LOOP = """import subprocess, time
+PR = 2178
+while True:
+    cmd = ["gh", "pr", "checks", str(PR)]
+    if subprocess.run(cmd).returncode != 8:
+        break
+    time.sleep(30)"""
+SLEEP_FUNCTION = """import subprocess, time
+def wait():
+    time.sleep(30)
+while subprocess.run(["gh", "pr", "checks", "1"]).returncode == 8:
+    wait()"""
+SLEEP_PROCESS = """import subprocess
+while subprocess.run(["gh", "pr", "checks", "1"]).returncode == 8:
+    subprocess.run(["sleep", "30"])"""
+IMPORTED_NAMES = """from subprocess import run
+from time import sleep
+while run(["gh", "pr", "checks", "1"]).returncode == 8:
+    sleep(30)"""
+
+PYTHON_WAITS = [
+    pytest.param(_heredoc(CHECKS_TRIES), hook.CI_LOOP, id="heredoc-gh-pr-checks-licznik-prob"),
+    pytest.param(
+        'timeout 580 .venv/bin/python -c "\nimport subprocess, time, json\nfor _ in range(36):\n'
+        "    s = subprocess.run(['gh','run','view','43679722310','--json','status,conclusion'],capture_output=True,"
+        "text=True).stdout\n    d = json.loads(s or '{}')\n    if d.get('status') == 'completed':\n        print(d); break\n"
+        "    time.sleep(15)\nelse: print('wciąż trwa', s)\n\"",
+        hook.CI_LOOP,
+        id="c-gh-run-view-licznik-prob",
+    ),
+    pytest.param(_heredoc(RUN_VIEW_FOREVER), hook.CI_LOOP, id="heredoc-gh-run-view-while-true"),
+    pytest.param(_heredoc(JOB_STATUS), hook.CI_LOOP, id="heredoc-gh-api-zadanie-actions"),
+    pytest.param(_heredoc(MAIN_RUNS), hook.CI_LOOP, id="main-po-merge"),
+    pytest.param(_heredoc(STATUS_FUNCTION), hook.CI_LOOP, id="zapytanie-w-funkcji-skryptu"),
+    pytest.param(_heredoc(COMMAND_BEFORE_LOOP), hook.CI_LOOP, id="polecenie-zbudowane-przed-petla"),
+    pytest.param(_heredoc(SEVERAL_PRS), hook.CI_LOOP, id="kilka-pr-w-kazdym-obrocie"),
+    pytest.param(_heredoc(COMMAND_IN_LOOP), hook.CI_LOOP, id="polecenie-zbudowane-w-petli-ze-stalych"),
+    pytest.param(_heredoc(SLEEP_FUNCTION), hook.CI_LOOP, id="sen-w-funkcji-skryptu"),
+    pytest.param(_heredoc(SLEEP_PROCESS), hook.CI_LOOP, id="sen-przez-proces"),
+    pytest.param(_heredoc(IMPORTED_NAMES), hook.CI_LOOP, id="importowane-nazwy-run-i-sleep"),
+    pytest.param(
+        _heredoc("\n".join("\t" + line for line in CHECKS_IN_CONDITION.split("\n")), program="python3 -").replace(
+            "<<'EOF'", "<<-'EOF'"
+        ),
+        hook.CI_LOOP,
+        id="heredoc-z-tabulatorami",
+    ),
+    pytest.param(
+        "python3 -c 'import subprocess, time\nwhile subprocess.run([\"gh\", \"pr\", \"checks\", \"'\"$PR\"'\"]).returncode "
+        "== 8:\n    time.sleep(30)'",
+        hook.CI_LOOP,
+        id="c-z-napisem-doklejonym",
+    ),
+    pytest.param(
+        "python3 -c 'import subprocess, time\nwhile subprocess.run(['\\''gh'\\'', '\\''pr'\\'', '\\''checks'\\'', "
+        "'\\''1'\\'']).returncode == 8:\n    time.sleep(30)'",
+        hook.CI_LOOP,
+        id="c-z-apostrofem-przez-ucieczke",
+    ),
+    pytest.param(
+        'python3 -c "import subprocess, time\nwhile subprocess.run([\\"gh\\", \\"pr\\", \\"checks\\", \\"1\\"]).returncode '
+        '== 8:\n    time.sleep(30)"',
+        hook.CI_LOOP,
+        id="c-w-cudzyslowie-z-ucieczka",
+    ),
+    pytest.param(
+        f"# nie czekaj w Bashu: it's fine\npython3 -c '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="apostrof-w-komentarzu-przed-c"
+    ),
+    pytest.param(f"/usr/bin/python3 -u -c '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="opcja-przed-c"),
+    pytest.param(f"python3 -Bc '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="c-zlaczone-z-opcja"),
+    pytest.param(_heredoc(CHECKS_TRIES, program="uv run python -"), hook.CI_LOOP, id="uv-run-python"),
+    pytest.param(_heredoc(CHECKS_TRIES, program="cd x && .venv/bin/python"), hook.CI_LOOP, id="heredoc-bez-myslnika"),
+    pytest.param(
+        "wynik=$(" + _heredoc(CHECKS_TRIES) + '\n); echo "$wynik"', hook.CI_LOOP, id="heredoc-w-podstawieniu"
+    ),
+    pytest.param("( " + _heredoc(CHECKS_TRIES) + "\n)", hook.CI_LOOP, id="heredoc-w-podpowloce-bez-tla"),
+    pytest.param(
+        ".venv/bin/python -c \"\nimport subprocess,time\nt=time.time()\nwhile subprocess.run(['pgrep','-f',"
+        "'tools/mutacje.py --plik'],capture_output=True).returncode==0 and time.time()-t<580: time.sleep(5)\n"
+        'print(round(time.time()-t))"; tail -20 mutacje.log',
+        hook.PGREP_LOOP,
+        id="c-pgrep-f-w-warunku-while",
+    ),
+    pytest.param(_heredoc(PGREP_SHELL), hook.PGREP_LOOP, id="heredoc-pgrep-f-w-powloce"),
+    pytest.param(
+        "python3 -c \"\nimport os,time\np='/private/tmp/c/s/tasks/brj1zg43l.output'\nt=time.time()\n"
+        'while os.path.getsize(p)==0 and time.time()-t<580: time.sleep(5)\n"',
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-w-zmiennej-pythona",
+    ),
+    pytest.param(
+        'f=/private/tmp/c/s/tasks/b1i18ef2l.output; python3 -c "\nimport os,time,sys\nt=time.time()\n'
+        'while time.time()-t<580 and os.path.getsize(sys.argv[1])==0: time.sleep(5)\n" $f; cat $f',
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-w-argumencie",
+    ),
+]
+
+
+@pytest.mark.parametrize(("command", "refusal"), PYTHON_WAITS)
+def test_petla_odpytywania_w_skrypcie_pythona_dostaje_odmowe(command: str, refusal: object) -> None:
+    assert hook.judge(command, in_background=False) is refusal
+
+
+RATE_LIMITED_BATCH = """import json, os, subprocess, time
+for x in json.load(open("wybrane.json")):
+    out = f"runs/{x['number']}.json"
+    if os.path.exists(out): continue
+    r = subprocess.run(["gh", "run", "list", "--branch", x["headRefName"], "--json", "databaseId,conclusion"], capture_output=True, text=True)
+    if r.returncode != 0:
+        print("ERR", x["number"], r.stderr[:300])
+        if "403" in r.stderr or "rate limit" in r.stderr.lower(): break
+        continue
+    open(out, "w").write(r.stdout)
+    time.sleep(0.7)"""
+TUPLE_BATCH = """import json, subprocess, time
+for pr, rid, a in json.load(open("todo.json")):
+    run = str(rid)
+    r = subprocess.run(["gh", "run", "view", run, "--json", "jobs"], capture_output=True, text=True)
+    if r.returncode != 0:
+        if "rate limit" in r.stderr.lower(): break
+        continue
+    time.sleep(0.7)"""
+PAGES = """import json, subprocess, time
+page = 1
+while True:
+    runs = json.loads(subprocess.run(["gh", "api", f"repos/o/r/actions/runs?per_page=100&page={page}"], capture_output=True, text=True).stdout)["workflow_runs"]
+    if not runs: break
+    page += 1
+    time.sleep(1)"""
+QUEUE = """import subprocess, time
+todo = [44439947891, 44439947892]
+while todo:
+    rid = todo.pop()
+    subprocess.run(["gh", "run", "view", str(rid), "--log-failed"])
+    time.sleep(1)"""
+LIST_ONCE = """import json, subprocess, time
+for run in json.loads(subprocess.run(["gh", "run", "list", "--json", "databaseId"], capture_output=True, text=True).stdout):
+    print(run["databaseId"])
+    time.sleep(0.5)"""
+READINESS = """import sys, time, urllib.request
+for _ in range(30):
+    try:
+        urllib.request.urlopen("http://127.0.0.1:5179/", timeout=1); break
+    except OSError:
+        time.sleep(1)
+"""
+FILE_WITH_CI_WORDS = """import os, time
+while not os.path.exists("wynik.json"):
+    print("czekam na wynik, potem gh pr checks 1")
+    time.sleep(5)"""
+
+PYTHON_PASSING = [
+    pytest.param(_heredoc(RATE_LIMITED_BATCH), id="partia-po-liscie-pr-z-break-przy-limicie"),
+    pytest.param(_heredoc(TUPLE_BATCH), id="partia-po-krotkach-z-break-przy-limicie"),
+    pytest.param(_heredoc(PAGES), id="strony-api-z-licznikiem"),
+    pytest.param(_heredoc(PAGES.replace("page += 1", "page = page + 1")), id="strony-api-z-licznikiem-przez-przypisanie"),
+    pytest.param(_heredoc(QUEUE), id="kolejka-zdejmowana-w-petli"),
+    pytest.param(_heredoc(LIST_ONCE), id="zapytanie-raz-przed-petla"),
+    pytest.param(
+        _heredoc(READINESS + 'print(open("/private/tmp/c/s/tasks/b31ma9p31.output").read()[-2000:])'),
+        id="gotowosc-serwera-plik-zadania-za-petla",
+    ),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
+        + _heredoc(READINESS + "print(open(sys.argv[1]).read()[-2000:])", program='python3 - "$F"'),
+        id="gotowosc-serwera-plik-zadania-w-argumencie-za-petla",
+    ),
+    pytest.param(_heredoc(CHECKS_TRIES, after=" > ci.log 2>&1 &"), id="heredoc-w-tle"),
+    pytest.param(f"python3 -c '{CHECKS_IN_CONDITION}' > ci.log 2>&1 & W=$!", id="c-w-tle"),
+    pytest.param(_heredoc(CHECKS_TRIES, program="cat > /tmp/python/czekaj.py"), id="zapis-skryptu-w-katalogu-python"),
+    pytest.param(_heredoc(CHECKS_TRIES, program=".venv/bin/python tools/mutacje.py --plik -"), id="heredoc-to-dane-skryptu"),
+    pytest.param(f"python3 -m pytest -c '{CHECKS_IN_CONDITION}'", id="c-po-m-to-argument-modulu"),
+    pytest.param(_heredoc(FILE_WITH_CI_WORDS), id="napis-z-gh-w-wydruku-petli-na-pliku"),
+    pytest.param(
+        "timeout 590 python3 -c \"\nimport time,pathlib\np=pathlib.Path('szybko.log')\n"
+        "while 'SZYBKO' not in p.read_text(errors='ignore'): time.sleep(5)\n\"",
+        id="zwykly-plik-logu",
+    ),
+]
+
+
+def test_partia_logow_zadan_actions_z_break_przechodzi() -> None:
+    command = (
+        "for j in 131746612659 131693897858 131705997031; do gh api repos/o/r/actions/jobs/$j/logs > $j.log 2> $j.err "
+        '|| { grep -qi "403\\|rate limit" $j.err && break; }; sleep 1; done'
+    )
+
+    assert hook.judge(command, in_background=False) is None
+
+
+@pytest.mark.parametrize("command", PYTHON_PASSING)
+def test_skrypt_pythona_bez_odpytywania_na_pierwszym_planie_przechodzi(command: str) -> None:
+    assert hook.judge(command, in_background=False) is None
+
+
+def _nested_python_loops(depth: int, body: str, outer: str = "", inner: str = "") -> str:
+    lines = ["import subprocess, time"]
+    for level in range(depth):
+        lines += [" " * level + "while True:", " " * (level + 1) + "time.sleep(1)"]
+        lines += [" " * (level + 1) + outer] if level == 0 and outer else []
+    lines += [" " * depth + line for line in (body, body, inner) if line]
+    return _heredoc("\n".join(lines))
+
+
+QUERY = "subprocess.run(['gh', 'pr', 'checks', '1'])"
+SHORT_SLEEP = "import time\ntime.sleep(0)"
+ZNANE_LUKI = [
+    pytest.param(
+        (_heredoc(SHORT_SLEEP) + "\n") * (hook.PYTHON_SOURCE_LIMIT // len(SHORT_SLEEP) + 1) + _heredoc(CHECKS_IN_CONDITION),
+        id="czekanie-za-skryptami-pythona-ponad-limit-dlugosci",
+    ),
+    pytest.param("bash czekaj.sh", id="petla-w-skrypcie-z-pliku"),
+    pytest.param(
+        'until gh api "repos/o/r/actions/runs?branch=main&status=in progress" | grep -q x; do sleep 30; done',
+        id="adres-gh-api-w-cudzyslowie-ze-spacja",
+    ),
+    pytest.param(
+        _heredoc("import subprocess, time\n" + "x = 1\n" * (hook.PYTHON_SOURCE_LIMIT // 6) + CHECKS_IN_CONDITION),
+        id="skrypt-pythona-dluzszy-niz-limit",
+    ),
+    pytest.param(
+        _nested_python_loops(24, "x = [" + "1," * (hook.PYTHON_NODES_LIMIT // 40) + "]", outer=QUERY),
+        id="petle-pythona-ponad-limit-wezlow",
+    ),
+    pytest.param(
+        _heredoc(
+            'import subprocess, time\nc0 = ["gh", "pr", "checks", "1"]\n'
+            + "".join(f"c{index + 1} = c{index}\n" for index in range(3000))
+            + "while subprocess.run(c3000).returncode == 8:\n    time.sleep(30)"
+        ),
+        id="polecenie-za-lancuchem-przypisan-glebszym-niz-stos",
+    ),
+    pytest.param(
+        "f=/private/tmp/c/s/tasks/b1.output; python3 -c \"\nimport os,time\nfrom sys import argv\n"
+        'while os.path.getsize(argv[1])==0: time.sleep(5)\n" $f',
+        id="argument-zadania-przez-from-sys-import-argv",
+    ),
+    pytest.param("python3 czekaj.py", id="petla-pythona-w-skrypcie-z-pliku"),
+    pytest.param(
+        "while kill -0 $P; do sleep 5; done; cat /private/tmp/c/s/tasks/b1.output", id="kill-0-plik-zadania-za-petla"
+    ),
+    pytest.param(
+        "python3 -c \"\nimport os,time\nwhile True:\n    try: os.kill(21464,0)\n    except ProcessLookupError: break\n"
+        "    time.sleep(5)\nprint('done')\"; cat /private/tmp/c/s/tasks/bpv3u7nlm.output",
+        id="kill-0-w-pythonie-plik-zadania-za-petla",
+    ),
+    pytest.param("cat <<'EOF' | python3 -\n" + CHECKS_IN_CONDITION + "\nEOF", id="skrypt-pythona-z-potoku"),
+    pytest.param("PY=python3; " + _heredoc(CHECKS_IN_CONDITION, program="$PY -"), id="program-pythona-ze-zmiennej"),
+    pytest.param(
+        "bash -c 'python3 -c \"import subprocess, time\nwhile subprocess.run([\\\"gh\\\", \\\"pr\\\", \\\"checks\\\", "
+        "\\\"1\\\"]).returncode == 8:\n    time.sleep(30)\"'",
+        id="python-c-w-skrypcie-powloki",
+    ),
+    pytest.param(
+        "python3 -c $'import subprocess, time\\nwhile subprocess.run([\"gh\", \"pr\", \"checks\", \"1\"]).returncode == 8:"
+        "\\n    time.sleep(30)'",
+        id="skrypt-ansi-c",
+    ),
+    pytest.param(
+        "python3 -c \"import subprocess, time\nwhile subprocess.run(['gh', 'pr', 'checks', $PR]).returncode == 8:\n"
+        '    time.sleep(30)"',
+        id="zmienna-powloki-w-kodzie-pythona",
+    ),
+    pytest.param(
+        _heredoc(
+            "import json, time, urllib.request\nwhile True:\n    run = json.load(urllib.request.urlopen("
+            '"https://api.github.com/repos/o/r/actions/runs/1"))\n    if run["status"] == "completed": break\n'
+            "    time.sleep(30)"
+        ),
+        id="zapytanie-o-ci-przez-http",
+    ),
+    pytest.param(
+        _heredoc(
+            "import subprocess\nfrom time import sleep as czekaj\nwhile subprocess.run([\"gh\", \"pr\", \"checks\", "
+            '"1"]).returncode == 8:\n    czekaj(30)'
+        ),
+        id="sen-pod-inna-nazwa",
+    ),
+    pytest.param(
+        _heredoc(
+            "import subprocess, time\nwhile True:\n    out = subprocess.run(['python3', 'bin/mutacje.py', '--zbierz'], "
+            "capture_output=True, text=True).stdout\n    if 'TRWA' not in out: break\n    time.sleep(60)"
+        ),
+        id="zapytanie-o-ci-przez-narzedzie-z-pliku",
+    ),
+    pytest.param(
+        _heredoc('import subprocess\nwhile subprocess.run(["gh", "pr", "checks", "1"]).returncode == 8:\n    pass'),
+        id="odpytywanie-bez-sleep",
+    ),
+    pytest.param('eval "gh run rerun 1"', id="ponowienie-przez-eval"),
+    pytest.param("GH=gh; $GH run rerun 1", id="ponowienie-z-programu-w-zmiennej"),
+    pytest.param("gh run -X y rerun 1", id="ponowienie-z-opcja-z-wartoscia-miedzy-run-a-rerun"),
+    pytest.param("sh ponow.sh", id="ponowienie-przez-skrypt-z-pliku"),
+    pytest.param(
+        "python3 -c 'import subprocess; subprocess.run([\"gh\", \"run\", \"rerun\", \"1\"])'",
+        id="ponowienie-z-pythona",
+    ),
+]
+
+
+@pytest.mark.parametrize("command", ZNANE_LUKI)
+def test_znane_luki_hooka_czekania_przechodza(command: str) -> None:
+    assert hook.judge(command, in_background=False) is None, (
+        "hook łapie już tę postać: usuń ją ze ZNANE_LUKI i dopisz do przypadków odmowy"
+    )
+
+
+@pytest.mark.parametrize(
+    "command",
+    [*CI_LOOPS, *WATCHES, *PGREP_LOOPS, *TASK_OUTPUT_LOOPS]
+    + [pytest.param(case.values[0], id=case.id) for case in PYTHON_WAITS],
+)
 def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=True) is None
 
@@ -456,6 +828,11 @@ def test_hook_odmawia_kodem_2_z_jedyna_droga_na_stderr(
     [
         pytest.param(PASSING[0], False, id="inne-polecenie"),
         pytest.param(CI_LOOPS[0], True, id="czekanie-w-tle"),
+        pytest.param(
+            _heredoc('import os, re, time\nwhile not re.search("\\d", os.listdir(".")[0]):\n    time.sleep(1)'),
+            False,
+            id="skrypt-pythona-z-nieznana-ucieczka",
+        ),
     ],
 )
 def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
@@ -498,6 +875,14 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "while :; do sleep 1; gh pr checks 1; done" + "\n" * 400000,
         "gh pr checks 1 " * 40000 + "\nwhile :; do sleep 1; gh pr checks 1; done",
         "until x; do sleep 1; " + "gh api x " * 40000 + "\ngh pr checks 1; done",
+        _heredoc(
+            "import subprocess, time\nx = [" + "1," * (hook.PYTHON_SOURCE_LIMIT // 2 - 100) + "]\n" + CHECKS_IN_CONDITION
+        ),
+        _heredoc(CHECKS_IN_CONDITION, program="python3 -X " + "a/" * 40000 + " -"),
+        "python3 " * 40000 + f"-c '{CHECKS_IN_CONDITION}'",
+        "python3 -c 'print(1)'; " * 40000 + f"python3 -c '{CHECKS_IN_CONDITION}'",
+        (_heredoc(SHORT_SLEEP) + "\n") * (hook.PYTHON_SOURCE_LIMIT // len(SHORT_SLEEP) // 2) + _heredoc(CHECKS_IN_CONDITION),
+        _nested_python_loops(90, "x = [" + "1," * 5000 + "]", inner=QUERY),
     ],
     ids=[
         "ogon-przekierowan",
@@ -508,6 +893,12 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "puste-wiersze",
         "zapytania-bez-watch",
         "gh-api-bez-adresu",
+        "skrypt-pythona-do-limitu-dlugosci",
+        "dluga-sciezka-w-linii-heredoca-pythona",
+        "slowa-pythona-przed-c",
+        "skrypty-pythona-bez-sleep-przed-czekaniem",
+        "skrypty-pythona-ze-sleep-do-limitu-przed-czekaniem",
+        "petle-pythona-zagniezdzone-z-zapytaniem-w-najglebszej",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
