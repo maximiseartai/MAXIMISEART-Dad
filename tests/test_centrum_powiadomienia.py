@@ -40,6 +40,7 @@ from tests.fixtures.centrum import (
 from tests.fixtures.centrum_processes import (
     PreparingCentrum,
     preparing_centrum,
+    run_to_end,
     settling_centrum,
     stopped_for_maks,
     write_configuration,
@@ -627,6 +628,18 @@ def test_zgloszenie_w_kolejce_bez_tokenu_czeka_na_token_a_po_dostarczeniu_jest_w
     ]
     [item] = notifications(centrum)["items"]
     assert (item["id"], item["state"], item["unread"]) == (f"zgloszenie-{number}-wyslana", SENT, False)
+
+
+def test_zgloszenie_dostarczone_z_kolejki_po_nastepnym_uruchomieniu_nie_zmienia_jego_karty(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    queued_report(centrum)
+    next_run = run_to_end(centrum, dry_run=True)
+    since = new_line()
+
+    delivered_from_queue(centrum)
+    join_threads_since(since)
+
+    assert centrum.client.get("/api/runs/current").json() == next_run
 
 
 def test_wydanie_rozwiazuje_zgloszenie_wyslane_z_kolejki(tmp_path: Path) -> None:
