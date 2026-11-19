@@ -55,6 +55,7 @@ SCRIPT_OPTION = re.compile(r"-[A-Za-z]*c[A-Za-z]*")
 KILL_WITHOUT_SIGNAL = frozenset({"-0", "-l", "-L"})
 SIGNAL = re.compile(r"-(?:\d+|(?:SIG)?[A-Z]{2,}[A-Z0-9+-]*)")
 WIDENING = re.compile(r"[|()]|\$(?!\Z)")
+LITERAL_PID = re.compile(r"\d+|%(?:\d+|%|\+|-)")
 BRACKET = re.compile(r"\[\^?\]?[^\]]*\]")
 
 
@@ -473,7 +474,9 @@ def _kill_targets(call: Call) -> Optional[list[Word]]:
 
 
 def _pid_from_elsewhere(targets: list[Word]) -> bool:
-    return not targets or any(word.substituted or "$" in word.text for word in targets)
+    return not targets or any(
+        word.substituted or not LITERAL_PID.fullmatch(word.text) for word in targets
+    )
 
 
 def judge(command: str, project: Optional[str]) -> Optional[Refusal]:

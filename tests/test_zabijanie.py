@@ -174,6 +174,26 @@ ODMOWY = [
         "wzorzec pgrep obok kill PID-u",
         id="kill-zmiennej-po-pgrep",
     ),
+    pytest.param(
+        "pgrep -f szybko.py | xargs -I{} kill {}",
+        "wzorzec pgrep obok kill PID-u",
+        id="pgrep-do-xargs-I-kill",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py | xargs -I % kill -9 %",
+        "wzorzec pgrep obok kill PID-u",
+        id="pgrep-do-xargs-I-procent-kill",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py | xargs -J % kill %",
+        "wzorzec pgrep obok kill PID-u",
+        id="pgrep-do-xargs-J-kill",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py > p; kill PID_Z_PLIKU",
+        "wzorzec pgrep obok kill PID-u",
+        id="kill-slowa-zamiast-pidu",
+    ),
     pytest.param("kill -9 -1", "kill z ujemnym PID-em", id="kill-wszystkich"),
     pytest.param("kill -- -4321", "kill z ujemnym PID-em", id="kill-grupy"),
     pytest.param("kill -s TERM -1", "kill z ujemnym PID-em", id="kill-wszystkich-z-s"),
@@ -241,6 +261,7 @@ PRZECHODZI = [
         id="kill-pidu-i-liczba-z-pgrep",
     ),
     pytest.param("kill -1 4321", id="kill-sygnalem-1"),
+    pytest.param("kill %1; pgrep -fl szybko", id="kill-zadania-i-przeglad-pgrep"),
     pytest.param("boatbox run 'pkill -f pytest; true'", id="boatbox-na-boxie"),
     pytest.param("ssh box 'pkill -f pytest'", id="ssh-na-innej-maszynie"),
 ]
