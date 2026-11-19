@@ -640,8 +640,11 @@ _GLOWA_ODCZYTU = (
     "from rozliczenia.worker_reports._reading import WindowRead\n\n\n"
     "def zlecenia(read: WindowRead) -> frozenset[OrderKey]:\n"
 )
-# Raporty wykonawców Wpisania raportów z odczytu okna bez nazwy ReadReport: moduł pakietu spoza właścicieli (sonda
-# przeglądu #2114 r1 W1, ``read_window(inputs).reports`` bez Wpisów na życzenie); odczyt → kod, który go odrzuca.
+_GLOWA_FAKTOW = "from rozliczenia.report_entering import EnteringFacts\n"
+# Raporty wykonawców Wpisania raportów bez nazwy ReadReport: z pola odczytu okna (moduł pakietu spoza właścicieli, sonda
+# przeglądu #2114 r1 W1, ``read_window(inputs).reports`` bez Wpisów na życzenie), z pola dopisania i z odczytów maili
+# wyniku rdzenia albo faktów kliknięcia (Logi kliknięcia w report_entering.py przed d18d2e48c7); odczyt → zgłoszenie,
+# które go odrzuca.
 DROGI_RAPORTOW_PRZEZ_ODCZYT = {
     "pole odczytu okna z Raportami wykonawców (#2114 r1 W1)": (
         _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read.reports for entry in report.entries)\n",
@@ -665,17 +668,40 @@ DROGI_RAPORTOW_PRZEZ_ODCZYT = {
         + "    return frozenset(OrderKey(entry.number, found.day, found.worker) for found in added for entry in found.report.entries)\n",
         'has no attribute "report"',
     ),
+    "wykluczenie pozostałych odczytów maila w odczytach wyniku rdzenia": (
+        "from rozliczenia.worker_reports import OrderNumber, ReadStranger, ReadUnreadable, ReportsOutcome\n\n\n"
+        "def numery(outcome: ReportsOutcome) -> set[OrderNumber]:\n"
+        "    return {entry.number for read in outcome.mails if not isinstance(read, (ReadUnreadable, ReadStranger)) for entry in read.entries}\n",
+        "(not iterable)",
+    ),
+    "refleksja po nazwie: pole odczytu maila przez getattr w odczytach faktów kliknięcia": (
+        _GLOWA_FAKTOW + "\n\n"
+        "def wpisy(facts: EnteringFacts) -> int:\n"
+        '    return sum(len(getattr(read, "entries", ())) for read in facts.mails if type(read).__name__ == "ReadReport")\n',
+        "(not iterable)",
+    ),
 }
 ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
-    "zakaz zna tylko nazwę klasy, nie zawężenie unii: wykluczenie pozostałych odczytów maila": (
-        "from rozliczenia.worker_reports import MailRead, OrderNumber, ReadStranger, ReadUnreadable\n\n\n"
-        "def numery(mails: tuple[MailRead, ...]) -> set[OrderNumber]:\n"
-        "    return {entry.number for read in mails if not isinstance(read, (ReadUnreadable, ReadStranger)) for entry in read.entries}\n"
+    "kapsuła oddaje zapis do Logów jako JSON: przejście po jego rekordach z zawężeniem isinstance": (
+        _GLOWA_FAKTOW + "\n\n"
+        "def numery(facts: EnteringFacts) -> set[str]:\n"
+        "    return {\n"
+        "        number\n"
+        "        for record in facts.mails.log()\n"
+        '        if record["kind"] == "report" and isinstance(entries := record["entries"], list)\n'
+        "        for entry in entries\n"
+        '        if isinstance(entry, dict) and isinstance(number := entry["number"], str)\n'
+        "    }\n"
     ),
-    "refleksja po nazwie: pole odczytu maila przez getattr": (
-        "from rozliczenia.worker_reports import MailRead\n\n\n"
-        "def wpisy(mails: tuple[MailRead, ...]) -> int:\n"
-        '    return sum(len(getattr(read, "entries", ())) for read in mails if type(read).__name__ == "ReadReport")\n'
+    "Logi Wpisania raportów mają typowane rekordy odczytów: przejście po nich z zawężeniem isinstance": (
+        "from rozliczenia.centrum.report_entering_logs import LoggedReportMail, logged_mails\n" + _GLOWA_FAKTOW + "\n\n"
+        "def numery(facts: EnteringFacts) -> set[str]:\n"
+        "    return {entry.number for read in logged_mails(facts.mails) if isinstance(read, LoggedReportMail) for entry in read.entries}\n"
+    ),
+    "refleksja po nazwie: pole kapsuły odczytów przez getattr": (
+        _GLOWA_FAKTOW + "\n\n"
+        "def wpisy(facts: EnteringFacts) -> int:\n"
+        '    return sum(len(getattr(read, "entries", ())) for read in getattr(facts.mails, "_reads"))\n'
     ),
 }
 
@@ -684,7 +710,9 @@ ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
 def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
     """Raporty wykonawców okna (``ReadReport``) i ich Wpisy czyta w ``src/`` tylko odczyt okna i moduły z prawem
     właściciela (``OWNERS``), bo moduł, który sam przechodzi po ``ReadReport``, nie zna raportu z błędem tematu ani
-    Wpisu na życzenie (ADR 0041) i liczy po swojemu, które zlecenia mają Wpis tego kliknięcia.
+    Wpisu na życzenie (ADR 0041) i liczy po swojemu, które zlecenia mają Wpis tego kliknięcia. Poza pakietem odczyty
+    maili są tylko w kapsule ``WindowMails`` (``ReportsOutcome.mails``, ``EnteringFacts.mails``), która nie jest
+    iterowalna, a wariantów odczytu pakiet nie wystawia.
 
     | Postać | Zakaz | Próbka |
     |---|---|---|
@@ -694,11 +722,14 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     | pole odczytu okna: ``read_window(inputs).reports`` (#2114 r1 W1) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | prywatne pole odczytu okna: ``read._entering`` | ruff ``SLF001`` | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | wzorzec klasy po nazwie pola: ``case WindowRead(_entering=entering)`` (#2114 r2 W1; pozycyjny wiąże tylko wyniki odczytu) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
-    | wykluczenie pozostałych odczytów: ``not isinstance(read, (ReadUnreadable, ReadStranger))`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
-    | refleksja po nazwie: ``getattr(read, "entries", ())``, ``type(read).__name__`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
     | pole obiektu dopasowania: ``Addition.report`` z ``WindowRead.additions`` | mypy: ``Addition`` nie ma pola z Raportem, tylko jego numery | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
+    | wykluczenie pozostałych odczytów: ``not isinstance(read, (ReadUnreadable, ReadStranger))`` po ``outcome.mails`` | mypy: pakiet nie wystawia wariantów, a ``WindowMails`` nie jest iterowalne | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
+    | refleksja po nazwie: ``getattr(read, "entries", ())``, ``type(read).__name__`` po ``facts.mails`` | mypy: ``WindowMails`` nie jest iterowalne | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
+    | zapis do Logów: rekordy ``facts.mails.log()`` z zawężeniem JSON przez ``isinstance`` | przepuszcza (bez zawężenia mypy odrzuca) | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | rekordy Logów: ``logged_mails(facts.mails)`` z ``isinstance(read, LoggedReportMail)`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | refleksja po nazwie pola kapsuły: ``getattr(facts.mails, "_reads")`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
 
-    Poza ``src/`` zakaz nie obowiązuje: próba skrzynki raportów w ``tools/`` czyta każdy mail osobno."""
+    Poza ``src/`` zakaz nie obowiązuje: próba skrzynki raportów w ``tools/`` czyta rekordy Logów każdego maila osobno."""
     probe = SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "sonda_luki.py"
     probki = {opis: kod for opis, (kod, _) in DROGI_RAPORTOW_PRZEZ_ODCZYT.items()} | ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM
 
@@ -707,7 +738,7 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     przepuszczone = {
         opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_RAPORTOW_PRZEZ_ODCZYT.items() if not any(odmowa in z for z in zgloszenia[opis])
     }
-    assert przepuszczone == {}, "odczyt okna znów daje Raporty wykonawców modułowi spoza właścicieli: daj mu fakt odczytu"
+    assert przepuszczone == {}, "odczyt okna albo kapsuła odczytów znów daje Raporty wykonawców modułowi spoza właścicieli: daj mu fakt odczytu"
     assert_znane_luki(
         {opis: zgloszenia[opis] for opis in ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM}, "tests/test_zakazy_ruff.py (ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM)"
     )
@@ -820,7 +851,6 @@ OWNERS: dict[str, frozenset[str]] = {
     ),
     "src/rozliczenia/worker_reports/__init__.py": frozenset(
         {
-            "rozliczenia.worker_reports._model.ReadReport",
             "rozliczenia.worker_reports._reminders.DEFAULT_REMINDERS",
             "rozliczenia.worker_reports._reminders.DEFAULT_SCHEDULE",
             "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
@@ -835,7 +865,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_matching.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_corrections.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
-    "src/rozliczenia/centrum/report_entering_logs.py": frozenset({"rozliczenia.worker_reports.ReadReport"}),
+    "src/rozliczenia/worker_reports/_mails.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),

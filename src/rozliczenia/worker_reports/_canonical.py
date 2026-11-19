@@ -1,4 +1,5 @@
-"""Postać kanoniczna Raportu wykonawcy: mail, z którego rdzeń czyta z powrotem ten sam odczyt (``MailRead``).
+"""Postać kanoniczna Raportu wykonawcy: mail, z którego rdzeń czyta z powrotem ten sam odczyt (``MailRead``), dla
+``WindowMails.canonical``.
 
 Odtworzenie Uruchomienia z Logów ma z maila tylko odczyt, bez adresu, tematu i treści, więc buduje z niego mail
 w postaci kanonicznej: temat ``Raport dd.mm.rrrr``, jedna linia ``<numer> <znak> <czynności>`` na Wpis raportu, a pod

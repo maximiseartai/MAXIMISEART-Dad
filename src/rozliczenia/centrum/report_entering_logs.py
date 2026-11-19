@@ -11,7 +11,7 @@ czytają karta z Logów, Historia i odtworzenie.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Annotated, Final, Literal, assert_never
@@ -29,7 +29,6 @@ from rozliczenia.worker_reports import (
     Kept,
     Login,
     MailId,
-    MailRead,
     ManualDifference,
     MissingVerdict,
     OrderKey,
@@ -39,14 +38,10 @@ from rozliczenia.worker_reports import (
     OwnEntries,
     OwnEntry,
     OwnMove,
-    ReadReport,
-    ReadStranger,
-    ReadUnreadable,
     RepeatedNumber,
     RepeatedOrder,
     ReportEntry,
     ReportProblem,
-    ReportSubject,
     RequestedEntry,
     SavedState,
     SubjectFault,
@@ -55,6 +50,7 @@ from rozliczenia.worker_reports import (
     UnreadableSubject,
     Verdict,
     VerdictFault,
+    WindowMails,
 )
 
 
@@ -127,56 +123,29 @@ class LoggedStrangerMail(_Record):
 
 
 LoggedMail = Annotated[LoggedReportMail | LoggedUnreadableMail | LoggedStrangerMail, Field(discriminator="kind")]
+"""Odczyt maila w Logach: jedyny schemat rekordu odczytu maila (``WindowMails.log``, ``WindowMails.from_log``)."""
 
 
-def _mail(read: MailRead) -> LoggedMail:
-    match read:
-        case ReadReport():
-            entries = [LoggedReportEntry.of(entry) for entry in read.entries]
-            return LoggedReportMail(
-                kind="report", mail=read.mail.digest, arrived=read.arrived, worker=read.worker, day=read.day, entries=entries
-            )
-        case ReadUnreadable():
-            return LoggedUnreadableMail(
-                kind="unreadable",
-                mail=read.mail.digest,
-                arrived=read.arrived,
-                worker=read.worker,
-                fault=read.fault,
-                numbers=sorted(read.numbers),
-                day=read.day,
-                entries=[LoggedReportEntry.of(entry) for entry in read.entries],
-            )
-        case ReadStranger():
-            return LoggedStrangerMail(kind="stranger", mail=read.mail.digest, arrived=read.arrived, day=read.day)
-        case _:
-            assert_never(read)
+class _MailRecord(_Record):
+    """Rekord odczytu maila w schemacie ``LoggedMail``, który rozpoznaje rodzaj maila po ``kind``."""
+
+    mail: LoggedMail
 
 
-def _read(mail: LoggedMail) -> MailRead:
-    """Odczyt maila z jego zapisu w Logach, czyli zapis w drugą stronę: odtworzenie Uruchomienia z Logów
-    (``tools/odtworz_uruchomienie.py``) podaje go procesowi jako mail w postaci kanonicznej
-    (``worker_reports.as_mail``). Raport z błędem tematu ma pusty temat dla taty, bo Logi tematów nie mają, a postać
-    kanoniczna bierze z odczytu tylko powód i dzień z tematu."""
+def logged_mails(mails: WindowMails) -> list[LoggedMail]:
+    """Odczyty maili okna w Logach: rekord każdego odczytu (``WindowMails.log``) przez schemat ``LoggedMail``, który
+    odmawia rekordu z polem spoza schematu, bez pola wymaganego albo z wartością innego typu (``ValidationError``)."""
 
-    match mail:
-        case LoggedReportMail():
-            entries = tuple(entry.entry() for entry in mail.entries)
-            return ReadReport(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.day, entries)
-        case LoggedUnreadableMail(entries=None):
-            numbers = sorted(OrderNumber(number) for number in mail.numbers or ())
-            return _unreadable(mail, tuple(ReportEntry(number, None, VerdictFault.MISSING, "") for number in numbers))
-        case LoggedUnreadableMail():
-            return _unreadable(mail, tuple(entry.entry() for entry in mail.entries or ()))
-        case LoggedStrangerMail():
-            return ReadStranger(MailId(mail.mail), mail.arrived, mail.day)
-        case _:
-            assert_never(mail)
+    return [_MailRecord.model_validate({"mail": record}).mail for record in mails.log()]
 
 
-def _unreadable(mail: LoggedUnreadableMail, entries: tuple[ReportEntry, ...]) -> ReadUnreadable:
-    subject = ReportSubject("")
-    return ReadUnreadable(MailId(mail.mail), mail.arrived, Login(mail.worker), mail.fault, entries, mail.day, subject)
+def window_mails(logged: Iterable[LoggedMail]) -> WindowMails:
+    """Odczyty maili okna z ich zapisu w Logach (``WindowMails.from_log``), czyli zapis w drugą stronę: odtworzenie
+    Uruchomienia z Logów (``tools/odtworz_uruchomienie.py``) podaje je procesowi jako maile w postaci kanonicznej
+    (``WindowMails.canonical``). Rekord ma każde pole schematu, a pole, którego nie mają Logi z wcześniejszych Wydań, z
+    jego domyślną wartością."""
+
+    return WindowMails.from_log(mail.model_dump(mode="json") for mail in logged)
 
 
 class LoggedOrderPlace(_Record):
@@ -527,7 +496,7 @@ class LoggedReports(_Record):
             rollout=facts.rollout,
             closed=list(facts.closed),
             skipped=facts.skipped,
-            mails=[_mail(read) for read in facts.mails],
+            mails=logged_mails(facts.mails),
             problems=[_problem(problem) for problem in facts.problems],
             changes=[
                 LoggedChange(sheet=change.order.sheet, row=change.order.row, column=change.column, value=change.value)
@@ -624,7 +593,7 @@ class LoggedReports(_Record):
             today=self.today,
             closed=tuple(self.closed),
             skipped=self.skipped,
-            mails=tuple(_read(mail) for mail in self.mails),
+            mails=window_mails(self.mails),
             strangers=tuple(_strangers(self)),
             saved=saved,
             orderless=tuple(_orderless(self)),
@@ -643,7 +612,7 @@ class EnteringReplay:
     today: date
     closed: tuple[str, ...]
     skipped: int
-    mails: tuple[MailRead, ...]
+    mails: WindowMails
     strangers: tuple[int, ...]
     saved: SavedState
     orderless: tuple[ReplayedOrderless, ...]
@@ -653,7 +622,7 @@ class EnteringReplay:
     def without_logs(cls, today: date) -> EnteringReplay:
         """Kliknięcie z dnia ``today`` bez Logów Wpisania raportów: pusta skrzynka i pamięć bez dnia wdrożenia."""
 
-        return cls(today, (), 0, (), (), SavedState(None, OwnEntries.EMPTY), (), ())
+        return cls(today, (), 0, window_mails(()), (), SavedState(None, OwnEntries.EMPTY), (), ())
 
 
 @dataclass(frozen=True)
@@ -717,15 +686,17 @@ def _texts(numbers: dict[tuple[int, date, str], set[str]], number: int, day: dat
 
 def _numbers(entering: LoggedReports) -> dict[tuple[int, date, str], set[str]]:
     """Numery Wpisów raportu w Logach po liczbie, dniu i Wykonawcy: pamięć wpisów ma w Logach numer tylko jako liczbę,
-    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie. Wpis raportu z
-    błędem tematu ma dzień z decyzji Wpisu na życzenie, bo tylko z nią coś wpisuje."""
+    a ma tylko zlecenia z Wpisem w tym kliknięciu, więc numer z zerami na początku jest w jego Wpisie. Zlecenia z Wpisem
+    Raportów wykonawców z dniem z tematu daje odczyt maili (``WindowMails.said`` bez decyzji), a Wpis raportu z błędem
+    tematu ma dzień z każdej decyzji Wpisu na życzenie, także bez pasującego Wpisu, bo tylko z nią coś wpisuje, a
+    decyzja niesie numer tekstem."""
 
-    said = [(mail.day, mail.worker, entry.number) for mail in entering.mails if isinstance(mail, LoggedReportMail) for entry in mail.entries]
-    said += [(decision.day, decision.worker, decision.number) for decision in entering.requested]
+    decisions = [logged.decision() for logged in entering.requested]
+    said = window_mails(entering.mails).said(()) | {OrderKey(found.number, found.day, found.worker) for found in decisions}
     numbers: dict[tuple[int, date, str], set[str]] = {}
-    for day, worker, number in said:
-        if _digits(number):
-            numbers.setdefault((int(number), day, worker), set()).add(number)
+    for key in said:
+        if _digits(key.number):
+            numbers.setdefault((int(key.number), key.day, key.worker), set()).add(key.number)
     return numbers
 
 

@@ -6,11 +6,12 @@ Obie operacje rdzenia ma pamięć Wpisania raportów (``EnteringMemory``, ``_mem
 (``WorkerList.addresses`` z Listy Wykonawców), INTERMAX okna (``RegisterWindow``) i dni otwarte na wejściu, a zmiany
 komórek, Przeniesienia zleceń, problemy, informacje i liczby dla widoku Raporty i nowa pamięć na wyjściu. Zdanie dla
 taty o problemie daje ``reasons.reason``, o informacji ``reasons.note``, a mail, z którego rdzeń czyta z powrotem ten
-sam odczyt (odtworzenie z Logów), ``as_mail``.
+sam odczyt (odtworzenie z Logów), ``WindowMails.canonical``.
 Druga operacja, ``EnteringMemory.reminders``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ADR 0041,
 ``_reminders.py``). Obie biorą Raporty wykonawców i ich dni z jednego odczytu okna (``_reading.py``) na wejściu z tej
 samej pamięci, którego pakiet nie wystawia, a Wpisanie czyta opis Wpisu ``tak`` Legendą czynności z wejścia
-(``_descriptions.py``, ADR 0039).
+(``_descriptions.py``, ADR 0039). Odczyty maili okna wychodzą z pakietu tylko w kapsule ``WindowMails`` (``_mails.py``):
+fakty, postać kanoniczna i zapis do Logów oraz odczyt z nich jako JSON, bez wariantu odczytu maila.
 Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń, reguły komórek i postać kanoniczna maila
 w pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
 oraz ``report_cells``, ``settlement_period``, ``text`` i ``activity_legend``, bo przejdzie bez zmian do Centrum w
@@ -30,7 +31,6 @@ from ._model import (
     Kept,
     Login,
     MailId,
-    MailRead,
     ManualDifference,
     MissingVerdict,
     MoveBar,
@@ -47,9 +47,6 @@ from ._model import (
     OwnEntry,
     OwnMove,
     ReadNumber,
-    ReadReport,
-    ReadStranger,
-    ReadUnreadable,
     RefusedMove,
     RegisterOrder,
     RepeatedNumber,
@@ -77,10 +74,9 @@ from ._model import (
     note_order,
     order_number,
 )
-from ._canonical import as_mail
 from ._entries import EXAMPLE_NUMBERS
+from ._mails import JsonValue, WindowMails
 from ._memory import EnteringMemory, MemorySource, RegisterWindow, SavedState
-from ._reading import worker_report_count
 from ._reminders import (
     DAY_FIELD,
     DEFAULT_REMINDERS,
@@ -117,10 +113,10 @@ __all__ = [
     "EnteringMemory",
     "FaultyDescription",
     "HandedOver",
+    "JsonValue",
     "Kept",
     "Login",
     "MailId",
-    "MailRead",
     "ManualDifference",
     "MemorySource",
     "MissingVerdict",
@@ -139,9 +135,6 @@ __all__ = [
     "OwnMove",
     "Pora",
     "ReadNumber",
-    "ReadReport",
-    "ReadStranger",
-    "ReadUnreadable",
     "RefusedMove",
     "RegisterOrder",
     "RegisterWindow",
@@ -175,9 +168,9 @@ __all__ = [
     "Verdict",
     "VerdictFault",
     "Window",
+    "WindowMails",
     "WorkerAddresses",
     "WorkerDay",
-    "as_mail",
     "note_order",
     "order_number",
     "reads_as_report",
@@ -185,6 +178,5 @@ __all__ = [
     "reminder_pora",
     "reminder_subject",
     "reminder_text",
-    "worker_report_count",
 ]
 

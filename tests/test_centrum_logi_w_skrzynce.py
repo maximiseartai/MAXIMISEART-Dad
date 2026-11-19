@@ -56,7 +56,15 @@ from rozliczenia.centrum import app
 from rozliczenia.centrum.catalog import CATALOG, KINDS
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
-from rozliczenia.centrum.report_entering_logs import EnteringReplay, LoggedReports, ReplayedOrderless, Unreplayable
+from rozliczenia.centrum.report_entering_logs import (
+    EnteringReplay,
+    LoggedMail,
+    LoggedReports,
+    ReplayedOrderless,
+    Unreplayable,
+    logged_mails,
+    window_mails,
+)
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, empty_memory
@@ -72,15 +80,12 @@ from rozliczenia.worker_reports import (
     OwnEntries,
     OwnEntry,
     OwnMove,
-    ReadReport,
-    ReadStranger,
-    ReadUnreadable,
     ReportEntry,
-    ReportSubject,
     SavedState,
     SenderAddress,
     SubjectFault,
     UnknownSender,
+    VerdictFault,
 )
 from rozliczenia.worker_reports import Verdict as Intent
 
@@ -100,6 +105,7 @@ from tests.fixtures.centrum_intermax import ENTERING_NOW, SENDERS, Clock, enteri
 from atrapy.baza_zlecen import FIVE, TWELVE, WITHOUT_HITS, BaseSheet, Visit
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
+from tests.fixtures import odczyty_maili
 from tests.fixtures.fake_cli import fake_cli
 from atrapy.intermax import (
     ADDRESS,
@@ -2668,6 +2674,10 @@ def test_granica_logow_wpisania_raportow_jest_w_raporcie_a_blokujaca_konczy_odtw
 
 CLICK_DAY: Final = date(2026, 11, 9)
 JAN, ANNA = Login("jan.testowy"), Login("anna.testowa")
+_FACTS_ENTRIES: Final = (
+    ReportEntry(OrderNumber("040000001"), Intent.YES, None, "montaż"),
+    ReportEntry(OrderNumber("40000002"), Intent.NO, None, "brak klienta"),
+)
 
 
 def _entering_facts() -> EnteringFacts:
@@ -2679,7 +2689,7 @@ def _entering_facts() -> EnteringFacts:
     arrived = datetime(2026, 11, 9, 18, 0).astimezone()
     zero, plain = OrderNumber("040000001"), OrderNumber("40000002")
     twice, once = MailId("c" * 16), MailId("d" * 16)
-    entries = (ReportEntry(zero, Intent.YES, None, "montaż"), ReportEntry(plain, Intent.NO, None, "brak klienta"))
+    entries = _FACTS_ENTRIES
     return EnteringFacts(
         today=CLICK_DAY,
         rollout_before=date(2026, 11, 2),
@@ -2688,12 +2698,12 @@ def _entering_facts() -> EnteringFacts:
         memory_before=(OwnEntry(OrderKey(zero, CLICK_DAY, JAN), ReportColumn.SUCCESSFUL, "tak"),),
         kept=(Kept(OrderKey(plain, CLICK_DAY, JAN), ReportColumn.COMPLETED, "brak klienta"),),
         skipped=2,
-        mails=(
-            ReadReport(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
-            ReadUnreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, entries[1:], CLICK_DAY, ReportSubject("")),
-            ReadStranger(twice, arrived, CLICK_DAY),
-            ReadStranger(twice, arrived, CLICK_DAY),
-            ReadStranger(once, arrived, CLICK_DAY),
+        mails=odczyty_maili.mails(
+            odczyty_maili.report(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
+            odczyty_maili.unreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, entries[1:], CLICK_DAY),
+            odczyty_maili.stranger(twice, arrived, CLICK_DAY),
+            odczyty_maili.stranger(twice, arrived, CLICK_DAY),
+            odczyty_maili.stranger(once, arrived, CLICK_DAY),
         ),
         problems=(
             UnknownSender(twice, SenderAddress("pierwszy@obcy.invalid"), CLICK_DAY),
@@ -2735,6 +2745,87 @@ def test_wpisanie_raportow_z_logow_wraca_jako_te_same_fakty_klikniecia_z_numerem
         facts.skipped,
         (),
     )
+
+
+def _old_logs(entering: dict[str, Any], *fields: str) -> dict[str, Any]:
+    """Logi Wpisania raportów z ``entering`` bez pól ``fields`` raportu z błędem tematu, jak w Logach wcześniejszych
+    Wydań."""
+
+    older = copy.deepcopy(entering)
+    for mail in older["mails"]:
+        if mail["kind"] == "unreadable":
+            for name in fields:
+                mail.pop(name)
+    return older
+
+
+_V070: Final = (
+    "Logi sprzed numerów Wpisów maila z nieczytelnym tematem (v0.7.0): odtworzenie czyta ten mail bez Wpisów, więc "
+    "ostrzeżenie o nieczytelnym temacie, które u taty zdjął poprawiony mail, wraca w odtworzeniu jako różnica"
+)
+# Logi Wpisania raportów z ``_entering_facts`` każdego kształtu raportu z błędem tematu, który zapisało któreś Wydanie:
+# pola, których te Logi nie mają, Wpisy, z którymi odtworzenie czyta ten raport (numer, znak, powód, czynności), i
+# zastrzeżenia odtworzenia.
+OLD_LOGS: Final[dict[str, tuple[tuple[str, ...], tuple[ReportEntry, ...], tuple[str, ...]]]] = {
+    "dzisiejsze": ((), (ReportEntry(OrderNumber("40000002"), Intent.NO, None, "brak klienta"),), ()),
+    "od_v0_7_0_sprzed_wpisow_przy_bledzie_tematu": (
+        ("entries",),
+        (ReportEntry(OrderNumber("40000002"), None, VerdictFault.MISSING, ""),),
+        (),
+    ),
+    "sprzed_numerow_v0_7_0": (("entries", "numbers"), (), (_V070,)),
+}
+
+
+@pytest.mark.parametrize("shape", OLD_LOGS)
+def test_logi_kazdego_ksztaltu_raportu_z_bledem_tematu_odtwarzaja_jego_wpisy_z_regula_starych_logow(shape: str) -> None:
+    """Raport z błędem tematu w Logach każdego Wydania wraca z Logów z Wpisami według reguły starych Logów
+    (``LoggedUnreadableMail``): dzisiejsze Logi z jego Wpisami, Logi od v0.7.0 sprzed Wpisu na życzenie przy błędzie
+    tematu (``numbers`` bez ``entries``) z samymi numerami bez znaku i czynności, a Logi sprzed numerów (v0.7.0) bez
+    Wpisów i z zastrzeżeniem; reszta maili, pamięć wpisów, decyzje i adresy maili spoza listy wracają jak z dzisiejszych
+    Logów."""
+
+    fields, entries, reservations = OLD_LOGS[shape]
+    facts = _entering_facts()
+    arrived = datetime(2026, 11, 9, 18, 0).astimezone()
+
+    replayed = LoggedReports.model_validate(_old_logs(_logged_reports(facts), *fields)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.mails == odczyty_maili.mails(
+        odczyty_maili.report(MailId("a" * 16), arrived, JAN, CLICK_DAY, _FACTS_ENTRIES),
+        odczyty_maili.unreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, entries, CLICK_DAY),
+        *(odczyty_maili.stranger(MailId(letter * 16), arrived, CLICK_DAY) for letter in "ccd"),
+    )
+    assert replayed.saved == SavedState(
+        facts.rollout_before, OwnEntries(frozenset(facts.memory_before), frozenset(facts.moves_before)), frozenset(facts.kept)
+    )
+    assert (replayed.strangers, replayed.reservations) == ((0, 1, 0), reservations)
+
+
+def test_odczyty_maili_wracaja_z_logow_z_tym_samym_zapisem_w_logach() -> None:
+    """Zapis odczytów maili w Logach i odczyt z nich to jedna para: rekordy Logów (``LoggedMail``) każdego rodzaju maila,
+    z każdym znakiem Wpisu i każdym powodem jego braku, z czynnościami w kilku liniach Windows i z polskimi literami,
+    raport z błędem tematu z dniem z tematu i bez niego, wracają z odczytów maili okna tym samym zapisem, z każdym polem
+    schematu Logów, także z numerami Wpisów raportu z błędem tematu."""
+
+    arrived = datetime(2026, 11, 9, 18, 0).astimezone()
+    marks = [*((verdict, None) for verdict in Intent), *((None, fault) for fault in VerdictFault)]
+    entries = tuple(
+        ReportEntry(OrderNumber(f"04000000{index}"), verdict, fault, "wymiana routera\r\nżółć" if index % 2 else "")
+        for index, (verdict, fault) in enumerate(marks)
+    )
+    logged: list[LoggedMail] = [
+        odczyty_maili.report(MailId("a" * 16), arrived, JAN, CLICK_DAY, entries),
+        odczyty_maili.unreadable(MailId("b" * 16), arrived, ANNA, SubjectFault.OTHER_WORDS, entries[::-1], CLICK_DAY),
+        odczyty_maili.unreadable(MailId("e" * 16), arrived + timedelta(minutes=1), ANNA, SubjectFault.NO_DATE, entries[:2], None),
+        odczyty_maili.stranger(MailId("c" * 16), arrived, CLICK_DAY),
+    ]
+
+    again = logged_mails(window_mails(logged))
+
+    assert again == logged
+    assert [mail.model_dump_json() for mail in again] == [mail.model_dump_json() for mail in logged]
 
 
 def _second_form(entering: dict[str, Any]) -> None:
@@ -2816,15 +2907,17 @@ def _click_with_forms(
     kolejności, w której zapisuje ją kliknięcie (po dniu i numerze)."""
 
     arrived = datetime(2026, 11, 9, 18, 0).astimezone()
-    mails = tuple(
-        ReadReport(
-            MailId(f"{index:016x}"),
-            arrived,
-            worker,
-            day,
-            tuple(ReportEntry(form, Intent.YES, None, "montaż") for form in sorted(forms)),
+    mails = odczyty_maili.mails(
+        *(
+            odczyty_maili.report(
+                MailId(f"{index:016x}"),
+                arrived,
+                worker,
+                day,
+                tuple(ReportEntry(form, Intent.YES, None, "montaż") for form in sorted(forms)),
+            )
+            for index, ((day, worker), forms) in enumerate(sorted(reported.items()))
         )
-        for index, ((day, worker), forms) in enumerate(sorted(reported.items()))
     )
     moves = (OwnMove(key.number, key.day, key.worker, key.day, key.worker, "Jan Testowy", arrived) for key in moved)
     return EnteringFacts(
