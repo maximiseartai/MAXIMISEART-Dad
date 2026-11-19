@@ -80,7 +80,7 @@ def _defined_in(statement: ast.stmt) -> Iterator[str]:
 def _definitions(modules: Mapping[PurePosixPath, str]) -> frozenset[str]:
     names: set[str] = set()
     for path, source in modules.items():
-        names.update(path.with_suffix("").parts)
+        names.add(path.parent.name if path.stem == "__init__" else path.stem)
         for node in ast.walk(ast.parse(source)):
             if isinstance(node, ast.stmt):
                 names.update(_defined_in(node))
@@ -151,6 +151,9 @@ def test_kazdy_identyfikator_z_glossary_jest_nazwa_zdefiniowana_w_src_albo_tools
         pytest.param("src/a.py", "class Worker:\n    active: bool\n", "Worker.active", True, id="pole-klasy"),
         pytest.param("src/a.py", "class Mark:\n    READY = 'E0CCFF'\n", "Mark.READY", True, id="skladowa-enum"),
         pytest.param("src/a.py", "class T:\n    def worker_settlement(self):\n        pass\n", "T.worker_settlement", True, id="metoda"),
+        pytest.param("src/rozliczenia/collective_file.py", "", "src", False, id="katalog-kodu-to-nie-modul"),
+        pytest.param("tools/lib/rozjazd_modelu.py", "", "lib", False, id="katalog-bez-init-to-nie-pakiet"),
+        pytest.param("src/rozliczenia/centrum/server.py", "", "rozliczenia", False, id="pakiet-nadrzedny-to-nie-ten-modul"),
         pytest.param("src/a.py", "print(release)\n", "release", False, id="nazwa-tylko-uzyta"),
         pytest.param("src/a.py", "from pathlib import Path\n", "Path", False, id="nazwa-tylko-z-importu"),
         pytest.param("src/a.py", "x = 'Release'\n", "Release", False, id="nazwa-tylko-w-napisie"),
