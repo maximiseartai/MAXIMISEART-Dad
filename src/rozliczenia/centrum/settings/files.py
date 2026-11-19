@@ -142,13 +142,15 @@ class Bad(Generic[T]):
 @final
 @dataclass(frozen=True)
 class Unreadable:
-    """Plik ``name`` (plik Ustawień: nazwa w ``config``) jest, ale system nie daje go teraz czytać (np. trzyma go
-    antywirus): treść nieznana, a nie zła, więc proces, który z niego bierze wejście, nie startuje
-    (``refusal.settings_file_unreadable``), zamiast liczyć treścią z Wydania jak tata bez własnego pliku. Klasa nie ma
-    podklas, więc gałąź ``isinstance(x, Unreadable)`` przy wartości bez unii jest dla mypy martwa (``warn_unreachable``
-    w ``src/``: „Subclass of … and "Unreadable" cannot exist”): usuń ją, bo odmowę o pliku daje już nazwa bez
-    przyrostka (``SettingsSnapshot.folders``, ``CentrumSettings.folders``). Unię bierze tylko wołający, który o pliku
-    mówi albo czeka (``*_or_unreadable``)."""
+    """Plik ``name`` jest, ale system nie daje go teraz czytać (np. trzyma go antywirus): treść nieznana, a nie zła.
+    ``name`` to nazwa pliku bez katalogu: pliku Ustawień w ``config``, a w odczycie pamięci właściciela (``Memory.read``)
+    i Historii Ustawień (``History.read``) ich własnego pliku, więc odmowa o pliku (``refusal.settings_file_unreadable``)
+    bierze tylko ``Unreadable`` pliku Ustawień. Proces, który z pliku Ustawień bez odczytu bierze wejście, nie startuje,
+    zamiast liczyć treścią z Wydania jak tata bez własnego pliku. Klasa nie ma podklas, więc gałąź
+    ``isinstance(x, Unreadable)`` przy wartości bez unii jest dla mypy martwa (``warn_unreachable`` w ``src/``:
+    „Subclass of … and "Unreadable" cannot exist”): usuń ją, bo odmowę o pliku daje już nazwa bez przyrostka
+    (``SettingsSnapshot.folders``, ``CentrumSettings.folders``). Unię bierze tylko wołający, który o pliku mówi albo
+    czeka (``*_or_unreadable``)."""
 
     name: str
 
