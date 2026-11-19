@@ -1,7 +1,8 @@
 """Przypadki Skrzynki Zgłoszeń: każda operacja ``GitHubReportBox`` i ``KeyedBox`` na repozytorium próbnym.
 
 Oczekiwany wynik każdego przypadku pochodzi z domeny (testy ``tests/test_skrzynka_zgloszen_github.py``, docstring
-``keyed_box``, ADR 0007, pomiar limitu treści z #332 przy ``COMMENT_LIMIT``), nie z przebiegu kodu. Przypadki biegną po kolei: późniejszy bierze
+``keyed_box``, ADR 0007, pomiar limitu treści z #332, który trzyma
+``tests/test_github_skrzynki.py``), nie z przebiegu kodu. Przypadki biegną po kolei: późniejszy bierze
 numery issue i komentarzy z wcześniejszych (``earlier``), a w odtwarzaniu z faktów swojego nagrania.
 """
 
@@ -54,7 +55,6 @@ LABELS_MADE: Final[tuple[Label, ...]] = (
 ABSENT_LABEL: Final[Label] = "uwaga-taty"
 PAGE: Final = 100
 SETTLE_S: Final = 90.0
-# Komentarz i jego poprawka przyjmują do tylu bajtów UTF-8 (pomiar #332 przy ``COMMENT_LIMIT``).
 COMMENT_BYTES: Final = 262_144
 
 
@@ -610,7 +610,7 @@ def _judge_deleted(facts: Facts, outcome: object) -> list[str]:
 
 REFUSED: Final = "Refused: Skrzynka odmówiła (report_box.Refused)"
 REJECTED: Final = "Rejected: Skrzynka odmówiła tej treści (report_box.Rejected)"
-LIMIT_SOURCE: Final = "report_box.COMMENT_LIMIT (pomiar #332: 65 536 znaków przechodzi, 65 537 dostaje 422)"
+LIMIT_SOURCE: Final = "tests/test_github_skrzynki.py (pomiar #332: 65 536 znaków przechodzi, 65 537 dostaje 422)"
 
 
 def _is(expected: object) -> Callable[[Facts, object], list[str]]:
