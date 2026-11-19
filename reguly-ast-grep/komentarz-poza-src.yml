@@ -7,8 +7,8 @@ message: >-
   zmiany w opisie PR; zostaje tylko komentarz, który w całości ma jedną z postaci: „# noqa: F401 - powód” (kody ruff
   rozdzielone „, ”, potem „ - ” i powód), „# type: ignore[attr-defined]” (kody mypy rozdzielone „, ”, potem koniec
   komentarza albo „  # powód”), „# ZEWNĘTRZNE: fakt (źródło)” (ograniczenie świata poza repo) albo
-  „#!/usr/bin/env python3” w pierwszej linii, bez numeru issue („#” i cyfra) i adresu github.com/maximiseartai/;
-  reguła zgłasza każdy komentarz na linii dodanej przez zmianę, także stary komentarz na końcu linii, którą zmiana
+  „#!/usr/bin/env python3” w pierwszej linii, bez numeru issue („#” i cyfra) i adresu repozytorium maximiseartai/
+  albo MAXIMISEART-AI/; reguła zgłasza każdy komentarz na linii dodanej przez zmianę, także stary komentarz na końcu linii, którą zmiana
   zmienia
 files:
   - "**/*.py"
@@ -25,7 +25,7 @@ rule:
   kind: comment
   any:
     - regex: >-
-        (?i:#\d|github\.com/maximiseartai/)
+        (?i:#\d|maximiseart-?ai/)
     - not:
         any:
           - regex: >-

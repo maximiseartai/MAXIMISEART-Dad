@@ -24,7 +24,7 @@ def oxlint(frontend: Path) -> str | None:
 def comments_on_added_lines(root: Path, base: str) -> list[odpalenia_ast_grep.Finding]:
     added: dict[str, set[int]] = {}
     for path, number, _ in odpalenia_ast_grep.Changes(root, base, FRONTEND).added():
-        added.setdefault(path, set()).add(number)
+        added.setdefault(PurePath(path).relative_to(FRONTEND).as_posix(), set()).add(number)
     if not added:
         return []
     frontend = root / FRONTEND
@@ -35,18 +35,32 @@ def comments_on_added_lines(root: Path, base: str) -> list[odpalenia_ast_grep.Fi
         config = Path(folder, CONFIG)
         only_rule = {"jsPlugins": [{"name": "repo", "specifier": str(frontend.joinpath(*PLUGIN))}], "rules": {RULE: "error"}}
         config.write_text(json.dumps(only_rule), encoding="utf-8")
-        lint = potomne.run([program, "-c", str(config), "-A", "all", *(f"--ignore-pattern={pattern}" for pattern in ignored), "--format", "json"], cwd=frontend)
+        no_ignore_file = Path(folder, "pusty-ignore")
+        no_ignore_file.write_text("", encoding="utf-8")
+        rule_only = [program, "-c", str(config), "-A", "all"]
+        listing = potomne.run(
+            [*rule_only, f"--ignore-path={no_ignore_file}", *(f"--ignore-pattern={pattern}" for pattern in ignored), "--debug=files", "--", *sorted(added)],
+            cwd=frontend,
+        )
+        linted = listing.stdout.splitlines()
+        if listing.returncode != 0 or not set(linted) <= added.keys():
+            raise odpalenia_ast_grep.ScanFailed(f"oxlint --debug=files zakończył się kodem {listing.returncode}:\n{listing.stdout}{listing.stderr}")
+        if not linted:
+            return []
+        paths = {str(frontend / name): name for name in linted}
+        lint = potomne.run([*rule_only, "--no-ignore", "--format", "json", "--", *paths], cwd=Path(folder))
     if lint.returncode not in (0, 1):
         raise odpalenia_ast_grep.ScanFailed(f"oxlint zakończył się kodem {lint.returncode}:\n{lint.stderr}")
     found = []
     for diagnostic in json.loads(lint.stdout)["diagnostics"]:
-        path = f"{FRONTEND}/{PurePath(diagnostic['filename']).as_posix()}"
+        if (name := paths.get(diagnostic["filename"])) is None:
+            raise odpalenia_ast_grep.ScanFailed(f"oxlint zgłosił plik spoza listy {diagnostic['filename']}: {diagnostic['message']}")
         if diagnostic.get("code") != CODE:
-            raise odpalenia_ast_grep.ScanFailed(f"oxlint nie sprawdził komentarzy {path}: {diagnostic['message']}")
+            raise odpalenia_ast_grep.ScanFailed(f"oxlint nie sprawdził komentarzy {FRONTEND}/{name}: {diagnostic['message']}")
         span = diagnostic["labels"][0]["span"]
-        text = (root / path).read_bytes()
+        text = (frontend / name).read_bytes()
         first = text[: span["offset"]].count(b"\n") + 1
         lines = range(first, first + text[span["offset"] : span["offset"] + span["length"]].count(b"\n") + 1)
-        if hits := sorted(added.get(path, set()).intersection(lines)):
-            found.append(odpalenia_ast_grep.Finding(path, hits[0], RULE, diagnostic["message"]))
+        if hits := sorted(added[name].intersection(lines)):
+            found.append(odpalenia_ast_grep.Finding(f"{FRONTEND}/{name}", hits[0], RULE, diagnostic["message"]))
     return sorted(found)

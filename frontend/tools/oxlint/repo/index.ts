@@ -5,7 +5,7 @@ import type { Comment } from "@oxlint/plugins";
 const ALLOWED_LINE_COMMENT =
   /^ (?:SAFETY: \S.*|@ts-expect-error \S.*|oxlint-disable-next-line [@a-z][\w/-]*(?:, [@a-z][\w/-]*)* -- \S.*|ZEWNĘTRZNE: \S.* \(\S(?:[^()]*\S)?\))$/u;
 
-const ISSUE_LINK = /#\d|github\.com\/maximiseartai\//iu;
+const ISSUE_LINK = /#\d|maximiseart-?ai\//iu;
 
 const NODE_SHEBANG = "/usr/bin/env node";
 
@@ -21,7 +21,7 @@ const noCommentsRule = defineRule({
     docs: { description: "Disallow comments except the directives, the shebang and the outside-world form the repository accepts." },
     messages: {
       comment:
-        "komentarz we frontendzie: to, co mówi, wyraź nazwą, typem albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR; zostaje tylko komentarz liniowy, który w całości ma jedną z postaci: „// SAFETY: powód” nad rzutowaniem typu, „// @ts-expect-error powód”, „// oxlint-disable-next-line reguła -- powód” albo „// ZEWNĘTRZNE: fakt (źródło)”, bez numeru issue („#” i cyfra) i adresu github.com/maximiseartai/, oraz „#!/usr/bin/env node” w pierwszej linii",
+        "komentarz we frontendzie: to, co mówi, wyraź nazwą, typem albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR; zostaje tylko komentarz liniowy, który w całości ma jedną z postaci: „// SAFETY: powód” nad rzutowaniem typu, „// @ts-expect-error powód”, „// oxlint-disable-next-line reguła -- powód” albo „// ZEWNĘTRZNE: fakt (źródło)”, bez numeru issue („#” i cyfra) i adresu repozytorium maximiseartai/ albo MAXIMISEART-AI/, oraz „#!/usr/bin/env node” w pierwszej linii",
     },
   },
   createOnce(context) {

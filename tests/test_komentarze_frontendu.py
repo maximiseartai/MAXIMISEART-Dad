@@ -130,6 +130,18 @@ _SAFETY: Final = "const value: unknown = 1\n// SAFETY: wartość ustawiona lini�
             [1],
             id="powod-z-adresem-repo",
         ),
+        pytest.param(
+            "src/a.ts",
+            "// ZEWNĘTRZNE: GitHub tnie (https://api.github.com/repos/maximiseartai/MAXIMISEART-Dad/issues/12)\nexport const a = 1\n",
+            [1],
+            id="zewnetrzne-z-adresem-api-repo",
+        ),
+        pytest.param(
+            "src/a.ts",
+            "// @ts-expect-error jak w github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/5\nexport const a: number = 'a'\n",
+            [1],
+            id="powod-z-adresem-repo-zgloszen",
+        ),
         pytest.param("scripts/a.mjs", "#!/usr/bin/env node\nexport const a = 1\n", [], id="shebang-node"),
         pytest.param("scripts/a.mjs", "#!/usr/bin/env bun\nexport const a = 1\n", [1], id="shebang-innego-programu"),
         pytest.param("src/api/generated/a.ts", "// wygenerowane\nexport const a = 1\n", [], id="kod-wygenerowany-z-ignore-patterns"),
@@ -146,6 +158,43 @@ def test_regula_no_comments_zglasza_komentarz_dodany_we_frontendzie_poza_postaci
     found = odpalenia_oxlint.comments_on_added_lines(tmp_path, base)
 
     assert [(finding.path, finding.line, finding.rule) for finding in found] == [(f"frontend/{name}", line, odpalenia_oxlint.RULE) for line in lines]
+
+
+_ESCAPED_RULE: Final = "repo/no-comment\\u0073"
+
+
+@needs_oxlint
+@pytest.mark.parametrize(
+    ("name", "hiding"),
+    [
+        pytest.param("src/a.ts", {"frontend/.eslintignore": "src/a.ts\n"}, id="eslintignore"),
+        pytest.param("src/a.ts", {"frontend/src/.eslintignore": "a.ts\n"}, id="eslintignore-w-podkatalogu"),
+        pytest.param("src/a.ts", {"frontend/src/.gitignore": "a.ts\n"}, id="plik-git-add-f-spod-gitignore"),
+        pytest.param("src/a.ts", {".gitignore": "node_modules\nfrontend/src/a.ts\n"}, id="plik-git-add-f-spod-gitignore-korzenia"),
+        pytest.param("src/a.ts", {".git/info/exclude": "frontend/src/a.ts\n"}, id="plik-git-add-f-spod-info-exclude"),
+        pytest.param("src/node_modules/a.ts", {}, id="katalog-node-modules"),
+        pytest.param("src/a.ts", {"frontend/src/.oxlintrc.json": '{ "ignorePatterns": ["a.ts"] }\n'}, id="ignore-patterns-konfiguracji-w-podkatalogu"),
+        pytest.param("src/a.ts", {"frontend/src/.oxlintrc.json": f'{{ "rules": {{ "{_ESCAPED_RULE}": "off" }} }}\n'}, id="regula-wylaczona-w-podkatalogu"),
+        pytest.param(
+            "src/a.ts",
+            {"frontend/.oxlintrc.json": f'{{ "overrides": [{{ "files": ["src/a.ts"], "rules": {{ "{_ESCAPED_RULE}": "off" }} }}] }}\n'},
+            id="overrides-konfiguracji-frontendu",
+        ),
+        pytest.param("src/a.ts", {"frontend/oxlint-suppressions.json": f'{{ "src/a.ts": {{ "{_ESCAPED_RULE}": {{ "count": 1 }} }} }}\n'}, id="plik-tlumien-oxlint"),
+    ],
+)
+def test_regula_no_comments_zglasza_komentarz_w_pliku_ktory_oxlint_pomija_poza_ignore_patterns(tmp_path: Path, name: str, hiding: dict[str, str]) -> None:
+    base = _frontend(tmp_path, {})
+    for path, text in hiding.items():
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text(text, encoding="utf-8")
+    (tmp_path / odpalenia_oxlint.FRONTEND / name).parent.mkdir(parents=True, exist_ok=True)
+    (tmp_path / odpalenia_oxlint.FRONTEND / name).write_text("// proza\nexport const a = 1\n", encoding="utf-8")
+    git(tmp_path, "add", "--force", "--", f"{odpalenia_oxlint.FRONTEND}/{name}")
+
+    found = odpalenia_oxlint.comments_on_added_lines(tmp_path, base)
+
+    assert [(finding.path, finding.line) for finding in found] == [(f"frontend/{name}", 1)]
 
 
 @needs_oxlint
@@ -199,6 +248,9 @@ ZNANE_LUKI_KOMENTARZY_FRONTENDU: Final[dict[str, dict[str, str]]] = {
     "fakt bez sprawdzenia: proza o kodzie repo w postaci ZEWNĘTRZNE": {"src/a.ts": "// ZEWNĘTRZNE: ta funkcja jest wolna (Maks)\nexport const a = 1\n"},
     "plik, którego oxlint nie czyta: CSS": {"src/a.css": "/* proza */\n.a { color: red; }\n"},
     "plik, którego oxlint nie czyta: HTML": {"index2.html": "<!-- proza -->\n<p></p>\n"},
+    "plik, którego oxlint nie czyta: JSONC jak knip.jsonc": {"knip2.jsonc": "// proza\n{}\n"},
+    "plik, którego oxlint nie czyta: JSON z komentarzem jak tsconfig.json": {"tsconfig.proba.json": '{\n  // proza\n  "compilerOptions": {}\n}\n'},
+    "plik, który oxlint czyta tylko w części skryptu: szablon .vue": {"src/a.vue": "<template>\n  <!-- proza -->\n  <p></p>\n</template>\n"},
 }
 
 

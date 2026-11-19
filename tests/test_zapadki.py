@@ -2050,6 +2050,12 @@ _REGULY_KOMENTARZY: Final[dict[str, tuple[str, ...]]] = {"komentarz-w-src": ("sr
         pytest.param(
             'x: int = "a"  # type: ignore[assignment]  # jak w github.com/maximiseartai/MAXIMISEART-Dad/pull/1\n', [1], id="type-ignore-z-adresem-repo-w-powodzie"
         ),
+        pytest.param(
+            "# ZEWNĘTRZNE: GitHub tnie (https://api.github.com/repos/maximiseartai/MAXIMISEART-Dad/issues/12)\nx = 1\n", [1], id="zewnetrzne-z-adresem-api-repo"
+        ),
+        pytest.param(
+            "import os  # noqa: F401 - jak w github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/5\n", [1], id="noqa-z-adresem-repo-zgloszen"
+        ),
         pytest.param("x = 1  # zewnętrzne: Excel blokuje plik (Excel)\n", [1], id="zewnetrzne-malymi-literami"),
         pytest.param("x = 1  # ZEWNETRZNE: Excel blokuje plik (Excel)\n", [1], id="zewnetrzne-bez-polskiej-litery"),
         pytest.param("x = 1  #ZEWNĘTRZNE: Excel blokuje plik (Excel)\n", [1], id="zewnetrzne-bez-spacji-po-haszu"),
