@@ -15,7 +15,9 @@ form into the question „Usunąć kod?” with „Nie usuwaj” and „Usuń”
 change it saves on the last Pliki zbiorcze after Przebieg rozliczeń, counted by the server with the row check of the
 Kontrola ilości: how many rows change, in how many it will be as Dad typed, the Kontrola's legend differences before and
 after, and each changed row that differs from Dad with its CZYNNOŚCI ZREALIZOWANE after the data guard (ADR 0025),
-without the address, the order numbers and the date; a row left without a code shows Dad's entry. „Zapisz” and „Usuń”
+without the address, the order numbers and the date; a row left without a code shows Dad's entry. The preview also
+counts the rows with a Błąd opisu before and after („wiersze z Błędem opisu: X → Y”) and shows each such row with
+„Błąd opisu: <reasons>” instead of codes, and Dad's entry as cells the legend will not fill. „Zapisz” and „Usuń”
 save also with differences.
 
 ## Sub-features
@@ -44,7 +46,7 @@ of `#/ustawienia/legenda-czynnosci` opens the section too.
 Run `.venv/bin/python .agents/skills/verify-centrum-rozliczen/scripts/run_centrum_verification.py --feature legenda-czynnosci`; the shared proof and the Windows form are in point 3 of [`README.md`](README.md).
 Its proof adds `api/legenda-czynnosci*.json`.
 The harness writes Dad's file of the legend in the run's `config` (first good, then bad) and removes it at the end of the step `legenda-historia`; the editor's steps write it again, and the harness removes it after `legenda-usuniecie-cofnij` and again after `legenda-podglad-usuniecia`, so the features after this one find the legend of the Release.
-The preview needs the Plik zbiorczy that `przebieg-rozliczen` settled, whose CZYNNOŚCI ZREALIZOWANE in the fixture has no code: the step `legenda-podglad` types codes and Dad's values into rows 18–20 and the harness puts the file's bytes back after `legenda-podglad-usuniecia`.
+The preview needs the Plik zbiorczy that `przebieg-rozliczen` settled, whose CZYNNOŚCI ZREALIZOWANE in the fixture has no code: the step `legenda-podglad` types codes and Dad's values into rows 18–21 (row 21 a Błąd opisu) and the harness puts the file's bytes back after `legenda-podglad-usuniecia`.
 Its proof adds `api/legenda-czynnosci-podglad.json` and `api/legenda-czynnosci-podglad-usuniecia.json` with the descriptions replaced by `<tekst wiersza>`, as in the ARIA snapshots of `430` and `432`.
 
 ## Gotchas

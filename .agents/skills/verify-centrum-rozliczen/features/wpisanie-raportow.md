@@ -14,7 +14,10 @@ Problem; Czeka, for yesterday or today without a mail, shows a clock instead of 
 column with `Św.`, a Sunday without orders struck through,
 and a ring of the entered orders of the range. A tile of a day with a Przypomnienie o raporcie wears a violet bell in its
 corner. A tile opens a popover with the day's figures, the course of its Przypomnienia and its orders, with each
-problem's sentence and `Zostaw moją`. The range changes with the arrows and a calendar, the Status filter keeps the
+problem's sentence and `Zostaw moją`; each `tak` order shows the Kody czynności the legend took from its description,
+or a calm „BRAK KODU”. A Raport z błędem tematu shows its subject after the data guard, `Błąd tematu` (what is wrong),
+`Liczony za` (the day it counts for) and `Przyszedł` (when it came), and a Raport whose subject names another day
+adds the line „Pomylony temat: raport z dniem … w temacie, Wpisy poszły do zleceń tego dnia”. The range changes with the arrows and a calendar, the Status filter keeps the
 Wykonawcy with a day of the chosen states, or with `Przypomniane` a day with a Przypomnienie, and dims the other tiles, and the Raporty from addresses outside the list
 stand under the table. At a difference with Dad's own value, `Zostaw moją` keeps his value: the difference is gone at
 once and does not come back at the next click. At a Wpis with `t`, `n`, `skuteczne` or `nieskuteczne` instead of `tak`/`nie` the popover

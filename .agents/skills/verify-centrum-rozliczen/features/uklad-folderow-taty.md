@@ -17,7 +17,7 @@ Printed by `scripts/sub_features.py --feature uklad-folderow-taty` from the driv
 
 ## How to get to it (user POV)
 
-Dad opens Ustawienia (the gear in the menu's footer), section Foldery, clicks `Zmień Folder okresów` and chooses
+Dad opens Ustawienia (the gear in the menu's footer), section Foldery, clicks `Wskaż Folder okresów` (`Zmień Folder okresów` once a folder is set) and chooses
 `Załączniki` or any week, `INEA` or month folder inside it.
 
 ## Driving it with Playwright for Python
