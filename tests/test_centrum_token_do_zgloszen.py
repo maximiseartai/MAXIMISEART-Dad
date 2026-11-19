@@ -1,10 +1,3 @@
-"""Wysyłka, która nie wyjdzie bez Maksa (Q5, Q17): Token do Zgłoszeń i treść odrzucona przez Skrzynkę Zgłoszeń.
-
-Uwaga taty i Zgłoszenie mówią przez HTTP API, na co czekają w Kolejce wysyłki, a Powiadomienia mówią to samo. Bez
-Tokenu do Zgłoszeń albo z odrzuconym czekają na token, nie na internet. Treść, którą Skrzynka odrzuciła, nie czeka na
-nic, co naprawi tata albo internet: kolejka ponawia ją dopiero przy następnym starcie Centrum.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -63,7 +56,6 @@ def test_uwaga_odrzucona_przez_skrzynke_nie_czeka_na_internet_a_nastepna_wychodz
     [sent] = started.report_box.issues_with("uwaga-taty")
     assert sent.title == "Druga"
     assert wait_for(lambda: note_states(started) == {"Pierwsza": REJECTED, "Druga": SENT})
-    # Kolejka usuwa plik dostarczonej Uwagi po zapisaniu jej stanu, a na Windows chwilę później.
     assert wait_for(lambda: len(queued(tmp_path, "uwaga-taty")) == 1)
     assert "przyczyna=odmowa-tresci" in started.log_path.read_text(encoding="utf-8")
 
@@ -85,10 +77,11 @@ def test_uwaga_odrzucona_przy_wyslij_mowi_o_tym_od_razu_a_po_starcie_centrum_kol
         assert wait_for(lambda: note_states(restarted) == {"Odrzucona": SENT})
 
 
-def test_uwaga_z_tokenem_bez_sieci_czeka_na_internet_takze_w_powiadomieniach(tmp_path: Path) -> None:
+def test_uwaga_z_tokenem_ktorego_skrzynka_bez_sieci_nie_sprawdzila_czeka_na_internet_takze_w_powiadomieniach(
+    tmp_path: Path,
+) -> None:
     write_report_key(ToolDirectory(tmp_path), KEY)
     started = centrum(tmp_path)
-    # Bez sieci Skrzynka nie sprawdziła jeszcze tokenu, więc Centrum nie wie, czy działa, i czeka na internet.
     started.report_box.search_failure = Unreachable()
     started.report_box.outcomes.append(Unreachable())
 
@@ -97,8 +90,6 @@ def test_uwaga_z_tokenem_bez_sieci_czeka_na_internet_takze_w_powiadomieniach(tmp
 
 
 def report(centrum: PreparingCentrum, run_id: str) -> dict[str, Any]:
-    """„Wyślij do Maksa” po Diagnozie Zatrzymania ``run_id``."""
-
     assert centrum.client.post(f"/api/runs/{run_id}/diagnosis").status_code == 200
     response = centrum.client.post(f"/api/runs/{run_id}/report")
     assert response.status_code == 200, response.json()
@@ -157,8 +148,6 @@ def test_odrzucona_tresc_zostaje_odrzucona_takze_gdy_potem_token_przestaje_dzial
     box.outcomes.append(Rejected())
     assert report(centrum, run_id) == REJECTED
 
-    # Token przestaje działać, ale odrzuconej treści i tak nie wyśle żaden token, więc tata dalej słyszy, że tego
-    # Zgłoszenia nie da się wysłać.
     remove_report_key(centrum.client, centrum.tool)
 
     assert current_report(centrum) == REJECTED

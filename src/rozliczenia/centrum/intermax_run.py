@@ -1,20 +1,3 @@
-"""Uporządkowanie INTERMAX z Centrum rozliczeń: karta poza okresami, wejście procesu z Ustawień Centrum i start.
-
-INTERMAX to Rejestr zleceń z Ustawień Centrum, a Kopie INTERMAX trafiają do folderu narzędzia. Proces nie należy do
-okresu: okres Uruchomienia to okres dzisiejszej daty z zegara procesu, ustalony przy starcie (ADR 0019), więc
-Logi Uruchomienia trafiają do Skrzynki Zgłoszeń przy tym okresie, także przy Zatrzymaniu przed odczytem.
-
-Dni na karcie (``days``) to Dni uporządkowane z silnika (``intermax_ordering.register_days``). Odczyt INTERMAX
-trwa (0,17–0,21 s na Macu dla kopii INTERMAX taty, 6,5 MB: mediany 7 odczytów ``register_days`` dla dni od 28.09 do
-26.10.2026), a karta pyta o dni przy każdym wejściu i powrocie do okna, więc Centrum czyta go od nowa tylko po
-zmianie znacznika zapisu (``live_file.saved_version``) albo dnia; inaczej oddaje poprzedni udany odczyt. Nieudanego odczytu (Komunikatu) nie pamięta, więc ponawia go przy następnym pytaniu,
-jak ``live_file.LastGoodReads``: OneDrive po pobraniu pliku nie zmienia jego znacznika. Uporządkowanie INTERMAX
-zmienia ten znacznik, więc dni po nim są świeże.
-
-Okno Ustawień wymienia Kopie INTERMAX z tego folderu i przywraca wybraną (``intermax_restore.restore``) w miejscu
-„jedno naraz” ``RunHost``.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -65,14 +48,6 @@ class _LastDaysRead:
 
 @dataclass(frozen=True)
 class IntermaxEntry:
-    """Adapter startu Uporządkowania INTERMAX: katalog procesów, folder Kopii INTERMAX i zależności procesu od Centrum.
-
-    ``parts``: zegar procesu, zegar Centrum i jego przerwa dla krótkiej ponownej próby podmiany, której odmawia
-    OneDrive, i kroki podmiany INTERMAX na dysku, te same dla Uporządkowania i przywrócenia Kopii. ``cloud_files``
-    rozpoznaje INTERMAX „tylko online” w OneDrive, gdy jego dni nie dają się odczytać. ``contexts``: Kontekst
-    Uruchomienia pracy Centrum; jego uchwytem plików taty karta czyta dni.
-    """
-
     settings: CentrumSettings
     catalog: Catalog
     copies_directory: Path
@@ -86,8 +61,6 @@ class IntermaxEntry:
         return "intermax"
 
     def setup(self, last: runs_contract.RunRestored | None) -> intermax_contract.IntermaxSetup:
-        """Karta przed startem z ostatnim Uporządkowaniem INTERMAX ``last`` z Logów Uruchomienia."""
-
         snapshot = self.settings.snapshot()
         register = _chosen_register(snapshot.folders_or_unreadable)
         return intermax_contract.IntermaxSetup(
@@ -99,9 +72,6 @@ class IntermaxEntry:
         )
 
     def days(self) -> intermax_contract.IntermaxDays:
-        """Dni INTERMAX z Ustawień Centrum ze stanem; bez wskazanego Rejestru zleceń albo przy pliku Folderów, którego
-        system nie daje teraz czytać, żadnych dni i żadnego Komunikatu: kartę blokuje wtedy zdanie ``setup``."""
-
         register = _chosen_register(self.settings.snapshot().folders_or_unreadable)
         if register is None:
             return intermax_contract.IntermaxDays(days=[], problem=None)
@@ -120,9 +90,6 @@ class IntermaxEntry:
         return intermax_contract.IntermaxDays(days=[_day(day, today) for day in found], problem=None)
 
     def prepare(self) -> PreparedRun[Any, Any]:
-        """Wejście procesu z Ustawień Centrum i Bazą zleceń z folderu INTERMAX; ``Refusal``, gdy Rejestr zleceń nie
-        jest wskazany."""
-
         snapshot = self.settings.snapshot()
         register = _register(snapshot)
         start = start_from_settings(
@@ -132,8 +99,6 @@ class IntermaxEntry:
         return self.catalog.prepared(self.key, start, self.parts, self.contexts.new())
 
     def copies(self) -> intermax_contract.IntermaxCopies:
-        """Kopie INTERMAX od najnowszej albo Komunikat, gdy folderu Kopii nie da się odczytać."""
-
         try:
             listed = intermax_restore.copies(self.copies_directory)
         except StopError as error:
@@ -141,8 +106,6 @@ class IntermaxEntry:
         return intermax_contract.IntermaxCopies(copies=[_copy(copy) for copy in listed], problem=None)
 
     def restore(self, name: str) -> intermax_contract.IntermaxRestore:
-        """Przywraca Kopię INTERMAX ``name`` do INTERMAX z Ustawień Centrum; ``Refusal``, gdy go nie wskazano."""
-
         register = _register(self.settings.snapshot())
         try:
             parts = self.parts
@@ -201,8 +164,6 @@ def intermax_router(
 
 
 def intermax_copies_router(host: RunHost, entry: IntermaxEntry) -> APIRouter:
-    """Kopie INTERMAX w Konfiguracji: lista od najnowszej i przywrócenie wybranej."""
-
     router = APIRouter(prefix="/api/intermax/copies", tags=["konfiguracja"])
 
     @router.get("", operation_id="getIntermaxCopies")
