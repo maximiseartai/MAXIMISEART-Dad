@@ -74,6 +74,7 @@ import time
 from typing import Any, Literal
 import zipfile
 
+from api_actions import REZERWA_POMIARU, ZRezerwa
 from github import REPO, GhApi, GitHub
 import jednostka
 from jednostka import Klucz, Rodzaj
@@ -98,7 +99,7 @@ SZUKANE_ARTEFAKTY = 30
 ZIELONE_MAIN = f"{REPO}/actions/workflows/ci.yml/runs?branch=main&event=push&status=success&per_page={SZUKANE_ARTEFAKTY}"
 LIMIT_GH_S = 30.0
 # GitHub odczytu czasów: repozytorium checkoutu, a każde zapytanie najwyżej ``LIMIT_GH_S``.
-GITHUB = GhApi(limit_s=LIMIT_GH_S)
+GITHUB = ZRezerwa(GhApi(limit_s=LIMIT_GH_S), REZERWA_POMIARU)
 # Błędy pobrania, po których odczyt bierze kopię z katalogu: sieć i ``gh`` (``BladApi`` z ``GhApi``, limit czasu),
 # odpowiedź API w innym kształcie i artefakt bez pliku.
 _BLEDY_POBRANIA = (OSError, subprocess.SubprocessError, RuntimeError, ValueError, KeyError, TypeError, zipfile.BadZipFile)
