@@ -55,7 +55,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_RE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
-from rozliczenia.centrum.report_reminders import MinuteRhythm
+from rozliczenia.centrum.report_reminders import REMINDERS_THREAD, MinuteRhythm
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
@@ -131,6 +131,7 @@ from tests.fixtures.centrum import (
     ToolDirectory,
     centrum,
     centrum_app,
+    join_threads_since,
     view_timing,
     write_report_key,
 )
@@ -146,6 +147,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
     write_dad_quantity_rules,
 )
+from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.tool_clone import tool_repository
 from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
@@ -3572,6 +3574,65 @@ def test_zatrzymane_centrum_konczy_sprawdzanie_przypomnien_co_minute(tmp_path: P
     client.start()
 
     client.stop()  # czeka na każdy wątek Centrum i wywraca test nazwą wątku, który żyje dalej
+
+
+def test_sprawdzanie_przypomnien_biegnie_zaraz_po_starcie_a_nastepne_dopiero_po_minucie() -> None:
+    """Centrum sprawdza Przypomnienia o raporcie od razu po starcie, a potem raz na minutę, nie w kółko: każde
+    sprawdzenie czyta pliki taty i pyta skrzynkę raportów."""
+
+    since = new_line()
+    calls: list[None] = []
+    first, again = threading.Event(), threading.Event()
+
+    def check() -> None:
+        calls.append(None)
+        (first if len(calls) == 1 else again).set()
+
+    rhythm = MinuteRhythm()
+    rhythm.start(check)
+    try:
+        checked = first.wait(30)
+        repeated = again.wait(1)
+    finally:
+        rhythm.stop()
+        join_threads_since(since, named=REMINDERS_THREAD)
+
+    assert (checked, repeated) == (True, False)
+
+
+_ZAMKNIECIE_W_TRAKCIE_SPRAWDZANIA_PRZYPOMNIEN: Final = (
+    "import threading\n"
+    "from rozliczenia.centrum.report_reminders import MinuteRhythm\n"
+    "checking, answer = threading.Event(), threading.Event()\n"
+    "MinuteRhythm().start(lambda: (checking.set(), answer.wait()))\n"
+    "assert checking.wait(30), 'sprawdzenie przypomnień nie zaczęło się po starcie'\n"
+    "print('sprawdza', flush=True)\n"
+)
+
+
+def test_proces_centrum_konczy_sie_mimo_sprawdzania_przypomnien_ktore_czeka_na_skrzynke() -> None:
+    """Skrzynka raportów bez sieci odpowiada dopiero po limicie czasu, a trwające sprawdzenie Przypomnień o raporcie nie
+    trzyma zamknięcia Centrum: proces kończy się, gdy skończy się jego praca."""
+
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
+    child = subprocess.Popen(
+        [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_SPRAWDZANIA_PRZYPOMNIEN],
+        cwd=ROOT,
+        env=environment,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert child.stdout is not None
+    try:
+        checking = child.stdout.readline()
+        exit_code = child.wait(timeout=30)
+    finally:
+        child.kill()
+        child.wait()
+        child.stdout.close()
+
+    assert (checking, exit_code) == ("sprawdza\n", 0)
 
 
 def test_start_centrum_sprawdza_klucz_do_zgloszen_w_tle_zanim_karta_o_cokolwiek_zapyta(tmp_path: Path) -> None:
