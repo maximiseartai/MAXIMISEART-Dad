@@ -454,9 +454,12 @@ for i in range(57):
     out = subprocess.run("pgrep -f 'straznik_gh.py --od 2026-11-07'", shell=True, capture_output=True, text=True).stdout.strip()
     if not out: break
     time.sleep(10)"""
-MAIN_RUNS = """import subprocess, time
+MAIN_RUNS = """import os, subprocess, time
 while True:
-    out = subprocess.run(["gh", "run", "list", "--branch", "main", "-L", "1", "--json", "status"], capture_output=True, text=True).stdout
+    out = subprocess.run(
+        ["gh", "run", "list", "--branch", "main", "-L", "1", "--json", "status"],
+        capture_output=True, text=True, env={**os.environ, "GH_PAGER": ""},
+    ).stdout
     if '"completed"' in out:
         break
     time.sleep(30)"""
@@ -466,7 +469,8 @@ def status():
 while "pending" in status():
     time.sleep(30)"""
 COMMAND_BEFORE_LOOP = """import subprocess, time
-CMD = ["gh", "pr", "checks", "1"]
+PR = "1"
+CMD = ("gh", "pr", "checks", PR)
 while subprocess.run(CMD, capture_output=True).returncode == 8:
     time.sleep(30)"""
 SEVERAL_PRS = """import subprocess, time
@@ -481,7 +485,7 @@ while subprocess.run(["gh", "pr", "checks", "1"], capture_output=True).returncod
 COMMAND_IN_LOOP = """import subprocess, time
 PR = 2178
 while True:
-    cmd = ["gh", "pr", "checks", str(PR)]
+    cmd = ("gh", "pr", "checks", str(PR))
     if subprocess.run(cmd).returncode != 8:
         break
     time.sleep(30)"""
@@ -501,11 +505,33 @@ SLEEP_IN_INNER_LOOP = """import subprocess, time
 while subprocess.run(["gh", "pr", "checks", "1"]).returncode == 8:
     for _ in range(30):
         time.sleep(1)"""
+GH_HELPER = """import json, subprocess, time
+def gh(*a):
+    return json.loads(subprocess.run(["gh", *a], capture_output=True, text=True).stdout or "null")
+while any(check["bucket"] == "pending" for check in gh("pr", "checks", "2178", "--json", "bucket")):
+    time.sleep(20)"""
+INNER_FOR_OVER_TUPLE = """import subprocess, time
+while True:
+    pending = 0
+    for pr in ("2178", "2179"):
+        pending += subprocess.run(["gh", "pr", "checks", pr]).returncode == 8
+    if not pending:
+        break
+    time.sleep(30)"""
+CONSTANT_FROM_TUPLE = """import subprocess, time
+PRS = ("2178", "2179")
+PR = PRS[0]
+while subprocess.run(["gh", "pr", "checks", PR]).returncode == 8:
+    time.sleep(30)"""
+CONSTANT_FROM_FSTRING = """import json, subprocess, time
+JOB = 132626412782
+URL = f"repos/o/r/actions/jobs/{JOB}"
+while json.loads(subprocess.run(["gh", "api", URL], capture_output=True).stdout)["status"] != "completed":
+    time.sleep(20)"""
 COMMAND_FROM_STRING_METHODS = """import shlex, subprocess, time
 PR = 2178
-CMD = "gh pr checks {}".format(PR).split()
-ALSO = shlex.split("gh pr checks 1")
-while subprocess.run(CMD).returncode == 8 and subprocess.run(ALSO).returncode == 8:
+CMD = "gh pr checks {}".format(PR)
+while subprocess.run(shlex.split(CMD)).returncode == 8 and subprocess.run("gh pr checks 1".split()).returncode == 8:
     time.sleep(30)"""
 
 PYTHON_WAITS = [
@@ -522,14 +548,46 @@ PYTHON_WAITS = [
     pytest.param(_heredoc(JOB_STATUS), hook.CI_LOOP, id="heredoc-gh-api-zadanie-actions"),
     pytest.param(_heredoc(MAIN_RUNS), hook.CI_LOOP, id="main-po-merge"),
     pytest.param(_heredoc(STATUS_FUNCTION), hook.CI_LOOP, id="zapytanie-w-funkcji-skryptu"),
-    pytest.param(_heredoc(COMMAND_BEFORE_LOOP), hook.CI_LOOP, id="polecenie-zbudowane-przed-petla"),
+    pytest.param(_heredoc(COMMAND_BEFORE_LOOP), hook.CI_LOOP, id="polecenie-w-krotce-przed-petla"),
     pytest.param(_heredoc(SEVERAL_PRS), hook.CI_LOOP, id="kilka-pr-w-kazdym-obrocie"),
-    pytest.param(_heredoc(COMMAND_IN_LOOP), hook.CI_LOOP, id="polecenie-zbudowane-w-petli-ze-stalych"),
+    pytest.param(_heredoc(COMMAND_IN_LOOP), hook.CI_LOOP, id="polecenie-w-krotce-zbudowanej-w-petli"),
     pytest.param(_heredoc(SLEEP_FUNCTION), hook.CI_LOOP, id="sen-w-funkcji-skryptu"),
     pytest.param(_heredoc(SLEEP_PROCESS), hook.CI_LOOP, id="sen-przez-proces"),
     pytest.param(_heredoc(IMPORTED_NAMES), hook.CI_LOOP, id="importowane-nazwy-run-i-sleep"),
     pytest.param(_heredoc(SLEEP_IN_INNER_LOOP), hook.CI_LOOP, id="sen-tylko-w-petli-wewnetrznej"),
     pytest.param(_heredoc(COMMAND_FROM_STRING_METHODS), hook.CI_LOOP, id="polecenie-z-metod-napisu"),
+    pytest.param(_heredoc(GH_HELPER), hook.CI_LOOP, id="pomocnik-gh-wolany-ze-stalymi"),
+    pytest.param(_heredoc(INNER_FOR_OVER_TUPLE), hook.CI_LOOP, id="kilka-pr-w-petli-wewnetrznej"),
+    pytest.param(_heredoc(CONSTANT_FROM_TUPLE), hook.CI_LOOP, id="stala-z-elementu-krotki"),
+    pytest.param(_heredoc(CONSTANT_FROM_FSTRING), hook.CI_LOOP, id="stala-z-f-stringu"),
+    pytest.param(_heredoc("import subprocess\n" + CHECKS_IN_CONDITION), hook.CI_LOOP, id="podwojny-import-modulu"),
+    pytest.param(
+        'f=/private/tmp/c/s/tasks/b1.output; python3 -c "\nimport os,time,sys\np = sys.argv[1]\n'
+        'while os.path.getsize(p)==0: time.sleep(5)\n" $f',
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-z-argumentu-w-zmiennej",
+    ),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
+        + _heredoc("import os, sys, time\nwhile os.path.getsize(sys.argv[-1]) == 0:\n    time.sleep(5)", program='python3 - "$F"'),
+        hook.TASK_OUTPUT_LOOP,
+        id="heredoc-plik-zadania-w-ostatnim-argumencie",
+    ),
+    pytest.param(
+        "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
+        + _heredoc(
+            "import os, sys, time\nwhile not any(os.path.getsize(p) for p in sys.argv[1:]):\n    time.sleep(5)",
+            program='python3 - "$F"',
+        ),
+        hook.TASK_OUTPUT_LOOP,
+        id="heredoc-plik-zadania-w-wycinku-argumentow",
+    ),
+    pytest.param(
+        'f=/private/tmp/c/s/tasks/b1.output; python3 -c "\nimport os,time,sys\n'
+        'while os.path.getsize(sys.argv[-1])==0: time.sleep(5)\n" 5179 $f',
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-w-ostatnim-argumencie",
+    ),
     pytest.param(f"\"/usr/bin/python3\" -c '{CHECKS_IN_CONDITION}'", hook.CI_LOOP, id="program-pythona-w-cudzyslowie"),
     pytest.param(_heredoc(CHECKS_TRIES, program='"/usr/bin/python3" -'), hook.CI_LOOP, id="heredoc-program-w-cudzyslowie"),
     pytest.param(
@@ -712,6 +770,25 @@ PORT_ARGUMENT = """import sys, time, urllib.request
     except OSError:
         time.sleep(1)
 print(open(sys.argv[1]).read()[-2000:])"""
+CHANGE_IN_CALL = """import heapq, itertools, json, subprocess, time
+pages = itertools.count(1)
+runs = iter([44439947891, 44439947892])
+todo = [44439947892, 44439947891]
+while todo:
+    out = subprocess.run(["gh", "api", f"repos/o/r/actions/runs?page={next(pages)}"], capture_output=True, text=True).stdout
+    subprocess.run(["gh", "run", "view", str(next(runs)), "--log-failed"])
+    subprocess.run(["gh", "run", "view", str(heapq.heappop(todo)), "--log-failed"])
+    time.sleep(1)"""
+PAGE_IN_GLOBAL = """import json, subprocess, time
+page = 1
+def advance():
+    global page
+    page += 1
+while True:
+    out = subprocess.run(["gh", "api", f"repos/o/r/actions/runs?page={page}"], capture_output=True, text=True).stdout
+    if not json.loads(out)["workflow_runs"]: break
+    advance()
+    time.sleep(1)"""
 FILE_WITH_CI_WORDS = """import os, time
 while not os.path.exists("wynik.json"):
     print("czekam na wynik, potem gh pr checks 1")
@@ -731,6 +808,47 @@ PYTHON_PASSING = [
     pytest.param(_heredoc(QUEUE_HEAD.format(shorten="heapq.heappop(todo)")), id="kolejka-skracana-funkcja-modulu"),
     pytest.param(_heredoc(QUEUE_OBJECT), id="kolejka-przesuwana-metoda-obiektu"),
     pytest.param(_heredoc(ITERATOR), id="kolejka-z-iteratora"),
+    pytest.param(_heredoc(CHANGE_IN_CALL), id="zmiana-w-wywolaniu-procesu"),
+    pytest.param(
+        _heredoc('import subprocess, time\nfor pr in ("2178", "2179"):\n    subprocess.run(["gh", "pr", "checks", pr])\n    time.sleep(1)'),
+        id="partia-po-stalej-krotce",
+    ),
+    pytest.param(
+        _heredoc(
+            "import subprocess, time\ntodo = [44439947891, 44439947892]\nwhile todo:\n"
+            '    subprocess.run(["gh", "run", "view", str(todo[0]), "--log-failed"])\n    del todo[0]\n    time.sleep(1)'
+        ),
+        id="kolejka-w-liscie-skracana-del",
+    ),
+    pytest.param(
+        _heredoc(
+            'import json, subprocess, time\ndef view(rid):\n    subprocess.run(["gh", "run", "view", str(rid), "--log-failed"])\n'
+            'for rid in json.load(open("runs.json")):\n    view(rid)\n    time.sleep(1)'
+        ),
+        id="partia-przez-funkcje-skryptu",
+    ),
+    pytest.param(
+        _heredoc(
+            "import json, subprocess, time\nRUN = 44439947891\ndef logs(RUN):\n    for _ in range(3):\n"
+            '        if subprocess.run(["gh", "run", "view", str(RUN), "--log-failed"]).returncode == 0:\n            return\n'
+            '        time.sleep(5)\nfor run in json.load(open("runs.json")):\n    logs(run)'
+        ),
+        id="ponowienie-w-funkcji-z-parametrem-jak-stala",
+    ),
+    pytest.param(
+        _heredoc(
+            "import subprocess, sys, time\nARGS = sys.argv[1:]\nwhile ARGS:\n"
+            '    subprocess.run(["gh", "run", "view", ARGS[0], "--log-failed"])\n    ARGS.pop(0)\n    time.sleep(1)',
+            program="python3 - 44439947891 44439947892",
+        ),
+        id="kolejka-z-wycinka-argumentow",
+    ),
+    pytest.param(_heredoc(PAGE_IN_GLOBAL), id="strony-w-zmiennej-globalnej-funkcji"),
+    pytest.param(
+        "python3 -c \"import subprocess, time  # stara pętla: \\\nwhile subprocess.run(['gh', 'pr', 'checks', '1'])"
+        '.returncode == 8: time.sleep(30)\nprint(1)"',
+        id="c-petla-w-komentarzu-przedluzonym-ukosnikiem",
+    ),
     pytest.param(
         "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
         + _heredoc(PORT_ARGUMENT.format(port="", read="sys.argv[2]"), program='python3 - "$F" 5179'),
@@ -794,6 +912,23 @@ QUERY = "subprocess.run(['gh', 'pr', 'checks', '1'])"
 SHORT_SLEEP = "import time\ntime.sleep(0)"
 NODE_BUDGET_SCRIPT = _nested_python_loops(60, "x = [" + "a," * 2000 + "]")
 ZNANE_LUKI = [
+    pytest.param(
+        _heredoc('import subprocess, time\ncmd = ["gh", "pr", "checks", "2178"]\nwhile subprocess.run(cmd).returncode == 8:\n    time.sleep(30)'),
+        id="polecenie-w-nazwanej-liscie",
+    ),
+    pytest.param(
+        _heredoc(
+            'import subprocess, time\nCMD = "gh pr checks 1".split()\nwhile subprocess.run(CMD).returncode == 8:\n    time.sleep(30)'
+        ),
+        id="polecenie-z-split-w-nazwanej-liscie",
+    ),
+    pytest.param(
+        _heredoc(
+            "import subprocess, time\nwhile True:\n    cmd = ['gh', 'pr', 'checks', '1']\n"
+            "    if subprocess.run(cmd).returncode != 8: break\n    time.sleep(30)"
+        ),
+        id="polecenie-w-liscie-zbudowanej-w-petli",
+    ),
     pytest.param(
         "\n".join([NODE_BUDGET_SCRIPT] * 2 + [_heredoc(CHECKS_IN_CONDITION + "\nx = 1" * 4000)]),
         id="czekanie-dluzsze-niz-skrypty-ponad-budzet-wezlow",
@@ -997,6 +1132,15 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         (_heredoc(SHORT_SLEEP) + "\n") * (hook.PYTHON_SOURCE_LIMIT // len(SHORT_SLEEP) // 2) + _heredoc(CHECKS_IN_CONDITION),
         _nested_python_loops(90, "x = [" + "1," * 5000 + "]", inner=QUERY),
         "\n".join([NODE_BUDGET_SCRIPT] * 14 + [_heredoc(CHECKS_IN_CONDITION)]),
+        _heredoc(CHECKS_IN_CONDITION)
+        + "\n"
+        + _heredoc(
+            "import subprocess, time\n"
+            + " = ".join(f"a{index}" for index in range(7000))
+            + " = [" + "0," * 7000 + "len('x')]\nfor pr in [1, 2, 3]:\n    subprocess.run(["
+            + ", ".join(f"a{index}" for index in range(7000))
+            + "])\n    time.sleep(1)"
+        ),
     ],
     ids=[
         "ogon-przekierowan",
@@ -1014,6 +1158,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "skrypty-pythona-ze-sleep-do-limitu-przed-czekaniem",
         "petle-pythona-zagniezdzone-z-zapytaniem-w-najglebszej",
         "skrypty-pythona-do-budzetu-wezlow-przed-czekaniem",
+        "przypisanie-lancuchowe-za-czekaniem",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:

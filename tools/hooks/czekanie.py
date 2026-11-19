@@ -18,13 +18,13 @@ i koniec tury; ``tools/hooks/praca_w_tle.py`` podaje ten sam tekst, a test pilnu
 - pętlę z ``sleep``, w której stoi plik wyjścia zadania w tle (``tasks/<id>.output``) wprost albo przez zmienną, której
   polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``);
 - pętlę skryptu Pythona (``python3 -c '…'`` i heredoc, który Python czyta ze stdin), w której ``sleep`` stoi w jej
-  ciele (także w pętli wewnętrznej), a w obrocie stoi wywołanie z tymi samymi argumentami w każdym obrocie: proces z
-  ``gh`` o CI albo z ``pgrep -f`` (``subprocess``, ``os.system``, ``os.popen`` albo funkcja skryptu, która je woła) albo
-  odczyt pliku wyjścia zadania (ścieżka w skrypcie, w zmiennej powłoki albo w ``sys.argv[N]``, gdy N-ty argument
-  skryptu to ten plik). Argument zmienia się między obrotami, gdy pętla zmienia nazwę, od której zależy: wiąże ją
-  (cel ``for``, ``+=``, wynik wywołania) albo zmienia jej wartość w miejscu (zapis albo ``del`` elementu lub
-  atrybutu, ``pop``, wywołanie dla skutku z nią jako odbiorcą albo argumentem, poza procesem, snem i ``print``), więc
-  partia zapytań po liście, stronach albo kolejce, także z ``break`` przy limicie API, przechodzi. Skrypt czyta
+  ciele (także w pętli wewnętrznej), a w obrocie stoi wywołanie, którego każde wejście jest stałą: proces z ``gh`` o CI
+  albo z ``pgrep -f`` (``subprocess``, ``os.system``, ``os.popen`` albo funkcja skryptu, wołana ze stałymi) albo
+  odczyt pliku wyjścia zadania (ścieżka w napisie, w zmiennej powłoki albo w ``sys.argv``, gdy wybrany argument
+  skryptu to ten plik). Stała to literał, moduł, element ``sys.argv``, czysta funkcja stałych (``str``, ``split``,
+  ``format``, ``Path``), nazwa związana w skrypcie raz przypisaniem wartości niezmiennej (napis, liczba, krotka) albo
+  nazwa iterowana po stałej poza celem samej pętli. Partia zapytań po liście, stronach albo kolejce ma w zapytaniu
+  cel pętli albo wartość, którą pętla zmienia, więc przechodzi, także z ``break`` przy limicie API. Skrypt czyta
   ``ast``, od najkrótszego, a ocena wszystkich skryptów polecenia ma jeden limit długości i jeden budżet węzłów.
 
 Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` albo licznikiem prób od 0 albo 1
@@ -145,7 +145,7 @@ REDIRECTION_ALONE = re.compile(r"\d*(?:<<?|>>?|&>>?|>&|<&)-?")
 PYTHON_COMMAND_END = re.compile(r"[;\n(){}`]|\|\|?|&&|(?<![<>])&(?!>)")
 COMMENT_AFTER = frozenset(" \t\n;&|(")
 PYTHON_SCRIPT = re.compile("\x00(\\d+)\x00")
-DOUBLE_QUOTED_ESCAPE = re.compile(r'\\([$`"\\])')
+DOUBLE_QUOTED_ESCAPE = re.compile(r'\\([$`"\\\n])')
 RUNS_PROCESS = frozenset(
     {
         "run",
@@ -161,11 +161,14 @@ RUNS_PROCESS = frozenset(
         "create_subprocess_shell",
     }
 )
-KEEPS_VALUE = frozenset(
-    {"str", "int", "float", "repr", "bool", "format", "tuple", "list", "split", "join", "strip", "replace", "lower", "upper"}
+GIVES_IMMUTABLE = frozenset(
+    {"str", "int", "float", "repr", "bool", "format", "tuple", "join", "strip", "replace", "lower", "upper", "Path", "PurePath"}
 )
-TAKES_FROM = frozenset({"pop", "popleft", "popitem"})
-LEAVES_VALUES = RUNS_PROCESS | {"sleep", "print"}
+KEEPS_VALUE = GIVES_IMMUTABLE | {"list", "split"}
+CONTAINERS = (
+    ast.List, ast.Tuple, ast.Set, ast.JoinedStr, ast.FormattedValue, ast.BinOp, ast.UnaryOp, ast.Starred, ast.Subscript, ast.Slice
+)
+OPERATORS = (ast.expr_context, ast.operator, ast.unaryop)
 PYTHON_SOURCE_LIMIT = 200_000
 PYTHON_NODES_LIMIT = 1_000_000
 
@@ -295,7 +298,7 @@ def _script_text(command: str, quote: int, end: int) -> str:
     text = command[quote + 1 : end - 1 if closed else len(command)]
     if command[quote] == "'":
         return text
-    return DOUBLE_QUOTED_ESCAPE.sub(r"\1", text)
+    return DOUBLE_QUOTED_ESCAPE.sub(lambda escaped: "" if escaped.group(1) == "\n" else escaped.group(1), text)
 
 
 def _comment_starts(command: str, index: int, start: int) -> bool:
@@ -604,50 +607,64 @@ def _called(call: ast.Call) -> str:
     return call.func.id if isinstance(call.func, ast.Name) else ""
 
 
-def _changes_value(node: ast.AST) -> bool:
-    return isinstance(node, ast.Call) and _called(node) not in KEEPS_VALUE
+def _is_sys_argv(node: ast.AST) -> bool:
+    return isinstance(node, ast.Attribute) and node.attr == "argv" and isinstance(node.value, ast.Name) and node.value.id == "sys"
 
 
-def _names(target: ast.AST) -> list[ast.Name]:
-    return [node for node in ast.walk(target) if isinstance(node, ast.Name)]
+def _integer(node: Optional[ast.AST]) -> Optional[int]:
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        inner = _integer(node.operand)
+        return None if inner is None else -inner
+    if isinstance(node, ast.Constant) and type(node.value) is int:
+        return node.value
+    return None
 
 
-def _root(node: ast.AST) -> Optional[str]:
-    while isinstance(node, (ast.Attribute, ast.Subscript)):
-        node = node.value
-    return node.id if isinstance(node, ast.Name) else None
-
-
-def _reads_argument(node: ast.AST, arguments: frozenset[int]) -> bool:
-    return (
-        isinstance(node, ast.Subscript)
-        and isinstance(node.value, ast.Attribute)
-        and node.value.attr == "argv"
-        and _root(node.value) == "sys"
-        and isinstance(node.slice, ast.Constant)
-        and node.slice.value in arguments
-    )
+def _selected(words: list[str], index: ast.AST) -> list[str]:
+    if isinstance(index, ast.Slice):
+        bounds: list[Optional[int]] = []
+        for part in (index.lower, index.upper, index.step):
+            bound = None if part is None else _integer(part)
+            if part is not None and bound is None:
+                return []
+            bounds.append(bound)
+        return [] if bounds[2] == 0 else words[slice(*bounds)]
+    place = _integer(index)
+    return [words[place]] if place is not None and -len(words) <= place < len(words) else []
 
 
 class _PythonScript:
-    def __init__(self, tree: ast.Module, task_arguments: frozenset[int], variables: frozenset[str], visits: _Visits) -> None:
-        self.task_arguments, self.variables, self.visits = task_arguments, variables, visits
-        self.functions: dict[str, ast.FunctionDef] = {}
-        self.values: dict[str, list[ast.expr]] = defaultdict(list)
-        self.modules: set[str] = set()
-        self.command_texts: dict[str, str] = {}
-        self.function_texts: dict[str, str] = {}
+    def __init__(self, tree: ast.Module, argv: list[str], variables: frozenset[str], visits: _Visits) -> None:
+        self.argv, self.variables, self.visits = argv, variables, visits
+        self.bindings: dict[str, int] = defaultdict(int)
+        self.values: dict[str, ast.expr] = {}
+        self.iterated: dict[str, tuple[ast.expr, ast.AST]] = {}
+        self.imports: dict[str, int] = defaultdict(int)
+        self.named: dict[str, bool] = {}
         self.function_sleeps: dict[str, bool] = {}
-        self.task_names: dict[str, bool] = {}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.FunctionDef):
-                self.functions[node.name] = node
-            elif isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name):
-                        self.values[target.id].append(node.value)
-            elif isinstance(node, (ast.Import, ast.ImportFrom)):
-                self.modules.update(alias.asname or alias.name.split(".")[0] for alias in node.names)
+        for node in self.nodes(tree):
+            self.bind(node)
+            if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+                self.values[node.targets[0].id] = node.value
+            elif isinstance(node, (ast.For, ast.comprehension)) and isinstance(node.target, ast.Name):
+                self.iterated[node.target.id] = (node.iter, node)
+        self.functions = {
+            node.name: node for node in tree.body if isinstance(node, ast.FunctionDef) and self.bindings[node.name] == 1
+        }
+        self.modules = {name for name, count in self.imports.items() if self.bindings[name] == count}
+
+    def bind(self, node: ast.AST) -> None:
+        if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store):
+            self.bindings[node.id] += 1
+        elif isinstance(node, ast.arg):
+            self.bindings[node.arg] += 1
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            self.bindings[node.name] += 1
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                bound = alias.asname or alias.name.split(".")[0]
+                self.bindings[bound] += 1
+                self.imports[bound] += 1
 
     def nodes(self, *roots: ast.AST) -> Iterator[ast.AST]:
         stack = list(reversed(roots))
@@ -681,7 +698,7 @@ class _PythonScript:
             return True
         if isinstance(call.func, ast.Name) and call.func.id in self.functions:
             return self.function_sleep(call.func.id)
-        return _called(call) in RUNS_PROCESS and SLEEP.search(self.command_text(call)) is not None
+        return _called(call) in RUNS_PROCESS and SLEEP.search(" ".join(self.parts(call))) is not None
 
     def function_sleep(self, name: str) -> bool:
         if name not in self.function_sleeps:
@@ -690,132 +707,120 @@ class _PythonScript:
             self.function_sleeps[name] = any(self.sleeps(call) for call in calls)
         return self.function_sleeps[name]
 
-    def command_text(self, node: ast.AST) -> str:
-        words: list[str] = []
-        for child in self.nodes(node):
-            if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                words.append(child.value)
-            elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load):
-                words.append(self.name_text(child.id))
-        return " ".join(word for word in words if word)
-
-    def name_text(self, name: str) -> str:
-        if name not in self.command_texts:
-            self.command_texts[name] = ""
-            data = [value for value in self.values.get(name, ()) if not any(map(_changes_value, ast.walk(value)))]
-            self.command_texts[name] = " ".join(self.command_text(value) for value in data)
-        return self.command_texts[name]
-
-    def query_text(self, call: ast.Call) -> str:
-        if isinstance(call.func, ast.Name) and call.func.id in self.functions:
-            return f"{self.function_text(call.func.id)} {self.command_text(call)}"
-        return self.command_text(call) if _called(call) in RUNS_PROCESS else ""
-
-    def function_text(self, name: str) -> str:
-        if name not in self.function_texts:
-            self.function_texts[name] = ""
-            calls = [node for node in self.nodes(self.functions[name]) if isinstance(node, ast.Call)]
-            self.function_texts[name] = " ".join(self.query_text(call) for call in calls)
-        return self.function_texts[name]
-
-    def reads_task_file(self, node: ast.AST) -> bool:
-        for child in self.nodes(node):
-            if isinstance(child, ast.Constant) and isinstance(child.value, str):
-                if TASK_OUTPUT.search(child.value) or any(
-                    found.group(1) in self.variables for found in REFERENCE.finditer(child.value)
-                ):
-                    return True
-            elif isinstance(child, ast.Name) and isinstance(child.ctx, ast.Load) and self.task_name(child.id):
-                return True
-            elif _reads_argument(child, self.task_arguments):
-                return True
+    def constant(self, node: ast.AST, loop: Optional[ast.AST], params: frozenset[str] = frozenset()) -> bool:
+        self.visits.step()
+        if isinstance(node, ast.Constant):
+            return True
+        if isinstance(node, ast.Name):
+            return (
+                node.id in params
+                or node.id in self.modules
+                or self.named_constant(node.id)
+                or self.iterated_constant(node.id, loop, params)
+            )
+        if isinstance(node, ast.Attribute):
+            return self.constant(node.value, loop, params)
+        if isinstance(node, ast.Call):
+            return _called(node) in KEEPS_VALUE and self.inputs_constant(node, loop, params)
+        if isinstance(node, ast.Dict):
+            return all(key is None or self.constant(key, loop, params) for key in node.keys) and all(
+                self.constant(value, loop, params) for value in node.values
+            )
+        if isinstance(node, CONTAINERS):
+            return all(self.constant(child, loop, params) for child in ast.iter_child_nodes(node) if not isinstance(child, OPERATORS))
         return False
 
-    def task_name(self, name: str) -> bool:
-        if name not in self.task_names:
-            self.task_names[name] = False
-            self.task_names[name] = any(self.reads_task_file(value) for value in self.values.get(name, ()))
-        return self.task_names[name]
+    def iterated_constant(self, name: str, loop: Optional[ast.AST], params: frozenset[str]) -> bool:
+        iterated = self.iterated.get(name)
+        return iterated is not None and self.bindings[name] == 1 and iterated[1] is not loop and self.constant(iterated[0], loop, params)
 
-    def changed_in_place(self, region: list[ast.AST]) -> set[str]:
-        changed: set[Optional[str]] = set()
-        for node in region:
-            if isinstance(node, (ast.Subscript, ast.Attribute, ast.Name)) and isinstance(node.ctx, ast.Del):
-                changed.add(_root(node))
-            elif isinstance(node, (ast.Subscript, ast.Attribute)) and isinstance(node.ctx, ast.Store):
-                changed.add(_root(node))
-            elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in TAKES_FROM:
-                changed.add(_root(node.func.value))
-            elif isinstance(node, ast.Expr) and isinstance(node.value, ast.Call) and _called(node.value) not in LEAVES_VALUES:
-                call = node.value
-                receiver = call.func.value if isinstance(call.func, ast.Attribute) else None
-                changed.update(_root(part) for part in [receiver, *call.args] if part is not None)
-        return {name for name in changed if name is not None and name not in self.modules}
+    def named_constant(self, name: str) -> bool:
+        if name not in self.named:
+            self.named[name] = False
+            value = self.values.get(name)
+            self.named[name] = self.bindings[name] == 1 and value is not None and self.immutable(value)
+        return self.named[name]
 
-    def varying(self, loop: ast.AST, region: list[ast.AST]) -> set[str]:
-        varying = {name.id for name in _names(loop.target)} if isinstance(loop, ast.For) else set()
-        varying |= self.changed_in_place(region)
-        bindings: list[tuple[set[str], ast.AST]] = []
-        valued: set[int] = set()
-        for node in region:
-            if isinstance(node, ast.Assign):
-                targets = [name for target in node.targets for name in _names(target)]
-                bindings.append(({name.id for name in targets}, node.value))
-            elif isinstance(node, (ast.For, ast.comprehension)):
-                targets = _names(node.target)
-                bindings.append(({name.id for name in targets}, node.iter))
-            else:
-                continue
-            valued.update(id(name) for name in targets)
-        stores = (node for node in region if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Store))
-        varying |= {node.id for node in stores if id(node) not in valued}
-        dependents: dict[str, list[int]] = defaultdict(list)
-        for index, (names, value) in enumerate(bindings):
-            reads = set()
-            for node in self.nodes(value):
-                if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load):
-                    reads.add(node.id)
-                elif _changes_value(node):
-                    varying |= names
-            if reads & names:
-                varying |= names
-            for name in reads:
-                dependents[name].append(index)
-        queue = list(varying)
-        while queue:
-            for index in dependents.get(queue.pop(), ()):
-                new = bindings[index][0] - varying
-                varying |= new
-                queue.extend(new)
-        return varying
+    def immutable(self, node: ast.AST) -> bool:
+        if isinstance(node, ast.Constant):
+            return True
+        if isinstance(node, ast.Name):
+            return self.named_constant(node.id)
+        if isinstance(node, (ast.Tuple, ast.BinOp, ast.UnaryOp)):
+            return all(self.immutable(child) for child in ast.iter_child_nodes(node) if not isinstance(child, OPERATORS))
+        if isinstance(node, ast.JoinedStr):
+            return self.constant(node, None)
+        if isinstance(node, ast.Call):
+            return _called(node) in GIVES_IMMUTABLE and self.inputs_constant(node, None)
+        if isinstance(node, ast.Subscript):
+            if _is_sys_argv(node.value):
+                return not isinstance(node.slice, ast.Slice) and self.constant(node.slice, None)
+            return self.immutable(node.value) and self.constant(node.slice, None)
+        return False
+
+    def inputs(self, call: ast.Call) -> list[ast.AST]:
+        receiver: list[ast.AST] = [call.func.value] if isinstance(call.func, ast.Attribute) else []
+        return receiver + list(call.args) + [keyword.value for keyword in call.keywords]
+
+    def inputs_constant(self, call: ast.Call, loop: Optional[ast.AST], params: frozenset[str] = frozenset()) -> bool:
+        return all(self.constant(part, loop, params) for part in self.inputs(call))
+
+    def parts(self, node: ast.AST) -> list[str]:
+        self.visits.step()
+        if isinstance(node, ast.Constant):
+            return [str(node.value)] if type(node.value) in (str, int, float) else []
+        if isinstance(node, ast.JoinedStr):
+            return ["".join(word for value in node.values for word in self.parts(value))]
+        if isinstance(node, ast.Name) and self.named_constant(node.id):
+            return self.parts(self.values[node.id])
+        if isinstance(node, ast.Name) and node.id in self.iterated and self.bindings[node.id] == 1:
+            return self.parts(self.iterated[node.id][0])
+        if isinstance(node, ast.Subscript) and _is_sys_argv(node.value):
+            return _selected(self.argv, node.slice)
+        return [word for child in ast.iter_child_nodes(node) for word in self.parts(child)]
+
+    def judged_calls(self, call: ast.Call, loop: ast.AST) -> Iterator[tuple[ast.Call, list[str]]]:
+        if isinstance(call.func, ast.Name) and call.func.id in self.functions:
+            if self.inputs_constant(call, loop):
+                function = self.functions[call.func.id]
+                arguments = function.args
+                params = frozenset(
+                    argument.arg
+                    for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg]
+                    if argument is not None
+                )
+                site = [word for part in self.inputs(call) for word in self.parts(part)]
+                for inner in self.nodes(*function.body):
+                    if isinstance(inner, ast.Call) and self.inputs_constant(inner, None, params):
+                        yield inner, site
+        elif self.inputs_constant(call, loop):
+            yield call, []
 
     def waits(self, loop: ast.AST) -> set[Refusal]:
         roots = [loop.test, *loop.body] if isinstance(loop, ast.While) else list(getattr(loop, "body", []))
-        region = list(self.nodes(*roots))
-        varying = self.varying(loop, region)
         found: set[Refusal] = set()
-        for call in region:
-            if not isinstance(call, ast.Call):
-                continue
-            if any(isinstance(node, ast.Name) and node.id in varying for node in self.nodes(call)):
-                continue
-            if self.reads_task_file(call):
-                found.add(TASK_OUTPUT_LOOP)
-            query = self.query_text(call)
-            if ASKS_CI.search(query) or _in_one_command(query, GH_API, CI_ADDRESS).starts:
-                found.add(CI_LOOP)
-            if PGREP.search(query):
-                found.add(PGREP_LOOP)
+        for call in [node for node in self.nodes(*roots) if isinstance(node, ast.Call)]:
+            for judged, site in self.judged_calls(call, loop):
+                words = [word for part in self.inputs(judged) for word in self.parts(part)] + site
+                if any(_task_files(word, self.variables) for word in words):
+                    found.add(TASK_OUTPUT_LOOP)
+                if _called(judged) not in RUNS_PROCESS:
+                    continue
+                text = " ".join(words)
+                if ASKS_CI.search(text) or _in_one_command(text, GH_API, CI_ADDRESS).starts:
+                    found.add(CI_LOOP)
+                if PGREP.search(text):
+                    found.add(PGREP_LOOP)
         return found
 
 
-def _python_waits(source: str, task_arguments: frozenset[int], variables: frozenset[str], visits: _Visits) -> set[Refusal]:
+def _python_waits(source: str, argv: list[str], variables: frozenset[str], visits: _Visits) -> set[Refusal]:
     found: set[Refusal] = set()
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             tree = ast.parse(source)
-        script = _PythonScript(tree, task_arguments, variables, visits)
+        script = _PythonScript(tree, argv, variables, visits)
         for loop in script.sleeping_loops(tree):
             found |= script.waits(loop)
     except (SyntaxError, RecursionError, _ScriptTooLong):
@@ -843,9 +848,8 @@ def _python_refusal(
         index = bisect_left(command_ends, at)
         start = separators[index - 1].end() if index else 0
         end = command_ends[index] if index < len(command_ends) else len(shell)
-        arguments = _script_arguments(shell[start:end], marker_text, number < heredocs)
-        tasks = frozenset(place + 1 for place, word in enumerate(arguments) if _task_files(word, variables))
-        found |= _python_waits(python[number], tasks, variables, visits)
+        argv = ["", *_script_arguments(shell[start:end], marker_text, number < heredocs)]
+        found |= _python_waits(python[number], argv, variables, visits)
     return next((refusal for refusal in (CI_LOOP, PGREP_LOOP, TASK_OUTPUT_LOOP) if refusal in found), None)
 
 
