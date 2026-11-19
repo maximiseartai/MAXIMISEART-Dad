@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 import copy
 import dataclasses
 import enum
 import functools
 import hashlib
 import inspect
+import itertools
 import json
 import os
 from pathlib import Path
@@ -26,14 +27,21 @@ if TYPE_CHECKING:
 MODUL_ZMIAN: Final = "src/rozliczenia/centrum/settings/release_changes.py"
 NOWY_WPIS: Final = (
     "u taty ta Zmiana z Wydania już weszła i właściciel Ustawień ma jej id w pamięci, więc zmieniona nie pobiegnie "
-    "drugi raz: przywróć ją taką, jaka jest w tagu Wydania, i dopisz do RELEASE_CHANGES "
-    "(rozliczenia.centrum.settings.release_changes) nowy ReleaseChange z nowym id obok wpisów tego samego pliku"
+    "drugi raz: przywróć ją taką, jaka jest w tagu Wydania, a to, co ma się jeszcze zmienić u taty, dopisz do "
+    "RELEASE_CHANGES (rozliczenia.centrum.settings.release_changes) jako nowy ReleaseChange z nowym id obok wpisów "
+    "tego samego pliku"
+)
+INNY_KOD: Final = (
+    f"gdy to poprawka wpisu w miejscu albo wpis sięga teraz po inną definicję, {NOWY_WPIS}; gdy to nowa nazwa albo "
+    "nowy moduł definicji innego modułu, po którą wpis sięga, wpisu nie zmieniaj ani nie przepinaj, tylko zostaw w "
+    "module propose nazwę z tagu (from … import nowa as stara albo alias stara = nowa w jej module), a definicji, "
+    "której moduł propose nie wiąże nazwą, przywróć moduł i nazwę z tagu"
 )
 GRANICA_ODCISKU: Final = (
     "odcisk Zmiany z Wydania bierze propose, które jest funkcją albo functools.partial, i to, po co sięga w biegu: "
     "funkcje i klasy modułu propose ze źródłem w pliku, dane (stała, krotka, lista, słownik, zbiór, Enum, dataclass) i "
-    "nazwy definicji innych modułów; obiekt innej klasy, metodę obiektu, funkcję bez źródła w pliku albo pod "
-    "functools.lru_cache i dwie lambdy w jednej linii zamień na funkcję modułu albo dataclass"
+    "nazwy, pod którymi moduł propose wiąże definicje innych modułów; obiekt innej klasy, metodę obiektu, funkcję bez "
+    "źródła w pliku albo pod functools.lru_cache i dwie lambdy w jednej linii zamień na funkcję modułu albo dataclass"
 )
 _STALE: Final = (bool, int, float, str, bytes)
 _LIMIT_ODCZYTU_S: Final = 120
@@ -43,6 +51,7 @@ _LIMIT_ODCZYTU_S: Final = 120
 class Wpis:
     plik: str
     odcisk: str
+    drzewo: object = dataclasses.field(default=None, compare=False, repr=False)
 
 
 def _nazwy_kodu(kod: CodeType) -> set[str]:
@@ -110,36 +119,41 @@ class _Odcisk:
         self._modul = modul
         self._w_toku: set[int] = set()
         self._drzewa: dict[str, ast.Module] = {}
+        self._nazwy: dict[int, list[str]] = {}
+        for nazwa, wartosc in sorted(vars(sys.modules[modul]).items() if modul in sys.modules else ()):
+            self._nazwy.setdefault(id(wartosc), []).append(nazwa)
 
     def wartosc(self, wartosc: object) -> object:
         if wartosc is None or type(wartosc) in _STALE:
-            return ["stała", repr(wartosc)]
+            return {"stała": repr(wartosc)}
         if type(wartosc) is tuple or type(wartosc) is list:
-            return [type(wartosc).__name__, [self.wartosc(element) for element in wartosc]]
+            return {type(wartosc).__name__: [self.wartosc(element) for element in wartosc]}
         if type(wartosc) is set or type(wartosc) is frozenset:
-            return [type(wartosc).__name__, sorted(json.dumps(self.wartosc(element), ensure_ascii=False) for element in wartosc)]
+            return {type(wartosc).__name__: sorted(json.dumps(self.wartosc(element), ensure_ascii=False) for element in wartosc)}
         if type(wartosc) is dict:
-            return ["dict", [[self.wartosc(klucz), self.wartosc(element)] for klucz, element in wartosc.items()]]
+            return {"dict": [[self.wartosc(klucz), self.wartosc(element)] for klucz, element in wartosc.items()]}
         if isinstance(wartosc, enum.Enum):
-            return ["enum", self.definicja(type(wartosc)), wartosc.name]
+            return {"enum": self.definicja(type(wartosc)), "członek": wartosc.name}
         if dataclasses.is_dataclass(wartosc) and not isinstance(wartosc, type):
-            pola = [[pole.name, self.wartosc(getattr(wartosc, pole.name))] for pole in dataclasses.fields(wartosc)]
-            return ["dataclass", self.definicja(type(wartosc)), pola]
+            pola = {pole.name: self.wartosc(getattr(wartosc, pole.name)) for pole in dataclasses.fields(wartosc)}
+            return {"dataclass": self.definicja(type(wartosc)), "pola": pola}
         if type(wartosc) is functools.partial:
-            return ["partial", self.wartosc(wartosc.func), self.wartosc(wartosc.args), self.wartosc(wartosc.keywords)]
+            return {"partial": self.wartosc(wartosc.func), "argumenty": self.wartosc(wartosc.args), "nazwane": self.wartosc(wartosc.keywords)}
         if isinstance(wartosc, ModuleType):
-            return ["moduł", wartosc.__name__]
+            return {"moduł": wartosc.__name__}
         if isinstance(wartosc, UnionType):
-            return ["unia", [self.wartosc(typ) for typ in wartosc.__args__]]
+            return {"unia": [self.wartosc(typ) for typ in wartosc.__args__]}
         if isinstance(getattr(wartosc, "__qualname__", None), str) and isinstance(getattr(wartosc, "__module__", None), str):
             return self.definicja(wartosc)
         raise ValueError(f"obiekt {type(wartosc).__module__}.{type(wartosc).__qualname__}: {GRANICA_ODCISKU}")
 
     def definicja(self, definicja: Any) -> object:
         if definicja.__module__ != self._modul:
-            return ["odwołanie", definicja.__module__, definicja.__qualname__]
+            if id(definicja) in self._nazwy:
+                return {"nazwa w module propose": " = ".join(self._nazwy[id(definicja)])}
+            return {"definicja innego modułu": f"{definicja.__module__}.{definicja.__qualname__}"}
         if id(definicja) in self._w_toku:
-            return ["w toku", definicja.__qualname__]
+            return {"w toku": definicja.__qualname__}
         self._w_toku.add(id(definicja))
         try:
             if isinstance(definicja, FunctionType):
@@ -152,12 +166,14 @@ class _Odcisk:
 
     def _funkcja(self, funkcja: FunctionType) -> object:
         kod = funkcja.__code__
-        domkniecie = [[nazwa, self.wartosc(komorka.cell_contents)] for nazwa, komorka in zip(kod.co_freevars, funkcja.__closure__ or (), strict=True)]
-        globalne = [[nazwa, self.wartosc(funkcja.__globals__[nazwa])] for nazwa in sorted(_nazwy_kodu(kod)) if nazwa in funkcja.__globals__]
-        zrodlo = self._zrodlo(kod.co_filename, kod.co_name, kod.co_firstlineno, kod.co_qualname)
-        atrybuty = [[nazwa, self.wartosc(atrybut)] for nazwa, atrybut in sorted(vars(funkcja).items())]
-        domyslne = [self.wartosc(funkcja.__defaults__), self.wartosc(funkcja.__kwdefaults__)]
-        return ["funkcja", ast.unparse(zrodlo), domyslne, domkniecie, globalne, atrybuty]
+        return {
+            "funkcja": ast.unparse(self._zrodlo(kod.co_filename, kod.co_name, kod.co_firstlineno, kod.co_qualname)),
+            "domyślne": self.wartosc(funkcja.__defaults__),
+            "domyślne nazwane": self.wartosc(funkcja.__kwdefaults__),
+            "domknięcie": {nazwa: self.wartosc(komorka.cell_contents) for nazwa, komorka in zip(kod.co_freevars, funkcja.__closure__ or (), strict=True)},
+            "nazwy": {nazwa: self.wartosc(funkcja.__globals__[nazwa]) for nazwa in sorted(_nazwy_kodu(kod)) if nazwa in funkcja.__globals__},
+            "atrybuty": {nazwa: self.wartosc(atrybut) for nazwa, atrybut in sorted(vars(funkcja).items())},
+        }
 
     def _klasa(self, klasa: type) -> object:
         try:
@@ -167,17 +183,22 @@ class _Odcisk:
         zrodlo = self._zrodlo(plik, klasa.__name__, getattr(klasa, "__firstlineno__", -1), klasa.__qualname__)
         assert isinstance(zrodlo, ast.ClassDef)
         modul = vars(sys.modules[klasa.__module__])
-        globalne = [[nazwa, self.wartosc(modul[nazwa])] for nazwa in sorted(_nazwy_ciala_klasy(zrodlo)) if nazwa in modul]
-        czlonki = [[nazwa, self.wartosc(_bez_opakowania(czlonek))] for nazwa, czlonek in sorted(vars(klasa).items()) if not _systemowa(nazwa)]
-        metody_systemowe = [
-            [nazwa, self.definicja(funkcja)]
+        metody_systemowe = {
+            nazwa: [
+                self.definicja(funkcja)
+                for funkcja in _funkcje_czlonka(czlonek)
+                if funkcja.__code__.co_filename == plik
+                and any(_poczatek(wezel, funkcja.__code__.co_name, funkcja.__code__.co_firstlineno) for wezel in ast.walk(zrodlo))
+            ]
             for nazwa, czlonek in sorted(vars(klasa).items())
             if _systemowa(nazwa)
-            for funkcja in _funkcje_czlonka(czlonek)
-            if funkcja.__code__.co_filename == plik
-            and any(_poczatek(wezel, funkcja.__code__.co_name, funkcja.__code__.co_firstlineno) for wezel in ast.walk(zrodlo))
-        ]
-        return ["klasa", ast.unparse(zrodlo), globalne, czlonki, metody_systemowe]
+        }
+        return {
+            "klasa": ast.unparse(zrodlo),
+            "nazwy": {nazwa: self.wartosc(modul[nazwa]) for nazwa in sorted(_nazwy_ciala_klasy(zrodlo)) if nazwa in modul},
+            "członki": {nazwa: self.wartosc(_bez_opakowania(czlonek)) for nazwa, czlonek in sorted(vars(klasa).items()) if not _systemowa(nazwa)},
+            "metody systemowe": {nazwa: metody for nazwa, metody in metody_systemowe.items() if metody},
+        }
 
     def _zrodlo(self, plik: str, nazwa: str, linia: int, opis: str) -> ast.AST:
         if plik not in self._drzewa:
@@ -191,18 +212,22 @@ class _Odcisk:
         return _bez_docstringow(trafione[0])
 
 
-def odcisk(propose: object) -> str:
+def _drzewo(propose: object) -> object:
     korzen = propose
     while type(korzen) is functools.partial:
         korzen = korzen.func
     if not isinstance(korzen, FunctionType):
         raise ValueError(f"propose to {type(propose).__module__}.{type(propose).__qualname__}: {GRANICA_ODCISKU}")
-    zrzut = json.dumps(_Odcisk(korzen.__module__).wartosc(propose), ensure_ascii=False)
-    return hashlib.sha256(zrzut.encode()).hexdigest()[:16]
+    return _Odcisk(korzen.__module__).wartosc(propose)
+
+
+def _wpis(plik: str, drzewo_odcisku: object) -> Wpis:
+    zrzut = json.dumps(drzewo_odcisku, ensure_ascii=False)
+    return Wpis(plik, hashlib.sha256(zrzut.encode()).hexdigest()[:16], drzewo_odcisku)
 
 
 def wpisy(zmiany: Iterable[ReleaseChange[Any]]) -> dict[str, Wpis]:
-    return {zmiana.id: Wpis(zmiana.file.name, odcisk(zmiana.propose)) for zmiana in zmiany}
+    return {zmiana.id: _wpis(zmiana.file.name, _drzewo(zmiana.propose)) for zmiana in zmiany}
 
 
 def wpisy_commitu(root: Path, commit: str) -> dict[str, Wpis]:
@@ -219,30 +244,56 @@ def wpisy_commitu(root: Path, commit: str) -> dict[str, Wpis]:
         odczyt = potomne.run([sys.executable, __file__], cwd=Path(katalog), env=srodowisko, timeout=_LIMIT_ODCZYTU_S)
     if odczyt.returncode:
         raise ValueError(f"Zmian z Wydania z commitu {commit} nie da się odczytać: {odczyt.stderr.strip()}")
-    return {id_zmiany: Wpis(*pola) for id_zmiany, pola in json.loads(odczyt.stdout).items()}
+    return {id_zmiany: _wpis(plik, drzewo_odcisku) for id_zmiany, (plik, drzewo_odcisku) in json.loads(odczyt.stdout).items()}
 
 
 def zmienione(root: Path, wydania: Sequence[tuple[str, str]], commit: str) -> list[str]:
     teraz = wpisy_commitu(root, commit)
     zmienione: dict[str, str] = {}
     for tag, wydany in wydania:
-        for id_zmiany, wpis in wpisy_commitu(root, wydany).items():
-            nowy = teraz.get(id_zmiany)
-            if id_zmiany in zmienione or nowy == wpis:
-                continue
-            if nowy is None:
-                zmienione[id_zmiany] = f"{id_zmiany} z {tag} zniknęła"
-            elif nowy.plik != wpis.plik:
-                zmienione[id_zmiany] = f"{id_zmiany} z {tag} zmienia {nowy.plik} zamiast {wpis.plik}"
-            else:
-                zmienione[id_zmiany] = f"{id_zmiany} z {tag} ma inny kod (odcisk {nowy.odcisk} zamiast {wpis.odcisk})"
+        for id_zmiany, roznica in roznice(wpisy_commitu(root, wydany), teraz, tag).items():
+            zmienione.setdefault(id_zmiany, roznica)
     return list(zmienione.values())
+
+
+def roznice(wtedy: Mapping[str, Wpis], teraz: Mapping[str, Wpis], skad: str) -> dict[str, str]:
+    return {id_zmiany: f"{id_zmiany} z {skad} {_roznica(wpis, teraz.get(id_zmiany))}" for id_zmiany, wpis in wtedy.items() if teraz.get(id_zmiany) != wpis}
+
+
+def _roznica(wtedy: Wpis, teraz: Wpis | None) -> str:
+    if teraz is None:
+        return f"zniknęła: {NOWY_WPIS}"
+    if teraz.plik != wtedy.plik:
+        return f"zmienia {teraz.plik} zamiast {wtedy.plik}: {NOWY_WPIS}"
+    for (miejsce_wtedy, lisc_wtedy), (miejsce, lisc) in itertools.zip_longest(_liscie(wtedy.drzewo, ("propose",)), _liscie(teraz.drzewo, ("propose",)), fillvalue=((), None)):
+        if miejsce != miejsce_wtedy:
+            return f"ma inny kod: {' › '.join(miejsce) or 'nic'} zamiast {' › '.join(miejsce_wtedy) or 'nic'}; {INNY_KOD}"
+        if lisc != lisc_wtedy:
+            linia_wtedy, linia = _pierwsza_rozna_linia(lisc_wtedy, lisc)
+            return f"ma inny kod w {' › '.join(miejsce)} („{linia}” zamiast „{linia_wtedy}”); {INNY_KOD}"
+    return f"ma inny odcisk ({teraz.odcisk} zamiast {wtedy.odcisk}); {INNY_KOD}"
+
+
+def _liscie(wezel: object, miejsce: tuple[str, ...]) -> Iterator[tuple[tuple[str, ...], object]]:
+    if isinstance(wezel, dict):
+        for klucz, wartosc in wezel.items():
+            yield from _liscie(wartosc, (*miejsce, klucz))
+    elif isinstance(wezel, list):
+        for numer, wartosc in enumerate(wezel):
+            yield from _liscie(wartosc, (*miejsce, str(numer)))
+    else:
+        yield miejsce, wezel
+
+
+def _pierwsza_rozna_linia(wtedy: object, teraz: object) -> tuple[str, str]:
+    linie = itertools.zip_longest(str(wtedy).splitlines(), str(teraz).splitlines(), fillvalue="")
+    return next(((linia_wtedy.strip(), linia.strip()) for linia_wtedy, linia in linie if linia_wtedy != linia), (str(wtedy), str(teraz)))
 
 
 def _wypisz_wpisy() -> None:
     from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 
-    print(json.dumps({id_zmiany: [wpis.plik, wpis.odcisk] for id_zmiany, wpis in wpisy(RELEASE_CHANGES).items()}))
+    print(json.dumps({id_zmiany: [wpis.plik, wpis.drzewo] for id_zmiany, wpis in wpisy(RELEASE_CHANGES).items()}))
 
 
 if __name__ == "__main__":

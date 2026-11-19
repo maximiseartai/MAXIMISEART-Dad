@@ -617,6 +617,21 @@ def test_plan_wydaje_poprawke_zmiany_z_wydania_jako_nowy_wpis_z_nowym_id(releasi
     assert planned["commit"] == fixing
 
 
+def test_plan_wydaje_wydanie_po_zmianie_nazwy_definicji_innego_modulu_z_aliasem_pod_stara_nazwa(releasing: Releasing) -> None:
+    with_footer = RELEASE_CHANGES.replace("from dataclasses import dataclass\n", "from dataclasses import dataclass\n\nfrom rozliczenia.pomoc import stopka\n").replace(
+        'return "stopka przypomnień"', "return stopka()"
+    )
+    first = releasing.merge(1, "feat: stopka", {**PACKAGES, "src/rozliczenia/pomoc.py": 'def stopka():\n    return "stopka"\n', RELEASE_CHANGES_FILE: with_footer})
+    releasing.released("v0.1.0", first)
+    renaming = releasing.merge(
+        2, "refactor: nazwa stopki", {"src/rozliczenia/pomoc.py": 'def stopka_przypomnien():\n    return "stopka"\n\n\nstopka = stopka_przypomnien\n'}
+    )
+
+    planned = releasing.planned()
+
+    assert planned["commit"] == renaming
+
+
 def test_plan_odmawia_bez_dostepu_do_skrzynki_zgloszen(releasing: Releasing) -> None:
     releasing.merge(1, "feat: pierwsze", {"src/a.py": "a = 1\n"})
     releasing.github("no_report_box")

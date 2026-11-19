@@ -370,8 +370,8 @@ def _check_released_changes_frozen(root: Path, line: MainLine, commit: str) -> N
     changed = zmiany_z_wydania.zmienione(root, [(tag, target) for _, tag, target in released], commit)
     if changed:
         raise Refused(
-            f"Zmiany z Wydania, które wyszły, są inne na commicie {commit}: {'; '.join(changed)}. "
-            f"Tak ich nie wydawaj, bo {zmiany_z_wydania.NOWY_WPIS}; po merge'u tej poprawki zrób plan od nowa."
+            f"Zmiany z Wydania, które wyszły, są inne na commicie {commit}: {' | '.join(changed)}. "
+            "Tak ich nie wydawaj, a po merge'u poprawki zrób plan od nowa."
         )
 
 
