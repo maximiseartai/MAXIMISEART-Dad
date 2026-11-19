@@ -89,7 +89,16 @@ from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
-from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, finished_view, run_events, views_until, write_report_key
+from tests.fixtures.centrum import (
+    ROOT,
+    CentrumClient,
+    FakeGitHub,
+    ToolDirectory,
+    finished_view,
+    run_events,
+    views_until,
+    write_report_key,
+)
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -147,7 +156,8 @@ def _finished(centrum: EnteringCentrum) -> dict[str, Any]:
 
 def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_bez_kopii_intermax(tmp_path: Path) -> None:
     """Kryterium #1227: Wpis z Raportu wykonawcy od adresu z listy trafia do obu komórek jego zlecenia z dnia z tematu,
-    zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie."""
+    zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie. Uruchomienie nie potwierdza
+    Gotowości, bo ta dotyczy Pliku zbiorczego przed Rozliczeniami pracowników."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
@@ -163,7 +173,7 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
         "last": None,
     }
     assert view["result"]["result"] == "OK"
-    assert view["run"]["period"] == ENTERING_PERIOD
+    assert (view["run"]["period"], view["run"]["confirms_readiness"]) == (ENTERING_PERIOD, False)
     assert view["result"]["summary"]["figures"] == [
         {"label": "Wpisane", "value": 1, "unit": "count"},
         {"label": "Problemy", "value": 0, "unit": "count"},
@@ -5032,6 +5042,25 @@ def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_por
     assert _failures_in_log(centrum) == ["przyczyna=haslo-odrzucone"]
 
 
+def test_zgloszenie_przypomnien_z_narzedzia_bez_commitu_gita_ma_commit_nieznany(tmp_path: Path) -> None:
+    write_report_key(ToolDirectory(tmp_path))
+    surroundings = Surroundings(github=FakeGitHub(tool_commit=None))
+    mailbox = FakeMailbox(send_outcome=PasswordRejected())
+    centrum = entering_centrum(tmp_path, INTERMAX, surroundings=surroundings, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    box = surroundings.report_box
+    assert box.wait_until(lambda fake: len(fake.sent) == 1)
+    centrum.client.stop()
+
+    [issue] = box.sent
+    body = issue.body.splitlines()
+    assert body[body.index("## Narzędzie") + 2] == "- Commit: nieznany"
+
+
 def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
     """Pola każdej linii ``przypomnienia-porazka`` dziennika Centrum po nazwie zdarzenia, po kolei."""
 
@@ -5048,6 +5077,7 @@ def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
         pytest.param("pamiec-wpisania", "decyzje", id="decyzje-zostaw-moja"),
         pytest.param("okresy", "okresy", id="okresy"),
         pytest.param("intermax", "intermax", id="intermax"),
+        pytest.param("intermax", "arkusz-zlecen", id="intermax-bez-arkusza-zlecen"),
     ],
 )
 def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku(
@@ -5055,7 +5085,7 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
 ) -> None:
     """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
     pliku dostępu, nieczytelna pamięć Wpisania raportów albo decyzje „Zostaw moją”, bo pusta pamięć zmieniłaby dzień
-    raportu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
+    raportu, bez folderu okresów, nieczytelny INTERMAX albo INTERMAX bez arkusza zleceń), trafia do dziennika Centrum raz, bez
     adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
     są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
 
@@ -5066,6 +5096,11 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
         shutil.rmtree(centrum.periods_directory)
     if broken == "intermax":
         centrum.register.write_bytes(b"to nie jest skoroszyt")
+    if broken == "arkusz-zlecen":
+        book = load_workbook(centrum.register)
+        for header in book[ORDER_SHEET][1]:
+            header.value = None
+        book.save(centrum.register)
     if broken == "pamiec":
         _state(centrum).write_text("{", encoding="utf-8")
     if broken == "decyzje":
