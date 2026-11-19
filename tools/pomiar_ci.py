@@ -10,6 +10,7 @@ Zadanie runu (``/actions/runs/<run>/jobs``):
     start     started_at → start kroku pracy (``KROK_PRACY`` w zadaniach pytest i Mutation checks)
     praca     krok pracy; zadanie bez niego pracuje od startu do końca
     koniec    koniec kroku pracy → completed_at
+    Chromium  krok ``KROK_PRZEGLADARKI`` (instalacja przeglądarki, część startu), gdy zadanie go ma
 
 Run:
 
@@ -17,10 +18,19 @@ Run:
     do czerwieni      utworzenie runu → koniec pierwszego zadania z wynikiem failure
     krytyczne         zadanie, które skończyło ostatnie przed Required, z jego kolejką, startem, pracą i końcem
     ogon              koniec krytycznego → koniec Required
+    mediana pracy     mediana pracy zadań planu runu (pytest i Mutation checks, ``plan_runu.Z_PLANU``) z krokiem pracy
+    ostatni Required  utworzenie runu → najpóźniejszy koniec Required którejkolwiek próby (ponowienia runu)
     main → werdykt    na main: merge (utworzenie runu pushu) → najwcześniejszy koniec Required dowolnej próby runu main
                       utworzonego nie wcześniej, zielonej albo czerwonej, poza próbą anulowaną w trakcie, ostatnią albo
                       wcześniejszą (``anulowane_proby``; anulowany run commitu obejmuje następny, a czerwona próba przed
                       ponowieniem to już werdykt, na który się czeka)
+
+Ścieżka krytyczna runu (``sciezka``) dzieli czas do Required na odcinki ``Odcinek``, które sumują się do niego:
+
+    plan      utworzenie runu → utworzenie krytycznego (zadanie Plan CI, na które czekają zadania planu)
+    kolejka, start, koniec, ogon  jak wyżej; zadanie planu bez kroku pracy (padło przed nim, np. na Chromium) tylko startuje
+    praca     praca krytycznego do mediany pracy zadań planu runu: tyle, ile pracuje typowe zadanie runu
+    maruder   praca krytycznego ponad tę medianę: o tyle krytyczne odstaje od typowego zadania tego samego runu
 
 Klasa zmiany PR (``Klasa``) wynika z plików, którymi głowa PR różni się od ``main`` z chwili runu (``git merge-base``
 z ostatnim commitem first-parent ``origin/main`` sprzed runu): pełna bramka (ścieżka z ``Context.PR_GATE`` w tej
@@ -52,6 +62,7 @@ import enum
 import json
 import math
 from pathlib import Path
+import statistics
 import subprocess
 import sys
 import time
@@ -62,7 +73,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from github import REPO, REQUIRED, BladApi, GhApi, GitHub
 from jednostka import Rodzaj
-from plan_runu import Plan
+from plan_runu import Z_PLANU, Plan
 import repo
 from repo import BASE, ROOT
 from wplyw_zmiany import Context, run_all
@@ -72,6 +83,8 @@ GITHUB = GhApi(limit_s=60)
 
 # Krok zadań pytest i Mutation checks w ci.yml, który wykonuje jednostki planu.
 KROK_PRACY = "Run the planned units"
+# Krok zadań pytest i Mutation checks w ci.yml, który instaluje Chromium (apt na Linuksie) przed krokiem pracy.
+KROK_PRZEGLADARKI = "Chromium"
 # Awaria runnerów 11.11 (apt DNS przy instalacji Chromium na Linuksie): runy z tego okna nie mówią o bramce.
 AWARIE = ((datetime(2026, 11, 11, 13, 30, tzinfo=timezone.utc), datetime(2026, 11, 11, 16, 0, tzinfo=timezone.utc)),)
 STRONA = 100
@@ -151,11 +164,15 @@ class Zadanie:
     start: datetime | None
     koniec: datetime | None
     praca: tuple[datetime, datetime] | None
+    przegladarka_s: float | None = None
 
     @classmethod
     def z_api(cls, dane: dict[str, Any]) -> Zadanie:
-        krok = next((k for k in dane["steps"] if k["name"] == KROK_PRACY and k["started_at"] and k["completed_at"]), None)
-        praca = (_moment(krok["started_at"]), _moment(krok["completed_at"])) if krok else None
+        def krok(nazwa: str) -> tuple[datetime, datetime] | None:
+            znaleziony = next((k for k in dane["steps"] if k["name"] == nazwa and k["started_at"] and k["completed_at"]), None)
+            return (_moment(znaleziony["started_at"]), _moment(znaleziony["completed_at"])) if znaleziony else None
+
+        przegladarka = krok(KROK_PRZEGLADARKI)
         return cls(
             dane["name"],
             szablon(dane["name"]),
@@ -165,7 +182,8 @@ class Zadanie:
             _moment(dane["created_at"]),
             _chwila(dane["started_at"]),
             _chwila(dane["completed_at"]),
-            praca,
+            krok(KROK_PRACY),
+            _s(*przegladarka) if przegladarka else None,
         )
 
     @property
@@ -212,6 +230,9 @@ class Pomiar:
     werdykt: str | None  # najwcześniejszy koniec Required próby, która nie jest anulowaną ostatnią próbą
     do_werdyktu_main_s: float | None = None
     run_werdyktu_main: int | None = None
+    praca_mediana_s: float | None = None
+    przegladarka_s: float | None = None  # krok Chromium krytycznego
+    do_ostatniego_required_s: float | None = None
 
     @property
     def liczony(self) -> bool:
@@ -328,6 +349,12 @@ def _pliki_planu(plan: Plan) -> int:
     return len({klucz.nazwa.partition("::")[0] for klucz in klucze if klucz.rodzaj is Rodzaj.PYTEST})
 
 
+def awaria(utworzony: datetime) -> str | None:
+    """Okno awarii runnerów (``AWARIE``), w którym run utworzono, albo ``None``: run z okna liczy się tylko jako pominięty."""
+
+    return next((f"awaria runnerów {od:%d.%m %H:%M}–{do:%H:%M} UTC" for od, do in AWARIE if od <= utworzony < do), None)
+
+
 def zmierz(
     run: dict[str, Any], wszystkie: list[Zadanie], plan: Plan | None, zmienione: frozenset[str] | None, anulowane: frozenset[int] = frozenset()
 ) -> Pomiar:
@@ -338,6 +365,7 @@ def zmierz(
     krytyczne = max(pracujace, key=lambda z: z.koniec or utworzony, default=None)
     czerwone = [z.koniec for z in pierwsze if z.szablon != POZA_BRAMKA and z.wynik == "failure" and z.koniec]
     werdykty = [z.koniec for z in wszystkie if z.szablon == "required" and z.biegl and z.koniec and z.proba not in anulowane]
+    prace = [praca for z in pracujace if z.szablon in Z_PLANU and z.praca and (praca := z.odcinki()["praca_s"]) is not None]
     kolejki: dict[str, list[float]] = {}
     konce_s: dict[str, float] = {}
     for z in pierwsze:
@@ -345,7 +373,6 @@ def zmierz(
             kolejki.setdefault(z.system, []).append(z.kolejka_s)
         if z.biegl and z.szablon != POZA_BRAMKA and (koniec := _s(utworzony, z.koniec)) is not None:
             konce_s[z.szablon] = max(konce_s.get(z.szablon, 0.0), koniec)
-    pominiety = next((f"awaria runnerów {od:%d.%m %H:%M}–{do:%H:%M} UTC" for od, do in AWARIE if od <= utworzony < do), None)
     return Pomiar(
         run=run["id"],
         zdarzenie=run["event"],
@@ -354,7 +381,7 @@ def zmierz(
         utworzony=run["created_at"],
         proby=run["run_attempt"],
         wynik=run["conclusion"],
-        pominiety=pominiety,
+        pominiety=awaria(utworzony),
         klasa=klasa(zmienione).value if zmienione is not None and run["event"] == "pull_request" else None,
         zmienione=len(zmienione) if zmienione is not None else None,
         mutacje=sum(z.szablon == MUTACJE.szablon and z.biegl for z in pierwsze),
@@ -371,7 +398,45 @@ def zmierz(
         konce_s=konce_s,
         starty_s=[s for z in pracujace if z.praca and (s := z.odcinki()["start_s"]) is not None],
         werdykt=min(werdykty).isoformat() if werdykty else None,
+        praca_mediana_s=statistics.median(prace) if prace else None,
+        przegladarka_s=krytyczne.przegladarka_s if krytyczne else None,
+        do_ostatniego_required_s=_s(utworzony, max(werdykty)) if werdykty else None,
     )
+
+
+class Odcinek(enum.Enum):
+    """Odcinek ścieżki krytycznej runu (``sciezka``), w kolejności na ścieżce."""
+
+    PLAN = "plan"
+    KOLEJKA = "kolejka"
+    START = "start"
+    PRACA = "praca"
+    MARUDER = "maruder"
+    KONIEC = "koniec"
+    OGON = "ogon"
+
+
+def sciezka(pomiar: Pomiar) -> dict[Odcinek, float] | None:
+    """Odcinki ścieżki krytycznej runu w sekundach, które sumują się do jego czasu do Required; ``None`` bez Required
+    albo krytycznego zadania."""
+
+    odcinki = pomiar.krytyczne_odcinki
+    if pomiar.do_required_s is None or pomiar.ogon_s is None or odcinki is None or odcinki["kolejka_s"] is None or odcinki["praca_s"] is None:
+        return None
+    start, praca, koniec = odcinki["start_s"], odcinki["praca_s"], odcinki["koniec_s"] or 0.0
+    planu = pomiar.krytyczne in Z_PLANU
+    if start is None:
+        start, praca = (praca, 0.0) if planu else (0.0, praca)
+    typowa = min(praca, pomiar.praca_mediana_s) if planu and pomiar.praca_mediana_s is not None else praca
+    reszta = {
+        Odcinek.KOLEJKA: odcinki["kolejka_s"],
+        Odcinek.START: start,
+        Odcinek.PRACA: typowa,
+        Odcinek.MARUDER: praca - typowa,
+        Odcinek.KONIEC: koniec,
+        Odcinek.OGON: pomiar.ogon_s,
+    }
+    return {Odcinek.PLAN: pomiar.do_required_s - sum(reszta.values()), **reszta}
 
 
 def z_werdyktem_main(pomiary: list[Pomiar]) -> list[Pomiar]:
@@ -391,28 +456,45 @@ def z_werdyktem_main(pomiary: list[Pomiar]) -> list[Pomiar]:
 
 @dataclass(frozen=True)
 class Cel:
-    """Cel Maksa dla CI: kwantyle czasów ``czasy`` w minutach wobec progów (``None``: kwantyl bez progu)."""
+    """Cel Maksa dla CI: kwantyle czasu ``czas`` runów z ``wybor`` w minutach wobec progów (``None``: kwantyl bez progu)."""
 
     nazwa: str
     opis: str
     p50_min: float | None
     p90_min: float
-    czasy: Callable[[list[Pomiar]], list[float]]
+    wybor: Callable[[Pomiar], bool]
+    czas: Callable[[Pomiar], float | None]
+
+    def runy(self, pomiary: Iterable[Pomiar]) -> list[Pomiar]:
+        """Runy, które cel liczy: z ``wybor`` i z czasem."""
+
+        return [p for p in pomiary if self.wybor(p) and self.czas(p) is not None]
+
+    def czasy(self, pomiary: Iterable[Pomiar]) -> list[float]:
+        return [czas for p in self.runy(pomiary) if (czas := self.czas(p)) is not None]
 
 
-def _do_required(pomiary: list[Pomiar], wybor: Callable[[Pomiar], bool]) -> list[float]:
-    return [p.do_required_s for p in pomiary if p.liczony and p.pr and wybor(p) and p.do_required_s is not None]
+def _pr(pomiar: Pomiar) -> bool:
+    return pomiar.liczony and pomiar.pr
 
 
 CELE = (
-    Cel("PR wybór", "PR z wyborem testów (klasa inna niż pełna bramka), push → Required", 2, 3, lambda pomiary: _do_required(pomiary, lambda p: p.klasa not in (None, Klasa.PELNA.value))),
-    Cel("każdy PR", "każdy PR, push → Required", None, 5, lambda pomiary: _do_required(pomiary, lambda p: True)),
+    Cel(
+        "PR wybór",
+        "PR z wyborem testów (klasa inna niż pełna bramka), push → Required",
+        2,
+        3,
+        lambda p: _pr(p) and p.klasa not in (None, Klasa.PELNA.value),
+        lambda p: p.do_required_s,
+    ),
+    Cel("każdy PR", "każdy PR, push → Required", None, 5, _pr, lambda p: p.do_required_s),
     Cel(
         "main strażnik",
         "strażnik main, merge → pełny werdykt obejmujący merge (także merge z anulowanym runem)",
         None,
         40,
-        lambda pomiary: [p.do_werdyktu_main_s for p in pomiary if p.main and not p.pominiety and p.do_werdyktu_main_s is not None],
+        lambda p: p.main and not p.pominiety,
+        lambda p: p.do_werdyktu_main_s,
     ),
 )
 
