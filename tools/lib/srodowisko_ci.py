@@ -65,8 +65,10 @@ CI_PYTHON = "3.14"
 CI_EXTRAS = ("dev",)
 CI_INSTALL = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[' + ",".join(CI_EXTRAS) + ']"'
 BUILD_TIMEOUT_S = 300
-# ZEWNĘTRZNE: multiprocessing kładzie gniazdo AF_UNIX w /tmp zamiast w TMPDIR, którego ścieżka z nazwą gniazda przekracza 104 bajty macOS, a piaskownica dowodu nie przyjmuje zapisu do /tmp (Lib/multiprocessing/util.py, _get_base_temp_dir)
-RUN_ROOT = Path("/tmp")
+# ZEWNĘTRZNE: ścieżka gniazda AF_UNIX ma na macOS mniej niż 104 bajty, a multiprocessing kładzie gniazdo serwera forkserver w TMPDIR/pymp-XXXXXXXX/listener-XXXXXXXX, gdy się tam zmieści, a inaczej w /tmp (Lib/multiprocessing/util.py, _get_base_temp_dir)
+_SOCKET_MAX = 104
+_RUN_SOCKET = "/srodowisko-ci-XXXXXXXX/tmp/pymp-XXXXXXXX/listener-XXXXXXXX"
+_SYSTEM_TEMP = Path("/tmp")
 _JOB_KEYS = {"name", "runs-on", "steps"}
 _INSTALL_ID = "deps"  # ``id`` kroku ``CI_INSTALL``, którego wynik czyta ``_CI_IF``
 _CI_IF = "${{ !cancelled() && steps." + _INSTALL_ID + ".outcome == 'success' }}"
@@ -146,7 +148,7 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
             f"środowisko Required CI: drzewo ma ścieżki różne tylko wielkością liter albo normalizacją Unicode ({', '.join(twins[:3])}), a system plików macOS "
             "trzyma jedną z nich, Linux runnera obie: dowód policzy job dowod statusu „Werdykt i bramka”, a przy merge'u uruchom go na Linuksie"
         )
-    with tempfile.TemporaryDirectory(prefix="srodowisko-ci-", dir=RUN_ROOT) as folder:
+    with tempfile.TemporaryDirectory(prefix="srodowisko-ci-", dir=run_root(Path(tempfile.gettempdir()))) as folder:
         home, copy = Path(folder) / "dom", Path(folder) / "drzewo"
         home.mkdir()
         _checkout(root, tree, copy)
@@ -163,6 +165,10 @@ def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterato
             tools |= PYTEST_VARIABLES
         (temporary := Path(folder) / "tmp").mkdir()
         yield Environment(tree, copy, python, {**tools, "HOME": str(home), "TMPDIR": str(temporary)})
+
+
+def run_root(temporary: Path) -> Path:
+    return temporary if len(str(temporary)) + len(_RUN_SOCKET) < _SOCKET_MAX else _SYSTEM_TEMP
 
 
 def _checkout(root: Path, commit: str, copy: Path) -> None:

@@ -32,6 +32,10 @@ opisuje; kopia wraca do stanu sprzed biegu. Każdy krok mypy i ruff i każdy bie
 (``piaskownica.prefix``: Landlock na Linuksie, ``sandbox-exec`` na macOS), w której zapis poza kopią biegu, jej ``HOME``
 i ``TMPDIR`` (i poza ``piaskownica.WRITABLE_DEVICES``) to odmowa systemu, a dowód na systemie bez niej to ``ODMOWA``
 przed pierwszym biegiem; bieg bez przywrócenia albo mutacji, który w niej nie przechodzi bez znalezisk, to ``ODMOWA``.
+Tak samo kończy się węzeł, który na Linuksie tworzy semafor multiprocessing (``Lock``, ``Queue``,
+``ProcessPoolExecutor``: plik w ``/dev/shm``), a na macOS węzeł, który sam uruchamia bieg w piaskownicy (testy dowodu),
+bo macOS nie nakłada drugiej piaskownicy na proces, który już w niej jest; job ``dowod`` na Linuksie, gdzie Landlock
+się zagnieżdża, taki węzeł liczy.
 
 | Selektor | Przywrócenie błędu na kopii HEAD PR scalonego z bazą | Dowód przechodzi, gdy |
 |---|---|---|

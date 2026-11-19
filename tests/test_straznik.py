@@ -96,7 +96,7 @@ class Pull:
     def _copy(self) -> Iterator[straznik.Environment]:
         """Kopia HEAD z własnym gitem, ``HOME`` i ``TMPDIR`` obok siebie, jak każde środowisko z ``srodowisko_ci.built``."""
 
-        with tempfile.TemporaryDirectory(prefix="straznik-", dir=srodowisko_ci.RUN_ROOT) as folder:
+        with tempfile.TemporaryDirectory(prefix="straznik-", dir=srodowisko_ci.run_root(Path(tempfile.gettempdir()))) as folder:
             copy, home, temporary = (Path(folder) / name for name in ("drzewo", "dom", "tmp"))
             srodowisko_ci._checkout(self.root, self.head, copy)
             home.mkdir()
@@ -516,6 +516,7 @@ SYSV = (
     "_LIBC.shmget.argtypes = (ctypes.c_int, ctypes.c_size_t, ctypes.c_int)\nKLUCZ = zlib.crc32({slad}.encode()) & 0x3FFFFFFF | 1\n\n\n"
 )
 ONCE_SYSV = SYSV + "def test_g() -> None:\n    assert _LIBC.shmget(KLUCZ, 1, 0o3600) >= 0, 'ślad poprzedniego biegu'\n"
+LOCK = "import multiprocessing\n\n\ndef test_g() -> None:\n    with multiprocessing.Lock():\n        pass\n"
 UNTOUCHED = "NIEWYKRYTA | x * 3 z FAIL: NIEWYKRYTA: 1 passed"
 REFUSED = f"ODMOWA | {NODE} na HEAD scalonym z bazą bez mutacji nie przechodzi: 1 failed"
 
@@ -562,6 +563,8 @@ SONDY_SLADU = {
         REFUSED,
     ),
     "pamiec-dzielona-obok-dev-null": Trace(ONCE, REFUSED, where="/dev/shm", platform="linux"),
+    "semafor-multiprocessing-w-dev-shm-linuksa": Trace(LOCK, REFUSED, platform="linux"),
+    "semafor-multiprocessing-poza-plikami-macos": Trace(LOCK, UNTOUCHED, platform="darwin"),
     "metadane-pliku-poza-kopia": Trace(
         "import os\nimport pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    assert slad.stat().st_mtime != 1\n    os.utime(slad, (1, 1))\n",
         REFUSED,
@@ -621,6 +624,23 @@ def test_stan_uslugi_systemu_poza_plikami_ktory_wywraca_bieg_bez_mutacji_to_odmo
 
     assert not outcome.detected, outcome.line
     assert f"#5 W1 r1 | {pull.failed[:8]} | ODMOWA | {NODE} bez mutacji pada po biegach z mutacją (1 failed" in outcome.line, outcome.line
+
+
+COLLECTED = (
+    "import pathlib\nimport sys\n\nfrom kod.flagi import WLACZONE\n\nif sys.argv[0] == '-c':\n    pathlib.Path({slad}).write_text('1')\n\n"
+    "if WLACZONE:\n\n    def test_g() -> None:\n        assert WLACZONE\n"
+)
+
+
+@wymaga_piaskownicy
+def test_zbieranie_plikow_testow_po_mutacji_bez_wezla_biegnie_w_piaskownicy(tmp_path: Path) -> None:
+    trace = tmp_path / "slad.txt"
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "kod/flagi.py": "WLACZONE = True\n", "tests/test_g.py": _with_trace(COLLECTED, str(trace))})
+
+    outcome = pull.prove(f"pytest {NODE}", mutation=_block(("kod/flagi.py", "WLACZONE = True", "WLACZONE = False"), name="flaga wyłączona z FAIL"))
+
+    assert "pliki testów polecenia z mutacją się nie zbierają" in outcome.line, outcome.line
+    assert not trace.exists()
 
 
 PLUGIN = "import pathlib\n\nfrom mypy.plugin import Plugin\n\npathlib.Path({slad}).write_text('1')\n\n\ndef plugin(version: str) -> type[Plugin]:\n    return Plugin\n"
@@ -807,6 +827,7 @@ SOURCES = {
         *((name, {"tests/test_g.py": trace.test}) for name, trace in SONDY_SLADU.items()),
         ("pamiec-uslugi-systemu", {"tests/test_g.py": ONCE_SYSV}),
         ("wtyczka-mypy", {"wtyczka.py": PLUGIN}),
+        ("zbieranie-po-mutacji", {"tests/test_g.py": COLLECTED}),
         *((name, gap.head) for name, gap in ZNANE_LUKI_STRAZNIKA.items()),
     ]
     for path, text in head.items()

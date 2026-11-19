@@ -4,6 +4,7 @@ from collections.abc import Sequence
 import ctypes
 import os
 from pathlib import Path
+import struct
 import sys
 from typing import NoReturn
 
@@ -20,15 +21,9 @@ _TRUNCATE = 1 << 14
 _TREE_WRITES = _WRITE_FILE | sum(1 << bit for bit in range(4, 14)) | _TRUNCATE
 _DEVICE_WRITES = _WRITE_FILE | _TRUNCATE
 _LANDLOCK_ABI_WITH_TRUNCATE = 3
-
-
-class _RulesetAttr(ctypes.Structure):
-    _fields_ = (("handled_access_fs", ctypes.c_uint64), ("handled_access_net", ctypes.c_uint64), ("scoped", ctypes.c_uint64))
-
-
-class _PathBeneath(ctypes.Structure):
-    _pack_ = 1
-    _fields_ = (("allowed_access", ctypes.c_uint64), ("parent_fd", ctypes.c_int32))
+# ZEWNĘTRZNE: struct landlock_ruleset_attr to trzy __u64 (handled_access_fs, handled_access_net, scoped), a struct landlock_path_beneath_attr to __u64 allowed_access i __s32 parent_fd bez wyrównania (include/uapi/linux/landlock.h)
+_RULESET_ATTR = struct.Struct("=QQQ")
+_PATH_BENEATH_ATTR = struct.Struct("=Qi")
 
 
 def unavailable() -> str | None:
@@ -71,13 +66,13 @@ def _confine(arguments: list[str]) -> NoReturn:
             raise SystemExit(f"piaskownica: {step} odmówiło (errno {ctypes.get_errno()})")
         return result
 
-    attributes = _RulesetAttr(_TREE_WRITES, 0, 0)
-    ruleset = checked(libc.syscall(_CREATE_RULESET, ctypes.byref(attributes), ctypes.c_size_t(ctypes.sizeof(attributes)), ctypes.c_uint32(0)), "landlock_create_ruleset")
+    attributes = ctypes.create_string_buffer(_RULESET_ATTR.pack(_TREE_WRITES, 0, 0), _RULESET_ATTR.size)
+    ruleset = checked(libc.syscall(_CREATE_RULESET, attributes, ctypes.c_size_t(_RULESET_ATTR.size), ctypes.c_uint32(0)), "landlock_create_ruleset")
     for path, rights in [*((root, _TREE_WRITES) for root in roots), *((device, _DEVICE_WRITES) for device in WRITABLE_DEVICES)]:
         opened = os.open(path, os.O_PATH | os.O_CLOEXEC)
         try:
-            rule = _PathBeneath(rights, opened)
-            checked(libc.syscall(_ADD_RULE, ruleset, ctypes.c_int(_RULE_PATH_BENEATH), ctypes.byref(rule), ctypes.c_uint32(0)), f"landlock_add_rule {path}")
+            rule = ctypes.create_string_buffer(_PATH_BENEATH_ATTR.pack(rights, opened), _PATH_BENEATH_ATTR.size)
+            checked(libc.syscall(_ADD_RULE, ruleset, ctypes.c_int(_RULE_PATH_BENEATH), rule, ctypes.c_uint32(0)), f"landlock_add_rule {path}")
         finally:
             os.close(opened)
     checked(libc.prctl(_SET_NO_NEW_PRIVS, 1, 0, 0, 0), "prctl PR_SET_NO_NEW_PRIVS")

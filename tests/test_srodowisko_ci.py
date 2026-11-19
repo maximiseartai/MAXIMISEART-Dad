@@ -638,6 +638,18 @@ def test_slad_biegu_wezla_nie_przechodzi_do_nastepnego_biegu_dowodu(tmp_path: Pa
     assert not outcome.detected and "| NIEWYKRYTA | wielkie litery z FAIL: NIEWYKRYTA: 1 passed" in outcome.line, outcome.line
 
 
+@pytest.mark.parametrize(
+    ("temporary", "root"),
+    [
+        ("/tmp/srodowisko-ci-abcdefgh/tmp", "/tmp/srodowisko-ci-abcdefgh/tmp"),
+        ("/var/folders/d3/wt4n0b7j26745wz98m_1ljs00000gq/T", "/tmp"),
+    ],
+    ids=["tmpdir-biegu-dowodu", "dlugi-tmpdir-macos"],
+)
+def test_srodowisko_dowodu_powstaje_w_tmpdir_wolajacego_a_w_tmp_tylko_gdy_gniazdo_multiprocessing_by_sie_w_nim_nie_zmiescilo(temporary: str, root: str) -> None:
+    assert srodowisko_ci.run_root(Path(temporary)) == Path(root)
+
+
 FORKSERVER = (
     "import multiprocessing.forkserver\n\nfrom kod.odczyt import odczyt\n\n\ndef test_odczyt() -> None:\n"
     "    multiprocessing.forkserver.ensure_running()\n    assert odczyt() == 'tekst'\n"
