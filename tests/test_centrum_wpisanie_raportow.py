@@ -5278,29 +5278,29 @@ _SONDA_PAMIECI_WPISANIA = ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pami
 
 
 def _pamiec_wpisania(importy: str, cialo: str) -> str:
-    """Moduł Centrum, który z ``ReportState`` pracy buduje wejście odczytu okna jak Przypomnienia o raporcie."""
+    """Moduł Centrum, który z ``ReportState`` pracy pyta pamięć Wpisania o odczyt okna jak Wpisanie raportów."""
 
     return (
         "from collections.abc import Sequence\nfrom datetime import date\n\n"
         f"{importy}\n"
         "from rozliczenia.activity_legend import ActivityLegend\n"
-        "from rozliczenia.report_entering import EnteringMemory, RegisterWindow, ReportState\n"
-        "from rozliczenia.worker_reports import ReportMail, Window, WorkerAddresses\n\n\n"
+        "from rozliczenia.report_entering import ReportState\n"
+        "from rozliczenia.worker_reports import EnteringMemory, RegisterWindow, ReportMail, Window, WorkerAddresses\n\n\n"
         "def wejscie(\n"
         "    state: ReportState, today: date, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail],\n"
         "    addresses: WorkerAddresses, legend: ActivityLegend,\n"
         ") -> object:\n"
         f"{cialo}"
-        "    return memory.report_inputs(window, intermax, mails, addresses, legend)\n"
+        "    return memory.enter(window, intermax, mails, addresses, legend)\n"
     )
 
 
-_PUSTA_PAMIEC = "from rozliczenia.report_entering import SavedState\nfrom rozliczenia.worker_reports import OwnEntries\n"
-_ARGUMENT_PAMIECI = 'Argument 1 to "EnteringMemory" has incompatible type "SavedState"; expected "ReportState"'
+_PUSTA_PAMIEC = "from rozliczenia.worker_reports import OwnEntries, SavedState\n"
+_ARGUMENT_PAMIECI = 'Argument 1 to "EnteringMemory" has incompatible type "SavedState"; expected "MemorySource"'
 DROGI_PAMIECI_WPISANIA: Final = {
     "report_inputs z pamięcią zbudowaną obok (#2125 r1 W1)": (
         _pamiec_wpisania(
-            "from rozliczenia.report_entering import SavedState, report_inputs\nfrom rozliczenia.worker_reports import OwnEntries\n",
+            "from rozliczenia.report_entering import report_inputs\nfrom rozliczenia.worker_reports import OwnEntries, SavedState\n",
             "    memory = EnteringMemory(state)\n"
             "    return report_inputs(window, intermax, mails, addresses, SavedState(None, OwnEntries.EMPTY), legend)\n",
         ),
@@ -5340,7 +5340,7 @@ DROGI_PAMIECI_WPISANIA: Final = {
     ),
     "podklasa z własną pamięcią: class Pusta(EnteringMemory) z __init__ bez ReportState (#2133 r1 W1)": (
         _pamiec_wpisania(
-            _PUSTA_PAMIEC + "from rozliczenia.report_entering import EnteringMemory\n\n\n"
+            _PUSTA_PAMIEC + "from rozliczenia.worker_reports import EnteringMemory\n\n\n"
             "class Pusta(EnteringMemory):\n"
             "    def __init__(self) -> None:\n"
             "        self._saved = SavedState(None, OwnEntries.EMPTY)\n\n",
@@ -5350,7 +5350,7 @@ DROGI_PAMIECI_WPISANIA: Final = {
     ),
     "podklasa, która zmienia pamięć z ReportState: super().__init__(state), potem rollout=None (#2133 r1 W1)": (
         _pamiec_wpisania(
-            "from dataclasses import replace\n\nfrom rozliczenia.report_entering import EnteringMemory, ReportState\n\n\n"
+            "from dataclasses import replace\n\nfrom rozliczenia.report_entering import ReportState\nfrom rozliczenia.worker_reports import EnteringMemory\n\n\n"
             "class BezWdrozenia(EnteringMemory):\n"
             "    def __init__(self, state: ReportState) -> None:\n"
             "        super().__init__(state)\n"
@@ -5381,7 +5381,7 @@ ZNANE_LUKI_PAMIECI_WPISANIA: Final = {
 @wymaga_ruff_i_mypy
 def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
     """Przypomnienia o raporcie i Wpisanie raportów liczą dzień raportu z tej samej pamięci Wpisania, bo wejście odczytu
-    okna daje tylko ``EnteringMemory.report_inputs``, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
+    okna buduje tylko ``EnteringMemory`` za swoimi operacjami, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
     (``ReportState.load``): wołający nie ma wartości pamięci, którą mógłby zbudować, skopiować albo zmienić obok.
 
     | Postać | mypy, ruff | Próbka |

@@ -123,14 +123,14 @@ from rozliczenia.quantity_engine import QuantityRules, RulesProblem
 from rozliczenia.activity_legend import ActivityLegend, LegendProblem
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
-from rozliczenia.report_entering import ClickResult, ReportEnteringParts, SavedState
+from rozliczenia.report_entering import ClickResult, ReportEnteringParts
 from rozliczenia import report_entering_messages
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 from rozliczenia.worker_list import WorkerEntry, WorkerList, WorkerListProblem
-from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, RequestedEntry, SenderAddress, as_mail
+from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, RequestedEntry, SavedState, SenderAddress, as_mail
 
 from atrapy.skrzynka_raportow import FakeInbox
 import atrapa_z_logow
