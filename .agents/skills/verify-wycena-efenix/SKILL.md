@@ -110,17 +110,19 @@ less than the file, like the S of #960) and two quantities, T over Emmett's and 
 Ostrzeżenie Emmetta, because Emmett has more than the file in T. The window's time limit is 4 s (`LIMIT_MS`: 3 s and the 1 s reload after „Załaduj do zlecenia”, which it
 waits for in the same limit) in a case the domain table lets stop on the time limit (`Cause.TIMEOUT` in `_expected`:
 a network fault, an answer that comes late or never, a page file waited for in vain) or whose answer comes just before
-it (`_PLACED`), and 15 s (`CALM_LIMIT_MS`) in the run without a fault, in second runs and in every other case, so a
+it (`_PLACED`), and 30 s (`CALM_LIMIT_MS`) in the run without a fault, in second runs and in every other case, so a
 busy machine does not turn a late reload into a stop. The table is the one source of where a run may stop on the limit:
-`meets_limit` and `allows` read it, and `limit_gaps` reds a case where they differ (`LUKA MODELU`). A run with 15 s
-never waits for it, and the proxy's clock tells, not the Zatrzymanie: a window that sent the proxy no request for 11 s
-(`QUIET_S`, the 15 s less the `LIMIT_MS` in which its own step's requests come) waited for its limit, which is
+`meets_limit` and `allows` read it, and `limit_gaps` reds a case where they differ (`LUKA MODELU`). A run with 30 s
+never waits for it, and the proxy's clock tells, not the Zatrzymanie: a window that sent the proxy no request for 26 s
+(`QUIET_S`, the 30 s less the `LIMIT_MS` in which its own step's requests come) waited for its limit, which is
 PRZYCZYNA whatever the window made of the wait (a Zatrzymanie of any cause or a run that went on), so a case that waits
-for the limit on healthy code goes red instead of costing 15 s. A wait during which the window keeps sending requests
+for the limit on healthy code goes red instead of costing 30 s. A wait during which the window keeps sending requests
 is outside it (`quiet`). The longest silence of 185 healthy runs with 15 s (`odpowiedzi`, `logowanie`,
 `zamkniete-okno`) was 2.0 s, the login wait between two questions about the session, and 5.0 s with the reload of 5 s
-of the busy-machine test (2026-11-15, PR #1915, Evidence); a run with 4 s may be silent longer (12 s at `HUNG` at the
-list again), which is why only a run with 15 s is checked.
+of the busy-machine test (2026-11-15, PR #1915, Evidence), all on Maks's Mac; on a Windows runner in CI the run without a
+fault of the busy-machine test was silent 14.6 s at that reload (run 44098171079, #2061), so 15 s and its 11 s left a
+healthy run almost no room; a run with 4 s may be silent longer (12 s at `HUNG` at the list again), which is why only a
+run with 30 s is checked.
 A case whose window stopped before its faulted request runs again like a fault that did not take effect
 (`Run.injected`, `RETRIES`). The login wait is 4 s.
 The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does (`EFENIX_EMMETT_RELOAD_MS`), not after the

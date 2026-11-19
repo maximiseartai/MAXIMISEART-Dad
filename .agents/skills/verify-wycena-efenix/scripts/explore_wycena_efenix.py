@@ -155,18 +155,20 @@ LIMIT_MS: Final = 3_000 + EFENIX_EMMETT_RELOAD_MS
 ``tests/test_wycena_efenix.py`` and the reload the efenix script makes after „Załaduj do zlecenia”, which the window
 waits for in the same time limit as its answer, so an answer to it just before the limit (``early_s``) comes as late as
 one to any other request."""
-CALM_LIMIT_MS: Final = 15_000
+CALM_LIMIT_MS: Final = 30_000
 """The window's time limit in every other run: the run without a fault, second runs and faults whose run never waits
 for the limit. A wait for it is a violation there whatever the window made of it (``QUIET_S``), so a longer one hides no
-answer or reload that never comes, and a case whose window waits for it on healthy code goes red instead of costing 15 s;
-with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than 4 s stopped such a run on
-the time limit. It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still ends within the run's
-limit."""
+answer or reload that never comes, and a case whose window waits for it on healthy code goes red instead of costing the
+limit; with ``LIMIT_MS`` a busy machine that reloads the page after „Załaduj do zlecenia” later than 4 s stopped such a
+run on the time limit, and with 15 s the run without a fault of the busy-machine test on a Windows runner in CI waited
+14.6 s for that reload (#2061). It stays well under ``CASE_LIMIT_S``, so a run that waits for it once still ends within
+the run's limit."""
 QUIET_S: Final = (CALM_LIMIT_MS - LIMIT_MS) / 1000
 """A window with ``CALM_LIMIT_MS`` that sent the proxy no request this long waited for that limit (``quiet``): such a wait
 is silent for the whole limit but the requests of its own step, which come within ``LIMIT_MS`` on healthy code, and no
-pause of a healthy run comes near it (the reload after „Załaduj do zlecenia”, ``EFENIX_EMMETT_RELOAD_MS``, and Dad's
-login wait between two questions about the session, ``efenix_browser.LOGIN_POLL_MS``)."""
+pause of a healthy run comes near it, also on a busy runner (the reload after „Załaduj do zlecenia”,
+``EFENIX_EMMETT_RELOAD_MS``, and Dad's login wait between two questions about the session,
+``efenix_browser.LOGIN_POLL_MS``)."""
 EARLY_S: Final = 0.6
 """How long before the end of the window's wait an answer ``Fault.LATE_BEFORE`` comes (``Plan.early_s``)."""
 RETRIES: Final = 3
@@ -175,7 +177,7 @@ CLOSE_WAIT_MS: Final = 5_000
 """How long the checker waits after a run for the tab Dad closed to be closed."""
 LOGIN_LIMIT_MS: Final = 4_000
 """How long the window waits for Dad's login in the checker (``efenix_browser.LOGIN_TIMEOUT_MS`` at Dad's)."""
-CASE_LIMIT_S: Final = 45.0
+CASE_LIMIT_S: Final = 90.0
 """A run that takes longer hangs: the checker ends with a violation."""
 
 # --- The scenario: two orders of the Plik zbiorczy and the same orders in the Atrapa efenix -------------------------
