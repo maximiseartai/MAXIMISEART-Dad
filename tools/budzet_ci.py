@@ -84,7 +84,6 @@ from pathlib import Path
 import statistics
 import subprocess
 import sys
-import tempfile
 import threading
 import time
 from typing import Any
@@ -92,7 +91,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
-from api_actions import Api, runy
+from api_actions import REZERWA_POMIARU, Api, PonizejRezerwy, ZRezerwa, runy
 import czasy_ci
 import github
 from github import REPO, BladApi, GhApi, GitHub
@@ -125,7 +124,7 @@ WERSJA_PAMIECI = 1
 # Pola runu z listy API, których potrzebują ``pomiar_ci.zadania`` i ``pomiar_ci.zmierz``.
 POLA_RUNU = ("id", "event", "head_branch", "head_sha", "created_at", "run_attempt", "conclusion", "status")
 POMIARY_TORU = {tor.nazwa: tor.pomiary for tor in (*TORY, MUTACJE)}
-GITHUB = GhApi(limit_s=60)
+GITHUB = ZRezerwa(GhApi(limit_s=60), REZERWA_POMIARU)
 
 
 class Licznik:
@@ -241,7 +240,7 @@ def _do_zmierzenia(run: Mapping[str, Any]) -> bool:
 
 
 def _limit_api(blad: BladApi) -> bool:
-    return "rate limit" in blad.stderr.lower()
+    return isinstance(blad, PonizejRezerwy) or "rate limit" in blad.stderr.lower()
 
 
 @dataclass
@@ -627,7 +626,9 @@ def _akcje(teraz: Tydzien, otwarte: list[dict[str, Any]], tekst: str) -> tuple[l
     return [github.Zamknij(int(issue["number"]), zamkniecie) for issue in otwarte], []
 
 
-def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github_api: GitHub = GITHUB, zegar: Callable[[], float] = time.monotonic) -> int:
+def main(
+    argv: Sequence[str] | None = None, *, root: Path = ROOT, github_api: GitHub = GITHUB, zegar: Callable[[], float] = time.monotonic, kopia: Path | None = None
+) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--katalog", type=Path, required=True, help="Pamięć strażnika: pamiec.json i czasy-ci/.")
     parser.add_argument("--dzien", type=date.fromisoformat, help="Dzień uruchomienia, RRRR-MM-DD (UTC, domyślnie dziś); okno to 7 dni przed nim.")
@@ -644,15 +645,14 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github_api: Gi
     okno = Okno.konczace(dzis - timedelta(days=1))
     licznik = Licznik(github_api)
     pamiec = Pamiec.wczytaj(args.katalog)
-    with tempfile.TemporaryDirectory() as odpowiedzi:
-        pobieranie = Pobieranie(pamiec, licznik, Api(Path(odpowiedzi), licznik), args.limit_zapytan, args.limit_czasu, zegar, args.katalog, dzis)
-        try:
-            linie, teraz = _bieg(pobieranie, okno, root, args.katalog, bez_zapisu=args.bez_zapisu)
-        except (BladApi, subprocess.SubprocessError, OSError, KeyError, ValueError) as blad:
-            print(f"{PREFIKS} FAIL | {blad} | {_koszt(pobieranie)}")
-            return 1
-        finally:
-            pamiec.zapisz(args.katalog, dzis)
+    pobieranie = Pobieranie(pamiec, licznik, Api(licznik, kopia), args.limit_zapytan, args.limit_czasu, zegar, args.katalog, dzis)
+    try:
+        linie, teraz = _bieg(pobieranie, okno, root, args.katalog, bez_zapisu=args.bez_zapisu)
+    except (BladApi, subprocess.SubprocessError, OSError, KeyError, ValueError) as blad:
+        print(f"{PREFIKS} FAIL | {blad} | {_koszt(pobieranie)}")
+        return 1
+    finally:
+        pamiec.zapisz(args.katalog, dzis)
     print("\n".join(linie))
     stan = "–" if teraz.p90 is None else ("ponad budżet" if teraz.przekroczony else "w budżecie")
     print(

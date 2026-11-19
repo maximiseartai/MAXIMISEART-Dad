@@ -35,6 +35,8 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
 Ponowienie to ``gh run rerun <run> --failed``, a zielonego zadania bez zapisu czasów ``gh run rerun --job <zadanie>``
 (kilku: ``gh run rerun <run>``, bo GitHub ponawia osobno tylko jedno zielone zadanie). Kod 0 i ``PONÓW OK`` znaczą, że
 narzędzie ponowiło run albo uruchomiło CI na świeżym scaleniu; kod 1 to ``PONÓW CZEKA`` albo ``PONÓW ODMOWA``, a kod 2 to ``PONÓW FAIL``, błąd ``gh``.
+Przy zapasie limitu GitHub API poniżej ``REZERWA_SCALANIA`` (``tools/lib/api_actions.py``) narzędzie nie pyta API,
+tylko odmawia (``PONÓW ODMOWA``) z godziną resetu limitu.
 
 Granica: runner, który zniknął bez logu zadania, daje odmowę z błędem pobrania logu, a nie awarię, bo w runach
 z 2–12.11 takiego przypadku nie było i jego sygnatury nie znamy.
@@ -59,6 +61,7 @@ import urllib.parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+from api_actions import REZERWA_SCALANIA, PonizejRezerwy, ZRezerwa
 import czasy_ci
 import github
 from github import REPO, STRONA, GhApi, GitHub
@@ -269,6 +272,7 @@ def _gh_swieze_scalenie(numer: int) -> None:
 
 
 GH = Akcje(_gh_ponow_zadania, _gh_swieze_scalenie)
+GITHUB = ZRezerwa(GhApi(), REZERWA_SCALANIA)
 
 
 @dataclass(frozen=True)
@@ -442,10 +446,13 @@ def main(argv: list[str] | None = None, *, api: GitHub | None = None, akcje: Akc
                 print(f"PONÓW ODMOWA | #{args.numer} | CI nie biegło na HEAD: jeszcze nie wystartowało albo PR ma konflikt z bazą")
                 return 1
             run_id = run.id
-        wynik = ponow(api or GhApi(), run_id, args.numer, teraz or datetime.now(UTC), akcje)
+        wynik = ponow(api or GITHUB, run_id, args.numer, teraz or datetime.now(UTC), akcje)
     except stan_pr.UnknownRun as nieznany:
         print(f"PONÓW FAIL | #{args.numer} | check „{nieznany.name}” bez identyfikatora runu w detailsUrl {nieznany.url}")
         return 2
+    except PonizejRezerwy as blad:
+        print(f"PONÓW ODMOWA | {blad.stderr}")
+        return 1
     except (github.BladApi, subprocess.SubprocessError, OSError) as blad:
         print(f"PONÓW FAIL | {blad}")
         return 2
