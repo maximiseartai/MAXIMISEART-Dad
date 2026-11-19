@@ -7,12 +7,16 @@ wątków, więc hook go odmawia (kod 2, przyczyna na stderr trafia do agenta) i 
 Działa tylko tam, gdzie ``boatbox`` jest w ``PATH`` (Mac Maksa), a na innej maszynie przepuszcza wszystko, bo skill
 każe tam uruchamiać lokalnie.
 
-Słowa polecenia daje lekser zsh, powłoki, w której Claude Code na Macu uruchamia polecenie (``ZSH_WORDS``: flaga
-``(Z+C+)`` bez wykonania podstawień i bez komentarzy, potem ``(Q)``), więc kontynuacja linii, cudzysłowy, ucieczki,
-``$'…'``, komentarze i numer deskryptora przed przekierowaniem (``2>&1``, ``8>f``) znaczą to samo co w powłoce
-agenta; bez zsh w ``PATH`` hook przepuszcza wszystko. Ciała heredoców hook zdejmuje sam, bo lekser zostawia je
-słowami. Operatory (``;``, ``&``, ``|``, nawiasy, nowa linia) dzielą polecenie na polecenia proste, a przekierowanie
-zabiera swój cel. Słowa za słowem ``boatbox`` należą do ``boatbox``. Python to słowo ``python``,
+Słowa polecenia daje zsh, powłoka, w której Claude Code na Macu uruchamia polecenie (``ZSH_WORDS``): jego parser
+czyta całe polecenie jako ciało funkcji (``functions[f]=$CMD``, bez wykonania), wypisuje je na nowo bez komentarzy
+i kontynuacji linii, z poleceniem najwyższego poziomu w linii od tabulatora, a ciała heredoców tej linii odpadają do
+linii ich ogranicznika; resztę dzieli na słowa lekser ``(Z+C+)``, a ``(Q)`` zdejmuje cudzysłowy. Kontynuacja linii,
+cudzysłowy, ucieczki, ``$'…'``, komentarze, heredoki i numer deskryptora przed przekierowaniem (``2>&1``, ``8>f``)
+znaczą więc to samo co w powłoce agenta. Znak spoza ASCII idzie do zsh jako znacznik z liter i cyfr, którego
+w poleceniu nie ma (``_Ascii``), bo tekst funkcji zsh oddaje bajty 0x83–0x9F w swojej wewnętrznej postaci, a żaden taki
+znak nie należy do składni powłoki. Polecenie, którego parser zsh nie przyjmie, albo bez zsh w ``PATH`` hook
+przepuszcza. Operatory (``;``, ``&``, ``|``, nawiasy, nowa linia) dzielą polecenie na polecenia proste, a
+przekierowanie zabiera swój cel. Słowa za słowem ``boatbox`` należą do ``boatbox``. Python to słowo ``python``,
 ``python3`` albo ``python3.14`` ze ścieżką (``.venv/bin/python``) w dowolnym miejscu polecenia prostego, także za
 ``timeout 900`` czy ``nohup``, albo bez ścieżki na pozycji programu: pierwsze słowo za przypisaniami (``X=1``)
 i słowami ``PREFIXES`` (``do``, ``then``, ``!``, ``{``…). Jego skrypt to pierwsze słowo za opcjami Pythona, a ``-m``
@@ -66,7 +70,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import potomne
 
-ZSH_WORDS = 'w=(${(Z+C+)CMD}); print -rN -- ${#w} "${w[@]}" "${(Q@)w}"'
+ZSH_WORDS = r"""
+functions[f]=$CMD 2>/dev/null || exit 3
+local line
+local -a w keep pending
+for line in "${(@f)functions[f]}"; do
+  if (( $#pending )); then
+    [[ $line == "$pending[1]" ]] && shift pending
+    continue
+  fi
+  keep+=("$line")
+  [[ $line == $'\t'* ]] || continue
+  w=(${(Z+C+)line})
+  for (( i = 1; i < $#w; i++ )); do
+    [[ $w[i] == (<->|)'<<'(|-) ]] && pending+=("${(Q)w[i+1]}")
+  done
+done
+w=(${(Z+C+)${(F)keep}})
+print -rN -- $#w "${w[@]}" "${(Q@)w}"
+"""
 SEPARATOR = re.compile(r"[;&|()]+")
 REDIRECT = re.compile(r"\d*[<>&|!-]*[<>][<>&|!-]*")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
@@ -80,7 +102,6 @@ TEST_FILE = re.compile(r".+\.py(?:::.*)?|.*\$.*|@.+")
 WORKERS = re.compile(r"(?:-n|--numprocesses=?)(.*)")
 HELP = frozenset({"-h", "--help"})
 BARE_WORD = re.compile(r"[\w@%+=:,./${}~-]+")
-HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)(\w+)\1")
 
 AUTO = "boatbox auto bierze wolny slot Maca, bez wolnego slotu od razu box, a bez startu boxa czeka w kolejce na slot."
 
@@ -143,32 +164,30 @@ PYTEST_RUN = Heavy(
 )
 
 
-def _without_heredocs(command: str) -> str:
-    kept: list[str] = []
-    delimiter: Optional[str] = None
-    for line in command.split("\n"):
-        if delimiter is not None:
-            if line.strip() == delimiter:
-                delimiter = None
-            continue
-        kept.append(line)
-        opened = HEREDOC.search(line)
-        if opened:
-            delimiter = opened.group(2)
-    return "\n".join(kept)
+class _Ascii:
+    def __init__(self, text: str) -> None:
+        marker = "Zq0"
+        while marker in text:
+            marker += "0"
+        self.text = "".join(char if char.isascii() else f"{marker}{ord(char):X}{marker}" for char in text)
+        self.marked = re.compile(f"{marker}([0-9A-F]+){marker}")
+
+    def decoded(self, word: str) -> str:
+        return self.marked.sub(lambda found: chr(int(found.group(1), 16)), word)
 
 
 def _simple_commands(command: str) -> list[list[str]]:
     zsh = shutil.which("zsh")
     if zsh is None:
         return []
+    ascii_command = _Ascii(command)
     try:
-        lexed = potomne.run([zsh, "-fc", ZSH_WORDS], cwd=Path(__file__).parent, env={"CMD": _without_heredocs(command)}, timeout=5)
-    except (OSError, subprocess.SubprocessError):
+        lexed = potomne.run([zsh, "-fc", ZSH_WORDS], cwd=Path(__file__).parent, env={"CMD": ascii_command.text}, timeout=5)
+    except (OSError, ValueError, subprocess.SubprocessError):
         return []
     if lexed.returncode != 0:
         return []
-    count, *words = lexed.stdout.split("\0")[:-1]
+    count, *words = [ascii_command.decoded(word) for word in lexed.stdout.split("\0")[:-1]]
     commands: list[list[str]] = [[]]
     target = False
     for token, word in zip(words[: int(count)], words[int(count) :]):

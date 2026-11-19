@@ -27,9 +27,18 @@ SETTINGS = ROOT / ".claude" / "settings.json"
 
 SZYBKO = "boatbox auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8 "
 ZSH = shutil.which("zsh")
-wymaga_zsh = pytest.mark.skipif(
-    ZSH is None, reason="hook czyta polecenie lekserem zsh, powłoki Claude Code na Macu, a runner CI nie ma zsh"
-)
+wymaga_zsh = pytest.mark.usefixtures("zsh_agenta")
+
+
+@pytest.fixture
+def zsh_agenta() -> str:
+    if sys.platform == "win32":
+        pytest.skip("hook ciężkich poleceń działa na Macu, gdzie Claude Code uruchamia polecenie w zsh")
+    assert ZSH is not None, (
+        "Hook ciężkich poleceń czyta polecenie parserem zsh, powłoki Claude Code na Macu, więc jego testy go wymagają: "
+        "zainstaluj zsh (apt-get install zsh) albo uruchom testy na Macu."
+    )
+    return ZSH
 
 
 def _load() -> ModuleType:
@@ -274,6 +283,46 @@ def _fake_boatbox(folder: Path) -> Path:
     return folder
 
 
+HEREDOCS = [
+    "echo -m \"$(cat <<'EOF'\ntytuł\nEOF\n)\" 2>/dev/null; ",
+    "cat <<\\EOF > /dev/null\ndon't\nEOF\n",
+    "cat <<'EOF' > /dev/null\ndon't\nEOF\n",
+    "cat <<EOF > /dev/null\n  EOF\ndon't\nEOF\n",
+    "cat <<A <<B > /dev/null\na\nA\nb don't\nB\n",
+    "cat <<-\tEOF > /dev/null\n\tdon't\n\tEOF\n",
+    "cat <<EOF > /dev/null\n\tżółć don't\nEOF\n",
+    "echo \"zapis <<EOF w tekście\"\n",
+    "echo 'zapis <<EOF w tekście'\n",
+    "# heredoc: cat <<EOF\n",
+    "echo $((1<<3))\n",
+    "python3 - <<'EOF' > /dev/null\nprint(\".venv/bin/python -m pytest -n 8\")\nEOF\n",
+]
+
+
+@wymaga_zsh
+@pytest.mark.parametrize("prefix", HEREDOCS)
+@pytest.mark.parametrize("tail", ["-n 8 > f", "-n 0"])
+def test_hook_czyta_heredoc_jak_zsh_agenta(prefix: str, tail: str, tmp_path: Path) -> None:
+    command = f"{prefix}{PYTEST} {tail}"
+    argv = [".venv/bin/python", *_argv_from_zsh(command, tmp_path)]
+
+    refusal, of_argv = hook.judge(command), hook.judge(shlex.join(argv))
+
+    assert (refusal is None) == (of_argv is None), argv
+    if refusal is not None:
+        ready = refusal.reason.split("Uruchom je tak: ", 1)[1].split("\n", 1)[0]
+        assert shlex.split(shlex.split(ready)[-1]) == argv
+
+
+@wymaga_zsh
+@pytest.mark.parametrize("tail", ["-n 8", "-n 0"])
+def test_heredoc_w_skrypcie_bash_c_czyta_sie_jak_w_powloce(tail: str, tmp_path: Path) -> None:
+    command = f"bash -c \"cat <<'E' > /dev/null\nx don't\nE\n{PYTEST} {tail}\""
+    argv = [".venv/bin/python", *_argv_from_zsh(command, tmp_path)]
+
+    assert (hook.judge(command) is None) == (hook.judge(shlex.join(argv)) is None), argv
+
+
 @wymaga_zsh
 @pytest.mark.parametrize("substitution", ["x=$(touch {m})", 'echo "$(touch {m})"', "x=`touch {m}`", "cat <(touch {m})"])
 def test_lekser_hooka_niczego_nie_wykonuje(substitution: str, tmp_path: Path) -> None:
@@ -308,6 +357,13 @@ def test_hook_z_boatbox_w_path_odmawia_kodem_2_z_poleceniem_na_stderr(tmp_path: 
 
     assert (hooked.returncode, hooked.stdout) == (2, ""), hooked.stderr
     assert ready in hooked.stderr
+
+
+@wymaga_zsh
+def test_bajt_nul_w_poleceniu_nie_wywraca_hooka(tmp_path: Path) -> None:
+    hooked = _hook(_bash(".venv/bin/python tools/szybko.py\0"), _fake_boatbox(tmp_path / "bin"), Path(str(ZSH)).parent)
+
+    assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
 
 @wymaga_zsh
