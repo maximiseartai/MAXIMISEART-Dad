@@ -180,6 +180,7 @@ def test_skill_z_poleceniami_w_ci_zostaje_w_skillach_verify_a_liczy_ci_wymienia_
         },
     )
     _append(tmp_path, "src/a/b/gleboki.py")
+    _append(tmp_path, ".agents/skills/verify-a/SKILL.md")
 
     result = _run(tmp_path, base)
 
@@ -188,7 +189,7 @@ def test_skill_z_poleceniami_w_ci_zostaje_w_skillach_verify_a_liczy_ci_wymienia_
         "wymienia linia LICZY CI"
     )
     assert _skills(result) == ["verify-a", "verify-mac", "verify-zly"], rule
-    assert result.stdout.splitlines()[-2] == "LICZY CI: verify-a (narzedzie.py --wszystko)", rule
+    assert "LICZY CI: verify-a (narzedzie.py --wszystko)" in result.stdout.splitlines(), rule
 
 
 MUTATION_SCRIPT = "MUTATIONS = ()\nif __name__ == '__main__':\n    print('MUTACJE OK')\n"
@@ -202,13 +203,20 @@ AGREEING = {
 }
 
 
+LICZY = ("LICZY CI", "LICZY MAIN", "LICZY NOC")
+
+
 @pytest.mark.parametrize(
-    ("changed", "at_night"),
-    [("src/a/b/gleboki.py", []), (".agents/skills/verify-a/SKILL.md", ["check_a_mutations.py"])],
+    ("changed", "counted"),
+    [
+        # Trafienie tylko w pilnuje: podstawę liczy pełne CI main po merge'u, a pull request nie (ADR 0020, D1).
+        ("src/a/b/gleboki.py", ["LICZY MAIN: verify-a (sprawdz_a.py --wszystko)"]),
+        (".agents/skills/verify-a/SKILL.md", ["LICZY CI: verify-a (sprawdz_a.py --wszystko)", "LICZY NOC: verify-a (check_a_mutations.py)"]),
+    ],
     ids=["pilnuje", "folder skilla"],
 )
-def test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_i_nocy(
-    tmp_path: Path, changed: str, at_night: list[str]
+def test_liczy_ci_main_i_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_plan_pull_requestu_pushu_i_nocy(
+    tmp_path: Path, changed: str, counted: list[str]
 ) -> None:
     base = _repo(tmp_path, AGREEING)
     _append(tmp_path, changed)
@@ -217,11 +225,7 @@ def test_liczy_ci_i_liczy_noc_wymieniaja_dokladnie_kroki_skilla_ktore_uruchamia_
     result = _run(tmp_path, base)
 
     assert _skills(result) == ["verify-a"]
-    lines = result.stdout.splitlines()
-    assert [line for line in lines if line.startswith(("LICZY CI", "LICZY NOC"))] == [
-        "LICZY CI: verify-a (sprawdz_a.py --wszystko)",
-        *([f"LICZY NOC: verify-a ({', '.join(at_night)})"] * bool(at_night)),
-    ]
+    assert [line for line in result.stdout.splitlines() if line.startswith(LICZY)] == counted
 
 
 MODEL_SCRIPT = (
@@ -239,27 +243,28 @@ WITH_MODEL = {
 
 
 @pytest.mark.parametrize(
-    ("changed", "in_ci", "at_night"),
+    ("changed", "counted"),
     [
-        (".agents/skills/verify-a/model/M.tla", ["check_model_a_mutations.py"], ["check_a_mutations.py"]),
-        (".agents/skills/verify-a/SKILL.md", [], ["check_a_mutations.py", "check_model_a_mutations.py"]),
-        ("src/a/b/gleboki.py", [], []),
+        (
+            ".agents/skills/verify-a/model/M.tla",
+            ["LICZY CI: verify-a (sprawdz_a.py --wszystko, check_model_a_mutations.py)", "LICZY NOC: verify-a (check_a_mutations.py)"],
+        ),
+        (
+            ".agents/skills/verify-a/SKILL.md",
+            ["LICZY CI: verify-a (sprawdz_a.py --wszystko)", "LICZY NOC: verify-a (check_a_mutations.py, check_model_a_mutations.py)"],
+        ),
+        ("src/a/b/gleboki.py", ["LICZY MAIN: verify-a (sprawdz_a.py --wszystko)"]),
     ],
     ids=["model", "folder skilla bez modelu", "pilnuje"],
 )
-def test_skrypt_mutacji_modelu_przy_zmianie_modelu_stoi_w_liczy_ci_a_nie_w_liczy_noc(
-    tmp_path: Path, changed: str, in_ci: list[str], at_night: list[str]
-) -> None:
+def test_skrypt_mutacji_modelu_przy_zmianie_modelu_stoi_w_liczy_ci_a_nie_w_liczy_noc(tmp_path: Path, changed: str, counted: list[str]) -> None:
     base = _repo(tmp_path, WITH_MODEL)
     _append(tmp_path, changed)
     commit(tmp_path, "zmiana")
 
     lines = _run(tmp_path, base).stdout.splitlines()
 
-    assert [line for line in lines if line.startswith(("LICZY CI", "LICZY NOC"))] == [
-        f"LICZY CI: verify-a ({', '.join(['sprawdz_a.py --wszystko', *in_ci])})",
-        *([f"LICZY NOC: verify-a ({', '.join(at_night)})"] * bool(at_night)),
-    ]
+    assert [line for line in lines if line.startswith(LICZY)] == counted
 
 
 def test_zmiana_silnika_mutacji_nie_wskazuje_skilla_choc_noc_uruchamia_jego_skrypt_mutacji(tmp_path: Path) -> None:

@@ -23,7 +23,8 @@ Po Z1 i Z2 ścianę pełnego CI `main` trzyma ten limit: plan pushu na czasach r
 Symulacja na merge'ach i zadaniach organizacji z 2–12.11 (runy `main` po kolei, jak w grupie współbieżności) daje strażnikowi `main` (merge → pełny werdykt) p90 15,8 min przy 20 zadaniach, 11,3 przy 25, 9,1 przy 30 i 6,9 przy 40; ten sam model z runem 23,1 min z bazy hillclimbu daje p90 42,7 min wobec zmierzonych 41,8.
 Czasu, w którym organizacja chciałaby więcej niż 60 zadań naraz, przybywa wobec 20 o 9 min w 11 dniach przy 25, 56 przy 30 i 96 przy 40, a zadanie `ci.yml` utworzone, gdy biegło 40–59 zadań, czekało w kolejce p50 13–22 s.
 25 daje połowę skrócenia, które dałoby 40, przy jednej dziesiątej dodatkowej kolejki, a powyżej 25 każde zadanie skraca cel coraz mniej (20 → 25: 27 s na zadanie, 25 → 30: 13 s, 30 → 40: 7,5 s).
-Zmieniona 19.11 (D2, decyzja Maksa): bramka PR ma budżet czasu, p90 ≤ 5 min od pushu do `Required CI status` każdego runu PR, a przekroczenie samo zakłada issue z wąskim gardłem, nad którym agent pracuje (poziom 2 niżej).
+Zmieniona 19.11 (D1, decyzja Maksa): podstawa `ci:` skilla biegnie na PR tylko wtedy, gdy PR zmienia folder skilla, a push do `main` i noc się nie zmieniają; wariant bez kroków skilli na PR (N0) biegnie w cieniu do rozstrzygnięcia regułą zapisaną przed włączeniem (sekcja „Podstawy skilli na PR (D1)”, #2169).
+Zmieniona 19.11 (D2, decyzja Maksa): budżet bramki PR to p90 ≤ 5 min od pushu do `Required CI status`, a jego przekroczenie automatycznie zakłada issue z wąskim gardłem (poziom 2 niżej, razem ze sposobem pomiaru, który wybrał autor strażnika).
 
 ## Kontekst
 
@@ -49,9 +50,11 @@ CI ma cztery poziomy:
    Ruff, mypy i Frontend biegną zawsze, a E2E przy zmianie `src/`.
    pytest biegnie tylko na testach wybranych dla zmiany, na Windows 3.13 (Python taty i najstarszy z `requires-python`) i Linux 3.14.
    Zmiana `.github/workflows/**` wybiera wszystko.
-   Podstawa skilla `verify-*` biegnie, gdy zmiana trafia w jego `pilnuje:`, a jego skrypty mutacji, gdy zmienił się folder skilla.
+   Podstawa skilla `verify-*` biegnie, gdy zmiana trafia w jego `pilnuje:` (od 19.11 tylko gdy PR zmienia folder skilla, D1), a jego skrypty mutacji, gdy zmienił się folder skilla.
    Change mutations nie blokuje werdyktu CI. Biegnie po zadaniach bramki, jedna mutacja na zmienioną linię, a każdą przeżytą recenzent omawia w werdykcie.
-   Bramka ma budżet czasu (D2, 19.11): p90 czasu od pushu do `Required CI status` pierwszej próby każdego runu PR z 7 pełnych dni UTC ≤ 5 min, czyli cel „każdy PR” z `tools/pomiar_ci.py`.
+   Bramka ma budżet czasu (D2, 19.11, decyzja Maksa): p90 ≤ 5 min od pushu do `Required CI status`, a przekroczenie automatycznie zakłada issue z wąskim gardłem.
+   Sposób pomiaru wybrał autor strażnika (#2171), nie D2, więc agent może go zmienić bez Maksa: p90 liczy pierwszą próbę każdego runu PR, bo tak liczy cel „każdy PR” z `tools/pomiar_ci.py` (jedna definicja czasu bramki), a ponowienie to nowa próba po werdykcie bramki, którą issue pokazuje obok p90.
+   Okno to 7 pełnych dni UTC przed dniem biegu: lista runów pełnego dnia już się nie zmienia, więc strażnik pobiera ją raz, a tydzień obejmuje każdy dzień tygodnia, więc p90 nie skacze z ruchem weekendu ani z jedną złą godziną (984 runy PR w 11–17.11 wobec około 150 jednego dnia).
    Pilnuje go codziennie strażnik budżetu (`tools/budzet_ci.py`, workflow `budzet-ci.yml`): przy przekroczeniu zakłada albo zmienia jedno issue z etykietą `budzet-ci`, które nazywa wąskie gardło, czyli odcinek ścieżki krytycznej o największym wkładzie do p90, a gdy p90 wróci do budżetu, komentuje liczby okna i zamyka issue.
    Otwarte issue to praca agenta: zoptymalizować bramkę z powrotem do budżetu, od wąskiego gardła.
    `tools/scal_pr.py` nie scala PR, którego `PASS` nie omawia przeżytych mutacji.
@@ -73,6 +76,35 @@ Najpierw poprawka w codebase albo środowisku agenta, tak żeby ta klasa błędu
 Do bramki trafia tylko to, co złapałoby ten defekt, z dowodem z backtestu, czyli test, krawędź wyboru testów albo glob `pilnuje:`.
 Pełnego zestawu ani całego zadania CI do bramki się nie dokłada.
 Test kształtu planu bramki dla dwóch wzorcowych PR-ów, małego tylko z testami i zmiany Centrum, ma limit liczby zadań i prognozy czasu; przekroczenie to decyzja Maksa.
+
+### Podstawy skilli na PR (D1)
+
+Decyzja Maksa z 19.11 (D1): na PR podstawa `ci:` skilla biegnie tylko wtedy, gdy PR zmienia plik w folderze skilla (`.agents/skills/<skill>/`, wariant NF).
+Zmiana, która trafia tylko w `pilnuje:`, zostawia podstawę pełnemu CI `main`, a plan pisze przy niej `biegnie na main: PR nie zmienia folderu skilla`, a `tools/skille_dla_zmiany.py` wymienia ją w linii `LICZY MAIN`.
+Push do `main` i noc zostają: push uruchamia każdą podstawę, a noc podstawę z `ci-czesci` przy trafieniu w `pilnuje:` albo folder.
+Zmiana ścieżki z `Context.SKILL_STEPS` dalej uruchamia na PR każdą podstawę, bo zmienia, jak podstawy biegną, a nie produkt, który sprawdzają.
+Skrypt mutacji modelu TLA+ biegnie na PR jak przed D1: jego reguła to już pliki folderu skilla (model, skrypt, sprawdzenia jego mutacji) i moduły, które te sprawdzenia importują (silnik modelu, który daje ich werdykt), a na pushu nie biegnie, więc zmiana modelu bez niego czekałaby na noc.
+Rozjazd modelu skilla z kodem `tools/szybko.py` sprawdza dalej przy trafieniu w `pilnuje:`, bo pełne CI `main` uruchomi podstawę z rozjazdem po merge'u.
+Powód: bramka PR ma mieścić się w p90 ≤ 5 min od pushu do `Required CI status`, a ogon trzymają podstawy skilli.
+W backteście 113 scalonych PR-ów (plan każdego wariantu na czasach CI z 19.11, realna ściana to zmierzona minus różnica planu) PR-ów dłuższych niż 5 min jest dziś 46 ze 101, z zawężoną pełną bramką i NF 30, a bez kroków skilli na PR (N0) 23.
+
+Plan PR-u zapisuje w `plan.json` cień (`cien`): dla wariantu V0 (reguła sprzed D1), NF i N0 kroki skilli, które by biegły, oraz najdłuższą ścianę zadania i liczbę zadań planu z nimi, na tych samych czasach, a linia `CIEŃ PODSTAW` je drukuje.
+Wykonuje się tylko NF (`NA_ZYWO` w `tools/lib/zakres_runu.py`), a N0 nie ma na PR żadnego kroku skilla, także skryptu mutacji modelu, jak w backteście.
+Artefakt `plan` trzyma się 30 dni, żeby pomiar po 14 dniach czytał cień całego okna.
+
+Reguła rozstrzygnięcia, zapisana przed włączeniem NF (#2169): N0 wygrywa, jeśli w 14 dniach po merge'u NF kroki skilli NF na PR złapały mniej niż X = 11 prawdziwych defektów (naprawa na gałęzi zmienia folder tego skilla albo `src/`; jedna gałąź z jednym krokiem to jeden defekt), których pytest w tym runie nie złapał, a cień daje N0 oszczędność czekania na PR co najmniej 825 agent-minut.
+Inaczej zostaje NF.
+Liczy to `tools/cien_podstaw.py` i drukuje obok wyrocznię `main`: podstawę, która padła na `main`, a scalony PR miał ją w cieniu V0, nie w NF.
+Taka ucieczka przechodzi przy NF i przy N0, więc wyniku nie zmienia, ale jej czerwień sprawdza koszt ucieczki przyjęty w progu.
+Skąd liczby (11–18.11):
+
+- Koszt ucieczki 75 agent-minut to mediana czerwieni `main` czterech defektów, które przeszły bramkę (#1518 51 min, #1534 28, #1570 66, #1906 z #1920 i #1923 104), czyli 58,5 min, i mediana PR-u naprawy od otwarcia do merge'a (#1526 16 min, #1553 10, #1915 118), czyli 16,2 min; minuta czerwieni to minuta agenta, który ją naprawia (przypuszczenie).
+- Oszczędność N0 wobec NF: na losowej próbce 70 z 113 PR-ów backtestu plan NF jest średnio o 23,9 s dłuższy, a 12–18.11 dało 1071 runów PR, z których 97,3% kończy się success albo failure (1003 z 1031 w 11–17.11), czyli 2084 runy na 14 dni i 830 agent-minut (wywnioskowane; tak samo liczy `tools/cien_podstaw.py`).
+  X to 830 / 75 = 11,1, zaokrąglone w dół, bo NF już biegnie, a powrót do N0 to nowa zmiana; próg oszczędności to X razy koszt ucieczki.
+- Z 1003 runów PR z wynikiem (11–17.11) 18 było czerwonych tylko przez Mutation checks, a naprawa na gałęzi daje w nich 10 defektów według reguły (gałąź z krokiem).
+  8 z nich NF dalej łapie na PR, bo PR zmieniał folder padłego skilla: sam `verify-status-okresu` (run 43134529470), `src/` po `verify-centrum-rozliczen` (43181231744 oraz 43401647863 i 43403067635, dwie gałęzie z tą samą poprawką, więc 7 różnych), napęd `verify-centrum-rozliczen` (43367034036, 43378421153, 43453840613, 44194162002).
+  2 przepuściłby na `main` i NF, i N0: rozjazd modelu `verify-kolejka-skrzynki` po docstringu w `src/` (43348679797), który łapie też `tools/szybko.py`, i `verify-centrum-rozliczen` po zmianie `src/rozliczenia/run_context.py` (43527120095), niepewny, bo gałąź wciągnęła też `main`.
+  8 na 1003 runy to około 17 na 2084 runy 14 dni, nad progiem, więc prognoza przed pomiarem: NF zostaje.
 
 ### Niestabilne testy
 
@@ -108,6 +140,7 @@ Maks zgodził się 26.10 na takie wpisy z góry, więc nie wymagają osobnej zgo
 - Przy 100 PR dziennie limit 20 zadań jest zajęty przez 16–17 godzin na dobę i wydłuża bramkę.
   W symulacji tego kształtu (nieblokujące Change mutations, trwający run `main` się kończy) p50 to 19,3 min i p90 46,3 min przy 20 zadaniach naraz, a 6,3 i 11,0 min przy 40.
 - Dalsze skracanie bramki to przyspieszanie samych testów, nie zdejmowanie ich z bramki.
+  Wyjątkiem jest D1: podstawa skilla przy zmianie tylko w `pilnuje:` biegnie od 19.11 na `main`, więc defekt, który łapie tylko ona, pokazuje dopiero pełne CI `main` (w 11–18.11 dwa takie defekty w 8 dni).
 - Przekroczenie budżetu bramki widać bez ręcznego pomiaru: issue `budzet-ci` stoi otwarte, dopóki p90 okna nie wróci do 5 min, a jego treść mówi, który odcinek i które jednostki skrócić.
 
 ## Odrzucone warianty

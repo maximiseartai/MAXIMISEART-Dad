@@ -78,7 +78,7 @@ import repo
 import rozjazd_modelu
 from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all, with_structure
 import wyniki_testow
-from zakres_runu import podstawa_na_pull_request
+from zakres_runu import podstawa_trafiona
 
 GREEN = "szybko-zielone.json"
 # Zapadki padają na liniach, które zmiana dodaje, a reguły ast-grep całego drzewa na każdej linii swoich plików, więc biegną
@@ -336,13 +336,13 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
 
 
 def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
-    """Rozjazdy modelu skilli, których podstawę ``ci:`` zmiana ``changed`` uruchomiłaby na pull request: w CI ta podstawa
-    pada na nich, zanim ruszy."""
+    """Rozjazdy modelu skilli, w których podstawę ``ci:`` trafia zmiana ``changed``: w CI ta podstawa pada na nich, zanim
+    ruszy, na pull request, gdy zmienia folder skilla, a na ``main`` po merge'u zawsze (ADR 0020, D1)."""
 
     return [
         f"{skill.name}: {found}"
         for skill in rozjazd_modelu.skille(root)
-        if podstawa_na_pull_request(skill, changed)[0] and (found := rozjazd_modelu.rozjazd(skill, root)) is not None
+        if podstawa_trafiona(skill, changed) and (found := rozjazd_modelu.rozjazd(skill, root)) is not None
     ]
 
 

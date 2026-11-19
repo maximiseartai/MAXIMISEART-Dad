@@ -5,6 +5,10 @@ zadanie wykonuje swoje jednostki przez ``tools/ci/wykonaj_zadanie.py``, a ``Requ
 planu przez ``tools/ci/werdykt_required.py``. Jednostka to plik testów, jego udział, krok CI, podstawa skilla, skrypt
 mutacji albo jego część, pod napisem swojego klucza (``tools/lib/jednostka.py``).
 
+Plan pull requestu ma też cień (``cien``, ADR 0020, D1): dla każdego wariantu ``zakres_runu.Podstawy`` kroki skilli,
+które by biegły, i plan z nimi na tych samych czasach (najdłuższa ściana zadania i liczba zadań). Wykonuje się tylko
+wariant ``NA_ZYWO``, a cień czyta pomiar rozstrzygnięcia D1 (``tools/cien_podstaw.py``).
+
 Plan ma ``digest``: zadanie wykonuje tylko plan, którego treść się z nim zgadza, i zapisuje go w swoim zapisie czasów,
 a werdykt przyjmuje tylko zapisy tego planu. Limit kroku pytest (``limit_pytest_s``) i limit zadania pytest w macierzy
 (``limit_minut``, ``timeout-minutes`` w ``ci.yml``) liczy plan z tych samych stałych, z którymi zadanie je egzekwuje.
@@ -22,14 +26,14 @@ from pathlib import Path
 from typing import Any
 
 from jednostka import Klucz, Rodzaj
-from zakres_runu import KROKI, MUTACJE, TORY, Zdarzenie
+from zakres_runu import KROKI, MUTACJE, TORY, Podstawy, Zdarzenie
 
 WERSJA = 1
 # Pola planu dopisane w wersji ``WERSJA`` po pierwszych zapisach. Plan zapisany przed polem (artefakt ``plan`` starszego
 # runu, który czytają ``tools/pomiar_ci.py --artefakty`` i ``tools/mutacje.py --jak-ci``) go nie ma, więc odczyt bierze
 # wartość domyślną z dataclass ``Plan``, a ``digest`` liczy pole tylko z wartością inną niż domyślna: digest takiego planu
 # zgadza się z zapisanym w nim i z zapisami czasów jego zadań.
-DOPISANE_POLA = frozenset({"zmienione_pliki_testow"})
+DOPISANE_POLA = frozenset({"zmienione_pliki_testow", "cien"})
 # Artefakt runu ``ci.yml`` z planem i plik planu w nim (``--wyjscie`` zadania ``plan``).
 ARTEFAKT = "plan"
 PLIK = "plan.json"
@@ -62,6 +66,17 @@ class Zadanie:
 
 
 @dataclass(frozen=True)
+class Cien:
+    """Wariant ``Podstawy`` w cieniu planu pull requestu: klucze kroków skilli, które by biegły (``Step.key``), oraz
+    najdłuższa ściana zadania i liczba zadań pytest i Mutation checks planu z nimi."""
+
+    wariant: Podstawy
+    kroki: tuple[str, ...]
+    sciana_s: float
+    zadania: int
+
+
+@dataclass(frozen=True)
 class Plan:
     zdarzenie: Zdarzenie
     cel_s: float
@@ -70,6 +85,8 @@ class Plan:
     bledy: tuple[str, ...] = ()  # FAIL-e znalezienia kroków skilli: zgubiony skrypt mutacji, zły klucz ``ci:``
     # Pliki testów, które zmienił sam pull request (``ZakresRunu.zmienione_pliki_testow``): ich porażka nie ma ponowienia.
     zmienione_pliki_testow: tuple[str, ...] = ()
+    # Na pull request każdy wariant ``Podstawy`` (ADR 0020, D1); push i noc go nie mają.
+    cien: tuple[Cien, ...] = ()
 
     @property
     def digest(self) -> str:
@@ -92,8 +109,9 @@ class Plan:
             raise ValueError(f"plan w wersji innej niż {WERSJA}")
         digest = dane.pop("digest")
         zadania = tuple(Zadanie(**{**zadanie, "jednostki": tuple(zadanie["jednostki"])}) for zadanie in dane.pop("zadania"))
+        cien = tuple(Cien(Podstawy(w["wariant"]), tuple(w["kroki"]), w["sciana_s"], w["zadania"]) for w in dane.pop("cien", ()))
         pola: dict[str, Any] = {nazwa: tuple(wartosc) if isinstance(wartosc, list) else wartosc for nazwa, wartosc in dane.items()}
-        plan = cls(**{**pola, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "zadania": zadania})
+        plan = cls(**{**pola, "zdarzenie": Zdarzenie(dane["zdarzenie"]), "zadania": zadania, "cien": cien})
         if plan.digest != digest:
             raise ValueError(f"treść planu nie zgadza się z jego digest {digest[:12]}")
         # Klucz jednostki w innej postaci to ValueError, jak plan w innej wersji.

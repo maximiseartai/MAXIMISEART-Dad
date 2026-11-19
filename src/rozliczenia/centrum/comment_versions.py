@@ -234,7 +234,7 @@ class _Versions:
 
 _VERSIONS: Final = _Versions()
 """Dowód wersji komentarza: ``LogsPost`` bez niego to błąd mypy (brak argumentu albo zły typ). Bierze go tylko
-``post_of``, bez pomocnika, który wkładałby go za wywołującego. Poza tym modułem ruff (``TID251`` w ``pyproject.toml``)
+``post_of``, bez pomocnika, który wkładałby go za wywołującego. Poza tym modułem ruff (``TID251`` w ``ruff.toml``)
 odrzuca ``from … import _VERSIONS`` (także z aliasem) i atrybut modułu (``comment_versions._VERSIONS``, także przez
 alias albo pełną ścieżkę), tak samo ``_Versions``.
 

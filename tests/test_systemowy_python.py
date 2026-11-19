@@ -1,6 +1,6 @@
 """Pliki, które systemowy Python uruchamia przed ``.venv``, importują się najstarszym Pythonem, jaki dla nich obiecano.
 
-Lista plików i wersji to ``per-file-target-version`` z ``pyproject.toml``. Ruff odrzuca w nich nowszą składnię,
+Lista plików i wersji to ``per-file-target-version`` z ``ruff.toml``. Ruff odrzuca w nich nowszą składnię,
 a ten test importuje je tą wersją Pythona, więc łapie też API, którego ruff nie widzi, np. ``dataclass(slots=True)``
 przed 3.10. Bez takiego Pythona na komputerze (CI na Linuksie) test się pomija.
 """
@@ -16,9 +16,7 @@ import tomllib
 import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
-TARGETS: dict[str, str] = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"][
-    "per-file-target-version"
-]
+TARGETS: dict[str, str] = tomllib.loads((ROOT / "ruff.toml").read_text(encoding="utf-8"))["per-file-target-version"]
 LOAD = (
     "import importlib.machinery, importlib.util, sys\n"
     "path, tools = sys.argv[1:]\n"

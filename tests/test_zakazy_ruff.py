@@ -1,9 +1,9 @@
-"""Zakaz ruff z ``pyproject.toml`` obowiązuje też w katalogu, który ma własną konfigurację ruff z zakazami, a każdy
+"""Zakaz ruff z ``ruff.toml`` korzenia obowiązuje też w katalogu, który ma własną konfigurację ruff z zakazami, a każdy
 zakaz tylko tego katalogu ma próbkę, którą ruff tam odrzuca.
 
 Ruff bierze tabelę ``banned-api`` (``TID251``) z najbliższego pliku konfiguracji w całości, zamiast dokładać ją do tabeli
-pliku, który ten rozszerza (``extend``), więc katalog z własnymi zakazami powtarza każdy zakaz z ``pyproject.toml``.
-Bez tego zakaz z ``pyproject.toml``, np. ``os.name``, w takim katalogu po cichu przestaje obowiązywać. Plikiem
+pliku, który ten rozszerza (``extend``), więc katalog z własnymi zakazami powtarza każdy zakaz z ``ruff.toml``
+korzenia. Bez tego zakaz korzenia, np. ``os.name``, w takim katalogu po cichu przestaje obowiązywać. Plikiem
 konfiguracji ruff jest ``ruff.toml``, ``.ruff.toml`` i ``pyproject.toml`` z tabelą ``[tool.ruff]``.
 
 Próbka biegnie przez ``ruff check --stdin-filename <katalog zakazu>/sonda_zakazu.py -``, więc ruff bierze konfigurację
@@ -29,15 +29,16 @@ import pytest
 from tests.fixtures.znane_luki import assert_znane_luki, ruff, ruff_i_mypy, wymaga_ruff, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
-# Każdy plik konfiguracji ruff poza pyproject.toml w korzeniu, literałem, żeby tools/szybko.py wybierał ten test przy
-# zmianie któregoś z nich.
+# Każdy plik konfiguracji ruff, literałem, żeby tools/szybko.py i bramka PR wybierały ten test przy zmianie któregoś
+# z nich. Konfiguracja korzenia stoi w ruff.toml, nie w pyproject.toml, więc jej zmiana nie uruchamia wszystkich testów.
+ROOT_CONFIG = ROOT / "ruff.toml"
 SRC_CONFIG = ROOT / "src" / "ruff.toml"
 TESTS_CONFIG = ROOT / "tests" / "ruff.toml"
 DRIVE_CONFIG = ROOT / ".agents" / "skills" / "verify-centrum-rozliczen" / "scripts" / "drive" / "ruff.toml"
 DIRECTORY_CONFIGS = (SRC_CONFIG, TESTS_CONFIG, DRIVE_CONFIG)
-# Sonda kodu narzędzi, który bierze konfigurację ruff z pyproject.toml w korzeniu.
+# Sonda kodu narzędzi, który bierze konfigurację ruff z ruff.toml korzenia.
 TOOLS_PROBE = ("tools", "lib")
-# Katalogi, które ruff sprawdza (``include`` w ``pyproject.toml``), i nazwy plików konfiguracji ruff.
+# Katalogi, które ruff sprawdza (``include`` w ``ruff.toml`` korzenia), i nazwy plików konfiguracji ruff.
 CHECKED = ("src", "tests", "tools", ".agents/skills")
 NAMES = ("ruff.toml", ".ruff.toml", "pyproject.toml")
 STAR = "F403"
@@ -93,32 +94,32 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import sys as s\ns.path.append(x)": (TESTS_CONFIG, (), "sys.path"),
     "from sys import path as p": (TESTS_CONFIG, (), "sys.path"),
     # Import w trakcie działania obok tools/lib/import_dynamiczny.py: postacie z przeglądu #1680 (r1–r3, W1).
-    'import importlib\nm = importlib.import_module(name="tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.import_module"),
-    'import importlib\nm = importlib.import_module(".znane_luki", "tests.fixtures")': (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.import_module"),
+    'import importlib\nm = importlib.import_module(name="tests.fixtures.znane_luki")': (ROOT_CONFIG, TOOLS_PROBE, "importlib.import_module"),
+    'import importlib\nm = importlib.import_module(".znane_luki", "tests.fixtures")': (ROOT_CONFIG, TOOLS_PROBE, "importlib.import_module"),
     'from importlib import import_module\nm = import_module(".znane_luki", package="tests.fixtures")': (
-        ROOT / "pyproject.toml",
+        ROOT_CONFIG,
         TOOLS_PROBE,
         "importlib.import_module",
     ),
-    'import importlib as il\nm = il.import_module("tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", (), "importlib.import_module"),
-    'import builtins\nm = builtins.__import__("tests.fixtures.znane_luki")': (ROOT / "pyproject.toml", TOOLS_PROBE, "builtins.__import__"),
-    "from importlib.util import spec_from_file_location": (ROOT / "pyproject.toml", (".agents", "skills", "verify-rozliczenia", "scripts"), "importlib.util"),
+    'import importlib as il\nm = il.import_module("tests.fixtures.znane_luki")': (ROOT_CONFIG, (), "importlib.import_module"),
+    'import builtins\nm = builtins.__import__("tests.fixtures.znane_luki")': (ROOT_CONFIG, TOOLS_PROBE, "builtins.__import__"),
+    "from importlib.util import spec_from_file_location": (ROOT_CONFIG, (".agents", "skills", "verify-rozliczenia", "scripts"), "importlib.util"),
     'import runpy\nrunpy.run_module("tests.fixtures.znane_luki")': (DRIVE_CONFIG, (), "runpy"),
-    'import runpy\nrunpy.run_path("tests/fixtures/znane_luki.py")': (ROOT / "pyproject.toml", TOOLS_PROBE, "runpy"),
+    'import runpy\nrunpy.run_path("tests/fixtures/znane_luki.py")': (ROOT_CONFIG, TOOLS_PROBE, "runpy"),
     'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
     # Ładowacz z importlib.abc (przegląd #1705 r1, W1), postacie jego importu i importlib.metadata.
-    "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.abc"),
+    "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     "from importlib.abc import SourceLoader": (SRC_CONFIG, ("rozliczenia",), "importlib.abc"),
     "from importlib import abc": (DRIVE_CONFIG, (), "importlib.abc"),
-    "import importlib.abc as ladowacze": (ROOT / "pyproject.toml", TOOLS_PROBE, "importlib.abc"),
+    "import importlib.abc as ladowacze": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     'from importlib.metadata import EntryPoint\nEntryPoint("x", "tests.fixtures.znane_luki:zapisz", "g").load()': (
-        ROOT / "pyproject.toml",
+        ROOT_CONFIG,
         TOOLS_PROBE,
         "importlib.metadata",
     ),
     # Dawne znane luki, które zakaz zamknął: ZNANE_LUKI_SKRYPTU i ZNANE_LUKI_GRAFU (tests/test_granice_importow.py) oraz
     # „tool przez importlib” z ZNANE_LUKI w tests/test_regula_danych.py, każda w katalogu swojej sondy.
-    'import importlib\n\nSERWER = importlib.import_module("fastapi")\n': (ROOT / "pyproject.toml", ("tools",), "importlib.import_module"),
+    'import importlib\n\nSERWER = importlib.import_module("fastapi")\n': (ROOT_CONFIG, ("tools",), "importlib.import_module"),
     'import importlib\n\nSKOROSZYT = importlib.import_module("openpyxl")\n': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
     'import importlib\n\nWZORZEC = importlib.import_module("rozliczenia." + "template_file")\n': (
         SRC_CONFIG,
@@ -302,50 +303,59 @@ def _ruff_table(path: Path) -> dict[str, Any] | None:
 
 
 def _configs(root: Path) -> set[Path]:
-    """Każdy plik konfiguracji ruff w katalogach, które ruff sprawdza, i w korzeniu poza ``pyproject.toml`` korzenia."""
+    """Każdy plik konfiguracji ruff w katalogach, które ruff sprawdza, i w korzeniu poza jego ``ruff.toml``: także
+    ``[tool.ruff]`` w ``pyproject.toml`` korzenia, którą ruff pomija obok ``ruff.toml``."""
     candidates = {path for top in CHECKED for name in NAMES for path in (root / top).rglob(name)}
-    candidates |= {root / name for name in NAMES if name != "pyproject.toml" and (root / name).exists()}
+    candidates |= {root / name for name in NAMES if name != "ruff.toml" and (root / name).exists()}
     return {path for path in candidates if _ruff_table(path) is not None}
 
 
-def test_szukanie_konfiguracji_widzi_pyproject_z_tabela_ruff_w_podkatalogu(tmp_path: Path) -> None:
+def test_szukanie_konfiguracji_widzi_pyproject_z_tabela_ruff_w_podkatalogu_i_korzeniu(tmp_path: Path) -> None:
     (tmp_path / "tools" / "z_ruff").mkdir(parents=True)
-    (tmp_path / "tools" / "z_ruff" / "pyproject.toml").write_text("[tool.ruff]\nextend = '../../pyproject.toml'\n")
+    (tmp_path / "tools" / "z_ruff" / "pyproject.toml").write_text("[tool.ruff]\nextend = '../../ruff.toml'\n")
     (tmp_path / "tools" / "bez_ruff").mkdir()
     (tmp_path / "tools" / "bez_ruff" / "pyproject.toml").write_text("[project]\nname = 'x'\n")
     (tmp_path / "src").mkdir()
-    (tmp_path / "src" / ".ruff.toml").write_text("extend = '../pyproject.toml'\n")
+    (tmp_path / "src" / ".ruff.toml").write_text("extend = '../ruff.toml'\n")
+    (tmp_path / "ruff.toml").write_text("")
     (tmp_path / "pyproject.toml").write_text("[tool.ruff]\n")
 
-    assert _configs(tmp_path) == {tmp_path / "tools" / "z_ruff" / "pyproject.toml", tmp_path / "src" / ".ruff.toml"}
+    assert _configs(tmp_path) == {
+        tmp_path / "tools" / "z_ruff" / "pyproject.toml",
+        tmp_path / "src" / ".ruff.toml",
+        tmp_path / "pyproject.toml",
+    }
 
 
-def test_katalog_z_wlasnymi_zakazami_ruff_powtarza_kazdy_zakaz_z_pyproject() -> None:
-    assert _configs(ROOT) == set(DIRECTORY_CONFIGS), "dopisz nowy plik konfiguracji ruff do DIRECTORY_CONFIGS w tests/test_zakazy_ruff.py"
+def test_katalog_z_wlasnymi_zakazami_ruff_powtarza_kazdy_zakaz_korzenia() -> None:
+    assert _configs(ROOT) == set(DIRECTORY_CONFIGS), (
+        "dopisz nowy plik konfiguracji ruff do DIRECTORY_CONFIGS w tests/test_zakazy_ruff.py; "
+        "konfiguracja korzenia stoi tylko w ruff.toml, bo ruff pomija obok niego [tool.ruff] z pyproject.toml"
+    )
 
-    root = _banned(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]["lint"])
+    root = _banned(tomllib.loads(ROOT_CONFIG.read_text(encoding="utf-8"))["lint"])
     problems = []
     for path in DIRECTORY_CONFIGS:
         config = _ruff_table(path) or {}
         where = path.relative_to(ROOT).as_posix()
-        if (path.parent / config.get("extend", "")).resolve() != ROOT / "pyproject.toml":
-            problems.append(f"{where}: extend nie wskazuje pyproject.toml repozytorium")
+        if (path.parent / config.get("extend", "")).resolve() != ROOT_CONFIG:
+            problems.append(f"{where}: extend nie wskazuje ruff.toml korzenia repozytorium")
         local = _banned(config.get("lint", {}))
         problems += [
-            f"{where}: brak zakazu {name} z pyproject.toml"
+            f"{where}: brak zakazu {name} z ruff.toml korzenia"
             for name, entry in root.items()
             if local.get(name) != entry and not (path == TESTS_CONFIG and name in DYNAMIC_IMPORT)
         ]
 
     assert problems == [], "\n".join(
-        [*problems, "ruff bierze banned-api z najbliższego pliku konfiguracji w całości: skopiuj tam wpis z pyproject.toml"]
+        [*problems, "ruff bierze banned-api z najbliższego pliku konfiguracji w całości: skopiuj tam wpis z ruff.toml korzenia"]
     )
 
 
 def test_kazdy_zakaz_tylko_katalogu_ma_probke() -> None:
-    """Zakaz tylko katalogu to wpis, którego nie ma w ``pyproject.toml``; kopii tabeli ``pyproject.toml`` pilnuje test
-    zgodności wyżej."""
-    root = _banned(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]["lint"])
+    """Zakaz tylko katalogu to wpis, którego nie ma w ``ruff.toml`` korzenia; kopii jego tabeli pilnuje test zgodności
+    wyżej."""
+    root = _banned(tomllib.loads(ROOT_CONFIG.read_text(encoding="utf-8"))["lint"])
     local = {path: _banned((_ruff_table(path) or {}).get("lint", {})) for path in DIRECTORY_CONFIGS}
     shared = root.keys()
     sampled = {(config, banned) for config, _, banned in SAMPLES.values()}
@@ -716,7 +726,7 @@ def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_p
 
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_WEJSCIA_ODCZYTU)")
 
-# Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w pyproject.toml) → zakazane nazwy,
+# Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w ruff.toml korzenia) → zakazane nazwy,
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
 # zakazów: kod właściciela zgłasza dokładnie swoje nazwy, gdy stoi poza zwolnieniem.
 OWNERS: dict[str, frozenset[str]] = {
@@ -775,7 +785,7 @@ OWNERS: dict[str, frozenset[str]] = {
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/waiting.py": frozenset({"time.sleep"}),
 }
-# Zakaz z pyproject.toml, który obowiązuje w każdym katalogu (test zgodności wyżej), więc jego brak w zgłoszeniu znaczy
+# Zakaz z ruff.toml korzenia, który obowiązuje w każdym katalogu (test zgodności wyżej), więc jego brak w zgłoszeniu znaczy
 # zwolnienie pliku z TID251.
 SHARED_PROBE = "import os\nsystem = os.name\n"
 
@@ -811,7 +821,7 @@ def test_konfiguracja_ruff_zwalnia_z_tid251_tylko_wlascicieli(tmp_path: Path) ->
     więc test pyta ruff, a nie czyta konfiguracji: kopia drzewa z próbką ``os.name`` w miejscu każdego pliku, który ruff
     sprawdza, i z każdym plikiem konfiguracji ruff repozytorium. Plik bez zgłoszenia jest zwolniony, a zwolniony może
     być tylko właściciel z ``OWNERS``."""
-    for config in (ROOT / "pyproject.toml", *_configs(ROOT)):
+    for config in (ROOT_CONFIG, *_configs(ROOT)):
         copy = tmp_path / config.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
@@ -833,7 +843,7 @@ def test_konfiguracja_ruff_zwalnia_z_tid251_tylko_wlascicieli(tmp_path: Path) ->
 
     assert sorted(checked - reported) == sorted(OWNERS), (
         "z TID251 konfiguracja ruff zwalnia tylko pliki z OWNERS w tests/test_zakazy_ruff.py: prawo właściciela to "
-        "jego ścieżka w per-file-ignores pyproject.toml i wiersz OWNERS z nazwami, a wyjątek tymczasowy stoi na linii"
+        "jego ścieżka w per-file-ignores ruff.toml korzenia i wiersz OWNERS z nazwami, a wyjątek tymczasowy stoi na linii"
     )
 
 
@@ -882,7 +892,7 @@ def test_noqa_nie_zwalnia_z_zakazu_tresci_z_wydania_a_wlasciciel_jest_zwolniony(
     assert _release_content_findings("--stdin-filename", str(owner), "-", code=RELEASE_CONTENT_PROBE) == []
 
 
-# Zakazy importu w trakcie działania w pyproject.toml (i jego kopiach poza tests/ruff.toml): lista nazw, nie dopasowanie
+# Zakazy importu w trakcie działania w ruff.toml korzenia (i jego kopiach poza tests/ruff.toml): lista nazw, nie dopasowanie
 # komunikatu, żeby nowy zakaz o innym brzmieniu nie wypadł z niej.
 # Nazwy pakietu importlib wynikają z biblioteki działającego Pythona (test nazw niżej); reszta to moduły, których zadaniem
 # jest import albo wykonanie modułu. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po
@@ -924,8 +934,8 @@ IMPORTLIB_DOZWOLONE = {
 
 
 def test_kazdy_zakaz_importu_w_trakcie_dzialania_jest_na_liscie_dynamic_import() -> None:
-    """Zakazem importu w trakcie działania jest wpis ``pyproject.toml``, którego komunikat odsyła do właściciela."""
-    banned = _banned(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["ruff"]["lint"])
+    """Zakazem importu w trakcie działania jest wpis ``ruff.toml`` korzenia, którego komunikat odsyła do właściciela."""
+    banned = _banned(tomllib.loads(ROOT_CONFIG.read_text(encoding="utf-8"))["lint"])
     owned = {name for name, entry in banned.items() if "tools/lib/import_dynamiczny.py" in entry["msg"]}
 
     assert sorted(owned ^ set(DYNAMIC_IMPORT)) == [], "DYNAMIC_IMPORT w tests/test_zakazy_ruff.py ma wymieniać każdy zakaz właściciela"
@@ -946,7 +956,7 @@ def test_kazda_nazwa_pakietu_importlib_jest_zakazana_albo_dozwolona_z_powodem() 
 
     assert open_names == [], (
         f"importlib tego Pythona ma nazwy bez zakazu: {open_names}; dopisz każdą z komunikatem właściciela do banned-api "
-        "w pyproject.toml, src/ruff.toml i drive/ruff.toml oraz do DYNAMIC_IMPORT, albo do IMPORTLIB_DOZWOLONE z powodem "
+        "w ruff.toml korzenia, src/ruff.toml i drive/ruff.toml oraz do DYNAMIC_IMPORT, albo do IMPORTLIB_DOZWOLONE z powodem "
         "i próbką w ZNANE_LUKI_IMPORTU, gdy kod poza tests/ jej potrzebuje"
     )
     assert sorted(IMPORTLIB_DOZWOLONE.keys() - names) == [], "IMPORTLIB_DOZWOLONE wymienia nazwę, której importlib nie ma"
@@ -1184,7 +1194,7 @@ def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: P
     zwolniony, a zwolniony może być tylko plik z prawem właściciela (``OWNERS``), któremu nazw zegara poza
     ``wall_clock.py`` odmawia ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw``. Że ruff w ogóle sprawdza każdy
     plik ``src/``, pilnuje ``test_ruff_sprawdza_kazdy_plik_src`` na prawdziwym checkoucie."""
-    for config in (ROOT / "pyproject.toml", *_configs(ROOT)):
+    for config in (ROOT_CONFIG, *_configs(ROOT)):
         copy = tmp_path / config.relative_to(ROOT)
         copy.parent.mkdir(parents=True, exist_ok=True)
         copy.write_text(config.read_text(encoding="utf-8"), encoding="utf-8")
@@ -1204,7 +1214,7 @@ def test_konfiguracja_ruff_zwalnia_z_zakazu_zegara_tylko_wlasciciela(tmp_path: P
 
 # Kod ``noqa`` spoza ruff, który reguła ast-grep ``komentarz-w-src`` przepuszcza, bo ma kształt kodu ``[A-Z]+[0-9]+``:
 # sam i obok prawdziwego kodu, na linii z naruszeniem i bez. Każdy katalog z konfiguracją ruff, bo ``RUF102`` stoi
-# w ``extend-select`` ``pyproject.toml``, które pozostałe pliki konfiguracji rozszerzają.
+# w ``extend-select`` ``ruff.toml`` korzenia, który pozostałe pliki konfiguracji rozszerzają.
 INVALID_NOQA_CODES = (
     "import os  # noqa: PR1614 - historia\n",
     "x = 1  # noqa: PR1614 - historia\n",

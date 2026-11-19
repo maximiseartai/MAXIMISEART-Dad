@@ -31,7 +31,7 @@ from silnik_mutacji import NearLimit
 import werdykt_required
 import wykonaj_zadanie
 import zapis_czasow
-from zakres_runu import KROKI, MUTACJE, TORY, Krok, KrokSkilla, Tor, Zdarzenie, pliki_testow
+from zakres_runu import KROKI, MUTACJE, NA_ZYWO, TORY, Krok, KrokSkilla, Podstawy, Tor, Zdarzenie, pliki_testow
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -436,16 +436,16 @@ def test_plan_wczytany_z_pliku_ma_zdarzenie_zapisanego_wiec_zadanie_pr_dalej_ma_
 
 
 def test_plan_zapisany_przed_dopisanym_polem_czyta_sie_z_digest_zapisow_jego_zadan() -> None:
-    """Artefakt ``plan`` runu main 43523010762 (13.11) nie ma ``zmienione_pliki_testow``, a czytają taki plik
-    ``tools/pomiar_ci.py --artefakty`` i ``tools/mutacje.py --jak-ci``: pole bierze wartość domyślną, a digest planu jest
-    tym z pliku, który stoi też w zapisach czasów jego zadań."""
+    """Artefakt ``plan`` runu main 43523010762 (13.11) nie ma ``zmienione_pliki_testow`` ani ``cien``, a czytają taki plik
+    ``tools/pomiar_ci.py --artefakty``, ``tools/mutacje.py --jak-ci`` i ``tools/cien_podstaw.py``: pola biorą wartość
+    domyślną, a digest planu jest tym z pliku, który stoi też w zapisach czasów jego zadań."""
 
     tekst = (ROOT / "tests/fixtures/plan-43523010762.json").read_text(encoding="utf-8")
 
     plan = plan_runu.Plan.z_json(tekst)
 
-    assert "zmienione_pliki_testow" not in json.loads(tekst)
-    assert (len(plan.zadania), plan.zmienione_pliki_testow, plan.digest) == (20, (), json.loads(tekst)["digest"])
+    assert {"zmienione_pliki_testow", "cien"}.isdisjoint(json.loads(tekst))
+    assert (len(plan.zadania), plan.zmienione_pliki_testow, plan.cien, plan.digest) == (20, (), (), json.loads(tekst)["digest"])
 
 
 def test_plan_z_dopisanym_polem_zmienionym_po_zapisie_jest_nieczytelny() -> None:
@@ -457,6 +457,40 @@ def test_plan_z_dopisanym_polem_zmienionym_po_zapisie_jest_nieczytelny() -> None
     assert plan_runu.Plan.z_json(tekst).zmienione_pliki_testow == ("tests/test_adr.py",)
     with pytest.raises(ValueError, match="digest"):
         plan_runu.Plan.z_json(tekst.replace('"tests/test_adr.py"\n ]', '"tests/test_b.py"\n ]'))
+
+
+def test_cien_wycenia_kazdy_wariant_podstaw_na_tych_samych_czasach_a_wariant_na_zywo_to_wykonywany_plan() -> None:
+    """Cień (ADR 0020, D1) to ten sam pytest z krokami skilli wariantu: wariant bez kroków nie ma zadań Mutation checks,
+    więc jego ściana i zadania to sam pytest, a wariant ``NA_ZYWO`` ma ścianę i zadania planu, który się wykonuje."""
+
+    czasy = _with_skill_times(_times())
+    pytest_lanes = [plan_ci.wycen(lane, FILES[:6], czasy) for lane in TORY]
+    steps = {wariant: [KrokSkilla(step, "") for step in _skill_steps(keys)] for wariant, keys in (
+        (Podstawy.V0, ["verify-a/ci", "verify-c/ci"]), (Podstawy.NF, ["verify-c/ci"]), (Podstawy.N0, [])
+    )}
+    live = plan_ci.rozplanuj([*pytest_lanes, plan_ci.wycen_mutacje(steps[NA_ZYWO], czasy)], Zdarzenie.PULL_REQUEST, czasy.runy)
+    pytest_only = plan_ci.rozplanuj(pytest_lanes, Zdarzenie.PULL_REQUEST, czasy.runy)
+
+    cien = {w.wariant: w for w in plan_ci.w_cieniu(live, steps, pytest_lanes, czasy)}
+
+    wall = max(job.sciana_s for job in live.zadania)
+    assert (cien[NA_ZYWO].sciana_s, cien[NA_ZYWO].zadania, cien[NA_ZYWO].kroki) == (wall, len(live.zadania), ("verify-c/ci",))
+    assert (cien[Podstawy.N0].sciana_s, cien[Podstawy.N0].zadania) == (max(job.sciana_s for job in pytest_only.zadania), len(pytest_only.zadania))
+    # Podstawa verify-a (300 s) nie dzieli się, więc V0 trzyma ścianę ponad NF.
+    assert cien[Podstawy.V0].sciana_s > cien[NA_ZYWO].sciana_s >= cien[Podstawy.N0].sciana_s
+
+
+def test_cien_planu_pr_czyta_sie_z_pliku_a_zmieniony_po_zapisie_jest_nieczytelny() -> None:
+    """Plan pull requestu z cieniem wczytuje się z typami, a cień wchodzi do digest, więc zmieniony po zapisie to
+    ``ValueError``; plan sprzed pola czyta ``test_plan_zapisany_przed_dopisanym_polem_czyta_sie_z_digest_zapisow_jego_zadan``."""
+
+    job = plan_runu.Zadanie("windows-3.13-1", "windows-3.13", "pytest (Python 3.13, 1/1)", ("pytest:tests/test_adr.py",), 401.0)
+    cien = (plan_runu.Cien(Podstawy.V0, ("verify-a/ci",), 420.0, 3), plan_runu.Cien(Podstawy.NF, (), 401.0, 1), plan_runu.Cien(Podstawy.N0, (), 401.0, 1))
+    tekst = plan_runu.Plan(Zdarzenie.PULL_REQUEST, plan_ci.CEL_S, (), (job,), cien=cien).do_json()
+
+    assert plan_runu.Plan.z_json(tekst).cien == cien
+    with pytest.raises(ValueError, match="digest"):
+        plan_runu.Plan.z_json(tekst.replace('"sciana_s": 420.0', '"sciana_s": 120.0'))
 
 
 @pytest.mark.parametrize("unit", ["tests/test_adr.py", "pytest:", "krok:e2e#0/2", "mutacje:verify-a/ci", "skill:verify-a/ci#3/2"])
@@ -1042,25 +1076,47 @@ MODEL_SKILL = {
     ),
     f".agents/skills/verify-m/{rozjazd_modelu.DEFINICJE}": json.dumps({"src/pakiet/a.py": {"a": ""}}),
 }
-# Krok skilla verify-m, który plan zdarzenia wybiera przy zmianie kodu opisanego modelem, i plik, który zostawia krok, gdy
-# ruszył: na pull request i na pushu ``main`` podstawa ``ci:`` (skrypt mutacji biegnie nocą, ADR 0021).
-MODEL_SKILL_STEPS = {
-    "pull_request": ("skill:verify-m/ci", "podstawa-biegla"),
-    "push": ("skill:verify-m/ci", "podstawa-biegla"),
-}
+# Krok skilla verify-m, który plan wybiera przy zmianie kodu opisanego modelem, i plik, który zostawia krok, gdy ruszył:
+# podstawa ``ci:`` (skrypt mutacji biegnie nocą, ADR 0021).
+MODEL_SKILL_STEP = ("skill:verify-m/ci", "podstawa-biegla")
 
 
-@pytest.mark.parametrize("event", MODEL_SKILL_STEPS)
-@pytest.mark.parametrize("model_in_line", [False, True], ids=["kod bez modelu", "model przesunięty"])
+def test_plan_pr_ze_zmiana_tylko_w_pilnuje_zostawia_podstawe_main_z_powodem_a_cien_wycenia_v0_nf_i_n0(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n", **MODEL_SKILL})
+    commit(repo, "baza")
+    git(repo, "branch", "baza")
+    (repo / "src/pakiet/a.py").write_text("def a(x: int) -> bool:\n    return x > 2\n", encoding="utf-8")
+    commit(repo, "zmiana kodu z pilnuje")
+    monkeypatch.chdir(repo)
+
+    plan_ci.main(
+        ["plan", "--baza", "baza", "--czasy", str(tmp_path / "czasy"), "--wyjscie", str(tmp_path / "plan.json")], root=repo, github=BEZ_LOGOWANIA
+    )
+
+    out = capsys.readouterr().out.splitlines()
+    plan = plan_runu.Plan.z_json((tmp_path / "plan.json").read_text(encoding="utf-8"))
+    assert "POMINIĘTY PODSTAWA verify-m: biegnie na main: PR nie zmienia folderu skilla (pilnuje: zmienione: src/pakiet/a.py)" in out
+    assert not any(job.tor == MUTACJE.nazwa for job in plan.zadania)
+    assert [(w.wariant, w.kroki) for w in plan.cien] == [(Podstawy.V0, ("verify-m/ci",)), (Podstawy.NF, ()), (Podstawy.N0, ())]
+    assert next(line for line in out if line.startswith("CIEŃ PODSTAW")).endswith("na żywo NF (ADR 0020, D1)")
+
+
+@pytest.mark.parametrize(
+    ("event", "model_in_line"),
+    [("push", False), ("push", True), ("pull_request", True)],
+    ids=["push, kod bez modelu", "push, model przesunięty", "pull_request, model przesunięty"],
+)
 def test_zmiana_kodu_opisanego_modelem_skilla_bez_modelu_czerwieni_jego_krok_w_mutation_checks_zanim_ruszy(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], model_in_line: bool, event: str
 ) -> None:
-    """Zmiana kodu z ``model/definicje.json`` skilla wybiera na pull request jego podstawę (ten sam wybór, którym pyta krok
-    ``rozjazd modelu`` w ``tools/szybko.py``), a na pushu ``main`` każdą podstawę, a wykonanie zadania kończy
-    taki krok porażką rozjazdu z krokami naprawy, zanim skrypt ruszy, także dla skilla, którego skrypt rozjazdu nie
-    sprawdza (#1194 r1, #1201 r1)."""
+    """Push ``main`` wybiera każdą podstawę, a pull request podstawę skilla, którego folder zmienia (D1): przesunięty
+    model to zmiana ``model/definicje.json``. Wykonanie zadania kończy krok porażką rozjazdu z krokami naprawy, zanim
+    skrypt ruszy, także dla skilla, którego skrypt rozjazdu nie sprawdza (#1194 r1, #1201 r1). Kod bez modelu na pull
+    request łapie przed pushem krok ``rozjazd modelu`` w ``tools/szybko.py`` (``tests/test_szybko.py``)."""
 
-    step, started = MODEL_SKILL_STEPS[event]
+    step, started = MODEL_SKILL_STEP
     repo = repository(tmp_path / "repo", {"src/pakiet/a.py": "def a(x: int) -> bool:\n    return x > 1\n", **MODEL_SKILL})
     rozjazd_modelu.przesun(repo / ".agents/skills/verify-m", repo)
     commit(repo, "baza")
