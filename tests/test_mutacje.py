@@ -639,6 +639,79 @@ def test_niewykryta_z_testem_ktorego_nie_ma_na_merge_base_mowi_ze_regres_nie_dot
     assert re.fullmatch(rf"NIEWYKRYTA: mutacja → 1 passed[^(]* in [0-9.]+s {note}", answered.stdout.splitlines()[0]), answered.stdout + answered.stderr
 
 
+NAMED_TEST = "def test_wybrany():\n    pass\n"
+IMPORTING_TEST = "from rozliczenia import WARTOSC\n\n\ndef test_n():\n    assert WARTOSC == 0\n"
+PARAMETRIZED_TEST = "import pytest\n\nimport rozliczenia\n\n\n@pytest.mark.parametrize('nazwa', rozliczenia.NAZWY)\ndef test_n(nazwa):\n    assert nazwa\n"
+SECONDS = r"[0-9.]+s"
+GONE = (
+    r"\(pytest nie uruchomił testu z polecenia, kod {code}, a pliki testów polecenia z mutacją się zbierają: .+; dowodzi tylko test, "
+    r"który z mutacją biegnie i pada, więc wybierz w poleceniu test, który mutacja zostawia, np\. bez parametru\)"
+)
+
+
+@pytest.mark.parametrize(
+    ("files", "edit", "selected", "line"),
+    [
+        ({"tests/test_n.py": NAMED_TEST}, ("tests/test_n.py", "def test_wybrany", "def test_inny"), ("tests/test_n.py::test_wybrany",), f"NIEWYKRYTA: mutacja → no tests ran in {SECONDS} {GONE.format(code=4)}"),
+        ({"tests/test_n.py": NAMED_TEST}, ("tests/test_n.py", "def test_wybrany", "def test_inny"), ("tests/test_n.py", "-k", "wybrany"), f"NIEWYKRYTA: mutacja → 1 deselected in {SECONDS} {GONE.format(code=5)}"),
+        # Sonda #2225 r1 W1: węzeł w pliku argumentów ``@`` (tak podaje testy ``--juz-lapie``) rozbiera sam pytest.
+        (
+            {"tests/test_n.py": NAMED_TEST, "testy.txt": "tests/test_n.py::test_wybrany\n"},
+            ("tests/test_n.py", "def test_wybrany", "def test_inny"),
+            ("@testy.txt",),
+            f"NIEWYKRYTA: mutacja → no tests ran in {SECONDS} {GONE.format(code=4)}",
+        ),
+        (
+            {PACKAGE: "NAZWY = ('a', 'b')\n", "tests/test_n.py": PARAMETRIZED_TEST},
+            (PACKAGE, "('a', 'b')", "('a',)"),
+            ("tests/test_n.py::test_n[b]",),
+            f"NIEWYKRYTA: mutacja → no tests ran in {SECONDS} {GONE.format(code=4)}",
+        ),
+        (
+            {"tests/test_n.py": IMPORTING_TEST},
+            (PACKAGE, "WARTOSC = 0", "INNA = 0"),
+            ("tests/test_n.py::test_n",),
+            rf"WYKRYTA: mutacja → 1 error in {SECONDS} \(pliki testów polecenia z mutacją się nie zbierają, kod 2: no tests collected, 1 error in {SECONDS}\)",
+        ),
+    ],
+    ids=["test-z-polecenia-usuniety", "k-bez-testu", "test-z-pliku-argumentow-usuniety", "parametr-znika", "plik-testow-nie-importuje-sie"],
+)
+def test_mutacja_po_ktorej_pytest_nie_uruchomil_testu_jest_wykryta_tylko_gdy_pliki_testow_sie_nie_zbieraja(
+    tmp_path: Path, files: dict[str, str], edit: tuple[str, str, str], selected: tuple[str, ...], line: str
+) -> None:
+    """Pytest z kodem 4 albo 5 po mutacji: test z polecenia zniknął, a pliki się zbierają, więc nic nie padło i Required
+    CI jest zielone (NIEWYKRYTA z podpowiedzią), albo plik testów z mutacją się nie zbiera, a Required CI pada (WYKRYTA);
+    ta sama reguła co w dowodzie strażnika ``pytest <węzeł>`` (próbki ``PROBKI_TESTU`` w ``tests/test_straznik.py``)."""
+
+    repo = repository(tmp_path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n", **files})
+    commit(repo, "baza")
+
+    answered = _in_repository(repo, "--zmiana", *edit, "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", *selected)
+
+    assert re.fullmatch(line, answered.stdout.splitlines()[0]), answered.stdout + answered.stderr
+
+
+def test_zbieranie_bez_wyniku_w_czasie_ktory_zostal_po_biegu_z_mutacja_daje_bez_werdyktu(tmp_path: Path) -> None:
+    """Sonda #2225 r1 D1: zbieranie plików testów po kodzie 4 albo 5 bez wyniku nie mówi, czy pliki się zbierają, więc
+    to BEZ WERDYKTU, a nie NIEWYKRYTA; dostaje tylko czas, który biegowi z mutacją został z limitu."""
+
+    slow = "import time\n\n\ndef pytest_configure(config):\n    if config.option.collectonly:\n        time.sleep(60)\n"
+    repo = repository(tmp_path / "repo", {PACKAGE: "WARTOSC = 0\n", ".gitignore": "__pycache__/\n", "tests/test_n.py": NAMED_TEST, "tests/conftest.py": slow})
+    commit(repo, "baza")
+
+    answered = _in_repository(
+        repo, "--limit-s", "4", "--zmiana", "tests/test_n.py", "def test_wybrany", "def test_inny", "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_n.py::test_wybrany"
+    )
+
+    shown = answered.stdout.splitlines()[0]
+    found = re.fullmatch(
+        rf"BEZ WERDYKTU: mutacja → no tests ran in {SECONDS} \(pytest nie uruchomił testu z polecenia, kod 4, a zbieranie jego plików testów z mutacją nie dało wyniku: brak wyniku po ([0-9.]+) s\)",
+        shown,
+    )
+    # Limit zbierania to reszta po biegu z mutacją, nigdy cały --limit-s.
+    assert found and found[1] != "4", answered.stdout + answered.stderr
+
+
 LOOSE_OLD_TEST = "import rozliczenia\n\n\ndef test_stary():\n    assert rozliczenia.WARTOSC < 5\n"
 ASSERTING_NEW_TEST = "import rozliczenia\n\n\ndef test_nowy():\n    assert {condition}\n"
 STRICT_NEW_TEST = ASSERTING_NEW_TEST.format(condition="rozliczenia.WARTOSC == {value}")
