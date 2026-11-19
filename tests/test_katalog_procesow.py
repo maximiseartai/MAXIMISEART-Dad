@@ -35,6 +35,7 @@ from rozliczenia import tool_files
 from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
 from tests.fixtures.centrum_intermax import entering_centrum, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, settling_centrum
+from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 from atrapy.intermax import Intermax
 from atrapy.preparation import PERIOD
@@ -447,24 +448,41 @@ def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
     assert (prepared.inputs.mode.value, prepared.info("u").pricing) == (expected, expected)
 
 
+_FOLDERY_ZE_STARTU: Final[frozenset[PathNeed]] = frozenset({"periods_directory", "copies_directory"})
+
+
+def _zaloz(sciezka: Path, folder: bool) -> None:
+    if folder:
+        sciezka.mkdir()
+        (sciezka / "w-folderze.xlsx").write_bytes(b"x")
+    else:
+        sciezka.write_bytes(b"x")
+
+
+@pytest.mark.parametrize("pliki_sa", [True, False], ids=["pliki-sa", "plikow-nie-ma"])
 @pytest.mark.parametrize("kind", CATALOG.kinds, ids=lambda kind: kind.key)
-def test_wejscie_procesu_powstaje_bez_plikow_ze_startu_i_bez_zapisu(
-    kind: ProcessKind[Any, Any], tmp_path: Path
+def test_wejscie_procesu_nie_czyta_nie_listuje_i_nie_zapisuje_plikow_ani_folderow_ze_startu(
+    kind: ProcessKind[Any, Any], pliki_sa: bool, tmp_path: Path
 ) -> None:
-    pliki = tmp_path / "pliki"
-    pliki.mkdir()
-    start = Start(
-        {need: pliki / need for need in kind.path_needs},
-        PERIOD if "period" in kind.needs else None,
-        False,
-        settings=_PELNE,
-        order_base=pliki / "order_base" if "order_base" in kind.needs else None,
-    )
-    czesci = dataclasses.replace(_ATRAPA, reports=ReportEnteringParts(FolderInbox(pliki / "skrzynka"), ReportStateInMemory()))
+    swiat = tmp_path / "taty" / "pliki"
+    swiat.mkdir(parents=True)
+    sciezki = {need: swiat / need for need in kind.path_needs}
+    baza = swiat / "order_base" if "order_base" in kind.needs else None
+    skrzynka = swiat / "skrzynka"
+    if pliki_sa:
+        for need, sciezka in sciezki.items():
+            _zaloz(sciezka, need in _FOLDERY_ZE_STARTU)
+        if baza is not None:
+            _zaloz(baza, folder=False)
+        _zaloz(skrzynka, folder=True)
+    przed = sorted(tmp_path.rglob("*"))
+    start = Start(sciezki, PERIOD if "period" in kind.needs else None, False, settings=_PELNE, order_base=baza)
+    czesci = dataclasses.replace(_ATRAPA, reports=ReportEnteringParts(FolderInbox(skrzynka), ReportStateInMemory()))
 
-    CATALOG.prepared(kind.key, start, czesci, RunContext())
+    with reading(tmp_path) as dostep:
+        CATALOG.prepared(kind.key, start, czesci, RunContext())
 
-    assert list(pliki.iterdir()) == []
+    assert (dostep.order, dostep.listed, sorted(tmp_path.rglob("*"))) == ([], set(), przed)
 
 
 def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:
