@@ -349,16 +349,30 @@ USES_DATA = "import kod.dane\n\n\ndef podwojona(x: int) -> int:\n    return kod.
 FIELDS = "POLA = ('dni',)\n\n\ndef podwojona(x: int) -> int:\n    (pole,) = POLA\n    return x * 2 if pole else 0\n"
 SAFE_READER = "from kod.okres import okres\n\n\ndef opis(x: int) -> str:\n    try:\n        return str(okres(x)['dni'])\n    except KeyError:\n        return '?'\n"
 HOMELY = "import pathlib\n\n\ndef podwojona(x: int) -> int:\n    try:\n        (pathlib.Path.home() / 'brak.txt').read_text()\n    except FileNotFoundError:\n        pass\n    return x * 2\n"
+COUNTER = "class Licznik:\n    def __init__(self, x: int, k: int) -> None:\n        self.wynik = x * k\n"
+COUNTING = "from kod.licznik import Licznik\n\n\ndef policz(x: int) -> int:\n    return Licznik(x, 2).wynik\n"
 GUARDED = "from kod.liczby import podwojona\n\n\ndef opis(x: int) -> str:\n    try:\n        return str(podwojona(x))\n    except KeyError:\n        return '?'\n"
+SETS = (
+    "def _sprawdz(pola: set[str]) -> None:\n    raise ValueError(f'nieznane pola: {pola}')\n\n\n"
+    "def podwojona(x: int) -> int:\n    try:\n        _sprawdz({'alfa', 'beta', 'gamma', 'delta', 'epsilon', 'zeta'})\n    except ValueError:\n        pass\n    return x * 2\n"
+)
+TEMP = (
+    "import pathlib\nimport tempfile\n\n\ndef podwojona(x: int) -> int:\n    try:\n        (pathlib.Path(tempfile.mkdtemp()) / 'brak.txt').read_text()\n"
+    "    except FileNotFoundError:\n        pass\n    return x * 2\n"
+)
+PLATFORM = "import sys\n\nif sys.platform == 'win32':\n    def mnoznik() -> int:\n        return 2\nelse:\n    def mnoznik() -> int:\n        return 2\n"
+PLATFORM_HEAD = PLATFORM.replace("        return 2\nelse", "        return 2\n\n    def opis() -> str:\n        return 'w'\nelse") + "\n    def opis() -> str:\n        return 'p'\n"
+USER = "from kod.platforma import mnoznik\n\n\ndef podwojona(x: int) -> int:\n    return x * mnoznik()\n"
+PAIR = "A, B = 2, 1\n\n\ndef podwojona(x: int) -> int:\n    return x * A\n"
 FIRST = "def pierwsza(x: list[int] | None) -> int:\n    return x[0] if x else 0\n"
 CALLER = "from kod.liczby import podwojona\n\n\ndef opis(x: int) -> str:\n    return f'{podwojona(x)}'\n"
 
 
-# Warunek, którym dowód odrzuca próbkę: drzewo FAIL przechodzi, padnięcie inne niż na drzewie FAIL, nowy wyjątek kodu
-# przeszczepu, a przy odrzuconym prawdziwym strażniku zdanie, co zrobić.
+# Warunek, którym dowód odrzuca próbkę: drzewo FAIL przechodzi, padnięcie inne niż na drzewie FAIL, rodzaj wyjątku
+# kodu przeszczepu nieznany z drzewa FAIL, a przy odrzuconym prawdziwym strażniku zdanie, co zrobić.
 NOT_ON_FAIL = "na drzewie FAIL (pliki PR spoza tests/ z treścią z FAIL) węzeł nie pada"
 OTHERWISE = "inaczej niż na drzewie FAIL"
-NEW_EXCEPTION = "zgłasza wyjątek, którego na drzewie FAIL nie zgłosił"
+NEW_EXCEPTION = "zgłasza wyjątek rodzaju, którego na drzewie FAIL nie zgłosił"
 REACH_GDZIE = "strażnik musi na drzewie FAIL dojść do kodu z Gdzie i paść tak samo"
 
 
@@ -529,6 +543,21 @@ PROBKI_TESTU = {
         base={"kod/okres.py": DAYS, "kod/opis.py": SAFE_READER},
         reason=OTHERWISE,
     ),
+    # Prawdziwi strażnicy, przy których przeszczep musi przynieść więcej niż definicję z ``Gdzie``: stałą z FAIL razem
+    # z importem, którego ona potrzebuje (domknięcie przechodnie), i wołającego konstruktora, który poprawka zmieniła
+    # (wołający konstruktora używa nazwy klasy, a nie ``__init__``).
+    "domkniecie-przechodnie-stalej-i-jej-importu": Sample(
+        {"kod/liczby.py": "from datetime import timedelta\n\nDZIEN = timedelta(days=1)\n\n\ndef podwojona(x: int) -> int:\n    return x * 3 + DZIEN.days * 0\n"},
+        {"kod/liczby.py": GOOD, "tests/test_g.py": TEST_G},
+        True,
+        (("kod/liczby.py", 7, 7),),
+    ),
+    "konstruktor-ze-zmieniona-sygnatura-i-jego-wolajacy": Sample(
+        {"kod/licznik.py": COUNTER.replace("x * k", "x * 3").replace(", k: int", ""), "kod/uzycie.py": COUNTING.replace("Licznik(x, 2)", "Licznik(x)")},
+        {"kod/licznik.py": COUNTER, "kod/uzycie.py": COUNTING, "tests/test_g.py": "from kod.uzycie import policz\n\n\ndef test_g() -> None:\n    assert policz(3) == 6\n"},
+        True,
+        (("kod/licznik.py", 3, 3),),
+    ),
     # Prawdziwy strażnik, którego funkcja z ``Gdzie`` zgłasza i łapie wyjątek z katalogiem domowym biegu w komunikacie:
     # katalog każdego biegu jest inny, a porównanie liczy go jako ``<bieg>``.
     "K-wyjatek-z-katalogiem-biegu-w-komunikacie": Sample(
@@ -638,6 +667,36 @@ PROBKI_TESTU = {
         (("kod/liczby.py", 2, 2),),
         base={"kod/liczby.py": FIRST},
     ),
+    # Sondy #2197 r2: nazwa z bloku ``if`` innego pliku, do którego poprawka dopisała nazwę (W1s2), i krotka modułu, którą
+    # poprawka zmieniła: funkcja z FAIL potrzebuje ``A``, a ``B`` zmieniła poprawka i sprawdza go test.
+    "W1s2-nazwa-z-bloku-if-innego-pliku-z-dopisana-nazwa": Sample(
+        {"kod/platforma.py": PLATFORM.replace("return 2\n", "return 1\n"), "kod/liczby.py": USER.replace("mnoznik()\n", "mnoznik() + 1\n")},
+        {"kod/platforma.py": PLATFORM_HEAD, "kod/liczby.py": USER, "tests/test_g.py": "from kod.platforma import mnoznik\n\n\ndef test_g() -> None:\n    assert mnoznik() == 2\n"},
+        False,
+        (("kod/liczby.py", 5, 5),),
+        base={"kod/platforma.py": PLATFORM.replace("return 2\n", "return 1\n"), "kod/liczby.py": USER},
+        reason="na przeszczepie z FAIL (kod/liczby.py:podwojona) węzeł nie pada",
+    ),
+    "krotka-modulu-zmieniona-test-drugiej-nazwy": Sample(
+        {"kod/liczby.py": PAIR.replace("x * A", "x * A + 1")},
+        {
+            "kod/liczby.py": "B, C = 5, 2\n\n\ndef podwojona(x: int) -> int:\n    return x * C\n",
+            "tests/test_g.py": "import kod.liczby\n\n\ndef test_g() -> None:\n    assert kod.liczby.B == 5\n",
+        },
+        False,
+        (("kod/liczby.py", 5, 5),),
+        base={"kod/liczby.py": PAIR},
+        reason="na przeszczepie z FAIL (kod/liczby.py:podwojona) węzeł nie pada",
+    ),
+    # Prawdziwy strażnik, którego funkcja z ``Gdzie`` zgłasza i łapie wyjątek z komunikatem innym w każdym biegu (zbiór
+    # napisów przy losowym ``PYTHONHASHSEED``, katalog z ``tempfile.mkdtemp``; sondy #2197 r2 W4): dowód nie porównuje
+    # wyjątków, tylko przechodzenie węzła.
+    "W4-zbior-w-komunikacie-zlapanego-wyjatku": Sample(
+        {"kod/liczby.py": SETS.replace("x * 2", "x * 3")}, {"kod/liczby.py": SETS, "tests/test_g.py": TEST_G}, True, (("kod/liczby.py", 10, 10),), base={"kod/liczby.py": SETS}
+    ),
+    "W4-mkdtemp-w-komunikacie-zlapanego-wyjatku": Sample(
+        {"kod/liczby.py": TEMP.replace("x * 2", "x * 3")}, {"kod/liczby.py": TEMP, "tests/test_g.py": TEST_G}, True, (("kod/liczby.py", 10, 10),), base={"kod/liczby.py": TEMP}
+    ),
     "A7b-pole-dataclass-i-nazwa-dodana-po-fail": Sample(
         {"kod/okres.py": PERIOD.replace("x * 2", "x * 3")},
         {"kod/okres.py": PERIOD_HEAD + "\n\nNOWA = 1\n", "tests/test_g.py": TEST_PERIOD.replace("from kod.okres", "import kod.okres\nfrom kod.okres") + "    assert getattr(kod.okres, 'NOWA', None) == 1\n"},
@@ -722,17 +781,32 @@ def test_dowod_testu_bez_kodu_z_gdzie_do_przeszczepu_odsyla_do_brak_test(tmp_pat
     assert outcome.line.endswith(f"| NIC DO PRZESZCZEPIENIA | {straznik._EMPTY}: dowodu testu nie ma z czego liczyć, strażnik to brak - test"), outcome.line
 
 
+MAIN = "\n\nif __name__ == '__main__':\n    print(podwojona(2))\n"
+
+
 @dowod_testu
-def test_dowod_testu_odmawia_gdzie_w_instrukcji_modulu_bez_nazwy_zamiast_przeszczepiac_caly_plik(tmp_path: Path) -> None:
-    """Miejsce ``Gdzie`` w instrukcji modułu, która nie wiąże nazwy (``if __name__``), nie ma definicji do przeszczepienia;
-    cały plik z FAIL przyjąłby test nazwy dodanej obok (kształt r1 #2116), więc dowód odmawia."""
+@pytest.mark.parametrize(
+    ("places", "test", "state"),
+    [
+        ((("kod/liczby.py", 10, 10),), "pytest", "NIC DO PRZESZCZEPIENIA"),
+        ((("kod/liczby.py", 10, 10),), "brak - test", "WYJĄTEK brak - test | przeszczep pusty"),
+        ((*WHERE, ("kod/liczby.py", 10, 10)), "pytest", "WYKRYTA | przeszczep z FAIL: kod/liczby.py:podwojona (pominięte poza definicjami: kod/liczby.py:10-10)"),
+        ((*WHERE, ("kod/liczby.py", 10, 10)), "brak - test", "ODMOWA | przeszczep z FAIL ma kod/liczby.py:podwojona: strażnik-test to pytest"),
+    ],
+    ids=["poza-definicja-pytest", "poza-definicja-brak-testu", "z-definicja-pytest", "z-definicja-brak-testu"],
+)
+def test_miejsce_gdzie_poza_definicja_pomijaja_oba_selektory_testu_a_jeden_z_nich_przechodzi(tmp_path: Path, places: Places, test: str, state: str) -> None:
+    """Miejsce ``Gdzie`` w instrukcji modułu, która nie wiąże nazwy (``if __name__``), nie ma definicji do przeszczepienia,
+    a cały plik z FAIL przyjąłby test nazwy dodanej obok (kształt r1 #2116), więc przeszczep je pomija; który selektor
+    testu obowiązuje, mówi jeden właściciel (``Transplant.selector``), więc odmowa jednego wskazuje drugi, który
+    przechodzi (#2197 r2 W5)."""
 
-    main = "\n\nif __name__ == '__main__':\n    print(podwojona(2))\n"
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD + main.replace("2))", "3))")}, {"kod/liczby.py": GOOD + main + "\n\nWERSJA = 2\n", "tests/test_g.py": VERSION})
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD + MAIN.replace("2))", "3))")}, {"kod/liczby.py": GOOD + MAIN, "tests/test_g.py": TEST_G})
 
-    outcome = pull.prove(f"pytest {NODE}", (("kod/liczby.py", 10, 10),))
+    outcome = pull.prove(f"pytest {NODE}" if test == "pytest" else test, places)
 
-    assert not outcome.detected and "| ODMOWA | Gdzie kod/liczby.py:10-10 nie leży w definicji" in outcome.line, outcome.line
+    assert outcome.detected == state.startswith(("WYKRYTA", "WYJĄTEK")), outcome.line
+    assert f"| {state}" in outcome.line, outcome.line
 
 
 # Test, który zostawia ślad i pada przy drugim biegu (miejsce śladu → ścieżka w teście): na HEAD przechodzi, a bez
@@ -742,6 +816,7 @@ SLADY = {
     "plik-ignorowany": "pathlib.Path('ignorowane/slad.txt')",
     "katalog-domowy": "pathlib.Path.home() / 'slad.txt'",
     "katalog-tymczasowy": "pathlib.Path(__import__('tempfile').gettempdir()) / 'slad-straznika.txt'",
+    "katalog-gita-kopii": "pathlib.Path(__import__('subprocess').run(['git', 'rev-parse', '--git-dir'], capture_output=True, text=True, check=True).stdout.strip()) / 'slad'",
 }
 
 
@@ -753,6 +828,24 @@ def test_slad_biegu_wezla_nie_przechodzi_do_nastepnego_biegu_dowodu(tmp_path: Pa
         f"    slad = {trace}\n    assert not slad.exists()\n    slad.parent.mkdir(parents=True, exist_ok=True)\n    slad.write_text('1')\n"
     )
     pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": once, ".gitignore": "ignorowane/\n"})
+
+    outcome = pull.prove(f"pytest {NODE}")
+
+    assert not outcome.detected and "| NIEWYKRYTA | na przeszczepie z FAIL (kod/liczby.py:podwojona) węzeł nie pada" in outcome.line, outcome.line
+
+
+@dowod_testu
+def test_konfiguracja_gita_kopii_z_biegu_nie_przechodzi_do_nastepnego_biegu_dowodu(tmp_path: Path) -> None:
+    """Sonda #2197 r2 W3: ``git config --local`` pisze do katalogu gita kopii (przy kopii z ``git worktree`` do wspólnego,
+    poza nią), którego ``git status`` nie pokazuje; po biegu wraca on do stanu sprzed niego jak pliki kopii."""
+
+    once = (
+        "import subprocess\n\n\ndef test_g() -> None:\n"
+        "    got = subprocess.run(['git', 'config', '--local', '--get', 'straznik.slad'], capture_output=True, text=True)\n"
+        "    assert got.stdout.strip() == ''\n"
+        "    subprocess.run(['git', 'config', '--local', 'straznik.slad', '1'], check=True)\n"
+    )
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": once})
 
     outcome = pull.prove(f"pytest {NODE}")
 
@@ -802,6 +895,41 @@ ZNANE_LUKI_STRAZNIKA: dict[str, tuple[dict[str, str], dict[str, str], str, Place
         },
         f"pytest {NODE}",
         (("kod/tablica.py", 3, 3),),
+    ),
+    # Rozjazd, który nie przechodzi przez ramkę pliku przeszczepu: ``KeyError`` zgłoszony i złapany w module, który tylko
+    # czyta wynik funkcji z FAIL (sonda #2197 r2 W2), albo w procesie potomnym, a test sprawdza w jednej linii wynik,
+    # którego błąd nie zmienia, i nazwę dodaną po FAIL, więc pada tak samo jak na drzewie FAIL.
+    "pytest: rozjazd złapany w module spoza przeszczepu i ta sama linia testu": (
+        {"kod/okres.py": DAYS.replace("x * 2", "x * 3"), "kod/opis.py": SAFE_READER},
+        {
+            "kod/okres.py": DAYS.replace("'dni'", "'liczba_dni'"),
+            "kod/opis.py": SAFE_READER.replace("'dni'", "'liczba_dni'") + "\n\nNOWA = 1\n",
+            "tests/test_g.py": "import kod.opis\n\n\ndef test_g() -> None:\n    assert kod.opis.opis(0) == '0' and getattr(kod.opis, 'NOWA', None) == 1\n",
+        },
+        f"pytest {NODE}",
+        (("kod/okres.py", 2, 2),),
+    ),
+    "pytest: rozjazd w procesie potomnym i ta sama linia testu": (
+        {"kod/dane.py": DATA, "kod/liczby.py": USES_DATA.replace("* 2", "* 3")},
+        {
+            "kod/dane.py": DATA.replace("'dni'", "'liczba_dni'"),
+            "kod/liczby.py": USES_DATA.replace("'dni'", "'liczba_dni'") + "\n\nNOWA = 1\n",
+            "tests/test_g.py": (
+                "import subprocess\nimport sys\n\nimport kod.liczby\n\n\ndef test_g() -> None:\n"
+                "    out = subprocess.run([sys.executable, '-c', 'import kod.liczby; print(kod.liczby.podwojona(0))'], capture_output=True, text=True).stdout\n"
+                "    assert out.strip() == '0' and getattr(kod.liczby, 'NOWA', None) == 1\n"
+            ),
+        },
+        f"pytest {NODE}",
+        (("kod/liczby.py", 5, 5),),
+    ),
+    # Dowód ``pytest`` pomija miejsce ``Gdzie`` poza definicją (``if __name__``), więc przechodzi testem, który łapie tylko
+    # zmianę definicji z drugiego miejsca, choć błąd w ``if __name__`` zostaje bez dowodu.
+    "pytest: miejsce Gdzie poza definicją dowód pomija": (
+        {"kod/liczby.py": BAD + "\n\nif __name__ == '__main__':\n    print(podwojona(3))\n"},
+        {"kod/liczby.py": GOOD + "\n\nif __name__ == '__main__':\n    print(podwojona(2))\n", "tests/test_g.py": TEST_G},
+        f"pytest {NODE}",
+        (*WHERE, ("kod/liczby.py", 10, 10)),
     ),
     # ``brak - test`` nie liczy miejsca ``Gdzie`` poza definicją (``if __name__``), którego przeszczep nie przenosi.
     "brak - test: Gdzie w instrukcji modułu bez nazwy": (

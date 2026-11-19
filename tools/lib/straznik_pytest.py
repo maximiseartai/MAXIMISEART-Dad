@@ -1,18 +1,19 @@
-"""Plugin pytest dowodu strażnika ``pytest <węzeł>`` (``straznik``, ADR 0042): jak padła każda faza testów węzła
-i jakie wyjątki zgłosił kod plików przeszczepu.
+"""Plugin pytest dowodu strażnika ``pytest <węzeł>`` (``straznik``, ADR 0042): jak przeszła albo padła każda faza
+testów węzła i jakie rodzaje wyjątków przeszły przez kod plików przeszczepu.
 
 Dowód ładuje plugin z pliku kodu bazy (``straznik._BOOTSTRAP``), nie z drzewa PR, i podaje go ``pytest.main`` jako
-obiekt ``Plugin``: drzewo PR, które ma własny plik o tej nazwie, wyniku nie zmienia. Plugin niczego nie klasyfikuje,
-tylko zapisuje; porównanie biegów robi ``straznik``.
+obiekt ``Plugin``: drzewo PR, które ma własny plik o tej nazwie, wyniku nie zmienia. Plugin niczego nie ocenia, tylko
+zapisuje, a biegi porównuje ``straznik``.
 
 Wynik w pliku ``output`` (JSON):
 
 - ``testy``: id węzła → lista ``faza:wynik`` (``passed``, ``failed``, ``skipped`` albo ``xfail``);
 - ``padniecia``: każda faza z wynikiem ``failed``: id węzła, faza, rodzaj wyjątku, miejsce (najgłębsza ramka w pliku pod
   ``tests/``, ``plik:linia`` względem korzenia) i pierwsza linia komunikatu;
-- ``wyjatki``: rodzaj i komunikat każdego wyjątku zgłoszonego w kodzie pliku z ``watched`` (``sys.monitoring``,
-  zdarzenie ``RAISE`` w miejscu, w którym powstał, także gdy kod niżej go łapie), bez adresów obiektów. Granica: wyjątek
-  w procesie potomnym plugin pomija.
+- ``wyjatki``: rodzaj wyjątku → pierwszy komunikat (do linii dowodu) dla każdego wyjątku, który przeszedł przez ramkę
+  kodu pliku z ``watched`` w procesie pytest (``sys.monitoring``, zdarzenie ``RAISE``: wyjątek zgłoszony w tej ramce albo
+  w kodzie, który ona wołała, także gdy kod niżej go łapie). Wyjątku w procesie potomnym i wyjątku, który nie przechodzi
+  przez ramkę takiego pliku (np. zgłoszony i złapany w module, który tylko czyta wynik przeszczepu), plugin nie widzi.
 """
 
 from __future__ import annotations
@@ -20,14 +21,12 @@ from __future__ import annotations
 from collections.abc import Generator
 import json
 from pathlib import Path
-import re
 import sys
 from types import CodeType
 
 import pytest
 
 TESTS = "tests/"  # katalog, w którym leży miejsce padnięcia: test albo jego fikstura
-_ADDRESS = re.compile(r"0x[0-9a-f]+")  # adres obiektu w komunikacie różni się między biegami
 _FREE_TOOLS = (3, 4)  # identyfikatory sys.monitoring bez roli w Pythonie (debugger 0, pokrycie 1, profiler 2, optymalizator 5)
 
 
@@ -39,7 +38,7 @@ class Plugin:
         self._output = Path(output)
         self._tests: dict[str, list[str]] = {}
         self._failures: list[dict[str, str]] = []
-        self._raised: set[tuple[str, str]] = set()
+        self._raised: dict[str, str] = {}
 
     def pytest_configure(self, config: pytest.Config) -> None:
         monitoring = sys.monitoring
@@ -50,7 +49,7 @@ class Plugin:
 
     def _on_raise(self, code: CodeType, offset: int, exception: BaseException) -> None:
         if code.co_filename in self._watched:
-            self._raised.add((type(exception).__name__, _ADDRESS.sub("0x", str(exception))[:300]))
+            self._raised.setdefault(type(exception).__name__, str(exception)[:200])
 
     @pytest.hookimpl(wrapper=True)
     def pytest_runtest_makereport(self, item: pytest.Item, call: pytest.CallInfo[None]) -> Generator[None, pytest.TestReport, pytest.TestReport]:
@@ -65,7 +64,7 @@ class Plugin:
         return report
 
     def pytest_sessionfinish(self, session: pytest.Session, exitstatus: int) -> None:
-        found = {"testy": self._tests, "padniecia": self._failures, "wyjatki": sorted(self._raised)}
+        found = {"testy": self._tests, "padniecia": self._failures, "wyjatki": self._raised}
         self._output.write_text(json.dumps(found, ensure_ascii=False), encoding="utf-8")
 
 
