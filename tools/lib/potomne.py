@@ -40,7 +40,7 @@ przez ``run`` idzie też każde inne polecenie, które trwa albo uruchamia włas
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager, suppress
 import json
 import math
@@ -63,7 +63,7 @@ _POLL_S = 0.1
 _RELEASE_S = 10.0
 # ``git worktree prune`` i ``remove`` usuwają katalogi ``.git/worktrees``, które ``add`` z innego wątku albo procesu
 # właśnie zakłada, i ``add`` pada. Równoległe mutacje robią kopie naraz, a workery pytest-xdist i narzędzia z kilku
-# worktree jednego repozytorium to osobne procesy, więc te polecenia idą po kolei pod ``_worktrees`` (#1312), z blokadą
+# worktree jednego repozytorium to osobne procesy, więc te polecenia idą po kolei pod ``repo_lock`` (#1312), z blokadą
 # tego pliku w katalogu gita wspólnym dla wszystkich worktree repozytorium.
 _WORKTREES_LOCK = "potomne-worktree.lock"
 _COPY_PREFIX = "kopia-commitu-"
@@ -174,7 +174,7 @@ def commit_copy(repo: Path, commit: str) -> Iterator[Path]:
     try:
         guard.report("+", "kopia", str(copy), str(repo))
         # Przez run: strażnik zabija przerwane ``worktree add``, zanim usunie kopię, którą ono jeszcze wypełnia.
-        with _worktrees(repo):
+        with repo_lock(repo, _WORKTREES_LOCK):
             added = run(["git", "worktree", "add", "--quiet", "--detach", str(copy), commit], cwd=repo)
         if added.returncode:
             raise _GitFailed(added.returncode, added.args, added.stdout, added.stderr)
@@ -472,21 +472,24 @@ def _guard() -> _Guard:
 
 
 @contextmanager
-def _worktrees(repo: Path) -> Iterator[None]:
-    """Zamek poleceń, które zmieniają ``.git/worktrees`` repozytorium ``repo``: blokada pliku ``_WORKTREES_LOCK``.
+def repo_lock(repo: Path, name: str, waiting: Callable[[], object] = lambda: None) -> Iterator[None]:
+    """Zamek repozytorium ``repo`` wspólny dla jego worktree: blokada pliku ``name`` w katalogu gita wspólnym dla
+    wszystkich worktree; ``waiting`` biegnie raz, zanim zamek zacznie czekać na blokadę, którą trzyma ktoś inny.
 
     Blokada należy do uchwytu pliku, a każde wejście otwiera własny, więc rozdziela wątki tego procesu i inne procesy, a
     system zwalnia ją ze śmiercią procesu. Gdy ``repo`` nie jest repozytorium gita, zamka nie ma, a błąd daje samo
-    polecenie ``git worktree``.
+    polecenie gita pod nim.
     """
 
     common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=repo, capture_output=True, text=True, check=False)
     if common.returncode:
         yield
         return
-    with (repo / common.stdout.strip() / _WORKTREES_LOCK).open("ab") as lock:
-        while not _locked(lock):
-            time.sleep(_POLL_S)
+    with (repo / common.stdout.strip() / name).open("ab") as lock:
+        if not _locked(lock):
+            waiting()
+            while not _locked(lock):
+                time.sleep(_POLL_S)
         try:
             yield
         finally:
@@ -525,7 +528,7 @@ def _unlock(lock: IO[bytes]) -> None:
 
 def _remove_copy(repo: Path, copy: Path) -> None:
     # Drugie --force usuwa też worktree zablokowane przez ``worktree add`` zabite w trakcie.
-    with _worktrees(repo):
+    with repo_lock(repo, _WORKTREES_LOCK):
         removed = subprocess.run(
             ["git", "worktree", "remove", "--force", "--force", str(copy)], cwd=repo, capture_output=True, check=False
         )
@@ -536,7 +539,7 @@ def _remove_copy(repo: Path, copy: Path) -> None:
     while copy.exists() and time.monotonic() < deadline:
         time.sleep(_POLL_S)
         shutil.rmtree(copy, ignore_errors=True)
-    with _worktrees(repo):
+    with repo_lock(repo, _WORKTREES_LOCK):
         subprocess.run(["git", "worktree", "prune"], cwd=repo, capture_output=True, check=False)
 
 

@@ -25,6 +25,12 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
   Część skryptu mutacji albo podstawy z planu (`#k/n` w nazwie jednostki) odtwarzasz przez `MUTACJE_CZESC=k/n` w środowisku polecenia tego skryptu albo polecenia `ci:`.
   Nocne `change-mutations` mutują zmienione linie `src/` i tylko tych jednostek `tools/`, które `tools/lib/szopa.toml` stawia w podtabeli `przepuszcza`, bo ich fałszywe „OK” przepuszcza zły kod produktu (audyty #1623 i #1624).
 
+## Status `Werdykt i bramka`
+
+- Run workflow `Werdykt i bramka` w stanie `cancelled` to nie porażka: `cancel-in-progress` w `werdykt-i-bramka.yml` anuluje starszy run PR, gdy przychodzi nowsze zdarzenie (komentarz, edycja opisu, koniec runu CI), a `gh pr checks` i powiadomienie „Checks failed” pokazują taki run jako `fail`.
+  O gotowości mówi status commita `Werdykt i bramka` na HEAD: `pending` czeka na CI albo werdykt, a opis `failure` zaczyna się od przyczyny, która wymaga działania autora (pełne przyczyny podaje linia `STATUS` w logu runu z `target_url` statusu).
+- Status w kolejce po zielonym CI i `PASS` to linia `SCAL CZEKA` z `tools/scal_pr.py N`: obserwuj PR, a nie ponawiaj merge'a w pętli.
+
 ## Status `scalenie z main`
 
 - Status (`tools/ci/status_scalenia.py`) mówi w opisie, co zrobić, a ruleset go nie wymaga, więc gotowość PR od niego nie zależy, choć `gh pr checks` kończy się kodem 1, gdy jest czerwony.
