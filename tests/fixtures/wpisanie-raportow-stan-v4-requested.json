@@ -1,0 +1,78 @@
+{
+  "schema_version": 4,
+  "rollout": "2026-11-09",
+  "own": [
+    {
+      "number": "40000002",
+      "day": "2026-11-09",
+      "worker": "anna.kowalska",
+      "column": "CZYNNOŚCI ZREALIZOWANE",
+      "value": "montaż"
+    },
+    {
+      "number": "40000002",
+      "day": "2026-11-09",
+      "worker": "anna.kowalska",
+      "column": "SKUTECZNE",
+      "value": "tak"
+    },
+    {
+      "number": "40000003",
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "column": "CZYNNOŚCI ZREALIZOWANE",
+      "value": "spawpg"
+    },
+    {
+      "number": "40000003",
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "column": "SKUTECZNE",
+      "value": "tak"
+    }
+  ],
+  "moves": [
+    {
+      "number": "40000002",
+      "day": "2026-11-09",
+      "worker": "anna.kowalska",
+      "origin_day": "2026-11-09",
+      "origin_worker": "anna.kowalska",
+      "origin_name": "anna.kowalska",
+      "since": "2026-11-09T18:30:00+01:00",
+      "overridden": false,
+      "added": false
+    },
+    {
+      "number": "40000003",
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "origin_day": "2026-11-09",
+      "origin_worker": "jan.testowy",
+      "origin_name": "jan.testowy",
+      "since": "2026-11-09T18:30:00+01:00",
+      "overridden": false,
+      "added": false
+    }
+  ],
+  "requested": [
+    {
+      "mail": "fciijllmipglpnop",
+      "worker": "anna.kowalska",
+      "day": "2026-11-09",
+      "number": "40000002",
+      "verdict": "tak",
+      "activities": "montaż",
+      "at": "2026-11-09T19:05:00+01:00"
+    },
+    {
+      "mail": "dmpekpnjpeodcodd",
+      "worker": "jan.testowy",
+      "day": "2026-11-09",
+      "number": "40000003",
+      "verdict": "tak",
+      "activities": "spawpg",
+      "at": "2026-11-09T19:00:00+01:00"
+    }
+  ]
+}
