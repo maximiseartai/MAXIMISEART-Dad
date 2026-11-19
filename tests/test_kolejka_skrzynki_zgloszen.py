@@ -13,8 +13,10 @@ from datetime import datetime, timezone
 import gzip
 import itertools
 import json
+import os
 from pathlib import Path
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -637,6 +639,44 @@ def test_wysylka_dodana_w_trakcie_przejscia_wychodzi_bez_kolejnego_budzenia(tmp_
     assert queue.box.wait_until(lambda box: bool(box.issues) and len(box.issues[0].comments) == 1)
     assert queue.box.issues[0].comments == ["Część 1/1\n\ndruga\n"]
     assert wait_for(lambda: queue.files() == [])
+
+
+_ZAMKNIECIE_W_TRAKCIE_PRZEJSCIA: Final = (
+    "import sys, threading\n"
+    "from pathlib import Path\n"
+    "from tests.fixtures.centrum import FakeReportBox\n"
+    "from tests.test_kolejka_skrzynki_zgloszen import Queue, post\n"
+    "queue = Queue(Path(sys.argv[1]), FakeReportBox(search_hold=threading.Event()))\n"
+    "queue.outbox.post(post(['treść\\n']))\n"
+    "assert queue.box.searching.wait(30), 'przejście kolejki nie zaczęło pytać skrzynki'\n"
+    "print('czeka', flush=True)\n"
+)
+
+
+def test_proces_konczy_sie_mimo_przejscia_kolejki_ktore_czeka_na_skrzynke(tmp_path: Path) -> None:
+    """Skrzynka bez sieci odpowiada dopiero po limicie czasu, a przejście kolejki nie trzyma zamknięcia Centrum: proces
+    kończy się, gdy skończy się jego praca, a wysyłka czeka w pliku na następny start."""
+
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
+    child = subprocess.Popen(
+        [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_PRZEJSCIA, str(tmp_path)],
+        cwd=ROOT,
+        env=environment,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert child.stdout is not None
+    try:
+        waiting = child.stdout.readline()
+        exit_code = child.wait(timeout=30)
+    finally:
+        child.kill()
+        child.wait()
+        child.stdout.close()
+
+    assert (waiting, exit_code) == ("czeka\n", 0)
+    assert len(list((tmp_path / "config" / "zgloszenia" / "kolejka").glob("*.json"))) == 1
 
 
 def test_gdy_skrzynka_odmawia_szukania_issue_okresu_wysylka_czeka_w_pliku_bez_nowego_issue(tmp_path: Path) -> None:

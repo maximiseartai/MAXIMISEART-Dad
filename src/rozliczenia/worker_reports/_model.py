@@ -157,6 +157,7 @@ class WorkerAddresses:
 
 OrderNumber = NewType("OrderNumber", str)
 """``NUMER ZL.`` jako same cyfry: bez „#” i bez „.0”, które szybki czytnik INTERMAX daje liczbie."""
+MailEntryKey = tuple[MailId, Login, OrderNumber]
 
 
 @dataclass(frozen=True, order=True)

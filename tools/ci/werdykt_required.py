@@ -24,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 import czasy_ci
 from jednostka import Czesc
+from ostatnie_linie import REQUIRED_FAIL
 from plan_runu import Z_PLANU, Plan
 from zakres_runu import MUTACJE, TORY
 
@@ -52,7 +53,7 @@ def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence
                 ostatnie[zapis.zadanie_planu] = zapis
     for zadanie in plan.zadania:
         if (ostatni := ostatnie.get(zadanie.id)) is None:
-            przyczyny.append(f"{zadanie.nazwa}: brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły")
+            przyczyny.append(f"{zadanie.nazwa}: {czasy_ci.BRAK_ZAPISU}")
             continue
         zaplanowane = {str(klucz.zgloszony) for klucz in zadanie.klucze}
         if brak := sorted(zaplanowane - {jednostka.klucz for jednostka in ostatni.jednostki}):
@@ -93,7 +94,7 @@ def _werdykt(args: argparse.Namespace) -> int:
             print(f"CZASY CI FAIL | {sciezka.name}: {error!r}")
     wyniki = {zadanie: need["result"] for zadanie, need in json.loads(os.environ["NEEDS"]).items()}
     if przyczyny := werdykt(plan, wyniki, zapisy, brak_planu=brak):
-        print("\n".join(f"REQUIRED FAIL | {przyczyna}" for przyczyna in przyczyny))
+        print("\n".join(f"{REQUIRED_FAIL}{przyczyna}" for przyczyna in przyczyny))
         return 1
     assert plan is not None
     jednostki = sum(len(zadanie.jednostki) for zadanie in plan.zadania)

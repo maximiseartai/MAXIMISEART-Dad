@@ -35,7 +35,7 @@ Ta sekcja mówi, czego skill pstack nie wie o tym repo.
   Warianty z prawdziwymi Wzorcami biegną tylko na Macu, bo Wzorce z `config/` nie opuszczają Maca.
   Ich `VERIFY SKIP` to `verified-unreachable` z warunkiem „Wzorce w `config/`”.
 - Przebieg na żywo skillu Centrum: na Macu, jeden bieg napędu naraz, bo procesor Maca dzielą wszystkie wątki; bieg innego wątku pokazuje `tools/quiet_machine.py --status` (`drive_centrum.py`), a wtedy czekasz na jego koniec.
-  Sekcja `Real mailbox` w `wpisanie-raportow` wymaga zgody Maksa na każdy bieg, więc nie wchodzi do przebiegu.
+  Sekcja `Real mailbox` w `wpisanie-raportow` należy do Wydania (krok 3 skilla [`wydanie`](../../.agents/skills/wydanie/SKILL.md)), więc nie wchodzi do przebiegu.
   `wydajnosc` zostaje poza przebiegiem jako `verified-unreachable` z warunkiem „cichy procesor”.
 - Dryf mapy w tym repo to także zdanie o tym, czego bieg nie sprawdza, bez nazwy testu, który to trzyma.
   Takie zdanie dostaje jedno zdanie z nazwą testu, które mówi dokładnie to, co test sprawdza, a gdy takiego testu nie ma, zostaje i opis PR wymienia je jako brak.
@@ -61,7 +61,7 @@ Ta sekcja mówi, czego skill pstack nie wie o tym repo.
   (b) Ścieżka, którą harness sam wybiera i podaje produktowi jako parametr (Ustawienia, dziennik i konfiguracja serwera w `fixture.json`, folder Wzorców, adres przekierowany na repozytorium próbne).
   (c) Współrzędne i nazwy w sprawdzeniu, które czyta plik zbudowany przez atrapę z kopią: zła stała w `src` nie trafia w ten plik, więc odczyt pada.
   Wyrocznia, która importuje sprawdzany kod, nie wykryje jego błędu: zmieniony w `src` tekst albo format przeszedłby z nim razem.
-  Kopię, która wygląda na mechanikę, opatrz komentarzem z powodem i odsyłaczem do tej sekcji.
+  Kopię, która wygląda na mechanikę, trzymaj w stałej nazwanej tym, co kopiuje ze świata zewnętrznego, jak nazwy plików taty w `tools/lib/atrapy/pliki_taty.py`, a nie w komentarzu z powodem ([ADR 0043](../adr/0043-kod-bez-komentarzy.md)).
 
 ## Reguły i co ich pilnuje
 

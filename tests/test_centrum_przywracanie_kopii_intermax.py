@@ -328,27 +328,34 @@ def test_przywrocenie_kopii_ktorej_lista_nie_wymienia_odmawia(tmp_path: Path, na
     assert (centrum.register.read_bytes(), _kopie(centrum)) == (before, kopie)
 
 
-def _zip_without_workbook(*, relationship: bool = False) -> bytes:
-    """Zip bez dokumentu skoroszytu; ``relationship``: relacje paczki wskazują go, ale części nie ma."""
+_TO_MISSING_WORKBOOK = (
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
+    'officeDocument" Target="xl/workbook.xml"/></Relationships>'
+)
+
+
+def _zip_without_workbook(relationships: str | None = None) -> bytes:
+    """Zip bez dokumentu skoroszytu; ``relationships``: treść relacji paczki (``_rels/.rels``), gdy jakaś jest."""
 
     archive = BytesIO()
     with zipfile.ZipFile(archive, "w") as written:
         written.writestr("[Content_Types].xml", "<Types/>")
-        if relationship:
-            written.writestr(
-                "_rels/.rels",
-                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/'
-                'officeDocument" Target="xl/workbook.xml"/></Relationships>',
-            )
+        if relationships is not None:
+            written.writestr("_rels/.rels", relationships)
         written.writestr("xl/worksheets/sheet1.xml", "<worksheet/>")
     return archive.getvalue()
 
 
 @pytest.mark.parametrize(
     "damaged",
-    [b"to nie jest skoroszyt", _zip_without_workbook(), _zip_without_workbook(relationship=True)],
-    ids=["nie-zip", "zip-bez-skoroszytu", "relacja-do-brakujacej-czesci"],
+    [
+        b"to nie jest skoroszyt",
+        _zip_without_workbook(),
+        _zip_without_workbook(_TO_MISSING_WORKBOOK),
+        _zip_without_workbook(_TO_MISSING_WORKBOOK[:40]),
+    ],
+    ids=["nie-zip", "zip-bez-skoroszytu", "relacja-do-brakujacej-czesci", "urwane-relacje-paczki"],
 )
 def test_uszkodzona_kopia_nie_jest_przywracana(tmp_path: Path, damaged: bytes) -> None:
     centrum = _ordered(tmp_path)

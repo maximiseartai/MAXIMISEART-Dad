@@ -98,7 +98,7 @@ ApiOperation = Literal[
 ]
 """Operacje API, które przeglądarka mierzy: nazwy (``operation_id``) zamiast adresu z tokenem okresu. Trasy spoza tej
 listy, każda z powodem, wymienia ``OUTSIDE_TIMING`` w ``tests/test_centrum_rozliczen.py``, który wiąże listę z trasami;
-że przeglądarka woła każdą przez ``call``, pilnuje reguła 4 w ``frontend/scripts/rules.mjs``."""
+że przeglądarka woła każdą przez ``call``, pilnuje ``npm run rules`` (``frontend/scripts/rules.mjs``)."""
 
 
 Milliseconds = Annotated[int, Field(ge=0, le=600_000)]

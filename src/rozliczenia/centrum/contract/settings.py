@@ -176,7 +176,8 @@ class HistoryRelease(Model):
 class HistoryRow(Model):
     """Wiersz Historii Ustawień. ``release``: Wydanie zmiany ze źródłem ``release``; ``undoes``: id cofniętego wiersza;
     ``undoable``: ma „Cofnij”; ``refused``: zła treść spoza Centrum albo zmiana z Wydania, których Centrum nie przyjęło,
-    z powodem ``reason``; ``removed``: plik usunięty poza Centrum."""
+    z powodem ``reason``; ``removed``: po zmianie pliku nie ma (usunięty poza Centrum albo przez „Cofnij” zmiany, przed
+    którą go nie było)."""
 
     id: str
     at: datetime

@@ -28,6 +28,11 @@ przypomnienia z „Wysłanych” liczą pory z chwili jego wysyłki, które prac
 `config/` leżą dwa, wynik ostatniego sprawdzenia dla widoku Raporty (`przypomnienia-wynik.json`) i te pory, a pamięcią
 wysłanych zostaje folder „Wysłane”.
 
+Zmieniona 19.11.2026 (decyzja Maksa): próbę przed Wydaniem uruchamia agent przy każdym Wydaniu jako krok weryfikacji,
+bez pytania Maksa (sekcja Decyzja). Adres próby leży tylko w notatkach lokalnych Maksa. Wybór agenta w #2242, nie
+Maksa, który prosił o przypomnienia włączone w `config/` swojego Maca: zostają tam wyłączone, bo Centrum z tego klonu
+wysyłałoby je Wykonawcom taty, a próba liczy je jak włączone tylko w swojej pamięci (`--wlaczone-od`).
+
 ## Kontekst
 
 Wykonawcy nie zawsze wysyłają raport za dzień. Tata przypomina im o tym sam. Chce, żeby Centrum wysyłało
@@ -64,8 +69,9 @@ Laptop taty na pewno działa o 8:00. Nie wiadomo, czy działa w nocy albo wieczo
   tylko tekst nad cytatem, a numery z przykładu w przypomnieniu nigdy nie dają Wpisu, żeby cytat nie dopisał
   fałszywego zlecenia (ADR 0029).
 - **Tata widzi przypomnienia** w okienku dnia Wykonawcy na mapie cieplnej widoku Raporty: kiedy poszły.
-- **Próba przed Wydaniem.** Maks uruchamia na prawdziwej skrzynce taty próbę, która liczy, komu i za które dni poszłyby
-  przypomnienia, a wysyła jeden mail tylko na adres Maksa. Po Wydaniu nie ma trybu próbnego.
+- **Próba przy każdym Wydaniu.** Agent Wydania uruchamia na prawdziwej skrzynce taty próbę, która liczy, komu i za
+  które dni poszłyby przypomnienia, a wysyła jeden mail tylko na adres Maksa (krok 3 skilla `wydanie`, bez pytania
+  Maksa od 19.11.2026). Po Wydaniu nie ma trybu próbnego.
 
 ## Odrzucone warianty
 
