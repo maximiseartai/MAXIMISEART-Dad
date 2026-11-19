@@ -2,11 +2,11 @@
 
 Kroki ruff i mypy (``static_steps``) to brama pre-push i polecenia zadania CI „Ruff, mypy” na każdej maszynie: mypy
 biegnie raz dla każdej platformy z ``MYPY_PLATFORMS``, jedynej listy platform mypy, a ``srodowisko_ci.mismatch``
-(na ``main`` w ``tests/test_srodowisko_ci.py``, w dowodzie strażnika na drzewie PR) pilnuje, że każdy krok zaczyna się
-poleceniem ruff albo mypy zadania „Ruff, mypy” z ``ci.yml``, a każde takie polecenie ma krok. Biegną nimi
+(na ``main`` w ``tests/test_srodowisko_ci.py``, w dowodzie strażnika na drzewie PR) pilnuje, że zadanie „Ruff, mypy”
+z ``ci.yml`` ma te kroki słowo w słowo, w tej kolejności, i żadnego innego kroku ruff ani mypy. Biegną nimi
 ``tools/ci_lokalnie.py``, ``tools/szybko.py``, brama typów mutacji (``tools/lib/silnik_mutacji.py``) i dowód strażnika ``mypy`` i ``ruff`` (``tools/lib/straznik.py``), więc zmiana listy
 zmienia je wszystkie naraz. Diagnostyki kroku w JSON (opcje ``JSON_OUTPUT``) czyta ``diagnostics``. Kroki zizmor, actionlint i shellcheck akcji złożonych (``workflow_steps``) sprawdzają
-``.github/`` w tym samym zadaniu CI, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest
+``.github/`` w zadaniu CI Frontend, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest
 (``pytest_step``) to ten sam pytest, który ``tools/ci_lokalnie.py`` uruchamia w całości, a ``tools/szybko.py``
 z wybranymi testami.
 
@@ -102,7 +102,7 @@ def _relative(name: str, root: Path) -> str:
 
 def workflow_steps(root: Path) -> list[Step]:
     """Kroki zizmor, actionlint z shellcheckiem (``.github/workflows``) i shellcheck skryptów akcji złożonych
-    (``.github/actions``, których actionlint nie czyta) w ``root``, jak w zadaniu CI „Ruff, mypy”, narzędziami z dodatku
+    (``.github/actions``, których actionlint nie czyta) w ``root``, jak w zadaniu CI Frontend, narzędziami z dodatku
     ``workflowy`` w katalogu skryptów Pythona, który je uruchamia; bez narzędzia krok pada z poleceniem, które je instaluje."""
 
     scripts = sysconfig.get_path("scripts")

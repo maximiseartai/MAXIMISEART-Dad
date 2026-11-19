@@ -35,7 +35,7 @@ def project(*dependencies: str, dev: tuple[str, ...] = (), tools: str = "") -> d
     text = (
         '[build-system]\nrequires = ["setuptools>=68"]\nbuild-backend = "setuptools.build_meta"\n\n'
         f'[project]\nname = "proba"\nversion = "0"\ndependencies = [{listed}]\n\n'
-        f"[project.optional-dependencies]\ndev = [{extras}]\nworkflowy = []\n\n"
+        f"[project.optional-dependencies]\ndev = [{extras}]\n\n"
         f"[tool.setuptools]\npackages = []\n\n{tools}"
     )
     return {"pyproject.toml": text, srodowisko_ci.WORKFLOW: CI}

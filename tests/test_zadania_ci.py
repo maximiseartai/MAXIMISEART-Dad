@@ -374,16 +374,42 @@ def test_kazdy_krok_wskazany_w_wyrazeniu_jest_wczesniej_w_tym_samym_zadaniu() ->
     assert unknown == {}
 
 
-def test_w_ruff_mypy_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych() -> None:
-    steps = jobs()["ruff-mypy"]["steps"]
-    deps = next(index for index, step in enumerate(steps) if step.get("id") == "deps")
+@pytest.mark.parametrize(
+    ("job", "expected"),
+    [
+        ("ruff-mypy", ("ruff", "mypy", "mypy", "pytest", "pytest")),
+        ("frontend", ("zizmor", "actionlint", "tools/ci/shellcheck_akcji.py", "tools/na_scalonych_pr.py")),
+    ],
+)
+def test_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych(job: str, expected: tuple[str, ...]) -> None:
+    steps = jobs()[job]["steps"]
+    first = next(index for index, step in enumerate(steps) if step.get("if") == INDEPENDENT)
 
-    checks = [(step["run"].removeprefix("python -m ").removeprefix("python ").split()[0], step.get("if")) for step in steps[deps + 1 :]]
+    checks = [(step["run"].removeprefix("python -m ").removeprefix("python ").split()[0], step.get("if")) for step in steps[first:]]
 
-    assert checks == [
-        (check, INDEPENDENT)
-        for check in ("ruff", "mypy", "mypy", "pytest", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py", "pytest", "tools/na_scalonych_pr.py")
+    assert checks == [(check, INDEPENDENT) for check in expected]
+
+
+def test_porazka_kroku_zadania_bramki_czerwieni_required() -> None:
+    """``continue-on-error`` zadania daje Required jego sukces mimo porażki, a kroku sukces zadania mimo porażki
+    sprawdzenia. Kroki zadań z planu (``plan_runu.Z_PLANU``) mogą go mieć (pomiar i wysłanie czasów), bo Required czyta
+    ich jednostki z zapisów, w których porażka zostaje (``tools/ci/werdykt_required.py``)."""
+
+    workflow = jobs()
+    gate = workflow[REQUIRED]["needs"]
+    tolerant = [name for name in gate if workflow[name].get("continue-on-error", False) is not False]
+    tolerant += [
+        f"{name}: {step.get('name', step.get('uses'))}"
+        for name in gate
+        if name not in plan_runu.Z_PLANU
+        for step in workflow[name]["steps"]
+        if step.get("continue-on-error", False) is not False
     ]
+
+    assert tolerant == [], (
+        "continue-on-error w zadaniu, na które czeka Required CI status, albo w jego kroku zamienia porażkę sprawdzenia w sukces:"
+        " usuń go; krok pomiaru bez wpływu na werdykt stoi tylko w zadaniach z planu (plan_runu.Z_PLANU), jak zapis czasów"
+    )
 
 
 def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytorium() -> None:

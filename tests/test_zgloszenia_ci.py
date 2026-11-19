@@ -989,7 +989,7 @@ def test_ponowienie_runu_w_toku_albo_zielonego_nic_nie_ponawia(status: str, wyni
         ({"Mutation checks (6/6)": MUTACJA}, (), "ci_lokalnie.py --tylko mutations --odtwarzam 42435998596", False),
         ({"Mutation checks (1/1)": CYTAT_503}, (), "defekt: Mutation checks (1/1) |", False),
         ({"pytest (Python 3.14, Linux, 5/8)": DNS + PADLY_TEST}, (), f"padłe testy: {TEST_OPIEKUNA} |", False),
-        ({"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"}, (), "ci_lokalnie.py --tylko ruff,mypy,workflowy", False),
+        ({"Ruff, mypy": "2026-11-12T15:50:00Z kod/a.py:3: error: Incompatible types\n"}, (), "ci_lokalnie.py --tylko ruff,mypy", False),
         ({"pytest (Python 3.13, 1/20)": RUN_43439867902}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"pytest (Python 3.13, 1/20)": WYSLANIE_ARTEFAKTU}, (), "awaria: usługa artefaktów GitHuba", True),
         ({"Mutation checks (6/6)": [_wykonany("Run the planned units", "failure", FAIL_SKILLA), ZAPIS_CZASOW, WYSLANIE_CZASOW]}, (), "defekt: Mutation checks (6/6) |", False),

@@ -1,7 +1,8 @@
 """Środowisko Required CI dowodu strażnika (``tools/lib/srodowisko_ci.py``, ADR 0042 „Środowisko dowodu”).
 
 ``mismatch`` na ``main`` jest puste, więc stałe ``srodowisko_ci`` opisują zadanie „Ruff, mypy” z ``ci.yml``, a każda
-zmiana tego zadania, która zmienia środowisko ruff i mypy, daje różnicę, której dowód odmawia. Dowód strażnika
+zmiana tego zadania poza nazwami i wersją akcji daje różnicę, której dowód odmawia, także krok dopisany za ostatnim
+sprawdzeniem (#2161 r3 W1). Dowód strażnika
 ``mypy`` w środowisku z ``built`` liczy to, co Required CI PR: zależności i konfiguracja drzewa HEAD scalonego z bazą,
 a nie wołającego (#2116 r4–r6).
 """
@@ -31,6 +32,7 @@ from tests.fixtures.srodowisko import CI, PINS, project, wymaga_uv
 
 ROOT = Path(__file__).resolve().parents[1]
 MYPY = '[tool.mypy]\nfiles = ["kod"]\nstrict = true\n{}\n'
+IF = "${{ !cancelled() && steps.deps.outcome == 'success' }}"
 
 
 def test_srodowisko_dowodu_opisuje_zadanie_ruff_mypy_z_ci_main() -> None:
@@ -80,6 +82,13 @@ def _insert(before: str, step: Job) -> Callable[[Job, Job], None]:
     return change
 
 
+def _append(step: Job) -> Callable[[Job, Job], None]:
+    def change(_: Job, job: Job) -> None:
+        _steps(job).append(step)
+
+    return change
+
+
 def _drop(fragment: str) -> Callable[[Job, Job], None]:
     def change(_: Job, job: Job) -> None:
         _steps(job).remove(_named(job, fragment))
@@ -108,7 +117,7 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
     ("change", "fragment"),
     [
         (_step("setup-python", {"with": {"python-version": "3.15"}}), "krok 2 zadania to"),
-        (_step("Install development dependencies", {"run": 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"'}), "krok 4 zadania to"),
+        (_step("Install development dependencies", {"run": 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev,workflowy]"'}), "krok 4 zadania to"),
         (_step("Install development dependencies", {"run": srodowisko_ci.CI_INSTALL + " types-requests"}), "krok 4 zadania to"),
         (_set("runs-on", "macos-latest"), "runs-on 'macos-latest' zamiast 'ubuntu-latest'"),
         (_set("container", "python:3.13"), "container w zadaniu"),
@@ -138,6 +147,17 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
         (_swap("Typecheck Python code (Linux)", "Typecheck Python code (Windows)"), "krok 6 zadania to"),
         (_step("Typecheck Python code (Windows)", {"run": "python -m mypy"}), "krok 7 zadania to"),
         (_step("Typecheck Python code (Linux)", {"run": "python -m mypy"}), "krok 6 zadania to"),
+        (_insert("Weed rules", {"name": "Mypy macOS", "if": IF, "run": "python -m mypy --platform darwin"}), "krok 8 zadania to"),
+        (_append({"name": "Format", "if": IF, "run": "python -m ruff format --check"}), "krok 10 zadania to"),
+        (_step("Typecheck Python code (Windows)", {"continue-on-error": True}), "krok 7 zadania to"),
+        (_step("Weed rules", {"continue-on-error": True}), "krok 8 zadania to"),
+        (_step("ast-grep rules on the added lines", {"continue-on-error": True}), "krok 9 zadania to"),
+        (_step("ast-grep rules on the added lines", {"if": "false"}), "krok 9 zadania to"),
+        (_step("ast-grep rules on the added lines", {"env": {"MAXIMISEART_ZAPADKA_BAZA": "HEAD"}}), "krok 9 zadania to"),
+        (_drop("ast-grep rules on the added lines"), "krok 9 zadania to"),
+        (_step("actions/checkout", {"with": {"fetch-depth": 1}}), "krok 1 zadania to"),
+        (_set("timeout-minutes", 30), "timeout-minutes w zadaniu"),
+        (_set("permissions.contents", "write"), "permissions w zadaniu"),
     ],
     ids=[
         "python",
@@ -171,6 +191,17 @@ def _ci(change: Callable[[Job, Job], None]) -> str:
         "kolejnosc-mypy",
         "mypy-windows-bez-platformy",
         "mypy-linux-bez-platformy",
+        "krok-mypy-za-ostatnim-sprawdzeniem",
+        "krok-ruff-na-koncu-zadania",
+        "sprawdzenie-bez-porazki",
+        "reguly-calego-drzewa-bez-porazki",
+        "reguly-linii-dodanych-bez-porazki",
+        "reguly-linii-dodanych-pominiete",
+        "reguly-linii-dodanych-bez-bazy",
+        "bez-regul-linii-dodanych",
+        "checkout-bez-bazy",
+        "limit-czasu",
+        "uprawnienia",
     ],
 )
 def test_zmiana_srodowiska_ruff_i_mypy_w_ci_to_roznica(tmp_path: Path, change: Callable[[Job, Job], None], fragment: str) -> None:
@@ -184,13 +215,11 @@ def test_zmiana_srodowiska_ruff_i_mypy_w_ci_to_roznica(tmp_path: Path, change: C
 @pytest.mark.parametrize(
     "change",
     [
-        _step("Audit workflows (zizmor)", {"env": {"GH_TOKEN": "x"}}),
-        _insert("Audit workflows (zizmor)", {"name": "Po mypy", "run": "python tools/cokolwiek.py"}),
-        _set("timeout-minutes", 30),
+        _set("name", "Ruff i mypy"),
         _step("Lint Python code", {"name": "Ruff"}),
         _step("astral-sh/setup-uv", {"uses": "astral-sh/setup-uv@0000000000000000000000000000000000000000"}),
     ],
-    ids=["env-po-mypy", "krok-po-mypy", "limit-czasu", "nazwa-kroku", "wersja-akcji"],
+    ids=["nazwa-zadania", "nazwa-kroku", "wersja-akcji"],
 )
 def test_zmiana_zadania_ktora_srodowiska_ruff_i_mypy_nie_zmienia_nie_jest_roznica(tmp_path: Path, change: Callable[[Job, Job], None]) -> None:
     _write(tmp_path, {srodowisko_ci.WORKFLOW: _ci(change)})

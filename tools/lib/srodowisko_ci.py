@@ -11,18 +11,22 @@ bierze środowisko tylko stąd, nie od wołającego, więc job ``dowod``, merge 
   pakiety, które uv rozwiązuje z ``pyproject.toml`` drzewa z dodatkami ``CI_EXTRAS`` dla systemu runnera
   (``CI_PLATFORM``), zainstalowane bez ponownego rozwiązania, więc Mac dostaje zbiór pakietów linuksa, i projekt
   edytowalnie z kopii, jak ``CI_INSTALL``;
-- ``mismatch`` mówi, czym zadanie ``JOB`` drzewa buduje środowisko inaczej niż ``built``: kroki od pierwszego do
-  ostatniego kroku ruff albo mypy różne od ``job_steps`` (checkout, setup-python ``CI_PYTHON``, setup-uv, ``CI_INSTALL``
-  i kroki ``kroki_lokalne.static_steps`` w ich kolejności z warunkiem ``_CI_IF``; równość, poza ``name`` i wersją akcji),
-  klucz zadania spoza ``_JOB_KEYS`` (np. ``container``, ``env``, ``strategy``, ``continue-on-error``), inny runner,
-  ``env`` i ``defaults`` workflow albo konfiguracja uv w drzewie. Przed sprawdzeniami nie biegnie więc żaden kod PR poza
-  instalacją, a kroki dowodu to kroki zadania słowo w słowo. ``built`` odmawia drzewa z różnicą,
+- ``mismatch`` mówi, czym zadanie ``JOB`` drzewa różni się od jedynej postaci, którą dowód liczy: kroki różne od
+  ``job_steps`` (wszystkie kroki zadania na równość, poza ``name`` i wersją akcji: checkout, setup-python ``CI_PYTHON``,
+  setup-uv, ``CI_INSTALL``, kroki ``kroki_lokalne.static_steps`` w ich kolejności i za nimi kroki reguł chwastów, każdy
+  z warunkiem ``_CI_IF``), klucz zadania spoza ``_JOB_KEYS`` (np. ``container``, ``env``, ``strategy``,
+  ``continue-on-error``), inny runner, ``env`` i ``defaults`` workflow albo konfiguracja uv w drzewie. Przed
+  sprawdzeniami nie biegnie więc żaden kod PR poza instalacją, kroki ruff i mypy dowodu to kroki zadania słowo w słowo,
+  a każdy krok, na którym dowód stoi, Required CI liczy bez wyjątku (#2161 r3 W1: krok dopisany za ostatnim
+  sprawdzeniem). Kroki, na których dowód nie stoi (``.github/``, przypadki reguł), są w zadaniu Frontend.
+  ``built`` odmawia drzewa z różnicą,
   a ``tests/test_srodowisko_ci.py`` wymaga ``mismatch(ROOT) == []``, więc stałe opisują Required CI ``main``, a zmiana
   środowiska Required CI wchodzi osobnym PR przed dowodem, który jej potrzebuje.
 
 Odmowa to ``Refused`` (``ValueError``) z tym, co zrobić. Granica: wydanie poprawkowe Pythona (``CI_PYTHON`` bez
 poprawki), wersja uv i obraz runnera mogą różnić się od runu Required CI, a pakiety rozwiązują się w chwili dowodu
-(repo nie ma pliku blokady, więc dwa runy CI też mogą je rozwiązać inaczej). Dowód biegnie na Linuksie i macOS (job
+(repo nie ma pliku blokady, więc dwa runy CI też mogą je rozwiązać inaczej); zmienne runnera (``CI``, ``GITHUB_*``),
+które czyta kod PR (wtyczka mypy, backend budowy), dowód ma w jobie ``dowod``, a przy merge'u na Macu nie. Dowód biegnie na Linuksie i macOS (job
 ``dowod`` i Mac koordynatora), a na macOS odmawia drzewa ze ścieżkami różnymi tylko wielkością liter, których jego
 system plików nie rozróżnia.
 """
@@ -54,12 +58,28 @@ JOB = "ruff-mypy"  # zadanie Required CI „Ruff, mypy”, w którym biegną ruf
 CI_RUNNER = "ubuntu-latest"
 CI_PLATFORM = "x86_64-unknown-linux-gnu"  # system ``CI_RUNNER`` dla ``uv pip compile --python-platform``
 CI_PYTHON = "3.14"
-CI_EXTRAS = ("dev", "workflowy")
+CI_EXTRAS = ("dev",)
 CI_INSTALL = 'uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[' + ",".join(CI_EXTRAS) + ']"'
 BUILD_TIMEOUT_S = 300
-_JOB_KEYS = {"name", "runs-on", "permissions", "timeout-minutes", "steps"}
+_JOB_KEYS = {"name", "runs-on", "steps"}
 _INSTALL_ID = "deps"  # ``id`` kroku ``CI_INSTALL``, którego wynik czyta ``_CI_IF``
 _CI_IF = "${{ !cancelled() && steps." + _INSTALL_ID + ".outcome == 'success' }}"
+_PYTEST = "python -m pytest -q -rs -n 0 -p no:cacheprovider"
+# Kroki reguł chwastów za mypy, na których stoi dowód: reguły całego drzewa i zakaz tłumienia reguły ast-grep i zakazu
+# ruff komentarzem (ADR 0036), a potem reguły ast-grep na liniach dodanych od bazy runu, które dowód ``ast-grep <id>``
+# liczy tą samą funkcją ``odpalenia_ast_grep.on_added_lines``.
+_WEED_TESTS = (
+    "test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii",
+    "test_kazda_regula_calego_drzewa_jest_w_katalogu_regul",
+    "test_zadna_linia_repo_nie_tlumi_reguly_ast_grep",
+    "test_zadna_linia_repo_nie_tlumi_zakazu_ruff",
+)
+_WEED_RULES: dict[str, object] = {"if": _CI_IF, "run": " ".join((_PYTEST, *(f"tests/test_zapadki.py::{test}" for test in _WEED_TESTS)))}
+_ADDED_LINES: dict[str, object] = {
+    "if": _CI_IF,
+    "env": {"MAXIMISEART_ZAPADKA_BAZA": "HEAD^1"},
+    "run": f"{_PYTEST} tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo",
+}
 # Zmienne wołającego, których uv i narzędzia dowodu nie dostają: sterują Pythonem, mypy, ruff, pip i uv, środowiskiem
 # wirtualnym albo dają token GitHuba; ``ci.yml`` żadnej z nich nie ustawia (``mismatch``). Miejsce pamięci uv i jego
 # Pythonów wyniku nie zmienia, więc zostaje.
@@ -103,7 +123,7 @@ def built(root: Path, head: str, target: str) -> Iterator[Environment]:
         _checkout(root, tree, copy)
         if problems := mismatch(copy):
             raise Refused(
-                f"środowisko Required CI: zadanie {JOB} z {WORKFLOW} drzewa PR scalonego z bazą buduje je inaczej niż dowód ({'; '.join(problems)}): "
+                f"środowisko Required CI: zadanie {JOB} z {WORKFLOW} drzewa PR scalonego z bazą różni się od zadania, które liczy dowód ({'; '.join(problems)}): "
                 "zmień środowisko Required CI osobnym PR przed tym, razem z tools/lib/srodowisko_ci.py, bo dowód buduje je kodem bazy"
             )
         python = _install(uv, copy, Path(folder))
@@ -167,25 +187,27 @@ def _built(copy: Path, step: str, command: tuple[str, ...]) -> str:
 
 
 def job_steps(tree: Path) -> list[dict[str, object]]:
-    """Kroki zadania ``JOB`` od pierwszego do ostatniego kroku ruff albo mypy, w postaci, którą zadanie musi mieć, żeby
-    ``built`` i ``straznik`` liczyły to, co ono: checkout, setup-python ``CI_PYTHON``, setup-uv, ``CI_INSTALL`` i kroki
-    ``kroki_lokalne.static_steps`` w ich kolejności, każdy z warunkiem ``_CI_IF``. Klucz ``name`` i wersja akcji po ``@``
+    """Wszystkie kroki zadania ``JOB`` w jedynej postaci, którą zadanie może mieć, żeby ``built`` i ``straznik`` liczyły
+    to, co ono: checkout, setup-python ``CI_PYTHON``, setup-uv, ``CI_INSTALL``, kroki ``kroki_lokalne.static_steps``
+    w ich kolejności i kroki reguł chwastów, każdy z warunkiem ``_CI_IF``. Klucz ``name`` i wersja akcji po ``@``
     (podbija ją dependabot) się nie liczą."""
 
     checks: list[dict[str, object]] = [{"if": _CI_IF, "run": " ".join(("python", *step.ci[1:]))} for step in static_steps(tree)]
     return [
-        {"uses": "actions/checkout", "with": {"fetch-depth": 0, "persist-credentials": False}},
+        {"uses": "actions/checkout", "with": {"fetch-depth": 2, "persist-credentials": False}},
         {"id": "python", "uses": "actions/setup-python", "with": {"python-version": CI_PYTHON}},
         {"uses": "astral-sh/setup-uv", "with": {"enable-cache": False}},
         {"id": _INSTALL_ID, "run": CI_INSTALL},
         *checks,
+        _WEED_RULES,
+        _ADDED_LINES,
     ]
 
 
 def mismatch(tree: Path) -> list[str]:
-    """Czym zadanie ``JOB`` z ``WORKFLOW`` w drzewie ``tree`` buduje środowisko ruff i mypy inaczej niż ``built``: każda
-    różnica kroków od ``job_steps`` (równość, nie podobieństwo), klucz zadania spoza ``_JOB_KEYS``, inny runner, ``env``
-    i ``defaults`` workflow albo konfiguracja uv."""
+    """Czym zadanie ``JOB`` z ``WORKFLOW`` w drzewie ``tree`` różni się od postaci, którą liczy dowód: pierwszy krok różny
+    od ``job_steps`` (cała lista na równość, więc też krok dopisany albo brakujący), klucz zadania spoza ``_JOB_KEYS``,
+    inny runner, ``env`` i ``defaults`` workflow albo konfiguracja uv."""
 
     problems = [f"{name} w drzewie: uv Required CI ją czyta, a dowód nie" for name in _uv_configs(tree)]
     try:
@@ -198,9 +220,7 @@ def mismatch(tree: Path) -> list[str]:
     problems += [f"{key} w zadaniu" for key in sorted(set(job) - _JOB_KEYS)]
     if job.get("runs-on") != CI_RUNNER:
         problems.append(f"runs-on {job.get('runs-on')!r} zamiast {CI_RUNNER!r}")
-    expected = job_steps(tree)
-    found = [_normal(step) for step in given[: len(expected)]]
-    for number, (want, have) in enumerate(itertools.zip_longest(expected, found), start=1):
+    for number, (want, have) in enumerate(itertools.zip_longest(job_steps(tree), map(_normal, given)), start=1):
         if want != have:
             problems.append(f"krok {number} zadania to {have!r} zamiast {want!r}")
             break

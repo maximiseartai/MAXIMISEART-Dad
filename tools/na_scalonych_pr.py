@@ -56,7 +56,7 @@ niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.u
 werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
 ``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść.
 
-Przypadki reguł (``--przypadki-regul``, krok zadania CI „Ruff, mypy”): każda reguła z katalogów ``ruleDirs``
+Przypadki reguł (``--przypadki-regul``, krok zadania CI Frontend): każda reguła z katalogów ``ruleDirs``
 ``sgconfig.yml`` checkoutu ma w polu ``metadata.przypadki`` przypadki, które łapie, i łapie każdy z nich jak Ważne
 dowodu (punkt 1): Ważne ``PR/W<n>/r<k>`` albo ``<pełny SHA> plik:linia``, czyli linie dodane przez commit od jego
 pierwszego rodzica, dla reguły, która nie powstała z Ważnego z polem ``Gdzie``. Pole czyta tylko ten krok, a ast-grep

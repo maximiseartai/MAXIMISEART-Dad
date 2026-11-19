@@ -1,7 +1,7 @@
 """Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 
-Lokalnie te same sprawdzenia co CI: zadania ruff, mypy i workflowy (zizmor i actionlint ``.github/``; w CI jedno zadanie
-``ruff-mypy``), frontend, pytest i mutations.
+Lokalnie te same sprawdzenia co CI: zadania ruff i mypy (w CI zadanie ``ruff-mypy``), frontend i workflowy (zizmor
+i actionlint ``.github/``; w CI oba w zadaniu ``frontend``), pytest i mutations.
 
 Uruchamia każdy krok po kolei Pythonem, który uruchomił skrypt (w worktree: jego ``.venv``,
 patrz ``tools/setup_worktree.py``), i drukuje wynik kroku jedną linią; wyjście pokazuje tylko
@@ -50,7 +50,7 @@ import repo
 # Wygenerowany kontrakt i zbudowany frontend muszą zgadzać się ze źródłami (u taty nie ma Node).
 GENERATED = ("frontend/src/api", "src/rozliczenia/centrum/static")
 # Zadanie w ci.yml, w którym biegną kroki zadania narzędzia, gdy nazywa się inaczej.
-CI_JOB = {"ruff": "ruff-mypy", "mypy": "ruff-mypy", "workflowy": "ruff-mypy"}
+CI_JOB = {"ruff": "ruff-mypy", "mypy": "ruff-mypy", "workflowy": "frontend"}
 JOBS_ELSEWHERE = {
     "plan": "plan zadań pytest i Mutation checks runu (tools/plan_ci.py plan drukuje go lokalnie), nic nie sprawdza",
     "required": "zbiorczy status pozostałych zadań, nic do odtworzenia",
