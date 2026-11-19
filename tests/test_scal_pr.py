@@ -486,6 +486,7 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [main, head]
     assert github.merges() == [["pr", "merge", "1", "--merge", "--match-head-commit", head]]
     assert (github.checkout / "posprzatane").exists()
+    assert "SCAL KOLEJKA" not in merged.stdout
 
 
 # Pełne SHA w tabelach na interfejsach: HEAD PR i starszy commit (litery, żeby ``HEAD.upper()`` był inny niż HEAD).
@@ -1192,6 +1193,57 @@ def test_main_przesuniety_w_trakcie_sprawdzania_daje_ponowienie_tylko_gdy_nowe_c
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | scalony do main jako {merge_commit[:7]} (baza {chain[-1][:7]})"), answered.stdout
     assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [chain[-1], head]
+
+
+@pytest.mark.parametrize("announced", [False, True], ids=["rodzic-sprzed-kolejki-bez-zapowiedzi", "rodzic-zapowiada-ponawianie"])
+def test_kopia_bazy_zapowiada_ponowienie_przy_ruchu_main_tylko_rodzicowi_ktory_ponawia(tmp_path: Path, announced: bool) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    moved = github.commit_on(github.start, {"kod/nowe.py": "NOWE: int = 1\n"}, "main w trakcie")
+    chain = [github.start, moved]
+    head = github.open_pull(1, {"tools/ci_lokalnie.py": MOVES_MAIN.format(chain=chain, checkout=str(github.checkout)), "kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    parent = {scal_pr.FROM_BASE_COPY: "1", **({scal_pr.RETRYING_PARENT: "1"} if announced else {})}
+
+    answered = _run_from(github, github.checkout, "1", environment=parent)
+
+    change = f"main zmienił się w trakcie sprawdzania ({github.start[:7]} → {moved[:7]}), a nowe commity nie zmieniają plików PR"
+    if announced:
+        assert answered.returncode == scal_pr.BASE_MOVED_EXIT, answered.stdout + answered.stderr
+        assert _last_line(answered) == f"SCAL PONÓW | #1 {head[:7]} | {change}: sprawdzam od nowa"
+    else:
+        assert answered.returncode == 1, answered.stdout + answered.stderr
+        assert _last_line(answered) == f"SCAL ODMOWA | #1 {head[:7]} | {change}: uruchom ponownie"
+    assert github.merges() == []
+
+
+@pytest.mark.parametrize(
+    ("arguments", "copy", "done"),
+    [(("1",), True, "scalony do main jako "), (("1", "--bez-merge"), False, "gotowy do merge'a z main ")],
+    ids=["kopia-bazy-rodzica-ktory-trzyma-blokade", "bez-merge-niczego-nie-scala"],
+)
+def test_kopia_bazy_i_sprawdzenie_bez_merge_a_nie_czekaja_na_blokade_merge_a(tmp_path: Path, arguments: tuple[str, ...], copy: bool, done: str) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.comment(1, PASS.format(head=head))
+    parent = {scal_pr.FROM_BASE_COPY: "1", scal_pr.RETRYING_PARENT: "1"} if copy else {}
+    lock = hold_lock(repo.common_dir(github.checkout) / scal_pr.MERGE_LOCK)
+    try:
+        answered = subprocess.run(
+            [sys.executable, str(github.checkout / "tools" / "scal_pr.py"), *arguments],
+            cwd=github.checkout,
+            env={**github.environment(), **parent},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=60,
+            check=False,
+        )
+    finally:
+        lock.close()
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert "SCAL KOLEJKA" not in answered.stdout
+    assert _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} | {done}"), answered.stdout
 
 
 def test_merge_czeka_w_kolejce_na_blokade_innego_scal_pr_i_sprawdza_baze_pobrana_po_niej(tmp_path: Path) -> None:

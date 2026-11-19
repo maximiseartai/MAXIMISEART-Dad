@@ -174,3 +174,7 @@ przyklad = 2100
 [R-DECYZJA-MAKSA-U-AUTORA]
 opis = "Zmiana zasięgu decyzji Maksa (wyjątek od jego zamkniętej listy) zapisana jako decyzja autora, bo źródło o tym przypadku nie mówi, więc agent rozstrzyga sam rodzaj „Reversing Maks” zamiast issue decyzja-maksa."
 przyklad = 2250
+
+[R-WERSJA-KOPII]
+opis = "Nowa umowa między checkoutem a kopią bazy, która go sądzi (kod wyjścia, zmienna, blokada), zakłada nową wersję narzędzia po obu stronach, więc checkout sprzed zmiany z kopią po niej robi co innego, niż mówi wynik."
+przyklad = 2296

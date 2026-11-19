@@ -59,7 +59,9 @@ pokaże runy pushu na `main`. Obserwację PR zostaw do zielonego `main` z tym me
 Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że byłby); linia po merge'u podaje SHA
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
 wynik. Kod 1 to odmowa (także ``SCAL CZEKA``) albo błąd narzędzia (``SCAL FAIL``). Kod ``BASE_MOVED_EXIT`` z linią
-``SCAL PONÓW`` daje kopia bazy (niżej) procesowi, który ją uruchomił, a ten sprawdza od nowa.
+``SCAL PONÓW`` daje kopia bazy (niżej) procesowi, który ją uruchomił i zapowiedział ponawianie zmienną
+``RETRYING_PARENT``, a ten sprawdza od nowa; kopia uruchomiona przez checkout sprzed kolejki merge'y, który tej zmiennej
+nie zna, przy ruchu bazy poza plikami PR odmawia kodem 1 z poleceniem, by uruchomić ponownie.
 
 Werdykt (``--werdykt``), kontekst przeglądu (``--przeglad``) i merge (także ``--bez-merge``) sądzi kod ``origin/<baza PR>`` tuż po pobraniu bazy, nie kod
 checkoutu, z którego je uruchomiono: reguły werdyktu, bramki korzenia i wzoru opisu żyją w ``tools/`` i w plikach
@@ -138,6 +140,7 @@ GUARD_JOB = "DOWOD_WYNIK"  # wynik tego joba (``needs.dowod.result``), gdy linii
 # Zmienna środowiska kopii bazy, którą uruchamia ``_judged_from_base``; kopia zdejmuje ją od razu, więc jej procesy
 # potomne (test scalenia z testami tego narzędzia) jej nie dziedziczą, a ``scal_pr.py`` bazy, który jej nie zna, ją pomija.
 FROM_BASE_COPY = "SCAL_PR_Z_KOPII_BAZY"
+RETRYING_PARENT = "SCAL_PR_RODZIC_PONAWIA"
 MERGE_LOCK = "scal-pr-merge.lock"
 MOVED_RETRIES = 3
 BASE_MOVED_EXIT = 3
@@ -201,7 +204,7 @@ def _remote_base(base: str) -> str:
     return listed.stdout.partition("\t")[0]
 
 
-def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, from_copy: bool) -> int | None:
+def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, from_copy: bool, retrying: bool) -> int | None:
     """``None``, gdy ten checkout to czysty checkout ``base`` (SHA ``origin/<baza PR>`` tuż po pobraniu) i sądzi sam;
     inaczej kod wyjścia polecenia ``argv`` uruchomionego z kopii ``base``, a w kopii (``from_copy``) odmowa."""
 
@@ -216,7 +219,8 @@ def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, fro
     print(f"SĘDZIA | #{pull.number} | reguły z {REMOTE}/{pull.base} {base[:7]}, nie z checkoutu {here}: biegnę z kopii tego commitu", flush=True)
     with potomne.commit_copy(ROOT, base) as copy:
         command = [sys.executable, str(copy / "tools" / "scal_pr.py"), *argv]
-        environment = {**os.environ, FROM_BASE_COPY: "1", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+        announced = {RETRYING_PARENT: "1"} if retrying else {}
+        environment = {**os.environ, FROM_BASE_COPY: "1", **announced, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
         return potomne.run(command, cwd=Path.cwd(), env=environment, echo=True).returncode
 
 
@@ -363,7 +367,7 @@ def _publish_status(pull: Pull, base: str) -> int:
     return 0
 
 
-def _base_moved(pull: Pull, base: str) -> int:
+def _base_moved(pull: Pull, base: str, *, retrying: bool) -> int:
     where = f"#{pull.number} {pull.head[:7]}"
     moved = werdykt_scalenia.fetch(pull.base, [])
     shared = sorted(repo.changed(ROOT, base, moved) & repo.changed(ROOT, repo.merge_base(ROOT, base, pull.head), pull.head))
@@ -371,16 +375,19 @@ def _base_moved(pull: Pull, base: str) -> int:
     if shared:
         print(f"SCAL ODMOWA | {where} | {change}, a nowe commity zmieniają pliki PR: {', '.join(shared)}; przejrzyj ich zmiany i uruchom ponownie")
         return 1
+    if not retrying:
+        print(f"SCAL ODMOWA | {where} | {change}, a nowe commity nie zmieniają plików PR: uruchom ponownie")
+        return 1
     print(f"SCAL PONÓW | {where} | {change}, a nowe commity nie zmieniają plików PR: sprawdzam od nowa", flush=True)
     return BASE_MOVED_EXIT
 
 
-def _merge(pull: Pull, base: str, *, merge: bool) -> int:
+def _merge(pull: Pull, base: str, *, merge: bool, retrying: bool) -> int:
     where = f"#{pull.number} {pull.head[:7]}"
     try:
         merge_test = _check(pull, base)
         if merge and _remote_base(pull.base) != base:
-            return _base_moved(pull, base)
+            return _base_moved(pull, base, retrying=retrying)
     except _GateQueued as queued:
         print(f"SCAL CZEKA | {where} | {queued}")
         return 1
@@ -406,7 +413,7 @@ def _invocation_path(text: str) -> Path:
     return Path(text).absolute()
 
 
-def _attempt(args: argparse.Namespace, given: list[str], label: str, *, from_copy: bool) -> int:
+def _attempt(args: argparse.Namespace, given: list[str], label: str, *, from_copy: bool, retrying: bool) -> int:
     try:
         pull = stan_pr.pull(args.numer)
         if args.status and (skipped := _skipped_status(pull)):
@@ -415,7 +422,7 @@ def _attempt(args: argparse.Namespace, given: list[str], label: str, *, from_cop
         if args.dowod_straznikow and (skipped := _skipped_status(pull)):
             return _guard_proofs(pull, args.dowod_straznikow, skipped)
         base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-        if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy)) is not None:
+        if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy, retrying=retrying)) is not None:
             return judged
         if args.przeglad:
             return kontekst_przegladu.print_context(pull, base)
@@ -425,7 +432,7 @@ def _attempt(args: argparse.Namespace, given: list[str], label: str, *, from_cop
             return _publish_status(pull, base)
         if args.dowod_straznikow:
             return _guard_proofs(pull, args.dowod_straznikow)
-        return _merge(pull, base, merge=not args.bez_merge)
+        return _merge(pull, base, merge=not args.bez_merge, retrying=retrying)
     except subprocess.CalledProcessError as error:
         command = " ".join(str(part) for part in error.cmd)
         print(f"{label} FAIL | {command}: {(error.stderr or error.stdout or '').strip()}")
@@ -447,15 +454,16 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–6 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
     mode.add_argument("--dowod-straznikow", type=_invocation_path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
     from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
+    parent_retries = os.environ.pop(RETRYING_PARENT, None) is not None
     given = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(given)
     label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "DOWÓD STRAŻNIKÓW" if args.dowod_straznikow else "SCAL"
     if label != "SCAL" or args.bez_merge or from_copy:
-        return _attempt(args, given, label, from_copy=from_copy)
+        return _attempt(args, given, label, from_copy=from_copy, retrying=parent_retries)
     queued = f"SCAL KOLEJKA | #{args.numer} | inny tools/scal_pr.py z tego repozytorium scala teraz: czekam, aż skończy"
     with potomne.repo_lock(ROOT, MERGE_LOCK, lambda: print(queued, flush=True)):
         for _ in range(MOVED_RETRIES + 1):
-            if (done := _attempt(args, given, label, from_copy=False)) != BASE_MOVED_EXIT:
+            if (done := _attempt(args, given, label, from_copy=False, retrying=True)) != BASE_MOVED_EXIT:
                 return done
     print(f"SCAL ODMOWA | #{args.numer} | baza zmieniła się w trakcie każdego z {MOVED_RETRIES + 1} sprawdzeń, uruchom ponownie")
     return 1
