@@ -1,4 +1,26 @@
-"""Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; użyj po merge'u albo gdy worktree się mnożą.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Iterable
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, replace
+import io
+import json
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import potomne
+from repo import BASE, MAIN, REMOTE, Worktree
+import repo
+
+OPIS = """Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; użyj po merge'u albo gdy worktree się mnożą.
 
 Raportuje, a z ``--usun`` usuwa lokalne worktree i gałęzie, których praca jest już w ``origin/main``; resztę opisuje z powodem.
 
@@ -34,28 +56,6 @@ repozytorium.
     .venv/bin/python tools/sprzatanie.py --usun    # usuwa
 """
 
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Iterable
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, replace
-import io
-import json
-import os
-from pathlib import Path
-import shutil
-import subprocess
-import sys
-import time
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import potomne
-from repo import BASE, MAIN, REMOTE, Worktree
-import repo
-
 TIMEOUT_S = 30
 FETCH_TIMEOUT_S = 120
 REMOVE_TIMEOUT_S = 300
@@ -90,7 +90,7 @@ class _Threads:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--usun", action="store_true", help="Usuwa; bez tej flagi narzędzie tylko raportuje.")
     args = parser.parse_args(argv)
     if isinstance(sys.stdout, io.TextIOWrapper):

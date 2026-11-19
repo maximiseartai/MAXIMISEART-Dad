@@ -173,6 +173,7 @@ def test_self_test_pisze_probe_sprzatania_do_podanego_katalogu_przebiegu(tmp_pat
 
 ROW_VALUE_EVIDENCE = {
     "przebieg.txt": "SYNTHETIC-3",
+    "przebieg-adres.txt": "TEST-ADDRESS",
     "przygotowanie.txt": "PREP-SYN-ADRES-4",
     "intermax-numer-zl.txt": "ZL-78201",
     "intermax-numer-umowy.txt": "UM-78205",

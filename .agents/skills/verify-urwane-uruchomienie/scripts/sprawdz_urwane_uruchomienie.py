@@ -1,6 +1,4 @@
-"""Sprawdza model TLA+ Dziennika Wyceny w efenix i Logów Urwanego Uruchomienia przy każdej kolejności zgaśnięć i awarii.
-
-Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
+"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
 opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
 z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko
 ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
@@ -24,6 +22,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from model_tlc import Model, Obietnica, Stan, main
 from skrypt_skilla import part
+
+OPIS = "Sprawdza model TLA+ Dziennika Wyceny w efenix i Logów Urwanego Uruchomienia przy każdej kolejności zgaśnięć i awarii."
 
 # Jednostki części podstawy w CI: grupy konfiguracji. Przebieg ``wszystko`` to ~85% podstawy (Windows CI, 12.11, sonda
 # 43305166779 z ``-lncheck final``: 245 i 239 s z 288 i 284 s), więc stoi sam, a reszta (42 i 44 s) w drugiej.
@@ -230,4 +230,4 @@ if __name__ == "__main__":
     except ValueError as problem:
         print(f"BŁĄD MODELU: {problem}\n\n{MODEL.werdykt}: BŁĄD MODELU (1)")
         raise SystemExit(2) from None
-    raise SystemExit(main(MODEL, argv, opis=__doc__.splitlines()[0] if __doc__ else None))
+    raise SystemExit(main(MODEL, argv, opis=OPIS))

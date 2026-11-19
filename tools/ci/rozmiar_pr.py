@@ -1,4 +1,20 @@
-"""Rozmiar PR: etykieta ``size:XS`` … ``size:XXL`` z efektywnych linii zmiany i licznik szopy, z workflow ``rozmiar-pr.yml``.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from pathlib import Path
+import sys
+import tomllib
+import urllib.parse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+from github import REPO, GhApi, GitHub, strony
+import repo
+from szopa import LISTA, PRZEPUSZCZA
+
+OPIS = """Rozmiar PR: etykieta ``size:XS`` … ``size:XXL`` z efektywnych linii zmiany i licznik szopy, z workflow ``rozmiar-pr.yml``.
 
 Liczy jak workflow ``pr-size.yml`` z t3code: suma dodanych i usuniętych linii z ``git diff --numstat
 --ignore-all-space --ignore-blank-lines <baza>...<głowa>`` (od bazy scalenia). W PR, który zmienia też coś poza
@@ -28,22 +44,6 @@ Workflow biegnie na ``pull_request_target`` z ``main`` i tylko czyta commity PR 
 
     .venv/bin/python tools/ci/rozmiar_pr.py --baza origin/main --glowa HEAD
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
-from pathlib import Path
-import sys
-import tomllib
-import urllib.parse
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
-
-from github import REPO, GhApi, GitHub, strony
-import repo
-from szopa import LISTA, PRZEPUSZCZA
 
 
 @dataclass(frozen=True)
@@ -299,7 +299,7 @@ def oznacz(github: GitHub, pr: int, powieksza: bool) -> list[str]:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+        description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
         "--baza",

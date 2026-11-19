@@ -1,7 +1,7 @@
 """Dowód strażnika Ważnego (``tools/lib/straznik.py``, ADR 0042) na małym repozytorium Gita: gałąź PR od ``main``
 z commitem werdyktu ``FAIL`` z błędem w miejscu ``Gdzie`` i HEAD z poprawką i strażnikiem z zamkniętej listy.
 
-Każdy przypadek tabeli z docstringu modułu ma tu przebieg: strażnik pada na błędzie z SHA ``FAIL`` albo z mutacji
+Każdy przypadek tabeli ``straznik.ZASADY`` ma tu przebieg: strażnik pada na błędzie z SHA ``FAIL`` albo z mutacji
 recenzenta (``WYKRYTA``), strażnik, który błędu nie łapie, nie przechodzi, a format z konfiguracji PR wyniku nie
 zmienia. Granice stoją w ``ZNANE_LUKI_STRAZNIKA`` i przechodzą dowód, dopóki konstrukcja ich nie zamknie.
 """

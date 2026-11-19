@@ -1,14 +1,3 @@
-"""Read-only check that the Centrum of one verification run is worth driving.
-
-``DOCTOR OK`` means: this run's server record (``harness.File.SERVER``) exists (written by
-``serve_centrum.py`` only after it bound the port), the URL is on
-``127.0.0.1``, ``/api/health`` answers with Centrum's identity, the commit of
-this run's tool clone, and an identifier of this start, the page at ``/`` is
-the built Centrum frontend, and the settings the server reads are this run's (the folder okresów is not set yet,
-or points inside the run root), and so are the metrics (the oldest Uruchomienie
-procesu is the fixture's, not one from Dad's history).
-"""
-
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
@@ -23,6 +12,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 from skrypt_skilla import Parser
 from harness import File
 from atrapy.pliki_taty import SERVICE
+
+OPIS = """Read-only check that the Centrum of one verification run is worth driving.
+
+``DOCTOR OK`` means: this run's server record (``harness.File.SERVER``) exists (written by
+``serve_centrum.py`` only after it bound the port), the URL is on
+``127.0.0.1``, ``/api/health`` answers with Centrum's identity, the commit of
+this run's tool clone, and an identifier of this start, the page at ``/`` is
+the built Centrum frontend, and the settings the server reads are this run's (the folder okresów is not set yet,
+or points inside the run root), and so are the metrics (the oldest Uruchomienie
+procesu is the fixture's, not one from Dad's history).
+"""
 
 
 def _get(url: str) -> tuple[int, bytes]:
@@ -64,7 +64,7 @@ def check(root: Path) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=RawDescriptionHelpFormatter)
     parser.add_root("run root of the served Centrum")
     problems = check(parser.parse_args(argv).root)
     if problems:

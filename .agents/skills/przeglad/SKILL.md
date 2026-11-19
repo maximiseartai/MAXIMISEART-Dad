@@ -87,7 +87,7 @@ Reguły szczebla i dowodu:
 
 Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)):
 
-- Każde Ważne kończy strażnik: autor wpisuje w jego bloku sekcji `## Korzeń` linię `Strażnik: <selektor>` z listy w docstringu [`tools/lib/straznik.py`](../../../tools/lib/straznik.py), a `tools/scal_pr.py` scala PR tylko z dowodem każdego strażnika (warunek 5).
+- Każde Ważne kończy strażnik: autor wpisuje w jego bloku sekcji `## Korzeń` linię `Strażnik: <selektor>` z listy w `ZASADY` [`tools/lib/straznik.py`](../../../tools/lib/straznik.py), a `tools/scal_pr.py` scala PR tylko z dowodem każdego strażnika (warunek 5).
   Autor sprawdza dowód przed kolejną rundą: `tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita <HEAD PR> --wazne <PR>/W<n>/r<k>`.
   Próbka `ZNANE_LUKI` nigdy nie zastępuje strażnika; wolno ją dodać obok niego dla formy siostrzanej, której mechanizm nie wyrazi.
 - Dowód bierze złą postać z drzewa SHA werdyktu i z funkcji wokół `Gdzie` (mypy i ruff liczą znalezisko w tej funkcji), więc recenzent pisze w `Gdzie` linie złego kodu, które poprawka ma zmienić, a nie miejsce objawu.

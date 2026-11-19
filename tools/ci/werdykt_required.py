@@ -1,15 +1,3 @@
-"""Required CI status: przepuszcza run, gdy każde zadanie i każda jednostka planu runu CI (``tools/lib/plan_runu.py``) przeszła.
-
-Werdykt przyjmuje tylko zapisy czasów (``tools/lib/czasy_ci.py``) z planu o tym samym ``digest``. Przepuszcza run, gdy
-każde zadanie przeszło, zadanie pominięte to tylko takie, któremu plan nie dał pracy, a każde zadanie planu zgłosiło w
-ostatniej próbie każdą swoją jednostkę (plik testów, krok CI, krok skilla) bez porażki, a części każdej podzielonej
-jednostki składają się na całość (każda z 1..n dokładnie raz). Plan, którego nie ma, i skrypt mutacji, który wybór
-skilli zgubił albo zły klucz ``ci:`` (``bledy`` planu), są czerwonym werdyktem z przyczyną. Wyniki zadań podaje
-zmienna ``NEEDS`` (``toJSON(needs)``).
-
-    python3 tools/ci/werdykt_required.py --plan .ci-plan/plan.json --zapisy .ci-czasy/zapisy
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -27,6 +15,18 @@ from jednostka import Czesc
 from ostatnie_linie import REQUIRED_FAIL
 from plan_runu import Z_PLANU, Plan
 from zakres_runu import MUTACJE, TORY
+
+OPIS = """Required CI status: przepuszcza run, gdy każde zadanie i każda jednostka planu runu CI (``tools/lib/plan_runu.py``) przeszła.
+
+Werdykt przyjmuje tylko zapisy czasów (``tools/lib/czasy_ci.py``) z planu o tym samym ``digest``. Przepuszcza run, gdy
+każde zadanie przeszło, zadanie pominięte to tylko takie, któremu plan nie dał pracy, a każde zadanie planu zgłosiło w
+ostatniej próbie każdą swoją jednostkę (plik testów, krok CI, krok skilla) bez porażki, a części każdej podzielonej
+jednostki składają się na całość (każda z 1..n dokładnie raz). Plan, którego nie ma, i skrypt mutacji, który wybór
+skilli zgubił albo zły klucz ``ci:`` (``bledy`` planu), są czerwonym werdyktem z przyczyną. Wyniki zadań podaje
+zmienna ``NEEDS`` (``toJSON(needs)``).
+
+    python3 tools/ci/werdykt_required.py --plan .ci-plan/plan.json --zapisy .ci-czasy/zapisy
+"""
 
 
 def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence[czasy_ci.Zapis], *, brak_planu: str = "") -> list[str]:
@@ -103,7 +103,7 @@ def _werdykt(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--plan", type=Path, required=True)
     parser.add_argument("--zapisy", type=Path, required=True)
     return _werdykt(parser.parse_args(argv))

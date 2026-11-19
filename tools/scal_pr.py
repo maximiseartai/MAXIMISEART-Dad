@@ -1,4 +1,35 @@
-"""Jedyna droga merge'a PR przez agenta: sprawdza gotowość (CI, werdykt PASS, opis) tuż przed gh pr merge; użyj zamiast gołego merge'a.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import bramka_korzenia
+import bramka_straznika
+import github
+import kontekst_przegladu
+import limit_rund
+import naprawia
+import ponowny_przeglad
+import potomne
+import reguly_bazy
+import rejestr_korzeni
+from repo import MAIN, REMOTE, ROOT
+import repo
+import stan_pr
+from stan_pr import Pull
+import straznik
+import szablon_werdyktu
+import testy_scalenia
+import werdykt_pr
+import werdykt_scalenia
+
+OPIS = """Jedyna droga merge'a PR przez agenta: sprawdza gotowość (CI, werdykt PASS, opis) tuż przed gh pr merge; użyj zamiast gołego merge'a.
 
 Jedyna droga merge'a PR przez agenta: ``gh pr merge`` tylko po sprawdzeniu gotowości tuż przed nim.
 
@@ -86,37 +117,6 @@ Komentarze, recenzje, checki i ``mergeable`` pochodzą z jednego ``gh pr view --
 komentarzy (sprawdzone na PR z 337 komentarzami, gh 2.101).
 """
 
-from __future__ import annotations
-
-import argparse
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import bramka_korzenia
-import bramka_straznika
-import github
-import kontekst_przegladu
-import limit_rund
-import naprawia
-import ponowny_przeglad
-import potomne
-import reguly_bazy
-import rejestr_korzeni
-from repo import MAIN, REMOTE, ROOT
-import repo
-import stan_pr
-from stan_pr import Pull
-import straznik
-import szablon_werdyktu
-import testy_scalenia
-import werdykt_pr
-import werdykt_scalenia
-
 CLEANUP = ROOT / "tools" / "sprzatanie.py"
 TEMPLATE = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"
 CLEANUP_TIMEOUT_S = 300
@@ -125,6 +125,7 @@ GUARD_JOB = "DOWOD_WYNIK"  # wynik tego joba (``needs.dowod.result``), gdy linii
 # Zmienna środowiska kopii bazy, którą uruchamia ``_judged_from_base``; kopia zdejmuje ją od razu, więc jej procesy
 # potomne (test scalenia z testami tego narzędzia) jej nie dziedziczą, a ``scal_pr.py`` bazy, który jej nie zna, ją pomija.
 FROM_BASE_COPY = "SCAL_PR_Z_KOPII_BAZY"
+RULES = (testy_scalenia.ZASADY, werdykt_pr.ZASADY, limit_rund.ZASADY, ponowny_przeglad.ZASADY, bramka_korzenia.ZASADY, bramka_straznika.ZASADY, straznik.ZASADY, reguly_bazy.ZASADY, rejestr_korzeni.ZASADY, naprawia.ZASADY, kontekst_przegladu.ZASADY)
 EXAMPLES = """\
     .venv/bin/python tools/scal_pr.py 336               # sprawdza i scala
     .venv/bin/python tools/scal_pr.py 336 --bez-merge   # tylko sprawdza
@@ -359,18 +360,23 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
     return 0
 
 
+def _invocation_path(text: str) -> Path:
+    """Plik z wiersza poleceń względem katalogu wywołania, bo ``gh`` biegnie z ``ROOT`` (w kopii bazy: z kopii)."""
+
+    return Path(text).absolute()
+
+
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_straznika.__doc__, straznik.__doc__, reguly_bazy.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
-        description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
+        description="\n".join(part.strip("\n") + "\n" for part in (OPIS, *RULES)), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument("numer", type=int, help="Numer PR.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
     mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
-    mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
+    mode.add_argument("--werdykt", type=_invocation_path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
     mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–6 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
-    mode.add_argument("--dowod-straznikow", type=Path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
+    mode.add_argument("--dowod-straznikow", type=_invocation_path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
     from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
     given = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(given)

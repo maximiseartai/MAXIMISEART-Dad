@@ -59,6 +59,7 @@ def test_identyczne_foldery_rozliczen_pracownikow_nie_maja_roznic(tmp_path: Path
         pytest.param(_set("N18", "value", True), _only("wartosci"), id="prawda-to-nie-liczba-3"),
         pytest.param(_set("AU18", "value", "=SUM(N18:AO18)"), _only("formuly"), id="formula"),
         pytest.param(_set("AU18", "value", 3), _only("formuly"), id="formula-zastapiona-wartoscia"),
+        pytest.param(_set("N18", "value", "=1+2"), _only("formuly"), id="wartosc-zastapiona-formula"),
         pytest.param(_set("N18", "font", Font(bold=True)), _only("style"), id="czcionka"),
         pytest.param(
             _set("N18", "fill", PatternFill(fill_type="solid", fgColor="FF0000")), _only("style"), id="wypelnienie"
@@ -184,6 +185,37 @@ def test_nazwa_arkusza_w_apostrofach_i_bez_w_nazwie_zdefiniowanej_sa_zgodne(tmp_
     rewrite_parts(
         candidate / SETTLEMENT_NAME,
         lambda name, data: data.replace(b">Sheet1!", b">'Sheet1'!") if name == "xl/workbook.xml" else data,
+    )
+
+    assert compare_worker_settlements(reference, candidate) == NO_DIFFERENCES
+
+
+def _replaced(data: bytes, *changes: tuple[bytes, bytes]) -> bytes:
+    for old, new in changes:
+        assert data.count(old) == 1, old
+        data = data.replace(old, new)
+    return data
+
+
+def test_flaga_pominieta_i_zapisana_wprost_z_wartoscia_domyslna_oraz_prawda_jako_1_i_true_sa_zgodne(tmp_path: Path) -> None:
+    """Excel pomija w ``xl/workbook.xml`` atrybut flagi z wartością domyślną i zapisuje prawdę jako ``1``, a inny program
+    może zapisać ``0`` wprost albo ``true``: to ten sam skoroszyt, w nazwach zdefiniowanych i flagach przeliczania."""
+
+    reference, candidate = settlement_folders(tmp_path)
+    rewrite_parts(
+        reference / SETTLEMENT_NAME,
+        lambda name, data: _replaced(data, (b' forceFullCalc="1"', b"")) if name == "xl/workbook.xml" else data,
+    )
+    rewrite_parts(
+        candidate / SETTLEMENT_NAME,
+        lambda name, data: _replaced(
+            data,
+            (b' forceFullCalc="1"', b' forceFullCalc="0"'),
+            (b'fullCalcOnLoad="1"', b'fullCalcOnLoad="true"'),
+            (b'name="Stawki"', b'name="Stawki" hidden="0"'),
+        )
+        if name == "xl/workbook.xml"
+        else data,
     )
 
     assert compare_worker_settlements(reference, candidate) == NO_DIFFERENCES

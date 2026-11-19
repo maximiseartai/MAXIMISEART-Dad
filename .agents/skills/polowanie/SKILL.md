@@ -21,13 +21,18 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
 ## Kroki
 
 1. Zbierz wystąpienia ze źródeł, każde do swojego pliku w `<bieg>`.
-   - Poprawki Maksa w wątkach agentów: wypisz wiadomości operatora z bazy T3 tego Maca i z bazy T3 og-box, każdą na maszynie, która ją trzyma, bo baza ma też sesje logowania T3.
+   - Poprawki Maksa w wątkach agentów: wypisz wiadomości operatora z bazy T3 tego Maca, a z bazy T3 og-box tylko wtedy, gdy og-box odpowiada, każdą na maszynie, która ją trzyma, bo baza ma też sesje logowania T3.
+     og-box jest nieużywany i offline od ok. 10.11.2026, więc brak odpowiedzi to stan zwykły: plik og-box dostaje linię `og-box: offline, pominięty`, a bieg idzie dalej bez pytania Maksa.
      Wystąpienie to wiadomość, w której Maks poprawia to, co agent zrobił albo pominął; pytanie, zgoda, nowe zadanie i prośba o stan nim nie są.
 
      ```bash
      .venv/bin/python tools/poprawki_operatora.py --tydzien <poniedziałek> > <bieg>/poprawki.txt
-     ssh og-box 'mkdir -p /tmp/polowanie/tools/lib' && scp tools/poprawki_operatora.py og-box:/tmp/polowanie/tools/ && scp tools/lib/tydzien_polski.py tools/lib/repo.py og-box:/tmp/polowanie/tools/lib/
-     ssh og-box 'python3 /tmp/polowanie/tools/poprawki_operatora.py --tydzien <poniedziałek>' > <bieg>/poprawki-og-box.txt
+     if ssh -o ConnectTimeout=5 -o BatchMode=yes og-box true; then
+       ssh og-box 'mkdir -p /tmp/polowanie/tools/lib' && scp tools/poprawki_operatora.py og-box:/tmp/polowanie/tools/ && scp tools/lib/tydzien_polski.py tools/lib/repo.py og-box:/tmp/polowanie/tools/lib/
+       ssh og-box 'python3 /tmp/polowanie/tools/poprawki_operatora.py --tydzien <poniedziałek>' > <bieg>/poprawki-og-box.txt
+     else
+       echo 'og-box: offline, pominięty' > <bieg>/poprawki-og-box.txt
+     fi
      ```
 
      Linia `POPRAWKI OPERATORA FAIL` znaczy „źródło poprawek operatora tej maszyny bez danych w tym tygodniu”: idź dalej z pozostałymi źródłami, a jej plik i linia wyniku z kroku 5 dostają zdanie „niedostępne: <powód z linii>”.
@@ -59,7 +64,7 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
      ```
 
    Wyszukiwarkę GitHuba wołaj tylko w tych poleceniach, nie w pętli po issues, bo ma osobny limit 30 zapytań na minutę.
-   Krok kończy się, gdy każde źródło ma plik w `<bieg>` z wynikiem polecenia albo zdanie „niedostępne: <przyczyna>”, a `<bieg>/wystapienia.md` ma wiersz na każde wystąpienie: źródło, link (`#PR W<n> r<k>`, issue albo `<czas> <wątek>` z `poprawki.txt` i `poprawki-og-box.txt`) i jedno zdanie o mechanizmie błędu.
+   Krok kończy się, gdy każde źródło ma plik w `<bieg>` z wynikiem polecenia, zdaniem „niedostępne: <przyczyna>” albo linią `og-box: offline, pominięty`, a `<bieg>/wystapienia.md` ma wiersz na każde wystąpienie: źródło, link (`#PR W<n> r<k>`, issue albo `<czas> <wątek>` z `poprawki.txt` i, gdy og-box odpowiedział, `poprawki-og-box.txt`) i jedno zdanie o mechanizmie błędu.
 2. Złóż wystąpienia w klasy.
    Weź też sekcję `## Pojedyncze` z `~/.t3/notes/polowanie/*/klasy.md` wcześniejszych polowań, bo wystąpienie z innego tygodnia liczy się do klasy.
    Dla każdej klasy znajdź mechanizm, który ją już pilnuje: regułę w `reguly-ast-grep/`, klucz `banned-api` w konfiguracji ruff, kontrakt w `.importlinter`, wiersz tabel reguł (`| Rule | Guard |` w `CODING_STANDARDS.md`, „Reguły i co ich pilnuje” w `docs/agents/pr-i-ci.md` i `docs/agents/skille.md`) albo punkt skilla.
@@ -81,5 +86,5 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
 
    Klasa, której mechanizm wymaga decyzji Maksa (rodzaj z listy „Decisions for Maks”; o każdej innej, także o miejscu reguły w repo, decyduje agent klasy), dostaje issue `decyzja-maksa` według [`issue-tracker.md`](../../../docs/agents/issue-tracker.md) zamiast PR, a PR bez merge'u przechodzi na następne polowanie i liczy się tam do limitu.
    Krok kończy się, gdy każda klasa bez mechanizmu i każda reguła ponad progiem ma w `klasy.md` link do PR z raportem klasy, issue `decyzja-maksa` albo zdanie „czeka: limit dwóch PR-ów”.
-5. Zakończ odpowiedź w wątku zadania jedną linią: `POLOWANIE <poniedziałek> | klasy <k> (nowe <n>) | PR: <URL-e albo brak> | reguły ponad progiem: <id p%, albo brak> | decyzje: <URL-e albo brak> | niedostępne: <plik źródła: powód, albo brak>`.
+5. Zakończ odpowiedź w wątku zadania jedną linią: `POLOWANIE <poniedziałek> | klasy <k> (nowe <n>) | PR: <URL-e albo brak> | reguły ponad progiem: <id p%, albo brak> | decyzje: <URL-e albo brak> | niedostępne: <plik źródła: powód, albo brak>`, a przy og-box bez odpowiedzi w części `niedostępne` stoi `og-box: offline, pominięty`.
    Krok kończy się, gdy linia ma każdy PR i issue z kroku 4 i każdą regułę ponad progiem z kroku 3.

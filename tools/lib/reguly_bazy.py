@@ -1,4 +1,17 @@
-"""Reguły ast-grep z bazy na liniach, które PR dodaje: PR nie osłabia reguły, która go sądzi ([ADR 0036](../../docs/adr/0036-chwast-to-regula.md)).
+from __future__ import annotations
+
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import sysconfig
+
+import odpalenia_ast_grep
+from odpalenia_ast_grep import Finding
+import potomne
+import repo
+
+ZASADY = """Reguły ast-grep z bazy na liniach, które PR dodaje: PR nie osłabia reguły, która go sądzi ([ADR 0036](../../docs/adr/0036-chwast-to-regula.md)).
 
 Required CI uruchamia zapadkę reguł ast-grep kodem i regułami HEAD PR, więc PR, który usuwa regułę z
 ``reguly-ast-grep/``, dopisuje jej ``ignores:``, zawęża ``files:`` albo zmienia ``sgconfig.yml``, przechodzi ją razem
@@ -19,19 +32,6 @@ ast-grep czyta pliki PR jako dane, z konfiguracją bazy, a ``tools/na_scalonych_
 Moduł importuje tylko bibliotekę standardową, ``repo``, ``potomne`` i ``odpalenia_ast_grep``, bo status uruchamia go
 Pythonem runnera.
 """
-
-from __future__ import annotations
-
-from pathlib import Path
-import shutil
-import subprocess
-import sys
-import sysconfig
-
-import odpalenia_ast_grep
-from odpalenia_ast_grep import Finding
-import potomne
-import repo
 
 RULES = "reguly-ast-grep"
 CONFIG = "sgconfig.yml"
