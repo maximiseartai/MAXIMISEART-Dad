@@ -2093,6 +2093,23 @@ def test_postep_wyceny_przeczytany_przed_jej_koncem_nie_idzie_po_jej_logach_gdy_
     ]
 
 
+def test_budzik_postepu_skonczonej_wyceny_dzwoniacy_po_starcie_nastepnej_nie_odswieza_jej_postepu(tmp_path: Path) -> None:
+    queue, clock, disk = RecordingQueue(), ManualClock(), _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, queue, disk, clock)
+    _priced(comments, disk)
+    comments.run_ended(_ended())
+    clock.advance(PROGRESS_S / 2)
+    comments.run_started(PRICING.model_copy(update={"id": OTHER_RUN_ID}), STARTED_AT)
+
+    progress_of_next: list[int] = []
+    for _ in range(3):
+        clock.advance(PROGRESS_S / 2)
+        progress_of_next.append(sum(post.run_id == OTHER_RUN_ID for post in queue.posts))
+
+    assert progress_of_next == [1, 2, 2]
+    assert clock.wakes == 1
+
+
 @dataclass
 class QueueFailingOnce(RecordingQueue):
     failing: int = 0

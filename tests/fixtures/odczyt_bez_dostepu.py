@@ -7,7 +7,8 @@ Tak samo widzi otwarcia do odczytu w folderze ``watched``, więc test wie, któr
 i zapisy w nim (otwarcie do zapisu, zamiana i usunięcie pliku), więc wie też, które pliki krok czytał przed zapisem.
 
 Haka nie da się zdjąć (PEP 578), więc instaluje się raz na proces i bez ``reading`` niczego nie robi.
-Granicę haka pokazują próbki ``ZNANE_LUKI_ODCZYTU`` w ``tests/test_centrum_rozliczen.py``.
+Granicę haka pokazują próbki ``ZNANE_LUKI_ODCZYTU`` w ``tests/test_centrum_rozliczen.py`` i ``ZNANE_LUKI_WEJSCIA`` w
+``tests/test_katalog_procesow.py``.
 """
 
 from __future__ import annotations
