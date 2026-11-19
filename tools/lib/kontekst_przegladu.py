@@ -13,7 +13,7 @@ import repo
 import stan_pr
 import werdykt_pr
 
-ZASADY = """Dwa tryby służą recenzentowi (skill ``przeglad``, tryb recenzenta) i niczego nie scalają. ``--przeglad`` drukuje
+ZASADY = """Dwa tryby służą recenzentowi (skill ``przeglad``, ``recenzent.md``) i niczego nie scalają. ``--przeglad`` drukuje
 kontekst przeglądu: pełny SHA HEAD PR, bazę i merge-base z nią, ``git diff --stat`` i zmienione pliki od merge-base,
 wynik ``tools/skille_dla_zmiany.py`` z HEAD PR liczony od merge-base (w kopii commitu HEAD, więc ``pilnuje:`` skilli
 jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, autorem, dwiema pierwszymi liniami i tym,

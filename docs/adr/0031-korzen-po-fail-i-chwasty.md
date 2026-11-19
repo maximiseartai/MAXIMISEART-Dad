@@ -4,7 +4,7 @@
 
 Zaakceptowana (decyzje Maksa Q1–Q26 z grilla 13.11.2026 w wątku T3).
 Wdrożenie idzie w pięciu PR-ach (Q24); ten ADR wchodzi w pierwszym z nich.
-Zmienia regułę korzenia z sekcji „Reguły i co ich pilnuje” w `AGENTS.md`: drabina szczebli ma teraz (e) i żyje w skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md), sekcja „Korzeń i chwast”.
+Zmienia regułę korzenia z sekcji „Reguły i co ich pilnuje” w `AGENTS.md`: drabina szczebli ma teraz (e) i żyje w skillu `przeglad`, plik [`korzen.md`](../../.agents/skills/przeglad/korzen.md).
 Zmieniona przez [ADR 0034](0034-kod-jest-pamiecia.md) (specyfikacja #1597) w decyzjach o źródłach chwastu, szczeblu (d), PR korzenia, etykiecie `ready-for-agent` i pomiarze co poniedziałek; każda zmiana obowiązuje od merge'a ticketu, który ADR 0034 przy niej podaje.
 Zmieniona przez [ADR 0036](0036-chwast-to-regula.md) (#1676) w decyzjach Q1, Q11, Q12, Q15, Q16, Q22 i Q26: chwast to reguła detektora, kod korzenia to kategoria, która nie blokuje merge'a, a `ZGODA KORZEŃ` i issues „Chwast” znikają; każda zmiana obowiązuje od merge'a jej wykonawcy z tabeli „Wdrożenie” w ADR 0036.
 Kartę XmR i porządek kodów z zadania T3 o 8:00 (Q18, Q19, Q23) zastąpiło polowanie na powtarzane błędy ze skilla [`polowanie`](../../.agents/skills/polowanie/SKILL.md), bo ADR 0036 wycofał miarę udziału powtórzeń i issues „Chwast”, które karta rysowała.

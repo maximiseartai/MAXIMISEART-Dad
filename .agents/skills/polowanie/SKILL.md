@@ -12,7 +12,7 @@ Uruchamia je stałe zadanie T3 w poniedziałek o 8:00 dla tygodnia, który wła�
 
 - **Wystąpienie** to jeden błąd agenta z linkiem: poprawka Maksa w wątku, Ważne, przeżyty mutant, czerwony `main` albo runda `FAIL`.
 - **Klasa** to co najmniej dwa wystąpienia tego samego mechanizmu błędu, czyli tego, co skłoniło agenta do błędu, z tego tygodnia albo z wcześniejszych polowań; wspólny kod korzenia klasy nie tworzy, bo kod to kategoria (ADR 0036).
-- **Mechanizm** to szczebel (a)–(d) drabiny z sekcji „Korzeń i chwast” skilla [`przeglad`](../przeglad/SKILL.md): odmawia nowego wystąpienia bez osądu.
+- **Mechanizm** to szczebel (a)–(d) drabiny z [`korzen.md`](../przeglad/korzen.md) skilla `przeglad`: odmawia nowego wystąpienia bez osądu.
 - **Zdrowie reguły** chwastu to jej odpalenia, fałszywe alarmy i obejścia w tygodniu.
 
 Polowanie biegnie na Macu Maksa we własnym worktree z `origin/main` (`git worktree add --detach ~/.t3/worktrees/MAXIMISEART-Dad/polowanie-<poniedziałek> origin/main`, potem `python3 tools/setup_worktree.py` w nim), a pliki biegu trzyma w `~/.t3/notes/polowanie/<poniedziałek>/` (dalej `<bieg>`), gdzie `<poniedziałek>` i `<niedziela>` to pierwszy i ostatni dzień tygodnia polowania.

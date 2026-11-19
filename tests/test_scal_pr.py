@@ -30,6 +30,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git, with_imports
 from tests.fixtures.potomne import hold_lock, wait_for
 
+import bramka_korzenia
 import bramka_straznika
 import czasy_ci
 import github as klient_github
@@ -2202,7 +2203,7 @@ def _limit_reason(*failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a po 3. rundzie z FAIL PR nie dostaje"
-        " kolejnej (skill przeglad, „Kolejne rundy”): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
+        " kolejnej (skill przeglad, rundy.md): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
         " usunięcie z PR części, której przegląd nie przyjął) i opisz je komentarzem PR z pierwszą linią"
         " „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie dostaje żadnej"
     )
@@ -2214,7 +2215,7 @@ def _final_reason(*failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}), a po 6. rundzie z FAIL #1 nie dostaje żadnej kolejnej"
-        " (skill przeglad, „Kolejne rundy”), także po komentarzu „ZMIANA PODEJŚCIA: <zdanie>”: zamknij #1 komentarzem"
+        " (skill przeglad, rundy.md), także po komentarzu „ZMIANA PODEJŚCIA: <zdanie>”: zamknij #1 komentarzem"
         " z powodem i zacznij nowy PR od świeżego origin/main z innym podejściem"
     )
 
@@ -2294,7 +2295,7 @@ def _repeat_reason(place: str, *failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a ich Ważne trafiają w to samo miejsce"
-        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, „Kolejne rundy”): zmień"
+        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, rundy.md): zmień"
         " podejście w #1 (atak na przesłankę, granica z mechanizmu albo usunięcie z PR części, której przegląd nie"
         " przyjął) i opisz je komentarzem PR z pierwszą linią „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie"
         " dostaje żadnej"
@@ -2636,14 +2637,20 @@ def _root_gate(
     korzenia wdrożoną na ``main`` w chwili ``gate``, a szablonem 1.10.2026; ``setup`` podaje stan i opis PR korzenia
     (``root``: stan, opis i opcjonalnie gałąź, do której go scalono, domyślnie ``main``), domyślną gałąź repozytorium
     albo błąd ``gh repo view`` (``repo_view``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``,
-    domyślnie ``baza``) i na HEAD (``skill``) i kod dopisany do listy korzeni na HEAD (``listed``)."""
+    domyślnie ``baza``) i na HEAD (``skill``), jego plik porażki w ADR na bazie (``adr_base``) i na HEAD (``adr``), bez
+    klucza nieobecny, i kod dopisany do listy korzeni na HEAD (``listed``)."""
 
-    skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
+    skill_file, adr_file = bramka_korzenia.FAILURE_FILES
+    base_files = {"kod/__init__.py": SUM, skill_file: korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]}
+    if "adr_base" in setup:
+        base_files[adr_file] = korzenie_pr.SKILL[str(setup["adr_base"])]
+    github = MergeGitHub(tmp_path, base_files, started=gate)
     _deploy_template(github)
     files = {"kod/inne.py": "INNE: int = 1\n"}
     if "skill" in setup:
-        files[szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix()] = korzenie_pr.SKILL[str(setup["skill"])]
+        files[skill_file] = korzenie_pr.SKILL[str(setup["skill"])]
+    if "adr" in setup:
+        files[adr_file] = korzenie_pr.SKILL[str(setup["adr"])]
     if "listed" in setup:
         files[szablon_werdyktu.LIST] = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + str(setup["listed"])
     github.open_pull(1, files)
@@ -2695,6 +2702,8 @@ def _root_gate(
         ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkt-z-przykladem-zmieniony-z-linkiem-do-pr"}, [NEW_POINT]),
         ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
         ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkty-bazy-zamienione-z-linkiem-do-pr"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"adr_base": "baza", "adr": "punkt-z-linkiem-do-pr"}, []),
+        ([FAIL_W1], "szczebel-e", {"adr_base": "baza", "adr": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
         ([FAIL_W1], "cytat-pola-w-bloku-kodu", {}, []),
         ([FAIL_W1], "cytat-pola-bez-bloku-kodu", {}, ["korzeń: blok „### W1 r1: R-DRUGA-DROGA” powtórzony"]),
         ([FAIL_W1], "wyrwany", {"root": ("OPEN", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest otwarty, a scala się go do domyślnej gałęzi przed tym PR"]),
@@ -2755,6 +2764,8 @@ def _root_gate(
         "szczebel-e-z-punktem-bazy-zmienionym-o-link-do-pr",
         "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy",
         "szczebel-e-z-nowym-punktem-i-punktami-bazy-w-innej-kolejnosci",
+        "szczebel-e-z-nowym-punktem-w-pliku-porazki-adr",
+        "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy-w-pliku-porazki-adr",
         "cytat-pola-w-bloku-kodu",
         "cytat-pola-bez-bloku-kodu",
         "wyrwany-w-otwartym-pr",
