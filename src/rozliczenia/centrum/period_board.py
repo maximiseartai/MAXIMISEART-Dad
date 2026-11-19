@@ -197,9 +197,13 @@ def read_board(periods_directory: Path | None, today: date, catalog: Catalog) ->
     """Tablica okresów z folderu okresów w dniu taty ``today``; ``catalog`` daje Historię Wyceny w efenix (jej plik
     metryk)."""
 
-    if periods_directory is None:
+    return board_of(None if periods_directory is None else scan_period_folders(periods_directory), today, catalog)
+
+
+def board_of(scanned: PeriodFolders | None, today: date, catalog: Catalog) -> periods_contract.PeriodBoard:
+    if scanned is None:
         return periods_contract.BoardNotSet(state="not_set")
-    scanned = scan_period_folders(periods_directory)
+    periods_directory = scanned.periods_directory
     if scanned.periods_directory_missing:
         return periods_contract.BoardMissing(state="missing", name=periods_directory.name)
     last_complete = last_complete_period(today)

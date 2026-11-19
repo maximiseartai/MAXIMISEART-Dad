@@ -1,14 +1,3 @@
-"""Read what an Uruchomienie procesu left behind: its JSON result through the contract, metrics, and Hiperłącza.
-
-The assertion scripts share this module, so they read the result of ``tools/uruchom_proces.py`` as the
-contract model ``ProcessResult`` it is printed from, never as a raw dict: a field renamed or dropped in the
-contract fails validation here and type checking in the scripts. Run alone, it checks one evidence file:
-
-    py -3 .agents\\skills\\verify-rozliczenia\\scripts\\wynik_uruchomienia.py --result "$evidenceRoot\\run.json"
-
-Messages name fields and files, never a value, because values can hold row content.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -28,6 +17,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools"))
 from uruchom_proces import ProcessResult
 
 from rozliczenia.centrum.contract import runs as runs_contract
+
+OPIS = """Read what an Uruchomienie procesu left behind: its JSON result through the contract, metrics, and Hiperłącza.
+
+The assertion scripts share this module, so they read the result of ``tools/uruchom_proces.py`` as the
+contract model ``ProcessResult`` it is printed from, never as a raw dict: a field renamed or dropped in the
+contract fails validation here and type checking in the scripts. Run alone, it checks one evidence file:
+
+    py -3 .agents\\skills\\verify-rozliczenia\\scripts\\wynik_uruchomienia.py --result "$evidenceRoot\\run.json"
+
+Messages name fields and files, never a value, because values can hold row content.
+"""
 
 __all__ = [
     "Link",
@@ -188,7 +188,7 @@ def finish(errors: list[str], success_message: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--result", required=True, type=Path, help="evidence JSON of a process step")
     args = parser.parse_args(argv)
     errors: list[str] = []

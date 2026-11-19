@@ -1,4 +1,27 @@
-"""Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Any
+import urllib.parse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import czasy_ci
+import github
+from github import REPO, STRONA, GhApi, GitHub
+import narzedzia_tlc
+import niestabilne_testy
+from ostatnie_linie import REQUIRED_FAIL
+import stan_pr
+
+OPIS = """Jedyna droga ponowienia runu CI: czeka na koniec runu, ponawia raz awarię runnera albo znany flaky test; użyj zamiast gh run rerun.
 
 Narzędzie bierze najnowszy run workflow ``CI`` na HEAD PR numer N (``stan_pr.latest_ci_run``, jak ``tools/scal_pr.py``)
 albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka to awaria runnera, a nie defekt:
@@ -43,29 +66,6 @@ z 2–12.11 takiego przypadku nie było i jego sygnatury nie znamy.
     .venv/bin/python tools/ponow_ci.py --run 43035692960
     py -3 tools/ponow_ci.py 1303                      # Windows
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
-from pathlib import Path
-import re
-import subprocess
-import sys
-from typing import Any
-import urllib.parse
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import czasy_ci
-import github
-from github import REPO, STRONA, GhApi, GitHub
-import narzedzia_tlc
-import niestabilne_testy
-from ostatnie_linie import REQUIRED_FAIL
-import stan_pr
 
 NAJWIECEJ_PONOWIEN = 1
 OKNO = timedelta(hours=2)
@@ -429,7 +429,7 @@ def ponow(api: GitHub, run_id: int, numer: int | None, teraz: datetime, akcje: A
 
 
 def main(argv: list[str] | None = None, *, api: GitHub | None = None, akcje: Akcje = GH, teraz: datetime | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     cel = parser.add_mutually_exclusive_group(required=True)
     cel.add_argument("numer", type=int, nargs="?", help="Numer PR: ponawia najnowszy run CI na jego HEAD.")
     cel.add_argument("--run", type=int, help="Identyfikator runu CI, np. pushu na main.")

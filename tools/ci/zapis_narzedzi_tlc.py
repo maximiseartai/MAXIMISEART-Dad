@@ -1,6 +1,4 @@
-"""Mówi krokowi ``actions/cache/save`` zadania CI, czy katalog narzędzi TLC ma jar o przypiętej sumie i można go zapisać.
-
-    python tools/ci/zapis_narzedzi_tlc.py
+"""    python tools/ci/zapis_narzedzi_tlc.py
 
 Pisze do ``GITHUB_OUTPUT`` linię ``zapisz=true`` tylko wtedy, gdy katalog podręczny ``KATALOG`` z
 ``tools/lib/narzedzia_tlc.py`` ma ``tla2tools.jar`` przypiętej wersji z przypiętą sumą SHA-256, a w każdym innym razie
@@ -21,11 +19,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from narzedzia_tlc import KATALOG, jar_tla, ma_przypieta_sume
 
+OPIS = "Mówi krokowi ``actions/cache/save`` zadania CI, czy katalog narzędzi TLC ma jar o przypiętej sumie i można go zapisać."
+
 ZAPISZ = "zapisz"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.parse_args(argv)
     jar = jar_tla(KATALOG)
     zapisz = ma_przypieta_sume(jar)

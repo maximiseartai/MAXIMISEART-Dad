@@ -1,4 +1,27 @@
-"""Odtwarza Uruchomienie z pliku Logów (dysk albo Archiwum Logów okresu) na Macu i drukuje pierwszą różnicę; użyj, by powtórzyć run taty.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Sequence
+from datetime import date
+import gzip
+import json
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+from typing import NoReturn
+import urllib.parse
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import potomne
+from repo import ROOT
+import repo
+
+OPIS = """Odtwarza Uruchomienie z pliku Logów (dysk albo Archiwum Logów okresu) na Macu i drukuje pierwszą różnicę; użyj, by powtórzyć run taty.
 
 Narzędzie odtwarzania Uruchomienia procesu z Logów Uruchomienia (#847, spec #837). Odtwarza każdy proces Centrum:
 Przebieg rozliczeń, Przygotowanie pliku zbiorczego, Uporządkowanie INTERMAX, Wycena w efenix i Wpisanie raportów.
@@ -43,29 +66,6 @@ odtworzyć, 2 błąd parametrów albo pliku. Narzędzie nie pisze nic do repozyt
 Skrzynki Zgłoszeń.
 """
 
-from __future__ import annotations
-
-import argparse
-from collections.abc import Sequence
-from datetime import date
-import gzip
-import json
-from pathlib import Path
-import re
-import shutil
-import subprocess
-import sys
-import tempfile
-from typing import NoReturn
-import urllib.parse
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import potomne
-from repo import ROOT
-import repo
-
 TOOL = Path("tools") / "odtworz_uruchomienie.py"
 ARCHIVE_HOST = "github.com"
 _IMPOSSIBLE = 3
@@ -83,7 +83,7 @@ class _Failure(Exception):
 
 
 def _parser() -> argparse.ArgumentParser:
-    parser = _Parser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = _Parser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "logi",
         help="Plik Logów (.json, .json.gz) albo odnośnik do pliku w Archiwum Logów okresu.",

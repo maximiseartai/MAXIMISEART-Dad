@@ -1,11 +1,3 @@
-"""Gotowość: fill a Plik zbiorczy like Dad does by hand before the Przebieg rozliczeń.
-
-In some Wiersze danych the harness types quantities into ``N:AP`` and the
-customer charge and remarks into ``AQ:AT``. Every other cell, every formula, and
-every ``xl/externalLinks/*`` part (the link to the Słownik) stays as it was.
-Prints counts only, never a cell value.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -26,6 +18,14 @@ from skrypt_skilla import Parser, require_run_root
 from atrapy.preparation import COLLECTIVE_FILE_NAME, INTERNAL_SETTLEMENT_NAME
 from atrapy.scenariusz_rozliczen import FILLED_ORDERS, PERIODS_DIRECTORY, order_number
 from atrapy.settlement import PERIOD
+
+OPIS = """Gotowość: fill a Plik zbiorczy like Dad does by hand before the Przebieg rozliczeń.
+
+In some Wiersze danych the harness types quantities into ``N:AP`` and the
+customer charge and remarks into ``AQ:AT``. Every other cell, every formula, and
+every ``xl/externalLinks/*`` part (the link to the Słownik) stays as it was.
+Prints counts only, never a cell value.
+"""
 
 # Where Dad types in his Plik zbiorczy: a deliberate copy (docs/agents/skille.md, „Co wyrocznia bierze z src”) and not
 # rozliczenia.collective_layout, because this script plays Dad, so a moved column in src must break the check.
@@ -150,7 +150,7 @@ def _fill(root: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of a chain fixture")
     args = parser.parse_args(argv)
     try:

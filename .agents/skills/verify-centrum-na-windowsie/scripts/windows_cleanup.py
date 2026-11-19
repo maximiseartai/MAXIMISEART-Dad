@@ -1,12 +1,3 @@
-"""Stop what one run started and remove its run root; the evidence stays.
-
-    py -3 .agents\\skills\\verify-centrum-na-windowsie\\scripts\\windows_cleanup.py --root <run root>
-
-Stops only processes whose command line contains the run root (Centrum from the run's tool, the restart guardian,
-Git and pip below it), never by process name. Closes the Explorer windows on the run's folders. Prints
-``CLEANUP OK | stopped=[…] | removed=true`` or ``CLEANUP FAIL | …``.
-"""
-
 from __future__ import annotations
 
 import os
@@ -19,6 +10,15 @@ import windows_desktop
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser, RunRootError, remove_run_root, require_run_root
+
+OPIS = """Stop what one run started and remove its run root; the evidence stays.
+
+    py -3 .agents\\skills\\verify-centrum-na-windowsie\\scripts\\windows_cleanup.py --root <run root>
+
+Stops only processes whose command line contains the run root (Centrum from the run's tool, the restart guardian,
+Git and pip below it), never by process name. Closes the Explorer windows on the run's folders. Prints
+``CLEANUP OK | stopped=[…] | removed=true`` or ``CLEANUP FAIL | …``.
+"""
 
 
 def _remove(root: Path) -> bool:
@@ -66,7 +66,7 @@ def cleanup(root: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of this Windows run")
     verdict = cleanup(parser.parse_args(argv).root)
     print(verdict, flush=True)

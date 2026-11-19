@@ -1,4 +1,12 @@
-"""Prints the section ``## Sub-features`` of a feature file from the plan of the variants of its process.
+from __future__ import annotations
+
+import argparse
+import sys
+from types import ModuleType
+
+import run_verification
+
+OPIS = """Prints the section ``## Sub-features`` of a feature file from the plan of the variants of its process.
 
 A feature is a process ``WorkflowProcess("<feature>", …)`` of ``run_verification.py``, and its variants are the entries
 of ``WORKFLOW_VARIANTS`` on that process once the module has run. The command makes the plan of each variant
@@ -13,14 +21,6 @@ other than through ``_run_step`` or ``_run_process_step``, a change to the run r
 the plan records, nor a branch of a workflow on what an earlier step left, which the plan's placeholder folders never
 hold.
 """
-
-from __future__ import annotations
-
-import argparse
-import sys
-from types import ModuleType
-
-import run_verification
 
 
 class Refusal(Exception):
@@ -62,7 +62,7 @@ def section(feature: str, workflows: ModuleType = run_verification) -> str:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--feature", required=True, help="feature of the map, the first argument of its WorkflowProcess")
     try:
         printed = section(parser.parse_args().feature)

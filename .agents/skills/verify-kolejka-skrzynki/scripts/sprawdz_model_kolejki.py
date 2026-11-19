@@ -1,6 +1,4 @@
-"""Sprawdza model TLA+ Kolejki Skrzynki Zgłoszeń przy każdej kolejności awarii i przeplotów (TLC).
-
-Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
+"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
 opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
 z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko
 ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
@@ -18,6 +16,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from model_tlc import Model, Obietnica, Stan, main
+
+OPIS = "Sprawdza model TLA+ Kolejki Skrzynki Zgłoszeń przy każdej kolejności awarii i przeplotów (TLC)."
 
 
 def _tell(states: Sequence[Stan]) -> None:
@@ -45,4 +45,4 @@ MODEL = Model(
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(MODEL, opis=__doc__.splitlines()[0] if __doc__ else None))
+    raise SystemExit(main(MODEL, opis=OPIS))

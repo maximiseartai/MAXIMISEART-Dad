@@ -1,4 +1,32 @@
-"""Rozstrzyga D1, NF czy N0, z cienia podstaw w plan.json runów PR i audytu kandydatów (--od, --do, --audyt); użyj po 14 dniach cienia.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Iterable, Mapping, Sequence
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timezone
+from difflib import SequenceMatcher
+from enum import StrEnum
+import io
+import json
+from pathlib import Path
+import re
+import statistics
+import subprocess
+import sys
+from typing import Any
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from api_actions import Api, runy
+from github import REPO, BladApi, GhApi, GitHub
+from jednostka import Klucz, Rodzaj
+from plan_runu import ARTEFAKT, PLIK, Plan
+import repo
+from repo import ROOT
+from zakres_runu import NA_ZYWO, Podstawy
+
+OPIS = """Rozstrzyga D1, NF czy N0, z cienia podstaw w plan.json runów PR i audytu kandydatów (--od, --do, --audyt); użyj po 14 dniach cienia.
 
 Reguła rozstrzygnięcia, zapisana 19.11.2026 przed włączeniem NF (ADR 0020, D1): N0 wygrywa, gdy w ``DNI`` dniach po
 merge'u NF kroki skilli NF na pull request złapały mniej niż ``X`` prawdziwych defektów, których pytest nie złapał, a cień
@@ -78,34 +106,6 @@ PLIK`` liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy 
     .venv/bin/python tools/cien_podstaw.py --katalog ~/.t3/notes/d1-cien --od 2026-11-20 --do 2026-12-03
     .venv/bin/python tools/cien_podstaw.py --rekordy ~/.t3/notes/d1-cien/rekordy.json --audyt ~/.t3/notes/d1-cien/audyt.json
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
-from difflib import SequenceMatcher
-from enum import StrEnum
-import io
-import json
-from pathlib import Path
-import re
-import statistics
-import subprocess
-import sys
-from typing import Any
-import zipfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from api_actions import Api, runy
-from github import REPO, BladApi, GhApi, GitHub
-from jednostka import Klucz, Rodzaj
-from plan_runu import ARTEFAKT, PLIK, Plan
-import repo
-from repo import ROOT
-from zakres_runu import NA_ZYWO, Podstawy
 
 GITHUB = GhApi(limit_s=60)
 # Progi D1 (ADR 0020, D1), zapisane przed włączeniem NF; zmiana któregoś unieważnia rozstrzygnięcie.
@@ -337,7 +337,7 @@ def rozstrzygnij(rekordy: Rekordy, audyt: Mapping[str, Sequence[str]] | None = N
 
 
 def wczytaj_audyt(tekst: str) -> dict[str, tuple[str, ...]]:
-    """Audyt z pliku JSON (docstring modułu); inna postać niż obiekt list nazw przyczyn to ``BladAudytu``."""
+    """Audyt z pliku JSON (``OPIS``); inna postać niż obiekt list nazw przyczyn to ``BladAudytu``."""
 
     dane = json.loads(tekst)
     if not isinstance(dane, dict) or not all(
@@ -529,7 +529,7 @@ def _pobierz(root: Path, glowy: Iterable[str]) -> None:
 
 
 def _naprawa(root: Path, main: str, czerwony: Mapping[str, Any], nastepny: Mapping[str, Any]) -> Naprawa | None:
-    """Naprawa między głowami runów ``czerwony`` i ``nastepny`` (docstring modułu) z dowodem do audytu; ``None``, gdy
+    """Naprawa między głowami runów ``czerwony`` i ``nastepny`` (``OPIS``) z dowodem do audytu; ``None``, gdy
     git nie zna którejś głowy."""
 
     try:
@@ -629,13 +629,13 @@ def _chwila(tekst: str) -> datetime:
 
 
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--katalog", type=Path, help="Folder biegu: odpowiedzi API i rekordy.json.")
     parser.add_argument("--od", type=date.fromisoformat, help="Pierwszy dzień okna cienia (UTC).")
     parser.add_argument("--do", type=date.fromisoformat, help="Ostatni dzień okna cienia (UTC), zakończony.")
     parser.add_argument("--probka", type=int, default=PROBKA, help=f"Najwięcej runów PR, z których cienia liczy się oszczędność (domyślnie {PROBKA}).")
     parser.add_argument("--rekordy", type=Path, help="Rekordy zapisane wcześniej (rekordy.json): rozstrzygnięcie bez GitHuba.")
-    parser.add_argument("--audyt", type=Path, help="Audyt kandydatów i niepoliczonych (JSON, docstring): wynik liczy przyczyny z audytu.")
+    parser.add_argument("--audyt", type=Path, help="Audyt kandydatów i niepoliczonych (JSON, postać w opisie wyżej): wynik liczy przyczyny z audytu.")
     args = parser.parse_args(argv)
     try:
         audyt = None if args.audyt is None else wczytaj_audyt(args.audyt.read_text(encoding="utf-8"))
