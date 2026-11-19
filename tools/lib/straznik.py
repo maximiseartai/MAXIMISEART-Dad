@@ -17,30 +17,41 @@ opisuje; kopia wraca do stanu sprzed biegu.
 |---|---|---|
 | ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na drzewie bez znalezisk w żadnym kroku narzędzia, po przywróceniu znalezisko któregoś kroku w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi w drzewie bez zmian, czyli poprawka leży obok) |
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` na drzewie ``srodowisko_ci.built`` | Ważne stoi w polu ``metadata.przypadki`` reguły w drzewie (jedyna lista jej przypadków), ast-grep środowiska ma wersję ast-grepa dowodu, a reguła łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
-| ``pytest <plik>::<test>`` | przeszczep (``transplant``): definicje wokół miejsc ``Gdzie`` spoza ``tests/`` z FAIL, a do tego drzewo FAIL: pliki PR spoza ``tests/`` z treścią z FAIL | węzeł (jeden test albo jego parametr) na drzewie bez zmian przechodzi w całości, na przeszczepie i na drzewie FAIL pada (kod 1), a plugin ``straznik_pytest`` nie widzi na przeszczepie w jego plikach wyjątku rozjazdu interfejsu, którego nie ma na drzewie FAIL |
+| ``pytest <plik>::<test>`` | przeszczep (``transplant``): definicje wokół miejsc ``Gdzie`` spoza ``tests/`` z FAIL, a do tego drzewo FAIL: pliki PR spoza ``tests/`` z treścią z FAIL | węzeł (jeden test albo jego parametr) na drzewie bez zmian przechodzi w całości, na przeszczepie pada (kod 1), każdy jego test pada na drzewie FAIL tak samo (rodzaj wyjątku i najgłębsza ramka w ``tests/``, zapis pluginu ``straznik_pytest``), a kod plików przeszczepu nie zgłasza wyjątku żadnego rodzaju, którego na drzewie FAIL nie zgłosił |
 | ``brak - proza`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - napęd`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie w ``frontend/``; strażnik to krok napędu skilla ``verify-*``, który Required CI uruchamia w Mutation checks, a recenzent następnej rundy uruchamia go na drzewie FAIL |
-| ``brak - test`` | przeszczep na HEAD PR | przeszczep jest pusty (``Gdzie`` tylko w ``tests/`` albo definicje z ``Gdzie`` mają na HEAD treść z FAIL), więc dowodu testu nie ma z czego liczyć, a czy test pada na błędzie z ``Gdzie``, sprawdza recenzent następnej rundy (skill ``przeglad``); w wątku sprzed wdrożenia dowodu testu (``bramka_straznika.TEST_MARKER``) zawsze |
+| ``brak - test`` | przeszczep na HEAD PR | przeszczep jest pusty (``Gdzie`` tylko w ``tests/`` albo poza definicjami, albo definicje z ``Gdzie`` mają na HEAD treść z FAIL), więc dowodu testu nie ma z czego liczyć, a czy test pada na błędzie z ``Gdzie``, sprawdza recenzent następnej rundy (skill ``przeglad``); w wątku sprzed wdrożenia dowodu testu (``bramka_straznika.TEST_MARKER``) zawsze |
 | ``brak - usunięte`` | bez | zawsze: PR usunął kod z ``Gdzie`` (szczebel (a): część, której przegląd nie przyjął, albo druga droga, której wołający biorą właściciela), więc nie ma mechanizmu do dowodu; czy kod zniknął i nie wraca inną drogą, sprawdza recenzent następnej rundy |
 
-Dowód testu nie pyta, dlaczego test padł (trzy rundy przeglądu #2116 obaliły kształty, które to klasyfikowały: kod 1
-na drzewie FAIL, rodzaj wyjątku, drugie przywrócenie linii obok ``Gdzie``). Pyta o dwie rzeczy, które da się zmierzyć:
-czym drzewo dowodu różni się od drzewa bez zmian i czy przeszczep jest wierny. Przeszczep różni się od drzewa bez zmian
-tylko definicjami, które wskazał recenzent, w postaci z FAIL; definicja to funkcja, metoda, funkcja zagnieżdżona,
-instrukcja modułu wiążąca nazwę, klucz najwyższego poziomu YAML i tabela TOML (inny plik w całości), dopasowana po
-nazwie kwalifikowanej w drzewie składni, więc linie dodane obok zostają z HEAD, a ``tests/`` zostaje z HEAD. Gdy HEAD
-definicji nie ma albo ma ją z inną sygnaturą, wracają też jej wołający z FAIL w plikach PR, a nazwy z FAIL, których
-przeszczep używa, a HEAD ich nie ma, wracają z nim. Wierność sprawdza plugin rozjazdu i warunek drzewa FAIL: funkcja
-z FAIL, która na przeszczepie pada na polu dataclass dodanym przez PR, na drzewie FAIL przechodzi (próbka A7).
-Węzeł biegnie Pythonem i zmiennymi środowiska Required CI (``srodowisko_ci.built`` z ``tests``: tor Linux zadania
-pytest), z pustym ``HOME`` i bez bajtkodu w każdym biegu, a pliki, które bieg zapisał w kopii (także ignorowane), wracają
-przed następnym, więc trzy biegi różnią się tylko plikami dowodu.
+Dowód testu nie pyta, dlaczego test padł, i nie dzieli wyjątków na rodzaje (trzy rundy przeglądu #2116 i runda r1 #2197
+obaliły kształty, które to klasyfikowały: kod 1 na drzewie FAIL, lista rodzajów wyjątku, drugie przywrócenie linii obok
+``Gdzie``, cały plik z FAIL). Pyta o rzeczy, które da się zmierzyć: czym drzewo dowodu różni się od drzewa bez zmian
+i czy przeszczep na drzewie HEAD robi to, co na drzewie FAIL. Przeszczep różni się od drzewa bez zmian tylko
+definicjami, które wskazał recenzent, w postaci z FAIL; definicja to funkcja, metoda, funkcja zagnieżdżona, instrukcja
+modułu wiążąca nazwę (także złożona: blok ``if``, ``try``, ``with`` z definicjami w gałęziach jest jedną definicją),
+klucz najwyższego poziomu YAML i tabela TOML (plik innego formatu w całości), dopasowana po nazwie kwalifikowanej
+w drzewie składni, więc linie dodane obok zostają z HEAD, a ``tests/`` zostaje z HEAD. Miejsce ``Gdzie`` w pliku
+Pythona poza definicją (instrukcja modułu bez nazwy, np. ``if __name__``) przeszczep pomija i dowód ``pytest`` go odmawia,
+zamiast brać cały plik. Gdy HEAD definicji nie ma albo ma ją z inną sygnaturą, wracają też jej wołający z FAIL w plikach
+PR, a nazwy z FAIL, których przeszczep używa, a HEAD ich nie ma, wracają z nim. Wierność sprawdza porównanie biegów:
+test, który na przeszczepie pada inaczej niż na drzewie FAIL (inny rodzaj wyjątku albo inna linia w ``tests/``), albo kod
+przeszczepu, który zgłasza wyjątek nieznany z drzewa FAIL (także złapany niżej), to odmowa, bo kod z FAIL w kontekście
+HEAD robi wtedy co innego niż na FAIL (próbki A7b, A8b, W2 w ``tests/test_straznik.py``). Węzeł biegnie Pythonem
+i zmiennymi środowiska Required CI (``srodowisko_ci.built`` z ``tests``: tor Linux zadania pytest), z pustym ``HOME``
+i ``TMPDIR`` tylko tego biegu i bez bajtkodu, a pliki, które bieg zapisał w kopii (także ignorowane), wracają przed
+następnym; ścieżka katalogu biegu w komunikatach wyjątków liczy się jako ``<bieg>``. Linia dowodu wymienia każdą
+przeszczepioną jednostkę.
 
 Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w ``tests/test_straznik.py``): ``brak - usunięte`` przechodzi przy każdym
-Ważnym, a ``brak - test`` przy pustym przeszczepie, także gdy test błędu nie łapie; test innej zmiany tej samej definicji
-z ``Gdzie`` w tym samym PR i test innej zmiany wołającego, który wraca, przechodzą dowód ``pytest``; wyjątek rozjazdu
-w procesie potomnym i w pliku spoza przeszczepu plugin pomija; dowód nie ocenia, czy test sprawdza zachowanie, a nie
-tekst, a test niestabilny może przejść jednym padnięciem; to ocenia recenzent. Gałęzi tylko dla macOS nie sprawdza
+Ważnym, a ``brak - test`` przy pustym przeszczepie, także gdy test błędu nie łapie i gdy ``Gdzie`` leży poza
+definicjami; test innej zmiany tej samej definicji z ``Gdzie`` w tym samym PR (także pliku innego formatu, który jest
+jedną definicją) i test innej zmiany wołającego, który wraca (wołający to każda definicja z tą nazwą, także atrybutu
+cudzego obiektu, np. ``re.match`` przy ``Tablica.match``), przechodzą dowód ``pytest``; wyjątek w procesie potomnym
+porównanie pomija; dowód nie ocenia, czy test sprawdza zachowanie, a nie tekst, a test niestabilny może przejść jednym
+padnięciem; to ocenia recenzent. W drugą stronę dowód odmawia strażnika, który na drzewie FAIL nie dochodzi do kodu
+z ``Gdzie`` (pada wcześniej, np. na nazwie dodanej przez poprawkę), choć na HEAD łapie błąd, bo taki sam przebieg ma test,
+który pada na kontrakcie zmienionym przez poprawkę (próbki ``W2-prawdziwy-…`` i ``W2-kontrakt-…``); odmawia też, gdy kod
+z FAIL na drzewie HEAD zgłasza wyjątek złapany niżej, którego na FAIL nie zgłaszał. Gałęzi tylko dla macOS nie sprawdza
 żaden krok Required CI, więc jej błędu ``mypy`` nie dowodzi na żadnej maszynie, a test, który przechodzi tylko na
 Windows, nie przechodzi na drzewie bez zmian i dowód ``pytest`` go odmawia. Plik, który po FAIL zmienił też ``main``,
 wraca przy mypy, ruff i na drzewie FAIL dowodu testu z treścią sprzed tej zmiany. Budowa środowiska, mypy i pytest
@@ -369,10 +380,11 @@ def _exempt(root: Path, kind: Kind, head: str, base: str, case: Case, before_tes
         if graft.contents:
             return Outcome(
                 False,
-                f"{label} | ODMOWA | przeszczep z FAIL ma {_listed(graft.units)}: strażnik-test to {Kind.PYTEST.value} tests/<plik>.py::<test> z dowodem narzędzia, "
+                f"{label} | ODMOWA | przeszczep z FAIL ma {'+'.join(graft.units)}: strażnik-test to {Kind.PYTEST.value} tests/<plik>.py::<test> z dowodem narzędzia, "
                 f"a {kind.value} przechodzi tylko przy pustym przeszczepie",
             )
-        return Outcome(True, f"{label} | WYJĄTEK {kind.value} | przeszczep pusty: {_EMPTY} | {REVIEWED[kind]}")
+        empty = f"Gdzie {', '.join(graft.unmatched)} poza definicjami, a reszta: {_EMPTY}" if graft.unmatched else _EMPTY
+        return Outcome(True, f"{label} | WYJĄTEK {kind.value} | przeszczep pusty: {empty} | {REVIEWED[kind]}")
     if kind in REVIEWED:
         return Outcome(True, f"{label} | WYJĄTEK {kind.value} | {REVIEWED[kind]}")
     touched = set(_pr_files(root, head, base, case))
@@ -407,6 +419,19 @@ def _prose(root: Path, case: Case, place: Place) -> bool:
 # ---------------------------------------------------------------- dowód testu (``pytest <węzeł>``)
 
 _EMPTY = "definicje z Gdzie spoza tests/ mają na HEAD treść z FAIL albo Gdzie leży tylko w tests/"
+_RUN = "<bieg>"  # katalog jednego biegu (HOME, TMPDIR) w komunikatach wyjątków, żeby biegi dało się porównać
+
+
+@dataclass(frozen=True)
+class _Failure:
+    """Padnięcie fazy testu: rodzaj wyjątku i miejsce (``straznik_pytest``), po których biegi się porównuje, i komunikat."""
+
+    kind: str
+    place: str
+    message: str
+
+    def __str__(self) -> str:
+        return f"{self.message} ({self.place or 'poza tests/'})"
 
 
 @dataclass(frozen=True)
@@ -416,8 +441,8 @@ class _Tested:
     code: int
     last: str
     phases: tuple[str, ...] = ()  # ``faza:wynik`` każdej fazy każdego testu węzła
-    crashes: tuple[str, ...] = ()
-    drift: frozenset[tuple[str, str]] = field(default_factory=frozenset)
+    failures: Mapping[str, _Failure] = field(default_factory=dict)  # ``<id węzła> <faza>`` → padnięcie
+    raised: frozenset[tuple[str, str]] = field(default_factory=frozenset)  # rodzaj i komunikat wyjątku w plikach przeszczepu
 
     @property
     def passed(self) -> bool:
@@ -427,14 +452,14 @@ class _Tested:
 
     @property
     def failed(self) -> bool:
-        """Węzeł padł: kod 1 (testy padły, a nie zbieranie ani przerwanie) i faza z wynikiem ``failed``."""
+        """Węzeł padł: kod 1 (testy padły, a nie zbieranie ani przerwanie) i faza z zapisanym padnięciem."""
 
-        return self.code == 1 and any(phase.endswith(":failed") for phase in self.phases)
+        return self.code == 1 and bool(self.failures)
 
     def why(self) -> str:
         if self.code == 0 and not self.passed:
             return f"pominięty albo bez testu ({', '.join(sorted(set(self.phases))) or 'żadnej fazy'})"
-        return f"kod {self.code}: {self.crashes[0] if self.crashes else self.last}"
+        return f"kod {self.code}: {next(iter(self.failures.values()), self.last)}"
 
 
 def _tests(root: Path, node: str, environment: Environment, cases: Sequence[Case]) -> list[Outcome]:
@@ -451,6 +476,10 @@ def _tests(root: Path, node: str, environment: Environment, cases: Sequence[Case
 
 
 def _transplanted(root: Path, node: str, environment: Environment, case: Case) -> Outcome:
+    """Węzeł na drzewie FAIL i na przeszczepie: ``WYKRYTA``, gdy na przeszczepie pada, każdy jego test pada na drzewie
+    FAIL tak samo (rodzaj wyjątku i miejsce w ``tests/``), a kod plików przeszczepu nie zgłasza wyjątku, którego na
+    drzewie FAIL nie zgłosił."""
+
     label = f"{case.label} | {case.failed[:8]}"
     tree = environment.tree
     files = _pr_files(root, tree, f"{tree}^1", case)
@@ -458,6 +487,8 @@ def _transplanted(root: Path, node: str, environment: Environment, case: Case) -
         graft = transplant(root, case, tree, files)
     except SyntaxError as error:
         return Outcome(False, f"{label} | ODMOWA | przeszczep: {_unparsed(error)}")
+    if graft.unmatched:
+        return Outcome(False, f"{label} | ODMOWA | {_unmatched(graft)}")
     if not graft.contents:
         return Outcome(False, f"{label} | NIC DO PRZESZCZEPIENIA | {_EMPTY}: dowodu testu nie ma z czego liczyć, strażnik to {Kind.TESTS.value}")
     failed = {path: repo.blob(root, case.failed, path) for path in files if not path.startswith(TESTS_DIR)}
@@ -465,33 +496,43 @@ def _transplanted(root: Path, node: str, environment: Environment, case: Case) -
     watched = sorted(graft.contents)
     on_failed = _pytest(node, environment, failed, watched)
     grafted = _pytest(node, environment, graft.contents, watched)
-    units = _listed(graft.units)
-    drift = sorted(grafted.drift - on_failed.drift)
-    if grafted.failed and on_failed.failed and not drift:
-        return Outcome(True, f"{label} | WYKRYTA | przeszczep z FAIL: {units} | {grafted.why()}")
+    units = "+".join(graft.units)
     if not grafted.failed:
-        why = f"na przeszczepie z FAIL ({units}) węzeł nie pada ({grafted.why()})"
-    elif not on_failed.failed:
-        why = f"na drzewie FAIL (pliki PR spoza tests/ z treścią z FAIL) węzeł nie pada ({on_failed.why()}), więc padnięcie na przeszczepie nie odtwarza FAIL"
-    else:
-        shown = "; ".join(f"{kind}: {message}" for kind, message in drift[:2])
-        why = f"przeszczep ({units}) pada na interfejsie HEAD, a nie na błędzie: {shown} (tego wyjątku nie ma na drzewie FAIL)"
-    return Outcome(False, f"{label} | NIEWYKRYTA | {why}")
+        return Outcome(False, f"{label} | NIEWYKRYTA | na przeszczepie z FAIL ({units}) węzeł nie pada ({grafted.why()})")
+    if not on_failed.failed:
+        why = f"na drzewie FAIL (pliki PR spoza tests/ z treścią z FAIL) węzeł nie pada ({on_failed.why()}), więc padnięcie na przeszczepie ({units}) nie odtwarza FAIL"
+        return Outcome(False, f"{label} | NIEWYKRYTA | {why}")
+    for key, failure in grafted.failures.items():
+        before = on_failed.failures.get(key)
+        if before is None or (before.kind, before.place) != (failure.kind, failure.place):
+            why = (
+                f"{key} pada na przeszczepie ({units}) inaczej niż na drzewie FAIL: {failure} zamiast {before or 'przejścia'}, więc dowód nie wie, "
+                "czy przeszczep pada na błędzie z Gdzie, czy na interfejsie HEAD; strażnik musi na drzewie FAIL dojść do kodu z Gdzie i paść tak samo "
+                "(np. bez nazw, które dodała poprawka)"
+            )
+            return Outcome(False, f"{label} | NIEWYKRYTA | {why}")
+    if new := sorted(grafted.raised - on_failed.raised):
+        shown = "; ".join(f"{kind}: {message}" for kind, message in new[:2])
+        why = f"kod przeszczepu ({units}) zgłasza wyjątek, którego na drzewie FAIL nie zgłosił: {shown}, więc w kontekście HEAD robi co innego niż na FAIL"
+        return Outcome(False, f"{label} | NIEWYKRYTA | {why}")
+    return Outcome(True, f"{label} | WYKRYTA | przeszczep z FAIL: {units} | {grafted.why()}")
 
 
 def _pytest(node: str, environment: Environment, contents: Mapping[str, bytes | None], watched: Sequence[str]) -> _Tested:
     """Bieg węzła ``node`` Pythonem i zmiennymi ``environment`` na jego kopii z plikami ``contents`` (``_placed``), z pustym
-    ``HOME`` i bez bajtkodu; plugin śledzi wyjątki rozjazdu w plikach ``watched``. Pliki, które bieg zapisał w kopii,
-    także ignorowane, wracają do stanu sprzed biegu."""
+    ``HOME`` i ``TMPDIR`` tylko tego biegu i bez bajtkodu; plugin zapisuje wyjątki kodu plików ``watched``. Pliki, które
+    bieg zapisał w kopii, także ignorowane, wracają do stanu sprzed biegu."""
 
     copy = environment.copy
     with tempfile.TemporaryDirectory(prefix="straznik-pytest-") as folder, _placed(copy, contents):
-        home, output = Path(folder) / "dom", Path(folder) / "wynik.json"
+        run = Path(folder)
+        home, temporary, output = run / "dom", run / "tmp", run / "wynik.json"
         home.mkdir()
+        temporary.mkdir()
         # Ścieżka pliku w kodzie Pythona bywa ścieżką kopii albo jej postacią bez dowiązań (``/private`` na macOS).
         spelled = sorted({str(path) for name in watched for path in (copy / name, (copy / name).resolve())})
         command = [str(environment.python), "-B", "-c", _BOOTSTRAP, str(PLUGIN), json.dumps([spelled, str(output)]), *_PYTEST_OPTIONS, node]
-        variables = {**environment.variables, "HOME": str(home), "PYTHONDONTWRITEBYTECODE": "1"}
+        variables = {**environment.variables, "HOME": str(home), "TMPDIR": str(temporary), "PYTHONDONTWRITEBYTECODE": "1"}
         state = _state(copy, ignored=True)
         try:
             done = potomne.run(command, cwd=copy, env=variables, timeout=PYTEST_TIMEOUT_S)
@@ -504,8 +545,24 @@ def _pytest(node: str, environment: Environment, contents: Mapping[str, bytes | 
         if not output.is_file():
             return _Tested(done.returncode, last)
         read = json.loads(output.read_text(encoding="utf-8"))
+        spellings = sorted({str(run), str(run.resolve())}, key=len, reverse=True)
+
+    def masked(text: str) -> str:
+        for spelling in spellings:
+            text = text.replace(spelling, _RUN)
+        return text
+
     phases = tuple(phase for found in read["testy"].values() for phase in found)
-    return _Tested(done.returncode, last, phases, tuple(read["padniecia"]), frozenset((kind, message) for kind, message in read["rozjazd"]))
+    failures = {f"{one['wezel']} {one['faza']}": _Failure(one["wyjatek"], one["miejsce"], masked(one["komunikat"])) for one in read["padniecia"]}
+    return _Tested(done.returncode, last, phases, failures, frozenset((kind, masked(message)) for kind, message in read["wyjatki"]))
+
+
+def _unmatched(graft: Transplant) -> str:
+    places = ", ".join(graft.unmatched)
+    return (
+        f"Gdzie {places} nie leży w definicji (funkcja, metoda, klasa, instrukcja modułu wiążąca nazwę), więc przeszczep nie wie, co przenieść z FAIL: "
+        f"dowodu testu nie ma z czego liczyć, strażnik to {Kind.TESTS.value} albo mechanizm statyczny"
+    )
 
 
 def _unparsed(error: SyntaxError) -> str:
@@ -517,15 +574,18 @@ def _unparsed(error: SyntaxError) -> str:
 Qual = tuple[str, ...]  # nazwa kwalifikowana w module: ``(f,)``, ``(Klasa, metoda)``, ``("=a,b",)`` instrukcji wiążącej nazwy
 _DEFINITIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+_COMPOUND = (ast.If, ast.Try, ast.TryStar, ast.With, ast.AsyncWith, ast.For, ast.AsyncFor, ast.While, ast.Match)
 _GROWTH = 4  # najwięcej rund domykania wołających i nazw przeszczepu
 
 
 @dataclass(frozen=True)
 class Transplant:
-    """Pliki przeszczepu (``None``: plik usunięty) i nazwy jego jednostek dla linii dowodu."""
+    """Pliki przeszczepu (``None``: plik usunięty), nazwy jego jednostek dla linii dowodu i miejsca ``Gdzie`` w plikach
+    Pythona, które nie leżą w żadnej definicji (``plik:od-do``), więc przeszczep ich nie przenosi."""
 
     contents: Mapping[str, bytes | None]
     units: tuple[str, ...]
+    unmatched: tuple[str, ...] = ()
 
 
 def transplant(root: Path, case: Case, tree: str, files: Sequence[str]) -> Transplant:
@@ -537,6 +597,7 @@ def transplant(root: Path, case: Case, tree: str, files: Sequence[str]) -> Trans
     wanted: dict[str, set[Qual]] = {}
     whole: set[str] = set()
     blocks: dict[str, set[str]] = {}
+    unmatched: list[str] = []
     for path, first, last in case.places:
         old = _text(root, case.failed, path)
         if path.startswith(TESTS_DIR) or old is None:
@@ -550,7 +611,7 @@ def transplant(root: Path, case: Case, tree: str, files: Sequence[str]) -> Trans
             continue
         quals = _locate(_parsed(old, path), first, last)
         if None in quals or not quals:
-            whole.add(path)
+            unmatched.append(f"{path}:{first}-{last}")
         wanted.setdefault(path, set()).update(qual for qual in quals if qual is not None)
     code = [path for path in files if path.endswith(".py") and not path.startswith(TESTS_DIR)]
     old_indexes = {path: _index(_parsed(old, path)) for path in dict.fromkeys([*code, *wanted]) if (old := _text(root, case.failed, path)) is not None}
@@ -576,7 +637,7 @@ def transplant(root: Path, case: Case, tree: str, files: Sequence[str]) -> Trans
         if new != now:
             contents[path] = new.encode()
             units += [f"{path}:{one}" for one in made]
-    return Transplant(contents, tuple(units))
+    return Transplant(contents, tuple(units), tuple(unmatched))
 
 
 def _parsed(text: str, path: str) -> ast.Module:
@@ -621,14 +682,26 @@ def _span(node: ast.stmt) -> tuple[int, int]:
 
 
 def _bound(node: ast.stmt) -> list[str]:
-    """Nazwy, które instrukcja modułu wiąże: definicja, import i przypisanie."""
+    """Nazwy, które instrukcja modułu wiąże: definicja, import i przypisanie, a instrukcja złożona (``if``, ``try``,
+    ``with``, ``for``, ``while``, ``match``) każdą nazwę, którą wiążą instrukcje w jej gałęziach, poza ciałem funkcji
+    i klasy; taka instrukcja jest jedną definicją, bo jej gałęzie wiążą te same nazwy na różne sposoby."""
 
     if isinstance(node, _SCOPES):
         return [node.name]
     if isinstance(node, (ast.Import, ast.ImportFrom)):
         return [(alias.asname or alias.name).split(".")[0] for alias in node.names]
+    if isinstance(node, _COMPOUND):
+        return sorted({name for child in _branches(node) for name in _bound(child)})
     targets: list[ast.expr] = list(node.targets) if isinstance(node, ast.Assign) else [node.target] if isinstance(node, (ast.AnnAssign, ast.AugAssign)) else []
     return [one.id for target in targets for one in ast.walk(target) if isinstance(one, ast.Name)]
+
+
+def _branches(node: ast.stmt) -> list[ast.stmt]:
+    """Instrukcje gałęzi instrukcji złożonej: ciało, ``else``, ``finally``, ciała ``except`` i przypadków ``match``."""
+
+    found: list[ast.stmt] = [*getattr(node, "body", []), *getattr(node, "orelse", []), *getattr(node, "finalbody", [])]
+    found += [child for handler in getattr(node, "handlers", []) for child in handler.body]
+    return found + [child for case in getattr(node, "cases", []) for child in case.body]
 
 
 def _used(node: ast.AST) -> set[str]:

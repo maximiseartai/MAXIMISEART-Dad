@@ -24,7 +24,7 @@ liczą to, co Required CI (#2116 r4–r6: system maszyny, lista platform, zależ
   środowiska Required CI wchodzi osobnym PR przed dowodem, który jej potrzebuje;
 - ``pytest_mismatch`` mówi to samo o torze Linux zadania ``PYTEST_JOB``, który powtarza dowód testu (``built``
   z ``tests``): ten sam Python i ta sama instalacja ``CI_INSTALL`` co ``JOB``, zmienne zadania ``PYTEST_VARIABLES``,
-  a przed krokiem pytest na Linuksie tylko kroki ``_PYTEST_STEPS``; tor Windows (Python 3.13, ``requirements.txt``)
+  a na Linuksie do kroku pytest włącznie tylko kroki ``_PYTEST_STEPS``; tor Windows (Python 3.13, ``requirements.txt``)
   dowód pomija, więc test, który przechodzi tylko tam, dowód odmawia na drzewie bez zmian.
 
 Odmowa to ``Refused`` (``ValueError``) z tym, co zrobić. Granica: wydanie poprawkowe Pythona (``CI_PYTHON`` bez
@@ -93,7 +93,8 @@ _MATRIX_PYTHON = "${{ matrix.python }}"
 _PYTEST_ENV = {**PYTEST_VARIABLES, "EXPECTED_PYTHON_VERSION": _MATRIX_PYTHON}
 _WINDOWS = "${{ runner.os == 'Windows' }}"
 _PYTEST_RUN = "python tools/ci/wykonaj_zadanie.py"  # początek polecenia kroku, który uruchamia pytest zadania
-# Kroki zadania ``PYTEST_JOB``, które biegną na Linuksie przed krokiem ``_PYTEST_RUN``; krok z ``if: _WINDOWS`` się nie liczy.
+# Kroki zadania ``PYTEST_JOB``, które biegną na Linuksie do kroku ``_PYTEST_RUN`` włącznie (krok z ``if: _WINDOWS`` się
+# nie liczy), każdy w całości: ``env``, ``shell`` albo inne polecenie kroku pytest zmienia przebieg testów w Required CI.
 _PYTEST_STEPS: list[dict[str, object]] = [
     {"uses": "actions/checkout", "with": {"persist-credentials": False}},
     {"id": "python", "uses": "actions/setup-python", "with": {"python-version": _MATRIX_PYTHON}},
@@ -101,6 +102,7 @@ _PYTEST_STEPS: list[dict[str, object]] = [
     {"if": "${{ runner.os == 'Linux' }}", "run": CI_INSTALL},
     {"if": "${{ matrix.przegladarka }}", "uses": "./.github/actions/chromium"},
     {"uses": "actions/download-artifact", "with": {"name": "plan", "path": ".ci-plan"}},
+    {"id": "units", "run": f"{_PYTEST_RUN} --plan .ci-plan/plan.json --zadanie ${{{{ matrix.id }}}}"},
 ]
 _PYTEST_HIDDEN_KEYS = ("container", "services", "defaults")
 # Zmienne wołającego, których uv i narzędzia dowodu nie dostają: sterują Pythonem, mypy, ruff, pytest, pip i uv,
@@ -253,9 +255,9 @@ def mismatch(tree: Path) -> list[str]:
 
 def pytest_mismatch(tree: Path) -> list[str]:
     """Czym tor Linux zadania ``PYTEST_JOB`` z ``WORKFLOW`` w drzewie ``tree`` różni się od toru, który powtarza dowód
-    testu: zmienne zadania inne niż ``_PYTEST_ENV``, klucz zadania z ``_PYTEST_HIDDEN_KEYS`` albo kroki przed krokiem
-    ``_PYTEST_RUN``, które biegną na Linuksie, inne niż ``_PYTEST_STEPS`` (cała lista na równość, bez ``name`` i wersji
-    akcji). ``env`` i ``defaults`` workflow zgłasza ``mismatch``."""
+    testu: zmienne zadania inne niż ``_PYTEST_ENV``, klucz zadania z ``_PYTEST_HIDDEN_KEYS`` albo kroki do kroku
+    ``_PYTEST_RUN`` włącznie, które biegną na Linuksie, inne niż ``_PYTEST_STEPS`` (cała lista na równość, bez ``name``
+    i wersji akcji). ``env`` i ``defaults`` workflow zgłasza ``mismatch``."""
 
     try:
         job = yaml.safe_load((tree / WORKFLOW).read_text(encoding="utf-8"))["jobs"][PYTEST_JOB]
@@ -266,10 +268,10 @@ def pytest_mismatch(tree: Path) -> list[str]:
     problems = [f"{key} w zadaniu {PYTEST_JOB}" for key in _PYTEST_HIDDEN_KEYS if key in job]
     if job.get("env") != _PYTEST_ENV:
         problems.append(f"env zadania {PYTEST_JOB} to {job.get('env')!r} zamiast {_PYTEST_ENV!r}")
-    linux = [step for step in given[:end] if step.get("if") != _WINDOWS]
+    linux = [step for step in given[: end + 1] if step.get("if") != _WINDOWS]
     for number, (want, have) in enumerate(itertools.zip_longest(_PYTEST_STEPS, linux), start=1):
         if want != have:
-            problems.append(f"krok {number} toru Linux zadania {PYTEST_JOB} przed pytest to {have!r} zamiast {want!r}")
+            problems.append(f"krok {number} toru Linux zadania {PYTEST_JOB} do pytest to {have!r} zamiast {want!r}")
             break
     return problems
 

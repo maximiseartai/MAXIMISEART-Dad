@@ -510,7 +510,7 @@ def test_dowod_straznika_pytest_liczy_wezel_na_przeszczepie_z_fail_w_srodowisku_
 
     assert done.returncode == 0, done.stdout + done.stderr
     assert done.stdout.splitlines() == [
-        f"#5 W1 r1 | {failed[:8]} | WYKRYTA | przeszczep z FAIL: kod/inne.py:wazne | kod 1: AttributeError: 'Obiekt' object has no attribute 'zakazane'",
+        f"#5 W1 r1 | {failed[:8]} | WYKRYTA | przeszczep z FAIL: kod/inne.py:wazne | kod 1: AttributeError: 'Obiekt' object has no attribute 'zakazane' (tests/test_inne.py:13)",
         "DOWÓD OK | pytest tests/test_inne.py::test_wazne_wola_tylko_dozwolone | wykryte 1/1",
     ], done.stdout
 

@@ -248,8 +248,22 @@ def test_dowod_testu_powtarza_tor_linux_zadania_pytest_z_ci_main() -> None:
         (_insert("Run the planned units", {"run": 'echo "PYTHONHASHSEED=1" >> "$GITHUB_ENV"'}), "krok 7 toru Linux"),
         (_step("Install test dependencies", {"if": "${{ runner.os != 'Linux' }}"}), "krok 4 toru Linux"),
         (_drop("Run the planned units"), "brak kroku python tools/ci/wykonaj_zadanie.py"),
+        (_step("Run the planned units", {"env": {"PYTEST_ADDOPTS": "--deselect tests/test_g.py::test_g"}}), "krok 7 toru Linux"),
+        (_step("Run the planned units", {"run": "python tools/ci/wykonaj_zadanie.py --plan .ci-plan/plan.json --zadanie ${{ matrix.id }} --pomin tests/test_g.py"}), "krok 7 toru Linux"),
+        (_step("Run the planned units", {"shell": "bash -e {0}"}), "krok 7 toru Linux"),
     ],
-    ids=["zmienna-zadania", "kontener", "domyslne-zadania", "instalacja-z-innym-dodatkiem", "krok-przed-pytest", "instalacja-windows-na-linuksie", "bez-kroku-pytest"],
+    ids=[
+        "zmienna-zadania",
+        "kontener",
+        "domyslne-zadania",
+        "instalacja-z-innym-dodatkiem",
+        "krok-przed-pytest",
+        "instalacja-windows-na-linuksie",
+        "bez-kroku-pytest",
+        "zmienna-kroku-pytest",
+        "inne-polecenie-kroku-pytest",
+        "powloka-kroku-pytest",
+    ],
 )
 def test_zmiana_toru_linux_zadania_pytest_to_roznica_dowodu_testu(tmp_path: Path, change: Callable[[Job, Job], None], fragment: str) -> None:
     """Zmienna, instalacja albo krok toru Linux zadania pytest, których dowód testu nie powtarza, to różnica, więc dowód
@@ -502,7 +516,7 @@ def test_dowod_testu_odmawia_drzewa_z_innym_torem_linux_a_dowod_mypy_nie(tmp_pat
     moved = {srodowisko_ci.WORKFLOW: _ci(_step("Install test dependencies (Linux)", {"run": "uv pip install --system -e '.[dev,workflowy]'"}), srodowisko_ci.PYTEST_JOB)}
     root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/uzycie.py": "X = 2\n"}, moved)
 
-    with pytest.raises(srodowisko_ci.Refused, match=re.escape("krok 4 toru Linux zadania pytest przed pytest to")), srodowisko_ci.built(root, head, target, tests=True):
+    with pytest.raises(srodowisko_ci.Refused, match=re.escape("krok 4 toru Linux zadania pytest do pytest to")), srodowisko_ci.built(root, head, target, tests=True):
         pass
     with srodowisko_ci.built(root, head, target) as environment:
         assert environment.python.is_file()
