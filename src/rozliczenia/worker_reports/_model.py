@@ -487,8 +487,8 @@ class Offer:
     (``activities``) do zlecenia, które po Wpisie stoi w dniu ``order_day`` u ``worker``; przy zleceniu innego
     Wykonawcy albo z innego dnia Wpis je przenosi jak Raport wykonawcy z tym dniem w temacie.
 
-    Ofertę składa tylko rdzeń, każdy przypadek w jednym miejscu: przy znaku z zamiarem ``_matching.Board.match`` (dzień,
-    w którym tata widzi problem), przy raporcie z błędem tematu ``_reading._offers`` (dzień zlecenia po Wpisie)."""
+    Ofertę składa tylko rdzeń, każdy przypadek w jednym miejscu: przy znaku z zamiarem ``_matching._offer`` (dzień, w
+    którym tata widzi problem), przy raporcie z błędem tematu ``_reading._offers`` (dzień zlecenia po Wpisie)."""
 
     mail: MailId
     worker: Login
