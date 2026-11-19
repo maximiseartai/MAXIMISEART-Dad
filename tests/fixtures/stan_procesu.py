@@ -31,12 +31,12 @@ i nie znika przed sprawdzeniem. Zasób na całe życie procesu workera (``_ZASOB
 testem, więc jest w stanie sprzed każdego testu.
 
 Po błędzie plugin przywraca każdą wartość do oczekiwanej, więc błąd ma sprawca, a nie każdy następny test workera.
-Katalog roboczy, który box boat przeniósł w trakcie biegu (``box_boat.przeniesiony``), nie jest stanem testu: plugin
-zgłasza go komunikatem ``box_boat.KOMUNIKAT``, a raport fazy, której jedyną porażką jest ten komunikat, dostaje
-własność ``box_boat.WLASNOSC``. Sesja, w której każdy raport, który padł (testu albo kolekcji), ma tę własność, kończy się kodem
-``box_boat.KOD_WYJSCIA`` zamiast 1, a ``tools/szybko.py`` kończy się wtedy wynikiem ``SZYBKO INFRA``. Plugin ustawia ten
-kod przed innymi ``pytest_sessionfinish``, więc porażka sesji spoza raportów (``DRZEWO REPO`` w ``tests/conftest.py``)
-nadpisuje go z powrotem na 1.
+Katalog roboczy, który box boat przeniósł w trakcie biegu, nie jest stanem testu: co box wyjaśnia, raport której fazy
+dostaje jego własność i jakim kodem kończy się sesja, rozstrzyga ``tools/lib/box_boat.py``, a plugin wraca do
+oczekiwanego katalogu i zgłasza taką fazę komunikatem ``box_boat.KOMUNIKAT``. Inna różnica stanu w tym samym
+sprawdzeniu dalej jest porażką testu, z tym komunikatem dopisanym. Plugin ustawia kod sesji przed innymi
+``pytest_sessionfinish``, więc porażka sesji spoza raportów (``DRZEWO REPO`` w ``tests/conftest.py``) nadpisuje go z
+powrotem na 1.
 Porównanie kosztuje listę deskryptorów i potomków, poniżej 0,5 ms na test; ``gc.collect()``, czekanie na wątki i
 potomków oraz opis zasobów biegną tylko wtedy, gdy stan się różni.
 
@@ -230,14 +230,11 @@ _porazki: list[bool] = []
 
 @pytest.hookimpl(wrapper=True)
 def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Generator[None, pytest.TestReport, pytest.TestReport]:
-    """Raport, którego jedyną porażką jest katalog repo przeniesiony przez box, dostaje własność ``box_boat.WLASNOSC``:
-    wyjątek fazy to dokładnie ``_KatalogPrzeniesiony`` bez wyjątku pod nim (``__cause__``, ``__context__``). Błąd
-    teardownu, który plugin dołącza jako przyczynę, i wyjątek innego haka zostawiają raport bez niej. Własność idzie z
-    raportem do kontrolera sesji, także od workera xdist."""
+    """Raport fazy, której jedyną porażką jest katalog repo przeniesiony przez box (``box_boat.jedyna_przyczyna``), dostaje
+    własność ``box_boat.WLASNOSC``; idzie ona z raportem do kontrolera sesji, także od workera xdist."""
 
     report = yield
-    error = call.excinfo.value if call.excinfo is not None else None
-    if type(error) is _KatalogPrzeniesiony and error.__cause__ is None and error.__context__ is None:
+    if box_boat.jedyna_przyczyna(call.excinfo.value if call.excinfo is not None else None):
         report.user_properties.append((box_boat.WLASNOSC, box_boat.KATALOG_ZWOLNIONY))
     return report
 
@@ -254,12 +251,11 @@ def pytest_collectreport(report: pytest.CollectReport) -> None:
 
 @pytest.hookimpl(wrapper=True, tryfirst=True)
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> Generator[None, object, object]:
-    """Sesja, której każda porażka to katalog repo przeniesiony przez box, kończy się ``box_boat.KOD_WYJSCIA``. Kod stoi
-    przed innymi implementacjami haka, więc ta, która sama wywraca sesję, ustawia go z powrotem na 1."""
+    """Kod sesji z ``box_boat.kod_sesji`` w kontrolerze sesji. Kod stoi przed innymi implementacjami haka, więc ta, która
+    sama wywraca sesję (``DRZEWO REPO``), ustawia go z powrotem na 1."""
 
-    controller = not hasattr(session.config, "workerinput")
-    if controller and session.exitstatus == pytest.ExitCode.TESTS_FAILED and _porazki and all(_porazki):
-        session.exitstatus = box_boat.KOD_WYJSCIA
+    if not hasattr(session.config, "workerinput"):
+        session.exitstatus = box_boat.kod_sesji(int(session.exitstatus), _porazki)
     return (yield)
 
 
@@ -362,10 +358,6 @@ def pytest_runtest_teardown(item: pytest.Item, nextitem: pytest.Item | None) -> 
     return result
 
 
-class _KatalogPrzeniesiony(AssertionError):
-    """Katalog roboczy procesu przeniesiony przez box boat (``box_boat.przeniesiony``), a nie zmieniony przez test."""
-
-
 def _check_after(item: pytest.Item) -> None:
     if isinstance(item, pytest.Function):
         # Ostatnia referencja wartości fixtur; pytest puszcza ją dopiero po hakach teardown (runner.runtestprotocol).
@@ -393,14 +385,18 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
     if not zostawione:
         return
     teraz_wartosci = dict(teraz.wartosci)
-    if _KATALOG in zostawione.klucze and box_boat.przeniesiony(teraz_wartosci.get(_KATALOG, _USUNIETY)):
-        _przywroc(zostawione, oczekiwane)
-        raise _KatalogPrzeniesiony(
-            f"{box_boat.KOMUNIKAT} (katalog roboczy {oczekiwane.wartosci.get(_KATALOG)} → {teraz_wartosci[_KATALOG]})"
-        )
+    box = box_boat.wyjasnione(zostawione.klucze, _KATALOG, teraz_wartosci.get(_KATALOG, _USUNIETY))
+    przeniesienie = (
+        f"{box_boat.KOMUNIKAT} (katalog roboczy {oczekiwane.wartosci.get(_KATALOG)} → {teraz_wartosci.get(_KATALOG)})"
+    )
+    for klucz in box:
+        _ustaw(klucz, oczekiwane.wartosci.get(klucz))
+    zostawione.klucze -= box
     nazwy = {zasob: _opis_zasobu(zasob) for zasob in zostawione.zasoby}  # przed gc, który zamyka deskryptor
     zebrane = _po_czekaniu_i_gc(zostawione)
     if not zostawione:
+        if box:
+            raise box_boat.KatalogPrzeniesiony(przeniesienie)
         return
     opisy = [
         nazwy[zasob] + _stan_zasobu(zasob, zebrane) + _czyj(oczekiwane.wlasciciele.get(zasob), kiedy)
@@ -418,6 +414,7 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
         + ". Zamknij plik i gniazdo przez with albo try/finally (skoroszyt openpyxl read_only=True trzyma plik do "
         "workbook.close()), zatrzymaj i dołącz wątek, poczekaj na proces potomny, a katalog roboczy i środowisko "
         "zmieniaj przez monkeypatch (tests/fixtures/stan_procesu.py)."
+        + (f" Poza tym {przeniesienie}." if box else "")
     )
 
 

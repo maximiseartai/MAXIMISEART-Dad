@@ -770,6 +770,16 @@ def po_tescie():
     yield
     raise RuntimeError("prawdziwy błąd teardownu fixtury")
 """
+_ZOSTAWIONA_ZMIENNA: Final = """
+
+
+@pytest.fixture
+def po_tescie():
+    import os
+
+    os.environ["ZMIENNA_ZOSTAWIONA"] = "1"
+    yield
+"""
 # Porażka sesji spoza raportów testów, jak DRZEWO REPO w tests/conftest.py.
 _PORAZKA_SESJI: Final = """
 
@@ -781,17 +791,24 @@ def pytest_sessionfinish(session):
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows nie przenosi katalogu roboczego procesu")
 @pytest.mark.parametrize(
-    ("dodatkowe", "sesji", "kod"),
+    ("dodatkowe", "sesji", "kod", "zostawione"),
     [
-        ({}, "", box_boat.KOD_WYJSCIA),
-        ({"test_zwykly.py": "def test_zwykly():\n    assert len('ab') == 3\n"}, "", 1),
-        ({}, _PORAZKA_SESJI, 1),
-        ({}, _PADLY_TEARDOWN, 1),
+        ({}, "", box_boat.KOD_WYJSCIA, ""),
+        ({"test_zwykly.py": "def test_zwykly():\n    assert len('ab') == 3\n"}, "", 1, ""),
+        ({}, _PORAZKA_SESJI, 1, ""),
+        ({}, _PADLY_TEARDOWN, 1, ""),
+        ({}, _ZOSTAWIONA_ZMIENNA, 1, "zmienna środowiska ZMIENNA_ZOSTAWIONA zmieniona"),
     ],
-    ids=["tylko-box", "box-i-zwykla-porazka", "box-i-porazka-sesji", "box-i-padly-teardown"],
+    ids=[
+        "tylko-box",
+        "box-i-zwykla-porazka",
+        "box-i-porazka-sesji",
+        "box-i-padly-teardown",
+        "box-i-zostawiona-zmienna",
+    ],
 )
 def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_sesja_tylko_z_nim_konczy_sie_kodem_boxa(
-    tmp_path: Path, dodatkowe: dict[str, str], sesji: str, kod: int
+    tmp_path: Path, dodatkowe: dict[str, str], sesji: str, kod: int, zostawione: str
 ) -> None:
     zwolniony = tmp_path.resolve() / "retired"
     conftest = _CONFTEST + f"\nimport box_boat\n\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n" + _PO_TESCIE + sesji
@@ -803,10 +820,30 @@ def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_sesja_tylko_z_n
     expected = f"{box_boat.KOMUNIKAT} (katalog roboczy {tmp_path.resolve() / 'repo'} → {zwolniony / 'home' / 'repo'})"
     assert (expected in moved, _zostawione(moved), errors["test_sasiad_biegnie_w_katalogu_repo"], kody) == (
         True,
-        "",
+        zostawione,
         "",
         [kod],
     ), errors
+
+
+def test_kod_boxa_ma_tylko_sesja_z_porazka_testow_ktorej_kazda_porazka_to_box() -> None:
+    przypadki = {
+        "tylko box": (1, [True]),
+        "box i inna porażka": (1, [True, False]),
+        "padła bez raportu (DRZEWO REPO)": (1, []),
+        "przerwana innym kodem": (3, [True]),
+        "przeszła": (0, []),
+    }
+
+    kody = {nazwa: box_boat.kod_sesji(kod, porazki) for nazwa, (kod, porazki) in przypadki.items()}
+
+    assert kody == {
+        "tylko box": box_boat.KOD_WYJSCIA,
+        "box i inna porażka": 1,
+        "padła bez raportu (DRZEWO REPO)": 1,
+        "przerwana innym kodem": 3,
+        "przeszła": 0,
+    }
 
 
 _LUKI_CONFTEST: Final = _CONFTEST + """
