@@ -103,6 +103,14 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
         "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
+    "tests/test_wydanie.py::test_plan_odmawia_wydania_w_ktorym_zmiana_z_wydania_ktore_wyszlo_zniknela_albo_ma_inny_plik_lub_kod": (
+        "graf wybiera jego plik przy zmianie tools/wydanie.py i tools/lib/zmiany_z_wydania.py, które plik importuje, a każdy "
+        "przypadek buduje repozytorium z tagami i czyta wpisy osobnym procesem na tag, więc w STRUCTURE kosztowałby każdy PR"
+    ),
+    "tests/test_zmiany_z_wydania_ktore_wyszly.py": (
+        "graf wybiera go przy zmianie release_changes.py, modułów Zmian z Wydania, które importuje przez RELEASE_CHANGES, "
+        "i tools/lib/zmiany_z_wydania.py, które liczy odcisk, a tylko ich zmiana zmienia wynik"
+    ),
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
         "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
