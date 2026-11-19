@@ -6,7 +6,7 @@ You are the owner and long-term maintainer of this codebase, and its design is u
 
 - Worktree: zanim uruchomisz Pythona, utwórz własne `.venv` przez `python3 tools/setup_worktree.py` (Windows: `py -3`); `.venv` głównego checkoutu sprawdza kod `main`. Python z `.venv` importuje w próbie każdy moduł narzędzi i `tests` tak jak test, bez `sys.path` i `PYTHONPATH`.
 - Issue N: przed startem uruchom `tools/praca_w_toku.py --issue N`. Gdy issue dotyczy gałęzi otwartego PR albo ktoś ma już na nim commity, poprawka należy do właściciela tej gałęzi: powiedz o tym użytkownikowi i zostaw ją jemu.
-- Po każdej zmianie uruchom `.venv/bin/python tools/szybko.py` (Windows: `py -3 tools/szybko.py`), na gałęzi zbudowanej na innej z `--baza <gałąź rodzica>`. Co sprawdza, a co zostawia CI, mówi jego `--help`.
+- Przed każdym pushem uruchom `.venv/bin/python tools/szybko.py` (Windows: `py -3 tools/szybko.py`), na gałęzi zbudowanej na innej z `--baza <gałąź rodzica>`. Co sprawdza, a co zostawia CI, mówi jego `--help`.
 - Ciężkie polecenie (`szybko.py`, `mutacje.py --plik`, pełny pytest i wszystko, co obciąży Maca dłużej niż minutę): zanim je uruchomisz, przeczytaj skill [`boat`](.agents/skills/boat/SKILL.md), bo mówi, czy biegnie na Macu, czy na boxie boat.
 - Kod i testy: zanim napiszesz albo zrecenzujesz kod (także w `tools/`, `frontend/` i skryptach skilli) albo test, przeczytaj [`CODING_STANDARDS.md`](CODING_STANDARDS.md).
 - Model domeny i reguły procesu: przeczytaj [`GLOSSARY.md`](GLOSSARY.md) oraz właściwe ADR-y w [`docs/adr/`](docs/adr/).
@@ -26,7 +26,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/budzet_ci.py`: Strażnik budżetu bramki PR: p90 push → Required z 7 dni wobec 5 min i jedno issue z wąskim gardłem; użyj po zmianie CI (--bez-zapisu).
 - `tools/ci_lokalnie.py`: Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 - `tools/cien_podstaw.py`: Rozstrzyga D1, NF czy N0, z cienia podstaw w plan.json runów PR i audytu kandydatów (--od, --do, --audyt); użyj po 14 dniach cienia.
-- `tools/mutacje.py`: Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
+- `tools/mutacje.py`: Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz przed pushem, ze wszystkimi mutacjami zmiany w jednym --plik.
 - `tools/mutacje_nocne.py`: Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.
 - `tools/mutacje_zmiany.py`: Psuje linie zmienione od bazy jak nocne mutacje main; użyj, gdy część nocnych mutacji padła i odtwarzasz ją na commicie runu (--odtwarzam).
 - `tools/na_scalonych_pr.py`: Uruchamia polecenie na commitach scalenia wskazanych PR-ów; użyj, by pokazać, że nowe sprawdzenie łapie błąd bez fałszywego alarmu.
@@ -49,7 +49,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/skille_dla_zmiany.py`: Wypisuje skille verify-*, które obowiązują dla zmiany od bazy, każdy z powodem; użyj przed pushem i przed oceną gotowości PR.
 - `tools/sprzatanie.py`: Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; --usun biegnie codziennie z launchd (--codziennie).
 - `tools/syntetyczne_wzorce.py`: Zapisuje syntetyczne Wzorce w kształcie Wzorców taty; użyj, gdy benchmark, weryfikacja w Excelu albo CI nie ma prawdziwych Wzorców.
-- `tools/szybko.py`: Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom po każdej zmianie przed pushem.
+- `tools/szybko.py`: Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom przed każdym pushem.
 - `tools/uruchom_proces.py`: Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix, report_entering) z wynikiem JSON; użyj w E2E, benchmarku i skillach.
 - `tools/wydanie.py`: Narzędzie Wydań (plan, potem wydaj): nowa wersja z tagiem v* i GitHub Release (ADR 0014); uruchamiaj tylko z workflow skilla wydanie.
 - `tools/wyrocznia_pracy_w_tle.py`: Uruchamia claude -p z pracą w tle, podagentem i t3_background_wait, by sprawdzić hooki praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
