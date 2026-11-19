@@ -164,6 +164,9 @@ class _Source:
         end = self.text.find("\n", self.read_to)
         return self.read((len(self.text) if end < 0 else end + 1) - self.read_to)
 
+    def close(self) -> None:
+        self.read_to = len(self.text)
+
     def descriptor(self, token: str) -> bool:
         operator = self.read_to - 1
         start = operator - len(token)
