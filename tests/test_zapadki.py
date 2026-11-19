@@ -52,7 +52,7 @@ _NAVIGATION_HELPER = (
     " zgłasza błędu przy statusie 4xx i 5xx"
 )
 
-# Pliki, którym wolno parsować Pythona ręcznie: stan z 12.11.2026 (23 pliki); wpis maleje z każdym usuniętym plikiem.
+# Pliki, którym wolno parsować Pythona ręcznie.
 # Jeden napis z odstępami, bo graf wyboru testów (``tools/lib/wplyw_zmiany.py``) bierze ścieżkę z napisu testu za jego
 # zależność, a zapadki i tak biegną przy każdej zmianie (``ZAPADKI`` w ``tools/szybko.py``).
 PARSERS = frozenset(

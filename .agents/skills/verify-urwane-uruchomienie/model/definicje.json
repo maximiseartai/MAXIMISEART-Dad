@@ -21,13 +21,13 @@
     "close": "c1bbc66f5758bbfc"
   },
   "src/rozliczenia/centrum/run_comments.py": {
-    "RunComments.run_started": "b346c9d4e6608164",
+    "RunComments.run_started": "966bd5d99cc81f66",
     "RunComments._progress": "5c4dcf5d41886d17",
-    "RunComments.run_ended": "7b767c1ea7a94b44",
+    "RunComments.run_ended": "ec7aabf33d573759",
     "RunComments._own": "f131bbcd41d18531",
-    "RunComments._step": "499fe01a51a07cc6",
+    "RunComments._step": "ef0c9d39a1209b24",
     "RunComments._keep": "51be69223c22623f",
-    "RunComments.close_left_behind": "e2478851c6d9d2c8",
+    "RunComments.close_left_behind": "73f77bbd6e7d33da",
     "RunComments.send_left_behind": "c525813f4ae4f058",
     "RecordMaker.interrupted": "2eb1ad184ada25f0"
   },

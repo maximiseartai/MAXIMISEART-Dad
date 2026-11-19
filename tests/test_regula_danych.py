@@ -240,8 +240,8 @@ def test_straznik_z_pamiecia_spoza_pracy_centrum_nie_przechodzi_mypy_a_znane_luk
 
 _KOMORKA: Final = "Syntetyczna Lipowa 5"
 
-# Podklasa pamięci i podmiana jej metody w biegu (przegląd #1688, runda 2, W1): uwagi techniczne i maskowanie daje tylko
-# ForbiddenValues.guard. Moduł każdej próbki robi przy wczytaniu podklasę albo podmienia metodę pamięci.
+# Podklasa pamięci i podmiana jej metody w biegu (przegląd #1688, runda 2, W1): uwagi techniczne i maskowanie dają tylko
+# client_data.guarded i guarded_number. Moduł każdej próbki robi przy wczytaniu podklasę albo podmienia metodę pamięci.
 _PAMIEC_W_BIEGU: Final = f"""import types
 from typing import Any
 

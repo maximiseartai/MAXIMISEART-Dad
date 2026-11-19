@@ -690,7 +690,7 @@ class CentrumSettings:
     def _with_used_keys(
         self, file: SettingsFile[T], edit: Callable[[T, frozenset[str]], T | FieldProblem]
     ) -> Saved | Refused | NotSaved:
-        """Zapis taty, w którym ``edit`` dostaje też klucze pliku z wierszy Historii (``used_keys``), przeczytane pod tą
+        """Zapis taty, w którym ``edit`` dostaje też klucze pliku z wierszy Historii (``_used_keys``), przeczytane pod tą
         samą blokadą co zapis: nowy wpis dostaje wtedy klucz, którego nie zna żaden wiersz, więc „Cofnij” starszego
         wiersza go nie rusza. Historia, której nie da się przeczytać, to ``NotSaved``."""
 
