@@ -577,6 +577,25 @@ PYTHON_WAITS = [
     pytest.param(_heredoc(FUNCTION_BEHIND_FUNCTION), hook.CI_LOOP, id="funkcja-skryptu-za-funkcja-skryptu"),
     pytest.param(_heredoc(FUNCTION_WITH_PARAMETER_BEHIND_FUNCTION), hook.CI_LOOP, id="funkcja-z-parametrem-za-funkcja-skryptu"),
     pytest.param(_heredoc(UNSTEADY_KEYWORDS), hook.CI_LOOP, id="niestale-env-i-cwd-nie-zmieniaja-zapytania"),
+    pytest.param(
+        _heredoc('import subprocess, time\nwhile subprocess.run(args=["gh", "pr", "checks", "1"]).returncode == 8:\n    time.sleep(30)'),
+        hook.CI_LOOP,
+        id="polecenie-w-slowie-args",
+    ),
+    pytest.param(
+        _heredoc(
+            'import subprocess, time\ndef status(again=True):\n    return status(False) if again else subprocess.run(["gh", "pr", "checks", "1"]).returncode\n'
+            "while status() == 8:\n    time.sleep(30)"
+        ),
+        hook.CI_LOOP,
+        id="funkcja-skryptu-wolajaca-sama-siebie",
+    ),
+    pytest.param(
+        'f=/private/tmp/c/s/tasks/b1.output; python3 -c "\nimport os,time,sys\n'
+        'while len(sys.argv) > 1 and os.path.getsize(sys.argv[1])==0: time.sleep(5)\n" $f',
+        hook.TASK_OUTPUT_LOOP,
+        id="c-plik-zadania-w-argumencie-z-len-argv",
+    ),
     pytest.param(_heredoc(INNER_FOR_OVER_TUPLE), hook.CI_LOOP, id="kilka-pr-w-petli-wewnetrznej"),
     pytest.param(_heredoc(CONSTANT_FROM_TUPLE), hook.CI_LOOP, id="stala-z-elementu-krotki"),
     pytest.param(_heredoc(CONSTANT_FROM_FSTRING), hook.CI_LOOP, id="stala-z-f-stringu"),
@@ -886,6 +905,14 @@ PYTHON_PASSING = [
             program="python3 - 44439947891 44439947892",
         ),
         id="kolejka-w-sys-argv-skracana-del",
+    ),
+    pytest.param(
+        _heredoc(
+            "import subprocess, sys, time\nwhile len(sys.argv) > 1:\n    rid = sys.argv[1]\n"
+            '    subprocess.run(["gh", "run", "view", rid, "--log-failed"])\n    sys.argv.pop(1)\n    time.sleep(1)',
+            program="python3 - 44439947891 44439947892",
+        ),
+        id="kolejka-w-sys-argv-przez-nazwe",
     ),
     pytest.param(
         _heredoc(
@@ -1225,6 +1252,14 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
             + ", ".join(["S"] * 20000)
             + "])\n    time.sleep(1)"
         ),
+        _heredoc(CHECKS_IN_CONDITION)
+        + "\n"
+        + _heredoc(
+            "import subprocess, sys, time\nfor pr in [1, 2, 3]:\n    subprocess.run(["
+            + ", ".join(["sys.argv[1]"] * 10000)
+            + "])\n    time.sleep(1)",
+            program="python3 - " + "a" * 10000,
+        ),
     ],
     ids=[
         "ogon-przekierowan",
@@ -1245,6 +1280,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "przypisanie-lancuchowe-za-czekaniem",
         "krotki-podwajane-za-czekaniem",
         "dlugi-napis-wiele-razy-za-czekaniem",
+        "dlugi-argument-skryptu-wiele-razy-za-czekaniem",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
