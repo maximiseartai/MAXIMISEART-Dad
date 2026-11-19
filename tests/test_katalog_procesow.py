@@ -496,6 +496,41 @@ def test_wejscie_procesu_nie_czyta_nie_listuje_i_nie_zapisuje_plikow_ani_foldero
     assert (dostep.order, dostep.listed, sorted(tmp_path.rglob("*"))) == ([], set(), przed)
 
 
+ZNANE_LUKI_WEJSCIA: Final = {
+    "metadane pliku bez zdarzenia audytu: os.stat": (
+        "import os\nfrom pathlib import Path\n\n\ndef wejscie(sciezka: Path) -> object:\n    return os.stat(sciezka).st_size\n"
+    ),
+    "metadane pliku bez zdarzenia audytu: Path.stat": (
+        "from pathlib import Path\n\n\ndef wejscie(sciezka: Path) -> object:\n    return sciezka.stat().st_size\n"
+    ),
+    "metadane pliku bez zdarzenia audytu: os.path.getsize": (
+        "import os\nfrom pathlib import Path\n\n\ndef wejscie(sciezka: Path) -> object:\n    return os.path.getsize(sciezka)\n"
+    ),
+}
+
+
+def test_znane_luki_wejscia_procesu_przechodza_przez_hak_audytu_bez_odczytu_listowania_i_zapisu(tmp_path: Path) -> None:
+    probki = tmp_path / "probki"
+    probki.mkdir()
+    wejscia = {opis: modul(plik).wejscie for opis, plik in zapisz(ZNANE_LUKI_WEJSCIA, probki).items()}
+    swiat = tmp_path / "taty"
+    swiat.mkdir()
+    plik = swiat / "collective_file"
+    _zaloz(plik, folder=False)
+    przed = sorted(swiat.rglob("*"))
+    zgloszenia: dict[str, list[str]] = {}
+    for opis, wejscie in wejscia.items():
+        with reading(swiat) as dostep:
+            wejscie(plik)
+        zgloszenia[opis] = [
+            *(f"hak widzi {'zapis' if zapis else 'odczyt'} {sciezka.name}" for zapis, sciezka in dostep.order),
+            *(f"hak widzi listowanie {folder.name}" for folder in dostep.listed),
+            *(["drzewo plików się zmienia"] if sorted(swiat.rglob("*")) != przed else []),
+        ]
+
+    assert_znane_luki(zgloszenia, "tests/test_katalog_procesow.py (ZNANE_LUKI_WEJSCIA)")
+
+
 def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:
     assert CATALOG.metrics_paths == {
         "preparation": tool_files.PREPARATION_METRICS,
