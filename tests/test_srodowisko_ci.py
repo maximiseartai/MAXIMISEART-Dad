@@ -11,8 +11,10 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import copy as copying
+import ctypes
 from functools import partial
 import json
+import os
 import re
 from pathlib import Path
 import subprocess
@@ -27,9 +29,9 @@ import pytest
 import yaml
 
 from mutacja_recenzenta import Block
+import piaskownica
 import srodowisko_ci
 import straznik
-from tests.fixtures.bez_dostepu import without_creating
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.srodowisko import CI, DEV, PINS, project, wymaga_uv
@@ -641,22 +643,68 @@ def test_slad_biegu_wezla_nie_przechodzi_do_nastepnego_biegu_dowodu(tmp_path: Pa
 
 
 @wymaga_uv
-@pytest.mark.parametrize("refused", [False, True], ids=["tmp-przyjmuje-zapis", "tmp-odmawia-zapisu"])
-def test_srodowisko_dowodu_powstaje_w_tmp_a_gdy_tmp_odmawia_zapisu_w_tmpdir_wolajacego(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refused: bool) -> None:
+def test_srodowisko_dowodu_poza_piaskownica_powstaje_w_tmp(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/uzycie.py": "X = 2\n"})
     caller = tmp_path / "wolajacy"
     caller.mkdir()
     monkeypatch.setenv("TMPDIR", str(caller))
     monkeypatch.setattr(tempfile, "tempdir", None)
-    system = tmp_path / "tmp-bez-zapisu"
-    system.mkdir()
-    if refused:
-        monkeypatch.setattr(srodowisko_ci, "_SYSTEM_TEMP", system)
 
-    with without_creating(system), srodowisko_ci.built(root, head, target) as environment:
+    with srodowisko_ci.built(root, head, target) as environment:
         folders = {environment.copy.parents[1], Path(environment.variables["TMPDIR"]).parents[1]}
 
-    assert folders == {caller if refused else Path("/tmp")}
+    assert folders == {Path("/tmp")}
+
+
+IN_SANDBOX = """\
+import json
+from pathlib import Path
+import sys
+
+import srodowisko_ci
+
+root, head, target = sys.argv[1:]
+with srodowisko_ci.run_folder("sonda-") as folder:
+    chosen = str(folder.parent)
+try:
+    with srodowisko_ci.built(Path(root), head, target):
+        built = "zbudowane"
+except srodowisko_ci.Refused as refused:
+    built = str(refused)
+print(json.dumps({"run_folder": chosen, "built": built}))
+"""
+
+
+def _in_macos_sandbox() -> bool:
+    library = ctypes.CDLL("/usr/lib/system/libsystem_sandbox.dylib")
+    library.sandbox_check.argtypes = (ctypes.c_int, ctypes.c_char_p, ctypes.c_int)
+    return bool(library.sandbox_check(os.getpid(), None, 0))
+
+
+def _sandboxed(writable: Path) -> tuple[str, ...]:
+    return () if sys.platform == "darwin" and _in_macos_sandbox() else piaskownica.prefix([writable])
+
+
+@wymaga_uv
+def test_srodowisko_dowodu_w_piaskownicy_ktora_odmawia_zapisu_do_tmp_powstaje_w_tmpdir_wolajacego(tmp_path: Path) -> None:
+    moved = {srodowisko_ci.WORKFLOW: _ci(_step("setup-python", {"with": {"python-version": "3.15"}}))}
+    root, _, _, head, target = _repository(tmp_path, {**project(tools=MYPY.format("")), **TYPED}, {"kod/uzycie.py": "X = 1\n"}, {"kod/uzycie.py": "X = 2\n"}, moved)
+    caller = tmp_path / "wolajacy"
+    caller.mkdir()
+    imports = os.pathsep.join(str(ROOT / folder) for folder in ("tools", "tools/lib", "tools/ci"))
+
+    done = subprocess.run(
+        [*_sandboxed(tmp_path), sys.executable, "-c", IN_SANDBOX, str(root), head, target],
+        env={**os.environ, "TMPDIR": str(caller), "PYTHONPATH": imports},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert done.returncode == 0, done.stderr[-3000:]
+    found = json.loads(done.stdout)
+    assert Path(found["run_folder"]) == caller, found
+    assert "zmień środowisko Required CI osobnym PR przed tym" in found["built"], found
 
 
 FORKSERVER = (
