@@ -35,7 +35,7 @@ Ta sekcja mówi, czego skill pstack nie wie o tym repo.
   Warianty z prawdziwymi Wzorcami biegną tylko na Macu, bo Wzorce z `config/` nie opuszczają Maca.
   Ich `VERIFY SKIP` to `verified-unreachable` z warunkiem „Wzorce w `config/`”.
 - Przebieg na żywo skillu Centrum: na Macu, jeden bieg napędu naraz, bo procesor Maca dzielą wszystkie wątki; bieg innego wątku pokazuje `tools/quiet_machine.py --status` (`drive_centrum.py`), a wtedy czekasz na jego koniec.
-  Sekcja `Real mailbox` w `wpisanie-raportow` wymaga zgody Maksa na każdy bieg, więc nie wchodzi do przebiegu.
+  Sekcja `Real mailbox` w `wpisanie-raportow` należy do Wydania (krok 3 skilla [`wydanie`](../../.agents/skills/wydanie/SKILL.md)), więc nie wchodzi do przebiegu.
   `wydajnosc` zostaje poza przebiegiem jako `verified-unreachable` z warunkiem „cichy procesor”.
 - Dryf mapy w tym repo to także zdanie o tym, czego bieg nie sprawdza, bez nazwy testu, który to trzyma.
   Takie zdanie dostaje jedno zdanie z nazwą testu, które mówi dokładnie to, co test sprawdza, a gdy takiego testu nie ma, zostaje i opis PR wymienia je jako brak.
