@@ -37,7 +37,7 @@ def _command() -> str:
 
 
 def take(name: str, route: str) -> Optional[str]:
-    if os.environ.get(SLOT) or os.environ.get("PYTEST_CURRENT_TEST") or shutil.which("boatbox") is None:
+    if sys.platform == "win32" or os.environ.get(SLOT) or os.environ.get("PYTEST_CURRENT_TEST") or shutil.which("boatbox") is None:
         return None
     import fcntl
 

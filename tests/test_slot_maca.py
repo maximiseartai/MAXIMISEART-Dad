@@ -13,6 +13,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+from typing import IO
 
 import pytest
 
@@ -46,17 +47,24 @@ HEAVY = [
 ]
 
 
+def _lock(slot: IO[str]) -> None:
+    if sys.platform != "win32":
+        import fcntl
+
+        fcntl.flock(slot, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return
+    raise OSError("sloty Maca to flock, którego Windows nie ma")
+
+
 @contextmanager
 def _busy(folder: Path, numbers: range) -> Iterator[None]:
-    import fcntl
-
     folder.mkdir(exist_ok=True)
     held = []
     try:
         for number in numbers:
             slot = (folder / str(number)).open("a", encoding="utf-8")
             held.append(slot)
-            fcntl.flock(slot, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock(slot)
         yield
     finally:
         for slot in held:
@@ -105,14 +113,12 @@ def test_proces_w_slocie_w_tescie_albo_bez_boatbox_nie_czeka_na_slot(boatbox: bo
 
 
 def test_wolny_slot_bierze_proces_do_konca_a_jadro_zwalnia_go_po_nim(tmp_path: Path) -> None:
-    import fcntl
-
     with _busy(tmp_path / "sloty", range(1, 2)):
         done = _run(MUTACJE, tmp_path)
 
     who = (tmp_path / "sloty" / "2.who").read_text(encoding="utf-8")
     with (tmp_path / "sloty" / "2").open("a", encoding="utf-8") as slot:
-        fcntl.flock(slot, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock(slot)
     assert done.returncode != 75, done.stderr
     assert who.startswith("pid=") and f"\ndir={ROOT}\ncmd=" in who
 
@@ -128,11 +134,9 @@ def test_pytest_bez_workerow_z_plikiem_testow_nie_bierze_slotu(tmp_path: Path) -
 
 @pytest.mark.skipif("SLOT_MACA_PROBKA" not in os.environ, reason="próbka sesji pytest w slocie, którą uruchamia test niżej")
 def test_probka_worker_widzi_slot_rodzica_zajety() -> None:
-    import fcntl
-
     with (Path(os.environ["BOATBOX_SLOT_DIR"]) / os.environ["BOATBOX_MAC_SLOT"]).open("a", encoding="utf-8") as slot:
         with pytest.raises(BlockingIOError):
-            fcntl.flock(slot, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            _lock(slot)
 
 
 def test_proces_trzyma_slot_przez_caly_bieg_a_potomkowie_dostaja_jego_numer(tmp_path: Path) -> None:
