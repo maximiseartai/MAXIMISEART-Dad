@@ -114,7 +114,8 @@ gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście 
 dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje ``ZASADY`` ``tools/lib/straznik.py``,
 z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu; ``pytest <węzeł>`` idzie dowodem
 ``straznik.prove_test`` z najnowszym blokiem ``### Mutacja W<n> r<k>`` tego Ważnego we wszystkich werdyktach PR
-(``mutacja_recenzenta``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``).
+(``mutacja_recenzenta``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``),
+także dla Ważnego z ``Gdzie`` bez miejsca ``plik:linia`` w repo (plik spoza repo), którego inne selektory odmawiają.
 ``--przed-dowodem-testu`` (wątek sprzed wdrożenia dowodu testu, ``bramka_straznika.TEST_MARKER``) przepuszcza
 ``brak - test``, którego poza takim wątkiem dowód odmawia. Linia na Ważne i na końcu
 ``DOWÓD OK|ODMOWA | <selektor> | wykryte k/n`` (przy wyjątku ``wyjątek k/n``); ``tools/scal_pr.py`` uruchamia go przy
@@ -479,7 +480,7 @@ def _case(guard: straznik.Guard, probe: Probe) -> straznik.Case:
     """Ważne ``probe`` jako przypadek dowodu: zakresy funkcji z ``places`` dla mypy i ruff, a proza z ``PROSE``
     dla ``brak - proza``; oba czyta ast-grep z kopii SHA werdyktu, jak dowód reguły."""
 
-    if not (raw := szablon_werdyktu.places(probe.where)):
+    if not (raw := szablon_werdyktu.places(probe.where)) and guard.kind is not straznik.Kind.PYTEST:
         raise ValueError(f"{probe.where} nie ma miejsca plik:linia")
     scopes = places(probe.where, probe.head) if guard.kind in (straznik.Kind.MYPY, straznik.Kind.RUFF) else []
     python = sorted({path for path, _, _ in raw if path.endswith(".py")})
