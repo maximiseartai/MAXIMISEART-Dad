@@ -9,7 +9,7 @@ Every PR in this repository has the same title shape and the same body sections,
 When a PR needs something the template lacks, add it here, in the same PR or in its own, instead of a private variant in the PR body.
 
 `tools/scal_pr.py` reads the `##` headings of the template below and refuses to merge a PR whose body does not have each of them, in this order, as its own line.
-Check a body before the review with `.venv/bin/python tools/scal_pr.py N --bez-merge`.
+Check a body before the review with `.venv/bin/python tools/scal_pr.py N --opis`: it ends with `OPIS OK` or `OPIS FAIL` and the missing headings, whatever the CI and the verdict, while a refusal of `--bez-merge` for another reason says nothing about the body.
 
 ## Title
 
@@ -50,7 +50,7 @@ The scope is the area (`intermax`, `centrum`, `plan`, `agents`), and the subject
 
 ## Root section
 
-A PR adds `## Korzeń` between `## Evidence` and `## Merge Danger` when the PR had a `FAIL` verdict, or when the PR fixes a red `main` ([ADR 0031](../../../docs/adr/0031-korzen-po-fail-i-chwasty.md), section „Korzeń i chwast” of the skill [`przeglad`](../przeglad/SKILL.md)).
+A PR adds `## Korzeń` between `## Evidence` and `## Merge Danger` when the PR had a `FAIL` verdict, or when the PR fixes a red `main` ([ADR 0031](../../../docs/adr/0031-korzen-po-fail-i-chwasty.md), [`korzen.md`](../przeglad/korzen.md) of the skill `przeglad`).
 A red-`main` fix names its issue on a line `Część #N` (labelled `czerwony-main`); a PR for a flaky test names the `Flaky test:` issue instead and needs no section.
 A thread whose first verdict came before this check was merged (the merge that added `tools/lib/bramka_korzenia.py`) finishes the old way, without the section, and one whose first verdict came before the merge that added ADR 0042 ends a Ważne block with `Dowód:` instead of `Strażnik:`.
 `tools/scal_pr.py` reads the block below as the pattern of its refusal and refuses to merge while the section misses something:
@@ -81,7 +81,7 @@ Dowód: <polecenie i wynik>
 - One block per red-`main` issue, with a code chosen by the author.
 - Every code of the section, in a Ważne block and in a red-`main` block, stands in `korzenie.toml` on HEAD.
 - `Szczebel:` names the highest rung that works, and `Wyżej nie, bo:` gives one line `(x) - zdanie` for each higher rung, in ladder order; rung (a) has no such line.
-  Rung (e) needs this PR to add a new point linking to this PR (`#N`) to „Co jest porażką” in the skill `przeglad` and to leave the other points as on the base: an edited point of the base is not a new point.
+  Rung (e) needs this PR to add a new point linking to this PR (`#N`) to „Co jest porażką” in [`SKILL.md`](../przeglad/SKILL.md) or [`porazka-adr.md`](../przeglad/porazka-adr.md) of the skill `przeglad` and to leave the other points as on the base: an edited point of the base is not a new point.
 - A Ważne block ends with one line `Strażnik: <selector>` from the list in `ZASADY` of `tools/lib/straznik.py`, also after `Wyrwany w #M`; `tools/scal_pr.py` computes its proof from the tree of the `FAIL` verdict, and you check it with `tools/na_scalonych_pr.py --straznik '<selector>' --z-commita <HEAD> --wazne <PR>/W<n>/r<k>`; `ast-grep <id>` also needs `<PR>/W<n>/r<k>` in the rule's `metadata.przypadki`.
   A test as the guard is `Strażnik: pytest tests/<file>.py::<test>` (one test or one of its parameters): the proof applies to HEAD merged with the base the reviewer's mutation from the newest `### Mutacja W<n> r<k>` block in the PR's verdicts and passes when the test passes without it and fails with it (ADR 0042, „Test jako strażnik z mutacją recenzenta”); until a reviewer writes that block, check the test with your own mutation of the bug in `tools/mutacje.py`.
   `Strażnik: brak - test`, with the test named in `Szczebel:`, passes only in a thread whose first verdict came before that proof, and the next reviewer runs that test on the tree of the `FAIL` verdict.

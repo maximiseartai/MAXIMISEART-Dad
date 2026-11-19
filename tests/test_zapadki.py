@@ -89,7 +89,7 @@ PARSER_FOLDERS = ("tests", "tools", ".agents/skills")
 _PARSER_CALL = re.compile(r"(?<![\w.])(?:ast\.(?:parse|walk)\(|tokenize\.)")
 _NEW_PARSER = (
     "nowy plik z ręcznym parserem Pythona (ast.parse, ast.walk, tokenize): nazwij korzeń poprawki i napraw go na"
-    " najwyższym szczeblu z sekcji „Korzeń i chwast” skilla .agents/skills/przeglad/SKILL.md; plik, który mimo to"
+    " najwyższym szczeblu z .agents/skills/przeglad/korzen.md; plik, który mimo to"
     " parsuje, dopisz do PARSERS w tests/test_zapadki.py z powodem w opisie PR, który mówi, dlaczego reguła ruff albo"
     " ast-grep ani test zachowania nie wystarczą, a recenzent sprawdza, czy ten powód jest prawdziwy (#1888)"
 )

@@ -30,6 +30,7 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fak
 from tests.fixtures.git_repo import commit, git, with_imports
 from tests.fixtures.potomne import hold_lock, wait_for
 
+import bramka_korzenia
 import bramka_straznika
 import czasy_ci
 import github as klient_github
@@ -55,7 +56,7 @@ BODY = opisy_pr.wzor("Cel.")
 SUM = "def suma(a: int, b: int) -> int:\n    return a + b\n"
 PYPROJECT = '[tool.ruff]\ninclude = ["kod/**/*.py"]\n\n[tool.mypy]\nstrict = true\nfiles = ["kod"]\n'
 CHECKS_PASS = "print('CI LOKALNIE OK')\n"
-CLEANUP = 'import pathlib\n\npathlib.Path("posprzatane").write_text("tak")\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
+CLEANUP = 'import pathlib, sys\n\npathlib.Path("posprzatane").write_text(" ".join(sys.argv[1:]))\nprint("SPRZĄTANIE OK | 0 usuniętych")\n'
 # Atrapa ``gh`` składa ``bodyHTML`` treści w odpowiedziach GraphQL z HTML renderera (``tests/fixtures/body_html.py``).
 FAKE_GH = f"import sys\nsys.path.insert(0, {str(TOOLS.parent)!r})\nfrom tests.fixtures.body_html import body_html\n" + """\
 import json, os, pathlib, re, subprocess, sys, time
@@ -256,6 +257,7 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
         "isCrossRepository": False,
         "baseRefName": "main",
         "headRefOid": head,
+        "headRefName": f"pr-{number}",
         "statusCheckRollup": [*GREEN, GATE_PASSED],
         "comments": [],
         "reviews": [],
@@ -469,7 +471,7 @@ def test_pomoc_podaje_niepuste_zasady_kazdego_modulu_bramek_z_przykladami_polece
     assert "tools/scal_pr.py 336 --werdykt" in shown
 
 
-def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_path: Path) -> None:
+def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_sprzatanie_usuwa_tylko_galaz_pr(tmp_path: Path) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM}, real_checks=True)
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
     main = github.push_main({"kod/nazwa.py": 'NAZWA = "z main"\n'})
@@ -486,8 +488,22 @@ def test_gotowy_pr_jest_scalany_z_jego_head_a_po_merge_biegnie_sprzatanie(tmp_pa
     )
     assert git(github.origin, "rev-list", "--parents", "-n", "1", merge_commit).split()[1:] == [main, head]
     assert github.merges() == [["pr", "merge", "1", "--merge", "--match-head-commit", head]]
-    assert (github.checkout / "posprzatane").exists()
+    assert (github.checkout / "posprzatane").read_text(encoding="utf-8") == "--usun --galaz pr-1"
     assert "SCAL KOLEJKA" not in merged.stdout
+
+
+def test_bez_galezi_pr_od_githuba_po_merge_sprzatanie_jest_pominiete_z_ostrzezeniem(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, headRefName="")
+    github.comment(1, PASS.format(head=head))
+
+    merged = github.run("1")
+
+    assert merged.returncode == 0, merged.stdout + merged.stderr
+    assert _last_line(merged).endswith("| UWAGA: GitHub nie podał gałęzi PR, sprzątanie pominięte")
+    assert not (github.checkout / "posprzatane").exists()
+    assert len(github.merges()) == 1
 
 
 # Pełne SHA w tabelach na interfejsach: HEAD PR i starszy commit (litery, żeby ``HEAD.upper()`` był inny niż HEAD).
@@ -941,6 +957,39 @@ def test_naglowek_dopisany_do_wzoru_skilla_pr_od_razu_obowiazuje(tmp_path: Path)
 
     assert _last_line(refused) == f"SCAL ODMOWA | #1 {head[:7]} | opis: brak „## Rollback” w kolejności wzoru .agents/skills/pr/SKILL.md"
     assert accepted.returncode == 0, accepted.stdout + accepted.stderr
+
+
+@pytest.mark.parametrize(
+    ("body", "rollup", "line"),
+    [
+        (BODY, [_check_run("COMPLETED", "FAILURE")], "OPIS OK | #1 {short} | nagłówki wzoru .agents/skills/pr/SKILL.md z main {main}"),
+        ("", [*GREEN, GATE_PASSED], f"OPIS FAIL | #1 {{short}} | brak {ALL_SECTIONS} w kolejności wzoru .agents/skills/pr/SKILL.md"),
+    ],
+    ids=["dobry-opis-przy-czerwonym-ci-bez-werdyktu", "pusty-opis-przy-zielonym-ci"],
+)
+def test_opis_sprawdza_tylko_naglowki_opisu_bez_ci_i_werdyktu(tmp_path: Path, body: str, rollup: list[dict[str, str | None]], line: str) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    github.update(1, body=body, statusCheckRollup=rollup)
+
+    answered = github.run("1", "--opis")
+
+    assert answered.returncode == (0 if body else 1), answered.stdout + answered.stderr
+    assert answered.stdout.splitlines() == [line.format(short=head[:7], main=github.start[:7])]
+    assert (github.published(), github.merges()) == ([], [])
+
+
+def test_opis_bierze_wzor_skilla_pr_z_bazy_w_origin_a_nie_z_checkoutu(tmp_path: Path) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    template = TEMPLATE.read_text(encoding="utf-8").replace("## Merge Danger\n", "## Merge Danger\n\n## Rollback\n", 1)
+    github.push_main({".agents/skills/pr/SKILL.md": template})
+    git(github.checkout, "reset", "--quiet", "--hard", github.start)
+
+    answered = github.run("1", "--opis")
+
+    assert answered.returncode == 1, answered.stdout + answered.stderr
+    assert answered.stdout.splitlines() == [f"OPIS FAIL | #1 {head[:7]} | brak „## Rollback” w kolejności wzoru .agents/skills/pr/SKILL.md"]
 
 
 @pytest.mark.parametrize(
@@ -1858,8 +1907,8 @@ def test_werdykt_niezgodny_z_regulami_nie_trafia_na_pr_a_odmowa_podaje_wszystkie
 
 @pytest.mark.parametrize(
     "modes",
-    [["--przeglad", "--bez-merge"], ["--werdykt", "PLIK", "--bez-merge"], ["--przeglad", "--werdykt", "PLIK"]],
-    ids=["przeglad-i-bez-merge", "werdykt-i-bez-merge", "przeglad-i-werdykt"],
+    [["--przeglad", "--bez-merge"], ["--werdykt", "PLIK", "--bez-merge"], ["--przeglad", "--werdykt", "PLIK"], ["--opis", "--bez-merge"]],
+    ids=["przeglad-i-bez-merge", "werdykt-i-bez-merge", "przeglad-i-werdykt", "opis-i-bez-merge"],
 )
 def test_tryby_przegladu_werdyktu_i_bez_merge_sie_wykluczaja_wiec_dwa_naraz_niczego_nie_publikuja_ani_nie_scalaja(
     tmp_path: Path, modes: list[str]
@@ -1878,8 +1927,8 @@ def test_tryby_przegladu_werdyktu_i_bez_merge_sie_wykluczaja_wiec_dwa_naraz_nicz
 
 @pytest.mark.parametrize(
     ("mode", "label"),
-    [(["--przeglad"], "PRZEGLĄD"), (["--werdykt", "PLIK"], "WERDYKT"), (["--bez-merge"], "SCAL")],
-    ids=["przeglad", "werdykt", "bez-merge"],
+    [(["--przeglad"], "PRZEGLĄD"), (["--werdykt", "PLIK"], "WERDYKT"), (["--bez-merge"], "SCAL"), (["--opis"], "OPIS")],
+    ids=["przeglad", "werdykt", "bez-merge", "opis"],
 )
 def test_blad_gh_konczy_sie_linia_fail_z_nazwa_trybu(tmp_path: Path, mode: list[str], label: str) -> None:
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
@@ -2202,7 +2251,7 @@ def _limit_reason(*failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a po 3. rundzie z FAIL PR nie dostaje"
-        " kolejnej (skill przeglad, „Kolejne rundy”): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
+        " kolejnej (skill przeglad, rundy.md): zmień podejście w #1 (atak na przesłankę, granica z mechanizmu albo"
         " usunięcie z PR części, której przegląd nie przyjął) i opisz je komentarzem PR z pierwszą linią"
         " „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie dostaje żadnej"
     )
@@ -2214,7 +2263,7 @@ def _final_reason(*failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}), a po 6. rundzie z FAIL #1 nie dostaje żadnej kolejnej"
-        " (skill przeglad, „Kolejne rundy”), także po komentarzu „ZMIANA PODEJŚCIA: <zdanie>”: zamknij #1 komentarzem"
+        " (skill przeglad, rundy.md), także po komentarzu „ZMIANA PODEJŚCIA: <zdanie>”: zamknij #1 komentarzem"
         " z powodem i zacznij nowy PR od świeżego origin/main z innym podejściem"
     )
 
@@ -2294,7 +2343,7 @@ def _repeat_reason(place: str, *failed: str) -> str:
     commits = ", ".join(sha[:7] for sha in failed)
     return (
         f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a ich Ważne trafiają w to samo miejsce"
-        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, „Kolejne rundy”): zmień"
+        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, rundy.md): zmień"
         " podejście w #1 (atak na przesłankę, granica z mechanizmu albo usunięcie z PR części, której przegląd nie"
         " przyjął) i opisz je komentarzem PR z pierwszą linią „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie"
         " dostaje żadnej"
@@ -2636,14 +2685,20 @@ def _root_gate(
     korzenia wdrożoną na ``main`` w chwili ``gate``, a szablonem 1.10.2026; ``setup`` podaje stan i opis PR korzenia
     (``root``: stan, opis i opcjonalnie gałąź, do której go scalono, domyślnie ``main``), domyślną gałąź repozytorium
     albo błąd ``gh repo view`` (``repo_view``), etykiety issues (``labels``), skill ``przeglad`` na bazie (``skill_base``,
-    domyślnie ``baza``) i na HEAD (``skill``) i kod dopisany do listy korzeni na HEAD (``listed``)."""
+    domyślnie ``baza``) i na HEAD (``skill``), jego plik porażki w ADR na bazie (``adr_base``) i na HEAD (``adr``), bez
+    klucza nieobecny, i kod dopisany do listy korzeni na HEAD (``listed``)."""
 
-    skill = korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]
-    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): skill}, started=gate)
+    skill_file, adr_file = bramka_korzenia.FAILURE_FILES
+    base_files = {"kod/__init__.py": SUM, skill_file: korzenie_pr.SKILL[str(setup.get("skill_base", "baza"))]}
+    if "adr_base" in setup:
+        base_files[adr_file] = korzenie_pr.SKILL[str(setup["adr_base"])]
+    github = MergeGitHub(tmp_path, base_files, started=gate)
     _deploy_template(github)
     files = {"kod/inne.py": "INNE: int = 1\n"}
     if "skill" in setup:
-        files[szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix()] = korzenie_pr.SKILL[str(setup["skill"])]
+        files[skill_file] = korzenie_pr.SKILL[str(setup["skill"])]
+    if "adr" in setup:
+        files[adr_file] = korzenie_pr.SKILL[str(setup["adr"])]
     if "listed" in setup:
         files[szablon_werdyktu.LIST] = (REVIEW / "korzenie.toml").read_text(encoding="utf-8") + str(setup["listed"])
     github.open_pull(1, files)
@@ -2695,6 +2750,8 @@ def _root_gate(
         ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkt-z-przykladem-zmieniony-z-linkiem-do-pr"}, [NEW_POINT]),
         ([FAIL_W1], "szczebel-e", {"skill": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
         ([FAIL_W1], "szczebel-e", {"skill_base": "punkt-z-przykladem", "skill": "punkty-bazy-zamienione-z-linkiem-do-pr"}, [NEW_POINT]),
+        ([FAIL_W1], "szczebel-e", {"adr_base": "baza", "adr": "punkt-z-linkiem-do-pr"}, []),
+        ([FAIL_W1], "szczebel-e", {"adr_base": "baza", "adr": "punkt-z-linkiem-do-pr-i-zmieniony-punkt-bazy"}, [NEW_POINT]),
         ([FAIL_W1], "cytat-pola-w-bloku-kodu", {}, []),
         ([FAIL_W1], "cytat-pola-bez-bloku-kodu", {}, ["korzeń: blok „### W1 r1: R-DRUGA-DROGA” powtórzony"]),
         ([FAIL_W1], "wyrwany", {"root": ("OPEN", "ten-kod")}, [f"{UPROOTED_IN}: PR korzenia jest otwarty, a scala się go do domyślnej gałęzi przed tym PR"]),
@@ -2755,6 +2812,8 @@ def _root_gate(
         "szczebel-e-z-punktem-bazy-zmienionym-o-link-do-pr",
         "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy",
         "szczebel-e-z-nowym-punktem-i-punktami-bazy-w-innej-kolejnosci",
+        "szczebel-e-z-nowym-punktem-w-pliku-porazki-adr",
+        "szczebel-e-z-nowym-punktem-i-zmienionym-punktem-bazy-w-pliku-porazki-adr",
         "cytat-pola-w-bloku-kodu",
         "cytat-pola-bez-bloku-kodu",
         "wyrwany-w-otwartym-pr",

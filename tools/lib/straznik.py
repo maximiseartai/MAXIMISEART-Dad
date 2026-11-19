@@ -378,8 +378,8 @@ def _mutated(build: Build, command: tuple[str, ...], case: Case) -> Outcome:
     label = f"{case.label} | {case.failed[:8]}"
     named = f"### Mutacja {case.label.partition(' ')[2]}"
     if case.mutation is None:
-        return Outcome(False, f"{label} | ODMOWA | żaden werdykt PR nie ma bloku {named} ze złą postacią do naniesienia na HEAD: recenzent następnej rundy dopisuje blok (skill przeglad)")
-    renew = f"recenzent następnej rundy odnawia blok {named} (skill przeglad)"
+        return Outcome(False, f"{label} | ODMOWA | żaden werdykt PR nie ma bloku {named} ze złą postacią do naniesienia na HEAD: recenzent następnej rundy dopisuje blok (skill przeglad, korzen.md)")
+    renew = f"recenzent następnej rundy odnawia blok {named} (skill przeglad, korzen.md)"
     try:
         mutations = mutacja_recenzenta.mutations(case.mutation, command)
     except ValueError as error:

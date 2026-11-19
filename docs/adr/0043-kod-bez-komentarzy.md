@@ -32,7 +32,7 @@ Czy komentarze modeli TLA+ skilli `verify-*` dostają wyjątek, rozstrzyga Maks 
 
 ### Cel i kolejność (specyfikacja #2227)
 
-- **Zakoduj, potem usuń.** Wiedza, której nie ma nigdzie poza komentarzem, przechodzi do kodu najwyższym szczeblem drabiny ze skilla [`przeglad`](../../.agents/skills/przeglad/SKILL.md) (nazwa, typ, test zachowania, reguła) i dopiero potem komentarz znika, a komentarz, który nic nie dodaje (powtarza kod albo jest historią), znika od razu.
+- **Zakoduj, potem usuń.** Wiedza, której nie ma nigdzie poza komentarzem, przechodzi do kodu najwyższym szczeblem drabiny z [`korzen.md`](../../.agents/skills/przeglad/korzen.md) skilla `przeglad` (nazwa, typ, test zachowania, reguła) i dopiero potem komentarz znika, a komentarz, który nic nie dodaje (powtarza kod albo jest historią), znika od razu.
   Powód: w eksperymencie usunięcie komentarzy bez kodowania złamało dwa z trzech niezmienników przy zielonym `tools/szybko.py`, a ta sama wiedza zakodowana zatrzymała obu agentów.
   Wchodzi w #2236 (kodowanie wiedzy) i #2235 (usuwanie komentarzy, które powtarzają kod albo są historią).
 

@@ -7,6 +7,7 @@ from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import sys
@@ -523,6 +524,97 @@ def _process_in(path: Path) -> Iterator[None]:
             yield
         finally:
             process.stdin.close()
+
+
+def test_galaz_wskazana_po_merge_znika_z_worktree_a_inne_scalone_zostaja_bez_oceny(merged: Path, fake_lsof: Callable[..., None]) -> None:
+    main, path = merged, merged.parent / "zrobione"
+    fake_lsof(ELSEWHERE)
+    other = _branch_with_work(main, "inne")
+    _merge(main, "inne")
+    git(main, "branch", "--quiet", "bez-worktree", "inne")
+
+    code, lines = _cleanup(main, "--usun", "--galaz", "zrobione")
+
+    assert code == 0
+    assert not path.exists()
+    assert other.is_dir()
+    assert _branches(main) == {"main", "inne", "bez-worktree"}
+    assert lines[-1] == "SPRZĄTANIE OK | usunięte 1 | zostawione 0"
+
+
+def test_galaz_wskazana_bez_worktree_znika_sama(merged: Path, fake_lsof: Callable[..., None]) -> None:
+    main = merged
+    fake_lsof(ELSEWHERE)
+    git(main, "worktree", "remove", str(merged.parent / "zrobione"))
+    _old_git(main, "branch", "tez-scalona", "zrobione")
+
+    code, lines = _cleanup(main, "--usun", "--galaz", "zrobione")
+
+    assert code == 0
+    assert _branches(main) == {"main", "tez-scalona"}
+    assert lines == ["- usunięte | gałąź zrobione", "SPRZĄTANIE OK | usunięte 1 | zostawione 0"]
+
+
+_FAKE_LAUNCHCTL = """import json, os, pathlib, sys
+with pathlib.Path(os.environ["LAUNCHCTL_WYWOLANIA"]).open("a") as calls:
+    calls.write(json.dumps(sys.argv[1:]) + "\\n")
+sys.exit(int(os.environ.get("LAUNCHCTL_KOD_" + sys.argv[1], "0")))
+"""
+
+
+@pytest.fixture
+def launchctl(home: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    program = fake_cli(home / "launchctl-bin", "launchctl", _FAKE_LAUNCHCTL)
+    monkeypatch.setenv("PATH", f"{program.parent}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("LAUNCHCTL_WYWOLANIA", str(home / "launchctl.jsonl"))
+    return home / "launchctl.jsonl"
+
+
+def test_codziennie_instaluje_agenta_launchd_z_usun_z_glownego_checkoutu(main: Path, home: Path, launchctl: Path) -> None:
+    if sys.platform == "win32":
+        pytest.skip("launchd jest tylko na macOS")
+    python = main / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    worktree = _worktree(main, "gdzie-indziej")
+    plist = home / "Library" / "LaunchAgents" / "com.maximiseart.sprzatanie.plist"
+    plist.parent.mkdir(parents=True)
+    plist.write_bytes(b"stara instalacja")
+
+    code, lines = _cleanup(worktree, "--codziennie")
+
+    log = home / "Library" / "Logs" / "com.maximiseart.sprzatanie.log"
+    assert (code, lines[-1]) == (0, f"SPRZĄTANIE CODZIENNIE | com.maximiseart.sprzatanie o 5:00 | --usun z {main} | log {log}")
+    assert plistlib.loads(plist.read_bytes()) == {
+        "Label": "com.maximiseart.sprzatanie",
+        "ProgramArguments": [str(python), str(main / "tools" / "sprzatanie.py"), "--usun"],
+        "WorkingDirectory": str(main),
+        "StartCalendarInterval": {"Hour": 5, "Minute": 0},
+        "StandardOutPath": str(log),
+        "StandardErrorPath": str(log),
+    }
+    domain = f"gui/{os.getuid()}"
+    calls = [json.loads(line) for line in launchctl.read_text(encoding="utf-8").splitlines()]
+    assert calls == [["bootout", f"{domain}/com.maximiseart.sprzatanie"], ["bootstrap", domain, str(plist)]]
+    assert worktree.is_dir()
+
+
+def test_codziennie_bez_venv_glownego_checkoutu_albo_z_odmowa_launchctl_konczy_sie_bledem(
+    main: Path, home: Path, launchctl: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plist = home / "Library" / "LaunchAgents" / "com.maximiseart.sprzatanie.plist"
+
+    without_venv = _cleanup(main, "--codziennie")
+    python = main / ".venv" / "bin" / "python"
+    python.parent.mkdir(parents=True)
+    python.write_text("", encoding="utf-8")
+    monkeypatch.setenv("LAUNCHCTL_KOD_bootstrap", "5")
+    refused = _cleanup(main, "--codziennie")
+
+    assert without_venv == (1, [f"SPRZĄTANIE FAIL | --codziennie potrzebuje launchctl (macOS) i {python} (python3 tools/setup_worktree.py w {main})"])
+    assert refused[0] == 1
+    assert refused[1][-1].startswith(f"SPRZĄTANIE FAIL | launchctl bootstrap {plist}: ")
+    assert [json.loads(line)[0] for line in launchctl.read_text(encoding="utf-8").splitlines()] == ["bootout", "bootstrap"]
 
 
 def test_galaz_main_zostaje_tez_bez_checkoutu(main: Path) -> None:
