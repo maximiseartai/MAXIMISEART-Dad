@@ -331,6 +331,23 @@ def test_logi_maja_kopie_wejscia_z_przeczytanymi_wierszami_bez_adresu_i_numeru_u
     assert "Ulica 40000001" not in json.dumps(logs, ensure_ascii=False)
 
 
+def test_kopia_wejscia_ma_date_zlecenia_ze_sladem_przesuniecia_choc_w_drugim_polozeniu_stoi_pod_adresem(tmp_path: Path) -> None:
+    """Uporządkowany wiersz z datą z godziną w kolumnie A (ślad przesunięcia) pamięć zna w obu położeniach, więc Kopia
+    nie ma komórek, które w przesunięciu stoją pod ``ADRES`` i ``NUMER UMOWY``; ``DATA GODZ. POCZ.`` zostaje, bo bez
+    niej odtworzenie nie powtórzy Uruchomienia (ADR 0025)."""
+
+    traced = Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (1, datetime(2026, 11, 9, 9))))
+    centrum = entering_centrum(tmp_path, Intermax(ordered=(traced,), raw=()), [report(JAN, SUBJECT, "40000001 tak wymiana")])
+
+    _finished(centrum)
+
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    [row] = copied["sheets"][0]["rows"]
+    assert row["cells"]["C"] == {"type": "datetime", "text": "2026-11-09T09:00:00"}
+    assert "I" not in row["cells"], "NUMER ZL. w przesunięciu stoi pod NUMER UMOWY"
+
+
 def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z_tresci_maila_jest_pod_straznikiem(
     tmp_path: Path,
 ) -> None:
@@ -973,6 +990,52 @@ def test_zapis_na_scalone_komorki_zlecenia_zatrzymuje_do_maksa_a_logi_maja_zapla
     assert [(change["row"], change["column"], change["value"]) for change in logs["report_entering"]["changes"]] == [
         (3, "SKUTECZNE", "tak"),
         (3, "CZYNNOŚCI ZREALIZOWANE", "wymiana"),
+    ]
+
+
+def _unreadable_border(register: Path) -> None:
+    rewrite_parts(
+        register,
+        lambda name, data: data.replace(b'<left style="thin" />', b'<left style="nieznany" />', 1) if name == "xl/styles.xml" else data,
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "spoil", "stop"),
+    [
+        pytest.param(
+            "40000001 tak wymiana\x01routera",
+            lambda register: None,
+            ("for_maks", "Zapis odrzucił komórki, które narzędzie chciało wpisać. INTERMAX nie został zmieniony."),
+            id="opis-ze-znakiem-spoza-xml",
+        ),
+        pytest.param(
+            "40000001 tak wymiana",
+            _unreadable_border,
+            ("for_tata", "Nie można odczytać INTERMAX jako skoroszytu Excela. INTERMAX nie został zmieniony."),
+            id="styl-ramki-ktorego-zapis-nie-czyta",
+        ),
+    ],
+)
+def test_zapis_odrzucony_albo_nieczytelny_przy_zapisie_zatrzymuje_a_logi_maja_zaplanowane_wpisy(
+    tmp_path: Path, text: str, spoil: Callable[[Path], object], stop: tuple[str, str]
+) -> None:
+    """Zapis odrzuca komórkę z tekstem, którego komórka nie przyjmie (znak spoza XML z treści maila), albo nie czyta
+    stylów INTERMAX, które odczyt pominął: kliknięcie zatrzymuje się z INTERMAX bajt w bajt, a Logi Uruchomienia mają
+    wpisy zaplanowane z Raportu, z których Maks odtworzy Uruchomienie."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, text)])
+    spoil(centrum.register)
+    before = centrum.register.read_bytes()
+
+    result = _stopped(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == stop
+    assert centrum.register.read_bytes() == before
+    [logs] = centrum.run_logs()
+    assert [(change["row"], change["column"]) for change in logs["report_entering"]["changes"]] == [
+        (3, "SKUTECZNE"),
+        (3, "CZYNNOŚCI ZREALIZOWANE"),
     ]
 
 
