@@ -1,7 +1,7 @@
 """Przypadki Skrzynki Zgłoszeń: każda operacja ``GitHubReportBox`` i ``KeyedBox`` na repozytorium próbnym.
 
-Oczekiwany wynik każdego przypadku pochodzi z domeny (docstringi ``report_box`` i ``keyed_box``, ADR 0007, pomiar
-limitu treści z #332 przy ``COMMENT_LIMIT``), nie z przebiegu kodu. Przypadki biegną po kolei: późniejszy bierze
+Oczekiwany wynik każdego przypadku pochodzi z domeny (testy ``tests/test_skrzynka_zgloszen_github.py``, docstring
+``keyed_box``, ADR 0007, pomiar limitu treści z #332 przy ``COMMENT_LIMIT``), nie z przebiegu kodu. Przypadki biegną po kolei: późniejszy bierze
 numery issue i komentarzy z wcześniejszych (``earlier``), a w odtwarzaniu z faktów swojego nagrania.
 """
 
@@ -621,7 +621,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "zalozenie",
         "Sent z numerem",
-        "report_box: „Nowe issue to Sent z numerem”",
+        "test_skrzynka_zgloszen_github: test_utworzone_issue_to_wyslane_zgloszenie_z_numerem",
         _prepare_open,
         _open,
         lambda f, o: _sent(o),
@@ -637,7 +637,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "zalozenie-bez-etykiety-w-repo",
         "Sent z numerem",
-        "report_box: „Nowe issue to Sent z numerem”; etykiet kod nie zakłada",
+        "test_skrzynka_zgloszen_github: test_utworzone_issue_to_wyslane_zgloszenie_z_numerem; etykiet kod nie zakłada (docs/agents/skrzynka-zgloszen.md)",
         _prepare_open_absent,
         _open,
         lambda f, o: _sent(o),
@@ -669,7 +669,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "komentarz",
         "Commented z id i adresem …/issues/<numer>#issuecomment-<id>",
-        "report_box: „komentarz … Commented z identyfikatorem i adresem”",
+        "test_skrzynka_zgloszen_github: test_przyjety_komentarz_ma_identyfikator_i_adres",
         _prepare_comment("zalozenie"),
         _comment,
         _judge_commented,
@@ -709,7 +709,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "poprawka",
         "Commented z tym samym id i adresem",
-        "report_box: „komentarz i jego poprawka (edit_comment) Commented z identyfikatorem i adresem”",
+        "test_skrzynka_zgloszen_github: test_poprawiony_komentarz_ma_ten_sam_identyfikator_i_adres_a_skrzynka_dostaje_nowa_tresc",
         _prepare_edit(),
         _edit,
         _judge_edited,
@@ -733,7 +733,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "komentarze",
         "komentarze issue po kolei z treścią po poprawce",
-        "report_box: „pytanie o komentarze issue (comments) daje je po kolei z treścią”",
+        "test_skrzynka_zgloszen_github: test_komentarze_issue_to_ich_identyfikatory_adresy_i_tresci_po_kolei",
         _prepare_comments,
         _comments,
         _judge_comments,
@@ -741,7 +741,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "komentarze-strony",
         f"wszystkie {PAGE + 1} komentarzy w kolejności dodania",
-        "report_box.comments: „Komentarze issue strona po stronie”",
+        "test_skrzynka_zgloszen_github: test_komentarze_issue_sa_zbierane_ze_wszystkich_stron",
         _prepare_comment_pages,
         _comments,
         _judge_comment_pages,
@@ -757,7 +757,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "lista-strony",
         f"dokładnie {PAGE + 1} założonych issue z etykietą",
-        "report_box.labelled_issues: „Issue z etykietą strona po stronie”",
+        "test_skrzynka_zgloszen_github: test_issue_z_etykieta_sa_zbierane_ze_wszystkich_stron",
         _prepare_issue_pages,
         _issue_pages,
         _judge_issue_pages,
@@ -765,7 +765,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "lista-zamkniete",
         "bez include_closed tylko otwarte; z include_closed także zamknięte z powodem i czasem",
-        "report_box: „labelled_issues daje ich numery, treści i zamknięcie (powód i czas)”",
+        "test_skrzynka_zgloszen_github: test_zamkniete_issue_ma_powod_i_czas_zamkniecia_a_otwarte_nie",
         _prepare_closed,
         _closed,
         _judge_closed,
@@ -789,7 +789,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "archiwum-brak",
         "None: w Skrzynce nie ma Archiwum z tym tagiem",
-        "report_box: „archive znajduje je po tagu z jego plikami … albo daje None”",
+        "test_skrzynka_zgloszen_github: test_bez_release_z_tagiem_okresu_archiwum_jeszcze_nie_ma",
         _prepare_archive,
         _archive,
         _is(None),
@@ -797,7 +797,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "archiwum-w-pustym-repo",
         "Rejected, a Archiwum dalej nie ma (None)",
-        "report_box: „repozytorium bez commitu odmawia założenia Archiwum (422 albo 409, Rejected)”",
+        "test_skrzynka_zgloszen_github: test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochodzi_w_tym_samym_przejsciu_bez_komunikatu",
         _prepare_archive,
         _open_archive,
         _is((Rejected(), None)),
@@ -805,7 +805,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "zly-klucz",
         "Refused w każdej operacji, KeyedBox: refused",
-        "report_box.Refused: klucz nieważny; ADR 0007: odmowa przy liście odrzuca klucz",
+        "report_box.Refused, ADR 0007: odmowa przy liście odrzuca klucz",
         _prepare_bad_key,
         _bad_key,
         _judge_bad_key,
