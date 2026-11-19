@@ -271,7 +271,7 @@ def _view(
             continue
         place = problem.worker, problem.day
         faulty = problem.faulty_subject
-        offers = held.get(faulty.mail, ()) if faulty is not None and faulty.mail is not None else ()
+        offers = held.get((faulty.mail, problem.worker), ()) if faulty is not None and faulty.mail is not None else ()
         placed[place].append(_Placed(problem, offers))
         for holder in sorted({(found.worker, found.day) for found in offers} - {place}):
             placed[holder].append(_Placed(problem, tuple(found for found in offers if (found.worker, found.day) == holder)))
@@ -324,14 +324,15 @@ class _Placed:
     offers: tuple[_Held, ...]
 
 
-def _held(shown: ShownResult) -> dict[str, tuple[_Held, ...]]:
-    """Wpisy na życzenie przy zleceniach wyniku po skrócie maila, z miejscem zlecenia, w kolejności dni i zleceń."""
+def _held(shown: ShownResult) -> dict[tuple[str, str], tuple[_Held, ...]]:
+    """Wpisy na życzenie przy zleceniach wyniku po skrócie maila i Wykonawcy, który go przysłał (Message-ID ustawia
+    nadawca), z miejscem zlecenia, w kolejności dni i zleceń."""
 
-    held: defaultdict[str, list[_Held]] = defaultdict(list)
+    held: defaultdict[tuple[str, str], list[_Held]] = defaultdict(list)
     for worker in shown.workers:
         for order in worker.orders_detail or ():
             if (offer := order.request) is not None:
-                held[offer.mail.digest].append(_Held(worker.worker, worker.day, offer))
+                held[offer.mail.digest, offer.worker].append(_Held(worker.worker, worker.day, offer))
     return {mail: tuple(found) for mail, found in held.items()}
 
 
