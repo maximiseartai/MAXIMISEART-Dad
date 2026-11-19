@@ -104,8 +104,8 @@ function CodeRow({ code, edit }: { code: ActivityCodeSentence; edit: () => void 
 }
 
 /**
- * Formularz Kodu czynności: zapisy, kolumna Ilości usług (stała albo przedziałami liczby z kodu) z wartością, kwota w AS,
- * kolory kolumn i „Nie liczy się w usterce”. Kolumny wybiera się tylko z tych, w które legenda może pisać, po nazwie z cennika. Każda zmiana, także
+ * Formularz Kodu czynności: zapisy, kolumna Ilości usług (stała albo przedziałami liczby z kodu) z wartością, kwota w AS
+ * i kolory kolumn. Kolumny wybiera się tylko z tych, w które legenda może pisać, po nazwie z cennika. Każda zmiana, także
  * „Usuń kod”, który przełącza formularz w pytanie „Usunąć kod?”, pokazuje podgląd skutku tej samej zmiany, którą zapisuje
  * dopiero „Zapisz” albo „Usuń”; zła wartość to jedno zdanie przy polu, a problem całego kodu nad formularzem.
  */
