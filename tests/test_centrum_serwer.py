@@ -13,6 +13,7 @@ import http.client
 import os
 from pathlib import Path
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -185,7 +186,7 @@ def _left_pricing(tool: ToolDirectory) -> Path:
     )
 
 
-def _served_once(tool: ToolDirectory) -> tuple[int, list[str]]:
+def _served_once(tool: ToolDirectory, *, before_start: Callable[[int], None] = lambda _port: None) -> tuple[int, list[str]]:
     """Centrum na ``serve`` jak u taty: start, jedno zapytanie karty i zamknięcie; status zapytania i wpisy dziennika,
     które Diagnoza i Zgłoszenia biorą jako wpisy tej pracy Centrum (``CentrumLog.recent``), bez czasu."""
 
@@ -195,6 +196,7 @@ def _served_once(tool: ToolDirectory) -> tuple[int, list[str]]:
     ready = threading.Event()
     listener = listen_locally(0)
     port = int(listener.getsockname()[1])
+    before_start(port)
     kwargs = {"listener": listener, "on_ready": lambda _url: ready.set(), "shutdown": shutdown, "log": log}
     since = new_line()
     served = threading.Thread(target=serve, args=(app,), kwargs=kwargs, name="centrum-test", daemon=True)
@@ -264,6 +266,37 @@ def test_wyjatek_wysylki_logow_urwanego_uruchomienia_nie_zatrzymuje_startu_centr
     assert 'nieoczekiwany-wyjatek typ=RuntimeError miejsce="wysyłka wersji zastępczych przy starcie"' in recent
     assert journal == journal_path(tool.log_path.parent, URWANA_WYCENA)
     assert journal.exists()
+
+
+_LINGER_FORMAT = "HH" if sys.platform == "win32" else "ii"
+
+
+def _abandoned_connections(port: int) -> None:
+    for reset in (True, False):
+        client = socket.create_connection((HOST, port), timeout=30)
+        try:
+            client.sendall(f"GET /api/health HTTP/1.1\r\nHost: {HOST}:{port}\r\n\r\n".encode("ascii"))
+            if reset:
+                client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack(_LINGER_FORMAT, 1, 0))
+        finally:
+            client.close()
+
+
+def test_centrum_odpowiada_po_polaczeniach_ktore_klienci_porzucili_zanim_zaczelo_je_przyjmowac(tmp_path: Path) -> None:
+    status, _recent = _served_once(ToolDirectory(tmp_path), before_start=_abandoned_connections)
+
+    assert status == 200
+
+
+def test_na_windows_centrum_na_petli_proactor_przestaje_sluchac_po_polaczeniu_porzuconym_przed_przyjeciem(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if sys.platform != "win32":
+        pytest.skip("Pętla Proactor jest tylko na Windows.")
+    monkeypatch.setattr("rozliczenia.centrum.server._LOOP_LISTENING_AFTER_FAILED_ACCEPT", asyncio.ProactorEventLoop)
+
+    with pytest.raises(ConnectionError):
+        _served_once(ToolDirectory(tmp_path), before_start=_abandoned_connections)
 
 
 def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzynke(tmp_path: Path) -> None:
