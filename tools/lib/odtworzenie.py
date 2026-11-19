@@ -6,7 +6,7 @@ Jedyną operacją jest ``replay()``. Kształt danych:
 - Logi Uruchomienia (``run_logs.RunLog`` tego drzewa) dają proces, tryb, okres, wynik i ślad do porównania, a Kopia
   wejścia wiersze plików taty. Wpisanie raportów ma maile ze Skrzynki raportów tylko jako Wpisy raportu w Logach
   (``report_entering``, wejście kliknięcia z nich daje ``LoggedReports.replay``), więc odtworzenie podaje je procesowi
-  jako maile w postaci kanonicznej (``worker_reports.as_mail``) od adresów ``@odtworzenie.invalid``, z Listą
+  jako maile w postaci kanonicznej (``WindowMails.canonical``) od adresów ``@odtworzenie.invalid``, z Listą
   Wykonawców z loginów Wpisów oraz z pamięcią wpisów i decyzjami „Zostaw moją” sprzed kliknięcia z Logów.
 - Granice (``Limit``) to to, czego Logi nie niosą. Granica blokująca (Logi bez Kopii wejścia, Urwane Uruchomienie,
   pusta Kopia, komórka typu, którego Kopia nie zapisała, Logi Wyceny bez odczytu wyników szukania, wiersz Kopii albo
@@ -130,7 +130,7 @@ from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import FORBIDDEN_POSITIONS
 from rozliczenia.worker_list import WorkerEntry, WorkerList, WorkerListProblem
-from rozliczenia.worker_reports import Login, OwnEntries, ReadStranger, RequestedEntry, SavedState, SenderAddress, as_mail
+from rozliczenia.worker_reports import Login, OwnEntries, RequestedEntry, SavedState, SenderAddress
 
 from atrapy.skrzynka_raportow import FakeInbox
 import atrapa_z_logow
@@ -998,7 +998,7 @@ def _entering_limits(record: RunLog) -> list[Limit]:
 
 def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     """INTERMAX z uporządkowanych wierszy Kopii wejścia, Lista Wykonawców z loginów Wpisów,
-    Skrzynka raportów z maili w postaci kanonicznej (``worker_reports.as_mail``), pamięć wpisów z ``rollout_before`` i
+    Skrzynka raportów z maili w postaci kanonicznej (``WindowMails.canonical``), pamięć wpisów z ``rollout_before`` i
     ``memory_before`` z decyzjami „Zostaw moją” z ``kept`` i decyzjami Wpisu na życzenie z ``requested``, folder okresów z pustym Plikiem zbiorczym każdego okresu zamkniętego u taty (``closed``) oraz
     zegar z dniem kliknięcia u taty. Numery z Wpisu, które INTERMAX taty miał w przeczytanym wierszu bez zlecenia
     (``orderless``), stają na dole swojego arkusza jako Surowe zlecenia z krojem z aplikacji, bo Kopia wejścia Wpisania
@@ -1011,16 +1011,12 @@ def _entering(record: RunLog, work: _Work) -> _Rebuilt:
     register, limits = _register_file(
         record, work, "intermax", lambda sheet, row: _ORDERED_FONT, lambda workbook: _add_orderless(workbook, replay)
     )
-    reads = replay.mails
-    logins = sorted({read.worker for read in reads if not isinstance(read, ReadStranger)}) or [_NO_WORKER]
+    logins = list(replay.mails.workers()) or [_NO_WORKER]
     senders = {login: _sender(f"wykonawca-{index}") for index, login in enumerate(logins)}
     workers = WorkerList.of([WorkerEntry([login], login, [sender.shown()]) for login, sender in senders.items()])
     assert isinstance(workers, WorkerList), "login Wpisu jest nazwą pliku, bo Logi niosą go po Liście Wykonawców taty"
     strangers = iter(replay.strangers)
-    mails = [
-        as_mail(read, _sender(f"obcy-{read.mail.digest}-{next(strangers)}") if isinstance(read, ReadStranger) else senders[read.worker])
-        for read in reads
-    ]
+    mails = list(replay.mails.canonical(senders, lambda mail, _: _sender(f"obcy-{mail.digest}-{next(strangers)}")))
     moment = datetime.combine(replay.today, started.timetz())
     warned = any(message.code == _MEMORY_NOT_SAVED for message in record.messages)
     inbox = FakeInbox(mails, skipped=replay.skipped)

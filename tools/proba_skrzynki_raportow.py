@@ -94,6 +94,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from rozliczenia import tool_files
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.centrum.report_entering_logs import (
+    LoggedMail,
+    LoggedReportMail,
+    LoggedStrangerMail,
+    LoggedUnreadableMail,
+    logged_mails,
+)
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.worker_report_inbox import (
@@ -108,9 +115,6 @@ from rozliczenia.worker_reports import (
     Login,
     OrderNumber,
     OwnEntries,
-    ReadReport,
-    ReadStranger,
-    ReadUnreadable,
     RegisterWindow,
     ReportEntry,
     ReportMail,
@@ -280,25 +284,26 @@ def _write_review(out: TextIO, mails: Sequence[ReportMail], addresses: WorkerAdd
     entries: dict[tuple[str, date, OrderNumber], list[tuple[datetime, ReportEntry]]] = {}
     out.write(_REVIEW_HEAD)
     for mail, found in sorted(_worker_reads(mails, addresses), key=lambda pair: pair[0].arrived):
-        alias = aliases.setdefault(found.worker, _alias(len(aliases)))
+        alias = aliases.setdefault(Login(found.worker), _alias(len(aliases)))
         out.write(f"\n===== {mail.arrived:%Y-%m-%d %H:%M %z} | {alias} | temat: {mail.subject!r}")
         match found:
-            case ReadReport(day=day):
+            case LoggedReportMail(day=day):
                 outside = "" if window.opens(day) else " | dzien spoza okna proby: rdzen pomija ten Raport"
                 out.write(f" | dzien {day.isoformat()}{outside}\n")
-            case ReadUnreadable(fault=fault):
+            case LoggedUnreadableMail(fault=fault):
                 outside = "" if window.opens(mail.arrived.date()) else " | przyszedl przed oknem proby: rdzen go pomija"
                 out.write(f" | temat nierozpoznany: {fault.name}{outside}\n")
         out.write("----- TRESC\n")
         out.write("".join(f"{line}\n" for line in mail.text.splitlines()))
         match found:
-            case ReadReport(day=day, entries=read):
+            case LoggedReportMail(day=day):
+                read = [logged.entry() for logged in found.entries]
                 out.write(f"----- WPISY ({len(read)})\n")
                 for entry in read:
                     out.write(f"  {_entry_line(entry)}\n")
                     entries.setdefault((alias, day, entry.number), []).append((mail.arrived, entry))
-            case ReadUnreadable(numbers=numbers):
-                listed = ", ".join(sorted(numbers)) or "brak"
+            case LoggedUnreadableMail(numbers=numbers):
+                listed = ", ".join(numbers or ()) or "brak"
                 out.write(f"----- WPISY: brak, bo temat nierozpoznany; numery dla poprawionego Raportu: {listed}\n")
     repeated = {key: same for key, same in entries.items() if len(same) > 1}
     out.write(f"\n===== NUMERY Z KILKOMA WPISAMI JEDNEGO WYKONAWCY Z JEDNEGO DNIA ({len(repeated)})\n")
@@ -310,11 +315,14 @@ def _write_review(out: TextIO, mails: Sequence[ReportMail], addresses: WorkerAdd
 
 def _worker_reads(
     mails: Sequence[ReportMail], addresses: WorkerAddresses
-) -> Iterator[tuple[ReportMail, ReadReport | ReadUnreadable]]:
+) -> Iterator[tuple[ReportMail, LoggedReportMail | LoggedUnreadableMail]]:
+    """Odczyt każdego maila od Wykonawcy w postaci, w jakiej niosą go Logi Wpisania raportów (``logged_mails``),
+    bo wariant odczytu nie wychodzi z rdzenia raportów."""
+
     for mail in mails:
         outcome = _read(_WHOLE_TIME, (mail,), addresses)
-        for found in outcome.mails:
-            if isinstance(found, (ReadReport, ReadUnreadable)):
+        for found in logged_mails(outcome.mails):
+            if isinstance(found, (LoggedReportMail, LoggedUnreadableMail)):
                 yield mail, found
 
 
@@ -349,7 +357,7 @@ def _recognised(outcome: ReportsOutcome) -> bool:
 def _no_report(mails: Sequence[ReportMail], outcome: ReportsOutcome, since: date) -> str:
     strangers = len(_strangers(outcome))
     reports = _reports(outcome)
-    unreadable = sum(1 for read in outcome.mails if isinstance(read, ReadUnreadable))
+    unreadable = sum(1 for read in _logged(outcome) if isinstance(read, LoggedUnreadableMail))
     return (
         f"brak rozpoznanego Raportu wykonawcy od {since.isoformat()} (maile_z_raport={len(mails)}"
         f", nieznani_nadawcy={strangers}, nierozpoznane_tematy={unreadable}"
@@ -358,12 +366,18 @@ def _no_report(mails: Sequence[ReportMail], outcome: ReportsOutcome, since: date
     )
 
 
-def _reports(outcome: ReportsOutcome) -> list[ReadReport]:
-    return [read for read in outcome.mails if isinstance(read, ReadReport)]
+def _reports(outcome: ReportsOutcome) -> list[LoggedReportMail]:
+    return [read for read in _logged(outcome) if isinstance(read, LoggedReportMail)]
 
 
-def _strangers(outcome: ReportsOutcome) -> list[ReadStranger]:
-    return [read for read in outcome.mails if isinstance(read, ReadStranger)]
+def _strangers(outcome: ReportsOutcome) -> list[LoggedStrangerMail]:
+    return [read for read in _logged(outcome) if isinstance(read, LoggedStrangerMail)]
+
+
+def _logged(outcome: ReportsOutcome) -> list[LoggedMail]:
+    """Odczyty maili wyniku rdzenia w postaci z Logów Wpisania raportów: wariant odczytu nie wychodzi z rdzenia."""
+
+    return logged_mails(outcome.mails)
 
 
 def _survey(inbox: ImapInbox, since: date, when: str) -> InboxSurvey:

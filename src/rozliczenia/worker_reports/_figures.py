@@ -17,6 +17,7 @@ from ._model import (
     Login,
     ManualDifference,
     MissingVerdict,
+    Offer,
     OrderDetail,
     OrderKey,
     OvertakenSubject,
@@ -25,7 +26,6 @@ from ._model import (
     RepeatedNumber,
     RepeatedOrder,
     ReportProblem,
-    Requestable,
     UnknownNumber,
     UnknownSender,
     UnreadableSubject,
@@ -48,7 +48,7 @@ def worker_days(
     legend: ActivityLegend,
     mistaken: Iterable[tuple[Login, date, date]],
     faulty: frozenset[OrderKey],
-    offers: Mapping[OrderRow, Requestable],
+    offers: Mapping[OrderRow, Offer],
     overtaken: Iterable[OvertakenSubject],
 ) -> tuple[WorkerDay, ...]:
     """Liczby i zlecenia dla każdego Wykonawcy z dnia, który ma zlecenia albo Raport wykonawcy; ``entered`` liczy

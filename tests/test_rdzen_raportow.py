@@ -24,6 +24,7 @@ import pytest
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend, DescriptionError, FixedColumn
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
+from rozliczenia.centrum.report_entering_logs import LoggedReportMail, LoggedUnreadableMail, logged_mails
 from rozliczenia.settlement_period import period_of
 from rozliczenia.worker_reports import (
     DEFAULT_REMINDERS,
@@ -41,6 +42,7 @@ from rozliczenia.worker_reports import (
     MoveBar,
     MovedFrom,
     MovedTo,
+    Offer,
     OrderDetail,
     OrderedDay,
     OrderKey,
@@ -50,9 +52,6 @@ from rozliczenia.worker_reports import (
     OwnEntry,
     OwnMove,
     ReadNumber,
-    ReadReport,
-    ReadStranger,
-    ReadUnreadable,
     RefusedMove,
     RegisterOrder,
     RepeatedNumber,
@@ -60,7 +59,6 @@ from rozliczenia.worker_reports import (
     ReportEntry,
     ReportMail,
     ReportProblem,
-    Requestable,
     RequestedEntry,
     ReportsOutcome,
     ReportSubject,
@@ -75,12 +73,13 @@ from rozliczenia.worker_reports import (
     VerdictFault,
     Window,
     WorkerAddresses,
+    WindowMails,
     WorkerDay,
-    as_mail,
     reminder_text,
 )
 from rozliczenia.worker_reports.reasons import note, overtaken, reason, subject_fault
 from tests.fixtures.expect import assert_expected
+from tests.fixtures.odczyty_maili import mails as window_mails, report, stranger, unreadable
 from tests.fixtures.pamiec_wpisania import Given, enter_reports, reminders_due
 
 DAY = date(2026, 11, 8)
@@ -110,8 +109,9 @@ def _letter(text: str, number: str, fault: VerdictFault, activities: str) -> Mis
     na życzenie, który wpisze zamiar znaku i ``activities`` do zlecenia z tego dnia."""
 
     assert fault.leaning is not None, fault
-    offer = Requestable(_mail(JAN, SUBJECT, text).id, fault.leaning, activities, DAY, Login("jan.testowy"))
-    return MissingVerdict(Login("jan.testowy"), DAY, OrderNumber(number), fault, offer)
+    jan = Login("jan.testowy")
+    offer = Offer(_mail(JAN, SUBJECT, text).id, jan, DAY, OrderNumber(number), fault.leaning, activities, DAY)
+    return MissingVerdict(jan, DAY, OrderNumber(number), fault, offer)
 
 
 def _order(
@@ -213,7 +213,7 @@ def test_raport_z_adresu_spoza_listy_nie_zmienia_komorek_i_jest_problemem_niezna
 
     assert outcome.changes == ()
     assert _problems(outcome) == (UnknownSender(mail.id, mail.sender, DAY),)
-    assert outcome.mails == (ReadStranger(mail.id, EVENING, DAY),)
+    assert outcome.mails == window_mails(stranger(mail.id, EVENING, DAY))
 
 
 @pytest.mark.parametrize(
@@ -256,7 +256,7 @@ def test_mail_z_innym_tematem_niz_raport_z_data_nie_daje_niczego(subject: str) -
 
     outcome = enter_reports(_inputs([_mail(JAN, subject, TEXT)], [_order()]))
 
-    assert (outcome.changes, _problems(outcome), outcome.mails) == ((), (), ())
+    assert (outcome.changes, _problems(outcome), outcome.mails) == ((), (), window_mails())
 
 
 def test_komorka_rowna_wpisowi_nie_daje_zmiany_a_drugie_klikniecie_niczego_nie_zmienia() -> None:
@@ -313,7 +313,7 @@ def test_tresc_bez_wpisu_raportu_nie_jest_raportem_i_nie_zmienia_komorek(text: s
 
     outcome = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], [_order()]))
 
-    assert (outcome.changes, outcome.mails, outcome.problems) == ((), (), ())
+    assert (outcome.changes, outcome.mails, outcome.problems) == ((), window_mails(), ())
 
 
 JAN_LOGIN, EWA_LOGIN = Login("jan.testowy"), Login("ewa.probna")
@@ -1274,6 +1274,27 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
     for order in other:
         [detail] = [found for found in _days(outcome)[order.key.day, JAN_LOGIN].orders_detail if found.number == order.key.number]
         assert detail == OrderDetail(order.key.number, "tak", detail.activities, reported=True, codes=detail.codes)
+
+
+def test_wpis_na_zyczenie_przy_t_w_raporcie_z_pomylonym_tematem_ma_dzien_problemu_i_wpisuje_do_zlecenia_z_jego_dnia() -> None:
+    """ADR 0041 i 0029: Raport wykonawcy za 8.11 z dwoma Wpisami do zleceń Jana z 7.11 to pomylony temat, a Wpis z ``t``
+    stoi jako problem w dniu z tematu, gdzie widzi go tata. Jego Wpis na życzenie ma ten dzień i wpisze ``tak`` do
+    zlecenia z 7.11 bez Przeniesienia, a decyzja taty z kliknięcia tego Wpisu wpisuje go tam jak Wpis z ``tak``."""
+
+    first, second = _numbered(1, SEVENTH), _numbered(2, SEVENTH)
+    mail = _mail(JAN, SUBJECT, "40000001 t montaż\n40000002 tak montaż")
+    inputs = _inputs([mail], [first, second], rollout=SIXTH, ordered=OPEN_DAYS)
+
+    offered = enter_reports(inputs)
+    [problem] = _problems(offered)
+    assert isinstance(problem, MissingVerdict) and problem.offer is not None
+    decided = enter_reports(replace(inputs, requested=frozenset({problem.offer.decide(EVENING + timedelta(hours=1))})))
+
+    number = OrderNumber("40000001")
+    offer = Offer(mail.id, JAN_LOGIN, DAY, number, Verdict.YES, "montaż", SEVENTH)
+    assert problem == MissingVerdict(JAN_LOGIN, DAY, number, VerdictFault.LETTER_YES, offer)
+    assert (_problems(decided), decided.moves) == ((), ())
+    assert set(decided.changes) == {*_both(first.row, "tak", "montaż"), *_both(second.row, "tak", "montaż")}
 
 
 @pytest.mark.parametrize("intermax_day", [SIXTH, SEVENTH], ids=["zlecenia-z-6", "zlecenia-z-7"])
@@ -2540,7 +2561,7 @@ def test_przy_dwoch_wpisach_zlecenia_wygrywa_pozniejszy_mail_w_kazdej_kolejnosci
         CellChange(ROW, ReportColumn.SUCCESSFUL, "nie"),
         CellChange(ROW, ReportColumn.COMPLETED, "klient nieobecny"),
     )
-    assert [read.mail for read in outcome.mails] == [earlier.id, later.id]
+    assert [read.mail for read in logged_mails(outcome.mails)] == [earlier.id.digest, later.id.digest]
 
 
 @pytest.mark.parametrize(
@@ -2646,8 +2667,10 @@ def test_raport_z_dnia_spoza_dni_otwartych_jest_pomijany_po_cichu(
 
     outcome = enter_reports(_inputs([mail], [_order(day=day)], rollout=rollout, closed=closed))
 
-    assert replace(outcome, mails=(), said=frozenset()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), (), frozenset())
-    assert [type(read) for read in outcome.mails] == ([ReadReport] if closed else [])
+    assert replace(outcome, mails=window_mails(), said=frozenset()) == ReportsOutcome(
+        (), (), (), window_mails(), OwnEntries.EMPTY, (), (), (), frozenset()
+    )
+    assert [type(read) for read in logged_mails(outcome.mails)] == ([LoggedReportMail] if closed else [])
 
 
 def test_raport_z_ostatniego_dnia_poprzedniego_okresu_wpisuje_sie_dopoki_okres_nie_ma_pliku_zbiorczego() -> None:
@@ -2664,7 +2687,9 @@ def test_raport_z_ostatniego_dnia_poprzedniego_okresu_wpisuje_sie_dopoki_okres_n
     )
 
     assert [change.column for change in still_open.changes] == [ReportColumn.SUCCESSFUL, ReportColumn.COMPLETED]
-    assert replace(closed, mails=(), said=frozenset()) == ReportsOutcome((), (), (), (), OwnEntries.EMPTY, (), (), (), frozenset())
+    assert replace(closed, mails=window_mails(), said=frozenset()) == ReportsOutcome(
+        (), (), (), window_mails(), OwnEntries.EMPTY, (), (), (), frozenset()
+    )
 
 
 TUESDAY = date(2026, 11, 10)
@@ -3233,23 +3258,28 @@ _CANONICAL_DAYS = (date(2026, 11, 7), DAY)
 """Oba dni zleceń są Dniami uporządkowanymi, więc nowy numer z 8 cyframi z maila się dopisuje."""
 
 
-def _canonical_senders(outcome: ReportsOutcome) -> list[SenderAddress]:
-    """Adres każdego odczytu: Wykonawcy z listy adresów, a maila spoza listy jeden z tylu adresów spoza niej, ile
-    problemów nieznanego nadawcy ma jego mail z dniem, bo tyle różnych nadawców miały maile z tym Message-ID."""
+def _canonical(outcome: ReportsOutcome) -> list[ReportMail]:
+    """Mail w postaci kanonicznej w miejscu każdego odczytu: od adresu Wykonawcy z listy adresów, a mail spoza listy od
+    jednego z tylu adresów spoza niej, ile problemów nieznanego nadawcy ma jego mail z dniem, bo tyle różnych nadawców
+    miały maile z tym Message-ID."""
 
     senders = Counter((problem.mail, problem.day) for problem in _problems(outcome) if isinstance(problem, UnknownSender))
     seen: Counter[tuple[MailId, date]] = Counter()
-    found: list[str] = []
-    for read in outcome.mails:
-        if isinstance(read, ReadStranger):
-            key = (read.mail, read.day)
-            found.append(f"obcy-{seen[key] % senders[key]}@odtworzenie.invalid")
-            seen[key] += 1
-        else:
-            found.append(ADDRESSES[read.worker][0])
-    addresses = [SenderAddress.of(address) for address in found]
-    assert None not in addresses
-    return [address for address in addresses if address is not None]
+
+    def other(mail: MailId, day: date) -> SenderAddress:
+        key = (mail, day)
+        address = _address(f"obcy-{seen[key] % senders[key]}@odtworzenie.invalid")
+        seen[key] += 1
+        return address
+
+    workers = {Login(login): _address(addresses[0]) for login, addresses in ADDRESSES.items()}
+    return list(outcome.mails.canonical(workers, other))
+
+
+def _address(text: str) -> SenderAddress:
+    address = SenderAddress.of(text)
+    assert address is not None, text
+    return address
 
 
 def _seen(problem: ReportProblem) -> object:
@@ -3275,7 +3305,8 @@ def _seen(problem: ReportProblem) -> object:
 )
 @example([_mail(JAN, f"{SUBJECT} Nowak {words}", TEXT, EVENING, "<1@przyklad.invalid>") for words in ("rano", "wieczorem")])
 def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[ReportMail]) -> None:
-    """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail z ``as_mail`` w miejscu każdego przeczytanego maila daje
+    """Odtworzenie z Logów (#1233) ma z maila tylko odczyt: mail w postaci kanonicznej (``WindowMails.canonical``) w
+    miejscu każdego przeczytanego maila daje
     ten sam odczyt, te same zmiany komórek, problemy (poza adresem nieznanego nadawcy), liczby i pamięć wpisów. Logi nie
     mają tematu, więc dwa Raporty wykonawcy z błędem tematu różne tylko tematem są w przebiegu, jak w odtworzeniu, jednym
     problemem (ostatni przykład)."""
@@ -3284,7 +3315,7 @@ def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[
         mails, _CANONICAL_ORDERS, today=DAY, rollout=date(2026, 11, 7), memory=_CANONICAL_MEMORY, ordered=_CANONICAL_DAYS
     )
     outcome = enter_reports(inputs)
-    canonical = list(map(as_mail, outcome.mails, _canonical_senders(outcome)))
+    canonical = _canonical(outcome)
 
     again = enter_reports(replace(inputs, mails=canonical))
 
@@ -3298,10 +3329,9 @@ def test_postac_kanoniczna_odczytu_maila_daje_ten_sam_wynik_rdzenia(mails: list[
     assert sorted(map(repr, map(_seen, _problems(again)))) == sorted(map(repr, map(_seen, _problems(outcome))))
 
 
-def _read_back(read: ReadReport | ReadUnreadable) -> tuple[object, ...]:
-    sender = SenderAddress.of(JAN)
-    assert sender is not None
-    return enter_reports(_inputs([as_mail(read, sender)], [_order()])).mails
+def _read_back(read: WindowMails) -> WindowMails:
+    workers = {Login("jan.testowy"): _address(JAN)}
+    return enter_reports(_inputs(list(read.canonical(workers, lambda mail, day: _address(ADAM))), [_order()])).mails
 
 
 DAY_BESIDE_FAULTS = (SubjectFault.OTHER_WORDS, SubjectFault.OTHER_TEXT, SubjectFault.NO_YEAR)
@@ -3327,9 +3357,9 @@ def test_postac_kanoniczna_bledu_tematu_daje_ten_sam_powod_i_dzien_z_tematu(faul
         ReportEntry(OrderNumber("40000001"), Verdict.NO, None, "brak klienta"),
         ReportEntry(OrderNumber("40000003"), None, VerdictFault.MISSING, ""),
     )
-    read = ReadUnreadable(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), fault, entries, day, ReportSubject(""))
+    read = window_mails(unreadable(MailId.of("<1@przyklad.invalid>"), EVENING, "jan.testowy", fault, entries, day))
 
-    assert _read_back(read) == (read,)
+    assert _read_back(read) == read
 
 
 @pytest.mark.parametrize("activities", ["", "wymiana routera"])
@@ -3344,9 +3374,9 @@ def test_postac_kanoniczna_wpisu_z_kazdym_znakiem_daje_ten_sam_wpis(
     """Każdy ``tak``/``nie`` i każdy powód jego braku, z opisem i bez, także Wpis bez żadnego znaku."""
 
     entry = ReportEntry(OrderNumber("40000001"), verdict, fault, activities)
-    read = ReadReport(MailId.of("<1@przyklad.invalid>"), EVENING, Login("jan.testowy"), DAY, (entry,))
+    read = window_mails(report(MailId.of("<1@przyklad.invalid>"), EVENING, "jan.testowy", DAY, (entry,)))
 
-    assert _read_back(read) == (read,)
+    assert _read_back(read) == read
 
 
 @settings(derandomize=True, database=None)
@@ -3504,14 +3534,8 @@ def test_wpis_raportu_ma_numer_tak_albo_nie_i_czynnosci() -> None:
 
     outcome = enter_reports(_inputs([mail], [_order()]))
 
-    assert outcome.mails == (
-        ReadReport(
-            mail.id,
-            EVENING,
-            Login("jan.testowy"),
-            DAY,
-            (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana routera, 2 gniazda"),),
-        ),
+    assert outcome.mails == window_mails(
+        report(mail.id, EVENING, "jan.testowy", DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana routera, 2 gniazda"),))
     )
     assert outcome.changes[1] == CellChange(ROW, ReportColumn.COMPLETED, "wymiana routera, 2 gniazda")
 
@@ -3548,10 +3572,8 @@ def test_odpowiedz_na_przypomnienie_jest_raportem_wykonawcy_za_dzien_z_tematu_pr
     outcome = enter_reports(_inputs([mail], [_order()]))
 
     assert outcome.changes == _both(ROW, "tak", "inst20m")
-    assert outcome.mails == (
-        ReadReport(
-            mail.id, EVENING, Login("jan.testowy"), DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "inst20m"),)
-        ),
+    assert outcome.mails == window_mails(
+        report(mail.id, EVENING, "jan.testowy", DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "inst20m"),))
     )
 
 
@@ -3576,7 +3598,7 @@ def test_przekazanie_przypomnienia_i_odpowiedz_na_inny_temat_nie_sa_raportem(sub
 
     outcome = enter_reports(_inputs([_mail(JAN, subject, REPLY)], [_order()]))
 
-    assert (outcome.changes, _problems(outcome), outcome.mails) == ((), (), ())
+    assert (outcome.changes, _problems(outcome), outcome.mails) == ((), (), window_mails())
 
 
 _PREFIXES = st.sampled_from(["Re:", "RE:", "re :", "Odp:", "ODP:", "odp:", "Fwd:", "FW:", "PD:", "pd :"])
@@ -3656,7 +3678,9 @@ def test_numery_z_przykladu_nie_daja_wpisu_ani_problemu_nawet_gdy_sa_zleceniami(
 
     assert outcome.changes == _both(ROW, "tak", "inst20m")
     assert _problems(outcome) == ()
-    assert [entry.number for read in outcome.mails if isinstance(read, ReadReport) for entry in read.entries] == ["40000001"]
+    assert [entry.number for read in logged_mails(outcome.mails) if isinstance(read, LoggedReportMail) for entry in read.entries] == [
+        "40000001"
+    ]
 
 
 def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
@@ -3666,16 +3690,10 @@ def test_numery_z_przykladu_nie_sa_numerami_nieczytelnego_tematu() -> None:
 
     outcome = enter_reports(_inputs([mail], [_order()]))
 
-    assert outcome.mails == (
-        ReadUnreadable(
-            mail.id,
-            EVENING,
-            Login("jan.testowy"),
-            SubjectFault.NO_YEAR,
-            (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "inst20m"),),
-            DAY,
-            ReportSubject("Raport 08.11"),
-        ),
+    assert outcome.mails == window_mails(
+        unreadable(
+            mail.id, EVENING, "jan.testowy", SubjectFault.NO_YEAR, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "inst20m"),), DAY
+        )
     )
 
 
@@ -3745,10 +3763,8 @@ def test_poprawka_w_odpowiedzi_z_tematem_raportu_na_poczatku_jest_raportem_za_je
 
     assert outcome.changes == _both(ROWS[0], "tak", "wymiana modemu")
     assert _problems(outcome) == ()
-    assert outcome.mails == (
-        ReadReport(
-            mail.id, EVENING, Login("jan.testowy"), DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana modemu"),)
-        ),
+    assert outcome.mails == window_mails(
+        report(mail.id, EVENING, "jan.testowy", DAY, (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana modemu"),))
     )
 
 
@@ -3861,7 +3877,7 @@ def test_literowka_w_roku_tematu_daje_dzien_z_tym_dniem_i_miesiacem_w_granicach_
     outcome = enter_reports(_inputs([mail], [order], today=max(day, arrived.date()), rollout=day))
 
     assert outcome.changes == _both(ROW, "tak", "wymiana routera")
-    assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [day]
+    assert [found.day for found in logged_mails(outcome.mails) if isinstance(found, LoggedReportMail)] == [day]
 
 
 def test_29_lutego_z_innego_roku_przestepnego_daje_29_lutego_roku_przestepnego_w_granicach() -> None:
@@ -3869,7 +3885,7 @@ def test_29_lutego_z_innego_roku_przestepnego_daje_29_lutego_roku_przestepnego_w
 
     outcome = enter_reports(_inputs([mail], [_order(day=date(2028, 2, 29))], today=date(2028, 3, 10), rollout=date(2028, 2, 1)))
 
-    assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [date(2028, 2, 29)]
+    assert [found.day for found in logged_mails(outcome.mails) if isinstance(found, LoggedReportMail)] == [date(2028, 2, 29)]
     assert outcome.changes == _both(ROW, "tak", "wymiana routera")
 
 
@@ -3880,7 +3896,7 @@ def test_29_lutego_bez_roku_przestepnego_w_granicach_zostaje_z_tematu() -> None:
 
     outcome = enter_reports(_inputs([mail], [_order()], rollout=date(2024, 1, 1)))
 
-    assert [found.day for found in outcome.mails if isinstance(found, ReadReport)] == [date(2024, 2, 29)]
+    assert [found.day for found in logged_mails(outcome.mails) if isinstance(found, LoggedReportMail)] == [date(2024, 2, 29)]
 
 
 @st.composite
@@ -3937,7 +3953,7 @@ def test_wlasnosc_temat_z_dniem_i_innymi_slowami_liczy_sie_za_ten_sam_dzien_z_te
     assume(expected)
     inputs = _inputs([_mail(JAN, subject + words, TEXT, arrived)], [], today=arrived.date() + timedelta(days=62), rollout=date(1000, 1, 1))
 
-    read = [(found.fault, found.day) for found in enter_reports(inputs).mails if isinstance(found, ReadUnreadable)]
+    read = [(found.fault, found.day) for found in logged_mails(enter_reports(inputs).mails) if isinstance(found, LoggedUnreadableMail)]
 
     assert read == [(SubjectFault.OTHER_WORDS, *expected)]
 
@@ -3966,7 +3982,7 @@ def _days_read(subject: str, arrived: datetime) -> list[date]:
     ``_AFTER`` po dniu przyjścia, więc pusta lista to tylko 29 lutego z roku spoza okna."""
 
     inputs = _inputs([_mail(JAN, subject, TEXT, arrived)], [], today=arrived.date() + timedelta(days=62), rollout=date(1000, 1, 1))
-    return [found.day for found in enter_reports(inputs).mails if isinstance(found, ReadReport)]
+    return [found.day for found in logged_mails(enter_reports(inputs).mails) if isinstance(found, LoggedReportMail)]
 
 
 @pytest.mark.parametrize(
@@ -3983,7 +3999,7 @@ def test_mail_z_bledem_tematu_bez_zadnego_wpisu_jest_pomijany_po_cichu(subject: 
 
     outcome = enter_reports(_inputs([_mail(JAN, subject, text)], [_order()]))
 
-    assert (outcome.mails, outcome.problems, outcome.changes) == ((), (), ())
+    assert (outcome.mails, outcome.problems, outcome.changes) == (window_mails(), (), ())
 
 
 @pytest.mark.parametrize(
@@ -4036,7 +4052,7 @@ def test_raport_z_bledem_tematu_liczy_sie_za_dzien_z_tematu_albo_wskazany_i_nic_
     jan, entries = Login("jan.testowy"), (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana routera"),)
     assert outcome.changes == ()
     assert _problems(outcome) == (UnreadableSubject(mail.id, jan, mail.arrived, fault, ReportSubject(subject), day or NEXT_DAY),)
-    assert outcome.mails == (ReadUnreadable(mail.id, mail.arrived, jan, fault, entries, day, ReportSubject(subject)),)
+    assert outcome.mails == window_mails(unreadable(mail.id, mail.arrived, jan, fault, entries, day))
     counted = {DAY: int(day == DAY), NEXT_DAY: int(day is None)}
     assert {(figure.day, figure.mails, figure.problems) for figure in outcome.workers} == {
         (found, mails, mails) for found, mails in counted.items()
@@ -4058,21 +4074,16 @@ def test_raport_z_bledem_tematu_bez_dnia_otwartego_jest_problemem_bez_dnia_a_z_d
     assert [(figure.day, figure.mails) for figure in outcome.workers] == [(DAY, 1)]
 
 
-def _requests(outcome: ReportsOutcome) -> dict[OrderNumber, Requestable | None]:
+def _requests(outcome: ReportsOutcome) -> dict[OrderNumber, Offer | None]:
     """Wpis na życzenie przy każdym zleceniu z dnia otwartego w wyniku, po numerze."""
 
     return {order.number: order.request for figure in outcome.workers for order in figure.orders_detail or ()}
 
 
-def _decisions(mail: ReportMail, offers: Mapping[OrderNumber, Requestable | None]) -> frozenset[RequestedEntry]:
-    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers`` raportu ``mail``: decyzja ma Wykonawcę i dzień, które
-    zlecenie ma po Wpisie, jak w widoku Raporty."""
+def _decisions(offers: Mapping[OrderNumber, Offer | None]) -> frozenset[RequestedEntry]:
+    """Kliknięcie taty przy każdym Wpisie na życzenie z ``offers``."""
 
-    return frozenset(
-        RequestedEntry(mail.id, offer.worker, offer.order_day, number, offer.verdict, offer.activities, EVENING + timedelta(hours=1))
-        for number, offer in offers.items()
-        if offer is not None
-    )
+    return frozenset(offer.decide(EVENING + timedelta(hours=1)) for offer in offers.values() if offer is not None)
 
 
 TWO_ORDERS = (_order(), _order(OrderRow("Zlecenia", 121), number="40000002"))
@@ -4106,10 +4117,10 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_wpisuje_to_co_raport_z_d
     correct = enter_reports(replace(inputs, mails=[_mail(JAN, SUBJECT, same, mail.arrived)]))
 
     offered = enter_reports(inputs)
-    decided = enter_reports(replace(inputs, requested=_decisions(mail, _requests(offered))))
+    decided = enter_reports(replace(inputs, requested=_decisions(_requests(offered))))
 
     expected = {
-        number: Requestable(mail.id, verdict, activities, DAY, Login("jan.testowy"))
+        number: Offer(mail.id, Login("jan.testowy"), DAY, number, verdict, activities, DAY)
         for number, verdict, activities in (
             (entry.number, entry.verdict, entry.activities) for entry in _entries_of(same)
         )
@@ -4141,10 +4152,12 @@ def test_wpis_na_zyczenie_przy_raporcie_z_bledem_tematu_przenosi_zlecenie_jak_ra
     right = enter_reports(replace(inputs, mails=[_mail(sender, correct, TEXT, mail.arrived)]))
 
     offered = enter_reports(inputs)
-    decided = enter_reports(replace(inputs, requested=_decisions(mail, _requests(offered))))
+    decided = enter_reports(replace(inputs, requested=_decisions(_requests(offered))))
 
     [login] = [Login(login) for login, addresses in ADDRESSES.items() if sender in addresses]
-    assert _requests(offered) == {OrderNumber("40000001"): Requestable(mail.id, Verdict.YES, "wymiana routera", order_day, login)}
+    assert _requests(offered) == {
+        OrderNumber("40000001"): Offer(mail.id, login, order_day, OrderNumber("40000001"), Verdict.YES, "wymiana routera", order_day)
+    }
     assert (offered.changes, offered.moves) == ((), ())
     assert (decided.changes, decided.moves, decided.memory, decided.notes) == (right.changes, right.moves, right.memory, right.notes)
     assert right.moves != ()
@@ -4197,11 +4210,11 @@ def test_o_wpisie_na_zyczenie_raportow_z_bledem_tematu_decyduje_najpozniejszy_ma
     assert outcome.changes == (() if winner is None or verdict is None else _both(ROW, verdict.value, winner.activities))
     assert offer.leaning is not None
     assert _requests(outcome) == {
-        OrderNumber("40000001"): Requestable(last.id, offer.leaning, offer.activities, DAY, Login("jan.testowy")) if pending else None
+        OrderNumber("40000001"): Offer(last.id, Login("jan.testowy"), DAY, OrderNumber("40000001"), offer.leaning, offer.activities, DAY) if pending else None
     }
     assert (last.id in {problem.mail for problem in _problems(outcome) if isinstance(problem, UnreadableSubject)}) == pending
     if pending:
-        after = enter_reports(replace(inputs, requested=decisions | _decisions(last, _requests(outcome))))
+        after = enter_reports(replace(inputs, requested=decisions | _decisions(_requests(outcome))))
         assert after.changes == _both(ROW, offer.leaning.value, offer.activities)
         assert set(_requests(after).values()) == {None}
         assert last.id not in {problem.mail for problem in _problems(after) if isinstance(problem, UnreadableSubject)}
@@ -4210,9 +4223,9 @@ def test_o_wpisie_na_zyczenie_raportow_z_bledem_tematu_decyduje_najpozniejszy_ma
 def _entries_of(text: str) -> tuple[ReportEntry, ...]:
     """Wpisy Raportu wykonawcy z dnia ``DAY`` z treścią ``text``, jak je czyta rdzeń."""
 
-    [read] = enter_reports(_inputs([_mail(JAN, SUBJECT, text)], TWO_ORDERS)).mails
-    assert isinstance(read, ReadReport), read
-    return read.entries
+    [read] = logged_mails(enter_reports(_inputs([_mail(JAN, SUBJECT, text)], TWO_ORDERS)).mails)
+    assert isinstance(read, LoggedReportMail), read
+    return tuple(entry.entry() for entry in read.entries)
 
 
 def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_tematu_a_decyzja_przy_innym_wpisie_nic_nie_wpisuje() -> None:
@@ -4231,8 +4244,53 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_temat
     assert stale.changes == ()
     assert [type(problem) for problem in _problems(stale)] == [UnreadableSubject]
     assert _requests(stale) == {
-        OrderNumber("40000001"): Requestable(faulty.id, Verdict.YES, "wymiana routera", DAY, Login("jan.testowy"))
+        OrderNumber("40000001"): Offer(faulty.id, Login("jan.testowy"), DAY, OrderNumber("40000001"), Verdict.YES, "wymiana routera", DAY)
     }
+
+
+def test_kapsula_odczytow_maili_nie_oddaje_odczytow_wzorcem_klasy_vars_ani_dict() -> None:
+    """Postacie z ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` w ``tests/test_zakazy_ruff.py``, które mypy przepuszcza, w
+    działaniu nie oddają odczytów maili kapsuły ``WindowMails``: wzorzec klasy z nazwą ``__reads`` nic nie wiąże, bo
+    pole ma nazwę po name mangling, a ``vars()`` i ``__dict__`` padają, bo kapsuła ma ``__slots__``."""
+
+    found = window_mails(stranger(MailId.of("<1@przyklad.invalid>"), EVENING, DAY))
+
+    match found:
+        case WindowMails(__reads=reads):
+            pytest.fail(f"wzorzec klasy związał odczyty kapsuły: {reads!r}")
+        case _:
+            pass
+    with pytest.raises(TypeError):
+        vars(found)
+    with pytest.raises(AttributeError):
+        assert found.__dict__ is None
+
+
+def test_zlecenia_z_wpisem_to_wpisy_raportow_z_dniem_z_tematu_i_wpisy_na_zyczenie_z_dniem_decyzji_taty() -> None:
+    """ADR 0041: zlecenia z Wpisem kliknięcia (``WindowMails.said``) to Wpisy Raportu wykonawcy z dniem z tematu i Wpisy
+    raportu z błędem tematu, przy których tata kliknął Wpis na życzenie, z dniem jego decyzji. Wpis raportu z błędem
+    tematu bez decyzji, także z ``tak``, i z decyzją z innymi czynnościami niż w mailu (widok sprzed poprawki) zlecenia
+    z Wpisem nie daje, a mail od nieznanego nadawcy żadnego."""
+
+    jan, faulty = Login("jan.testowy"), MailId.of("<2@przyklad.invalid>")
+    reported = (ReportEntry(OrderNumber("40000001"), Verdict.YES, None, "wymiana routera"),)
+    asked = (
+        ReportEntry(OrderNumber("40000002"), None, VerdictFault.LETTER_YES, "wymiana"),
+        ReportEntry(OrderNumber("40000003"), None, VerdictFault.LETTER_NO, "brak klienta"),
+        ReportEntry(OrderNumber("40000004"), Verdict.YES, None, "montaż"),
+    )
+    found = window_mails(
+        report(MailId.of("<1@przyklad.invalid>"), EVENING, jan, DAY, reported),
+        unreadable(faulty, EVENING, jan, SubjectFault.NO_DATE, asked, None),
+        stranger(MailId.of("<3@przyklad.invalid>"), EVENING, DAY),
+    )
+    decisions = (
+        RequestedEntry(faulty, jan, NEXT_DAY, OrderNumber("40000002"), Verdict.YES, "wymiana", EVENING),
+        RequestedEntry(faulty, jan, NEXT_DAY, OrderNumber("40000003"), Verdict.NO, "klient nieobecny", EVENING),
+    )
+
+    assert found.said(()) == {OrderKey(OrderNumber("40000001"), DAY, jan)}
+    assert found.said(decisions) == {OrderKey(OrderNumber("40000001"), DAY, jan), OrderKey(OrderNumber("40000002"), NEXT_DAY, jan)}
 
 
 @pytest.mark.parametrize(
@@ -4274,7 +4332,7 @@ def test_nieczytelny_temat_spoza_wykonawcow_albo_z_okresu_z_plikiem_zbiorczym_je
 
     outcome = enter_reports(_inputs([_mail(sender, "Raport 08.11", TEXT, arrived)], [], rollout=rollout, closed=closed))
 
-    assert (_problems(outcome), outcome.mails) == ((), ())
+    assert (_problems(outcome), outcome.mails) == ((), window_mails())
 
 
 @pytest.mark.parametrize(
@@ -4414,7 +4472,7 @@ def test_pozniejszy_wpis_bez_tak_ani_nie_zastepuje_wczesniejszy_i_nic_nie_wpisuj
 
     outcome = enter_reports(_inputs(mails, [_order()]))
 
-    offer = Requestable(mails[1].id, Verdict.YES, "wymiana routera", DAY, Login("jan.testowy"))
+    offer = Offer(mails[1].id, Login("jan.testowy"), DAY, OrderNumber("40000001"), Verdict.YES, "wymiana routera", DAY)
     assert outcome.changes == ()
     assert _problems(outcome) == (
         MissingVerdict(Login("jan.testowy"), DAY, OrderNumber("40000001"), VerdictFault.LETTER_YES, offer),
@@ -4882,9 +4940,9 @@ def test_dwa_nieczytelne_tematy_z_jednym_message_id_chwila_i_powodem_rozstrzygaj
     outcomes = [enter_reports(_inputs(order, [_order()])) for order in (mails, mails[::-1])]
 
     assert outcomes[0] == outcomes[1]
-    assert [read.numbers for read in outcomes[0].mails if isinstance(read, ReadUnreadable)] == [
-        frozenset({OrderNumber("40000001")}),
-        frozenset({OrderNumber("40000002")}),
+    assert [read.numbers for read in logged_mails(outcomes[0].mails) if isinstance(read, LoggedUnreadableMail)] == [
+        ["40000001"],
+        ["40000002"],
     ]
 
 
@@ -4932,7 +4990,7 @@ def test_dwa_nieczytelne_tematy_z_jednym_message_id_i_chwila_przyjscia_daja_ten_
     outcomes = [enter_reports(_inputs(order, [_order()])) for order in (mails, mails[::-1])]
 
     assert outcomes[0] == outcomes[1]
-    assert {read.fault for read in outcomes[0].mails if isinstance(read, ReadUnreadable)} == {
+    assert {read.fault for read in logged_mails(outcomes[0].mails) if isinstance(read, LoggedUnreadableMail)} == {
         SubjectFault.NO_YEAR,
         SubjectFault.YEAR_DIGITS,
     }
@@ -5260,15 +5318,14 @@ def test_pozniejszy_mail_z_jednym_wpisem_numeru_rozwiazuje_ostrzezenie_a_pozniej
 
 
 def test_postac_kanoniczna_maila_ze_sprzecznymi_wpisami_daje_te_same_wpisy_i_ostrzezenie() -> None:
-    """Odtworzenie z Logów (#1233): mail z ``as_mail`` w miejscu maila ze sprzecznymi Wpisami daje ten sam odczyt (oba
-    Wpisy numeru) i to samo ostrzeżenie."""
+    """Odtworzenie z Logów (#1233): mail w postaci kanonicznej (``WindowMails.canonical``) w miejscu maila ze
+    sprzecznymi Wpisami daje ten sam odczyt (oba Wpisy numeru) i to samo ostrzeżenie."""
 
     mail = _mail(JAN, SUBJECT, f"{CONFLICT}   Wysłano z aplikacji mobilnej Poczty o2")
     outcome = enter_reports(_inputs([mail], CONFLICT_ORDERS))
-    sender = SenderAddress.of(JAN)
-    assert sender is not None
+    canonical = outcome.mails.canonical({Login("jan.testowy"): _address(JAN)}, lambda mail, day: _address(ADAM))
 
-    again = enter_reports(_inputs([as_mail(read, sender) for read in outcome.mails], CONFLICT_ORDERS))
+    again = enter_reports(_inputs(list(canonical), CONFLICT_ORDERS))
 
     assert again == outcome
     assert [type(problem) for problem in _problems(again)] == [ConflictingVerdicts]

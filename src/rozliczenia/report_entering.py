@@ -39,7 +39,8 @@ okresu: Uruchomienie ma okres dzisiejszej daty z zegara procesu (ADR 0019). Zatr
 (``EnteringFacts``), a Zatrzymanie po zapisie całe podsumowanie (``EnteringSummary``), więc Logi mają zmiany i problemy
 także wtedy. Plik dostępu, który zniknie albo zepsuje się między
 Sprawdzaniem a odczytem skrzynki, daje to samo Zatrzymanie co w Sprawdzaniu. Adres, temat ani treść maila nie
-wychodzą z rdzenia do faktów: ``MailRead`` ich nie ma, a adres nieznanego nadawcy ma tylko problem w pamięci.
+wychodzą z rdzenia do faktów: odczyty maili (``WindowMails``) ich nie mają, a adres nieznanego nadawcy ma tylko problem w
+pamięci.
 """
 
 from __future__ import annotations
@@ -74,7 +75,6 @@ from .worker_report_inbox import InboxUnreachable, Mails, PasswordRejected, Work
 from .worker_reports import (
     EnteringMemory,
     Kept,
-    MailRead,
     MemorySource,
     OrderKey,
     OrderNumber,
@@ -91,10 +91,10 @@ from .worker_reports import (
     RequestedEntry,
     SavedState,
     Window,
+    WindowMails,
     WorkerAddresses,
     WorkerDay,
     order_number,
-    worker_report_count,
 )
 from .wall_clock import local_now
 from .worker_list import WorkerList
@@ -244,7 +244,7 @@ class EnteringFacts:
     memory_before: tuple[OwnEntry, ...]
     kept: tuple[Kept, ...]
     skipped: int
-    mails: tuple[MailRead, ...]
+    mails: WindowMails
     problems: tuple[ReportProblem, ...]
     changes: tuple[CellChange, ...]
     moves: tuple[OrderMove, ...] = ()
@@ -275,7 +275,7 @@ class EnteringSummary:
     def reports(self) -> int:
         """Raporty wykonawców od Wykonawców z listy adresów, które kliknięcie przeczytało."""
 
-        return worker_report_count(self.facts.mails)
+        return self.facts.mails.worker_report_count
 
 
 @contextmanager

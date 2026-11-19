@@ -1,0 +1,109 @@
+{
+  "schema_version": 3,
+  "clicked_at": "2026-11-09T18:30:00+01:00",
+  "days": [
+    "2026-11-09"
+  ],
+  "workers": [
+    {
+      "day": "2026-11-09",
+      "worker": "anna.kowalska",
+      "orders": 1,
+      "entered": 0,
+      "mails": 1,
+      "without_report": [],
+      "orders_detail": [
+        {
+          "number": "40000002",
+          "successful": null,
+          "activities": null,
+          "reported": false,
+          "codes": null,
+          "faulty": true,
+          "request": {
+            "mail": "fciijllmipglpnop",
+            "activities": "montaż",
+            "successful": "tak",
+            "worker": "anna.kowalska",
+            "order_day": "2026-11-09"
+          }
+        }
+      ],
+      "mistaken": [],
+      "overtaken": []
+    },
+    {
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "orders": 2,
+      "entered": 0,
+      "mails": 1,
+      "without_report": [],
+      "orders_detail": [
+        {
+          "number": "40000001",
+          "successful": null,
+          "activities": null,
+          "reported": false,
+          "codes": null,
+          "faulty": true,
+          "request": {
+            "mail": "fciijllmipglpnop",
+            "activities": "inst20m",
+            "successful": "tak",
+            "worker": "anna.kowalska",
+            "order_day": "2026-11-09"
+          }
+        },
+        {
+          "number": "40000003",
+          "successful": null,
+          "activities": null,
+          "reported": true,
+          "codes": null,
+          "faulty": false,
+          "request": null
+        }
+      ],
+      "mistaken": [],
+      "overtaken": []
+    }
+  ],
+  "problems": [
+    {
+      "day": "2026-11-09",
+      "worker": "anna.kowalska",
+      "number": null,
+      "reason": "Raport wykonawcy od anna.kowalska z 09.11.2026, 18:30 ma błąd w temacie: poza tym słowem i datą temat ma inne słowa. Centrum liczy go za 09.11.2026, więc za ten dzień nie idzie Przypomnienie o raporcie, ale jego Wpisów nie wpisało.",
+      "sender": null,
+      "difference": null,
+      "request": null,
+      "faulty_subject": {
+        "subject": "Raport 09.11.2026 Nowak",
+        "fault": "inne słowa",
+        "day": "2026-11-09",
+        "arrived": "2026-11-09T18:30:00+01:00",
+        "mail": "fciijllmipglpnop"
+      }
+    },
+    {
+      "day": "2026-11-09",
+      "worker": "jan.testowy",
+      "number": "40000003",
+      "reason": "Wpis zlecenia 40000003 od jan.testowy z 09.11.2026 ma samą literę „t” zamiast „tak”, więc Centrum go nie wpisało.",
+      "sender": null,
+      "difference": null,
+      "request": {
+        "mail": "dmpekpnjpeodcodd",
+        "worker": "jan.testowy",
+        "day": "2026-11-09",
+        "number": "40000003",
+        "activities": "spawpg",
+        "successful": "tak",
+        "order_day": "2026-11-09"
+      },
+      "faulty_subject": null
+    }
+  ],
+  "notes": []
+}

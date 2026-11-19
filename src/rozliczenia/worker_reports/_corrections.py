@@ -106,7 +106,7 @@ def uncorrected(
             reports,
             board.own_numbers,
             addition.worker,
-            frozenset(entry.number for entry in addition.report.entries),
+            addition.numbers,
             (addition.arrived, addition.mail),
             {addition.day},
         )

@@ -19,6 +19,7 @@ from ._model import (
     MailId,
     MissingVerdict,
     MoveBar,
+    Offer,
     OrderedDay,
     OrderKey,
     OrderNumber,
@@ -31,7 +32,6 @@ from ._model import (
     RepeatedOrder,
     ReportEntry,
     ReportProblem,
-    Requestable,
     RequestedEntry,
     SubjectLost,
     UnknownNumber,
@@ -49,30 +49,20 @@ MISTAKEN_SUBJECT = 2
 @dataclass(frozen=True)
 class Addition:
     """Zwycięski Wpis numeru ``number``, którego INTERMAX nie ma, z ``tak``/``nie`` ``verdict`` i czynnościami
-    ``activities``, z Raportu wykonawcy ``report``: Zlecenie dopisane z raportu w arkuszu zleceń ``sheet`` pod
-    zleceniami nadawcy w dniu z tematu."""
+    ``activities``: Zlecenie dopisane z raportu w arkuszu zleceń ``sheet`` pod zleceniami nadawcy ``worker`` w dniu z
+    tematu ``day``, z Raportu wykonawcy z maila ``mail``, który przyszedł ``arrived``. ``numbers``: numery wszystkich
+    Wpisów tego Raportu wykonawcy, po których reguła poprawionego maila (``_corrections.uncorrected``) poznaje, czy
+    późniejszy mail go poprawił; samego Raportu dopisanie nie niesie, bo jego Wpisy czyta tylko odczyt okna."""
 
     sheet: str
     number: OrderNumber
     verdict: Verdict
     activities: str
-    report: ReadReport
-
-    @property
-    def day(self) -> date:
-        return self.report.day
-
-    @property
-    def worker(self) -> Login:
-        return self.report.worker
-
-    @property
-    def arrived(self) -> datetime:
-        return self.report.arrived
-
-    @property
-    def mail(self) -> MailId:
-        return self.report.mail
+    day: date
+    worker: Login
+    arrived: datetime
+    mail: MailId
+    numbers: frozenset[OrderNumber]
 
 
 @dataclass(frozen=True)
@@ -218,9 +208,9 @@ class Board:
         innego niż jedno.
 
         Zwycięski Wpis zlecenia ze znakiem, który ma zamiar (``t``, ``n``, ``skuteczne``, ``nieskuteczne``), z decyzją
-        taty ``requested`` przy tym Wpisie (``RequestedEntry``: mail, Wykonawca, dzień, w którym tata widzi problem,
-        numer, zamiar znaku i czynności) trafia do zlecenia jak Wpis z tym ``tak`` albo ``nie``; bez decyzji to
-        ``MissingVerdict`` z tym, co wpisze Wpis na życzenie (``Requestable``). Wpis numeru bez zlecenia (Zlecenie
+        taty ``requested`` przy jego Wpisie na życzenie (``_offer``: mail, Wykonawca, dzień, w którym tata widzi
+        problem, numer, zamiar znaku i czynności, ``Offer.place``) trafia do zlecenia jak Wpis z tym ``tak`` albo
+        ``nie``; bez decyzji to ``MissingVerdict`` z tym Wpisem na życzenie. Wpis numeru bez zlecenia (Zlecenie
         dopisane z raportu) Wpisu na życzenie nie ma.
         """
 
@@ -273,7 +263,8 @@ class Board:
             if claim.refused is not None:
                 problems.append(claim.refused)
                 continue
-            entries = _requested(decided, report, shown, claim.entries)
+            offer = _offer(claim, shown)
+            entries = _requested(decided, offer, claim.entries)
             match entries:
                 case (ReportEntry(fault=None) as entry,):
                     targets[OrderKey(order.key.number, claim.day, report.worker)] = (order, entry)
@@ -282,12 +273,7 @@ class Board:
                     mails[order.row] = report.mail
                     if claim.lost is not None:
                         lost.append(claim.lost)
-                case (ReportEntry(fault=VerdictFault() as fault, activities=activities),):
-                    offer = (
-                        None
-                        if fault.leaning is None
-                        else Requestable(report.mail, fault.leaning, activities, claim.day, report.worker)
-                    )
+                case (ReportEntry(fault=VerdictFault() as fault),):
                     problems.append(MissingVerdict(report.worker, shown, order.key.number, fault, offer))
                 case _:
                     problems.append(
@@ -300,7 +286,10 @@ class Board:
             report = new.report
             match new.entries:
                 case (ReportEntry(verdict=Verdict() as verdict, activities=activities),):
-                    added.append(Addition(new.sheet, number, verdict, activities, report))
+                    numbers = frozenset(entry.number for entry in report.entries)
+                    added.append(
+                        Addition(new.sheet, number, verdict, activities, report.day, report.worker, report.arrived, report.mail, numbers)
+                    )
                 case (ReportEntry(fault=VerdictFault() as fault),):
                     problems.append(MissingVerdict(report.worker, report.day, number, fault))
                 case _:
@@ -454,21 +443,29 @@ class Board:
         return MoveBar.OTHER_SHEET if day in self._ordered_anywhere else MoveBar.NOT_ORDERED
 
 
+def _offer(claim: _Claim, shown: date) -> Offer | None:
+    """Wpis na życzenie zwycięskiego Wpisu zlecenia ``claim``: jeden Wpis ze znakiem z zamiarem (``t``, ``n``,
+    ``skuteczne``, ``nieskuteczne``) z Raportu wykonawcy ``claim.report``, który tata widzi w dniu ``shown``, wpisze ten
+    zamiar do zlecenia z dnia ``claim.day`` u nadawcy; ``None``: przycisku nie ma."""
+
+    report = claim.report
+    match claim.entries:
+        case (ReportEntry(verdict=None, fault=VerdictFault(leaning=Verdict() as leaning), activities=activities),):
+            return Offer(report.mail, report.worker, shown, claim.order.key.number, leaning, activities, claim.day)
+        case _:
+            return None
+
+
 def _requested(
     decided: Mapping[tuple[MailId, Login, date, OrderNumber, Verdict, str], RequestedEntry],
-    report: ReadReport,
-    shown: date,
+    offer: Offer | None,
     entries: tuple[ReportEntry, ...],
 ) -> tuple[ReportEntry, ...]:
-    """Zwycięskie Wpisy zlecenia z Raportu wykonawcy ``report``, które tata widzi w dniu ``shown``: jeden Wpis ze znakiem
-    z zamiarem, przy którym tata kliknął Wpis na życzenie (``decided``), staje się Wpisem z tym ``tak`` albo ``nie``, a
-    inne zostają."""
+    """Zwycięskie Wpisy zlecenia: jeden Wpis ze znakiem z zamiarem, przy którego Wpisie na życzenie ``offer`` tata
+    kliknął (``decided`` po ``Offer.place``), staje się Wpisem z tym ``tak`` albo ``nie``, a inne zostają."""
 
     match entries:
-        case (ReportEntry(verdict=None, fault=VerdictFault(leaning=Verdict() as leaning)) as entry,):
-            decision = decided.get((report.mail, report.worker, shown, entry.number, leaning, entry.activities))
-            if decision is not None:
-                return (ReportEntry(entry.number, leaning, None, entry.activities),)
+        case (entry,) if offer is not None and offer.place in decided:
+            return (ReportEntry(entry.number, offer.verdict, None, entry.activities),)
         case _:
-            pass
-    return entries
+            return entries
