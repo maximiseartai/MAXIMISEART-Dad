@@ -10,7 +10,10 @@ the Szablony pracowników progress, closing Centrum is refused meanwhile, the
 Folder rozliczeń pracowników appears at once, and the Status okresu moves to
 `Rozliczenia pracowników gotowe`. The result lists every Rozliczenie
 pracownika with the Wykonawca, his orders and `Otwórz`, marks the empty one
-`pusty`, and opens the Folder rozliczeń pracowników as its main action. Every
+`pusty`, and opens the Folder rozliczeń pracowników as its main action. In N:AP
+and `AS` of each Rozliczenie pracownika a Czerwone pole is empty and a Zielone pole holds 1, both white (ADR 0039),
+after the Ilości tylko dla INEA are cleared; the drive does not check the colours,
+`tests/test_czerwone_i_zielone_pole.py` does. Every
 stop and problem has three parts. While the Plik zbiorczy is open in Excel (its lock file `~$…`
 next to it), the start card warns, turns off `Uruchom` and keeps `Podgląd bez
 zapisu` and the reminder; once the lock file is gone, Dad's return to the

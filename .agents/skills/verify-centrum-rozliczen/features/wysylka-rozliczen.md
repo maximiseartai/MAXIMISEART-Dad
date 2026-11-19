@@ -9,7 +9,15 @@ the skrzynka raportów, one request per mail, while his row turns „Wysłane”
 says „Wszystkie rozliczenia wysłane” and closes into one line of the axis: „X z X · <time>”, a small bar, the
 Wykonawcy's avatars and „kto i kiedy”. A file already sent and unchanged never goes twice. The header's switch shows
 only the periods that wait (`Do wysłania`) or all of them; its link `Temat i treść` opens the section `Wysyłka
-rozliczeń` of Ustawienia, with a preview; a subject with „raport” is refused (ADR 0040).
+rozliczeń` of Ustawienia, with a preview; a subject with „raport” is refused (ADR 0040), and so is one whose `Re:`
+reply the skrzynka raportów would take for a Raport („Temat wygląda jak temat raportu…”). The section shows the
+subject and text of Dad's file, never the built-in ones in silence: while that file has a subject or text the rule
+refuses, with no last good one, the page, the preview and the sending refuse in one sentence („Mail z rozliczeniem nie
+pójdzie…”, #2074), and while that file, the file of Przypomnienia with the footer or the Lista Wykonawców cannot be
+read, they refuse with the sentence of that file („Pliku … w folderze config nie da się teraz przeczytać…”). The drive
+refuses only the subject with „raport”; the other refusals stand in
+`tests/test_centrum_rozliczen.py::test_temat_taty_ktorego_regula_nie_przyjmuje_to_odmowa_strony_podgladu_i_wysylki_bez_maila`
+and `::test_plik_tematu_stopki_albo_listy_bez_odczytu_to_odmowa_strony_podgladu_i_wysylki_bez_maila`.
 
 ## Sub-features
 

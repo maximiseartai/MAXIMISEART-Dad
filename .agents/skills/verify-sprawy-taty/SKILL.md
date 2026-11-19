@@ -9,6 +9,7 @@ pilnuje:
   - src/rozliczenia/centrum/outbox.py
   - src/rozliczenia/centrum/atomic_file.py
   - src/rozliczenia/centrum/notifications.py
+  - src/rozliczenia/centrum/report_reminders.py
   - tools/lib/model_tlc.py
   - tools/lib/rozjazd_modelu.py
   - tools/lib/narzedzia_tlc.py
@@ -95,6 +96,7 @@ keep the two in step. Each model action is one indivisible step of this code (`s
 | `Powiadomienia` | `Notifications.view`: `StateFile.retry`, and the thread of the check (`_start_check_if_due`) runs `Notifications._ask_box` → `DadCases.ask_box` → `_close` through `_change` |
 | `MaksZamyka` | Maks closes an issue in the Skrzynka |
 | `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again: memory is gone (`DadCases._rejected`, `Outbox._rejected`, `_first_comments` of this work, the handle), `dad_cases._load` reads `config/sprawy-taty.json`, `Outbox.resume`, and the card of a Zatrzymanie of this problem gets a new handle with `Reports._state_of`. No code reconciles the cases with the queue files after a start |
+| `NowyUchwytPrzypomnien` | `ReportReminders._failed` on `PasswordRejected`: the next check of the Przypomnienia o raporcie in the same Centrum work makes a new handle of the problem (`Reports.handle`, its state from `Reports._state_of`), then `prepare` of a `ReminderReport` (`Podglad`, with no return of the problem) and `send` without a click (`Klik`); the memory of `Reports` and `DadCases` stays. The previous `send` has returned: `_failed` calls it in the check, and checks run one after another (`ReportReminders._lock`, one `MinuteRhythm` thread). The previous `_ask` has ended: `MinuteRhythm` waits `CHECK_EVERY_S` (60 s) after a check, and `_ask_box` waits at most `SEARCH_DEADLINE_S` (3 s) |
 
 `model/definicje.json` holds the digests of the definitions the table names. Left out on purpose: the text of a
 Zgłoszenie and of an Uwaga (`ReportSource.report`, which `_preview` calls, `note_issue`, the guard), the Komunikat of
@@ -103,7 +105,7 @@ pinned Uwaga, which changes no case), `KeyedBox.judge` (which of „na internet�
 and `Reports._find_open` (one call of the Skrzynka). Two changes move the model without changing a definition, so look for
 them in the diff: a new caller of `DadCases.add`, `withdraw`, `forget` or `numbered` outside these definitions, and a
 second handle of one problem in one Centrum work (`stops.py` makes one per Zatrzymanie, `tool_updates.py` one per failed
-Aktualizacja). Add such code to the table and to `model/definicje.json`.
+Aktualizacja, `report_reminders.py` one per check with a rejected password, which `NowyUchwytPrzypomnien` models). Add such code to the table and to `model/definicje.json`.
 
 The digests in `model/definicje.json` were taken when every row of the table was last checked against the code
 (`tools/przesun_model.py`); what that check found is in the message of the commit that changed the digests. To see what
@@ -163,6 +165,7 @@ a request is the `KeyedBox.judge` of `DadCases.queued` replaced for the test, as
 | `kolejka` | two clicks, one Uwaga, one switch-off, `Outbox.post` once False and once an exception | known `zgasniecie-w-wysylce-zgloszenia`, `zgasniecie-w-wysylce-uwagi` |
 | `plik-stanu-kolejka` | one click, one Uwaga, one switch-off, one failed write of `config/sprawy-taty.json`, `Outbox.post` once False | known `zgasniecie-w-wysylce-zgloszenia`, `zgasniecie-w-wysylce-uwagi`, `plik-stanu-niedostepny`, `wycofanie-bez-zapisu`, `zapomnienie-bez-zapisu` |
 | `powrot` | two clicks, two switch-offs, the Skrzynka once without an answer, one rejected text, Maks closes one issue: the return of the problem after a start | known `zgasniecie-w-wysylce-zgloszenia`, `pokaz-po-odrzuceniu` |
+| `przypomnienia` | the problem is the rejected password of the Przypomnienia: three checks, each with a new handle and a send without a click, one switch-off, the Skrzynka once without an answer, one rejected text, Maks closes one issue | known `zgasniecie-w-wysylce-zgloszenia`, `pokaz-po-odrzuceniu` |
 
 ## Known findings
 
@@ -259,6 +262,9 @@ each gives `SPRAWY TATY: NOWE NARUSZENIE`:
   (`odrzucona`).
 - Zbieganie: `ReportHandle._delivered` without `_show` (`zwykle`); `ReportHandle.send` without the `_pending` check after
   the wait (`zwykle`: the number comes between `DadCases.queued` and the end of `send`).
+- OdrzuconaNieCzeka on the new handle of a check: `ReportHandle.__init__` without `Reports._state_of`, starting at „czeka
+  w kolejce” (`przypomnienia`). Keeping the old handle's state instead passes, because the old handle hears the same
+  news through its ear.
 
 `GRANICE` in the script holds the boundary of each cause a failed write leaves behind (`plik-stanu-niedostepny`,
 `wycofanie-bez-zapisu`, `zapomnienie-bez-zapisu`): `plik-stanu-kolejka` without that one known finding must give
@@ -269,7 +275,8 @@ unsaved `withdraw`.
 ## Scope
 
 Verified: the three promises over every order of the actions above within the bounds of each configuration (one
-problem with one handle per Centrum work, at most two clicks, at most one Uwaga, one or two switch-offs, at most one
+problem with one handle per Centrum work, or three handles one after another for the Przypomnienia, at most two clicks
+or three sends of the Przypomnienia, at most one Uwaga, one or two switch-offs, at most one
 failure of each kind, one rejected text, one closure by Maks). Assumed, each a reason the check can pass while the code
 is wrong:
 
@@ -277,8 +284,11 @@ is wrong:
   (JEDNO_ISSUE), a file whose mark is there gets the same number (`_settle`), a rejected text is rejected again at every
   start, and the oldest file goes first.
 - **`os.replace` is atomic** (`StateFile`, queue files): a switch-off leaves the old file or the new one.
-- **One handle of the problem per Centrum work.** Two Zatrzymania of one problem in one work give two handles whose
-  `_queue` may both pass `_pending` before either adds its case; the model has one.
+- **One handle of the problem per Centrum work, except the Przypomnienia.** Two Zatrzymania of one problem in one work
+  give two handles whose `_queue` may both pass `_pending` before either adds its case; the model has one. The handles
+  of the rejected password of the Przypomnienia come one after another (`przypomnienia`), each `send` back before the
+  next handle, so their `_queue` never run together. Handles of a Zatrzymanie and of the Przypomnienia in one
+  configuration are not checked: their problems differ, so they share only the queue.
 - **One `prepare` per handle, so one `_queue` of the handle at a time.** `Stops.diagnose` calls `prepare` at every
   Diagnoza, and `ReportHandle._ask` sends the return of the problem without checking `_sending`, so a second Diagnoza
   during a click can run the return's `_queue` next to the click's. The model has one `Podglad` per handle and one

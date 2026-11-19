@@ -40,7 +40,7 @@ SKILL_ROOT = Path(__file__).resolve().parents[2]
 BASELINE = SKILL_ROOT / "wydajnosc-baseline.json"
 # docs/agents/komputer-taty.md: 4× is the reference profile of Dad's laptop, 6× the pessimistic one.
 PROFILES = (4, 6)
-# The menu pages the baseline holds; Raporty has no budget yet, so it is neither measured nor captured.
+# The menu pages the baseline holds; Raporty and Wysyłka rozliczeń have no budget yet, so they are neither measured nor captured.
 MEASURED_PAGES = ("okresy", "uruchomienia", "metryki")
 LAP = ("uruchomienia", "metryki", "okresy")
 REOPENED = ("okresy", "metryki")

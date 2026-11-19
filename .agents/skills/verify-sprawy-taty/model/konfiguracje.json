@@ -10,7 +10,8 @@
       "MaxAwariiKolejki": 0,
       "MaxWyjatkowKolejki": 0,
       "MaxOdrzucen": 0,
-      "MaxZamkniec": 1
+      "MaxZamkniec": 1,
+      "MaxUchwytowPrzypomnien": 0
     },
     "znane": [
       {
@@ -36,7 +37,8 @@
       "MaxAwariiKolejki": 0,
       "MaxWyjatkowKolejki": 0,
       "MaxOdrzucen": 1,
-      "MaxZamkniec": 0
+      "MaxZamkniec": 0,
+      "MaxUchwytowPrzypomnien": 0
     },
     "znane": [
       {
@@ -62,7 +64,8 @@
       "MaxAwariiKolejki": 0,
       "MaxWyjatkowKolejki": 0,
       "MaxOdrzucen": 0,
-      "MaxZamkniec": 0
+      "MaxZamkniec": 0,
+      "MaxUchwytowPrzypomnien": 0
     },
     "znane": [
       {
@@ -93,7 +96,8 @@
       "MaxAwariiKolejki": 1,
       "MaxWyjatkowKolejki": 1,
       "MaxOdrzucen": 0,
-      "MaxZamkniec": 0
+      "MaxZamkniec": 0,
+      "MaxUchwytowPrzypomnien": 0
     },
     "znane": [
       {
@@ -119,7 +123,8 @@
       "MaxAwariiKolejki": 1,
       "MaxWyjatkowKolejki": 0,
       "MaxOdrzucen": 0,
-      "MaxZamkniec": 0
+      "MaxZamkniec": 0,
+      "MaxUchwytowPrzypomnien": 0
     },
     "znane": [
       {
@@ -160,7 +165,35 @@
       "MaxAwariiKolejki": 0,
       "MaxWyjatkowKolejki": 0,
       "MaxOdrzucen": 1,
-      "MaxZamkniec": 1
+      "MaxZamkniec": 1,
+      "MaxUchwytowPrzypomnien": 0
+    },
+    "znane": [
+      {
+        "obietnica": "CzekaMaPlik",
+        "przyczyna": "zgasniecie-w-wysylce-zgloszenia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "OdrzuconaNieCzeka",
+        "przyczyna": "pokaz-po-odrzuceniu",
+        "znalezisko": "jak w odrzucona"
+      }
+    ]
+  },
+  "przypomnienia": {
+    "opis": "Odrzucone hasło Przypomnień o raporcie: trzy sprawdzenia, każde z nowym uchwytem i wysyłką bez kliknięcia, jedno zgaśnięcie, skrzynka raz bez odpowiedzi, jedna odrzucana treść, Maks zamyka jedno issue.",
+    "stale": {
+      "MaxKlikniec": 3,
+      "MaxUwag": 0,
+      "MaxZgasniec": 1,
+      "MaxAwariiSieci": 1,
+      "MaxAwariiPlikuStanu": 0,
+      "MaxAwariiKolejki": 0,
+      "MaxWyjatkowKolejki": 0,
+      "MaxOdrzucen": 1,
+      "MaxZamkniec": 1,
+      "MaxUchwytowPrzypomnien": 2
     },
     "znane": [
       {

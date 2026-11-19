@@ -6,9 +6,12 @@ whatever the mode, result and ending. The file says whether it was a `DRY-RUN`
 or a `RUN`, carries the card's result, ending, Rodzaj Zatrzymania, summary and
 Komunikaty in three parts with their codes, the number of problems, the call trace of a Zatrzymanie, the
 Szablony pracowników with their outcome and time, the tool's commit and its Wydanie, and the process's files by
-name (with size and whether OneDrive holds them only online). A Przygotowanie pliku zbiorczego and a Przebieg
-rozliczeń carry the Reguły ilości with the Lista Urządzeń and the Legenda czynności of their start (`quantity_rules`,
-`activity_legend`). A Przebieg rozliczeń adds how many Ilości tylko dla
+name (with size and whether OneDrive holds them only online; a Wzorzec also with its `sha256`). A Przygotowanie pliku zbiorczego and a Przebieg
+rozliczeń carry the Reguły ilości with the Lista Urządzeń of their start (`quantity_rules`), and they and a Wpisanie
+raportów the Legenda czynności (`activity_legend`) and the Lista Wykonawców (`workers`: logins, name and Nieaktywny,
+without addresses). Every Logi, an Urwane Uruchomienie's too, carry Dad's actions in Centrum (`dad_actions`) and the
+Centrum log (`centrum_log`) since the previous Logi: every entry but the `pomiar` ones, at most the 2000 newest
+(`MAX_FOR_LOGS`), with `omitted` counting the older. A Przebieg rozliczeń adds how many Ilości tylko dla
 INEA it left empty (`inea_only_cleared`, ADR 0018), an Uporządkowanie INTERMAX its Wpisy urządzenia i
 czynności INTERMAX (`intermax_entries`, ADR 0019): INTERMAX row numbers and operator names, a Wycena w efenix the
 trace of every order (`efenix_orders`, `efenix_stop`), and a Wpisanie raportów its Wpisy, problems and changed cells
@@ -24,7 +27,10 @@ Zgłoszeń (`config/zgloszenia/kolejka/`, like the Kontrola ilości) and go to t
 period's issue labelled `logi-uruchomienia`, which they keep using after Maks
 closes it, one comment per Uruchomienie: a summary ending with the link to its
 full Logi in the Archiwum Logów okresu (#844), the GitHub Release `logi-<period>`
-of the skrzynka's repository, which holds the file under its own name plus `.gz`.
+of the skrzynka's repository, which holds the file under its own name plus `.gz`, and beside it each Wzorzec the
+Uruchomienie computed with, once per version, as `wzorzec-<SHA-256 of its bytes>.xlsx`. A Wzorzec goes up only through
+the data-rule check of every text and attribute of its XML (`template_archive.py`); a refused one (an XML comment or
+processing instruction too) leaves a note in the Logi with its name and reason, and never holds back the Logi file.
 Each Diagnoza with a new result (features/diagnoza.md) of the last Uruchomienie of this Centrum
 rewrites the file with its `diagnosis`, replaces it in the Archiwum and changes the
 comment of its Uruchomienie, so its file in the Archiwum is always the file; a Diagnoza of
