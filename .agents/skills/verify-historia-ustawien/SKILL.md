@@ -88,7 +88,7 @@ Each model action is one indivisible step of this code (`src/rozliczenia/centrum
 | `PamiecSpoza` | `CentrumSettings._compared`: `CentrumSettings._remember` of the new state (bad content keeps the old `good`) |
 | `Uzyj` | the process takes `_value` of the observed value |
 | `Propozycja` | `CentrumSettings._apply`: `change.propose` on the observed value: `Edit` or `Later` (`periods_directory_from_layout_root`) |
-| `Wylicz` | `CentrumSettings._change`: `edit(current)`; no difference on a good file is `Saved(change=None)` (result „bez-zmian”); a row only with a difference of keys; `new` is no file when `CentrumSettings._restores_absence` holds („Cofnij” of a row with `created` back to `file.default`), else `file.dump` |
+| `Wylicz` | `CentrumSettings._change`: `edit(current)`; no difference on a good file is `Saved(change=None)` (result „bez-zmian”); a row only with a difference of keys; `new` is no file when `CentrumSettings._restores_absence` holds („Cofnij” of a row with `created` back to `file.default`, or of the newest row of its file), else `file.dump` |
 | `Zapis` | `CentrumSettings._change`: `place.write(new)` (`_ConfigFile`, `replace_atomically`); `OSError` is `NotSaved` |
 | `Wiersz` | `CentrumSettings._change`: `History.append` of `CentrumSettings._row` (`created` when there was no file before, `removed` when the change writes none); `OSError` goes to `CentrumSettings._put_back` |
 | `Przywroc` | `CentrumSettings._put_back(place, data)`; its `OSError` is only logged |
@@ -280,6 +280,10 @@ each kind; two „Cofnij” only in `brak-pliku` and in a wider run outside CI, 
 - **The file is one value.** A file with several keys (a Lista Wykonawców with several Wykonawcy) behaves like one value
   per key; a „Cofnij” of one key while another changed is not checked.
 - **A Zmiana z Wydania is declarative**, as `release_changes.py` requires, and waits on bad content.
+- **`file.default` is one value** (`DOMYSLNA`): an Aktualizacja that changes the Wydanie's defaults between a change and
+  its „Cofnij” is not modeled, so the branch of `_restores_absence` for the newest row of the file changes no path of
+  the model; `test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wartosci_z_wydania_usuwa_plik`
+  checks it.
 
 Left out: the pair of Reguły ilości and Lista Urządzeń (a file that stops fitting the other, `_paired`), secrets,
 autostart, removed logins and the periods check, the first start without any memory, `_absent`, a file the system

@@ -1230,14 +1230,22 @@ class CentrumSettings:
         )
 
     def _restores_absence(self, file: SettingsFile[T], undoes: HistoryRow | None, value: T) -> bool:
-        """„Cofnij” zmiany, przed którą pliku nie było (``HistoryRow.created``), z wartością z Wydania przywraca brak
-        pliku, a nie zapisuje treści z Wydania do pliku taty, która przy następnym Wydaniu nie dostałaby nowych wartości
-        domyślnych (ADR 0032). Plik, którego brak może znaczyć coś innego niż wartości domyślne (migracja z Wydania z
-        ``refused_absent`` albo ``waiting``: Lista Wykonawców), zostaje z treścią."""
+        """„Cofnij” zmiany, przed którą pliku nie było (``HistoryRow.created``), przywraca brak pliku, a nie zapisuje do
+        pliku taty treści z Wydania, która przy następnym Wydaniu nie dostałaby nowych wartości domyślnych (ADR 0032).
+        Brak pliku to stan sprzed zmiany, gdy jej wiersz jest najnowszym wierszem pliku (plik ma od tamtej pory jej
+        treść, także gdy Aktualizacja zmieniła potem wartości z Wydania), albo gdy wartość po cofnięciu to wartość z
+        Wydania (wcześniej cofnięto też późniejsze zmiany). Plik, którego brak może znaczyć coś innego niż wartości
+        domyślne (migracja z Wydania z ``refused_absent`` albo ``waiting``: Lista Wykonawców), zostaje z treścią."""
 
-        if undoes is None or not undoes.created or file.diff(file.default, value):
+        if undoes is None or not undoes.created:
             return False
-        return all(change.refused_absent is None and change.waiting is None for change in self._release_changes if change.file is file)
+        if any(change.refused_absent is not None or change.waiting is not None for change in self._release_changes if change.file is file):
+            return False
+        if not file.diff(file.default, value):
+            return True
+        history = self._history.read()
+        rows = () if isinstance(history, Unreadable) else history.rows
+        return next((row.id for row in rows if row.file == file.name), None) == undoes.id
 
     def _row(
         self,

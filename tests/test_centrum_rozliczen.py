@@ -1539,6 +1539,32 @@ def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skl
     assert counted.rules == DEFAULT_QUANTITY_RULES.rules
 
 
+@pytest.mark.parametrize(
+    ("name", "change"),
+    [
+        (RULES_FILE, lambda app: app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2))),
+        (DEVICES_FILE, lambda app: app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": [], "group": None})),
+    ],
+    ids=[RULES_FILE, DEVICES_FILE],
+)
+def test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wartosci_z_wydania_usuwa_plik(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None], name: str, change: Callable[[Centrum], Any]
+) -> None:
+    """Tata bez pliku zmienia Ustawienie, Aktualizacja daje nowe wartości z Wydania, a potem tata klika „Cofnij”: pliku
+    znowu nie ma, więc tata liczy nowymi wartościami z Wydania, a nie wartościami poprzedniego Wydania w swoim pliku."""
+
+    app = centrum(tmp_path)
+    assert change(app).status_code == 200
+    [created] = [row for row in history_rows(app) if row["file"] == name]
+    release_without_manual_installation()
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert [file for file in (RULES_FILE, DEVICES_FILE) if (app.tool.config / file).exists()] == []
+    assert _tools_rules(app.tool.config) == DEFAULT_QUANTITY_RULES
+
+
 def _nokia_rule(app: Centrum, value: int) -> dict[str, Any]:
     """Formularz reguły „nokia” z sekcji Reguły ilości z wartością ``value``: zmiana, której nic nie łączy ze składnikiem
     z Wydania."""
