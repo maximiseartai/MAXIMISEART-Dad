@@ -866,8 +866,8 @@ class Ponowienia:
     """``ponow_ci.Akcje``, które zapisują ponowienia zamiast pisać na GitHubie."""
 
     def __init__(self) -> None:
-        self.zapisane: list[tuple[str, int]] = []
-        self.akcje = ponow_ci.Akcje(lambda run: self.zapisane.append(("rerun", run)), lambda pr: self.zapisane.append(("close/reopen", pr)))
+        self.zapisane: list[tuple[str | int, ...]] = []
+        self.akcje = ponow_ci.Akcje(lambda run, zielone: self.zapisane.append(("rerun", run, *zielone)), lambda pr: self.zapisane.append(("close/reopen", pr)))
 
 
 def _run_ci(run_id: int, *, status: str = "completed", wynik: str | None = "failure", proba: int = 1, koniec: str = "2026-11-11T14:00:00Z") -> dict[str, Any]:
@@ -1046,6 +1046,106 @@ def test_awaria_runnera_i_znany_flaky_test_sa_ponawiane_a_defekt_dostaje_odmowe_
     assert linia in wynik.linia
     assert (wynik.kod, ponowienia.zapisane) == ((0, [("rerun", run["id"])]) if ponowiony else (1, []))
     assert wynik.linia.startswith("PONÓW OK" if ponowiony else "PONÓW ODMOWA")
+
+
+ZADANIE_5_13 = "pytest (Python 3.14, Linux, 5/13)"
+ZIELONE_ZADANIE = [
+    _wykonany(
+        "Run the planned units",
+        "success",
+        "2026-11-18T03:52:01.4202361Z =========== 1045 passed, 45 skipped, 9 warnings in 88.57s (0:01:28) ============\n"
+        "2026-11-18T03:52:01.5911938Z WYKONANIE OK | pytest (Python 3.14, Linux, 5/13)\n",
+    ),
+    _wykonany(
+        "Record the time of each unit of work",
+        "success",
+        "2026-11-18T03:52:21.8861462Z CZASY CI FAIL | API zadań runu: URLError(TimeoutError('timed out'))\n"
+        "2026-11-18T03:52:21.8862100Z CZASY CI | pytest | linux-3.14 | 8 jednostek | narzut ? s | pytest-22-1.json\n"
+        "2026-11-18T03:52:21.9039247Z ##[error]Process completed with exit code 1.\n",
+    ),
+    _wykonany(
+        "Upload the unit times",
+        "success",
+        "2026-11-18T03:52:22.0364527Z With the provided path, there will be 1 file uploaded\n"
+        "2026-11-18T03:54:36.3963787Z ##[error]Failed to CreateArtifact: Unable to make request: ETIMEDOUT\n",
+    ),
+    ("Post Run actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1", "success", "2026-11-18T03:54:36.4121958Z Post job cleanup.\n"),
+]
+BRAK_ZAPISU_CZASOW = "REQUIRED FAIL | {}: brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły"
+
+
+def _zielone_zadanie(**zamiany: str) -> list[Krok]:
+    return [_wykonany(nazwa, wynik, zamiany[nazwa]) if nazwa in zamiany else (nazwa, wynik, log) for nazwa, wynik, log in ZIELONE_ZADANIE]
+
+
+def _werdykt_required(przyczyny: list[str]) -> list[Krok]:
+    werdykt = "".join(f"2026-11-18T03:57:15.3704675Z {przyczyna}\n" for przyczyna in przyczyny) + "2026-11-18T03:57:15.3823970Z ##[error]Process completed with exit code 1.\n"
+    return [_wykonany("Run python3 tools/ci/werdykt_required.py --plan .ci-plan/plan.json --zapisy .ci-czasy/zapisy", "failure", werdykt)]
+
+
+def _sam_required(run_id: int, required: list[Krok], zielone: Mapping[str, list[Krok]]) -> dict[str, Any]:
+    kroki = {run_id * 100 + numer: (nazwa, "success", jego) for numer, (nazwa, jego) in enumerate(zielone.items())} | {run_id * 100 + 99: (REQUIRED, "failure", required)}
+    zadania = [
+        {"id": id_zadania, "name": nazwa, "status": "completed", "conclusion": wynik, "steps": [_krok(numer, krok) for numer, krok in enumerate(jego, start=1)]}
+        for id_zadania, (nazwa, wynik, jego) in kroki.items()
+    ]
+    return {
+        f"{REPO}/actions/runs/{run_id}/attempts/1/jobs?per_page=100&page=1": {"total_count": len(zadania), "jobs": zadania},
+        **{f"{REPO}/actions/jobs/{id_zadania}/logs": "".join(log for _, _, log in jego).encode() for id_zadania, (_, _, jego) in kroki.items()},
+    }
+
+
+@pytest.mark.parametrize(
+    ("required", "zielone", "linia", "zapisane"),
+    [
+        (_werdykt_required([BRAK_ZAPISU_CZASOW.format(ZADANIE_5_13)]), {ZADANIE_5_13: ZIELONE_ZADANIE}, "PONÓW OK | run 44232410011 | awaria: usługa artefaktów GitHuba | gh run rerun --job 4423241001100", [("rerun", 44232410011, 4423241001100)]),
+        (
+            _werdykt_required([BRAK_ZAPISU_CZASOW.format(ZADANIE_5_13), BRAK_ZAPISU_CZASOW.format("Mutation checks (1/1)")]),
+            {ZADANIE_5_13: ZIELONE_ZADANIE, "Mutation checks (1/1)": _zielone_zadanie(**{"Upload the unit times": ARTEFAKT_HTTP_503})},
+            "PONÓW OK | run 44232410011 | awaria: usługa artefaktów GitHuba | gh run rerun 44232410011",
+            [("rerun", 44232410011, 4423241001100, 4423241001101)],
+        ),
+        (_werdykt_required([BRAK_ZAPISU_CZASOW.format(ZADANIE_5_13)]), {ZADANIE_5_13: _zielone_zadanie(**{"Upload the unit times": ARTEFAKT_HTTP_403})}, "PONÓW ODMOWA | run 44232410011 | defekt: Required CI status |", []),
+        (
+            _werdykt_required([BRAK_ZAPISU_CZASOW.format(ZADANIE_5_13)]),
+            {ZADANIE_5_13: _zielone_zadanie(**{"Upload the unit times": "2026-11-18T03:52:22Z No files were found with the provided path: .ci-czasy/zapis/. No artifacts will be uploaded.\n", "Record the time of each unit of work": WYSLANIE_ARTEFAKTU})},
+            "PONÓW ODMOWA | run 44232410011 | defekt: Required CI status |",
+            [],
+        ),
+        (
+            _werdykt_required([BRAK_ZAPISU_CZASOW.format(ZADANIE_5_13), BRAK_ZAPISU_CZASOW.format("Mutation checks (1/1)")]),
+            {ZADANIE_5_13: ZIELONE_ZADANIE, "Mutation checks (1/1)": _zielone_zadanie(**{"Upload the unit times": ARTEFAKT_HTTP_403})},
+            "PONÓW ODMOWA | run 44232410011 | defekt: Required CI status |",
+            [],
+        ),
+        (_werdykt_required([BRAK_ZAPISU_CZASOW.format(ZADANIE_5_13), f"REQUIRED FAIL | {ZADANIE_5_13}: jednostki z porażką: pytest:tests/test_adr.py"]), {ZADANIE_5_13: ZIELONE_ZADANIE}, "PONÓW ODMOWA | run 44232410011 | defekt: Required CI status |", []),
+        (_werdykt_required([BRAK_ZAPISU_CZASOW.format("pytest (Python 3.13, 1/18)")]), {ZADANIE_5_13: ZIELONE_ZADANIE}, "PONÓW ODMOWA | run 44232410011 | defekt: Required CI status |", []),
+        ([CHROMIUM, _wykonany("Run actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333", "failure", POBRANIE_ARTEFAKTU)], {}, "PONÓW OK | run 44232410011 | awaria: usługa artefaktów GitHuba | gh run rerun 44232410011 --failed", [("rerun", 44232410011)]),
+    ],
+    ids=[
+        "run-44232410011-wyslanie-czasow-etimedout", "dwa-zadania-bez-zapisu-po-awarii", "wyslanie-czasow-http-403", "awaria-poza-krokiem-wyslania-czasow",
+        "jedno-z-dwoch-bez-awarii", "inna-przyczyna-obok-braku-zapisu", "zadanie-bez-zapisu-spoza-proby", "required-pobranie-artefaktu-etimedout",
+    ],
+)
+def test_required_bez_zapisu_czasow_zielonego_zadania_po_awarii_wyslania_ponawia_to_zadanie(
+    required: list[Krok], zielone: dict[str, list[Krok]], linia: str, zapisane: list[tuple[str | int, ...]]
+) -> None:
+    run = _run_ci(44232410011)
+    ponowienia = Ponowienia()
+    github = Nagrany({f"{REPO}/actions/runs/{run['id']}": run, **_sam_required(run["id"], required, zielone), **_runy_ci([run]), **_issues(niestabilne_testy.ETYKIETA_FLAKY, "open", [])})
+
+    wynik = ponow_ci.ponow(github, run["id"], None, PONOW_TERAZ, ponowienia.akcje)
+
+    assert (wynik.linia if zapisane else wynik.linia[: len(linia)]) == linia
+    assert (wynik.kod, ponowienia.zapisane) == ((0, zapisane) if zapisane else (1, []))
+
+
+def test_krok_wyslania_czasow_ma_w_ci_yml_nazwe_ktora_czyta_ponow_ci() -> None:
+    wysylajace = {
+        nazwa: [krok.get("name") for krok in zadanie.get("steps", []) if krok.get("with", {}).get("path") == ".ci-czasy/zapis/"] for nazwa, zadanie in jobs().items()
+    }
+
+    assert {nazwa: kroki for nazwa, kroki in wysylajace.items() if kroki} == {"pytest": [ponow_ci.WYSLANIE_CZASOW], "mutations": [ponow_ci.WYSLANIE_CZASOW]}
 
 
 def _kanarek(proba: int, status: str, wynik: str | None, koniec: str, log: str = DNS) -> tuple[dict[str, Any], dict[str, Any]]:
