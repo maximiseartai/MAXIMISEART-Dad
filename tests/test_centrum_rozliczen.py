@@ -4888,6 +4888,25 @@ def test_proces_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrze
     assert (view["result"]["warnings"][0], warning["setting"]) == (warning, "wykonawcy")
 
 
+def test_sekcja_wykonawcy_przy_zlej_liscie_pokazuje_ostatnia_dobra_liste_ze_zdaniem_o_zlym_ustawieniu(tmp_path: Path) -> None:
+    """Okno Ustawień pokazuje przy złym pliku Listę Wykonawców, którą liczy proces (ostatnią dobrą), a nie pustą listę,
+    obok zdania, co poprawić."""
+
+    centrum_ = settling_centrum(tmp_path)
+    centrum_.client.get("/api/settings")
+    centrum_.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+
+    section = centrum_.client.get("/api/settings").json()["workers"]
+
+    assert (section["state"], section["problem"]) == (
+        "bad",
+        {"field": None, "message": settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES)},
+    )
+    assert [(worker["logins"], worker["name"]) for worker in section["workers"]] == [
+        ([login], name) for login, name in SETTLEMENT_WORKERS.items()
+    ]
+
+
 def test_diagnoza_zatrzymania_opisuje_liste_wykonawcow_ze_startu_uruchomienia_a_nie_pozniejsza(tmp_path: Path) -> None:
     """D9: Diagnoza wyjaśnia to Uruchomienie, więc zła lista ze startu zostaje w Diagnozie po naprawie pliku, a lista
     zepsuta po starcie do niej nie trafia (przegląd #1529 r1, D2)."""
