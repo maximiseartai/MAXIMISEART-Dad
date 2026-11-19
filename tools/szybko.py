@@ -71,7 +71,9 @@ Krok ``rozjazd modelu`` pyta ``tools/lib/rozjazd_modelu.py`` o każdy skill z ``
 ``ci:`` zmiana uruchomiłaby na pull request (``tools/lib/zakres_runu.py``): czy kod opisany jego modelem zmienił się od
 skrótów z tego pliku. To samo pytanie w CI zadaje wykonanie zadania (``tools/ci/wykonaj_zadanie.py``) przed krokiem
 skilla i kończy go porażką, więc szybko pada też, bez TLC, z nazwą skilla, pliku i definicji i krokami „Bring the model
-in line” ze ``SKILL.md`` skilla.
+in line” ze ``SKILL.md`` skilla. Z ``--napraw``, gdy rozjazd modelu to jedyny krok, który padł, szybko przelicza skróty
+(``tools/przesun_model.py``) każdego skilla w rozjeździe, którego folderu poza ``model/definicje.json`` zmiana nie
+dotyka, i wypisuje je linią ``NAPRAWA``; skill ze zmienionym modelem albo definicją, której nie ma, zostaje porażką.
 
 Kończy się ``SZYBKO OK`` albo ``SZYBKO FAIL | <kroki>``, z dopiskiem `` | pytest przerwany``, gdy szybko przerwał
 krok pytest.
@@ -335,15 +337,32 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
     return failed, interrupted
 
 
-def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
+def _model_drift(root: Path, changed: frozenset[str]) -> dict[Path, str]:
     """Rozjazdy modelu skilli, w których podstawę ``ci:`` trafia zmiana ``changed``: w CI ta podstawa pada na nich, zanim
     ruszy, na pull request, gdy zmienia folder skilla, a na ``main`` po merge'u zawsze (ADR 0020, D1)."""
 
-    return [
-        f"{skill.name}: {found}"
+    return {
+        skill: found
         for skill in rozjazd_modelu.skille(root)
         if podstawa_trafiona(skill, changed) and (found := rozjazd_modelu.rozjazd(skill, root)) is not None
-    ]
+    }
+
+
+def _repair(root: Path, drift: dict[Path, str], changed: frozenset[str]) -> dict[Path, str]:
+    left = {}
+    for skill, found in drift.items():
+        folder = skill.relative_to(root).as_posix() + "/"
+        model = sorted(path for path in changed if path.startswith(folder) and path != folder + rozjazd_modelu.DEFINICJE)
+        if model:
+            left[skill] = f"{found} Model zmieniony w tej zmianie ({', '.join(model)}), więc skróty przelicz sam."
+            continue
+        try:
+            moved = rozjazd_modelu.przesun(skill, root)
+        except ValueError as error:
+            left[skill] = f"{found} {error}."
+            continue
+        print(f"NAPRAWA | {skill.name} | przeliczone skróty: {', '.join(moved)}", flush=True)
+    return left
 
 
 def _describe(selection: Selection, chosen: Plan, changed: frozenset[str], base: str) -> str:
@@ -364,6 +383,9 @@ def _deferred(chosen: Plan, selected: int) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, od której liczy się zmiana (domyślnie {BASE}).")
+    parser.add_argument(
+        "--napraw", action="store_true", help="Gdy padł tylko rozjazd modelu, przelicza skróty skilli, których modelu zmiana nie dotyka (opis wyżej)."
+    )
     args = parser.parse_args(argv)
     try:
         changed = changed_since(ROOT, args.baza)
@@ -375,13 +397,18 @@ def main(argv: list[str] | None = None) -> int:
     chosen = plan(memory.to_run(selection), selection.distances, _times(ROOT), workers=czasy_ci.workery_lokalne())
     print(_describe(selection, chosen, changed, args.baza), flush=True)
     if drift := _model_drift(ROOT, changed):
-        print("FAIL rozjazd modelu (bez TLC)\n" + "\n".join(drift), flush=True)
+        hint = "" if args.napraw else "; gdy model opisuje kod, skróty skilla bez zmian modelu przelicza tools/szybko.py --napraw"
+        print(f"FAIL rozjazd modelu (bez TLC){hint}\n" + "\n".join(f"{skill.name}: {found}" for skill, found in drift.items()), flush=True)
     junit = memory.path.with_name(f"szybko-junit-{os.getpid()}.xml")
     with ExitStack() as copies:
         merge, on_merge = _merge_steps(args.baza, copies)
         steps = [*_steps(ROOT, chosen.run, junit, changed, structure=not on_merge), *merge]
         base = repo.merge_base(ROOT, "HEAD", args.baza)
         failed, interrupted = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
+    if drift and args.napraw and (failed or interrupted):
+        print(f"NAPRAWA POMINIĘTA | rozjazd modelu to nie jedyna porażka: {', '.join(failed + interrupted)}", flush=True)
+    elif drift and args.napraw and (drift := _repair(ROOT, drift, changed)):
+        print("FAIL rozjazd modelu po naprawie\n" + "\n".join(f"{skill.name}: {found}" for skill, found in drift.items()), flush=True)
     failed = (["rozjazd modelu"] if drift else []) + failed
     memory.remember(selection, junit, chosen.run)
     junit.unlink(missing_ok=True)

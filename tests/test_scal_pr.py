@@ -35,6 +35,7 @@ import naprawia
 import ponowny_przeglad
 import reguly_bazy
 import rejestr_korzeni
+import rozjazd_modelu
 import scal_pr
 import stan_pr
 import szablon_werdyktu
@@ -1002,6 +1003,53 @@ def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_
     expected = re.escape(f"SCAL ODMOWA | #1 {head[:7]} | test scalenia z main {main[:7]} {reason.format(main=main[:7], prog=chr(0))}")
     assert re.fullmatch(expected.replace(re.escape(chr(0)), ".+"), _last_line(answered)), _last_line(answered)
     assert github.merges() == []
+
+
+MODEL_SKILL = ".agents/skills/verify-model"
+MODEL_CODE = "kod/model.py"
+MODEL_SOURCE = "def licz() -> int:\n    return 1\n"
+CHANGED_MODEL_SOURCE = "def licz() -> int:\n    return 2\n"
+TEST_SELECTION_RULE = {"pyproject.toml": WITH_PYTEST + "# reguła wyboru testów\n"}
+
+
+MODEL_DRIFT = f"verify-model: kod opisany modelem zmienił się: {MODEL_CODE} licz. Wykonaj kroki „Bring the model in line”"
+
+
+@pytest.mark.parametrize(
+    ("pull_files", "main_files", "code", "line"),
+    [
+        pytest.param(
+            {MODEL_CODE: CHANGED_MODEL_SOURCE},
+            TEST_SELECTION_RULE,
+            1,
+            f"SCAL ODMOWA | #1 {{head}} | rozjazd modelu na scaleniu z main {{main}}: {MODEL_DRIFT}",
+            id="rozjazd-przez-pr",
+        ),
+        pytest.param(
+            {"kod/inne.py": "INNE: int = 1\n"},
+            {**TEST_SELECTION_RULE, MODEL_CODE: CHANGED_MODEL_SOURCE},
+            0,
+            "SCAL OK | #1 {head} | gotowy do merge'a z main {main}, bez merge'a (--bez-merge) | test scalenia pominięty: zmiana pyproject.toml dotyczy każdego testu",
+            id="rozjazd-juz-na-samym-main",
+        ),
+    ],
+)
+def test_pominiety_test_scalenia_i_tak_odmawia_przy_rozjezdzie_modelu_skilla_na_scaleniu_ktorego_nie_ma_na_samym_main(
+    tmp_path: Path, pull_files: dict[str, str], main_files: dict[str, str], code: int, line: str
+) -> None:
+    (tmp_path / "skroty" / "kod").mkdir(parents=True)
+    (tmp_path / "skroty" / MODEL_CODE).write_text(MODEL_SOURCE, encoding="utf-8")
+    digests = rozjazd_modelu.skroty({MODEL_CODE: {"licz": ""}}, tmp_path / "skroty")
+    skill = {f"{MODEL_SKILL}/SKILL.md": "Model.\n", f"{MODEL_SKILL}/{rozjazd_modelu.DEFINICJE}": json.dumps(digests)}
+    github = MergeGitHub(tmp_path, {"pyproject.toml": WITH_PYTEST, "kod/__init__.py": HELPED_SUM, "kod/pomoc.py": HELPER, MODEL_CODE: MODEL_SOURCE, **skill})
+    head = github.open_pull(1, pull_files)
+    github.comment(1, PASS.format(head=head))
+    main = github.push_main(main_files)
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == code, answered.stdout + answered.stderr
+    assert _last_line(answered).startswith(line.format(head=head[:7], main=main[:7])), _last_line(answered)
 
 
 @pytest.mark.parametrize(

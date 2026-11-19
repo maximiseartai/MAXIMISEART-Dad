@@ -964,6 +964,51 @@ def test_skroty_przeliczone_po_zmianie_kodu_opisanego_modelem_nie_sa_rozjazdem_d
     assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
 
 
+def test_napraw_przelicza_skroty_skilla_bez_zmian_modelu_gdy_rozjazd_to_jedyna_porazka(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _model_skill(repo)
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
+
+    answered = _szybko(repo, "--napraw")
+
+    assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
+    assert "NAPRAWA | verify-model | przeliczone skróty: src/pakiet/b.py inna" in answered.stdout.splitlines()
+    assert rozjazd_modelu.rozjazd(repo / MODEL_SKILL, repo) is None
+
+
+@pytest.mark.parametrize(
+    ("changed", "verdict", "line"),
+    [
+        pytest.param(
+            {f"{MODEL_SKILL}/model/kolejka.tla": "---- MODULE kolejka ----\n====\n"},
+            "SZYBKO FAIL | rozjazd modelu",
+            f"Model zmieniony w tej zmianie ({MODEL_SKILL}/model/kolejka.tla), więc skróty przelicz sam.",
+            id="model-skilla-zmieniony",
+        ),
+        pytest.param(
+            {"src/pakiet/a.py": "import os\n\n\ndef wartosc() -> int:\n    return 1\n"},
+            "SZYBKO FAIL | rozjazd modelu, ruff",
+            "NAPRAWA POMINIĘTA | rozjazd modelu to nie jedyna porażka: ruff",
+            id="padl-inny-krok",
+        ),
+    ],
+)
+def test_napraw_nie_przelicza_skrotow_gdy_zmiana_dotyka_modelu_albo_pada_inny_krok(
+    tmp_path: Path, changed: dict[str, str], verdict: str, line: str
+) -> None:
+    repo = _repo(tmp_path)
+    _model_skill(repo)
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
+    for name, text in changed.items():
+        _write(repo, name, text)
+
+    answered = _szybko(repo, "--napraw")
+
+    assert (answered.returncode, _verdict(answered)) == (1, verdict), answered.stdout
+    assert line in answered.stdout
+    assert rozjazd_modelu.rozjazd(repo / MODEL_SKILL, repo) is not None
+
+
 def test_rozjazd_modelu_skilla_ktorego_zmiana_nie_dotyka_zostaje_poza_szybkim_sprawdzeniem(tmp_path: Path) -> None:
     """Rozjazd, który przyszedł z bazą (czerwony ``main``), naprawia osobny PR; CI tej zmiany podstawy skilla nie uruchamia."""
 
