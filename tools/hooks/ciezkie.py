@@ -7,11 +7,12 @@ wątków, więc hook go odmawia (kod 2, przyczyna na stderr trafia do agenta) i 
 Działa tylko tam, gdzie ``boatbox`` jest w ``PATH`` (Mac Maksa), a na innej maszynie przepuszcza wszystko, bo skill
 każe tam uruchamiać lokalnie.
 
-Hook czyta polecenie słowami ``shlex`` bez ciał heredoców i dzieli je na polecenia proste na operatorach powłoki
-(``;``, ``&``, ``|``, nawiasy, nowa linia); przekierowanie zabiera swój cel i numer deskryptora, czyli w tekście
-polecenia same gołe cyfry tuż przed ``<`` albo ``>`` (``2>&1``), a liczba przed spacją, w cudzysłowie albo z ucieczką
-(``-n 8 > log``, ``-n "8">log``) zostaje argumentem, jak w Bashu. Słowa za słowem ``boatbox``
-należą do ``boatbox``. Python to słowo ``python``,
+Słowa polecenia daje lekser zsh, powłoki, w której Claude Code na Macu uruchamia polecenie (``ZSH_WORDS``: flaga
+``(Z+C+)`` bez wykonania podstawień i bez komentarzy, potem ``(Q)``), więc kontynuacja linii, cudzysłowy, ucieczki,
+``$'…'``, komentarze i numer deskryptora przed przekierowaniem (``2>&1``, ``8>f``) znaczą to samo co w powłoce
+agenta; bez zsh w ``PATH`` hook przepuszcza wszystko. Ciała heredoców hook zdejmuje sam, bo lekser zostawia je
+słowami. Operatory (``;``, ``&``, ``|``, nawiasy, nowa linia) dzielą polecenie na polecenia proste, a przekierowanie
+zabiera swój cel. Słowa za słowem ``boatbox`` należą do ``boatbox``. Python to słowo ``python``,
 ``python3`` albo ``python3.14`` ze ścieżką (``.venv/bin/python``) w dowolnym miejscu polecenia prostego, także za
 ``timeout 900`` czy ``nohup``, albo bez ścieżki na pozycji programu: pierwsze słowo za przypisaniami (``X=1``)
 i słowami ``PREFIXES`` (``do``, ``then``, ``!``, ``{``…). Jego skrypt to pierwsze słowo za opcjami Pythona, a ``-m``
@@ -40,9 +41,9 @@ cudzysłowie podwójnym, bo zmienną zna tylko powłoka agenta. Przechodzi bez s
 | nazwa skryptu jako argument innego programu | ``sed -n 1,9p tools/szybko.py``, ``git add tools/szybko.py`` |
 | Python ze skryptem z napisu albo stdin | ``.venv/bin/python - <<'EOF'``, ``.venv/bin/python -c '…'`` |
 | lekkie polecenia skilla | ``.venv/bin/python -m ruff check .``, ``.venv/bin/python -m mypy``, ``git``, ``gh`` |
-| wejście, którego hook nie odczyta | ``echo "niedomknięte`` |
+| polecenie w komentarzu | ``# .venv/bin/python tools/szybko.py`` |
 
-Postacie, które hook przepuszcza, choć uruchamiają ciężkie polecenie (interpreter ze zmiennej, ``eval``, ``"$(…)"``…),
+Postacie, które hook przepuszcza, choć uruchamiają ciężkie polecenie (interpreter ze zmiennej, ``eval``, ``$(…)``…),
 są próbkami ``ZNANE_LUKI`` w ``tests/test_ciezkie.py``; inny harness niż Claude Code hooka nie uruchamia.
 Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
 (``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową.
@@ -56,12 +57,13 @@ import json
 import re
 import shlex
 import shutil
+import subprocess
 import sys
 from typing import Optional
 
-OPERATORS = "();<>|&\n"
-WORD_ENDS = " \t\r" + OPERATORS
-REDIRECT = re.compile(r"[<>&]*[<>][<>&]*")
+ZSH_WORDS = 'w=(${(Z+C+)CMD}); print -rN -- ${#w} "${w[@]}" "${(Q@)w}"'
+SEPARATOR = re.compile(r"[;&|()]+")
+REDIRECT = re.compile(r"\d*[<>&|!-]*[<>][<>&|!-]*")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 PREFIXES = frozenset({"!", "{", "if", "then", "else", "elif", "do", "while", "until", "time", "exec", "command", "nohup"})
 PYTHON = re.compile(r"python(?:\d+(?:\.\d+)*)?")
@@ -151,52 +153,36 @@ def _without_heredocs(command: str) -> str:
     return "\n".join(kept)
 
 
-class _Source:
-    def __init__(self, text: str) -> None:
-        self.text, self.read_to = text, 0
-
-    def read(self, size: int = 1) -> str:
-        chunk = self.text[self.read_to : self.read_to + size]
-        self.read_to += len(chunk)
-        return chunk
-
-    def readline(self) -> str:
-        end = self.text.find("\n", self.read_to)
-        return self.read((len(self.text) if end < 0 else end + 1) - self.read_to)
-
-    def close(self) -> None:
-        self.read_to = len(self.text)
-
-    def descriptor(self, token: str) -> bool:
-        operator = self.read_to - 1
-        start = operator - len(token)
-        return (
-            token.isdigit()
-            and self.text[operator : operator + 1] in ("<", ">")
-            and self.text[start:operator] == token
-            and (start == 0 or self.text[start - 1] in WORD_ENDS)
-        )
-
-
 def _simple_commands(command: str) -> list[list[str]]:
-    source = _Source(_without_heredocs(command).replace("\\\n", " "))
-    lexer = shlex.shlex(source, posix=True, punctuation_chars=OPERATORS)
-    lexer.whitespace = " \t\r"
-    lexer.whitespace_split = True
-    lexer.commenters = ""
+    zsh = shutil.which("zsh")
+    if zsh is None:
+        return []
+    try:
+        lexed = subprocess.run(
+            [zsh, "-fc", ZSH_WORDS],
+            env={"CMD": _without_heredocs(command)},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="surrogateescape",
+            timeout=5,
+            check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    count, *words = lexed.stdout.split("\0")[:-1]
     commands: list[list[str]] = [[]]
     target = False
-    for token in lexer:
-        if token and all(char in OPERATORS for char in token):
-            if REDIRECT.fullmatch(token):
-                target = True
-            else:
-                commands.append([])
-                target = False
+    for token, word in zip(words[: int(count)], words[int(count) :]):
+        if SEPARATOR.fullmatch(token):
+            commands.append([])
+            target = False
+        elif REDIRECT.fullmatch(token):
+            target = True
         elif target:
             target = False
-        elif not source.descriptor(token):
-            commands[-1].append(token)
+        else:
+            commands[-1].append(word)
     return commands
 
 
@@ -260,11 +246,7 @@ def _argument(text: str) -> str:
 
 
 def _judged(command: str) -> Iterator[Refusal]:
-    try:
-        commands = _simple_commands(command)
-    except ValueError:
-        return
-    for words in commands:
+    for words in _simple_commands(command):
         yield from _refusals(words)
 
 

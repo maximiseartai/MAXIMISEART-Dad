@@ -26,6 +26,10 @@ HOOK = ROOT / "tools" / "hooks" / "ciezkie.py"
 SETTINGS = ROOT / ".claude" / "settings.json"
 
 SZYBKO = "boatbox auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8 "
+ZSH = shutil.which("zsh")
+wymaga_zsh = pytest.mark.skipif(
+    ZSH is None, reason="hook czyta polecenie lekserem zsh, powłoki Claude Code na Macu, a runner CI nie ma zsh"
+)
 
 
 def _load() -> ModuleType:
@@ -50,7 +54,7 @@ REFUSED = [
     ("cd wt # wejście do worktree\n.venv/bin/python tools/szybko.py", SZYBKO + "'.venv/bin/python tools/szybko.py'"),
     ("nohup .venv/bin/python tools/szybko.py &", SZYBKO + "'.venv/bin/python tools/szybko.py'"),
     ("git add -A\n.venv/bin/python tools/szybko.py", SZYBKO + "'.venv/bin/python tools/szybko.py'"),
-    ('out=$(.venv/bin/python tools/szybko.py 2>&1); echo "$out" | tail', SZYBKO + "'.venv/bin/python tools/szybko.py'"),
+    (".venv/bin/python tools/szybko.py  # bez -h, na Macu", SZYBKO + "'.venv/bin/python tools/szybko.py'"),
     ("bash -lc '.venv/bin/python tools/szybko.py'", SZYBKO + "'.venv/bin/python tools/szybko.py'"),
     ("bash -euo pipefail -c 'cd wt && .venv/bin/python tools/szybko.py'", SZYBKO + "'.venv/bin/python tools/szybko.py'"),
     (
@@ -92,6 +96,14 @@ REFUSED = [
     ("pytest -n auto", "boatbox job pytest 'pytest -n auto'"),
     (
         ".venv/bin/python -m pytest -q -n 8 > pytest.log 2>&1",
+        "boatbox job pytest '.venv/bin/python -m pytest -q -n 8'",
+    ),
+    (
+        ".venv/bin/python -m pytest -q -n\\\n8>pytest.log",
+        "boatbox job pytest '.venv/bin/python -m pytest -q -n8'",
+    ),
+    (
+        ".venv/bin/python -m pytest -q -n 8 > pytest.log 2>&1  # potem tests/test_x.py",
         "boatbox job pytest '.venv/bin/python -m pytest -q -n 8'",
     ),
     (
@@ -141,6 +153,7 @@ PASSING = [
     ".venv/bin/python -m ruff check tools/szybko.py && .venv/bin/python -m mypy",
     "gh pr view 1 --json title",
     'echo "niedomknięte',
+    "# .venv/bin/python tools/szybko.py",
 ]
 
 
@@ -149,17 +162,19 @@ ZNANE_LUKI = {
     "opcje pytest ze zmiennej: pytest $ARGS": 'ARGS="-n auto"; .venv/bin/python -m pytest $ARGS',
     "pytest bez ścieżki za innym programem: timeout 900 pytest": "timeout 900 pytest -n auto",
     "Python bez ścieżki za innym programem: timeout 900 python3": "timeout 900 python3 tools/szybko.py",
+    "podstawienie polecenia: lekser zsh daje $(…) jednym słowem": "out=$(.venv/bin/python tools/szybko.py)",
     "podstawienie w cudzysłowie podwójnym: \"$(…)\"": 'echo "$(.venv/bin/python tools/szybko.py)"',
     "podstawienie w backtickach": "x=`.venv/bin/python tools/szybko.py`",
+    "podstawienie procesu: <(…)": "diff <(.venv/bin/python tools/szybko.py) wynik.txt",
     "eval": "eval '.venv/bin/python tools/szybko.py'",
     "xargs: skrypt ze stdin": "echo tools/szybko.py | xargs .venv/bin/python",
     "skrypt powłoki z pliku": "bash sprawdz.sh",
     "plik testów tylko jako wartość opcji": ".venv/bin/python -m pytest -n auto --ignore tests/test_x.py",
     "połączone opcje Pythona: -um pytest": ".venv/bin/python -um pytest -n auto",
-    "komentarz z niedomkniętym cudzysłowem przed poleceniem": "# don't\n.venv/bin/python tools/szybko.py",
 }
 
 
+@wymaga_zsh
 def test_znane_luki_hooka_ciezkich_polecen_przechodza() -> None:
     zgloszenia: dict[str, list[str]] = {}
     for opis, command in ZNANE_LUKI.items():
@@ -169,6 +184,7 @@ def test_znane_luki_hooka_ciezkich_polecen_przechodza() -> None:
     assert_znane_luki(zgloszenia, "tests/test_ciezkie.py (ZNANE_LUKI)")
 
 
+@wymaga_zsh
 @pytest.mark.parametrize(("command", "ready"), REFUSED, ids=[command for command, _ in REFUSED])
 def test_ciezkie_polecenie_bez_boatbox_dostaje_odmowe_z_gotowym_poleceniem(command: str, ready: str) -> None:
     refusal = hook.judge(command)
@@ -177,11 +193,13 @@ def test_ciezkie_polecenie_bez_boatbox_dostaje_odmowe_z_gotowym_poleceniem(comma
     assert f"Uruchom je tak: {ready}\n" in refusal.reason
 
 
+@wymaga_zsh
 @pytest.mark.parametrize("ready", [ready for _, ready in REFUSED])
 def test_gotowe_polecenie_z_odmowy_przechodzi(ready: str) -> None:
     assert hook.judge(ready) is None
 
 
+@wymaga_zsh
 @pytest.mark.parametrize("command", PASSING)
 def test_polecenie_w_boatbox_i_lekkie_polecenie_przechodza(command: str) -> None:
     assert hook.judge(command) is None
@@ -191,12 +209,14 @@ HEAVY = [shlex.split(ready)[-1] for _, ready in REFUSED]
 BOATBOX = ["boatbox auto", "boatbox run", "boatbox run --here", "boatbox job nazwa", "timeout 900 boatbox auto"]
 
 
+@wymaga_zsh
 @pytest.mark.parametrize("boatbox", BOATBOX)
 @pytest.mark.parametrize("heavy", HEAVY)
 def test_ciezkie_polecenie_za_boatbox_bez_cudzyslowu_przechodzi(boatbox: str, heavy: str) -> None:
     assert hook.judge(f"{boatbox} {heavy}") is None
 
 
+@wymaga_zsh
 @pytest.mark.parametrize("redirect", [" > f", " 2>&1", " &> f", " >> f 2>&1", " 2>blad.log", " </dev/null"])
 @pytest.mark.parametrize(("heavy", "ready"), [(heavy, ready) for heavy, (_, ready) in zip(HEAVY, REFUSED, strict=True)])
 def test_przekierowanie_za_ciezkim_poleceniem_nie_zmienia_odmowy(heavy: str, ready: str, redirect: str) -> None:
@@ -213,28 +233,29 @@ TAILS = [
     "-n auto 3>f", "--numprocesses 4 > f", "-n 8 <<< x", "-n 8 <<EOF\nx\nEOF", "-n 8\t> f", "-n 8>f",
     "-k 'zażółć' -n 8 > f", "-n 8 >f </dev/null", "-n 8 2>f", "-n 4 tests/ 2>&1", "-n 8 >& f", "-n 8 >&f",
     "-n 8 0<f", "-n 8 9>f", '-n "8">f', "-n '8'>f", "-n \\8>f", '-n ""8>f', '-n 8"">f', '-n "8" > f',
-    "--numprocesses '4'>>f 2>&1", '-n "auto">f', "-n 0>f", '-n "0">f',
+    "--numprocesses '4'>>f 2>&1", '-n "auto">f', "-n 0>f", '-n "0">f', "-n\\\n8>f", "-n\r8>f", "-n $'8'>f",
+    "-n 8 > f  # potem tests/test_x.py", "-n 8 # koszt $HOME", "-n 8 # -h", "-n\\\n 8 >f",
 ]
-PREFIXES = ["", "echo zażółć; ", "cat <<'E' > /dev/null\nżółw 8>\nE\n"]
+PREFIXES = ["", "echo zażółć; ", "cat <<'E' > /dev/null\nżółw 8>\nE\n", "true && \\\n"]
 
 
-def _argv_from_bash(command: str, folder: Path) -> list[str]:
+def _argv_from_zsh(command: str, folder: Path) -> list[str]:
     program = folder / ".venv" / "bin" / "python"
     program.parent.mkdir(parents=True)
     program.write_text('#!/bin/sh\nprintf \'%s\\0\' "$@" > "$ARGV_OUT"\n', encoding="utf-8")
     program.chmod(0o755)
     (folder / "f").write_text("", encoding="utf-8")
     out = folder / "argv"
-    subprocess.run(["bash", "-c", command], cwd=folder, env={**os.environ, "ARGV_OUT": str(out)}, capture_output=True, check=True)
+    subprocess.run([str(ZSH), "-fc", command], cwd=folder, env={**os.environ, "ARGV_OUT": str(out)}, capture_output=True, check=True)
     return [word.decode() for word in out.read_bytes().split(b"\0")[:-1]]
 
 
-@pytest.mark.skipif(sys.platform == "win32" or shutil.which("bash") is None, reason="wyrocznią argv jest Bash")
+@wymaga_zsh
 @pytest.mark.parametrize("prefix", PREFIXES)
 @pytest.mark.parametrize("tail", TAILS)
-def test_hook_czyta_liczbe_i_przekierowanie_jak_bash(prefix: str, tail: str, tmp_path: Path) -> None:
+def test_hook_czyta_liczbe_przekierowanie_i_komentarz_jak_zsh_agenta(prefix: str, tail: str, tmp_path: Path) -> None:
     command = f"{prefix}{PYTEST} {tail}"
-    argv = [".venv/bin/python", *_argv_from_bash(command, tmp_path)]
+    argv = [".venv/bin/python", *_argv_from_zsh(command, tmp_path)]
 
     refusal, of_argv = hook.judge(command), hook.judge(shlex.join(argv))
 
@@ -253,11 +274,21 @@ def _fake_boatbox(folder: Path) -> Path:
     return folder
 
 
-def _hook(stdin: str, path: Path) -> subprocess.CompletedProcess[str]:
+@wymaga_zsh
+@pytest.mark.parametrize("substitution", ["x=$(touch {m})", 'echo "$(touch {m})"', "x=`touch {m}`", "cat <(touch {m})"])
+def test_lekser_hooka_niczego_nie_wykonuje(substitution: str, tmp_path: Path) -> None:
+    marker = tmp_path / "wykonane"
+
+    hook.judge(substitution.format(m=marker))
+
+    assert not marker.exists()
+
+
+def _hook(stdin: str, *path: Path) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(HOOK)],
         input=stdin,
-        env={**os.environ, "PATH": str(path)},
+        env={**os.environ, "PATH": os.pathsep.join(map(str, path))},
         capture_output=True,
         text=True,
         encoding="utf-8",
@@ -269,28 +300,34 @@ def _bash(command: str) -> str:
     return json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": command}})
 
 
+@wymaga_zsh
 def test_hook_z_boatbox_w_path_odmawia_kodem_2_z_poleceniem_na_stderr(tmp_path: Path) -> None:
     command, ready = REFUSED[0]
 
-    hooked = _hook(_bash(command), _fake_boatbox(tmp_path / "bin"))
+    hooked = _hook(_bash(command), _fake_boatbox(tmp_path / "bin"), Path(str(ZSH)).parent)
 
     assert (hooked.returncode, hooked.stdout) == (2, ""), hooked.stderr
     assert ready in hooked.stderr
 
 
+@wymaga_zsh
+def test_hook_bez_boatbox_w_path_przepuszcza_ciezkie_polecenie() -> None:
+    hooked = _hook(_bash(REFUSED[0][0]), Path(str(ZSH)).parent)
+
+    assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
+
+
 @pytest.mark.parametrize(
-    ("stdin", "with_boatbox"),
+    "stdin",
     [
-        pytest.param(_bash(REFUSED[0][0]), False, id="bez-boatbox-w-path"),
-        pytest.param(_bash(PASSING[0]), True, id="polecenie-w-boatbox"),
-        pytest.param("nie json", True, id="wejscie-nieczytelne"),
-        pytest.param(json.dumps({"tool_input": {"command": 7}}), True, id="polecenie-nie-tekst"),
+        pytest.param(_bash(REFUSED[0][0]), id="bez-zsh-w-path"),
+        pytest.param(_bash(PASSING[0]), id="polecenie-w-boatbox"),
+        pytest.param("nie json", id="wejscie-nieczytelne"),
+        pytest.param(json.dumps({"tool_input": {"command": 7}}), id="polecenie-nie-tekst"),
     ],
 )
-def test_hook_przepuszcza_bez_slowa(stdin: str, with_boatbox: bool, tmp_path: Path) -> None:
-    path = _fake_boatbox(tmp_path / "bin") if with_boatbox else tmp_path
-
-    hooked = _hook(stdin, path)
+def test_hook_przepuszcza_bez_slowa(stdin: str, tmp_path: Path) -> None:
+    hooked = _hook(stdin, _fake_boatbox(tmp_path / "bin"))
 
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
@@ -312,6 +349,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
     assert 0 < float(str(configured["timeout"])) <= 10
 
 
+@wymaga_zsh
 @pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
 @pytest.mark.parametrize(("project", "code"), [pytest.param(ROOT, 2, id="checkout-z-hookiem"), pytest.param(None, 0, id="checkout-bez-skryptu")])
 def test_ustawienia_projektu_wpinaja_hook_dla_basha(project: Path | None, code: int, tmp_path: Path) -> None:
@@ -324,7 +362,7 @@ def test_ustawienia_projektu_wpinaja_hook_dla_basha(project: Path | None, code: 
         env={
             **os.environ,
             "CLAUDE_PROJECT_DIR": str(project or tmp_path),
-            "PATH": f"{_fake_boatbox(tmp_path / 'bin')}{os.pathsep}/usr/bin{os.pathsep}/bin",
+            "PATH": os.pathsep.join([str(_fake_boatbox(tmp_path / "bin")), str(Path(str(ZSH)).parent), "/usr/bin", "/bin"]),
         },
         capture_output=True,
         text=True,
