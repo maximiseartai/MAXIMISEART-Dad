@@ -524,6 +524,7 @@ _Avoid_: kolor pracownika, zielona komórka
 
 Zasady taty, które z treści zlecenia (`UMOWA`, `URZĄDZENIA`, `CZYNNOŚCI`, `DATA`) wyznaczają Ilości usług.
 Są Ustawieniem Centrum: tata tworzy je i zmienia sam, każdą jako „jeśli … to …”.
+Nie mają danych osobowych, tak jak Lista Urządzeń: nazywają urządzenia, czynności i kolumny, nie ludzi ani adresy, więc Zgłoszenie podaje zmianę obu wprost, wpisem przed i po.
 Ilości wynikające z opisu technika (`CZYNNOŚCI ZREALIZOWANE`) nie są Regułami ilości: wyznacza je Legenda czynności albo wpisuje tata.
 _Avoid_: scenariusze rozliczeń, instrukcja
 

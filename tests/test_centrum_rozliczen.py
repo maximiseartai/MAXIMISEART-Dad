@@ -1890,6 +1890,86 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
     list_holds()
 
 
+def _dad_spellings(app: Centrum, spellings: Mapping[str, list[str]]) -> None:
+    known = {device["id"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]}
+    for device, (name, *others) in spellings.items():
+        if device in known:
+            response = app.client.put(f"{DEVICES_URL}/{device}", json={**device_form(app, device), "name": name, "other_spellings": others})
+        else:
+            response = app.client.post(DEVICES_URL, json={"name": name, "other_spellings": others, "group": None})
+        assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize(
+    ("spellings", "owner", "how"),
+    [
+        pytest.param(
+            {"nokia": ["nokia", "instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]},
+            "nokia",
+            "zapis",
+            id="zapis-obok-innych-zapisow-skladnika",
+        ),
+        pytest.param(
+            {"fut": ["instalacja ręczna"], "nokia": ["nokia", "wizja"]}, "instalacja ręczna", "skladnik", id="jedyny-zapis-skladnika-bez-reguly"
+        ),
+        pytest.param(
+            {"nokia": ["instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]},
+            "instalacja ręczna",
+            "nazwa",
+            id="jedyny-zapis-skladnika-potrzebnego-regule",
+        ),
+        pytest.param({"nowy": ["instalacja ręczna", "wizja"]}, "instalacja ręczna", "nazwa", id="pierwszy-z-kilku-zapisow-skladnika"),
+    ],
+)
+def test_zdanie_o_zajetym_zapisie_skladnika_wydania_kaze_usunac_zapis_obok_innych_skladnik_bez_reguly_a_inaczej_zmienic_nazwe(
+    tmp_path: Path,
+    release_without_manual_installation: Callable[[], None],
+    spellings: dict[str, list[str]],
+    owner: str,
+    how: settings_messages.TakenAction,
+) -> None:
+    app = centrum(tmp_path)
+    _dad_spellings(app, spellings)
+
+    release_without_manual_installation()
+    problem = app.client.get(QUANTITY_RULES_URL).json()["devices_problem"]
+
+    assert problem == {"field": None, "message": settings_messages.release_component_taken("instalacja ręczna", owner, how)}
+
+
+def test_odmowa_zmiany_regul_ktora_zdejmuje_regule_skladnika_z_zajetym_zapisem_mowi_jak_zwolnic_zapis_tym_samym_zdaniem_co_sekcja(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    _dad_spellings(app, {"technicolor": ["instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]})
+    release_without_manual_installation()
+    waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "nazwa")
+
+    shown = app.client.get(QUANTITY_RULES_URL).json()
+    removed = app.client.delete(f"{QUANTITY_RULES_URL}/technicolor")
+
+    assert shown["rules_problem"] == {"field": None, "message": waiting}
+    assert (removed.status_code, removed.json()["message"]) == (422, waiting)
+    assert settings_bytes(app.tool.config / RULES_FILE) is None
+
+
+def test_usuniecie_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_mu_ten_zapis_na_liscie_taty(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    added = app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": [], "group": None})
+    own = added.json()["quantity_rules"]["devices"][-1]["id"]
+    release_without_manual_installation()
+    assert device_form(app, "instalacja-reczna")["name"] == "wizja"
+
+    removed = app.client.delete(f"{DEVICES_URL}/{own}")
+
+    assert removed.status_code == 200, removed.text
+    dad_list = _dad_list(app)
+    assert dad_list is not None
+    assert [component.spellings for component in dad_list if component.id == "instalacja-reczna"] == [("instalacja ręczna", "wizja")]
+
+
 def _rule_with(component: str) -> dict[str, Any]:
     """Formularz reguły „Jeśli URZĄDZENIA zawierają składnik, to wpisz 3 × jego liczbę w Z” dla składnika ``component``."""
 
@@ -1954,6 +2034,52 @@ def test_cofniecie_usuniecia_reguly_ze_skladnikiem_usunietym_potem_odmawia_zdani
     assert (undone.status_code, undone.json()) == (422, {"message": sentence})
     assert (again.status_code, again.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
     assert (settings_bytes(app.tool.config / DEVICES_FILE), settings_bytes(app.tool.config / RULES_FILE)) == files
+
+
+def _renamed_then_removed(app: Centrum) -> str:
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own = str(added.json()["quantity_rules"]["devices"][-1]["id"])
+    assert app.client.put(f"{DEVICES_URL}/{own}", json={"name": "ont z", "other_spellings": [], "group": None}).status_code == 200
+    assert app.client.delete(f"{DEVICES_URL}/{own}").status_code == 200
+    return own
+
+
+def _removed_from_list_older_than_history(app: Centrum) -> str:
+    app.tool.config.mkdir(parents=True, exist_ok=True)
+    (app.tool.config / DEVICES_FILE).write_bytes(DEVICES.dump((*DEFAULT_QUANTITY_RULES.devices.components, Component("ont-y", ("ont y",)))))
+    assert app.client.get(QUANTITY_RULES_URL).status_code == 200
+    assert app.client.delete(f"{DEVICES_URL}/ont-y").status_code == 200
+    assert [row["changes"][0]["after"] for row in history_rows(app) if row["file"] == DEVICES_FILE] == [None]
+    return "ont-y"
+
+
+def _release_component_off_dad_list(app: Centrum) -> str:
+    app.tool.config.mkdir(parents=True, exist_ok=True)
+    (app.tool.config / RULES_FILE).write_bytes(RULES.dump(tuple(rule for rule in DEFAULT_QUANTITY_RULES.rules if rule.id != "zmiana-instalacji")))
+    devices = tuple(component for component in DEFAULT_QUANTITY_RULES.devices.components if component.id != "zmiana-instalacji")
+    (app.tool.config / DEVICES_FILE).write_bytes(DEVICES.dump(devices))
+    return "zmiana-instalacji"
+
+
+@pytest.mark.parametrize(
+    ("world", "name"),
+    [
+        pytest.param(_renamed_then_removed, "ont z", id="nazwa-z-najnowszego-wiersza-historii"),
+        pytest.param(_removed_from_list_older_than_history, "ont y", id="nazwa-sprzed-usuniecia-bez-wczesniejszego-wiersza"),
+        pytest.param(_release_component_off_dad_list, "zmiana instalacji w lokalu abonenta", id="nazwa-z-listy-urzadzen-z-wydania"),
+    ],
+)
+def test_odmowa_reguly_ze_skladnikiem_spoza_listy_urzadzen_nazywa_go_tak_jak_tata_ostatnio_go_widzial(
+    tmp_path: Path, world: Callable[[Centrum], str], name: str
+) -> None:
+    app = centrum(tmp_path)
+    component = world(app)
+
+    refused = app.client.post(QUANTITY_RULES_URL, json=_rule_with(component))
+
+    rule = f"Jeśli URZĄDZENIA zawierają „{name}”, to wpisz 3 × liczbę „{name}” w Z."
+    sentence = f"Reguła potrzebuje składnika „{name}”, którego nie ma na Liście Urządzeń: {rule} Najpierw dodaj ten składnik w sekcji Urządzenia."
+    assert (refused.status_code, refused.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
 
 
 # Formularze składnika w teście równoważności: „ont z” bierze zapis „ont x”, a „ont w” zapis „ont y”.
