@@ -1542,6 +1542,8 @@ def _view_where(centrum: SettlingCentrum, wanted: Callable[[dict[str, Any]], boo
         view: dict[str, Any] = event["view"]
         if wanted(view):
             return view
+        if view["state"] == "finished":
+            raise AssertionError(f"Uruchomienie skończyło się przed oczekiwanym widokiem: {view['result']}")
     raise AssertionError("Strumień skończył się przed oczekiwanym widokiem.")
 
 
