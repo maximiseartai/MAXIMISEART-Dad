@@ -386,11 +386,15 @@ def judged(
     concurrent: bool = False,
     python: str | None = None,
     env: Mapping[str, str] | None = None,
+    needs_test: bool = False,
 ) -> tuple[Verdict, str, float | None]:
     """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
     stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
     ``min(limit_s, left)``. Woła ją ``verdicts`` na kopii checkoutu i dowód strażnika ``pytest`` (``straznik``) na
-    kopii środowiska Required CI."""
+    kopii środowiska Required CI. Z ``needs_test`` polecenie pytest, w którym po mutacji nie biegł żaden test
+    (``_without_test``, np. parametr, którego z mutacją nie ma), daje NIEWYKRYTA: dowód wybiera jeden węzeł, a Required
+    CI uruchamia cały plik, w którym zniknięty węzeł niczego nie czerwieni. Bez niego kod 4 i 5 są wykryciem jak dotąd,
+    bo plik albo zbiór plików bez testu czerwieni zadanie CI."""
 
     left = limit_s if left is None else left
     if stale := _apply(copy, mutation.edits):
@@ -403,7 +407,10 @@ def judged(
         found = Verdict.HANG, ran.hang
     else:
         caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
-        found = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
+        if caught and needs_test and _without_test(mutation.command, ran):
+            found = Verdict.SURVIVED, f"{ran.last} (pytest nie uruchomił testu, kod {ran.code})"
+        else:
+            found = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
     return *found, ran.seconds
 
 

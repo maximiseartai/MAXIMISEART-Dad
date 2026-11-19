@@ -92,7 +92,7 @@ Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md))
 - Dowód bierze złą postać z drzewa SHA werdyktu i z funkcji wokół `Gdzie` (mypy i ruff liczą znalezisko w tej funkcji), więc recenzent pisze w `Gdzie` linie złego kodu, które poprawka ma zmienić, a nie miejsce objawu.
 - Recenzent następnej rundy czyta z linii dowodu, które znalezisko padło, i daje Ważne, gdy strażnik łapie inną poprawkę tego PR niż to Ważne; przy `Strażnik: brak - napęd` uruchamia krok napędu skilla `verify-*` na drzewie SHA werdyktu, a to, co przechodzi, to Ważne.
 - Test jako strażnik to `Strażnik: pytest tests/<plik>.py::<test>` (jeden test albo jego parametr), a złą postać pisze recenzent, nie autor: blok `### Mutacja W<n> r<k>` w werdykcie (postać w sekcji „Postać werdyktu”) z mutacją, która na HEAD przywraca zachowanie z Dowodu Ważnego najmniejszą zmianą kodu, konfiguracji albo reguły, nie testu.
-  Dowód przechodzi, gdy test na HEAD scalonym z bazą bez mutacji przechodzi, a z każdą mutacją najnowszego bloku tego Ważnego w werdyktach PR pada (ADR 0042, aneks „Test jako strażnik z mutacją recenzenta”).
+  Dowód przechodzi, gdy test na HEAD scalonym z bazą bez mutacji przechodzi, z każdą mutacją najnowszego bloku tego Ważnego w werdyktach PR biegnie i pada, a po nich bez mutacji przechodzi znowu (ADR 0042, aneks „Test jako strażnik z mutacją recenzenta”).
 - Recenzent rundy, która sprawdza poprawkę Ważnego ze `Strażnik: pytest …`, czyta najnowszy blok tego Ważnego i pisze w swoim werdykcie, także w `PASS`, nowy blok `### Mutacja W<n> r<k>`, gdy bloku nie ma, gdy jego kotwicy nie ma na HEAD dokładnie raz albo gdy mutacja nie przywraca błędu z Ważnego (jest słabsza od niego albo psuje więcej).
   Blok sprawdza przed publikacją: `tools/mutacje.py --plik <blok.json> -- -m pytest -q -n 0 <węzeł>`, a `NIEWYKRYTA` to Ważne, bo strażnik nie łapie błędu.
   Recenzent `FAIL` daje blok od razu, gdy wie, jaki kod po poprawce przywróci błąd; wierność bloku ocenia recenzent następnej rundy, bo dowód gwarantuje tylko, że test pada przez tę mutację.
@@ -134,7 +134,7 @@ Gdzie: <plik:linia>
 - <co sprawdzone i z jakim wynikiem, 1–5 punktów>
 ```
 
-Blok `### Mutacja W<n> r<k>` daje złą postać strażnikowi `pytest <węzeł>` Ważnego `W<n>` z `k`-tego werdyktu PR (sekcja „Korzeń i chwast”): stoi przed `## Sprawdzone` w `FAIL` albo w `PASS`, najwyżej jeden na Ważne w werdykcie, a pod nagłówkiem ma tylko blok kodu ``` albo ~~~ bez nazwy języka (```json GitHub renderuje inaczej, więc to odmowa) z JSON pliku `tools/mutacje.py --plik` z kluczami `nazwa` i `zmiany`.
+Blok `### Mutacja W<n> r<k>` daje złą postać strażnikowi `pytest <węzeł>` Ważnego `W<n>` z `k`-tego werdyktu PR (sekcja „Korzeń i chwast”): stoi przed `## Sprawdzone` w `FAIL` albo w `PASS`, najwyżej jeden na Ważne w werdykcie, a pod nagłówkiem ma tylko blok kodu ``` albo ~~~ bez nazwy języka (```json GitHub renderuje inaczej, więc to odmowa) z JSON pliku `tools/mutacje.py --plik` z kluczami `nazwa` i `zmiany`, bez zmian w `tests/`.
 `PASS` bez znalezisk ma tylko linie `WERDYKT: PASS <pełny SHA HEAD>`, `Znaleziska: 0 (Ważne 0, Drobne 0)`, bloki `### Mutacja` i `## Sprawdzone`.
 Punkt `## Sprawdzone`, który zaczyna się od `Korzeń `, to rozstrzygnięcie kodu Ważnego z wcześniejszej rundy (`- Korzeń W1 r1: R-KOD - zdanie`, sekcja „Korzeń i chwast”), a kod sprawdza się jak w polu `Korzeń:`.
 Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.

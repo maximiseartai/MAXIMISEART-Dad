@@ -4,7 +4,8 @@ na HEAD PR, a której autor nie pisze.
 
 W werdykcie blok to nagłówek ``### Mutacja W<n> r<k>`` (``HEADING``: Ważne ``W<n>`` werdyktu ``FAIL`` rundy ``k``)
 i pod nim jeden blok kodu ``` bez nazwy języka z JSON w postaci pliku ``tools/mutacje.py --plik``
-(``silnik_mutacji.FILE_SHAPE``), z samymi kluczami ``nazwa`` i ``zmiany``, bo polecenie daje selektor strażnika; GitHub
+(``silnik_mutacji.FILE_SHAPE``), z samymi kluczami ``nazwa`` i ``zmiany``, bo polecenie daje selektor strażnika, i bez
+zmian w ``tests/``, bo zła postać to kod, który test ma złapać; GitHub
 renderuje blok z nazwą języka jako ``<div>`` ze ściśniętymi spacjami, więc kotwica nie przeszłaby nietknięta. Postać
 sprawdza szablon werdyktu (``szablon_werdyktu``) przy ``--werdykt`` i przy zgodzie na merge. Blok może stać w werdykcie
 ``FAIL``, który zgłosił Ważne, i w każdym późniejszym werdykcie PR, a obowiązuje najnowszy (``newest``), więc recenzent
@@ -25,6 +26,7 @@ import re
 from silnik_mutacji import Mutation, from_json
 
 HEADING = re.compile(r"Mutacja (W\d+) r(\d+)")
+TESTS = "tests"  # katalog testów: zmiana w nim nie jest złą postacią kodu, którą test ma złapać
 
 
 @dataclass(frozen=True)
@@ -40,14 +42,16 @@ class Block:
 
 
 def mutations(block: Block, command: tuple[str, ...]) -> list[Mutation]:
-    """Mutacje bloku z poleceniem ``command``, co najmniej jedna; tekst innej postaci niż plik mutacji z samymi ``nazwa``
-    i ``zmiany`` to ``ValueError`` z przyczyną."""
+    """Mutacje bloku z poleceniem ``command``, co najmniej jedna, żadna w ``tests/``; tekst innej postaci niż plik
+    mutacji z samymi ``nazwa`` i ``zmiany`` to ``ValueError`` z przyczyną."""
 
     found = from_json(block.text, command, f"blok ### {block}")
     if not found:
         raise ValueError(f"blok ### {block}: lista bez wpisu, a dowód potrzebuje co najmniej jednej mutacji")
     if any(mutation.command != command or mutation.expected is not None for mutation in found):
         raise ValueError(f"blok ### {block}: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika pytest")
+    if tested := sorted({edit.file.as_posix() for mutation in found for edit in mutation.edits if edit.file.parts[0] == TESTS}):
+        raise ValueError(f"blok ### {block}: zmiana w {', '.join(tested)}: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test")
     return found
 
 

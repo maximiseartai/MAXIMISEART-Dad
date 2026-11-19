@@ -19,7 +19,8 @@ Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmo
 - Drobne to nagłówek ``### D<n>. <zdanie>`` i jedna linia ``Gdzie: <plik:linia>``;
 - Ważne stoją przed Drobnymi, numery idą od 1 bez przerw, a ich liczby zgadzają się z linią ``Znaleziska:``;
 - blok mutacji recenzenta (``mutacja_recenzenta``) to nagłówek ``### Mutacja W<n> r<k>`` przed ``## Sprawdzone``
-  i pod nim tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji z kluczami ``nazwa`` i ``zmiany``, najwyżej jeden
+  i pod nim tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji z kluczami ``nazwa`` i ``zmiany``, bez zmian
+  w ``tests/``, najwyżej jeden
   na Ważne w werdykcie, w werdykcie ``PASS`` i ``FAIL``;
 - na końcu ``## Sprawdzone`` z 1 do 5 niepustymi punktami listy, a po nich nic; punkt, który zaczyna się od
   ``Korzeń ``, to rozstrzygnięcie ``Korzeń W<n> r<k>: R-KOD - zdanie`` albo ``Korzeń W<n> r<k>: NOWY R-KOD - opis``,

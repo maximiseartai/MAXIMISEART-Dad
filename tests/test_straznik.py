@@ -147,6 +147,7 @@ def test_selektor_straznika_z_zamknietej_listy_daje_rodzaj_i_argumenty(text: str
         "pytest src/rozliczenia/x.py::test_y",
         "pytest tests/../src/x.py::test_y",
         "pytest tests/test_x.py::A::B::test_y",
+        "pytest tests/test_x.py::TestKlasa",
         "mypy --strict",
         "ast-grep",
         "brak",
@@ -160,6 +161,7 @@ def test_selektor_straznika_z_zamknietej_listy_daje_rodzaj_i_argumenty(text: str
         "wezel-poza-tests",
         "sciezka-wychodzi-z-tests",
         "klasa-w-klasie",
+        "klasa-testow",
         "mypy-z-flaga",
         "ast-grep-bez-id",
         "brak-bez-powodu",
@@ -351,6 +353,9 @@ def _block(*edits: tuple[str, str, str], name: str = "x * 3 z FAIL") -> str:
 
 
 TRIPLED = _block(("kod/liczby.py", "return x * 2", "return x * 3"))
+# Parametr testu z id z danych produkcji (sonda #2197 r4 W1): z mutacją, która przywraca listę z FAIL, węzła nie ma.
+FORMATS = 'OBSLUGIWANE = ("a", "b")\n\n\ndef obsluz(nazwa: str) -> bool:\n    return nazwa in OBSLUGIWANE\n'
+TEST_FORMATS = 'import pytest\n\nfrom kod.pliki import OBSLUGIWANE, obsluz\n\n\n@pytest.mark.parametrize("nazwa", OBSLUGIWANE)\ndef test_g(nazwa: str) -> None:\n    assert obsluz(nazwa)\n'
 MEMO = (
     "_PAMIEC: dict[int, int] = {}\n\n\ndef _norma(x: int) -> int:\n    try:\n        return _PAMIEC[x]\n    except KeyError:\n"
     "        _PAMIEC[x] = x\n        return x\n\n\ndef podwojona(x: int) -> int:\n    return _norma(x) * 2\n"
@@ -365,6 +370,7 @@ class Sample:
     head: dict[str, str]
     mutation: str | None
     state: str
+    node: str = NODE
 
 
 PROBKI_TESTU = {
@@ -388,6 +394,18 @@ PROBKI_TESTU = {
         {"tests/test_g.py": TEST_G},
         json.dumps([{"nazwa": "x * 3", "zmiany": [["kod/liczby.py", "return x * 2", "return x * 3"]]}, {"nazwa": "x + 2", "zmiany": [["kod/liczby.py", "return x + 1", "return x + 2"]]}]),
         "NIEWYKRYTA | x + 2: NIEWYKRYTA: 1 passed",
+    ),
+    # Sonda #2197 r4 W1: z mutacją pytest nie uruchamia węzła (kod 4), a Required CI uruchamia cały plik i jest zielone.
+    "wezel-znika-z-mutacja": Sample(
+        {"kod/pliki.py": FORMATS, "tests/test_g.py": TEST_FORMATS},
+        _block(("kod/pliki.py", '("a", "b")', '("a",)'), name="lista bez b z FAIL"),
+        "NIEWYKRYTA | lista bez b z FAIL: NIEWYKRYTA: ",
+        "tests/test_g.py::test_g[b]",
+    ),
+    "blok-zmienia-test": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("tests/test_g.py", "== 6", "== 7")),
+        "ODMOWA | blok ### Mutacja W1 r1: zmiana w tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test",
     ),
     "pominiety-na-head": Sample({"tests/test_g.py": TEST_G.replace("def test_g", "import pytest\n\n\n@pytest.mark.skip\ndef test_g")}, TRIPLED, "NIEWYKRYTA | x * 3 z FAIL: NIEWYKRYTA: 1 skipped"),
     "brak-bloku": Sample({"tests/test_g.py": TEST_G}, None, "ODMOWA | żaden werdykt PR nie ma bloku ### Mutacja W1 r1 ze złą postacią do naniesienia na HEAD: recenzent następnej rundy dopisuje blok"),
@@ -418,10 +436,27 @@ def test_dowod_testu_przyjmuje_test_ktory_pada_tylko_przez_mutacje_recenzenta(tm
     sample = PROBKI_TESTU[name]
     pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **sample.head})
 
-    outcome = pull.prove(f"pytest {NODE}", mutation=sample.mutation)
+    outcome = pull.prove(f"pytest {sample.node}", mutation=sample.mutation)
 
     assert outcome.detected is sample.state.startswith("WYKRYTA"), outcome.line
     assert f"#5 W1 r1 | {pull.failed[:8]} | {sample.state}" in outcome.line, outcome.line
+    if name == "wezel-znika-z-mutacja":
+        assert outcome.line.endswith("(pytest nie uruchomił testu, kod 4)"), outcome.line
+
+
+def test_slad_poza_srodowiskiem_biegu_to_odmowa_a_nie_wykryta(tmp_path: Path) -> None:
+    """Sonda #2197 r4 W2: test, który nie woła kodu z mutacją, a zostawia ślad poza środowiskiem biegu (ścieżka
+    bezwzględna) i pada, gdy go zastanie, padłby z każdą mutacją; bieg bez mutacji po biegach z mutacją pada tak samo,
+    więc dowód odmawia."""
+
+    trace = tmp_path / "slad.txt"
+    once = f"import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({str(trace)!r})\n    assert not slad.exists()\n    slad.write_text('1')\n"
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": once})
+
+    outcome = pull.prove(f"pytest {NODE}", mutation=TRIPLED)
+
+    assert not outcome.detected, outcome.line
+    assert f"#5 W1 r1 | {pull.failed[:8]} | ODMOWA | {NODE} bez mutacji pada po biegach z mutacją (1 failed" in outcome.line, outcome.line
 
 
 @pytest.mark.parametrize(
@@ -484,6 +519,13 @@ ZNANE_LUKI_STRAZNIKA = {
         },
         f"pytest {NODE}",
         _block(("kod/liczby.py", "    if x < 0:\n        raise ValueError(x)\n    return x * 2\n", "    return x * 3\n")),
+    ),
+    # Wierna mutacja (kod z FAIL: ujemne razy 3) łapana inną drogą niż błąd z Ważnego (sonda #2197 r4 D2): test podaje
+    # napis, na którym porównanie z FAIL zgłasza ``TypeError``, a ujemnych liczb nie sprawdza.
+    "pytest: wierna mutacja łapana inną drogą niż błąd": Gap(
+        {"tests/test_g.py": "from kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    assert podwojona('ab') == 'abab'  # type: ignore[arg-type]\n"},
+        f"pytest {NODE}",
+        _block(("kod/liczby.py", "    return x * 2\n", "    return x * 2 if x >= 0 else x * 3\n"), name="ujemne razy 3 z FAIL"),
     ),
     # Test tekstu definicji zamiast jej zachowania pada z mutacją tego tekstu; dowód nie ocenia, co test sprawdza.
     "pytest: test tekstu definicji zamiast jej zachowania": Gap(

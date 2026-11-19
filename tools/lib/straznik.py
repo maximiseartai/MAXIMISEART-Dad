@@ -17,7 +17,7 @@ opisuje; kopia wraca do stanu sprzed biegu.
 |---|---|---|
 | ``mypy``, ``ruff`` | pliki z ``Gdzie`` z FAIL w całości: najpierw wszystkie, potem każdy osobno | na drzewie bez znalezisk w żadnym kroku narzędzia, po przywróceniu znalezisko któregoś kroku w przywróconym pliku, w zakresie ``Case.scopes`` wokół ``Gdzie`` (najmniejsza funkcja z ``na_scalonych_pr.places``; cały plik, gdy kod zakresu z FAIL stoi w drzewie bez zmian, czyli poprawka leży obok) |
 | ``ast-grep <id>`` | bez przywrócenia: dowód reguły ``tools/na_scalonych_pr.py --regula-id`` na drzewie ``srodowisko_ci.built`` | Ważne stoi w polu ``metadata.przypadki`` reguły w drzewie (jedyna lista jej przypadków), ast-grep środowiska ma wersję ast-grepa dowodu, a reguła łapie ``Gdzie`` na liniach dodanych do FAIL i ma najwyżej ``na_scalonych_pr.FALSE_ALARMS`` fałszywych alarmów |
-| ``pytest <plik>::<test>`` | mutacje recenzenta z najnowszego bloku ``### Mutacja W<n> r<k>`` tego Ważnego w werdyktach PR (``mutacja_recenzenta``), każda naniesiona silnikiem ``tools/mutacje.py`` (``silnik_mutacji.judged``: kotwica dokładnie raz) na kopię HEAD PR scalonego z bazą | węzeł (jeden test albo jego parametr) bez mutacji przechodzi, a z każdą mutacją bloku pada (``WYKRYTA``, jak w ``tools/mutacje.py``), każdy bieg w osobnym środowisku toru Linux zadania pytest (``prove_test``) |
+| ``pytest <plik>::<test>`` | mutacje recenzenta z najnowszego bloku ``### Mutacja W<n> r<k>`` tego Ważnego w werdyktach PR (``mutacja_recenzenta``), każda naniesiona silnikiem ``tools/mutacje.py`` (``silnik_mutacji.judged``: kotwica dokładnie raz) na kopię HEAD PR scalonego z bazą | węzeł (jeden test albo jego parametr) bez mutacji przechodzi, z każdą mutacją bloku biegnie i pada (``WYKRYTA``, jak w ``tools/mutacje.py``, ale węzeł, którego z mutacją nie ma, to nie wykrycie), a po nich bez mutacji przechodzi znowu; każdy bieg w osobnym środowisku toru Linux zadania pytest (``prove_test``) |
 | ``brak - proza`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - napęd`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie w ``frontend/``; strażnik to krok napędu skilla ``verify-*``, który Required CI uruchamia w Mutation checks, a recenzent następnej rundy uruchamia go na drzewie FAIL |
 | ``brak - test`` | bez | tylko w wątku z pierwszym werdyktem sprzed wdrożenia dowodu testu (``bramka_straznika.TEST_MARKER``): czy test pada na błędzie z ``Gdzie``, sprawdza recenzent następnej rundy (skill ``przeglad``), jak przed ADR 0042 |
@@ -28,13 +28,15 @@ z bloku, więc węzeł, który bez niej przechodzi, a z nią pada, pada przez t�
 rundy #2116 i trzy #2197 obaliły kształty, które klasyfikowały przyczynę padnięcia albo przenosiły definicje z FAIL).
 Złą postać pisze recenzent w werdykcie, a nie autor, więc wierność mutacji wobec błędu z Ważnego ocenia recenzent
 następnej rundy, który czyta blok. Każdy bieg (bez mutacji i z każdą mutacją) dostaje od ``build`` własne środowisko
-(kopię, Pythona, ``HOME`` i ``TMPDIR``), więc stan biegu nie przechodzi do następnego. Brak bloku to odmowa, w której
+(kopię, Pythona, ``HOME`` i ``TMPDIR``), a stan, który bieg zostawia poza nim (np. plik pod ścieżką bezwzględną),
+łapie bieg bez mutacji po biegach z mutacją: gdy pada, dowód odmawia. Brak bloku to odmowa, w której
 recenzent następnej rundy dopisuje blok, a kotwica, której na HEAD scalonym z bazą nie ma dokładnie raz, i blok innej
 postaci to odmowa, w której recenzent następnej rundy odnawia blok. Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w
 ``tests/test_straznik.py``): ``brak - usunięte`` przechodzi przy każdym Ważnym, a ``brak - test`` przy każdym w wątku
 sprzed wdrożenia dowodu testu, także gdy mechanizm z dowodem by je zamknął, test błędu nie łapie albo kod z ``Gdzie``
 stoi na HEAD; mutacja słabsza albo szersza niż błąd z Ważnego daje ``WYKRYTA`` testowi, który łapie tylko ją, albo
-testowi innej zmiany, którą mutacja też psuje; dowód nie ocenia, czy test sprawdza zachowanie, a nie tekst, a test
+testowi innej zmiany, którą mutacja też psuje, a nawet wierną mutację test może złapać inną drogą niż błąd z Ważnego
+(np. na wejściu, którego błąd nie dotyczy); dowód nie ocenia, czy test sprawdza zachowanie, a nie tekst, a test
 niestabilny może przejść jednym padnięciem; to ocenia recenzent. Mutację nanosi dowód po instalacji projektu, jak
 ``tools/mutacje.py`` na kopię z instalacją edytowalną, więc mutacja zależności w ``pyproject.toml`` pakietów nie
 zmienia. Gałęzi tylko dla macOS nie sprawdza żaden krok Required CI, więc jej błędu ``mypy`` nie dowodzi na żadnej
@@ -65,8 +67,8 @@ from silnik_mutacji import Mutation, Verdict
 FIELD = "Strażnik:"
 
 _RULE_ID = re.compile(r"[\w.-]+")
-# Węzeł pytest: plik testów pod ``tests/``, test (albo klasa i test) i najwyżej jeden parametr.
-_NODE = re.compile(r"tests/(?:[\w-]+/)*[\w-]+\.py(?:::[^\W\d]\w*){1,2}(?:\[\S+\])?")
+# Węzeł pytest: plik testów pod ``tests/``, test (``test…``, także w klasie) i najwyżej jeden parametr, nie klasa ani plik.
+_NODE = re.compile(r"tests/(?:[\w-]+/)*[\w-]+\.py(?:::[^\W\d]\w*)?::test\w*(?:\[\S+\])?")
 # Bieg węzła dowodu testu: jeden proces bez pamięci pytest, jak polecenie z przepisu ``tools/mutacje.py``.
 _PYTEST = ("-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider")
 PYTEST_TIMEOUT_S = 300  # jeden bieg węzła; razem dowody PR ogranicza ``bramka_straznika.PROOF_TIMEOUT_S``
@@ -193,14 +195,22 @@ def prove_test(node: str, build: Build, cases: Sequence[Case]) -> list[Outcome]:
     jedną linię na Ważne."""
 
     command = (*_PYTEST, node)
-    verdict, last = _judged(build, Mutation("bez mutacji", (), command))
+    clean = Mutation("bez mutacji", (), command)
+    verdict, last = _judged(build, clean)
     if verdict is not Verdict.SURVIVED:
         red = (
             f"PODSTAWA CZERWONA | {node} na HEAD scalonym z bazą bez mutacji: {last} (dowód liczy węzeł w środowisku toru Linux Required CI: "
             "wybierz węzeł, który tam przechodzi, popraw test albo zaktualizuj PR z bazy)"
         )
         return [Outcome(False, f"{case.label} | {case.failed[:8]} | {red}") for case in cases]
-    return [_mutated(build, command, case) for case in cases]
+    found = [_mutated(build, command, case) for case in cases]
+    if any(outcome.detected for outcome in found) and (again := _judged(build, clean))[0] is not Verdict.SURVIVED:
+        left = (
+            f"ODMOWA | {node} bez mutacji pada po biegach z mutacją ({again[1]}): węzeł zostawia stan poza środowiskiem biegu, który zmienia następny "
+            "bieg, więc padnięcie z mutacją niczego nie dowodzi; strażnik to test, który przechodzi w każdym biegu bez mutacji"
+        )
+        return [Outcome(False, f"{case.label} | {case.failed[:8]} | {left}") for case in cases]
+    return found
 
 
 def exempt(root: Path, guard: Guard, head: str, base: str, cases: Sequence[Case], *, before_test_proof: bool = False) -> list[Outcome]:
@@ -346,10 +356,12 @@ def _scope(root: Path, tree: str, case: Case, path: str) -> set[int]:
 
 def _judged(build: Build, mutation: Mutation) -> tuple[Verdict, str]:
     """Werdykt mutacji ``mutation`` silnikiem ``tools/mutacje.py`` na kopii nowego środowiska z ``build``, jego Pythonem
-    i zmiennymi."""
+    i zmiennymi; mutacja, z którą pytest nie uruchomił węzła, nie jest wykryciem (``needs_test``)."""
 
     with build() as environment:
-        verdict, last, _ = silnik_mutacji.judged(environment.copy, mutation, limit_s=PYTEST_TIMEOUT_S, python=str(environment.python), env=environment.variables)
+        verdict, last, _ = silnik_mutacji.judged(
+            environment.copy, mutation, limit_s=PYTEST_TIMEOUT_S, python=str(environment.python), env=environment.variables, needs_test=bool(mutation.edits)
+        )
     return verdict, last
 
 
