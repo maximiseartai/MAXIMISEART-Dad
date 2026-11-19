@@ -400,7 +400,7 @@ def judged(
 ) -> tuple[Verdict, str, float | None]:
     """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
     stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
-    ``min(limit_s, left)``, według zasad werdyktów z docstringu modułu, także polecenia pytest, w którym z mutacją nie
+    ``min(limit_s, left)``, według zasad werdyktów z ``ZASADY``, także polecenia pytest, w którym z mutacją nie
     biegł żaden test (``_collecting``). Bieg bez zmian (podstawa dowodu strażnika, ``tools/mutacje.py --juz-lapie``)
     tej reguły nie ma: pytest, który nie uruchomił testu bez mutacji, pada, jak podstawa ``_baseline``. Jedyne źródło
     werdyktu mutacji: woła ją ``verdicts`` (``tools/mutacje.py``, noc, skrypty skilli) na kopii checkoutu i dowód

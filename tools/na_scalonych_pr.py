@@ -111,7 +111,7 @@ krok CI.
 Dowód strażnika (``--straznik SELEKTOR --z-commita <HEAD PR>`` z ``--wazne``) to selektor z pola ``Strażnik:`` bloku
 Ważnego w sekcji ``## Korzeń``. ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
 gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście jej przypadków; każdy inny selektor idzie
-dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje docstring ``tools/lib/straznik.py``,
+dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje ``ZASADY`` ``tools/lib/straznik.py``,
 z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu; ``pytest <węzeł>`` idzie dowodem
 ``straznik.prove_test`` z najnowszym blokiem ``### Mutacja W<n> r<k>`` tego Ważnego we wszystkich werdyktach PR
 (``mutacja_recenzenta``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``).

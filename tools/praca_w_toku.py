@@ -424,7 +424,7 @@ def claims(issue: int, world: World, gh: GitHub, lines: list[Line]) -> list[Clai
 
 
 def _is_work(work: Work, world: World, read_tree: bool) -> bool:
-    """Czy kandydat to linia pracy (docstring modułu); niezacommitowane pliki czyta tylko z ``read_tree``."""
+    """Czy kandydat to linia pracy (``OPIS``); niezacommitowane pliki czyta tylko z ``read_tree``."""
 
     theirs = world.commits.own(work.tip)
     if work.pr is not None or (work.branch is not None and theirs):

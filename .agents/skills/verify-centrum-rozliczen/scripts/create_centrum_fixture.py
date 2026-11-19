@@ -342,7 +342,7 @@ def _metrics(root: Path) -> dict[str, object]:
 
 
 def _report_entering(root: Path) -> dict[str, object]:
-    """INTERMAX and Skrzynka raportów of ``wpisanie-raportow`` (module docstring), with what the drive expects."""
+    """INTERMAX and Skrzynka raportów of ``wpisanie-raportow`` (``OPIS``), with what the drive expects."""
 
     completed = FIRST + HEADERS.index("CZYNNOŚCI ZREALIZOWANE")
     register = root / "INTERMAX" / "raporty" / "ZLECENIA INTERMAX OD 08_11_2021-NOWA WERSJA.xlsx"

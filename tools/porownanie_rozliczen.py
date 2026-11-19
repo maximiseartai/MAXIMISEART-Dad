@@ -20,7 +20,6 @@ Użycie (z katalogu repozytorium):
 
 
 def main(argv: list[str] | None = None) -> int:
-    # Co znaczy „ten sam wynik”, mówi docstring biblioteki, więc --help bierze go stamtąd.
     parser = argparse.ArgumentParser(description=f"{OPIS}\n{porownanie_znaczeniowe.ZASADY}", formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("reference", type=Path, help="Folder rozliczeń pracowników z wyniku referencyjnego.")
     parser.add_argument("candidate", type=Path, help="Folder rozliczeń pracowników kandydata.")

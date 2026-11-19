@@ -129,7 +129,7 @@ class _Lines(HTMLParser):
 
 def listed_issues(html: str, repository: str, words: tuple[str, ...]) -> tuple[int, ...]:
     """Numery issues ``repository`` z list numerów po słowie z ``words`` na początku linii HTML opisu PR z renderera
-    GitHuba, według tych samych reguł co „Naprawia” (docstring modułu)."""
+    GitHuba, według tych samych reguł co „Naprawia” (``ZASADY``)."""
 
     parser = _Lines()
     parser.feed(html)

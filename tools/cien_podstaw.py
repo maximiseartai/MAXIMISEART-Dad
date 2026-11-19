@@ -337,7 +337,7 @@ def rozstrzygnij(rekordy: Rekordy, audyt: Mapping[str, Sequence[str]] | None = N
 
 
 def wczytaj_audyt(tekst: str) -> dict[str, tuple[str, ...]]:
-    """Audyt z pliku JSON (docstring modułu); inna postać niż obiekt list nazw przyczyn to ``BladAudytu``."""
+    """Audyt z pliku JSON (``OPIS``); inna postać niż obiekt list nazw przyczyn to ``BladAudytu``."""
 
     dane = json.loads(tekst)
     if not isinstance(dane, dict) or not all(
@@ -529,7 +529,7 @@ def _pobierz(root: Path, glowy: Iterable[str]) -> None:
 
 
 def _naprawa(root: Path, main: str, czerwony: Mapping[str, Any], nastepny: Mapping[str, Any]) -> Naprawa | None:
-    """Naprawa między głowami runów ``czerwony`` i ``nastepny`` (docstring modułu) z dowodem do audytu; ``None``, gdy
+    """Naprawa między głowami runów ``czerwony`` i ``nastepny`` (``OPIS``) z dowodem do audytu; ``None``, gdy
     git nie zna którejś głowy."""
 
     try:
@@ -635,7 +635,7 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     parser.add_argument("--do", type=date.fromisoformat, help="Ostatni dzień okna cienia (UTC), zakończony.")
     parser.add_argument("--probka", type=int, default=PROBKA, help=f"Najwięcej runów PR, z których cienia liczy się oszczędność (domyślnie {PROBKA}).")
     parser.add_argument("--rekordy", type=Path, help="Rekordy zapisane wcześniej (rekordy.json): rozstrzygnięcie bez GitHuba.")
-    parser.add_argument("--audyt", type=Path, help="Audyt kandydatów i niepoliczonych (JSON, docstring): wynik liczy przyczyny z audytu.")
+    parser.add_argument("--audyt", type=Path, help="Audyt kandydatów i niepoliczonych (JSON, postać w opisie wyżej): wynik liczy przyczyny z audytu.")
     args = parser.parse_args(argv)
     try:
         audyt = None if args.audyt is None else wczytaj_audyt(args.audyt.read_text(encoding="utf-8"))
