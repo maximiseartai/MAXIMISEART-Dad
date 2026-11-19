@@ -61,6 +61,7 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 - `Strażnik: brak - usunięte` przechodzi przy każdym Ważnym, a `Strażnik: brak - test` przy każdym w wątku sprzed aneksu, więc kod z `Gdzie`, który stoi na HEAD, test, który tam błędu nie łapie, i Ważne, które zamknąłby typ, łapie tylko recenzent następnej rundy, jak przed tym ADR.
 - Dowód mypy biegnie krokami mypy z `kroki_lokalne.static_steps` (każda platforma `MYPY_PLATFORMS`, jak Required CI) w środowisku z `srodowisko_ci.built` i na prawdziwych Ważnych trwa 33–45 s na Macu (#1956 W2 r1, #1499 W1 r2), z czego budowa środowiska z pamięci uv około sekundy, więc status przy PR z `FAIL` przychodzi później niż dziś; PR bez czego dowodzić czeka tylko na start joba `dowod`.
 - Dowód potrzebuje uv i sieci do PyPI (jak Required CI); bez uv, na Windows i przy porażce budowy odmawia z przyczyną.
+- Raport tygodniowy (`tools/rejestr_korzeni_tydzien.py`) liczy Ważne scalone w wątkach z tym warunkiem według selektora `Strażnik:`, który czyta ta sama funkcja co bramka, udział wyjątków `brak - …` z listą Ważnych do przeglądu tygodnia i powroty idiomu mimo strażnika: pole `Idiom:` z `jak` do Ważnego scalonego ze strażnikiem przed werdyktem pola.
 
 ## Zmienia te zdania ADR 0036
 

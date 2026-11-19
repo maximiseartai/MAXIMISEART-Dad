@@ -27,9 +27,11 @@ from tests.fixtures.body_html import SAMPLES, body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import git
 
+import bramka_straznika
 import rejestr_korzeni
-from rejestr_korzeni import IdiomCase, Occurrence, Reviewed
+from rejestr_korzeni import GuardCase, IdiomCase, Occurrence, Reviewed
 import rejestr_korzeni_tydzien as tydzien
+import straznik
 import szablon_werdyktu
 import tydzien_polski
 import werdykt_pr
@@ -37,6 +39,7 @@ import werdykt_pr
 ROOT = Path(__file__).resolve().parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "rejestr-korzeni.yml"
 DEPLOYED = datetime(2026, 10, 1, tzinfo=UTC)
+GUARDED = datetime(2026, 10, 15, tzinfo=UTC)
 NO_ALARMS = tydzien.Alarms(0, {}, 0)
 
 
@@ -58,6 +61,7 @@ def _pull_of(
     created: str | None = None,
     files: Sequence[str] = (),
     limited: str | None = None,
+    guards: Sequence[GuardCase] = (),
 ) -> Reviewed:
     return Reviewed(
         number,
@@ -68,6 +72,7 @@ def _pull_of(
         _at(created) if created else None,
         frozenset(files),
         _at(limited) if limited else None,
+        tuple(guards),
     )
 
 
@@ -76,7 +81,7 @@ def _idiom(pull: int, when: str, rule: str | None, klass: str | None, like: tupl
 
 
 def _body(pulls: Sequence[Reviewed], week: date, alarms: tydzien.Alarms = NO_ALARMS) -> str:
-    return tydzien.body(pulls, [], week, DEPLOYED, alarms)
+    return tydzien.body(pulls, [], week, DEPLOYED, GUARDED, alarms)
 
 
 def _rows(text: str, section: str) -> list[str]:
@@ -120,17 +125,17 @@ def test_pole_idiom_to_powrot_bez_jak_ucieczka_a_jak_innego_pr_polaczenie_i_bez_
 
     text = _body(pulls, date(2026, 10, 12))
 
-    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 4 | 3 | 75% | 1 | 1 |", "| Od wdrożenia 2026-10-01 | 5 | 4 | 80% | 1 | 2 |"], text
+    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 4 | 3 | 75% | 1 | 1 | 0 |", "| Od wdrożenia 2026-10-01 | 5 | 4 | 80% | 1 | 2 | 0 |"], text
     assert _rows(text, "Bez reguły") == ["| #10 W1 r2 | brak-testu | #10 W1 r1 |"], text
-    assert _rows(text, "Historia")[-2:] == ["| 2026-10-05 | 1 | 1 | 100% | 0 | 1 |", "| 2026-10-12 | 4 | 3 | 75% | 1 | 1 |"], text
+    assert _rows(text, "Historia")[-2:] == ["| 2026-10-05 | 1 | 1 | 100% | 0 | 1 | 0 |", "| 2026-10-12 | 4 | 3 | 75% | 1 | 1 | 0 |"], text
 
 
 def test_tydzien_bez_wystapien_ma_zero_i_udzial_bez_wartosci() -> None:
     text = _body([_pull_of(1, [_occurrence(1, "R-BEZ-TESTU", "2026-10-06T10:00:00+00:00")])], date(2026, 10, 12))
 
-    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 0 | 0 | - | 0 | 0 |", "| Od wdrożenia 2026-10-01 | 1 | 0 | 0% | 0 | 0 |"], text
+    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-12 | 0 | 0 | - | 0 | 0 | 0 |", "| Od wdrożenia 2026-10-01 | 1 | 0 | 0% | 0 | 0 | 0 |"], text
     assert _rows(text, "Kody") == ["| R-BEZ-TESTU | 0 | 1 |"], text
-    assert _rows(text, "Historia")[-1] == "| 2026-10-12 | 0 | 0 | - | 0 | 0 |", text
+    assert _rows(text, "Historia")[-1] == "| 2026-10-12 | 0 | 0 | - | 0 | 0 | 0 |", text
 
 
 def test_czekanie_od_pass_na_head_do_merge_w_tygodniu_merge_a_merge_bez_pass_osobno() -> None:
@@ -173,6 +178,76 @@ def test_po_limicie_rund_pokazuje_pr_tygodnia_na_plikach_pr_zamknietego_po_limic
     text = _body(pulls, date(2026, 10, 12))
 
     assert _rows(text, "Po limicie rund") == ["| #22 | #20 | 2 |", "| #25 | #20 | 1 |"], text
+
+
+def _guard(pull: int, merged: str, text: str | None, major: str = "W1 r1") -> GuardCase:
+    """Ważne PR ``pull`` scalonego w chwili ``merged`` z linią ``Strażnik: text`` (``None``: bez linii), czytaną jak
+    w bramce strażnika."""
+
+    return GuardCase(pull, major, _at(merged), straznik.parse(text) if text is not None else None)
+
+
+# Każdy selektor z listy ADR 0042 i Ważne bez strażnika, z różną liczbą Ważnych, żeby kolumna nie mogła wziąć liczby
+# innej; wyjątki to postacie „brak - …”.
+SELECTORS = [
+    ("mypy", 3),
+    ("ruff", 1),
+    ("ast-grep zakazane-wywolanie", 1),
+    ("pytest tests/test_x.py::test_y", 2),
+    ("brak - proza", 1),
+    ("brak - napęd", 1),
+    ("brak - usunięte", 2),
+    ("brak - test", 1),
+    (None, 1),
+]
+
+
+def test_strazniki_licza_wazne_scalone_z_kazdym_selektorem_a_wyjatki_i_brak_straznika_trafiaja_na_liste_tygodnia() -> None:
+    """Ważne liczy się w tygodniu merge'a PR; udział wyjątków to Ważne z „brak - …” przez wszystkie Ważne, a lista
+    tygodnia pokazuje każde Ważne z wyjątkiem albo bez strażnika, bez tych z dowodem narzędzia."""
+
+    week = [_guard(2000 + index * 10 + copy, "2026-10-20T10:00:00+00:00", text) for index, (text, count) in enumerate(SELECTORS) for copy in range(count)]
+    before = _guard(1990, "2026-10-16T10:00:00+00:00", "mypy")
+    text = _body([_pull_of(case.pull, merged=case.when.isoformat(), guards=[case]) for case in [before, *week]], date(2026, 10, 19))
+
+    lines = text.splitlines()
+    header = lines[lines.index("## Strażniki") + 2].strip("| ").split(" | ")
+    rows = [dict(zip(header, row.strip("| ").split(" | "), strict=True)) for row in _rows(text, "Strażniki")]
+    weekly = {"Okres": "Tydzień 2026-10-19", "Ważne": "13", "mypy": "3", "ruff": "1", "ast-grep": "1", "pytest": "2", "brak - proza": "1", "brak - napęd": "1"}
+    weekly |= {"brak - usunięte": "2", "brak - test": "1", "Bez strażnika": "1", "Udział wyjątków": "38%"}
+    assert rows == [weekly, weekly | {"Okres": "Od wdrożenia 2026-10-15", "Ważne": "14", "mypy": "4", "Udział wyjątków": "36%"}], text
+    assert _rows(text, "Wyjątki strażnika") == [
+        "| #2040 W1 r1 | brak - proza |",
+        "| #2050 W1 r1 | brak - napęd |",
+        "| #2060 W1 r1 | brak - usunięte |",
+        "| #2061 W1 r1 | brak - usunięte |",
+        "| #2070 W1 r1 | brak - test |",
+        "| #2080 W1 r1 | - |",
+    ], text
+
+
+def test_powrot_idiomu_do_waznego_scalonego_ze_straznikiem_to_powrot_mimo_straznika_w_tej_samej_mierze() -> None:
+    """Powrót mimo strażnika to pole ``Idiom:`` z ``jak`` do Ważnego, które w chwili werdyktu pola stało na ``main``
+    ze strażnikiem; powrót do Ważnego bez strażnika, przed merge'em strażnika albo spoza skanu nim nie jest, a ucieczkę
+    reguły (``Idiom: <id>``) liczy kolumna ucieczek."""
+
+    pulls = [
+        _pull_of(30, merged="2026-10-16T10:00:00+00:00", guards=[_guard(30, "2026-10-16T10:00:00+00:00", "pytest tests/test_x.py::test_y")]),
+        _pull_of(31, merged="2026-10-16T10:00:00+00:00", guards=[_guard(31, "2026-10-16T10:00:00+00:00", None)]),
+        _pull_of(32, merged="2026-10-20T12:00:00+00:00", guards=[_guard(32, "2026-10-20T12:00:00+00:00", "mypy", "W2 r1")]),
+        _pull_of(40, idioms=[_idiom(40, "2026-10-20T10:00:00+00:00", "x-regula", None, (30, "W1", 1))]),
+        _pull_of(41, idioms=[_idiom(41, "2026-10-20T10:00:00+00:00", "x-regula", None, (31, "W1", 1))]),
+        _pull_of(42, idioms=[_idiom(42, "2026-10-20T10:00:00+00:00", "x-regula", None, (32, "W2", 1))]),
+        _pull_of(43, idioms=[_idiom(43, "2026-10-20T10:00:00+00:00", "x-regula", None, (33, "W1", 1))]),
+        _pull_of(44, idioms=[_idiom(44, "2026-10-20T10:00:00+00:00", "x-regula", None, None)]),
+        _pull_of(45, idioms=[_idiom(45, "2026-10-17T10:00:00+00:00", "x-regula", None, (30, "W1", 1))]),
+    ]
+
+    text = _body(pulls, date(2026, 10, 19))
+
+    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-19 | 0 | 5 | - | 1 | 4 | 1 |", "| Od wdrożenia 2026-10-01 | 0 | 6 | - | 1 | 5 | 2 |"], text
+    assert _rows(text, "Powroty mimo strażnika") == ["| #40 W1 r2 | #30 W1 r1 | pytest tests/test_x.py::test_y |"], text
+    assert _rows(text, "Historia")[-2:] == ["| 2026-10-12 | 0 | 1 | - | 0 | 1 | 1 |", "| 2026-10-19 | 0 | 5 | - | 1 | 4 | 1 |"], text
 
 
 def test_historia_ma_najwyzej_26_ostatnich_tygodni_od_tygodnia_wdrozenia() -> None:
@@ -310,10 +385,10 @@ WEEDS = [{"number": 1520, "title": "Chwast: R-DRUGA-DROGA", "body": ""}, {"numbe
 WEEK_12 = """\
 ## Pomiar
 
-| Okres | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
-| --- | --- | --- | --- | --- | --- |
-| Tydzień 2026-10-12 | 0 | 0 | - | 0 | 0 |
-| Od wdrożenia 2026-10-01 | 1 | 0 | 0% | 0 | 0 |
+| Okres | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami | Powroty mimo strażnika |
+| --- | --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-12 | 0 | 0 | - | 0 | 0 | 0 |
+| Od wdrożenia 2026-10-01 | 1 | 0 | 0% | 0 | 0 | 0 |
 
 ## Czekanie
 
@@ -331,6 +406,23 @@ WEEK_12 = """\
 ## Bez reguły
 
 | Ważne | Klasa | Jak |
+| --- | --- | --- |
+
+## Strażniki
+
+| Okres | Ważne | mypy | ruff | ast-grep | pytest | brak - proza | brak - test | brak - napęd | brak - usunięte | Bez strażnika | Udział wyjątków |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-12 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
+| Od wdrożenia 2026-10-15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
+
+## Wyjątki strażnika
+
+| Ważne | Strażnik |
+| --- | --- |
+
+## Powroty mimo strażnika
+
+| Ważne | Jak | Strażnik |
 | --- | --- | --- |
 
 ## Po limicie rund
@@ -353,19 +445,19 @@ WEEK_12 = """\
 
 ## Historia
 
-| Tydzień | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
-| --- | --- | --- | --- | --- | --- |
-| 2026-09-28 | 0 | 0 | - | 0 | 0 |
-| 2026-10-05 | 1 | 0 | 0% | 0 | 0 |
-| 2026-10-12 | 0 | 0 | - | 0 | 0 |
+| Tydzień | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami | Powroty mimo strażnika |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-28 | 0 | 0 | - | 0 | 0 | 0 |
+| 2026-10-05 | 1 | 0 | 0% | 0 | 0 | 0 |
+| 2026-10-12 | 0 | 0 | - | 0 | 0 | 0 |
 """
 WEEK_19 = """\
 ## Pomiar
 
-| Okres | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
-| --- | --- | --- | --- | --- | --- |
-| Tydzień 2026-10-19 | 3 | 0 | 0% | 0 | 0 |
-| Od wdrożenia 2026-10-01 | 4 | 0 | 0% | 0 | 0 |
+| Okres | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami | Powroty mimo strażnika |
+| --- | --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-19 | 3 | 0 | 0% | 0 | 0 | 0 |
+| Od wdrożenia 2026-10-01 | 4 | 0 | 0% | 0 | 0 | 0 |
 
 ## Czekanie
 
@@ -383,6 +475,23 @@ WEEK_19 = """\
 ## Bez reguły
 
 | Ważne | Klasa | Jak |
+| --- | --- | --- |
+
+## Strażniki
+
+| Okres | Ważne | mypy | ruff | ast-grep | pytest | brak - proza | brak - test | brak - napęd | brak - usunięte | Bez strażnika | Udział wyjątków |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Tydzień 2026-10-19 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
+| Od wdrożenia 2026-10-15 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | - |
+
+## Wyjątki strażnika
+
+| Ważne | Strażnik |
+| --- | --- |
+
+## Powroty mimo strażnika
+
+| Ważne | Jak | Strażnik |
 | --- | --- | --- |
 
 ## Po limicie rund
@@ -406,12 +515,12 @@ WEEK_19 = """\
 
 ## Historia
 
-| Tydzień | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami |
-| --- | --- | --- | --- | --- | --- |
-| 2026-09-28 | 0 | 0 | - | 0 | 0 |
-| 2026-10-05 | 1 | 0 | 0% | 0 | 0 |
-| 2026-10-12 | 0 | 0 | - | 0 | 0 |
-| 2026-10-19 | 3 | 0 | 0% | 0 | 0 |
+| Tydzień | Wystąpienia | Powroty idiomu | Udział powrotów | Ucieczki | Połączenia między PR-ami | Powroty mimo strażnika |
+| --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-28 | 0 | 0 | - | 0 | 0 | 0 |
+| 2026-10-05 | 1 | 0 | 0% | 0 | 0 | 0 |
+| 2026-10-12 | 0 | 0 | - | 0 | 0 | 0 |
+| 2026-10-19 | 3 | 0 | 0% | 0 | 0 | 0 |
 """
 
 
@@ -432,9 +541,10 @@ class RegistryGitHub(FakeGitHub):
     ) -> None:
         tmp_path.mkdir()
         super().__init__(tmp_path, {"docs/adr/README.md": "# ADR\n", **(files or {})}, tool="tools/rejestr_korzeni_tydzien.py", gh=FAKE_GH, started=started)
-        with pytest.MonkeyPatch.context() as patch:
-            patch.setenv("GIT_COMMITTER_DATE", DEPLOYED.isoformat())
-            self.push_main({szablon_werdyktu.ADR: "# ADR 0031: Korzeń po FAIL i chwasty\n"})
+        for moment, marker in [(DEPLOYED, szablon_werdyktu.ADR), (GUARDED, bramka_straznika.MARKER)]:
+            with pytest.MonkeyPatch.context() as patch:
+                patch.setenv("GIT_COMMITTER_DATE", moment.isoformat())
+                self.push_main({marker: "# ADR\n"})
         state = {"repo": opisy_pr.REPO, "pulls": pulls, "weeds": WEEDS, "own": own, "labels": list(labels)}
         (self.bin / "state.json").write_text(json.dumps(state), encoding="utf-8")
 
@@ -470,7 +580,8 @@ def test_pierwszy_pomiar_bez_issue_zaklada_etykiete_i_rejestr_korzeni_z_nia_a_ko
     assert created == [
         "REJESTR KORZENI | założona etykieta rejestr-korzeni",
         "REJESTR KORZENI | założone #9100 „Rejestr korzeni”",
-        "REJESTR KORZENI OK | tydzień 2026-10-12: 0 wystąpień, 0 powrotów idiomu (udział -), 0 ucieczek, 0 połączeń między PR-ami",
+        "REJESTR KORZENI OK | tydzień 2026-10-12: 0 wystąpień, 0 powrotów idiomu (udział -), 0 ucieczek, 0 połączeń między PR-ami, 0 powrotów mimo strażnika,"
+        " 0 Ważnych w wątkach strażnika",
     ]
 
     labelled = RegistryGitHub(tmp_path / "z-etykieta", [], labels=("chwast", "rejestr-korzeni"))
@@ -482,7 +593,11 @@ def test_pierwszy_pomiar_bez_issue_zaklada_etykiete_i_rejestr_korzeni_z_nia_a_ko
     edited = _measure(later, "--tydzien", "2026-10-25")
 
     assert later.writes() == [["PATCH", "repos/{owner}/{repo}/issues/1600", {"body": WEEK_19}]]
-    assert edited == ["REJESTR KORZENI | zmieniona treść #1600", "REJESTR KORZENI OK | tydzień 2026-10-19: 3 wystąpień, 0 powrotów idiomu (udział 0%), 0 ucieczek, 0 połączeń między PR-ami"]
+    assert edited == [
+        "REJESTR KORZENI | zmieniona treść #1600",
+        "REJESTR KORZENI OK | tydzień 2026-10-19: 3 wystąpień, 0 powrotów idiomu (udział 0%), 0 ucieczek, 0 połączeń między PR-ami, 0 powrotów mimo strażnika,"
+        " 0 Ważnych w wątkach strażnika",
+    ]
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
@@ -558,7 +673,7 @@ def test_pole_idiom_i_pass_na_head_z_werdyktow_skanu_daja_powrot_polaczenie_list
 
     text = "\n".join(_measure(github, "--tydzien", "2026-10-19", "--bez-zapisu")[2:-1])
 
-    assert _rows(text, "Pomiar")[0] == "| Tydzień 2026-10-19 | 1 | 1 | 100% | 0 | 1 |", text
+    assert _rows(text, "Pomiar")[0] == "| Tydzień 2026-10-19 | 1 | 1 | 100% | 0 | 1 | 0 |", text
     assert _rows(text, "Czekanie")[0] == "| Tydzień 2026-10-19 | 2 | 1 | 30 min | 30 min | 0 |", text
     assert _rows(text, "Bez reguły") == ["| #1450 W1 r1 | brak-testu | #1553 W1 r2 |"], text
 
@@ -573,7 +688,7 @@ def test_pr_scalony_przed_wdrozeniem_i_zmieniony_po_nim_nie_liczy_sie_od_wdrozen
 
     text = "\n".join(_measure(github, "--tydzien", "2026-10-12", "--bez-zapisu")[2:-1])
 
-    assert _rows(text, "Pomiar")[1] == "| Od wdrożenia 2026-10-01 | 0 | 0 | - | 0 | 0 |", text
+    assert _rows(text, "Pomiar")[1] == "| Od wdrożenia 2026-10-01 | 0 | 0 | - | 0 | 0 | 0 |", text
     assert _rows(text, "Czekanie")[1] == "| Od wdrożenia 2026-10-01 | 0 | 0 | - | - | 0 |", text
 
 
@@ -596,6 +711,30 @@ def test_pr_zamkniety_bez_merge_po_trzech_rundach_z_fail_daje_nowy_pr_na_jego_pl
     text = "\n".join(_measure(github, "--tydzien", "2026-10-12", "--bez-zapisu")[2:-1])
 
     assert _rows(text, "Po limicie rund") == ["| #1473 | #1470 | 1 |"], text
+
+
+@ONLY_FOUND_BY_NAME_ON_POSIX
+def test_straznik_waznego_czyta_selektor_z_opisu_scalonego_pr_tylko_w_watku_po_wdrozeniu_warunku_straznika(tmp_path: Path) -> None:
+    """Granica to chwila, w której ``bramka_straznika.MARKER`` wszedł do ``main`` (tu 15.10): PR z pierwszym werdyktem
+    przed nią kończy z ``Dowód:`` i nie liczy się, a PR otwarty jeszcze się nie scalił; selektor spoza listy to Ważne bez
+    strażnika."""
+
+    after = "2026-10-16T10:00:00Z"
+    pulls = [
+        _pull(1480, [(FAIL_W1, after)], body=korzenie_pr.OPISY["straznik-c"], merged="2026-10-20T10:00:00Z"),
+        _pull(1481, [(FAIL_W1, after)], body=korzenie_pr.OPISY["straznik-brak-testu"], merged="2026-10-20T10:00:00Z"),
+        _pull(1482, [(FAIL_W1, after)], body=korzenie_pr.OPISY["straznik-spoza-listy"], merged="2026-10-20T10:00:00Z"),
+        _pull(1483, [(FAIL_W1, "2026-10-14T10:00:00Z")], body=korzenie_pr.OPISY["straznik-c"], merged="2026-10-20T10:00:00Z"),
+        _pull(1484, [(FAIL_W1, after)], body=korzenie_pr.OPISY["straznik-c"]),
+    ]
+    github = RegistryGitHub(tmp_path / "gh", [], pulls=pulls)
+
+    lines = _measure(github, "--tydzien", "2026-10-19", "--bez-zapisu")
+    text = "\n".join(lines[2:-1])
+
+    assert _rows(text, "Strażniki")[0] == "| Tydzień 2026-10-19 | 3 | 1 | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 1 | 33% |", text
+    assert _rows(text, "Wyjątki strażnika") == ["| #1481 W1 r1 | brak - test |", "| #1482 W1 r1 | - |"], text
+    assert lines[-1].endswith(", 3 Ważnych w wątkach strażnika"), lines
 
 
 RULE = 'id: zakazane-wywolanie\nlanguage: python\nseverity: error\nmessage: bez zakazane()\nfiles:\n  - "**/*.py"\nrule:\n  pattern: $O.zakazane()\n'
