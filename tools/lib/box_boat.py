@@ -56,9 +56,14 @@ def wyjasnione(zmienione: Collection[_Klucz], katalog: _Klucz, oczekiwany: str |
     katalogu roboczego ``katalog``, gdy katalog roboczy ``teraz`` to dokładnie ``przeniesienie`` oczekiwanego. Każdy inny
     klucz i katalog, do którego test wszedł sam, zostają stanem testu."""
 
-    if katalog not in zmienione or oczekiwany is None or teraz != przeniesienie(oczekiwany):
-        return set()
-    return {katalog}
+    katalog_teraz = teraz if oczekiwany is not None and teraz == przeniesienie(oczekiwany) else ""
+    return {katalog} if katalog in zmienione and przeniesiony(katalog_teraz) else set()
+
+
+def przeniesiony(katalog: str) -> bool:
+    """Czy katalog ``katalog`` leży pod ``KATALOG_ZWOLNIONY``, czyli w drzewie, które lazyfs przeniósł."""
+
+    return katalog.startswith(KATALOG_ZWOLNIONY)
 
 
 def zglos(opis: str) -> KatalogPrzeniesiony:
@@ -73,7 +78,11 @@ def jedyna_przyczyna(error: BaseException | None) -> bool:
     """Czy wyjątek fazy testu to wyjątek z ``zglos`` bez wyjątku pod nim (``__cause__``, ``__context__``): błąd teardownu
     dołączony jako przyczyna, wyjątek innego haka i ``KatalogPrzeniesiony`` rzucony przez test to porażka testu."""
 
-    return isinstance(error, KatalogPrzeniesiony) and error in _ZGLOSZONE and error.__cause__ is None and error.__context__ is None
+    return error in _ZGLOSZONE and _bez_przyczyny(error)
+
+
+def _bez_przyczyny(error: BaseException | None) -> bool:
+    return type(error) is KatalogPrzeniesiony and error.__cause__ is None and error.__context__ is None
 
 
 def kod_sesji(kod: int, porazki: Sequence[bool]) -> int:
