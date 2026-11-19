@@ -1,17 +1,3 @@
-"""Wpis procesu w katalogu procesów i Uruchomienie procesu gotowe do startu, to samo dla każdego gospodarza.
-
-Wpis (``ProcessKind``) deklaruje wszystko, o co gospodarze pytają proces, więc Diagnoza, Logi Uruchomienia, karty
-z Logów, Metryki, Konfiguracja i start pytają wpis zamiast rozgałęziać się po kluczu procesu. Wpisy zbiera katalog
-(``catalog``).
-
-Centrum rozliczeń (``period_start``, ``intermax_run``), Skrypt dla maszyn (``tools/uruchom_proces.py``) i odtworzenie
-z Logów (``tools/lib/odtworzenie.py``) mówią, co mają, w języku potrzeb (``Start``, ``HostParts``), dostają
-``PreparedRun`` z katalogu (``Catalog.prepared``) i prowadzą je przez ``PreparedRun.conduct``: to samo wejście, rdzeń,
-widok, plik metryk i Kontekst Uruchomienia. Gospodarz daje tylko rozmówcę.
-
-Granicę importów modułu opisuje i sprawdza ``tests/test_granice_importow.py``.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
@@ -52,20 +38,10 @@ SummaryT = TypeVar("SummaryT", bound=WarnedSummary)
 
 SettingField = Literal["register", "periods_directory"]
 TemplateRole = Literal["internal", "collective", "worker"]
-"""Wzorzec, który proces czyta; Konfiguracja wymienia każdy pod jego rolą."""
 TemplateNeed = Literal["internal_template", "collective_template", "worker_template"]
 ConfigurationNeed = TemplateNeed
-"""Plik Konfiguracji (``configuration.ConfigurationFiles``): Wzorzec."""
 PathNeed = Literal["register", "periods_directory", "collective_file", "copies_directory", ConfigurationNeed]
 Need = PathNeed | SettingNeed | Literal["period", "efenix_window", "worker_report_inbox", "order_base"]
-"""Czego wejście procesu potrzebuje od gospodarza, wspólnie dla trzech gospodarzy: Centrum wie, skąd wziąć każdą
-ścieżkę (``period_start``, ``intermax_run``, ``report_entering_run``), Skrypt dla maszyn ma na nią flagę, a odtworzenie
-odbudowuje ją z Logów. ``period``: token okresu (``Start.period``), ``SettingNeed``: Ustawienie ze startu, którym
-proces liczy, w polu ``Start.settings`` o tej samej nazwie (``workers``: Lista Wykonawców, ``quantity_rules``: Reguły
-ilości, ``activity_legend``: Legenda czynności; skąd bierze je każdy gospodarz, mówi ``SettingsAtStart``),
-``efenix_window``: okno efenix gospodarza (``HostParts.efenix``), ``worker_report_inbox``: Skrzynka raportów i pamięć własnych wpisów (``HostParts.reports``),
-``order_base``: Baza zleceń, gdy gospodarz ją ma (``Start.order_base``): Centrum z folderu INTERMAX, Skrypt dla maszyn
-z flagi, a odtworzenie żadnej, bo Kopia wejścia jej nie ma."""
 
 
 def _is_path(need: Need) -> TypeGuard[PathNeed]:
@@ -85,16 +61,6 @@ _TEMPLATE_ROLES: Final[Mapping[TemplateNeed, TemplateRole]] = {
 
 @dataclass(frozen=True)
 class Start:
-    """Start jednego Uruchomienia w języku potrzeb, ten sam dla Centrum, Skryptu dla maszyn i odtworzenia.
-
-    ``paths`` ma ścieżkę każdej potrzeby-pliku procesu (sprawdza ``Catalog.prepared``). ``period``: token okresu, gdy
-    gospodarz go zna (karta, ``--period``, Logi); ``None``: okres wynika z wejścia. ``pricing``: tryb Wyceny w efenix
-    wybrany przy starcie; ``None``: nikt nie wybrał (proces bez trybów, Skrypt bez ``--z-przekazaniem`` albo Logi sprzed
-    trybów), a tryb Uruchomienia daje ``ProcessKind.pricing_of``. ``settings``: Ustawienia ze startu, bez wartości
-    domyślnej; skąd bierze je każdy gospodarz i co z nich trafia do wejścia i do Logów, mówi ``SettingsAtStart``.
-    ``order_base``: Baza zleceń procesu z potrzebą ``order_base``; ``None``: gospodarz jej nie ma.
-    """
-
     paths: Mapping[PathNeed, Path]
     period: str | None
     dry_run: bool
@@ -120,9 +86,6 @@ def start_from_settings(
     pricing: runs_contract.Pricing | None = None,
     order_base: Path | None = None,
 ) -> Start:
-    """Start Uruchomienia z Centrum z migawki Ustawień z chwili startu (ADR 0032, ``SettingsAtStart.of_snapshot``);
-    ścieżki, okres, tryb i Bazę zleceń wybiera gospodarz."""
-
     return Start(
         paths,
         period=period,
@@ -136,11 +99,6 @@ def start_from_settings(
 def chosen_settings(
     settings: SettingsSnapshot, needed: Sequence[NeededSetting], needs: Sequence[Need]
 ) -> dict[SettingField, Path] | Refusal:
-    """Ścieżki ``needed`` z migawki Ustawień Centrum do startu procesu o potrzebach ``needs`` albo odmowa startu: plik
-    Folderów, potem plik Ustawienia ze startu, którym proces liczy (pliki pary Reguł ilości i Listy Urządzeń, Legendy
-    czynności; ``settings_at_start.unreadable``), którego system nie daje teraz czytać, a potem „Najpierw wskaż …” z
-    nazwami niewskazanych ścieżek."""
-
     try:
         folders = settings.folders
     except Refusal as folders_unreadable:
@@ -155,22 +113,12 @@ def chosen_settings(
 
 @dataclass(frozen=True)
 class EfenixOpening:
-    """Okno efenix od gospodarza: jak je otworzyć i tempo ludzkie (``None``: bez przerw, tylko Atrapa efenix)."""
-
     open: OpenEfenix
     pace: Pace | None
 
 
 @dataclass(frozen=True)
 class HostParts:
-    """Zależności jednego procesu, które daje gospodarz raz na swoje życie; domyślne to komputer bez Centrum.
-
-    Centrum: okno efenix taty z tempem, dziennik Wyceny w efenix z Logów (``logs_disk.Journal``), zegar Centrum, przerwa
-    ponownej próby podmiany INTERMAX, kroki podmiany na dysku oraz Skrzynka raportów w Gmailu z pamięcią własnych wpisów
-    w ``config``. Skrypt dla maszyn i odtworzenie: okno Atrapy efenix (``efenix_chrome.atrapa_opening``), Skrzynka
-    raportów z folderu maili ``.eml`` z pamięcią bez pliku, reszta domyślna (odtworzenie: ``now`` z Logów).
-    """
-
     efenix: EfenixOpening | None = None
     journal: OrderJournal = NO_JOURNAL
     now: Callable[[], datetime] = local_now
@@ -189,12 +137,6 @@ class HostParts:
 
 @dataclass(frozen=True)
 class NeededSetting:
-    """Ścieżka z Ustawień Centrum, bez której proces nie startuje.
-
-    ``name`` to nazwa dla taty w karcie, odmowie startu i Diagnozie, a ``missing`` Komunikat procesu o ścieżce
-    wskazanej, której już nie ma.
-    """
-
     name: str
     field: SettingField
     missing: Callable[[Path], Message]
@@ -226,13 +168,10 @@ SimpleCheck = Literal[
     "centrum_log",
     "worker_list",
 ]
-"""Sprawdzenia Diagnozy jako dane: Diagnoza zamienia każdy krok na swoje sprawdzenie, a jego treść zostaje w niej."""
 
 
 @dataclass(frozen=True)
 class PeriodFolderCheck:
-    """„Folder okresu”; ``collective_file_missing``: proces czyta Plik zbiorczy okresu, a jego brak to przyczyna."""
-
     collective_file_missing: Callable[[Path], Message] | None
 
 
@@ -243,31 +182,21 @@ PERIODS_DIRECTORY: Final = NeededSetting(
     "folder okresów", "periods_directory", preparation_messages.periods_directory_missing
 )
 TAIL: Final[tuple[CheckStep, ...]] = ("tool_freshness", "report_key", "centrum_log")
-"""Ogon każdej Diagnozy, po plikach taty: nowsze Wydanie wyjaśnia tylko bez innej przyczyny, bo przyczyny w plikach
-taty nowa wersja nie usuwa (ADR 0009); Token do Zgłoszeń nigdy nie wyjaśnia, tylko idzie do Zgłoszenia; dziennik idzie
-ostatni, po wpisach o sprawdzeniach, które same się nie udały."""
 
 
 @dataclass(frozen=True)
 class ByStatus:
-    """Okresy z Tablicy okresów o Statusie okresu z ``statuses``; ``none_ready``: blokada karty, gdy żadnego nie ma."""
-
     statuses: frozenset[PeriodStatus]
     none_ready: str
 
 
 @dataclass(frozen=True)
 class RecentWeeks:
-    """Ostatnie ``weeks`` pełnych okresów ze Statusem z Folderu okresu: proces, który dopiero tworzy pliki okresu."""
-
     weeks: int
 
 
 @dataclass(frozen=True)
 class PeriodStart:
-    """Karta startu procesu, który tata uruchamia z okresem: co powstaje (``creates``), jak wybrać okresy
-    (``chooser``) i odmowa startu bez zapisu (``no_preview``)."""
-
     creates: str
     chooser: ByStatus | RecentWeeks
     no_preview: Refusal | None = None
@@ -275,22 +204,6 @@ class PeriodStart:
 
 @dataclass(frozen=True, kw_only=True)
 class ProcessKind(Generic[InputsT, SummaryT]):
-    """Wpis katalogu procesów: wszystko, o co gospodarze pytają proces.
-
-    ``core`` to rdzeń procesu (testy podmieniają go przez ``Catalog.steered``), a ``default_metrics`` plik metryk
-    procesu w katalogu narzędzia (testy i ``--metrics`` podmieniają go przez ``Catalog.with_metrics``); oba czyta się
-    przez katalog. ``needs`` to potrzeby wejścia procesu, a ``inputs`` jedyna budowa wejścia z nich: czysta funkcja
-    startu i zależności gospodarza, bez I/O. ``settings`` to potrzebne Ustawienia Centrum w kolejności odmowy i Diagnozy,
-    a ``checks`` sprawdzenia Diagnozy w kolejności wyjaśniania: pierwsze, które nie przeszło, wyjaśnia Zatrzymanie.
-    ``journaled``: proces pisze dziennik Wyceny w efenix (``logs_disk.LogsOnDisk``). ``short_title``: krótka nazwa
-    procesu w filtrach Metryk. ``logs``: dodatki Logów Uruchomienia procesu (``run_logs.ProcessLogs``) z podsumowania
-    silnika (``None``: Uruchomienie bez wyniku) i faktów Zatrzymania (``process_run.Stop.facts``; ``None`` bez nich).
-    ``quantity_check``: Kontrola ilości Zleceń z podsumowania Regułami ilości tego Uruchomienia, po zapisie (ADR 0013);
-    ``None``: proces bez Kontroli ilości. Proces, który liczy Ustawieniem ze startu (Listą Wykonawców, Regułami ilości,
-    Legendą czynności), ma jego ``SettingNeed`` w ``needs``; skąd biorą je gospodarze i co z nich trafia do wejścia
-    i do Logów, mówi ``SettingsAtStart``.
-    """
-
     key: common_contract.ProcessKey
     short_title: str
     view: ProcessView[SummaryT]
@@ -305,28 +218,19 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     quantity_check: Callable[[SummaryT], CheckResult] | None = None
 
     def __post_init__(self) -> None:
-        """Pierwszy tryb Wyceny to ``DEFAULT_PRICING``: Logi sprzed trybów nie mają trybu, a Wycena biegła wtedy bez
-        Przekazania (ADR 0027)."""
-
         modes = self.view.pricing_modes
         assert not modes or modes[0] == runs_contract.DEFAULT_PRICING, f"{self.key}: pierwszy tryb to {runs_contract.DEFAULT_PRICING}"
 
     @property
     def title(self) -> str:
-        """Nazwa procesu z GLOSSARY, ta sama na karcie, w Logach, Diagnozie i Metrykach co w rdzeniu."""
-
         return self.core.name
 
     @property
     def preview_hint(self) -> str | None:
-        """Podpowiedź „Podgląd bez zapisu”; ``None``: proces bez Podglądu bez zapisu."""
-
         return self.view.preview_hint if isinstance(self.view, PeriodProcessView) else None
 
     @property
     def path_needs(self) -> tuple[PathNeed, ...]:
-        """Potrzeby-pliki procesu: klucze ``Start.paths``."""
-
         return tuple(need for need in self.needs if _is_path(need))
 
     @property
@@ -343,18 +247,9 @@ class ProcessKind(Generic[InputsT, SummaryT]):
 
     @property
     def reads_period_folder(self) -> bool:
-        """Proces należy do okresu: czyta i zapisuje pliki Folderu okresu."""
-
         return any(setting.field == "periods_directory" for setting in self.settings)
 
     def pricing_of(self, chosen: runs_contract.Pricing | None) -> runs_contract.Pricing | None:
-        """Tryb Wyceny w efenix Uruchomienia, jedna reguła na żywo, w Skrypcie dla maszyn i dla Logów.
-
-        Proces bez trybów nie ma trybu. ``chosen`` ``None`` w procesie z trybami (Logi sprzed trybów, Skrypt bez
-        ``--z-przekazaniem``) to pierwszy, domyślny tryb. ``ValueError`` (błąd gospodarza), gdy ``chosen`` nie jest
-        trybem procesu: odmowę dla taty daje wcześniej karta startu.
-        """
-
         modes = self.view.pricing_modes
         if chosen is not None and chosen not in modes:
             raise ValueError(f"{self.title} nie ma trybu {chosen}")
@@ -363,8 +258,6 @@ class ProcessKind(Generic[InputsT, SummaryT]):
     def run_info(
         self, *, run_id: str, period: str, mode: RunMode, pricing: runs_contract.Pricing | None
     ) -> runs_contract.RunInfo:
-        """Uruchomienie procesu na karcie: ta sama reguła na żywo i dla karty z Logów Uruchomienia."""
-
         return runs_contract.RunInfo(
             id=run_id,
             process=self.key,
@@ -377,14 +270,10 @@ class ProcessKind(Generic[InputsT, SummaryT]):
         )
 
     def settings_blocker(self, settings: SettingsSnapshot) -> str | None:
-        """Zdanie odmowy startu z Ustawień Centrum (``chosen_settings``) na kartę; ``None``, gdy proces może startować."""
-
         chosen = chosen_settings(settings, self.settings, self.needs)
         return chosen.message if isinstance(chosen, Refusal) else None
 
     def required_paths(self, settings: SettingsSnapshot) -> Mapping[SettingField, Path]:
-        """Wskazane ścieżki Ustawień procesu; ``Refusal`` ze zdaniem ``settings_blocker``, gdy proces nie może startować."""
-
         chosen = chosen_settings(settings, self.settings, self.needs)
         if isinstance(chosen, Refusal):
             raise chosen
@@ -393,11 +282,6 @@ class ProcessKind(Generic[InputsT, SummaryT]):
 
 @dataclass(frozen=True, kw_only=True)
 class PeriodProcessKind(ProcessKind[InputsT, SummaryT]):
-    """Wpis procesu, który tata uruchamia z okresem z karty Uruchomień: ``start`` to polityka jego karty startu.
-
-    Podgląd bez zapisu ma proces, którego widok to ``run_view.PeriodProcessView`` (Wycena w efenix go nie ma).
-    """
-
     key: common_contract.PeriodProcessKey
     start: PeriodStart
 
@@ -409,8 +293,6 @@ class PeriodProcessKind(ProcessKind[InputsT, SummaryT]):
 
 
 class Engine(Protocol):
-    """``process_run.run_process`` w tym, czego używa ``PreparedRun.conduct``."""
-
     def __call__(
         self,
         process: Process[Any, Any, RunContext],
@@ -426,22 +308,10 @@ class Engine(Protocol):
 
 @final
 class _Catalog:
-    """Typ dowodu, że Uruchomienie gotowe do startu złożył katalog procesów (``_CATALOG``)."""
-
     __slots__ = ()
 
 
 _CATALOG: Final = _Catalog()
-"""Dowód katalogu procesów: ``PreparedRun`` bez niego to błąd mypy (brak argumentu albo zły typ). Bierze go tylko
-``Catalog.prepared``: poza tym modułem i ``catalog.py`` (prawo właściciela w ``ruff.toml``) ruff (``TID251`` w ``ruff.toml``)
-odrzuca ``from … import _CATALOG`` (także z aliasem) i atrybut modułu (``process_kind._CATALOG``, także przez alias albo
-pełną ścieżkę), tak samo ``_Catalog``.
-
-``PreparedRun`` nie jest dataclassą, więc mypy odrzuca też ``dataclasses.replace`` gotowego Uruchomienia, np. z innym
-plikiem metryk (``type-var``), a przypisanie jego pola (``Final``). Konstruktor ``PreparedRun`` poza ``catalog.py``
-łapie po nazwie ``PreparedRun``, nazwie z importu albo atrybucie ``tests/test_granice_importow.py``, a odmowy podklasy
-opisuje docstring ``PreparedRun`` (metaklasa przy tworzeniu, ``startable`` przy użyciu). Granice tych mechanizmów
-pokazują tam próbki ``ZNANE_LUKI_KATALOGU``, każda za klasą nazwaną w swojej nazwie."""
 
 
 _NO_SUBCLASSES: Final = (
@@ -452,26 +322,6 @@ _NO_SUBCLASSES: Final = (
 
 @final
 class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refusal=_NO_SUBCLASSES):
-    """Uruchomienie procesu gotowe do startu: wpis procesu z katalogu (z rdzeniem katalogu), okres, wejście, Kontekst
-    Uruchomienia (``run_context.RunContexts.new``) i historia metryk procesu z katalogu. ``pricing``: tryb Wyceny
-    w efenix (``None``: proces bez trybów), ``settings``: Ustawienia ze startu po rzucie na proces
-    (``SettingsAtStart.for_process``), ``engine``: silnik z katalogu
-    (``run_process``; inny daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz`` przez ``Catalog.with_engine``).
-    Powstaje tylko w ``Catalog.prepared`` (``_CATALOG``).
-
-    Nie ma podklas: podklasa z własnym ``__init__`` albo ``conduct`` składałaby się sama, bez katalogu. Przy tworzeniu
-    odmawia metaklasa (``client_data.WithoutSubclasses``) pod każdą nazwą i przy każdej kolejności baz, a
-    ``__init_subclass__`` klasie zrobionej z pominięciem ``__new__`` metaklasy, gdy żadna wcześniejsza baza w MRO nie
-    przesłania jego odmowy. Tworzenie nie zamyka klasy zrobionej z pominięciem ``__new__`` metaklasy ani relacji
-    podklasy przypisanej w trakcie działania, więc regułę trzyma kontrola w chwili użycia (``startable``: typ dokładnie
-    ``PreparedRun``, bez względu na to, jak powstała klasa obiektu): przed ``conduct`` w każdym miejscu, które go woła
-    (``runs.Run.work``, Skrypt dla maszyn ``tools/uruchom_proces.py``, odtworzenie z Logów
-    ``tools/lib/odtworzenie.py``), i na początku samego ``conduct``; ``startable`` w ``runs.Run.__init__`` mówi ją
-    wcześniej, przy starcie w Centrum. Typ ``PreparedRun[…]`` w adnotacji podklasy nie robi. Odmowy przy tworzeniu
-    i przy użyciu pokazują ``PODKLASY_GOTOWEGO_URUCHOMIENIA`` i ``URUCHOMIENIA_OBOK_KATALOGU``, a znane luki kontroli
-    w chwili użycia próbki ``ZNANE_LUKI_STARTU`` w ``tests/test_katalog_procesow.py``.
-    """
-
     __slots__ = (
         "context",
         "engine",
@@ -513,8 +363,6 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
 
     @property
     def input_copy(self) -> InputCopy | None:
-        """Kopia wejścia, którą czytniki procesu wypełniają w trakcie Uruchomienia; ``None``: Uruchomienie bez Kopii."""
-
         return self.context.files.copy
 
     def info(self, run_id: str) -> runs_contract.RunInfo:
@@ -538,12 +386,6 @@ class PreparedRun(Generic[InputsT, SummaryT], metaclass=WithoutSubclasses, refus
 
 
 def startable(run: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:
-    """``run``, gdy w chwili tego wywołania jego typ to dokładnie ``PreparedRun``; obiekt podklasy, jakkolwiek powstała,
-    także z ``__class__`` podmienionym przed tym wywołaniem, daje ``TypeError`` z drogą naprawy. Ta kontrola trzyma
-    regułę „bez podklas”, bo odmowa metaklasy przy tworzeniu nie zamyka klasy zrobionej z pominięciem jej ``__new__``
-    ani relacji podklasy przypisanej w trakcie działania. Miejsca, które wołają ``conduct``, wołają je na wyniku tej
-    funkcji (``startable(run).conduct(…)``)."""
-
     if type(run) is not PreparedRun:
         raise TypeError(f"{_NO_SUBCLASSES} Start dostał {type(run).__qualname__}.")
     return run

@@ -1,11 +1,3 @@
-"""Wpisanie raportów w katalogu procesów: wpis i widok Uruchomienia (ADR 0028).
-
-Wpisanie raportów wpisuje Raporty wykonawców do INTERMAX z Ustawień Centrum i nie należy do okresu (jak Uporządkowanie
-INTERMAX, ADR 0019); folder okresów z Ustawień czyta tylko po to, by pominąć dni okresów z Plikiem zbiorczym. Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``).
-Legendą czynności ze startu, tą samą co Przygotowanie pliku zbiorczego, czyta opis Wpisu ``tak`` (ADR 0039), więc Logi
-Uruchomienia mają ją dla odtworzenia (``"activity_legend"`` w ``needs``).
-"""
-
 from __future__ import annotations
 
 from functools import partial
