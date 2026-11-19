@@ -1,0 +1,243 @@
+{
+  "zwykle": {
+    "opis": "Dwa zapisy taty, jedno „Cofnij”, jedna zmiana pliku poza Centrum, jedno zgaśnięcie, bez awarii zapisu.",
+    "stale": {
+      "Poczatek": "v0",
+      "MaxZmian": 2,
+      "MaxCofniec": 1,
+      "MaxRecznych": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 0,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiPamieciZmian": 0,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "Centrum gaśnie po History.append, a przed _remember w _change (albo w _compared po wierszu spoza Centrum): pamięć ma starą ostatnią dobrą wartość, więc przy złej treści albo pliku cofniętym ręcznie do starej treści proces liczy wartością sprzed zmiany, a Historia pokazuje nową"
+      }
+    ]
+  },
+  "poczatek-wydania": {
+    "opis": "Plik ma już wartość zmiany z Wydania, jeden nieudany zapis pamięci zmian z Wydań.",
+    "stale": {
+      "Poczatek": "r",
+      "MaxZmian": 2,
+      "MaxCofniec": 1,
+      "MaxRecznych": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 0,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiPamieciZmian": 1,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "WydanieNieNadpisuje",
+        "przyczyna": "bez-zmian-bez-pamieci",
+        "znalezisko": "zmiana z Wydania z wynikiem „bez-zmian” (bez wiersza) i nieudanym Memory.remember_applied wraca przy następnym starcie i ustawia swoją wartość w miejsce tej, którą tata zapisał potem (granica z docstringu owner.py)"
+      }
+    ]
+  },
+  "pamiec-zmian": {
+    "opis": "Zmiana z Wydania wchodzi z wierszem, a zapis pamięci zmian z Wydań się nie udaje; tata potem cofa jej wiersz.",
+    "stale": {
+      "Poczatek": "v0",
+      "MaxZmian": 1,
+      "MaxCofniec": 1,
+      "MaxRecznych": 0,
+      "MaxZgasniec": 1,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 0,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiPamieciZmian": 1,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": []
+  },
+  "wiersz": {
+    "opis": "Jeden nieudany wiersz Historii i jedno nieudane przywrócenie pliku.",
+    "stale": {
+      "Poczatek": "v0",
+      "MaxZmian": 1,
+      "MaxCofniec": 1,
+      "MaxRecznych": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 1,
+      "MaxAwariiPrzywrocenia": 1,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiPamieciZmian": 0,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "wiersz-odczytu-nieudany",
+        "znalezisko": "History.append wiersza spoza Centrum zawodzi, a _compared oddaje nową treść: proces liczy zmianą spoza Centrum, której wiersz dojdzie dopiero przy następnym odczycie (zamierzone, test_reczna_zmiana_przy_historii_ktorej_nie_da_sie_dopisac_dostaje_wiersz_przy_nastepnym_odczycie)"
+      },
+      {
+        "obietnica": "WydanieNieNadpisuje",
+        "przyczyna": "wiersz-i-przywrocenie-nieudane",
+        "znalezisko": "zapis zmiany z Wydania zostaje w pliku bez wiersza, bo History.append i _put_back zawodzą: Historia pokazuje go jako zmianę spoza Centrum, tata ją cofa, a następny start stosuje zmianę znowu"
+      },
+      {
+        "obietnica": "NieZapisanoZnaczyNie",
+        "przyczyna": "przywrocenie-nieudane",
+        "znalezisko": "History.append i _put_back zawodzą przy zapisie taty: tata czyta „nie zapisano”, a plik ma jego wartość (granica z docstringu _put_back)"
+      }
+    ]
+  },
+  "pamiec": {
+    "opis": "Jeden nieudany zapis pamięci pliku.",
+    "stale": {
+      "Poczatek": "v0",
+      "MaxZmian": 2,
+      "MaxCofniec": 1,
+      "MaxRecznych": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 0,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 1,
+      "MaxAwariiPamieciZmian": 0,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "pamiec-niezapisana",
+        "znalezisko": "Memory.write po wierszu rzuca OSError (_remember tylko loguje): jak przy zgaśnięciu przed pamięcią, przy złej treści proces liczy wartością sprzed zmiany"
+      }
+    ]
+  },
+  "odczyt-pamieci": {
+    "opis": "Pamięć pliku raz bez odczytu przy migawce dla procesu, dwie zmiany pliku poza Centrum.",
+    "stale": {
+      "Poczatek": "v0",
+      "MaxZmian": 1,
+      "MaxCofniec": 1,
+      "MaxRecznych": 2,
+      "MaxZgasniec": 1,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 0,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiPamieciZmian": 0,
+      "MaxNieczytelnejPamieci": 1,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "pamiec-bez-odczytu",
+        "znalezisko": "Memory.read daje Unreadable, więc _compared nie porównuje: proces liczy zmianą spoza Centrum bez wiersza (zamierzone, docstring owner.py i test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pamiec_wroci)"
+      },
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zly-plik-bez-pamieci",
+        "znalezisko": "zła treść przy pamięci bez odczytu: _read(parsed, None), więc _value daje file.default i proces liczy wartością z Wydania zamiast ostatniej dobrej wartości taty (Reguły ilości i Legenda czynności bez odmowy)"
+      }
+    ]
+  },
+  "historia-i-zapis": {
+    "opis": "Historia raz bez odczytu, jeden nieudany zapis pliku, dwa zgaśnięcia.",
+    "stale": {
+      "Poczatek": "v0",
+      "MaxZmian": 2,
+      "MaxCofniec": 1,
+      "MaxRecznych": 1,
+      "MaxZgasniec": 2,
+      "MaxAwariiZapisuPliku": 1,
+      "MaxAwariiWiersza": 0,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiPamieciZmian": 0,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 1
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "WydanieNieNadpisuje",
+        "przyczyna": "zgasniecie-przed-wierszem-wydania",
+        "znalezisko": "Centrum gaśnie po zapisie zmiany z Wydania, a przed jej wierszem; następny start nie daje jej wyniku (Historia bez odczytu albo kolejna awaria), tata zmienia wartość pokazaną jako zmiana spoza Centrum, a start po nim ustawia wartość zmiany znowu"
+      }
+    ]
+  },
+  "wydanie-jako-spoza": {
+    "opis": "Dwa zgaśnięcia, jeden nieudany wiersz Historii i jeden nieudany zapis pamięci, bez zapisów taty.",
+    "stale": {
+      "Poczatek": "v0",
+      "MaxZmian": 0,
+      "MaxCofniec": 1,
+      "MaxRecznych": 1,
+      "MaxZgasniec": 2,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 1,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 1,
+      "MaxAwariiPamieciZmian": 0,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      },
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "wiersz-odczytu-nieudany",
+        "znalezisko": "jak w wiersz"
+      },
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "pamiec-niezapisana",
+        "znalezisko": "jak w pamiec"
+      },
+      {
+        "obietnica": "WydanieNieNadpisuje",
+        "przyczyna": "zgasniecie-przed-wierszem-wydania",
+        "znalezisko": "jak w historia-i-zapis"
+      }
+    ]
+  }
+}
