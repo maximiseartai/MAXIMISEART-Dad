@@ -306,7 +306,7 @@ def create_app(
     reminders = ReportReminders(work, settings, reminder_mailbox or inbox, files, reports, now, report_files)
     mailing = SettlementMailing(work, settings, settlement_mailbox or inbox, files, now)
     app.include_router(settlement_mailing_router(mailing))
-    report_entering = ReportEnteringEntry(settings, catalog, configuration, parts, contexts, report_files, reminders.shown)
+    report_entering = ReportEnteringEntry(settings, catalog, parts, contexts, report_files, reminders.shown)
     rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)
     closed = comments.close_left_behind()

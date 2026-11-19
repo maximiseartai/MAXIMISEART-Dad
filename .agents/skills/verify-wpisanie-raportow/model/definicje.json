@@ -26,7 +26,7 @@
     "write_cells": "46fce0bc4f0aa999"
   },
   "src/rozliczenia/centrum/report_entering_state.py": {
-    "_TextFile": "3046c386650244a3",
+    "_TextFile": "4f9254c5b427de26",
     "FileReportState.of_work": "f1ce4f0a2f2f9966",
     "FileReportState.load": "5a3cd6f0816be1aa",
     "FileReportState.save_memory": "56b68bb5c2e9236e",
@@ -41,7 +41,7 @@
     "ReportEnteringEntry.view": "14db4216db21e7d3",
     "_view": "a488064f49d3db61",
     "ReportEnteringEntry.on_request": "3428127192cf72ab",
-    "ReportEnteringEntry.prepare": "37dd801af022ef5d"
+    "ReportEnteringEntry.prepare": "9d0ec5429383da52"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
     "StateFile": "0d1bb4b512f0e433",

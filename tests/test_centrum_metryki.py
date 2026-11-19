@@ -20,6 +20,13 @@ SETTLEMENT_COUNTERS = {
     "issues": 0,
 }
 
+EARLIER_RELEASE_COUNTERS = {
+    "efenix": {"orders": 3, "ready": 2, "errors": 0, "emmett_warnings": 1, "with_photos": 2, "defects": 0},
+    "intermax": {"orders": 40, "workers": 5},
+    "report_entering": {"entered": 6, "problems": 1, "reports": 4},
+}
+"""Liczby w rekordach metryk procesów spoza okresów, takie jak w plikach metryk taty z wcześniejszych Wydań."""
+
 
 FOR_TATA = {"kind": "for_tata", "code": "ZLE_SKUTECZNE"}
 
@@ -185,6 +192,23 @@ def runs_of(body: dict[str, object]) -> list[dict[str, Any]]:
     runs = body["runs"]
     assert isinstance(runs, list)
     return runs
+
+
+def test_historia_pokazuje_uruchomienia_efenix_intermax_i_wpisania_raportow_z_rekordow_wczesniejszego_wydania(
+    tmp_path: Path,
+) -> None:
+    """Rekord metryk z liczbami, które zapisało wcześniejsze Wydanie, zostaje w Historii: proces, który zgubiłby albo
+    przemianował liczbę, ukryłby każde wcześniejsze Uruchomienie z plików metryk taty."""
+
+    app = centrum(tmp_path)
+    paths = {"efenix": app.metrics.efenix, "intermax": app.metrics.intermax, "report_entering": app.metrics.report_entering}
+    for process, counters in EARLIER_RELEASE_COUNTERS.items():
+        write_lines(paths[process], record("2026-11-10T08:00:00+00:00", counters=counters, period="10_16_11_2026"))
+
+    runs = metrics(app)["runs"]
+
+    assert isinstance(runs, list)
+    assert sorted(run["process"] for run in runs) == ["efenix", "intermax", "report_entering"]
 
 
 def test_p50_i_p95_dopiero_od_pieciu_ukonczonych_obserwacji_tego_samego_trybu(tmp_path: Path) -> None:
