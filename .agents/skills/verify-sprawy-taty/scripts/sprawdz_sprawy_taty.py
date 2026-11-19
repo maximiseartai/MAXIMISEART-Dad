@@ -41,6 +41,7 @@ _STEPS = {
     "Powiadomienia": "tata otwiera Powiadomienia: StateFile.retry i DadCases.ask_box",
     "MaksZamyka": "Maks zamyka issue w Skrzynce",
     "Zgasniecie": "Centrum gaśnie, a tata otwiera je znowu: DadCases._load czyta config/sprawy-taty.json",
+    "NowyUchwytPrzypomnien": "następne sprawdzenie Przypomnień z odrzuconym hasłem: ReportReminders._failed robi nowy uchwyt (Reports.handle)",
 }
 
 # Stan karty Zatrzymania (ReportState) słowami taty.

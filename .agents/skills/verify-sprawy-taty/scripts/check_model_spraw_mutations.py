@@ -145,6 +145,19 @@ MUTATIONS = (
         "numer issue przychodzi między DadCases.queued a końcem send: karta mówi „czeka w kolejce” do końca pracy Centrum",
         NEW,
     ),
+    Mutation(
+        "ReportHandle.__init__ bez Reports._state_of: nowy uchwyt Przypomnień zaczyna od „czeka w kolejce”",
+        (
+            Edit(
+                MODEL,
+                "    /\\ uchwyt' = UchwytPrzypomnien\n    /\\ karta' = StanZgl(sprawy, otwarte, odrzuconeSprawy)\n",
+                "    /\\ uchwyt' = UchwytPrzypomnien\n    /\\ karta' = \"wKolejce\"\n",
+            ),
+        ),
+        _check("przypomnienia"),
+        "uchwyt sprawdzenia po odrzuceniu treści mówi „czeka w kolejce”, a _done zatrzymuje jego send",
+        NEW,
+    ),
     *dict.fromkeys(mutation for mutations in GRANICE.values() for mutation in mutations),
 )
 
