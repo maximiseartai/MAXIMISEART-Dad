@@ -53,7 +53,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         ostrzeżenie (przy pliku Folderów bez odczytu bez ostrzeżenia: to ostrzeżenie, nie straż); usunięty login
         sprawdza w okresach właściciel."""
 
-        listed = _listed(settings)
+        listed = settings.view().workers.counted()
         worker = _worker(listed, login)
         form = _form(edit)
         trial = workers.edited(listed, login, form)
@@ -103,7 +103,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
         """Usuwa Wykonawcę; właściciel zapisuje to tylko po pełnym sprawdzeniu okresów, w którym żaden jego login nie
         występuje."""
 
-        _worker(_listed(settings), login)
+        _worker(settings.view().workers.counted(), login)
         return choice(settings, settings.change_workers(RemoveWorker(login)))
 
     return router
@@ -111,18 +111,6 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
 
 def _form(form: contract.WorkerForm) -> WorkerForm:
     return WorkerForm(form.logins, form.name, form.addresses)
-
-
-def _listed(settings: CentrumSettings) -> WorkerList:
-    """Lista Wykonawców, od której zaczyna zmiana: dobra albo ostatnia dobra przy złym pliku; bez niej (zła bez
-    ostatniej dobrej albo bez odczytu) odmowa ``refusal.workers_unusable(None)``."""
-
-    listed = settings.view().workers.counted_or_unreadable()
-    if isinstance(listed, Unreadable):
-        raise refusal.workers_unusable(None)
-    if isinstance(listed, FieldProblem):
-        raise refusal.workers_unusable(None)
-    return listed
 
 
 def _worker(listed: WorkerList, login: str) -> Worker:
