@@ -60,6 +60,7 @@ from tests.fixtures.praca_centrum import centrum_work
 from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.potomne import wait_for
 
+SRC = Path(__file__).resolve().parents[1] / "src"
 READY = {"state": "ready"}
 WAITING = {"state": "waiting"}
 
@@ -223,18 +224,19 @@ def test_odcisk_problemu_jest_ten_sam_w_kazdym_procesie_centrum() -> None:
     fingerprint = ProblemFingerprint("settlement", "KOD", "Co sie stalo.", "Gdzie.", "Co zrobic.")
     child = "import sys; from rozliczenia.centrum.reports import ProblemFingerprint as F; print(F(*sys.argv[1:]).digest)"
 
-    digests = {
+    processes = [
         subprocess.run(
             [sys.executable, "-c", child, *astuple(fingerprint)],
-            env={**os.environ, "PYTHONHASHSEED": seed},
+            env={**os.environ, "PYTHONHASHSEED": seed, "PYTHONPATH": str(SRC)},
             capture_output=True,
             text=True,
-            check=True,
-        ).stdout.strip()
+            check=False,
+        )
         for seed in ("1", "2")
-    }
+    ]
 
-    assert digests == {fingerprint.digest}
+    assert [process.returncode for process in processes] == [0, 0], "".join(process.stderr for process in processes)
+    assert {process.stdout.strip() for process in processes} == {fingerprint.digest}
 
 
 LOGS_LINK = "https://github.com/tata/skrzynka/issues/7#issuecomment-1"
