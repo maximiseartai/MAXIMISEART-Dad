@@ -2073,6 +2073,38 @@ def test_postep_wyceny_przeczytany_przed_jej_koncem_nie_idzie_po_jej_logach_gdy_
     ]
 
 
+@dataclass
+class QueueFailingOnce(RecordingQueue):
+    failing: int = 0
+    tried: int = 0
+
+    def post(self, post: LogsPost) -> bool:
+        self.tried += 1
+        if self.tried - 1 == self.failing:
+            raise RuntimeError
+        return super().post(post)
+
+
+@pytest.mark.parametrize("failing", [0, 1], ids=["przy-starcie", "w-budziku"])
+def test_postep_wyceny_po_wyjatku_jest_w_dzienniku_centrum_i_idzie_przy_nastepnym_budziku(
+    failing: int, tmp_path: Path
+) -> None:
+    queue, clock, disk = QueueFailingOnce(failing=failing), ManualClock(), _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, queue, disk, clock)
+
+    _priced(comments, disk)
+    clock.advance(PROGRESS_S)
+    clock.advance(PROGRESS_S)
+
+    failures = [
+        line.split(" ", 1)[1]
+        for line in (tmp_path / "centrum-rozliczen.log").read_text(encoding="utf-8").splitlines()
+        if "nieoczekiwany-wyjatek" in line
+    ]
+    assert ([post.rank for post in queue.posts], clock.wakes) == ([Rank.DRAFT, Rank.DRAFT], 1)
+    assert failures == ['nieoczekiwany-wyjatek typ=RuntimeError miejsce="postęp Wyceny w efenix"']
+
+
 def test_diagnoza_dopisuje_sie_do_logow_ostatniego_uruchomienia_raz_na_wynik(tmp_path: Path) -> None:
     """Diagnoza dopisuje się do Logów ostatniego Uruchomienia tej pracy Centrum nowszą wersją tej samej wysyłki, a druga
     z tym samym wynikiem i Diagnoza innego Uruchomienia nie zmieniają niczego (#840)."""
