@@ -463,27 +463,28 @@ def _glowa(owner: str, *importy: str) -> str:
     return "".join(f"{linia}\n" for linia in importy) + f"from rozliczenia.centrum.settings.owner import {owner}\n\n\n"
 
 
-_MARTWA_GALAZ: Final = '"UnreadableFile" is final'
+_BEZ_ODCZYTU: Final = "from rozliczenia.centrum.settings.files import Unreadable"
+_MARTWA_GALAZ: Final = '"Unreadable" is final'
 
 DROGI_TRESCI_Z_WYDANIA: Final = {
     "literał w gałęzi „bez odczytu” wartości migawki bez unii (#2029 r1 W1)": (
-        _glowa("SettingsSnapshot, UnreadableFile") + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders\n"
-        '    return "" if isinstance(reminders, UnreadableFile) else reminders.footer\n',
+        _glowa("SettingsSnapshot", _BEZ_ODCZYTU) + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders\n"
+        '    return "" if isinstance(reminders, Unreadable) else reminders.footer\n',
         _MARTWA_GALAZ,
     ),
     "konstruktor z wartościami domyślnymi w gałęzi „bez odczytu” wartości migawki bez unii (#1931 r1 D2)": (
-        _glowa("SettingsSnapshot, UnreadableFile", "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(snapshot: SettingsSnapshot) -> FolderSettings:\n    folders = snapshot.folders\n"
-        "    if isinstance(folders, UnreadableFile):\n        return FolderSettings()\n    return folders\n",
+        _glowa("SettingsSnapshot", _BEZ_ODCZYTU, "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(snapshot: SettingsSnapshot) -> FolderSettings:\n    folders = snapshot.folders\n"
+        "    if isinstance(folders, Unreadable):\n        return FolderSettings()\n    return folders\n",
         _MARTWA_GALAZ,
     ),
     "konstruktor z wartościami domyślnymi w gałęzi „bez odczytu” Folderów okna": (
-        _glowa("CentrumSettings, UnreadableFile", "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders()\n"
-        "    return FolderSettings() if isinstance(folders, UnreadableFile) else folders\n",
+        _glowa("CentrumSettings", _BEZ_ODCZYTU, "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders()\n"
+        "    return FolderSettings() if isinstance(folders, Unreadable) else folders\n",
         _MARTWA_GALAZ,
     ),
     "gałąź „bez odczytu” Reguł ilości, którymi liczy okno": (
-        _glowa("CentrumSettings, UnreadableFile", "from rozliczenia.quantity_engine import QuantityRules") + "def reguly(settings: CentrumSettings) -> QuantityRules | None:\n"
-        "    rules = settings.quantity_rules().rules\n    return None if isinstance(rules, UnreadableFile) else rules\n",
+        _glowa("CentrumSettings", _BEZ_ODCZYTU, "from rozliczenia.quantity_engine import QuantityRules") + "def reguly(settings: CentrumSettings) -> QuantityRules | None:\n"
+        "    rules = settings.quantity_rules().rules\n    return None if isinstance(rules, Unreadable) else rules\n",
         _MARTWA_GALAZ,
     ),
     "pole widoku do pokazania w odczycie, który liczy: podpowiedzi Listy Urządzeń z shown (#2078 r1 W1)": (
@@ -505,12 +506,12 @@ DROGI_TRESCI_Z_WYDANIA: Final = {
 
 ZNANE_LUKI_TRESCI_Z_WYDANIA = {
     "unia na jawne żądanie (_or_unreadable) u wołającego, który powinien odmówić: literał w jej gałęzi": (
-        _glowa("SettingsSnapshot, UnreadableFile") + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders_or_unreadable\n"
-        '    return "" if isinstance(reminders, UnreadableFile) else reminders.footer\n'
+        _glowa("SettingsSnapshot", _BEZ_ODCZYTU) + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders_or_unreadable\n"
+        '    return "" if isinstance(reminders, Unreadable) else reminders.footer\n'
     ),
     "unia na jawne żądanie (_or_unreadable) u wołającego, który powinien odmówić: konstruktor w jej gałęzi": (
-        _glowa("CentrumSettings, UnreadableFile", "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders_or_unreadable()\n"
-        "    return FolderSettings() if isinstance(folders, UnreadableFile) else folders\n"
+        _glowa("CentrumSettings", _BEZ_ODCZYTU, "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders_or_unreadable()\n"
+        "    return FolderSettings() if isinstance(folders, Unreadable) else folders\n"
     ),
     "odmowa właściciela złapana i zastąpiona: konstruktor w except": (
         _glowa("SettingsSnapshot", "from rozliczenia.centrum.refusal import Refusal", "from rozliczenia.centrum.settings.folders import FolderSettings")
@@ -549,12 +550,12 @@ def test_tresc_z_wydania_poza_wlascicielem_nie_przechodzi_a_znane_luki_przechodz
     | atrybut pakietu pod aliasem: ``reports.DEFAULT_REMINDERS.footer`` | łapie | ``SAMPLES`` |
     | prywatny moduł pakietu: ``from ._reminders import DEFAULT_REMINDERS`` | łapie | ``SAMPLES`` |
     | część treści Przypomnień: ``DEFAULT_SCHEDULE``, ``DEFAULT_TEXT`` | łapie | ``SAMPLES`` |
-    | literał w gałęzi „bez odczytu” wartości bez unii: ``reminders = snapshot.reminders``, ``"" if isinstance(reminders, UnreadableFile) else …`` (#2029 r1 W1) | łapie (mypy ``unreachable``: ``UnreadableFile`` jest final) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | literał w gałęzi „bez odczytu” wartości bez unii: ``reminders = snapshot.reminders``, ``"" if isinstance(reminders, Unreadable) else …`` (#2029 r1 W1) | łapie (mypy ``unreachable``: ``Unreadable`` jest final) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | konstruktor z wartościami domyślnymi w takiej gałęzi: ``FolderSettings()`` przy ``snapshot.folders`` (#1931 r1 D2) i ``settings.folders()`` okna | łapie (mypy ``unreachable``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | gałąź „bez odczytu” Reguł ilości okna: ``settings.quantity_rules().rules`` | łapie (mypy ``unreachable``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | literał albo konstruktor w gałęzi unii na jawne żądanie: ``snapshot.reminders_or_unreadable``, ``settings.folders_or_unreadable()`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | odmowa właściciela złapana i zastąpiona: ``except Refusal: return FolderSettings()`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
-    | pole widoku do pokazania w odczycie, który liczy: ``device_suggestions(settings.quantity_rules().shown, …)`` (#2078 r1 W1; ``.rules`` to unia z ``UnreadableFile``) | łapie (mypy: ``ShownQuantityRules``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | pole widoku do pokazania w odczycie, który liczy: ``device_suggestions(settings.quantity_rules().shown, …)`` (#2078 r1 W1; ``.rules`` to unia z ``Unreadable``) | łapie (mypy: ``ShownQuantityRules``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | legenda do pokazania jako legenda, którą się liczy: ``settings.activity_legend().shown`` | łapie (mypy: ``ShownActivityLegend``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | części widoku do pokazania: ``QuantityRules(shown.rules, shown.devices)``, ``shown.devices`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |

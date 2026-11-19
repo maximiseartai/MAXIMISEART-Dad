@@ -77,7 +77,7 @@ from rozliczenia.centrum.atomic_file import StateFile
 from rozliczenia.centrum.log import ReminderFailure
 from rozliczenia.centrum.reports import ProblemFingerprint, ReminderReport, Reports
 from rozliczenia.centrum.settings.files import Unreadable, usable
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.dad_files import DadFiles
@@ -269,7 +269,7 @@ class ReportReminders:
         snapshot = self._settings.snapshot()
         reminders = snapshot.reminders_or_unreadable
         in_effect: SchedulesInEffect | None = None
-        if isinstance(reminders, UnreadableFile):
+        if isinstance(reminders, Unreadable):
             schedule = self._unread_schedule()
         else:
             schedule = self._schedule = reminders.schedule
@@ -279,7 +279,7 @@ class ReportReminders:
         self._close_unread(now.date(), pora)
         if pora is None or self._settled == (now.date(), pora, schedule):
             return
-        if isinstance(reminders, UnreadableFile):
+        if isinstance(reminders, Unreadable):
             self._unread = _Unread(now.date(), pora, reminders.name)
             return
         self._unread = None
@@ -444,16 +444,16 @@ def due_reminders(
     Wykonawców."""
 
     reminders = snapshot.reminders_or_unreadable
-    if isinstance(reminders, UnreadableFile):
+    if isinstance(reminders, Unreadable):
         return NotRead("plik-bez-odczytu", file=reminders.name)
     rollout = reminders.sends
     if rollout is None:
         return NotRead("bez-wdrozenia")
     settings = snapshot.folders_or_unreadable
-    if isinstance(settings, UnreadableFile):
+    if isinstance(settings, Unreadable):
         return NotRead("plik-bez-odczytu", file=settings.name)
     legend = snapshot.activity_legend_or_unreadable
-    if isinstance(legend, UnreadableFile):
+    if isinstance(legend, Unreadable):
         return NotRead("plik-bez-odczytu", file=legend.name)
     if settings.register is None or settings.periods_directory is None:
         return NotRead("bez-ustawien")

@@ -77,7 +77,7 @@ class Memory:
 
         data = settings_bytes(self._path(name))
         if isinstance(data, OSError):
-            return Unreadable()
+            return Unreadable(self._path(name).name)
         if data is None:
             return None
         try:
