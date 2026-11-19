@@ -2015,6 +2015,8 @@ def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich
     # Werdykt z wybaczonym naruszeniem ma ich liczbę („WYCENA EFENIX OK, ZNANE USTALENIA: n”).
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
     assert any(" ponownych uruchomień " in line for line in lines), "\n".join(lines)
+    [silence] = [found for line in lines if (found := re.fullmatch(r"CISZA OKNA \| najdłużej (\d+\.\d) s .+ od 26 s \| .+", line))]
+    assert float(silence[1]) < 26
     [evidence] = (tmp_path / "evidence").iterdir()
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
     # Kontrprzykład ma tylko przypadek z naruszeniem, znanym ustaleniem albo przyjętym ryzykiem, a tu nie ma żadnego.

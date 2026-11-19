@@ -120,9 +120,11 @@ for the limit on healthy code goes red instead of costing 30 s. A wait during wh
 is outside it (`quiet`). The longest silence of 185 healthy runs with 15 s (`odpowiedzi`, `logowanie`,
 `zamkniete-okno`) was 2.0 s, the login wait between two questions about the session, and 5.0 s with the reload of 5 s
 of the busy-machine test (2026-11-15, PR #1915, Evidence), all on Maks's Mac; on a Windows runner in CI the run without a
-fault of the busy-machine test was silent 14.6 s at that reload (run 44098171079, #2061), so 15 s and its 11 s left a
-healthy run almost no room; a run with 4 s may be silent longer (12 s at `HUNG` at the list again), which is why only a
-run with 30 s is checked.
+fault of the busy-machine test was silent 14.6 s (run 44098171079, #2061), so 15 s and its 11 s left a healthy run
+almost no room; the log gives only the length of that silence, and that it fell at the reload is a conclusion, because
+the evidence stayed in the runner's tmp; a run with 4 s may be silent longer (12 s at `HUNG` at the list again), which is why only a
+run with 30 s is checked. Every report prints the longest silence of a run with 30 s and its case (`CISZA OKNA`), so
+CI shows how close healthy runs come to 26 s.
 A case whose window stopped before its faulted request runs again like a fault that did not take effect
 (`Run.injected`, `RETRIES`). The login wait is 4 s.
 The Atrapa reloads the page 1 s after „Załaduj do zlecenia”, as efenix does (`EFENIX_EMMETT_RELOAD_MS`), not after the
