@@ -29,6 +29,7 @@ import yaml
 from mutacja_recenzenta import Block
 import srodowisko_ci
 import straznik
+from tests.fixtures.bez_dostepu import without_creating
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.git_repo import commit, git
 from tests.fixtures.srodowisko import CI, DEV, PINS, project, wymaga_uv
@@ -647,11 +648,12 @@ def test_srodowisko_dowodu_powstaje_w_tmp_a_gdy_tmp_odmawia_zapisu_w_tmpdir_wola
     caller.mkdir()
     monkeypatch.setenv("TMPDIR", str(caller))
     monkeypatch.setattr(tempfile, "tempdir", None)
+    system = tmp_path / "tmp-bez-zapisu"
+    system.mkdir()
     if refused:
-        (system := tmp_path / "tmp-bez-zapisu").write_text("")
         monkeypatch.setattr(srodowisko_ci, "_SYSTEM_TEMP", system)
 
-    with srodowisko_ci.built(root, head, target) as environment:
+    with without_creating(system), srodowisko_ci.built(root, head, target) as environment:
         folders = {environment.copy.parents[1], Path(environment.variables["TMPDIR"]).parents[1]}
 
     assert folders == {caller if refused else Path("/tmp")}
