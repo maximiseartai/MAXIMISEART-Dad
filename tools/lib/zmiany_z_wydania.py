@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import builtins
 from collections.abc import Iterable, Iterator, Mapping, Sequence
 import copy
 import dataclasses
@@ -33,15 +34,16 @@ NOWY_WPIS: Final = (
 )
 INNY_KOD: Final = (
     f"gdy to poprawka wpisu w miejscu albo wpis sięga teraz po inną definicję, {NOWY_WPIS}; gdy to nowa nazwa albo "
-    "nowy moduł definicji innego modułu, po którą wpis sięga, wpisu nie zmieniaj ani nie przepinaj, tylko zostaw w "
-    "module propose nazwę z tagu (from … import nowa as stara albo alias stara = nowa w jej module), a definicji, "
-    "której moduł propose nie wiąże nazwą, przywróć moduł i nazwę z tagu"
+    "nowe miejsce definicji lub modułu spoza modułu propose, plik modułu propose przywróć taki, jaki jest w tagu, i "
+    "wpisu nie przepinaj: odcisk zna je tylko po nazwie, pod którą moduł propose je wiąże, więc w kodzie, który "
+    "zmieniłeś, zostaw starą nazwę do importu (alias stara = nowa w jej module, moduł pod starą ścieżką)"
 )
 GRANICA_ODCISKU: Final = (
     "odcisk Zmiany z Wydania bierze propose, które jest funkcją albo functools.partial, i to, po co sięga w biegu: "
     "funkcje i klasy modułu propose ze źródłem w pliku, dane (stała, krotka, lista, słownik, zbiór, Enum, dataclass) i "
-    "nazwy, pod którymi moduł propose wiąże definicje innych modułów; obiekt innej klasy, metodę obiektu, funkcję bez "
-    "źródła w pliku albo pod functools.lru_cache i dwie lambdy w jednej linii zamień na funkcję modułu albo dataclass"
+    "nazwy, pod którymi moduł propose wiąże definicje i moduły spoza siebie; definicję albo moduł spoza modułu propose "
+    "zwiąż w nim nazwą (import), a obiekt innej klasy, metodę obiektu, funkcję bez źródła w pliku albo pod "
+    "functools.lru_cache i dwie lambdy w jednej linii zamień na funkcję modułu albo dataclass"
 )
 _STALE: Final = (bool, int, float, str, bytes)
 _LIMIT_ODCZYTU_S: Final = 120
@@ -114,14 +116,36 @@ def _systemowa(nazwa: str) -> bool:
     return len(nazwa) > 2 and nazwa.startswith("_") and nazwa.endswith("_")
 
 
+def _importy_pod_inna_nazwa(drzewo: ast.Module) -> dict[str, str]:
+    importy: dict[str, str] = {}
+    czekajace: list[ast.AST] = list(drzewo.body)
+    while czekajace:
+        wezel = czekajace.pop()
+        if isinstance(wezel, (ast.Import, ast.ImportFrom)):
+            for alias in wezel.names:
+                if alias.asname is not None and alias.asname != alias.name:
+                    importy[alias.asname] = f"{alias.name} as {alias.asname}"
+        elif not isinstance(wezel, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            czekajace += ast.iter_child_nodes(wezel)
+    return importy
+
+
+def _nazwy_wartosci(przestrzen: Mapping[str, object], importy: Mapping[str, str]) -> dict[int, list[str]]:
+    nazwy: dict[int, list[str]] = {}
+    for nazwa, wartosc in sorted(przestrzen.items()):
+        nazwy.setdefault(id(wartosc), []).append(importy.get(nazwa, nazwa))
+    return nazwy
+
+
 class _Odcisk:
     def __init__(self, modul: str) -> None:
         self._modul = modul
         self._w_toku: set[int] = set()
         self._drzewa: dict[str, ast.Module] = {}
-        self._nazwy: dict[int, list[str]] = {}
-        for nazwa, wartosc in sorted(vars(sys.modules[modul]).items() if modul in sys.modules else ()):
-            self._nazwy.setdefault(id(wartosc), []).append(nazwa)
+        przestrzen = vars(sys.modules[modul]) if modul in sys.modules else {}
+        plik = przestrzen.get("__file__")
+        importy = _importy_pod_inna_nazwa(self._drzewo_pliku(plik, modul)) if isinstance(plik, str) else {}
+        self._nazwy = _nazwy_wartosci(vars(builtins), {}) | _nazwy_wartosci(przestrzen, importy)
 
     def wartosc(self, wartosc: object) -> object:
         if wartosc is None or type(wartosc) in _STALE:
@@ -140,7 +164,7 @@ class _Odcisk:
         if type(wartosc) is functools.partial:
             return {"partial": self.wartosc(wartosc.func), "argumenty": self.wartosc(wartosc.args), "nazwane": self.wartosc(wartosc.keywords)}
         if isinstance(wartosc, ModuleType):
-            return {"moduł": wartosc.__name__}
+            return {"moduł": self.definicja(wartosc)}
         if isinstance(wartosc, UnionType):
             return {"unia": [self.wartosc(typ) for typ in wartosc.__args__]}
         if isinstance(getattr(wartosc, "__qualname__", None), str) and isinstance(getattr(wartosc, "__module__", None), str):
@@ -148,10 +172,11 @@ class _Odcisk:
         raise ValueError(f"obiekt {type(wartosc).__module__}.{type(wartosc).__qualname__}: {GRANICA_ODCISKU}")
 
     def definicja(self, definicja: Any) -> object:
-        if definicja.__module__ != self._modul:
+        if isinstance(definicja, ModuleType) or definicja.__module__ != self._modul:
             if id(definicja) in self._nazwy:
                 return {"nazwa w module propose": " = ".join(self._nazwy[id(definicja)])}
-            return {"definicja innego modułu": f"{definicja.__module__}.{definicja.__qualname__}"}
+            opis = definicja.__name__ if isinstance(definicja, ModuleType) else f"{definicja.__module__}.{definicja.__qualname__}"
+            raise ValueError(f"{opis} spoza modułu {self._modul}, który nie wiąże go nazwą: {GRANICA_ODCISKU}")
         if id(definicja) in self._w_toku:
             return {"w toku": definicja.__qualname__}
         self._w_toku.add(id(definicja))
@@ -200,13 +225,16 @@ class _Odcisk:
             "metody systemowe": {nazwa: metody for nazwa, metody in metody_systemowe.items() if metody},
         }
 
-    def _zrodlo(self, plik: str, nazwa: str, linia: int, opis: str) -> ast.AST:
+    def _drzewo_pliku(self, plik: str, opis: str) -> ast.Module:
         if plik not in self._drzewa:
             try:
                 self._drzewa[plik] = ast.parse(Path(plik).read_text(encoding="utf-8"))
             except (OSError, SyntaxError, ValueError) as blad:
                 raise ValueError(f"{opis}: nie ma źródła w pliku {plik} ({blad}): {GRANICA_ODCISKU}") from blad
-        trafione = [wezel for wezel in ast.walk(self._drzewa[plik]) if _poczatek(wezel, nazwa, linia)]
+        return self._drzewa[plik]
+
+    def _zrodlo(self, plik: str, nazwa: str, linia: int, opis: str) -> ast.AST:
+        trafione = [wezel for wezel in ast.walk(self._drzewo_pliku(plik, opis)) if _poczatek(wezel, nazwa, linia)]
         if len(trafione) != 1:
             raise ValueError(f"{opis}: {len(trafione)} definicji {nazwa} od linii {linia} w {plik}: {GRANICA_ODCISKU}")
         return _bez_docstringow(trafione[0])

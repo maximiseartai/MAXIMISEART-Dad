@@ -617,15 +617,34 @@ def test_plan_wydaje_poprawke_zmiany_z_wydania_jako_nowy_wpis_z_nowym_id(releasi
     assert planned["commit"] == fixing
 
 
-def test_plan_wydaje_wydanie_po_zmianie_nazwy_definicji_innego_modulu_z_aliasem_pod_stara_nazwa(releasing: Releasing) -> None:
-    with_footer = RELEASE_CHANGES.replace("from dataclasses import dataclass\n", "from dataclasses import dataclass\n\nfrom rozliczenia.pomoc import stopka\n").replace(
-        'return "stopka przypomnień"', "return stopka()"
+@pytest.mark.parametrize(
+    ("used", "renamed"),
+    [
+        (
+            ("from rozliczenia.pomoc import stopka\n", "return stopka()"),
+            {"src/rozliczenia/pomoc.py": 'def stopka_przypomnien():\n    return "stopka"\n\n\nstopka = stopka_przypomnien\n'},
+        ),
+        (
+            ("from rozliczenia import pomoc\n", "return pomoc.stopka()"),
+            {
+                "src/rozliczenia/pomoc.py": "",
+                "src/rozliczenia/teksty.py": 'def stopka():\n    return "stopka"\n',
+                "src/rozliczenia/__init__.py": "from rozliczenia import teksty as pomoc\n",
+            },
+        ),
+    ],
+    ids=["definicja", "moduł"],
+)
+def test_plan_wydaje_wydanie_po_zmianie_nazwy_definicji_albo_modulu_spoza_modulu_wpisu_z_aliasem_pod_stara_nazwa(
+    releasing: Releasing, used: tuple[str, str], renamed: dict[str, str]
+) -> None:
+    import_line, call = used
+    with_footer = RELEASE_CHANGES.replace("from dataclasses import dataclass\n", f"from dataclasses import dataclass\n\n{import_line}").replace(
+        'return "stopka przypomnień"', call
     )
     first = releasing.merge(1, "feat: stopka", {**PACKAGES, "src/rozliczenia/pomoc.py": 'def stopka():\n    return "stopka"\n', RELEASE_CHANGES_FILE: with_footer})
     releasing.released("v0.1.0", first)
-    renaming = releasing.merge(
-        2, "refactor: nazwa stopki", {"src/rozliczenia/pomoc.py": 'def stopka_przypomnien():\n    return "stopka"\n\n\nstopka = stopka_przypomnien\n'}
-    )
+    renaming = releasing.merge(2, "refactor: nazwa stopki", renamed)
 
     planned = releasing.planned()
 

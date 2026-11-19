@@ -20,9 +20,9 @@ import repo
 from zmiany_z_wydania import GRANICA_ODCISKU, INNY_KOD, Wpis, roznice, wpisy, wpisy_commitu
 
 PRZYPIETE: Final = {
-    "2026-11-lista-wykonawcow": Wpis(WORKERS_FILE, "a5b1a109c181edcf"),
+    "2026-11-lista-wykonawcow": Wpis(WORKERS_FILE, "a9cb8eb5293610ce"),
     "2026-11-folder-okresow-od-zalacznikow": Wpis(SETTINGS_FILE, "308b4e7abd72e003"),
-    "2026-11-przypomnienia": Wpis(REMINDERS_FILE, "def7aa3ade7b79c8"),
+    "2026-11-przypomnienia": Wpis(REMINDERS_FILE, "97d126b4aeefd51a"),
 }
 
 PRZYPNIJ: Final = (
@@ -31,14 +31,38 @@ PRZYPNIJ: Final = (
     "Wydania, w którym wpis z tagu zniknął albo ma inny plik lub odcisk; gdy stoi, zrób to, co mówi jej różnica wobec "
     "origin/main"
 )
+BEZ_BAZY: Final = (
+    f"pierwszego innego elementu nie ma tu z czym policzyć, bo git nie zna {repo.BASE} albo jego wspólnego przodka z "
+    f"HEAD (płytki klon zadania pytest w CI), a poda go ten test uruchomiony na komputerze z {repo.BASE}"
+)
 
 
-def _wobec_main(teraz: Mapping[str, Wpis]) -> str:
+def _wpisy_main() -> Mapping[str, Wpis] | str:
     try:
-        main = wpisy_commitu(repo.ROOT, repo.merge_base(repo.ROOT, "HEAD", repo.BASE))
+        baza = repo.merge_base(repo.ROOT, "HEAD", repo.BASE)
+    except subprocess.CalledProcessError:
+        return BEZ_BAZY
+    try:
+        return wpisy_commitu(repo.ROOT, baza)
     except (subprocess.SubprocessError, ValueError) as blad:
-        return f"tu nie da się jej policzyć ({blad}), więc {INNY_KOD}"
-    return " | ".join(roznice(main, teraz, "origin/main").values()) or "wpisy z origin/main mają ten sam odcisk, więc zmienił się kod odcisku w tools/lib/zmiany_z_wydania.py: przepnij je"
+        return f"wpisów z {repo.BASE} nie da się tu odczytać ({blad})"
+
+
+def _powod(id_zmiany: str, przypiety: Wpis | None, teraz: Wpis | None, main: Mapping[str, Wpis] | str) -> str:
+    if przypiety is None:
+        return f"{id_zmiany} to nowy wpis: przypnij go"
+    if isinstance(main, str):
+        return f"{id_zmiany}: {main}"
+    if id_zmiany not in main:
+        return f"{id_zmiany} nie ma na {repo.BASE}, więc nie wyszedł w żadnym Wydaniu: " + ("usuń go z PRZYPIETE" if teraz is None else "przepnij go")
+    if main[id_zmiany] == teraz:
+        return f"{id_zmiany} ma ten sam odcisk co na {repo.BASE}, więc zmienił się kod odcisku w tools/lib/zmiany_z_wydania.py: przepnij go"
+    return roznice({id_zmiany: main[id_zmiany]}, {} if teraz is None else {id_zmiany: teraz}, repo.BASE)[id_zmiany]
+
+
+def _co_zrobic(rozne: Mapping[str, tuple[Wpis | None, Wpis | None]]) -> str:
+    main = _wpisy_main() if any(przypiety is not None for przypiety, _ in rozne.values()) else {}
+    return " | ".join(_powod(id_zmiany, przypiety, teraz, main) for id_zmiany, (przypiety, teraz) in rozne.items())
 
 
 def test_zmiana_z_wydania_ma_plik_i_odcisk_przypiete_od_pr_ktory_ja_dodaje_bo_tata_ma_jej_id_w_pamieci() -> None:
@@ -49,7 +73,7 @@ def test_zmiana_z_wydania_ma_plik_i_odcisk_przypiete_od_pr_ktory_ja_dodaje_bo_ta
         if PRZYPIETE.get(id_zmiany) != teraz.get(id_zmiany)
     }
 
-    assert not rozne, f"{PRZYPNIJ}; (przypięte, teraz): {rozne}; różnica wobec origin/main: {_wobec_main(teraz)}"
+    assert not rozne, f"{PRZYPNIJ}; (przypięte, teraz): {rozne}; co zrobić: {_co_zrobic(rozne)}"
 
 
 _NAGLOWEK: Final = "from rozliczenia.centrum.settings.folders import FOLDERS\nfrom rozliczenia.centrum.settings.proposal import ReleaseChange\n\n\n"
@@ -253,10 +277,23 @@ PRZYPADKI_ODCISKU: Final = [
         zmiana=("LIMIT = 1", "LIMIT = 2"),
     ),
     _przypadek(
-        {"pomocnik": _KOLOR + "class Inny(enum.Enum):\n    A = 1\n", "zmiana": _zmiana("import pomocnik\n\n_KOLOR = pomocnik.Kolor.A\n\n\ndef propose(inputs):\n    return _KOLOR\n")},
+        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
         False,
-        "członek Enum innego modułu, którego klasy moduł propose nie wiąże nazwą",
-        zmiana=("pomocnik.Kolor.A", "pomocnik.Inny.A"),
+        "inna definicja innego modułu importowana pod nazwą z tagu",
+        zmiana=("from pomocnik import d\n", "from pomocnik import e as d\n"),
+    ),
+    _przypadek(
+        {"pomocnik": "", "pakiet": "import pomocnik\n", "zmiana": _zmiana("from pakiet import pomocnik\n\n\ndef propose(inputs):\n    return pomocnik\n")},
+        False,
+        "definicja pod nazwą, pod którą moduł propose wiązał moduł",
+        pakiet=("import pomocnik\n", "def pomocnik():\n    return 1\n"),
+    ),
+    _przypadek({"zmiana": _zmiana("_TYPY = (int,)\n\n\ndef propose(inputs):\n    return isinstance(inputs, _TYPY)\n")}, False, "typ wbudowany w danych modułu propose", zmiana=("(int,)", "(str,)")),
+    _przypadek(
+        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
+        False,
+        "inna definicja innego modułu importowana pod nazwą z tagu w bloku if modułu",
+        zmiana=("from pomocnik import d\n", "if True:\n    from pomocnik import e as d\n"),
     ),
     _przypadek(
         {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 1\n", "zmiana": _zmiana("from pomocnik import d\n\n_KODY = (d,)\n\n\ndef propose(inputs):\n    return _KODY\n")},
@@ -307,6 +344,35 @@ PRZYPADKI_ODCISKU: Final = [
         typy=("", _LOGIN),
         pomocnik=(_LOGIN, "from typy import Login\n"),
     ),
+    _przypadek(
+        {"pomocnik": "class Kod:\n    pass\n", "zmiana": _zmiana("from pomocnik import Kod\n\n\ndef propose(inputs):\n    return Kod()\n")},
+        True,
+        "klasa innego modułu przemianowana z aliasem pod starą nazwą",
+        pomocnik=("class Kod:\n    pass\n", "class NowyKod:\n    pass\n\n\nKod = NowyKod\n"),
+    ),
+    _przypadek(
+        {
+            "pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n",
+            "zmiana": _zmiana("from pomocnik import d\n\n\ndef _inna():\n    return 0\n\n\ndef propose(inputs):\n    return d(inputs)\n"),
+        },
+        True,
+        "import pod inną nazwą w funkcji modułu propose, po którą wpis nie sięga",
+        zmiana=("    return 0\n", "    from pomocnik import e as d\n\n    return d(0)\n"),
+    ),
+    _przypadek(
+        {"pomocnik": "def d(x):\n    return 1\n", "zmiana": _zmiana("from pomocnik import d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
+        True,
+        "definicja, którą moduł propose wiąże nazwą i wstawia też do builtins pod inną",
+        zmiana=("from pomocnik import d\n", "import builtins\n\nfrom pomocnik import d\n\nbuiltins._DRUGA_NAZWA = d\n"),
+    ),
+    _przypadek(
+        {"komunikaty": "", "pomocnik": "LIMIT = 1\n", "pakiet": "import pomocnik\n", "zmiana": _zmiana("from pakiet import pomocnik\n\n\ndef propose(inputs):\n    return pomocnik.LIMIT\n")},
+        True,
+        "moduł przemianowany z aliasem pod starą nazwą w pakiecie, czytany kropką",
+        komunikaty=("", "LIMIT = 1\n"),
+        pomocnik=("LIMIT = 1\n", ""),
+        pakiet=("import pomocnik\n", "import komunikaty as pomocnik\n"),
+    ),
 ]
 
 ROZNICE_ODCISKU: Final = [
@@ -323,10 +389,16 @@ ROZNICE_ODCISKU: Final = [
         id="nazwa, pod którą moduł propose wiąże definicję innego modułu",
     ),
     pytest.param(
-        {"pomocnik": _KOLOR, "zmiana": _zmiana("import pomocnik\n\n_KOLOR = pomocnik.Kolor.A\n\n\ndef propose(inputs):\n    return _KOLOR\n")},
-        {"pomocnik": _KOLOR.replace("class Kolor", "class Barwa") + "Kolor = Barwa\n", "zmiana": _zmiana("import pomocnik\n\n_KOLOR = pomocnik.Kolor.A\n\n\ndef propose(inputs):\n    return _KOLOR\n")},
-        "propose › nazwy › _KOLOR › enum › definicja innego modułu („pomocnik.Barwa” zamiast „pomocnik.Kolor”)",
-        id="moduł i nazwa definicji innego modułu, której moduł propose nie wiąże nazwą",
+        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
+        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import e as d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
+        "propose › nazwy › d › nazwa w module propose („e as d” zamiast „d”)",
+        id="inna definicja innego modułu importowana pod nazwą z tagu",
+    ),
+    pytest.param(
+        {"pomocnik": "LIMIT = 1\n", "komunikaty": "LIMIT = 1\n", "zmiana": _zmiana("import pomocnik\n\n\ndef propose(inputs):\n    return pomocnik.LIMIT\n")},
+        {"pomocnik": "LIMIT = 1\n", "komunikaty": "LIMIT = 1\n", "zmiana": _zmiana("import komunikaty as pomocnik\n\n\ndef propose(inputs):\n    return pomocnik.LIMIT\n")},
+        "propose › nazwy › pomocnik › moduł › nazwa w module propose („komunikaty as pomocnik” zamiast „pomocnik”)",
+        id="moduł przemianowany, a w module propose import pod nazwą z tagu",
     ),
 ]
 
@@ -348,6 +420,25 @@ ODMOWY_ODCISKU: Final = [
         {"zmiana": _zmiana('exec("def _d():\\n    return 1")\n\n\ndef propose(inputs):\n    return _d()\n')}, id="funkcja modułu bez źródła w pliku"
     ),
     pytest.param({"zmiana": _zmiana('_K = type("_K", (), {})\n\n\ndef propose(inputs):\n    return _K\n')}, id="klasa modułu utworzona w biegu"),
+    pytest.param(
+        {"pomocnik": _KOLOR, "zmiana": _zmiana("import pomocnik\n\n_KOLOR = pomocnik.Kolor.A\n\n\ndef propose(inputs):\n    return _KOLOR\n")},
+        id="członek Enum innego modułu, którego klasy moduł propose nie wiąże nazwą",
+    ),
+    pytest.param(
+        {"pomocnik": "def d(x):\n    return 1\n", "zmiana": _zmiana("import pomocnik\n\n_KODY = (pomocnik.d,)\n\n\ndef propose(inputs):\n    return _KODY\n")},
+        id="definicja innego modułu w danych, której moduł propose nie wiąże nazwą",
+    ),
+    pytest.param(
+        {"zmiana": _zmiana('import importlib\n\n_MODULY = (importlib.import_module("json"),)\n\n\ndef propose(inputs):\n    return _MODULY\n')},
+        id="moduł, którego moduł propose nie wiąże nazwą",
+    ),
+    pytest.param(
+        {
+            "pomocnik": "def dek(f):\n    def opakowana(inputs):\n        return f(inputs)\n\n    return opakowana\n",
+            "zmiana": _zmiana("from pomocnik import dek\n\n\n@dek\ndef propose(inputs):\n    return 1\n"),
+        },
+        id="funkcja spod dekoratora innego modułu bez functools.wraps",
+    ),
 ]
 
 ZNANE_LUKI_ODCISKU: Final = {
@@ -359,23 +450,13 @@ ZNANE_LUKI_ODCISKU: Final = {
         {"pomocnik": "def d(x):\n    return 1\n", "zmiana": _zmiana("import pomocnik\n\n\ndef propose(inputs):\n    return pomocnik.d(inputs)\n")},
         {"pomocnik": "def d(x):\n    return 2\n", "zmiana": _zmiana("import pomocnik\n\n\ndef propose(inputs):\n    return pomocnik.d(inputs)\n")},
     ),
-    "zna tylko moduł funkcji propose: funkcja spod dekoratora innego modułu bez functools.wraps": (
-        {
-            "pomocnik": "def dek(f):\n    def opakowana(inputs):\n        return f(inputs)\n\n    return opakowana\n",
-            "zmiana": _zmiana("from pomocnik import dek\n\n\n@dek\ndef propose(inputs):\n    return 1\n"),
-        },
-        {
-            "pomocnik": "def dek(f):\n    def opakowana(inputs):\n        return f(inputs)\n\n    return opakowana\n",
-            "zmiana": _zmiana("from pomocnik import dek\n\n\n@dek\ndef propose(inputs):\n    return 2\n"),
-        },
-    ),
     "nie czyta nazwy zbudowanej w biegu: funkcja modułu po napisie z nazwą": (
         {"zmiana": _zmiana("import sys\n\n\ndef _d(x):\n    return 1\n\n\ndef propose(inputs):\n    return getattr(sys.modules[__name__], '_d')(inputs)\n")},
         {"zmiana": _zmiana("import sys\n\n\ndef _d(x):\n    return 2\n\n\ndef propose(inputs):\n    return getattr(sys.modules[__name__], '_d')(inputs)\n")},
     ),
-    "zna definicję innego modułu tylko po nazwie, pod którą wiąże ją moduł propose: inna definicja pod tą samą nazwą": (
+    "zna definicję innego modułu tylko po nazwie, pod którą wiąże ją moduł propose: inna definicja przypisana tej nazwie": (
         {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
-        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("from pomocnik import e as d\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
+        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("import pomocnik\n\nd = pomocnik.e\n\n\ndef propose(inputs):\n    return d(inputs)\n")},
     ),
     "czyta nazwy tylko z __globals__ modułu: nazwa, którą moduł wstawia do builtins": (
         {"zmiana": _zmiana("import builtins\n\nbuiltins._LIMIT_ODCISKU = 1\n\n\ndef propose(inputs):\n    return _LIMIT_ODCISKU\n")},
