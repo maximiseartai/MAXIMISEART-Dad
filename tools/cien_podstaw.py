@@ -63,8 +63,8 @@ Dane: runy ``ci.yml`` okna (dzień utworzenia, UTC), artefakty ``plan`` (``reten
 runów PR, próbki i scalonych PR-ów, zadania runów PR bez wyniku success i logi ich padłych zadań Mutation checks, a z gita
 checkoutu pliki głów PR i ich baz i merge'e ``main`` z numerami PR-ów (brakujące głowy runów pobiera jeden ``git
 fetch``). Odpowiedzi API zapisują się w ``<katalog>/api`` (``tools/lib/api_actions.py``), a rekordy z dowodami
-w ``<katalog>/rekordy.json``; 14 dni to około 700 zapytań. ``--rekordy PLIK`` liczy rozstrzygnięcie z zapisanych
-rekordów bez GitHuba. Wynik kończy linia:
+w ``<katalog>/rekordy.json``; 14 dni to kilkaset zapytań, a ich liczbę drukuje pierwsza linia wyniku. ``--rekordy
+PLIK`` liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy linia:
 
     D1 | złapane przez NF: kandydaci <n> (wymaga audytu <m>), niepoliczone <k>, przyczyny po audycie <p> | oszczędność N0 …
     | wynik: N0 wygrywa|NF zostaje|czeka na audyt|brak: …

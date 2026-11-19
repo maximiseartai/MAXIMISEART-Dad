@@ -668,6 +668,19 @@ def test_znane_luki_reguly_naprawy_przechodza_przez_jej_wybor_kandydatow(tmp_pat
     assert_znane_luki(zgloszenia, "tests/test_cien_podstaw.py (ZNANE_LUKI)")
 
 
+def test_porazka_kroku_nf_z_glowa_nastepnego_runu_nieznana_gitowi_jest_niepoliczona_do_audytu(tmp_path: Path) -> None:
+    """Głowy następnego runu nie ma w checkoucie ani na ``origin`` (np. gałąź usunięta po force-pushu), więc naprawy nie
+    da się policzyć, a porażka stoi w wyniku zamiast zniknąć."""
+
+    def stan(repo: Path) -> tuple[str, str, str]:
+        main, czerwona, _ = _usuniety_zly_commit(repo)
+        return main, czerwona, "f" * 40
+
+    rekordy = _rekordy_luki(tmp_path, stan)
+
+    assert (rekordy.pr[0].naprawa, _klucze(rozstrzygnij(rekordy).niepoliczone)) == (None, ("2 verify-a/ci",))
+
+
 @pytest.mark.parametrize("opis", list(ZNANE_LUKI))
 def test_znana_luka_reguly_naprawy_wymaga_audytu_w_wyniku(tmp_path: Path, opis: str) -> None:
     """Postać, w której reguła naprawy się myli, stoi w wyniku jako kandydat albo niepoliczony z „wymaga audytu”, więc
