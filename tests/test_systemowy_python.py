@@ -15,6 +15,10 @@ import tomllib
 
 import pytest
 
+from tests.fixtures.git_repo import copy_files, with_imports
+
+import setup_worktree
+
 ROOT = Path(__file__).resolve().parents[1]
 TARGETS: dict[str, str] = tomllib.loads((ROOT / "ruff.toml").read_text(encoding="utf-8"))["per-file-target-version"]
 LOAD = (
@@ -59,3 +63,32 @@ def test_plik_uruchamiany_przed_venv_importuje_sie_systemowym_pythonem(path: str
     )
 
     assert imported.returncode == 0, imported.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
+def test_setup_worktree_starym_pythonem_bez_uv_konczy_sie_jedna_linia_z_poleceniem_naprawy(tmp_path: Path) -> None:
+    target = TARGETS["tools/setup_worktree.py"]
+    python = _python(target)
+    if python is None:
+        pytest.skip(f"brak Pythona {target} na tym komputerze")
+    copy_files(tmp_path, with_imports(["tools/setup_worktree.py"]))
+    without_uv = tmp_path / "bez-uv"
+    without_uv.mkdir()
+
+    answered = subprocess.run(
+        [python, "tools/setup_worktree.py"],
+        cwd=tmp_path,
+        env={"PATH": str(without_uv), "PYTHONUTF8": "1"},
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+
+    old, minimum = f"{target[2]}.{target[3:]}", setup_worktree.MINIMUM
+    expected = (
+        f"BŁĄD: Python {old} nie utworzy .venv (repo wymaga {minimum} albo nowszego), a uv nie ma w PATH: "
+        f"uruchom python{minimum} tools/setup_worktree.py albo zainstaluj uv (https://docs.astral.sh/uv/)."
+    )
+    assert (answered.returncode, answered.stdout, answered.stderr.splitlines()) == (1, "", [expected])
+    assert not (tmp_path / ".venv").exists()
