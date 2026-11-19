@@ -270,25 +270,13 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia",),
         "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
     ),
-    # Raporty wykonawców okna poza odczytem okna: postacie z tabeli przypadków przy ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM;
-    # pierwsza to liczby widoku Raporty z przeglądów #2068 (r1, W2) i #2085 (r1 i r2, W1), druga Logi Wpisania raportów
-    # bez Wpisów na życzenie (report_entering.py przed tą zmianą).
+    # Raporty wykonawców okna poza odczytem okna w module rdzenia raportów bez prawa właściciela: liczby widoku Raporty z
+    # przeglądów #2068 (r1, W2) i #2085 (r1 i r2, W1); postacie spoza pakietu odrzuca mypy (DROGI_RAPORTOW_PRZEZ_ODCZYT).
     "from ._model import ReadReport": (SRC_CONFIG, ("rozliczenia", "worker_reports"), "rozliczenia.worker_reports._model.ReadReport"),
-    "from .worker_reports import MailRead, ReadReport": (SRC_CONFIG, ("rozliczenia",), "rozliczenia.worker_reports.ReadReport"),
-    "import rozliczenia.worker_reports as reports\ncount = sum(isinstance(read, reports.ReadReport) for read in mails)": (
-        SRC_CONFIG,
-        ("rozliczenia", "centrum"),
-        "rozliczenia.worker_reports.ReadReport",
-    ),
-    # Wejście odczytu okna spoza pamięci Wpisania (EnteringMemory._inputs): postacie z tabeli przypadków przy ZNANE_LUKI_WEJSCIA_ODCZYTU; pierwsza to
-    # Przypomnienia o raporcie z przeglądu #2059 (r1, W1), które budowały wejście same z OwnEntries.EMPTY.
-    "from rozliczenia.worker_reports import OwnEntries, ReportInputs": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.worker_reports.ReportInputs"),
+    # Wejście odczytu okna spoza pamięci Wpisania (EnteringMemory._inputs) w module rdzenia raportów bez prawa
+    # właściciela; postacie spoza pakietu, w tym Przypomnienia o raporcie z przeglądu #2059 (r1, W1), odrzuca mypy
+    # (DROGI_WEJSCIA_ODCZYTU).
     "from ._model import ReportInputs": (SRC_CONFIG, ("rozliczenia", "worker_reports"), "rozliczenia.worker_reports._model.ReportInputs"),
-    "import rozliczenia.worker_reports as reports\ngiven = reports.ReportInputs(mails, addresses, orders, window, memory, kept, present, legend)": (
-        SRC_CONFIG,
-        ("rozliczenia", "centrum"),
-        "rozliczenia.worker_reports.ReportInputs",
-    ),
 }
 
 
@@ -651,6 +639,15 @@ _GLOWA_KAPSULY = (
 # wyniku rdzenia albo faktów kliknięcia (Logi kliknięcia w report_entering.py przed d18d2e48c7); odczyt → zgłoszenie,
 # które go odrzuca.
 DROGI_RAPORTOW_PRZEZ_ODCZYT = {
+    "import z pakietu (Logi kliknięcia w report_entering.py przed d18d2e48c7)": (
+        "from rozliczenia.worker_reports import MailRead, ReadReport\n\nREADS = (MailRead, ReadReport)\n",
+        'has no attribute "ReadReport"',
+    ),
+    "atrybut pakietu pod aliasem: reports.ReadReport": (
+        "import rozliczenia.worker_reports as reports\n\n\n"
+        "def raporty(reads: tuple[object, ...]) -> int:\n    return sum(isinstance(read, reports.ReadReport) for read in reads)\n",
+        'has no attribute "ReadReport"',
+    ),
     "pole odczytu okna z Raportami wykonawców (#2114 r1 W1)": (
         _GLOWA_ODCZYTU + "    return frozenset(OrderKey(entry.number, report.day, report.worker) for report in read.reports for entry in report.entries)\n",
         "attr-defined",
@@ -738,6 +735,19 @@ ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM = {
     "refleksja po stanie: __getstate__ daje sloty kapsuły": (
         _GLOWA_FAKTOW + "\n\ndef odczyty(facts: EnteringFacts) -> object:\n    return facts.mails.__getstate__()\n"
     ),
+    "refleksja po stanie: __reduce_ex__ daje sloty kapsuły (#2190 r2 D1)": (
+        _GLOWA_FAKTOW + "\n\ndef odczyty(facts: EnteringFacts) -> object:\n    return facts.mails.__reduce_ex__(2)\n"
+    ),
+    "refleksja po nazwie: inspect.getmembers daje pole kapsuły z name mangling (#2190 r2 D1)": (
+        "import inspect\n\n" + _GLOWA_FAKTOW + "\n\n"
+        "def wpisy(facts: EnteringFacts) -> int:\n"
+        '    return sum(len(getattr(read, "entries", ())) for _, value in inspect.getmembers(facts.mails) if isinstance(value, tuple) for read in value)\n'
+    ),
+    "import prywatnej nazwy modułu rdzenia, w pakiecie względny: kodek _mails._read na rekordach zapisu do Logów": (
+        "from rozliczenia.worker_reports import WindowMails\nfrom rozliczenia.worker_reports._mails import _read\n\n\n"
+        "def wpisy(mails: WindowMails) -> int:\n"
+        '    return sum(len(getattr(_read(record), "entries", ())) for record in mails.log())\n'
+    ),
     "mypy nie zna name mangling we wzorcu klasy: case WindowMails(__reads=...) (w działaniu nic nie wiąże)": (
         _GLOWA_KAPSULY + "    match facts.mails:\n        case WindowMails(__reads=reads):\n            return reads\n    return None\n"
     ),
@@ -753,13 +763,15 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     właściciela (``OWNERS``), bo moduł, który sam przechodzi po ``ReadReport``, nie zna raportu z błędem tematu ani
     Wpisu na życzenie (ADR 0041) i liczy po swojemu, które zlecenia mają Wpis tego kliknięcia. Poza pakietem odczyty
     maili są tylko w kapsule ``WindowMails`` (``ReportsOutcome.mails``, ``EnteringFacts.mails``), która nie jest
-    iterowalna i trzyma je w polu z name mangling (``__reads``), a wariantów odczytu pakiet nie wystawia.
+    iterowalna i trzyma je w polu z name mangling (``__reads``), a wariantów odczytu pakiet nie wystawia, więc kształt
+    pilnuje tego mypy; zakaz ruff ``_model.ReadReport`` łapie już tylko moduł rdzenia raportów bez prawa właściciela.
 
-    | Postać | Zakaz | Próbka |
+    | Postać | Strażnik | Próbka |
     |---|---|---|
-    | import względny w pakiecie: ``from ._model import ReadReport`` (#2068 r1 W2, #2085 r1 W1 i r2 W1, ``_figures.py``) | łapie | ``SAMPLES`` |
-    | import z pakietu: ``from .worker_reports import MailRead, ReadReport`` (Logi kliknięcia w ``report_entering.py``) | łapie | ``SAMPLES`` |
-    | atrybut pakietu pod aliasem: ``isinstance(read, reports.ReadReport)`` | łapie | ``SAMPLES`` |
+    | import względny w pakiecie: ``from ._model import ReadReport`` (#2068 r1 W2, #2085 r1 W1 i r2 W1, ``_figures.py``) | ruff ``TID251`` | ``SAMPLES`` |
+    | import z modułu prywatnego spoza pakietu: ``from ..worker_reports._model import ReadReport`` | ``tests/test_granice_importow.py::test_moduly_prywatne_rdzenia_raportow_importuje_tylko_jego_pakiet`` | ``REPORT_CORE_PRIVATE`` tam |
+    | import z pakietu: ``from rozliczenia.worker_reports import MailRead, ReadReport`` (Logi kliknięcia w ``report_entering.py``) | mypy ``attr-defined`` (w działaniu ``ImportError``) | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
+    | atrybut pakietu pod aliasem: ``isinstance(read, reports.ReadReport)`` | mypy ``attr-defined`` | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | pole odczytu okna: ``read_window(inputs).reports`` (#2114 r1 W1) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | prywatne pole odczytu okna: ``read._entering`` | ruff ``SLF001`` | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | wzorzec klasy po nazwie pola: ``case WindowRead(_entering=entering)`` (#2114 r2 W1; pozycyjny wiąże tylko wyniki odczytu) | mypy: ``WindowRead`` nie ma pola z Raportami | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
@@ -772,8 +784,9 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     | pola kapsuły przez ``dataclasses.fields``, ``asdict``, ``replace`` | mypy: kapsuła nie jest dataclass | ``DROGI_RAPORTOW_PRZEZ_ODCZYT`` |
     | zapis do Logów: rekordy ``facts.mails.log()`` z zawężeniem JSON przez ``isinstance`` | przepuszcza (bez zawężenia mypy odrzuca) | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
     | rekordy Logów: ``logged_mails(facts.mails)`` z ``isinstance(read, LoggedReportMail)`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
-    | refleksja po nazwie pola kapsuły: ``getattr(facts.mails, "_WindowMails__reads")``, ``object.__getattribute__`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
-    | refleksja po stanie: ``facts.mails.__getstate__()`` | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | refleksja po nazwie pola kapsuły: ``getattr(facts.mails, "_WindowMails__reads")``, ``object.__getattribute__``, ``inspect.getmembers(facts.mails)`` (#2190 r2 D1) | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | refleksja po stanie: ``facts.mails.__getstate__()``, ``facts.mails.__reduce_ex__(2)`` (#2190 r2 D1) | przepuszcza | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
+    | prywatny kodek odczytów w module rdzenia bez prawa właściciela: ``from ._mails import _read`` na rekordach ``mails.log()`` | przepuszcza (import względny prywatnej nazwy: ``ZNANE_LUKI_IMPORTU_SRC`` w ``tests/test_granice_importow.py``) | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
     | ``case WindowMails(__reads=reads)``, ``vars(facts.mails)``, ``facts.mails.__dict__`` | przepuszcza, ale w działaniu nic nie oddaje (``tests/test_rdzen_raportow.py::test_kapsula_odczytow_maili_nie_oddaje_odczytow_wzorcem_klasy_vars_ani_dict``) | ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` |
 
     Poza ``src/`` zakaz nie obowiązuje: próba skrzynki raportów w ``tools/`` czyta rekordy Logów każdego maila osobno."""
@@ -791,75 +804,96 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     )
 
 
-# Wejście odczytu okna spoza pamięci Wpisania (EnteringMemory._inputs), które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią,
-# konstruktor z typu wejścia albo z refleksji w module spoza właścicieli i konstruktor w module z prawem do typu (granica
-# zakazu nazwy); opis → (sonda, kod).
-_CENTRUM_PROBE = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
+# Wejście odczytu okna spoza pamięci Wpisania (EnteringMemory._inputs): postać → (kod, zgłoszenie, które ją odrzuca).
+# Spoza pakietu rdzenia raportów, bo pakiet nie wystawia ReportInputs ani ReminderInputs, a EnteringMemory nie oddaje
+# wejścia; import z modułu prywatnego spoza pakietu odrzuca tests/test_granice_importow.py (REPORT_CORE_PRIVATE).
+DROGI_WEJSCIA_ODCZYTU: Final = {
+    "import z pakietu w Centrum: Przypomnienia o raporcie z własnym wejściem (#2059 r1 W1)": (
+        "from rozliczenia.worker_reports import OwnEntries, ReportInputs\n\nINPUTS = (OwnEntries.EMPTY, ReportInputs)\n",
+        'has no attribute "ReportInputs"',
+    ),
+    "atrybut pakietu pod aliasem: reports.ReportInputs": (
+        "import rozliczenia.worker_reports as reports\n\nINPUTS = reports.ReportInputs\n",
+        'has no attribute "ReportInputs"',
+    ),
+    "kopia wejścia pamięci Wpisania z pustą pamięcią przez dataclasses.replace (#2125 r1)": (
+        "import dataclasses\n\nfrom rozliczenia.report_entering import ReportState\n"
+        "from rozliczenia.worker_reports import EnteringMemory, OwnEntries\n\n\n"
+        "def wejscie(state: ReportState) -> object:\n"
+        "    return dataclasses.replace(EnteringMemory(state).report_inputs(), memory=OwnEntries.EMPTY)\n",
+        'has no attribute "report_inputs"',
+    ),
+    "typ pola wejścia przez typing.get_type_hints(ReminderInputs) (#2125 r4 D1)": (
+        "import typing\n\nfrom rozliczenia.worker_reports import ReminderInputs\n\nINPUTS = typing.get_type_hints(ReminderInputs)[\"reports\"]\n",
+        'has no attribute "ReminderInputs"',
+    ),
+}
+# Postacie, które zakaz _model.ReportInputs i mypy przepuszczają: refleksja po nazwie spoza pakietu (w działaniu
+# AttributeError) i wejście zbudowane w module rdzenia raportów, w pakiecie importem względnym, którego
+# tests/test_granice_importow.py nie sprawdza (ZNANE_LUKI_IMPORTU_SRC); próbka importuje bezwzględnie, bo mypy sprawdza ją
+# w katalogu tymczasowym.
 ZNANE_LUKI_WEJSCIA_ODCZYTU = {
-    "zakaz zna tylko nazwę klasy, nie kopię: wejście z report_inputs z pustą pamięcią przez dataclasses.replace": (
-        _CENTRUM_PROBE,
-        "import dataclasses\n\n"
-        "from rozliczenia.worker_reports import EnteringMemory, OwnEntries\n\n"
-        "given = dataclasses.replace(EnteringMemory(state).report_inputs(*inputs), memory=OwnEntries.EMPTY)\n",
+    "refleksja po nazwie: getattr(pakiet, \"ReportInputs\") (w działaniu AttributeError, #2125 r4 D1)": (
+        "from rozliczenia import worker_reports\n\nINPUTS = getattr(worker_reports, \"ReportInputs\")\n"
     ),
-    "zakaz zna tylko nazwę klasy, nie jej typ z wartości: type(wejście)(…)": (
-        _CENTRUM_PROBE,
-        "from rozliczenia.worker_reports import EnteringMemory, OwnEntries\n\n"
-        "given = EnteringMemory(state).report_inputs(*inputs)\n"
-        "again = type(given)(given.mails, given.addresses, given.orders, given.window, OwnEntries.EMPTY, frozenset(), given.present, given.legend)\n",
+    "refleksja po nazwie w module rdzenia raportów: getattr(_model, \"ReportInputs\")": (
+        "from rozliczenia.worker_reports import _model\n\nINPUTS = getattr(_model, \"ReportInputs\")\n"
     ),
-    "refleksja po nazwie: getattr(pakiet, \"ReportInputs\")(…) (#2125 r4 D1)": (
-        _CENTRUM_PROBE,
-        "from rozliczenia import worker_reports\n"
-        "from rozliczenia.worker_reports import OwnEntries\n\n"
-        "given = getattr(worker_reports, \"ReportInputs\")(mails, addresses, orders, window, OwnEntries.EMPTY, frozenset(), present, legend)\n",
+    "zakaz zna tylko nazwę klasy, nie kopię: pole Przypomnień rdzenia z pustą pamięcią przez dataclasses.replace": (
+        "import dataclasses\n\nfrom rozliczenia.worker_reports import OwnEntries\n"
+        "from rozliczenia.worker_reports._reminders import ReminderInputs\n\n\n"
+        "def wejscie(inputs: ReminderInputs) -> object:\n    return dataclasses.replace(inputs.reports, memory=OwnEntries.EMPTY)\n"
     ),
-    "refleksja po nazwie: typ pola z typing.get_type_hints(ReminderInputs)[\"reports\"] (#2125 r4 D1)": (
-        _CENTRUM_PROBE,
-        "import typing\n\n"
-        "from rozliczenia.worker_reports import OwnEntries, ReminderInputs\n\n"
-        "given = typing.get_type_hints(ReminderInputs)[\"reports\"](mails, addresses, orders, window, OwnEntries.EMPTY, frozenset(), present, legend)\n",
-    ),
+}
+# Granica prawa właściciela: ruff zwalnia cały plik, więc konstruktor w module, który bierze typ tylko jako pole, przechodzi.
+ZNANE_LUKI_PRAWA_DO_WEJSCIA = {
     "prawo do nazwy obejmuje plik: konstruktor w Przypomnieniach rdzenia, które biorą wejście jako pole": (
-        SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "_reminders.py",
-        "from ._model import OwnEntries, ReportInputs\n\n"
-        "given = ReportInputs(mails, addresses, orders, window, OwnEntries.EMPTY, frozenset(), present, legend)\n",
+        "from ._model import OwnEntries, ReportInputs\n\n\n"
+        "def wejscie(fields: tuple[object, ...]) -> object:\n    return ReportInputs(*fields, memory=OwnEntries.EMPTY)\n"
     ),
 }
 
 
-@wymaga_ruff
-def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_przez_ruff() -> None:
-    """Wejście odczytu okna rdzenia raportów (``ReportInputs``) buduje w ``src/`` tylko
-    pamięć Wpisania za swoimi operacjami (``worker_reports.EnteringMemory.enter`` i ``reminders``), to samo dla Wpisania raportów i Przypomnień o raporcie, bo dzień
-    raportu zależy od pamięci Wpisania: wejście zbudowane obok, np. z ``OwnEntries.EMPTY`` (#2059 r1 W1), daje
-    ``read_window`` inny dzień raportu niż kafelek Wpisania. Typ wejścia biorą też odczyt okna, Przypomnienia rdzenia
-    (``ReminderInputs.reports``) i operacja Wpisania (``_operation.enter_reports``) (``OWNERS``), więc zakaz zatrzymuje
-    nazwę, nie samo wywołanie konstruktora.
+@wymaga_ruff_i_mypy
+def test_wejscie_odczytu_okna_spoza_pamieci_wpisania_nie_przechodzi_a_znane_luki_przechodza_przez_ruff_i_mypy(tmp_path: Path) -> None:
+    """Wejście odczytu okna rdzenia raportów (``ReportInputs``) buduje w ``src/`` tylko pamięć Wpisania za swoimi
+    operacjami (``worker_reports.EnteringMemory.enter`` i ``reminders``), to samo dla Wpisania raportów i Przypomnień o
+    raporcie, bo dzień raportu zależy od pamięci Wpisania: wejście zbudowane obok, np. z ``OwnEntries.EMPTY`` (#2059 r1
+    W1), daje ``read_window`` inny dzień raportu niż kafelek Wpisania. Pakiet nie wystawia wejścia, a ``EnteringMemory``
+    go nie oddaje, więc spoza pakietu pilnuje tego mypy; zakaz ruff ``_model.ReportInputs`` łapie już tylko moduł
+    rdzenia raportów bez prawa właściciela (typ biorą odczyt okna, Przypomnienia rdzenia i operacja Wpisania).
 
-    Pamięć Wpisania, którą wejście niesie, pilnuje typ ``EnteringMemory`` (powstaje tylko z ``ReportState``), a jej
+    Pamięć Wpisania, którą wejście niesie, pilnuje typ ``EnteringMemory`` (powstaje tylko z ``MemorySource``), a jej
     postacie (#2125 r1–r3 W1) i znane luki są w
     ``tests/test_centrum_wpisanie_raportow.py::test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza``.
 
-    | Postać | Zakaz | Próbka |
+    | Postać | Strażnik | Próbka |
     |---|---|---|
-    | import z pakietu w Centrum: ``from rozliczenia.worker_reports import OwnEntries, ReportInputs`` | łapie | ``SAMPLES`` |
-    | import względny w pakiecie: ``from ._model import ReportInputs`` | łapie | ``SAMPLES`` |
-    | atrybut pakietu pod aliasem: ``reports.ReportInputs(…)`` | łapie | ``SAMPLES`` |
-    | moduł z prawem do innej nazwy: ``report_reminders.py`` (``DEFAULT_REMINDERS``) z ``ReportInputs`` (#2059 r1 W1) | ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw`` z komunikatem zakazu | ``OWNERS`` |
-    | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``_operation``) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | kopia wejścia ze zmienioną pamięcią: ``dataclasses.replace(wejście, memory=…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | konstruktor z typu wartości: ``type(wejście)(…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
-    | refleksja po nazwie: ``getattr(worker_reports, "ReportInputs")(…)``, ``typing.get_type_hints(ReminderInputs)["reports"](…)`` (#2125 r4 D1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | import względny w module rdzenia raportów: ``from ._model import ReportInputs`` | ruff ``TID251`` | ``SAMPLES`` |
+    | import z modułu prywatnego spoza pakietu: ``from ..worker_reports._model import ReportInputs`` | ``tests/test_granice_importow.py::test_moduly_prywatne_rdzenia_raportow_importuje_tylko_jego_pakiet`` | ``REPORT_CORE_PRIVATE`` tam |
+    | import z pakietu w Centrum: ``from rozliczenia.worker_reports import OwnEntries, ReportInputs`` (#2059 r1 W1) | mypy ``attr-defined`` (w działaniu ``ImportError``) | ``DROGI_WEJSCIA_ODCZYTU`` |
+    | atrybut pakietu pod aliasem: ``reports.ReportInputs`` | mypy ``attr-defined`` | ``DROGI_WEJSCIA_ODCZYTU`` |
+    | kopia albo typ wejścia pamięci: ``dataclasses.replace(EnteringMemory(state).report_inputs(), …)``, ``type(…)(…)`` (#2125 r1) | mypy ``attr-defined``: pamięć nie oddaje wejścia | ``DROGI_WEJSCIA_ODCZYTU`` |
+    | typ pola: ``typing.get_type_hints(ReminderInputs)["reports"]`` (#2125 r4 D1) | mypy ``attr-defined`` (w działaniu ``ImportError``) | ``DROGI_WEJSCIA_ODCZYTU`` |
+    | refleksja po nazwie: ``getattr(worker_reports, "ReportInputs")`` | przepuszcza (w działaniu ``AttributeError``) | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | w module rdzenia raportów: ``getattr(_model, "ReportInputs")``, ``dataclasses.replace(inputs.reports, memory=…)`` z ``ReminderInputs`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``_operation``) | przepuszcza | ``ZNANE_LUKI_PRAWA_DO_WEJSCIA`` |
 
     Poza ``src/`` zakaz nie obowiązuje: testy rdzenia budują wejście same, a próba skrzynki raportów w ``tools/`` czyta
     każdy mail bez pamięci Wpisania."""
-    zgloszenia = {
-        opis: [message for _, name, message in _banned_names("--stdin-filename", str(probe), "-", code=kod) if name != STAR]
-        for opis, (probe, kod) in ZNANE_LUKI_WEJSCIA_ODCZYTU.items()
-    }
+    probe = SRC_CONFIG.parent / "rozliczenia" / "worker_reports" / "sonda_luki.py"
+    probki = {opis: kod for opis, (kod, _) in DROGI_WEJSCIA_ODCZYTU.items()} | ZNANE_LUKI_WEJSCIA_ODCZYTU
+    (tmp_path / "prawo").mkdir()
 
-    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_WEJSCIA_ODCZYTU)")
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=probe)
+    zgloszenia |= ruff(zapisz(ZNANE_LUKI_PRAWA_DO_WEJSCIA, tmp_path / "prawo"), sonda=probe.with_name("_reminders.py"))
+
+    przepuszczone = {opis: zgloszenia[opis] for opis, (_, odmowa) in DROGI_WEJSCIA_ODCZYTU.items() if not any(odmowa in z for z in zgloszenia[opis])}
+    assert przepuszczone == {}, "rdzeń raportów znów oddaje wejście odczytu okna spoza pamięci Wpisania: daj wołającemu operację EnteringMemory"
+    assert_znane_luki(
+        {opis: zgloszenia[opis] for opis in (*ZNANE_LUKI_WEJSCIA_ODCZYTU, *ZNANE_LUKI_PRAWA_DO_WEJSCIA)},
+        "tests/test_zakazy_ruff.py (ZNANE_LUKI_WEJSCIA_ODCZYTU, ZNANE_LUKI_PRAWA_DO_WEJSCIA)",
+    )
 
 # Prawo właściciela: plik, który konfiguracja ruff zwalnia z TID251 (per-file-ignores w ruff.toml korzenia) → zakazane nazwy,
 # których jest właścicielem. Ruff zwalnia plik z całego TID251, a nie z jednej nazwy, więc ta tabela trzyma resztę
