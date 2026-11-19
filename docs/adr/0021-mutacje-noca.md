@@ -47,16 +47,22 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Bazą jest commit, do którego doszedł ostatni udany przebieg (`do` z jego artefaktu `zakres-nocy`, a w runie bez niego jego commit), a bez udanego przebiegu commit sprzed 24 h.
   Ręczny run z `od` spoza linii `main` liczy od wspólnego przodka HEAD i `od` (`git merge-base`), od którego liczy też każda część, więc plan i części mutują te same zmiany, a cofnięcie zmian gałęzi `od` nie wchodzi do nocy; `od` bez wspólnego przodka z HEAD kończy plan błędem.
 - Mutacje dzielą się na części, kolejne na liście posortowanej po plikach, żeby mutacje każdej części biegły z testami tylko kilku plików.
-  Część ma 6 pełnych kolejek po 4 mutacje naraz, czyli 24 mutacje (`NA_CZESC` w `tools/mutacje_nocne.py`), a jej limit czasu to 175 min w zadaniu 180 min.
+  Część ma 6 pełnych kolejek po 4 mutacje naraz, czyli 24 mutacje (`NA_CZESC` w `tools/mutacje_nocne.py`), a jej limit czasu to 235 min w zadaniu 240 min.
   Koszt mutacji zależy od pliku o dwa rzędy wielkości, a przed pokryciem plan go nie zna.
   W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300, 41601085650, 2892 mutacje) mediana mutacji pliku wynosiła 1–210 s, ale 34 mutacje trwały pełne 900 s, 16 z nich w `tools/mutacje.py`.
   Pokrycie części trwało tam najwyżej 1006 s, a brama typów najwyżej 58 s.
   Mutacje po 900 s kończyły się w testach linii, które biegną po 4 mutacje naraz.
   Testy kodu pliku, też po 4 naraz, trwały dla jednej mutacji najwyżej 836 s, a testy pliku, po jednej mutacji, najwyżej 441 s.
   Do testów kodu pliku doszło najwyżej 11 z 32 mutacji części, do testów pliku 37 z 93, a do obu naraz najwyżej po 12 z 49.
-  Część mieści się w limicie, gdy ma najgorszy czas każdego przebiegu naraz, choć zmierzono je w różnych częściach, a do dalszych przebiegów dochodzi tyle jej mutacji, co w którejś zmierzonej części: 16 mutacji `tools/mutacje.py` po 900 s w testach linii, reszta po 210 s, testy kodu pliku po 836 s, testy pliku po 441 s, pokrycie i brama typów, najgorzej ok. 9700 s.
-  Przy 28 mutacjach tak liczona część trwa ok. 10 800 s, ponad limit.
-  Gdyby udziały dalszych przebiegów wziąć z różnych części (11 z 32 do testów kodu pliku i 37 z 93 do testów pliku w jednej części), w limicie zmieściłoby się 20 mutacji.
+  Część mieści się w limicie, gdy ma najgorszy czas każdego przebiegu naraz, choć zmierzono je w różnych częściach, a do dalszych przebiegów dochodzi tyle jej mutacji, co w którejś zmierzonej części: 16 mutacji `tools/mutacje.py` po 900 s w testach linii, reszta po 210 s, testy kodu pliku po 836 s, testy pliku po pełnym limicie mutacji i brama typów, najgorzej ok. 13 400 s.
+  Przy 28 mutacjach tak liczona część trwa ok. 15 400 s, ponad limit.
+  Do 18.11 limit wynosił 175 min, a testy pliku w tym rachunku trwały 441 s (najwyżej w nocach 31.10–3.11), z pokryciem części 1006 s, więc część trwała najgorzej ok. 9700 s.
+  W nocach 17–19.11 (runy 44055469611, 44216322171, 44441152441) testy pliku plików Centrum, 4000–5300 testów, trwały bez mutacji 560–890 s, a mutacja, której nie złapały, zwykle kończyła je w limicie mutacji 900 s.
+  Do testów pliku doszło do 13 z 24 mutacji części, a najdłuższe części tych nocy miały 10 155, 10 037 i 10 044 s testów: co noc jedna doszła do limitu 175 min i zostawiła 8, 2 i 10 mutacji bez werdyktu.
+  Pokrycie biegnie od 16.11 w osobnych zadaniach (w części najwyżej 1 s), a brama typów części trwała najwyżej 156 s; z tymi czasami część mieści się w 235 min, a rozmiar części zostaje.
+  Składy części tych nocy, z testami pliku i mutacjami w testach linii po 900 s, dają w tym rachunku do ok. 17 100 s, ale żadna ze 158 części tych nocy nie przekroczyła 10 200 s testów.
+  Limit 235 min w zadaniu 240 min zaproponował odczyt nocy 19.11, a Maks go przyjął („tak”, 19.11); rozmiar części i liczba części nocy zostają, bo ta decyzja ich nie dotyczy.
+  Gdyby udziały dalszych przebiegów wziąć z różnych części (11 z 32 do testów kodu pliku i 37 z 93 do testów pliku w jednej części), w limicie 175 min zmieściłoby się 20 mutacji.
   Mutacja, która trwa pełny limit także w testach pliku, może limit części przekroczyć i zostaje wtedy bez werdyktu.
   Te same czasy w częściach pierwszej nocy po limicie mutacji nocy dają przy 25 mutacjach najdłuższą część ok. 3400–3600 s, więc w limicie 3300 s ona sama czerwieniłaby każdą noc z tym samym zakresem.
   Przy 24 mutacjach najdłuższa część tej nocy (24 mutacje `tools/lib/wplyw_zmiany.py`, z czego 6 w testach pliku po kolei przez ok. 2300 s) trwa tak liczona, ze wszystkimi przebiegami testów, ok. 4700 s, mniej niż połowę limitu części.

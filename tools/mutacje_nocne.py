@@ -129,10 +129,11 @@ PREFIKS = "MUTACJE NOCNE"
 # Część to 6 pełnych kolejek po WORKERS mutacji naraz. W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300,
 # 41601085650) mediana mutacji pliku wynosiła 1–210 s, ale 16 mutacji tools/mutacje.py trwało w testach linii pełny limit
 # mutacji (MUTATION_LIMIT_S). Testy kodu pliku jednej mutacji trwały najwyżej 836 s (doszło do nich najwyżej 11 z 32
-# mutacji części), testy pliku, które biegną po jednej, najwyżej 441 s (najwyżej 37 z 93), pokrycie części 1006 s, a brama
-# typów 58 s. Część mieści się w limicie czasu części (PART_LIMIT_S), gdy ma najgorszy czas każdego przebiegu naraz, a do
-# dalszych przebiegów dochodzi tyle jej mutacji, co w którejś zmierzonej części: ok. 9700 s, a o kolejkę większa ok.
-# 10 800 s (ADR 0021). Mutacja, która trwa pełny limit także w testach pliku, może go przekroczyć i zostaje bez werdyktu.
+# mutacji części), a testy pliku, które biegną po jednej, w nocach 17–19.11 do pełnego limitu mutacji (najwyżej 37 z 93).
+# Pokrycie biegnie w osobnych zadaniach, a brama typów części trwała najwyżej 156 s. Część mieści się w limicie czasu
+# części (PART_LIMIT_S), gdy ma najgorszy czas każdego przebiegu naraz, a do dalszych przebiegów dochodzi tyle jej
+# mutacji, co w którejś zmierzonej części 31.10–3.11: ok. 13 400 s, a o kolejkę większa ok. 15 400 s (ADR 0021).
+# Mutacja, która trwa pełny limit także w testach pliku, może go przekroczyć i zostaje bez werdyktu.
 NA_CZESC = 6 * mutacje_zmiany.WORKERS
 # Zadania części biegną najwyżej po 17 naraz, a zadania skryptów skilli po 3 (max-parallel w mutacje-nocne.yml), bo 60
 # zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20. W 6 nocach 12–17.11 zmiany main dawały
