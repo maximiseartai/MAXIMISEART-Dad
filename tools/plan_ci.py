@@ -29,6 +29,10 @@ run (``STALE_ZADANIA``, zadania pytest i Mutation checks) przekroczyłby limit z
 (``ZADANIA_RUNU`` na pull request, ``ZADANIA_RUNU_MAIN`` na pushu, ``ZADANIA_RUNU_NOCY`` nocą), cel wszystkich torów
 rośnie co ``KROK_CELU_S``.
 
+Plan pull requestu wycenia w cieniu każdy wariant ``Podstawy`` zakresu (ADR 0020, D1): ten sam pytest z krokami skilli
+wariantu, na tych samych czasach i tym samym limicie zadań. Linia ``CIEŃ PODSTAW`` podaje dla każdego ścianę, liczbę
+zadań i kroków skilli, a ``plan.json`` pole ``cien``; wykonuje się tylko wariant ``NA_ZYWO``.
+
 Plan (``tools/lib/plan_runu.py``) zapisuje się w pliku ``--wyjscie``, a macierze zadań w ``GITHUB_OUTPUT``: każde zadanie
 wykonuje swoje jednostki (``tools/ci/wykonaj_zadanie.py``), a ``Required CI status`` sprawdza je wobec planu
 (``tools/ci/werdykt_required.py``). Zadanie pytest dostaje w macierzy ``limit_minut`` (``timeout-minutes`` w ``ci.yml``),
@@ -46,7 +50,7 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import math
 import os
@@ -60,10 +64,10 @@ import czasy_ci
 from github import GitHub
 import jednostka
 from jednostka import Klucz, Rodzaj
-from plan_runu import Plan, Zadanie
+from plan_runu import Cien, Plan, Zadanie
 from repo import BASE, ROOT
 from wplyw_zmiany import changed_since
-from zakres_runu import KROKI, MUTACJE, RDZENIE_RUNNERA, TORY, KrokSkilla, Tor, ZakresRunu, Zdarzenie, zakres
+from zakres_runu import KROKI, MUTACJE, NA_ZYWO, RDZENIE_RUNNERA, TORY, KrokSkilla, Podstawy, Tor, ZakresRunu, Zdarzenie, zakres
 
 WORKERY = RDZENIE_RUNNERA  # pytest -n auto
 # W symulacji 60 PR (29.10) cel 60, 75 i 90 s daje bramce ten sam p50 i p90, bo ścianę trzyma jednostka, której plan
@@ -265,6 +269,18 @@ def rozplanuj(
     return Plan(zdarzenie, cel, runy, tuple(zadania), bledy, zmienione_pliki_testow)
 
 
+def w_cieniu(plan: Plan, kroki: Mapping[Podstawy, Sequence[KrokSkilla]], pytest: Sequence[Wycena], czasy: czasy_ci.Czasy) -> tuple[Cien, ...]:
+    """Cień planu ``plan``: dla każdego wariantu z ``kroki`` (``ZakresRunu.cien``) jego kroki skilli i plan z nimi obok
+    wycen pytest ``pytest``; wariant ``NA_ZYWO`` to sam ``plan``, więc jego cień zgadza się z wykonaniem."""
+
+    cien = []
+    for wariant, wybrane in kroki.items():
+        wyceniony = plan if wariant is NA_ZYWO else rozplanuj([*pytest, wycen_mutacje(wybrane, czasy)], plan.zdarzenie, plan.runy)
+        sciana = max((zadanie.sciana_s for zadanie in wyceniony.zadania), default=0.0)
+        cien.append(Cien(wariant, tuple(w.krok.key for w in wybrane), sciana, len(wyceniony.zadania)))
+    return tuple(cien)
+
+
 def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
     run = STALE_ZADANIA + len(plan.zadania)
     zrodlo = ", ".join(map(str, plan.runy)) or "brak (wagi domyślne)"
@@ -286,6 +302,9 @@ def _wypisz(plan: Plan, praca: ZakresRunu, wyceny: Sequence[Wycena]) -> None:
         print(f"POMINIĘTY {krok.name}: {powod}")
     if plan.zmienione_pliki_testow:
         print(f"BEZ PONOWIENIA | {len(plan.zmienione_pliki_testow)} plików testów zmienionych przez ten PR")
+    if plan.cien:
+        warianty = " | ".join(f"{w.wariant} {w.sciana_s:.0f} s, {w.zadania} zadań, {len(w.kroki)} kroków skilli" for w in plan.cien)
+        print(f"CIEŃ PODSTAW | {warianty} | na żywo {NA_ZYWO} (ADR 0020, D1)")
     print(f"PLAN CI DIGEST | {plan.digest}")
 
 
@@ -298,6 +317,7 @@ def _plan(args: argparse.Namespace, root: Path, github: GitHub) -> int:
     wyceny = [*(wycen(tor, praca.pliki, czasy, praca.przegladarka) for tor in praca.tory), wycen_mutacje(praca.wybrane, czasy)]
     bledy = tuple(f"{nazwa}: {powod}" for nazwa, powod in praca.bledy)
     plan = rozplanuj(wyceny, args.zdarzenie, czasy.runy, bledy, tuple(sorted(praca.zmienione_pliki_testow)))
+    plan = replace(plan, cien=w_cieniu(plan, praca.cien, wyceny[:-1], czasy))
     _wypisz(plan, praca, wyceny)
     if args.wyjscie:
         args.wyjscie.parent.mkdir(parents=True, exist_ok=True)

@@ -47,19 +47,18 @@ import argparse
 from collections import Counter
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import asdict, dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 import enum
 import json
 import math
 from pathlib import Path
 import subprocess
 import sys
-import time
 from typing import Any
-import urllib.parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+from api_actions import STRONA, Api, runy
 from github import REPO, REQUIRED, BladApi, GhApi, GitHub
 from jednostka import Rodzaj
 from plan_runu import Plan
@@ -74,11 +73,7 @@ GITHUB = GhApi(limit_s=60)
 KROK_PRACY = "Run the planned units"
 # Awaria runnerów 11.11 (apt DNS przy instalacji Chromium na Linuksie): runy z tego okna nie mówią o bramce.
 AWARIE = ((datetime(2026, 11, 11, 13, 30, tzinfo=timezone.utc), datetime(2026, 11, 11, 16, 0, tzinfo=timezone.utc)),)
-STRONA = 100
 STRONA_PONOWIONEGO = 30
-# Odpowiedź 5xx API Actions (502, 503) mija po chwili: tyle prób z przerwą.
-PROBY_API = 5
-PRZERWA_API_S = 20.0
 # Początek nazwy zadania w runie → zadanie w ci.yml; pytest i Mutation checks biorą nazwę z toru planu.
 SZABLONY = (
     *((tor.zadanie.partition("(")[0] + "(", tor.szablon) for tor in (*TORY, MUTACJE)),
@@ -224,55 +219,6 @@ class Pomiar:
     @property
     def main(self) -> bool:
         return self.zdarzenie == "push" and self.galaz == "main"
-
-
-class Api:
-    """``gh api`` z odpowiedziami na dysku; ``trwala`` mówi, czy odpowiedź już się nie zmieni (wtedy ją zapisuje)."""
-
-    def __init__(self, katalog: Path, github: GitHub) -> None:
-        self.katalog = katalog / "api"
-        self.katalog.mkdir(parents=True, exist_ok=True)
-        self.github = github
-        self.zapytania = 0
-
-    def json(self, sciezka: str, trwala: Callable[[Any], bool]) -> Any:
-        plik = self.katalog / f"{urllib.parse.quote(sciezka, safe='')}.json"
-        if plik.is_file():
-            return json.loads(plik.read_text(encoding="utf-8"))
-        for proba in range(1, PROBY_API + 1):
-            self.zapytania += 1
-            try:
-                dane = self.github.json(sciezka)
-                break
-            except (BladApi, subprocess.TimeoutExpired) as blad:
-                if proba == PROBY_API or (isinstance(blad, BladApi) and "HTTP 5" not in blad.stderr):
-                    raise
-                time.sleep(PRZERWA_API_S)
-        if trwala(dane):
-            tymczasowy = plik.with_suffix(".pobieranie")
-            tymczasowy.write_text(json.dumps(dane), encoding="utf-8")
-            tymczasowy.replace(plik)
-        return dane
-
-
-def runy(api: Api, od: date, do: date, dzis: date) -> list[dict[str, Any]]:
-    """Runy ``ci.yml`` utworzone w dniach ``od``–``do`` (UTC), po dniu, bo lista API kończy się na 1000 runów."""
-
-    znalezione = []
-    dzien = od
-    while dzien <= do:
-        zamkniety = dzien < dzis
-
-        def trwala(dane: dict[str, Any], zamkniety: bool = zamkniety) -> bool:
-            return zamkniety and all(r["status"] == "completed" for r in dane["workflow_runs"])
-
-        for strona in range(1, 100):
-            partia = api.json(f"{REPO}/actions/workflows/ci.yml/runs?created={dzien.isoformat()}&per_page={STRONA}&page={strona}", trwala)["workflow_runs"]
-            znalezione += partia
-            if len(partia) < STRONA:
-                break
-        dzien += timedelta(days=1)
-    return znalezione
 
 
 def zadania(api: Api, run: dict[str, Any]) -> list[Zadanie]:

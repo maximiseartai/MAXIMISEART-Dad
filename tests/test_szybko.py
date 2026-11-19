@@ -944,7 +944,8 @@ def _model_skill(repo: Path) -> None:
 
 
 def test_zmiana_kodu_opisanego_modelem_skilla_wywraca_szybkie_sprawdzenie_bez_tlc(tmp_path: Path) -> None:
-    """CI kończy podstawę skilla porażką rozjazdu modelu (#880, #882), więc szybko też pada, z drogą naprawy."""
+    """CI kończy podstawę skilla porażką rozjazdu modelu (#880, #882), na pull request tylko przy zmianie folderu skilla,
+    a na ``main`` po merge'u zawsze (D1), więc szybko pada już przy zmianie samego kodu z ``pilnuje``, z drogą naprawy."""
 
     repo = _repo(tmp_path)
     _model_skill(repo)
