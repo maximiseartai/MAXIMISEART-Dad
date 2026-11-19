@@ -1,4 +1,31 @@
-"""Mierzy z API Actions czas push → Required CI status według klas zmian PR i strażnika main; użyj przed i po zmianie CI.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timezone
+import enum
+import json
+import math
+from pathlib import Path
+import statistics
+import subprocess
+import sys
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from api_actions import REZERWA_POMIARU, STRONA, Api, PonizejRezerwy, ZRezerwa, runy
+from github import REPO, REQUIRED, BladApi, GhApi, GitHub
+from jednostka import Rodzaj
+from plan_runu import Z_PLANU, Plan
+import repo
+from repo import BASE, ROOT
+from wplyw_zmiany import Context, run_all
+from zakres_runu import MUTACJE, TORY
+
+OPIS = """Mierzy z API Actions czas push → Required CI status według klas zmian PR i strażnika main; użyj przed i po zmianie CI.
 
 Run to run workflow ``ci.yml`` z okna ``--od``–``--do`` (dzień utworzenia runu, UTC). Run z okna awarii runnerów
 (``AWARIE``, 11.11 apt DNS na Linuksie) liczy się tylko jako pominięty. Czasy liczą się z pierwszej próby runu, bo to
@@ -52,33 +79,6 @@ linią ``POMIAR CI ODMOWA`` z godziną resetu i kodem 1. Wynik: ``<katalog>/pomi
 
     .venv/bin/python tools/pomiar_ci.py --katalog ~/.t3/notes/<bieg>/pomiar --od 2026-11-02 --do 2026-11-12 --artefakty ~/.t3/notes/<bieg>/pomiar/artefakty
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
-import enum
-import json
-import math
-from pathlib import Path
-import statistics
-import subprocess
-import sys
-from typing import Any
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from api_actions import REZERWA_POMIARU, STRONA, Api, PonizejRezerwy, ZRezerwa, runy
-from github import REPO, REQUIRED, BladApi, GhApi, GitHub
-from jednostka import Rodzaj
-from plan_runu import Z_PLANU, Plan
-import repo
-from repo import BASE, ROOT
-from wplyw_zmiany import Context, run_all
-from zakres_runu import MUTACJE, TORY
 
 GITHUB = ZRezerwa(GhApi(limit_s=60), REZERWA_POMIARU)
 
@@ -531,7 +531,7 @@ def podsumowanie(pomiary: list[Pomiar], bledy_api: int, zapytania: int) -> str:
 
 
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB, kopia: Path | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--katalog", type=Path, required=True, help="Folder biegu: pomiar.jsonl, tabela.md.")
     parser.add_argument("--od", type=date.fromisoformat, default=date(2026, 11, 2), help="Pierwszy dzień okna (UTC).")
     parser.add_argument("--do", type=date.fromisoformat, help="Ostatni dzień okna (UTC), domyślnie dziś.")

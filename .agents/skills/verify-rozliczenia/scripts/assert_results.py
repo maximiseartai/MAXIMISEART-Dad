@@ -1,5 +1,3 @@
-"""Assert safe, user-visible workbook results without printing row contents."""
-
 from __future__ import annotations
 
 import hashlib
@@ -30,6 +28,8 @@ from atrapy.scenariusz_rozliczen import (
 )
 from atrapy.settlement import PERIOD, SOURCE_NAME, WORKERS
 from rozliczenia.staged_publication import staging_prefix
+
+OPIS = """Assert safe, user-visible workbook results without printing row contents."""
 
 WORKER_NAMES = tuple(WORKERS.values())
 PHASES = ("Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie")
@@ -334,7 +334,7 @@ def _assert_existing_output(root: Path, result_path: Path | None, expected_stop:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of a settlement fixture")
     parser.add_argument(
         "--expect",

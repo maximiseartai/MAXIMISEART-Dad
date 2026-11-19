@@ -292,8 +292,6 @@ class RecordMaker:
 
 @cache
 def _system() -> str:
-    """System raz na pracę Centrum, przy pierwszych Logach, nie przy starcie; nigdy ``platform.node()`` (nazwa komputera)."""
-
     return platform.platform()
 
 

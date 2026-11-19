@@ -27,6 +27,17 @@ ZADANIA_RUNU = f"{REPO}/actions/runs/7/jobs?filter=all&per_page=100&page=1"
 LISTA_RUNOW = f"{REPO}/actions/workflows/ci.yml/runs?created=2026-11-03&"
 RESET = datetime(2026, 11, 19, 13, 5, tzinfo=timezone.utc).timestamp()
 GODZINA_RESETU = f"{datetime.fromtimestamp(RESET, timezone.utc).astimezone():%H:%M}"
+PODPROCES = """
+import sys
+import api_actions
+
+class GitHub:
+    def json(self, sciezka):
+        return {"z": "github"}
+
+print(api_actions.odmowa(int(sys.argv[2])))
+print(api_actions.Api(GitHub()).json(sys.argv[1], lambda dane: False))
+"""
 
 
 class _GitHub:
@@ -63,17 +74,27 @@ def dom(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return tmp_path / "dom"
 
 
-def test_testy_i_ich_podprocesy_nie_czytaja_kopii_api_komputera() -> None:
-    domyslna = Path.home() / ".cache" / "maximiseart"
+def test_zapas_i_odpowiedzi_api_w_domu_komputera_nie_zmieniaja_wyniku_testu_ani_jego_podprocesu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    dom = tmp_path / "dom"
+    for nazwa in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(nazwa, str(dom))
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    stan_komputera = dom / ".cache" / "maximiseart"
+    _zapisz_zapas(stan_komputera, 0, time.time())
+    Api(_GitHub(), stan_komputera / "api").json(ZADANIA_RUNU, lambda dane: True)
+    github = _GitHub()
+
+    w_tescie = (api_actions.odmowa(REZERWA_SCALANIA), Api(github).json(ZADANIA_RUNU, lambda dane: False) is not None)
     w_podprocesie = subprocess.run(
-        [sys.executable, "-c", "import api_actions; print(api_actions.kopia_komputera())"],
+        [sys.executable, "-c", PODPROCES, ZADANIA_RUNU, str(REZERWA_SCALANIA)],
         cwd=ROOT / "tools" / "lib",
         capture_output=True,
         text=True,
         check=True,
-    ).stdout.strip()
+    ).stdout.splitlines()
 
-    assert domyslna not in (api_actions.kopia_komputera(), Path(w_podprocesie))
+    assert (w_tescie, github.pytania) == ((None, True), [ZADANIA_RUNU])
+    assert w_podprocesie == ["None", "{'z': 'github'}"]
 
 
 def test_druga_prosba_o_zakonczony_run_z_innego_biegu_bierze_kopie_na_komputerze_bez_zapytania(dom: Path) -> None:

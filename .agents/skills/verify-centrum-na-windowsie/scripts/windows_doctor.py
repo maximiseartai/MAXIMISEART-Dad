@@ -1,10 +1,3 @@
-"""Read-only doctor: is the Centrum on Dad's port this run's, started from its tool, and answering?
-
-    py -3 .agents\\skills\\verify-centrum-na-windowsie\\scripts\\windows_doctor.py --root <run root>
-
-Prints ``DOCTOR OK | pid=… | commit=… | process=… | tool=…`` or ``DOCTOR FAIL | <reason>`` (exit code 1).
-"""
-
 from __future__ import annotations
 
 import json
@@ -19,6 +12,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser
 from atrapy.pliki_taty import SERVICE
+
+OPIS = """Read-only doctor: is the Centrum on Dad's port this run's, started from its tool, and answering?
+
+    py -3 .agents\\skills\\verify-centrum-na-windowsie\\scripts\\windows_doctor.py --root <run root>
+
+Prints ``DOCTOR OK | pid=… | commit=… | process=… | tool=…`` or ``DOCTOR FAIL | <reason>`` (exit code 1).
+"""
 
 
 def diagnose(root: Path) -> str:
@@ -48,7 +48,7 @@ def diagnose(root: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of this Windows run")
     verdict = diagnose(parser.parse_args(argv).root)
     print(verdict, flush=True)

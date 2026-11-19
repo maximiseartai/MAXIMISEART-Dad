@@ -1,4 +1,86 @@
-"""Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom po Zgłoszeniu z Zatrzymania okna efenix.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
+from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
+import enum
+from pathlib import Path
+import re
+import socket
+import sys
+from typing import Final, TypedDict, TypeVar, cast
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
+
+from openpyxl.utils import column_index_from_string
+from openpyxl.worksheet.worksheet import Worksheet
+from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings, Route, sync_playwright
+from playwright.sync_api import Error as PlaywrightError
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from rozliczenia import workbook_files
+from rozliczenia.collective_layout import COST_ROW
+from rozliczenia.efenix_address import readable
+from rozliczenia.efenix_browser import TIMEOUT_MS
+from rozliczenia.efenix_page import (
+    AMOUNT,
+    EXECUTION_DATE,
+    LOGIN_FORM,
+    LOGIN_PAGE,
+    ORDER_ID_FIELD,
+    ORDER_PAGE,
+    QUANTITY,
+    SCRIPT_USES,
+    SEARCH,
+    SHOWS_ANYTHING,
+    Cell,
+    ColumnFault,
+    Element,
+    PageElement,
+    PageKind,
+    ResultsTable,
+    RowFault,
+    RowsFault,
+    ScriptUse,
+    SearchWarning,
+    TableFault,
+    emmett_window,
+    emmett_window_fault,
+    listed,
+    read_order,
+    results_table,
+    search_warning,
+    table_faults,
+)
+from rozliczenia.efenix_checks import PRICING_STATUS
+from rozliczenia.efenix_window import ElementCount, UnexpectedPage
+from rozliczenia.efenix_positions import POSITION_OF_COLUMN
+from rozliczenia.tool_files import COLLECTIVE_TEMPLATE
+from rozliczenia.workbook_files import WorkbookError
+
+from atrapy.model_efenix import CATALOG, EfenixOrder
+from atrapy.atrapa_efenix import (
+    CANCEL_BUTTON,
+    FINGERPRINT_FIELD,
+    LIST_PAGE,
+    LIST_ROWS_PER_PAGE,
+    LIST_SCRIPT,
+    LIST_SEARCH_FIELDS,
+    ORDER_SCRIPT,
+    PASSWORD_FIELD,
+    PRICE_FIELD,
+    PRICING_CARD,
+    SHOWN_PRICE,
+    SIGNUM_FIELD,
+    atrapa_efenix,
+    position_field,
+)
+
+OPIS = """Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom po Zgłoszeniu z Zatrzymania okna efenix.
 
 Narzędzie dla Maksa, poza CI (ADR 0024). Łączy się z Chrome, w którym Maks jest zalogowany do efenix kontem taty, i
 sprawdza budowę, której używa Wycena w efenix i którą odtwarza Atrapa efenix (``tools/lib/atrapy/atrapa_efenix.py``).
@@ -127,88 +209,6 @@ kod 2: różnice albo inne części niesprawdzone, także propozycja Emmetta nie
 liczby, kody pozycji z kolumnami i postać daty i kwoty (cyfry jako ``9``). Kod 1: brak Chrome pod ``--cdp``,
 nieczytelny Wzorzec, efenix nie odpowiada albo Chrome nie jest zalogowany; opis na stderr.
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
-from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
-import enum
-from pathlib import Path
-import re
-import socket
-import sys
-from typing import Final, TypedDict, TypeVar, cast
-from urllib.parse import parse_qs, urlencode, urljoin, urlparse
-
-from openpyxl.utils import column_index_from_string
-from openpyxl.worksheet.worksheet import Worksheet
-from playwright.sync_api import APIRequestContext, Browser, Page, ProxySettings, Route, sync_playwright
-from playwright.sync_api import Error as PlaywrightError
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from rozliczenia import workbook_files
-from rozliczenia.collective_layout import COST_ROW
-from rozliczenia.efenix_address import readable
-from rozliczenia.efenix_browser import TIMEOUT_MS
-from rozliczenia.efenix_page import (
-    AMOUNT,
-    EXECUTION_DATE,
-    LOGIN_FORM,
-    LOGIN_PAGE,
-    ORDER_ID_FIELD,
-    ORDER_PAGE,
-    QUANTITY,
-    SCRIPT_USES,
-    SEARCH,
-    SHOWS_ANYTHING,
-    Cell,
-    ColumnFault,
-    Element,
-    PageElement,
-    PageKind,
-    ResultsTable,
-    RowFault,
-    RowsFault,
-    ScriptUse,
-    SearchWarning,
-    TableFault,
-    emmett_window,
-    emmett_window_fault,
-    listed,
-    read_order,
-    results_table,
-    search_warning,
-    table_faults,
-)
-from rozliczenia.efenix_checks import PRICING_STATUS
-from rozliczenia.efenix_window import ElementCount, UnexpectedPage
-from rozliczenia.efenix_positions import POSITION_OF_COLUMN
-from rozliczenia.tool_files import COLLECTIVE_TEMPLATE
-from rozliczenia.workbook_files import WorkbookError
-
-from atrapy.model_efenix import CATALOG, EfenixOrder
-from atrapy.atrapa_efenix import (
-    CANCEL_BUTTON,
-    FINGERPRINT_FIELD,
-    LIST_PAGE,
-    LIST_ROWS_PER_PAGE,
-    LIST_SCRIPT,
-    LIST_SEARCH_FIELDS,
-    ORDER_SCRIPT,
-    PASSWORD_FIELD,
-    PRICE_FIELD,
-    PRICING_CARD,
-    SHOWN_PRICE,
-    SIGNUM_FIELD,
-    atrapa_efenix,
-    position_field,
-)
 
 # Jedyne żądania do efenix, które narzędzie wysyła: (metoda, ścieżka względem katalogu ``--efenix-url``). Zapis ilości,
 # Emmett, data wykonania, zmiana statusu, Przekazanie do akceptacji, anulowanie, logowanie i wylogowanie nie są na liście.
@@ -980,7 +980,7 @@ def _node_layout(node: _Node) -> tuple[str, str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--efenix-url", required=True, help=f"Adres listy zleceń efenix (…/{LIST_PAGE}).")
     parser.add_argument("--cdp", default="http://127.0.0.1:9222", help="Adres zdalnego debugowania Chrome (domyślnie %(default)s).")
     parser.add_argument(

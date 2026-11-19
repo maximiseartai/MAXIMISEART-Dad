@@ -1,4 +1,23 @@
-"""Bramka korzenia przed merge'em (ADR 0031, decyzje Q8, Q10, Q14, Q17, Q18, Q20, Q25, Q26): opis PR ma sekcję
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import datetime
+import json
+import re
+
+import github
+import naprawia
+import rejestr_korzeni
+from rejestr_korzeni import SECTION, Block
+from repo import REMOTE, ROOT
+import repo
+from stan_pr import Pull
+import straznik
+import szablon_werdyktu
+from szablon_werdyktu import Item
+import werdykt_pr
+
+ZASADY = """Bramka korzenia przed merge'em (ADR 0031, decyzje Q8, Q10, Q14, Q17, Q18, Q20, Q25, Q26): opis PR ma sekcję
 ``## Korzeń`` z blokiem na każde Ważne i każdy czerwony `main`, który PR naprawia, a każdy kod ``NOWY`` z werdyktów PR
 stoi na liście korzeni na HEAD.
 
@@ -68,25 +87,6 @@ kontroli listy przy publikacji, a kod bloku czerwonego `main` nie przechodzi jej
 Odmowa podaje każdą brakującą rzecz, wzór sekcji z bloku ``markdown`` sekcji „Root section” skilla ``pr`` i to, że
 opis poprawia ``gh pr edit N --body-file PLIK`` bez nowego commita i bez nowego werdyktu.
 """
-
-from __future__ import annotations
-
-from collections.abc import Sequence
-from datetime import datetime
-import json
-import re
-
-import github
-import naprawia
-import rejestr_korzeni
-from rejestr_korzeni import SECTION, Block
-from repo import REMOTE, ROOT
-import repo
-from stan_pr import Pull
-import straznik
-import szablon_werdyktu
-from szablon_werdyktu import Item
-import werdykt_pr
 
 MARKER = "tools/lib/bramka_korzenia.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia bramki (werdykt_pr.deployment)
 PATTERN_SKILL = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"

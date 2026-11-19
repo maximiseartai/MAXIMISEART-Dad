@@ -1,4 +1,27 @@
-"""Odpowiada sesji na trzy pytania: czy ktoś zajmuje jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Callable, Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+import io
+import json
+from pathlib import Path
+import re
+import subprocess
+import sys
+import time
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import github
+from ostatnie_linie import AKTUALIZACJA
+import potomne
+from repo import BASE
+import repo
+
+OPIS = """Odpowiada sesji na trzy pytania: czy ktoś zajmuje jej zgłoszenie, czy aktywna praca zmienia jej pliki, czy aktualizować z main; użyj przed startem issue.
 
 Narzędzie nie wylicza pracy w repozytorium. Zaczyna od bieżącego checkoutu (tego, w którym je uruchomiono), jego
 plików i numeru zgłoszenia, i szuka tylko innej pracy, która się z nimi przecina. Bez ``--issue`` i bez plików
@@ -59,29 +82,6 @@ obiektów tylko nieosiągalne obiekty scalenia, które usuwa ``git gc``.
     python3 tools/praca_w_toku.py --lokalnie     # bez GitHuba
     python3 tools/praca_w_toku.py --wszystkie    # także nieaktywne nakładania (czyta każdy worktree)
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Callable, Iterable, Mapping
-from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
-import io
-import json
-from pathlib import Path
-import re
-import subprocess
-import sys
-import time
-from typing import Any
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import github
-from ostatnie_linie import AKTUALIZACJA
-import potomne
-from repo import BASE
-import repo
 
 
 AKTYWNA_S = 24 * 3600
@@ -282,7 +282,7 @@ class _GitHubSkipped(Exception):
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--issue", type=int, metavar="N", help="Także: kto zajmuje zgłoszenie #N.")
     parser.add_argument("--lokalnie", action="store_true", help="Bez wywołań gh.")
     parser.add_argument("--nakladania", action="store_true", help="Tylko nakładania.")
@@ -424,7 +424,7 @@ def claims(issue: int, world: World, gh: GitHub, lines: list[Line]) -> list[Clai
 
 
 def _is_work(work: Work, world: World, read_tree: bool) -> bool:
-    """Czy kandydat to linia pracy (docstring modułu); niezacommitowane pliki czyta tylko z ``read_tree``."""
+    """Czy kandydat to linia pracy (``OPIS``); niezacommitowane pliki czyta tylko z ``read_tree``."""
 
     theirs = world.commits.own(work.tip)
     if work.pr is not None or (work.branch is not None and theirs):

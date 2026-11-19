@@ -1,6 +1,4 @@
-"""Sprawdza model TLA+ karty przeglądarki, która śledzi Uruchomienie procesu i Aktualizację narzędzia.
-
-Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``: każda kolejność zdarzeń strumienia Uruchomień,
+"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``: każda kolejność zdarzeń strumienia Uruchomień,
 odpowiedzi HTTP, kliknięć taty w tej karcie i w drugiej karcie, ponownych startów Centrum i odczytów stanu
 Aktualizacji. Porównuje wynik ze znanymi znaleziskami i opowiada każdy kontrprzykład krokami kodu. Konfiguracje,
 TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu z kodem z ``model/definicje.json`` ma
@@ -21,6 +19,8 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from model_tlc import Model, Obietnica, Stan, main
+
+OPIS = "Sprawdza model TLA+ karty przeglądarki, która śledzi Uruchomienie procesu i Aktualizację narzędzia."
 
 # Akcja modelu i krok kodu, który opisuje (tabela w SKILL.md), w słowach kontrprzykładu.
 _STEPS = {
@@ -116,4 +116,4 @@ MODEL = Model(
 
 
 if __name__ == "__main__":
-    raise SystemExit(main(MODEL, opis=__doc__.splitlines()[0] if __doc__ else None))
+    raise SystemExit(main(MODEL, opis=OPIS))

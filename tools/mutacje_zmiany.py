@@ -1,4 +1,44 @@
-"""Psuje linie zmienione od bazy jak nocne mutacje main; użyj, gdy część nocnych mutacji padła i odtwarzasz ją na commicie runu (--odtwarzam).
+from __future__ import annotations
+
+import argparse
+import ast
+from collections import Counter, defaultdict
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from dataclasses import dataclass, field, replace
+import datetime
+import difflib
+import enum
+import hashlib
+import io
+import itertools
+import json
+import math
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+import tempfile
+import time
+import tokenize
+from typing import NewType
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import ciezkie_ci
+from jednostka import Czesc
+import niestabilne_testy
+import pokrycie_procesu
+import potomne
+from repo import BASE, ROOT
+import repo
+import silnik_mutacji
+import szopa
+import wplyw_zmiany
+import wyniki_testow
+from zakres_runu import RDZENIE_RUNNERA
+
+OPIS = """Psuje linie zmienione od bazy jak nocne mutacje main; użyj, gdy część nocnych mutacji padła i odtwarzasz ją na commicie runu (--odtwarzam).
 
 Psuje zmienione linie ``src/`` i jednostek ``przepuszcza`` z ``tools/lib/szopa.toml`` w ``tools/`` i sprawdza, że test to zauważa
 (ADR 0021); skryptów skilli w ``.agents/skills/*/scripts`` nie psuje, także tych z oznaczeniem ``przepuszcza``.
@@ -155,46 +195,6 @@ Listę mutacji od bazy, jej przycięcie do ``--do``, bez mutacji z ``--osadzone`
 ``ZakresMutacji``, o który pyta też plan nocy w ``tools/mutacje_nocne.py``, więc plan i części dzielą tę samą listę, a
 zadania pokrycia liczą z niej pliki testów nocy.
 """
-
-from __future__ import annotations
-
-import argparse
-import ast
-from collections import Counter, defaultdict
-from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass, field, replace
-import datetime
-import difflib
-import enum
-import hashlib
-import io
-import itertools
-import json
-import math
-import os
-from pathlib import Path
-import re
-import subprocess
-import sys
-import tempfile
-import time
-import tokenize
-from typing import NewType
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import ciezkie_ci
-from jednostka import Czesc
-import niestabilne_testy
-import pokrycie_procesu
-import potomne
-from repo import BASE, ROOT
-import repo
-import silnik_mutacji
-import szopa
-import wplyw_zmiany
-import wyniki_testow
-from zakres_runu import RDZENIE_RUNNERA
 
 # Mutacji naraz i workerów xdist pokrycia: vCPU runnera nocy. Stała, a nie ``silnik_mutacji.PARALLEL`` (rdzenie komputera), bo
 # z niej plan nocy liczy rozmiar części (``mutacje_nocne.NA_CZESC``, ADR 0021), który nie może zależeć od komputera, na
@@ -1041,7 +1041,7 @@ def _part(text: str) -> Czesc:
 def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mutacji.static_gate) -> int:
     """Kod wyjścia narzędzia; ``gate`` to brama typów przeżytych mutacji (``silnik_mutacji.type_gate``)."""
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", default=BASE, help=f"Gałąź, od której liczy się zmiana (domyślnie {BASE}).")
     parser.add_argument("--rownolegle", type=int, default=WORKERS, help="Ile mutacji biegnie naraz, każda w swojej kopii.")
     parser.add_argument("--limit-s", type=float, default=MUTATION_LIMIT_S, help="Limit czasu testów jednej mutacji w sekundach.")

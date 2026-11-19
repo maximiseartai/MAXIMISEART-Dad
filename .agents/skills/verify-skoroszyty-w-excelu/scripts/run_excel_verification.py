@@ -1,14 +1,3 @@
-"""Dad's week through real Microsoft Excel: period files open, Gotowość typed and saved in Excel, then Rozliczenia pracowników.
-
-    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py
-    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py --wzorce syntetyczne
-    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py --kontrola-naprawy
-
-Prints ``STEP <feature> | <id> | OK`` per checked behaviour, then ``VERIFY OK`` (or ``VERIFY FAIL``,
-``VERIFY SKIP``) with the evidence directory. Evidence holds names, counts, addresses, and timings,
-never a cell value. No step waits for a human, except the opt-in ``--kontrola-naprawy``.
-"""
-
 from __future__ import annotations
 
 from argparse import Namespace, RawDescriptionHelpFormatter
@@ -57,6 +46,17 @@ from atrapy.scenariusz_rozliczen import (
 from atrapy.scenariusz_rozliczen import QUANTITIES as ORDER_QUANTITIES
 from atrapy.pliki_taty import WORKER_LIST_NAME
 from atrapy.settlement import PERIOD, WORKERS
+
+OPIS = """Dad's week through real Microsoft Excel: period files open, Gotowość typed and saved in Excel, then Rozliczenia pracowników.
+
+    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py
+    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py --wzorce syntetyczne
+    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/run_excel_verification.py --kontrola-naprawy
+
+Prints ``STEP <feature> | <id> | OK`` per checked behaviour, then ``VERIFY OK`` (or ``VERIFY FAIL``,
+``VERIFY SKIP``) with the evidence directory. Evidence holds names, counts, addresses, and timings,
+never a cell value. No step waits for a human, except the opt-in ``--kontrola-naprawy``.
+"""
 
 SCRIPT = Path(__file__).resolve()
 REPO_ROOT = SCRIPT.parents[4]
@@ -716,7 +716,7 @@ def _hygiene(run: Run) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=RawDescriptionHelpFormatter)
     parser.add_run_dir()
     parser.add_argument("--wzorce", choices=("prawdziwe", "syntetyczne"), default="prawdziwe")
     parser.add_argument("--templates-dir", type=Path, help="directory with the three real Wzorce (default: config/)")
