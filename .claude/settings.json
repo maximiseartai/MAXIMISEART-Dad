@@ -20,6 +20,11 @@
             "type": "command",
             "command": "test ! -f \"$CLAUDE_PROJECT_DIR/tools/hooks/czekanie.py\" || python3 \"$CLAUDE_PROJECT_DIR/tools/hooks/czekanie.py\"",
             "timeout": 10
+          },
+          {
+            "type": "command",
+            "command": "test ! -f \"$CLAUDE_PROJECT_DIR/tools/hooks/zabijanie.py\" || python3 \"$CLAUDE_PROJECT_DIR/tools/hooks/zabijanie.py\"",
+            "timeout": 10
           }
         ]
       }
