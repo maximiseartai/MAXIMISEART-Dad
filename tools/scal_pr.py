@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import api_actions
 import bramka_korzenia
 import bramka_straznika
 import github
@@ -78,7 +79,9 @@ pokaże runy pushu na `main`. Obserwację PR zostaw do zielonego `main` z tym me
 
 Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że byłby); linia po merge'u podaje SHA
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
-wynik. Kod 1 to odmowa albo błąd narzędzia (``SCAL FAIL``).
+wynik. Kod 1 to odmowa albo błąd narzędzia (``SCAL FAIL``). Przy zapasie limitu GitHub API poniżej
+``REZERWA_SCALANIA`` (``tools/lib/api_actions.py``) narzędzie nie pyta GitHuba, tylko odmawia linią ``SCAL ODMOWA``
+z godziną resetu limitu.
 
 Werdykt (``--werdykt``), kontekst przeglądu (``--przeglad``) i merge (także ``--bez-merge``) sądzi kod ``origin/<baza PR>`` tuż po pobraniu bazy, nie kod
 checkoutu, z którego je uruchomiono: reguły werdyktu, bramki korzenia i wzoru opisu żyją w ``tools/`` i w plikach
@@ -382,6 +385,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(given)
     label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "DOWÓD STRAŻNIKÓW" if args.dowod_straznikow else "SCAL"
     try:
+        if (powod := api_actions.odmowa(api_actions.REZERWA_SCALANIA)) is not None:
+            print(f"{label} ODMOWA | {powod}")
+            return 1
         pull = stan_pr.pull(args.numer)
         if args.status and (skipped := _skipped_status(pull)):
             print(f"STATUS POMINIĘTY | #{pull.number} {pull.head[:7]} | {skipped}")

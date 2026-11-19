@@ -18,9 +18,9 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAction } from "@/lib/action"
 import { useResource, type Resource } from "@/lib/use-resource"
 
-const TITLE_MAX_LENGTH = zDadNoteRequest.shape.title.toJSONSchema().maxLength
+const TITLE_MAX_LENGTH = zDadNoteRequest.shape.title.maxLength ?? undefined
 
-const BODY_MAX_LENGTH = zDadNoteRequest.shape.body.toJSONSchema().maxLength
+const BODY_MAX_LENGTH = zDadNoteRequest.shape.body.unwrap().unwrap().maxLength ?? undefined
 
 // Szkic dopiero po krótkiej przerwie w pisaniu: zapytanie na każdy klawisz zapychałoby pomiar widoku.
 const DRAFT_PAUSE_MS = 150

@@ -18,7 +18,7 @@ import zipfile
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
-from api_actions import Api, runy
+from api_actions import REZERWA_POMIARU, Api, ZRezerwa, runy
 from github import REPO, BladApi, GhApi, GitHub
 from jednostka import Klucz, Rodzaj
 from plan_runu import ARTEFAKT, PLIK, Plan
@@ -96,8 +96,8 @@ następnego zielonego runu ``main``.
 Dane: runy ``ci.yml`` okna (dzień utworzenia, UTC), artefakty ``plan`` (``retention-days: 30`` w ``ci.yml``) czerwonych
 runów PR, próbki i scalonych PR-ów, zadania runów PR bez wyniku success i logi ich padłych zadań Mutation checks, a z gita
 checkoutu pliki głów PR i ich baz i merge'e ``main`` z numerami PR-ów (brakujące głowy runów pobiera jeden ``git
-fetch``). Odpowiedzi API zapisują się w ``<katalog>/api`` (``tools/lib/api_actions.py``), a rekordy z dowodami
-w ``<katalog>/rekordy.json``; 14 dni to kilkaset zapytań, a ich liczbę drukuje pierwsza linia wyniku. ``--rekordy
+fetch``). Odpowiedzi API zapisują się we wspólnej kopii ``~/.cache/maximiseart/api`` (``tools/lib/api_actions.py``), a rekordy
+z dowodami w ``<katalog>/rekordy.json``; 14 dni to kilkaset zapytań, a ich liczbę drukuje pierwsza linia wyniku. ``--rekordy
 PLIK`` liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy linia:
 
     D1 | złapane przez NF: kandydaci <n> (wymaga audytu <m>), niepoliczone <k>, przyczyny po audycie <p> | oszczędność N0 …
@@ -107,7 +107,7 @@ PLIK`` liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy 
     .venv/bin/python tools/cien_podstaw.py --rekordy ~/.t3/notes/d1-cien/rekordy.json --audyt ~/.t3/notes/d1-cien/audyt.json
 """
 
-GITHUB = GhApi(limit_s=60)
+GITHUB = ZRezerwa(GhApi(limit_s=60), REZERWA_POMIARU)
 # Progi D1 (ADR 0020, D1), zapisane przed włączeniem NF; zmiana któregoś unieważnia rozstrzygnięcie.
 KOSZT_UCIECZKI_MIN = 75.0
 X = 11
@@ -628,9 +628,9 @@ def _chwila(tekst: str) -> datetime:
     return datetime.fromisoformat(tekst.replace("Z", "+00:00"))
 
 
-def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB) -> int:
+def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB, kopia: Path | None = None) -> int:
     parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--katalog", type=Path, help="Folder biegu: odpowiedzi API i rekordy.json.")
+    parser.add_argument("--katalog", type=Path, help="Folder biegu: rekordy.json.")
     parser.add_argument("--od", type=date.fromisoformat, help="Pierwszy dzień okna cienia (UTC).")
     parser.add_argument("--do", type=date.fromisoformat, help="Ostatni dzień okna cienia (UTC), zakończony.")
     parser.add_argument("--probka", type=int, default=PROBKA, help=f"Najwięcej runów PR, z których cienia liczy się oszczędność (domyślnie {PROBKA}).")
@@ -647,12 +647,13 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
         dzis = datetime.now(timezone.utc).date()
         if args.do >= dzis:
             parser.error(f"okno kończy się {args.do}, a dzień trwa: pomiar biegnie po zakończonym oknie")
-        api = Api(args.katalog, github)
+        api = Api(github, kopia)
         try:
             rekordy = zbierz(api, root, args.od, args.do, dzis, args.probka)
         except (BladApi, subprocess.TimeoutExpired) as blad:
             print(f"D1 CIEŃ | błąd API po {api.zapytania} zapytaniach: {blad}")
             return 1
+        args.katalog.mkdir(parents=True, exist_ok=True)
         (args.katalog / "rekordy.json").write_text(json.dumps(asdict(rekordy), ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"D1 CIEŃ | zapytań API {api.zapytania}, rekordy {args.katalog / 'rekordy.json'}")
     else:
