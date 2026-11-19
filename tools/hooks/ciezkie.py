@@ -54,12 +54,17 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 import json
+from pathlib import Path
 import re
 import shlex
 import shutil
 import subprocess
 import sys
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+import potomne
 
 ZSH_WORDS = 'w=(${(Z+C+)CMD}); print -rN -- ${#w} "${w[@]}" "${(Q@)w}"'
 SEPARATOR = re.compile(r"[;&|()]+")
@@ -158,17 +163,10 @@ def _simple_commands(command: str) -> list[list[str]]:
     if zsh is None:
         return []
     try:
-        lexed = subprocess.run(
-            [zsh, "-fc", ZSH_WORDS],
-            env={"CMD": _without_heredocs(command)},
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="surrogateescape",
-            timeout=5,
-            check=True,
-        )
+        lexed = potomne.run([zsh, "-fc", ZSH_WORDS], cwd=Path(__file__).parent, env={"CMD": _without_heredocs(command)}, timeout=5)
     except (OSError, subprocess.SubprocessError):
+        return []
+    if lexed.returncode != 0:
         return []
     count, *words = lexed.stdout.split("\0")[:-1]
     commands: list[list[str]] = [[]]
