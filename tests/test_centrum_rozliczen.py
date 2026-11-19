@@ -4990,6 +4990,41 @@ def test_zmiana_wykonawcy_przy_liscie_bez_odczytu_mowi_o_pliku_bez_odczytu(
     assert app.tool.worker_list.read_bytes() == kept
 
 
+@pytest.mark.parametrize(("method", "route", "form"), [change for change in _WORKER_CHANGES if change.id != "zmiana"])
+def test_zmiana_wykonawcy_przy_liscie_chwilowo_bez_odczytu_czeka_na_plik_i_zapisuje(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
+) -> None:
+    app = centrum(tmp_path, pause=lambda _: allow_reading(app.tool.worker_list))
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}))
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    write_orders(register, ["inny.login"])
+    app.platform.chosen_files.append(register)
+    (tmp_path / "Okresy").mkdir()
+    app.platform.chosen_folders.append(tmp_path / "Okresy")
+    app.client.post("/api/settings/register/choose")
+    app.client.post("/api/settings/periods-directory/choose")
+    kept = app.tool.worker_list.read_bytes()
+
+    with without_reading(app.tool.worker_list):
+        saved = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
+
+    assert saved.status_code == 200, saved.text
+    assert app.tool.worker_list.read_bytes() != kept
+
+
+def test_dodanie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_zapisuje_liste_od_nowa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    app.tool.worker_list.write_bytes(b"schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n")
+
+    added = app.client.post("/api/settings/workers", json=worker_form(["ewa.nowa"], "Ewa Nowa"))
+
+    assert added.status_code == 200, added.text
+    assert app.client.get("/api/settings").json()["workers"]["state"] == "good"
+    assert list(listed_workers(app.client)) == ["ewa.nowa"]
+
+
 def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
     tmp_path: Path,
 ) -> None:
