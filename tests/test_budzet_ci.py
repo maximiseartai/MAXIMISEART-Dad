@@ -1,9 +1,11 @@
-"""Strażnik budżetu bramki PR (``tools/budzet_ci.py``, ADR 0020, D2): p90 czasu od pushu do ``Required CI status``
-każdego runu PR z 7 pełnych dni wobec 5 min, jedno issue z etykietą ``budzet-ci`` i wąskie gardło, czyli odcinek
-ścieżki krytycznej o największym wkładzie do p90 (średnia w ogonie minus średnia w runach w budżecie).
+"""Strażnik budżetu bramki PR (``tools/budzet_ci.py``): D2 Maksa (ADR 0020, p90 ≤ 5 min od pushu do ``Required CI
+status``, przekroczenie zakłada issue z wąskim gardłem) mierzony na pierwszej próbie runów PR z 7 pełnych dni (wybór
+autora strażnika), jedno issue z etykietą ``budzet-ci`` i wąskie gardło, czyli odcinek ścieżki krytycznej o największym
+wkładzie do p90 (średnia w ogonie minus średnia w runach w budżecie).
 
 Runy, ich zadania i GitHub są fałszywe (``_GitHub``), a czasy zadań stoją w sekundach od utworzenia runu, więc każdy
-odcinek ścieżki (kolejka, start, praca, maruder, ogon) wynika wprost z próbki.
+odcinek ścieżki (kolejka, start, praca, maruder, ogon) wynika wprost z próbki. Zegar strażnika to zegar fałszywego
+GitHuba, który każde zapytanie przesuwa o ``tick`` sekund.
 """
 
 from __future__ import annotations
@@ -112,9 +114,12 @@ def _slow_queue(run: int, day: int) -> Run:
 
 
 class _GitHub:
-    """GitHub z runami ``ci.yml`` po dniach, artefaktami ``plan`` i ``czasy-ci`` oraz issues i etykietami w pamięci."""
+    """GitHub z runami ``ci.yml`` po dniach, artefaktami ``plan`` (bajty zamiast tekstu: zip uszkodzony) i ``czasy-ci``
+    oraz issues i etykietami w pamięci; każde zapytanie trwa ``tick`` sekund zegara ``now``."""
 
-    def __init__(self, runs: Sequence[Run], *, plans: Mapping[int, str] | None = None, czasy: Mapping[str, object] | None = None) -> None:
+    def __init__(
+        self, runs: Sequence[Run], *, plans: Mapping[int, str | bytes] | None = None, czasy: Mapping[str, object] | None = None, tick: float = 0.0
+    ) -> None:
         self.runs = list(runs)
         self.plans = dict(plans or {})
         self.czasy = czasy
@@ -122,9 +127,15 @@ class _GitHub:
         self.labels: list[str] = []
         self.comments: list[tuple[int, str]] = []
         self.requests: list[str] = []
+        self.tick = tick
+        self.now = 0.0
+
+    def _request(self, request: str) -> None:
+        self.requests.append(request)
+        self.now += self.tick
 
     def json(self, sciezka: str) -> object:
-        self.requests.append(sciezka)
+        self._request(sciezka)
         query = urllib.parse.parse_qs(urllib.parse.urlsplit(sciezka).query)
         first_page = query.get("page") == ["1"]
         if sciezka.startswith(f"{REPO}/actions/workflows/ci.yml/runs?created="):
@@ -146,15 +157,18 @@ class _GitHub:
         raise AssertionError(f"strażnik nie pyta o {sciezka}")
 
     def bajty(self, sciezka: str) -> bytes:
-        self.requests.append(sciezka)
+        self._request(sciezka)
         artifact = int(sciezka.split("/")[5])
+        plan = self.plans.get(artifact)
+        if isinstance(plan, bytes):
+            return plan
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, "w") as archive:
-            archive.writestr(*(("czasy-ci.json", json.dumps(self.czasy)) if artifact == 0 else (plan_runu.PLIK, self.plans[artifact])))
+            archive.writestr(*(("czasy-ci.json", json.dumps(self.czasy)) if artifact == 0 else (plan_runu.PLIK, str(plan))))
         return buffer.getvalue()
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, Any]) -> object:
-        self.requests.append(f"{metoda} {sciezka}")
+        self._request(f"{metoda} {sciezka}")
         if sciezka == f"{REPO}/labels":
             self.labels.append(tresc["name"])
             return {}
@@ -173,8 +187,14 @@ def _guard(folder: Path, github: _GitHub, day: str, capsys: pytest.CaptureFixtur
     """Bieg strażnika w dniu ``day`` z pamięcią w ``folder``, który jest też checkoutem bez repozytorium (głowy PR bez klasy)."""
 
     folder.mkdir(parents=True, exist_ok=True)
-    code = budzet_ci.main(["--katalog", str(folder / "pamiec"), "--dzien", day, *extra], root=folder, github_api=github)
+    code = budzet_ci.main(["--katalog", str(folder / "pamiec"), "--dzien", day, *extra], root=folder, github_api=github, zegar=lambda: github.now)
     return code, capsys.readouterr().out.splitlines()
+
+
+def _jobs(github: _GitHub) -> list[str]:
+    """Numery runów, o których zadania strażnik pytał, po kolei."""
+
+    return [request.split("/")[5] for request in github.requests if "/jobs?" in request]
 
 
 def _writes(github: _GitHub) -> list[str]:
@@ -262,8 +282,11 @@ def test_straznik_z_pamiecia_pyta_tylko_o_brakujace_runy_a_po_limicie_zapytan_ni
     second_jobs = {request.split("/")[5] for request in github.requests if "/jobs?" in request}
 
     assert (first_code, second_code) == (0, 0)
-    assert "BUDŻET CI | pomiar niepełny: 3 z 10 runów PR do zmierzenia (bez anulowanych i okien awarii); issue bez zmian" in first
-    assert first[-1].endswith("zapytań 10 z limitu 25") and writes_after_first == []
+    assert (
+        "BUDŻET CI | pomiar niepełny: 3 z 10 runów PR do zmierzenia (bez anulowanych i okien awarii);"
+        " okno niepełne (limit zapytań 25), resztę zmierzy następny bieg z pamięci; issue bez zmian"
+    ) in first
+    assert first[-1].endswith("zapytań 10 z limitu 25, 0 s z limitu pobierania 900 s") and writes_after_first == []
     assert (len(first_jobs), len(second_jobs), first_jobs & second_jobs) == (3, 7, set())
     assert not any("/runs?created=" in request for request in github.requests)
     assert [issue["state"] for issue in github.issues] == ["open"] and "Pokrycie: 10 z 10 runów PR" in github.issues[0]["body"]
@@ -297,3 +320,101 @@ def test_najwolniejsze_jednostki_to_jednostki_krytycznego_zadania_ogona_z_planu_
     header = lines.index("| jednostka (wszystkie części) | tor czasów | runy ogona | s w runie (mediana) | razem, min |")
     assert lines[header + 2 : header + 4] == [f"| `skill:verify-x/ci` | {MUTACJE_TOR} | 2 | 300 | 10,0 |", f"| `pytest:tests/test_a.py` | {MUTACJE_TOR} | 1 | 120 | 2,0 |"]
     assert "Plany: 2 z 2 runów ogona." in lines
+
+
+def test_grupa_w_budzecie_to_runy_do_5_min_a_nie_wszystkie_runy_ponizej_p90(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Okno ma 2 runy ogona po 9,8 min, 3 runy po 7,5 min (ponad budżet, poniżej p90) i 5 runów po 2,5 min. Wkład
+    liczy się wobec runów w budżecie (≤ 5 min, n 5), więc praca runów po 7,5 min (400 s) nie zaniża średniej pracy
+    grupy i wkład pracy to 0, a cała różnica 7,3 min to kolejka; wobec wszystkich runów poniżej p90 (n 8) praca dałaby
+    wkład ujemny."""
+
+    github = _GitHub([*(_slow_queue(n, 5) for n in (1, 2)), *(Run(n, 5, (_pytest(work=400),)) for n in (3, 4, 5)), *(_fast(n, 5) for n in range(10, 15))])
+
+    code, lines = _guard(tmp_path, github, "2026-11-10", capsys, "--bez-zapisu")
+
+    assert code == 0
+    assert (
+        "Odcinek o największym wkładzie do p90: średnio 7,3 z 7,3 min różnicy między runami ogona (≥ p90, n 2)"
+        " a runami w budżecie (≤ 5 min, n 5); z tego `pytest` jako krytyczne zadanie 7,3 min."
+    ) in lines
+    assert [line.split(" | ")[3:6] for line in lines if line.startswith("| praca (do mediany")] == [["1,7", "1,7", "**0,0**"]]
+
+
+def test_p90_rowny_5_min_miesci_sie_w_budzecie_wiec_straznik_zamyka_otwarte_issue(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """D2 to „p90 ≤ 5 min”: okno, w którym każdy run kończy Required dokładnie po 300 s, ma p90 równy budżetowi, więc
+    strażnik zamyka otwarte issue z liczbami okna i żadnego runu nie liczy ponad budżet."""
+
+    github = _GitHub([Run(n, 5, (_pytest(work=251),)) for n in range(1, 11)])
+    github.issues.append({"number": 7, "title": budzet_ci.TYTUL, "body": "", "labels": ["budzet-ci"], "state": "open"})
+
+    code, lines = _guard(tmp_path, github, "2026-11-10", capsys)
+
+    assert code == 0
+    assert lines[-1].startswith("BUDŻET CI OK | okno 03.11–09.11.2026: każdy PR p90 5,0 min (n 10), w budżecie 5 min")
+    assert github.comments == [(7, "Budżet wrócił: p90 5,0 min ≤ 5 min, p50 5,0 min, n 10, ponad budżet 0 (okno 03.11–09.11.2026, `tools/budzet_ci.py`).")]
+    assert github.issues[0]["state"] == "closed"
+
+
+def test_limit_czasu_konczy_pobieranie_issue_mowi_o_niepelnym_oknie_a_nastepny_dzien_mierzy_reszte_z_pamieci(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Każde zapytanie trwa 10 s, a limit czasu to 130 s: 7 list dni (70 s) i zadania 6 z 10 runów ponad budżet, potem
+    strażnik przestaje pobierać (także plany), zakłada issue z próbki i nazywa w nim i w logu niepełne okno i limit.
+    Następnego dnia z domyślnym limitem pyta tylko o listę nowego dnia i zadania 4 brakujących runów, a issue nie mówi
+    już o niepełnym oknie."""
+
+    github = _GitHub([_slow_queue(n, 5) for n in range(1, 11)], tick=10)
+    partial = "6 z 10 runów PR do zmierzenia (bez anulowanych i okien awarii); okno niepełne (limit czasu 130 s), resztę zmierzy następny bieg z pamięci"
+
+    first_code, first = _guard(tmp_path, github, "2026-11-10", capsys, "--limit-czasu", "130")
+    first_jobs, first_body = _jobs(github), github.issues[0]["body"]
+    github.requests = []
+    second_code, second = _guard(tmp_path, github, "2026-11-11", capsys)
+
+    assert (first_code, second_code) == (0, 0)
+    assert f"BUDŻET CI | okno niepełne, issue z próbki: {partial}" in first
+    assert f"Pokrycie: {partial}." in first_body and "Plany: 0 z 6 runów ogona; planu nie pobrano (limit czasu 130 s): 6." in first_body
+    assert (len(first_jobs), len(_jobs(github)), set(first_jobs) & set(_jobs(github))) == (6, 4, set())
+    assert [request.split("created=")[1][:10] for request in github.requests if "/runs?created=" in request] == ["2026-11-10"]
+    assert "Pokrycie: 10 z 10 runów PR do zmierzenia (bez anulowanych i okien awarii)." in github.issues[0]["body"]
+    assert second[-1].startswith("BUDŻET CI OK | okno 04.11–10.11.2026: każdy PR p90 9,8 min (n 10)")
+
+
+def test_pamiec_trafia_na_dysk_w_trakcie_pobierania_wiec_bieg_przerwany_z_zewnatrz_jej_nie_traci(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Zapytania trwają po 25 s, a pamięć trafia na dysk, gdy od poprzedniego zapisu minęło ``ZAPIS_CO_S`` (60 s), czyli
+    co trzeci run: przed każdym zapytaniem o zadania runu na dysku stoją rekordy runów zmierzonych więcej niż minutę
+    wcześniej, więc anulowane zadanie workflow zostawia je krokowi zapisu cache, a bieg nie zapisuje całej pamięci po
+    każdym z setek runów."""
+
+    class Watching(_GitHub):
+        def __init__(self, runs: Sequence[Run]) -> None:
+            super().__init__(runs, tick=25)
+            self.on_disk: list[int] = []
+
+        def json(self, sciezka: str) -> object:
+            if "/jobs?" in sciezka:
+                plik = tmp_path / "pamiec" / budzet_ci.PLIK_PAMIECI
+                self.on_disk.append(len(json.loads(plik.read_text(encoding="utf-8"))["rekordy"]) if plik.is_file() else 0)
+            return super().json(sciezka)
+
+    github = Watching([_fast(n, 5) for n in range(1, 11)])
+
+    code, _ = _guard(tmp_path, github, "2026-11-10", capsys, "--bez-zapisu", "--limit-czasu", "3600")
+
+    assert code == 0
+    assert github.on_disk == [0, 1, 1, 1, 4, 4, 4, 7, 7, 7]
+
+
+def test_run_ogona_bez_planu_przez_blad_artefaktu_ma_w_issue_ten_blad_a_nie_limit(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    """Zip planu jednego runu ogona jest uszkodzony, a limitu nikt nie dotknął: linia planów w treści issue podaje błąd
+    zipu, nie brak zapytań."""
+
+    critical = "Mutation checks (1/1)"
+    plan = plan_runu.Plan(Zdarzenie.PULL_REQUEST, 300.0, (1,), (plan_runu.Zadanie("mutacje-1", "mutacje", critical, ("pytest:tests/test_a.py",), 300.0),))
+    slow = [Run(n, 5, (Job(critical, 15, 2, 30, 480),)) for n in (1, 2)]
+    github = _GitHub([*slow, *(_fast(n, 5) for n in range(10, 18))], plans={1: b"to nie zip", 2: plan.do_json()})
+
+    code, lines = _guard(tmp_path, github, "2026-11-10", capsys, "--bez-zapisu")
+
+    assert code == 0
+    assert "Plany: 1 z 2 runów ogona; błąd planu (BadZipFile: File is not a zip file): 1." in lines

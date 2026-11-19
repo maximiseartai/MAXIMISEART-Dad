@@ -1,12 +1,14 @@
 name: Budżet CI
 
-# Every day at 5:23 UTC the budget guard of the PR gate (tools/budzet_ci.py, ADR 0020, D2 of 19.11) measures the p90 of
-# push → Required CI status over every PR run of the last 7 full UTC days and opens, updates or closes the one issue with
-# the label budzet-ci, which names the bottleneck. Minute 23, not the full hour: GitHub delays scheduled runs at the
-# start of an hour and drops some under high load. The guard's memory (pamiec.json: the PR runs of each closed day and
-# the record of each measured run, czasy-ci/) travels between runs in actions/cache, so a run asks the API only for the
-# days and runs it lacks (about 160 requests on a day of 147 PR runs) and stops at --limit-zapytan, below the 1000
-# requests an hour of GITHUB_TOKEN that it shares with ci.yml; the docstring of the tool gives the cost of each part.
+# Every day at 5:23 UTC the budget guard of the PR gate (tools/budzet_ci.py) checks D2 of 19.11 (ADR 0020: p90 <= 5 min
+# from push to Required CI status, and exceeding it opens an issue naming the bottleneck). It measures the first attempt
+# of every PR run of the last 7 full UTC days (the guard author's choice, ADR 0020) and opens, updates or closes the one
+# issue with the label budzet-ci. Minute 23, not the full hour: GitHub delays scheduled runs at the start of an hour and
+# drops some under high load. The guard's memory (pamiec.json: the PR runs of each closed day and the record of each
+# measured run, czasy-ci/) travels between runs in actions/cache, so a run asks the API only for the days and runs it
+# lacks (about 160 requests on a day of 147 PR runs). It stops fetching at --limit-zapytan, below the 1000 requests an
+# hour of GITHUB_TOKEN that it shares with ci.yml, or after 15 min (--limit-czasu, half of timeout-minutes), and then
+# counts the window from what it has and says so in the issue; the docstring of the tool gives the cost of each part.
 on:
   schedule:
     - cron: '23 5 * * *'
@@ -57,9 +59,10 @@ jobs:
           GH_REPO: ${{ github.repository }}
         run: python tools/budzet_ci.py --katalog .budzet-ci
 
-      # Also after a red step: the memory holds every run measured so far, so the next run does not ask for it again.
+      # Also after a red or cancelled step (timeout-minutes cancels the job): the guard writes its memory to disk at the
+      # end and at least once a minute while fetching, so the next run does not ask again for the runs measured so far.
       - name: Save the guard's memory
-        if: ${{ !cancelled() }}
+        if: ${{ always() }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: .budzet-ci
