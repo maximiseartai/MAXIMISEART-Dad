@@ -1276,6 +1276,27 @@ def test_dwa_niezgodne_wpisy_to_pomylony_temat_wpisy_ida_do_zlecen_z_ich_dnia_be
         assert detail == OrderDetail(order.key.number, "tak", detail.activities, reported=True, codes=detail.codes)
 
 
+def test_wpis_na_zyczenie_przy_t_w_raporcie_z_pomylonym_tematem_ma_dzien_problemu_i_wpisuje_do_zlecenia_z_jego_dnia() -> None:
+    """ADR 0041 i 0029: Raport wykonawcy za 8.11 z dwoma Wpisami do zleceń Jana z 7.11 to pomylony temat, a Wpis z ``t``
+    stoi jako problem w dniu z tematu, gdzie widzi go tata. Jego Wpis na życzenie ma ten dzień i wpisze ``tak`` do
+    zlecenia z 7.11 bez Przeniesienia, a decyzja taty z kliknięcia tego Wpisu wpisuje go tam jak Wpis z ``tak``."""
+
+    first, second = _numbered(1, SEVENTH), _numbered(2, SEVENTH)
+    mail = _mail(JAN, SUBJECT, "40000001 t montaż\n40000002 tak montaż")
+    inputs = _inputs([mail], [first, second], rollout=SIXTH, ordered=OPEN_DAYS)
+
+    offered = enter_reports(inputs)
+    [problem] = _problems(offered)
+    assert isinstance(problem, MissingVerdict) and problem.offer is not None
+    decided = enter_reports(replace(inputs, requested=frozenset({problem.offer.decide(EVENING + timedelta(hours=1))})))
+
+    number = OrderNumber("40000001")
+    offer = Offer(mail.id, JAN_LOGIN, DAY, number, Verdict.YES, "montaż", SEVENTH)
+    assert problem == MissingVerdict(JAN_LOGIN, DAY, number, VerdictFault.LETTER_YES, offer)
+    assert (_problems(decided), decided.moves) == ((), ())
+    assert set(decided.changes) == {*_both(first.row, "tak", "montaż"), *_both(second.row, "tak", "montaż")}
+
+
 @pytest.mark.parametrize("intermax_day", [SIXTH, SEVENTH], ids=["zlecenia-z-6", "zlecenia-z-7"])
 def test_ta_sama_tresc_raportu_pod_dwoma_dniami_wpisuje_sie_raz_do_zlecen_z_ich_dnia_w_intermax(intermax_day: date) -> None:
     """Prawdziwa skrzynka 12.11.2026: Wykonawca wysłał treść jednego dnia jako ``Raport`` za 7.11 i zaraz jako
