@@ -210,6 +210,12 @@ PRZYPADKI_ODCISKU: Final = [
         zmiana=("f.limit = 1", "f.limit = 2"),
     ),
     _przypadek(
+        {"zmiana": _zmiana("class _Baza:\n    LIMIT = 1\n\n\nclass _K(_Baza):\n    pass\n\n\ndef propose(inputs):\n    return _K.LIMIT\n")},
+        False,
+        "klasa bazowa z modułu klasy, po którą sięga wpis",
+        zmiana=("LIMIT = 1", "LIMIT = 2"),
+    ),
+    _przypadek(
         {"zmiana": _zmiana("class _K:\n    pass\n\n\n_K.LIMIT = 1\n\n\ndef propose(inputs):\n    return _K.LIMIT\n")},
         False,
         "atrybut klasy modułu ustawiony po klasie",
