@@ -31,6 +31,12 @@ i nie znika przed sprawdzeniem. Zasób na całe życie procesu workera (``_ZASOB
 testem, więc jest w stanie sprzed każdego testu.
 
 Po błędzie plugin przywraca każdą wartość do oczekiwanej, więc błąd ma sprawca, a nie każdy następny test workera.
+Katalog roboczy, który box boat przeniósł w trakcie biegu, nie jest stanem testu: co box wyjaśnia, raport której fazy
+dostaje jego własność i jakim kodem kończy się sesja, rozstrzyga ``tools/lib/box_boat.py``, a plugin wraca do
+oczekiwanego katalogu i zgłasza taką fazę komunikatem ``box_boat.KOMUNIKAT``. Inna różnica stanu w tym samym
+sprawdzeniu dalej jest porażką testu, z tym komunikatem dopisanym. Plugin ustawia kod sesji przed innymi
+``pytest_sessionfinish``, więc porażka sesji spoza raportów (``DRZEWO REPO`` w ``tests/conftest.py``) nadpisuje go z
+powrotem na 1.
 Porównanie kosztuje listę deskryptorów i potomków, poniżej 0,5 ms na test; ``gc.collect()``, czekanie na wątki i
 potomków oraz opis zasobów biegną tylko wtedy, gdy stan się różni.
 
@@ -67,6 +73,7 @@ import warnings
 
 import pytest
 
+import box_boat
 import potomne
 from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.potomne import wait_for
@@ -216,6 +223,42 @@ def _release_gc() -> None:
         gc.enable()
 
 
+_porazki: list[bool] = []
+"""Raporty, które padły w procesie kontrolera sesji (pod xdist dostaje raporty workerów): ``True`` dla raportu fazy,
+której jedyną porażką jest katalog repo przeniesiony przez box."""
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(item: pytest.Item, call: pytest.CallInfo[None]) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    """Raport fazy, której jedyną porażką jest katalog repo przeniesiony przez box (``box_boat.jedyna_przyczyna``), dostaje
+    własność ``box_boat.WLASNOSC``; idzie ona z raportem do kontrolera sesji, także od workera xdist."""
+
+    report = yield
+    if box_boat.jedyna_przyczyna(call.excinfo.value if call.excinfo is not None else None):
+        report.user_properties.append((box_boat.WLASNOSC, box_boat.KATALOG_ZWOLNIONY))
+    return report
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    if report.failed:
+        _porazki.append(box_boat.WLASNOSC in dict(report.user_properties))
+
+
+def pytest_collectreport(report: pytest.CollectReport) -> None:
+    if report.failed:
+        _porazki.append(False)
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> Generator[None, object, object]:
+    """Kod sesji z ``box_boat.kod_sesji`` w kontrolerze sesji. Kod stoi przed innymi implementacjami haka, więc ta, która
+    sama wywraca sesję (``DRZEWO REPO``), ustawia go z powrotem na 1."""
+
+    if not hasattr(session.config, "workerinput"):
+        session.exitstatus = box_boat.kod_sesji(int(session.exitstatus), _porazki)
+    return (yield)
+
+
 @pytest.hookimpl(tryfirst=True)
 def pytest_runtest_setup(item: pytest.Item) -> None:
     while _ZASOBY_PROCESU:
@@ -341,11 +384,22 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
     zostawione = oczekiwane.roznica(teraz)
     if not zostawione:
         return
+    teraz_wartosci = dict(teraz.wartosci)
+    box = box_boat.wyjasnione(
+        zostawione.klucze, _KATALOG, oczekiwane.wartosci.get(_KATALOG), teraz_wartosci.get(_KATALOG, _USUNIETY)
+    )
+    przeniesienie = (
+        f"{box_boat.KOMUNIKAT} (katalog roboczy {oczekiwane.wartosci.get(_KATALOG)} → {teraz_wartosci.get(_KATALOG)})"
+    )
+    for klucz in box:
+        _ustaw(klucz, oczekiwane.wartosci.get(klucz))
+    zostawione.klucze -= box
     nazwy = {zasob: _opis_zasobu(zasob) for zasob in zostawione.zasoby}  # przed gc, który zamyka deskryptor
     zebrane = _po_czekaniu_i_gc(zostawione)
     if not zostawione:
+        if box:
+            raise box_boat.zglos(przeniesienie)
         return
-    teraz_wartosci = dict(teraz.wartosci)
     opisy = [
         nazwy[zasob] + _stan_zasobu(zasob, zebrane) + _czyj(oczekiwane.wlasciciele.get(zasob), kiedy)
         for zasob in sorted(zostawione.zasoby, key=_kolejnosc)
@@ -355,15 +409,14 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
         + _czyj(oczekiwane.wlasciciele.get(klucz), kiedy)
         for klucz in sorted(zostawione.klucze)
     ]
-    # Wartości wracają, więc błąd ma tylko sprawca, a nie każdy następny test workera.
-    for klucz in zostawione.klucze:
-        _ustaw(klucz, oczekiwane.wartosci.get(klucz))
+    _przywroc(zostawione, oczekiwane)
     raise AssertionError(
         "Test albo jego fixtura zostawiły procesowi workera stan, który działa w oknie następnego testu: "
         + "; ".join(opisy)
         + ". Zamknij plik i gniazdo przez with albo try/finally (skoroszyt openpyxl read_only=True trzyma plik do "
         "workbook.close()), zatrzymaj i dołącz wątek, poczekaj na proces potomny, a katalog roboczy i środowisko "
         "zmieniaj przez monkeypatch (tests/fixtures/stan_procesu.py)."
+        + (f" Poza tym {przeniesienie}." if box else "")
     )
 
 
@@ -412,6 +465,13 @@ class _Oczekiwany:
         wartosci = dict(teraz.wartosci)
         klucze = {klucz for klucz in {*self.wartosci, *wartosci} if wartosci.get(klucz) != self.wartosci.get(klucz)}
         return Zostawione(zasoby, klucze)
+
+
+def _przywroc(zostawione: Zostawione, oczekiwane: _Oczekiwany) -> None:
+    """Wartości wracają do oczekiwanych, więc błąd ma tylko sprawca, a nie każdy następny test workera."""
+
+    for klucz in zostawione.klucze:
+        _ustaw(klucz, oczekiwane.wartosci.get(klucz))
 
 
 def _po_czekaniu_i_gc(zostawione: Zostawione) -> set[_Zasob]:
