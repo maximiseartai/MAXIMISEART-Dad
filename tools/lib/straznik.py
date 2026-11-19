@@ -40,7 +40,10 @@ testowi innej zmiany, którą mutacja też psuje, a nawet wierną mutację test 
 niestabilny może przejść jednym padnięciem, także test, którego wynik zależy od stanu poprzedniego biegu poza
 środowiskiem (plik pod ścieżką bezwzględną, usługa systemu): biegi dowodu ten stan dzielą, a Required CI uruchamia
 węzeł raz, więc test, który sprawdza błąd dopiero przy śladzie poprzedniego biegu albo pada na przemian, może dać
-``WYKRYTA``, choć Required CI z błędem przechodzi; to ocenia recenzent. Mutację nanosi dowód po instalacji projektu, jak
+``WYKRYTA``, choć Required CI z błędem przechodzi; to ocenia recenzent. Dowód uruchamia też węzeł sam, a Required CI
+w sesji z innymi plikami zadania (worker xdist zbiera je przed pierwszym testem) i po wcześniejszych testach workera,
+więc test, któremu stan modułu z importu innego pliku testów albo stan po wcześniejszym teście maskuje błąd, daje
+``WYKRYTA``, choć Required CI z błędem przechodzi; to też ocenia recenzent. Mutację nanosi dowód po instalacji projektu, jak
 ``tools/mutacje.py`` na kopię z instalacją edytowalną, więc mutacja zależności w ``pyproject.toml`` pakietów nie
 zmienia. Gałęzi tylko dla macOS nie sprawdza żaden krok Required CI, więc jej błędu ``mypy`` nie dowodzi na żadnej
 maszynie, a test, który przechodzi tylko na Windows, dowód ``pytest`` odmawia bez mutacji. Plik, który po FAIL zmienił

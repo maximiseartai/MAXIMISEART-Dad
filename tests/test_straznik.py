@@ -352,6 +352,14 @@ def _block(*edits: tuple[str, str, str], name: str = "x * 3 z FAIL") -> str:
     return json.dumps([{"nazwa": name, "zmiany": [list(edit) for edit in edits]}])
 
 
+def _with_trace(text: str, trace: str) -> str:
+    """Źródło próbki z ``{slad}`` zastąpionym literałem Pythona ścieżki ``trace`` (``repr``), a nie samym tekstem
+    ścieżki w cudzysłowie: ścieżka Windows ``C:\\Users\\…`` w cudzysłowie to ``SyntaxError`` (``\\U``), więc podstawa
+    dowodu na Windows jest czerwona (#2197 r6 W1)."""
+
+    return text.replace("{slad}", repr(trace))
+
+
 TRIPLED = _block(("kod/liczby.py", "return x * 2", "return x * 3"))
 # Parametr testu z id z danych produkcji (sonda #2197 r4 W1): z mutacją, która przywraca listę z FAIL, węzła nie ma.
 FORMATS = 'OBSLUGIWANE = ("a", "b")\n\n\ndef obsluz(nazwa: str) -> bool:\n    return nazwa in OBSLUGIWANE\n'
@@ -407,6 +415,23 @@ PROBKI_TESTU = {
         _block(("tests/test_g.py", "== 6", "== 7")),
         "ODMOWA | blok ### Mutacja W1 r1: zmiana w tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test",
     ),
+    # Sonda #2197 r6 D1: APFS macOS nanosi ``Tests/test_g.py`` na test, a Linux nie ma takiego pliku; odmowa ta sama
+    # na każdym systemie.
+    "blok-zmienia-test-pod-inna-wielkoscia-liter": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("Tests/test_g.py", "== 6", "== 7")),
+        "ODMOWA | blok ### Mutacja W1 r1: zmiana w Tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test",
+    ),
+    "blok-z-pusta-sciezka": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("", "return x * 2", "return x * 3")),
+        "ODMOWA | x * 3 z FAIL: . to katalog, a nie plik na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok",
+    ),
+    "blok-ze-sciezka-katalogu-i-pusta-kotwica": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("kod", "", "X = 1\n")),
+        "ODMOWA | x * 3 z FAIL: kod to katalog, a nie plik na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok",
+    ),
     "pominiety-na-head": Sample({"tests/test_g.py": TEST_G.replace("def test_g", "import pytest\n\n\n@pytest.mark.skip\ndef test_g")}, TRIPLED, "NIEWYKRYTA | x * 3 z FAIL: NIEWYKRYTA: 1 skipped"),
     "brak-bloku": Sample({"tests/test_g.py": TEST_G}, None, "ODMOWA | żaden werdykt PR nie ma bloku ### Mutacja W1 r1 ze złą postacią do naniesienia na HEAD: recenzent następnej rundy dopisuje blok"),
     "kotwica-nieobecna-na-head": Sample(
@@ -444,14 +469,15 @@ def test_dowod_testu_przyjmuje_test_ktory_pada_tylko_przez_mutacje_recenzenta(tm
         assert outcome.line.endswith("(pytest nie uruchomił testu, kod 4)"), outcome.line
 
 
+ONCE = "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    assert not slad.exists()\n    slad.write_text('1')\n"
+
+
 def test_slad_poza_srodowiskiem_biegu_to_odmowa_a_nie_wykryta(tmp_path: Path) -> None:
     """Sonda #2197 r4 W2: test, który nie woła kodu z mutacją, a zostawia ślad poza środowiskiem biegu (ścieżka
     bezwzględna) i pada, gdy go zastanie, padłby z każdą mutacją; bieg bez mutacji po biegach z mutacją pada tak samo,
     więc dowód odmawia."""
 
-    trace = tmp_path / "slad.txt"
-    once = f"import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({str(trace)!r})\n    assert not slad.exists()\n    slad.write_text('1')\n"
-    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": once})
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": _with_trace(ONCE, str(tmp_path / "slad.txt"))})
 
     outcome = pull.prove(f"pytest {NODE}", mutation=TRIPLED)
 
@@ -533,7 +559,7 @@ ZNANE_LUKI_STRAZNIKA = {
     "pytest: test pada na przemian przez ślad poza środowiskiem": Gap(
         {
             "tests/test_g.py": (
-                "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path('{slad}')\n    if slad.exists():\n        slad.unlink()\n"
+                "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    if slad.exists():\n        slad.unlink()\n"
                 "        raise AssertionError('ślad poprzedniego biegu')\n    slad.write_text('1')\n"
             )
         },
@@ -543,12 +569,28 @@ ZNANE_LUKI_STRAZNIKA = {
     "pytest: test sprawdza błąd dopiero przy śladzie poza środowiskiem": Gap(
         {
             "tests/test_g.py": (
-                "import pathlib\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    slad = pathlib.Path('{slad}')\n"
+                "import pathlib\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n"
                 "    if slad.exists():\n        assert podwojona(3) == 6\n    slad.write_text('1')\n"
             )
         },
         f"pytest {NODE}",
         TRIPLED,
+    ),
+    # Sąsiad w sesji Required CI (sonda #2197 r6 W2): rejestr formatów wypełnia import ``kod.csv_format``, a poprawka
+    # dodaje ten import do ``kod/eksport.py``. Dowód uruchamia węzeł sam, więc z mutacją, która import usuwa, test pada,
+    # a zadanie pytest zbiera też ``tests/test_csv_format.py`` (każdy worker xdist zbiera wszystkie pliki zadania przed
+    # pierwszym testem), który moduł formatu importuje, więc z błędem przechodzi; tak samo maskuje stan zostawiony przez
+    # wcześniejszy test workera. To ocenia recenzent.
+    "pytest: sąsiad w sesji Required CI ustawia stan modułu, który maskuje błąd": Gap(
+        {
+            "kod/formaty.py": "FORMATY: dict[str, str] = {}\n",
+            "kod/csv_format.py": "from kod.formaty import FORMATY\n\nFORMATY['csv'] = 'przecinki'\n",
+            "kod/eksport.py": "import kod.csv_format\nfrom kod.formaty import FORMATY\n\n\ndef opis(nazwa: str) -> str:\n    return FORMATY[nazwa]\n",
+            "tests/test_g.py": "from kod.eksport import opis\n\n\ndef test_g() -> None:\n    assert opis('csv') == 'przecinki'\n",
+            "tests/test_csv_format.py": "import kod.csv_format\nfrom kod.formaty import FORMATY\n\n\ndef test_csv() -> None:\n    assert FORMATY['csv'] == 'przecinki'\n",
+        },
+        f"pytest {NODE}",
+        _block(("kod/eksport.py", "import kod.csv_format\n", ""), name="eksport bez importu, który rejestruje csv, z FAIL"),
     ),
     # Test tekstu definicji zamiast jej zachowania pada z mutacją tego tekstu; dowód nie ocenia, co test sprawdza.
     "pytest: test tekstu definicji zamiast jej zachowania": Gap(
@@ -562,9 +604,34 @@ ZNANE_LUKI_STRAZNIKA = {
 @pytest.mark.parametrize("name", ZNANE_LUKI_STRAZNIKA)
 def test_znane_luki_straznika_przechodza_przez_dowod(tmp_path: Path, name: str) -> None:
     gap = ZNANE_LUKI_STRAZNIKA[name]
-    head = {path: text.replace("{slad}", str(tmp_path / "slad.txt")) for path, text in gap.head.items()}
+    head = {path: _with_trace(text, str(tmp_path / "slad.txt")) for path, text in gap.head.items()}
     pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **head})
 
     outcome = pull.prove(gap.guard, scopes=SCOPE, before_test_proof=gap.before_test_proof, mutation=gap.mutation)
 
     assert outcome.detected, f"dowód odmawia już luki „{name}”: usuń ją ze ZNANE_LUKI_STRAZNIKA ({outcome.line})"
+
+
+# Ścieżka ``tmp_path`` runnera Windows w Required CI (#2197 r6 W1, job ``pytest (Python 3.13, …)``).
+WINDOWS_TRACE = r"C:\Users\runneradmin\AppData\Local\Temp\pytest-of-runneradmin\pytest-0\test_g0\slad.txt"
+
+
+SOURCES = {
+    f"{name}: {path}": text
+    for name, head in [
+        *((name, sample.head) for name, sample in PROBKI_TESTU.items()),
+        ("slad-poza-srodowiskiem", {"tests/test_g.py": ONCE}),
+        *((name, gap.head) for name, gap in ZNANE_LUKI_STRAZNIKA.items()),
+    ]
+    for path, text in head.items()
+    if path.endswith(".py")
+}
+
+
+@pytest.mark.parametrize("source", SOURCES)
+def test_zrodlo_kazdej_probki_dowodu_testu_kompiluje_sie_ze_sladem_pod_sciezka_windows(source: str) -> None:
+    """Próbka wstawia ścieżkę ``tmp_path`` do źródła testu (``{slad}``) tylko przez ``_with_trace``, więc z ukośnikami
+    wstecznymi Windows źródło jest tym samym Pythonem; ścieżka w cudzysłowie bez ucieczki to ``SyntaxError``
+    i czerwona podstawa dowodu tylko na Windows (#2197 r6 W1), a ten test łapie to na każdym systemie."""
+
+    compile(_with_trace(SOURCES[source], WINDOWS_TRACE), source, "exec")

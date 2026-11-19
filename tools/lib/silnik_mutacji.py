@@ -13,7 +13,8 @@ nieaktualnych ``.pyc``. Polecenie biegnie Pythonem, który uruchomił narzędzie
 z ``PYTHONPATH`` na ``src`` kopii: edytowalna instalacja ``.venv`` wskazuje ``src`` checkoutu.
 
 Mutacja zmienia jedną albo kilka kotwic, każdą obecną w swoim pliku dokładnie raz; inaczej jest
-NIEAKTUALNA. Pusta kotwica w pliku, którego nie ma, tworzy go razem z katalogami. Zanim narzędzie
+NIEAKTUALNA, tak samo jak zmiana, której ścieżka to katalog. Pusta kotwica w pliku, którego nie ma, tworzy go
+razem z katalogami. Zanim narzędzie
 zepsuje kod, polecenie musi przejść na kopii bez mutacji, a jeśli mutacja oczekuje ostatniej
 linii wyjścia, polecenie bez mutacji nie może się nią kończyć. Werdykty to ``Verdict``, a dowodem jest tylko
 WYKRYTA: polecenie pada albo kończy się oczekiwaną linią. ZAWIESZENIE to test, który pytest-timeout skończył po
@@ -152,7 +153,7 @@ class Verdict(StrEnum):
     REGRESSION = "REGRES"  # NIEWYKRYTA na HEAD, a WYKRYTA na merge-base: zmiana osłabiła test
     HANG = "ZAWIESZENIE"  # test skończony przez pytest-timeout, co czerwieni CI
     OVER_LIMIT = "PRZEKROCZONY CZAS"  # polecenie bez wyniku w --limit-s narzędzia, czego CI nie widzi
-    STALE = "NIEAKTUALNA"  # kotwica nie występuje dokładnie raz
+    STALE = "NIEAKTUALNA"  # kotwica nie występuje dokładnie raz albo ścieżka to katalog
     NO_VERDICT = "BEZ WERDYKTU"  # koniec czasu wywołującego przed wynikiem
 
 
@@ -280,10 +281,12 @@ def _remove(copy: Path, path: Path) -> None:
 
 
 def _apply(copy: Path, edits: Sequence[Edit]) -> str | None:
-    """Zmienia kod kopii; zwraca opis kotwicy, której nie ma dokładnie raz."""
+    """Zmienia kod kopii; zwraca opis kotwicy, której nie ma dokładnie raz, albo ścieżki, która jest katalogiem."""
 
     for edit in edits:
         path = copy / edit.file
+        if path.is_dir():
+            return f"{edit.file.as_posix()} to katalog, a nie plik"
         code = path.read_text(encoding="utf-8") if path.is_file() else ""
         if code.count(edit.anchor) != 1:
             return f"kotwicy nie ma dokładnie raz w {edit.file.as_posix()}: {edit.anchor.strip()[:60]!r}"

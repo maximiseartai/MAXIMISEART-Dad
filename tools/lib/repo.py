@@ -43,6 +43,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import threading
+import unicodedata
 
 ROOT = Path(__file__).resolve().parents[2]
 # Katalogi importu (od korzenia, od najwyższego pierwszeństwa), które widzi test i każdy Python z ``.venv``:
@@ -73,6 +74,7 @@ __all__ = [
     "command",
     "commit",
     "common_dir",
+    "folded",
     "git",
     "git_dir",
     "is_ancestor",
@@ -117,6 +119,14 @@ def blob(root: Path, revision: str, path: str) -> bytes | None:
     if not succeeds(root, "cat-file", "-e", f"{revision}:{path}"):
         return None
     return _output(root, "cat-file", "blob", f"{revision}:{path}", timeout=TIMEOUT_S)
+
+
+def folded(path: str) -> str:
+    """Klucz ścieżki, pod którym system plików macOS (APFS) scala pisownie różne tylko wielkością liter albo
+    normalizacją Unicode (NFC i NFD), a system plików runnera Linux nie: na Macu ścieżki z tym samym kluczem to jeden
+    plik."""
+
+    return unicodedata.normalize("NFC", path).casefold()
 
 
 def _output(root: Path, *arguments: str, timeout: float | None, isolated: bool = False) -> bytes:

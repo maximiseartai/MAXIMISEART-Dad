@@ -48,7 +48,6 @@ import subprocess
 import sys
 import tempfile
 import tomllib
-import unicodedata
 from typing import Any
 
 import yaml
@@ -184,7 +183,7 @@ def _twins(root: Path, tree: str) -> list[str]:
     seen: dict[str, list[str]] = {}
     for path in repo.git(root, "ls-tree", "-r", "-z", "--name-only", tree).split("\0"):
         if path:
-            seen.setdefault(unicodedata.normalize("NFC", path).casefold(), []).append(path)
+            seen.setdefault(repo.folded(path), []).append(path)
     return sorted(path for paths in seen.values() if len(paths) > 1 for path in paths)
 
 
