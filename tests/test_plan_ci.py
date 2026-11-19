@@ -216,6 +216,32 @@ def test_plan_odmawia_gdy_limit_zadan_zdarzenia_nie_miesci_zadania_na_kazdy_tor_
         _plan(_times(), FILES, event=event)
 
 
+def test_skrypt_mutacji_bez_pomiaru_main_wazy_czas_nocy_wiec_dzieli_sie_na_czesci_a_bez_niego_stoi_caly(tmp_path: Path) -> None:
+    """Od 13.11 main nie uruchamia skryptów mutacji (ADR 0021): bez czasów nocy skrypt modelu kolejki (567–856 s w runach
+    PR 16–18.11) ważył medianę zmierzonych kroków toru, ok. 55 s, i stał cały w jednym zadaniu, które trzymało ścianę
+    runu."""
+
+    def artifact(run: int, units: dict[str, float]) -> str:
+        observed = {key: [{"run": run, "proba": 1, "zadanie": key, "s": s, "status": "ok"}] for key, s in units.items()}
+        return json.dumps({"wersja": 1, "runy": [{"run": run, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {MUTACJE.pomiary: observed}})
+
+    script = "verify-a/check_a_mutations.py"
+    (tmp_path / czasy_ci.ARTEFAKT_NOCY).mkdir()
+    (tmp_path / "5.json").write_text(artifact(5, {"skill:verify-a/ci": 40.0, "skill:verify-c/ci": 30.0, "narzut:mutations": 40.0}), encoding="utf-8")
+    (tmp_path / czasy_ci.ARTEFAKT_NOCY / "9.json").write_text(artifact(9, {f"skill:{script}": 300.0}), encoding="utf-8")
+    for folder in (tmp_path, tmp_path / czasy_ci.ARTEFAKT_NOCY):
+        (folder / "pobrane").touch()
+    steps = _skill_steps(["verify-a/ci", "verify-c/ci", script])
+
+    def parts(z_nocy: bool) -> list[str]:
+        plan = _plan(czasy_ci.z_mainu(tmp_path, odswiez_po_s=math.inf, github=BEZ_LOGOWANIA, z_nocy=z_nocy), [], steps=steps, tory=())
+        return sorted(unit for job in plan.zadania for unit in job.jednostki if unit.startswith(f"skill:{script}"))
+
+    # Zadanie Mutation checks mieści 44 s pracy (cel 90 s bez narzutu 40 s i końca 6 s), a bez nocy skrypt waży 35 s.
+    assert parts(z_nocy=False) == [f"skill:{script}"]
+    assert parts(z_nocy=True) == [f"skill:{script}#{part}/7" for part in range(1, 8)]
+
+
 def test_kazdy_wybrany_krok_skilla_biegnie_raz_a_skrypt_dluzszy_od_zadania_w_czesciach_najwyzej_po_jednej_na_mutacje() -> None:
     chosen = [key for key in SKILL_STEPS if key != "verify-d/check_d_mutations.py"]
     plan = _plan(_with_skill_times(_times()), [*FILES, LONG], steps=_skill_steps(chosen))
@@ -613,8 +639,12 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_wypisuje_jednostki_
     planned_steps = {unit.partition("#")[0] for job in plan.zadania if job.tor == MUTACJE.nazwa for unit in job.jednostki}
 
     assert code == 0
-    assert out[0] == "CZASY CI | pobranie czasy-ci z GitHuba: gh: not logged in; plan waży pracę bez pomiaru domyślnie"
-    assert re.fullmatch(rf"PLAN CI \| push \| wszystkie pliki \| cel \d+ s \| (\d+) zadań runu \(limit {plan_ci.ZADANIA_RUNU_MAIN}\) \| czasy z runów main: brak \(wagi domyślne\)", out[1]), out[1]
+    assert out[0] == "CZASY CI | pobranie czasy-ci z GitHuba: gh: not logged in; pobranie czasy-nocy z GitHuba: gh: not logged in; plan waży pracę bez pomiaru domyślnie"
+    assert re.fullmatch(
+        rf"PLAN CI \| push \| wszystkie pliki \| cel \d+ s \| (\d+) zadań runu \(limit {plan_ci.ZADANIA_RUNU_MAIN}\) \| czasy z runów main: brak \(wagi domyślne\)"
+        r" \| skrypty mutacji bez pomiaru main z nocy: brak",
+        out[1],
+    ), out[1]
     assert out[-1] == f"PLAN CI DIGEST | {plan.digest}"
     # Linia zadania liczy całe pliki testów, a każdą inną jednostkę (krok CI, krok skilla, udział) wypisuje kluczem.
     job_lines = {line.partition(": ")[0].strip(): line for line in out if line.startswith("  ")}

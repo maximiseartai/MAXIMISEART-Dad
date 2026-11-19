@@ -476,10 +476,17 @@ def _artifact(run: int, **jobs: dict[str, float]) -> dict[str, object]:
 
 class _GitHub:
     """GitHub z zielonymi runami main i ich artefaktami ``czasy-ci`` (id artefaktu to numer runu + 1000), z których
-    ``expired`` wygasły; zapamiętuje listy, o które pytano, i runy, których artefakt pobrano."""
+    ``expired`` wygasły, i z artefaktami ``czasy-nocy`` runów ``nights`` (id to numer runu + 2000; ``None``: lista
+    artefaktów nocy pada); zapamiętuje listy, o które pytano, i runy, których artefakt pobrano."""
 
-    def __init__(self, green: list[int], artifacts: dict[int, dict[str, object]], expired: frozenset[int] = frozenset()) -> None:
-        self.green, self.artifacts, self.expired = green, artifacts, expired
+    def __init__(
+        self,
+        green: list[int],
+        artifacts: dict[int, dict[str, object]],
+        expired: frozenset[int] = frozenset(),
+        nights: dict[int, dict[str, object]] | None = None,
+    ) -> None:
+        self.green, self.artifacts, self.expired, self.nights = green, artifacts, expired, nights
         self.listed: list[str] = []
         self.downloaded: list[int] = []
 
@@ -487,17 +494,22 @@ class _GitHub:
         self.listed.append(sciezka)
         if sciezka.startswith("repos/{owner}/{repo}/actions/workflows/ci.yml/runs?"):
             return {"workflow_runs": [{"id": run} for run in self.green]}
+        if sciezka.startswith("repos/{owner}/{repo}/actions/artifacts?name=czasy-nocy&"):
+            if self.nights is None:
+                raise RuntimeError("HTTP 502: Bad Gateway")
+            return {"artifacts": [{"id": run + 2000, "expired": False, "workflow_run": {"id": run}} for run in self.nights]}
         assert sciezka.startswith("repos/{owner}/{repo}/actions/artifacts?name=czasy-ci&"), sciezka
         return {"artifacts": [{"id": run + 1000, "expired": run in self.expired, "workflow_run": {"id": run}} for run in self.artifacts]}
 
     def bajty(self, sciezka: str) -> bytes:
-        artifact = sciezka.removeprefix("repos/{owner}/{repo}/actions/artifacts/").removesuffix("/zip")
-        run = int(artifact) - 1000
+        artifact = int(sciezka.removeprefix("repos/{owner}/{repo}/actions/artifacts/").removesuffix("/zip"))
+        name, documents = ("czasy-nocy", self.nights or {}) if artifact >= 2000 else ("czasy-ci", self.artifacts)
+        run = artifact % 1000
         self.downloaded.append(run)
         packed = io.BytesIO()
         with zipfile.ZipFile(packed, "w") as archive:
-            if self.artifacts[run]:
-                archive.writestr("czasy-ci.json", json.dumps(self.artifacts[run]))
+            if documents[run]:
+                archive.writestr(f"{name}.json", json.dumps(documents[run]))
         return packed.getvalue()
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> NoReturn:
@@ -638,6 +650,59 @@ def test_po_nieudanym_pobraniu_nastepny_odczyt_pobiera_znowu_a_po_udanym_czeka_d
     assert (failed.runy, failed.blad) == ((), "pobranie czasy-ci z GitHuba: error connecting to api.github.com")
     assert (retried.runy, retried.blad) == ((3,), None)
     assert (cached.runy, cached.blad) == ((3,), None)
+
+
+def _night(run: int, **units: float) -> dict[str, object]:
+    """Artefakt ``czasy-nocy`` runu nocy: każda jednostka w osobnym zadaniu ``skill-mutations`` na windows-3.14."""
+
+    return _artifact(run, **{f"Mutation checks ({index})": {key: seconds} for index, (key, seconds) in enumerate(units.items(), start=1)})
+
+
+KOLEJKA = "skill:verify-kolejka/check_model_kolejki_mutations.py"
+KARTA = "skill:verify-karta/check_model_karty_mutations.py"
+
+
+def test_skrypt_mutacji_bez_pomiaru_main_bierze_mediane_trzech_najnowszych_nocy_a_pomiar_main_wygrywa(tmp_path: Path) -> None:
+    """Od 13.11 main nie uruchamia skryptów mutacji (ADR 0021), a pull request dalej uruchamia skrypty modeli. Noc uruchamia
+    każdą część każdej liczby części podstawy z ``ci-czesci``, więc jej suma runu nie jest czasem podstawy, a narzut i
+    krok pracy main mierzy zawsze."""
+
+    lane = "windows-3.14"
+    main = _artifact(10, M={KARTA: 100.0, "skill:verify-a/ci": 50.0, "narzut:mutations": 40.0})
+    nights = {
+        run: _night(run, **{KOLEJKA: seconds, KARTA: 900.0, "skill:verify-b/ci": 3000.0, "narzut:mutations": 99.0, "krok:praca": 2000.0})
+        for run, seconds in {6: 5000.0, 7: 500.0, 8: 800.0, 9: 700.0}.items()
+    }
+    github = _GitHub([10], {10: main}, nights=nights)
+
+    czasy = czasy_ci.z_mainu(tmp_path, github=github, z_nocy=True)
+
+    assert (czasy.runy, czasy.noce, czasy.blad, sorted(github.downloaded)) == ((10,), (7, 8, 9), None, [7, 8, 9, 10])
+    assert [czasy.praca(lane, klucz) for klucz in (KOLEJKA, KARTA, "skill:verify-b/ci", "krok:praca")] == [700.0, 100.0, None, None]
+    assert [zadanie["narzut:mutations"] for zadanie in czasy.zadania(lane) if "narzut:mutations" in zadanie] == [40.0]
+
+
+def test_odczyt_bez_z_nocy_nie_pyta_o_czasy_nocy(tmp_path: Path) -> None:
+    """``tools/szybko.py``, ``tools/scal_pr.py`` i plan części nocy ważą tylko pliki testów, więc nie czekają na noc."""
+
+    github = _GitHub([10], {10: _artifact(10, M={"narzut:mutations": 40.0})}, nights={9: _night(9, **{KOLEJKA: 700.0})})
+
+    czasy = czasy_ci.z_mainu(tmp_path, github=github)
+
+    assert (czasy.praca("windows-3.14", KOLEJKA), czasy.noce, github.downloaded) == (None, (), [10])
+    assert not (tmp_path / czasy_ci.ARTEFAKT_NOCY).exists()
+
+
+def test_blad_pobrania_czasow_nocy_zostawia_czasy_main_a_nastepny_odczyt_pobiera_tylko_noce(tmp_path: Path) -> None:
+    main = {3: _artifact(3, A={"pytest:tests/test_x.py": 4.0})}
+
+    failed = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=_GitHub([3], main), z_nocy=True)
+    github = _GitHub([3], main, nights={9: _night(9, **{KOLEJKA: 700.0})})
+    retried = czasy_ci.z_mainu(tmp_path, odswiez_po_s=czasy_ci.ODSWIEZ_S, github=github, z_nocy=True)
+
+    assert (failed.runy, failed.noce, failed.blad) == ((3,), (), "pobranie czasy-nocy z GitHuba: HTTP 502: Bad Gateway")
+    assert (retried.runy, retried.noce, retried.blad, retried.praca("windows-3.14", KOLEJKA)) == ((3,), (9,), None, 700.0)
+    assert [sciezka.partition("?")[2] for sciezka in github.listed] == ["name=czasy-nocy&per_page=30"]
 
 
 @pytest.mark.parametrize(
