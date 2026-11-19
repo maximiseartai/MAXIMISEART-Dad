@@ -100,7 +100,7 @@ def built(root: Path, head: str, target: str) -> Iterator[Environment]:
     with tempfile.TemporaryDirectory(prefix="srodowisko-ci-") as folder:
         home, copy = Path(folder) / "dom", Path(folder) / "drzewo"
         home.mkdir()
-        _checkout(root, tree, copy, home)
+        _checkout(root, tree, copy)
         if problems := mismatch(copy):
             raise Refused(
                 f"środowisko Required CI: zadanie {JOB} z {WORKFLOW} drzewa PR scalonego z bazą buduje je inaczej niż dowód ({'; '.join(problems)}): "
@@ -112,18 +112,17 @@ def built(root: Path, head: str, target: str) -> Iterator[Environment]:
         yield Environment(tree, copy, python, {**tools, "HOME": str(home)})
 
 
-def _checkout(root: Path, commit: str, copy: Path, home: Path) -> None:
+def _checkout(root: Path, commit: str, copy: Path) -> None:
     """Kopia commitu ``commit`` w ``copy`` jak checkout Required CI: osobne repozytorium z obiektami ``root``
     (alternates), bez szablonów, ``info/exclude`` repozytorium ``root`` i konfiguracji gita wołającego, które czytałyby
     checkout (filtry, końce linii) i ruff (wykluczenia)."""
 
-    isolated = {"HOME": str(home), "XDG_CONFIG_HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}
     commands = (
         (root, ("clone", "--quiet", "--shared", "--no-checkout", "--template=", str(root.resolve()), str(copy))),
         (copy, ("-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", commit)),
     )
     for cwd, arguments in commands:
-        done = repo.run_git(cwd, *arguments, timeout=BUILD_TIMEOUT_S, extra_env=isolated)
+        done = repo.run_git(cwd, *arguments, timeout=BUILD_TIMEOUT_S, isolated=True)
         if done.returncode:
             raise Refused(f"środowisko Required CI: git {arguments[0]} kopii skończył się kodem {done.returncode} ({done.stderr.strip()[-300:]}): uruchom ponownie")
 
