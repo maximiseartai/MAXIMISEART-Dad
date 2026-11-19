@@ -38,7 +38,6 @@ import rejestr_korzeni
 import scal_pr
 import stan_pr
 import szablon_werdyktu
-import testy_scalenia
 import werdykt_pr
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
@@ -445,16 +444,16 @@ def _deploy_template(github: MergeGitHub, *, authored: str = "2026-10-01T00:00:0
     git(github.checkout, "push", "--quiet", "origin", "main")
 
 
-def test_pomoc_podaje_zasady_testu_scalenia_werdyktu_i_limitu_rund_z_przykladami_polecen(capsys: pytest.CaptureFixture[str]) -> None:
-    """``AGENTS.md`` odsyła agenta po warunki scalenia i postać werdyktów do ``--help``, a te zasady żyją w modułach
-    bramek, nie w docstringu narzędzia."""
+def test_pomoc_podaje_niepuste_zasady_kazdego_modulu_bramek_z_przykladami_polecen(capsys: pytest.CaptureFixture[str]) -> None:
+    """``AGENTS.md`` odsyła agenta po warunki scalenia i postać werdyktów do ``--help``, a te zasady żyją w stałych
+    ``ZASADY`` modułów bramek, nie w opisie narzędzia."""
 
     with pytest.raises(SystemExit):
         scal_pr.main(["--help"])
 
     shown = " ".join(capsys.readouterr().out.split())
-    for rules in (testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__):
-        assert " ".join(str(rules).split()) in shown
+    assert [index for index, rules in enumerate(scal_pr.RULES) if not rules.strip()] == []
+    assert [index for index, rules in enumerate(scal_pr.RULES) if " ".join(rules.split()) not in shown] == []
     assert "tools/scal_pr.py 336 --werdykt" in shown
 
 

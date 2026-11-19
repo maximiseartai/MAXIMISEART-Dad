@@ -1,4 +1,10 @@
-"""Ponowny przegląd tego samego HEAD (skill ``przeglad``, „Kolejne rundy”): werdykt dla SHA, który ma już werdykt
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+import szablon_werdyktu
+
+ZASADY = """Ponowny przegląd tego samego HEAD (skill ``przeglad``, „Kolejne rundy”): werdykt dla SHA, który ma już werdykt
 w tym PR, ma w „## Sprawdzone” punkt ``Ponowny przegląd: <zdanie>`` (``POINT``). Zdanie mówi, czemu ten SHA dostaje
 kolejny przegląd, i podaje punkty „Do sprawdzenia” ze zlecenia tej rundy.
 
@@ -16,12 +22,6 @@ tego modułu (``werdykt_pr.rule_applies`` z chwilą ``werdykt_pr.deployment`` dl
 Granica: narzędzie nie widzi zlecenia, więc nie sprawdza, czy zdanie punktu jest prawdziwe ani czy podaje każdy punkt
 „Do sprawdzenia”; ocenia to recenzent następnej rundy.
 """
-
-from __future__ import annotations
-
-from collections.abc import Sequence
-
-import szablon_werdyktu
 
 MARKER = "tools/lib/ponowny_przeglad.py"
 POINT = "Ponowny przegląd: "

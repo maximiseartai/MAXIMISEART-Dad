@@ -1,12 +1,3 @@
-"""Create a disposable synthetic Rejestr zleceń and both Wzorce for Przygotowanie pliku zbiorczego.
-
-``--with-worker-template`` also creates the Wzorzec rozliczenia pracownika for the Przebieg rozliczeń
-that follows. With ``--templates-from`` every Wzorce is a byte copy of the real one instead of a
-synthetic workbook.
-
-The synthetic Wzorce are the shared ``atrapy`` Wzorce of the tests, so the skill checks the shape the tests check.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -42,6 +33,15 @@ from atrapy.scenariusz_rozliczen import (
 )
 from atrapy.settlement import PERIOD, WORKERS, write_worker_list
 from atrapy.workbooks import active_worksheet
+
+OPIS = """Create a disposable synthetic Rejestr zleceń and both Wzorce for Przygotowanie pliku zbiorczego.
+
+``--with-worker-template`` also creates the Wzorzec rozliczenia pracownika for the Przebieg rozliczeń
+that follows. With ``--templates-from`` every Wzorce is a byte copy of the real one instead of a
+synthetic workbook.
+
+The synthetic Wzorce are the shared ``atrapy`` Wzorce of the tests, so the skill checks the shape the tests check.
+"""
 
 REGISTER_DATE_FORMAT = "dd.mm.yyyy hh:mm"
 HIGHLIGHT_FILL = "FFFFFF00"
@@ -127,7 +127,7 @@ def _write_fixture(root: Path, templates_from: Path | None, *, with_worker_templ
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root to create; absent or empty")
     parser.add_argument("--templates-from", type=Path, help="copy the real Wzorce from this directory")
     parser.add_argument(

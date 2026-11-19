@@ -1,8 +1,3 @@
-"""Read-only fixture check before driving Przygotowanie pliku zbiorczego.
-
-``--with-worker-template`` also checks the Wzorzec rozliczenia pracownika of the Przebieg rozliczeń that follows.
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -32,6 +27,11 @@ from atrapy.scenariusz_rozliczen import (
 from atrapy.settlement import PERIOD
 from rozliczenia import register_columns
 from rozliczenia.collective_layout import HEADER_ROW, INPUT_COLUMNS
+
+OPIS = """Read-only fixture check before driving Przygotowanie pliku zbiorczego.
+
+``--with-worker-template`` also checks the Wzorzec rozliczenia pracownika of the Przebieg rozliczeń that follows.
+"""
 
 REQUIRED_REGISTER_HEADERS = frozenset(column.register_header for column in register_columns.COLUMNS)
 TARGET_HEADERS = frozenset(register_columns.TARGET_HEADERS)
@@ -109,7 +109,7 @@ def _check(root: Path, *, worker_template: bool) -> tuple[str, int, int]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of a preparation fixture")
     parser.add_argument("--with-worker-template", action="store_true", help="also check the Wzorzec rozliczenia pracownika")
     args = parser.parse_args(argv)

@@ -1,4 +1,23 @@
-"""Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import ciezkie_ci
+from kroki_lokalne import MYPY_PLATFORMS, OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
+from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
+import potomne
+from repo import BASE, ROOT
+import repo
+
+OPIS = """Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 
 Lokalnie te same sprawdzenia co CI: zadania ruff i mypy (w CI zadanie ``ruff-mypy``), frontend i workflowy (zizmor
 i actionlint ``.github/``; w CI oba w zadaniu ``frontend``), pytest i mutations.
@@ -27,25 +46,6 @@ Kroki i kopie commitów nie przeżywają ``ci_lokalnie``, także zabitego przez 
     .venv/bin/python tools/ci_lokalnie.py --kazdy-commit
     .venv/bin/python tools/ci_lokalnie.py --tylko ruff,mypy
 """
-
-from __future__ import annotations
-
-import argparse
-import json
-from pathlib import Path
-import shutil
-import subprocess
-import sys
-import time
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import ciezkie_ci
-from kroki_lokalne import MYPY_PLATFORMS, OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
-from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
-import potomne
-from repo import BASE, ROOT
-import repo
 
 # Wygenerowany kontrakt i zbudowany frontend muszą zgadzać się ze źródłami (u taty nie ma Node).
 GENERATED = ("frontend/src/api", "src/rozliczenia/centrum/static")
@@ -164,7 +164,7 @@ def _check_every_commit(root: Path, base: str, jobs: set[str], *, fail_fast: boo
 
 
 def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--kroki-ci", action="store_true", help="Wypisz JSON: odtwarzane zadania CI, zadanie CI każdego zadania narzędzia i fragmenty poleceń z ich zadaniem CI.")
     parser.add_argument(
         "--kazdy-commit",

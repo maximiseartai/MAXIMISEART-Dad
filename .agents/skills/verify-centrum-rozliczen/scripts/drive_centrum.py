@@ -1,14 +1,3 @@
-"""Drive a running Centrum rozliczeń in Chromium the way Dad does and record the proof.
-
-Each feature step pairs a user action with the resulting screen, the server's
-answer, and the side effect on disk (settings file, picker dialogs, opened
-paths). Screenshots and ARIA snapshots go to ``<evidence>/screenshots`` and
-``<evidence>/aria``; API answers to ``<evidence>/api``; the run's state files
-to ``<evidence>/state``. The section Sub-features of each driven feature, from the run's steps and checks (``sections``),
-goes to ``<evidence>/sekcje-z-biegu/<feature>.md``, and the drive fails, printing the difference, when it differs from
-the feature's file in ``features/`` (``compare``).
-"""
-
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
@@ -41,6 +30,17 @@ from komunikat_mapy import call_messages
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.efenix_browser import launch_options
 from rozliczenia.tool_files import config_dir
+
+OPIS = """Drive a running Centrum rozliczeń in Chromium the way Dad does and record the proof.
+
+Each feature step pairs a user action with the resulting screen, the server's
+answer, and the side effect on disk (settings file, picker dialogs, opened
+paths). Screenshots and ARIA snapshots go to ``<evidence>/screenshots`` and
+``<evidence>/aria``; API answers to ``<evidence>/api``; the run's state files
+to ``<evidence>/state``. The section Sub-features of each driven feature, from the run's steps and checks (``sections``),
+goes to ``<evidence>/sekcje-z-biegu/<feature>.md``, and the drive fails, printing the difference, when it differs from
+the feature's file in ``features/`` (``compare``).
+"""
 
 MODULES = {each.name: modul(each.module) for each in FEATURES}
 FEATURE_FILES = Path(__file__).resolve().parents[1] / "features"
@@ -202,7 +202,7 @@ def compare(evidence: Path, printed: dict[str, Section]) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=RawDescriptionHelpFormatter)
     parser.add_root("run root with fixture.json and a served Centrum")
     parser.add_argument("--url", required=True, help="Centrum URL from the record serve_centrum.py writes (harness.File.SERVER).")
     parser.add_argument("--evidence", required=True, help="Evidence directory that survives cleanup.")

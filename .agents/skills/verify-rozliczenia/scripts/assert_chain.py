@@ -1,13 +1,3 @@
-"""Assert the Przebieg rozliczeń of a chain run on the Plik zbiorczy from Przygotowanie, without printing row contents.
-
-The Plik zbiorczy was written by Przygotowanie pliku zbiorczego and then filled by
-the Gotowość step, so its Wiersze danych carry values in all of ``A:AT``, and the
-Wyróżnienia and NUMER ZL. Hiperłącza Przygotowanie carried over from the Rejestr. A Rozliczenie pracownika
-holds those rows without the Ilości tylko dla INEA (ADR 0018), with the Czerwone pole empty and the Zielone pole 1,
-both without a fill (ADR 0039, ``WORKER_COLOURED_FIELDS``). The checks are generic over the Wzorce, so the
-same helper serves both the synthetic and the real Wzorce. Messages name workers, rows, and columns, never a cell value.
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -57,6 +47,16 @@ from atrapy.scenariusz_rozliczen import (
 from atrapy.settlement import PERIOD, WORKERS
 from rozliczenia import collective_layout
 from rozliczenia.collective_layout import FIRST_DATA_ROW, HEADER_ROW
+
+OPIS = """Assert the Przebieg rozliczeń of a chain run on the Plik zbiorczy from Przygotowanie, without printing row contents.
+
+The Plik zbiorczy was written by Przygotowanie pliku zbiorczego and then filled by
+the Gotowość step, so its Wiersze danych carry values in all of ``A:AT``, and the
+Wyróżnienia and NUMER ZL. Hiperłącza Przygotowanie carried over from the Rejestr. A Rozliczenie pracownika
+holds those rows without the Ilości tylko dla INEA (ADR 0018), with the Czerwone pole empty and the Zielone pole 1,
+both without a fill (ADR 0039, ``WORKER_COLOURED_FIELDS``). The checks are generic over the Wzorce, so the
+same helper serves both the synthetic and the real Wzorce. Messages name workers, rows, and columns, never a cell value.
+"""
 
 INPUT_COLUMNS = collective_layout.INPUT_COLUMNS[-1]  # A:K
 COPIED_COLUMNS = collective_layout.DATA_ROW_COLUMNS[-1]  # A:AT
@@ -482,7 +482,7 @@ def _assert_run(root: Path, result_path: Path | None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of a chain fixture")
     parser.add_argument("--expect", choices=("dry-run", "run"), required=True)
     parser.add_argument("--result", type=Path, help="evidence JSON of the Przebieg rozliczeń step")

@@ -1,25 +1,3 @@
-"""Uruchamia claude -p z pracą w tle i bez niej, by sprawdzić hook Stop praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
-
-Wyrocznia hooka ``tools/hooks/praca_w_tle.py``: hook działa, dopóki Claude Code uruchamia hooki ``Stop`` z listą
-``background_tasks`` i słucha ich odmowy, więc po aktualizacji Claude Code ta wyrocznia uruchamia ``claude -p`` w trybie
-bypass (jak T3) w katalogu tego checkoutu, czyli z jego ``.claude/settings.json``. Modelu nie ma: lokalne fałszywe API
-(``ANTHROPIC_BASE_URL``) każe wywołać Basha z poleceniem przypadku, a po jego wyniku kończy turę słowami agentów z nocy
-4/5.11.2026 („Czekam na powiadomienie o procesie w tle.”), także po każdej odmowie hooka.
-
-Przypadki (``CASES``): ``praca-w-tle`` uruchamia ``sleep 60`` z ``run_in_background``, a ``ZGODNE`` znaczy, że hook
-odmówił końca tury dwa razy, drugi raz przy ``stop_hook_active``; wtedy wyrocznia kończy Claude Code, a ``sleep 60``,
-które Claude Code uruchamia poza swoją grupą procesów, kończy się samo. ``bez-pracy-w-tle`` uruchamia ``true`` na pierwszym planie, a ``ZGODNE`` znaczy, że Claude Code sam
-skończył turę bez odmowy. Hook pisze dziennik do pliku w katalogu tymczasowym wyroczni
-(``praca_w_tle.LOG_ENV``), nie do ``~/.cache/maximiseart/praca_w_tle.jsonl``. Inny wynik to ``ZMIANA`` z opisem. Ostatnia linia to ``WYROCZNIA OK | …`` (kod 0) tylko
-wtedy, gdy każdy przypadek jest ``ZGODNE``; inaczej ``WYROCZNIA ZMIANA | …`` (kod 1). Bez ``claude`` na PATH albo na
-Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Code, które uruchomiła wyrocznia. Claude Code
-uruchamia ``tools/lib/falszywe_api.py`` tak, by mogło pytać tylko fałszywe API, a gdy przez ``--kontakt-s`` sekund go
-nie zapyta, kończy je, a wyrocznia zgłasza ``ZMIANA``.
-
-    .venv/bin/python tools/wyrocznia_pracy_w_tle.py               # oba przypadki, ok. 5 s
-    .venv/bin/python tools/wyrocznia_pracy_w_tle.py praca-w-tle   # wybrany przypadek
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -37,6 +15,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import falszywe_api
 import praca_w_tle
 from repo import ROOT
+
+OPIS = """Uruchamia claude -p z pracą w tle i bez niej, by sprawdzić hook Stop praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
+
+Wyrocznia hooka ``tools/hooks/praca_w_tle.py``: hook działa, dopóki Claude Code uruchamia hooki ``Stop`` z listą
+``background_tasks`` i słucha ich odmowy, więc po aktualizacji Claude Code ta wyrocznia uruchamia ``claude -p`` w trybie
+bypass (jak T3) w katalogu tego checkoutu, czyli z jego ``.claude/settings.json``. Modelu nie ma: lokalne fałszywe API
+(adres z ``falszywe_api.claude``) każe wywołać Basha z poleceniem przypadku, a po jego wyniku kończy turę słowami agentów z nocy
+4/5.11.2026 („Czekam na powiadomienie o procesie w tle.”), także po każdej odmowie hooka.
+
+Przypadki (``CASES``): ``praca-w-tle`` uruchamia ``sleep 60`` z ``run_in_background``, a ``ZGODNE`` znaczy, że hook
+odmówił końca tury dwa razy, drugi raz przy ``stop_hook_active``; wtedy wyrocznia kończy Claude Code, a ``sleep 60``,
+które Claude Code uruchamia poza swoją grupą procesów, kończy się samo. ``bez-pracy-w-tle`` uruchamia ``true`` na pierwszym planie, a ``ZGODNE`` znaczy, że Claude Code sam
+skończył turę bez odmowy. Hook pisze dziennik do pliku w katalogu tymczasowym wyroczni
+(``praca_w_tle.LOG_ENV``), nie do ``~/.cache/maximiseart/praca_w_tle.jsonl``. Inny wynik to ``ZMIANA`` z opisem. Ostatnia linia to ``WYROCZNIA OK | …`` (kod 0) tylko
+wtedy, gdy każdy przypadek jest ``ZGODNE``; inaczej ``WYROCZNIA ZMIANA | …`` (kod 1). Bez ``claude`` na PATH albo na
+Windows kończy się kodem 2, tak samo wyrocznia uruchomiona w Claude Code, które uruchomiła wyrocznia. Claude Code
+uruchamia ``tools/lib/falszywe_api.py`` tak, by mogło pytać tylko fałszywe API, a gdy przez ``--kontakt-s`` sekund go
+nie zapyta, kończy je, a wyrocznia zgłasza ``ZMIANA``.
+
+    .venv/bin/python tools/wyrocznia_pracy_w_tle.py               # oba przypadki, ok. 5 s
+    .venv/bin/python tools/wyrocznia_pracy_w_tle.py praca-w-tle   # wybrany przypadek
+"""
 
 MARKER = "WYROCZNIA-PRACY-W-TLE"
 WAITING = "Czekam na powiadomienie o procesie w tle."
@@ -166,7 +166,7 @@ def verdict(case: Case, got: Outcome) -> tuple[str, str]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "nazwy", nargs="*", help=f"Nazwy przypadków ({', '.join(case.name for case in CASES)}); bez nich wszystkie."
     )

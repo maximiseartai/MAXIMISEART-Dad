@@ -1,6 +1,4 @@
-"""Klienty GitHuba Centrum (Skrzynka Zgłoszeń, Aktualność narzędzia) na prawdziwym GitHubie i na jego nagraniach.
-
-Tryby (opis w ``SKILL.md`` skilla ``verify-github-skrzynki``):
+"""Tryby (opis w ``SKILL.md`` skilla ``verify-github-skrzynki``):
 
 - ``doctor``: tylko odczyt; klucz klienta i jego rodzaj, klucz ``gh`` do sprzątania, repozytoria próbne (prywatne, bez
   pozostałości runów, Archiwum z commitem), limity zapytań.
@@ -67,6 +65,8 @@ from github_wymiana import (
     token_slug,
     write_recording,
 )
+
+OPIS = "Klienty GitHuba Centrum (Skrzynka Zgłoszeń, Aktualność narzędzia) na prawdziwym GitHubie i na jego nagraniach."
 
 ROOT = Path(__file__).resolve().parents[4]
 SKILL: Final = Path(__file__).resolve().parents[1]
@@ -599,7 +599,7 @@ def _features(value: str, allowed: Sequence[str]) -> tuple[str, ...]:
 
 
 def main() -> int:
-    parser = Parser(description=__doc__.splitlines()[0])
+    parser = Parser(description=OPIS)
     parser.add_argument("tryb", choices=("doctor", "na-zywo", "odtworz"))
     parser.add_argument("--feature", choices=(*(each.name for each in FEATURES), "all"), default="all")
     parser.add_run_dir()

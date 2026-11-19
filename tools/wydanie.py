@@ -1,6 +1,4 @@
-"""Narzędzie Wydań (plan, potem wydaj): nowa wersja z tagiem v* i GitHub Release (ADR 0014); uruchamiaj tylko z workflow skilla wydanie.
-
-Narzędzie Wydań: mechaniczna część „wydaj nową wersję” (skill ``wydanie``, ADR 0014).
+"""Narzędzie Wydań: mechaniczna część „wydaj nową wersję” (skill ``wydanie``, ADR 0014).
 
 ``plan`` pobiera `main` i tagi Wydań tak jak Aktualizacja narzędzia (``tool_update.fetch_main_line``) i zapisuje
 plan Wydania w pliku JSON: najnowszy commit z linii pierwszych rodziców `main` z zielonym ``Required CI status``
@@ -55,6 +53,8 @@ from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes
 from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
 from rozliczenia.centrum.tool_update import MainLine, Release
 from rozliczenia.tool_files import REPOSITORY
+
+OPIS = "Narzędzie Wydań (plan, potem wydaj): nowa wersja z tagiem v* i GitHub Release (ADR 0014); uruchamiaj tylko z workflow skilla wydanie."
 
 CONFIRMED: Final = "--potwierdzone-przez-maksa"
 # Pliki, które działają u taty: kod narzędzia, zbudowane Centrum (frontend buduje się do src/), start i biblioteki.
@@ -451,7 +451,7 @@ def _report(chosen: ReleasePlan) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.add_argument("--repozytorium", type=Path, default=ROOT, help="Checkout z remote origin (domyślnie ten).")
     commands = parser.add_subparsers(dest="polecenie", required=True)
     planned = commands.add_parser("plan", help="Plan następnego Wydania; niczego nie tworzy.")

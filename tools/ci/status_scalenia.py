@@ -1,4 +1,21 @@
-"""Werdykt scalenia każdego otwartego PR z jego bazą jako status commita na HEAD PR.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+import json
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
+
+import github
+import potomne
+from repo import ROOT
+from werdykt_scalenia import PullRequest, base_problem, fetch, merge_verdict
+
+OPIS = """Werdykt scalenia każdego otwartego PR z jego bazą jako status commita na HEAD PR.
 
 CI na PR sprawdza scalenie z bazą tylko w chwili pushu. Gdy potem do bazy wejdzie inny PR, otwarty PR może
 się z nim kłócić bez konfliktu tekstowego. Narzędzie bierze każdy otwarty PR do bazy (domyślnie ``main``)
@@ -28,23 +45,6 @@ wyglądałby jak czerwony ``main``. Kod 1 znaczy, że narzędzie nie zapisało a
     python tools/ci/status_scalenia.py --zapisz scalenia.json --baza main         # workflow scalenia.yml
     python3 tools/ci/status_scalenia.py --publikuj-z scalenia.json                # workflow werdykt-i-bramka.yml
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-import json
-from pathlib import Path
-import subprocess
-import sys
-import time
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
-
-import github
-import potomne
-from repo import ROOT
-from werdykt_scalenia import PullRequest, base_problem, fetch, merge_verdict
 
 VERDICT_STATES = frozenset({"success", "failure", "error"})
 
@@ -118,7 +118,7 @@ def _publish_from(path: Path) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", default="main", help="Gałąź, do której celują sprawdzane PR (domyślnie main); --publikuj-z bierze ją z pliku.")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--zapisz", type=Path, metavar="PLIK", help="Zapisz werdykty w pliku JSON dla --publikuj-z.")

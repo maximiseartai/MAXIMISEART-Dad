@@ -1,6 +1,4 @@
-"""Brama Legendy czynności: liczy, w ilu wierszach z kodem legenda daje to, co wpisał tata; tylko na Macu Maksa, przed Wydaniem z legendą.
-
-Puszcza Legendę czynności (``--legenda``: plik ``legenda-czynnosci.yaml`` z Ustawień taty; bez niego legenda z
+"""Puszcza Legendę czynności (``--legenda``: plik ``legenda-czynnosci.yaml`` z Ustawień taty; bez niego legenda z
 Wydania) na Plikach zbiorczych wypełnionych przez tatę: ``.xlsx`` z dysku (wartości, kwota w ``AS`` i kolory) albo
 plik Logów Wyceny w efenix z dysku taty lub z Archiwum Logów okresu (``.json``, ``.json.gz``), z którego czyta tylko
 Kopię wejścia Pliku zbiorczego: ``N:AP`` i ``CZYNNOŚCI ZREALIZOWANE``, bo kolorów Logi nie mają. Pliki są tylko czytane.
@@ -72,6 +70,8 @@ from rozliczenia.register_columns import COMPLETED
 from rozliczenia.row_look import GENERAL
 from rozliczenia.text import normalize_text
 from rozliczenia.workbook_files import DataCell, DataRow, header_columns, read_data_rows
+
+OPIS = "Brama Legendy czynności: liczy, w ilu wierszach z kodem legenda daje to, co wpisał tata; tylko na Macu Maksa, przed Wydaniem z legendą."
 
 ROOT: Final = Path(__file__).resolve().parents[1]
 NONE: Final = "brak"
@@ -304,7 +304,7 @@ def _outside_repository(text: str) -> Path:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.add_argument("pliki", nargs="+", type=Path, help="Pliki zbiorcze taty (.xlsx) i pliki Logów Wyceny w efenix (.json, .json.gz)")
     parser.add_argument("--legenda", type=Path, help="legenda-czynnosci.yaml z Ustawień; bez niego legenda z Wydania")
     parser.add_argument("--opisy", type=_outside_repository, help="plik poza repozytorium na wiersze z treścią CZYNNOŚCI ZREALIZOWANE")

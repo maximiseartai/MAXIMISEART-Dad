@@ -15,12 +15,12 @@ Pomiar na poligonie (publiczna kopia repozytorium, `claude -p` na Opusie, 19 syt
 
 - `tools/` trzyma tylko narzędzia, które agent albo człowiek uruchamia.
   Skrypt, który uruchamia tylko workflow, leży w `tools/ci/`, a moduł bez własnego wywołania w `tools/lib/`.
-  Skrypt, który agent uruchamia sam według `docs/agents/`, `README.md` albo docstringu narzędzia (plan runu `plan_ci`, odtworzenie części nocnych mutacji `mutacje_zmiany`), zostaje w `tools/`.
-- `AGENTS.md` ma sekcję `## Narzędzia`: jedna linia na narzędzie z `tools/`, a w niej pierwsze zdanie docstringu, które mówi, co narzędzie robi i kiedy go użyć.
-  Blok generuje `tests/test_spis_narzedzi.py` z `ZAPISZ_EXPECT=1` i ten sam test pada, gdy blok rozjedzie się z docstringami, więc spis nie ma ręcznych opisów.
+  Skrypt, który agent uruchamia sam według `docs/agents/`, `README.md` albo `OPIS` narzędzia (plan runu `plan_ci`, odtworzenie części nocnych mutacji `mutacje_zmiany`), zostaje w `tools/`.
+- `AGENTS.md` ma sekcję `## Narzędzia`: jedna linia na narzędzie z `tools/`, a w niej pierwsze zdanie stałej `OPIS` narzędzia (ten sam napis zaczyna jego `--help`), które mówi, co narzędzie robi i kiedy go użyć.
+  Blok generuje `tests/test_spis_narzedzi.py` z `ZAPISZ_EXPECT=1` i ten sam test pada, gdy blok rozjedzie się z `OPIS` albo narzędzie nie ma `OPIS`, więc spis nie ma ręcznych opisów.
 - Pierwsze zdanie ma jedną linię 80–160 znaków, a jego pierwsze trzy słowa odróżniają narzędzie od innych.
   Narzędzie z obowiązkową podkomendą wymienia ją w tym zdaniu w nawiasie, np. `(plan --baza origin/main)`.
-- `AGENTS.md` i skille nie wskazują `tools/ci/`, a dokument agenta ani docstring narzędzia nie każe uruchamiać skryptu z `tools/ci/`.
+- `AGENTS.md` i skille nie wskazują `tools/ci/`, a dokument agenta, `OPIS` ani docstring narzędzia nie każe uruchamiać skryptu z `tools/ci/`.
 - Tych reguł pilnuje `tests/test_spis_narzedzi.py`, a jego komunikaty je mówią.
 
 ## Dowód
