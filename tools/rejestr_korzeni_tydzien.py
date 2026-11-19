@@ -277,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
         text = body(pulls, weeds(github.issues(api, rejestr_korzeni.WEED, "open")), week, deployed, alarms(midnight(week + timedelta(days=7))))
         action, lines = _action(github.issues(api, rejestr_korzeni.REGISTRY, "open"), text)
         if isinstance(action, github.Zaloz):
-            lines += rejestr_korzeni.create_labels(api, (rejestr_korzeni.REGISTRY,), PREFIX, write=not args.bez_zapisu)
+            lines += github.zaloz_etykiety(api, rejestr_korzeni.LABELS, PREFIX, zapis=not args.bez_zapisu)
         if action is not None:
             lines += [f"{PREFIX} | bez zapisu: {github.opis(action)}"] if args.bez_zapisu else github.wykonaj(api, [action], PREFIX)
     except (subprocess.SubprocessError, OSError, ValueError, KeyError, github.BladApi) as error:
