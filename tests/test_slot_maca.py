@@ -7,7 +7,7 @@ sloty test zajmuje tym samym ``flock`` co ``boatbox``.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 import os
 from pathlib import Path
@@ -21,16 +21,24 @@ pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="sloty Maca to f
 ROOT = Path(__file__).resolve().parents[1]
 MUTACJE = [sys.executable, str(ROOT / "tools" / "mutacje.py"), "--plik", "brak.json"]
 HEAVY = [
-    pytest.param([sys.executable, str(ROOT / "tools" / "szybko.py")], "szybko.py", "auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8", id="szybko"),
-    pytest.param(MUTACJE, "mutacje.py --plik", "auto", id="mutacje-plik"),
     pytest.param(
-        [sys.executable, str(ROOT / "tools" / "benchmark_przebiegu.py"), "measure", "--scenario", "typowy-tydzien"],
-        "benchmark_przebiegu.py measure",
+        lambda tmp: [sys.executable, str(ROOT / "tools" / "szybko.py"), "--baza", "nie/ma/takiej"],
+        "szybko.py",
+        "auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8",
+        id="szybko",
+    ),
+    pytest.param(lambda tmp: MUTACJE, "mutacje.py --plik", "auto", id="mutacje-plik"),
+    pytest.param(
+        lambda tmp: [
+            *[sys.executable, str(ROOT / "tools" / "benchmark_przebiegu.py"), "freeze", "--commit", "0000000"],
+            *["--reference-dir", str(tmp / "ref"), "--mirror-dir", str(tmp / "lustro")],
+        ],
+        "benchmark_przebiegu.py freeze",
         "run --here",
-        id="benchmark-measure",
+        id="benchmark-freeze",
     ),
     pytest.param(
-        [sys.executable, "-m", "pytest", "-q", "-n", "2", "-p", "no:cacheprovider", str(ROOT / "tests" / "test_slot_maca.py")],
+        lambda tmp: [sys.executable, "-m", "pytest", "-q", "-n", "2", "-p", "no:cacheprovider", str(ROOT / "tests" / "brak_pliku_testow.py")],
         "pytest",
         "auto",
         id="pytest-z-workerami",
@@ -67,12 +75,14 @@ def _run(command: list[str], tmp_path: Path, *, boatbox: bool = True, **extra: s
     return subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True, encoding="utf-8", timeout=300, check=False)
 
 
-@pytest.mark.parametrize(("command", "name", "route"), HEAVY)
+@pytest.mark.parametrize(("build", "name", "route"), HEAVY)
 def test_ciezki_proces_bez_wolnego_slotu_maca_konczy_sie_kodem_75_z_poleceniem_boatbox(
-    command: list[str], name: str, route: str, tmp_path: Path
+    build: Callable[[Path], list[str]], name: str, route: str, tmp_path: Path
 ) -> None:
+    command = build(tmp_path)
+
     with _busy(tmp_path / "sloty", range(1, 3)):
-        done = _run(command, tmp_path)
+        done = _run(command, tmp_path, QUIET_MACHINE_SCRATCH=str(tmp_path / "maszyna"))
 
     assert done.returncode == 75, done.stderr
     assert f"CIĘŻKIE {name} | Mac zajęty (2/2 sloty): uruchom przez boatbox {route} '" in done.stderr
