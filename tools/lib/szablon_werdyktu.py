@@ -18,6 +18,10 @@ Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmo
   pole ``id`` reguły ast-grep, klucz ``banned-api`` albo ``id`` kontraktu import-linter, bez spacji (``RULE_ID``);
 - Drobne to nagłówek ``### D<n>. <zdanie>`` i jedna linia ``Gdzie: <plik:linia>``;
 - Ważne stoją przed Drobnymi, numery idą od 1 bez przerw, a ich liczby zgadzają się z linią ``Znaleziska:``;
+- blok mutacji recenzenta (``mutacja_recenzenta``) to nagłówek ``### Mutacja W<n> r<k>`` przed ``## Sprawdzone``
+  i pod nim tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji z kluczami ``nazwa`` i ``zmiany``, bez zmian
+  w ``tests/``, najwyżej jeden
+  na Ważne w werdykcie, w werdykcie ``PASS`` i ``FAIL``;
 - na końcu ``## Sprawdzone`` z 1 do 5 niepustymi punktami listy, a po nich nic; punkt, który zaczyna się od
   ``Korzeń ``, to rozstrzygnięcie ``Korzeń W<n> r<k>: R-KOD - zdanie`` albo ``Korzeń W<n> r<k>: NOWY R-KOD - opis``,
   którym recenzent następnej rundy podaje kod Ważnego ``W<n>`` z rundy ``k`` (decyzja Q25).
@@ -47,6 +51,7 @@ import re
 import tomllib
 
 import github
+import mutacja_recenzenta
 from repo import ROOT
 import repo
 from stan_pr import Pull
@@ -117,11 +122,13 @@ class Idiom:
 @dataclass(frozen=True)
 class Findings:
     """Kody korzeni z treści werdyktu: ``majors`` po jednym na Ważne w kolejności, ``resolutions`` z punktów
-    rozstrzygnięcia w „## Sprawdzone”, a ``idioms`` z pól ``Idiom:`` Ważnych, które je mają."""
+    rozstrzygnięcia w „## Sprawdzone”, ``idioms`` z pól ``Idiom:`` Ważnych, które je mają, a ``mutations`` bloki
+    mutacji recenzenta w postaci szablonu."""
 
     majors: tuple[Root, ...]
     resolutions: tuple[Root, ...]
     idioms: tuple[Idiom, ...] = ()
+    mutations: tuple[mutacja_recenzenta.Block, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -355,6 +362,24 @@ def _minor(label: str, block: Sequence[Item]) -> list[str]:
     return [*([] if where else [f"{label}: puste pole Gdzie"]), *(f"{label}: Drobne ma tylko pole Gdzie, a jest {item.shown()}" for item in block[1:])]
 
 
+def _mutation(named: re.Match[str], block: Sequence[Item], mutations: list[mutacja_recenzenta.Block]) -> list[str]:
+    """Co poprawić w bloku mutacji ``### Mutacja W<n> r<k>`` (``named``) z jednostkami ``block`` pod nagłówkiem; blok
+    w postaci szablonu trafia do ``mutations``."""
+
+    found = mutacja_recenzenta.Block(named[1], int(named[2]), "\n".join(item.text for item in block))
+    if not block or any(item.kind != "code" for item in block):
+        shown = next((item.shown() for item in block if item.kind != "code"), "koniec")
+        return [f"{found}: pod nagłówkiem tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji, a jest {shown}"]
+    if any((one.label, one.round) == (found.label, found.round) for one in mutations):
+        return [f"{found}: drugi blok tego Ważnego w werdykcie, a obowiązuje jeden"]
+    try:
+        mutacja_recenzenta.mutations(found, ())
+    except ValueError as error:
+        return [str(error)]
+    mutations.append(found)
+    return []
+
+
 def _root_problems(roots: Sequence[Root], codes: Callable[[], frozenset[str]]) -> list[str]:
     roots = [root for root in roots if root.code is not None]
     if not roots:
@@ -393,13 +418,19 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list
     found: list[str] = []
     roots: list[Root] = []
     idioms: list[Idiom] = []
+    mutations: list[mutacja_recenzenta.Block] = []
     counts = {"W": 0, "D": 0}
     end = next((index for index, item in enumerate(units) if item.kind == "h2" and item.text == CHECKED), len(units))
     index = 0
     while index < end:
+        if units[index].kind == "h3" and (named := mutacja_recenzenta.HEADING.fullmatch(units[index].text)):
+            after = next((later for later in range(index + 1, end) if units[later].kind in {"h2", "h3"}), end)
+            found.extend(_mutation(named, units[index + 1 : after], mutations))
+            index = after
+            continue
         heading = HEADING.fullmatch(units[index].text) if units[index].kind == "h3" else None
         if heading is None:
-            found.append(f"{units[index].shown()} to nie nagłówek „### W<n>. <zdanie>”, „### D<n>. <zdanie>” ani „## {CHECKED}”")
+            found.append(f"{units[index].shown()} to nie nagłówek „### W<n>. <zdanie>”, „### D<n>. <zdanie>”, „### Mutacja W<n> r<k>” ani „## {CHECKED}”")
             index += 1
             continue
         kind, label = heading[1], f"{heading[1]}{heading[2]}"
@@ -433,4 +464,4 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list
             found.append(f"punkt „{point.text}” to nie rozstrzygnięcie „Korzeń W<n> r<runda>: R-KOD - zdanie” (punkt „## {CHECKED}” nie zaczyna się od „{RESOLUTION_START.strip()}”, gdy nim nie jest)")
         else:
             resolutions.append(Root(resolved[1], bool(resolved[3]), resolved[4], int(resolved[2])))
-    return found, Findings(tuple(roots), tuple(resolutions), tuple(idioms))
+    return found, Findings(tuple(roots), tuple(resolutions), tuple(idioms), tuple(mutations))

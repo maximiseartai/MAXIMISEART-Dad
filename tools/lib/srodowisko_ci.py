@@ -2,9 +2,9 @@
 „Środowisko dowodu”): drzewo HEAD PR scalone z bazą i Python z jego zależnościami, zbudowane tak, jak zadanie
 „Ruff, mypy” (``JOB``) z ``.github/workflows/ci.yml`` buduje swoje.
 
-Dowód strażnika ``mypy``, ``ruff`` i ``ast-grep <id>`` (``tools/na_scalonych_pr.py --straznik``, ``tools/lib/straznik.py``)
-bierze środowisko tylko stąd, nie od wołającego, więc job ``dowod``, merge na Macu i autor liczą to, co Required CI
-(#2116 r4–r6: system maszyny, lista platform, zależności ``main`` zamiast HEAD PR):
+Dowód strażnika ``mypy``, ``ruff``, ``ast-grep <id>`` i ``pytest <węzeł>`` (``tools/na_scalonych_pr.py --straznik``,
+``tools/lib/straznik.py``) bierze środowisko tylko stąd, nie od wołającego, więc job ``dowod``, merge na Macu i autor
+liczą to, co Required CI (#2116 r4–r6: system maszyny, lista platform, zależności ``main`` zamiast HEAD PR):
 
 - ``built`` scala HEAD PR z bazą (``repo.merge_commit``, jak ``refs/pull/N/merge``, które sprawdza Required CI), zakłada
   kopię tego drzewa i przez uv (bez konfiguracji uv, ze zmiennymi ``variables``) środowisko: Python ``CI_PYTHON``,
@@ -21,12 +21,17 @@ bierze środowisko tylko stąd, nie od wołającego, więc job ``dowod``, merge 
   sprawdzeniem). Kroki, na których dowód nie stoi (``.github/``, przypadki reguł), są w zadaniu Frontend.
   ``built`` odmawia drzewa z różnicą,
   a ``tests/test_srodowisko_ci.py`` wymaga ``mismatch(ROOT) == []``, więc stałe opisują Required CI ``main``, a zmiana
-  środowiska Required CI wchodzi osobnym PR przed dowodem, który jej potrzebuje.
+  środowiska Required CI wchodzi osobnym PR przed dowodem, który jej potrzebuje;
+- ``pytest_mismatch`` mówi to samo o torze Linux zadania ``PYTEST_JOB``, który powtarza dowód testu (``built``
+  z ``tests``): ten sam Python i ta sama instalacja ``CI_INSTALL`` co ``JOB``, zmienne zadania ``PYTEST_VARIABLES``,
+  a na Linuksie do kroku pytest włącznie tylko kroki ``_PYTEST_STEPS``; tor Windows (Python 3.13, ``requirements.txt``)
+  dowód pomija, więc test, który przechodzi tylko tam, dowód odmawia na drzewie bez zmian.
 
 Odmowa to ``Refused`` (``ValueError``) z tym, co zrobić. Granica: wydanie poprawkowe Pythona (``CI_PYTHON`` bez
 poprawki), wersja uv i obraz runnera mogą różnić się od runu Required CI, a pakiety rozwiązują się w chwili dowodu
 (repo nie ma pliku blokady, więc dwa runy CI też mogą je rozwiązać inaczej); zmienne runnera (``CI``, ``GITHUB_*``),
-które czyta kod PR (wtyczka mypy, backend budowy), dowód ma w jobie ``dowod``, a przy merge'u na Macu nie. Dowód biegnie na Linuksie i macOS (job
+które czyta kod PR (wtyczka mypy, backend budowy, testy), dowód ma w jobie ``dowod``, a przy merge'u na Macu nie; Pythona toru
+Linux zadania pytest (``zakres_runu.TORY``) z ``CI_PYTHON`` wiąże test, nie ``pytest_mismatch``. Dowód biegnie na Linuksie i macOS (job
 ``dowod`` i Mac koordynatora), a na macOS odmawia drzewa ze ścieżkami różnymi tylko wielkością liter, których jego
 system plików nie rozróżnia.
 """
@@ -80,10 +85,30 @@ _ADDED_LINES: dict[str, object] = {
     "env": {"MAXIMISEART_ZAPADKA_BAZA": "HEAD^1"},
     "run": f"{_PYTEST} tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo",
 }
-# Zmienne wołającego, których uv i narzędzia dowodu nie dostają: sterują Pythonem, mypy, ruff, pip i uv, środowiskiem
-# wirtualnym albo dają token GitHuba; ``ci.yml`` żadnej z nich nie ustawia (``mismatch``). Miejsce pamięci uv i jego
-# Pythonów wyniku nie zmienia, więc zostaje.
-_HIDDEN_PREFIXES = ("PYTHON", "MYPY", "RUFF", "PIP_", "UV_")
+# Zadanie Required CI z torami pytest (``zakres_runu.TORY``): dowód ``pytest <węzeł>`` powtarza jego tor Linux, czyli
+# Pythona ``CI_PYTHON`` z instalacją ``CI_INSTALL`` (to samo środowisko co ``JOB``) i zmienne zadania ``PYTEST_VARIABLES``.
+PYTEST_JOB = "pytest"
+PYTEST_VARIABLES = {"EXPECTED_PYTHON_VERSION": CI_PYTHON, "PYTHONUTF8": "1"}
+_MATRIX_PYTHON = "${{ matrix.python }}"
+_PYTEST_ENV = {**PYTEST_VARIABLES, "EXPECTED_PYTHON_VERSION": _MATRIX_PYTHON}
+_WINDOWS = "${{ runner.os == 'Windows' }}"
+_PYTEST_RUN = "python tools/ci/wykonaj_zadanie.py"  # początek polecenia kroku, który uruchamia pytest zadania
+# Kroki zadania ``PYTEST_JOB``, które biegną na Linuksie do kroku ``_PYTEST_RUN`` włącznie (krok z ``if: _WINDOWS`` się
+# nie liczy), każdy w całości: ``env``, ``shell`` albo inne polecenie kroku pytest zmienia przebieg testów w Required CI.
+_PYTEST_STEPS: list[dict[str, object]] = [
+    {"uses": "actions/checkout", "with": {"persist-credentials": False}},
+    {"id": "python", "uses": "actions/setup-python", "with": {"python-version": _MATRIX_PYTHON}},
+    {"uses": "astral-sh/setup-uv", "with": {"enable-cache": False}},
+    {"if": "${{ runner.os == 'Linux' }}", "run": CI_INSTALL},
+    {"if": "${{ matrix.przegladarka }}", "uses": "./.github/actions/chromium"},
+    {"uses": "actions/download-artifact", "with": {"name": "plan", "path": ".ci-plan"}},
+    {"id": "units", "run": f"{_PYTEST_RUN} --plan .ci-plan/plan.json --zadanie ${{{{ matrix.id }}}}"},
+]
+_PYTEST_HIDDEN_KEYS = ("container", "services", "defaults")
+# Zmienne wołającego, których uv i narzędzia dowodu nie dostają: sterują Pythonem, mypy, ruff, pytest, pip i uv,
+# środowiskiem wirtualnym albo testami repo (``MAXIMISEART_``) albo dają token GitHuba; ``ci.yml`` żadnej z nich nie
+# ustawia (``mismatch``, ``pytest_mismatch``). Miejsce pamięci uv i jego Pythonów wyniku nie zmienia, więc zostaje.
+_HIDDEN_PREFIXES = ("PYTHON", "MYPY", "RUFF", "PYTEST_", "MAXIMISEART_", "PIP_", "UV_")
 _HIDDEN = {"VIRTUAL_ENV", "CONDA_PREFIX", "GH_TOKEN", "GITHUB_TOKEN"}
 _KEPT = {"UV_CACHE_DIR", "UV_PYTHON_INSTALL_DIR"}
 
@@ -99,9 +124,11 @@ def variables() -> dict[str, str]:
 
 
 @contextmanager
-def built(root: Path, head: str, target: str) -> Iterator[Environment]:
+def built(root: Path, head: str, target: str, *, tests: bool = False) -> Iterator[Environment]:
     """Środowisko Required CI dla HEAD PR ``head`` scalonego z ``target`` (baza PR; dla PR już scalonego ``main`` sprzed
-    jego merge'a), w repozytorium ``root``; znika z końcem bloku."""
+    jego merge'a), w repozytorium ``root``; znika z końcem bloku. Z ``tests`` to środowisko toru Linux zadania
+    ``PYTEST_JOB``: odmawia też drzewa z różnicą ``pytest_mismatch``, a narzędzia dostają zmienne ``PYTEST_VARIABLES``
+    i ``TMPDIR`` tego środowiska, więc bieg testów w nowym środowisku nie widzi śladów poprzedniego."""
 
     if sys.platform == "win32":
         raise Refused("środowisko Required CI: dowód strażnika biegnie na Linuksie i macOS, uruchom go tam")
@@ -121,7 +148,7 @@ def built(root: Path, head: str, target: str) -> Iterator[Environment]:
         home, copy = Path(folder) / "dom", Path(folder) / "drzewo"
         home.mkdir()
         _checkout(root, tree, copy)
-        if problems := mismatch(copy):
+        if problems := [*mismatch(copy), *(pytest_mismatch(copy) if tests else [])]:
             raise Refused(
                 f"środowisko Required CI: zadanie {JOB} z {WORKFLOW} drzewa PR scalonego z bazą różni się od zadania, które liczy dowód ({'; '.join(problems)}): "
                 "zmień środowisko Required CI osobnym PR przed tym, razem z tools/lib/srodowisko_ci.py, bo dowód buduje je kodem bazy"
@@ -129,6 +156,9 @@ def built(root: Path, head: str, target: str) -> Iterator[Environment]:
         python = _install(uv, copy, Path(folder))
         # Narzędzia z pustym HOME, jak na runnerze: bez konfiguracji użytkownika mypy i ruff i bez globalnych wykluczeń gita.
         tools = {name: value for name, value in variables().items() if not name.startswith("XDG_")}
+        if tests:
+            (temporary := Path(folder) / "tmp").mkdir()
+            tools |= {**PYTEST_VARIABLES, "TMPDIR": str(temporary)}
         yield Environment(tree, copy, python, {**tools, "HOME": str(home)})
 
 
@@ -223,6 +253,29 @@ def mismatch(tree: Path) -> list[str]:
     for number, (want, have) in enumerate(itertools.zip_longest(job_steps(tree), map(_normal, given)), start=1):
         if want != have:
             problems.append(f"krok {number} zadania to {have!r} zamiast {want!r}")
+            break
+    return problems
+
+
+def pytest_mismatch(tree: Path) -> list[str]:
+    """Czym tor Linux zadania ``PYTEST_JOB`` z ``WORKFLOW`` w drzewie ``tree`` różni się od toru, który powtarza dowód
+    testu: zmienne zadania inne niż ``_PYTEST_ENV``, klucz zadania z ``_PYTEST_HIDDEN_KEYS`` albo kroki do kroku
+    ``_PYTEST_RUN`` włącznie, które biegną na Linuksie, inne niż ``_PYTEST_STEPS`` (cała lista na równość, bez ``name``
+    i wersji akcji). ``env`` i ``defaults`` workflow zgłasza ``mismatch``."""
+
+    try:
+        job = yaml.safe_load((tree / WORKFLOW).read_text(encoding="utf-8"))["jobs"][PYTEST_JOB]
+        given = [_normal(step) for step in job["steps"]]
+        end = next(number for number, step in enumerate(given) if str(step.get("run", "")).startswith(_PYTEST_RUN))
+    except (OSError, yaml.YAMLError, KeyError, TypeError, AttributeError, StopIteration) as error:
+        return [f"brak kroku {_PYTEST_RUN} zadania {PYTEST_JOB} w {WORKFLOW} ({type(error).__name__}: {error})"]
+    problems = [f"{key} w zadaniu {PYTEST_JOB}" for key in _PYTEST_HIDDEN_KEYS if key in job]
+    if job.get("env") != _PYTEST_ENV:
+        problems.append(f"env zadania {PYTEST_JOB} to {job.get('env')!r} zamiast {_PYTEST_ENV!r}")
+    linux = [step for step in given[: end + 1] if step.get("if") != _WINDOWS]
+    for number, (want, have) in enumerate(itertools.zip_longest(_PYTEST_STEPS, linux), start=1):
+        if want != have:
+            problems.append(f"krok {number} toru Linux zadania {PYTEST_JOB} do pytest to {have!r} zamiast {want!r}")
             break
     return problems
 

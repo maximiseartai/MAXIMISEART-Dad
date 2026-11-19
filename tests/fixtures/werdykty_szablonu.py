@@ -49,6 +49,20 @@ def _replaced(old: str, *new: str) -> str:
 
 
 TEMPLATE = _text(*LINES)
+# Blok mutacji recenzenta (``mutacja_recenzenta``): nagłówek ``### Mutacja W<n> r<k>`` i blok kodu ``` z JSON pliku mutacji.
+MUTATION = '[{"nazwa": "odmowa bez przyczyny", "zmiany": [["tools/scal_pr.py", "    return reasons\\n", "    return []\\n"]]}]'
+
+
+def _mutation(text: str = MUTATION, fence: str = "```", label: str = "W1 r1") -> tuple[str, ...]:
+    return (f"### Mutacja {label}", fence, text, "```")
+
+
+def _with_mutation(*block: str) -> str:
+    """Szablon z blokami ``block`` przed „## Sprawdzone”."""
+
+    return _replaced(CHECKED, *block, CHECKED)
+
+
 # Pole ``Idiom:`` po Szczeblu w trzech postaciach z ADR 0036 i Idiom, który ``szablon_werdyktu.findings`` z niego czyta:
 # id reguły, klasa idiomu bez reguły i wcześniejsze Ważne (PR, Ważne, runda).
 IDIOMY: dict[str, tuple[str, tuple[str | None, str | None, tuple[int, str, int] | None]]] = {
@@ -71,6 +85,8 @@ PRZECHODZA = {
     "cytat-pola-we-wcietym-bloku-kodu": _replaced(EVIDENCE, "Dowód: grep:", "", "    Gdzie: tools/x.py:3", "    Korzeń: R-NIE-MA - cytat", ""),
     "linia-dowodu-300-znakow-w-bloku-kodu": _replaced(EVIDENCE, "Dowód:", "```", "x" * 300, "```"),
     **{f"idiom-{name}": _replaced(RUNG, RUNG, line) for name, (line, _) in IDIOMY.items()},
+    "mutacja-recenzenta": _with_mutation(*_mutation()),
+    "mutacja-recenzenta-dwoch-waznych-z-roznych-rund": _with_mutation(*_mutation(), *_mutation(label="W2 r1"), *_mutation(label="W1 r2")),
 }
 ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     "brak-pola-gdzie": (_replaced(WHERE), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po nagłówku"),
@@ -128,6 +144,19 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     "puste-pole-idiom": (_replaced(RUNG, RUNG, "Idiom:"), (1, 1), "W1: „Idiom:” to nie"),
     "proza-zamiast-szczebla": (_replaced(RUNG, "Dalsza proza.", RUNG), (1, 1), "W1: linia „Dalsza proza.” to nie „Szczebel:"),
     "pass-z-waznym": (_text(*LINES[:5], *LINES[7:]), (0, 0), "w treści Ważne 1"),
+    "mutacja-z-nazwa-jezyka": (_with_mutation(*_mutation(fence="```json")), (1, 1), "Mutacja W1 r1: pod nagłówkiem tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji, a jest blok <div>"),
+    "mutacja-bez-bloku-kodu": (_with_mutation("### Mutacja W1 r1", MUTATION), (1, 1), "Mutacja W1 r1: pod nagłówkiem tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji, a jest linia"),
+    "mutacja-sam-naglowek": (_with_mutation("### Mutacja W1 r1"), (1, 1), "a jest koniec"),
+    "mutacja-nie-json": (_with_mutation(*_mutation("[{nazwa: x}]")), (1, 1), "blok ### Mutacja W1 r1: to nie JSON"),
+    "mutacja-pusta-lista": (_with_mutation(*_mutation("[]")), (1, 1), "blok ### Mutacja W1 r1: lista bez wpisu"),
+    "mutacja-bez-zamiany": (_with_mutation(*_mutation('[{"nazwa": "x", "zmiany": [["a.py", "b"]]}]')), (1, 1), "blok ### Mutacja W1 r1: wpis 1 ma zły albo brakujący klucz 'zmiany'"),
+    "mutacja-z-poleceniem": (
+        _with_mutation(*_mutation('[{"nazwa": "x", "zmiany": [["a.py", "b", "c"]], "polecenie": ["-c", "pass"]}]')),
+        (1, 1),
+        "blok ### Mutacja W1 r1: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika pytest",
+    ),
+    "mutacja-dwa-bloki-tego-samego-waznego": (_with_mutation(*_mutation(), *_mutation()), (1, 1), "Mutacja W1 r1: drugi blok tego Ważnego w werdykcie"),
+    "mutacja-bez-rundy": (_with_mutation("### Mutacja W1", "```", MUTATION, "```"), (1, 1), "„### Mutacja W<n> r<k>”"),
 }
 _MAJOR = (
     "### W1. Brak testu.",
@@ -156,6 +185,14 @@ WERDYKTY = {
     "wazne-idiom-typ": _text(*_MAJOR, "Idiom: bez reguły typ jak #1553 W1 r2", "## Sprawdzone", "- diff"),
     "wazne-idiom-test-klasy": _text(*_MAJOR, "Idiom: bez reguły test-klasy jak #1553 W1 r2", "## Sprawdzone", "- diff"),
     "proza": "Wszystko dobrze, bez uwag.",
+    # Blok mutacji dowodu ``pytest`` (``tests/test_na_scalonych_pr.py``): FAIL z blokiem, którego kotwicy nie ma na HEAD,
+    # i późniejszy PASS z blokiem, który przywraca ``zakazane()``.
+    "wazne-z-nieaktualna-mutacja": _text(
+        *_MAJOR, "### Mutacja W1 r1", "```", '[{"nazwa": "inne z FAIL", "zmiany": [["kod/inne.py", "obiekt.inne()", "obiekt.zakazane()"]]}]', "```", "## Sprawdzone", "- diff"
+    ),
+    "pass-z-mutacja": _text(
+        "### Mutacja W1 r1", "```", '[{"nazwa": "zakazane z FAIL", "zmiany": [["kod/inne.py", "obiekt.dozwolone()", "obiekt.zakazane()"]]}]', "```", "## Sprawdzone", "- diff"
+    ),
     **{f"korzen-{index}": _text(*_MAJOR[:3], root, _MAJOR[4], "## Sprawdzone", "- diff") for index, root in enumerate(ROOTS_E2E)},
 }
 
