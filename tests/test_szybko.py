@@ -53,6 +53,10 @@ BY_CHANGE_ONLY = {
         "puszcza próbki przez nakładkę Run.refusing_text_settings_writes w procesie testu; graf wybiera jego plik przy "
         "zmianie skryptów napędu verify-centrum-rozliczen, które ładuje ścieżką"
     ),
+    "tests/test_straznik.py::test_slad_biegu_w_srodowisku_biegu_znika_z_nim_a_zapis_poza_nim_to_odmowa_systemu": (
+        "sprawdza piaskownicę dowodu strażnika na repozytorium testu, a nie całe repozytorium; graf wybiera jego plik przy "
+        "zmianie tools/lib/straznik.py, piaskownica.py, srodowisko_ci.py i silnik_mutacji.py, które importuje"
+    ),
     "tests/test_stan_procesu.py": (
         "sprawdza plugin na sesjach próbek w katalogu tymczasowym, a nie całe repozytorium: sam plugin conftest stawia "
         "przy każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/stan_procesu.py, który importuje"

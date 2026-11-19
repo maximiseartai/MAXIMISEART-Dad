@@ -96,7 +96,7 @@ class Pull:
     def _copy(self) -> Iterator[straznik.Environment]:
         """Kopia HEAD z własnym gitem, ``HOME`` i ``TMPDIR`` obok siebie, jak każde środowisko z ``srodowisko_ci.built``."""
 
-        with tempfile.TemporaryDirectory(prefix="straznik-") as folder:
+        with tempfile.TemporaryDirectory(prefix="straznik-", dir=srodowisko_ci.RUN_ROOT) as folder:
             copy, home, temporary = (Path(folder) / name for name in ("drzewo", "dom", "tmp"))
             srodowisko_ci._checkout(self.root, self.head, copy)
             home.mkdir()
@@ -640,6 +640,7 @@ def test_krok_mypy_ktory_pisze_poza_kopia_biegu_to_odmowa_systemu_a_nie_wynik_do
     assert not trace.exists()
 
 
+@wymaga_piaskownicy
 @pytest.mark.parametrize("guard", ["mypy", f"pytest {NODE}"])
 def test_dowod_bez_piaskownicy_systemu_to_odmowa_przed_pierwszym_biegiem(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, guard: str) -> None:
     pull = _fixed(tmp_path)

@@ -636,3 +636,16 @@ def test_slad_biegu_wezla_nie_przechodzi_do_nastepnego_biegu_dowodu(tmp_path: Pa
     outcome = _tested(tmp_path, TRACES)
 
     assert not outcome.detected and "| NIEWYKRYTA | wielkie litery z FAIL: NIEWYKRYTA: 1 passed" in outcome.line, outcome.line
+
+
+FORKSERVER = (
+    "import multiprocessing.forkserver\n\nfrom kod.odczyt import odczyt\n\n\ndef test_odczyt() -> None:\n"
+    "    multiprocessing.forkserver.ensure_running()\n    assert odczyt() == 'tekst'\n"
+)
+
+
+@wymaga_uv
+def test_wezel_ze_serwerem_procesow_multiprocessing_ma_gniazdo_w_tmpdir_biegu_w_piaskownicy(tmp_path: Path) -> None:
+    outcome = _tested(tmp_path, FORKSERVER)
+
+    assert outcome.detected and "| WYKRYTA | z bloku ### Mutacja W1 r1: wielkie litery z FAIL → 1 failed" in outcome.line, outcome.line
