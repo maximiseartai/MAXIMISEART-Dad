@@ -61,5 +61,8 @@
     "Notifications.view": "c78f2de86c448cc1",
     "Notifications._ask_box": "852b202ffb45ab22",
     "Notifications._start_check_if_due": "46c4c9d58d3b4ee9"
+  },
+  "src/rozliczenia/centrum/report_reminders.py": {
+    "ReportReminders._failed": "cb7ff8e9d0eea7f4"
   }
 }

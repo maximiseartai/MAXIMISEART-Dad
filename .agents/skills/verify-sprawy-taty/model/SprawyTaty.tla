@@ -4,7 +4,8 @@
 (* zapytania HTTP, wątku kolejki skrzynka-kolejka, wątku pytania skrzynki (zgloszenie-skrzynka), Powiadomień i       *)
 (* zgaśnięcia Centrum. Kolejkę (Outbox) model ma tylko na granicy: Outbox.post to jeden krok z wynikiem True, False  *)
 (* albo wyjątkiem, a przejście kolejki to doręczenie jednego pliku; resztę sprawdza verify-kolejka-skrzynki.        *)
-(* Jeden problem (odcisk F) ma jeden uchwyt Zgłoszenia w każdej pracy Centrum: kartę Zatrzymania tego problemu.      *)
+(* Jeden problem (odcisk F) ma jeden uchwyt Zgłoszenia w każdej pracy Centrum: kartę Zatrzymania tego problemu, a     *)
+(* przy MaxUchwytowPrzypomnien > 0 odrzucone hasło Przypomnień o raporcie, którego każde sprawdzenie robi nowy uchwyt. *)
 EXTENDS Naturals, Sequences, FiniteSets
 
 CONSTANTS
@@ -17,6 +18,10 @@ CONSTANTS
     MaxWyjatkowKolejki,   \* ile razy Outbox.post rzuca wyjątek inny niż OSError (Reports._queue: finally)
     MaxOdrzucen,          \* ile wysyłek ma treść, którą Skrzynka odrzuca (outbox: Rejected, odmowa-tresci)
     MaxZamkniec,          \* ile issue Maks zamyka
+    \* Ile razy sprawdzenie Przypomnień o raporcie z odrzuconym hasłem robi w pracy Centrum drugi albo dalszy uchwyt
+    \* problemu (ReportReminders._failed: Reports.handle, prepare, send). Przy > 0 problem F to odrzucone hasło
+    \* Przypomnień: każdy jego uchwyt jest bez karty Zatrzymania i bez powrotu (ReminderReport nie jest StopReport).
+    MaxUchwytowPrzypomnien,
     \* Przyczyny znanych znalezisk, które wariant ...PozaZnanymi danej obietnicy pomija (skrypt skilla je ustawia).
     WybaczoneCzekaMaPlik, WybaczoneOdrzuconaNieCzeka
 
@@ -24,7 +29,8 @@ F == 0                       \* id sprawy Zgłoszenia: odcisk problemu (Case.id,
 Uwagi == 1..MaxUwag          \* id sprawy Uwagi taty: identyfikator jej wysyłki (uuid4().hex)
 Idy == {F} \cup Uwagi
 Rodzaje == {"zgl", "uwaga"}  \* CaseKind: REPORT (recurs) i NOTE
-\* Każde _queue, które nie zastało czekającej sprawy, dopisuje jedną: kliknięcie albo powrót problemu (raz na uchwyt).
+\* Każde _queue, które nie zastało czekającej sprawy, dopisuje jedną: kliknięcie (u Przypomnień send z _failed) albo
+\* powrót problemu (raz na uchwyt karty Zatrzymania; uchwyt Przypomnień nie ma powrotu).
 MaxSpraw == MaxKlikniec + MaxZgasniec + 1 + MaxUwag
 Sidy == 1..MaxSpraw          \* tożsamość jednej sprawy (Case z chwilą sent_at; withdraw usuwa tylko ją)
 Numery == 0..MaxSpraw        \* numer issue; 0: sprawa bez numeru, czeka w Kolejce wysyłki
@@ -41,6 +47,9 @@ Bezczynne == [pc |-> "-", kto |-> "-", sid |-> 0, plik |-> 0, wynik |-> "-", zna
 BezUwagi == [pc |-> "-", sid |-> 0, id |-> 0]
 BezPytania == [krok |-> "-", numer |-> FALSE, wyslano |-> FALSE]
 NowyUchwyt == [podglad |-> FALSE, wysyla |-> FALSE, powrot |-> FALSE]
+\* Uchwyt problemu z Przypomnień: ReportHandle._ask z comeback None nigdy nie kładzie powrotu, jak po _returned.
+UchwytPrzypomnien == [podglad |-> FALSE, wysyla |-> FALSE, powrot |-> TRUE]
+PierwszyUchwyt == IF MaxUchwytowPrzypomnien > 0 THEN UchwytPrzypomnien ELSE NowyUchwyt
 
 VARIABLES
     \* Dysk taty i Skrzynka Zgłoszeń: zostają po zgaśnięciu Centrum.
@@ -61,7 +70,7 @@ VARIABLES
     otwarte,            \* Reports._open[F]: "?" (brak odpowiedzi w tej pracy) | "tak" | "nie"
     karta,              \* ReportHandle._state: to, co widzi tata na karcie Zatrzymania
     \* Liczniki.
-    nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci, awariePlikuStanu, awarieKolejki,
+    nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien, awarieSieci, awariePlikuStanu, awarieKolejki,
     wyjatkiKolejki, odrzucenia, zamkniecia,
     \* Zdarzenia, które łamią obietnice: zbiór przyczyn w chwili każdego zdarzenia.
     bezPliku, odrzuconaCzeka,
@@ -72,7 +81,7 @@ VARIABLES
 dysk == <<plikStanu, kolejka, skrzynka, znaczniki>>
 pamiec == <<sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req, uwaga, uchwyt, pyt, otwarte,
             karta>>
-liczniki == <<nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci, awariePlikuStanu,
+liczniki == <<nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien, awarieSieci, awariePlikuStanu,
               awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
 zdarzenia == <<bezPliku, odrzuconaCzeka>>
 duchy == <<wycofane, numerowane>>
@@ -182,6 +191,7 @@ TypeOK ==
     /\ karta \in Karty
     /\ nastepnaSprawa \in 1..(MaxSpraw + 1) /\ nastepnyPlik \in 1..(MaxSpraw + 1)
     /\ klikniecia \in 0..MaxKlikniec /\ uwagi \in 0..MaxUwag /\ zgasniecia \in 0..MaxZgasniec
+    /\ uchwytyPrzypomnien \in 0..MaxUchwytowPrzypomnien
     /\ awarieSieci \in 0..MaxAwariiSieci /\ awariePlikuStanu \in 0..MaxAwariiPlikuStanu
     /\ awarieKolejki \in 0..MaxAwariiKolejki /\ wyjatkiKolejki \in 0..MaxWyjatkowKolejki
     /\ odrzucenia \in 0..MaxOdrzucen /\ zamkniecia \in 0..MaxZamkniec
@@ -192,10 +202,10 @@ TypeOK ==
 Init ==
     /\ plikStanu = <<>> /\ kolejka = {} /\ skrzynka = {} /\ znaczniki = {}
     /\ sprawy = <<>> /\ odrzuconeSprawy = {} /\ odrzuconePliki = {} /\ dostarczoneWPracy = {}
-    /\ kolejkaPc = Wolny /\ req = Bezczynne /\ uwaga = BezUwagi /\ uchwyt = NowyUchwyt /\ pyt = BezPytania
+    /\ kolejkaPc = Wolny /\ req = Bezczynne /\ uwaga = BezUwagi /\ uchwyt = PierwszyUchwyt /\ pyt = BezPytania
     /\ otwarte = "?" /\ karta = "gotowe"
     /\ nastepnaSprawa = 1 /\ nastepnyPlik = 1
-    /\ klikniecia = 0 /\ uwagi = 0 /\ zgasniecia = 0 /\ awarieSieci = 0 /\ awariePlikuStanu = 0 /\ awarieKolejki = 0
+    /\ klikniecia = 0 /\ uwagi = 0 /\ zgasniecia = 0 /\ uchwytyPrzypomnien = 0 /\ awarieSieci = 0 /\ awariePlikuStanu = 0 /\ awarieKolejki = 0
     /\ wyjatkiKolejki = 0 /\ odrzucenia = 0 /\ zamkniecia = 0
     /\ bezPliku = {} /\ odrzuconaCzeka = {}
     /\ wycofane = {} /\ numerowane = {}
@@ -221,7 +231,7 @@ Pytanie ==
           /\ UNCHANGED awarieSieci
     /\ pyt' = [pyt EXCEPT !.krok = "decyzja"]
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req, uwaga, uchwyt,
-                   karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awariePlikuStanu, awarieKolejki,
+                   karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien, awariePlikuStanu, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
@@ -253,7 +263,7 @@ Klik ==
     /\ pyt' = IF pyt.krok # "-" THEN [pyt EXCEPT !.wyslano = TRUE] ELSE pyt
     /\ req' = [Bezczynne EXCEPT !.pc = "sprawdz", !.kto = "klik"]
     /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga, otwarte, karta,
-                   nastepnaSprawa, nastepnyPlik, uwagi, zgasniecia, awarieSieci, awariePlikuStanu, awarieKolejki,
+                   nastepnaSprawa, nastepnyPlik, uwagi, zgasniecia, uchwytyPrzypomnien, awarieSieci, awariePlikuStanu, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
@@ -277,7 +287,7 @@ Sprawdz ==
             /\ nastepnaSprawa' = nastepnaSprawa + 1
             /\ UNCHANGED uchwyt
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga,
-                   pyt, otwarte, karta, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci, awarieKolejki,
+                   pyt, otwarte, karta, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien, awarieSieci, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
@@ -298,7 +308,7 @@ Post ==
           /\ req' = [req EXCEPT !.pc = "wycofaj", !.wynik = "wyjatek"]
           /\ UNCHANGED <<kolejka, nastepnyPlik, odrzucenia, awarieKolejki>>
     /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga, uchwyt, pyt, otwarte,
-                   karta, nastepnaSprawa, klikniecia, uwagi, zgasniecia, awarieSieci, awariePlikuStanu, zamkniecia>>
+                   karta, nastepnaSprawa, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien, awarieSieci, awariePlikuStanu, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 (* Reports._queue, finally: if not queued: self._cases.withdraw(case); potem ReportNotQueued (Komunikat), a wyjątek  *)
@@ -311,7 +321,7 @@ Wycofaj ==
        THEN req' = Bezczynne /\ uchwyt' = [uchwyt EXCEPT !.wysyla = FALSE]
        ELSE req' = [req EXCEPT !.pc = "pokaz"] /\ UNCHANGED uchwyt
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, uwaga,
-                   pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci,
+                   pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien, awarieSieci,
                    awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia, numerowane>>
     /\ Historia(FALSE, {})
 
@@ -344,7 +354,7 @@ UwagaWyslij ==
     /\ uwaga' = [pc |-> "post", sid |-> nastepnaSprawa, id |-> uwagi + 1]
     /\ uwagi' = uwagi + 1 /\ nastepnaSprawa' = nastepnaSprawa + 1
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req,
-                   uchwyt, pyt, otwarte, karta, nastepnyPlik, klikniecia, zgasniecia, awarieSieci, awarieKolejki,
+                   uchwyt, pyt, otwarte, karta, nastepnyPlik, klikniecia, zgasniecia, uchwytyPrzypomnien, awarieSieci, awarieKolejki,
                    wyjatkiKolejki, odrzucenia, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
@@ -361,7 +371,7 @@ UwagaPost ==
           /\ uwaga' = [uwaga EXCEPT !.pc = "zapomnij"]
           /\ UNCHANGED <<kolejka, nastepnyPlik, odrzucenia>>
     /\ UNCHANGED <<plikStanu, skrzynka, znaczniki, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy,
-                   kolejkaPc, req, uchwyt, pyt, otwarte, karta, nastepnaSprawa, klikniecia, uwagi, zgasniecia,
+                   kolejkaPc, req, uchwyt, pyt, otwarte, karta, nastepnaSprawa, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien,
                    awarieSieci, awariePlikuStanu, wyjatkiKolejki, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
@@ -372,7 +382,7 @@ UwagaZapomnij ==
     /\ wycofane' = wycofane \cup {uwaga.sid}
     /\ uwaga' = BezUwagi
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req,
-                   uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia,
+                   uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien,
                    awarieSieci, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia, numerowane>>
     /\ Historia(FALSE, {})
 
@@ -414,7 +424,7 @@ Doreczenie ==
                                    ELSE [krok |-> "oznacz", plik |-> p.nr, wiesc |-> "-"]
              /\ UNCHANGED <<odrzuconeSprawy, odrzuconePliki, awarieSieci>>
     /\ UNCHANGED <<kolejka, dostarczoneWPracy, req, uwaga, uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik,
-                   klikniecia, uwagi, zgasniecia, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia, wycofane>>
+                   klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia, wycofane>>
     /\ Historia(FALSE, {})
 
 (* DadCases._tell w wątku kolejki, poza blokadą spraw: Reports._heard (numer: _open, _numbered) i każdy żywy uchwyt *)
@@ -452,7 +462,7 @@ Powiadomienia ==
                      LET z == {i \in skrzynka : i.nr = sprawy[k].numer /\ i.rodzaj = sprawy[k].rodzaj} IN
                      IF z = {} THEN sprawy[k] ELSE [sprawy[k] EXCEPT !.zamknieta = (CHOOSE i \in z : TRUE).zamkniete]])
     /\ UNCHANGED <<kolejka, skrzynka, znaczniki, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req,
-                   uwaga, uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia,
+                   uwaga, uchwyt, pyt, otwarte, karta, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien,
                    awarieSieci, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
@@ -460,7 +470,7 @@ Powiadomienia ==
 MaksZamyka ==
     /\ zamkniecia < MaxZamkniec /\ zamkniecia' = zamkniecia + 1
     /\ \E i \in skrzynka : ~i.zamkniete /\ skrzynka' = (skrzynka \ {i}) \cup {[i EXCEPT !.zamkniete = TRUE]}
-    /\ UNCHANGED <<plikStanu, kolejka, znaczniki, pamiec, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia,
+    /\ UNCHANGED <<plikStanu, kolejka, znaczniki, pamiec, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, uchwytyPrzypomnien,
                    awarieSieci, awariePlikuStanu, awarieKolejki, wyjatkiKolejki, odrzucenia>>
     /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
@@ -474,18 +484,35 @@ Zgasniecie ==
     /\ zgasniecia < MaxZgasniec /\ zgasniecia' = zgasniecia + 1
     /\ sprawy' = plikStanu
     /\ odrzuconeSprawy' = {} /\ odrzuconePliki' = {} /\ dostarczoneWPracy' = {}
-    /\ kolejkaPc' = Wolny /\ req' = Bezczynne /\ uwaga' = BezUwagi /\ uchwyt' = NowyUchwyt /\ pyt' = BezPytania
+    /\ kolejkaPc' = Wolny /\ req' = Bezczynne /\ uwaga' = BezUwagi /\ uchwyt' = PierwszyUchwyt /\ pyt' = BezPytania
     /\ otwarte' = "?"
     /\ karta' = StanZgl(plikStanu, "?", {})
-    /\ UNCHANGED <<dysk, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, awarieSieci, awariePlikuStanu, awarieKolejki,
-                   wyjatkiKolejki, odrzucenia, zamkniecia>>
+    /\ UNCHANGED <<dysk, nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, uchwytyPrzypomnien, awarieSieci,
+                   awariePlikuStanu, awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
     /\ UNCHANGED duchy /\ Historia(TRUE, {})
+
+(* -------------------------------- Przypomnienia o raporcie (report_reminders.py) -------------------------------- *)
+
+(* Następne sprawdzenie Przypomnień z odrzuconym hasłem w tej samej pracy Centrum: ReportReminders._failed robi nowy  *)
+(* uchwyt problemu (Reports.handle, ReportHandle.__init__: _state z Reports._state_of), a stary zostaje bez           *)
+(* właściciela; pamięć Reports i DadCases zostaje. Poprzedni send już wrócił: _failed woła go synchronicznie, a        *)
+(* sprawdzenia biegną po kolei (ReportReminders._lock, jeden wątek MinuteRhythm). Poprzednie _ask już się skończyło:   *)
+(* MinuteRhythm czeka CHECK_EVERY_S (60 s) po końcu sprawdzenia, a _ask_box najwyżej SEARCH_DEADLINE_S (3 s).          *)
+NowyUchwytPrzypomnien ==
+    /\ uchwytyPrzypomnien < MaxUchwytowPrzypomnien /\ uchwytyPrzypomnien' = uchwytyPrzypomnien + 1
+    /\ req.pc = "-" /\ pyt.krok = "-"
+    /\ uchwyt' = UchwytPrzypomnien
+    /\ karta' = StanZgl(sprawy, otwarte, odrzuconeSprawy)
+    /\ UNCHANGED <<dysk, sprawy, odrzuconeSprawy, odrzuconePliki, dostarczoneWPracy, kolejkaPc, req, uwaga, pyt, otwarte,
+                   nastepnaSprawa, nastepnyPlik, klikniecia, uwagi, zgasniecia, awarieSieci, awariePlikuStanu,
+                   awarieKolejki, wyjatkiKolejki, odrzucenia, zamkniecia>>
+    /\ UNCHANGED duchy /\ Historia(FALSE, {})
 
 Next ==
     \/ Podglad \/ Pytanie \/ Decyzja \/ Klik \/ Sprawdz \/ Post \/ Wycofaj \/ Czekaj \/ Pokaz
     \/ UwagaWyslij \/ UwagaPost \/ UwagaZapomnij
     \/ Doreczenie \/ Uslyszane \/ Oznacz
-    \/ Powiadomienia \/ MaksZamyka \/ Zgasniecie
+    \/ Powiadomienia \/ MaksZamyka \/ Zgasniecie \/ NowyUchwytPrzypomnien
 
 (* Każdy krok kodu, który już się zaczął, kiedyś się dzieje; tata klika, pisze Uwagi, otwiera Powiadomienia i      *)
 (* Diagnozę, kiedy chce, a Maks zamyka issue, kiedy chce.                                                        *)

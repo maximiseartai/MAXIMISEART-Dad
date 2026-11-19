@@ -1,6 +1,6 @@
 ---
 name: verify-status-okresu
-description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu (Tablica okresów, start cards, Uzupełnienie, Reguły ilości preview and Kontrola ilości differences, Wpisanie raportów, the Sprawdzanie of Przygotowanie and Przebieg rozliczeń) names the same Status and acts on a period only when it allows, for every state of the Folder okresu (each period file present or not, readable or not). Use when `tools/skille_dla_zmiany.py` names it, when a change adds a new consumer of the Status okresu, or when `explore_status_okresu.py` fails.
+description: Exhaustively check, on the real code and a real temporary folder, that every consumer of the Status okresu (Tablica okresów, start cards, Uzupełnienie, Reguły ilości preview and Kontrola ilości differences, Wpisanie raportów, the Przypomnienia o raporcie, the Sprawdzanie of Przygotowanie and Przebieg rozliczeń) names the same Status and acts on a period only when it allows, for every state of the Folder okresu (each period file present or not, readable or not). Use when `tools/skille_dla_zmiany.py` names it, when a change adds a new consumer of the Status okresu, or when `explore_status_okresu.py` fails.
 pilnuje:
   - src/rozliczenia/period_folder.py
   - src/rozliczenia/file_state.py
@@ -22,6 +22,7 @@ pilnuje:
   - src/rozliczenia/centrum/processes/preparation.py
   - src/rozliczenia/centrum/processes/settlement.py
   - src/rozliczenia/centrum/processes/efenix.py
+  - src/rozliczenia/centrum/report_reminders.py
   - tools/lib/atrapy/pliki_taty.py
   - tools/lib/atrapy/preparation.py
   - tools/lib/atrapy/settlement.py
@@ -48,12 +49,14 @@ says.
 ## The promise
 
 - **OTWARCIE**: for every state of the Folder okresu, each process lets itself act on the period exactly when the
-  Status okresu allows it: Przygotowanie pliku zbiorczego and Wpisanie raportów only in „Brak plików okresu”,
+  Status okresu allows it: Przygotowanie pliku zbiorczego, Wpisanie raportów and the Przypomnienia o raporcie only in
+  „Brak plików okresu”,
   Przebieg rozliczeń and Uzupełnienie only in „Plik zbiorczy przygotowany”, and the preview of a Reguły ilości change
   and the list of Kontrola ilości differences count only on the Plik zbiorczy of a period in „Rozliczenia pracowników
   gotowe”. Tablica okresów offers a step only where its process will act. A consumer that cannot read the folder says so instead of answering, and says so only when
   something in the folder cannot be read.
-  Harm: Dad sees „Okres zamknięty” while Wpisanie raportów writes into that period's days of INTERMAX, or Przygotowanie
+  Harm: Dad sees „Okres zamknięty” while Wpisanie raportów writes into that period's days of INTERMAX or a Wykonawca
+  gets a reminder of a report for one of its days, or Przygotowanie
   writes a new Plik zbiorczy into a period that already has Rozliczenia pracowników, or the board offers a start that
   stops.
 - **TA_SAMA_NAZWA**: every consumer that shows Dad a Status okresu (Tablica okresów, the start cards of Przygotowanie,
@@ -72,16 +75,21 @@ The check asks every consumer through its public entry point: `create_app` over 
 (`/api/periods`), the start cards (`/api/runs/setup`), Uzupełnienie (`/api/periods/{token}/quantities-to-fill`) and the
 preview of a Reguły ilości change (`/api/settings/quantity-rules/preview`), the list of Kontrola ilości differences
 (`/api/settings/quantity-rules/differences`),
-`report_entering.enter_from_mail` for Wpisanie raportów, and `input_checks.check_preparation` and
+`report_entering.enter_from_mail` for Wpisanie raportów, `report_reminders.due_reminders` for the Przypomnienia o
+raporcie, and `input_checks.check_preparation` and
 `input_checks.check_settlement` for the starts.
 Run it when a diff changes how any of them reads the Folder okresu or decides from it: `PeriodFolderObservation`,
 `PeriodFolder.observe`, `_listing`, `_exists` and `reading` in `period_folder.py`, `path_taken` and `file_state` in
-`file_state.py`, `closed_periods` and `read` in `report_entering.py`, `Window` in `worker_reports/_model.py`, `read` and
+`file_state.py`, `closed_periods` and `read` in `report_entering.py`, the call of `closed_periods` in
+`due_reminders` (`centrum/report_reminders.py`), `Window` in `worker_reports/_model.py`, `read` and
 the `settled` calls in `centrum/filling.py`, `_settled` in `centrum/quantity_rules_preview.py`, `listed` in `centrum/quantity_differences.py`, `_steps`, `_path` and `read_board` in `centrum/period_board.py`, `_recent_choice` and the
 `ByStatus` and `RecentWeeks` choosers, `ensure_period_files_absent`, `ensure_worker_settlements_absent`, and the order
 of checks in `check_preparation` and `check_settlement`.
 A new consumer of the Status okresu (Diagnoza, a new process with a period) is not asked until you add it to
 `ask_all` with its line in `ALLOWED` or `NAMING`.
+Wysyłka rozliczeń (`centrum/settlement_mailing.py`) is not asked: it mails the files that
+`PeriodFolder.worker_settlement_entries` lists without asking the Status okresu, and a Folder rozliczeń pracowników
+with files is „Rozliczenia pracowników gotowe” whatever else the Folder okresu holds.
 
 The part modelled by hand is the reference Status okresu, which mirrors `PeriodFolderObservation.status`; its digest
 is in `model/definicje.json`.
@@ -131,7 +139,11 @@ Each state gets a fresh Centrum (`create_app`, without its lifespan) because Uzu
 each Plik zbiorczy.
 Wpisanie raportów is deployed on the period's Tuesday and runs the Wednesday after, so its window spans this period
 and the next; its Skrzynka raportów refuses the password, so the click stops right after the window is set and the
-day it reads from (`Window.first`) says whether the period is open for it.
+day it reads from (`Window.first`) says which periods it counts closed (`Window.closed`).
+The Przypomnienia o raporcie are deployed the same Tuesday and asked the same way through `due_reminders`, with their
+own Ustawienia (Foldery, Przypomnienia, Lista Wykonawców) in a second `config`.
+Whether each write and reminder keeps out of a closed day (`Window.opens`) is not asked here: the TLA+ model of
+`verify-wpisanie-raportow` checks it for the cells of Wpisanie raportów (`ZamkniecieOkresu`).
 The starts run the Sprawdzanie of each process on valid synthetic Wzorce, so only the Folder okresu decides.
 
 | Scope | States of Folder okresu `08_14_09_2026` |
@@ -170,6 +182,9 @@ A known finding is a real defect in the current code.
    `Window.first` is the period's Tuesday and Wpisanie raportów writes `SKUTECZNE` and `CZYNNOŚCI ZREALIZOWANE` into
    INTERMAX orders of the closed period. Replayed on 12 November 2026 with a whole `enter_from_mail` and a Raport
    wykonawcy from 9.09.2026: 2 cells written; with the Plik zbiorczy back, 0.
+   The Przypomnienia o raporcie (since 6353fcdd50) take the same `closed_periods` in `due_reminders`, so they read the
+   Skrzynka raportów from the period's Tuesday too and remind a Wykonawca of a report for a day of the closed period
+   (the checker's answer in the same 4 states, 19 November 2026).
 2. **Przygotowanie w zamkniętym okresie** (OTWARCIE). The Folder okresu has a Folder rozliczeń pracowników (readable or
    not) and neither period file. Tablica okresów offers no „Przygotuj plik zbiorczy”, but
    `ensure_period_files_absent` checks only the Rozliczenie wewnętrzne and the Plik zbiorczy, so the Sprawdzanie of
@@ -241,7 +256,7 @@ py -3 .agents\skills\verify-status-okresu\scripts\check_status_okresu_mutations.
 ```
 
 It must end with `MUTACJE OK`: a Status okresu that ignores an empty Folder rozliczeń pracowników, Uzupełnienie
-deciding `settled` by the wrong Status okresu, Wpisanie raportów that closes no period, the karta Przebiegu rozliczeń
+deciding `settled` by the wrong Status okresu, Wpisanie raportów that closes no period, the Przypomnienia that close no period, the karta Przebiegu rozliczeń
 offering a closed period, an unreadable folder read as a missing one, and the karta Przygotowania naming every period
 „Brak plików okresu” all give `NOWE NARUSZENIE`, and so does a state with an unreadable Plik zbiorczy built with a
 readable one, while taking access away without effect gives `LUKA MODELU` (on Windows a deny entry that leaves
