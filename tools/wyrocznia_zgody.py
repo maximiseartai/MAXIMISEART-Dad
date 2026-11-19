@@ -28,8 +28,8 @@ Claude Code ta wyrocznia uruchamia go tak jak T3 (``stream-json`` na wejściu i 
 stdio``, ``--permission-mode bypassPermissions``), w katalogu tego checkoutu, czyli z jego ``.claude/settings.json``.
 Modelu nie ma: lokalne fałszywe API każe wysłać polecenie przypadku z ``tools/wyrocznia_zgody.jsonl`` bajt w
 bajt narzędziem Bash i odbiera wynik narzędzia, a wtedy wyrocznia kończy Claude Code. Claude Code uruchamia
-``tools/lib/falszywe_api.py`` tak, by mogło pytać tylko fałszywe API, także gdy ``~/.claude/settings.json`` ma
-``env.ANTHROPIC_BASE_URL`` huba, a gdy przez ``--kontakt-s`` sekund go nie zapyta, kończy je (``ZMIANA``). Polecenia nie biegną: prefiks powłoki ``tools/wyrocznia_zgody_prefiks.sh`` wykonuje tylko polecenie
+``tools/lib/falszywe_api.py`` tak, by mogło pytać tylko fałszywe API, także gdy ``~/.claude/settings.json`` daje
+mu adres huba, a gdy przez ``--kontakt-s`` sekund go nie zapyta, kończy je (``ZMIANA``). Polecenia nie biegną: prefiks powłoki ``tools/wyrocznia_zgody_prefiks.sh`` wykonuje tylko polecenie
 równe co do znaku poleceniu hooka zgody z ``.claude/settings.json``.
 Host, czyli T3 z człowiekiem, nigdy nie odpowiada na pytanie o zgodę i zamyka wejście po ``--host-s`` sekundach bez
 wyniku narzędzia. Ścieżki ``@WS@``, ``@FAR@`` i ``@TFAR@`` (ta sama co ``@FAR@``, ale przez ``~``) prowadzą do

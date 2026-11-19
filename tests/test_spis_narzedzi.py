@@ -48,7 +48,7 @@ from rozliczenia.centrum.contract import common as common_contract
 
 from tests.fixtures.expect import assert_expected
 from tests.fixtures.git_repo import git
-from tests.fixtures.skladnia import drzewo, napisy_prozy, pamiec_drzew, wezly
+from tests.fixtures.skladnia import drzewo, pamiec_drzew, wezly
 from tests.fixtures.znane_luki import assert_znane_luki, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -865,11 +865,10 @@ CONTRACTS = (
 
 
 def _texts(tree: ast.AST) -> list[tuple[int, str]]:
-    """Napisy kodu, także każdy stały kawałek f-stringu, bez prozy: docstringów, innych napisów stojących samotnie jako
-    instrukcja i tekstu pomocy w ``OPIS`` i ``ZASADY`` modułu (``napisy_prozy``)."""
+    """Napisy kodu, także każdy stały kawałek f-stringu, bez docstringów i innych napisów stojących samotnie jako instrukcja."""
 
-    prose = napisy_prozy(tree)
-    return [(node.lineno, node.value) for node in wezly(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in prose]
+    alone = {id(node.value) for node in wezly(tree) if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant)}
+    return [(node.lineno, node.value) for node in wezly(tree) if isinstance(node, ast.Constant) and isinstance(node.value, str) and id(node) not in alone]
 
 
 def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None:
@@ -909,8 +908,7 @@ def test_straznik_kontraktu_napisow_widzi_napis_i_kawalek_fstringu_poza_wlascici
     }
     pliki["biblioteka"].write_text(
         'def f(x: str) -> str:\n    """MUTACJE OK w docstringu."""\n    "MUTACJE OK samotnie"\n'
-        '    print("MUTACJE OK")\n    print(f"{x}pytest:{x}")\n    return f"{x}=1 MUTACJE_CZESC {x}"\n'
-        'OPIS = """Część z MUTACJE_CZESC=1/2, a na końcu linia MUTACJE OK."""\n',
+        '    print("MUTACJE OK")\n    print(f"{x}pytest:{x}")\n    return f"{x}=1 MUTACJE_CZESC {x}"\n',
         encoding="utf-8",
     )
     pliki["hook pre-push"].write_text('print("AKTUALIZACJA: niepotrzebna")\n', encoding="utf-8")

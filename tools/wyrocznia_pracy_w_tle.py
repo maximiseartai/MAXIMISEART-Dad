@@ -21,7 +21,7 @@ OPIS = """Uruchamia claude -p z pracą w tle i bez niej, by sprawdzić hook Stop
 Wyrocznia hooka ``tools/hooks/praca_w_tle.py``: hook działa, dopóki Claude Code uruchamia hooki ``Stop`` z listą
 ``background_tasks`` i słucha ich odmowy, więc po aktualizacji Claude Code ta wyrocznia uruchamia ``claude -p`` w trybie
 bypass (jak T3) w katalogu tego checkoutu, czyli z jego ``.claude/settings.json``. Modelu nie ma: lokalne fałszywe API
-(``ANTHROPIC_BASE_URL``) każe wywołać Basha z poleceniem przypadku, a po jego wyniku kończy turę słowami agentów z nocy
+(adres z ``falszywe_api.claude``) każe wywołać Basha z poleceniem przypadku, a po jego wyniku kończy turę słowami agentów z nocy
 4/5.11.2026 („Czekam na powiadomienie o procesie w tle.”), także po każdej odmowie hooka.
 
 Przypadki (``CASES``): ``praca-w-tle`` uruchamia ``sleep 60`` z ``run_in_background``, a ``ZGODNE`` znaczy, że hook

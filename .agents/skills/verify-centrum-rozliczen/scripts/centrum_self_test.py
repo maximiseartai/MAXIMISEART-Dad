@@ -166,7 +166,6 @@ PROTOCOL_SAMPLES = (
 # Strings beside those names, which the guard leaves alone.
 PROTOCOL_LOOKALIKES = (
     '"""``<root>/opened.jsonl`` in a docstring."""',
-    'OPIS = """``<root>/opened.jsonl`` in the help of a script."""',
     'run.step(FEATURE, "aktualizacja-brak-sieci")',
     'facts.get("przyczyna") == "brak-sieci"',
     'process == "efenix"',
@@ -839,10 +838,10 @@ def _protocol_names() -> tuple[frozenset[str], str]:
 
 
 def _protocol_spelled(source: str) -> list[str]:
-    """Each string of ``source`` (a docstring, another bare string or the help text ``OPIS`` aside) with a path part
-    of a file of ``harness.py`` or a label's rejection, as ``<line>: <string>``: both sides of the protocol take its
-    names from ``harness.py``, so a name changed there cannot leave one side on the old name. A part the product names
-    too (``SHARED_PARTS``) counts only as an operand of ``/``.
+    """Each string of ``source`` (a docstring or other bare string aside) with a path part of a file of ``harness.py``
+    or a label's rejection, as ``<line>: <string>``: both sides of the protocol take its names from ``harness.py``, so
+    a name changed there cannot leave one side on the old name. A part the product names too (``SHARED_PARTS``) counts
+    only as an operand of ``/``.
 
     Its boundary, which review checks: a name put together at run time (``"brak-" + "sieci"``), a part glued to another
     in one string (``f"{x}-zapytania.jsonl"``), and a shared part that is no operand of ``/``
@@ -853,9 +852,7 @@ def _protocol_spelled(source: str) -> list[str]:
     bare = {
         id(node.value)
         for node in ast.walk(tree)
-        if (isinstance(node, ast.Expr) or (isinstance(node, ast.Assign) and [ast.unparse(target) for target in node.targets] == ["OPIS"]))
-        and isinstance(node.value, ast.Constant)
-        and isinstance(node.value.value, str)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
     }
     joined = {
         id(operand)

@@ -101,7 +101,7 @@ import typing
 
 import pytest
 
-from tests.fixtures.skladnia import drzewo, napisy_prozy, pamiec_drzew, raz_na_drzewo, wezly
+from tests.fixtures.skladnia import drzewo, pamiec_drzew, raz_na_drzewo, wezly
 from tests.fixtures.znane_luki import assert_znane_luki, ruff, ruff_i_mypy, wymaga_ruff, wymaga_ruff_i_mypy, zapisz
 
 SRC = Path(__file__).resolve().parents[1] / "src"
@@ -1261,8 +1261,8 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
     ``guard_text`` drogą, której nie zamyka typ ani jego sprawdzenie przy uruchomieniu (docstring ``run_logs_guard._MINTED``):
     ``_MINTED`` w każdej postaci, także napis; nazwa ``GuardedLogs`` albo ``GuardedText`` (także pod inną nazwą z
     importu i jako atrybut modułu) poza adnotacją, importem i ``isinstance``; napis z tą nazwą (także slot
-    ``_GuardedLogs__…``) poza docstringiem i tekstem pomocy w ``OPIS`` albo ``ZASADY`` modułu. Granice tego
-    sprawdzenia, mypy i ruff pokazują próbki ``ZNANE_LUKI_STRAZNIKA``, każda za klasą nazwaną w swojej nazwie."""
+    ``_GuardedLogs__…``) poza docstringiem. Granice tego sprawdzenia, mypy i ruff pokazują próbki
+    ``ZNANE_LUKI_STRAZNIKA``, każda za klasą nazwaną w swojej nazwie."""
 
     names = GUARDED | {
         alias.asname
@@ -1272,7 +1272,11 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
         if alias.name in GUARDED and alias.asname
     }
     typed = _type_nodes(tree)
-    prose = napisy_prozy(tree)
+    docstrings = {
+        node.value
+        for node in wezly(tree)
+        if isinstance(node, ast.Expr) and isinstance(node.value, ast.Constant) and isinstance(node.value.value, str)
+    }
     found = []
     for node in wezly(tree):
         if (
@@ -1291,7 +1295,7 @@ def _guard_bypasses(tree: ast.Module) -> list[tuple[int, str]]:
         elif (
             isinstance(node, ast.Constant)
             and isinstance(node.value, str)
-            and id(node) not in prose
+            and node not in docstrings
             and any(name in node.value for name in GUARDED)
         ):
             found.append((node.lineno, repr(node.value)))
@@ -1345,9 +1349,8 @@ def test_sprawdzenie_straznika_lapie_kazda_droge_obok_niego_ktorej_typ_nie_zamyk
     assert _guard_bypasses(ast.parse(code))
 
 
-def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_imporcie_isinstance_docstringu_i_opisie() -> None:
+def test_sprawdzenie_straznika_przepuszcza_typy_po_strazniku_w_adnotacjach_imporcie_isinstance_i_docstringu() -> None:
     code = (
-        'OPIS = "Logi po strażniku to GuardedLogs."\n'
         "from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText\n"
         "def keep(logs: GuardedLogs, text: 'GuardedText | None' = None) -> GuardedLogs:\n"
         '    """Logi po strażniku (``GuardedLogs``) idą dalej bez zmian."""\n'

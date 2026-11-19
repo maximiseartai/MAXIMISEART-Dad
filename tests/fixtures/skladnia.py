@@ -7,15 +7,14 @@ import ast
 from collections.abc import Callable, Hashable, Iterator, Mapping
 import contextlib
 from pathlib import Path
-from typing import Final, TypeVar, cast
+from typing import TypeVar, cast
 
-__all__ = ["STALE_PROZY", "dotted", "drzewo", "imports", "napisy_prozy", "pamiec_drzew", "raz_na_drzewo", "wezly"]
+__all__ = ["dotted", "drzewo", "imports", "pamiec_drzew", "raz_na_drzewo", "wezly"]
 
 _Drzewo = TypeVar("_Drzewo", bound=ast.AST)
 _Wynik = TypeVar("_Wynik")
 # Otwarte bloki ``pamiec_drzew``, ostatni na końcu.
 _PAMIEC: list[dict[Hashable, object]] = []
-STALE_PROZY: Final = ("OPIS", "ZASADY")
 
 
 @contextlib.contextmanager
@@ -58,16 +57,6 @@ def wezly(tree: ast.AST) -> tuple[ast.AST, ...]:
     całym repo kosztuje ok. 0,4 s, a strażnicy robią ich kilkanaście po tych samych drzewach."""
 
     return _raz(("wezly", tree), lambda: tuple(ast.walk(tree)))
-
-
-def napisy_prozy(tree: ast.AST) -> frozenset[int]:
-    samotne = {id(node.value) for node in wezly(tree) if isinstance(node, ast.Expr)}
-    stale = {
-        id(node.value)
-        for node in (tree.body if isinstance(tree, ast.Module) else [])
-        if isinstance(node, ast.Assign) and [ast.unparse(target) for target in node.targets] in [[name] for name in STALE_PROZY]
-    }
-    return frozenset(samotne | stale)
 
 
 def raz_na_drzewo(function: Callable[[_Drzewo], _Wynik]) -> Callable[[_Drzewo], _Wynik]:

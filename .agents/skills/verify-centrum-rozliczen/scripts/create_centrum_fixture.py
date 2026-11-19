@@ -83,8 +83,8 @@ from the origin, as an install from the README leaves it). The clone's
 (``worker_mapping.yaml``), which the newest commit stops tracking. Its
 ``run_centrum.py``, which the restart guardian starts after an update, is a shim
 that serves this run's scripted Centrum (``serve_centrum.py`` with this run root)
-on the port it is given; while ``<root>/pacing/ponowny-start-ms.txt`` exists, it
-waits that many milliseconds first. One version on the origin's branch
+on the port it is given; while the pacing file of ``Pace.RESTART`` (``harness.py``)
+exists, it waits that many milliseconds first. One version on the origin's branch
 ``nie-startuje`` has a ``run_centrum.py`` that fails at once with an import error.
 
 ``<root>/INTERMAX/`` holds two synthetic INTERMAX files for ``uporzadkowanie-intermax``: one with the Surowe

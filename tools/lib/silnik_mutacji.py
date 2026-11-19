@@ -36,7 +36,7 @@ import potomne
 from repo import ROOT
 import repo
 
-ZASADY = """Każda mutacja dostaje własną kopię checkoutu: odłączony ``git worktree`` z HEAD w katalogu
+ZASADY = f"""Każda mutacja dostaje własną kopię checkoutu: odłączony ``git worktree`` z HEAD w katalogu
 tymczasowym z naniesionymi niezacommitowanymi zmianami (także dodanymi do indeksu), więc ``git``
 działa w niej jak w checkoucie. Checkout zostaje nietknięty, więc nie ma czego przywracać ani
 nieaktualnych ``.pyc``. Polecenie biegnie Pythonem, który uruchomił narzędzie, w korzeniu kopii,
@@ -110,7 +110,7 @@ jej startu (kod 2 i linia ``CIĘŻKIE CI ODMOWA``) na zasadach ``tools/lib/ciezk
 ``check_<co>_mutations.py`` skilli ``verify-*`` używają tego samego silnika przez ``check_all``, który
 takiego limitu nie ma.
 
-Z ``MUTACJE_CZESC=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N części tabeli: K-ty z N kolejnych kawałków
+Z ``{ZMIENNA_CZESCI}=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N części tabeli: K-ty z N kolejnych kawałków
 mutacji ułożonych po poleceniu, potem po nazwie, więc część nie zależy od kolejności tabeli, a N części sprawdza każdą
 mutację dokładnie raz. Podstawa części to tylko polecenia jej mutacji, po kolei, a część bez mutacji kończy się
 ``MUTACJE OK``. Kawałki po poleceniu dają poleceniu podstawę tylko w częściach, do których trafiają jego mutacje:

@@ -44,9 +44,9 @@ zadania o najmniejszej sumie). Plik dłuższy niż zadanie dzieli się na k udzi
 testów policzyły mu runy main (``Czasy.testy``), bo udział bez testu nie zgłasza wyniku i czerwieni ``Required CI
 status``. Bez tej liczby (czasy-ci sprzed jej zapisu) plik dzieli się tylko po czasie: cały, niepodzielny plik
 podniósłby cel wszystkich torów do swojej ściany (okno 22e6fe616, cel 615 s). Udział k biegnie z ``-p tools.lib.pytest_czesc`` (testy pliku posortowane po id, po kolei). Skrypt mutacji dłuższy niż zadanie dzieli się tak samo na
-najwyżej tyle części, ile ma mutacji: część biegnie z ``MUTACJE_CZESC=k/n`` (``tools/lib/silnik_mutacji.py``), z podstawą
+najwyżej tyle części, ile ma mutacji: część biegnie ze zmienną ``jednostka.ZMIENNA_CZESCI`` równą ``k/n`` (``tools/lib/silnik_mutacji.py``), z podstawą
 poleceń swoich mutacji. Podstawa ``ci:`` z ``ci-czesci: <n>`` dzieli się tak samo na najwyżej n części (część k
-skrypt bierze z ``MUTACJE_CZESC=k/n``, ``tools/lib/skrypt_skilla.py``), a bez niego nie. Plan drukuje najdłuższą jednostkę
+skrypt bierze z tej samej zmiennej, ``tools/lib/skrypt_skilla.py``), a bez niego nie. Plan drukuje najdłuższą jednostkę
 każdego toru po podziale: poniżej niej ściana zadania nie zejdzie.
 Zadanie Mutation checks instaluje Chromium tylko wtedy, gdy ma krok skilla, którego skrypty importują Playwright, a
 zadanie pytest tylko wtedy, gdy ma plik testów, który sięga Chromium dla testów (``PRZEGLADARKA``). Gdy

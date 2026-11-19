@@ -66,7 +66,7 @@ i sprawdzenie trwają po najwyżej ``--juz-lapie-s`` s. Wybór biegnie też raz 
 (#1719): czerwony daje ``PODSTAWA CZERWONA``, a bez wyniku w ``--podstawa-s`` s ``PODSTAWA NIESPRAWDZONA``, obie kod 2.
 Bez ``--juz-lapie`` nie biegnie ani wybór, ani podstawa, ani sprawdzenie, tylko mutacje.
 
-Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
+Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i części tabeli (``jednostka.ZMIENNA_CZESCI``) drukuje ``--zasady``.
 """
 
 
