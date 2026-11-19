@@ -738,7 +738,8 @@ Mówią wprost, czy był to podgląd, w którym nic nie zapisano, czy Uruchomien
 Zostają na komputerze taty także po zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił.
 Niosą tylko to, na co pozwala Reguła danych.
 Tata ich nie wysyła ani nie ogląda, ale z nich wraca karta Uruchomienia po starcie Centrum i w Historii.
-W trakcie Wyceny w efenix ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut jej postęp z dziennika Wyceny w efenix, a na końcu staje się podsumowaniem Logów, a gdy Centrum zamknęło się w jej trakcie, podsumowaniem Logów Urwanego Uruchomienia z następnego startu.
+Wycena w efenix trwa u taty długo, a jej Logi powstają dopiero na jej końcu, więc w jej trakcie ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut jej postęp z dziennika Wyceny w efenix, a na końcu staje się podsumowaniem Logów, a gdy Centrum zamknęło się w jej trakcie, podsumowaniem Logów Urwanego Uruchomienia z następnego startu.
+Postęp jest dla Maksa, a nie warunkiem pracy taty: Wycena biegnie dalej, gdy postępu nie da się wysłać.
 Wycena, której Logi z wynikiem nie doszły do kolejki, ma po następnym starcie wersję zastępczą, która Logów z wynikiem w Skrzynce nie zastępuje (ADR 0015, dopiski #846 i #910; ADR 0017, dopisek #910).
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 

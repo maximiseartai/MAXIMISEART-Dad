@@ -23,6 +23,10 @@ from wplyw_zmiany import STRUCTURE
 ROOT = Path(__file__).resolve().parents[1]
 
 BY_CHANGE_ONLY = {
+    "tests/test_komentarze_frontendu.py": (
+        "graf wybiera go przy zmianie tools/lib/odpalenia_oxlint.py i wtyczki oxlint repo, a pliki frontend/ sprawdzają w "
+        "każdym runie zadania pytest (tekst) i zadanie CI Frontend (oxlint z node_modules, których szybko nie instaluje)"
+    ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples), pliku tests/expected/komunikaty.txt i plików frontendu z UI_TEXTS (literały)"
