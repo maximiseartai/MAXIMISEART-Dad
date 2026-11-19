@@ -6,8 +6,9 @@ Centrum, przed pierwszym zapytaniem, każdą zmianę, której jeszcze nie zapami
 taty. Zmiana, która weszła, ma w Historii Ustawień źródło z numerem Wydania i „Cofnij”, a odrzucona ma powód i nie wraca.
 Wydanie bez wpisu niczego nie pisze.
 
-Edycja jest deklaratywna („ustaw”, „dodaj, jeśli nie ma”), bo po utracie pamięci właściciela zmiana biegnie jeszcze
-raz i wtedy nie może dać różnicy ani wiersza.
+Wpis dopisuje się do ``RELEASE_CHANGES`` obok wpisów tej samej funkcji, nigdy nie zmienia się ani nie usuwa wpisu z
+Wydania, które już wyszło: jego id jest w pamięci właściciela u taty. Edycja jest deklaratywna („ustaw”, „dodaj, jeśli
+nie ma”), bo po utracie pamięci właściciela zmiana biegnie jeszcze raz i wtedy nie może dać różnicy ani wiersza.
 """
 
 from __future__ import annotations

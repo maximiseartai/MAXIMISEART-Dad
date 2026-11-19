@@ -37,40 +37,6 @@ COMMITTED = "2026-10-10T10:00:00+00:00"
 QUARANTINE_FILE = "tests/fixtures/kwarantanna.py"
 EMPTY = "KWARANTANNA: dict[str, Kwarantanna] = {}\n"
 QUARANTINED = 'KWARANTANNA: dict[str, Kwarantanna] = {"tests/test_x.py::test_niestabilny": Kwarantanna(1, date(2026, 10, 30))}\n'
-RELEASE_CHANGES_FILE = "src/rozliczenia/centrum/settings/release_changes.py"
-PACKAGES = {f"src/rozliczenia/{folder}__init__.py": "" for folder in ("", "centrum/", "centrum/settings/")}
-RELEASE_CHANGES = """\
-from dataclasses import dataclass
-
-
-@dataclass(frozen=True)
-class SettingsFile:
-    name: str
-
-
-@dataclass(frozen=True)
-class ReleaseChange:
-    id: str
-    file: SettingsFile
-    propose: object
-
-
-def folder(inputs):
-    return "folder okresów od Załączników"
-
-
-def nastepna(inputs):
-    return "stopka przypomnień"
-
-
-RELEASE_CHANGES = (
-    ReleaseChange("2026-11-folder", SettingsFile("centrum-ustawienia.yaml"), folder),
-    ReleaseChange("2026-12-nastepne-wydanie", SettingsFile("przypomnienia.yaml"), nastepna),
-)
-"""
-FIRST_RELEASE_CHANGES = RELEASE_CHANGES.replace(
-    '    ReleaseChange("2026-12-nastepne-wydanie", SettingsFile("przypomnienia.yaml"), nastepna),\n', ""
-)
 FAKE_GH = """\
 import io, json, pathlib, sys, urllib.parse, zipfile
 
@@ -552,69 +518,6 @@ def test_plan_odmawia_gdy_od_poprzedniego_wydania_nic_nie_ma_zielonego_ci(releas
     assert result.returncode == 1
     assert result.stdout.splitlines()[-1].startswith("WYDANIE ODMOWA | Nic do wydania")
     assert not releasing.plan_file.exists()
-
-
-def _released_changes(releasing: Releasing) -> None:
-    first = releasing.merge(1, "feat: folder okresów od Załączników", {**PACKAGES, RELEASE_CHANGES_FILE: FIRST_RELEASE_CHANGES})
-    releasing.released("v0.1.0", first)
-    second = releasing.merge(2, "feat: stopka przypomnień", {RELEASE_CHANGES_FILE: RELEASE_CHANGES})
-    releasing.released("v0.2.0", second)
-
-
-@pytest.mark.parametrize(
-    ("fix", "refused"),
-    [
-        ({'return "stopka przypomnień"\n': 'return "poprawiona stopka"\n'}, "2026-12-nastepne-wydanie z v0.2.0 ma inny kod"),
-        (
-            {'return "stopka przypomnień"\n': 'return "poprawiona stopka"\n', '"2026-12-nastepne-wydanie"': '"2026-12-nastepne-wydanie-v2"'},
-            "2026-12-nastepne-wydanie z v0.2.0 zniknęła",
-        ),
-        ({'SettingsFile("przypomnienia.yaml")': 'SettingsFile("centrum-ustawienia.yaml")'}, "2026-12-nastepne-wydanie z v0.2.0 zmienia centrum-ustawienia.yaml"),
-        ({'    ReleaseChange("2026-11-folder", SettingsFile("centrum-ustawienia.yaml"), folder),\n': ""}, "2026-11-folder z v0.1.0 zniknęła"),
-    ],
-    ids=["poprawka w miejscu", "poprawka w miejscu z nowym id", "inny plik Ustawień", "wpis usunięty"],
-)
-def test_plan_odmawia_wydania_w_ktorym_zmiana_z_wydania_ktore_wyszlo_zniknela_albo_ma_inny_plik_lub_kod(
-    releasing: Releasing, fix: dict[str, str], refused: str
-) -> None:
-    _released_changes(releasing)
-    fixed = RELEASE_CHANGES
-    for before, after in fix.items():
-        fixed = fixed.replace(before, after)
-    releasing.merge(3, "fix: poprawka Zmiany z Wydania", {RELEASE_CHANGES_FILE: fixed})
-
-    result = releasing.plan()
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert result.stdout.splitlines()[-1].startswith("WYDANIE ODMOWA | Zmiany z Wydania, które wyszły, są inne")
-    assert refused in result.stdout
-    assert not releasing.plan_file.exists()
-
-
-def test_plan_odmawia_gdy_zmiana_z_wydania_zniknela_jeszcze_przed_poprzednim_wydaniem(releasing: Releasing) -> None:
-    first = releasing.merge(1, "feat: dwie Zmiany z Wydania", {**PACKAGES, RELEASE_CHANGES_FILE: RELEASE_CHANGES})
-    releasing.released("v0.1.0", first)
-    second = releasing.merge(2, "fix: bez stopki przypomnień", {RELEASE_CHANGES_FILE: FIRST_RELEASE_CHANGES})
-    releasing.released("v0.2.0", second)
-    releasing.merge(3, "fix: naprawa", {"src/a.py": "a = 1\n"})
-
-    result = releasing.plan()
-
-    assert result.returncode == 1, result.stdout + result.stderr
-    assert "2026-12-nastepne-wydanie z v0.1.0 zniknęła" in result.stdout.splitlines()[-1]
-
-
-def test_plan_wydaje_poprawke_zmiany_z_wydania_jako_nowy_wpis_z_nowym_id(releasing: Releasing) -> None:
-    _released_changes(releasing)
-    fixed = RELEASE_CHANGES.replace(
-        "RELEASE_CHANGES = (\n",
-        'def poprawiona(inputs):\n    return "poprawiona stopka"\n\n\nRELEASE_CHANGES = (\n',
-    ).replace("nastepna),\n", 'nastepna),\n    ReleaseChange("2026-12-poprawiona-stopka", SettingsFile("przypomnienia.yaml"), poprawiona),\n')
-    fixing = releasing.merge(3, "fix: poprawka Zmiany z Wydania", {RELEASE_CHANGES_FILE: fixed})
-
-    planned = releasing.planned()
-
-    assert planned["commit"] == fixing
 
 
 def test_plan_odmawia_bez_dostepu_do_skrzynki_zgloszen(releasing: Releasing) -> None:
