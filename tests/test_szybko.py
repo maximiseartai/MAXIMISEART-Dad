@@ -394,7 +394,7 @@ _PRZENIESIONY_PRZEZ_BOX = (
             (1, "SZYBKO FAIL | pytest"),
         ),
     ],
-    ids=["tylko box", "box i zwykla porazka", "porazka cytuje komunikat boxa"],
+    ids=["tylko-box", "box-i-zwykla-porazka", "porazka-cytuje-komunikat-boxa"],
 )
 def test_szybko_infra_tylko_gdy_kazdy_test_padl_na_katalogu_przeniesionym_przez_box(
     tmp_path: Path, tests: dict[str, str], expected: tuple[int, str]
