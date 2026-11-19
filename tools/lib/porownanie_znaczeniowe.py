@@ -108,8 +108,6 @@ def _compare_workbooks(reference: Path, candidate: Path) -> dict[str, int]:
         differences.update(
             _compare_sheets(_sheet(reference_book, title), _sheet(candidate_book, title), styles)
         )
-    reference_book.close()
-    candidate_book.close()
     return dict(differences)
 
 
