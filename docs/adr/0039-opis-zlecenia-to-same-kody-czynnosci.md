@@ -19,6 +19,8 @@ zdania ADR 0038:
   czerwone i zielone pola zmieniają się w Rozliczeniu pracownika;
 - „Później: (…) legenda w Przypomnieniu o raporcie”: niepotrzebna.
 
+[ADR 0044](0044-rt2-w-usterce-sie-nie-liczy.md) zmienia po odpowiedzi taty zdanie o `rt2` w usterce.
+
 Dopełnia [ADR 0018](0018-ilosci-tylko-dla-inea-nie-przechodza-do-rozliczenia-pracownika.md): obok Ilości tylko dla INEA
 także liczba z czerwonego pola nie przechodzi do Rozliczenia pracownika.
 

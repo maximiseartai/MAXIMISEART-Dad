@@ -68,6 +68,7 @@ def form_of(code: ActivityCode) -> contract.ActivityCodeForm:
         value=code.value,
         amount=code.amount,
         fills=[contract.FillForm(column=fill.column, colour=colour_name(fill.colour)) for fill in code.fills],
+        counts_in_fault=code.counts_in_fault,
     )
 
 
@@ -152,6 +153,7 @@ def _code(form: contract.ActivityCodeForm, identifier: str) -> tuple[ActivityCod
         1 if column is None else form.value,
         form.amount,
         tuple(CellFill(fill.column, _colour(fill.colour)) for fill in form.fills),
+        form.counts_in_fault,
     )
     return code, tuple(spellings.values())
 

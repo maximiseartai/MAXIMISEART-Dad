@@ -26,8 +26,8 @@ export type ActivitiesCondition = {
  * ActivityCodeForm
  *
  * Kod czynności w formularzu: zapisy (``#`` w miejscu liczby), kolumna Ilości usług (``None``: bez kolumny) z wartością
- * za jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty) i kolory wybranych kolumn. Bez kolumny wartość się nie
- * liczy.
+ * za jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty), kolory wybranych kolumn i to, czy kod liczy się w usterce
+ * (``counts_in_fault``). Bez kolumny wartość się nie liczy.
  */
 export type ActivityCodeForm = {
     /**
@@ -54,6 +54,10 @@ export type ActivityCodeForm = {
      * Fills
      */
     fills: Array<FillForm>;
+    /**
+     * Counts In Fault
+     */
+    counts_in_fault: boolean;
 };
 
 /**

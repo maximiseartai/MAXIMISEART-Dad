@@ -1363,8 +1363,8 @@ export const zRangesForm = z.object({
  * ActivityCodeForm
  *
  * Kod czynności w formularzu: zapisy (``#`` w miejscu liczby), kolumna Ilości usług (``None``: bez kolumny) z wartością
- * za jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty) i kolory wybranych kolumn. Bez kolumny wartość się nie
- * liczy.
+ * za jedno wystąpienie, kwota w ``AS`` (``None``: bez kwoty), kolory wybranych kolumn i to, czy kod liczy się w usterce
+ * (``counts_in_fault``). Bez kolumny wartość się nie liczy.
  */
 export const zActivityCodeForm = z.object({
     spellings: z.array(z.string()),
@@ -1374,7 +1374,8 @@ export const zActivityCodeForm = z.object({
     ]).nullable(),
     value: z.int(),
     amount: z.int().nullable(),
-    fills: z.array(zFillForm)
+    fills: z.array(zFillForm),
+    counts_in_fault: z.boolean()
 });
 
 /**

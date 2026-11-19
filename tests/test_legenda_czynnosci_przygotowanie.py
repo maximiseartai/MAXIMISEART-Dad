@@ -16,6 +16,8 @@ from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 import pytest
 
+from rozliczenia.activity_legend import ActivityLegend
+from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.collective_layout import PHOTO_COLUMNS, QUANTITY_COLUMNS
 
 from tests.fixtures.benchmark import COLLECTIVE_TEMPLATE, INTERNAL_TEMPLATE, write_synthetic_templates
@@ -205,6 +207,35 @@ def test_kolor_bez_wartosci_nie_robi_ze_zlecenia_zlecenia_ze_zdjeciami(tmp_path:
     [row] = _values(fixture.collective_file_path, 1)
     assert {letter: row[letter] for letter in PHOTO_LETTERS if row[letter] not in (None, 0)} == {}
     assert _fills(fixture.collective_file_path, 1)[0]["AF"] == GREEN
+
+
+RT2_OUTSIDE_FAULTS = ActivityLegend(
+    tuple(replace(code, counts_in_fault=False) if code.id == "rt2" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
+)
+FAULT = "usterka"
+
+
+def test_rt2_w_usterce_nic_nie_wyznacza_a_poza_usterka_daje_am_z_kolorami(tmp_path: Path) -> None:
+    cases = [
+        Case("", {}, devices=FAULT),
+        Case("rt2", {}, devices=FAULT),
+        Case("Wymiana kabla, rt2.", {}, devices=FAULT),
+        Case("bypas5m", {}, devices=FAULT),
+        Case("rt2 bypas5m", {}, devices=FAULT),
+        Case("rt2", DEVICES_ONLY_V | {"AM": 1}, {"AM": RED, "AF": GREEN}),
+    ]
+    fixture = _fixture(tmp_path, cases)
+
+    summary = run_preparation(fixture, legend=RT2_OUTSIDE_FAULTS)
+
+    values, fills = _values(fixture.collective_file_path, len(cases)), _fills(fixture.collective_file_path, len(cases))
+    assert values[0]["AI"], "Reguły ilości z Wydania dają usterce Ilość usług w AI"
+    assert [(values[index], fills[index]) for index in (1, 2)] == [(values[0], fills[0])] * 2
+    assert (values[4], fills[4]) == (values[3], fills[3])
+    assert values[3]["AM"] == 1
+    assert "BLEDY_OPISU" not in [warning.code for warning in summary.warnings]
+    template = _values(fixture.collective_template_path, len(cases))[5]
+    assert (values[5], {letter: fills[5][letter] for letter in ("AM", "AF")}) == (template | cases[5].values, cases[5].fills)
 
 
 def test_legenda_z_kopii_wzorca_jest_taka_jak_z_openpyxl(tmp_path: Path) -> None:

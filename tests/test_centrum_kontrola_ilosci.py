@@ -958,7 +958,7 @@ LEGEND_EDITS: Final[dict[str, tuple[Callable[[SettlingCentrum], dict[str, Any]],
     "zmiana": (lambda centrum: {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}}, (7, 8, 1, 1, 1, 0)),
     # Wiersz „listwy”: nowy kod daje 220 w AS, tak jak wpisał tata, więc nie jest już wierszem bez kodu.
     "dodanie": (
-        lambda centrum: {"kind": "add", "code": {"spellings": ["listwy"], "column": None, "value": 1, "amount": 220, "fills": []}},
+        lambda centrum: {"kind": "add", "code": {"spellings": ["listwy"], "column": None, "value": 1, "amount": 220, "fills": [], "counts_in_fault": True}},
         (7, 7, 1, 1, 1, 1),
     ),
     # Wiersz „Inst20m tak”: bez kodu, ale bez Błędu opisu, a zostaje wpis taty 1 w Y.
@@ -1060,7 +1060,7 @@ def test_podglad_legendy_pokazuje_wiersz_ktory_po_zmianie_ma_blad_opisu_z_powode
 def test_podglad_legendy_odmawia_tym_samym_zdaniem_przy_polu_co_zapis_bez_zapisu(tmp_path: Path) -> None:
     centrum = legend_centrum(tmp_path, LEGEND_ROWS)
     run_to_end(centrum, dry_run=False)
-    taken = {"spellings": ["rt2"], "column": None, "value": 1, "amount": 10, "fills": []}
+    taken = {"spellings": ["rt2"], "column": None, "value": 1, "amount": 10, "fills": [], "counts_in_fault": True}
 
     previewed = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "add", "code": taken})
     unknown = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "remove", "code_id": "nie-ma-takiego"})
@@ -1147,7 +1147,7 @@ def test_podglad_legendy_ma_opis_technika_po_strazniku_bez_adresu_numerow_zlecen
     rows = [{**MARKED, "K": f"rt2 {address}"}, {**RULED, "B": address, "I": orange}, described]
     centrum = centrum_with(tmp_path, rows)
     run_to_end(centrum, dry_run=False)
-    added = {"spellings": [address.casefold()], "column": None, "value": 1, "amount": 10, "fills": []}
+    added = {"spellings": [address.casefold()], "column": None, "value": 1, "amount": 10, "fills": [], "counts_in_fault": True}
 
     response = centrum.client.post(f"{LEGEND_URL}/preview", json={"kind": "add", "code": added})
 
