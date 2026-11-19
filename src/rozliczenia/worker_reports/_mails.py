@@ -44,42 +44,44 @@ class WindowMails:
     """Odczyty maili okna w kolejności odczytu okna (``_reading._mail_order``): Raporty wykonawców z dniem z tematu,
     raporty z błędem tematu i maile od nieznanych nadawców, każdy z mailem i chwilą przyjścia, bez adresu, tematu i
     treści poza Wpisami (temat raportu z błędem tematu ma tylko problem ``UnreadableSubject``). Dwie kapsuły są równe,
-    gdy mają te same odczyty w tej samej kolejności; podklasa, która dałaby odczyty, nie przechodzi mypy (``final``)."""
+    gdy mają te same odczyty w tej samej kolejności. Odczyty są w slocie z name mangling (``__reads``), więc wzorzec
+    klasy ani atrybut spoza klasy nie nazwie ich tak, żeby przeszło mypy, a podklasa, która dałaby odczyty, nie
+    przechodzi mypy (``final``)."""
 
-    __slots__ = ("_reads",)
+    __slots__ = ("__reads",)
 
     def __init__(self, reads: Iterable[MailRead]) -> None:
-        self._reads = tuple(reads)
+        self.__reads = tuple(reads)
 
     def __eq__(self, other: object) -> bool:
-        return isinstance(other, WindowMails) and self._reads == other._reads
+        return isinstance(other, WindowMails) and self.__reads == other.__reads
 
     def __hash__(self) -> int:
-        return hash(self._reads)
+        return hash(self.__reads)
 
     def __repr__(self) -> str:
-        return f"WindowMails({self._reads!r})"
+        return f"WindowMails({self.__reads!r})"
 
     @property
     def worker_report_count(self) -> int:
         """Raporty wykonawców z dniem z tematu, bez raportów z błędem tematu i maili od nieznanych nadawców."""
 
-        return sum(isinstance(found, ReadReport) for found in self._reads)
+        return sum(isinstance(found, ReadReport) for found in self.__reads)
 
     def said(self, requested: Iterable[RequestedEntry]) -> frozenset[OrderKey]:
         """Zlecenia (numer, dzień, Wykonawca) z Wpisem Raportów wykonawców Wpisania raportów: Wpis Raportu wykonawcy z
         dniem z tematu i Wpis na życzenie raportu z błędem tematu z dniem decyzji taty z ``requested``
         (``requested_reports``); bez decyzji same Wpisy Raportów wykonawców z dniem z tematu."""
 
-        reports = [found for found in self._reads if isinstance(found, ReadReport)]
-        unreadable = [found for found in self._reads if isinstance(found, ReadUnreadable)]
+        reports = [found for found in self.__reads if isinstance(found, ReadReport)]
+        unreadable = [found for found in self.__reads if isinstance(found, ReadUnreadable)]
         asked = requested_reports(unreadable, decided(unreadable, requested))
         return frozenset(OrderKey(entry.number, report.day, report.worker) for report in (*reports, *asked) for entry in report.entries)
 
     def workers(self) -> tuple[Login, ...]:
         """Loginy Wykonawców, od których są odczyty (bez nieznanych nadawców), alfabetycznie, każdy raz."""
 
-        return tuple(sorted({found.worker for found in self._reads if not isinstance(found, ReadStranger)}))
+        return tuple(sorted({found.worker for found in self.__reads if not isinstance(found, ReadStranger)}))
 
     def canonical(
         self, workers: Mapping[Login, SenderAddress], stranger: Callable[[MailId, date], SenderAddress]
@@ -90,7 +92,7 @@ class WindowMails:
 
         return tuple(
             _canonical.as_mail(found, stranger(found.mail, found.day) if isinstance(found, ReadStranger) else workers[found.worker])
-            for found in self._reads
+            for found in self.__reads
         )
 
     def log(self) -> tuple[dict[str, JsonValue], ...]:
@@ -99,7 +101,7 @@ class WindowMails:
         rosnąco, dniem z tematu (``None``: bez dnia) i Wpisami, a mail od nieznanego nadawcy z dniem z tematu; każdy ze
         skrótem maila i chwilą przyjścia, bez adresu, tematu i reszty treści maila."""
 
-        return tuple(map(_logged, self._reads))
+        return tuple(map(_logged, self.__reads))
 
     @classmethod
     def from_log(cls, records: Iterable[Mapping[str, JsonValue]]) -> WindowMails:

@@ -4229,6 +4229,24 @@ def test_pozniejszy_raport_wygrywa_z_wpisem_na_zyczenie_z_raportu_z_bledem_temat
     }
 
 
+def test_kapsula_odczytow_maili_nie_oddaje_odczytow_wzorcem_klasy_vars_ani_dict() -> None:
+    """Postacie z ``ZNANE_LUKI_RAPORTOW_POZA_ODCZYTEM`` w ``tests/test_zakazy_ruff.py``, które mypy przepuszcza, w
+    działaniu nie oddają odczytów maili kapsuły ``WindowMails``: wzorzec klasy z nazwą ``__reads`` nic nie wiąże, bo
+    pole ma nazwę po name mangling, a ``vars()`` i ``__dict__`` padają, bo kapsuła ma ``__slots__``."""
+
+    found = window_mails(stranger(MailId.of("<1@przyklad.invalid>"), EVENING, DAY))
+
+    match found:
+        case WindowMails(__reads=reads):
+            pytest.fail(f"wzorzec klasy związał odczyty kapsuły: {reads!r}")
+        case _:
+            pass
+    with pytest.raises(TypeError):
+        vars(found)
+    with pytest.raises(AttributeError):
+        assert found.__dict__ is None
+
+
 def test_zlecenia_z_wpisem_to_wpisy_raportow_z_dniem_z_tematu_i_wpisy_na_zyczenie_z_dniem_decyzji_taty() -> None:
     """ADR 0041: zlecenia z Wpisem kliknięcia (``WindowMails.said``) to Wpisy Raportu wykonawcy z dniem z tematu i Wpisy
     raportu z błędem tematu, przy których tata kliknął Wpis na życzenie, z dniem jego decyzji. Wpis raportu z błędem

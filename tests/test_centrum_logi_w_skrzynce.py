@@ -81,6 +81,7 @@ from rozliczenia.worker_reports import (
     OwnEntry,
     OwnMove,
     ReportEntry,
+    RequestedEntry,
     SavedState,
     SenderAddress,
     SubjectFault,
@@ -2801,6 +2802,38 @@ def test_logi_kazdego_ksztaltu_raportu_z_bledem_tematu_odtwarzaja_jego_wpisy_z_r
         facts.rollout_before, OwnEntries(frozenset(facts.memory_before), frozenset(facts.moves_before)), frozenset(facts.kept)
     )
     assert (replayed.strangers, replayed.reservations) == ((0, 1, 0), reservations)
+
+
+@pytest.mark.parametrize("shape", ["dzisiejsze", "od_v0_7_0_sprzed_wpisow_przy_bledzie_tematu"])
+def test_pamiec_wpisu_na_zyczenie_wraca_z_logow_z_postacia_numeru_z_decyzji_taty_takze_bez_pasujacego_wpisu(shape: str) -> None:
+    """Pamięć wpisów zlecenia, które wpisał Wpis na życzenie przy raporcie z błędem tematu, wraca z Logów z postacią
+    numeru z zerem na początku z decyzji taty (decyzja niesie numer tekstem), także w Logach sprzed Wpisów przy błędzie
+    tematu, gdzie raport ma same numery bez znaku, więc żaden jego Wpis nie pasuje już do decyzji; numeru nie ma w
+    żadnym innym Wpisie Logów."""
+
+    arrived = datetime(2026, 11, 9, 18, 0).astimezone()
+    faulty, number, day = MailId("b" * 16), OrderNumber("040000003"), date(2026, 11, 6)
+    entry = ReportEntry(number, None, VerdictFault.LETTER_YES, "wymiana")
+    memory = OwnEntry(OrderKey(number, day, ANNA), ReportColumn.SUCCESSFUL, "tak")
+    facts = replace(
+        _entering_facts(),
+        mails=odczyty_maili.mails(
+            odczyty_maili.report(MailId("a" * 16), arrived, JAN, CLICK_DAY, _FACTS_ENTRIES),
+            odczyty_maili.unreadable(faulty, arrived, ANNA, SubjectFault.NO_DATE, (entry,), None),
+        ),
+        problems=(),
+        memory_before=(memory,),
+        kept=(),
+        moves_before=(),
+        orderless=(),
+        requested=(RequestedEntry(faulty, ANNA, day, number, Intent.YES, "wymiana", arrived),),
+    )
+    fields = OLD_LOGS[shape][0]
+
+    replayed = LoggedReports.model_validate(_old_logs(_logged_reports(facts), *fields)).replay()
+
+    assert isinstance(replayed, EnteringReplay), replayed
+    assert replayed.saved.memory == OwnEntries(frozenset({memory}), frozenset())
 
 
 def test_odczyty_maili_wracaja_z_logow_z_tym_samym_zapisem_w_logach() -> None:
