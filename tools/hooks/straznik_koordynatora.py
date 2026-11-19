@@ -43,7 +43,7 @@ narzędzia Agent biegnie w procesie koordynatora i nie ma wątku, więc strażni
 gotowym PR bez żywego dziecka nie dostaje budzenia. Plik ``.dzieci`` rośnie o linię na zlecenie i nikt go nie
 skraca; przez całe życie pilnującego obok śpi najwyżej jeden czekający proces. T3, które przy końcu dziecka dopisze coś do wątku rodzica bez jego tury, przesunie ruch rodzica i
 ukryje brak budzenia. Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod 3.9
-(``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową i ``potomne``.
+(``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową i ``potomne``.
 """
 
 from __future__ import annotations

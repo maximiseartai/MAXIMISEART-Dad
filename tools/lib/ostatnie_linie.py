@@ -2,7 +2,7 @@
 
 Czytający nie importuje piszącego, bo leży niżej (moduł ``tools/lib``, hook na systemowym Pythonie 3.9) albo uruchamia
 go z innego commitu (``tools/scal_pr.py --przeglad`` z HEAD PR), więc prefiks ma jedno źródło tutaj. Moduł używa tylko biblioteki
-standardowej i działa pod Pythonem 3.9 macOS (``per-file-target-version`` w ``pyproject.toml``).
+standardowej i działa pod Pythonem 3.9 macOS (``per-file-target-version`` w ``ruff.toml``).
 """
 
 # ``tools/lib/silnik_mutacji.py`` (``check_all``) kończy nią każdy skrypt mutacji skilla, który przeszedł; czyta

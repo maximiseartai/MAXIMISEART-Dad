@@ -1,6 +1,6 @@
 """Szeroki ``except`` w Centrum rozliczeń przekazuje złapany wyjątek do dziennika Centrum albo rzuca go dalej.
 
-Ruff BLE001 uznaje za wpis do dziennika tylko ``logging``, a Centrum ma własny dziennik, więc ``pyproject.toml``
+Ruff BLE001 uznaje za wpis do dziennika tylko ``logging``, a Centrum ma własny dziennik, więc ``ruff.toml``
 wyłącza BLE001 dla ``src/rozliczenia/centrum``, a tę samą regułę z dziennikiem Centrum sprawdza ten test.
 ``except Exception``, ``except BaseException`` i gołe ``except`` przechodzą, gdy blok woła ``unexpected_failure``
 ze złapanym wyjątkiem albo go rzuca. Gołe ``raise`` w zagnieżdżonym ``except`` rzuca wyjątek wewnętrzny, więc się nie
@@ -158,40 +158,41 @@ PROBKI: Final = {
 }
 
 # Znane luki licznika (tests/fixtures/znane_luki.py): „klasa, którą przepuszcza licznik: zmiana” → pliki drzewa przed
-# zmianą i po niej, na których licznik daje te same liczby, choć zmiana dodaje tłumienie. Plik pyproject.toml próbki zastępuje konfigurację
-# repozytorium na jej drzewie, a jej ostatnia tabela to [tool.ruff].
-_KONFIGURACJA = '[tool.ruff]\ninclude = ["*.py"]\n'
+# zmianą i po niej, na których licznik daje te same liczby, choć zmiana dodaje tłumienie. Plik ruff.toml próbki zastępuje
+# konfigurację ruff repozytorium na jej drzewie, a pyproject.toml próbki konfigurację mypy.
+_KONFIGURACJA = 'include = ["*.py"]\n'
 ZNANE_LUKI: Final = {
     "porównuje saldo katalogu, nie linie: noqa usunięte w jednym pliku, nowe dodane w drugim": (
         {"src/a.py": "import os  # noqa: F401 - próbka\n", "src/b.py": "y = 2\n"},
         {"src/a.py": "x = 1\n", "src/b.py": "import sys  # noqa: F401 - próbka\n"},
     ),
     "liczy linie kodu, nie konfigurację: per-file-ignores ruff": (
-        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
+        {"ruff.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
         {
-            "pyproject.toml": _KONFIGURACJA + '\n[tool.ruff.lint.per-file-ignores]\n"src/a.py" = ["F401"]\n',
+            "ruff.toml": _KONFIGURACJA + '\n[lint.per-file-ignores]\n"src/a.py" = ["F401"]\n',
             "src/a.py": "import os\n",
         },
     ),
     "liczy linie kodu, nie konfigurację: overrides mypy z ignore_errors": (
-        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x: int = 1\n"},
+        {"ruff.toml": _KONFIGURACJA, "src/a.py": "x: int = 1\n"},
         {
-            "pyproject.toml": _KONFIGURACJA + '\n[[tool.mypy.overrides]]\nmodule = ["a"]\nignore_errors = true\n',
+            "ruff.toml": _KONFIGURACJA,
+            "pyproject.toml": '[[tool.mypy.overrides]]\nmodule = ["a"]\nignore_errors = true\n',
             "src/a.py": 'x: int = "1"\n',
         },
     ),
     "czyta tylko pliki, które listuje ruff: noqa w pliku z extend-exclude": (
-        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
+        {"ruff.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
         {
-            "pyproject.toml": _KONFIGURACJA + 'extend-exclude = ["src/b.py"]\n',
+            "ruff.toml": _KONFIGURACJA + 'extend-exclude = ["src/b.py"]\n',
             "src/a.py": "x = 1\n",
             "src/b.py": "import os  # noqa: F401 - próbka\n",
         },
     ),
     "czyta tylko pliki, które listuje ruff: type: ignore w pliku, który sprawdza tylko mypy": (
-        {"pyproject.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
+        {"ruff.toml": _KONFIGURACJA, "src/a.py": "x = 1\n"},
         {
-            "pyproject.toml": _KONFIGURACJA + 'extend-exclude = ["src/b.py"]\n',
+            "ruff.toml": _KONFIGURACJA + 'extend-exclude = ["src/b.py"]\n',
             "src/a.py": "x = 1\n",
             "src/b.py": 'y: int = "1"  # type: ignore[assignment]\n',
         },
@@ -255,10 +256,11 @@ def _tlumienia(root: Path) -> list[Tlumienie]:
 
 
 def _drzewo(root: Path, pliki: Mapping[str, str]) -> Path:
-    """Drzewo z konfiguracją ruff repozytorium i ``pliki``, gotowe dla ``_tlumienia``."""
+    """Drzewo z konfiguracją ruff i mypy repozytorium i ``pliki``, gotowe dla ``_tlumienia``."""
 
     root.mkdir()
-    (root / "pyproject.toml").write_bytes((ROOT / "pyproject.toml").read_bytes())
+    for konfiguracja in ("ruff.toml", "pyproject.toml"):
+        (root / konfiguracja).write_bytes((ROOT / konfiguracja).read_bytes())
     for nazwa, kod in pliki.items():
         (root / nazwa).parent.mkdir(parents=True, exist_ok=True)
         (root / nazwa).write_text(kod, encoding="utf-8")

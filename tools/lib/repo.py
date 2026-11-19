@@ -23,7 +23,7 @@ CI, a lokalne bity indeksu (``assume-unchanged``, ``skip-worktree``) i wykluczen
 ``git`` i ``succeeds`` to szybkie, lokalne podpolecenia (``FAST_GIT`` w ``tests/test_potomne.py``). Polecenie, które
 trwa albo sięga sieci (fetch, push, zapis drzewa), idzie przez ``run_git``, czyli ``potomne.run``. Brama pre-push
 i ``setup_worktree.py`` biegną systemowym Pythonem, więc ten plik działa pod Pythonem 3.9
-(``per-file-target-version`` w ``pyproject.toml``), a ``potomne`` importuje dopiero ``run_git``: push człowieka
+(``per-file-target-version`` w ``ruff.toml``), a ``potomne`` importuje dopiero ``run_git``: push człowieka
 nie zależy od niego.
 
     sys.path.insert(0, str(Path(__file__).resolve().parent / "lib"))  # narzędzie z tools/

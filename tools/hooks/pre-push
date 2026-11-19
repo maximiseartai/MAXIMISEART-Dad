@@ -20,7 +20,7 @@ narzędzie się nie uda, brama drukuje ``AKTUALIZACJA: nieznana (…)`` albo ``S
 pushu się nie zmienia.
 
 Hook biegnie systemowym Pythonem (na Macu 3.9), więc ten plik, ``tools/lib/repo.py``, ``tools/lib/potomne.py`` i
-``tools/lib/ostatnie_linie.py`` ruff sprawdza pod 3.9 (``per-file-target-version`` w ``pyproject.toml``).
+``tools/lib/ostatnie_linie.py`` ruff sprawdza pod 3.9 (``per-file-target-version`` w ``ruff.toml``).
 """
 
 from __future__ import annotations

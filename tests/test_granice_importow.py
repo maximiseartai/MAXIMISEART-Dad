@@ -2060,7 +2060,7 @@ def test_wyrocznie_skilli_i_narzedzia_biora_z_src_tylko_publiczne_nazwy() -> Non
 
 
 # Nazwy z banned-api src/ruff.toml (dowód katalogu, _PASSED i inne): ich import u właściciela pilnuje ruff TID251 z prawem
-# właściciela w per-file-ignores pyproject.toml.
+# właściciela w per-file-ignores ruff.toml.
 SRC_BANNED: typing.Final = frozenset(
     tomllib.loads((SRC / "ruff.toml").read_text(encoding="utf-8"))["lint"]["flake8-tidy-imports"]["banned-api"]
 )

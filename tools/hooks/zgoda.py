@@ -18,7 +18,7 @@ Claude Code sprawdza to ``tools/wyrocznia_zgody.py``. Kartę zgody, którą T3 p
 T3 nie zamyka jej na ``control_cancel_request``, więc zostaje w stanie „waiting” także po końcu tury (26.10 u dziecka
 ``delegate_task``: jeszcze 3 min po końcu runu, „cancelled” dopiero 30 min po nim). Inne harnessy niż Claude Code
 (Codex, opencode) łapie tylko przegląd. Uruchamia go systemowy Python (na Macu 3.9), więc ruff sprawdza ten plik pod
-3.9 (``per-file-target-version`` w ``pyproject.toml``), a plik importuje tylko bibliotekę standardową.
+3.9 (``per-file-target-version`` w ``ruff.toml``), a plik importuje tylko bibliotekę standardową.
 """
 
 from __future__ import annotations
