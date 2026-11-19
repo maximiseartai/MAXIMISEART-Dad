@@ -23,8 +23,10 @@ import shutil
 import subprocess
 import sys
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
+import potomne
 from setup_worktree import MINIMUM
 
 FIND_TIMEOUT_S = 5
@@ -55,13 +57,7 @@ def _python_folder() -> Path:
     if uv is None:
         raise _Skipped("uv nie ma w PATH")
     try:
-        found = subprocess.run(
-            [uv, "python", "find", "--system", f">={MINIMUM}"],
-            capture_output=True,
-            text=True,
-            timeout=FIND_TIMEOUT_S,
-            check=False,
-        )
+        found = potomne.run([uv, "python", "find", "--system", f">={MINIMUM}"], cwd=Path.cwd(), timeout=FIND_TIMEOUT_S)
     except (OSError, subprocess.TimeoutExpired) as error:
         raise _Skipped(f"uv python find: {error}") from error
     if found.returncode != 0:
