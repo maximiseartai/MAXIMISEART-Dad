@@ -41,6 +41,7 @@ import ponowny_przeglad
 import reguly_bazy
 import rejestr_korzeni
 import repo
+import rozjazd_modelu
 import scal_pr
 import stan_pr
 import szablon_werdyktu
@@ -548,7 +549,8 @@ def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
 def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany_run_z_merge_em(tmp_path: Path, conclusion: str | None, own: str) -> None:
     """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a anuluje
     nowszy push na `main`, gdy czeka za trwającym (#1449: runy merge'ów #1439, #1418, #1434 anulowane po 2 min, czerwień
-    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a."""
+    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a, tylko mówi, że wątek nie
+    czeka, bo czerwony `main` zakłada issue sam (#2267)."""
 
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
@@ -562,8 +564,9 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert merged.stdout.splitlines()[-2:] == [
-        f"CI MAIN | {merge_commit[:7]} | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge: {own}"
-        " | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR",
+        f"CI MAIN | {merge_commit[:7]} | nie czekaj na ten run: czerwony main zakłada issue czerwony-main i komentuje ten PR"
+        f" sam (tools/ci/zgloszenia_ci.py) | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego"
+        f" commit zawiera merge: {own}",
         _last_line(merged),
     ]
     assert github.run_lists() == [["run", "list", "--workflow", "CI", "--event", "push", "--branch", "main", "--commit", merge_commit, "--json", "databaseId,url,conclusion"]]
@@ -1134,6 +1137,53 @@ def test_pr_ktorego_test_pada_na_scaleniu_z_main_choc_oba_byly_zielone_nie_jest_
     expected = re.escape(f"SCAL ODMOWA | #1 {head[:7]} | test scalenia z main {main[:7]} {reason.format(main=main[:7], prog=chr(0))}")
     assert re.fullmatch(expected.replace(re.escape(chr(0)), ".+"), _last_line(answered)), _last_line(answered)
     assert github.merges() == []
+
+
+MODEL_SKILL = ".agents/skills/verify-model"
+MODEL_CODE = "kod/model.py"
+MODEL_SOURCE = "def licz() -> int:\n    return 1\n"
+CHANGED_MODEL_SOURCE = "def licz() -> int:\n    return 2\n"
+TEST_SELECTION_RULE = {"pyproject.toml": WITH_PYTEST + "# reguła wyboru testów\n"}
+
+
+MODEL_DRIFT = f"verify-model: kod opisany modelem zmienił się: {MODEL_CODE} licz. Wykonaj kroki „Bring the model in line”"
+
+
+@pytest.mark.parametrize(
+    ("pull_files", "main_files", "code", "line"),
+    [
+        pytest.param(
+            {MODEL_CODE: CHANGED_MODEL_SOURCE},
+            TEST_SELECTION_RULE,
+            1,
+            f"SCAL ODMOWA | #1 {{head}} | rozjazd modelu na scaleniu z main {{main}}: {MODEL_DRIFT}",
+            id="rozjazd-przez-pr",
+        ),
+        pytest.param(
+            {"kod/inne.py": "INNE: int = 1\n"},
+            {**TEST_SELECTION_RULE, MODEL_CODE: CHANGED_MODEL_SOURCE},
+            0,
+            "SCAL OK | #1 {head} | gotowy do merge'a z main {main}, bez merge'a (--bez-merge) | test scalenia pominięty: zmiana pyproject.toml dotyczy każdego testu",
+            id="rozjazd-juz-na-samym-main",
+        ),
+    ],
+)
+def test_pominiety_test_scalenia_i_tak_odmawia_przy_rozjezdzie_modelu_skilla_na_scaleniu_ktorego_nie_ma_na_samym_main(
+    tmp_path: Path, pull_files: dict[str, str], main_files: dict[str, str], code: int, line: str
+) -> None:
+    (tmp_path / "skroty" / "kod").mkdir(parents=True)
+    (tmp_path / "skroty" / MODEL_CODE).write_text(MODEL_SOURCE, encoding="utf-8")
+    digests = rozjazd_modelu.skroty({MODEL_CODE: {"licz": ""}}, tmp_path / "skroty")
+    skill = {f"{MODEL_SKILL}/SKILL.md": "Model.\n", f"{MODEL_SKILL}/{rozjazd_modelu.DEFINICJE}": json.dumps(digests)}
+    github = MergeGitHub(tmp_path, {"pyproject.toml": WITH_PYTEST, "kod/__init__.py": HELPED_SUM, "kod/pomoc.py": HELPER, MODEL_CODE: MODEL_SOURCE, **skill})
+    head = github.open_pull(1, pull_files)
+    github.comment(1, PASS.format(head=head))
+    main = github.push_main(main_files)
+
+    answered = github.run("1", "--bez-merge")
+
+    assert answered.returncode == code, answered.stdout + answered.stderr
+    assert _last_line(answered).startswith(line.format(head=head[:7], main=main[:7])), _last_line(answered)
 
 
 @pytest.mark.parametrize(

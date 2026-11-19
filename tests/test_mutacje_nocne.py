@@ -252,6 +252,7 @@ def _zapisy(
 
 PRZEZYLO = (1, "MUTACJE ZMIANY FAIL | przeżyło 2 | mutacje=4 | wyjątki=0 | innego systemu=0")
 OK = (0, "MUTACJE ZMIANY OK | mutacje=3 | wyjątki=0 | innego systemu=0")
+RADA_WASKIEGO_WEZLA = "sprawdź ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest w `polecenie` jej wpisu"
 
 
 def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_drugi_przebieg_niczego_nie_dubluje(
@@ -301,7 +302,7 @@ def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_d
     assert "\n".join(f"MUTACJA {nazwa} | klucz {_klucz(nazwa)}" for nazwa in (*przezyte[:2], przezyte[4])) + "\n" in tresc_11
     assert RUN in tresc_11 and "nie warto, bo" in tresc_11 and "które ostatnio zmienił #11:" in tresc_11
     # Rada o mutacjach bez werdyktu stoi tylko przy nich (``test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_…``).
-    assert "uruchom ją `tools/mutacje.py`" not in tresc_11
+    assert RADA_WASKIEGO_WEZLA not in tresc_11
     tresc_commitu = nowe[f"Przeżyte mutacje z commitu {d[:9]}"]["body"]
     assert f"MUTACJA src/a.py:4 stała | klucz {_klucz('src/a.py:4 stała')}" in tresc_commitu and f"które ostatnio zmienił commit {d}:" in tresc_commitu
     # Issue #12 ma już mutację „stała”, a #14 zamknięte z powodem dla niej: dostają tylko nowe mutacje.
@@ -401,10 +402,10 @@ def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a
         f"MUTACJA src/a.py:1 stała | klucz {_klucz('src/a.py:1 stała')}",
         f"MUTACJA src/a.py:5 inna | klucz {_klucz('src/a.py:5 inna')}{bez_werdyktu}",
     ]
-    assert "uruchom ją `tools/mutacje.py`" in tresci["Przeżyte mutacje z #11"]
+    assert RADA_WASKIEGO_WEZLA in tresci["Przeżyte mutacje z #11"]
     [komentarz] = [komentarz["body"] for komentarz in github.issues[0]["comments"]]
     assert [linia for linia in komentarz.splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{bez_werdyktu}"]
-    assert "uruchom ją `tools/mutacje.py`" in komentarz
+    assert RADA_WASKIEGO_WEZLA in komentarz
 
 
 def test_mutacja_z_przekroczonym_czasem_testow_trafia_do_issue_z_wlasnym_dopiskiem_i_rada_a_nie_jako_przezyta(
@@ -434,7 +435,7 @@ def test_mutacja_z_przekroczonym_czasem_testow_trafia_do_issue_z_wlasnym_dopiski
         f"MUTACJA src/a.py:5 inna | klucz {_klucz('src/a.py:5 inna')}{dopisek}",
     ]
     rada = "Linia z `przekroczony czas testów, bez werdyktu` to mutacja, której testy nie skończyły się w limicie czasu mutacji"
-    assert rada in tresci["Przeżyte mutacje z #11"] and "uruchom ją `tools/mutacje.py`" in tresci["Przeżyte mutacje z #11"]
+    assert rada in tresci["Przeżyte mutacje z #11"] and RADA_WASKIEGO_WEZLA in tresci["Przeżyte mutacje z #11"]
     # Rada o limicie czasu części stoi tylko przy mutacjach bez werdyktu po nim.
     assert "przed limitem czasu części" not in tresci["Przeżyte mutacje z #11"]
     [komentarz] = [komentarz["body"] for komentarz in github.issues[0]["comments"]]

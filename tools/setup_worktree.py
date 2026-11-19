@@ -5,8 +5,11 @@ leży, instaluje go edytowalnie i sprawdza, że ``rozliczenia`` importuje się z
 jego ``src``. Używa ``uv``, gdy jest dostępne, a bez niego ``venv`` i ``pip``.
 Plik ``.pth`` (``IMPORT_PTH``) daje każdemu Pythonowi z ``.venv`` katalogi importu testów (``repo.IMPORT_ROOTS``),
 więc próba ``.venv/bin/python -c "import wplyw_zmiany"`` importuje moduły narzędzi bez ``sys.path`` i ``PYTHONPATH``.
-Włącza też bramę ``tools/hooks/pre-push`` (``core.hooksPath``) i sterownik scalania plików generowanych
-(``merge=wygenerowane`` w ``.gitattributes``); oba siedzą w konfiguracji repozytorium, wspólnej dla wszystkich worktree.
+Włącza też bramę ``tools/hooks/pre-push`` (``core.hooksPath``), sterownik scalania plików generowanych
+(``merge=wygenerowane`` w ``.gitattributes``) i sterownik scalania skrótów modeli skilli (``merge=model-skilla``, czyli
+``tools/przesun_model.py --scal`` Pythonem z ``.venv`` worktree, który scala, a bez ``.venv`` ``git merge-file``, czyli
+scalenie tekstem jak bez sterownika); wszystkie siedzą w konfiguracji
+repozytorium, wspólnej dla wszystkich worktree.
 
     py -3 tools/setup_worktree.py              # Windows
     python3 tools/setup_worktree.py            # macOS i Linux
@@ -38,6 +41,7 @@ HOOKS = "tools/hooks"
 MINIMUM_PYTHON = (3, 13)  # requires-python z pyproject.toml
 MINIMUM = ".".join(map(str, MINIMUM_PYTHON))
 SUPPORTED = sys.version_info >= MINIMUM_PYTHON
+VENV_PYTHON = ".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -64,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     if sys.platform != "win32":
         _gate_pushes(ROOT)
     _merge_generated(ROOT)
+    _merge_model_digests(ROOT, VENV_PYTHON)
     _write_import_roots(_venv_python())
 
     for module, expected in (("rozliczenia", ROOT / "src" / "rozliczenia"), ("repo", ROOT / "tools" / "lib")):
@@ -106,8 +111,14 @@ def _merge_generated(root: Path) -> None:
     repo.git(root, "config", "merge.wygenerowane.driver", "true")
 
 
+def _merge_model_digests(root: Path, python: str) -> None:
+    repo.git(root, "config", "merge.model-skilla.name", "skróty modelu skilla: scalenie definicji, skrót zmieniony po obu stronach z drzewa scalenia")
+    text = "git merge-file -L HEAD -L baza -L scalana %A %O %B"
+    repo.git(root, "config", "merge.model-skilla.driver", f"if [ -x {python} ]; then {python} tools/przesun_model.py --scal %O %A %B %P; else {text}; fi")
+
+
 def _venv_python() -> Path:
-    return VENV / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    return ROOT / VENV_PYTHON
 
 
 def _write_import_roots(python: Path) -> None:
