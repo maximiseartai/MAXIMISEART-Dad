@@ -87,4 +87,4 @@ Zmienia decyzję „Test jako strażnik” w ramach tej samej decyzji Maksa („
   - `brak - test` przechodzi bez dowodu przy pustym przeszczepie, także gdy test błędu nie łapie i gdy `Gdzie` leży poza definicjami;
   - dowód nie ocenia, czy test sprawdza zachowanie, a nie tekst (`inspect.getsource(f) == …` przechodzi), ani niestabilności (jedno padnięcie liczy się jak wykrycie); to dalej ocenia recenzent;
   - w drugą stronę dowód odmawia strażnika, który na drzewie `FAIL` nie dochodzi do kodu z `Gdzie` (pada wcześniej, np. na nazwie dodanej przez poprawkę), choć na HEAD łapie błąd: tak samo przebiega test, który pada na kontrakcie zmienionym przez poprawkę, więc komunikat każe dojść do kodu z `Gdzie` na drzewie `FAIL`; odmawia też, gdy kod z `FAIL` na HEAD zgłasza wyjątek złapany niżej, którego na `FAIL` nie zgłaszał.
-- **Koszt.** Trzy biegi węzła w środowisku Required CI: na 8 prawdziwych Ważnych 11–30 s na dowód na Macu, z budową środowiska z pamięci uv.
+- **Koszt.** Trzy biegi węzła w środowisku Required CI: na 8 prawdziwych Ważnych 9–24 s na dowód na Macu (#2197 r2), z budową środowiska z pamięci uv.
