@@ -162,9 +162,10 @@ def _proba(
     *,
     teraz: datetime = RANO,
     do: str = MAKS,
+    opcje: tuple[str, ...] = (),
 ) -> tuple[int, str]:
     code = proba_przypomnien.main(
-        ["--config", str(klon.config), "--do", do],
+        ["--config", str(klon.config), "--do", do, *opcje],
         connect=lambda: imaplib.IMAP4("127.0.0.1", imap.port),
         smtp=lambda: smtplib.SMTP("127.0.0.1", serwer.port, timeout=10),
         now=lambda: teraz.astimezone(),
@@ -253,6 +254,28 @@ def test_proba_liczy_pore_z_ustawien_przypomnien_a_nie_z_dawnych_stalych(tmp_pat
         0,
         "PROBA PRZYPOMNIEN OK | pora=wieczorna | przypomnienia=3 | wykonawcy=2 | dni=2 | wyslano 1 na podany adres",
     )
+
+
+def test_proba_liczy_wylaczone_przypomnienia_jak_wlaczone_od_dnia_z_polecenia_bez_zmiany_pliku(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Na Macu Maksa przypomnienia w ``config/`` są wyłączone, żeby Centrum z tego klonu nie wysłało ich Wykonawcom;
+    ``--wlaczone-od`` włącza je tylko w pamięci próby: od 10.11 należą się Jan i Anna za 10.11, a plik zostaje
+    wyłączony."""
+
+    klon = _klon(tmp_path)
+    _przypomnienia(klon.config, wlaczone="false")
+    plik = (klon.config / REMINDERS_FILE).read_bytes()
+    with _gmail() as (imap, serwer):
+        code, line = _proba(capsys, klon, imap, serwer, opcje=("--wlaczone-od", "2026-11-10"))
+
+    assert (code, line) == (
+        0,
+        "PROBA PRZYPOMNIEN OK | pora=poranna | przypomnienia=2 | wykonawcy=2 | dni=1 | wyslano 1 na podany adres",
+    )
+    message, recipients, _ = _mail(serwer)
+    assert (recipients, message["Subject"]) == ((MAKS,), "Przypomnienie: raport za dzień 10.11.2026")
+    assert (klon.config / REMINDERS_FILE).read_bytes() == plik
 
 
 def test_proba_odmawia_adresu_wykonawcy_bez_wysylki(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

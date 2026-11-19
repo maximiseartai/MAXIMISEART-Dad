@@ -1,6 +1,6 @@
-"""Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przed Wydaniem.
+"""Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przy każdym Wydaniu.
 
-Narzędzie dla Maksa, poza CI (spec #1344, US 57–58, ADR 0030). Pracę Przypomnień o raporcie CI sprawdza tylko na
+Krok każdego Wydania (krok 3 skilla ``wydanie``), poza CI (spec #1344, US 57–58, ADR 0030). Pracę Przypomnień o raporcie CI sprawdza tylko na
 ``AtrapaImap`` i ``AtrapaSmtp``, więc prawdziwy Gmail, INTERMAX taty, treść i stopkę sprawdza ta próba. Czyta to samo
 i tą samą drogą co praca przypomnień Centrum (``rozliczenia.centrum.report_reminders.due_reminders``): z folderu
 ``--config`` Przypomnienia o raporcie z Ustawień Centrum (``przypomnienia.yaml``: czy idą, dzień wdrożenia, pory,
@@ -22,6 +22,9 @@ Wykonawcy (w Gmailu z ``+…`` albo z kropkami w części przed ``@``) przechodz
 zawsze własny adres Maksa. Bez stopki w Ustawieniach narzędzie też nie wysyła, bo przypomnienie Wykonawcy poszłoby bez
 niej. Plik przypomnień zakłada start Centrum po Aktualizacji (zmiana z Wydania ``2026-11-przypomnienia``), a próba
 niczego nie zapisuje, więc w klonie przed pierwszym startem nowej wersji przypomnienia są dla niej wyłączone.
+``--wlaczone-od RRRR-MM-DD`` liczy je jak włączone od tego dnia, tylko w pamięci próby: tak biegnie próba Wydania na
+Macu Maksa, którego ``config/`` ma przypomnienia wyłączone, bo Centrum uruchomione z tego klonu wysyłałoby je prawdziwym
+Wykonawcom ze skrzynki taty.
 
 Wynik (stdout) to jedna linia z samymi liczbami, bez adresów, loginów, nazw Wykonawców i numerów zleceń, i same znaki
 ASCII (polskie słowa bez polskich liter, jak próba IMAP ``tools/proba_skrzynki_raportow.py``):
@@ -38,9 +41,9 @@ policzeniu przypomnień ma przed powodem te same liczby: brak stopki, adres Wyko
 aplikacji, sieć (nazwa typu błędu) albo inna odmowa Gmaila przy wysyłce. Hasła nie ma w wyniku ani wyjątkach: zna je
 tylko port skrzynki.
 
-Uruchomienie w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``); mail sprawdza Maks w swojej skrzynce:
+Uruchomienie w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``); mail dochodzi do skrzynki Maksa:
 
-    .venv/bin/python tools/proba_przypomnien.py --do <adres Maksa> [--config <folder config>]
+    .venv/bin/python tools/proba_przypomnien.py --do <adres Maksa> [--config <folder config>] [--wlaczone-od RRRR-MM-DD]
 """
 
 from __future__ import annotations
@@ -48,7 +51,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Callable, Sequence
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 import imaplib
 from pathlib import Path
 import smtplib
@@ -93,13 +96,17 @@ FAIL: Final = "PROBA PRZYPOMNIEN FAIL"
 _NOT_SENT: Final = "mail nie poszedl"
 
 
-def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) -> str:
-    """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``."""
+def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress, switched_on: date | None = None) -> str:
+    """Jedna linia wyniku próby; wysyła najwyżej jeden mail, tylko do ``target``. ``switched_on`` liczy przypomnienia
+    jak włączone od tego dnia, tylko w pamięci próby."""
 
     snapshot = read_snapshot(config)
     reminders = snapshot.reminders_or_unreadable
     if isinstance(reminders, Unreadable):
         return f"{FAIL} | {_not_read(NotRead('plik-bez-odczytu', file=reminders.name))}"
+    if switched_on is not None:
+        reminders = replace(reminders, enabled=True, since=switched_on)
+        snapshot = replace(snapshot, reminders_or_unreadable=reminders)
     in_effect = schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, reminders.schedule)
     read = due_reminders(now, snapshot, inbox, DadFiles(), in_effect, (), _entering(config))
     match read:
@@ -199,6 +206,15 @@ def main(
         default=tool_files.CONFIG_DIR,
         help="Folder config z plikami przypomnień i Ustawieniami taty (domyślnie config klonu narzędzia, jak w Centrum).",
     )
+    parser.add_argument(
+        "--wlaczone-od",
+        type=date.fromisoformat,
+        metavar="RRRR-MM-DD",
+        help=(
+            "Liczy przypomnienia jak włączone od tego dnia, tylko w pamięci próby; plik przypomnień w --config zostaje "
+            "wyłączony, więc Centrum uruchomione z tego klonu nie wysyła przypomnień Wykonawcom."
+        ),
+    )
     args = parser.parse_args(argv)
     target = SenderAddress.of(args.do)
     if target is None:
@@ -208,7 +224,7 @@ def main(
         return read_snapshot(args.config).inbox
 
     inbox = ImapInbox(access) if connect is None or smtp is None else ImapInbox(access, connect=connect, smtp=smtp)
-    line = probe(now(), args.config, inbox, target)
+    line = probe(now(), args.config, inbox, target, args.wlaczone_od)
     print(line)
     return 0 if line.startswith(OK) else 1
 
