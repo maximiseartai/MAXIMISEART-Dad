@@ -156,6 +156,14 @@ PGREP_LOOPS = (
     "until ! pgrep -l -f mutacje.json >/dev/null; do sleep 5; done",
     "until pgrep -f serve_centrum >/dev/null; do sleep 1; done; curl -s localhost:8765/health",
 )
+TASK_OUTPUT_LOOPS = (
+    "F=/private/tmp/c/s/tasks/bwx8k6zpp.output; until grep -q pr-2121 $F; do sleep 15; done; cat $F",
+    "F=/private/tmp/c/s/tasks/bomvji68c.output; until [ -s $F ]; do sleep 10; done; cat $F",
+    "F=/private/tmp/c/s/tasks/bhcxilqwz.output; until [ $(wc -l < $F) -gt 7 ]; do sleep 15; done; sleep 2; tail -12 $F",
+    "F=/private/tmp/c/s/tasks/b1.output; until grep -q KONIEC \"${F}\"; do sleep 5; done",
+    "for i in $(seq 1 40); do grep -q KONIEC /private/tmp/c/s/tasks/b1.output && break; sleep 15; done",
+    "until grep -q CZAS tasks/bhcxilqwz.output; do perl -e 'select(undef,undef,undef,15)'; done",
+)
 # Dziewięć ponowień odbitych „already running” albo „cannot be rerun” (sesje d00be8d7, 41511ae6, e27ed100 ×2,
 # 6bc1a081 ×4, 80f3de41) i partia 13 ponowień naraz w awarii DNS runnerów 11.11 (e27ed100, 22:38).
 RERUNS = (
@@ -320,6 +328,7 @@ PASSING = (
     # Bez ``-c`` powłoka dostaje w napisie nazwę pliku skryptu albo jego argument.
     "sh -e 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "bash backup.sh 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
+    "sleep 1; cat /private/tmp/c/s/tasks/be31c9zrc.output | tail",
 )
 
 
@@ -378,49 +387,68 @@ def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(
 
 @pytest.mark.parametrize("command", PASSING)
 def test_inne_polecenie_przechodzi(command: str) -> None:
+    """Także jedno czytanie pliku wyjścia zadania bez pętli (#2267)."""
+
     assert hook.judge(command, in_background=False) is None
 
 
-@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS)
+SERVER_READINESS = {
+    "curl-plik-za-petla": "for i in 1 2 3 4 5 6 7 8 9 10; do curl -s -o /dev/null -w '%{http_code}\\n' "
+    "http://127.0.0.1:47900/ && break; sleep 1; done; cat /private/tmp/c/s/tasks/b31ma9p31.output | tail -5",
+    "curl-plik-w-zmiennej-przed-petla": "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
+    "until curl -sf http://127.0.0.1:5179/ >/dev/null; do sleep 1; done; tail -5 $F",
+}
+
+
+@pytest.mark.parametrize("command", list(SERVER_READINESS.values()), ids=list(SERVER_READINESS))
+def test_gotowosc_serwera_z_zadania_w_tle_bez_jego_pliku_w_petli_przechodzi(command: str) -> None:
+    """Koniec serwera z zadania w tle nie przyjdzie, więc droga ``t3_background_wait`` by go nie obudziła: pętla, która
+    nie czyta jego pliku wyjścia, przechodzi, gdy plik stoi za nią (jak w transkryptach repo) albo w zmiennej sprzed niej
+    (recenzja #2295 r2 W2)."""
+
+    assert hook.judge(command, in_background=False) is None
+
+
+@pytest.mark.parametrize("command", TASK_OUTPUT_LOOPS)
+def test_petla_na_pliku_wyjscia_zadania_w_tle_dostaje_odmowe(command: str) -> None:
+    """Pętle z sesji 18/19.11.2026 (#2267, ścieżka sesji skrócona do ``/private/tmp/c/s``) i syntetyczne: zmienna w
+    ``"${F}"``, ścieżka w pętli z licznikiem prób i względna ze snem przez perl."""
+
+    assert hook.judge(command, in_background=False) is hook.TASK_OUTPUT_LOOP
+
+
+@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS + TASK_OUTPUT_LOOPS)
 def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=True) is None
 
 
-ROAD_THROUGH_NOTIFICATION = (
-    "pełny SHA",
-    "watch_pull_request",
-    "run_in_background: true",
-    "t3_background_wait",
-)
+ROAD_FOR_CI = ("watch_pull_request z URL PR i kończy turę", "pełnym SHA HEAD", "PR scala rodzic", "issue czerwony-main sam")
+ROAD_FOR_TASK = ("run_in_background: true", hook.WAIT_FOR_TASK)
+NOT_FOR_CI = ("t3_background_wait", "run_in_background")
 
 
 @pytest.mark.parametrize(
-    ("command", "in_background", "said"),
+    ("command", "in_background", "said", "unsaid"),
     [
-        pytest.param(CI_LOOPS[0], False, ROAD_THROUGH_NOTIFICATION, id="petla-na-ci"),
-        pytest.param(WATCHES[0], False, ROAD_THROUGH_NOTIFICATION, id="watch"),
-        pytest.param(
-            PGREP_LOOPS[0],
-            False,
-            (
-                "pgrep -f znajduje własną powłokę",
-                "run_in_background: true",
-                "t3_background_wait",
-            ),
-            id="pgrep",
-        ),
-        pytest.param(
-            RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), id="ponowienie-w-tle"
-        ),
+        pytest.param(CI_LOOPS[0], False, ROAD_FOR_CI, NOT_FOR_CI, id="petla-na-ci"),
+        pytest.param(WATCHES[0], False, ROAD_FOR_CI, NOT_FOR_CI, id="watch"),
+        pytest.param(PGREP_LOOPS[0], False, ("pgrep -f znajduje własną powłokę", *ROAD_FOR_TASK), (), id="pgrep"),
+        pytest.param(TASK_OUTPUT_LOOPS[0], False, ("tasks/*.output", hook.WAIT_FOR_TASK), (), id="plik-wyjscia-zadania"),
+        pytest.param(RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), (), id="ponowienie-w-tle"),
     ],
 )
-def test_hook_odmawia_kodem_2_z_przyczyna_na_stderr(
-    command: str, in_background: bool, said: tuple[str, ...]
+def test_hook_odmawia_kodem_2_z_jedyna_droga_na_stderr(
+    command: str, in_background: bool, said: tuple[str, ...], unsaid: tuple[str, ...]
 ) -> None:
+    """Jedna droga dla przypadku (#2267): PR przez ``watch_pull_request`` albo koniec dziecka na URL i SHA, ``main`` bez
+    czekania, zadanie w tle przez ``t3_background_wait``; odmowa o CI nie podsuwa drogi zadania w tle, która na CI nie
+    czeka."""
+
     hooked = _bash(command, in_background=in_background)
 
     assert (hooked.returncode, hooked.stdout) == (2, ""), hooked.stderr
     assert [text for text in said if text not in hooked.stderr] == [], hooked.stderr
+    assert [text for text in unsaid if text in hooked.stderr] == [], hooked.stderr
 
 
 @pytest.mark.parametrize(
