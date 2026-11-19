@@ -847,6 +847,23 @@ def test_skrzynka_z_folderu_eml_oddaje_maile_z_tematem_raportu_jak_port(tmp_path
     assert [mail.subject for mail in found] == ["Rapotr 08.11.2026"]
 
 
+def test_skrzynka_z_folderu_eml_ma_okno_dni_pominiete_maile_i_brak_skrzynki_jak_port(tmp_path: Path) -> None:
+    """Jak ``Mails`` portu: maile od dnia przed wskazanym, mail bez ``Date`` tylko liczy się jako pominięty, a bez
+    folderu Skrypt dla maszyn dostaje niedostępną skrzynkę, nie pustą."""
+
+    folder = tmp_path / "maile"
+    folder.mkdir()
+    for name, sent in [("dzien-przed", b"Sat, 07 Nov 2026 18:05:00 +0100"), ("dwa-dni-przed", b"Fri, 06 Nov 2026 18:05:00 +0100")]:
+        (folder / f"{name}.eml").write_bytes(b"Date: " + sent + b"\r\n" + surowy(message_id=f"<{name}@x.invalid>".encode()))
+    (folder / "bez-daty.eml").write_bytes(surowy(message_id=b"<bez-daty@x.invalid>"))
+
+    outcome = FolderInbox(folder).mails_since(date(2026, 11, 8))
+
+    assert isinstance(outcome, Mails), outcome
+    assert ([mail.arrived.date() for mail in outcome.mails], outcome.skipped) == ([date(2026, 11, 7)], 1)
+    assert FolderInbox(tmp_path / "brak").mails_since(date(2026, 11, 8)) == InboxUnreachable("missing")
+
+
 def test_atrapa_skrzynki_raportow_procesu_oddaje_swoj_wynik_i_zapisuje_dzien_kazdego_odczytu() -> None:
     mail = mail_of(surowy(), datetime(2026, 11, 8, 18, 5, tzinfo=TATA))
     assert mail is not None

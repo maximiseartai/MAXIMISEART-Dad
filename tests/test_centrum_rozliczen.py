@@ -765,6 +765,70 @@ def test_cofniecie_przywraca_wartosc_jako_nowy_wiersz_a_cofniecie_cofniecia_przy
     assert app.client.get("/api/settings").json()["theme"] == "light"
 
 
+@pytest.mark.parametrize(
+    ("name", "change"),
+    [
+        (LEGEND_FILE, lambda app: app.client.post("/api/settings/activity-legend", json=code_form("listwa#m", amount=20))),
+        (RULES_FILE, lambda app: app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2))),
+        (DEVICES_FILE, lambda app: app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": [], "group": None})),
+        (SETTINGS_FILE, lambda app: app.client.put("/api/settings/theme", json={"theme": "light"})),
+        (RULES_FILE, lambda app: _outside(app, RULES_FILE, NOKIA_Z, NOKIA_Z.replace("wartosc: 1", "wartosc: 2"))),
+    ],
+    ids=[LEGEND_FILE, RULES_FILE, DEVICES_FILE, SETTINGS_FILE, f"{RULES_FILE}-spoza"],
+)
+def test_cofniecie_zmiany_ktora_utworzyla_plik_ustawien_usuwa_plik(
+    tmp_path: Path, name: str, change: Callable[[Centrum], Any]
+) -> None:
+    """Tata bez pliku liczy wartościami z Wydania. „Cofnij” pierwszej zmiany (jego albo spoza Centrum) przywraca brak
+    pliku, a nie treść z Wydania w pliku, więc następne Wydanie z nowymi wartościami domyślnymi dociera do niego (ADR
+    0032); wiersz cofnięcia mówi „plik usunięty”, a cofnięcie cofnięcia tworzy plik znowu."""
+
+    app = centrum(tmp_path)
+    assert change(app).status_code == 200
+    [created] = [row for row in history_rows(app) if row["file"] == name]
+
+    files = (LEGEND_FILE, RULES_FILE, DEVICES_FILE, SETTINGS_FILE)
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+    after_undo = [file for file in files if (app.tool.config / file).exists()]
+    [undo_row, _] = [row for row in history_rows(app) if row["file"] == name]
+    redone = app.client.post(f"/api/settings/history/{undo_row['id']}/undo")
+    after_redo = [file for file in files if (app.tool.config / file).exists()]
+
+    assert undone.status_code == 200, undone.text
+    assert after_undo == []
+    assert (undo_row["undoes"], undo_row["removed"]) == (created["id"], True)
+    assert (redone.status_code, after_redo) == (200, [name]), redone.text
+
+
+def test_cofniecie_zmiany_ktora_utworzyla_plik_zostawia_plik_z_pozniejsza_zmiana_innego_klucza(tmp_path: Path) -> None:
+    """„Cofnij” zmiany motywu, która utworzyła plik Folderów i motywu, przy wskazanym potem folderze okresów zostawia plik
+    z tym folderem: brak pliku zgubiłby późniejszą zmianę taty."""
+
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    app = centrum(tmp_path)
+    assert app.client.put("/api/settings/theme", json={"theme": "light"}).status_code == 200
+    [created] = history_rows(app)
+    app.platform.chosen_folders.append(periods)
+    assert app.client.post("/api/settings/periods-directory/choose").status_code == 200
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert FOLDERS.parse(app.settings_path.read_bytes()) == FolderSettings(periods_directory=periods)
+    assert history_rows(app)[0]["removed"] is False
+
+
+def _outside(app: Centrum, name: str, old: str, new: str) -> Any:
+    """Plik ``name`` z treścią z Wydania z ``old`` zamienionym na ``new`` zapisany poza Centrum i odczyt, który daje
+    jego wiersz Historii."""
+
+    app.client.get("/api/settings/history")
+    write_dad_quantity_rules(app.tool, name, old, new)
+    return app.client.get("/api/settings/history")
+
+
 def test_cofniecie_zmiany_ktorej_nie_ma_w_historii_jest_odmowa(tmp_path: Path) -> None:
     refused = centrum(tmp_path).client.post("/api/settings/history/nie-ma-takiej/undo")
 
@@ -1498,9 +1562,9 @@ def test_narzedzia_licza_ostatnia_dobra_para_gdy_plik_taty_zmieniony_poza_centru
 def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skladnikowi_wydania_jego_zapisy(
     tmp_path: Path, release_without_manual_installation: Callable[[], None], others: list[str]
 ) -> None:
-    """Tata dodał składnik „instalacja ręczna” (z zapisem „wizja” albo bez), a następne Wydanie daje te zapisy nowemu
-    składnikowi reguł. „Cofnij” dodania przechodzi za pierwszym razem: składnik taty znika, a składnik z Wydania dostaje
-    oba zapisy, w pliku taty i w procesach, i sekcja nie ma już zdania."""
+    """Tata dodał składnik „instalacja ręczna” (z zapisem „wizja” albo bez) do Listy Urządzeń z Wydania, a następne
+    Wydanie daje te zapisy nowemu składnikowi reguł. „Cofnij” dodania przechodzi za pierwszym razem: plik taty znika, bo
+    przed dodaniem go nie było, procesy liczą składnikiem z Wydania z oboma zapisami, a sekcja nie ma już zdania."""
 
     app = centrum(tmp_path)
     app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": others, "group": None})
@@ -1511,13 +1575,56 @@ def test_cofniecie_dodania_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_skl
 
     assert undone.status_code == 200, undone.text
     assert app.client.get(QUANTITY_RULES_URL).json()["devices_problem"] is None
-    dad_list = _dad_list(app)
-    assert dad_list is not None and [component.spellings for component in dad_list if "instalacja ręczna" in component.spellings] == [
-        ("instalacja ręczna", "wizja")
-    ]
+    assert _dad_list(app) is None
     counted = _tools_rules(app.tool.config)
     assert counted.devices.find(["instalacja", "ręczna"]) == ([(Component("instalacja-reczna", ("instalacja ręczna", "wizja")), 1)], True)
     assert counted.rules == DEFAULT_QUANTITY_RULES.rules
+
+
+@pytest.mark.parametrize(
+    ("name", "change"),
+    [
+        (RULES_FILE, lambda app: app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, 2))),
+        (DEVICES_FILE, lambda app: app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": [], "group": None})),
+    ],
+    ids=[RULES_FILE, DEVICES_FILE],
+)
+def test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wartosci_z_wydania_usuwa_plik(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None], name: str, change: Callable[[Centrum], Any]
+) -> None:
+    """Tata bez pliku zmienia Ustawienie, Aktualizacja daje nowe wartości z Wydania, a potem tata klika „Cofnij”: pliku
+    znowu nie ma, więc tata liczy nowymi wartościami z Wydania, a nie wartościami poprzedniego Wydania w swoim pliku."""
+
+    app = centrum(tmp_path)
+    assert change(app).status_code == 200
+    [created] = [row for row in history_rows(app) if row["file"] == name]
+    release_without_manual_installation()
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert [file for file in (RULES_FILE, DEVICES_FILE) if (app.tool.config / file).exists()] == []
+    assert _tools_rules(app.tool.config) == DEFAULT_QUANTITY_RULES
+
+
+def test_cofniecie_zmiany_ktora_utworzyla_plik_po_cofnieciu_pozniejszej_i_aktualizacji_usuwa_plik(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    """Tata bez pliku reguł zmienia regułę dwa razy, cofa drugą zmianę, Aktualizacja daje nowe Reguły ilości, a potem
+    tata cofa pierwszą zmianę: późniejsze zmiany niczego w pliku nie zostawiły, więc pliku znowu nie ma."""
+
+    app = centrum(tmp_path)
+    for value in (2, 3):
+        assert app.client.put(f"{QUANTITY_RULES_URL}/nokia", json=_nokia_rule(app, value)).status_code == 200
+    [second, created] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
+    assert app.client.post(f"/api/settings/history/{second['id']}/undo").status_code == 200
+    release_without_manual_installation()
+
+    undone = app.client.post(f"/api/settings/history/{created['id']}/undo")
+
+    assert undone.status_code == 200, undone.text
+    assert not (app.tool.config / RULES_FILE).exists()
+    assert _tools_rules(app.tool.config) == DEFAULT_QUANTITY_RULES
 
 
 def _nokia_rule(app: Centrum, value: int) -> dict[str, Any]:
@@ -2228,6 +2335,7 @@ def test_regula_ilosci_zmieniona_poza_centrum_dziala_od_razu_ma_wiersz_historii_
 
 def test_regula_ilosci_usunieta_poza_centrum_po_cofnieciu_wraca_na_koniec_listy(tmp_path: Path) -> None:
     app = centrum(tmp_path)
+    write_dad_quantity_rules(app.tool, RULES_FILE, "", "")
     rule_sentences(app)
     contract_rule = "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n"
     write_dad_quantity_rules(app.tool, RULES_FILE, contract_rule, "")
@@ -5588,6 +5696,29 @@ def test_cofnij_zmiany_ktora_dala_login_ze_zleceniami_jest_odmowa_jak_usuniecie(
     assert [row["undoable"] for row in history_rows_of(centrum_.client)] == [True]
 
 
+def test_cofniecie_dodania_wykonawcy_do_listy_bez_pliku_zostawia_plik_z_pusta_lista(tmp_path: Path) -> None:
+    """Brak pliku Listy Wykonawców po migracji z Wydania nie zawsze znaczy pustą listę (migracja czeka na stare pliki
+    albo ją odrzucono), więc „Cofnij” dodania Wykonawcy bez zleceń zostawia plik z pustą listą zamiast go usuwać."""
+
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    write_orders(register, ["adrian.testowy"])
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir()
+    client = started(tool, RELEASE_CHANGES, platform=FakePlatform(chosen_files=[register], chosen_folders=[periods]))
+    client.post("/api/settings/register/choose")
+    client.post("/api/settings/periods-directory/choose")
+    saved = client.post(WORKERS_API, json=worker_form(["nowy.login"], "Nowy Testowy"))
+
+    undone = client.post(f"/api/settings/history/{saved.json()['change']}/undo")
+
+    assert (saved.status_code, undone.status_code) == (200, 200), undone.text
+    assert WORKERS.parse(tool.worker_list.read_bytes()) == WORKERS.default
+    assert history_rows_of(client)[0]["removed"] is False
+
+
 def test_zapisanego_loginu_nie_da_sie_przepisac_gdy_ma_zlecenia_a_drugi_login_tata_dopisuje(tmp_path: Path) -> None:
     """US 29, 38: formularz, w którym zapisany login z zleceniami w okresie zastąpiono innym, nie zapisuje się, bo
     zmieniłby po cichu, czyje zlecenia trafiają do kogo; dopisany drugi login obok zapisanego się zapisuje."""
@@ -8846,4 +8977,4 @@ def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tm
         ("wysylka_rozliczen.tresc", "Dzień dobry,\nw załączniku rozliczenie za {okres}.", form["text"]),
     ]
     assert undone.json()["settings"]["settlement_mail"]["subject"] == "Rozliczenie za {okres}"
-    assert yaml.safe_load((app.tool.config / SETTLEMENT_MAIL_FILE).read_bytes())["temat"] == "Rozliczenie za {okres}"
+    assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
