@@ -1953,6 +1953,26 @@ def test_wynik_wyceny_bez_przyjecia_logow_przez_kolejke_zostawia_dziennik_do_nas
     assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
 
 
+def test_logi_z_wynikiem_ktorych_nie_dalo_sie_zbudowac_nie_ida_do_kolejki_a_dziennik_czeka_na_wersje_zastepcza(
+    tmp_path: Path,
+) -> None:
+    def files(process: object, period: object, settings: object) -> list[Path]:
+        raise RuntimeError("syntetyczna awaria plików procesu")
+
+    queue = RecordingQueue()
+    disk = _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, queue, disk, files=files)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+    after_end = ([post.rank for post in queue.posts], len(list((tmp_path / "dzienniki-wyceny").glob("*.jsonl"))))
+    _started(_comments(tmp_path, queue))
+
+    assert after_end == ([Rank.DRAFT], 1)
+    assert [post.rank for post in queue.posts] == [Rank.DRAFT, Rank.STAND_IN]
+    assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+
+
 def test_dziennik_wyceny_bez_dowodu_startu_logow_na_dysku_odmawia_przed_pierwsza_linia(tmp_path: Path) -> None:
     """Dziennik startuje tylko ``LogsOnDisk.started``, który zapisuje też plik ostatniego startu: start bez dowodu
     (``_STARTER``) odmawia, zanim dziennik zapisze pierwszą linię albo pokaże postęp."""
