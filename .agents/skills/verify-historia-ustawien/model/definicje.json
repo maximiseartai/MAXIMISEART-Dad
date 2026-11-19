@@ -21,7 +21,9 @@
     "_read": "adc1e0da96a0d564",
     "_value": "db29a2e6e696ca1f",
     "_or_unreadable": "4e482873f2d0e839",
-    "_or_release": "6711e67ff4145259"
+    "_or_release": "6711e67ff4145259",
+    "_seen": "e84c5750ec860f79",
+    "_good_value": "c415f83222a4f3b8"
   },
   "src/rozliczenia/centrum/settings/memory.py": {
     "Memory.read": "8685ca8089664245",

@@ -92,10 +92,11 @@ Each model action is one indivisible step of this code (`src/rozliczenia/centrum
 | `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again; the next start runs `apply_release_changes` before the first request; a Historia line cut by the switch-off is skipped by `History.read`, so it is a row that does not exist |
 
 `model/definicje.json` holds the digests of the definitions the table names, plus `History._write` (the leading newline
-that keeps a cut line apart), `replace_atomically` (old or new file, never a torn one), `settings_bytes`, `_value`,
+that keeps a cut line apart), `replace_atomically` (old or new file, never a torn one), `settings_bytes`, `_seen` and `_good_value` (what
+`_compared` compares and which last good value it gives), `_value`,
 `_or_unreadable`, `_or_release` (which callers get `file.default`), `RELEASE_CHANGES` and all of `proposal.py` (the
 shapes of a Zmiana z Wydania). Left out on purpose: the pair check of Reguły ilości and Lista Urządzeń (`_paired`,
-`_checked`), the secret of the inbox file (`_with_secret_value`, `_seen`), the autostart place, the periods check of
+`_checked`), the secret of the inbox file (`_with_secret_value`, the hash in `_seen`), the autostart place, the periods check of
 removed logins (`_by_dad` before the lock), `keep_rejected`, the first read after the Wydanie that introduced the owner
 (no memory at all) and `_absent`. Two changes move the model without changing a definition, so look for them in the
 diff: a new caller that writes a settings file, the memory or the Historia outside `_change`, `_compared` and
@@ -260,8 +261,8 @@ and each gives `HISTORIA USTAWIEŃ: NOWE NARUSZENIE`:
 ## Scope
 
 Verified: the three promises over every order of the actions above within the bounds of each configuration (one
-settings file, one Zmiana z Wydania, at most two saves, two „Cofnij”, two hand edits, two switch-offs and one failure of
-each kind). Assumed, each a reason the check can pass while the code is wrong:
+settings file, one Zmiana z Wydania, at most two saves, one „Cofnij”, two hand edits, two switch-offs and one failure of
+each kind; two „Cofnij” only in a wider run outside CI, see PR #2174). Assumed, each a reason the check can pass while the code is wrong:
 
 - **One Centrum at a time** on `config/`: the owner's lock is per process; two Centrum on one folder are not checked.
 - **`replace_atomically` is atomic** and `History.append` either adds a whole line or a line `History.read` skips.
