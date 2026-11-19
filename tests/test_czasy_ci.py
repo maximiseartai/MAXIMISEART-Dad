@@ -960,7 +960,7 @@ def test_pomiar_ci_liczy_cele_z_pierwszej_proby_bez_anulowanych_a_straznik_main_
     ]
     github = _ActionsApi(runs)
 
-    code = pomiar_ci.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-03", "--do", "2026-11-03"], root=checkout, github=github)
+    code = pomiar_ci.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-03", "--do", "2026-11-03"], root=checkout, github=github, kopia=tmp_path / "api")
 
     out, err = capsys.readouterr()
     assert out.splitlines()[-1] == (
@@ -985,7 +985,7 @@ def test_pomiar_ci_z_bledem_api_wyniku_wczesniejszej_proby_zglasza_run_i_konczy_
 
     github = _ActionsApi([{**_ci_run(20, "push", "0" * 40, 0, [*_gate(0, 10, conclusion="failure"), *_gate(12, 20, attempt=2)], attempts=2), "proby": {1: None}}])
 
-    code = pomiar_ci.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-03", "--do", "2026-11-03"], root=tmp_path, github=github)
+    code = pomiar_ci.main(["--katalog", str(tmp_path / "bieg"), "--od", "2026-11-03", "--do", "2026-11-03"], root=tmp_path, github=github, kopia=tmp_path / "api")
 
     assert (code, capsys.readouterr().err.splitlines()) == (1, ["POMIAR CI | błąd API run 20: gh api repos/{owner}/{repo}/actions/runs/20/attempts/1: gh: Not Found (HTTP 404)"])
 

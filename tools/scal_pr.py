@@ -9,6 +9,7 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import api_actions
 import bramka_korzenia
 import bramka_straznika
 import github
@@ -93,6 +94,8 @@ wynik. Kod 1 to odmowa (także ``SCAL CZEKA``) albo błąd narzędzia (``SCAL FA
 ``SCAL PONÓW`` daje kopia bazy (niżej) procesowi, który ją uruchomił i zapowiedział ponawianie zmienną
 ``RETRYING_PARENT``, a ten sprawdza od nowa; kopia uruchomiona przez checkout sprzed kolejki merge'y, który tej zmiennej
 nie zna, przy ruchu bazy poza plikami PR odmawia kodem 1 z poleceniem, by uruchomić ponownie.
+Przy zapasie limitu GitHub API poniżej ``REZERWA_SCALANIA`` (``tools/lib/api_actions.py``) narzędzie nie pyta GitHuba,
+tylko odmawia linią ``SCAL ODMOWA`` z godziną resetu limitu.
 
 Werdykt (``--werdykt``), kontekst przeglądu (``--przeglad``) i merge (także ``--bez-merge``) sądzi kod ``origin/<baza PR>`` tuż po pobraniu bazy, nie kod
 checkoutu, z którego je uruchomiono: reguły werdyktu, bramki korzenia i wzoru opisu żyją w ``tools/`` i w plikach
@@ -416,6 +419,9 @@ def _invocation_path(text: str) -> Path:
 
 def _attempt(args: argparse.Namespace, given: list[str], label: str, *, from_copy: bool, retrying: bool) -> int:
     try:
+        if (powod := api_actions.odmowa(api_actions.REZERWA_SCALANIA)) is not None:
+            print(f"{label} ODMOWA | {powod}")
+            return 1
         pull = stan_pr.pull(args.numer)
         if args.status and (skipped := _skipped_status(pull)):
             print(f"STATUS POMINIĘTY | #{pull.number} {pull.head[:7]} | {skipped}")
