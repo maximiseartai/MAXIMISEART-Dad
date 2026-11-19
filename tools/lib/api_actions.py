@@ -2,7 +2,9 @@
 
 ``Api`` pyta po jednym, a odpowiedź 5xx (502, 503) dostaje ``PROBY_API`` prób z przerwą ``PRZERWA_API_S``.
 Odpowiedź, która już się nie zmieni (lista runów zamkniętego dnia, zadania zakończonego runu, log), zapisuje się
-w ``~/.cache/maximiseart/api`` (``KOPIA``), wspólnej dla każdego checkoutu, wątku i biegu, więc pyta się tylko o nowe.
+w ``api`` kopii komputera (``kopia_komputera``: ``~/.cache/maximiseart``, albo katalog ze zmiennej ``MAXIMISEART_KOPIA``,
+którą testy ustawiają na katalog tymczasowy, także dla podprocesów), wspólnej dla każdego checkoutu, wątku i biegu,
+więc pyta się tylko o nowe.
 
 Wątki na komputerze dzielą limit zapytań REST tokenu (5000 na godzinę). ``ZRezerwa`` przed każdym zapytaniem bierze
 zapas z ``zapas_maca`` (``gh api rate_limit``, które do limitu się nie liczy, odczytane dla wszystkich procesów
@@ -39,7 +41,9 @@ __all__ = [
     "Api",
     "PonizejRezerwy",
     "ZRezerwa",
+    "ZMIENNA_KOPII",
     "Zapas",
+    "kopia_komputera",
     "odmowa",
     "runy",
     "zapas_maca",
@@ -50,6 +54,7 @@ STRONA = 100
 PROBY_API = 5
 PRZERWA_API_S = 20.0
 KOPIA = Path(".cache") / "maximiseart"
+ZMIENNA_KOPII = "MAXIMISEART_KOPIA"
 REZERWA_POMIARU = 1500
 REZERWA_SCALANIA = 300
 ODSWIEZ_ZAPAS_S = 20.0
@@ -59,6 +64,10 @@ ODSWIEZ_ZAPAS_S = 20.0
 class Zapas:
     pozostalo: int
     reset: float
+
+
+def kopia_komputera() -> Path:
+    return Path(os.environ.get(ZMIENNA_KOPII) or Path.home() / KOPIA)
 
 
 def _rate_limit() -> str:
@@ -85,7 +94,7 @@ def _zapisany(plik: Path, teraz: float) -> Zapas | None:
 def zapas_maca(plik: Path | None = None, *, odczyt: Callable[[], str] = _rate_limit, teraz: Callable[[], float] = time.time) -> Zapas | None:
     if os.environ.get("GITHUB_ACTIONS") == "true":
         return None
-    plik = plik or Path.home() / KOPIA / "zapas-api.json"
+    plik = plik or kopia_komputera() / "zapas-api.json"
     if (zapisany := _zapisany(plik, teraz())) is not None:
         return zapisany
     try:
@@ -134,11 +143,11 @@ class ZRezerwa:
 
 
 class Api:
-    """``gh api`` z odpowiedziami w ``kopia`` (domyślnie ``~/.cache/maximiseart/api``); ``trwala`` mówi, czy odpowiedź
+    """``gh api`` z odpowiedziami w ``kopia`` (domyślnie ``api`` w ``kopia_komputera``); ``trwala`` mówi, czy odpowiedź
     już się nie zmieni (wtedy ją zapisuje)."""
 
     def __init__(self, github: GitHub, kopia: Path | None = None) -> None:
-        self.katalog = kopia or Path.home() / KOPIA / "api"
+        self.katalog = kopia or kopia_komputera() / "api"
         self.katalog.mkdir(parents=True, exist_ok=True)
         self.github = github
         self.zapytania = 0

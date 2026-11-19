@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import subprocess
+import sys
 import time
 from typing import Any
 
@@ -47,11 +48,27 @@ class _GitHub:
 
 
 @pytest.fixture
+def kopia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setenv(api_actions.ZMIENNA_KOPII, str(tmp_path / "kopia"))
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    return tmp_path / "kopia"
+
+
+@pytest.fixture
 def dom(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     for nazwa in ("HOME", "USERPROFILE"):
         monkeypatch.setenv(nazwa, str(tmp_path / "dom"))
-    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    monkeypatch.delenv(api_actions.ZMIENNA_KOPII)
     return tmp_path / "dom"
+
+
+def test_testy_i_ich_podprocesy_nie_czytaja_kopii_api_komputera() -> None:
+    domyslna = Path.home() / ".cache" / "maximiseart"
+    w_podprocesie = subprocess.run(
+        [sys.executable, "-c", "import api_actions; print(api_actions.kopia_komputera())"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+
+    assert domyslna not in (api_actions.kopia_komputera(), Path(w_podprocesie))
 
 
 def test_druga_prosba_o_zakonczony_run_z_innego_biegu_bierze_kopie_na_komputerze_bez_zapytania(dom: Path) -> None:
@@ -67,7 +84,7 @@ def test_druga_prosba_o_zakonczony_run_z_innego_biegu_bierze_kopie_na_komputerze
     assert (dom / ".cache" / "maximiseart" / "api").is_dir()
 
 
-def test_odpowiedz_ktora_jeszcze_sie_zmieni_nie_trafia_do_kopii(dom: Path) -> None:
+def test_odpowiedz_ktora_jeszcze_sie_zmieni_nie_trafia_do_kopii(kopia: Path) -> None:
     github = _GitHub()
 
     Api(github).json(ZADANIA_RUNU, lambda dane: False)
@@ -110,23 +127,24 @@ def test_zapas_ktorego_pomiar_juz_nie_bierze_zostaje_dla_scalania_i_ponowienia(c
         with pytest.raises(api_actions.PonizejRezerwy):
             zapytanie()
     ZRezerwa(scalanie, REZERWA_SCALANIA, lambda: zapas).json(ZADANIA_RUNU)
+    ZRezerwa(pomiar, REZERWA_POMIARU, lambda: Zapas(REZERWA_POMIARU, RESET)).json(ZADANIA_RUNU)
     kod = ponow_ci.main(["--run", "7"], api=ZRezerwa(scalanie, REZERWA_SCALANIA, lambda: Zapas(REZERWA_SCALANIA - 1, RESET)))
 
-    assert (pomiar.pytania, scalanie.pytania) == ([], [ZADANIA_RUNU])
+    assert (pomiar.pytania, scalanie.pytania) == ([ZADANIA_RUNU], [ZADANIA_RUNU])
     assert (kod, capsys.readouterr().out.splitlines()) == (
         1,
         [f"PONÓW ODMOWA | zapas GitHub API {REZERWA_SCALANIA - 1} zapytań poniżej rezerwy {REZERWA_SCALANIA}: ponów po resecie limitu o {GODZINA_RESETU}"],
     )
 
 
-def _zapisz_zapas(dom: Path, pozostalo: int, odczyt: float) -> None:
-    plik = dom / ".cache" / "maximiseart" / "zapas-api.json"
+def _zapisz_zapas(kopia: Path, pozostalo: int, odczyt: float) -> None:
+    plik = kopia / "zapas-api.json"
     plik.parent.mkdir(parents=True, exist_ok=True)
     plik.write_text(json.dumps({"odczyt": odczyt, "pozostalo": pozostalo, "reset": RESET}), encoding="utf-8")
 
 
-def test_scalanie_ponizej_swojej_rezerwy_odmawia_z_zapasu_zapisanego_przez_inny_watek_bez_pytania_githuba(dom: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    _zapisz_zapas(dom, REZERWA_SCALANIA - 1, time.time())
+def test_scalanie_ponizej_swojej_rezerwy_odmawia_z_zapasu_zapisanego_przez_inny_watek_bez_pytania_githuba(kopia: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    _zapisz_zapas(kopia, REZERWA_SCALANIA - 1, time.time())
 
     kod = scal_pr.main(["1", "--bez-merge"])
 
@@ -146,8 +164,8 @@ def test_scalanie_ponizej_swojej_rezerwy_odmawia_z_zapasu_zapisanego_przez_inny_
         pytest.param(ponow_ci.GITHUB, REZERWA_SCALANIA, id="ponow_ci"),
     ],
 )
-def test_klient_github_narzedzia_odmawia_ponizej_jego_rezerwy_bez_uruchomienia_gh(dom: Path, klient: GitHub, rezerwa: int) -> None:
-    _zapisz_zapas(dom, rezerwa - 1, time.time())
+def test_klient_github_narzedzia_odmawia_ponizej_jego_rezerwy_bez_uruchomienia_gh(kopia: Path, klient: GitHub, rezerwa: int) -> None:
+    _zapisz_zapas(kopia, rezerwa - 1, time.time())
 
     with pytest.raises(api_actions.PonizejRezerwy, match=f"poniżej rezerwy {rezerwa}:"):
         klient.json(ZADANIA_RUNU)
@@ -157,14 +175,14 @@ def _rate_limit(pozostalo: int) -> str:
     return json.dumps({"resources": {"core": {"limit": 5000, "remaining": pozostalo, "reset": RESET}}})
 
 
-def test_zapas_odczytany_przed_chwila_przez_inny_proces_nie_pyta_githuba_a_starszy_pyta_i_zapisuje_nowy(dom: Path) -> None:
+def test_zapas_odczytany_przed_chwila_przez_inny_proces_nie_pyta_githuba_a_starszy_pyta_i_zapisuje_nowy(kopia: Path) -> None:
     odczyty: list[int] = []
 
     def odczyt() -> str:
         odczyty.append(1)
         return _rate_limit(4000)
 
-    _zapisz_zapas(dom, 2000, 1000.0)
+    _zapisz_zapas(kopia, 2000, 1000.0)
     swiezy = api_actions.zapas_maca(odczyt=odczyt, teraz=lambda: 1000.0 + api_actions.ODSWIEZ_ZAPAS_S - 1)
     stary = api_actions.zapas_maca(odczyt=odczyt, teraz=lambda: 1000.0 + api_actions.ODSWIEZ_ZAPAS_S)
     po_odczycie = api_actions.zapas_maca(odczyt=odczyt, teraz=lambda: 1000.0 + api_actions.ODSWIEZ_ZAPAS_S + 1)
@@ -172,7 +190,7 @@ def test_zapas_odczytany_przed_chwila_przez_inny_proces_nie_pyta_githuba_a_stars
     assert (swiezy, stary, po_odczycie, len(odczyty)) == (Zapas(2000, RESET), Zapas(4000, RESET), Zapas(4000, RESET), 1)
 
 
-def test_bez_odczytu_zapasu_narzedzie_pyta_jak_dotad(dom: Path) -> None:
+def test_bez_odczytu_zapasu_narzedzie_pyta_jak_dotad(kopia: Path) -> None:
     def odczyt() -> str:
         raise subprocess.CalledProcessError(4, ["gh", "api", "rate_limit"])
 
@@ -180,8 +198,8 @@ def test_bez_odczytu_zapasu_narzedzie_pyta_jak_dotad(dom: Path) -> None:
     assert api_actions.odmowa(REZERWA_POMIARU, lambda: api_actions.zapas_maca(odczyt=odczyt)) is None
 
 
-def test_w_github_actions_run_ma_wlasny_token_wiec_rezerwy_nie_ma(dom: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_w_github_actions_run_ma_wlasny_token_wiec_rezerwy_nie_ma(kopia: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GITHUB_ACTIONS", "true")
-    _zapisz_zapas(dom, 0, time.time())
+    _zapisz_zapas(kopia, 0, time.time())
 
     assert api_actions.zapas_maca(odczyt=lambda: _rate_limit(0)) is None
