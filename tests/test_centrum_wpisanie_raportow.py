@@ -3329,7 +3329,8 @@ def test_wpis_na_zyczenie_z_widoku_sprzed_nowszego_klikniecia_odmawia_a_przycisk
     """US 49 i 53: późniejszy mail Jana z tym samym ``t`` przy tym samym zleceniu wygrywa, więc nowsze kliknięcie daje
     nowy przycisk, który różni się od dawnego tylko mailem. Przycisk z widoku sprzed nowszego kliknięcia jest
     nieaktualny: odmawia jednym zdaniem, nie startuje Uruchomienia i niczego nie zapisuje, a przycisk nowszego kliknięcia
-    wpisuje Wpis późniejszego maila z decyzją przy tym mailu."""
+    wpisuje Wpis późniejszego maila z decyzją przy tym mailu. Tak samo odmawia przycisk nowszego kliknięcia z innym
+    dniem zlecenia po Wpisie, niż ma ten przycisk w wyniku, bo tata kliknąłby co innego, niż widział."""
 
     intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001),), raw=())
     first = report(JAN, SUBJECT, "40000001 t inst20m", at=datetime(2026, 11, 9, 17))
@@ -3342,9 +3343,11 @@ def test_wpis_na_zyczenie_z_widoku_sprzed_nowszego_klikniecia_odmawia_a_przycisk
     register, state, logs = centrum.register.read_bytes(), _state(centrum).read_bytes(), len(centrum.run_logs())
 
     stale = centrum.client.post("/api/report-entering/request", json=old)
+    other_day = centrum.client.post("/api/report-entering/request", json={**new, "order_day": "2026-11-10"})
 
     assert old == {**new, "mail": first.id.digest} != new
-    assert (stale.status_code, stale.json()["message"]) == (404, "Tego Wpisu nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty.")
+    gone = "Tego Wpisu nie ma w ostatnim Wpisaniu raportów. Odśwież widok Raporty."
+    assert [(answer.status_code, answer.json()["message"]) for answer in (stale, other_day)] == [(404, gone)] * 2
     assert (centrum.register.read_bytes(), _state(centrum).read_bytes(), len(centrum.run_logs())) == (register, state, logs)
     done = _enter_on_request(centrum, new, datetime(2026, 11, 9, 19, 30))
     assert [decision["mail"] for decision in _entering(centrum, done)["requested"]] == [later.id.digest]
