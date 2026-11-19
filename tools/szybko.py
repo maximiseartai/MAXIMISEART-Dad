@@ -306,9 +306,12 @@ class Outcome:
     interrupted: list[str]
 
 
-def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) -> Outcome:
-    """Kroki naraz, z bazą zapadek ``base``. Gdy padnie krok inny niż ``interruptible``, ``interruptible`` jest
+def _run_all(steps: list[Step], base: str, interruptible: Step, pytest_steps: Iterable[Step]) -> Outcome:
+    """Kroki naraz, z bazą zapadek ``base``; kod ``box_boat.KOD_WYJSCIA`` liczy się tylko z kroków ``pytest_steps``, czyli
+    procesów pytest z pluginem stanu procesu. Gdy padnie krok inny niż ``interruptible``, ``interruptible`` jest
     przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie trzeba czekać."""
+
+    box_steps = {id(step) for step in pytest_steps}
 
     stop, failure = threading.Event(), threading.Event()
 
@@ -335,7 +338,7 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
             print(f"{'OK  ' if code == 0 else 'FAIL'} {step.name} ({elapsed:.0f} s)", flush=True)
             if code:
                 failed.append(step.name)
-                if step.job == "pytest" and code == box_boat.KOD_WYJSCIA:
+                if id(step) in box_steps and code == box_boat.KOD_WYJSCIA:
                     box.append(step.name)
                 print("\n".join(output.rstrip().splitlines()[-OUTPUT_ON_FAILURE :]), flush=True)
     except BaseException:
@@ -394,7 +397,8 @@ def main(argv: list[str] | None = None) -> int:
         merge, on_merge = _merge_steps(args.baza, copies)
         steps = [*_steps(ROOT, chosen.run, junit, changed, structure=not on_merge), *merge]
         base = repo.merge_base(ROOT, "HEAD", args.baza)
-        outcome = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
+        pytest = next(step for step in steps if step.name == "pytest")
+        outcome = _run_all(steps, base, pytest, (pytest, *merge))
     failed = (["rozjazd modelu"] if drift else []) + outcome.failed
     memory.remember(selection, junit, chosen.run)
     junit.unlink(missing_ok=True)

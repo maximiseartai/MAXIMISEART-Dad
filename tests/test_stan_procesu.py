@@ -729,9 +729,6 @@ def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(
     ), (dirty, culprit, deleted, failed_setup, errors)
 
 
-# Box boat po załadowaniu dysku przenosi drzewo z katalogiem repo pod box_boat.KATALOG_ZWOLNIONY, gdy testy w nim
-# biegną, a pod starą ścieżką stawia pełne drzewo: katalog roboczy procesu idzie za przeniesionym katalogiem. Próbka
-# przenosi katalog sesji tak samo (rename) pod katalog zwolniony podstawiony w conftest i stawia nowy pod starą ścieżką.
 _PRZENIESIENIE_BOXA: Final = {
     "test_przeniesienie.py": """
 import os
@@ -740,9 +737,9 @@ from pathlib import Path
 import box_boat
 
 
-def test_box_przenosi_katalog_repo_w_trakcie_testu(po_tescie):
-    repo = Path.cwd()
-    przeniesiony = Path(box_boat.KATALOG_ZWOLNIONY, "home", repo.name)
+def test_box_przenosi_katalog_repo_w_trakcie_testu(po_tescie, request):
+    repo = request.config.invocation_params.dir
+    przeniesiony = Path(box_boat.przeniesienie(str(repo)))
     przeniesiony.parent.mkdir(parents=True)
     os.rename(repo, przeniesiony)
     repo.mkdir()
@@ -752,9 +749,11 @@ def test_sasiad_biegnie_w_katalogu_repo(request):
     assert os.getcwd() == str(request.config.invocation_params.dir)
 """,
 }
+"""Box boat po załadowaniu dysku przenosi drzewo z katalogiem repo pod ``box_boat.KATALOG_ZWOLNIONY``, gdy testy w nim
+biegną, a pod starą ścieżką stawia pełne drzewo: katalog roboczy procesu idzie za przeniesionym katalogiem. Próbka
+przenosi katalog sesji tak samo (rename) pod ``box_boat.przeniesienie`` z katalogiem domowym i zwolnionym podstawionymi
+w conftest i stawia nowy pod starą ścieżką."""
 
-
-# Fixtura testu przeniesienia: bez błędu, a w próbce prawdziwej porażki teardownu z własnym błędem po teście.
 _PO_TESCIE: Final = """
 
 
@@ -762,6 +761,7 @@ _PO_TESCIE: Final = """
 def po_tescie():
     yield
 """
+"""Fixtura testu przeniesienia bez skutku; próbki niżej podmieniają ją na fixturę z prawdziwą porażką obok boxa."""
 _PADLY_TEARDOWN: Final = """
 
 
@@ -780,24 +780,42 @@ def po_tescie():
     os.environ["ZMIENNA_ZOSTAWIONA"] = "1"
     yield
 """
-# Porażka sesji spoza raportów testów, jak DRZEWO REPO w tests/conftest.py.
+_PODKATALOG_REPO: Final = """
+
+
+@pytest.fixture
+def po_tescie():
+    import os
+    from pathlib import Path
+
+    podkatalog = Path.cwd() / "podkatalog"
+    podkatalog.mkdir()
+    os.chdir(podkatalog)
+    yield
+"""
 _PORAZKA_SESJI: Final = """
 
 
 def pytest_sessionfinish(session):
     session.exitstatus = pytest.ExitCode.TESTS_FAILED
 """
+"""Porażka sesji spoza raportów testów, jak ``DRZEWO REPO`` w ``tests/conftest.py``."""
+_RZUCA_WYJATEK_BOXA: Final = {
+    "test_rzuca.py": "import box_boat\n\n\ndef test_rzuca():\n    raise box_boat.KatalogPrzeniesiony(box_boat.KOMUNIKAT)\n"
+}
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows nie przenosi katalogu roboczego procesu")
 @pytest.mark.parametrize(
-    ("dodatkowe", "sesji", "kod", "zostawione"),
+    ("dodatkowe", "sesji", "kod", "boxa", "zostawione"),
     [
-        ({}, "", box_boat.KOD_WYJSCIA, ""),
-        ({"test_zwykly.py": "def test_zwykly():\n    assert len('ab') == 3\n"}, "", 1, ""),
-        ({}, _PORAZKA_SESJI, 1, ""),
-        ({}, _PADLY_TEARDOWN, 1, ""),
-        ({}, _ZOSTAWIONA_ZMIENNA, 1, "zmienna środowiska ZMIENNA_ZOSTAWIONA zmieniona"),
+        ({}, "", box_boat.KOD_WYJSCIA, True, ""),
+        ({"test_zwykly.py": "def test_zwykly():\n    assert len('ab') == 3\n"}, "", 1, True, ""),
+        ({}, _PORAZKA_SESJI, 1, True, ""),
+        ({}, _PADLY_TEARDOWN, 1, True, ""),
+        ({}, _ZOSTAWIONA_ZMIENNA, 1, True, "zmienna środowiska ZMIENNA_ZOSTAWIONA zmieniona"),
+        ({}, _PODKATALOG_REPO, 1, False, "katalog roboczy {repo} → {przeniesiony}/podkatalog"),
+        (_RZUCA_WYJATEK_BOXA, "", 1, True, ""),
     ],
     ids=[
         "tylko-box",
@@ -805,22 +823,26 @@ def pytest_sessionfinish(session):
         "box-i-porazka-sesji",
         "box-i-padly-teardown",
         "box-i-zostawiona-zmienna",
+        "box-i-chdir-w-repo",
+        "box-i-wyjatek-boxa-z-testu",
     ],
 )
 def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_sesja_tylko_z_nim_konczy_sie_kodem_boxa(
-    tmp_path: Path, dodatkowe: dict[str, str], sesji: str, kod: int, zostawione: str
+    tmp_path: Path, dodatkowe: dict[str, str], sesji: str, kod: int, boxa: bool, zostawione: str
 ) -> None:
-    zwolniony = tmp_path.resolve() / "retired"
-    conftest = _CONFTEST + f"\nimport box_boat\n\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n" + _PO_TESCIE + sesji
+    dom, zwolniony = tmp_path.resolve(), tmp_path.resolve() / "retired"
+    podstawione = f"box_boat.KATALOG_DOMOWY = {str(dom)!r}\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n"
+    conftest = _CONFTEST + "\nimport box_boat\n\n" + podstawione + _PO_TESCIE + sesji
     kody: list[int] = []
 
     errors = _sesja(tmp_path, {**_PRZENIESIENIE_BOXA, **dodatkowe}, conftest, katalog="repo", kody=kody)
 
     moved = errors["test_box_przenosi_katalog_repo_w_trakcie_testu"]
-    expected = f"{box_boat.KOMUNIKAT} (katalog roboczy {tmp_path.resolve() / 'repo'} → {zwolniony / 'home' / 'repo'})"
+    repo, przeniesiony = dom / "repo", zwolniony / "home" / "repo"
+    expected = f"{box_boat.KOMUNIKAT} (katalog roboczy {repo} → {przeniesiony})"
     assert (expected in moved, _zostawione(moved), errors["test_sasiad_biegnie_w_katalogu_repo"], kody) == (
-        True,
-        zostawione,
+        boxa,
+        zostawione.format(repo=repo, przeniesiony=przeniesiony),
         "",
         [kod],
     ), errors

@@ -71,7 +71,7 @@ Po załadowaniu (`HYDRATION-DONE` w `/var/lib/ascii-lazy/daemon.out`) lazyfs w p
 Polecenie, które już biegło w katalogu repo, ma wtedy katalog roboczy pod tą ścieżką, więc każdy worker pytest pada raz z komunikatem `BOX: boat przeniósł katalog repo w trakcie biegu; to nie test, powtórz bieg`.
 To nie wygaśnięcie `BOATBOX_IDLE_MIN`: w każdym sprawdzonym takim biegu 19.11.2026 box był świeżo utworzony albo wznowiony, jego `hydratedAt` z `boat info <id> --json` wypadł w trakcie biegu, a następny bieg na tym samym boxie przeszedł.
 Wznowienie nie zawsze ładuje dysk od nowa, a `hydrated` w `boat info` zostaje wtedy `true` z poprzedniego ładowania, więc o tym, czy box jeszcze ładuje dysk, mówi tylko sam box: `findmnt -n -o FSTYPE --mountpoint "$HOME"` daje wtedy typ `fuse…`.
-Box wyjaśnia tylko katalog roboczy: inny stan zostawiony w tym samym teście (zmienna, plik, wątek) i błąd teardownu dalej są porażką testu, z komunikatem boxa dopisanym.
+Box wyjaśnia tylko katalog roboczy, który jest dokładnie oczekiwanym katalogiem po przeniesieniu (`box_boat.przeniesienie`): podkatalog, do którego test wszedł sam, inny stan zostawiony w tym samym teście (zmienna, plik, wątek) i błąd teardownu dalej są porażką testu.
 Sesja pytest, której każda porażka to sam komunikat boxa, kończy się kodem 75 (`KOD_WYJSCIA` z `tools/lib/box_boat.py`, który rozstrzyga wszystkie trzy granice), a inna porażka obok, także porażka całej sesji jak `DRZEWO REPO`, daje kod 1.
 `szybko.py` kończy linią `SZYBKO INFRA` i kodem 75 bieg, w którym każdy krok, który padł, to pytest z kodem 75: powtórz go bez zmian w kodzie.
 Pełny pytest z kodem 75 (`boatbox job` kończy log `FAIL rc=75`) też powtórz.

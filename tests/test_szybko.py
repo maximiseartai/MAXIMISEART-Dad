@@ -936,6 +936,17 @@ def test_uv_pyta_siec_tylko_bez_cache_a_modul_ktory_sie_nie_importuje_wywraca_kr
     assert (answered.returncode, last) == (1, f"SZYBKO FAIL | import src pod Pythonem 3.{sys.version_info[1] - 1}"), answered.stdout
 
 
+def test_kod_boxa_z_kroku_bez_pytest_to_porazka_a_nie_szybko_infra(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _requiring(repo, (3, sys.version_info[1] - 1))
+    fake = fake_cli(tmp_path / "bin", "uv", f"import sys\nsys.exit({box_boat.KOD_WYJSCIA})\n")
+
+    answered = _szybko(repo, path=fake.parent)
+
+    expected = f"SZYBKO FAIL | import src pod Pythonem 3.{sys.version_info[1] - 1}"
+    assert (answered.returncode, _verdict(answered)) == (1, expected), answered.stdout
+
+
 def test_requires_python_bez_najstarszej_wersji_wywraca_szybkie_sprawdzenie(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     _write(repo, "pyproject.toml", '[project]\nname = "pakiet"\nrequires-python = "~=3.11"\n\n[tool.mypy]\nfiles = ["src"]\n')

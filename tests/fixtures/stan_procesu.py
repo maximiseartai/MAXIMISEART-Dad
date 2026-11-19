@@ -223,9 +223,9 @@ def _release_gc() -> None:
         gc.enable()
 
 
-# Raporty, które padły w procesie kontrolera sesji (pod xdist dostaje raporty workerów): ``True`` dla raportu testu,
-# po którym plugin widział katalog repo przeniesiony przez box.
 _porazki: list[bool] = []
+"""Raporty, które padły w procesie kontrolera sesji (pod xdist dostaje raporty workerów): ``True`` dla raportu fazy,
+której jedyną porażką jest katalog repo przeniesiony przez box."""
 
 
 @pytest.hookimpl(wrapper=True)
@@ -385,7 +385,9 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
     if not zostawione:
         return
     teraz_wartosci = dict(teraz.wartosci)
-    box = box_boat.wyjasnione(zostawione.klucze, _KATALOG, teraz_wartosci.get(_KATALOG, _USUNIETY))
+    box = box_boat.wyjasnione(
+        zostawione.klucze, _KATALOG, oczekiwane.wartosci.get(_KATALOG), teraz_wartosci.get(_KATALOG, _USUNIETY)
+    )
     przeniesienie = (
         f"{box_boat.KOMUNIKAT} (katalog roboczy {oczekiwane.wartosci.get(_KATALOG)} → {teraz_wartosci.get(_KATALOG)})"
     )
@@ -396,7 +398,7 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
     zebrane = _po_czekaniu_i_gc(zostawione)
     if not zostawione:
         if box:
-            raise box_boat.KatalogPrzeniesiony(przeniesienie)
+            raise box_boat.zglos(przeniesienie)
         return
     opisy = [
         nazwy[zasob] + _stan_zasobu(zasob, zebrane) + _czyj(oczekiwane.wlasciciele.get(zasob), kiedy)
