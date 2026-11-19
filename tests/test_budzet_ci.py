@@ -192,7 +192,7 @@ def _guard(folder: Path, github: _GitHub, day: str, capsys: pytest.CaptureFixtur
     """Bieg strażnika w dniu ``day`` z pamięcią w ``folder``, który jest też checkoutem bez repozytorium (głowy PR bez klasy)."""
 
     folder.mkdir(parents=True, exist_ok=True)
-    code = budzet_ci.main(["--katalog", str(folder / "pamiec"), "--dzien", day, *extra], root=folder, github_api=github, zegar=lambda: github.now)
+    code = budzet_ci.main(["--katalog", str(folder / "pamiec"), "--dzien", day, *extra], root=folder, github_api=github, zegar=lambda: github.now, kopia=folder / "kopia-api")
     return code, capsys.readouterr().out.splitlines()
 
 

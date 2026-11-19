@@ -735,7 +735,8 @@ AST_GREP_RULES = "reguly-ast-grep"
 # Reguła ast-grep z ``AST_GREP_RULES`` → fragment jej komunikatu, który mówi, co zrobić zamiast zgłoszonego kodu.
 AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
-    "komentarz-w-src": "wyraź lepszą nazwą albo testem",
+    "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
+    "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
@@ -1985,7 +1986,11 @@ _DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type:
 _NOT_TYPE_CHECKING = "from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\n    "
 
 
+_REGULY_KOMENTARZY: Final[dict[str, tuple[str, ...]]] = {"komentarz-w-src": ("src", "rozliczenia"), "komentarz-poza-src": ("tests",)}
+
+
 @needs_ast_grep
+@pytest.mark.parametrize("rule", _REGULY_KOMENTARZY)
 @pytest.mark.parametrize(
     ("text", "lines"),
     [
@@ -1996,7 +2001,7 @@ _NOT_TYPE_CHECKING = "from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\
         ('x: int = "a"  # type: ignore[assignment]\r\ny = 1\r\n', []),
         ("x = 1  # wyjaśnienie\n", [1]),
         ('"""Moduł."""\n# uwaga\nx = max(\n    1,  # pierwszy\n)\n# koniec', [2, 4, 6]),
-        ("#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n# fmt: off\nx = 1  # pragma: no cover\n", [1, 2, 3, 4]),
+        ("#!/usr/bin/env python3\n# -*- coding: utf-8 -*-\n# fmt: off\nx = 1  # pragma: no cover\n", [2, 3, 4]),
         ("x = []  # type: list[int]\n", [1]),
         ("x = 1  # mypy: patrz, tu jest cała historia z #1234 i powód\n", [1]),
         ("# mypy: always-true=uwaga od PR 1234\n# mypy: ignore-errors\nx = 1\n", [1, 2]),
@@ -2032,14 +2037,46 @@ _NOT_TYPE_CHECKING = "from typing import TYPE_CHECKING\n\nif not TYPE_CHECKING:\
         ('x: int = "a"  # type: ignore[assign--ment]\n', [1]),
         ('x: int = "a"  # type: ignore[assignment-]\n', [1]),
         ('x: int = "a"  # bo PR 12, type: ignore[assignment]\n', [1]),
+        pytest.param("x = 1  # ZEWNĘTRZNE: Excel blokuje otwarty plik (https://learn.microsoft.com/office)\n", [], id="zewnetrzne-ze-zrodlem"),
+        pytest.param("# ZEWNĘTRZNE: GitHub tnie komentarz (https://github.com/cli/cli/issues/1)\r\nx = 1\r\n", [], id="zewnetrzne-z-issue-innego-repo-i-crlf"),
+        pytest.param("x = 1  # ZEWNĘTRZNE: Excel blokuje otwarty plik\n", [1], id="zewnetrzne-bez-zrodla"),
+        pytest.param("x = 1  # ZEWNĘTRZNE: Excel blokuje otwarty plik ()\n", [1], id="zewnetrzne-z-pustym-zrodlem"),
+        pytest.param("x = 1  # ZEWNĘTRZNE: Excel blokuje otwarty plik ( Excel)\n", [1], id="zewnetrzne-ze-zrodlem-od-spacji"),
+        pytest.param("x = 1  # ZEWNĘTRZNE: (https://learn.microsoft.com)\n", [1], id="zewnetrzne-bez-faktu"),
+        pytest.param("x = 1  # ZEWNĘTRZNE: Excel blokuje plik (https://learn.microsoft.com) i proza\n", [1], id="zewnetrzne-z-proza-po-zrodle"),
+        pytest.param("x = 1  # ZEWNĘTRZNE: Excel blokuje plik (#1234)\n", [1], id="zewnetrzne-ze-zrodlem-w-issue-repo"),
+        pytest.param("x = 1  # ZEWNĘTRZNE: Excel blokuje plik, patrz #1234 (Excel)\n", [1], id="zewnetrzne-z-numerem-issue-w-fakcie"),
+        pytest.param(
+            "x = 1  # ZEWNĘTRZNE: Excel blokuje plik (https://GitHub.com/MaximiseArtAI/MAXIMISEART-Dad/pull/12)\n", [1], id="zewnetrzne-z-adresem-repo"
+        ),
+        pytest.param("import os  # noqa: F401 - import z przeglądu #1234\n", [1], id="noqa-z-numerem-issue-w-powodzie"),
+        pytest.param(
+            'x: int = "a"  # type: ignore[assignment]  # jak w github.com/maximiseartai/MAXIMISEART-Dad/pull/1\n', [1], id="type-ignore-z-adresem-repo-w-powodzie"
+        ),
+        pytest.param(
+            "# ZEWNĘTRZNE: GitHub tnie (https://api.github.com/repos/maximiseartai/MAXIMISEART-Dad/issues/12)\nx = 1\n", [1], id="zewnetrzne-z-adresem-api-repo"
+        ),
+        pytest.param(
+            "import os  # noqa: F401 - jak w github.com/MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia/issues/5\n", [1], id="noqa-z-adresem-repo-zgloszen"
+        ),
+        pytest.param("x = 1  # zewnętrzne: Excel blokuje plik (Excel)\n", [1], id="zewnetrzne-malymi-literami"),
+        pytest.param("x = 1  # ZEWNETRZNE: Excel blokuje plik (Excel)\n", [1], id="zewnetrzne-bez-polskiej-litery"),
+        pytest.param("x = 1  #ZEWNĘTRZNE: Excel blokuje plik (Excel)\n", [1], id="zewnetrzne-bez-spacji-po-haszu"),
+        pytest.param("#!/usr/bin/env python3\r\nx = 1\r\n", [], id="shebang-w-pierwszej-linii-crlf"),
+        pytest.param('"""Moduł."""\n#!/usr/bin/env python3\n', [2], id="shebang-po-docstringu"),
+        pytest.param("x = 1\n#!/usr/bin/env python3\n", [2], id="shebang-po-kodzie"),
+        pytest.param("#!/usr/bin/env python\nx = 1\n", [1], id="shebang-pythona-bez-wersji"),
+        pytest.param("#!/usr/bin/python3\nx = 1\n", [1], id="shebang-bez-env"),
+        pytest.param("#!/usr/bin/env python3 -u\nx = 1\n", [1], id="shebang-z-argumentem"),
+        pytest.param("def f() -> None:\n    #!/usr/bin/env python3\n    pass\n", [2], id="shebang-w-bloku-funkcji"),
     ],
 )
-def test_komentarz_w_src_przechodzi_tylko_jako_tlumienie_w_gramatyce_reguly(tmp_path: Path, text: str, lines: list[int]) -> None:
-    base = _src_sample(tmp_path, text)
+def test_komentarz_w_src_i_poza_nim_przechodzi_tylko_w_postaci_z_listy_wyjatkow(tmp_path: Path, rule: str, text: str, lines: list[int]) -> None:
+    base = _empty_base(tmp_path)
+    (folder := tmp_path.joinpath(*_REGULY_KOMENTARZY[rule])).mkdir(parents=True)
+    (folder / "probka.py").write_text(text, encoding="utf-8")
 
-    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [
-        (line, "komentarz-w-src") for line in lines
-    ]
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
 
 
 @needs_ast_grep
@@ -2051,9 +2088,65 @@ def test_komentarz_w_src_czyta_pliki_py_pyi_i_py3_a_pomija_pyw_i_plik_bez_rozsze
     names = ("a.py", "pakiet/b.py", "c.pyi", "d.py3", "e.pyw", "skrypt")
     for name in names:
         (tmp_path / "src" / name).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / "src" / name).write_text("#!/usr/bin/env python3\nx = 1\n", encoding="utf-8")
+        (tmp_path / "src" / name).write_text("#!/usr/bin/env python3\nx = 1  # proza\n", encoding="utf-8")
 
     assert [finding.path for finding in syntax_rules(tmp_path, base)] == sorted(f"src/{name}" for name in names[:4])
+
+
+_ZAKRES_KOMENTARZY_POZA_SRC: Final[tuple[tuple[str, ...], ...]] = (
+    ("tests", "test_a.py"),
+    ("tests", "fixtures", "b.pyi"),
+    ("tools", "c.py3"),
+    ("tools", "lib", "d.py"),
+    (".agents", "skills", "s", "scripts", "drive", "e.py"),
+    ("conftest.py",),
+    ("docs", "f.py"),
+    (".github", "scripts", "g.py"),
+    ("frontend", "scripts", "h.py"),
+)
+
+
+@needs_ast_grep
+def test_komentarz_poza_src_czyta_kazdy_plik_py_pyi_i_py3_poza_src_a_src_zostawia_regule_komentarz_w_src(tmp_path: Path) -> None:
+    base = _empty_base(tmp_path)
+    for parts in (*_ZAKRES_KOMENTARZY_POZA_SRC, ("src", "rozliczenia", "i.py")):
+        tmp_path.joinpath(*parts).parent.mkdir(parents=True, exist_ok=True)
+        tmp_path.joinpath(*parts).write_text("x = 1  # proza\n", encoding="utf-8")
+
+    assert sorted((finding.path, finding.rule) for finding in syntax_rules(tmp_path, base)) == sorted(
+        [*(("/".join(parts), "komentarz-poza-src") for parts in _ZAKRES_KOMENTARZY_POZA_SRC), ("src/rozliczenia/i.py", "komentarz-w-src")]
+    )
+
+
+_BAZA_KOMENTARZY_POZA_SRC: Final = {"tests/test_stary.py": "X = 1  # komentarz\n"}
+ZNANE_LUKI_KOMENTARZY_POZA_SRC: Final[dict[str, tuple[dict[str, str], tuple[tuple[str, ...], ...]]]] = {
+    "plik spoza języków ast-grep: rozszerzenie .pyw": ({"tools/skrypt.pyw": "X = 1  # proza\n"}, ()),
+    "plik spoza języków ast-grep: Python bez rozszerzenia jak tools/hooks/pre-push": (
+        {"tools/hooks/skrypt": "#!/usr/bin/env python3\nX = 1  # proza\n"},
+        (),
+    ),
+    "przeniesienie bez zmian: git mv pliku z komentarzem (git diff -M)": ({}, (("mv", "tests/test_stary.py", "tests/test_nowy.py"),)),
+    "shebang poza pierwszą linią: pusta linia przed nim": ({"tests/test_a.py": "\n#!/usr/bin/env python3\nX = 1\n"}, ()),
+    "fakt bez sprawdzenia: proza o kodzie repo w postaci ZEWNĘTRZNE": ({"tests/test_a.py": "X = 1  # ZEWNĘTRZNE: ta funkcja jest wolna (Maks)\n"}, ()),
+}
+
+
+@needs_ast_grep
+def test_znane_luki_reguly_komentarz_poza_src_przechodza_przez_zapadke_regul_ast_grep(tmp_path: Path) -> None:
+    from tests.fixtures.znane_luki import assert_znane_luki
+
+    zgloszenia: dict[str, list[str]] = {}
+    for numer, (opis, (pliki, polecenia)) in enumerate(ZNANE_LUKI_KOMENTARZY_POZA_SRC.items()):
+        root = tmp_path / str(numer)
+        base = _committed(root, _BAZA_KOMENTARZY_POZA_SRC)
+        for nazwa, tekst in pliki.items():
+            (root / nazwa).parent.mkdir(parents=True, exist_ok=True)
+            (root / nazwa).write_text(tekst, encoding="utf-8")
+        for polecenie in polecenia:
+            _git(root, *polecenie)
+        zgloszenia[opis] = [f"{finding.path}:{finding.line}: {finding.rule}" for finding in syntax_rules(root, base)]
+
+    assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_komentarz_poza_src_przechodza_przez_zapadke_regul_ast_grep")
 
 
 # Znane luki reguły ``komentarz-w-src`` (tests/fixtures/znane_luki.py): „klasa: postać” → nowy plik ``src/`` z komentarzem
@@ -2079,6 +2172,7 @@ ZNANE_LUKI_KOMENTARZY: Final = {
     f"dyrektywa {_IGNORE}: nazwa tej reguły i proza w komentarzu obok kodu": (
         f"x = 1  # {_IGNORE}: komentarz-w-src (wyjaśnienie obok kodu)\n"
     ),
+    "fakt bez sprawdzenia: proza o kodzie repo w postaci ZEWNĘTRZNE": "x = 1  # ZEWNĘTRZNE: ta funkcja jest wolna (Maks)\n",
 }
 
 
@@ -2346,7 +2440,9 @@ def test_lokator_tytulu_okna_zglasza_literal_roli_naglowka_bez_nazwy_w_kazdym_za
     (folder := tmp_path.joinpath(*_KATALOG_LOKATORA)).mkdir(parents=True)
     zapisz({"probka": text}, folder)
 
-    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "lokator-tytulu-okna") for line in lines]
+    found = syntax_rules(tmp_path, base)
+
+    assert [finding.line for finding in found if finding.rule == "lokator-tytulu-okna"] == lines
 
 
 # Znane luki reguły ``lokator-tytulu-okna`` (tests/fixtures/znane_luki.py): „klasa: postać” → dodany skrypt skilla
