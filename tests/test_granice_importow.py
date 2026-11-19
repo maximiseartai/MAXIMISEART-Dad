@@ -2082,7 +2082,7 @@ def test_src_importuje_z_innego_modulu_src_tylko_publiczne_nazwy() -> None:
 
     assert reaches == [], (
         "moduł src importuje prywatną nazwę innego modułu: weź jego publiczną nazwę albo funkcję, a stan, który dzielą "
-        "klasy jednego modułu, daj prywatnej klasie tego modułu (CODING_STANDARDS.md, wiersz SLF001):\n" + "\n".join(reaches)
+        "klasy jednego modułu, daj prywatnej klasie tego modułu:\n" + "\n".join(reaches)
     )
 
 
@@ -2120,7 +2120,6 @@ def test_znane_luki_importu_src_przechodza_przez_sprawdzenie_importow_i_ruff(tmp
     assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_IMPORTU_SRC)")
 
 
-# Jedyny plik src, który konfiguracja ruff zwalnia z SLF001 (wiersz SLF001 w CODING_STANDARDS.md).
 SLF001_OWNER: typing.Final = "src/rozliczenia/row_look.py"
 # Prywatna składowa obiektu spoza klasy: każdy plik src bez zwolnienia z SLF001 ją zgłasza.
 SLF001_PROBE: typing.Final = "def owner_field(owner: object) -> object:\n    return owner._field\n"
@@ -2198,7 +2197,7 @@ def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> No
 
     assert sorted(probes - reported) == [SLF001_OWNER], (
         "z SLF001 konfiguracja ruff zwalnia w src/ tylko row_look.py: do prywatnej składowej innego obiektu sięgaj "
-        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać plik w konfiguracji ruff"
+        "przez jego publiczną metodę, zamiast zwalniać plik w konfiguracji ruff"
     )
 
     defaults = tmp_path / "domyslne"
@@ -2218,7 +2217,7 @@ def test_konfiguracja_ruff_zwalnia_z_slf001_tylko_row_look(tmp_path: Path) -> No
     assert widened == {}, (
         "konfiguracja ruff w src/ ma SLF001 włączony i nie zwalnia z niego żadnej nazwy ponad domyślne nazwy ruff "
         f"(flake8-self ignore-names, extend-ignore-names): {widened}; do prywatnej składowej innego obiektu sięgaj "
-        "przez jego publiczną metodę (CODING_STANDARDS.md, wiersz SLF001), zamiast zwalniać nazwę w konfiguracji ruff"
+        "przez jego publiczną metodę, zamiast zwalniać nazwę w konfiguracji ruff"
     )
 
 

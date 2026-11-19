@@ -111,3 +111,29 @@ def test_sprawdzenie_pomija_frontmatter_skilla_a_sprawdza_proze_po_nim() -> None
     )
 
     assert list(_lines_broken_mid_sentence(document)) == [6]
+
+
+BUDZET_BAJTOW = {"CODING_STANDARDS.md": 45_000, ".agents/skills/przeglad": 41_000}
+
+
+def _bajty(sciezka: Path) -> int:
+    pliki = sorted(sciezka.rglob("*")) if sciezka.is_dir() else [sciezka]
+    return sum(len(plik.read_bytes()) for plik in pliki if plik.is_file())
+
+
+def test_reguly_mieszcza_sie_w_budzecie_bajtow() -> None:
+    ponad = [
+        f"{nazwa}: {rozmiar} B, budżet {budzet} B (+{rozmiar - budzet} B)"
+        for nazwa, budzet in BUDZET_BAJTOW.items()
+        if (rozmiar := _bajty(ROOT / nazwa)) > budzet
+    ]
+
+    assert not ponad, "\n".join(
+        [
+            *ponad,
+            "Każdy agent czyta te reguły przed każdą zmianą, więc nowa treść wchodzi tylko w miejsce starej: zanim dopiszesz "
+            "wiersz albo zdanie, usuń wiersz tabeli reguł, którego treść mówi już komunikat strażnika (asercja testu, msg "
+            "banned-api, message reguły ast-grep), albo skróć wiersz do wiedzy, której komunikat nie ma. Budżet w "
+            "BUDZET_BAJTOW podnosi tylko PR, który w opisie mówi, czego nie dało się usunąć ani przenieść do komunikatu.",
+        ]
+    )
