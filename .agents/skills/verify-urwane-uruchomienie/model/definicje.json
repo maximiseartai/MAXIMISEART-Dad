@@ -1,59 +1,59 @@
 {
   "src/rozliczenia/centrum/run_logs.py": {
-    "RunLog.interrupted": "8ddcbc62d5b9b818",
+    "RunLog.interrupted": "334f09df62597607",
     "LoggedEnding": "f7ebf8e1ca3bb563"
   },
   "src/rozliczenia/centrum/run_logs_guard.py": {
-    "_guarded": "62e60d8fcb97c5d6",
-    "guard_logs": "220c4b2868ecc3fc",
-    "GuardedLogs": "4eb55b05819bbd16"
+    "_guarded": "4c45778b3827b010",
+    "guard_logs": "baed6be310b1212e",
+    "GuardedLogs": "1981fd07cdf5faa6"
   },
   "src/rozliczenia/centrum/comment_versions.py": {
-    "ResultWithoutLogs": "5aa6b60c6ae8d5e0",
+    "ResultWithoutLogs": "87dbb0bfcaeb4727",
     "ProgressVersion": "0711a1abc9d86430",
-    "OwnLogs": "a3062dfbfec63cb3",
-    "StandInLogs": "367eab79c6a7a73d",
-    "WithoutLogsVersion": "e9e83bbbbd6c2545",
+    "OwnLogs": "6dfe8155770c374c",
+    "StandInLogs": "06ac60d9f42e7a61",
+    "WithoutLogsVersion": "2492cff3fbd85af7",
     "rank_of": "29dce38c5ecbe640",
-    "journal_after": "55d9aebdc4621587",
-    "post_of": "d36afa52b17f9712",
-    "Drop": "c76b417cfc198b48",
-    "close": "c1bbc66f5758bbfc"
+    "journal_after": "3c8e8c1a646d1c0f",
+    "post_of": "2562b6b465b4823e",
+    "Drop": "328a4018ab11f915",
+    "close": "0e60c13a15f8bad8"
   },
   "src/rozliczenia/centrum/run_comments.py": {
-    "RunComments.run_started": "b346c9d4e6608164",
-    "RunComments._progress": "5c4dcf5d41886d17",
-    "RunComments.run_ended": "7b767c1ea7a94b44",
+    "RunComments.run_started": "4d06034fff64e533",
+    "RunComments._progress": "e73266097c21cc13",
+    "RunComments.run_ended": "1df53477c144200c",
     "RunComments._own": "f131bbcd41d18531",
     "RunComments._step": "499fe01a51a07cc6",
-    "RunComments._keep": "51be69223c22623f",
-    "RunComments.close_left_behind": "e2478851c6d9d2c8",
-    "RunComments.send_left_behind": "c525813f4ae4f058",
-    "RecordMaker.interrupted": "2eb1ad184ada25f0"
+    "RunComments._keep": "8e34996d24064124",
+    "RunComments.close_left_behind": "9d220279a69a742b",
+    "RunComments.send_left_behind": "e2ea287390da2c8d",
+    "RecordMaker.interrupted": "5eda6e431051633b"
   },
   "src/rozliczenia/centrum/logs_disk.py": {
-    "LogsOnDisk.logs": "09cb03e3fedd9628",
-    "_read_logs": "42f7c04a89d9683f",
-    "_names": "e0cb74814c580cb5",
+    "LogsOnDisk.logs": "3398df23668447d5",
+    "_read_logs": "0372f0010163fe92",
+    "_names": "2b377de4cd949752",
     "_NAME": "7e5bf69553e4b18c",
     "_RUN_ID": "2663ee55d3c60890",
     "LogsRead": "2dfbc7e2c338f6b7",
-    "Journal": "355e5548440b680f",
+    "Journal": "63217561f9bcd3e2",
     "_first_line": "f9a16b6e76575975",
-    "_RunEnded": "477bfb1ffeda6787",
-    "JournalRead": "481b8340dbb55851",
-    "_read_journal": "0566cf4fcc730794",
-    "_remove": "e246b45d4dad5104",
-    "LogsOnDisk.started": "75738ee9bb3ba332",
-    "LogsOnDisk.left_behind": "bcc9dd8fefc30a28",
-    "LogsOnDisk.remove_journal": "3342b6cf4e34752b",
-    "LogsOnDisk.write": "0fb10f92472fe375",
-    "name_of": "d7dce93561713660"
+    "_RunEnded": "00468202fdcb6ba4",
+    "JournalRead": "d75325c67a4bff9e",
+    "_read_journal": "433ad332eea3ae3a",
+    "_remove": "42fcd391806ee656",
+    "LogsOnDisk.started": "25353f93e475fe62",
+    "LogsOnDisk.left_behind": "580d5b369c76caaf",
+    "LogsOnDisk.remove_journal": "87e2512d61096f75",
+    "LogsOnDisk.write": "dfa1fe4c6c22e07d",
+    "name_of": "2ba9df538b541a60"
   },
   "src/rozliczenia/file_state.py": {
     "_ABSENT": "f8f2224054693ffa",
-    "folder_entries": "c94f2b5cbadaec16",
-    "remove_file": "09898070a34c3c70"
+    "folder_entries": "027ab27a7a05a43e",
+    "remove_file": "4143ab5b3752197f"
   },
   "src/rozliczenia/centrum/app.py": {
     "create_app.lifespan": "ec80548a442b02bf",
@@ -67,19 +67,19 @@
     "Run.work": "d0f7b0f1286316ca",
     "RunHost.__init__": "5847fd718edb1804",
     "RunHost.after": "ef0aefab73842450",
-    "RunHost.shutdown_refusal": "28c8f086b7300aed",
+    "RunHost.shutdown_refusal": "fac18fc07218e104",
     "RunHost.start": "08dd69ac2bb960a7"
   },
   "src/rozliczenia/centrum/process_kind.py": {
     "PreparedRun.conduct": "197b9ba739afa456"
   },
   "src/rozliczenia/centrum/outbox.py": {
-    "Outbox.post": "083f22f284c67464",
-    "Outbox.resume": "2a67b7d7c8f5622c",
-    "Rank": "b6093dbf555a941e",
-    "Version": "2903ae4cfcb97028",
+    "Outbox.post": "5a4e6fd49a60d980",
+    "Outbox.resume": "76a0f695f5c59a24",
+    "Rank": "e8490c8dacb50583",
+    "Version": "ce8cf47bb35112e9",
     "_version_of": "34ae931f25c75815",
-    "_superseded": "563aa9a41628837b"
+    "_superseded": "d32753e6dd31cddf"
   },
   "src/rozliczenia/centrum/launcher.py": {
     "_start": "9592aabfd44f1273",
@@ -88,16 +88,16 @@
   "src/rozliczenia/centrum/server.py": {
     "AFTER_START": "c0a7e2b361f39be2",
     "after_start": "dda17dfeee9413a2",
-    "serve": "82e8b0ef557e7425",
-    "_Server": "8ceb23258608b3c4"
+    "serve": "966ee1006e17b954",
+    "_Server": "91047037b068a4cd"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "replace_atomically": "d3549c3aa56844ea"
+    "replace_atomically": "b183683bb64df774"
   },
   "src/rozliczenia/efenix_pricing.py": {
     "price_orders.save": "944904a2f85b713b"
   },
   "src/rozliczenia/process_run.py": {
-    "run_process": "63aab0e739341e47"
+    "run_process": "9ceccbf29ce9a4c5"
   }
 }

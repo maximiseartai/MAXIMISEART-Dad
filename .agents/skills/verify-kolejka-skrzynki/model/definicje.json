@@ -1,15 +1,15 @@
 {
   "src/rozliczenia/centrum/outbox.py": {
-    "cały plik": "fca3a73b83966874"
+    "cały plik": "bdbcf5d35e84bad0"
   },
   "src/rozliczenia/centrum/keyed_box.py": {
-    "cały plik": "fbd3d281073bbf27"
+    "cały plik": "aff4a7d4508cb79c"
   },
   "src/rozliczenia/centrum/report_box.py": {
-    "cały plik": "937b00bdf58fd419"
+    "cały plik": "e04edde238a2d260"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "cały plik": "262527c4a28f09fa"
+    "cały plik": "7bd2c1eff4c21407"
   },
   "src/rozliczenia/centrum/app.py": {
     "create_app.lifespan": "ec80548a442b02bf"
@@ -18,16 +18,16 @@
     "_listen_when_released": "f8e942c859e06ae0"
   },
   "src/rozliczenia/tool_files.py": {
-    "listen_locally": "447af6975944743e",
+    "listen_locally": "9760ec21f1d1049c",
     "_bound": "915deb4f448334bf"
   },
   "src/rozliczenia/centrum/server.py": {
     "_GRACEFUL_SHUTDOWN_S": "06931a36054ed6bc",
-    "serve": "82e8b0ef557e7425",
-    "_Server": "8ceb23258608b3c4"
+    "serve": "966ee1006e17b954",
+    "_Server": "91047037b068a4cd"
   },
   "src/rozliczenia/centrum/run_comments.py": {
-    "RunComments.diagnosed": "202e278277c62b14",
-    "RunComments._progress": "5c4dcf5d41886d17"
+    "RunComments.diagnosed": "fa80c4589d0e3eb8",
+    "RunComments._progress": "e73266097c21cc13"
   }
 }
