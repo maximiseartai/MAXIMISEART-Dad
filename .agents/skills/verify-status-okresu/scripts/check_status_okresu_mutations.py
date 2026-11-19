@@ -28,6 +28,7 @@ QUANTITY_DIFFERENCES = Path("src/rozliczenia/centrum/quantity_differences.py")
 PERIOD_START = Path("src/rozliczenia/centrum/period_start.py")
 SETTLEMENT_KIND = Path("src/rozliczenia/centrum/processes/settlement.py")
 FILE_STATE = Path("src/rozliczenia/file_state.py")
+REPORT_REMINDERS = Path("src/rozliczenia/centrum/report_reminders.py")
 EXPLORER_FILE = Path(".agents/skills/verify-status-okresu/scripts/explore_status_okresu.py")
 EXPLORER = (EXPLORER_FILE.as_posix(),)
 NEW = "STATUS OKRESU: NOWE NARUSZENIE"
@@ -270,6 +271,19 @@ MUTATIONS = (
         ),
         EXPLORER,
         "Wpisanie raportów wpisuje do INTERMAX w dniach okresu z Plikiem zbiorczym",
+        NEW,
+    ),
+    Mutation(
+        "Przypomnienia o raporcie nie zamykają żadnego okresu",
+        (
+            Edit(
+                REPORT_REMINDERS,
+                "        closed = closed_periods(settings.periods_directory, Window.periods(today, since))\n",
+                "        closed = ()\n",
+            ),
+        ),
+        EXPLORER,
+        "Wykonawca dostaje przypomnienie o raporcie z dnia okresu z Plikiem zbiorczym",
         NEW,
     ),
     Mutation(

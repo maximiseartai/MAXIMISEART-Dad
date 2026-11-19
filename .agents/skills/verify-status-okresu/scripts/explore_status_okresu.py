@@ -8,6 +8,8 @@ directory, real files, access taken away with ``chmod`` or, on Windows, a deny e
 - Uzupełnienie (``GET /api/periods/{token}/quantities-to-fill``): whether Dad may still fill the Plik zbiorczy;
 - Wpisanie raportów (``report_entering.enter_from_mail``): from which day it reads the Skrzynka raportów, so whether
   the period is open for it;
+- the Przypomnienia o raporcie (``report_reminders.due_reminders``): the same, so whether they remind a Wykonawca of
+  the period's days;
 - the start of Przygotowanie pliku zbiorczego (``input_checks.check_preparation``) and of Przebieg rozliczeń
   (``input_checks.check_settlement``): their Sprawdzanie passes or stops.
 
@@ -17,7 +19,7 @@ period closed (Droga okresu), else a Plik zbiorczy makes Plik zbiorczy przygotow
 rules:
 
 - OTWARCIE: each process lets itself act on the period exactly when the reference Status okresu allows it:
-  Przygotowanie and Wpisanie raportów only in Brak plików okresu, Przebieg rozliczeń and Uzupełnienie only in Plik
+  Przygotowanie, Wpisanie raportów and the Przypomnienia only in Brak plików okresu, Przebieg rozliczeń and Uzupełnienie only in Plik
   zbiorczy przygotowany. A consumer that cannot read the folder must say so, and may say so only when something in
   the folder cannot be read.
 - TA_SAMA_NAZWA: each consumer that names a Status okresu (Tablica okresów, the start cards, Uzupełnienie with its
@@ -53,17 +55,19 @@ from fastapi.testclient import TestClient
 
 from atrapy import pliki_taty
 from atrapy.preparation import PreparationFixture, make_preparation_fixture
-from atrapy.settlement import MARKED, worker_list, write_quantity_source, write_template
-from atrapy.skrzynka_raportow import FakeInbox
+from atrapy.settlement import MARKED, worker_list, write_quantity_source, write_template, write_worker_list
+from atrapy.skrzynka_raportow import FakeInbox, FakeMailbox
 from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum.app import create_app
 from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import NO_AUTOSTART
-from rozliczenia.centrum.settings.folders import ChoosePeriodsDirectory
+from rozliczenia.centrum.report_reminders import NotRead, due_reminders
+from rozliczenia.centrum.settings.folders import ChangeFolders, ChoosePeriodsDirectory
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.reminders import SwitchReminders
 from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import check_preparation, check_settlement
@@ -75,7 +79,7 @@ from rozliczenia.wall_clock import local_now
 from rozliczenia.worker_list import WorkerList
 from rozliczenia.worker_periods import WorkerPeriods
 from rozliczenia.worker_report_inbox import PasswordRejected
-from rozliczenia.worker_reports import OwnEntries
+from rozliczenia.worker_reports import OwnEntries, SchedulesInEffect
 import rozjazd_modelu
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -242,6 +246,7 @@ class Consumer(enum.Enum):
     PODGLAD_REGUL = "podgląd zmiany Reguł ilości (quantity-rules/preview)"
     LISTA_ROZNIC = "lista różnic Kontroli ilości (quantity-rules/differences)"
     WPISANIE_RAPORTOW = "Wpisanie raportów (enter_from_mail)"
+    PRZYPOMNIENIA = "Przypomnienia o raporcie (due_reminders)"
     START_PRZYGOTOWANIA = "Sprawdzanie Przygotowania pliku zbiorczego (check_preparation)"
     START_PRZEBIEGU = "Sprawdzanie Przebiegu rozliczeń (check_settlement)"
 
@@ -257,6 +262,7 @@ ALLOWED: dict[Consumer, Status] = {
     Consumer.TABLICA_PRZYGOTUJ: Status.BRAK_PLIKOW,
     Consumer.START_PRZYGOTOWANIA: Status.BRAK_PLIKOW,
     Consumer.WPISANIE_RAPORTOW: Status.BRAK_PLIKOW,
+    Consumer.PRZYPOMNIENIA: Status.BRAK_PLIKOW,
     Consumer.TABLICA_ROZLICZ: Status.PRZYGOTOWANY,
     Consumer.KARTA_PRZEBIEGU: Status.PRZYGOTOWANY,
     Consumer.START_PRZEBIEGU: Status.PRZYGOTOWANY,
@@ -473,7 +479,13 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         catalog=CATALOG.with_metrics({key: config / f"metryki-{key}.jsonl" for key in CATALOG.metrics_paths}),
     )
     # The folder of Foldery okresu is flat and outside ``Rozliczenia {rok}``, so choosing it saves it unchanged.
-    CentrumSettings(
+    _settings(config, log).change_folders(ChoosePeriodsDirectory(periods))
+    # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
+    return TestClient(app, base_url="http://127.0.0.1")
+
+
+def _settings(config: Path, log: CentrumLog) -> CentrumSettings:
+    return CentrumSettings(
         config,
         log=log,
         now=local_now,
@@ -485,9 +497,7 @@ def _centrum(case: Path, periods: Path) -> TestClient:
         # No changes from a Release, so the tool version for their Historia row is never asked.
         release_changes=(),
         release_origin=lambda: ReleaseOrigin(release=None, commit=None),
-    ).change_folders(ChoosePeriodsDirectory(periods))
-    # Without ``with``: the lifespan (Powiadomienia, Skrzynka Zgłoszeń, Kolejka wysyłki) never starts.
-    return TestClient(app, base_url="http://127.0.0.1")
+    )
 
 
 def _status_of(label: str) -> Status:
@@ -651,6 +661,38 @@ def ask_entering(inputs: Inputs, periods: Path) -> Answer:
     raise Unexpected("Wpisanie raportów skończyło się bez zatrzymania, choć Skrzynka odrzuca hasło")
 
 
+def ask_reminders(case: Path, inputs: Inputs, periods: Path) -> Answer:
+    """From which day the Przypomnienia o raporcie, deployed on the period's Tuesday, read the Skrzynka raportów
+    (``Window.first`` in ``due_reminders``), so whether they remind a Wykonawca of the period's days.
+
+    The Skrzynka refuses the password, so the check stops right after the window is set and INTERMAX is read.
+    """
+
+    config = case / "config-przypomnien"
+    write_worker_list(config / pliki_taty.WORKER_LIST_NAME, inputs.workers)
+    settings = _settings(config, CentrumLog(config / "centrum.log"))
+    settings.change_folders(ChangeFolders(inputs.preparation.register_path, periods))
+    settings.change_reminders(SwitchReminders(enabled=True, today=PERIOD.tuesday))
+    mailbox = FakeMailbox(outcome=PasswordRejected())
+    entering = ReportStateInMemory(SavedState(PERIOD.tuesday, OwnEntries.EMPTY))
+    found = due_reminders(CLICKED_AT, settings.snapshot(), mailbox, DadFiles(), SchedulesInEffect(), (), entering)
+    if isinstance(found, NotRead) and found.cause == "okresy":
+        return Answer(Consumer.PRZYPOMNIENIA, Act.NIE_CZYTA, detail="nie odczytało folderu okresów")
+    if isinstance(found, PasswordRejected) and mailbox.days == [PERIOD.tuesday]:
+        return Answer(
+            Consumer.PRZYPOMNIENIA,
+            Act.DZIALA,
+            detail=f"czyta Skrzynkę raportów od {PERIOD.tuesday:%d.%m.%Y}, więc przypomni o dniach okresu",
+        )
+    if isinstance(found, PasswordRejected) and mailbox.days == [NEXT_PERIOD.tuesday]:
+        return Answer(
+            Consumer.PRZYPOMNIENIA,
+            Act.ODMAWIA,
+            detail=f"czyta Skrzynkę raportów dopiero od {NEXT_PERIOD.tuesday:%d.%m.%Y}: okres zamknięty",
+        )
+    raise Unexpected(f"Przypomnienia o raporcie: {found!r}, odczyty skrzynki od {mailbox.days}")
+
+
 def _start(consumer: Consumer, check: Callable[[], object]) -> Answer:
     try:
         check()
@@ -696,6 +738,7 @@ def ask_all(case: Path, state: FolderState, inputs: Inputs) -> list[Answer]:
             ask_rules_preview(client),
             ask_differences(client),
             ask_entering(inputs, periods),
+            ask_reminders(case, inputs, periods),
             *ask_starts(inputs, periods),
         ]
 
@@ -784,10 +827,11 @@ KNOWN_FINDINGS: tuple[Excuse[StateShape], ...] = (
         "Folder rozliczeń pracowników jest, a Pliku zbiorczego nie ma (tata przeniósł, usunął albo przemianował go po "
         "Przebiegu rozliczeń): Tablica okresów pokazuje „Rozliczenia pracowników gotowe” i „Okres zamknięty”, a "
         "report_entering.closed_periods patrzy tylko na collective_file_exists, więc Wpisanie raportów czyta Skrzynkę raportów "
-        "od wtorku okresu i wpisuje do INTERMAX w jego dniach",
+        "od wtorku okresu i wpisuje do INTERMAX w jego dniach, a Przypomnienia o raporcie (due_reminders, ta sama "
+        "closed_periods) przypominają Wykonawcom o raportach z dni zamkniętego okresu",
         StateShape(
             states(collective=(Collective.BRAK,), workers=(Workers.PUSTY, Workers.Z_ROZLICZENIEM)),
-            frozenset({Consumer.WPISANIE_RAPORTOW}),
+            frozenset({Consumer.WPISANIE_RAPORTOW, Consumer.PRZYPOMNIENIA}),
         ),
         after=("czytelne",),
     ),
