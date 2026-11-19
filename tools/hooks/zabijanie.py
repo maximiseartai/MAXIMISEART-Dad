@@ -55,7 +55,6 @@ SCRIPT_OPTION = re.compile(r"-[A-Za-z]*c[A-Za-z]*")
 KILL_WITHOUT_SIGNAL = frozenset({"-0", "-l", "-L"})
 SIGNAL = re.compile(r"-(?:\d+|(?:SIG)?[A-Z]{2,}[A-Z0-9+-]*)")
 WIDENING = re.compile(r"[|()]|\$(?!\Z)")
-LITERAL_PID = re.compile(r"\d+|%(?:\d+|%|\+|-)")
 BRACKET = re.compile(r"\[\^?\]?[^\]]*\]")
 
 
@@ -422,7 +421,7 @@ def _patterns(name: str, texts: list[str]) -> tuple[list[str], Optional[str]]:
 
 def _problem(call: Call, project: Optional[str]) -> Optional[str]:
     shown = (
-        "pgrep obok kill PID-u ze zmiennej, z podstawienia albo z wejścia"
+        "pgrep w jednym poleceniu z kill, pkill albo killall (pgrep do podglądu puść osobnym poleceniem)"
         if call.name == "pgrep"
         else call.name
     )
@@ -473,12 +472,6 @@ def _kill_targets(call: Call) -> Optional[list[Word]]:
     return arguments
 
 
-def _pid_from_elsewhere(targets: list[Word]) -> bool:
-    return not targets or any(
-        word.substituted or not LITERAL_PID.fullmatch(word.text) for word in targets
-    )
-
-
 def judge(command: str, project: Optional[str]) -> Optional[Refusal]:
     if not MENTIONS.search(command):
         return None
@@ -503,7 +496,7 @@ def judge(command: str, project: Optional[str]) -> Optional[Refusal]:
             f"grupę, także procesy innych wątków na wspólnym Macu. {_allowed(shown)}"
         )
     judged = [call for call in calls if call.name in KILLERS]
-    if any(_pid_from_elsewhere(targets) for targets in kills):
+    if kills or judged:
         judged += [call for call in calls if call.name == "pgrep"]
     for call in judged:
         problem = _problem(call, project)

@@ -105,12 +105,12 @@ ODMOWY = [
     pytest.param(f"pkill -k -f {WORKTREE}/x", "z opcją -k", id="nieznana-opcja-krotka"),
     pytest.param(
         "kill $(pgrep -f szybko.py)",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="kill-pgrep",
     ),
     pytest.param(
         "pgrep -f szybko.py | xargs kill",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="xargs-kill",
     ),
     pytest.param(
@@ -156,43 +156,83 @@ ODMOWY = [
     ),
     pytest.param(
         "pgrep -f szybko.py | while read p; do kill $p; done",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="pgrep-do-kill-w-petli-while",
     ),
     pytest.param(
         "pids=$(pgrep -f szybko.py); echo $pids | xargs kill",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="pgrep-do-xargs-kill-przez-zmienna",
     ),
     pytest.param(
         'trap "kill $pids" EXIT; pgrep -x yes | wc -l',
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="trap-kill-zmiennej-obok-pgrep",
     ),
     pytest.param(
         "pgrep -f szybko >/dev/null || kill $PID",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="kill-zmiennej-po-pgrep",
     ),
     pytest.param(
         "pgrep -f szybko.py | xargs -I{} kill {}",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="pgrep-do-xargs-I-kill",
     ),
     pytest.param(
         "pgrep -f szybko.py | xargs -I % kill -9 %",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="pgrep-do-xargs-I-procent-kill",
     ),
     pytest.param(
         "pgrep -f szybko.py | xargs -J % kill %",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="pgrep-do-xargs-J-kill",
     ),
     pytest.param(
         "pgrep -f szybko.py > p; kill PID_Z_PLIKU",
-        "wzorzec pgrep obok kill PID-u",
+        "wzorzec pgrep w jednym poleceniu z kill",
         id="kill-slowa-zamiast-pidu",
+    ),
+    pytest.param(
+        "kill 123; pgrep -fl run_centrum.py | grep t3-moj",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="kill-pidu-i-przeglad-pgrep",
+    ),
+    pytest.param(
+        "kill 1 2; echo \"po kill: $(pgrep -f 'wt-mutacje' | wc -l)\"",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="kill-pidu-i-liczba-z-pgrep",
+    ),
+    pytest.param(
+        "kill %1; pgrep -fl szybko",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="kill-zadania-i-przeglad-pgrep",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py | xargs kill 4321",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="pgrep-do-xargs-kill-z-literalem",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py | xargs -I 1 kill 1",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="pgrep-do-xargs-I-cyfra-kill",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py | xargs -I %% kill %%",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="pgrep-do-xargs-I-zadanie-kill",
+    ),
+    pytest.param(
+        "pgrep -f szybko.py | xargs -J 9 kill -9 9",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="pgrep-do-xargs-J-cyfra-kill",
+    ),
+    pytest.param(
+        "pkill -f '/srv/worktrees/t3-moj/x'; pgrep -fl szybko",
+        "wzorzec pgrep w jednym poleceniu z kill",
+        id="pgrep-obok-wlasnego-pkill",
     ),
     pytest.param("kill -9 -1", "kill z ujemnym PID-em", id="kill-wszystkich"),
     pytest.param("kill -- -4321", "kill z ujemnym PID-em", id="kill-grupy"),
@@ -252,16 +292,7 @@ PRZECHODZI = [
         id="heredoc-opisu-pr",
     ),
     pytest.param("ls # potem: ; pkill -f x", id="komentarz"),
-    pytest.param(
-        "kill 123; pgrep -fl run_centrum.py | grep t3-moj",
-        id="kill-pidu-i-przeglad-pgrep",
-    ),
-    pytest.param(
-        "kill 1 2; echo \"po kill: $(pgrep -f 'wt-mutacje' | wc -l)\"",
-        id="kill-pidu-i-liczba-z-pgrep",
-    ),
     pytest.param("kill -1 4321", id="kill-sygnalem-1"),
-    pytest.param("kill %1; pgrep -fl szybko", id="kill-zadania-i-przeglad-pgrep"),
     pytest.param("boatbox run 'pkill -f pytest; true'", id="boatbox-na-boxie"),
     pytest.param("ssh box 'pkill -f pytest'", id="ssh-na-innej-maszynie"),
 ]
