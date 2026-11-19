@@ -99,12 +99,16 @@ def _przypadek(przed: Mapping[str, str], ten_sam: bool, opis: str, **zmiany: tup
     return pytest.param(dict(przed), _po(przed, **zmiany), ten_sam, id=opis)
 
 
-def _przeniesiony(importy: str, uzycie: str) -> object:
+def _przeniesiony(importy: str, uzycie: str, *, w_ciele_propose: bool = False) -> object:
     def moduly(pakiet: str) -> dict[str, str]:
-        kod = f"{importy.format(pakiet)}\n\n\ndef propose(inputs):\n    return {uzycie}\n"
+        if w_ciele_propose:
+            kod = f"def propose(inputs):\n    {importy.format(pakiet)}\n\n    return {uzycie}\n"
+        else:
+            kod = f"{importy.format(pakiet)}\n\n\ndef propose(inputs):\n    return {uzycie}\n"
         return {"pk": "", f"pk.{pakiet}": "", f"pk.{pakiet}.pomocnik": "LIMIT = 1\n\n\ndef d(x):\n    return x\n", "pk.zmiana": _zmiana(kod)}
 
-    return pytest.param(moduly("stary"), moduly("nowy"), True, id=f"moduł przeniesiony z importem przepisanym w module propose: {importy.format('stary')}")
+    miejsce = "ciele propose" if w_ciele_propose else "module propose"
+    return pytest.param(moduly("stary"), moduly("nowy"), True, id=f"moduł przeniesiony z importem przepisanym w {miejsce}: {importy.format('stary')}")
 
 
 PRZYPADKI_ODCISKU: Final = [
@@ -322,6 +326,12 @@ PRZYPADKI_ODCISKU: Final = [
         zmiana=("from pomocnik import d as f\n", "from pomocnik import d as f\n\nif True:\n    from pomocnik import e as f\n"),
     ),
     _przypadek(
+        {"pomocnik": "def d(x):\n    return 1\n\n\ndef e(x):\n    return 2\n", "zmiana": _zmiana("def propose(inputs):\n    from pomocnik import d\n\n    return d(inputs)\n")},
+        False,
+        "inna definicja innego modułu importowana pod nazwą z tagu w ciele propose",
+        zmiana=("from pomocnik import d\n", "from pomocnik import e as d\n"),
+    ),
+    _przypadek(
         {"zmiana": _zmiana("def propose(inputs):\n    return (1)\n")},
         True,
         "docstring, komentarz i formatowanie",
@@ -408,6 +418,9 @@ PRZYPADKI_ODCISKU: Final = [
     _przeniesiony("from pk.{}.pomocnik import d as f", "f(inputs)"),
     _przeniesiony("from .{} import pomocnik as komunikaty", "komunikaty.LIMIT"),
     _przeniesiony("from .{}.pomocnik import d as f", "f(inputs)"),
+    _przeniesiony("import pk.{}.pomocnik as pomocnik", "pomocnik.LIMIT", w_ciele_propose=True),
+    _przeniesiony("from pk.{}.pomocnik import d", "d(inputs)", w_ciele_propose=True),
+    _przeniesiony("from .{} import pomocnik as komunikaty", "komunikaty.LIMIT", w_ciele_propose=True),
 ]
 
 ROZNICE_ODCISKU: Final = [

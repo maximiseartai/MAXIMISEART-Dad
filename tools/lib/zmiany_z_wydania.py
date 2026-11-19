@@ -76,14 +76,21 @@ def _nazwy_ciala_klasy(klasa: ast.ClassDef) -> set[str]:
     return nazwy
 
 
-def _bez_docstringow(wezel: ast.AST) -> ast.AST:
+def _bez_sciezki_importu(instrukcja: ast.stmt) -> ast.stmt:
+    if not isinstance(instrukcja, (ast.Import, ast.ImportFrom)):
+        return instrukcja
+    aliasy = [(_importowana_nazwa(instrukcja, alias), alias.asname) for alias in instrukcja.names]
+    return ast.Import(names=[ast.alias(importowana, None if wiazana == importowana else wiazana) for importowana, wiazana in aliasy])
+
+
+def _bez_docstringow_i_sciezek_importu(wezel: ast.AST) -> ast.AST:
     wezel = copy.deepcopy(wezel)
     for wlasciciel in ast.walk(wezel):
         for pole in ("body", "orelse", "finalbody"):
             instrukcje = getattr(wlasciciel, pole, None)
             if isinstance(instrukcje, list) and instrukcje and isinstance(instrukcje[0], ast.stmt):
                 zostaja = [
-                    instrukcja
+                    _bez_sciezki_importu(instrukcja)
                     for instrukcja in instrukcje
                     if not (isinstance(instrukcja, ast.Expr) and isinstance(instrukcja.value, ast.Constant) and isinstance(instrukcja.value.value, str))
                 ]
@@ -250,7 +257,7 @@ class _Odcisk:
         trafione = [wezel for wezel in ast.walk(self._drzewo_pliku(plik, opis)) if _poczatek(wezel, nazwa, linia)]
         if len(trafione) != 1:
             raise ValueError(f"{opis}: {len(trafione)} definicji {nazwa} od linii {linia} w {plik}: {GRANICA_ODCISKU}")
-        return _bez_docstringow(trafione[0])
+        return _bez_docstringow_i_sciezek_importu(trafione[0])
 
 
 def _drzewo(propose: object) -> object:
