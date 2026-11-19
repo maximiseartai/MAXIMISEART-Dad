@@ -157,12 +157,21 @@ def ci_problem(pull: Pull) -> str | None:
     return Waiting(f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa") if run.running else None
 
 
+REVIEW_DOES_NOT_WAIT = (
+    "polecenia z linii LICZY CI jeszcze bez wyniku: nie czekaj na nie, przejrzyj diff i opublikuj werdykt teraz,"
+    " bo merge (tools/scal_pr.py) sam wymaga zielonego CI na HEAD, a status „Werdykt i bramka” czeka na ten werdykt"
+)
+
 def ci_line(pull: Pull) -> str:
-    """Linia ``CI`` przeglądu: stan najnowszego runu CI na HEAD i zadania innych workflowów, na które czeka gotowość."""
+    """Linia ``CI`` przeglądu: stan najnowszego runu CI na HEAD i zadania innych workflowów, na które czeka gotowość.
+
+    Workflow ``github.WERDYKT_I_BRAMKA`` czeka na werdykt, który recenzent dopiero pisze, więc linia go nie liczy,
+    a linia ``pending`` mówi recenzentowi, że werdykt nie czeka na CI (``REVIEW_DOES_NOT_WAIT``): zielonego CI na HEAD
+    wymaga merge."""
 
     where = f"CI | {github.REQUIRED}"
     head = pull.head
-    others = [check for check in pull.checks if check.get("workflowName") and check.get("workflowName") != github.CI_WORKFLOW]
+    others = [check for check in pull.checks if check.get("workflowName") not in (None, "", github.CI_WORKFLOW, github.WERDYKT_I_BRAMKA)]
     try:
         run = latest_ci_run(pull.checks)
     except UnknownRun as unknown:
@@ -194,4 +203,4 @@ def ci_line(pull: Pull) -> str:
         rest = f" | inne workflowy, na które czeka gotowość: {'; '.join(states)}" if states else ""
         return f"{where} success na HEAD {head} | polecenia z linii LICZY CI przeszły, ich logów nie przeszukuj{rest}"
     running = [*run.running, *(check for check in others if check.get("status") != "COMPLETED")]
-    return f"{where} pending na HEAD {head} (w toku: {len(running)}{f'; {jobs}' if jobs else ''}) | polecenia z linii LICZY CI jeszcze bez wyniku"
+    return f"{where} pending na HEAD {head} (w toku: {len(running)}{f'; {jobs}' if jobs else ''}) | {REVIEW_DOES_NOT_WAIT}"

@@ -1387,6 +1387,8 @@ RED_WITH_FAILED_JOBS = [
     _check_run("COMPLETED", "FAILURE"),
 ]
 FAILED_JOBS = "padłe zadania: Mutation checks 2, pytest (Python 3.11, 1/2)"
+WAITING = stan_pr.REVIEW_DOES_NOT_WAIT
+WAITING_GATE = _check_run("IN_PROGRESS", None, name="Status werdyktu i bramki", workflow="Werdykt i bramka", url=OTHER_RUN)
 WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windowsie", workflow="Verify", url=OTHER_RUN)
 
 
@@ -1394,6 +1396,11 @@ WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windows
     ("ci", "line"),
     [
         (GREEN, f"success na HEAD {HEAD} | {PASSED}"),
+        ([*GREEN, WAITING_GATE], f"success na HEAD {HEAD} | {PASSED}"),
+        (
+            [_check_run("IN_PROGRESS", None, name="Frontend"), WAITING_GATE],
+            f"pending na HEAD {HEAD} (w toku: 1) | {WAITING}",
+        ),
         (
             [
                 *GREEN,
@@ -1405,15 +1412,15 @@ WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windows
         ),
         (
             [_check_run("COMPLETED", "SUCCESS", name="Ruff, mypy"), _check_run("IN_PROGRESS", None)],
-            f"pending na HEAD {HEAD} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 1) | {WAITING}",
         ),
         (
             [_check_run("QUEUED", None, name="Plan CI"), _check_run("IN_PROGRESS", None, name="Frontend")],
-            f"pending na HEAD {HEAD} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 2) | {WAITING}",
         ),
         (
             [_check_run("IN_PROGRESS", None, name="Frontend"), _check_run("COMPLETED", "FAILURE", name="pytest (Python 3.11, 1/2)")],
-            f"pending na HEAD {HEAD} (w toku: 1; padłe zadania: pytest (Python 3.11, 1/2)) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 1; padłe zadania: pytest (Python 3.11, 1/2)) | {WAITING}",
         ),
         (RED_WITH_FAILED_JOBS, f"failure na HEAD {HEAD} | {FAILED_JOBS} | {UNPROVEN}"),
         (
@@ -1431,19 +1438,19 @@ WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windows
         ),
         (
             [*_run(4000, ("Plan CI", "COMPLETED", "FAILURE"), RED_RUN[-1]), *_run(4077, *RUNNING_RUN)],
-            f"pending na HEAD {HEAD} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 2) | {WAITING}",
         ),
         (
             [*_run(3000, *RED_RUN), *_run(4000, *GREEN_RUN), *_run(4077, *RUNNING_RUN)],
-            f"pending na HEAD {HEAD} (w toku: 2) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 2) | {WAITING}",
         ),
         (
             _run(4077, ("Plan CI", "COMPLETED", "SUCCESS"), ("Frontend", "COMPLETED", "SUCCESS")),
-            f"pending na HEAD {HEAD} (w toku: 0) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 0) | {WAITING}",
         ),
         (
             [*_run(4077, ("Frontend", "IN_PROGRESS", None), REQUIRED_DONE)],
-            f"pending na HEAD {HEAD} (w toku: 1) | polecenia z linii LICZY CI jeszcze bez wyniku",
+            f"pending na HEAD {HEAD} (w toku: 1) | {WAITING}",
         ),
         (
             [*GREEN, _check_run("COMPLETED", "SUCCESS", name="Frontend", url="https://github.com/o/r/runs/129482655837")],
@@ -1453,6 +1460,8 @@ WAITING_VERIFY = _check_run("IN_PROGRESS", None, name="Verify Centrum na Windows
     ],
     ids=[
         "zielony",
+        "zielony-a-bramka-czeka-na-werdykt",
+        "w-toku-a-bramka-czeka-na-werdykt",
         "zielony-a-inny-workflow-w-toku-albo-padl",
         "w-toku",
         "w-toku-przed-required",
