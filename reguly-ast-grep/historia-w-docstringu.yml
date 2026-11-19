@@ -3,7 +3,7 @@ language: python
 severity: error
 message: >-
   docstring w src, którego tekst źródła ma „#” i cyfrę, adres w domenie github.com albo skrót commitu (słowo z 7 albo
-  więcej znaków 0-9a-f z literą): historię zmiany zostaw w opisie PR albo w issue, a docstring niech mówi, co kod robi
+  więcej znaków 0-9a-f z literą): historię zmiany zostaw w opisie PR, a docstring niech mówi, co kod robi
   teraz; liczbę z pomiaru niech nazywa polecenie albo narzędzie repozytorium, które ją daje, a numer issue albo PR
   pomiaru idzie do opisu PR; reguła czyta pliki .py, .pyi i .py3 w src, a plik .pyw i plik bez rozszerzenia pomija
 files:

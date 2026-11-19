@@ -61,7 +61,7 @@ Ta sekcja mówi, czego skill pstack nie wie o tym repo.
   (b) Ścieżka, którą harness sam wybiera i podaje produktowi jako parametr (Ustawienia, dziennik i konfiguracja serwera w `fixture.json`, folder Wzorców, adres przekierowany na repozytorium próbne).
   (c) Współrzędne i nazwy w sprawdzeniu, które czyta plik zbudowany przez atrapę z kopią: zła stała w `src` nie trafia w ten plik, więc odczyt pada.
   Wyrocznia, która importuje sprawdzany kod, nie wykryje jego błędu: zmieniony w `src` tekst albo format przeszedłby z nim razem.
-  Kopię, która wygląda na mechanikę, opatrz komentarzem z powodem i odsyłaczem do tej sekcji.
+  Kopię, która wygląda na mechanikę, trzymaj w stałej nazwanej tym, co kopiuje ze świata zewnętrznego, jak nazwy plików taty w `tools/lib/atrapy/pliki_taty.py`, a nie w komentarzu z powodem ([ADR 0043](../adr/0043-kod-bez-komentarzy.md)).
 
 ## Reguły i co ich pilnuje
 
