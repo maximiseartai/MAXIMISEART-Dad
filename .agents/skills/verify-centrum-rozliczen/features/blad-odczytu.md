@@ -13,7 +13,7 @@ button reads every failed one again. The card `Uporządkuj INTERMAX`
 (`/api/intermax/copies`), the sections `Reguły ilości` (`/api/settings/quantity-rules`, `Reguł ilości`, and its list `/api/settings/quantity-rules/differences`, `różnic z Kontroli ilości`),
 `Legenda czynności` (`/api/settings/activity-legend`, `Legendy czynności`) and `Historia` (`/api/settings/history`, `Historii Ustawień`) of Ustawienia,
 the summary of Uzupełnienie on the result card of Przygotowanie pliku zbiorczego (`Pliku zbiorczego`),
-the side panel `karty Uruchomienia` and Raporty (`/api/report-entering/view`,
+the side panel `karty Uruchomienia`, Wysyłka rozliczeń (`/api/settlement-mailing`, `Wysyłki rozliczeń`) and Raporty (`/api/report-entering/view`,
 `Raportów`, and apart from it `/api/report-entering`, `Wpisania raportów`, under the header button) use the same
 component, but this feature does not drive their failed reads.
 

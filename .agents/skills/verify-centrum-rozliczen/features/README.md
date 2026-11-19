@@ -36,6 +36,8 @@ The feature `<feature>` of `--feature` lives in `<feature>.md` next to this file
 - No settings are set when a run starts.
 - Only for `wydajnosc`, the fixture is created with `--wariant rok-pracy`: `<root>/Rok pracy/Załączniki` holds 52 periods in Dad's layout and the metrics files hold a year of records (`_year_of_work` in `scripts/create_centrum_fixture.py`).
 - `<root>/aktualizacja/` holds the run's tool for `aktualizacja`: a clone (`klon`) on the first synthetic commit, with Dad's files in its `config/`, and a bare local "origin" (`origin.git`) one commit ahead that stops tracking his changed old Wykonawcy file (`worker_mapping.yaml`), plus a branch `biblioteki` one commit later that needs a library pip cannot install offline and a branch `nie-startuje` whose Centrum does not start. Centrum's own commit is the clone's `HEAD`, and Aktualizacja narzędzia moves only this clone. The clone's `run_centrum.py` serves the run's scripted Centrum, so the Centrum the restart guardian starts after an update is again this run's.
+- The INTERMAX folder holds a synthetic Baza zleceń under its fixed name, which gives two of the six pasted orders a
+  Historia adresu in `uporzadkowanie-intermax`.
 - The run's `config/` holds a synthetic Lista Wykonawców `wykonawcy.yaml` (three Wykonawcy)
   and the three Wzorce, valid for the engine's Sprawdzanie; the configuration read of Ustawienia reads
   these, never Dad's `config/`.

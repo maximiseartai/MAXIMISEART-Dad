@@ -6,7 +6,12 @@ zleceń), Dad saves and closes it and taps `Uporządkuj INTERMAX` on the card un
 INTERMAX is the Rejestr zleceń from his settings, and the Uruchomienie belongs to
 the period of today's date (ADR 0019). The result card counts the orders, those
 with Historia adresu from the Baza zleceń beside INTERMAX and the Wykonawcy, names the ordered day and the Kopia INTERMAX from before the write,
-and opens INTERMAX. Stops show the same three-part banner as the other
+and opens INTERMAX. The Baza zleceń lies in the folder of INTERMAX under its fixed name (`ORDER_BASE_NAME` in
+`src/rozliczenia/order_base.py`); each order with Historia adresu gets the Baza's rows of the same address after
+`UWAGI`, every other block light grey, and its column A red. Without a Baza Dad can read, the day is still ordered:
+a warning says „INTERMAX został uporządkowany bez Historii adresu…” and the card leaves the count out
+(`tests/test_centrum_uporzadkowanie_intermax.py::test_uporzadkowanie_z_centrum_bez_bazy_zlecen_w_folderze_intermax_ostrzega_a_karta_i_logi_nie_maja_historii_adresu`;
+the drive's fixture has a Baza). Stops show the same three-part banner as the other
 processes; „do Maksa” leads to the Diagnoza and the Zgłoszenie.
 
 ## Sub-features

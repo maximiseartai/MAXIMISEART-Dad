@@ -42,7 +42,7 @@ Printed by `scripts/sub_features.py --feature ustawienia` from the drive's steps
 
 ## How to get to it (user POV)
 
-- The gear `Ustawienia` in the menu's footer, section Foldery: `Wskaż`/`Zmień` and `Wpisz` next to `Rejestr zleceń` and `Folder okresów`; section Wygląd: Motyw `Jasny`/`Ciemny`; section Narzędzie: the switch `Uruchamiaj Centrum razem z Windows`; section Historia: the changes with `Cofnij`; section Skrzynka raportów: `Zmień hasło` next to `Hasło aplikacji`; section Przypomnienia: the switch `Przypomnienia o raporcie`, the pory, `Pierwsze przypomnienie`, `Treść`, `Stopka`, `Zapisz` and the preview below.
+- The gear `Ustawienia` in the menu's footer, section Foldery: `Wskaż`/`Zmień` and `Wpisz` next to `Rejestr zleceń` and `Folder okresów`; section Wygląd: Motyw `Jasny`/`Ciemny`; section Narzędzie: the switch `Uruchamiaj Centrum razem z Windows`; section Historia: the changes with `Cofnij`; section Skrzynka raportów: `Zmień hasło` next to `Hasło aplikacji`; section Przypomnienia: the switch `Przypomnienia o raporcie`, the pory, `Pierwsze przypomnienie`, `Treść`, `Stopka`, `Zapisz` and the preview below; section Wysyłka rozliczeń: `Temat`, `Treść`, the `Stopka` link to Przypomnienia, `Zapisz wysyłkę rozliczeń` and the preview below (driven by `wysylka-rozliczen`).
 - The toast `Zapisano` after each change, with `Cofnij`.
 - `Ustaw w Ustawieniach` on the empty Okresy and next to an unset file on Uruchomienia (groups `Rejestr zleceń`, `Folder okresów`, `INTERMAX`) and Raporty (group `INTERMAX`) opens `#/ustawienia/foldery`.
 

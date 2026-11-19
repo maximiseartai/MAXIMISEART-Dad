@@ -9,7 +9,8 @@ orders in the Rejestr zleceń or a Plik zbiorczy stays with a sentence that prop
 Rozliczenie pracownika with the old one lies in a period asks first. Closing Ustawienia with an unsaved form asks
 `Zamknąć bez zapisu?`. Under the list the section suggests the logins of the ordered orders of the current period and
 the 4 before it in the Rejestr zleceń that no Wykonawca has, each with `Dodaj Wykonawcę`, and says in one sentence when
-the Rejestr is not set or cannot be read (#1475). The drive does not drive the file of Ustawienia that cannot be read
+the Rejestr is not set or cannot be read (#1475), or when the file of the Lista Wykonawców cannot be read; then a
+change of the list is refused too. The drive does not drive the file of Ustawienia that cannot be read
 now, the Historia row of a change or what the processes do with the list:
 `tests/test_centrum_rozliczen.py::test_odczyty_okna_centrum_przy_pliku_ustawien_bez_odczytu_odmawiaja_zdaniem_o_nim`
 checks that the suggestions then say a sentence about that file instead of „wskaż Rejestr zleceń”,
