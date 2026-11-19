@@ -51,8 +51,8 @@ def pytest_configure(config: pytest.Config) -> None:
 
     ctrl_c_reaches_children()
     heavy = config.getoption("numprocesses", default=None) or not config.option.file_or_dir
-    if heavy and not hasattr(config, "workerinput") and (refusal := slot_maca.take("pytest", "auto")) is not None:
-        pytest.exit(refusal, returncode=slot_maca.CODE)
+    if heavy and not hasattr(config, "workerinput"):
+        slot_maca.take("pytest", "auto")
 
 
 def pytest_itemcollected(item: pytest.Item) -> None:

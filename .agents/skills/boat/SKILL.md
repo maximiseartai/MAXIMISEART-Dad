@@ -26,8 +26,7 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 Box `large` ma 8 vCPU, a Mac zostaje przy 4 workerach z `czasy_ci.WORKERY_LOKALNE`, więc liczbę workerów boxa podaje tylko `--box-env`.
 W pomiarze A/B obie strony biegną po kolei na tym samym boxie.
 `szybko.py`, `mutacje.py --plik`, `benchmark_przebiegu.py measure|freeze` i pytest z workerami albo bez pliku testów same biorą slot Maca przy starcie (`tools/lib/slot_maca.py`), gdy `boatbox` jest w `PATH`, a polecenie nie biegnie już w slocie `boatbox` (`BOATBOX_MAC_SLOT`).
-Bez wolnego slotu kończą się kodem 69 i linią `CIĘŻKIE … Mac zajęty`, która podaje gotowe polecenie `boatbox`.
-Proces, który uruchomiło inne narzędzie z `tools/` (np. pytest testu scalenia w `tools/scal_pr.py` albo mutacji w `tools/mutacje.py --zmiana`), slotu nie bierze, bo o jego miejscu zdecydowało to narzędzie.
+Bez wolnego slotu czekają w kolejce na slot jak `boatbox` i co 30 s piszą linię `CIĘŻKIE … Mac zajęty` z gotowym poleceniem `boatbox`, które pośle je na box bez czekania; kodu wyjścia bramka nie zmienia.
 
 ## Base
 

@@ -182,9 +182,8 @@ def _measure_or_freeze(args: argparse.Namespace, references: Path) -> dict[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
-    if args.command in ("measure", "freeze") and (refusal := slot_maca.take(f"benchmark_przebiegu.py {args.command}", "run --here")) is not None:
-        print(refusal, file=sys.stderr)
-        return slot_maca.CODE
+    if args.command in ("measure", "freeze"):
+        slot_maca.take(f"benchmark_przebiegu.py {args.command}", "run --here")
     try:
         if args.command == "comment":
             print(render_comment(read_journal(args.journal), args.before, args.after), end="")

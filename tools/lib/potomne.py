@@ -91,10 +91,6 @@ class _GitFailed(subprocess.CalledProcessError):
         return f"{super().__str__()}\n{self.stderr.strip()}"
 
 
-CHILD = "MAXIMISEART_POTOMEK_NARZEDZIA"
-"""Zmienna, którą ``run`` daje każdemu poleceniu: proces potomny narzędzia z ``tools/``, nie agenta."""
-
-
 def run(
     command: Sequence[str],
     *,
@@ -119,7 +115,7 @@ def run(
     tree = _Tree(
         arguments,
         cwd=cwd,
-        env={**(os.environ if env is None else env), CHILD: "1"},
+        env=env,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT if echo else subprocess.PIPE,
