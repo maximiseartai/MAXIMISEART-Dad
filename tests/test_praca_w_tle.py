@@ -1,12 +1,15 @@
-"""Hook ``tools/hooks/praca_w_tle.py`` i jego wyrocznia: agent nie kończy tury, dopóki w tle jego sesji biegnie Bash albo Monitor.
+"""Hook ``tools/hooks/praca_w_tle.py`` i jego wyrocznia: agent nie kończy tury, dopóki w tle biegnie jego Bash albo Monitor.
 
 Wejścia mają kształt wejścia hooka ``Stop`` z Claude Code 2.1.318: ``REAL`` to zapis z próby ``claude -p``, które
 uruchomiło ``sleep 60`` z ``run_in_background`` i skończyło turę (5.11.2026), a pozostałe zadania mają pola, które
-budowa ``background_tasks`` w binarce 2.1.318 podaje dla ich typu. Każdy test hooka uruchamia go tak jak
-Claude Code: JSON na stdin, a odmowa to ``{"decision": "block", "reason": …}`` na stdout z kodem 0. Dziennik hooka
-leży w katalogu domowym, więc każdy test ma własny. Wyrocznię ``tools/wyrocznia_pracy_w_tle.py`` test uruchamia z
-atrapą ``claude``, która woła API pod adresem, jaki wybrałby Claude Code (``tests/fixtures/ustawienia_claude.py``), i
-uruchamia hooki ``Stop`` z ``.claude/settings.json`` tak, jak robi to Claude Code 2.1.318.
+budowa ``background_tasks`` w binarce 2.1.318 podaje dla ich typu. Wejścia hooka ``PostToolUse`` (``SUBAGENT_BASH``,
+``SUBAGENT_MONITOR``, ``REGISTERED``) to zapisy z prób ``claude -p`` 2.1.328 z fałszywym API (19.11.2026) ze ścieżkami
+i ID zadania podmienionymi na te z ``REAL``. Każdy test hooka uruchamia go tak jak Claude Code: JSON na stdin, a
+odmowa to ``{"decision": "block", "reason": …}`` na stdout z kodem 0. Dziennik i pliki sesji hooka leżą w katalogu
+domowym, więc każdy test ma własny. Wyrocznię ``tools/wyrocznia_pracy_w_tle.py`` test uruchamia z atrapą ``claude``,
+która woła API pod adresem, jaki wybrałby Claude Code (``tests/fixtures/ustawienia_claude.py``), uruchamia hooki
+``Stop`` i ``PostToolUse`` z ``.claude/settings.json``, podagenta narzędzia Agent i narzędzie MCP, a po turze bez
+odmowy budzi sesję powiadomieniem o końcu zadania głównej pętli, jak Claude Code 2.1.328.
 """
 
 from __future__ import annotations
@@ -14,11 +17,14 @@ from __future__ import annotations
 from collections.abc import Mapping
 import contextlib
 from datetime import datetime, timedelta
+import importlib.util
 import json
 import os
 from pathlib import Path
 import subprocess
 import sys
+import time
+from types import ModuleType
 
 import pytest
 
@@ -28,6 +34,8 @@ from tests.fixtures.fake_cli import fake_cli
 ROOT = Path(__file__).resolve().parents[1]
 HOOK = ROOT / "tools" / "hooks" / "praca_w_tle.py"
 ORACLE = ROOT / "tools" / "wyrocznia_pracy_w_tle.py"
+WAITING_HOOK = ROOT / "tools" / "hooks" / "czekanie.py"
+FAKE_T3 = ROOT / "tools" / "lib" / "falszywy_t3.py"
 SETTINGS = ROOT / ".claude" / "settings.json"
 POSIX_ONLY = pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
 
@@ -73,6 +81,64 @@ SUBAGENT = {
 }
 
 
+POST = {
+    "session_id": REAL["session_id"],
+    "transcript_path": REAL["transcript_path"],
+    "cwd": REAL["cwd"],
+    "prompt_id": "654ab1d2-5c8d-4249-8d3a-7ffca27380e6",
+    "permission_mode": "bypassPermissions",
+    "effort": {"level": "medium"},
+    "hook_event_name": "PostToolUse",
+}
+SUBAGENT_BASH = {
+    **POST,
+    "agent_id": "a7918e90976a301e0",
+    "agent_type": "general-purpose",
+    "tool_name": "Bash",
+    "tool_input": {"command": "sleep 60", "description": "Run sleep 60 in background", "run_in_background": True},
+    "tool_response": {
+        "stdout": "",
+        "stderr": "",
+        "interrupted": False,
+        "isImage": False,
+        "noOutputExpected": False,
+        "backgroundTaskId": "bi6lxbxlb",
+    },
+    "tool_use_id": "toolu_2",
+    "duration_ms": 236,
+}
+SUBAGENT_MONITOR = {
+    **POST,
+    "agent_id": "a5b7fa5dc3a07d45d",
+    "agent_type": "general-purpose",
+    "tool_name": "Monitor",
+    "tool_input": {"description": "Monitor podagenta", "timeout_ms": 60000, "command": "sleep 60"},
+    "tool_response": {"taskId": "bi6lxbxlb", "timeoutMs": 60000, "persistent": False},
+    "tool_use_id": "toolu_2",
+    "duration_ms": 282,
+}
+MAIN_BASH = {key: value for key, value in SUBAGENT_BASH.items() if key not in ("agent_id", "agent_type")}
+REGISTERED = {
+    **POST,
+    "tool_name": "mcp__t3-code__t3_background_wait",
+    "tool_input": {"taskIds": ["bi6lxbxlb"]},
+    "tool_response": [{"type": "text", "text": '{"matched": ["bi6lxbxlb"], "unmatched": []}'}],
+    "tool_use_id": "toolu_2",
+    "duration_ms": 9,
+    "mcp_server": {"name": "t3-code", "source": "dynamic"},
+}
+UNREGISTERED = {**REGISTERED, "tool_input": {"taskIds": ["bi6lxbxlb"], "waiting": False}}
+
+
+def _load(path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(f"test_praca_w_tle_{path.stem}", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclass hooka szuka swojego modułu w sys.modules
+    spec.loader.exec_module(module)
+    return module
+
+
 def _stop(tasks: object, **fields: object) -> str:
     return json.dumps({**REAL, "background_tasks": tasks, **fields})
 
@@ -99,9 +165,9 @@ def test_zapis_wejscia_claude_code_z_sleep_w_tle_zatrzymuje_koniec_tury_i_trafia
     reason = _reason(_hook(json.dumps(REAL), tmp_path))
 
     assert "shell bi6lxbxlb „sleep 60”" in reason
-    assert ["t3_background_wait" in reason, "TaskStop" in reason, "run_in_background" in reason] == [True, True, True]
-    # Próba z modelem (5.11.2026): po odmowie agent zatrzymał zadanie i uruchomił Monitor, który znów dostał odmowę.
-    assert "Monitor to też zadanie w tle" in reason
+    # Jedna droga czekania na zadanie: t3_background_wait z ID z odmowy (lista, bo taskId pada, #2267) i koniec tury.
+    assert 't3_background_wait z taskIds: ["bi6lxbxlb"]' in reason
+    assert _load(WAITING_HOOK).WAIT_FOR_TASK in reason
     assert "serwer), zatrzymaj jako zadanie i uruchom odłączony (nohup … & w Bashu na pierwszym planie)" in reason
     (row,) = _log(tmp_path)
     assert datetime.fromisoformat(str(row.pop("czas"))).utcoffset() == timedelta(0)
@@ -140,6 +206,120 @@ def test_odmowa_trwa_takze_przy_stop_hook_active_dopoki_zadanie_zyje(tmp_path: P
 
     assert "shell bi6lxbxlb" in reason
     assert [row["stop_hook_active"] for row in _log(tmp_path)] == [True]
+
+
+def _session_file(home: Path, session: str = str(REAL["session_id"])) -> Path:
+    return home / ".cache" / "maximiseart" / "praca_w_tle" / f"{session}.jsonl"
+
+
+def _quietly(hooked: subprocess.CompletedProcess[bytes]) -> None:
+    assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, b"", b"")
+
+
+@pytest.mark.parametrize(
+    ("posts", "reason"),
+    [
+        ([SUBAGENT_BASH], "zadanie podagenta a7918e90976a301e0"),
+        ([SUBAGENT_MONITOR], "zadanie podagenta a5b7fa5dc3a07d45d"),
+        ([REGISTERED], "zarejestrowany w t3_background_wait"),
+        ([UNREGISTERED, REGISTERED], "zarejestrowany w t3_background_wait"),
+    ],
+    ids=["bash-podagenta", "monitor-podagenta", "zarejestrowany", "zarejestrowany-po-wypisaniu"],
+)
+def test_shell_podagenta_i_zadanie_zarejestrowane_przepuszczaja_koniec_tury_z_powodem_w_dzienniku(
+    tmp_path: Path, posts: list[dict[str, object]], reason: str
+) -> None:
+    # Claude Code 2.1.328 podaje hookowi Stop shell podagenta bez pola, które go odróżnia (wyrocznia, shell-podagenta).
+    for post in posts:
+        _quietly(_hook(json.dumps(post), tmp_path))
+
+    _quietly(_hook(json.dumps(REAL), tmp_path))
+    assert [(row["decyzja"], row["szczegoly"]) for row in _log(tmp_path)] == [
+        ("przepuszczam", [f"shell bi6lxbxlb „sleep 60” przepuszczony: {reason}"])
+    ]
+
+
+@pytest.mark.parametrize(
+    "posts",
+    [
+        [MAIN_BASH],
+        [REGISTERED, UNREGISTERED],
+        [{**SUBAGENT_BASH, "tool_response": {"stdout": "gotowe", "stderr": "", "interrupted": False}}],
+        [{**REGISTERED, "tool_input": {"taskId": "bi6lxbxlb"}}],
+        [{**REGISTERED, "tool_input": {"taskIds": ["b2"]}}],
+        [{**REGISTERED, "session_id": "inna-sesja"}],
+        [{**REGISTERED, "session_id": "../poza-katalogiem"}],
+        [{**SUBAGENT_BASH, "hook_event_name": "PreToolUse"}],
+    ],
+    ids=[
+        "bash-glownej-petli",
+        "wypisany-z-rejestracji",
+        "bash-podagenta-na-pierwszym-planie",
+        "taskId-zamiast-taskIds",
+        "inne-zadanie",
+        "inna-sesja",
+        "sesja-spoza-wzorca",
+        "przed-narzedziem",
+    ],
+)
+def test_wlasny_shell_glownej_petli_bez_rejestracji_zatrzymuje_koniec_tury(
+    tmp_path: Path, posts: list[dict[str, object]]
+) -> None:
+    for post in posts:
+        assert _hook(json.dumps(post), tmp_path).returncode == 0
+
+    assert "shell bi6lxbxlb „sleep 60”" in _reason(_hook(json.dumps(REAL), tmp_path))
+
+
+def test_rejestracja_w_t3_background_wait_obejmuje_tylko_zadania_z_listy(tmp_path: Path) -> None:
+    other = {"id": "b2", "type": "shell", "status": "running", "description": "Drugi sen", "command": "sleep 90"}
+    _quietly(_hook(json.dumps(REGISTERED), tmp_path))
+
+    reason = _reason(_hook(_stop([SHELL, other]), tmp_path))
+
+    assert ["shell b2 „sleep 90”" in reason, 't3_background_wait z taskIds: ["b2"]' in reason] == [True, True]
+    assert "shell bi6lxbxlb „sleep 60”" not in reason.split(". ")[0]
+
+
+def test_pliki_sesji_starsze_niz_tydzien_znikaja_przy_dopisaniu(tmp_path: Path) -> None:
+    old, young = _session_file(tmp_path, "stara"), _session_file(tmp_path, "mloda")
+    old.parent.mkdir(parents=True)
+    for path, days in ((old, 8), (young, 6)):
+        path.write_text('{"id": "b9", "przepuszczam": true, "powod": "x"}\n', encoding="utf-8")
+        moment = time.time() - days * 24 * 3600
+        os.utime(path, (moment, moment))
+
+    _quietly(_hook(json.dumps(REGISTERED), tmp_path))
+
+    assert sorted(path.name for path in old.parent.iterdir()) == sorted(["mloda.jsonl", f"{REAL['session_id']}.jsonl"])
+
+
+@pytest.mark.parametrize(
+    ("content", "said"),
+    [
+        (b"\xff\xfe{", b"plik sesji nieczytelny"),
+        (b'nie json\n["bi6lxbxlb"]\n{"id": "bi6lxbxlb", "przepuszczam": "tak"}\n', b""),
+    ],
+    ids=["nie-utf8", "linie-innej-postaci"],
+)
+def test_plik_sesji_innej_postaci_nie_przepuszcza_zadania(tmp_path: Path, content: bytes, said: bytes) -> None:
+    path = _session_file(tmp_path)
+    path.parent.mkdir(parents=True)
+    path.write_bytes(content)
+
+    hooked = _hook(json.dumps(REAL), tmp_path)
+
+    assert json.loads(hooked.stdout)["decision"] == "block"
+    assert (hooked.returncode, said in hooked.stderr) == (0, True)
+
+
+def test_niedostepny_katalog_plikow_sesji_nie_zatrzymuje_narzedzia(tmp_path: Path) -> None:
+    (tmp_path / ".cache" / "maximiseart").mkdir(parents=True)
+    (tmp_path / ".cache" / "maximiseart" / "praca_w_tle").write_text("plik zamiast katalogu", encoding="utf-8")
+
+    hooked = _hook(json.dumps(REGISTERED), tmp_path)
+
+    assert (hooked.returncode, hooked.stdout, b"praca_w_tle: plik sesji niedost" in hooked.stderr) == (0, b"", True)
 
 
 # Typy z budowy background_tasks w binarce 2.1.318, które same raportują wywołującemu (REPORTING hooka).
@@ -397,8 +577,8 @@ def test_checkout_bez_skryptu_hooka_nie_blokuje_konca_tury(tmp_path: Path) -> No
     assert [(run.returncode, run.stdout, run.stderr) for run in hooked] == [(0, b"", b"")]
 
 
-FAKE_CLAUDE = '''"""Atrapa claude: zachowuje się jak Claude Code 2.1.318 w ``claude -p`` wobec fałszywego API wyroczni."""
-import json, os, subprocess, sys, time, urllib.request
+FAKE_CLAUDE = '''"""Atrapa claude: zachowuje się jak Claude Code 2.1.328 w ``claude -p`` wobec fałszywego API wyroczni."""
+import json, os, re, subprocess, sys, time, urllib.request
 sys.path.insert(0, {fixtures!r})
 import ustawienia_claude
 # Ustawienia atrapy z testu: środowisko wyroczni nie dochodzi do claude (lista dozwolona falszywe_api).
@@ -425,43 +605,71 @@ def api(messages):
     return start, delta
 def user(text):
     return [{{"type": "text", "text": text}}] if ATRAPA.get("ATRAPA_BLOKI") else text
+SESSION = f"atrapa-{{os.getpid()}}"
+settings = json.load(open(os.path.join(os.getcwd(), ".claude", "settings.json"), encoding="utf-8"))
+def hooks(name, event, tool=None):
+    if ATRAPA.get("ATRAPA_BEZ_HOOKA") and name == "Stop" or ATRAPA.get("ATRAPA_BEZ_POST") and name == "PostToolUse":
+        return []
+    commands = [h["command"] for e in settings["hooks"].get(name, []) if tool is None or re.fullmatch(e["matcher"], tool) for h in e["hooks"]]
+    payload = json.dumps({{"hook_event_name": name, "session_id": SESSION, **event}})
+    env = {{**os.environ, "CLAUDE_PROJECT_DIR": os.getcwd()}}
+    return [subprocess.run(c, shell=True, input=payload, capture_output=True, text=True, env=env).stdout for c in commands]
+tasks, owners = [], {{}}
+def call(name, given, agent):
+    if name == "Bash" and given.get("run_in_background"):
+        task = f"b{{len(owners) + 1}}"
+        owners[task] = agent
+        tasks.append({{"id": task, "type": "shell", "status": "running", "description": given["description"], "command": given["command"]}})
+        result, response = f"Command running in background with ID: {{task}}", {{"backgroundTaskId": task}}
+    elif name == "Bash":
+        result = subprocess.run(given["command"], shell=True, capture_output=True, text=True).stdout
+        response = {{"stdout": result}}
+    elif name == "Agent":
+        result, response = turn([{{"role": "user", "content": user(given["prompt"])}}], "a1"), {{"status": "completed"}}
+    else:
+        result = json.dumps({{"matched": given["taskIds"], "unmatched": []}})
+        response = [{{"type": "text", "text": result}}]
+    hooks("PostToolUse", {{"tool_name": name, "tool_input": given, "tool_response": response, **({{"agent_id": agent}} if agent else {{}})}}, name)
+    return result
+def turn(messages, agent=None):
+    for _ in range(20):
+        start, delta = api(messages)
+        if start["type"] != "tool_use":
+            messages.append({{"role": "assistant", "content": [{{"type": "text", "text": delta["text"]}}]}})
+            return delta["text"]
+        if ATRAPA.get("ATRAPA_BEZ_WYNIKU"):
+            sys.exit(0)
+        given = json.loads(delta["partial_json"])
+        result = call(start["name"], given, agent)
+        messages += [
+            {{"role": "assistant", "content": [{{"type": "tool_use", "id": start["id"], "name": start["name"], "input": given}}]}},
+            {{"role": "user", "content": [{{"type": "tool_result", "tool_use_id": start["id"], "content": [{{"type": "text", "text": result}}]}}]}},
+        ]
+    sys.exit(3)
 api([{{"role": "user", "content": "Podaj tytuł sesji."}}])
 if ATRAPA.get("ATRAPA_TYLKO_POBOCZNE"):
     sys.exit(0)
 messages = [{{"role": "user", "content": user(argv[argv.index("-p") + 1])}}]
-tasks, active = [], False
+active = False
 for _ in range(12):
-    start, delta = api(messages)
-    if start["type"] == "tool_use":
-        if ATRAPA.get("ATRAPA_BEZ_WYNIKU"):
-            sys.exit(0)
-        bash = json.loads(delta["partial_json"])
-        if bash.get("run_in_background"):
-            tasks.append({{"id": "b1", "type": "shell", "status": "running", "description": bash["description"], "command": bash["command"]}})
-            result = "Command running in background with ID: b1"
-        else:
-            result = subprocess.run(bash["command"], shell=True, capture_output=True, text=True).stdout
-        messages += [
-            {{"role": "assistant", "content": [{{"type": "tool_use", "id": start["id"], "name": "Bash", "input": bash}}]}},
-            {{"role": "user", "content": [{{"type": "tool_result", "tool_use_id": start["id"], "content": [{{"type": "text", "text": result}}]}}]}},
-        ]
-        continue
-    messages.append({{"role": "assistant", "content": [{{"type": "text", "text": delta["text"]}}]}})
-    settings = json.load(open(os.path.join(os.getcwd(), ".claude", "settings.json"), encoding="utf-8"))
-    hooks = [] if ATRAPA.get("ATRAPA_BEZ_HOOKA") else [h["command"] for e in settings["hooks"]["Stop"] for h in e["hooks"]]
-    event = {{"hook_event_name": "Stop", "stop_hook_active": active, "background_tasks": tasks, "session_crons": []}}
-    answers = [
-        subprocess.run(h, shell=True, input=json.dumps(event), capture_output=True, text=True,
-                       env={{**os.environ, "CLAUDE_PROJECT_DIR": os.getcwd()}}).stdout
-        for h in hooks
-    ]
-    reasons = [json.loads(a)["reason"] for a in answers if a.strip()]
+    turn(messages)
+    event = {{"stop_hook_active": active, "background_tasks": tasks, "session_crons": []}}
+    reasons = [json.loads(a)["reason"] for a in hooks("Stop", event) if a.strip()]
     if ATRAPA.get("ATRAPA_JEDNA_ODMOWA") and not active:
         reasons.append("Odmowa końca tury: w tle sesji biegnie jeszcze nic (fałszywa odmowa).")
-    if not reasons:
-        sys.exit(int(ATRAPA.get("ATRAPA_KOD", "0")))
-    messages.append({{"role": "user", "content": user("Stop hook feedback:\\n" + reasons[0])}})
-    active = True
+    if reasons:
+        messages.append({{"role": "user", "content": user("Stop hook feedback:\\n" + reasons[0])}})
+        active = True
+        continue
+    # Claude Code 2.1.328 w claude -p czeka na zadania w tle, a koniec zadania głównej pętli budzi sesję.
+    own = [task["id"] for task in tasks if owners[task["id"]] is None]
+    tasks.clear()
+    if own and not ATRAPA.get("ATRAPA_BEZ_BUDZENIA"):
+        note = "".join(f"<task-notification><task-id>{{task}}</task-id><status>completed</status></task-notification>" for task in own)
+        messages.append({{"role": "user", "content": user(note)}})
+        active = False
+        continue
+    sys.exit(int(ATRAPA.get("ATRAPA_KOD", "0")))
 sys.exit(3)
 '''
 
@@ -520,10 +728,12 @@ def test_wyrocznia_z_odmowa_hooka_przy_pracy_w_tle_i_bez_niej_konczy_sie_ok(
     ran = _oracle(tmp_path, atrapa=atrapa)
 
     assert ran.stdout.splitlines() == [
-        "Claude Code 9.9.9 (Claude Code), przypadki 2",
+        "Claude Code 9.9.9 (Claude Code), przypadki 4",
         "ZGODNE praca-w-tle | odmowy hooka: 2",
         "ZGODNE bez-pracy-w-tle | koniec tury bez odmowy (kod 0)",
-        "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 2",
+        "ZGODNE shell-podagenta | koniec tury bez odmowy (kod 0)",
+        "ZGODNE zadanie-zarejestrowane | koniec tury bez odmowy (kod 0), sesja obudzona po końcu zadania",
+        "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 4",
     ], ran.stderr
     assert ran.returncode == 0
     # Dziennik hooka w biegu wyroczni leży poza katalogiem domowym, żeby nie mieszać prób z prawdziwymi sesjami.
@@ -543,6 +753,9 @@ def test_wyrocznia_uruchamia_claude_p_w_checkoucie_tylko_z_ustawieniami_projektu
     assert argv[:2] == ["-p", "WYROCZNIA-PRACY-W-TLE bez-pracy-w-tle: uruchom polecenie."]
     assert argv[argv.index("--setting-sources") + 1] == "project,local"
     assert argv[argv.index("--permission-mode") + 1] == "bypassPermissions"
+    # Z serwerów MCP tylko fałszywy t3-code: ani serwery z ~/.claude.json, ani prawdziwy T3.
+    servers = json.loads(argv[argv.index("--mcp-config") + 1])["mcpServers"]
+    assert ("--strict-mcp-config" in argv, list(servers), servers["t3-code"]["args"]) == (True, ["t3-code"], [str(FAKE_T3)])
     # Reguła zespołu: Claude Code wyroczni, gdyby jednak zapytał model, pyta Opusa.
     assert argv[argv.index("--model") + 1] == "claude-opus-5-5"
     assert call["cwd"] == str(ROOT)
@@ -568,7 +781,7 @@ def test_wyrocznia_pyta_tylko_falszywe_api_takze_gdy_ustawienia_uzytkownika_maja
 
     ran = _oracle(tmp_path, user_settings=hub)
 
-    assert ran.stdout.splitlines()[-1] == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 2", ran.stderr
+    assert ran.stdout.splitlines()[-1] == "WYROCZNIA OK | Claude Code 9.9.9 (Claude Code) | ZGODNE 4", ran.stderr
     envs = [call["env"] for call in _calls(tmp_path)]
     fake = {str(env["ANTHROPIC_BASE_URL"]) for env in envs if isinstance(env, dict)}
     asked = [json.loads(line) for line in (tmp_path / "wywolania.jsonl.api").read_text(encoding="utf-8").splitlines()]
@@ -580,11 +793,39 @@ def test_wyrocznia_pyta_tylko_falszywe_api_takze_gdy_ustawienia_uzytkownika_maja
 def test_wyrocznia_gdy_hook_nie_odmawia_konczy_sie_zmiana(tmp_path: Path) -> None:
     ran = _oracle(tmp_path, atrapa={"ATRAPA_BEZ_HOOKA": "1"})
 
-    assert ran.stdout.splitlines()[1:] == [
+    assert ran.stdout.splitlines()[1:3] == [
         "ZMIANA praca-w-tle | koniec tury bez odmowy (kod 0)",
         "ZGODNE bez-pracy-w-tle | koniec tury bez odmowy (kod 0)",
-        "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZGODNE 1, ZMIANA 1",
     ], ran.stderr
+    assert ran.stdout.splitlines()[-1] == "WYROCZNIA ZMIANA | Claude Code 9.9.9 (Claude Code) | ZGODNE 3, ZMIANA 1"
+    assert ran.returncode == 1
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize(
+    ("atrapa", "seen"),
+    [
+        (
+            {"ATRAPA_BEZ_POST": "1"},
+            ["ZMIANA shell-podagenta | odmowy hooka: 2", "ZMIANA zadanie-zarejestrowane | odmowy hooka: 2"],
+        ),
+        (
+            {"ATRAPA_BEZ_BUDZENIA": "1"},
+            [
+                "ZGODNE shell-podagenta | koniec tury bez odmowy (kod 0)",
+                "ZMIANA zadanie-zarejestrowane | koniec tury bez odmowy (kod 0), ale bez powiadomienia o końcu zadania",
+            ],
+        ),
+    ],
+    ids=["bez-hooka-post-tool-use", "bez-budzenia-po-koncu-zadania"],
+)
+def test_wyrocznia_gdy_shell_podagenta_albo_zadanie_zarejestrowane_nie_konczy_tury_jak_trzeba_konczy_sie_zmiana(
+    tmp_path: Path, atrapa: dict[str, str], seen: list[str]
+) -> None:
+    # Bez hooka PostToolUse hook Stop odmawia jak na main przed #2267, a bez budzenia tura z zadaniem zostaje bez wyniku.
+    ran = _oracle(tmp_path, "shell-podagenta", "zadanie-zarejestrowane", atrapa=atrapa)
+
+    assert ran.stdout.splitlines()[1:3] == seen, ran.stderr
     assert ran.returncode == 1
 
 
@@ -654,7 +895,7 @@ def test_wynik_przypadku_widac_w_wyjsciu_zanim_zacznie_sie_nastepny(tmp_path: Pa
 
     assert ran.returncode == 0, output.read_text(encoding="utf-8") + ran.stderr
     seen = [call["wyjscie"] for call in _calls(tmp_path)]
-    assert len(seen) == 2 and "ZGODNE praca-w-tle | odmowy hooka: 2\n" in str(seen[1]), seen
+    assert len(seen) == 4 and "ZGODNE praca-w-tle | odmowy hooka: 2\n" in str(seen[1]), seen
 
 
 @POSIX_ONLY

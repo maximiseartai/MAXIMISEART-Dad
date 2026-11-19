@@ -52,7 +52,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/szybko.py`: Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom po każdej zmianie przed pushem.
 - `tools/uruchom_proces.py`: Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix, report_entering) z wynikiem JSON; użyj w E2E, benchmarku i skillach.
 - `tools/wydanie.py`: Narzędzie Wydań (plan, potem wydaj): nowa wersja z tagiem v* i GitHub Release (ADR 0014); uruchamiaj tylko z workflow skilla wydanie.
-- `tools/wyrocznia_pracy_w_tle.py`: Uruchamia claude -p z pracą w tle i bez niej, by sprawdzić hook Stop praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
+- `tools/wyrocznia_pracy_w_tle.py`: Uruchamia claude -p z pracą w tle, podagentem i t3_background_wait, by sprawdzić hooki praca_w_tle.py; uruchom po każdej aktualizacji Claude Code.
 - `tools/wyrocznia_zgody.py`: Sprawdza, czy zainstalowany Claude Code oddaje hookowi zgoda.py pytanie o zgodę na rm; uruchom po każdej aktualizacji Claude Code.
 - `tools/zgodnosc_efenix.py`: Porównuje budowę stron efenix z Atrapą efenix samym odczytem; uruchom po Zgłoszeniu z Zatrzymania okna efenix.
 <!-- koniec spisu narzędzi -->
@@ -62,6 +62,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - Przegląd PR zlecaj zaraz po pushu, równolegle z CI.
 - Skille `verify-*` przeszły, gdy ich polecenia z linii `LICZY CI` przechodzą w zielonym CI, a resztę ich workflow agent wykonał i skończył bez FAIL.
 - Merge PR: tylko `.venv/bin/python tools/scal_pr.py N` (Windows: `py -3 tools/scal_pr.py N`), nigdy gołe `gh pr merge`; warunki scalenia i postać werdyktów podaje jego `--help`.
+- PR dziecka `delegate_task` obserwuje (`watch_pull_request`) i scala koordynator, a dziecko kończy zadanie na URL PR i pełnym SHA HEAD.
 - Tag Wydania `v*` i GitHub Release tworzy tylko narzędzie Wydań (ADR 0014); brama `tools/hooks/pre-push` łapie tylko `git push`, więc agent nie tworzy ich też przez `--no-verify`, `gh release create`, `gh api` ani stronę GitHuba.
 - CI i gałąź: przeczytaj [`docs/agents/pr-i-ci.md`](docs/agents/pr-i-ci.md), zanim uruchomisz lokalnie zadanie CI, i gdy zadanie CI padło, status `scalenie z main` nie jest zielony albo `main` jest czerwony.
 

@@ -39,11 +39,12 @@ Przed merge'em sprawdza, że baza w ``origin`` nie przesunęła się w trakcie s
 usuwa, tylko mówi, które lokalne gałęzie i worktree można usunąć. Sprzątanie, które przekroczy czas, kończy się
 ostrzeżeniem w linii ``SCAL OK``, bo PR jest już scalony.
 
-Po merge'u do ``main`` linia ``CI MAIN`` przed ``SCAL OK`` mówi, który run CI rozstrzyga o merge'u (``github.ROZSTRZYGA``):
-nowszy push na `main` anuluje run commitu merge'a, gdy ten czeka za trwającym, i wtedy rozstrzyga run późniejszego
-commitu. Linia podaje run commitu merge'a i to, czy już go anulowano, a bez niego polecenie ``gh run list``, które
-pokaże runy pushu na `main`. Obserwację PR zostaw do zielonego `main` z tym merge'em albo do komentarza czerwonego
-`main` w PR, który ``tools/ci/zgloszenia_ci.py`` pisze w każdym PR, o którego merge'u rozstrzyga czerwony run.
+Po merge'u do ``main`` linia ``CI MAIN`` przed ``SCAL OK`` mówi najpierw, że wątek, który scalił, na run CI tego
+merge'a nie czeka (``NO_WAIT``): czerwony `main` zakłada issue ``czerwony-main`` i komentuje każdy PR, o którego merge'u
+rozstrzyga czerwony run, sam (``tools/ci/zgloszenia_ci.py``). Potem mówi, który run CI rozstrzyga o merge'u
+(``github.ROZSTRZYGA``): nowszy push na `main` anuluje run commitu merge'a, gdy ten czeka za trwającym, i wtedy
+rozstrzyga run późniejszego commitu. Linia podaje run commitu merge'a i to, czy już go anulowano, a bez niego
+polecenie ``gh run list``, które pokaże runy pushu na `main`.
 
 Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że byłby); linia po merge'u podaje SHA
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
@@ -224,6 +225,12 @@ def _merge_commit(number: int) -> str | None:
         return None
 
 
+NO_WAIT = (
+    f"nie czekaj na ten run: czerwony main zakłada issue {github.CZERWONY_MAIN} i komentuje ten PR sam "
+    "(tools/ci/zgloszenia_ci.py)"
+)
+
+
 def _main_ci(merge_commit: str | None) -> str:
     """Linia ``CI MAIN``: który run CI rozstrzyga o merge'u do `main` i co wiadomo o runie commitu merge'a."""
 
@@ -238,7 +245,7 @@ def _main_ci(merge_commit: str | None) -> str:
         own = f"run commitu merge'a {runs[0]['databaseId']} anulowany, więc rozstrzyga run późniejszego commitu z {listing}"
     else:
         own = f"run commitu merge'a {runs[0]['databaseId']} {runs[0]['url']}, o ile nowszy push nie anuluje go, zanim ruszy"
-    return f"CI MAIN | {(merge_commit or '?')[:7]} | {github.ROZSTRZYGA}: {own} | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR"
+    return f"CI MAIN | {(merge_commit or '?')[:7]} | {NO_WAIT} | {github.ROZSTRZYGA}: {own}"
 
 
 def _clean_up() -> str:

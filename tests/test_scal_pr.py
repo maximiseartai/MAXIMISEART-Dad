@@ -520,7 +520,8 @@ def _written(*verdicts: tuple[str, ...]) -> stan_pr.Pull:
 def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany_run_z_merge_em(tmp_path: Path, conclusion: str | None, own: str) -> None:
     """Czerwony `main` po własnym merge'u nie wracał do wątku, który scalał (#911, #971), a run commitu merge'a anuluje
     nowszy push na `main`, gdy czeka za trwającym (#1449: runy merge'ów #1439, #1418, #1434 anulowane po 2 min, czerwień
-    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a."""
+    przyszła z runu merge'a #1437), więc linia nie każe czekać na wynik runu commitu merge'a, tylko mówi, że wątek nie
+    czeka, bo czerwony `main` zakłada issue sam (#2267)."""
 
     github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
     head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
@@ -534,8 +535,9 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
     merge_commit = git(github.origin, "rev-parse", "refs/heads/main")
     assert merged.returncode == 0, merged.stdout + merged.stderr
     assert merged.stdout.splitlines()[-2:] == [
-        f"CI MAIN | {merge_commit[:7]} | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge: {own}"
-        " | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR",
+        f"CI MAIN | {merge_commit[:7]} | nie czekaj na ten run: czerwony main zakłada issue czerwony-main i komentuje ten PR"
+        f" sam (tools/ci/zgloszenia_ci.py) | o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego"
+        f" commit zawiera merge: {own}",
         _last_line(merged),
     ]
     assert github.run_lists() == [["run", "list", "--workflow", "CI", "--event", "push", "--branch", "main", "--commit", merge_commit, "--json", "databaseId,url,conclusion"]]

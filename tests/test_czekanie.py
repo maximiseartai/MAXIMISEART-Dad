@@ -156,6 +156,59 @@ PGREP_LOOPS = (
     "until ! pgrep -l -f mutacje.json >/dev/null; do sleep 5; done",
     "until pgrep -f serve_centrum >/dev/null; do sleep 1; done; curl -s localhost:8765/health",
 )
+# Pętle na pliku wyjścia zadania w tle z sesji 18/19.11.2026 (#2267), ścieżka sesji skrócona do ``/private/tmp/c/s``.
+TASK_OUTPUT_LOOPS = (
+    "F=/private/tmp/c/s/tasks/bwx8k6zpp.output; until grep -q pr-2121 $F; do sleep 15; done; cat $F",
+    "F=/private/tmp/c/s/tasks/bomvji68c.output; until [ -s $F ]; do sleep 10; done; cat $F",
+    "F=/private/tmp/c/s/tasks/bhcxilqwz.output; until [ $(wc -l < $F) -gt 7 ]; do sleep 15; done; sleep 2; tail -12 $F",
+    # Syntetyczne: ścieżka w pętli z licznikiem prób i względna ze snem przez perl.
+    "for i in $(seq 1 40); do grep -q KONIEC /private/tmp/c/s/tasks/b1.output && break; sleep 15; done",
+    "until grep -q CZAS tasks/bhcxilqwz.output; do perl -e 'select(undef,undef,undef,15)'; done",
+)
+# Pętle odpytywania w Pythonie z tych samych sesji (#2267) i nazwa odmowy, którą dostają.
+PYTHON_LOOPS = (
+    (
+        "python3 - <<'EOF'\nimport json, subprocess, time\nend = time.time() + 560\nwhile True:\n"
+        "    out = subprocess.run([\"gh\",\"run\",\"view\",\"44439947891\",\"--json\",\"status,conclusion,jobs\"],"
+        "capture_output=True,text=True).stdout\n    d = json.loads(out)\n    if d['status'] == 'completed' or "
+        "time.time() > end:\n        break\n    time.sleep(20)\nprint(d['conclusion'])\nEOF",
+        "CI_LOOP",
+    ),
+    (
+        "cd /repo; python3 - <<'EOF'\nimport json, subprocess, time\nfor i in range(9):\n"
+        "    out = subprocess.run([\"gh\", \"pr\", \"checks\", \"2178\", \"--json\", \"name,bucket\"], "
+        "capture_output=True, text=True).stdout or \"[]\"\n    if all(c['bucket'] != 'pending' for c in json.loads(out)):\n"
+        "        break\n    time.sleep(60)\nEOF",
+        "CI_LOOP",
+    ),
+    (
+        "python3 - <<'EOF'\nimport subprocess, time\ndeadline = time.time() + 580\nwhile time.time() < deadline:\n"
+        "    if subprocess.run([\"pgrep\", \"-f\", \"tools/szybko.py\"], capture_output=True).returncode != 0:\n"
+        "        break\n    time.sleep(10)\nprint(subprocess.run([\"tail\", \"-8\", \"szybko.txt\"]).returncode)\nEOF",
+        "PGREP_LOOP",
+    ),
+    (
+        "F=/private/tmp/c/s/tasks/b1.output; .venv/bin/python - \"$F\" <<'EOF'\nimport sys, time\nfor _ in range(110):\n"
+        "    if 'KONIEC' in open(sys.argv[1]).read():\n        break\n    time.sleep(5)\nEOF",
+        "TASK_OUTPUT_LOOP",
+    ),
+    # Syntetyczne: ``-c`` z opcją przed nim, ``-c`` w napisie z ``"``, f-napis i ``sleep`` z ``from time import``.
+    (
+        "python3 -I -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n"
+        "    time.sleep(30)'",
+        "CI_LOOP",
+    ),
+    (
+        'py -3 -c "import subprocess, time\nfor i in range(1, 20): subprocess.run([\'gh\', \'api\', '
+        "\'repos/o/r/commits/abc/check-runs\']); time.sleep(3)\"",
+        "CI_LOOP",
+    ),
+    (
+        "python3 - <<'EOF'\nfrom time import sleep\nimport os\nn = 5\nwhile os.system(f\"gh pr checks {n} | grep -q pending\") == 0:\n"
+        "    sleep(30)\nEOF",
+        "CI_LOOP",
+    ),
+)
 # Dziewięć ponowień odbitych „already running” albo „cannot be rerun” (sesje d00be8d7, 41511ae6, e27ed100 ×2,
 # 6bc1a081 ×4, 80f3de41) i partia 13 ponowień naraz w awarii DNS runnerów 11.11 (e27ed100, 22:38).
 RERUNS = (
@@ -320,6 +373,19 @@ PASSING = (
     # Bez ``-c`` powłoka dostaje w napisie nazwę pliku skryptu albo jego argument.
     "sh -e 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "bash backup.sh 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
+    # Jedno czytanie pliku wyjścia zadania bez pętli i pętla, która kończy się przed nim (#2267).
+    "sleep 1; cat /private/tmp/c/s/tasks/be31c9zrc.output | tail",
+    "until test -f gotowe; do sleep 1; done; cat /private/tmp/c/s/tasks/b1.output",
+    # Python: partia zapytań z limitem API, czekanie na zwykły plik, sen poza pętlą i heredoc, który nie jest Pythonem.
+    "python3 - <<'EOF'\nimport subprocess, time\nfor run in runs:\n"
+    "    subprocess.run(['gh', 'api', f'repos/o/r/actions/runs/{run}/jobs'])\n    time.sleep(1)\nEOF",
+    "F=~/notatki/szybko.txt; python3 - \"$F\" <<'EOF'\nimport re, sys, time\nfor _ in range(110):\n"
+    "    if re.search('^SZYBKO', open(sys.argv[1]).read(), re.M):\n        break\n    time.sleep(5)\nEOF",
+    "python3 - <<'EOF'\nimport subprocess, time\nfor n in range(247, 265):\n"
+    "    subprocess.run(['gh', 'pr', 'view', str(n), '--json', 'title'])\n    time.sleep(1)\nEOF",
+    "python3 -c 'import time; time.sleep(3)'; gh pr checks 1",
+    "python3 - <<'EOF'\nto nie Python: while sleep( gh pr checks 1\nEOF",
+    "cat > notatka.txt <<'EOF'\nwhile True: gh pr checks 1; time.sleep(5)\nEOF",
 )
 
 
@@ -357,28 +423,47 @@ def test_inne_polecenie_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=False) is None
 
 
-@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS)
+@pytest.mark.parametrize("command", TASK_OUTPUT_LOOPS)
+def test_petla_na_pliku_wyjscia_zadania_w_tle_dostaje_odmowe(command: str) -> None:
+    assert hook.judge(command, in_background=False) is hook.TASK_OUTPUT_LOOP
+
+
+@pytest.mark.parametrize(("command", "refusal"), [pytest.param(command, name, id=command) for command, name in PYTHON_LOOPS])
+def test_petla_odpytywania_w_skrypcie_pythona_dostaje_odmowe(command: str, refusal: str) -> None:
+    assert hook.judge(command, in_background=False) is getattr(hook, refusal)
+
+
+@pytest.mark.parametrize("command", CI_LOOPS + WATCHES + PGREP_LOOPS + TASK_OUTPUT_LOOPS + tuple(command for command, _ in PYTHON_LOOPS))
 def test_to_samo_czekanie_w_tle_przechodzi(command: str) -> None:
     assert hook.judge(command, in_background=True) is None
 
 
-ROAD_THROUGH_NOTIFICATION = ("pełny SHA", "watch_pull_request", "run_in_background: true", "t3_background_wait")
+# Jedna droga dla przypadku (#2267): PR przez watch_pull_request albo koniec dziecka na URL i SHA, main bez czekania,
+# zadanie w tle przez t3_background_wait; odmowa o CI nie podsuwa drogi zadania w tle, która na CI nie czeka.
+ROAD_FOR_CI = ("watch_pull_request z URL PR i kończy turę", "pełnym SHA HEAD", "PR scala rodzic", "issue czerwony-main sam")
+ROAD_FOR_TASK = ("run_in_background: true", hook.WAIT_FOR_TASK)
+NOT_FOR_CI = ("t3_background_wait", "run_in_background")
 
 
 @pytest.mark.parametrize(
-    ("command", "in_background", "said"),
+    ("command", "in_background", "said", "unsaid"),
     [
-        pytest.param(CI_LOOPS[0], False, ROAD_THROUGH_NOTIFICATION, id="petla-na-ci"),
-        pytest.param(WATCHES[0], False, ROAD_THROUGH_NOTIFICATION, id="watch"),
-        pytest.param(PGREP_LOOPS[0], False, ("pgrep -f znajduje własną powłokę", "run_in_background: true", "t3_background_wait"), id="pgrep"),
-        pytest.param(RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), id="ponowienie-w-tle"),
+        pytest.param(CI_LOOPS[0], False, ROAD_FOR_CI, NOT_FOR_CI, id="petla-na-ci"),
+        pytest.param(WATCHES[0], False, ROAD_FOR_CI, NOT_FOR_CI, id="watch"),
+        pytest.param(PYTHON_LOOPS[0][0], False, ROAD_FOR_CI, NOT_FOR_CI, id="python-na-ci"),
+        pytest.param(PGREP_LOOPS[0], False, ("pgrep -f znajduje własną powłokę", *ROAD_FOR_TASK), (), id="pgrep"),
+        pytest.param(TASK_OUTPUT_LOOPS[0], False, ("tasks/*.output", hook.WAIT_FOR_TASK), (), id="plik-wyjscia-zadania"),
+        pytest.param(RERUNS[0], True, ("tools/ponow_ci.py N", "--run ID"), (), id="ponowienie-w-tle"),
     ],
 )
-def test_hook_odmawia_kodem_2_z_przyczyna_na_stderr(command: str, in_background: bool, said: tuple[str, ...]) -> None:
+def test_hook_odmawia_kodem_2_z_jedyna_droga_na_stderr(
+    command: str, in_background: bool, said: tuple[str, ...], unsaid: tuple[str, ...]
+) -> None:
     hooked = _bash(command, in_background=in_background)
 
     assert (hooked.returncode, hooked.stdout) == (2, ""), hooked.stderr
     assert [text for text in said if text not in hooked.stderr] == [], hooked.stderr
+    assert [text for text in unsaid if text in hooked.stderr] == [], hooked.stderr
 
 
 @pytest.mark.parametrize(
@@ -417,6 +502,8 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "while :; do sleep 1; gh pr checks 1; done" + "\n" * 400000,
         "gh pr checks 1 " * 40000 + "\nwhile :; do sleep 1; gh pr checks 1; done",
         "until x; do sleep 1; " + "gh api x " * 40000 + "\ngh pr checks 1; done",
+        # Szukanie ``-c`` od każdego słowa ``python`` do końca linii rośnie z kwadratem liczby tych słów.
+        "python3 " * 40000 + "-c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)'",
     ],
     ids=[
         "ogon-przekierowan",
@@ -427,6 +514,7 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "puste-wiersze",
         "zapytania-bez-watch",
         "gh-api-bez-adresu",
+        "wiele-slow-pythona",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
