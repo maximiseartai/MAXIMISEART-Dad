@@ -2751,6 +2751,25 @@ def test_logi_maja_najwyzej_1000_najnowszych_dzialan_taty(tmp_path: Path) -> Non
     assert ([entry.at for entry in taken.entries], taken.omitted) == (moments[1:], 1)
 
 
+def test_dziennik_dzialan_taty_ktorego_nie_da_sie_odczytac_daje_logom_pusty_dziennik_a_wpisy_czekaja_na_nastepne(
+    tmp_path: Path,
+) -> None:
+    """Plik dziennika działań taty bez prawa odczytu: Logi tego Uruchomienia mają pusty dziennik, dziennik Centrum mówi,
+    że dziennika działań taty nie da się odczytać, a wpisy czekają w pliku na Logi następnego Uruchomienia."""
+
+    entry = ViewOpened(at=datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc), action="widok", page="okresy", kind="navigation")
+    path = tmp_path / DAD_ACTIONS_FILE
+    path.write_text(entry.model_dump_json() + "\n", encoding="utf-8")
+    journal = DadActionJournal(centrum_work(tmp_path, CentrumLog(tmp_path / "centrum.log")))
+
+    with without_reading(path):
+        taken = journal.take()
+
+    assert (taken.entries, taken.omitted) == ([], 0)
+    assert "dzialania-taty-niedostepne typ=PermissionError" in (tmp_path / "centrum.log").read_text(encoding="utf-8")
+    assert journal.take().entries == [entry]
+
+
 def test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_takze_nastepnym_logom(tmp_path: Path) -> None:
     """Katalog Logów przyjmuje dopisanie, ale nie założenie pliku, więc podmiana pliku pada: dziennik działań taty po
     pierwszym Uruchomieniu zostaje pełny, a Logi drugiego Uruchomienia mają też jego wpisy, bo lepiej dwa razy niż wcale."""
@@ -2774,7 +2793,7 @@ def test_dziennik_dzialan_taty_ktorego_nie_da_sie_zapisac_jest_linia_dziennika_c
     tmp_path: Path,
 ) -> None:
     """Na miejscu pliku dziennika działań taty stoi katalog: przyciski i Uruchomienie działają jak zawsze, Logi mają
-    pusty dziennik, a dziennik Centrum mówi, że dziennika działań taty nie da się zapisać."""
+    pusty dziennik, a dziennik Centrum mówi już przy przycisku, że dziennika działań taty nie da się zapisać."""
 
     centrum = settling_centrum(tmp_path)
     journal = centrum.log_path.parent / DAD_ACTIONS_FILE
@@ -2782,6 +2801,7 @@ def test_dziennik_dzialan_taty_ktorego_nie_da_sie_zapisac_jest_linia_dziennika_c
     journal.mkdir()
 
     assert centrum.client.put("/api/settings/theme", json={"theme": "dark"}).status_code == 200
+    assert "dzialania-taty-niedostepne typ=" in centrum.log_path.read_text(encoding="utf-8"), "przed Logami Uruchomienia"
     view = run_to_end(centrum, dry_run=True)
 
     assert view["result"]["result"] == "OK"

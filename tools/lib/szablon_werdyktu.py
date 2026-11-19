@@ -44,7 +44,7 @@ rozstrzyga ``werdykt_pr.rule_applies`` z chwilą ``werdykt_pr.deployment`` (decy
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
 from pathlib import Path
 import re
@@ -99,12 +99,14 @@ class CodesUnavailable(Exception):
 @dataclass(frozen=True)
 class Root:
     """Kod korzenia Ważnego ``label`` (``W1``) z pola ``Korzeń:`` albo, z ``round``, z punktu rozstrzygnięcia
-    ``Korzeń W1 r2: …`` w „## Sprawdzone”; ``code`` to ``None``, gdy Ważne nie ma pola ``Korzeń:`` w postaci szablonu."""
+    ``Korzeń W1 r2: …`` w „## Sprawdzone”; ``code`` to ``None``, gdy Ważne nie ma pola ``Korzeń:`` w postaci szablonu,
+    a ``files`` to pliki miejsc pola ``Gdzie:`` Ważnego (``places``), puste w punkcie rozstrzygnięcia."""
 
     label: str
     new: bool
     code: str | None
     round: int | None = None
+    files: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -330,6 +332,7 @@ def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Id
     if where is None:
         return [f"{order}, a po nagłówku jest {block[0].shown() if block else 'koniec'}"]
     problems = [] if where else [f"{label}: puste pole Gdzie"]
+    roots[-1] = replace(roots[-1], files=frozenset(path for path, _, _ in places(where)))
     evidence = _value(block[1], "Dowód:") if len(block) > 1 else None
     if evidence is None:
         return [*problems, f"{order}, a po Gdzie jest {block[1].shown() if len(block) > 1 else 'koniec'}"]
@@ -339,7 +342,7 @@ def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Id
     if not rest or _value(rest[0], "Korzeń:") is None:
         return [*problems, f"{order}, a po Dowodzie jest {rest[0].shown() if rest else 'koniec'} ({QUOTE})"]
     found = ROOT_FIELD.fullmatch(rest[0].text)
-    roots[-1] = Root(label, bool(found[1]), found[2]) if found else roots[-1]
+    roots[-1] = replace(roots[-1], new=bool(found[1]), code=found[2]) if found else roots[-1]
     if found is None:
         problems.append(f"{label}: „{rest[0].text}” to nie „Korzeń: R-KOD - zdanie” ani „Korzeń: NOWY R-KOD - opis”")
     if len(rest) < 2:

@@ -64,6 +64,14 @@ def test_mutacja_kodu_kopii_jest_wykryta_mimo_edytowalnej_instalacji_checkoutu()
     assert answered.stdout.splitlines()[-2:] == ["WYKRYTA: mutacja → kod wyjścia 3", "MUTACJE OK"]
 
 
+def test_werdykt_polecenia_ktore_pisze_tylko_na_stderr_podaje_ostatnia_linie_stderr() -> None:
+    """Wyjątek po mutacji kończy polecenie śladem stosu na stderr, a jego ostatnia linia mówi, co padło."""
+
+    answered = _mutacje("--zmiana", *_appended(PACKAGE, "raise ValueError('zepsuty pakiet')"), "--", *IMPORT)
+
+    assert answered.stdout.splitlines()[-2:] == ["WYKRYTA: mutacja → ValueError: zepsuty pakiet", "MUTACJE OK"], answered.stderr
+
+
 def test_mutacja_bez_wplywu_na_polecenie_jest_niewykryta() -> None:
     answered = _mutacje("--zmiana", *_appended(PACKAGE, "# bez skutku"), "--", *IMPORT)
 
@@ -294,7 +302,8 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
     """Mutacja z #911 rosła od ~74 s do ponad 600 s, a log CI pokazał ją dopiero jako PRZEKROCZONY CZAS (#927).
 
     Czas i ostrzeżenie idą na stderr, które log CI łączy ze stdout: ostrzeżenie nie jest werdyktem, więc werdykty, linia
-    ``MUTACJE OK`` i kod 0 zostają takie jak bez niego.
+    ``MUTACJE OK`` i kod 0 zostają takie jak bez niego. Skrypt uruchomiony ścieżką bezwzględną ostrzeżenie nazywa ścieżką
+    względem korzenia repozytorium, jak polecenie CI, a szkodę mutacji werdykt podaje w nawiasie po jej nazwie.
     """
 
     repo = _small_repository(tmp_path)
@@ -304,7 +313,7 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
         "import sys\nfrom pathlib import Path\nsys.path.insert(0, 'tools/lib')\nfrom silnik_mutacji import Edit, Mutation, check_all\n\n"
         "slow = ('-c', 'import time, rozliczenia\\nif rozliczenia.WARTOSC == 1:\\n    time.sleep(2)\\nraise SystemExit(rozliczenia.WARTOSC)')\n"
         "MUTATIONS = (\n"
-        f"    Mutation('wolna', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), slow),\n"
+        f"    Mutation('wolna', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 1'),), slow, 'spowalnia polecenie'),\n"
         f"    Mutation('szybka', (Edit(Path({PACKAGE!r}), 'WARTOSC = 0', 'WARTOSC = 2'),), slow),\n"
         ")\nraise SystemExit(check_all(MUTATIONS, limit_s=4))\n",
         encoding="utf-8",
@@ -312,12 +321,12 @@ def test_skrypt_mutacji_skilla_pokazuje_czas_kazdej_mutacji_i_ostrzega_o_tej_kto
 
     started = time.perf_counter()
     answered = subprocess.run(
-        [sys.executable, script], cwd=repo, env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": "1/1"}, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+        [sys.executable, str(repo / script)], cwd=repo, env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": "1/1"}, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
     )
     took = time.perf_counter() - started
 
     shown = answered.stdout + answered.stderr
-    verdicts = ["MUTACJE CZĘŚĆ 1/1: 2 z 2 mutacji", "WYKRYTA: wolna → kod wyjścia 1", "WYKRYTA: szybka → kod wyjścia 2", "MUTACJE OK"]
+    verdicts = ["MUTACJE CZĘŚĆ 1/1: 2 z 2 mutacji", "WYKRYTA: wolna (spowalnia polecenie) → kod wyjścia 1", "WYKRYTA: szybka → kod wyjścia 2", "MUTACJE OK"]
     assert (answered.returncode, answered.stdout.splitlines()) == (0, verdicts), shown
     times = answered.stderr.splitlines()
     assert len(times) == 3, shown
@@ -369,7 +378,44 @@ def test_czesci_tabeli_sprawdzaja_kazda_mutacje_raz_kazda_z_podstawa_tylko_polec
     assert broken.returncode == 1 and "MUTACJE_CZESC to K/N z 1 <= K <= N, nie '0/3'" in broken.stderr, broken.stderr
 
 
+def test_log_ci_ma_linie_czesci_a_potem_linie_czas_kazdej_mutacji_tuz_nad_jej_werdyktem(tmp_path: Path) -> None:
+    """Log CI łączy stderr (linie ``CZAS``) ze stdout (część, werdykty), więc kolejność linii w nim to kolejność, w której
+    narzędzie je drukuje, a nie to, kiedy bufor stdout się opróżni."""
+
+    caught = "import rozliczenia; raise SystemExit(rozliczenia.WARTOSC)"
+
+    answered = _in_repository(
+        _small_repository(tmp_path), "--plik", str(_plan(tmp_path, 2)), "--", "-c", caught, env=WITHOUT_XDIST_WORKERS | {"MUTACJE_CZESC": "1/1"}, merged=True
+    )
+
+    shown = [re.sub(r" → [0-9]+ s$", " → N s", line) for line in answered.stdout.splitlines()]
+    assert shown == [
+        "MUTACJE CZĘŚĆ 1/1: 2 z 2 mutacji",
+        "CZAS: m1 → N s",
+        "WYKRYTA: m1 → kod wyjścia 1",
+        "CZAS: m2 → N s",
+        "WYKRYTA: m2 → kod wyjścia 1",
+        "MUTACJE OK",
+    ], answered.stdout
+
+
+def test_log_ci_ma_przyczyne_podstawy_bez_testu_miedzy_jej_linia_a_koncem_jej_wyjscia(tmp_path: Path) -> None:
+    """Linia ``PODSTAWA BEZ TESTU`` (stdout) stoi w logu CI zaraz pod ``PODSTAWA CZERWONA``, nad końcem wyjścia podstawy
+    (stderr), jak mówi ``_check``."""
+
+    answered = _in_repository(
+        _small_repository(tmp_path), "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1", "--", "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "-k", "nie_ma", merged=True
+    )
+
+    lines = answered.stdout.splitlines()
+    cause = "PODSTAWA BEZ TESTU: pytest nie wybrał żadnego testu (kod 5), więc popraw ścieżkę albo -k w poleceniu po --; to błąd polecenia, nie kodu"
+    assert (answered.returncode, lines[0].startswith("PODSTAWA CZERWONA: "), lines[1], lines[2].startswith("  stdout | ")) == (2, True, cause, True), answered.stdout
+
+
 def test_kopia_ma_niezacommitowane_zmiany_checkoutu_a_checkout_zostaje_nietkniety(tmp_path: Path) -> None:
+    """Nieśledzone repozytorium w checkoucie git wymienia jako katalog („zagniezdzone/”), którego w kopii nie ma, więc
+    kopia go pomija."""
+
     package = "src/rozliczenia"
     repo = repository(
         tmp_path / "repo",
@@ -384,6 +430,8 @@ def test_kopia_ma_niezacommitowane_zmiany_checkoutu_a_checkout_zostaje_nietkniet
     (repo / package / "poza_indeksem.py").write_text("WARTOSC = 1\n", encoding="utf-8")
     (repo / package / "nowy.py").write_text("WARTOSC = 1\n", encoding="utf-8")
     (repo / package / "usuniety.py").unlink()
+    (repo / "zagniezdzone").mkdir()
+    git(repo / "zagniezdzone", "init", "--quiet")
     status = git(repo, "status", "--porcelain")
     sees_changes = (
         "import importlib.util as u, rozliczenia.w_indeksie as a, rozliczenia.poza_indeksem as b, rozliczenia.nowy as c; "
@@ -404,8 +452,9 @@ def test_kopia_ma_niezacommitowane_zmiany_checkoutu_a_checkout_zostaje_nietkniet
     assert (git(repo, "status", "--porcelain"), git(repo, "worktree", "list", "--porcelain").count("worktree ")) == (status, 1)
 
 
-def test_plik_mutacji_spoza_repozytorium_jest_odrzucony_przed_zmiana() -> None:
-    answered = _mutacje("--zmiana", str(ROOT / PACKAGE), "x", "y", "--", *IMPORT)
+@pytest.mark.parametrize("path", [str(ROOT / PACKAGE), "../poza_repozytorium.py"], ids=["sciezka-bezwzgledna", "wyjscie-przez-dwie-kropki"])
+def test_plik_mutacji_spoza_repozytorium_jest_odrzucony_przed_zmiana(path: str) -> None:
+    answered = _mutacje("--zmiana", path, "x", "y", "--", *IMPORT)
 
     assert answered.returncode == 2
     assert "plik mutacji musi leżeć w repozytorium" in answered.stderr
@@ -442,6 +491,37 @@ def test_kopia_ma_sciezke_ktora_zmienila_typ(tmp_path: Path, before: dict[str, s
     )
 
     assert answered.stdout.splitlines() == ["WYKRYTA: mutacja → kod wyjścia 9", "MUTACJE OK"], answered.stderr
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="dowiązanie symboliczne na Windows wymaga uprawnień administratora")
+def test_kopia_ma_niezacommitowane_dowiazanie_checkoutu_jako_dowiazanie(tmp_path: Path) -> None:
+    """Dowiązanie, którego cel leży poza gitem (tu nie istnieje), kopia ma jako to samo dowiązanie, a nie jego cel."""
+
+    repo = _small_repository(tmp_path)
+    (repo / "dowiazanie").symlink_to("nie-ma-takiego-pliku")
+    sees_link = "import os, rozliczenia; raise SystemExit(rozliczenia.WARTOSC if os.readlink('dowiazanie') == 'nie-ma-takiego-pliku' else 9)"
+
+    answered = _in_repository(repo, "--zmiana", PACKAGE, "WARTOSC = 0", "WARTOSC = 1", "--", "-c", sees_link)
+
+    assert answered.stdout.splitlines() == ["WYKRYTA: mutacja → kod wyjścia 1", "MUTACJE OK"], answered.stderr
+
+
+def test_kopia_ktora_importuje_rozliczenia_spoza_swojego_src_przerywa_narzedzie(tmp_path: Path) -> None:
+    """Polecenie w kopii, które importuje ``rozliczenia`` z innego miejsca niż ``src`` kopii, sprawdzałoby kod bez
+    mutacji, więc narzędzie przerywa się, zanim cokolwiek uruchomi: tu kopia nie ma pakietu, a ``PYTHONPATH`` ma obcy."""
+
+    repo = repository(tmp_path / "repo", {"src/inny/__init__.py": "WARTOSC = 0\n"})
+    commit(repo, "baza")
+    foreign = tmp_path / "obcy" / "rozliczenia"
+    foreign.mkdir(parents=True)
+    (foreign / "__init__.py").write_text("", encoding="utf-8")
+
+    answered = _in_repository(
+        repo, "--zmiana", "src/inny/__init__.py", "WARTOSC = 0", "WARTOSC = 1", "--", "-c", "", env=WITHOUT_XDIST_WORKERS | {"PYTHONPATH": str(tmp_path / "obcy")}
+    )
+
+    assert answered.returncode != 0 and "WYKRYTA" not in answered.stdout, answered.stdout
+    assert re.search(r"RuntimeError: kopia importuje rozliczenia z .*obcy.*, nie ze swojego src", answered.stderr), answered.stderr
 
 
 def _hanging_repository(path: Path) -> tuple[Path, list[str], Path, Path]:
@@ -577,14 +657,16 @@ STRICT = "import pathlib, rozliczenia; raise SystemExit(rozliczenia.WARTOSC if p
         ({"scisle": ""}, {"scisle": ""}, True, "REGRES: mutacja → kod wyjścia 0 (WYKRYTA na merge-base {base}: kod wyjścia 1)"),
         ({}, {}, False, "NIEWYKRYTA: mutacja → kod wyjścia 0"),
         ({"scisle": "", PACKAGE: "WARTOSC = 2\n"}, {PACKAGE: "WARTOSC = 0\n"}, False, "NIEWYKRYTA: mutacja → kod wyjścia 0 (na merge-base {base} podstawa czerwona: kod wyjścia 2)"),
+        ({"scisle": "", PACKAGE: "WARTOSC = 5\n"}, {PACKAGE: "WARTOSC = 0\n"}, False, "NIEWYKRYTA: mutacja → kod wyjścia 0 (na merge-base {base} podstawa czerwona: kod wyjścia 5)"),
         ({"scisle": "", PACKAGE: "WARTOSC = 0 \n"}, {PACKAGE: "WARTOSC = 0\n"}, False, "NIEWYKRYTA: mutacja → kod wyjścia 0 (na merge-base {base} NIEAKTUALNA: kotwicy nie ma dokładnie raz w src/rozliczenia/__init__.py: 'WARTOSC = 0')"),
     ],
-    ids=["test-oslabiony-w-commicie", "test-oslabiony-w-checkoucie", "test-bez-zmiany", "podstawa-merge-base-czerwona", "merge-base-bez-kotwicy"],
+    ids=["test-oslabiony-w-commicie", "test-oslabiony-w-checkoucie", "test-bez-zmiany", "podstawa-merge-base-czerwona", "podstawa-merge-base-z-kodem-5-bez-pytest", "merge-base-bez-kotwicy"],
 )
 def test_mutacja_niewykryta_na_head_a_wykryta_na_merge_base_daje_regres(
     tmp_path: Path, base: dict[str, str], head: dict[str, str], uncommitted: bool, line: str
 ) -> None:
-    """Zmiana, która osłabia test, daje REGRES; mutacja, której merge-base nie rozstrzyga, zostaje NIEWYKRYTA z jego wynikiem."""
+    """Zmiana, która osłabia test, daje REGRES; mutacja, której merge-base nie rozstrzyga, zostaje NIEWYKRYTA z jego wynikiem.
+    Kod 5 polecenia, które nie jest pytest, to zwykła czerwona podstawa, a nie pytest bez testu."""
 
     repo = repository(tmp_path / "repo", {PACKAGE: "WARTOSC = 0\n", **base})
     forked = commit(repo, "baza")
@@ -1388,7 +1470,7 @@ def test_mutacja_liczona_jako_wykryta_po_dlugim_poleceniu_pokazuje_jego_czas_i_o
     """ZAWIESZENIE i PRZEKROCZONY CZAS, który brama typów zmienia w WYKRYTA PRZEZ BRAMĘ TYPÓW, kończą się ``MUTACJE OK``,
     więc tylko linie ``CZAS`` i ``CZAS BLISKO LIMITU`` mówią w logu, że polecenie zużyło ponad połowę limitu albo cały
     (#927): pytest-timeout po połowie limitu albo cały limit, a nie dłużej niż cały skrypt na zegarze testu ani niż dwa
-    limity."""
+    limity. Ostrzeżenie skryptu bez części (``MUTACJE_CZESC``) noc czyta z pustą częścią, a nie bez niej."""
 
     started = time.perf_counter()
     answered = _skill_check(tmp_path, anchor, replacement, hang_s=limit_s // 2, limit_s=limit_s, command=command)
@@ -1403,6 +1485,7 @@ def test_mutacja_liczona_jako_wykryta_po_dlugim_poleceniu_pokazuje_jego_czas_i_o
     warned = re.fullmatch(rf"CZAS BLISKO LIMITU: .*: m → ([0-9]+) s z limitu --limit-s {limit_s} s .*", times[1])
     assert spent and warned and warned[1] == spent[1] and least <= int(spent[1]) <= round(took), shown
     assert int(spent[1]) < 2 * limit_s, shown
+    assert [(near.part, near.name, near.seconds) for near in silnik_mutacji.near_limits(answered)] == [("", "m", int(spent[1]))], shown
 
 
 LINUX_1 = "pytest (Python 3.14, Linux, 1/2)"

@@ -40,8 +40,8 @@ przez ``run`` idzie też każde inne polecenie, które trwa albo uruchamia włas
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping, Sequence
-from contextlib import contextmanager, suppress
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import AbstractContextManager, contextmanager, suppress
 import json
 import math
 import os
@@ -472,25 +472,32 @@ def _guard() -> _Guard:
 
 
 @contextmanager
-def _worktrees(repo: Path) -> Iterator[None]:
-    """Zamek poleceń, które zmieniają ``.git/worktrees`` repozytorium ``repo``: blokada pliku ``_WORKTREES_LOCK``.
+def repo_lock(repo: Path, name: str, waiting: Callable[[], object] = lambda: None) -> Iterator[None]:
+    """Zamek repozytorium ``repo`` wspólny dla jego worktree: blokada pliku ``name`` w katalogu gita wspólnym dla
+    wszystkich worktree; ``waiting`` biegnie raz, zanim zamek zacznie czekać na blokadę, którą trzyma ktoś inny.
 
     Blokada należy do uchwytu pliku, a każde wejście otwiera własny, więc rozdziela wątki tego procesu i inne procesy, a
     system zwalnia ją ze śmiercią procesu. Gdy ``repo`` nie jest repozytorium gita, zamka nie ma, a błąd daje samo
-    polecenie ``git worktree``.
+    polecenie gita pod nim.
     """
 
     common = subprocess.run(["git", "rev-parse", "--git-common-dir"], cwd=repo, capture_output=True, text=True, check=False)
     if common.returncode:
         yield
         return
-    with (repo / common.stdout.strip() / _WORKTREES_LOCK).open("ab") as lock:
-        while not _locked(lock):
-            time.sleep(_POLL_S)
+    with (repo / common.stdout.strip() / name).open("ab") as lock:
+        if not _locked(lock):
+            waiting()
+            while not _locked(lock):
+                time.sleep(_POLL_S)
         try:
             yield
         finally:
             _unlock(lock)
+
+
+def _worktrees(repo: Path) -> AbstractContextManager[None]:
+    return repo_lock(repo, _WORKTREES_LOCK)
 
 
 def _locked(lock: IO[bytes]) -> bool:
