@@ -18,6 +18,8 @@ import pytest
 from tests.fixtures.stan_procesu import WATEK_S, descriptors, left_to_gc
 from tests.fixtures.znane_luki import assert_znane_luki
 
+import box_boat
+
 ROOT: Final = Path(__file__).resolve().parents[1]
 
 # Plugin w procesie pytest sesji próbek, z krótszym czekaniem na potomków niż w repozytorium.
@@ -38,19 +40,22 @@ def plik_w_cyklu(path):
 """
 
 
-def _sesja(tmp_path: Path, pliki: Mapping[str, str], conftest: str = _CONFTEST) -> dict[str, str]:
+def _sesja(tmp_path: Path, pliki: Mapping[str, str], conftest: str = _CONFTEST, *, katalog: str = ".") -> dict[str, str]:
     """Raport błędu albo porażki każdego testu sesji próbek z plików ``pliki``, w prawdziwym cyklu życia testu w
     osobnym procesie pytest: pierwsza linia to fazy błędów (``on setup``, ``on teardown``), dalej pełny raport z treści
-    elementu JUnit, bo atrybut ``message`` pytest 9 skraca do 500 znaków; test bez błędu ma pusty raport."""
+    elementu JUnit, bo atrybut ``message`` pytest 9 skraca do 500 znaków; test bez błędu ma pusty raport. Sesja biegnie
+    w ``tmp_path / katalog`` z conftest i plikami próbek, a raport JUnit i ``--basetemp`` leżą w ``tmp_path``."""
 
-    (tmp_path / "conftest.py").write_text(conftest, encoding="utf-8")
+    sesja = tmp_path / katalog
+    sesja.mkdir(exist_ok=True)
+    (sesja / "conftest.py").write_text(conftest, encoding="utf-8")
     for name, text in pliki.items():
-        (tmp_path / name).write_text(text, encoding="utf-8")
+        (sesja / name).write_text(text, encoding="utf-8")
     report = tmp_path / "junit.xml"
     done = subprocess.run(
         [sys.executable, "-m", "pytest", "-p", "no:cacheprovider", "-p", "no:xdist", f"--basetemp={tmp_path / 'tmp'}"]
         + ["-p", "no:randomly", f"--junitxml={report}", "-o", "junit_family=xunit1", *pliki],
-        cwd=tmp_path,
+        cwd=sesja,
         env={**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT), str(ROOT / "tools/lib")])},
         capture_output=True,
         text=True,
@@ -717,6 +722,43 @@ def test_kazdy_rodzaj_stanu_z_setupu_fixtury_modulu_nalezy_do_niej_do_jej_konca(
         (sys.platform != "win32", False),
         "zmienna środowiska ZMIENNA_PADLEGO_SETUPU zmieniona",
     ), (dirty, culprit, deleted, failed_setup, errors)
+
+
+# Box boat po załadowaniu dysku przenosi drzewo z katalogiem repo pod box_boat.KATALOG_ZWOLNIONY, gdy testy w nim
+# biegną, a pod starą ścieżką stawia pełne drzewo: katalog roboczy procesu idzie za przeniesionym katalogiem. Próbka
+# przenosi katalog sesji tak samo (rename) pod katalog zwolniony podstawiony w conftest i stawia nowy pod starą ścieżką.
+_PRZENIESIENIE_BOXA: Final = {
+    "test_przeniesienie.py": """
+import os
+from pathlib import Path
+
+import box_boat
+
+
+def test_box_przenosi_katalog_repo_w_trakcie_testu():
+    repo = Path.cwd()
+    przeniesiony = Path(box_boat.KATALOG_ZWOLNIONY, "home", repo.name)
+    przeniesiony.parent.mkdir(parents=True)
+    os.rename(repo, przeniesiony)
+    repo.mkdir()
+
+
+def test_sasiad_biegnie_w_katalogu_repo(request):
+    assert os.getcwd() == str(request.config.invocation_params.dir)
+""",
+}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows nie przenosi katalogu roboczego procesu")
+def test_katalog_repo_przeniesiony_przez_box_to_komunikat_boxa_a_nie_stan_zostawiony_przez_test(tmp_path: Path) -> None:
+    zwolniony = tmp_path.resolve() / "retired"
+    conftest = _CONFTEST + f"\nimport box_boat\n\nbox_boat.KATALOG_ZWOLNIONY = {str(zwolniony) + os.sep!r}\n"
+
+    errors = _sesja(tmp_path, _PRZENIESIENIE_BOXA, conftest, katalog="repo")
+
+    moved = errors["test_box_przenosi_katalog_repo_w_trakcie_testu"]
+    expected = f"{box_boat.KOMUNIKAT} (katalog roboczy {tmp_path.resolve() / 'repo'} → {zwolniony / 'home' / 'repo'})"
+    assert (expected in moved, _zostawione(moved), errors["test_sasiad_biegnie_w_katalogu_repo"]) == (True, "", ""), errors
 
 
 _LUKI_CONFTEST: Final = _CONFTEST + """

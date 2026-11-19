@@ -64,6 +64,13 @@ Gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co naj
 Prawdziwe pliki taty, pliki z `config/`, tokeny i treść skrzynki trzymaj poza worktree albo w ścieżkach ignorowanych przez git, bo na box trafia każdy nieignorowany plik, także nieśledzony.
 Testom na boxie dawaj atrapy i dane syntetyczne.
 
+## Katalog repo przeniesiony w trakcie biegu
+
+Box ze snapshotu albo po wznowieniu startuje na dysku ładowanym leniwie, a gdy boat kończy ładowanie (`hydrated` i `hydratedAt` w `boat info <id> --json`; 19.11.2026 w `boat list --json` 17–95 s po starcie albo wznowieniu), przenosi stare drzewo `/home` pod `/var/lib/ascii-lazy/retired/`.
+Polecenie, które już biegło w katalogu repo, ma wtedy katalog roboczy pod tą ścieżką, więc każdy worker pytest pada raz z komunikatem `BOX: boat przeniósł katalog repo w trakcie biegu; to nie test, powtórz bieg`.
+To nie wygaśnięcie `BOATBOX_IDLE_MIN`: w każdym sprawdzonym takim biegu 19.11.2026 box był świeżo utworzony albo wznowiony, jego `hydratedAt` wypadł w trakcie biegu, a następny bieg na tym samym boxie przeszedł.
+`boatbox` czeka na koniec ładowania przed synchronizacją i biegiem, a `szybko.py` kończy taki bieg linią `SZYBKO INFRA` i kodem 75: powtórz bieg bez zmian w kodzie.
+
 ## Test pada tylko na boxie
 
 Uruchom go lokalnie, zanim cokolwiek poprawisz.

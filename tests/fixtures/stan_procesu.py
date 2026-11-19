@@ -31,6 +31,8 @@ i nie znika przed sprawdzeniem. Zasób na całe życie procesu workera (``_ZASOB
 testem, więc jest w stanie sprzed każdego testu.
 
 Po błędzie plugin przywraca każdą wartość do oczekiwanej, więc błąd ma sprawca, a nie każdy następny test workera.
+Katalog roboczy, który box boat przeniósł w trakcie biegu (``box_boat.przeniesiony``), nie jest stanem testu: plugin
+zgłasza go komunikatem ``box_boat.KOMUNIKAT``, z którym ``tools/szybko.py`` kończy się wynikiem ``SZYBKO INFRA``.
 Porównanie kosztuje listę deskryptorów i potomków, poniżej 0,5 ms na test; ``gc.collect()``, czekanie na wątki i
 potomków oraz opis zasobów biegną tylko wtedy, gdy stan się różni.
 
@@ -67,6 +69,7 @@ import warnings
 
 import pytest
 
+import box_boat
 import potomne
 from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.potomne import wait_for
@@ -341,11 +344,16 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
     zostawione = oczekiwane.roznica(teraz)
     if not zostawione:
         return
+    teraz_wartosci = dict(teraz.wartosci)
+    if _KATALOG in zostawione.klucze and box_boat.przeniesiony(teraz_wartosci.get(_KATALOG, _USUNIETY)):
+        _przywroc(zostawione, oczekiwane)
+        raise AssertionError(
+            f"{box_boat.KOMUNIKAT} (katalog roboczy {oczekiwane.wartosci.get(_KATALOG)} → {teraz_wartosci[_KATALOG]})"
+        )
     nazwy = {zasob: _opis_zasobu(zasob) for zasob in zostawione.zasoby}  # przed gc, który zamyka deskryptor
     zebrane = _po_czekaniu_i_gc(zostawione)
     if not zostawione:
         return
-    teraz_wartosci = dict(teraz.wartosci)
     opisy = [
         nazwy[zasob] + _stan_zasobu(zasob, zebrane) + _czyj(oczekiwane.wlasciciele.get(zasob), kiedy)
         for zasob in sorted(zostawione.zasoby, key=_kolejnosc)
@@ -355,9 +363,7 @@ def _porownaj(przed: Stan, ksiega: list[_Odcinek | _Wlasne], kiedy: str) -> None
         + _czyj(oczekiwane.wlasciciele.get(klucz), kiedy)
         for klucz in sorted(zostawione.klucze)
     ]
-    # Wartości wracają, więc błąd ma tylko sprawca, a nie każdy następny test workera.
-    for klucz in zostawione.klucze:
-        _ustaw(klucz, oczekiwane.wartosci.get(klucz))
+    _przywroc(zostawione, oczekiwane)
     raise AssertionError(
         "Test albo jego fixtura zostawiły procesowi workera stan, który działa w oknie następnego testu: "
         + "; ".join(opisy)
@@ -412,6 +418,13 @@ class _Oczekiwany:
         wartosci = dict(teraz.wartosci)
         klucze = {klucz for klucz in {*self.wartosci, *wartosci} if wartosci.get(klucz) != self.wartosci.get(klucz)}
         return Zostawione(zasoby, klucze)
+
+
+def _przywroc(zostawione: Zostawione, oczekiwane: _Oczekiwany) -> None:
+    """Wartości wracają do oczekiwanych, więc błąd ma tylko sprawca, a nie każdy następny test workera."""
+
+    for klucz in zostawione.klucze:
+        _ustaw(klucz, oczekiwane.wartosci.get(klucz))
 
 
 def _po_czekaniu_i_gc(zostawione: Zostawione) -> set[_Zasob]:

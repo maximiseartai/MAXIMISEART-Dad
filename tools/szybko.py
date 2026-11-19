@@ -43,7 +43,9 @@ skilla i kończy go porażką, więc szybko pada też, bez TLC, z nazwą skilla,
 in line” ze ``SKILL.md`` skilla.
 
 Kończy się ``SZYBKO OK`` albo ``SZYBKO FAIL | <kroki>``, z dopiskiem `` | pytest przerwany``, gdy szybko przerwał
-krok pytest.
+krok pytest. Gdy każdy krok, który padł, ma w wyjściu komunikat ``box_boat.KOMUNIKAT`` (box boat przeniósł katalog repo
+w trakcie biegu), szybko kończy się ``SZYBKO INFRA | <kroki>: <komunikat>`` i kodem ``KOD_INFRA``, a nie 1: to nie
+porażka zmiany, tylko bieg do powtórzenia.
 
     .venv/bin/python tools/szybko.py
     .venv/bin/python tools/szybko.py --baza feat/galaz-rodzica
@@ -70,6 +72,7 @@ import tomllib
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import box_boat
 import czasy_ci
 from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
 import potomne
@@ -81,6 +84,8 @@ import wyniki_testow
 from zakres_runu import podstawa_trafiona
 
 GREEN = "szybko-zielone.json"
+# Kod wyjścia biegu, którego porażkę dał box, a nie zmiana: EX_TEMPFAIL z sysexits.h, czyli „powtórz”.
+KOD_INFRA = 75
 # Zapadki padają na liniach, które zmiana dodaje, a reguły ast-grep całego drzewa na każdej linii swoich plików, więc biegną
 # przy każdej zmianie jak ``STRUCTURE``. Plan CI ich nie ma, bo płytki checkout zadań pytest nie ma bazy zmiany i zapadka
 # się tam pomija; reguły ast-grep na dodanych liniach całego repozytorium dostają ją w zadaniu CI „Ruff, mypy”, gdzie
@@ -294,10 +299,18 @@ def _environment(root: Path, base: str) -> dict[str, str]:
     }
 
 
-def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) -> tuple[list[str], list[str]]:
-    """Kroki naraz, z bazą zapadek ``base``; zwraca nazwy kroków, które padły, i przerwanych. Gdy padnie krok inny niż
-    ``interruptible``, ``interruptible`` jest przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie
-    trzeba czekać."""
+@dataclass(frozen=True)
+class Outcome:
+    """Nazwy kroków, które padły, tych z nich, które padły na przeniesionym przez box katalogu repo, i przerwanych."""
+
+    failed: list[str]
+    infra: list[str]
+    interrupted: list[str]
+
+
+def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) -> Outcome:
+    """Kroki naraz, z bazą zapadek ``base``. Gdy padnie krok inny niż ``interruptible``, ``interruptible`` jest
+    przerywany: wynik i tak jest FAIL, a na koniec długiego kroku pytest nie trzeba czekać."""
 
     stop, failure = threading.Event(), threading.Event()
 
@@ -313,7 +326,7 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
             failure.set()
         return done.returncode == 0, done.stdout + done.stderr, time.monotonic() - started
 
-    failed, interrupted = [], []
+    failed, infra, interrupted = [], [], []
     pool = ThreadPoolExecutor(max_workers=len(steps))
     try:
         for step, (passed, output, elapsed) in zip(steps, pool.map(run, steps), strict=True):
@@ -324,6 +337,8 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
             print(f"{'OK  ' if passed else 'FAIL'} {step.name} ({elapsed:.0f} s)", flush=True)
             if not passed:
                 failed.append(step.name)
+                if box_boat.KOMUNIKAT in output:
+                    infra.append(step.name)
                 print("\n".join(output.rstrip().splitlines()[-OUTPUT_ON_FAILURE :]), flush=True)
     except BaseException:
         # Przerwanie w głównym wątku nie dociera do wątków, które czekają na swoje polecenia.
@@ -332,7 +347,7 @@ def _run_all(steps: list[Step], base: str, interruptible: Step | None = None) ->
         raise
     finally:
         pool.shutdown(cancel_futures=True)
-    return failed, interrupted
+    return Outcome(failed, infra, interrupted)
 
 
 def _model_drift(root: Path, changed: frozenset[str]) -> list[str]:
@@ -381,13 +396,16 @@ def main(argv: list[str] | None = None) -> int:
         merge, on_merge = _merge_steps(args.baza, copies)
         steps = [*_steps(ROOT, chosen.run, junit, changed, structure=not on_merge), *merge]
         base = repo.merge_base(ROOT, "HEAD", args.baza)
-        failed, interrupted = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
-    failed = (["rozjazd modelu"] if drift else []) + failed
+        outcome = _run_all(steps, base, next(step for step in steps if step.name == "pytest"))
+    failed = (["rozjazd modelu"] if drift else []) + outcome.failed
     memory.remember(selection, junit, chosen.run)
     junit.unlink(missing_ok=True)
     if chosen.deferred:
         print(_deferred(chosen, len(selection.fingerprints)))
-    stopped = "".join(f" | {name} przerwany" for name in interrupted)
+    stopped = "".join(f" | {name} przerwany" for name in outcome.interrupted)
+    if failed and failed == outcome.infra:
+        print(f"SZYBKO INFRA | {', '.join(failed)}: {box_boat.KOMUNIKAT}{stopped}")
+        return KOD_INFRA
     print(f"SZYBKO FAIL | {', '.join(failed)}{stopped}" if failed else "SZYBKO OK")
     return 1 if failed else 0
 

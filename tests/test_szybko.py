@@ -15,6 +15,7 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import TOOLS, commit, git, repository
 
+import box_boat
 import czasy_ci
 import rozjazd_modelu
 import szybko
@@ -369,6 +370,18 @@ def test_blad_ruff_przerywa_krok_pytest_zamiast_czekac_na_jego_koniec(tmp_path: 
     last = answered.stdout.splitlines()[-1]
     expected = "SZYBKO FAIL | ruff, mypy, mypy (Windows), testy struktury po mergu z origin/main | pytest przerwany"
     assert (answered.returncode, last) == (1, expected), answered.stdout
+
+
+def test_porazka_z_komunikatem_boxa_o_przeniesionym_katalogu_repo_to_szybko_infra_a_nie_fail(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    # Tak plugin stanu procesu zgłasza katalog repo, który box boat przeniósł w trakcie biegu.
+    _write(repo, "tests/test_box.py", f"def test_przeniesiony_katalog() -> None:\n    raise AssertionError({box_boat.KOMUNIKAT!r})\n")
+
+    answered = _szybko(repo)
+
+    expected = f"SZYBKO INFRA | pytest: {box_boat.KOMUNIKAT}"
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == (szybko.KOD_INFRA, expected), answered.stdout
+    assert szybko.KOD_INFRA not in (0, 1)
 
 
 def test_zmiana_bez_bledu_konczy_sie_ok_choc_niedotkniety_test_pada(tmp_path: Path) -> None:
