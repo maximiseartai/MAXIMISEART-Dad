@@ -239,5 +239,29 @@
         "znalezisko": "jak w historia-i-zapis"
       }
     ]
+  },
+  "brak-pliku": {
+    "opis": "Pliku nie ma (Centrum liczy wartością z Wydania): jeden zapis taty, dwa „Cofnij” (także cofnięcie cofnięcia), jedna zmiana pliku poza Centrum, jedno zgaśnięcie.",
+    "stale": {
+      "Poczatek": "brak",
+      "MaxZmian": 1,
+      "MaxCofniec": 2,
+      "MaxRecznych": 1,
+      "MaxZgasniec": 1,
+      "MaxAwariiZapisuPliku": 0,
+      "MaxAwariiWiersza": 0,
+      "MaxAwariiPrzywrocenia": 0,
+      "MaxAwariiPamieci": 0,
+      "MaxAwariiPamieciZmian": 0,
+      "MaxNieczytelnejPamieci": 0,
+      "MaxNieczytelnejHistorii": 0
+    },
+    "znane": [
+      {
+        "obietnica": "LiczyZapisanym",
+        "przyczyna": "zgasniecie-przed-pamiecia",
+        "znalezisko": "jak w zwykle"
+      }
+    ]
   }
 }

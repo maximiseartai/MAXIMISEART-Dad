@@ -109,6 +109,7 @@ class FakePlatform:
     chosen_folders: list[Path | None] = field(default_factory=list)
     opened: list[Path] = field(default_factory=list)
     dialog_titles: list[str] = field(default_factory=list)
+    file_filters: list[Sequence[tuple[str, str]]] = field(default_factory=list)
     failure: Exception | None = None  # awaria systemu przy otwieraniu, np. zablokowany Excel
 
     def open_path(self, path: Path) -> None:
@@ -118,6 +119,7 @@ class FakePlatform:
 
     def choose_file(self, title: str, filetypes: Sequence[tuple[str, str]]) -> Path | None:
         self.dialog_titles.append(title)
+        self.file_filters.append(filetypes)
         return self.chosen_files.pop(0)
 
     def choose_folder(self, title: str) -> Path | None:
