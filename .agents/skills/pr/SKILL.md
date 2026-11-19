@@ -9,7 +9,7 @@ Every PR in this repository has the same title shape and the same body sections,
 When a PR needs something the template lacks, add it here, in the same PR or in its own, instead of a private variant in the PR body.
 
 `tools/scal_pr.py` reads the `##` headings of the template below and refuses to merge a PR whose body does not have each of them, in this order, as its own line.
-Check a body before the review with `.venv/bin/python tools/scal_pr.py N --bez-merge`.
+Check a body before the review with `.venv/bin/python tools/scal_pr.py N --opis`: it ends with `OPIS OK` or `OPIS FAIL` and the missing headings, whatever the CI and the verdict, while a refusal of `--bez-merge` for another reason says nothing about the body.
 
 ## Title
 

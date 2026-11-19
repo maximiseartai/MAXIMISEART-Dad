@@ -47,7 +47,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/scal_pr.py`: Jedyna droga merge'a PR przez agenta: sprawdza gotowość (CI, werdykt PASS, opis) tuż przed gh pr merge; użyj zamiast gołego merge'a.
 - `tools/setup_worktree.py`: Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
 - `tools/skille_dla_zmiany.py`: Wypisuje skille verify-*, które obowiązują dla zmiany od bazy, każdy z powodem; użyj przed pushem i przed oceną gotowości PR.
-- `tools/sprzatanie.py`: Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; użyj po merge'u albo gdy worktree się mnożą.
+- `tools/sprzatanie.py`: Raportuje, a z --usun usuwa worktree i gałęzie, których praca jest już w origin/main; --usun biegnie codziennie z launchd (--codziennie).
 - `tools/syntetyczne_wzorce.py`: Zapisuje syntetyczne Wzorce w kształcie Wzorców taty; użyj, gdy benchmark, weryfikacja w Excelu albo CI nie ma prawdziwych Wzorców.
 - `tools/szybko.py`: Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom po każdej zmianie przed pushem.
 - `tools/uruchom_proces.py`: Jedno Uruchomienie procesu (settlement, preparation, intermax, efenix, report_entering) z wynikiem JSON; użyj w E2E, benchmarku i skillach.
