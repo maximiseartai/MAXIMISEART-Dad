@@ -80,10 +80,10 @@ otherwise):
 | --- | --- |
 | `TataZmienia` | Dad or his worker (through OneDrive) types a value into the cell or clears it and saves INTERMAX |
 | `NowyMail` | a Raport wykonawcy with another content of the Wpis for this order arrives; the latest mail wins (`enter_reports`) |
-| `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering.closed_periods` gives `Window.of` the closed tokens and `Window.opens` leaves the order out of `orders` in `enter_reports` |
+| `ZamkniecieOkresu`, `OtwarcieOkresu` | the Plik zbiorczy of the period appears (Przygotowanie) or Dad removes it; `report_entering.closed_periods` gives `Window.of` the closed tokens through `EnteringMemory.window` and `Window.opens` leaves the order out of `orders` in `enter_reports` |
 | `PojawiaSieKopia`, `TataUsuwaKopie` | OneDrive puts a conflict copy beside INTERMAX; Dad merges it and removes it |
 | `Sprawdzanie` | Dad clicks „Wpisz raporty z maili”, or „Wpisz do INTERMAX” (Wpis na życzenie) at a Wpis of the last result, at a problem or at an order with a Wpis of a report with a faulty subject (`ReportEnteringEntry.on_request` looks for it in `ShownResult.requests` of `files.shown()` outside any lock, else `request_gone`, and `prepare` puts Dad's decision into `ReportEnteringParts.requested`; for the one cell it is one more content of the newest Wpis, like `NowyMail`); `RunHost.start` (one Uruchomienie at a time), `enter_from_mail` `check`: `EnteringMemory` of `parts.state`, the one load of the click, `FileReportState.load`, which reads the memory through `_TextFile.text` (`StateFile.retry` first, then the waiting text or the file) and `kept()` the same way, then `onedrive_conflicts.beside` (:276), whose copy is a Zatrzymanie before the mailbox |
-| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`EnteringMemory.report_inputs` → `enter_reports` → `_cells.reconcile` on the snapshot of the memory and `kept` from `check`, then `_cells.with_added`; a memory file older than version 4 goes through `OlderOwnEntries.upgraded` first, Left out) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
+| `Zapis` | `read` (mailbox, `register_file.read`), `plan` (`EnteringMemory.enter` → `enter_reports` → `_cells.reconcile` on the snapshot of the memory and `kept` from `check`, then `_cells.with_added`; a memory file older than version 4 goes through `OlderOwnEntries.upgraded` first, Left out) and `save` (`write_cells` with the changes, the Przeniesienia zleceń and the Zlecenia dopisane z raportu of the click) as one step: without any of them `write_cells` returns `CellsWritten(0)` and replaces nothing; `Refusal` or `Rejected` is a Zatrzymanie with INTERMAX untouched and neither memory nor result written |
 | `ZapiszPamiec` | `parts.state.save_memory` (the memory with Dad's decisions of Wpis na życzenie, `EnteringMemory.requested`) → `FileReportState.save_memory` → `_TextFile.write` → `StateFile.write`; an `OSError` keeps the text waiting and the process gives only the warning `memory_not_saved` |
 | `ZapiszWynik` | :383 `parts.state.save_result` (the `ClickResult` with `ManualDifference` among its problems) → `_TextFile.write`, then :385 `onedrive_conflicts.beside`: a copy is the Zatrzymanie `conflict_after_save`, otherwise the summary; one step, because nothing between them writes a file or INTERMAX |
 | `Odswiez` | a tab reads the Raporty view: `ReportEnteringEntry.view` → `FileReportState.shown` and `kept`, each `_TextFile.text` retries a waiting write; the Lista Wykonawców it reads from the Ustawienia snapshot only gives an unknown sender the login it was assigned to (#1475), and a list the system cannot read now counts as empty, so the sender stays unknown; no cell of the model depends on it |
@@ -283,7 +283,7 @@ with a Plik zbiorczy reaches an order of an open day only that way, so both are 
 `WYKONAWCA` or of the day (the memory of the number `OwnMove`, found by `_model.memories_of`, and the rule
 `_model.may_move`, whose transition table `tests/test_rdzen_raportow.py` checks as a property) only leaves an older
 Wpis in force, which `NowyMail` also covers. A number the process reads in several rows (several orders, a closed day
-or one after today too, or an order and a row the core makes no order from, `ReportInputs.present`, #1374 r4) moves
+or one after today too, or an order and a row the core makes no order from, `RegisterWindow.present`, #1374 r4) moves
 none of them and reaches only the sender's one order in the day of the subject (`_matching.Board`), otherwise a
 problem, which also only leaves an older Wpis in force. A number in several orders keeps no own entries in the memory
 (`_cells.reconcile`, #1367 r4: Excel does not tell which row of the number is which after Dad deletes, merges or swaps
@@ -296,7 +296,7 @@ only at the number's one order with the same day and Wykonawca as when it was sa
 makes its cell Dad's value as above (`OlderOwnEntries.upgraded`, #1367 r5); the model starts from a memory this code
 wrote. A Zlecenie dopisane z raportu (#1354) is, for the one cell, the empty cell that `Zapis` fills with the Wpis and
 remembers as the tool's own entry (`_cells.with_added`); only a number no row the process reads holds becomes one
-(`ReportInputs.present`, also a Surowe zlecenie, a row the core makes no order from: without `WYKONAWCA`, with the
+(`RegisterWindow.present`, also a Surowe zlecenie, a row the core makes no order from: without `WYKONAWCA`, with the
 date as text, pasted from the app between ordered rows, and a row from the week before the first open day, before the
 rollout day too: `Window.numbers_since`), so it never doubles a number of any row the process read. Dad
 deleting the added row leaves no value of his that a write could overwrite, and the click after it adds the row again

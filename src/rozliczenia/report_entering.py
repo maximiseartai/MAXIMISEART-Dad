@@ -1,7 +1,7 @@
 """Wpisanie raportów dla Uruchomienia procesu: tak/nie i czynności z Raportów wykonawców do INTERMAX (ADR 0028).
 
 Operacją procesu jest ``enter_from_mail()``. Silnik sekwencjonuje kroki i jako jedyny tłumaczy ich fakty na
-Komunikaty, a reguły zna rdzeń raportów (``worker_reports.enter_reports``):
+Komunikaty, a reguły zna rdzeń raportów (pamięć Wpisania ``worker_reports.EnteringMemory`` i jej ``enter``):
 
 - Sprawdzanie: plik dostępu do Skrzynki raportów, pamięć własnych
   wpisów (``ReportState.load``), brak kopii konfliktu OneDrive obok INTERMAX (``onedrive_conflicts.beside``) i INTERMAX
@@ -34,7 +34,7 @@ decyzjami z pamięci (``EnteringMemory.requested``), a pamięć zapisuje je po u
 też w następnych kliknięciach, a po odmowie zapisu nie zostaje.
 
 Okno dni zaczyna się od dnia wdrożenia z pamięci (przed pierwszym udanym kliknięciem: dziś) i nie ma dni okresów z
-Plikiem zbiorczym w folderze okresów; bez folderu okresów albo bez dostępu do niego skrzynka nie jest czytana. Proces nie należy do
+Plikiem zbiorczym w folderze okresów (``EnteringMemory.window`` z ``closed_periods``); bez folderu okresów albo bez dostępu do niego skrzynka nie jest czytana. Proces nie należy do
 okresu: Uruchomienie ma okres dzisiejszej daty z zegara procesu (ADR 0019). Zatrzymanie po rdzeniu niesie fakty
 (``EnteringFacts``), a Zatrzymanie po zapisie całe podsumowanie (``EnteringSummary``), więc Logi mają zmiany i problemy
 także wtedy. Plik dostępu, który zniknie albo zepsuje się między
@@ -93,7 +93,6 @@ from .worker_reports import (
     Window,
     WorkerAddresses,
     WorkerDay,
-    enter_reports,
     order_number,
     worker_report_count,
 )
@@ -316,8 +315,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     today = clicked_at.date()
 
     def read() -> tuple[Window, RegisterFile, RegisterWindow, int, tuple[ReportMail, ...]]:
-        closed = closed_periods(inputs.periods_directory, Window.periods(today, clicked.rollout))
-        window = Window.of(today, clicked.rollout, closed)
+        window = clicked.window(today, lambda periods: closed_periods(inputs.periods_directory, periods))
         outcome = parts.inbox.mails_since(window.first)
         match outcome:
             case PasswordRejected():
@@ -340,9 +338,8 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
     window, register, intermax, skipped, mails = phases.read(read)
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
-        given = clicked.report_inputs(window, intermax, mails, addresses, inputs.legend)
-        remembered = given.memory
-        found = enter_reports(given)
+        remembered = clicked.remembered(intermax)
+        found = clicked.enter(window, intermax, mails, addresses, inputs.legend)
         reported = found.said
         numbers = {key.number for key in reported}
         before = tuple(
