@@ -18,6 +18,7 @@ from typing import TypeAlias, assert_never, final
 from . import _canonical
 from ._model import (
     Login,
+    MailEntryKey,
     MailId,
     MailRead,
     OrderKey,
@@ -116,24 +117,24 @@ class WindowMails:
 
 def decided(
     unreadable: Iterable[ReadUnreadable], requested: Iterable[RequestedEntry]
-) -> dict[tuple[MailId, OrderNumber], tuple[RequestedEntry, ReportEntry]]:
+) -> dict[MailEntryKey, tuple[RequestedEntry, ReportEntry]]:
     """Decyzja taty przy każdym Wpisie raportu z błędem tematu, przy którym kliknął: jedyny Wpis numeru w tym mailu z
     zamiarem i czynnościami z decyzji; przy kilku decyzjach jednego Wpisu najnowsza."""
 
     said = {(found.mail, found.worker): found.entries for found in unreadable}
-    chosen: dict[tuple[MailId, OrderNumber], tuple[RequestedEntry, ReportEntry]] = {}
+    chosen: dict[MailEntryKey, tuple[RequestedEntry, ReportEntry]] = {}
     for decision in sorted(requested, key=lambda decision: (decision.at, decision.day)):
         entries = [entry for entry in said.get((decision.mail, decision.worker), ()) if entry.number == decision.number]
         match entries:
             case [entry] if (entry.leaning, entry.activities) == (decision.verdict, decision.activities):
-                chosen[decision.mail, decision.number] = (decision, entry)
+                chosen[decision.mail, decision.worker, decision.number] = (decision, entry)
             case _:
                 pass
     return chosen
 
 
 def requested_reports(
-    unreadable: Iterable[ReadUnreadable], chosen: Mapping[tuple[MailId, OrderNumber], tuple[RequestedEntry, ReportEntry]]
+    unreadable: Iterable[ReadUnreadable], chosen: Mapping[MailEntryKey, tuple[RequestedEntry, ReportEntry]]
 ) -> tuple[ReadReport, ...]:
     """Wpisy na życzenie raportów z błędem tematu jako Raporty wykonawcy tego maila, jeden na dzień decyzji, z Wpisami
     w kolejności maila; znak zamiast ``tak``/``nie`` zamienia dopasowanie tą samą decyzją (``_matching._requested``)."""
@@ -142,7 +143,7 @@ def requested_reports(
     for found in unreadable:
         days: dict[date, list[ReportEntry]] = {}
         for entry in found.entries:
-            if (pick := chosen.get((found.mail, entry.number))) is not None and pick[1] == entry:
+            if (pick := chosen.get((found.mail, found.worker, entry.number))) is not None and pick[1] == entry:
                 days.setdefault(pick[0].day, []).append(entry)
         found_reports += [
             ReadReport(found.mail, found.arrived, found.worker, day, tuple(entries)) for day, entries in sorted(days.items())
