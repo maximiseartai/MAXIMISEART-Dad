@@ -1,6 +1,4 @@
-"""Interleave Dad's clicks in the tool's efenix tab with every write of a real Wycena w efenix and check where each write lands.
-
-The checker runs the real process (``run_process`` with ``efenix_process.PROCESS`` and the window
+"""The checker runs the real process (``run_process`` with ``efenix_process.PROCESS`` and the window
 ``efenix_browser.window`` in Playwright's Chromium) on the Atrapa efenix (``tools/lib/atrapy/atrapa_efenix.py``) with
 one order of a synthetic Plik zbiorczy, order A: an empty pricing and an empty execution date, so the process sets the
 date, loads Wycena Emmetta and enters two quantities over Emmett's, and in the mode with Przekazanie forwards it. The
@@ -76,6 +74,8 @@ from atrapy.atrapa_efenix import (
 )
 from atrapy.efenix import Order, write_collective_file
 from atrapy.interlocutor import Tata
+
+OPIS = "Interleave Dad's clicks in the tool's efenix tab with every write of a real Wycena w efenix and check where each write lands."
 
 VERDICT: Final = "KARTA EFENIX"
 LIMIT_MS: Final = 15_000
@@ -536,7 +536,7 @@ def summarize(report: Report, *, strict: bool) -> tuple[list[str], int]:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = Parser(description=(__doc__ or "").splitlines()[0])
+    parser = Parser(description=OPIS)
     parser.add_argument("--lista", action="store_true", help="drukuje przypadki (z przebiegów bez taty) i kończy")
     parser.add_argument("--przypadek", help="uruchamia tylko ten przypadek (nazwa z --lista)")
     parser.add_argument("--strict", action="store_true", help="znane ustalenia też są naruszeniem")

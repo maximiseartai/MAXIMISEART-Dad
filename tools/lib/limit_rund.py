@@ -1,4 +1,12 @@
-"""Limit rund przeglądu (skill ``przeglad``, „Kolejne rundy”): PR, który ma ``LIMIT`` rund z ``FAIL``, nie dostaje
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+
+from stan_pr import Pull
+import werdykt_pr
+
+ZASADY = """Limit rund przeglądu (skill ``przeglad``, „Kolejne rundy”): PR, który ma ``LIMIT`` rund z ``FAIL``, nie dostaje
 kolejnej rundy, dopóki autor nie zmieni podejścia w tym samym PR i nie zapisze tego komentarzem PR, którego pierwsza
 niepusta linia to ``ZMIANA PODEJŚCIA: <zdanie>`` (``DECLARATION``). Po ``END`` (``2 * LIMIT``) rundach z ``FAIL`` PR nie
 dostaje już żadnej rundy, jakiekolwiek komentarze ma, więc zostaje mu tylko nowy PR od ``main``: koniec liczą same
@@ -29,14 +37,6 @@ ocenia recenzent następnej rundy), a usunięty komentarz ``FAIL`` rundą już n
 z limitem zaczyna bez jego Ważnych, bo bramki czytają tylko werdykty własnego PR; kod zamkniętego PR nie wszedł do
 ``main``, więc nic go nie blokuje.
 """
-
-from __future__ import annotations
-
-from dataclasses import dataclass
-from datetime import datetime
-
-from stan_pr import Pull
-import werdykt_pr
 
 LIMIT = 3
 END = 2 * LIMIT

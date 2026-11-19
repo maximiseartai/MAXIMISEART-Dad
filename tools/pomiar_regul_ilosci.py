@@ -1,6 +1,4 @@
-"""Mierzy Reguły ilości na Plikach zbiorczych wypełnionych przez tatę (spec #268); tylko na Macu Maksa, przed zmianą Reguł ilości.
-
-Dla każdego Pliku zbiorczego z argumentów liczy to, co Kontrola ilości, tymi samymi częściami i Regułami ilości z
+"""Dla każdego Pliku zbiorczego z argumentów liczy to, co Kontrola ilości, tymi samymi częściami i Regułami ilości z
 Wydania (``DEFAULT_QUANTITY_RULES``): jeden odczyt (``collective_file.read_data_rows``), treść po filtrze prywatności
 (``order_facts``), silnik Reguł ilości i kolumny porównania (``tool_entry.compared_columns``). Własne są tylko zestawienia: zgodność całych wierszy i kolumn oraz klasy
 rozbieżności. Wypisuje same liczby i teksty ``URZĄDZENIA``, bez adresów, numerów, umów i opisów technika, więc
@@ -34,6 +32,8 @@ from rozliczenia.tool_entry import compared_columns
 from rozliczenia.quantity_engine import FromDescription, OrderContent, RuleResult, ServiceQuantities, WeekTime, WithoutRule, evaluate
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.text import WEEKDAY_LABELS
+
+OPIS = "Mierzy Reguły ilości na Plikach zbiorczych wypełnionych przez tatę (spec #268); tylko na Macu Maksa, przed zmianą Reguł ilości."
 
 Difference = tuple[str, int, TataValue]
 """Kolumna, wartość z reguły, wartość taty."""

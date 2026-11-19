@@ -17,7 +17,7 @@ Dowód typu i testu z #1912 odpadł po czterech rundach, bo autor pisał tekst m
 
 - **Strażnik przy każdym Ważnym.** Blok każdego Ważnego w sekcji `## Korzeń` opisu PR kończy linia `Strażnik: <selektor>` z zamkniętej listy, także po `Wyrwany w #M`, zamiast autorskiego `Dowód:`, który zostaje tylko w bloku czerwonego `main`.
   Autor wybiera tylko selektor; złą postać daje drzewo SHA werdyktu `FAIL` i miejsca jego pola `Gdzie` (przy mypy i ruff przywrócone pliki z `Gdzie`, przy `ast-grep <id>` linie dodane do `FAIL`), a wynik liczy narzędzie poleceniami i w środowisku Required CI (niżej „Środowisko dowodu”), więc dowód na Macu, w jobie na ubuntu i u autora daje to samo.
-  Listę, przywrócenie błędu przy każdym rodzaju i granice podaje jeden właściciel: docstring `tools/lib/straznik.py`, a bramkę `tools/lib/bramka_straznika.py` (warunek 5 `tools/scal_pr.py`).
+  Listę, przywrócenie błędu przy każdym rodzaju i granice podaje jeden właściciel: `ZASADY` `tools/lib/straznik.py`, a bramkę `tools/lib/bramka_straznika.py` (warunek 5 `tools/scal_pr.py`).
   Powód: strażnik powstaje przy pierwszym Ważnym, więc rozpoznanie powtórki przez recenzenta przestaje być warunkiem.
 - **Dowód bez tekstu autora.** Bramka czyta tylko znaleziska mypy i ruff w formacie JSON z wiersza poleceń dowodu i wynik dowodu reguły ast-grep, więc ani tekst mutacji, ani format wyjścia z konfiguracji PR wyniku nie zmienia.
   Powód: prototyp na Ważnych z przeszłości (tabela w komentarzu PR, który dodał ten ADR) dał dowód `WYKRYTA` dla 2 z 2 Ważnych z typem i 0 z 5 fałszywych `WYKRYTA` strażnika statycznego niezwiązanego z błędem, a mutacja z pliku PR z warunkiem „zamiana to tekst z SHA `FAIL`” przepuściła 7 z 9 sond obejścia.

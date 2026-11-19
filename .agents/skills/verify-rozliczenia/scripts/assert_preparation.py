@@ -1,5 +1,3 @@
-"""Assert Przygotowanie pliku zbiorczego side effects without printing row contents."""
-
 from __future__ import annotations
 
 import hashlib
@@ -47,6 +45,8 @@ from atrapy.scenariusz_rozliczen import (
     written_quantities,
 )
 from atrapy.settlement import PERIOD
+
+OPIS = """Assert Przygotowanie pliku zbiorczego side effects without printing row contents."""
 
 EXPECTED_COUNTERS = {"period_orders": 7, "successful_orders": 6, "skipped_empty_rows": 4, "warnings": 3}
 # Ilości usług Dad completes: Plik zbiorczy rows 20 (order 7, prewencja) and 21 (order 6, unknown device), and
@@ -523,7 +523,7 @@ def _assert_run(root: Path, metrics: Path, result_path: Path | None, templates: 
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root of a preparation fixture")
     parser.add_argument("--expect", choices=("dry-run", "run"), required=True)
     parser.add_argument(

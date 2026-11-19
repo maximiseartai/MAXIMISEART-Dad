@@ -4575,17 +4575,17 @@ _EVENTS = st.lists(
 """Zdarzenia dnia 10.11.2026 po minutach: tata zapisuje pory, rytm sprawdza przypomnienia albo Centrum startuje znowu.
 Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty. W dniu Aktualizacji test
 ściska minuty zdarzeń za chwilę wysyłki starej wersji."""
-_OLD_VERSION = {
-    "bez-aktualizacji": st.none(),
-    "dzien-aktualizacji": st.one_of(st.integers(8 * 60, 17 * 60 - 1), st.integers(18 * 60, 22 * 60 - 1)),
-}
-"""Minuta dnia, w której stara wersja wysłała przypomnienia w porze z ADR 0030 przed Aktualizacją (bez pliku pór);
-``None``: dzień bez Aktualizacji."""
+_ADR_0030_PORY_MINUTE = st.one_of(st.integers(8 * 60, 17 * 60 - 1), st.integers(18 * 60, 22 * 60 - 1))
+_OLD_VERSION_SENDING_MINUTE_BY_DAY = {"bez-aktualizacji": st.none(), "dzien-aktualizacji": _ADR_0030_PORY_MINUTE}
 
 
 # Bez zmniejszania przykładu: każdy próbowany przykład to nowe Centrum, więc zmniejszanie złego przykładu trwa dłużej
 # niż limit testu, a przykład z najwyżej 12 zdarzeniami czyta się i bez niego.
-@pytest.mark.parametrize("old_versions", list(_OLD_VERSION.values()), ids=list(_OLD_VERSION))
+@pytest.mark.parametrize(
+    "old_version_sending_minutes",
+    list(_OLD_VERSION_SENDING_MINUTE_BY_DAY.values()),
+    ids=list(_OLD_VERSION_SENDING_MINUTE_BY_DAY),
+)
 @settings(
     derandomize=True,
     database=None,
@@ -4597,7 +4597,7 @@ _OLD_VERSION = {
 @given(data=st.data(), events=_EVENTS)
 def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_tej_samej_pory(
     tmp_path_factory: pytest.TempPathFactory,
-    old_versions: st.SearchStrategy[int | None],
+    old_version_sending_minutes: st.SearchStrategy[int | None],
     data: st.DataObject,
     events: list[tuple[int, object]],
 ) -> None:
@@ -4606,7 +4606,7 @@ def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_t
     jedno przypomnienie w każdej nazwanej porze (porannej, wieczornej) tego dnia, także w dniu Aktualizacji, gdy
     „Wysłane” mają już przypomnienia starej wersji, a pliku pór jeszcze nie ma (W1 r2)."""
 
-    old_version = data.draw(old_versions)
+    old_version = data.draw(old_version_sending_minutes)
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path_factory.mktemp("pory"), INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)

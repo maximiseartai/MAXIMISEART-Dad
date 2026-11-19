@@ -1,4 +1,38 @@
-"""Uruchamia polecenie na commitach scalenia wskazanych PR-ów; użyj, by pokazać, że nowe sprawdzenie łapie błąd bez fałszywego alarmu.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Iterable
+from dataclasses import dataclass
+from functools import partial
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import sysconfig
+import time
+from typing import Any
+
+import yaml
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import ciezkie_ci
+import github
+import mutacja_recenzenta
+import odpalenia_ast_grep
+import potomne
+import rejestr_korzeni
+from repo import REMOTE, ROOT
+import repo
+import srodowisko_ci
+import straznik
+import szablon_werdyktu
+import werdykt_pr
+
+OPIS = """Uruchamia polecenie na commitach scalenia wskazanych PR-ów; użyj, by pokazać, że nowe sprawdzenie łapie błąd bez fałszywego alarmu.
 
 Nowe sprawdzenie (narzędzie, test struktury, zadanie CI) przed przeglądem przechodzi próbę na scalonych PR-ach: na PR-ach,
 które dostały werdykt FAIL, ma znaleźć to, co znalazł przegląd, a na zwykłych dobrych PR-ach nie może dawać fałszywego
@@ -77,7 +111,7 @@ krok CI.
 Dowód strażnika (``--straznik SELEKTOR --z-commita <HEAD PR>`` z ``--wazne``) to selektor z pola ``Strażnik:`` bloku
 Ważnego w sekcji ``## Korzeń``. ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
 gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście jej przypadków; każdy inny selektor idzie
-dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje docstring ``tools/lib/straznik.py``,
+dowodem ``straznik.prove`` albo warunkiem wyjątku ``straznik.exempt``, które opisuje ``ZASADY`` ``tools/lib/straznik.py``,
 z zakresem funkcji z ``places`` i prozą z reguły ``PROSE`` na kopii SHA werdyktu; ``pytest <węzeł>`` idzie dowodem
 ``straznik.prove_test`` z najnowszym blokiem ``### Mutacja W<n> r<k>`` tego Ważnego we wszystkich werdyktach PR
 (``mutacja_recenzenta``), każdy bieg w nowym środowisku toru Linux zadania pytest (``srodowisko_ci.built`` z ``tests``).
@@ -89,40 +123,6 @@ merge'u każdego PR z Ważnym (``bramka_straznika``):
     .venv/bin/python tools/na_scalonych_pr.py --straznik mypy --z-commita <HEAD PR> --wazne 1956/W2/r1
     .venv/bin/python tools/na_scalonych_pr.py --straznik "pytest tests/test_x.py::test_y" --z-commita <HEAD PR> --wazne 2029/W1/r1
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Iterable
-from dataclasses import dataclass
-from functools import partial
-import json
-import os
-from pathlib import Path
-import re
-import shutil
-import subprocess
-import sys
-import sysconfig
-import time
-from typing import Any
-
-import yaml
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import ciezkie_ci
-import github
-import mutacja_recenzenta
-import odpalenia_ast_grep
-import potomne
-import rejestr_korzeni
-from repo import REMOTE, ROOT
-import repo
-import srodowisko_ci
-import straznik
-import szablon_werdyktu
-import werdykt_pr
 
 AST_GREP = shutil.which("ast-grep", path=sysconfig.get_path("scripts"))
 MAJOR = re.compile(r"#?(\d+)/(W\d+)/r(\d+)")
@@ -568,7 +568,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     split = arguments.index("--") if "--" in arguments else len(arguments)
     command = arguments[split + 1 :]
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pr", type=int, action="append", default=[], help="Numer scalonego PR-u; powtórz dla kilku.")
     parser.add_argument("--ostatnie", type=int, nargs="?", const=CHECK_PRS, default=0, help=f"Tyle ostatnio scalonych PR-ów; bez liczby {CHECK_PRS}.")
     parser.add_argument("--commit", action="append", default=[], help="Dowolny commit, np. HEAD PR-u z werdyktem FAIL.")

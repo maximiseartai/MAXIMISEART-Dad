@@ -1,19 +1,3 @@
-"""Microsoft Excel for Mac through AppleScript: open a workbook without any dialog, read and type cells, save, close.
-
-Used as a module by ``run_excel_verification.py`` and ``excel_doctor.py``, and as a command for cleanup:
-
-    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/excel.py status
-    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/excel.py close-under --root DESK_DIRECTORY
-
-Excel is sandboxed. A file outside its container opened from AppleScript waits on the sandbox "Otwórz"
-panel; opened through Finder (``open -a``) it asks whether to update external links. Both wait for a
-human. A workbook on the desk (``DESK``, inside Excel's own container) opened from AppleScript with
-``update links do not update links`` asks nothing, so every workbook this skill drives sits on the desk.
-
-Every workbook is addressed by its full path, never by position, so the user's own workbooks in the same
-Excel are never read, changed, or closed. Calls name addresses and counts, never a cell value.
-"""
-
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
@@ -30,6 +14,22 @@ from typing import TextIO
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser
+
+OPIS = """Microsoft Excel for Mac through AppleScript: open a workbook without any dialog, read and type cells, save, close.
+
+Used as a module by ``run_excel_verification.py`` and ``excel_doctor.py``, and as a command for cleanup:
+
+    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/excel.py status
+    .venv/bin/python .agents/skills/verify-skoroszyty-w-excelu/scripts/excel.py close-under --root DESK_DIRECTORY
+
+Excel is sandboxed. A file outside its container opened from AppleScript waits on the sandbox "Otwórz"
+panel; opened through Finder (``open -a``) it asks whether to update external links. Both wait for a
+human. A workbook on the desk (``DESK``, inside Excel's own container) opened from AppleScript with
+``update links do not update links`` asks nothing, so every workbook this skill drives sits on the desk.
+
+Every workbook is addressed by its full path, never by position, so the user's own workbooks in the same
+Excel are never read, changed, or closed. Calls name addresses and counts, never a cell value.
+"""
 
 APP = "Microsoft Excel"
 BUNDLE_ID = "com.microsoft.Excel"
@@ -608,7 +608,7 @@ def quit_if_idle() -> bool:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("status", help="say whether Excel runs, answers, and how many workbooks it holds")
     closer = commands.add_parser("close-under", help="close every workbook below a run root, without saving")
