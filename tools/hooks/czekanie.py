@@ -658,7 +658,7 @@ class _PythonScript:
             self.bindings[node.id] += 1
         elif isinstance(node, ast.arg):
             self.bindings[node.arg] += 1
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        elif isinstance(node, ast.FunctionDef):
             self.bindings[node.name] += 1
         elif isinstance(node, (ast.Import, ast.ImportFrom)):
             for alias in node.names:
