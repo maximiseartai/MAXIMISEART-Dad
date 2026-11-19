@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 import gzip
 import itertools
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -656,9 +657,11 @@ def test_proces_konczy_sie_mimo_przejscia_kolejki_ktore_czeka_na_skrzynke(tmp_pa
     """Skrzynka bez sieci odpowiada dopiero po limicie czasu, a przejście kolejki nie trzyma zamknięcia Centrum: proces
     kończy się, gdy skończy się jego praca, a wysyłka czeka w pliku na następny start."""
 
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     child = subprocess.Popen(
         [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_PRZEJSCIA, str(tmp_path)],
         cwd=ROOT,
+        env=environment,
         stdout=subprocess.PIPE,
         text=True,
         encoding="utf-8",
