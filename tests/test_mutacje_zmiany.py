@@ -258,7 +258,7 @@ def test_mutacja_ktorej_brama_typow_nie_sprawdzila_w_czasie_trafia_do_zapisu_jak
     assert f"BEZ WERDYKTU: {late} → brama typów, ruff: brak wyniku po 1 s" in done.stdout.splitlines(), done.stdout
     written = json.loads(record.read_text(encoding="utf-8"))
     assert written["kod"] == 3
-    assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 1 mutacji | "), written["wynik"]
+    assert written["wynik"].startswith("MUTACJE ZMIANY FAIL | limit czasu części 14100 s minął przed werdyktem 1 mutacji | "), written["wynik"]
     assert [_named(entry) for entry in written["bez_werdyktu"]] == [late]
     assert late not in [_named(entry) for entry in written["przezyte"]]
 

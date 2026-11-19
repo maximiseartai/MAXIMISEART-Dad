@@ -7,7 +7,10 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
    już po pierwszym padniętym zadaniu. Linia ``PONÓW CZEKA`` mówi, ile zadań biegnie.
 2. Każde padnięte zadanie ostatniej próby runu (``Required CI status`` tylko, gdy padł sam) narzędzie klasyfikuje
    po jego logu. Awaria to sygnatura z ``SYGNATURY`` w kroku, który zaczerwienił zadanie (pierwszym kroku z ``failure``,
-   ``log_porazki``), i log bez linii ``FAILED``/``ERROR`` testu; sygnatury pochodzą
+   ``log_kroku``), i log bez linii ``FAILED``/``ERROR`` testu. ``Required CI status``, który padł sam, bo każdemu
+   zadaniu z jego przyczyn brak zapisu czasów (``czasy_ci.BRAK_ZAPISU``), to awaria, gdy krok ``WYSLANIE_CZASOW``
+   każdego z tych zielonych zadań ma sygnaturę: zapis nie doszedł przez awarię, choć zadanie przeszło, więc narzędzie
+   ponawia te zadania, a z nimi ``Required CI status``, który od nich zależy; sygnatury pochodzą
    z porażek runów CI z 2–13.11.2026, a sygnaturę napisu, który pisze kod repo, daje jego właściciel (chwilową awarię
    pobrania TLC ``narzedzia_tlc.CHWILOWA_AWARIA``, bez trwałego HTTP 404 i innej sumy SHA-256). Znany flaky test
    to zadanie, w którym każdy padnięty test ma otwarte issue ``Flaky test: <test>`` (``niestabilne_testy.tytul_issue``),
@@ -29,8 +32,9 @@ albo run z ``--run`` (np. push na `main`) i ponawia go tylko wtedy, gdy porażka
    ``github.CZERWONY_MAIN``), a teraz już nie jest: stare scalenie miało czerwony `main`, więc narzędzie uruchamia CI
    na świeżym scaleniu (``gh pr close`` i ``gh pr reopen``), bo ponowienie zadań biegnie na starym scaleniu.
 
-Ponowienie to ``gh run rerun <run> --failed``. Kod 0 i ``PONÓW OK`` znaczą, że narzędzie ponowiło run albo uruchomiło
-CI na świeżym scaleniu; kod 1 to ``PONÓW CZEKA`` albo ``PONÓW ODMOWA``, a kod 2 to ``PONÓW FAIL``, błąd ``gh``.
+Ponowienie to ``gh run rerun <run> --failed``, a zielonego zadania bez zapisu czasów ``gh run rerun --job <zadanie>``
+(kilku: ``gh run rerun <run>``, bo GitHub ponawia osobno tylko jedno zielone zadanie). Kod 0 i ``PONÓW OK`` znaczą, że
+narzędzie ponowiło run albo uruchomiło CI na świeżym scaleniu; kod 1 to ``PONÓW CZEKA`` albo ``PONÓW ODMOWA``, a kod 2 to ``PONÓW FAIL``, błąd ``gh``.
 
 Granica: runner, który zniknął bez logu zadania, daje odmowę z błędem pobrania logu, a nie awarię, bo w runach
 z 2–12.11 takiego przypadku nie było i jego sygnatury nie znamy.
@@ -55,10 +59,12 @@ import urllib.parse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import czasy_ci
 import github
 from github import REPO, STRONA, GhApi, GitHub
 import narzedzia_tlc
 import niestabilne_testy
+from ostatnie_linie import REQUIRED_FAIL
 import stan_pr
 
 NAJWIECEJ_PONOWIEN = 1
@@ -83,6 +89,9 @@ _NAGLOWEK_KROKU = re.compile(_LINE + r"##\[group\]Run ")
 _PODKROKI = re.compile(_LINE + r"##\[(start|end)-action ")
 _PO_KROKACH = re.compile(_LINE + r"(?:Post job cleanup\.|Cleaning up orphan processes)")
 _POZA_KROKAMI = frozenset({"Set up job", "Complete job"})
+_PRZYCZYNA_REQUIRED = re.compile(_LINE + re.escape(REQUIRED_FAIL) + r"(.*?)\r?$")
+_BEZ_ZAPISU = f": {czasy_ci.BRAK_ZAPISU}"
+WYSLANIE_CZASOW = "Upload the unit times"
 
 
 @dataclass(frozen=True)
@@ -123,11 +132,13 @@ class Zadanie:
     sygnatury: tuple[str, ...]
     testy: tuple[str, ...]
     plik_testu_pr: bool = False  # zadanie nie ponowiło testu z pliku testu zmienionego przez PR
+    zielone: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
 class Awaria:
     sygnatury: tuple[str, ...]
+    zielone: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -147,7 +158,7 @@ def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
     """Werdykt porażki z padniętych zadań jednej próby runu i tytułów otwartych issue flaky testów."""
 
     if zadania and all(zadanie.sygnatury and not zadanie.testy for zadanie in zadania):
-        return Awaria(tuple(sorted({nazwa for zadanie in zadania for nazwa in zadanie.sygnatury})))
+        return Awaria(tuple(sorted({nazwa for zadanie in zadania for nazwa in zadanie.sygnatury})), tuple(id_zadania for zadanie in zadania for id_zadania in zadanie.zielone))
     testy = tuple(dict.fromkeys(test for zadanie in zadania for test in zadanie.testy))
     znane = all(niestabilne_testy.tytul_issue(test) in flaky for test in testy) and not any(zadanie.plik_testu_pr for zadanie in zadania)
     if zadania and all(zadanie.testy for zadanie in zadania) and znane:
@@ -155,9 +166,9 @@ def klasyfikuj(zadania: Sequence[Zadanie], flaky: frozenset[str]) -> Werdykt:
     return Defekt(tuple(zadanie for zadanie in zadania if not zadanie.sygnatury or zadanie.testy))
 
 
-def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
-    """Linie kroku, który zaczerwienił zadanie: pierwszego kroku z ``conclusion: failure`` w API zadań, które podaje
-    kroki po ``number`` (5813 zadań prób z 30.10–13.11).
+def log_kroku(log: str, kroki: Sequence[Mapping[str, Any]], nazwa: str | None = None) -> str:
+    """Linie kroku ``nazwa``, a bez niej kroku, który zaczerwienił zadanie: pierwszego kroku z ``conclusion: failure``
+    w API zadań, które podaje kroki po ``number`` (5813 zadań prób z 30.10–13.11).
 
     Po nim biegną tylko kroki ``if: failure()`` (wysłanie dowodów w ci.yml) i kroki z ``continue-on-error`` (wysłanie
     czasów), które też drukują ``##[error]`` i padają na tej samej awarii usługi artefaktów, a porażki zadania nie
@@ -168,13 +179,14 @@ def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
     który padł, leżała w jego ``started_at`` i ``completed_at`` z API. Gdy liczba nagłówków się nie zgadza albo sekunda
     nagłówka kroku, który padł, leży poza tymi czasami albo jej nie ma (dwa znaczniki z wyjścia kroków, np. zacytowany
     ``##[group]Run`` i niezamknięty ``##[start-action``, wyrównują liczbę i przesuwają kroki), krok jest niepewny
-    i funkcja nie daje linii, czyli defekt; tak samo zadanie bez kroku z ``failure`` (timeout, ``startup_failure``).
+    i funkcja nie daje linii, czyli defekt; tak samo zadanie bez kroku z ``failure`` (timeout, ``startup_failure``)
+    albo bez kroku ``nazwa``. Ta sama zgodność wyznacza linie kroku ``nazwa``.
     """
 
     wykonane = [
         krok for krok in kroki if krok["conclusion"] != "skipped" and krok["name"] not in _POZA_KROKAMI and not krok["name"].startswith("Post ")
     ]
-    padly = next((numer for numer, krok in enumerate(wykonane) if krok["conclusion"] == "failure"), None)
+    padly = next((numer for numer, krok in enumerate(wykonane) if (krok["name"] == nazwa if nazwa else krok["conclusion"] == "failure")), None)
     linie = log.splitlines(keepends=True)
     poczatki: list[int] = []
     koniec, akcje = len(linie), 0
@@ -195,7 +207,22 @@ def log_porazki(log: str, kroki: Sequence[Mapping[str, Any]]) -> str:
 
 
 def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie:
-    """Sygnatury z kroku, który zaczerwienił zadanie (``log_porazki``), i padnięte testy z całego logu zadania.
+    """Sygnatury z kroku, który zaczerwienił zadanie (``log_kroku``), i padnięte testy z całego logu zadania (``_log``)."""
+
+    return Zadanie(
+        nazwa,
+        _sygnatury(log_kroku(log, kroki)),
+        tuple(dict.fromkeys(found[1] for found in TEST_LINE.finditer(log))),
+        PLIK_TESTU_PR.search(log) is not None,
+    )
+
+
+def _sygnatury(tekst: str) -> tuple[str, ...]:
+    return tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(tekst))
+
+
+def _log(api: GitHub, job: Mapping[str, Any]) -> str:
+    """Log zadania z API, którego każdy koniec linii jest ``\\n``.
 
     Log zadania Windows z API kończy linie ``\\r\\n`` (``pytest (Python 3.13, 5/5)`` runu 43523010762: 593 z 600 linii), a wzorce
     czytają linie zakończone ``\\n``, więc funkcja dzieli log na linie raz przez ``str.splitlines`` (jak
@@ -203,26 +230,37 @@ def zadanie(nazwa: str, log: str, kroki: Sequence[Mapping[str, Any]]) -> Zadanie
     sam ``\\r`` i ``\\r\\r\\n``, staje się ``\\n``.
     """
 
-    log = "\n".join(log.splitlines())
-    porazka = log_porazki(log, kroki)
-    return Zadanie(
-        nazwa,
-        tuple(sygnatura.nazwa for sygnatura in SYGNATURY if sygnatura.wzorzec.search(porazka)),
-        tuple(dict.fromkeys(found[1] for found in TEST_LINE.finditer(log))),
-        PLIK_TESTU_PR.search(log) is not None,
-    )
+    return "\n".join(api.bajty(f"{REPO}/actions/jobs/{job['id']}/logs").decode("utf-8", errors="replace").splitlines())
+
+
+def _required(api: GitHub, job: Mapping[str, Any], zadania_proby: Sequence[Mapping[str, Any]]) -> Zadanie:
+    log, kroki = _log(api, job), job.get("steps") or ()
+    zadania = {inne["name"]: inne for inne in zadania_proby}
+    bez_zapisu = [zadania.get(found[1].removesuffix(_BEZ_ZAPISU)) for found in _PRZYCZYNA_REQUIRED.finditer(log_kroku(log, kroki))]
+    sygnatury = [_sygnatury(log_kroku(_log(api, inne), inne.get("steps") or (), WYSLANIE_CZASOW)) if inne else () for inne in bez_zapisu]
+    if sygnatury and all(sygnatury):
+        return Zadanie(job["name"], tuple(dict.fromkeys(nazwa for jego in sygnatury for nazwa in jego)), (), zielone=tuple(inne["id"] for inne in bez_zapisu if inne))
+    return zadanie(job["name"], log, kroki)
 
 
 @dataclass(frozen=True)
 class Akcje:
     """Zapisy na GitHubie: ponowienie padniętych zadań runu i CI na świeżym scaleniu PR."""
 
-    ponow_zadania: Callable[[int], None]
+    ponow_zadania: Callable[[int, tuple[int, ...]], None]
     swieze_scalenie: Callable[[int], None]
 
 
-def _gh_ponow_zadania(run: int) -> None:
-    github.gh("run", "rerun", str(run), "--failed")
+def _ponowienie(run: int, zielone: tuple[int, ...]) -> tuple[str, ...]:
+    if not zielone:
+        return ("run", "rerun", str(run), "--failed")
+    if len(zielone) == 1:
+        return ("run", "rerun", "--job", str(zielone[0]))
+    return ("run", "rerun", str(run))
+
+
+def _gh_ponow_zadania(run: int, zielone: tuple[int, ...]) -> None:
+    github.gh(*_ponowienie(run, zielone))
 
 
 def _gh_swieze_scalenie(numer: int) -> None:
@@ -260,13 +298,11 @@ def _zadania_proby(api: GitHub, run: int, proba: int) -> list[dict[str, Any]]:
 
 
 def _werdykt(api: GitHub, run: int, proba: int, flaky: frozenset[str]) -> Werdykt:
-    padniete = [job for job in _zadania_proby(api, run, proba) if job["conclusion"] in FAILED_JOB]
+    zadania_proby = _zadania_proby(api, run, proba)
+    padniete = [job for job in zadania_proby if job["conclusion"] in FAILED_JOB]
     bez_required = [job for job in padniete if job["name"] != github.REQUIRED]
-    zadania = [
-        zadanie(job["name"], api.bajty(f"{REPO}/actions/jobs/{job['id']}/logs").decode("utf-8", errors="replace"), job.get("steps") or ())
-        for job in bez_required or padniete
-    ]
-    return klasyfikuj(zadania, flaky)
+    zadania = [zadanie(job["name"], _log(api, job), job.get("steps") or ()) for job in bez_required]
+    return klasyfikuj(zadania or [_required(api, job, zadania_proby) for job in padniete], flaky)
 
 
 def _opis(werdykt: Werdykt) -> str:
@@ -387,8 +423,9 @@ def ponow(api: GitHub, run_id: int, numer: int | None, teraz: datetime, akcje: A
         return _odmowa_po_ponowieniu(run, werdykt)
     if isinstance(werdykt, Awaria) and (czeka := _kanarek(api, run, teraz, flaky)):
         return czeka
-    akcje.ponow_zadania(run_id)
-    return Wynik(0, f"PONÓW OK | run {run_id} | {_opis(werdykt)} | gh run rerun {run_id} --failed")
+    zielone = werdykt.zielone if isinstance(werdykt, Awaria) else ()
+    akcje.ponow_zadania(run_id, zielone)
+    return Wynik(0, f"PONÓW OK | run {run_id} | {_opis(werdykt)} | gh {' '.join(_ponowienie(run_id, zielone))}")
 
 
 def main(argv: list[str] | None = None, *, api: GitHub | None = None, akcje: Akcje = GH, teraz: datetime | None = None) -> int:

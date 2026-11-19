@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
 import itertools
 from pathlib import Path
@@ -4291,6 +4291,56 @@ def test_zlecenia_z_wpisem_to_wpisy_raportow_z_dniem_z_tematu_i_wpisy_na_zyczeni
 
     assert found.said(()) == {OrderKey(OrderNumber("40000001"), DAY, jan)}
     assert found.said(decisions) == {OrderKey(OrderNumber("40000001"), DAY, jan), OrderKey(OrderNumber("40000002"), NEXT_DAY, jan)}
+
+
+SHARED_MAIL = MailId.of("<wspolny@przyklad.invalid>")
+
+
+def _one_mail(value: object) -> object:
+    match value:
+        case MailId():
+            return SHARED_MAIL
+        case WindowMails():
+            return tuple({**record, "mail": SHARED_MAIL.digest} for record in value.log())
+        case tuple():
+            return tuple(map(_one_mail, value))
+        case frozenset():
+            return frozenset(map(_one_mail, value))
+        case list():
+            return list(map(_one_mail, value))
+        case dict():
+            return {_one_mail(key): _one_mail(item) for key, item in value.items()}
+        case _ if is_dataclass(value) and not isinstance(value, type):
+            return replace(value, **{found.name: _one_mail(getattr(value, found.name)) for found in fields(value) if found.init})
+        case _:
+            return value
+
+
+@pytest.mark.parametrize(
+    ("ewa", "orders"),
+    [
+        pytest.param(("Raport 08.11.2026 Nowak", TEXT), [_order()], id="ten-sam-wpis-z-bledem-tematu"),
+        pytest.param((SUBJECT, TEXT), [_order()], id="pozniejszy-raport-bierze-zlecenie"),
+        pytest.param(
+            (SUBJECT, "40000002 tak montaż"),
+            [_order(), _order(OrderRow("Zlecenia", 121), number="40000002", worker="Ewa.Probna")],
+            id="raport-z-innym-zleceniem",
+        ),
+    ],
+)
+def test_wynik_rdzenia_z_message_id_wspolnym_dla_raportow_dwoch_wykonawcow_jest_wynikiem_z_dwoma_roznymi(
+    ewa: tuple[str, str], orders: list[RegisterOrder]
+) -> None:
+    def clicked(message_id: str | None) -> list[object]:
+        jan = _mail(JAN, "Raport 08.11.2026 Kowalski", TEXT, message_id=message_id)
+        mails = [jan, _mail(EWA, *ewa, EVENING + timedelta(minutes=5), message_id=message_id)]
+        decision = RequestedEntry(
+            jan.id, Login("jan.testowy"), DAY, OrderNumber("40000001"), Verdict.YES, "wymiana routera", EVENING + timedelta(hours=1)
+        )
+        inputs = _inputs(mails, orders)
+        return [_one_mail(enter_reports(replace(inputs, requested=requested))) for requested in (frozenset(), frozenset({decision}))]
+
+    assert clicked("<wspolny@przyklad.invalid>") == clicked(None)
 
 
 @pytest.mark.parametrize(

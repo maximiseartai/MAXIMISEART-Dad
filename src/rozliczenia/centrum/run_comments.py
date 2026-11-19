@@ -2,8 +2,7 @@
 Wyceny w efenix w Uruchomieniu i przy starcie Centrum.
 
 Co jest którą wersją komentarza, w jakim stopniu i co dalej z dziennikiem, decyduje ``comment_versions``, a pliki zapisuje
-i czyta ``logs_disk``. ``RunComments`` tylko układa ich kroki w kolejności modelu ``verify-urwane-uruchomienie``, każdy we
-własnej osłonie, i trzyma to, co komentarz pamięta w tej pracy Centrum: obserwowaną Wycenę i ostatnie Logi do Diagnozy.
+i czyta ``logs_disk``. ``RunComments`` tylko układa ich kroki w kolejności modelu ``verify-urwane-uruchomienie``.
 
 **Start Uruchomienia** (``RunComments.run_started``, zanim ruszy jego wątek): pierwsza linia dziennika Wyceny i plik
 ostatniego startu (``LogsOnDisk.started``), potem postęp. Plik startu, którego nie dało się zapisać, wychodzi do
@@ -26,8 +25,8 @@ zapisuje w dzienniku Centrum, a Wycena biegnie dalej.
    start nie zgaduje tego z Historii; Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie,
    zamiast niego usuwa dziennik, który mógł po nim zostać;
 2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs_guard.guard_logs``, ADR 0025), z
-   Wzorcami procesu, które przeszły sprawdzenie reguły danych (``template_archive.TemplateChecks``): każdy Wzorzec z
-   ``config`` ma w Logach SHA-256 swoich bajtów, a Wzorzec, którego sprawdzenie nie przepuściło, uwagę w
+   Wzorcami procesu, które przeszły sprawdzenie reguły danych (``template_archive.TemplateChecks``): Wzorzec z
+   ``config``, który dało się przeczytać, ma w Logach SHA-256 swoich bajtów, a Wzorzec, którego sprawdzenie nie przepuściło, uwagę w
    ``input_copy_notes``; pierwsze sprawdzenie nowej wersji Wzorca w pracy Centrum czyta cały skoroszyt, a strażnik
    przechodzi jego teksty znowu tylko wtedy, gdy pamięć reguły danych poznała nową wartość;
 3. plik Logów (``LogsOnDisk.write``), a potem, także gdy pliku nie dało się zapisać, te same Logi do Kolejki wysyłki
@@ -39,8 +38,8 @@ zapisuje w dzienniku Centrum, a Wycena biegnie dalej.
 Błąd jednego kroku trafia do dziennika Centrum (typ, jak w ``RunHost.after``) i nie pomija następnych: wpis końca, który się
 nie zapisał, nie zatrzymuje Logów, a plik Logów, który się nie zapisał, nie zatrzymuje ich wysyłki. Bez Logów (krok 2
 rzucił) nic nie idzie, a dziennik zostaje. Zgaśnięcie Centrum między wpisem końca a przyjęciem Logów zostawia dziennik z
-wpisem końca, a start wysyła z niego wynik bez Logów; Logi z wynikiem, które kolejka mogła już przyjąć, mają wyższy stopień,
-więc ich nie zastępuje.
+wpisem końca, a start wysyła wersję zastępczą: Logi z pliku Logów, a bez niego wynik bez Logów z wpisu końca. Logi z
+wynikiem, które kolejka mogła już przyjąć, mają wyższy stopień, więc wersja zastępcza ich nie zastępuje.
 
 **Diagnoza** Zatrzymania (``RunComments.diagnosed``) dopisuje się do Logów swojego Uruchomienia: ten sam plik dostaje pole
 ``diagnosis``, a Logi idą do kolejki drugi raz jako nowsza wersja tej samej wysyłki, z tymi samymi Wzorcami, więc kolejka
@@ -51,9 +50,9 @@ pokazaniu, a Maks potrzebuje tylko zmiany wyniku. Diagnozę ma tylko ostatnie Ur
 pamięci zostają tylko jego Logi; Diagnoza, w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
 
 **Start Centrum** zamyka dzienniki, które zostawiła poprzednia praca Centrum. Dziennik Wyceny z pierwszą linią na dysku to
-ślad Uruchomienia, którego wersji końcowej komentarza kolejka nie przyjęła w jego pracy Centrum: Centrum zgasło w trakcie
-Wyceny albo po wyniku, a przed Logami, Logi nie powstały albo kolejka odmówiła. Start zamyka każdy taki dziennik przy budowie
-aplikacji, przed kartą ostatniego Uruchomienia (``RunComments.close_left_behind``, ``run_cards.RunCards.last`` bierze jego
+ślad Uruchomienia, którego przyjęcia wersji końcowej komentarza przez kolejkę jego praca Centrum nie zapisała: Centrum
+zgasło w trakcie Wyceny, po wyniku przed Logami albo po ich przyjęciu przed usunięciem dziennika, Logi nie powstały albo
+kolejka odmówiła. Start zamyka taki dziennik przy budowie aplikacji, przed kartą ostatniego Uruchomienia (``RunComments.close_left_behind``, ``run_cards.RunCards.last`` bierze jego
 dowód ``LeftBehindClosed``), a wersję zastępczą bierze z tego, co zastaje na dysku taty (macierz
 ``comment_versions.close``, ze strażnikiem reguły danych tej pracy Centrum w środku). Dziennik Urwanego Uruchomienia
 (ADR 0017) zamyka jako Logi Urwanego Uruchomienia (``RecordMaker.interrupted``), a karta po starcie pokazuje zlecenia z
@@ -132,7 +131,7 @@ _LEFT_BEHIND: Final = "wysyłka wersji zastępczych przy starcie"
 """Miejsce błędu wysyłki jednej wersji zastępczej w kroku startu serwera (``RunComments.send_left_behind``)."""
 
 _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
-"""Miejsce zamaskowanej wartości w uwadze technicznej postępu."""
+"""Miejsce błędu kroku postępu w dzienniku Centrum i zamaskowanej wartości w uwadze technicznej postępu."""
 
 T = TypeVar("T")
 
@@ -152,15 +151,15 @@ class CommentQueue(Protocol):
         ...
 
     def delivered(self, run_id: str, label: Label) -> str | None:
-        """Adres komentarza wysyłki Uruchomienia ``run_id`` z etykietą ``label``, który Skrzynka przyjęła w tej pracy
-        Centrum; ``None``: jeszcze żaden."""
+        """Adres komentarza wysyłki Uruchomienia ``run_id`` z etykietą ``label``, który Skrzynka przyjęła i kolejka go
+        zna (z tej pracy Centrum albo z pliku adresów poprzednich); ``None``: żaden."""
         ...
 
 
 @dataclass(frozen=True)
 class LeftBehindClosed:
-    """Dowód, że start Centrum zamknął każdy dziennik Wyceny, który zostawiła poprzednia praca Centrum
-    (``RunComments.close_left_behind``). Karta ostatniego Uruchomienia (``run_cards.RunCards.last``) go bierze, więc
+    """Dowód, że start Centrum zamknął dzienniki Wyceny, które zostawiła poprzednia praca Centrum, poza tymi, których nie
+    dało się odczytać (``RunComments.close_left_behind``). Karta ostatniego Uruchomienia (``run_cards.RunCards.last``) go bierze, więc
     nie przeczyta Logów, zanim powstaną Logi Urwanego Uruchomienia."""
 
 
@@ -320,9 +319,10 @@ class RunComments:
     """
 
     def __init__(self, work: CentrumWork, disk: LogsOnDisk, queue: CommentQueue, records: RecordMaker) -> None:
-        """``_lock`` porządkuje postęp, Logi z wynikiem i Diagnozę: postęp, który już idzie do kolejki, jest w niej przed
-        Logami, a dwie Diagnozy naraz (dwie karty) piszą plik i komentarz jedna po drugiej. ``_last`` to Logi ostatniego
-        Uruchomienia z jego Wzorcami tak, jak ostatnio poszły do pliku i Skrzynki."""
+        """``_lock`` porządkuje postęp z Logami z wynikiem (postęp, który już idzie do kolejki, jest w niej przed Logami)
+        i Diagnozy między sobą (dwie naraz z dwóch kart piszą plik i komentarz jedna po drugiej). ``_last`` to Logi
+        ostatniego Uruchomienia z jego Wzorcami, do których dopisuje się Diagnoza: z ``run_ended`` zaraz po strażniku,
+        przed plikiem i wysyłką, a z Diagnozy dopiero po zapisie pliku."""
 
         self._disk = disk
         self._queue = queue
@@ -343,7 +343,7 @@ class RunComments:
         if info.process != self._disk.journal.process:
             return
         watched = self._watched = _Watched(info.id, self._clock())
-        self._progress(watched)
+        self._step(partial(self._progress, watched), where=_PROGRESS_PLACE)
         self._clock.after(PROGRESS_S, partial(self._refresh, info.id))
 
     def _refresh(self, run_id: str) -> None:
@@ -351,7 +351,9 @@ class RunComments:
         ``run_id`` nie doszło do działań po wyniku i nie zaczęło się następne."""
 
         watched = self._watched
-        if watched is None or watched.run_id != run_id or not self._progress(watched):
+        if watched is None or watched.run_id != run_id:
+            return
+        if self._step(partial(self._progress, watched), where=_PROGRESS_PLACE) is False:
             return
         self._clock.after(PROGRESS_S, partial(self._refresh, run_id))
 
@@ -377,17 +379,17 @@ class RunComments:
         modułu): wpis końca, Logi z wynikiem, plik i wysyłka, dziennik po przyjęciu."""
 
         run_id = run.info.id
-        self._step(lambda: self._disk.journal.end(run_id, run.result))
+        self._step(lambda: self._disk.journal.end(run_id, run.result), where=_AFTER_RUN)
         with self._lock:
             if self._watched is not None and self._watched.run_id == run_id:
                 self._watched = replace(self._watched, ended=True)
-        version = self._step(lambda: self._own(run))
+        version = self._step(lambda: self._own(run), where=_AFTER_RUN)
         if version is None:
             return
         accepted: list[bool] = []
-        self._step(lambda: self._keep(version, accepted.append))
+        self._step(lambda: self._keep(version, accepted.append), where=_AFTER_RUN)
         if accepted and journal_after(version, accepted=accepted[0]) == "usuń":
-            self._step(lambda: self._disk.journal.remove(run_id))
+            self._step(lambda: self._disk.journal.remove(run_id), where=_AFTER_RUN)
 
     def _own(self, run: EndedRun) -> OwnLogs:
         made = self._records.of(run)
@@ -396,15 +398,15 @@ class RunComments:
             self._last = version
         return version
 
-    def _step(self, step: Callable[[], T]) -> T | None:
+    def _step(self, step: Callable[[], T], *, where: str) -> T | None:
         try:
             return step()
         except Exception as failure:
-            self._log.unexpected_failure(failure, where=_AFTER_RUN)
+            self._log.unexpected_failure(failure, where=where)
             return None
 
     def link(self, run_id: str) -> str | None:
-        """Adres komentarza Logów Uruchomienia ``run_id``, który Skrzynka przyjęła w tej pracy Centrum; ``None``: jeszcze
+        """Adres komentarza Logów Uruchomienia ``run_id``, który Skrzynka przyjęła (``CommentQueue.delivered``); ``None``:
         żaden. Komentarz Uruchomienia prowadzi do jego pełnych Logów w Archiwum Logów okresu, także po Diagnozie."""
 
         return self._queue.delivered(run_id, LABEL)
@@ -441,7 +443,7 @@ class RunComments:
             accepted(self._queue.post(post_of(version)))
 
     def close_left_behind(self) -> LeftBehindClosed:
-        """Przy budowie aplikacji: każdy dziennik z pierwszą linią zamyka wersją zastępczą komentarza jego Uruchomienia
+        """Przy budowie aplikacji: dziennik z pierwszą linią, który dało się odczytać, zamyka wersją zastępczą komentarza jego Uruchomienia
         (``comment_versions.close``), a Logi zapisuje w pliku Logów; dziennik bez niej usuwa. Niczego nie wysyła."""
 
         for left in self._disk.left_behind():

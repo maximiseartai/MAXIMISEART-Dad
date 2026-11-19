@@ -12,11 +12,11 @@ from ..report_cells import OrderRow
 from . import _corrections, _descriptions, _entries, _mails, _matching, _subject
 from ._model import (
     Login,
+    MailEntryKey,
     MailId,
     MailRead,
     Offer,
     OrderKey,
-    OrderNumber,
     OvertakenSubject,
     ReadReport,
     ReadStranger,
@@ -200,7 +200,7 @@ def _indicated(
 
 
 def _offers(
-    matched: _matching.Matched, asked: Sequence[ReadReport], decided: Mapping[tuple[MailId, OrderNumber], object]
+    matched: _matching.Matched, asked: Sequence[ReadReport], decided: Mapping[MailEntryKey, object]
 ) -> dict[OrderRow, Offer]:
     """Wpis na życzenie przy każdym zleceniu, którego zwycięskim Wpisem byłby Wpis raportu z błędem tematu, gdyby każdy
     taki raport miał w temacie swój dzień, a każdy znak z zamiarem był swoim ``tak``/``nie`` (``asked``), wśród
@@ -214,19 +214,21 @@ def _offers(
     zlecenia po Wpisie, który decyzja daje Raportowi wykonawcy tego maila jako dzień z tematu
     (``_mails.requested_reports``)."""
 
-    faulty = {report.mail for report in asked}
+    faulty = {(report.mail, report.worker) for report in asked}
     return {
         order.row: Offer(mail, key.worker, key.day, key.number, entry.verdict, entry.activities, key.day)
         for key, (order, entry) in matched.targets.items()
-        if (mail := matched.mails[order.row]) in faulty and (mail, key.number) not in decided and entry.verdict is not None
+        if ((mail := matched.mails[order.row]), key.worker) in faulty
+        and (mail, key.worker, key.number) not in decided
+        and entry.verdict is not None
     }
 
 
-def _overtaken(found: ReadUnreadable, taken: Mapping[tuple[MailId, OrderNumber], Login]) -> tuple[Login, ...]:
+def _overtaken(found: ReadUnreadable, taken: Mapping[MailEntryKey, Login]) -> tuple[Login, ...]:
     """Wykonawcy późniejszych maili, których Wpisy wzięły zlecenia raportu z błędem tematu ``found``
     (``Matched.taken``), alfabetycznie, gdy wzięły zlecenie każdego jego Wpisu; inaczej pusto."""
 
-    said = [(found.mail, number) for number in found.numbers]
+    said = [(found.mail, found.worker, number) for number in found.numbers]
     if not all(place in taken for place in said):
         return ()
     return tuple(sorted({taken[place] for place in said}))
@@ -242,13 +244,14 @@ def _leaned(entry: ReportEntry) -> ReportEntry:
 
 def _settled(
     found: ReadUnreadable,
-    decided: Mapping[tuple[MailId, OrderNumber], object],
-    taken: Mapping[tuple[MailId, OrderNumber], Login],
+    decided: Mapping[MailEntryKey, object],
+    taken: Mapping[MailEntryKey, Login],
 ) -> bool:
     """Czy raport z błędem tematu ``found`` nie ma już czego wpisać: tata wpisał Wpisem na życzenie każdy jego Wpis,
     którego zlecenia nie wziął późniejszy mail (``Matched.taken``)."""
 
-    return all((found.mail, number) in decided or (found.mail, number) in taken for number in found.numbers)
+    places = [(found.mail, found.worker, number) for number in found.numbers]
+    return all(place in decided or place in taken for place in places)
 
 
 def _mail_order(found: MailRead) -> tuple[datetime, MailId, str, tuple[str, ...]]:

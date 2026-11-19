@@ -1,6 +1,6 @@
-"""Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przed Wydaniem z Wpisaniem raportów.
+"""Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przy każdym Wydaniu.
 
-Narzędzie dla Maksa, poza CI (Granica 4 speca #1224, ADR 0028). Port IMAP Skrzynki raportów
+Krok każdego Wydania (krok 3 skilla ``wydanie``), poza CI (Granica 4 speca #1224, ADR 0028). Port IMAP Skrzynki raportów
 (``rozliczenia.worker_report_inbox.ImapInbox``) CI sprawdza tylko na ``AtrapaImap``, więc prawdziwego Gmaila sprawdza
 ta próba: tym samym portem, z tym samym plikiem dostępu ``config/skrzynka-raportow.txt`` (linia 1 adres skrzynki,
 linia 2 hasło aplikacji Google) i Listą Wykonawców ``config/wykonawcy.yaml``, co Wpisanie raportów.
@@ -52,8 +52,8 @@ bez ``tak`` ani ``nie`` (``wpisy_bez_tak_nie``). Zepsute znaki daje też zagrani
 z tematem Raportu wykonawcy: wtedy Maks sprawdza te maile ręcznie. Hasła nie ma
 w wyniku, wyjątkach ani żadnym pliku: zna je tylko port.
 
-Uruchomienie u taty, w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``), a ostatnią linię Maks wpisuje w
-komentarzu #1234:
+Uruchomienie w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``), a ostatnia linia idzie do raportu
+weryfikacji Wydania:
 
     .venv/bin/python tools/proba_skrzynki_raportow.py [--od RRRR-MM-DD] [--config <folder config>]
         [--przeglad <plik> [--nadpisz]]
