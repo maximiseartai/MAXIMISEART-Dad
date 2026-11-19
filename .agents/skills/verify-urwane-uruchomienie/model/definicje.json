@@ -21,11 +21,11 @@
     "close": "0e60c13a15f8bad8"
   },
   "src/rozliczenia/centrum/run_comments.py": {
-    "RunComments.run_started": "4d06034fff64e533",
+    "RunComments.run_started": "70962e8b442a8b6d",
     "RunComments._progress": "e73266097c21cc13",
-    "RunComments.run_ended": "1df53477c144200c",
+    "RunComments.run_ended": "84c25f76a2982ab0",
     "RunComments._own": "f131bbcd41d18531",
-    "RunComments._step": "499fe01a51a07cc6",
+    "RunComments._step": "ef0c9d39a1209b24",
     "RunComments._keep": "8e34996d24064124",
     "RunComments.close_left_behind": "9d220279a69a742b",
     "RunComments.send_left_behind": "e2ea287390da2c8d",
