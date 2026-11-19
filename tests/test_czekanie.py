@@ -17,6 +17,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import time
 import tracemalloc
 from types import ModuleType
 
@@ -686,6 +687,13 @@ while todo:
     subprocess.run(["gh", "run", "view", str(todo[0]), "--log-failed"])
     {shorten}
     time.sleep(1)"""
+ITERATOR = """import subprocess, time
+runs = iter([44439947891, 44439947892])
+while True:
+    rid = next(runs, None)
+    if rid is None: break
+    subprocess.run(["gh", "run", "view", str(rid), "--log-failed"])
+    time.sleep(1)"""
 QUEUE_OBJECT = """import subprocess, time
 class Runs:
     def __init__(self):
@@ -722,6 +730,7 @@ PYTHON_PASSING = [
     pytest.param(_heredoc(QUEUE_HEAD.format(shorten="del todo[0]")), id="kolejka-skracana-del"),
     pytest.param(_heredoc(QUEUE_HEAD.format(shorten="heapq.heappop(todo)")), id="kolejka-skracana-funkcja-modulu"),
     pytest.param(_heredoc(QUEUE_OBJECT), id="kolejka-przesuwana-metoda-obiektu"),
+    pytest.param(_heredoc(ITERATOR), id="kolejka-z-iteratora"),
     pytest.param(
         "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
         + _heredoc(PORT_ARGUMENT.format(port="", read="sys.argv[2]"), program='python3 - "$F" 5179'),
@@ -1020,6 +1029,19 @@ def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) ->
     )
 
     assert hooked.returncode == 2, hooked.stderr
+
+
+def test_skrypty_pythona_jednego_polecenia_dziela_jeden_budzet_wezlow() -> None:
+    several = "\n".join([NODE_BUDGET_SCRIPT] * 4)
+    ratios = []
+    for _ in range(2):
+        start = time.perf_counter()
+        hook.judge(NODE_BUDGET_SCRIPT, in_background=False)
+        middle = time.perf_counter()
+        hook.judge(several, in_background=False)
+        ratios.append((time.perf_counter() - middle) / (middle - start))
+
+    assert min(ratios) < 2, ratios
 
 
 def test_hook_trzyma_w_pamieci_jedno_cialo_petli_naraz() -> None:
