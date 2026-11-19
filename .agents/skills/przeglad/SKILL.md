@@ -91,8 +91,14 @@ Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md))
   Próbka `ZNANE_LUKI` nigdy nie zastępuje strażnika; wolno ją dodać obok niego dla formy siostrzanej, której mechanizm nie wyrazi.
 - Dowód bierze złą postać z drzewa SHA werdyktu i z funkcji wokół `Gdzie` (mypy i ruff liczą znalezisko w tej funkcji), więc recenzent pisze w `Gdzie` linie złego kodu, które poprawka ma zmienić, a nie miejsce objawu.
 - Recenzent następnej rundy czyta z linii dowodu, które znalezisko padło, i daje Ważne, gdy strażnik łapie inną poprawkę tego PR niż to Ważne; przy `Strażnik: brak - napęd` uruchamia krok napędu skilla `verify-*` na drzewie SHA werdyktu, a to, co przechodzi, to Ważne.
-- Test jako strażnik to `Strażnik: brak - test`, bo testu nie dowodzi jeszcze żadne narzędzie (ADR 0042, „Test jako strażnik”), więc dowód testu jest osądem recenzenta jak przed ADR 0042.
-  Recenzent następnej rundy uruchamia test, który nazywa `Szczebel:` bloku, na drzewie SHA werdyktu `FAIL` (przy próbce testu: mutację złej implementacji z Dowodu Ważnego) i daje Ważne, gdy test przechodzi, pada tylko z braku czegoś, co poprawka dodała obok kodu z `Gdzie` (moduł, metoda, nazwa, opcja), albo gdy Ważne zamknąłby wyższy szczebel z dowodem narzędzia (`mypy`, `ruff`, `ast-grep <id>`).
+- Test jako strażnik to `Strażnik: pytest tests/<plik>.py::<test>` (jeden test albo jego parametr), a złą postać pisze recenzent, nie autor: blok `### Mutacja W<n> r<k>` w werdykcie (postać w sekcji „Postać werdyktu”) z mutacją, która na HEAD przywraca zachowanie z Dowodu Ważnego najmniejszą zmianą kodu, konfiguracji albo reguły, nie testu.
+  Dowód przechodzi, gdy test na HEAD scalonym z bazą bez mutacji przechodzi, z każdą mutacją najnowszego bloku tego Ważnego w werdyktach PR biegnie i pada, a po nich bez mutacji przechodzi znowu (ADR 0042, aneks „Test jako strażnik z mutacją recenzenta”).
+- Recenzent rundy, która sprawdza poprawkę Ważnego ze `Strażnik: pytest …`, czyta najnowszy blok tego Ważnego i pisze w swoim werdykcie, także w `PASS`, nowy blok `### Mutacja W<n> r<k>`, gdy bloku nie ma, gdy jego kotwicy nie ma na HEAD dokładnie raz albo gdy mutacja nie przywraca błędu z Ważnego (jest słabsza od niego albo psuje więcej), a gdy test łapie wierną mutację inną drogą niż błąd (np. na wejściu, którego błąd nie dotyczy), dopisuje do bloku formę siostrzaną błędu, której ta droga nie łapie.
+  Blok sprawdza przed publikacją: `tools/mutacje.py --plik <blok.json> -- -m pytest -q -n 0 <węzeł>`, a `NIEWYKRYTA` to Ważne, bo strażnik nie łapie błędu; tak samo `WYKRYTA` z ostatnią linią bez testu (`no tests ran`, `not found`), gdy plik węzła z mutacją się zbiera (`-m pytest -q -n 0 --collect-only <plik>` kończy się kodem 0), bo węzła z mutacją nie ma, a dowód liczy to jako `NIEWYKRYTA`; plik albo `conftest.py`, który z mutacją się nie zbiera, dowód liczy jako `WYKRYTA`, jak Required CI.
+  Gdy test czyta stan modułu, który w sesji Required CI może ustawić inny plik testów (rejestr wypełniany przy imporcie) albo wcześniejszy test, sprawdza blok też z plikami testów, które ten moduł importują, w jednym poleceniu pytest, a `NIEWYKRYTA` tam to Ważne, bo dowód uruchamia węzeł sam (aneks ADR 0042, „Granica: sąsiedzi w sesji Required CI”).
+  Recenzent `FAIL` daje blok od razu, gdy wie, jaki kod po poprawce przywróci błąd; wierność bloku ocenia recenzent następnej rundy, bo dowód gwarantuje tylko, że test pada przez tę mutację.
+- `Strażnik: brak - test` przechodzi tylko w wątku z pierwszym werdyktem sprzed wdrożenia dowodu testu (`bramka_straznika.TEST_MARKER`), więc tam dowód testu jest osądem recenzenta jak przed ADR 0042.
+  Recenzent następnej rundy uruchamia test, który nazywa `Szczebel:` bloku, na drzewie SHA werdyktu `FAIL` (przy próbce testu: mutację złej implementacji z Dowodu Ważnego) i daje Ważne, gdy test przechodzi, pada tylko z braku czegoś, co poprawka dodała obok kodu z `Gdzie` (moduł, metoda, nazwa, opcja), albo gdy Ważne zamknąłby wyższy szczebel z dowodem narzędzia (`mypy`, `ruff`, `ast-grep <id>`, `pytest <węzeł>`).
 - Kod z `Gdzie` usunięty z PR (szczebel (a)) to `Strażnik: brak - usunięte`; recenzent następnej rundy sprawdza, że ten kod zniknął z HEAD i nie wrócił inną drogą, a gdy stoi albo wrócił, to Ważne.
 - Pole `Idiom:` po `Szczebel:` jest opcjonalne i niczego przy merge'u nie wymaga: `Idiom: <id> jak #N W<n> r<k>`, gdy Ważne powtarza wcześniejsze, albo `Idiom: <id>`, gdy to ucieczka istniejącego strażnika `<id>`; raport tygodniowy liczy z niego powroty i ucieczki.
 
@@ -121,11 +127,16 @@ Szczebel: <(a)–(e)> - <zdanie, czemu ten>
 Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>; opcjonalne, tylko gdy Ważne powtarza wcześniejsze albo ucieka strażnikowi)
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>
+### Mutacja W<n> r<k>
+~~~
+[{"nazwa": "<jaki błąd przywraca>", "zmiany": [["<plik>", "<kotwica: tekst HEAD, który stoi w pliku raz>", "<zamiana>"]]}]
+~~~
 ## Sprawdzone
 - <co sprawdzone i z jakim wynikiem, 1–5 punktów>
 ```
 
-`PASS` bez znalezisk ma tylko linie `WERDYKT: PASS <pełny SHA HEAD>`, `Znaleziska: 0 (Ważne 0, Drobne 0)` i `## Sprawdzone`.
+Blok `### Mutacja W<n> r<k>` daje złą postać strażnikowi `pytest <węzeł>` Ważnego `W<n>` z `k`-tego werdyktu PR (sekcja „Korzeń i chwast”): stoi przed `## Sprawdzone` w `FAIL` albo w `PASS`, najwyżej jeden na Ważne w werdykcie, a pod nagłówkiem ma tylko blok kodu ``` albo ~~~ bez nazwy języka (```json GitHub renderuje inaczej, więc to odmowa) z JSON pliku `tools/mutacje.py --plik` z kluczami `nazwa` i `zmiany`, bez zmian w `tests/`.
+`PASS` bez znalezisk ma tylko linie `WERDYKT: PASS <pełny SHA HEAD>`, `Znaleziska: 0 (Ważne 0, Drobne 0)`, bloki `### Mutacja` i `## Sprawdzone`.
 Punkt `## Sprawdzone`, który zaczyna się od `Korzeń `, to rozstrzygnięcie kodu Ważnego z wcześniejszej rundy (`- Korzeń W1 r1: R-KOD - zdanie`, sekcja „Korzeń i chwast”), a kod sprawdza się jak w polu `Korzeń:`.
 Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.
 Dowód dłuższy niż 5 linii albo z linią ponad 300 znaków zapisz w pliku obok werdyktu i podaj w Dowodzie jego ścieżkę.
@@ -162,7 +173,7 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
    ```
 
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
-3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)) z linią `Strażnik:`, której dowód przechodzi, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
+3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)) z linią `Strażnik:`, której dowód przechodzi (przy `pytest <węzeł>` bez bloku recenzenta sprawdź test własną mutacją błędu w `tools/mutacje.py`, a blok do dowodu da recenzent kolejnej rundy), a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
    Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście w tym samym PR i piszesz komentarz `ZMIANA PODEJŚCIA: <zdanie>` (sekcja „Kolejne rundy”).
 4. Po `PASS` z Drobnymi scal PR na tym `PASS` i nie pushuj do niego poprawek Drobnych: każde Drobne zapisz w opisie PR jako otwarte z PR-em, który je poprawi (Twój następny PR albo Twój zbiorczy PR poprawek Drobnych od świeżego `origin/main`), albo, jak po `FAIL` w kroku 3, z powodem, czemu go nie poprawiasz.
    Push po `PASS` zdejmuje zgodę i kosztuje rundę, a PR poprawki i tak przechodzi przegląd: w werdyktach z 12–17.11.2026 40 z 46 rund po `PASS` ze zmianą kodu przyszło po `PASS` z Drobnymi, 38 z nich skończyło się tym samym `PASS`, a w jednym poprawka Drobnych wniosła Ważne do PR, który miał już zgodę (#1853: jedno Drobne dało trzy rundy z `FAIL`).

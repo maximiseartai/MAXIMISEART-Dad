@@ -38,7 +38,7 @@ Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` d
 from __future__ import annotations
 
 import argparse
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import replace
 from functools import cache, partial
 from itertools import pairwise
@@ -73,51 +73,10 @@ RULES_HEADING = "Zasady werdyktów i przebiegu"
 RULES = (silnik_mutacji.__doc__ or "").partition(f"\n{RULES_HEADING}\n")[2]
 
 
-def _texts(value: object, count: int | None = None) -> bool:
-    return isinstance(value, list) and all(isinstance(item, str) for item in value) and count in {None, len(value)}
-
-
-class _Key(NamedTuple):
-    required: bool
-    valid: Callable[[object], bool]
-
-
-_ENTRY = {
-    "nazwa": _Key(required=True, valid=lambda value: isinstance(value, str)),
-    "zmiany": _Key(required=True, valid=lambda value: isinstance(value, list) and bool(value) and all(_texts(edit, 3) for edit in value)),
-    "polecenie": _Key(required=False, valid=_texts),
-    "oczekiwane": _Key(required=False, valid=lambda value: isinstance(value, str)),
-}
-FILE_SHAPE = '[{"nazwa": "...", "zmiany": [["plik", "kotwica", "zamiana"], ...]}, ...] z opcjonalnymi "polecenie": [...] i "oczekiwane": "..."'
-
-
-def _entry_problem(entry: object) -> str | None:
-    if not isinstance(entry, dict):
-        return "nie jest obiektem"
-    if unknown := sorted(entry.keys() - _ENTRY.keys()):
-        return f"ma nieznany klucz {unknown[0]!r}"
-    wrong = [key for key, (required, valid) in _ENTRY.items() if (key in entry or required) and not (key in entry and valid(entry[key]))]
-    return f"ma zły albo brakujący klucz {wrong[0]!r}" if wrong else None
-
-
 def _from_file(path: Path, command: tuple[str, ...]) -> list[Mutation]:
     """Mutacje z pliku JSON; plik innej postaci niż ``FILE_SHAPE`` to ``ValueError``, która ją podaje."""
 
-    entries = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(entries, list):
-        raise ValueError(f"{path}: plik mutacji to lista, nie {type(entries).__name__}; postać: {FILE_SHAPE}")
-    for number, entry in enumerate(entries, 1):
-        if problem := _entry_problem(entry):
-            raise ValueError(f"{path}: wpis {number} {problem}; postać: {FILE_SHAPE}")
-    return [
-        Mutation(
-            name=entry["nazwa"],
-            edits=tuple(Edit(Path(file), anchor, replacement) for file, anchor, replacement in entry["zmiany"]),
-            command=tuple(entry.get("polecenie", command)),
-            expected=entry.get("oczekiwane"),
-        )
-        for entry in entries
-    ]
+    return silnik_mutacji.from_json(path.read_text(encoding="utf-8"), command, str(path))
 
 
 def _output(*arguments: str) -> str:

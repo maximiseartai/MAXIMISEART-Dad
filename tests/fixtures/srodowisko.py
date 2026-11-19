@@ -14,11 +14,8 @@ import srodowisko_ci
 
 ROOT = Path(__file__).resolve().parents[2]
 CI = (ROOT / srodowisko_ci.WORKFLOW).read_text(encoding="utf-8")
-PINS = tuple(
-    pin
-    for pin in tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]["dev"]
-    if pin.startswith(("mypy==", "ruff==", "ast-grep-cli=="))
-)
+DEV = tuple(tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["optional-dependencies"]["dev"])
+PINS = tuple(pin for pin in DEV if pin.startswith(("mypy==", "ruff==", "ast-grep-cli==")))
 
 wymaga_uv = pytest.mark.skipif(
     sys.platform == "win32" or shutil.which("uv") is None,

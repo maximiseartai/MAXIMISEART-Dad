@@ -98,6 +98,7 @@ OPISY = {
     "naglowek-poza-wzorem": body(C_BLOCK.replace("### W1 r1: R-BEZ-TESTU", "### W1: R-BEZ-TESTU")),
     "dowod-6-linii": body(_lines("### W1 r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", EVIDENCE, *(f"linia {number}" for number in range(2, 7)))),
     "straznik-c": body(C_BLOCK.replace(EVIDENCE, GUARD)),
+    "straznik-brak-testu": body(C_BLOCK.replace(EVIDENCE, "Strażnik: brak - test")),
     "straznik-spoza-listy": body(C_BLOCK.replace(EVIDENCE, "Strażnik: npm test")),
     "straznik-i-linia-po": body(C_BLOCK.replace(EVIDENCE, f"{GUARD}\nlinia 2")),
     "wyrwany-ze-straznikiem": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{ROOT_PR}", GUARD)),

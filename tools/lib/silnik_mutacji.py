@@ -13,7 +13,8 @@ nieaktualnych ``.pyc``. Polecenie biegnie Pythonem, który uruchomił narzędzie
 z ``PYTHONPATH`` na ``src`` kopii: edytowalna instalacja ``.venv`` wskazuje ``src`` checkoutu.
 
 Mutacja zmienia jedną albo kilka kotwic, każdą obecną w swoim pliku dokładnie raz; inaczej jest
-NIEAKTUALNA. Pusta kotwica w pliku, którego nie ma, tworzy go razem z katalogami. Zanim narzędzie
+NIEAKTUALNA, tak samo jak zmiana, której ścieżka to katalog. Pusta kotwica w pliku, którego nie ma, tworzy go
+razem z katalogami. Zanim narzędzie
 zepsuje kod, polecenie musi przejść na kopii bez mutacji, a jeśli mutacja oczekuje ostatniej
 linii wyjścia, polecenie bez mutacji nie może się nią kończyć. Werdykty to ``Verdict``, a dowodem jest tylko
 WYKRYTA: polecenie pada albo kończy się oczekiwaną linią. ZAWIESZENIE to test, który pytest-timeout skończył po
@@ -101,6 +102,7 @@ from dataclasses import asdict, dataclass
 from enum import StrEnum
 from functools import partial
 from itertools import pairwise
+import json
 import os
 from pathlib import Path
 import re
@@ -110,7 +112,7 @@ import sys
 import tempfile
 import threading
 import time
-from typing import Any, Protocol, TypeVar
+from typing import Any, NamedTuple, Protocol, TypeVar
 
 from import_dynamiczny import jest_modul
 from jednostka import ZMIENNA_CZESCI, Czesc
@@ -151,7 +153,7 @@ class Verdict(StrEnum):
     REGRESSION = "REGRES"  # NIEWYKRYTA na HEAD, a WYKRYTA na merge-base: zmiana osłabiła test
     HANG = "ZAWIESZENIE"  # test skończony przez pytest-timeout, co czerwieni CI
     OVER_LIMIT = "PRZEKROCZONY CZAS"  # polecenie bez wyniku w --limit-s narzędzia, czego CI nie widzi
-    STALE = "NIEAKTUALNA"  # kotwica nie występuje dokładnie raz
+    STALE = "NIEAKTUALNA"  # kotwica nie występuje dokładnie raz albo ścieżka to katalog
     NO_VERDICT = "BEZ WERDYKTU"  # koniec czasu wywołującego przed wynikiem
 
 
@@ -193,6 +195,58 @@ class Mutation:
     expected: str | None = None  # początek ostatniej linii wyjścia; None: polecenie kończy się błędem
 
 
+def _texts(value: object, count: int | None = None) -> bool:
+    return isinstance(value, list) and all(isinstance(item, str) for item in value) and count in {None, len(value)}
+
+
+class _Key(NamedTuple):
+    required: bool
+    valid: Callable[[object], bool]
+
+
+_ENTRY = {
+    "nazwa": _Key(required=True, valid=lambda value: isinstance(value, str)),
+    "zmiany": _Key(required=True, valid=lambda value: isinstance(value, list) and bool(value) and all(_texts(edit, 3) for edit in value)),
+    "polecenie": _Key(required=False, valid=_texts),
+    "oczekiwane": _Key(required=False, valid=lambda value: isinstance(value, str)),
+}
+FILE_SHAPE = '[{"nazwa": "...", "zmiany": [["plik", "kotwica", "zamiana"], ...]}, ...] z opcjonalnymi "polecenie": [...] i "oczekiwane": "..."'
+
+
+def _entry_problem(entry: object) -> str | None:
+    if not isinstance(entry, dict):
+        return "nie jest obiektem"
+    if unknown := sorted(entry.keys() - _ENTRY.keys()):
+        return f"ma nieznany klucz {unknown[0]!r}"
+    wrong = [key for key, (required, valid) in _ENTRY.items() if (key in entry or required) and not (key in entry and valid(entry[key]))]
+    return f"ma zły albo brakujący klucz {wrong[0]!r}" if wrong else None
+
+
+def from_json(text: str, command: tuple[str, ...], source: str) -> list[Mutation]:
+    """Mutacje z tekstu JSON w postaci ``FILE_SHAPE``: pliku ``tools/mutacje.py --plik`` albo bloku mutacji recenzenta
+    w werdykcie (``mutacja_recenzenta``), z poleceniem ``command``, gdy wpis nie ma własnego; inna postać to
+    ``ValueError`` ze źródłem ``source`` i tą postacią."""
+
+    try:
+        entries = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"{source}: to nie JSON ({error}); postać: {FILE_SHAPE}") from None
+    if not isinstance(entries, list):
+        raise ValueError(f"{source}: plik mutacji to lista, nie {type(entries).__name__}; postać: {FILE_SHAPE}")
+    for number, entry in enumerate(entries, 1):
+        if problem := _entry_problem(entry):
+            raise ValueError(f"{source}: wpis {number} {problem}; postać: {FILE_SHAPE}")
+    return [
+        Mutation(
+            name=entry["nazwa"],
+            edits=tuple(Edit(Path(file), anchor, replacement) for file, anchor, replacement in entry["zmiany"]),
+            command=tuple(entry.get("polecenie", command)),
+            expected=entry.get("oczekiwane"),
+        )
+        for entry in entries
+    ]
+
+
 @contextmanager
 def checkout_copy(commit: str | None = None) -> Iterator[Path]:
     """Kopia HEAD z niezacommitowanymi zmianami checkoutu albo, z ``commit``, kopia samego commitu."""
@@ -227,10 +281,12 @@ def _remove(copy: Path, path: Path) -> None:
 
 
 def _apply(copy: Path, edits: Sequence[Edit]) -> str | None:
-    """Zmienia kod kopii; zwraca opis kotwicy, której nie ma dokładnie raz."""
+    """Zmienia kod kopii; zwraca opis kotwicy, której nie ma dokładnie raz, albo ścieżki, która jest katalogiem."""
 
     for edit in edits:
         path = copy / edit.file
+        if path.is_dir():
+            return f"{edit.file.as_posix()} to katalog, a nie plik"
         code = path.read_text(encoding="utf-8") if path.is_file() else ""
         if code.count(edit.anchor) != 1:
             return f"kotwicy nie ma dokładnie raz w {edit.file.as_posix()}: {edit.anchor.strip()[:60]!r}"
@@ -249,14 +305,22 @@ class _Ran:
 
 
 def _run(
-    copy: Path, command: Sequence[str], limit_s: float, stop: threading.Event | None = None, *, concurrent: bool = False
+    copy: Path,
+    command: Sequence[str],
+    limit_s: float,
+    stop: threading.Event | None = None,
+    *,
+    concurrent: bool = False,
+    python: str | None = None,
+    env: Mapping[str, str] | None = None,
 ) -> _Ran:
-    """Przebieg polecenia w kopii, także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
+    """Przebieg polecenia w kopii Pythonem ``python`` (bez niego: tym, który uruchomił narzędzie) ze zmiennymi ``env``
+    (bez nich: ``kroki_lokalne.environment`` kopii), także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
 
     started = time.monotonic()
     try:
-        env = environment(copy, concurrent=concurrent)
-        done = potomne.run([sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
+        env = environment(copy, concurrent=concurrent) if env is None else env
+        done = potomne.run([python or sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
     except potomne.TimeoutExpired as expired:
         return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started, _tail(*expired.printed))
     seconds = time.monotonic() - started
@@ -312,19 +376,52 @@ def _verdict(
     if left <= 0:
         return Verdict.NO_VERDICT, "czas minął, zanim się zaczęła", None
     with checkout_copy(commit) as copy:
-        stale = _apply(copy, mutation.edits)
-        if stale:
-            return Verdict.STALE, stale, None
-        ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent)
+        return judged(copy, mutation, limit_s=limit_s, left=left, stop=stop, concurrent=concurrent)
+
+
+def judged(
+    copy: Path,
+    mutation: Mutation,
+    *,
+    limit_s: float,
+    left: float | None = None,
+    stop: threading.Event | None = None,
+    concurrent: bool = False,
+    python: str | None = None,
+    env: Mapping[str, str] | None = None,
+    collected: Sequence[str] | None = None,
+) -> tuple[Verdict, str, float | None]:
+    """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
+    stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
+    ``min(limit_s, left)``. Woła ją ``verdicts`` na kopii checkoutu i dowód strażnika ``pytest`` (``straznik``) na
+    kopii środowiska Required CI. Z ``collected`` (polecenie, które z mutacją tylko zbiera plik węzła) polecenie
+    pytest, w którym po mutacji nie biegł żaden test (``_without_test``), jest WYKRYTA tylko wtedy, gdy plik węzła
+    z mutacją się nie zbiera (``collected`` kończy się kodem innym niż 0 i 5: błąd importu modułu testu albo
+    ``conftest.py``), bo tak pada zadanie Required CI, które uruchamia cały plik; gdy plik się zbiera, a węzła nie ma
+    (np. parametr, którego z mutacją nie ma), NIEWYKRYTA, bo zniknięty węzeł sam w CI niczego nie czerwieni, a inny
+    węzeł pliku, który z mutacją pada, to inny strażnik. Bez
+    ``collected`` kod 4 i 5 są wykryciem jak dotąd, bo plik albo zbiór plików bez testu czerwieni zadanie CI."""
+
+    left = limit_s if left is None else left
+    if stale := _apply(copy, mutation.edits):
+        return Verdict.STALE, stale, None
+    ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
     if ran.code is None:
         # Koniec czasu wywołującego, a nie limit polecenia, nie mówi, czy mutacja zawiesza polecenie.
-        judged = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
+        found = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
     elif ran.hang is not None:
-        judged = Verdict.HANG, ran.hang
+        found = Verdict.HANG, ran.hang
     else:
         caught = ran.last.startswith(mutation.expected) if mutation.expected is not None else ran.code != 0
-        judged = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
-    return *judged, ran.seconds
+        if caught and collected is not None and _without_test(mutation.command, ran):
+            gathered = _run(copy, collected, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
+            if gathered.code is None or gathered.code in {0, PYTEST_EXIT_NO_TESTS_COLLECTED}:
+                found = Verdict.SURVIVED, f"{ran.last} (pytest nie uruchomił testu, kod {ran.code}, a plik węzła się zbiera: {gathered.last})"
+            else:
+                found = Verdict.CAUGHT, f"{ran.last} (plik węzła z mutacją się nie zbiera, kod {gathered.code}: {gathered.last})"
+        else:
+            found = (Verdict.CAUGHT if caught else Verdict.SURVIVED), ran.last
+    return *found, ran.seconds
 
 
 def _baseline(

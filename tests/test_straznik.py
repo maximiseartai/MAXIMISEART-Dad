@@ -1,19 +1,24 @@
 """Dowód strażnika Ważnego (``tools/lib/straznik.py``, ADR 0042) na małym repozytorium Gita: gałąź PR od ``main``
 z commitem werdyktu ``FAIL`` z błędem w miejscu ``Gdzie`` i HEAD z poprawką i strażnikiem z zamkniętej listy.
 
-Każdy przypadek tabeli z docstringu modułu ma tu przebieg: strażnik pada na błędzie z SHA ``FAIL`` (``WYKRYTA``),
-strażnik, który błędu nie łapie, nie przechodzi, a format z konfiguracji PR wyniku nie zmienia. Granice stoją
-w ``ZNANE_LUKI_STRAZNIKA`` i przechodzą dowód, dopóki konstrukcja ich nie zamknie.
+Każdy przypadek tabeli z docstringu modułu ma tu przebieg: strażnik pada na błędzie z SHA ``FAIL`` albo z mutacji
+recenzenta (``WYKRYTA``), strażnik, który błędu nie łapie, nie przechodzi, a format z konfiguracji PR wyniku nie
+zmienia. Granice stoją w ``ZNANE_LUKI_STRAZNIKA`` i przechodzą dowód, dopóki konstrukcja ich nie zamknie.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
+import json
 from pathlib import Path
 import sys
+import tempfile
 
 import pytest
 
+from mutacja_recenzenta import Block
 import potomne
 import srodowisko_ci
 import straznik
@@ -34,6 +39,8 @@ select = ["F", "TID251"]
 
 [tool.ruff.lint.flake8-tidy-imports.banned-api]
 {banned}
+
+[tool.pytest.ini_options]
 """
 BASE = {
     "kod/__init__.py": "",
@@ -57,20 +64,37 @@ class Pull:
     failed: str
     head: str
 
-    def prove(self, guard: str, places: Places = WHERE, *, scopes: Places = (), prose: Places = ()) -> straznik.Outcome:
-        """Dowód jednego Ważnego; ``scopes`` i ``prose`` to linie z FAIL, które podaje ``tools/na_scalonych_pr.py``.
-        Mypy i ruff biegną tu Pythonem testów na kopii HEAD, bo te testy sprawdzają przywrócenie błędu; środowisko
-        Required CI z ``srodowisko_ci.built``, którym biegnie dowód, sprawdza ``tests/test_srodowisko_ci.py``."""
+    def prove(
+        self, guard: str, places: Places = WHERE, *, scopes: Places = (), prose: Places = (), before_test_proof: bool = False, mutation: str | None = None
+    ) -> straznik.Outcome:
+        """Dowód jednego Ważnego; ``scopes`` i ``prose`` to linie z FAIL, które podaje ``tools/na_scalonych_pr.py``,
+        a ``mutation`` tekst najnowszego bloku ``### Mutacja W1 r1`` z werdyktów PR. Mypy, ruff i pytest biegną tu
+        Pythonem testów na kopii HEAD, bo te testy sprawdzają przywrócenie błędu; środowisko Required CI
+        z ``srodowisko_ci.built``, którym biegnie dowód, i osobne środowisko na każdy bieg testu sprawdza
+        ``tests/test_srodowisko_ci.py``."""
 
-        case = straznik.Case("#5 W1 r1", self.failed, self.fork, places, scopes, prose)
+        block = None if mutation is None else Block("W1", 1, mutation)
+        case = straznik.Case("#5 W1 r1", self.failed, self.fork, places, scopes, prose, block)
         chosen = straznik.parse(guard)
         if chosen.kind in straznik.EXEMPT:
-            [outcome] = straznik.exempt(self.root, chosen, self.head, self.fork, [case])
+            [outcome] = straznik.exempt(self.root, chosen, self.head, self.fork, [case], before_test_proof=before_test_proof)
             return outcome
-        with potomne.commit_copy(self.root, self.head) as copy:
-            environment = straznik.Environment(self.head, copy, Path(sys.executable), srodowisko_ci.variables())
+        if chosen.kind is Kind.PYTEST:
+            [outcome] = straznik.prove_test(chosen.arguments[0], self._copy, [case])
+            return outcome
+        with self._copy() as environment:
             [outcome] = straznik.prove(self.root, chosen, environment, [case])
         return outcome
+
+    @contextmanager
+    def _copy(self) -> Iterator[straznik.Environment]:
+        """Kopia HEAD z własnym ``HOME`` i ``TMPDIR``, jak każde środowisko z ``srodowisko_ci.built`` z ``tests``."""
+
+        with potomne.commit_copy(self.root, self.head) as copy, tempfile.TemporaryDirectory(prefix="straznik-") as folder:
+            home, temporary = Path(folder) / "dom", Path(folder) / "tmp"
+            home.mkdir()
+            temporary.mkdir()
+            yield straznik.Environment(self.head, copy, Path(sys.executable), {**srodowisko_ci.variables(), "HOME": str(home), "TMPDIR": str(temporary)})
 
 
 def _pull(tmp_path: Path, failed: dict[str, str], head: dict[str, str]) -> Pull:
@@ -102,6 +126,8 @@ def _fixed(tmp_path: Path) -> Pull:
         ("mypy", Guard(Kind.MYPY)),
         ("ruff", Guard(Kind.RUFF)),
         ("ast-grep lokator-tytulu-okna", Guard(Kind.AST_GREP, ("lokator-tytulu-okna",))),
+        ("pytest tests/test_g.py::test_g", Guard(Kind.PYTEST, ("tests/test_g.py::test_g",))),
+        ("pytest tests/centrum/test_ż.py::Klasa::test_ą[1-a]", Guard(Kind.PYTEST, ("tests/centrum/test_ż.py::Klasa::test_ą[1-a]",))),
         ("brak - proza", Guard(Kind.PROSE)),
         ("brak  -  test", Guard(Kind.TESTS)),
         ("brak - napęd", Guard(Kind.DRIVE)),
@@ -114,14 +140,41 @@ def test_selektor_straznika_z_zamknietej_listy_daje_rodzaj_i_argumenty(text: str
 
 @pytest.mark.parametrize(
     "text",
-    ["", "pytest tests/test_x.py::test_y", "mypy --strict", "ast-grep", "brak", "brak - nic", "tools/mutacje.py --zmiana a b c"],
-    ids=["pusty", "test-bez-dowodu-narzedzia", "mypy-z-flaga", "ast-grep-bez-id", "brak-bez-powodu", "brak-z-powodem-spoza-listy", "mutacja-autora"],
+    [
+        "",
+        "pytest tests/test_x.py",
+        "pytest tests/test_x.py::test_y -k z",
+        "pytest src/rozliczenia/x.py::test_y",
+        "pytest tests/../src/x.py::test_y",
+        "pytest tests/test_x.py::A::B::test_y",
+        "pytest tests/test_x.py::TestKlasa",
+        "mypy --strict",
+        "ast-grep",
+        "brak",
+        "brak - nic",
+        "tools/mutacje.py --zmiana a b c",
+    ],
+    ids=[
+        "pusty",
+        "caly-plik-testow",
+        "wezel-z-opcja-pytest",
+        "wezel-poza-tests",
+        "sciezka-wychodzi-z-tests",
+        "klasa-w-klasie",
+        "klasa-testow",
+        "mypy-z-flaga",
+        "ast-grep-bez-id",
+        "brak-bez-powodu",
+        "brak-z-powodem-spoza-listy",
+        "mutacja-autora",
+    ],
 )
 def test_selektor_spoza_listy_to_odmowa_z_postaciami_listy(text: str) -> None:
-    """Test nie ma selektora z dowodem narzędzia (ADR 0042, „Test jako strażnik”), więc ``pytest …`` to odmowa
-    z listą, w której stoi ``brak - test``."""
+    """Test wskazuje jeden węzeł pytest w ``tests/`` (test albo jego parametr), bez opcji, bo dowód liczy padnięcie tego
+    węzła z mutacją recenzenta; mutację pisze recenzent w werdykcie, nie autor w selektorze; inna postać to odmowa
+    z listą."""
 
-    with pytest.raises(ValueError, match=r"to nie selektor strażnika z listy: mypy, ruff, .* brak - test \(strażnik to test\) albo brak - usunięte"):
+    with pytest.raises(ValueError, match=r"to nie selektor strażnika z listy: mypy, ruff, .* pytest tests/<plik>\.py::<test>, .* brak - usunięte"):
         straznik.parse(text)
 
 
@@ -287,22 +340,323 @@ def test_komentarz_za_kodem_na_linii_z_gdzie_nie_jest_proza(tmp_path: Path) -> N
     assert not outcome.detected and "kod/liczby.py:2 to nie plik .md, docstring ani komentarz" in outcome.line, outcome.line
 
 
-# Granice dowodu (ADR 0042, „Konsekwencje”): każda próbka przechodzi dowód, choć strażnik nie łapie Ważnego z ``Gdzie``.
+# Dowód ``pytest <węzeł>`` z mutacją recenzenta (ADR 0042, aneks): HEAD z poprawką ``x * 2`` i blok, który przywraca
+# ``x * 3`` z FAIL. Węzeł pada tylko przez mutację z bloku, więc sondy rund r1–r3 #2197 (nazwa dodana po FAIL, wyjątek
+# złapany w kodzie HEAD, stan biegu) nie mają czego sklasyfikować.
+GOOD = BASE["kod/liczby.py"]
+NODE = "tests/test_g.py::test_g"
+TEST_G = "from kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    assert podwojona(3) == 6\n"
+
+
+def _block(*edits: tuple[str, str, str], name: str = "x * 3 z FAIL") -> str:
+    return json.dumps([{"nazwa": name, "zmiany": [list(edit) for edit in edits]}])
+
+
+def _with_trace(text: str, trace: str) -> str:
+    """Źródło próbki z ``{slad}`` zastąpionym literałem Pythona ścieżki ``trace`` (``repr``), a nie samym tekstem
+    ścieżki w cudzysłowie: ścieżka Windows ``C:\\Users\\…`` w cudzysłowie to ``SyntaxError`` (``\\U``), więc podstawa
+    dowodu na Windows jest czerwona (#2197 r6 W1)."""
+
+    return text.replace("{slad}", repr(trace))
+
+
+TRIPLED = _block(("kod/liczby.py", "return x * 2", "return x * 3"))
+# Parametr testu z id z danych produkcji (sonda #2197 r4 W1): z mutacją, która przywraca listę z FAIL, węzła nie ma.
+FORMATS = 'OBSLUGIWANE = ("a", "b")\n\n\ndef obsluz(nazwa: str) -> bool:\n    return nazwa in OBSLUGIWANE\n'
+TEST_FORMATS = 'import pytest\n\nfrom kod.pliki import OBSLUGIWANE, obsluz\n\n\n@pytest.mark.parametrize("nazwa", OBSLUGIWANE)\ndef test_g(nazwa: str) -> None:\n    assert obsluz(nazwa)\n'
+IMPORT_FAIL = _block(("kod/liczby.py", "def podwojona(x: int) -> int:\n", "from kod.nie_ma import LIMIT\n\n\ndef podwojona(x: int) -> int:\n"), name="import z FAIL")
+MEMO = (
+    "_PAMIEC: dict[int, int] = {}\n\n\ndef _norma(x: int) -> int:\n    try:\n        return _PAMIEC[x]\n    except KeyError:\n"
+    "        _PAMIEC[x] = x\n        return x\n\n\ndef podwojona(x: int) -> int:\n    return _norma(x) * 2\n"
+)
+
+
+@dataclass(frozen=True)
+class Sample:
+    """HEAD z plikami ``head`` po FAIL z ``x * 3`` w ``podwojona``, blok mutacji ``mutation`` (``None``: żaden werdykt
+    go nie ma), początek stanu w linii dowodu i jej fragment ``tail`` dalej."""
+
+    head: dict[str, str]
+    mutation: str | None
+    state: str
+    node: str = NODE
+    tail: str = ""
+
+
+PROBKI_TESTU = {
+    "prawdziwy-straznik": Sample({"tests/test_g.py": TEST_G}, TRIPLED, "WYKRYTA | z bloku ### Mutacja W1 r1: x * 3 z FAIL → 1 failed"),
+    "test-innej-funkcji": Sample({"tests/test_g.py": TEST_G.replace("podwojona(3) == 6", "podwojona(0) == 0")}, TRIPLED, "NIEWYKRYTA | x * 3 z FAIL: NIEWYKRYTA: 1 passed"),
+    # Sonda r1 W1, r2 W1 i r3 W1 #2197: test padał na drzewie FAIL tylko przez nazwę dodaną po FAIL; z mutacją z bloku ta
+    # nazwa stoi, więc test pada tylko wtedy, gdy łapie błąd.
+    "test-nazwy-dodanej-po-fail": Sample(
+        {"kod/liczby.py": GOOD + "\n\nWERSJA = 2\n", "tests/test_g.py": "import kod.liczby\n\n\ndef test_g() -> None:\n    assert kod.liczby.podwojona(0) == 0\n    assert kod.liczby.WERSJA == 2\n"},
+        TRIPLED,
+        "NIEWYKRYTA | x * 3 z FAIL: NIEWYKRYTA: 1 passed",
+    ),
+    # Sonda r3 W2 #2197: pomocnik HEAD w tym samym pliku zgłasza i łapie ``KeyError``; dowód nie porównuje wyjątków, więc
+    # prawdziwy strażnik przechodzi.
+    "prawdziwy-straznik-z-wyjatkiem-zlapanym-w-kodzie-head": Sample(
+        {"kod/liczby.py": MEMO, "tests/test_g.py": TEST_G},
+        _block(("kod/liczby.py", "return _norma(x) * 2", "return _norma(x) * 3")),
+        "WYKRYTA | z bloku ### Mutacja W1 r1",
+    ),
+    "dwie-mutacje-jedna-niewykryta": Sample(
+        {"tests/test_g.py": TEST_G},
+        json.dumps([{"nazwa": "x * 3", "zmiany": [["kod/liczby.py", "return x * 2", "return x * 3"]]}, {"nazwa": "x + 2", "zmiany": [["kod/liczby.py", "return x + 1", "return x + 2"]]}]),
+        "NIEWYKRYTA | x + 2: NIEWYKRYTA: 1 passed",
+    ),
+    # Sonda #2197 r4 W1: z mutacją pytest nie uruchamia węzła (kod 4), a Required CI uruchamia cały plik i jest zielone.
+    "wezel-znika-z-mutacja": Sample(
+        {"kod/pliki.py": FORMATS, "tests/test_g.py": TEST_FORMATS},
+        _block(("kod/pliki.py", '("a", "b")', '("a",)'), name="lista bez b z FAIL"),
+        "NIEWYKRYTA | lista bez b z FAIL: NIEWYKRYTA: ",
+        "tests/test_g.py::test_g[b]",
+        "(pytest nie uruchomił testu, kod 4, a plik węzła się zbiera: ",
+    ),
+    # Sonda #2224 r1 W1: z mutacją nie importuje się moduł węzła albo ``tests/conftest.py`` (pytest kod 4 jak przy
+    # zniknięciu węzła), a Required CI, które uruchamia plik, pada; to wykrycie.
+    "modul-wezla-nie-importuje-sie-z-mutacja": Sample(
+        {"tests/test_g.py": TEST_G},
+        IMPORT_FAIL,
+        "WYKRYTA | z bloku ### Mutacja W1 r1: import z FAIL → ",
+        tail="(plik węzła z mutacją się nie zbiera, kod 2: ",
+    ),
+    "plik-wezla-bez-testow-z-mutacja": Sample(
+        {
+            "kod/flagi.py": "WLACZONE = True\n",
+            "tests/test_g.py": "from kod.flagi import WLACZONE\n\nif WLACZONE:\n\n    def test_g() -> None:\n        assert WLACZONE\n",
+        },
+        _block(("kod/flagi.py", "WLACZONE = True", "WLACZONE = False"), name="flaga wyłączona z FAIL"),
+        "NIEWYKRYTA | flaga wyłączona z FAIL: NIEWYKRYTA: ",
+        tail="a plik węzła się zbiera: ",
+    ),
+    "conftest-nie-importuje-sie-z-mutacja": Sample(
+        {"tests/test_g.py": TEST_G, "tests/conftest.py": "import kod.liczby\n"},
+        IMPORT_FAIL,
+        "WYKRYTA | z bloku ### Mutacja W1 r1: import z FAIL → ",
+        tail="(plik węzła z mutacją się nie zbiera, kod 4: ",
+    ),
+    "blok-zmienia-test": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("tests/test_g.py", "== 6", "== 7")),
+        "ODMOWA | blok ### Mutacja W1 r1: zmiana w tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test",
+    ),
+    # Sonda #2197 r6 D1: APFS macOS nanosi ``Tests/test_g.py`` na test, a Linux nie ma takiego pliku; odmowa ta sama
+    # na każdym systemie.
+    "blok-zmienia-test-pod-inna-wielkoscia-liter": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("Tests/test_g.py", "== 6", "== 7")),
+        "ODMOWA | blok ### Mutacja W1 r1: zmiana w Tests/test_g.py: zła postać to kod, konfiguracja albo reguła, które test ma złapać, a nie test",
+    ),
+    "blok-z-pusta-sciezka": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("", "return x * 2", "return x * 3")),
+        "ODMOWA | x * 3 z FAIL: . to katalog, a nie plik na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok",
+    ),
+    "blok-ze-sciezka-katalogu-i-pusta-kotwica": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("kod", "", "X = 1\n")),
+        "ODMOWA | x * 3 z FAIL: kod to katalog, a nie plik na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok",
+    ),
+    "pominiety-na-head": Sample({"tests/test_g.py": TEST_G.replace("def test_g", "import pytest\n\n\n@pytest.mark.skip\ndef test_g")}, TRIPLED, "NIEWYKRYTA | x * 3 z FAIL: NIEWYKRYTA: 1 skipped"),
+    "brak-bloku": Sample({"tests/test_g.py": TEST_G}, None, "ODMOWA | żaden werdykt PR nie ma bloku ### Mutacja W1 r1 ze złą postacią do naniesienia na HEAD: recenzent następnej rundy dopisuje blok"),
+    "kotwica-nieobecna-na-head": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("kod/liczby.py", "return x * 4", "return x * 3")),
+        "ODMOWA | x * 3 z FAIL: kotwicy nie ma dokładnie raz w kod/liczby.py: 'return x * 4' na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok ### Mutacja W1 r1",
+    ),
+    "kotwica-dwa-razy-na-head": Sample(
+        {"tests/test_g.py": TEST_G},
+        _block(("kod/liczby.py", "return x", "return 3 * x")),
+        "ODMOWA | x * 3 z FAIL: kotwicy nie ma dokładnie raz w kod/liczby.py: 'return x' na HEAD scalonym z bazą: recenzent następnej rundy odnawia blok",
+    ),
+    "blok-z-poleceniem": Sample(
+        {"tests/test_g.py": TEST_G},
+        json.dumps([{"nazwa": "m", "zmiany": [["kod/liczby.py", "return x * 2", "return x * 3"]], "polecenie": ["-c", "raise SystemExit(1)"]}]),
+        "ODMOWA | blok ### Mutacja W1 r1: wpis ma tylko klucze nazwa i zmiany, bo polecenie daje selektor strażnika pytest: recenzent następnej rundy odnawia blok",
+    ),
+    "blok-nie-json": Sample({"tests/test_g.py": TEST_G}, "[{nazwa: m}]", "ODMOWA | blok ### Mutacja W1 r1: to nie JSON"),
+}
+
+
+@pytest.mark.parametrize("name", PROBKI_TESTU)
+def test_dowod_testu_przyjmuje_test_ktory_pada_tylko_przez_mutacje_recenzenta(tmp_path: Path, name: str) -> None:
+    """Węzeł bez mutacji przechodzi, a z każdą mutacją najnowszego bloku pada: tylko wtedy ``WYKRYTA``; bez bloku albo
+    z kotwicą, której na HEAD nie ma dokładnie raz, odmowa mówi recenzentowi następnej rundy, co zrobić."""
+
+    sample = PROBKI_TESTU[name]
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **sample.head})
+
+    outcome = pull.prove(f"pytest {sample.node}", mutation=sample.mutation)
+
+    assert outcome.detected is sample.state.startswith("WYKRYTA"), outcome.line
+    assert f"#5 W1 r1 | {pull.failed[:8]} | {sample.state}" in outcome.line, outcome.line
+    assert sample.tail in outcome.line, outcome.line
+
+
+ONCE = "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    assert not slad.exists()\n    slad.write_text('1')\n"
+
+
+def test_slad_poza_srodowiskiem_biegu_to_odmowa_a_nie_wykryta(tmp_path: Path) -> None:
+    """Sonda #2197 r4 W2: test, który nie woła kodu z mutacją, a zostawia ślad poza środowiskiem biegu (ścieżka
+    bezwzględna) i pada, gdy go zastanie, padłby z każdą mutacją; bieg bez mutacji po biegach z mutacją pada tak samo,
+    więc dowód odmawia."""
+
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, "tests/test_g.py": _with_trace(ONCE, str(tmp_path / "slad.txt"))})
+
+    outcome = pull.prove(f"pytest {NODE}", mutation=TRIPLED)
+
+    assert not outcome.detected, outcome.line
+    assert f"#5 W1 r1 | {pull.failed[:8]} | ODMOWA | {NODE} bez mutacji pada po biegach z mutacją (1 failed" in outcome.line, outcome.line
+
+
+@pytest.mark.parametrize(
+    ("head", "fragment"),
+    [
+        ({"tests/test_g.py": TEST_G.replace("== 6", "== 7")}, "PODSTAWA CZERWONA | tests/test_g.py::test_g na HEAD scalonym z bazą bez mutacji: 1 failed"),
+        ({"tests/test_g.py": TEST_G.replace("def test_g", "def test_inny")}, "PODSTAWA CZERWONA | tests/test_g.py::test_g na HEAD scalonym z bazą bez mutacji: "),
+    ],
+    ids=["pada", "bez-wezla"],
+)
+def test_dowod_testu_odmawia_wezla_ktory_na_head_bez_mutacji_nie_przechodzi(tmp_path: Path, head: dict[str, str], fragment: str) -> None:
+    """Węzeł, który pada bez mutacji (np. tylko na Windows przechodzi) albo którego nie ma, niczego nie dowodzi."""
+
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **head})
+
+    outcome = pull.prove(f"pytest {NODE}", mutation=TRIPLED)
+
+    assert not outcome.detected and fragment in outcome.line, outcome.line
+
+
+@pytest.mark.parametrize(("before_test_proof", "state"), [(False, "ODMOWA | brak - test przechodzi tylko w wątku sprzed wdrożenia dowodu testu"), (True, "WYJĄTEK brak - test")])
+def test_brak_testu_przechodzi_tylko_w_watku_sprzed_wdrozenia_dowodu_testu(tmp_path: Path, before_test_proof: bool, state: str) -> None:
+    """Sonda luki G3: ``brak - test`` przechodziło bez testu, który łapie błąd. Po wdrożeniu dowodu testu
+    (``bramka_straznika.TEST_MARKER``) strażnik-test to ``pytest <węzeł>`` z blokiem mutacji recenzenta."""
+
+    pull = _fixed(tmp_path)
+
+    outcome = pull.prove("brak - test", before_test_proof=before_test_proof)
+
+    assert outcome.detected is before_test_proof, outcome.line
+    assert f"#5 W1 r1 | {pull.failed[:8]} | {state}" in outcome.line, outcome.line
+
+
+@dataclass(frozen=True)
+class Gap:
+    """Granica: HEAD z plikami ``head`` po FAIL z ``x * 3``, selektor ``guard``, blok ``mutation`` i wątek sprzed dowodu
+    testu (``before_test_proof``)."""
+
+    head: dict[str, str]
+    guard: str
+    mutation: str | None = None
+    before_test_proof: bool = False
+
+
+# Granice dowodu (ADR 0042, „Konsekwencje” i aneks): każda próbka przechodzi dowód, choć strażnik nie łapie Ważnego
+# z ``Gdzie``.
 ZNANE_LUKI_STRAZNIKA = {
-    # Test nie ma dowodu narzędzia, więc ``brak - test`` przechodzi przy Ważnym w kodzie także bez testu, który łapie
+    # W wątku sprzed wdrożenia dowodu testu ``brak - test`` przechodzi przy Ważnym w kodzie także bez testu, który łapie
     # błąd z ``Gdzie``, i przy Ważnym, które zamknąłby typ; to ocenia recenzent następnej rundy (skill ``przeglad``).
-    "brak - test: Ważne w kodzie bez testu, który łapie błąd": ({"kod/liczby.py": BAD}, {"kod/liczby.py": BASE["kod/liczby.py"]}, "brak - test"),
+    "brak - test: wątek sprzed dowodu testu bez testu, który łapie błąd": Gap({}, "brak - test", before_test_proof=True),
     # Usunięcia kodu z ``Gdzie`` też nie dowodzi narzędzie, więc ``brak - usunięte`` przechodzi, choć funkcja z ``Gdzie``
     # stoi na HEAD poprawiona w miejscu.
-    "brak - usunięte: kod z Gdzie poprawiony w miejscu, a nie usunięty": ({"kod/liczby.py": BAD}, {"kod/liczby.py": BASE["kod/liczby.py"]}, "brak - usunięte"),
+    "brak - usunięte: kod z Gdzie poprawiony w miejscu, a nie usunięty": Gap({}, "brak - usunięte"),
+    # Mutacja szersza niż błąd z Ważnego (cała funkcja zamiast ``x * 3``) łapie test innej zmiany tej funkcji; wierność
+    # bloku ocenia recenzent następnej rundy, który go czyta.
+    "pytest: mutacja szersza niż błąd łapie test innej zmiany": Gap(
+        {
+            "kod/liczby.py": GOOD.replace("    return x * 2\n", "    if x < 0:\n        raise ValueError(x)\n    return x * 2\n"),
+            "tests/test_g.py": "import pytest\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    with pytest.raises(ValueError):\n        podwojona(-1)\n",
+        },
+        f"pytest {NODE}",
+        _block(("kod/liczby.py", "    if x < 0:\n        raise ValueError(x)\n    return x * 2\n", "    return x * 3\n")),
+    ),
+    # Wierna mutacja (kod z FAIL: ujemne razy 3) łapana inną drogą niż błąd z Ważnego (sonda #2197 r4 D2): test podaje
+    # napis, na którym porównanie z FAIL zgłasza ``TypeError``, a ujemnych liczb nie sprawdza.
+    "pytest: wierna mutacja łapana inną drogą niż błąd": Gap(
+        {"tests/test_g.py": "from kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    assert podwojona('ab') == 'abab'  # type: ignore[arg-type]\n"},
+        f"pytest {NODE}",
+        _block(("kod/liczby.py", "    return x * 2\n", "    return x * 2 if x >= 0 else x * 3\n"), name="ujemne razy 3 z FAIL"),
+    ),
+    # Stan poza środowiskiem biegu (``{slad}``: plik pod ścieżką bezwzględną, sondy #2197 r5 W1), który biegu bez mutacji
+    # nie wywraca: test pada przy śladzie poprzedniego biegu na przemian albo sprawdza błąd dopiero przy nim. Required CI
+    # uruchamia węzeł raz, więc z błędem przechodzi; to test niestabilny, który ocenia recenzent.
+    "pytest: test pada na przemian przez ślad poza środowiskiem": Gap(
+        {
+            "tests/test_g.py": (
+                "import pathlib\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n    if slad.exists():\n        slad.unlink()\n"
+                "        raise AssertionError('ślad poprzedniego biegu')\n    slad.write_text('1')\n"
+            )
+        },
+        f"pytest {NODE}",
+        TRIPLED,
+    ),
+    "pytest: test sprawdza błąd dopiero przy śladzie poza środowiskiem": Gap(
+        {
+            "tests/test_g.py": (
+                "import pathlib\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    slad = pathlib.Path({slad})\n"
+                "    if slad.exists():\n        assert podwojona(3) == 6\n    slad.write_text('1')\n"
+            )
+        },
+        f"pytest {NODE}",
+        TRIPLED,
+    ),
+    # Sąsiad w sesji Required CI (sonda #2197 r6 W2): rejestr formatów wypełnia import ``kod.csv_format``, a poprawka
+    # dodaje ten import do ``kod/eksport.py``. Dowód uruchamia węzeł sam, więc z mutacją, która import usuwa, test pada,
+    # a zadanie pytest zbiera też ``tests/test_csv_format.py`` (każdy worker xdist zbiera wszystkie pliki zadania przed
+    # pierwszym testem), który moduł formatu importuje, więc z błędem przechodzi; tak samo maskuje stan zostawiony przez
+    # wcześniejszy test workera. To ocenia recenzent.
+    "pytest: sąsiad w sesji Required CI ustawia stan modułu, który maskuje błąd": Gap(
+        {
+            "kod/formaty.py": "FORMATY: dict[str, str] = {}\n",
+            "kod/csv_format.py": "from kod.formaty import FORMATY\n\nFORMATY['csv'] = 'przecinki'\n",
+            "kod/eksport.py": "import kod.csv_format\nfrom kod.formaty import FORMATY\n\n\ndef opis(nazwa: str) -> str:\n    return FORMATY[nazwa]\n",
+            "tests/test_g.py": "from kod.eksport import opis\n\n\ndef test_g() -> None:\n    assert opis('csv') == 'przecinki'\n",
+            "tests/test_csv_format.py": "import kod.csv_format\nfrom kod.formaty import FORMATY\n\n\ndef test_csv() -> None:\n    assert FORMATY['csv'] == 'przecinki'\n",
+        },
+        f"pytest {NODE}",
+        _block(("kod/eksport.py", "import kod.csv_format\n", ""), name="eksport bez importu, który rejestruje csv, z FAIL"),
+    ),
+    # Test tekstu definicji zamiast jej zachowania pada z mutacją tego tekstu; dowód nie ocenia, co test sprawdza.
+    "pytest: test tekstu definicji zamiast jej zachowania": Gap(
+        {"tests/test_g.py": "import inspect\n\nfrom kod.liczby import podwojona\n\n\ndef test_g() -> None:\n    assert 'x * 2' in inspect.getsource(podwojona)\n"},
+        f"pytest {NODE}",
+        TRIPLED,
+    ),
 }
 
 
 @pytest.mark.parametrize("name", ZNANE_LUKI_STRAZNIKA)
 def test_znane_luki_straznika_przechodza_przez_dowod(tmp_path: Path, name: str) -> None:
-    failed, head, guard = ZNANE_LUKI_STRAZNIKA[name]
-    pull = _pull(tmp_path, failed, head)
+    gap = ZNANE_LUKI_STRAZNIKA[name]
+    head = {path: _with_trace(text, str(tmp_path / "slad.txt")) for path, text in gap.head.items()}
+    pull = _pull(tmp_path, {"kod/liczby.py": BAD}, {"kod/liczby.py": GOOD, **head})
 
-    outcome = pull.prove(guard, scopes=SCOPE)
+    outcome = pull.prove(gap.guard, scopes=SCOPE, before_test_proof=gap.before_test_proof, mutation=gap.mutation)
 
     assert outcome.detected, f"dowód odmawia już luki „{name}”: usuń ją ze ZNANE_LUKI_STRAZNIKA ({outcome.line})"
+
+
+# Ścieżka ``tmp_path`` runnera Windows w Required CI (#2197 r6 W1, job ``pytest (Python 3.13, …)``).
+WINDOWS_TRACE = r"C:\Users\runneradmin\AppData\Local\Temp\pytest-of-runneradmin\pytest-0\test_g0\slad.txt"
+
+
+SOURCES = {
+    f"{name}: {path}": text
+    for name, head in [
+        *((name, sample.head) for name, sample in PROBKI_TESTU.items()),
+        ("slad-poza-srodowiskiem", {"tests/test_g.py": ONCE}),
+        *((name, gap.head) for name, gap in ZNANE_LUKI_STRAZNIKA.items()),
+    ]
+    for path, text in head.items()
+    if path.endswith(".py")
+}
+
+
+@pytest.mark.parametrize("source", SOURCES)
+def test_zrodlo_kazdej_probki_dowodu_testu_kompiluje_sie_ze_sladem_pod_sciezka_windows(source: str) -> None:
+    """Próbka wstawia ścieżkę ``tmp_path`` do źródła testu (``{slad}``) tylko przez ``_with_trace``, więc z ukośnikami
+    wstecznymi Windows źródło jest tym samym Pythonem; ścieżka w cudzysłowie bez ucieczki to ``SyntaxError``
+    i czerwona podstawa dowodu tylko na Windows (#2197 r6 W1), a ten test łapie to na każdym systemie."""
+
+    compile(_with_trace(SOURCES[source], WINDOWS_TRACE), source, "exec")

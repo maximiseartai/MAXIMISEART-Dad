@@ -238,7 +238,7 @@ def test_plik_mutacji_innej_postaci_jest_odrzucony_z_postacia_pliku(tmp_path: Pa
 
     answered = _mutacje("--plik", str(plan), "--", *IMPORT)
 
-    assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, f"{plan}: {problem}; postać: {mutacje.FILE_SHAPE}")
+    assert (answered.returncode, answered.stderr.splitlines()[-1].partition(": error: ")[2]) == (2, f"{plan}: {problem}; postać: {silnik_mutacji.FILE_SHAPE}")
 
 
 KOD_4 = (
