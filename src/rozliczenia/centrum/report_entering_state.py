@@ -443,7 +443,7 @@ class _TextFile:
         """Treść pliku; ``None``, gdy go nie ma, a ``unreadable``, gdy nie da się go odczytać."""
 
         self.file.retry()
-        if self.file.unavailable and self._written is not None:
+        if self.file.unavailable:
             return self._written
         try:
             return self.file.path.read_text(encoding="utf-8")

@@ -998,7 +998,7 @@ def _wynik_wysylki(config: Path, scenariusz: str) -> tuple[ImapInbox, object]:
         return inbox, inbox.send(PRZYPOMNIENIE, WYSLANE_O)
     password = "inne-haslo-maksa" if scenariusz == "odrzucone-haslo" else HASLO
     cut: Literal["greeting"] | None = "greeting" if scenariusz == "zerwane" else None
-    refuse: Literal["recipients"] | None = "recipients" if scenariusz == "odmowa-adresu" else None
+    refuse: Literal["greeting", "recipients"] | None = {"zajety": "greeting", "odmowa-adresu": "recipients"}.get(scenariusz)
     with AtrapaImap(address=SKRZYNKA, password=password) as imap, AtrapaSmtp(imap, cut=cut, refuse=refuse) as smtp:
         inbox = smtp_portu(config, imap, smtp)
         return inbox, inbox.send(PRZYPOMNIENIE, WYSLANE_O)
@@ -1011,17 +1011,30 @@ def _wynik_wysylki(config: Path, scenariusz: str) -> tuple[ImapInbox, object]:
         pytest.param("odrzucone-haslo", PasswordRejected(), id="odrzucone-haslo"),
         pytest.param("brak-sieci", InboxUnreachable("ConnectionRefusedError"), id="brak-sieci"),
         pytest.param("zerwane", InboxUnreachable("SMTPServerDisconnected"), id="zerwane-polaczenie"),
+        pytest.param("zajety", InboxUnreachable("SMTPConnectError"), id="zajety-serwer"),
         pytest.param("odmowa-adresu", MailRefused("SMTPRecipientsRefused"), id="odmowa-adresu"),
     ],
 )
 def test_wynik_wysylki_przypomnienia_niesie_sama_nazwe_bledu_bez_hasla(tmp_path: Path, scenariusz: str, wynik: object) -> None:
-    """Brak sieci i zerwane połączenie to ``InboxUnreachable`` (ponowienie w tej samej porze), inna odmowa serwera to
-    ``MailRefused``, a hasło aplikacji nie wychodzi z portu w żadnym wyniku, ``repr`` ani tekście (US 47)."""
+    """Brak sieci, zerwane połączenie i serwer zajęty już przy powitaniu (``421``) to ``InboxUnreachable`` (ponowienie
+    w tej samej porze), inna odmowa serwera to ``MailRefused``, a hasło aplikacji nie wychodzi z portu w żadnym
+    wyniku, ``repr`` ani tekście (US 47)."""
 
     inbox, outcome = _wynik_wysylki(dostep(tmp_path), scenariusz)
 
     assert outcome == wynik
     assert not [text for text in (repr(inbox), repr(outcome), str(outcome)) if HASLO in text or "abcd efgh" in text]
+
+
+def test_dostep_do_skrzynki_z_pliku_nie_ma_hasla_w_repr(tmp_path: Path) -> None:
+    """Dostęp, który port dostaje od właściciela Ustawień, jest gotowy, a hasła aplikacji nie ma w jego ``repr`` (US 47)."""
+
+    config = dostep(tmp_path)
+
+    shown = repr(z_pliku(config)())
+
+    assert ImapInbox(z_pliku(config)).access() == "ready"
+    assert HASLO not in shown and "abcd efgh" not in shown
 
 
 def test_test_bez_atrapy_smtp_pada_zamiast_laczyc_sie_z_gmailem(tmp_path: Path) -> None:
