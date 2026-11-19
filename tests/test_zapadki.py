@@ -81,6 +81,7 @@ PARSERS = frozenset(
     tools/lib/niestabilne_testy.py
     tools/lib/rozjazd_modelu.py
     tools/lib/wplyw_zmiany.py
+    tools/lib/zmiany_z_wydania.py
     tools/mutacje_zmiany.py
     tools/rownowaznosc.py
     """.split()
