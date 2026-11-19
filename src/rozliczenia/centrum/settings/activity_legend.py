@@ -6,14 +6,13 @@ są same kody, bo cofnięcie (``restore``) może złożyć wartość, której ``
 dopiero przez ``dump`` i ``parse``; legendę, którą liczą procesy, daje z dobrej wartości ``activity_legend``. Klucz
 Historii to ``kody.<id>``, a wartość to wpis pliku jako JSON, z którego cofnięcie odtwarza kod.
 
-Legendę taty Wydanie zmienia tylko jawną zmianą (furtka ADR 0032): wpis ``ReleaseChange(<id>, LEGEND, set_codes(...))``
-w ``release_changes.RELEASE_CHANGES``. Plik ``legenda_czynnosci_domyslna.yaml`` po pierwszym Wydaniu z legendą się nie
+Legendę taty Wydanie zmienia tylko jawną zmianą (furtka ADR 0032): wpis ``ReleaseChange(<id>, LEGEND, <funkcja>)`` w
+``release_changes.RELEASE_CHANGES``, gdzie ``<funkcja>`` to funkcja tego modułu, która zwraca ``set_codes(inputs, ...)``. Plik ``legenda_czynnosci_domyslna.yaml`` po pierwszym Wydaniu z legendą się nie
 zmienia: tata bez własnego pliku liczy nim, więc jego zmiana weszłaby bez wiersza Historii i bez „Cofnij”.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from functools import lru_cache
 from typing import Final
 
@@ -105,18 +104,15 @@ def legend_refusal(codes: Codes | FieldProblem) -> Codes | FieldProblem:
     return codes
 
 
-def set_codes(*codes: ActivityCode) -> Callable[[ReleaseInputs[Codes]], Proposal[Codes]]:
+def set_codes(inputs: ReleaseInputs[Codes], *codes: ActivityCode) -> Proposal[Codes]:
     """Zmiana Legendy czynności z Wydania: każdy kod z ``codes`` zastępuje w legendzie taty kod o tym samym ``id`` na jego
     miejscu, a kod, którego tata nie ma, dochodzi na koniec. Edycja jest deklaratywna („ustaw”), więc powtórzona po
     utracie pamięci właściciela nie daje różnicy. Plik ze złą treścią albo bez odczytu to ``Later``: zmiana nie nadpisuje
     pliku taty ostatnią dobrą legendą."""
 
-    def propose(inputs: ReleaseInputs[Codes]) -> Proposal[Codes]:
-        if not isinstance(inputs.current, Good):
-            return Later("plik Legendy czynności ma złą treść albo nie da się go teraz przeczytać")
-        return Edit(lambda current: _with_codes(current, codes))
-
-    return propose
+    if not isinstance(inputs.current, Good):
+        return Later("plik Legendy czynności ma złą treść albo nie da się go teraz przeczytać")
+    return Edit(lambda current: _with_codes(current, codes))
 
 
 def _with_codes(current: Codes, codes: Codes) -> Codes:

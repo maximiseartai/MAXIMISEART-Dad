@@ -26,6 +26,11 @@ NOWY_WPIS: Final = (
     "drugi raz: przywróć ją taką, jaka jest w tagu Wydania, i dopisz do RELEASE_CHANGES "
     "(rozliczenia.centrum.settings.release_changes) nowy ReleaseChange z nowym id obok wpisów tego samego pliku"
 )
+GRANICA_ODCISKU: Final = (
+    "odcisk widzi tylko propose, którego kod to def na najwyższym poziomie modułu, więc lambdę, metodę, funkcję "
+    "zagnieżdżoną albo z fabryki, functools.partial, obiekt wywoływalny i funkcję spod dekoratora, który zwraca inną "
+    "funkcję, zamień na taką funkcję modułu (np. def nazwa_zmiany(inputs): return set_codes(inputs, kod))"
+)
 _LIMIT_ODCZYTU_S: Final = 120
 
 
@@ -46,31 +51,50 @@ def _bez_docstringu(node: ast.AST) -> ast.AST:
     return node
 
 
-def odcisk(path: Path, name: str) -> str:
+def _nazwy(node: ast.AST) -> list[str]:
+    return [found.id for found in ast.walk(node) if isinstance(found, ast.Name)]
+
+
+def _poczatek(node: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
+    return min([node.lineno, *(decorator.lineno for decorator in node.decorator_list)])
+
+
+def odcisk(path: Path, name: str, line: int) -> str:
+    body = ast.parse(path.read_text(encoding="utf-8")).body
     definitions: dict[str, ast.stmt] = {}
-    for node in ast.parse(path.read_text(encoding="utf-8")).body:
+    for node in body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             definitions[node.name] = node
         elif isinstance(node, (ast.Assign, ast.AnnAssign)):
             targets = node.targets if isinstance(node, ast.Assign) else [node.target]
             definitions.update({target.id: node for target in targets if isinstance(target, ast.Name)})
-    seen: set[str] = set()
-    waiting = [name]
+    root = next(
+        (node for node in body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name and _poczatek(node) == line),
+        None,
+    )
+    if root is None:
+        raise ValueError(f"{path}:{line} nie zaczyna definicji {name} na najwyższym poziomie modułu: {GRANICA_ODCISKU}")
+    seen = {name}
+    waiting = _nazwy(root)
     while waiting:
         current = waiting.pop()
         if current in seen or current not in definitions:
             continue
         seen.add(current)
-        waiting += [node.id for node in ast.walk(definitions[current]) if isinstance(node, ast.Name)]
-    unparsed = "\n".join(ast.unparse(_bez_docstringu(definitions[current])) for current in sorted(seen))
+        waiting += _nazwy(definitions[current])
+    unparsed = "\n".join(ast.unparse(_bez_docstringu(root if current == name else definitions[current])) for current in sorted(seen))
     return hashlib.sha256(unparsed.encode()).hexdigest()[:16]
 
 
 def wpisy(zmiany: Iterable[ReleaseChange[Any]]) -> dict[str, Wpis]:
-    return {
-        zmiana.id: Wpis(zmiana.file.name, odcisk(Path(inspect.getfile(sys.modules[zmiana.propose.__module__])), zmiana.propose.__name__))
-        for zmiana in zmiany
-    }
+    found: dict[str, Wpis] = {}
+    for zmiana in zmiany:
+        propose = zmiana.propose
+        if not inspect.isfunction(propose):
+            raise ValueError(f"propose Zmiany z Wydania {zmiana.id} to {propose!r}: {GRANICA_ODCISKU}")
+        code = propose.__code__
+        found[zmiana.id] = Wpis(zmiana.file.name, odcisk(Path(code.co_filename), code.co_name, code.co_firstlineno))
+    return found
 
 
 def wpisy_commitu(root: Path, commit: str) -> dict[str, Wpis]:

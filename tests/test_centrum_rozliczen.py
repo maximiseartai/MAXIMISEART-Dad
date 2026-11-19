@@ -92,7 +92,7 @@ from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxUnreachable, MailRefused, SentAttachment
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
-from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE, set_codes
+from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE, Codes, set_codes
 from rozliczenia.centrum.settings.quantity_rules import DEVICES, DEVICES_FILE, DEVICES_SECTION, RULES, RULES_FILE
 from rozliczenia.quantity_engine import (
     Component,
@@ -2656,7 +2656,11 @@ def test_zla_legenda_to_zle_ustawienie_z_jednym_zdaniem_a_przygotowanie_liczy_os
     assert [(row["source"], row["refused"]) for row in legend_history(preparing.client)] == [("outside", True)]
 
 
-RT2_IN_AK = ReleaseChange("2026-12-rt2-w-ak", LEGEND, set_codes(own_code("rt2", column=FixedColumn("AK"))))
+def rt2_in_ak(inputs: ReleaseInputs[Codes]) -> Proposal[Codes]:
+    return set_codes(inputs, own_code("rt2", column=FixedColumn("AK")))
+
+
+RT2_IN_AK = ReleaseChange("2026-12-rt2-w-ak", LEGEND, rt2_in_ak)
 """Jawna zmiana legendy w Wydaniu, np. po odpowiedzi taty, że ``rt2`` daje ``AK``."""
 
 
@@ -2707,9 +2711,9 @@ def test_legenda_z_wydania_zmienia_sie_tylko_jawna_zmiana_w_wydaniu() -> None:
     bez „Cofnij” (ADR 0032)."""
 
     assert hashlib.sha256(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes)).hexdigest() == RELEASE_LEGEND_SHA256, (
-        "Legendę czynności taty zmienia w Wydaniu tylko wpis ReleaseChange(<id>, LEGEND, set_codes(...)) w "
-        "RELEASE_CHANGES (centrum/settings/release_changes.py), nie zmiana legenda_czynnosci_domyslna.yaml. Skrót zmień "
-        "tylko wtedy, gdy żadne Wydanie (tag v*) nie niosło jeszcze tej legendy: git tag --contains <commit pliku>."
+        "Legendę czynności taty zmienia w Wydaniu tylko wpis ReleaseChange(<id>, LEGEND, <funkcja>) w RELEASE_CHANGES "
+        "(centrum/settings/release_changes.py), którego funkcja tego modułu zwraca set_codes(inputs, ...), nie zmiana "
+        "legenda_czynnosci_domyslna.yaml. Skrót zmień tylko wtedy, gdy żadne Wydanie (tag v*) nie niosło jeszcze tej legendy: git tag --contains <commit pliku>."
     )
 
 
@@ -3002,9 +3006,13 @@ LISTWY = ActivityCode("listwy", ("listwy{n}m",), amount=20)
 """Kod, którego legenda z Wydania nie ma: np. kwota za listwy po odpowiedzi taty."""
 
 
+def with_listwy(inputs: ReleaseInputs[Codes]) -> Proposal[Codes]:
+    return set_codes(inputs, LISTWY)
+
+
 def test_jawna_zmiana_legendy_w_wydaniu_dopisuje_kod_ktorego_tata_nie_ma_na_koncu(tmp_path: Path) -> None:
     tool = ToolDirectory(tmp_path)
-    client = started(tool, (ReleaseChange("2026-12-listwy", LEGEND, set_codes(LISTWY)),))
+    client = started(tool, (ReleaseChange("2026-12-listwy", LEGEND, with_listwy),))
     sentences, _ = legend_sentences(client)
     rows = legend_history(client)
     client.stop()
@@ -3023,7 +3031,7 @@ def test_jawna_zmiana_legendy_w_wydaniu_czeka_przy_zlym_albo_nieczytelnym_pliku_
     good = with_own(own_code("spawpg", amount=80))
     stored = with_own(own_code("spawez", spellings=("spawpg",))) if state == "zła treść" else good
     path.write_bytes(stored)
-    change = ReleaseChange("2026-12-listwy", LEGEND, set_codes(LISTWY))
+    change = ReleaseChange("2026-12-listwy", LEGEND, with_listwy)
 
     if state == "bez odczytu":
         with without_reading(path):
