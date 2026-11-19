@@ -73,8 +73,8 @@ Reguły szczebla i dowodu:
 - Autor wyrywa korzeń na najwyższym szczeblu, który działa, a przy każdym wyższym pisze jedno zdanie, czemu nie działa.
   Gdy recenzent pokaże działający wyższy szczebel, to Ważne.
   „Bez mechanizmu” nie jest szczeblem.
-- Dowód wyrwania: mechanizm pada na pierwotnym błędzie (mutacja z `tools/mutacje.py` albo cofnięcie poprawki).
-  Recenzent następnej rundy powtarza ten dowód i jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
+- Dowód wyrwania: mechanizm pada na pierwotnym błędzie, a liczy go bramka strażnika (niżej).
+  Recenzent następnej rundy jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
   Przy Ważnym z korzeniem R-PROZA-KOPIA regułę „Fix the class, not the instance” z `CODING_STANDARDS.md` autor stosuje do prozy: klasą jest każde zdanie diffu od merge-base na temat zdania z werdyktu, które przed kolejną rundą czyta z kodem (#2069: trzy `FAIL` za kolejne zdania o tym, skąd gospodarze biorą Ustawienia ze startu, `PASS` dopiero po przeczesaniu wszystkich).
 - Autor może zakwestionować kod korzenia z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy kodem w swoim werdykcie: punktem `Korzeń W<n> r<k>: R-KOD - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
   Rejestr korzeni i bramka korzenia biorą kod z ostatniego werdyktu, który dotyczy tego Ważnego.
@@ -84,16 +84,17 @@ Reguły szczebla i dowodu:
 - Gdy żaden kod z listy nie pasuje, recenzent pisze `Korzeń: NOWY R-KOD - opis` z kodem, którego na liście nie ma, a nie najbliższy kod, bo zły kod zafałszowałby rejestr powtórzeń.
   Autor dopisuje ten kod do [`korzenie.toml`](korzenie.toml) w swoim PR, z jednym zdaniem i przykładem PR, a kolejne werdykty piszą go już bez `NOWY`.
 
-Drugie wystąpienie idiomu ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.md)):
+Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)):
 
-- Pole `Idiom:` pisze recenzent, nie autor, w Ważnym po polu `Szczebel:`, w jednej z trzech postaci:
-  - `Idiom: <id> jak #N W<n> r<k>`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
-  - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
-  - `Idiom: bez reguły <klasa> jak #N W<n> r<k>`, gdy idiom nie dostaje reguły, a `<klasa>` spełnia swój warunek z tabeli punktu „Idiom bez reguły” ADR 0036.
-- PR z Ważnym z polem `Idiom: <id>` albo `Idiom: <id> jak #N W<n> r<k>` scala się tylko wtedy, gdy na HEAD PR istnieje reguła o id `<id>` i gdy jej dowód przechodzi.
-  Próbka `ZNANE_LUKI` nigdy nie zastępuje reguły; wolno ją dodać obok reguły, która łapie przypadek z `Gdzie`, dla formy siostrzanej, której mechanizm reguły nie wyrazi.
-  Dowód to `tools/na_scalonych_pr.py --regula-id <id> --z-commita <HEAD PR>` z każdym przypadkiem tej reguły z historii jej pól `Idiom:`, a `tools/scal_pr.py` uruchamia go z kodu bazy przy merge'u; dziś umie tylko reguły ast-grep.
-- Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a; to, co sprawdza recenzent następnej rundy (regułę albo dowód mutacji), podaje dla każdej klasy ta sama tabela ADR 0036.
+- Każde Ważne kończy strażnik: autor wpisuje w jego bloku sekcji `## Korzeń` linię `Strażnik: <selektor>` z listy w docstringu [`tools/lib/straznik.py`](../../../tools/lib/straznik.py), a `tools/scal_pr.py` scala PR tylko z dowodem każdego strażnika (warunek 5).
+  Autor sprawdza dowód przed kolejną rundą: `tools/na_scalonych_pr.py --straznik '<selektor>' --z-commita <HEAD PR> --wazne <PR>/W<n>/r<k>`.
+  Próbka `ZNANE_LUKI` nigdy nie zastępuje strażnika; wolno ją dodać obok niego dla formy siostrzanej, której mechanizm nie wyrazi.
+- Dowód bierze złą postać z drzewa SHA werdyktu i z funkcji wokół `Gdzie` (mypy i ruff liczą znalezisko w tej funkcji), więc recenzent pisze w `Gdzie` linie złego kodu, które poprawka ma zmienić, a nie miejsce objawu.
+- Recenzent następnej rundy czyta z linii dowodu, które znalezisko padło, i daje Ważne, gdy strażnik łapie inną poprawkę tego PR niż to Ważne; przy `Strażnik: brak - napęd` uruchamia krok napędu skilla `verify-*` na drzewie SHA werdyktu, a to, co przechodzi, to Ważne.
+- Test jako strażnik to `Strażnik: brak - test`, bo testu nie dowodzi jeszcze żadne narzędzie (ADR 0042, „Test jako strażnik”), więc dowód testu jest osądem recenzenta jak przed ADR 0042.
+  Recenzent następnej rundy uruchamia test, który nazywa `Szczebel:` bloku, na drzewie SHA werdyktu `FAIL` (przy próbce testu: mutację złej implementacji z Dowodu Ważnego) i daje Ważne, gdy test przechodzi, pada tylko z braku czegoś, co poprawka dodała obok kodu z `Gdzie` (moduł, metoda, nazwa, opcja), albo gdy Ważne zamknąłby wyższy szczebel z dowodem narzędzia (`mypy`, `ruff`, `ast-grep <id>`).
+- Kod z `Gdzie` usunięty z PR (szczebel (a)) to `Strażnik: brak - usunięte`; recenzent następnej rundy sprawdza, że ten kod zniknął z HEAD i nie wrócił inną drogą, a gdy stoi albo wrócił, to Ważne.
+- Pole `Idiom:` po `Szczebel:` jest opcjonalne i niczego przy merge'u nie wymaga: `Idiom: <id> jak #N W<n> r<k>`, gdy Ważne powtarza wcześniejsze, albo `Idiom: <id>`, gdy to ucieczka istniejącego strażnika `<id>`; raport tygodniowy liczy z niego powroty i ucieczki.
 
 ## Dowody
 
@@ -117,7 +118,7 @@ Gdzie: <plik:linia>
 Dowód: <polecenie i wynik, najwyżej 5 linii po 300 znaków; cytat z polem w bloku kodu>
 Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
-Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>, albo Idiom: bez reguły <brak-testu|stan-kroku|typ|test-klasy> jak #N W<n> r<k>; tylko gdy idiom się powtarza)
+Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>; opcjonalne, tylko gdy Ważne powtarza wcześniejsze albo ucieka strażnikowi)
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>
 ## Sprawdzone
@@ -139,7 +140,7 @@ Nowe znalezisko w kodzie, którego ta runda nie zmieniła, jest Ważne tylko wte
 Po drugiej rundzie z `FAIL` na tej samej przesłance (ta sama granica albo reguła pada na kolejnym przypadku) kolejna runda zaczyna się od zmiany podejścia: ataku na przesłankę, granicy z mechanizmu albo podziału PR.
 Po trzeciej rundzie z `FAIL` bez zmiany podejścia czwartej rundy nie ma: `tools/scal_pr.py` odmawia jej w `--przeglad`, w `--werdykt` i przy merge'u (limit rund, `tools/lib/limit_rund.py`), dopóki autor nie zmieni podejścia w tym samym PR i nie opisze tego komentarzem PR z pierwszą linią `ZMIANA PODEJŚCIA: <zdanie>`.
 Po szóstej rundzie z `FAIL` PR nie dostaje żadnej rundy, jakiekolwiek ma komentarze, więc zostaje nowy PR od świeżego `origin/main` (#2010: cztery komentarze dały osiem rund z `FAIL`).
-Podejście zmienia się w tym samym PR, a nie w nowym, bo bramka korzenia i bramka idiomu czytają tylko werdykty własnego PR, więc nowy PR gubi Ważne rund poprzednika (#1990); część, której przegląd nie przyjął, usuwasz z PR, a jej Ważne dostają w `## Korzeń` szczebel (a) z usuniętym kodem.
+Podejście zmienia się w tym samym PR, a nie w nowym, bo bramka korzenia i bramka strażnika czytają tylko werdykty własnego PR, więc nowy PR gubi Ważne rund poprzednika (#1990); część, której przegląd nie przyjął, usuwasz z PR, a jej Ważne dostają w `## Korzeń` szczebel (a) z usuniętym kodem i `Strażnik: brak - usunięte`.
 Recenzent rundy po zmianie podejścia sprawdza najpierw, czy diff od ostatniego `FAIL` robi to, co mówi to zdanie; gdy nie robi, to Ważne.
 Każdą rundę robi nowy recenzent, który nie pisał kodu, z linkiem do poprzednich werdyktów.
 Werdykt dla SHA, który ma już werdykt w tym PR (linia `RUNDA` z `--przeglad` kończy się `czyli dla tego HEAD`), ma w `## Sprawdzone` punkt `Ponowny przegląd: <czemu kolejny przegląd tego SHA i punkty „Do sprawdzenia” ze zlecenia>`, więc ślad na PR mówi, skąd zmiana zgody bez zmiany kodu (#875 r3: `FAIL` po `PASS` po tezie koordynatora); bez niego `--werdykt` i merge odmawiają (`tools/lib/ponowny_przeglad.py`).
@@ -161,7 +162,7 @@ Autor nie przegląda własnego diffu przed pushem i nie zleca przeglądu przed p
    ```
 
    Krok kończy się, gdy recenzent oddaje ścieżkę pliku werdyktu i linię `WERDYKT OK`.
-3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)), dla Ważnego z polem `Idiom: <id>` dodaj albo popraw regułę ast-grep o tym id z jej dowodem, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
+3. Po `FAIL` wyrwij korzeń każdego Ważnego według sekcji „Korzeń i chwast” i opisz go w sekcji `## Korzeń` opisu PR (wzór w skillu [`pr`](../pr/SKILL.md)) z linią `Strażnik:`, której dowód przechodzi, a Drobne popraw albo zapisz z powodem w opisie PR, i zleć kolejną rundę według sekcji „Kolejne rundy”.
    Krok kończy się, gdy na HEAD PR jest `PASS` albo po trzeciej rundzie z `FAIL`, po której zmieniasz podejście w tym samym PR i piszesz komentarz `ZMIANA PODEJŚCIA: <zdanie>` (sekcja „Kolejne rundy”).
 4. Po `PASS` z Drobnymi scal PR na tym `PASS` i nie pushuj do niego poprawek Drobnych: każde Drobne zapisz w opisie PR jako otwarte z PR-em, który je poprawi (Twój następny PR albo Twój zbiorczy PR poprawek Drobnych od świeżego `origin/main`), albo, jak po `FAIL` w kroku 3, z powodem, czemu go nie poprawiasz.
    Push po `PASS` zdejmuje zgodę i kosztuje rundę, a PR poprawki i tak przechodzi przegląd: w werdyktach z 12–17.11.2026 40 z 46 rund po `PASS` ze zmianą kodu przyszło po `PASS` z Drobnymi, 38 z nich skończyło się tym samym `PASS`, a w jednym poprawka Drobnych wniosła Ważne do PR, który miał już zgodę (#1853: jedno Drobne dało trzy rundy z `FAIL`).
@@ -178,7 +179,7 @@ Recenzent nie pisał kodu i pracuje we własnym odłączonym checkoucie HEAD PR 
 2. Przejrzyj diff według sekcji „Co jest porażką” i „Dowody”, a skille z linii `SKILLE VERIFY` wykonaj według sekcji `What CI runs and what stays local` każdego z nich.
    Linia `CI` z kroku 1 mówi, czy polecenia z linii `LICZY CI` przeszły: przy `success` logów zadań CI nie przeszukuj, a przy `failure` czytaj tylko logi padłych zadań, które podaje.
    Każde potwierdzone znalezisko od razu dopisz do pliku `runda-<k>.md` w katalogu werdyktu blokiem szablonu z sekcji „Postać werdyktu”, żeby przerwany przegląd zostawił znaleziska.
-   Ważne ma kod korzenia z [`korzenie.toml`](korzenie.toml) i szczebel z sekcji „Korzeń i chwast”, a gdy idiom się powtarza albo ucieka regule, pole `Idiom:` z tej sekcji.
+   Ważne ma kod korzenia z [`korzenie.toml`](korzenie.toml), szczebel z sekcji „Korzeń i chwast” i `Gdzie` z liniami złego kodu, a gdy powtarza wcześniejsze Ważne albo ucieka strażnikowi, pole `Idiom:` z tej sekcji.
    Krok kończy się, gdy przejrzałeś cały diff, a każde znalezisko jest w pliku, Ważne z korzeniem i szczeblem.
 3. Dopisz na górę pliku dwie linie z sekcji „Postać werdyktu”, a na koniec `## Sprawdzone` z 1–5 punktami.
    Krok kończy się, gdy liczby w drugiej linii zgadzają się ze znaleziskami w pliku.

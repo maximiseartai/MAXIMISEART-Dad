@@ -1,9 +1,14 @@
 """Kroki sprawdzeń, które biegną lokalnie tak jak w CI (ruff, mypy obu systemów, pytest), i środowisko kodu drzewa.
 
-Kroki ruff i mypy (``static_steps``) to brama pre-push i zadanie CI „Ruff, mypy”: biegną nimi ``tools/ci_lokalnie.py``,
-``tools/szybko.py`` i brama typów mutacji (``tools/lib/silnik_mutacji.py``). Kroki zizmor, actionlint
-i shellcheck akcji złożonych (``workflow_steps``) sprawdzają ``.github/`` w tym samym zadaniu CI, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest (``pytest_step``) to ten sam pytest, który
-``tools/ci_lokalnie.py`` uruchamia w całości, a ``tools/szybko.py`` z wybranymi testami.
+Kroki ruff i mypy (``static_steps``) to brama pre-push i polecenia zadania CI „Ruff, mypy” na każdej maszynie: mypy
+biegnie raz dla każdej platformy z ``MYPY_PLATFORMS``, jedynej listy platform mypy, a ``srodowisko_ci.mismatch``
+(na ``main`` w ``tests/test_srodowisko_ci.py``, w dowodzie strażnika na drzewie PR) pilnuje, że zadanie „Ruff, mypy”
+z ``ci.yml`` ma te kroki słowo w słowo, w tej kolejności, i żadnego innego kroku ruff ani mypy. Biegną nimi
+``tools/ci_lokalnie.py``, ``tools/szybko.py``, brama typów mutacji (``tools/lib/silnik_mutacji.py``) i dowód strażnika ``mypy`` i ``ruff`` (``tools/lib/straznik.py``), więc zmiana listy
+zmienia je wszystkie naraz. Diagnostyki kroku w JSON (opcje ``JSON_OUTPUT``) czyta ``diagnostics``. Kroki zizmor, actionlint i shellcheck akcji złożonych (``workflow_steps``) sprawdzają
+``.github/`` w zadaniu CI Frontend, a lokalnie biegną nimi ``tools/ci_lokalnie.py`` i ``tools/szybko.py``. Krok pytest
+(``pytest_step``) to ten sam pytest, który ``tools/ci_lokalnie.py`` uruchamia w całości, a ``tools/szybko.py``
+z wybranymi testami.
 
 ``environment`` to środowisko procesu, który uruchamia kod drzewa ``root`` (checkoutu albo jego kopii): edytowalna
 instalacja ``.venv`` wskazuje ``src`` checkoutu, więc ``src`` drzewa stoi na ``PYTHONPATH`` przed nią.
@@ -12,6 +17,7 @@ instalacja ``.venv`` wskazuje ``src`` checkoutu, więc ``src`` drzewa stoi na ``
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 import os
 from pathlib import Path
 import shutil
@@ -22,6 +28,11 @@ from jednostka import ZMIENNA_CZESCI
 
 # Tyle ostatnich linii wyjścia kroku, który padł, drukują ``tools/ci_lokalnie.py`` i ``tools/szybko.py``.
 OUTPUT_ON_FAILURE = 40
+# Platformy, dla których Required CI sprawdza mypy (``.github/workflows/ci.yml``, zadanie „Ruff, mypy”), i nazwa kroku
+# każdej. Mypy systemu maszyny pominąłby na Macu gałąź tylko dla Linuksa, a przyjął gałąź tylko dla macOS (#2116 r5 W1).
+MYPY_PLATFORMS = {"linux": "mypy", "win32": "mypy (Windows)"}
+# Opcje, z którymi krok ruff albo mypy (``Step.job``) drukuje diagnostyki w JSON, które czyta ``diagnostics``.
+JSON_OUTPUT = {"ruff": ("--output-format", "json"), "mypy": ("--output", "json")}
 
 
 @dataclass(frozen=True)
@@ -30,25 +41,68 @@ class Step:
     job: str  # zadanie ``tools/ci_lokalnie.py``, w którym krok biegnie
     command: tuple[str, ...]
     cwd: Path
+    local: tuple[str, ...] = ()  # koniec ``command``, który dodaje tylko bieg lokalny, a CI go nie ma
+
+    @property
+    def ci(self) -> tuple[str, ...]:
+        """``command`` bez końca ``local``: polecenie kroku CI z interpreterem na początku."""
+
+        return self.command[: len(self.command) - len(self.local)]
 
 
-def static_steps(root: Path) -> list[Step]:
-    """Kroki ruff i mypy obu systemów w ``root``, w kolejności bramy pre-push."""
+def static_steps(root: Path, python: str = sys.executable) -> list[Step]:
+    """Kroki ruff i mypy każdej platformy ``MYPY_PLATFORMS`` w ``root``, w kolejności bramy pre-push, Pythonem ``python``
+    (dowód strażnika: Pythonem środowiska Required CI z ``srodowisko_ci.built``)."""
 
-    python = sys.executable
-    return [
-        Step("ruff", "ruff", (python, "-m", "ruff", "check"), root),
-        # Gałęzie innych systemów niż Windows sprawdza mypy systemu, na którym biegnie; CI biegnie na Linuksie.
-        Step("mypy", "mypy", (python, "-m", "mypy"), root),
-        # Gałęzie tylko dla Windows używają API, którego inne systemy nie mają.
-        # Własny cache, bo zmiana --platform unieważnia wspólny i oba kroki sprawdzałyby za każdym razem całość.
-        Step("mypy (Windows)", "mypy", (python, "-m", "mypy", "--platform", "win32", "--cache-dir", ".mypy_cache/win32"), root),
-    ]
+    # Własny cache każdej platformy, bo zmiana --platform unieważnia wspólny i kroki sprawdzałyby za każdym razem całość.
+    cache = {platform: ("--cache-dir", f".mypy_cache/{platform}") for platform in MYPY_PLATFORMS}
+    mypy = (Step(name, "mypy", (python, "-m", "mypy", "--platform", platform, *cache[platform]), root, cache[platform]) for platform, name in MYPY_PLATFORMS.items())
+    return [Step("ruff", "ruff", (python, "-m", "ruff", "check"), root), *mypy]
+
+
+@dataclass(frozen=True)
+class Diagnostic:
+    """Diagnostyka kroku ruff albo mypy z wyjścia w JSON."""
+
+    path: str  # plik względem korzenia drzewa, gdy w nim leży, z ``/``
+    line: int
+    code: str | None  # kod reguły; None, gdy narzędzie go nie podało
+    message: str
+
+
+def diagnostics(job: str, output: str, root: Path) -> list[Diagnostic]:
+    """Diagnostyki kroku narzędzia ``job`` (``ruff``: lista obiektów, ``mypy``: obiekt w każdej linii, tylko błędy) z wyjścia
+    z opcjami ``JSON_OUTPUT``, uruchomionego w drzewie ``root``; wyjście, którego nie da się przeczytać, nie daje żadnej."""
+
+    if job == "ruff":
+        try:
+            return [Diagnostic(_relative(item["filename"], root), int(item["location"]["row"]), item["code"], item["message"]) for item in json.loads(output)]
+        except (ValueError, KeyError, TypeError):
+            return []
+    found = []
+    for line in output.splitlines():
+        try:
+            item = json.loads(line)
+            if item["severity"] == "error":
+                found.append(Diagnostic(_relative(item["file"], root), int(item["line"]), item["code"], item["message"]))
+        except (ValueError, KeyError, TypeError):
+            continue
+    return found
+
+
+def _relative(name: str, root: Path) -> str:
+    """Ścieżka pliku diagnostyki z ``/``: względem ``root``, gdy w nim leży (ruff podaje bezwzględną, mypy względną)."""
+
+    path = Path(name) if Path(name).is_absolute() else root / name
+    try:
+        return path.resolve().relative_to(root.resolve()).as_posix()
+    except ValueError:
+        return Path(name).as_posix()
 
 
 def workflow_steps(root: Path) -> list[Step]:
     """Kroki zizmor, actionlint z shellcheckiem (``.github/workflows``) i shellcheck skryptów akcji złożonych
-    (``.github/actions``, których actionlint nie czyta) w ``root``, jak w zadaniu CI „Ruff, mypy”, narzędziami z dodatku
+    (``.github/actions``, których actionlint nie czyta) w ``root``, jak w zadaniu CI Frontend, narzędziami z dodatku
     ``workflowy`` w katalogu skryptów Pythona, który je uruchamia; bez narzędzia krok pada z poleceniem, które je instaluje."""
 
     scripts = sysconfig.get_path("scripts")

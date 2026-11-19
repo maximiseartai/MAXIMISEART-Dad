@@ -1,8 +1,8 @@
 name: Werdykt i bramka
 
 # The commit status "Werdykt i bramka" on the HEAD of each open PR to main: would tools/scal_pr.py merge it now, by
-# conditions 1-6 of its --help (CI, verdict PASS for HEAD, PR body, root gate, rule of an Idiom: field, main's ast-grep
-# rules on the lines the PR adds), judged by main's code
+# conditions 1-6 of its --help (CI, verdict PASS for HEAD, PR body, root gate, the guard proof of every Ważne, main's
+# ast-grep rules on the lines the PR adds), judged by main's code
 # (tools/scal_pr.py --status, ADR 0036 "Status w Actions"): pending while it only waits for CI or a verdict on HEAD,
 # failure when the author must act. The ruleset of main requires it as success. A closed PR gets no new status, so
 # the HEAD of a merged PR keeps the status it had at the merge, and a merge without a green one shows afterwards.
@@ -11,8 +11,15 @@ name: Werdykt i bramka
 # workflow_run take the workflow from the default branch. pull_request_review is not a trigger, because it takes the
 # workflow from the PR's merge ref: a verdict is a comment (tools/scal_pr.py --werdykt), and a verdict posted as a
 # review shows at the next event.
+#
+# The guard proof of condition 5 runs the PR's code (the build backend and packages of its pyproject.toml, mypy plugins
+# from its config), so it runs in the job dowod, which has no write
+# permission and no secret. Only the jobs status and scalenia may write statuses, and neither runs the PR's code:
+# status judges conditions 1-4 and 6 itself and takes from dowod only the reasons of condition 5 for the same HEAD SHA,
+# so the PR's code can change at most its own condition 5 in the status, and tools/scal_pr.py proves it again at the
+# merge (ADR 0042).
 on:
-  pull_request_target: # zizmor: ignore[dangerous-triggers] checks out main and only reads the PR through the API and git
+  pull_request_target: # zizmor: ignore[dangerous-triggers] checks out main; only the job dowod, without write permission, runs the PR's code
     branches:
       - main
     types:
@@ -34,9 +41,9 @@ on:
     types:
       - completed
 
-# No job runs the PR's code, so a fork may trigger them too: tools/scal_pr.py refuses a PR from a fork and sets that
-# as its status. statuses: write can set any commit status, so only the jobs of this workflow have it
-# (tests/test_zadania_ci.py), and the ruleset requires a CheckRun of CI too.
+# Only the job dowod runs the PR's code, and never of a fork: tools/scal_pr.py refuses a PR from a fork before any
+# proof and sets that as its status. statuses: write can set any commit status, so only the jobs of this workflow that
+# never run the PR's code have it (tests/test_zadania_ci.py), and the ruleset requires a CheckRun of CI too.
 permissions:
   contents: read
 
@@ -46,8 +53,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  status:
-    name: Status werdyktu i bramki
+  dowod:
+    name: Dowód strażników
     if: >-
       github.event_name == 'pull_request_target'
       || (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open')
@@ -58,9 +65,79 @@ jobs:
       pull-requests: read
       issues: read
       checks: read
+    # The guard proofs share bramka_straznika.PROOF_TIMEOUT_S, at least 5 min under this limit, so a slow proof ends
+    # as a reason of condition 5 instead of a cancelled job without one.
+    timeout-minutes: 20
+    outputs:
+      dowody: ${{ steps.zbierz.outputs.dowody }}
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: maintenance.auto
+      GIT_CONFIG_VALUE_0: 'false'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      # tools/na_scalonych_pr.py of main needs main's dev extra (PyYAML, ast-grep for the function around Gdzie), and -r
+      # installs only the dependencies. The proof builds the environment of Required CI itself, with uv, from the PR's
+      # HEAD merged with main (tools/lib/srodowisko_ci.py), so mypy, ruff and ast-grep run with the PR's dependencies.
+      - name: Install the dependencies of the guard proof
+        env:
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: uv pip install --system --python "$PYTHON" -r pyproject.toml --extra dev
+
+      - name: Prove the guards of each PR of the event
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          NUMERY: ${{ github.event.pull_request.number || github.event.issue.number || join(github.event.workflow_run.pull_requests.*.number, ' ') }}
+          PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          read -ra numery <<< "$NUMERY"
+          for numer in "${numery[@]}"; do
+            "$PYTHON" tools/scal_pr.py "$numer" --dowod-straznikow "$RUNNER_TEMP/dowody.jsonl" || true
+          done
+
+      - id: zbierz
+        name: Collect the results
+        if: ${{ !cancelled() }}
+        run: |
+          touch "$RUNNER_TEMP/dowody.jsonl"
+          {
+            echo 'dowody<<KONIEC_DOWODOW'
+            cat "$RUNNER_TEMP/dowody.jsonl"
+            echo 'KONIEC_DOWODOW'
+          } >> "$GITHUB_OUTPUT"
+
+  status:
+    name: Status werdyktu i bramki
+    needs: dowod
+    if: >-
+      !cancelled()
+      && (github.event_name == 'pull_request_target'
+      || (github.event_name == 'issue_comment' && github.event.issue.pull_request && github.event.issue.state == 'open')
+      || (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'pull_request' && github.event.workflow_run.pull_requests[0]))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      checks: read
       statuses: write
-    # The rule proofs of condition 5 share bramka_idiomu.PROOF_TIMEOUT_S, at least 2 min under this limit, so a slow
-    # proof ends as a failure status with its reason instead of a cancelled job without a status.
+    # The cases of condition 6 share reguly_bazy.CASES_TIMEOUT_S, at least 2 min under this limit, so a slow check
+    # ends as a failure status with its reason instead of a cancelled job without a status.
     timeout-minutes: 10
     # Since Git 2.54 a fetch starts `git maintenance run --auto` detached, and its `git worktree prune` can delete the
     # worktree that potomne.commit_copy is adding (#312); the job env reaches every git, actions/checkout included.
@@ -85,10 +162,9 @@ jobs:
         with:
           enable-cache: false
 
-      # Condition 5 runs the rule proof tools/na_scalonych_pr.py, which needs ast-grep and PyYAML, and condition 6 ast-grep. Their pins come from
-      # main's pyproject.toml (the dev extra, as in CI), and -r installs only the dependencies, so nothing from the PR
-      # and no build of the project runs.
-      - name: Install the dependencies of the rule proof
+      # Condition 6 runs ast-grep on the PR's files as data. Its pin comes from main's pyproject.toml (the dev extra, as
+      # in CI), and -r installs only the dependencies, so nothing from the PR and no build of the project runs.
+      - name: Install the dependencies of condition 6
         env:
           PYTHON: ${{ steps.python.outputs.python-path }}
         run: uv pip install --system --python "$PYTHON" -r pyproject.toml --extra dev
@@ -98,6 +174,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           NUMERY: ${{ github.event.pull_request.number || github.event.issue.number || join(github.event.workflow_run.pull_requests.*.number, ' ') }}
+          DOWODY_STRAZNIKOW: ${{ needs.dowod.outputs.dowody }}
+          DOWOD_WYNIK: ${{ needs.dowod.result }}
         run: |
           read -ra numery <<< "$NUMERY"
           wynik=0

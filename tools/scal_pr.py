@@ -18,9 +18,9 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
    ``NOWY`` z werdyktów stoi na liście korzeni na HEAD (bramka korzenia, ``bramka_korzenia``, niżej);
-5. każde Ważne werdyktu ``FAIL`` z polem ``Idiom: <id>`` albo ``Idiom: <id> jak #N W<n> r<k>`` ma na HEAD PR regułę
-   ast-grep o tym id, a jej dowód ``tools/na_scalonych_pr.py --regula`` przechodzi na każdym przypadku tego id z historii
-   pól ``Idiom:`` (``bramka_idiomu``, niżej);
+5. każde Ważne werdyktu ``FAIL`` ma w bloku sekcji ``## Korzeń`` strażnika (``Strażnik: <selektor>``), a jego dowód
+   ``tools/na_scalonych_pr.py --straznik`` przechodzi: mechanizm z HEAD pada na błędzie z drzewa SHA werdyktu
+   (``bramka_straznika`` i ``straznik``, niżej);
 6. reguły ast-grep z bazy nie zgłaszają żadnej linii, którą PR dodaje, także gdy PR je usuwa albo osłabia, a każdy
    przypadek reguł bazy wymienia i łapie po scaleniu któraś reguła (``reguly_bazy``, niżej);
 7. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
@@ -61,12 +61,18 @@ uruchomić ponownie. Tak samo biegnie ``--przeglad``, bo limit rund odmawia kole
 
 Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–6 jako status commita ``Werdykt i bramka``
 (``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
-``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunki 5 i 6 liczy, jak merge, dopiero po
-warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak reguły.
-Oba potrzebują ast-grep, a dowód warunku 5 także PyYAML; workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
-je z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR, a warunek 6 czyta ast-grepem pliki PR jako dane,
-z konfiguracją bazy. Warunków 7 i 8 nie liczy, bo uruchamiają kod PR (ruff,
-mypy i pytest na scalonym drzewie), a status ustawia token z prawem zapisu statusów; scalenie z ruff i mypy pokazuje
+``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunki 5 i 6 dokłada, jak merge, dopiero
+po warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak
+strażnika. Warunek 6 potrzebuje ast-grep, który workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
+z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR, i czyta ast-grepem pliki PR jako dane, z konfiguracją
+bazy. Dowód strażnika wykonuje kod PR (budowa środowiska z ``pyproject.toml`` PR, wtyczki mypy), a ``--status`` biegnie
+z tokenem z prawem zapisu statusów, więc warunku 5 nie liczy sam: bierze go ze zmiennej ``DOWODY_STRAZNIKOW``
+(``GUARD_PROOFS``), w której workflow podaje wynik joba ``dowod``. Ten job biegnie bez prawa zapisu i uruchamia ``--dowod-straznikow PLIK``: warunek 5 dla PR,
+którego warunki 1–4 tylko oczekują albo przechodzą, jako linię JSON z SHA HEAD dopisaną do ``PLIK``, a ``--status``
+bierze ostatnią linię PR. Wynik dla innego HEAD albo pominięty to oczekiwanie, a brak wyniku to odmowa. Granica: kod
+PR, który celowo pisze plik wyników joba, daje w statusie przechodzący warunek 5 własnego PR, ale nie zgodę, CI ani
+opis, a merge przez ``tools/scal_pr.py`` liczy dowód sam. Warunków 7 i 8 nie liczy, bo uruchamiają kod PR (ruff,
+mypy i pytest na scalonym drzewie); scalenie z ruff i mypy pokazuje
 status ``scalenie z main``. PR zamknięty albo do innej gałęzi
 niż `main` statusu nie dostaje (linia ``STATUS POMINIĘTY``), więc status scalonego HEAD zostaje taki, jak w chwili
 merge'a, i po fakcie pokazuje merge bez zielonego statusu. Gdy każda przyczyna to oczekiwanie na coś, co przyjdzie
@@ -91,8 +97,8 @@ import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
-import bramka_idiomu
 import bramka_korzenia
+import bramka_straznika
 import github
 import kontekst_przegladu
 import limit_rund
@@ -105,6 +111,7 @@ from repo import MAIN, REMOTE, ROOT
 import repo
 import stan_pr
 from stan_pr import Pull
+import straznik
 import szablon_werdyktu
 import testy_scalenia
 import werdykt_pr
@@ -113,6 +120,8 @@ import werdykt_scalenia
 CLEANUP = ROOT / "tools" / "sprzatanie.py"
 TEMPLATE = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"
 CLEANUP_TIMEOUT_S = 300
+GUARD_PROOFS = "DOWODY_STRAZNIKOW"  # wynik joba ``dowod`` dla ``--status``: lista linii JSON z ``--dowod-straznikow``
+GUARD_JOB = "DOWOD_WYNIK"  # wynik tego joba (``needs.dowod.result``), gdy linii PR nie ma
 # Zmienna środowiska kopii bazy, którą uruchamia ``_judged_from_base``; kopia zdejmuje ją od razu, więc jej procesy
 # potomne (test scalenia z testami tego narzędzia) jej nie dziedziczą, a ``scal_pr.py`` bazy, który jej nie zna, ją pomija.
 FROM_BASE_COPY = "SCAL_PR_Z_KOPII_BAZY"
@@ -120,7 +129,8 @@ EXAMPLES = """\
     .venv/bin/python tools/scal_pr.py 336               # sprawdza i scala
     .venv/bin/python tools/scal_pr.py 336 --bez-merge   # tylko sprawdza
     .venv/bin/python tools/scal_pr.py 336 --przeglad    # kontekst dla recenzenta
-    python3 tools/scal_pr.py 336 --status               # workflow werdykt-i-bramka.yml: status bez merge'a
+    python3 tools/scal_pr.py 336 --dowod-straznikow d.jsonl  # workflow werdykt-i-bramka.yml, job dowod: warunek 5
+    python3 tools/scal_pr.py 336 --status               # workflow werdykt-i-bramka.yml, job status: status bez merge'a
     .venv/bin/python tools/scal_pr.py 336 --werdykt ~/.t3/notes/bieg/recenzje/336/runda-1.md
 """
 
@@ -157,7 +167,8 @@ def _problems(pull: Pull) -> list[str]:
         problems.append("PR z forka")
     template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
     consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template), limit_rund.deployed_problem(pull)]
-    return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER))]
+    guarded = bramka_straznika.applies(pull)
+    return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER), guarded=guarded)]
 
 
 def _remote_base(base: str) -> str:
@@ -191,7 +202,7 @@ def _check(pull: Pull, base: str) -> str:
     checked = werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)
     if problems := _problems(pull):
         raise _Refused("; ".join(problems))
-    if problems := bramka_idiomu.problems(pull):
+    if problems := bramka_straznika.problems(pull):
         raise _Refused("; ".join(problems))
     if problems := reguly_bazy.problems(ROOT, pull.head, base) + reguly_bazy.case_problems(ROOT, pull.head, base):
         raise _Refused("; ".join(problems))
@@ -263,15 +274,55 @@ def _skipped_status(pull: Pull) -> str | None:
     return None
 
 
+def _guard_proofs(pull: Pull, output: Path, skipped: str | None = None) -> int:
+    """Warunek 5 PR ``pull`` jako linia JSON dopisana do ``output`` (job ``dowod``, bez prawa zapisu): pominięty
+    (``skipped``), gdy PR nie dostaje statusu albo ma czego dowodzić (``bramka_straznika.needed``), a któraś przyczyna
+    warunków 1–4 wymaga działania autora; PR bez czego dowodzić dostaje linię bez przyczyn bez warunków 1–4."""
+
+    where = f"#{pull.number} {pull.head[:7]}"
+    if skipped is None and bramka_straznika.needed(pull) and not all(isinstance(problem, stan_pr.Waiting) for problem in _problems(pull)):
+        skipped = "warunki 1–4 odmawiają"
+    problems = [] if skipped else bramka_straznika.problems(pull)
+    entry = {"numer": pull.number, "sha": pull.head, "pominiety": skipped is not None, "przyczyny": [{"tekst": str(problem), "oczekuje": isinstance(problem, stan_pr.Waiting)} for problem in problems]}
+    with output.open("a", encoding="utf-8") as lines:
+        lines.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    print(f"DOWÓD STRAŻNIKÓW | {where} | {f'pominięty: {skipped}' if skipped else '; '.join(problems) or 'przechodzi'}")
+    return 0
+
+
+def _proved_guards(pull: Pull) -> list[str]:
+    """Przyczyny warunku 5 z wyniku joba ``dowod`` w zmiennej ``GUARD_PROOFS``, dla HEAD ``pull``; PR bez czego
+    dowodzić (``bramka_straznika.needed``) wyniku nie potrzebuje."""
+
+    if not bramka_straznika.needed(pull):
+        return []
+    if (raw := os.environ.get(GUARD_PROOFS)) is None:
+        return [f"strażnik: --status bierze warunek 5 z joba dowod workflow werdykt-i-bramka.yml w zmiennej {GUARD_PROOFS}, a jej nie ma"]
+    try:
+        entries = [json.loads(line) for line in raw.splitlines() if line.strip()]
+    except ValueError as error:
+        return [f"strażnik: {GUARD_PROOFS} to nie linie JSON z --dowod-straznikow ({error})"]
+    # Ostatnia linia PR, bo ``--dowod-straznikow`` dopisuje ją po biegu kodu PR w dowodzie.
+    entry = next((one for one in reversed(entries) if isinstance(one, dict) and one.get("numer") == pull.number), None)
+    if entry is None:
+        return [f"strażnik: job dowod nie podał wyniku dla #{pull.number} (wynik joba: {os.environ.get(GUARD_JOB) or '?'}), uruchom ponownie"]
+    if entry.get("sha") != pull.head:
+        return [stan_pr.Waiting(f"strażnik: dowód policzony dla innego HEAD niż {pull.head[:7]}, policzy go następny run")]
+    if entry.get("pominiety"):
+        return [stan_pr.Waiting("strażnik: dowód pominięty w tym runie, bo warunki 1–4 odmawiały; policzy go następny run")]
+    return [stan_pr.Waiting(one["tekst"]) if one.get("oczekuje") else str(one["tekst"]) for one in entry.get("przyczyny", [])]
+
+
 def _publish_status(pull: Pull, base: str) -> int:
     """Warunki 1–6 jako status commita ``github.WERDYKT_I_BRAMKA`` na HEAD otwartego PR do `main` z bazą ``base``:
     ``pending``, gdy każda przyczyna odmowy to oczekiwanie (``stan_pr.Waiting``), a ``failure``, gdy choć jedna wymaga
-    działania autora; warunki 5 i 6 biegną tylko wtedy, gdy warunki 1–4 nie dały już ``failure``."""
+    działania autora; warunek 5 z joba ``dowod`` (``_proved_guards``) i warunek 6 dochodzą tylko wtedy, gdy warunki 1–4
+    nie dały już ``failure``."""
 
     where = f"#{pull.number} {pull.head[:7]}"
     problems = _problems(pull)
     if all(isinstance(problem, stan_pr.Waiting) for problem in problems):
-        problems += bramka_idiomu.problems(pull) + reguly_bazy.problems(ROOT, pull.head, base) + reguly_bazy.case_problems(ROOT, pull.head, base)
+        problems += _proved_guards(pull) + reguly_bazy.problems(ROOT, pull.head, base) + reguly_bazy.case_problems(ROOT, pull.head, base)
     reasons = "; ".join(problems)
     if not problems:
         state, description = "success", "warunki 1–6 tools/scal_pr.py spełnione"
@@ -309,7 +360,7 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_idiomu.__doc__, reguly_bazy.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
+    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_straznika.__doc__, straznik.__doc__, reguly_bazy.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
     parser = argparse.ArgumentParser(
         description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
     )
@@ -319,15 +370,18 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
     mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
     mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–6 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
+    mode.add_argument("--dowod-straznikow", type=Path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
     from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
     given = sys.argv[1:] if argv is None else argv
     args = parser.parse_args(given)
-    label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "SCAL"
+    label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "DOWÓD STRAŻNIKÓW" if args.dowod_straznikow else "SCAL"
     try:
         pull = stan_pr.pull(args.numer)
         if args.status and (skipped := _skipped_status(pull)):
             print(f"STATUS POMINIĘTY | #{pull.number} {pull.head[:7]} | {skipped}")
             return 0
+        if args.dowod_straznikow and (skipped := _skipped_status(pull)):
+            return _guard_proofs(pull, args.dowod_straznikow, skipped)
         base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
         if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy)) is not None:
             return judged
@@ -337,6 +391,8 @@ def main(argv: list[str] | None = None) -> int:
             return _publish_verdict(pull, args.werdykt)
         if args.status:
             return _publish_status(pull, base)
+        if args.dowod_straznikow:
+            return _guard_proofs(pull, args.dowod_straznikow)
         return _merge(pull, base, merge=not args.bez_merge)
     except subprocess.CalledProcessError as error:
         command = " ".join(str(part) for part in error.cmd)

@@ -9,7 +9,8 @@ Required czeka na każde zadanie runu.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
+import copy
 import fnmatch
 import json
 import os
@@ -374,16 +375,165 @@ def test_kazdy_krok_wskazany_w_wyrazeniu_jest_wczesniej_w_tym_samym_zadaniu() ->
     assert unknown == {}
 
 
-def test_w_ruff_mypy_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych() -> None:
-    steps = jobs()["ruff-mypy"]["steps"]
-    deps = next(index for index, step in enumerate(steps) if step.get("id") == "deps")
+@pytest.mark.parametrize(
+    ("job", "expected"),
+    [
+        ("ruff-mypy", ("ruff", "mypy", "mypy", "pytest", "pytest")),
+        ("frontend", ("zizmor", "actionlint", "tools/ci/shellcheck_akcji.py", "tools/na_scalonych_pr.py")),
+    ],
+)
+def test_porazka_jednego_sprawdzenia_nie_ukrywa_pozostalych(job: str, expected: tuple[str, ...]) -> None:
+    steps = jobs()[job]["steps"]
+    first = next(index for index, step in enumerate(steps) if step.get("if") == INDEPENDENT)
 
-    checks = [(step["run"].removeprefix("python -m ").removeprefix("python ").split()[0], step.get("if")) for step in steps[deps + 1 :]]
+    checks = [(step["run"].removeprefix("python -m ").removeprefix("python ").split()[0], step.get("if")) for step in steps[first:]]
 
-    assert checks == [
-        (check, INDEPENDENT)
-        for check in ("ruff", "pytest", "mypy", "mypy", "zizmor", "actionlint", "tools/ci/shellcheck_akcji.py", "pytest", "tools/na_scalonych_pr.py")
-    ]
+    assert checks == [(check, INDEPENDENT) for check in expected]
+
+
+# Jedyne postacie kroku z ``continue-on-error`` w zadaniach bramki, porównywane w całości (każdy klucz poza ``name``,
+# akcja bez wersji po ``@``), jak ``srodowisko_ci.mismatch`` porównuje zadanie „Ruff, mypy”: zapis czasów (brak zapisu
+# czerwieni Required), wysłanie i pobranie artefaktu (brak planu albo zapisów ocenia werdykt Required) i zapis pamięci
+# narzędzi TLC (tylko decyzja o zapisie cache). Ich porażka nie jest porażką sprawdzenia.
+_ALWAYS = "${{ !cancelled() }}"
+_ON_PUSH = "${{ !cancelled() && github.event_name == 'push' }}"
+_TOKEN = {"GH_TOKEN": "${{ github.token }}"}
+_RECORD = 'python tools/ci/zapis_czasow.py zadanie --tor "${{ runner.os }}-${{ steps.python.outputs.python-version }}"'
+_RECORD_TO = ' --wykonanie .ci-czasy/wykonanie.json --wyjscie ".ci-czasy/zapis/${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}.json"'
+_SAVED = {"path": ".ci-czasy/zapis/", "retention-days": 7, "if-no-files-found": "warn", "include-hidden-files": True}
+TOLERATED: tuple[dict[str, object], ...] = (
+    {"if": _ALWAYS, "continue-on-error": True, "env": _TOKEN, "run": _RECORD + " --junit .ci-czasy/junit.xml" + _RECORD_TO},
+    {"if": _ALWAYS, "continue-on-error": True, "env": _TOKEN, "run": _RECORD + _RECORD_TO},
+    {"if": _ALWAYS, "continue-on-error": True, "uses": "actions/upload-artifact", "with": {"name": "czasy-zadanie-${{ github.job }}-${{ strategy.job-index }}-${{ github.run_attempt }}", **_SAVED}},
+    {"if": "${{ !cancelled() && steps.tlc.outputs.trafienie != 'true' }}", "continue-on-error": True, "uses": "./.github/actions/narzedzia-tlc/zapis", "with": {"klucz": "${{ steps.tlc.outputs.klucz }}"}},
+    {"continue-on-error": True, "uses": "actions/download-artifact", "with": {"name": "plan", "path": ".ci-plan"}},
+    {"continue-on-error": True, "uses": "actions/download-artifact", "with": {"pattern": "czasy-zadanie-*", "merge-multiple": True, "path": ".ci-czasy/zapisy"}},
+    {"if": _ON_PUSH, "continue-on-error": True, "run": "python3 tools/ci/zapis_czasow.py scal --katalog .ci-czasy/zapisy --wyjscie .ci-czasy/czasy-ci.json"},
+    {
+        "if": _ON_PUSH,
+        "continue-on-error": True,
+        "uses": "actions/upload-artifact",
+        "with": {"name": "czasy-ci", "path": ".ci-czasy/czasy-ci.json", "retention-days": 30, "if-no-files-found": "warn", "include-hidden-files": True, "overwrite": True},
+    },
+)
+# Zmienne zadania z krokiem z ``TOLERATED``: inna (np. ``BASH_ENV``, ``PYTHONPATH``) zmieniłaby to, co ten krok uruchamia.
+TOLERATED_JOB_ENV = frozenset({"EXPECTED_PYTHON_VERSION", "PYTHONUTF8"})
+
+
+def _normal(step: dict[str, Any]) -> dict[str, Any]:
+    normal = {key: value for key, value in step.items() if key != "name"}
+    if "uses" in normal:
+        normal["uses"] = str(normal["uses"]).partition("@")[0]
+    return normal
+
+
+def _tolerant(workflow: dict[str, Any]) -> list[str]:
+    """Co w zadaniach bramki (``needs`` Required i samo Required) zamienia porażkę sprawdzenia w sukces:
+    ``continue-on-error`` zadania, krok z nim inny w całości niż postać z ``TOLERATED``, a przy kroku z ``TOLERATED``
+    ``defaults`` i ``env`` workflow, ``defaults`` i ``container`` zadania i zmienna zadania spoza ``TOLERATED_JOB_ENV``."""
+
+    jobs = workflow["jobs"]
+    found = [f"workflow: {key}" for key in ("env", "defaults") if key in workflow]
+    for name in [*jobs[REQUIRED]["needs"], REQUIRED]:
+        job = jobs[name]
+        found += [name] if job.get("continue-on-error", False) is not False else []
+        tolerated = [step for step in job["steps"] if step.get("continue-on-error", False) is not False]
+        found += [f"{name}: {step.get('name', step.get('uses'))}" for step in tolerated if _normal(step) not in TOLERATED]
+        if tolerated:
+            found += [f"{name}: {key}" for key in ("defaults", "container") if key in job]
+            found += [f"{name}: env {variable}" for variable in sorted(set(job.get("env", {})) - TOLERATED_JOB_ENV)]
+    return found
+
+
+def _changed(job: str | None, step: str | None, values: Mapping[str, object]) -> dict[str, Any]:
+    """``ci.yml`` z kluczami ``values`` w zadaniu ``job`` (bez zadania: w workflow), a ze ``step`` w jego kroku o tej nazwie."""
+
+    workflow: dict[str, Any] = copy.deepcopy(yaml.safe_load(WORKFLOW.read_text(encoding="utf-8")))
+    target = workflow if job is None else workflow["jobs"][job]
+    if step is not None:
+        target = next(one for one in target["steps"] if one.get("name") == step)
+    target.update(values)
+    return workflow
+
+
+TOLERANT = {"continue-on-error": True}
+RECORD = "Record the time of each unit of work"
+CHAINED = "bash -c \"bash -e $0 && python -m pytest tests\" {0}"
+
+
+@pytest.mark.parametrize(
+    ("job", "step", "values", "found"),
+    [
+        ("pytest", None, {}, []),
+        ("pytest", "Verify py -3 interpreter", TOLERANT, ["pytest: Verify py -3 interpreter"]),
+        ("pytest", "Run the planned units", TOLERANT, ["pytest: Run the planned units"]),
+        ("frontend", None, TOLERANT, ["frontend"]),
+        ("frontend", "Audit workflows (zizmor)", TOLERANT, ["frontend: Audit workflows (zizmor)"]),
+        ("ruff-mypy", "Typecheck Python code (Windows)", TOLERANT, ["ruff-mypy: Typecheck Python code (Windows)"]),
+        (REQUIRED, "Require every CI check to succeed and every planned unit to report", TOLERANT, [f"{REQUIRED}: Require every CI check to succeed and every planned unit to report"]),
+        (REQUIRED, None, TOLERANT, [REQUIRED]),
+        ("mutations", RECORD, {"run": "python tools/ci/zapis_czasow.py zadanie --wyjscie x.json && python -m pytest tests"}, [f"mutations: {RECORD}"]),
+        ("pytest", RECORD, {"shell": CHAINED}, [f"pytest: {RECORD}"]),
+        ("pytest", RECORD, {"env": {**_TOKEN, "BASH_ENV": "tools/ci/sprawdzenie.sh"}}, [f"pytest: {RECORD}"]),
+        ("pytest", RECORD, {"working-directory": "tests"}, [f"pytest: {RECORD}"]),
+        ("mutations", "Save TLC tools", {"uses": "./.github/actions/narzedzia-tlc"}, ["mutations: Save TLC tools"]),
+        ("pytest", None, {"env": {"PYTHONUTF8": "1", "BASH_ENV": "tools/ci/sprawdzenie.sh"}}, ["pytest: env BASH_ENV"]),
+        ("mutations", None, {"defaults": {"run": {"shell": CHAINED}}}, ["mutations: defaults"]),
+        (REQUIRED, None, {"container": "python:3.14"}, [f"{REQUIRED}: container"]),
+        (None, None, {"defaults": {"run": {"shell": CHAINED}}}, ["workflow: defaults"]),
+        (None, None, {"env": {"BASH_ENV": "tools/ci/sprawdzenie.sh"}}, ["workflow: env"]),
+        ("pytest", "Upload the unit times", {"name": "Wysłanie czasów"}, []),
+    ],
+    ids=[
+        "ci-yml",
+        "sprawdzenie-py-3",
+        "jednostki-pytest",
+        "zadanie-frontend",
+        "zizmor",
+        "mypy-windows",
+        "werdykt-required",
+        "zadanie-required",
+        "sprawdzenie-za-zapisem-czasow",
+        "powloka-kroku-zapisu",
+        "bash-env-kroku-zapisu",
+        "katalog-kroku-zapisu",
+        "inna-akcja-zapisu-tlc",
+        "bash-env-zadania",
+        "powloka-zadania",
+        "kontener-zadania",
+        "powloka-workflow",
+        "env-workflow",
+        "nazwa-kroku-pomiaru",
+    ],
+)
+def test_porazka_kroku_zadania_bramki_czerwieni_required(job: str | None, step: str | None, values: dict[str, object], found: list[str]) -> None:
+    """``continue-on-error`` zadania daje Required jego sukces mimo porażki, a kroku sukces zadania mimo porażki
+    sprawdzenia, którego zapisy jednostek nie niosą (#2161 r4 W1: „Verify py -3 interpreter”); krok z nim ma jedną
+    z postaci ``TOLERATED`` w całości, więc ani ``shell``, ``env``, katalog kroku, ani domyślna powłoka, kontener
+    i zmienne zadania i workflow nie dokładają mu sprawdzenia (#2161 r5 W1). Granica (``ZNANE_LUKI_TOLERANCJI``): krok
+    przed krokiem pomiaru, który zmienia jego wejście (``GITHUB_ENV``, ``GITHUB_PATH``, plik skryptu), i treść
+    ``tools/ci/zapis_czasow.py`` i akcji ``narzedzia-tlc/zapis``, które czyta recenzent w diffie."""
+
+    assert _tolerant(_changed(job, step, values)) == found, (
+        "continue-on-error w zadaniu, na które czeka Required CI status, w samym Required albo w ich kroku zamienia porażkę"
+        " sprawdzenia w sukces: usuń go; krok pomiaru bez wpływu na werdykt dopisz w całości do TOLERATED (tests/test_zadania_ci.py)"
+    )
+
+
+# Znane luki strażnika ``continue-on-error`` (postać → zmiana ``ci.yml``): krok przed krokiem pomiaru zmienia jego
+# wejście (zmienne przez ``GITHUB_ENV``, ``PATH`` przez ``GITHUB_PATH``, plik skryptu), a strażnik nie czyta poleceń powłoki.
+ZNANE_LUKI_TOLERANCJI: dict[str, tuple[str, str, Mapping[str, object]]] = {
+    "zmienna z GITHUB_ENV przed krokiem pomiaru": ("pytest", "Verify py -3 interpreter", {"run": 'echo "BASH_ENV=tools/ci/sprawdzenie.sh" >> "$GITHUB_ENV"'}),
+    "katalog z GITHUB_PATH przed krokiem pomiaru": ("pytest", "Route py -3 to the selected Python", {"run": 'echo "$GITHUB_WORKSPACE/tools/ci/atrapy" >> "$GITHUB_PATH"'}),
+    "skrypt zapisu czasów nadpisany przed krokiem pomiaru": ("mutations", "Run the planned units", {"run": "cp tools/ci/sprawdzenie.py tools/ci/zapis_czasow.py"}),
+}
+
+
+@pytest.mark.parametrize("gap", sorted(ZNANE_LUKI_TOLERANCJI))
+def test_znane_luki_straznika_continue_on_error_przechodza(gap: str) -> None:
+    job, step, values = ZNANE_LUKI_TOLERANCJI[gap]
+
+    assert _tolerant(_changed(job, step, values)) == [], f"strażnik łapie już lukę „{gap}”: usuń jej próbkę z ZNANE_LUKI_TOLERANCJI"
 
 
 def test_dependabot_przesuwa_przypiete_akcje_kazdej_akcji_zlozonej_z_repozytorium() -> None:

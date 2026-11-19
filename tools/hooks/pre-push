@@ -36,7 +36,7 @@ AGENT_MARKERS = ("AI_AGENT", "CLAUDECODE")
 VENV_PYTHON = Path(".venv/bin/python")
 COMMAND = (str(VENV_PYTHON), "tools/ci_lokalnie.py", "--tylko", "ruff,mypy", "--do-pierwszego-bledu")
 NOTE_TIMEOUT_S = 5
-CHECKS = "sprawdzam ruff i mypy (macOS i Windows) przez tools/ci_lokalnie.py; resztę sprawdza CI na GitHubie"
+CHECKS = "sprawdzam ruff i mypy (platformy Required CI) przez tools/ci_lokalnie.py; resztę sprawdza CI na GitHubie"
 
 
 @dataclass(frozen=True)

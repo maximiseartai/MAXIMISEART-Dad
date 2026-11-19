@@ -23,11 +23,21 @@ jobs:
   frontend:
     # Centrum rozliczeń: the committed build and contract must match their sources (tata has no Node). Beside Ruff and
     # mypy, not after them: one job for both took 47–78 s, so on a short pull request it ended after the pytest jobs.
+    # After them the checks of .github/ and of the founding cases of the ast-grep rules: job Ruff, mypy has exactly the
+    # steps of the guard proof (tools/lib/srodowisko_ci.py), and a job of their own would put the small pull request of
+    # the gate shape over its job limit (tests/test_ksztalt_bramki.py, ADR 0020).
     name: Frontend
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # The founding cases of the ast-grep rules read the verdicts of pull requests (tools/na_scalonych_pr.py).
+      pull-requests: read
+      issues: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # The founding cases of the ast-grep rules need the merge-base of a pull request with origin/main.
+          fetch-depth: 0
           persist-credentials: false
 
       - id: python
@@ -40,7 +50,8 @@ jobs:
           enable-cache: false
 
       - name: Install development dependencies (pinned FastAPI and Pydantic shape the contract)
-        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
+        id: deps
+        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev,workflowy]"
 
       # Centrum rozliczeń: the committed build and contract must match their sources (tata has no Node).
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
@@ -93,61 +104,7 @@ jobs:
             exit 1
           fi
 
-  ruff-mypy:
-    # mypy needs no Windows runner, because --platform decides which sys.platform branches it checks; CI checks both
-    # systems.
-    name: Ruff, mypy
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      # The founding cases of the ast-grep rules read the verdicts of pull requests (tools/na_scalonych_pr.py).
-      pull-requests: read
-      issues: read
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          # The ast-grep rules on added lines count them from HEAD^1; the founding cases of the rules need the merge-base
-          # of a pull request with origin/main, so the whole history.
-          fetch-depth: 0
-          persist-credentials: false
-
-      - id: python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.14'
-
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        with:
-          enable-cache: false
-
-      - name: Install development dependencies
-        id: deps
-        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev,workflowy]"
-
-      # Each check runs even when an earlier step failed, so one red check does not hide the others.
-      - name: Lint Python code
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: python -m ruff check
-
-      # The rules of REGULY_CALEGO_DRZEWA in tests/test_zapadki.py report every line of their files, not only the added
-      # ones, and a weed rule has no owner right in a comment (ADR 0036): no ast-grep-ignore and no noqa of a banned name.
-      - name: Weed rules of the whole tree
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: >-
-          python -m pytest -q -rs -n 0 -p no:cacheprovider
-          tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
-          tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
-          tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
-          tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff
-
-      - name: Typecheck Python code (Windows)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: python -m mypy --platform win32
-
-      - name: Typecheck Python code (Linux)
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        run: python -m mypy --platform linux
-
+      # Each check below runs also after a red step above, so one red check does not hide the others.
       # Offline: the same verdict without a token or GitHub's API; low and above, configured in .github/zizmor.yml.
       - name: Audit workflows (zizmor)
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
@@ -162,19 +119,74 @@ jobs:
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         run: python tools/ci/shellcheck_akcji.py
 
-      # On a pull request HEAD^1 is the base the merge commit merges into, on a push to main the previous main.
-      - name: ast-grep rules on the added lines of the repository
-        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
-        env:
-          MAXIMISEART_ZAPADKA_BAZA: HEAD^1
-        run: python -m pytest -q -rs -n 0 -p no:cacheprovider tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
-
       # Each rule of reguly-ast-grep/ still catches every case of its metadata.przypadki.
       - name: ast-grep rules catch their founding cases
         if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: python tools/na_scalonych_pr.py --przypadki-regul
+
+  ruff-mypy:
+    # mypy needs no Windows runner, because --platform decides which sys.platform branches it checks; CI checks both
+    # systems. The whole job is the one form tools/lib/srodowisko_ci.py compares it with: the guard proof builds its
+    # environment as this job does and stands on each of its checks, so a change of the job goes first in a pull
+    # request of its own, together with srodowisko_ci.job_steps.
+    name: Ruff, mypy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The ast-grep rules on added lines count them from HEAD^1.
+          fetch-depth: 2
+          persist-credentials: false
+
+      - id: python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      - name: Install development dependencies
+        id: deps
+        run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
+
+      # Each check runs even when an earlier step failed, so one red check does not hide the others.
+      - name: Lint Python code
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python -m ruff check
+
+      # In the order of kroki_lokalne.static_steps, so the guard proof runs the checks in the order of this job
+      # (tools/lib/srodowisko_ci.py).
+      - name: Typecheck Python code (Linux)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python -m mypy --platform linux
+
+      - name: Typecheck Python code (Windows)
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: python -m mypy --platform win32
+
+      # The rules of REGULY_CALEGO_DRZEWA in tests/test_zapadki.py report every line of their files, not only the added
+      # ones, and a weed rule has no owner right in a comment (ADR 0036): no ast-grep-ignore and no noqa of a banned name.
+      # The step runs after ruff and mypy, so before them no code of the PR runs but its install, as in the guard proof
+      # (tools/lib/srodowisko_ci.py).
+      - name: Weed rules of the whole tree
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: >-
+          python -m pytest -q -rs -n 0 -p no:cacheprovider
+          tests/test_zapadki.py::test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii
+          tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
+          tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
+          tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff
+
+      # On a pull request HEAD^1 is the base the merge commit merges into, on a push to main the previous main.
+      - name: ast-grep rules on the added lines of the repository
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        env:
+          MAXIMISEART_ZAPADKA_BAZA: HEAD^1
+        run: python -m pytest -q -rs -n 0 -p no:cacheprovider tests/test_zapadki.py::test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo
 
   plan:
     # Decides the pytest and Mutation checks jobs of this run (tools/plan_ci.py), from the unit times of the last green

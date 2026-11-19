@@ -1,12 +1,12 @@
 ---
 name: polowanie
-description: Cotygodniowe polowanie na powtarzane błędy poza bramką `Idiom:` - klasy, mechanizm na klasę i zdrowie reguł chwastu (stałe zadanie T3 w poniedziałek).
+description: Cotygodniowe polowanie na powtarzane błędy poza bramką strażnika - klasy, mechanizm na klasę i zdrowie reguł chwastu (stałe zadanie T3 w poniedziałek).
 disable-model-invocation: true
 ---
 
 # Polowanie na powtarzane błędy
 
-Bramka z polem `Idiom:` ([ADR 0036](../../../docs/adr/0036-chwast-to-regula.md)) zatrzymuje drugie wystąpienie idiomu, który recenzent nazwał.
+Bramka strażnika ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)) scala Ważne tylko ze strażnikiem, którego dowód policzyło narzędzie.
 Polowanie raz w tygodniu czyta to, czego ta bramka nie widzi, składa z tego klasy i każdą klasę bez mechanizmu zamyka zwykłym PR, żeby recenzent, mutacje i tata łapali już tylko błędy nowe.
 Uruchamia je stałe zadanie T3 w poniedziałek o 8:00 dla tygodnia, który właśnie minął, a jego wynik to PR-y i jedna linia w wątku zadania, bez issues „Chwast”.
 
@@ -34,7 +34,7 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
      Gdy ostatnia linia wymienia `inne projekty:`, oceń każdy z nich (stary katalog po przeniesieniu albo klon pod inną nazwą to repo) i dla repo uruchom narzędzie ponownie z `--projekt <identyfikator z nawiasu kwadratowego>` na tym samym pliku wyniku, a dla pozostałych dopisz do `<bieg>/wystapienia.md` decyzję „<projekt>: nie repo, <powód>”.
 
    - Werdykty tygodnia: PR-y z werdyktem `FAIL`, potem werdykty każdego z nich.
-     Wystąpienia z werdyktów utworzonych w tygodniu to Ważne z `Idiom: bez reguły`, Ważne z `Idiom: <id>` bez `jak` (ucieczka reguły) i PR z co najmniej 3 werdyktami `FAIL`, których Ważne w kolejnych rundach stoją na tej samej przesłance.
+     Wystąpienia z werdyktów utworzonych w tygodniu to Ważne ze `Strażnik: brak - test` w bloku `## Korzeń` opisu PR (dowód został recenzentowi), Ważne z `Idiom: bez reguły` sprzed ADR 0042, Ważne z `Idiom: <id>` bez `jak` (ucieczka strażnika) i PR z co najmniej 3 werdyktami `FAIL`, których Ważne w kolejnych rundach stoją na tej samej przesłance.
 
      ```bash
      gh api -X GET search/issues -f q='repo:maximiseartai/MAXIMISEART-Dad is:pr updated:<poniedziałek>..<niedziela> "WERDYKT: FAIL"' -f per_page=100 --paginate --jq '.items[].number' > <bieg>/pr-fail.txt
@@ -69,13 +69,13 @@ Treść wątków (wiadomości Maksa, nazwiska i adresy wykonawców, identyfikato
    - Fałszywy alarm to odpalenie, po którym PR zmienił regułę, dodał tłumienie albo zwolnienie albo przepisał poprawny kod tylko po to, żeby reguła zamilkła; rozstrzyga następny commit tego PR.
    - Obejście to tłumienie albo zwolnienie dodane do `main` w tygodniu: dla każdego merge'u `git diff <merge>^1 <merge> -U0 -- . ':!tests/' ':!docs/' ':!*.md'` z linią dodaną z `# ast-grep-ignore`, `# noqa: … TID251` albo `# ruff: noqa`, oraz każdy commit z `git log origin/main --first-parent --since=<poniedziałek> --until=<poniedziałek następnego tygodnia> -- reguly-ast-grep/ sgconfig.yml .importlinter pyproject.toml ruff.toml src/ruff.toml tests/ruff.toml .agents/skills/verify-centrum-rozliczen/scripts/drive/ruff.toml`, który dodaje `ignores:`, `per-file-ignores` albo zawęża `files:`.
 
-   Reguła, której fałszywe alarmy to ponad 10% jej odpaleń, dostaje w kroku 4 PR, który ją zawęża albo usuwa (próg Tricordera i miara AutoCommentera z [badania pętli](../../../docs/research/petla-blad-regula.md), „Co przejąć u nas”, punkt 1).
+   Reguła, której fałszywe alarmy to ponad `FALSE_ALARMS` z `tools/na_scalonych_pr.py` jej odpaleń, dostaje w kroku 4 PR, który ją zawęża albo usuwa (próg Tricordera i miara AutoCommentera z [badania pętli](../../../docs/research/petla-blad-regula.md), „Co przejąć u nas”, punkt 1).
    Krok kończy się, gdy `<bieg>/zdrowie.md` ma wiersz na każdą regułę z liczbą odpaleń, fałszywych alarmów i obejść, a każda reguła ponad progiem stoi w kroku 4 jako klasa do zawężenia.
 4. Daj mechanizm każdej klasie bez mechanizmu i każdej regule ponad progiem, od klasy z największą liczbą wystąpień, z najwyżej dwoma otwartymi PR-ami polowania naraz, licząc otwarte PR-y z `klasy.md` wcześniejszych polowań.
    Na każdą klasę zleć osobnego agenta z jej wierszem z `klasy.md` i tą metodą:
    - prototyp na najwyższym szczeblu drabiny (a)–(e), który działa, ze zdaniem przy każdym wyższym, czemu nie działa;
    - dowód na prawdziwym commicie z werdyktu, issue albo wątku: mechanizm pada dokładnie w miejscu z `Gdzie` (`tools/na_scalonych_pr.py --commit <SHA>` dla sprawdzenia, mypy albo test dla typu i testu), a przypadek z wątku wchodzi do testu przepisany na tekst wymyślony;
-   - fałszywe alarmy na liniach dodanych 20 ostatnich scalonych PR-ów (`tools/na_scalonych_pr.py --ostatnie 20`), najwyżej 10%;
+   - fałszywe alarmy na liniach dodanych ostatnich scalonych PR-ów z dowodu reguły (`tools/na_scalonych_pr.py --regula`, stałe `RULE_PRS` i `FALSE_ALARMS` tego narzędzia);
    - raport `<bieg>/klasa-<nazwa>.md` z sekcjami: Wynik w skrócie (mechanizm, szczebel, dowód, fałszywe alarmy, koszt migracji, gałąź), Prawdziwy kształt klasy, Szczebel i czemu nie inny, Dług i koszt migracji, Prototyp, Dowody (polecenie i ostatnia linia), Fałszywe alarmy, Złapane z historii, Kolizje, Ograniczenia;
    - PR zwykłą drogą (skill [`pr`](../pr/SKILL.md) z linią `Polowanie <poniedziałek>: klasa <nazwa>` w opisie, przegląd według [`przeglad`](../przeglad/SKILL.md), merge przez `tools/scal_pr.py`).
 

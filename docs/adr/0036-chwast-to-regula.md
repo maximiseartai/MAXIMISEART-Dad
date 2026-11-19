@@ -6,6 +6,7 @@ Przyjęta na mandat Maksa z nocy 14/15.11.2026 (pełna samodzielność, uzgodnio
 Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach Q1 (miara), Q11 (szczebel wyżej przy powrocie i `ZGODA KORZEŃ`), Q12, Q15, Q16 i Q22 (issues „Chwast”) oraz Q26 (powrót po (e) idzie do Maksa).
 Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik”, bo ich przedmiotem jest issue „Chwast”, oraz w mierze odczytu 11.12.2026; „Cztery źródła” zostają źródłami wystąpień, ale żadne z nich nie zakłada już issue.
 Zastępuje propozycję z PR #1678, zamkniętego bez merge'u, więc numer 0035 zostaje wolny.
+[ADR 0042](0042-straznik-przy-pierwszym-waznym.md) na decyzję Maksa z 18.11.2026 zmienia decyzje „Pole werdyktu”, „Warunek merge'a”, „Dowód reguły”, „Idiom bez reguły” i „Status w Actions”.
 
 Ten ADR wchodzi bez zmiany kodu, skilli i bramki. Każdą decyzję wdraża wykonawca z tabeli w sekcji „Wdrożenie”, a do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`, z regułą przejściową pod tą tabelą.
 
@@ -45,6 +46,8 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 
 ### Drugie wystąpienie idiomu
 
+Zapis decyzji z 14–17.11.2026; warunek merge'a z tej sekcji zastępuje [ADR 0042](0042-straznik-przy-pierwszym-waznym.md), a pole `Idiom:` zostaje adnotacją, którą czyta tylko raport tygodniowy.
+
 - **Pole werdyktu.** Pole pisze recenzent, nie autor. Ma jedną z trzech postaci:
   - `Idiom: <id> jak #N Wn rk`, gdy to drugie wystąpienie idiomu, który nie ma jeszcze reguły, a `<id>` to id reguły, którą PR ma dodać;
   - `Idiom: <id>`, gdy to ucieczka istniejącej reguły `<id>`;
@@ -60,7 +63,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
   Osłabienie reguły w PR, który ona sądzi (`ignores:`, `files:`, usunięta reguła, `sgconfig.yml`), łapie warunek 6 `tools/scal_pr.py`, także w statusie „Werdykt i bramka”: reguły ast-grep z bazy na liniach, które PR dodaje, linia z tekstem dyrektywy tłumienia też, a każdy przypadek reguł bazy (`metadata.przypadki`) wymienia i łapie po scaleniu któraś reguła, bez względu na jej id i plik, wszystko liczone kodem bazy, więc zmiana reguły obowiązuje od swojego merge'a, a kod, który z niej korzysta, wchodzi następnym PR-em.
   Powód kształtu: krok z #1766 wyznaczał prawo właściciela z treści linii różnicy i przepisywał YAML reguł, a każda z sześciu rund przeglądu #1720 znalazła w nim nową formę ukrycia; zakaz samego tekstu dyrektywy nie odtwarza gramatyki ast-grep, a dwie pierwsze rundy #2099 pokazały, że odtworzona gramatyka komentarza (`##`, samotne `\r`) się z nią rozjeżdża.
   Powód: cztery rundy przeglądu tego ADR znalazły cztery formy ukrycia w prozie, w tym zwolnienie całego `TID251` dla 16 plików właścicieli, które istnieje już na `main`. Granicę mechanizmu da się sprawdzić tylko na kodzie z testem.
-- **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku tej reguły z historii jej pól `Idiom:` (nie tylko bieżącego) na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej 10% fałszywych alarmów na dodanych liniach 20 ostatnich scalonych PR-ów.
+- **Dowód reguły.** Regułę przyjmuje się tylko z wynikiem `tools/na_scalonych_pr.py`, który `tools/scal_pr.py` uruchamia z kodu bazy PR: łapie `Gdzie` każdego przypadku tej reguły z historii jej pól `Idiom:` (nie tylko bieżącego) na dodanych liniach do SHA werdyktu `FAIL` i ma najwyżej `FALSE_ALARMS` fałszywych alarmów na dodanych liniach `RULE_PRS` ostatnich scalonych PR-ów (stałe w `tools/na_scalonych_pr.py`).
   Powód: 10% to próg Google Tricorder dla analiz w review, a reguła `write_text` dała 18 alarmów w 6 z 20 PR-ów bez żadnego znanego defektu, a reguła lokatora tytułu 0 alarmów i złapała jedyną porażkę wyrwania.
 - **Idiom bez reguły.** Ważne z polem `Idiom: bez reguły <klasa>` nie zatrzymuje merge'a, a bramka niczego w nim nie sprawdza; każde takie Ważne trafia do poniedziałkowego raportu z linkiem.
   To jedyne miejsce osądu w pętli: klasę wybiera niezależny recenzent według warunku z tabeli, a recenzent następnej rundy sprawdza ją według ostatniej kolumny.
@@ -86,8 +89,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 
 ### Stary checkout
 
-- **Status w Actions.** Status „Werdykt i bramka” w GitHub Actions liczy bramkę kodem bazy PR i na razie tylko raportuje.
-  Włączenie go jako wymaganego w rulesecie należy do Maksa, bo 13.11.2026 wyłączył blokady po stronie serwera (ADR 0034, „Odrzucone warianty”), więc do tej decyzji stary checkout może ominąć bramkę.
+- **Status w Actions.** Status „Werdykt i bramka” w GitHub Actions liczy bramkę kodem bazy PR, a ruleset `main` wymaga go od 14.11.2026 13:21 (`gh api repos/maximiseartai/MAXIMISEART-Dad/rules/branches/main`: `Required CI status` i `Werdykt i bramka`), więc stary checkout bramki nie omija.
   Powód: 12 merge'y, których bramka z kodu `main` by odmówiła, przeszło przez `tools/scal_pr.py` sprzed bramki, a ślad tego zostaje tylko w lokalnych transkryptach.
 
 ### Miara
@@ -97,7 +99,7 @@ Metoda i tabele tych liczb są w komentarzu PR #1693, który wprowadził ten ADR
 | Prawdziwe powroty odmawiane przez Required CI | 0 z 11 | co najmniej 5 z 11: 4 wyrażalne i 2 częściowo, bez #1585 W1 r2 (`write_text`), którego linia była na `main` przed PR, więc nie jest dodaną linią |
 | Powroty idiomu wśród wystąpień | 11 z 94 | poniżej 8% (próg z wyboru, nie z pomiaru) |
 | Czekanie od `PASS` i zielonego CI do merge'a | mediana 4,9 h | poniżej 1 h |
-| Fałszywe alarmy reguły na 20 ostatnich PR-ach | `write_text` 18 w 6 z 20 | najwyżej 10%, powyżej zawężamy albo usuwamy regułę |
+| Fałszywe alarmy reguły na `RULE_PRS` ostatnich PR-ach | `write_text` 18 w 6 z 20 | najwyżej `FALSE_ALARMS` (stałe w `tools/na_scalonych_pr.py`), powyżej zawężamy albo usuwamy regułę |
 
 Odczyt 11.12.2026 z ADR 0034 (#1636) zostaje i czyta te liczby (wiersz „Tickety o issues „Chwast”” w tabeli „Wdrożenie”).
 Gdy odczyt pokaże zły wynik, wracamy do reguły pisanej w PR drugiego wystąpienia z blokadą w Required CI zamiast sprawdzenia w `tools/scal_pr.py`.
@@ -139,5 +141,4 @@ Pozostałe wiersze PR bramki wchodzą jednym merge'em, więc warunek `Idiom:` ni
   Pierwszy krok pomiaru to drugi niezależny oceniający na tych samych 47 wierszach.
 - Dowód reguły liczy `tools/na_scalonych_pr.py` z kodu bazy PR, więc wynik nie zależy od recenzenta; poza osądem zostaje tylko wybór postaci `bez reguły` i dowód mutacji klas `typ` i `test-klasy`, a raport liczy tę postać co tydzień.
 - Reguła łapie tylko to, co skan czyta: skan bez ukrytych katalogów pominąłby `.agents/`, gdzie leżała jedyna porażka wyrwania.
-- Do decyzji Maksa o rulesecie stary checkout może scalić PR bez bramki, a status „Werdykt i bramka” pokazuje to po fakcie od merge'a jego wykonawcy z tabeli „Wdrożenie”.
 - Pole nazywa się `Idiom:`, a nie `Wzorzec:`, bo Wzorzec to pojęcie domeny z [`GLOSSARY.md`](../../GLOSSARY.md).

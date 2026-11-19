@@ -112,8 +112,8 @@ SYGNATURY = (
 LOKALNIE = (
     ("pytest", "pytest"),
     ("Mutation checks", "mutations --odtwarzam {run}"),
-    ("Ruff, mypy", "ruff,mypy,workflowy"),
-    ("Frontend", "frontend"),
+    ("Ruff, mypy", "ruff,mypy"),
+    ("Frontend", "frontend,workflowy"),
 )
 
 

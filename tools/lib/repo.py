@@ -145,14 +145,18 @@ def run_git(
     timeout: float | None = None,
     extra_env: Mapping[str, str] | None = None,
     stop: threading.Event | None = None,
+    isolated: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     """Polecenie gita, które trwa albo sięga sieci, przez ``potomne.run`` (drzewo procesów ginie z narzędziem): wynik
-    bez sprawdzania kodu i z poleceniem ``["git", *arguments]``, a ``extra_env`` dochodzi do środowiska narzędzia."""
+    bez sprawdzania kodu i z poleceniem ``["git", *arguments]``, a ``extra_env`` dochodzi do środowiska narzędzia.
+    ``isolated``: git bez środowiska wołającego i bez konfiguracji systemu i użytkownika, jak ``git(isolated=True)``,
+    ale bez ``GIT_WORK_TREE`` (np. ``clone`` do nowego katalogu)."""
 
     import potomne
 
-    environment = {**_environment(os.environ), **(extra_env or {})}
-    return potomne.run(["git", *arguments], cwd=root, env=environment, timeout=timeout, stop=stop)
+    with _isolated(None) if isolated else nullcontext(_environment(os.environ)) as base:
+        environment = {**base, **(extra_env or {})}
+        return potomne.run(["git", *arguments], cwd=root, env=environment, timeout=timeout, stop=stop)
 
 
 def command(*arguments: str) -> tuple[str, ...]:
@@ -201,6 +205,14 @@ def merge_tree(root: Path, first: str, second: str) -> Merged:
         written = error.stdout
     tree, *conflicts = written.split("\0")
     return Merged(tree, tuple(dict.fromkeys(path for path in conflicts if path)))
+
+
+def merge_commit(root: Path, base: str, head: str, merged: Merged) -> str:
+    """Commit scalenia HEAD PR ``head`` z bazą ``base`` o drzewie ``merged`` (``merge_tree`` bez konfliktu), z rodzicami
+    ``base`` i ``head`` jak ``refs/pull/N/merge`` GitHuba: drzewo, które sprawdza Required CI PR i które wejdzie do bazy."""
+
+    author = ("-c", "user.name=scal_pr", "-c", "user.email=scal_pr@localhost")
+    return git(root, *author, "commit-tree", merged.tree, "-p", base, "-p", head, "-m", "scalenie PR z bazą").strip()
 
 
 def working_tree_commit(root: Path, message: str) -> str:
@@ -304,13 +316,15 @@ def _environment(base: Mapping[str, str]) -> dict[str, str]:
 
 
 @contextmanager
-def _isolated(root: Path) -> Iterator[dict[str, str]]:
-    """Środowisko ``git(isolated=True)`` w ``root``: pusty katalog ``HOME`` istnieje do końca bloku."""
+def _isolated(root: Path | None) -> Iterator[dict[str, str]]:
+    """Środowisko ``git(isolated=True)`` w ``root`` (``GIT_WORK_TREE``) albo ``run_git(isolated=True)`` bez drzewa
+    roboczego (``None``): pusty katalog ``HOME`` istnieje do końca bloku."""
 
     with tempfile.TemporaryDirectory(prefix="git-bez-konfiguracji-") as home:
         kept = {name: os.environ[name] for name in _ISOLATED_KEPT if name in os.environ}
         machine = {"GIT_CONFIG_NOSYSTEM": "1", "GIT_ATTR_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_NO_REPLACE_OBJECTS": "1"}
-        yield _environment({**kept, **machine, "HOME": home, "LANG": "C", "GIT_WORK_TREE": str(root.resolve())})
+        tree = {} if root is None else {"GIT_WORK_TREE": str(root.resolve())}
+        yield _environment({**kept, **machine, "HOME": home, "LANG": "C", **tree})
 
 
 def _text(output: bytes) -> str:

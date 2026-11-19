@@ -1,7 +1,7 @@
 """Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 
-Lokalnie te same sprawdzenia co CI: zadania ruff, mypy i workflowy (zizmor i actionlint ``.github/``; w CI jedno zadanie
-``ruff-mypy``), frontend, pytest i mutations.
+Lokalnie te same sprawdzenia co CI: zadania ruff i mypy (w CI zadanie ``ruff-mypy``), frontend i workflowy (zizmor
+i actionlint ``.github/``; w CI oba w zadaniu ``frontend``), pytest i mutations.
 
 Uruchamia każdy krok po kolei Pythonem, który uruchomił skrypt (w worktree: jego ``.venv``,
 patrz ``tools/setup_worktree.py``), i drukuje wynik kroku jedną linią; wyjście pokazuje tylko
@@ -41,7 +41,7 @@ import time
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
-from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
+from kroki_lokalne import MYPY_PLATFORMS, OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
 from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import BASE, ROOT
@@ -50,7 +50,7 @@ import repo
 # Wygenerowany kontrakt i zbudowany frontend muszą zgadzać się ze źródłami (u taty nie ma Node).
 GENERATED = ("frontend/src/api", "src/rozliczenia/centrum/static")
 # Zadanie w ci.yml, w którym biegną kroki zadania narzędzia, gdy nazywa się inaczej.
-CI_JOB = {"ruff": "ruff-mypy", "mypy": "ruff-mypy", "workflowy": "ruff-mypy"}
+CI_JOB = {"ruff": "ruff-mypy", "mypy": "ruff-mypy", "workflowy": "frontend"}
 JOBS_ELSEWHERE = {
     "plan": "plan zadań pytest i Mutation checks runu (tools/plan_ci.py plan drukuje go lokalnie), nic nie sprawdza",
     "required": "zbiorczy status pozostałych zadań, nic do odtworzenia",
@@ -74,12 +74,11 @@ def _reproduced(root: Path) -> list[tuple[str, Step]]:
     """Każdy krok narzędzia z fragmentem polecenia `run:` w ci.yml, które odtwarza."""
 
     python, npm, frontend = sys.executable, _npm(), root / "frontend"
-    ruff, mypy, mypy_windows = static_steps(root)
+    ruff, *mypy = static_steps(root)
     zizmor, actionlint, shellcheck_actions = workflow_steps(root)
     return [
         ("-m ruff check", ruff),
-        ("-m mypy --platform linux", mypy),
-        ("-m mypy --platform win32", mypy_windows),
+        *((f"-m mypy --platform {platform}", step) for platform, step in zip(MYPY_PLATFORMS, mypy, strict=True)),
         ("zizmor --offline --min-severity low .github", zizmor),
         ("actionlint -shellcheck", actionlint),
         ("tools/ci/shellcheck_akcji.py", shellcheck_actions),
@@ -166,7 +165,7 @@ def _check_every_commit(root: Path, base: str, jobs: set[str], *, fail_fast: boo
 
 def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--kroki-ci", action="store_true", help="Wypisz JSON: odtwarzane zadania CI i ich polecenia.")
+    parser.add_argument("--kroki-ci", action="store_true", help="Wypisz JSON: odtwarzane zadania CI, zadanie CI każdego zadania narzędzia i fragmenty poleceń z ich zadaniem CI.")
     parser.add_argument(
         "--kazdy-commit",
         nargs="?",
@@ -187,7 +186,9 @@ def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
     if args.kroki_ci:
         reproduced = sorted({CI_JOB.get(job, job) for job in known})
         elsewhere = {"zadania": JOBS_ELSEWHERE, "polecenia": COMMANDS_ELSEWHERE}
-        print(json.dumps({"lokalnie": reproduced, "gdzie_indziej": elsewhere, "fragmenty": [ci for ci, _ in _reproduced(root)]}))
+        jobs_ci = {job: CI_JOB.get(job, job) for job in sorted(known)}
+        fragments = [[CI_JOB.get(step.job, step.job), ci] for ci, step in _reproduced(root)]
+        print(json.dumps({"lokalnie": reproduced, "zadania": jobs_ci, "gdzie_indziej": elsewhere, "fragmenty": fragments}))
         return 0
     jobs = set(args.tylko.split(",")) if args.tylko else set(EVERY_COMMIT_JOBS if args.kazdy_commit else known)
     if unknown := jobs - known:

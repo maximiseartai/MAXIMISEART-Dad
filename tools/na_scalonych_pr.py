@@ -10,15 +10,16 @@ linię wyjścia. W kopii ``HEAD^1`` to ``main`` sprzed scalenia, więc ``--baza 
 Pełne wyjście każdego PR-u leży w ``--wyniki`` (domyślnie katalog ``na-scalonych-pr`` w katalogu gita worktree).
 
     .venv/bin/python tools/na_scalonych_pr.py --pr 393 --pr 384 -- tools/mutacje_zmiany.py --baza HEAD^1
-    .venv/bin/python tools/na_scalonych_pr.py --ostatnie 5 -- tools/mutacje_zmiany.py --baza HEAD^1
+    .venv/bin/python tools/na_scalonych_pr.py --ostatnie -- tools/mutacje_zmiany.py --baza HEAD^1
     .venv/bin/python tools/na_scalonych_pr.py --commit 04f08b45 -- tools/mutacje_zmiany.py --baza e7cf937b
 
 ``--narzedzia origin/main`` bierze narzędzia z commitu zamiast z checkoutu, np. dla pomiaru przed zmianą narzędzia.
 ``--commit`` bierze dowolny commit, np. HEAD PR-u z werdyktem FAIL, który w tej postaci nie wszedł do ``main``; wtedy
 bazę zmiany polecenie podaje samo.
 
-``--ostatnie`` bierze ostatnie merge'e PR-ów (``Merge pull request #N``) z historii ``--first-parent``
-``origin/main`` po pobraniu ``main``.
+``--ostatnie N`` bierze ``N`` ostatnich merge'y PR-ów (``Merge pull request #N``) z historii ``--first-parent``
+``origin/main`` po pobraniu ``main``, a ``--ostatnie`` bez liczby ``CHECK_PRS``: tyle PR-ów bez fałszywego alarmu
+pokazuje nowe sprawdzenie (``CODING_STANDARDS.md``).
 
 Kończy się ``NA SCALONYCH PR OK | <n> PR-ów`` albo ``NA SCALONYCH PR FAIL | <PR-y z kodem innym niż 0>``.
 
@@ -27,7 +28,7 @@ nadpisywania ``tools/``, więc reguła z zakresem w ``tools/`` widzi linie sameg
 liczy ``odpalenia_ast_grep.on_added_lines``, ta sama funkcja co zapadka ``syntax_rules``: węzeł reguły obejmuje
 którąkolwiek linię dodaną, a linia odpalenia to pierwsza dodana linia węzła (odpala też ``severity: off``):
 
-    .venv/bin/python tools/na_scalonych_pr.py --regula reguly-ast-grep/x.yml --wazne 1533/W1/r2 --ostatnie 20
+    .venv/bin/python tools/na_scalonych_pr.py --regula reguly-ast-grep/x.yml --wazne 1533/W1/r2
     .venv/bin/python tools/na_scalonych_pr.py --regula-id x --z-commita <SHA HEAD PR> --wazne 1533/W1/r2
 
 ``--regula-id ID --z-commita REV`` bierze regułę o id ``ID``, którą wybiera sam ast-grep z konfiguracji kopii commitu
@@ -44,19 +45,18 @@ w Required CI tego commitu. Tak uruchamia dowód ``tools/scal_pr.py``.
    złapane, gdy reguła odpala w miejscu z pola ``Gdzie`` (``szablon_werdyktu.places``: ``plik:linia`` albo
    ``plik:linia-linia``): w najmniejszej funkcji Pythona, która obejmuje to miejsce, a poza funkcją albo w pliku
    spoza Pythona na samych jego liniach. Odpalenie w innym miejscu to ``obok``, a brak odpalenia ``nie``.
-2. Fałszywe alarmy: odpalenia na liniach dodanych przez każdy PR z ``--pr`` i ``--ostatnie`` (bez obu 20 ostatnich),
-   od ``<merge>^1`` do ``<merge>``.
+2. Fałszywe alarmy: odpalenia na liniach dodanych przez każdy PR z ``--pr`` i ``--ostatnie`` (bez obu ``RULE_PRS``
+   ostatnich), od ``<merge>^1`` do ``<merge>``.
 3. Wystąpienia na całym ``origin/main`` (``--no-ignore hidden``, bo bez tej flagi ast-grep nie wchodzi do
    ``.agents/``), tylko jako dana.
 
 Kończy się ``DOWÓD OK|ODMOWA | <id reguły> | złapane k/n | FP x w y z N PR (p%) | main z``, gdzie ``x`` to odpalenia
-w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad 10% ``N``; reguła bez
+w ``y`` PR-ach. ``ODMOWA``, gdy któreś Ważne nie jest złapane albo PR-y z odpaleniem to ponad ``FALSE_ALARMS`` ``N``; reguła bez
 niepustego pola ``files:``, której zapadka nie przyjmie (``odpalenia_ast_grep.unscoped``), błąd GitHuba, brak
 werdyktu, ``Gdzie`` bez miejsca ``plik:linia`` i porażka ast-grep to ``DOWÓD ODMOWA | <reguła> | <błąd>``, więc
-``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść. ``tools/scal_pr.py`` uruchamia ten dowód przy merge'u PR z Ważnym
-z polem ``Idiom:`` (``bramka_idiomu``).
+``DOWÓD OK`` reguły z pliku znaczy też, że reguła może wejść.
 
-Przypadki reguł (``--przypadki-regul``, krok zadania CI „Ruff, mypy”): każda reguła z katalogów ``ruleDirs``
+Przypadki reguł (``--przypadki-regul``, krok zadania CI Frontend): każda reguła z katalogów ``ruleDirs``
 ``sgconfig.yml`` checkoutu ma w polu ``metadata.przypadki`` przypadki, które łapie, i łapie każdy z nich jak Ważne
 dowodu (punkt 1): Ważne ``PR/W<n>/r<k>`` albo ``<pełny SHA> plik:linia``, czyli linie dodane przez commit od jego
 pierwszego rodzica, dla reguły, która nie powstała z Ważnego z polem ``Gdzie``. Pole czyta tylko ten krok, a ast-grep
@@ -73,6 +73,16 @@ usunięcie reguły go nie gubi. Regułę z przypadkami usuwa się więc tylko ra
 reguły, która go łapie. Tak uruchamia go ``tools/scal_pr.py`` z kodu bazy na scaleniu HEAD PR z bazą (warunek 6,
 ``reguly_bazy``), więc PR, który osłabia regułę i usuwa z niej przypadek, nie przechodzi także wtedy, gdy zmienia ten
 krok CI.
+
+Dowód strażnika (``--straznik SELEKTOR --z-commita <HEAD PR>`` z ``--wazne``) to selektor z pola ``Strażnik:`` bloku
+Ważnego w sekcji ``## Korzeń``. ``ast-grep <id>`` idzie dowodem reguły o tym id (wyżej, z ``RULE_PRS`` ostatnimi PR-ami),
+gdy reguła na HEAD ma to Ważne w polu ``metadata.przypadki``, jedynej liście jej przypadków; każdy inny selektor idzie
+dowodem ``straznik.prove``, który opisuje docstring ``tools/lib/straznik.py``, z zakresem funkcji z ``places`` i prozą
+z reguły ``PROSE`` na kopii SHA werdyktu. Linia na Ważne i na końcu ``DOWÓD OK|ODMOWA | <selektor> | wykryte k/n``
+(przy wyjątku ``wyjątek k/n``); ``tools/scal_pr.py`` uruchamia go przy merge'u każdego PR z Ważnym
+(``bramka_straznika``):
+
+    .venv/bin/python tools/na_scalonych_pr.py --straznik mypy --z-commita <HEAD PR> --wazne 1956/W2/r1
 """
 
 from __future__ import annotations
@@ -102,6 +112,8 @@ import potomne
 import rejestr_korzeni
 from repo import REMOTE, ROOT
 import repo
+import srodowisko_ci
+import straznik
 import szablon_werdyktu
 import werdykt_pr
 
@@ -113,7 +125,12 @@ WHERE = "Gdzie:"
 # Cała kopia: bez tych flag ast-grep nie wchodzi do katalogu ukrytego (``.agents/``) ani ignorowanego.
 WHOLE = ("--no-ignore", "hidden", "--no-ignore", "vcs", "--no-ignore", "dot")
 FUNCTIONS = "id: funkcja\nlanguage: python\nrule:\n  kind: function_definition\n"  # także async def
-FALSE_ALARMS = 0.10  # najwyższy udział PR-ów z odpaleniem, przy którym dowód przechodzi
+# Proza w pliku Pythona dla ``Strażnik: brak - proza``: komentarz i docstring, czyli instrukcja z samym napisem na
+# początku modułu, klasy albo funkcji.
+PROSE = "id: proza\nlanguage: python\nrule:\n  any:\n    - kind: comment\n    - kind: expression_statement\n      nthChild: 1\n      has:\n        kind: string\n        stopBy: neighbor\n"
+FALSE_ALARMS = 0.10  # najwyższy udział PR-ów z odpaleniem, przy którym dowód reguły przechodzi (próg Tricorder, ADR 0036)
+RULE_PRS = 20  # ostatnie scalone PR-y fałszywych alarmów dowodu reguły bez ``--pr`` i ``--ostatnie``
+CHECK_PRS = 5  # ostatnie scalone PR-y próby nowego sprawdzenia: ``--ostatnie`` bez liczby (CODING_STANDARDS.md)
 CONFIG = "sgconfig.yml"
 # Odpowiedzi ast-grep 0.51.0, gdy konfiguracja nie ładuje reguły ``--filter``: brak takiej reguły, brak katalogu
 # ``ruleDirs`` i brak pliku konfiguracji.
@@ -305,12 +322,18 @@ def caught(rule: Rule, probe: Probe) -> bool:
     return bool(inside)
 
 
-def _fork(base: str, commit: str) -> str:
-    """``merge-base`` z ``base`` sprzed merge'a, który wniósł ``commit`` (``<merge>^1``), albo z ``base``, gdy go nie wniósł."""
+def _target(base: str, commit: str) -> str:
+    """SHA bazy, do której ``commit`` się scala: ``base`` sprzed merge'a, który go wniósł (``<merge>^1``), albo ``base``."""
 
     after = set(repo.git(ROOT, "rev-list", "--ancestry-path", f"{commit}..{base}").split())
     merges = [one for one in repo.git(ROOT, "rev-list", "--first-parent", f"{commit}..{base}").split() if one in after]
-    return repo.merge_base(ROOT, f"{merges[-1]}^1" if merges else base, commit)
+    return repo.git(ROOT, "rev-parse", "--verify", f"{merges[-1]}^1" if merges else f"{base}^{{commit}}").strip()
+
+
+def _fork(base: str, commit: str) -> str:
+    """``merge-base`` ``commit`` z bazą, do której się scala (``_target``)."""
+
+    return repo.merge_base(ROOT, _target(base, commit), commit)
 
 
 def proof_on(commit: str, rule: str, majors: list[tuple[int, str, int]], numbers: list[int], last: int) -> int:
@@ -371,6 +394,84 @@ def checked(name: str, rule: Rule, majors: list[tuple[int, str, int]], numbers: 
     ok = catches == len(majors) and share <= FALSE_ALARMS
     print(f"DOWÓD {'OK' if ok else 'ODMOWA'} | {name} | złapane {catches}/{len(majors)} | FP {alarms} w {len(flagged)} z {len(prs)} PR ({share:.0%}) | main {existing}")
     return 0 if ok else 1
+
+
+def guard_proof(head: str, text: str, majors: list[tuple[int, str, int]]) -> int:
+    """Dowód strażnika z pola ``Strażnik:`` (``straznik``) na HEAD PR-u ``head`` dla Ważnych ``majors``; reguła
+    ast-grep idzie dowodem reguły (``proof_on``), a kod 0 jest tylko z ``DOWÓD OK``."""
+
+    try:
+        guard = straznik.parse(text)
+    except ValueError as error:
+        print(f"DOWÓD ODMOWA | {text} | {error}")
+        return 1
+    try:
+        if problem := fetched(head):
+            raise ValueError(problem)
+        # Baza ``main`` sprzed merge'a PR, więc dowód na scalonym już PR liczy drzewo jak przed merge'em.
+        target = _target(repo.BASE, head)
+        if guard.kind is straznik.Kind.AST_GREP:
+            return _rule_guard(head, target, guard, majors)
+        repository = str(json.loads(github.gh("repo", "view", "--json", "nameWithOwner"))["nameWithOwner"])
+        cases = [_case(guard, major_probe(repository, *one)) for one in majors]
+        if guard.kind in straznik.EXEMPT:
+            found = straznik.exempt(ROOT, guard, head, repo.merge_base(ROOT, target, head), cases)
+        else:
+            with srodowisko_ci.built(ROOT, head, target) as environment:
+                found = straznik.prove(ROOT, guard, environment, cases)
+    except (ValueError, subprocess.CalledProcessError) as error:
+        print(f"DOWÓD ODMOWA | {guard} | {error}")
+        return 1
+    for outcome in found:
+        print(outcome.line, flush=True)
+    detected = sum(outcome.detected for outcome in found)
+    ok = detected == len(found)
+    print(f"DOWÓD {'OK' if ok else 'ODMOWA'} | {guard} | {'wyjątek' if guard.kind in straznik.EXEMPT else 'wykryte'} {detected}/{len(found)}")
+    return 0 if ok else 1
+
+
+def _rule_guard(head: str, target: str, guard: straznik.Guard, majors: list[tuple[int, str, int]]) -> int:
+    """Strażnik ``ast-grep <id>`` na HEAD ``head`` scalonym z ``target`` w środowisku Required CI (``srodowisko_ci``):
+    ast-grep dowodu ma wersję ast-grepa tego środowiska, każde Ważne stoi w ``metadata.przypadki`` reguły (jedna lista
+    przypadków, którą sprawdza też ``--przypadki-regul``), a dowód reguły na nich przechodzi."""
+
+    rule = guard.arguments[0]
+    if AST_GREP is None:
+        print(f"DOWÓD ODMOWA | {guard} | {odpalenia_ast_grep.INSTALL}")
+        return 1
+    with srodowisko_ci.built(ROOT, head, target) as environment:
+        if (mine := _version(AST_GREP)) != (theirs := _version(str(environment.ast_grep))):
+            print(
+                f"DOWÓD ODMOWA | {guard} | ast-grep dowodu ({mine}) to nie ast-grep Required CI z pyproject.toml PR scalonego z bazą ({theirs}): "
+                "gdy PR zmienia pin ast-grep-cli, zmień go osobnym PR przed tym, a gdy nie, odśwież .venv (python3 tools/setup_worktree.py)"
+            )
+            return 1
+        listed = {case for document in _rule_documents(environment.copy) if str(document["id"]) == rule for case in _cases_of(document)}
+        if missing := [f"{number}/{label}/r{round_}" for number, label, round_ in majors if f"{number}/{label}/r{round_}" not in listed]:
+            print(f"DOWÓD ODMOWA | {guard} | {', '.join(missing)} nie stoi w metadata.{CASES} reguły {rule} na HEAD: dopisz je tam, to jedyna lista przypadków reguły")
+            return 1
+        return proof_on(environment.tree, rule, majors, [], RULE_PRS)
+
+
+def _version(ast_grep: str) -> str:
+    """Wersja z ``ast-grep --version`` albo powód, czemu jej nie ma."""
+
+    if not Path(ast_grep).is_file():
+        return "brak ast-grep"
+    done = potomne.run([ast_grep, "--version"], cwd=ROOT)
+    return done.stdout.strip() if done.returncode == 0 else f"bez wersji, kod {done.returncode}"
+
+
+def _case(guard: straznik.Guard, probe: Probe) -> straznik.Case:
+    """Ważne ``probe`` jako przypadek dowodu: zakresy funkcji z ``places`` dla mypy i ruff, a proza z ``PROSE``
+    dla ``brak - proza``; oba czyta ast-grep z kopii SHA werdyktu, jak dowód reguły."""
+
+    if not (raw := szablon_werdyktu.places(probe.where)):
+        raise ValueError(f"{probe.where} nie ma miejsca plik:linia")
+    scopes = places(probe.where, probe.head) if guard.kind in (straznik.Kind.MYPY, straznik.Kind.RUFF) else []
+    python = sorted({path for path, _, _ in raw if path.endswith(".py")})
+    prose = hits(probe.head, ("--inline-rules", PROSE), python) if guard.kind is straznik.Kind.PROSE and python else []
+    return straznik.Case(probe.label, probe.head, probe.base, tuple(raw), tuple(scopes), tuple(prose))
 
 
 def case_probe(repository: str, text: str) -> Probe:
@@ -456,14 +557,15 @@ def main(argv: list[str] | None = None) -> int:
     command = arguments[split + 1 :]
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--pr", type=int, action="append", default=[], help="Numer scalonego PR-u; powtórz dla kilku.")
-    parser.add_argument("--ostatnie", type=int, default=0, help="Tyle ostatnio scalonych PR-ów.")
+    parser.add_argument("--ostatnie", type=int, nargs="?", const=CHECK_PRS, default=0, help=f"Tyle ostatnio scalonych PR-ów; bez liczby {CHECK_PRS}.")
     parser.add_argument("--commit", action="append", default=[], help="Dowolny commit, np. HEAD PR-u z werdyktem FAIL.")
     parser.add_argument("--wyniki", type=Path, help="Katalog na pełne wyjście każdego PR-u.")
     parser.add_argument("--narzedzia", metavar="REV", help="Narzędzia z tego commitu zamiast z checkoutu, np. origin/main dla porównania.")
     rule = parser.add_mutually_exclusive_group()
     rule.add_argument("--regula", type=Path, help="Dowód reguły ast-grep z tego pliku YAML zamiast polecenia.")
     rule.add_argument("--regula-id", metavar="ID", help="Dowód reguły ast-grep o tym id, którą ładuje sgconfig.yml na --z-commita.")
-    parser.add_argument("--z-commita", metavar="REV", help="Commit, z którego --regula-id bierze regułę, a --przypadki-regul reguły z przypadkami, np. HEAD PR.")
+    rule.add_argument("--straznik", metavar="SELEKTOR", help=f"Dowód strażnika z pola Strażnik: na HEAD PR --z-commita ({straznik.FORMS}).")
+    parser.add_argument("--z-commita", metavar="REV", help="HEAD PR: z niego --regula-id bierze regułę, --straznik kopię, a --przypadki-regul reguły z przypadkami.")
     parser.add_argument("--wazne", type=major, action="append", default=[], help="Ważne PR/W<n>/r<k>, które reguła ma złapać; powtórz dla kilku.")
     rule.add_argument("--przypadki-regul", action="store_true", help="Każda reguła z reguly-ast-grep/ łapie przypadki ze swojego pola metadata.przypadki.")
     args = parser.parse_args(arguments[:split])
@@ -471,10 +573,14 @@ def main(argv: list[str] | None = None) -> int:
         if command or args.wazne or args.pr or args.ostatnie or args.commit:
             parser.error("--przypadki-regul bierze przypadki z reguł checkoutu albo --z-commita REV, bez innych argumentów")
         return founding(commit_of(args.z_commita) if args.z_commita else None)
+    if args.straznik is not None:
+        if command or not args.wazne or args.z_commita is None:
+            parser.error("dowód strażnika: --straznik SELEKTOR z --z-commita REV i co najmniej jednym --wazne PR/W<n>/r<k>, bez polecenia po --")
+        return guard_proof(commit_of(args.z_commita), args.straznik, args.wazne)
     if args.regula is not None or args.regula_id is not None:
         if command or not args.wazne or (args.regula_id is None) != (args.z_commita is None):
             parser.error("dowód reguły: --regula PLIK.yml albo --regula-id ID z --z-commita REV i co najmniej jedno --wazne PR/W<n>/r<k>, bez polecenia po --")
-        last = args.ostatnie or (0 if args.pr else 20)
+        last = args.ostatnie or (0 if args.pr else RULE_PRS)
         if args.regula_id is not None:
             return proof_on(commit_of(args.z_commita), args.regula_id, args.wazne, args.pr, last)
         return proof(args.regula, args.wazne, args.pr, last)

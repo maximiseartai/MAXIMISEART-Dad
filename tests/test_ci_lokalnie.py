@@ -23,6 +23,7 @@ from tests.fixtures.git_repo import commit, git, repository
 from tests.fixtures.potomne import beating, wait_for, with_grandchild, worktrees
 
 import ci_lokalnie
+import ponow_ci
 from kroki_lokalne import Step
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -68,17 +69,43 @@ def test_kazde_zadanie_ci_jest_odtworzone_albo_ma_wskazane_zastepstwo() -> None:
 
 
 def test_kazde_polecenie_odtwarzanych_zadan_ma_krok_i_odwrotnie() -> None:
+    """Krok narzędzia odtwarza polecenie zadania ``ci.yml``, w którym ono biegnie (``CI_JOB``), a nie innego (#2161 r5 D1:
+    kroki workflowy w zadaniu Frontend)."""
+
     steps = _tool_steps()
     jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
-    fragments: list[str] = steps["fragmenty"]  # type: ignore[assignment]
+    fragments: list[list[str]] = steps["fragmenty"]  # type: ignore[assignment]
     elsewhere: list[str] = list(steps["gdzie_indziej"]["polecenia"])  # type: ignore[index]
     commands = [command for job in steps["lokalnie"] for command in _commands(jobs[job])]  # type: ignore[attr-defined]
 
-    without_step = [command for command in commands if not any(fragment in command for fragment in [*fragments, *elsewhere])]
-    without_command = [fragment for fragment in [*fragments, *elsewhere] if not any(fragment in command for command in commands)]
+    without_step = [command for command in commands if not any(fragment in command for fragment in [*(one for _, one in fragments), *elsewhere])]
+    without_command = [fragment for fragment in elsewhere if not any(fragment in command for command in commands)]
+    elsewhere_job = [(job, fragment) for job, fragment in fragments if not any(fragment in command for command in _commands(jobs[job]))]
 
     assert without_step == []
     assert without_command == []
+    assert elsewhere_job == []
+
+
+def test_ponowienie_ci_odsyla_do_zadan_narzedzia_ktore_odtwarzaja_padle_zadanie_ci() -> None:
+    """``ponow_ci.LOKALNIE`` (zadanie runu → ``--tylko``) i ``CI_JOB`` tego narzędzia mówią to samo: każdy wpis odsyła
+    do wszystkich zadań narzędzia jednego zadania ``ci.yml`` i tylko do nich (#2161 r4 D1: kroki workflowy przeszły
+    z „Ruff, mypy” do Frontend), a zadanie o stałej nazwie w ``ci.yml`` zaczyna się od początku wpisu."""
+
+    answered = _tool_steps()["zadania"]
+    assert isinstance(answered, dict)
+    tool = {str(job): str(ci) for job, ci in answered.items()}
+    jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    wrong = []
+    for start, only in ponow_ci.LOKALNIE:
+        listed = only.split()[0].split(",")
+        targets = {tool.get(job) for job in listed}
+        target = next(iter(targets))
+        named = str(jobs.get(target, {}).get("name", ""))
+        if len(targets) != 1 or sorted(listed) != sorted(job for job, ci in tool.items() if ci == target) or ("${{" not in named and not named.startswith(start)):
+            wrong.append((start, only, sorted(map(str, targets))))
+
+    assert wrong == []
 
 
 @pytest.mark.parametrize("fail_fast", [False, True])
