@@ -1,34 +1,58 @@
-"""Rozstrzyga D1, NF czy N0, z cienia podstaw w plan.json runów PR i wyroczni main (--od, --do); użyj po 14 dniach cienia.
+"""Rozstrzyga D1, NF czy N0, z cienia podstaw w plan.json runów PR i audytu kandydatów (--od, --do, --audyt); użyj po 14 dniach cienia.
 
-Reguła rozstrzygnięcia, zapisana 19.11.2026 przed włączeniem NF (ADR 0020, D1): N0 wygrywa, gdy w 14 dniach po merge'u
-NF kroki skilli NF na pull request złapały mniej niż ``X`` prawdziwych defektów, których pytest nie złapał, a cień daje N0
-oszczędność czekania na PR co najmniej ``OSZCZEDNOSC_MIN`` agent-minut; inaczej zostaje NF. Wyrocznia ``main`` (ucieczki
-z NF i ich czerwień) nie rozstrzyga, bo takie ucieczki przechodzą przy NF i przy N0, ale pokazuje, czy czerwień ucieczki
-zgadza się z przyjętą w koszcie. Progi wynikają z danych
-11–18.11 (ADR 0020, D1): koszt ucieczki ``KOSZT_UCIECZKI_MIN`` to mediana czerwieni ``main`` czterech defektów, które
-przeszły bramkę (58,5 min), i mediana PR-u naprawy (16,2 min), a ``X`` to oszczędność N0 wobec NF w backteście
-(830 agent-minut na 14 dni) przez ten koszt (11,1), w dół; ``OSZCZEDNOSC_MIN`` to ``X`` razy koszt ucieczki.
+Reguła rozstrzygnięcia, zapisana 19.11.2026 przed włączeniem NF (ADR 0020, D1): N0 wygrywa, gdy w ``DNI`` dniach po
+merge'u NF kroki skilli NF na pull request złapały mniej niż ``X`` prawdziwych defektów, których pytest nie złapał, a cień
+daje N0 oszczędność czekania na PR co najmniej ``OSZCZEDNOSC_MIN`` agent-minut; inaczej zostaje NF. Prawdziwy defekt to
+osobna przyczyna porażki, którą potwierdził audyt (decyzja koordynatora programu CI z 19.11 w #2169), bo ``X`` wycenia
+jedną ucieczkę na ``main``: jedno czerwone ``main`` i jeden PR naprawy, a dwa PR-y z tą samą przyczyną dałyby ich tyle
+samo. Wyrocznia ``main`` (ucieczki z NF i ich czerwień) nie rozstrzyga, bo takie ucieczki przechodzą przy NF i przy N0,
+ale pokazuje, czy czerwień ucieczki zgadza się z przyjętą w koszcie. Progi wynikają z danych 11–18.11 (ADR 0020, D1):
+koszt ucieczki ``KOSZT_UCIECZKI_MIN`` to mediana czerwieni ``main`` czterech defektów, które przeszły bramkę (58,5 min),
+i mediana PR-u naprawy (16,2 min), a ``X`` to oszczędność N0 wobec NF w backteście (830 agent-minut na 14 dni) przez ten
+koszt (11,1), w dół; ``OSZCZEDNOSC_MIN`` to ``X`` razy koszt ucieczki. Progi liczą okno ``DNI`` dni, więc okno innej
+długości nie ma wyniku.
 
-Kandydat na defekt złapany przez NF: run PR ``ci.yml`` bez porażki zadania pytest, w którym padła jednostka ``skill:``
-(linia ``WYKONANIE FAIL`` w logu zadania Mutation checks) z kroków cienia ``NA_ZYWO`` spoza cienia N0 (``plan.json``,
-pole ``cien``), a naprawa do następnego runu gałęzi zmienia folder tego skilla albo ``src/``; czerwone runy jednej gałęzi
-z tym samym krokiem to jeden kandydat, a run bez artefaktu planu liczy się osobno jako bez cienia. Złapane przez NF
-w regule to kandydaci, których audyt potwierdził, bo reguła naprawy niżej wybiera kandydatów, a jej znane luki to próbki
-``ZNANE_LUKI`` w ``tests/test_cien_podstaw.py`` (linie pliku naprawy przestawione przez ``main``, naprawa samym
-usunięciem commitu). Przy każdym kandydacie wynik drukuje dowód do audytu: PR, czerwony run z padłym krokiem, następny
-run, adresy obu, a przy każdym pliku naprawy kroku polecenia własnego diffu PR przy obu głowach (``git diff
-<baza>...<głowa> -- <plik>``, pełne diffy w ``rekordy.json``) i linie +/-, którymi te diffy się różnią.
-Kandydat, którego każdy plik naprawy ``main`` zmienił między bazami głów, ``wymaga audytu``, a czerwony run kroku NF
-bez naprawy, którego głowa nie jest przodkiem następnej (rebase, usunięty commit, reset), to ``NIEPOLICZONY, wymaga
-audytu``. Naprawa to pliki, które
-zmienia commit bez merge'a osiągalny z następnej głowy, a nie z czerwonej ani z bazy następnej, i w których zmieniła się
-własna zmiana PR: treść pliku przy obu głowach różni się poza liniami, które ``main`` zmienił w tym pliku między bazami
-głów (baza głowy to jej baza scalenia z ``main`` sprzed scalenia tej głowy). Rebase, scalenie ``main`` do gałęzi,
-rozstrzygnięcie konfliktu i amend, które zostawiają własną zmianę PR, naprawą nie są, którąkolwiek drogą zaktualizowano
-gałąź. Zmiana tylko w commicie scalenia (rozstrzygnięcie, które łączy linię ``main`` i PR w nową, plik wygenerowany na
-nowo) też nie, a ta sama nowa linia w commicie rebase'u jest naprawą, bo nie różni się od poprawki tej linii. Granica:
-poprawka, która dodaje, usuwa albo przestawia tylko linie o treści jednej z linii zmienionych przez ``main`` w tym pliku
-między bazami (np. pustą linię), naprawą nie jest.
+Kandydat na defekt złapany przez NF to porażka jednego kroku w jednym czerwonym runie PR ``ci.yml``: run bez porażki
+zadania pytest, w którym padła jednostka ``skill:`` (linia ``WYKONANIE FAIL`` w logu zadania Mutation checks) z kroków
+cienia ``NA_ZYWO`` spoza cienia N0 (``plan.json``, pole ``cien``), a naprawa do następnego runu gałęzi zmienia folder
+tego skilla albo ``src/``. Czerwony run to run PR z padłym zadaniem, także anulowany (``cancel-in-progress`` po nowym
+pushu), a następny run gałęzi to najbliższy późniejszy run z wynikiem success albo failure, bo głowa runu anulowanego
+nie ma naprawy z pushu, który go anulował. Każdy czerwony run ma własnego kandydata, także kolejny run gałęzi z tym samym
+krokiem, bo jego porażka może mieć inną przyczynę; w przyczyny grupuje kandydatów audyt. Przypadki porażki kroku skilla
+w runie PR okna:
+
+    postać                                                                   | w wyniku
+    krok NF spoza N0, pytest przeszedł, naprawa w folderze skilla albo src/  | KANDYDAT NF
+    jak wyżej, a każdy plik naprawy kroku zmienił też main między bazami głów | KANDYDAT NF, wymaga audytu
+    run anulowany, zanim pytest skończył                                      | kandydat albo niepoliczony, wymaga audytu
+    kolejny czerwony run gałęzi z tym samym krokiem                           | osobny kandydat albo niepoliczony
+    następny run gałęzi anulowany                                             | naprawa do następnego runu z wynikiem
+    bez naprawy, czerwona głowa nie jest przodkiem następnej (rebase, reset)  | NIEPOLICZONY, wymaga audytu
+    bez następnego runu z wynikiem w oknie albo z głową, której git nie zna   | NIEPOLICZONY, wymaga audytu
+    run bez artefaktu planu, z naprawą                                        | BEZ CIENIA
+    naprawa tylko poza folderem skilla i src/, historia nieprzepisana         | nie liczy się (flaky, test, infrastruktura)
+    padł też pytest; krok spoza NF albo w N0                                  | nie liczy się: pytest złapał; warianty się nie różnią
+
+Naprawa to pliki, które zmienia commit bez merge'a osiągalny z następnej głowy, a nie z czerwonej ani z bazy następnej,
+i w których zmieniła się własna zmiana PR: treść pliku przy obu głowach różni się poza liniami, które ``main`` zmienił
+w tym pliku między bazami głów (baza głowy to jej baza scalenia z ``main`` sprzed scalenia tej głowy). Plik, który
+``main`` przemianował między bazami głów (``git diff -M`` baz), przy czerwonej głowie i jej bazie ma ścieżkę sprzed
+przemianowania. Rebase, scalenie ``main`` do gałęzi, rozstrzygnięcie konfliktu i amend, które zostawiają własną zmianę PR,
+naprawą nie są, którąkolwiek drogą zaktualizowano gałąź. Zmiana tylko w commicie scalenia (rozstrzygnięcie, które łączy
+linię ``main`` i PR w nową, plik wygenerowany na nowo) też nie, a ta sama nowa linia w commicie rebase'u jest naprawą,
+bo nie różni się od poprawki tej linii. Granica: poprawka, która dodaje, usuwa albo przestawia tylko linie o treści jednej
+z linii zmienionych przez ``main`` w tym pliku między bazami (np. pustą linię), naprawą nie jest. Znane luki reguły
+naprawy to próbki ``ZNANE_LUKI`` w ``tests/test_cien_podstaw.py`` (linie pliku naprawy przestawione przez ``main``,
+naprawa samym usunięciem commitu), a wynik pisze przy nich „wymaga audytu”.
+
+Przy każdym kandydacie i niepoliczonym wynik drukuje klucz porażki (``<run> <krok>``) i dowód do audytu: PR, czerwony
+run z padłym krokiem, następny run, adresy obu, inne czerwone runy gałęzi z tym krokiem, a przy każdym pliku naprawy
+kroku polecenia własnego diffu PR przy obu głowach (``git diff <baza>...<głowa> -- <plik>``, przy czerwonej głowie po
+ścieżce sprzed przemianowania; pełne diffy w ``rekordy.json``) i linie +/-, którymi te diffy się różnią. Audyt
+(``--audyt PLIK``) to obiekt JSON: klucz porażki każdego kandydata i niepoliczonego z wyniku → lista nazw przyczyn,
+które audyt w niej potwierdził (pusta: nie prawdziwy defekt albo niepewny), a ta sama nazwa przy kilku porażkach to
+jedna przyczyna. Audyt bez którejś porażki z wyniku albo z porażką spoza niego to odmowa. Prawdziwe defekty to różne
+nazwy przyczyn; bez audytu wynik czeka na audyt, chyba że oszczędność N0 jest pod progiem.
 Oszczędność N0: średnia różnica ściany planu NF i N0 z cienia runów PR próbki (co któryś run okna, najwyżej
 ``--probka``; czerwone runy spoza próbki jej nie przesuwają) razy liczba runów PR okna z wynikiem success albo failure.
 Ucieczka z NF (wyrocznia ``main``): run pushu ``main`` z padłą podstawą, którą ostatni run PR-u scalonego od
@@ -36,16 +60,17 @@ poprzedniego runu ``main`` miał w cieniu V0, a nie w cieniu NF; czerwień to mi
 następnego zielonego runu ``main``.
 
 Dane: runy ``ci.yml`` okna (dzień utworzenia, UTC), artefakty ``plan`` (``retention-days: 30`` w ``ci.yml``) czerwonych
-runów PR, próbki i scalonych PR-ów, zadania i logi padłych zadań Mutation checks, a z gita checkoutu pliki głów PR i ich baz
-i merge'e ``main`` z numerami PR-ów (brakujące głowy runów pobiera jeden ``git fetch``). Odpowiedzi API zapisują się
-w ``<katalog>/api`` (``tools/lib/api_actions.py``), a rekordy z dowodami w ``<katalog>/rekordy.json``; 14 dni to około
-600 zapytań. ``--rekordy PLIK`` liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy linia, w której
-wynik liczy kandydatów, a regułę rozstrzyga ich audyt:
+runów PR, próbki i scalonych PR-ów, zadania runów PR bez wyniku success i logi ich padłych zadań Mutation checks, a z gita
+checkoutu pliki głów PR i ich baz i merge'e ``main`` z numerami PR-ów (brakujące głowy runów pobiera jeden ``git
+fetch``). Odpowiedzi API zapisują się w ``<katalog>/api`` (``tools/lib/api_actions.py``), a rekordy z dowodami
+w ``<katalog>/rekordy.json``; 14 dni to kilkaset zapytań, a ich liczbę drukuje pierwsza linia wyniku. ``--rekordy
+PLIK`` liczy rozstrzygnięcie z zapisanych rekordów bez GitHuba. Wynik kończy linia:
 
-    D1 | złapane przez NF: kandydaci <n>, do audytu (wymaga audytu <m>, niepoliczone do audytu <k>; …) | oszczędność N0 …
-    | wynik na kandydatach: N0 wygrywa|NF zostaje
+    D1 | złapane przez NF: kandydaci <n> (wymaga audytu <m>), niepoliczone <k>, przyczyny po audycie <p> | oszczędność N0 …
+    | wynik: N0 wygrywa|NF zostaje|czeka na audyt|brak: …
 
     .venv/bin/python tools/cien_podstaw.py --katalog ~/.t3/notes/d1-cien --od 2026-11-20 --do 2026-12-03
+    .venv/bin/python tools/cien_podstaw.py --rekordy ~/.t3/notes/d1-cien/rekordy.json --audyt ~/.t3/notes/d1-cien/audyt.json
 """
 
 from __future__ import annotations
@@ -55,6 +80,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timezone
 from difflib import SequenceMatcher
+from enum import StrEnum
 import io
 import json
 from pathlib import Path
@@ -80,6 +106,7 @@ GITHUB = GhApi(limit_s=60)
 KOSZT_UCIECZKI_MIN = 75.0
 X = 11
 OSZCZEDNOSC_MIN = X * KOSZT_UCIECZKI_MIN
+DNI = 14
 # Czerwień main w koszcie ucieczki: wyrocznia main drukuje ją obok swojej mediany.
 CZERWIEN_MIN = 59.0
 PROBKA = 100
@@ -89,6 +116,28 @@ WYKONANIE_FAIL = re.compile(r"WYKONANIE FAIL \| (.+)")
 MERGE_PR = re.compile(r"Merge pull request #(\d+) from [^/\s]+/(\S+)")
 # Zadania runu, których porażka to porażka pytest i kroków skilli (nazwy z ``zakres_runu.TORY`` i ``MUTACJE``).
 PYTEST, MUTACJE = "pytest (", "Mutation checks ("
+# Wyniki runu, który biegł do końca: tylko taki run ma następną głowę z naprawą i liczy się w oszczędności.
+SKONCZONE = ("success", "failure")
+
+
+class Pytest(StrEnum):
+    """Zadania pytest czerwonego runu: run anulowany po nowym pushu mógł je przerwać, zanim skończyły."""
+
+    PRZESZEDL = "przeszedł"
+    PADL = "padł"
+    NIE_SKONCZYL = "nie skończył"
+
+
+class Wynik(StrEnum):
+    N0_WYGRYWA = "N0 wygrywa"
+    NF_ZOSTAJE = "NF zostaje"
+    CZEKA_NA_AUDYT = "czeka na audyt"
+    OKNO = f"brak: progi D1 liczą okno {DNI} dni"
+
+
+class BladAudytu(ValueError):
+    """Plik audytu nie pasuje do wyniku: brak porażki z wyniku, porażka spoza niego albo wartość, która nie jest listą
+    nazw przyczyn."""
 
 
 @dataclass(frozen=True)
@@ -107,10 +156,11 @@ class Glowa:
 
 @dataclass(frozen=True)
 class PlikNaprawy:
-    sciezka: str
+    sciezka: str  # przy następnej głowie
+    sciezka_czerwonej: str  # przy czerwonej głowie i jej bazie: inna, gdy ``main`` przemianował plik między bazami głów
     diff_czerwonej: str  # własny diff PR pliku przy czerwonej głowie: ``git diff <baza>...<głowa> -- <plik>``
     diff_nastepnej: str
-    main_zmienil: bool  # ``main`` zmienił plik między bazami głów, więc regułę treści myli przestawienie jego linii
+    main_zmienil: bool  # ``main`` zmienił treść pliku między bazami głów, więc regułę treści myli przestawienie jego linii
 
 
 @dataclass(frozen=True)
@@ -129,9 +179,10 @@ class Naprawa:
 class RunPr:
     run: int
     galaz: str
-    pytest_padl: bool
+    pytest: Pytest
     padle: tuple[str, ...]  # kroki skilli z porażką
-    naprawa: Naprawa | None  # None: nie ma następnego runu gałęzi albo kroku z porażką
+    # None: run bez kroku z porażką albo bez następnego runu gałęzi z wynikiem w oknie, albo git nie zna którejś głowy
+    naprawa: Naprawa | None
     cien: Mapping[str, Wariant] | None  # wariant ``Podstawy`` → jego cień; None: run bez artefaktu planu z cieniem
     probka: bool = False  # run próbki oszczędności
     pr: int | None = None  # numer PR-u gałęzi z merge'a do ``main`` w oknie; None: gałąź bez merge'a w oknie
@@ -166,61 +217,101 @@ class Rekordy:
             return Naprawa(Glowa(**n["czerwona"]), Glowa(**n["nastepna"]), tuple(PlikNaprawy(**p) for p in n["pliki"]), n["przepisana"])
 
         pr = tuple(
-            RunPr(r["run"], r["galaz"], r["pytest_padl"], tuple(r["padle"]), naprawa(r["naprawa"]), cien(r), r["probka"], r["pr"])
+            RunPr(r["run"], r["galaz"], Pytest(r["pytest"]), tuple(r["padle"]), naprawa(r["naprawa"]), cien(r), r["probka"], r["pr"])
             for r in dane["pr"]
         )
         main = tuple(RunMain(r["run"], tuple(r["padle"]), tuple(r["pominiete_przez_nf"]), r["czerwien_min"]) for r in dane["main"])
         return cls(dane["od"], dane["do"], dane["pr_runow"], pr, main)
 
 
-Defekt = tuple[str, str]  # (gałąź, krok skilla)
+@dataclass(frozen=True)
+class Porazka:
+    """Porażka kroku skilla ``krok`` w czerwonym runie PR ``run``: jednostka kandydata, niepoliczonego i audytu."""
+
+    run: RunPr
+    krok: str
+
+    @property
+    def klucz(self) -> str:
+        """Klucz porażki w wyniku i w pliku audytu."""
+
+        return f"{self.run.run} {self.krok}"
+
+    @property
+    def naprawiona(self) -> bool:
+        return self.run.naprawa is not None and any(_w_naprawie(self.krok, sciezka) for sciezka in self.run.naprawa.sciezki)
+
+    @property
+    def powody_audytu(self) -> tuple[str, ...]:
+        """Czemu audyt musi rozstrzygnąć porażkę, której reguła naprawy nie umie ocenić; pusta: kandydat tylko do audytu."""
+
+        naprawa = self.run.naprawa
+        powody = ["run anulowany, zanim pytest skończył: nie wiadomo, czy pytest by ją złapał"] if self.run.pytest is Pytest.NIE_SKONCZYL else []
+        if naprawa is None:
+            powody.append("brak następnego runu gałęzi z wynikiem w oknie albo git nie zna jego głowy: naprawa mogła pójść inną gałęzią albo po oknie")
+        elif not self.naprawiona:
+            powody.append("czerwona głowa nie jest przodkiem następnej (rebase, usunięty commit, reset): naprawa usunięciem commitu nie ma pliku")
+        elif all(plik.main_zmienil for plik in naprawa.pliki if _w_naprawie(self.krok, plik.sciezka)):
+            powody.append("każdy plik naprawy zmienił też main między bazami głów")
+        return tuple(powody)
 
 
 @dataclass(frozen=True)
 class Rozstrzygniecie:
-    zlapane: Mapping[Defekt, tuple[RunPr, ...]]  # kandydaci na defekty złapane przez NF → ich czerwone runy z naprawą
-    niepoliczone: Mapping[Defekt, tuple[RunPr, ...]]  # porażki kroków NF bez naprawy z przepisaną historią gałęzi
-    bez_cienia: tuple[Defekt, ...]  # porażki z naprawą runów bez artefaktu planu: nie wiadomo, czy N0 by je puścił
+    kandydaci: tuple[Porazka, ...]  # porażki kroków NF z naprawą w folderze skilla albo ``src/``
+    niepoliczone: tuple[Porazka, ...]  # porażki kroków NF bez takiej naprawy z przepisaną historią albo bez następnego runu
+    bez_cienia: tuple[Porazka, ...]  # porażki z naprawą runów bez artefaktu planu: nie wiadomo, czy N0 by je puścił
+    przyczyny: Mapping[str, tuple[Porazka, ...]] | None  # przyczyna z audytu → jej porażki; None: bez audytu
+    dni: int  # długość okna
     oszczednosc_min: float | None  # None: żaden run próbki nie ma cienia
     probka: int
     ucieczki: tuple[tuple[int, str], ...]  # (run main, podstawa)
     czerwien_min: float | None  # mediana czerwieni runów main z ucieczką
 
     @property
-    def wymaga_audytu(self) -> tuple[Defekt, ...]:
-        """Kandydaci, których każda naprawa stoi tylko na plikach zmienionych przez ``main`` między bazami głów."""
-
-        return tuple(defekt for defekt, czerwone in self.zlapane.items() if all(_pliki_naprawy_od_main(defekt[1], run) for run in czerwone))
+    def wymaga_audytu(self) -> tuple[Porazka, ...]:
+        return tuple(porazka for porazka in self.kandydaci if porazka.powody_audytu)
 
     @property
-    def n0_wygrywa(self) -> bool:
-        return len(self.zlapane) < X and self.oszczednosc_min is not None and self.oszczednosc_min >= OSZCZEDNOSC_MIN
+    def wynik(self) -> Wynik:
+        if self.dni != DNI:
+            return Wynik.OKNO
+        if self.oszczednosc_min is None or self.oszczednosc_min < OSZCZEDNOSC_MIN:
+            return Wynik.NF_ZOSTAJE
+        if self.przyczyny is None:
+            return Wynik.CZEKA_NA_AUDYT
+        return Wynik.N0_WYGRYWA if len(self.przyczyny) < X else Wynik.NF_ZOSTAJE
 
 
-def rozstrzygnij(rekordy: Rekordy) -> Rozstrzygniecie:
-    zlapane: dict[Defekt, list[RunPr]] = {}
-    niepoliczone: dict[Defekt, list[RunPr]] = {}
-    bez_cienia = set()
+def rozstrzygnij(rekordy: Rekordy, audyt: Mapping[str, Sequence[str]] | None = None) -> Rozstrzygniecie:
+    kandydaci: list[Porazka] = []
+    niepoliczone: list[Porazka] = []
+    bez_cienia: list[Porazka] = []
     for run in rekordy.pr:
-        for krok in run.padle if not run.pytest_padl else ():
-            naprawiony = _naprawiony(krok, run.naprawa)
+        for porazka in (Porazka(run, krok) for krok in run.padle) if run.pytest is not Pytest.PADL else ():
             if run.cien is None:
-                if naprawiony:
-                    bez_cienia.add((run.galaz, krok))
-            elif krok not in run.cien[NA_ZYWO].kroki or krok in run.cien[Podstawy.N0].kroki:
+                if porazka.naprawiona:
+                    bez_cienia.append(porazka)
+            elif porazka.krok not in run.cien[NA_ZYWO].kroki or porazka.krok in run.cien[Podstawy.N0].kroki:
                 continue
-            elif naprawiony:
-                zlapane.setdefault((run.galaz, krok), []).append(run)
-            elif run.naprawa is not None and run.naprawa.przepisana:
-                niepoliczone.setdefault((run.galaz, krok), []).append(run)
+            elif porazka.naprawiona:
+                kandydaci.append(porazka)
+            elif run.naprawa is None or run.naprawa.przepisana:
+                niepoliczone.append(porazka)
     roznice = [run.cien[NA_ZYWO].sciana_s - run.cien[Podstawy.N0].sciana_s for run in rekordy.pr if run.probka and run.cien is not None]
     oszczednosc = statistics.mean(roznice) * rekordy.pr_runow / 60 if roznice else None
     ucieczki = tuple((run.run, krok) for run in rekordy.main for krok in run.padle if krok in run.pominiete_przez_nf)
     czerwien = [run.czerwien_min for run in rekordy.main if run.czerwien_min is not None and any(run.run == u for u, _ in ucieczki)]
+
+    def po_galezi(porazki: list[Porazka]) -> tuple[Porazka, ...]:
+        return tuple(sorted(porazki, key=lambda porazka: (porazka.run.galaz, porazka.krok, porazka.run.run)))
+
     return Rozstrzygniecie(
-        {defekt: tuple(zlapane[defekt]) for defekt in sorted(zlapane)},
-        {defekt: tuple(niepoliczone[defekt]) for defekt in sorted(niepoliczone) if defekt not in zlapane},
-        tuple(sorted(bez_cienia - zlapane.keys())),
+        po_galezi(kandydaci),
+        po_galezi(niepoliczone),
+        po_galezi(bez_cienia),
+        None if audyt is None else _przyczyny(kandydaci + niepoliczone, audyt),
+        (date.fromisoformat(rekordy.do) - date.fromisoformat(rekordy.od)).days + 1,
         oszczednosc,
         len(roznice),
         ucieczki,
@@ -228,35 +319,53 @@ def rozstrzygnij(rekordy: Rekordy) -> Rozstrzygniecie:
     )
 
 
+def wczytaj_audyt(tekst: str) -> dict[str, tuple[str, ...]]:
+    """Audyt z pliku JSON (docstring modułu); inna postać niż obiekt list nazw przyczyn to ``BladAudytu``."""
+
+    dane = json.loads(tekst)
+    if not isinstance(dane, dict) or not all(
+        isinstance(przyczyny, list) and all(isinstance(nazwa, str) and nazwa.strip() for nazwa in przyczyny) for przyczyny in dane.values()
+    ):
+        raise BladAudytu('audyt to obiekt JSON {"<run> <krok>": ["<przyczyna>", …]} z kluczem każdej porażki z wyniku; pusta lista: nie prawdziwy defekt')
+    return {klucz: tuple(przyczyny) for klucz, przyczyny in dane.items()}
+
+
+def _przyczyny(porazki: list[Porazka], audyt: Mapping[str, Sequence[str]]) -> dict[str, tuple[Porazka, ...]]:
+    klucze = {porazka.klucz for porazka in porazki}
+    if klucze != audyt.keys():
+        raise BladAudytu(
+            f"audyt nie pasuje do wyniku: bez porażek z wyniku {sorted(klucze - audyt.keys())}, z porażkami spoza wyniku {sorted(audyt.keys() - klucze)}"
+        )
+    przyczyny: dict[str, list[Porazka]] = {}
+    for porazka in porazki:
+        for nazwa in dict.fromkeys(audyt[porazka.klucz]):
+            przyczyny.setdefault(nazwa, []).append(porazka)
+    return {nazwa: tuple(przyczyny[nazwa]) for nazwa in sorted(przyczyny)}
+
+
 def _w_naprawie(krok: str, sciezka: str) -> bool:
     return sciezka.startswith(("src/", f".agents/skills/{krok.partition('/')[0]}/"))
 
 
-def _naprawiony(krok: str, naprawa: Naprawa | None) -> bool:
-    return naprawa is not None and any(_w_naprawie(krok, sciezka) for sciezka in naprawa.sciezki)
-
-
-def _pliki_naprawy_od_main(krok: str, run: RunPr) -> bool:
-    return run.naprawa is not None and all(plik.main_zmienil for plik in run.naprawa.pliki if _w_naprawie(krok, plik.sciezka))
-
-
 def wypisz(rekordy: Rekordy, wynik: Rozstrzygniecie) -> list[str]:
-    linie = [f"D1 CIEŃ | okno {rekordy.od}–{rekordy.do} | runów PR {rekordy.pr_runow}, z cieniem w próbce {wynik.probka}"]
-    for numer, (defekt, czerwone) in enumerate(wynik.zlapane.items(), 1):
-        audyt = (
-            "wymaga audytu: każdy plik naprawy zmienił też main między bazami głów"
-            if defekt in wynik.wymaga_audytu
-            else "do audytu"
-        )
-        linie.append(f"KANDYDAT NF {numer}/{len(wynik.zlapane)} | {defekt[0]}: {defekt[1]} | {_pr(czerwone[0])} | {audyt}")
-        linie += [linia for run in czerwone for linia in _dowod(defekt[1], run)]
-    for defekt, czerwone in wynik.niepoliczone.items():
-        linie.append(
-            f"NIEPOLICZONY, wymaga audytu | {defekt[0]}: {defekt[1]} | {_pr(czerwone[0])} | czerwona głowa nie jest przodkiem następnej"
-            " (rebase, usunięty commit, reset): naprawa usunięciem commitu nie ma pliku"
-        )
-        linie += [linia for run in czerwone for linia in _dowod(defekt[1], run)]
-    linie += [f"BEZ CIENIA | {galaz}: {krok} (run bez artefaktu planu)" for galaz, krok in wynik.bez_cienia]
+    linie = [f"D1 CIEŃ | okno {rekordy.od}–{rekordy.do} ({wynik.dni} dni) | runów PR {rekordy.pr_runow}, z cieniem w próbce {wynik.probka}"]
+    numery = {porazka.klucz: f"kandydat {numer}" for numer, porazka in enumerate(wynik.kandydaci, 1)}
+    numery |= {porazka.klucz: "niepoliczony" for porazka in wynik.niepoliczone}
+    for numer, porazka in enumerate(wynik.kandydaci, 1):
+        audyt = f"wymaga audytu: {'; '.join(porazka.powody_audytu)}" if porazka.powody_audytu else "do audytu"
+        linie.append(f"KANDYDAT NF {numer}/{len(wynik.kandydaci)} | {porazka.klucz} | {porazka.run.galaz}, {_pr(porazka.run)} | {audyt}")
+        linie += _dowod(porazka, wynik, numery)
+    for porazka in wynik.niepoliczone:
+        linie.append(f"NIEPOLICZONY, wymaga audytu | {porazka.klucz} | {porazka.run.galaz}, {_pr(porazka.run)} | {'; '.join(porazka.powody_audytu)}")
+        linie += _dowod(porazka, wynik, numery)
+    linie += [f"BEZ CIENIA | {porazka.klucz} | {porazka.run.galaz} (run bez artefaktu planu)" for porazka in wynik.bez_cienia]
+    if wynik.przyczyny is not None:
+        policzone = {porazka.klucz for porazki in wynik.przyczyny.values() for porazka in porazki}
+        linie += [
+            f"PRZYCZYNA {numer}/{len(wynik.przyczyny)} | {nazwa} | {', '.join(porazka.klucz for porazka in porazki)}"
+            for numer, (nazwa, porazki) in enumerate(wynik.przyczyny.items(), 1)
+        ]
+        linie += [f"BEZ PRZYCZYNY | {klucz} (audyt: nie prawdziwy defekt albo niepewny)" for klucz in numery if klucz not in policzone]
     czerwien = {run.run: run.czerwien_min for run in rekordy.main}
     linie += [f"UCIECZKA Z NF | run main {run}: {krok}, czerwień {_min(czerwien[run])}" for run, krok in wynik.ucieczki]
     linie.append(
@@ -264,10 +373,11 @@ def wypisz(rekordy: Rekordy, wynik: Rozstrzygniecie) -> list[str]:
         f" (koszt ucieczki w progu przyjmuje {CZERWIEN_MIN:.0f} min)"
     )
     oszczednosc = "brak cienia" if wynik.oszczednosc_min is None else f"{wynik.oszczednosc_min:.0f} agent-min"
+    przyczyny = "brak audytu (--audyt)" if wynik.przyczyny is None else str(len(wynik.przyczyny))
     linie.append(
-        f"D1 | złapane przez NF: kandydaci {len(wynik.zlapane)}, do audytu (wymaga audytu {len(wynik.wymaga_audytu)},"
-        f" niepoliczone do audytu {len(wynik.niepoliczone)}; N0 wygrywa poniżej {X} prawdziwych)"
-        f" | oszczędność N0 {oszczednosc} (próg {OSZCZEDNOSC_MIN:.0f}) | wynik na kandydatach: {'N0 wygrywa' if wynik.n0_wygrywa else 'NF zostaje'}"
+        f"D1 | złapane przez NF: kandydaci {len(wynik.kandydaci)} (wymaga audytu {len(wynik.wymaga_audytu)}), niepoliczone"
+        f" {len(wynik.niepoliczone)}, przyczyny po audycie {przyczyny}; N0 wygrywa poniżej {X} przyczyn"
+        f" | oszczędność N0 {oszczednosc} (próg {OSZCZEDNOSC_MIN:.0f}) | wynik: {wynik.wynik}"
     )
     return linie
 
@@ -276,22 +386,35 @@ def _pr(run: RunPr) -> str:
     return "PR bez merge'a w oknie" if run.pr is None else f"PR #{run.pr}"
 
 
-def _dowod(krok: str, run: RunPr) -> list[str]:
-    """Dowód audytu czerwonego runu: oba runy z głowami i bazami, a przy każdym pliku naprawy kroku polecenia własnego
-    diffu PR przy obu głowach (pełne diffy są w ``rekordy.json``) i linie +/-, którymi te diffy się różnią."""
+def _dowod(porazka: Porazka, wynik: Rozstrzygniecie, numery: Mapping[str, str]) -> list[str]:
+    """Dowód audytu porażki: oba runy z głowami i bazami, inne czerwone runy gałęzi z tym krokiem, a przy każdym pliku
+    naprawy kroku polecenia własnego diffu PR przy obu głowach (pełne diffy są w ``rekordy.json``) i linie +/-, którymi
+    te diffy się różnią."""
 
-    assert run.naprawa is not None, "kandydat i niepoliczony mają naprawę"
-    czerwona, nastepna = run.naprawa.czerwona, run.naprawa.nastepna
-    linie = [
+    krok, naprawa = porazka.krok, porazka.run.naprawa
+    inne = [
+        f"{inna.run.run} ({numery[inna.klucz]})"
+        for inna in (*wynik.kandydaci, *wynik.niepoliczone)
+        if (inna.run.galaz, inna.krok) == (porazka.run.galaz, krok) and inna.run.run != porazka.run.run
+    ]
+    linie = [f"  ten krok padł też w runach tej gałęzi: {', '.join(inne)}"] if inne else []
+    if naprawa is None:
+        return [f"  czerwony run {porazka.run.run} | padł krok {krok} | następny run: brak", *linie]
+    czerwona, nastepna = naprawa.czerwona, naprawa.nastepna
+    linie[:0] = [
         f"  czerwony run {czerwona.run} {czerwona.url} | padł krok {krok} | głowa {czerwona.sha[:12]}, baza {czerwona.baza[:12]}",
         f"  następny run {nastepna.run} {nastepna.url} | głowa {nastepna.sha[:12]}, baza {nastepna.baza[:12]}",
     ]
-    if poza := [plik.sciezka for plik in run.naprawa.pliki if not _w_naprawie(krok, plik.sciezka)]:
+    if poza := [plik.sciezka for plik in naprawa.pliki if not _w_naprawie(krok, plik.sciezka)]:
         linie.append(f"  poza naprawą kroku: {', '.join(poza)}")
-    for plik in (plik for plik in run.naprawa.pliki if _w_naprawie(krok, plik.sciezka)):
-        linie.append(f"  plik {plik.sciezka}{' | main zmienił go między bazami głów' if plik.main_zmienil else ''}")
+    for plik in (plik for plik in naprawa.pliki if _w_naprawie(krok, plik.sciezka)):
+        przemianowany = f" | przy czerwonej głowie {plik.sciezka_czerwonej}: main przemianował go między bazami głów" if plik.sciezka_czerwonej != plik.sciezka else ""
+        linie.append(f"  plik {plik.sciezka}{przemianowany}{' | main zmienił go między bazami głów' if plik.main_zmienil else ''}")
         przed, po = _zmiany(plik.diff_czerwonej), _zmiany(plik.diff_nastepnej)
-        linie += [f"    git diff {glowa.baza[:12]}...{glowa.sha[:12]} -- {plik.sciezka} | linii +/-: {len(zmiany)}" for glowa, zmiany in ((czerwona, przed), (nastepna, po))]
+        linie += [
+            f"    git diff {glowa.baza[:12]}...{glowa.sha[:12]} -- {sciezka} | linii +/-: {len(zmiany)}"
+            for glowa, sciezka, zmiany in ((czerwona, plik.sciezka_czerwonej, przed), (nastepna, plik.sciezka, po))
+        ]
         roznica = [
             f"{znak} {linia}"
             for kod, i, j, k, m in SequenceMatcher(None, przed, po, autojunk=False).get_opcodes()
@@ -322,25 +445,23 @@ def _min(wartosc: float | None) -> str:
 def zbierz(api: Api, root: Path, od: date, do: date, dzis: date, probka: int) -> Rekordy:
     wszystkie = sorted((r for r in runy(api, od, do, dzis) if r["status"] == "completed"), key=lambda r: r["created_at"])
     pr_wszystkie = [r for r in wszystkie if r["event"] == "pull_request"]
-    pr = [r for r in pr_wszystkie if r["conclusion"] in ("success", "failure")]
+    pr = [r for r in pr_wszystkie if r["conclusion"] in SKONCZONE]
     main_wszystkie = [r for r in wszystkie if r["event"] == "push" and r["head_branch"] == "main"]
-    main = [r for r in main_wszystkie if r["conclusion"] in ("success", "failure")]
+    main = [r for r in main_wszystkie if r["conclusion"] in SKONCZONE]
     # Głowa ostatniego runu main okna zawiera bazę scalenia każdej głowy PR okna, bo main tylko rośnie.
     main_po_oknie = main_wszystkie[-1]["head_sha"] if main_wszystkie else repo.BASE
     _pobierz(root, {r["head_sha"] for r in wszystkie})
     numery = _pr_scalonych(root, main_po_oknie, od)
     w_probce = {r["id"] for r in pr[:: max(1, len(pr) // probka)][:probka]} if probka else set()
     rekordy_pr = []
-    for run in pr:
-        czerwony = run["conclusion"] == "failure"
-        if not (czerwony or run["id"] in w_probce):
+    for run in pr_wszystkie:
+        # Padłe zadanie ma też run anulowany: jego wynik to cancelled, a nie failure.
+        pytest, padle = _porazki(api, run) if run["conclusion"] != "success" else (Pytest.PRZESZEDL, ())
+        if not (padle or run["id"] in w_probce):
             continue
-        pytest_padl, padle = _porazki(api, run) if czerwony else (False, ())
-        nastepny = next((r for r in pr_wszystkie if r["head_branch"] == run["head_branch"] and r["created_at"] > run["created_at"]), None)
+        nastepny = next((r for r in pr if r["head_branch"] == run["head_branch"] and r["created_at"] > run["created_at"]), None)
         naprawa = _naprawa(root, main_po_oknie, run, nastepny) if padle and nastepny else None
-        rekordy_pr.append(
-            RunPr(run["id"], run["head_branch"], pytest_padl, padle, naprawa, _cien(api, run["id"]), run["id"] in w_probce, numery.get(run["head_branch"]))
-        )
+        rekordy_pr.append(RunPr(run["id"], run["head_branch"], pytest, padle, naprawa, _cien(api, run["id"]), run["id"] in w_probce, numery.get(run["head_branch"])))
     ostatni_pr = {r["head_sha"]: r["id"] for r in pr_wszystkie}
     rekordy_main = []
     for numer, run in enumerate(main):
@@ -358,17 +479,19 @@ def zbierz(api: Api, root: Path, od: date, do: date, dzis: date, probka: int) ->
     return Rekordy(od.isoformat(), do.isoformat(), len(pr), tuple(rekordy_pr), tuple(rekordy_main))
 
 
-def _porazki(api: Api, run: dict[str, Any]) -> tuple[bool, tuple[str, ...]]:
-    """Czy padło zadanie pytest i kroki skilli z porażką z logów padłych zadań Mutation checks ostatniej próby runu."""
+def _porazki(api: Api, run: dict[str, Any]) -> tuple[Pytest, tuple[str, ...]]:
+    """Zadania pytest i kroki skilli z porażką z logów padłych zadań Mutation checks ostatniej próby runu; zadanie pytest
+    z innym wynikiem niż success, skipped albo failure (anulowane, przekroczony czas) nie skończyło."""
 
     zadania = api.json(f"{REPO}/actions/runs/{run['id']}/jobs?filter=latest&per_page=100", lambda _: True)["jobs"]
-    padle = [z for z in zadania if z["conclusion"] == "failure"]
     kroki = set()
-    for zadanie in (z for z in padle if z["name"].startswith(MUTACJE)):
+    for zadanie in (z for z in zadania if z["conclusion"] == "failure" and z["name"].startswith(MUTACJE)):
         log = api.bajty(f"{REPO}/actions/jobs/{zadanie['id']}/logs").decode("utf-8", errors="replace")
         for linia in WYKONANIE_FAIL.findall(log):
             kroki |= {klucz.nazwa for klucz in map(Klucz.z_tekstu, linia.strip().split(", ")) if klucz.rodzaj is Rodzaj.SKILL}
-    return any(z["name"].startswith(PYTEST) for z in padle), tuple(sorted(kroki))
+    wyniki = {z["conclusion"] for z in zadania if z["name"].startswith(PYTEST)}
+    pytest = Pytest.PADL if "failure" in wyniki else Pytest.PRZESZEDL if wyniki <= {"success", "skipped"} else Pytest.NIE_SKONCZYL
+    return pytest, tuple(sorted(kroki))
 
 
 def _cien(api: Api, run: int) -> dict[str, Wariant] | None:
@@ -394,33 +517,59 @@ def _naprawa(root: Path, main: str, czerwony: Mapping[str, Any], nastepny: Mappi
     try:
         czerwona, nastepna = (Glowa(r["id"], r["html_url"], r["head_sha"], _baza_pr(root, main, r["head_sha"])) for r in (czerwony, nastepny))
         commity = repo.git(root, "log", "--no-merges", "--no-renames", "--name-only", "-z", "--format=", nastepna.sha, f"^{czerwona.sha}", f"^{nastepna.baza}")
-        pliki = sorted({plik.strip("\n") for plik in commity.split("\0")} - {""})
+        przemianowane = _przemianowane_przez_main(root, czerwona.baza, nastepna.baza)
+        pary = [(przemianowane.get(plik, plik), plik) for plik in sorted({plik.strip("\n") for plik in commity.split("\0")} - {""})]
         return Naprawa(
             czerwona,
             nastepna,
-            tuple(_plik_naprawy(root, plik, czerwona, nastepna) for plik in pliki if _wlasna_zmiana_inna(root, plik, czerwona, nastepna)),
+            tuple(_plik_naprawy(root, *para, czerwona, nastepna) for para in pary if _wlasna_zmiana_inna(root, *para, czerwona, nastepna)),
             not repo.is_ancestor(root, czerwona.sha, nastepna.sha),
         )
     except subprocess.CalledProcessError:
         return None
 
 
-def _wlasna_zmiana_inna(root: Path, plik: str, czerwona: Glowa, nastepna: Glowa) -> bool:
+def _przemianowane_przez_main(root: Path, baza_czerwonej: str, baza_nastepnej: str) -> dict[str, str]:
+    """Ścieżka pliku przy bazie następnej głowy → jego ścieżka przy bazie czerwonej, gdy ``main`` przemianował go między
+    bazami głów (wpis ``R`` w ``git diff -M`` baz, także ze zmianą treści)."""
+
+    if baza_czerwonej == baza_nastepnej:
+        return {}
+    pola = iter(repo.git(root, "diff", "--no-ext-diff", "--name-status", "-M", "-z", baza_czerwonej, baza_nastepnej).split("\0"))
+    przemianowane: dict[str, str] = {}
+    for status in pola:
+        if not status:
+            continue
+        # Wpis -z to status i ścieżka, a przemianowanie (R) i kopia (C) mają dwie ścieżki: sprzed i po.
+        sciezki = [next(pola) for _ in range(2 if status[0] in "RC" else 1)]
+        if status[0] == "R":
+            przemianowane[sciezki[1]] = sciezki[0]
+    return przemianowane
+
+
+def _wlasna_zmiana_inna(root: Path, przy_czerwonej: str, przy_nastepnej: str, czerwona: Glowa, nastepna: Glowa) -> bool:
     """Czy treść pliku przy głowach PR różni się poza liniami, które ``main`` zmienił w tym pliku między bazami głów
     (diff ``difflib`` obu baz): rebase i rozstrzygnięcie konfliktu, które zostawiają własną zmianę PR, zmieniają w pliku
     tylko takie linie, a przesunięte linie diffu (``git diff`` z powtórzoną linią obok zmiany) nie mają tu znaczenia,
-    bo porównanie nie czyta diffu głów."""
+    bo porównanie nie czyta diffu głów. Plik przy czerwonej głowie i jej bazie ma ścieżkę ``przy_czerwonej``."""
 
-    przed, po = _linie(root, czerwona.baza, plik), _linie(root, nastepna.baza, plik)
+    przed, po = _linie(root, czerwona.baza, przy_czerwonej), _linie(root, nastepna.baza, przy_nastepnej)
     z_main = {linia for kod, i, j, k, m in SequenceMatcher(None, przed, po, autojunk=False).get_opcodes() if kod != "equal" for linia in przed[i:j] + po[k:m]}
-    return [linia for linia in _linie(root, czerwona.sha, plik) if linia not in z_main] != [linia for linia in _linie(root, nastepna.sha, plik) if linia not in z_main]
+    wlasne = [[linia for linia in _linie(root, glowa.sha, sciezka) if linia not in z_main] for glowa, sciezka in ((czerwona, przy_czerwonej), (nastepna, przy_nastepnej))]
+    return wlasne[0] != wlasne[1]
 
 
-def _plik_naprawy(root: Path, plik: str, czerwona: Glowa, nastepna: Glowa) -> PlikNaprawy:
-    def diff(glowa: Glowa) -> str:
-        return repo.git(root, "diff", "--no-ext-diff", "--no-color", f"{glowa.baza}...{glowa.sha}", "--", plik)
+def _plik_naprawy(root: Path, przy_czerwonej: str, przy_nastepnej: str, czerwona: Glowa, nastepna: Glowa) -> PlikNaprawy:
+    def diff(glowa: Glowa, sciezka: str) -> str:
+        return repo.git(root, "diff", "--no-ext-diff", "--no-color", f"{glowa.baza}...{glowa.sha}", "--", sciezka)
 
-    return PlikNaprawy(plik, diff(czerwona), diff(nastepna), repo.blob(root, czerwona.baza, plik) != repo.blob(root, nastepna.baza, plik))
+    return PlikNaprawy(
+        przy_nastepnej,
+        przy_czerwonej,
+        diff(czerwona, przy_czerwonej),
+        diff(nastepna, przy_nastepnej),
+        repo.blob(root, czerwona.baza, przy_czerwonej) != repo.blob(root, nastepna.baza, przy_nastepnej),
+    )
 
 
 def _linie(root: Path, rewizja: str, plik: str) -> list[bytes]:
@@ -466,7 +615,12 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     parser.add_argument("--do", type=date.fromisoformat, help="Ostatni dzień okna cienia (UTC), zakończony.")
     parser.add_argument("--probka", type=int, default=PROBKA, help=f"Najwięcej runów PR, z których cienia liczy się oszczędność (domyślnie {PROBKA}).")
     parser.add_argument("--rekordy", type=Path, help="Rekordy zapisane wcześniej (rekordy.json): rozstrzygnięcie bez GitHuba.")
+    parser.add_argument("--audyt", type=Path, help="Audyt kandydatów i niepoliczonych (JSON, docstring): wynik liczy przyczyny z audytu.")
     args = parser.parse_args(argv)
+    try:
+        audyt = None if args.audyt is None else wczytaj_audyt(args.audyt.read_text(encoding="utf-8"))
+    except (BladAudytu, json.JSONDecodeError) as blad:
+        parser.error(f"--audyt {args.audyt}: {blad}")
     if args.rekordy:
         rekordy = Rekordy.z_json(args.rekordy.read_text(encoding="utf-8"))
     elif args.katalog and args.od and args.do:
@@ -483,7 +637,11 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
         print(f"D1 CIEŃ | zapytań API {api.zapytania}, rekordy {args.katalog / 'rekordy.json'}")
     else:
         parser.error("podaj --rekordy albo --katalog z --od i --do")
-    print("\n".join(wypisz(rekordy, rozstrzygnij(rekordy))))
+    try:
+        wynik = rozstrzygnij(rekordy, audyt)
+    except BladAudytu as blad:
+        parser.error(f"--audyt {args.audyt}: {blad}")
+    print("\n".join(wypisz(rekordy, wynik)))
     return 0
 
 
