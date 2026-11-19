@@ -99,6 +99,14 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie run_logs_guard.py, comment_versions.py, outbox.py i client_data.py, które plik "
         "importuje, i plików konfiguracji ruff"
     ),
+    "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_nazwy_komputera_w_src_przechodza_przez_ruff": (
+        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
+        "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
+    ),
+    "tests/test_zmiany_z_wydania_ktore_wyszly.py": (
+        "graf wybiera go przy zmianie release_changes.py i modułów Zmian z Wydania, które importuje przez RELEASE_CHANGES, "
+        "a tylko ich zmiana zmienia odcisk"
+    ),
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
         "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"

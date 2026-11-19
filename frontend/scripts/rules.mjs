@@ -29,6 +29,9 @@
 //    kontraktu): każdą z nich i żadnej innej, a nazwa operacji to literał pierwszego argumentu `call`; metodę, adres
 //    i schemat odpowiedzi `call` bierze z wygenerowanej tablicy operacji. Granica: `call` pod inną nazwą (alias
 //    importu, `const f = call`) reguła pomija; to łapie tylko przegląd.
+// 5. Atrybut JSX `aria-busy` ma tylko wartość literału "true" (kontener szkieletu, który istnieje tylko w czasie
+//    wczytywania). Granica: literał "true" na elemencie, który zostaje po wczytaniu, `aria-busy` z rozwinięcia
+//    (`{...props}`), `setAttribute("aria-busy", …)` i `createElement` łapie tylko przegląd.
 import { readdirSync, readFileSync } from "node:fs"
 import { join, relative, resolve } from "node:path"
 import ts from "typescript"
@@ -234,8 +237,16 @@ function location(file, path, node) {
   return `${relative(root, path).replaceAll("\\", "/")}:${line + 1}: ${node.getText(file)}`
 }
 
+function isBusyOutsideSkeleton(node) {
+  return (
+    ts.isJsxAttribute(node) &&
+    node.name.getText() === "aria-busy" &&
+    !(node.initializer !== undefined && ts.isStringLiteral(node.initializer) && node.initializer.text === "true")
+  )
+}
+
 // Nazwy użyte w kodzie: identyfikatory (także dostęp do właściwości i destrukturyzacja) i teksty literałów.
-function inspect(path, names, used, comparisons, network, calls) {
+function inspect(path, names, used, comparisons, network, calls, busy) {
   const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)
 
   function visit(node) {
@@ -259,6 +270,10 @@ function inspect(path, names, used, comparisons, network, calls) {
       network.push({ place: location(file, path, node), kind })
     }
 
+    if (isBusyOutsideSkeleton(node)) {
+      busy.push(location(file, path, node))
+    }
+
     ts.forEachChild(node, visit)
   }
 
@@ -279,10 +294,12 @@ const connectedFiles = new Set()
 
 const operationCalls = []
 
+const busyOutsideSkeleton = []
+
 for (const path of sourceFiles(source)) {
   const key = relative(root, path).replaceAll("\\", "/")
   const calls = []
-  inspect(path, names, used, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls, operationCalls)
+  inspect(path, names, used, PROCESS_COMPARISON_FILES.has(key) ? [] : comparisons, calls, operationCalls, busyOutsideSkeleton)
 
   if (calls.length > 0) {
     connectedFiles.add(key)
@@ -677,6 +694,13 @@ const problems = [
   ),
   ...operationCalls.flatMap(({ place, operation }) =>
     operation === null ? [`\`call\` bez literału nazwy operacji w pierwszym argumencie: ${place}`] : [],
+  ),
+  ...busyOutsideSkeleton.map(
+    (place) =>
+      `aria-busy poza szkieletem wczytywania: ${place}. W Centrum aria-busy="true" nosi tylko kontener szkieletu, ` +
+      `który istnieje tylko w czasie wczytywania: index.css daje mu animację odsłonięcia szkieletu (120 ms ` +
+      `przezroczysty), a view-timing.ts liczy go jako widoczny szkielet w pomiarze widoku. Stan „trwa” elementu, ` +
+      `który zostaje na ekranie, pokaż inaczej: disabled z focusableWhenDisabled albo tekst w role="status".`,
   ),
 ]
 
