@@ -69,17 +69,22 @@ def test_kazde_zadanie_ci_jest_odtworzone_albo_ma_wskazane_zastepstwo() -> None:
 
 
 def test_kazde_polecenie_odtwarzanych_zadan_ma_krok_i_odwrotnie() -> None:
+    """Krok narzędzia odtwarza polecenie zadania ``ci.yml``, w którym ono biegnie (``CI_JOB``), a nie innego (#2161 r5 D1:
+    kroki workflowy w zadaniu Frontend)."""
+
     steps = _tool_steps()
     jobs = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]
-    fragments: list[str] = steps["fragmenty"]  # type: ignore[assignment]
+    fragments: list[list[str]] = steps["fragmenty"]  # type: ignore[assignment]
     elsewhere: list[str] = list(steps["gdzie_indziej"]["polecenia"])  # type: ignore[index]
     commands = [command for job in steps["lokalnie"] for command in _commands(jobs[job])]  # type: ignore[attr-defined]
 
-    without_step = [command for command in commands if not any(fragment in command for fragment in [*fragments, *elsewhere])]
-    without_command = [fragment for fragment in [*fragments, *elsewhere] if not any(fragment in command for command in commands)]
+    without_step = [command for command in commands if not any(fragment in command for fragment in [*(one for _, one in fragments), *elsewhere])]
+    without_command = [fragment for fragment in elsewhere if not any(fragment in command for command in commands)]
+    elsewhere_job = [(job, fragment) for job, fragment in fragments if not any(fragment in command for command in _commands(jobs[job]))]
 
     assert without_step == []
     assert without_command == []
+    assert elsewhere_job == []
 
 
 def test_ponowienie_ci_odsyla_do_zadan_narzedzia_ktore_odtwarzaja_padle_zadanie_ci() -> None:

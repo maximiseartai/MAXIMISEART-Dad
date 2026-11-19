@@ -165,7 +165,7 @@ def _check_every_commit(root: Path, base: str, jobs: set[str], *, fail_fast: boo
 
 def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--kroki-ci", action="store_true", help="Wypisz JSON: odtwarzane zadania CI, zadanie CI każdego zadania narzędzia i ich polecenia.")
+    parser.add_argument("--kroki-ci", action="store_true", help="Wypisz JSON: odtwarzane zadania CI, zadanie CI każdego zadania narzędzia i fragmenty poleceń z ich zadaniem CI.")
     parser.add_argument(
         "--kazdy-commit",
         nargs="?",
@@ -187,7 +187,8 @@ def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
         reproduced = sorted({CI_JOB.get(job, job) for job in known})
         elsewhere = {"zadania": JOBS_ELSEWHERE, "polecenia": COMMANDS_ELSEWHERE}
         jobs_ci = {job: CI_JOB.get(job, job) for job in sorted(known)}
-        print(json.dumps({"lokalnie": reproduced, "zadania": jobs_ci, "gdzie_indziej": elsewhere, "fragmenty": [ci for ci, _ in _reproduced(root)]}))
+        fragments = [[CI_JOB.get(step.job, step.job), ci] for ci, step in _reproduced(root)]
+        print(json.dumps({"lokalnie": reproduced, "zadania": jobs_ci, "gdzie_indziej": elsewhere, "fragmenty": fragments}))
         return 0
     jobs = set(args.tylko.split(",")) if args.tylko else set(EVERY_COMMIT_JOBS if args.kazdy_commit else known)
     if unknown := jobs - known:
