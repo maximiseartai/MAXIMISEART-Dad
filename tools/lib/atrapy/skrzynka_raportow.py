@@ -209,7 +209,8 @@ class AtrapaImap:
     powitaniem, jak sieć, która zgubiła Gmaila, a
     ``cut="after_login"`` po udanym ``LOGIN`` czyta polecenia, ale odpowiada już tylko na ``CAPABILITY``, o które
     ``imaplib`` 3.14 pyta sam po ``LOGIN``, jak Gmail, który zamilkł w trakcie sesji: klient z limitem czasu dostaje
-    wtedy ``TimeoutError``. ``refuse="login"`` odmawia ``LOGIN`` jak Gmail w chwilowej awarii (``NO [UNAVAILABLE]``, bez
+    wtedy ``TimeoutError``, a ``cut="logout"`` zrywa połączenie na ``LOGOUT`` bez ``BYE``, jak Gmail, który zamknął
+    sesję przed wylogowaniem. ``refuse="login"`` odmawia ``LOGIN`` jak Gmail w chwilowej awarii (``NO [UNAVAILABLE]``, bez
     ``AUTHENTICATIONFAILED``), ``refuse="examine"`` odmawia otwarcia folderu, a ``refuse="sections"`` każdego
     ``UID FETCH`` treści części (``BODY.PEEK[TEXT]``, ``[n]``), jak Gmail, który nie umie podać sekcji. ``sent`` to maile folderu ``\\Sent``
     („Wysłane”, UID inne niż maili ``mails``), którego nie ma bez ``sent_folder``. ``validity`` to ``UIDVALIDITY``, które
@@ -226,7 +227,7 @@ class AtrapaImap:
         password: str,
         mails: Sequence[AtrapaMail] = (),
         all_folder: bool = True,
-        cut: Literal["greeting", "after_login"] | None = None,
+        cut: Literal["greeting", "after_login", "logout"] | None = None,
         refuse: Literal["login", "examine", "sections"] | None = None,
         marks_seen: bool = False,
         deletes_read: bool = False,
@@ -362,7 +363,8 @@ class _Session(socketserver.StreamRequestHandler):
                     self._fetch(number, mail, items)
             self._send(done)
         elif command == "LOGOUT":
-            self._send(b"* BYE AtrapaImap", done)
+            if atrapa.cut != "logout":
+                self._send(b"* BYE AtrapaImap", done)
             return False
         elif command.removeprefix("UID ") in _WRITES:
             self._send(f"{tag} NO [CANNOT] AtrapaImap jest tylko do odczytu".encode())

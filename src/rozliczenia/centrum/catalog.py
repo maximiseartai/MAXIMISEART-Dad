@@ -12,8 +12,6 @@ gospodarza. Kartę przed startem procesu z okresem składa ``period_start.Period
 ADR 0019, i ``report_entering_run``, ADR 0028).
 
 Moduł nie robi I/O przy wczytaniu, a granicę jego importów opisuje i sprawdza ``tests/test_granice_importow.py``.
-Tylko ten moduł importuje dowód katalogu procesów ``process_kind._CATALOG`` (docstring ``_CATALOG``), więc tylko on
-składa ``PreparedRun``.
 """
 
 from __future__ import annotations

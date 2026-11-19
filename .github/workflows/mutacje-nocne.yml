@@ -14,7 +14,8 @@ name: Mutacje nocne
 # parts skip the same identities (artifact osadzone-nocy), so the night takes only what no part judged and reaches
 # further. Surviving mutations run again, because only the keys in the issues say whether one was filed. Pull requests neither run nor wait for it. The night
 # starts from the first push to main after 01:30 UTC (mutacje-nocne-start.yml dispatches it with start: auto), and the
-# cron run that comes hours late does no second night.
+# cron run that comes hours late does no second night. The job odczyt then writes the night's reading to the run summary
+# and to the one issue with the label noc-mutacji.
 on:
   schedule:
     - cron: '30 1 * * *'
@@ -148,6 +149,9 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
 
+      - name: zsh
+        uses: ./.github/actions/zsh
+
       - name: Chromium
         if: ${{ matrix.przegladarka }}
         uses: ./.github/actions/chromium
@@ -227,6 +231,9 @@ jobs:
         # editable install does not hide a mutation: the mutation engine (tools/lib/silnik_mutacji.py) puts the copy's
         # src first.
         run: uv pip install --system --python "${{ steps.python.outputs.python-path }}" -e ".[dev]"
+
+      - name: zsh
+        uses: ./.github/actions/zsh
 
       # As in the pytest parts of ci.yml: test files that reach Atrapa efenix drive a real browser, and the part runs them
       # with its mutations (tools/mutacje_nocne.py marks such a part).
@@ -451,3 +458,36 @@ jobs:
           LICZBA: ${{ needs.plan.outputs.liczba }}
           RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: python3 tools/mutacje_nocne.py zglos --baza "$BAZA" --zapisy .ci-mutacje/zapisy --czesci "$LICZBA" --run "$RUN" --plan-skilli .ci-plan/plan.json
+
+  # The night's reading after its filing (tools/mutacje_nocne.py odczyt): wall, runner-hours, backlog, longest part against
+  # PART_LIMIT_S and BEZ WERDYKTU, from the run's jobs, the plan log and the part logs, in the run summary and in the one
+  # issue with the label noc-mutacji, which stays open while the last night is over a threshold. Measurement only: a red
+  # run would not move the next night's base, so a failure here leaves the run's conclusion alone.
+  odczyt:
+    name: Odczyt nocy
+    needs:
+      - plan
+      - change-mutations
+      - skill-mutations
+      - czasy-nocy
+      - zgloszenie
+    if: ${{ !cancelled() && needs.plan.result == 'success' && (needs.plan.outputs.czesci != '[]' || needs.plan.outputs.skille != '[]') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+    permissions:
+      contents: read
+      # The jobs of this run and their logs.
+      actions: read
+      # Creates the label, opens, edits, comments and closes the issue.
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Read the night into the run summary and its issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: python3 tools/mutacje_nocne.py odczyt "$RUN_ID" --issue

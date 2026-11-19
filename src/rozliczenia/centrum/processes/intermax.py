@@ -1,8 +1,3 @@
-"""Uporządkowanie INTERMAX w katalogu procesów: wpis i widok Uruchomienia.
-
-Uporządkowanie porządkuje dzień, nie okres (ADR 0019): czyta INTERMAX z Ustawień Centrum i Bazę zleceń obok niego.
-"""
-
 from __future__ import annotations
 
 from functools import partial
@@ -19,9 +14,6 @@ from rozliczenia.tool_files import INTERMAX_METRICS
 
 
 def _summary(summary: OrderingSummary, _dry_run: bool) -> runs_contract.RunSummary:
-    """Liczby karty Uporządkowania: osobna liczba zleceń z Historią adresu stoi zaraz po liczbie Zleceń; bez Bazy
-    zleceń jej nie ma, a mówi o tym ostrzeżenie."""
-
     history = (
         [] if summary.history is None else [count_figure(intermax_messages.HISTORY_FIGURE, summary.history.orders)]
     )

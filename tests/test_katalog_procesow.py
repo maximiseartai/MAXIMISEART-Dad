@@ -1,10 +1,3 @@
-"""Katalog procesów Centrum rozliczeń (#717): każdy wpis katalogu działa w każdym miejscu Centrum tak samo.
-
-Test zgodności przechodzi po wszystkich wpisach katalogu i patrzy przez interfejs HTTP Centrum: karta przed startem
-i odmowa startu bez Ustawień taty, karta Uruchomienia na żywo i z Logów, Logi Uruchomienia, Historia i statystyki
-Metryk oraz kolejność sprawdzeń Diagnozy. Dokładne teksty i listy sprawdzeń każdego procesu przypinają jego testy HTTP.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -42,6 +35,7 @@ from rozliczenia import tool_files
 from tests.fixtures.centrum import ToolDirectory, centrum, finished_view
 from tests.fixtures.centrum_intermax import entering_centrum, ordering_centrum
 from tests.fixtures.centrum_processes import preparing_centrum, settling_centrum
+from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.znane_luki import assert_znane_luki, modul, zapisz
 from atrapy.intermax import Intermax
 from atrapy.preparation import PERIOD
@@ -61,9 +55,6 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
 
 
 def test_wpis_procesu_z_okresem_odmawia_trybow_wyceny_z_innym_pierwszym_niz_tryb_logow_sprzed_trybow() -> None:
-    """Logi sprzed trybów Wyceny w efenix nie mają trybu, a Wycena biegła wtedy bez Przekazania (ADR 0027), więc wpis
-    procesu, którego pierwszy tryb jest inny, nie powstaje, także wpis procesu z okresem z karty Uruchomień."""
-
     efenix = CATALOG.kind("efenix")
     assert isinstance(efenix, PeriodProcessKind)
     swapped = dataclasses.replace(efenix.view, pricing_modes=tuple(reversed(efenix.view.pricing_modes)))
@@ -80,10 +71,6 @@ _GOTOWE_URUCHOMIENIE: Final = (
     "class Polyka:\n    def __init_subclass__(cls, **kwargs: object) -> None:\n"
     "        with contextlib.suppress(TypeError):\n            super().__init_subclass__(**kwargs)\n\n\n"
 )
-# Postacie podklasy, którym odmawia jej utworzenie: metaklasa PreparedRun (client_data.WithoutSubclasses) przy każdej
-# kolejności baz (przegląd #1680, runda 2: nazwa przypisana poza importem i type(gotowe) przechodziły ruff, mypy
-# z type: ignore i sprawdzenie katalogu w tests/test_granice_importow.py; przegląd #1725, runda 2: wcześniejsza baza
-# w MRO decydowała, czy odmowa PreparedRun.__init_subclass__ dochodzi).
 PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
     "nazwa z importu": "class Moja(PreparedRun[Any, Any]):\n    pass\n",
     "nazwa z importu pod aliasem": "from rozliczenia.centrum.process_kind import PreparedRun as _G\n\n\nclass Moja(_G):\n    pass\n",
@@ -107,24 +94,24 @@ PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
 }
 
 
+_ODMOWA_PODKLASY: Final = (
+    "nie ma podklas: składa je tylko Catalog.prepared, a rdzeń, plik metryk i silnik procesu podmienia "
+    "Catalog.steered, Catalog.with_metrics i Catalog.with_engine"
+)
+
+
 @pytest.mark.parametrize("podklasa", PODKLASY_GOTOWEGO_URUCHOMIENIA.values(), ids=PODKLASY_GOTOWEGO_URUCHOMIENIA.keys())
 def test_uruchomienie_gotowe_do_startu_nie_ma_podklas_takze_zrobionych_w_trakcie_dzialania(
     podklasa: str, tmp_path: Path
 ) -> None:
-    """Podklasa ``PreparedRun`` składałaby się sama, z własnym rdzeniem albo ``conduct``, bez katalogu procesów, więc
-    jej utworzenie odmawia pod każdą nazwą, także w trakcie działania, a odmowa mówi, czym podmienić rdzeń, plik metryk
-    i silnik."""
-
     plik = tmp_path / "podklasa.py"
     plik.write_text(_GOTOWE_URUCHOMIENIE + podklasa, encoding="utf-8")
 
-    with pytest.raises(TypeError, match="nie ma podklas: składa je tylko Catalog.prepared"):
+    with pytest.raises(TypeError, match=_ODMOWA_PODKLASY):
         modul(plik)
 
 
 def test_typ_uruchomienia_gotowego_do_startu_w_adnotacji_nie_jest_podklasa(tmp_path: Path) -> None:
-    """``PreparedRun[…]`` to typ w adnotacji, nie podklasa, więc wyliczony w trakcie działania nie odmawia."""
-
     plik = tmp_path / "adnotacja.py"
     plik.write_text(
         _GOTOWE_URUCHOMIENIE + "def start(run: PreparedRun[Any, Any]) -> PreparedRun[Any, Any]:\n    return run\n\n\n"
@@ -138,14 +125,9 @@ def test_typ_uruchomienia_gotowego_do_startu_w_adnotacji_nie_jest_podklasa(tmp_p
 
 
 _WLASNE: Final = "    def conduct(self, interlocutor: object) -> str:\n        return 'własne'\n"
-# Podklasa z własnym conduct zrobiona z pominięciem __new__ metaklasy PreparedRun, więc powstaje za bazą, której
-# __init_subclass__ nie dopuszcza do odmowy PreparedRun.__init_subclass__.
 _OMIJA_METAKLASE: Final = (
     'Moja = type.__new__(type(PreparedRun), "Moja", (Bez, PreparedRun), {"conduct": lambda self, interlocutor: "własne"})\n'
 )
-# Obiekty, które utworzenie podklasy przepuszcza, bo klasa powstaje z pominięciem __new__ metaklasy PreparedRun
-# (przegląd #1698, runda 1; sonda #1725, runda 2), albo które nie są podklasą: każdemu odmawia start Uruchomienia
-# w Centrum.
 URUCHOMIENIA_OBOK_KATALOGU: Final = {
     "type.__new__ z metaklasą PreparedRun": _OMIJA_METAKLASE + "uruchomienie = object.__new__(Moja)\n",
     "metaklasa pochodna wołająca type.__new__": (
@@ -171,9 +153,6 @@ URUCHOMIENIA_OBOK_KATALOGU: Final = {
 
 @pytest.mark.parametrize("kod", URUCHOMIENIA_OBOK_KATALOGU.values(), ids=URUCHOMIENIA_OBOK_KATALOGU.keys())
 def test_uruchomienie_w_centrum_startuje_tylko_z_typu_uruchomienia_gotowego_do_startu(kod: str, tmp_path: Path) -> None:
-    """Regułę „Uruchomienie gotowe do startu nie ma podklas” trzyma start Uruchomienia w Centrum (``runs.Run``), więc
-    obiekt innego typu niż ``PreparedRun`` nie startuje, jakkolwiek powstała jego klasa, a odmowa mówi drogę naprawy."""
-
     plik = tmp_path / "obok_katalogu.py"
     plik.write_text(_GOTOWE_URUCHOMIENIE + kod + "\nruns.Run(None, uruchomienie, None, threading)\n", encoding="utf-8")
 
@@ -181,9 +160,6 @@ def test_uruchomienie_w_centrum_startuje_tylko_z_typu_uruchomienia_gotowego_do_s
         modul(plik)
 
 
-# Podklasa z własnym conduct o układzie PreparedRun, zrobiona z pominięciem __new__ metaklasy, więc obiekt z katalogu
-# przyjmuje ją przez __class__ (przegląd #1698, runda 2: podmiana po przyjęciu w runs.Run.__init__, przed conduct
-# w Run.work).
 _PODMIANA: Final = (
     "WOLANE: list[str] = []\n\n\nclass BezSlotow:\n    __slots__ = ()\n\n"
     "    def __init_subclass__(cls, **kwargs: object) -> None:\n        pass\n\n\n"
@@ -203,22 +179,18 @@ def _z_katalogu() -> PreparedRun[Any, Any]:
 
 
 class _Odmowa(Exception):
-    """Błąd Uruchomienia, który ``Run.work`` oddaje gospodarzowi (``RunHost.failed``)."""
-
+    ...
 
 class _Gospodarz:
     def failed(self, failure: Exception) -> None:
         raise _Odmowa from failure
 
 
-# Run.work dochodzi tylko do RunHost.failed, więc gospodarz i Zatrzymania Uruchomienia to atrapy bez typu Centrum.
 _GOSPODARZ: Final[Any] = _Gospodarz()
 _BEZ_ZATRZYMAN: Final[Any] = None
 
 
 class _Katalog:
-    """Katalog Skryptu dla maszyn, który daje gotowe Uruchomienie ``run`` zamiast złożonego ze startu."""
-
     def __init__(self, run: PreparedRun[Any, Any]) -> None:
         self._run = run
 
@@ -268,7 +240,6 @@ def _conduct_z_klasy(podklasa: type, tmp_path: Path, monkeypatch: pytest.MonkeyP
     PreparedRun.conduct(run, rozmowca)
 
 
-# Każde miejsce, które woła conduct (r3/wywolania.md), i conduct z klasy na obiekcie podklasy.
 UZYCIA_GOTOWEGO_URUCHOMIENIA: Final = {
     "Run.work: __class__ podmienione po przyjęciu": _w_centrum_po_przyjeciu,
     "Run.work: pole _prepared podmienione po przyjęciu": _w_centrum_z_podmienionym_polem,
@@ -282,9 +253,6 @@ UZYCIA_GOTOWEGO_URUCHOMIENIA: Final = {
 def test_conduct_odmawia_obiektu_podklasy_w_chwili_uzycia(
     uzycie: Callable[[type, Path, pytest.MonkeyPatch], None], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Regułę „Uruchomienie gotowe do startu nie ma podklas” trzyma kontrola w chwili użycia (``startable`` przed
-    ``conduct`` i w nim), więc obiekt zmieniony po przyjęciu nie prowadzi Uruchomienia własnym ``conduct``."""
-
     plik = tmp_path / "podmiana.py"
     plik.write_text(_GOTOWE_URUCHOMIENIE + _PODMIANA, encoding="utf-8")
     podmiana = modul(plik)
@@ -301,8 +269,6 @@ _UDAJE_START: Final = (
     "    def info(self, run_id: str) -> None:\n        return None\n\n"
     "    def progress_view(self, snapshot: object) -> None:\n        return None\n"
 )
-# Znane luki kontroli w chwili użycia (tests/fixtures/znane_luki.py): obiekt innego typu niż PreparedRun, którego
-# własne conduct biegnie mimo niej.
 ZNANE_LUKI_STARTU: Final = {
     "nowe miejsce użycia: conduct podklasy wołany bez startable": (
         _OMIJA_METAKLASE + "assert object.__new__(Moja).conduct(None) == 'własne'\n"
@@ -336,21 +302,13 @@ KOPIE_PRZEZ_REPLACE: Final = {
 
 @pytest.mark.parametrize("kopia", KOPIE_PRZEZ_REPLACE.values(), ids=KOPIE_PRZEZ_REPLACE.keys())
 def test_kopia_gotowego_uruchomienia_przez_replace_rzuca_takze_obok_mypy(kopia: Callable[[Any], object]) -> None:
-    """Kopię ``PreparedRun`` przez ``replace`` odrzuca mypy, a z ``# type: ignore[…]`` rzuca Python, bo to nie
-    dataclassa i nie ma ``__replace__``, więc ta postać nie jest próbką ``ZNANE_LUKI_KATALOGU``
-    (``tests/test_granice_importow.py``). Wartość bez pól wystarcza, bo ``replace`` odmawia po typie, zanim przeczyta
-    pole."""
-
-    gotowe: Any = object.__new__(PreparedRun)
+    bez_pol: Any = object.__new__(PreparedRun)
 
     with pytest.raises(TypeError, match=r"replace\(\)"):
-        kopia(gotowe)
+        kopia(bez_pol)
 
 
 def test_tryb_z_karty_to_tryb_silnika_wyceny_w_efenix_pod_ta_sama_nazwa() -> None:
-    """Tryb Wyceny, który tata wybiera przyciskiem (``runs_contract.Pricing``), silnik zna pod tą samą nazwą (ADR 0027): inny
-    tryb na karcie wywróciłby start Wyceny w trakcie budowy wejścia."""
-
     assert {mode.value for mode in PricingMode} == set(get_args(runs_contract.Pricing))
 
 
@@ -422,9 +380,6 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
 def test_start_bez_potrzeby_procesu_to_blad_gospodarza_a_nie_uruchomienie(
     key: common_contract.ProcessKey, start: Start, parts: HostParts, error: str
 ) -> None:
-    """Odmowy dla taty daje karta startu; start, któremu brakuje potrzeby wpisu procesu, to błąd gospodarza (Centrum,
-    Skryptu dla maszyn albo odtworzenia), który katalog zgłasza, zanim zbuduje wejście procesu."""
-
     with pytest.raises(ValueError, match=error):
         CATALOG.prepared(key, start, parts, RunContext())
 
@@ -456,9 +411,6 @@ def _liczy_w_starcie(kind: ProcessKind[Any, Any]) -> tuple[str, ...]:
 def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospodarza(
     kind: ProcessKind[Any, Any], ustawienie: str
 ) -> None:
-    """Start pełny poza Listą Wykonawców, Regułami ilości albo Legendą czynności procesu, który nimi liczy, to błąd
-    gospodarza o tym, czego brakuje, a nie Uruchomienie bez nich."""
-
     start = Start(
         {need: Path(need) for need in kind.path_needs},
         PERIOD if "period" in kind.needs else None,
@@ -471,10 +423,6 @@ def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospoda
 
 
 def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_ustawien_ze_startu() -> None:
-    """Sprawdzenie startu i rzut na proces w ``Catalog.prepared`` czytają Ustawienie ze startu z pola
-    ``SettingsAtStart`` o nazwie jego potrzeby, więc potrzeba bez takiego pola wywróciłaby start procesu, który nią
-    liczy. Pole migawki do odmowy startu przy pliku bez odczytu wybiera ``match`` w ``settings_at_start`` (mypy)."""
-
     assert set(get_args(SettingNeed)) <= {pole.name for pole in dataclasses.fields(SettingsAtStart)}
 
 
@@ -482,9 +430,6 @@ def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_ustawien_ze_startu
 def test_uruchomienie_gotowe_do_startu_ma_tylko_ustawienia_ze_startu_ktorymi_proces_liczy(
     kind: ProcessKind[Any, Any],
 ) -> None:
-    """Start z każdym Ustawieniem ze startu daje Uruchomienie, które niesie tylko te, którymi proces liczy, a ostrzeżenia
-    startu bez zmian: Logi czytają je z ``PreparedRun.settings``."""
-
     ostrzezenia = (diagnosis_messages.worker_list_last_good("zdanie"),)
     pelne = dataclasses.replace(_PELNE, warnings=ostrzezenia)
     start = Start({need: Path(need) for need in kind.path_needs}, PERIOD if "period" in kind.needs else None, False, settings=pelne)
@@ -501,9 +446,6 @@ def test_uruchomienie_gotowe_do_startu_ma_tylko_ustawienia_ze_startu_ktorymi_pro
 def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
     chosen: runs_contract.Pricing | None, expected: runs_contract.Pricing
 ) -> None:
-    """Skrypt dla maszyn bez ``--z-przekazaniem`` i Logi sprzed trybów nie wybierają trybu, a Wycena biegnie wtedy bez
-    Przekazania (ADR 0027): ten sam tryb w wejściu silnika i w Uruchomieniu na karcie."""
-
     start = Start(
         {"collective_file": Path("plik-zbiorczy.xlsx")},
         period=None,
@@ -517,8 +459,79 @@ def test_wycena_bez_wybranego_trybu_biegnie_bez_przekazania_jak_przed_trybami(
     assert (prepared.inputs.mode.value, prepared.info("u").pricing) == (expected, expected)
 
 
+_FOLDERY_ZE_STARTU: Final[frozenset[PathNeed]] = frozenset({"periods_directory", "copies_directory"})
+
+
+def _zaloz(sciezka: Path, folder: bool) -> None:
+    if folder:
+        sciezka.mkdir()
+        (sciezka / "w-folderze.xlsx").write_bytes(b"x")
+    else:
+        sciezka.write_bytes(b"x")
+
+
+@pytest.mark.parametrize("pliki_sa", [True, False], ids=["pliki-sa", "plikow-nie-ma"])
+@pytest.mark.parametrize("kind", CATALOG.kinds, ids=lambda kind: kind.key)
+def test_wejscie_procesu_nie_czyta_nie_listuje_i_nie_zapisuje_plikow_ani_folderow_ze_startu(
+    kind: ProcessKind[Any, Any], pliki_sa: bool, tmp_path: Path
+) -> None:
+    swiat = tmp_path / "taty" / "pliki"
+    swiat.mkdir(parents=True)
+    sciezki = {need: swiat / need for need in kind.path_needs}
+    baza = swiat / "order_base" if "order_base" in kind.needs else None
+    skrzynka = swiat / "skrzynka"
+    if pliki_sa:
+        for need, sciezka in sciezki.items():
+            _zaloz(sciezka, need in _FOLDERY_ZE_STARTU)
+        if baza is not None:
+            _zaloz(baza, folder=False)
+        _zaloz(skrzynka, folder=True)
+    przed = sorted(tmp_path.rglob("*"))
+    start = Start(sciezki, PERIOD if "period" in kind.needs else None, False, settings=_PELNE, order_base=baza)
+    czesci = dataclasses.replace(_ATRAPA, reports=ReportEnteringParts(FolderInbox(skrzynka), ReportStateInMemory()))
+
+    with reading(tmp_path) as dostep:
+        CATALOG.prepared(kind.key, start, czesci, RunContext())
+
+    assert (dostep.order, dostep.listed, sorted(tmp_path.rglob("*"))) == ([], set(), przed)
+
+
+ZNANE_LUKI_WEJSCIA: Final = {
+    "metadane pliku bez zdarzenia audytu: os.stat": (
+        "import os\nfrom pathlib import Path\n\n\ndef wejscie(sciezka: Path) -> object:\n    return os.stat(sciezka).st_size\n"
+    ),
+    "metadane pliku bez zdarzenia audytu: Path.stat": (
+        "from pathlib import Path\n\n\ndef wejscie(sciezka: Path) -> object:\n    return sciezka.stat().st_size\n"
+    ),
+    "metadane pliku bez zdarzenia audytu: os.path.getsize": (
+        "import os\nfrom pathlib import Path\n\n\ndef wejscie(sciezka: Path) -> object:\n    return os.path.getsize(sciezka)\n"
+    ),
+}
+
+
+def test_znane_luki_wejscia_procesu_przechodza_przez_hak_audytu_bez_odczytu_listowania_i_zapisu(tmp_path: Path) -> None:
+    probki = tmp_path / "probki"
+    probki.mkdir()
+    wejscia = {opis: modul(plik).wejscie for opis, plik in zapisz(ZNANE_LUKI_WEJSCIA, probki).items()}
+    swiat = tmp_path / "taty"
+    swiat.mkdir()
+    plik = swiat / "collective_file"
+    _zaloz(plik, folder=False)
+    przed = sorted(swiat.rglob("*"))
+    zgloszenia: dict[str, list[str]] = {}
+    for opis, wejscie in wejscia.items():
+        with reading(swiat) as dostep:
+            wejscie(plik)
+        zgloszenia[opis] = [
+            *(f"hak widzi {'zapis' if zapis else 'odczyt'} {sciezka.name}" for zapis, sciezka in dostep.order),
+            *(f"hak widzi listowanie {folder.name}" for folder in dostep.listed),
+            *(["drzewo plików się zmienia"] if sorted(swiat.rglob("*")) != przed else []),
+        ]
+
+    assert_znane_luki(zgloszenia, "tests/test_katalog_procesow.py (ZNANE_LUKI_WEJSCIA)")
+
+
 def test_kazdy_proces_ma_wlasna_historie_metryk_w_katalogu_narzedzia() -> None:
-    # Nazwy plików metryk przypina test_opiekun_ponownego_startu.py.
     assert CATALOG.metrics_paths == {
         "preparation": tool_files.PREPARATION_METRICS,
         "settlement": tool_files.SETTLEMENT_METRICS,
@@ -544,7 +557,6 @@ def _report_entering_setup(client: TestClient) -> tuple[str | None, Any]:
     return client.get("/api/report-entering").json()["blocker"], client.post("/api/report-entering/run")
 
 
-# Karta przed startem i start każdego procesu tak, jak je woła przeglądarka; nowy wpis katalogu potrzebuje tu swojej.
 _SETUP_AND_START: dict[common_contract.ProcessKey, Callable[[TestClient], tuple[str | None, Any]]] = {
     "preparation": _period_setup("preparation"),
     "settlement": _period_setup("settlement"),
@@ -569,9 +581,6 @@ def test_bez_ustawien_taty_karta_i_odmowa_startu_mowia_to_samo_co_brakuje(
 
 @dataclass(frozen=True)
 class _Stopping:
-    """Centrum gotowe do startu procesu, którego silnik kończy pracę Zatrzymaniem „do Maksa” bez zmiany plików taty: jego
-    podsumowania nie da się pokazać. ``start``: start procesu tak, jak go woła przeglądarka."""
-
     client: TestClient
     tool: ToolDirectory
     start: Callable[[], Any]
@@ -661,9 +670,6 @@ def test_uruchomienie_procesu_ma_te_same_fakty_wpisu_na_karcie_w_logach_historii
 def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
     tmp_path: Path, declaration: ProcessKind[Any, Any]
 ) -> None:
-    """Ustawienia taty pierwsze, OneDrive przed każdym sprawdzeniem, które otwiera pliki, a na końcu Aktualność
-    narzędzia, Token do Zgłoszeń i dziennik; Folder okresu tylko w procesie z okresem."""
-
     client, view = _stopped(declaration.key, tmp_path)
 
     diagnosis = client.post(f"/api/runs/{view['run']['id']}/diagnosis").json()
@@ -679,35 +685,35 @@ def test_diagnoza_kazdego_procesu_idzie_w_kolejnosci_wyjasniania(
 _DAMAGED_WORKERS: Final = settings_messages.damaged(WORKERS_FILE, settings_messages.MAKS_FIXES)
 
 
+def _centrum_czyta_liste_przed_zepsuciem(stopping: _Stopping, *, z_plikiem_listy: bool) -> None:
+    listed = stopping.tool.worker_list
+    if z_plikiem_listy and not listed.exists():
+        write_worker_list(listed)
+    if not z_plikiem_listy:
+        listed.unlink(missing_ok=True)
+    stopping.client.get("/api/settings")
+
+
+def _ostrzezenia_o_liscie_tylko_po_starcie_ktory_zaczal_uruchomienie(
+    client: TestClient, started: Any
+) -> list[dict[str, Any]] | None:
+    if started.status_code != 200:
+        return None
+    return [warning for warning in finished_view(client)["result"]["warnings"] if warning["setting"] == "wykonawcy"]
+
+
 @pytest.mark.parametrize("last_good", [True, False], ids=["z-ostatnia-dobra", "bez-ostatniej-dobrej"])
 @pytest.mark.parametrize("declaration", CATALOG.kinds, ids=lambda declaration: declaration.key)
 def test_zla_lista_wykonawcow_wstrzymuje_albo_ostrzega_tylko_proces_ktory_jej_potrzebuje(
     tmp_path: Path, declaration: ProcessKind[Any, Any], last_good: bool
 ) -> None:
-    """Zła treść Listy Wykonawców dotyczy tylko procesu, który jej potrzebuje (``needs`` wpisu katalogu): biegnie on na
-    ostatniej dobrej liście z ostrzeżeniem startu, a bez niej nie startuje i odmowa mówi, co poprawić. Uporządkowanie
-    INTERMAX i Wycena w efenix listy nie potrzebują, więc startują bez odmowy i bez ostrzeżenia o liście."""
-
     stopping = _STOPPING[declaration.key](tmp_path)
-    listed = stopping.tool.worker_list
-    # Ostatnia dobra lista to ta, którą Centrum przeczytało, zanim plik się zepsuł. Centrum Uporządkowania INTERMAX
-    # (``ordering_centrum``) nie ma pliku listy, a po usuniętym pliku Centrum nie ma ostatniej dobrej.
-    if last_good and not listed.exists():
-        write_worker_list(listed)
-    if not last_good:
-        listed.unlink(missing_ok=True)
-    stopping.client.get("/api/settings")
-    listed.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
+    _centrum_czyta_liste_przed_zepsuciem(stopping, z_plikiem_listy=last_good)
+    stopping.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
 
     started = stopping.start()
     refused = started.json()["message"] if started.status_code == 409 else None
-    # Strumień czeka na koniec Uruchomienia bez granicy, więc tylko po starcie, który Uruchomienie zaczął: błąd
-    # gospodarza (500) pada w asercji niżej, a nie w limicie czasu testu.
-    warnings = (
-        [warning for warning in finished_view(stopping.client)["result"]["warnings"] if warning["setting"] == "wykonawcy"]
-        if started.status_code == 200
-        else None
-    )
+    warnings = _ostrzezenia_o_liscie_tylko_po_starcie_ktory_zaczal_uruchomienie(stopping.client, started)
 
     needed = "workers" in declaration.needs
     last_good_warning = Message.of(diagnosis_messages.worker_list_last_good(_DAMAGED_WORKERS)).model_dump()

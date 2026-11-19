@@ -89,7 +89,16 @@ from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
-from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, finished_view, run_events, views_until, write_report_key
+from tests.fixtures.centrum import (
+    ROOT,
+    CentrumClient,
+    FakeGitHub,
+    ToolDirectory,
+    finished_view,
+    run_events,
+    views_until,
+    write_report_key,
+)
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -147,7 +156,8 @@ def _finished(centrum: EnteringCentrum) -> dict[str, Any]:
 
 def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_bez_kopii_intermax(tmp_path: Path) -> None:
     """Kryterium #1227: Wpis z Raportu wykonawcy od adresu z listy trafia do obu komórek jego zlecenia z dnia z tematu,
-    zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie."""
+    zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie. Uruchomienie nie potwierdza
+    Gotowości, bo ta dotyczy Pliku zbiorczego przed Rozliczeniami pracowników."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
@@ -163,7 +173,7 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
         "last": None,
     }
     assert view["result"]["result"] == "OK"
-    assert view["run"]["period"] == ENTERING_PERIOD
+    assert (view["run"]["period"], view["run"]["confirms_readiness"]) == (ENTERING_PERIOD, False)
     assert view["result"]["summary"]["figures"] == [
         {"label": "Wpisane", "value": 1, "unit": "count"},
         {"label": "Problemy", "value": 0, "unit": "count"},
@@ -329,6 +339,23 @@ def test_logi_maja_kopie_wejscia_z_przeczytanymi_wierszami_bez_adresu_i_numeru_u
     assert columns <= {chr(ord("A") + column - 1) for column in range(1, LAST + 1)} - {"E", "K"}
     assert (ADDRESS, CONTRACT_NUMBER) == (5, 11), "ADRES w E, NUMER UMOWY w K"
     assert "Ulica 40000001" not in json.dumps(logs, ensure_ascii=False)
+
+
+def test_kopia_wejscia_ma_date_zlecenia_ze_sladem_przesuniecia_choc_w_drugim_polozeniu_stoi_pod_adresem(tmp_path: Path) -> None:
+    """Uporządkowany wiersz z datą z godziną w kolumnie A (ślad przesunięcia) pamięć zna w obu położeniach, więc Kopia
+    nie ma komórek, które w przesunięciu stoją pod ``ADRES`` i ``NUMER UMOWY``; ``DATA GODZ. POCZ.`` zostaje, bo bez
+    niej odtworzenie nie powtórzy Uruchomienia (ADR 0025)."""
+
+    traced = Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (1, datetime(2026, 11, 9, 9))))
+    centrum = entering_centrum(tmp_path, Intermax(ordered=(traced,), raw=()), [report(JAN, SUBJECT, "40000001 tak wymiana")])
+
+    _finished(centrum)
+
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    [row] = copied["sheets"][0]["rows"]
+    assert row["cells"]["C"] == {"type": "datetime", "text": "2026-11-09T09:00:00"}
+    assert "I" not in row["cells"], "NUMER ZL. w przesunięciu stoi pod NUMER UMOWY"
 
 
 def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z_tresci_maila_jest_pod_straznikiem(
@@ -973,6 +1000,52 @@ def test_zapis_na_scalone_komorki_zlecenia_zatrzymuje_do_maksa_a_logi_maja_zapla
     assert [(change["row"], change["column"], change["value"]) for change in logs["report_entering"]["changes"]] == [
         (3, "SKUTECZNE", "tak"),
         (3, "CZYNNOŚCI ZREALIZOWANE", "wymiana"),
+    ]
+
+
+def _unreadable_border(register: Path) -> None:
+    rewrite_parts(
+        register,
+        lambda name, data: data.replace(b'<left style="thin" />', b'<left style="nieznany" />', 1) if name == "xl/styles.xml" else data,
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "spoil", "stop"),
+    [
+        pytest.param(
+            "40000001 tak wymiana\x01routera",
+            lambda register: None,
+            ("for_maks", "Zapis odrzucił komórki, które narzędzie chciało wpisać. INTERMAX nie został zmieniony."),
+            id="opis-ze-znakiem-spoza-xml",
+        ),
+        pytest.param(
+            "40000001 tak wymiana",
+            _unreadable_border,
+            ("for_tata", "Nie można odczytać INTERMAX jako skoroszytu Excela. INTERMAX nie został zmieniony."),
+            id="styl-ramki-ktorego-zapis-nie-czyta",
+        ),
+    ],
+)
+def test_zapis_odrzucony_albo_nieczytelny_przy_zapisie_zatrzymuje_a_logi_maja_zaplanowane_wpisy(
+    tmp_path: Path, text: str, spoil: Callable[[Path], object], stop: tuple[str, str]
+) -> None:
+    """Zapis odrzuca komórkę z tekstem, którego komórka nie przyjmie (znak spoza XML z treści maila), albo nie czyta
+    stylów INTERMAX, które odczyt pominął: kliknięcie zatrzymuje się z INTERMAX bajt w bajt, a Logi Uruchomienia mają
+    wpisy zaplanowane z Raportu, z których Maks odtworzy Uruchomienie."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, text)])
+    spoil(centrum.register)
+    before = centrum.register.read_bytes()
+
+    result = _stopped(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == stop
+    assert centrum.register.read_bytes() == before
+    [logs] = centrum.run_logs()
+    assert [(change["row"], change["column"]) for change in logs["report_entering"]["changes"]] == [
+        (3, "SKUTECZNE"),
+        (3, "CZYNNOŚCI ZREALIZOWANE"),
     ]
 
 
@@ -5032,6 +5105,25 @@ def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_por
     assert _failures_in_log(centrum) == ["przyczyna=haslo-odrzucone"]
 
 
+def test_zgloszenie_przypomnien_z_narzedzia_bez_commitu_gita_ma_commit_nieznany(tmp_path: Path) -> None:
+    write_report_key(ToolDirectory(tmp_path))
+    surroundings = Surroundings(github=FakeGitHub(tool_commit=None))
+    mailbox = FakeMailbox(send_outcome=PasswordRejected())
+    centrum = entering_centrum(tmp_path, INTERMAX, surroundings=surroundings, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    box = surroundings.report_box
+    assert box.wait_until(lambda fake: len(fake.sent) == 1)
+    centrum.client.stop()
+
+    [issue] = box.sent
+    body = issue.body.splitlines()
+    assert body[body.index("## Narzędzie") + 2] == "- Commit: nieznany"
+
+
 def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
     """Pola każdej linii ``przypomnienia-porazka`` dziennika Centrum po nazwie zdarzenia, po kolei."""
 
@@ -5048,6 +5140,7 @@ def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
         pytest.param("pamiec-wpisania", "decyzje", id="decyzje-zostaw-moja"),
         pytest.param("okresy", "okresy", id="okresy"),
         pytest.param("intermax", "intermax", id="intermax"),
+        pytest.param("intermax", "arkusz-zlecen", id="intermax-bez-arkusza-zlecen"),
     ],
 )
 def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku(
@@ -5055,7 +5148,7 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
 ) -> None:
     """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
     pliku dostępu, nieczytelna pamięć Wpisania raportów albo decyzje „Zostaw moją”, bo pusta pamięć zmieniłaby dzień
-    raportu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
+    raportu, bez folderu okresów, nieczytelny INTERMAX albo INTERMAX bez arkusza zleceń), trafia do dziennika Centrum raz, bez
     adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
     są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
 
@@ -5066,6 +5159,11 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
         shutil.rmtree(centrum.periods_directory)
     if broken == "intermax":
         centrum.register.write_bytes(b"to nie jest skoroszyt")
+    if broken == "arkusz-zlecen":
+        book = load_workbook(centrum.register)
+        for header in book[ORDER_SHEET][1]:
+            header.value = None
+        book.save(centrum.register)
     if broken == "pamiec":
         _state(centrum).write_text("{", encoding="utf-8")
     if broken == "decyzje":

@@ -8,6 +8,7 @@ updates:
       - /.github/actions/chromium
       - /.github/actions/narzedzia-tlc
       - /.github/actions/narzedzia-tlc/zapis
+      - /.github/actions/zsh
     schedule:
       interval: weekly
     cooldown:
