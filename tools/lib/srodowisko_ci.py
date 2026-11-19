@@ -117,15 +117,15 @@ def _checkout(root: Path, commit: str, copy: Path, home: Path) -> None:
     (alternates), bez szablonów, ``info/exclude`` repozytorium ``root`` i konfiguracji gita wołającego, które czytałyby
     checkout (filtry, końce linii) i ruff (wykluczenia)."""
 
-    isolated = {"PATH": os.environ.get("PATH", ""), "HOME": str(home), "LANG": "C", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}
+    isolated = {"HOME": str(home), "XDG_CONFIG_HOME": str(home), "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}
     commands = (
-        (("git", "clone", "--quiet", "--shared", "--no-checkout", "--template=", str(root.resolve()), str(copy)), root),
-        (("git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", commit), copy),
+        (root, ("clone", "--quiet", "--shared", "--no-checkout", "--template=", str(root.resolve()), str(copy))),
+        (copy, ("-c", "advice.detachedHead=false", "checkout", "--quiet", "--detach", commit)),
     )
-    for command, cwd in commands:
-        done = potomne.run(command, cwd=cwd, env=isolated, timeout=BUILD_TIMEOUT_S)
+    for cwd, arguments in commands:
+        done = repo.run_git(cwd, *arguments, timeout=BUILD_TIMEOUT_S, extra_env=isolated)
         if done.returncode:
-            raise Refused(f"środowisko Required CI: {' '.join(command[:2])} kopii skończył się kodem {done.returncode} ({done.stderr.strip()[-300:]}): uruchom ponownie")
+            raise Refused(f"środowisko Required CI: git {arguments[0]} kopii skończył się kodem {done.returncode} ({done.stderr.strip()[-300:]}): uruchom ponownie")
 
 
 def _twins(root: Path, tree: str) -> list[str]:
@@ -173,7 +173,7 @@ def job_steps(tree: Path) -> list[dict[str, object]]:
     ``kroki_lokalne.static_steps`` w ich kolejności, każdy z warunkiem ``_CI_IF``. Klucz ``name`` i wersja akcji po ``@``
     (podbija ją dependabot) się nie liczą."""
 
-    checks = [{"if": _CI_IF, "run": " ".join(("python", *step.ci[1:]))} for step in static_steps(tree)]
+    checks: list[dict[str, object]] = [{"if": _CI_IF, "run": " ".join(("python", *step.ci[1:]))} for step in static_steps(tree)]
     return [
         {"uses": "actions/checkout", "with": {"fetch-depth": 0, "persist-credentials": False}},
         {"id": "python", "uses": "actions/setup-python", "with": {"python-version": CI_PYTHON}},
