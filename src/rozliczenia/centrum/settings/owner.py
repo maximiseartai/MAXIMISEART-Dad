@@ -22,7 +22,7 @@ Wołający, który bez pliku odpowiada tacie odmową (Tablica okresów, ścieżk
 ilości, otwarcie Rejestru zleceń, podgląd zmiany reguły albo kodu, Wysyłka rozliczeń, start procesu), bierze wartość
 nazwą bez przyrostka (``folders``, ``QuantityRulesView.rules``, ``counted_activity_legend``, własności
 ``SettingsSnapshot``, ``WorkerListRead.counted``): plik, którego system nie daje teraz czytać, to tam odmowa 409 o nim
-(``refusal.settings_file_unreadable``), a nie treść z Wydania, którą tata wziąłby za niewskazany folder okresów albo za
+(``refusal.settings_file_unreadable``, a dla Listy Wykonawców ``refusal.workers_unusable``), a nie treść z Wydania, którą tata wziąłby za niewskazany folder okresów albo za
 swoje Reguły ilości; odczyt niczego nie zapisuje, więc ta odmowa nie jest regułą przyjęcia zmiany. Unię z
 ``Unreadable`` daje tylko nazwa z przyrostkiem ``_or_unreadable``, dla wołającego, który o pliku mówi albo czeka.
 ``Unreadable`` nie ma podklas, a mypy w ``src/`` ma ``warn_unreachable``, więc gałąź „bez odczytu” przy wartości

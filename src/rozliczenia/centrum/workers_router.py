@@ -118,9 +118,11 @@ def _listed(settings: CentrumSettings) -> WorkerList:
     ostatniej dobrej albo bez odczytu) odmowa ``refusal.workers_unusable(None)``."""
 
     listed = settings.view().workers.counted_or_unreadable()
-    if isinstance(listed, WorkerList):
-        return listed
-    raise refusal.workers_unusable(None)
+    if isinstance(listed, Unreadable):
+        raise refusal.workers_unusable(None)
+    if isinstance(listed, FieldProblem):
+        raise refusal.workers_unusable(None)
+    return listed
 
 
 def _worker(listed: WorkerList, login: str) -> Worker:
