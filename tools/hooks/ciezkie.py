@@ -8,8 +8,9 @@ Działa tylko tam, gdzie ``boatbox`` jest w ``PATH`` (Mac Maksa), a na innej mas
 każe tam uruchamiać lokalnie.
 
 Hook czyta polecenie słowami ``shlex`` bez ciał heredoców i dzieli je na polecenia proste na operatorach powłoki
-(``;``, ``&``, ``|``, nawiasy, nowa linia); przekierowanie zabiera swój cel i liczbę przyklejoną do operatora
-(``2>&1``), a liczba przed spacją (``-n 8 > log``) zostaje argumentem, jak w Bashu. Słowa za słowem ``boatbox``
+(``;``, ``&``, ``|``, nawiasy, nowa linia); przekierowanie zabiera swój cel i numer deskryptora, czyli w tekście
+polecenia same gołe cyfry tuż przed ``<`` albo ``>`` (``2>&1``), a liczba przed spacją, w cudzysłowie albo z ucieczką
+(``-n 8 > log``, ``-n "8">log``) zostaje argumentem, jak w Bashu. Słowa za słowem ``boatbox``
 należą do ``boatbox``. Python to słowo ``python``,
 ``python3`` albo ``python3.14`` ze ścieżką (``.venv/bin/python``) w dowolnym miejscu polecenia prostego, także za
 ``timeout 900`` czy ``nohup``, albo bez ścieżki na pozycji programu: pierwsze słowo za przypisaniami (``X=1``)
@@ -51,7 +52,6 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass
-import io
 import json
 import re
 import shlex
@@ -60,6 +60,7 @@ import sys
 from typing import Optional
 
 OPERATORS = "();<>|&\n"
+WORD_ENDS = " \t\r" + OPERATORS
 REDIRECT = re.compile(r"[<>&]*[<>][<>&]*")
 ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
 PREFIXES = frozenset({"!", "{", "if", "then", "else", "elif", "do", "while", "until", "time", "exec", "command", "nohup"})
@@ -150,10 +151,33 @@ def _without_heredocs(command: str) -> str:
     return "\n".join(kept)
 
 
+class _Source:
+    def __init__(self, text: str) -> None:
+        self.text, self.read_to = text, 0
+
+    def read(self, size: int = 1) -> str:
+        chunk = self.text[self.read_to : self.read_to + size]
+        self.read_to += len(chunk)
+        return chunk
+
+    def readline(self) -> str:
+        end = self.text.find("\n", self.read_to)
+        return self.read((len(self.text) if end < 0 else end + 1) - self.read_to)
+
+    def descriptor(self, token: str) -> bool:
+        operator = self.read_to - 1
+        start = operator - len(token)
+        return (
+            token.isdigit()
+            and self.text[operator : operator + 1] in ("<", ">")
+            and self.text[start:operator] == token
+            and (start == 0 or self.text[start - 1] in WORD_ENDS)
+        )
+
+
 def _simple_commands(command: str) -> list[list[str]]:
-    text = _without_heredocs(command).replace("\\\n", " ")
-    stream = io.StringIO(text)
-    lexer = shlex.shlex(stream, posix=True, punctuation_chars=OPERATORS)
+    source = _Source(_without_heredocs(command).replace("\\\n", " "))
+    lexer = shlex.shlex(source, posix=True, punctuation_chars=OPERATORS)
     lexer.whitespace = " \t\r"
     lexer.whitespace_split = True
     lexer.commenters = ""
@@ -168,7 +192,7 @@ def _simple_commands(command: str) -> list[list[str]]:
                 target = False
         elif target:
             target = False
-        elif not (token.isdigit() and text[stream.tell() - 1] in "<>"):
+        elif not source.descriptor(token):
             commands[-1].append(token)
     return commands
 

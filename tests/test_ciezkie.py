@@ -12,6 +12,7 @@ import json
 import os
 from pathlib import Path
 import shlex
+import shutil
 import subprocess
 import sys
 from types import ModuleType
@@ -203,6 +204,44 @@ def test_przekierowanie_za_ciezkim_poleceniem_nie_zmienia_odmowy(heavy: str, rea
 
     assert refusal is not None
     assert f"Uruchom je tak: {ready}\n" in refusal.reason
+
+
+PYTEST = ".venv/bin/python -m pytest -q"
+TAILS = [
+    "-n 8 > f", "-n 8> f", "-n 8 2>&1", "-n 8 >f 2>&1", "-n 8>>f", "-n 8 &>f", "-n 8&>f", "-n 8 >|f", "-n 8 <f",
+    "-n 8 2>/dev/null", "-n 8 >&2", "-n 8>&2", "-n 8 1>f", "-n 8 | cat", "-n 8|cat", "-n 8; echo", "-n 8;echo",
+    "-n auto 3>f", "--numprocesses 4 > f", "-n 8 <<< x", "-n 8 <<EOF\nx\nEOF", "-n 8\t> f", "-n 8>f",
+    "-k 'zażółć' -n 8 > f", "-n 8 >f </dev/null", "-n 8 2>f", "-n 4 tests/ 2>&1", "-n 8 >& f", "-n 8 >&f",
+    "-n 8 0<f", "-n 8 9>f", '-n "8">f', "-n '8'>f", "-n \\8>f", '-n ""8>f', '-n 8"">f', '-n "8" > f',
+    "--numprocesses '4'>>f 2>&1", '-n "auto">f', "-n 0>f", '-n "0">f',
+]
+PREFIXES = ["", "echo zażółć; ", "cat <<'E' > /dev/null\nżółw 8>\nE\n"]
+
+
+def _argv_from_bash(command: str, folder: Path) -> list[str]:
+    program = folder / ".venv" / "bin" / "python"
+    program.parent.mkdir(parents=True)
+    program.write_text('#!/bin/sh\nprintf \'%s\\0\' "$@" > "$ARGV_OUT"\n', encoding="utf-8")
+    program.chmod(0o755)
+    (folder / "f").write_text("", encoding="utf-8")
+    out = folder / "argv"
+    subprocess.run(["bash", "-c", command], cwd=folder, env={**os.environ, "ARGV_OUT": str(out)}, capture_output=True, check=True)
+    return [word.decode() for word in out.read_bytes().split(b"\0")[:-1]]
+
+
+@pytest.mark.skipif(sys.platform == "win32" or shutil.which("bash") is None, reason="wyrocznią argv jest Bash")
+@pytest.mark.parametrize("prefix", PREFIXES)
+@pytest.mark.parametrize("tail", TAILS)
+def test_hook_czyta_liczbe_i_przekierowanie_jak_bash(prefix: str, tail: str, tmp_path: Path) -> None:
+    command = f"{prefix}{PYTEST} {tail}"
+    argv = [".venv/bin/python", *_argv_from_bash(command, tmp_path)]
+
+    refusal, of_argv = hook.judge(command), hook.judge(shlex.join(argv))
+
+    assert (refusal is None) == (of_argv is None), argv
+    if refusal is not None:
+        ready = refusal.reason.split("Uruchom je tak: ", 1)[1].split("\n", 1)[0]
+        assert shlex.split(shlex.split(ready)[-1]) == argv
 
 
 def _fake_boatbox(folder: Path) -> Path:
