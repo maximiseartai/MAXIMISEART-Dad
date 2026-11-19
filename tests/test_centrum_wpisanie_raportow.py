@@ -3705,6 +3705,27 @@ def test_wpisy_na_zyczenie_dwoch_wykonawcow_z_tym_samym_message_id_wpisuja_kazdy
     }
 
 
+def test_widok_raporty_stawia_blad_tematu_przy_jego_nadawcy_z_jego_wpisami_na_zyczenie_takze_przy_wspolnym_message_id(
+    tmp_path: Path,
+) -> None:
+    intermax = Intermax(ordered=(_order(9, 9, "jan.testowy", 40000001), _order(9, 11, "anna.kowalska", 40000002)), raw=())
+    shared = "<wspolny@przyklad.invalid>"
+    mails = [
+        report(JAN, "Raport 09.11.2026 Kowalski", "40000001 tak inst20m", at=datetime(2026, 11, 9, 17), message_id=shared),
+        report(ANNA, "Raport 09.11.2026 Nowak", "40000002 tak montaż", at=datetime(2026, 11, 9, 18), message_id=shared),
+    ]
+    centrum = entering_centrum(tmp_path, intermax, mails)
+    _finished(centrum)
+
+    view = _view(centrum)
+
+    assert mails[0].id == mails[1].id
+    assert {
+        login: [[offer["request"]["number"] for offer in problem["faulty_subject"]["offers"]] for problem in _worker(view, login)["problems"]]
+        for login in ("jan.testowy", "anna.kowalska")
+    } == {"jan.testowy": [["40000001"]], "anna.kowalska": [["40000002"]]}
+
+
 def _v0_14_0_click() -> tuple[Intermax, list[ReportMail]]:
     """INTERMAX i maile kliknięcia, po którym Centrum z Wydania v0.14.0 zapisało pliki
     ``tests/fixtures/wpisanie-raportow-wynik-v3-oferty.json`` i ``tests/fixtures/wpisanie-raportow-stan-v4-requested.json``

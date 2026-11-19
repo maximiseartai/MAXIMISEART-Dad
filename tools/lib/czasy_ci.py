@@ -83,6 +83,7 @@ WERSJA = 1
 Status = Literal["ok", "fail"]
 ARTEFAKT = "czasy-ci"
 ARTEFAKT_NOCY = "czasy-nocy"
+BRAK_ZAPISU = "brak zapisu czasów z tego planu, więc nic nie dowodzi, że jego jednostki biegły"
 ILE_RUNOW = 3
 ODSWIEZ_S = 24 * 3600
 # Tor, którego czasy ważą pracę na Macu agenta (Linux jak komputer agenta, nie Windows): budżet ``tools/szybko.py`` i
