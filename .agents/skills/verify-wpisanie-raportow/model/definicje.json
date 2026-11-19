@@ -1,51 +1,51 @@
 {
   "src/rozliczenia/worker_reports/_cells.py": {
-    "reconcile": "24c1e54992807b1a",
-    "with_added": "6a974a5cbe5a2caf"
+    "reconcile": "118eabe2dec4dd2c",
+    "with_added": "77b6cda27c3e0f52"
   },
   "src/rozliczenia/worker_reports/_model.py": {
-    "Window.of": "28961f03f61c2f9d",
+    "Window.of": "76902e0576f71e75",
     "Window.opens": "f15e07ab407b86b5",
-    "OwnEntries": "48594af020368135",
-    "Kept": "417281fbc0c25393",
-    "Offer.token": "8f4d7bdf165d3a99",
-    "Offer.decide": "d751d3ddb4f60a2b"
+    "OwnEntries": "c175e92ac9abec42",
+    "Kept": "dec6e06948a317a9",
+    "Offer.token": "389e647451017ca9",
+    "Offer.decide": "e5c324859e7faf24"
   },
   "src/rozliczenia/worker_reports/_operation.py": {
-    "enter_reports": "64436d7978d9a3a2"
+    "enter_reports": "558f52ae39ac8d45"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "7c6ddbf194fbdf94",
-    "closed_periods": "5b9ce8bf021b5dd9"
+    "enter_from_mail": "85a0e8c9d766ce58",
+    "closed_periods": "b75123255310df0b"
   },
   "src/rozliczenia/worker_reports/_memory.py": {
-    "SavedState": "2bef4c3810a32563",
-    "EnteringMemory": "f1ba38e84895bc5e"
+    "SavedState": "314a0ff628016189",
+    "EnteringMemory": "f9742c0f4fa5ac1a"
   },
   "src/rozliczenia/intermax_cells.py": {
-    "write_cells": "a2a848ebcb13bf49"
+    "write_cells": "46fce0bc4f0aa999"
   },
   "src/rozliczenia/centrum/report_entering_state.py": {
-    "_TextFile": "9db2e80263d37a50",
+    "_TextFile": "4f9254c5b427de26",
     "FileReportState.of_work": "f1ce4f0a2f2f9966",
-    "FileReportState.load": "aae08959cc0fa028",
+    "FileReportState.load": "5a3cd6f0816be1aa",
     "FileReportState.save_memory": "56b68bb5c2e9236e",
     "FileReportState.save_result": "2ebc70e71f10aa3d",
-    "FileReportState.shown": "61cf53486f8f555d",
-    "FileReportState.kept": "97d11bf6647e9014",
-    "FileReportState.keep": "c661614598a4c6a9",
-    "ShownResult.offers": "2a25e20b27557982"
+    "FileReportState.shown": "88bd26657b8a6ed8",
+    "FileReportState.kept": "f767db9f83419007",
+    "FileReportState.keep": "e2c6f0d5cfac7cd4",
+    "ShownResult.offers": "d1a6b2316b521a23"
   },
   "src/rozliczenia/centrum/report_entering_run.py": {
-    "ReportEnteringEntry.keep": "c20ea2503a531687",
-    "ReportEnteringEntry.view": "ea296eec62e110c0",
-    "_view": "b1007b7375359a60",
-    "ReportEnteringEntry.on_request": "9248c082158cf898",
-    "ReportEnteringEntry.prepare": "ed4d77b5d45401f7"
+    "ReportEnteringEntry.keep": "137bddaaffe96369",
+    "ReportEnteringEntry.view": "14db4216db21e7d3",
+    "_view": "a488064f49d3db61",
+    "ReportEnteringEntry.on_request": "3428127192cf72ab",
+    "ReportEnteringEntry.prepare": "9d0ec5429383da52"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "StateFile": "71beaa3fba9d5cdd",
-    "replace_atomically": "d3549c3aa56844ea"
+    "StateFile": "0d1bb4b512f0e433",
+    "replace_atomically": "b183683bb64df774"
   },
   "src/rozliczenia/centrum/app.py": {
     "create_app.report_files": "33d33878d51ed362"
