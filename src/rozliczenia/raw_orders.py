@@ -31,8 +31,9 @@ wcześniejsze dni (usterka z poprzedniego dnia dopisana pod dniem) nie kończą 
 uporządkowane wiersze z jego datą albo jeden, pod którym nie ma wiersza wcześniejszego dnia; zlecenie na jutro
 wpisane w dzisiejszym dniu nie czyni jutra uporządkowanym. Granicę i arkusze, w których się ich szuka, wybiera
 ``intermax_ordering`` jednakowo dla Planowania i karty Uporządkowania INTERMAX w Centrum rozliczeń. Ten sam przegląd
-daje Wpisaniu raportów uporządkowane wiersze (``ordered_rows``), a bez końca na wierszu z wyglądem z aplikacji każdy
-wiersz, z którego czyta ono numer zlecenia (``numbered_rows``).
+daje Wpisaniu raportów uporządkowane wiersze (``ordered_rows``) i każdy wiersz, z którego czyta ono numer zlecenia
+(``numbered_rows``). Wiersz z wyglądem z aplikacji nad uporządkowanymi jest przeszkodą tylko dla Uporządkowania:
+Dni uporządkowane i uporządkowane wiersze przegląd zbiera dalej nad nim.
 
 Plan dnia (``plan_day``) z bloku wyznacza docelowe wiersze zleceń: jeden pusty wiersz pod żółtym wierszem albo
 10 pustych pod ostatnim uporządkowanym zleceniem, segmenty Wykonawców w kolejności alfabetycznej z jednym
@@ -343,9 +344,9 @@ def ordered_rows(rows_from_bottom: Iterable[RowFacts], columns: OrderColumns, si
     """Uporządkowane wiersze z dniem od ``since`` z wierszy arkusza zleceń od ostatniego w górę, od dołu.
 
     Ten sam przegląd co w ``ordered_days``: od ostatniego uporządkowanego wiersza nad Surowymi zleceniami w górę, do
-    ``_EARLIER_ROWS`` kolejnych wierszy z dniem wcześniejszym niż ``since``. Surowych zleceń na dole przegląd nie oddaje,
-    a kończy go też wiersz z wyglądem z aplikacji nad uporządkowanymi, więc uporządkowane zlecenia nad takim blokiem nie
-    wchodzą, jak w Dniu uporządkowanym. Wiersz bez daty w ``DATA GODZ. POCZ.`` nie wchodzi.
+    ``_EARLIER_ROWS`` kolejnych wierszy z dniem wcześniejszym niż ``since``. Surowych zleceń na dole i wierszy z
+    wyglądem z aplikacji nad uporządkowanymi przegląd nie oddaje, ale uporządkowane wiersze nad nimi tak. Wiersz bez
+    daty w ``DATA GODZ. POCZ.`` nie wchodzi.
     """
 
     rows = iter(rows_from_bottom)
@@ -363,10 +364,10 @@ def numbered_rows(
     może stać (``row_positions``, z pierwszym wierszem bloku wklejenia z ``first_in_block``).
 
     To wklejenie na dole arkusza (``pasted_rows``) i przegląd ``ordered_rows`` od ostatniego uporządkowanego wiersza w
-    górę z tą samą granicą (``_upward``), którego nie kończy wiersz z wyglądem z aplikacji i z którego nie odpada wiersz
-    bez daty z godziną. Są tu więc wiersze ``ordered_rows`` i każdy przeczytany wiersz, z którego Wpisanie raportów
-    nie robi zlecenia: Surowe zlecenie, wiersz bez Wykonawcy, wiersz z datą tekstem albo bez daty, wiersz z wyglądem z
-    aplikacji między uporządkowanymi i uporządkowany wiersz nad nim.
+    górę z tą samą granicą (``_upward``), z którego nie odpada wiersz z wyglądem z aplikacji ani wiersz bez daty z
+    godziną. Są tu więc wiersze ``ordered_rows`` i każdy przeczytany wiersz, z którego Wpisanie raportów nie robi
+    zlecenia: Surowe zlecenie, wiersz bez Wykonawcy, wiersz z datą tekstem albo bez daty i wiersz z wyglądem z aplikacji
+    między uporządkowanymi.
     """
 
     first: dict[int, bool] = {}
@@ -942,22 +943,25 @@ class _Above:
 
 
 def _above(first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day: date | None) -> _Above:
-    """Przegląd od ostatniego uporządkowanego wiersza ``first`` w górę: wiersz z wyglądem z aplikacji nad nim, dni i
-    przejrzane uporządkowane wiersze.
+    """Przegląd od ostatniego uporządkowanego wiersza ``first`` w górę: najniższy wiersz z wyglądem z aplikacji nad nim,
+    dni i przejrzane uporządkowane wiersze.
 
-    Dni to uporządkowane dni przeglądu: dzień dwóch kolejnych wierszy z datą albo wiersza, pod którym nie ma
-    wcześniejszego dnia. Przegląd kończy ``_EARLIER_ROWS`` kolejnych wierszy z dniem wcześniejszym niż ``day`` (bez
-    niego: dzień pierwszego wiersza z datą).
+    Dni to uporządkowane dni przeglądu: dzień dwóch kolejnych uporządkowanych wierszy z datą albo wiersza, pod którym
+    nie ma wcześniejszego dnia. Wiersz z wyglądem z aplikacji przegląd przechodzi, bo tata dopisuje ręcznie zlecenie
+    pod dniem, zanim nada mu Calibri 8, a uporządkowane dni nad nim dalej są uporządkowane. Przegląd kończy
+    ``_EARLIER_ROWS`` kolejnych wierszy z dniem wcześniejszym niż ``day`` (bez niego: dzień pierwszego wiersza z datą).
     """
 
     below = first.number
+    obstacle: AboveOrdered | None = None
     days: set[date] = set()
     seen: list[RowFacts] = []
     previous: date | None = None
     lowest: date | None = None
     for row in _upward(first, rows, columns, day):
         if not _is_ordered(row, columns):
-            return _Above(AboveOrdered(row.number, below), days, tuple(seen))
+            obstacle = obstacle or AboveOrdered(row.number, below)
+            continue
         below = row.number
         seen.append(row)
         when = row.value(columns.date)
@@ -967,7 +971,7 @@ def _above(first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day
         if when.date() in (previous, lowest):
             days.add(when.date())
         previous = when.date()
-    return _Above(None, days, tuple(seen))
+    return _Above(obstacle, days, tuple(seen))
 
 
 def _upward(first: RowFacts, rows: Iterator[RowFacts], columns: OrderColumns, day: date | None) -> Iterator[RowFacts]:

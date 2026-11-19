@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import json
-from typing import Generic, Literal, Protocol, TypeVar
+from typing import Generic, Literal, Protocol, TypeVar, final
 
 import yaml
 
@@ -139,9 +139,18 @@ class Bad(Generic[T]):
     usable: T | None
 
 
+@final
 @dataclass(frozen=True)
 class Unreadable:
-    """Plik jest, ale system nie daje go teraz czytać (np. trzyma go antywirus): treść nieznana, a nie zła."""
+    """Plik ``name`` (plik Ustawień: nazwa w ``config``) jest, ale system nie daje go teraz czytać (np. trzyma go
+    antywirus): treść nieznana, a nie zła, więc proces, który z niego bierze wejście, nie startuje
+    (``refusal.settings_file_unreadable``), zamiast liczyć treścią z Wydania jak tata bez własnego pliku. Klasa nie ma
+    podklas, więc gałąź ``isinstance(x, Unreadable)`` przy wartości bez unii jest dla mypy martwa (``warn_unreachable``
+    w ``src/``: „Subclass of … and "Unreadable" cannot exist”): usuń ją, bo odmowę o pliku daje już nazwa bez
+    przyrostka (``SettingsSnapshot.folders``, ``CentrumSettings.folders``). Unię bierze tylko wołający, który o pliku
+    mówi albo czeka (``*_or_unreadable``)."""
+
+    name: str
 
 
 Read = Good[T] | Bad[T]

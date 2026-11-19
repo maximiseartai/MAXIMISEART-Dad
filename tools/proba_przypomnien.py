@@ -63,7 +63,8 @@ from rozliczenia.centrum.clock import SYSTEM_CLOCK
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.report_entering_state import FileReportState
 from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders, schedules_in_effect
-from rozliczenia.centrum.settings.owner import UnreadableFile, read_snapshot
+from rozliczenia.centrum.settings.files import Unreadable
+from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.client_data import empty_memory
@@ -97,7 +98,7 @@ def probe(now: datetime, config: Path, inbox: ImapInbox, target: SenderAddress) 
 
     snapshot = read_snapshot(config)
     reminders = snapshot.reminders_or_unreadable
-    if isinstance(reminders, UnreadableFile):
+    if isinstance(reminders, Unreadable):
         return f"{FAIL} | {_not_read(NotRead('plik-bez-odczytu', file=reminders.name))}"
     in_effect = schedules_in_effect(config / tool_files.REMINDERS_SCHEDULES, reminders.schedule)
     read = due_reminders(now, snapshot, inbox, DadFiles(), in_effect, (), _entering(config))

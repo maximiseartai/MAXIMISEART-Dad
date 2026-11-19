@@ -2006,9 +2006,9 @@ _ORDERLESS_ROWS = {
         _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000067, cells=((NUMBER, 40000067), (DATE, "09.11.2026 10:00")))),
         (40000067,),
     ),
-    "wyglad-z-aplikacji-i-zlecenie-nad-nim": (
+    "wyglad-z-aplikacji": (
         _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000068, cells=((NUMBER, 40000068),), app_look=True)),
-        (40000001, 40000068),
+        (40000068,),
     ),
     "przesuniety-wiersz-z-aplikacji": (
         _day_with(Order(_NINTH_AT_TEN, "jan.testowy", 40000069, cells=((NUMBER, 40000069),), shifted=True, app_look=True)),
@@ -2039,8 +2039,7 @@ def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu
     kopii INTERMAX taty i z Uporządkowania: Surowe zlecenia na dole arkusza (pierwsze przesunięte o dwie kolumny w lewo,
     jak z aplikacji), uporządkowany wiersz bez ``WYKONAWCA`` (także z 8.11 sprzed dnia wdrożenia: to wiersz bez zlecenia,
     a nie zlecenie sprzed okna), wiersz z ``DATA GODZ. POCZ.`` tekstem, wiersz z wyglądem z
-    aplikacji między uporządkowanymi (z nim zlecenie Jana nad nim, bo przegląd zleceń kończy się na takim wierszu),
-    taki wiersz przesunięty jak pierwszy wiersz wklejenia i przesunięty pierwszy wiersz dolnego z dwóch wklejeń bez
+    aplikacji między uporządkowanymi, taki wiersz przesunięty jak pierwszy wiersz wklejenia i przesunięty pierwszy wiersz dolnego z dwóch wklejeń bez
     Uporządkowania między nimi, który reguła danych zna w obu położeniach (przegląd #1374 r3 Drobne 1: numer tylko z
     pierwszego położenia dawał dubel). Kliknięcie nie zmienia INTERMAX, więc żaden numer nie stoi w
     nim dwa razy, a okienko Jana z 9.11 ma problem z każdym numerem, który mówi, że zlecenie już jest. Logi mają te
@@ -2062,6 +2061,32 @@ def test_klikniecie_nie_dopisuje_numeru_ktory_intermax_ma_w_przeczytanym_wierszu
     problems = _worker(_view(centrum), "jan.testowy")["problems"]
     assert [problem["number"] for problem in problems] == [str(number) for number in numbers]
     assert all(f"Zlecenie {problem['number']} z Wpisu od jan.testowy z 09.11.2026 jest już w INTERMAX" in problem["reason"] for problem in problems)
+
+
+def test_wiersz_dopisany_recznie_pod_dniem_bez_calibri_8_nie_ukrywa_zlecen_nad_nim(tmp_path: Path) -> None:
+    """Logi taty z 16.11 i 18.11.2026: po Uporządkowaniu dnia na pojutrze tata dopisał ręcznie zlecenie na jutro w
+    pustym wierszu pod jutrzejszym dniem, jeszcze bez Calibri 8. Wpisanie raportów kończyło na nim przegląd od dołu,
+    więc czytało tylko dni pod nim, nie wpisało nic, a każdy numer z wcześniejszych dni miało za problem; tata widział
+    0/0 i klikał drugi raz, aż sformatował wiersz. Tu INTERMAX ma uporządkowane 8.11 ze zleceniem Jana, pod nim
+    dopisany ręcznie wiersz Jana z 8.11 z wyglądem z aplikacji i uporządkowane 9.11. Raport Jana za 8.11 wpisuje się do
+    jego zlecenia nad tym wierszem przy pierwszym kliknięciu."""
+
+    intermax = Intermax(
+        ordered=(
+            _order(8, 9, "jan.testowy", 40000010),
+            Order(datetime(2026, 11, 8, 10), "jan.testowy", 40000068, cells=((NUMBER, 40000068),), app_look=True),
+            _order(9, 9, "anna.kowalska", 40000002),
+            _order(9, 11, "jan.testowy", 40000001),
+        ),
+        raw=(),
+    )
+    centrum = entering_centrum(tmp_path, intermax)
+    _click_at(centrum, datetime(2026, 11, 8, 18), [])
+
+    entering = _entering(centrum, _click_at(centrum, ENTERING_NOW, [report(JAN, "Raport 08.11.2026", "40000010 tak montaż")]))
+
+    assert _cells(centrum.register)[40000010] == ("tak", "montaż")
+    assert (entering["written"], entering["problems"]) == (2, [])
 
 
 def test_wiersz_bez_wykonawcy_nad_dziesiatkami_zlecen_dnia_nie_jest_dopisany_drugi_raz(tmp_path: Path) -> None:
@@ -5253,29 +5278,29 @@ _SONDA_PAMIECI_WPISANIA = ROOT / "src" / "rozliczenia" / "centrum" / "sonda_pami
 
 
 def _pamiec_wpisania(importy: str, cialo: str) -> str:
-    """Moduł Centrum, który z ``ReportState`` pracy buduje wejście odczytu okna jak Przypomnienia o raporcie."""
+    """Moduł Centrum, który z ``ReportState`` pracy pyta pamięć Wpisania o odczyt okna jak Wpisanie raportów."""
 
     return (
         "from collections.abc import Sequence\nfrom datetime import date\n\n"
         f"{importy}\n"
         "from rozliczenia.activity_legend import ActivityLegend\n"
-        "from rozliczenia.report_entering import EnteringMemory, RegisterWindow, ReportState\n"
-        "from rozliczenia.worker_reports import ReportMail, Window, WorkerAddresses\n\n\n"
+        "from rozliczenia.report_entering import ReportState\n"
+        "from rozliczenia.worker_reports import EnteringMemory, RegisterWindow, ReportMail, Window, WorkerAddresses\n\n\n"
         "def wejscie(\n"
         "    state: ReportState, today: date, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail],\n"
         "    addresses: WorkerAddresses, legend: ActivityLegend,\n"
         ") -> object:\n"
         f"{cialo}"
-        "    return memory.report_inputs(window, intermax, mails, addresses, legend)\n"
+        "    return memory.enter(window, intermax, mails, addresses, legend)\n"
     )
 
 
-_PUSTA_PAMIEC = "from rozliczenia.report_entering import SavedState\nfrom rozliczenia.worker_reports import OwnEntries\n"
-_ARGUMENT_PAMIECI = 'Argument 1 to "EnteringMemory" has incompatible type "SavedState"; expected "ReportState"'
+_PUSTA_PAMIEC = "from rozliczenia.worker_reports import OwnEntries, SavedState\n"
+_ARGUMENT_PAMIECI = 'Argument 1 to "EnteringMemory" has incompatible type "SavedState"; expected "MemorySource"'
 DROGI_PAMIECI_WPISANIA: Final = {
     "report_inputs z pamięcią zbudowaną obok (#2125 r1 W1)": (
         _pamiec_wpisania(
-            "from rozliczenia.report_entering import SavedState, report_inputs\nfrom rozliczenia.worker_reports import OwnEntries\n",
+            "from rozliczenia.report_entering import report_inputs\nfrom rozliczenia.worker_reports import OwnEntries, SavedState\n",
             "    memory = EnteringMemory(state)\n"
             "    return report_inputs(window, intermax, mails, addresses, SavedState(None, OwnEntries.EMPTY), legend)\n",
         ),
@@ -5315,7 +5340,7 @@ DROGI_PAMIECI_WPISANIA: Final = {
     ),
     "podklasa z własną pamięcią: class Pusta(EnteringMemory) z __init__ bez ReportState (#2133 r1 W1)": (
         _pamiec_wpisania(
-            _PUSTA_PAMIEC + "from rozliczenia.report_entering import EnteringMemory\n\n\n"
+            _PUSTA_PAMIEC + "from rozliczenia.worker_reports import EnteringMemory\n\n\n"
             "class Pusta(EnteringMemory):\n"
             "    def __init__(self) -> None:\n"
             "        self._saved = SavedState(None, OwnEntries.EMPTY)\n\n",
@@ -5325,7 +5350,7 @@ DROGI_PAMIECI_WPISANIA: Final = {
     ),
     "podklasa, która zmienia pamięć z ReportState: super().__init__(state), potem rollout=None (#2133 r1 W1)": (
         _pamiec_wpisania(
-            "from dataclasses import replace\n\nfrom rozliczenia.report_entering import EnteringMemory, ReportState\n\n\n"
+            "from dataclasses import replace\n\nfrom rozliczenia.report_entering import ReportState\nfrom rozliczenia.worker_reports import EnteringMemory\n\n\n"
             "class BezWdrozenia(EnteringMemory):\n"
             "    def __init__(self, state: ReportState) -> None:\n"
             "        super().__init__(state)\n"
@@ -5356,7 +5381,7 @@ ZNANE_LUKI_PAMIECI_WPISANIA: Final = {
 @wymaga_ruff_i_mypy
 def test_pamiec_wpisania_spoza_report_state_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
     """Przypomnienia o raporcie i Wpisanie raportów liczą dzień raportu z tej samej pamięci Wpisania, bo wejście odczytu
-    okna daje tylko ``EnteringMemory.report_inputs``, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
+    okna buduje tylko ``EnteringMemory`` za swoimi operacjami, a ``EnteringMemory`` powstaje tylko z ``ReportState`` pracy
     (``ReportState.load``): wołający nie ma wartości pamięci, którą mógłby zbudować, skopiować albo zmienić obok.
 
     | Postać | mypy, ruff | Próbka |

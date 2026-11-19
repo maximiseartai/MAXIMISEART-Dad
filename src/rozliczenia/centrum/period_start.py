@@ -33,7 +33,8 @@ from rozliczenia.centrum.process_kind import (
     start_from_settings,
 )
 from rozliczenia.centrum.settings.folders import FolderSettings
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, UnreadableFile
+from rozliczenia.centrum.settings.files import Unreadable
+from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.period_folder import PeriodFolders, collective_file_name, period_status_label, scan_period_folders
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
@@ -94,7 +95,7 @@ class PeriodStarts:
         open_templates = open_in_excel(self.configuration.template_inputs(kind.templates))
         choices: tuple[list[runs_contract.PeriodChoice], str, str | None]
         match snapshot.folders_or_unreadable:
-            case UnreadableFile():
+            case Unreadable():
                 choices = [], last_complete_period(self.today()).token, None
             case FolderSettings() as settings:
                 choices = self._choices(kind, settings, open_templates)

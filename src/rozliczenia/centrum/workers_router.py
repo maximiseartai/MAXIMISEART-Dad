@@ -22,7 +22,7 @@ from rozliczenia.centrum.contract import settings as settings_contract
 from rozliczenia.centrum.contract import settings_workers as contract
 from rozliczenia.centrum.settings import messages, workers
 from rozliczenia.centrum.settings.files import FieldProblem, Unreadable, usable
-from rozliczenia.centrum.settings.owner import CentrumSettings, UnreadableFile
+from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.settings.workers import WORKERS_FILE, AddWorker, AssignAddress, ChangeWorker, RemoveWorker, SwitchWorker, WorkerForm
 from rozliczenia.centrum.settings_router import choice, describe
 from rozliczenia.centrum.worker_suggestions import worker_suggestions
@@ -61,7 +61,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
             raise refusal.setting_refused(trial)
         if not edit.rename_confirmed:
             folders = settings.folders_or_unreadable()
-            periods_directory = None if isinstance(folders, UnreadableFile) else folders.periods_directory
+            periods_directory = None if isinstance(folders, Unreadable) else folders.periods_directory
             old = old_name_periods(worker.name, edit.name, periods_directory)
             if old:
                 return settings_contract.WorkerSaved(
@@ -79,7 +79,7 @@ def workers_router(settings: CentrumSettings, files: DadFiles, today: Callable[[
 
         snapshot = settings.snapshot()
         folders = snapshot.folders_or_unreadable
-        if isinstance(folders, UnreadableFile):
+        if isinstance(folders, Unreadable):
             return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(folders.name))
         if isinstance(snapshot.workers, Unreadable):
             return contract.WorkerSuggestions(state="unreadable", suggestions=[], message=messages.unreadable(WORKERS_FILE))

@@ -62,7 +62,7 @@ from rozliczenia.centrum.run_logs_guard import guard_logs
 from rozliczenia.client_data import ForbiddenColumn, empty_memory
 from rozliczenia.domain import RunMode
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import EnteringFacts, Orderless, SavedState
+from rozliczenia.report_entering import EnteringFacts, Orderless
 from rozliczenia.worker_reports import (
     Kept,
     Login,
@@ -77,6 +77,7 @@ from rozliczenia.worker_reports import (
     ReadUnreadable,
     ReportEntry,
     ReportSubject,
+    SavedState,
     SenderAddress,
     SubjectFault,
     UnknownSender,

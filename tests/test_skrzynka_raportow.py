@@ -315,6 +315,110 @@ def test_port_wybiera_maile_po_temacie_i_nadawcy_z_naglowkow_a_tresc_pobiera_tyl
     assert _pobrane(atrapa) == {1, 5, 8, 11}
 
 
+def _czytane(atrapa: AtrapaImap) -> set[int]:
+    """UID maili, o które port pytał serwer w jakimkolwiek ``UID FETCH``, także o same nagłówki ``Subject`` i ``From``."""
+
+    found: set[int] = set()
+    for command in atrapa.commands:
+        if command.startswith("UID FETCH"):
+            for part in command.split(" ")[2].split(","):
+                first, _, last = part.partition(":")
+                found.update(range(int(first), int(last or first) + 1))
+    return found
+
+
+def test_kolejny_odczyt_skrzynki_pyta_serwer_tylko_o_maile_spoza_poprzedniego_i_oddaje_to_co_odczyt_od_zera(
+    tmp_path: Path,
+) -> None:
+    """Kolejne kliknięcie Wpisania raportów (i Przypomnienia o raporcie) na tym samym porcie: UID z tym samym
+    ``UIDVALIDITY`` to zawsze ten sam mail, więc port nie pobiera drugi raz maili, które już przeczytał, ani nagłówków
+    maili bez tematu Raportu wykonawcy, a wynik, także liczba pominiętych i mail usunięty ze skrzynki, jest taki jak
+    odczyt od zera nowym portem."""
+
+    def mail(uid: int, temat: bytes = b"Raport 08.11.2026", od: bytes | None = b"Jan <jan.testowy@przyklad.invalid>") -> AtrapaMail:
+        return w_skrzynce(uid, surowy(temat=temat, od=od, message_id=f"<{uid}@x.invalid>".encode()))
+
+    config = dostep(tmp_path)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[mail(1), mail(2, b"Faktura"), mail(3, od=None), mail(4)]) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails = (*atrapa.mails, mail(5), mail(6, b"Faktura"))
+        atrapa.deleted.add(4)
+        atrapa.commands.clear()
+        again = inbox.mails_since(date(2026, 11, 8))
+        asked = _czytane(atrapa)
+        fresh = port(config, atrapa).mails_since(date(2026, 11, 8))
+
+    assert [mail.id for mail in maile(first)] == [MailId.of("<1@x.invalid>"), MailId.of("<4@x.invalid>")]
+    assert again == fresh
+    assert [mail.id for mail in maile(again)] == [MailId.of("<1@x.invalid>"), MailId.of("<5@x.invalid>")]
+    assert isinstance(again, Mails) and again.skipped == 1
+    assert asked == {5, 6}
+
+
+@pytest.mark.parametrize(("uidvalidity", "nowe_uidvalidity"), [(1, 2), (None, None)], ids=["zmienione", "bez-uidvalidity"])
+def test_skrzynka_ze_zmienionym_albo_bez_uidvalidity_port_czyta_kazdy_mail_od_zera(
+    tmp_path: Path, uidvalidity: int | None, nowe_uidvalidity: int | None
+) -> None:
+    """Gdy ``UIDVALIDITY`` folderu się zmieni albo serwer go nie podaje, ten sam UID może wskazywać inny mail, więc
+    port czyta każdy mail od zera i oddaje nowy mail spod starego UID."""
+
+    config = dostep(tmp_path)
+    przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
+    po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[przed], validity=uidvalidity) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails, atrapa.validity = (po,), nowe_uidvalidity
+        again = inbox.mails_since(date(2026, 11, 8))
+
+    assert [mail.text for mail in maile(first)] == ["40000001 tak"]
+    assert [(mail.id, mail.text) for mail in maile(again)] == [(MailId.of("<po@x.invalid>"), "40000002 nie")]
+
+
+@pytest.mark.parametrize("bez_odpowiedzi", ["choice", "content"], ids=["naglowki", "tresc"])
+def test_mail_bez_odpowiedzi_serwera_port_czyta_przy_nastepnym_odczycie(
+    tmp_path: Path, bez_odpowiedzi: Literal["choice", "content"]
+) -> None:
+    """Gmail w chwilowej awarii nie oddaje linii jednego maila, choć polecenie kończy się ``OK``: o nagłówki ``Subject``
+    i ``From`` albo o treść wybranego Raportu. Port nie wie wtedy, czy to Raport wykonawcy, więc go nie pamięta, a
+    kolejny odczyt na tym samym porcie, gdy serwer już odpowiada, oddaje ten Raport."""
+
+    config = dostep(tmp_path)
+    mails = [w_skrzynce(uid, surowy(message_id=f"<{uid}@x.invalid>".encode())) for uid in (1, 2)]
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=mails, unanswered={2: bez_odpowiedzi}) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.unanswered.clear()
+        again = inbox.mails_since(date(2026, 11, 8))
+
+    assert [mail.id for mail in maile(first)] == [MailId.of("<1@x.invalid>")]
+    assert [mail.id for mail in maile(again)] == [MailId.of("<1@x.invalid>"), MailId.of("<2@x.invalid>")]
+
+
+def test_pamiec_odczytu_jednej_skrzynki_nie_oddaje_maili_innej_skrzynce_ani_innemu_folderowi(tmp_path: Path) -> None:
+    """Pamięć odczytu należy do adresu skrzynki i folderu: po zmianie adresu w pliku dostępu (inna skrzynka z tym samym
+    ``UIDVALIDITY``) albo gdy skrzynka traci folder wszystkich maili, ten sam UID wskazuje inny mail i port czyta go od
+    zera."""
+
+    inna = "inna.skrzynka@przyklad.invalid"
+    przed = w_skrzynce(7, surowy(tresc="40000001 tak", message_id=b"<przed@x.invalid>"))
+    po = w_skrzynce(7, surowy(tresc="40000002 nie", message_id=b"<po@x.invalid>"))
+    config = dostep(tmp_path)
+    with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=[przed]) as atrapa:
+        inbox = port(config, atrapa)
+        first = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails, atrapa.address = (po,), inna
+        dostep(config, f"{inna}\nabcd efgh ijkl mnop\n".encode())
+        po_adresie = inbox.mails_since(date(2026, 11, 8))
+        atrapa.mails, atrapa.all_folder = (przed,), False
+        po_folderze = inbox.mails_since(date(2026, 11, 8))
+
+    assert [mail.text for mail in maile(first)] == ["40000001 tak"]
+    assert [mail.text for mail in maile(po_adresie)] == ["40000002 nie"]
+    assert [mail.text for mail in maile(po_folderze)] == ["40000001 tak"]
+
+
 def test_mail_od_samej_skrzynki_port_pomija_bez_pobierania_tresci(tmp_path: Path) -> None:
     """Przypomnienia o raporcie, które Centrum wysyła ze skrzynki raportów, leżą w folderze wszystkich maili ze słowem
     „raport” w temacie: port pomija je po nagłówku ``From``, zanim pobierze ich treść."""

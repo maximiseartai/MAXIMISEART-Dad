@@ -58,7 +58,6 @@ from rozliczenia.period_folder import (
 )
 from rozliczenia.centrum.settings.files import Good, Read, Unreadable
 from rozliczenia.centrum.settings.folders import FolderSettings
-from rozliczenia.centrum.settings.owner import UnreadableFile
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 from rozliczenia.worker_list import WorkerList
@@ -177,7 +176,7 @@ class _ProcessFiles:
 
     declaration: ProcessKind[Any, Any]
     period: SettlementPeriod
-    settings: FolderSettings | UnreadableFile
+    settings: FolderSettings | Unreadable
     configuration: ConfigurationFiles
 
     @property
@@ -185,7 +184,7 @@ class _ProcessFiles:
         """Foldery z migawki; przy pliku Folderów bez odczytu ``_FoldersUnread``, bo jego Rejestru zleceń i folderu
         okresów nikt nie zna."""
 
-        if isinstance(self.settings, UnreadableFile):
+        if isinstance(self.settings, Unreadable):
             raise _FoldersUnread(self.settings.name)
         return self.settings
 
@@ -228,16 +227,16 @@ def files_of_process(
     process: common_contract.ProcessKey,
     period: str,
     *,
-    settings: FolderSettings | UnreadableFile,
+    settings: FolderSettings | Unreadable,
     configuration: ConfigurationFiles,
-) -> list[Path] | UnreadableFile:
+) -> list[Path] | Unreadable:
     """Pliki taty Uruchomienia procesu ``process`` dla tokenu okresu ``period``, ta sama lista co w sprawdzeniu OneDrive;
     przy pliku Folderów bez odczytu ten plik, bo bez niego listy nie da się wyliczyć.
 
     ``PeriodFolderInaccessible``, gdy folderu okresów albo Folderu okresu nie da się odczytać.
     """
 
-    if isinstance(settings, UnreadableFile):
+    if isinstance(settings, Unreadable):
         return settings
     return _ProcessFiles(declaration_of(process), parse_period_token(period), settings, configuration).files
 
@@ -512,7 +511,7 @@ def diagnose(
     process: common_contract.ProcessKey,
     period: str,
     *,
-    settings: FolderSettings | UnreadableFile,
+    settings: FolderSettings | Unreadable,
     configuration: ConfigurationFiles,
     log: CentrumLog,
     surroundings: Surroundings,

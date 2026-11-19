@@ -4,7 +4,8 @@
 ``LIMIT_S`` (``None`` bez limitu), a porażka to ``subprocess.CalledProcessError`` z wyjściem błędów programu.
 ``GhApi`` pyta ``gh api`` o repozytorium checkoutu (``REPO``), a ``strony`` czyta listę API po ``STRONA`` wpisów do
 ostatniej niepełnej strony, więc lista dłuższa od strony nie gubi wpisów. Akcje issue (``Zaloz``, ``Skomentuj``,
-``Zamknij``, ``Edytuj``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję.
+``Zamknij``, ``Edytuj``) narzędzie najpierw ustala, a potem wykonuje ``wykonaj``, które drukuje jedną linię na akcję;
+brakującą etykietę issue zakłada ``zaloz_etykiety``.
 ``ustaw_status`` to jedyne miejsce, które ustawia status commita.
 
 W workflow ``gh`` dostaje token z ``GH_TOKEN``, lokalnie z logowania Maksa. Moduł używa tylko biblioteki standardowej,
@@ -206,6 +207,21 @@ def issues(github: GitHub, etykieta: str, stan: str, od: datetime | None = None)
 
     zapytanie = {"labels": etykieta, "state": stan, **({"since": od.strftime("%Y-%m-%dT%H:%M:%SZ")} if od else {})}
     return [issue for issue in strony(github, f"{REPO}/issues?{urllib.parse.urlencode(zapytanie)}") if "pull_request" not in issue]
+
+
+def zaloz_etykiety(github: GitHub, etykiety: Mapping[str, tuple[str, str]], prefiks: str, *, zapis: bool) -> list[str]:
+    """Zakłada etykiety ``etykiety`` (nazwa → kolor i opis), których repozytorium jeszcze nie ma; bez ``zapis`` tylko
+    podaje, co by założył. Linia ``<prefiks> | …`` na każdą."""
+
+    obecne = {str(etykieta["name"]) for etykieta in strony(github, f"{REPO}/labels")}
+    linie = []
+    for nazwa, (kolor, opis_etykiety) in etykiety.items():
+        if nazwa in obecne:
+            continue
+        if zapis:
+            github.wyslij("POST", f"{REPO}/labels", {"name": nazwa, "color": kolor, "description": opis_etykiety})
+        linie.append(f"{prefiks} | założona etykieta {nazwa}" if zapis else f"{prefiks} | bez zapisu: załóż etykietę {nazwa}")
+    return linie
 
 
 def required(github: GitHub, commit: str) -> dict[str, Any] | None:

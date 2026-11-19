@@ -53,7 +53,7 @@ from rozliczenia.client_data import ForbiddenValues, guarded
 from rozliczenia.centrum.work import CentrumWork
 from rozliczenia.intermax_cells import CellsWritten
 from rozliczenia.report_cells import ReportColumn
-from rozliczenia.report_entering import ClickResult, DecisionsUnreadable, SavedState, StateUnreadable
+from rozliczenia.report_entering import ClickResult, DecisionsUnreadable, StateUnreadable
 from rozliczenia.tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_RESULT, REPORT_ENTERING_STATE
 from rozliczenia.worker_reports import (
     ConflictingVerdicts,
@@ -77,6 +77,7 @@ from rozliczenia.worker_reports import (
     ReportProblem,
     Requestable,
     RequestedEntry,
+    SavedState,
     UnknownNumber,
     UnknownSender,
     UnreadableSubject,

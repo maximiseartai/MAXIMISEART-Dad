@@ -280,7 +280,7 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
         ("rozliczenia", "centrum"),
         "rozliczenia.worker_reports.ReadReport",
     ),
-    # Wejście odczytu okna spoza EnteringMemory.report_inputs: postacie z tabeli przypadków przy ZNANE_LUKI_WEJSCIA_ODCZYTU; pierwsza to
+    # Wejście odczytu okna spoza pamięci Wpisania (EnteringMemory._inputs): postacie z tabeli przypadków przy ZNANE_LUKI_WEJSCIA_ODCZYTU; pierwsza to
     # Przypomnienia o raporcie z przeglądu #2059 (r1, W1), które budowały wejście same z OwnEntries.EMPTY.
     "from rozliczenia.worker_reports import OwnEntries, ReportInputs": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.worker_reports.ReportInputs"),
     "from ._model import ReportInputs": (SRC_CONFIG, ("rozliczenia", "worker_reports"), "rozliczenia.worker_reports._model.ReportInputs"),
@@ -463,27 +463,28 @@ def _glowa(owner: str, *importy: str) -> str:
     return "".join(f"{linia}\n" for linia in importy) + f"from rozliczenia.centrum.settings.owner import {owner}\n\n\n"
 
 
-_MARTWA_GALAZ: Final = '"UnreadableFile" is final'
+_BEZ_ODCZYTU: Final = "from rozliczenia.centrum.settings.files import Unreadable"
+_MARTWA_GALAZ: Final = '"Unreadable" is final'
 
 DROGI_TRESCI_Z_WYDANIA: Final = {
     "literał w gałęzi „bez odczytu” wartości migawki bez unii (#2029 r1 W1)": (
-        _glowa("SettingsSnapshot, UnreadableFile") + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders\n"
-        '    return "" if isinstance(reminders, UnreadableFile) else reminders.footer\n',
+        _glowa("SettingsSnapshot", _BEZ_ODCZYTU) + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders\n"
+        '    return "" if isinstance(reminders, Unreadable) else reminders.footer\n',
         _MARTWA_GALAZ,
     ),
     "konstruktor z wartościami domyślnymi w gałęzi „bez odczytu” wartości migawki bez unii (#1931 r1 D2)": (
-        _glowa("SettingsSnapshot, UnreadableFile", "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(snapshot: SettingsSnapshot) -> FolderSettings:\n    folders = snapshot.folders\n"
-        "    if isinstance(folders, UnreadableFile):\n        return FolderSettings()\n    return folders\n",
+        _glowa("SettingsSnapshot", _BEZ_ODCZYTU, "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(snapshot: SettingsSnapshot) -> FolderSettings:\n    folders = snapshot.folders\n"
+        "    if isinstance(folders, Unreadable):\n        return FolderSettings()\n    return folders\n",
         _MARTWA_GALAZ,
     ),
     "konstruktor z wartościami domyślnymi w gałęzi „bez odczytu” Folderów okna": (
-        _glowa("CentrumSettings, UnreadableFile", "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders()\n"
-        "    return FolderSettings() if isinstance(folders, UnreadableFile) else folders\n",
+        _glowa("CentrumSettings", _BEZ_ODCZYTU, "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders()\n"
+        "    return FolderSettings() if isinstance(folders, Unreadable) else folders\n",
         _MARTWA_GALAZ,
     ),
     "gałąź „bez odczytu” Reguł ilości, którymi liczy okno": (
-        _glowa("CentrumSettings, UnreadableFile", "from rozliczenia.quantity_engine import QuantityRules") + "def reguly(settings: CentrumSettings) -> QuantityRules | None:\n"
-        "    rules = settings.quantity_rules().rules\n    return None if isinstance(rules, UnreadableFile) else rules\n",
+        _glowa("CentrumSettings", _BEZ_ODCZYTU, "from rozliczenia.quantity_engine import QuantityRules") + "def reguly(settings: CentrumSettings) -> QuantityRules | None:\n"
+        "    rules = settings.quantity_rules().rules\n    return None if isinstance(rules, Unreadable) else rules\n",
         _MARTWA_GALAZ,
     ),
     "pole widoku do pokazania w odczycie, który liczy: podpowiedzi Listy Urządzeń z shown (#2078 r1 W1)": (
@@ -505,12 +506,12 @@ DROGI_TRESCI_Z_WYDANIA: Final = {
 
 ZNANE_LUKI_TRESCI_Z_WYDANIA = {
     "unia na jawne żądanie (_or_unreadable) u wołającego, który powinien odmówić: literał w jej gałęzi": (
-        _glowa("SettingsSnapshot, UnreadableFile") + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders_or_unreadable\n"
-        '    return "" if isinstance(reminders, UnreadableFile) else reminders.footer\n'
+        _glowa("SettingsSnapshot", _BEZ_ODCZYTU) + "def stopka(snapshot: SettingsSnapshot) -> str:\n    reminders = snapshot.reminders_or_unreadable\n"
+        '    return "" if isinstance(reminders, Unreadable) else reminders.footer\n'
     ),
     "unia na jawne żądanie (_or_unreadable) u wołającego, który powinien odmówić: konstruktor w jej gałęzi": (
-        _glowa("CentrumSettings, UnreadableFile", "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders_or_unreadable()\n"
-        "    return FolderSettings() if isinstance(folders, UnreadableFile) else folders\n"
+        _glowa("CentrumSettings", _BEZ_ODCZYTU, "from rozliczenia.centrum.settings.folders import FolderSettings") + "def foldery(settings: CentrumSettings) -> FolderSettings:\n    folders = settings.folders_or_unreadable()\n"
+        "    return FolderSettings() if isinstance(folders, Unreadable) else folders\n"
     ),
     "odmowa właściciela złapana i zastąpiona: konstruktor w except": (
         _glowa("SettingsSnapshot", "from rozliczenia.centrum.refusal import Refusal", "from rozliczenia.centrum.settings.folders import FolderSettings")
@@ -549,12 +550,12 @@ def test_tresc_z_wydania_poza_wlascicielem_nie_przechodzi_a_znane_luki_przechodz
     | atrybut pakietu pod aliasem: ``reports.DEFAULT_REMINDERS.footer`` | łapie | ``SAMPLES`` |
     | prywatny moduł pakietu: ``from ._reminders import DEFAULT_REMINDERS`` | łapie | ``SAMPLES`` |
     | część treści Przypomnień: ``DEFAULT_SCHEDULE``, ``DEFAULT_TEXT`` | łapie | ``SAMPLES`` |
-    | literał w gałęzi „bez odczytu” wartości bez unii: ``reminders = snapshot.reminders``, ``"" if isinstance(reminders, UnreadableFile) else …`` (#2029 r1 W1) | łapie (mypy ``unreachable``: ``UnreadableFile`` jest final) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | literał w gałęzi „bez odczytu” wartości bez unii: ``reminders = snapshot.reminders``, ``"" if isinstance(reminders, Unreadable) else …`` (#2029 r1 W1) | łapie (mypy ``unreachable``: ``Unreadable`` jest final) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | konstruktor z wartościami domyślnymi w takiej gałęzi: ``FolderSettings()`` przy ``snapshot.folders`` (#1931 r1 D2) i ``settings.folders()`` okna | łapie (mypy ``unreachable``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | gałąź „bez odczytu” Reguł ilości okna: ``settings.quantity_rules().rules`` | łapie (mypy ``unreachable``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | literał albo konstruktor w gałęzi unii na jawne żądanie: ``snapshot.reminders_or_unreadable``, ``settings.folders_or_unreadable()`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | odmowa właściciela złapana i zastąpiona: ``except Refusal: return FolderSettings()`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
-    | pole widoku do pokazania w odczycie, który liczy: ``device_suggestions(settings.quantity_rules().shown, …)`` (#2078 r1 W1; ``.rules`` to unia z ``UnreadableFile``) | łapie (mypy: ``ShownQuantityRules``) | ``DROGI_TRESCI_Z_WYDANIA`` |
+    | pole widoku do pokazania w odczycie, który liczy: ``device_suggestions(settings.quantity_rules().shown, …)`` (#2078 r1 W1; ``.rules`` to unia z ``Unreadable``) | łapie (mypy: ``ShownQuantityRules``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | legenda do pokazania jako legenda, którą się liczy: ``settings.activity_legend().shown`` | łapie (mypy: ``ShownActivityLegend``) | ``DROGI_TRESCI_Z_WYDANIA`` |
     | części widoku do pokazania: ``QuantityRules(shown.rules, shown.devices)``, ``shown.devices`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
@@ -654,7 +655,7 @@ def test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_prz
     )
 
 
-# Wejście odczytu okna spoza EnteringMemory.report_inputs, które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią,
+# Wejście odczytu okna spoza pamięci Wpisania (EnteringMemory._inputs), które zakaz przepuszcza: kopia wejścia ze zmienioną pamięcią,
 # konstruktor z typu wejścia albo z refleksji w module spoza właścicieli i konstruktor w module z prawem do typu (granica
 # zakazu nazwy); opis → (sonda, kod).
 _CENTRUM_PROBE = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py"
@@ -662,14 +663,12 @@ ZNANE_LUKI_WEJSCIA_ODCZYTU = {
     "zakaz zna tylko nazwę klasy, nie kopię: wejście z report_inputs z pustą pamięcią przez dataclasses.replace": (
         _CENTRUM_PROBE,
         "import dataclasses\n\n"
-        "from rozliczenia.report_entering import EnteringMemory\n"
-        "from rozliczenia.worker_reports import OwnEntries\n\n"
+        "from rozliczenia.worker_reports import EnteringMemory, OwnEntries\n\n"
         "given = dataclasses.replace(EnteringMemory(state).report_inputs(*inputs), memory=OwnEntries.EMPTY)\n",
     ),
     "zakaz zna tylko nazwę klasy, nie jej typ z wartości: type(wejście)(…)": (
         _CENTRUM_PROBE,
-        "from rozliczenia.report_entering import EnteringMemory\n"
-        "from rozliczenia.worker_reports import OwnEntries\n\n"
+        "from rozliczenia.worker_reports import EnteringMemory, OwnEntries\n\n"
         "given = EnteringMemory(state).report_inputs(*inputs)\n"
         "again = type(given)(given.mails, given.addresses, given.orders, given.window, OwnEntries.EMPTY, frozenset(), given.present, given.legend)\n",
     ),
@@ -696,11 +695,11 @@ ZNANE_LUKI_WEJSCIA_ODCZYTU = {
 @wymaga_ruff
 def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_przez_ruff() -> None:
     """Wejście odczytu okna rdzenia raportów (``ReportInputs``) buduje w ``src/`` tylko
-    ``report_entering.EnteringMemory.report_inputs``, to samo dla Wpisania raportów i Przypomnień o raporcie, bo dzień
+    pamięć Wpisania za swoimi operacjami (``worker_reports.EnteringMemory.enter`` i ``reminders``), to samo dla Wpisania raportów i Przypomnień o raporcie, bo dzień
     raportu zależy od pamięci Wpisania: wejście zbudowane obok, np. z ``OwnEntries.EMPTY`` (#2059 r1 W1), daje
     ``read_window`` inny dzień raportu niż kafelek Wpisania. Typ wejścia biorą też odczyt okna, Przypomnienia rdzenia
-    (``ReminderInputs.reports``) i ``__init__`` pakietu (``OWNERS``), więc zakaz zatrzymuje nazwę, nie samo wywołanie
-    konstruktora.
+    (``ReminderInputs.reports``) i operacja Wpisania (``_operation.enter_reports``) (``OWNERS``), więc zakaz zatrzymuje
+    nazwę, nie samo wywołanie konstruktora.
 
     Pamięć Wpisania, którą wejście niesie, pilnuje typ ``EnteringMemory`` (powstaje tylko z ``ReportState``), a jej
     postacie (#2125 r1–r3 W1) i znane luki są w
@@ -712,7 +711,7 @@ def test_znane_luki_zakazu_wejscia_odczytu_okna_spoza_report_inputs_przechodza_p
     | import względny w pakiecie: ``from ._model import ReportInputs`` | łapie | ``SAMPLES`` |
     | atrybut pakietu pod aliasem: ``reports.ReportInputs(…)`` | łapie | ``SAMPLES`` |
     | moduł z prawem do innej nazwy: ``report_reminders.py`` (``DEFAULT_REMINDERS``) z ``ReportInputs`` (#2059 r1 W1) | ``test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw`` z komunikatem zakazu | ``OWNERS`` |
-    | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``__init__``) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
+    | konstruktor w module z prawem do typu (``_reading``, ``_reminders``, ``_operation``) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
     | kopia wejścia ze zmienioną pamięcią: ``dataclasses.replace(wejście, memory=…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
     | konstruktor z typu wartości: ``type(wejście)(…)`` | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
     | refleksja po nazwie: ``getattr(worker_reports, "ReportInputs")(…)``, ``typing.get_type_hints(ReminderInputs)["reports"](…)`` (#2125 r4 D1) | przepuszcza | ``ZNANE_LUKI_WEJSCIA_ODCZYTU`` |
@@ -764,7 +763,6 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/__init__.py": frozenset(
         {
             "rozliczenia.worker_reports._model.ReadReport",
-            "rozliczenia.worker_reports._model.ReportInputs",
             "rozliczenia.worker_reports._reminders.DEFAULT_REMINDERS",
             "rozliczenia.worker_reports._reminders.DEFAULT_SCHEDULE",
             "rozliczenia.worker_reports._reminders.DEFAULT_TEXT",
@@ -774,7 +772,8 @@ OWNERS: dict[str, frozenset[str]] = {
         {"rozliczenia.worker_reports._model.ReadReport", "rozliczenia.worker_reports._model.ReportInputs"}
     ),
     "src/rozliczenia/worker_reports/_reminders.py": frozenset({"rozliczenia.worker_reports._model.ReportInputs"}),
-    "src/rozliczenia/report_entering.py": frozenset({"rozliczenia.worker_reports.ReportInputs"}),
+    "src/rozliczenia/worker_reports/_memory.py": frozenset({"rozliczenia.worker_reports._model.ReportInputs"}),
+    "src/rozliczenia/worker_reports/_operation.py": frozenset({"rozliczenia.worker_reports._model.ReportInputs"}),
     "src/rozliczenia/worker_reports/_matching.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_corrections.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),

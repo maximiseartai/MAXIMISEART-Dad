@@ -17,7 +17,7 @@ Wierności Gmailowi atrapa nie dowodzi: prawdziwą skrzynkę sprawdza próba IMA
 from __future__ import annotations
 
 import base64
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 import email
@@ -212,7 +212,11 @@ class AtrapaImap:
     wtedy ``TimeoutError``. ``refuse="login"`` odmawia ``LOGIN`` jak Gmail w chwilowej awarii (``NO [UNAVAILABLE]``, bez
     ``AUTHENTICATIONFAILED``), ``refuse="examine"`` odmawia otwarcia folderu, a ``refuse="sections"`` każdego
     ``UID FETCH`` treści części (``BODY.PEEK[TEXT]``, ``[n]``), jak Gmail, który nie umie podać sekcji. ``sent`` to maile folderu ``\\Sent``
-    („Wysłane”, UID inne niż maili ``mails``), którego nie ma bez ``sent_folder``.
+    („Wysłane”, UID inne niż maili ``mails``), którego nie ma bez ``sent_folder``. ``validity`` to ``UIDVALIDITY``, które
+    ``EXAMINE`` podaje jak Gmail; ``None``: serwer go nie podaje, a jego zmiana między sesjami to skrzynka, której UID
+    wskazują już inne maile. ``unanswered`` to UID maili, o które ``UID FETCH`` nie oddaje linii, choć kończy się ``OK``,
+    jak Gmail w chwilowej awarii: ``choice`` przy nagłówkach ``Subject`` i ``From``, ``content`` przy każdym innym
+    pobraniu (struktura, sekcje, cały mail).
     """
 
     def __init__(
@@ -229,6 +233,8 @@ class AtrapaImap:
         flags_reply: Literal["without_fetch", "unsolicited"] | None = None,
         sent: Sequence[AtrapaMail] = (),
         sent_folder: bool = True,
+        validity: int | None = 1,
+        unanswered: Mapping[int, Literal["choice", "content"]] | None = None,
     ) -> None:
         self.address = address
         self.password = password
@@ -242,6 +248,8 @@ class AtrapaImap:
         self.deleted: set[int] = set()
         self.sent = list(sent)
         self.sent_folder = sent_folder
+        self.validity = validity
+        self.unanswered: dict[int, Literal["choice", "content"]] = dict(unanswered or {})
         self.flags: dict[int, set[str]] = {mail.uid: set(mail.flags) for mail in (*self.mails, *self.sent)}
         self.commands: list[str] = []
         self._server = _Server(self)
@@ -319,7 +327,7 @@ class _Session(socketserver.StreamRequestHandler):
             self._send(*folders, done)
         elif command == "EXAMINE" and atrapa.sent_folder and _strings(arguments) == [_SENT]:
             self._mails = tuple(atrapa.sent)
-            self._send(f"* {len(self._mails)} EXISTS".encode(), f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode())
+            self._send(f"* {len(self._mails)} EXISTS".encode(), *self._validity(), f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode())
         elif command == "EXAMINE":
             known = atrapa.refuse != "examine" and _strings(arguments) in (["INBOX"], *([[_ALL]] if atrapa.all_folder else []))
             if known:
@@ -329,7 +337,8 @@ class _Session(socketserver.StreamRequestHandler):
                     if mail.uid not in atrapa.deleted and (_strings(arguments) == [_ALL] or mail.in_inbox or not atrapa.all_folder)
                 )
             exists = f"* {len(self._mails)} EXISTS".encode()
-            self._send(*((exists, f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode()) if known else (f"{tag} NO brak folderu".encode(),)))
+            opened = (exists, *self._validity(), f"{tag} OK [READ-ONLY] EXAMINE gotowe".encode())
+            self._send(*(opened if known else (f"{tag} NO brak folderu".encode(),)))
         elif command == "UID SEARCH":
             self._send(f"* SEARCH {' '.join(str(mail.uid) for mail in _since(self._mails, arguments))}".rstrip().encode(), done)
         elif command == "UID FETCH":
@@ -343,7 +352,10 @@ class _Session(socketserver.StreamRequestHandler):
             ):
                 self._send(f"{tag} NO Some messages could not be FETCHed (Failure)".encode())
                 return True
+            choice = "HEADER.FIELDS (SUBJECT FROM)" in items
             for number, mail in asked:
+                if atrapa.unanswered.get(mail.uid) == ("choice" if choice else "content"):
+                    continue
                 if sections or "BODYSTRUCTURE" in items:
                     self._fetch_parts(number, mail, items, sections)
                 else:
@@ -406,6 +418,10 @@ class _Session(socketserver.StreamRequestHandler):
     def _logs_in(self, arguments: str) -> bool:
         atrapa = self.server.atrapa
         return atrapa.refuse != "login" and _strings(arguments) == [atrapa.address, atrapa.password]
+
+    def _validity(self) -> tuple[bytes, ...]:
+        validity = self.server.atrapa.validity
+        return () if validity is None else (f"* OK [UIDVALIDITY {validity}] UID gotowe".encode(),)
 
     def _send(self, *lines: bytes) -> None:
         self.wfile.write(b"".join(line + b"\r\n" for line in lines))
