@@ -163,23 +163,43 @@ def test_wolny_port_dla_centrum_omija_port_na_ktorym_ktos_slucha(monkeypatch: py
         assert free_port() == drawn[1]
 
 
+@contextmanager
+def _port_silent_on_first_connection() -> Iterator[int]:
+    """Port, który przyjmuje pierwsze połączenie i milczy na nim do końca bloku, a od tego połączenia nikt na nim nie
+    słucha.
+
+    Słuchanie kończy samo pierwsze połączenie, a nie zegar, więc kolejność „milczał, potem nikt nie słuchał” nie zależy
+    od tego, jak szybko runner dojdzie do pierwszego pytania.
+    """
+
+    listener = socket.create_server(("127.0.0.1", free_port()))
+    port = listener.getsockname()[1]
+    held: list[socket.socket] = []
+
+    def accept_once() -> None:
+        connection, _ = listener.accept()
+        listener.close()
+        held.append(connection)
+
+    accepting = threading.Thread(target=accept_once, daemon=True)
+    accepting.start()
+    try:
+        yield port
+    finally:
+        accepting.join()
+        for connection in held:
+            connection.close()
+
+
 def test_czekanie_na_centrum_bez_odpowiedzi_mowi_po_kolei_kiedy_port_milczal_a_kiedy_nikt_na_nim_nie_sluchal() -> None:
     """Porażka czekania na ``health`` mówi, co port odpowiadał w kolejnych sekundach, bo bez tego log flaky testu skrótu
     nie rozstrzygał, czy Centrum trzymało port bez odpowiedzi, czy nikt na nim nie słuchał (#1454)."""
 
-    silent = socket.create_server(("127.0.0.1", free_port()))
-    port = silent.getsockname()[1]
-    closing = threading.Timer(1.5, silent.close)
-    closing.start()
-
-    with pytest.raises(urllib.error.URLError) as failure:
+    with _port_silent_on_first_connection() as port, pytest.raises(urllib.error.URLError) as failure:
         centrum_health(port, timeout_s=3)
-    closing.join()
 
-    # Pierwsze pytanie trafia w port, który przyjął połączenie: czeka na odpowiedź do limitu 1 s albo, gdy zamknięcie
-    # po 1,5 s wyprzedzi limit (wolny runner Windows), dostaje ConnectionResetError (#2060). Oba to „połączenie przyjęte”.
     spans = failure.value.__notes__[-1].splitlines()[1:]
-    assert (spans[0].split(": ", 1)[1].startswith("połączenie przyjęte"), "nikt nie słucha" in spans[-1]) == (True, True), spans
+    assert (spans[0].split(": ", 1)[1].startswith("połączenie przyjęte, bez odpowiedzi"), "nikt nie słucha" in spans[-1]) == (True, True), spans
 
 
 def test_ponowne_uruchomienie_tylko_otwiera_karte_dzialajacego_centrum(tmp_path: Path) -> None:
