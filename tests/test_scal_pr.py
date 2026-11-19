@@ -1591,7 +1591,25 @@ def test_werdykt_w_postaci_ze_skilla_dla_head_trafia_na_pr_jako_komentarz_ktory_
     assert (checked.returncode == 0) == (decision == "PASS"), checked.stdout + checked.stderr
 
 
-MANY_PROBLEMS = f"WERDYKT: FAIL {OLD}\nZnaleziska: 3 (Ważne 0, Drobne 4)"
+def test_werdykt_podany_sciezka_wzgledna_spoza_repo_trafia_na_pr(tmp_path: Path) -> None:
+    """Ścieżka względna liczy się od katalogu wywołania, choć ``gh`` biegnie z checkoutu albo z kopii bazy."""
+
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    notes = tmp_path / "recenzje" / "1"
+    notes.mkdir(parents=True)
+    verdict = "WERDYKT: PASS {head}\n\nZnaleziska: 1 (Ważne 0, Drobne 1)\n" + werdykty_szablonu.WERDYKTY["drobne"] + "\n"
+    (tmp_path / "recenzje" / "runda-1.md").write_text(verdict.format(head=head), encoding="utf-8")
+
+    answered = github.run("1", "--werdykt", "../runda-1.md", cwd=notes)
+
+    assert answered.returncode == 0, answered.stdout + answered.stderr
+    assert _last_line(answered) == f"WERDYKT OK | #1 {head[:7]} | PASS | https://github.com/{opisy_pr.REPO}/pull/1#issuecomment-1"
+    assert github.published() == [["1", verdict.format(head=head)]]
+
+
+MANY_PROBLEMS =f"WERDYKT: FAIL {OLD}\nZnaleziska: 3 (Ważne 0, Drobne 4)"
 MANY_REASONS = (
     f"werdykt dla {OLD[:7]}, a HEAD PR to {{head}}: przejrzyj git diff {OLD} {{head}} i wpisz SHA HEAD; "
     "Znaleziska: 3, a Ważne 0 i Drobne 4 dają 4; Drobne 4: podaj najwyżej 3, najważniejsze; "

@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from dataclasses import replace
 from datetime import datetime
+from email.message import EmailMessage
+import email.utils
 import itertools
 import json
 import os
@@ -67,14 +69,17 @@ from atrapy.settlement import (
     link_order_numbers,
     make_fixture,
     make_preview_fixture,
+    worker_list,
     write_quantity_source,
     write_template,
+    write_worker_list,
 )
 from atrapy.atrapa_efenix import amount_of, atrapa_efenix
 from atrapy.efenix import Order as EfenixOrder
 from atrapy.efenix import write_collective_file
 from atrapy.baza_zlecen import TWELVE, BaseSheet, Visit, write_order_base
-from atrapy.intermax import Intermax
+from atrapy.intermax import FIRST, HEADERS, NUMBER, ORDER_SHEET, Intermax
+from atrapy.intermax import Order as IntermaxOrder
 from atrapy.workbooks import hyperlinks
 
 import uruchom_proces
@@ -592,6 +597,13 @@ def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(
     assert not (tmp_path / "metrics.jsonl").exists()
 
 
+def test_bez_procesu_skrypt_konczy_sie_kodem_1_bez_wyniku_json_ze_zdaniem_o_brakujacym_procesie() -> None:
+    completed = _completed()
+
+    assert (completed.returncode, completed.stdout) == (1, "")
+    assert completed.stderr.splitlines()[-1].endswith("required: PROCES")
+
+
 def test_zla_lista_wykonawcow_konczy_skrypt_kodem_1_ze_zdaniem_wlasciciela_ustawien_bez_uruchomienia(
     tmp_path: Path,
 ) -> None:
@@ -607,6 +619,49 @@ def test_zla_lista_wykonawcow_konczy_skrypt_kodem_1_ze_zdaniem_wlasciciela_ustaw
     assert completed.stderr.splitlines()[-1].endswith(f"--wykonawcy: {settings_messages.worker_name_invalid()}")
     assert not target.exists() and not (tmp_path / "metrics.jsonl").exists()
     assert sorted(path.name for path in config.parent.iterdir() if path.name.startswith("ustawienia")) == []
+
+
+def test_wpisanie_raportow_ze_skryptu_dla_maszyn_wpisuje_raport_z_pliku_eml_folderu_maili_do_intermax(tmp_path: Path) -> None:
+    """``--maile`` to Skrzynka raportów Skryptu dla maszyn: Raport wykonawcy z pliku ``.eml`` trafia do obu komórek
+    zlecenia z dnia z tematu. Pamięć wpisów żyje tylko w tym Uruchomieniu, więc jego okno zaczyna się dziś, jak przy
+    pierwszym kliknięciu w Centrum, i zlecenie oraz raport są z dzisiaj."""
+
+    now = datetime.now().astimezone()
+    register = tmp_path / "INTERMAX.xlsx"
+    order = IntermaxOrder(now.replace(hour=9, minute=0, second=0, microsecond=0, tzinfo=None), "jan.testowy", 40000001, cells=((NUMBER, 40000001),))
+    Intermax(ordered=(order,), raw=()).write(register)
+    (tmp_path / "Okresy").mkdir()
+    workers = tmp_path / WORKERS_FILE
+    write_worker_list(workers, worker_list({"jan.testowy": "Jan Testowy"}, {"jan.testowy": ["jan@przyklad.invalid"]}))
+    mail = EmailMessage()
+    mail["From"] = "jan@przyklad.invalid"
+    mail["Subject"] = f"Raport {now:%d.%m.%Y}"
+    mail["Date"] = email.utils.format_datetime(now)
+    mail["Message-ID"] = "<raport-1@przyklad.invalid>"
+    mail.set_content("40000001 tak inst20m rt2")
+    (tmp_path / "maile").mkdir()
+    (tmp_path / "maile" / "raport.eml").write_bytes(bytes(mail))
+
+    exit_code, result = _run(
+        "report_entering",
+        "--register",
+        register,
+        "--periods-directory",
+        tmp_path / "Okresy",
+        "--wykonawcy",
+        workers,
+        "--maile",
+        tmp_path / "maile",
+        "--metrics",
+        tmp_path / "metrics.jsonl",
+    )
+
+    figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
+    assert (exit_code, result["result"], figures) == (0, "OK", {"Wpisane": 1, "Problemy": 0, "Raporty": 1})
+    sheet = load_workbook(register)[ORDER_SHEET]
+    row = next(cells for cells in sheet.iter_rows(min_row=2, values_only=True) if cells[NUMBER - 1] == 40000001)
+    successful, completed = (FIRST - 1 + HEADERS.index(header) for header in ("SKUTECZNE", "CZYNNOŚCI ZREALIZOWANE"))
+    assert (row[successful], row[completed]) == ("tak", "inst20m rt2")
 
 
 def test_opis_uzycia_wymienia_kazdy_proces_z_jego_nazwa_w_kolejnosci_katalogu_procesow() -> None:
