@@ -998,7 +998,8 @@ def _wynik_wysylki(config: Path, scenariusz: str) -> tuple[ImapInbox, object]:
         return inbox, inbox.send(PRZYPOMNIENIE, WYSLANE_O)
     password = "inne-haslo-maksa" if scenariusz == "odrzucone-haslo" else HASLO
     cut: Literal["greeting"] | None = "greeting" if scenariusz == "zerwane" else None
-    refuse: Literal["greeting", "recipients"] | None = {"zajety": "greeting", "odmowa-adresu": "recipients"}.get(scenariusz)
+    refusals: dict[str, Literal["greeting", "recipients"]] = {"zajety": "greeting", "odmowa-adresu": "recipients"}
+    refuse = refusals.get(scenariusz)
     with AtrapaImap(address=SKRZYNKA, password=password) as imap, AtrapaSmtp(imap, cut=cut, refuse=refuse) as smtp:
         inbox = smtp_portu(config, imap, smtp)
         return inbox, inbox.send(PRZYPOMNIENIE, WYSLANE_O)
