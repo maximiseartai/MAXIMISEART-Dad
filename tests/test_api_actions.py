@@ -19,6 +19,7 @@ from github import GitHub
 from api_actions import REZERWA_POMIARU, REZERWA_SCALANIA, Api, Zapas, ZRezerwa
 import pomiar_ci
 import ponow_ci
+from repo import ROOT
 import scal_pr
 
 REPO = "repos/{owner}/{repo}"
@@ -65,7 +66,11 @@ def dom(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_testy_i_ich_podprocesy_nie_czytaja_kopii_api_komputera() -> None:
     domyslna = Path.home() / ".cache" / "maximiseart"
     w_podprocesie = subprocess.run(
-        [sys.executable, "-c", "import api_actions; print(api_actions.kopia_komputera())"], capture_output=True, text=True, check=True
+        [sys.executable, "-c", "import api_actions; print(api_actions.kopia_komputera())"],
+        cwd=ROOT / "tools" / "lib",
+        capture_output=True,
+        text=True,
+        check=True,
     ).stdout.strip()
 
     assert domyslna not in (api_actions.kopia_komputera(), Path(w_podprocesie))
