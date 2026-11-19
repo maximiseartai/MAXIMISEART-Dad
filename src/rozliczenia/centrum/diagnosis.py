@@ -481,8 +481,6 @@ def _centrum_log(computer: _Computer, label: str) -> list[CheckResult]:
 
 
 def _check_of(step: CheckStep) -> _Check:
-    """Sprawdzenie kroku Diagnozy z wpisu procesu; kolejność kroków i jej powody deklaruje katalog procesów."""
-
     match step:
         case "tata_settings":
             return _tata_settings

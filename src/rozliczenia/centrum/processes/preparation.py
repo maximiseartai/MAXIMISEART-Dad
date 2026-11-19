@@ -1,5 +1,3 @@
-"""Przygotowanie pliku zbiorczego w katalogu procesów: wpis i widok Uruchomienia."""
-
 from __future__ import annotations
 
 from typing import Final
@@ -100,6 +98,3 @@ KIND: Final[PeriodProcessKind[PreparationInputs, PreparationSummary]] = PeriodPr
         *TAIL,
     ),
 )
-"""Przygotowanie pliku zbiorczego w Centrum. Sprawdzenie OneDrive (``files_in_onedrive``) idzie przed sprawdzeniami,
-które otwierają Rejestr zleceń, Wzorce i pliki okresu: plik tylko w chmurze może się nie otworzyć, a wtedy przyczyną
-jest OneDrive, nie uszkodzony plik."""
