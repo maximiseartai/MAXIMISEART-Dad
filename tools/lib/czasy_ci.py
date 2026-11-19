@@ -25,7 +25,7 @@ Status jednostki to ``ok`` albo ``fail``; pominięty krok i pominięty skrypt ni
 testów: ile jego testów (``<testcase>``) jest w junit zadania. ``plan`` to ``digest`` planu, z którego zadanie biegło.
 
 Scalenie. Na pushu do main ``Required CI status`` scala zapisy runu w ``czasy-ci.json`` (``tools/ci/zapis_czasow.py
-scal``, artefakt ``czasy-ci``, 30 dni), jedyne źródło czasów CI:
+scal``, artefakt ``czasy-ci``, 30 dni), źródło czasów CI obok czasów nocy (niżej):
 
     {"wersja": 1, "runy": [{"run": 43473166640, "proba": 1, "sha": "c11a455d...", "zdarzenie": "push"}],
      "tory": {"windows-3.13": {"narzut:pytest": [{"run": 43473166640, "proba": 1, "zadanie": "...", "s": 25.0, "status": "ok", "testy": null}],
@@ -311,9 +311,9 @@ def z_mainu(katalog: Path, *, odswiez_po_s: float = 0, github: GitHub = GITHUB, 
     zrodla = [(katalog, ARTEFAKT, ZIELONE_MAIN), *([(nocny, ARTEFAKT_NOCY, None)] if z_nocy else [])]
     with ThreadPoolExecutor() as pula:
         pobrania = [pula.submit(_odswiez, miejsce, odswiez_po_s, github, artefakt, zielone) for miejsce, artefakt, zielone in zrodla]
-    bledy = [blad for pobranie in pobrania if (blad := pobranie.result())]
+    blad_main, *bledy_nocy = (pobranie.result() for pobranie in pobrania)
     dokumenty, nieczytelne = _dokumenty(katalog)
-    bledy += nieczytelne
+    bledy = [blad for blad in (blad_main, *nieczytelne) if blad]
     try:
         tory = _obserwacje(dokumenty)
         runy = tuple(sorted({run["run"] for dokument in dokumenty for run in dokument["runy"]}))
@@ -324,7 +324,7 @@ def z_mainu(katalog: Path, *, odswiez_po_s: float = 0, github: GitHub = GITHUB, 
     noce: tuple[int, ...] = ()
     if z_nocy:
         nocne, nieczytelne = _dokumenty(nocny)
-        bledy += nieczytelne
+        bledy += [blad for blad in (*bledy_nocy, *nieczytelne) if blad]
         try:
             skrypty = {(tor, klucz): obserwacje for tor, klucze in _obserwacje(nocne).items() for klucz, obserwacje in klucze.items() if _skrypt_mutacji(klucz)}
             noce = tuple(sorted({run["run"] for dokument in nocne for run in dokument["runy"]}))

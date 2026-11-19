@@ -8,7 +8,7 @@ Liczby o naszym CI pochodzą z pomiarów 11–18.11 [S30, S31, S32] i z tekstu z
 
 1. **Czym jest Jev.** Jev to model, który nie generuje tekstu. Dostaje stan i pytania typu Choice (najwyżej 255 opcji), Score (najwyżej 10 poziomów), Noul (tak/nie) albo Box, a dla każdego pytania zwraca typowaną odpowiedź z rozkładem prawdopodobieństwa [S1, S5, S13]. Kosztuje 0,042 USD za milion tokenów wejścia, a tokeny wyjścia są darmowe [S3]. Limit kontekstu to 64k tokenów na żądanie i 32k na pytanie [S3]. Typowe wywołanie trwa ok. 100 ms [S6]. Limity zapytań ustala się per organizacja w konsoli, a ich wartości są niepotwierdzone [S3]. Odpowiedzi nie są deterministyczne: między powtórzeniami prawdopodobieństwa przesuwają się do 0,015 [S11], a API nie ma parametru temperatury ani ziarna [S5]. Alias `jev-latest` przesuwa się z każdym wydaniem, więc wersję trzeba przypiąć (`jev-1.14.0`) [S3].
 2. **Koszt i opóźnienie nie są ograniczeniem.** Najdroższy kandydat, zawężanie wyboru testów, kosztowałby przy ok. 1000 runach PR na tydzień najwyżej ok. 2,7 USD tygodniowo według cennika. Każdy eksperyment offline poniżej kosztuje mniej niż 1,5 USD. Opóźnienie ~100 ms też nie ma znaczenia przy bramce, która trwa minuty. Dwie główne zalety Jev, szybkość i cena wobec LLM, prawie nic tu nie dają. Zostaje skalibrowane prawdopodobieństwo dla osądu semantycznego o logu albo diffie.
-3. **Warto przetestować jednego kandydata: doradczą klasyfikację porażki.** Chodzi o porażki zadania, które `tools/ponow_ci.py` dziś uznaje za „nieznaną porażkę, więc defekt” [S27], i o issue czerwonego `main`. Jev nigdy nie uruchamia ponowienia, tylko dopisuje linię do odmowy i do issue. Zysk to czas pierwszej diagnozy agenta, a nie ściana CI. Eksperyment E1 kosztuje poniżej 0,5 USD w kredytach i ok. jednego dnia pracy agenta, a jego próg go/no-go podaję niżej.
+3. **Jedyny kandydat wart testu, doradcza klasyfikacja porażki, odpadł w E1 (NO-GO, pkt 8).** Chodziło o porażki zadania, które `tools/ponow_ci.py` dziś uznaje za „nieznaną porażkę, więc defekt” [S27], i o issue czerwonego `main`. Jev nigdy nie uruchamiałby ponowienia, tylko dopisywałby linię do odmowy i do issue. Zysk byłby w czasie pierwszej diagnozy agenta, a nie w ścianie CI. Eksperyment E1 z progiem go/no-go opisuje sekcja E1, a jego wynik sekcja „Wynik E1”.
 4. **Nie robić: zawężania wyboru testów ani pomijania podstaw skilli przez Jev.** Oba pomysły kłócą się z ADR 0020 („Dalsze skracanie bramki to przyspieszanie samych testów, nie zdejmowanie ich z bramki”) [S24] i z zasadą, że nieznana forma kończy się bezpiecznie (fail closed) [S26]. Do tego za mało pozytywów, żeby dowieść recall: prawdziwych defektów `src/` złapanych przez podstawy było ok. 3 na tydzień [S30]. Większy zysk dają zmiany deterministyczne, które już zmierzono: planer zaniża realną ścianę o 112 s przy p50 i 436 s przy p90, a zawężenie FULL i warianty NF/N0 obniżają p50 z 4,7 do 3,9–4,3 min [S30].
 5. **Nie robić: Jev dla etykiety `zderzenie`.** W danych nie ma ani jednego prawdziwego zderzenia (0 z 5 w tygodniu 12–18.11, 0 z 6 w ADR 0020) [S31, S24], więc nie da się zmierzyć ani precyzji, ani recall. Prostsza jest poprawka deterministyczna (sekcja K5).
 6. **Dane.** Do Jev mogą trafić tylko artefakty CI publicznego repo: diff, nazwy testów i ogon logu kroku, który padł. Dane taty nie mogą tam trafić nigdy, także dlatego, że zgoda na podprocesora dla jego umowy jest otwarta (#1157). TypeSafe nie trenuje na danych wejściowych [S3, S18, S20]. Retencja to jednak „as long as reasonably necessary” [S18, S19], telemetrię z danych klienta TypeSafe może trzymać bezterminowo [S20], a zero data retention ma tylko plan enterprise [S17]. Listy podprocesorów nie udało się odczytać (niepotwierdzone).
@@ -228,7 +228,7 @@ Zero pozytywów, więc nie ma metryki. Zamiast tego deterministyczny warunek z s
 
 | | Kandydat | Miejsce | Dane z etykietą | Koszt eksp. | Koszt/tydz. | Rozstrzygalne teraz | Rekomendacja |
 |---|---|---|---|---|---|---|---|
-| E1 | Klasyfikacja porażki (+K4) | porada | 31 issues czerwonego `main`, 32 flaky, 18 runów tylko z Mutation checks, `SYGNATURY` | ≈ 0,27 USD | ≈ 0,04 USD | tak (≥ 40 przypadków testowych) | uruchomić |
+| E1 | Klasyfikacja porażki (+K4) | porada | 31 issues czerwonego `main`, 32 flaky, 18 runów tylko z Mutation checks, `SYGNATURY` | ≈ 0,27 USD | ≈ 0,04 USD | tak (≥ 40 przypadków testowych) | uruchomiony 19.11: NO-GO (sekcja „Wynik E1”) |
 | E2 | Zawężanie testów | merge | 64 runy z czerwonym pytest | ≈ 1,05 USD | ≤ 2,7 USD | słabo (recall ≤ 0,90 przy n=30) | najpierw planer; potem tylko za zgodą Maksa |
 | E3 | Pomijanie podstaw | merge | ok. 6–9 pozytywów | pomijalny | ≈ 1,5 USD | nie | nie teraz |
 | E4 | `zderzenie` | porada | 0 pozytywów | — | — | nie | reguła deterministyczna |
@@ -240,18 +240,19 @@ Eksperyment według sekcji E1, z narzędziami w notatce lokalnej poza repo (`~/.
 - **Dane.** 189 przypadków: 29 z czerwonego `main` (etykiety ręczne: flaky 16, defekt 6, latent 5, awaria 2), 22 z runów PR, w których czerwone było tylko Mutation checks, 138 innych porażek PR (etykieta słaba: następny zielony run po zmianie kodu). Tylko populacja, którą `ponow_ci` uznaje za nieznaną porażkę.
 - **Wysyłka.** Ogon kroku, który padł, po filtrze danych taty. Filtr w trybie „dane” odrzucił 0 przypadków; 41 trafień filtra dosłownego koordynator sprawdził ręcznie i wszystkie były słownictwem repo z testów syntetycznych (np. „Skrzynka raportów”, nazwa kolumny w nazwie testu).
 - **Wywołania.** 567 (189 × 3 powtórzenia), w każdym pytanie Choice o 4 klasy w dwóch kolejnościach opcji i dwa pytania Noul. 2 883 684 tokeny wejścia = 0,1211 USD, 0 błędów, czas p50 0,22 s, p90 0,25 s.
-- **Ocena** (podział dev/test 50/50, próg z dev):
+- **Ocena** (`python3 ocena.py`, wydruk w `ocena.txt`, z którego pochodzą wszystkie liczby tabeli i mediany niżej; podział dev/test 50/50, próg z dev):
 
 | Miara | Wynik | Poprzeczka |
 |---|---|---|
 | precyzja flaky∪awaria przy recall ≥ 0,5 | żaden próg na dev nie daje ≥ 0,9 bez defektu nad progiem | ≥ 0,9 |
-| AUC flaky∪awaria wobec defekt∪latent, wszystkie przypadki | Choice 0,615, Noul 0,611 | — |
+| AUC flaky∪awaria wobec defekt∪latent, wszystkie przypadki | Choice 0,615, Noul 0,612 | — |
 | AUC na etykietach ręcznych (czerwony `main`, 18 poz., 11 neg.) | 0,417 | > 0,5 |
-| zgodność dwóch kolejności opcji | 0,989 | ≤ 5% zmian |
+| zmiana decyzji między 3 powtórzeniami tej samej kolejności opcji, bez progu (argmax 4 klas; P(flaky∪awaria) ≥ 0,5), test | 2/94 = 2,1%; 2/94 = 2,1% (wszystkie: 8/189 = 4,2%; 5/189 = 2,6%) | ≤ 5% zmian (przy progu z dev, którego nie ma) |
+| zgodność argmax dwóch kolejności opcji, odczyty testu | 0,989 (279/282; wszystkie odczyty 0,972) | — |
 | trafność argmax 4 klas (test) | 0,543 | — |
 | baza deterministyczna z chwili porażki | precyzja 0, recall 0 | Jev musi ją pobić |
 
-- **Werdykt: NO-GO.** Wynik nie jest artefaktem słabych etykiet PR: na samych etykietach ręcznych Jev daje prawdziwym defektom wyższe „bezpieczne” prawdopodobieństwo (mediana 0,51) niż flaky testom (0,25). Baza deterministyczna też nic nie wnosi, więc obie drogi zostają przy dzisiejszym `ponow_ci` i diagnozie agenta.
+- **Werdykt: NO-GO.** Wynik nie jest artefaktem słabych etykiet PR: na samych etykietach ręcznych Jev daje prawdziwym defektom wyższe „bezpieczne” prawdopodobieństwo (Choice, mediana 0,51) niż flaky testom (0,25). Baza deterministyczna też nic nie wnosi, więc obie drogi zostają przy dzisiejszym `ponow_ci` i diagnozie agenta.
 - **Granica wyniku.** Pozytywów jest mało (24, z tego 18 z czerwonego `main`), a jedna wersja modelu (`jev-1.14.0`) i jedno sformułowanie pytań. Inne sformułowanie albo nowsza wersja Jev wymaga nowego pomiaru tymi samymi skryptami (koszt ≈ 0,12 USD).
 
 ## Źródła
