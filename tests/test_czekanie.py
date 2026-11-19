@@ -391,10 +391,20 @@ def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
 
-def _configured_timeout() -> float:
+def _own_hooks() -> list[dict[str, object]]:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    (timeout,) = [hook["timeout"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
-    return float(timeout)
+    return [
+        hook
+        for entry in entries
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+        if str(hook["command"]).endswith('/tools/hooks/czekanie.py"')
+    ]
+
+
+def _configured_timeout() -> float:
+    (configured,) = _own_hooks()
+    return float(str(configured["timeout"]))
 
 
 def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
@@ -498,8 +508,7 @@ def test_hook_bez_stdin_przechodzi() -> None:
 
 
 def _configured(project: Path) -> list[subprocess.CompletedProcess[str]]:
-    entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    commands = [hook["command"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
+    commands = [str(hook["command"]) for hook in _own_hooks()]
     tool_input = {"command": PGREP_LOOPS[0], "run_in_background": False}
     return [
         subprocess.run(

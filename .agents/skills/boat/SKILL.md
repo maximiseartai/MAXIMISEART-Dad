@@ -16,15 +16,16 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 |---|---|---|
 | `mutacje.py --plik` z mutacjami o kilku różnych `polecenie` | kilka boxów naraz, bo razem są szybsze od Maca | `boatbox fan` (sekcja „Fan mutacji”) |
 | Pełny pytest | jeden box, bo na Macu zajmuje wszystkie rdzenie na kilka minut | `boatbox job pytest '.venv/bin/python -m pytest -n auto'`, potem `boatbox wait pytest` |
-| `szybko.py`, `mutacje.py --plik` z jednym `polecenie` | Mac, gdy ma wolne rdzenie, a box, gdy Mac jest wąskim gardłem | `boatbox auto '<polecenie>'`, a `szybko.py` jak niżej |
+| `szybko.py`, `mutacje.py --plik` z jednym `polecenie` | Mac w wolnym slocie, a bez wolnego slotu box (sekcja „Budżet”) | `boatbox auto '<polecenie>'`, a `szybko.py` jak niżej |
 | Odtworzenie błędu na Linuksie, powtórzenia testu pod obciążeniem, pomiar, model TLC | box | `boatbox run` albo `boatbox job` |
 | Pojedynczy plik testów, `mutacje.py --zmiana`, ruff, mypy, budowa frontendu, git, `gh`, `tools/scal_pr.py` | Mac, bo to lekkie polecenia (`npm ci` z `npm run build` trwają kilka sekund) | bezpośrednio |
-| Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty | Mac, jedno ciężkie polecenie naraz | bezpośrednio |
+| Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty, pomiar `benchmark_przebiegu.py measure` na Macu | Mac w slocie, a przy zajętych slotach kolejka na slot | `boatbox run --here '<polecenie>'` |
 | Nocne mutacje (`mutacje_nocne.py`, `mutacje_zmiany.py`) | GitHub Actions | workflow `mutacje-nocne.yml` |
 
 `szybko.py` uruchamiaj tak: `boatbox auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8 '.venv/bin/python tools/szybko.py'`.
 Box `large` ma 8 vCPU, a Mac zostaje przy 4 workerach z `czasy_ci.WORKERY_LOKALNE`, więc liczbę workerów boxa podaje tylko `--box-env`.
 W pomiarze A/B obie strony biegną po kolei na tym samym boxie.
+Hook `tools/hooks/ciezkie.py` odmawia polecenia z tej tabeli, które biegłoby na Macu bez `boatbox`, i podaje gotowe polecenie `boatbox`; które polecenia łapie, a które przepuszcza, mówi jego docstring.
 
 ## Base
 
@@ -56,8 +57,12 @@ Pliki części leżą w korzeniu worktree, bo `boatbox` wysyła na box tylko pli
 
 Plan boat liczy starty boxa w oknach minuty, godziny i doby (`boat limits --json`) oraz godziny maszyn, z których na każdy dzień przypada tylko część, a box `large` zużywa je podwójnie.
 Start to każde utworzenie i wznowienie boxa oraz każda część `fan` uruchomiona równolegle.
-Gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej 16, liczba jego rdzeni), ciężkie polecenie biegnie na boxie także po przekroczeniu tempa godzin (linia `over pace:` w `boatbox status`), bo zatkany Mac kosztuje wątki agentów więcej niż godziny planu (decyzja Maksa 16.11.2026).
-`boatbox auto` wybiera wtedy box sam, a na Macu zostawia polecenie tylko przy wolnych rdzeniach albo gdy żaden box nie wystartuje; te przypadki i zachowanie `fan` przy małej liczbie startów opisuje `boatbox help`.
+Mac ma sloty na ciężkie polecenia, wspólne dla wszystkich repozytoriów i wątków: `BOATBOX_MAC_SLOTS`, domyślnie liczba rdzeni / 4 − 1, bo ciężkie polecenie bierze około 4 rdzeni, a resztę potrzebują agenci, Chrome i T3.
+`boatbox auto` i `boatbox run --here` zajmują slot na cały bieg polecenia blokadą pliku w jądrze, więc dwa równoczesne starty nie dostaną tego samego slotu, a slot zabitego polecenia zwalnia się sam.
+Decyzja zapada przy starcie, nie po obciążeniu z `uptime`, które nie nadąża za kilkoma startami naraz.
+Bez wolnego slotu `boatbox auto` od razu wysyła polecenie na box, także po przekroczeniu tempa godzin (linia `over pace:` w `boatbox status`), bo zatkany Mac kosztuje wątki agentów więcej niż godziny planu (decyzja Maksa 16.11.2026).
+Bez wolnego slotu i bez startu boxa (budżet doby albo godziny, box nie wstaje) polecenie czeka w kolejce na slot i co 30 s pisze linię stanu, więc na Macu nigdy nie biegnie więcej ciężkich poleceń niż slotów.
+Zajęte sloty, ich polecenia i czas pokazuje `boatbox status`, a zachowanie `fan` przy małej liczbie startów opisuje `boatbox help`.
 
 ## Dane
 

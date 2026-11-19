@@ -66,6 +66,7 @@ przepuszcza."tools/ci/werdykt_required.py" = ["tests/fixtures/ci_workflow.py", "
 przepuszcza."tools/ci/wykonaj_zadanie.py" = ["tests/fixtures/granice_ksztaltow.py", "tests/test_mutacje_skilli.py"]
 "tools/ci/zgloszenia_ci.py" = ["tests/test_zgloszenia_ci.py"]
 "tools/ci_lokalnie.py" = ["tests/test_ci_lokalnie.py"]
+"tools/hooks/ciezkie.py" = ["tests/test_ciezkie.py"]
 "tools/hooks/czekanie.py" = ["tests/test_czekanie.py", "tests/test_wlasnosci_hookow.py"]
 "tools/hooks/praca_w_tle.py" = ["tests/test_praca_w_tle.py"]
 "tools/hooks/pre-push" = ["tests/test_brama_pre_push.py"]
