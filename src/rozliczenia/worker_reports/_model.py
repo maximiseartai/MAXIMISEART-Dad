@@ -12,12 +12,15 @@ from email.utils import parseaddr
 from enum import Enum
 import hashlib
 from types import MappingProxyType
-from typing import ClassVar, Final, NewType, assert_never
+from typing import TYPE_CHECKING, ClassVar, Final, NewType, assert_never
 
 from ..activity_legend import ActivityLegend, DescriptionProblem, problem_text
 from ..report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from ..settlement_period import SettlementPeriod, period_of
 from ..text import normalize_text
+
+if TYPE_CHECKING:
+    from ._mails import WindowMails
 
 SUBJECT_WORD: Final = "raport"
 """Pierwsze słowo tematu Raportu wykonawcy, bez względu na wielkość liter i z jedną literówką albo bez
@@ -1028,13 +1031,14 @@ class ReportsOutcome:
     przenosi wiersz już z komórkami z ``changes``; ``added`` (Zlecenia dopisane z raportu) po arkuszu, dniu, Wykonawcy i
     numerze, każdy numer najwyżej raz, a zapis dopisuje je po Przeniesieniach; ``problems`` bez powtórzeń, w kolejności
     ``problem_order``; ``notes`` (informacje dla taty) w kolejności ``note_order``; ``workers`` po dniu i Wykonawcy, po
-    Przeniesieniach i dopisaniach; ``mails`` po chwili przyjścia. ``memory`` proces zapisuje dopiero po udanym zapisie
+    Przeniesieniach i dopisaniach; ``mails``: odczyty maili okna po chwili przyjścia (``WindowMails``, z której
+    wychodzą tylko fakty, postać kanoniczna i zapis do Logów). ``memory`` proces zapisuje dopiero po udanym zapisie
     INTERMAX. ``said``: zlecenia z Wpisem tego kliknięcia, także z Wpisem na życzenie (``_reading.WindowRead.said``)."""
 
     changes: tuple[CellChange, ...]
     problems: tuple[ReportProblem, ...]
     workers: tuple[WorkerDay, ...]
-    mails: tuple[MailRead, ...]
+    mails: WindowMails
     memory: OwnEntries
     moves: tuple[OrderMove, ...]
     notes: tuple[ReportNote, ...]
