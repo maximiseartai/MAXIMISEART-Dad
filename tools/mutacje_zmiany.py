@@ -8,6 +8,7 @@ from dataclasses import dataclass, field, replace
 import datetime
 import difflib
 import enum
+import functools
 import hashlib
 import io
 import itertools
@@ -22,6 +23,7 @@ import tempfile
 import time
 import tokenize
 from typing import NewType
+import warnings
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
@@ -77,8 +79,22 @@ bez innej mutacji: przy zbiorze albo słowniku po prawej ``startswith`` tylko rz
 inna mutacja (bez elementu krotki, ``False`` → ``True``), biegnie jako cofnięcie pod jej opisem. Linia mutacji to linia
 jej wyjątku (``Mutant.line``).
 
-Mutacja, która zmienia tylko docstringi, komentarze, adnotacje argumentów i wyników funkcji, importy albo aliasy
-typów (``Nazwa = Callable[...]``, ``A | B`` czytane tylko w adnotacjach), nie zmienia zachowania, więc jej nie ma.
+Mutacja, która zmienia tylko docstringi, komentarze, importy, aliasy typów (``Nazwa = Callable[...]``, ``A | B``
+czytane tylko w adnotacjach) albo adnotacje, których biegnący kod nie czyta, nie zmienia zachowania, więc jej nie ma.
+Nie czyta ich nikt w zmiennej funkcji (poza klasą w niej), w argumencie i wyniku funkcji, a przy ``from __future__
+import annotations`` także w polu dataclass i klasy bez bazy i w zmiennej modułu, poza ``ClassVar``, ``InitVar`` i
+``KW_ONLY``, które czyta ``dataclasses``. W pliku z pydantic albo FastAPI czyta je biblioteka: zostają aliasy typów i
+adnotacje funkcji z dekoratorem innym niż ``property``, ``staticmethod``, ``cache`` i podobne (trasa), funkcji i metody
+podanej w wywołaniu w tym pliku (``Depends(obj.m)``) albo w wywołaniu ``Depends``, ``Security``, ``add_api_route``,
+``TypeAdapter``, ``validate_call`` czy wywołaniu wyniku wywołania (``app.get("/x")(f)``) w dowolnym pliku ``src/`` i
+``tools/`` (``_INJECTORS``), a klasa, którą nazywa taka adnotacja, pole klasy z bazą albo argument wywołania
+(``TypeAdapter(A)``, ``Depends()`` z klasą w adnotacji), zachowuje adnotacje pól i ``__init__``. Plik, który czyta
+adnotacje sam (``fields(...)`` z ``.type``, ``get_type_hints``, ``signature``, ``__annotations__``), zachowuje je
+wszystkie poza zmiennymi funkcji. Granica jest składniowa: funkcję, którą FastAPI dostaje inną drogą (alias metody w
+innym pliku), i dataclass czytaną tylko przez model pydantic innego pliku filtr bierze za nieczytane; przypadki stoją
+w ``tests/test_mutacje_zmiany.py`` (``znana-luka-…``), a ``tests/test_centrum_metryki.py::
+test_filtr_zachowuje_adnotacje_kazdej_funkcji_ktora_czyta_fastapi_centrum`` pada, gdy filtr gubi adnotację którejś
+funkcji z drzewa zależności prawdziwej aplikacji Centrum.
 Dekoratorów narzędzie nie psuje, a samo usunięcie linii (bez linii dodanej w tym miejscu) nie daje mutacji.
 Kod, którego na tym systemie strzeże ``sys.platform ==``/``!=`` literał, dostaje linię ``POMINIĘTA``: gałąź ``if``
 albo ``… if … else …`` innego systemu, kod po ``if`` z takim warunkiem, którego ciało kończy się ``return``/``raise``
@@ -140,8 +156,8 @@ błędny (niezdefiniowana nazwa, błąd składni, błąd typów), to ``WYKRYTA P
 nie trafia do zapisu ani do issue (``silnik_mutacji.wrong``). Cofnięcia fragmentu do bazy (``Mutant.revert``) brama nie
 sprawdza: przywraca ono kod, który przeszedł bramę, więc jej błąd na nim powstaje tylko z niezgodności z niecofniętymi
 fragmentami tej samej zmiany (import, adnotacja, typ w innym miejscu). Pełne cofnięcie zmiany przeszłoby bramę, a testy
-by go nie złapały, więc takie cofnięcie przeżywa i trafia do issue; gdy zmiana była tylko typów, agent odpowiada
-``nie warto`` (#671, #674).
+by go nie złapały, więc takie cofnięcie przeżywa i trafia do issue; gdy zmiana była tylko adnotacji, które czyta
+biblioteka, a test tego nie sprawdza, agent odpowiada ``nie warto`` (#671, #674).
 Linia ``CZAS`` mówi, ile trwała każda faza, także brama typów.
 
 Mutacja, która przeżywa, to obietnica bez testu: dopisz test, który ją wykrywa. Mutacja równoważna (kod robi to samo)
@@ -599,37 +615,26 @@ def _candidates(node: ast.AST, source: _Source, exit_codes: dict[int, tuple[ast.
             yield node, dropped, f"({', '.join(rest)}{tail})", f"krotka bez `{_short(source.segment(dropped))}`"
 
 
-def _meaning(text: str) -> str:
-    """Kod bez tego, czego test nie widzi: docstringów, adnotacji funkcji, importów i aliasów typów.
-
-    Adnotacje argumentów i wyników (``from __future__ import annotations``) nie działają w czasie wykonania, a import
-    nazwy, którą kod naprawdę wywołuje, psuje już mutacja linii z tym wywołaniem. W pliku z pydantic albo FastAPI
-    adnotacje i aliasy decydują o walidacji i trasach, więc zostają; tam pomija się tylko docstringi i importy.
-    Adnotacje pól zostają zawsze.
-    """
-
+def _meaning(text: str, injected: frozenset[str]) -> str:
     tree = ast.parse(text)
-    if _runtime_annotations(tree):
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-                node.body = [statement for statement in node.body if not _invisible(statement, set(), module=False)]
-        return ast.dump(tree)
-    for node in ast.walk(tree):
-        if isinstance(node, ast.arg):
-            node.annotation = None
-        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            node.returns = None
+    reader = _reads_own_annotations(tree)
+    validated = reader or _runtime_annotations(tree)
+    for holder in _unread_annotations(tree, injected, reader=reader, validated=validated):
+        if isinstance(holder, ast.AnnAssign):
+            holder.annotation = ast.Constant(None)
+        elif isinstance(holder, ast.arg):
+            holder.annotation = None
+        else:
+            holder.returns = None
     loaded = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and isinstance(node.ctx, ast.Load)}
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
-            module = isinstance(node, ast.Module)
+            module = isinstance(node, ast.Module) and not validated
             node.body = [statement for statement in node.body if not _invisible(statement, loaded, module=module)]
     return ast.dump(tree)
 
 
 def _runtime_annotations(tree: ast.AST) -> bool:
-    """Plik importuje pydantic albo FastAPI, które czytają adnotacje i aliasy typów w czasie wykonania."""
-
     for node in ast.walk(tree):
         names = (
             [alias.name for alias in node.names] if isinstance(node, ast.Import) else [node.module or ""] if isinstance(node, ast.ImportFrom) else []
@@ -637,6 +642,144 @@ def _runtime_annotations(tree: ast.AST) -> bool:
         if any(name.split(".")[0] in {"pydantic", "fastapi"} for name in names):
             return True
     return False
+
+
+_ANNOTATION_READERS = frozenset({"get_type_hints", "get_annotations", "signature"})
+_INJECTORS = frozenset({"Depends", "Security", "add_api_route", "add_api_websocket_route", "APIRoute", "validate_call", "TypeAdapter"})
+_INERT_DECORATORS = frozenset(
+    {"property", "setter", "getter", "deleter", "staticmethod", "classmethod", "cached_property", "cache", "lru_cache"}
+    | {"abstractmethod", "override", "contextmanager"}
+)
+_DATACLASS_PSEUDO_FIELDS = frozenset({"ClassVar", "InitVar", "KW_ONLY"})
+
+
+def _identifier(node: ast.AST) -> str:
+    target = node.func if isinstance(node, ast.Call) else node
+    return target.attr if isinstance(target, ast.Attribute) else target.id if isinstance(target, ast.Name) else ""
+
+
+@functools.cache
+def _injected(root: Path) -> frozenset[str]:
+    names: set[str] = set()
+    for path in sorted([*root.glob("src/**/*.py"), *root.glob("tools/**/*.py")]):
+        text = path.read_text(encoding="utf-8", errors="replace")
+        if not any(injector in text for injector in _INJECTORS) and ")(" not in text:
+            continue
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for call in ast.walk(tree):
+            if isinstance(call, ast.Call) and (_identifier(call) in _INJECTORS or isinstance(call.func, ast.Call)):
+                names.update(_identifier(argument) for argument in [*call.args, *(keyword.value for keyword in call.keywords)])
+    return frozenset(names - {""})
+
+
+def _locals(function: ast.FunctionDef | ast.AsyncFunctionDef) -> Iterator[ast.AnnAssign]:
+    pending: list[ast.AST] = list(function.body)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ast.AnnAssign):
+            yield node
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            pending.extend(ast.iter_child_nodes(node))
+
+
+def _reads_own_annotations(tree: ast.AST) -> bool:
+    called = {_identifier(node) for node in ast.walk(tree) if isinstance(node, ast.Call)}
+    attributes = {node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)}
+    return bool(called & _ANNOTATION_READERS) or bool(attributes & {"__annotations__", "__signature__"}) or ("fields" in called and "type" in attributes)
+
+
+def _names(annotation: ast.AST) -> set[str]:
+    found: set[str] = set()
+    for node in ast.walk(annotation):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.update(re.findall(r"\w+", node.value))
+        elif isinstance(node, (ast.Name, ast.Attribute)):
+            found.add(_identifier(node))
+    return found
+
+
+def _stdlib_dataclass(node: ast.ClassDef, tree: ast.AST) -> bool:
+    imported = any(
+        isinstance(statement, ast.ImportFrom)
+        and statement.module == "dataclasses"
+        and any(alias.name == "dataclass" and alias.asname is None for alias in statement.names)
+        for statement in ast.walk(tree)
+    )
+    targets = {ast.unparse(decorator.func if isinstance(decorator, ast.Call) else decorator) for decorator in node.decorator_list}
+    return "dataclasses.dataclass" in targets or (imported and "dataclass" in targets)
+
+
+def _signature(function: ast.FunctionDef | ast.AsyncFunctionDef) -> list[ast.arg]:
+    arguments = function.args
+    return [argument for argument in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs, arguments.vararg, arguments.kwarg] if argument]
+
+
+def _unread_annotations(
+    tree: ast.Module, injected: frozenset[str], *, reader: bool, validated: bool
+) -> Iterator[ast.AnnAssign | ast.arg | ast.FunctionDef | ast.AsyncFunctionDef]:
+    functions = [node for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))]
+    for function in functions:
+        yield from _locals(function)
+    if reader:
+        return
+    deferred = any(
+        isinstance(statement, ast.ImportFrom)
+        and statement.module == "__future__"
+        and any(alias.name == "annotations" for alias in statement.names)
+        for statement in tree.body
+    )
+    arguments = [
+        argument
+        for call in ast.walk(tree)
+        if isinstance(call, ast.Call) and _identifier(call) not in {"isinstance", "issubclass"}
+        for argument in [*call.args, *(keyword.value for keyword in call.keywords)]
+    ]
+    passed = {argument.id for argument in arguments if isinstance(argument, ast.Name)} | injected
+    passed_methods = {argument.attr for argument in arguments if isinstance(argument, ast.Attribute)} | injected
+    owners = {id(statement): node for node in ast.walk(tree) if isinstance(node, ast.ClassDef) for statement in node.body}
+    classes = [node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)]
+    plain = [node for node in classes if _stdlib_dataclass(node, tree) or (not node.bases and not node.keywords and not node.decorator_list)]
+
+    def fields(node: ast.ClassDef) -> set[str]:
+        return {name for statement in node.body if isinstance(statement, ast.AnnAssign) for name in _names(statement.annotation)}
+
+    served = [
+        function
+        for function in functions
+        if validated
+        and (
+            any(_identifier(decorator) not in _INERT_DECORATORS for decorator in function.decorator_list)
+            or (not function.decorator_list and function.name in (passed_methods if id(function) in owners else passed))
+        )
+    ]
+    read = passed | passed_methods | {name for node in classes if node not in plain for name in fields(node)} if validated else set()
+    reached: list[ast.ClassDef] = []
+    while validated:
+        for function in served:
+            read |= {name for argument in _signature(function) if argument.annotation for name in _names(argument.annotation)}
+            read |= _names(function.returns) if function.returns else set()
+        more = [node for node in classes if node.name in read and node not in reached]
+        if not more:
+            break
+        reached += more
+        read |= {name for node in more for name in fields(node)}
+        served += [function for function in functions if function.name == "__init__" and owners.get(id(function)) in more]
+    scopes: list[ast.Module | ast.ClassDef] = [tree, *(node for node in plain if node not in reached)] if deferred else []
+    for scope in scopes:
+        yield from (
+            statement
+            for statement in scope.body
+            if isinstance(statement, ast.AnnAssign) and not _names(statement.annotation) & _DATACLASS_PSEUDO_FIELDS
+        )
+    for function in functions:
+        if function not in served:
+            yield from _signature(function)
+            yield function
 
 
 _TYPE_FORMS = frozenset(
@@ -674,7 +817,7 @@ def _invisible(statement: ast.stmt, loaded: set[str], *, module: bool) -> bool:
     )
 
 
-def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform) -> list[Mutant]:
+def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.platform, root: Path = ROOT) -> list[Mutant]:
     """Mutacje zmienionych linii pliku ``path`` o treści ``text``; każda daje kod, który się kompiluje.
 
     Testy biegną na systemie ``platform``: mutacja kodu gałęzi innego systemu ma ``other_system``.
@@ -691,7 +834,8 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
     cached = _cached_lines(tree)
     exit_codes = _exit_codes(tree)
     found: dict[str, Mutant] = {}
-    meaning = _meaning(text)
+    injected = _injected(root)
+    meaning = _meaning(text, injected)
 
     def add(
         lines: frozenset[int], line: int, description: str, mutated: str, *, other_system: bool, revert: Revert = Revert.NONE, last_resort: bool = False
@@ -706,7 +850,7 @@ def mutants(path: str, text: str, hunks: Sequence[Hunk], platform: str = sys.pla
             compile(mutated, path, "exec", dont_inherit=True)
         except (SyntaxError, ValueError):
             return
-        if _meaning(mutated) != meaning:
+        if _meaning(mutated, injected) != meaning:
             found[mutated] = Mutant(path, line, lines, description, mutated, other_system, bool(lines & cached), revert, last_resort)
 
     for node in ast.walk(tree):

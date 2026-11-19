@@ -38,8 +38,8 @@ def _load() -> ModuleType:
 hook = _load()
 
 CI_LOOPS = (
-    "until s=$(gh pr checks 234 --json name,bucket 2>/dev/null) && [ -n \"$s\" ] && [ \"$s\" != \"[]\" ] && "
-    "jq -e 'all(.bucket!=\"pending\")' <<<\"$s\" >/dev/null; do sleep 60; done; gh pr checks 234",
+    'until s=$(gh pr checks 234 --json name,bucket 2>/dev/null) && [ -n "$s" ] && [ "$s" != "[]" ] && '
+    'jq -e \'all(.bucket!="pending")\' <<<"$s" >/dev/null; do sleep 60; done; gh pr checks 234',
     'end=$((SECONDS+590)); while [ $SECONDS -lt $end ]; do s=$(gh pr checks 431 2>/dev/null | grep "^Required CI '
     'status" | cut -f2); [ -n "$s" ] && [ "$s" != pending ] && break; sleep 30; done; echo "required=$s"; '
     "gh pr checks 431 2>/dev/null | cut -f1,2 | sort -k2 | grep -v pass",
@@ -53,12 +53,12 @@ CI_LOOPS = (
     "until c=$(gh run list --branch main --commit 5f6bbaa096e364da0c80672e948d90913c886683 --json "
     "status,conclusion --jq '.[0]|\"\\(.status) \\(.conclusion)\"') && [[ $c == completed* ]]; do sleep 30; done; "
     'echo "$c"',
-    "until s=$(gh pr view 225 --json mergeable -q .mergeable); [ \"$s\" != \"UNKNOWN\" ] && "
+    'until s=$(gh pr view 225 --json mergeable -q .mergeable); [ "$s" != "UNKNOWN" ] && '
     '[ "$s" != "CONFLICTING" ]; do sleep 15; done; gh pr view 225 --json mergeable,mergeStateStatus',
     'until [ "$(gh pr view 307 --json state --jq .state)" != "OPEN" ]; do sleep 30; done; '
     "gh pr view 307 --json state,mergedAt --jq '[.state,.mergedAt]|@tsv'",
     "for i in $(seq 1 56); do s=$(gh api repos/MAXIMISEART-AI/MAXIMISEART-Dad/commits/"
-    "66f3e0301f6d6f965733d0e1c46baeb90d25c7b3/status --jq '.statuses[] | select(.context==\"Required CI status\") | "
+    '66f3e0301f6d6f965733d0e1c46baeb90d25c7b3/status --jq \'.statuses[] | select(.context=="Required CI status") | '
     '.state\' 2>/dev/null | head -1); [ "$s" = success -o "$s" = failure ] && break; sleep 10; done',
     "perl -e 'alarm 570; exec @ARGV' bash -c 'until [ \"$(gh pr view 307 --json state --jq .state 2>/dev/null)\" = "
     '"MERGED" ]; do perl -e "select(undef,undef,undef,30)"; done\'; gh pr view 307 --json state,mergeCommit',
@@ -126,7 +126,7 @@ CI_LOOPS = (
 )
 WATCHES = (
     "timeout 1500 gh pr checks 215 --watch > .audit/swarm-215/lane1-pr-checks.txt 2>&1; echo exit=$?",
-    "timeout 540 gh pr checks 330 --watch --interval 60 2>&1 | tail -15; echo \"exit ${pipestatus[1]}\"",
+    'timeout 540 gh pr checks 330 --watch --interval 60 2>&1 | tail -15; echo "exit ${pipestatus[1]}"',
     "timeout 580 gh run watch 40098178470 --exit-status > /dev/null 2>&1; echo rc=$?; "
     'gh pr checks 384 2>&1 | grep -v "pass" | head',
     "gh run watch 39930673572 --interval 30 --exit-status > /dev/null 2>&1; echo exit=$?; date -u +%T",
@@ -197,38 +197,14 @@ PYTHON_LOOPS = (
         "TASK_OUTPUT_LOOP",
         "plik-zadania-w-argumencie",
     ),
-    # Syntetyczne: ``-c`` z opcją przed nim, ``-c`` w napisie z ``"``, f-napis, ``sleep`` z ``from time import`` i
     # ``for`` po liście z wyjściem przez ``sys.exit``.
-    (
-        "python3 -I -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n"
-        "    time.sleep(30)'",
-        "CI_LOOP",
-        "c-z-opcja",
-    ),
-    (
-        'py -3 -c "import subprocess, time\nfor i in range(1, 20): subprocess.run([\'gh\', \'api\', '
-        "\'repos/o/r/commits/abc/check-runs\']); time.sleep(3)\"",
-        "CI_LOOP",
-        "py-3-c-gh-api",
-    ),
     (
         "python3 - <<'EOF'\nfrom time import sleep\nimport os\nn = 5\nwhile os.system(f\"gh pr checks {n} | grep -q pending\") == 0:\n"
         "    sleep(30)\nEOF",
         "CI_LOOP",
         "sleep-z-time-i-f-napis",
     ),
-    # Skrypt ``-c`` za słowami, które czytanie ``shlex`` od początku polecenia gubiło (``#`` w słowie, ``$'…'``,
     # recenzja #2295 r2 W3), za kontynuacją linii i z ``'\''`` w środku.
-    ("N=${U##*/}; python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)' $N", "CI_LOOP", "hash-w-slowie"),
-    ("[ $# -gt 0 ] || set -- 5; python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)' $1", "CI_LOOP", "dolar-hash"),
-    ("echo $'it\\'s'; python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)'", "CI_LOOP", "napis-ansi"),
-    ("python3 \\\n  -c 'import subprocess, time\nwhile True:\n    subprocess.run([\"gh\", \"pr\", \"checks\", \"5\"])\n    time.sleep(30)'", "CI_LOOP", "kontynuacja-linii"),
-    (
-        "python3 -c 'import subprocess, time\nwhile True:\n    subprocess.run(['\\''gh'\\'', '\\''pr'\\'', "
-        "'\\''checks'\\'', '\\''5'\\''])\n    time.sleep(30)'",
-        "CI_LOOP",
-        "apostrof-w-skrypcie",
-    ),
     (
         "python3 - <<'EOF'\nimport subprocess, sys, time\nfor attempt in attempts:\n"
         "    if subprocess.run(['gh', 'pr', 'checks', '7']).returncode == 0:\n        sys.exit(0)\n    time.sleep(30)\nEOF",
@@ -242,12 +218,12 @@ RERUNS = (
     "gh run rerun 41959078147 --job 127020944830 2>&1 | tail -2; echo rerun-requested",
     'gh run rerun 41940851666 --failed 2>&1 | tail -2; echo "rerun zlecony"',
     "gh run rerun --job 130564767610 2>&1 | tail -3",
-    "for r in 43037317259 43033018567 43032850682 43034061364; do printf \"$r $(gh run view $r --json status,conclusion "
-    "--jq '\"\\(.status)/\\(.conclusion)\"') \"; gh run rerun $r --failed 2>&1 | tail -1; echo; done",
+    'for r in 43037317259 43033018567 43032850682 43034061364; do printf "$r $(gh run view $r --json status,conclusion '
+    '--jq \'"\\(.status)/\\(.conclusion)"\') "; gh run rerun $r --failed 2>&1 | tail -1; echo; done',
     "gh run rerun 42431729670 --failed 2>&1 | tail -1",
     "gh run view 42431729670 --json status -q .status; gh run rerun 42431729670 --failed 2>&1 | tail -1",
     "gh run rerun 42435998596 --job 128594886949 2>&1 | tail -3; gh run view 42435998596 --json status,jobs --jq "
-    "'.status, ([.jobs[]|select(.conclusion==\"failure\")|.name]|join(\", \"))'",
+    '\'.status, ([.jobs[]|select(.conclusion=="failure")|.name]|join(", "))\'',
     "for j in 129008722489 129008722741; do gh api --allow-escape-sequences repos/maximiseartai/MAXIMISEART-Dad/actions/jobs/"
     "$j/logs 2>&1 | grep -E 'BŁĄD POBIERANIA|WYKONANIE FAIL' | head -2; done; gh run rerun 42571178441 --failed 2>&1 | tail -1",
     "gh run rerun 43035692960 --failed && echo rerun ok",
@@ -299,11 +275,6 @@ RERUNS = (
     "true # $'\\'\ngh run rerun 1",
     "echo a #$'\\'\ngh run rerun 1",
     "echo `echo $'\\'`; gh run rerun 1",
-    # ``$'…'`` tylko po nieparzystej liczbie ``$`` bez ukośnika i z ``'`` zamykającym w tej samej linii (#2295 r3):
-    # ``$$'a\'`` to numer procesu i napis ``'a\'``, a ``$'\'`` w komentarzu nie sięga ``'`` z dalszej linii.
-    "echo $$'a\\' ; gh run rerun 1 ; echo 'b'",
-    "echo \\$'a\\' ; gh run rerun 1 ; echo 'b'",
-    "# $'\\'\ngh run rerun 1\necho 'x'",
 )
 PASSING = (
     "gh pr checks 405 2>&1 | head -20",
@@ -329,7 +300,7 @@ PASSING = (
     'pgrep -lf "Microsoft Excel" ; echo "pgrep=$?"; uptime; '
     "while [ \"$(uptime | awk -F'load averages: ' '{print int($2)}')\" -gt 16 ]; do sleep 20; done; uptime",
     'pgrep -fl "serve_centrum|pytest" | cut -c1-150',
-    "for i in $(seq 1 38); do grep -q \"end head round 1\" wydajnosc/przebieg.log && break; "
+    'for i in $(seq 1 38); do grep -q "end head round 1" wydajnosc/przebieg.log && break; '
     "perl -e 'select(undef,undef,undef,15)'; done; cat wydajnosc/przebieg.log",
     "gh run list --branch main --workflow ci.yml -L 4 --json databaseId,status --jq "
     "'.[]|select(.status==\"completed\")|.databaseId' | head -2 | while read id; do gh run view $id --json "
@@ -339,9 +310,9 @@ PASSING = (
     "sed -i '' 's/CI_STATUS_PLACEHOLDER/SUCCESS (zmierzone: `gh pr view 381 --json statusCheckRollup` po "
     "`gh pr checks --watch`)/' ~/.t3/notes/arch-2026-10-24/K6/RAPORT.md",
     "cat > ~/.t3/notes/uzupelnienie-415/418/r2/czekaj.sh <<'EOF'\n#!/bin/zsh\nH=a6246f973bbff04407eb8e6c26917cd527ca3a9d\n"
-    "while true; do\n  r=$(gh pr checks 433 --json name,bucket --jq '.[]|select(.name==\"Required CI status\")|"
-    ".bucket')\n  [ \"$r\" != pending ] && break\n  sleep 60\ndone\nEOF\nchmod +x ~/.t3/notes/uzupelnienie-415/418/r2/czekaj.sh",
-    "git commit -q -m \"docs(agents): nie pisz until gh pr checks; do sleep 30; done, tylko watch_pull_request\"",
+    'while true; do\n  r=$(gh pr checks 433 --json name,bucket --jq \'.[]|select(.name=="Required CI status")|'
+    '.bucket\')\n  [ "$r" != pending ] && break\n  sleep 60\ndone\nEOF\nchmod +x ~/.t3/notes/uzupelnienie-415/418/r2/czekaj.sh',
+    'git commit -q -m "docs(agents): nie pisz until gh pr checks; do sleep 30; done, tylko watch_pull_request"',
     'git -c user.name=v311 commit -q -m "until ! pgrep -f mutacje; do sleep 5; done wisi"',
     # Partie zapytań z sleep jako limitem API: ``for`` po liście i ``while read`` bez wyjścia z pętli i licznika.
     "for id in 39805093290 39772151111 39771042902 39601913795 39601190727; do sleep 2; gh run view $id --json "
@@ -352,11 +323,11 @@ PASSING = (
     '"repos/MAXIMISEART-AI/MAXIMISEART-Dad/actions/runs/$id/jobs?per_page=20" --jq ".jobs[]|select(.conclusion=='
     '\\"failure\\")|\\"$id \\(.head_branch) \\(.head_sha[0:7]) \\(.id) \\(.name)\\"" 2>&1 | head -5; gh api '
     '"repos/MAXIMISEART-AI/MAXIMISEART-Dad/actions/runs/$id" --jq \'"   run: \\(.head_branch) \\(.event) '
-    '\\(.conclusion)"\' 2>&1 | head -2; done',
+    "\\(.conclusion)\"' 2>&1 | head -2; done",
     "while read id ev br sha at; do grep -qx $id $V/.ok && continue; sleep 1; gh api "
     '"repos/MAXIMISEART-AI/MAXIMISEART-Dad/actions/runs/$id/jobs?per_page=100" --jq ".jobs[]|select(.conclusion=='
     '\\"failure\\")|\\"$id $br $sha \\(.id) \\(.name)\\"" || echo "$id ERR"; done < $V/runy-czerwone.txt',
-    "for n in $(seq 247 264); do printf \"#%s \" $n; gh pr view $n --json isDraft,statusCheckRollup --jq "
+    'for n in $(seq 247 264); do printf "#%s " $n; gh pr view $n --json isDraft,statusCheckRollup --jq '
     "'[.isDraft, ([.statusCheckRollup[]|.conclusion]|map(select(.!=\"SUCCESS\"))|length)]|@tsv'; done",
     "for n in $(seq 247 264); do sleep 1; gh pr view $n --json title; done",
     "for n in {247..264}; do sleep 1; gh pr view $n --json title; done",
@@ -416,21 +387,39 @@ PASSING = (
     "    subprocess.run(['gh', 'pr', 'view', str(n), '--json', 'title'])\n    time.sleep(1)\nEOF",
     "python3 -c 'import time; time.sleep(3)'; gh pr checks 1",
     "python3 - <<'EOF'\nto nie Python: while sleep( gh pr checks 1\nEOF",
-    # Skrypt Pythona zapisany heredokiem do pliku i ``-c`` innego programu za końcem polecenia z Pythonem.
+    # Skrypt Pythona zapisany heredokiem do pliku, a nie podany Pythonowi.
     "cat > czekaj.py <<'EOF'\nimport subprocess, time\nwhile True:\n    subprocess.run(['gh', 'pr', 'checks', '1'])\n"
     "    time.sleep(5)\nEOF\nchmod +x czekaj.py",
-    "python3 --version; grep -c 'while 1: sleep(1); print(\"gh pr checks 1\")' notatki.txt",
-    "python3 --version\ngrep -c 'while 1: sleep(1); print(\"gh pr checks 1\")' notatki.txt",
 )
 
 
 def _hook(stdin: str) -> subprocess.CompletedProcess[str]:
-    return subprocess.run([sys.executable, str(HOOK)], input=stdin, capture_output=True, text=True, check=False)
+    return subprocess.run(
+        [sys.executable, str(HOOK)],
+        input=stdin,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
-def _bash(command: str, in_background: bool = False) -> subprocess.CompletedProcess[str]:
-    tool_input = {"command": command, "description": "x", "run_in_background": in_background}
-    return _hook(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": tool_input}))
+def _bash(
+    command: str, in_background: bool = False
+) -> subprocess.CompletedProcess[str]:
+    tool_input = {
+        "command": command,
+        "description": "x",
+        "run_in_background": in_background,
+    }
+    return _hook(
+        json.dumps(
+            {
+                "hook_event_name": "PreToolUse",
+                "tool_name": "Bash",
+                "tool_input": tool_input,
+            }
+        )
+    )
 
 
 @pytest.mark.parametrize(
@@ -438,7 +427,9 @@ def _bash(command: str, in_background: bool = False) -> subprocess.CompletedProc
     [pytest.param(command, hook.CI_LOOP, id=command) for command in CI_LOOPS]
     + [pytest.param(command, hook.WATCHING, id=command) for command in WATCHES],
 )
-def test_czekanie_na_ci_na_pierwszym_planie_dostaje_odmowe(command: str, refusal: object) -> None:
+def test_czekanie_na_ci_na_pierwszym_planie_dostaje_odmowe(
+    command: str, refusal: object
+) -> None:
     assert hook.judge(command, in_background=False) is refusal
 
 
@@ -449,7 +440,9 @@ def test_petla_na_pgrep_dostaje_odmowe(command: str) -> None:
 
 @pytest.mark.parametrize("in_background", [False, True])
 @pytest.mark.parametrize("command", RERUNS)
-def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(command: str, in_background: bool) -> None:
+def test_ponowienie_runu_poza_ponow_ci_dostaje_odmowe(
+    command: str, in_background: bool
+) -> None:
     assert hook.judge(command, in_background=in_background) is hook.RERUN
 
 
@@ -465,9 +458,9 @@ SERVER_READINESS = {
     "http://127.0.0.1:47900/ && break; sleep 1; done; cat /private/tmp/c/s/tasks/b31ma9p31.output | tail -5",
     "curl-plik-w-zmiennej-przed-petla": "F=/private/tmp/c/s/tasks/b31ma9p31.output; "
     "until curl -sf http://127.0.0.1:5179/ >/dev/null; do sleep 1; done; tail -5 $F",
-    "python-plik-za-skryptem": "F=/private/tmp/c/s/tasks/b31ma9p31.output; python3 -c 'import time, urllib.request\n"
-    "for _ in range(30):\n    try:\n        urllib.request.urlopen(\"http://127.0.0.1:5179/\")\n        break\n"
-    "    except OSError:\n        time.sleep(1)'; tail -5 $F",
+    "python-plik-za-heredokiem": "F=/private/tmp/c/s/tasks/b31ma9p31.output; python3 - <<'EOF'\n"
+    "import time, urllib.request\nfor _ in range(30):\n    try:\n        urllib.request.urlopen(\"http://127.0.0.1:5179/\")\n"
+    "        break\n    except OSError:\n        time.sleep(1)\nEOF\ntail -5 $F",
 }
 
 
@@ -521,7 +514,10 @@ def test_hook_odmawia_kodem_2_z_jedyna_droga_na_stderr(
 
 @pytest.mark.parametrize(
     ("command", "in_background"),
-    [pytest.param(PASSING[0], False, id="inne-polecenie"), pytest.param(CI_LOOPS[0], True, id="czekanie-w-tle")],
+    [
+        pytest.param(PASSING[0], False, id="inne-polecenie"),
+        pytest.param(CI_LOOPS[0], True, id="czekanie-w-tle"),
+    ],
 )
 def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
     hooked = _bash(command, in_background=in_background)
@@ -531,7 +527,13 @@ def test_hook_przepuszcza_bez_slowa(command: str, in_background: bool) -> None:
 
 def _configured_timeout() -> float:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    (timeout,) = [hook["timeout"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
+    (timeout,) = [
+        hook["timeout"]
+        for entry in entries
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+        if "czekanie.py" in hook["command"]
+    ]
     return float(timeout)
 
 
@@ -550,19 +552,13 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "until a& do b& done&" * 40000 + "while :; do sleep 1; gh pr checks 1; done",
         "(until x do done)" * 40000 + "(while :; do sleep 1; gh pr checks 1; done)",
         # Ciało każdej pętli przeszukane osobno: pętle zagnieżdżone i niezamknięte razem rosną z kwadratem długości.
-        "until x; do " * 40000 + "done; " * 40000 + "while :; do sleep 1; gh pr checks 1; done",
+        "until x; do " * 40000
+        + "done; " * 40000
+        + "while :; do sleep 1; gh pr checks 1; done",
         # Wzorzec, który od każdego wiersza albo każdego ``gh pr checks`` czyta do końca polecenia.
         "while :; do sleep 1; gh pr checks 1; done" + "\n" * 400000,
         "gh pr checks 1 " * 40000 + "\nwhile :; do sleep 1; gh pr checks 1; done",
         "until x; do sleep 1; " + "gh api x " * 40000 + "\ngh pr checks 1; done",
-        # Szukanie ``-c`` od każdego słowa ``python`` rośnie z kwadratem liczby tych słów, a od słowa ``python``
-        # sklejonego cudzysłowem z następnym z kwadratem długości słowa (recenzja #2295 r1 W1).
-        "python3 " * 40000 + "-c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)'",
-        "python3'" * 20000 + "; python3 -c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)'",
-        # Słowo budowane znak po znaku (``shlex``) rośnie z kwadratem długości: skrypt ``-c`` ok. 2 MB (#2295 r2 W1).
-        "python3 -c 'import time\nwhile True:\n    print(\"gh pr checks 1\")\n    time.sleep(1)\nx = \"" + "a" * 2_000_000 + "\"'",
-        # Szukanie końca ``$'…'`` od każdego ``$'`` do końca linii rośnie z kwadratem ich liczby.
-        "echo " + "$'\\' " * 40000 + "\nuntil ! gh pr checks 1 | grep -q pending; do sleep 30; done",
     ],
     ids=[
         "ogon-przekierowan",
@@ -573,10 +569,6 @@ def test_limit_hooka_w_ustawieniach_opoznia_polecenie_najwyzej_o_10_s() -> None:
         "puste-wiersze",
         "zapytania-bez-watch",
         "gh-api-bez-adresu",
-        "wiele-slow-pythona",
-        "python-sklejony-cudzyslowem",
-        "skrypt-python-2-mb",
-        "napisy-ansi-bez-konca",
     ],
 )
 def test_hook_ocenia_wejscie_bez_konca_przed_limitem_z_ustawien(command: str) -> None:
@@ -624,9 +616,25 @@ def test_hook_trzyma_w_pamieci_jedno_cialo_petli_naraz() -> None:
         # unlimited`` na Linuksie mieści się na stosie, kończy ``ValueError``, i test nie odróżnia hooka bez
         # ``RecursionError``. Żadne zadanie CI nie zdejmuje limitu stosu.
         "[" * 1_000_000,
-        json.dumps({"tool_input": {"command": '"$(' * 1000 + "until ! gh pr checks 1; do sleep 30; done"}}),
+        json.dumps(
+            {
+                "tool_input": {
+                    "command": '"$(' * 1000
+                    + "until ! gh pr checks 1; do sleep 30; done"
+                }
+            }
+        ),
     ],
-    ids=["pusto", "nie-json", "lista", "null", "liczba", "bez-polecenia", "gleboki-json", "gleboki-cudzyslow"],
+    ids=[
+        "pusto",
+        "nie-json",
+        "lista",
+        "null",
+        "liczba",
+        "bez-polecenia",
+        "gleboki-json",
+        "gleboki-cudzyslow",
+    ],
 )
 def test_nieczytelne_wejscie_hooka_przechodzi(stdin: str) -> None:
     hooked = _hook(stdin)
@@ -634,7 +642,9 @@ def test_nieczytelne_wejscie_hooka_przechodzi(stdin: str) -> None:
     assert (hooked.returncode, hooked.stdout) == (0, "")
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="zamknięte stdin daje tu sh, którego Windows nie ma")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="zamknięte stdin daje tu sh, którego Windows nie ma"
+)
 def test_hook_bez_stdin_przechodzi() -> None:
     # Python bez deskryptora 0 ma ``sys.stdin = None``, a ``json.load(None)`` rzuca ``AttributeError``.
     hooked = subprocess.run(
@@ -649,7 +659,13 @@ def test_hook_bez_stdin_przechodzi() -> None:
 
 def _configured(project: Path) -> list[subprocess.CompletedProcess[str]]:
     entries = json.loads(SETTINGS.read_text(encoding="utf-8"))["hooks"]["PreToolUse"]
-    commands = [hook["command"] for entry in entries if entry["matcher"] == "Bash" for hook in entry["hooks"]]
+    commands = [
+        hook["command"]
+        for entry in entries
+        if entry["matcher"] == "Bash"
+        for hook in entry["hooks"]
+        if "czekanie.py" in hook["command"]
+    ]
     tool_input = {"command": PGREP_LOOPS[0], "run_in_background": False}
     return [
         subprocess.run(
@@ -665,14 +681,18 @@ def _configured(project: Path) -> list[subprocess.CompletedProcess[str]]:
     ]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store"
+)
 def test_ustawienia_projektu_wpinaja_hook_dla_basha() -> None:
     hooked = _configured(ROOT)
 
     assert [(run.returncode, "pgrep -f" in run.stderr) for run in hooked] == [(2, True)]
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store")
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="python3 na Windows bywa aliasem Microsoft Store"
+)
 def test_checkout_bez_skryptu_hooka_nie_blokuje_basha(tmp_path: Path) -> None:
     # Sesja trzyma ustawienia ze startu, a checkout sprzed hooka nie ma skryptu; python3 bez pliku kończy się kodem 2.
     hooked = _configured(tmp_path)

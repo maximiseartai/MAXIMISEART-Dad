@@ -394,6 +394,17 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
         ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, False, settings=ustawienia_z_wydania(None)), HostParts(), "potrzebuje okna efenix"),
         ("efenix", Start({"collective_file": Path("plik-zbiorczy.xlsx")}, None, True, settings=ustawienia_z_wydania(None)), _ATRAPA, "nie ma Podglądu bez zapisu"),
         (
+            "report_entering",
+            Start(
+                {"register": Path("intermax.xlsx"), "periods_directory": Path("okresy")},
+                period=None,
+                dry_run=False,
+                settings=ustawienia_z_wydania(WorkerList(())),
+            ),
+            HostParts(),
+            "potrzebuje Skrzynki raportów",
+        ),
+        (
             "settlement",
             Start(
                 _SETTLEMENT_FILES,
@@ -406,7 +417,7 @@ _ATRAPA: Final = HostParts(efenix=atrapa_opening("http://127.0.0.1:9/index.php")
             "nie ma trybu z Przekazaniem",
         ),
     ],
-    ids=["bez-pliku", "bez-okresu", "bez-okna-efenix", "podglad-bez-podgladu", "tryb-spoza-procesu"],
+    ids=["bez-pliku", "bez-okresu", "bez-okna-efenix", "podglad-bez-podgladu", "bez-skrzynki-raportow", "tryb-spoza-procesu"],
 )
 def test_start_bez_potrzeby_procesu_to_blad_gospodarza_a_nie_uruchomienie(
     key: common_contract.ProcessKey, start: Start, parts: HostParts, error: str

@@ -59,6 +59,8 @@ JOBS_ELSEWHERE = {
 COMMANDS_ELSEWHERE = {
     "tests/test_zapadki.py::test_reguly_ast_grep": "reguły ast-grep na dodanych liniach: lokalnie biegną z zapadkami w tools/szybko.py",
     "tests/test_zapadki.py::test_reguly_calego_drzewa": "reguły ast-grep całego drzewa: lokalnie biegną z zapadkami w tools/szybko.py",
+    "tests/test_komentarze_frontendu.py": "komentarze na liniach dodanych frontendu: z node_modules frontendu (npm ci w frontend/)"
+    " uruchom .venv/bin/python -m pytest -q -n 0 tests/test_komentarze_frontendu.py",
     "tools/na_scalonych_pr.py --przypadki-regul": "przypadki reguł ast-grep czytają werdykty z GitHuba: uruchom je .venv/bin/python tools/na_scalonych_pr.py --przypadki-regul",
     "tools/ci/zapis_czasow.py": "pomiar czasów zadania (artefakt czasy-ci), nic nie sprawdza",
     "tools/ci/zapis_narzedzi_tlc.py": "decyzja o zapisie cache narzędzi TLC (#940), nie sprawdza zmiany",

@@ -17,10 +17,10 @@ i koniec tury). Odrzuca:
   ``gh run watch``;
 - pętlę z ``sleep``, w której stoi plik wyjścia zadania w tle (``tasks/<id>.output``) wprost albo przez zmienną, której
   polecenie go przypisuje (``F=…/tasks/b1.output; until grep -q KONIEC $F; do sleep 15; done``);
-- pętlę skryptu Pythona z ``-c`` albo z heredoca podanego Pythonowi (``python3 - <<'EOF'``), która woła ``sleep(…)``,
-  a w jej napisach stoi zapytanie o CI (``["gh", "run", "view", …]``, ``f"gh pr checks {n}"``) albo ``pgrep -f``,
-  albo plik wyjścia zadania stoi w skrypcie albo w jego argumentach (``python3 - "$F" <<'EOF'``); skrypt czyta ``ast``,
-  a skrypt ``-c`` ten sam czytnik napisów co skrypt ``bash -c`` (``_ShellScripts``).
+- pętlę skryptu Pythona z heredoca podanego Pythonowi (``python3 - <<'EOF'``), która woła ``sleep(…)``, a w jej
+  napisach stoi zapytanie o CI (``["gh", "run", "view", …]``, ``f"gh pr checks {n}"``) albo ``pgrep -f``, albo plik
+  wyjścia zadania stoi w skrypcie albo w poleceniu, które otwiera heredoc (``python3 - "$F" <<'EOF'``); skrypt czyta
+  ``ast``, a heredoc linie polecenia, więc napisy przed nim nie zmieniają, czym jest jego ciało.
 
 Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` albo licznikiem prób od 0 albo 1
 (``$(seq N)``, ``$(seq 1 N)``, ``{1..N}``, ``for ((``; w Pythonie ``range(N)``, ``range(0, N)``, ``range(1, N)``),
@@ -39,12 +39,11 @@ Wejście, którego nie da się odczytać, też przechodzi, bo hook nie może zat
 Ciała heredoców (skrypt Pythona, treść commitu) i napisy ze spacją w cudzysłowach (opis commitu, wiersz logu)
 hook pomija jako polecenia powłoki; zostawia z nich ``$(…)`` i ciało ``-c`` powłoki, ``su``, ``runuser``,
 ``flock`` albo ``script`` z dowolnymi słowami przed ``-c`` (``bash -euo pipefail -c '…'``, ``bash -lc``,
-``su -l -s /bin/sh root -c``). Napis ``$'…'`` bash kończy ``'`` bez ukośnika w tej samej linii; bez takiego ``'``
-(``$'\'`` w komentarzu) i za ``$$`` napis czyta się jak ``'…'``. Skrypt Pythona czyta tylko wtedy, gdy polecenie ma
-``sleep(``.
+``su -l -s /bin/sh root -c``). Skrypt Pythona czyta tylko wtedy, gdy polecenie ma ``sleep(``.
 
 Granica: inne harnessy niż Claude Code (Codex, opencode), pętlę w skrypcie uruchomionym z pliku (także zapisanym
-heredokiem do pliku), w Pythonie wewnątrz ``bash -c``, w Pythonie z poleceniem CI w zmiennej spoza pętli, z adresem
+heredokiem do pliku), w skrypcie ``python3 -c '…'`` (czytnik napisów polecenia nie zna komentarzy bash, więc ``'``
+w komentarzu przed ``-c`` zmieniłby, który napis jest skryptem), w Pythonie z poleceniem CI w zmiennej spoza pętli, z adresem
 ``gh api`` w cudzysłowie i pętle, których wzorca hook nie zna, łapie tylko przegląd. Pętla bez pliku zadania w sobie
 przechodzi, także ``while kill -0 $P; do sleep 5; done; cat …/tasks/b1.output``, bo tak samo wygląda czekanie na
 gotowość serwera z zadania w tle (``curl … && break``), którego koniec nie przyjdzie; tak samo pętla na zwykłym pliku
@@ -90,13 +89,10 @@ TASK_OUTPUT = re.compile(r"\btasks/[^/\s]*\.output\b")
 # po ``_code``: ``"${F}"`` jest tam ``"$_F_"``, bo napis bez spacji ma nawiasy zamienione na podkreślenia.
 ASSIGNMENT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(\S*)")
 REFERENCE = re.compile(r"\$[{_]?([A-Za-z_]\w*)")
-# Program Pythona: ``python3``, ``python3.14``, ``.venv/bin/python``, ``py`` (Windows), ale nie ``x.py``; ``PYTHON``
-# szuka go w linii otwierającej heredoc, a ``PYTHON_NAME`` sprawdza nazwę w cudzysłowie (``"$PY" -c`` nie).
-_PYTHON_NAME = r"(?:python(?:\d+(?:\.\d+)?)?|py)"
-PYTHON = re.compile(rf"(?<![\w.$-])(?:[\w.~/-]*/)?{_PYTHON_NAME}(?![\w.-])")
-PYTHON_NAME = re.compile(_PYTHON_NAME)
+# Program Pythona w linii otwierającej heredoc: ``python3``, ``python3.14``, ``.venv/bin/python``, ``py`` (Windows),
+# ale nie ``x.py``.
+PYTHON = re.compile(r"(?<![\w.$-])(?:[\w.~/-]*/)?(?:python(?:\d+(?:\.\d+)?)?|py)(?![\w.-])")
 PYTHON_SLEEP = re.compile(r"\bsleep\s*\(")
-PYTHON_SCRIPT_OPTION = re.compile(r"-[A-Za-z]*c")
 
 # Agenci śpią też przez `perl -e 'select(undef,undef,undef,N)'`, gdy harness blokuje sam `sleep`; w napisie bez
 # spacji nawias jest już podkreśleniem (`QUOTED_SEPARATOR`).
@@ -127,10 +123,6 @@ LIST_PART = re.compile(
     r"|(?P<end>[;\n])|(?P<background>(?<![<>&|\\])&(?![&>]))"
 )
 HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)(\w+)\1")
-# Ucieczki w napisie ``"…"`` (ukośnik przed ``\\``, ``"``, ``$``, `` ` `` i nową linią) i w napisie ``$'…'`` bash.
-DOUBLE_QUOTED_ESCAPE = re.compile(r'\\([\\"$`\n])')
-ESCAPED = re.compile(r"\\([\s\S])")
-ANSI_ESCAPES = {"n": "\n", "t": "\t", "r": "\r"}
 # Skrypt powłoki to tylko argument `-c` (także złączonego: `-lc`, `-euc`) w poleceniu prostym, w którym stoi słowo
 # powłoki, `su`, `runuser`, `flock` albo `script`: `grep -c '…'` liczy wiersze, a `python3 -c '…'` to Python. Słowa
 # między nimi mogą być dowolne (`-euo pipefail`, `--rcfile x`, `-s /bin/sh root`), więc `bash skrypt.sh -c '…'` też
@@ -141,14 +133,10 @@ ANSI_ESCAPES = {"n": "\n", "t": "\t", "r": "\r"}
 # niedomknięte `${`, więc `${` w komentarzu nie sięga dalej niż jego linia. Ukośnik przed literą nic nie zmienia
 # (`\bash`).
 # `fish` i `csh` mają inną składnię pętli, ale pętla bez `done` sięga do końca polecenia.
-# Skrypt Pythona to tak samo argument ``-c`` (też ``-Ic``) w poleceniu prostym ze słowem programu Pythona; czyta go ten
-# sam czytnik, więc ``python3 -c`` za ``$'it\'s'``, ``${U##*/}`` albo ``$#`` znajduje tak jak ``bash -c``.
 _SHELLS = r"(?:ba|da|k|z|mk|a|fi|c|tc)?sh|su|runuser|flock|script|\$\{?(?:SHELL|BASH)\}?"
 SHELL_NAME = re.compile(rf"(?:{_SHELLS})")
-SHELL_SCRIPT, PYTHON_SCRIPT = "powłoka", "python"
 COMMAND_PART = re.compile(
     rf"(?P<shell>(?<![^\s/;&|(`])(?:\\(?=[a-z]))?(?:{_SHELLS})(?![^\s;&|()`]))"
-    rf"|(?P<python>(?<![^\s/;&|(`])(?:\\(?=[a-z]))?{_PYTHON_NAME}(?![^\s;&|()`]))"
     r"|\\[\s\S]|(?P<parameter>\$\{)|(?P<brace>\})|(?P<substitution>\$\()"
     r"|(?P<end>[;\n]|(?<![<>])&(?!>)|(?<!>)\|)|(?P<open>\()|(?P<close>\))|(?P<tick>`)"
 )
@@ -195,8 +183,8 @@ PGREP_LOOP = Refusal(
 
 
 def _heredocs(command: str) -> tuple[str, list[tuple[str, str]]]:
-    """Polecenie bez ciał heredoców i ciała heredoców podanych programowi Pythona (``python3 - <<'EOF'``), każde z linią,
-    która je otwiera (argumenty skryptu)."""
+    """Polecenie bez ciał heredoców i ciała heredoców podanych programowi Pythona (``python3 - <<'EOF'``), każde z
+    poleceniem prostym, które je otwiera (program i argumenty skryptu, bez poleceń przed ``;`` i za nim)."""
 
     kept: list[str] = []
     scripts: list[tuple[list[str], str]] = []
@@ -213,58 +201,44 @@ def _heredocs(command: str) -> tuple[str, list[tuple[str, str]]]:
         opened = HEREDOC.search(line)
         if opened:
             delimiter = opened.group(2)
-            script = [] if PYTHON.search(SIMPLE_COMMAND_END.split(line[: opened.start()])[-1]) else None
+            program = SIMPLE_COMMAND_END.split(line[: opened.start()])[-1]
+            script = [] if PYTHON.search(program) else None
             if script is not None:
-                scripts.append((script, line))
+                scripts.append((script, program + SIMPLE_COMMAND_END.split(line[opened.end() :])[0]))
     return "\n".join(kept), [("\n".join(lines), line) for lines, line in scripts]
 
 
-def _code(
-    command: str, start: int = 0, inside_substitution: bool = False, python: Optional[list[tuple[str, int]]] = None
-) -> tuple[str, int]:
-    """Polecenie bez tekstu w cudzysłowach, ale z ``$(…)`` w napisach i z ciałem ``bash -c '…'``.
+def _code(command: str, start: int = 0, inside_substitution: bool = False) -> tuple[str, int]:
+    """Polecenie bez tekstu w cudzysłowach, ale z ``$(…)`` w nich i z ciałem ``bash -c '…'``.
 
     Proza w argumentach (opis commitu, wiersz logu, wzorzec ``sed``) nie jest poleceniem, nawet gdy cytuje pętlę.
-    Skrypt ``python3 -c '…'`` (tekst i indeks za nim) dopisuje do ``python``. Zwraca też indeks za ``)``, która zamyka
-    ``$(`` przy ``inside_substitution``.
+    Zwraca też indeks za ``)``, która zamyka ``$(`` przy ``inside_substitution``.
     """
 
-    found: list[tuple[str, int]] = [] if python is None else python
     kept: list[str] = []
     scripts = _ShellScripts(command, start)
     # Napis przyklejony do skryptu ``-c`` to jego dalszy ciąg: w ``bash -c '… perl -e '\''select(…)'\''; done'``
     # ``done`` stoi w trzecim napisie.
-    depth, index, script_end, python_end = 0, start, -1, -1
+    depth, index, script_end = 0, start, -1
     while index < len(command):
         char = command[index]
         if char == "\\":
             kept.append(command[index : index + 2])
             if index == script_end:
                 script_end += 2
-            if index == python_end:
-                found[-1] = (found[-1][0] + command[index + 1 : index + 2], index + 2)
-                python_end += 2
             index += 2
             continue
         if char in "'\"":
-            ansi_end = _ansi_end(command, start, index)
-            ansi = ansi_end is not None
-            literal, end = _quoted(command, index, ansi_end, found)
-            kind = scripts.script(index, end)
+            literal, end = _quoted(command, index)
+            script = scripts.is_script(index, end)
             if index == script_end:
                 kept.append(command[index + 1 : end])
                 script_end = end
-            elif kind == SHELL_SCRIPT:
+            elif script:
                 kept.append(";" + command[index + 1 : end])
                 script_end = end
             else:
                 kept.append(literal)
-            if index == python_end:
-                found[-1] = (found[-1][0] + _text(command, index, end, ansi), end)
-                python_end = end
-            elif kind == PYTHON_SCRIPT:
-                found.append((_text(command, index, end, ansi), end))
-                python_end = end
             index = end
             continue
         if inside_substitution and char == ")":
@@ -278,35 +252,10 @@ def _code(
     return "".join(kept), index
 
 
-def _ansi_end(command: str, start: int, quote: int) -> Optional[int]:
-    """Indeks za napisem ``$'…'`` bash od ``quote``, w którym ``\\'`` nie zamyka napisu; ``None``, gdy przed ``quote``
-    nie stoi ``$`` (``$$'`` to numer procesu i zwykły napis) albo napis nie zamyka się w swojej linii.
+def _quoted(command: str, start: int) -> tuple[str, int]:
+    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``."""
 
-    Czas zostaje liniowy: szukanie końca od ``$'`` kończy najbliższy ``'`` bez ukośnika, a każdy następny ``$'`` ma
-    taki ``'``, więc szukania od kolejnych ``$'`` nie czytają tych samych znaków.
-    """
-
-    dollars = quote
-    while dollars > start and command[dollars - 1] == "$":
-        dollars -= 1
-    escaped = dollars > start and command[dollars - 1] == "\\"
-    if command[quote] != "'" or (quote - dollars - escaped) % 2 == 0:
-        return None
-    index = quote + 1
-    while index < len(command) and command[index] not in "'\n":
-        index += 2 if command[index] == "\\" and command[index + 1 : index + 2] not in ("", "\n") else 1
-    return index + 1 if index < len(command) and command[index] == "'" else None
-
-
-def _quoted(command: str, start: int, ansi_end: Optional[int], python: list[tuple[str, int]]) -> tuple[str, int]:
-    """Napis w cudzysłowie od ``start`` i indeks za nim; z napisu ze spacją (proza) zostają tylko ``$(…)`` w ``"…"``.
-
-    ``ansi_end``: koniec napisu ``$'…'`` z ``_ansi_end``. Skrypty Pythona z ``$(…)`` w ``"…"`` idą do ``python``.
-    """
-
-    if ansi_end is not None:
-        end, kept = ansi_end, "''"
-    elif command[start] == "'":
+    if command[start] == "'":
         close = command.find("'", start + 1)
         end, kept = (len(command) if close < 0 else close + 1), "''"
     else:
@@ -318,7 +267,7 @@ def _quoted(command: str, start: int, ansi_end: Optional[int], python: list[tupl
             elif char == '"':
                 break
             elif command.startswith("$(", index):
-                substitution, index = _code(command, index + 2, inside_substitution=True, python=python)
+                substitution, index = _code(command, index + 2, inside_substitution=True)
                 parts.append(f" $({substitution}) ")
             else:
                 index += 1
@@ -327,60 +276,29 @@ def _quoted(command: str, start: int, ansi_end: Optional[int], python: list[tupl
     return (kept if WHITESPACE.search(literal) else QUOTED_SEPARATOR.sub("_", literal)), end
 
 
-def _text(command: str, start: int, end: int, ansi: bool) -> str:
-    """Tekst napisu od ``start`` do ``end`` tak, jak dostaje go program: bez cudzysłowów i ich ucieczek."""
-
-    quote = command[start]
-    inner = command[start + 1 : end - 1 if end - 1 > start and command[end - 1] == quote else end]
-    if ansi:
-        return ESCAPED.sub(lambda found: ANSI_ESCAPES.get(found.group(1), found.group(1)), inner)
-    if quote == '"':
-        return DOUBLE_QUOTED_ESCAPE.sub(lambda found: "" if found.group(1) == "\n" else found.group(1), inner)
-    return inner
-
-
 class _ShellScripts:
-    """Napisy w cudzysłowach jednego polecenia po kolei: który z nich to skrypt ``-c`` powłoki albo Pythona.
+    """Napisy w cudzysłowach jednego polecenia po kolei: który z nich to skrypt ``-c`` powłoki.
 
     Każdy znak poza cudzysłowami czyta raz, więc czas zostaje liniowy przy dowolnie wielu słowach przed ``-c``.
     """
 
     def __init__(self, command: str, start: int) -> None:
         self.command, self.read_to = command, start
-        self.shell = self.python = False
+        self.shell = False
         # Otwarte ``${`` polecenia, w którym stoi skaner; ``$(``, ``(`` i lewy `` ` `` odkładają je razem ze słowem
-        # powłoki i Pythona do ``outer``, a ich zamknięcie je przywraca.
+        # powłoki do ``outer``, a ich zamknięcie je przywraca.
         self.parameters = 0
-        self.outer: list[tuple[str, bool, bool, int]] = []
+        self.outer: list[tuple[str, bool, int]] = []
 
-    def script(self, quote: int, end: int) -> Optional[str]:
-        """``SHELL_SCRIPT`` albo ``PYTHON_SCRIPT``, gdy napis od ``quote`` do ``end`` stoi za ``-c`` w poleceniu prostym
-        ze słowem powłoki albo Pythona; inaczej ``None``."""
+    def is_script(self, quote: int, end: int) -> bool:
+        """Czy napis od ``quote`` do ``end`` stoi za ``-c`` w poleceniu prostym ze słowem powłoki."""
 
-        self._scan(quote)
-        words = self.command[self.read_to : quote].split()
-        option = words[-1] if words else ""
-        kind = None
-        if self.shell and "c" in option and SCRIPT_OPTION.fullmatch(option) is not None:
-            kind = SHELL_SCRIPT
-        elif self.python and PYTHON_SCRIPT_OPTION.fullmatch(option) is not None:
-            kind = PYTHON_SCRIPT
-        self.read_to = end
-        # Nazwa powłoki albo Pythona w cudzysłowie (``"$SHELL" -c``, ``"python3" -c``) też jest jej słowem.
-        name = self.command[quote + 1 : end - 1].rsplit("/", 1)[-1]
-        self.shell = self.shell or SHELL_NAME.fullmatch(name) is not None
-        self.python = self.python or PYTHON_NAME.fullmatch(name) is not None
-        return kind
-
-    def _scan(self, to: int) -> None:
-        for part in COMMAND_PART.finditer(self.command, self.read_to, to):
+        for part in COMMAND_PART.finditer(self.command, self.read_to, quote):
             kind = part.lastgroup
             if part.group() == "\n":
                 self.parameters = 0
             if kind == "shell":
                 self.shell = True
-            elif kind == "python":
-                self.python = True
             elif kind == "parameter":
                 self.parameters += 1
             elif kind == "brace":
@@ -388,14 +306,22 @@ class _ShellScripts:
             elif self.parameters and kind in ("end", "open", "close"):
                 continue
             elif kind == "end":
-                self.shell = self.python = False
+                self.shell = False
             elif kind in ("open", "substitution") or (
                 kind == "tick" and not (self.outer and self.outer[-1][0] == "`")
             ):
-                self.outer.append((part.group(), self.shell, self.python, self.parameters))
-                self.shell, self.python, self.parameters = False, False, 0
+                self.outer.append((part.group(), self.shell, self.parameters))
+                self.shell, self.parameters = False, 0
             elif kind in ("close", "tick"):
-                self.shell, self.python, self.parameters = self.outer.pop()[1:] if self.outer else (False, False, 0)
+                self.shell, self.parameters = self.outer.pop()[1:] if self.outer else (False, 0)
+        words = self.command[self.read_to : quote].split()
+        option = words[-1] if words else ""
+        script = self.shell and "c" in option and SCRIPT_OPTION.fullmatch(option) is not None
+        self.read_to = end
+        # Nazwa powłoki w cudzysłowie (``"$SHELL" -c``) też jest słowem powłoki.
+        if SHELL_NAME.fullmatch(self.command[quote + 1 : end - 1].rsplit("/", 1)[-1]):
+            self.shell = True
+        return script
 
 
 class _Matches:
@@ -570,10 +496,9 @@ def _task_files(text: str, variables: frozenset[str]) -> list[int]:
 
 
 def judge(command: str, in_background: bool) -> Optional[Refusal]:
-    inline: list[tuple[str, int]] = []
     try:
         kept, scripts = _heredocs(command)
-        shell, _ = _code(kept, python=inline)
+        shell, _ = _code(kept)
     except RecursionError:  # setki zagnieżdżonych "$(…)": polecenia nie da się odczytać, więc przechodzi
         return None
     if _reruns(shell):
@@ -600,10 +525,7 @@ def judge(command: str, in_background: bool) -> Optional[Refusal]:
             return TASK_OUTPUT_LOOP
     if not PYTHON_SLEEP.search(command):
         return None
-    # Argumenty skryptu ``-c`` stoją za nim do końca jego polecenia prostego.
-    ends = [found.start() for found in SIMPLE_COMMAND_END.finditer(kept)]
-    inline_scripts = [(text, kept[end : _first_from(ends, end, len(kept))]) for text, end in inline]
-    for script, arguments in [*scripts, *inline_scripts]:
+    for script, arguments in scripts:
         refusal = _python_wait(script, bool(_task_files(f"{script}\n{arguments}", variables)))
         if refusal is not None:
             return refusal

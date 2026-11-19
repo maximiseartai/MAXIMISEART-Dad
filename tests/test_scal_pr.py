@@ -9,6 +9,7 @@ i zapisuje wywołania ``gh pr merge`` zamiast scalać.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -23,6 +24,7 @@ import pytest
 import yaml
 
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
+from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli
 from tests.fixtures.git_repo import commit, git, with_imports
 
@@ -2091,11 +2093,79 @@ def test_po_trzeciej_rundzie_z_fail_pr_nie_dostaje_kolejnej_rundy_bez_zmiany_pod
     assert limit_rund.problem(_written(*verdicts), deployed) == reason
 
 
+def _repeat_reason(place: str, *failed: str) -> str:
+    commits = ", ".join(sha[:7] for sha in failed)
+    return (
+        f"limit rund: rund z FAIL {len(failed)} ({commits}) bez zmiany podejścia, a ich Ważne trafiają w to samo miejsce"
+        f" ({place}), więc po 2. rundzie z FAIL PR nie dostaje kolejnej (skill przeglad, „Kolejne rundy”): zmień"
+        " podejście w #1 (atak na przesłankę, granica z mechanizmu albo usunięcie z PR części, której przegląd nie"
+        " przyjął) i opisz je komentarzem PR z pierwszą linią „ZMIANA PODEJŚCIA: <zdanie>”; po 6. rundzie z FAIL PR nie"
+        " dostaje żadnej"
+    )
+
+
+def _placed(*verdicts: tuple[str, str]) -> stan_pr.Pull:
+    written = [CHANGED if verdict == CHANGED else ("comment", f"{FAIL_WITH.format(commit=verdict[1])}{werdykty_szablonu.WERDYKTY[verdict[0]]}") for verdict in verdicts]
+    pull = _written(*written)
+    html = {**werdykty_szablonu.rendered(), "": ""}
+    rendered = [{**item, "bodyHTML": body_html(str(item["body"]), html)} if str(item["body"]).startswith("WERDYKT") else item for item in pull.verdicts]
+    return replace(pull, verdicts=tuple(rendered))
+
+
+FAIL_WITH = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n"
+
+
+@pytest.mark.parametrize(
+    ("verdicts", "reason"),
+    [
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND)], _repeat_reason("kod/inne.py, R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-ten-sam-plik", SECOND_ROUND)], _repeat_reason("kod/inne.py", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-ten-sam-kod", SECOND_ROUND)], _repeat_reason("R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-dwa-miejsca", SECOND_ROUND)], _repeat_reason("kod/inne.py", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne-gdzie-indziej", FIRST_ROUND), ("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND)], _repeat_reason("kod/inne.py, R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne-gdzie-indziej", SECOND_ROUND)], None),
+        ([("wazne", FIRST_ROUND), ("wazne-gdzie-indziej-drobne-tu", SECOND_ROUND)], None),
+        ([("wazne", FIRST_ROUND)], None),
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND), CHANGED], None),
+        ([("wazne", FIRST_ROUND), CHANGED, ("wazne", SECOND_ROUND)], _repeat_reason("kod/inne.py, R-BEZ-TESTU", FIRST_ROUND, SECOND_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND), CHANGED, ("wazne-gdzie-indziej", THIRD_ROUND)], None),
+        ([("wazne", FIRST_ROUND), ("wazne-gdzie-indziej", SECOND_ROUND), ("wazne-gdzie-indziej", THIRD_ROUND)], _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+        ([("wazne", FIRST_ROUND), ("wazne", SECOND_ROUND), ("wazne-gdzie-indziej", THIRD_ROUND)], _limit_reason(FIRST_ROUND, SECOND_ROUND, THIRD_ROUND)),
+    ],
+    ids=[
+        "ten-sam-plik-i-kod",
+        "ten-sam-plik-inny-kod",
+        "ten-sam-kod-inny-plik",
+        "plik-na-drugim-miejscu-pola-gdzie",
+        "miejsce-z-drugiego-werdyktu-tej-samej-rundy",
+        "inny-plik-i-kod",
+        "drobne-w-tym-samym-pliku-sie-nie-liczy",
+        "jedna-runda",
+        "zmiana-podejscia-po-drugiej-rundzie",
+        "zmiana-podejscia-przed-druga-runda-nie-liczy-sie",
+        "zmiana-podejscia-po-drugiej-rundzie-wystarcza-po-trzeciej",
+        "rundy-2-i-3-w-tym-samym-miejscu-to-limit-trzech",
+        "po-trzeciej-rundzie-przyczyna-limitu-trzech",
+    ],
+)
+def test_po_drugiej_rundzie_z_fail_w_tym_samym_pliku_albo_kodzie_korzenia_pr_nie_dostaje_kolejnej_bez_zmiany_podejscia(
+    verdicts: list[tuple[str, str]], reason: str | None
+) -> None:
+    assert limit_rund.problem(_placed(*verdicts), BEFORE_FIRST) == reason
+
+
+def test_werdykt_fail_bez_html_ktorego_github_nie_wyrenderowal_odmawia_rundy_z_przyczyna() -> None:
+    pull = _written(("comment", FAIL_WITH.format(commit=FIRST_ROUND) + werdykty_szablonu.WERDYKTY["wazne"]), ("comment", FAIL_WITH.format(commit=SECOND_ROUND) + werdykty_szablonu.WERDYKTY["wazne-gdzie-indziej"]))
+
+    assert (limit_rund.problem(pull, BEFORE_FIRST) or "").startswith("limit rund: GitHub nie wyrenderował werdyktu FAIL ("), limit_rund.problem(pull, BEFORE_FIRST)
+
+
 @pytest.mark.parametrize(
     ("rounds", "changes"),
-    [(2, ()), (3, ()), (3, (3,)), (6, (3, 6))],
+    [(2, ()), (2, (2,)), (3, ()), (3, (3,)), (6, (3, 6))],
     ids=[
-        "po-drugiej-rundzie-z-fail-kolejna-runda-sie-odbywa",
+        "po-drugiej-rundzie-z-fail-w-tym-samym-miejscu-kolejnej-nie-ma",
+        "po-zmianie-podejscia-po-drugiej-rundzie-runda-sie-odbywa",
         "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma",
         "po-zmianie-podejscia-w-tym-samym-pr-runda-sie-odbywa",
         "po-szostej-rundzie-z-fail-druga-zmiana-podejscia-nie-daje-rundy",
@@ -2120,7 +2190,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
             github.comment(1, CHANGED[1])
     path = tmp_path / f"runda-{rounds + 1}.md"
     path.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
-    refused = rounds >= 3 and (rounds, changes) != (3, (3,))
+    refused = not changes or rounds >= limit_rund.END
 
     reviewed = github.run("1", "--przeglad")
     answered = github.run("1", "--werdykt", str(path))
@@ -2129,7 +2199,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     checked = github.run("1", "--bez-merge")
 
-    reason = _limit_reason(*failed) if rounds == 3 else _final_reason(*failed)
+    reason = {2: _repeat_reason("kod/inne.py, R-BEZ-TESTU", *failed), 3: _limit_reason(*failed)}.get(rounds) or _final_reason(*failed)
     assert reviewed.returncode == int(refused), reviewed.stdout + reviewed.stderr
     assert answered.returncode == int(refused), answered.stdout + answered.stderr
     if refused:

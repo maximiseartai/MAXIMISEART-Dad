@@ -669,7 +669,7 @@ Sprawiedliwosc ==
 
 Spec == Init /\ [][Next]_vars /\ Sprawiedliwosc
 
-(* Obietnice (docstringi logs_disk.py i run_comments.py). *)
+(* Obietnice (docstring logs_disk.py). *)
 \* Dziennik Urwanego Uruchomienia (z pierwszą linią, bez wyniku) znika dopiero, gdy jego Logi są najnowszą wersją, którą
 \* przyjęła kolejka: razem ze Zbieganiem to wysyłka co najmniej raz.
 DziennikPoKolejce == zgubiony = {}

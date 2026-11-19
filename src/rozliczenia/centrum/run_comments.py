@@ -1,78 +1,3 @@
-"""Komentarz Uruchomienia w issue Logów okresu: jedyne miejsce, które układa kroki jego wersji, plików Logów i dziennika
-Wyceny w efenix w Uruchomieniu i przy starcie Centrum.
-
-Co jest którą wersją komentarza, w jakim stopniu i co dalej z dziennikiem, decyduje ``comment_versions``, a pliki zapisuje
-i czyta ``logs_disk``. ``RunComments`` tylko układa ich kroki w kolejności modelu ``verify-urwane-uruchomienie``.
-
-**Start Uruchomienia** (``RunComments.run_started``, zanim ruszy jego wątek): pierwsza linia dziennika Wyceny i plik
-ostatniego startu (``LogsOnDisk.started``), potem postęp. Plik startu, którego nie dało się zapisać, wychodzi do
-``RunHost.start`` i postępu nie ma; postęp jest ostatni, bo jest dla Maksa, a nie warunkiem pracy taty.
-
-**Postęp Wyceny w efenix**: Wycena trwa u taty długo, a Logi powstają dopiero na jej końcu. Przy jej
-starcie Centrum zakłada komentarz Uruchomienia, a potem co ``PROGRESS_S`` na zegarze Centrum, nigdy częściej, odświeża go
-stanem dziennika (``logs_disk.Journal.progress``): zlecenia skończone z wszystkich, wyniki do tej pory, ostatnie skończone
-zlecenie, zlecenie w trakcie i czas od startu. Dziennik podaje tylko wpisy, które już ma na dysku, a bez swojej pierwszej
-linii na dysku nic, więc postęp nigdy go nie wyprzedza: każdy komentarz postępu ma dziennik. Wycena, której dziennika nie
-da się zapisać, postępu nie ma, tylko podsumowanie na końcu. Postęp to wersja najniższego stopnia
-(``comment_versions.ProgressVersion``), po strażniku reguły danych jak Logi; od działań po wyniku jego Uruchomienia
-(``run_ended``) nie idzie, a pierwsze odświeżenie po końcu kończy budzik. Postęp, którego kolejka nie przyjęła, ``Outbox.post``
-zapisuje w dzienniku Centrum, a Wycena biegnie dalej.
-
-**Koniec Uruchomienia** (``RunComments.run_ended``, pierwsze działanie po wyniku, ``runs.AfterRun``), cztery kroki:
-
-1. wpis końca z wynikiem w dzienniku Wyceny (``Journal.end``): jest na dysku, zanim powstaną Logi z wynikiem i zanim
-   pójdą do Skrzynki, więc dziennik sam mówi następnemu startowi, czy jego Uruchomienie doszło do wyniku i do jakiego, a
-   start nie zgaduje tego z Historii; Uruchomienie, którego pierwsza linia nie trafiła na dysk w żadnym zapisie,
-   zamiast niego usuwa dziennik, który mógł po nim zostać;
-2. Logi z wynikiem (``RecordMaker.of``) po strażniku reguły danych (``run_logs_guard.guard_logs``, ADR 0025), z
-   Wzorcami procesu, które przeszły sprawdzenie reguły danych (``template_archive.TemplateChecks``): Wzorzec z
-   ``config``, który dało się przeczytać, ma w Logach SHA-256 swoich bajtów, a Wzorzec, którego sprawdzenie nie przepuściło, uwagę w
-   ``input_copy_notes``; pierwsze sprawdzenie nowej wersji Wzorca w pracy Centrum czyta cały skoroszyt, a strażnik
-   przechodzi jego teksty znowu tylko wtedy, gdy pamięć reguły danych poznała nową wartość;
-3. plik Logów (``LogsOnDisk.write``), a potem, także gdy pliku nie dało się zapisać, te same Logi do Kolejki wysyłki
-   (``comment_versions.OwnLogs``, stopień najwyższy): komentarz z podsumowaniem, plik w Archiwum Logów okresu i obok
-   niego Wzorce po sprawdzeniu, każdy pod nazwą ze swojego SHA-256;
-4. dziennik znika, gdy kolejka przyjęła Logi (``comment_versions.journal_after``); inaczej zostaje do następnego startu,
-   który zamknie go wersją zastępczą.
-
-Błąd jednego kroku trafia do dziennika Centrum (typ, jak w ``RunHost.after``) i nie pomija następnych: wpis końca, który się
-nie zapisał, nie zatrzymuje Logów, a plik Logów, który się nie zapisał, nie zatrzymuje ich wysyłki. Bez Logów (krok 2
-rzucił) nic nie idzie, a dziennik zostaje. Zgaśnięcie Centrum między wpisem końca a przyjęciem Logów zostawia dziennik z
-wpisem końca, a start wysyła wersję zastępczą: Logi z pliku Logów, a bez niego wynik bez Logów z wpisu końca. Logi z
-wynikiem, które kolejka mogła już przyjąć, mają wyższy stopień, więc wersja zastępcza ich nie zastępuje.
-
-**Diagnoza** Zatrzymania (``RunComments.diagnosed``) dopisuje się do Logów swojego Uruchomienia: ten sam plik dostaje pole
-``diagnosis``, a Logi idą do kolejki drugi raz jako nowsza wersja tej samej wysyłki, z tymi samymi Wzorcami, więc kolejka
-podmienia plik w Archiwum i zmienia komentarz tego Uruchomienia, a Wzorce, które czekały z wersją bez Diagnozy, idą z
-nią. Diagnoza z tym samym wynikiem co ostatnio dopisana
-(``LoggedDiagnosis.same_result``) nie zmienia niczego: po nieoczekiwanym wyjątku karta zaczyna Diagnozę sama przy każdym
-pokazaniu, a Maks potrzebuje tylko zmiany wyniku. Diagnozę ma tylko ostatnie Uruchomienie tej pracy Centrum, więc w
-pamięci zostają tylko jego Logi; Diagnoza, w której trakcie skończyło się następne Uruchomienie, nie dopisuje się nigdzie.
-
-**Start Centrum** zamyka dzienniki, które zostawiła poprzednia praca Centrum. Dziennik Wyceny z pierwszą linią na dysku to
-ślad Uruchomienia, którego przyjęcia wersji końcowej komentarza przez kolejkę jego praca Centrum nie zapisała: Centrum
-zgasło w trakcie Wyceny, po wyniku przed Logami albo po ich przyjęciu przed usunięciem dziennika, Logi nie powstały albo
-kolejka odmówiła. Start zamyka taki dziennik przy budowie aplikacji, przed kartą ostatniego Uruchomienia (``RunComments.close_left_behind``, ``run_cards.RunCards.last`` bierze jego
-dowód ``LeftBehindClosed``), a wersję zastępczą bierze z tego, co zastaje na dysku taty (macierz
-``comment_versions.close``, ze strażnikiem reguły danych tej pracy Centrum w środku). Dziennik Urwanego Uruchomienia
-(ADR 0017) zamyka jako Logi Urwanego Uruchomienia (``RecordMaker.interrupted``), a karta po starcie pokazuje zlecenia z
-tych Logów.
-
-Logi, nowe i te z pliku, start zapisuje w pliku Logów takie, jakie pójdą do Skrzynki (``LogsOnDisk.write``), więc plik i
-komentarz mają te same znaki także po Logach, które zapisała praca Centrum sprzed strażnika. Plik, którego nie dało się
-zapisać, nie zatrzymuje Logów w drodze do Maksa. Dziennika, którego nie da się odczytać, ani dziennika, którego pliku Logów
-system nie daje odczytać (``logs_disk.Refused``), start nie rusza: spróbuje następny.
-
-Wersja zastępcza idzie do Skrzynki Zgłoszeń jak zwykłe Logi, ale dopiero w starcie serwera, po ``Outbox.resume`` w
-``lifespan`` i po wpisie ``start`` (``RunComments.send_left_behind``, krok ``server.AFTER_START``), więc kolejka nie
-dostaje wysyłki przed swoim startem (model ``verify-kolejka-skrzynki``), a wpisy wysyłki należą w dzienniku do tej pracy
-Centrum. Dziennik znika, gdy kolejka ją przyjęła
-(``comment_versions.journal_after``), a Centrum zgaszone przed tym wysyła ją przy następnym starcie, więc wysyłka jest co
-najmniej raz, jak w całej kolejce. Wersja zastępcza ma stopień wyższy od każdego postępu i niższy od Logów z wynikiem
-(``comment_versions.rank_of``), więc zamienia postęp w podsumowanie także po cofnięciu zegara komputera, a Logów z wynikiem,
-które kolejka mogła już przyjąć, nie zastępuje ani w kolejce, ani w Skrzynce.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
@@ -123,60 +48,39 @@ from rozliczenia.wall_clock import utc_now
 from rozliczenia.workbook_files import WorkbookError
 
 PROGRESS_S: Final = 300.0
-"""Odstęp między postępami jednej Wyceny w efenix na zegarze Centrum: postęp idzie najwyżej co tyle."""
 
 _AFTER_RUN: Final = "po wyniku Uruchomienia procesu"
-"""Miejsce błędu kroku końca Uruchomienia w dzienniku Centrum: to samo co błąd działania po wyniku w ``RunHost.after``."""
 _LEFT_BEHIND: Final = "wysyłka wersji zastępczych przy starcie"
-"""Miejsce błędu wysyłki jednej wersji zastępczej w kroku startu serwera (``RunComments.send_left_behind``)."""
 
 _PROGRESS_PLACE: Final = "postęp Wyceny w efenix"
-"""Miejsce błędu kroku postępu w dzienniku Centrum i zamaskowanej wartości w uwadze technicznej postępu."""
 
 T = TypeVar("T")
 
 ProcessFiles = Callable[[common_contract.ProcessKey, str, SettingsSnapshot | None], Sequence[Path] | Unreadable]
-"""Pliki procesu dla tokenu okresu z migawką Ustawień Centrum ze startu Uruchomienia (``None``: bez migawki, z
-bieżącymi), a przy pliku Folderów bez odczytu ten plik."""
 
 ProcessTemplates = Callable[[common_contract.ProcessKey], Sequence[Path]]
-"""Wzorce procesu z ``config`` na dysku narzędzia (``ProcessKind.configuration_needs``)."""
 
 
 class CommentQueue(Protocol):
-    """Kolejka wysyłki (``outbox.Outbox``) tak, jak widzi ją komentarz Uruchomienia."""
-
     def post(self, post: LogsPost) -> bool:
-        """Wysyłka Logów z ``post_of`` do kolejki; ``True``: plik kolejki powstał."""
         ...
 
     def delivered(self, run_id: str, label: Label) -> str | None:
-        """Adres komentarza wysyłki Uruchomienia ``run_id`` z etykietą ``label``, który Skrzynka przyjęła i kolejka go
-        zna (z tej pracy Centrum albo z pliku adresów poprzednich); ``None``: żaden."""
         ...
 
 
 @dataclass(frozen=True)
 class LeftBehindClosed:
-    """Dowód, że start Centrum zamknął dzienniki Wyceny, które zostawiła poprzednia praca Centrum, poza tymi, których nie
-    dało się odczytać (``RunComments.close_left_behind``). Karta ostatniego Uruchomienia (``run_cards.RunCards.last``) go bierze, więc
-    nie przeczyta Logów, zanim powstaną Logi Urwanego Uruchomienia."""
+    pass
 
 
 @dataclass(frozen=True)
 class MadeLogs:
-    """Logi Uruchomienia sprzed strażnika i Wzorce procesu, które idą obok nich do Archiwum Logów okresu."""
-
     record: RunLog
     templates: tuple[ArchivedTemplate, ...]
 
 
 class RecordMaker:
-    """Logi Uruchomienia z dzisiejszym narzędziem (``commit``, ``wydanie``), środowiskiem (system, Python i pliki procesu
-    ``files`` z rozmiarem i atrybutem OneDrive z ``cloud_files``, a Wzorce procesu ``templates`` z SHA-256 bajtów, które
-    daje uchwyt plików taty ``dad_files``), działaniami taty i wpisami dziennika Centrum, które czekają na Logi
-    (``dad_actions``, ``centrum_log``), oraz Wzorce po sprawdzeniu ``checks`` do Archiwum Logów okresu."""
-
     def __init__(
         self,
         *,
@@ -201,10 +105,6 @@ class RecordMaker:
         self._centrum_log = centrum_log
 
     def of(self, run: EndedRun) -> MadeLogs:
-        """Logi z wynikiem i Wzorce procesu do Archiwum: Wzorzec, którego sprawdzenie nie przepuściło, ma w Logach uwagę
-        (``TemplateRefused.note``) w ``input_copy_notes``, bo karta z Logów pokazuje ``technical_notes`` i ma być taka
-        jak karta na żywo, a odtworzenie tej uwagi nie powtarza."""
-
         read = self._read_templates(run.info.process)
         environment = self._environment(run.info.process, run.info.period, run.settings.snapshot, read)
         record = logs_of(
@@ -221,8 +121,6 @@ class RecordMaker:
         return MadeLogs(record, tuple(found for found in checked if isinstance(found, ArchivedTemplate)))
 
     def _read_templates(self, process: common_contract.ProcessKey) -> dict[Path, bytes]:
-        """Bajty Wzorców procesu z ``config`` przy końcu Uruchomienia; Wzorca, którego nie da się przeczytać, nie ma."""
-
         read: dict[Path, bytes] = {}
         for path in self._templates(process):
             try:
@@ -232,9 +130,6 @@ class RecordMaker:
         return read
 
     def interrupted(self, journal: JournalRead) -> RunLog:
-        """Logi Urwanego Uruchomienia z dziennika ``journal`` (``RunLog.interrupted``): Aktualizacja narzędzia nie startuje
-        w trakcie Uruchomienia, więc po zgaśnięciu Centrum ma ten sam commit."""
-
         return RunLog.interrupted(
             journal.started,
             ended_at=journal.last_at,
@@ -262,11 +157,6 @@ class RecordMaker:
         settings: SettingsSnapshot | None,
         templates: Mapping[Path, bytes],
     ) -> Environment:
-        """Środowisko Uruchomienia do Logów; plik z bajtami w ``templates`` (Wzorzec procesu) ma ich SHA-256.
-        Niedostępny folder to stan komputera taty, nie nieoczekiwany wyjątek, więc
-        Logi mają wtedy pliki ``None``, bez wpisu w dzienniku, który Diagnoza by zgłosiła. Plik Folderów bez odczytu
-        też: Logi mają wtedy pliki ``None`` i nazwę tego pliku, a nie pliki Folderów z Wydania."""
-
         unreadable: str | None = None
         files: list[LoggedFile] | None = None
         try:
@@ -297,31 +187,13 @@ def _system() -> str:
 
 @dataclass(frozen=True)
 class _Watched:
-    """Wycena w efenix z komentarzem postępu, jej start na zegarze Centrum i to, czy doszła do działań po wyniku
-    (``ended``): wtedy jej postęp się skończył."""
-
     run_id: str
     since: float
     ended: bool = False
 
 
 class RunComments:
-    """Komentarz Uruchomienia każdego Uruchomienia procesu z Centrum (docstring modułu).
-
-    ``run_ended`` oznacza Wycenę jako skończoną pod tą samą blokadą co postęp, więc postęp, który już idzie do kolejki,
-    jest w niej przed Logami, a następny nie pójdzie. Wynik wysyłki Logów (``accepted``) zostaje także wtedy, gdy plik
-    Logów rzucił po niej, a każdy krok końca biegnie we własnej osłonie (``_step``), więc nie zmienia wyniku ani nie
-    pomija następnych. Katalog Logów, który przy starcie nie przyjął pliku Logów Urwanego Uruchomienia
-    (``close_left_behind``), nie zatrzymuje tych Logów w drodze do Maksa, a wyjątek przy wysyłce wersji zastępczej
-    (``send_left_behind``) zostawia jej dziennik na dysku, więc wersja idzie przy następnym starcie.
-    """
-
     def __init__(self, work: CentrumWork, disk: LogsOnDisk, queue: CommentQueue, records: RecordMaker) -> None:
-        """``_lock`` porządkuje postęp z Logami z wynikiem (postęp, który już idzie do kolejki, jest w niej przed Logami)
-        i Diagnozy między sobą (dwie naraz z dwóch kart piszą plik i komentarz jedna po drugiej). ``_last`` to Logi
-        ostatniego Uruchomienia z jego Wzorcami, do których dopisuje się Diagnoza: z ``run_ended`` zaraz po strażniku,
-        przed plikiem i wysyłką, a z Diagnozy dopiero po zapisie pliku."""
-
         self._disk = disk
         self._queue = queue
         self._forbidden = work.forbidden
@@ -334,9 +206,6 @@ class RunComments:
         self._pending: list[tuple[JournalKey, StandInVersion]] = []
 
     def run_started(self, info: runs_contract.RunInfo, started_at: datetime) -> None:
-        """Start Uruchomienia z Centrum, zanim ruszy jego wątek (docstring modułu); ``OSError`` pliku startu wychodzi do
-        ``RunHost.start``."""
-
         self._disk.started(StartFacts.of_run(info, started_at))
         if info.process != self._disk.journal.process:
             return
@@ -345,9 +214,6 @@ class RunComments:
         self._clock.after(PROGRESS_S, partial(self._refresh, info.id))
 
     def _refresh(self, run_id: str) -> None:
-        """Budzik ``PROGRESS_S`` po starcie albo poprzednim odświeżeniu: postęp i następny budzik, dopóki Uruchomienie
-        ``run_id`` nie doszło do działań po wyniku i nie zaczęło się następne."""
-
         watched = self._watched
         if watched is None or watched.run_id != run_id:
             return
@@ -356,11 +222,6 @@ class RunComments:
         self._clock.after(PROGRESS_S, partial(self._refresh, run_id))
 
     def _progress(self, watched: _Watched) -> bool:
-        """Postęp ``watched`` z dziennika do Kolejki wysyłki (``ProgressVersion``). ``False``: Uruchomienie doszło do
-        działań po wyniku (``run_ended``), więc jego postęp się skończył i nic nie idzie, bo postęp po Logach byłby ich
-        nowszą wersją i cofnąłby podsumowanie. Postęp, którego kolejka nie przyjęła, daje ``True``: typ błędu jest w
-        dzienniku Centrum, a następne odświeżenie spróbuje znowu."""
-
         progress = self._disk.journal.progress(watched.run_id)
         elapsed_s = self._clock() - watched.since
         with self._lock:
@@ -373,9 +234,6 @@ class RunComments:
             return True
 
     def run_ended(self, run: EndedRun) -> None:
-        """Koniec Uruchomienia ``run`` (``runs.AfterRun``) w czterech krokach modelu, każdy we własnej osłonie (docstring
-        modułu): wpis końca, Logi z wynikiem, plik i wysyłka, dziennik po przyjęciu."""
-
         run_id = run.info.id
         self._step(lambda: self._disk.journal.end(run_id, run.result), where=_AFTER_RUN)
         with self._lock:
@@ -404,19 +262,9 @@ class RunComments:
             return None
 
     def link(self, run_id: str) -> str | None:
-        """Adres komentarza Logów Uruchomienia ``run_id``, który Skrzynka przyjęła (``CommentQueue.delivered``); ``None``:
-        żaden. Komentarz Uruchomienia prowadzi do jego pełnych Logów w Archiwum Logów okresu, także po Diagnozie."""
-
         return self._queue.delivered(run_id, LABEL)
 
     def diagnosed(self, run_id: str, diagnosis: Diagnosis) -> None:
-        """Dopisuje Diagnozę do Logów Uruchomienia ``run_id`` (docstring modułu, ``stops.DiagnosedLogs``); Logi, które
-        jeszcze czekają w kolejce, Logi z Diagnozą zastępują (``outbox._superseded``).
-
-        Plik Logów, którego nie dało się zapisać, wychodzi po wysyłce jako błąd, a następna Diagnoza próbuje znowu: plik
-        i komentarz.
-        """
-
         with self._lock:
             last = self._last
             if last is None or last.logs.record.run_id != run_id:
@@ -430,20 +278,12 @@ class RunComments:
             self._last = version
 
     def _keep(self, version: OwnLogs, accepted: Callable[[bool], None]) -> None:
-        """Plik Logów (nowy albo nadpisany), a potem, także gdy pliku nie dało się zapisać, do Skrzynki komentarz w issue
-        okresu, plik w Archiwum Logów okresu z tymi samymi bajtami co plik (``LogsOnDisk.write``) i Wzorce Uruchomienia:
-        katalog Logów, który nie przyjął pliku, nie zatrzymuje Logów w drodze do Maksa. ``accepted`` dostaje wynik wysyłki
-        (``Outbox.post``), a błąd zapisu pliku wychodzi dopiero po niej."""
-
         try:
             self._disk.write(version.logs)
         finally:
             accepted(self._queue.post(post_of(version)))
 
     def close_left_behind(self) -> LeftBehindClosed:
-        """Przy budowie aplikacji: dziennik z pierwszą linią, który dało się odczytać, zamyka wersją zastępczą komentarza jego Uruchomienia
-        (``comment_versions.close``), a Logi zapisuje w pliku Logów; dziennik bez niej usuwa. Niczego nie wysyła."""
-
         for left in self._disk.left_behind():
             try:
                 closing = close(left, self._forbidden, self._records.interrupted)
@@ -468,11 +308,6 @@ class RunComments:
         return LeftBehindClosed()
 
     def send_left_behind(self) -> None:
-        """Krok startu serwera po wpisie ``start`` i po ``Outbox.resume``, przed pierwszym zapytaniem: wersje zastępcze z
-        zamkniętych dzienników idą do Kolejki wysyłki, a dziennik, którego wersję kolejka przyjęła, znika
-        (``journal_after``); dziennik wersji, której kolejka nie przyjęła, czeka na następny start. Błąd jednej wersji
-        trafia do dziennika Centrum (typ) i nie zatrzymuje startu Centrum ani następnych wersji."""
-
         with self._lock:
             pending, self._pending = self._pending, []
         for key, version in pending:

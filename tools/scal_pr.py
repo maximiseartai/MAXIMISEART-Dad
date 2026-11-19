@@ -44,8 +44,8 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    przykład sprzed zamknięcia i otwarcia PR, się nie liczą, ani czerwone, ani zielone (``stan_pr.latest_ci_run``);
    check workflow ``CI`` bez identyfikatora runu w ``detailsUrl`` to odmowa;
 3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej, z punktem
-   ``Ponowny przegląd:``, gdy HEAD miał już werdykt), a PR nie ma trzech rund z ``FAIL`` (limit rund, niżej, który
-   odmawia też ``--werdykt`` i ``--przeglad``);
+   ``Ponowny przegląd:``, gdy HEAD miał już werdykt), a limit rund nie odmawia PR kolejnej rundy (``limit_rund``,
+   niżej, który odmawia też ``--werdykt`` i ``--przeglad``);
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
