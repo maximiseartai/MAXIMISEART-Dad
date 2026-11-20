@@ -173,3 +173,9 @@ Centrum bez identyfikatora Uruchomienia.
   powstały, i mówi, co z nimi zrobić.
 - Plik Logów bez pola Diagnozy (sprzed tego pola, tylko u Maksa) daje „karty
   nie ma”.
+- Dziennik Wyceny w efenix jest śladem dla Maksa, a nie warunkiem pracy
+  taty: nieudany zapis jego pierwszej linii albo wpisu to jedna linia
+  dziennika Centrum na Uruchomienie, a Wycena biegnie dalej. Zlecenie, którego
+  wpis „zaczynam zlecenie” się nie zapisał, może więc zmienić efenix bez
+  śladu w Logach Urwanego Uruchomienia (znalezisko `wpis-nieudany` modelu
+  `verify-urwane-uruchomienie`).

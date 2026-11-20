@@ -972,6 +972,7 @@ def test_diagnoza_niczego_nie_zmienia_w_plikach_taty(tmp_path: Path) -> None:
     centrum.fixture.period_directory.mkdir()
     centrum.fixture.internal_settlement_path.write_bytes(b"syntetyczny plik okresu")
     opened_in_excel(centrum.fixture.register_path)
+    opened_in_excel(centrum.fixture.internal_settlement_path)
     before = files_of(tmp_path)
 
     diagnose(centrum, run_id)
@@ -1257,3 +1258,31 @@ def test_pliki_tylko_w_chmurze_sprawdza_tylko_windows(tmp_path: Path) -> None:
     )
     assert check(diagnosis, "Pliki w OneDrive") == expected
     assert diagnosis["explanation"] == NOT_FOUND
+
+
+def test_diagnoza_bez_rejestru_i_folderu_okresow_wyjasnia_najpierw_brak_rejestru_jak_kolejnosc_ustawien_przygotowania(
+    tmp_path: Path,
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    centrum.fixture.register_path.unlink()
+    centrum.fixture.periods_directory.rename(tmp_path / "INEA stary")
+
+    diagnosis = diagnose(centrum, run_id)
+
+    assert diagnosis["explanation"] == explanation_of(preparation_messages.register_missing(centrum.fixture.register_path))
+
+
+def test_diagnoza_bez_folderu_okresow_nie_sprawdza_folderu_okresu_ani_jego_plikow_i_nie_ma_nieoczekiwanego_bledu(
+    tmp_path: Path,
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    centrum.fixture.periods_directory.rename(tmp_path / "INEA stary")
+
+    diagnosis = diagnose(centrum, run_id)
+
+    assert (check(diagnosis, "Folder okresu"), check(diagnosis, "Pliki okresu w Excelu")) == (
+        ("not_checked", "Folderu okresów nie ma na miejscu."),
+        ("not_checked", "Nie odszukano Folderu okresu."),
+    )
