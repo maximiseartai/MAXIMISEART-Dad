@@ -1,28 +1,3 @@
-"""Start Centrum rozliczeń: skrót „Centrum rozliczeń” (``pythonw``, bez konsoli) albo ``run_centrum.py`` z konsolą.
-
-Jedno Centrum na komputerze: gdy port jest zajęty, ``health`` rozstrzyga, czy
-to własne Centrum z tego samego commitu narzędzia (wtedy tylko otwiera kartę),
-Centrum innej wersji (wtedy otwiera jego kartę, w której tata widzi przycisk
-„Zamknij Centrum rozliczeń”, i odmawia startu), czy inny program. Każdy błąd startu kończy się
-komunikatem w trzech częściach: bez konsoli w natywnym okienku, z konsolą w
-konsoli, a fakt trafia do dziennika Centrum. Ponowny start po Aktualizacji narzędzia (``--bez-okienek``)
-nie pokazuje okienka, tylko zapisuje fakt w dzienniku: tata widzi wtedy jeden
-Komunikat, w karcie. Takie Centrum przez 10 sekund ponawia zajęcie portu,
-bo skrót kliknięty w trakcie ponownego startu trzyma go tylko do odczytu
-dziennika: opiekun nie cofa przez to wersji, która działa. Przy imporcie moduł
-używa tylko biblioteki standardowej, więc brak FastAPI albo uvicorn też staje
-się takim komunikatem.
-
-Skrót, który zajmie port i zastanie dziennik „Aktualizacja w toku”, kończy
-Aktualizację narzędzia przerwaną wyłączeniem komputera: cofa klon do wersji
-sprzed niej, zostawia dla karty wynik porażki nieoczekiwanej i startuje od
-nowa z dysku w cofniętej wersji, bo ten proces ma w pamięci moduły wersji,
-którą właśnie cofnął. Wtedy jeszcze nie wczytał niczego spoza biblioteki
-standardowej, więc nowa wersja bez swoich bibliotek też da się cofnąć. Nie
-cofa, dopóki opiekun ponownego startu może jeszcze kończyć aktualizację, ani
-przy starcie nowej wersji przez samego opiekuna (``--bez-okienek``).
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -62,17 +37,11 @@ from rozliczenia.tool_files import (
 from rozliczenia.wall_clock import epoch_s
 
 _HEALTH_TIMEOUT_S = 5
-"""Tyle skrót czeka na ``health`` Centrum na zajętym porcie: drugie kliknięcie może trafić na Centrum, które jeszcze
-startuje."""
 _SHORTCUT_HOLDS_PORT_S = 10
-"""Tyle Centrum od opiekuna ponawia zajęcie portu: skrót kliknięty w trakcie ponownego startu oddaje go po odczycie
-dziennika."""
 _POLL_S = 0.1
 
 
 def parse_arguments(argv: Sequence[str] | None) -> argparse.Namespace:
-    """Argumenty ``run_centrum.py``: z linii poleceń, ze skrótu albo z ``tool_files.start_command`` opiekuna."""
-
     parser = argparse.ArgumentParser(description="Uruchamia Centrum rozliczeń w przeglądarce.")
     parser.add_argument(PORT_FLAG, type=int, default=DEFAULT_PORT, help=f"Port na {HOST}.")
     parser.add_argument(NO_BROWSER_FLAG, action="store_true", help="Nie otwieraj karty w przeglądarce.")
@@ -178,12 +147,6 @@ def _listen_when_released(port: int, *, wait_s: float) -> socket.socket:
 
 
 def _roll_back(interrupted: InterruptedUpdate) -> None:
-    """Cofa przerwaną Aktualizację narzędzia; każda porażka to wyjątek, a dziennik zostaje na następny start.
-
-    Plik wyniku od opiekuna mógł już mówić „ok”, a karta cofniętej wersji ma
-    pokazać porażkę.
-    """
-
     ToolClone(TOOL_ROOT).roll_back()
     write_result(CONFIG_DIR / RESULT_FILE, UpdateResult(UNEXPECTED, interrupted.before, interrupted.after))
 

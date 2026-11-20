@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from tests.fixtures.centrum_processes import preparing_centrum, run_to_end
 from tests.fixtures.message_samples import PREPARATION_SAMPLES, SETTLEMENT_SAMPLES, Samples
 
 FOR_MAKS = {
@@ -70,3 +71,13 @@ def test_zdanie_o_osobie_utrzymujacej_narzedzie_i_rodzaj_do_maksa_powstaja_tylko
                     pass
 
     assert found == []
+
+
+def test_ten_sam_komunikat_do_maksa_przy_ponownym_uruchomieniu_nie_jest_powtorka(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    centrum.fixture.internal_template_path.unlink()
+    first = run_to_end(centrum, dry_run=True)["result"]
+
+    again = run_to_end(centrum, dry_run=True)["result"]
+
+    assert [(result["stop_kind"], result["diagnosis"]) for result in (first, again)] == [("for_maks", "on_request")] * 2

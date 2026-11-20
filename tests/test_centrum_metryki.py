@@ -369,6 +369,21 @@ def test_nieczytelny_plik_metryk_daje_bezpieczny_komunikat(tmp_path: Path) -> No
     assert response.json() == {"message": "Nie udało się odczytać plików metryk. Odśwież kartę."}
 
 
+def test_tablica_okresow_przy_nieczytelnym_pliku_metryk_wyceny_w_efenix_jest_taka_jak_bez_wyceny(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    periods = tmp_path / "INEA"
+    periods.mkdir()
+    app.platform.chosen_folders.append(periods)
+    app.client.post("/api/settings/periods-directory/choose")
+    without_pricing = app.client.get("/api/periods").json()
+    app.metrics.efenix.mkdir()
+
+    board = app.client.get("/api/periods")
+
+    assert (board.status_code, board.json()) == (200, without_pricing)
+    assert without_pricing["state"] == "ready"
+
+
 def _fastapi_calls(dependant: Dependant) -> Iterator[Callable[..., Any]]:
     if dependant.call is not None:
         yield dependant.call
