@@ -188,3 +188,11 @@ Centrum bez identyfikatora Uruchomienia.
   wpis „zaczynam zlecenie” się nie zapisał, może więc zmienić efenix bez
   śladu w Logach Urwanego Uruchomienia (znalezisko `wpis-nieudany` modelu
   `verify-urwane-uruchomienie`).
+- Logi ostatniego startu, których system nie daje przeczytać, i katalog Logów,
+  którego nie daje wylistować, to odmowa (`logs_disk.Refused`): po starcie
+  Centrum nie ma wtedy karty ostatniego Uruchomienia, a nie karta Urwanego
+  Uruchomienia, bo przy pliku Logi są, więc Uruchomienie miało wynik, a przy
+  katalogu nie wiadomo, czy są. Dziennik Wyceny w efenix zostaje wtedy następnemu startowi.
+  Plik w miejscu katalogu Logów to brak Logów, jak brak katalogu: sam się nie
+  zmieni, więc odmowa zostawiłaby dziennik na zawsze, a tak start zamyka go
+  wersją zastępczą.
