@@ -72,10 +72,9 @@ GRANICE: Final[Mapping[str, tuple[Mutation, ...]]] = {
 }
 """For each cause of a known finding that a failed write of ``config/sprawy-taty.json`` leaves behind, the
 configuration with every such failure without that one known finding: the same harm, a waiting case without its queue
-file after a start, must then be a new violation, because no other cause forgives that path (#1341 round 1: a cause
-„plik stanu różni się od pamięci” forgave the unsaved ``withdraw`` and ``forget`` under the name of the unsaved
-``numbered``). A broken model instead would not do: ``StateFile`` retries the pending text at every later change, so
-with one failed write an unsaved change other than these never outlives the next write."""
+file after a start, must then be a new violation, because no other cause forgives that path. A broken model instead
+would not do: ``StateFile`` retries the pending text at every later change, so with one failed write an unsaved change
+other than these never outlives the next write."""
 
 MUTATIONS = (
     Mutation(

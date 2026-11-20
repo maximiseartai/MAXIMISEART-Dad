@@ -66,10 +66,6 @@ BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
         "unlink_failed": (ROLLBACK_RETRIED,),
     },
 }
-"""Broken variants just outside each part of the shape of each accepted risk and known finding of the explorer
-(``RiskShape``), by its name and part: the same harm as the risk's, but with that one part other than its story says,
-so each must give a new violation (#920). ``tests/test_mutacje_skilli.py`` reds an entry of ``ACCEPTED_RISKS`` or
-``KNOWN_FINDINGS`` with a part without one here."""
 
 MUTATIONS = (
     Mutation(

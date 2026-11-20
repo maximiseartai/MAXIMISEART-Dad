@@ -62,9 +62,6 @@ BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {
         "targets": (QUANTITY_ELSEWHERE,),
     },
 }
-"""Broken variants just outside each part of the shape of the known finding (``StrayShape``), by its name and part:
-the same harm, with that one part other than its story says, so each must give a new violation (#920).
-``tests/test_mutacje_skilli.py`` reds an entry of ``KNOWN_FINDINGS`` with a part without one here."""
 
 SAME_ORDER = (
     "    def _same_order(self, part: PagePart) -> None:\n"
