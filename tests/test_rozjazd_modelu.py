@@ -549,6 +549,10 @@ WIERSZE = ("`Krok`", "`Ruch(q)`", "`Max`", "`Wybaczone…`", "`x`")
         pytest.param(
             _model().replace("Pomocnik ==", "Nowa ==").replace("Next ==\n    \\/ Krok", "Next == Nowa \\/ Krok"), WIERSZE, ["Nowa"], id="nowa-akcja-next-w-jednej-linii"
         ),
+        pytest.param(
+            _model().replace("Pomocnik ==", "Nowa ==").replace("\\/ Krok", "\\/ Krok \\/ (Nowa)"), WIERSZE, ["Nowa"], id="nowa-akcja-next-w-nawiasie"
+        ),
+        pytest.param(_model(next_="(\\E q \\in Q : (Ruch(q)))"), WIERSZE[:1] + WIERSZE[2:], ["Ruch"], id="akcja-pod-kwantyfikatorem-w-nawiasie"),
         pytest.param(_model(stale="Max, MaxNowa"), WIERSZE, ["MaxNowa"], id="stala-w-linii-z-inna"),
         pytest.param(_model(zmienne="x,\n    y"), WIERSZE, ["y"], id="zmienna"),
         pytest.param(_model(), ("`Krok`", "`Ruch(q)`", "`Max`", "`x`"), ["WybaczoneA"], id="bez-wiersza-z-przedrostkiem"),

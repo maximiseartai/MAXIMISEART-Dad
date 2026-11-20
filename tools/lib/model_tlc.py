@@ -450,7 +450,7 @@ def akcje_next(spec: str) -> frozenset[str]:
     found = re.search(r"^Next\s*==(.*?)(?=^\S|\Z)", spec, re.DOTALL | re.MULTILINE)
     if found is None:
         raise ValueError("specyfikacja nie ma definicji „Next ==”")
-    return frozenset(re.findall(r"(?:^|\\/)\s*(?:\\E[^:]*:\s*)?(\w+)", found[1].strip()))
+    return frozenset(re.findall(r"(?:^|\\/)[\s(]*(?:\\E[^:]*:[\s(]*)?(\w+)", found[1].strip()))
 
 
 def tlc(
