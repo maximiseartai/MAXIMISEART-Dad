@@ -45,14 +45,10 @@ class PeriodFiles:
 
     @property
     def filenames(self) -> tuple[str, str]:
-        """Rozliczenie wewnętrzne i Plik zbiorczy, w kolejności publikacji."""
-
         return (self.folder.internal_settlement.name, self.folder.collective_file.name)
 
 
 def ensure_period_files_absent(files: PeriodFiles) -> None:
-    """Nienadpisywanie: żaden z dwóch plików okresu nie istnieje jeszcze w Folderze okresu."""
-
     folder = files.folder
     try:
         for target in (folder.internal_settlement, folder.collective_file):
@@ -213,19 +209,12 @@ def _write_period_file(
 
 
 def _with_quantities(row: CollectiveRow) -> RegisterRow:
-    """Wiersz Rejestru z Wpisem narzędzia: Ilości usług, kwota w ``AS`` i wypełnienia z legendy."""
-
     entry = row.entry
     fills = {column: solid_fill(colour.argb) for column, colour in entry.fills.items()}
     return replace(row.order.register_row, quantities=dict(entry.quantities), amount=entry.amount, fills=fills)
 
 
 def _publish(staged_directory: Path, files: PeriodFiles) -> None:
-    """Przenosi oba pliki do Folderu okresu razem; przy błędzie nie zostawia żadnego.
-
-    Jeśli już przeniesionego pliku nie da się usunąć, zatrzymanie wskazuje ten plik.
-    """
-
     ensure_period_files_absent(files)
     period_directory = files.folder.directory
     if not path_taken(period_directory):

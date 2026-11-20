@@ -18,12 +18,9 @@ import sys
 from typing import Final
 
 TOOL_ROOT: Final = Path(__file__).resolve().parents[2]
-"""Katalog narzędzia (klon Gita z ``pyproject.toml``), w którym leży pakiet ``src/rozliczenia``."""
 
 
 def config_dir(root: Path) -> Path:
-    """Folder ``config`` klonu narzędzia w ``root``: Wzorce, Ustawienia Centrum, pliki stanu."""
-
     return root / "config"
 
 
@@ -77,8 +74,6 @@ def centrum_script(root: Path) -> Path:
 
 
 def start_command(root: Path, port: int) -> list[str]:
-    """Polecenie, którym opiekun startuje Centrum z klonu ``root``: jak skrót, tylko bez karty i bez okienek."""
-
     return [sys.executable, str(centrum_script(root)), PORT_FLAG, str(port), NO_BROWSER_FLAG, NO_DIALOGS_FLAG]
 
 
@@ -95,8 +90,6 @@ def listen_locally(port: int) -> socket.socket:
 
 
 def port_free(port: int) -> bool:
-    """Czy port na ``HOST`` da się teraz zająć tak jak ``listen_locally``."""
-
     try:
         _bound(port).close()
     except OSError:

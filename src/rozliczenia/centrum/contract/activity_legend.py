@@ -12,7 +12,6 @@ from rozliczenia.centrum.contract.quantity_rules import PreviewFile, SentencePar
 from rozliczenia.centrum.contract.settings_workers import SettingProblem
 
 FillColourName = Literal["zielony", "czerwony"]
-"""Kolor wypełnienia z plików taty."""
 
 
 class FixedColumnForm(Model):
@@ -114,7 +113,6 @@ class RemoveActivityCode(Model):
 
 
 ActivityCodeEdit = Annotated[AddActivityCode | ChangeActivityCode | RemoveActivityCode, Field(discriminator="kind")]
-"""Zmiana Legendy czynności z formularza kodu."""
 
 
 class LegendPreviewValue(Model):

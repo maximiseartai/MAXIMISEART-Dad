@@ -12,7 +12,6 @@ from rozliczenia.period_folder import PeriodPlace, PeriodStatus
 
 
 StepAction = Literal["prepare_collective_file", "price_in_efenix", "create_worker_settlements"]
-"""Krok okresu, który robi proces."""
 
 
 class ProcessStep(Model):
