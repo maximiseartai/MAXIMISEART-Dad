@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Sequence, Set
 from datetime import datetime
 import json
 import re
@@ -15,6 +15,7 @@ from stan_pr import Pull
 import straznik
 import szablon_werdyktu
 from szablon_werdyktu import Item
+import szczebel_straznika
 import werdykt_pr
 import wplyw_zmiany
 
@@ -42,6 +43,9 @@ PR bez naprawy czerwonego `main`; linię „Część #N” każe pisać ``docs/a
 Ważne PR, który dostaje lekką rundę przeglądu (``light``: ``wplyw_zmiany.light_review`` od ``origin/<baza PR>``, aneks
 „Lekka runda przeglądu PR samych narzędzi” ADR 0042, decyzja Maksa z 20.11.2026), bloku nie potrzebuje, więc warunek 5
 nie ma dla niego strażnika do dowodu, a jego kod ``NOWY`` nie musi stać na liście; blok czerwonego `main` nadal tak.
+Wyjątek (ADR 0046): Ważne ze szczeblem z ``szczebel_straznika.LIGHT`` w wątku, w którym obowiązuje szczebel strażnika
+(``szczebel_straznika.applies``), potrzebuje bloku jak w pełnej stawce, a blok innego Ważnego takiego PR nie jest
+nadmiarowy.
 Stawkę drukuje recenzentowi ``--przeglad`` (``kontekst_przegladu``).
 Flaky test ma własne issue z etykietą ``flaky-test``, więc PR, który wskazuje tylko je, sekcji nie potrzebuje (Q10).
 Opis bez słów „Część” i „Naprawia” i bez werdyktu ``FAIL`` bramka pomija bez pytania GitHuba.
@@ -125,17 +129,24 @@ def problems(pull: Pull, deployed: datetime | None, *, guarded: bool = False) ->
         return [f"korzeń: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
     found: list[str] = []
     lightly = light(pull)
-    expected = {} if lightly else {heading: major.code for heading, major in _expected(rounds, found).items()}
+    majors = _light_majors(pull, rounds) if lightly else _expected(rounds, found)
+    expected = {heading: major.code for heading, major in majors.items() if not lightly or major.mechanism in szczebel_straznika.LIGHT}
     codes = {} if lightly else {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)}
     if expected or any(word in pull.body for word in RED_MAIN_WORDS):
-        found.extend(_described(pull, expected, codes, guarded))
+        found.extend(_described(pull, expected, codes, guarded, spare=majors.keys() - expected.keys()))
     found.extend(_unlisted(codes, pull))
     return _refusal(found, pull)
 
 
-def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, list[str]], guarded: bool) -> list[str]:
+def _light_majors(pull: Pull, rounds: Sequence[werdykt_pr.Round]) -> dict[str, rejestr_korzeni.Major]:
+    """Ważne PR z lekką rundą, gdy w wątku obowiązuje szczebel strażnika, bo tylko wtedy jego szczebel może żądać bloku."""
+
+    return rejestr_korzeni.majors(rounds)[0] if szczebel_straznika.applies(pull) else {}
+
+
+def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, list[str]], guarded: bool, *, spare: Set[str]) -> list[str]:
     """Przyczyny z opisu PR: czerwony `main` z linii „Część” i „Naprawia” i sekcja ``## Korzeń``, której kody bloków
-    trafiają do ``codes``."""
+    trafiają do ``codes``; ``spare`` to Ważne, których blok może stać w sekcji, choć bramka go nie żąda."""
 
     try:
         html = github.html_markdownu(pull.body, pull.repository)
@@ -144,7 +155,7 @@ def _described(pull: Pull, expected: dict[str, str | None], codes: dict[str, lis
     found: list[str] = []
     expected.update({f"Czerwony main #{number}": None for number in _red_main(html, pull, found)})
     if expected:
-        found.extend(_section(szablon_werdyktu.items(html), expected, pull, codes, guarded))
+        found.extend(_section(szablon_werdyktu.items(html), expected, pull, codes, guarded, spare))
     return found
 
 
@@ -196,7 +207,7 @@ def _red_main(html: str, pull: Pull, found: list[str]) -> list[int]:
     return red
 
 
-def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, codes: dict[str, list[str]], guarded: bool) -> list[str]:
+def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull, codes: dict[str, list[str]], guarded: bool, spare: Set[str]) -> list[str]:
     parsed = rejestr_korzeni.section(units)
     missing = [f"brak bloku „### {heading}: {code or 'R-KOD'}”" for heading, code in expected.items()]
     if parsed is None:
@@ -226,7 +237,7 @@ def _section(units: Sequence[Item], expected: dict[str, str | None], pull: Pull,
                 f"korzeń: {heading}: kod {block.code}, a ostatni werdykt, który go dotyczy, podaje {code}; inny kod rozstrzyga recenzent następnej rundy punktem „Korzeń {heading}: R-KOD - zdanie” w „## Sprawdzone” (Q25)"
             )
         found.extend(_fields(block, pull, guarded=guarded and heading.startswith("W")))
-    found.extend(f"korzeń: blok „### {heading}: {block.code}”, a PR nie ma takiego Ważnego ani czerwonego main" for heading, block in blocks.items() if heading not in expected)
+    found.extend(f"korzeń: blok „### {heading}: {block.code}”, a PR nie ma takiego Ważnego ani czerwonego main" for heading, block in blocks.items() if heading not in expected and heading not in spare)
     return found
 
 

@@ -24,6 +24,10 @@ rozstrzygnięcia w „## Sprawdzone” zmienia kod korzenia, a nie szczebel.
 Ważne bez szczebla (werdykt ``FAIL`` wątku sprzed pola ``Mechanizm:`` albo opublikowany poza ``--werdykt`` bez niego)
 przyjmuje każdy selektor.
 
+W PR z lekką rundą przeglądu (``bramka_korzenia.light``) blok w ``## Korzeń`` i strażnika potrzebuje tylko Ważne ze
+szczeblem z ``LIGHT`` (``lint``, decyzja Maksa z 20.11.2026: taki strażnik jest tani), a reszta Ważnych nie (aneks lekkiej
+rundy ADR 0042, zmieniony przez ADR 0046); żąda go ``bramka_korzenia`` w wątku, w którym obowiązuje ten warunek.
+
 Warunek obowiązuje od własnego wdrożenia (``MARKER``: ten moduł, jak ``bramka_straznika.MARKER`` i ``TEST_MARKER``;
 ``werdykt_pr.rule_applies``, decyzja Q20 ADR 0031), więc wątek z pierwszym werdyktem sprzed niego kończy po staremu,
 z dowodem selektora, który wpisał autor. Moduł bierze tylko bibliotekę standardową, bo job ``status`` uruchamia
@@ -33,6 +37,7 @@ z dowodem selektora, który wpisał autor. Moduł bierze tylko bibliotekę stand
 MARKER = "tools/lib/szczebel_straznika.py"
 BYPASS = frozenset({Kind.MYPY, Kind.RUFF, Kind.AST_GREP})
 ALLOWED = {Mechanism.ARCHITEKTURA: BYPASS, Mechanism.REFAKTOR: BYPASS, Mechanism.LINT: BYPASS}
+LIGHT = frozenset({Mechanism.LINT})
 BYPASS_FORMS = f"{Kind.MYPY.value}, {Kind.RUFF.value} albo {Kind.AST_GREP.value} <id reguły>"
 
 

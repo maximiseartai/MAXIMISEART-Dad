@@ -224,6 +224,9 @@ WERDYKTY = {
     "wazne-ten-sam-kod": _text(_MAJOR[0], OTHER_WHERE, *_MAJOR[2:], "## Sprawdzone", "- diff"),
     "wazne-gdzie-indziej": _text(_MAJOR[0], OTHER_WHERE, _MAJOR[2], OTHER_ROOT, _MAJOR[4], "## Sprawdzone", "- diff"),
     "wazne-dwa-miejsca": _text(_MAJOR[0], f"{OTHER_WHERE}, kod/inne.py:9", _MAJOR[2], OTHER_ROOT, _MAJOR[4], "## Sprawdzone", "- diff"),
+    "wazne-lint-i-architektura": _text(
+        *LINES[: LINES.index(MECHANISM)], "Mechanizm: lint", "### W2. Druga droga obok właściciela.", WHERE, EVIDENCE, ROOT, RUNG, "Mechanizm: architektura", "## Sprawdzone", "- diff"
+    ),
     "wazne-gdzie-indziej-drobne-tu": _text(_MAJOR[0], OTHER_WHERE, _MAJOR[2], OTHER_ROOT, _MAJOR[4], "### D1. Nazwa.", "Gdzie: kod/inne.py:1", "## Sprawdzone", "- diff"),
 }
 

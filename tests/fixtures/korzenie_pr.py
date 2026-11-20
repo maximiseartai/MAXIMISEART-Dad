@@ -119,6 +119,7 @@ OPISY = {
     "straznik-i-linia-po": body(C_BLOCK.replace(EVIDENCE, f"{GUARD}\nlinia 2")),
     "wyrwany-ze-straznikiem": body(_lines("### W1 r1: R-BEZ-TESTU", f"Wyrwany w #{ROOT_PR}", GUARD)),
     **{f"straznik-{name}": body(C_BLOCK.replace(EVIDENCE, f"Strażnik: {selector}")) for name, selector in STRAZNICY.items()},
+    "dwa-ze-straznikiem-ruff": body(*(C_BLOCK.replace(EVIDENCE, "Strażnik: ruff").replace("W1 r1", f"W{number} r1") for number in (1, 2))),
     "dwa-z-tym-samym-straznikiem": body(*(_lines(f"### W{number} r1: R-BEZ-TESTU", "Szczebel: (a) - jeden właściciel.", GUARD) for number in (1, 2))),
 }
 PR_KORZENIA = {

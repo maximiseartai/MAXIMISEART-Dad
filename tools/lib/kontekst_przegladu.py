@@ -36,7 +36,8 @@ SKILLS_FOR_CHANGE = Path("tools") / "skille_dla_zmiany.py"
 SKILLS_TIMEOUT_S = 300
 STAKE_LIGHT = (
     "STAWKA | lekka: PR zmienia tylko tools/ bez tools/wydanie.py, .github/ i testy narzędzi, więc Ważne jest tylko zepsucie main, "
-    "Wydania albo danych taty, a scal_pr nie wymaga do niego bloku ## Korzeń ani strażnika (aneks ADR 0042)"
+    "Wydania albo danych taty, a scal_pr wymaga do niego bloku ## Korzeń i strażnika tylko przy Mechanizm: lint, jak w pełnej "
+    "stawce (aneks ADR 0042, ADR 0046)"
 )
 STAKE_FULL = "STAWKA | pełna"
 

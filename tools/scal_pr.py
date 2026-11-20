@@ -55,7 +55,7 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    ``tools/na_scalonych_pr.py --straznik`` przechodzi: mechanizm z HEAD pada na błędzie z drzewa SHA werdyktu
    (``bramka_straznika`` i ``straznik``, niżej), a szczebel z pola ``Mechanizm:`` Ważnego przyjmuje ten selektor
    (``szczebel_straznika``, niżej); PR z lekką rundą przeglądu (``bramka_korzenia.light``) nie potrzebuje
-   do Ważnego ani bloku, ani strażnika;
+   do Ważnego ani bloku, ani strażnika, poza Ważnym ze szczeblem ``lint`` (``szczebel_straznika.LIGHT``);
 6. reguły ast-grep z bazy nie zgłaszają żadnej linii, którą PR dodaje, także gdy PR je usuwa albo osłabia, a każdy
    przypadek reguł bazy wymienia i łapie po scaleniu któraś reguła (``reguly_bazy``, niżej);
 7. HEAD PR scala się z bieżącą bazą z ``origin`` bez konfliktu, a ruff i mypy dla obu systemów przechodzą na
