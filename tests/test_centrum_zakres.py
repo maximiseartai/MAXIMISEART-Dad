@@ -135,7 +135,7 @@ def _trasy(app: FastAPI) -> frozenset[str]:
         f"{method} {context.route.path_format}"
         for context in iter_route_contexts(app.routes)
         if isinstance(context.route, APIRoute)
-        for method in context.route.methods
+        for method in context.route.methods or ()
     )
 
 
