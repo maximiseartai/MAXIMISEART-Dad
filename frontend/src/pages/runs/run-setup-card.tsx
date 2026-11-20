@@ -32,7 +32,6 @@ import { useRuns, type RunDraft } from "@/lib/runs"
 import { useSettings } from "@/lib/settings"
 import { ConfirmRunDialog } from "@/pages/runs/run-dialogs"
 
-/** Okres zawsze zaczyna się we wtorek i kończy w poniedziałek, więc dni tygodnia są stałe. */
 function PeriodLabel({ choice }: { choice: PeriodChoice }) {
   return (
     <>
@@ -254,7 +253,6 @@ export function RunSetupCard({ processes }: { processes: ReadonlyArray<ProcessSe
   )
 }
 
-/** Przycisk trybu Wyceny w efenix z podpisem pod nim, który mówi, kto klika zielony „Zapisz” w efenix. */
 function PricingButton({ pricing, disabled, onClick }: { pricing: Pricing; disabled: boolean; onClick: () => void }) {
   const mode = PRICING[pricing]
   const hintId = React.useId()
@@ -272,7 +270,6 @@ function PricingButton({ pricing, disabled, onClick }: { pricing: Pricing; disab
   )
 }
 
-/** Plik zbiorczy wybranego okresu: tylko nazwa, bo wynika z okresu i folderu okresów. */
 function CollectiveFile({ choice }: { choice: PeriodChoice | undefined }) {
   return (
     <div className="flex items-center gap-2 text-sm" role="group" aria-label="Plik zbiorczy">

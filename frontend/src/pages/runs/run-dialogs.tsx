@@ -112,10 +112,6 @@ function withoutQuantityOf(period: string | null): Promise<WithoutQuantity | nul
   return period === null ? Promise.resolve(null) : getWithoutQuantity(period)
 }
 
-/**
- * Wiersze bez ilości okresu `period`, czytane od nowa po powrocie do karty (np. z Excela); `null`, dopóki nie ma
- * odpowiedzi dla tego okresu. Odczyt, który się nie udał, jest jak Plik zbiorczy bez odczytu.
- */
 function useWithoutQuantity(period: string | null): WithoutQuantity | null {
   const { resource } = useResource(withoutQuantityOf, [period])
 

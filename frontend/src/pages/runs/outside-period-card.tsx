@@ -15,17 +15,13 @@ import { LastRun } from "@/pages/runs/last-run"
 
 type OutsidePeriodCardProps = {
   read: () => Promise<IntermaxSetup>
-  /** Nazwa procesu w dopełniaczu, do szkieletu i błędu odczytu („Wczytywanie Uporządkowania INTERMAX”). */
   what: string
-  /** Napis przycisku i nazwa karty dla czytnika ekranu. */
   label: string
   description: string
   icon: ReactNode
   request: RunStart
   skeleton: string
-  /** Treść pod INTERMAX z Ustawień Centrum, gdy serwer nie podaje blokady (np. dni INTERMAX). */
   unblocked?: ReactNode
-  /** Dopisek linii „Ostatnio …” o ostatnim Uruchomieniu, np. liczba uporządkowanych zleceń. */
   lastDetail: (last: RunRestored) => string | undefined
 }
 

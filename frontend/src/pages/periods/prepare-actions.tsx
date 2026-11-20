@@ -21,11 +21,6 @@ function showRuns() {
   window.location.hash = href("uruchomienia")
 }
 
-/**
- * Akcja karty „Następny krok”: podgląd bez zapisu procesu następnego kroku od razu, a w trakcie Uruchomienia
- * przejście do podglądu na żywo; proces bez podglądu (Wycena w efenix) otwiera nowe Uruchomienie z tym okresem.
- * Główna, chyba że karta ma inną akcję główną (`secondary`).
- */
 export function StepAction({
   period,
   step,
@@ -117,7 +112,6 @@ function DraftButton({
   )
 }
 
-/** Krok w wierszu Tablicy okresów; `secondary` to krok obok następnego. */
 export function PrepareLink({ period, step, secondary }: { period: PeriodRow; step: ProcessStep; secondary: boolean }) {
   return (
     <DraftButton

@@ -5,7 +5,6 @@ import { recordViewTiming } from "@/api/centrum"
 import type { ViewTiming } from "@/api/generated"
 import { zViewTiming } from "@/api/generated/zod.gen"
 
-/** Widok, który się mierzy: strona z `PAGES` albo okno Ustawień; jego nagłówek nosi `data-page` z tym `id`. */
 type View = { id: ViewTiming["page"] }
 
 type ViewStart = { kind: ViewTiming["kind"]; at: number }

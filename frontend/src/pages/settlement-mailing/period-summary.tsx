@@ -13,11 +13,6 @@ import { delivered, lastSent, tally, type ShownState } from "@/pages/settlement-
 import type { PeriodMailing } from "@/pages/settlement-mailing/use-period-mailing"
 import { settlements } from "@/pages/settlement-mailing/words"
 
-/**
- * Okres jednym wierszem osi: „X z Y · kiedy ostatni”, mały pasek, awatary Wykonawców z kropką stanu i rozwijane „kto i
- * kiedy” z odznaką każdego. Pod spodem pytanie o każde poprawione rozliczenie (`cards`), które po wysłaniu krótko
- * potwierdza i się zwija. Bez czytelnych „Wysłanych” wiersz mówi tylko, ile jest Rozliczeń pracowników.
- */
 export function PeriodSummary({
   period,
   readable,

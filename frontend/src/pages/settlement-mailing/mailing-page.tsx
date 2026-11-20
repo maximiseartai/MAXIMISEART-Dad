@@ -25,7 +25,6 @@ import { cn } from "cn"
 
 type Ready = Extract<SettlementMailing, { state: "ready" }>
 
-/** Które okresy stoją na osi: tylko te, które czekają na tatę (i te, które wysłał w tej wizycie), albo wszystkie. */
 type Shown = "waiting" | "all"
 
 const SHOWN: ReadonlyArray<{ value: Shown; label: string }> = [
@@ -77,7 +76,6 @@ export function MailingPage() {
   )
 }
 
-/** Przełącznik dwóch widoków osi: pigułka jedzie pod wybraną opcję. */
 function ShownSwitch({ value, onChange }: { value: Shown; onChange: (value: Shown) => void }) {
   const chosen = SHOWN.findIndex((option) => option.value === value)
 
@@ -203,7 +201,6 @@ function NothingWaits() {
  */
 type Body = "tracker" | "closing" | "leaving" | "summary"
 
-/** Karta po wysłaniu wszystkiego stoi tyle, zanim zamieni się w wiersz, a gaśnie tyle. */
 const CLOSING_MS = 1500
 const LEAVING_MS = 150
 
