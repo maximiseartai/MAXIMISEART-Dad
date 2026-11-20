@@ -25,7 +25,9 @@ Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmo
   na Ważne w werdykcie, w werdykcie ``PASS`` i ``FAIL``;
 - na końcu ``## Sprawdzone`` z 1 do 5 niepustymi punktami listy, a po nich nic; punkt, który zaczyna się od
   ``Korzeń ``, to rozstrzygnięcie ``Korzeń W<n> r<k>: R-KOD - zdanie`` albo ``Korzeń W<n> r<k>: NOWY R-KOD - opis``,
-  którym recenzent następnej rundy podaje kod Ważnego ``W<n>`` z rundy ``k`` (decyzja Q25).
+  którym recenzent następnej rundy podaje kod Ważnego ``W<n>`` z rundy ``k`` (decyzja Q25), a punkt, który zaczyna się
+  od ``Mechanizm ``, to rozstrzygnięcie ``Mechanizm W<n> r<k>: <szczebel> - zdanie`` z wartością ``Mechanism``, którym
+  podaje jego szczebel, gdy wpisany nie działa (ADR 0046, „Szczebel, który nie działa”).
 
 Inny blok (cytat, tabela, lista numerowana, lista w liście, ``<details>``, blok HTML i każdy, którego GitHub dopiero
 zacznie używać) jest odmową, a linia pola poza blokiem kodu jest polem, więc cytowane pole bez bloku kodu nie
@@ -79,6 +81,7 @@ IDIOM = re.compile(rf"Idiom: (?:{RULE_ID}(?:{_EARLIER})?|bez reguły (?:{'|'.joi
 # Punkt „## Sprawdzone”, którym recenzent rozstrzyga kod Ważnego z wcześniejszej rundy (decyzja Q25).
 RESOLUTION = re.compile(rf"Korzeń (W\d+) r(\d+): (NOWY )?({CODE.pattern}) - (\S.*)")
 RESOLUTION_START = "Korzeń "
+MECHANISM_START = "Mechanizm "
 FIELDS = ("Gdzie:", "Dowód:", "Korzeń:", "Szczebel:", MECHANISM_FIELD, "Idiom:")
 # ``plik:linia`` albo ``plik:linia-linia`` pola ``Gdzie:`` (``places``).
 PLACE = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]*\w|[\w-][\w.-]*\.[A-Za-z]\w*):(\d+)(?:[-–](\d+))?(?!\d)")
@@ -107,6 +110,15 @@ class Mechanism(StrEnum):
 
 
 MECHANISM_FORM = f"{MECHANISM_FIELD} <{'|'.join(Mechanism)}>"
+MECHANISM_RESOLUTION = re.compile(rf"{MECHANISM_START}(W\d+) r(\d+): ({'|'.join(Mechanism)}) - (\S.*)")
+MECHANISM_RESOLUTION_FORM = f"{MECHANISM_START}W<n> r<runda>: <{'|'.join(Mechanism)}> - zdanie"
+
+
+@dataclass(frozen=True)
+class MechanismPoint:
+    label: str
+    round: int
+    mechanism: Mechanism
 
 
 @dataclass(frozen=True)
@@ -126,11 +138,13 @@ class Root:
 @dataclass(frozen=True)
 class Findings:
     """Kody korzeni z treści werdyktu: ``majors`` po jednym na Ważne w kolejności, ``resolutions`` z punktów
-    rozstrzygnięcia w „## Sprawdzone”, a ``mutations`` bloki mutacji recenzenta w postaci szablonu."""
+    rozstrzygnięcia w „## Sprawdzone”, ``mutations`` bloki mutacji recenzenta w postaci szablonu, a ``mechanisms``
+    szczeble z punktów ``Mechanizm W<n> r<k>: …``."""
 
     majors: tuple[Root, ...]
     resolutions: tuple[Root, ...]
     mutations: tuple[mutacja_recenzenta.Block, ...] = ()
+    mechanisms: tuple[MechanismPoint, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -465,4 +479,10 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None, *, mechanism:
             found.append(f"punkt „{point.text}” to nie rozstrzygnięcie „Korzeń W<n> r<runda>: R-KOD - zdanie” (punkt „## {CHECKED}” nie zaczyna się od „{RESOLUTION_START.strip()}”, gdy nim nie jest)")
         else:
             resolutions.append(Root(resolved[1], bool(resolved[3]), resolved[4], int(resolved[2])))
-    return found, Findings(tuple(roots), tuple(resolutions), tuple(mutations))
+    mechanisms = []
+    for point in (item for item in points if item.text.startswith(MECHANISM_START)):
+        if (resolved := MECHANISM_RESOLUTION.fullmatch(point.text)) is None:
+            found.append(f"punkt „{point.text}” to nie rozstrzygnięcie szczebla „{MECHANISM_RESOLUTION_FORM}” (punkt „## {CHECKED}” nie zaczyna się od „{MECHANISM_START.strip()}”, gdy nim nie jest)")
+        else:
+            mechanisms.append(MechanismPoint(resolved[1], int(resolved[2]), Mechanism(resolved[3])))
+    return found, Findings(tuple(roots), tuple(resolutions), tuple(mutations), tuple(mechanisms))

@@ -91,6 +91,7 @@ PRZECHODZA = {
     "linia-dowodu-300-znakow-w-bloku-kodu": _replaced(EVIDENCE, "Dowód:", "```", "x" * 300, "```"),
     **{f"mechanizm-{name}": _replaced(MECHANISM, f"Mechanizm: {name}") for name in MECHANIZMY},
     "mutacja-recenzenta": _with_mutation(*_mutation()),
+    "rozstrzygniecie-szczebla": _text(*LINES, "- Mechanizm W1 r1: test - reguła ast-grep alarmuje w ponad 10% PR-ów."),
     "mutacja-recenzenta-dwoch-waznych-z-roznych-rund": _with_mutation(*_mutation(), *_mutation(label="W2 r1"), *_mutation(label="W1 r2")),
 }
 ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
@@ -169,6 +170,9 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     ),
     "mutacja-dwa-bloki-tego-samego-waznego": (_with_mutation(*_mutation(), *_mutation()), (1, 1), "Mutacja W1 r1: drugi blok tego Ważnego w werdykcie"),
     "mutacja-bez-rundy": (_with_mutation("### Mutacja W1", "```", MUTATION, "```"), (1, 1), "„### Mutacja W<n> r<k>”"),
+    "rozstrzygniecie-szczebla-spoza-piramidy": (_text(*LINES, "- Mechanizm W1 r1: typ - typ zamyka klasę."), (1, 1), "punkt „Mechanizm W1 r1: typ - typ zamyka klasę.” to nie rozstrzygnięcie szczebla „Mechanizm W<n> r<runda>: <architektura|refaktor|lint|test|weryfikacja> - zdanie”"),
+    "rozstrzygniecie-szczebla-bez-zdania": (_text(*LINES, "- Mechanizm W1 r1: test"), (1, 1), "punkt „Mechanizm W1 r1: test” to nie rozstrzygnięcie szczebla"),
+    "rozstrzygniecie-szczebla-bez-rundy": (_text(*LINES, "- Mechanizm W1: test - reguła ast-grep alarmuje."), (1, 1), "punkt „Mechanizm W1: test - reguła ast-grep alarmuje.” to nie rozstrzygnięcie szczebla"),
 }
 PRZED_MECHANIZMEM = {
     "szablon-bez-mechanizmu": _replaced(MECHANISM),
