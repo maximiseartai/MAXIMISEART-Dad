@@ -432,6 +432,26 @@ def test_opowiesc_ktora_nie_zna_kazdej_akcji_next_to_blad_modelu_przed_tlc(
     assert said in capsys.readouterr().out
 
 
+FORMY_NEXT = "Pisz == TRUE\nCzytaj(q) == q = 1\nLOCAL Lokalna(q) == q = 2\nWolna(F(_), q) == F(q)\nSiec ≜ TRUE\nQ == {1, 2}\nRECURSIVE Rek(_)\nRek(n) == n = 0\n\n"
+
+
+@pytest.mark.parametrize(
+    ("next_", "akcje"),
+    [
+        pytest.param("Next ==\n    \\/ Pisz\n    \\/ \\E q \\in Q : Czytaj(q)\n", {"Pisz", "Czytaj"}, id="alternatywa-i-kwantyfikator"),
+        pytest.param("Next == Pisz \\/ Siec\n", {"Pisz", "Siec"}, id="jedna-linia-i-definicja-przez-znak"),
+        pytest.param("Next ==\n    \\/ (Pisz)\n    \\/ (\\E q \\in Q : (Czytaj(q)))\n", {"Pisz", "Czytaj"}, id="nawiasy"),
+        pytest.param("Next ==\n    \\/ \\E q \\in Q : \\E r \\in Q : Czytaj(q)\n    \\/ \\A q \\in Q : Lokalna(q)\n", {"Czytaj", "Lokalna"}, id="kwantyfikatory-zagniezdzone-i-ogolny"),
+        pytest.param("Next ==\n    \\/ Pisz\n\\* komentarz w kolumnie 0\n    \\/ Lokalna(1)\n", {"Pisz", "Lokalna"}, id="komentarz-w-kolumnie-0"),
+        pytest.param("Next ==\n    \\/ Pisz\n(* komentarz\n   blokowy *)\n    \\/ Rek(1)\n", {"Pisz", "Rek"}, id="komentarz-blokowy-w-kolumnie-0"),
+        pytest.param("Next ==\n    \\/ Pisz \\* Czytaj tylko w komentarzu\n    \\/ \\E q \\in {y \\in Q : y > 1} : Wolna(Rek, q)\n", {"Pisz", "Wolna", "Rek"}, id="komentarz-w-linii-i-zbior-z-dwukropkiem"),
+        pytest.param("Next ==\n    \\/ (x' = 1)\n    \\/ Pisz\n", {"Pisz"}, id="wyrazenie-w-nawiasie-to-nie-akcja"),
+    ],
+)
+def test_akcje_next_to_kazda_definicja_uzyta_w_next_w_kazdej_formie_zapisu(next_: str, akcje: set[str]) -> None:
+    assert model_tlc.akcje_next(f"---- MODULE M ----\n{FORMY_NEXT}{next_}\nSpec == [][Next]_x\n====\n") == akcje
+
+
 def test_kazdy_skill_z_modelem_ma_konfiguracje_a_jego_opowiesc_zna_kazda_akcje_next() -> None:
     """To samo, co skrypt modelu sprawdza przed TLC, bez TLC: konfiguracje się wczytują, a opowieść, która nazywa akcje
     (``akcje``), zna każdą akcję ``Next`` swojej specyfikacji i żadnej innej."""

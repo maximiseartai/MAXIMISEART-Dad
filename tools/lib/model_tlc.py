@@ -444,11 +444,12 @@ def _check_actions(model: Model) -> None:
 
 
 def akcje_next(spec: str) -> frozenset[str]:
-    found = re.search(r"^Next\s*==(.*?)(?=^\S|\Z)", spec, re.DOTALL | re.MULTILINE)
+    text = re.sub(r"\(\*.*?\*\)|\\\*[^\n]*", "", spec, flags=re.DOTALL)
+    found = re.search(r"^Next\s*(?:==|≜)(.*?)(?=^\S|\Z)", text, re.DOTALL | re.MULTILINE)
     if found is None:
         raise ValueError("specyfikacja nie ma definicji „Next ==”")
-    body = re.sub(r"\(\*.*?\*\)|\\\*[^\n]*|\\[EA]\s[^:]*:", " ", found[1], flags=re.DOTALL)
-    defined = set(re.findall(r"^(\w+)\s*(?:\([^)]*\))?\s*==", spec, re.MULTILINE))
+    body = re.sub(r"\\[EA]\s[^:]*:", " ", found[1])
+    defined = set(re.findall(r"^(?:LOCAL\s+)?(\w+)\s*(?:\(.*?\))?\s*(?:==|≜)", text, re.MULTILINE))
     return frozenset(name for name in re.findall(r"\w+", body) if name in defined)
 
 
