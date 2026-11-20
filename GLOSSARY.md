@@ -532,6 +532,7 @@ _Avoid_: scenariusze rozliczeń, instrukcja
 
 Kody czynności, które tata ustala dla Wykonawców, każdy z tym, co wyznacza w Pliku zbiorczym.
 Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z Kodów czynności w opisie technika (`CZYNNOŚCI ZREALIZOWANE`), gdy opis nie ma Błędu opisu; zwykły opis obok kodów niczego nie wyznacza.
+Nie ma danych osobowych: nazywa czynności, kolumny, kwoty i kolory, nie ludzi ani adresy, więc Zgłoszenie podaje zmianę kodu wprost, wpisem przed i po.
 _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 
 ## Kod czynności
@@ -643,7 +644,7 @@ _Avoid_: ustawienia Uruchomienia, środowisko
 
 Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, w chwili jego startu: Lista Wykonawców, Reguły ilości i Legenda czynności.
 Proces mówi, którymi z nich liczy, w swoich potrzebach, a Uruchomienie procesu, który danym Ustawieniem nie liczy, nie ma go ani w wejściu, ani w Logach Uruchomienia.
-Skąd bierze je każdy gospodarz Uruchomienia (Centrum rozliczeń, Skrypt dla maszyn, odtworzenie z Logów), mówi jeden opis: `settings_at_start.SettingsAtStart`.
+Każdy gospodarz Uruchomienia buduje je (`settings_at_start.SettingsAtStart`) w jednym miejscu: Centrum rozliczeń z migawki Ustawień Centrum (`SettingsAtStart.of_snapshot`), Skrypt dla maszyn z Wydania (`uruchom_proces.ustawienia_z_wydania`), a odtworzenie z Logów Uruchomienia (`odtworzenie._prepared`).
 Zmiana Ustawień w trakcie Uruchomienia ich nie zmienia (ADR 0032).
 _Avoid_: fakty startu (to fakty o tym, jak wystartowało Uruchomienie), ustawienia Uruchomienia
 

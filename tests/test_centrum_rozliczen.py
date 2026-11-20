@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import base64
 import codecs
 import errno
@@ -41,6 +42,7 @@ from hypothesis import strategies as st
 import yaml
 import pytest
 
+import rozliczenia
 from rozliczenia.settlement_mailing import SettlementMailSettings
 from rozliczenia.settlement_period import last_complete_period, parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
@@ -82,6 +84,7 @@ from rozliczenia.centrum.settings.proposal import (
     ReleaseInputs,
 )
 from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings import migrations
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, EXCEPTIONS_FILE, QuantityException
@@ -4586,6 +4589,16 @@ def test_kazda_zmiana_z_wydania_ma_swiat_do_proby_pliku_bez_odczytu() -> None:
     )
 
 
+RELEASE_CHANGE_ID: Final = re.compile(r"\d{4}-(0[1-9]|1[0-2])-[a-z0-9]+(-[a-z0-9]+)*")
+
+
+def test_id_kazdej_zmiany_z_wydania_to_rok_miesiac_i_nazwa_i_zadne_sie_nie_powtarza() -> None:
+    ids = [change.id for change in RELEASE_CHANGES]
+
+    assert [found for found in ids if RELEASE_CHANGE_ID.fullmatch(found) is None] == []
+    assert len(set(ids)) == len(ids), "id jest pamięcią zmiany u taty, więc drugi wpis z tym samym id nigdy nie pobiegnie"
+
+
 @dataclass(frozen=True)
 class ReleaseEffect:
     """Ślad jednej zmiany z Wydania: jej wiersze Historii, wynik w pamięci zmian z Wydań i treść jej pliku."""
@@ -4900,6 +4913,56 @@ def test_zmiana_z_wydania_nie_nadpisuje_zlego_pliku_taty(tmp_path: Path, change:
     assert not any('"wynik":"zapisano"' in row.replace(" ", "") for row in _release_effect(tool, change).rows)
 
 
+@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
+def test_zmiana_z_wydania_po_utracie_pamieci_wlasciciela_biegnie_drugi_raz_bez_roznicy_i_bez_wiersza(
+    tmp_path: Path, change: ReleaseChange[Any]
+) -> None:
+    tool = _release_world(tmp_path, change)
+    started(tool, (change,)).stop()
+    applied = _release_effect(tool, change)
+    shutil.rmtree(tool.config / MEMORY_DIRECTORY)
+    (tool.config / HISTORY_FILE).unlink()
+
+    started(tool, (change,)).stop()
+    again = _release_effect(tool, change)
+
+    assert applied.rows != ()
+    assert (again.rows, again.file) == ((), applied.file), (
+        "po utracie pamięci właściciela zmiana z Wydania biegnie jeszcze raz, więc jej edycja ustawia wartość („ustaw”, "
+        "„dodaj, jeśli nie ma”), a nie zmienia jej względem bieżącej"
+    )
+
+
+def _docstrings(tree: ast.Module) -> set[int]:
+    owners = [tree, *(node for node in ast.walk(tree) if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)))]
+    return {
+        id(owner.body[0].value)
+        for owner in owners
+        if owner.body and isinstance(owner.body[0], ast.Expr) and isinstance(owner.body[0].value, ast.Constant)
+    }
+
+
+def test_stare_pliki_config_nazywa_w_src_tylko_ich_przeniesienie_z_wydania() -> None:
+    old = (OLD_MAPPING_FILE, OLD_ADDRESSES_FILE, OLD_ROLLOUT_FILE, OLD_FOOTER_FILE)
+    src = Path(rozliczenia.__file__).parent
+    named: list[str] = []
+    for path in sorted(src.rglob("*.py")):
+        if path.is_relative_to(Path(migrations.__file__).parent):
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        skipped = _docstrings(tree)
+        named += [
+            f"{path.relative_to(src)}:{node.lineno}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and id(node) not in skipped
+            and any(name in node.value for name in old)
+        ]
+
+    assert named == [], "stare pliki config czyta tylko ich przeniesienie z Wydania (settings/migrations), więc zostają u taty jako kopia"
+
+
 # --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
 
 JAN = "jan.testowy@przyklad.invalid"
@@ -4969,7 +5032,7 @@ def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_sp
         "wykonawcy",
         False,
         False,
-    )
+    ), "przeniesienie Listy Wykonawców nie ma „Cofnij”, bo cofnięcie zostawiłoby Centrum bez Wykonawców"
     assert {name: (tool.config / name).read_bytes() for name in old} == old
 
 
@@ -6652,7 +6715,9 @@ def test_przeniesienie_przypomnien_z_plikow_maksa_daje_dzien_wdrozenia_i_stopke_
     _, again = migrated_reminders(tool)
 
     assert reminders == {**ADR_0030_REMINDERS, "footer": kept, "state": "good", "enabled": enabled, "since": since, "problem": None}
-    assert (row["source"], row["release"]["change"], row["undoable"], row["refused"]) == ("release", "2026-11-przypomnienia", False, False)
+    assert (row["source"], row["release"]["change"], row["undoable"], row["refused"]) == ("release", "2026-11-przypomnienia", False, False), (
+        "przeniesienie przypomnień nie ma „Cofnij”, bo cofnięcie wyłączyłoby przypomnienia i zgubiło stopkę taty"
+    )
     assert len(again) == 1, "przeniesienie wchodzi raz"
     assert {name: (tool.config / name).read_bytes() for name in old} == old
 

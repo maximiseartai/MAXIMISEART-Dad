@@ -1,28 +1,3 @@
-"""Różnice z Kontroli ilości jako podpowiedzi w sekcji Reguły ilości okna Ustawień (ADR 0033, US 62, 63): lista „Tu
-wpisałeś inaczej niż reguła”, „To był wyjątek” i formularz nowej reguły dla „Popraw regułę”.
-
-Różnica to komórka Wiersza danych, w której Kontrola ilości liczy różnicę: kolumna z ``quantity_check.row_check``, z
-którego ``check`` Kontroli ilości liczy swoje różnice. Pliki to ostatnie Pliki zbiorcze po Przebiegu rozliczeń z
-odczytu podglądu zmiany reguł (``RecentCollectiveFiles``), a reguły to bieżące Reguły ilości z Ustawień, więc okres,
-którego reguł nikt nie zmienił od Przebiegu, ma tu tyle różnic co jego Kontrola ilości. Plik zbiorczy, którego nie da
-się przeczytać, lista pomija i nazywa jego okres, a plik Folderów, Reguł ilości albo Listy Urządzeń bez odczytu to
-odmowa 409 o nim (lista i „To był wyjątek”), nie „brak folderu okresów” ani różnice liczone regułami z Wydania.
-
-Wyjątki (``settings.quantity_exceptions``) tylko ukrywają różnice na tej liście: Kontrola ilości w Skrzynce Zgłoszeń i
-podgląd zmiany reguł liczą dalej każdą. „To był wyjątek” wysyła samo id różnicy; serwer liczy różnice od nowa i
-zapisuje wyjątek tej, która ma to id, zapisem właściciela Ustawień (plik, wiersz Historii z „Cofnij”, pamięć), więc
-przeglądarka nie składa wyjątku sama. Różnicy, której już nie ma, odpowiada 404.
-
-„Popraw regułę” dostaje formularz nowej reguły z warunkami z ``URZĄDZENIA`` różnicy: przy znanych składnikach po
-jednym warunku „zawierają składnik” na każdy, przy składniku spoza Listy Urządzeń zakres „nieznane” i warunek
-„zawierają tekst” z całym tekstem. Reguły się sumują, więc gdy tata wpisał więcej niż reguły w kolumnie, którą reguła
-może wpisać (nie P, Q, S), formularz wpisuje brakującą ilość raz na zlecenie; mniejszej ilości nowa reguła nie da, więc
-wtedy działanie wybiera tata. Formularz niczego nie zapisuje: zapis to zwykły zapis edytora.
-
-Odpowiedź ma tylko treść dozwoloną filtrem prywatności (``OrderFacts``) bez ``UMOWA``, jak podgląd: ``URZĄDZENIA``,
-``CZYNNOŚCI``, dzień tygodnia z pełną godziną, ilości i numer wiersza, nigdy adresu, numeru zlecenia ani daty dziennej.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -64,15 +39,10 @@ from rozliczenia.quantity_engine import BUILT_IN_COLUMNS, DeviceList, OrderConte
 from rozliczenia.text import normalize_text
 
 SHOWN: Final = 50
-"""Najwyżej tyle różnic pokazuje lista; resztę tylko liczy."""
 _UNREADABLE: Final[dict[int | str, dict[str, object]]] = {409: {"model": common_contract.Problem}}
-"""Odmowa w OpenAPI: plik Ustawień, z którego liczą się różnice, bez odczytu (409) jako ``Problem``."""
-
 
 @dataclass(frozen=True)
 class Difference:
-    """Komórka Wiersza danych ``row`` okresu ``period``, w której tata wpisał ``tata``, a Reguły ilości dają inaczej."""
-
     period: str
     row: int
     content: OrderContent
@@ -90,9 +60,6 @@ class Difference:
 
 
 def differences(recent: Recent, rules: QuantityRules) -> list[Difference]:
-    """Różnice Kontroli ilości plików ``recent`` według ``rules``: od najnowszego okresu, w kolejności wierszy i kolumn
-    ``N:AP``."""
-
     found: list[Difference] = []
     for file in recent.files:
         for numbered in file.orders.rows:
@@ -108,14 +75,9 @@ def differences(recent: Recent, rules: QuantityRules) -> list[Difference]:
 
 
 def quantity_differences_router(settings: CentrumSettings, price_list: PriceList, recent: RecentCollectiveFiles) -> APIRouter:
-    """Trasy różnic Kontroli ilości i „To był wyjątek”. Zapis pliku wyjątków nie usuwa loginów z Listy Wykonawców,
-    a jego odmowa ``KeptInPeriods`` jest odpowiedzią jak przy każdym zapisie Ustawień."""
-
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
     def listed() -> tuple[contract.QuantityDifferences, list[Difference]]:
-        """Lista dla sekcji i wszystkie różnice ostatnich plików, także te, które są wyjątkami."""
-
         view = settings.quantity_rules()
         rules = view.rules
         bad = view.exceptions_problem
@@ -187,8 +149,6 @@ def _difference(difference: Difference, names: Mapping[str, str], devices: Devic
 
 
 def _draft(difference: Difference, devices: DeviceList) -> RuleForm:
-    """Formularz nowej reguły dla „Popraw regułę”: warunki z ``URZĄDZENIA`` różnicy i brakująca ilość w kolumnie."""
-
     read = devices_read(devices, difference.content)
     conditions: list[RuleCondition]
     if read.all_known:
@@ -208,8 +168,6 @@ def _draft(difference: Difference, devices: DeviceList) -> RuleForm:
 
 
 def exception_sentence(exception: QuantityException, names: Mapping[str, str]) -> list[SentencePart]:
-    """Wyjątek jako zdanie Historii Ustawień: okres, wiersz, kolumna z nazwą pozycji cennika i wpis taty."""
-
     tata = exception.tata if isinstance(exception.tata, int) else "wartość nieliczbową"
     return [
         SentenceText(kind="text", text=f"To był wyjątek: okres {exception.period}, wiersz {exception.row}, "),
@@ -219,8 +177,6 @@ def exception_sentence(exception: QuantityException, names: Mapping[str, str]) -
 
 
 def with_exception_sentences(rules: Callable[[], RuleSentences], price_list: PriceList) -> Callable[[], RuleSentences]:
-    """Zdania Historii Ustawień reguł (``rules``) i do tego wyjątków Kontroli ilości (klucz ``wyjatki.<id>``)."""
-
     def reader() -> RuleSentences:
         rule_sentence = rules()
         names = price_list.names()
