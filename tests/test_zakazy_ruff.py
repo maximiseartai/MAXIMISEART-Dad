@@ -20,6 +20,7 @@ import importlib.util
 import json
 from pathlib import Path
 import pkgutil
+import re
 import subprocess
 import sys
 import tomllib
@@ -380,6 +381,32 @@ ZNANE_LUKI_SNU = {
     "nazwa w napisie: getattr": 'import time\n\ngetattr(time, "sleep")(0.3)\n',
     "inne API z limitem czasu: threading.Event.wait": "import threading\n\nthreading.Event().wait(0.3)\n",
 }
+
+
+def _drogi_zapisu_pyyaml() -> set[str]:
+    import yaml
+
+    piszace = re.compile(r"(Dumper|Emitter|Serializer|Representer)$")
+    funkcje = {f"yaml.{nazwa}" for nazwa in dir(yaml) if re.match(r"(dump|safe_dump|emit|serialize)", nazwa)}
+    klasy = {f"yaml.{nazwa}" for nazwa, wartosc in vars(yaml).items() if isinstance(wartosc, type) and piszace.search(nazwa)}
+    moduly = {
+        modul.name
+        for modul in pkgutil.iter_modules(yaml.__path__, "yaml.")
+        if any(
+            isinstance(wartosc, type) and wartosc.__module__ == modul.name and piszace.search(nazwa)
+            for nazwa, wartosc in vars(importlib.import_module(modul.name)).items()
+        )
+    }
+    return funkcje | klasy | moduly
+
+
+def test_kazda_droga_zapisu_pyyaml_ma_zakaz_poza_tests() -> None:
+    """Drogi zapisu wynikają z zainstalowanego PyYAML, nie z wyliczenia: funkcja zapisu, klasa, która pisze YAML
+    (``*Dumper``, ``*Emitter``, ``*Serializer``, ``*Representer``), i podmoduł, który taką klasę definiuje."""
+
+    assert sorted(_drogi_zapisu_pyyaml() ^ set(ZAPIS_YAML)) == [], (
+        "zakaz zapisu YAML przez PyYAML w ruff.toml korzenia, src/ruff.toml i drive/ruff.toml ma wymieniać każdą drogę zapisu PyYAML"
+    )
 
 
 ZNANE_LUKI_ZAPISU_YAML = {
@@ -1134,25 +1161,8 @@ def _release_content_findings(*arguments: str, code: str | None = None) -> list[
 # Nazwy pakietu importlib wynikają z biblioteki działającego Pythona (test nazw niżej); reszta to moduły, których zadaniem
 # jest import albo wykonanie modułu. Inne moduły biblioteki standardowej, które przy okazji wykonują plik albo importują po
 # nazwie, są znaną luką z próbkami w ZNANE_LUKI_IMPORTU, nie pełną listą.
-ZAPIS_YAML = (
-    "yaml.dump",
-    "yaml.dump_all",
-    "yaml.safe_dump",
-    "yaml.safe_dump_all",
-    "yaml.emit",
-    "yaml.serialize",
-    "yaml.serialize_all",
-    "yaml.Dumper",
-    "yaml.SafeDumper",
-    "yaml.BaseDumper",
-    "yaml.CDumper",
-    "yaml.CSafeDumper",
-    "yaml.CBaseDumper",
-    "yaml.dumper",
-    "yaml.emitter",
-    "yaml.serializer",
-    "yaml.representer",
-    "yaml.cyaml",
+ZAPIS_YAML = tuple(
+    name for name, entry in _banned(tomllib.loads(ROOT_CONFIG.read_text(encoding="utf-8"))["lint"]).items() if "PyYAML" in entry["msg"]
 )
 DYNAMIC_IMPORT = (
     "importlib.import_module",
