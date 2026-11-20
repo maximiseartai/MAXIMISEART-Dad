@@ -20,6 +20,7 @@ import sys
 import pytest
 
 import na_boxie
+import potomne
 import testy_scalenia
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="boatbox biegnie tylko na Macu, a przeniesienie to exec")
@@ -43,6 +44,7 @@ HEAVY = [
     ),
     pytest.param(lambda tmp: [PYTHON, "tools/ci_lokalnie.py", "--tylko", "pytest", "--kazdy-commit", "nie/ma/takiej"], CI, id="ci-lokalnie-pytest"),
     pytest.param(lambda tmp: [*PYTEST, "-n", "2"], {}, id="pytest-z-workerami"),
+    pytest.param(lambda tmp: [PYTHON, "tools/na_scalonych_pr.py", "--commit", "HEAD", "--", "tools/mutacje_zmiany.py", "--baza", "HEAD"], {}, id="na-scalonych-pr"),
 ]
 FAKE = """#!/bin/bash
 printf '%s\\n' "$PWD" "$@" > "$ATRAPA_ZAPIS/$1"
@@ -69,9 +71,10 @@ def _fake(tmp_path: Path) -> Path:
 
 
 def _env(tmp_path: Path, *, boatbox: bool = True, extra: Mapping[str, str] | None = None) -> dict[str, str]:
-    """Środowisko agenta w powłoce Maca: bez zmiennych boxa, ``run --here`` i sesji pytest testu, z atrapą ``boatbox``."""
+    """Środowisko agenta w powłoce Maca: bez zmiennych boxa, ``run --here`` i znacznika narzędzia repo (tu: sesji pytest
+    testu), z atrapą ``boatbox``."""
 
-    hidden = (na_boxie.BOX, na_boxie.TUTAJ, na_boxie.SESJA, "PYTEST_VERSION", "PYTEST_CURRENT_TEST", "PYTEST_XDIST_WORKER", "GITHUB_ACTIONS")
+    hidden = (na_boxie.BOX, na_boxie.TUTAJ, potomne.NARZEDZIE, "PYTEST_VERSION", "PYTEST_CURRENT_TEST", "PYTEST_XDIST_WORKER", "GITHUB_ACTIONS")
     env = {name: value for name, value in os.environ.items() if name not in hidden}
     path = [*[str(_fake(tmp_path))] * boatbox, "/usr/bin", "/bin"]
     return env | {"PATH": os.pathsep.join(path), "ATRAPA_ZAPIS": str(tmp_path / "zapis"), "QUIET_MACHINE_SCRATCH": str(tmp_path / "maszyna"), **(extra or {})}
@@ -124,12 +127,12 @@ def test_ciezkie_narzedzie_na_macu_przenosi_sie_na_box_z_tym_samym_poleceniem_i_
     [
         pytest.param(True, {na_boxie.BOX: "1"}, id="na-boxie"),
         pytest.param(True, {na_boxie.TUTAJ: "1"}, id="boatbox-run-here"),
-        pytest.param(True, {na_boxie.SESJA: "1"}, id="w-sesji-pytest"),
+        pytest.param(True, {potomne.NARZEDZIE: "1"}, id="potomek-narzedzia-repo"),
         pytest.param(False, {}, id="bez-boatbox-w-path"),
     ],
 )
 @pytest.mark.parametrize(("command", "own"), [pytest.param(SZYBKO, 1, id="szybko"), pytest.param([*PYTEST, "-n", "2"], 0, id="pytest-z-workerami")])
-def test_na_boxie_przy_run_here_w_sesji_pytest_i_bez_boatbox_narzedzie_zostaje(
+def test_na_boxie_przy_run_here_u_potomka_narzedzia_repo_i_bez_boatbox_narzedzie_zostaje(
     command: list[str], own: int, boatbox: bool, extra: dict[str, str], tmp_path: Path
 ) -> None:
     done = _run(command, tmp_path, boatbox=boatbox, extra=extra)
@@ -197,6 +200,26 @@ def test_plik_mutacji_ponad_limit_argumentu_linuksa_jedzie_na_box_w_pliku_skrypt
     assert max(len(argument.encode()) for argument in moved[1]) < ARGUMENT_LINUKSA
 
 
+WOLAJACY = """import os
+from pathlib import Path
+import sys
+
+sys.path.insert(0, "tools/lib")
+import potomne
+
+done = potomne.run([sys.executable, "tools/mutacje_zmiany.py", "--baza", "HEAD"], cwd=Path.cwd(), env={**os.environ, "MAXIMISEART_NA_SCALONYCH_PR": "1"})
+print(done.stdout, done.stderr)
+sys.exit(done.returncode)
+"""
+"""Narzędzie repo jak ``tools/na_scalonych_pr.py``: uruchamia ciężkie narzędzie z własną zmienną, z której ono czyta decyzję."""
+
+
+def test_ciezkie_narzedzie_uruchomione_przez_narzedzie_repo_zostaje_przy_nim_z_jego_srodowiskiem(tmp_path: Path) -> None:
+    done = _run([PYTHON, "-c", WOLAJACY], tmp_path)
+
+    assert (done.returncode, "MUTACJE ZMIANY OK" in done.stdout, _moved(tmp_path)) == (0, True, None), done.stdout + done.stderr
+
+
 IMPORT_ENV = dict(os.environ)
 """Środowisko z chwili importu modułu testów, jak ``WITHOUT_XDIST_WORKERS`` w ``tests/test_mutacje.py``."""
 
@@ -230,8 +253,9 @@ def mac(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     junit.write_text(JUNIT, encoding="utf-8")
     for name, value in (_env(tmp_path) | {"ATRAPA_JUNIT": str(junit)}).items():
         monkeypatch.setenv(name, value)
-    for name in (na_boxie.SESJA, na_boxie.BOX, na_boxie.TUTAJ):
+    for name in (na_boxie.BOX, na_boxie.TUTAJ):
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(potomne, "POTOMEK_NARZEDZIA", False)
     return tmp_path
 
 

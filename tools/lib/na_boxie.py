@@ -4,16 +4,20 @@ na Maca.
 
 Mac to proces z ``boatbox`` w ``PATH`` (CI, box boat i komputer taty go nie mają) bez ``BOX``, które ``boatbox`` ustawia
 w każdym poleceniu na boxie. Ciężkie wejścia (``szybko.py``, ``mutacje.py``, ``mutacje_zmiany.py``,
-``benchmark_przebiegu.py``, ``ci_lokalnie.py`` z zadaniem ``pytest`` albo ``mutations`` oraz pytest z więcej niż jednym
-workerem xdist, przez ``przenies_pytest`` w ``tests/conftest.py``) wołają ``przenies`` zaraz po odczycie argumentów. Na
+``benchmark_przebiegu.py`` poza ``comment`` i ``guard``, ``ci_lokalnie.py`` z zadaniem ``pytest`` albo ``mutations``,
+``na_scalonych_pr.py`` z poleceniem oraz pytest z więcej niż jednym workerem xdist, przez ``przenies_pytest``
+w ``tests/conftest.py``) wołają ``przenies`` po odczycie argumentów i własnych szybkich odmowach. Na
 Macu ``przenies`` robi ``os.execvp`` na ``boatbox run`` z tym samym poleceniem w tym samym katalogu, więc wołający dalej
 czeka na ten sam proces i dostaje jego wyjście i kod wyjścia. Test scalenia ``tools/scal_pr.py``, którego narzędzie
 zostaje na Macu (merge, blokada merge'a), puszcza swój pytest na box przez ``uruchom`` i zabiera z boxa jego junit.
 
-Wyjątki są tylko jawne: ``TUTAJ``, które ustawia wyłącznie ``boatbox run --here`` (Excel, Centrum z prawdziwymi plikami
-taty, testy tylko na macOS), i sesja pytest (``SESJA``, które ``przenies_pytest`` wpisuje do ``os.environ`` sesji, która
-zostaje tam, gdzie jest), bo narzędzie uruchomione przez test jest częścią testu. Pytest bez workerów albo z jednym
-zostaje na Macu, bo jest lekki. Decyzja czyta tylko środowisko, ``PATH`` i liczbę workerów pytest, a nie tekst polecenia.
+Przenosi się tylko proces, którego nie uruchomiło inne narzędzie repo (``potomne.POTOMEK_NARZEDZIA``): przeniesienie
+gubi środowisko, kopię commitu i pliki wołającego, więc potomek narzędzia repo, także narzędzie uruchomione przez test
+w sesji pytest, zostaje przy wołającym. Wołający, który sam robi ciężką pracę, przechodzi na box w całości
+(``na_scalonych_pr.py`` z poleceniem) albo puszcza ją jawnie przez ``uruchom`` (test scalenia). Jedyny inny wyjątek to
+``TUTAJ``, które ustawia wyłącznie ``boatbox run --here`` (Excel, Centrum z prawdziwymi plikami taty, testy tylko na
+macOS). Pytest bez workerów albo z jednym zostaje na Macu, bo jest lekki. Decyzja czyta tylko środowisko, ``PATH``
+i liczbę workerów pytest, a nie tekst polecenia.
 
 Polecenie jedzie na box jako plik skryptu (``boatbox run --file``), który ``boatbox`` wysyła przez stdin, bo jeden
 argument polecenia na Linuksie boxa ma najwyżej 128 KiB, a plan mutacji bywa większy. Skrypt biegnie z
@@ -38,9 +42,10 @@ import tempfile
 import textwrap
 from typing import Any, NoReturn, Protocol
 
+import potomne
+
 BOX = "BOATBOX_BOX"
 TUTAJ = "BOATBOX_HERE"
-SESJA = "MAXIMISEART_SESJA_PYTEST"
 NIE_WSTAL = 75
 """Kod ``boatbox``, gdy box nie wstał, a polecenie nie ruszyło (EX_TEMPFAIL, jak ``box_boat.KOD_WYJSCIA``: powtórz)."""
 START_S = 300
@@ -61,9 +66,9 @@ class Konfiguracja(Protocol):
 
 def przeniesc() -> bool:
     """Czy ciężkie wejście przenosi się na box: Mac (``boatbox`` w ``PATH``, nie Windows), nie box (``BOX``), bez
-    jawnego wyjątku ``TUTAJ`` i poza sesją pytest (``SESJA``)."""
+    jawnego wyjątku ``TUTAJ`` i proces, którego nie uruchomiło inne narzędzie repo."""
 
-    if sys.platform == "win32" or any(os.environ.get(name) for name in (BOX, TUTAJ, SESJA)):
+    if sys.platform == "win32" or potomne.POTOMEK_NARZEDZIA or any(os.environ.get(name) for name in (BOX, TUTAJ)):
         return False
     return shutil.which("boatbox") is not None
 
@@ -96,11 +101,14 @@ def skrypt(words: Sequence[str], cwd: Path, *, root: Path = ROOT, carried: tuple
 
 
 def plik_skryptu(text: str) -> Path:
-    """Plik ``SKRYPTY`` z treścią ``text``, nazwany jej skrótem, więc równoległe przeniesienia nie piszą jednego pliku."""
+    """Plik ``SKRYPTY`` z treścią ``text``, nazwany jej skrótem: równoległe przeniesienia tego samego polecenia (z dwóch
+    worktree) dają ten sam plik, więc proces zapisuje go obok i podmienia atomowo, a ``boatbox`` czyta zawsze pełny."""
 
     SKRYPTY.mkdir(exist_ok=True)
     path = SKRYPTY / f"{hashlib.sha256(text.encode()).hexdigest()[:16]}.sh"
-    path.write_text(text, encoding="utf-8")
+    written = path.with_name(f"{path.name}.{os.getpid()}")
+    written.write_text(text, encoding="utf-8")
+    os.replace(written, path)
     return path
 
 
@@ -126,21 +134,17 @@ def przenies(plik: str | os.PathLike[str] | None = None) -> None:
 def przenies_pytest(config: Konfiguracja) -> None:
     """``przenies`` dla sesji pytest z ``pytest_configure`` kontrolera: przenosi tylko sesję z więcej niż jednym workerem
     xdist (pytest-xdist liczy już ``-n auto`` w ``pytest_cmdline_main``, a przechwytywanie wyjścia pytest jest wtedy
-    zawieszone, więc wyjście ``boatbox`` idzie do wołającego). Sesja, która zostaje, wpisuje ``SESJA`` dla procesów
-    swoich testów."""
+    zawieszone, więc wyjście ``boatbox`` idzie do wołającego)."""
 
     workers = config.getoption("numprocesses", default=None)
     if isinstance(workers, int) and workers > 1 and przeniesc():
         _exec(skrypt(sys.orig_argv, Path.cwd()))
-    os.environ[SESJA] = "1"
 
 
 def uruchom(words: Sequence[str], cwd: Path, *, timeout: float, result: str, into: Path) -> subprocess.CompletedProcess[str]:
     """``words`` na boxie worktree ``cwd`` (``boatbox run --file`` z limitem ``timeout`` ponad ``START_S``), potem plik
     ``result`` (względny do ``cwd``) z boxa do katalogu ``into``, a na końcu usunięcie boxa, bo ``cwd`` to kopia, która
     znika po biegu. Kod ``NIE_WSTAL`` mówi, że box nie wstał, a polecenie nie ruszyło."""
-
-    import potomne
 
     try:
         script = plik_skryptu(skrypt(words, cwd, root=cwd))

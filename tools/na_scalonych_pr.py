@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import ciezkie_ci
 import github
 import mutacja_recenzenta
+import na_boxie
 import odpalenia_ast_grep
 import potomne
 import rejestr_korzeni
@@ -603,6 +604,7 @@ def main(argv: list[str] | None = None) -> int:
         return proof(args.regula, args.wazne, args.pr, last)
     if not command or not (args.pr or args.ostatnie or args.commit):
         parser.error("podaj PR-y (--pr, --ostatnie albo --commit) i polecenie po --, np. -- tools/mutacje_zmiany.py --baza HEAD^1")
+    na_boxie.przenies()
     try:
         prs = merged(args.pr, args.ostatnie) if args.pr or args.ostatnie else []
     except (ValueError, subprocess.CalledProcessError) as error:
