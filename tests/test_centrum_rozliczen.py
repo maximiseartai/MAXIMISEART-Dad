@@ -897,7 +897,7 @@ RULE_SENTENCES = {
 }
 
 
-def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego_w_sekcji_i_w_historii(tmp_path: Path) -> None:
+def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego_w_zdaniu_edytorze_i_historii(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     template = write_collective_template(app.tool.configuration.collective_template)
@@ -914,6 +914,8 @@ def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_plik
         "i Technicolor (opis) (AK)."
     )
     assert sentences["inea-gniazdo"] == "Jeśli URZĄDZENIA zawierają tekst „gniazdo”, to zostaw demontaż (AP) pustą w Rozliczeniu pracownika."
+    columns = {column["letter"]: column["name"] for column in app.client.get(QUANTITY_RULES_URL).json()["columns"]}
+    assert (columns["Z"], columns["AK"]) == ("ONT Nokia z montażem", "Technicolor (opis)")
     assert app.client.delete("/api/settings/quantity-rules/technicolor").status_code == 200
     [row] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
     assert [(plain(change["before"]), change["after"]) for change in row["rules"]] == [(sentences["technicolor"], None)]

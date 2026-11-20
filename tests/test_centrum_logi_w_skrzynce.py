@@ -138,7 +138,7 @@ from tests.fixtures.centrum_processes import (
 )
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import COMPLETED_WITHOUT_CODES, INTERNAL_SETTLEMENT_NAME, incomplete_period_rows, paste_raw_orders, register_order
-from atrapy.settlement import PERIOD, write_quantity_source
+from atrapy.settlement import PERIOD, WORKERS, worker_list, write_quantity_source, write_worker_list
 import sys
 
 import odtworz_uruchomienie
@@ -1310,6 +1310,20 @@ def test_uruchomienie_na_ostatniej_dobrej_liscie_wykonawcow_odtwarza_sie_z_ostrz
     centrum.tool.worker_list.write_bytes(good)
     logged = [(message["code"], message.get("at_start")) for message in produced.record["messages"]]
     assert logged == [("LISTA_WYKONAWCOW_OSTATNIA_DOBRA", True)], logged
+
+    code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
+
+    assert (code, lines[0]) == (0, "ODTWORZENIE ZGODNE"), lines
+
+
+def test_odtworzenie_liczy_lista_wykonawcow_z_logow_a_nie_z_pliku_folderu_konfiguracji_zmienionego_po_uruchomieniu(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    centrum = settling_centrum(tmp_path)
+    write_report_key(ToolDirectory(tmp_path))
+    assert run_to_end(centrum, dry_run=True)["result"]["result"] == "OK"
+    produced = Produced(_archive_file(centrum, tmp_path), ("--konfiguracja", str(tmp_path / "config")))
+    write_worker_list(centrum.tool.worker_list, worker_list({login: f"{name} Inny" for login, name in WORKERS.items()}))
 
     code, lines = _replayed(capsys, produced.archived, "--na-tym-drzewie", *produced.arguments)
 
