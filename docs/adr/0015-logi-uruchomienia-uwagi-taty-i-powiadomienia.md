@@ -131,6 +131,12 @@ taty, a stare pliki zostają nietknięte. Każde Wydanie z plikiem Spraw taty pi
 już tylko jego, więc ten odczyt znika dopiero wtedy, gdy Maks sprawdzi, że u
 taty jest `config/sprawy-taty.json` albo nie ma żadnego ze starych plików.
 
+**Dopisek (#2236, 2026-11-20).** Gdy `logs/dzialania-taty.jsonl` nie da się
+opróżnić po Logach Uruchomienia (podmiana pliku pada), jego wpisy idą też do
+Logów następnego Uruchomienia: lepiej, żeby działanie taty stało w dwóch
+Logach, niż żeby nie stało w żadnych
+(`tests/test_centrum_logi_uruchomienia.py::test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_takze_nastepnym_logom`).
+
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zastępuje stary plik
 Wykonawców (`worker_mapping.yaml`) Listą Wykonawców.
 
