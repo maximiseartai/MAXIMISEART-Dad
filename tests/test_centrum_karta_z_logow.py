@@ -1,9 +1,3 @@
-"""Karta Uruchomienia z Logów Uruchomienia (#427) przez HTTP API Centrum, jak ją widzi przeglądarka.
-
-Ponowny start to nowa aplikacja Centrum na tych samych katalogach (``restart()``), jak po zamknięciu Centrum i
-kliknięciu skrótu na pulpicie taty.
-"""
-
 from __future__ import annotations
 
 import json
@@ -96,9 +90,6 @@ def test_karta_po_starcie_idzie_za_plikiem_logow_bez_ustawien_metryk_i_folderu_o
 
 
 def test_karta_po_starcie_i_w_historii_ma_ostrzezenie_startu_przed_ostrzezeniem_wyniku_jak_na_zywo(tmp_path: Path) -> None:
-    """Karta z Logów ma ostrzeżenia w tej samej kolejności co na żywo (``EndedRun.warnings``): najpierw ostrzeżenie
-    startu (ostatnia dobra Lista Wykonawców), potem ostrzeżenie wyniku (nieznany WYKONAWCA)."""
-
     centrum = settling_centrum(tmp_path, include_unmapped=True)
     centrum.client.get("/api/settings")
     centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
@@ -147,9 +138,6 @@ def test_uruchomienie_przerwane_zamknieciem_centrum_jest_nazwane_po_starcie(
 
 
 def held_before(monkeypatch: pytest.MonkeyPatch, owner: type, name: str) -> tuple[threading.Event, threading.Event]:
-    """Metoda ``name`` klasy ``owner`` czeka, aż test ją puści: ponowny start Centrum w tym czasie to Centrum zamknięte
-    tuż przed nią. Daje parę (doszło, puść); puszczona metoda robi swoje w poprzednim Centrum."""
-
     reached, released = threading.Event(), threading.Event()
     real = getattr(owner, name)
 
@@ -165,8 +153,6 @@ def held_before(monkeypatch: pytest.MonkeyPatch, owner: type, name: str) -> tupl
 def test_centrum_zamkniete_po_zapisie_wyniku_w_historii_daje_karte_z_wynikiem_z_historii(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Centrum zamyka się po rekordzie metryk, a przed Logami Uruchomienia: karta po starcie nie przeczy Historii (#722)."""
-
     centrum = preparing_centrum(tmp_path)
     reached, released = held_before(monkeypatch, RunComments, "run_ended")
     running = centrum.start(dry_run=False).json()
@@ -195,9 +181,7 @@ def test_centrum_zamkniete_po_zapisie_wyniku_w_historii_daje_karte_z_wynikiem_z_
     }
 
 
-def append_record(path: Path, counter_names: frozenset[str], record: dict[str, Any], started_at: datetime) -> None:
-    """Rekord metryk spoza Centrum (np. ze skryptu dla maszyn) jak ``record``."""
-
+def append_record_outside_centrum(path: Path, counter_names: frozenset[str], record: dict[str, Any], started_at: datetime) -> None:
     counters = dict.fromkeys(counter_names, 0)
     other = {**record, "started_at": started_at.isoformat(), "result": "OK", "stop": None, "counters": counters}
     MetricsStore(path, counter_names).append(other)
@@ -206,9 +190,6 @@ def append_record(path: Path, counter_names: frozenset[str], record: dict[str, A
 def test_centrum_zamkniete_przed_zapamietaniem_uruchomienia_daje_karte_z_wynikiem_z_historii(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Wiersz Historii nie ma jeszcze identyfikatora Uruchomienia (``CentrumRuns.remember``), a karta i tak go znajduje:
-    pierwszy wiersz tego procesu od startu Uruchomienia (#722)."""
-
     centrum = preparing_centrum(tmp_path)
     reached, released = held_before(monkeypatch, CentrumRuns, "remember")
     running = centrum.start(dry_run=False).json()
@@ -219,9 +200,9 @@ def test_centrum_zamkniete_przed_zapamietaniem_uruchomienia_daje_karte_z_wynikie
     started_at = datetime.fromisoformat(start_file["started_at"])
     catalog = centrum.engines.catalog()
     preparation, settlement = catalog.metrics("preparation").counter_names, catalog.metrics("settlement").counter_names
-    append_record(centrum.metrics_path, preparation, record, started_at - timedelta(hours=1))
-    append_record(centrum.engines.metrics.settlement, settlement, record, started_at)
-    append_record(centrum.metrics_path, preparation, record, started_at + timedelta(hours=1))
+    append_record_outside_centrum(centrum.metrics_path, preparation, record, started_at - timedelta(hours=1))
+    append_record_outside_centrum(centrum.engines.metrics.settlement, settlement, record, started_at)
+    append_record_outside_centrum(centrum.metrics_path, preparation, record, started_at + timedelta(hours=1))
 
     centrum.restart()
 
@@ -264,9 +245,6 @@ def test_karta_z_historii_po_zatrzymaniu_ma_tytul_i_akcje_jak_na_zywo(
 def test_karta_z_historii_po_zatrzymaniu_po_zapisie_proponuje_ponowne_uruchomienie_bo_wiersz_nie_wie_o_silniku(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Wiersz Historii nie mówi, czy Zatrzymanie przyszło po silniku, więc karta z niego po zapisie proponuje ponowne
-    Uruchomienie, a nie otwarcie pliku, które pokazała karta na żywo; ponowne Uruchomienie mówi, co z plikami zrobić."""
-
     centrum = preparing_centrum(tmp_path)
     centrum.engines.fail_summary = True
     reached, released = held_before(monkeypatch, RunComments, "run_ended")
@@ -286,8 +264,6 @@ def test_karta_z_historii_po_zatrzymaniu_po_zapisie_proponuje_ponowne_uruchomien
 def test_centrum_zamkniete_przed_zapisem_wyniku_w_historii_daje_urwane_uruchomienie(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Wiersz wcześniejszego Uruchomienia w Historii nie jest wynikiem Urwanego."""
-
     centrum = preparing_centrum(tmp_path)
     earlier = run_to_end(centrum, dry_run=True)
     reached, released = held_before(monkeypatch, MetricsStore, "append")
@@ -306,8 +282,6 @@ def test_centrum_zamkniete_przed_zapisem_wyniku_w_historii_daje_urwane_uruchomie
 
 
 def test_nieczytelna_historia_bez_logow_daje_urwane_uruchomienie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """Historii nie da się odczytać, więc nie pokaże wyniku, któremu karta mogłaby przeczyć."""
-
     centrum = preparing_centrum(tmp_path)
     reached, released = held_before(monkeypatch, RunComments, "run_ended")
     running = centrum.start(dry_run=False).json()
@@ -394,22 +368,16 @@ def test_wiersz_historii_otwiera_karte_swojego_uruchomienia_takze_po_ponownym_st
     assert before == after == expected
 
 
-OLD_WORDS = {"RUN": "zapis", "DRY-RUN": "podgląd"}
-"""Tryb w plikach Centrum sprzed schematu Logów 3."""
+MODE_WORDS_BEFORE_SCHEMA_3 = {"RUN": "zapis", "DRY-RUN": "podgląd"}
 
 
 def as_schema_2(record: dict[str, Any]) -> dict[str, Any]:
-    """Logi tego Uruchomienia tak, jak zapisało je Centrum sprzed schematu 3: tryb, także przy starcie w dzienniku
-    działań taty, słowem."""
-
     actions = record["dad_actions"]
-    entries = [entry | {"mode": OLD_WORDS[entry["mode"]]} if entry.get("mode") else entry for entry in actions["entries"]]
-    return record | {"schema_version": 2, "mode": OLD_WORDS[record["mode"]], "dad_actions": actions | {"entries": entries}}
+    entries = [entry | {"mode": MODE_WORDS_BEFORE_SCHEMA_3[entry["mode"]]} if entry.get("mode") else entry for entry in actions["entries"]]
+    return record | {"schema_version": 2, "mode": MODE_WORDS_BEFORE_SCHEMA_3[record["mode"]], "dad_actions": actions | {"entries": entries}}
 
 
 def as_schema_1(record: dict[str, Any]) -> dict[str, Any]:
-    """Logi tego Uruchomienia tak, jak zapisało je Centrum sprzed #839: bez godzin kroków i dziennika działań taty."""
-
     old = {key: value for key, value in as_schema_2(record).items() if key != "dad_actions"} | {"schema_version": 1}
     old["phases"] = [{key: phase[key] for key in ("phase", "state", "duration_ms")} for phase in record["phases"]]
     old["templates"] = [
@@ -420,9 +388,6 @@ def as_schema_1(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def with_configuration_view(record: dict[str, Any]) -> dict[str, Any]:
-    """Logi tego Uruchomienia z Wydania, w którym tata otwierał jeszcze widok Konfiguracja (do v0.9.1): ten widok w
-    dzienniku działań taty."""
-
     actions = record["dad_actions"]
     view = {"at": record["started_at"], "action": "widok", "page": "konfiguracja", "kind": "navigation"}
     return record | {"dad_actions": actions | {"entries": [view, *actions["entries"]]}}
@@ -477,8 +442,6 @@ def test_uruchomienie_bez_logow_nie_ma_karty(tmp_path: Path) -> None:
     assert (broken.status_code, broken.json()) == missing
 
 
-# --- Logi na dysku (``logs_disk``): jedna odpowiedź o Logach Uruchomienia dla kart i dla startu Centrum ----------------
-
 RUN_ID = "0123456789abcdef0123456789abcdef"
 SECOND = datetime(2026, 10, 23, 14, 5, 7, tzinfo=timezone.utc)
 
@@ -488,8 +451,6 @@ def start(run_id: str = RUN_ID, *, process: ProcessKey = "efenix", started_at: d
 
 
 def interrupted_logs(started: StartFacts) -> RunLog:
-    """Logi Urwanego Uruchomienia ``started`` bez zleceń, jakie start Centrum zamyka z dziennika Wyceny w efenix."""
-
     return RunLog.interrupted(
         started,
         ended_at=started.started_at + timedelta(minutes=5),
@@ -515,13 +476,11 @@ def written(directory: Path, record: RunLog, name: str | None = None) -> Path:
 def test_nazwa_pliku_logow_to_sekunda_startu_w_utc_proces_i_identyfikator_a_dysk_znajduje_po_niej_logi(
     tmp_path: Path,
 ) -> None:
-    """Plik po zapisie, który się nie skończył (``.tmp``), ma inną nazwę, więc nie jest Logami Uruchomienia."""
-
     started = start(started_at=SECOND.replace(microsecond=654321))
     record = interrupted_logs(started)
     written(tmp_path, record)
-    later = interrupted_logs(start("f" * 32, started_at=SECOND + timedelta(hours=1)))
-    written(tmp_path, later, name_of(later.start) + ".tmp")
+    unfinished_write = interrupted_logs(start("f" * 32, started_at=SECOND + timedelta(hours=1)))
+    written(tmp_path, unfinished_write, name_of(unfinished_write.start) + ".tmp")
     disk = on_disk(tmp_path)
 
     assert name_of(started) == f"20261023T140507Z-efenix-{RUN_ID}.json"
@@ -559,9 +518,6 @@ def test_identyfikator_spoza_centrum_nie_ma_logow_choc_nazwa_pliku_sie_nim_koncz
 def test_identyfikator_spoza_centrum_nie_ma_logow_bez_zagladania_do_katalogu_logow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Identyfikator z adresu karty, którego Centrum nie nadaje (np. ``../``), nie dochodzi do dysku: przy katalogu Logów,
-    którego system nie daje wylistować, jest dalej bez Logów, a nie odmową."""
-
     directory = tmp_path / RUN_LOGS_DIRECTORY
     directory.mkdir()
     disk = on_disk(tmp_path)
@@ -574,9 +530,6 @@ def test_identyfikator_spoza_centrum_nie_ma_logow_bez_zagladania_do_katalogu_log
 
 
 def test_plik_z_krotszym_identyfikatorem_w_nazwie_nie_jest_logami_uruchomienia(tmp_path: Path) -> None:
-    """Centrum nadaje identyfikator z 32 znaków szesnastkowych (``uuid4().hex``), więc plik z krótszym w nazwie to nie
-    Logi Uruchomienia, a o krótszy identyfikator dysk nie pyta."""
-
     written(tmp_path, interrupted_logs(start("abc")))
     disk = on_disk(tmp_path)
 
@@ -584,9 +537,6 @@ def test_plik_z_krotszym_identyfikatorem_w_nazwie_nie_jest_logami_uruchomienia(t
 
 
 def test_dziennik_wyceny_sprzed_schematu_3_ze_slowem_trybu_ma_ten_sam_start(tmp_path: Path) -> None:
-    """Dziennik Wyceny w efenix, który zostawiło Centrum sprzed schematu Logów 3, ma w pierwszej linii słowo trybu
-    („zapis”), a start Centrum czyta go jako ten sam start Uruchomienia, więc zamyka go Logami Urwanego Uruchomienia."""
-
     started = start()
     path = journal_path(tmp_path, started)
     path.parent.mkdir(parents=True)
@@ -598,9 +548,6 @@ def test_dziennik_wyceny_sprzed_schematu_3_ze_slowem_trybu_ma_ten_sam_start(tmp_
 
 
 def test_plik_w_miejscu_katalogu_logow_to_brak_logow_a_nie_odmowa(tmp_path: Path) -> None:
-    """Plik w miejscu katalogu Logów się nie zmieni, więc to brak Logów, jak bez katalogu: start Centrum zamyka dziennik
-    Wyceny jego Uruchomienia wersją zastępczą, zamiast zostawiać go na zawsze jak przy odmowie."""
-
     (tmp_path / RUN_LOGS_DIRECTORY).write_text("", encoding="utf-8")
     left_journal(tmp_path, start())
     disk = on_disk(tmp_path)
@@ -611,10 +558,6 @@ def test_plik_w_miejscu_katalogu_logow_to_brak_logow_a_nie_odmowa(tmp_path: Path
 def test_katalog_logow_ktorego_system_nie_daje_wylistowac_to_odmowa_a_nie_brak_logow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Nie wiadomo, czy Logi ostatniego startu są, więc karta po starcie nie mówi, że Uruchomienie urwało się w trakcie,
-    tak jak przy Logach, których nie da się odczytać, a Logów procesu nie ma żadnych. Z wylistowanym katalogiem bez pliku
-    Logów ostatniego startu to Urwane Uruchomienie."""
-
     disk = on_disk(tmp_path)
     disk.started(start(process="settlement"))
     record = interrupted_logs(start("f" * 32, process="intermax"))
@@ -662,8 +605,6 @@ def test_nieczytelne_najnowsze_logi_procesu_nie_ustepuja_miejsca_starszym(tmp_pa
 
 
 def test_widok_logow_liczy_sie_raz_na_wersje_pliku(tmp_path: Path) -> None:
-    """Diagnoza nadpisuje plik Logów, więc widok tego pliku liczy się znowu, a pliku bez zmian nie."""
-
     record = interrupted_logs(start())
     path = written(tmp_path, record)
     seen: list[str] = []
@@ -682,9 +623,6 @@ def test_widok_logow_liczy_sie_raz_na_wersje_pliku(tmp_path: Path) -> None:
 
 
 def test_widoki_logow_procesu_ida_od_najnowszego_startu(tmp_path: Path) -> None:
-    """Zakończone Uruchomienia procesu idą od najnowszego (``RunCards.ended``), także gdy identyfikator starszego jest
-    dalej w alfabecie."""
-
     newer = interrupted_logs(start("0" * 32, started_at=SECOND))
     older = interrupted_logs(start("f" * 32, started_at=SECOND - timedelta(days=1)))
     for record in (older, newer):
@@ -769,9 +707,6 @@ def test_dziennik_ktorego_start_centrum_nie_moze_usunac_zostaje_na_dysku_z_linia
 def test_plik_ostatniego_startu_z_trescia_ktora_nie_jest_startem_daje_start_bez_ostatniego_uruchomienia(
     tmp_path: Path,
 ) -> None:
-    """Plik ostatniego startu, którego treść nie jest faktami startu (np. zmienił go inny program), to start Centrum bez
-    ostatniego Uruchomienia, jak bez pliku, a nie błąd."""
-
     (tmp_path / LAST_STARTED_FILE).write_text("{", encoding="utf-8")
     disk = on_disk(tmp_path)
 
@@ -779,16 +714,12 @@ def test_plik_ostatniego_startu_z_trescia_ktora_nie_jest_startem_daje_start_bez_
 
 
 def test_logi_urwanego_uruchomienia_nie_sa_karta_ostatniego_uruchomienia_procesu(tmp_path: Path) -> None:
-    """Karta ostatniego Uporządkowania INTERMAX bierze Logi z wynikiem, a Logi Urwanego Uruchomienia go nie mają."""
-
     written(tmp_path, interrupted_logs(start(process="intermax")))
 
     assert RunCards(on_disk(tmp_path), list).latest("intermax") is None
 
 
 def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_karty(tmp_path: Path) -> None:
-    """Logi są, więc Uruchomienie miało wynik: karta po starcie nie mówi, że urwało się w trakcie (a7ee70d7b)."""
-
     disk = on_disk(tmp_path)
     disk.started(start(process="settlement"))
     (tmp_path / RUN_LOGS_DIRECTORY / name_of(start(process="settlement"))).mkdir(parents=True)
@@ -797,9 +728,6 @@ def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_ka
 
 
 def test_wiersz_historii_ze_startem_w_chwili_startu_uruchomienia_to_jego_wynik(tmp_path: Path) -> None:
-    """Zegar Windows tyka co ok. 15 ms, więc rekord metryk może mieć start równy startowi Uruchomienia; to dalej jego
-    wiersz (okno od startu jak w ``CentrumRuns.remember``), a nie Urwane Uruchomienie."""
-
     disk = on_disk(tmp_path)
     disk.started(start())
     row = ProcessRun(
@@ -823,9 +751,6 @@ def test_wiersz_historii_ze_startem_w_chwili_startu_uruchomienia_to_jego_wynik(t
 
 
 def test_wycena_zatrzymana_po_zleceniach_konczy_sie_w_powiadomieniu_bez_liczby_zlecen(tmp_path: Path) -> None:
-    """Po Zatrzymaniu Logi Wyceny w efenix mają zlecenia sprzed niego, ale Powiadomienie liczy zlecenia tylko Wyceny
-    z podsumowaniem, więc zakończona Zatrzymaniem nie ma ich liczby."""
-
     order = LoggedOrder(row=18, outcome=OrderKind.READY, code=None, file={}, file_amount=Decimal(0), steps=[])
     stopped = interrupted_logs(start()).model_copy(
         update={"ending": "stop", "result": "BLAD_KRYTYCZNY", "stop_kind": "for_maks", "efenix_orders": [order]}
@@ -838,9 +763,6 @@ def test_wycena_zatrzymana_po_zleceniach_konczy_sie_w_powiadomieniu_bez_liczby_z
 
 
 def test_zero_zlecen_przed_zamknieciem_centrum_nie_ostrzega(tmp_path: Path) -> None:
-    """Karta Urwanej Wyceny liczy zlecenia skończone przed zamknięciem Centrum; zero to zwykła liczba, a nie sygnał dla
-    taty jak dzień bez zleceń (``CountGroup.zero_warns``)."""
-
     disk = on_disk(tmp_path)
     disk.started(start())
     written(tmp_path, interrupted_logs(start()))
@@ -851,29 +773,7 @@ def test_zero_zlecen_przed_zamknieciem_centrum_nie_ostrzega(tmp_path: Path) -> N
     assert ({count.count for count in previous.orders.counts}, previous.orders.zero_warns) == ({0}, False)
 
 
-# --- Schemat Logów każdego Wydania (``tests/fixtures/schemat_logow.py``) ---------------------------------------------
-
-
 def test_logi_kazdego_wydania_przechodza_dzisiejszy_schemat_logow() -> None:
-    """Logi Uruchomienia każdego Wydania przechodzą dzisiejszy schemat Logów, więc karta z Historii, Uwaga taty i
-    odtworzenie czytają każdy plik Logów z dysku taty i z Archiwum Logów okresu.
-
-    Zapis ``tests/fixtures/schemat_logow_wydan.json`` ma fakty schematu Logów każdego Wydania od v0.1.1 i dzisiejszego
-    (``tests/fixtures/schemat_logow.py``). Strażnik łapie zmianę schematu, po której plik zgodny z zapisem jej nie
-    przechodzi. Tabela przypadków (``PRZYPADKI``, każdy wiersz biegnie w teście):
-    
-    | Zmiana schematu | Przykład | Strażnik |
-    |---|---|---|
-    | usunięta wartość zamkniętej listy | widok ``konfiguracja`` usunięty z ``PageId`` | łapie |
-    | usunięte pole (Logi nie przyjmują pól spoza schematu) | pole ``omitted`` usunięte | łapie |
-    | nowe pole wymagane | pole bez wartości domyślnej | łapie |
-    | pole opcjonalne staje się wymagane | ``process`` bez ``= None`` | łapie |
-    | usunięty wariant unii z polem rozróżniającym | wpis ``widok`` usunięty z unii | łapie |
-    | nowa wartość, nowe pole opcjonalne | strona ``raporty`` | przepuszcza: stary plik przechodzi |
-    | węższy typ otwartego pola | ``str`` na ``int`` | znana luka (``ZNANE_LUKI``) |
-    | węższe ograniczenie albo walidator | ``max_length``, ``field_validator`` | znana luka (``ZNANE_LUKI``) |
-    """
-
     znalezione = zwezenia(wczytaj(), fakty(RunLog.model_json_schema()))
 
     assert znalezione == [], (
@@ -1001,8 +901,6 @@ ZNANE_LUKI: dict[str, tuple[type[BaseModel], type[BaseModel]]] = {
     "węższe ograniczenie: max_length": (_Tekst, _Krotki),
     "walidator, którego schemat JSON nie pokazuje: field_validator": (_Tekst, _Walidator),
 }
-"""Zmiana, po której stary plik Logów nie przechodzi schematu, a strażnik jej nie łapie, bo czyta tylko zamknięte listy,
-pola i pola wymagane schematu JSON. Gdy strażnik zacznie ją łapać, próbka znika stąd i staje się wierszem tabeli."""
 
 
 @pytest.mark.parametrize("luka", ZNANE_LUKI)
