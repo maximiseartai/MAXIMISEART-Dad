@@ -21,6 +21,9 @@ from rozliczenia.efenix_checks import Settled
 from rozliczenia.efenix_orders import CollectiveOrder
 from rozliczenia.efenix_pricing import OrderKind, OrderResult
 from rozliczenia.efenix_window import ListedOrder
+from rozliczenia.activity_legend import LegendProblem
+from rozliczenia.message import Message as EngineMessage
+from rozliczenia.quantity_engine import RulesProblem
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
@@ -29,8 +32,11 @@ from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
 from rozliczenia.centrum.run_logs import (
     RUN_LOGS_DIRECTORY,
     Environment,
+    LoggedActivityLegend,
     LoggedInterruption,
+    LoggedMessage,
     LoggedOrder,
+    LoggedQuantityRules,
     RunLog,
     StartFacts,
     Tool,
@@ -729,6 +735,13 @@ def test_logi_urwanego_uruchomienia_nie_sa_karta_ostatniego_uruchomienia_procesu
     assert RunCards(on_disk(tmp_path), list).latest("intermax") is None
 
 
+def test_logi_urwanego_uruchomienia_nie_daja_karty_wiersza_historii_ani_zakonczonego_uruchomienia(tmp_path: Path) -> None:
+    written(tmp_path, interrupted_logs(start()))
+    cards = RunCards(on_disk(tmp_path), list)
+
+    assert (cards.card(RUN_ID).state, cards.ended("efenix")) == ("missing", [])
+
+
 def test_logi_ostatniego_startu_ktorych_system_nie_daje_odczytac_to_start_bez_karty(tmp_path: Path) -> None:
     disk = on_disk(tmp_path)
     disk.started(start(process="settlement"))
@@ -781,6 +794,19 @@ def test_zero_zlecen_przed_zamknieciem_centrum_nie_ostrzega(tmp_path: Path) -> N
 
     assert previous is not None and previous.state == "interrupted" and previous.orders is not None
     assert ({count.count for count in previous.orders.counts}, previous.orders.zero_warns) == ({0}, False)
+
+
+def test_komunikat_bez_sekcji_ustawien_i_spoza_startu_ma_w_pliku_logow_tylko_pola_sprzed_nich() -> None:
+    message = EngineMessage.to_maintainer("BRAK_WZORCA", "Co.", "Gdzie.")
+
+    assert set(json.loads(LoggedMessage.of("warning", message).model_dump_json())) == {"kind", "code", "what", "where", "action"}
+
+
+def test_regul_ilosci_i_legendy_z_logow_ktore_nie_sa_tekstem_json_nie_da_sie_odczytac() -> None:
+    rules = LoggedQuantityRules(rules="[adres]", devices="{}").value()
+    legend = LoggedActivityLegend(legend="[adres]").value()
+
+    assert (type(rules), type(legend)) == (RulesProblem, LegendProblem)
 
 
 def test_logi_kazdego_wydania_przechodza_dzisiejszy_schemat_logow() -> None:
