@@ -1,11 +1,3 @@
-"""Próba Przypomnień o raporcie przed Wydaniem (#1353, ADR 0030): narzędzie Maksa liczy przypomnienia, które poszłyby
-teraz, i wysyła jedno tylko na adres z polecenia.
-
-Narzędzie czyta INTERMAX z dysku testu i rozmawia prawdziwym ``imaplib`` i ``smtplib`` portu z lokalnymi ``AtrapaImap``
-i ``AtrapaSmtp`` (``tools/lib/atrapy/skrzynka_raportow.py``), bez sieci i bez Gmaila. Test czyta to, co widzi Maks:
-jedną linię na stdout i kod wyjścia, oraz mail, który przyjął serwer SMTP. Maile, adresy i numery są syntetyczne.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Iterator
@@ -44,20 +36,15 @@ MAKS = "maks.probny@przyklad.invalid"
 JAN = "jan.testowy@przyklad.invalid"
 ANNA = "anna.probna@przyklad.invalid"
 STOPKA = "Pozdrawiam\nTata Testowy\n"
-# Środa 11.11.2026 8:30, pora poranna: przypomnienia za 9.11 i 10.11 już się należą (ADR 0030).
 RANO = datetime(2026, 11, 11, 8, 30)
 WRITES = {"SELECT", "STORE", "COPY", "MOVE", "EXPUNGE", "APPEND"}
-# Wszystko o Wykonawcach i zleceniach, czego wynik próby nie może pokazać.
-TRESCI = [SKRZYNKA, HASLO, JAN, ANNA, "jan.testowy", "anna.probna", "bartek.obcy", "Jan Testowy", "Anna", "4000000"]
+NIEWIDOCZNE_W_WYNIKU = [SKRZYNKA, HASLO, JAN, ANNA, "jan.testowy", "anna.probna", "bartek.obcy", "Jan Testowy", "Anna", "4000000"]
 
 
 def _zlecenie(dzien: int, godzina: int, wykonawca: str, numer: int) -> Order:
     return Order(datetime(2026, 11, dzien, godzina), wykonawca, numer, cells=((NUMBER, numer),))
 
 
-# Uporządkowane zlecenia: Jana z 9.11 i 10.11, Anny z 9.11 (za który przysłała Raport) i z 10.11, a Bartka, którego nie
-# ma na liście adresów, z 9.11. Należą się więc trzy przypomnienia (Jan 9.11, Jan 10.11, Anna 10.11) dwóm Wykonawcom
-# za dwa dni.
 INTERMAX = Intermax(
     ordered=(
         _zlecenie(9, 9, "jan.testowy", 40000001),
@@ -83,8 +70,6 @@ def _raport_anny() -> AtrapaMail:
 
 @dataclass(frozen=True)
 class Klon:
-    """Folder ``config`` klonu narzędzia z plikami Maksa i taty, INTERMAX taty i jego folder okresów."""
-
     config: Path
     intermax: Path
     okresy: Path
@@ -109,9 +94,6 @@ def _klon(tmp_path: Path) -> Klon:
 
 
 def _przypomnienia(config: Path, *, wlaczone: str = "true", stopka: str = STOPKA, wieczorna: str = "18:00") -> None:
-    """Przypomnienia o raporcie w Ustawieniach Centrum klonu: włączone od 9.11.2026, ze stopką taty i porą wieczorną od
-    ``wieczorna``."""
-
     (config / REMINDERS_FILE).write_text(
         f"schema_version: 1\nwlaczone: {wlaczone}\nwlaczone_od: 2026-11-09\n"
         f"pora_wieczorna: {{od: '{wieczorna}', do: '22:00'}}\nstopka: {json.dumps(stopka)}\n",
@@ -121,8 +103,6 @@ def _przypomnienia(config: Path, *, wlaczone: str = "true", stopka: str = STOPKA
 
 @dataclass(frozen=True)
 class Gmail:
-    """Usterki atrapy Gmaila: hasło skrzynki IMAP i serwera SMTP, zerwane powitanie i odmowa adresatów SMTP."""
-
     haslo_imap: str = HASLO
     haslo_smtp: str = HASLO
     imap_zerwany: bool = False
@@ -135,8 +115,6 @@ GMAIL = Gmail()
 
 @contextmanager
 def _gmail(gmail: Gmail = GMAIL) -> Iterator[tuple[AtrapaImap, AtrapaSmtp]]:
-    """Skrzynka raportów z Raportem Anny za 9.11 i serwer SMTP; SMTP sprawdza hasło swojej osobnej skrzynki."""
-
     with (
         AtrapaImap(
             address=SKRZYNKA,
@@ -173,7 +151,7 @@ def _proba(
     out, err = capsys.readouterr()
     assert not err
     assert out.isascii()
-    for tresc in [*TRESCI, MAKS]:
+    for tresc in [*NIEWIDOCZNE_W_WYNIKU, MAKS]:
         assert tresc not in out, tresc
     [line] = out.splitlines()
     return code, line
@@ -189,10 +167,6 @@ def _mail(serwer: AtrapaSmtp) -> tuple[EmailMessage, tuple[str, ...], bytes]:
 def test_proba_liczy_przypomnienia_i_wysyla_jedno_tylko_na_podany_adres_z_trescia_i_stopka(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Kryterium #1353 (US 57–58): jedna linia z liczbą przypomnień, Wykonawców i dni, które poszłyby teraz, i z
-    wynikiem wysyłki; jeden mail z tematem, treścią i stopką prawdziwego przypomnienia idzie tylko na adres z
-    polecenia, a INTERMAX i skrzynka zostają bez zmian."""
-
     klon = _klon(tmp_path)
     before = klon.intermax.read_bytes()
     with _gmail() as (imap, serwer):
@@ -225,10 +199,6 @@ def test_proba_liczy_przypomnienia_i_wysyla_jedno_tylko_na_podany_adres_z_tresci
 def test_proba_bez_naleznych_przypomnien_wysyla_przypomnienie_za_wczoraj_na_podany_adres(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], teraz: datetime
 ) -> None:
-    """W nocy i od 17:00 do 18:00 przypomnienia nie idą (ADR 0030), więc próba mówi ``pora=brak`` i liczy zero, choć
-    rano tego dnia należały się trzy, a SMTP, treść i stopkę sprawdza przypomnieniem za wczoraj, dalej tylko na adres z
-    polecenia."""
-
     klon = _klon(tmp_path)
     with _gmail() as (imap, serwer):
         code, line = _proba(capsys, klon, imap, serwer, teraz=teraz)
@@ -242,9 +212,6 @@ def test_proba_bez_naleznych_przypomnien_wysyla_przypomnienie_za_wczoraj_na_poda
 
 
 def test_proba_liczy_pore_z_ustawien_przypomnien_a_nie_z_dawnych_stalych(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """ADR 0032: o 17:30 przy porze wieczornej od 17:00 z Ustawień próba liczy przypomnienia tej pory, choć przy porach
-    z ADR 0030 to przerwa między porami."""
-
     klon = _klon(tmp_path)
     _przypomnienia(klon.config, wieczorna="17:00")
     with _gmail() as (imap, serwer):
@@ -259,10 +226,6 @@ def test_proba_liczy_pore_z_ustawien_przypomnien_a_nie_z_dawnych_stalych(tmp_pat
 def test_proba_liczy_wylaczone_przypomnienia_jak_wlaczone_od_dnia_z_polecenia_bez_zmiany_pliku(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Na Macu Maksa przypomnienia w ``config/`` są wyłączone, żeby Centrum z tego klonu nie wysłało ich Wykonawcom;
-    ``--wlaczone-od`` włącza je tylko w pamięci próby: od 10.11 należą się Jan i Anna za 10.11, a plik zostaje
-    wyłączony."""
-
     klon = _klon(tmp_path)
     _przypomnienia(klon.config, wlaczone="false")
     plik = (klon.config / REMINDERS_FILE).read_bytes()
@@ -279,8 +242,6 @@ def test_proba_liczy_wylaczone_przypomnienia_jak_wlaczone_od_dnia_z_polecenia_be
 
 
 def test_proba_odmawia_adresu_wykonawcy_bez_wysylki(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    """Adres z polecenia, który jest na liście adresów Wykonawców, to pomyłka Maksa: próba nic nie wysyła."""
-
     klon = _klon(tmp_path)
     with _gmail() as (imap, serwer):
         code = proba_przypomnien.main(
@@ -377,10 +338,6 @@ def test_porazka_odczytu_ma_wlasna_linie_bez_wysylki(
 def test_plik_ustawien_bez_odczytu_ma_wlasna_linie_z_jego_nazwa_bez_wysylki(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], plik: str
 ) -> None:
-    """Plik Przypomnień, Folderów, Legendy czynności albo Listy Wykonawców, którego system nie daje teraz czytać, to nie
-    wyłączone przypomnienia, brak INTERMAX ani zła lista: próba nazywa ten plik i nic nie wysyła, bo bez legendy nie wie, który Wpis ``tak``
-    ma Błąd opisu (ADR 0039)."""
-
     klon = _klon(tmp_path)
     if plik == LEGEND_FILE:
         (klon.config / plik).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))

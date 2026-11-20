@@ -3601,6 +3601,21 @@ def test_zapis_taty_przy_zlej_tresci_pliku_zmienia_ostatnia_dobra_wartosc(tmp_pa
     assert changes(history_rows(app))[0] == ("tata", [{"key": "wyglad.motyw", "before": "dark", "after": "light"}])
 
 
+def test_zapis_taty_przy_zlej_tresci_pliku_odklada_ja_bez_zmiany_do_odrzuconych(tmp_path: Path) -> None:
+    app, _ = with_periods_directory(tmp_path)
+    bad = b"schema_version: 1\nfolder_okresow: INEA\n"
+    app.settings_path.write_bytes(bad)
+
+    changed = app.client.put("/api/settings/theme", json={"theme": "light"})
+
+    rejected = sorted((app.tool.config / MEMORY_DIRECTORY / "odrzucone").iterdir())
+    assert (changed.status_code, [path.name.partition(".yaml.")[0] for path in rejected], rejected[0].read_bytes()) == (
+        200,
+        ["centrum-ustawienia"],
+        bad,
+    )
+
+
 def test_zmiana_ktorej_wiersza_historii_nie_da_sie_dopisac_zostawia_plik_ustawien_bez_zmiany(tmp_path: Path) -> None:
     app, periods = with_periods_directory(tmp_path)
     saved = app.settings_path.read_bytes()
@@ -6527,6 +6542,16 @@ def test_godzina_przypomnien_bez_zera_na_poczatku_zapisuje_sie_jako_gg_mm(tmp_pa
     assert yaml.safe_load((app.tool.config / REMINDERS_FILE).read_text(encoding="utf-8"))["pora_poranna"] == {"od": "07:30", "do": "15:00"}
 
 
+@pytest.mark.parametrize("separator", ["\x85", " ", " ", "\r\n"], ids=["nel", "u2028", "u2029", "crlf"])
+def test_stopka_przypomnien_z_kazdym_znakiem_konca_linii_wraca_z_pliku_ustawien_bez_zmian(tmp_path: Path, separator: str) -> None:
+    app = centrum(tmp_path)
+    footer = f"Pozdrawiam{separator}Tata Testowy"
+
+    saved = app.client.put("/api/settings/reminders", json=reminders_form(footer=footer))
+
+    assert (saved.status_code, app.client.get("/api/settings").json()["reminders"]["footer"]) == (200, footer)
+
+
 def test_przelacznik_przypomnien_przy_pierwszym_wlaczeniu_zapisuje_dzien_wdrozenia_a_ponowne_go_zostawia(
     tmp_path: Path,
 ) -> None:
@@ -7439,6 +7464,20 @@ def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskaz
         settings = choose_periods_directory(app, week, way)
 
     assert settings["periods_directory"]["path"] == str(week)
+
+
+def test_folder_okresow_zapisany_w_srodku_ukladu_folderow_taty_nie_widzi_folderow_okresu_wszystkich_lat(tmp_path: Path) -> None:
+    root = dad_layout(tmp_path)
+    month = inea(root, "11_Listopad_2026")
+    app = centrum(tmp_path)
+
+    shown: list[tuple[str, bool]] = []
+    for periods in (month, root):
+        write_folder_settings(app.tool, FolderSettings(periods_directory=periods))
+        settings = app.client.get("/api/settings").json()
+        shown.append((settings["periods_directory"]["path"], settings["periods_all_years"]))
+
+    assert shown == [(str(month), False), (str(root), True)]
 
 
 def test_rejestr_zmieniony_w_sekcji_foldery_zostawia_folder_okresow_cofniety_do_tygodnia(tmp_path: Path) -> None:
