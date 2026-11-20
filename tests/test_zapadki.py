@@ -791,7 +791,8 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     base = _base()
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert syntax_rule_findings(ROOT, base) == []
+    found = syntax_rules(ROOT, base)
+    assert not found, odpalenia_ast_grep.refusal(found)
 
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
@@ -824,7 +825,8 @@ def whole_tree_rules(
 
 @windows_without_ast_grep
 def test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii() -> None:
-    assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_tree_rules(ROOT)] == []
+    found = whole_tree_rules(ROOT)
+    assert not found, odpalenia_ast_grep.refusal(found)
 
 
 def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:

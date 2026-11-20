@@ -16,8 +16,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import UTC, date, datetime
 import json
+import os
 from pathlib import Path
 import subprocess
+import sys
 from typing import Any
 
 import pytest
@@ -29,6 +31,8 @@ from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
 from tests.fixtures.git_repo import git
 
 import bramka_straznika
+import odpalenia_ast_grep
+from odpalenia_ast_grep import Finding
 import rejestr_korzeni
 from rejestr_korzeni import GuardCase, Occurrence, Reviewed
 import rejestr_korzeni_tydzien as tydzien
@@ -310,7 +314,7 @@ FIRING_PULLS = [
             id="dwa-runy-tego-samego-pr-u-to-jedno-odpalenie",
         ),
         pytest.param(
-            [(1, "b", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {WEED_STEP: "E   + 'kod/a.py:3: zakazane-wywolanie: bez zakazane()',\nE   + 'kod/b.py:4: inna-regula: bez innej',"})])],
+            [(1, "b", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {WEED_STEP: odpalenia_ast_grep.refusal([Finding("kod/a.py", 3, "zakazane-wywolanie", "bez zakazane()"), Finding("kod/b.py", 4, "inna-regula", "bez innej")])})])],
             ["| #41 | ast-grep inna-regula | - |", "| #41 | ast-grep zakazane-wywolanie | #31 W1 r1 |"],
             id="reguła-chwastu-z-logu-kroku-z-ważnym-jej-strażnika",
         ),
@@ -325,6 +329,31 @@ FIRING_PULLS = [
 )
 def test_odpalenia_straznikow_to_porazki_ich_krokow_i_testow_w_runach_ci_pr_ow_tygodnia(runs: list[tuple[int, str, str, list[tuple[dict[str, object], str]]]], expected: list[str]) -> None:
     assert _rows_of(tydzien.firings(_actions(runs), FIRING_PULLS, WEEK_START, WEEK_END)) == expected
+
+
+LONG_PATH = ".agents/skills/verify-centrum-rozliczen/scripts/check_centrum_wycena_w_efenix_mutations_bardzo_dlugiej_nazwy.py"
+ZAPADKA = """\
+import odpalenia_ast_grep
+from odpalenia_ast_grep import Finding
+
+
+def test_zapadka():
+    found = [Finding("tools/a.py", 12, "regula-w-trasie", "komunikat"), Finding({path!r}, 120, "komentarz-poza-src", "komunikat " * 12)]
+    assert not found, odpalenia_ast_grep.refusal(found)
+"""
+
+
+def test_odpalenia_regul_chwastow_czyta_kazda_regule_z_prawdziwego_wydruku_pytest_takze_przy_dlugiej_sciezce(tmp_path: Path) -> None:
+    (tmp_path / "test_zapadka.py").write_text(ZAPADKA.format(path=LONG_PATH), encoding="utf-8")
+    environment = {**os.environ, "CI": "true", "PYTHONPATH": os.pathsep.join(str(ROOT / folder) for folder in ("tools/lib", "")), "PYTHONUTF8": "1"}
+    printed = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-rs", "-n", "0", "-p", "no:cacheprovider", "test_zapadka.py"],
+        cwd=tmp_path, env=environment, capture_output=True, text=True, encoding="utf-8", timeout=120, check=False,
+    )
+    runs = [(1, "b", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {WEED_STEP: printed.stdout})])]
+
+    assert printed.returncode == 1, printed.stdout + printed.stderr
+    assert _rows_of(tydzien.firings(_actions(runs), FIRING_PULLS, WEEK_START, WEEK_END)) == ["| #41 | ast-grep komentarz-poza-src | - |", "| #41 | ast-grep regula-w-trasie | - |"], printed.stdout
 
 
 def test_kroki_straznikow_odpalen_to_kroki_ruff_mypy_i_regul_chwastow_zadania_ruff_mypy_w_ci() -> None:
@@ -884,6 +913,8 @@ def test_poszerzenie_reguly_to_zmiana_zasiegu_reguly_z_bazy_merge_a_bez_zmiany_k
     owned = f"# komentarz reguły\n{widened}ignores:\n  - kod/wlasciciel.py\n"
     named = BANS.replace('"x.y"', '"a.d".msg = "nie a.b"\n"x.y"')
     reworded = named.replace("nie a.b", "nigdy a.b")
+    split = reworded.replace('"a.c".msg = "nigdy a.b"', '"a.c".msg = "inny komunikat a.c"')
+    narrowed = split.replace('"a.d".msg = "nigdy a.b"\n', "")
     for number, changed, when in [
         (6, {rule: scoped}, "2026-10-13T10:00:00+00:00"),
         (7, {rule: worded}, "2026-10-20T10:00:00+00:00"),
@@ -893,6 +924,8 @@ def test_poszerzenie_reguly_to_zmiana_zasiegu_reguly_z_bazy_merge_a_bez_zmiany_k
         (11, {RUFF: named}, "2026-10-21T10:00:00+00:00"),
         (12, {RUFF: reworded}, "2026-10-21T11:00:00+00:00"),
         (13, {RUFF: f'{reworded}"kod/drugi.py" = ["TID251"]\n'}, "2026-10-21T12:00:00+00:00"),
+        (15, {RUFF: f'{split}"kod/drugi.py" = ["TID251"]\n'}, "2026-10-21T13:00:00+00:00"),
+        (16, {RUFF: f'{narrowed}"kod/drugi.py" = ["TID251"]\n'}, "2026-10-21T14:00:00+00:00"),
         (14, {rule: RULE}, "2026-10-27T10:00:00+00:00"),
     ]:
         with pytest.MonkeyPatch.context() as patch:
@@ -913,10 +946,11 @@ def test_poszerzenie_reguly_to_zmiana_zasiegu_reguly_z_bazy_merge_a_bez_zmiany_k
         "| #10 | zakazane-wywolanie | ignores |",
         "| #11 | banned-api a.b | nazwy |",
         f"| #13 | banned-api {RUFF} | per-file-ignores |",
+        "| #16 | banned-api a.b | nazwy |",
     ], text
-    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-19 | 0 | 4 |", "| Od wdrożenia 2026-10-01 | 0 | 5 |"], text
-    assert _rows(text, "Historia")[-2:] == ["| 2026-10-12 | 0 | 1 |", "| 2026-10-19 | 0 | 4 |"], text
-    assert lines[-1].endswith(": 0 wystąpień, 0 odpaleń strażników, 4 poszerzeń reguł, 0 Ważnych w wątkach strażnika"), lines
+    assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-19 | 0 | 5 |", "| Od wdrożenia 2026-10-01 | 0 | 6 |"], text
+    assert _rows(text, "Historia")[-2:] == ["| 2026-10-12 | 0 | 1 |", "| 2026-10-19 | 0 | 5 |"], text
+    assert lines[-1].endswith(": 0 wystąpień, 0 odpaleń strażników, 5 poszerzeń reguł, 0 Ważnych w wątkach strażnika"), lines
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX

@@ -50,8 +50,9 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
   w chwili ``Occurrence.when``;
 - odpalenie strażnika to porażka kroku strażnika w runie workflow ``CI`` PR-u (``CI_RUNS``: zdarzenie ``pull_request``,
   wynik ``failure``, ostatnia próba runu) założonym w tygodniu: krok ruff i każdy krok mypy zadania ``RUFF_MYPY``
-  odpala ``ruff`` albo ``mypy``, a krok reguł chwastów (``STEP_GUARDS``) ``ast-grep <id>`` każdej reguły, której
-  odpalenie ``RULE_IN_LOG`` stoi w logu kroku (``ponow_ci.log_kroku``), a bez takiej linii samo ``ast-grep``
+  odpala ``ruff`` albo ``mypy``, a krok reguł chwastów (``STEP_GUARDS``) ``ast-grep <id>`` każdej reguły z linii
+  ``odpalenia_ast_grep.FIRED_LINE`` w logu kroku (``ponow_ci.log_kroku``), którą zapadka drukuje na każde odpalenie
+  (``odpalenia_ast_grep.refusal``), a bez takiej linii samo ``ast-grep``
   (porażka zakazu tłumienia); test odpala strażnik ``pytest <węzeł>`` Ważnego scalonego przed założeniem runu, gdy
   linia ``FAILED`` albo ``ERROR`` (``ponow_ci.TEST_LINE``) padniętego zadania to ten węzeł albo jego parametr. Run
   należy do najpóźniej założonego PR-u skanu z tą gałęzią sprzed runu, a bez takiego do gałęzi; „Odpalenia
@@ -62,8 +63,9 @@ obciążeniu porzuca biegi z cronu na początku godziny. Liczby bierze z jednego
 - poszerzenie reguły to zmiana zasięgu reguły, którą miała już baza merge'a PR-u na ``origin/main``
   (``widenings``): w pliku reguły ``RULES`` reguła z tym samym ``id`` przed i po merge'u z innym polem spoza
   ``META`` (``rule``, ``files``, ``ignores``, ``constraints``, ``utils``…), a w każdym ``ruff.toml`` grupa wpisów
-  ``banned-api`` z tym samym ``msg`` przed merge'em z inną listą nazw po nim (``nazwy``) albo inne pliki właścicieli
-  ``TID251`` w ``per-file-ignores``; sama zmiana komunikatu, metadanych, komentarza i nowa reguła nim nie jest,
+  ``banned-api`` z tym samym ``msg`` przed merge'em, która po nim straciła nazwę albo zyskała nową nazwę z ``msg``
+  którejś ze swoich nazw (``nazwy``; grupę wyznaczają nazwy, więc nowy ``msg`` jednej z nich zasięgu nie zmienia),
+  albo inne pliki właścicieli ``TID251`` w ``per-file-ignores``; sama zmiana komunikatu, metadanych, komentarza i nowa reguła nim nie jest,
   a narzędzie nie odróżnia poszerzenia od zawężenia wzorca, więc kolumna ``Pola`` mówi, co się zmieniło, w chwili
   merge'a;
 - czekanie to czas od utworzenia ostatniego werdyktu ``PASS`` na HEAD PR do jego merge'a, dla PR-ów scalonych
@@ -146,7 +148,6 @@ STEP_GUARDS = {
     "Weed rules of the whole tree": Kind.AST_GREP,
     "ast-grep rules on the added lines of the repository": Kind.AST_GREP,
 }
-RULE_IN_LOG = re.compile(r"'[^'\s]+:\d+: ([\w.-]+): ")
 RULES = "reguly-ast-grep"
 RUFF_CONFIG = "ruff.toml"
 META = frozenset({"id", "message", "note", "url", "metadata", "severity", "labels", "fix"})
@@ -347,7 +348,7 @@ def _fired(job: Mapping[str, Any], log: str, earlier: Sequence[GuardCase]) -> It
         for step in steps:
             kind = STEP_GUARDS.get(str(step["name"])) if step["conclusion"] == "failure" else None
             if kind is Kind.AST_GREP:
-                rules = dict.fromkeys(RULE_IN_LOG.findall(ponow_ci.log_kroku(log, steps, str(step["name"]))))
+                rules = dict.fromkeys(odpalenia_ast_grep.FIRED_LINE.findall(ponow_ci.log_kroku(log, steps, str(step["name"]))))
                 yield from (Guard(kind, (rule,)) for rule in rules) if rules else (Guard(kind),)
             elif kind is not None:
                 yield Guard(kind)
@@ -394,9 +395,9 @@ def _ban_changes(path: str, before: Mapping[str, Any], after: Mapping[str, Any])
     changes: list[tuple[str, tuple[str, ...]]] = []
     for message in dict.fromkeys(old.values()):
         names = {name for name, text in old.items() if text == message}
-        moved = {new[name] for name in names if name in new}
-        group = {name for name, text in new.items() if text in moved}
-        if moved and (len(moved) > 1 or group != names):
+        kept = names & new.keys()
+        added = {name for name in new.keys() - old.keys() if new[name] in {new[member] for member in kept}}
+        if kept and (added or kept != names):
             changes.append((f"banned-api {min(names)}", (BANNED_NAMES,)))
     if _owners(before) != _owners(after):
         changes.append((f"banned-api {path}", (OWNERS,)))
