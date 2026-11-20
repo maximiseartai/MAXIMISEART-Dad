@@ -70,12 +70,12 @@ def test_godzina_warunku_daty_spoza_zegara_to_odmowa_formularza_przy_polu_od(sin
 
 
 def test_nowa_regula_dostaje_najmniejszy_numer_ktorego_nie_ma_zadna_regula_ani_historia() -> None:
-    existing = (QuantityRule("regula-2", (), Scope.EVERY, Fill((Write("N", 1),))),)
+    existing = (QuantityRule("regula-3", (), Scope.EVERY, Fill((Write("N", 1),))),)
 
-    added = rule_forms.edited(existing, rules_contract.AddRule(kind="add", rule=_rule_form("17:00")), frozenset({"regula-3"}))
+    added = rule_forms.edited(existing, rules_contract.AddRule(kind="add", rule=_rule_form("17:00")), frozenset({"regula-1"}))
 
     assert isinstance(added, tuple), added
-    assert [rule.id for rule in added] == ["regula-2", "regula-1"]
+    assert [rule.id for rule in added] == ["regula-3", "regula-2"]
 
 
 @pytest.mark.parametrize(
