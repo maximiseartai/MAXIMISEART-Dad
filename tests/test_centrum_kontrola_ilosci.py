@@ -1,9 +1,3 @@
-"""Kontrola ilości po Przebiegu rozliczeń z Centrum (ADR 0013, #273), przez HTTP API z fałszywą Skrzynką Zgłoszeń.
-
-Plik zbiorczy jest syntetyczny: wiersze z poprawkami „taty” w N:AP, a wartości w kolumnach, których Kontrola nie
-może wysłać, są znacznikami. Żaden test nie łączy się z GitHubem.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -14,7 +8,7 @@ from pathlib import Path
 import shutil
 import threading
 from dataclasses import replace
-from typing import Any, Final
+from typing import Any, Final, NamedTuple
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
@@ -62,39 +56,39 @@ LINE = f"- Kontrola ilości okresu: {PERIOD}"
 
 TUE, WED, THU, FRI, MON = (datetime(2026, 9, day) for day in (8, 9, 10, 11, 14))
 
-# Każdy wiersz to jeden przypadek decyzji 9-11; komentarz mówi, co Reguły ilości dają, a co wpisał tata.
-TATA_ROWS: list[dict[str, CellValue]] = [
-    # zgodny z regułą; zera z Wzorca w N, Q i X to puste
-    {"C": "u", "D": "nokia zte", "E": "instalacja", "G": TUE.replace(hour=10, minute=15),
-     "V": 1, "T": 1, "O": 1, "Z": 1, "S": 1, "N": 0, "Q": 0, "X": 0},
-    # reguła Q 2 (trzy fut przy routerze), tata 1: dwa wiersze z tej samej godziny to jedna grupa
-    {"C": "u", "D": "nokia zte 3*fut", "E": "instalacja", "G": TUE.replace(hour=10, minute=5),
-     "V": 1, "T": 1, "O": 1, "Z": 1, "P": 1, "Q": 1, "S": 4},
-    {"C": "u", "D": "nokia zte 3*fut", "E": "instalacja", "G": TUE.replace(hour=10, minute=40),
-     "V": 1, "T": 1, "O": 1, "Z": 1, "P": 1, "Q": 1, "S": 4},
-    # usterka w piątek przed 17: bez dodatku, tata wpisał 45 w N
-    {"C": "pr", "D": "usterka", "G": FRI.replace(hour=16, minute=30), "V": 1, "AI": 1, "N": 45},
-    # reguła daje AK 1, więc AK jest porównywane: tata 0
-    {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1},
-    # AK z reguły wpisane przez tatę: zgodne, więc nie liczy się jak kolumna z opisu
-    {"C": "pr", "D": "technicolor", "G": WED.replace(hour=15), "V": 1, "O": 1, "Z": 1, "S": 1, "AK": 1},
-    # reguła nie daje AK, więc AK taty liczy się jak kolumna z opisu technika, razem z Y
-    {"C": "pr", "D": "nokia", "G": WED.replace(hour=13), "V": 1, "Z": 1, "AK": 1, "Y": 1},
-    # samo nokia z „akt int” w CZYNNOŚCI: O 1 z reguły, zgodne z tatą
-    {"C": "pr", "D": "nokia", "E": "AKT INT", "G": WED.replace(hour=16), "V": 1, "Z": 1, "O": 1},
-    # bez reguły: różnica tylko w V, wartość taty w O
-    {"C": "u", "D": "przeniesienie", "G": MON.replace(hour=9), "T": 1, "O": 1},
-    # bez reguły: słowo w AM to „nieliczbowa”, AM liczy się też jak kolumna z opisu
-    {"C": "u", "D": "przeniesienie", "G": MON.replace(hour=9, minute=30), "V": 1, "T": 1, "AM": "dwa"},
-    # rozliczany z opisu: bez porównania, AB taty liczy się jak kolumna z opisu
-    {"C": "u", "D": "prewencja", "G": THU.replace(hour=8), "AB": 2},
-    # DATA zmieniona przez tatę na tekst: bez porównania
-    {"C": "pr", "D": "nokia", "G": "wtorek", "V": 1, "Z": 1},
-    # liczba tekstem i float równy liczbie to ta liczba; R to pozostała kolumna N:AP
-    {"C": "pr", "D": "gniazdo", "G": THU.replace(hour=11), "V": "1", "AE": 1.0, "AP": 1, "R": 3},
-    # 1.5 i formuła to „nieliczbowa”
-    {"C": "pr", "D": "fut", "G": THU.replace(hour=14), "V": 1, "Q": 1.5, "S": "=1+1"},
-]
+AGREED = "zgodny-z-regula-a-zera-wzorca-w-n-q-x-to-puste"
+LATE_FAULT = "usterka-w-piatek-przed-17-bez-dodatku-a-tata-45-w-n"
+TATA_CASES: Final[dict[str, dict[str, CellValue]]] = {
+    AGREED: {"C": "u", "D": "nokia zte", "E": "instalacja", "G": TUE.replace(hour=10, minute=15),
+             "V": 1, "T": 1, "O": 1, "Z": 1, "S": 1, "N": 0, "Q": 0, "X": 0},
+    "q-2-z-reguly-przy-trzech-fut-z-routerem-tata-1-pierwszy-wiersz-grupy-tej-samej-godziny": {
+        "C": "u", "D": "nokia zte 3*fut", "E": "instalacja", "G": TUE.replace(hour=10, minute=5),
+        "V": 1, "T": 1, "O": 1, "Z": 1, "P": 1, "Q": 1, "S": 4},
+    "q-2-z-reguly-przy-trzech-fut-z-routerem-tata-1-drugi-wiersz-grupy-tej-samej-godziny": {
+        "C": "u", "D": "nokia zte 3*fut", "E": "instalacja", "G": TUE.replace(hour=10, minute=40),
+        "V": 1, "T": 1, "O": 1, "Z": 1, "P": 1, "Q": 1, "S": 4},
+    LATE_FAULT: {"C": "pr", "D": "usterka", "G": FRI.replace(hour=16, minute=30), "V": 1, "AI": 1, "N": 45},
+    "ak-1-z-reguly-porownane-a-tata-0": {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1},
+    "ak-z-reguly-wpisane-przez-tate-zgodne-wiec-nie-jest-kolumna-z-opisu": {
+        "C": "pr", "D": "technicolor", "G": WED.replace(hour=15), "V": 1, "O": 1, "Z": 1, "S": 1, "AK": 1},
+    "ak-taty-bez-reguly-liczy-sie-jak-kolumna-z-opisu-razem-z-y": {
+        "C": "pr", "D": "nokia", "G": WED.replace(hour=13), "V": 1, "Z": 1, "AK": 1, "Y": 1},
+    "samo-nokia-z-akt-int-w-czynnosciach-ma-o-1-z-reguly-zgodne-z-tata": {
+        "C": "pr", "D": "nokia", "E": "AKT INT", "G": WED.replace(hour=16), "V": 1, "Z": 1, "O": 1},
+    "bez-reguly-roznica-tylko-w-v-a-o-to-wartosc-taty": {"C": "u", "D": "przeniesienie", "G": MON.replace(hour=9), "T": 1, "O": 1},
+    "bez-reguly-slowo-w-am-to-nieliczbowa-i-kolumna-z-opisu": {
+        "C": "u", "D": "przeniesienie", "G": MON.replace(hour=9, minute=30), "V": 1, "T": 1, "AM": "dwa"},
+    "rozliczany-z-opisu-bez-porownania-a-ab-taty-to-kolumna-z-opisu": {"C": "u", "D": "prewencja", "G": THU.replace(hour=8), "AB": 2},
+    "data-zmieniona-przez-tate-na-tekst-bez-porownania": {"C": "pr", "D": "nokia", "G": "wtorek", "V": 1, "Z": 1},
+    "liczba-tekstem-i-float-rowny-liczbie-to-ta-liczba-a-r-to-pozostala-kolumna-n-ap": {
+        "C": "pr", "D": "gniazdo", "G": THU.replace(hour=11), "V": "1", "AE": 1.0, "AP": 1, "R": 3},
+    "ulamek-i-formula-to-nieliczbowa": {"C": "pr", "D": "fut", "G": THU.replace(hour=14), "V": 1, "Q": 1.5, "S": "=1+1"},
+}
+TATA_ROWS: Final = list(TATA_CASES.values())
+
+
+def tata_rows_with(case: str, **cells: CellValue) -> list[dict[str, CellValue]]:
+    return [{**row, **cells} if name == case else dict(row) for name, row in TATA_CASES.items()]
 
 DIFFERENCES_HEADER = (
     "| Kolumna | Reguła | Tata | CZYNNOŚCI | UMOWA | Dzień, godzina | Wiersze |\n"
@@ -187,10 +181,7 @@ def box(centrum: SettlingCentrum) -> FakeReportBox:
     return centrum.surroundings.report_box
 
 
-def queued(centrum: SettlingCentrum) -> list[Path]:
-    """Kontrole ilości w kolejce, bez ``.json.tmp``, który kolejka zostawia na chwilę przepisania pliku
-    (``replace_atomically``, na Windows z ponowieniami zamiany; #885); Logi Uruchomienia mają w niej własne pliki."""
-
+def queued_checks(centrum: SettlingCentrum) -> list[Path]:
     return sorted(centrum.tool.queue.glob(f"*-{LABEL}-*.json"))
 
 
@@ -215,7 +206,7 @@ def test_przebieg_z_poprawkami_taty_daje_kontrole_ilosci_z_grupami_roznic_i_licz
 
 
 def test_przy_zera_roznic_kontrola_ilosci_tez_powstaje_z_tytulem_bez_roznic(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, [TATA_ROWS[0]])
+    centrum = centrum_with(tmp_path, [TATA_CASES[AGREED]])
 
     run_to_end(centrum, dry_run=False)
 
@@ -226,7 +217,7 @@ def test_przy_zera_roznic_kontrola_ilosci_tez_powstaje_z_tytulem_bez_roznic(tmp_
 
 
 def test_kontrola_ilosci_liczy_regulami_ilosci_z_ustawien_ktorymi_liczyl_jej_przebieg(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, [TATA_ROWS[0]])
+    centrum = centrum_with(tmp_path, [TATA_CASES[AGREED]])
     rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
     write_dad_quantity_rules(centrum.tool, RULES_FILE, rule, rule.replace("wartosc: 1", "wartosc: 2"))
 
@@ -267,16 +258,14 @@ FORBIDDEN = (
     "13:45",
 )
 ALLOWED = ("ZNACZNIK-UMOWA", "ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI")
-# Chwila startu zegara ściennego testu różnic i wyjątku w dniu Centrum przebiegu: minuta 7 daje w każdej strefie co
-# kwadrans minutę 07, 22, 37 albo 52, więc ani godzinę 13:45, ani minutę 13 przed sekundą 45.
-CLOCK_START = datetime.combine(TODAY, time(12, 7), timezone.utc)
+CLOCK_START_WITHOUT_FORBIDDEN = datetime.combine(TODAY, time(12, 7), timezone.utc)
 
 
 def test_kontrola_ilosci_nie_ma_adresu_numerow_wykonawcy_daty_ani_opisu_technika_wiersza_bez_wpisu_taty(
     tmp_path: Path,
 ) -> None:
-    # Wiersz bez kodu i bez wpisu taty w kolumnie z opisu technika ani w AS: CZYNNOŚCI ZREALIZOWANE nie wychodzą.
-    centrum = centrum_with(tmp_path, [{**MARKED, "AS": None}])
+    without_code_or_dad_entry = {**MARKED, "AS": None}
+    centrum = centrum_with(tmp_path, [without_code_or_dad_entry])
 
     view = run_to_end(centrum, dry_run=False)
 
@@ -285,7 +274,7 @@ def test_kontrola_ilosci_nie_ma_adresu_numerow_wykonawcy_daty_ani_opisu_technika
     assert [marker for marker in FORBIDDEN if marker in sent] == []
     assert all(marker in sent for marker in ALLOWED)
     assert "| V | 1 | nieliczbowa | `ZNACZNIK-CZYNNOSCI` | `u ZNACZNIK-UMOWA` | śr 13 | 1 |" in sent
-    assert wait_for(lambda: queued(centrum) == [])
+    assert wait_for(lambda: queued_checks(centrum) == [])
     seen_by_tata = [
         json.dumps(view),
         centrum.client.get("/api/runs/current").text,
@@ -329,28 +318,25 @@ def test_adres_numer_orange_telefon_i_ulica_wpisane_w_urzadzenia_i_czynnosci_wyc
 def test_wartosc_zakazanej_kolumny_w_komorce_ktora_tabela_kontroli_zapisuje_inaczej_wychodzi_zamaskowana(
     tmp_path: Path, forbidden: dict[str, CellValue], typed: str, shown: str, column: str
 ) -> None:
-    # Tabela Kontroli ilości pisze koniec linii komórki jako „⏎”, a „|” jako „\|” (ADR 0025: każdy zapis wartości).
     centrum = centrum_with(tmp_path, [{**MARKED, **forbidden}, {**MARKED, "E": typed}])
 
     view = run_to_end(centrum, dry_run=False)
 
     issue = sent_check(centrum)
-    # Bez losowego identyfikatora Uruchomienia (32 znaki szesnastkowe), w którym „4321” wypada raz na ~1770 Uruchomień.
-    sent = (issue.title + issue.body + "".join(issue.comments)).replace(view["run"]["id"], "")
-    assert shown in sent
-    assert ("Malachitowa" in sent, "4321" in sent) == (False, False)
-    assert sent.endswith(f"## Uwagi techniczne\n\n- Reguła danych: zamaskowano wartość kolumny {column} w: treść Kontroli ilości.\n")
+    sent_without_random_run_id = (issue.title + issue.body + "".join(issue.comments)).replace(view["run"]["id"], "")
+    assert shown in sent_without_random_run_id
+    assert ("Malachitowa" in sent_without_random_run_id, "4321" in sent_without_random_run_id) == (False, False)
+    assert sent_without_random_run_id.endswith(f"## Uwagi techniczne\n\n- Reguła danych: zamaskowano wartość kolumny {column} w: treść Kontroli ilości.\n")
 
 
 def test_wartosc_adresu_rowna_slowom_tytulu_kontroli_ilosci_jest_zamaskowana_takze_w_tytule(tmp_path: Path) -> None:
-    # Tytuł ma dziś tylko token okresu i liczbę różnic, a reguła danych obejmuje cały tekst Kontroli ilości: wartość
-    # ADRES, tu równa słowom tytułu, nie wychodzi także w nim. Linia okresu na górze issue to znacznik wątku okresu.
     centrum = centrum_with(tmp_path, [{**MARKED, "B": "Kontrola ilości"}])
 
     run_to_end(centrum, dry_run=False)
 
     issue = sent_check(centrum)
     assert issue.title.startswith(f"[adres] {PERIOD}: ")
+    assert issue.body.startswith(f"{LINE}\n")
     assert "- Reguła danych: zamaskowano wartość kolumny ADRES w: tytuł Kontroli ilości.\n" in issue.body
 
 
@@ -371,13 +357,9 @@ def test_wynik_przebiegu_jest_ten_sam_przy_kazdej_odpowiedzi_skrzynki(tmp_path: 
     assert records == [without_times(expected_record)] * 3
 
 
-def test_logi_uruchomienia_ida_do_kolejki_wysylki_przed_kontrola_ilosci(
+def test_logi_uruchomienia_ida_do_kolejki_wysylki_przed_kontrola_ilosci_wiec_centrum_zgasle_w_kontroli_ich_nie_zabiera(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Po wyniku Przebiegu rozliczeń z zapisem Kolejka wysyłki dostaje najpierw Logi Uruchomienia, a dopiero po nich
-    Kontrolę ilości: działanie po wyniku, które zawiedzie albo przy którym Centrum zgaśnie, nie zabiera Uruchomieniu jego
-    Logów (#871)."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     queued: list[str] = []
     post = Outbox.post
@@ -410,44 +392,30 @@ def test_wysylka_w_tle_nie_trzyma_miejsca_uruchomienia_ani_zamkniecia_centrum(tm
     sent_check(centrum)
 
 
-# Zlecenie zgodne z Regułami ilości z Wydania (TATA_ROWS[0]); wiersze legendy różnią się tylko opisem technika (K),
-# wpisami taty w kolumnach legendy i AS oraz kolorami. Oczekiwania z maila taty (ADR 0038, 0039, 0041): spawpg daje 1 w
-# AB, 70 w AS i AS na czerwono, rt2 daje 1 w AM, AM na czerwono i AF na zielono, instutp wybiera kolumnę liczbą 1–30,
-# kod z liczbą spoza przedziałów to Błąd opisu, a zwykły opis bez kodu nie jest błędem, tylko wierszem bez kodu.
-RULED: dict[str, CellValue] = {"C": "u", "D": "nokia zte", "E": "instalacja", "G": TUE.replace(hour=10, minute=15),
+AGREED_WITH_RULES: dict[str, CellValue] = {"C": "u", "D": "nokia zte", "E": "instalacja", "G": TUE.replace(hour=10, minute=15),
                                "V": 1, "T": 1, "O": 1, "Z": 1, "S": 1}
-LEGEND_ROWS: list[dict[str, CellValue]] = [
-    # zgodny z legendą: opis nie wychodzi
-    {**RULED, "K": "Inst20m tak", "Y": 1},
-    # spawpg z wartościami legendy, ale bez czerwonego AS
-    {**RULED, "K": "spawpg", "AB": 1, "AS": 70},
-    # rt2 dwa razy: tata wpisał AK zamiast AM i dał tylko zielone AF
-    {**RULED, "K": "rt2", "AK": 1},
-    {**RULED, "K": "rt2", "AK": 1},
-    # Błąd opisu: kod z liczbą spoza przedziałów instutp z wpisem taty AJ
-    {**RULED, "K": "instutp40m", "AJ": 1},
-    # bez kodu i bez wpisu taty: opis nie wychodzi
-    {**RULED, "K": "montaż gniazda"},
-    # bez kodu, z kwotą taty w AS
-    {**RULED, "K": "listwy", "AS": 220},
-    # z tekstem w AS: wychodzi jako „nieliczbowa”, nie jako tekst
-    {**RULED, "K": "kwota tekstem", "AS": "ZNACZNIK-KWOTA"},
-    # bez wpisu taty: opis nie wychodzi
-    {**RULED, "K": "ZNACZNIKBEZWPISU"},
-    # bez kodu i bez Błędu opisu, z wpisem taty w Y
-    {**RULED, "K": "tak", "Y": 1},
-]
+LEGEND_CASES: Final[dict[str, dict[str, CellValue]]] = {
+    "zgodny-z-legenda-wiec-opis-nie-wychodzi": {**AGREED_WITH_RULES, "K": "Inst20m tak", "Y": 1},
+    "spawpg-z-wartosciami-legendy-bez-czerwonego-as": {**AGREED_WITH_RULES, "K": "spawpg", "AB": 1, "AS": 70},
+    "rt2-z-ak-taty-zamiast-am-i-samym-zielonym-af-pierwszy": {**AGREED_WITH_RULES, "K": "rt2", "AK": 1},
+    "rt2-z-ak-taty-zamiast-am-i-samym-zielonym-af-drugi": {**AGREED_WITH_RULES, "K": "rt2", "AK": 1},
+    "blad-opisu-instutp-z-liczba-spoza-przedzialow-z-aj-taty": {**AGREED_WITH_RULES, "K": "instutp40m", "AJ": 1},
+    "bez-kodu-i-wpisu-taty-wiec-opis-nie-wychodzi": {**AGREED_WITH_RULES, "K": "montaż gniazda"},
+    "bez-kodu-z-kwota-taty-w-as": {**AGREED_WITH_RULES, "K": "listwy", "AS": 220},
+    "tekst-w-as-wychodzi-jako-nieliczbowa-a-nie-tekst": {**AGREED_WITH_RULES, "K": "kwota tekstem", "AS": "ZNACZNIK-KWOTA"},
+    "bez-wpisu-taty-wiec-opis-nie-wychodzi": {**AGREED_WITH_RULES, "K": "ZNACZNIKBEZWPISU"},
+    "bez-kodu-i-bledu-opisu-z-y-taty": {**AGREED_WITH_RULES, "K": "tak", "Y": 1},
+}
+LEGEND_ROWS: Final = list(LEGEND_CASES.values())
 GREEN, RED = "FF92D050", "FFFF0000"
 
 
-def fill_cells(path: Path, cells: dict[str, str]) -> None:
-    """Jednolite wypełnienie komórek Pliku zbiorczego (adres → kolor ARGB), tak jak koloruje je tata w Excelu."""
-
+def fill_cells(path: Path, argb_by_address: dict[str, str]) -> None:
     workbook = load_workbook(path)
     try:
         sheet = workbook.active
         assert sheet is not None
-        for address, argb in cells.items():
+        for address, argb in argb_by_address.items():
             sheet[address].fill = PatternFill(patternType="solid", fgColor=argb)
         workbook.save(path)
     finally:
@@ -497,7 +465,7 @@ def test_kontrola_ilosci_grupuje_roznice_legendy_po_kodzie_z_opisem_technika_kwo
 
 
 def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_przebieg(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, [{**RULED, "K": "spawpg", "AB": 1, "AS": 70}])
+    centrum = centrum_with(tmp_path, [{**AGREED_WITH_RULES, "K": "spawpg", "AB": 1, "AS": 70}])
     fill_cells(centrum.collective_file, {"AS18": RED})
     own = tuple(replace(code, amount=80) if code.id == "spawpg" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
     (centrum.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(own))
@@ -510,8 +478,6 @@ def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_prz
 
 
 def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy(tmp_path: Path) -> None:
-    # Reguły ilości z Wydania dają przy samym technicolor 1 w AK, a instwewrg6 z liczbą 1–10 też 1 w AK: Przygotowanie
-    # wpisuje 2, więc 2 taty jest zgodne, a 1 to różnica legendy, nie różnica Reguł ilości.
     technicolor: dict[str, CellValue] = {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1, "K": "instwewrg65m"}
     centrum = centrum_with(tmp_path, [{**technicolor, "AK": 2}, {**technicolor, "AK": 1}])
 
@@ -524,11 +490,9 @@ def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_s
 
 
 def test_kod_obok_zwyklego_opisu_kontrola_porownuje_z_legenda_a_wiersz_bez_kodu_nie_jest_bledem_opisu(tmp_path: Path) -> None:
-    # spawpg obok zwykłego opisu wyznacza to samo co sam spawpg (ADR 0041): tata wpisał to samo, więc wiersz jest zgodny
-    # z legendą, a opis nie wychodzi; wiersz z samym zwykłym opisem i Y taty to wiersz bez kodu z wpisem taty.
     centrum = centrum_with(
         tmp_path,
-        [{**RULED, "K": "spawpg, wymiana gniazda ZNACZNIKOPISU", "AB": 1, "AS": 70}, {**RULED, "K": "montaż gniazda", "Y": 1}],
+        [{**AGREED_WITH_RULES, "K": "spawpg, wymiana gniazda ZNACZNIKOPISU", "AB": 1, "AS": 70}, {**AGREED_WITH_RULES, "K": "montaż gniazda", "Y": 1}],
     )
     fill_cells(centrum.collective_file, {"AS18": RED})
 
@@ -545,8 +509,6 @@ def test_kod_obok_zwyklego_opisu_kontrola_porownuje_z_legenda_a_wiersz_bez_kodu_
 
 
 def test_w_wierszu_bez_reguly_kolumna_wpisana_legenda_nie_jest_wartoscia_taty(tmp_path: Path) -> None:
-    # Bez reguły (przeniesienie): V i T z Wydania zgodne z tatą, inst20m wpisuje 1 w Y, także obok zwykłego opisu, więc Y
-    # to kolumna narzędzia jak w Ilościach do uzupełnienia, a O to wartość taty.
     unruled: dict[str, CellValue] = {"C": "u", "D": "przeniesienie", "G": MON.replace(hour=9), "V": 1, "T": 1, "Y": 1}
     centrum = centrum_with(tmp_path, [{**unruled, "K": "inst20m", "O": 1}, {**unruled, "K": "Podłączyłem lokal, inst20m"}])
 
@@ -562,8 +524,7 @@ def test_w_wierszu_bez_reguly_kolumna_wpisana_legenda_nie_jest_wartoscia_taty(tm
 
 
 def test_kolumne_z_opisu_technika_wpisana_legenda_kontrola_nie_liczy_jako_wypelniona_przez_tate(tmp_path: Path) -> None:
-    # inst20m wpisuje 1 w Y, jak Przygotowanie; Y taty w wierszu bez kodu liczy się, jak w Ilościach do uzupełnienia.
-    centrum = centrum_with(tmp_path, [{**RULED, "K": "inst20m", "Y": 1}, {**RULED, "Y": 1}])
+    centrum = centrum_with(tmp_path, [{**AGREED_WITH_RULES, "K": "inst20m", "Y": 1}, {**AGREED_WITH_RULES, "Y": 1}])
 
     run_to_end(centrum, dry_run=False)
 
@@ -577,8 +538,8 @@ def test_kolumne_z_opisu_technika_wpisana_legenda_kontrola_nie_liczy_jako_wypeln
 
 def test_adres_numer_orange_telefon_i_ulica_w_opisie_technika_wychodza_zamaskowane_z_uwaga(tmp_path: Path) -> None:
     address, orange = "Syntetyczna Malachitowa 3/1", "4807654321"
-    described = {**RULED, "K": f"klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5", "Y": 1}
-    centrum = centrum_with(tmp_path, [{**RULED, "B": address, "I": orange}, described])
+    described = {**AGREED_WITH_RULES, "K": f"klient {address} umowa {orange} tel. 600-123-456 ul. Kwiatowa 5", "Y": 1}
+    centrum = centrum_with(tmp_path, [{**AGREED_WITH_RULES, "B": address, "I": orange}, described])
 
     run_to_end(centrum, dry_run=False)
 
@@ -602,14 +563,12 @@ def test_podglad_i_zatrzymanie_nie_tworza_kontroli_ilosci(tmp_path: Path) -> Non
 
     assert preview["result"]["ending"] == "finished"
     assert stopped["result"]["ending"] == "stop"
-    assert queued(centrum) == []
+    assert queued_checks(centrum) == []
     assert box(centrum).keys == []
     assert f"etykieta={LABEL}" not in centrum.log_path.read_text(encoding="utf-8")
 
 
 def repeated(centrum: SettlingCentrum) -> dict[str, Any]:
-    """Przebieg tego samego okresu jeszcze raz, po usunięciu Folderu rozliczeń pracowników, jak zrobiłby tata."""
-
     shutil.rmtree(centrum.worker_settlements)
     view = run_to_end(centrum, dry_run=False)
     assert view["result"]["result"] == "OK"
@@ -626,7 +585,7 @@ def test_powtorzony_przebieg_okresu_dopisuje_kontrole_jako_komentarz_do_otwarteg
     assert box(centrum).wait_until(lambda fake: bool(first.comments)), "druga Kontrola ilości nie dotarła"
     assert [issue.number for issue in box(centrum).issues_with(LABEL)] == [first.number]
     assert first.comments == [expected_body(second["run"]["id"]).removeprefix(f"{LINE}\n\n")]
-    assert wait_for(lambda: queued(centrum) == [])
+    assert wait_for(lambda: queued_checks(centrum) == [])
 
 
 def test_gdy_maks_zamknal_issue_okresu_powtorzony_przebieg_zaklada_nowe(tmp_path: Path) -> None:
@@ -660,31 +619,29 @@ def test_kontrola_ilosci_nie_trafia_do_issue_innego_okresu_ani_innej_etykiety(tm
     assert [issue.comments for issue in foreign] == [[], [], [], []]
 
 
-def waiting_for_network(centrum: SettlingCentrum) -> int:
+def passes_waiting_for_network(centrum: SettlingCentrum) -> int:
     waiting = f"skrzynka-czeka etykieta={LABEL} okres={PERIOD} przyczyna=brak-sieci"
     return centrum.log_path.read_text(encoding="utf-8").count(waiting)
 
 
 def test_kontrola_ilosci_bez_sieci_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum(tmp_path: Path) -> None:
-    # Bez sieci przez cały czas, a nie na jedną odpowiedź: Logi Uruchomienia budzą kolejkę osobno, więc Kontrola
-    # może pójść w jednym albo dwóch przejściach.
     centrum = centrum_with(tmp_path, TATA_ROWS)
     box(centrum).search_failure = Unreachable()
 
     view = run_to_end(centrum, dry_run=False)
 
-    assert wait_for(lambda: waiting_for_network(centrum) >= 1)
+    assert wait_for(lambda: passes_waiting_for_network(centrum) >= 1)
     assert view["result"]["result"] == "OK"
     assert view["result"]["technical_notes"] == [] and view["result"]["warnings"] == []
-    [waiting] = queued(centrum)
+    [waiting] = queued_checks(centrum)
     assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
 
-    before_start = waiting_for_network(centrum)
+    before_start = passes_waiting_for_network(centrum)
     centrum.restart()
     with centrum.client:
-        assert wait_for(lambda: waiting_for_network(centrum) > before_start)
+        assert wait_for(lambda: passes_waiting_for_network(centrum) > before_start)
         assert centrum.client.get("/api/runs/current").json()["state"] == "idle"
-    assert queued(centrum) == [waiting]
+    assert queued_checks(centrum) == [waiting]
     assert box(centrum).issues == []
 
     box(centrum).search_failure = None
@@ -693,24 +650,20 @@ def test_kontrola_ilosci_bez_sieci_czeka_w_kolejce_i_wychodzi_przy_nastepnym_sta
         issue = sent_check(centrum)
 
     assert issue.body == expected_body(view["run"]["id"])
-    assert wait_for(lambda: queued(centrum) == [])
+    assert wait_for(lambda: queued_checks(centrum) == [])
     assert list(ToolDirectory(tmp_path).queue.parent.glob("Zgłoszenie *.md")) == []
 
 
 def test_logi_i_kontrola_ilosci_jednego_przebiegu_czekaja_razem_i_przy_starcie_wychodza_obie(tmp_path: Path) -> None:
-    """Logi Uruchomienia i Kontrola ilości jednego Przebiegu rozliczeń mają to samo Uruchomienie, ale inny cel w
-    Skrzynce: bez sieci czekają w kolejce razem, a przy następnym starcie Centrum wychodzą obie, bo żadna nie jest
-    nowszą wersją drugiej."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
-    box(centrum).background = frozenset()  # Logi też bez sieci, a nie w ruchu w tle, który zawsze dochodzi
+    box(centrum).background = frozenset()
     box(centrum).search_failure = Unreachable()
     folder = ToolDirectory(tmp_path).queue
 
     view = run_to_end(centrum, dry_run=False)
 
     assert wait_for(lambda: "przyczyna=brak-sieci" in centrum.log_path.read_text(encoding="utf-8"))
-    assert wait_for(lambda: len(queued(centrum)) == 1 and bool(list(folder.glob("*-logi-uruchomienia-*.json"))))
+    assert wait_for(lambda: len(queued_checks(centrum)) == 1 and bool(list(folder.glob("*-logi-uruchomienia-*.json"))))
 
     box(centrum).search_failure = None
     centrum.restart()
@@ -724,29 +677,31 @@ def test_logi_i_kontrola_ilosci_jednego_przebiegu_czekaja_razem_i_przy_starcie_w
     assert [view["run"]["id"] in comment for comment in logs.comments] == [True]
 
 
-def test_ponowienie_przy_starcie_nie_opoznia_startu_centrum(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS)
-    box(centrum).search_failure = Unreachable()
-    run_to_end(centrum, dry_run=False)
-    assert wait_for(lambda: waiting_for_network(centrum) >= 1)
-    # Sieć wraca dopiero po końcu kolejki poprzedniego Centrum (restart): jej następne przejście, np. obudzone
-    # przez Logi Uruchomienia, wysłałoby Kontrolę samo i zawisło na hold.
+def network_back_only_in_restarted_centrum_with_held_opening(centrum: SettlingCentrum) -> threading.Event:
     centrum.restart()
     box(centrum).open_hold = hold = threading.Event()
     box(centrum).opening.clear()
     box(centrum).search_failure = None
+    return hold
 
-    # Start na osobnym wątku: start, który czeka na skrzynkę, wisiałby inaczej do końca testu.
-    start = threading.Thread(target=centrum.client.__enter__, daemon=True)
-    start.start()
+
+def test_ponowienie_przy_starcie_nie_opoznia_startu_centrum(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    box(centrum).search_failure = Unreachable()
+    run_to_end(centrum, dry_run=False)
+    assert wait_for(lambda: passes_waiting_for_network(centrum) >= 1)
+    hold = network_back_only_in_restarted_centrum_with_held_opening(centrum)
+
+    start_off_test_thread = threading.Thread(target=centrum.client.__enter__, daemon=True)
+    start_off_test_thread.start()
     try:
-        start.join(10)
-        started_while_held = not start.is_alive()
+        start_off_test_thread.join(10)
+        started_while_held = not start_off_test_thread.is_alive()
         asked = box(centrum).opening.wait(30)
         health = centrum.client.get("/api/health") if started_while_held else None
     finally:
         hold.set()
-        start.join(30)
+        start_off_test_thread.join(30)
     try:
         issue = sent_check(centrum)
     finally:
@@ -759,7 +714,6 @@ def test_ponowienie_przy_starcie_nie_opoznia_startu_centrum(tmp_path: Path) -> N
 
 
 RULES_URL = "/api/settings/quantity-rules"
-# Reguła z edytora: przy składniku „nokia” wpisz jeszcze 1 w Z, obok reguły „nokia” (Z razy liczba „nokia”).
 NOKIA_Z_ONCE: dict[str, Any] = {
     "scope": "known",
     "conditions": [{"kind": "component", "component": "nokia", "negated": False}],
@@ -791,7 +745,6 @@ def test_podglad_reguly_liczy_roznice_tym_samym_rachunkiem_co_kontrola_ilosci_pr
     assert box(centrum).wait_until(lambda fake: bool(first.comments)), "druga Kontrola ilości nie dotarła"
     assert first.title == f"Kontrola ilości {PERIOD}: {preview['differences_before']} różnic"
     assert f"- Różnice w kolumnach Reguł ilości: {preview['differences_after']}\n" in first.comments[0]
-    # Dwa wiersze z samym „nokia” (środa 13 i 16) mają po zmianie Z = 2, a tata wpisał 1.
     assert (preview["differences_before"], preview["differences_after"], preview["changed"], preview["changed_as_tata"]) == (
         7,
         9,
@@ -839,7 +792,6 @@ def test_podglad_liczy_wiersze_ktore_po_zmianie_beda_tak_jak_wpisal_tata(tmp_pat
 
     preview = previewed(centrum, {"kind": "change", "rule_id": "dodatek-usterka-pn-pt", "rule": late_fault})
 
-    # Usterka w piątek 16:30: po zmianie dodatek N = 45, tak jak wpisał tata.
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
     assert (preview["differences_before"], preview["differences_after"]) == (7, 6)
 
@@ -879,12 +831,8 @@ def test_podglad_nie_ma_adresu_numeru_zlecenia_umowy_wykonawcy_ani_daty_dziennej
 def test_podglad_bierze_cztery_najnowsze_okresy_po_przebiegu_rozliczen_od_najnowszego(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
-    # Ten sam rozliczony okres jeszcze cztery razy: dwa tygodnie przed nim i dwa po nim.
     for token in ("25_31_08_2026", "01_07_09_2026", "15_21_09_2026", "22_28_09_2026"):
-        folder = centrum.period_parent / token
-        folder.mkdir()
-        shutil.copyfile(centrum.collective_file, folder / pliki_taty.collective_file_name(token))
-        (folder / pliki_taty.worker_settlements_name(token)).mkdir()
+        settled_copy(centrum, token)
 
     preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
 
@@ -903,8 +851,6 @@ def test_podglad_liczy_wiersz_ktory_zmiana_reguly_tylko_zostawia_pusty_w_rozlicz
 
     preview = previewed(centrum, {"kind": "add", "rule": leave_v_empty})
 
-    # Jedyny wiersz z „AKT INT” w CZYNNOŚCI (samo nokia, środa 16) ma po zmianie V pustą w Rozliczeniu pracownika, a ilości
-    # bez zmian, więc dalej jest tak, jak wpisał tata.
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
     assert (preview["differences_before"], preview["differences_after"]) == (7, 7)
 
@@ -938,8 +884,6 @@ def shown_legend_rows(preview: dict[str, Any]) -> list[tuple[Any, ...]]:
 
 
 def legend_saved(centrum: SettlingCentrum, edit: dict[str, Any]) -> dict[str, Any]:
-    """Zapis tej samej zmiany, którą podgląd dostał jako ``edit``, drogą formularza kodu."""
-
     if edit["kind"] == "add":
         response = centrum.client.post(LEGEND_URL, json=edit["code"])
     elif edit["kind"] == "change":
@@ -951,27 +895,36 @@ def legend_saved(centrum: SettlingCentrum, edit: dict[str, Any]) -> dict[str, An
     return found
 
 
-# Każdy rodzaj zmiany z formularza kodu: (zmiana, (różnice legendy przed, po, wiersze z Błędem opisu przed, po,
-# zmienione wiersze, w tym tak, jak wpisał tata)).
-LEGEND_EDITS: Final[dict[str, tuple[Callable[[SettlingCentrum], dict[str, Any]], tuple[int, int, int, int, int, int]]]] = {
-    # Wiersz „spawpg”: tata wpisał 70 w AS, a po zmianie legenda da 80. „instutp40m” zostaje Błędem opisu.
-    "zmiana": (lambda centrum: {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}}, (7, 8, 1, 1, 1, 0)),
-    # Wiersz „listwy”: nowy kod daje 220 w AS, tak jak wpisał tata, więc nie jest już wierszem bez kodu.
-    "dodanie": (
-        lambda centrum: {"kind": "add", "code": {"spellings": ["listwy"], "column": None, "value": 1, "amount": 220, "fills": [], "counts_in_fault": True}},
-        (7, 7, 1, 1, 1, 1),
+class LegendPreviewCounts(NamedTuple):
+    differences_before: int
+    differences_after: int
+    errors_before: int
+    errors_after: int
+    changed: int
+    changed_as_tata: int
+
+
+LEGEND_EDITS: Final[dict[str, tuple[Callable[[SettlingCentrum], dict[str, Any]], LegendPreviewCounts]]] = {
+    "zmiana-kwoty-spawpg-na-80-gdy-tata-wpisal-70-a-instutp40m-zostaje-bledem-opisu": (
+        lambda centrum: {"kind": "change", "code_id": "spawpg", "code": code_form(centrum, "spawpg") | {"amount": 80}},
+        LegendPreviewCounts(7, 8, 1, 1, 1, 0),
     ),
-    # Wiersz „Inst20m tak”: bez kodu, ale bez Błędu opisu, a zostaje wpis taty 1 w Y.
-    "usuniecie": (lambda centrum: {"kind": "remove", "code_id": "inst"}, (7, 7, 1, 1, 1, 0)),
-    # Wiersz „instutp40m”: przedział do 40 daje 1 w AJ, tak jak wpisał tata, więc nie jest już Błędem opisu.
-    "przedzial": (
+    "nowy-kod-listwy-daje-220-w-as-jak-tata-wiec-wiersz-ma-kod": (
+        lambda centrum: {"kind": "add", "code": {"spellings": ["listwy"], "column": None, "value": 1, "amount": 220, "fills": [], "counts_in_fault": True}},
+        LegendPreviewCounts(7, 7, 1, 1, 1, 1),
+    ),
+    "usuniecie-inst-zostawia-inst20m-tak-bez-kodu-i-bledu-opisu-z-y-taty": (
+        lambda centrum: {"kind": "remove", "code_id": "inst"},
+        LegendPreviewCounts(7, 7, 1, 1, 1, 0),
+    ),
+    "przedzial-instutp-do-40-daje-aj-jak-tata-wiec-instutp40m-bez-bledu-opisu": (
         lambda centrum: {
             "kind": "change",
             "code_id": "instutp",
             "code": code_form(centrum, "instutp")
             | {"column": {"kind": "ranges", "ranges": [{"low": 1, "high": 15, "column": "AL"}, {"low": 16, "high": 40, "column": "AJ"}]}},
         },
-        (7, 7, 1, 0, 1, 1),
+        LegendPreviewCounts(7, 7, 1, 0, 1, 1),
     ),
 }
 
@@ -992,8 +945,7 @@ def test_podglad_legendy_kazdej_zmiany_liczy_roznice_ktore_kontrola_ilosci_da_po
     assert box(centrum).wait_until(lambda fake: bool(first.comments)), "druga Kontrola ilości nie dotarła"
     assert f"różnice legendy: {preview['differences_before']}, wiersze z Błędem opisu: {preview['errors_before']}\n" in first.body
     assert f"różnice legendy: {preview['differences_after']}, wiersze z Błędem opisu: {preview['errors_after']}\n" in first.comments[0]
-    counted = ("differences_before", "differences_after", "errors_before", "errors_after", "changed", "changed_as_tata")
-    assert tuple(preview[name] for name in counted) == expected
+    assert LegendPreviewCounts(*(preview[name] for name in LegendPreviewCounts._fields)) == expected
 
 
 def test_podglad_legendy_pokazuje_wiersz_z_roznica_od_taty_z_opisem_technika_kwota_i_kolorem(tmp_path: Path) -> None:
@@ -1012,10 +964,9 @@ def test_podglad_legendy_pokazuje_wiersz_z_roznica_od_taty_z_opisem_technika_kwo
 def test_podglad_legendy_liczy_wiersze_ktore_po_zmianie_beda_tak_jak_wpisal_tata(tmp_path: Path) -> None:
     centrum = legend_centrum(tmp_path, LEGEND_ROWS)
     run_to_end(centrum, dry_run=False)
-    # rt2 tak, jak wpisuje go tata: 1 w AK i samo zielone AF.
-    tata_rt2 = code_form(centrum, "rt2") | {"column": {"kind": "fixed", "column": "AK"}, "fills": [{"column": "AF", "colour": "zielony"}]}
+    rt2_as_tata = code_form(centrum, "rt2") | {"column": {"kind": "fixed", "column": "AK"}, "fills": [{"column": "AF", "colour": "zielony"}]}
 
-    preview = legend_previewed(centrum, {"kind": "change", "code_id": "rt2", "code": tata_rt2})
+    preview = legend_previewed(centrum, {"kind": "change", "code_id": "rt2", "code": rt2_as_tata})
 
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (2, 2, [])
     assert (preview["differences_before"], preview["differences_after"]) == (7, 1)
@@ -1024,10 +975,9 @@ def test_podglad_legendy_liczy_wiersze_ktore_po_zmianie_beda_tak_jak_wpisal_tata
 def test_podglad_legendy_liczy_zmiane_samych_kolorow_kodu_jako_zmieniony_wiersz(tmp_path: Path) -> None:
     centrum = legend_centrum(tmp_path, LEGEND_ROWS)
     run_to_end(centrum, dry_run=False)
-    # spawpg bez czerwonego AS, tak jak wpisał go tata: zmieniają się same kolory.
-    spawpg = code_form(centrum, "spawpg") | {"fills": []}
+    spawpg_as_tata_without_red_as = code_form(centrum, "spawpg") | {"fills": []}
 
-    preview = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": spawpg})
+    preview = legend_previewed(centrum, {"kind": "change", "code_id": "spawpg", "code": spawpg_as_tata_without_red_as})
 
     assert (preview["changed"], preview["changed_as_tata"], preview["rows"]) == (1, 1, [])
     assert (preview["differences_before"], preview["differences_after"]) == (7, 6)
@@ -1044,8 +994,7 @@ def test_podglad_legendy_pokazuje_wpis_taty_w_wierszu_ktory_po_usunieciu_kodu_je
 
 
 def test_podglad_legendy_pokazuje_wiersz_ktory_po_zmianie_ma_blad_opisu_z_powodem_i_wpisem_taty(tmp_path: Path) -> None:
-    # bypas w Y obok inst20m to dwa kody w jednej kolumnie: legenda nie wpisze nic, a wpis taty zostaje.
-    centrum = centrum_with(tmp_path, [{**RULED, "K": "inst20m bypas5m", "Y": 1, "AM": 1}])
+    centrum = centrum_with(tmp_path, [{**AGREED_WITH_RULES, "K": "inst20m bypas5m", "Y": 1, "AM": 1}])
     run_to_end(centrum, dry_run=False)
     bypas = code_form(centrum, "bypas") | {"column": {"kind": "fixed", "column": "Y"}}
 
@@ -1076,10 +1025,6 @@ def test_podglad_legendy_odmawia_tym_samym_zdaniem_przy_polu_co_zapis_bez_zapisu
 def test_podglad_legendy_przy_pliku_pary_regul_ilosci_bez_odczytu_to_409_o_tym_pliku_a_nie_podglad_regulami_z_wydania(
     tmp_path: Path, unreadable: str
 ) -> None:
-    """Podgląd liczy legendę po zmianie razem z Regułami ilości, którymi liczy Przebieg rozliczeń: Reguły ilości z
-    Wydania w miejscu pliku pary, którego system nie daje teraz czytać, dałyby tacie inny skutek zmiany kodu niż
-    następny Przebieg, więc podgląd mówi, którego pliku nie da się przeczytać, jak zapis."""
-
     centrum = legend_centrum(tmp_path, LEGEND_ROWS)
     rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
     write_dad_quantity_rules(centrum.tool, RULES_FILE, rule, rule.replace("wartosc: 1", "wartosc: 2"))
@@ -1102,9 +1047,6 @@ def test_podglad_legendy_przy_pliku_pary_regul_ilosci_bez_odczytu_to_409_o_tym_p
 def test_podglad_legendy_przy_regulach_ilosci_bez_odczytu_najpierw_mowi_o_folderach_i_o_braku_okresu(
     tmp_path: Path, settled: bool, expected: tuple[int, dict[str, str]]
 ) -> None:
-    """Reguły ilości podgląd czyta dopiero, gdy ma na czym liczyć: plik Folderów bez odczytu i brak okresu po Przebiegu
-    rozliczeń mówią tacie to samo co bez pliku reguł, którego system nie daje teraz czytać."""
-
     centrum = legend_centrum(tmp_path, LEGEND_ROWS)
     rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
     write_dad_quantity_rules(centrum.tool, RULES_FILE, rule, rule.replace("wartosc: 1", "wartosc: 2"))
@@ -1140,11 +1082,10 @@ def test_podglad_legendy_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_na
 
 
 def test_podglad_legendy_ma_opis_technika_po_strazniku_bez_adresu_numerow_zlecenia_ani_daty_dziennej(tmp_path: Path) -> None:
-    # Wiersz, który podgląd pokazuje, ma opis z samych kodów przed albo po zmianie, więc adres stanie w nim tylko wtedy,
-    # gdy tata doda kod o zapisie równym wartości ADRES. Opis z adresem i telefonem bez takiego kodu się nie zmienia.
     address, orange = "Malachitowa", "4807654321"
-    described = {**RULED, "K": f"rt2 klient {orange} tel. 600-123-456 ul. Kwiatowa 5"}
-    rows = [{**MARKED, "K": f"rt2 {address}"}, {**RULED, "B": address, "I": orange}, described]
+    described_without_code_equal_to_address = {**AGREED_WITH_RULES, "K": f"rt2 klient {orange} tel. 600-123-456 ul. Kwiatowa 5"}
+    with_address_that_becomes_code = {**MARKED, "K": f"rt2 {address}"}
+    rows = [with_address_that_becomes_code, {**AGREED_WITH_RULES, "B": address, "I": orange}, described_without_code_equal_to_address]
     centrum = centrum_with(tmp_path, rows)
     run_to_end(centrum, dry_run=False)
     added = {"spellings": [address.casefold()], "column": None, "value": 1, "amount": 10, "fills": [], "counts_in_fault": True}
@@ -1161,7 +1102,6 @@ SUGGESTIONS_URL = "/api/settings/devices/suggestions"
 
 
 def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okresow_i_znikaja_po_dodaniu(tmp_path: Path) -> None:
-    # Zlecenie z dwoma zapisami spoza listy rozdzielonymi składnikiem z listy: dwie podpowiedzi.
     two_unknown: dict[str, CellValue] = {"C": "u", "D": "przeniesienie nokia ont x", "G": MON.replace(hour=10), "T": 1}
     centrum = centrum_with(tmp_path, [*TATA_ROWS, two_unknown])
     before = centrum.client.get(SUGGESTIONS_URL).json()
@@ -1171,7 +1111,6 @@ def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okre
     added = centrum.client.post("/api/settings/devices", json={"name": "przeniesienie", "other_spellings": [], "group": None})
 
     assert before == {"suggestions": [], "unread": []}
-    # „prewencja” jest nieznana, ale zlecenie z nią rozlicza się z opisu, więc ma już swoją regułę.
     assert suggested == {
         "suggestions": [{"spelling": "przeniesienie", "orders": 3}, {"spelling": "ont x", "orders": 1}],
         "unread": [],
@@ -1184,9 +1123,6 @@ def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okre
 def test_podpowiedzi_listy_urzadzen_przy_pliku_pary_bez_odczytu_sa_puste_a_nie_liczone_lista_z_wydania(
     tmp_path: Path, unreadable: str
 ) -> None:
-    """Lista Urządzeń z Wydania nie ma składnika, który tata dodał, więc podpowiedzi z niej znów by mu go podpowiadały;
-    przy pliku pary bez odczytu nie wiadomo, co tata ma na liście, a to podpowiedź, nie straż: 200 bez podpowiedzi."""
-
     two_unknown: dict[str, CellValue] = {"C": "u", "D": "przeniesienie nokia ont x", "G": MON.replace(hour=10), "T": 1}
     centrum = centrum_with(tmp_path, [*TATA_ROWS, two_unknown])
     rule = "{kolumna: Z, wartosc: 1, razy: liczba, skladnik: nokia-router}"
@@ -1212,16 +1148,25 @@ def test_podpowiedzi_listy_urzadzen_przy_pliku_zbiorczym_ktorego_nie_da_sie_prze
 
 DIFFERENCES_URL = f"{RULES_URL}/differences"
 NEWER = "15_21_09_2026"
-# Różnice Kontroli ilości z TATA_ROWS (expected_body), po jednej na komórkę: okres, wiersz Pliku zbiorczego, URZĄDZENIA,
-# CZYNNOŚCI, dzień z godziną, kolumna, wartość reguły i wpis taty.
+class Difference(NamedTuple):
+    period: str
+    row: int
+    devices: str
+    activities: str
+    when: str
+    column: str
+    rule: int
+    tata: int | str
+
+
 TATA_DIFFERENCES = [
-    (PERIOD, 19, "nokia zte 3*fut", "instalacja", "wt 10", "Q", 2, 1),
-    (PERIOD, 20, "nokia zte 3*fut", "instalacja", "wt 10", "Q", 2, 1),
-    (PERIOD, 21, "usterka", "", "pt 16", "N", 0, 45),
-    (PERIOD, 22, "technicolor", "", "śr 12", "AK", 1, 0),
-    (PERIOD, 26, "przeniesienie", "", "pon 9", "V", 1, 0),
-    (PERIOD, 31, "fut", "", "czw 14", "Q", 1, "nieliczbowa"),
-    (PERIOD, 31, "fut", "", "czw 14", "S", 1, "nieliczbowa"),
+    Difference(PERIOD, 19, "nokia zte 3*fut", "instalacja", "wt 10", "Q", 2, 1),
+    Difference(PERIOD, 20, "nokia zte 3*fut", "instalacja", "wt 10", "Q", 2, 1),
+    Difference(PERIOD, 21, "usterka", "", "pt 16", "N", 0, 45),
+    Difference(PERIOD, 22, "technicolor", "", "śr 12", "AK", 1, 0),
+    Difference(PERIOD, 26, "przeniesienie", "", "pon 9", "V", 1, 0),
+    Difference(PERIOD, 31, "fut", "", "czw 14", "Q", 1, "nieliczbowa"),
+    Difference(PERIOD, 31, "fut", "", "czw 14", "S", 1, "nieliczbowa"),
 ]
 
 
@@ -1232,11 +1177,8 @@ def differences(centrum: SettlingCentrum) -> dict[str, Any]:
     return found
 
 
-def shown(found: dict[str, Any]) -> list[tuple[Any, ...]]:
-    return [
-        (d["period"], d["row"], d["devices"], d["activities"], d["when"], d["column"], d["rule"], d["tata"])
-        for d in found["differences"]
-    ]
+def shown(found: dict[str, Any]) -> list[Difference]:
+    return [Difference(*(d[name] for name in Difference._fields)) for d in found["differences"]]
 
 
 def at(found: dict[str, Any], row: int, column: str, period: str = PERIOD) -> dict[str, Any]:
@@ -1246,22 +1188,18 @@ def at(found: dict[str, Any], row: int, column: str, period: str = PERIOD) -> di
     return difference
 
 
-def marked(centrum: SettlingCentrum, difference: dict[str, Any]) -> dict[str, Any]:
-    """„To był wyjątek” przy różnicy: zapis i lista różnic po nim."""
-
+def marked_as_exception(centrum: SettlingCentrum, difference: dict[str, Any]) -> dict[str, Any]:
     response = centrum.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
     assert response.status_code == 200, response.text
     saved: dict[str, Any] = response.json()
     return saved
 
 
-def without(*cells: tuple[int, str]) -> list[tuple[Any, ...]]:
-    return [difference for difference in TATA_DIFFERENCES if (difference[1], difference[5]) not in cells]
+def without(*cells: tuple[int, str]) -> list[Difference]:
+    return [difference for difference in TATA_DIFFERENCES if (difference.row, difference.column) not in cells]
 
 
 def settled_copy(centrum: SettlingCentrum, token: str) -> None:
-    """Ten sam rozliczony Plik zbiorczy jako inny okres po Przebiegu rozliczeń."""
-
     folder = centrum.period_parent / token
     folder.mkdir()
     shutil.copyfile(centrum.collective_file, folder / pliki_taty.collective_file_name(token))
@@ -1269,8 +1207,6 @@ def settled_copy(centrum: SettlingCentrum, token: str) -> None:
 
 
 def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okresu(tmp_path: Path) -> None:
-    """US 62: lista „Tu wpisałeś inaczej niż reguła” liczy ten sam rachunek co Kontrola ilości, komórka po komórce."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
     issue = sent_check(centrum)
@@ -1285,9 +1221,6 @@ def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okr
 def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kazdego_zapisu_ustawien(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Plik wyjątków nie usuwa loginów z Listy Wykonawców, więc właściciel Ustawień nie odmawia go z powodu loginu
-    w okresie; gdyby odmówił, „To był wyjątek” odpowiada jak każdy zapis Ustawień: 409 z tym samym Komunikatem."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
     difference = at(differences(centrum), 21, "N")
@@ -1301,12 +1234,10 @@ def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kaz
 
 
 def test_to_byl_wyjatek_ukrywa_roznice_po_restarcie_po_kolejnym_przebiegu_i_przy_nowszym_okresie(tmp_path: Path) -> None:
-    """US 63: różnica oznaczona „To był wyjątek” nie wraca na liście; ta sama komórka nowszego okresu to inna różnica."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
 
-    saved = marked(centrum, at(differences(centrum), 21, "N"))
+    saved = marked_as_exception(centrum, at(differences(centrum), 21, "N"))
     centrum.restart()
     with centrum.client:
         restarted = differences(centrum)
@@ -1317,48 +1248,38 @@ def test_to_byl_wyjatek_ukrywa_roznice_po_restarcie_po_kolejnym_przebiegu_i_przy
     assert saved["change"] is not None
     assert (shown(saved["differences"]), saved["differences"]["exceptions"]) == (without((21, "N")), 1)
     assert (shown(restarted), restarted["exceptions"]) == (without((21, "N")), 1)
-    newer = [(NEWER, *difference[1:]) for difference in TATA_DIFFERENCES]
+    newer = [difference._replace(period=NEWER) for difference in TATA_DIFFERENCES]
     assert (shown(later), later["exceptions"]) == ([*newer, *without((21, "N"))], 1)
 
 
 def test_wyjatek_zostaje_po_zmianie_reguly_a_inny_wpis_taty_w_tej_komorce_to_nowa_roznica(tmp_path: Path) -> None:
-    """Wyjątek mówi, że wpis taty jest dobry dla tego zlecenia: zmiana reguły go nie odkrywa, a zmiana wpisu albo nowa
-    różnica innego wiersza się pokazuje."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
-    marked(centrum, at(differences(centrum), 22, "AK"))
+    marked_as_exception(centrum, at(differences(centrum), 22, "AK"))
     technicolor = rule_form(centrum, "technicolor")
     technicolor["action"]["writes"][2]["value"] = 2
 
     assert centrum.client.put(f"{RULES_URL}/technicolor", json=technicolor).status_code == 200
     after_rule = differences(centrum)
-    changed = [dict(row) for row in TATA_ROWS]
-    changed[4]["AK"] = 3
-    write_quantity_source(centrum.collective_file, changed)
+    write_quantity_source(centrum.collective_file, tata_rows_with("ak-1-z-reguly-porownane-a-tata-0", AK=3))
     after_tata = differences(centrum)
 
     def ak(found: dict[str, Any]) -> list[tuple[int, int, Any]]:
         return [(d["row"], d["rule"], d["tata"]) for d in found["differences"] if d["column"] == "AK"]
 
-    # Technicolor o 15 (wiersz 23) ma AK 1 od taty, a reguła daje teraz 2.
     assert (ak(after_rule), after_rule["exceptions"]) == ([(23, 2, 1)], 1)
     assert (ak(after_tata), after_tata["exceptions"]) == ([(22, 2, 3), (23, 2, 1)], 0)
 
 
 def in_late_fault(**cells: CellValue) -> Callable[[SettlingCentrum], None]:
-    """Zmiana tylko podanych komórek wiersza 21 (usterka w piątek o 16:30, tata 45 w N) w Pliku zbiorczym."""
-
     def change(centrum: SettlingCentrum) -> None:
-        rows = [dict(row) for row in TATA_ROWS]
-        rows[3].update(cells)
-        write_quantity_source(centrum.collective_file, rows)
+        write_quantity_source(centrum.collective_file, tata_rows_with(LATE_FAULT, **cells))
 
     return change
 
 
 def row_above(centrum: SettlingCentrum) -> None:
-    write_quantity_source(centrum.collective_file, [TATA_ROWS[0], *TATA_ROWS])
+    write_quantity_source(centrum.collective_file, [TATA_CASES[AGREED], *TATA_ROWS])
 
 
 @pytest.mark.parametrize(
@@ -1382,13 +1303,9 @@ def test_wyjatek_ukrywa_tylko_swoja_komorke_a_zmiana_kazdej_rzeczy_ktora_tworzy_
     back: tuple[str, int, str],
     hidden: int,
 ) -> None:
-    """„To był wyjątek” mówi o jednej komórce jednego zlecenia: inna kolumna z tym samym wpisem taty zostaje na liście,
-    a różnica tej komórki wraca, gdy zmieni się okres, wiersz w pliku, wpis taty, UMOWA, URZĄDZENIA, CZYNNOŚCI, dzień
-    albo godzina zlecenia (ADR 0033)."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
-    marked(centrum, at(differences(centrum), *marked_cell))
+    marked_as_exception(centrum, at(differences(centrum), *marked_cell))
 
     change(centrum)
     found = differences(centrum)
@@ -1400,14 +1317,12 @@ def test_wyjatek_ukrywa_tylko_swoja_komorke_a_zmiana_kazdej_rzeczy_ktora_tworzy_
 def test_drugi_wyjatek_tej_samej_roznicy_ze_starego_okna_jest_juz_zapisany_bez_drugiego_wiersza_historii(
     tmp_path: Path,
 ) -> None:
-    """Okno otwarte przed zapisem wysyła „To był wyjątek” tej samej różnicy jeszcze raz: zapis mówi „już zapisane”."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
     late_fault = at(differences(centrum), 21, "N")
-    first = marked(centrum, late_fault)
+    first = marked_as_exception(centrum, late_fault)
 
-    second = marked(centrum, late_fault)
+    second = marked_as_exception(centrum, late_fault)
 
     rows = centrum.client.get("/api/settings/history").json()["rows"]
     assert (first["change"] is not None, second["change"]) == (True, None)
@@ -1416,13 +1331,11 @@ def test_drugi_wyjatek_tej_samej_roznicy_ze_starego_okna_jest_juz_zapisany_bez_d
 
 
 def test_wyjatek_jednego_z_dwoch_takich_samych_zlecen_nie_ukrywa_drugiego(tmp_path: Path) -> None:
-    """Dwa zlecenia o tej samej treści, porze i wpisie taty to dwie różnice: wyjątek jest jednego zlecenia."""
-
-    late_fault = TATA_ROWS[3]
+    late_fault = TATA_CASES[LATE_FAULT]
     centrum = centrum_with(tmp_path, [late_fault, late_fault])
     run_to_end(centrum, dry_run=False)
 
-    saved = marked(centrum, at(differences(centrum), 18, "N"))
+    saved = marked_as_exception(centrum, at(differences(centrum), 18, "N"))
 
     assert [(d["row"], d["column"]) for d in saved["differences"]["differences"]] == [(19, "N")]
 
@@ -1430,7 +1343,7 @@ def test_wyjatek_jednego_z_dwoch_takich_samych_zlecen_nie_ukrywa_drugiego(tmp_pa
 def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
-    saved = marked(centrum, at(differences(centrum), 21, "N"))
+    saved = marked_as_exception(centrum, at(differences(centrum), 21, "N"))
     [row] = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["id"] == saved["change"]]
 
     undone = centrum.client.post(f"/api/settings/history/{row['id']}/undo")
@@ -1452,9 +1365,7 @@ def test_wyjatek_roznicy_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) 
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
     gone = at(differences(centrum), 21, "N")
-    fixed = [dict(row) for row in TATA_ROWS]
-    fixed[3]["N"] = 0
-    write_quantity_source(centrum.collective_file, fixed)
+    write_quantity_source(centrum.collective_file, tata_rows_with(LATE_FAULT, N=0))
     history_before = centrum.client.get("/api/settings/history").json()
 
     response = centrum.client.post(f"{DIFFERENCES_URL}/{gone['id']}/exception")
@@ -1465,9 +1376,6 @@ def test_wyjatek_roznicy_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp_path: Path) 
 
 
 def test_popraw_regule_daje_formularz_nowej_reguly_z_warunkami_z_urzadzen_roznicy_bez_zapisu(tmp_path: Path) -> None:
-    """US 62: „Popraw regułę” otwiera edytor z warunkami z URZĄDZENIA tej różnicy; reguła zapisuje się dopiero
-    przyciskiem „Zapisz”, a dopisanie brakującej ilości w kolumnie daje wpis taty."""
-
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
     found = differences(centrum)
@@ -1481,7 +1389,6 @@ def test_popraw_regule_daje_formularz_nowej_reguly_z_warunkami_z_urzadzen_roznic
         "conditions": [component("usterka")],
         "action": {"kind": "fill", "writes": [{"column": "N", "value": 45, "multiplier": "once", "component": None}]},
     }
-    # Q i S liczy narzędzie samo, a mniejszej ilości niż reguła nowa reguła nie da: działanie wybiera tata.
     assert at(found, 19, "Q")["draft"] == {
         "scope": "known",
         "conditions": [component("nokia-router"), component("fut")],
@@ -1503,11 +1410,7 @@ def test_popraw_regule_daje_formularz_nowej_reguly_z_warunkami_z_urzadzen_roznic
 
 
 def test_popraw_regule_nie_wpisuje_brakujacej_ilosci_w_p_q_i_s_ktore_narzedzie_liczy_samo(tmp_path: Path) -> None:
-    """Tata wpisał w P, Q i S więcej niż reguły: tych kolumn reguła nie wpisuje, więc „Zapisz” nie przyjąłby
-    formularza, który je wypełnia; działanie wybiera tata."""
-
-    rows = [dict(row) for row in TATA_ROWS]
-    rows[1].update(P=3, Q=5, S=9)
+    rows = tata_rows_with("q-2-z-reguly-przy-trzech-fut-z-routerem-tata-1-pierwszy-wiersz-grupy-tej-samej-godziny", P=3, Q=5, S=9)
     centrum = centrum_with(tmp_path, rows)
     run_to_end(centrum, dry_run=False)
     found = differences(centrum)
@@ -1526,7 +1429,7 @@ def test_lista_roznic_pomija_plik_zbiorczy_ktorego_nie_da_sie_przeczytac_i_nazyw
     found = differences(centrum)
 
     assert found["unread"] == [PERIOD]
-    assert shown(found) == [(NEWER, *difference[1:]) for difference in TATA_DIFFERENCES]
+    assert shown(found) == [difference._replace(period=NEWER) for difference in TATA_DIFFERENCES]
 
 
 def test_zly_plik_wyjatkow_ma_zdanie_w_sekcji_a_lista_pokazuje_rowniez_roznice_bez_wyjatku(tmp_path: Path) -> None:
@@ -1541,11 +1444,7 @@ def test_zly_plik_wyjatkow_ma_zdanie_w_sekcji_a_lista_pokazuje_rowniez_roznice_b
 
 
 def test_zadna_chwila_zegara_testu_roznic_nie_ma_napisu_z_forbidden() -> None:
-    """Test różnic i wyjątku zapisuje tylko chwile ``CLOCK_START + k·STEP`` (``k < MOMENTS``), więc napis z ``FORBIDDEN``
-    w jego wyjściu pochodzi z komórki, a nie z zegara: żadna z tych chwil go nie ma w zapisie ISO (UTC, strefa biegu,
-    ``Z``), w sekundach od epoki ani w godzinie i dacie w żadnej strefie co kwadrans (#1789, #1797: ``14:13:45``)."""
-
-    moments = [CLOCK_START + step * STEP for step in range(MOMENTS)]
+    moments = [CLOCK_START_WITHOUT_FORBIDDEN + step * STEP for step in range(MOMENTS)]
     written = [
         text
         for moment in moments
@@ -1561,20 +1460,13 @@ def test_zadna_chwila_zegara_testu_roznic_nie_ma_napisu_z_forbidden() -> None:
 def test_roznice_i_wyjatek_w_historii_i_zgloszeniu_nie_maja_adresu_numerow_wykonawcy_daty_ani_tresci_wiersza(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Lista różnic pokazuje tacie URZĄDZENIA i CZYNNOŚCI jak podgląd, bez UMOWA; wyjątek w Historii Ustawień, w
-    Logach Centrum i w Zgłoszeniu ma tylko okres, wiersz, kolumnę i wpis taty (ADR 0013, ADR 0032)."""
-
-    # Historia, Logi i Zgłoszenie mają chwilę zegara, a żadna chwila tego zegara nie ma napisu z ``FORBIDDEN``
-    # (``test_zadna_chwila_zegara_testu_roznic_nie_ma_napisu_z_forbidden``).
-    wall_clock_from(monkeypatch, CLOCK_START)
+    wall_clock_from(monkeypatch, CLOCK_START_WITHOUT_FORBIDDEN)
     centrum = centrum_with(tmp_path, [MARKED])
     run_to_end(centrum, dry_run=False)
     response = centrum.client.get(DIFFERENCES_URL).text
-    # URZĄDZENIA ze słowem spoza Listy Urządzeń: reguły dają V 1 i T 1, a tata wpisał w V słowo i nic w T.
     assert [(d["row"], d["column"]) for d in differences(centrum)["differences"]] == [(18, "T"), (18, "V")]
 
-    marked(centrum, at(differences(centrum), 18, "V"))
-    # Zgłoszenie z Zatrzymania podglądu Przebiegu, który bez Folderu rozliczeń pracowników nie trafia na Nienadpisywanie.
+    marked_as_exception(centrum, at(differences(centrum), 18, "V"))
     shutil.rmtree(centrum.worker_settlements)
     run_id = stopped_for_maks(centrum)
     report = centrum.client.post(f"/api/runs/{run_id}/diagnosis").json()["report"]["body"]

@@ -12,6 +12,8 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 
 ## Gdzie biegnie polecenie
 
+Każde ciężkie polecenie i każdą jego część, którą da się rozdzielić, puszczaj przez `boatbox`, także wiele razy i równolegle.
+
 | Praca | Gdzie | Jak |
 |---|---|---|
 | `mutacje.py --plik` z mutacjami o kilku różnych `polecenie` | kilka boxów naraz, bo razem są szybsze od Maca | `boatbox fan` (sekcja „Fan mutacji”) |
@@ -50,7 +52,7 @@ Gdy ta zmiana jest już na `origin/main`, uruchom `boatbox base` bez `--setup`, 
 
 ## Fan mutacji
 
-Zestaw mutacji dziel na najwyżej 12 części, bo plan boat daje 12 startów boxa na minutę, a mutacje o tym samym `polecenie` trzymaj w jednej części:
+Zestaw mutacji dziel na części (w przykładzie 12), a mutacje o tym samym `polecenie` trzymaj w jednej części:
 
 ```bash
 jq -c '[group_by(.polecenie | tostring) | to_entries[] | {k: (.key % 12), v: .value}] | group_by(.k)[] | map(.v[])' mutacje.json \

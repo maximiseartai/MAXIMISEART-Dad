@@ -31,9 +31,9 @@ from wplyw_zmiany import STRUCTURE, Context, Repository, changed_since, run_all,
 import wyniki_testow
 from zakres_runu import podstawa_trafiona
 
-OPIS = """Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom po każdej zmianie przed pushem.
+OPIS = """Szybko sprawdza zmianę: ruff, mypy dla obu systemów, testy struktury i testy dotknięte zmianą; uruchom przed każdym pushem.
 
-Agent uruchamia je po każdej zmianie; pełną bramką jest CI na GitHubie. Zmiana to pliki, którymi checkout,
+Agent uruchamia je przed każdym pushem; pełną bramką jest CI na GitHubie. Zmiana to pliki, którymi checkout,
 razem z niezacommitowanymi i nieśledzonymi plikami, różni się od ``merge-base`` HEAD z ``--baza`` (domyślnie
 ``origin/main``). Kroki ruff i mypy, a przy zmianie w ``.github/`` zizmor i actionlint, to kroki ``tools/ci_lokalnie.py``, a pytest to jego krok z wybranymi
 testami. Gdy ``.venv`` ma Pythona nowszego niż najstarszy z ``requires-python``, który CI też testuje, krok
