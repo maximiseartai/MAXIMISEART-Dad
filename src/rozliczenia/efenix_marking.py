@@ -179,8 +179,6 @@ class _Styles:
         self._added_xfs: list[bytes] = []
 
     def marked(self, style: int, mark: Mark) -> int:
-        """Styl ``style`` z wypełnieniem Znacznika ``mark``; ``style``, gdy ``mark`` nie zastępuje jego Znacznika."""
-
         if style >= len(self._xfs):
             raise UnsupportedShape("styl komórki")
         if not mark.replaces(self._marks.get(self._fill_ids[style])):

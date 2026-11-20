@@ -23,8 +23,6 @@ from .file_state import folder_entries
 __all__ = ["beside"]
 
 _DEVICE: Final = re.compile(r"[^\W_](?:[\w '’-]*[^\W_])?")
-"""Nazwa komputera w dopisku: litery, cyfry, łączniki, podkreślenia, spacje i apostrofy, z literą albo cyfrą na obu
-brzegach."""
 
 
 def beside(register: Path) -> tuple[Path, ...]:

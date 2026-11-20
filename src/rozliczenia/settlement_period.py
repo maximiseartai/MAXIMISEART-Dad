@@ -17,14 +17,11 @@ from datetime import date, datetime, timedelta
 PERIOD_TOKEN_PATTERN = r"\d{2}_\d{2}_\d{2}_\d{4}"
 """Zapis tokenu bez sprawdzania dni tygodnia; wspólny dla nazw plików i metryk."""
 UNKNOWN_PERIOD = "nieznany"
-"""Okres w rekordzie metryk, gdy tokenu nie udało się ustalić."""
 _TUESDAY = 1
 
 
 @dataclass(frozen=True)
 class SettlementPeriod:
-    """Okres rozliczeniowy od wtorku do poniedziałku."""
-
     tuesday: date
 
     def __post_init__(self) -> None:
@@ -56,8 +53,6 @@ class SettlementPeriod:
 
 
 def parse_period_token(token: str) -> SettlementPeriod:
-    """Okres z tokenu; ``ValueError``, gdy token nie opisuje okresu od wtorku do poniedziałku."""
-
     if re.fullmatch(PERIOD_TOKEN_PATTERN, token) is None:
         raise ValueError("Token okresu ma postać dd_dd_mm_rrrr.")
     _, monday_day, month, year = (int(part) for part in token.split("_"))
@@ -75,7 +70,5 @@ def period_of(day: date) -> SettlementPeriod:
 
 
 def last_complete_period(today: date) -> SettlementPeriod:
-    """Ostatni pełny okres zakończony przed ``today``; okres kończący się dziś nie jest pełny."""
-
     days_since_previous_monday = today.weekday() or 7
     return SettlementPeriod(today - timedelta(days=days_since_previous_monday + 6))

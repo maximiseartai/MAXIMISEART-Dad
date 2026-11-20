@@ -39,16 +39,11 @@ def path_state(path: Path) -> PathState:
 
 
 def file_state(path: Path) -> FileState:
-    """Czy ``path`` jest plikiem, nie ma go (także gdy na jego miejscu jest folder) albo jest niedostępny."""
-
     state = path_state(path)
     return "missing" if state == "folder" else state
 
 
 def path_taken(path: Path) -> bool:
-    """Czy na miejscu ``path`` coś jest, także skrót do pliku, którego nie ma; ``OSError``, gdy nie da się tego
-    sprawdzić (miejsce niedostępne nie jest wolne)."""
-
     try:
         os.lstat(path)
     except _ABSENT:
@@ -57,8 +52,6 @@ def path_taken(path: Path) -> bool:
 
 
 def folder_entries(directory: Path) -> list[os.DirEntry[str]] | None:
-    """Wpisy folderu z jednego listowania; ``None``, gdy folderu nie ma, a ``OSError``, gdy jest niedostępny."""
-
     try:
         with os.scandir(directory) as entries:
             return list(entries)
@@ -76,7 +69,5 @@ def entry_kind(entry: os.DirEntry[str]) -> Literal["file", "folder", "missing"]:
 
 
 def remove_file(path: Path) -> None:
-    """Usuwa plik ``path``; pliku, którego nie ma, nie zgłasza, a ``OSError`` znaczy, że jest, ale go nie usunięto."""
-
     with suppress(*_ABSENT):
         path.unlink()

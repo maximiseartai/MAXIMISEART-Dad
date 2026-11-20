@@ -61,11 +61,6 @@ class CollectiveOrder:
 
 @dataclass(frozen=True)
 class PricingScope:
-    """Zlecenia w zakresie w kolejności, w której proces je sprawdza, i liczby pominiętych Wierszy danych z Wykonawcą.
-
-    ``address_column``: litera kolumny ``ADRES``. ``content``: bajty Pliku zbiorczego, z których pochodzi zakres.
-    """
-
     orders: tuple[CollectiveOrder, ...]
     with_photos: int
     defects: int
