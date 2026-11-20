@@ -14,7 +14,7 @@ from typing import Optional
 
 SEPARATORS = frozenset({"&&", "&"})
 SEPARATOR_CHARACTERS = ";|()\n"
-KEYWORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "{", "time"})
+KEYWORDS = frozenset({"if", "then", "else", "elif", "do", "while", "until", "!", "{"})
 ASSIGNMENT = re.compile(r"([A-Za-z_][A-Za-z0-9_]*)=(.*)", re.DOTALL)
 PYTHON = re.compile(r"python(?:3(?:\.\d+)?)?")
 REDIRECT = re.compile(r"((?:\d+|&)?(?:>>|>&|<&|&>|>\||<>|>|<))(.*)", re.DOTALL)
@@ -36,6 +36,7 @@ class _Launcher:
 
 
 LAUNCHERS = {
+    "time": _Launcher(0, frozenset({"-o", "-f", "--output", "--format"})),
     "timeout": _Launcher(1, frozenset({"-s", "-k", "--signal", "--kill-after"})),
     "env": _Launcher(0, frozenset({"-u", "-C", "--unset", "--chdir"})),
     "nice": _Launcher(0, frozenset({"-n", "--adjustment"})),
@@ -160,7 +161,7 @@ def _many_workers(value: Optional[str]) -> bool:
 
 
 def _names_tests(arguments: tuple[str, ...]) -> bool:
-    return any(".py" in argument or argument.startswith("tests/") or argument == "tests" for argument in arguments)
+    return any(".py" in argument or (argument.startswith("tests/") and argument.rstrip("/") != "tests") for argument in arguments)
 
 
 def _pytest(arguments: tuple[str, ...]) -> Optional[_Heavy]:

@@ -83,9 +83,19 @@ ODMOWY = [
         id="pelny-pytest-n-8-z-wyjsciem-do-pliku",
     ),
     pytest.param(
+        ".venv/bin/python -m pytest -n auto tests/ -q",
+        "boatbox job pytest '.venv/bin/python -m pytest -n auto tests/ -q' && boatbox wait pytest",
+        id="pelny-pytest-katalogiem-tests",
+    ),
+    pytest.param(
         ".venv/bin/python -m pytest -q -n 4 tests/test_x.py",
         "boatbox run '.venv/bin/python -m pytest -q -n 4 tests/test_x.py'",
         id="pytest-n-4-na-pliku",
+    ),
+    pytest.param(
+        ".venv/bin/python -m pytest -q -n 4 tests/fixtures/",
+        "boatbox run '.venv/bin/python -m pytest -q -n 4 tests/fixtures/'",
+        id="pytest-n-4-na-podkatalogu-tests",
     ),
     pytest.param(
         "python3 -m pytest -n2 tests/test_x.py",
@@ -242,6 +252,35 @@ def test_polecenie_lekkie_albo_z_boatbox_przechodzi(command: str) -> None:
 @pytest.mark.parametrize("command", ZNANE_LUKI)
 def test_znane_luki_hooka_ciezkich_polecen_przechodza(command: str) -> None:
     assert hook.judge(command, str(ROOT)) is None, "hook łapie już tę postać: usuń ją ze ZNANE_LUKI i dopisz do ODMOWY"
+
+
+PRZEDROSTKI = {
+    "time": "-p",
+    "timeout": "--foreground 900",
+    "env": "-u BOATBOX_SLOT",
+    "nice": "-n 5",
+    "nohup": "",
+    "caffeinate": "-i",
+    "command": "",
+    "exec": "",
+}
+
+
+def test_kazdy_program_uruchamiajacy_hooka_ma_probke_przedrostka() -> None:
+    assert set(PRZEDROSTKI) == set(hook.LAUNCHERS)
+
+
+@pytest.mark.parametrize("path", ["", "/usr/bin/"], ids=["nazwa", "sciezka"])
+@pytest.mark.parametrize("launcher", sorted(PRZEDROSTKI))
+def test_ciezkie_polecenie_za_programem_uruchamiajacym_dostaje_odmowe(launcher: str, path: str) -> None:
+    prefix = " ".join(word for word in (path + launcher, PRZEDROSTKI[launcher]) if word)
+
+    szybko = hook.judge(f"{prefix} {SZYBKO} > s.log 2>&1", str(ROOT))
+    pytest_workers = hook.judge(f"{prefix} .venv/bin/python -m pytest -q -n 4 tests/test_x.py", str(ROOT))
+
+    assert szybko is not None and szybko.reason.endswith(f" Uruchom: {NA_BOXIE_SZYBKO} >s.log 2>&1")
+    assert pytest_workers is not None
+    assert pytest_workers.reason.endswith(" -m pytest -q -n 4 tests/test_x.py'")
 
 
 def _repo(path: Path) -> Path:
