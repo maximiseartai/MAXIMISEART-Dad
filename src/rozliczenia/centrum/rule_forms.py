@@ -1,21 +1,3 @@
-"""Edytor Reguł ilości (ADR 0033): formularz reguły z kontraktu ↔ reguła silnika ``QuantityRule`` i zmiana listy reguł.
-
-Formularz niczego nie sprawdza sam. Reguły po zmianie sprawdza silnik bez Listy Urządzeń (``rule_list_problem``), a
-``form_problem`` zamienia jego problem na odmowę z polem formularza (``FieldPath`` względem reguły: ``to``,
-``jesli[0].tekst``, ``to.wpisy[1].kolumna``). Miejsce problemu silnik daje swoim tekstem (``reguly[<id>].jesli[0].tekst``):
-``form_problem`` zdejmuje przedrostek reguły o znanym id i przyjmuje tylko formy z listy (``_RULE_FIELD``), a każda inna
-forma to odmowa bez pola, ze zdaniem nad formularzem. Czy reguły pasują do Listy Urządzeń, sprawdza właściciel Ustawień
-jako zmianę pary, tak samo dla edytora i „Cofnij” (``CentrumSettings._dad_change``). Sam formularz odmawia tylko tego,
-czego typ silnika nie wyrazi: reguły bez działania i godziny, która nie jest godziną z minutą.
-
-Nowa reguła dostaje id ``regula-<n>`` z najmniejszym ``n`` od 1, którego nie ma żadna reguła teraz ani żaden klucz
-Historii Ustawień pliku reguł (``used``), i staje na końcu listy. Id usuniętej reguły nie wraca więc do nowej, a klucz
-Historii ``reguly.<id>`` zawsze wskazuje jedną regułę: „Cofnij” starego wiersza nie rusza reguły dodanej po nim. Historii
-się nie przycina, więc ``used`` ma każde id, jakie plik reguł kiedykolwiek miał w Historii, także z Wydania i spoza
-Centrum. Zmieniona reguła zostaje na swoim miejscu, więc kolejność reguł w pliku (od niej zależy kolejność kolumn
-podpowiedzi Uzupełnienia) się nie zmienia.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -71,12 +53,10 @@ _V = TypeVar("_V")
 
 @dataclass(frozen=True)
 class UnknownRule:
-    """Reguły o tym id nie ma w regułach, którymi liczy Centrum."""
+    ...
 
 
 def form_of(rule: QuantityRule) -> contract.RuleForm:
-    """Reguła silnika jako formularz edytora."""
-
     return contract.RuleForm(
         scope=SCOPES[rule.scope],
         conditions=[_condition_form(condition) for condition in rule.conditions],
@@ -87,10 +67,6 @@ def form_of(rule: QuantityRule) -> contract.RuleForm:
 def edited(
     rules: tuple[QuantityRule, ...], edit: contract.RuleEdit, used: frozenset[str]
 ) -> tuple[QuantityRule, ...] | FieldProblem | UnknownRule:
-    """Reguły ``rules`` po zmianie ``edit``, jeszcze niesprawdzone przez silnik; ``used``: id reguł z kluczy Historii
-    Ustawień, których nowa reguła nie dostanie. ``FieldProblem``: formularz, którego typ silnika nie wyrazi,
-    ``UnknownRule``: zmiana albo usunięcie reguły, której nie ma."""
-
     match edit:
         case contract.AddRule(rule=form):
             rule = _rule(form, _new_id(rules, used))
@@ -111,9 +87,6 @@ def edited(
 def dad_rules(
     rules: tuple[QuantityRule, ...], edit: contract.RuleEdit, used: frozenset[str]
 ) -> tuple[QuantityRule, ...] | FieldProblem:
-    """Zmiana taty z edytora reguł, którą zapisuje i podgląda właściciel Ustawień: reguły po zmianie ``edit`` albo odmowa
-    formularza z polem; reguły, której już nie ma, nie rusza (404 daje trasa przed zapisem)."""
-
     changed = edited(rules, edit, used)
     if isinstance(changed, UnknownRule):
         return rules
@@ -124,16 +97,11 @@ def dad_rules(
 
 
 def edited_id(before: tuple[QuantityRule, ...], after: tuple[QuantityRule, ...]) -> str | None:
-    """Id reguły, którą zmiana dodała albo zmieniła (``None``: zmiana tylko usunęła albo niczego nie zmieniła)."""
-
     old = {rule.id: rule for rule in before}
     return next((rule.id for rule in after if old.get(rule.id) != rule), None)
 
 
 def form_problem(rules: tuple[QuantityRule, ...], rule_id: str | None) -> FieldProblem | None:
-    """Problem reguł po zmianie z edytora, którego nie usunie żadna Lista Urządzeń (``rule_list_problem``): problem reguły
-    ``rule_id`` ma pole formularza, każdy inny tylko zdanie; ``None``: reguły są dobre same w sobie."""
-
     problem = rule_list_problem(rules)
     if problem is None:
         return None
@@ -143,9 +111,6 @@ def form_problem(rules: tuple[QuantityRule, ...], rule_id: str | None) -> FieldP
 
 
 def component_field(form: contract.RuleForm, component: str) -> FieldPath | None:
-    """Pole formularza reguły z wyborem składnika ``component``: pierwszy warunek „zawierają”, potem pierwszy wpis razy
-    ten składnik (``None``: formularz go nie wybiera); przy nim stoi odmowa właściciela o składniku spoza listy."""
-
     for index, condition in enumerate(form.conditions):
         if isinstance(condition, contract.ComponentCondition) and condition.component == component:
             return FieldPath("jesli", index, "skladnik")
@@ -160,7 +125,6 @@ _RULE_FIELD: Final = re.compile(
     r"|to\.wpisy\[(?P<write>\d+)\]\.(?P<write_field>kolumna|wartosc|skladnik)"
     r"|to\.(?P<action_field>wpisy|kolumny)"
 )
-"""Miejsca problemu jednej reguły w silniku, które formularz ma jako pole; inne nie mają pola."""
 _NAMES: Final[Mapping[str, FieldName]] = {
     "skladnik": "skladnik",
     "tekst": "tekst",
