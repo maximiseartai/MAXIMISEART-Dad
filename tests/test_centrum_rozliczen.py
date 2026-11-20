@@ -3254,6 +3254,7 @@ def _added_code(form: dict[str, Any], used: frozenset[str]) -> ActivityCode:
     ("spellings", "used", "identifier"),
     [
         pytest.param(("Listwa #m",), frozenset(), "listwa", id="czesc-przed-miejscem-na-liczbe"),
+        pytest.param(("Listwa #m", "slupek#m"), frozenset(), "listwa", id="pierwszy-z-dwoch-zapisow"),
         pytest.param(("listwa#m",), frozenset({"listwa"}), "listwa-2", id="zajete-w-historii-z-numerem-2"),
         pytest.param(("listwa#m",), frozenset({"listwa", "listwa-2"}), "listwa-3", id="kolejny-wolny-numer"),
     ],
