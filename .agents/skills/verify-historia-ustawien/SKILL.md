@@ -90,7 +90,7 @@ Each model action is one indivisible step of this code (`src/rozliczenia/centrum
 | `PamiecSpoza` | `CentrumSettings._compared`: `CentrumSettings._remember` of the new state (bad content keeps the old `good`) |
 | `Uzyj` | the process takes `_value` of the observed value |
 | `Propozycja` | `CentrumSettings._apply`: `change.propose` on the observed value: `Edit` („set `r`”) on a good value, after which `_change` reads the file again, or `Later` on bad content (`periods_directory_from_layout_root`), without a result, so the change comes back at the next start |
-| `Wylicz` | `CentrumSettings._change`: `edit(current)`; no difference on a good file is `Saved(change=None)` (result „bez-zmian”); a row only with a difference of keys; `new` is no file when `CentrumSettings._restores_absence` holds („Cofnij” of a row with `created` after which the later rows of the file leave nothing: each key back to its value before the first row since that touched it gives the same value; with one value, always), else `file.dump` |
+| `Wylicz` | `CentrumSettings._change`: `edit(current)`; no difference on a good file is `Saved(change=None)` (result „bez-zmian”); a row only with a difference of keys; `new` is no file when `CentrumSettings._restores_absence` holds („Cofnij” of a row with `created` after which the later rows of the file leave nothing: each key back to its value before the first row since that touched it gives the same value and `file.restore` of those keys is not a `FieldProblem`; with one value, always), else `file.dump` |
 | `Zapis` | `CentrumSettings._change`: `place.write(new)` (`_ConfigFile`, `replace_atomically`); `OSError` is `NotSaved` |
 | `Wiersz` | `CentrumSettings._change`: `History.append` of `CentrumSettings._row` (`created` when there was no file before, `removed` when the change writes none); `OSError` goes to `CentrumSettings._put_back` |
 | `Przywroc` | `CentrumSettings._put_back(place, data)`, the content from before; its `OSError` is only logged and leaves the new content without a row; then `NotSaved` |
@@ -334,6 +334,10 @@ each kind; two „Cofnij” only in `brak-pliku` and in a wider run outside CI, 
   (`test_cofniecie_zmiany_ktora_utworzyla_plik_zostawia_plik_z_pozniejsza_zmiana_innego_klucza`).
 
 Left out: the pair of Reguły ilości and Lista Urządzeń (a file that stops fitting the other, `_paired`), secrets,
-autostart, removed logins and the periods check, the first start without any memory, `_absent`, a file the system
+autostart, removed logins and the periods check, a „Cofnij” whose `file.restore` breaks a rule of the file (a
+`FieldProblem`, so `_change` gives `Refused` before any write or row; only the Lista Wykonawców, a file of several keys,
+refuses one, and
+`test_cofniecie_usuniecia_wykonawcy_po_ktorym_lista_lamalaby_regule_to_odmowa_ze_zdaniem_a_lista_i_historia_bez_zmian`
+checks it), the first start without any memory, `_absent`, a file the system
 cannot read (`Unreadable` file: processes refuse), a hand edit that lands between the owner's read and its write (the
 owner overwrites it without a row, as any file without a lock would), and the Historia or the memory deleted by hand.

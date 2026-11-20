@@ -142,7 +142,7 @@ class SettingsFile(Generic[T]):
     parse: Callable[[bytes | None], T | FieldProblem]
     dump: Callable[[T], bytes]
     diff: Callable[[T, T], tuple[KeyChange, ...]]
-    restore: Callable[[T, tuple[KeyChange, ...]], T]
+    restore: Callable[[T, tuple[KeyChange, ...]], T | FieldProblem]
     reported: Callable[[KeyChange], str]
     default: T
     logged: Callable[[str], str] = str

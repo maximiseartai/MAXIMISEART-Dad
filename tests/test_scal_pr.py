@@ -34,6 +34,7 @@ import bramka_korzenia
 import bramka_straznika
 import czasy_ci
 import github as klient_github
+import kontekst_przegladu
 import limit_rund
 from mutacja_recenzenta import Block
 import naprawia
@@ -3148,16 +3149,19 @@ def _guard_pull(
     deployed: str = GATE_BEFORE_VERDICTS,
     gate: str = GATE_BEFORE_VERDICTS,
     root: bool = False,
+    base: dict[str, str] | None = None,
+    changed: dict[str, str] | None = None,
 ) -> tuple[MergeGitHub, str]:
     """PR 1 z werdyktami ``verdicts`` (domyślnie ``FAIL_W1``) na starszym commicie, opisem ``body`` z ``korzenie_pr.OPISY``
     i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, warunek 5 w chwili ``deployed``, a dowód
-    kończy się ``proof``; z ``root`` PR korzenia #1436 jest scalony z linią ``Korzeń z #1``."""
+    kończy się ``proof``; z ``root`` PR korzenia #1436 jest scalony z linią ``Korzeń z #1``; ``base`` dokłada pliki do
+    bazy, a ``changed`` to pliki PR (domyślnie ``kod/inne.py``)."""
 
-    files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"]}
+    files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"], **(base or {})}
     github = MergeGitHub(tmp_path, files, started=gate)
     _deploy_template(github)
     _deploy_guard(github, deployed)
-    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    head = github.open_pull(1, changed or {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=korzenie_pr.OPISY[body])
     if root:
         github.pulls[str(korzenie_pr.ROOT_PR)] = _pr_view(korzenie_pr.ROOT_PR, OLD, state="MERGED", body=korzenie_pr.PR_KORZENIA["ten-kod"], baseRefName="main")
@@ -3262,6 +3266,49 @@ def test_brak_testu_w_watku_sprzed_wdrozenia_dowodu_testu_przechodzi_jak_przed_n
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert _proofs(github) == [["--straznik", "brak - test", "--z-commita", head, "--wazne", "1/W1/r1", *(["--przed-dowodem-testu"] if before else [])]]
+
+
+LIGHT_BASE = {
+    "src/rozliczenia/__init__.py": "",
+    "tools/narzedzie.py": "X: int = 1\n",
+    "tools/atrapa.py": "import rozliczenia\n",
+    "tests/fixtures/produkt.py": "import rozliczenia\n",
+    "tests/fixtures/luka.py": "import narzedzie\n",
+}
+
+
+@pytest.mark.parametrize(
+    ("changed", "light"),
+    [
+        ({"tools/narzedzie.py": "X: int = 2\n"}, True),
+        ({".github/workflows/proba.yml": "name: proba\n", "tests/fixtures/proba_narzedzia.py": "from narzedzie import X\n\nY = X\n"}, True),
+        ({"tools/wydanie.py": "X: int = 1\n"}, False),
+        ({"tools/narzedzie.py": "X: int = 2\n", "src/rozliczenia/dane.py": "X: int = 1\n"}, False),
+        ({"run_centrum.py": "X: int = 1\n"}, False),
+        ({".agents/skills/proba/scripts/skrypt.py": "import narzedzie\n"}, False),
+        ({"tests/fixtures/produkt.py": "import narzedzie\nimport rozliczenia\n"}, False),
+        ({"tests/fixtures/proba_produktu.py": "import narzedzie\nfrom tests.fixtures import produkt\n"}, False),
+        ({"tests/fixtures/proba_luki.py": "from tests.fixtures import luka\n"}, False),
+        ({"tests/fixtures/proba_atrapy.py": "import atrapa\n"}, False),
+        ({"tests/fixtures/zegar.py": "import time\n"}, False),
+    ],
+    ids=["same-narzedzia", "workflow-i-test-narzedzi", "narzedzie-wydan", "narzedzia-i-src", "plik-wydania", "skrypt-skilla-z-importem-narzedzia", "test-z-importem-src", "test-przez-fiksture-z-importem-src", "test-z-narzedziem-tylko-przez-fiksture", "test-narzedzia-z-importem-src", "test-bez-importu-narzedzia"],
+)
+def test_wazne_pr_samych_narzedzi_scala_sie_bez_bloku_korzen_i_straznika_a_reszta_dalej_ich_wymaga(
+    tmp_path: Path, changed: dict[str, str], light: bool
+) -> None:
+    github, head = _guard_pull(tmp_path, "bez-sekcji", base=LIGHT_BASE, changed=changed)
+
+    answered = github.run("1", "--bez-merge")
+    review = github.run("1", "--przeglad")
+
+    last = _last_line(answered)
+    if light:
+        assert answered.returncode == 0 and last.startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    else:
+        assert answered.returncode == 1 and "korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym" in last, last
+    assert _proofs(github) == []
+    assert (kontekst_przegladu.STAKE_LIGHT if light else kontekst_przegladu.STAKE_FULL) in review.stdout.splitlines(), review.stdout + review.stderr
 
 
 @pytest.mark.parametrize(
