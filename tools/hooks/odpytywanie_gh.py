@@ -9,7 +9,7 @@ import sys
 import time
 from typing import Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/hooks"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from czekanie import CI_ADDRESS, INSTEAD

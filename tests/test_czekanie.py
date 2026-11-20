@@ -90,7 +90,6 @@ CI_LOOPS = (
     "/bin/bash --noprofile --norc -o pipefail -c 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "bash -ce 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "fish -c 'while true; sleep 30; gh pr checks 1; end'",
-    # Stan zadania Actions: gh api z adresem zadania bez dalszej ścieżki.
     "for i in $(seq 1 18); do s=$(gh api repos/o/r/actions/jobs/130914219319 -q '.status'); [ \"$s\" = completed ] && break; "
     "sleep 30; done",
     # Słowa przed ``-c`` mogą być dowolne, więc ``-c`` za nazwą skryptu też dostaje odmowę (fałszywą, ale tańszą).
@@ -332,7 +331,6 @@ PASSING = (
     "sh -e 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "bash backup.sh 'until ! gh pr checks 1 | grep -q pending; do sleep 30; done'",
     "sleep 1; cat /private/tmp/c/s/tasks/be31c9zrc.output | tail",
-    # Partia logów zadań Actions z break przy limicie: /logs to nie stan zadania.
     "for j in 131746612659 131693897858; do gh api repos/o/r/actions/jobs/$j/logs > $j.log 2> $j.err "
     '|| { grep -qi "rate limit" $j.err && break; }; sleep 1; done',
 )
