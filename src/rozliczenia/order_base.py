@@ -68,15 +68,11 @@ class HistoryBlock:
 
 @dataclass(frozen=True)
 class UnsupportedSheet:
-    """Arkusz Bazy, którego narzędzie nie czyta: wierszy nie da się rozdzielić albo kolumna A nie ma nagłówka."""
-
     sheet: str
 
 
 @dataclass(frozen=True)
 class _Sheet:
-    """Arkusz Bazy: szerokość nagłówka, kolumny daty i numeru zlecenia (od 1, ``None``: bez nagłówka), XML i wiersze."""
-
     width: int
     date: int | None
     number: int | None
@@ -86,15 +82,11 @@ class _Sheet:
 
 @dataclass(frozen=True)
 class _Row:
-    """Wiersz Bazy w indeksie adresów: arkusz (miejsce w ``OrderBase.sheets``) i numer wiersza."""
-
     sheet: int
     number: int
 
 
 class OrderBase:
-    """Baza zleceń przeczytana raz: jej arkusze i indeks adresów kolumny A."""
-
     def __init__(self, path: Path, sheets: Sequence[_Sheet], index: AddressIndex[_Row], values: CellValues) -> None:
         self._path = path
         self._sheets = tuple(sheets)
@@ -106,9 +98,6 @@ class OrderBase:
         return len(self._sheets)
 
     def history(self, address: object, city: object, number: object) -> tuple[HistoryBlock, ...]:
-        """Historia adresu zlecenia z ``ADRES`` ``address``, ``MIASTO`` ``city`` i ``NUMER ZL.`` ``number`` (zob.
-        docstring modułu); ``WorkbookError``, gdy komórki wiersza z tym adresem nie da się odczytać."""
-
         own = _order_number(number)
         dated: list[tuple[datetime, HistoryBlock]] = []
         undated: list[HistoryBlock] = []
@@ -135,8 +124,6 @@ class OrderBase:
 
 
 def read(path: Path, files: DadFiles) -> OrderBase | UnsupportedSheet:
-    """Baza zleceń ``path`` uchwytem ``files``; ``WorkbookError``, gdy jej nie ma, jest niedostępna albo nieczytelna."""
-
     file = files.read(path, despite_excel_lock=True)
     memory = file.memory(((ForbiddenColumn.ADDRESS, _ADDRESS_COLUMN),))
     sheets: list[_Sheet] = []

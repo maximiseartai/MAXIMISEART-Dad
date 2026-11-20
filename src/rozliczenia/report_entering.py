@@ -259,8 +259,6 @@ class EnteringFacts:
 
 @dataclass
 class EnteringSummary:
-    """Podsumowanie Wpisania raportów: fakty kliknięcia i liczba wpisanych komórek (``written``)."""
-
     facts: EnteringFacts
     written: int
     warnings: list[Message] = field(default_factory=list)
@@ -275,8 +273,6 @@ class EnteringSummary:
 
     @property
     def reports(self) -> int:
-        """Raporty wykonawców od Wykonawców z listy adresów, które kliknięcie przeczytało."""
-
         return self.facts.mails.worker_report_count
 
 

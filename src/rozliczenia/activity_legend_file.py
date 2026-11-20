@@ -43,8 +43,6 @@ class _Malformed(Exception):
 
 
 def parse_activity_legend(document: object) -> ActivityLegend | LegendProblem:
-    """Legenda czynności z dokumentu pliku ``legenda-czynnosci.yaml`` albo pierwszy problem."""
-
     try:
         entries = _mapping(document, "", required={"schema_version", "kody"})
         if entries["schema_version"] != SCHEMA_VERSION or isinstance(entries["schema_version"], bool):
@@ -174,4 +172,3 @@ def _default() -> ActivityLegend:
 
 
 DEFAULT_ACTIVITY_LEGEND: Final = _default()
-"""Legenda czynności z Wydania: mail taty z 15.11.2026 (ADR 0038)."""

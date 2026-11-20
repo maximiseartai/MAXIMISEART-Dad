@@ -35,7 +35,6 @@ from .text import normalize_text
 
 NON_NUMERIC: Final = "nieliczbowa"
 TataValue = int | Literal["nieliczbowa"]
-"""Ilość taty: liczba (pusta komórka, 0 i ``"0"`` to 0; ``"2"`` i ``2.0`` to 2) albo „nieliczbowa” (formuła, słowo, 1.5)."""
 
 _INPUTS: Final[tuple[Column, ...]] = (CONTRACT, DEVICES, ACTIVITIES, DATE)
 _NO_FILLS: Final[Mapping[str, FillColour]] = MappingProxyType({})
@@ -46,17 +45,13 @@ class OrderFacts:
     """Wiersz danych po filtrze prywatności."""
 
     content: OrderContent | None
-    """Treść zlecenia dla Reguł ilości, zawsze z datą; ``None``, gdy ``DATA`` nie jest datą."""
     quantities: Mapping[str, TataValue]
-    """Litera kolumny N:AP → ilość taty, tylko różna od 0."""
     completed: str = ""
     """Opis technika: tekst ``CZYNNOŚCI ZREALIZOWANE`` tak, jak go pokazuje Excel; pusta komórka albo brak nagłówka to
     ``""``."""
     amount: TataValue = 0
     """Kwota taty w ``AS`` (Uwagi - kwota), czytana jak ilość taty."""
     fills: Mapping[str, FillColour] = field(default=_NO_FILLS)
-    """Kolumna, którą może wypełnić Legenda czynności (``FILL_COLUMNS``) → kolor legendy jej wypełnienia, tylko z
-    wypełnieniem w kolorze legendy (``legend_colour``)."""
 
     def quantity(self, column: str) -> TataValue:
         return self.quantities.get(column, 0)

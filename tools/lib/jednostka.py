@@ -31,8 +31,6 @@ class Czesc:
 
     @classmethod
     def z_tekstu(cls, tekst: str) -> Czesc:
-        """Część z napisu ``k/n``; inna postać to ``ValueError`` z napisem."""
-
         k, _, n = tekst.partition("/")
         if not (k.isdigit() and n.isdigit() and 1 <= int(k) <= int(n)):
             raise ValueError(f"K/N z 1 <= K <= N, nie {tekst!r}")
@@ -46,13 +44,9 @@ class Czesc:
         return f"{self.k}/{self.n}"
 
     def co_nta(self, elementy: Sequence[T]) -> list[T]:
-        """Pozycje ``k``, ``k + n``, ``k + 2n``… z ``elementy`` (numerowanych od 1)."""
-
         return list(elementy[self.k - 1 :: self.n])
 
     def kawalek(self, elementy: Sequence[T]) -> Sequence[T]:
-        """K-ty z ``n`` kolejnych kawałków ``elementy``; ``n`` części daje każdy element dokładnie raz."""
-
         return elementy[len(elementy) * (self.k - 1) // self.n : len(elementy) * self.k // self.n]
 
 
@@ -71,8 +65,6 @@ class Klucz:
 
     @classmethod
     def z_tekstu(cls, tekst: str) -> Klucz:
-        """Klucz z napisu; nieznany rodzaj, brak nazwy albo zła część to ``ValueError``."""
-
         przed, _, czesc = tekst.partition("#")
         rodzaj, dwukropek, nazwa = przed.partition(":")
         if not dwukropek or not nazwa or rodzaj not in {r.value for r in Rodzaj}:

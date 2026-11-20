@@ -84,8 +84,6 @@ class ReadFile:
             self._copied = self._copy.workbook(self.path, self.content, self.modified_at)
 
     def memory(self, forbidden: ForbiddenPositions) -> SheetMemory:
-        """Pamięć arkusza bez Kopii."""
-
         return SheetMemory(self._forbidden, tuple(forbidden))
 
     def sheet(
