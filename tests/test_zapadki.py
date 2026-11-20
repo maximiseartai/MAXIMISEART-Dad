@@ -2311,6 +2311,9 @@ _PROBKI_REGUL_POWROTOW: Final = [
         [3],
         id="segment-sciezki-bez-ukosnika-w-klasie",
     ),
+    pytest.param("program-wzorcem-ze-sciezka", "import re\n\nPYTHON = re.compile(r'(?:[\\w./-]*?/)?python3?')\n", [3], id="prefiks-z-leniwym-kwantyfikatorem"),
+    pytest.param("program-wzorcem-ze-sciezka", "import re\n\nPYTHON = re.compile(r'(?:[\\w./-]{1,}/)?python')\n", [3], id="prefiks-z-liczonym-kwantyfikatorem"),
+    pytest.param("program-wzorcem-ze-sciezka", "import re\n\nOPTION = re.compile(r'[a-z]{2,}')\n", [], id="klasa-z-liczonym-kwantyfikatorem-bez-ukosnika-przechodzi"),
     pytest.param(
         "program-wzorcem-ze-sciezka",
         _PROGRAM + '    return word.rsplit("/", 1)[-1] in {"python", "python3"}\n',
@@ -2389,6 +2392,46 @@ _PROBKI_REGUL_POWROTOW: Final = [
         [10],
         id="reszta-od-konca-w-zmiennej",
     ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for number, found in enumerate(WORD.finditer(text)):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-enumerate",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in re.finditer(WORD, text):\n        rests.append(text[found.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-re-finditer",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        "from re import finditer\n\n\ndef rests(text: str) -> list[str]:\n    rests = []\n    for found in finditer(r'[a-z]+', text):\n"
+        "        rests.append(text[found.end() :])\n    return rests\n",
+        [7],
+        id="reszta-w-petli-zaimportowanego-finditer",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for first, second in zip(WORD.finditer(text), WORD.finditer(text.upper())):\n        rests.append(text[first.end() :])\n    return rests\n",
+        [9],
+        id="reszta-w-petli-zip",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text.upper()[found.end() :])\n    return rests\n",
+        [],
+        id="reszta-innego-tekstu-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia",
+        f"{_WORDS}    rests = []\n    for start in range(3):\n        rests.append(text[start:])\n    return rests\n",
+        [],
+        id="reszta-w-petli-bez-trafien-przechodzi",
+    ),
+    pytest.param(
+        "reszta-tekstu-od-kazdego-trafienia", f"{_WORDS}    return [text[found.end() :] for found in WORD.finditer(text)]\n", [7], id="reszta-w-wyrazeniu-listowym"
+    ),
 ]
 
 
@@ -2446,8 +2489,6 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "rodzaj węzła po nazwie klasy": f'{_AST_STOP}    return any(type(node).__name__ == "Break" for node in ast.walk(tree))\n',
     },
     "reszta-tekstu-od-kazdego-trafienia": {
-        "pętla w wyrażeniu listowym": f"{_WORDS}    return [text[found.end() :] for found in WORD.finditer(text)]\n",
-        "funkcja re.finditer z wzorcem w argumencie": f"{_WORDS}    rests = []\n    for found in re.finditer(WORD, text):\n        rests.append(text[found.end() :])\n    return rests\n",
         "tekst pętli pod inną nazwą": f"{_WORDS}    rests = []\n    rest = text\n    for found in WORD.finditer(text):\n        rests.append(rest[found.end() :])\n    return rests\n",
     },
 }

@@ -2,9 +2,9 @@ id: reszta-tekstu-od-kazdego-trafienia
 language: python
 severity: error
 message: >-
-  pętla po trafieniach wzorca (finditer) czyta od nowa resztę tekstu od każdego trafienia (tekst[m.end():],
-  tekst[m.start():], tekst[m.end() + 1:]), więc czas rośnie z kwadratem liczby trafień; czytaj tekst raz od początku
-  do końca i rozpoznawaj trafienia po drodze
+  pętla po trafieniach wzorca (finditer, także w enumerate, zip i wyrażeniu listowym) czyta od nowa resztę tekstu od
+  każdego trafienia (tekst[m.end():], tekst[m.start():], tekst[m.end() + 1:]), więc czas rośnie z kwadratem liczby
+  trafień; czytaj tekst raz od początku do końca i rozpoznawaj trafienia po drodze
 files:
   - tools/**/*.py
   - src/**/*.py
@@ -12,11 +12,41 @@ metadata:
   przypadki:
     - 2295/W1/r1
 rule:
-  # Wycinek bez końca tego samego tekstu w pętli po jego trafieniach, z każdym początkiem ($M.end(), $M.start(), przesunięcie).
+  # Wycinek bez końca tekstu $S w pętli (for albo wyrażenie listowe), której iterowane wyrażenie woła gdziekolwiek
+  # finditer z $S w argumentach: R.finditer(s), re.finditer(W, s), enumerate(...) i zip(...) wokół niego.
   pattern: $S[$START:]
   regex: ':\s*\]$'
   inside:
     stopBy: end
-    pattern: |
-      for $M in $R.finditer($S):
-          $$$BODY
+    any:
+      - kind: for_statement
+        has:
+          field: right
+          matches: trafienia-tekstu
+      - any:
+          - kind: list_comprehension
+          - kind: set_comprehension
+          - kind: dictionary_comprehension
+          - kind: generator_expression
+        has:
+          kind: for_in_clause
+          has:
+            field: right
+            matches: trafienia-tekstu
+utils:
+  trafienia-tekstu:
+    any:
+      - matches: finditer-tekstu
+      - has:
+          stopBy: end
+          matches: finditer-tekstu
+  finditer-tekstu:
+    kind: call
+    all:
+      - has:
+          field: function
+          regex: '(^|\.)finditer$'
+      - has:
+          field: arguments
+          has:
+            pattern: $S
