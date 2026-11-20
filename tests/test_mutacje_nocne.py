@@ -2124,6 +2124,13 @@ def _wystapienia(tmp_path: Path, issues: list[dict[str, Any]], capsys: pytest.Ca
             id="pozniejsza-odpowiedz-odwoluje-nie-warto",
         ),
         pytest.param(
+            [f"SKRYPT {SKRYPT_A_PLIK} | nie warto, bo podstawa padła na znanej awarii runnera",
+             f"CZAS BLISKO LIMITU {SKRYPT_A_PLIK} | podmiana → bez odczytu | nie warto, bo stały czas",
+             f"```\nSKRYPT {SKRYPT_A_PLIK}\n```"],
+            [],
+            id="pozniejszy-sam-cytat-linii-nie-odwoluje-nie-warto",
+        ),
+        pytest.param(
             ["Skrypt padł na awarii runnera, więc nie warto, a czas blisko limitu jest stały.", f"```\nSKRYPT {SKRYPT_A_PLIK}\n```"],
             [f"SKRYPT {SKRYPT_A_PLIK}", f"CZAS BLISKO LIMITU {SKRYPT_A_PLIK} | podmiana → bez odczytu"],
             id="proza-i-sam-cytat-linii-nie-odpowiadaja",

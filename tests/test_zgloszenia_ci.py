@@ -416,6 +416,17 @@ def test_bez_zderzenia_gdy_main_nie_byl_zielony_tuz_przed_albo_bramka_pr_nie_byl
     assert f"Ostatni zielony commit: {zielony}" in akcja.tresc
 
 
+def test_czerwony_main_szuka_ostatniego_zielonego_najwyzej_historia_commitow_main_wstecz(main: dict[str, str], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(zgloszenia_ci, "HISTORIA", 2)
+    github = _czerwony_run(main, bramka_b="2026-10-26T09:50:00Z", main_10="cancelled")
+
+    [akcja] = zgloszenia_ci.akcje(github, Path.cwd(), 300, TERAZ)
+
+    assert isinstance(akcja, Zaloz)
+    assert "Ostatniego zielonego commitu nie ma w 2 commitach `main` wstecz." in akcja.tresc
+    assert "Ostatni zielony commit" not in akcja.tresc
+
+
 @pytest.mark.parametrize("required_9", ["success", "failure"])
 def test_zderzenie_tylko_gdy_kazdy_pr_niewidziany_przez_bramke_byl_zielony(main: dict[str, str], required_9: str) -> None:
     github = _czerwony_run(main, bramka_b="2026-10-26T09:30:00Z", required_9=required_9)
