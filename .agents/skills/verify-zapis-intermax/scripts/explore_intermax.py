@@ -1,9 +1,9 @@
 """Exhaustively check how Uporządkowanie INTERMAX, Przywracanie Kopii INTERMAX and Wpisanie raportów replace the
 Rejestr zleceń.
 
-The checker runs the real ``intermax_ordering.order_register()`` and the real ``intermax_restore.restore()`` (#472),
-which both replace INTERMAX through ``intermax_replace.replace_register`` (#716), and the real
-``intermax_cells.write_cells()`` of Wpisanie raportów (#1226, ADR 0028), which replaces it through the same sequence
+The checker runs the real ``intermax_ordering.order_register()`` and the real ``intermax_restore.restore()``,
+which both replace INTERMAX through ``intermax_replace.replace_register``, and the real
+``intermax_cells.write_cells()`` of Wpisanie raportów (ADR 0028), which replaces it through the same sequence
 without a Kopia (``intermax_replace.replace_without_copy``) after ``register_file.read``, on a synthetic INTERMAX
 (``tools/lib/atrapy/intermax.py``) in a real folder, next to a Kopie folder that already holds ``KEPT`` older Kopie of
 both names, so that their order by name differs from their order in time. The restore brings back the oldest of them, a
@@ -586,7 +586,7 @@ def _came(world: World, faults: Sequence[tuple[str, str]]) -> Came:
 @dataclass(frozen=True)
 class FindingShape:
     """The exact shape of a known finding, each part taken from its story and each required, so an entry cannot match
-    on fewer of them (#920):
+    on fewer of them:
 
     - ``came_before``: the points of the run before which the worker's change came after the read; not the pause
       before a retry, after which the run reads INTERMAX again, so a change it puts its file over there is one it had
@@ -654,7 +654,7 @@ KNOWN_FINDINGS: tuple[Excuse[FindingShape], ...] = (
 
 class _Stopped(Exception):
     """Wpisanie raportów stops with a fact: ``write_cells`` did not write, or the read refused INTERMAX. Its process
-    (#1227) turns it into a Zatrzymanie; this checker only needs that it stopped."""
+    turns it into a Zatrzymanie; this checker only needs that it stopped."""
 
 
 def _write_reports(world: World, waiting: Waiting, disk: Disk) -> None:

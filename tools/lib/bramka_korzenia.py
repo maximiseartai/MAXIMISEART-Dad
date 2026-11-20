@@ -63,8 +63,9 @@ w niej tylko bloki ``###``, a w bloku tylko linie akapitu i (w Dowodzie) bloki k
 - nagłówek ``### Czerwony main #<N>: R-KOD`` dla issue czerwonego `main` ``#N`` z linii „Część” albo „Naprawia”
   z kodem, który wybiera autor;
 - potem ``Wyrwany w #M`` (link GitHuba do PR tego repozytorium) albo ``Szczebel: (x) - mechanizm`` ze szczeblem od
-  (a) do (e), przy szczeblu niższym niż (a) ``Wyżej nie, bo:`` z jedną linią ``(y) - zdanie`` na każdy wyższy
-  szczebel, w kolejności drabiny (pierwsza może stać w linii pola), i na końcu pole dowodu: w bloku Ważnego wątku,
+  (a) do (e), przy szczeblu niższym niż (a) ``Wyżej nie, bo:`` z jedną linią ``(y) - zdanie`` na każdy szczebel
+  przed nim w pierwszeństwie ``PRIORITY`` (piramida pola ``Mechanizm:``, ADR 0046: reguła (d) przed testem (c)),
+  w kolejności liter (pierwsza może stać w linii pola), i na końcu pole dowodu: w bloku Ważnego wątku,
   w którym obowiązuje warunek strażnika (``guarded``, ``bramka_straznika.applies``), jedna linia ``Strażnik: <selektor>``
   z listy ``straznik.parse`` (także po ``Wyrwany w #M``), której dowód liczy ``bramka_straznika``; w bloku czerwonego
   `main` i w wątku sprzed warunku ``Dowód:`` jak w szablonie werdyktu (``szablon_werdyktu.evidence_problems``: od
@@ -100,7 +101,7 @@ PATTERN_SECTION = "Root section"
 FAILURES = "Co jest porażką"
 FAILURE_FILES = (".agents/skills/przeglad/SKILL.md", ".agents/skills/przeglad/porazka-adr.md")
 RED_MAIN_WORDS = ("Część", naprawia.FIXES)
-RUNGS = "abcde"
+PRIORITY = "abdce"
 HIGHER = re.compile(r"\(([a-e])\) - (\S.*)")
 WHY_NOT = "Wyżej nie, bo:"
 EVIDENCE = "Dowód:"
@@ -259,7 +260,7 @@ def _fields(block: Block, pull: Pull, *, guarded: bool) -> list[str]:
         return [f"{label}: pierwsza linia bloku to „Szczebel: (a) - mechanizm” ze szczeblem od (a) do (e) albo „Wyrwany w #M”, a jest {first.shown() if first else 'koniec'}"]
     found = []
     evidence = next((index for index, item in enumerate(units) if _line(item, field) is not None), None)
-    higher = RUNGS[: RUNGS.index(rung[1])]
+    higher = sorted(PRIORITY[: PRIORITY.index(rung[1])])
     why = units[1 : evidence if evidence is not None else len(units)]
     if higher and _line(why[0] if why else None, WHY_NOT) is None:
         found.append(f"{label}: po Szczeblu ({rung[1]}) linia „{WHY_NOT} (a) - zdanie” z jedną linią na każdy wyższy szczebel {', '.join(f'({letter})' for letter in higher)}")

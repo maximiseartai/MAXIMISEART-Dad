@@ -38,21 +38,17 @@ from ostatnie_linie import MUTACJE_OK
 
 FOLDER_SKILLI = (".agents", "skills")
 PATTERN = "check_*_mutations.py"
-# Wywołanie skryptu mutacji w SKILL.md; ścieżka bez ``.agents`` na początku liczy się od folderu skilla.
 MENTION = re.compile(r"[\w.\\/-]*scripts[\\/]check_\w+_mutations\.py")
 BASELINE = "PODSTAWA"
 # Uruchamiacz kroku: proces skryptu mutacji, jego polecenie, części i limit czasu; zmiana każdego z nich może zmienić
 # werdykt każdego skryptu. Silnik, który skrypt importuje, wchodzi do ``watched`` z domknięcia importów skryptu.
 LAUNCHER = ("tools/ci/wykonaj_zadanie.py", "tools/lib/kroki_skilli.py")
-# Powód w ``Hits`` dla pliku w folderze skilla.
 FOLDER = "folder skilla"
 # Folder modelu TLA+ w skillu: skrypt mutacji, który psuje tylko pliki w nim, biegnie też na pull request (ADR 0021).
 MODEL = "model"
 
 
 def _root(skill: Path) -> Path:
-    """Korzeń checkoutu skilla ``skill`` (folder w ``<root>/.agents/skills``)."""
-
     return skill.parents[len(FOLDER_SKILLI)]
 
 
@@ -84,11 +80,6 @@ def _values(skill_md: Path, key: str) -> list[str]:
 
 
 def guarded(skill_md: Path) -> tuple[str, ...] | None:
-    """Globy z klucza ``pilnuje`` frontmattera ``SKILL.md``; ``None``, gdy klucza nie ma.
-
-    Klucz to linia ``pilnuje:``, a pod nią linie ``  - <glob>``.
-    """
-
     front = _front(skill_md)
     keys = [number for number, line in enumerate(front) if line.split(":", 1)[0] == "pilnuje"]
     if not keys:
@@ -106,11 +97,6 @@ def guarded(skill_md: Path) -> tuple[str, ...] | None:
 
 
 def ci_parts(skill_md: Path) -> int:
-    """Najwięcej części polecenia ``ci`` z klucza ``ci-czesci`` frontmattera ``SKILL.md``; bez klucza 1.
-
-    Klucz to jedna linia ``ci-czesci: <liczba całkowita od 1>``.
-    """
-
     values = _values(skill_md, "ci-czesci")
     if not values:
         return 1
@@ -136,11 +122,6 @@ def ci_command(skill_md: Path) -> tuple[str, ...] | None:
 
 
 class Hits(NamedTuple):
-    """Zmienione pliki, przy których skill obowiązuje: plik → glob ``pilnuje``, który go obejmuje, albo ``FOLDER``.
-
-    ``always`` to powód, gdy skill obowiązuje przy każdej zmianie: nie ma klucza ``pilnuje`` albo nie da się go odczytać.
-    """
-
     files: dict[str, str]
     always: str | None
 
@@ -186,14 +167,10 @@ class Step(NamedTuple):
 
     @property
     def folder(self) -> str:
-        """Folder skilla od korzenia z ``/`` na końcu, np. ``.agents/skills/verify-x/``."""
-
         return f"{_name(self.skill, self.root)}/"
 
 
 def _lost(root: Path, scripts: list[Path]) -> dict[str, str]:
-    """Skrypty mutacji checkoutu ``root``, których runner by nie uruchomił, z powodem."""
-
     skills = root.joinpath(*FOLDER_SKILLI)
     lost = {
         _name(path, root): f"nazwa spoza wzorca scripts/{PATTERN}"
@@ -212,8 +189,6 @@ def _lost(root: Path, scripts: list[Path]) -> dict[str, str]:
 
 @cache
 def _browser(skill: Path) -> bool:
-    """Skrypty skilla importują Playwright; skrypt, który się nie parsuje, liczy się jak taki, co importuje."""
-
     for path in skill.glob("scripts/**/*.py"):
         try:
             tree = ast.parse(path.read_bytes(), filename=str(path))
@@ -228,8 +203,6 @@ def _browser(skill: Path) -> bool:
 
 
 def _count(script: Path) -> int:
-    """Liczba mutacji skryptu; tabela, której nie da się wczytać, to jedna niepodzielna część, która pokaże swój błąd."""
-
     try:
         return max(1, len(_mutations(script)))
     except Exception:  # noqa: BLE001 - błąd tabeli zgłasza sam skrypt mutacji, gdy biegnie
@@ -237,9 +210,6 @@ def _count(script: Path) -> int:
 
 
 def _steps(root: Path, failed: dict[str, str]) -> list[Step]:
-    """Kroki wszystkich skilli checkoutu ``root``, podstawa każdego skilla z kluczem ``ci`` przed jego skryptami; zły
-    klucz ``ci`` albo ``ci-czesci`` trafia do ``failed``."""
-
     folder = root.joinpath(*FOLDER_SKILLI)
     skills: dict[Path, list[Path]] = {skill_md.parent: [] for skill_md in folder.glob("*/SKILL.md") if _values(skill_md, "ci")}
     for script in sorted(folder.glob(f"*/scripts/{PATTERN}")):
@@ -325,8 +295,6 @@ class Katalog:
         return cls(root, tuple(found), failed)
 
     def krok(self, klucz: Klucz) -> Step:
-        """Krok po kluczu jednostki planu (rodzaju ``Rodzaj.SKILL``, część bez znaczenia); ``KeyError``, gdy go nie ma."""
-
         return {Klucz(Rodzaj.SKILL, step.key): step for step in self.kroki}[klucz.calosc]
 
     def skille(self, wzorzec: str = "*") -> list[Path]:

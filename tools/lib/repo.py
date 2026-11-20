@@ -176,8 +176,6 @@ def command(*arguments: str) -> tuple[str, ...]:
 
 
 def commit(root: Path, revision: str) -> str | None:
-    """Pełny SHA commitu ``revision``; ``None``, gdy repozytorium go nie zna."""
-
     try:
         return git(root, "rev-parse", "--verify", "--quiet", f"{revision}^{{commit}}").strip()
     except subprocess.CalledProcessError:

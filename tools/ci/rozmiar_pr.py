@@ -54,7 +54,6 @@ class Etykieta:
 
 
 _DOPISEK = "efektywnych zmienionych linii (bez plików testów w PR mieszanym)"
-# Górna granica (wyłącznie) i etykieta; liczba ≥ ostatniej granicy to ``XXL``.
 PROGI = (
     (10, Etykieta("size:XS", "0e8a16", f"0–9 {_DOPISEK}")),
     (30, Etykieta("size:S", "5ebd3e", f"10–29 {_DOPISEK}")),
@@ -96,8 +95,6 @@ class Rozmiar:
 
     @property
     def linie(self) -> int:
-        """Linie, od których zależy etykieta: bez testów, a w PR z samymi testami linie testów."""
-
         return self.bez_testow or self.testow
 
     @property
@@ -143,9 +140,6 @@ def zmierz(root: Path, baza: str, glowa: str) -> Rozmiar:
 
 
 def wpisy(tekst: str) -> dict[str, str]:
-    """Każdy wpis listy w treści TOML ``tekst`` (jednostka i każdy plik jej testów) z nazwą swojej grupy. Inny kształt
-    niż tabele ``GRUPY`` z podtabelą ``PRZEPUSZCZA``, w których jednostka ma listę plików testów, i wpis, który stoi dwa razy, to ``ValueError``."""
-
     wynik: dict[str, str] = {}
     for grupa, jednostki in tomllib.loads(tekst).items():
         if grupa not in GRUPY or not isinstance(jednostki, dict) or not isinstance(oznaczone := jednostki.pop(PRZEPUSZCZA, {}), dict):
@@ -167,8 +161,6 @@ def obejmujace(wpisy: Mapping[str, str], sciezka: str) -> list[str]:
 
 
 def _grupa(lista: Mapping[str, str], sciezka: str) -> str | None:
-    """Grupa pliku ``sciezka`` z jego wpisu na liście ``lista``, a bez wpisu z reguły katalogu ``REGULY``."""
-
     grupy = {lista[wpis] for wpis in obejmujace(lista, sciezka)}
     if grupy:
         # Dwa wpisy dwóch grup to błąd listy, który jej test łapie; do tej pory liczy się ostrożnie.
@@ -240,8 +232,6 @@ def zmierz_szope(root: Path, baza: str, glowa: str) -> Szopa:
 
 
 def _zaloz(github: GitHub, nowa: Etykieta) -> list[str]:
-    """Zakłada albo poprawia w repozytorium etykietę ``nowa``; linia na akcję."""
-
     linie = []
     w_repo = {wpis["name"]: wpis for wpis in strony(github, f"{REPO}/labels")}
     sciezka = urllib.parse.quote(nowa.nazwa, safe="")
@@ -266,8 +256,6 @@ def _zaloz(github: GitHub, nowa: Etykieta) -> list[str]:
 
 
 def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
-    """Zakłada albo poprawia etykietę ``nowa``, nadaje ją PR-owi ``pr`` i zdejmuje inne etykiety rozmiaru; linia na akcję."""
-
     linie = _zaloz(github, nowa)
     na_pr = {wpis["name"] for wpis in strony(github, f"{REPO}/issues/{pr}/labels")}
     for stara in sorted(na_pr & {e.nazwa for e in ETYKIETY} - {nowa.nazwa}):
@@ -284,8 +272,6 @@ def nadaj(github: GitHub, pr: int, nowa: Etykieta) -> list[str]:
 
 
 def oznacz(github: GitHub, pr: int, powieksza: bool) -> list[str]:
-    """Etykieta ``POWIEKSZA`` jest na PR ``pr`` wtedy i tylko wtedy, gdy ``powieksza``; linia na akcję."""
-
     na_pr = {wpis["name"] for wpis in strony(github, f"{REPO}/issues/{pr}/labels")}
     if powieksza and POWIEKSZA.nazwa not in na_pr:
         linie = _zaloz(github, POWIEKSZA)

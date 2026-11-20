@@ -36,7 +36,6 @@ class CollectiveRows:
     without_worker: list[int]
     """Numery Wierszy danych bez Wykonawcy w kolejności z pliku."""
     orders: CollectiveOrders
-    """Dozwolona treść każdego Wiersza danych odczytu, z Ilościami tylko dla INEA."""
     inea_only: Cleared
     """Liczba komórek z wartością, które Wiersze danych z Wykonawcą straciły jako Ilości tylko dla INEA (bez Zielonych
     pól, które mają 1)."""
@@ -60,7 +59,6 @@ def read_data_rows(path: Path, files: DadFiles, rules: QuantityRules) -> Collect
 @dataclass(frozen=True)
 class NumberedOrders:
     rows: tuple[NumberedOrder, ...]
-    """Każdy Wiersz danych w kolejności z pliku."""
     price_list: Mapping[str, str]
     """Litera kolumny N:AP i ``AS`` → nazwa pozycji cennika z wiersza 17."""
 

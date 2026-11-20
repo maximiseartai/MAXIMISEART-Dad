@@ -52,8 +52,6 @@ class Polaczenie(socket.socket):
         return super().recv(bufsize, flags)
 
     def _czeka_na_dane(self) -> bool:
-        """Czy są dane albo koniec od klienta (prawda), czy przyszła flaga końca serwera (fałsz)."""
-
         while not self.koniec.is_set():
             if select.select([self], [], [], CZEKANIE_S)[0]:
                 return True

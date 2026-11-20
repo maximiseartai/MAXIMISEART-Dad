@@ -1,14 +1,3 @@
-"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``, porównuje wynik z jej znanymi znaleziskami i
-opowiada każdy kontrprzykład krokami kodu. Konfiguracje, TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu
-z kodem z ``model/definicje.json`` ma ``tools/lib/model_tlc.py``: rozjazd skrypt tylko
-ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie biegnie (``tools/ci/wykonaj_zadanie.py``).
-W CI część ``MUTACJE_CZESC=k/n`` (``ci-czesci`` w ``SKILL.md``) sprawdza tylko swój kawałek ``UNITS``
-(``skrypt_skilla.part``); jawne ``--config`` (skrypt mutacji, człowiek) bierze swoje konfiguracje bez względu na część.
-
-    .venv/bin/python .agents/skills/verify-urwane-uruchomienie/scripts/sprawdz_urwane_uruchomienie.py
-    py -3 .agents\\skills\\verify-urwane-uruchomienie\\scripts\\sprawdz_urwane_uruchomienie.py
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
@@ -34,9 +23,6 @@ UNITS = (
 
 
 def arguments(argv: Sequence[str], environment: Mapping[str, str] = os.environ) -> list[str]:
-    """Argumenty ``main``: bez ``--config`` konfiguracje części ``MUTACJE_CZESC`` z ``UNITS`` (bez części wszystkie);
-    zła część to ``ValueError``."""
-
     if any(argument.partition("=")[0] == "--config" for argument in argv):
         return list(argv)
     return [*argv, *(f"--config={name}" for unit in part(UNITS, environment) for name in unit)]
@@ -68,7 +54,6 @@ _STEPS = {
 }
 
 
-# Akcja, którą opowiada ``_read``, bo jej słowa zależą od tego, co ``close`` postanowił.
 _READ = "Czytaj"
 
 
@@ -189,7 +174,6 @@ MODEL = Model(
     werdykt="URWANE URUCHOMIENIE",
     skill=Path(__file__).resolve().parents[1],
     specyfikacja="UrwaneUruchomienie.tla",
-    # Zmienna historii każdej obietnicy: zbiór przyczyn w chwili każdego zdarzenia, które ją łamie.
     obietnice={
         "DziennikPoKolejce": Obietnica(
             "dziennik Urwanego Uruchomienia zniknął, a jego Logi nie są najnowszą wersją, którą przyjęła Kolejka wysyłki, "

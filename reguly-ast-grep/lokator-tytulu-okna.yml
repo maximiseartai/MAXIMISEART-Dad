@@ -10,8 +10,10 @@ files:
 metadata:
   przypadki:
     - 1533/W1/r2
+    - 4e4838cef6acb314b5c8222d0f67bb9ed7dc37b2 .agents/skills/verify-centrum-rozliczen/scripts/drive/common.py:212
 rule:
   # Lokator nagłówka bez name= to druga droga do tytułu okna obok settings_title (#1553; powrót w metadata.przypadki).
+  # Drugi przypadek to lokator z samym level=2 (#1728 W1 r1: level= nie odróżnia tytułu okna od tytułu powiadomienia).
   # Reguła czyta tylko literał roli: argument z miejsca albo role=, po zdjęciu dowolnej liczby nawiasów, to napis
   # o wartości heading w dowolnym zapisie literału. Każde inne wyrażenie roli (nazwa, sklejanie, operator, wywołanie,
   # f-napis ze wstawką) to znana luka „rola nie jest literałem” w ZNANE_LUKI_LOKATORA w tests/test_zapadki.py.

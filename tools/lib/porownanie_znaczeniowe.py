@@ -111,8 +111,6 @@ def _compare_workbooks(reference: Path, candidate: Path) -> dict[str, int]:
 
 
 def _parts(path: Path) -> dict[str, bytes]:
-    """Części archiwum potrzebne poza openpyxl: ``xl/workbook.xml`` i ``xl/externalLinks/*``."""
-
     with zipfile.ZipFile(path) as archive:
         return {
             name: archive.read(name)
@@ -144,8 +142,6 @@ def _defined_names(parts: dict[str, bytes]) -> dict[tuple[str | None, str | None
 
 
 def _definition(text: str | None) -> str:
-    """Definicja nazwy znaczeniowo: ``'Sheet1'!$A$1`` i ``Sheet1!$A$1`` to to samo odwołanie."""
-
     return _QUOTED_SHEET.sub(lambda match: match.group(1).replace("''", "'") + "!", text or "")
 
 
@@ -178,8 +174,6 @@ def _sheet(workbook: Workbook, title: str) -> Worksheet:
 
 
 class _Styles:
-    """Rozwiązany styl jako mała liczba: ten sam numer dla równych stylów z obu skoroszytów pary."""
-
     def __init__(self) -> None:
         self._canonical: dict[tuple[Hashable, ...], int] = {}
         self._by_style_array: dict[tuple[int, tuple[int, ...]], int] = {}
@@ -245,8 +239,6 @@ def _hyperlink(cell: Cell | MergedCell | None) -> tuple[str | None, str | None] 
 
 
 def _value(cell: Cell | MergedCell | None) -> tuple[str, object]:
-    """Wartość znaczeniowo: 3 i 3.0 to ta sama liczba, ale prawda to nie 1."""
-
     value: object = None if cell is None else cell.value
     if isinstance(value, bool):
         return ("logiczna", value)

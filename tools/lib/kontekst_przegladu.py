@@ -42,8 +42,6 @@ STAKE_FULL = "STAWKA | pełna"
 
 
 def _skills_for_change(head: str, fork: str) -> list[str]:
-    """Wynik ``tools/skille_dla_zmiany.py`` z kopii commitu ``head`` od ``fork``; ostatnia linia to zawsze ``SKILLE VERIFY``."""
-
     unknown = SKILLE_VERIFY + "nieznane ({})"
     with potomne.commit_copy(ROOT, head) as copy:
         if not (copy / SKILLS_FOR_CHANGE).is_file():

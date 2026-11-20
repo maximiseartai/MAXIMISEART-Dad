@@ -45,8 +45,6 @@ class Step:
 
     @property
     def ci(self) -> tuple[str, ...]:
-        """``command`` bez końca ``local``: polecenie kroku CI z interpreterem na początku."""
-
         return self.command[: len(self.command) - len(self.local)]
 
 

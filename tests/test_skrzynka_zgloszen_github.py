@@ -14,7 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
-from rozliczenia.centrum.github import HttpRequest, HttpResponse, headers
+from rozliczenia.centrum.github import HttpRequest, HttpResponse, headers, send
 from rozliczenia.centrum.report_box import (
     Archive,
     Asset,
@@ -176,6 +176,14 @@ def test_skrzynka_wysyla_do_githuba_zadanie_jego_metoda(
 
     assert answer.status == 200
     assert [seen.method for seen in box.asked] == [method]
+
+
+def test_odpowiedz_githuba_dluzsza_niz_limit_odczytu_jest_ucieta_do_limitu() -> None:
+    lista = Answer(body=["x" * 1000])
+    with github_api({"/lista": lista}) as api:
+        answer = send(HttpRequest("GET", f"{api.url}/lista", headers(), None), proxy="direct", key_after_redirect="nowhere", timeout_s=30, read_limit=100)
+
+    assert (answer.status, answer.body) == (200, json.dumps(lista.body).encode()[:100])
 
 
 def test_przekierowanie_skrzynki_na_adres_z_nieczytelnym_portem_to_skrzynka_nieosiagalna(

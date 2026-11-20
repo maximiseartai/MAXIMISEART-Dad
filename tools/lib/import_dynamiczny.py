@@ -61,7 +61,6 @@ def modul(nazwa: str) -> ModuleType:
 
 
 def modul_z_pliku(nazwa: str, plik: Path) -> ModuleType:
-    """Moduł wykonany z pliku ``plik`` pod nazwą ``nazwa``, bez wpisu w ``sys.modules``."""
     _odmow_testow(nazwa, [str(plik)])
     spec = importlib.util.spec_from_file_location(nazwa, plik)
     if spec is None or spec.loader is None:
@@ -72,5 +71,4 @@ def modul_z_pliku(nazwa: str, plik: Path) -> ModuleType:
 
 
 def jest_modul(nazwa: str, sciezki: Sequence[str] | None = None) -> bool:
-    """Czy moduł najwyższego poziomu ``nazwa`` jest w ``sciezki`` (bez nich w ``sys.path``); nie wykonuje kodu modułu."""
     return importlib.machinery.PathFinder.find_spec(nazwa, None if sciezki is None else list(sciezki)) is not None

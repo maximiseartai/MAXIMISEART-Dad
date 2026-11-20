@@ -1,4 +1,4 @@
-"""Show that the cleanup tests fail when a run of this skill again leaves workbooks or a growing Excel behind (#390).
+"""Show that the cleanup tests fail when a run of this skill again leaves workbooks or a growing Excel behind.
 
 Each mutation runs on its own copy of the checkout (``tools/lib/silnik_mutacji.py``) with
 ``tests/test_sprzatanie_excela.py``, which fakes Excel's AppleScript, so it also runs on

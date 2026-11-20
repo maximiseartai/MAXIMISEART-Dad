@@ -428,7 +428,6 @@ class RunCardMissing(Model):
 
 
 RunCard = Annotated[RunRestored | RunCardMissing, Field(discriminator="state")]
-"""Karta Uruchomienia z wiersza Historii."""
 
 
 class RunEvent(Model):

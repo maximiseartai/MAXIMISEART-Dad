@@ -13,7 +13,7 @@ import stan_pr
 from stan_pr import Pull
 import straznik
 import szablon_werdyktu
-from szablon_werdyktu import CODE, Item, Root
+from szablon_werdyktu import CODE, Item, Mechanism, Root
 import werdykt_pr
 
 ZASADY = """Rejestr korzeni (ADR 0031, decyzje Q13, Q22, Q25): wystąpienia kodów korzeni czytane z GitHuba dla bramki korzenia
@@ -189,12 +189,14 @@ def root_lines(units: Sequence[Item], repository: str) -> list[tuple[github.Link
 class Major:
     """Ważne ``heading`` (``W1 r2``) werdyktu ``FAIL`` rundy ``round`` z kodem z ostatniego werdyktu, który go dotyczy
     (``None``, gdy żaden nie podał kodu w szablonie), i chwilą Ważnego ``since``, czyli utworzenia werdyktu ``FAIL``
-    rundy ``round`` (``None`` bez chwili); rozstrzygnięcie innym kodem (Q25) zmienia kod, a nie chwilę."""
+    rundy ``round`` (``None`` bez chwili); rozstrzygnięcie innym kodem (Q25) zmienia kod, a nie chwilę, a ``mechanism``
+    to szczebel z pola ``Mechanizm:`` Ważnego tego werdyktu ``FAIL`` (``None`` bez pola)."""
 
     heading: str
     round: int
     code: str | None
     since: datetime | None = None
+    mechanism: Mechanism | None = None
 
 
 def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[tuple[int, Root]]]:
@@ -210,9 +212,11 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
             for label in dict.fromkeys(labels):
                 found[f"{label} r{current.number}"] = Major(f"{label} r{current.number}", current.number, None, _moment(current.verdict.when))
             for root in current.findings.majors:
+                key = f"{root.label} r{current.number}"
                 if root.code is not None:
-                    key = f"{root.label} r{current.number}"
                     found[key] = replace(found[key], code=root.code)
+                if root.mechanism is not None:
+                    found[key] = replace(found[key], mechanism=root.mechanism)
         for resolution in current.findings.resolutions:
             key = f"{resolution.label} r{resolution.round}"
             if key in found:
