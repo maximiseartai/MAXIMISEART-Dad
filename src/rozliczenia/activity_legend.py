@@ -46,7 +46,6 @@ from .collective_layout import QUANTITY_LETTERS, REMARKS_AMOUNT, letter
 from .quantity_engine import BUILT_IN_COLUMNS, MAX_VALUE, Quantities
 
 NUMBER: Final = "{n}"
-"""Miejsce na liczbę w zapisie Kodu czynności."""
 SHOWN_NUMBER: Final = "#"
 """Miejsce na liczbę w zapisie pokazanym tacie: w zdaniach kodów, w odmowach i w formularzu kodu."""
 AMOUNT_COLUMN: Final = letter(REMARKS_AMOUNT)
@@ -54,9 +53,7 @@ AMOUNT_COLUMN: Final = letter(REMARKS_AMOUNT)
 COLUMNS: Final = tuple(column for column in QUANTITY_LETTERS if column not in BUILT_IN_COLUMNS)
 """Kolumny, w które kod wpisuje Ilość usług: ``N:AP`` bez wbudowanych rachunków P, Q i S."""
 FILL_COLUMNS: Final = (*COLUMNS, AMOUNT_COLUMN)
-"""Kolumny, które kod wypełnia kolorem."""
 YES_NO: Final = frozenset({"tak", "nie"})
-"""Słowa, które stoją w opisie obok kodów i nigdy nie są kodem."""
 
 
 class FillColour(StrEnum):
@@ -75,15 +72,11 @@ _ARGB: Final[Mapping[FillColour, str]] = {FillColour.GREEN: "FF92D050", FillColo
 
 @dataclass(frozen=True)
 class FixedColumn:
-    """Kod wpisuje w jedną kolumnę bez względu na liczbę w zapisie."""
-
     column: str
 
 
 @dataclass(frozen=True)
 class NumberRange:
-    """Liczba z zapisu od ``low`` do ``high`` włącznie wybiera kolumnę ``column``."""
-
     low: int
     high: int
     column: str
@@ -91,8 +84,6 @@ class NumberRange:
 
 @dataclass(frozen=True)
 class ColumnByNumber:
-    """Kod wybiera kolumnę liczbą z zapisu; przedziały są rozłączne, w kolejności z pliku."""
-
     ranges: tuple[NumberRange, ...]
 
     def column(self, number: int) -> str | None:
@@ -120,7 +111,6 @@ class ActivityCode:
     value: int = 1
     """Ilość usług w kolumnie ``column`` za jedno wystąpienie; bez kolumny 1."""
     amount: int | None = None
-    """Kwota w ``AS`` za jedno wystąpienie; ``None``: bez kwoty."""
     fills: tuple[CellFill, ...] = ()
     counts_in_fault: bool = True
 
@@ -141,17 +131,12 @@ class LegendRefused(ValueError):
 
 @dataclass(frozen=True)
 class _Pattern:
-    """Zapis ``spelling`` kodu ``owner``."""
-
     owner: ActivityCode
     spelling: str
 
 
 @dataclass(frozen=True)
 class ActivityLegend:
-    """Legenda czynności: identyfikatory kodów są różne, słowo pasuje najwyżej do jednego zapisu, ``tak`` i ``nie`` do
-    żadnego, a każdy kod coś wyznacza."""
-
     codes: tuple[ActivityCode, ...]
     _patterns: tuple[_Pattern, ...] = field(init=False, repr=False, compare=False)
     _spellings: re.Pattern[str] = field(init=False, repr=False, compare=False)
@@ -167,9 +152,6 @@ class ActivityLegend:
         object.__setattr__(self, "_spellings", re.compile("|".join(_alternative(index, pattern.spelling) for index, pattern in enumerate(patterns))))
 
     def read(self, text: str, *, fault: bool) -> DescriptionRead:
-        """Wynik legendy dla opisu technika ``text`` zlecenia, które jest usterką (``fault``) albo nie (zob. rachunek w
-        opisie modułu)."""
-
         found: list[tuple[FoundCode, ActivityCode | None]] = []
         spelled: list[str] = []
         problems: list[DescriptionProblem] = []
@@ -230,8 +212,6 @@ class FoundCode:
 
     @property
     def spelled(self) -> str:
-        """Kod w zapisie legendy z liczbą z opisu w miejscu ``{n}`` (``inst30m``), nie w zapisie technika."""
-
         return self.spelling if self.number is None else self.spelling.replace(NUMBER, str(self.number))
 
 
@@ -264,8 +244,6 @@ class WithCodes:
 
 @dataclass(frozen=True)
 class NumberOutOfRange:
-    """Kod czynności ``code`` w zapisie ``spelling`` z liczbą ``number`` spoza przedziałów kodu."""
-
     code: str
     spelling: str
     number: int
@@ -280,8 +258,6 @@ class NumberOutOfRange:
 
 @dataclass(frozen=True)
 class ColumnTwice:
-    """W kolumnę Ilości usług ``column`` wpisuje więcej niż jeden kod: ``codes`` w kolejności z opisu, z powtórzeniami."""
-
     column: str
     codes: tuple[str, ...]
     reason: ClassVar[str] = "kolumna Ilości usług trafiona drugi raz"
@@ -293,8 +269,6 @@ class ColumnTwice:
 
 @dataclass(frozen=True)
 class TwoColours:
-    """Kody ``codes`` (w kolejności z opisu) wypełniają kolumnę ``column`` różnymi kolorami."""
-
     column: str
     codes: tuple[str, ...]
     reason: ClassVar[str] = "kolumna wypełniona dwoma kolorami"
@@ -308,7 +282,6 @@ DescriptionProblem = NumberOutOfRange | ColumnTwice | TwoColours
 """Powód Błędu opisu: ``reason`` to rodzaj powodu, a ``detail`` kod z liczbą albo kolumna z identyfikatorami kodów, bez
 tekstu technika."""
 REASONS: Final = tuple(kind.reason for kind in (NumberOutOfRange, ColumnTwice, TwoColours))
-"""Rodzaje powodów Błędu opisu w stałej kolejności."""
 
 
 @dataclass(frozen=True)
@@ -322,7 +295,6 @@ class DescriptionError:
 
 
 DescriptionRead = NoCodes | WithCodes | DescriptionError
-"""Wynik Legendy czynności dla opisu technika ``CZYNNOŚCI ZREALIZOWANE``."""
 
 NO_CODES: Final = NoCodes()
 
@@ -335,8 +307,6 @@ def problem_text(problem: DescriptionProblem) -> str:
 
 
 def shown_spelling(spelling: str) -> str:
-    """Zapis Kodu czynności tak, jak widzi go tata: miejsce na liczbę to ``#`` (``inst#m``)."""
-
     return spelling.replace(NUMBER, SHOWN_NUMBER)
 
 
@@ -357,9 +327,6 @@ def _column(choice: ColumnChoice | None, number: int | None) -> str | None:
 
 
 def _alternative(index: int, spelling: str) -> str:
-    """Wzorzec zapisu numer ``index`` w alternatywie legendy: znaki zapisu, a ``{n}`` jako liczba w grupie
-    ``liczba<index>``."""
-
     atoms = [rf"(?P<{_NUMBER_GROUP}{index}>[0-9]+)" if part == NUMBER else re.escape(part) for part in re.split(r"(\{n\})", spelling) if part]
     return rf"(?P<{_SPELLING_GROUP}{index}>" + "".join(atoms) + ")"
 
@@ -383,8 +350,6 @@ def _is_number(value: object) -> bool:
 
 
 def _check_code(code: ActivityCode, ids: set[str], earlier: list[_Pattern]) -> None:
-    """Niezmienniki kodu ``code``; ``earlier``: zapisy kodów przed nim w legendzie, do których dopisuje swoje."""
-
     path = f"kody[{code.id}]"
     _require(bool(code.id) and code.id == code.id.strip(), f"{path}.id", "Kod potrzebuje nazwy bez spacji na początku i końcu.")
     _require(code.id not in ids, f"{path}.id", f"Kod „{code.id}” jest w legendzie dwa razy.")
@@ -433,8 +398,6 @@ def _check_code(code: ActivityCode, ids: set[str], earlier: list[_Pattern]) -> N
 
 
 def _shared_word(before: _Pattern, pattern: _Pattern, word: str) -> str:
-    """Zdanie odmowy dla taty: zapis ``pattern`` i wcześniejszy zapis ``before`` pasują do słowa ``word``."""
-
     spelling, other = shown_spelling(pattern.spelling), shown_spelling(before.spelling)
     name = shown_spelling(before.owner.spellings[0])
     if before.spelling == pattern.spelling:
@@ -472,14 +435,10 @@ def _common_word(first: str, second: str) -> str | None:
 
 
 def _atoms(spelling: str) -> tuple[str, ...]:
-    """Zapis jako elementy: każdy znak osobno, a ``{n}`` jako jeden element."""
-
     return tuple(atom for part in re.split(r"(\{n\})", spelling) for atom in ((part,) if part == NUMBER else part))
 
 
 def _closure(state: _State) -> tuple[_State, ...]:
-    """Stany bez czytania znaku: liczba z cyfrą może się skończyć."""
-
     place, in_number = state
     return (state, (place + 1, False)) if in_number else (state,)
 
@@ -492,8 +451,6 @@ def _readable(atoms: tuple[str, ...], state: _State) -> str:
 
 
 def _after(atoms: tuple[str, ...], state: _State, char: str) -> tuple[_State, ...]:
-    """Stany po przeczytaniu znaku ``char``."""
-
     return tuple(
         (place, True) if atoms[place] == NUMBER else (place + 1, False)
         for place, _ in _closure(state)
