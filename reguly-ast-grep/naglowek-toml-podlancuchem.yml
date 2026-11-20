@@ -20,7 +20,7 @@ rule:
     - has:
         nthChild: 1
         kind: string
-        regex: '^[rbf]?["'']\['
+        regex: '^[rbf]?["''](\\n)*\['
     - has:
         stopBy: end
         kind: call

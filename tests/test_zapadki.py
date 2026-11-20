@@ -2202,6 +2202,7 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("krok-mypy-ruff-poza-krokami", f"{_SYS}POLECENIE = (sys.executable, '-m', 'ruff', 'check')\n", [3]),
     ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "pytest", "-q"]\n', []),
     ("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', []),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', []),
     ("naglowek-toml-podlancuchem", f'{_TOML}"[tool.uv" in plik.read_text(encoding="utf-8")\n', [5]),
     ("naglowek-toml-podlancuchem", f'{_TOML}"[project]" not in plik.read_text()\n', [5]),
     ("naglowek-toml-podlancuchem", f'import tomllib\n\n{_TOML}"uv" in tomllib.loads(plik.read_text())["tool"]\n', []),
@@ -2242,6 +2243,22 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
 
 
+@needs_ast_grep
+@pytest.mark.parametrize(
+    "naglowek",
+    [
+        pytest.param('"[tool.uv"', id="nawias-na-poczatku"),
+        pytest.param('"\\n[tool.uv]"', id="nawias-po-nowej-linii"),
+        pytest.param('"\\n\\n[project]"', id="nawias-po-dwoch-nowych-liniach"),
+    ],
+)
+def test_naglowek_toml_podlancuchem_zglasza_naglowek_od_poczatku_linii(tmp_path: Path, naglowek: str) -> None:
+    base = _empty_base(tmp_path)
+    _probki_w_zakresie(tmp_path, "naglowek-toml-podlancuchem", {"probka": f"{_TOML}{naglowek} in plik.read_text()\n"})
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(5, "naglowek-toml-podlancuchem")]
+
+
 # Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
 # ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
 # konfiguracją swojego katalogu.
@@ -2266,6 +2283,7 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "szukanie przez find": f"{_BOX}wyjscie.find(box_boat.KOMUNIKAT) >= 0\n",
     },
     "stosunek-czasow-sciany": {
+        "stosunek zapisany mnożeniem": f"{_ZEGAR}    assert time.perf_counter() - srodek < 2 * (srodek - start)\n",
         "czasy w nazwanych zmiennych": f"{_ZEGAR}    pierwszy = srodek - start\n    drugi = time.perf_counter() - srodek\n    assert drugi / pierwszy < 2\n",
     },
 }

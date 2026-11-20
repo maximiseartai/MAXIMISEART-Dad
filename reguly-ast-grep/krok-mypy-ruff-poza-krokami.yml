@@ -20,6 +20,11 @@ rule:
     any:
       - kind: list
       - kind: tuple
+  not:
+    precedes:
+      stopBy: end
+      kind: string
+      regex: '^["'']format["'']$'
   follows:
     pattern: ','
     follows:
