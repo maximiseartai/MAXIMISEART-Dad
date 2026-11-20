@@ -21,6 +21,7 @@ import pytest
 
 import na_boxie
 import potomne
+from tests.fixtures.git_repo import git
 import testy_scalenia
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="boatbox biegnie tylko na Macu, a przeniesienie to exec")
@@ -186,8 +187,17 @@ def test_slowo_ktorego_box_nie_zobaczy_to_odmowa_przed_startem_boxa(
     assert f"NA BOXIE ODMOWA | box nie zobaczy: {unseen(tmp_path)};" in done.stderr
 
 
-def test_venv_repo_box_ma_wlasne_wiec_slowo_pod_nim_nie_jest_odmowa() -> None:
-    assert na_boxie.niewidoczne([PYTHON, ".venv/bin/pytest", str(ROOT / ".venv" / "bin" / "python"), "-n", "2"], ROOT) == []
+def test_venv_repo_box_ma_wlasne_wiec_slowo_pod_nim_nie_jest_odmowa_a_inna_ignorowana_sciezka_jest(tmp_path: Path) -> None:
+    git(tmp_path, "init", "--quiet")
+    (tmp_path / ".gitignore").write_text(".venv\nignorowane/\n", encoding="utf-8")
+    for name in (".venv/bin/pytest", "ignorowane/plik"):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("", encoding="utf-8")
+    (tmp_path / ".venv" / "bin" / "python").symlink_to(sys.executable)
+
+    found = na_boxie.niewidoczne([PYTHON, ".venv/bin/pytest", str(tmp_path / ".venv" / "bin" / "python"), "ignorowane/plik"], tmp_path, root=tmp_path)
+
+    assert found == ["ignorowane/plik (ignorowana przez gita)"]
 
 
 def test_polecenie_z_podkatalogu_wchodzi_do_niego_a_sciezka_pod_repo_jest_wzgledna(tmp_path: Path) -> None:
