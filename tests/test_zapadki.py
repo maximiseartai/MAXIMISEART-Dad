@@ -733,10 +733,15 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "historia-w-docstringu": "historię zmiany zostaw w opisie PR,",
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
+    "dyrektywa-mypy-recznie": "użyj mypy.util.get_mypy_comments",
+    "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
+    "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
+    "kursor-po-zmiennym-porzadku": "Stronicuj po stałym porządku (created)",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
+    "pytest-current-test-poza-testami": "sesję pytest rozpoznaje PYTEST_VERSION",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
     "watki-workera": "zapytaj tests/fixtures/linie_watkow.py",
@@ -797,11 +802,16 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
 # linie dodane przez zmianę, i folder, od którego liczy je ``whole_tree_rules``.
 REGULY_CALEGO_DRZEWA: Final = (
+    "dyrektywa-mypy-recznie",
+    "follow-symlinks-tylko-posix",
     "historia-w-docstringu",
+    "komentarz-przez-startswith",
     "komentarz-w-src",
     "kotwica-konca-linii",
+    "kursor-po-zmiennym-porzadku",
     "lokator-tytulu-okna",
     "odczyt-docstringu",
+    "pytest-current-test-poza-testami",
     "regula-w-trasie",
     "stan-pliku-poza-file-state",
     "watki-workera",
@@ -2167,7 +2177,16 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
+    "kursor-po-zmiennym-porzadku": (("tools",), ".py"),
+    "dyrektywa-mypy-recznie": (("tests",), ".py"),
+    "follow-symlinks-tylko-posix": (("tests",), ".py"),
+    "komentarz-przez-startswith": (("tools",), ".py"),
+    "pytest-current-test-poza-testami": (("tools",), ".py"),
 }
+_KURSOR = "QUERY = "
+_DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
+_OS = "import os\n\n"
+_LINIA = "def komentarz(linia: str) -> bool:\n    return "
 _PATTERN = "import re\n\nLINE = "
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
 # (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
@@ -2182,6 +2201,41 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+    (
+        "kursor-po-zmiennym-porzadku",
+        f'{_KURSOR}"""\npullRequests(first: 20, after: $cursor, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ number }} }}\n"""\n',
+        [1],
+    ),
+    ("kursor-po-zmiennym-porzadku", f"{_KURSOR}'search(query: \"is:pr sort:updated-desc\", type: ISSUE, first: 20, after: $cursor) {{ nodes {{ number }} }}'\n", [1]),
+    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"pullRequests(first: 20, after:$cursor, orderBy: {{ field: UPDATED_AT }})"\n', [1]),
+    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"pullRequests(first: 20, after: $cursor, orderBy: {{field: CREATED_AT}})"\n', []),
+    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"search(query: \\"is:pr sort:created-asc\\", type: ISSUE, first: 20, after: $cursor)"\n', []),
+    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"pullRequests(first: 20, orderBy: {{field: UPDATED_AT}})"\n', []),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# mypy:")\n', [5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}re.match(r"#\\s*mypy:", linia) is not None\n', [5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia[:7] == "# mypy:"\n', [5]),
+    ("dyrektywa-mypy-recznie", 'PROBKI = {"w kolumnie 0": "# mypy: ignore-errors\\n"}\n', []),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# noqa:")\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.chown("plik", 0, 0, follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.link("a", "b", follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1))\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=True)\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.chmod("plik", 0o644, follow_symlinks=False)\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.stat("plik", follow_symlinks=False)\n', []),
+    ("follow-symlinks-tylko-posix", 'import shutil\n\nshutil.copy2("a", "b", follow_symlinks=False)\n', []),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("#")\n', [2]),
+    ("komentarz-przez-startswith", f"{_LINIA}linia.lstrip().startswith('#')\n", [2]),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.startswith("#")\n', []),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("##")\n', []),
+    (
+        "komentarz-przez-startswith",
+        "import tokenize\n\n\ndef komentarz(token: tokenize.TokenInfo) -> bool:\n    return token.type == tokenize.COMMENT\n",
+        [],
+    ),
+    ("pytest-current-test-poza-testami", f'{_OS}W_TESCIE = "PYTEST_CURRENT_TEST" in os.environ\n', [3]),
+    ("pytest-current-test-poza-testami", f"{_OS}W_TESCIE = os.environ.get('PYTEST_CURRENT_TEST') is not None\n", [3]),
+    ("pytest-current-test-poza-testami", f'{_OS}W_SESJI = "PYTEST_VERSION" in os.environ\n', []),
 ]
 
 
@@ -2218,6 +2272,26 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+    "kursor-po-zmiennym-porzadku": {
+        "zapytanie sklejone z części": f'ORDER = "orderBy: {{field: UPDATED_AT}}"\n{_KURSOR}"pullRequests(first: 20, after: $cursor, " + ORDER + ")"\n',
+        "porządek w zmiennej GraphQL": f'{_KURSOR}"pullRequests(first: 20, after: $cursor, orderBy: $order)"\n',
+    },
+    "dyrektywa-mypy-recznie": {
+        "wzorzec w stałej poza wywołaniem": 'DYREKTYWA = "# mypy:"\n\n\ndef dyrektywa(linia: str) -> bool:\n    return linia.startswith(DYREKTYWA)\n',
+        "dyrektywa bez #": 'def dyrektywa(linia: str) -> bool:\n    return "mypy:" in linia\n',
+    },
+    "follow-symlinks-tylko-posix": {
+        "funkcja pod samą nazwą z from-importu": 'from os import utime\n\nutime("plik", (1, 1), follow_symlinks=False)\n',
+        "os pod inną nazwą": 'import os as system\n\nsystem.utime("plik", (1, 1), follow_symlinks=False)\n',
+        "argument ze słownika": f'{_OS}os.utime("plik", (1, 1), **{{"follow_symlinks": False}})\n',
+    },
+    "komentarz-przez-startswith": {
+        "linia po strip w zmiennej": 'def komentarz(linia: str) -> bool:\n    tekst = linia.strip()\n    return tekst.startswith("#")\n',
+        "znak w krotce": f'{_LINIA}linia.strip().startswith(("#", "!"))\n',
+    },
+    "pytest-current-test-poza-testami": {
+        "nazwa zmiennej sklejona z części": f'{_OS}W_TESCIE = "PYTEST_" + "CURRENT_TEST" in os.environ\n',
     },
 }
 

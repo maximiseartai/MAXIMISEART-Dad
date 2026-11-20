@@ -1,0 +1,18 @@
+id: kursor-po-zmiennym-porzadku
+language: python
+severity: error
+message: >-
+  kursor GraphQL (after:) przy porządku po polu, które się zmienia (UPDATED_AT, sort:updated), to keyset: element
+  zmieniony między stronami przeskakuje przed kursor i znika ze skanu. Stronicuj po stałym porządku (created).
+files:
+  - tools/**/*.py
+  - .agents/skills/**/scripts/**/*.py
+  - src/**/*.py
+metadata:
+  przypadki:
+    - 89c03ffc4e91c7ecbd617545bcf4b8681c615813 tools/lib/rejestr_korzeni.py:84
+rule:
+  kind: string
+  all:
+    - regex: 'after:\s*\$'
+    - regex: '(orderBy:\s*\{\s*field:\s*UPDATED_AT|sort:updated)'

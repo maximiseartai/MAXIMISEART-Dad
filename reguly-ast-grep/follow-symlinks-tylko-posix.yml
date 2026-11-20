@@ -1,0 +1,24 @@
+id: follow-symlinks-tylko-posix
+language: python
+severity: error
+message: >-
+  follow_symlinks=False w os.utime/os.chown/os.chflags/os.link nie istnieje na Windows (NotImplementedError); pomiń
+  argument albo sprawdź os.supports_follow_symlinks
+files:
+  - "**/*.py"
+metadata:
+  przypadki:
+    - 1956/W1/r1
+rule:
+  kind: call
+  all:
+    - has:
+        field: function
+        regex: '^os\.(utime|chown|chflags|link|setxattr|getxattr|listxattr|removexattr)$'
+    - has:
+        field: arguments
+        has:
+          kind: keyword_argument
+          all:
+            - has: {field: name, regex: '^follow_symlinks$'}
+            - has: {field: value, regex: '^False$'}
