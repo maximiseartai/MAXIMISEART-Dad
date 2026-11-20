@@ -7,7 +7,6 @@ jego interfejsie. Żaden test nie łączy się z siecią.
 
 from __future__ import annotations
 
-import ast
 from collections.abc import Callable, Sequence
 import json
 import os
@@ -1286,15 +1285,13 @@ PINNED_ONLY_FOR_TESTS = {"hypothesis"}
 CAPPED_BUT_NOT_CHECKED_AT_START = {"playwright"}
 
 
-def imported_by_src() -> set[str]:
-    imported: set[str] = set()
-    for path in (REPOSITORY_ROOT / "src").rglob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if isinstance(node, ast.Import):
-                imported.update(alias.name.split(".")[0] for alias in node.names)
-            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
-                imported.add(node.module.split(".")[0])
-    return imported
+def src_files_importing(module: str) -> list[str]:
+    statement = re.compile(rf"^\s*(?:import|from)\s+{re.escape(module)}\b", re.MULTILINE)
+    return [
+        path.relative_to(REPOSITORY_ROOT).as_posix()
+        for path in sorted((REPOSITORY_ROOT / "src").rglob("*.py"))
+        if statement.search(path.read_text(encoding="utf-8"))
+    ]
 
 
 def test_po_cofnieciu_aktualizacji_stara_wersja_startuje_z_bibliotekami_nowej_bo_wymagania_centrum_maja_dolne_granice() -> None:
@@ -1308,7 +1305,7 @@ def test_po_cofnieciu_aktualizacji_stara_wersja_startuje_z_bibliotekami_nowej_bo
     beyond_lower_bound = {name for name, spec in specs.items() if not re.fullmatch(r">=[0-9][0-9.]*", spec)}
 
     assert beyond_lower_bound == PINNED_ONLY_FOR_TESTS | CAPPED_BUT_NOT_CHECKED_AT_START
-    assert PINNED_ONLY_FOR_TESTS.isdisjoint(imported_by_src())
+    assert {name: src_files_importing(name) for name in PINNED_ONLY_FOR_TESTS} == {name: [] for name in PINNED_ONLY_FOR_TESTS}
 
 
 def test_dziennik_z_polem_innej_wersji_narzedzia_cofa_klon_jak_zwykle(repository: ToolRepository, tmp_path: Path) -> None:
