@@ -1,4 +1,19 @@
-"""Wypisuje skille verify-*, które obowiązują dla zmiany od bazy, każdy z powodem; użyj przed pushem i przed oceną gotowości PR.
+from __future__ import annotations
+
+import argparse
+from pathlib import Path
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from kroki_skilli import Katalog, hits
+from ostatnie_linie import CO_DALEJ, SKILLE_VERIFY
+from repo import BASE, ROOT
+from wplyw_zmiany import changed_since
+from zakres_runu import Zdarzenie, zakresy
+
+OPIS = """Wypisuje skille verify-*, które obowiązują dla zmiany od bazy, każdy z powodem; użyj przed pushem i przed oceną gotowości PR.
 
 Wypisuje skille ``verify-*``, które obowiązują dla zmiany od bazy (domyślnie ``origin/main``), każdy z powodem.
 
@@ -29,21 +44,6 @@ Bazę podaje ``--baza`` albo pozycyjnie; obie postacie naraz z różnymi wartoś
     py -3 tools/skille_dla_zmiany.py --baza origin/main            # Windows
 """
 
-from __future__ import annotations
-
-import argparse
-from pathlib import Path
-import subprocess
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from kroki_skilli import Katalog, hits
-from ostatnie_linie import CO_DALEJ, SKILLE_VERIFY
-from repo import BASE, ROOT
-from wplyw_zmiany import changed_since
-from zakres_runu import Zdarzenie, zakresy
-
 IN_CI = "LICZY CI"
 ON_MAIN = "LICZY MAIN"
 AT_NIGHT = "LICZY NOC"
@@ -60,7 +60,7 @@ WHAT_NEXT = (
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", help=f"Commit albo gałąź, od której liczy się zmiana (domyślnie {BASE}).")
     parser.add_argument("pozycyjna", nargs="?", metavar="BAZA", help="To samo co --baza.")
     args = parser.parse_args(argv)

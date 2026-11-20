@@ -4,7 +4,7 @@
 
 Przyjęta 19.11.2026: cel i kolejność stoją w sekcji „Rozwiązanie” specyfikacji #2227, a decyzje Maksa w jej sekcji „Decyzje Maksa (19.11.2026)”; reguły ponad nie są decyzjami autora z ticketu #2232 i stoją w osobnej sekcji.
 Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzji „Komentarze w `src`”: zakaz obejmuje cały kod repo i docstringi, a historia zmiany idzie tylko do opisu PR, nie do issue.
-Każda reguła wchodzi ticketem specyfikacji #2227, który stoi przy niej; do jego merge'a obowiązuje dotychczasowe zdanie w [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md), a dzisiejszy strażnik (`reguly-ast-grep/komentarz-w-src.yml`) łapie komentarz tylko w `src`.
+Każda reguła wchodzi ticketem specyfikacji #2227, który stoi przy niej; do jego merge'a obowiązuje dotychczasowe zdanie w [`CODING_STANDARDS.md`](../../CODING_STANDARDS.md), a strażnicy komentarzy od #2234 to `reguly-ast-grep/komentarz-w-src.yml` (każda linia `src`), `reguly-ast-grep/komentarz-poza-src.yml` i reguła oxlint `repo/no-comments` (linie dodane poza `src` i we frontendzie).
 
 ## Kontekst
 
@@ -32,7 +32,7 @@ Czy komentarze modeli TLA+ skilli `verify-*` dostają wyjątek, rozstrzyga Maks 
 
 ### Cel i kolejność (specyfikacja #2227)
 
-- **Zakoduj, potem usuń.** Wiedza, której nie ma nigdzie poza komentarzem, przechodzi do kodu najwyższym szczeblem drabiny ze skilla [`przeglad`](../../.agents/skills/przeglad/SKILL.md) (nazwa, typ, test zachowania, reguła) i dopiero potem komentarz znika, a komentarz, który nic nie dodaje (powtarza kod albo jest historią), znika od razu.
+- **Zakoduj, potem usuń.** Wiedza, której nie ma nigdzie poza komentarzem, przechodzi do kodu najwyższym szczeblem drabiny z [`korzen.md`](../../.agents/skills/przeglad/korzen.md) skilla `przeglad` (nazwa, typ, test zachowania, reguła) i dopiero potem komentarz znika, a komentarz, który nic nie dodaje (powtarza kod albo jest historią), znika od razu.
   Powód: w eksperymencie usunięcie komentarzy bez kodowania złamało dwa z trzech niezmienników przy zielonym `tools/szybko.py`, a ta sama wiedza zakodowana zatrzymała obu agentów.
   Wchodzi w #2236 (kodowanie wiedzy) i #2235 (usuwanie komentarzy, które powtarzają kod albo są historią).
 
@@ -83,7 +83,7 @@ Tych powodów i przykładów Maks nie podał; dopisał je autor ADR.
 
 ## Konsekwencje
 
-- Do merge'a #2234 nowy komentarz poza `src` łapie tylko przegląd, a recenzent zgłasza go jako Drobne, bo reguła jest punktem `CODING_STANDARDS.md` bez strażnika.
+- Od #2234 komentarz na linii, którą zmiana dodaje poza `src` i we frontendzie, zatrzymuje Required CI (`komentarz-poza-src`, `repo/no-comments`), a w `src` każdy komentarz, jak dotąd (`komentarz-w-src`).
 - Docstring, który czyta program, zostaje do #2230 i #2231; nowe narzędzie do tego czasu dalej dostaje docstring, z którego `--help` i spis narzędzi biorą swój tekst.
 - Istniejące komentarze i docstringi czekają na fale #2235 i #2236, a zmiana, która dotyka modułu z komentarzem, może go zakodować i usunąć w tym samym PR.
 - Komentarze modeli TLA+ skilli `verify-*` czekają na odpowiedź Maksa w #2255, a do niej kroki „Bring the model in line” ich `SKILL.md` zostają bez zmian.

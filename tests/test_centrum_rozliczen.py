@@ -55,23 +55,25 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_RE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_DIRECTORY
 from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
-from rozliczenia.centrum.report_reminders import MinuteRhythm
+from rozliczenia.centrum.report_reminders import REMINDERS_THREAD, MinuteRhythm
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
+from rozliczenia.wall_clock import local_now
+from rozliczenia.workbook_files import file_bytes
 from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
-from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Remembered, settings_bytes
+from rozliczenia.centrum.settings.history import HISTORY_FILE, ByDad, History, HistoryRow, RowChange
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.rule_forms import form_of
 from rozliczenia.centrum.device_forms import ChangeComponent, DeviceEdit, RemoveComponent
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved, read_snapshot
+from rozliczenia.centrum.settings.owner import REPORTED_CHANGES, CentrumSettings, NotSaved, Refused, Saved, read_snapshot
 from rozliczenia.centrum.settings.proposal import (
     Edit,
     Later,
@@ -90,7 +92,7 @@ from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL, SETTLE
 from rozliczenia.centrum.mailing_messages import mail_refused, mailbox_unreachable, sent_unread
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
-from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
+from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxUnreachable, MailRefused, SentAttachment
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
@@ -121,6 +123,7 @@ from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.centrum import (
     CENTRUM,
     FakeAutostart,
+    FakeGitHub,
     FakeReportBox,
     TOOL_COMMIT,
     Centrum,
@@ -131,6 +134,7 @@ from tests.fixtures.centrum import (
     ToolDirectory,
     centrum,
     centrum_app,
+    join_threads_since,
     view_timing,
     write_report_key,
 )
@@ -146,6 +150,7 @@ from tests.fixtures.centrum_processes import (
     stopped_for_maks,
     write_dad_quantity_rules,
 )
+from tests.fixtures.linie_watkow import new_line
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.tool_clone import tool_repository
 from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
@@ -1888,6 +1893,86 @@ def test_po_dowolnej_liscie_taty_wydanie_z_nowym_skladnikiem_regul_liczy_kazdy_j
     list_holds()
 
 
+def _dad_spellings(app: Centrum, spellings: Mapping[str, list[str]]) -> None:
+    known = {device["id"] for device in app.client.get(QUANTITY_RULES_URL).json()["devices"]}
+    for device, (name, *others) in spellings.items():
+        if device in known:
+            response = app.client.put(f"{DEVICES_URL}/{device}", json={**device_form(app, device), "name": name, "other_spellings": others})
+        else:
+            response = app.client.post(DEVICES_URL, json={"name": name, "other_spellings": others, "group": None})
+        assert response.status_code == 200, response.text
+
+
+@pytest.mark.parametrize(
+    ("spellings", "owner", "how"),
+    [
+        pytest.param(
+            {"nokia": ["nokia", "instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]},
+            "nokia",
+            "zapis",
+            id="zapis-obok-innych-zapisow-skladnika",
+        ),
+        pytest.param(
+            {"fut": ["instalacja ręczna"], "nokia": ["nokia", "wizja"]}, "instalacja ręczna", "skladnik", id="jedyny-zapis-skladnika-bez-reguly"
+        ),
+        pytest.param(
+            {"nokia": ["instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]},
+            "instalacja ręczna",
+            "nazwa",
+            id="jedyny-zapis-skladnika-potrzebnego-regule",
+        ),
+        pytest.param({"nowy": ["instalacja ręczna", "wizja"]}, "instalacja ręczna", "nazwa", id="pierwszy-z-kilku-zapisow-skladnika"),
+    ],
+)
+def test_zdanie_o_zajetym_zapisie_skladnika_wydania_kaze_usunac_zapis_obok_innych_skladnik_bez_reguly_a_inaczej_zmienic_nazwe(
+    tmp_path: Path,
+    release_without_manual_installation: Callable[[], None],
+    spellings: dict[str, list[str]],
+    owner: str,
+    how: settings_messages.TakenAction,
+) -> None:
+    app = centrum(tmp_path)
+    _dad_spellings(app, spellings)
+
+    release_without_manual_installation()
+    problem = app.client.get(QUANTITY_RULES_URL).json()["devices_problem"]
+
+    assert problem == {"field": None, "message": settings_messages.release_component_taken("instalacja ręczna", owner, how)}
+
+
+def test_odmowa_zmiany_regul_ktora_zdejmuje_regule_skladnika_z_zajetym_zapisem_mowi_jak_zwolnic_zapis_tym_samym_zdaniem_co_sekcja(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    _dad_spellings(app, {"technicolor": ["instalacja ręczna"], "gateway": ["gateway", "zyxel", "wizja"]})
+    release_without_manual_installation()
+    waiting = settings_messages.rules_wait_for_release_component("instalacja ręczna", "instalacja ręczna", "nazwa")
+
+    shown = app.client.get(QUANTITY_RULES_URL).json()
+    removed = app.client.delete(f"{QUANTITY_RULES_URL}/technicolor")
+
+    assert shown["rules_problem"] == {"field": None, "message": waiting}
+    assert (removed.status_code, removed.json()["message"]) == (422, waiting)
+    assert settings_bytes(app.tool.config / RULES_FILE) is None
+
+
+def test_usuniecie_skladnika_taty_z_zapisem_skladnika_wydania_oddaje_mu_ten_zapis_na_liscie_taty(
+    tmp_path: Path, release_without_manual_installation: Callable[[], None]
+) -> None:
+    app = centrum(tmp_path)
+    added = app.client.post(DEVICES_URL, json={"name": "instalacja ręczna", "other_spellings": [], "group": None})
+    own = added.json()["quantity_rules"]["devices"][-1]["id"]
+    release_without_manual_installation()
+    assert device_form(app, "instalacja-reczna")["name"] == "wizja"
+
+    removed = app.client.delete(f"{DEVICES_URL}/{own}")
+
+    assert removed.status_code == 200, removed.text
+    dad_list = _dad_list(app)
+    assert dad_list is not None
+    assert [component.spellings for component in dad_list if component.id == "instalacja-reczna"] == [("instalacja ręczna", "wizja")]
+
+
 def _rule_with(component: str) -> dict[str, Any]:
     """Formularz reguły „Jeśli URZĄDZENIA zawierają składnik, to wpisz 3 × jego liczbę w Z” dla składnika ``component``."""
 
@@ -1952,6 +2037,52 @@ def test_cofniecie_usuniecia_reguly_ze_skladnikiem_usunietym_potem_odmawia_zdani
     assert (undone.status_code, undone.json()) == (422, {"message": sentence})
     assert (again.status_code, again.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
     assert (settings_bytes(app.tool.config / DEVICES_FILE), settings_bytes(app.tool.config / RULES_FILE)) == files
+
+
+def _renamed_then_removed(app: Centrum) -> str:
+    added = app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None})
+    own = str(added.json()["quantity_rules"]["devices"][-1]["id"])
+    assert app.client.put(f"{DEVICES_URL}/{own}", json={"name": "ont z", "other_spellings": [], "group": None}).status_code == 200
+    assert app.client.delete(f"{DEVICES_URL}/{own}").status_code == 200
+    return own
+
+
+def _removed_from_list_older_than_history(app: Centrum) -> str:
+    app.tool.config.mkdir(parents=True, exist_ok=True)
+    (app.tool.config / DEVICES_FILE).write_bytes(DEVICES.dump((*DEFAULT_QUANTITY_RULES.devices.components, Component("ont-y", ("ont y",)))))
+    assert app.client.get(QUANTITY_RULES_URL).status_code == 200
+    assert app.client.delete(f"{DEVICES_URL}/ont-y").status_code == 200
+    assert [row["changes"][0]["after"] for row in history_rows(app) if row["file"] == DEVICES_FILE] == [None]
+    return "ont-y"
+
+
+def _release_component_off_dad_list(app: Centrum) -> str:
+    app.tool.config.mkdir(parents=True, exist_ok=True)
+    (app.tool.config / RULES_FILE).write_bytes(RULES.dump(tuple(rule for rule in DEFAULT_QUANTITY_RULES.rules if rule.id != "zmiana-instalacji")))
+    devices = tuple(component for component in DEFAULT_QUANTITY_RULES.devices.components if component.id != "zmiana-instalacji")
+    (app.tool.config / DEVICES_FILE).write_bytes(DEVICES.dump(devices))
+    return "zmiana-instalacji"
+
+
+@pytest.mark.parametrize(
+    ("world", "name"),
+    [
+        pytest.param(_renamed_then_removed, "ont z", id="nazwa-z-najnowszego-wiersza-historii"),
+        pytest.param(_removed_from_list_older_than_history, "ont y", id="nazwa-sprzed-usuniecia-bez-wczesniejszego-wiersza"),
+        pytest.param(_release_component_off_dad_list, "zmiana instalacji w lokalu abonenta", id="nazwa-z-listy-urzadzen-z-wydania"),
+    ],
+)
+def test_odmowa_reguly_ze_skladnikiem_spoza_listy_urzadzen_nazywa_go_tak_jak_tata_ostatnio_go_widzial(
+    tmp_path: Path, world: Callable[[Centrum], str], name: str
+) -> None:
+    app = centrum(tmp_path)
+    component = world(app)
+
+    refused = app.client.post(QUANTITY_RULES_URL, json=_rule_with(component))
+
+    rule = f"Jeśli URZĄDZENIA zawierają „{name}”, to wpisz 3 × liczbę „{name}” w Z."
+    sentence = f"Reguła potrzebuje składnika „{name}”, którego nie ma na Liście Urządzeń: {rule} Najpierw dodaj ten składnik w sekcji Urządzenia."
+    assert (refused.status_code, refused.json()) == (422, {"message": sentence, "field": "jesli[0].skladnik"})
 
 
 # Formularze składnika w teście równoważności: „ont z” bierze zapis „ont x”, a „ont w” zapis „ont y”.
@@ -2819,7 +2950,7 @@ def test_wydanie_bez_jawnej_zmiany_legendy_nie_rusza_legendy_taty(tmp_path: Path
     own = with_own(own_code("rt2", column=FixedColumn("AK")))
     (tool.config / LEGEND_FILE).write_bytes(own)
 
-    client = started(tool, RELEASE_CHANGES)
+    client = started(tool, tuple(change for change in RELEASE_CHANGES if change.file is not LEGEND))
     sentences, _ = legend_sentences(client)
     rows = legend_history(client)
     client.stop()
@@ -2827,6 +2958,70 @@ def test_wydanie_bez_jawnej_zmiany_legendy_nie_rusza_legendy_taty(tmp_path: Path
     assert sentences["rt2"] == "rt2: 1 w AK, AM na czerwono, AF na zielono."
     assert (tool.config / LEGEND_FILE).read_bytes() == own
     assert rows == []
+
+
+RT2_OUTSIDE_FAULTS = next(change for change in RELEASE_CHANGES if change.id == "2026-11-rt2-bez-usterek")
+
+
+@pytest.mark.parametrize(
+    ("own", "sentence"),
+    [
+        (None, "rt2: 1 w AM, AM na czerwono, AF na zielono; w usterce się nie liczy."),
+        (own_code("rt2", column=FixedColumn("AK")), "rt2: 1 w AK, AM na czerwono, AF na zielono; w usterce się nie liczy."),
+    ],
+    ids=["legenda-z-wydania", "rt2-taty-w-ak"],
+)
+def test_zmiana_z_wydania_ustawia_rt2_taty_ze_w_usterce_sie_nie_liczy_raz_z_cofnij(
+    tmp_path: Path, own: ActivityCode | None, sentence: str
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    if own is not None:
+        (tool.config / LEGEND_FILE).write_bytes(with_own(own))
+    first = started(tool, (RT2_OUTSIDE_FAULTS,))
+    sentences, _ = legend_sentences(first)
+    rows = legend_history(first)
+    first.stop()
+    applied = (tool.config / LEGEND_FILE).read_bytes()
+    (tool.config / MEMORY_DIRECTORY / APPLIED_FILE).unlink()
+    (tool.config / HISTORY_FILE).unlink()
+    again = started(tool, (RT2_OUTSIDE_FAULTS,))
+    rows_again = legend_history(again)
+    again.stop()
+
+    assert sentences["rt2"] == sentence
+    assert [sentence for code, sentence in sentences.items() if code != "rt2"] == [
+        sentence for sentence in MAIL_SENTENCES if not sentence.startswith("rt2:")
+    ]
+    assert [(row["source"], row["undoable"]) for row in rows] == [("release", True)]
+    assert ((tool.config / LEGEND_FILE).read_bytes(), rows_again) == (applied, [])
+
+
+def test_zmiana_z_wydania_rt2_nie_rusza_legendy_taty_bez_rt2(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    tool.config.mkdir(parents=True)
+    own = LEGEND.dump(tuple(code for code in DEFAULT_ACTIVITY_LEGEND.codes if code.id != "rt2"))
+    (tool.config / LEGEND_FILE).write_bytes(own)
+
+    client = started(tool, (RT2_OUTSIDE_FAULTS,))
+    sentences, _ = legend_sentences(client)
+    rows = legend_history(client)
+    client.stop()
+
+    assert "rt2" not in sentences
+    assert ((tool.config / LEGEND_FILE).read_bytes(), rows) == (own, [])
+
+
+def test_zmiana_kodu_z_formularza_zostawia_ze_w_usterce_sie_nie_liczy(tmp_path: Path) -> None:
+    client = started(ToolDirectory(tmp_path), (RT2_OUTSIDE_FAULTS,))
+    shown = shown_form(client, "rt2")
+    changed = client.put(code_url("rt2"), json=shown | {"amount": 5})
+    sentences, _ = legend_sentences(client)
+    client.stop()
+
+    assert shown["counts_in_fault"] is False
+    assert changed.status_code == 200, changed.text
+    assert sentences["rt2"] == "rt2: 1 w AM, 5 w Uwagi - kwota (AS), AM na czerwono, AF na zielono; w usterce się nie liczy."
 
 
 RELEASE_LEGEND_SHA256 = "a89bfa2741cf95ba917a5931afdf351f2af3036605d6e6c5017cd39b7ada6e44"
@@ -2844,10 +3039,17 @@ def test_legenda_z_wydania_zmienia_sie_tylko_jawna_zmiana_w_wydaniu() -> None:
     )
 
 
-def code_form(*spellings: str, column: dict[str, Any] | None = None, value: int = 1, amount: int | None = None, fills: list[dict[str, str]] | None = None) -> dict[str, Any]:
+def code_form(
+    *spellings: str,
+    column: dict[str, Any] | None = None,
+    value: int = 1,
+    amount: int | None = None,
+    fills: list[dict[str, str]] | None = None,
+    counts_in_fault: bool = True,
+) -> dict[str, Any]:
     """Formularz Kodu czynności w sekcji Legenda czynności (``#`` w miejscu liczby)."""
 
-    return {"spellings": list(spellings), "column": column, "value": value, "amount": amount, "fills": fills or []}
+    return {"spellings": list(spellings), "column": column, "value": value, "amount": amount, "fills": fills or [], "counts_in_fault": counts_in_fault}
 
 
 def fixed(column: str) -> dict[str, Any]:
@@ -2913,6 +3115,16 @@ LEGEND_EDITS: dict[str, tuple[LegendEdit, str | None, str | None]] = {
         ),
         "instwewrg6#m: # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
         "instwewrg6#m (też instrg6#m): # od 1 do 10 → 1 w AK, # od 11 do 15 → 1 w AL, # od 16 do 30 → 1 w AJ.",
+    ),
+    "kod przestaje się liczyć w usterce": (
+        lambda client: client.put(code_url("rt2"), json=shown_form(client, "rt2") | {"counts_in_fault": False}),
+        "rt2: 1 w AM, AM na czerwono, AF na zielono.",
+        "rt2: 1 w AM, AM na czerwono, AF na zielono; w usterce się nie liczy.",
+    ),
+    "dodanie kodu, który w usterce się nie liczy": (
+        lambda client: client.post(LEGEND_URL, json=code_form("rt3", column=fixed("AK"), counts_in_fault=False)),
+        None,
+        "rt3: 1 w AK; w usterce się nie liczy.",
     ),
     "zamiana zapisu": (
         lambda client: client.put(code_url("instmdik"), json=shown_form(client, "instmdik") | {"spellings": ["mdik"]}),
@@ -3574,6 +3786,65 @@ def test_zatrzymane_centrum_konczy_sprawdzanie_przypomnien_co_minute(tmp_path: P
     client.stop()  # czeka na każdy wątek Centrum i wywraca test nazwą wątku, który żyje dalej
 
 
+def test_sprawdzanie_przypomnien_biegnie_zaraz_po_starcie_a_nastepne_dopiero_po_minucie() -> None:
+    """Centrum sprawdza Przypomnienia o raporcie od razu po starcie, a potem raz na minutę, nie w kółko: każde
+    sprawdzenie czyta pliki taty i pyta skrzynkę raportów."""
+
+    since = new_line()
+    calls: list[None] = []
+    first, again = threading.Event(), threading.Event()
+
+    def check() -> None:
+        calls.append(None)
+        (first if len(calls) == 1 else again).set()
+
+    rhythm = MinuteRhythm()
+    rhythm.start(check)
+    try:
+        checked = first.wait(30)
+        repeated = again.wait(1)
+    finally:
+        rhythm.stop()
+        join_threads_since(since, named=REMINDERS_THREAD)
+
+    assert (checked, repeated) == (True, False)
+
+
+_ZAMKNIECIE_W_TRAKCIE_SPRAWDZANIA_PRZYPOMNIEN: Final = (
+    "import threading\n"
+    "from rozliczenia.centrum.report_reminders import MinuteRhythm\n"
+    "checking, answer = threading.Event(), threading.Event()\n"
+    "MinuteRhythm().start(lambda: (checking.set(), answer.wait()))\n"
+    "assert checking.wait(30), 'sprawdzenie przypomnień nie zaczęło się po starcie'\n"
+    "print('sprawdza', flush=True)\n"
+)
+
+
+def test_proces_centrum_konczy_sie_mimo_sprawdzania_przypomnien_ktore_czeka_na_skrzynke() -> None:
+    """Skrzynka raportów bez sieci odpowiada dopiero po limicie czasu, a trwające sprawdzenie Przypomnień o raporcie nie
+    trzyma zamknięcia Centrum: proces kończy się, gdy skończy się jego praca."""
+
+    environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
+    child = subprocess.Popen(
+        [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_SPRAWDZANIA_PRZYPOMNIEN],
+        cwd=ROOT,
+        env=environment,
+        stdout=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+    )
+    assert child.stdout is not None
+    try:
+        checking = child.stdout.readline()
+        exit_code = child.wait(timeout=30)
+    finally:
+        child.kill()
+        child.wait()
+        child.stdout.close()
+
+    assert (checking, exit_code) == ("sprawdza\n", 0)
+
+
 def test_start_centrum_sprawdza_klucz_do_zgloszen_w_tle_zanim_karta_o_cokolwiek_zapyta(tmp_path: Path) -> None:
     tool = ToolDirectory(tmp_path)
     write_report_key(tool)
@@ -3775,7 +4046,7 @@ class SettingsWorld:
     difference: str = ""
 
 
-WORLD_CODE: Final = {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": []}
+WORLD_CODE: Final = {"spellings": ["instrg6#m"], "column": {"kind": "fixed", "column": "AK"}, "value": 1, "amount": None, "fills": [], "counts_in_fault": True}
 """Kod czynności, który tata w świecie próbek dodał i usunął: nowy kod z tym formularzem nie może dostać jego id."""
 
 EXCEPTION_OF_WORLD = QuantityException(PERIOD, 21, "N", 45, "0123456789abcdef")
@@ -4298,10 +4569,15 @@ def _old_reminder_files(tool: ToolDirectory) -> None:
     (tool.config / OLD_FOOTER_FILE).write_text("Pozdrawiam\n", encoding="utf-8")
 
 
+def _own_rt2_in_ak(tool: ToolDirectory) -> None:
+    (tool.config / LEGEND_FILE).write_bytes(with_own(own_code("rt2", column=FixedColumn("AK"))))
+
+
 RELEASE_CHANGE_WORLDS: dict[str, Callable[[ToolDirectory], None]] = {
     "2026-11-lista-wykonawcow": _old_worker_files,
     "2026-11-folder-okresow-od-zalacznikow": _periods_folder_in_week,
     "2026-11-przypomnienia": _old_reminder_files,
+    "2026-11-rt2-bez-usterek": _own_rt2_in_ak,
 }
 """Świat każdej zmiany z Wydania, w którym zmiana wchodzi (``Edit`` z różnicą): stare pliki albo plik do poprawy."""
 
@@ -4662,7 +4938,7 @@ def migrated(tool: ToolDirectory) -> tuple[dict[str, Any], list[dict[str, Any]]]
 
     client = started(tool, RELEASE_CHANGES)
     workers = client.get("/api/settings").json()["workers"]
-    rows = client.get("/api/settings/history").json()["rows"]
+    rows = [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == WORKERS_FILE]
     client.stop()
     return workers, rows
 
@@ -4969,6 +5245,18 @@ LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kam
             id="login-zamiast-listy",
         ),
         pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}, 7]}}\n",
+            "wykonawcy[0].loginy[1]",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy", 1), settings_messages.MAKS_FIXES),
+            id="liczba-w-liscie-loginow",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], adresy: [{LEAKED_ADDRESS}, null]}}\n",
+            "wykonawcy[0].adresy[1]",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "adresy", 1), settings_messages.MAKS_FIXES),
+            id="pusta-wartosc-w-liscie-adresow",
+        ),
+        pytest.param(
             f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], aktywny: {LEAKED_NAME}}}\n",
             "wykonawcy[0].aktywny",
             settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"), settings_messages.MAKS_FIXES),
@@ -5086,31 +5374,85 @@ def test_proces_bez_dobrej_listy_wykonawcow_nie_startuje_a_odmowa_mowi_co_popraw
     )
 
 
-@pytest.mark.parametrize(
-    ("method", "form"),
-    [
-        pytest.param("PUT", {"logins": ["jan.testowy"], "name": "Jan Testowy", "addresses": []}, id="zmiana"),
-        pytest.param("DELETE", None, id="usuniecie"),
-    ],
-)
-def test_zmiana_i_usuniecie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_mowia_co_poprawic_a_nie_o_pliku_bez_odczytu(
-    tmp_path: Path, method: str, form: dict[str, object] | None
+_WORKER_CHANGES = [
+    pytest.param("PUT", "", {"logins": ["jan.testowy"], "name": "Jan Testowy", "addresses": []}, id="zmiana"),
+    pytest.param("DELETE", "", None, id="usuniecie"),
+    pytest.param("PUT", "/switches", {"active": False}, id="przelacznik"),
+    pytest.param("POST", "/addresses", {"address": "jan@example.com"}, id="adres"),
+]
+
+
+@pytest.mark.parametrize(("method", "route", "form"), _WORKER_CHANGES)
+def test_zmiana_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_mowi_co_poprawic_a_nie_o_pliku_bez_odczytu(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
 ) -> None:
-    """Plik da się czytać, więc odmowa „Zapisz” w formularzu Wykonawcy i „Usuń” mówi o złym ustawieniu jak odmowa
-    startu, a nie każe zamykać programów, które trzymają plik, i niczego nie zapisuje."""
+    """Plik da się czytać, więc odmowa „Zapisz” w formularzu Wykonawcy, „Usuń”, przełącznika i „Przypisz do Wykonawcy…”
+    mówi o złym ustawieniu jak odmowa startu, a nie każe zamykać programów, które trzymają plik, ani nie mówi, że
+    Wykonawcy nie ma na liście, i niczego nie zapisuje."""
 
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     bad = "schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n"
     app.tool.worker_list.write_text(bad, encoding="utf-8")
 
-    refused = app.client.request(method, "/api/settings/workers/jan.testowy", json=form)
+    refused = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
 
     assert (refused.status_code, refused.json()) == (
         409,
         {"message": unusable(settings_messages.worker_without_login()), "field": "wykonawcy[0].loginy"},
     )
     assert app.tool.worker_list.read_text(encoding="utf-8") == bad
+
+
+@pytest.mark.parametrize(("method", "route", "form"), _WORKER_CHANGES)
+def test_zmiana_wykonawcy_przy_liscie_bez_odczytu_mowi_o_pliku_bez_odczytu(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
+) -> None:
+    app = centrum(tmp_path)
+    write_worker_list(app.tool.worker_list, worker_list({"jan.testowy": "Jan Testowy"}))
+    kept = app.tool.worker_list.read_bytes()
+
+    with reading(app.tool.config, frozenset({app.tool.worker_list})):
+        refused = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
+
+    assert (refused.status_code, refused.json()) == (409, {"message": refusal.workers_unusable(None).message})
+    assert app.tool.worker_list.read_bytes() == kept
+
+
+@pytest.mark.parametrize(("method", "route", "form"), [change for change in _WORKER_CHANGES if change.id != "zmiana"])
+def test_zmiana_wykonawcy_przy_liscie_chwilowo_bez_odczytu_czeka_na_plik_i_zapisuje(
+    tmp_path: Path, method: str, route: str, form: dict[str, object] | None
+) -> None:
+    held = ToolDirectory(tmp_path).worker_list
+    app = centrum(tmp_path, pause=lambda _: allow_reading(held))
+    write_worker_list(held, worker_list({"jan.testowy": "Jan Testowy"}))
+    register = register_of(tmp_path)
+    register.parent.mkdir()
+    write_orders(register, ["inny.login"])
+    app.platform.chosen_files.append(register)
+    (tmp_path / "Okresy").mkdir()
+    app.platform.chosen_folders.append(tmp_path / "Okresy")
+    app.client.post("/api/settings/register/choose")
+    app.client.post("/api/settings/periods-directory/choose")
+    kept = held.read_bytes()
+
+    with without_reading(held):
+        saved = app.client.request(method, f"/api/settings/workers/jan.testowy{route}", json=form)
+
+    assert saved.status_code == 200, saved.text
+    assert held.read_bytes() != kept
+
+
+def test_dodanie_wykonawcy_przy_zlej_liscie_bez_ostatniej_dobrej_zapisuje_liste_od_nowa(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    app.tool.worker_list.write_bytes(b"schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n")
+
+    added = app.client.post("/api/settings/workers", json=worker_form(["ewa.nowa"], "Ewa Nowa"))
+
+    assert added.status_code == 200, added.text
+    assert app.client.get("/api/settings").json()["workers"]["state"] == "good"
+    assert list(listed_workers(app.client)) == ["ewa.nowa"]
 
 
 def test_reczna_zmiana_listy_wykonawcow_ma_wiersz_historii_z_wpisem_do_cofniecia_a_dziennik_bez_danych_osobowych(
@@ -5812,6 +6154,111 @@ def test_kazda_zmiana_wykonawcy_ma_wiersz_historii_a_zgloszenie_nie_ma_loginu_na
     seen = {"Zgłoszenie": report, "Logi Centrum": centrum_.tool.log_path.read_text(encoding="utf-8")}
     leaks = [(where, secret) for where, text in seen.items() for secret in (LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS) if secret in text]
     assert leaks == []
+
+def test_zmiana_listy_spoza_centrum_paruje_wpisy_po_wspolnym_loginie_w_kolejnosci_listy_a_usuniety_wpis_ma_klucz_na_koncu(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    write_worker_list(
+        app.tool.worker_list,
+        worker_list({"anna.przyklad": "Anna Przykład", "jan.testowy": "Jan Testowy", "adam.usuniety": "Adam Usunięty"}),
+    )
+    app.client.get("/api/settings")
+    changed = WorkerList.of(
+        [
+            WorkerEntry(["jan.testowy", "jan.drugi"], "Jan Testowy", ()),
+            WorkerEntry(["anna.nowa", "anna.przyklad"], "Anna Przykład", ()),
+        ]
+    )
+    assert isinstance(changed, WorkerList), changed
+    write_worker_list(app.tool.worker_list, changed)
+
+    [row] = [row for row in history_rows(app) if row["file"] == WORKERS_FILE]
+
+    assert [(change["key"], change["before"] is None, change["after"] is None) for change in row["changes"]] == [
+        ("wykonawcy[jan.testowy]", False, False),
+        ("wykonawcy[anna.przyklad]", False, False),
+        ("wykonawcy[adam.usuniety]", False, True),
+    ]
+
+
+def test_dodany_wykonawca_staje_na_koncu_cofniety_wpis_wraca_na_miejsce_wpisu_ze_wspolnym_loginem_a_usuniety_na_koniec(
+    tmp_path: Path,
+) -> None:
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    start = list(listed_workers(client))
+    client.post(WORKERS_API, json=worker_form(["pierwszy.nowy"], "Pierwszy Nowy"))
+    client.post(WORKERS_API, json=worker_form(["drugi.nowy"], "Drugi Nowy"))
+    after_add = list(listed_workers(client))
+    second_login = client.put(f"{WORKERS_API}/pierwszy.nowy", json=worker_form(["pierwszy.nowy", "pierwszy.drugi"], "Pierwszy Nowy"))
+    after_second_login = list(listed_workers(client))
+    client.put(f"{WORKERS_API}/pierwszy.nowy", json=worker_form(["pierwszy.drugi"], "Pierwszy Nowy"))
+    second_login_undone = client.post(f"/api/settings/history/{second_login.json()['change']}/undo")
+    after_undo = listed_workers(client)
+    removed = client.delete(f"{WORKERS_API}/pierwszy.nowy")
+    removal_undone = client.post(f"/api/settings/history/{removed.json()['change']}/undo")
+
+    assert [answer.status_code for answer in (second_login, second_login_undone, removed, removal_undone)] == [200] * 4
+    assert after_add == after_second_login == [*start, "pierwszy.nowy", "drugi.nowy"]
+    assert list(after_undo) == after_add
+    assert after_undo["pierwszy.nowy"]["logins"] == ["pierwszy.nowy"]
+    assert list(listed_workers(client)) == [*start, "drugi.nowy", "pierwszy.nowy"]
+
+
+def test_zmiana_wczesniejszego_wykonawcy_na_adres_albo_plik_pozniejszego_to_odmowa_przy_polu_formularza(tmp_path: Path) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["pozniejszy.nowy"], "Późniejszy Nowy", [OBCY]))
+    client.post(WORKERS_API, json=worker_form(["ostatni.nowy"], "Ostatni Nowy"))
+    first, *_ = listed_workers(client).values()
+    saved = centrum_.tool.worker_list.read_bytes()
+
+    same_address = client.put(f"{WORKERS_API}/{first['logins'][0]}", json=worker_form(first["logins"], first["name"], [OBCY]))
+    same_file = client.put(f"{WORKERS_API}/{first['logins'][0]}", json=worker_form(first["logins"], "późniejszy  NOWY"))
+
+    assert (same_address.status_code, same_address.json()) == (
+        422,
+        {"message": settings_messages.worker_address_repeated(), "field": "adresy[0]"},
+    )
+    assert (same_file.status_code, same_file.json()) == (422, {"message": settings_messages.worker_same_file(), "field": "nazwa"})
+    assert centrum_.tool.worker_list.read_bytes() == saved
+
+
+def test_przelacznik_wykonawcy_zmienia_tylko_podany_przelacznik_a_login_w_adresie_ma_dowolna_wielkosc_liter(
+    tmp_path: Path,
+) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["bartek.nowy"], "Bartek Nowy"))
+
+    switched = client.put(f"{WORKERS_API}/Bartek.Nowy/switches", json={"active": False})
+
+    assert switched.status_code == 200, switched.json()
+    assert {name: listed_workers(client)["bartek.nowy"][name] for name in ("active", "reminders")} == {
+        "active": False,
+        "reminders": True,
+    }
+
+
+def test_dodanie_wykonawcy_z_loginem_sprawy_login_bez_wykonawcy_zamyka_te_sprawe_a_inne_sprawy_zostaja(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    not_moved = AddressesNotMoved(settings_messages.addresses_not_moved(OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy"))
+    address = SenderAddress.of(OBCY)
+    assert address is not None
+    other = UnmatchedLogin(Login("inny.login"), ())
+    waiting = WorkerList.of([], [UnmatchedLogin(Login("obcy.login"), (address,)), other, not_moved])
+    assert isinstance(waiting, WorkerList), waiting
+    write_worker_list(app.tool.worker_list, waiting)
+    app.client.get("/api/settings")
+
+    added = app.client.post(WORKERS_API, json=worker_form(["Obcy.Login"], "Obcy Nadawca", [OBCY]))
+
+    assert added.status_code == 200, added.json()
+    assert app.client.get("/api/settings").json()["workers"]["unresolved"] == [
+        {"reason": "login_bez_wykonawcy", "login": "inny.login", "addresses": []},
+        {"reason": "adresy_nieprzeniesione", "message": not_moved.sentence},
+    ]
 
 
 def bad_periods_directory(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
@@ -6651,6 +7098,24 @@ def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_
     assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None)
 
 
+def test_wiersz_hasla_skrzynki_z_cofnieciem_wpisanym_w_historie_recznie_nie_ma_cofnij_i_dalej_sie_nie_cofa(tmp_path: Path) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    client.get("/api/settings")
+    change = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO}).json()["change"]
+    history = tool.config / HISTORY_FILE
+    rows = [json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()]
+    history.write_text("".join(json.dumps(row | {"cofalny": True}) + "\n" for row in rows), encoding="utf-8")
+    access = (tool.config / INBOX_ACCESS_FILE).read_bytes()
+
+    undo = client.post(f"/api/settings/history/{change}/undo")
+    after = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+
+    assert (undo.status_code, undo.json()["message"]) == (404, "Tej zmiany nie da się cofnąć.")
+    assert [(row["id"], row["undoable"]) for row in after] == [(change, False)]
+    assert (tool.config / INBOX_ACCESS_FILE).read_bytes() == access
+
+
 def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:
     client, tool = _inbox_centrum(tmp_path)
     client.get("/api/settings")
@@ -6876,6 +7341,7 @@ def test_tablica_okresow_pokazuje_status_okresu_kazdego_folderu_okresu_od_najnow
     (worker_folder / "Rozliczenie 22_28_09_2026 -.xlsx").touch()
     (worker_folder / "Rozliczenie 22_28_09_2026 - .xlsx").touch()
     (worker_folder / "Rozliczenie 22_28_09_2026 - Jan Próbny.pdf").touch()
+    (worker_folder / "Rozliczenie 22_28_09_2026 - Folder Kopii.xlsx").mkdir()
     write_period_files(periods, "29_05_10_2026")
     (periods / "15_21_09_2026").mkdir()
     (periods / "Archiwum").mkdir()
@@ -7081,6 +7547,22 @@ def test_folder_wskazany_w_ukladzie_plaskim_zapisuje_sie_taki_jak_wskazany(
     )
 
 
+def test_folder_okresow_obok_rozliczen_roku_w_zalacznikach_zapisuje_sie_taki_jak_wskazany(tmp_path: Path) -> None:
+    """Folder poza ``Rozliczenia {rok}`` nie jest częścią układu folderów taty, choć ``Załączniki`` nad nim go mają."""
+
+    pointed = dad_layout(tmp_path) / "Archiwum" / "INEA"
+    pointed.mkdir(parents=True)
+    write_period_files(pointed, "22_28_09_2026")
+    app = centrum(tmp_path)
+
+    settings = choose_periods_directory(app, pointed, "wpisana")
+
+    assert (settings["periods_directory"], settings["periods_all_years"]) == (
+        {"state": "ready", "path": str(pointed), "name": "INEA"},
+        False,
+    )
+
+
 @NO_ACCESS_ON_WINDOWS
 @pytest.mark.parametrize("way", ["okno", "wpisana"])
 def test_folder_bez_dostepu_wskazany_w_srodku_ukladu_zapisuje_sie_taki_jak_wskazany(tmp_path: Path, way: str) -> None:
@@ -7188,6 +7670,10 @@ def write_folder_settings(tool: ToolDirectory, folders: FolderSettings) -> None:
 PERIODS_FROM_ATTACHMENTS = "2026-11-folder-okresow-od-zalacznikow"
 
 
+def folder_history(client: CentrumClient) -> list[dict[str, Any]]:
+    return [row for row in client.get("/api/settings/history").json()["rows"] if row["file"] == FOLDERS.name]
+
+
 @pytest.mark.parametrize("inside", [*INSIDE_DAD_LAYOUT[:3], pytest.param(None, id="tydzien-przeniesiony")])
 def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_jako_zmiana_z_wydania_z_cofnij(
     tmp_path: Path, inside: tuple[str, ...] | None
@@ -7202,7 +7688,7 @@ def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_
     write_folder_settings(tool, FolderSettings(periods_directory=saved))
 
     first = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
-    [applied] = first.get("/api/settings/history").json()["rows"]
+    [applied] = folder_history(first)
     periods = first.get("/api/settings").json()["periods_directory"]
     first.stop()
     after_update = config_bytes(tool.config)
@@ -7214,7 +7700,7 @@ def test_folder_okresow_zapisany_w_srodku_ukladu_zamienia_sie_raz_na_zalaczniki_
     third.stop()
     fourth = started(tool, RELEASE_CHANGES, tool_freshness=freshness)
     after_undo = fourth.get("/api/settings").json()["periods_directory"]
-    rows = fourth.get("/api/settings/history").json()["rows"]
+    rows = folder_history(fourth)
     fourth.stop()
 
     assert periods == {"state": "ready", "path": str(root), "name": "Załączniki"}
@@ -7249,7 +7735,7 @@ def test_folder_okresow_od_korzenia_ukladu_zostaje_po_aktualizacji_bez_wiersza_i
 
     started(tool, RELEASE_CHANGES).stop()
     again = started(tool, RELEASE_CHANGES)
-    rows = again.get("/api/settings/history").json()["rows"]
+    rows = folder_history(again)
     again.stop()
 
     assert (tool.settings.read_bytes(), rows) == (before, [])
@@ -8175,14 +8661,14 @@ def test_proces_liczacy_regulami_ilosci_przy_pliku_pary_bez_odczytu_odmawia_star
     """Decyzja 2A Maksa: plik Reguł ilości, Listy Urządzeń albo Legendy czynności, którego system nie daje teraz czytać,
     nie znaczy reguł ani legendy z Wydania, którymi Przygotowanie pliku zbiorczego wpisałoby ilości bez ustawień taty.
     Karta i start Przygotowania i Przebiegu rozliczeń mówią tacie, którego pliku nie da się przeczytać; karta Wpisania
-    raportów mówi to samo o pliku Legendy czynności, bo nią czyta opis Wpisu ``tak`` (ADR 0039), a Wycena w efenix i
-    Uporządkowanie INTERMAX nie mają tej blokady."""
+    raportów mówi to samo, bo nimi czyta opis Wpisu ``tak`` w usterce i poza nią (ADR 0039, ADR 0044), a Wycena w efenix
+    i Uporządkowanie INTERMAX nie mają tej blokady."""
 
     app, _periods = _with_folders_and_rules(tmp_path)
     (app.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(DEFAULT_ACTIVITY_LEGEND.codes))
     sentence = refusal.settings_file_unreadable(unreadable).message
     counted = ("preparation", "settlement")
-    blocked = (*counted, "report_entering") if unreadable == LEGEND_FILE else counted
+    blocked = (*counted, "report_entering")
     readable = _start_blockers(app)
     assert sentence not in readable.values()
     before = _config_files(app.tool.config)
@@ -8970,3 +9456,278 @@ def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tm
     ]
     assert undone.json()["settings"]["settlement_mail"]["subject"] == "Rozliczenie za {okres}"
     assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
+
+
+DIFFERENCES_URL = f"{QUANTITY_RULES_URL}/differences"
+WORKERS_URL = "/api/settings/workers"
+CONTRACT_RULE = "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n"
+FAULT_ROW: dict[str, CellValue] = {"C": "pr", "D": "usterka", "G": datetime(2026, 9, 11, 16, 30), "V": 1, "AI": 1, "N": 45}
+
+
+def _history(client: CentrumClient) -> list[dict[str, Any]]:
+    response = client.get("/api/settings/history")
+    assert response.status_code == 200, response.text
+    rows: list[dict[str, Any]] = response.json()["rows"]
+    return rows
+
+
+def _rule_ids(client: CentrumClient) -> list[str]:
+    return [rule["id"] for rule in client.get(QUANTITY_RULES_URL).json()["rules"]]
+
+
+def _added_rule_row(app: Centrum) -> str:
+    saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+    assert saved.status_code == 200, saved.text
+    return str(saved.json()["change"])
+
+
+@pytest.mark.parametrize(
+    ("method", "url"),
+    [
+        pytest.param("PUT", lambda _row: f"{QUANTITY_RULES_URL}/regula-1", id="zmiana-reguly"),
+        pytest.param("DELETE", lambda _row: f"{QUANTITY_RULES_URL}/regula-1", id="usuniecie-reguly"),
+        pytest.param("POST", lambda row: f"/api/settings/history/{row}/undo", id="cofniecie-dodania-reguly"),
+    ],
+)
+def test_zmiana_reguly_taty_przy_pliku_regul_bez_odczytu_to_409_o_tym_pliku_a_nie_odpowiedz_z_regul_z_wydania(
+    tmp_path: Path, method: str, url: Any
+) -> None:
+    app = centrum(tmp_path)
+    row = _added_rule_row(app)
+    rules = app.tool.config / RULES_FILE
+    before = rules.read_bytes()
+
+    with without_reading(rules):
+        response = app.client.request(method, url(row), json=EDITOR_RULE if method == "PUT" else None)
+
+    assert (response.status_code, response.json()) == (409, {"message": settings_messages.unreadable(RULES_FILE)})
+    assert rules.read_bytes() == before
+
+
+def test_cofniecie_recznego_utworzenia_pliku_ustawien_spoza_centrum_przywraca_brak_pliku(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    assert app.client.get("/api/settings").status_code == 200
+    app.settings_path.write_bytes(FOLDERS.dump(replace(FOLDERS.default, theme="light")))
+    [row] = _history(app.client)
+
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (row["source"], row["undoable"]) == ("outside", True)
+    assert undone.status_code == 200, undone.text
+    assert not app.settings_path.exists()
+
+
+def test_reguly_zmienione_poza_centrum_przy_liscie_urzadzen_bez_odczytu_okno_pokazuje_ostatnie_dobre_reguly_taty(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    assert app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None}).status_code == 200
+    _added_rule_row(app)
+    write_dad_quantity_rules(app.tool, RULES_FILE, "", "")
+
+    with without_reading(app.tool.config / DEVICES_FILE):
+        shown = _rule_ids(app.client)
+
+    assert "regula-1" in shown
+
+
+def test_przy_pamieci_listy_wykonawcow_ktorej_tresci_regula_juz_nie_przyjmuje_zla_lista_nie_ma_ostatniej_dobrej_i_proces_nie_startuje(
+    tmp_path: Path,
+) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    assert centrum_.client.get("/api/settings").status_code == 200
+    refused = b"schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n"
+    centrum_.tool.worker_list.write_bytes(refused)
+    Memory(centrum_.tool.config, lambda _: None).write(WORKERS_FILE, Remembered(seen=refused, good=refused))
+
+    started_run = centrum_.client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+
+    assert (started_run.status_code, started_run.json()) == (
+        409,
+        {
+            "message": f"Lista Wykonawców ma złe ustawienie: {settings_messages.worker_without_login()} Szczegóły są w "
+            "Ustawieniach, w sekcji Wykonawcy.",
+            "field": "wykonawcy[0].loginy",
+        },
+    )
+
+
+def _light_theme(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+    return Edit(lambda current: replace(current, theme="light"))
+
+
+def test_start_centrum_pyta_o_wersje_narzedzia_tylko_gdy_ma_zmiane_z_wydania_do_zastosowania(tmp_path: Path) -> None:
+    asked: list[str] = []
+
+    def wydanie(local: str) -> None:
+        asked.append(local)
+
+    freshness = replace(FakeGitHub().freshness(), wydanie=wydanie)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    change = ReleaseChange("2026-11-motyw-jasny-proba", FOLDERS, _light_theme)
+    counts = []
+    for _start in range(2):
+        client = CentrumClient(centrum_app(tool, tool_freshness=freshness, release_changes=(change,)))
+        client.start()
+        client.stop()
+        counts.append(len(asked))
+
+    assert counts == [1, 1]
+
+
+def test_zgloszenie_podaje_najwyzej_tyle_najnowszych_zmian_ustawien_ile_mowi_jego_limit(tmp_path: Path) -> None:
+    centrum_ = preparing_centrum(tmp_path)
+    history = History(centrum_.tool.config, lambda _: None)
+    for number in range(1, REPORTED_CHANGES + 2):
+        history.append(
+            HistoryRow(
+                id=f"wiersz-{number:02d}",
+                at=local_now() - timedelta(minutes=REPORTED_CHANGES + 2 - number),
+                source=ByDad(),
+                undoes=None,
+                file=SETTINGS_FILE,
+                section="foldery",
+                changes=(RowChange(key="foldery.folder_okresow", before=None, after=str(tmp_path / f"Folder-{number:02d}")),),
+                secret=False,
+                undoable=True,
+                result="zapisano",
+                reason=None,
+                created=False,
+                removed=False,
+            )
+        )
+    run_id = stopped_for_maks(centrum_)
+
+    response = centrum_.client.post(f"/api/runs/{run_id}/diagnosis")
+
+    assert response.status_code == 200, response.text
+    lines = response.json()["report"]["body"].splitlines()
+    start = lines.index("## Zmiany Ustawień (30 dni)") + 2
+    section = lines[start : lines.index("", start)]
+    assert [line.rsplit(" ", 1)[1] for line in section] == [f"Folder-{number:02d}" for number in range(REPORTED_CHANGES + 1, 1, -1)]
+
+
+def test_odmowa_reguly_ze_skladnikiem_spoza_listy_urzadzen_nazywa_kolumne_pozycja_cennika_z_wzorca(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    template = write_collective_template(app.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["Z17"] = "ONT  Nokia\nz montażem"
+    workbook.save(template)
+    rule = {
+        "scope": "known",
+        "conditions": [{"kind": "component", "component": "ont q", "negated": False}],
+        "action": {"kind": "fill", "writes": [{"column": "Z", "value": 3, "multiplier": "component", "component": "ont q"}]},
+    }
+
+    refused = app.client.post(QUANTITY_RULES_URL, json=rule)
+
+    assert (refused.status_code, refused.json()) == (
+        422,
+        {
+            "message": "Reguła potrzebuje składnika „ont q”, którego nie ma na Liście Urządzeń: Jeśli URZĄDZENIA zawierają "
+            "„ont q”, to wpisz 3 × liczbę „ont q” w ONT Nokia z montażem (Z). Najpierw dodaj ten składnik w sekcji Urządzenia.",
+            "field": "jesli[0].skladnik",
+        },
+    )
+
+
+def test_migawka_narzedzi_maksa_niczego_nie_zapisuje_wiec_centrum_dalej_widzi_reczna_zmiane_jako_zmiane_spoza_centrum(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    assert app.client.get("/api/settings").status_code == 200
+    app.settings_path.write_bytes(FOLDERS.dump(replace(FOLDERS.default, theme="light")))
+    before = _config_files(app.tool.config)
+
+    snapshot = read_snapshot(app.tool.config)
+
+    assert snapshot.folders.theme == "light"
+    assert _config_files(app.tool.config) == before
+    assert [row["source"] for row in _history(app.client)] == ["outside"]
+
+
+def test_regula_dodana_i_usunieta_poza_centrum_zostawia_swoje_id_w_historii_wiec_cofniecie_usuniecia_nie_rusza_reguly_dodanej_potem(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    assert app.client.get(QUANTITY_RULES_URL).status_code == 200
+    outside_rule = CONTRACT_RULE.replace("t-umowa-u", "regula-1").replace("slowo: u}", "slowo: proba}")
+    write_dad_quantity_rules(app.tool, RULES_FILE, CONTRACT_RULE, CONTRACT_RULE + outside_rule)
+    assert "regula-1" in _rule_ids(app.client)
+    write_dad_quantity_rules(app.tool, RULES_FILE, "", "")
+    [removed, _added] = _history(app.client)
+
+    saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+    undone = app.client.post(f"/api/settings/history/{removed['id']}/undo")
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["quantity_rules"]["rules"][-1]["id"] == "regula-2"
+    assert undone.status_code == 200, undone.text
+    assert {"regula-1", "regula-2"} <= set(_rule_ids(app.client))
+
+
+def test_plik_wyjatkow_kontroli_ilosci_bez_odczytu_ma_zdanie_o_tresci_z_wydania_a_nie_odmowie(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    exceptions = app.tool.config / EXCEPTIONS_FILE
+    exceptions.parent.mkdir(parents=True)
+    exceptions.write_bytes(EXCEPTIONS.dump(()))
+
+    with without_reading(exceptions):
+        response = app.client.get(DIFFERENCES_URL)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["exceptions_problem"] == {"field": None, "message": settings_messages.unavailable(EXCEPTIONS_FILE)}
+
+
+def test_zly_plik_wyjatkow_kontroli_ilosci_dalej_ukrywa_roznice_wyjatkiem_z_ostatniego_dobrego_pliku(tmp_path: Path) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    write_quantity_source(centrum_.collective_file, [FAULT_ROW])
+    run_to_end(centrum_, dry_run=False)
+    [difference] = centrum_.client.get(DIFFERENCES_URL).json()["differences"]
+    marked = centrum_.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
+    assert marked.status_code == 200, marked.text
+    (centrum_.tool.config / EXCEPTIONS_FILE).write_bytes(b"wyjatki: [")
+
+    found = centrum_.client.get(DIFFERENCES_URL).json()
+
+    assert (found["differences"], found["exceptions"]) == ([], 1)
+    assert found["exceptions_problem"] == {"field": None, "message": settings_messages.damaged(EXCEPTIONS_FILE)}
+
+
+def test_okresy_przy_usuwaniu_wykonawcy_sprawdzaja_sie_poza_blokada_ustawien_wiec_okno_ustawien_nie_czeka_na_pliki_zbiorcze(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owners: list[CentrumSettings] = []
+    readers: list[threading.Thread] = []
+    read_while_checking: list[bool] = []
+
+    def source(path: Path) -> bytes:
+        if owners and not readers:
+            reader = threading.Thread(target=owners[0].view, daemon=True)
+            readers.append(reader)
+            reader.start()
+            reader.join(timeout=5)
+            read_while_checking.append(not reader.is_alive())
+        return file_bytes(path)
+
+    change_workers = CentrumSettings.change_workers
+
+    def captured(settings: CentrumSettings, edit: Any) -> Any:
+        owners.append(settings)
+        return change_workers(settings, edit)
+
+    register = tmp_path / "Rejestr" / REGISTER_NAME
+    register.parent.mkdir()
+    write_register(register, [register_order(1, datetime(2026, 9, 8, 10), worker="adrian.testowy")])
+    centrum_ = settling_centrum(tmp_path, surroundings=Surroundings(source=source), register=register)
+    monkeypatch.setattr(CentrumSettings, "change_workers", captured)
+
+    removed = centrum_.client.delete(f"{WORKERS_URL}/kamil.syntetyczny")
+    for reader in readers:
+        reader.join(timeout=5)
+
+    assert removed.status_code == 200, removed.text
+    assert read_while_checking == [True]

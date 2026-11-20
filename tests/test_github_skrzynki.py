@@ -1,11 +1,3 @@
-"""Skill ``verify-github-skrzynki``: granice przebiegu na żywo i nagrania prawdziwego GitHuba.
-
-Przebieg na żywo pisze tylko do repozytoriów próbnych (pustego i Archiwum z commitem), więc transport klienta Skrzynki
-odmawia każdego innego adresu, także prawdziwej Skrzynki, zanim cokolwiek wyśle. Nagrania leżą w repozytorium publicznym, więc nie mają klucza ani
-nagłówków żądań. Odtwarzanie nagrań (podstawa ``ci:``) biegnie w Mutation checks; tu sprawdza się, że odtwarzanie
-odmawia żądania spoza nagrania, a sprzątanie zostawia Release razem z jego tagiem.
-"""
-
 from __future__ import annotations
 
 import json
@@ -17,6 +9,7 @@ import pytest
 from rozliczenia.centrum.github import HttpRequest
 from rozliczenia.centrum.keyed_box import LIST_LAG_S
 from rozliczenia.centrum.report_box import (
+    COMMENT_LIMIT,
     REPOSITORY,
     Archive,
     Asset,
@@ -157,9 +150,6 @@ def test_nagrania_sa_i_nie_maja_klucza_ani_naglowkow_zadan() -> None:
 
 @pytest.mark.parametrize("case", ["etykieta-z-githuba", "lista-strony", "lista-zamkniete"])
 def test_przypadek_pada_gdy_lista_githuba_nadazyla_pozniej_niz_zaklada_centrum(case: str) -> None:
-    """Centrum zakłada, że lista GitHuba pokazuje każdy zapis po ``keyed_box.LIST_LAG_S`` (#879), więc przypadek, w
-    którym lista nadążyła później, to rozjazd, choć klient odpowiada dobrze; nagrane opóźnienie przypadek przepuszcza."""
-
     recording = json.loads((SKILL / "nagrania" / "skrzynka-fine-grained.json").read_text(encoding="utf-8"))
     facts = recording["przypadki"][case]["fakty"]
     recorded = {result.case: result.problems for result in github_skrzynki.replay("skrzynka-fine-grained", recording)}
@@ -175,10 +165,6 @@ def test_przypadek_pada_gdy_lista_githuba_nadazyla_pozniej_niz_zaklada_centrum(c
 
 
 def test_atrapa_skrzynki_daje_w_archiwach_te_skutki_ktore_nagral_prawdziwy_github() -> None:
-    """Model Skrzynki atrap (``atrapy.skrzynka``, za ``FakeReportBox`` i ``FileReportBox``) odpowiada w Archiwach okresów
-    jak nagrany GitHub: drugie Archiwum tagu i drugi plik nazwy to 422 (``Rejected``), lista Release'ów pokazuje nowe
-    Archiwum dopiero po chwili, a plik wysłany po usunięciu tej samej nazwy dostaje nowy identyfikator."""
-
     cases = json.loads((SKILL / "nagrania" / "archiwum-fine-grained.json").read_text(encoding="utf-8"))["przypadki"]
     ids = [int(found) for found in re.findall(r"Asset\(id=(\d+)", cases["wysylka-pliku"]["wynik"])]
     [replaced] = re.findall(r"Asset\(id=(\d+)", cases["podmiana-pliku"]["wynik"])
@@ -201,14 +187,10 @@ def test_atrapa_skrzynki_daje_w_archiwach_te_skutki_ktore_nagral_prawdziwy_githu
 
 
 def test_atrapa_skrzynki_daje_w_issue_te_skutki_ktore_nagral_prawdziwy_github() -> None:
-    """Model Skrzynki atrap (``atrapy.skrzynka``) odpowiada w issue jak nagrany GitHub: issue dostają kolejne numery w
-    całej skrzynce, bez względu na etykietę, a issue odrzucone (422) numeru nie zabiera; komentarz, lista komentarzy i
-    poprawka komentarza issue albo komentarza, którego nie ma, to 404 (``Refused``); lista z etykietą pokazuje tylko
-    issue tej etykiety, zamknięte tylko na prośbę, a nowe issue dopiero po chwili; identyfikator komentarza rośnie
-    w całej skrzynce. Kolejności listy model nie odtwarza (GitHub daje najnowsze pierwsze), bo wołający wybierają po
-    numerze."""
-
     cases = json.loads((SKILL / "nagrania" / "skrzynka-fine-grained.json").read_text(encoding="utf-8"))["przypadki"]
+    assert len({cases[case]["fakty"]["etykieta"] for case in OPENED_IN_TURN}) == len(OPENED_IN_TURN)
+    commented_issues = {cases[case]["wymiany"][0]["sciezka"].split("/")[-2] for case in COMMENTED_IN_TURN}
+    assert len(commented_issues) > 1, commented_issues
     opened = [int(re.findall(r"Sent\(number=(\d+)\)", cases[case]["wynik"])[0]) for case in OPENED_IN_TURN]
     missing = {case: ([exchange["status"] for exchange in cases[case]["wymiany"]], cases[case]["wynik"]) for case in MISSING}
     commented = [int(re.findall(r"Commented\(id=(\d+)", cases[case]["wynik"])[0]) for case in COMMENTED_IN_TURN]
@@ -221,7 +203,7 @@ def test_atrapa_skrzynki_daje_w_issue_te_skutki_ktore_nagral_prawdziwy_github() 
     assert cases["lista-bez-etykiety"]["wynik"] == "()" and cases["etykieta-z-githuba"]["fakty"]["nadazylo_po_s"] > 0
     assert commented == sorted(set(commented))
     assert [int(number) for number in open_only] == [closed["otwarte"]]
-    assert sorted(map(int, with_closed)) == sorted([closed["otwarte"], closed["nie_planowane"], closed["zrobione"]])
+    assert [int(number) for number in with_closed] == sorted([closed["otwarte"], closed["nie_planowane"], closed["zrobione"]], reverse=True)
 
     issues = Issues(first_number=opened[0], lag=True)
     report = issues.open("zgloszenie", "tytuł", "treść")
@@ -242,16 +224,26 @@ def test_atrapa_skrzynki_daje_w_issue_te_skutki_ktore_nagral_prawdziwy_github() 
     not_planned.closure, done.closure = Closure("not_planned", None), Closure("completed", None)
     issues.caught_up()
     assert [issue.number for issue in issues.listed("zgloszenie", include_closed=False)] == [report.number]
-    assert sorted(issue.number for issue in issues.listed("zgloszenie", include_closed=True)) == sorted(
-        [report.number, not_planned.number, done.number]
-    )
+    assert [issue.number for issue in issues.listed("zgloszenie", include_closed=True)] == [
+        report.number,
+        not_planned.number,
+        done.number,
+    ], "atrapa listuje issue od najstarszego, a GitHub od najnowszego, bo wołający wybierają issue po numerze"
 
 
-# Nagrane założenia issue po kolei, każde z inną etykietą.
+def test_limit_tresci_skrzynki_to_najdluzsza_tresc_issue_ktora_przyjal_nagrany_github_a_komentarz_przyjmuje_kazdy_tekst_tej_dlugosci() -> None:
+    cases = json.loads((SKILL / "nagrania" / "skrzynka-fine-grained.json").read_text(encoding="utf-8"))["przypadki"]
+
+    def recorded(case: str) -> tuple[object, int]:
+        return cases[case]["fakty"]["dlugosc"], cases[case]["wymiany"][-1]["status"]
+
+    assert (recorded("zalozenie-na-limicie"), recorded("zalozenie-ponad-limit")) == ((COMMENT_LIMIT, 201), (COMMENT_LIMIT + 1, 422))
+    assert recorded("komentarz-na-limicie") == (COMMENT_LIMIT, 201)
+    assert len(cases["komentarz-na-limicie"]["fakty"]["znak"].encode("utf-8")) == len("\U0010ffff".encode("utf-8"))
+
+
 OPENED_IN_TURN = ("zalozenie", "zalozenie-bez-etykiety-w-repo", "zalozenie-na-limicie")
-# Nagrane kroki na issue albo komentarzu, którego nie ma.
 MISSING = ("komentarz-brak-issue", "komentarze-brak-issue", "poprawka-brak-komentarza")
-# Nagrane komentarze po kolei w dwóch issue.
 COMMENTED_IN_TURN = ("komentarz", "komentarz-na-limicie", "komentarz-na-limicie-bajtow")
 
 
@@ -275,8 +267,6 @@ def test_odtwarzanie_odmawia_zadania_spoza_nagrania() -> None:
 
 
 class _ArchiveHarness:
-    """Harness repozytorium próbnego Archiwum z jednym Release'em runu (ze znacznikiem) i jego tagiem."""
-
     def __init__(self, run: str, assets: list[str]) -> None:
         self.release = {"id": 7, "tag_name": f"logi-verify-{run}", "body": f"{github_wymiana.RUN_MARKER}{run}"}
         self.assets = [{"name": name} for name in assets]

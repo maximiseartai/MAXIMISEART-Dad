@@ -4,7 +4,8 @@
 
 Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęzi). Wyprzedza mapę
 [Centrum w chmurze](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/1145) tak jak
-[ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md). Zmienia te zdania ADR 0028:
+[ADR 0028](0028-wpisanie-raportow-z-gmaila-na-zadanie-przed-chmura.md). Zmienia te zdania ADR 0028 i jedno zdanie
+[ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md):
 
 - „Na żądanie, nie w tle”: Centrum startuje samo po zalogowaniu taty i w tle wysyła Przypomnienia o raporcie.
   Wpisanie raportów dalej rusza tylko na kliknięcie taty;
@@ -17,7 +18,14 @@ Zaakceptowana (decyzja Maksa 12.11.2026 po rozmowie z tatą, grill w tej gałęz
   Centrum zmienia się tak samo, a [ADR 0007](0007-zgloszenia-do-maksa-w-prywatnym-repo.md) dostaje wysyłkę przez
   SMTP obok IMAP;
 - „Co widzi przeglądarka”: widok Raporty pokazuje też pory wysłanych przypomnień i informację o brakującej stopce,
-  bez adresów Wykonawców i bez treści maili.
+  bez adresów Wykonawców i bez treści maili;
+- zdanie decyzji ADR 0007 „Tata wysyła je jednym kliknięciem po Diagnozie i przed wysłaniem widzi jego dokładną
+  treść”: odrzucone hasło aplikacji w pracy przypomnień, przy odczycie skrzynki albo przy wysyłce, zakłada
+  Zgłoszenie do Maksa samo, bez kliknięcia i podglądu taty. Decyzja Maksa 20.11.2026 w [#2329](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2329),
+  odpowiedź „A”: „Zgłoszenie przy odrzuconym haśle przypomnień zostaje wysyłane samo, bez kliknięcia”. Przypomnienia
+  biegną w tle, gdy tata zwykle nie siedzi przy Centrum, więc ze Zgłoszeniem na kliknięcie Maks dowiedziałby się o
+  wstrzymanych przypomnieniach dopiero po otwarciu Centrum, a Zgłoszenie niesie tylko części, które tata wysyła w
+  każdym Zgłoszeniu z Zatrzymania.
 
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zmienia pory, godzinę pierwszego przypomnienia, stopkę i treść maila w
 Ustawienia Centrum z dzisiejszymi wartościami jako domyślnymi; temat zostaje stały, a stały blok wzoru z
@@ -72,6 +80,13 @@ Laptop taty na pewno działa o 8:00. Nie wiadomo, czy działa w nocy albo wieczo
 - **Próba przy każdym Wydaniu.** Agent Wydania uruchamia na prawdziwej skrzynce taty próbę, która liczy, komu i za
   które dni poszłyby przypomnienia, a wysyła jeden mail tylko na adres Maksa (krok 3 skilla `wydanie`, bez pytania
   Maksa od 19.11.2026). Po Wydaniu nie ma trybu próbnego.
+
+Decyzje agenta wdrożenia poza prośbą Maksa: odrzucone hasło aplikacji w pracy przypomnień zamyka porę, żeby Gmail nie
+dostawał złego hasła co minutę; pamięć wysłanych w tej pracy Centrum jest własna, a nie wspólna z Wysyłką rozliczeń
+([ADR 0040](0040-wysylka-rozliczen-mailem-ze-skrzynki-raportow.md)) za jednym modułem „wysłane przez Centrum”, bo obie
+liczą z wysłanych co innego: przypomnienie porę z chwili wysyłki i Wykonawcę z adresów Listy Wykonawców, Mail z rozliczeniem
+stan pliku po jego nazwie i chwili zmiany, z ostatnim mailem pliku w miejscu poprzedniego, a dostęp do skrzynki
+sprawdzają w innym miejscu odczytu i z innym skutkiem.
 
 ## Odrzucone warianty
 

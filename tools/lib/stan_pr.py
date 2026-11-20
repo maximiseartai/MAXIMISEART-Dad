@@ -8,6 +8,7 @@ Stan najnowszego runu CI na HEAD czytają dwa tryby narzędzia: merge jako przyc
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 import json
 import re
 from typing import Any
@@ -103,7 +104,6 @@ class UnknownRun(Exception):
     """Check workflow ``CI``, którego ``detailsUrl`` nie ma postaci ``…/actions/runs/<run>/job/<zadanie>``."""
 
     def __init__(self, name: str, url: str) -> None:
-        super().__init__(name, url)
         self.name = name
         self.url = url
 
@@ -155,6 +155,21 @@ def ci_problem(pull: Pull) -> str | None:
     if (result := check.get("conclusion") or "?") != "SUCCESS":
         return f"CI: „{github.REQUIRED}” {result}"
     return Waiting(f"CI: run {github.CI_WORKFLOW} {run.id} jeszcze trwa") if run.running else None
+
+
+GATE_IN_PROGRESS = frozenset({"PENDING", "EXPECTED"})
+
+
+def gate_queued(pull: Pull) -> Waiting | None:
+    gate = next((check for check in pull.checks if check.get("context") == github.WERDYKT_I_BRAMKA), None)
+    if gate is not None and gate.get("state") not in GATE_IN_PROGRESS:
+        return None
+    run = latest_ci_run(pull.checks)
+    comments = [verdict.get("createdAt") for verdict in pull.verdicts]
+    finished = [check.get("completedAt") for check in (run.checks if run else ())]
+    since = max((str(moment) for moment in [*comments, *finished] if moment), default=None)
+    queued = f" od {datetime.fromisoformat(since):%H:%M} UTC" if since else ""
+    return Waiting(f"{github.WERDYKT_I_BRAMKA} w kolejce{queued}; watch_pull_request obudzi wątek")
 
 
 REVIEW_DOES_NOT_WAIT = (

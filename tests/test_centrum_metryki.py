@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Iterator
+import inspect
 import json
 from pathlib import Path
 from typing import Any
 
-from tests.fixtures.centrum import Centrum, centrum
+from fastapi.dependencies.models import Dependant
+from fastapi.routing import APIRoute, iter_route_contexts
+
+from tests.fixtures.centrum import Centrum, ToolDirectory, centrum, centrum_app
+
+from mutacje_zmiany import Hunk, Revert, mutants
+
+ROOT = Path(__file__).resolve().parents[1]
 
 PREPARATION_COUNTERS = {"period_orders": 3, "successful_orders": 2, "skipped_empty_rows": 1, "warnings": 0}
 SETTLEMENT_COUNTERS = {
@@ -358,3 +367,41 @@ def test_nieczytelny_plik_metryk_daje_bezpieczny_komunikat(tmp_path: Path) -> No
 
     assert response.status_code == 500
     assert response.json() == {"message": "Nie udało się odczytać plików metryk. Odśwież kartę."}
+
+
+def _fastapi_calls(dependant: Dependant) -> Iterator[Callable[..., Any]]:
+    if dependant.call is not None:
+        yield dependant.call
+    for inner in dependant.dependencies:
+        yield from _fastapi_calls(inner)
+
+
+def _annotation_changes(call: Callable[..., Any]) -> Iterator[tuple[str, int, str]]:
+    function = inspect.unwrap(vars(call)["__init__"] if isinstance(call, type) else getattr(call, "__func__", call))
+    path = Path(inspect.getsourcefile(function) or "")
+    if not path.is_relative_to(ROOT / "src"):
+        return
+    lines, start = inspect.getsourcelines(function)
+    for name, annotation in function.__annotations__.items():
+        written = f"-> {annotation}" if name == "return" else f"{name}: {annotation}"
+        found = next((offset for offset, line in enumerate(lines) if isinstance(annotation, str) and written in line), None)
+        if found is not None:
+            changed = "-> object" if name == "return" else f"{name}: object"
+            yield path.relative_to(ROOT).as_posix(), start + found, lines[found].rstrip("\n").replace(written, changed, 1)
+
+
+def test_filtr_zachowuje_adnotacje_kazdej_funkcji_ktora_czyta_fastapi_centrum(tmp_path: Path) -> None:
+    app = centrum_app(ToolDirectory(tmp_path))
+    routes = [context.route for context in iter_route_contexts(app.routes)]
+    calls = {call for route in routes if isinstance(route, APIRoute) for call in _fastapi_calls(route.dependant)}
+    lines = {change for call in calls for change in _annotation_changes(call)}
+
+    lost = [
+        f"{path}:{number}"
+        for path, number, changed in sorted(lines)
+        if not any(m.revert is Revert.HUNK for m in mutants(path, (ROOT / path).read_text(encoding="utf-8"), [Hunk(number, 1, (changed,))]))
+    ]
+
+    assert "src/rozliczenia/centrum/dad_action_journal.py" in {path for path, _, _ in lines}
+    assert len(lines) > 20
+    assert lost == [], "cofnięcie adnotacji funkcji, którą czyta FastAPI, musi być mutacją: dodaj jej formę do _unread_annotations"

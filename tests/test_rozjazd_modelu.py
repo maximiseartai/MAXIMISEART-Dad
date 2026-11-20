@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL = ".agents/skills/verify-model"
 CODE = "src/pakiet/kod.py"
 WHOLE = "src/pakiet/caly.py"
+WHOLE_TEXT = "frontend/src/widok.ts"
 # ``zapisz`` w ``obok``, ``Logi.zamknij`` przed ``Dziennik.zamknij`` z tabeli i ``kolejka`` w ``inna`` przed ``kolejka``
 # w ``utworz``: definicja o tej nazwie w innym zakresie.
 SOURCE = '''"""Moduł."""
@@ -78,7 +79,11 @@ def galezie(x: object) -> object:
             wynik = 3
     return wynik
 '''
-NAMES = {CODE: ["zapisz", "Dziennik.zamknij", "utworz.kolejka", "STALA", "galezie.wynik"], WHOLE: [rozjazd_modelu.CALY_PLIK]}
+NAMES = {
+    CODE: ["zapisz", "Dziennik.zamknij", "utworz.kolejka", "STALA", "galezie.wynik"],
+    WHOLE: [rozjazd_modelu.CALY_PLIK],
+    WHOLE_TEXT: [rozjazd_modelu.CALY_PLIK],
+}
 STEPS = f"Wykonaj kroki „Bring the model in line” z {SKILL}/SKILL.md, a skróty przelicz (tools/przesun_model.py verify-model) dopiero, gdy model opisuje kod."
 
 
@@ -90,7 +95,8 @@ def _write(root: Path, name: str, text: str) -> None:
 def _skill(root: Path) -> Path:
     """Skill z modelem kodu ``NAMES`` i kod, który model opisuje: skróty przeliczone na tym kodzie."""
 
-    for name, text in {CODE: SOURCE, WHOLE: "X = 1\n", "inny.txt": "inny\n", f"{SKILL}/SKILL.md": "Model.\n"}.items():
+    files = {CODE: SOURCE, WHOLE: "X = 1\n", WHOLE_TEXT: "x = 1\n", "inny.txt": "inny\n", f"{SKILL}/SKILL.md": "Model.\n"}
+    for name, text in files.items():
         _write(root, name, text)
     _write(root, f"{SKILL}/{rozjazd_modelu.DEFINICJE}", json.dumps({path: dict.fromkeys(names, "") for path, names in NAMES.items()}))
     rozjazd_modelu.przesun(root / SKILL, root)
@@ -107,7 +113,6 @@ def _edit(root: Path, name: str, old: str, new: str) -> None:
     ("old", "new", "changed"),
     [
         pytest.param("    return 1\n", "    return 10\n", f"{CODE} zapisz", id="cialo-definicji"),
-        pytest.param('    """Zapisuje."""\n', '    """Zapisuje inaczej."""\n', f"{CODE} zapisz", id="docstring-definicji"),
         pytest.param("        return 3\n", "        return 30\n", f"{CODE} Dziennik.zamknij", id="metoda-swojej-klasy"),
         pytest.param("        kolejka = list()\n", "        kolejka = dict()\n", f"{CODE} utworz.kolejka", id="przypisanie-w-funkcji"),
         pytest.param(
@@ -120,15 +125,15 @@ def _edit(root: Path, name: str, old: str, new: str) -> None:
         pytest.param("        wynik = 2\n", "        wynik = 20\n", f"{CODE} galezie.wynik", id="wiazanie-w-except"),
         pytest.param("            wynik = 3\n", "            wynik = 30\n", f"{CODE} galezie.wynik", id="wiazanie-w-case"),
         pytest.param("\ndef zapisz(", "\ndef zapisz_inaczej(", f"{CODE} zapisz", id="definicji-nie-ma"),
-        pytest.param("X = 1\n", '"""Docstring."""\nX = 1\n', WHOLE, id="caly-plik"),
-        pytest.param("X = 1\n", "X = 1  # komentarz\n", WHOLE, id="komentarz-w-calym-pliku"),
+        pytest.param("X = 1\n", "X = 2\n", WHOLE, id="caly-plik"),
+        pytest.param("x = 1\n", "x = 1;\n", WHOLE_TEXT, id="tekst-calego-pliku-spoza-pythona-o-tym-samym-drzewie"),
     ],
 )
 def test_zmiana_kodu_opisanego_modelem_jest_rozjazdem_z_plikiem_definicja_i_krokami_naprawy(
     tmp_path: Path, old: str, new: str, changed: str
 ) -> None:
     skill = _skill(tmp_path)
-    _edit(tmp_path, WHOLE if changed == WHOLE else CODE, old, new)
+    _edit(tmp_path, changed if changed in NAMES else CODE, old, new)
 
     found = rozjazd_modelu.rozjazd(skill, tmp_path)
 
@@ -144,6 +149,10 @@ def test_zmiana_kodu_opisanego_modelem_jest_rozjazdem_z_plikiem_definicja_i_krok
         pytest.param(CODE, "    kolejka = set()\n", "    kolejka = frozenset()\n", id="przypisanie-o-tej-nazwie-w-innej-funkcji"),
         pytest.param(CODE, '"""Moduł."""\n', '"""Moduł."""\n\nPOZA = 1\n\n', id="przesuniete-linie"),
         pytest.param(CODE, "    return 1\n", "    return 1  # komentarz\n", id="komentarz-w-definicji"),
+        pytest.param(CODE, '    """Zapisuje."""\n', '    """Zapisuje inaczej."""\n', id="zmieniony-docstring-definicji"),
+        pytest.param(CODE, '    """Zapisuje."""\n', "", id="usuniety-docstring-definicji"),
+        pytest.param(WHOLE, "X = 1\n", '"""Docstring."""\nX = 1\n', id="docstring-w-calym-pliku"),
+        pytest.param(WHOLE, "X = 1\n", "X = 1  # komentarz\n", id="komentarz-w-calym-pliku"),
         pytest.param(WHOLE, "X = 1\n", "X = 1\r\n", id="konce-linii-windows-w-calym-pliku"),
         pytest.param("inny.txt", "inny\n", "zmieniony\n", id="plik-spoza-definicji"),
     ],
@@ -211,6 +220,16 @@ def test_przeliczenie_nie_zapisuje_skrotow_gdy_definicji_nie_ma(tmp_path: Path) 
         rozjazd_modelu.przesun(skill, tmp_path)
 
     assert (skill / rozjazd_modelu.DEFINICJE).read_text(encoding="utf-8") == recorded
+
+
+@pytest.mark.parametrize("body", ["pass", "...", "return None"])
+def test_definicja_z_samym_docstringiem_ma_skrot_inny_niz_definicja_bez_docstringu(tmp_path: Path, body: str) -> None:
+    _write(tmp_path, "z_docstringiem.py", 'def f():\n    """Opis."""\n')
+    _write(tmp_path, "bez_docstringu.py", f"def f():\n    {body}\n")
+
+    found = rozjazd_modelu.skroty({"z_docstringiem.py": {"f": ""}, "bez_docstringu.py": {"f": ""}}, tmp_path)
+
+    assert found["z_docstringiem.py"]["f"] != found["bez_docstringu.py"]["f"]
 
 
 def test_skrot_definicji_to_skrot_drzewa_bez_polozenia_i_pustych_pol_ten_sam_w_kazdym_pythonie(tmp_path: Path) -> None:
@@ -288,7 +307,7 @@ def test_narzedzie_odmawia_skillowi_bez_definicji_i_definicji_ktorej_nie_ma(tmp_
 POZA_MODELEM: Final = {
     # „Changes to Komunikaty text, the log or Zgłoszenia do not matter here”: odmowę daje trasa w całym pliku
     # ``tool_update.py``, a ``update_without_port`` to tylko jej Komunikat.
-    "verify-aktualizacja-narzedzia": ["src/rozliczenia/centrum/refusal.py update_without_port"],
+    "verify-aktualizacja-narzedzia": ["src/rozliczenia/centrum/runs.py RunHost.begin_update", "src/rozliczenia/centrum/refusal.py update_without_port"],
     # „The rest of the table runs as real code”: klucze mają tylko części modelowane ręcznie.
     "verify-jedno-uruchomienie-naraz": [
         "src/rozliczenia/centrum/runs.py RunHost.start",
@@ -300,11 +319,22 @@ POZA_MODELEM: Final = {
         "src/rozliczenia/centrum/runs.py RunHost.after",
         "src/rozliczenia/centrum/shutdown.py Shutdown.request",
     ],
+    "verify-kolejka-skrzynki": ["src/rozliczenia/centrum/run_comments.py RunComments.send_left_behind", "src/rozliczenia/centrum/case_delivery.py _CaseDelivery.delivered"],
     # Wiersz ``hyperlinks.py``: „its reader `read_sheet_hyperlinks` is covered by pytest (…), not here”.
     "verify-kopia-wzorca": ["src/rozliczenia/hyperlinks.py read_sheet_hyperlinks"],
     # „Left out on purpose: (…) the Komunikat of an Uwaga that was not queued (`refusal.note_not_queued`), (…)
     # `KeyedBox.judge`”.
     "verify-sprawy-taty": ["src/rozliczenia/centrum/keyed_box.py KeyedBox.judge", "src/rozliczenia/centrum/refusal.py note_not_queued"],
+    "verify-urwane-uruchomienie": [
+        "src/rozliczenia/centrum/app.py create_app",
+        "src/rozliczenia/efenix_trace.py traced",
+        "src/rozliczenia/efenix_pricing.py _outcome",
+        "src/rozliczenia/centrum/run_comments.py RunComments._refresh",
+        "src/rozliczenia/centrum/process_kind.py startable",
+        "src/rozliczenia/centrum/catalog.py Catalog.prepared",
+        "src/rozliczenia/centrum/run_comments.py RecordMaker.of",
+        "src/rozliczenia/centrum/outbox.py _settle",
+    ],
     # „Every code name in the table is one of them, except `onedrive_conflicts.beside` (…), `OlderOwnEntries.upgraded`
     # (Left out) and `register_file.read` (…) (`verify-zapis-intermax`)”.
     "verify-wpisanie-raportow": [

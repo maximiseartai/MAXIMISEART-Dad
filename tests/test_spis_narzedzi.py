@@ -1,11 +1,11 @@
-"""Blok ``## Narzędzia`` w ``AGENTS.md`` to spis narzędzi agenta: każde narzędzie z ``tools/`` z pierwszym zdaniem docstringu.
+"""Blok ``## Narzędzia`` w ``AGENTS.md`` to spis narzędzi agenta: każde narzędzie z ``tools/`` z pierwszym zdaniem stałej ``OPIS``.
 
 Spis jest w kontekście agenta od początku sesji, więc agent nie musi wiedzieć, że narzędzie istnieje, zanim go szuka.
 W ``tools/`` leżą tylko narzędzia, które agent albo człowiek uruchamia; skrypty, które uruchamia workflow, leżą
 w ``tools/ci/``, a moduły bez własnego wywołania w ``tools/lib/``, więc spis ich nie ma, a ``AGENTS.md`` i skille nie
-wskazują ``tools/ci/``. Skrypt, który agent uruchamia sam według ``docs/agents/``, ``README.md`` albo docstringu
+wskazują ``tools/ci/``. Skrypt, który agent uruchamia sam według ``docs/agents/``, ``README.md`` albo ``OPIS``
 narzędzia (plan runu, odtworzenie części nocnych mutacji), leży w ``tools/``, bo inaczej spis go nie ma, a agent bierze
-najbliższą pozycję spisu: polecenie ``python … tools/ci/…`` w tych dokumentach to błąd. Pierwsze zdanie docstringu (zarazem pierwsza linia ``--help``) mówi w jednej linii
+najbliższą pozycję spisu: polecenie ``python … tools/ci/…`` w tych dokumentach to błąd. Pierwsze zdanie ``OPIS`` (zarazem pierwsza linia ``--help``) mówi w jednej linii
 ``MIN_CHARS``–``MAX_CHARS`` znaków, co narzędzie robi i kiedy go użyć, a pierwsze ``SAME_WORDS`` słów odróżnia je od
 każdego innego narzędzia. Narzędzie z obowiązkową podkomendą (``add_subparsers(required=True)``) wymienia w tym
 zdaniu w nawiasie co najmniej jedną z nich, np. „(plan --baza origin/main)”, bo agent, który zna je tylko ze spisu,
@@ -87,9 +87,19 @@ def _tools() -> list[Path]:
     return sorted(TOOLS.glob("*.py"))
 
 
+def _description(path: Path) -> str:
+    for node in drzewo(path).body:
+        if isinstance(node, ast.Assign) and [ast.unparse(target) for target in node.targets] == ["OPIS"]:
+            if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+                return node.value.value
+    raise ValueError(
+        f'{path.name}: brak stałej modułu OPIS = "…" z napisem; opis narzędzia (--help i pozycja spisu) stoi w OPIS, '
+        "nie w docstringu, bo usunięty docstring psuje --help po cichu, a usuniętej stałej nie przepuści mypy"
+    )
+
+
 def _first_paragraph(path: Path) -> list[str]:
-    docstring = ast.get_docstring(drzewo(path)) or ""
-    return docstring.split("\n\n", 1)[0].splitlines()
+    return _description(path).split("\n\n", 1)[0].splitlines()
 
 
 def _required_subcommands(path: Path) -> list[str]:
@@ -171,14 +181,14 @@ def test_pierwsze_zdanie_narzedzia_to_jedna_linia_o_dlugosci_spisu() -> None:
         paragraph = _first_paragraph(path)
         name = path.relative_to(ROOT).as_posix()
         if len(paragraph) != 1:
-            problems.append(f"{name}: pierwszy akapit docstringu ma {len(paragraph)} linii, a ma mieć jedno zdanie w jednej")
+            problems.append(f"{name}: pierwszy akapit OPIS ma {len(paragraph)} linii, a ma mieć jedno zdanie w jednej")
         elif not MIN_CHARS <= len(paragraph[0]) <= MAX_CHARS or not paragraph[0].endswith("."):
             problems.append(f"{name}: pierwsze zdanie ma {len(paragraph[0])} znaków albo nie kończy się kropką")
 
     assert problems == [], "\n".join(
         [
             *problems,
-            f"Zacznij docstring jednym zdaniem {MIN_CHARS}–{MAX_CHARS} znaków zakończonym kropką: co narzędzie robi i kiedy "
+            f"Zacznij OPIS jednym zdaniem {MIN_CHARS}–{MAX_CHARS} znaków zakończonym kropką: co narzędzie robi i kiedy "
             "go użyć, słowami sytuacji agenta; szczegóły daj w następnych akapitach.",
         ]
     )
@@ -215,7 +225,7 @@ def test_agents_md_ani_skill_nie_wskazuja_agentowi_skryptow_ci() -> None:
 
 def test_dokument_agenta_nie_kaze_mu_uruchamiac_skryptu_ci() -> None:
     documents = {path: path.read_text(encoding="utf-8") for path in AGENT_DOCS}
-    documents |= {path: ast.get_docstring(drzewo(path)) or "" for path in _tools()}
+    documents |= {path: f"{_description(path)}\n{ast.get_docstring(drzewo(path)) or ''}" for path in _tools()}
     found = [
         f"{path.relative_to(ROOT).as_posix()}: {line.strip()}"
         for path, text in documents.items()
@@ -233,7 +243,7 @@ def test_dokument_agenta_nie_kaze_mu_uruchamiac_skryptu_ci() -> None:
 
 
 def _without_subcommand_in_first_sentence(paths: list[Path]) -> dict[Path, list[str]]:
-    """Narzędzia z obowiązkową podkomendą, których pierwsze zdanie docstringu nie wymienia żadnej w nawiasie."""
+    """Narzędzia z obowiązkową podkomendą, których pierwsze zdanie ``OPIS`` nie wymienia żadnej w nawiasie."""
 
     missing = {}
     for path in paths:
@@ -248,7 +258,7 @@ def test_pierwsze_zdanie_narzedzia_z_obowiazkowa_podkomenda_ja_wymienia() -> Non
     missing = {path.relative_to(ROOT).as_posix(): subcommands for path, subcommands in _without_subcommand_in_first_sentence(_tools()).items()}
 
     assert missing == {}, (
-        f"te narzędzia wymagają podkomendy, a pierwsze zdanie docstringu (pozycja spisu) żadnej nie wymienia w nawiasie: {missing}; "
+        f"te narzędzia wymagają podkomendy, a pierwsze zdanie OPIS (pozycja spisu) żadnej nie wymienia w nawiasie: {missing}; "
         "napisz w nim w nawiasie podkomendę, której agent używa, np. „(plan --baza origin/main)”, bo agent, który zna "
         "narzędzie tylko ze spisu, uruchamiał je bez podkomendy (pomiar 30–31.10.2026), a gołe słowo nie odróżnia "
         "podkomendy od tego samego słowa w zdaniu (ADR 0022)."
@@ -280,18 +290,35 @@ def test_podkomendy_sa_obowiazkowe_tylko_z_required_true(tmp_path: Path) -> None
 
 
 @pytest.mark.parametrize(
-    ("docstring", "missing"),
+    ("opis", "missing"),
     [
         ("Drukuje plan runu CI i wykonuje jego zadanie (plan --baza origin/main), gdy agent chce zobaczyć plan.", False),
         ("Drukuje plan runu CI i wykonuje jego zadanie, gdy agent chce zobaczyć plan.\n\nPodkomendy: (plan --baza origin/main) i (wykonaj).", True),
     ],
     ids=["podkomenda w pierwszym zdaniu", "podkomenda tylko w dalszym akapicie"],
 )
-def test_podkomenda_liczy_sie_tylko_w_pierwszym_zdaniu_docstringu(tmp_path: Path, docstring: str, missing: bool) -> None:
+def test_podkomenda_liczy_sie_tylko_w_pierwszym_zdaniu_opisu(tmp_path: Path, opis: str, missing: bool) -> None:
     tool = tmp_path / "narzedzie.py"
-    tool.write_text(f'"""{docstring}\n"""\n\n' + PARSER.format("required=True"), encoding="utf-8")
+    tool.write_text(f'OPIS = """{opis}\n"""\n\n' + PARSER.format("required=True"), encoding="utf-8")
 
     assert _without_subcommand_in_first_sentence([tool]) == ({tool: ["plan", "wykonaj"]} if missing else {})
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '"""Drukuje plan runu CI i wykonuje jego zadanie, gdy agent chce zobaczyć plan przed pushem gałęzi.\n"""\n',
+        'OPIS = f"Drukuje plan runu {CI}."\n',
+        'from opisy import OPIS\n',
+    ],
+    ids=["sam docstring", "f-string", "import"],
+)
+def test_narzedzie_bez_stalej_opis_z_napisem_nie_przechodzi_spisu(tmp_path: Path, source: str) -> None:
+    tool = tmp_path / "narzedzie.py"
+    tool.write_text(source, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=r"brak stałej modułu OPIS"):
+        _first_paragraph(tool)
 
 
 @pytest.mark.parametrize(
@@ -834,6 +861,7 @@ CONTRACTS = (
     (re.compile(r".*MUTACJE_CZESC", re.DOTALL), TOOLS / "lib" / "jednostka.py"),
     (re.compile(r"MUTACJE OK|SKILLE VERIFY|AKTUALIZACJA:|CI LOKALNIE (?:OK|FAIL)"), TOOLS / "lib" / "ostatnie_linie.py"),
     (re.compile(r"MUTACJE ZMIANY OK"), TOOLS / "mutacje_zmiany.py"),
+    (re.compile(r"BOX: "), TOOLS / "lib" / "box_boat.py"),
 )
 
 
@@ -846,8 +874,8 @@ def _texts(tree: ast.AST) -> list[tuple[int, str]]:
 
 def test_kontrakt_napisow_miedzy_narzedziami_ci_ma_jednego_wlasciciela() -> None:
     """Klucz jednostki planu (``pytest:``, ``krok:``, ``skill:``, ``narzut:``), nazwę zmiennej części ``MUTACJE_CZESC``
-    i początek ostatniej linii, którą czyta inne narzędzie, hook albo CI, pisze w ``tools/`` i skryptach skilli tylko
-    ich właściciel: reszta składa je i rozbiera przez ``jednostka.Klucz``, ``jednostka.Czesc`` i stałe właściciela, więc
+    początek ostatniej linii, którą czyta inne narzędzie, hook albo CI, i komunikat boxa (``BOX: ``), który drukują plugin
+    stanu procesu i ``tools/szybko.py``, pisze w ``tools/`` i skryptach skilli tylko ich właściciel: reszta składa je i rozbiera przez ``jednostka.Klucz``, ``jednostka.Czesc`` i stałe właściciela, więc
     zmiana napisu po jednej stronie nie zostawia drugiej z cichym „nieznane”. Każdy stały kawałek f-stringu liczy się od
     swojego początku, a nazwy zmiennej szuka w całym kawałku. Postacie, których nie łapie, są próbkami w
     ``ZNANE_LUKI_KONTRAKTU``."""

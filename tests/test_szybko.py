@@ -15,6 +15,7 @@ import pytest
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.git_repo import TOOLS, commit, git, repository
 
+import box_boat
 import czasy_ci
 import rozjazd_modelu
 import szybko
@@ -23,6 +24,10 @@ from wplyw_zmiany import STRUCTURE
 ROOT = Path(__file__).resolve().parents[1]
 
 BY_CHANGE_ONLY = {
+    "tests/test_komentarze_frontendu.py": (
+        "graf wybiera go przy zmianie tools/lib/odpalenia_oxlint.py i wtyczki oxlint repo, a pliki frontend/ sprawdzają w "
+        "każdym runie zadania pytest (tekst) i zadanie CI Frontend (oxlint z node_modules, których szybko nie instaluje)"
+    ),
     "tests/test_komunikaty_expect.py": (
         "skanuje cały src/, ale globem (rglob) na src, który graf widzi, więc wybiera go przy zmianie każdego modułu "
         "src/, katalogu (import message_samples), pliku tests/expected/komunikaty.txt i plików frontendu z UI_TEXTS (literały)"
@@ -49,21 +54,13 @@ BY_CHANGE_ONLY = {
         "puszcza próbki przez nakładkę Run.refusing_text_settings_writes w procesie testu; graf wybiera jego plik przy "
         "zmianie skryptów napędu verify-centrum-rozliczen, które ładuje ścieżką"
     ),
+    "tests/test_straznik.py::test_slad_biegu_w_srodowisku_biegu_znika_z_nim_a_zapis_poza_nim_to_odmowa_systemu": (
+        "sprawdza piaskownicę dowodu strażnika na repozytorium testu, a nie całe repozytorium; graf wybiera jego plik przy "
+        "zmianie tools/lib/straznik.py, piaskownica.py, srodowisko_ci.py i silnik_mutacji.py, które importuje"
+    ),
     "tests/test_stan_procesu.py": (
         "sprawdza plugin na sesjach próbek w katalogu tymczasowym, a nie całe repozytorium: sam plugin conftest stawia "
         "przy każdym teście, a graf wybiera ten plik przy zmianie tests/fixtures/stan_procesu.py, który importuje"
-    ),
-    "tests/test_prywatne_skladowe.py::test_prywatna_skladowa_ustawien_w_module_centrum_pada_w_ruff": (
-        "sprawdza ruff SLF001 na próbce modułu Centrum w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
-    ),
-    "tests/test_prywatne_skladowe.py::test_znane_luki_prywatnych_skladowych_przechodza_przez_ruff_i_mypy": (
-        "sprawdza granicę ruff SLF001 na próbkach w pliku tymczasowym, a SLF001 biegnie w zadaniu ruff każdego runu"
-    ),
-    "tests/test_wyglad_wiersza_danych.py::test_prawo_wygladu_do_slf001_obejmuje_tylko_styl_komorki_openpyxl": (
-        "sprawdza kod row_look.py, który jego plik importuje, więc graf wybiera go przy zmianie tego modułu"
-    ),
-    "tests/test_import_dynamiczny.py": (
-        "sprawdza właściciela importu w trakcie działania na jego module; graf wybiera go przy zmianie tools/lib/import_dynamiczny.py, który importuje"
     ),
     "tests/test_zadania_ci.py": "sprawdza ci.yml, który czyta ścieżką widoczną dla grafu, i plan na atrapach zapisów",
     "tests/test_kolejka_skrzynki_zgloszen.py::test_znane_luki_jednej_drogi_wyjscia_przechodza_przez_mypy_ruff_i_plik_kolejki": (
@@ -78,20 +75,6 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę dad_files.py, "
         "run_context.py i work.py, których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
     ),
-    "tests/test_regula_danych.py::test_pamiec_regula_danych_nie_ma_podklas_w_biegu_przy_kazdej_kolejnosci_baz": (
-        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
-    ),
-    "tests/test_regula_danych.py::test_metody_pamieci_nie_da_sie_podmienic_na_obiekcie": (
-        "graf wybiera jego plik przy zmianie client_data, który plik importuje, a próbki biegną tylko na ForbiddenValues"
-    ),
-    "tests/test_regula_danych.py::test_odbiorca_pamieci_odmawia_obiektu_innego_typu_niz_pamiec_tuz_przed_straznikiem": (
-        "graf wybiera jego plik przy zmianie client_data, który plik importuje; zmianę run_logs_guard.py i dad_notes.py, "
-        "których próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
-    ),
-    "tests/test_regula_danych.py::test_uwagi_techniczne_daje_tylko_straznik_pamieci_a_znane_luki_przechodza": (
-        "graf wybiera jego plik przy zmianie client_data i plików konfiguracji ruff i mypy; zmianę run_logs_guard.py, "
-        "której próbki nie importują ścieżką widoczną dla grafu, liczy pełny pytest w CI"
-    ),
     "tests/test_kolejka_skrzynki_zgloszen.py::test_kolejka_bierze_tylko_wysylke_z_konstruktora_post_a_znane_luki_przechodza": (
         "graf wybiera jego plik przy zmianie outbox.py, który plik importuje, i plików konfiguracji ruff"
     ),
@@ -99,19 +82,19 @@ BY_CHANGE_ONLY = {
         "graf wybiera jego plik przy zmianie run_logs_guard.py, comment_versions.py, outbox.py i client_data.py, które plik "
         "importuje, i plików konfiguracji ruff"
     ),
+    "tests/test_wydanie.py::test_plan_odmawia_wydania_w_ktorym_zmiana_z_wydania_ktore_wyszlo_zniknela_albo_ma_inny_plik_lub_kod": (
+        "graf wybiera jego plik przy zmianie tools/wydanie.py i tools/lib/zmiany_z_wydania.py, które plik importuje, a każdy "
+        "przypadek buduje repozytorium z tagami i czyta wpisy osobnym procesem na tag, więc w STRUCTURE kosztowałby każdy PR"
+    ),
+    "tests/test_zmiany_z_wydania_ktore_wyszly.py": (
+        "graf wybiera go przy zmianie release_changes.py, modułów Zmian z Wydania, które importuje przez RELEASE_CHANGES, "
+        "i tools/lib/zmiany_z_wydania.py, które liczy odcisk, a tylko ich zmiana zmienia wynik"
+    ),
     "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_sledzenia_w_src_przechodza_przez_ruff": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną tylko przez "
         "ruff w pliku tymczasowym, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
     "tests/test_zakazy_ruff.py::test_tresc_z_wydania_poza_wlascicielem_nie_przechodzi_a_znane_luki_przechodza_przez_ruff_i_mypy": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
-        "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_znane_luki_zakazu_raportow_wykonawcow_poza_odczytem_okna_przechodza_przez_ruff_i_mypy": (
-        "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
-        "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
-    ),
-    "tests/test_zakazy_ruff.py::test_wejscie_odczytu_okna_spoza_pamieci_wpisania_nie_przechodzi_a_znane_luki_przechodza_przez_ruff_i_mypy": (
         "graf wybiera jego plik przy zmianie każdego pliku src/ i plików konfiguracji ruff, a próbki biegną przez ruff i "
         "mypy w plikach tymczasowych, więc w STRUCTURE przekroczyłby limit testów wzorcowego PR L (tests/test_ksztalt_bramki.py)"
     ),
@@ -369,6 +352,45 @@ def test_blad_ruff_przerywa_krok_pytest_zamiast_czekac_na_jego_koniec(tmp_path: 
     last = answered.stdout.splitlines()[-1]
     expected = "SZYBKO FAIL | ruff, mypy, mypy (Windows), testy struktury po mergu z origin/main | pytest przerwany"
     assert (answered.returncode, last) == (1, expected), answered.stdout
+
+
+def _box_conftest(repo: Path, *, in_copy: bool) -> str:
+    """Conftest, który kończy sesję pytest kodem boxa, jak plugin stanu procesu po katalogu repo przeniesionym przez box:
+    zawsze w sesji repozytorium ``repo``, a w jego kopii z mergu tylko z ``in_copy``. Sesja w kopii kończy się 5 s
+    później, więc krok pytest na HEAD kończy się pierwszy, a krok struktury na mergu nie jest przerywany."""
+
+    return (
+        "import time\nfrom pathlib import Path\n\nimport pytest\n\n\n"
+        "def pytest_sessionfinish(session: pytest.Session) -> None:\n"
+        f"    here = Path(__file__).resolve().parents[1] == Path({str(repo.resolve())!r})\n"
+        "    if session.exitstatus != pytest.ExitCode.TESTS_FAILED:\n"
+        "        return\n"
+        "    if not here:\n"
+        "        time.sleep(5)\n"
+        f"    if here or {in_copy}:\n"
+        f"        session.exitstatus = {box_boat.KOD_WYJSCIA}\n"
+    )
+
+
+@pytest.mark.parametrize(
+    ("in_copy", "expected"),
+    [
+        (True, (box_boat.KOD_WYJSCIA, f"SZYBKO INFRA | pytest, testy struktury po mergu z origin/main: {box_boat.KOMUNIKAT}")),
+        (False, (1, "SZYBKO FAIL | pytest, testy struktury po mergu z origin/main")),
+    ],
+    ids=["box-w-obu-krokach", "box-tylko-w-jednym-kroku"],
+)
+def test_szybko_infra_tylko_gdy_kazdy_krok_ktory_padl_to_pytest_z_kodem_boxa(
+    tmp_path: Path, in_copy: bool, expected: tuple[int, str]
+) -> None:
+    repo = _repo(tmp_path, structure="raise AssertionError('test pada')")
+    _write(repo, "tests/conftest.py", _box_conftest(repo, in_copy=in_copy))
+    git(repo, "update-ref", "refs/remotes/origin/main", commit(repo, "kod boxa"))
+    _base_moved_on(repo, ("docs/z-main.md", "main\n"), ("docs/z-galezi.md", "gałąź\n"))
+
+    answered = _szybko(repo)
+
+    assert (answered.returncode, answered.stdout.splitlines()[-1]) == expected, answered.stdout
 
 
 def test_zmiana_bez_bledu_konczy_sie_ok_choc_niedotkniety_test_pada(tmp_path: Path) -> None:
@@ -888,6 +910,17 @@ def test_uv_pyta_siec_tylko_bez_cache_a_modul_ktory_sie_nie_importuje_wywraca_kr
     assert (answered.returncode, last) == (1, f"SZYBKO FAIL | import src pod Pythonem 3.{sys.version_info[1] - 1}"), answered.stdout
 
 
+def test_kod_boxa_z_kroku_bez_pytest_to_porazka_a_nie_szybko_infra(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _requiring(repo, (3, sys.version_info[1] - 1))
+    fake = fake_cli(tmp_path / "bin", "uv", f"import sys\nsys.exit({box_boat.KOD_WYJSCIA})\n")
+
+    answered = _szybko(repo, path=fake.parent)
+
+    expected = f"SZYBKO FAIL | import src pod Pythonem 3.{sys.version_info[1] - 1}"
+    assert (answered.returncode, _verdict(answered)) == (1, expected), answered.stdout
+
+
 def test_requires_python_bez_najstarszej_wersji_wywraca_szybkie_sprawdzenie(tmp_path: Path) -> None:
     repo = _repo(tmp_path)
     _write(repo, "pyproject.toml", '[project]\nname = "pakiet"\nrequires-python = "~=3.11"\n\n[tool.mypy]\nfiles = ["src"]\n')
@@ -958,6 +991,51 @@ def test_skroty_przeliczone_po_zmianie_kodu_opisanego_modelem_nie_sa_rozjazdem_d
     answered = _szybko(repo)
 
     assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
+
+
+def test_napraw_przelicza_skroty_skilla_bez_zmian_modelu_gdy_rozjazd_to_jedyna_porazka(tmp_path: Path) -> None:
+    repo = _repo(tmp_path)
+    _model_skill(repo)
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
+
+    answered = _szybko(repo, "--napraw")
+
+    assert (answered.returncode, _verdict(answered)) == (0, "SZYBKO OK"), answered.stdout
+    assert "NAPRAWA | verify-model | przeliczone skróty: src/pakiet/b.py inna" in answered.stdout.splitlines()
+    assert rozjazd_modelu.rozjazd(repo / MODEL_SKILL, repo) is None
+
+
+@pytest.mark.parametrize(
+    ("changed", "verdict", "line"),
+    [
+        pytest.param(
+            {f"{MODEL_SKILL}/model/kolejka.tla": "---- MODULE kolejka ----\n====\n"},
+            "SZYBKO FAIL | rozjazd modelu",
+            f"Model zmieniony w tej zmianie ({MODEL_SKILL}/model/kolejka.tla), więc skróty przelicz sam.",
+            id="model-skilla-zmieniony",
+        ),
+        pytest.param(
+            {"src/pakiet/a.py": "import os\n\n\ndef wartosc() -> int:\n    return 1\n"},
+            "SZYBKO FAIL | rozjazd modelu, ruff",
+            "NAPRAWA POMINIĘTA | rozjazd modelu to nie jedyna porażka: ruff",
+            id="padl-inny-krok",
+        ),
+    ],
+)
+def test_napraw_nie_przelicza_skrotow_gdy_zmiana_dotyka_modelu_albo_pada_inny_krok(
+    tmp_path: Path, changed: dict[str, str], verdict: str, line: str
+) -> None:
+    repo = _repo(tmp_path)
+    _model_skill(repo)
+    _write(repo, "src/pakiet/b.py", "def inna() -> int:\n    return 2\n")
+    for name, text in changed.items():
+        _write(repo, name, text)
+
+    answered = _szybko(repo, "--napraw")
+
+    assert (answered.returncode, _verdict(answered)) == (1, verdict), answered.stdout
+    assert line in answered.stdout
+    assert rozjazd_modelu.rozjazd(repo / MODEL_SKILL, repo) is not None
 
 
 def test_rozjazd_modelu_skilla_ktorego_zmiana_nie_dotyka_zostaje_poza_szybkim_sprawdzeniem(tmp_path: Path) -> None:

@@ -1,10 +1,3 @@
-"""Wycena w efenix w katalogu procesów: wpis i widok Uruchomienia.
-
-Wycena wycenia zlecenia Pliku zbiorczego okresu w efenix w oknie efenix gospodarza, a Status okresu się nie zmienia.
-Tryb Wyceny (ADR 0027) tata wybiera przy każdym starcie jednym z dwóch przycisków i Centrum go nie pamięta. Wejście ma
-dziennik Wyceny w efenix gospodarza (w Centrum ``logs_disk.Journal``), który przeżywa nagłe zgaśnięcie Centrum.
-"""
-
 from __future__ import annotations
 
 from typing import Final
@@ -28,7 +21,6 @@ from rozliczenia.efenix_pricing import EfenixInputs, OrderKind, PricingMode, Pri
 from rozliczenia.tool_files import EFENIX_METRICS
 
 _NOTED: Final = (OrderKind.ERROR, OrderKind.WARNING, OrderKind.FORWARDED, OrderKind.SETTLED)
-"""Listy zleceń na karcie bieżącego Uruchomienia: najpierw te, które zostały tacie."""
 
 
 def _summary(summary: PricingSummary, _dry_run: bool) -> runs_contract.RunSummary:
@@ -72,9 +64,6 @@ def _notes(summary: PricingSummary) -> list[runs_contract.OrderNotes]:
 
 
 def _logs(summary: PricingSummary | None, facts: object) -> ProcessLogs:
-    """Ślad zleceń z podsumowania, a po Zatrzymaniu okna efenix (``PricingStopped``) ślad zleceń sprzed niego i samo
-    Zatrzymanie."""
-
     stopped = facts if isinstance(facts, PricingStopped) else None
     priced = summary if stopped is None else stopped.summary
     return ProcessLogs(

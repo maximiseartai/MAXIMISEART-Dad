@@ -16,9 +16,9 @@ Komunikaty, a reguły zna rdzeń raportów (pamięć Wpisania ``worker_reports.E
   uporządkowane (``raw_orders.ordered_days``). Zapis INTERMAX przez tatę albo jego pracownika między odczytem INTERMAX a podmianą
   przepada (``intermax_replace`` porównuje bajty z dyskiem dopiero po odmowie podmiany), więc odczyt przez sieć nie
   stoi w tym oknie;
-- Planowanie: rdzeń raportów z Legendą czynności ze startu (``EnteringInputs.legend``), z pamięcią z pliku sprzed
-  wersji 4 zamienioną przy odczytanych zleceniach (``OlderOwnEntries.upgraded``), bo rdzeń przyjmuje tylko
-  ``OwnEntries``;
+- Planowanie: rdzeń raportów z Legendą czynności i Regułami ilości ze startu (``EnteringInputs.legend``,
+  ``EnteringInputs.rules``), z pamięcią z pliku sprzed wersji 4 zamienioną przy odczytanych zleceniach
+  (``OlderOwnEntries.upgraded``), bo rdzeń przyjmuje tylko ``OwnEntries``;
 - Zapisywanie: komórki, Przeniesienia zleceń i Zlecenia dopisane z raportu bez Kopii INTERMAX
   (``intermax_cells.write_cells``), a po udanym zapisie
   pamięć własnych wpisów
@@ -64,7 +64,8 @@ from .intermax_replace import LOCAL_DISK, Disk, Refusal, Waiting
 from .message import Message, StopError
 from .period_folder import PeriodFolder, PeriodFolderInaccessible, scan_period_folders
 from .phase_runner import PhaseRunner
-from .register_columns import ADDRESS, COMPLETED, DATE, ORDER_NUMBER, SUCCESSFUL, WORKER
+from .quantity_engine import QuantityRules
+from .register_columns import ACTIVITIES, ADDRESS, COMPLETED, CONTRACT, DATE, DEVICES, ORDER_NUMBER, SUCCESSFUL, WORKER
 from .register_file import OrderSheets, RegisterFile
 from .report_cells import CellChange, OrderAdded, OrderMove, OrderRow
 from .run_context import RunContext
@@ -188,15 +189,16 @@ class ReportEnteringParts:
 
 @dataclass(frozen=True)
 class EnteringInputs:
-    """Wejście Wpisania raportów: INTERMAX, folder okresów, Lista Wykonawców i Legenda czynności z Ustawień Centrum,
-    zależności gospodarza i zegar procesu. ``period`` jak w ``OrderingInputs``: okres dzisiejszej daty przy starcie
-    (ADR 0019)."""
+    """Wejście Wpisania raportów: INTERMAX, folder okresów, Lista Wykonawców, Legenda czynności i Reguły ilości z
+    Ustawień Centrum, zależności gospodarza i zegar procesu. ``period`` jak w ``OrderingInputs``: okres dzisiejszej
+    daty przy starcie (ADR 0019)."""
 
     register_path: Path
     periods_directory: Path
     workers: WorkerList
     parts: ReportEnteringParts
     legend: ActivityLegend
+    rules: QuantityRules
     now: Callable[[], datetime] = local_now
     waiting: Waiting = field(default_factory=Waiting)
     disk: Disk = LOCAL_DISK
@@ -339,7 +341,7 @@ def enter_from_mail(inputs: EnteringInputs, context: RunContext) -> EnteringSumm
 
     def plan() -> tuple[EnteringFacts, OwnEntries, tuple[WorkerDay, ...]]:
         remembered = clicked.remembered(intermax)
-        found = clicked.enter(window, intermax, mails, addresses, inputs.legend)
+        found = clicked.enter(window, intermax, mails, addresses, inputs.legend, inputs.rules)
         reported = found.said
         numbers = {key.number for key in reported}
         before = tuple(
@@ -517,6 +519,9 @@ def _present(register: RegisterFile, since: date) -> tuple[tuple[str, ReadNumber
                     successful=None,
                     completed=None,
                     address=None,
+                    contract=None,
+                    devices=None,
+                    activities=None,
                 )
                 read.setdefault(number, None if order is None else order.key.day)
             found += [(area.sheet, ReadNumber(number, day)) for number, day in read.items()]
@@ -585,6 +590,9 @@ def _register_orders(
                 successful=row.value(at[SUCCESSFUL]),
                 completed=row.value(at[COMPLETED]),
                 address=row.value(at[ADDRESS]),
+                contract=row.value(at[CONTRACT]),
+                devices=row.value(at[DEVICES]),
+                activities=row.value(at[ACTIVITIES]),
             )
             if order is not None:
                 orders.append(replace(order, key=replace(order.key, worker=workers.worker(order.key.worker))))

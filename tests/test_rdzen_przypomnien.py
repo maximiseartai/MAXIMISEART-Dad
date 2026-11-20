@@ -77,6 +77,9 @@ def _order(worker: str = "Jan.Testowy", day: date = DAY, number: int = 40000001,
         successful=None,
         completed=None,
         address=None,
+        contract=None,
+        devices=None,
+        activities=None,
     )
     assert order is not None
     return order
@@ -783,7 +786,7 @@ def test_przyklad_w_przypomnieniu_to_wpis_tak_z_samymi_kodami_legendy_z_wydania_
     example = lines.index("PRZYKŁAD:")
     yes, no = (line.split(maxsplit=2) for line in lines[example + 1 : example + 3])
 
-    read = DEFAULT_ACTIVITY_LEGEND.read(yes[2])
+    read = DEFAULT_ACTIVITY_LEGEND.read(yes[2], fault=False)
     assert yes[1] == "tak" and isinstance(read, WithCodes) and read.spelled == tuple(yes[2].split())
     assert no[1:] == ["nie", "brak klienta"]
 

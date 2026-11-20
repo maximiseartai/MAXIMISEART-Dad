@@ -660,6 +660,34 @@ def test_bez_czasow_z_main_plan_wazy_prace_domyslnie_mowi_to_wypisuje_jednostki_
     assert output == {"pytest": json.dumps(plan.macierz("pytest"), ensure_ascii=False), "mutations": json.dumps(plan.macierz("mutations"), ensure_ascii=False)}
 
 
+def test_plan_bez_katalogu_czasow_wazy_czasami_z_gita_checkoutu_pobranymi_przed_doba_a_z_katalogiem_pobiera_je_zawsze(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Lokalnie (bez ``--czasy``) plan czyta czasy-ci z katalogu gita checkoutu, wspólnego z ``tools/szybko.py``, i pobiera
+    je od nowa dopiero po ``czasy_ci.ODSWIEZ_S``; zadanie plan w CI (``--czasy``) pobiera je przy każdym planie."""
+
+    root = repository(tmp_path / "repo", {"tests/test_a.py": "def test_a() -> None:\n    pass\n"}, tools=())
+    commit(root, "start")
+    observed = {"narzut:mutations": [{"run": 7, "proba": 1, "zadanie": "M", "s": 40.0, "status": "ok"}]}
+    artifact = json.dumps({"wersja": 1, "runy": [{"run": 7, "proba": 1, "sha": "0" * 40, "zdarzenie": "push"}], "tory": {MUTACJE.pomiary: observed}})
+    for folder in (czasy_ci.katalog_checkoutu(root), tmp_path / "czasy"):
+        (folder / czasy_ci.ARTEFAKT_NOCY).mkdir(parents=True)
+        (folder / "7.json").write_text(artifact, encoding="utf-8")
+        # Pobranie sprzed chwili: lokalnie świeże, więc plan nie pyta GitHuba, który tu odmawia każdemu zapytaniu.
+        (folder / "pobrane").touch()
+        (folder / czasy_ci.ARTEFAKT_NOCY / "pobrane").touch()
+
+    def first_line(*czasy: str) -> str:
+        assert plan_ci.main(["plan", "--zdarzenie", "push", "--baza", "HEAD", *czasy], root=root, github=BEZ_LOGOWANIA) == 0
+        return capsys.readouterr().out.splitlines()[0]
+
+    assert re.fullmatch(r"PLAN CI \| push \| .* \| czasy z runów main: 7 \| skrypty mutacji bez pomiaru main z nocy: brak", first_line())
+    assert first_line("--czasy", str(tmp_path / "czasy")) == (
+        "CZASY CI | pobranie czasy-ci z GitHuba: gh: not logged in; pobranie czasy-nocy z GitHuba: gh: not logged in;"
+        " plan waży pracę bez pomiaru domyślnie"
+    )
+
+
 def test_kroki_planu_uruchamiaja_skrypty_repozytorium_kazde_polecenie_z_limitem_czasu() -> None:
     for step in KROKI.values():
         assert len(step.polecenia) == len(step.limity_s) and all(limit > 0 for limit in step.limity_s), step.nazwa

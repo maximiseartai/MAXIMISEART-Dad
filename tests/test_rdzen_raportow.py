@@ -23,6 +23,7 @@ import pytest
 
 from rozliczenia.activity_legend import ActivityCode, ActivityLegend, DescriptionError, FixedColumn
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
+from rozliczenia.quantity_engine import OrderContent
 from rozliczenia.report_cells import CellChange, OrderAdded, OrderMove, OrderRow, ReportColumn
 from rozliczenia.centrum.report_entering_logs import LoggedReportMail, LoggedUnreadableMail, logged_mails
 from rozliczenia.settlement_period import period_of
@@ -123,6 +124,7 @@ def _order(
     successful: object = None,
     completed: object = None,
     address: object = "Ulica Testowa 1",
+    devices: object = None,
 ) -> RegisterOrder:
     order = RegisterOrder.of(
         row,
@@ -132,6 +134,9 @@ def _order(
         successful=successful,
         completed=completed,
         address=address,
+        contract=None,
+        devices=devices,
+        activities=None,
     )
     assert order is not None
     return order
@@ -433,6 +438,9 @@ def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[Reg
             successful=written.get((order.row, ReportColumn.SUCCESSFUL), order.successful),
             completed=written.get((order.row, ReportColumn.COMPLETED), order.completed),
             address="Ulica Testowa 1" if order.addressed else None,
+            contract=order.content.contract,
+            devices=order.content.devices,
+            activities=order.content.activities,
         )
         assert changed is not None
         found.append(changed)
@@ -446,6 +454,9 @@ def _after(orders: Sequence[RegisterOrder], outcome: ReportsOutcome) -> list[Reg
             successful=added.successful,
             completed=added.completed,
             address=None,
+            contract=None,
+            devices=None,
+            activities=None,
         )
         assert new is not None
         found.append(new)
@@ -3149,7 +3160,16 @@ def test_wiersz_bez_numeru_dnia_albo_wykonawcy_nie_jest_zleceniem_rdzenia(
 ) -> None:
     assert (
         RegisterOrder.of(
-            ROW, number=number, started=started, worker=worker, successful=None, completed=None, address=None
+            ROW,
+            number=number,
+            started=started,
+            worker=worker,
+            successful=None,
+            completed=None,
+            address=None,
+            contract=None,
+            devices=None,
+            activities=None,
         )
         is None
     )
@@ -3157,10 +3177,19 @@ def test_wiersz_bez_numeru_dnia_albo_wykonawcy_nie_jest_zleceniem_rdzenia(
 
 def test_dzien_zlecenia_z_daty_bez_godziny_i_pusta_komorka_z_samych_spacji() -> None:
     order = RegisterOrder.of(
-        ROW, number=NUMBER, started=DAY, worker="Jan.Testowy", successful="  ", completed="x", address="  "
+        ROW,
+        number=NUMBER,
+        started=DAY,
+        worker="Jan.Testowy",
+        successful="  ",
+        completed="x",
+        address="  ",
+        contract=None,
+        devices=None,
+        activities=None,
     )
 
-    assert order == RegisterOrder(ROW, _key(), None, "x", "Jan.Testowy", addressed=False)
+    assert order == RegisterOrder(ROW, _key(), None, "x", "Jan.Testowy", addressed=False, content=OrderContent("", "", "", None))
 
 
 # Maile Raportów wykonawców z tym, co rdzeń czyta albo pomija: Wpisy z ``tak``/``nie``, literą, słowem albo bez znaku, z
@@ -3458,7 +3487,7 @@ def _every_problem() -> list[ReportProblem]:
 def _faulty(text: str, number: str = "40000001", worker: str = "jan.testowy", day: date = DAY) -> FaultyDescription:
     """Błąd opisu Wpisu ``tak`` z czynnościami ``text`` według Legendy czynności z Wydania."""
 
-    read = DEFAULT_ACTIVITY_LEGEND.read(text)
+    read = DEFAULT_ACTIVITY_LEGEND.read(text, fault=False)
     assert isinstance(read, DescriptionError), text
     return FaultyDescription(Login(worker), day, OrderNumber(number), read.problems)
 
@@ -3889,10 +3918,12 @@ def test_29_lutego_z_innego_roku_przestepnego_daje_29_lutego_roku_przestepnego_w
     assert outcome.changes == _both(ROW, "tak", "wymiana routera")
 
 
-def test_29_lutego_bez_roku_przestepnego_w_granicach_zostaje_z_tematu() -> None:
-    """Dzień, którego nie ma w żadnym roku wokół przyjścia maila, zostaje z tematu, więc poza oknem rdzeń go pomija."""
+@pytest.mark.parametrize("subject", ["Raport 29.02.2024", "Raport 29.02.24"], ids=["rok-czterocyfrowy", "rok-dwucyfrowy"])
+def test_29_lutego_bez_roku_przestepnego_w_granicach_zostaje_z_tematu(subject: str) -> None:
+    """Dzień, którego nie ma w żadnym roku wokół przyjścia maila, zostaje z tematu, więc poza oknem rdzeń go pomija;
+    rok z dwiema cyframi to rok 2000–2099 (ADR 0041)."""
 
-    mail = _mail(JAN, "Raport 29.02.2024", TEXT, datetime(2026, 11, 8, 18, tzinfo=TAPA))
+    mail = _mail(JAN, subject, TEXT, datetime(2026, 11, 8, 18, tzinfo=TAPA))
 
     outcome = enter_reports(_inputs([mail], [_order()], rollout=date(2024, 1, 1)))
 
@@ -4883,6 +4914,12 @@ TWO_CELLS = ((0, "tak", "wymiana routera"), (1, "nie", "brak klienta"))
         pytest.param(f"{ROUTER} serdecznie pozdrawiam", ROUTER_CELLS, id="pozegnanie-w-tej-samej-linii"),
         pytest.param(f"{ROUTER}, pozdrawiam Jan Testowy", ROUTER_CELLS, id="pozegnanie-i-podpis-w-tej-samej-linii"),
         pytest.param(f"{ROUTER} z poważaniem Jan Testowy", ROUTER_CELLS, id="dwuwyrazowe-pozegnanie-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, pozdrowienia Jan", ROUTER_CELLS, id="pozdrowienia-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, pozdr. Jan Testowy", ROUTER_CELLS, id="pozdr-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER} pzdr", ROUTER_CELLS, id="pzdr-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, pozdro Jan", ROUTER_CELLS, id="pozdro-i-podpis-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, miłego dnia", ROUTER_CELLS, id="milego-dnia-w-tej-samej-linii"),
+        pytest.param(f"{ROUTER}, miłego wieczoru Jan", ROUTER_CELLS, id="milego-wieczoru-i-podpis-w-tej-samej-linii"),
         pytest.param(
             f"{ROUTER}, pozdrawiam\nJan Testowy technik serwisu", ROUTER_CELLS, id="pozegnanie-na-koncu-linii-i-podpis-pod-nim"
         ),
@@ -6008,3 +6045,24 @@ def test_wpisanie_raportow_czyta_opis_legenda_czynnosci_z_wejscia_a_nie_z_wydani
 
     assert enter_reports(_inputs(mails, [_order()], legend=legend)).problems == ()
     assert enter_reports(_inputs(mails, [_order()])).problems == (_faulty("montaż ONT inst20m inst30m"),)
+
+
+@pytest.mark.parametrize(
+    ("devices", "problems"),
+    [
+        pytest.param("usterka", (), id="usterka"),
+        pytest.param("USTERKA WEW", (), id="usterka-wew-wielkimi-literami"),
+        pytest.param("router", (_faulty("rt2 bypas5m"),), id="poza-usterka"),
+        pytest.param("usterka router", (_faulty("rt2 bypas5m"),), id="usterka-bez-ilosci-w-AI-z-regul-ilosci"),
+        pytest.param(None, (_faulty("rt2 bypas5m"),), id="puste-urzadzenia"),
+    ],
+)
+def test_kod_ktory_w_usterce_sie_nie_liczy_nie_daje_bledu_opisu_w_widoku_raporty_tylko_w_usterce_pliku_zbiorczego(
+    devices: str | None, problems: tuple[FaultyDescription, ...]
+) -> None:
+    legend = ActivityLegend(
+        tuple(replace(code, counts_in_fault=False) if code.id == "rt2" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
+    )
+    mails = [_mail(JAN, SUBJECT, "40000001 tak rt2 bypas5m")]
+
+    assert enter_reports(_inputs(mails, [_order(devices=devices)], legend=legend)).problems == problems

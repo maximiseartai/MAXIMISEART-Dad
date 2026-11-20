@@ -1,4 +1,31 @@
-"""Mierzy z API Actions czas push → Required CI status według klas zmian PR i strażnika main; użyj przed i po zmianie CI.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import asdict, dataclass
+from datetime import date, datetime, timezone
+import enum
+import json
+import math
+from pathlib import Path
+import statistics
+import subprocess
+import sys
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from api_actions import REZERWA_POMIARU, STRONA, Api, PonizejRezerwy, ZRezerwa, runy
+from github import REPO, REQUIRED, BladApi, GhApi, GitHub
+from jednostka import Rodzaj
+from plan_runu import Z_PLANU, Plan
+import repo
+from repo import BASE, ROOT
+from wplyw_zmiany import Context, run_all
+from zakres_runu import MUTACJE, TORY
+
+OPIS = """Mierzy z API Actions czas push → Required CI status według klas zmian PR i strażnika main; użyj przed i po zmianie CI.
 
 Run to run workflow ``ci.yml`` z okna ``--od``–``--do`` (dzień utworzenia runu, UTC). Run z okna awarii runnerów
 (``AWARIE``, 11.11 apt DNS na Linuksie) liczy się tylko jako pominięty. Czasy liczą się z pierwszej próby runu, bo to
@@ -41,9 +68,11 @@ checks liczy się z API zadań, więc i run bez artefaktu je ma.
 Cele (``CELE``, w minutach): PR z wyborem testów (każda klasa poza pełną bramką) p50 ≤ 2 i p90 ≤ 3, każdy PR p90 ≤ 5,
 strażnik main (merge → pełny werdykt) p90 ≤ 40. Kwantyl to wartość najbliższej rangi.
 
-Odpowiedzi API (lista runów zakończonego dnia, zadania zakończonego runu) zapisują się w ``<katalog>/api``, więc
-ponowne uruchomienie pyta tylko o nowe runy. Zapytania idą po jednym. Run, którego zadań API nie dało, liczy się jako
-błąd API (linia ``POMIAR CI | błąd API``) i kod wyjścia 1. Wynik: ``<katalog>/pomiar.jsonl`` (rekord na run),
+Odpowiedzi API (lista runów zakończonego dnia, zadania zakończonego runu) zapisują się we wspólnej kopii
+``~/.cache/maximiseart/api`` (``tools/lib/api_actions.py``), więc ponowne uruchomienie i inny wątek pytają tylko o nowe
+runy. Zapytania idą po jednym. Run, którego zadań API nie dało, liczy się jako błąd API (linia ``POMIAR CI | błąd
+API``) i kod wyjścia 1. Przy zapasie limitu GitHub API poniżej rezerwy pomiaru narzędzie nie pyta dalej i kończy się
+linią ``POMIAR CI ODMOWA`` z godziną resetu i kodem 1. Wynik: ``<katalog>/pomiar.jsonl`` (rekord na run),
 ``<katalog>/tabela.md`` (p50/p90/n), tabela też na wyjściu, a na końcu linia do porównania przed i po zmianie:
 
     POMIAR CI | PR wybór p50 <min> p90 <min> (n <runy>) | każdy PR … | main strażnik … | runów <n>, błędów API <n>, zapytań <n>
@@ -51,34 +80,7 @@ błąd API (linia ``POMIAR CI | błąd API``) i kod wyjścia 1. Wynik: ``<katalo
     .venv/bin/python tools/pomiar_ci.py --katalog ~/.t3/notes/<bieg>/pomiar --od 2026-11-02 --do 2026-11-12 --artefakty ~/.t3/notes/<bieg>/pomiar/artefakty
 """
 
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import asdict, dataclass
-from datetime import date, datetime, timezone
-import enum
-import json
-import math
-from pathlib import Path
-import statistics
-import subprocess
-import sys
-from typing import Any
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-from api_actions import STRONA, Api, runy
-from github import REPO, REQUIRED, BladApi, GhApi, GitHub
-from jednostka import Rodzaj
-from plan_runu import Z_PLANU, Plan
-import repo
-from repo import BASE, ROOT
-from wplyw_zmiany import Context, run_all
-from zakres_runu import MUTACJE, TORY
-
-GITHUB = GhApi(limit_s=60)
+GITHUB = ZRezerwa(GhApi(limit_s=60), REZERWA_POMIARU)
 
 # Krok zadań pytest i Mutation checks w ci.yml, który wykonuje jednostki planu.
 KROK_PRACY = "Run the planned units"
@@ -528,15 +530,31 @@ def podsumowanie(pomiary: list[Pomiar], bledy_api: int, zapytania: int) -> str:
     return f"POMIAR CI | {' | '.join(cele)} | runów {len(pomiary)}, błędów API {bledy_api}, zapytań {zapytania}"
 
 
-def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB) -> int:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--katalog", type=Path, required=True, help="Folder biegu: odpowiedzi API, pomiar.jsonl, tabela.md.")
+def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = GITHUB, kopia: Path | None = None) -> int:
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--katalog", type=Path, required=True, help="Folder biegu: pomiar.jsonl, tabela.md.")
     parser.add_argument("--od", type=date.fromisoformat, default=date(2026, 11, 2), help="Pierwszy dzień okna (UTC).")
     parser.add_argument("--do", type=date.fromisoformat, help="Ostatni dzień okna (UTC), domyślnie dziś.")
     parser.add_argument("--artefakty", type=Path, help="Katalog <run>/plan.json z artefaktami plan.")
     args = parser.parse_args(argv)
     dzis = datetime.now(timezone.utc).date()
-    api = Api(args.katalog, github)
+    api = Api(github, kopia)
+    try:
+        pomiary, bledy_api = _zmierz_okno(api, args, root, dzis)
+    except PonizejRezerwy as blad:
+        print(f"POMIAR CI ODMOWA | {blad.stderr}")
+        return 1
+    args.katalog.mkdir(parents=True, exist_ok=True)
+    (args.katalog / "pomiar.jsonl").write_text("".join(json.dumps(asdict(p), ensure_ascii=False) + "\n" for p in pomiary), encoding="utf-8")
+    linie = tabela(pomiary)
+    (args.katalog / "tabela.md").write_text("\n".join(linie) + "\n", encoding="utf-8")
+    print("\n".join(linie))
+    print(f"\nOkno {args.od}–{args.do or dzis}, rekordy {args.katalog / 'pomiar.jsonl'}.")
+    print(podsumowanie(pomiary, bledy_api, api.zapytania))
+    return 1 if bledy_api else 0
+
+
+def _zmierz_okno(api: Api, args: argparse.Namespace, root: Path, dzis: date) -> tuple[list[Pomiar], int]:
     lista = [r for r in runy(api, args.od, args.do or dzis, dzis) if r["status"] == "completed"]
     zmiany = Zmiany(root, (r["head_sha"] for r in lista if r["event"] == "pull_request"))
     pomiary = []
@@ -545,20 +563,15 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
         try:
             wszystkie = zadania(api, run)
             anulowane = anulowane_proby(api, run)
+        except PonizejRezerwy:
+            raise
         except (BladApi, subprocess.TimeoutExpired) as blad:
             bledy_api += 1
             print(f"POMIAR CI | błąd API run {run['id']}: {blad}", file=sys.stderr)
             continue
         zmienione = zmiany.pliki(run["head_sha"], run["created_at"]) if run["event"] == "pull_request" else None
         pomiary.append(zmierz(run, wszystkie, _plan(args.artefakty, run["id"]), zmienione, anulowane))
-    pomiary = z_werdyktem_main(pomiary)
-    (args.katalog / "pomiar.jsonl").write_text("".join(json.dumps(asdict(p), ensure_ascii=False) + "\n" for p in pomiary), encoding="utf-8")
-    linie = tabela(pomiary)
-    (args.katalog / "tabela.md").write_text("\n".join(linie) + "\n", encoding="utf-8")
-    print("\n".join(linie))
-    print(f"\nOkno {args.od}–{args.do or dzis}, rekordy {args.katalog / 'pomiar.jsonl'}.")
-    print(podsumowanie(pomiary, bledy_api, api.zapytania))
-    return 1 if bledy_api else 0
+    return z_werdyktem_main(pomiary), bledy_api
 
 
 if __name__ == "__main__":

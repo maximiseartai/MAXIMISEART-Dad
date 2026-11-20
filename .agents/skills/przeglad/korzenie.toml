@@ -1,4 +1,4 @@
-# Zamknięta lista kodów korzeni (ADR 0031, skill przeglad, sekcja „Korzeń i chwast”).
+# Zamknięta lista kodów korzeni (ADR 0031, skill przeglad, plik korzen.md).
 # Korzeń to to, co skłoniło agenta do błędu, a nie sam błąd.
 # Każdy kod ma jedno zdanie opisu i numer jednego PR, w którym przegląd znalazł Ważne z tym korzeniem.
 # Nowy kod dopisuje autor PR, gdy werdykt podał „Korzeń: NOWY R-KOD - opis” z kodem spoza listy; tools/scal_pr.py --werdykt czyta ten plik.
@@ -174,3 +174,15 @@ przyklad = 2100
 [R-DECYZJA-MAKSA-U-AUTORA]
 opis = "Zmiana zasięgu decyzji Maksa (wyjątek od jego zamkniętej listy) zapisana jako decyzja autora, bo źródło o tym przypadku nie mówi, więc agent rozstrzyga sam rodzaj „Reversing Maks” zamiast issue decyzja-maksa."
 przyklad = 2250
+
+[R-STAN-KOMPUTERA]
+opis = "Kod domyślnie czyta wspólny stan komputera (plik w HOME, kopia w ~/.cache), a testy nie dostają go odizolowanego jak git i gh w conftest, więc wynik testu na Macu zależy od tego, co zapisały inne wątki, a CI z innym środowiskiem tego nie widzi."
+przyklad = 2293
+
+[R-WERSJA-KOPII]
+opis = "Nowa umowa między checkoutem a kopią bazy, która go sądzi (kod wyjścia, zmienna, blokada), zakłada nową wersję narzędzia po obu stronach, więc checkout sprzed zmiany z kopią po niej robi co innego, niż mówi wynik."
+przyklad = 2296
+
+[R-ODMOWA-ZE-SKROTU]
+opis = "Odmowa porównuje same skróty i podaje dwa skróty bez elementu, który się różni, więc jej polecenie naprawy zakłada jedną przyczynę różnicy i nie da się go wykonać, gdy przyczyna leży poza tym, co polecenie każe przywrócić."
+przyklad = 2304

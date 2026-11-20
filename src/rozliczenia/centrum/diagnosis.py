@@ -62,7 +62,7 @@ from rozliczenia.centrum.settings.owner import WorkerListRead
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 
-_LOG_ENTRIES: Final = 20
+LOG_ENTRIES: Final = 20
 
 
 class _FoldersUnread(Exception):
@@ -253,7 +253,7 @@ class _Computer(_ProcessFiles):
 
     @cached_property
     def log_entries(self) -> tuple[str, ...]:
-        return tuple(self.log.recent(_LOG_ENTRIES))
+        return tuple(self.log.recent(LOG_ENTRIES))
 
 
 _CheckRun = Callable[[_Computer, str], list[CheckResult]]
@@ -481,8 +481,6 @@ def _centrum_log(computer: _Computer, label: str) -> list[CheckResult]:
 
 
 def _check_of(step: CheckStep) -> _Check:
-    """Sprawdzenie kroku Diagnozy z wpisu procesu; kolejność kroków i jej powody deklaruje katalog procesów."""
-
     match step:
         case "tata_settings":
             return _tata_settings

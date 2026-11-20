@@ -1,4 +1,17 @@
-"""Run verify-centrum-na-windowsie on GitHub's Windows machine from any computer, and bring the evidence home.
+from __future__ import annotations
+
+from datetime import datetime
+import json
+from pathlib import Path
+import subprocess
+import sys
+import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
+
+from skrypt_skilla import Parser
+
+OPIS = """Run verify-centrum-na-windowsie on GitHub's Windows machine from any computer, and bring the evidence home.
 
     .venv/bin/python .agents/skills/verify-centrum-na-windowsie/scripts/run_on_github.py [--feature all] [--ref <branch>]
     .venv/bin/python .agents/skills/verify-centrum-na-windowsie/scripts/run_on_github.py --run <run id>
@@ -13,19 +26,6 @@ The verdict is about the local ``HEAD``: a run of another commit (``headSha``) g
 line names the run's commit (``head=``). A dispatch refuses to start when ``origin/<ref>`` is not ``HEAD`` and accepts
 only a dispatched run of that commit.
 """
-
-from __future__ import annotations
-
-from datetime import datetime
-import json
-from pathlib import Path
-import subprocess
-import sys
-import time
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
-
-from skrypt_skilla import Parser
 
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
@@ -67,7 +67,7 @@ def _dispatch(ref: str, feature: str, head: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_run_dir()
     parser.add_argument("--feature", default="all")
     parser.add_argument("--ref", default=None)

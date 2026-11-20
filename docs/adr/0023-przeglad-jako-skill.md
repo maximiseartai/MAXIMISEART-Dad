@@ -16,7 +16,7 @@ Rozrzut dwóch powtórzeń tego samego wariantu to ok. ±0,12 trafności, więc 
 
 ## Decyzja
 
-- Reguły przeglądu są w skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md): co jest porażką, dowody, postać werdyktu i kolejne rundy, wspólne dla autora i recenzenta.
+- Reguły przeglądu są w skillu [`przeglad`](../../.agents/skills/przeglad/SKILL.md): co jest porażką, dowody, postać werdyktu i kolejne rundy; od #2280 każdy tryb czyta tylko swoje pliki skilla, a listę plików podaje jego `SKILL.md`.
 - Tryb recenzenta ma kroki: `tools/scal_pr.py N --przeglad` drukuje kontekst, recenzent dopisuje każde potwierdzone znalezisko od razu do pliku rundy, a `tools/scal_pr.py N --werdykt <plik>` sprawdza obie pierwsze linie, SHA HEAD i zgodność `PASS`/`FAIL` z liczbą Ważnych, zanim opublikuje werdykt jako komentarz PR.
 - Tryb autora to tylko to, co autor czyta, zanim zleci przegląd po pushu: autor nie przegląda własnego diffu przed pushem.
 

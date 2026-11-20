@@ -17,6 +17,7 @@ from datetime import date, datetime
 from typing import Protocol, TypeAlias, final
 
 from ..activity_legend import ActivityLegend
+from ..quantity_engine import QuantityRules
 from ..settlement_period import SettlementPeriod
 from . import _operation
 from ._model import (
@@ -117,12 +118,18 @@ class EnteringMemory:
         return memory.upgraded(intermax.orders) if isinstance(memory, OlderOwnEntries) else memory
 
     def enter(
-        self, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail], addresses: WorkerAddresses, legend: ActivityLegend
+        self,
+        window: Window,
+        intermax: RegisterWindow,
+        mails: Sequence[ReportMail],
+        addresses: WorkerAddresses,
+        legend: ActivityLegend,
+        rules: QuantityRules,
     ) -> ReportsOutcome:
         """Operacja Wpisania raportów (``_operation.enter_reports``) na wejściu odczytu okna z tej pamięci
         (``_inputs``)."""
 
-        return _operation.enter_reports(self._inputs(window, intermax, mails, addresses, legend))
+        return _operation.enter_reports(self._inputs(window, intermax, mails, addresses, legend, rules))
 
     def reminders(
         self,
@@ -132,6 +139,7 @@ class EnteringMemory:
         mails: Sequence[ReportMail],
         addresses: WorkerAddresses,
         legend: ActivityLegend,
+        rules: QuantityRules,
         *,
         sent: Sequence[SentReminder],
         reminded: frozenset[Login],
@@ -144,11 +152,17 @@ class EnteringMemory:
         (``reminded``), Ustawienia przypomnień ``settings`` i pory, przy których praca przypomnień sprawdzała
         (``in_effect``)."""
 
-        reports = self._inputs(window, intermax, mails, addresses, legend)
+        reports = self._inputs(window, intermax, mails, addresses, legend, rules)
         return reminders_due(ReminderInputs(now, reports, sent, reminded, settings, in_effect))
 
     def _inputs(
-        self, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail], addresses: WorkerAddresses, legend: ActivityLegend
+        self,
+        window: Window,
+        intermax: RegisterWindow,
+        mails: Sequence[ReportMail],
+        addresses: WorkerAddresses,
+        legend: ActivityLegend,
+        rules: QuantityRules,
     ) -> ReportInputs:
         """Jedyne wejście odczytu okna rdzenia raportów, to samo dla Wpisania raportów i Przypomnień o raporcie: INTERMAX
         okna z ``register_window`` i ta pamięć (``remembered``). Dzień raportu zależy od pamięci: numer dopisany przez
@@ -169,6 +183,7 @@ class EnteringMemory:
             ordered_days=intermax.ordered_days,
             present=tuple(read for _, read in intermax.present),
             legend=legend,
+            rules=rules,
             requested=saved.requested,
             entering_rollout=window.today if saved.rollout is None else saved.rollout,
         )

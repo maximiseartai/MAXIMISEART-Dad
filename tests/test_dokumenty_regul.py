@@ -9,9 +9,10 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 import re
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-DOCUMENTS = ("AGENTS.md", "CODING_STANDARDS.md", "docs/agents/pr-i-ci.md", "docs/agents/issue-tracker.md", "docs/agents/skrzynka-zgloszen.md", "docs/agents/komputer-taty.md", ".agents/skills/przeglad/SKILL.md", ".agents/skills/boat/SKILL.md", "docs/agents/skille.md", "GLOSSARY.md")
+DOCUMENTS = ("AGENTS.md", "CODING_STANDARDS.md", "docs/agents/pr-i-ci.md", "docs/agents/issue-tracker.md", "docs/agents/skrzynka-zgloszen.md", "docs/agents/komputer-taty.md", ".agents/skills/przeglad/SKILL.md", ".agents/skills/przeglad/recenzent.md", ".agents/skills/przeglad/autor.md", ".agents/skills/przeglad/korzen.md", ".agents/skills/przeglad/rundy.md", ".agents/skills/przeglad/porazka-adr.md", ".agents/skills/boat/SKILL.md", "docs/agents/skille.md", "GLOSSARY.md")
 FENCE = "```"
 NOT_PROSE = re.compile(r"\s*(?:#+\s|\||```)")
 LIST_ITEM = re.compile(r"\s*(?:-|\d+\.)\s")
@@ -111,3 +112,34 @@ def test_sprawdzenie_pomija_frontmatter_skilla_a_sprawdza_proze_po_nim() -> None
     )
 
     assert list(_lines_broken_mid_sentence(document)) == [6]
+
+
+BUDZET_BAJTOW = {"CODING_STANDARDS.md": 45_000, ".agents/skills/przeglad": 41_000}
+
+
+def _rozmiar_w_indeksie(nazwa: str) -> int:
+    wpisy = subprocess.run(["git", "ls-files", "-s", "-z", "--", nazwa], cwd=ROOT, capture_output=True, check=True)
+    obiekty = "".join(f"{wpis.split()[1]}\n" for wpis in wpisy.stdout.decode("utf-8").split("\0") if wpis)
+    rozmiary = subprocess.run(
+        ["git", "cat-file", "--batch-check=%(objectsize)"], cwd=ROOT, input=obiekty.encode(), capture_output=True, check=True
+    )
+    return sum(int(rozmiar) for rozmiar in rozmiary.stdout.split())
+
+
+def test_reguly_mieszcza_sie_w_budzecie_bajtow() -> None:
+    ponad = [
+        f"{nazwa}: {rozmiar} B, budżet {budzet} B (+{rozmiar - budzet} B)"
+        for nazwa, budzet in BUDZET_BAJTOW.items()
+        if (rozmiar := _rozmiar_w_indeksie(nazwa)) > budzet
+    ]
+
+    assert not ponad, "\n".join(
+        [
+            *ponad,
+            "Każdy agent czyta te reguły przed każdą zmianą, więc nowa treść wchodzi tylko w miejsce starej: zanim dopiszesz "
+            "wiersz albo zdanie, usuń wiersz tabeli reguł, którego treść mówi już komunikat strażnika (asercja testu, msg "
+            "banned-api, message reguły ast-grep), albo skróć wiersz do wiedzy, której komunikat nie ma. Budżet w "
+            "BUDZET_BAJTOW podnosi tylko PR, który w opisie mówi, czego nie dało się usunąć ani przenieść do komunikatu.",
+        ]
+    )
+

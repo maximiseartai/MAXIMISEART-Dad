@@ -1,5 +1,3 @@
-"""Remove one disposable verification run without touching its evidence."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,9 +7,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 
 from skrypt_skilla import Parser, remove_run_root
 
+OPIS = """Remove one disposable verification run without touching its evidence."""
+
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__)
+    parser = Parser(description=OPIS)
     parser.add_root("run root a fixture of this skill created")
     args = parser.parse_args(argv)
     try:

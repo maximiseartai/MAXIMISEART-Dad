@@ -1,10 +1,3 @@
-"""Stop the Centrum this verification run started and remove its run root; evidence is never touched.
-
-The server is stopped only when its record (``harness.File.SERVER``) names it and its URL
-still answers with Centrum's identity, so a reused PID or another program is
-never killed. Processes are never killed by name.
-"""
-
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
@@ -22,6 +15,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "tools/lib"))
 from skrypt_skilla import Parser, remove_run_root, require_run_root
 from harness import File
 from atrapy.pliki_taty import SERVICE
+
+OPIS = """Stop the Centrum this verification run started and remove its run root; evidence is never touched.
+
+The server is stopped only when its record (``harness.File.SERVER``) names it and its URL
+still answers with Centrum's identity, so a reused PID or another program is
+never killed. Processes are never killed by name.
+"""
 
 
 def _answers_as_centrum(url: str) -> bool:
@@ -53,7 +53,7 @@ def _stop_server(root: Path) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=RawDescriptionHelpFormatter)
     parser.add_root("run root create_centrum_fixture.py created")
     root = parser.parse_args(argv).root
     try:

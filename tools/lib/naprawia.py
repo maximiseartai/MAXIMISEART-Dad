@@ -1,4 +1,16 @@
-"""Po merge'u do domyślnej gałęzi repozytorium, przed sprzątaniem, zamyka jego otwarte issues, które opis PR wskazuje
+from __future__ import annotations
+
+from html.parser import HTMLParser
+import json
+import re
+
+import github
+from github import LinkGithuba
+import rejestr_korzeni
+from stan_pr import Pull
+import szablon_werdyktu
+
+ZASADY = """Po merge'u do domyślnej gałęzi repozytorium, przed sprzątaniem, zamyka jego otwarte issues, które opis PR wskazuje
 słowem „Naprawia”. GitHub tego słowa nie zna, więc bez narzędzia takie issues zostawały otwarte. Każde dostaje
 komentarz z numerem PR i pełnym SHA commitu merge'a, a linia ``SCAL OK`` podaje ``zamknięte: #N``. Opis bez słowa
 „Naprawia” pomija bez pytania GitHuba. Z nim pyta o domyślną gałąź (``gh repo view``), a przy merge'u do niej
@@ -45,18 +57,6 @@ czasie, odpowiedź bez stanu issue) kończy się ostrzeżeniem ``UWAGA: nie zamk
 ostrzeżeń stoi w linii ``SCAL OK`` z kodem 0, bo PR jest już scalony. Z ``--bez-merge`` tylko czyta, niczego nie
 zamyka, a linia podaje ``po merge'u zamknie: #N`` (a zamiast „nie zamknięto …” ostrzeżenia ``nie sprawdzono …``).
 """
-
-from __future__ import annotations
-
-from html.parser import HTMLParser
-import json
-import re
-
-import github
-from github import LinkGithuba
-import rejestr_korzeni
-from stan_pr import Pull
-import szablon_werdyktu
 
 LINK = "\x01"
 NOT_TEXT = "\x00"
@@ -129,7 +129,7 @@ class _Lines(HTMLParser):
 
 def listed_issues(html: str, repository: str, words: tuple[str, ...]) -> tuple[int, ...]:
     """Numery issues ``repository`` z list numerów po słowie z ``words`` na początku linii HTML opisu PR z renderera
-    GitHuba, według tych samych reguł co „Naprawia” (docstring modułu)."""
+    GitHuba, według tych samych reguł co „Naprawia” (``ZASADY``)."""
 
     parser = _Lines()
     parser.feed(html)

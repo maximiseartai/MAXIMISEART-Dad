@@ -1,4 +1,24 @@
-"""Jedna operacja, ``compare_worker_settlements``: dla dwóch Folderów rozliczeń
+from __future__ import annotations
+
+import os
+import re
+import zipfile
+from collections import Counter
+from collections.abc import Hashable, Iterator, Mapping, Sequence
+from concurrent.futures import ProcessPoolExecutor
+from copy import copy
+from pathlib import Path
+from typing import Any, Final
+from xml.etree import ElementTree
+
+from openpyxl import Workbook, load_workbook
+from openpyxl.cell.cell import Cell, MergedCell
+from openpyxl.styles.cell_style import StyleArray
+from openpyxl.utils.cell import column_index_from_string
+from openpyxl.worksheet.dimensions import Dimension
+from openpyxl.worksheet.worksheet import Worksheet
+
+ZASADY = """Jedna operacja, ``compare_worker_settlements``: dla dwóch Folderów rozliczeń
 pracowników zwraca liczbę różnic w każdej kategorii (``CATEGORIES``). Wynik to
 same liczby: bez treści komórek, adresów komórek, nazw plików i numerów zleceń.
 
@@ -19,27 +39,6 @@ same liczby: bez treści komórek, adresów komórek, nazw plików i numerów zl
 
 ``xl/calcChain.xml`` nie jest porównywany.
 """
-
-from __future__ import annotations
-
-import os
-import re
-import zipfile
-from collections import Counter
-from collections.abc import Hashable, Iterator, Mapping, Sequence
-from concurrent.futures import ProcessPoolExecutor
-from copy import copy
-from datetime import date, datetime, time, timedelta
-from pathlib import Path
-from typing import Any, Final
-from xml.etree import ElementTree
-
-from openpyxl import Workbook, load_workbook
-from openpyxl.cell.cell import Cell, MergedCell
-from openpyxl.styles.cell_style import StyleArray
-from openpyxl.utils.cell import column_index_from_string
-from openpyxl.worksheet.dimensions import Dimension
-from openpyxl.worksheet.worksheet import Worksheet
 
 CATEGORIES: Final = (
     "pliki",
@@ -108,8 +107,6 @@ def _compare_workbooks(reference: Path, candidate: Path) -> dict[str, int]:
         differences.update(
             _compare_sheets(_sheet(reference_book, title), _sheet(candidate_book, title), styles)
         )
-    reference_book.close()
-    candidate_book.close()
     return dict(differences)
 
 
@@ -239,10 +236,7 @@ def _formula(cell: Cell | MergedCell | None) -> tuple[str, ...] | None:
     value: Any = cell.value
     if isinstance(value, str):
         return ("formuła", value)
-    text = getattr(value, "text", None)
-    if text is not None:  # formuła tablicowa
-        return ("tablicowa", str(getattr(value, "ref", "")), str(text))
-    return ("tabela danych", *(f"{key}={item}" for key, item in sorted(vars(value).items())))
+    return (type(value).__name__, *(f"{key}={item}" for key, item in sorted(vars(value).items())))
 
 
 def _hyperlink(cell: Cell | MergedCell | None) -> tuple[str | None, str | None] | None:
@@ -250,18 +244,14 @@ def _hyperlink(cell: Cell | MergedCell | None) -> tuple[str | None, str | None] 
     return None if link is None else (link.target, link.location)
 
 
-def _value(cell: Cell | MergedCell | None) -> tuple[str, object] | None:
+def _value(cell: Cell | MergedCell | None) -> tuple[str, object]:
     """Wartość znaczeniowo: 3 i 3.0 to ta sama liczba, ale prawda to nie 1."""
 
     value: object = None if cell is None else cell.value
-    if value is None:
-        return None
     if isinstance(value, bool):
         return ("logiczna", value)
     if isinstance(value, int | float):
         return ("liczba", float(value))
-    if isinstance(value, datetime | date | time | timedelta):
-        return ("data", value)
     return (type(value).__name__, value)
 
 
@@ -290,9 +280,9 @@ def _style(
     if row_dimension is not None and row_dimension.has_style:
         return styles.of(row_dimension, sheet)
     column_dimension = columns.get(coordinate[1])
-    if column_dimension is not None and column_dimension.has_style:
+    if column_dimension is not None:
         return styles.of(column_dimension, sheet)
-    return styles.of(Cell(sheet, row=1, column=1, style_array=StyleArray()), sheet)
+    return styles.of(Cell(sheet, row=1, column=1), sheet)
 
 
 def _dimension_difference(

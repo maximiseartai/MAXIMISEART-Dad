@@ -24,7 +24,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
-from typing import Any, Final, Protocol
+from typing import Any, Final, Literal, Protocol
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -59,6 +59,7 @@ from rozliczenia.centrum.report_box import REPOSITORY, Refused, Unreachable
 from rozliczenia.centrum.report_entering_logs import (
     EnteringReplay,
     LoggedMail,
+    LoggedOrderProblem,
     LoggedReports,
     ReplayedOrderless,
     Unreplayable,
@@ -72,9 +73,11 @@ from rozliczenia.domain import RunMode
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import EnteringFacts, Orderless
 from rozliczenia.worker_reports import (
+    AddBar,
     Kept,
     Login,
     MailId,
+    MoveBar,
     OrderKey,
     OrderNumber,
     OwnEntries,
@@ -1565,6 +1568,58 @@ def _preparation_with_edited_rule(folder: Path) -> _EditedRulesRun:
     return _EditedRulesRun(produced, lambda kept: _quantity(kept / "okresy" / collective.parent.name / collective.name, "AA18"), 3)
 
 
+_AI_1_AT_NOKIA = {
+    "scope": "every",
+    "conditions": [{"kind": "devices", "mode": "contains", "text": "nokia", "negated": False}],
+    "action": {"kind": "fill", "writes": [{"column": "AI", "value": 1, "multiplier": "once", "component": None}]},
+}
+
+
+def _report_entering_with_edited_rule(folder: Path) -> _EditedRulesRun:
+    surroundings = Surroundings()
+    intermax = Intermax(ordered=(Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, kind="nokia", cells=((NUMBER, 40000001),)),), raw=())
+    reports = [report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000001 tak rt2 bypas5m")]
+    centrum = entering_centrum(folder, intermax, reports, surroundings=surroundings)
+    write_report_key(ToolDirectory(folder))
+    codes = tuple(replace(code, counts_in_fault=False) if code.id == "rt2" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
+    (centrum.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(codes))
+    assert centrum.client.post("/api/settings/quantity-rules", json=_AI_1_AT_NOKIA).status_code == 200
+    run = centrum.run_to_end()
+    produced = Produced(_archived_run(surroundings.report_box, folder, run["run"]["id"]), ())
+    assert produced.record["report_entering"]["problems"] == [], "u taty zlecenie z nokia było usterką z reguły z edytora"
+
+    def problems(kept: Path) -> object:
+        return json.loads((kept / "odtworzone-logi.json").read_text(encoding="utf-8"))["report_entering"]["problems"]
+
+    return _EditedRulesRun(produced, problems, [])
+
+
+_AI_1_AT_CONTRACT_U = {
+    "scope": "every",
+    "conditions": [{"kind": "contract", "word": "u", "negated": False}],
+    "action": {"kind": "fill", "writes": [{"column": "AI", "value": 1, "multiplier": "once", "component": None}]},
+}
+
+
+@pytest.mark.parametrize(("contract", "faulty"), [("U", False), (None, True)], ids=["umowa-z-regula-AI", "pusta-umowa"])
+def test_wpisanie_raportow_liczy_usterke_regula_taty_z_umowa_z_wiersza_intermax(
+    tmp_path: Path, contract: str | None, faulty: bool
+) -> None:
+    surroundings = Surroundings()
+    cells = ((NUMBER, 40000001), (FIRST + HEADERS.index("UMOWA"), contract))
+    intermax = Intermax(ordered=(Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, kind="router", cells=cells),), raw=())
+    reports = [report(SENDERS["jan.testowy"], _REPORTED_DAY, "40000001 tak rt2 bypas5m")]
+    centrum = entering_centrum(tmp_path, intermax, reports, surroundings=surroundings)
+    write_report_key(ToolDirectory(tmp_path))
+    codes = tuple(replace(code, counts_in_fault=False) if code.id == "rt2" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
+    (centrum.tool.config / LEGEND_FILE).write_bytes(LEGEND.dump(codes))
+    assert centrum.client.post("/api/settings/quantity-rules", json=_AI_1_AT_CONTRACT_U).status_code == 200
+    run = centrum.run_to_end()
+    record = Produced(_archived_run(surroundings.report_box, tmp_path, run["run"]["id"]), ()).record
+
+    assert bool(record["report_entering"]["problems"]) is faulty
+
+
 def _quantity(collective: Path, cell: str) -> object:
     workbook = load_workbook(collective, read_only=True)
     try:
@@ -1577,6 +1632,7 @@ def _quantity(collective: Path, cell: str) -> object:
 EDITED_RULES_RUNS: dict[str, Callable[[Path], _EditedRulesRun]] = {
     "settlement": _settlement_with_edited_rule,
     "preparation": _preparation_with_edited_rule,
+    "report_entering": _report_entering_with_edited_rule,
 }
 
 
@@ -2859,6 +2915,19 @@ def test_odczyty_maili_wracaja_z_logow_z_tym_samym_zapisem_w_logach() -> None:
 
     assert again == logged
     assert [mail.model_dump_json() for mail in again] == [mail.model_dump_json() for mail in logged]
+
+
+@pytest.mark.parametrize(
+    ("kind", "bar"),
+    [("unknown_number", AddBar.NOT_ORDERED), ("refused_move", MoveBar.NOT_ORDERED)],
+    ids=["nieznany-numer", "odmowa-przeniesienia"],
+)
+def test_slowo_powodu_wspolne_dopisaniu_i_przeniesieniu_wraca_z_logow_jako_powod_rodzaju_problemu(
+    kind: Literal["unknown_number", "refused_move"], bar: AddBar | MoveBar
+) -> None:
+    logged = LoggedOrderProblem(kind=kind, worker="jan.testowy", day=CLICK_DAY, number="40000001", bar=bar)
+
+    assert LoggedOrderProblem.model_validate_json(logged.model_dump_json()).bar is bar
 
 
 def _second_form(entering: dict[str, Any]) -> None:

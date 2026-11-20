@@ -7,7 +7,8 @@ Tak samo widzi otwarcia do odczytu w folderze ``watched``, więc test wie, któr
 i zapisy w nim (otwarcie do zapisu, zamiana i usunięcie pliku), więc wie też, które pliki krok czytał przed zapisem.
 
 Haka nie da się zdjąć (PEP 578), więc instaluje się raz na proces i bez ``reading`` niczego nie robi.
-Granicę haka pokazują próbki ``ZNANE_LUKI_ODCZYTU`` w ``tests/test_centrum_rozliczen.py``.
+Granicę haka pokazują próbki ``ZNANE_LUKI_ODCZYTU`` w ``tests/test_centrum_rozliczen.py`` i ``ZNANE_LUKI_WEJSCIA`` w
+``tests/test_katalog_procesow.py``.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ import os
 from pathlib import Path
 import sys
 import threading
+from typing import Final
 
 _LOCK = threading.Lock()
 _WRITES = {"os.rename": 1, "os.remove": 0}
@@ -37,6 +39,7 @@ class Reads:
     seen: set[Path] = field(default_factory=set)
     order: list[tuple[bool, Path]] = field(default_factory=list)
     """Odczyt (``False``) albo zapis (``True``) i plik, w kolejności zdarzeń."""
+    listed: set[Path] = field(default_factory=set)
 
     def before_last_write(self, outside: Path) -> set[Path]:
         """Pliki czytane przed ostatnim zapisem bloku poza folderem ``outside`` (np. Logi): odczyt po nim nie zmienia
@@ -47,6 +50,7 @@ class Reads:
         return {path for write, path in self.order[:last] if not write}
 
 
+_LISTINGS: Final = frozenset({"os.listdir", "os.scandir"})
 _active: Reads | None = None
 _installed = False
 
@@ -77,6 +81,9 @@ def _hook(event: str, arguments: tuple[object, ...]) -> None:
     reads = _active
     if reads is None:
         return
+    if event in _LISTINGS:
+        _list(reads, arguments[0])
+        return
     opened = _target(event, arguments)
     if opened is None or not opened[1].is_relative_to(reads.watched):
         return
@@ -87,6 +94,17 @@ def _hook(event: str, arguments: tuple[object, ...]) -> None:
             reads.seen.add(path)
     if not write and path in reads.denied:
         raise PermissionError(errno.EACCES, "plik trzymany przez system (test)", str(path))
+
+
+def _list(reads: Reads, folder: object) -> None:
+    if folder is None:
+        folder = "."
+    if not isinstance(folder, (str, bytes, os.PathLike)):
+        return
+    path = Path(os.path.abspath(os.fsdecode(folder)))
+    if path.is_relative_to(reads.watched):
+        with _LOCK:
+            reads.listed.add(path)
 
 
 @contextmanager

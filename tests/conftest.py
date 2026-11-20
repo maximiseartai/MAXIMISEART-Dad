@@ -27,6 +27,7 @@ from tests.fixtures.linie_watkow import shared_test_loop, stopped_after_test
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
+import api_actions
 import niestabilne_testy
 from repo import IMPORT_ROOTS, ROOT
 from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, opening
@@ -171,6 +172,13 @@ def gh_bez_logowania(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]
 
 
 @pytest.fixture(autouse=True, scope="session")
+def kopia_api_bez_komputera(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv(api_actions.ZMIENNA_KOPII, str(tmp_path_factory.mktemp("kopia-api")))
+        yield
+
+
+@pytest.fixture(autouse=True, scope="session")
 def jedna_petla_testclient() -> Iterator[None]:
     """Każdy ``TestClient`` poza ``with`` obsługuje żądania w jednej pętli zdarzeń procesu testów, nie w nowej na żądanie.
 
@@ -193,7 +201,7 @@ def jedna_petla_testclient() -> Iterator[None]:
 _GITHUB_RELEASES = tool_freshness.github_releases
 GITHUB_ATRAPA_S = 30.0
 """Limit pytania o Wydania do atrapy API GitHuba w teście: atrapa na obciążonym runnerze Windows odpowiada dłużej niż
-``tool_freshness._TIMEOUT_S`` (#1734), a sam limit sprawdzają testy ``releases_from`` z krótkim ``timeout_s``."""
+``tool_freshness.RELEASES_TIMEOUT_S`` (#1734), a sam limit sprawdzają testy ``releases_from`` z krótkim ``timeout_s``."""
 
 
 @pytest.fixture
@@ -201,7 +209,7 @@ def prawdziwe_wydania_githuba(monkeypatch: pytest.MonkeyPatch) -> Callable[[tool
     """Prawdziwe ``github_releases`` dla atrapy API GitHuba, z limitem ``GITHUB_ATRAPA_S`` zamiast krótkiego limitu
     Centrum."""
 
-    monkeypatch.setattr(tool_freshness, "_TIMEOUT_S", GITHUB_ATRAPA_S)
+    monkeypatch.setattr(tool_freshness, "RELEASES_TIMEOUT_S", GITHUB_ATRAPA_S)
     return _GITHUB_RELEASES
 
 

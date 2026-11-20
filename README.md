@@ -431,7 +431,9 @@ praca jest już w `origin/main`, i niczego nie usuwa; usuwa je dopiero z `--usun
 Zostawia każdy worktree z commitami spoza `origin/main`, zmianami, plikami nieśledzonymi,
 niepustymi plikami ignorowanymi spoza `.venv`, `node_modules` i cache, żywym procesem
 (także w podkatalogu), blokadą, rebase'em, merge'em albo bisect w toku albo aktywnym
-wątkiem T3 i podaje powód.
+wątkiem T3 i podaje powód. Po merge'u `tools/scal_pr.py` usuwa w ten sposób tylko gałąź
+i worktree scalonego PR (`--usun --galaz <gałąź>`), a resztę usuwa codzienne `--usun`
+z launchd, które instaluje raz na Macu `.venv/bin/python tools/sprzatanie.py --codziennie`.
 
 Czas Przebiegu rozliczeń mierzy `tools/benchmark_przebiegu.py measure
 --scenario typowy-tydzien` (albo `ciezki-tydzien`) na syntetycznym lustrze

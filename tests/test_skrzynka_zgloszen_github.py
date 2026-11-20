@@ -1,9 +1,3 @@
-"""Skrzynka Zgłoszeń na GitHubie: odpowiedzi REST zamienione na wyniki skrzynki, z podstawionym transportem HTTP.
-
-Żaden test nie łączy się z prawdziwym GitHubem. Nagrania prawdziwego GitHuba skilla ``verify-github-skrzynki``
-odtwarzają się tak samo na każdej maszynie, choć bajty gzipu ``ArchiveFile.packed`` zależą od Pythona i zlib.
-"""
-
 from __future__ import annotations
 
 import gzip
@@ -65,15 +59,11 @@ TITLE = "BRAK_WZORCA: Nie znaleziono wzorca."
 BODY = "## Komunikat\n"
 FINGERPRINT = "0123456789abcdef"
 KEY = "github_pat_SYNTETYCZNY"
-# Prawdziwy transport Skrzynki z chwili importu: autouse ``bez_skrzynki_zgloszen_na_githubie`` (``tests/conftest.py``)
-# podmienia ``urllib_transport`` w module.
-SKRZYNKA_TRANSPORT = report_box.urllib_transport
+TRANSPORT_SKRZYNKI_SPRZED_BLOKADY_TESTOW = report_box.urllib_transport
 
 
 @dataclass
 class ScriptedTransport:
-    """Transport HTTP, który zapisuje żądania i odpowiada przygotowaną odpowiedzią albo brakiem sieci."""
-
     answer: Callable[[], HttpResponse]
     requests: list[HttpRequest] = field(default_factory=list)
 
@@ -112,8 +102,7 @@ def test_utworzone_issue_to_wyslane_zgloszenie_z_numerem() -> None:
     assert KEY not in repr(request)
 
 
-def test_skrzynka_pyta_github_naglowkami_api_rest_z_wersja_api_i_kluczem_taty() -> None:
-    # Nagłówki z dokumentacji REST API GitHuba: typ odpowiedzi, wersja API, obowiązkowy User-Agent i klucz.
+def test_skrzynka_pyta_github_naglowkami_api_rest_z_wersja_api_obowiazkowym_user_agentem_i_kluczem_taty() -> None:
     _, transport = send_with(lambda: HttpResponse(201, json.dumps({"number": 42}).encode()))
 
     [request] = transport.requests
@@ -127,22 +116,34 @@ def test_skrzynka_pyta_github_naglowkami_api_rest_z_wersja_api_i_kluczem_taty() 
 
 def test_skrzynka_laczy_sie_z_githubem_przez_proxy_z_ustawien_systemu(monkeypatch: pytest.MonkeyPatch) -> None:
     with system_proxy(monkeypatch) as proxied:
-        outcome = GitHubReportBox(transport=SKRZYNKA_TRANSPORT).labelled_issues("zgloszenie", include_closed=False, key=KEY)
+        outcome = GitHubReportBox(transport=TRANSPORT_SKRZYNKI_SPRZED_BLOKADY_TESTOW).labelled_issues("zgloszenie", include_closed=False, key=KEY)
 
     assert outcome == Unreachable()
     assert proxied == ["CONNECT api.github.com:443"]
 
 
+def test_skrzynka_zbudowana_przed_podmiana_transportu_modulu_pyta_przez_transport_z_chwili_zadania(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    box = GitHubReportBox()
+    transport = ScriptedTransport(lambda: HttpResponse(201, json.dumps({"number": 42}).encode()))
+    monkeypatch.setattr(report_box, "urllib_transport", transport)
+
+    outcome = box.open_issue("zgloszenie", TITLE, BODY, key=KEY)
+
+    assert (outcome, [request.url for request in transport.requests]) == (Sent(42), [ISSUES])
+
+
 @pytest.mark.parametrize("same_server_hops", [0, 1], ids=["wprost", "po-przekierowaniu-na-tym-samym-serwerze"])
-def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki_na_inny_serwer(same_server_hops: int) -> None:
-    # Serwer pod innym portem to inny origin, jak inny host: klucz taty tam nie idzie, także gdy wcześniej przeszedł
-    # przekierowanie na tym samym serwerze.
+def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki_na_inny_serwer_takze_pod_innym_portem_tego_hosta(
+    same_server_hops: int,
+) -> None:
     with github_api({"/lista": Answer(body=[])}) as elsewhere, github_api({}) as box:
         box.answers = {
             **{f"/{hop}": Answer(302, headers={"Location": f"{box.url}/{hop + 1}"}) for hop in range(same_server_hops)},
             f"/{same_server_hops}": Answer(301, headers={"Location": f"{elsewhere.url}/lista"}),
         }
-        answer = SKRZYNKA_TRANSPORT(HttpRequest("GET", f"{box.url}/0", headers(KEY), None))
+        answer = TRANSPORT_SKRZYNKI_SPRZED_BLOKADY_TESTOW(HttpRequest("GET", f"{box.url}/0", headers(KEY), None))
 
     assert answer.status == 200
     assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"] * (same_server_hops + 1)
@@ -157,11 +158,10 @@ def test_klucz_taty_nie_idzie_za_przekierowaniem_skrzynki_na_inny_serwer(same_se
 def test_klucz_taty_idzie_za_przekierowaniem_skrzynki_na_ten_sam_serwer_z_domyslnym_portem_podanym_albo_nie(
     monkeypatch: pytest.MonkeyPatch, asked: str, moved: str
 ) -> None:
-    # Adres bez portu i adres z domyślnym portem schematu to ten sam origin. Atrapa jest proxy z ustawień systemu, bo
-    # serwer testu nie dostaje portu 80; przez proxy urllib pyta o cały adres, a nazwy hosta nie rozwiązuje.
+    # ZEWNĘTRZNE: port 80 serwera testu wymaga na Linuksie uprawnień roota, a urllib przez proxy HTTP wysyła cały adres i nie rozwiązuje nazwy hosta (man 7 ip, dokumentacja urllib.request.ProxyHandler)
     with github_api({asked: Answer(301, headers={"Location": moved}), moved: Answer(body=[])}) as proxy:
         proxy_of_system(monkeypatch, proxy.url)
-        answer = SKRZYNKA_TRANSPORT(HttpRequest("GET", asked, headers(KEY), None))
+        answer = TRANSPORT_SKRZYNKI_SPRZED_BLOKADY_TESTOW(HttpRequest("GET", asked, headers(KEY), None))
 
     assert answer.status == 200
     assert [(seen.path, seen.authorization) for seen in proxy.asked] == [(asked, f"Bearer {KEY}"), (moved, f"Bearer {KEY}")]
@@ -171,10 +171,8 @@ def test_klucz_taty_idzie_za_przekierowaniem_skrzynki_na_ten_sam_serwer_z_domysl
 def test_skrzynka_wysyla_do_githuba_zadanie_jego_metoda(
     monkeypatch: pytest.MonkeyPatch, method: str, body: bytes | None
 ) -> None:
-    # Bez podanej metody urllib wysyła POST, gdy żądanie ma treść, a GET bez niej: poprawka komentarza i usunięcie
-    # pliku archiwum nie doszłyby do GitHuba.
     with github_api({"/zasob": Answer(body={})}) as box:
-        answer = SKRZYNKA_TRANSPORT(HttpRequest(method, f"{box.url}/zasob", headers(KEY), body))
+        answer = TRANSPORT_SKRZYNKI_SPRZED_BLOKADY_TESTOW(HttpRequest(method, f"{box.url}/zasob", headers(KEY), body))
 
     assert answer.status == 200
     assert [seen.method for seen in box.asked] == [method]
@@ -183,11 +181,10 @@ def test_skrzynka_wysyla_do_githuba_zadanie_jego_metoda(
 def test_przekierowanie_skrzynki_na_adres_z_nieczytelnym_portem_to_skrzynka_nieosiagalna(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Z takim adresem urllib się nie połączy, więc Skrzynka czeka jak bez sieci i ponawia później.
     listed = f"/repos/{report_box.REPOSITORY}/issues?state=open&labels=zgloszenie&per_page=100&page=1"
     with github_api({listed: Answer(301, headers={"Location": "http://127.0.0.1:abc/lista"})}) as box:
         monkeypatch.setattr(report_box, "API", box.url)
-        outcome = GitHubReportBox(transport=SKRZYNKA_TRANSPORT).labelled_issues("zgloszenie", include_closed=False, key=KEY)
+        outcome = GitHubReportBox(transport=TRANSPORT_SKRZYNKI_SPRZED_BLOKADY_TESTOW).labelled_issues("zgloszenie", include_closed=False, key=KEY)
 
     assert outcome == Unreachable()
     assert [asked.path for asked in box.asked] == [listed]
@@ -196,15 +193,12 @@ def test_przekierowanie_skrzynki_na_adres_z_nieczytelnym_portem_to_skrzynka_nieo
 def test_przeniesione_repozytorium_zgloszen_odpowiada_skrzynce_z_kluczem_taty_pod_adresem_przekierowania(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """GitHub przekierowuje przeniesione albo przemianowane repozytorium (301) na ``/repositories/<id>/…`` tego samego
-    hosta, a prywatne repozytorium Zgłoszeń bez klucza odpowiada 404, czyli odmową Skrzynki."""
-
     listed = "issues?state=open&labels=zgloszenie&per_page=100&page=1"
     with github_api({f"/repositories/1/{listed}": Answer(body=[])}, private=True) as box:
         moved = Answer(301, headers={"Location": f"{box.url}/repositories/1/{listed}"})
         box.answers = {**box.answers, f"/repos/{report_box.REPOSITORY}/{listed}": moved}
         monkeypatch.setattr(report_box, "API", box.url)
-        outcome = GitHubReportBox(transport=SKRZYNKA_TRANSPORT).labelled_issues("zgloszenie", include_closed=False, key=KEY)
+        outcome = GitHubReportBox(transport=TRANSPORT_SKRZYNKI_SPRZED_BLOKADY_TESTOW).labelled_issues("zgloszenie", include_closed=False, key=KEY)
 
     assert outcome == ()
     assert [asked.authorization for asked in box.asked] == [f"Bearer {KEY}"] * 2
@@ -589,7 +583,6 @@ OPERATIONS: dict[str, Callable[[GitHubReportBox, str], object]] = {
 }
 
 
-# Odpowiedź GitHuba na komentarz ponad limit, zmierzona na repozytorium Skrzynki (#332).
 TOO_LONG = (
     b'{"message": "Validation Failed", "errors": [{"resource": "IssueComment", "code": "unprocessable", '
     b'"field": "data", "message": "Body is too long (maximum is 65536 characters)"}]}'
@@ -616,7 +609,6 @@ def test_klucz_ktorego_nie_da_sie_wyslac_w_naglowku_to_odmowa_skrzynki_bez_zapyt
     assert (outcome, transport.requests) == (Refused(), [])
 
 
-# Odpowiedzi GitHuba na przekroczony limit zapytań: podstawowy (403) i „secondary” (403 albo 429).
 RATE_LIMITS = {
     "podstawowy-403": (403, b'{"message": "API rate limit exceeded for user ID 1.", "documentation_url": "..."}'),
     "secondary-403": (403, b'{"message": "You have exceeded a secondary rate limit. Please wait a few minutes."}'),
@@ -693,6 +685,12 @@ def test_odmowa_autoryzacji_przy_archiwum_to_odmowa_skrzynki(operation: str) -> 
     outcome = OPERATIONS[operation](GitHubReportBox(transport=transport), KEY)
 
     assert outcome == Refused()
+
+
+def test_404_przy_szukaniu_archiwum_okresu_to_odmowa_skrzynki_a_nie_brak_archiwum() -> None:
+    transport = ScriptedTransport(lambda: HttpResponse(404, b'{"message": "Not Found"}'))
+
+    assert GitHubReportBox(transport=transport).archive(TAG, key=KEY) == Refused()
 
 
 def test_bez_release_z_tagiem_okresu_archiwum_jeszcze_nie_ma() -> None:
@@ -773,8 +771,6 @@ def test_niezwykla_odpowiedz_przy_archiwum_to_skrzynka_nieosiagalna(
     assert outcome == Unreachable()
 
 
-# Odpowiedzi GitHuba na założenie Release w repozytorium bez commitu: 409 z repozytorium Skrzynki 2026-11-04 (opis PR
-# #860) i 422 z repozytorium próbnego 2026-11-05 kluczem OAuth i fine-grained (nagrania ``verify-github-skrzynki``).
 EMPTY_REPOSITORY = {
     "message": "Git Repository is empty.",
     "documentation_url": "https://docs.github.com/rest/releases/releases#create-a-release",
@@ -792,8 +788,6 @@ EMPTY_REPOSITORY_ANSWERS = {
 }
 
 
-# Odpowiedzi GitHuba na plik o nazwie, która już jest w Release, i na Release z tagiem, który już ma Release
-# (repozytorium próbne z commitem 2026-11-05, nagrania ``verify-github-skrzynki``).
 SAME_NAME = {
     "message": "Validation Failed",
     "errors": [{"resource": "ReleaseAsset", "code": "already_exists", "field": "name"}],
@@ -807,14 +801,6 @@ SAME_TAG = {
 
 @dataclass
 class GitHubOnTransport:
-    """GitHub REST dla Skrzynki w pamięci, za transportem HTTP: issue z komentarzami i Release'y z plikami.
-
-    Zna tylko zapytania, które wysyła ``GitHubReportBox``, i jak GitHub nie trzyma dwóch plików jednej nazwy w jednym
-    Release ani dwóch Release'ów jednego tagu (422). ``refuse_releases``: klucz bez uprawnienia do treści repozytorium (403 przy każdym zapytaniu o
-    Release'y i ich pliki). ``empty_repository``: repozytorium bez żadnego commitu, jak repozytorium Skrzynki
-    2026-11-04: lista Release'ów jest pusta, a założenie Release to ta odpowiedź (``EMPTY_REPOSITORY_ANSWERS``).
-    """
-
     issues: dict[int, dict[str, Any]] = field(default_factory=dict)
     releases: dict[int, dict[str, Any]] = field(default_factory=dict)
     assets: dict[int, dict[str, Any]] = field(default_factory=dict)
@@ -876,8 +862,6 @@ class GitHubOnTransport:
                 raise AssertionError(f"GitHubReportBox nie wysyła {request.method} {path}")
 
     def files(self, tag: str) -> dict[str, str]:
-        """Pliki Release z tagiem ``tag`` po nazwie, rozpakowane."""
-
         [release] = [release["id"] for release in self.releases.values() if release["tag_name"] == tag]
         mine = [asset for asset in self.assets.values() if asset["release"] == release]
         return {asset["name"]: gzip.decompress(self.data[asset["id"]]).decode("utf-8") for asset in mine}
@@ -969,8 +953,7 @@ def test_klucz_bez_uprawnienia_do_tresci_repozytorium_zostawia_plik_w_kolejce_a_
     queue = github_queue(tmp_path, github)
 
     queue.post(logs_post("{}\n"))
-    # Przejście zamienia plik kolejki na plik ze znacznikiem części, a na Windows odczyt w trakcie zamiany pada
-    # (PermissionError), więc test czyta plik dopiero po przejściu.
+    # ZEWNĘTRZNE: Windows odmawia otwarcia pliku, który przejście kolejki właśnie podmienia na plik ze znacznikiem części, więc odczyt w trakcie przejścia pada PermissionError (dokumentacja MoveFileExW i CreateFileW)
     assert not queue.wait_delivered("", "zgloszenie", timeout_s=30), "przejście kolejki się skończyło"
 
     assert "przyczyna=odmowa-archiwum" in (tmp_path / "logs" / "centrum-rozliczen.log").read_text("utf-8")
@@ -985,8 +968,6 @@ REPORT = report_target(FINGERPRINT, tool(TITLE))
 
 
 def queued_before_start(directory: Path, *posts: Post) -> None:
-    """Pliki kolejki z poprzedniej pracy Centrum w tej kolejności, nazwane jak w ``Outbox.post``."""
-
     directory.mkdir(parents=True)
     for place, post in enumerate(posts):
         name = f"20261023T10150{place}000000Z-{place + 1:04d}-{post.target.label}-{post.run_id[:8]}.json"
@@ -997,11 +978,6 @@ def queued_before_start(directory: Path, *posts: Post) -> None:
 def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochodzi_w_tym_samym_przejsciu_bez_komunikatu(
     tmp_path: Path, refusal: str
 ) -> None:
-    """Repozytorium Skrzynki bez commitu (409 albo 422 na założenie Archiwum) i Token bez uprawnienia do treści repozytorium (403)
-    to odmowa Archiwum, która trwa, aż Maks coś zmieni: zatrzymuje tylko plik Logów. Komentarz Logów idzie z dopiskiem,
-    a Zgłoszenie, które czeka w kolejce za nimi, dochodzi w tym samym przejściu, a klucz taty zostaje przyjęty, więc tata
-    nie dostaje Komunikatu (spec #837, #844)."""
-
     github = GitHubOnTransport(
         empty_repository=EMPTY_REPOSITORY_ANSWERS.get(refusal), refuse_releases=refusal == "bez-uprawnienia"
     )
@@ -1036,14 +1012,11 @@ def test_odmowa_archiwum_zatrzymuje_tylko_plik_logow_a_zgloszenie_za_nimi_dochod
 
 @pytest.mark.parametrize("system", [3, 19, 255, 10], ids=["linux", "macos-python-3-12", "python-3-13", "windows-zlib"])
 def test_nagranie_archiwum_odtwarza_sie_przy_gzipie_innej_maszyny(monkeypatch: pytest.MonkeyPatch, system: int) -> None:
-    """``ArchiveFile.packed`` daje na Windows w CI (Python 3.14) inne bajty niż na Macu, na którym powstało nagranie
-    (run 41959078147, bajt systemu w nagłówku 255 zamiast 19): odtwarzanie Archiwum nie zależy od bajtów gzipu maszyny."""
-
     compress = gzip.compress
 
     def compress_like_other_machine(data: bytes, compresslevel: int = 9, *, mtime: float | None = None) -> bytes:
-        packed = compress(data, compresslevel=1, mtime=mtime)  # inny poziom: deflate innej biblioteki
-        return packed[:9] + bytes([system]) + packed[10:]
+        packed_by_other_deflate = compress(data, compresslevel=1, mtime=mtime)
+        return packed_by_other_deflate[:9] + bytes([system]) + packed_by_other_deflate[10:]
 
     monkeypatch.setattr(gzip, "compress", compress_like_other_machine)
     recording = github_wymiana.read_recording(SKILL / "nagrania" / "archiwum-fine-grained.json")

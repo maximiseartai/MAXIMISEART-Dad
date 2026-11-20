@@ -1,40 +1,3 @@
-"""Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
-
-Przepis z korzenia checkoutu; po ``--`` stoją argumenty Pythona, który uruchomił narzędzie:
-
-    # jedna mutacja: plik, kotwica (jej tekst stoi w pliku dokładnie raz) i zamiana
-    .venv/bin/python tools/mutacje.py --zmiana src/rozliczenia/x.py 'if n > LIMIT:' 'if False:' \\
-        -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu
-    # mutacje z pliku JSON, naraz
-    .venv/bin/python tools/mutacje.py --rownolegle --plik mutacje.json -- -m pytest -q -n 0 tests/test_x.py
-
-    mutacje.json: "polecenie" (zamiast polecenia po --) i "oczekiwane" (początek ostatniej linii wyjścia, który
-    wykrywa mutację zamiast kodu wyjścia) są opcjonalne
-    [
-      {"nazwa": "bez limitu", "zmiany": [["src/rozliczenia/x.py", "if n > LIMIT:", "if False:"]]},
-      {"nazwa": "dwa miejsca", "zmiany": [["src/rozliczenia/x.py", "n = 1", "n = 2"], ["tools/y.py", "z", "w"]],
-       "polecenie": ["-m", "pytest", "-q", "-n", "0", "tests/test_y.py"], "oczekiwane": "SPRAWDZENIE: NARUSZENIE"}
-    ]
-
-Pytest w jednym procesie to ``-n 0``: ``-p no:xdist`` pada na ``--dist`` z ``addopts`` w ``pyproject.toml``. Ścieżka
-i ``-k`` muszą wybrać test, bo polecenie bez mutacji (podstawa) musi przejść, zanim mutacja czegoś dowiedzie. Mutację
-NIEWYKRYTA narzędzie powtarza na merge-base HEAD z ``--baza`` (domyślnie origin/main; gałąź zbudowana na innej podaje
-ją), a WYKRYTA tam to REGRES. Poza CI jedno uruchomienie ma najwyżej 100 mutacji (``ciezkie_ci.TARGETED``). Dowodem
-jest tylko WYKRYTA, a narzędzie kończy się wtedy kodem 0 i linią ``MUTACJE OK``.
-
-Z ``--juz-lapie``, po ``MUTACJE OK`` (każda mutacja padła w poleceniu) z poleceniem pytest, które wybiera test dodany
-albo zmieniony od tego merge-base, narzędzie sprawdza każdą mutację też testami sprzed zmiany z wyboru szybko (``szybko.plan``), z ``-x``.
-Na stderr: ``JUŻ ŁAPIE <plik>::<test>`` (ten test sprzed zmiany sam pada po mutacji, a bez niej przechodzi, więc autor
-sprawdza, czy nowy test dodaje coś ponad niego) albo ``JUŻ ŁAPIE NIESPRAWDZONE`` z przyczyną, gdy sprawdzenie tego nie
-wie (limit, pliki odłożone przez szybko, test sprzed zmiany czerwony bez mutacji albo łapiący tylko z sąsiadem). Rady
-usunięcia nowego testu narzędzie nie daje. Werdyktów, stdout ani kodu to nie zmienia, a wybór, ze skanem i czasami CI,
-i sprawdzenie trwają po najwyżej ``--juz-lapie-s`` s. Wybór biegnie też raz bez mutacji w podstawie przed mutacjami
-(#1719): czerwony daje ``PODSTAWA CZERWONA``, a bez wyniku w ``--podstawa-s`` s ``PODSTAWA NIESPRAWDZONA``, obie kod 2.
-Bez ``--juz-lapie`` nie biegnie ani wybór, ani podstawa, ani sprawdzenie, tylko mutacje.
-
-Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i ``MUTACJE_CZESC`` drukuje ``--zasady``.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -69,8 +32,42 @@ import szybko
 import wplyw_zmiany
 import wyniki_testow
 
-RULES_HEADING = "Zasady werdyktów i przebiegu"
-RULES = (silnik_mutacji.__doc__ or "").partition(f"\n{RULES_HEADING}\n")[2]
+OPIS = """Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz przed pushem, ze wszystkimi mutacjami zmiany w jednym --plik.
+
+Przepis z korzenia checkoutu; po ``--`` stoją argumenty Pythona, który uruchomił narzędzie:
+
+    # jedna mutacja: plik, kotwica (jej tekst stoi w pliku dokładnie raz) i zamiana
+    .venv/bin/python tools/mutacje.py --zmiana src/rozliczenia/x.py 'if n > LIMIT:' 'if False:' \\
+        -- -m pytest -q -n 0 tests/test_x.py -k nazwa_testu
+    # mutacje z pliku JSON, naraz
+    .venv/bin/python tools/mutacje.py --rownolegle --plik mutacje.json -- -m pytest -q -n 0 tests/test_x.py
+
+    mutacje.json: "polecenie" (zamiast polecenia po --) i "oczekiwane" (początek ostatniej linii wyjścia, który
+    wykrywa mutację zamiast kodu wyjścia) są opcjonalne
+    [
+      {"nazwa": "bez limitu", "zmiany": [["src/rozliczenia/x.py", "if n > LIMIT:", "if False:"]]},
+      {"nazwa": "dwa miejsca", "zmiany": [["src/rozliczenia/x.py", "n = 1", "n = 2"], ["tools/y.py", "z", "w"]],
+       "polecenie": ["-m", "pytest", "-q", "-n", "0", "tests/test_y.py"], "oczekiwane": "SPRAWDZENIE: NARUSZENIE"}
+    ]
+
+Pytest w jednym procesie to ``-n 0``: ``-p no:xdist`` pada na ``--dist`` z ``addopts`` w ``pyproject.toml``. Ścieżka
+i ``-k`` muszą wybrać test, bo polecenie bez mutacji (podstawa) musi przejść, zanim mutacja czegoś dowiedzie. Mutację
+NIEWYKRYTA narzędzie powtarza na merge-base HEAD z ``--baza`` (domyślnie origin/main; gałąź zbudowana na innej podaje
+ją), a WYKRYTA tam to REGRES. Poza CI jedno uruchomienie ma najwyżej 100 mutacji (``ciezkie_ci.TARGETED``). Dowodem
+jest tylko WYKRYTA, a narzędzie kończy się wtedy kodem 0 i linią ``MUTACJE OK``.
+
+Z ``--juz-lapie``, po ``MUTACJE OK`` (każda mutacja padła w poleceniu) z poleceniem pytest, które wybiera test dodany
+albo zmieniony od tego merge-base, narzędzie sprawdza każdą mutację też testami sprzed zmiany z wyboru szybko (``szybko.plan``), z ``-x``.
+Na stderr: ``JUŻ ŁAPIE <plik>::<test>`` (ten test sprzed zmiany sam pada po mutacji, a bez niej przechodzi, więc autor
+sprawdza, czy nowy test dodaje coś ponad niego) albo ``JUŻ ŁAPIE NIESPRAWDZONE`` z przyczyną, gdy sprawdzenie tego nie
+wie (limit, pliki odłożone przez szybko, test sprzed zmiany czerwony bez mutacji albo łapiący tylko z sąsiadem). Rady
+usunięcia nowego testu narzędzie nie daje. Werdyktów, stdout ani kodu to nie zmienia, a wybór, ze skanem i czasami CI,
+i sprawdzenie trwają po najwyżej ``--juz-lapie-s`` s. Wybór biegnie też raz bez mutacji w podstawie przed mutacjami
+(#1719): czerwony daje ``PODSTAWA CZERWONA``, a bez wyniku w ``--podstawa-s`` s ``PODSTAWA NIESPRAWDZONA``, obie kod 2.
+Bez ``--juz-lapie`` nie biegnie ani wybór, ani podstawa, ani sprawdzenie, tylko mutacje.
+
+Zasady werdyktów, kopii, bramy typów, nocy, ``--jak-ci`` i części tabeli (``jednostka.ZMIENNA_CZESCI``) drukuje ``--zasady``.
+"""
 
 
 def _from_file(path: Path, command: tuple[str, ...]) -> list[Mutation]:
@@ -311,7 +308,7 @@ def main(argv: list[str] | None = None) -> int:
     arguments = sys.argv[1:] if argv is None else argv
     split = arguments.index("--") if "--" in arguments else len(arguments)
     command = tuple(arguments[split + 1 :])
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--zmiana",
         nargs=3,
@@ -344,7 +341,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--zasady", action="store_true", help=f"Drukuje zasady werdyktów, kopii, bramy typów, nocy, --jak-ci i {ZMIENNA_CZESCI}.")
     args = parser.parse_args(arguments[:split])
     if args.zasady:
-        print(RULES.strip())
+        print(silnik_mutacji.ZASADY.strip())
         return 0
     if not args.juz_lapie and (limits := [flag for flag, value in (("--juz-lapie-s", args.juz_lapie_s), ("--podstawa-s", args.podstawa_s)) if value is not None]):
         parser.error(f"{' i '.join(limits)} to limity sprawdzenia {ALREADY}, które biegnie tylko z --juz-lapie: dopisz --juz-lapie albo usuń limit")

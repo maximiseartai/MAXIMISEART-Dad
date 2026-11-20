@@ -1953,6 +1953,26 @@ def test_wynik_wyceny_bez_przyjecia_logow_przez_kolejke_zostawia_dziennik_do_nas
     assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
 
 
+def test_logi_z_wynikiem_ktorych_nie_dalo_sie_zbudowac_nie_ida_do_kolejki_a_dziennik_czeka_na_wersje_zastepcza(
+    tmp_path: Path,
+) -> None:
+    def files(process: object, period: object, settings: object) -> list[Path]:
+        raise RuntimeError("syntetyczna awaria plików procesu")
+
+    queue = RecordingQueue()
+    disk = _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, queue, disk, files=files)
+    _priced(comments, disk)
+
+    comments.run_ended(_ended())
+    after_end = ([post.rank for post in queue.posts], len(list((tmp_path / "dzienniki-wyceny").glob("*.jsonl"))))
+    _started(_comments(tmp_path, queue))
+
+    assert after_end == ([Rank.DRAFT], 1)
+    assert [post.rank for post in queue.posts] == [Rank.DRAFT, Rank.STAND_IN]
+    assert list((tmp_path / "dzienniki-wyceny").glob("*.jsonl")) == []
+
+
 def test_dziennik_wyceny_bez_dowodu_startu_logow_na_dysku_odmawia_przed_pierwsza_linia(tmp_path: Path) -> None:
     """Dziennik startuje tylko ``LogsOnDisk.started``, który zapisuje też plik ostatniego startu: start bez dowodu
     (``_STARTER``) odmawia, zanim dziennik zapisze pierwszą linię albo pokaże postęp."""
@@ -2071,6 +2091,23 @@ def test_postep_wyceny_przeczytany_przed_jej_koncem_nie_idzie_po_jej_logach_gdy_
         (Rank.OWN, RUN_ID),
         (Rank.DRAFT, OTHER_RUN_ID),
     ]
+
+
+def test_budzik_postepu_skonczonej_wyceny_dzwoniacy_po_starcie_nastepnej_nie_odswieza_jej_postepu(tmp_path: Path) -> None:
+    queue, clock, disk = RecordingQueue(), ManualClock(), _logs_on_disk(tmp_path)
+    comments = _comments(tmp_path, queue, disk, clock)
+    _priced(comments, disk)
+    comments.run_ended(_ended())
+    clock.advance(PROGRESS_S / 2)
+    comments.run_started(PRICING.model_copy(update={"id": OTHER_RUN_ID}), STARTED_AT)
+
+    progress_of_next: list[int] = []
+    for _ in range(3):
+        clock.advance(PROGRESS_S / 2)
+        progress_of_next.append(sum(post.run_id == OTHER_RUN_ID for post in queue.posts))
+
+    assert progress_of_next == [1, 2, 2]
+    assert clock.wakes == 1
 
 
 @dataclass

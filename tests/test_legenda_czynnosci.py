@@ -11,6 +11,7 @@ przykładów).
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import replace
 from itertools import product
 import re
 
@@ -43,7 +44,7 @@ PROPERTY = settings(derandomize=True, database=None, deadline=None, max_examples
 
 
 def _read(text: str) -> DescriptionRead:
-    return DEFAULT_ACTIVITY_LEGEND.read(text)
+    return DEFAULT_ACTIVITY_LEGEND.read(text, fault=False)
 
 
 def _codes(text: str) -> WithCodes:
@@ -53,7 +54,7 @@ def _codes(text: str) -> WithCodes:
 
 
 def _problems(text: str, legend: ActivityLegend = DEFAULT_ACTIVITY_LEGEND) -> tuple[object, ...]:
-    read = legend.read(text)
+    read = legend.read(text, fault=False)
     assert isinstance(read, DescriptionError), read
     return read.problems
 
@@ -187,6 +188,40 @@ def test_rozne_kody_w_roznych_kolumnach_wyznaczaja_kazdy_swoje() -> None:
     assert [found.code for found in read.found] == ["spawpg", "dzielnik1/2", "inst", "instutp", "rt2"]
 
 
+_RT2_OUTSIDE_FAULTS = ActivityLegend(
+    tuple(replace(code, counts_in_fault=False) if code.id == "rt2" else code for code in DEFAULT_ACTIVITY_LEGEND.codes)
+)
+
+
+@pytest.mark.parametrize("text", ["rt2", "RT2, wymiana kabla", "rt2 rt2"])
+def test_kod_ktory_w_usterce_sie_nie_liczy_jest_w_usterce_kodem_bez_ilosci_kwoty_i_kolorow(text: str) -> None:
+    read = _RT2_OUTSIDE_FAULTS.read(text, fault=True)
+
+    assert isinstance(read, WithCodes), read
+    assert (dict(read.quantities), read.amount, dict(read.fills), set(read.spelled)) == ({}, 0, {}, {"rt2"})
+
+
+@pytest.mark.parametrize(
+    ("text", "alone"),
+    [("rt2 bypas5m", "bypas5m"), ("rt2 instwew15m spawpg", "instwew15m spawpg"), ("instutp40m rt2", "instutp40m")],
+)
+def test_kod_ktory_w_usterce_sie_nie_liczy_nie_zmienia_w_usterce_wyniku_innych_kodow(text: str, alone: str) -> None:
+    read, without = _RT2_OUTSIDE_FAULTS.read(text, fault=True), _RT2_OUTSIDE_FAULTS.read(alone, fault=True)
+
+    if isinstance(without, DescriptionError):
+        assert isinstance(read, DescriptionError) and read.problems == without.problems
+    else:
+        assert isinstance(read, WithCodes) and isinstance(without, WithCodes)
+        assert (dict(read.quantities), read.amount, dict(read.fills)) == (dict(without.quantities), without.amount, dict(without.fills))
+
+
+@pytest.mark.parametrize("text", ["rt2", "rt2 bypas5m", "spawpg rt2"])
+def test_poza_usterka_i_przy_kodzie_ktory_liczy_sie_w_usterce_wynik_jest_jak_bez_usterki(text: str) -> None:
+    outside = _RT2_OUTSIDE_FAULTS.read(text, fault=False)
+
+    assert outside == DEFAULT_ACTIVITY_LEGEND.read(text, fault=False) == DEFAULT_ACTIVITY_LEGEND.read(text, fault=True)
+
+
 def _coloured(column: str) -> ActivityLegend:
     """Trzy kody, które wypełniają kolumnę ``column``: zielony, czerwony i drugi zielony."""
 
@@ -204,7 +239,7 @@ def test_dwa_rozne_kolory_w_jednej_kolumnie_to_blad_opisu_a_ten_sam_kolor_dwa_ra
     legend = _coloured(column)
 
     assert _problems("zielony czerwony zielony", legend) == (TwoColours(column, ("zielony", "czerwony", "zielony")),)
-    read = legend.read("zielony tezzielony")
+    read = legend.read("zielony tezzielony", fault=False)
     assert isinstance(read, WithCodes) and dict(read.fills) == {column: FillColour.GREEN}
 
 
@@ -434,6 +469,8 @@ def _document(*codes: dict[str, object]) -> dict[str, object]:
         (_document({"id": "a", "zapisy": ["x"], "kolumna": "Y", "przedzialy": []}), "kody[a].przedzialy"),
         (_document({"id": "a", "zapisy": ["x"], "kolumna": "Y", "kolor": "zielony"}), "kody[0].kolor"),
         (_document({"id": "a", "kolumna": "Y"}), "kody[0].zapisy"),
+        (_document({"id": "a", "zapisy": ["x"], "kolumna": "Y", "w_usterce": "nie"}), "kody[a].w_usterce"),
+        (_document({"id": "a", "zapisy": ["x"], "kolumna": "Y", "w_usterce": 0}), "kody[a].w_usterce"),
         ({"schema_version": 2, "kody": []}, "schema_version"),
         ({"schema_version": 1}, "kody"),
         ([], "plik"),
@@ -453,6 +490,7 @@ def test_legenda_z_kazdym_dzialaniem_czyta_sie_z_powrotem_w_ten_sam_typ() -> Non
             ActivityCode("b", ("spawpg",), FixedColumn("AB"), amount=70, fills=(CellFill("AS", FillColour.RED),)),
             ActivityCode("c", ("instwew{n}m",), fills=(CellFill("AF", FillColour.GREEN),)),
             ActivityCode("d", ("dzielnik1/2",), amount=50),
+            ActivityCode("e", ("rt2",), FixedColumn("AM"), counts_in_fault=False),
         )
     )
 

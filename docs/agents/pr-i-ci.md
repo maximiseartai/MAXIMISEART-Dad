@@ -11,7 +11,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
   Linia `CIEŃ PODSTAW` podaje ścianę i zadania wariantów V0, NF i N0, a rozstrzygnięcie D1 (#2169) liczy po 14 dniach `tools/cien_podstaw.py`.
 - Do bramki PR dokładasz tylko to, co złapałoby defekt, który przez nią przeszedł, z dowodem z backtestu.
 - Bramka ma budżet p90 ≤ 5 min od pushu do `Required CI status` (ADR 0020, D2): przekroczenie otwiera issue z etykietą `budzet-ci`, które nazywa wąskie gardło, a stan budżetu na dziś bez zapisu na GitHubie drukuje `tools/budzet_ci.py --katalog <folder> --bez-zapisu`.
-- Linię `SZOPA` i etykietę `powiększa maszynerię procesu` z workflow `Rozmiar PR` opisuje docstring `tools/ci/rozmiar_pr.py`: etykieta tylko informuje recenzenta i nie wstrzymuje merge'u, a przeniesienie pliku między grupami (licznik liczy ścieżki) recenzent ocenia z liczb obu grup w linii `SZOPA`.
+- Linię `SZOPA` i etykietę `powiększa maszynerię procesu` z workflow `Rozmiar PR` opisuje `OPIS` `tools/ci/rozmiar_pr.py` (jego `--help`): etykieta tylko informuje recenzenta i nie wstrzymuje merge'u, a przeniesienie pliku między grupami (licznik liczy ścieżki) recenzent ocenia z liczb obu grup w linii `SZOPA`.
 - pytest na Windows biegnie w CI, na PR i na `main`, tylko na Pythonie taty (3.13) i na tym torze biegną E2E i straż czasu; pytest na Pythonie 3.14 biegnie tylko na Linuksie (ADR 0020, Z2).
 
 ## Zadanie CI padło
@@ -25,6 +25,12 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
   Część skryptu mutacji albo podstawy z planu (`#k/n` w nazwie jednostki) odtwarzasz przez `MUTACJE_CZESC=k/n` w środowisku polecenia tego skryptu albo polecenia `ci:`.
   Nocne `change-mutations` mutują zmienione linie `src/` i tylko tych jednostek `tools/`, które `tools/lib/szopa.toml` stawia w podtabeli `przepuszcza`, bo ich fałszywe „OK” przepuszcza zły kod produktu (audyty #1623 i #1624).
 
+## Status `Werdykt i bramka`
+
+- Run workflow `Werdykt i bramka` w stanie `cancelled` to nie porażka: `cancel-in-progress` w `werdykt-i-bramka.yml` anuluje starszy run PR, gdy przychodzi nowsze zdarzenie (komentarz, edycja opisu, koniec runu CI), a `gh pr checks` i powiadomienie „Checks failed” pokazują taki run jako `fail`.
+  O gotowości mówi status commita `Werdykt i bramka` na HEAD: `pending` czeka na CI albo werdykt, a opis `failure` zaczyna się od przyczyny, która wymaga działania autora (pełne przyczyny podaje linia `STATUS` w logu runu z `target_url` statusu).
+- Status w kolejce po zielonym CI i `PASS` to linia `SCAL CZEKA` z `tools/scal_pr.py N`: obserwuj PR, a nie ponawiaj merge'a w pętli.
+
 ## Status `scalenie z main`
 
 - Status (`tools/ci/status_scalenia.py`) mówi w opisie, co zrobić, a ruleset go nie wymaga, więc gotowość PR od niego nie zależy, choć `gh pr checks` kończy się kodem 1, gdy jest czerwony.
@@ -36,7 +42,7 @@ Dlaczego PR dostaje mniej sprawdzeń niż `main`, mówi [ADR 0020](../adr/0020-c
   PR, nad którym pracujesz, zostaje przy swojej zmianie.
   PR naprawy wskazuje issue czerwonego `main` linią `Część #N` (zamyka je następny zielony `main`) i ma sekcję `## Korzeń` według skilla [`pr`](../../.agents/skills/pr/SKILL.md), a PR flaky testu wskazuje issue `Flaky test:` i sekcji nie ma.
 - O merge'u rozstrzyga pierwszy nieanulowany run CI pushu na `main`, którego commit zawiera merge: nowszy push anuluje run, który czeka za trwającym (ADR 0020).
-  Kiedy kończysz obserwację scalonego PR, mówi linia `CI MAIN` z `tools/scal_pr.py` i jego `--help`.
+  Na ten run wątek, który scalił, nie czeka: czerwony `main` zakłada issue `czerwony-main` i komentuje PR sam (`tools/ci/zgloszenia_ci.py`), co mówi też linia `CI MAIN` z `tools/scal_pr.py`.
 
 ## Reguły i co ich pilnuje
 

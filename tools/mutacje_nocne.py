@@ -1,4 +1,40 @@
-"""Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.
+from __future__ import annotations
+
+import argparse
+from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime, time, timedelta
+from enum import Enum
+import io
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+import sys
+from typing import Any
+import urllib.parse
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+from api_actions import REZERWA_POMIARU, STRONA, Api, ZRezerwa
+import czasy_ci
+from github import MERGE, REPO, SQUASH, Akcja, Edytuj, GhApi, GitHub, Skomentuj, Zaloz, Zamknij, blok_kodu, issues, strony, zaloz_etykiety
+from github import wykonaj as wykonaj_akcje
+from kroki_skilli import Katalog, Step
+from jednostka import ZMIENNA_CZESCI, Czesc, Klucz
+import jednostka
+import mutacje_zmiany
+import plan_runu
+from repo import ROOT
+import repo
+from silnik_mutacji import NearLimit, Verdict
+from wplyw_zmiany import Repository, changed_since
+from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
+
+OPIS = """Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.
 
 Mutacje nocne (ADR 0021): mutacje linii zmienionych na ``main`` od ostatniej nocy i issue dla przeżytych.
 
@@ -60,7 +96,8 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   ``MUTACJA <plik>:<linia> <opis> | klucz <klucz>`` (z pól zapisu części: id jak w ``NIEWYKRYTA``, klucz z ``mutacje_zmiany.fingerprint``),
   a mutacja bez werdyktu ma na końcu dopisek swojego ``Rodzaj`` i radę w issue: część po limicie czasu jej nie
   sprawdziła albo jej testy przekroczyły limit czasu mutacji (``--limit-s`` całego zbioru testów, #1339), więc noc nie
-  wraca do jej zakresu, a sprawdza ją agent PR-u.
+  wraca do jej zakresu, a sprawdza ją agent PR-u ``tools/mutacje.py --plik`` z jednym wąskim węzłem pytest na mutację
+  (``polecenie`` wpisu), bo cały zbiór testów pliku trwa blisko limitu.
   Mutacji, której klucz issue już ma w treści albo komentarzu, nie dostaje drugi raz; nowe idą do istniejącego issue
   komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``.
   Część bez zapisu albo z kodem wyjścia spoza ``mutacje_zmiany.KODY_Z_WYNIKIEM`` (testy padają albo nie kończą się
@@ -79,46 +116,21 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   zmienia się co noc, więc issue, które ma już linię z tym skryptem i mutacją, nie dostaje jej drugi raz (#935).
   Zadanie bez zapisu tego planu albo bez wyniku jednostki czerwieni run, tak jak skrypt, który padł, albo ostrzeżenie w
   nocy bez commitu od bazy, bo nie ma PR-u, który by je dostał.
+- ``odczyt RUN`` (zadanie ``odczyt`` workflow po zgłoszeniu) liczy odczyt nocy z zadań runu (ostatnia próba), logu
+  zadania ``ZADANIE_PLANU`` i logów zadań części, przez kopię odpowiedzi ``api_actions.Api``: ścianę od utworzenia runu do
+  końca ostatniego zadania, godziny runnerów (suma czasów zadań bez pominiętych), mutacje i zaległość z linii planu,
+  najdłuższy krok ``KROK_CZESCI`` wobec ``mutacje_zmiany.PART_LIMIT_S`` i linie ``BEZ WERDYKTU`` każdej części. Próg to
+  ściana ponad ``LIMIT_SCIANY_S``, krok części do ``PART_LIMIT_S`` albo choć jedna mutacja ``BEZ WERDYKTU``. Drukuje
+  treść odczytu (także do ``GITHUB_STEP_SUMMARY``) i linię ``MUTACJE NOCNE ODCZYT``, a z ``--issue`` zapisuje treść w
+  jednym issue z etykietą ``ETYKIETA_ODCZYTU`` (najstarszym): bez niego je zakłada, noc ponad progiem otwiera zamknięte
+  komentarzem z wąskim gardłem, a noc w progach zamyka otwarte komentarzem z liczbami. Część albo plan, który jeszcze
+  biegnie, nie daje odczytu.
 
-Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów:
+Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów, a odczyt nocy bez zapisu w issue:
 
     .venv/bin/python tools/mutacje_nocne.py plan
+    .venv/bin/python tools/mutacje_nocne.py odczyt 44441152441
 """
-
-from __future__ import annotations
-
-import argparse
-from collections import Counter
-from collections.abc import Sequence
-from dataclasses import dataclass, field
-from datetime import UTC, datetime, time, timedelta
-from enum import Enum
-import io
-import json
-import os
-from pathlib import Path
-import re
-import subprocess
-import sys
-from typing import Any
-import urllib.parse
-import zipfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import czasy_ci
-from github import MERGE, REPO, SQUASH, Akcja, GhApi, GitHub, Skomentuj, Zaloz, blok_kodu, issues, strony
-from github import wykonaj as wykonaj_akcje
-from kroki_skilli import Katalog, Step
-from jednostka import ZMIENNA_CZESCI, Czesc, Klucz
-import jednostka
-import mutacje_zmiany
-import plan_runu
-from repo import ROOT
-import repo
-from silnik_mutacji import NearLimit
-from wplyw_zmiany import Repository, changed_since
-from zakres_runu import KrokSkilla, Zdarzenie, potrzebuja_chromium, zakres
 
 WORKFLOW = "mutacje-nocne.yml"
 # Doba nocy zaczyna się o godzinie crona ``30 1 * * *`` w mutacje-nocne.yml; od niej noc startuje z pierwszego pushu na main.
@@ -168,7 +180,25 @@ _SKRYPT = "SKRYPT "
 _BLISKO = "CZAS BLISKO LIMITU "
 _Z_LIMITU = " s z limitu --limit-s "
 _CZAS_BLISKO = re.compile(rf" \| \d+{re.escape(_Z_LIMITU)}\S+ s( \({ZMIENNA_CZESCI}=\S+\))?\s*$")
-_RADA_MUTACJE = "uruchom ją `tools/mutacje.py`, a gdy test już ją wykrywa, napisz w komentarzu `MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`"
+_ZALEGLOSC = "zaległość:"
+_MUTACJE_PLANU = "mutacje"
+ZADANIE_PLANU = "Plan mutacji nocnych"
+ZADANIE_CZESCI = "Change mutations ("
+KROK_CZESCI = "Mutate the part's changed lines of src/ and tools/"
+LIMIT_SCIANY_S = 7 * 3600
+ODCZYT = f"{PREFIKS} ODCZYT"
+ETYKIETA_ODCZYTU = "noc-mutacji"
+ETYKIETY_ODCZYTU = {ETYKIETA_ODCZYTU: ("5319e7", "Odczyt nocy mutacji: noc ponad próg (tools/mutacje_nocne.py odczyt, ADR 0021)")}
+TYTUL_ODCZYTU = "Noc mutacji ponad próg"
+_STEMPEL = r"(?m)^(?:\d{4}-\d\d-\d\dT[\d:.]+Z )?"
+_PLAN_W_LOGU = re.compile(rf"{_STEMPEL}{PREFIKS} PLAN \| .*? \| {_MUTACJE_PLANU} (?P<mutacje>\d+) \|")
+_ZALEGLOSC_W_LOGU = re.compile(rf"{_STEMPEL}{PREFIKS} \| {_ZALEGLOSC} (?P<zalegle>\d+) ")
+_BEZ_WERDYKTU_W_LOGU = re.compile(rf"{_STEMPEL}{Verdict.NO_VERDICT}: ")
+_RADA_MUTACJE = (
+    "sprawdź ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest w `polecenie` jej wpisu (`tests/test_x.py::test_y`), "
+    "bo cały zbiór testów pliku trwa blisko limitu, a gdy test ją wykrywa, napisz w komentarzu "
+    "`MUTACJA <plik>:<linia> <opis> | wykryta, <polecenie>`"
+)
 
 
 class Rodzaj(Enum):
@@ -401,9 +431,8 @@ def zaplanuj(
     repository = Repository.scan(root)
     wpisy = macierz(noc, noc.liczba_czesci(na_czesc), repository, koszty)
     pokrycie = macierz_pokrycia(noc, repository) if wpisy else []
-    if zalegle := len(caly.mutanty) - len(noc.mutanty):
-        print(f"MUTACJE NOCNE | zaległość: {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
-    return _zapisz_plan(od_sha, skad, do_sha, wpisy, pokrycie, noc.liczba_mutacji, zakres, osadzone_plik, osadzone_czerwonych)
+    zalegle = len(caly.mutanty) - len(noc.mutanty)
+    return _zapisz_plan(od_sha, skad, do_sha, wpisy, pokrycie, noc.liczba_mutacji, zakres, osadzone_plik, osadzone_czerwonych, zalegle=zalegle)
 
 
 def _zapisz_plan(
@@ -418,9 +447,12 @@ def _zapisz_plan(
     osadzone_czerwonych: frozenset[mutacje_zmiany.Tozsamosc],
     *,
     pominieta: bool = False,
+    zalegle: int = 0,
 ) -> int:
+    if zalegle:
+        print(f"{PREFIKS} | {_ZALEGLOSC} {zalegle} mutacji zmian po {do_sha} czeka na następne noce")
     z_chromium = sum(bool(wpis["przegladarka"]) for wpis in wpisy)
-    print(f"MUTACJE NOCNE PLAN | baza {od_sha} ({skad}) | do {do_sha} | mutacje {mutacje} | części {len(wpisy)} | z Chromium {z_chromium}")
+    print(f"{PREFIKS} PLAN | baza {od_sha} ({skad}) | do {do_sha} | {_MUTACJE_PLANU} {mutacje} | części {len(wpisy)} | z Chromium {z_chromium}")
     if wyjscie := os.environ.get("GITHUB_OUTPUT"):
         with open(wyjscie, "a", encoding="utf-8") as plik:
             plik.write(
@@ -482,7 +514,7 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
         try:
             zapis = json.loads((katalog / f"{ARTEFAKT}{numer}" / ZAPIS).read_text(encoding="utf-8"))
             # Część, której limit czasu minął przed werdyktem części mutacji, też zapisuje przeżyte z reszty.
-            czesci = [Przezyta.z_zapisu(wpis, rodzaj) for rodzaj in Rodzaj for wpis in zapis.get(rodzaj.lista) or []]
+            czesci = [Przezyta.z_zapisu(wpis, rodzaj) for rodzaj in Rodzaj for wpis in zapis[rodzaj.lista]]
         except (OSError, ValueError) as blad:
             problemy.append(f"część {numer}/{liczba} bez zapisu: {blad}")
             continue
@@ -867,6 +899,187 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
     return 0
 
 
+@dataclass(frozen=True)
+class Zadanie:
+    nazwa: str
+    start: datetime
+    koniec: datetime
+
+
+@dataclass(frozen=True)
+class Odczyt:
+    run: int
+    adres: str
+    utworzony: datetime
+    zadania: tuple[Zadanie, ...]
+    mutacje: int
+    zaleglosc: int
+    czasy_czesci: dict[str, float]
+    bez_werdyktu: dict[str, int]
+
+    @property
+    def sciana_s(self) -> float:
+        return (max(z.koniec for z in self.zadania) - self.utworzony).total_seconds() if self.zadania else 0.0
+
+    @property
+    def praca_s(self) -> float:
+        return sum((z.koniec - z.start).total_seconds() for z in self.zadania)
+
+    @property
+    def najdluzsza(self) -> tuple[str, float] | None:
+        return max(self.czasy_czesci.items(), key=lambda para: para[1], default=None)
+
+    @property
+    def dzien(self) -> str:
+        return f"{self.utworzony:%d.%m.%Y}"
+
+    @property
+    def gardla(self) -> list[str]:
+        wynik = []
+        if self.sciana_s > LIMIT_SCIANY_S:
+            ostatnie = max(self.zadania, key=lambda z: z.koniec)
+            wynik.append(
+                f"ściana nocy {_h(self.sciana_s)} h ponad {_h(LIMIT_SCIANY_S)} h: ostatnie skończyło się zadanie `{ostatnie.nazwa}`,"
+                f" które ruszyło {_h((ostatnie.start - self.utworzony).total_seconds())} h po utworzeniu runu i biegło {_h((ostatnie.koniec - ostatnie.start).total_seconds())} h"
+            )
+        if (najdluzsza := self.najdluzsza) is not None and najdluzsza[1] >= mutacje_zmiany.PART_LIMIT_S:
+            wynik.append(f"część `{najdluzsza[0]}` doszła do limitu części: {najdluzsza[1]:.0f} s z `PART_LIMIT_S` {mutacje_zmiany.PART_LIMIT_S} s")
+        if bez := sum(self.bez_werdyktu.values()):
+            czesci = ", ".join(f"`{nazwa}` {n}" for nazwa, n in sorted(self.bez_werdyktu.items(), key=lambda para: -para[1]))
+            wynik.append(f"{Verdict.NO_VERDICT} {bez}: {czesci}")
+        return wynik
+
+    def tresc(self) -> str:
+        najdluzsza = "–" if self.najdluzsza is None else f"`{self.najdluzsza[0]}` {self.najdluzsza[1]:.0f} s"
+        linie = [
+            f"Treść zmienia co noc odczyt nocy mutacji (`tools/mutacje_nocne.py odczyt`, zadanie `odczyt` workflow `{WORKFLOW}`); uwagi idą w komentarze.",
+            f"Issue jest otwarte, gdy ostatnia noc przekroczyła próg: ściana ponad {_h(LIMIT_SCIANY_S)} h, część do `PART_LIMIT_S`"
+            f" ({mutacje_zmiany.PART_LIMIT_S} s) albo {Verdict.NO_VERDICT} > 0.",
+            "",
+            f"## Noc {self.dzien} ([run {self.run}]({self.adres}))",
+            "",
+            "Ściana nocy to czas od utworzenia runu do końca ostatniego zadania, a godziny runnerów to suma czasów jego zadań.",
+            "",
+            "| | |",
+            "|---|---|",
+            f"| ściana nocy | {_h(self.sciana_s)} h |",
+            f"| godziny runnerów | {self.praca_s / 3600:.1f} h w {len(self.zadania)} zadaniach |",
+            f"| mutacje nocy | {self.mutacje} w {len(self.czasy_czesci)} częściach |",
+            f"| zaległość | {self.zaleglosc} mutacji |",
+            f"| najdłuższa część | {najdluzsza} z `PART_LIMIT_S` {mutacje_zmiany.PART_LIMIT_S} s |",
+            f"| {Verdict.NO_VERDICT} | {sum(self.bez_werdyktu.values())} w {len(self.bez_werdyktu)} częściach |",
+            "",
+            "## Wąskie gardło",
+            "",
+            *([f"- {gardlo}" for gardlo in self.gardla] or ["Noc w progach."]),
+        ]
+        return "\n".join(linie) + "\n"
+
+    @property
+    def linia(self) -> str:
+        najdluzsza = "–" if self.najdluzsza is None else f"{self.najdluzsza[1]:.0f} s"
+        return (
+            f"{ODCZYT} | run {self.run} | ściana {_h(self.sciana_s)} h | runnery {self.praca_s / 3600:.1f} h | mutacje {self.mutacje}"
+            f" | zaległość {self.zaleglosc} | najdłuższa część {najdluzsza} z {mutacje_zmiany.PART_LIMIT_S} s"
+            f" | bez werdyktu {sum(self.bez_werdyktu.values())} | {'ponad próg' if self.gardla else 'w progach'}"
+        )
+
+
+def _h(sekundy: float) -> str:
+    return f"{sekundy / 3600:.2f}"
+
+
+def _chwila(tekst: str) -> datetime:
+    return datetime.fromisoformat(tekst.replace("Z", "+00:00"))
+
+
+def _zadania_runu(api: Api, run: dict[str, Any]) -> list[dict[str, Any]]:
+    def trwala(dane: dict[str, Any]) -> bool:
+        return all(zadanie["status"] == "completed" for zadanie in dane["jobs"])
+
+    zadania: list[dict[str, Any]] = []
+    for strona in range(1, 100):
+        partia: list[dict[str, Any]] = api.json(f"{REPO}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs?per_page={STRONA}&page={strona}", trwala)["jobs"]
+        zadania += partia
+        if len(partia) < STRONA:
+            break
+    return zadania
+
+
+def _log(api: Api, zadanie: dict[str, Any]) -> str:
+    if zadanie["status"] != "completed":
+        raise ValueError(f"zadanie {zadanie['name']} jeszcze biegnie, więc noc nie ma jeszcze odczytu")
+    return api.bajty(f"{REPO}/actions/jobs/{zadanie['id']}/logs").decode("utf-8", errors="replace")
+
+
+def odczytaj(api: Api, run_id: int) -> Odczyt:
+    run = api.json(f"{REPO}/actions/runs/{run_id}", lambda _: False)
+    zadania = _zadania_runu(api, run)
+    plan = next((zadanie for zadanie in zadania if zadanie["name"] == ZADANIE_PLANU), None)
+    if plan is None:
+        raise ValueError(f"run {run_id} nie ma zadania {ZADANIE_PLANU}")
+    log_planu = _log(api, plan)
+    if (linia_planu := _PLAN_W_LOGU.search(log_planu)) is None:
+        raise ValueError(f"log zadania {ZADANIE_PLANU} runu {run_id} nie ma linii {PREFIKS} PLAN")
+    zalegle = _ZALEGLOSC_W_LOGU.search(log_planu)
+    czasy: dict[str, float] = {}
+    bez_werdyktu: dict[str, int] = {}
+    for czesc in (zadanie for zadanie in zadania if zadanie["name"].startswith(ZADANIE_CZESCI)):
+        if n := len(_BEZ_WERDYKTU_W_LOGU.findall(_log(api, czesc))):
+            bez_werdyktu[czesc["name"]] = n
+        krok = next((krok for krok in czesc.get("steps") or [] if krok["name"] == KROK_CZESCI and krok.get("started_at") and krok.get("completed_at")), None)
+        if krok is not None:
+            czasy[czesc["name"]] = (_chwila(krok["completed_at"]) - _chwila(krok["started_at"])).total_seconds()
+    zakonczone = tuple(
+        Zadanie(zadanie["name"], _chwila(zadanie["started_at"]), _chwila(zadanie["completed_at"]))
+        for zadanie in zadania
+        if zadanie["status"] == "completed" and zadanie["conclusion"] != "skipped" and zadanie.get("started_at") and zadanie.get("completed_at")
+    )
+    return Odczyt(
+        run_id,
+        str(run["html_url"]),
+        _chwila(run["created_at"]),
+        zakonczone,
+        int(linia_planu["mutacje"]),
+        int(zalegle["zalegle"]) if zalegle else 0,
+        czasy,
+        bez_werdyktu,
+    )
+
+
+def _issues_odczytu(github: GitHub) -> list[dict[str, Any]]:
+    return sorted(issues(github, ETYKIETA_ODCZYTU, "all"), key=lambda issue: int(issue["number"]))
+
+
+def zapisz_odczyt(github: GitHub, odczyt: Odczyt) -> list[str]:
+    linie: list[str] = []
+    akcje: list[Akcja] = []
+    if not (istniejace := _issues_odczytu(github)):
+        linie += zaloz_etykiety(github, ETYKIETY_ODCZYTU, ODCZYT, zapis=True)
+        linie += wykonaj_akcje(github, [Zaloz(TYTUL_ODCZYTU, odczyt.tresc(), (ETYKIETA_ODCZYTU,))], ODCZYT)
+        istniejace = _issues_odczytu(github)
+    else:
+        akcje.append(Edytuj(int(istniejace[0]["number"]), odczyt.tresc()))
+    numer, otwarte = int(istniejace[0]["number"]), istniejace[0]["state"] == "open"
+    noc = f"Noc {odczyt.dzien} ([run {odczyt.run}]({odczyt.adres}))"
+    if odczyt.gardla and not otwarte:
+        akcje.append(Skomentuj(numer, f"{noc} ponad próg:\n\n" + "\n".join(f"- {gardlo}" for gardlo in odczyt.gardla), (ETYKIETA_ODCZYTU,)))
+    if not odczyt.gardla and otwarte:
+        akcje.append(Zamknij(numer, f"{noc} w progach: {odczyt.linia.removeprefix(f'{ODCZYT} | ')}."))
+    return linie + wykonaj_akcje(github, akcje, ODCZYT)
+
+
+def _odczyt(api: Api, github: GitHub, run_id: int, *, zapis: bool) -> int:
+    odczyt = odczytaj(api, run_id)
+    tekst = odczyt.tresc()
+    if podsumowanie := os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(podsumowanie, "a", encoding="utf-8") as plik:
+            plik.write(tekst)
+    print("\n".join(zapisz_odczyt(github, odczyt)) if zapis else tekst)
+    print(odczyt.linia)
+    return 0
+
+
 def _drukuj_wystapienia(issues_json: Any) -> int:
     if not isinstance(issues_json, list):
         raise ValueError("plik issues to nie lista JSON z gh issue list")
@@ -878,11 +1091,11 @@ def _drukuj_wystapienia(issues_json: Any) -> int:
     return 0
 
 
-def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub | None = None, kopia: Path | None = None) -> int:
     """``root`` to checkout ``main``, którego zmiany noc mutuje, a ``github`` daje runy nocy, issue przeżytych mutacji
     i artefakty czasów CI; bez niego noc pyta ``GITHUB``, a czasy ``czasy_ci.GITHUB``."""
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Baza i koniec zakresu nocy, liczba mutacji i części (GITHUB_OUTPUT).")
     plan.add_argument("--od", default="", help="Commit, od którego liczyć zmiany, a spoza linii HEAD jego wspólny przodek z HEAD (domyślnie koniec zakresu ostatniego udanego runu albo 24 h wstecz).")
@@ -903,6 +1116,9 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
     zgloszenie.add_argument("--czesci", type=int, required=True, help="Liczba części z planu.")
     zgloszenie.add_argument("--run", required=True, help="URL runu workflow.")
     zgloszenie.add_argument("--plan-skilli", type=Path, help=f"Plan skryptów mutacji skilli nocy; ich zapisy w podkatalogach {ARTEFAKT_SKILLI}<id zadania>.")
+    odczyt = polecenia.add_parser("odczyt", help="Odczyt nocy z zadań runu, logu planu i logów części: ściana, godziny runnerów, zaległość, najdłuższa część, BEZ WERDYKTU.")
+    odczyt.add_argument("run", type=int, help="Id runu nocy.")
+    odczyt.add_argument("--issue", action="store_true", help=f"Zapisz odczyt w issue z etykietą {ETYKIETA_ODCZYTU} (bez tej flagi tylko drukuje).")
     args = parser.parse_args(argv)
     noc = GITHUB if github is None else github
     try:
@@ -910,6 +1126,8 @@ def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub
             return _drukuj_wystapienia(json.loads(args.issues.read_text(encoding="utf-8")))
         if args.polecenie == "start":
             return start(noc, datetime.now(UTC))
+        if args.polecenie == "odczyt":
+            return _odczyt(Api(ZRezerwa(noc, REZERWA_POMIARU) if github is None else noc, kopia), noc, args.run, zapis=args.issue)
         if args.polecenie == "plan":
             if args.od and args.baza and args.od != args.baza:
                 plan.error(f"dwie różne bazy: --od {args.od} i --baza {args.baza}")

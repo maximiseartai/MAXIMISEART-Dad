@@ -207,7 +207,7 @@ class PeriodFolder:
             internal_settlement_exists=_exists(listed, self.internal_settlement, directory=False),
             collective_file_exists=_exists(listed, self.collective_file, directory=False),
             worker_settlements_folder_exists=has_worker_settlements,
-            worker_settlement_count=len(self.worker_settlement_files()) if has_worker_settlements else 0,
+            worker_settlement_count=len(self._worker_settlement_listing()) if has_worker_settlements else 0,
         )
 
     def worker_settlement_files(self) -> tuple[Path, ...]:
@@ -216,28 +216,39 @@ class PeriodFolder:
         Pomija pliki blokady Excela, pliki ukryte, foldery i Wzorzec rozliczenia pracownika bez nazwy wykonawcy.
         """
 
-        return tuple(found.path for found in self.worker_settlement_entries())
+        return tuple(sorted(self.worker_settlements / entry.name for entry in self._worker_settlement_listing()))
 
     def worker_settlement_entries(self) -> tuple[WorkerSettlementFile, ...]:
         """Rozliczenia pracownika jak ``worker_settlement_files``, każde z nazwą Wykonawcy z nazwy pliku i chwilą zmiany z
         tego samego listowania (Windows podaje ją bez otwierania pliku w OneDrive)."""
 
-        prefix, suffix = _WORKER_SETTLEMENT.format(token=self.period.token, worker="\0").split("\0")
+        prefix, suffix = self._worker_settlement_affixes()
         return tuple(
             sorted(
                 (
                     WorkerSettlementFile(
                         self.worker_settlements / entry.name, entry.name[len(prefix) : -len(suffix)], _modified(entry)
                     )
-                    for entry in _listing(self.worker_settlements) or ()
-                    if entry.name.startswith(prefix)
-                    and entry.name.endswith(suffix)
-                    and len(entry.name) > len(prefix) + len(suffix)
-                    and entry_kind(entry) == "file"
+                    for entry in self._worker_settlement_listing()
                 ),
                 key=lambda found: found.path,
             )
         )
+
+    def _worker_settlement_affixes(self) -> tuple[str, str]:
+        prefix, suffix = _WORKER_SETTLEMENT.format(token=self.period.token, worker="\0").split("\0")
+        return prefix, suffix
+
+    def _worker_settlement_listing(self) -> list[os.DirEntry[str]]:
+        prefix, suffix = self._worker_settlement_affixes()
+        return [
+            entry
+            for entry in _listing(self.worker_settlements) or ()
+            if entry.name.startswith(prefix)
+            and entry.name.endswith(suffix)
+            and len(entry.name) > len(prefix) + len(suffix)
+            and entry_kind(entry) == "file"
+        ]
 
 
 @dataclass(frozen=True)

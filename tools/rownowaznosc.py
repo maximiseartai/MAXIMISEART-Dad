@@ -1,4 +1,34 @@
-"""Sprawdza, że refaktor nie zmienia wyniku procesów (scenariusze syntetyczne na bazie i HEAD), a z --ast drzew składni src/; użyj przy refaktorze src/.
+from __future__ import annotations
+
+import argparse
+import ast
+from collections.abc import Callable, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
+from dataclasses import dataclass
+import io
+import json
+from pathlib import Path
+import re
+import shutil
+import sys
+import tempfile
+import warnings
+from typing import Literal, get_args
+import zipfile
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import potomne
+from atrapy import wzorce
+from atrapy.pliki_taty import WORKER_TEMPLATE_NAME
+from repo import BASE, ROOT
+import repo
+from rozliczenia.centrum.contract import common as common_contract
+from rozliczenia.period_folder import PeriodFolder
+
+OPIS = """Sprawdza, że refaktor nie zmienia wyniku procesów (scenariusze syntetyczne na bazie i HEAD), a z --ast drzew składni src/; użyj przy refaktorze src/.
 
 Weryfikacja różnicowa refaktoru: te same scenariusze syntetyczne na commicie bazy i na HEAD dają ten sam wynik.
 
@@ -71,36 +101,6 @@ Tryb nie widzi trzech rzeczy, które sprawdza osobne polecenie:
 - docstringu definicji z modelem skilla ``verify-*``, którego skrót się zmienia (``tools/przesun_model.py <skill>``);
 - pliku spoza ``src/`` (``git diff --name-only <baza> -- . ':!src'``).
 """
-
-from __future__ import annotations
-
-import argparse
-import ast
-from collections.abc import Callable, Sequence
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import nullcontext
-from dataclasses import dataclass
-import io
-import json
-from pathlib import Path
-import re
-import shutil
-import sys
-import tempfile
-import warnings
-from typing import Literal, get_args
-import zipfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import potomne
-from atrapy import wzorce
-from atrapy.pliki_taty import WORKER_TEMPLATE_NAME
-from repo import BASE, ROOT
-import repo
-from rozliczenia.centrum.contract import common as common_contract
-from rozliczenia.period_folder import PeriodFolder
 
 PARALLEL = 3
 TIMEOUT = 600
@@ -533,7 +533,7 @@ def main(argv: list[str] | None = None) -> int:
     if isinstance(sys.stdout, io.TextIOWrapper):
         sys.stdout.reconfigure(encoding="utf-8")
     names = [scenario.name for scenario in SCENARIOS]
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--baza", metavar="COMMIT", help="Commit bazy; domyślnie merge-base HEAD (albo --glowa) z origin/main.")
     parser.add_argument("--glowa", metavar="COMMIT", help="Commit HEAD zamiast drzewa roboczego z niezacommitowanymi zmianami.")
     chosen = parser.add_mutually_exclusive_group()

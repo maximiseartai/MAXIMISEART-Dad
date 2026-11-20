@@ -524,6 +524,7 @@ _Avoid_: kolor pracownika, zielona komórka
 
 Zasady taty, które z treści zlecenia (`UMOWA`, `URZĄDZENIA`, `CZYNNOŚCI`, `DATA`) wyznaczają Ilości usług.
 Są Ustawieniem Centrum: tata tworzy je i zmienia sam, każdą jako „jeśli … to …”.
+Nie mają danych osobowych, tak jak Lista Urządzeń: nazywają urządzenia, czynności i kolumny, nie ludzi ani adresy, więc Zgłoszenie podaje zmianę obu wprost, wpisem przed i po.
 Ilości wynikające z opisu technika (`CZYNNOŚCI ZREALIZOWANE`) nie są Regułami ilości: wyznacza je Legenda czynności albo wpisuje tata.
 _Avoid_: scenariusze rozliczeń, instrukcja
 
@@ -538,6 +539,7 @@ _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 Słowo z Legendy czynności, które Wykonawca pisze w Wpisie raportu obok zwykłego opisu albo bez niego, np. `inst20m` albo `spawpg`, w jednym z jego zapisów, bez względu na wielkość liter.
 Wyznacza w Pliku zbiorczym Ilość usług w kolumnie, kwotę w `AS` (Uwagi - kwota), Wyróżnienie albo kilka z nich naraz; kwoty kilku kodów w zleceniu się sumują.
 Liczba w kodzie albo nie ma znaczenia (`inst20m` i `inst35m` to ten sam kod), albo przedziałem wybiera kolumnę (`instutp12m` daje `AL`, `instutp20m` daje `AJ`).
+Kod, który w usterce się nie liczy (z Wydania `rt2`, bo tata: „przy usterkach nie liczy się rt2”), jest w usterce (ilość w `AI`) Kodem czynności, ale niczego w niej nie wyznacza ([ADR 0044](docs/adr/0044-rt2-w-usterce-sie-nie-liczy.md)).
 _Avoid_: skrót, kod (bez dopowiedzenia)
 
 ## Błąd opisu
@@ -738,7 +740,8 @@ Mówią wprost, czy był to podgląd, w którym nic nie zapisano, czy Uruchomien
 Zostają na komputerze taty także po zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił.
 Niosą tylko to, na co pozwala Reguła danych.
 Tata ich nie wysyła ani nie ogląda, ale z nich wraca karta Uruchomienia po starcie Centrum i w Historii.
-W trakcie Wyceny w efenix ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut jej postęp z dziennika Wyceny w efenix, a na końcu staje się podsumowaniem Logów, a gdy Centrum zamknęło się w jej trakcie, podsumowaniem Logów Urwanego Uruchomienia z następnego startu.
+Wycena w efenix trwa u taty długo, a jej Logi powstają dopiero na jej końcu, więc w jej trakcie ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut jej postęp z dziennika Wyceny w efenix, a na końcu staje się podsumowaniem Logów, a gdy Centrum zamknęło się w jej trakcie, podsumowaniem Logów Urwanego Uruchomienia z następnego startu.
+Postęp jest dla Maksa, a nie warunkiem pracy taty: Wycena biegnie dalej, gdy postępu nie da się wysłać.
 Wycena, której Logi z wynikiem nie doszły do kolejki, ma po następnym starcie wersję zastępczą, która Logów z wynikiem w Skrzynce nie zastępuje (ADR 0015, dopiski #846 i #910; ADR 0017, dopisek #910).
 _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), dziennik Centrum, raport
 

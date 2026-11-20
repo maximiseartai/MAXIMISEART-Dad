@@ -1,4 +1,49 @@
-"""Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przy każdym Wydaniu.
+from __future__ import annotations
+
+import argparse
+from collections.abc import Callable, Sequence
+from dataclasses import replace
+from datetime import date, datetime, timedelta
+import imaplib
+from pathlib import Path
+import smtplib
+import sys
+import time
+from typing import Final
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from rozliczenia import tool_files
+from rozliczenia.centrum.clock import SYSTEM_CLOCK
+from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.report_entering_state import FileReportState
+from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders, schedules_in_effect
+from rozliczenia.centrum.settings.files import Unreadable
+from rozliczenia.centrum.settings.owner import read_snapshot
+from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
+from rozliczenia.centrum.work import CentrumWork
+from rozliczenia.client_data import empty_memory
+from rozliczenia.dad_files import DadFiles
+from rozliczenia.worker_report_inbox import (
+    INBOX_ACCESS_FILE,
+    ImapInbox,
+    InboxState,
+    InboxUnreachable,
+    MailRefused,
+    MailSent,
+    PasswordRejected,
+)
+from rozliczenia.worker_reports import (
+    Login,
+    Reminder,
+    ReminderSettings,
+    SenderAddress,
+    reminder_pora,
+    reminder_subject,
+    reminder_text,
+)
+
+OPIS = """Liczy Przypomnienia o raporcie, które poszłyby teraz ze skrzynki taty, i wysyła jedno tylko na podany adres; uruchom przy każdym Wydaniu.
 
 Krok każdego Wydania (krok 3 skilla ``wydanie``), poza CI (spec #1344, US 57–58, ADR 0030). Pracę Przypomnień o raporcie CI sprawdza tylko na
 ``AtrapaImap`` i ``AtrapaSmtp``, więc prawdziwy Gmail, INTERMAX taty, treść i stopkę sprawdza ta próba. Czyta to samo
@@ -45,51 +90,6 @@ Uruchomienie w klonie narzędzia z plikami w ``config/`` (Windows: ``py -3``); m
 
     .venv/bin/python tools/proba_przypomnien.py --do <adres Maksa> [--config <folder config>] [--wlaczone-od RRRR-MM-DD]
 """
-
-from __future__ import annotations
-
-import argparse
-from collections.abc import Callable, Sequence
-from dataclasses import replace
-from datetime import date, datetime, timedelta
-import imaplib
-from pathlib import Path
-import smtplib
-import sys
-import time
-from typing import Final
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-
-from rozliczenia import tool_files
-from rozliczenia.centrum.clock import SYSTEM_CLOCK
-from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.report_entering_state import FileReportState
-from rozliczenia.centrum.report_reminders import DueReminders, NotRead, due_reminders, schedules_in_effect
-from rozliczenia.centrum.settings.files import Unreadable
-from rozliczenia.centrum.settings.owner import read_snapshot
-from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
-from rozliczenia.centrum.work import CentrumWork
-from rozliczenia.client_data import empty_memory
-from rozliczenia.dad_files import DadFiles
-from rozliczenia.worker_report_inbox import (
-    INBOX_ACCESS_FILE,
-    ImapInbox,
-    InboxState,
-    InboxUnreachable,
-    MailRefused,
-    MailSent,
-    PasswordRejected,
-)
-from rozliczenia.worker_reports import (
-    Login,
-    Reminder,
-    ReminderSettings,
-    SenderAddress,
-    reminder_pora,
-    reminder_subject,
-    reminder_text,
-)
 
 OK: Final = "PROBA PRZYPOMNIEN OK"
 FAIL: Final = "PROBA PRZYPOMNIEN FAIL"
@@ -191,7 +191,7 @@ def main(
     """``connect`` i ``smtp`` podaje test, żeby port rozmawiał z ``AtrapaImap`` i ``AtrapaSmtp``, a ``now`` daje chwilę
     ze strefą; bez nich port łączy się z Gmailem w chwili uruchomienia."""
 
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
         "--do",
         required=True,

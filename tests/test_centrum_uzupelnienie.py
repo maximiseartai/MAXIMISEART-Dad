@@ -1,10 +1,3 @@
-"""Uzupełnienie pliku zbiorczego w Centrum rozliczeń (#415, #417, ADR 0016), przez HTTP API jak przeglądarka.
-
-Każdy test przygotowuje Plik zbiorczy z syntetycznego Rejestru zleceń w Centrum, potem zmienia go jak tata w
-Excelu (openpyxl) i pyta Centrum o Ilości do uzupełnienia okresu. Ostatni uruchamia na nim prawdziwy Przebieg
-rozliczeń, po którym wiersz bez wpisu taty jest „bez ilości” (#422).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -64,8 +57,6 @@ def _description(view: dict[str, Any]) -> dict[str, int]:
 
 
 def _edit(path: Path, change: Callable[[Worksheet, dict[str, str]], None]) -> None:
-    """Zmiana Pliku zbiorczego jak tata w Excelu; ``change`` dostaje arkusz i nagłówki wiersza 17 → litera kolumny."""
-
     workbook = load_workbook(path)
     sheet = workbook.active
     assert isinstance(sheet, Worksheet)
@@ -102,7 +93,9 @@ def test_po_przygotowaniu_wiersze_bez_reguly_i_z_opisu_czekaja_na_tate(tmp_path:
     assert _description(view) == dict.fromkeys(DESCRIPTION, 0)
 
 
-def test_uzupelnienie_liczy_biezacymi_regulami_ilosci_z_ustawien_a_nie_tymi_z_przygotowania(tmp_path: Path) -> None:
+def test_uzupelnienie_liczy_regulami_ilosci_z_ustawien_wiec_nowy_skladnik_zdejmuje_wiersz_bez_reguly_a_t_po_usunietej_regule_jest_wpisem_taty(
+    tmp_path: Path,
+) -> None:
     centrum = _prepared(tmp_path)
     write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "  - {id: fut, zapisy: [fut], grupa: tv}\n", "  - {id: przeniesienie, zapisy: [przeniesienie]}\n")
     write_dad_quantity_rules(
@@ -116,7 +109,6 @@ def test_uzupelnienie_liczy_biezacymi_regulami_ilosci_z_ustawien_a_nie_tymi_z_pr
     table = centrum.view(f"{URL}/without_rule")
     window = centrum.view(f"/api/periods/{PERIOD}/without-quantity")
 
-    # „przeniesienie” jest już składnikiem, a T z Przygotowania (reguła usunięta) liczy się jak wpis taty.
     assert _kinds(view)["without_rule"] == [(22, True)]
     assert [(row["row"], row["state"]) for row in table["rows"]] == [(22, "done")]
     assert (_hints(view)["without_rule"], table["hint"]) == ("Dopisz ilości poza V i N.", "Dopisz ilości poza V i N.")
@@ -226,7 +218,9 @@ def test_wyczyszczony_wiersz_nie_przesuwa_numerow_pozostalych(tmp_path: Path) ->
     }
 
 
-def test_zmiana_urzadzen_przenosi_wiersz_miedzy_rodzajami(tmp_path: Path) -> None:
+def test_zmiana_urzadzen_przenosi_wiersz_miedzy_rodzajami_a_v_i_t_z_przygotowania_robia_z_niego_zrobiony_wiersz_z_opisu(
+    tmp_path: Path,
+) -> None:
     centrum = _prepared(tmp_path)
 
     def change(sheet: Worksheet, header: dict[str, str]) -> None:
@@ -238,7 +232,6 @@ def test_zmiana_urzadzen_przenosi_wiersz_miedzy_rodzajami(tmp_path: Path) -> Non
 
     view = centrum.view(URL)
 
-    # V i T, które Przygotowanie wpisało w wierszu bez reguły, zostają w nim, więc wiersz z opisu jest zrobiony.
     assert _kinds(view) == {
         "without_rule": [(21, False), (22, False)],
         "from_description": [(19, True)],
@@ -288,8 +281,6 @@ def test_odpowiedz_i_dziennik_nie_niosa_tresci_wierszy(tmp_path: Path) -> None:
 
 
 def _problem(centrum: PreparingCentrum, *, collective_file_exists: bool) -> dict[str, str]:
-    """Komunikat widoku z problemem; ``collective_file_exists`` mówi, czy „Otwórz Plik zbiorczy” ma co otworzyć."""
-
     view = centrum.view(URL)
     assert (view["state"], view["collective_file_exists"]) == ("problem", collective_file_exists)
     message: dict[str, str] = view["message"]
@@ -404,11 +395,6 @@ def test_okres_bez_folderu_okresu_daje_komunikat_o_braku_pliku_zbiorczego(tmp_pa
 def test_plik_regul_ilosci_listy_urzadzen_albo_legendy_bez_odczytu_to_odmowa_uzupelnienia_a_nie_plik_z_wydania(
     tmp_path: Path, unreadable: str
 ) -> None:
-    """Decyzja 2A Maksa: plik pary Reguł ilości i Listy Urządzeń, którego system nie daje teraz czytać (np. trzyma go
-    OneDrive), nie znaczy reguł z Wydania. Strona Uzupełnienia i strona rodzaju mówią tacie, którego pliku nie da się
-    przeczytać, a okno „Uruchomić z zapisem?” nie liczy wierszy bez ilości (start Przebiegu rozliczeń odmawia tym samym
-    zdaniem). Przy czytelnym pliku te same strony liczą regułami taty. Tak samo plik Legendy czynności (#1940)."""
-
     centrum = _prepared(tmp_path)
     write_dad_quantity_rules(centrum.tool, DEVICES_FILE, "  - {id: fut, zapisy: [fut], grupa: tv}\n", "  - {id: przeniesienie, zapisy: [przeniesienie]}\n")
     write_dad_quantity_rules(

@@ -1927,11 +1927,200 @@ def test_adnotacja_pola_modelu_zostaje_mutacja_a_stala_nie_jest_aliasem() -> Non
     assert "zmiana linii 1 cofnięta do bazy" in _described('NAZWA = OPCJE["nowa"]\n', [1], ('NAZWA = OPCJE["stara"]',))
 
 
-def test_w_pliku_z_pydantic_adnotacja_i_alias_typu_zostaja_mutacja() -> None:
-    code = "from pydantic import BaseModel\nWynik = Annotated[A | B, Field(discriminator='rodzaj')]\n\n\ndef trasa() -> Wynik:\n    pass\n"
+def test_w_pliku_z_pydantic_alias_typu_zostaje_mutacja() -> None:
+    code = "from pydantic import BaseModel\nWynik = Annotated[A | B, Field(discriminator='rodzaj')]\n"
 
     assert "zmiana linii 2 cofnięta do bazy" in _described(code, [2], ("Wynik = A | B",))
-    assert "zmiana linii 5 cofnięta do bazy" in _described(code, [5], ("def trasa() -> A:",))
+
+
+ODROCZONE = "from __future__ import annotations\nfrom dataclasses import dataclass\n"
+FASTAPI = ODROCZONE + "from fastapi import APIRouter, Depends\n"
+
+
+@pytest.mark.parametrize(
+    ("code", "start", "old", "mutation"),
+    [
+        pytest.param(
+            ODROCZONE + "@dataclass\nclass A:\n    summary: runs_contract.RunSummary\n",
+            5,
+            ("    summary: contract.RunSummary",),
+            False,
+            id="pole-dataclass-z-odroczonymi-adnotacjami",
+        ),
+        pytest.param(
+            ODROCZONE + "_VIEW: Final[View[Inputs, Summary]] = View()\n",
+            3,
+            ("_VIEW: Final[View[Summary]] = View()",),
+            False,
+            id="zmienna-modulu-z-odroczonymi-adnotacjami",
+        ),
+        pytest.param(
+            "def f(self):\n    self.counts: dict[Status, int] = {}\n",
+            2,
+            ("    self.counts: dict[str, int] = {}",),
+            False,
+            id="zmienna-funkcji-bez-odroczonych-adnotacji",
+        ),
+        pytest.param(
+            FASTAPI + "class K:\n    def m(self) -> Refusal | None:\n        return None\n",
+            5,
+            ("    def m(self) -> str | None:",),
+            False,
+            id="wynik-metody-w-pliku-fastapi",
+        ),
+        pytest.param(
+            FASTAPI + "class K:\n    @property\n    def m(self) -> runs_contract.Result:\n        return wynik\n",
+            6,
+            ("    def m(self) -> contract.Result:",),
+            False,
+            id="wlasciwosc-w-pliku-fastapi",
+        ),
+        pytest.param(
+            FASTAPI + 'class K:\n    def m(self, then: Retry) -> Refusal:\n        """Odmowa."""\n        return then\n',
+            5,
+            ("    def m(self, then: str) -> str:", '        """Napis."""'),
+            False,
+            id="adnotacja-z-docstringiem-w-pliku-fastapi",
+        ),
+        pytest.param(
+            FASTAPI + "@dataclass\nclass A:\n    card: runs_contract.Card\n",
+            6,
+            ("    card: contract.Card",),
+            False,
+            id="pole-dataclass-poza-trasami-w-pliku-fastapi",
+        ),
+        pytest.param(
+            ODROCZONE + "@dataclass\nclass Wiersz:\n    x: int\n",
+            5,
+            ("    x: str",),
+            False,
+            id="znana-luka-widzi-jeden-plik-dataclass-w-modelu-pydantic-innego-pliku",
+        ),
+        pytest.param(
+            "from dataclasses import dataclass\n@dataclass\nclass A:\n    x: brak.Typ\n",
+            4,
+            ("    x: int",),
+            True,
+            id="pole-dataclass-bez-odroczonych-adnotacji-liczy-sie-przy-imporcie",
+        ),
+        pytest.param(
+            ODROCZONE + "@dataclass\nclass A:\n    x: ClassVar[int] = 1\n",
+            5,
+            ("    x: int = 1",),
+            True,
+            id="classvar-zmienia-pola-dataclass",
+        ),
+        pytest.param(
+            ODROCZONE + "from pydantic import BaseModel\nclass M(BaseModel):\n    x: int\n",
+            5,
+            ("    x: str",),
+            True,
+            id="pole-modelu-pydantic",
+        ),
+        pytest.param(
+            ODROCZONE + "class M(Model):\n    x: int\n",
+            4,
+            ("    x: str",),
+            True,
+            id="pole-klasy-z-baza-z-innego-pliku",
+        ),
+        pytest.param(
+            FASTAPI + "@router.get('/')\ndef trasa(q: int) -> int:\n    return q\n",
+            5,
+            ("def trasa(q: str) -> int:",),
+            True,
+            id="argument-trasy-fastapi",
+        ),
+        pytest.param(
+            FASTAPI + "def zalezna(q: int) -> int:\n    return q\nUZYCIE = Depends(zalezna)\n",
+            4,
+            ("def zalezna(q: str) -> int:",),
+            True,
+            id="argument-zaleznosci-depends",
+        ),
+        pytest.param(
+            FASTAPI + "@dataclass\nclass A:\n    x: int\n@router.get('/')\ndef trasa() -> A:\n    return A(1)\n",
+            6,
+            ("    x: str",),
+            True,
+            id="pole-dataclass-osiagane-z-trasy",
+        ),
+        pytest.param(
+            ODROCZONE + "from pydantic import TypeAdapter\n@dataclass\nclass A:\n    x: int\nODCZYT = TypeAdapter(A)\n",
+            6,
+            ("    x: str",),
+            True,
+            id="pole-dataclass-w-typeadapter",
+        ),
+        pytest.param(
+            ODROCZONE + "@dataclass\nclass A:\n    x: int\nKLASY = (A,)\nTYPY = [str(pole.type) for klasa in KLASY for pole in fields(klasa)]\n",
+            5,
+            ("    x: str",),
+            True,
+            id="plik-czyta-adnotacje-pol-przez-fields",
+        ),
+        pytest.param(
+            ODROCZONE + "from pydantic import BaseModel\ndef f():\n    class M(BaseModel):\n        x: int\n    return M\n",
+            6,
+            ("        x: str",),
+            True,
+            id="pole-modelu-pydantic-w-funkcji",
+        ),
+        pytest.param(
+            ODROCZONE + "def f():\n    @dataclass\n    class A:\n        x: ClassVar[int] = 1\n    return A\n",
+            6,
+            ("        x: int = 1",),
+            True,
+            id="classvar-dataclass-w-funkcji",
+        ),
+        pytest.param(
+            FASTAPI + "class K:\n    def m(self, request: Request) -> None:\n        pass\nk = K()\nUZYCIE = Depends(k.m)\n",
+            5,
+            ("    def m(self, request: object) -> None:",),
+            True,
+            id="metoda-obiektu-w-depends",
+        ),
+        pytest.param(
+            FASTAPI + "class K:\n    def __init__(self, q: int) -> None:\n        self.q = q\nUZYCIE = Depends(K)\n",
+            5,
+            ("    def __init__(self, q: str) -> None:",),
+            True,
+            id="init-klasy-w-depends",
+        ),
+        pytest.param(
+            FASTAPI + "class K:\n    def __init__(self, q: int) -> None:\n        self.q = q\n@router.get('/')\ndef trasa(k: Annotated[K, Depends()]) -> None:\n    pass\n",
+            5,
+            ("    def __init__(self, q: str) -> None:",),
+            True,
+            id="init-klasy-z-adnotacji-trasy-depends-bez-argumentu",
+        ),
+    ],
+)
+def test_cofniecie_adnotacji_jest_mutacja_tylko_gdy_biegnacy_kod_ja_czyta(
+    tmp_path: Path, code: str, start: int, old: tuple[str, ...], mutation: bool
+) -> None:
+    found = mutants("m.py", code, [Hunk(start, len(old), old)], root=tmp_path)
+
+    assert any(m.revert is Revert.HUNK for m in found) is mutation
+
+
+@pytest.mark.parametrize(
+    ("other", "mutation"),
+    [
+        pytest.param("ZALEZNOSC = Depends(dziennik.observe)\n", True, id="depends-metody-obiektu"),
+        pytest.param("ZALEZNOSC = Depends(dependency=dziennik.observe)\n", True, id="depends-argument-nazwany"),
+        pytest.param("app.get('/x')(Dziennik().observe)\n", True, id="trasa-wywolaniem-dekoratora"),
+        pytest.param("obs = Dziennik().observe\nZALEZNOSC = Depends(obs)\n", False, id="znana-luka-alias-metody-w-innym-pliku"),
+    ],
+)
+def test_metoda_podana_fastapi_w_innym_pliku_zachowuje_adnotacje(tmp_path: Path, other: str, mutation: bool) -> None:
+    code = FASTAPI + "class Dziennik:\n    async def observe(self, request: Request) -> None:\n        pass\n"
+    hunks = [Hunk(5, 1, ("    async def observe(self, request: object) -> None:",))]
+    (tmp_path / "src").mkdir()
+    (tmp_path / "src/app.py").write_text("from fastapi import Depends\n" + other, encoding="utf-8")
+
+    assert not any(m.revert is Revert.HUNK for m in mutants("m.py", code, hunks, root=tmp_path / "pusty"))
+    assert any(m.revert is Revert.HUNK for m in mutants("m.py", code, hunks, root=tmp_path)) is mutation
 
 
 def test_adnotacje_i_docstringi_nie_dostaja_mutacji() -> None:

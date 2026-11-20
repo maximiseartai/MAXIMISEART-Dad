@@ -1,4 +1,36 @@
-"""Jedyna droga merge'a PR przez agenta: sprawdza gotowość (CI, werdykt PASS, opis) tuż przed gh pr merge; użyj zamiast gołego merge'a.
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
+
+import api_actions
+import bramka_korzenia
+import bramka_straznika
+import github
+import kontekst_przegladu
+import limit_rund
+import naprawia
+import ponowny_przeglad
+import potomne
+import reguly_bazy
+import rejestr_korzeni
+from repo import MAIN, REMOTE, ROOT
+import repo
+import stan_pr
+from stan_pr import Pull
+import straznik
+import szablon_werdyktu
+import testy_scalenia
+import werdykt_pr
+import werdykt_scalenia
+
+OPIS = """Jedyna droga merge'a PR przez agenta: sprawdza gotowość (CI, werdykt PASS, opis) tuż przed gh pr merge; użyj zamiast gołego merge'a.
 
 Jedyna droga merge'a PR przez agenta: ``gh pr merge`` tylko po sprawdzeniu gotowości tuż przed nim.
 
@@ -12,8 +44,8 @@ Narzędzie scala PR numer N do jego bazy, gdy jednocześnie:
    przykład sprzed zamknięcia i otwarcia PR, się nie liczą, ani czerwone, ani zielone (``stan_pr.latest_ci_run``);
    check workflow ``CI`` bez identyfikatora runu w ``detailsUrl`` to odmowa;
 3. najnowszy werdykt dla HEAD PR to ``PASS`` w postaci, którą publikuje ``--werdykt`` (niżej, z punktem
-   ``Ponowny przegląd:``, gdy HEAD miał już werdykt), a PR nie ma trzech rund z ``FAIL`` (limit rund, niżej, który
-   odmawia też ``--werdykt`` i ``--przeglad``);
+   ``Ponowny przegląd:``, gdy HEAD miał już werdykt), a limit rund nie odmawia PR kolejnej rundy (``limit_rund``,
+   niżej, który odmawia też ``--werdykt`` i ``--przeglad``);
 4. opis PR ma każdy nagłówek ``##`` wzoru z ``.agents/skills/pr/SKILL.md``, każdy jako osobną linię i w kolejności
    wzoru, więc każdy PR ma te same sekcje, a sekcja dopisana do wzoru od razu obowiązuje; w wątku z szablonem
    werdyktu opis po ``FAIL`` z Ważnym i przy naprawie czerwonego `main` ma też sekcję ``## Korzeń``, a każdy kod
@@ -31,23 +63,47 @@ Mutacje zmienionych linii nie biegną na PR i nie czeka na nie: biegną nocą na
 ``tools/mutacje_nocne.py``).
 
 Gdy któryś warunek nie zachodzi, narzędzie nie scala i kończy się linią ``SCAL ODMOWA | #N <sha> | <przyczyny>``.
-Warunki 1–4 sprawdza razem i podaje wszystkie przyczyny; warunki 5–8 trwają dłużej, więc biegną dopiero po nich, po
-kolei.
-Przed merge'em sprawdza, że baza w ``origin`` nie przesunęła się w trakcie sprawdzania, a ``gh pr merge
---match-head-commit`` odrzuca PR, którego HEAD zmienił się po sprawdzeniu. Po merge'u uruchamia
-``tools/sprzatanie.py`` i podaje ostatnią linię jego raportu: bez ``--usun`` sprzątanie niczego nie
-usuwa, tylko mówi, które lokalne gałęzie i worktree można usunąć. Sprzątanie, które przekroczy czas, kończy się
-ostrzeżeniem w linii ``SCAL OK``, bo PR jest już scalony.
+Warunki 1–4 sprawdza razem i podaje wszystkie przyczyny, najpierw te, które wymagają działania autora; warunki 5–8
+trwają dłużej, więc biegną dopiero po nich, po kolei.
+Między nimi PR do `main` czeka na wymagany status ``Werdykt i bramka`` (``github.WERDYKT_I_BRAMKA``, niżej) na HEAD: gdy
+warunki 1–4 przechodzą, a statusu jeszcze nie ma albo jest ``pending`` (``stan_pr.GATE_IN_PROGRESS``), GitHub nie
+przyjmie merge'a, zanim odświeży go run workflow ``werdykt-i-bramka.yml`` z kolejki, więc narzędzie bez warunków 5–8
+kończy się linią ``SCAL CZEKA | #N <sha> | Werdykt i bramka w kolejce od HH:MM UTC; watch_pull_request obudzi wątek``,
+z godziną najnowszego komentarza PR albo końca najnowszego runu CI, czyli zdarzenia, które ten run uruchomiło. Przy
+``failure`` i ``error`` sprawdza dalej.
+Merge (bez ``--bez-merge``) najpierw bierze blokadę merge'a, plik ``MERGE_LOCK`` w katalogu gita wspólnym dla wszystkich
+worktree repozytorium (``potomne.repo_lock``), więc ``tools/scal_pr.py`` z kilku worktree tego komputera scalają po
+kolei, a każdy pobiera bazę dopiero po merge'u poprzedniego; czekanie na blokadę zapowiada linia ``SCAL KOLEJKA``.
+Przed merge'em sprawdza, że baza w ``origin`` nie przesunęła się w trakcie sprawdzania (merge spoza tego komputera).
+Gdy się przesunęła, a nowe commity bazy nie zmieniają żadnego pliku, który zmienia PR, linia ``SCAL PONÓW`` zapowiada
+sprawdzenie od nowa na nowej bazie, najwyżej ``MOVED_RETRIES`` razy; gdy zmieniają plik PR, narzędzie odmawia z listą
+tych plików. ``gh pr merge --match-head-commit`` odrzuca PR, którego HEAD zmienił się po sprawdzeniu. Po merge'u uruchamia
+``tools/sprzatanie.py --usun --galaz <gałąź PR>`` i podaje ostatnią linię jego wyjścia: usuwa tylko lokalną gałąź
+scalonego PR i jej worktree, przy warunkach sprzątania (praca w ``origin/main``, drzewo bez zmian, bez żywego procesu
+i aktywnego wątku T3), a resztę worktree i gałęzi usuwa codzienne ``tools/sprzatanie.py --usun`` z launchd
+(``--codziennie``). Sprzątanie, które przekroczy czas albo nie dostanie od GitHuba gałęzi PR, kończy się ostrzeżeniem
+w linii ``SCAL OK``, bo PR jest już scalony.
 
-Po merge'u do ``main`` linia ``CI MAIN`` przed ``SCAL OK`` mówi, który run CI rozstrzyga o merge'u (``github.ROZSTRZYGA``):
-nowszy push na `main` anuluje run commitu merge'a, gdy ten czeka za trwającym, i wtedy rozstrzyga run późniejszego
-commitu. Linia podaje run commitu merge'a i to, czy już go anulowano, a bez niego polecenie ``gh run list``, które
-pokaże runy pushu na `main`. Obserwację PR zostaw do zielonego `main` z tym merge'em albo do komentarza czerwonego
-`main` w PR, który ``tools/ci/zgloszenia_ci.py`` pisze w każdym PR, o którego merge'u rozstrzyga czerwony run.
+Po merge'u do ``main`` linia ``CI MAIN`` przed ``SCAL OK`` mówi najpierw, że wątek, który scalił, na run CI tego
+merge'a nie czeka (``NO_WAIT``): czerwony `main` zakłada issue ``czerwony-main`` i komentuje każdy PR, o którego merge'u
+rozstrzyga czerwony run, sam (``tools/ci/zgloszenia_ci.py``). Potem mówi, który run CI rozstrzyga o merge'u
+(``github.ROZSTRZYGA``): nowszy push na `main` anuluje run commitu merge'a, gdy ten czeka za trwającym, i wtedy
+rozstrzyga run późniejszego commitu. Linia podaje run commitu merge'a i to, czy już go anulowano, a bez niego
+polecenie ``gh run list``, które pokaże runy pushu na `main`.
 
 Kod 0 i ``SCAL OK`` znaczą, że PR jest scalony (albo z ``--bez-merge``: że byłby); linia po merge'u podaje SHA
 commitu merge'a i bazy, z którą sprawdziła scalenie, a gdy test scalenia biegł albo został pominięty, także jego
-wynik. Kod 1 to odmowa albo błąd narzędzia (``SCAL FAIL``).
+wynik. Kod 1 to odmowa (także ``SCAL CZEKA``) albo błąd narzędzia (``SCAL FAIL``). Kod ``BASE_MOVED_EXIT`` z linią
+``SCAL PONÓW`` daje kopia bazy (niżej) procesowi, który ją uruchomił i zapowiedział ponawianie zmienną
+``RETRYING_PARENT``, a ten sprawdza od nowa; kopia uruchomiona przez checkout sprzed kolejki merge'y, który tej zmiennej
+nie zna, przy ruchu bazy poza plikami PR odmawia kodem 1 z poleceniem, by uruchomić ponownie.
+Przy zapasie limitu GitHub API poniżej ``REZERWA_SCALANIA`` (``tools/lib/api_actions.py``) narzędzie nie pyta GitHuba,
+tylko odmawia linią ``SCAL ODMOWA`` z godziną resetu limitu.
+
+Z ``--opis`` narzędzie sprawdza tylko warunek 4 bez bramki korzenia: czy opis PR ma nagłówki wzoru z
+``.agents/skills/pr/SKILL.md`` w ``origin/<baza PR>``, i kończy się linią ``OPIS OK`` (kod 0) albo ``OPIS FAIL`` z
+brakującymi nagłówkami (kod 1), bez względu na CI i werdykt. ``--bez-merge`` sprawdza wszystkie warunki naraz, więc
+jego odmowa z innej przyczyny nie mówi, że opis jest dobry.
 
 Werdykt (``--werdykt``), kontekst przeglądu (``--przeglad``) i merge (także ``--bez-merge``) sądzi kod ``origin/<baza PR>`` tuż po pobraniu bazy, nie kod
 checkoutu, z którego je uruchomiono: reguły werdyktu, bramki korzenia i wzoru opisu żyją w ``tools/`` i w plikach
@@ -60,8 +116,9 @@ w ``origin`` przesunęła się, zanim pobrała ją ponownie, nie uruchamia nast�
 uruchomić ponownie. Tak samo biegnie ``--przeglad``, bo limit rund odmawia kolejnej rundy już w nim.
 
 Z ``--status`` narzędzie niczego nie scala, tylko ustawia warunki 1–6 jako status commita ``Werdykt i bramka``
-(``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, a linia
-``STATUS`` podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunki 5 i 6 dokłada, jak merge, dopiero
+(``github.WERDYKT_I_BRAMKA``) na HEAD PR do `main`: ``success`` albo ``failure`` z przyczynami odmowy w opisie, najpierw
+tymi, które wymagają działania autora, bo GitHub tnie opis do ``github.OPIS_STATUSU_LIMIT`` znaków, a linia ``STATUS``
+podaje go w całości; sądzi go kod bazy, jak werdykt i merge. Warunki 5 i 6 dokłada, jak merge, dopiero
 po warunkach 1–4, ale także wtedy, gdy każda ich przyczyna to oczekiwanie, więc PR z CI w toku już widzi brak
 strażnika. Warunek 6 potrzebuje ast-grep, który workflow ``.github/workflows/werdykt-i-bramka.yml`` instaluje
 z ``pyproject.toml`` bazy (dodatek dev, jak CI), nigdy z PR, i czyta ast-grepem pliki PR jako dane, z konfiguracją
@@ -86,37 +143,6 @@ Komentarze, recenzje, checki i ``mergeable`` pochodzą z jednego ``gh pr view --
 komentarzy (sprawdzone na PR z 337 komentarzami, gh 2.101).
 """
 
-from __future__ import annotations
-
-import argparse
-import json
-import os
-from pathlib import Path
-import subprocess
-import sys
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
-
-import bramka_korzenia
-import bramka_straznika
-import github
-import kontekst_przegladu
-import limit_rund
-import naprawia
-import ponowny_przeglad
-import potomne
-import reguly_bazy
-import rejestr_korzeni
-from repo import MAIN, REMOTE, ROOT
-import repo
-import stan_pr
-from stan_pr import Pull
-import straznik
-import szablon_werdyktu
-import testy_scalenia
-import werdykt_pr
-import werdykt_scalenia
-
 CLEANUP = ROOT / "tools" / "sprzatanie.py"
 TEMPLATE = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"
 CLEANUP_TIMEOUT_S = 300
@@ -125,9 +151,15 @@ GUARD_JOB = "DOWOD_WYNIK"  # wynik tego joba (``needs.dowod.result``), gdy linii
 # Zmienna środowiska kopii bazy, którą uruchamia ``_judged_from_base``; kopia zdejmuje ją od razu, więc jej procesy
 # potomne (test scalenia z testami tego narzędzia) jej nie dziedziczą, a ``scal_pr.py`` bazy, który jej nie zna, ją pomija.
 FROM_BASE_COPY = "SCAL_PR_Z_KOPII_BAZY"
+RETRYING_PARENT = "SCAL_PR_RODZIC_PONAWIA"
+MERGE_LOCK = "scal-pr-merge.lock"
+MOVED_RETRIES = 3
+BASE_MOVED_EXIT = 3
+RULES = (testy_scalenia.ZASADY, werdykt_pr.ZASADY, limit_rund.ZASADY, ponowny_przeglad.ZASADY, bramka_korzenia.ZASADY, bramka_straznika.ZASADY, straznik.ZASADY, reguly_bazy.ZASADY, rejestr_korzeni.ZASADY, naprawia.ZASADY, kontekst_przegladu.ZASADY)
 EXAMPLES = """\
     .venv/bin/python tools/scal_pr.py 336               # sprawdza i scala
     .venv/bin/python tools/scal_pr.py 336 --bez-merge   # tylko sprawdza
+    .venv/bin/python tools/scal_pr.py 336 --opis        # tylko nagłówki opisu PR
     .venv/bin/python tools/scal_pr.py 336 --przeglad    # kontekst dla recenzenta
     python3 tools/scal_pr.py 336 --dowod-straznikow d.jsonl  # workflow werdykt-i-bramka.yml, job dowod: warunek 5
     python3 tools/scal_pr.py 336 --status               # workflow werdykt-i-bramka.yml, job status: status bez merge'a
@@ -139,10 +171,18 @@ class _Refused(Exception):
     pass
 
 
-def _body_problem(body: str) -> str | None:
+class _GateQueued(Exception):
+    pass
+
+
+def _reasons(problems: list[str]) -> str:
+    return "; ".join(sorted(problems, key=lambda problem: isinstance(problem, stan_pr.Waiting)))
+
+
+def _body_problem(body: str, skill: str) -> str | None:
     """Przyczyna odmowy, gdy opisowi brakuje nagłówka wzoru albo ma go nie po poprzednim; wzór to blok ``markdown``."""
 
-    template = TEMPLATE.read_text(encoding="utf-8").partition("```markdown\n")[2].partition("\n```")[0]
+    template = skill.partition("```markdown\n")[2].partition("\n```")[0]
     lines = [line.strip() for line in body.splitlines()]
     missing, after = [], 0
     for heading in (line for line in template.splitlines() if line.startswith("## ")):
@@ -166,7 +206,7 @@ def _problems(pull: Pull) -> list[str]:
     if pull.from_fork:
         problems.append("PR z forka")
     template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
-    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body), werdykt_pr.consent_problem(pull, template), limit_rund.deployed_problem(pull)]
+    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body, TEMPLATE.read_text(encoding="utf-8")), werdykt_pr.consent_problem(pull, template), limit_rund.deployed_problem(pull)]
     guarded = bramka_straznika.applies(pull)
     return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER), guarded=guarded)]
 
@@ -177,7 +217,7 @@ def _remote_base(base: str) -> str:
     return listed.stdout.partition("\t")[0]
 
 
-def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, from_copy: bool) -> int | None:
+def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, from_copy: bool, retrying: bool) -> int | None:
     """``None``, gdy ten checkout to czysty checkout ``base`` (SHA ``origin/<baza PR>`` tuż po pobraniu) i sądzi sam;
     inaczej kod wyjścia polecenia ``argv`` uruchomionego z kopii ``base``, a w kopii (``from_copy``) odmowa."""
 
@@ -192,7 +232,8 @@ def _judged_from_base(pull: Pull, base: str, label: str, argv: list[str], *, fro
     print(f"SĘDZIA | #{pull.number} | reguły z {REMOTE}/{pull.base} {base[:7]}, nie z checkoutu {here}: biegnę z kopii tego commitu", flush=True)
     with potomne.commit_copy(ROOT, base) as copy:
         command = [sys.executable, str(copy / "tools" / "scal_pr.py"), *argv]
-        environment = {**os.environ, FROM_BASE_COPY: "1", "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
+        announced = {RETRYING_PARENT: "1"} if retrying else {}
+        environment = {**os.environ, FROM_BASE_COPY: "1", **announced, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8", "PYTHONUNBUFFERED": "1"}
         return potomne.run(command, cwd=Path.cwd(), env=environment, echo=True).returncode
 
 
@@ -201,7 +242,9 @@ def _check(pull: Pull, base: str) -> str:
 
     checked = werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)
     if problems := _problems(pull):
-        raise _Refused("; ".join(problems))
+        raise _Refused(_reasons(problems))
+    if pull.base == MAIN and (queued := stan_pr.gate_queued(pull)):
+        raise _GateQueued(queued)
     if problems := bramka_straznika.problems(pull):
         raise _Refused("; ".join(problems))
     if problems := reguly_bazy.problems(ROOT, pull.head, base) + reguly_bazy.case_problems(ROOT, pull.head, base):
@@ -215,13 +258,21 @@ def _check(pull: Pull, base: str) -> str:
         return testy_scalenia.merge_test(copy, where, base, pull.head)
 
 
-def _merge_commit(number: int) -> str | None:
-    """SHA commitu merge'a scalonego PR albo ``None``, gdy GitHub go nie podał."""
+def _merged_pull(number: int) -> tuple[str | None, str | None]:
+    """SHA commitu merge'a scalonego PR i nazwa jego gałęzi, każde ``None``, gdy GitHub go nie podał."""
 
     try:
-        return str(json.loads(github.gh("pr", "view", str(number), "--json", "mergeCommit"))["mergeCommit"]["oid"])
+        merged = json.loads(github.gh("pr", "view", str(number), "--json", "mergeCommit,headRefName"))
     except Exception:  # noqa: BLE001 - PR jest już scalony, a brak SHA podaje linia SCAL OK
-        return None
+        return None, None
+    commit, branch = merged.get("mergeCommit"), merged.get("headRefName")
+    return (str(commit["oid"]) if isinstance(commit, dict) else None), (str(branch) if branch else None)
+
+
+NO_WAIT = (
+    f"nie czekaj na ten run: czerwony main zakłada issue {github.CZERWONY_MAIN} i komentuje ten PR sam "
+    "(tools/ci/zgloszenia_ci.py)"
+)
 
 
 def _main_ci(merge_commit: str | None) -> str:
@@ -238,12 +289,14 @@ def _main_ci(merge_commit: str | None) -> str:
         own = f"run commitu merge'a {runs[0]['databaseId']} anulowany, więc rozstrzyga run późniejszego commitu z {listing}"
     else:
         own = f"run commitu merge'a {runs[0]['databaseId']} {runs[0]['url']}, o ile nowszy push nie anuluje go, zanim ruszy"
-    return f"CI MAIN | {(merge_commit or '?')[:7]} | {github.ROZSTRZYGA}: {own} | obserwuj PR do zielonego main z tym merge'em albo do komentarza czerwonego main w PR"
+    return f"CI MAIN | {(merge_commit or '?')[:7]} | {NO_WAIT} | {github.ROZSTRZYGA}: {own}"
 
 
-def _clean_up() -> str:
+def _clean_up(branch: str | None) -> str:
+    if branch is None:
+        return "UWAGA: GitHub nie podał gałęzi PR, sprzątanie pominięte"
     try:
-        done = potomne.run([sys.executable, str(CLEANUP)], cwd=ROOT, timeout=CLEANUP_TIMEOUT_S, echo=True)
+        done = potomne.run([sys.executable, str(CLEANUP), "--usun", "--galaz", branch], cwd=ROOT, timeout=CLEANUP_TIMEOUT_S, echo=True)
     except subprocess.TimeoutExpired:
         return f"UWAGA: sprzątanie przerwane po {CLEANUP_TIMEOUT_S} s, uruchom je ponownie"
     result = done.stdout.rstrip().rpartition("\n")[2]
@@ -323,7 +376,7 @@ def _publish_status(pull: Pull, base: str) -> int:
     problems = _problems(pull)
     if all(isinstance(problem, stan_pr.Waiting) for problem in problems):
         problems += _proved_guards(pull) + reguly_bazy.problems(ROOT, pull.head, base) + reguly_bazy.case_problems(ROOT, pull.head, base)
-    reasons = "; ".join(problems)
+    reasons = _reasons(problems)
     if not problems:
         state, description = "success", "warunki 1–6 tools/scal_pr.py spełnione"
     elif all(isinstance(problem, stan_pr.Waiting) for problem in problems):
@@ -337,12 +390,30 @@ def _publish_status(pull: Pull, base: str) -> int:
     return 0
 
 
-def _merge(pull: Pull, base: str, *, merge: bool) -> int:
+def _base_moved(pull: Pull, base: str, *, retrying: bool) -> int:
+    where = f"#{pull.number} {pull.head[:7]}"
+    moved = werdykt_scalenia.fetch(pull.base, [])
+    shared = sorted(repo.changed(ROOT, base, moved) & repo.changed(ROOT, repo.merge_base(ROOT, base, pull.head), pull.head))
+    change = f"{pull.base} zmienił się w trakcie sprawdzania ({base[:7]} → {moved[:7]})"
+    if shared:
+        print(f"SCAL ODMOWA | {where} | {change}, a nowe commity zmieniają pliki PR: {', '.join(shared)}; przejrzyj ich zmiany i uruchom ponownie")
+        return 1
+    if not retrying:
+        print(f"SCAL ODMOWA | {where} | {change}, a nowe commity nie zmieniają plików PR: uruchom ponownie")
+        return 1
+    print(f"SCAL PONÓW | {where} | {change}, a nowe commity nie zmieniają plików PR: sprawdzam od nowa", flush=True)
+    return BASE_MOVED_EXIT
+
+
+def _merge(pull: Pull, base: str, *, merge: bool, retrying: bool) -> int:
     where = f"#{pull.number} {pull.head[:7]}"
     try:
         merge_test = _check(pull, base)
         if merge and _remote_base(pull.base) != base:
-            raise _Refused(f"{pull.base} zmienił się w trakcie sprawdzania, uruchom ponownie")
+            return _base_moved(pull, base, retrying=retrying)
+    except _GateQueued as queued:
+        print(f"SCAL CZEKA | {where} | {queued}")
+        return 1
     except (_Refused, testy_scalenia.Refused) as refusal:
         print(f"SCAL ODMOWA | {where} | {refusal}")
         return 1
@@ -350,40 +421,47 @@ def _merge(pull: Pull, base: str, *, merge: bool) -> int:
         print(f"SCAL OK | {where} | gotowy do merge'a z {pull.base} {base[:7]}, bez merge'a (--bez-merge){merge_test}{naprawia.close_fixed(pull, merged=False, merge_commit=None)}")
         return 0
     github.gh("pr", "merge", str(pull.number), "--merge", "--match-head-commit", pull.head)
-    merge_commit = _merge_commit(pull.number)
+    merge_commit, branch = _merged_pull(pull.number)
     closed = naprawia.close_fixed(pull, merged=True, merge_commit=merge_commit)
-    cleaned = _clean_up()
+    cleaned = _clean_up(branch)
     if pull.base == MAIN:
         print(_main_ci(merge_commit))
     print(f"SCAL OK | {where} | scalony do {pull.base} jako {(merge_commit or '?')[:7]} (baza {base[:7]}){merge_test}{closed} | {cleaned}")
     return 0
 
 
-def main(argv: list[str] | None = None) -> int:
-    rules = (__doc__, testy_scalenia.__doc__, werdykt_pr.__doc__, limit_rund.__doc__, ponowny_przeglad.__doc__, bramka_korzenia.__doc__, bramka_straznika.__doc__, straznik.__doc__, reguly_bazy.__doc__, rejestr_korzeni.__doc__, naprawia.__doc__, kontekst_przegladu.__doc__)
-    parser = argparse.ArgumentParser(
-        description="\n".join(str(part).strip("\n") + "\n" for part in rules), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("numer", type=int, help="Numer PR.")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
-    mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
-    mode.add_argument("--werdykt", type=Path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
-    mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–6 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
-    mode.add_argument("--dowod-straznikow", type=Path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
-    from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
-    given = sys.argv[1:] if argv is None else argv
-    args = parser.parse_args(given)
-    label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "DOWÓD STRAŻNIKÓW" if args.dowod_straznikow else "SCAL"
+def _check_body(pull: Pull) -> int:
+    where = f"#{pull.number} {pull.head[:7]}"
+    base = werdykt_scalenia.fetch(pull.base, [])
+    template = TEMPLATE.relative_to(ROOT).as_posix()
+    if problem := _body_problem(pull.body, repo.git(ROOT, "show", f"{base}:{template}")):
+        print(f"OPIS FAIL | {where} | {problem.removeprefix('opis: ')}")
+        return 1
+    print(f"OPIS OK | {where} | nagłówki wzoru {template} z {pull.base} {base[:7]}")
+    return 0
+
+
+def _invocation_path(text: str) -> Path:
+    """Plik z wiersza poleceń względem katalogu wywołania, bo ``gh`` biegnie z ``ROOT`` (w kopii bazy: z kopii)."""
+
+    return Path(text).absolute()
+
+
+def _attempt(args: argparse.Namespace, given: list[str], label: str, *, from_copy: bool, retrying: bool) -> int:
     try:
+        if (powod := api_actions.odmowa(api_actions.REZERWA_SCALANIA)) is not None:
+            print(f"{label} ODMOWA | {powod}")
+            return 1
         pull = stan_pr.pull(args.numer)
         if args.status and (skipped := _skipped_status(pull)):
             print(f"STATUS POMINIĘTY | #{pull.number} {pull.head[:7]} | {skipped}")
             return 0
         if args.dowod_straznikow and (skipped := _skipped_status(pull)):
             return _guard_proofs(pull, args.dowod_straznikow, skipped)
+        if args.opis:
+            return _check_body(pull)
         base = werdykt_scalenia.fetch(pull.base, [werdykt_scalenia.PullRequest(pull.number, pull.title, pull.head)])
-        if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy)) is not None:
+        if (judged := _judged_from_base(pull, base, label, given, from_copy=from_copy, retrying=retrying)) is not None:
             return judged
         if args.przeglad:
             return kontekst_przegladu.print_context(pull, base)
@@ -393,12 +471,40 @@ def main(argv: list[str] | None = None) -> int:
             return _publish_status(pull, base)
         if args.dowod_straznikow:
             return _guard_proofs(pull, args.dowod_straznikow)
-        return _merge(pull, base, merge=not args.bez_merge)
+        return _merge(pull, base, merge=not args.bez_merge, retrying=retrying)
     except subprocess.CalledProcessError as error:
         command = " ".join(str(part) for part in error.cmd)
         print(f"{label} FAIL | {command}: {(error.stderr or error.stdout or '').strip()}")
     except (subprocess.TimeoutExpired, OSError) as error:
         print(f"{label} FAIL | {error}")
+    return 1
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="\n".join(part.strip("\n") + "\n" for part in (OPIS, *RULES)), epilog=EXAMPLES, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("numer", type=int, help="Numer PR.")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--bez-merge", action="store_true", help="Sprawdź gotowość, ale nie scalaj.")
+    mode.add_argument("--opis", action="store_true", help="Sprawdź tylko nagłówki opisu PR według wzoru skilla pr.")
+    mode.add_argument("--przeglad", action="store_true", help="Wydrukuj recenzentowi kontekst przeglądu PR.")
+    mode.add_argument("--werdykt", type=_invocation_path, metavar="PLIK", help="Sprawdź plik werdyktu i opublikuj go jako komentarz PR.")
+    mode.add_argument("--status", action="store_true", help=f"Ustaw warunki 1–6 jako status „{github.WERDYKT_I_BRAMKA}” na HEAD PR, bez merge'a.")
+    mode.add_argument("--dowod-straznikow", type=_invocation_path, metavar="PLIK", help=f"Dopisz do PLIK linię JSON z warunkiem 5 dla --status (zmienna {GUARD_PROOFS}).")
+    from_copy = os.environ.pop(FROM_BASE_COPY, None) is not None
+    parent_retries = os.environ.pop(RETRYING_PARENT, None) is not None
+    given = sys.argv[1:] if argv is None else argv
+    args = parser.parse_args(given)
+    label = "PRZEGLĄD" if args.przeglad else "WERDYKT" if args.werdykt else "STATUS" if args.status else "DOWÓD STRAŻNIKÓW" if args.dowod_straznikow else "OPIS" if args.opis else "SCAL"
+    if label != "SCAL" or args.bez_merge or from_copy:
+        return _attempt(args, given, label, from_copy=from_copy, retrying=parent_retries)
+    queued = f"SCAL KOLEJKA | #{args.numer} | inny tools/scal_pr.py z tego repozytorium scala teraz: czekam, aż skończy"
+    with potomne.repo_lock(ROOT, MERGE_LOCK, lambda: print(queued, flush=True)):
+        for _ in range(MOVED_RETRIES + 1):
+            if (done := _attempt(args, given, label, from_copy=False, retrying=True)) != BASE_MOVED_EXIT:
+                return done
+    print(f"SCAL ODMOWA | #{args.numer} | baza zmieniła się w trakcie każdego z {MOVED_RETRIES + 1} sprawdzeń, uruchom ponownie")
     return 1
 
 

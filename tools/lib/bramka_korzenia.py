@@ -1,4 +1,23 @@
-"""Bramka korzenia przed merge'em (ADR 0031, decyzje Q8, Q10, Q14, Q17, Q18, Q20, Q25, Q26): opis PR ma sekcję
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import datetime
+import json
+import re
+
+import github
+import naprawia
+import rejestr_korzeni
+from rejestr_korzeni import SECTION, Block
+from repo import REMOTE, ROOT
+import repo
+from stan_pr import Pull
+import straznik
+import szablon_werdyktu
+from szablon_werdyktu import Item
+import werdykt_pr
+
+ZASADY = """Bramka korzenia przed merge'em (ADR 0031, decyzje Q8, Q10, Q14, Q17, Q18, Q20, Q25, Q26): opis PR ma sekcję
 ``## Korzeń`` z blokiem na każde Ważne i każdy czerwony `main`, który PR naprawia, a każdy kod ``NOWY`` z werdyktów PR
 stoi na liście korzeni na HEAD.
 
@@ -47,8 +66,9 @@ w niej tylko bloki ``###``, a w bloku tylko linie akapitu i (w Dowodzie) bloki k
   1 do 5 linii po najwyżej 300 znaków, bloki kodu się liczą), a po ``Wyrwany w #M`` nic.
 
 Bloku brakującego, nadmiarowego, powtórzonego albo z innym kodem bramka odmawia. Szczebel (e) wymaga, żeby HEAD PR
-dopisał do sekcji „Co jest porażką” skilla ``przeglad`` nowy punkt listy z linkiem GitHuba do tego PR (przykład),
-a pozostałe punkty zostawił jak na bazie scalenia z bazą PR (Q26), więc zmieniony punkt bazy nie jest nowym punktem.
+dopisał do sekcji „Co jest porażką” plików ``FAILURE_FILES`` skilla ``przeglad`` nowy punkt listy z linkiem GitHuba
+do tego PR (przykład), a pozostałe punkty tych plików zostawił po kolei jak na bazie scalenia z bazą PR (Q26), więc
+zmieniony punkt bazy nie jest nowym punktem.
 Granica: bramka sprawdza, że taki punkt przybył, a czy
 opisuje ten korzeń i czy szczebel jest najwyższy działający, ocenia recenzent następnej rundy (Q2, Q7), tak jak treść
 Dowodu, której narzędzie nie odtwarza. Rozmiaru wyrwania (Q8: ponad M według etykiety ``size:`` z
@@ -69,30 +89,11 @@ Odmowa podaje każdą brakującą rzecz, wzór sekcji z bloku ``markdown`` sekcj
 opis poprawia ``gh pr edit N --body-file PLIK`` bez nowego commita i bez nowego werdyktu.
 """
 
-from __future__ import annotations
-
-from collections.abc import Sequence
-from datetime import datetime
-import json
-import re
-
-import github
-import naprawia
-import rejestr_korzeni
-from rejestr_korzeni import SECTION, Block
-from repo import REMOTE, ROOT
-import repo
-from stan_pr import Pull
-import straznik
-import szablon_werdyktu
-from szablon_werdyktu import Item
-import werdykt_pr
-
 MARKER = "tools/lib/bramka_korzenia.py"  # plik, którego dodanie do bazy PR to chwila wdrożenia bramki (werdykt_pr.deployment)
 PATTERN_SKILL = ROOT / ".agents" / "skills" / "pr" / "SKILL.md"
 PATTERN_SECTION = "Root section"
 FAILURES = "Co jest porażką"
-REVIEW_SKILL = ".agents/skills/przeglad/SKILL.md"
+FAILURE_FILES = (".agents/skills/przeglad/SKILL.md", ".agents/skills/przeglad/porazka-adr.md")
 RED_MAIN_WORDS = ("Część", naprawia.FIXES)
 RUNGS = "abcde"
 HIGHER = re.compile(r"\(([a-e])\) - (\S.*)")
@@ -323,16 +324,21 @@ def _failure_point(block: Block, pull: Pull) -> list[str]:
     label = f"korzeń: {block.heading}: Szczebel (e)"
     try:
         base = repo.git(ROOT, "merge-base", f"refs/remotes/{REMOTE}/{pull.base}", pull.head).strip()
-        before, after = (_points(repo.git(ROOT, "show", f"{commit}:{REVIEW_SKILL}"), pull) for commit in (base, pull.head))
+        before, after = (_listed_points(commit, pull) for commit in (base, pull.head))
     except Exception as error:  # noqa: BLE001 - każdy błąd Gita albo renderera to odmowa z przyczyną
         return [f"{label}: nie odczytano sekcji „{FAILURES}” skilla przeglad na bazie i HEAD ({error}), uruchom ponownie"]
     kept = [item.text for item in after if not _links_to(item, pull, pull.number, PULL_REQUEST)]
     if len(kept) < len(after) and kept == [item.text for item in before]:
         return []
     return [
-        f"{label} wymaga nowego punktu z linkiem do tego PR (#{pull.number}) dopisanego w tym PR do sekcji „{FAILURES}” w {REVIEW_SKILL}, "
+        f"{label} wymaga nowego punktu z linkiem do tego PR (#{pull.number}) dopisanego w tym PR do sekcji „{FAILURES}” w {' albo '.join(FAILURE_FILES)}, "
         "a pozostałe punkty sekcji zostają jak na bazie: zmieniony punkt z bazy to nie nowy punkt"
     ]
+
+
+def _listed_points(commit: str, pull: Pull) -> list[Item]:
+    files = [path for path in FAILURE_FILES if repo.succeeds(ROOT, "cat-file", "-e", f"{commit}:{path}")]
+    return [point for path in files for point in _points(repo.git(ROOT, "show", f"{commit}:{path}"), pull)]
 
 
 def _points(text: str, pull: Pull) -> list[Item]:

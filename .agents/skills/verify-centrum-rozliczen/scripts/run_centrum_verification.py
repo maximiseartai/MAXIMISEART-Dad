@@ -1,10 +1,3 @@
-"""One-command proof of Centrum rozliczeń: fixture, launch, doctor, drive in Chromium, cleanup, self-test.
-
-Prints ``VERIFY OK | features=… | evidence=… | scratch_removed=true`` or
-``VERIFY FAIL | …``. Scratch lives in ``<run dir>/runs/centrum-<id>`` and is
-removed; evidence lives in ``<run dir>/evidence/centrum-<id>`` and is kept.
-"""
-
 from __future__ import annotations
 
 from argparse import RawDescriptionHelpFormatter
@@ -31,6 +24,13 @@ from harness import SLOW_RUNNER, File
 from import_dynamiczny import jest_modul
 from quiet_machine import MachineBusy, QuietMachine
 from skrypt_skilla import Parser, child_environment, new_run, part
+
+OPIS = """One-command proof of Centrum rozliczeń: fixture, launch, doctor, drive in Chromium, cleanup, self-test.
+
+Prints ``VERIFY OK | features=… | evidence=… | scratch_removed=true`` or
+``VERIFY FAIL | …``. Scratch lives in ``<run dir>/runs/centrum-<id>`` and is
+removed; evidence lives in ``<run dir>/evidence/centrum-<id>`` and is kept.
+"""
 
 SCRIPTS = Path(__file__).resolve().parent
 REPO_ROOT = SCRIPTS.parents[3]
@@ -225,7 +225,7 @@ def _verify(features: tuple[str, ...], performance: list[str], run_dir: Path) ->
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = Parser(description=__doc__, formatter_class=RawDescriptionHelpFormatter)
+    parser = Parser(description=OPIS, formatter_class=RawDescriptionHelpFormatter)
     parser.add_run_dir()
     parser.add_argument("--feature", choices=("all", *(each.name for each in FEATURES)), default="all")
     parser.add_argument("--baseline", help="wydajnosc: compare with this baseline instead of the skill's.")

@@ -20,6 +20,7 @@ from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.centrum.report_box import Refused, Unreachable
 from rozliczenia.message import Message
 from rozliczenia.template_file import TemplateFile
@@ -399,6 +400,25 @@ def test_zgloszenie_podaje_zmiane_listy_wykonawcow_bez_loginu_nazwy_i_adresu(tmp
     ), lines[start : start + 4]
     for secret in ("dariusz.fikcyjny2", "Dariusz Zmieniony", "nowy.wykonawca", "Nowy Wykonawca", "nowy@przyklad.invalid"):
         assert not zawiera_wartosc(body, secret), secret
+
+
+def test_zgloszenie_podaje_zmiane_regul_ilosci_i_listy_urzadzen_wprost_z_wpisem_przed_i_po_jak_historia_ustawien(
+    tmp_path: Path,
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    added = centrum.client.post("/api/settings/devices", json={"name": "ont y", "other_spellings": [], "group": None})
+    removed = centrum.client.delete("/api/settings/quantity-rules/t-umowa-u")
+    assert (added.status_code, removed.status_code) == (200, 200), (added.text, removed.text)
+    run_id = stopped_for_maks(centrum)
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    rows = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["file"] in (DEVICES_FILE, RULES_FILE)]
+    assert sorted(row["file"] for row in rows) == sorted([DEVICES_FILE, RULES_FILE])
+    for row in rows:
+        [change] = row["changes"]
+        before, after = (change[side] or "nie ustawiono" for side in ("before", "after"))
+        assert any(line.endswith(f"· tata · {row['file']} · {change['key']}: {before} → {after}") for line in lines), lines
 
 
 def test_zgloszenie_podaje_zmiane_por_przypomnien_wprost_a_stopke_bez_jej_tresci(tmp_path: Path) -> None:

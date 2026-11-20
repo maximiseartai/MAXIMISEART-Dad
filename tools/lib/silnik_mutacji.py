@@ -3,11 +3,40 @@
 Wołają go narzędzie ``tools/mutacje.py`` (``review``), skrypty mutacji skilli ``check_<co>_mutations.py``
 (``check_all``), mutacje nocy ``tools/mutacje_zmiany.py`` (``verdicts``, ``in_ci``, ``type_gate``) i zadanie planu CI
 ``tools/ci/wykonaj_zadanie.py`` (``near_limits``), a dowód strażnika ``pytest <węzeł>`` (``tools/lib/straznik.py``) bierze
-werdykt z ``judged``. Zasady niżej drukuje ``tools/mutacje.py --zasady``.
+werdykt z ``judged``. Zasady (``ZASADY``) drukuje ``tools/mutacje.py --zasady``.
+"""
 
-Zasady werdyktów i przebiegu
+from __future__ import annotations
 
-Każda mutacja dostaje własną kopię checkoutu: odłączony ``git worktree`` z HEAD w katalogu
+from collections import defaultdict
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
+from dataclasses import asdict, dataclass
+from enum import StrEnum
+from functools import partial
+from itertools import pairwise
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import time
+from typing import Any, NamedTuple, Protocol, TypeVar
+
+from import_dynamiczny import jest_modul
+from jednostka import ZMIENNA_CZESCI, Czesc
+from kroki_lokalne import JSON_OUTPUT, diagnostics, environment, static_steps
+from ostatnie_linie import MUTACJE_OK
+import potomne
+from repo import ROOT
+import repo
+
+ZASADY = f"""Każda mutacja dostaje własną kopię checkoutu: odłączony ``git worktree`` z HEAD w katalogu
 tymczasowym z naniesionymi niezacommitowanymi zmianami (także dodanymi do indeksu), więc ``git``
 działa w niej jak w checkoucie. Checkout zostaje nietknięty, więc nie ma czego przywracać ani
 nieaktualnych ``.pyc``. Polecenie biegnie Pythonem, który uruchomił narzędzie, w korzeniu kopii,
@@ -81,7 +110,7 @@ jej startu (kod 2 i linia ``CIĘŻKIE CI ODMOWA``) na zasadach ``tools/lib/ciezk
 ``check_<co>_mutations.py`` skilli ``verify-*`` używają tego samego silnika przez ``check_all``, który
 takiego limitu nie ma.
 
-Z ``MUTACJE_CZESC=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N części tabeli: K-ty z N kolejnych kawałków
+Z ``{ZMIENNA_CZESCI}=K/N`` w środowisku ``check_all`` sprawdza tylko K-tą z N części tabeli: K-ty z N kolejnych kawałków
 mutacji ułożonych po poleceniu, potem po nazwie, więc część nie zależy od kolejności tabeli, a N części sprawdza każdą
 mutację dokładnie raz. Podstawa części to tylko polecenia jej mutacji, po kolei, a część bez mutacji kończy się
 ``MUTACJE OK``. Kawałki po poleceniu dają poleceniu podstawę tylko w częściach, do których trafiają jego mutacje:
@@ -98,36 +127,6 @@ stanie się PRZEKROCZONY CZAS; werdyktów, linii końcowej ani kodu wyjścia to 
 czyta z wyjścia skryptu ``near_limits``, a nocne skrypty mutacji skilli zgłaszają je raz na mutację w issue PR-u
 (``tools/mutacje_nocne.py``).
 """
-
-from __future__ import annotations
-
-from collections import defaultdict
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
-from dataclasses import asdict, dataclass
-from enum import StrEnum
-from functools import partial
-from itertools import pairwise
-import json
-import os
-from pathlib import Path
-import re
-import shutil
-import subprocess
-import sys
-import tempfile
-import threading
-import time
-from typing import Any, NamedTuple, Protocol, TypeVar
-
-from import_dynamiczny import jest_modul
-from jednostka import ZMIENNA_CZESCI, Czesc
-from kroki_lokalne import JSON_OUTPUT, diagnostics, environment, static_steps
-from ostatnie_linie import MUTACJE_OK
-import potomne
-from repo import ROOT
-import repo
 
 TIMEOUT = 600
 # Mutacji naraz najwyżej tyle, ile rdzeni ma komputer (4 vCPU runnera Windows CI), i najwyżej 8 (16 rdzeni Maca dzielą
@@ -322,14 +321,16 @@ def _run(
     concurrent: bool = False,
     python: str | None = None,
     env: Mapping[str, str] | None = None,
+    sandbox: Sequence[str] = (),
 ) -> _Ran:
     """Przebieg polecenia w kopii Pythonem ``python`` (bez niego: tym, który uruchomił narzędzie) ze zmiennymi ``env``
-    (bez nich: ``kroki_lokalne.environment`` kopii), także polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
+    (bez nich: ``kroki_lokalne.environment`` kopii) za przedrostkiem ``sandbox`` (``piaskownica.prefix``), także
+    polecenia, które przekroczyło limit (to, co zdążyło wypisać)."""
 
     started = time.monotonic()
     try:
         env = environment(copy, concurrent=concurrent) if env is None else env
-        done = potomne.run([python or sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
+        done = potomne.run([*sandbox, python or sys.executable, *command], cwd=copy, env=env, timeout=limit_s, stop=stop)
     except potomne.TimeoutExpired as expired:
         return _Ran(None, f"brak wyniku po {limit_s:g} s", None, time.monotonic() - started, _tail(*expired.printed))
     seconds = time.monotonic() - started
@@ -398,11 +399,12 @@ def judged(
     concurrent: bool = False,
     python: str | None = None,
     env: Mapping[str, str] | None = None,
+    sandbox: Sequence[str] = (),
 ) -> tuple[Verdict, str, float | None]:
     """Werdykt mutacji na kopii ``copy``, której pliki zmienia, jak ``_verdict``: NIEAKTUALNA bez biegu, gdy kotwica nie
     stoi dokładnie raz, a inaczej werdykt polecenia z Pythonem ``python`` i zmiennymi ``env`` (``_run``) w limicie
-    ``min(limit_s, left)``, według zasad werdyktów z docstringu modułu, także polecenia pytest, w którym z mutacją nie
-    biegł żaden test (``_collecting``). Bieg bez zmian (podstawa dowodu strażnika, ``tools/mutacje.py --juz-lapie``)
+    ``min(limit_s, left)`` za przedrostkiem ``sandbox`` (dowód strażnika: piaskownica biegu), według zasad werdyktów
+    z ``ZASADY``, także polecenia pytest, w którym z mutacją nie biegł żaden test (``_collecting``). Bieg bez zmian (podstawa dowodu strażnika, ``tools/mutacje.py --juz-lapie``)
     tej reguły nie ma: pytest, który nie uruchomił testu bez mutacji, pada, jak podstawa ``_baseline``. Jedyne źródło
     werdyktu mutacji: woła ją ``verdicts`` (``tools/mutacje.py``, noc, skrypty skilli) na kopii checkoutu i dowód
     strażnika ``pytest`` (``straznik``) na kopii środowiska Required CI."""
@@ -410,7 +412,7 @@ def judged(
     left = limit_s if left is None else left
     if stale := _apply(copy, mutation.edits):
         return Verdict.STALE, stale, None
-    ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env)
+    ran = _run(copy, mutation.command, min(limit_s, left), stop, concurrent=concurrent, python=python, env=env, sandbox=sandbox)
     if ran.code is None:
         # Koniec czasu wywołującego, a nie limit polecenia, nie mówi, czy mutacja zawiesza polecenie.
         found = (Verdict.OVER_LIMIT, f"{ran.last} ({OVER_LIMIT_NOTE})") if left >= limit_s else (Verdict.NO_VERDICT, ran.last)
@@ -421,7 +423,7 @@ def judged(
     elif mutation.edits and _without_test(mutation.command, ran):
         # Zbieranie dostaje czas, który biegowi z mutacją został, więc razem nie przekraczają końca czasu wywołującego.
         budget = max(min(limit_s, left - ran.seconds), 0.0)
-        gathered = _run(copy, _collecting(mutation.command), budget, stop, concurrent=concurrent, python=python, env=env)
+        gathered = _run(copy, _collecting(mutation.command), budget, stop, concurrent=concurrent, python=python, env=env, sandbox=sandbox)
         gone = f"{ran.last} (pytest nie uruchomił testu z polecenia, kod {ran.code}, a"
         if gathered.code is None:
             found = Verdict.NO_VERDICT, f"{gone} zbieranie jego plików testów z mutacją nie dało wyniku: {gathered.last})"

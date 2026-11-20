@@ -1,22 +1,3 @@
-"""Test scalenia łapie PR, który z bieżącą bazą daje czerwony ``main``, choć sam był zielony, bo baza od merge-base PR
-zmieniła coś, czego PR używa. Gdy baza od merge-base się nie zmieniła, nie liczy niczego. Inaczej bierze pliki testów
-dotknięte i zmianą PR, i zmianą bazy od merge-base, w odległości najwyżej ``MERGE_TEST_DISTANCE`` od każdej z nich
-w grafie ``tools/lib/wplyw_zmiany.py`` liczonym na scalonym drzewie: plik testów zmieniony albo zależny wprost od pliku
-zmienionego po obu stronach. Gdy takich plików nie ma, nic nie biegnie (liczenie trwało ~1,5 s na merge'ach z 6.11.2026).
-Gdy są, biegną pytestem w kopii scalonego drzewa, z jego ``tests/conftest.py``, więc test z kwarantanny
-(``tests/fixtures/kwarantanna.py``) nie czerwieni wyniku, jak w CI. Gdy któryś test pada, te same pliki testów biegną
-jeszcze raz na drzewie samej bazy, bo czerwony ``main`` nie blokuje merge'ów (ADR 0020): odmowa z nazwami testów
-zachodzi tylko wtedy, gdy któryś test pada na scaleniu, a na samej bazie nie (albo nie ma go na bazie). Gdy każdy
-padnięty test pada też na samej bazie, PR przechodzi, a linia ``SCAL OK`` wymienia te testy (``na samym main … pada
-już: …``). Ten drugi bieg kosztuje tylko po porażce. Pytest, który pada bez nazwy testu, to odmowa z przyczyną ze stderr.
-Test scalenia nie biegnie, a linia ``SCAL OK`` mówi dlaczego (``test scalenia pominięty: …``), gdy któraś strona
-zmienia plik reguły wyboru testów (``Context.TESTS``: ``conftest.py`` każdego testu, konfiguracja), bo taki plik dotyczy
-każdego testu, gdy suma czasów CI tych plików (tor ``czasy_ci.TOR_LOKALNY``, plik bez pomiaru waży medianę) przekracza
-``MERGE_TEST_BUDGET_S`` albo gdy czasów CI nie ma. Na merge'ach z 6.11.2026 limit przepuścił pliki do 20 s w CI
-(4–8 s na Macu agenta), a zatrzymał pliki od 437 s w CI (93 s na Macu i więcej). Test, który trwa dłużej niż
-``MERGE_TEST_TIMEOUT_S``, to odmowa, bo nie dał wyniku.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -32,8 +13,30 @@ import github
 import potomne
 from repo import ROOT
 import repo
+import rozjazd_modelu
 from wplyw_zmiany import Context, Repository, run_all
 import wyniki_testow
+
+ZASADY = """Test scalenia łapie PR, który z bieżącą bazą daje czerwony ``main``, choć sam był zielony, bo baza od merge-base PR
+zmieniła coś, czego PR używa. Gdy baza od merge-base się nie zmieniła, nie liczy niczego. Inaczej bierze pliki testów
+dotknięte i zmianą PR, i zmianą bazy od merge-base, w odległości najwyżej ``MERGE_TEST_DISTANCE`` od każdej z nich
+w grafie ``tools/lib/wplyw_zmiany.py`` liczonym na scalonym drzewie: plik testów zmieniony albo zależny wprost od pliku
+zmienionego po obu stronach. Gdy takich plików nie ma, nic nie biegnie (liczenie trwało ~1,5 s na merge'ach z 6.11.2026).
+Gdy są, biegną pytestem w kopii scalonego drzewa, z jego ``tests/conftest.py``, więc test z kwarantanny
+(``tests/fixtures/kwarantanna.py``) nie czerwieni wyniku, jak w CI. Gdy któryś test pada, te same pliki testów biegną
+jeszcze raz na drzewie samej bazy, bo czerwony ``main`` nie blokuje merge'ów (ADR 0020): odmowa z nazwami testów
+zachodzi tylko wtedy, gdy któryś test pada na scaleniu, a na samej bazie nie (albo nie ma go na bazie). Gdy każdy
+padnięty test pada też na samej bazie, PR przechodzi, a linia ``SCAL OK`` wymienia te testy (``na samym main … pada
+już: …``). Ten drugi bieg kosztuje tylko po porażce. Pytest, który pada bez nazwy testu, to odmowa z przyczyną ze stderr.
+Test scalenia nie biegnie, a linia ``SCAL OK`` mówi dlaczego (``test scalenia pominięty: …``), gdy któraś strona
+zmienia plik reguły wyboru testów (``Context.TESTS``: ``conftest.py`` każdego testu, konfiguracja), bo taki plik dotyczy
+każdego testu, gdy suma czasów CI tych plików (tor ``czasy_ci.TOR_LOKALNY``, plik bez pomiaru waży medianę) przekracza
+``MERGE_TEST_BUDGET_S`` albo gdy czasów CI nie ma. Przy zmianie pliku reguły wyboru testów liczy jednak na scalonym
+drzewie rozjazd modelu każdego skilla ``verify-*`` (``tools/lib/rozjazd_modelu.py``) i odmawia z nazwą skilla, gdy
+rozjazd jest na scaleniu, a na samej bazie go nie ma albo jest inny. Na merge'ach z 6.11.2026 limit przepuścił pliki do 20 s w CI
+(4–8 s na Macu agenta), a zatrzymał pliki od 437 s w CI (93 s na Macu i więcej). Test, który trwa dłużej niż
+``MERGE_TEST_TIMEOUT_S``, to odmowa, bo nie dał wyniku.
+"""
 
 # Plik testów w tej odległości od zmiany PR i od zmiany bazy (0 to plik zmieniony, 1 zależny wprost).
 MERGE_TEST_DISTANCE = 1
@@ -58,6 +61,8 @@ def merge_test(copy: Path, where: str, base: str, head: str) -> str:
         return ""
     pull_changed = repo.changed(ROOT, fork, head, timeout=limit)
     if full := run_all(pull_changed | base_changed, Context.TESTS):
+        if drift := _model_drift(copy, base):
+            raise Refused(f"rozjazd modelu na scaleniu z {where}: {'; '.join(drift)}")
         return f" | test scalenia pominięty: zmiana {', '.join(full)} dotyczy każdego testu"
     repository = Repository.scan(copy)
     pull_impact, base_impact = repository.impact(pull_changed), repository.impact(base_changed)
@@ -91,6 +96,15 @@ def merge_test(copy: Path, where: str, base: str, head: str) -> str:
         also = f" (na samym {where} pada też: {', '.join(already)})" if already else ""
         raise Refused(f"test scalenia z {where} pada: {', '.join(pull_failed)}{also}")
     return f" | test scalenia: {names} bez porażek przez PR, a na samym {where} pada już: {', '.join(already)} ({time.monotonic() - started:.0f} s)"
+
+
+def _model_drift(copy: Path, base: str) -> list[str]:
+    merged = {skill.name: found for skill in rozjazd_modelu.skille(copy) if (found := rozjazd_modelu.rozjazd(skill, copy)) is not None}
+    if not merged:
+        return []
+    repo.run_git(copy, "read-tree", "-u", "--reset", base).check_returncode()
+    on_base = {skill.name: rozjazd_modelu.rozjazd(skill, copy) for skill in rozjazd_modelu.skille(copy)}
+    return [f"{name}: {found}" for name, found in merged.items() if on_base.get(name) != found]
 
 
 def failed_tests(copy: Path, tests: Sequence[str], what: str) -> list[str]:

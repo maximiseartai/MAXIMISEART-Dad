@@ -22,6 +22,7 @@ from pathlib import Path
 import shutil
 import smtplib
 import threading
+from importlib import resources
 from typing import Any, Final
 
 from hypothesis import HealthCheck, Phase, given, settings
@@ -50,6 +51,7 @@ from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, O
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_list import WorkerEntry, WorkerList
@@ -89,7 +91,16 @@ from atrapy.settlement import worker_list, write_worker_list
 from atrapy.skrzynka_raportow import AtrapaImap, AtrapaMail, AtrapaSmtp, FakeInbox, FakeMailbox
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, PATH_CHECKS, without_access, without_reading
-from tests.fixtures.centrum import ROOT, CentrumClient, ToolDirectory, finished_view, run_events, views_until, write_report_key
+from tests.fixtures.centrum import (
+    ROOT,
+    CentrumClient,
+    FakeGitHub,
+    ToolDirectory,
+    finished_view,
+    run_events,
+    views_until,
+    write_report_key,
+)
 from tests.fixtures.centrum_intermax import (
     ENTERING_NOW,
     ENTERING_PERIOD,
@@ -108,6 +119,11 @@ from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruf
 SUCCESSFUL = FIRST + HEADERS.index("SKUTECZNE")
 COMPLETED = FIRST + HEADERS.index("CZYNNOŚCI ZREALIZOWANE")
 SUBJECT = "Raport 09.11.2026"
+_DEFAULT_SETTINGS: Final = {
+    LEGEND_FILE: resources.files("rozliczenia") / "legenda_czynnosci_domyslna.yaml",
+    RULES_FILE: resources.files("rozliczenia") / "reguly_ilosci_domyslne.yaml",
+    DEVICES_FILE: resources.files("rozliczenia") / "lista_urzadzen_domyslna.yaml",
+}
 JAN = SENDERS["jan.testowy"]
 
 
@@ -147,7 +163,8 @@ def _finished(centrum: EnteringCentrum) -> dict[str, Any]:
 
 def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_bez_kopii_intermax(tmp_path: Path) -> None:
     """Kryterium #1227: Wpis z Raportu wykonawcy od adresu z listy trafia do obu komórek jego zlecenia z dnia z tematu,
-    zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie."""
+    zapisem bez Kopii INTERMAX; karta pokazuje liczbę wpisanych, a Historia ma Uruchomienie. Uruchomienie nie potwierdza
+    Gotowości, bo ta dotyczy Pliku zbiorczego przed Rozliczeniami pracowników."""
 
     centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak inst20m rt2")])
     before = _cells(centrum.register)
@@ -163,7 +180,7 @@ def test_klikniecie_wpisuje_tak_i_czynnosci_raportu_do_pustych_komorek_zlecenia_
         "last": None,
     }
     assert view["result"]["result"] == "OK"
-    assert view["run"]["period"] == ENTERING_PERIOD
+    assert (view["run"]["period"], view["run"]["confirms_readiness"]) == (ENTERING_PERIOD, False)
     assert view["result"]["summary"]["figures"] == [
         {"label": "Wpisane", "value": 1, "unit": "count"},
         {"label": "Problemy", "value": 0, "unit": "count"},
@@ -329,6 +346,23 @@ def test_logi_maja_kopie_wejscia_z_przeczytanymi_wierszami_bez_adresu_i_numeru_u
     assert columns <= {chr(ord("A") + column - 1) for column in range(1, LAST + 1)} - {"E", "K"}
     assert (ADDRESS, CONTRACT_NUMBER) == (5, 11), "ADRES w E, NUMER UMOWY w K"
     assert "Ulica 40000001" not in json.dumps(logs, ensure_ascii=False)
+
+
+def test_kopia_wejscia_ma_date_zlecenia_ze_sladem_przesuniecia_choc_w_drugim_polozeniu_stoi_pod_adresem(tmp_path: Path) -> None:
+    """Uporządkowany wiersz z datą z godziną w kolumnie A (ślad przesunięcia) pamięć zna w obu położeniach, więc Kopia
+    nie ma komórek, które w przesunięciu stoją pod ``ADRES`` i ``NUMER UMOWY``; ``DATA GODZ. POCZ.`` zostaje, bo bez
+    niej odtworzenie nie powtórzy Uruchomienia (ADR 0025)."""
+
+    traced = Order(datetime(2026, 11, 9, 9), "jan.testowy", 40000001, cells=((NUMBER, 40000001), (1, datetime(2026, 11, 9, 9))))
+    centrum = entering_centrum(tmp_path, Intermax(ordered=(traced,), raw=()), [report(JAN, SUBJECT, "40000001 tak wymiana")])
+
+    _finished(centrum)
+
+    [logs] = centrum.run_logs()
+    [copied] = logs["input_copy"]
+    [row] = copied["sheets"][0]["rows"]
+    assert row["cells"]["C"] == {"type": "datetime", "text": "2026-11-09T09:00:00"}
+    assert "I" not in row["cells"], "NUMER ZL. w przesunięciu stoi pod NUMER UMOWY"
 
 
 def test_dziewieciocyfrowy_numer_zlecenia_z_intermax_wychodzi_do_logow_a_numer_z_tresci_maila_jest_pod_straznikiem(
@@ -976,6 +1010,52 @@ def test_zapis_na_scalone_komorki_zlecenia_zatrzymuje_do_maksa_a_logi_maja_zapla
     ]
 
 
+def _unreadable_border(register: Path) -> None:
+    rewrite_parts(
+        register,
+        lambda name, data: data.replace(b'<left style="thin" />', b'<left style="nieznany" />', 1) if name == "xl/styles.xml" else data,
+    )
+
+
+@pytest.mark.parametrize(
+    ("text", "spoil", "stop"),
+    [
+        pytest.param(
+            "40000001 tak wymiana\x01routera",
+            lambda register: None,
+            ("for_maks", "Zapis odrzucił komórki, które narzędzie chciało wpisać. INTERMAX nie został zmieniony."),
+            id="opis-ze-znakiem-spoza-xml",
+        ),
+        pytest.param(
+            "40000001 tak wymiana",
+            _unreadable_border,
+            ("for_tata", "Nie można odczytać INTERMAX jako skoroszytu Excela. INTERMAX nie został zmieniony."),
+            id="styl-ramki-ktorego-zapis-nie-czyta",
+        ),
+    ],
+)
+def test_zapis_odrzucony_albo_nieczytelny_przy_zapisie_zatrzymuje_a_logi_maja_zaplanowane_wpisy(
+    tmp_path: Path, text: str, spoil: Callable[[Path], object], stop: tuple[str, str]
+) -> None:
+    """Zapis odrzuca komórkę z tekstem, którego komórka nie przyjmie (znak spoza XML z treści maila), albo nie czyta
+    stylów INTERMAX, które odczyt pominął: kliknięcie zatrzymuje się z INTERMAX bajt w bajt, a Logi Uruchomienia mają
+    wpisy zaplanowane z Raportu, z których Maks odtworzy Uruchomienie."""
+
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, text)])
+    spoil(centrum.register)
+    before = centrum.register.read_bytes()
+
+    result = _stopped(centrum)
+
+    assert (result["stop_kind"], result["stops"][0]["what"]) == stop
+    assert centrum.register.read_bytes() == before
+    [logs] = centrum.run_logs()
+    assert [(change["row"], change["column"]) for change in logs["report_entering"]["changes"]] == [
+        (3, "SKUTECZNE"),
+        (3, "CZYNNOŚCI ZREALIZOWANE"),
+    ]
+
+
 def _diagnosed(centrum: EnteringCentrum, view: dict[str, Any]) -> None:
     response = centrum.client.post(f"/api/runs/{view['run']['id']}/diagnosis")
     assert response.status_code == 200, response.json()
@@ -1092,6 +1172,19 @@ def test_bez_pliku_hasla_albo_adresow_wykonawcow_karta_mowi_czego_brakuje_a_star
     assert (started.status_code, started.json()) == (409, {"message": sentence})
     assert centrum.fake_inbox.days == []
     assert centrum.run_logs() == []
+
+
+def test_karta_przy_liscie_wykonawcow_bez_odczytu_nie_mowi_o_adresach_a_start_odmawia_o_liscie(tmp_path: Path) -> None:
+    centrum = entering_centrum(tmp_path, INTERMAX, [report(JAN, SUBJECT, "40000001 tak wymiana")])
+
+    with without_reading(centrum.tool.worker_list):
+        setup = centrum.setup()
+        started = centrum.start()
+
+    assert setup["blocker"] is None
+    assert started.status_code == 409
+    assert started.json()["message"] != ADDRESSES_MISSING
+    assert centrum.fake_inbox.days == []
 
 
 def test_klikniecie_przy_zlej_liscie_wykonawcow_biegnie_na_ostatniej_dobrej_z_ostrzezeniem_na_karcie(tmp_path: Path) -> None:
@@ -2788,7 +2881,8 @@ def test_plik_wyniku_sprzed_zlecen_dnia_czyta_sie_z_liczbami_bez_zlecen_az_do_na
     [difference] = _worker(view, "jan.testowy")["problems"]
     kept = centrum.client.post("/api/report-entering/keep", json=difference["keep"])
 
-    assert datetime.fromisoformat(view["clicked_at"]) == datetime.fromisoformat("2026-11-09T18:30:00+01:00")
+    clicked_at = datetime.fromisoformat(view["clicked_at"])
+    assert (clicked_at, clicked_at.utcoffset()) == (datetime.fromisoformat("2026-11-09T18:30:00+01:00"), timedelta(0))
     assert [
         (worker["worker"], [(day["day"], day["orders"], day["entered"], day["mails"], day["without_report"]) for day in worker["days"]])
         for worker in view["workers"]
@@ -2834,6 +2928,66 @@ def test_plik_wyniku_sprzed_zlecen_dnia_daje_null_takze_przy_dniu_z_samym_proble
         None,
     )
     assert [problem["number"] for problem in only_problem["problems"]] == ["40000009"]
+
+
+def test_plik_wyniku_sprzed_kodow_przyciskow_i_dni_z_tematu_czyta_sie_bez_nich(tmp_path: Path) -> None:
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    result = json.loads((ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v3-oferty.json").read_text(encoding="utf-8"))
+    for worker in result["workers"]:
+        for name in ("mistaken", "overtaken"):
+            worker.pop(name, None)
+        for order in worker["orders_detail"]:
+            for name in ("codes", "faulty", "request"):
+                order.pop(name, None)
+    for problem in result["problems"]:
+        for name in ("request", "faulty_subject"):
+            problem.pop(name, None)
+    (centrum.tool.config / REPORT_ENTERING_RESULT).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+
+    days = [day for worker in _view(centrum)["workers"] for day in worker["days"]]
+
+    orders = [order for day in days for order in day["orders_detail"]]
+    assert orders
+    assert {(tuple(order["codes"]), order["no_code"], order["request"]) for order in orders} == {((), False, None)}
+    assert {(tuple(day["mistaken_subjects"]), tuple(day["overtaken_subjects"])) for day in days} == {((), ())}
+    assert {(problem["request"], problem["faulty_subject"]) for day in days for problem in day["problems"]} <= {(None, None)}
+
+
+def test_widok_raporty_przy_liscie_wykonawcow_bez_odczytu_pokazuje_wynik_klikniecia_z_nieznanym_nadawca_bez_loginu(
+    tmp_path: Path,
+) -> None:
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    old = ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v1.json"
+    shutil.copyfile(old, centrum.tool.config / REPORT_ENTERING_RESULT)
+
+    with without_reading(centrum.tool.worker_list):
+        view = centrum.client.get("/api/report-entering/view")
+
+    assert view.status_code == 200, view.json()
+    assert [(sender["sender"], sender["worker"]) for sender in view.json()["unknown_senders"]] == [(STRANGER, None)]
+
+
+def test_widok_raporty_ma_wykonawcow_alfabetycznie_a_przypomnienie_za_dzien_spoza_wyniku_nie_tworzy_dnia(
+    tmp_path: Path,
+) -> None:
+    centrum = entering_centrum(tmp_path, INTERMAX)
+    result = json.loads((ROOT / "tests" / "fixtures" / "wpisanie-raportow-wynik-v1.json").read_text(encoding="utf-8"))
+    anna, jan = result["workers"]
+    result.update(days=["2026-11-09", "2026-11-10"], workers=[jan, {**anna, "day": "2026-11-10"}], problems=[])
+    (centrum.tool.config / REPORT_ENTERING_RESULT).write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
+    sent = {"worker": "jan.testowy", "sent_at": "2026-11-10T07:30:00+00:00"}
+    reminders = {"schema_version": 1, "footer": "present", "sent": [{**sent, "day": "2026-11-08"}, {**sent, "day": "2026-11-09"}]}
+    (centrum.tool.config / REMINDERS_RESULT).write_text(json.dumps(reminders), encoding="utf-8")
+
+    view = _view(centrum)
+
+    assert [
+        (worker["worker"], [(day["day"], [datetime.fromisoformat(at) for at in day["reminders"]]) for day in worker["days"]])
+        for worker in view["workers"]
+    ] == [
+        ("anna.kowalska", [("2026-11-10", [])]),
+        ("jan.testowy", [("2026-11-09", [datetime.fromisoformat(sent["sent_at"])])]),
+    ]
 
 
 def test_widok_raporty_na_przelomie_roku_daje_swieta_z_obu_lat(tmp_path: Path) -> None:
@@ -3900,6 +4054,18 @@ def test_plik_pamieci_z_decyzjami_wpisu_na_zyczenie_z_wydania_v0_14_0_wpisuje_je
     assert json.loads(_state(centrum).read_text(encoding="utf-8"))["requested"] == decisions
 
 
+def test_plik_pamieci_w_wersji_4_sprzed_wpisu_na_zyczenie_czyta_sie_bez_decyzji_taty(tmp_path: Path) -> None:
+    intermax, mails = _v0_14_0_click()
+    centrum = entering_centrum(tmp_path, intermax, mails)
+    saved = json.loads((ROOT / "tests" / "fixtures" / "wpisanie-raportow-stan-v4-requested.json").read_text(encoding="utf-8"))
+    del saved["requested"]
+    _state(centrum).write_text(json.dumps(saved, ensure_ascii=False), encoding="utf-8")
+
+    _finished(centrum)
+
+    assert json.loads(_state(centrum).read_text(encoding="utf-8"))["requested"] == []
+
+
 # --- Przypomnienia o raporcie: praca Centrum co minutę (ADR 0030, #1349) -----------------------------------------------
 
 SKRZYNKA = "raporty.taty@przyklad.invalid"
@@ -4412,6 +4578,36 @@ def test_w_dniu_aktualizacji_zmiana_por_po_wysylce_starej_wersji_nie_daje_drugie
     ], "drugi mail tej samej pory w dniu Aktualizacji"
 
 
+def test_w_dniu_aktualizacji_bez_pliku_por_wyslane_przez_stara_wersje_licza_tylko_pory_starej_wersji_a_nie_biezace(
+    tmp_path: Path,
+) -> None:
+    day = date(2026, 11, 10)
+    mailbox = SentFolderMailbox(sends=_old_version_sends(tmp_path / "stara", datetime.combine(day, time(16, 30))))
+    centrum = entering_centrum(tmp_path / "nowa", INTERMAX, reminder_mailbox=mailbox, release_changes=RELEASE_CHANGES)
+    (centrum.tool.config / INBOX_ACCESS_FILE).write_text(f"{SKRZYNKA}\n{HASLO}\n", encoding="utf-8")
+    (centrum.tool.config / OLD_ROLLOUT_FILE).write_bytes(b"2026-11-09\n")
+    (centrum.tool.config / OLD_FOOTER_FILE).write_bytes(b"Pozdrawiam\nTata\n")
+    centrum.moment.append(datetime.combine(day, time(16, 45)))
+    centrum.client.start()
+    changed = centrum.client.put(
+        "/api/settings/reminders",
+        json=_reminders_form(
+            morning={"start": "08:00", "end": "16:00"}, evening={"start": "16:00", "end": "22:00"}, footer="Pozdrawiam\nTata\n"
+        ),
+    )
+    centrum.moment.append(datetime.combine(day, time(16, 46)))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert changed.status_code == 200
+    assert [(reminder.worker, at.time()) for reminder, at in mailbox.sends] == [
+        ("anna.kowalska", time(16, 30)),
+        ("jan.testowy", time(16, 30)),
+        ("anna.kowalska", time(16, 46)),
+        ("jan.testowy", time(16, 46)),
+    ], "wieczorne przypomnienie po zmianie pór nie poszło, bo wysłane przez starą wersję liczyły też bieżące pory"
+
+
 def test_zegar_gmaila_spozniony_o_poltorej_minuty_nie_przenosi_wysylki_na_pory_sprzed_zmiany(tmp_path: Path) -> None:
     """Zapas zegara (``CLOCK_MARGIN``): o 7:30 praca sprawdza przy porannej 7:00–9:00, tata wydłuża ją do 17:00, a
     sprawdzenie o 9:30 wysyła przypomnienia. Zegar Gmaila spóźnia się o półtorej minuty, więc „Wysłane” mają 9:28:30,
@@ -4517,6 +4713,7 @@ def test_nieczytelny_plik_por_liczy_wyslane_takze_przy_biezacych_porach_az_po_na
         ("anna.kowalska", time(7, 0)),
         ("jan.testowy", time(7, 0)),
     ]
+    assert "nieoczekiwany-wyjatek" not in centrum.tool.log_path.read_text(encoding="utf-8")
 
 
 _HALF_HOURS = st.lists(st.integers(6 * 2, 23 * 2 + 1), min_size=4, max_size=4, unique=True).map(sorted)
@@ -4575,17 +4772,17 @@ _EVENTS = st.lists(
 """Zdarzenia dnia 10.11.2026 po minutach: tata zapisuje pory, rytm sprawdza przypomnienia albo Centrum startuje znowu.
 Po każdej zmianie pór i każdym starcie rytm sprawdza w następnej minucie, jak u taty. W dniu Aktualizacji test
 ściska minuty zdarzeń za chwilę wysyłki starej wersji."""
-_OLD_VERSION = {
-    "bez-aktualizacji": st.none(),
-    "dzien-aktualizacji": st.one_of(st.integers(8 * 60, 17 * 60 - 1), st.integers(18 * 60, 22 * 60 - 1)),
-}
-"""Minuta dnia, w której stara wersja wysłała przypomnienia w porze z ADR 0030 przed Aktualizacją (bez pliku pór);
-``None``: dzień bez Aktualizacji."""
+_ADR_0030_PORY_MINUTE = st.one_of(st.integers(8 * 60, 17 * 60 - 1), st.integers(18 * 60, 22 * 60 - 1))
+_OLD_VERSION_SENDING_MINUTE_BY_DAY = {"bez-aktualizacji": st.none(), "dzien-aktualizacji": _ADR_0030_PORY_MINUTE}
 
 
 # Bez zmniejszania przykładu: każdy próbowany przykład to nowe Centrum, więc zmniejszanie złego przykładu trwa dłużej
 # niż limit testu, a przykład z najwyżej 12 zdarzeniami czyta się i bez niego.
-@pytest.mark.parametrize("old_versions", list(_OLD_VERSION.values()), ids=list(_OLD_VERSION))
+@pytest.mark.parametrize(
+    "old_version_sending_minutes",
+    list(_OLD_VERSION_SENDING_MINUTE_BY_DAY.values()),
+    ids=list(_OLD_VERSION_SENDING_MINUTE_BY_DAY),
+)
 @settings(
     derandomize=True,
     database=None,
@@ -4597,7 +4794,7 @@ _OLD_VERSION = {
 @given(data=st.data(), events=_EVENTS)
 def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_tej_samej_pory(
     tmp_path_factory: pytest.TempPathFactory,
-    old_versions: st.SearchStrategy[int | None],
+    old_version_sending_minutes: st.SearchStrategy[int | None],
     data: st.DataObject,
     events: list[tuple[int, object]],
 ) -> None:
@@ -4606,7 +4803,7 @@ def test_wlasnosc_zadna_zmiana_por_w_ciagu_dnia_nie_daje_wykonawcy_dwoch_maili_t
     jedno przypomnienie w każdej nazwanej porze (porannej, wieczornej) tego dnia, także w dniu Aktualizacji, gdy
     „Wysłane” mają już przypomnienia starej wersji, a pliku pór jeszcze nie ma (W1 r2)."""
 
-    old_version = data.draw(old_versions)
+    old_version = data.draw(old_version_sending_minutes)
     mailbox = SentFolderMailbox()
     centrum = entering_centrum(tmp_path_factory.mktemp("pory"), INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
@@ -5032,6 +5229,25 @@ def test_odrzucone_haslo_przy_przypomnieniach_daje_zgloszenie_do_maksa_raz_w_por
     assert _failures_in_log(centrum) == ["przyczyna=haslo-odrzucone"]
 
 
+def test_zgloszenie_przypomnien_z_narzedzia_bez_commitu_gita_ma_commit_nieznany(tmp_path: Path) -> None:
+    write_report_key(ToolDirectory(tmp_path))
+    surroundings = Surroundings(github=FakeGitHub(tool_commit=None))
+    mailbox = FakeMailbox(send_outcome=PasswordRejected())
+    centrum = entering_centrum(tmp_path, INTERMAX, surroundings=surroundings, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    box = surroundings.report_box
+    assert box.wait_until(lambda fake: len(fake.sent) == 1)
+    centrum.client.stop()
+
+    [issue] = box.sent
+    body = issue.body.splitlines()
+    assert body[body.index("## Narzędzie") + 2] == "- Commit: nieznany"
+
+
 def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
     """Pola każdej linii ``przypomnienia-porazka`` dziennika Centrum po nazwie zdarzenia, po kolei."""
 
@@ -5048,6 +5264,7 @@ def _failures_in_log(centrum: EnteringCentrum) -> list[str]:
         pytest.param("pamiec-wpisania", "decyzje", id="decyzje-zostaw-moja"),
         pytest.param("okresy", "okresy", id="okresy"),
         pytest.param("intermax", "intermax", id="intermax"),
+        pytest.param("intermax", "arkusz-zlecen", id="intermax-bez-arkusza-zlecen"),
     ],
 )
 def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku(
@@ -5055,7 +5272,7 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
 ) -> None:
     """Każda porażka sprawdzenia z dniem wdrożenia, które nie doszło do skrzynki (bez INTERMAX w Ustawieniach taty, bez
     pliku dostępu, nieczytelna pamięć Wpisania raportów albo decyzje „Zostaw moją”, bo pusta pamięć zmieniłaby dzień
-    raportu, bez folderu okresów, nieczytelny INTERMAX), trafia do dziennika Centrum raz, bez
+    raportu, bez folderu okresów, nieczytelny INTERMAX albo INTERMAX bez arkusza zleceń), trafia do dziennika Centrum raz, bez
     adresów, a wynik dla widoku Raporty ją nazywa; wyjątkiem jest tylko brak dnia wdrożenia, przy którym przypomnienia
     są wyłączone (ADR 0030, przegląd #1372 r1 Drobne 1)."""
 
@@ -5066,6 +5283,11 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
         shutil.rmtree(centrum.periods_directory)
     if broken == "intermax":
         centrum.register.write_bytes(b"to nie jest skoroszyt")
+    if broken == "arkusz-zlecen":
+        book = load_workbook(centrum.register)
+        for header in book[ORDER_SHEET][1]:
+            header.value = None
+        book.save(centrum.register)
     if broken == "pamiec":
         _state(centrum).write_text("{", encoding="utf-8")
     if broken == "decyzje":
@@ -5086,7 +5308,37 @@ def test_porazka_odczytu_przypomnien_trafia_raz_do_dziennika_centrum_i_do_wyniku
         assert secret not in log, secret
 
 
-@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE, WORKERS_FILE])
+@pytest.mark.parametrize("broken", ["intermax", "okresy", "dostep"])
+def test_porazka_odczytu_przypomnien_naprawiona_w_tej_samej_porze_daje_przypomnienia_od_nastepnej_minuty(
+    tmp_path: Path, broken: str
+) -> None:
+    mailbox = FakeMailbox(state="missing" if broken == "dostep" else "ready")
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum)
+    register = centrum.register.read_bytes()
+    elsewhere = tmp_path / "okresy-gdzie-indziej"
+    if broken == "okresy":
+        centrum.periods_directory.rename(elsewhere)
+    if broken == "intermax":
+        centrum.register.write_bytes(b"to nie jest skoroszyt")
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+
+    centrum.rhythm.tick()
+    failed = (list(mailbox.sends), _reminder_result(centrum)["failure"])
+    mailbox.state = "ready"
+    if broken == "okresy":
+        elsewhere.rename(centrum.periods_directory)
+    centrum.register.write_bytes(register)
+    centrum.moment.append(datetime(2026, 11, 10, 8, 31))
+    centrum.rhythm.tick()
+    centrum.client.stop()
+
+    assert failed == ([], {"intermax": "intermax", "okresy": "okresy", "dostep": "bez-dostepu"}[broken])
+    assert sorted(reminder.worker for reminder, _ in mailbox.sends) == ["anna.kowalska", "jan.testowy"]
+
+
+@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE, WORKERS_FILE, LEGEND_FILE, RULES_FILE, DEVICES_FILE])
 @pytest.mark.parametrize("back", [True, False], ids=["wraca-w-porze", "nie-wraca-do-konca-pory"])
 def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia_wpis_z_nazwa_pliku(
     tmp_path: Path, file: str, back: bool
@@ -5100,6 +5352,8 @@ def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
     centrum.client.start()
+    if not (centrum.tool.config / file).exists():
+        (centrum.tool.config / file).write_bytes(_DEFAULT_SETTINGS[file].read_bytes())
 
     with without_reading(centrum.tool.config / file):
         for moment in (REMINDER_MORNING, datetime(2026, 11, 10, 8, 31)):
@@ -5303,6 +5557,26 @@ def test_widok_raporty_mowi_o_braku_stopki_przed_pierwszym_kliknieciem_a_po_nieu
 
     assert (before_click["clicked_at"], before_click["reminders_without_footer"]) == (None, True)
     assert (_reminder_result(centrum)["failure"], after_failure["reminders_without_footer"]) == ("brak-sieci", False)
+
+
+def test_sprawdzenie_przy_pliku_przypomnien_bez_odczytu_nie_zmienia_informacji_widoku_raporty_o_stopce(
+    tmp_path: Path,
+) -> None:
+    mailbox = FakeMailbox()
+    centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
+    _reminders_set_up(centrum, footer="")
+    centrum.moment.append(REMINDER_MORNING)
+    centrum.client.start()
+    centrum.rhythm.tick()
+    before = _view(centrum)["reminders_without_footer"]
+
+    with without_reading(centrum.tool.config / REMINDERS_FILE):
+        centrum.moment.append(datetime(2026, 11, 10, 18, 5))
+        centrum.rhythm.tick()
+    after = _view(centrum)["reminders_without_footer"]
+    centrum.client.stop()
+
+    assert (before, after) == (True, True)
 
 
 @pytest.mark.parametrize("content", [b"{\"schema_version\": 1, \"sent\": [", b"\xff\xfe nie JSON", b'{"schema_version": 2, "footer": "missing", "sent": []}'])
@@ -5580,14 +5854,15 @@ def _pamiec_wpisania(importy: str, cialo: str) -> str:
         "from collections.abc import Sequence\nfrom datetime import date\n\n"
         f"{importy}\n"
         "from rozliczenia.activity_legend import ActivityLegend\n"
+        "from rozliczenia.quantity_engine import QuantityRules\n"
         "from rozliczenia.report_entering import ReportState\n"
         "from rozliczenia.worker_reports import EnteringMemory, RegisterWindow, ReportMail, Window, WorkerAddresses\n\n\n"
         "def wejscie(\n"
         "    state: ReportState, today: date, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail],\n"
-        "    addresses: WorkerAddresses, legend: ActivityLegend,\n"
+        "    addresses: WorkerAddresses, legend: ActivityLegend, rules: QuantityRules,\n"
         ") -> object:\n"
         f"{cialo}"
-        "    return memory.enter(window, intermax, mails, addresses, legend)\n"
+        "    return memory.enter(window, intermax, mails, addresses, legend, rules)\n"
     )
 
 

@@ -2,7 +2,7 @@
 repozytorium próbnym z commitem (``TRIAL_ARCHIVE``).
 
 Oczekiwany wynik każdego przypadku pochodzi z domeny (``GLOSSARY.md``: Archiwum Logów okresu, ADR 0015 z dopiskiem
-#844, docstringi ``report_box`` i ``outbox._deliver_archive``), nie z przebiegu kodu. Przypadki biegną po kolei:
+#844, testy ``tests/test_skrzynka_zgloszen_github.py`` i docstring ``outbox._deliver_archive``), nie z przebiegu kodu. Przypadki biegną po kolei:
 późniejszy bierze identyfikatory Archiwów i plików z wcześniejszych (``earlier``), a w odtwarzaniu z faktów swojego
 nagrania. Plik leży w Archiwum pod nazwą ``packed_name`` z etykietą ``<nazwa> (wersja <wersja>)`` jak u Kolejki
 wysyłki, a jego bajty to treść ``ArchiveFile.packed`` po rozpakowaniu w gzipie o tych samych bajtach na każdej maszynie
@@ -524,7 +524,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "archiwum-brak",
         "None: Archiwum z tym tagiem jeszcze nie ma",
-        "report_box: „archive znajduje je po tagu z jego plikami … albo daje None”",
+        "test_skrzynka_zgloszen_github: test_bez_release_z_tagiem_okresu_archiwum_jeszcze_nie_ma",
         _prepare_absent,
         _archive,
         _is(None),
@@ -532,7 +532,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "zalozenie",
         "Archive z identyfikatorem, bez plików",
-        "report_box: „open_archive zakłada je bez plików”; " + ARCHIVE_SOURCE,
+        "test_skrzynka_zgloszen_github: test_zalozone_archiwum_to_release_z_tagiem_ktory_nie_jest_najnowszym_wydaniem; " + ARCHIVE_SOURCE,
         _prepare_absent,
         _open,
         _judge_open,
@@ -540,7 +540,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "zalozenie-tego-samego-tagu",
         "Rejected, a archive po tagu daje to jedno Archiwum bez plików",
-        "report_box.open_archive: „na tag, który już ma Release, 422 … to Rejected”",
+        "test_skrzynka_zgloszen_github: test_archiwum_z_tagiem_ktory_juz_ma_release_to_odmowa_tresci_a_archiwum_zostaje_jedno",
         _prepare_reopen,
         _reopen,
         _judge_reopen,
@@ -548,7 +548,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "znalezienie-po-tagu",
         "każde z dwóch Archiwów po swoim tagu",
-        "report_box.archive: „Release z tagiem tag z listy Release'ów”",
+        "test_skrzynka_zgloszen_github: test_archiwum_okresu_to_release_z_tagiem_z_listy_wydan_repozytorium_z_jego_plikami",
         _prepare_find,
         _find,
         _judge_find,
@@ -556,7 +556,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "wysylka-pliku",
         "Asset z nazwą i etykietą, doszedł; Archiwum ma ten jeden plik",
-        "report_box: „upload wysyła plik”, Asset: nazwa, etykieta i czy plik doszedł w całości",
+        "test_skrzynka_zgloszen_github: test_plik_idzie_na_adres_wysylki_plikow_z_nazwa_i_etykieta_a_wynik_to_plik_archiwum",
         _prepare_upload,
         _upload("tekst", "etykieta"),
         _judge_upload,
@@ -564,7 +564,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "plik-tej-samej-nazwy",
         "Rejected, a w Archiwum zostaje plik pierwszej wersji",
-        "report_box.upload: „Plik o tej nazwie, który już jest w Archiwum, to Rejected”",
+        "test_skrzynka_zgloszen_github: test_plik_o_nazwie_ktora_jest_juz_w_archiwum_to_odmowa_tresci_a_pierwszy_plik_zostaje",
         _prepare_same_name,
         _upload("tekst_po_diagnozie", "etykieta_po_diagnozie"),
         _judge_same_name,
@@ -572,7 +572,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "pliki-strony",
         f"dokładnie {PAGE + 1} wysłanych plików z dwóch stron listy",
-        "report_box.archive: „jego pliki, oba strona po stronie”",
+        "test_skrzynka_zgloszen_github: test_pliki_archiwum_sa_zbierane_ze_wszystkich_stron",
         _prepare_pages,
         _archive,
         _judge_pages,
@@ -598,7 +598,7 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "zly-klucz",
         "Refused w każdym kroku Archiwum, a pliki zostają",
-        "report_box.Refused: klucz nieważny; „jego brak to Refused z kroków Archiwum”",
+        "test_skrzynka_zgloszen_github: test_odmowa_autoryzacji_przy_archiwum_to_odmowa_skrzynki",
         _prepare_bad_key,
         _bad_key,
         _judge_bad_key,

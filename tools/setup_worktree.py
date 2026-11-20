@@ -1,14 +1,15 @@
-"""Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
-
-``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
+"""``.venv`` głównego checkoutu instaluje edytowalnie ``src`` głównego checkoutu,
 więc pytest i skrypty weryfikacyjne uruchomione nim z worktree mogą po cichu
 sprawdzać kod z ``main``. Ten skrypt tworzy ``.venv`` w checkoucie, w którym
 leży, instaluje go edytowalnie i sprawdza, że ``rozliczenia`` importuje się z
 jego ``src``. Używa ``uv``, gdy jest dostępne, a bez niego ``venv`` i ``pip``.
 Plik ``.pth`` (``IMPORT_PTH``) daje każdemu Pythonowi z ``.venv`` katalogi importu testów (``repo.IMPORT_ROOTS``),
 więc próba ``.venv/bin/python -c "import wplyw_zmiany"`` importuje moduły narzędzi bez ``sys.path`` i ``PYTHONPATH``.
-Włącza też bramę ``tools/hooks/pre-push`` (``core.hooksPath``) i sterownik scalania plików generowanych
-(``merge=wygenerowane`` w ``.gitattributes``); oba siedzą w konfiguracji repozytorium, wspólnej dla wszystkich worktree.
+Włącza też bramę ``tools/hooks/pre-push`` (``core.hooksPath``), sterownik scalania plików generowanych
+(``merge=wygenerowane`` w ``.gitattributes``) i sterownik scalania skrótów modeli skilli (``merge=model-skilla``, czyli
+``tools/przesun_model.py --scal`` Pythonem z ``.venv`` worktree, który scala, a bez ``.venv`` ``git merge-file``, czyli
+scalenie tekstem jak bez sterownika); wszystkie siedzą w konfiguracji
+repozytorium, wspólnej dla wszystkich worktree.
 
     py -3 tools/setup_worktree.py              # Windows
     python3 tools/setup_worktree.py            # macOS i Linux
@@ -31,6 +32,8 @@ import potomne
 from repo import ROOT
 import repo
 
+OPIS = "Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona."
+
 VENV = ROOT / ".venv"
 EXTRAS = ".[dev,workflowy]"
 IMPORT_PTH = "maximiseart_katalogi_importu.pth"
@@ -38,10 +41,11 @@ HOOKS = "tools/hooks"
 MINIMUM_PYTHON = (3, 13)  # requires-python z pyproject.toml
 MINIMUM = ".".join(map(str, MINIMUM_PYTHON))
 SUPPORTED = sys.version_info >= MINIMUM_PYTHON
+VENV_PYTHON = ".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python"
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0] if __doc__ else None)
+    parser = argparse.ArgumentParser(description=OPIS)
     parser.add_argument(
         "--python",
         default=sys.executable if SUPPORTED else MINIMUM,
@@ -54,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
         _run([uv, "venv", "--allow-existing", "--python", args.python, str(VENV)])
         _run([uv, "pip", "install", "--python", str(_venv_python()), "-e", EXTRAS])
     elif not SUPPORTED:
-        print(f"BŁĄD: bez uv uruchom skrypt Pythonem {MINIMUM} albo nowszym.", file=sys.stderr)
+        print(_without_uv_on_old_python(), file=sys.stderr)
         return 1
     else:
         venv.EnvBuilder(with_pip=True, symlinks=sys.platform != "win32").create(VENV)  # jak ``python -m venv``
@@ -64,6 +68,7 @@ def main(argv: list[str] | None = None) -> int:
     if sys.platform != "win32":
         _gate_pushes(ROOT)
     _merge_generated(ROOT)
+    _merge_model_digests(ROOT, VENV_PYTHON)
     _write_import_roots(_venv_python())
 
     for module, expected in (("rozliczenia", ROOT / "src" / "rozliczenia"), ("repo", ROOT / "tools" / "lib")):
@@ -74,6 +79,16 @@ def main(argv: list[str] | None = None) -> int:
     print(f"OK: {VENV} importuje rozliczenia z src i moduły narzędzi z katalogów repo.IMPORT_ROOTS.", flush=True)
     _print_work_in_progress()
     return 0
+
+
+def _without_uv_on_old_python() -> str:
+    """Jedna linia błędu z poleceniem naprawy, gdy skrypt uruchomił Python starszy niż ``MINIMUM``, a uv nie ma w PATH."""
+
+    return (
+        f"BŁĄD: Python {sys.version_info[0]}.{sys.version_info[1]} nie utworzy .venv (repo wymaga {MINIMUM} albo nowszego), "
+        f"a uv nie ma w PATH: uruchom python{MINIMUM} tools/setup_worktree.py (Windows: py -{MINIMUM} tools/setup_worktree.py) "
+        "albo zainstaluj uv (https://docs.astral.sh/uv/)."
+    )
 
 
 def _gate_pushes(root: Path) -> None:
@@ -96,8 +111,14 @@ def _merge_generated(root: Path) -> None:
     repo.git(root, "config", "merge.wygenerowane.driver", "true")
 
 
+def _merge_model_digests(root: Path, python: str) -> None:
+    repo.git(root, "config", "merge.model-skilla.name", "skróty modelu skilla: scalenie definicji, skrót zmieniony po obu stronach z drzewa scalenia")
+    text = "git merge-file -L HEAD -L baza -L scalana %A %O %B"
+    repo.git(root, "config", "merge.model-skilla.driver", f"if [ -x {python} ]; then {python} tools/przesun_model.py --scal %O %A %B %P; else {text}; fi")
+
+
 def _venv_python() -> Path:
-    return VENV / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    return ROOT / VENV_PYTHON
 
 
 def _write_import_roots(python: Path) -> None:

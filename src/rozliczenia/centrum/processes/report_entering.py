@@ -1,11 +1,3 @@
-"""Wpisanie raportów w katalogu procesów: wpis i widok Uruchomienia (ADR 0028).
-
-Wpisanie raportów wpisuje Raporty wykonawców do INTERMAX z Ustawień Centrum i nie należy do okresu (jak Uporządkowanie
-INTERMAX, ADR 0019); folder okresów z Ustawień czyta tylko po to, by pominąć dni okresów z Plikiem zbiorczym. Skrzynkę raportów i pamięć własnych wpisów daje gospodarz (``HostParts.reports``).
-Legendą czynności ze startu, tą samą co Przygotowanie pliku zbiorczego, czyta opis Wpisu ``tak`` (ADR 0039), więc Logi
-Uruchomienia mają ją dla odtworzenia (``"activity_legend"`` w ``needs``).
-"""
-
 from __future__ import annotations
 
 from functools import partial
@@ -45,6 +37,7 @@ def _inputs(start: Start, parts: HostParts) -> EnteringInputs:
         start.settings.worker_list(),
         parts.report_entering(),
         start.settings.counted_legend(),
+        start.settings.counted_rules(),
         now=parts.now,
         waiting=parts.waiting,
         disk=parts.disk,
@@ -66,7 +59,7 @@ KIND: Final[ProcessKind[EnteringInputs, EnteringSummary]] = ProcessKind(
     view=_VIEW,
     core=report_entering_process.PROCESS,
     default_metrics=REPORT_ENTERING_METRICS,
-    needs=("register", "periods_directory", "workers", "worker_report_inbox", "activity_legend"),
+    needs=("register", "periods_directory", "workers", "worker_report_inbox", "quantity_rules", "activity_legend"),
     inputs=_inputs,
     settings=(
         NeededSetting(

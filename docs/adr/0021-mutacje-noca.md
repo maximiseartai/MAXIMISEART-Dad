@@ -18,6 +18,7 @@ Zmieniona 14.11 (pomiar nocnych mutacji skilli, decyzja koordynatora w trybie au
 Zmieniona 14.11 (#1625, historia 60 specyfikacji #1597, oznaczenia z audytów #1623 i #1624 zatwierdzonych przez Maksa 14.11): z `tools/` noc mutuje tylko jednostki, których fałszywe „OK” przepuszcza zły kod produktu, a błąd reszty narzędzi wychodzi w przeglądzie albo w użyciu (sekcja Decyzja).
 Zmieniona 16.11 (cel Maksa 16.11: noc ma zajmować mniej godzin runnera i kończyć się wcześniej bez utraty pokrycia i jakości): pokrycie testów bez mutacji liczą raz na noc zadania pokrycia, a części czytają ich zapisy (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 Zmieniona 16.11 (cel Maksa 16.11: noc ma zużywać godziny runnera na nową pracę, a nie powtarzać starej): noc po czerwonej z tą samą bazą nie mutuje drugi raz mutacji, którym części czerwonego runu dały werdykt bez issue (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
+Zmieniona 19.11 (#2282, bieg retro 19.11 w trybie auto Maksa): odczyt każdej nocy liczy sam workflow nocy i zapisuje go w jednym issue z progiem zamiast zadań T3 (sekcja Decyzja).
 
 ## Kontekst
 
@@ -67,7 +68,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Te same czasy w częściach pierwszej nocy po limicie mutacji nocy dają przy 25 mutacjach najdłuższą część ok. 3400–3600 s, więc w limicie 3300 s ona sama czerwieniłaby każdą noc z tym samym zakresem.
   Przy 24 mutacjach najdłuższa część tej nocy (24 mutacje `tools/lib/wplyw_zmiany.py`, z czego 6 w testach pliku po kolei przez ok. 2300 s) trwa tak liczona, ze wszystkimi przebiegami testów, ok. 4700 s, mniej niż połowę limitu części.
 - Część, której limit czasu minął po pokryciu, przed werdyktem którejś mutacji, dała wynik: `tools/mutacje_zmiany.py` kończy się kodem 3, a zapis wymienia mutacje bez werdyktu.
-  Każda trafia do issue `Przeżyte mutacje z #N` PR-u, który ostatni zmienił jej linie, z dopiskiem `bez werdyktu w limicie czasu części`, a agent sprawdza ją `tools/mutacje.py`.
+  Każda trafia do issue `Przeżyte mutacje z #N` PR-u, który ostatni zmienił jej linie, z dopiskiem `bez werdyktu w limicie czasu części`, a agent sprawdza ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest na mutację (`polecenie` wpisu), bo cały zbiór testów pliku trwa blisko limitu.
   Zadanie części zostaje zielone, a przebieg przesuwa bazę, więc część z drogimi mutacjami nie zatrzymuje nocy, a następna noc nie dostaje tego samego zakresu.
 - Noc ma najwyżej 60 części, czyli 1440 mutacji, a naraz biegnie najwyżej 17 zadań części i 3 zadania skryptów skilli, bo 60 zadań organizacji dzielą też runy CI PR-ów, a noc dostaje z nich najwyżej 20.
   Do 17.11 limit wynosił 40 części: w 6 nocach 12–17.11 zmiany `main` dawały ok. 980 mutacji na dobę, a noc najwyżej 960, więc zaległość rosła (11.11: 7450, 17.11: 7812); 60 części zmniejsza ją o ok. 460 na noc kosztem ok. pół godziny nocy (czwarta fala części).
@@ -82,7 +83,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Każda przeżyta mutacja trafia do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił zmienione linie, które ona psuje (`git blame` na `main`, commit scalenia, a bez numeru w jego temacie API GitHuba).
   Jedno issue na PR, a ta sama mutacja nie trafia do niego drugi raz, także gdy jej linie się przesuną: porównuje się klucz z pliku i zmienionego kodu, bez numerów linii.
   Issue naprawia agent testem, który zabija mutację, albo linią `MUTACJA <id> | nie warto, bo <powód>`.
-- Mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS` (`--limit-s`, 900 s), a której nie wykryła brama typów, trafia do issue PR-u z dopiskiem `przekroczony czas testów, bez werdyktu` i radą, by sprawdzić ją `tools/mutacje.py` (#1339).
+- Mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS` (`--limit-s`, 900 s), a której nie wykryła brama typów, trafia do issue PR-u z dopiskiem `przekroczony czas testów, bez werdyktu` i radą, by sprawdzić ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest na mutację (#1339).
   Limit dotyczy całego polecenia `pytest`, a zbiór testów pliku trwa bez mutacji blisko niego: w runie 42783639074 część 10/37 dała `NIEWYKRYTA` po 802.59 s i 800.20 s, a mutację `report_box.py:210`, którą `tests/test_skrzynka_zgloszen_github.py` łapie w 14 testach, `PRZEKROCZONY CZAS` w tym samym zbiorze.
   Taki wynik nie mówi więc ani, że test łapie mutację, ani, że jej nie łapie; przed #1339 siedem takich linii z nocy 9–11.11 trafiło do issues jako zwykłe przeżyte, choć test każdą łapał.
   W runach 42783639074 i 42982940704 tak kończyło się 21 z 64 i 20 ze 143 przeżytych mutacji (odtworzenie zapisów i logów części w #1339).
@@ -99,6 +100,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Cofnięcia fragmentu do bazy brama nie sprawdza: przywraca ono kod, który bramę przeszedł, więc jej błąd na nim powstaje tylko z niezgodności z niecofniętymi fragmentami tej samej zmiany (import, adnotacja, typ w innym miejscu).
   Pełne cofnięcie zmiany przeszłoby bramę, a testy by go nie złapały, więc brama nie mówi, czy test pilnuje zmiany, a każdą listę kodów da się tak obejść.
   Takie cofnięcie trafia do issue jak przed bramą, a gdy zmiana była tylko typów (#671, #674), agent odpowiada `nie warto`.
+  Cofnięcia, które zmienia tylko adnotacje, których biegnący kod nie czyta, nie ma wcale (granica w docstringu `tools/mutacje_zmiany.py` i w przypadkach jego testu): 19.11 takich było 102 z 539 linii otwartych issues `przezyte-mutacje`, prawie wszystkie z plików Centrum, które importują FastAPI, a filtr zostawiał wtedy w takim pliku każdą adnotację, a w każdym pliku każde pole dataclass.
   Ręczne zamiany `check_all` skryptów mutacji skilli brama sprawdza tak samo jak mutacje operatorów.
   Brama biegnie tylko dla mutacji, które przeżyły testy, i raz bez mutacji, która daje im cache mypy; gdy bez mutacji coś zgłasza, przeżyte zostają przeżyte, a linia `BRAMA TYPÓW CZERWONA` idzie na stderr.
 - Część, która nie dała wyniku (test jej plików testów padł w pokryciu nocy także po ponowieniu, żaden zapis pokrycia nie ma jej pliku testów, zły wyjątek, brak zapisu), jest czerwona, a przebieg z nią jest czerwony i nie przesuwa bazy, więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji.
@@ -149,6 +151,10 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 - Podstawa z `ci-czesci:` biegnie na PR w częściach jednego n, które plan wybiera z celu ściany, więc ta sama noc, przy zmianie, która wybrałaby ją na PR, uruchamia każdą część każdego n od 1 do `ci-czesci`.
   Część, która pada tylko przy innym n (na przykład część zaczynająca się od funkcji, która potrzebuje stanu wcześniejszej), wychodzi tak w nocy, a nie dopiero na PR, którego cel ściany zmieni n.
   Pełne CI `main` uruchamia podstawę raz, w częściach z planu: wszystkie części każdego n przy każdym pushu `main` kosztowałyby ok. 55 min runnera Windows na merge.
+- Odczyt nocy liczy zadanie `odczyt` workflow po zgłoszeniu (`tools/mutacje_nocne.py odczyt <run>`, lokalnie to samo bez `--issue`): ścianę od utworzenia runu do końca ostatniego zadania, godziny runnerów (suma czasów zadań), zaległość z logu planu, najdłuższy krok mutacji części wobec `PART_LIMIT_S` i liczbę `BEZ WERDYKTU` z logów części.
+  Pisze go w podsumowaniu runu i w treści jednego issue z etykietą `noc-mutacji`, które jest otwarte, dopóki ostatnia noc przekracza próg: ściana ponad 7 h, część do `PART_LIMIT_S` albo choć jedna mutacja `BEZ WERDYKTU`; jego treść nazywa wąskie gardło.
+  Próg 7 h to koniec nocy uruchomionej ok. 02:00 UTC po 09:00 UTC, którego odczyt nocy 20.11 miał pilnować; noce 17–19.11 trwały 3,48–6,41 h (`tools/mutacje_nocne.py odczyt` runów 44055469611, 44216322171 i 44441152441).
+  Odczyt to pomiar, więc jego porażka nie czerwieni runu i nie zatrzymuje bazy następnej nocy.
 
 ## Konsekwencje
 
