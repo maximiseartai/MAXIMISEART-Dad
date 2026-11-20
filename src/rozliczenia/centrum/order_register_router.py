@@ -6,11 +6,11 @@ from rozliczenia.centrum import refusal
 from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.refusal import NOT_FOUND_OR_CONFLICT
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.owner import SettingsReads
 from rozliczenia.file_state import file_state
 
 
-def order_register_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
+def order_register_router(settings: SettingsReads, platform: Platform) -> APIRouter:
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
     @router.post("/register/open", operation_id="openRegister", responses=NOT_FOUND_OR_CONFLICT)

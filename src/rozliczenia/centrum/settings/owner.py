@@ -252,6 +252,16 @@ class NotUndoable:
     known: bool
 
 
+class SettingsReads(Protocol):
+    def snapshot(self) -> SettingsSnapshot: ...
+
+    def folders(self) -> FolderSettings: ...
+
+    def quantity_rules(self) -> QuantityRulesView: ...
+
+    def counted_activity_legend(self) -> ActivityLegend: ...
+
+
 class _Place(Protocol):
     def unsupported(self) -> FieldProblem | None:
         ...

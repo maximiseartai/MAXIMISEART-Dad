@@ -16,7 +16,7 @@ from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.metrics import last_results
 from rozliczenia.centrum.platform import Platform
 from rozliczenia.centrum.process_kind import PERIODS_DIRECTORY
-from rozliczenia.centrum.settings.owner import CentrumSettings
+from rozliczenia.centrum.settings.owner import SettingsReads
 from rozliczenia.file_state import file_state, path_state
 from rozliczenia.period_folder import (
     PeriodFolder,
@@ -224,7 +224,7 @@ def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> 
         raise refusal.period_folder_lookup(error) from None
 
 
-def requested_folder(settings: CentrumSettings, token: str) -> PeriodFolder:
+def requested_folder(settings: SettingsReads, token: str) -> PeriodFolder:
     periods_directory = settings.folders().periods_directory_to_read
     if periods_directory is None:
         raise refusal.first_choose((PERIODS_DIRECTORY.name,))
@@ -232,7 +232,7 @@ def requested_folder(settings: CentrumSettings, token: str) -> PeriodFolder:
 
 
 def periods_router(
-    settings: CentrumSettings, platform: Platform, today: Callable[[], date], catalog: Catalog
+    settings: SettingsReads, platform: Platform, today: Callable[[], date], catalog: Catalog
 ) -> APIRouter:
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 

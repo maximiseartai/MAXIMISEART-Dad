@@ -37,7 +37,7 @@ from rozliczenia.centrum.report_entering_state import (
 )
 from rozliczenia.centrum.report_reminders import ShownReminders
 from rozliczenia.centrum.runs import RunHost
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot, WorkerListRead
+from rozliczenia.centrum.settings.owner import SettingsReads, SettingsSnapshot, WorkerListRead
 from rozliczenia.public_holidays import public_holidays
 from rozliczenia.report_cells import ReportColumn
 from rozliczenia.report_entering import DecisionsUnreadable, StateUnreadable
@@ -65,7 +65,7 @@ _SETTINGS: Final[tuple[NeededSetting, ...]] = (*_KIND.settings, PERIODS_DIRECTOR
 
 @dataclass(frozen=True)
 class ReportEnteringEntry:
-    settings: CentrumSettings
+    settings: SettingsReads
     catalog: Catalog
     parts: HostParts
     contexts: RunContexts
