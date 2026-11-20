@@ -86,7 +86,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   ``WYSTĄPIENIE``), a na końcu liczbę issues z wystąpieniem i bez; linię nocy i odpowiedź rozpoznaje ``rdzen``, ten sam,
   po którym noc nie zgłasza linii drugi raz. Woła go krok 1 skilla polowania.
 - ``zglos`` czyta zapisy części. Każdą przeżytą mutację, mutację bez werdyktu po limicie czasu części i mutację, której
-  testy w ostatnim przebiegu przekroczyły limit czasu mutacji, przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
+  testy w ostatnim przebiegu przekroczyły limit czasu mutacji, w pliku kodu produktu (``PRODUKT``) przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
   linie, które mutacja psuje, a nie linię jej nazwy, bo nazwę daje początek węzła, a w wielowierszowym ``if (`` zmienia
   się często tylko linia w środku. ``git blame`` tych linii daje commity nocy, bo to linie zmienione od bazy, a z nich
   liczy się ten, który linia pierwszych rodziców HEAD wniosła ostatni. Numer PR podaje temat commitu tej linii, który go wniósł
@@ -99,7 +99,11 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   wraca do jej zakresu, a sprawdza ją agent PR-u ``tools/mutacje.py --plik`` z jednym wąskim węzłem pytest na mutację
   (``polecenie`` wpisu), bo cały zbiór testów pliku trwa blisko limitu.
   Mutacji, której klucz issue już ma w treści albo komentarzu, nie dostaje drugi raz; nowe idą do istniejącego issue
-  komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``.
+  komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``. Noc zakłada albo komentuje issue
+  najwyżej ``ISSUES_NA_NOC`` PR-ów, od PR-u z najwięcej nowymi przeżytymi mutacjami, a przy równej liczbie z najwięcej
+  nowymi mutacjami. Mutacje spoza ``PRODUKT`` (``tools/``) i nowe mutacje PR-ów ponad limit nie dostają issue, a linia
+  ``MUTACJE NOCNE BEZ ISSUE`` podaje ich liczbę i pliki z liczbą mutacji każdego; noc ich nie powtarza, bo baza
+  przechodzi za nie.
   Część bez zapisu albo z kodem wyjścia spoza ``mutacje_zmiany.KODY_Z_WYNIKIEM`` (testy padają albo nie kończą się
   w limicie czasu części bez mutacji, zły wyjątek) czerwieni run po zgłoszeniu reszty, także przeżytych mutacji z jej
   zapisu, więc następna noc liczy od tej samej bazy, z tym samym limitem mutacji, ale bez mutacji, którym części tego
@@ -161,6 +165,8 @@ BEZ_CZASOW = czasy_ci.KosztyPlikow({})
 GITHUB = GhApi()
 OKNO = timedelta(hours=24)
 ETYKIETY = ("ready-for-agent", "przezyte-mutacje")
+PRODUKT = ("src/", "frontend/")
+ISSUES_NA_NOC = 5
 # Artefakt części k w mutacje-nocne.yml: ``mutacje-nocne-<k>`` z plikiem ``--zapis`` narzędzia mutacji.
 ARTEFAKT = "mutacje-nocne-"
 ZAPIS = "czesc.json"
@@ -676,16 +682,28 @@ def _autor_kroku(
     return None
 
 
-def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> list[Akcja]:
-    """Nowe issue dla PR bez issue, a komentarz z nowymi mutacjami dla PR, którego issue nie ma jeszcze ich kluczy."""
+def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> tuple[list[Akcja], list[Przezyta]]:
+    """Nowe issue dla PR bez issue, a komentarz z nowymi mutacjami dla PR, którego issue nie ma jeszcze ich kluczy, dla
+    najwyżej ``ISSUES_NA_NOC`` PR-ów z najwięcej nowymi przeżytymi, a potem wszystkimi nowymi mutacjami, oraz nowe mutacje
+    PR-ów ponad limit, które zostają bez issue."""
 
     istniejace: dict[str, dict[str, Any]] = {}
     for znalezione in issues(github, ETYKIETY[1], "all"):
         istniejace.setdefault(znalezione["title"], znalezione)
-    wynik: list[Akcja] = []
+    kandydaci: list[tuple[Autor, dict[str, Any] | None, list[Przezyta]]] = []
     for kto, mutacje in przypisane.items():
-        linie = [mutacja.w_issue for mutacja in mutacje]
         issue = istniejace.get(kto.tytul)
+        if issue is None:
+            kandydaci.append((kto, None, mutacje))
+            continue
+        znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
+        klucze = {znalezione["klucz"] for znalezione in _KLUCZ.finditer(znane)}
+        if nowe := [mutacja for mutacja in mutacje if mutacja.klucz not in klucze]:
+            kandydaci.append((kto, issue, nowe))
+    kandydaci.sort(key=lambda kandydat: (-sum(mutacja.rodzaj is Rodzaj.PRZEZYTA for mutacja in kandydat[2]), -len(kandydat[2])))
+    wynik: list[Akcja] = []
+    for kto, issue, mutacje in kandydaci[:ISSUES_NA_NOC]:
+        linie = [mutacja.w_issue for mutacja in mutacje]
         if issue is None:
             tresc = [
                 f"Nocne mutacje `main` ([run]({run})) przeżyły testy na liniach, które ostatnio zmienił {kto.nazwa}:",
@@ -699,12 +717,14 @@ def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> 
             ]
             wynik.append(Zaloz(kto.tytul, "\n".join(tresc), ETYKIETY))
             continue
-        znane = "\n".join([issue.get("body") or "", *(komentarz["body"] or "" for komentarz in strony(github, f"{REPO}/issues/{issue['number']}/comments"))])
-        klucze = {znalezione["klucz"] for znalezione in _KLUCZ.finditer(znane)}
-        if nowe := [mutacja for mutacja in mutacje if mutacja.klucz not in klucze]:
-            tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu([mutacja.w_issue for mutacja in nowe]), *_rady(nowe)]
-            wynik.append(_uzupelnij(issue, "\n".join(tresc)))
-    return wynik
+        tresc = [f"Nowe przeżyte mutacje z [runu]({run}):", "", *blok_kodu(linie), *_rady(mutacje)]
+        wynik.append(_uzupelnij(issue, "\n".join(tresc)))
+    return wynik, [mutacja for *_, mutacje in kandydaci[ISSUES_NA_NOC:] for mutacja in mutacje]
+
+
+def _bez_issue(mutacje: Sequence[Przezyta]) -> str:
+    pliki = Counter(mutacja.plik for mutacja in mutacje)
+    return f"mutacje {len(mutacje)}, pliki {len(pliki)}" + (f": {', '.join(f'{plik} ({liczba})' for plik, liczba in sorted(pliki.items()))}" if pliki else "")
 
 
 def _rady(mutacje: Sequence[Przezyta]) -> list[str]:
@@ -879,7 +899,9 @@ def _uzupelnij(issue: dict[str, Any], tresc: str) -> Skomentuj:
 
 def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: str, plan_skilli: plan_runu.Plan | None = None) -> int:
     przezyte, problemy = zapisy(katalog, liczba)
-    linie = wykonaj_akcje(github, akcje(github, przypisz(github, root, od, przezyte), run), PREFIKS)
+    poza_produktem = [mutacja for mutacja in przezyte if not mutacja.plik.startswith(PRODUKT)]
+    zgloszone, ponad_limit = akcje(github, przypisz(github, root, od, [mutacja for mutacja in przezyte if mutacja.plik.startswith(PRODUKT)]), run)
+    linie = wykonaj_akcje(github, zgloszone, PREFIKS)
     padly: list[str] = []
     blisko: list[tuple[str, NearLimit]] = []
     if plan_skilli is not None:
@@ -888,6 +910,7 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
         problemy += problemy_skilli + bez_pr
         linie += wykonaj_akcje(github, akcje_skryptow(github, przypisane, run), PREFIKS)
     print("\n".join(linie) or "MUTACJE NOCNE | nic nowego do zgłoszenia")
+    print(f"MUTACJE NOCNE BEZ ISSUE | poza {' i '.join(PRODUKT)} {_bez_issue(poza_produktem)} | ponad limit {ISSUES_NA_NOC} issues na noc {_bez_issue(ponad_limit)}")
     if problemy:
         print(f"MUTACJE NOCNE FAIL | {'; '.join(problemy)}")
         return 1

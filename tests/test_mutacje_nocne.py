@@ -253,6 +253,7 @@ def _zapisy(
 PRZEZYLO = (1, "MUTACJE ZMIANY FAIL | przeżyło 2 | mutacje=4 | wyjątki=0 | innego systemu=0")
 OK = (0, "MUTACJE ZMIANY OK | mutacje=3 | wyjątki=0 | innego systemu=0")
 RADA_WASKIEGO_WEZLA = "sprawdź ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest w `polecenie` jej wpisu"
+BEZ_POMINIETYCH = "MUTACJE NOCNE BEZ ISSUE | poza src/ i frontend/ mutacje 0, pliki 0 | ponad limit 5 issues na noc mutacje 0, pliki 0"
 
 
 def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_drugi_przebieg_niczego_nie_dubluje(
@@ -319,9 +320,37 @@ def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_d
         "MUTACJE NOCNE | komentarz w #5",
         "MUTACJE NOCNE | otwarte ponownie #6",
         f"MUTACJE NOCNE | założone #903 „Przeżyte mutacje z commitu {d[:9]}”",
+        BEZ_POMINIETYCH,
         "MUTACJE NOCNE OK | części 3 | przeżyło 8",
     ]
-    assert drugie_wyjscie.splitlines() == ["MUTACJE NOCNE | nic nowego do zgłoszenia", "MUTACJE NOCNE OK | części 3 | przeżyło 8"]
+    assert drugie_wyjscie.splitlines() == ["MUTACJE NOCNE | nic nowego do zgłoszenia", BEZ_POMINIETYCH, "MUTACJE NOCNE OK | części 3 | przeżyło 8"]
+
+
+def test_issue_dostaja_tylko_mutacje_kodu_produktu_najwyzej_limit_pr_z_najwiecej_przezytymi_a_reszta_trafia_do_linii_bez_issue(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    repo = mutation_repository(tmp_path / "repo", {"src/a.py": "a = 1\nb = 2\nc = 3\n", "tools/b.py": "x = 1\n"})
+    git(repo, "checkout", "--quiet", "-b", "main")
+    baza = commit(repo, "baza nocy")
+    for linia, tekst, numer in ((1, "a = 10", 11), (2, "b = 20", 12), (3, "c = 30", 13)):
+        _zmien(repo, linia, tekst)
+        commit(repo, f"Zmień {tekst} (#{numer})")
+    (repo / "tools" / "b.py").write_text("x = 10\n", encoding="utf-8")
+    commit(repo, "Zmień x (#14)")
+    monkeypatch.setattr(mutacje_nocne, "ISSUES_NA_NOC", 2)
+    przezyte = ["src/a.py:1 stała", "src/a.py:2 stała", "src/a.py:2 inna", "src/a.py:3 stała", "src/a.py:3 inna", "tools/b.py:1 stała", "tools/b.py:1 inna", "tools/b.py:1 trzecia"]
+    bez_werdyktu = ["src/a.py:1 inna", "src/a.py:1 trzecia", "src/a.py:3 trzecia"]
+    zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [_przezyta(nazwa) for nazwa in przezyte])}, bez_werdyktu={1: [_przezyta(nazwa) for nazwa in bez_werdyktu]})
+    github = GitHubWPamieci()
+
+    kod = mutacje_nocne.zglos(github, repo, baza, zapisy, 1, RUN)
+
+    wyjscie = capsys.readouterr().out.splitlines()
+    assert kod == 0, wyjscie
+    assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #13", "Przeżyte mutacje z #12"]
+    assert wyjscie[-2] == (
+        "MUTACJE NOCNE BEZ ISSUE | poza src/ i frontend/ mutacje 3, pliki 1: tools/b.py (3) | ponad limit 2 issues na noc mutacje 3, pliki 1: src/a.py (3)"
+    )
 
 
 def test_czesc_bez_zapisu_z_uszkodzonym_zapisem_albo_z_porazka_bez_przezytych_czerwieni_przebieg_po_zgloszeniu_reszty(
