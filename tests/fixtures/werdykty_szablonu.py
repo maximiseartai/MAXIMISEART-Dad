@@ -37,6 +37,7 @@ LINES = (
 )
 HEADING, WHERE, EVIDENCE, ROOT, RUNG, MECHANISM, MINOR, MINOR_WHERE, CHECKED, POINT = LINES
 MAJOR_LINES = LINES[: LINES.index(MINOR)]
+NEW_ROOT = "Korzeń: NOWY R-NOWY-KOD - opis kodu, którego nie ma na liście."
 MINOR_LINES = (MINOR, MINOR_WHERE)
 END_LINES = (CHECKED, POINT)
 QUOTE = "cytat z polem albo nagłówkiem w Dowodzie ujmij w blok kodu ```"
@@ -78,7 +79,7 @@ IDIOMY = {
 }
 PRZECHODZA = {
     "szablon": TEMPLATE,
-    "nowy-kod-spoza-listy": _replaced(ROOT, "Korzeń: NOWY R-NOWY-KOD - opis kodu, którego nie ma na liście."),
+    "nowy-kod-spoza-listy": _replaced(ROOT, NEW_ROOT),
     "szczebel-e": _replaced(RUNG, "Szczebel: (e) - punkt w „Co jest porażką”, bo (a)–(d) nie działają."),
     "dowod-5-linii": _replaced(EVIDENCE, "Dowód: tools/mutacje.py", *(f"linia {number}" for number in range(2, 6))),
     "dowod-pod-polem": _replaced(EVIDENCE, "Dowód:", "polecenie", "wynik"),
@@ -217,6 +218,13 @@ WERDYKTY = {
     "wazne-ten-sam-kod": _text(_MAJOR[0], OTHER_WHERE, *_MAJOR[2:], "## Sprawdzone", "- diff"),
     "wazne-gdzie-indziej": _text(_MAJOR[0], OTHER_WHERE, _MAJOR[2], OTHER_ROOT, _MAJOR[4], "## Sprawdzone", "- diff"),
     "wazne-dwa-miejsca": _text(_MAJOR[0], f"{OTHER_WHERE}, kod/inne.py:9", _MAJOR[2], OTHER_ROOT, _MAJOR[4], "## Sprawdzone", "- diff"),
+    "wazne-lint-i-architektura": _text(
+        *LINES[: LINES.index(MECHANISM)], "Mechanizm: lint", "### W2. Druga droga obok właściciela.", WHERE, EVIDENCE, ROOT, RUNG, "Mechanizm: architektura", "## Sprawdzone", "- diff"
+    ),
+    "wazne-lint-i-architektura-z-nowym-kodem": _text(
+        *LINES[: LINES.index(MECHANISM)], "Mechanizm: lint", "### W2. Druga droga obok właściciela.", WHERE, EVIDENCE, NEW_ROOT, RUNG, "Mechanizm: architektura", "## Sprawdzone", "- diff"
+    ),
+    "wazne-lint-z-nowym-kodem": _text(HEADING, WHERE, EVIDENCE, NEW_ROOT, RUNG, "Mechanizm: lint", "## Sprawdzone", "- diff"),
     "wazne-gdzie-indziej-drobne-tu": _text(_MAJOR[0], OTHER_WHERE, _MAJOR[2], OTHER_ROOT, _MAJOR[4], "### D1. Nazwa.", "Gdzie: kod/inne.py:1", "## Sprawdzone", "- diff"),
 }
 
