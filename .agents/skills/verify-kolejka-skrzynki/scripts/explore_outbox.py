@@ -1056,8 +1056,8 @@ def _state(
     The version of a wysyłka in the Skrzynka's texts (``_queue_version``, from the moment the checker posted it) counts
     as its place among the scope's wysyłki (``versions``): the code only compares versions of one wysyłka.
 
-    Also whether a ``RETRY_S`` wake is armed, the memory of the queue that decides its next passes (``Outbox.state``,
-    whose docstring says what it leaves out and why) and the queue threads started and not run yet, which decide
+    Also whether a ``RETRY_S`` wake is armed, the memory of the queue that decides its next passes (``Outbox.state``;
+    „What the checker covers” in SKILL.md says what it leaves out and why) and the queue threads started and not run yet, which decide
     whether ``send_in_background`` starts a pass. The Archiwum counts as its files with the versions in their labels and
     whether each upload ended, plus the files the queue sent twice (``MemoryBox.twice``), which the rule reads; a pair of
     ``remove`` and ``upload`` never spans a pass boundary.

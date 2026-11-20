@@ -249,6 +249,8 @@ class Post:
             raise ValueError("Treść nowego issue musi mieć wiersz rozpoznawczy celu.")
         if isinstance(self.target, OpenIssue) and comments:
             raise ValueError("Wysyłka do jednego otwartego issue musi mieścić się w jednej części.")
+        if isinstance(self.target, OpenIssue) and len(self.target.again) + len(body) > TEXT_LIMIT:
+            raise ValueError("Wysyłka do jednego otwartego issue musi mieścić się z nagłówkiem again w komentarzu Skrzynki Zgłoszeń.")
 
     @classmethod
     def of(
