@@ -216,3 +216,13 @@ def test_urwany_zapis_w_dzienniku_psuje_jeden_wpis_a_reszta_od_startu_zostaje(tm
     entries = CentrumLog(path).recent(10)
 
     assert [entry.split(" ")[1] for entry in entries] == ["start", "diagnoza", "stop"]
+
+
+def test_wynik_aktualizacji_zapisany_przed_restartem_centrum_nie_trafia_do_dziennika_drugi_raz(tmp_path: Path) -> None:
+    log = CentrumLog(tmp_path / "centrum.log")
+    log.started(port=47811, version="v1", console=False)
+    log.update_started(before="a1")
+    log.update_finished(result="AKTUALIZACJA_NIEUDANA", before="a1", after=None, installed=False)
+    log.started(port=47811, version="v1", console=False)
+
+    assert log.update_awaits(result="AKTUALIZACJA_NIEUDANA", before="a1", after=None) is False

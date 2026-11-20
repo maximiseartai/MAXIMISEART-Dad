@@ -11,7 +11,7 @@ from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import workbook_files
-from rozliczenia.centrum.live_file import RETRY_GAP_S, LastGoodReads
+from rozliczenia.centrum.live_file import LastGoodReads
 from tests.fixtures.centrum import ROOT, FakeOneDrive
 from tests.fixtures.clock import ManualClock
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, filling_centrum, run_to_end
@@ -213,12 +213,12 @@ def test_inna_przyczyna_po_przerwie_trafia_do_dziennika(tmp_path: Path) -> None:
 @pytest.mark.parametrize(
     ("silence", "message"),
     [
-        pytest.param(RETRY_GAP_S, True, id="cisza-rowna-odstepowi-ponawiania-ta-sama-seria"),
-        pytest.param(RETRY_GAP_S + 1, False, id="cisza-dluzsza-od-odstepu-ponawiania-nowa-seria"),
+        pytest.param(15, True, id="cisza-15-s-ta-sama-seria-ponad-minute-od-pierwszej-porazki"),
+        pytest.param(16, False, id="cisza-16-s-nowa-seria-mniej-niz-minute-od-drugiej-porazki"),
     ],
 )
 def test_cisza_dluzsza_niz_kilka_odstepow_po_zmianie_pliku_zaczyna_nowa_minute(
-    tmp_path: Path, silence: float, message: bool
+    tmp_path: Path, silence: int, message: bool
 ) -> None:
     centrum = _prepared(tmp_path)
     path = centrum.fixture.collective_file_path
