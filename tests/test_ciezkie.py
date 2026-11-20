@@ -363,10 +363,13 @@ def test_dolar_w_apostrofach_gotowe_polecenie_oddaje_do_rozwiniecia_na_macu() ->
     assert refusal.reason.endswith(' Uruchom: boatbox run ".venv/bin/python -m pytest -n 4 tests/test_x.py -k \\"$x\\""')
 
 
+def _on_mac() -> dict[str, str]:
+    return {key: value for key, value in os.environ.items() if key != "BOATBOX_BOX"}
+
+
 def _boatbox_in_path(tmp_path: Path) -> dict[str, str]:
     _executable(tmp_path / "bin" / "boatbox", "#!/bin/sh\n")
-    environment = {key: value for key, value in os.environ.items() if key != "BOATBOX_BOX"}
-    return {**environment, "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"}
+    return {**_on_mac(), "PATH": f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}"}
 
 
 def _hook(stdin: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -386,7 +389,7 @@ def test_hook_odmawia_kodem_2_jedna_linia_na_stderr(tmp_path: Path) -> None:
 
 
 def test_hook_bez_boatbox_w_path_przepuszcza(tmp_path: Path) -> None:
-    hooked = _hook(_bash(SZYBKO), {**os.environ, "PATH": str(tmp_path)})
+    hooked = _hook(_bash(SZYBKO), {**_on_mac(), "PATH": str(tmp_path)})
 
     assert (hooked.returncode, hooked.stdout, hooked.stderr) == (0, "", "")
 
