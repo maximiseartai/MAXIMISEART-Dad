@@ -10,8 +10,6 @@ from rozliczenia.centrum.outbox import Deliveries, Post
 
 @dataclass
 class QueueListener:
-    """``numbers``: Uruchomienie i numer issue każdej przyjętej wysyłki."""
-
     numbers: list[tuple[str, int]] = field(default_factory=list)
 
     def prepare(self, post: Post, sent: Deliveries) -> Post | None:

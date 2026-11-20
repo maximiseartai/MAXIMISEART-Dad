@@ -26,11 +26,9 @@ from atrapy.workbooks import active_worksheet, add_external_link_fixture
 
 DAY = date(2026, 9, 9)
 ADDRESS = "UL. TESTOWA 12/3"
-"""``ADRES`` zlecenia w Pliku zbiorczym, domyślny ``Order.address``."""
 EFENIX_ADDRESS = "Miasto-Dzielnica ul.Testowa 12 Lokal 3"
 """Dane adresowe tego samego zlecenia w Atrapie efenix, domyślny ``Order.efenix_address``."""
 FIRST_ROW = FIRST_DATA_ROW
-"""Wiersz danych pierwszego zlecenia ``write_collective_file``; każde następne stoi wiersz niżej."""
 _THIN = Side(style="thin")
 
 

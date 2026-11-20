@@ -1,5 +1,3 @@
-"""Uruchomienie Centrum rozliczeń lokalnie bez instalowania pakietu jako aplikacji."""
-
 from pathlib import Path
 import sys
 

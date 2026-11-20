@@ -37,8 +37,6 @@ MESSAGE = (
 
 
 def decision(event: object) -> dict[str, object] | None:
-    """Odpowiedź hooka na zdarzenie ``PermissionRequest``: odmowa w trybie bypass, inaczej ``None``."""
-
     if not isinstance(event, dict) or event.get("permission_mode") != "bypassPermissions":
         return None
     return {
@@ -52,11 +50,10 @@ def decision(event: object) -> dict[str, object] | None:
 def main() -> int:
     try:
         event = json.loads(sys.stdin.buffer.read())
-    except (ValueError, RecursionError):  # także UnicodeDecodeError i JSON zagnieżdżony głębiej niż stos Pythona
+    except (ValueError, RecursionError):
         return 0
     answer = decision(event)
     if answer is not None:
-        # json.dumps zapisuje polskie litery jako ``\u0142``, bo konsola Windows nie zapisze ich w swoim kodowaniu.
         print(json.dumps(answer))
     return 0
 
