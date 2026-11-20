@@ -26,6 +26,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/budzet_ci.py`: Strażnik budżetu bramki PR: p90 push → Required z 7 dni wobec 5 min i jedno issue z wąskim gardłem; użyj po zmianie CI (--bez-zapisu).
 - `tools/ci_lokalnie.py`: Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 - `tools/cien_podstaw.py`: Rozstrzyga D1, NF czy N0, z cienia podstaw w plan.json runów PR i audytu kandydatów (--od, --do, --audyt); użyj po 14 dniach cienia.
+- `tools/inwentarz_komentarzy.py`: Wypisuje komentarze i docstringi z plikiem, linią, formą i węzłem, a z --dowod-fali sprawdza falę zakresem runu CI; użyj do pliku dowodu fali.
 - `tools/mutacje.py`: Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz przed pushem, ze wszystkimi mutacjami zmiany w jednym --plik.
 - `tools/mutacje_nocne.py`: Liczy nocne mutacje na main i zgłasza przeżyte w issue PR-ów; użyj (plan), by bez testów zobaczyć bazę i części najbliższej nocy.
 - `tools/mutacje_zmiany.py`: Psuje linie zmienione od bazy jak nocne mutacje main; użyj, gdy część nocnych mutacji padła i odtwarzasz ją na commicie runu (--odtwarzam).
