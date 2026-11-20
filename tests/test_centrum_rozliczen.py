@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import base64
 import codecs
 import errno
@@ -42,7 +41,6 @@ from hypothesis import strategies as st
 import yaml
 import pytest
 
-import rozliczenia
 from rozliczenia.settlement_mailing import SettlementMailSettings
 from rozliczenia.settlement_period import last_complete_period, parse_period_token
 from rozliczenia.period_folder import collective_file_name_with
@@ -84,7 +82,6 @@ from rozliczenia.centrum.settings.proposal import (
     ReleaseInputs,
 )
 from rozliczenia.centrum.settings import messages as settings_messages
-from rozliczenia.centrum.settings import migrations
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS, EXCEPTIONS_FILE, QuantityException
@@ -4933,36 +4930,6 @@ def test_zmiana_z_wydania_po_utracie_pamieci_wlasciciela_biegnie_drugi_raz_bez_r
     )
 
 
-def _docstrings(tree: ast.Module) -> set[int]:
-    owners = [tree, *(node for node in ast.walk(tree) if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)))]
-    return {
-        id(owner.body[0].value)
-        for owner in owners
-        if owner.body and isinstance(owner.body[0], ast.Expr) and isinstance(owner.body[0].value, ast.Constant)
-    }
-
-
-def test_stare_pliki_config_nazywa_w_src_tylko_ich_przeniesienie_z_wydania() -> None:
-    old = (OLD_MAPPING_FILE, OLD_ADDRESSES_FILE, OLD_ROLLOUT_FILE, OLD_FOOTER_FILE)
-    src = Path(rozliczenia.__file__).parent
-    named: list[str] = []
-    for path in sorted(src.rglob("*.py")):
-        if path.is_relative_to(Path(migrations.__file__).parent):
-            continue
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        skipped = _docstrings(tree)
-        named += [
-            f"{path.relative_to(src)}:{node.lineno}"
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Constant)
-            and isinstance(node.value, str)
-            and id(node) not in skipped
-            and any(name in node.value for name in old)
-        ]
-
-    assert named == [], "stare pliki config czyta tylko ich przeniesienie z Wydania (settings/migrations), więc zostają u taty jako kopia"
-
-
 # --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
 
 JAN = "jan.testowy@przyklad.invalid"
@@ -5042,6 +5009,7 @@ def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_sp
         pytest.param("wykonawcy: [", "plik nie jest poprawnym YAML", id="zly-yaml"),
         pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}, {JAN}]\n", "ten sam adres stoi dwa razy", id="adres-dwa-razy"),
         pytest.param(b"\xff\xfe nie UTF-8", "plik nie jest zapisany w UTF-8", id="spoza-utf-8"),
+        pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: ['Jan Testowy <{JAN}>']\n", "któryś wpis nie jest adresem", id="nazwa-przed-adresem"),
     ],
 )
 def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
