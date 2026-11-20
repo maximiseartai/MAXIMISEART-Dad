@@ -1155,7 +1155,7 @@ def wysylka(komorka: str, postep: ProgressVersion) -> LogsPost:
 _KOMORKA: Final = "Syntetyczna Lipowa 5"
 
 
-def _swieze_argumenty_logow() -> dict[str, object]:
+def _argumenty_logow() -> dict[str, object]:
     pamiec = empty_memory()
     logi = record()
     return {
@@ -1171,7 +1171,7 @@ def _swieze_argumenty_logow() -> dict[str, object]:
 
 
 def _w_pliku_kolejki(plik: Path) -> list[str]:
-    return bieg_do_pliku_kolejki(modul(plik), _swieze_argumenty_logow(), _KOMORKA)
+    return bieg_do_pliku_kolejki(modul(plik), _argumenty_logow(), _KOMORKA)
 
 
 @pytest.mark.parametrize("opis", ODMOWY_LOGOW.keys())
