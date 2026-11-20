@@ -9,6 +9,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from pathlib import Path
 import re
+import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 DOCUMENTS = ("AGENTS.md", "CODING_STANDARDS.md", "docs/agents/pr-i-ci.md", "docs/agents/issue-tracker.md", "docs/agents/skrzynka-zgloszen.md", "docs/agents/komputer-taty.md", ".agents/skills/przeglad/SKILL.md", ".agents/skills/przeglad/recenzent.md", ".agents/skills/przeglad/autor.md", ".agents/skills/przeglad/korzen.md", ".agents/skills/przeglad/rundy.md", ".agents/skills/przeglad/porazka-adr.md", ".agents/skills/boat/SKILL.md", "docs/agents/skille.md", "GLOSSARY.md")
@@ -116,16 +117,20 @@ def test_sprawdzenie_pomija_frontmatter_skilla_a_sprawdza_proze_po_nim() -> None
 BUDZET_BAJTOW = {"CODING_STANDARDS.md": 45_000, ".agents/skills/przeglad": 41_000}
 
 
-def _bajty(sciezka: Path) -> int:
-    pliki = sorted(sciezka.rglob("*")) if sciezka.is_dir() else [sciezka]
-    return sum(len(plik.read_bytes()) for plik in pliki if plik.is_file())
+def _pliki_w_repo(nazwa: str) -> list[Path]:
+    listed = subprocess.run(["git", "ls-files", "-z", "--", nazwa], cwd=ROOT, capture_output=True, check=True)
+    return [ROOT / plik for plik in listed.stdout.decode("utf-8").split("\0") if plik]
+
+
+def _bajty(pliki: list[Path]) -> int:
+    return sum(len(plik.read_bytes().replace(b"\r\n", b"\n")) for plik in pliki)
 
 
 def test_reguly_mieszcza_sie_w_budzecie_bajtow() -> None:
     ponad = [
         f"{nazwa}: {rozmiar} B, budżet {budzet} B (+{rozmiar - budzet} B)"
         for nazwa, budzet in BUDZET_BAJTOW.items()
-        if (rozmiar := _bajty(ROOT / nazwa)) > budzet
+        if (rozmiar := _bajty(_pliki_w_repo(nazwa))) > budzet
     ]
 
     assert not ponad, "\n".join(
@@ -137,3 +142,13 @@ def test_reguly_mieszcza_sie_w_budzecie_bajtow() -> None:
             "BUDZET_BAJTOW podnosi tylko PR, który w opisie mówi, czego nie dało się usunąć ani przenieść do komunikatu.",
         ]
     )
+
+
+def test_budzet_liczy_plik_z_checkoutu_windows_tak_samo_jak_z_repo(tmp_path: Path) -> None:
+    tekst = "| Rule | Guard |\n|---|---|\n| Wiersz. | test |\n"
+    lf = tmp_path / "lf.md"
+    crlf = tmp_path / "crlf.md"
+    lf.write_bytes(tekst.encode("utf-8"))
+    crlf.write_bytes(tekst.replace("\n", "\r\n").encode("utf-8"))
+
+    assert _bajty([crlf]) == _bajty([lf])
