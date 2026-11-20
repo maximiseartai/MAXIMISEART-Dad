@@ -61,17 +61,19 @@ from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
+from rozliczenia.wall_clock import local_now
+from rozliczenia.workbook_files import file_bytes
 from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
-from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Remembered, settings_bytes
+from rozliczenia.centrum.settings.history import HISTORY_FILE, ByDad, History, HistoryRow, RowChange
+from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.rule_forms import form_of
 from rozliczenia.centrum.device_forms import ChangeComponent, DeviceEdit, RemoveComponent
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved, read_snapshot
+from rozliczenia.centrum.settings.owner import REPORTED_CHANGES, CentrumSettings, NotSaved, Refused, Saved, read_snapshot
 from rozliczenia.centrum.settings.proposal import (
     Edit,
     Later,
@@ -121,6 +123,7 @@ from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.centrum import (
     CENTRUM,
     FakeAutostart,
+    FakeGitHub,
     FakeReportBox,
     TOOL_COMMIT,
     Centrum,
@@ -6978,6 +6981,24 @@ def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_
     assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None)
 
 
+def test_wiersz_hasla_skrzynki_z_cofnieciem_wpisanym_w_historie_recznie_dalej_sie_nie_cofa(tmp_path: Path) -> None:
+    client, tool = _inbox_centrum(tmp_path)
+    client.get("/api/settings")
+    change = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO}).json()["change"]
+    history = tool.config / HISTORY_FILE
+    rows = [json.loads(line) for line in history.read_text(encoding="utf-8").splitlines()]
+    history.write_text("".join(json.dumps(row | {"cofalny": True}) + "\n" for row in rows), encoding="utf-8")
+    access = (tool.config / INBOX_ACCESS_FILE).read_bytes()
+
+    undo = client.post(f"/api/settings/history/{change}/undo")
+    after = client.get("/api/settings/history").json()["rows"]
+    client.stop()
+
+    assert (undo.status_code, undo.json()["message"]) == (404, "Tej zmiany nie da się cofnąć.")
+    assert [row["id"] for row in after] == [change]
+    assert (tool.config / INBOX_ACCESS_FILE).read_bytes() == access
+
+
 def test_zmiana_pliku_skrzynki_spoza_centrum_ma_wiersz_bez_wartosci(tmp_path: Path) -> None:
     client, tool = _inbox_centrum(tmp_path)
     client.get("/api/settings")
@@ -9318,3 +9339,278 @@ def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tm
     ]
     assert undone.json()["settings"]["settlement_mail"]["subject"] == "Rozliczenie za {okres}"
     assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
+
+
+DIFFERENCES_URL = f"{QUANTITY_RULES_URL}/differences"
+WORKERS_URL = "/api/settings/workers"
+CONTRACT_RULE = "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n"
+FAULT_ROW: dict[str, CellValue] = {"C": "pr", "D": "usterka", "G": datetime(2026, 9, 11, 16, 30), "V": 1, "AI": 1, "N": 45}
+
+
+def _history(client: CentrumClient) -> list[dict[str, Any]]:
+    response = client.get("/api/settings/history")
+    assert response.status_code == 200, response.text
+    rows: list[dict[str, Any]] = response.json()["rows"]
+    return rows
+
+
+def _rule_ids(client: CentrumClient) -> list[str]:
+    return [rule["id"] for rule in client.get(QUANTITY_RULES_URL).json()["rules"]]
+
+
+def _added_rule_row(app: Centrum) -> str:
+    saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+    assert saved.status_code == 200, saved.text
+    return str(saved.json()["change"])
+
+
+@pytest.mark.parametrize(
+    ("method", "url"),
+    [
+        pytest.param("PUT", lambda _row: f"{QUANTITY_RULES_URL}/regula-1", id="zmiana-reguly"),
+        pytest.param("DELETE", lambda _row: f"{QUANTITY_RULES_URL}/regula-1", id="usuniecie-reguly"),
+        pytest.param("POST", lambda row: f"/api/settings/history/{row}/undo", id="cofniecie-dodania-reguly"),
+    ],
+)
+def test_zmiana_reguly_taty_przy_pliku_regul_bez_odczytu_to_409_o_tym_pliku_a_nie_odpowiedz_z_regul_z_wydania(
+    tmp_path: Path, method: str, url: Any
+) -> None:
+    app = centrum(tmp_path)
+    row = _added_rule_row(app)
+    rules = app.tool.config / RULES_FILE
+    before = rules.read_bytes()
+
+    with without_reading(rules):
+        response = app.client.request(method, url(row), json=EDITOR_RULE if method == "PUT" else None)
+
+    assert (response.status_code, response.json()) == (409, {"message": settings_messages.unreadable(RULES_FILE)})
+    assert rules.read_bytes() == before
+
+
+def test_cofniecie_recznego_utworzenia_pliku_ustawien_spoza_centrum_przywraca_brak_pliku(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    assert app.client.get("/api/settings").status_code == 200
+    app.settings_path.write_bytes(FOLDERS.dump(replace(FOLDERS.default, theme="light")))
+    [row] = _history(app.client)
+
+    undone = app.client.post(f"/api/settings/history/{row['id']}/undo")
+
+    assert (row["source"], row["undoable"]) == ("outside", True)
+    assert undone.status_code == 200, undone.text
+    assert not app.settings_path.exists()
+
+
+def test_reguly_zmienione_poza_centrum_przy_liscie_urzadzen_bez_odczytu_okno_pokazuje_ostatnie_dobre_reguly_taty(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    assert app.client.post(DEVICES_URL, json={"name": "ont y", "other_spellings": [], "group": None}).status_code == 200
+    _added_rule_row(app)
+    write_dad_quantity_rules(app.tool, RULES_FILE, "", "")
+
+    with without_reading(app.tool.config / DEVICES_FILE):
+        shown = _rule_ids(app.client)
+
+    assert "regula-1" in shown
+
+
+def test_przy_pamieci_listy_wykonawcow_ktorej_tresci_regula_juz_nie_przyjmuje_zla_lista_nie_ma_ostatniej_dobrej_i_proces_nie_startuje(
+    tmp_path: Path,
+) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    assert centrum_.client.get("/api/settings").status_code == 200
+    refused = b"schema_version: 1\nwykonawcy:\n  - {nazwa: Jan, loginy: []}\n"
+    centrum_.tool.worker_list.write_bytes(refused)
+    Memory(centrum_.tool.config, lambda _: None).write(WORKERS_FILE, Remembered(seen=refused, good=refused))
+
+    started_run = centrum_.client.post("/api/runs", json={"process": "settlement", "period": PERIOD, "mode": "DRY-RUN"})
+
+    assert (started_run.status_code, started_run.json()) == (
+        409,
+        {
+            "message": f"Lista Wykonawców ma złe ustawienie: {settings_messages.worker_without_login()} Szczegóły są w "
+            "Ustawieniach, w sekcji Wykonawcy.",
+            "field": "wykonawcy[0].loginy",
+        },
+    )
+
+
+def _light_theme(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
+    return Edit(lambda current: replace(current, theme="light"))
+
+
+def test_start_centrum_pyta_o_wersje_narzedzia_tylko_gdy_ma_zmiane_z_wydania_do_zastosowania(tmp_path: Path) -> None:
+    asked: list[str] = []
+
+    def wydanie(local: str) -> None:
+        asked.append(local)
+
+    freshness = replace(FakeGitHub().freshness(), wydanie=wydanie)
+    tool = ToolDirectory(tmp_path / "narzedzie-taty")
+    change = ReleaseChange("2026-11-motyw-jasny-proba", FOLDERS, _light_theme)
+    counts = []
+    for _start in range(2):
+        client = CentrumClient(centrum_app(tool, tool_freshness=freshness, release_changes=(change,)))
+        client.start()
+        client.stop()
+        counts.append(len(asked))
+
+    assert counts == [1, 1]
+
+
+def test_zgloszenie_podaje_najwyzej_tyle_najnowszych_zmian_ustawien_ile_mowi_jego_limit(tmp_path: Path) -> None:
+    centrum_ = preparing_centrum(tmp_path)
+    history = History(centrum_.tool.config, lambda _: None)
+    for number in range(1, REPORTED_CHANGES + 2):
+        history.append(
+            HistoryRow(
+                id=f"wiersz-{number:02d}",
+                at=local_now() - timedelta(minutes=REPORTED_CHANGES + 2 - number),
+                source=ByDad(),
+                undoes=None,
+                file=SETTINGS_FILE,
+                section="foldery",
+                changes=(RowChange(key="foldery.folder_okresow", before=None, after=str(tmp_path / f"Folder-{number:02d}")),),
+                secret=False,
+                undoable=True,
+                result="zapisano",
+                reason=None,
+                created=False,
+                removed=False,
+            )
+        )
+    run_id = stopped_for_maks(centrum_)
+
+    response = centrum_.client.post(f"/api/runs/{run_id}/diagnosis")
+
+    assert response.status_code == 200, response.text
+    lines = response.json()["report"]["body"].splitlines()
+    start = lines.index("## Zmiany Ustawień (30 dni)") + 2
+    section = lines[start : lines.index("", start)]
+    assert [line.rsplit(" ", 1)[1] for line in section] == [f"Folder-{number:02d}" for number in range(REPORTED_CHANGES + 1, 1, -1)]
+
+
+def test_odmowa_reguly_ze_skladnikiem_spoza_listy_urzadzen_nazywa_kolumne_pozycja_cennika_z_wzorca(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    app.tool.config.mkdir(parents=True)
+    template = write_collective_template(app.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["Z17"] = "ONT  Nokia\nz montażem"
+    workbook.save(template)
+    rule = {
+        "scope": "known",
+        "conditions": [{"kind": "component", "component": "ont q", "negated": False}],
+        "action": {"kind": "fill", "writes": [{"column": "Z", "value": 3, "multiplier": "component", "component": "ont q"}]},
+    }
+
+    refused = app.client.post(QUANTITY_RULES_URL, json=rule)
+
+    assert (refused.status_code, refused.json()) == (
+        422,
+        {
+            "message": "Reguła potrzebuje składnika „ont q”, którego nie ma na Liście Urządzeń: Jeśli URZĄDZENIA zawierają "
+            "„ont q”, to wpisz 3 × liczbę „ont q” w ONT Nokia z montażem (Z). Najpierw dodaj ten składnik w sekcji Urządzenia.",
+            "field": "jesli[0].skladnik",
+        },
+    )
+
+
+def test_migawka_narzedzi_maksa_niczego_nie_zapisuje_wiec_centrum_dalej_widzi_reczna_zmiane_jako_zmiane_spoza_centrum(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    assert app.client.get("/api/settings").status_code == 200
+    app.settings_path.write_bytes(FOLDERS.dump(replace(FOLDERS.default, theme="light")))
+    before = _config_files(app.tool.config)
+
+    snapshot = read_snapshot(app.tool.config)
+
+    assert snapshot.folders.theme == "light"
+    assert _config_files(app.tool.config) == before
+    assert [row["source"] for row in _history(app.client)] == ["outside"]
+
+
+def test_regula_dodana_i_usunieta_poza_centrum_zostawia_swoje_id_w_historii_wiec_cofniecie_usuniecia_nie_rusza_reguly_dodanej_potem(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    assert app.client.get(QUANTITY_RULES_URL).status_code == 200
+    outside_rule = CONTRACT_RULE.replace("t-umowa-u", "regula-1").replace("slowo: u}", "slowo: proba}")
+    write_dad_quantity_rules(app.tool, RULES_FILE, CONTRACT_RULE, CONTRACT_RULE + outside_rule)
+    assert "regula-1" in _rule_ids(app.client)
+    write_dad_quantity_rules(app.tool, RULES_FILE, "", "")
+    [removed, _added] = _history(app.client)
+
+    saved = app.client.post(QUANTITY_RULES_URL, json=EDITOR_RULE)
+    undone = app.client.post(f"/api/settings/history/{removed['id']}/undo")
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["quantity_rules"]["rules"][-1]["id"] == "regula-2"
+    assert undone.status_code == 200, undone.text
+    assert {"regula-1", "regula-2"} <= set(_rule_ids(app.client))
+
+
+def test_plik_wyjatkow_kontroli_ilosci_bez_odczytu_ma_zdanie_o_tresci_z_wydania_a_nie_odmowie(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    exceptions = app.tool.config / EXCEPTIONS_FILE
+    exceptions.parent.mkdir(parents=True)
+    exceptions.write_bytes(EXCEPTIONS.dump(()))
+
+    with without_reading(exceptions):
+        response = app.client.get(DIFFERENCES_URL)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["exceptions_problem"] == {"field": None, "message": settings_messages.unavailable(EXCEPTIONS_FILE)}
+
+
+def test_zly_plik_wyjatkow_kontroli_ilosci_dalej_ukrywa_roznice_wyjatkiem_z_ostatniego_dobrego_pliku(tmp_path: Path) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    write_quantity_source(centrum_.collective_file, [FAULT_ROW])
+    run_to_end(centrum_, dry_run=False)
+    [difference] = centrum_.client.get(DIFFERENCES_URL).json()["differences"]
+    marked = centrum_.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
+    assert marked.status_code == 200, marked.text
+    (centrum_.tool.config / EXCEPTIONS_FILE).write_bytes(b"wyjatki: [")
+
+    found = centrum_.client.get(DIFFERENCES_URL).json()
+
+    assert (found["differences"], found["exceptions"]) == ([], 1)
+    assert found["exceptions_problem"] == {"field": None, "message": settings_messages.damaged(EXCEPTIONS_FILE)}
+
+
+def test_okresy_przy_usuwaniu_wykonawcy_sprawdzaja_sie_poza_blokada_ustawien_wiec_okno_ustawien_nie_czeka_na_pliki_zbiorcze(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    owners: list[CentrumSettings] = []
+    readers: list[threading.Thread] = []
+    read_while_checking: list[bool] = []
+
+    def source(path: Path) -> bytes:
+        if owners and not readers:
+            reader = threading.Thread(target=owners[0].view, daemon=True)
+            readers.append(reader)
+            reader.start()
+            reader.join(timeout=5)
+            read_while_checking.append(not reader.is_alive())
+        return file_bytes(path)
+
+    change_workers = CentrumSettings.change_workers
+
+    def captured(settings: CentrumSettings, edit: Any) -> Any:
+        owners.append(settings)
+        return change_workers(settings, edit)
+
+    register = tmp_path / "Rejestr" / REGISTER_NAME
+    register.parent.mkdir()
+    write_register(register, [register_order(1, datetime(2026, 9, 8, 10), worker="adrian.testowy")])
+    centrum_ = settling_centrum(tmp_path, surroundings=Surroundings(source=source), register=register)
+    monkeypatch.setattr(CentrumSettings, "change_workers", captured)
+
+    removed = centrum_.client.delete(f"{WORKERS_URL}/kamil.syntetyczny")
+    for reader in readers:
+        reader.join(timeout=5)
+
+    assert removed.status_code == 200, removed.text
+    assert read_while_checking == [True]
