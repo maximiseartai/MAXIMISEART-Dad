@@ -6,9 +6,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 import json
-import os
 from pathlib import Path
 from typing import Any, NoReturn
+import os
 
 import pytest
 from openpyxl import load_workbook
