@@ -737,7 +737,6 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
     "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
-    "kursor-po-zmiennym-porzadku": "Stronicuj po stałym porządku (created)",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
@@ -808,7 +807,6 @@ REGULY_CALEGO_DRZEWA: Final = (
     "komentarz-przez-startswith",
     "komentarz-w-src",
     "kotwica-konca-linii",
-    "kursor-po-zmiennym-porzadku",
     "lokator-tytulu-okna",
     "odczyt-docstringu",
     "pytest-current-test-poza-testami",
@@ -2177,13 +2175,11 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
-    "kursor-po-zmiennym-porzadku": (("tools",), ".py"),
     "dyrektywa-mypy-recznie": (("tests",), ".py"),
     "follow-symlinks-tylko-posix": (("tests",), ".py"),
     "komentarz-przez-startswith": (("tools",), ".py"),
     "pytest-current-test-poza-testami": (("tools",), ".py"),
 }
-_KURSOR = "QUERY = "
 _DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
 _OS = "import os\n\n"
 _LINIA = "def komentarz(linia: str) -> bool:\n    return "
@@ -2201,16 +2197,6 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
-    (
-        "kursor-po-zmiennym-porzadku",
-        f'{_KURSOR}"""\npullRequests(first: 20, after: $cursor, orderBy: {{field: UPDATED_AT, direction: DESC}}) {{ nodes {{ number }} }}\n"""\n',
-        [1],
-    ),
-    ("kursor-po-zmiennym-porzadku", f"{_KURSOR}'search(query: \"is:pr sort:updated-desc\", type: ISSUE, first: 20, after: $cursor) {{ nodes {{ number }} }}'\n", [1]),
-    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"pullRequests(first: 20, after:$cursor, orderBy: {{ field: UPDATED_AT }})"\n', [1]),
-    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"pullRequests(first: 20, after: $cursor, orderBy: {{field: CREATED_AT}})"\n', []),
-    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"search(query: \\"is:pr sort:created-asc\\", type: ISSUE, first: 20, after: $cursor)"\n', []),
-    ("kursor-po-zmiennym-porzadku", f'{_KURSOR}"pullRequests(first: 20, orderBy: {{field: UPDATED_AT}})"\n', []),
     ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# mypy:")\n', [5]),
     ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}re.match(r"#\\s*mypy:", linia) is not None\n', [5]),
     ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia[:7] == "# mypy:"\n', [5]),
@@ -2266,23 +2252,6 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
 
 
-@needs_ast_grep
-@pytest.mark.parametrize(
-    "porzadek",
-    [
-        pytest.param("{field: UPDATED_AT, direction: DESC}", id="field-przed-direction"),
-        pytest.param("{direction: DESC, field: UPDATED_AT}", id="direction-przed-field"),
-        pytest.param("{\n  direction: DESC\n  field: UPDATED_AT\n}", id="pola-w-osobnych-liniach"),
-    ],
-)
-def test_kursor_po_zmiennym_porzadku_nie_zalezy_od_kolejnosci_pol_porzadku(tmp_path: Path, porzadek: str) -> None:
-    base = _empty_base(tmp_path)
-    zapytanie = f'{_KURSOR}"""\npullRequests(first: 20, after: $cursor, orderBy: {porzadek}) {{ nodes {{ number }} }}\n"""\n'
-    _probki_w_zakresie(tmp_path, "kursor-po-zmiennym-porzadku", {"probka": zapytanie})
-
-    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(1, "kursor-po-zmiennym-porzadku")]
-
-
 # Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
 # ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
 # konfiguracją swojego katalogu.
@@ -2292,10 +2261,6 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
-    },
-    "kursor-po-zmiennym-porzadku": {
-        "zapytanie sklejone z części": f'ORDER = "orderBy: {{field: UPDATED_AT}}"\n{_KURSOR}"pullRequests(first: 20, after: $cursor, " + ORDER + ")"\n',
-        "porządek w zmiennej GraphQL": f'{_KURSOR}"pullRequests(first: 20, after: $cursor, orderBy: $order)"\n',
     },
     "dyrektywa-mypy-recznie": {
         "wzorzec w stałej poza wywołaniem": 'DYREKTYWA = "# mypy:"\n\n\ndef dyrektywa(linia: str) -> bool:\n    return linia.startswith(DYREKTYWA)\n',
