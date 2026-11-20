@@ -1867,6 +1867,32 @@ _ODCZYT = "from rozliczenia.centrum.settings.owner import SettingsReads\n"
             id="metoda-przekazana-bez-wywolania",
         ),
         pytest.param("settings/history.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.undo()\n", [6, 8], id="modul-pakietu-ustawien"),
+        pytest.param(
+            "probka.py",
+            "from typing import Protocol\n\nfrom rozliczenia.centrum.settings.owner import NotSaved, Refused, Saved\n",
+            "\n\nclass _Zapis(Protocol):\n    def change_folders(self) -> Saved | Refused | NotSaved: ...\n",
+            [8, 10],
+            id="wlasny-protocol-z-wynikiem-wlasciciela",
+        ),
+        pytest.param(
+            "probka.py", "from rozliczenia.centrum.settings.owner import Saved as Zapisane\n", "\n\ndef apply(saved: Zapisane) -> None:\n    print(saved)\n", [6, 8], id="wynik-wlasciciela-pod-alias"
+        ),
+        pytest.param(
+            "settings/history.py", "from .owner import Refused\n", "\n\ndef apply(refused: Refused) -> None:\n    print(refused)\n", [6, 8], id="wynik-wlasciciela-importem-wzglednym"
+        ),
+        pytest.param(
+            "probka.py", "from rozliczenia.centrum.settings import owner\n", "\n\ndef apply(saved: owner.Saved) -> None:\n    print(saved)\n", [6, 8], id="modul-wlasciciela-w-calosci"
+        ),
+        pytest.param(
+            "probka.py", "import rozliczenia.centrum.settings.owner\n", "\n\ndef apply(saved: object) -> None:\n    print(saved)\n", [6, 8], id="modul-wlasciciela-importem"
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.logs_disk import Refused\n",
+            "\n\ndef apply(refused: Refused) -> None:\n    print(refused)\n",
+            [],
+            id="klasa-o-nazwie-wyniku-z-innego-modulu",
+        ),
         pytest.param("settings/owner.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.undo()\n", [], id="wlasciciel"),
         pytest.param("probka.py", _ODCZYT, "\n\ndef read(settings: SettingsReads) -> None:\n    settings.folders()\n", [], id="modul-tylko-czyta"),
         pytest.param("probka.py", "from fastapi import APIRouter\n", "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", [], id="trasa-bez-ustawien"),
@@ -1881,9 +1907,12 @@ def test_regula_w_trasie_obejmuje_kazdy_modul_z_typem_wlasciciela_ustawien_poza_
     """Zakres reguły wynika z własności, nie ze składni trasy ani z nazw metod zapisu: sondy #1727 r1 W1
     (``quantity_differences.py`` bez ``router`` w nazwie), r2 W1 i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``,
     adnotacja napisem), r4 W1 i r5 W2 (``getattr`` z nazwą metody zapisu) i moduł bez trasy, który nazywa typ
-    ``CentrumSettings`` przez import, alias, atrybut modułu właściciela albo adnotację napisem, są zgłoszone; ten sam kod
+    ``CentrumSettings`` przez import, alias, atrybut modułu właściciela albo adnotację napisem, i moduł, który importuje
+    klasę wyniku zapisu właściciela albo cały moduł właściciela (własny ``Protocol`` z metodą zapisu, #2489 r1 W1), są
+    zgłoszone; ten sam kod
     w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``), w module, który Ustawienia tylko czyta
-    przez ``SettingsReads``, w module bez Ustawień i w module, którego napis tylko wspomina typ, nie."""
+    przez ``SettingsReads``, w module bez Ustawień, w module z klasą o nazwie wyniku z innego modułu i w module, którego
+    napis tylko wspomina typ, nie."""
 
     base = _empty_base(tmp_path)
     plik = tmp_path.joinpath(*_CENTRUM, *modul.split("/"))
@@ -2006,6 +2035,12 @@ ZNANE_LUKI_REGULY_W_TRASIE: Final = {
         "from rozliczenia.centrum import refusal\n\n\n"
         "def apply(settings: object, problem: object) -> None:\n    if problem:\n"
         '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, "change_folders")(problem)\n'
+    ),
+    "zakres: własny Protocol z metodą zapisu, której wynik nie nazywa klasy wyniku właściciela (object)": (
+        "from typing import Protocol\n\nfrom rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.settings.folders import FoldersEdit\n\n\n"
+        "class _Zapis(Protocol):\n    def change_folders(self, edit: FoldersEdit) -> object: ...\n\n\n"
+        "def apply(settings: _Zapis, edit: FoldersEdit, problem: object) -> None:\n    if problem:\n"
+        "        raise refusal.settings_not_saved()\n    settings.change_folders(edit)\n"
     ),
     "zakres: właściciel Ustawień z pola obiektu, którego klasa nazywa CentrumSettings w innym module": (
         "from rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.route_context import RouteContext\n\n\n"
