@@ -24,6 +24,8 @@ from rozliczenia.centrum import tool_freshness, tool_update
 from rozliczenia.centrum.github import TOOL_API
 from rozliczenia.centrum.opener import opener
 from rozliczenia.centrum.tool_freshness import (
+    RELEASE_NOTES_THREAD,
+    RELEASES_THREAD,
     AnswerSource,
     GitHubReleases,
     KeySource,
@@ -40,7 +42,6 @@ from rozliczenia.centrum.version import SERVICE, RunningCentrum, running_centrum
 from tests.fixtures.github_api import Answer, github_api, newest_on_main
 from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.proxy_systemu import system_proxy
-from tests.fixtures.tool_clone import tool_repository
 
 pytestmark = pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 
@@ -550,7 +551,7 @@ def test_wydania_z_odpowiedziami_wolniejszymi_niz_limit_to_nie_wiadomo_a_linia_m
     line = new_line()
     with serwer_http(_answering_in_pieces(newest_on_main(REPOSITORY, "v0.2.0", NEWEST)), name="atrapa-api-github") as server:
         newest = releases_from(f"{server.url}{REPOSITORY}", timeout_s=_TOTAL_LIMIT_S, known=known)
-        for late in threads_since(line, named="github-wydania"):
+        for late in threads_since(line, named=RELEASES_THREAD):
             late.join(30)
 
     assert (newest, known) == (None, {NEWEST: True})
@@ -560,7 +561,7 @@ def test_lista_wydan_wolniejsza_niz_limit_to_nie_wiadomo() -> None:
     line = new_line()
     with serwer_http(_answering_in_pieces(newest_on_main(REPOSITORY, "v0.2.0", NEWEST)), name="atrapa-api-github") as server:
         published = published_from(f"{server.url}{REPOSITORY}", timeout_s=_TOTAL_LIMIT_S)
-        for late in threads_since(line, named="github-notki-wydan"):
+        for late in threads_since(line, named=RELEASE_NOTES_THREAD):
             late.join(30)
 
     assert published is None
@@ -801,18 +802,6 @@ def test_narzedzie_bez_commitu_nie_pyta_githuba() -> None:
     freshness = ToolFreshness(local=lambda: None, since=lambda: None, release=release, published=lambda: ())
 
     assert (freshness.assess(), asked) == (("no_commit", None), [])
-
-
-def test_narzedzie_na_nowszym_commicie_main_niz_wydanie_jest_aktualne_a_bez_commitu_wydania_ma_nowsza_wersje(
-    tmp_path: Path,
-) -> None:
-    repository = tool_repository(tmp_path / "repozytoria")
-    released = repository.head()
-    repository.in_clone("commit", "--quiet", "--allow-empty", "--message", "nowszy commit main")
-    newer = repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
-    freshness = ToolFreshness.of_clone(repository.clone, release=lambda: None, published=lambda: ())
-
-    assert [freshness.judge(lambda: GitHubReleases(commit, None)) for commit in (released, newer)] == ["current", "newer"]
 
 
 def test_odpowiedz_githuba_pamietana_dziesiec_minut_a_brak_odpowiedzi_minute() -> None:

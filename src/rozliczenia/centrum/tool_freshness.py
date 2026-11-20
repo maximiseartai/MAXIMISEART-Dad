@@ -66,6 +66,8 @@ def offers_update(judgement: Judgement) -> bool:
 _CANDIDATES: Final = 5
 _PAGE_BYTES: Final = 1_000_000
 RELEASES_TIMEOUT_S: Final = 3.0
+RELEASES_THREAD: Final = "github-wydania"
+RELEASE_NOTES_THREAD: Final = "github-notki-wydan"
 
 
 @dataclass(frozen=True)
@@ -186,7 +188,7 @@ def releases_from(
             return None
         return GitHubReleases(found.commit, None if found.release is None else found.release.tag)
 
-    return within(timeout_s, fetch, name="github-wydania")
+    return within(timeout_s, fetch, name=RELEASES_THREAD)
 
 
 def _main_tip(asking: Asking) -> str:
@@ -262,7 +264,7 @@ def published_from(api: str, *, timeout_s: float, token: str | None = None) -> t
         except NoAnswer:
             return None
 
-    return within(timeout_s, fetch, name="github-notki-wydan")
+    return within(timeout_s, fetch, name=RELEASE_NOTES_THREAD)
 
 
 def parse_published(document: object) -> tuple[PublishedRelease, ...] | None:
