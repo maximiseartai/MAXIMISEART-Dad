@@ -135,8 +135,6 @@ def _summary_lines(result: dict[str, Any]) -> list[str]:
 
 
 def check_oracle(reference: Reference, mirror: Path, przebieg: Przebieg) -> dict[str, Any]:
-    """Bramka poprawności: liczba różnic w każdej kategorii względem wyniku referencyjnego, bez treści."""
-
     worker_settlements = worker_settlements_folder(mirror)
     differences = compare_worker_settlements(reference.folder / worker_settlements.name, worker_settlements)
     counters = przebieg.metrics["counters"]
