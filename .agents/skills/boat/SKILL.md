@@ -5,7 +5,7 @@ description: Ciężkie polecenie biegnie na boxie boat (`boatbox`), także rozbi
 
 # Boat
 
-Box boat to kopia worktree w tym, co widzi git: ten sam HEAD, ten sam `origin/main`, te same gałęzie lokalne i `origin/*` oraz te same niezacommitowane i nieśledzone pliki, więc narzędzia repo dają na nim ten sam wynik.
+Box boat to kopia worktree w tym, co widzi git: ten sam HEAD, ten sam `origin/main`, te same gałęzie lokalne, `origin/*` i tagi oraz te same niezacommitowane i nieśledzone pliki, więc narzędzia repo dają na nim ten sam wynik.
 Pliki ignorowane przez git (`.venv`, `node_modules`, `config/`) na box nie trafiają, a pliki zapisane na boxie wracają do worktree tylko przez `boatbox get`.
 Edycja, git i agenci zostają na Macu, a obliczenia idą na box; mechanikę (`run`, `job`, `wait`, `log`, `fan`, `get`, `stop`, sloty równoległych agentów) opisuje `boatbox help`.
 Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalnie.
@@ -14,7 +14,7 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 
 Polecenie jest **ciężkie**, gdy na Macu trwałoby ponad minutę albo zajmuje kilka rdzeni naraz, oraz gdy uruchamia kod z zewnątrz; pytest jest ciężki wtedy i tylko wtedy, gdy ma więcej niż jeden worker xdist, bo tak rozstrzyga jego bramka.
 Ciężkie polecenie biegnie zawsze na boxie, także wiele naraz i równolegle, każda część, którą da się rozdzielić, na własnym boxie; Mac zostaje dla edycji, gita i agentów.
-Ciężkie narzędzia repo (`szybko.py`, `mutacje.py`, `mutacje_zmiany.py`, `benchmark_przebiegu.py` poza `comment` i `guard`, `ci_lokalnie.py` z zadaniem `pytest` albo `mutations`, `na_scalonych_pr.py` z poleceniem i pytest z więcej niż jednym workerem xdist) uruchomione na Macu same przechodzą przy starcie na box (`boatbox run` z tym samym poleceniem, `tools/lib/na_boxie.py`), a gdy box nie wstanie, kończą się kodem 75 bez biegu na Macu; na Macu zostają tylko przez `boatbox run --here '<polecenie>'`, narzędzie uruchomione przez inne narzędzie repo albo przez test zostaje przy wołającym, a słowo polecenia, którego box nie zobaczy (ścieżka spoza repo albo istniejąca ścieżka ignorowana przez gita), to odmowa `NA BOXIE ODMOWA` przed startem boxa.
+Ciężkie narzędzia repo (`szybko.py`, `mutacje.py`, `mutacje_zmiany.py`, `benchmark_przebiegu.py` poza `comment` i `guard`, `ci_lokalnie.py` z zadaniem `pytest` albo `mutations`, `na_scalonych_pr.py` z poleceniem i pytest z więcej niż jednym workerem xdist) uruchomione na Macu same przechodzą przy starcie na box (`boatbox run` z tym samym poleceniem, `tools/lib/na_boxie.py`), a gdy box nie wstanie, kończą się kodem 75 bez biegu na Macu; na Macu zostają tylko przez `boatbox run --here '<polecenie>'`, narzędzie uruchomione przez inne narzędzie repo albo przez test zostaje przy wołającym, a słowo polecenia, które box rozwiąże inaczej niż Mac (ścieżka spoza repo, także względna, ścieżka ignorowana przez gita, reflog `@{…}`, ref spoza gałęzi, `origin/*` i tagów), to odmowa `NA BOXIE ODMOWA` przed startem boxa.
 
 | Praca | Jak |
 |---|---|

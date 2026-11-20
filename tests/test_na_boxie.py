@@ -21,7 +21,7 @@ import pytest
 
 import na_boxie
 import potomne
-from tests.fixtures.git_repo import git
+from tests.fixtures.git_repo import commit, git
 import testy_scalenia
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="boatbox biegnie tylko na Macu, a przeniesienie to exec")
@@ -172,6 +172,12 @@ def test_lekki_tryb_albo_szybka_odmowa_ciezkiego_narzedzia_zostaje_na_macu(comma
         ),
         pytest.param(lambda tmp: [*PYTEST, "-n", "2", f"--basetemp={tmp / 'b'}"], lambda tmp: f"{tmp / 'b'} (spoza repo)", id="sciezka-po-rownasie"),
         pytest.param(
+            lambda tmp: [PYTHON, "tools/na_scalonych_pr.py", "--commit", "HEAD", "--wyniki", "../wyniki", "--", "tools/mutacje_zmiany.py"],
+            lambda tmp: "../wyniki (spoza repo)",
+            id="wzgledna-spoza-repo",
+        ),
+        pytest.param(lambda tmp: [*SZYBKO[:2], "--baza", "@{-1}"], lambda tmp: "@{-1} (reflog albo upstream tego Maca)", id="reflog"),
+        pytest.param(
             lambda tmp: [*PYTEST, "-n", "2", "tools/lib/__pycache__"], lambda tmp: "tools/lib/__pycache__ (ignorowana przez gita)", id="ignorowana-przez-gita"
         ),
     ],
@@ -187,17 +193,30 @@ def test_slowo_ktorego_box_nie_zobaczy_to_odmowa_przed_startem_boxa(
     assert f"NA BOXIE ODMOWA | box nie zobaczy: {unseen(tmp_path)};" in done.stderr
 
 
-def test_venv_repo_box_ma_wlasne_wiec_slowo_pod_nim_nie_jest_odmowa_a_inna_ignorowana_sciezka_jest(tmp_path: Path) -> None:
-    git(tmp_path, "init", "--quiet")
-    (tmp_path / ".gitignore").write_text(".venv\nignorowane/\n", encoding="utf-8")
-    for name in (".venv/bin/pytest", "ignorowane/plik"):
-        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path / name).write_text("", encoding="utf-8")
-    (tmp_path / ".venv" / "bin" / "python").symlink_to(sys.executable)
+def test_box_rozwiazuje_slowo_jak_mac_albo_przeniesienie_mowi_dlaczego_nie(tmp_path: Path) -> None:
+    repository = tmp_path / "repo"
+    repository.mkdir()
+    git(repository, "init", "--quiet")
+    (repository / ".gitignore").write_text(".venv\nignorowane/\n", encoding="utf-8")
+    for name in (".venv/bin/pytest", "ignorowane/plik", "widziany.txt"):
+        (repository / name).parent.mkdir(parents=True, exist_ok=True)
+        (repository / name).write_text("", encoding="utf-8")
+    (repository / ".venv" / "bin" / "python").symlink_to(sys.executable)
+    (repository / "na-zewnatrz").symlink_to(tmp_path)
+    commit(repository, "pierwszy")
+    git(repository, "tag", "v1")
+    git(repository, "update-ref", "refs/notatki/x", "HEAD")
+    words = [".venv/bin/pytest", str(repository / ".venv" / "bin" / "python"), "widziany.txt", "HEAD", "HEAD^{commit}", "v1"]
+    unseen = ["ignorowane/plik", "na-zewnatrz", "refs/notatki/x", "HEAD@{1}"]
 
-    found = na_boxie.niewidoczne([PYTHON, ".venv/bin/pytest", str(tmp_path / ".venv" / "bin" / "python"), "ignorowane/plik"], tmp_path, root=tmp_path)
+    found = na_boxie.niewidoczne([PYTHON, *words, *unseen], repository, root=repository)
 
-    assert found == ["ignorowane/plik (ignorowana przez gita)"]
+    assert found == [
+        "ignorowane/plik (ignorowana przez gita)",
+        "na-zewnatrz (dowiązanie spoza repo)",
+        "refs/notatki/x (ref refs/notatki/x, którego boatbox nie wiezie)",
+        "HEAD@{1} (reflog albo upstream tego Maca)",
+    ]
 
 
 def test_polecenie_z_podkatalogu_wchodzi_do_niego_a_sciezka_pod_repo_jest_wzgledna(tmp_path: Path) -> None:
