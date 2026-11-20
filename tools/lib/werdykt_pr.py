@@ -112,9 +112,10 @@ def text_lines(body: object) -> list[str]:
     return [line.strip() for line in str(body).splitlines() if line.strip()]
 
 
-def consent_problem(pull: Pull, deployed: datetime | None) -> str | None:
+def consent_problem(pull: Pull, deployed: datetime | None, *, mechanism: datetime | None) -> str | None:
     """Przyczyna odmowy merge'a PR, gdy najnowszy werdykt dla jego HEAD nie jest zgodą; ``deployed`` to chwila
-    wdrożenia szablonu na bazie PR (``deployment`` z ``szablon_werdyktu.ADR``)."""
+    wdrożenia szablonu na bazie PR (``deployment`` z ``szablon_werdyktu.ADR``), a ``mechanism`` pola Mechanizm
+    (``deployment`` z ``szablon_werdyktu.MECHANISM_ADR``)."""
 
     head = pull.head
     publish = f"tools/scal_pr.py {pull.number} --werdykt PLIK"
@@ -127,7 +128,7 @@ def consent_problem(pull: Pull, deployed: datetime | None) -> str | None:
         return Waiting(f"werdykt: brak komentarza ani recenzji „WERDYKT: PASS {head}”; opublikuj werdykt przez {publish}")
     problems = list(latest.problems)
     if latest.stance is Stance.CONSENT and rule_applies(pull, deployed):
-        problems = _template_problems(latest.body, pull, repeat=_repeats(pull, position))
+        problems = _template_problems(latest.body, pull, repeat=_repeats(pull, position), mechanism=rule_applies(pull, mechanism))
     if problems:
         return f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt ({'; '.join(problems)}); popraw plik werdyktu i opublikuj go przez {publish}"
     return None if latest.stance is Stance.CONSENT else f"werdykt: FAIL dla {head[:7]} bez nowszego „WERDYKT: PASS {head}”"
@@ -178,12 +179,15 @@ def file_problems(text: str, head: str) -> list[str]:
     return problems
 
 
-def publish_problems(text: str, pull: Pull, deployed: datetime | None) -> list[str]:
+def publish_problems(text: str, pull: Pull, deployed: datetime | None, *, mechanism: datetime | None) -> list[str]:
     """Co poprawić w pliku werdyktu przed publikacją na ``pull``: dwie pierwsze linie, a w wątku z szablonem
-    (``rule_applies`` z chwilą wdrożenia szablonu ``deployed``, ``deployment`` z ``szablon_werdyktu.ADR``) także treść według ``szablon_werdyktu``."""
+    (``rule_applies`` z chwilą wdrożenia szablonu ``deployed``, ``deployment`` z ``szablon_werdyktu.ADR``) także treść według ``szablon_werdyktu``,
+    z polem Mechanizm, gdy obowiązuje w wątku z chwilą ``mechanism`` (``deployment`` z ``szablon_werdyktu.MECHANISM_ADR``)."""
 
     problems = file_problems(text, pull.head)
-    return [*problems, *_template_problems(text, pull, repeat=_repeats(pull, len(pull.verdicts)))] if rule_applies(pull, deployed) else problems
+    if not rule_applies(pull, deployed):
+        return problems
+    return [*problems, *_template_problems(text, pull, repeat=_repeats(pull, len(pull.verdicts)), mechanism=rule_applies(pull, mechanism))]
 
 
 def _repeats(pull: Pull, before: int) -> bool:
@@ -241,10 +245,9 @@ def _html(rest: str, pull: Pull) -> str:
     return github.html_markdownu(rest, pull.repository) if rest.strip() else ""
 
 
-def _template_problems(text: str, pull: Pull, *, repeat: bool) -> list[str]:
+def _template_problems(text: str, pull: Pull, *, repeat: bool, mechanism: bool) -> list[str]:
     """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje
-    GitHub, z polem Mechanizm, gdy obowiązuje w wątku (``szablon_werdyktu.MECHANISM_ADR``), a z ``repeat``
-    (``_repeats``) także przyczyna ``ponowny_przeglad``."""
+    GitHub, z polem Mechanizm, gdy ``mechanism``, a z ``repeat`` (``_repeats``) także przyczyna ``ponowny_przeglad``."""
 
     rest, declared = _content(text)
     try:
@@ -252,7 +255,6 @@ def _template_problems(text: str, pull: Pull, *, repeat: bool) -> list[str]:
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera (gh z błędem albo po czasie, pusty HTML) to odmowa z przyczyną
         return [f"GitHub nie wyrenderował treści werdyktu ({error}), uruchom ponownie"]
     missing = ponowny_przeglad.problem(szablon_werdyktu.items(html)) if repeat else None
-    mechanism = rule_applies(pull, deployment(pull.base, szablon_werdyktu.MECHANISM_ADR))
     found = szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull), mechanism=mechanism)
     return [missing, *found] if missing else found
 

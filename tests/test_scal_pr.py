@@ -673,7 +673,7 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
     ],
 )
 def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tuple[str, ...]], reason: str | None) -> None:
-    assert werdykt_pr.consent_problem(_written(*verdicts), None) == reason
+    assert werdykt_pr.consent_problem(_written(*verdicts), None, mechanism=None) == reason
 
 
 @pytest.mark.parametrize(
@@ -2251,7 +2251,7 @@ def test_komentarz_sprzed_wdrozenia_zmieniony_na_werdykt_nie_postarza_watku_a_re
     pull = _pull(comments=comments)
 
     assert werdykt_pr.rule_applies(pull, AFTER_FIRST) is True
-    assert (werdykt_pr.consent_problem(pull, AFTER_FIRST) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
+    assert (werdykt_pr.consent_problem(pull, AFTER_FIRST, mechanism=None) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
 
 
 SPRAWDZONE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["sprawdzone"] + "\n"
