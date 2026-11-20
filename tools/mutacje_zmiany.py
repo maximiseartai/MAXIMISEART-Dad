@@ -178,7 +178,8 @@ W CI biegnie nocą na Linuksie, na ``main``, od bazy z ``tools/mutacje_nocne.py`
 workflow ``mutacje-nocne.yml``. Z ``--zapis`` każda część zapisuje swoją ostatnią linię, przeżyte mutacje, mutacje bez
 werdyktu po limicie czasu części i mutacje z przekroczonym czasem testów w ostatnim przebiegu: plik, linię i opis z
 nazwy (``<plik>:<linia> <opis>``, jak w linii ``NIEWYKRYTA``), zmienione linie, które mutacja psuje (``Mutant.lines``), i klucz (``fingerprint``), a do tego kod wyjścia; z nich
-``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił te linie. Zapis ma też tożsamości (``Tozsamosc``)
+``tools/mutacje_nocne.py`` zakłada issue PR-u, który ostatni zmienił linie przeżytej, a mutacje bez werdyktu i z
+przekroczonym czasem liczy tylko w linii ``MUTACJE NOCNE BEZ ISSUE``. Zapis ma też tożsamości (``Tozsamosc``)
 mutacji, których werdykt nie potrzebuje issue (``osadzone``: wykrytych testem, także ``ZAWIESZENIE``, albo bramą typów,
 ``ZDOMINOWANA``, ``WYJĄTEK`` i ``POMINIĘTA``). Przeżytych, bez werdyktu, z przekroczonym czasem i ``NIEAKTUALNA`` w nim
 nie ma, bo to, czy przeżyta ma już issue, rozstrzygają tylko klucze w issue. Plan nocy po czerwonej, która nie
