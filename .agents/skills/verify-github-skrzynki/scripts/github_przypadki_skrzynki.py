@@ -741,7 +741,7 @@ CASES: Final[tuple[Case[SkrzynkaLive, Client], ...]] = (
     Case(
         "komentarze-strony",
         f"wszystkie {PAGE + 1} komentarzy w kolejności dodania",
-        "test_skrzynka_zgloszen_github: test_komentarze_issue_sa_zbierane_ze_wszystkich_stron",
+        "test_skrzynka_zgloszen_github: test_issue_z_etykieta_sa_zbierane_ze_wszystkich_stron",
         _prepare_comment_pages,
         _comments,
         _judge_comment_pages,

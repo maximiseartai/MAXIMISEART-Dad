@@ -81,7 +81,7 @@ harness starts them outside Centrum through the machine script
 Uporządkowanie INTERMAX, through the same core
 (`run_process`) and the same Uruchomienie view as Centrum. Each run prints one
 JSON result in the shape of the Centrum contract and exits `0` (OK), `2`
-(Wymaga sprawdzenia), or `1` (Zatrzymanie). The script's docstring is the
+(Wymaga sprawdzenia), or `1` (Zatrzymanie). The script's `--help` is the
 reference for its parameters and fields. Verification uses synthetic `.xlsx` files
 and never uses a real customer workbook; the only exceptions are the local
 `preparation-real-templates` and `chain-real-templates` variants, which copy

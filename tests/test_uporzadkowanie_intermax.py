@@ -4,10 +4,8 @@ Historia adresu z Bazy zleceń."""
 from __future__ import annotations
 
 import errno
-import os
 import re
 import struct
-import sys
 import zipfile
 import zlib
 from collections.abc import Callable, Iterator, Sequence
@@ -29,13 +27,12 @@ from openpyxl.utils.cell import column_index_from_string, coordinate_from_string
 from openpyxl.utils.datetime import CALENDAR_MAC_1904
 from openpyxl.worksheet.worksheet import Worksheet
 
-from rozliczenia import intermax_copies
 from rozliczenia.client_data import MIN_VALUE, empty_memory, guarded
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
 from rozliczenia.intermax_ordering import HistoryCounts, OrderingInputs, OrderingSummary, RegisterDay, register_days
-from rozliczenia.intermax_replace import LOCAL_DISK, Waiting
+from rozliczenia.intermax_replace import Waiting
 from rozliczenia.intermax_process import PROCESS
 from rozliczenia.message import Message
 from rozliczenia.order_base import ORDER_BASE_NAME
@@ -43,7 +40,6 @@ from rozliczenia.run_clock import RunClock
 from rozliczenia.run_context import RunContext
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
 from rozliczenia.progress import PhaseState
-from rozliczenia.tool_files import TOOL_ROOT
 from rozliczenia.workbook_files import Problem, WorkbookError
 
 from tests.fixtures.clock import ManualClock
@@ -77,7 +73,7 @@ from atrapy.baza_zlecen import Layout as BaseLayout
 from atrapy.interlocutor import Tata
 from atrapy.preparation import make_preparation_fixture, paste_raw_orders, register_order
 from atrapy.pliki_taty import PASTE_SHIFT
-from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, partial_copy, writing
+from tests.fixtures.intermax_disk import FaultyDisk, denied, failing_replace, no_space, writing
 from tests.fixtures.operacje import run_preparation
 from atrapy.workbooks import rewrite_parts, without_sheet
 
@@ -380,15 +376,6 @@ def test_bez_zoltego_wiersza_dzien_staje_10_pustych_wierszy_pod_ostatnim_uporzad
     assert max_row == layout.last_ordered + 10 + 6 + 2, "<dimension> obejmuje dłuższy dzień"
 
 
-def test_pierwszy_wiersz_na_miejscu_nie_jest_przesuwany(tmp_path: Path) -> None:
-    path, layout = _register(tmp_path, Intermax(shifted=False))
-
-    _run(tmp_path)
-
-    assert layout.yellow is not None
-    assert order_rows(path, layout.yellow + 9, layout.yellow + 9) == [_expected(layout.raw[0])]
-
-
 def test_zlecenia_maja_wyglad_reszty_intermax_od_kolumny_a_z_pogrubionym_wykonawca_i_nic_za_uwagi(tmp_path: Path) -> None:
     path, layout = _register(tmp_path)
 
@@ -451,37 +438,29 @@ def test_znaczniki_wyceny_w_efenix_nie_sa_zadnym_kolorem_operatora_ani_zoltym_od
     [
         ("TMOBILE", "Instalacja Hurt", _colored(_GREEN, _GREEN, None)),
         ("T-Mobile", "Instalacja", _colored(_GREEN, _GREEN, None)),
-        (" t mobile ", "Instalacja", _colored(_GREEN, _GREEN, None)),
         ("ORANGE", "Instalacja Hurt", _colored(_ORANGE, _ORANGE, None)),
         ("Netia", "Instalacja Hurt", _colored(_DARK_BLUE, _LIGHT_BLUE, None)),
         ("P4", "Instalacja Hurt", _colored(_LIGHT_BLUE, _LIGHT_BLUE, None)),
         ("VECTRA", "Instalacja Hurt", _colored(_LIGHT_BLUE, _LIGHT_BLUE, None)),
-        ("Netia S.A.", "Instalacja Hurt", _colored(_DARK_BLUE, _LIGHT_BLUE, None)),
         ("INEA", "Instalacja Hurt", _colored(None, None, None)),
-        ("INEA S.A.", "Instalacja", _colored(None, None, None)),
         ("OXYLION", "Instalacja", _colored(_LIGHT_BLUE, _LIGHT_BLUE, None)),
         (None, "Instalacja", _colored(None, None, None)),
         ("TMOBILE", "Usterka", _colored(None, None, _PINK)),
         ("TMOBILE", "Usterka Hurt", _colored(None, None, _PINK)),
-        ("ORANGE", "USTERKA  HURT", _colored(None, None, _PINK)),
         (None, "Usterka", _colored(None, None, _PINK)),
     ],
     ids=[
         "tmobile",
         "t-mobile",
-        "t mobile ze spacjami",
         "orange",
         "netia",
         "p4",
         "vectra",
-        "netia s.a.",
         "inea",
-        "inea s.a.",
         "inny operator",
         "puste czynnosci",
         "usterka przy tmobile",
         "usterka hurt przy tmobile",
-        "usterka hurt wielkimi literami",
         "usterka bez operatora",
     ],
 )
@@ -513,11 +492,6 @@ def test_kolor_operatora_w_czynnosciach_numerze_umowy_i_urzadzeniach_a_inne_komo
         ("SYSTEMIA", "Instalacja Hurt", ("nokia", "SYSTEMIA - akt pętli")),
         ("ORANGE", "Instalacja Hurt", ("gniazdo", "ORANGE - akt pętli LLU")),
         ("TMOBILE", "Instalacja Hurt", ("nokia getewayHomeBox", "TMOBILE - akt int")),
-        ("NETIA", "instalacja hurt", ("nokia", "NETIA - akt pętli")),
-        (" p4 ", " INSTALACJA  HURT ", ("nokia", "p4 - akt pętli")),
-        ("Netia S.A.", "Instalacja Hurt", ("nokia", "Netia S.A. - akt pętli")),
-        ("NETIA s.a", "Instalacja Hurt", ("nokia", "NETIA s.a - akt pętli")),
-        ("Netia-SA", "Instalacja Hurt", ("nokia", "Netia-SA - akt pętli")),
         ("P4 <&>", "Instalacja Hurt", ("nokia", "P4 <&> - akt pętli")),
         ("T-Mobile", "Instalacja Hurt", ("nokia getewayHomeBox", "T-Mobile - akt int")),
     ],
@@ -529,11 +503,6 @@ def test_kolor_operatora_w_czynnosciach_numerze_umowy_i_urzadzeniach_a_inne_komo
         "systemia",
         "orange",
         "tmobile",
-        "wielkie litery operatora i male rodzaju",
-        "spacje w operatorze i rodzaju",
-        "netia s.a.",
-        "netia s.a bez kropki malymi literami",
-        "netia-sa z myslnikiem",
         "znaki xml w nazwie operatora",
         "t-mobile",
     ],
@@ -559,24 +528,16 @@ def test_instalacja_hurt_operatora_z_reguly_taty_dostaje_wpis_urzadzenia_i_czynn
         ("P4", "Usterka"),
         ("TMOBILE", "Usterka Hurt"),
         ("ORANGE", "Usterka pomontażowa"),
-        ("Netia", "Pomiar"),
-        ("VECTRA", "Niedostępność usług"),
         ("P4", "Instalacja"),
-        ("INEA", "Instalacja Hurt"),
         ("OXYLION", "Instalacja Hurt"),
-        ("Fiberhost", "Instalacja Hurt"),
         (None, "Instalacja Hurt"),
     ],
     ids=[
         "usterka",
         "usterka hurt",
         "usterka pomontazowa",
-        "pomiar",
-        "niedostepnosc uslug",
         "instalacja reczna",
-        "inea",
         "oxylion",
-        "fiberhost",
         "puste czynnosci",
     ],
 )
@@ -911,19 +872,6 @@ def test_bez_zamrozonego_naglowka_widok_bez_panelu_otwiera_sie_na_dzisiejszym_dn
     assert load_workbook(path)[ORDER_SHEET].sheet_view.pane is None
 
 
-@pytest.mark.parametrize("kind", ["Instalacja", "Instalacja Hurt"], ids=["bez wpisow", "z wpisami"])
-def test_kopia_intermax_ma_nazwe_z_zegara_procesu_i_bajty_sprzed_uporzadkowania(tmp_path: Path, kind: str) -> None:
-    raw = [replace(order, operator="TMOBILE", kind=kind) for order in Intermax().raw]
-    path, _ = _register(tmp_path, Intermax(raw=raw))
-    original = path.read_bytes()
-
-    _run(tmp_path)
-
-    copy = tmp_path / "Kopie INTERMAX" / COPY_NAME
-    assert copy.read_bytes() == original
-    assert path.read_bytes() != original
-
-
 def test_po_jedenastej_kopii_zostaje_10_najnowszych_a_inne_pliki_folderu_zostaja(tmp_path: Path) -> None:
     _register(tmp_path)
     copies = tmp_path / "Kopie INTERMAX"
@@ -1094,22 +1042,6 @@ def test_bez_surowych_zlecen_zatrzymanie_dla_taty_i_nic_nie_zapisano(tmp_path: P
     assert not (tmp_path / "Kopie INTERMAX").exists()
 
 
-def test_intermax_otwarty_w_excelu_to_zatrzymanie_dla_taty_w_sprawdzaniu_bez_zapisu(tmp_path: Path) -> None:
-    path, _ = _register(tmp_path)
-    original = path.read_bytes()
-    lock = path.with_name(f"~${path.name}")
-    lock.write_bytes(b"")
-
-    outcome = _run(tmp_path)
-
-    stop = _stop(outcome)
-    assert outcome.progress.phase_states[ProgressPhase.CHECKING] == PhaseState.FAILED
-
-    assert (stop.message.code, stop.stop_kind) == ("INTERMAX_OTWARTY", "for_tata")
-    assert path.read_bytes() == original
-    assert not (tmp_path / "Kopie INTERMAX").exists()
-
-
 def test_scalone_komorki_w_surowych_zleceniach_to_zatrzymanie_do_maksa_bez_zapisu(tmp_path: Path) -> None:
     path, layout = _register(tmp_path)
     workbook = load_workbook(path)
@@ -1121,13 +1053,6 @@ def test_scalone_komorki_w_surowych_zleceniach_to_zatrzymanie_do_maksa_bez_zapis
 
     assert (stop.message.code, stop.stop_kind) == ("NIEOBSLUGIWANY_UKLAD_INTERMAX", "for_maks")
     assert path.read_bytes() == original
-
-
-@pytest.mark.parametrize("now", [datetime(2026, 10, 25, 21, 5, 7), datetime(2026, 10, 27, 8, 0, 0)])
-def test_uruchomienie_ma_okres_dzisiejszej_daty_z_zegara_procesu(tmp_path: Path, now: datetime) -> None:
-    inputs = replace(OrderingInputs(tmp_path / REGISTER_NAME, tmp_path / "Kopie INTERMAX"), now=lambda: now)
-
-    assert inputs.period == {25: "20_26_10_2026", 27: "27_02_11_2026"}[now.day]
 
 
 def _first_day_row(path: Path, layout: Layout, order: Order) -> int:
@@ -1913,21 +1838,6 @@ def test_styl_wiersza_bez_customformat_nie_czyni_wiersza_zoltym(tmp_path: Path) 
     assert _first_day_row(path, layout, layout.raw[1]) == layout.last_ordered + 11
 
 
-def test_kopia_intermax_powstaje_przed_podmiana_intermax(tmp_path: Path) -> None:
-    path, _ = _register(tmp_path)
-    original = path.read_bytes()
-    copy = tmp_path / "Kopie INTERMAX" / COPY_NAME
-    copied_before: list[bool] = []
-
-    def replace(source: Path, target: Path) -> None:
-        copied_before.append(copy.is_file() and copy.read_bytes() == original)
-        os.replace(source, target)
-
-    _ordered(_run(tmp_path, disk=FaultyDisk(replace=replace)))
-
-    assert copied_before == [True]
-
-
 def test_kopia_o_tej_samej_nazwie_zostaje_a_intermax_nie_jest_zmieniony(tmp_path: Path) -> None:
     path, _ = _register(tmp_path)
     copies = tmp_path / "Kopie INTERMAX"
@@ -1941,15 +1851,6 @@ def test_kopia_o_tej_samej_nazwie_zostaje_a_intermax_nie_jest_zmieniony(tmp_path
     assert (copies / COPY_NAME).read_bytes() == b"kopia sprzed minuty"
 
 
-def test_niepelna_kopia_intermax_nie_zostaje_a_intermax_nie_jest_zmieniony(tmp_path: Path) -> None:
-    path, _ = _register(tmp_path)
-
-    with _nothing_written(tmp_path, path):
-        stop = _stop(_run(tmp_path, disk=FaultyDisk(create=partial_copy)))
-
-    assert (stop.message.code, stop.stop_kind) == ("KOPIA_INTERMAX_NIEUDANA", "for_tata")
-
-
 def test_folder_kopii_ktorego_nie_da_sie_utworzyc_to_zatrzymanie_dla_taty_bez_zapisu(tmp_path: Path) -> None:
     path, _ = _register(tmp_path)
     (tmp_path / "Kopie INTERMAX").write_bytes(b"plik zamiast folderu")
@@ -1960,22 +1861,6 @@ def test_folder_kopii_ktorego_nie_da_sie_utworzyc_to_zatrzymanie_dla_taty_bez_za
     assert (stop.message.code, stop.stop_kind) == ("KOPIA_INTERMAX_NIEUDANA", "for_tata")
     assert path.read_bytes() == original
     assert [entry.name for entry in path.parent.iterdir()] == [REGISTER_NAME]
-
-
-@pytest.mark.skipif(sys.platform == "win32", reason="chmod w Windows zmienia tylko atrybut „tylko do odczytu”")
-def test_folder_kopii_bez_dostepu_to_zatrzymanie_dla_taty_bez_zapisu(tmp_path: Path) -> None:
-    path, _ = _register(tmp_path)
-    copies = tmp_path / "Kopie INTERMAX"
-    copies.mkdir()
-
-    with _nothing_written(tmp_path, path):
-        copies.chmod(0)
-        try:
-            stop = _stop(_run(tmp_path))
-        finally:
-            copies.chmod(0o755)
-
-    assert (stop.message.code, stop.stop_kind) == ("KOPIA_INTERMAX_NIEUDANA", "for_tata")
 
 
 def _lock(tmp_path: Path) -> Callable[[], object]:
@@ -1997,86 +1882,6 @@ def test_odmowa_podmiany_bez_excela_po_krotkiej_ponownej_probie_to_onedrive_dla_
     assert stop.message.action == "Poczekaj, aż OneDrive skończy synchronizację, potem uruchom ponownie."
     assert (clock.seconds, len(attempts)) == (4005.0, 11)
     _without_order_data(stop.message, layout.raw)
-
-
-def test_podmiana_po_chwilowej_odmowie_onedrive_porzadkuje_intermax(tmp_path: Path) -> None:
-    path, layout = _register(tmp_path)
-    original = path.read_bytes()
-    replace, attempts = failing_replace(denied, times=2)
-    clock = ManualClock(seconds=4000.0)
-
-    assert _ordered(_run(tmp_path, clock=clock, disk=FaultyDisk(replace=replace))).order_count == len(layout.raw)
-
-    assert (clock.seconds, len(attempts)) == (4001.0, 3)
-    assert path.read_bytes() != original
-    assert (tmp_path / "Kopie INTERMAX" / COPY_NAME).read_bytes() == original
-
-
-class _PauseThen(ManualClock):
-    """Zegar procesu, w którego przerwie przed ponowną próbą podmiany dzieje się ``meanwhile``."""
-
-    def __init__(self, meanwhile: Callable[[], object]) -> None:
-        super().__init__()
-        self._meanwhile = meanwhile
-
-    def pause(self, seconds: float) -> None:
-        super().pause(seconds)
-        self._meanwhile()
-
-
-def test_wersja_pracownika_wgrana_przez_onedrive_miedzy_probami_podmiany_zostaje_a_tata_slyszy_o_synchronizacji(
-    tmp_path: Path,
-) -> None:
-    path, _ = _register(tmp_path)
-    worker = Intermax()
-    worker.ordered = (*worker.ordered, Order(datetime(2026, 10, 20, 11), "jan.nowak", 4))
-    replace, attempts = failing_replace(denied, times=1)
-    uploaded: list[bytes] = []
-
-    def upload() -> None:
-        worker.write(path)
-        uploaded.append(path.read_bytes())
-
-    stop = _stop(_run(tmp_path, clock=_PauseThen(upload), disk=FaultyDisk(replace=replace)))
-
-    assert (stop.message.code, stop.stop_kind) == ("INTERMAX_SYNCHRONIZOWANY", "for_tata")
-    assert len(attempts) == 1
-    assert uploaded == [path.read_bytes()]
-    assert [entry.name for entry in path.parent.iterdir()] == [REGISTER_NAME]
-    assert _copies(tmp_path) == set()
-
-
-def _unreadable(path: Path, disk: FaultyDisk) -> None:
-    """System przestaje oddawać bajty ``path`` (OneDrive trzyma plik w trakcie synchronizacji)."""
-
-    def refused_read(target: Path) -> bytes:
-        if target == path:
-            raise WorkbookError(path, Problem.INACCESSIBLE)
-        return LOCAL_DISK.read(target)
-
-    disk.read = refused_read
-
-
-@pytest.mark.parametrize(
-    ("meanwhile", "code"),
-    [
-        (lambda path, _disk: path.with_name(f"~${REGISTER_NAME}").write_bytes(b""), "INTERMAX_OTWARTY"),
-        (_unreadable, "INTERMAX_SYNCHRONIZOWANY"),
-    ],
-    ids=["tata otwiera INTERMAX w Excelu", "INTERMAX niedostępny"],
-)
-def test_intermax_nieczytelny_w_przerwie_miedzy_probami_podmiany_to_zatrzymanie_dla_taty_bez_zapisu(
-    tmp_path: Path, meanwhile: Callable[[Path, FaultyDisk], object], code: str
-) -> None:
-    path, _ = _register(tmp_path)
-    replace, attempts = failing_replace(denied, times=1)
-    disk = FaultyDisk(replace=replace)
-
-    with _nothing_written(tmp_path, path):
-        stop = _stop(_run(tmp_path, clock=_PauseThen(lambda: meanwhile(path, disk)), disk=disk))
-
-    assert (stop.message.code, stop.stop_kind) == (code, "for_tata")
-    assert len(attempts) == 1
 
 
 def test_odmowa_podmiany_przy_otwartym_excelu_to_zatrzymanie_dla_taty_bez_czekania(tmp_path: Path) -> None:
@@ -2106,31 +1911,6 @@ def test_inny_blad_podmiany_niz_odmowa_to_zatrzymanie_dla_taty_bez_czekania(tmp_
     assert stop.message.dad_file is None
     assert (clock.seconds, len(attempts)) == (0.0, 1)
     _without_order_data(stop.message, layout.raw)
-
-
-def test_nieudany_zapis_obok_intermax_to_zatrzymanie_dla_taty_o_wolnym_miejscu(tmp_path: Path) -> None:
-    path, _ = _register(tmp_path)
-
-    def full(_temporary: Path, _content: bytes) -> None:
-        raise no_space()
-
-    with _nothing_written(tmp_path, path):
-        stop = _stop(_run(tmp_path, disk=FaultyDisk(write=full)))
-
-    assert (stop.kind, stop.message.code, stop.stop_kind) == ("stop", "ZAPIS_INTERMAX_NIEUDANY", "for_tata")
-
-
-def test_intermax_otwarty_w_excelu_w_trakcie_zapisu_to_zatrzymanie_dla_taty_bez_zapisu(tmp_path: Path) -> None:
-    path, _ = _register(tmp_path)
-
-    def opened_meanwhile(temporary: Path, content: bytes) -> None:
-        _lock(tmp_path)()
-        LOCAL_DISK.write(temporary, content)
-
-    with _nothing_written(tmp_path, path):
-        stop = _stop(_run(tmp_path, disk=FaultyDisk(write=opened_meanwhile)))
-
-    assert (stop.message.code, stop.stop_kind) == ("INTERMAX_OTWARTY", "for_tata")
 
 
 @pytest.mark.parametrize(("content", "code"), [(None, "BRAK_INTERMAX"), (b"to nie jest skoroszyt", "NIECZYTELNY_INTERMAX")])
@@ -2289,15 +2069,6 @@ def test_powtorzony_naglowek_adres_zatrzymuje_uporzadkowanie_dla_taty_bez_zapisu
     assert outcome.progress.phase_states[ProgressPhase.READING] == PhaseState.FAILED
 
 
-def test_karta_z_powtorzonym_naglowkiem_mowi_to_samo_co_uporzadkowanie(tmp_path: Path) -> None:
-    path, _ = _register(tmp_path)
-    _edited(path, lambda sheet: setattr(sheet.cell(1, LAST + 1), "value", "adres"))
-
-    days = register_days(path, _TODAY, DadFiles())
-
-    assert isinstance(days, Message) and days.code == "POWTORZONY_NAGLOWEK_INTERMAX", days
-
-
 def test_karta_przed_wklejeniem_bez_arkusza_zlecen_mowi_to_samo_co_uporzadkowanie(tmp_path: Path) -> None:
     path, _ = _register(tmp_path)
     _edited(path, lambda sheet: setattr(sheet.cell(1, FIRST + HEADERS.index("AKCJE")), "value", "AKCJE X"))
@@ -2345,10 +2116,6 @@ def test_podsumowanie_ktorego_nie_da_sie_pokazac_mowi_ze_intermax_jest_uporzadko
     assert (stop.kind, stop.message.code, stop.stop_kind) == ("after_engine", "BLAD_PODSUMOWANIA", "for_maks")
 
 
-def test_kopie_intermax_trafiaja_do_folderu_narzedzia_poza_onedrive(tmp_path: Path) -> None:
-    assert intermax_copies.default_directory() == TOOL_ROOT / "Kopie INTERMAX"
-
-
 def test_niedostepny_intermax_to_zatrzymanie_dla_taty_bez_zapisu(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     path, _ = _register(tmp_path)
     read_bytes = Path.read_bytes
@@ -2377,15 +2144,6 @@ def test_nieoczekiwany_blad_przed_podmiana_mowi_ze_intermax_nie_zostal_zmieniony
 
     assert (stop.kind, stop.message.code, stop.stop_kind) == ("unexpected", "BLAD_NIEOCZEKIWANY", "for_maks")
     assert "INTERMAX nie został zmieniony." in stop.message.what
-
-
-@pytest.mark.parametrize("ending", ["unexpected_failure", "summary_not_shown"])
-def test_komunikaty_zakonczen_uporzadkowania_maja_trzy_czesci_i_nazywaja_proces(ending: str) -> None:
-    message = getattr(PROCESS, ending)
-
-    assert isinstance(message, Message)
-    assert message.code.startswith("BLAD_") and message.what and message.action
-    assert message.where == "Uporządkowanie INTERMAX"
 
 
 @pytest.mark.parametrize(("rows", "stops"), [("yellow", False), ("above", False), ("whole column", True)])

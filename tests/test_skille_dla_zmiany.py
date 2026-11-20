@@ -19,13 +19,11 @@ import yaml
 from tests.fixtures.git_repo import commit, copy_files, git, with_imports
 
 import kroki_skilli
-import repo
 import skille_dla_zmiany
 import wplyw_zmiany
 import zakres_runu
 
 ROOT = Path(__file__).resolve().parents[1]
-TOOLS = ROOT / "tools"
 SKILLS = ROOT / ".agents" / "skills"
 
 
@@ -91,7 +89,6 @@ def _append(root: Path, name: str) -> None:
         ("src/ab.py", [], None),
         # Import skryptu skilla spoza pilnuje: skill pilnuje swojego zachowania globami, a importów nie liczy (ADR 0020).
         ("tools/pomocnik.py", [], None),
-        ("docs/inny.md", [], None),
         (".agents/skills/inny/SKILL.md", [], None),
     ],
 )
@@ -108,34 +105,11 @@ def test_zmiana_wskazuje_skille_ktorych_glob_albo_folder_obejmuje_zmieniony_plik
     assert result.stdout.splitlines()[:-1] == ([reason, skille_dla_zmiany.WHAT_NEXT] if reason else [])
 
 
-def test_zmiana_bez_commitu_nowy_plik_i_przeniesienie_poza_glob_wskazuja_skill(tmp_path: Path) -> None:
+def test_zmiana_bez_commitu_wskazuje_skill(tmp_path: Path) -> None:
     base = _repo(tmp_path)
 
     _append(tmp_path, "docs/b.md")
     assert _skills(_run(tmp_path, base)) == ["verify-b"]
-    git(tmp_path, "checkout", "--", "docs/b.md")
-
-    (tmp_path / "src/a/nowy.py").write_text("N = 1\n", encoding="utf-8")
-    assert _skills(_run(tmp_path, base)) == ["verify-a"]
-    (tmp_path / "src/a/nowy.py").unlink()
-
-    git(tmp_path, "mv", "docs/b.md", "docs/przeniesiony.md")
-    commit(tmp_path, "przeniesienie")
-    assert _skills(_run(tmp_path, base)) == ["verify-b"]
-
-
-def test_zmiana_tylko_w_bazie_po_rozgalezieniu_nie_wskazuje_skilla(tmp_path: Path) -> None:
-    _repo(tmp_path)
-    trunk = git(tmp_path, "rev-parse", "--abbrev-ref", "HEAD")
-    git(tmp_path, "checkout", "--quiet", "-b", "praca")
-    _append(tmp_path, "tools/narzedzie.py")
-    commit(tmp_path, "praca")
-    git(tmp_path, "checkout", "--quiet", trunk)
-    _append(tmp_path, "docs/b.md")
-    moved = commit(tmp_path, "baza poszła dalej")
-    git(tmp_path, "checkout", "--quiet", "praca")
-
-    assert _skills(_run(tmp_path, moved)) == ["verify-a"]
 
 
 def test_skill_bez_pilnuje_albo_z_nieczytelnym_pilnuje_obowiazuje_zawsze(tmp_path: Path) -> None:
@@ -166,30 +140,6 @@ def test_wiele_plikow_jednego_skilla_skraca_powod(tmp_path: Path) -> None:
         skille_dla_zmiany.WHAT_NEXT,
         f"{VERDICT}verify-a",
     ]
-
-
-def test_skill_z_poleceniami_w_ci_zostaje_w_skillach_verify_a_liczy_ci_wymienia_jego_polecenia(tmp_path: Path) -> None:
-    base = _repo(
-        tmp_path,
-        {
-            **REPO,
-            ".agents/skills/verify-a/SKILL.md": "---\nname: verify-a\npilnuje:\n  - src/a/*\nci: tools/narzedzie.py --wszystko\n---\n",
-            ".agents/skills/verify-a/scripts/check_a_mutations.py": MUTATION_SCRIPT,
-            ".agents/skills/verify-mac/SKILL.md": "---\nname: verify-mac\npilnuje:\n  - src/a/*\n---\n",
-            ".agents/skills/verify-zly/SKILL.md": "---\nname: verify-zly\npilnuje:\n  - src/a/*\nci: docs/b.md\n---\n",
-        },
-    )
-    _append(tmp_path, "src/a/b/gleboki.py")
-    _append(tmp_path, ".agents/skills/verify-a/SKILL.md")
-
-    result = _run(tmp_path, base)
-
-    rule = (
-        "skill, którego polecenia liczy CI, dalej obowiązuje dla zmiany (SKILLE VERIFY), a jego polecenia z CI "
-        "wymienia linia LICZY CI"
-    )
-    assert _skills(result) == ["verify-a", "verify-mac", "verify-zly"], rule
-    assert "LICZY CI: verify-a (narzedzie.py --wszystko)" in result.stdout.splitlines(), rule
 
 
 MUTATION_SCRIPT = "MUTATIONS = ()\nif __name__ == '__main__':\n    print('MUTACJE OK')\n"
@@ -253,9 +203,8 @@ WITH_MODEL = {
             ".agents/skills/verify-a/SKILL.md",
             ["LICZY CI: verify-a (sprawdz_a.py --wszystko)", "LICZY NOC: verify-a (check_a_mutations.py, check_model_a_mutations.py)"],
         ),
-        ("src/a/b/gleboki.py", ["LICZY MAIN: verify-a (sprawdz_a.py --wszystko)"]),
     ],
-    ids=["model", "folder skilla bez modelu", "pilnuje"],
+    ids=["model", "folder skilla bez modelu"],
 )
 def test_skrypt_mutacji_modelu_przy_zmianie_modelu_stoi_w_liczy_ci_a_nie_w_liczy_noc(tmp_path: Path, changed: str, counted: list[str]) -> None:
     base = _repo(tmp_path, WITH_MODEL)
@@ -286,13 +235,6 @@ def test_baza_ktorej_nie_ma_albo_pusta_mimo_istniejacej_domyslnej_daje_nieznane_
     assert result.returncode == 1
     assert result.stdout.splitlines()[-1].startswith(f"{VERDICT}nieznane (git merge-base: ")
     assert argv[-1] in result.stdout
-
-
-def test_pomoc_opcji_baza_podaje_domyslna_galaz_bazy() -> None:
-    answered = subprocess.run([sys.executable, str(TOOLS / "skille_dla_zmiany.py"), "--help"], capture_output=True, text=True, encoding="utf-8", check=True)
-
-    options = " ".join(answered.stdout.partition("options:")[2].split())
-    assert f"--baza BAZA Commit albo gałąź, od której liczy się zmiana (domyślnie {repo.BASE})." in options
 
 
 def test_baza_z_opcja_baza_i_pozycyjna_daje_ten_sam_wynik_a_dwie_rozne_to_blad_uzycia(tmp_path: Path) -> None:

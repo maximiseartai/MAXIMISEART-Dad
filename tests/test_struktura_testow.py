@@ -15,6 +15,7 @@ from typing import NamedTuple
 
 import pytest
 
+import repo
 from repo import IMPORT_ROOTS
 from rozliczenia import period_folder, tool_files
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
@@ -201,19 +202,17 @@ def test_sprawdzenie_sys_path_przepuszcza_skrypty_skilli_i_kod_podprocesu(code: 
     assert _tools_on_path(ast.parse(code)) == []
 
 
-def test_narzedzie_wczytane_z_pliku_bez_wpisu_w_sys_modules_to_druga_kopia_w_ktorej_dataclass_pada(tmp_path: Path) -> None:
-    narzedzie = tmp_path / "narzedzie_z_pliku.py"
-    narzedzie.write_text(
-        "from __future__ import annotations\nfrom dataclasses import dataclass\n\n\n@dataclass\nclass Wynik:\n    kod: int\n",
-        encoding="utf-8",
-    )
-    spec = importlib.util.spec_from_file_location(narzedzie.stem, narzedzie)
+def test_narzedzie_wczytane_z_pliku_to_druga_kopia_z_innymi_klasami_niz_narzedzie_z_importu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spec = importlib.util.spec_from_file_location("repo_z_pliku", repo.__file__)
     assert spec is not None and spec.loader is not None
     kopia = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, kopia)
+    spec.loader.exec_module(kopia)
 
-    with pytest.raises(AttributeError):
-        spec.loader.exec_module(kopia)
-    assert narzedzie.stem not in sys.modules
+    assert kopia.Worktree is not repo.Worktree
+    assert not issubclass(repo.Worktree, kopia.Worktree)
 
 
 ZNANE_LUKI_SYS_PATH = {

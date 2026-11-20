@@ -13,8 +13,8 @@ bieżący `main`). Zmienia trzy zdania
 - „Bez treści wierszy”: Logi Uruchomienia nie niosą treści wierszy, ale ich
   Komunikaty i podsumowanie tak jak na karcie Uruchomienia (wyjątki niżej);
 - własne pliki Centrum: dochodzą Logi Uruchomienia w `logs/uruchomienia/` oraz
-  w `config/` stan wysłanych Uwag (`uwagi-taty.json`, od #431 razem ze
-  Zgłoszeniami w pliku Spraw taty `sprawy-taty.json`), przeczytanych
+  w `config/` stan wysłanych Uwag razem ze Zgłoszeniami w pliku Spraw taty
+  (`sprawy-taty.json`), przeczytanych
   Powiadomień (`powiadomienia.json`) i adresy dostarczonych Logów
   (`skrzynka-adresy.jsonl`), wszystko poza Gitem.
 
@@ -136,6 +136,14 @@ opróżnić po Logach Uruchomienia (podmiana pliku pada), jego wpisy idą też d
 Logów następnego Uruchomienia: lepiej, żeby działanie taty stało w dwóch
 Logach, niż żeby nie stało w żadnych
 (`tests/test_centrum_logi_uruchomienia.py::test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_takze_nastepnym_logom`).
+
+**Dopisek (#2227, 2026-11-20).** Kolejka wysyłki czyta też pliki, które
+zostawiły w niej starsze Wydania (bez Tokenu do Zgłoszeń, bez sieci albo z
+treścią odrzuconą przez Skrzynkę): schemat 1 z celem w kluczu `thread`, schemat
+2 bez pliku do Archiwum Logów okresu i pliki bez stopnia wersji, stanu albo
+nagłówka ponowienia, bo każde nowsze Wydanie wysyła to, co starsze zostawiło.
+Ten odczyt znika dopiero wtedy, gdy Maks sprawdzi, że w kolejce taty nie ma
+pliku sprzed Wydania, które tata ma.
 
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zastępuje stary plik
 Wykonawców (`worker_mapping.yaml`) Listą Wykonawców.

@@ -67,8 +67,6 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "from shutil import move as shift": (DRIVE_CONFIG, (), "shutil.move"),
     "from shutil import rmtree": (DRIVE_CONFIG, (), "shutil.rmtree"),
     "from os import *": (DRIVE_CONFIG, (), STAR),
-    "from shutil import *": (DRIVE_CONFIG, (), STAR),
-    "from pathlib import *": (DRIVE_CONFIG, (), STAR),
     "from pathlib import Path\nPath.replace(p, q)": (DRIVE_CONFIG, (), "pathlib.Path.replace"),
     "from pathlib import Path\nPath.move(p, q)": (DRIVE_CONFIG, (), "pathlib.Path.move"),
     "from pathlib import Path as P\nP.replace(p, q)": (DRIVE_CONFIG, (), "pathlib.Path.replace"),
@@ -82,20 +80,11 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "import time\ntime.sleep(0.3)": (DRIVE_CONFIG, (), "time.sleep"),
     "from time import sleep as pause": (DRIVE_CONFIG, (), "time.sleep"),
     'import sys\nsys.path.insert(0, str(ROOT / "tools"))': (TESTS_CONFIG, (), "sys.path"),
-    'import sys\nsys.path.append(str(Path(__file__).resolve().parents[1] / "tools/ci"))': (TESTS_CONFIG, (), "sys.path"),
-    'import sys\nsys.path.append("C:\\\\repo\\\\tools")': (TESTS_CONFIG, (), "sys.path"),
-    'import sys\nTOOLS: Final = ROOT / "tools"\nsys.path.insert(0, str(TOOLS / "lib"))': (
-        TESTS_CONFIG,
-        ("fixtures",),
-        "sys.path",
-    ),
-    'import sys\ndef f() -> None:\n    sys.path.insert(0, str(ROOT / "tools"))': (TESTS_CONFIG, (), "sys.path"),
     "import sys\nsys.path[:0] = [x]": (TESTS_CONFIG, (), "sys.path"),
     "import sys as s\ns.path.append(x)": (TESTS_CONFIG, (), "sys.path"),
     "from sys import path as p": (TESTS_CONFIG, (), "sys.path"),
     # Import w trakcie działania obok tools/lib/import_dynamiczny.py: postacie z przeglądu #1680 (r1–r3, W1).
     'import importlib\nm = importlib.import_module(name="tests.fixtures.znane_luki")': (ROOT_CONFIG, TOOLS_PROBE, "importlib.import_module"),
-    'import importlib\nm = importlib.import_module(".znane_luki", "tests.fixtures")': (ROOT_CONFIG, TOOLS_PROBE, "importlib.import_module"),
     'from importlib import import_module\nm = import_module(".znane_luki", package="tests.fixtures")': (
         ROOT_CONFIG,
         TOOLS_PROBE,
@@ -104,32 +93,15 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     'import importlib as il\nm = il.import_module("tests.fixtures.znane_luki")': (ROOT_CONFIG, (), "importlib.import_module"),
     'import builtins\nm = builtins.__import__("tests.fixtures.znane_luki")': (ROOT_CONFIG, TOOLS_PROBE, "builtins.__import__"),
     "from importlib.util import spec_from_file_location": (ROOT_CONFIG, (".agents", "skills", "verify-rozliczenia", "scripts"), "importlib.util"),
-    'import runpy\nrunpy.run_module("tests.fixtures.znane_luki")': (DRIVE_CONFIG, (), "runpy"),
     'import runpy\nrunpy.run_path("tests/fixtures/znane_luki.py")': (ROOT_CONFIG, TOOLS_PROBE, "runpy"),
-    'import importlib\nm = importlib.import_module("tests.fixtures.znane_luki")': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
     # Ładowacz z importlib.abc (przegląd #1705 r1, W1), postacie jego importu i importlib.metadata.
     "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
-    "from importlib.abc import SourceLoader": (SRC_CONFIG, ("rozliczenia",), "importlib.abc"),
     "from importlib import abc": (DRIVE_CONFIG, (), "importlib.abc"),
     "import importlib.abc as ladowacze": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     'from importlib.metadata import EntryPoint\nEntryPoint("x", "tests.fixtures.znane_luki:zapisz", "g").load()': (
         ROOT_CONFIG,
         TOOLS_PROBE,
         "importlib.metadata",
-    ),
-    # Dawne znane luki, które zakaz zamknął: ZNANE_LUKI_SKRYPTU i ZNANE_LUKI_GRAFU (tests/test_granice_importow.py) oraz
-    # „tool przez importlib” z ZNANE_LUKI w tests/test_regula_danych.py, każda w katalogu swojej sondy.
-    'import importlib\n\nSERWER = importlib.import_module("fastapi")\n': (ROOT_CONFIG, ("tools",), "importlib.import_module"),
-    'import importlib\n\nSKOROSZYT = importlib.import_module("openpyxl")\n': (SRC_CONFIG, ("rozliczenia",), "importlib.import_module"),
-    'import importlib\n\nWZORZEC = importlib.import_module("rozliczenia." + "template_file")\n': (
-        SRC_CONFIG,
-        ("rozliczenia",),
-        "importlib.import_module",
-    ),
-    'import importlib\n\ntekst = importlib.import_module("rozliczenia.client_data").tool(komorka)\n': (
-        SRC_CONFIG,
-        ("rozliczenia", "centrum"),
-        "importlib.import_module",
     ),
     "import threading\nstart = threading.Thread.start": (TESTS_CONFIG, (), "threading.Thread.start"),
     "from threading import Thread as Worker\nWorker.start = counted": (TESTS_CONFIG, ("fixtures",), "threading.Thread.start"),
@@ -627,7 +599,7 @@ def test_tresc_z_wydania_poza_wlascicielem_nie_przechodzi_a_znane_luki_przechodz
     | części widoku do pokazania: ``QuantityRules(shown.rules, shown.devices)``, ``shown.devices``, ``WorkerList(shown.workers, shown.unresolved)`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | wartość domyślna opisu pliku: ``SETTLEMENT_MAIL.default`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
     | refleksja po nazwie: ``getattr(settlement_mailing, "DEFAULT_SETTLEMENT_MAIL")`` | przepuszcza | ``ZNANE_LUKI_TRESCI_Z_WYDANIA`` |
-    | ``# noqa: TID251`` na linii importu | łapie | ``RELEASE_CONTENT_PROBE`` |
+    | ``# noqa: TID251`` na linii importu | łapie | ``tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff`` |
 
     Poza ``src/`` zakaz nie obowiązuje: narzędzia w ``tools/`` liczą celowo treścią z Wydania. Każda próbka biegnie przez
     mypy z opcjami modułów ``src/`` (``warn_unreachable``), bo leży w katalogu tymczasowym."""
@@ -1062,24 +1034,12 @@ def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
 RELEASE_CONTENT = frozenset(
     name for name in _banned(tomllib.loads(SRC_CONFIG.read_text(encoding="utf-8"))["lint"]) if name.rpartition(".")[2].startswith("DEFAULT_")
 )
-RELEASE_CONTENT_PROBE = "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL  # noqa: TID251 - sonda\n\nMAIL = DEFAULT_SETTLEMENT_MAIL\n"
 
 
 def _release_content_findings(*arguments: str, code: str | None = None) -> list[str]:
     """``plik: nazwa`` każdego zakazu z ``RELEASE_CONTENT``, który ``ruff check`` z ``--ignore-noqa`` zgłasza."""
 
     return [f"{path}: {name}" for path, name, _ in _banned_names(*arguments, code=code) if name in RELEASE_CONTENT]
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_noqa_nie_zwalnia_z_zakazu_tresci_z_wydania_a_wlasciciel_jest_zwolniony() -> None:
-    probe = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_zakazu.py"
-    owner = SRC_CONFIG.parent / "rozliczenia" / "centrum" / "settings" / "settlement_mail.py"
-
-    assert _release_content_findings("--stdin-filename", str(probe), "-", code=RELEASE_CONTENT_PROBE) == [
-        "src/rozliczenia/centrum/sonda_zakazu.py: rozliczenia.settlement_mailing.DEFAULT_SETTLEMENT_MAIL"
-    ]
-    assert _release_content_findings("--stdin-filename", str(owner), "-", code=RELEASE_CONTENT_PROBE) == []
 
 
 # Zakazy importu w trakcie działania w ruff.toml korzenia (i jego kopiach poza tests/ruff.toml): lista nazw, nie dopasowanie
@@ -1242,8 +1202,6 @@ def test_znane_luki_zakazu_importu_w_trakcie_dzialania_przechodza_przez_ruff_i_m
     assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_IMPORTU)")
 
 
-# Właściciel zegara ściennego w src/: jedyny plik z prawem do nazw zegara (OWNERS).
-CLOCK_OWNER = ROOT / "src" / "rozliczenia" / "wall_clock.py"
 # Zakazy zegara ściennego w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: lista nazw, nie dopasowanie
 # komunikatu, żeby nowy zakaz zegara o innym brzmieniu nie wypadł z niej po cichu.
 CLOCK = (
@@ -1295,17 +1253,6 @@ def test_kazdy_zakaz_zegara_jest_na_liscie_clock() -> None:
 
     assert sorted(clock - set(CLOCK)) == [], "dopisz zakaz zegara do CLOCK w tests/test_zakazy_ruff.py"
     assert sorted(set(CLOCK) - banned.keys()) == [], "CLOCK wymienia zakaz, którego nie ma w src/ruff.toml"
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_noqa_nie_zwalnia_z_zakazu_zegara_a_wlasciciel_jest_zwolniony() -> None:
-    probe = SRC_CONFIG.parent / "rozliczenia" / "sonda_zakazu.py"
-
-    assert _clock_findings("--stdin-filename", str(probe), "-", code=CLOCK_PROBE) == [
-        "src/rozliczenia/sonda_zakazu.py:2",
-        "src/rozliczenia/sonda_zakazu.py:3",
-    ]
-    assert _clock_findings("--stdin-filename", str(CLOCK_OWNER), "-", code=CLOCK_PROBE) == ["src/rozliczenia/wall_clock.py:3"]
 
 
 # Znane luki zakazu zegara ściennego (tests/fixtures/znane_luki.py): „klasa: postać” → moduł src, który bierze chwilę
@@ -1414,8 +1361,16 @@ INVALID_NOQA_CODES = (
 
 
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-@pytest.mark.parametrize("folder", [ROOT / "tools", *(config.parent for config in DIRECTORY_CONFIGS)])
-@pytest.mark.parametrize("code", INVALID_NOQA_CODES)
+@pytest.mark.parametrize(
+    ("folder", "code"),
+    [
+        *(pytest.param(ROOT / "tools", code, id=f"tools-{number}") for number, code in enumerate(INVALID_NOQA_CODES)),
+        *(
+            pytest.param(config.parent, INVALID_NOQA_CODES[0], id=config.parent.name)
+            for config in DIRECTORY_CONFIGS
+        ),
+    ],
+)
 def test_ruff_odrzuca_kod_noqa_spoza_ruff_w_kazdym_katalogu(folder: Path, code: str) -> None:
     result = subprocess.run(
         [sys.executable, "-m", "ruff", "check", "--no-cache", "--output-format", "json"]

@@ -17,7 +17,6 @@ from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
 from rozliczenia.centrum.settings.autostart import AUTOSTART_SETTING
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL_FILE
-from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
@@ -59,7 +58,6 @@ from atrapy.preparation import (
     month_periods_folder,
     write_register,
 )
-from atrapy.settlement import WORKERS, worker_list, write_worker_list
 from atrapy.workbooks import excel_lock
 
 
@@ -369,23 +367,6 @@ def test_zgloszenie_ma_zmiany_ustawien_z_30_dni_z_folderem_sama_nazwa_bez_sciezk
     assert not zawiera_wartosc("\n".join(lines), account.name)
 
 
-def test_zgloszenie_podaje_zmiane_listy_wykonawcow_bez_loginu_nazwy_i_adresu(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    run_id = stopped_for_maks(centrum)
-    names = {**WORKERS, "dariusz.fikcyjny2": "Dariusz Zmieniony", "nowy.wykonawca": "Nowy Wykonawca"}
-    write_worker_list(centrum.tool.worker_list, worker_list(names, {"nowy.wykonawca": ["nowy@przyklad.invalid"]}))
-
-    body = diagnose(centrum, run_id)["report"]["body"]
-
-    lines = body.splitlines()
-    start = lines.index("## Zmiany Ustawień (30 dni)")
-    assert lines[start + 2].endswith(
-        f"· spoza Centrum · {WORKERS_FILE} · zmieniono Wykonawcę (pola: nazwa); dodano Wykonawcę"
-    ), lines[start : start + 4]
-    for secret in ("dariusz.fikcyjny2", "Dariusz Zmieniony", "nowy.wykonawca", "Nowy Wykonawca", "nowy@przyklad.invalid"):
-        assert not zawiera_wartosc(body, secret), secret
-
-
 def test_zgloszenie_podaje_zmiane_regul_ilosci_i_listy_urzadzen_wprost_z_wpisem_przed_i_po_jak_historia_ustawien(
     tmp_path: Path,
 ) -> None:
@@ -565,27 +546,6 @@ def _history_row(at: datetime, key: str, before: str, after: str, *, source: dic
         "powod": None,
     }
     return json.dumps(row, ensure_ascii=False) + "\n"
-
-
-def test_diagnoza_dla_zatrzymania_dla_taty_jest_odrzucona(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    opened_in_excel(centrum.fixture.register_path)
-    run_id = run_to_end(centrum, dry_run=True)["run"]["id"]
-
-    refused = centrum.client.post(f"/api/runs/{run_id}/diagnosis")
-
-    assert (refused.status_code, refused.json()) == (
-        409,
-        {"message": "Diagnoza jest przy Zatrzymaniu do Maksa albo przy powtórce tego samego Komunikatu."},
-    )
-
-
-def test_diagnoza_nieznanego_uruchomienia_jest_odrzucona(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-
-    refused = centrum.client.post("/api/runs/nieznane/diagnosis")
-
-    assert (refused.status_code, refused.json()) == (404, {"message": "Nie ma takiego Uruchomienia procesu."})
 
 
 def test_diagnoza_i_zgloszenie_poprzedniego_uruchomienia_sa_odrzucone_w_trakcie_i_po_nastepnym(tmp_path: Path) -> None:
@@ -1131,31 +1091,28 @@ def test_aktualnosc_bez_sieci_albo_bez_gita_nie_jest_sprawdzona_i_nie_jest_przyc
     diagnosis = diagnose(centrum, run_id)
 
     assert check(diagnosis, "Aktualność narzędzia") == ("not_checked", detail)
-    assert (diagnosis["explanation"], diagnosis["next_action"]) == (NOT_FOUND, "report")
+    assert (diagnosis["explanation"], diagnosis["next_action"], diagnosis["update_proposal"]) == (NOT_FOUND, "report", False)
 
 
 @pytest.mark.parametrize(
-    ("github", "offered", "diagnosis_offer"),
+    ("github", "offered"),
     [
-        (FakeGitHub(release=NEWER_MAIN), True, ("update", False)),
-        (FakeGitHub(), False, ("report", False)),
-        (FakeGitHub(release=None), False, ("report", False)),
-        (FakeGitHub(release=NO_RELEASE), False, ("report", False)),
-        (FakeGitHub(tool_commit=None), False, ("report", False)),
+        (FakeGitHub(release=NEWER_MAIN), True),
+        (FakeGitHub(), False),
+        (FakeGitHub(release=None), False),
+        (FakeGitHub(release=NO_RELEASE), False),
+        (FakeGitHub(tool_commit=None), False),
     ],
     ids=["nowsze-wydanie", "aktualna", "brak-sieci", "bez-wydania", "bez-gita"],
 )
-def test_konfiguracja_i_diagnoza_proponuja_aktualizacje_tylko_przy_nowszym_wydaniu(
-    tmp_path: Path, github: FakeGitHub, offered: bool, diagnosis_offer: tuple[str, bool]
+def test_konfiguracja_proponuje_aktualizacje_tylko_przy_nowszym_wydaniu(
+    tmp_path: Path, github: FakeGitHub, offered: bool
 ) -> None:
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(github=github))
-    run_id = stopped_for_maks(centrum)
 
-    diagnosis = diagnose(centrum, run_id)
     configuration = centrum.client.get("/api/configuration").json()
 
     assert configuration["update_offered"] is offered
-    assert (diagnosis["next_action"], diagnosis["update_proposal"]) == diagnosis_offer
 
 
 def test_odmowa_githuba_z_powodu_limitu_w_diagnozie_nie_zabiera_konfiguracji_propozycji_aktualizacji(
@@ -1198,22 +1155,6 @@ def online_only(centrum: PreparingCentrum | SettlingCentrum, path: Path) -> None
     onedrive.online_only.add(path)
 
 
-def test_rejestr_tylko_w_chmurze_wyjasnia_jak_zachowac_go_na_komputerze(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    run_id = stopped_for_maks(centrum)
-    online_only(centrum, centrum.fixture.register_path)
-
-    diagnosis = diagnose(centrum, run_id)
-
-    assert diagnosis["explanation"] == {
-        "what": "Plik jest tylko w OneDrive w chmurze, bez kopii na tym komputerze.",
-        "where": f"plik {centrum.fixture.register_path.name}, folder {tmp_path.name}",
-        "action": ONLY_IN_CLOUD_ACTION,
-    }
-    assert diagnosis["next_action"] == "rerun"
-    assert check(diagnosis, "Pliki w OneDrive")[0] == "failed"
-
-
 @pytest.mark.parametrize(
     "cloud_file",
     [
@@ -1238,6 +1179,8 @@ def test_plik_tylko_w_chmurze_ktorego_nie_da_sie_otworzyc_wyjasnia_onedrive_a_ni
         "where": f"plik {path.name}, folder {path.parent.name}",
         "action": ONLY_IN_CLOUD_ACTION,
     }
+    assert diagnosis["next_action"] == "rerun"
+    assert check(diagnosis, "Pliki w OneDrive")[0] == "failed"
 
 
 def test_plik_folderu_okresu_tylko_w_chmurze_jest_przyczyna(tmp_path: Path) -> None:

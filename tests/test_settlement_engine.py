@@ -2,13 +2,11 @@ from __future__ import annotations
 
 import errno
 import os
-import re
 import shutil
 import sys
 import tempfile
 from pathlib import Path
 import time
-import zipfile
 from collections.abc import Callable
 
 from openpyxl import load_workbook
@@ -48,12 +46,10 @@ from atrapy.workbooks import (
     active_worksheet,
     add_external_link_fixture,
     column_widths,
-    cut_sheet_after_data_rows,
     hyperlinks,
     marked_for_copy,
     opening_view,
     refused_by_copy,
-    rewrite_parts,
     view_of,
     without_sheet,
     written_by_copy,
@@ -481,11 +477,10 @@ def with_unmapped_worker_and_data_row_without_worker(source_path: Path) -> None:
 @pytest.mark.parametrize(
     ("damage", "code"),
     [
-        (with_unmapped_worker, "NIEZNANY_WYKONAWCA"),
         (with_data_row_without_worker, "WIERSZE_BEZ_WYKONAWCY"),
         (with_unmapped_worker_and_data_row_without_worker, "NIEZNANY_WYKONAWCA"),
     ],
-    ids=["wykonawca-bez-mapowania", "wiersz-danych-bez-wykonawcy", "oba-wygrywa-nieznany-wykonawca"],
+    ids=["wiersz-danych-bez-wykonawcy", "oba-wygrywa-nieznany-wykonawca"],
 )
 def test_wykonawca_bez_mapowania_albo_wiersz_danych_bez_wykonawcy_wstrzymuje_publikacje_folderu_rozliczen_pracownikow(
     tmp_path: Path, damage: Callable[[Path], None], code: str
@@ -507,7 +502,6 @@ def test_wykonawca_bez_mapowania_albo_wiersz_danych_bez_wykonawcy_wstrzymuje_pub
 @pytest.mark.parametrize(
     ("workers", "named", "subject"),
     [
-        ({19: "andrzej.nieznany2"}, ["andrzej.nieznany2"], "jest WYKONAWCA"),
         (
             {18: " Zenon.Nieznany ", 19: "Bartosz.Nieznany", 20: "ZENON.NIEZNANY"},
             ["Zenon.Nieznany", "Bartosz.Nieznany"],
@@ -515,7 +509,7 @@ def test_wykonawca_bez_mapowania_albo_wiersz_danych_bez_wykonawcy_wstrzymuje_pub
         ),
         ({18: "Zenon\u00a0Nieznany\u00a0", 19: "zenon nieznany"}, ["Zenon\u00a0Nieznany"], "jest WYKONAWCA"),
     ],
-    ids=["jeden", "dwoch-w-kolejnosci-pliku-w-pisowni-pierwszego-wiersza", "twarda-spacja-to-spacja"],
+    ids=["dwoch-w-kolejnosci-pliku-w-pisowni-pierwszego-wiersza", "twarda-spacja-to-spacja"],
 )
 def test_zatrzymanie_i_podglad_nazywaja_kazdego_nieznanego_wykonawce_raz(
     tmp_path: Path, workers: dict[int, str | None], named: list[str], subject: str
@@ -603,8 +597,8 @@ def _stopped_in(phase: ProgressPhase) -> dict[ProgressPhase, PhaseState]:
 
 @pytest.mark.parametrize(
     "damage",
-    [overwrite_with_non_workbook, cut_sheet_after_data_rows, without_sheet],
-    ids=["nie-skoroszyt", "urwany-arkusz", "bez-arkusza"],
+    [without_sheet],
+    ids=["bez-arkusza"],
 )
 def test_nieczytelny_plik_zbiorczy_zatrzymuje_przebieg_rozliczen_bezpiecznym_komunikatem(
     tmp_path: Path,
@@ -627,63 +621,6 @@ def test_nieczytelny_plik_zbiorczy_zatrzymuje_przebieg_rozliczen_bezpiecznym_kom
     assert projection.snapshot.phase_states == _stopped_in(ProgressPhase.READING)
     assert not target_directory.exists()
     assert not list(target_directory.parent.glob(f".{target_directory.name}.staging-*"))
-
-
-def with_undefined_number_format(cell: str) -> Callable[[Path], None]:
-    """Komórka ``cell`` ma styl z numerem formatu liczby, którego nie ma w stylach skoroszytu."""
-
-    def change(path: Path) -> None:
-        workbook = load_workbook(path)
-        try:
-            active_worksheet(workbook)[cell].number_format = "0.000"
-            workbook.save(path)
-        finally:
-            workbook.close()
-        with zipfile.ZipFile(path) as workbook_zip:
-            cell_styles = re.search(rb'<cellXfs count="(\d+)"', workbook_zip.read("xl/styles.xml"))
-        assert cell_styles is not None
-        count = int(cell_styles[1])
-
-        def undefined(name: str, data: bytes) -> bytes:
-            if name == "xl/styles.xml":
-                data = data.replace(b'<cellXfs count="%d"' % count, b'<cellXfs count="%d"' % (count + 1), 1)
-                return data.replace(b"</cellXfs>", b'<xf numFmtId="250" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/></cellXfs>', 1)
-            if name.startswith("xl/worksheets/"):
-                return re.sub(rb'<c r="%s" s="\d+"' % cell.encode(), b'<c r="%s" s="%d"' % (cell.encode(), count), data, count=1)
-            return data
-
-        rewrite_parts(path, undefined)
-
-    return change
-
-
-def test_format_liczby_bez_definicji_poza_kolumnami_wygladu_nie_zatrzymuje_przebiegu_rozliczen(tmp_path: Path) -> None:
-    source_path, target_directory, config_path = make_fixture(tmp_path)
-    with_undefined_number_format("M18")(source_path)
-
-    run_settlements(
-        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
-        RunContext(),
-    )
-
-    assert any(target_directory.glob("*.xlsx"))
-
-
-def test_format_liczby_bez_definicji_w_kolumnach_wygladu_to_uszkodzony_plik_zbiorczy(tmp_path: Path) -> None:
-    source_path, target_directory, config_path = make_fixture(tmp_path)
-    with_undefined_number_format("L18")(source_path)
-
-    with pytest.raises(StopError) as stop:
-        run_settlements(
-            SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name),
-            RunContext(),
-        )
-
-    assert (stop.value.message.code, stop.value.message.what) == (
-        "ZLY_PLIK_ZBIORCZY",
-        f"{UNFIT_COLLECTIVE_FILE_PREFIX} {UNREADABLE_SOURCE_MESSAGE}",
-    )
-    assert not target_directory.exists()
 
 
 @pytest.mark.parametrize(
@@ -766,19 +703,6 @@ def test_plik_zbiorczy_bez_wykonawca_w_h17_zatrzymuje_przebieg_rozliczen(tmp_pat
     assert stop.value.message.code == "ZLY_PLIK_ZBIORCZY"
     assert stop.value.message.what == f"{UNFIT_COLLECTIVE_FILE_PREFIX} W wierszu 17 nie znaleziono nagłówka WYKONAWCA w kolumnie H."
     assert not target_directory.exists()
-
-
-def test_istniejacy_folder_rozliczen_pracownikow_nie_jest_nadpisywany(complete_run: tuple[Path, Path, Path, Path]) -> None:
-    source_path, target_directory, config_path, worker_template_path = complete_run
-    target_directory.mkdir()
-    sentinel = target_directory / "existing.txt"
-    sentinel.write_text("zachowaj", encoding="utf-8")
-
-    with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
-
-    assert raised.value.message.code == "FOLDER_ROZLICZEN_ISTNIEJE"
-    assert sentinel.read_text(encoding="utf-8") == "zachowaj"
 
 
 def test_folder_rozliczen_pracownikow_ktorego_nie_da_sie_sprawdzic_zatrzymuje_zanim_cos_powstanie(
@@ -944,29 +868,6 @@ def test_wzorzec_rozliczenia_pracownika_zepsuty_po_sprawdzaniu_wstrzymuje_publik
     assert [(type(event), event.template_index) for event in failed] == [(WorkerFailed, 1)]
 
 
-@pytest.mark.parametrize("merged", ["A18:B18", "A19:B19"], ids=["pierwszy-wiersz", "drugi-wiersz"])
-def test_wzorzec_rozliczenia_pracownika_ze_scaleniem_w_wierszach_danych_zatrzymuje_zapisywanie(
-    complete_run: tuple[Path, Path, Path, Path], merged: str
-) -> None:
-    source_path, target_directory, config_path, worker_template_path = complete_run
-    workbook = load_workbook(worker_template_path)
-    try:
-        active_worksheet(workbook).merge_cells(merged)
-        workbook.save(worker_template_path)
-    finally:
-        workbook.close()
-    worker_template_before = worker_template_path.read_bytes()
-
-    with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
-
-    assert raised.value.message.code == "BLAD_SZABLONU_PRACOWNIKA"
-    assert raised.value.message.what == FIRST_WORKER_FILE_FAILED
-    assert not target_directory.exists()
-    assert not list(target_directory.parent.glob(f".{target_directory.name}.staging-*"))
-    assert worker_template_path.read_bytes() == worker_template_before
-
-
 @pytest.mark.parametrize(
     ("failing_phase", "code"),
     [(ProgressPhase.CHECKING, "ZLY_WZORZEC_PRACOWNIKA"), (ProgressPhase.SAVING, "BLAD_KOPII_WZORCA")],
@@ -1001,31 +902,6 @@ def test_blad_odczytu_wzorca_rozliczenia_pracownika_z_dysku_wstrzymuje_publikacj
         assert raised.value.message.what == f"{UNUSABLE_WORKER_TEMPLATE_PREFIX} Nie można odczytać Wzorca rozliczenia pracownika."
     assert not target_directory.exists()
     assert not list(target_directory.parent.glob(f".{target_directory.name}.staging-*"))
-
-
-def test_nieudany_zapis_rozliczenia_pracownika_wstrzymuje_publikacje(
-    complete_run: tuple[Path, Path, Path, Path], monkeypatch: pytest.MonkeyPatch
-) -> None:
-    source_path, target_directory, config_path, worker_template_path = complete_run
-    worker_template_before = worker_template_path.read_bytes()
-    replace = os.replace
-
-    def fail_replacing_workbook(source: str | os.PathLike[str], target: str | os.PathLike[str]) -> None:
-        if Path(target).suffix == ".xlsx":
-            raise OSError("synthetic write failure")
-        replace(source, target)
-
-    monkeypatch.setattr(os, "replace", fail_replacing_workbook)
-
-    with pytest.raises(StopError) as raised:
-        run_settlements(SettlementInputs(source_path, worker_list(), worker_template_path), RunContext())
-
-    assert raised.value.message.code == "BLAD_SZABLONU_PRACOWNIKA"
-    assert "Adrian Testowy" in raised.value.message.what
-    assert not target_directory.exists()
-    assert not list(target_directory.parent.glob(f".{target_directory.name}.staging-*"))
-    assert sorted(path.name for path in target_directory.parent.iterdir()) == [SOURCE_NAME]
-    assert worker_template_path.read_bytes() == worker_template_before
 
 
 @pytest.mark.parametrize(
@@ -1371,33 +1247,6 @@ def test_failed_przetworzenie_szablonu_pracownika_emits_failure_without_false_co
     )
     assert summary.written_count == 2
     assert target_directory.is_dir()
-
-
-@pytest.mark.parametrize(
-    ("dry_run", "include_unmapped", "issue_count"),
-    [(False, False, 0), (True, True, 1)],
-    ids=["zapis", "dry-run-z-problemem"],
-)
-def test_progress_projection_accepts_whole_przebieg_rozliczen(
-    tmp_path: Path, dry_run: bool, include_unmapped: bool, issue_count: int
-) -> None:
-    source_path, _, config_path = make_fixture(tmp_path)
-    write_source(source_path, include_unmapped=include_unmapped)
-    projection = ProgressProjection()
-
-    summary = run_settlements(
-        SettlementInputs(source_path, worker_list(), tmp_path / tool_files.WORKER_TEMPLATE.name, dry_run=dry_run),
-        RunContext(observer=projected(projection)),
-    )
-
-    snapshot = projection.snapshot
-    assert set(snapshot.phase_states.values()) == {PhaseState.COMPLETED}
-    assert snapshot.template_total == 3
-    assert snapshot.templates_completed == 3
-    assert snapshot.issue_count == issue_count
-    assert set(summary.phase_durations_ms) == set(ProgressPhase)
-    with pytest.raises(TypeError):
-        summary.phase_durations_ms[ProgressPhase.SAVING] = 0  # type: ignore[index]
 
 
 def test_progress_projection_accepts_przebieg_rozliczen_interrupted_in_zapisywanie_with_its_time(

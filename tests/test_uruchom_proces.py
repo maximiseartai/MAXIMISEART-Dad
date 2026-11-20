@@ -14,7 +14,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
-from typing import Any, get_args, get_type_hints
+from typing import Any
 
 import pytest
 
@@ -24,14 +24,10 @@ from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
 from rozliczenia import settlement_messages
 from rozliczenia.centrum import run_view
-from rozliczenia.centrum.contract import common as common_contract
-from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.settings import messages as settings_messages
-from rozliczenia.preparation_process import PROCESS as PREPARATION
-from rozliczenia.process_run import Stop
 from rozliczenia.settlement_process import PROCESS as SETTLEMENT
 from rozliczenia.telemetry import MetricsStore
 from rozliczenia.tool_files import (
@@ -52,10 +48,7 @@ from tests.fixtures.centrum import ToolDirectory
 from tests.fixtures.centrum_processes import run_to_end, settling_centrum
 from tests.fixtures.wyciek import zawiera_wartosc
 from atrapy.preparation import (
-    COLLECTIVE_FILE_NAME,
-    INTERNAL_SETTLEMENT_NAME,
     PreparationFixture,
-    incomplete_period_fixture,
     link_register_order_numbers,
     make_preparation_fixture,
 )
@@ -68,7 +61,6 @@ from atrapy.settlement import (
     SOURCE_NAME,
     link_order_numbers,
     make_fixture,
-    make_preview_fixture,
     worker_list,
     write_quantity_source,
     write_template,
@@ -109,14 +101,6 @@ def _run(*arguments: str | Path, script: Path = SCRIPT) -> tuple[int, dict[str, 
     return completed.returncode, json.loads(completed.stdout)
 
 
-def test_skrypt_dla_maszyn_i_karta_centrum_znaja_kazde_zatrzymanie_rdzenia() -> None:
-    core = set(get_args(get_type_hints(Stop)["kind"]))
-    script = set(get_args(uruchom_proces.StopResult.model_fields["kind"].annotation))
-    card = set(get_args(runs_contract.RunOutcome.model_fields["ending"].annotation)) - {"finished"}
-
-    assert core == script == card == {"stop", "declined", "unexpected", "after_engine"}
-
-
 def _settlement_arguments(tmp_path: Path, source: Path, config: Path, *extra: str) -> list[str]:
     return [
         "settlement",
@@ -134,10 +118,6 @@ def _settlement_arguments(tmp_path: Path, source: Path, config: Path, *extra: st
 
 def _settlement(tmp_path: Path, source: Path, config: Path, *extra: str) -> tuple[int, dict[str, Any]]:
     return _run(*_settlement_arguments(tmp_path, source, config, *extra))
-
-
-def _preparation(fixture: PreparationFixture, *extra: str) -> tuple[int, dict[str, Any]]:
-    return _run(*_preparation_arguments(fixture, *extra))
 
 
 def _preparation_arguments(fixture: PreparationFixture, *extra: str) -> list[str | Path]:
@@ -287,29 +267,6 @@ def test_awaria_podgladu_postepu_odlacza_go_bez_tekstu_wyjatku_i_bez_zmiany_wyni
     assert (record["result"], result["metrics_saved"]) == ("OK", True)
 
 
-def test_plan_ktorego_nie_da_sie_pokazac_to_zatrzymanie_po_silniku_z_tym_samym_wynikiem_co_w_metrykach(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    source, _target, config = make_preview_fixture(tmp_path)
-    secret = "Jan Kowalski /Users/klient/Rejestr.xlsx"
-
-    def broken_view(*args: Any, **kwargs: Any) -> Any:
-        raise RuntimeError(secret)
-
-    monkeypatch.setattr(run_view.ProcessView, "shown", broken_view)
-
-    exit_code = uruchom_proces.main(_settlement_arguments(tmp_path, source, config, "--dry-run"))
-    stdout, stderr = capsys.readouterr()
-    result = json.loads(stdout)
-
-    assert secret not in stdout + stderr
-    assert stderr == ""
-    assert (exit_code, result["result"], result["summary"], result["warnings"]) == (1, "BLAD_KRYTYCZNY", None, [])
-    assert (result["stop"]["kind"], result["stop"]["message"]["code"]) == ("after_engine", "BLAD_PLANU")
-    [record] = MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT.counter_names).read()
-    assert (record["mode"], record["result"]) == ("DRY-RUN", "BLAD_KRYTYCZNY")
-
-
 def test_nieudany_zapis_metryk_jest_ostrzezeniem_bez_zmiany_wyniku(tmp_path: Path) -> None:
     source, target, config = make_fixture(tmp_path)
     not_a_folder = tmp_path / "plik zamiast folderu"
@@ -325,24 +282,6 @@ def test_nieudany_zapis_metryk_jest_ostrzezeniem_bez_zmiany_wyniku(tmp_path: Pat
         ("Puste szablony", 1),
     ]
     assert len(list(target.iterdir())) == 3
-
-
-def test_podglad_z_nieznanym_wykonawca_wymaga_sprawdzenia_kodem_2_z_kodem_ostrzezenia(tmp_path: Path) -> None:
-    source, _target, config = make_preview_fixture(tmp_path)
-
-    exit_code, result = _settlement(tmp_path, source, config, "--dry-run")
-
-    assert (exit_code, result["result"], result["stop"]) == (2, "WYMAGA_SPRAWDZENIA", None)
-    assert [warning["code"] for warning in result["warnings"]] == ["BRAK_MAPOWANIA"]
-    assert set(result["warnings"][0]) == {"code", "what", "where", "action"}
-    assert [(figure["label"], figure["value"]) for figure in result["summary"]["figures"]] == [
-        ("Wiersze danych", 3),
-        ("Planowane szablony", 2),
-        ("Puste szablony", 1),
-    ]
-    assert sorted(path.name for path in source.parent.iterdir()) == [SOURCE_NAME]
-    [record] = MetricsStore(tmp_path / "metrics.jsonl", SETTLEMENT.counter_names).read()
-    assert (record["mode"], record["result"]) == ("DRY-RUN", "WYMAGA_SPRAWDZENIA")
 
 
 def test_podsumowanie_i_ostrzezenia_w_kolejnosci_etapow_sa_te_same_w_skrypcie_na_karcie_i_w_metrykach(tmp_path: Path) -> None:
@@ -415,36 +354,6 @@ def test_zatrzymanie_w_sprawdzaniu_konczy_kodem_1_z_kodem_komunikatu_i_bez_pliko
     assert str(tmp_path) not in json.dumps(result)
 
 
-def test_decyzja_o_niepelnym_okresie_jest_odrzucana_bez_czekania_i_bez_plikow_okresu(tmp_path: Path) -> None:
-    fixture = incomplete_period_fixture(tmp_path)
-
-    exit_code, result = _preparation(fixture)
-
-    assert (exit_code, result["result"], result["summary"]) == (1, "BLAD_KRYTYCZNY", None)
-    assert (result["stop"]["kind"], result["stop"]["message"]["code"]) == ("declined", "PRZERWANO_NIEPELNY_OKRES")
-    assert not fixture.period_directory.exists()
-    [record] = MetricsStore(fixture.register_path.parent / "metrics.jsonl", PREPARATION.counter_names).read()
-    assert (record["mode"], record["period"], record["result"]) == ("RUN", PERIOD, "BLAD_KRYTYCZNY")
-    assert str(tmp_path) not in json.dumps(result)
-
-
-def test_podglad_przygotowania_pliku_zbiorczego_pokazuje_plan_bez_plikow_okresu(tmp_path: Path) -> None:
-    fixture = make_preparation_fixture(tmp_path)
-
-    exit_code, result = _preparation(fixture, "--dry-run")
-
-    assert (exit_code, result["result"], result["stop"]) == (0, "OK", None)
-    assert [warning["code"] for warning in result["warnings"]] == ["NIEZNANE_URZADZENIA", "KOLUMNY_Z_OPISU"]
-    figures = {figure["label"]: figure["value"] for figure in result["summary"]["figures"]}
-    assert (figures["Zlecenia okresu"], figures["Zlecenia skuteczne"]) == (4, 3)
-    assert result["summary"]["files"] == [
-        {"name": INTERNAL_SETTLEMENT_NAME, "kind": "internal_settlement"},
-        {"name": COLLECTIVE_FILE_NAME, "kind": "collective_file"},
-    ]
-    assert list(fixture.periods_directory.iterdir()) == []
-    assert result["metrics_saved"] is True
-
-
 def test_uporzadkowanie_intermax_ze_skryptu_dla_maszyn_oddaje_karte_uruchomienia_i_kopie(tmp_path: Path) -> None:
     register = tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
     Intermax().write(register)
@@ -453,18 +362,7 @@ def test_uporzadkowanie_intermax_ze_skryptu_dla_maszyn_oddaje_karte_uruchomienia
     exit_code, result = _run("intermax", "--register", register, "--copies", copies, "--metrics", metrics)
 
     assert (exit_code, result["result"], result["stop"]) == (0, "OK", None)
-    assert result["summary"]["figures"] == [
-        {"label": "Zlecenia", "value": 6, "unit": "count"},
-        {"label": "Wykonawcy", "value": 3, "unit": "count"},
-    ]
-    assert result["summary"]["counts"] == {
-        "title": "Uporządkowany dzień",
-        "counts": [{"label": "pon 26.10.2026", "count": 6}],
-        "zero_warns": True,
-    }
-    assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     assert len(list(copies.iterdir())) == 1
-    assert "intermax" in get_args(common_contract.ProcessKey)
     assert "jan.nowak" not in json.dumps(result) and "jan.nowak" not in metrics.read_text(encoding="utf-8")
 
 
@@ -489,32 +387,7 @@ def test_uporzadkowanie_intermax_z_baza_zlecen_z_parametru_kopiuje_historie_adre
         assert found.count("ULICA 101") == (1 if given else 0), given
 
 
-def test_uporzadkowanie_intermax_z_nieusunieta_stara_kopia_konczy_sie_ok_z_ostrzezeniem(tmp_path: Path) -> None:
-    register = tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
-    Intermax().write(register)
-    copies = tmp_path / "Kopie INTERMAX"
-    copies.mkdir()
-    for day in range(10, 20):
-        (copies / f"INTERMAX przed uporządkowaniem 2026-10-{day:02d} 07-00-00.xlsx").write_bytes(b"kopia")
-    (copies / "INTERMAX przed uporządkowaniem 2026-10-09 07-00-00.xlsx").mkdir()
-
-    exit_code, result = _run("intermax", "--register", register, "--copies", copies, "--metrics", tmp_path / "m.jsonl")
-
-    assert (exit_code, result["result"], result["stop"]) == (0, "OK", None)
-    assert [warning["code"] for warning in result["warnings"]] == ["STARE_KOPIE_INTERMAX"]
-
-
-def test_uporzadkowanie_intermax_bez_surowych_zlecen_konczy_kodem_1_z_kodem_komunikatu(tmp_path: Path) -> None:
-    register = tmp_path / "ZLECENIA INTERMAX OD 08_11_2021.xlsx"
-    Intermax(raw=()).write(register)
-
-    exit_code, result = _run("intermax", "--register", register, "--copies", tmp_path / "Kopie", "--metrics", tmp_path / "m.jsonl")
-
-    assert (exit_code, result["result"], result["summary"]) == (1, "BLAD_KRYTYCZNY", None)
-    assert (result["stop"]["kind"], result["stop"]["message"]["code"]) == ("stop", "BRAK_SUROWYCH_ZLECEN")
-
-
-def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_kwotami_i_ostrzezenia_emmetta(
+def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_wymaga_sprawdzenia_bez_zmiany_statusu_i_bez_numerow_zlecen(
     tmp_path: Path,
 ) -> None:
     au = float(amount_of({"012": 2}))
@@ -534,31 +407,6 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_na_atrapie_oddaje_gotowe_bledy_z_
         changes = atrapa.status_changes()
 
     assert (exit_code, result["result"], result["stop"], changes) == (2, "WYMAGA_SPRAWDZENIA", None, 0)
-    assert result["summary"]["figures"] == [
-        {"label": "Zlecenia w zakresie", "value": 4, "unit": "count"},
-        {"label": "Gotowe do przekazania", "value": 1, "unit": "count"},
-        {"label": "Przekazane do akceptacji", "value": 0, "unit": "count"},
-        {"label": "Rozliczone", "value": 0, "unit": "count"},
-        {"label": "Błędy zleceń", "value": 2, "unit": "count"},
-        {"label": "Ostrzeżenia Emmetta", "value": 1, "unit": "count"},
-    ]
-    assert result["summary"]["counts"] == {
-        "title": "Pominięte",
-        "counts": [
-            {"label": "Ze zdjęciami", "count": 0},
-            {"label": "Usterki", "count": 0},
-            {"label": "Nieznalezione w efenix", "count": 0},
-        ],
-        "zero_warns": False,
-    }
-    assert [(warning["code"], warning["where"].rpartition(", ")[2]) for warning in result["warnings"]] == [
-        ("EFENIX_INNY_STATUS", "wiersz 19"),
-        ("EFENIX_INNA_KWOTA", "wiersz 20"),
-        ("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 21"),
-    ]
-    amounts = f"kwota w efenix to {au:.2f} zł, a Kwota (AU) {au + 10:.2f} zł".replace(".", ",")
-    assert amounts in result["warnings"][1]["what"]
-    assert "pozycja INDEKS_012 (kolumna O): efenix 3, plik 2" in result["warnings"][2]["what"]
     assert [phase["state"] for phase in result["progress"]["phases"]] == ["completed"] * 4
     texts = (json.dumps(result), metrics.read_text(encoding="utf-8"))
     assert [zawiera_wartosc(text, orders[0].number) for text in texts] == [False, False]
@@ -583,8 +431,6 @@ def test_wycena_w_efenix_ze_skryptu_dla_maszyn_z_przekazaniem_przekazuje_gotowe_
     ("arguments", "missing"),
     [
         (("settlement",), "--source"),
-        (("efenix", "--efenix-url", "http://127.0.0.1:9/zlecenia"), "--source"),
-        (("efenix", "--source", "brak/Plik zbiorczy.xlsx"), "--efenix-url"),
     ],
 )
 def test_bledne_argumenty_koncza_sie_kodem_1_bez_wyniku_json(

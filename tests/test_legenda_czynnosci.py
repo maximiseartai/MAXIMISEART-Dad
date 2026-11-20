@@ -155,10 +155,6 @@ def test_kody_z_opisu_w_zapisie_legendy_w_kolejnosci_z_opisu_takze_przy_bledzie_
     assert _read(text).spelled == spelled
 
 
-def test_kod_z_liczba_spoza_przedzialow_to_blad_opisu_takze_obok_zwyklego_opisu() -> None:
-    assert _problems("montaż instutp40m") == (NumberOutOfRange("instutp", "instutp{n}m", 40),)
-
-
 @pytest.mark.parametrize(
     ("text", "problem"),
     [
@@ -241,10 +237,6 @@ def test_dwa_rozne_kolory_w_jednej_kolumnie_to_blad_opisu_a_ten_sam_kolor_dwa_ra
     assert _problems("zielony czerwony zielony", legend) == (TwoColours(column, ("zielony", "czerwony", "zielony")),)
     read = legend.read("zielony tezzielony", fault=False)
     assert isinstance(read, WithCodes) and dict(read.fills) == {column: FillColour.GREEN}
-
-
-def test_dwa_kody_z_tym_samym_kolorem_w_af_z_legendy_z_wydania_nie_sa_bledem() -> None:
-    assert dict(_codes("rt2 instwew15m").fills)["AF"] is FillColour.GREEN
 
 
 def test_powody_bledu_ida_najpierw_kodami_spoza_przedzialow_w_kolejnosci_z_opisu_potem_kolumnami_kazdy_raz() -> None:

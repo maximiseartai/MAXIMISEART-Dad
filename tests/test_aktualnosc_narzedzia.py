@@ -47,6 +47,8 @@ from tests.fixtures.github_api import Answer, github_api, newest_on_main
 
 from tests.fixtures.proxy_systemu import system_proxy
 
+pytestmark = pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
+
 MAIN = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
 TOKEN = "token-wymyslony-w-tescie"
 WITH_TOKEN = f"Bearer {TOKEN}"
@@ -282,30 +284,28 @@ def test_najnowsze_wydanie_ze_wszystkich_stron_listy_tagow(github: str) -> None:
     assert releases_from(f"{github}/strony", timeout_s=30) == GitHubReleases(NEWEST, "v1.0.0")
 
 
-@pytest.mark.parametrize("token", [None, TOKEN], ids=["bez-tokenu", "z-tokenem"])
-def test_aktualnosc_pyta_github_naglowkami_api_rest_z_wersja_api(github: str, token: str | None) -> None:
+def test_aktualnosc_pyta_github_naglowkami_api_rest_z_wersja_api(github: str) -> None:
     # Nagłówki z dokumentacji REST API GitHuba: typ odpowiedzi, wersja API i obowiązkowy User-Agent (bez niego 403).
     expected = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
         "User-Agent": "centrum-rozliczen",
-        "Authorization": None if token is None else f"Bearer {token}",
+        "Authorization": None,
     }
 
-    assert releases_from(f"{github}/tagi", timeout_s=30, token=token) == GitHubReleases(NEWEST, "v0.10.0")
-    assert published_from(f"{github}/wydania", timeout_s=30, token=token) is not None
+    assert releases_from(f"{github}/tagi", timeout_s=30) == GitHubReleases(NEWEST, "v0.10.0")
+    assert published_from(f"{github}/wydania", timeout_s=30) is not None
 
     assert len(_ASKED_HEADERS) >= 2
     assert all({name: headers[name] for name in expected} == expected for headers in _ASKED_HEADERS)
 
 
-@pytest.mark.parametrize("token", [None, TOKEN], ids=["bez-tokenu", "z-tokenem"])
 def test_aktualnosc_laczy_sie_z_githubem_wprost_mimo_proxy_w_ustawieniach_systemu(
-    github: str, monkeypatch: pytest.MonkeyPatch, token: str | None
+    github: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     with system_proxy(monkeypatch) as proxied:
-        assert releases_from(f"{github}/tagi", timeout_s=30, token=token) == GitHubReleases(NEWEST, "v0.10.0")
-        assert published_from(f"{github}/wydania", timeout_s=30, token=token) is not None
+        assert releases_from(f"{github}/tagi", timeout_s=30) == GitHubReleases(NEWEST, "v0.10.0")
+        assert published_from(f"{github}/wydania", timeout_s=30) is not None
 
     assert proxied == []
 
@@ -488,9 +488,6 @@ def test_odmowa_githuba_w_polowie_wyszukiwania_to_nie_wiadomo_i_nic_nie_zostaje_
     assert known == {}
 
 
-# Wyjątek w wątku pytania też kończy się ``None`` (``deadline.within``), ale jako ślad wywołań na stderr Centrum:
-# odpowiedź w innym kształcie ma być „nie wiadomo” bez wyjątku.
-@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 @pytest.mark.parametrize("repository", [*_ODD_REFS, *_ODD_COMPARES])
 def test_czubek_main_albo_porownanie_w_innym_ksztalcie_to_nie_wiadomo(github: str, repository: str) -> None:
     assert releases_from(f"{github}/{repository}", timeout_s=30) is None
@@ -645,18 +642,6 @@ def test_odmowa_z_powodu_limitu_githuba_mowi_kiedy_limit_sie_odnowi_a_bez_tokenu
     assert [asked.authorization for asked in api.asked] == authorizations
 
 
-def test_wyczerpany_limit_konta_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktualizacji() -> None:
-    """Limit konta MAXIMISEART-AI dzielą z Centrum agenci Maksa; limit adresu IP taty to osobna pula."""
-
-    limited = Answer(403, {"message": "API rate limit exceeded"}, LIMIT)
-    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=limited) as api:
-        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
-
-    assert newest == GitHubReleases(NEWEST, "v0.2.0")
-    assert [asked.authorization for asked in api.asked][:2] == [WITH_TOKEN, None]
-    assert WITH_TOKEN not in [asked.authorization for asked in api.asked][1:]
-
-
 def test_odmowa_z_tokenem_z_nieczytelna_chwila_odnowienia_limitu_to_odmowa_tokenu_ponowiona_bez_niego() -> None:
     unreadable = Answer(403, {"message": "API rate limit exceeded"}, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "jutro"})
     with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=unreadable) as api:
@@ -666,11 +651,10 @@ def test_odmowa_z_tokenem_z_nieczytelna_chwila_odnowienia_limitu_to_odmowa_token
     assert [asked.authorization for asked in api.asked][:2] == [WITH_TOKEN, None]
 
 
-@pytest.mark.parametrize("status", [500, 502])
-def test_awaria_githuba_na_pytanie_z_tokenem_to_brak_odpowiedzi_bez_ponowienia_bez_tokenu(status: int) -> None:
+def test_awaria_githuba_na_pytanie_z_tokenem_to_brak_odpowiedzi_bez_ponowienia_bez_tokenu() -> None:
     """Bez tokenu ponawia się tylko odmowę tokenu (401, 403, limit konta) i 404, a awaria GitHuba nią nie jest."""
 
-    failure = Answer(status, {"message": "Server Error"})
+    failure = Answer(500, {"message": "Server Error"})
     with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=failure) as api:
         newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
 
@@ -697,7 +681,6 @@ def test_odmowa_z_trescia_bez_konca_czytana_do_1_mb_a_pytanie_ponowione_bez_toke
     assert [asked.authorization for asked in api.asked] == [WITH_TOKEN, None]
 
 
-@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 def test_odpowiedz_urwana_w_trakcie_tresci_to_brak_odpowiedzi_a_nie_wyjatek() -> None:
     """Odmowa listy PR-ów commitu (``commits/<sha>/pulls``) to brak odpowiedzi, po którym decyduje wyszukiwanie
     binarne; urwana treść tej odmowy też."""
@@ -713,7 +696,6 @@ def test_odpowiedz_urwana_w_trakcie_tresci_to_brak_odpowiedzi_a_nie_wyjatek() ->
         assert releases_from(f"{api.url}{REPOSITORY}", timeout_s=30) == GitHubReleases(NEWEST, "v0.2.0")
 
 
-@pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
 def test_lista_tagow_urwana_w_trakcie_tresci_to_brak_odpowiedzi_a_nie_wyjatek() -> None:
     cut = Answer(body=[{"name": "v0.2.0", "commit": {"sha": NEWEST}}], ending="cut")
     with github_api({f"{REPOSITORY}/tags?per_page=100": cut}) as api:

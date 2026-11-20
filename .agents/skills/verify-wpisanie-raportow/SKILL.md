@@ -40,17 +40,19 @@ Dad clicks „Wpisz raporty z maili” when his worker is not in INTERMAX. Each 
 open days again and writes `tak`/`nie` and the activities into `SKUTECZNE` and `CZYNNOŚCI ZREALIZOWANE`. ADR 0028:
 „Pamięta tylko to, co samo wpisało, bo bez tego nie odróżni własnego wpisu od ręcznego” and „pisze tylko do pustej
 komórki albo do własnego wcześniejszego wpisu, którego nikt potem nie zmienił”. Three files in `config/` carry the
-state between clicks (the docstring of `centrum/report_entering_state.py` names them), each with one writer, each written atomically, and a write that fails waits in the memory of
+state between clicks (`FileReportState.of_work` in `centrum/report_entering_state.py` names them), each with one writer, each written atomically, and a write that fails waits in the memory of
 this Centrum work (`StateFile`, `_TextFile`) until a later write or read retries it. The model checks, over every
 order of steps:
 
 - **NieNadpisuje**: a Wpis replaces only an empty cell or the tool's own earlier entry; never a value Dad or his worker
-  typed (docstring of `reconcile`: „wartość ręczna równa Wpisowi do pamięci nie trafia, żeby późniejsza poprawka nie
-  nadpisała taty”). Harm: Dad's correction disappears from INTERMAX and from the Rozliczenia, and there is no Kopia
+  typed; a manual value equal to the Wpis does not go into the memory, so a later correction cannot overwrite Dad
+  (`test_komorka_rowna_wpisowi_nie_daje_zmiany_a_drugie_klikniecie_niczego_nie_zmienia` in
+  `tests/test_rdzen_raportow.py`). Harm: Dad's correction disappears from INTERMAX and from the Rozliczenia, and there is no Kopia
   INTERMAX to bring it back (ADR 0028: „Bez Kopii INTERMAX”).
 - **ZostawUcisza**: once „Zostaw moją” returned the Raporty view without the difference, the view never shows that
-  difference (the same cell and the same content of the Wpis) again (docstring of `Kept`: „różnica z tą treścią nie
-  wraca”; `report_entering_run.py`: „różnica … znika z widoku od razu”). „Zostaw moją” never writes INTERMAX by
+  difference (the same cell and the same content of the Wpis) again
+  (`test_zostaw_moja_zapisuje_decyzje_poza_intermax_a_roznica_nie_wraca_dopoki_wykonawca_nie_przysle_innej_tresci` in
+  `tests/test_centrum_wpisanie_raportow.py`). „Zostaw moją” never writes INTERMAX by
   construction (`keep` has no write), and the Wpis never replaces Dad's value after it, which is NieNadpisuje. Harm: Dad
   decides the same difference again, or stops trusting the view.
 - **BezFalszywejRoznicy**: a difference with a manual value (`ManualDifference`) stands only at a value Dad or his worker

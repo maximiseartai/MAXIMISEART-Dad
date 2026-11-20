@@ -5,7 +5,7 @@ Zgłoszenie, Kontrola ilości or Logi Uruchomienia from Dad's computer: before y
 
 ## Conventions
 
-- This repository is public: a public issue may name a worker of Dad's by first name alone, never by surname, login or address, and repository files say „pracownik taty” ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)).
+- This repository is public: a public issue may name a worker of Dad's by first name alone, never by surname, login or address, and repository files say „pracownik taty” ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md)); the exception is Andrzej, Dad's office worker, whom repository files name by first name, as the name of his Stanowisko (Maks, 20.11.2026).
 - Read an issue with its comments with `gh issue view <number> --json title,body,comments --jq '.title, .body, (.comments[] | "--- \(.author.login) \(.createdAt)\n\(.body)")'`; `--comments` alone prints only the comments when its output is piped, as in an agent's shell.
 - PRs as a request surface: no.
 

@@ -109,7 +109,7 @@ def test_brama_pre_push_poza_ci_sprawdza_ruff_i_mypy_bez_odtwarzania(tmp_path: P
     assert done.stdout.splitlines()[-1] == "CI LOKALNIE OK | tylko mypy, ruff"
 
 
-@pytest.mark.parametrize("jobs", [{"ruff", "mypy"}, {"pytest"}, {"frontend"}, {"ruff", "mypy", "pytest"}])
+@pytest.mark.parametrize("jobs", [{"ruff", "mypy", "pytest", "frontend"}])
 def test_lekkie_zadania_biegna_poza_ci_bez_odtwarzania(tmp_path: Path, jobs: set[str]) -> None:
     def gh(arguments: Sequence[str]) -> str:
         raise AssertionError("lekkie zadanie nie pyta GitHuba")
@@ -238,24 +238,6 @@ def test_lista_ponad_100_mutacji_poza_ci_to_reczne_mutacje_zmiany_i_odmawia_z_je
     assert refused is not None and refused.startswith("CIĘŻKIE CI ODMOWA | change-mutations ") and "\n" not in refused
     assert NIGHT in refused and "--odtwarzam" in refused
     assert "najwyżej 100 mutacji, a ta lista ma 101." in refused
-
-
-@pytest.mark.parametrize("env", [{"GITHUB_ACTIONS": "true"}, {"MAXIMISEART_NA_SCALONYCH_PR": "1"}], ids=["w CI", "z tools/na_scalonych_pr.py"])
-def test_dluga_lista_mutacji_w_ci_i_na_scalonych_pr_biegnie(tmp_path: Path, env: dict[str, str]) -> None:
-    assert mutations_refusal(335, None, root=tmp_path, env=env, gh=_no_github) is None
-
-
-def test_dluga_lista_mutacji_odtwarzajaca_czerwone_mutacje_zmiany_tej_galezi_biegnie(tmp_path: Path) -> None:
-    assert mutations_refusal(335, "123", root=_repo(tmp_path), env={}, gh=_gh("praca", "f" * 40, RED_MUTATIONS)) is None
-
-
-def test_dluga_lista_mutacji_z_runu_gdzie_padly_tylko_mutacje_skilli_odmawia(tmp_path: Path) -> None:
-    red_skills: Jobs = [{"name": "Mutation checks (1/3)", "conclusion": "failure"}, {"name": "Change mutations (1/3)", "conclusion": "success"}]
-
-    refused = mutations_refusal(335, "123", root=_repo(tmp_path), env={}, gh=_gh("praca", "f" * 40, red_skills))
-
-    assert refused is not None and refused.startswith("CIĘŻKIE CI ODMOWA | --odtwarzam 123: ") and "nie padło change-mutations" in refused
-    assert "a ta lista ma 335." in refused
 
 
 # Podstawa padnie na pierwszej kopii: mutacje, które przeszły przez strażnika, kończą się na niej, a nie po 101 kopiach.

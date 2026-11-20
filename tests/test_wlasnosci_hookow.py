@@ -883,6 +883,11 @@ SWAPPED_QUOTES = str.maketrans({"'": '"', '"': "'"})
 
 
 @PROPERTY
+@example(mode="bypassPermissions", command="echo PYTAJ-MAKSA push")
+@example(mode="acceptEdits", command="cd /srv/x && rm -f logi/*")
+@example(mode="plan", command="cd /srv/x && rm -f logi/*")
+@example(mode="dontAsk", command="cd /srv/x && rm -f logi/*")
+@example(mode="auto", command="cd /srv/x && rm -f logi/*")
 @given(mode=MODES, command=st.one_of(_compound().map(lambda case: case.text), st.text()))
 def test_zgoda_rozstrzyga_sam_tryb_a_nie_tekst_polecenia(mode: str | None, command: str) -> None:
     # Docstring zgoda.py: kiedy pytać, rozstrzyga kontrola Claude Code, a hook jej nie odtwarza (wariant A z #496).
@@ -903,6 +908,7 @@ def test_zgoda_rozstrzyga_sam_tryb_a_nie_tekst_polecenia(mode: str | None, comma
 
 
 @PROPERTY
+@example(stdin=b"\xff\xfe{")
 @example(stdin=b"[" * 100000)
 @example(stdin=b'{"permission_mode": "bypassPermissions"')
 @given(

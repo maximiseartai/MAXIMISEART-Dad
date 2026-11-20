@@ -37,22 +37,25 @@ without an issue number to `config/sprawy-taty.json` (`DadCases.add`), puts the 
 `config/zgloszenia/kolejka/` (`Outbox.post`), and the queue thread `skrzynka-kolejka` delivers it; the delivery gives
 the case its issue number (`_CaseDelivery.delivered` → `DadCases.numbered`), and a rejected text stays in the memory of
 this Centrum work (`DadCases.rejected`), because the queue tries it again only at the next start. The card shows
-the state of the `ReportHandle`, and the Powiadomienia show `DadCases.state`. The docstrings promise, and the model
-checks over every order of steps:
+the state of the `ReportHandle`, and the Powiadomienia show `DadCases.state`. The model checks over every order of
+steps:
 
 - **CzekaMaPlik**: every case that waits (no issue number, „czeka” on the card and in the Powiadomienia) has its file in
   the Kolejka wysyłki, except during the one request between `DadCases.add` and the write of its file or its
-  withdrawal. Source: the `finally` of `Reports._queue` and the docstring of the class `Reports` („Sprawa, której
-  wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby wiecznie, a tata nie mógłby kliknąć jeszcze raz”)
-  and `test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum` in
+  withdrawal. Source: the `finally` of `Reports._queue`, which withdraws a case whose file was not written (it would
+  wait forever, and Dad could not click again), with
+  `test_zgloszenie_ktorego_kolejka_nie_zapisala_daje_komunikat_i_nie_zostawia_sprawy` in
+  `tests/test_centrum_uchwyt_zgloszenia.py`, and
+  `test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum` in
   `tests/test_centrum_uwaga_taty.py` (an Uwaga without a number waits with its file in the queue until `numbered` gives
   it the number of its issue). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
   forever, and `_pending` turns every later click and every return of the problem into that same answer, without a
   new file.
 - **OdrzuconaNieCzeka**: once the Sprawy taty know that the Skrzynka rejected the text of the waiting Zgłoszenie in this
-  Centrum work and the handle has heard it, the card does not say „czeka w kolejce”. Source: the docstring of
-  `reports.py` („Zgłoszenie, którego treść Skrzynka odrzuciła, nie czeka na nic, co mógłby naprawić tata albo
-  internet”) and GLOSSARY, Kolejka wysyłki (a rejected text stays until the next start; Dad should contact Maks).
+  Centrum work and the handle has heard it, the card does not say „czeka w kolejce”. Source:
+  `test_zgloszenie_odrzucone_przez_skrzynke_kaze_skontaktowac_sie_z_maksem_zamiast_czekac_na_internet` in
+  `tests/test_centrum_token_do_zgloszen.py` and GLOSSARY, Kolejka wysyłki (a rejected text stays until the next start;
+  Dad should contact Maks).
   Harm: Dad waits for the internet instead of calling Maks, and `_done` returns „czeka w kolejce” for every click.
 - **Zbieganie** (liveness): once failures and switch-offs stop and Centrum keeps running, the card says what the Sprawy
   taty and the Skrzynka know (a waiting case: „czeka w kolejce” or „odrzucone”; no waiting case: neither, except
@@ -349,6 +352,6 @@ is wrong:
 Left out: the text of a Zgłoszenie or an Uwaga and its guard, which of „na internet” and „na Token” a waiting case shows,
 the Logs line of a pinned Uwaga (`_CaseDelivery.prepare` and the comment after rejected Logs), an unreadable queue file
 (it stays, so the case keeps its file), a queue file whose removal failed, an unreadable `config/sprawy-taty.json` (no
-cases at all: their files are delivered and number nothing), the old files before one store (`OLD_REPORTS_FILE`,
-`OLD_NOTES_FILE`), an exception other than `OSError` from `Outbox.post` in `dad_notes.send` (no `finally` there; no
+cases at all: their files are delivered and number nothing), the old file before one store (`OLD_REPORTS_FILE`),
+an exception other than `OSError` from `Outbox.post` in `dad_notes.send` (no `finally` there; no
 known path raises one), and Maks reopening an issue.
