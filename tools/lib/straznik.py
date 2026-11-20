@@ -45,7 +45,7 @@ się zagnieżdża, taki węzeł liczy.
 | ``brak - proza`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie to plik ``.md``, docstring albo linia samego komentarza Pythona (``Case.prose`` z reguły ``na_scalonych_pr.PROSE``) |
 | ``brak - napęd`` | bez | któreś miejsce ``Gdzie`` leży w pliku, który zmienił PR, a każde takie w ``frontend/``; strażnik to krok napędu skilla ``verify-*``, który Required CI uruchamia w Mutation checks, a recenzent następnej rundy uruchamia go na drzewie FAIL |
 | ``brak - test`` | bez | tylko w wątku z pierwszym werdyktem sprzed wdrożenia dowodu testu (``bramka_straznika.TEST_MARKER``): czy test pada na błędzie z ``Gdzie``, sprawdza recenzent następnej rundy (skill ``przeglad``), jak przed ADR 0042 |
-| ``brak - usunięte`` | bez | zawsze: PR usunął kod z ``Gdzie`` (szczebel (a): część, której przegląd nie przyjął, albo druga droga, której wołający biorą właściciela), więc nie ma mechanizmu do dowodu; czy kod zniknął i nie wraca inną drogą, sprawdza recenzent następnej rundy |
+| ``brak - usunięte`` | bez | zawsze, gdy szczebel Ważnego go przyjmuje (``szczebel_straznika``: nie przy ``architektura``, ``refaktor`` i ``lint``): PR usunął kod z ``Gdzie`` (szczebel (a): część, której przegląd nie przyjął, albo druga droga, której wołający biorą właściciela), więc nie ma mechanizmu do dowodu; czy kod zniknął i nie wraca inną drogą, sprawdza recenzent następnej rundy |
 
 Dowód testu nie pyta, dlaczego test padł, i nie przenosi kodu z FAIL: drzewo biegu różni się od HEAD tylko mutacją
 z bloku, więc węzeł, który bez niej przechodzi, a z nią pada, pada przez tę i tylko tę zmianę (ADR 0042, aneks; trzy
@@ -59,7 +59,7 @@ liczyć padnięcie z mutacją przez ślad poprzedniego biegu. Po biegach z mutac
 inaczej dowód odmawia. Brak bloku to odmowa, w której
 recenzent następnej rundy dopisuje blok, a kotwica, której na HEAD scalonym z bazą nie ma dokładnie raz, i blok innej
 postaci to odmowa, w której recenzent następnej rundy odnawia blok. Granice (próbki ``ZNANE_LUKI_STRAZNIKA`` w
-``tests/test_straznik.py``): ``brak - usunięte`` przechodzi przy każdym Ważnym, a ``brak - test`` przy każdym w wątku
+``tests/test_straznik.py``): ``brak - usunięte`` przechodzi przy każdym Ważnym, które szczebel z nim przyjmuje, a ``brak - test`` przy każdym w wątku
 sprzed wdrożenia dowodu testu, także gdy mechanizm z dowodem by je zamknął, test błędu nie łapie albo kod z ``Gdzie``
 stoi na HEAD; mutacja słabsza albo szersza niż błąd z Ważnego daje ``WYKRYTA`` testowi, który łapie tylko ją, albo
 testowi innej zmiany, którą mutacja też psuje, a nawet wierną mutację test może złapać inną drogą niż błąd z Ważnego

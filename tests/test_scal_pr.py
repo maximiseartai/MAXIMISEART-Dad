@@ -2823,8 +2823,11 @@ def _root_gate(
         ([FAIL_W1], "inny-kod", {}, ["korzeń: W1 r1: kod R-DRUGA-DROGA, a ostatni werdykt, który go dotyczy, podaje R-BEZ-TESTU"]),
         ([FAIL_W1, PASS_RESOLVES], "kod-rozstrzygniety", {}, []),
         ([FAIL_W1, PASS_RESOLVES], "szczebel-c", {}, ["korzeń: W1 r1: kod R-BEZ-TESTU, a ostatni werdykt, który go dotyczy, podaje R-DRUGA-DROGA"]),
-        ([FAIL_W1], "szczebel-c-bez-wyzej-nie", {}, ["korzeń: W1 r1: po Szczeblu (c) linia „Wyżej nie, bo: (a) - zdanie” z jedną linią na każdy wyższy szczebel (a), (b)"]),
-        ([FAIL_W1], "szczebel-c-bez-zdania-dla-b", {}, ["korzeń: W1 r1: „Wyżej nie, bo:” ma jedną linię „(x) - zdanie” na każdy wyższy szczebel (a), (b) po kolei"]),
+        ([FAIL_W1], "szczebel-c-bez-wyzej-nie", {}, ["korzeń: W1 r1: po Szczeblu (c) linia „Wyżej nie, bo: (a) - zdanie” z jedną linią na każdy wyższy szczebel (a), (b), (d)"]),
+        ([FAIL_W1], "szczebel-c-bez-zdania-dla-b", {}, ["korzeń: W1 r1: „Wyżej nie, bo:” ma jedną linię „(x) - zdanie” na każdy wyższy szczebel (a), (b), (d) po kolei"]),
+        ([FAIL_W1], "szczebel-c-bez-zdania-dla-d", {}, ["korzeń: W1 r1: „Wyżej nie, bo:” ma jedną linię „(x) - zdanie” na każdy wyższy szczebel (a), (b), (d) po kolei"]),
+        ([FAIL_W1], "szczebel-d", {}, []),
+        ([FAIL_W1], "szczebel-d-ze-zdaniem-dla-c", {}, ["korzeń: W1 r1: „Wyżej nie, bo:” ma jedną linię „(x) - zdanie” na każdy wyższy szczebel (a), (b) po kolei"]),
         ([FAIL_W1], "szczebel-a-z-wyzej-nie", {}, ["korzeń: W1 r1: przy (a) nie ma wyższego szczebla"]),
         ([FAIL_W1], "bez-dowodu", {}, ["korzeń: W1 r1: brak pola „Dowód: <polecenie i wynik>” na końcu bloku"]),
         ([FAIL_W1], "bez-szczebla", {}, ["korzeń: W1 r1: pierwsza linia bloku to „Szczebel: (a) - mechanizm” ze szczeblem od (a) do (e) albo „Wyrwany w #M”"]),
@@ -2887,6 +2890,9 @@ def _root_gate(
         "kod-sprzed-rozstrzygniecia",
         "szczebel-c-bez-wyzej-nie",
         "szczebel-c-bez-zdania-dla-b",
+        "szczebel-c-bez-zdania-dla-reguly-d-ktora-idzie-przed-testem",
+        "szczebel-d-bez-zdania-dla-testu-c-ktory-idzie-po-regule",
+        "szczebel-d-ze-zdaniem-dla-testu-c",
         "szczebel-a-z-wyzej-nie",
         "bez-dowodu",
         "bez-szczebla",
@@ -3302,6 +3308,74 @@ def test_brak_testu_w_watku_sprzed_wdrozenia_dowodu_testu_przechodzi_jak_przed_n
 
     assert answered.returncode == 0, answered.stdout + answered.stderr
     assert _proofs(github) == [["--straznik", "brak - test", "--z-commita", head, "--wazne", "1/W1/r1", *(["--przed-dowodem-testu"] if before else [])]]
+
+
+def _fail_with(mechanism: str) -> str:
+    return "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 1, Drobne 1)\n" + werdykty_szablonu.PRZECHODZA[f"mechanizm-{mechanism}"]
+
+
+BYPASS_GUARDS = ("mypy", "ruff", "ast-grep")
+RUNG_REFUSAL = "strażnik: Ważne 1/W1/r1: Mechanizm: {mechanism} przyjmuje tylko Strażnik: mypy, ruff albo ast-grep <id reguły>"
+OWNER_BYPASS = "jako strażnik obejścia nowej struktury (typ, zakaz TID251 właściciela, reguła ast-grep), a test zachowania właściciela zostaje w PR obok"
+REMOVED_WAY = "zakaz usuniętej nazwy w banned-api ruff (Strażnik: ruff) albo reguła ast-grep na liniach z drzewa FAIL (Strażnik: ast-grep <id>)"
+
+
+def _accepted(answered: subprocess.CompletedProcess[str], github: MergeGitHub, head: str, guard: str, *extra: str) -> None:
+    assert answered.returncode == 0 and _last_line(answered).startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    assert _proofs(github) == [["--straznik", korzenie_pr.STRAZNICY[guard], "--z-commita", head, "--wazne", "1/W1/r1", *extra]]
+
+
+@pytest.mark.parametrize(
+    ("mechanism", "guard"),
+    [pytest.param(mechanism, guard, id=f"{mechanism}-{guard}") for mechanism in ("architektura", "refaktor", "lint") for guard in korzenie_pr.STRAZNICY],
+)
+def test_szczebel_architektura_refaktor_i_lint_przyjmuje_tylko_straznika_mypy_ruff_albo_ast_grep(tmp_path: Path, mechanism: str, guard: str) -> None:
+    """ADR 0046: szczebel z pola ``Mechanizm:`` Ważnego, który wpisał recenzent, wybiera strażnika, więc przy
+    ``architektura``, ``refaktor`` i ``lint`` autor nie scali PR testem ani wyjątkiem ``brak - …``, a odmowa nazywa
+    szczebel, dopuszczalne selektory i, przy usuniętym kodzie, zakaz jego powrotu."""
+
+    github, head = _guard_pull(tmp_path, f"straznik-{guard}", _fail_with(mechanism))
+
+    answered = github.run("1", "--bez-merge")
+
+    if guard in BYPASS_GUARDS:
+        _accepted(answered, github, head, guard)
+        return
+    last = _last_line(answered)
+    assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {RUNG_REFUSAL.format(mechanism=mechanism)}"), answered.stdout + answered.stderr
+    assert f"a jest Strażnik: {korzenie_pr.STRAZNICY[guard]}; " in last, last
+    assert (OWNER_BYPASS in last, REMOVED_WAY in last) == (mechanism == "architektura", guard == "usuniete"), last
+    assert _proofs(github) == []
+
+
+@pytest.mark.parametrize(
+    ("verdict", "guard", "gate"),
+    [
+        pytest.param(_fail_with("test"), "pytest", GATE_BEFORE_VERDICTS, id="szczebel-test-z-testem"),
+        pytest.param(_fail_with("weryfikacja"), "usuniete", GATE_BEFORE_VERDICTS, id="szczebel-weryfikacja-z-usunietym-kodem"),
+        pytest.param(FAIL_W1, "pytest", GATE_BEFORE_VERDICTS, id="wazne-bez-pola-mechanizm"),
+        pytest.param(_fail_with("lint"), "pytest", GATE_AFTER_VERDICTS, id="watek-sprzed-wdrozenia-szczebla-straznika"),
+    ],
+)
+def test_straznik_poza_szczeblem_architektura_refaktor_i_lint_dostaje_dowod_jak_w_adr_0042(tmp_path: Path, verdict: str, guard: str, gate: str) -> None:
+    """Granice warunku szczebla: ``test`` i ``weryfikacja`` przyjmują każdy selektor, Ważne bez pola ``Mechanizm:``
+    też, a wątek, którego pierwszy werdykt powstał przed dodaniem ``szczebel_straznika.MARKER`` do bazy (moduł stoi
+    w commicie ``start`` atrapy z chwilą ``gate``), kończy po staremu z dowodem selektora autora."""
+
+    github, head = _guard_pull(tmp_path, f"straznik-{guard}", verdict, gate=gate)
+
+    _accepted(github.run("1", "--bez-merge"), github, head, guard)
+
+
+def test_job_dowodu_liczy_odmowe_szczebla_bez_dowodu_jak_merge(tmp_path: Path) -> None:
+    github, head = _guard_pull(tmp_path, "straznik-pytest", _fail_with("lint"))
+
+    [written] = _guard_proofs_line(github, tmp_path)
+
+    [reason] = cast(list[dict[str, object]], written.pop("przyczyny"))
+    assert written == {"numer": 1, "sha": head, "pominiety": False}
+    assert str(reason["tekst"]).startswith(RUNG_REFUSAL.format(mechanism="lint")) and reason["oczekuje"] is False, reason
+    assert _proofs(github) == []
 
 
 LIGHT_BASE = {
