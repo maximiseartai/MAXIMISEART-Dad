@@ -4,10 +4,8 @@ import type { ProcessRun } from "@/api/generated"
 import { dateTime, dayMonth, seconds } from "@/lib/format"
 import { isStopped, phaseDuration } from "@/pages/metrics/process-runs"
 
-// Cztery sloty palety wykresu sprawdzone w prototypie (#95), po jednym na etap.
 const PHASE_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)"]
 
-// Układ w pikselach: pole słupków, pod nim podpisy dat.
 const PLOT_TOP = 8
 
 const PLOT_HEIGHT = 238
@@ -32,14 +30,12 @@ const TOP_SEGMENT: React.CSSProperties = { ...BAR, clipPath: `inset(0 round ${BA
 
 const FOCUS_RING: React.CSSProperties = { x: "calc(var(--bar-width) / -2 - 3px)", width: "calc(var(--bar-width) + 6px)" }
 
-// Podziałki osi czasu: najmniejszy krok z tych (×10ⁿ, od 0,1 s), przy którym wystarczą cztery przedziały.
 const STEP_FACTORS = [1, 2, 2.5, 3, 5]
 
 const AXIS_INTERVALS = 4
 
 const SMALLEST_STEP_MS = 100
 
-/** Słupki skumulowane czasów etapów: najstarsze Uruchomienie procesu z lewej; szczegóły po najechaniu, stuknięciu albo fokusie. */
 export function StageTimesChart({
   phases,
   shown,
@@ -56,7 +52,6 @@ export function StageTimesChart({
   const top = ticks.at(-1) ?? SMALLEST_STEP_MS
   const yOf = (durationMs: number) => PLOT_BOTTOM - (durationMs / top) * PLOT_HEIGHT
   const centerOf = (index: number) => ((index + 0.5) / runs.length) * 100
-  // Klawiatura wchodzi na wykres na otwartym słupku, a bez niego na najnowszym.
   const tabStop = active ?? runs.length - 1
   const activeRun = active === null ? undefined : runs[active]
 
@@ -193,7 +188,6 @@ export function StageTimesChart({
   )
 }
 
-/** Szczegóły słupka obok niego: po prawej, a w prawej połowie wykresu po lewej (`--bar-width` z pola słupków). */
 function BarDetails({
   run,
   shown,

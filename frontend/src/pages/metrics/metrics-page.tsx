@@ -45,7 +45,6 @@ export function MetricsPage() {
 
   const shownMode = modes.some((option) => option.value === mode) ? mode : (modes[0]?.value ?? mode)
 
-  // Jeden filtr w nagłówku steruje statystykami i wykresem; historia ma własne filtry.
   const filters = hasRuns && process !== null ? (
     <>
       <SegmentedFilter label="Proces" options={processes} value={process} onChange={setProcess} />

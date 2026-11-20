@@ -252,8 +252,7 @@ def _zapisy(
 
 PRZEZYLO = (1, "MUTACJE ZMIANY FAIL | przeżyło 2 | mutacje=4 | wyjątki=0 | innego systemu=0")
 OK = (0, "MUTACJE ZMIANY OK | mutacje=3 | wyjątki=0 | innego systemu=0")
-RADA_WASKIEGO_WEZLA = "sprawdź ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest w `polecenie` jej wpisu"
-BEZ_POMINIETYCH = "MUTACJE NOCNE BEZ ISSUE | poza src/ i frontend/ mutacje 0, pliki 0 | ponad limit 5 issues na noc mutacje 0, pliki 0"
+BEZ_POMINIETYCH = "MUTACJE NOCNE BEZ ISSUE | bez werdyktu mutacje 0, pliki 0"
 
 
 def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_drugi_przebieg_niczego_nie_dubluje(
@@ -302,8 +301,6 @@ def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_d
     # Dwa commity PR #11 dają jedno issue.
     assert "\n".join(f"MUTACJA {nazwa} | klucz {_klucz(nazwa)}" for nazwa in (*przezyte[:2], przezyte[4])) + "\n" in tresc_11
     assert RUN in tresc_11 and "nie warto, bo" in tresc_11 and "które ostatnio zmienił #11:" in tresc_11
-    # Rada o mutacjach bez werdyktu stoi tylko przy nich (``test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_…``).
-    assert RADA_WASKIEGO_WEZLA not in tresc_11
     tresc_commitu = nowe[f"Przeżyte mutacje z commitu {d[:9]}"]["body"]
     assert f"MUTACJA src/a.py:4 stała | klucz {_klucz('src/a.py:4 stała')}" in tresc_commitu and f"które ostatnio zmienił commit {d}:" in tresc_commitu
     # Issue #12 ma już mutację „stała”, a #14 zamknięte z powodem dla niej: dostają tylko nowe mutacje.
@@ -326,31 +323,43 @@ def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_d
     assert drugie_wyjscie.splitlines() == ["MUTACJE NOCNE | nic nowego do zgłoszenia", BEZ_POMINIETYCH, "MUTACJE NOCNE OK | części 3 | przeżyło 8"]
 
 
-def test_issue_dostaja_tylko_mutacje_kodu_produktu_najwyzej_limit_pr_z_najwiecej_przezytymi_a_reszta_trafia_do_linii_bez_issue(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+def test_kazdy_pr_z_przezytymi_dostaje_issue_bez_limitu_a_mutacje_bez_werdyktu_daja_tylko_linie_bez_issue(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    repo = mutation_repository(tmp_path / "repo", {"src/a.py": "a = 1\nb = 2\nc = 3\n", "tools/b.py": "x = 1\n"})
+    """Siedem PR-ów z przeżytymi, także w ``tools/``, dostaje siedem issues, każde tylko ze swoją przeżytą. Mutacje bez
+    werdyktu po limicie czasu części i z przekroczonym czasem testów nie trafiają do żadnego issue, także do issue PR-u,
+    który ma tylko je: jego zamknięte issue zostaje zamknięte bez komentarza, a linia ``BEZ ISSUE`` podaje ich pliki."""
+
+    repo = mutation_repository(tmp_path / "repo", {"src/a.py": "".join(f"a{n} = {n}\n" for n in range(1, 7)), "tools/b.py": "x = 1\n", "src/c.py": "y = 1\n"})
     git(repo, "checkout", "--quiet", "-b", "main")
     baza = commit(repo, "baza nocy")
-    for linia, tekst, numer in ((1, "a = 10", 11), (2, "b = 20", 12), (3, "c = 30", 13)):
-        _zmien(repo, linia, tekst)
-        commit(repo, f"Zmień {tekst} (#{numer})")
-    (repo / "tools" / "b.py").write_text("x = 10\n", encoding="utf-8")
-    commit(repo, "Zmień x (#14)")
-    monkeypatch.setattr(mutacje_nocne, "ISSUES_NA_NOC", 2)
-    przezyte = ["src/a.py:1 stała", "src/a.py:2 stała", "src/a.py:2 inna", "src/a.py:3 stała", "src/a.py:3 inna", "tools/b.py:1 stała", "tools/b.py:1 inna", "tools/b.py:1 trzecia"]
-    bez_werdyktu = ["src/a.py:1 inna", "src/a.py:1 trzecia", "src/a.py:3 trzecia"]
-    zapisy = _zapisy(tmp_path / "zapisy", {1: (PRZEZYLO, [_przezyta(nazwa) for nazwa in przezyte])}, bez_werdyktu={1: [_przezyta(nazwa) for nazwa in bez_werdyktu]})
-    github = GitHubWPamieci()
+    for linia in range(1, 7):
+        _zmien(repo, linia, f"a{linia} = {linia}0")
+        commit(repo, f"Zmień a{linia} (#{10 + linia})")
+    for plik, tekst, numer in (("tools/b.py", "x = 10\n", 17), ("src/c.py", "y = 10\n", 18)):
+        (repo / plik).write_text(tekst, encoding="utf-8")
+        commit(repo, f"Zmień {plik} (#{numer})")
+    przezyte = [*(f"src/a.py:{linia} stała" for linia in range(1, 7)), "tools/b.py:1 stała"]
+    zapisy = _zapisy(
+        tmp_path / "zapisy",
+        {1: (PRZEZYLO, [_przezyta(nazwa) for nazwa in przezyte])},
+        bez_werdyktu={1: [_przezyta("src/a.py:1 inna"), _przezyta("src/c.py:1 stała")]},
+        przekroczony_czas={1: [_przezyta("src/c.py:1 inna"), _przezyta("tools/b.py:1 inna")]},
+    )
+    zamkniete = {"number": 5, "title": "Przeżyte mutacje z #18", "state": "closed", "body": "", "comments": [], "labels": []}
+    github = GitHubWPamieci(issues=[zamkniete])
 
     kod = mutacje_nocne.zglos(github, repo, baza, zapisy, 1, RUN)
 
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 0, wyjscie
-    assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #13", "Przeżyte mutacje z #12"]
-    assert wyjscie[-2] == (
-        "MUTACJE NOCNE BEZ ISSUE | poza src/ i frontend/ mutacje 3, pliki 1: tools/b.py (3) | ponad limit 2 issues na noc mutacje 3, pliki 1: src/a.py (3)"
-    )
+    mutacje_issues = {issue["title"]: [linia for linia in issue["body"].splitlines() if linia.startswith("MUTACJA")] for issue in github.issues[1:]}
+    assert mutacje_issues == {f"Przeżyte mutacje z #{10 + numer}": [f"MUTACJA {nazwa} | klucz {_klucz(nazwa)}"] for numer, nazwa in enumerate(przezyte, start=1)}
+    assert (zamkniete["state"], zamkniete["comments"]) == ("closed", [])
+    assert wyjscie[-2:] == [
+        "MUTACJE NOCNE BEZ ISSUE | bez werdyktu mutacje 4, pliki 3: src/a.py (1), src/c.py (2), tools/b.py (1)",
+        "MUTACJE NOCNE OK | części 1 | przeżyło 7 | bez werdyktu 2 | przekroczony czas 2",
+    ]
 
 
 def test_czesc_bez_zapisu_z_uszkodzonym_zapisem_albo_z_porazka_bez_przezytych_czerwieni_przebieg_po_zgloszeniu_reszty(
@@ -403,73 +412,6 @@ def test_czesc_z_polem_wpisu_null_albo_innego_typu_z_wpisem_nie_obiektem_albo_be
     assert "; część 2/4 bez zapisu: wpis mutacji z polem innego typu (" in porazka, porazka
     assert "; część 3/4 bez zapisu: wpis mutacji to nie obiekt JSON: src/a.py:1 stała;" in porazka, porazka
     assert porazka.endswith(f"; część 4/4 bez kodu wyjścia: {OK[1]}"), porazka
-
-
-def test_mutacje_bez_werdyktu_po_limicie_czasu_czesci_trafiaja_do_issue_ich_pr_a_przebieg_zostaje_zielony(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Część dała werdykt reszcie mutacji, a zapis wymienia te, których nie zdążyła: noc zgłasza je PR-om ich linii, więc
-    następna noc nie wraca do jej zakresu (ADR 0021). Mutacja bez werdyktu ma dopisek i radę także w komentarzu do
-    issue, które PR już ma, bo inaczej agent wziąłby ją za przeżytą i pisał test albo „nie warto”."""
-
-    repo, baza = _historia(tmp_path)
-    github = GitHubWPamieci(issues=[{"number": 5, "title": "Przeżyte mutacje z #12", "state": "open", "body": "", "comments": []}])
-    po_limicie = (3, "MUTACJE ZMIANY FAIL | limit czasu części 10500 s minął przed werdyktem 2 mutacji | przeżyło 1 | mutacje=28 | wyjątki=0 | innego systemu=0")
-    zapisy = _zapisy(
-        tmp_path / "zapisy",
-        {1: (OK, []), 2: (po_limicie, [_przezyta("src/a.py:1 stała")])},
-        bez_werdyktu={2: [_przezyta("src/a.py:5 inna"), _przezyta("src/a.py:2 stała")]},
-    )
-
-    kod = mutacje_nocne.zglos(github, repo, baza, zapisy, 2, RUN)
-
-    assert kod == 0
-    assert capsys.readouterr().out.splitlines()[-1] == "MUTACJE NOCNE OK | części 2 | przeżyło 1 | bez werdyktu 2"
-    tresci = {issue["title"]: issue["body"] for issue in github.issues}
-    bez_werdyktu = " | bez werdyktu w limicie czasu części"
-    assert [linia for linia in tresci["Przeżyte mutacje z #11"].splitlines() if linia.startswith("MUTACJA")] == [
-        f"MUTACJA src/a.py:1 stała | klucz {_klucz('src/a.py:1 stała')}",
-        f"MUTACJA src/a.py:5 inna | klucz {_klucz('src/a.py:5 inna')}{bez_werdyktu}",
-    ]
-    assert RADA_WASKIEGO_WEZLA in tresci["Przeżyte mutacje z #11"]
-    [komentarz] = [komentarz["body"] for komentarz in github.issues[0]["comments"]]
-    assert [linia for linia in komentarz.splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{bez_werdyktu}"]
-    assert RADA_WASKIEGO_WEZLA in komentarz
-
-
-def test_mutacja_z_przekroczonym_czasem_testow_trafia_do_issue_z_wlasnym_dopiskiem_i_rada_a_nie_jako_przezyta(
-    tmp_path: Path, capsys: pytest.CaptureFixture[str]
-) -> None:
-    """Limit czasu mutacji dotyczy całego zbioru testów, więc ``PRZEKROCZONY CZAS`` nie mówi, czy test łapie mutację
-    (#1339): jej linia ``MUTACJA`` ma własny dopisek i radę, także w komentarzu do issue, które PR już ma, a ostatnia linia
-    liczy ją osobno od przeżytych."""
-
-    repo, baza = _historia(tmp_path)
-    github = GitHubWPamieci(issues=[{"number": 5, "title": "Przeżyte mutacje z #12", "state": "open", "body": "", "comments": []}])
-    wynik = (1, "MUTACJE ZMIANY FAIL | przeżyło 1 | przekroczony czas 2 | mutacje=24 | wyjątki=0 | innego systemu=0")
-    zapisy = _zapisy(
-        tmp_path / "zapisy",
-        {1: (wynik, [_przezyta("src/a.py:1 stała")])},
-        przekroczony_czas={1: [_przezyta("src/a.py:5 inna"), _przezyta("src/a.py:2 stała")]},
-    )
-
-    kod = mutacje_nocne.zglos(github, repo, baza, zapisy, 1, RUN)
-
-    assert kod == 0
-    assert capsys.readouterr().out.splitlines()[-1] == "MUTACJE NOCNE OK | części 1 | przeżyło 1 | przekroczony czas 2"
-    tresci = {issue["title"]: issue["body"] for issue in github.issues}
-    dopisek = " | przekroczony czas testów, bez werdyktu"
-    assert [linia for linia in tresci["Przeżyte mutacje z #11"].splitlines() if linia.startswith("MUTACJA")] == [
-        f"MUTACJA src/a.py:1 stała | klucz {_klucz('src/a.py:1 stała')}",
-        f"MUTACJA src/a.py:5 inna | klucz {_klucz('src/a.py:5 inna')}{dopisek}",
-    ]
-    rada = "Linia z `przekroczony czas testów, bez werdyktu` to mutacja, której testy nie skończyły się w limicie czasu mutacji"
-    assert rada in tresci["Przeżyte mutacje z #11"] and RADA_WASKIEGO_WEZLA in tresci["Przeżyte mutacje z #11"]
-    # Rada o limicie czasu części stoi tylko przy mutacjach bez werdyktu po nim.
-    assert "przed limitem czasu części" not in tresci["Przeżyte mutacje z #11"]
-    [komentarz] = [komentarz["body"] for komentarz in github.issues[0]["comments"]]
-    assert [linia for linia in komentarz.splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}{dopisek}"]
-    assert rada in komentarz
 
 
 def test_czesc_konczy_sie_w_swoim_limicie_czasu_przed_limitem_zadania_ci_ktore_by_ja_anulowalo_bez_zapisu() -> None:
@@ -1166,7 +1108,7 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
 ) -> None:
     """Części biegną naprawdę z limitem czasu ``CZAS_CZESCI_S``. Testy zmiany PR #1 kończą się od razu, a test zmiany PR #2
     po każdej jej mutacji śpi 300 s, więc jej część kończy limit czasu przed werdyktem. Noc i tak jest udana: mutacje bez
-    werdyktu idą do issue PR #2, a następna noc zaczyna od końca tego zakresu, nie od tej samej bazy."""
+    werdyktu idą do linii ``BEZ ISSUE``, a następna noc zaczyna od końca tego zakresu, nie od tej samej bazy."""
 
     test_b = "import time\n\nfrom rozliczenia.b import b\n\n\ndef test_b() -> None:\n    if b(2):\n        time.sleep(300)\n    assert b(3) is True\n"
     pliki = {
@@ -1194,13 +1136,11 @@ def test_czesc_z_mutacjami_drozszymi_niz_jej_limit_czasu_nie_zatrzymuje_nocy_a_n
 
     assert [czesc.returncode for czesc in czesci] == [0, 3], [czesc.stdout for czesc in czesci]
     assert czesci[1].stdout.splitlines()[-1].startswith(f"MUTACJE ZMIANY FAIL | limit czasu części {CZAS_CZESCI_S} s minął przed werdyktem 2 mutacji")
-    assert (kod, capsys.readouterr().out.splitlines()[-1]) == (0, "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2")
-    (issue,) = github.issues
-    assert issue["title"] == "Przeżyte mutacje z #2"
-    assert sorted(linia.split(" | klucz ")[0] for linia in issue["body"].splitlines() if linia.endswith(mutacje_nocne.Rodzaj.BEZ_WERDYKTU.dopisek)) == [
-        "MUTACJA src/rozliczenia/b.py:2 granica `x > 2` → `>=`",
-        "MUTACJA src/rozliczenia/b.py:2 zmiana linii 2 cofnięta do bazy",
-    ]
+    assert (kod, capsys.readouterr().out.splitlines()[-2:]) == (
+        0,
+        ["MUTACJE NOCNE BEZ ISSUE | bez werdyktu mutacje 2, pliki 1: src/rozliczenia/b.py (2)", "MUTACJE NOCNE OK | części 2 | przeżyło 0 | bez werdyktu 2"],
+    )
+    assert github.issues == []
     # Run jest udany, więc następna noc ma tylko PR #3 dopisany po nim.
     github.runy = [{"id": 2, "head_sha": git(repo, "rev-parse", "HEAD")}]
     github.zakresy[2] = Path(plan["zakres"]).read_bytes()
@@ -2220,17 +2160,17 @@ def test_linia_skryptu_skilla_i_ostrzezenie_czasu_z_odpowiedzia_wedlug_rady_nocy
 
 
 def test_mutacja_z_odpowiedzia_wykryta_albo_nie_warto_nie_jest_wystapieniem_a_mutacja_bez_niej_jest(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Linie ``MUTACJA`` z kluczem i dopiskiem bez werdyktu pisze noc, także w komentarzu drugiej nocy; odpowiedź
-    agenta powtarza nazwę mutacji bez klucza, jak w radzie nocy, a ``wykryta (teraz linia …)`` też jest odpowiedzią."""
+    """Issue sprzed 20.11 ma linię ``MUTACJA`` z dopiskiem bez werdyktu za kluczem: noc, której ta mutacja przeżyła, nie
+    zgłasza jej drugi raz, a komentarz drugiej nocy ma tylko nową. Odpowiedź agenta powtarza nazwę mutacji bez klucza,
+    jak w radzie nocy, a ``wykryta (teraz linia …)`` też jest odpowiedzią."""
 
     repo, baza = _historia(tmp_path)
-    c, d = git(repo, "rev-parse", "HEAD^"), git(repo, "rev-parse", "HEAD")
-    github = GitHubWPamieci(pr_commitow={c: [{"number": 14, "merged_at": "2026-10-28T10:00:00Z"}], d: [{"number": 15, "merged_at": None}]})
-    pierwsza = _zapisy(tmp_path / "pierwsza", {1: (PRZEZYLO, [_przezyta("src/a.py:2 stała")]), 2: (OK, [])}, bez_werdyktu={2: [_przezyta("src/a.py:2 `20` → `0`")]})
-    druga = _zapisy(tmp_path / "druga", {1: (PRZEZYLO, [_przezyta("src/a.py:2 inna")])})
-    assert mutacje_nocne.zglos(github, repo, baza, pierwsza, 2, RUN) == 0
+    stara = "MUTACJA src/a.py:2 `20` → `0`"
+    tresc = f"```\nMUTACJA src/a.py:2 stała | klucz {_klucz('src/a.py:2 stała')}\n{stara} | klucz {_klucz(stara.removeprefix('MUTACJA '))} | bez werdyktu w limicie czasu części\n```"
+    github = GitHubWPamieci(issues=[{"number": 5, "title": "Przeżyte mutacje z #12", "state": "open", "body": tresc, "comments": []}])
+    druga = _zapisy(tmp_path / "druga", {1: (PRZEZYLO, [_przezyta("src/a.py:2 `20` → `0`"), _przezyta("src/a.py:2 inna")])})
     assert mutacje_nocne.zglos(github, repo, baza, druga, 1, RUN) == 0
     capsys.readouterr()
     [issue] = github.issues
@@ -2241,7 +2181,9 @@ def test_mutacja_z_odpowiedzia_wykryta_albo_nie_warto_nie_jest_wystapieniem_a_mu
 
     kod, wyjscie = _wystapienia(tmp_path, _jak_gh_issue_list(github, {issue["title"]: odpowiedzi}), capsys)
 
-    assert (kod, len(issue["comments"])) == (0, 1)
+    [komentarz] = issue["comments"]
+    assert kod == 0
+    assert [linia for linia in komentarz["body"].splitlines() if linia.startswith("MUTACJA")] == [f"MUTACJA src/a.py:2 inna | klucz {_klucz('src/a.py:2 inna')}"]
     assert wyjscie == [
         f"WYSTĄPIENIE #{issue['number']} {issue['title']} | MUTACJA src/a.py:2 inna",
         "MUTACJE NOCNE WYSTĄPIENIA | issues z wystąpieniem 1 | bez wystąpienia 0 | z 1",
