@@ -52,7 +52,9 @@ pierwszy sekret na jego komputerze:
   problem ma już otwarte Zgłoszenie) i przy sprawdzeniu aktualności
   narzędzia w Diagnozie. Brak sieci nie daje Komunikatu, dopóki tata niczego
   nie wysyła. Listę issue z etykietą Centrum czyta najwyżej z 10 stron po 100
-  wpisów, bo jedna etykieta Skrzynki nigdy nie ma 1000 issue.
+  wpisów, bo jedna etykieta Skrzynki nigdy nie ma 1000 issue. Skrzynka
+  łączy się przez proxy z ustawień systemu, a Aktualność narzędzia wprost;
+  tę różnicę rozstrzyga Maks w #2487.
 - Klucz to token fine-grained, który Maks tworzy ręcznie: tylko repozytorium
   Zgłoszeń, uprawnienie Issues (odczyt i zapis), ważność najwyżej rok. Maks
   wpisuje go do `config/zgloszenia-klucz.txt` poza Gitem; tata nie ma pola na
