@@ -67,7 +67,6 @@ export function RunsPage() {
       </TabsContent>
       {history ? (
         <TabsContent value="historia">
-          {/* Każde zakończone Uruchomienie to nowy odczyt historii z plików metryk. */}
           <RunHistory key={view === null || view.state === "idle" || isActive(view) ? "trwa" : view.run.id} />
         </TabsContent>
       ) : null}
