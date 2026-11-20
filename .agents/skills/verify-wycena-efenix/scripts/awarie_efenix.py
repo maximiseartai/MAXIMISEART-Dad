@@ -6,7 +6,7 @@ included, which ``page.route`` of Playwright misses. It changes the Atrapa only 
 ends its session), and it adds to every page it passes on two things the Atrapa lacks and efenix has or the check needs:
 
 - a stylesheet ``css/efenix.css`` that the proxy serves itself, as efenix pages load fontawesome, so a page file the
-  ``load`` event waits for can hang, break or be missing (#802);
+  ``load`` event waits for can hang, break or be missing;
 - a click watcher that reports a click on a button the window must never use (Przekazanie do akceptacji, anulowanie and
   the „Tak” of their dialog) as a request to ``__przycisk-spoza-listy``, which the proxy counts and never forwards.
 
@@ -19,10 +19,10 @@ answer that never comes, an answer just before or just after the window's time l
 that request, and two that the browser side and
 the explorer handle: the tab closed when the browser sends the request (``TAB_CLOSED``) and the tool's process killed
 right before or right after efenix ran it (``KILLED``, snapshots taken by ``before_executed`` and ``after_executed``).
-Three more belong to one kind of request: the login page under the address of an order page (``LOGIN_PAGE``, #808), and
+Three more belong to one kind of request: the login page under the address of an order page (``LOGIN_PAGE``), and
 the session ended when the list opens, after which Dad logs in or closes the tab while the window waits for him
-(``LOGIN_LATER``, ``LOGIN_CLOSED``, #758), or Dad logs in and the list the window asks for next is an error page of
-the server (``LOGIN_ERROR``, #891).
+(``LOGIN_LATER``, ``LOGIN_CLOSED``), or Dad logs in and the list the window asks for next is an error page of
+the server (``LOGIN_ERROR``).
 """
 
 from __future__ import annotations

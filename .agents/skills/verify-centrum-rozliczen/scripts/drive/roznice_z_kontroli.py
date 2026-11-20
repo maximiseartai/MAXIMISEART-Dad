@@ -1,5 +1,3 @@
-"""Drive features/roznice-z-kontroli.md."""
-
 from __future__ import annotations
 
 import json
