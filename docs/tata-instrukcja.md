@@ -411,7 +411,8 @@ Jeśli Uporządkowanie zrobiło coś nie tak, otwórz okno `Ustawienia`, sekcję
 `Kopie INTERMAX`. Lista ma 10 najnowszych Kopii INTERMAX z datą i godziną.
 Kliknij `Przywróć` przy kopii sprzed uporządkowania i potwierdź przyciskiem
 `Przywróć tę kopię`. Wszystkie zmiany w INTERMAX późniejsze od tej kopii
-znikną, także te, które wpisaliście ręcznie. Przed przywróceniem narzędzie
+znikną, także te, które wpisaliście ręcznie, i te zrobione na drugim
+komputerze. Przed przywróceniem narzędzie
 robi Kopię obecnego INTERMAX, więc przywrócenie też da się cofnąć tak samo.
 
 ### Uporządkowanie INTERMAX → co zrobić
