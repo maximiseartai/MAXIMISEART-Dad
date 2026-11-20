@@ -42,8 +42,6 @@ def calendar_day(today: date, day: date) -> date:
 
 @dataclass(frozen=True)
 class Position:
-    """Pozycja wyceny: kod ``NNN``, wymyślona cena i rodzaj pola (``ILOSC`` albo ``CENA``)."""
-
     code: str
     price: Decimal
     kind: str = "ILOSC"
@@ -71,8 +69,6 @@ PRICES: Final = {position.code: position.price for position in CATALOG}
 
 
 def amount_of(quantities: Mapping[str, int], prices: Mapping[str, Decimal] = PRICES) -> Decimal:
-    """Kwota końcowa wyceny z ilościami ``quantities`` (kod → ilość) w cenach ``prices`` (domyślnie cenach Atrapy)."""
-
     return sum((prices[code] * quantity for code, quantity in quantities.items()), Decimal("0.00"))
 
 
@@ -171,8 +167,6 @@ class EfenixOrder:
 
     @property
     def positions(self) -> tuple[Position, ...]:
-        """Pozycje ``CATALOG``, których karty ma strona zlecenia."""
-
         return tuple(position for position in CATALOG if not (position.code in self.without and self.page_changed))
 
 
