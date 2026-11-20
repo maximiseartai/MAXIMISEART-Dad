@@ -1,0 +1,49 @@
+id: stosunek-czasow-sciany
+language: python
+severity: error
+message: >-
+  stosunek dwóch czasów ściany zależy od obciążenia maszyny i rozgrzania (próg przy 2 pada na poprawnym kodzie):
+  licz kroki budżetu (węzły, wywołania), nie zegar
+files:
+  - tests/**/*.py
+metadata:
+  przypadki:
+    - 2323/W4/r3
+utils:
+  zegar:
+    any:
+      - kind: call
+        has: {field: function, regex: '^(time\.)?(perf_counter|monotonic|time|perf_counter_ns|monotonic_ns)$'}
+      - kind: identifier
+        pattern: $CHWILA
+        inside:
+          stopBy: end
+          kind: function_definition
+          has:
+            stopBy: end
+            kind: assignment
+            all:
+              - has: {field: left, pattern: $CHWILA}
+              - has:
+                  field: right
+                  kind: call
+                  has: {field: function, regex: '^(time\.)?(perf_counter|monotonic|time|perf_counter_ns|monotonic_ns)$'}
+  roznica-zegara:
+    kind: binary_operator
+    all:
+      - has: {field: operator, regex: '^-$'}
+      - has: {field: left, matches: zegar}
+rule:
+  kind: binary_operator
+  all:
+    - has: {field: operator, regex: '^/$'}
+    - has:
+        field: left
+        any:
+          - matches: roznica-zegara
+          - has: {kind: binary_operator, matches: roznica-zegara}
+    - has:
+        field: right
+        any:
+          - matches: roznica-zegara
+          - has: {kind: binary_operator, matches: roznica-zegara}
