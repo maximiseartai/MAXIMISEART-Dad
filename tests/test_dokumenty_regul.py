@@ -117,20 +117,20 @@ def test_sprawdzenie_pomija_frontmatter_skilla_a_sprawdza_proze_po_nim() -> None
 BUDZET_BAJTOW = {"CODING_STANDARDS.md": 45_000, ".agents/skills/przeglad": 41_000}
 
 
-def _pliki_w_repo(nazwa: str) -> list[Path]:
-    listed = subprocess.run(["git", "ls-files", "-z", "--", nazwa], cwd=ROOT, capture_output=True, check=True)
-    return [ROOT / plik for plik in listed.stdout.decode("utf-8").split("\0") if plik]
-
-
-def _bajty(pliki: list[Path]) -> int:
-    return sum(len(plik.read_bytes().replace(b"\r\n", b"\n")) for plik in pliki)
+def _rozmiar_w_indeksie(nazwa: str) -> int:
+    wpisy = subprocess.run(["git", "ls-files", "-s", "-z", "--", nazwa], cwd=ROOT, capture_output=True, check=True)
+    obiekty = "".join(f"{wpis.split()[1]}\n" for wpis in wpisy.stdout.decode("utf-8").split("\0") if wpis)
+    rozmiary = subprocess.run(
+        ["git", "cat-file", "--batch-check=%(objectsize)"], cwd=ROOT, input=obiekty.encode(), capture_output=True, check=True
+    )
+    return sum(int(rozmiar) for rozmiar in rozmiary.stdout.split())
 
 
 def test_reguly_mieszcza_sie_w_budzecie_bajtow() -> None:
     ponad = [
         f"{nazwa}: {rozmiar} B, budżet {budzet} B (+{rozmiar - budzet} B)"
         for nazwa, budzet in BUDZET_BAJTOW.items()
-        if (rozmiar := _bajty(_pliki_w_repo(nazwa))) > budzet
+        if (rozmiar := _rozmiar_w_indeksie(nazwa)) > budzet
     ]
 
     assert not ponad, "\n".join(
@@ -143,12 +143,3 @@ def test_reguly_mieszcza_sie_w_budzecie_bajtow() -> None:
         ]
     )
 
-
-def test_budzet_liczy_plik_z_checkoutu_windows_tak_samo_jak_z_repo(tmp_path: Path) -> None:
-    tekst = "| Rule | Guard |\n|---|---|\n| Wiersz. | test |\n"
-    lf = tmp_path / "lf.md"
-    crlf = tmp_path / "crlf.md"
-    lf.write_bytes(tekst.encode("utf-8"))
-    crlf.write_bytes(tekst.replace("\n", "\r\n").encode("utf-8"))
-
-    assert _bajty([crlf]) == _bajty([lf])
