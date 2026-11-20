@@ -1,6 +1,3 @@
-"""Zdania Ustawień Centrum dla taty: złe ustawienie w pliku i zła wartość zmiany, każde z próbką w
-``tests/expected/komunikaty.txt``. Odmowa API niesie je przez ``refusal.setting_refused``."""
-
 from __future__ import annotations
 
 from typing import Final, Literal
@@ -8,10 +5,7 @@ from typing import Final, Literal
 from rozliczenia.centrum.settings.files import FieldPath
 
 SAVE_AGAIN: Final = "Zapisz Ustawienia jeszcze raz."
-"""Naprawa złego pliku, który zapis taty w oknie Ustawień pisze od nowa z ostatniej dobrej wartości."""
 MAKS_FIXES: Final = "Poprawia go Maks."
-"""Naprawa złego pliku Listy Wykonawców: zła treść bierze się z ręcznej zmiany Maksa w ``config``, a zmiana taty w
-sekcji Wykonawcy zapisałaby plik od nowa z ostatniej dobrej listy (zła treść trafia wtedy do ``odrzucone``)."""
 
 
 def not_text(file: str, repair: str = SAVE_AGAIN) -> str:
@@ -27,14 +21,10 @@ def other_schema(file: str, repair: str = SAVE_AGAIN) -> str:
 
 
 def unknown_key(file: str, position: int, repair: str = SAVE_AGAIN) -> str:
-    """Nieznane pole na górze pliku po numerze, nie po nazwie: nazwa to tekst z pliku, a zdanie trafia do Zgłoszenia."""
-
     return f"Plik {file} w folderze config ma nieznane pole ({position}. od góry pliku). {repair}"
 
 
 def worker_unknown_key(file: str, worker: int, position: int) -> str:
-    """Nieznane pole we wpisie Wykonawcy po numerach: stary kształt wpisu (``login: Nazwa``) ma login w miejscu pola."""
-
     return (
         f"Plik {file} w folderze config ma nieznane pole we wpisie {worker}. Wykonawcy ({position}. pole wpisu). "
         f"{MAKS_FIXES}"
@@ -105,9 +95,6 @@ def worker_list_changed() -> str:
 
 
 def worker_rename_old_files(periods: tuple[str, ...]) -> str:
-    """Ostrzeżenie przed zmianą nazwy: ``periods`` to tokeny okresów (od najnowszego) z Rozliczeniem pracownika o starej
-    nazwie; zdanie podaje ich liczbę i najnowszy."""
-
     count = len(periods)
     where = f"w okresie {periods[0]}" if count == 1 else f"w {count} okresach, ostatnio {periods[0]}"
     return (
@@ -117,16 +104,10 @@ def worker_rename_old_files(periods: tuple[str, ...]) -> str:
 
 
 def worker_suggestions_not_set() -> str:
-    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo tata nie wskazał Rejestru zleceń."""
-
     return "Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń."
 
 
 def worker_suggestions_unreadable() -> str:
-    """Sekcja Wykonawcy bez podpowiedzi nowych loginów, bo Rejestru zleceń nie da się teraz przeczytać (nie ma go, brak
-    dostępu, nie jest skoroszytem, wierszy nie da się rozdzielić); stan pliku pokazuje sekcja Foldery. Rejestr bez
-    obszaru wklejania ma zamiast tego zdanie Komunikatu procesów (``worker_suggestions``)."""
-
     return (
         "Nie da się teraz przeczytać Rejestru zleceń, więc Centrum nie podpowie loginów nowych Wykonawców. Sprawdź "
         "Rejestr w sekcji Foldery."
@@ -206,16 +187,10 @@ def settlement_mail_report_word() -> str:
 
 
 def settlement_mail_reads_as_report() -> str:
-    """Temat bez słowa „raport”, którego odpowiedź ``Re:`` skrzynka raportów wzięłaby za Raport wykonawcy
-    (``Report {okres}``)."""
-
     return "Temat wygląda jak temat raportu: odpowiedź Wykonawcy Centrum wzięłoby za jego raport."
 
 
 def settlement_mail_unusable(problem: str) -> str:
-    """Odmowa Wysyłki rozliczeń bez tematu i treści taty, które przyjmuje reguła: ``problem`` to zdanie złej treści pliku
-    tematu i treści."""
-
     return (
         f"Mail z rozliczeniem nie pójdzie, dopóki temat i treść mają złe ustawienie. {problem} Popraw je w Ustawieniach, "
         "w sekcji Wysyłka rozliczeń."
@@ -257,57 +232,38 @@ def inbox_password_text() -> str:
 def inbox_password_empty() -> str:
     return "Wpisz nowe hasło aplikacji."
 def quantity_rules_problem(file: str, problem: str) -> str:
-    """Zły plik Reguł ilości albo Listy Urządzeń: ``problem`` to zdanie silnika Reguł ilości o pierwszym złym polu."""
-
     return f"Plik {file} w folderze config: {problem}"
 
 
 def activity_legend_problem(file: str, problem: str) -> str:
-    """Zły plik Legendy czynności: ``problem`` to zdanie silnika legendy o pierwszym złym polu."""
-
     return f"Plik {file} w folderze config: {problem}"
 
 
 def rule_without_action() -> str:
-    """Reguła z edytora Reguł ilości bez działania."""
-
     return "Wybierz, co reguła ma zrobić: wpisz w kolumnę, nic nie wpisuj albo zostaw kolumnę pustą."
 
 
 def rule_hour() -> str:
-    """Godzina warunku DATA z edytora Reguł ilości nie jest godziną z minutą."""
-
     return "Godzinę wpisz jako GG:MM, np. 17:00."
 
 
 def component_name_empty() -> str:
-    """Składnik z sekcji Urządzenia bez nazwy (pierwszego zapisu)."""
-
     return "Wpisz nazwę składnika tak, jak stoi w URZĄDZENIA."
 
 
 def spelling_with_star(spelling: str) -> str:
-    """Zapis składnika z gwiazdką: Reguły ilości czytają ją w ``URZĄDZENIA`` jako krotność."""
-
     return f"Zapis „{spelling}” nie może mieć gwiazdki: w URZĄDZENIA gwiazdka to liczba sztuk, np. 2*fut."
 
 
 def spelling_taken(spelling: str, component: str) -> str:
-    """Zapis, który ma już inny składnik; ``component``: jego nazwa, jak w sekcji Urządzenia."""
-
     return f"Zapis „{spelling}” ma już składnik „{component}”. Jeden zapis należy do jednego składnika."
 
 
 def component_used_by_rule(component: str, rule: str) -> str:
-    """Usunięcie składnika, którego potrzebuje reguła; ``rule``: jej zdanie „jeśli … to …”."""
-
     return f"Składnika „{component}” potrzebuje reguła: {rule} Najpierw zmień albo usuń tę regułę w sekcji Reguły ilości."
 
 
 def rule_needs_component(component: str, rule: str) -> str:
-    """Reguła, której składnika nie ma na Liście Urządzeń (np. „Cofnij” jej usunięcia po usunięciu składnika);
-    ``component``: jego nazwa, jak ostatnio na liście, ``rule``: zdanie reguły „jeśli … to …”."""
-
     return (
         f"Reguła potrzebuje składnika „{component}”, którego nie ma na Liście Urządzeń: {rule} Najpierw dodaj ten składnik "
         "w sekcji Urządzenia."
@@ -315,9 +271,6 @@ def rule_needs_component(component: str, rule: str) -> str:
 
 
 def needed_by_release_rules(component: str) -> str:
-    """Lista Urządzeń taty bez składnika, którego potrzebują Reguły ilości z Wydania (tata nie ma pliku reguł);
-    ``component``: jego nazwa z Listy Urządzeń z Wydania."""
-
     return (
         f"Reguły ilości z Wydania potrzebują składnika „{component}”, którego nie ma na Liście Urządzeń, więc Centrum "
         "bierze go z Listy Urządzeń z Wydania. Żeby został na liście, zapisz go: ołówek przy nim, potem „Zapisz”."
@@ -325,14 +278,9 @@ def needed_by_release_rules(component: str) -> str:
 
 
 TakenAction = Literal["zapis", "skladnik", "nazwa"]
-"""Jak tata zwalnia zapis składnika z Wydania: usuwa go ze składnika z innymi zapisami, usuwa cały składnik albo zmienia
-jego nazwę."""
 
 
 def release_component_taken(component: str, owner: str, how: TakenAction) -> str:
-    """Składnik z Listy Urządzeń z Wydania, którego potrzebują Reguły ilości z Wydania, a którego każdy zapis ma składnik z
-    listy taty, więc Centrum liczy bez niego; ``component``: jego pierwszy zapis, który ma składnik ``owner``."""
-
     return (
         f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
         f"Centrum liczy bez niego. Żeby liczyło z nim, {_freed(component, owner, how)}."
@@ -340,10 +288,6 @@ def release_component_taken(component: str, owner: str, how: TakenAction) -> str
 
 
 def rules_wait_for_release_component(component: str, owner: str, how: TakenAction) -> str:
-    """Sekcja Reguły ilości i odmowa pierwszego zapisu reguł taty w miejsce Reguł ilości z Wydania, które mają składnik
-    z Listy Urządzeń z Wydania, a każdy jego zapis ma składnik ``owner`` z listy taty: plik reguł taty musi pasować do
-    jego listy, więc zapisze się dopiero, gdy tata zwolni zapis ``component`` w sekcji Urządzenia."""
-
     return (
         f"Reguły ilości z Wydania mają składnik „{component}”, ale ten zapis ma już składnik „{owner}” z listy, więc "
         "Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia "
@@ -360,8 +304,6 @@ def _freed(component: str, owner: str, how: TakenAction) -> str:
 
 
 def needed_by_rules(file: str, component: str) -> str:
-    """Lista Urządzeń bez składnika, którego potrzebują Reguły ilości; ``component``: jego nazwa, jak w sekcji Urządzenia."""
-
     return (
         f"Plik {file} w folderze config nie ma składnika „{component}”, którego potrzebują Reguły ilości, "
         "więc Centrum liczy ostatnią dobrą Listą Urządzeń."
@@ -373,7 +315,4 @@ def unavailable(file: str) -> str:
 
 
 def unreadable(file: str) -> str:
-    """Plik ``file``, bez którego treści Centrum odmawia, zamiast brać treść z Wydania: odmowa
-    ``refusal.settings_file_unreadable``, zdanie pliku w oknie Ustawień i w podpowiedziach Wykonawców."""
-
     return f"Pliku {file} w folderze config nie da się teraz przeczytać. Zamknij program, który może trzymać plik, i spróbuj ponownie."

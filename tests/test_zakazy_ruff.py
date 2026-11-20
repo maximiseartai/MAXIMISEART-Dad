@@ -26,7 +26,7 @@ from typing import Any, Final
 
 import pytest
 
-from tests.fixtures.znane_luki import assert_znane_luki, ruff, ruff_i_mypy, wymaga_ruff, wymaga_ruff_i_mypy, zapisz
+from tests.fixtures.znane_luki import assert_znane_luki, platformy_mypy_ci, ruff, ruff_i_mypy, wymaga_ruff, wymaga_ruff_i_mypy, zapisz
 
 ROOT = Path(__file__).resolve().parents[1]
 # Każdy plik konfiguracji ruff, literałem, żeby tools/szybko.py i bramka PR wybierały ten test przy zmianie któregoś
@@ -1432,3 +1432,27 @@ def test_ruff_odrzuca_kod_noqa_spoza_ruff_w_kazdym_katalogu(folder: Path, code: 
     assert "RUF102" in {finding["code"] for finding in json.loads(result.stdout)}, (
         f"konfiguracja ruff w {folder.relative_to(ROOT).as_posix()} ma odrzucić kod noqa spoza ruff (RUF102):\n{code}"
     )
+
+
+MIEJSCE_Z_TEKSTU: Final = """\
+from rozliczenia.centrum.settings.files import FieldPath
+
+
+def miejsca(klucz: str, pole: str) -> tuple[FieldPath, FieldPath]:
+    return FieldPath(klucz), FieldPath("wykonawcy", 0, pole)
+"""
+
+
+@wymaga_ruff_i_mypy
+def test_miejsce_zlego_ustawienia_z_tekstu_spoza_znanych_nazw_pol_nie_przechodzi_mypy(tmp_path: Path) -> None:
+    pliki = zapisz({"tekst z pliku": MIEJSCE_Z_TEKSTU}, tmp_path)
+
+    zgloszenia = ruff_i_mypy(pliki, sonda=ROOT / "src" / "rozliczenia" / "centrum" / "settings" / "sonda_miejsca.py")
+
+    odrzucone = sorted(zgloszenie.split(" ", 1)[1] for zgloszenie in zgloszenia["tekst z pliku"] if "[arg-type]" in zgloszenie)
+    assert [zgloszenie.split(";", 1)[0] for zgloszenie in odrzucone] == sorted(
+        [
+            *(['Argument 1 to "FieldPath" has incompatible type "str"'] * len(platformy_mypy_ci())),
+            *(['Argument 3 to "FieldPath" has incompatible type "str"'] * len(platformy_mypy_ci())),
+        ]
+    ), zgloszenia

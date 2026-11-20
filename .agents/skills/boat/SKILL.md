@@ -1,33 +1,38 @@
 ---
 name: boat
-description: Ciężkie polecenie - na Macu albo na boxie boat (`boatbox`), także rozbite na kilka boxów. Użyj przed `szybko.py`, `mutacje.py --plik`, pełnym pytestem i innym poleceniem dłuższym niż minuta na Macu, oraz gdy test pada tylko na boxie.
+description: Ciężkie polecenie biegnie na boxie boat (`boatbox`), także rozbite na kilka boxów. Użyj przed `szybko.py`, pełnym pytestem, `mutacje.py --plik` i każdym poleceniem, które na Macu trwałoby ponad minutę, oraz gdy test pada tylko na boxie albo z komunikatem `BOX:`.
 ---
 
 # Boat
 
 Box boat to kopia worktree w tym, co widzi git: ten sam HEAD, ten sam `origin/main` oraz te same niezacommitowane i nieśledzone pliki, więc narzędzia repo dają na nim ten sam wynik.
 Pliki ignorowane przez git (`.venv`, `node_modules`, `config/`) na box nie trafiają, a pliki zapisane na boxie wracają do worktree tylko przez `boatbox get`.
-Edycja, git i agenci zostają na Macu, a mechanikę (`run`, `auto`, `job`, `wait`, `log`, `fan`, `get`, `stop`, sloty równoległych agentów) opisuje `boatbox help`.
+Edycja, git i agenci zostają na Macu, a obliczenia idą na box; mechanikę (`run`, `job`, `wait`, `log`, `fan`, `get`, `stop`, sloty równoległych agentów) opisuje `boatbox help`.
 Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalnie.
 
 ## Gdzie biegnie polecenie
 
-Każde ciężkie polecenie i każdą jego część, którą da się rozdzielić, puszczaj przez `boatbox`, także wiele razy i równolegle.
+Polecenie jest **ciężkie**, gdy na Macu trwałoby ponad minutę albo zajmuje kilka rdzeni naraz, oraz gdy uruchamia kod z zewnątrz; pytest jest ciężki wtedy i tylko wtedy, gdy ma więcej niż jeden worker xdist, bo tak rozstrzyga jego bramka.
+Ciężkie polecenie biegnie zawsze na boxie, także wiele naraz i równolegle, każda część, którą da się rozdzielić, na własnym boxie; Mac zostaje dla edycji, gita i agentów.
 Ciężkie narzędzia repo (`szybko.py`, `mutacje.py`, `mutacje_zmiany.py`, `benchmark_przebiegu.py`, `ci_lokalnie.py` z zadaniem `pytest` albo `mutations` i pytest z więcej niż jednym workerem xdist) uruchomione na Macu same przechodzą przy starcie na box (`boatbox run` z tym samym poleceniem, `tools/lib/na_boxie.py`), a gdy box nie wstanie, kończą się kodem 75 bez biegu na Macu; na Macu zostają tylko przez `boatbox run --here '<polecenie>'`.
 
-| Praca | Gdzie | Jak |
-|---|---|---|
-| `mutacje.py --plik` z mutacjami o kilku różnych `polecenie` | kilka boxów naraz, bo razem są szybsze od Maca | `boatbox fan` (sekcja „Fan mutacji”) |
-| Pełny pytest | jeden box, bo na Macu zajmuje wszystkie rdzenie na kilka minut | `boatbox job pytest '.venv/bin/python -m pytest -n auto'`, potem `boatbox wait pytest` |
-| `szybko.py`, `mutacje.py --plik` z jednym `polecenie` | Mac, gdy ma wolne rdzenie, a box, gdy Mac jest wąskim gardłem | `boatbox auto '<polecenie>'`, a `szybko.py` jak niżej |
-| Odtworzenie błędu na Linuksie, powtórzenia testu pod obciążeniem, pomiar, model TLC | box | `boatbox run` albo `boatbox job` |
-| Pojedynczy plik testów, `mutacje.py --zmiana`, ruff, mypy, budowa frontendu, git, `gh`, `tools/scal_pr.py` | Mac, bo to lekkie polecenia (`npm ci` z `npm run build` trwają kilka sekund) | bezpośrednio |
-| Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty | Mac, jedno ciężkie polecenie naraz | bezpośrednio |
-| Nocne mutacje (`mutacje_nocne.py`, `mutacje_zmiany.py`) | GitHub Actions | workflow `mutacje-nocne.yml` |
+| Praca | Jak |
+|---|---|
+| `szybko.py` | `boatbox run 'PYTEST_XDIST_AUTO_NUM_WORKERS=8 .venv/bin/python tools/szybko.py'` (box `large` ma 8 vCPU) |
+| Pełny pytest | `boatbox job pytest '.venv/bin/python -m pytest -n auto'`, potem `boatbox wait pytest` |
+| `mutacje.py --plik` z mutacjami o kilku różnych `polecenie` | `boatbox fan` (sekcja „Fan mutacji”) |
+| `mutacje.py --plik` z jednym `polecenie`, odtworzenie błędu na Linuksie, powtórzenia testu pod obciążeniem, pomiar, model TLC, kod z zewnątrz (nowa zależność, cudzy PR) | `boatbox run '<polecenie>'`, a przy biegu ponad 5 minut `boatbox job` i `boatbox wait` |
+| Lekkie: pytest bez workerów xdist albo z jednym (`-n 0`, `-n 1`: jeden rdzeń, więc także długi plik testów), ruff, mypy, budowa frontendu, git, `gh`, `tools/scal_pr.py` | na Macu, bezpośrednio |
+| Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty, test, który działa tylko na macOS | na Macu: `boatbox run --here '<polecenie>'` |
+| Nocne mutacje (`mutacje_nocne.py`, `mutacje_zmiany.py`) | GitHub Actions, workflow `mutacje-nocne.yml` |
 
-`szybko.py` uruchamiaj tak: `boatbox auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8 '.venv/bin/python tools/szybko.py'`.
-Box `large` ma 8 vCPU, a Mac zostaje przy 4 workerach z `czasy_ci.WORKERY_LOKALNE`, więc liczbę workerów boxa podaje tylko `--box-env`.
 W pomiarze A/B obie strony biegną po kolei na tym samym boxie.
+
+## Gdy box nie wstaje
+
+- `missing command: boat`: zgłoś to Maksowi, bo instalacja i logowanie boat to jego krok, a polecenie zostaw do uruchomienia na boxie, nie na Macu.
+- `no_ready_machine` albo inny brak maszyn: ponów raz po minucie, potem z `BOATBOX_TYPE=default`; gdy i to nie wstaje, zgłoś polecenie i błąd, a polecenie zostaw na boxie.
+- Wynik wygląda na stary kod: porównaj `head` boxa z `boatbox status` z `git rev-parse HEAD`.
 
 ## Base
 
@@ -60,17 +65,10 @@ Pliki części leżą w korzeniu worktree, bo `boatbox` wysyła na box tylko pli
 Prawdziwe pliki taty, pliki z `config/`, tokeny i treść skrzynki trzymaj poza worktree albo w ścieżkach ignorowanych przez git, bo na box trafia każdy nieignorowany plik, także nieśledzony.
 Testom na boxie dawaj atrapy i dane syntetyczne.
 
-## Katalog repo przeniesiony w trakcie biegu
+## Komunikat `BOX:` i `SZYBKO INFRA`
 
-Box ze snapshotu albo po wznowieniu z dysku podaje `/home/user` z montowania FUSE ładowanego leniwie (lazyfs, `/var/lib/ascii-lazy/`).
-Po załadowaniu (`HYDRATION-DONE` w `/var/lib/ascii-lazy/daemon.out`) lazyfs w pierwszej przerwie w odczytach podstawia prawdziwy dysk, a stare drzewo przenosi pod `/var/lib/ascii-lazy/retired/` (linia `retired /home/user ->` w tym samym pliku; 19.11.2026 w 16–29 s od startu boxa).
-Polecenie, które już biegło w katalogu repo, ma wtedy katalog roboczy pod tą ścieżką, więc każdy worker pytest pada raz z komunikatem `BOX: boat przeniósł katalog repo w trakcie biegu; to nie test, powtórz bieg`.
-To nie wygaśnięcie `BOATBOX_IDLE_MIN`: w każdym sprawdzonym takim biegu 19.11.2026 box był świeżo utworzony albo wznowiony, jego `hydratedAt` z `boat info <id> --json` wypadł w trakcie biegu, a następny bieg na tym samym boxie przeszedł.
-Wznowienie nie zawsze ładuje dysk od nowa, a `hydrated` w `boat info` zostaje wtedy `true` z poprzedniego ładowania, więc o tym, czy box jeszcze ładuje dysk, mówi tylko sam box: `findmnt -n -o FSTYPE --mountpoint "$HOME"` daje wtedy typ `fuse…`.
-Box wyjaśnia tylko katalog roboczy, który jest dokładnie oczekiwanym katalogiem po przeniesieniu (`box_boat.przeniesienie`): podkatalog, do którego test wszedł sam, inny stan zostawiony w tym samym teście (zmienna, plik, wątek) i błąd teardownu dalej są porażką testu.
-Sesja pytest, której każda porażka to sam komunikat boxa, kończy się kodem 75 (`KOD_WYJSCIA` z `tools/lib/box_boat.py`, który rozstrzyga wszystkie trzy granice), a inna porażka obok, także porażka całej sesji jak `DRZEWO REPO`, daje kod 1.
-`szybko.py` kończy linią `SZYBKO INFRA` i kodem 75 bieg, w którym każdy krok, który padł, to pytest z kodem 75: powtórz go bez zmian w kodzie.
-Pełny pytest z kodem 75 (`boatbox job` kończy log `FAIL rc=75`) też powtórz.
+Komunikat `BOX: boat przeniósł katalog repo w trakcie biegu; to nie test, powtórz bieg`, linia `SZYBKO INFRA` z kodem 75 i log `boatbox job` zakończony `FAIL rc=75` znaczą, że box podmienił dysk pod biegnącym poleceniem: powtórz ten sam bieg bez zmian w kodzie.
+Przyczynę i granice tego rozpoznania opisuje [`przeniesienie.md`](przeniesienie.md).
 
 ## Test pada tylko na boxie
 

@@ -1,10 +1,3 @@
-"""Plik Ustawień Centrum w ``config``: jak go przeczytać, zapisać, porównać i cofnąć, ten sam opis dla każdego pliku.
-
-Każdy plik ma jedną regułę ``parse``: sprawdza zapis taty, cofnięcie i plik zmieniony ręcznie, więc zła wartość nie
-wchodzi żadną drogą. Brak pliku to wartość domyślna. Pliki, które ma właściciel (``CentrumSettings``), wymienia jego
-``_FILES``, a każdy z nich to opis z własnym ``parse``, ``dump``, ``diff`` i ``restore``.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -18,8 +11,7 @@ T = TypeVar("T")
 
 
 class _SettingsDumper(yaml.SafeDumper):
-    """Zapis YAML plików Ustawień: napis ze znakiem NEL (U+0085) w cudzysłowie podwójnym, w którym stoi on jako ``\\N``,
-    bo przy ``allow_unicode`` pakiet yaml pisze go wprost, a przy odczycie czyta jako podział linii ze spacją."""
+    ...
 
 
 def _text(dumper: yaml.SafeDumper, value: str) -> yaml.ScalarNode:
@@ -30,9 +22,6 @@ _SettingsDumper.add_representer(str, _text)
 
 
 def settings_yaml(document: Mapping[str, object]) -> bytes:
-    """Bajty pliku Ustawień w YAML (UTF-8, ``\n`` na końcu linii na każdym systemie): klucze w kolejności ``document``,
-    polskie litery wprost, bez łamania długich linii; każdy napis wraca z pliku bez zmian."""
-
     text = yaml.dump(dict(document), Dumper=_SettingsDumper, allow_unicode=True, sort_keys=False, width=1_000_000)
     return text.encode("utf-8")
 
@@ -82,26 +71,10 @@ FieldName = Literal[
     "wypelnienia",
     "temat",
 ]
-"""Znane nazwy pól plików Ustawień: jedyne słowa, z których powstaje ``FieldPath``.
-
-Nazwy stoją w grupach według pliku: ``centrum-ustawienia.yaml`` od ``rejestr_zlecen``, ``skrzynka-raportow.txt`` od
-``adres``, ``wykonawcy.yaml`` od ``wykonawcy``, ``przypomnienia.yaml`` od ``wlaczone``, przełącznik startu razem z Windows
-(skrót w folderze Autostart) ``autostart``, ``wyjatki-ilosci.yaml`` (różnice Kontroli ilości oznaczone „To był wyjątek”)
-od ``wyjatki``, reguła pliku ``reguly-ilosci.yaml`` w edytorze Reguł ilości od ``jesli``, składnik pliku
-``lista-urzadzen.yaml`` w sekcji Urządzenia ``zapisy`` (nazwa składnika to ``nazwa``) i Kod czynności pliku
-``legenda-czynnosci.yaml`` w formularzu kodu od ``przedzialy`` (do tego ``zapisy``, ``kolumna``, ``wartosc``) i
-``wysylka-rozliczen.yaml`` ``temat`` (do tego ``tresc``).
-"""
 
 
 @dataclass(frozen=True, init=False)
 class FieldPath:
-    """Miejsce pola w pliku Ustawień (``wykonawcy[2].adresy[0]``), złożone tylko ze znanych nazw pól i numerów pozycji.
-
-    Miejsce trafia do Logów Centrum, Historii Ustawień i Zgłoszenia, więc tekst z pliku (nieznany klucz, który bywa
-    loginem albo nazwą) nie ma tu drogi: konstruktor przyjmuje tylko ``FieldName`` i ``int``, inny tekst odrzuca mypy.
-    """
-
     text: str
 
     def __init__(self, first: FieldName, *rest: FieldName | int) -> None:
@@ -111,15 +84,11 @@ class FieldPath:
 
 @dataclass(frozen=True)
 class FieldProblem:
-    """Pierwszy problem treści pliku: pole w pliku (``rejestr_zlecen``) albo ``None`` dla całego pliku i zdanie dla taty."""
-
     field: FieldPath | None
     sentence: str
 
     @property
     def place(self) -> str | None:
-        """Pole jako tekst odmowy, kontraktu i Logów Centrum; ``None`` dla całego pliku."""
-
         return None if self.field is None else self.field.text
 
 
@@ -130,11 +99,6 @@ class Good(Generic[T]):
 
 @dataclass(frozen=True)
 class Bad(Generic[T]):
-    """Złe ustawienie: problem treści pliku i ostatnia dobra wartość z pamięci właściciela, którą przyjmuje dzisiejsza
-    reguła ``parse`` (``None``: takiej nie ma; co wtedy liczy proces, mówi właściciel: zwykle wartości domyślne pliku,
-    a Lista Wykonawców i temat i treść Maila z rozliczeniem nie mają wtedy wartości dla procesu). Sekret, którego treści pamięć nie trzyma, ma tu wartość samej złej treści
-    (``SettingsFile.unchecked``; ``None``: treść nie daje wartości)."""
-
     problem: FieldProblem
     usable: T | None
 
@@ -142,16 +106,6 @@ class Bad(Generic[T]):
 @final
 @dataclass(frozen=True)
 class Unreadable:
-    """Plik ``name`` jest, ale system nie daje go teraz czytać (np. trzyma go antywirus): treść nieznana, a nie zła.
-    ``name`` to nazwa pliku bez katalogu: pliku Ustawień w ``config``, a w odczycie pamięci właściciela (``Memory.read``)
-    i Historii Ustawień (``History.read``) ich własnego pliku, więc odmowa o pliku (``refusal.settings_file_unreadable``)
-    bierze tylko ``Unreadable`` pliku Ustawień. Proces, który z pliku Ustawień bez odczytu bierze wejście, nie startuje,
-    zamiast liczyć treścią z Wydania jak tata bez własnego pliku. Klasa nie ma podklas, więc gałąź
-    ``isinstance(x, Unreadable)`` przy wartości bez unii jest dla mypy martwa (``warn_unreachable`` w ``src/``:
-    „Subclass of … and "Unreadable" cannot exist”): usuń ją, bo odmowę o pliku daje już nazwa bez przyrostka
-    (``SettingsSnapshot.folders``, ``CentrumSettings.folders``). Unię bierze tylko wołający, który o pliku mówi albo
-    czeka (``*_or_unreadable``)."""
-
     name: str
 
 
@@ -159,10 +113,6 @@ Read = Good[T] | Bad[T]
 
 
 def usable(read: Read[T]) -> T | None:
-    """Wartość, na której proces może biec: dobra albo ostatnia dobra przy złym pliku; ``None``: żadnej nie ma.
-    ``Unreadable`` tu nie wchodzi, bo plik bez odczytu to nie zły plik bez ostatniej dobrej: wołający mówi sam, co z nim
-    robi."""
-
     match read:
         case Good(value=value):
             return value
@@ -172,41 +122,22 @@ def usable(read: Read[T]) -> T | None:
 
 @dataclass(frozen=True)
 class KeyChange:
-    """Zmiana jednego klucza (``sekcja.pole``) w wierszu Historii Ustawień: wartość przed i po, ``None``: nie ustawiono."""
-
     key: str
     before: str | None
     after: str | None
 
 
 RemovedWhat = Literal["worker", "login"]
-"""Co zmiana usuwa z Listy Wykonawców: całego Wykonawcę albo tylko jego login."""
 
 
 @dataclass(frozen=True)
 class RemovedLogins:
-    """Loginy, które zmiana usuwa z Listy Wykonawców, i czy znika z nimi cały Wykonawca (``what``)."""
-
     logins: frozenset[str]
     what: RemovedWhat
 
 
 @dataclass(frozen=True)
 class SettingsFile(Generic[T]):
-    """Plik Ustawień Centrum w ``config``.
-
-    ``parse`` dostaje bajty pliku (``None``: pliku nie ma) i daje wartość albo pierwszy problem, ``dump`` daje bajty
-    pliku, które właściciel zapisuje bez zmiany, więc test i fikstura zapisują je ``write_bytes`` tymi samymi bajtami na
-    każdym systemie (zapis tekstowy dałby na Windows ``\r\n``), ``diff`` klucze, które różnią dwie wartości, a
-    ``restore`` wartość z kluczami ustawionymi na ich wartość ``before``. ``restore`` może dać wartość, której ``parse``
-    nie przyjmie; właściciel sprawdza ją jak każdą zmianę. ``reported`` daje zmianę klucza dla Zgłoszenia, a ``logged``
-    klucz dla Logów Centrum, oba bez danych osobowych. Plik ``secret`` ma w Historii tylko klucze, bez wartości, i nie
-    da się go cofnąć. Ostatniej dobrej treści sekretu nikt nie pamięta, więc ``unchecked`` daje wartość jego treści bez
-    reguł ``parse`` (``None``: treść nie daje wartości): zapis taty na złej treści zaczyna od niej, a ``parse`` zapisu
-    odrzuca to, czego zapis nie naprawił. ``removed_logins`` daje loginy, które zmiana wartości usuwa z Listy Wykonawców
-    (``None``: żadnego): właściciel zapisuje zmianę taty dopiero, gdy żaden z nich nie występuje w okresie (ADR 0032).
-    """
-
     name: str
     parse: Callable[[bytes | None], T | FieldProblem]
     dump: Callable[[T], bytes]
@@ -230,9 +161,6 @@ _Entry = TypeVar("_Entry", bound=_Identified)
 
 @dataclass(frozen=True)
 class EntriesById(Generic[_Entry]):
-    """Jak porównać i odtworzyć wpisy pliku, który jest listą wpisów z ``id``: klucz Historii ``<sekcja>.<id>``, a wartość
-    to wpis jako JSON (``dumped``) i z powrotem (``parsed``; ``None``: wpisu nie da się odczytać)."""
-
     section: str
     dumped: Callable[[_Entry], dict[str, object]]
     parsed: Callable[[object], _Entry | None]
@@ -247,14 +175,9 @@ class EntriesById(Generic[_Entry]):
         )
 
     def ids(self, keys: frozenset[str]) -> frozenset[str]:
-        """Id wpisów z kluczy Historii Ustawień tej sekcji (``<sekcja>.<id>``)."""
-
         return frozenset(key.removeprefix(f"{self.section}.") for key in keys if key.startswith(f"{self.section}."))
 
     def restore(self, current: tuple[_Entry, ...], changes: tuple[KeyChange, ...]) -> tuple[_Entry, ...]:
-        """``current`` z każdym wpisem ``changes`` jak przed zmianą: usunięty wraca na koniec, dodany znika; klucz innej
-        sekcji albo wpis, którego nie da się odczytać, zostaje bez zmian."""
-
         entries = list(current)
         for change in changes:
             section, _, identifier = change.key.partition(".")
