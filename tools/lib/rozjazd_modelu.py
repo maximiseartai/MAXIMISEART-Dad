@@ -194,8 +194,7 @@ def bez_klucza(skill: Path, root: Path) -> list[str]:
     poza docstringiem i ``...`` (metoda ``Protocol``, `OrderJournal.ended`), także gdy inna klasa ma metodę o tej nazwie
     z ciałem, nazwa obiektu przed funkcją modułu (`pliki.zapisz()` to tylko metoda `zapisz`), goła nazwa definicji w
     pliku spoza ``DEFINICJE`` (`beside`), nazwa w prozie sekcji poza tabelą, nazwa w tabeli innej sekcji i każda nazwa
-    skilla, którego sekcja nie ma tabeli, bo model wiąże z kodem proza albo komentarze modelu TLA+
-    (`verify-urwane-uruchomienie`).
+    skilla, którego sekcja nie ma tabeli.
     """
 
     recorded = definicje(skill)
