@@ -13,6 +13,7 @@ from typing import Any, Final, NamedTuple
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
+from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
@@ -1384,7 +1385,9 @@ def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp
     run_to_end(centrum, dry_run=False)
     template = write_collective_template(centrum.tool.configuration.collective_template)
     workbook = load_workbook(template)
-    workbook.active["N17"] = "Montaż ONT"
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["N17"] = "Montaż ONT"
     workbook.save(template)
     saved = marked_as_exception(centrum, at(differences(centrum), 21, "N"))
     [row] = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["id"] == saved["change"]]
