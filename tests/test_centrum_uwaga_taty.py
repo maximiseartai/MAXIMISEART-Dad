@@ -1,5 +1,3 @@
-"""Uwaga taty ogólna (ADR 0015, #318) przez HTTP API Centrum z fałszywą Skrzynką Zgłoszeń; bez prawdziwego GitHuba."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -37,8 +35,7 @@ from atrapy.settlement import write_quantity_source
 
 TITLE = "Plik zbiorczy otwiera się długo"
 BODY = "Od wczoraj Excel myśli przy nim minutę.\nInne pliki otwierają się od razu."
-# Treść issue kończy się wersją narzędzia taty: pierwsze 7 znaków commitu, jak na Konfiguracji.
-VERSION_LINE = "Uwaga ogólna · wersja narzędzia 3c1d0a9"
+VERSION_LINE = f"Uwaga ogólna · wersja narzędzia {TOOL_COMMIT[:7]}"
 
 
 def centrum_with_key(tmp_path: Path) -> Centrum:
@@ -77,9 +74,6 @@ def test_uwaga_z_tytulem_i_trescia_to_jedno_issue_uwaga_taty_z_wersja_narzedzia(
 def test_uwaga_przy_chwilowo_zablokowanym_pliku_zapisow_skrzynki_wychodzi_od_razu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Antywirus na chwilę trzyma plik zapisów Skrzynki: jego zamiana czeka jak przy innych plikach Centrum, więc Uwaga
-    nie czeka na budzenie kolejki i nie wygląda jak brak sieci (#879)."""
-
     opening = tmp_path / "config" / OPENING_FILE
     replace = Path.replace
     refused: list[Path] = []
@@ -101,9 +95,6 @@ def test_uwaga_przy_chwilowo_zablokowanym_pliku_zapisow_skrzynki_wychodzi_od_raz
 def test_uwaga_przy_pliku_zapisow_skrzynki_nieczytelnym_na_stale_czeka_a_dziennik_mowi_raz_ktory_plik(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Pliku zapisów Skrzynki nie da się odczytać ani zapisać (#909): Uwaga czeka w kolejce jak bez internetu, a dziennik
-    Centrum dostaje jedną linię z typem błędu, po której Maks wie, że to nie sieć."""
-
     opening = tmp_path / "config" / OPENING_FILE
     read_text = Path.read_text
 
@@ -142,7 +133,6 @@ def test_podglad_maks_dostanie_to_dokladnie_wyslane_issue(tmp_path: Path, text: 
     assert sent.json() == {"state": "sent"}
     [issue] = dad_note_issues(started)
     assert draft.status_code == 200
-    # Uwaga ogólna nie ma odnośnika, więc „Maks dostanie” pokazuje tacie treść issue bez zmian.
     assert draft.json() == {"title": issue.title, "body": issue.body, "shown_body": issue.body}
     assert (issue.title, issue.body) == (TITLE, body)
 
@@ -190,8 +180,6 @@ def test_uwaga_po_uporzadkowaniu_intermax_nie_wynosi_adresu_ani_numeru_umowy_z_w
 def test_po_uporzadkowaniu_intermax_uwaga_zna_adres_przesunietego_wiersza_a_slowo_z_urzadzen_wychodzi_bez_zmian(
     tmp_path: Path,
 ) -> None:
-    # Pierwszy wiersz wklejenia (zlecenie 101) jest przesunięty o dwie kolumny w lewo (ADR 0019): pod nagłówkiem
-    # ADRES stoi w nim URZĄDZENIA („Instalacja”), a jego ADRES i NUMER UMOWY stoją dwie kolumny wcześniej.
     started = ordering_centrum(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
     assert started.run_to_end()["result"]["result"] == "OK"
@@ -209,9 +197,6 @@ def test_po_uporzadkowaniu_intermax_uwaga_zna_adres_przesunietego_wiersza_a_slow
     ]
 
 
-# Każdy odczyt pliku taty w tej pracy Centrum uczy strażnika jego zakazanych wartości (ADR 0025), także odczyt bez
-# Uruchomienia: Diagnoza czyta cały Rejestr zleceń, strony Uzupełnienia i okno startu Przebiegu Plik zbiorczy, karta
-# Uporządkowania dół INTERMAX, a Przygotowanie przed odczytem okresu szuka Surowych zleceń.
 READ_ADDRESS = "Syntetyczna Opalowa 3/8"
 
 
@@ -223,8 +208,8 @@ def first_line_of_draft(client: TestClient, body: str) -> str:
 
 
 def diagnosed_register(tmp_path: Path) -> tuple[TestClient, Callable[[], object], str]:
-    # Zlecenie z sierpnia: Przygotowanie okresu go nie czyta, czyta je tylko Diagnoza całego Rejestru.
-    started = preparing_centrum(tmp_path, [{**register_order(9, datetime(2026, 8, 3, 9)), "ADRES": READ_ADDRESS}, *default_register_rows()])
+    outside_period = {**register_order(9, datetime(2026, 8, 3, 9)), "ADRES": READ_ADDRESS}
+    started = preparing_centrum(tmp_path, [outside_period, *default_register_rows()])
 
     def read() -> object:
         run_id = stopped_for_maks(started)
@@ -322,7 +307,6 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
 
     assert response.status_code == 200
     assert response.json() == {"state": "queued", "waits_for": waits_for}
-    # Odpowiedź przychodzi z końcem nieudanej próby wysyłki, a nie po całym czasie czekania na skrzynkę.
     assert time.monotonic() - asked_at < DELIVERY_WAIT_S
     assert started.report_box.issues == []
     started.client.stop()
@@ -331,7 +315,6 @@ def test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_ce
     assert (note["title"], note["number"]) == (TITLE, None)
 
     restarted = centrum_with_key(tmp_path)
-    # Zakładanie bez odpowiedzi wstrzymuje następne Centrum na LIST_LAG_S (#879); nowe Centrum ma nowy zegar od zera.
     restarted.clock.pause(LIST_LAG_S)
     with restarted.client:
         assert restarted.report_box.wait_until(lambda box: len(box.issues) == 1)

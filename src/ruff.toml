@@ -130,3 +130,5 @@ extend = "../ruff.toml"
 # pamięci Wpisania, więc drugie wejście daje drugi dzień. Prawo właściciela ma worker_reports/_memory.py, a typ pola
 # albo parametru biorą operacja Wpisania, odczyt okna i Przypomnienia rdzenia; inny moduł rdzenia raportów zatrzymuje ten zakaz.
 "rozliczenia.worker_reports._model.ReportInputs".msg = "wejście odczytu okna rdzenia raportów buduje w src/ tylko pamięć Wpisania za swoimi operacjami (worker_reports.EnteringMemory.enter i reminders): weź wynik operacji pamięci Wpisania (EnteringMemory z ReportState pracy, INTERMAX z register_window), bo własne ReportInputs, np. z OwnEntries.EMPTY, daje read_window inny dzień raportu niż Wpisanie raportów (#2059 W1)"
+"rozliczenia.centrum.keyed_box.read_report_key".msg = "Token do Zgłoszeń czyta z pliku tylko KeyedBox (rozliczenia.centrum.keyed_box): Skrzynkę pytaj przez KeyedBox, a token do pytań o Wydania bierz z KeyedBox.github_key"
+"rozliczenia.centrum.keyed_box.REPORT_KEY_FILE".msg = "Token do Zgłoszeń czyta z pliku tylko KeyedBox (rozliczenia.centrum.keyed_box): Skrzynkę pytaj przez KeyedBox, a token do pytań o Wydania bierz z KeyedBox.github_key"
