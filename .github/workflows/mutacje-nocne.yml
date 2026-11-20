@@ -4,10 +4,9 @@ name: Mutacje nocne
 # scripts in .agents/skills/, even when marked przepuszcza) that changed on main since the last successful night, as
 # tools/mutacje_zmiany.py mutates it, and the mutation scripts of the skills whose folder changed since then. A night
 # mutates at most CZESCI_NA_NOC parts of NA_CZESC mutations (tools/mutacje_nocne.py): with more, it stops at a commit
-# of main, and the next night starts there. Each surviving mutation, and each mutation its
-# part's time limit left without a verdict, goes to the issue "Przeżyte mutacje z #N" of the PR that last changed its
-# line, for at most ISSUES_NA_NOC pull requests a night, the rest only to the filing's log, and each failed
-# mutation script to "Przeżyte mutacje skilli z #N" of the PR that last changed its skill (tools/mutacje_nocne.py,
+# of main, and the next night starts there. Each surviving mutation (NIEWYKRYTA) goes to the issue "Przeżyte mutacje
+# z #N" of the PR that last changed its line, each mutation without a verdict (the part's or the mutation's time limit)
+# only to the filing's log line MUTACJE NOCNE BEZ ISSUE, and each failed mutation script to "Przeżyte mutacje skilli z #N" of the PR that last changed its skill (tools/mutacje_nocne.py,
 # ADR 0021). The parts do not run their own coverage pass: the shards of the job pokrycie run it once for the whole
 # night, and each part reads their records. A red night does not move the base, so the next night gets its range again,
 # but without the mutations whose verdict from its parts needs no issue (caught, dominated, excused or of the other
