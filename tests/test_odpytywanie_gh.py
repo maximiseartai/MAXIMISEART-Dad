@@ -10,8 +10,8 @@ import time
 import pytest
 
 from tests.fixtures.fake_cli import fake_cli
+from tests.fixtures.git_repo import commit, copy_files, git, with_imports
 
-import github
 import nakladka
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -26,6 +26,14 @@ REAL_GH = (
     "sys.exit(int(code.read_text()) if code.exists() else 0)\n"
 )
 LIMIT = 6
+POLL = (
+    "import subprocess, sys\n"
+    "route = sys.argv[1] if len(sys.argv) > 1 else 'lista'\n"
+    "command = {'lista': ['gh', 'pr', 'checks', '1'], 'powloka': 'gh pr checks 1', 'xargs': ['xargs', 'gh', 'pr', 'checks']}[route]\n"
+    "codes = [subprocess.run(command, shell=route == 'powloka', input='1', text=True, cwd='/', capture_output=True).returncode for _ in range(8)]\n"
+    "print(*codes)\n"
+)
+SHELL_POLL = "for i in 1 2 3 4 5 6 7 8; do gh pr checks 1 >/dev/null 2>&1; printf '%s ' $?; done"
 
 pytestmark = pytest.mark.skipif(sys.platform == "win32", reason="nakładka to skrypt sh w PATH sesji Claude Code na Macu")
 
@@ -34,9 +42,9 @@ def _real_gh(tmp_path: Path) -> Path:
     return fake_cli(tmp_path / "bin", "gh", REAL_GH).parent
 
 
-def _environment(tmp_path: Path, session: str = "sesja-1") -> dict[str, str]:
-    environment = {key: value for key, value in os.environ.items() if key not in (nakladka.POMIJA, "GH_REPO")}
-    path = os.pathsep.join([str(nakladka.NAKLADKI), str(_real_gh(tmp_path)), os.environ["PATH"]])
+def _environment(tmp_path: Path, session: str = "sesja-1", wrapper: Path = nakladka.NAKLADKI) -> dict[str, str]:
+    environment = {key: value for key, value in os.environ.items() if key != "GH_REPO"}
+    path = os.pathsep.join([str(wrapper), str(_real_gh(tmp_path)), os.environ["PATH"]])
     return {**environment, "HOME": str(tmp_path / "dom"), "PATH": path, nakladka.ZMIENNA_SESJI: session}
 
 
@@ -119,15 +127,8 @@ def test_zapytanie_sprzed_okna_sie_nie_liczy(tmp_path: Path) -> None:
     assert _gh(environment, *arguments, cwd=tmp_path).returncode == 0
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        pytest.param({nakladka.POMIJA: "1"}, id="narzedzie-repo"),
-        pytest.param({nakladka.ZMIENNA_SESJI: ""}, id="bez-sesji"),
-    ],
-)
-def test_narzedzie_repo_i_polecenie_spoza_sesji_przechodza(tmp_path: Path, change: dict[str, str]) -> None:
-    environment = {**_environment(tmp_path), **change}
+def test_polecenie_spoza_sesji_przechodzi(tmp_path: Path) -> None:
+    environment = {**_environment(tmp_path), nakladka.ZMIENNA_SESJI: ""}
 
     codes = [_gh(environment, "pr", "checks", "2178", cwd=tmp_path).returncode for _ in range(LIMIT + 2)]
 
@@ -141,11 +142,64 @@ def test_kod_wyjscia_prawdziwego_gh_wraca_przez_nakladke(tmp_path: Path) -> None
     assert _gh(environment, "pr", "checks", "2178", cwd=tmp_path).returncode == 4
 
 
-def test_narzedzia_repo_wolaja_gh_ze_znacznikiem_pominiecia(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_cli(tmp_path / "bin", "gh", f"import os\nprint(os.environ.get({nakladka.POMIJA!r}, 'brak'))\n")
-    monkeypatch.setenv("PATH", f"{tmp_path / 'bin'}{os.pathsep}{os.environ['PATH']}")
+def _repo_copy(tmp_path: Path) -> Path:
+    repo = tmp_path / "repo"
+    copy_files(repo, [*with_imports(["tools/hooks/odpytywanie_gh.py"]), "tools/nakladki/gh"])
+    (repo / "tools" / "czeka.py").write_text(POLL, encoding="utf-8")
+    (repo / "tools" / "czeka.sh").write_text(SHELL_POLL, encoding="utf-8")
+    git(repo, "init", "--quiet")
+    commit(repo, "nakładka")
+    (repo / "nowy.py").write_text(POLL, encoding="utf-8")
+    (tmp_path / "poza").mkdir()
+    (tmp_path / "poza" / "czeka.py").write_text(POLL, encoding="utf-8")
+    (tmp_path / "poza" / "czeka.sh").write_text(SHELL_POLL, encoding="utf-8")
+    return repo
 
-    assert github.gh("pr", "checks", "1", cwd=tmp_path).strip() == "1"
+
+CALLERS = [
+    pytest.param(["{python}", "tools/czeka.py"], "repo", [0] * 8, id="skrypt-repo-sciezka-wzgledna"),
+    pytest.param(["{python}", "{repo}/tools/czeka.py"], "tmp", [0] * 8, id="skrypt-repo-sciezka-bezwzgledna"),
+    pytest.param(["{python}", "tools/czeka.py", "powloka"], "repo", [0] * 8, id="skrypt-repo-przez-powloke"),
+    pytest.param(["{python}", "tools/czeka.py", "xargs"], "repo", [0] * 8, id="skrypt-repo-przez-xargs"),
+    pytest.param(["sh", "tools/czeka.sh"], "repo", [0] * 8, id="skrypt-powloki-w-repo"),
+    pytest.param(["{python}", "-c", POLL], "repo", [0] * LIMIT + [2, 2], id="python-c"),
+    pytest.param(["{python}", "-"], "repo", [0] * LIMIT + [2, 2], id="python-heredoc"),
+    pytest.param(["{python}", "nowy.py"], "repo", [0] * LIMIT + [2, 2], id="nieśledzony-skrypt-w-repo"),
+    pytest.param(["{python}", "{tmp}/poza/czeka.py"], "tmp", [0] * LIMIT + [2, 2], id="skrypt-spoza-repo"),
+    pytest.param(["sh", "{tmp}/poza/czeka.sh"], "tmp", [0] * LIMIT + [2, 2], id="skrypt-powloki-spoza-repo"),
+    pytest.param(["sh", "-c", SHELL_POLL], "repo", [0] * LIMIT + [2, 2], id="petla-powloki"),
+]
+
+
+@pytest.mark.parametrize(("command", "folder", "codes"), CALLERS)
+def test_skrypt_sledzony_w_repo_czeka_bez_odmowy_ktoredykolwiek_wola_gh_a_petla_agenta_dostaje_odmowe(
+    tmp_path: Path, command: list[str], folder: str, codes: list[int]
+) -> None:
+    repo = _repo_copy(tmp_path)
+    environment = _environment(tmp_path, wrapper=repo / "tools" / "nakladki")
+
+    done = subprocess.run(
+        [word.replace("{python}", sys.executable).replace("{repo}", str(repo)).replace("{tmp}", str(tmp_path)) for word in command],
+        input=POLL,
+        cwd=repo if folder == "repo" else tmp_path,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert [int(code) for code in done.stdout.split()] == codes, done.stderr
+
+
+def test_nakladka_przepuszcza_gh_z_ostrzezeniem_gdy_hook_czekania_sie_nie_importuje(tmp_path: Path) -> None:
+    repo = _repo_copy(tmp_path)
+    (repo / "tools" / "hooks" / "czekanie.py").write_text("<<<<<<< HEAD\n", encoding="utf-8")
+    environment = _environment(tmp_path, wrapper=repo / "tools" / "nakladki")
+
+    calls = [_gh(environment, "pr", "checks", "2178", cwd=tmp_path) for _ in range(LIMIT + 2)]
+
+    assert [call.returncode for call in calls] == [0] * (LIMIT + 2)
+    assert "czekanie.py się nie importuje (SyntaxError" in calls[-1].stderr, calls[-1].stderr
 
 
 def _session_start_command() -> str:

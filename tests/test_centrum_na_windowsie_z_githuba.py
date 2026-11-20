@@ -19,22 +19,18 @@ import pytest
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, fake_cli
 from tests.fixtures.git_repo import commit, git
 
-import nakladka
-
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / ".agents" / "skills" / "verify-centrum-na-windowsie" / "scripts" / "run_on_github.py"
 OTHER = "f" * 40
-FAKE_GH = f"""import json, os, sys
+FAKE_GH = """import json, sys
 from pathlib import Path
 
 state = Path(__file__).with_name("stan.json")
 answers = json.loads(state.read_text(encoding="utf-8"))
 with Path(__file__).with_name("wywolania.txt").open("a", encoding="utf-8") as log:
     log.write(" ".join(sys.argv[1:]) + "\\n")
-with Path(__file__).with_name("znaczniki.txt").open("a", encoding="utf-8") as log:
-    log.write(os.environ.get({nakladka.POMIJA!r}, "brak") + "\\n")
 command = sys.argv[1:3]
 if command == ["run", "list"]:
     print(json.dumps(answers["runs"]))
@@ -56,7 +52,7 @@ class Checkout:
         scripts.mkdir(parents=True)
         shutil.copy(SCRIPT, scripts / SCRIPT.name)
         (self.root / "tools" / "lib").mkdir(parents=True)
-        for module in ("skrypt_skilla.py", "jednostka.py", "github.py", "nakladka.py", "repo.py"):
+        for module in ("skrypt_skilla.py", "jednostka.py"):
             shutil.copy(ROOT / "tools" / "lib" / module, self.root / "tools" / "lib" / module)
         (self.root / ".gitignore").write_text(".verification/\n__pycache__/\n", encoding="utf-8")
         origin = tmp_path / "origin.git"
@@ -76,15 +72,11 @@ class Checkout:
         log = self.bin / "wywolania.txt"
         return log.read_text(encoding="utf-8").splitlines() if log.is_file() else []
 
-    def markers(self) -> list[str]:
-        return (self.bin / "znaczniki.txt").read_text(encoding="utf-8").splitlines()
-
     def run(self, *arguments: str) -> subprocess.CompletedProcess[str]:
-        environment = {key: value for key, value in os.environ.items() if key != nakladka.POMIJA}
         return subprocess.run(
             [sys.executable, str(self.root / ".agents" / "skills" / "verify-centrum-na-windowsie" / "scripts" / SCRIPT.name), *arguments],
             cwd=self.root,
-            env={**environment, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}"},
+            env={**os.environ, "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}"},
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -163,14 +155,3 @@ def test_dispatch_bez_dostepu_do_origin_konczy_sie_werdyktem(tmp_path: Path) -> 
     assert verdict.startswith("VERIFY FAIL | git fetch --quiet origin praca:"), verdict
     assert "nie-ma.git" in verdict, "linia werdyktu ma przyczynę od gita"
     assert not any(call.startswith("workflow run") for call in checkout.calls())
-
-
-def test_kazde_wywolanie_gh_skryptu_niesie_znacznik_narzedzia_repo_ktory_nakladka_gh_przepuszcza(tmp_path: Path) -> None:
-    checkout = Checkout(tmp_path)
-    checkout.answer(runs=[{"databaseId": 9, "createdAt": _now(), "headSha": checkout.head}], view={"9": {"conclusion": "success", "headSha": checkout.head}})
-
-    done = checkout.run()
-
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert [call.split()[:2] for call in checkout.calls()] == [["workflow", "run"], ["run", "list"], ["run", "watch"], ["run", "view"], ["run", "download"]]
-    assert checkout.markers() == ["1"] * 5
