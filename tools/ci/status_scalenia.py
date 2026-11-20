@@ -91,9 +91,6 @@ def _check_all(base_name: str, out: Path | None) -> int:
 
 
 def _publish_from(path: Path) -> int:
-    """Statusy z pliku ``--zapisz``: tylko wpis z kontekstem ``scalenie z <baza pliku>``, stanem z ``VERDICT_STATES``
-    i SHA, które otwarty PR o tym numerze do tej bazy (nie z forka) ma teraz jako HEAD."""
-
     written = json.loads(path.read_text(encoding="utf-8"))
     base_name = str(written["baza"])
     heads = {pull.number: pull.head for pull in _open_pull_requests(base_name)}

@@ -30,8 +30,6 @@ zmienna ``NEEDS`` (``toJSON(needs)``).
 
 
 def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence[czasy_ci.Zapis], *, brak_planu: str = "") -> list[str]:
-    """Przyczyny czerwonego Required; pusta lista to zielony."""
-
     przyczyny = []
     if plan is None:
         przyczyny.append(f"plan CI: {brak_planu or 'brak planu'}; zadania pytest i Mutation checks nie miały pracy")
@@ -65,8 +63,6 @@ def werdykt(plan: Plan | None, wyniki_zadan: Mapping[str, str], zapisy: Sequence
 
 
 def _niepelne_czesci(plan: Plan) -> list[str]:
-    """Jednostki podzielone w planie, których części ``#k/n`` z zadań jednego toru nie są dokładnie raz każdą z 1..n."""
-
     czesci: dict[tuple[str, str], list[Czesc]] = defaultdict(list)
     for zadanie in plan.zadania:
         for klucz in zadanie.klucze:

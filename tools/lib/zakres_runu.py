@@ -119,8 +119,6 @@ class Krok:
     domyslnie_s: float
 
     def wywolania(self, skill: str) -> list[tuple[str, ...]]:
-        """Wywołania skryptów skilla ``skill`` (``.agents/skills/<skill>/scripts/``): nazwa skryptu i jego argumenty."""
-
         found = []
         for polecenie in self.polecenia:
             words = polecenie.split()
@@ -162,8 +160,8 @@ PRZEGLADARKA = "tools/lib/atrapy/atrapa_efenix.py"
 @dataclass(frozen=True)
 class Tor:
     nazwa: str  # początek id zadań toru
-    szablon: str  # zadanie ci.yml, którego macierz to zadania toru
-    pomiary: str  # tor czasów w czasy-ci: system i Python runnera
+    szablon: str
+    pomiary: str
     os: str
     python: str
     kroki: tuple[str, ...]
@@ -214,15 +212,13 @@ class ZakresRunu:
     wybrane: tuple[KrokSkilla, ...]
     pominiete: tuple[tuple[Step, str], ...]
     bledy: tuple[tuple[str, str], ...]
-    przegladarka: frozenset[str] = frozenset()  # pliki z ``pliki``, które sięgają ``PRZEGLADARKA``
+    przegladarka: frozenset[str] = frozenset()
     # Na pull request pliki testów ze zmiany (sam plik testu, nie plik, od którego test zależy): bez ponowienia (Z7).
     zmienione_pliki_testow: frozenset[str] = frozenset()
     # Na pull request kroki skilli, które wybrałby każdy wariant ``Podstawy`` (``cien[NA_ZYWO]`` to ``wybrane``); push i noc: puste.
     cien: Mapping[Podstawy, tuple[KrokSkilla, ...]] = field(default_factory=dict)
 
     def kroki_skilla(self, skill: Path) -> list[Step]:
-        """Wybrane kroki skilla ``skill`` (folder), w kolejności wyboru."""
-
         return [wybrany.krok for wybrany in self.wybrane if wybrany.krok.skill == skill]
 
     def polecenia(self, skill: Path) -> list[tuple[str, ...]]:
@@ -275,9 +271,6 @@ def _wybrane(why: Mapping[Step, Powod], zdarzenie: Zdarzenie) -> tuple[KrokSkill
 
 
 def potrzebuja_chromium(testy: Iterable[str], repository: Repository) -> frozenset[str]:
-    """Pliki testów z ``testy`` (pliki i węzły ``plik::test``), które sięgają ``PRZEGLADARKA``, więc zadanie CI, które
-    je uruchamia (pytest planu albo część nocnych Change mutations), instaluje Chromium."""
-
     return repository.reaching(PRZEGLADARKA) & {test.partition("::")[0] for test in testy}
 
 
@@ -299,8 +292,6 @@ def _pytest(
 
 
 def _czesci(step: Step, zdarzenie: Zdarzenie) -> tuple[Czesc, ...]:
-    """Nocą podstawa z ``ci-czesci: n`` biegnie każdą częścią ``k/m`` każdego m od 1 do n (ADR 0021)."""
-
     if zdarzenie is Zdarzenie.NOC and step.verdict is None and step.parts > 1:
         return tuple(czesc for n in range(1, step.parts + 1) for czesc in Czesc.calosc(n))
     return ()
@@ -327,8 +318,6 @@ def _dlaczego(step: Step, zdarzenie: Zdarzenie, zmiana: frozenset[str], reposito
 
 
 def _zawsze(skill: Path, zmiana: frozenset[str]) -> str | None:
-    """Powód, z którego krok skilla biegnie przy każdej zmianie: skill bez czytelnego ``pilnuje`` albo zmiana z ``SKILL_STEPS``."""
-
     if always := hits(skill, zmiana).always:
         return always
     if infrastructure := run_all(zmiana, Context.SKILL_STEPS):

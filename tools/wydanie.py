@@ -66,7 +66,6 @@ _PAGE_SIZE: Final = 100
 _MAX_PAGES: Final = 10
 
 CiState = Literal["zielone", "czerwone", "w toku", "brak", "kwarantanna czerwona", "bez zapisu kwarantanny"]
-# ``niestabilne_testy.stan_kwarantanny`` → stan CI commitu z zielonym ``Required CI status``.
 _QUARANTINE: Final[Mapping[niestabilne_testy.StanKwarantanny, CiState]] = {
     "przeszła": "zielone",
     "padła": "kwarantanna czerwona",
@@ -79,7 +78,6 @@ class Bump(enum.Enum):
     PATCH = "PATCH"
 
 
-# Typ tytułu PR (Conventional Commits), który podbija MINOR, gdy PR zmienia pliki taty; każdy inny PR podbija PATCH.
 BUMP_OF_TYPE: Final[Mapping[str, Bump]] = {"feat": Bump.MINOR}
 NEXT: Final[Mapping[Bump, Callable[[tuple[int, int, int]], tuple[int, int, int]]]] = {
     Bump.MINOR: lambda number: (number[0], number[1] + 1, 0),
@@ -97,8 +95,6 @@ class Refused(Exception):
 
 @dataclass(frozen=True)
 class MergedPR:
-    """PR scalony do `main` od poprzedniego Wydania; ``for_dad``: czy zmienia pliki, które działają u taty."""
-
     number: int
     title: str
     for_dad: bool
@@ -111,8 +107,6 @@ class MergedPR:
 
 @dataclass(frozen=True)
 class SkippedCommit:
-    """Nowszy commit `main`, którego CI nie jest zielone."""
-
     commit: str
     ci: CiState
 
@@ -184,8 +178,6 @@ _Answer = TypeVar("_Answer")
 
 
 def _gh(answer: TypeAdapter[_Answer], path: str, body: Mapping[str, object] | None = None) -> _Answer:
-    """Odpowiedź ``gh api`` (GET, z ``body`` POST) odczytana przez ``answer``; każda porażka to ``Refused``."""
-
     found = _gh_found(answer, path, body)
     if found is None:
         raise Refused(f"gh api {path}: GitHub odpowiedział 404 (brak dostępu albo nie ma takiego zasobu).")
@@ -193,8 +185,6 @@ def _gh(answer: TypeAdapter[_Answer], path: str, body: Mapping[str, object] | No
 
 
 def _gh_found(answer: TypeAdapter[_Answer], path: str, body: Mapping[str, object] | None = None) -> _Answer | None:
-    """Jak ``_gh``, ale 404 to ``None``."""
-
     sent = None if body is None else json.dumps(body).encode("utf-8")
     answered = _gh_bytes(path, sent)
     return None if answered is None else answer.validate_json(answered)
@@ -242,8 +232,6 @@ def ci_state(root: Path, commit: str) -> CiState:
 
 
 def _has_quarantine(root: Path, commit: str) -> bool:
-    """Czy ``KWARANTANNA`` w drzewie commitu ma wpisy."""
-
     listed = repo.run_git(root, "ls-tree", "--name-only", commit, "--", niestabilne_testy.PLIK_KWARANTANNY, timeout=60)
     if listed.returncode != 0:
         raise Refused(f"git ls-tree {commit}: {listed.stderr.strip()}")
@@ -276,8 +264,6 @@ def _quarantine_records(run_id: str) -> list[niestabilne_testy.ZapisKwarantanny]
 
 
 def plan(root: Path) -> ReleasePlan:
-    """Plan następnego Wydania z ``main`` w ``origin``; ``Refused``, gdy nie ma czego wydać."""
-
     line = _fetch(root)
     newest = line.newest()
     previous = None if newest.release is None or newest.commit is None else PreviousRelease(newest.release, newest.commit)
@@ -303,8 +289,6 @@ def plan(root: Path) -> ReleasePlan:
 
 
 def chosen_release(chosen: ReleasePlan, override: str | None) -> Release:
-    """Numer Wydania: proponowany albo ``override`` (``v0.x.y`` albo ``0.x.y``), zawsze wyższy od każdego Wydania."""
-
     release = chosen.proposed if override is None else Release.of_tag(override if override.startswith("v") else f"v{override}")
     if release is None or release.number[0] != 0:
         raise Refused(f"Numer {override or chosen.proposed.tag} nie ma kształtu 0.MINOR.PATCH (np. 0.2.0).")
@@ -316,8 +300,6 @@ def chosen_release(chosen: ReleasePlan, override: str | None) -> Release:
 
 
 def publish(root: Path, chosen: ReleasePlan, summary: str, override: str | None, *, confirmed: bool) -> str:
-    """Wydanie planu ``chosen`` z „Co nowego” ``summary``; bez ``confirmed`` niczego nie tworzy. Zwraca linię wyniku."""
-
     release = chosen_release(chosen, override)
     notes = release_notes.render(ReleaseNotes(summary, chosen.dad_cases))
     print(f"Wydanie {release.tag} na commicie {chosen.commit}\n\n{notes}", flush=True)
@@ -390,8 +372,6 @@ def _tag_and_push(root: Path, release: Release, commit: str) -> None:
 
 
 def _merged_prs(root: Path, previous: str | None, commit: str) -> tuple[MergedPR, ...]:
-    """PR-y scalone do `main` od commitu ``previous`` (bez niego) do ``commit``: merge i squash z GitHuba."""
-
     span = commit if previous is None else f"{previous}..{commit}"
     listed = repo.git(root, "log", "--first-parent", "--diff-merges=first-parent", "--name-only", "--format=%x1e%s%x1f%b%x1f", span)
     changes: list[MergedPR] = []

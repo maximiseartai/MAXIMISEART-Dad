@@ -301,9 +301,6 @@ def replay(
     )
 
 
-# --- granice --------------------------------------------------------------------------------------------------------
-
-
 def _limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebuild, sources: _Sources) -> list[Limit]:
     if record.ending == "interrupted":
         return [
@@ -600,9 +597,6 @@ def _workers_limits(record: RunLog, kind: ProcessKind[Any, Any], rebuild: _Rebui
     if isinstance(LoggedWorker.worker_list(record.workers), WorkerListProblem):
         return [Limit("Listy Wykonawców z Logów nie da się złożyć regułami Listy Wykonawców", blocking=True)]
     return []
-
-
-# --- pliki wejścia --------------------------------------------------------------------------------------------------
 
 
 @dataclass
@@ -1169,9 +1163,6 @@ def _configured_workers(work: _Work) -> WorkerList:
     return parsed
 
 
-# --- przebieg -------------------------------------------------------------------------------------------------------
-
-
 class _Tata:
     """Rozmówca odtworzenia jak tata w Logach: zgoda w Decyzji taty, chyba że Logi kończą się odmową, i ostatni widok
     postępu, jak karta Centrum (``runs.Run``)."""
@@ -1214,9 +1205,6 @@ def _run(record: RunLog, prepared: PreparedRun[Any, Any], memory: ForbiddenValue
         dad_actions=DadActions(entries=[], omitted=0),
     )
     return guard_logs(replayed, memory).record
-
-
-# --- porównanie -----------------------------------------------------------------------------------------------------
 
 
 def _copied(files: list[dict[str, Any]] | None) -> object:

@@ -91,9 +91,6 @@ def _polecenia(krok: Krok) -> list[tuple[tuple[str, ...], float]]:
 
 
 def _uruchom(root: Path, nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], float]], po_limicie: str = "") -> dict[str, object]:
-    """Polecenia po kolei w ``root`` do pierwszej porażki; wyjście na bieżąco, a drzewo procesów ginie z limitem z linią ``LIMIT``
-    i dopiskiem ``po_limicie``."""
-
     print(f"== {nazwa}", flush=True)
     start, status = time.monotonic(), "ok"
     for polecenie, limit in polecenia:
@@ -113,8 +110,6 @@ def _uruchom(root: Path, nazwa: str, polecenia: Sequence[tuple[tuple[str, ...], 
 
 @dataclass(frozen=True)
 class Wynik:
-    """Powód porażki kroku skilla (``None``: przeszedł) i ostrzeżenia ``CZAS BLISKO LIMITU`` z wyjścia jego ``check_all``."""
-
     powod: str | None
     blisko_limitu: tuple[silnik_mutacji.NearLimit, ...] = ()
 
@@ -146,9 +141,6 @@ def run(step: Step, limit_s: float = LIMIT_S, env: Mapping[str, str] | None = No
 
 
 def _krok_skilla(klucz: Klucz, katalog: Katalog) -> tuple[dict[str, object], list[dict[str, object]]]:
-    """Krok skilla albo jego część ``#k/n``; wynik zgłasza pod kluczem całego kroku, jak udział pliku testów,
-    a obok jego ostrzeżenia ``CZAS BLISKO LIMITU`` (``silnik_mutacji.NearLimit``) pod tym samym kluczem."""
-
     nazwa = str(klucz.zgloszony)
     print(f"== {klucz}", flush=True)
     start = time.monotonic()

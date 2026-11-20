@@ -294,9 +294,6 @@ class Repository:
         return cls(root, frozenset(path for path in listed.split("\0") if path))
 
     def impact(self, changed: frozenset[str]) -> Impact:
-        """Wpływ ``changed`` (ścieżki względem ``root``). Usunięte ścieżki zmiany wchodzą do zbioru plików grafu, więc
-        test, który importuje usunięty moduł, jest dotknięty, a usunięty plik testu nie jest."""
-
         graph = self._graph(changed - self._files)
         full = run_all(changed, Context.TESTS)
         # Plik reguły dotyczy każdego testu, a drogę w grafie mają do niego tylko testy, które wymieniają jego nazwę.
@@ -480,8 +477,6 @@ def _imports(nodes: Iterable[ast.AST], path: str) -> set[str]:
 
 
 def _resolve(name: str, importer: str, modules: Mapping[str, set[str]], files: frozenset[str]) -> set[str]:
-    """Moduł obok importującego (skrypt z własnym katalogiem na ``sys.path``) wygrywa z modułem z ``_modules``."""
-
     here = PurePosixPath(importer).parent / name.replace(".", "/")
     local = {str(candidate) for candidate in (here.with_suffix(".py"), here / "__init__.py") if str(candidate) in files}
     return local or modules.get(name, set())
@@ -506,8 +501,6 @@ def _files_named(text: str, files: frozenset[str]) -> set[str]:
 
 
 def _folder_files(text: str, in_folder: Mapping[str, set[str]]) -> set[str]:
-    """Pliki leżące wprost w katalogu ``text`` (``in_folder``: katalog → jego pliki)."""
-
     if (path := _as_path(text)) is None or "/" not in path:
         return set()
     found = {file for folder, inside in in_folder.items() if folder == path or folder.endswith("/" + path) for file in inside}

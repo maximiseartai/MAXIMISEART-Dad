@@ -94,7 +94,6 @@ class Source:
     label: str
     rows: tuple[DadRow, ...]
     looked: bool
-    """Porównanie obejmuje ``AS`` i kolory (plik z dysku)."""
 
 
 @dataclass(frozen=True)
@@ -123,8 +122,6 @@ class Checked:
 
 
 class Gate:
-    """Rachunek wiersza bramy dla jednej Legendy czynności i Reguł ilości."""
-
     def __init__(self, legend: ActivityLegend, rules: QuantityRules) -> None:
         self.legend = legend
         self.rules = rules
@@ -132,8 +129,6 @@ class Gate:
         self.fill_columns = legend_fill_columns(legend)
 
     def check(self, row: DadRow, *, looked: bool) -> Checked:
-        """Wiersz po rachunku; ``looked=False`` (Logi) pomija ``AS`` i kolory, których Logi nie mają."""
-
         checked = legend_row_check(row.order, self.legend, self.rules)
         differences = tuple(_shown(found) for found in checked.differences if looked or _in_logs(found))
         entries = {column: value for column, value in checked.entry if looked or column != AMOUNT_COLUMN}
@@ -161,8 +156,6 @@ def _colour(colour: FillColour | None) -> str:
 
 
 def disk_rows(path: Path) -> Source:
-    """Wiersze danych Pliku zbiorczego z dysku z kwotą w ``AS`` i kolorami."""
-
     read = read_data_rows(path, DadFiles(), despite_excel_lock=True)
     return Source(path.name, _rows(path.name, read.header, read.rows), looked=True)
 
@@ -216,8 +209,6 @@ def _rows(label: str, header: Mapping[str, int], rows: Sequence[DataRow]) -> tup
 
 @dataclass(frozen=True)
 class Tally:
-    """Wiersze jednego albo wielu źródeł po rachunku bramy."""
-
     rows: int
     undated: int
     checked: tuple[Checked, ...]

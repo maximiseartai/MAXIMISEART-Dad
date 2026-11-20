@@ -154,8 +154,6 @@ class QuietMachine:
 
     @contextmanager
     def run(self) -> Iterator[float]:
-        """Register one run for its duration; yields how many seconds it waited for a measurement."""
-
         started = time.monotonic()
         self._directory.mkdir(parents=True, exist_ok=True)
         marker = self._directory / f"run-{os.getpid()}-{uuid.uuid4().hex[:8]}.pid"
@@ -195,8 +193,6 @@ class QuietMachine:
         return runs
 
     def _take_lock(self) -> str | None:
-        """None once this process holds the lock, otherwise who holds it."""
-
         self._directory.mkdir(parents=True, exist_ok=True)
         if (holder := self._measurement_holder()) is not None:
             return holder
@@ -209,8 +205,6 @@ class QuietMachine:
         return None
 
     def _take_quiet_machine(self) -> str | None:
-        """None once this process holds the lock on a quiet machine, otherwise what keeps it busy."""
-
         if (busy := self._quiet()) is not None:
             return busy
         if (holder := self._take_lock()) is not None:

@@ -81,7 +81,7 @@ _HUNK = re.compile(r"@@ -\d+(?:,(?P<old_count>\d+))? \+(?P<new>\d+)(?:,(?P<new_c
 
 class Finding(NamedTuple):
     path: str
-    line: int  # pierwsza dodana linia węzła, od 1
+    line: int
     rule: str
     message: str
 
@@ -122,9 +122,6 @@ _DIFF_OPTIONS: Final = (
 
 
 class Changes:
-    """Zmiana checkoutu ``root`` od ``base`` w plikach ``pathspec`` (ścieżka gita): jej linie dodane, a pliku
-    nieśledzonego każda linia."""
-
     def __init__(self, root: Path, base: str, pathspec: str = ".") -> None:
         self._root = root
         # Konfiguracja checkoutu, której ``isolated`` nie wyłącza, a która zmienia pliki albo linie różnicy.
@@ -161,8 +158,6 @@ class Changes:
                 path = line.removeprefix("+++ b/").removesuffix("\t") if line != "+++ /dev/null" else None
 
     def added(self) -> Iterator[tuple[str, int, str]]:
-        """Linie dodane: ścieżka, numer linii od 1 i treść; plik nieśledzony cały."""
-
         yield from self._added
         for path in self._untracked:
             if (self._root / path).is_file():
@@ -183,9 +178,6 @@ def json_stream(stdout: str) -> list[Any]:
 
 
 def added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> Iterator[tuple[str, int, str]]:
-    """Linie plików ``pattern`` w ``folder`` checkoutu ``root``, które zmiana od ``base`` dodaje: ścieżka, numer linii
-    od 1 i treść."""
-
     return Changes(root, base, f"{folder}/{pattern}").added()
 
 

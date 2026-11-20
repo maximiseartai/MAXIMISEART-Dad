@@ -405,9 +405,6 @@ class Report:
         return 2 if self.differences or self.unchecked else 0
 
     def lines(self) -> list[str]:
-        """Wynik dla Maksa; po częściach niesprawdzonych stoi zawsze ``DATE_BUTTON_BY_HAND``, a bez pomiaru propozycji
-        Emmetta (``proposal_by_hand``) ``PROPOSAL_BY_HAND``."""
-
         head = " | ".join(f"{name}: {count}" for name, count in self.checked.items())
         unchecked = [*self.unchecked, DATE_BUTTON_BY_HAND, *([PROPOSAL_BY_HAND] if self.proposal_by_hand else [])]
         lines = [f"ZGODNOŚĆ ATRAPY EFENIX Z EFENIX | {head}"]
@@ -437,8 +434,6 @@ class _Answer:
 
 
 class _Efenix:
-    """Odczyty efenix z ``ALLOWED`` wysyłane przez ``request`` bez podążania za przekierowaniem."""
-
     def __init__(self, request: APIRequestContext, url: str, *, timeout_ms: int) -> None:
         self._request = request
         self.url = url
@@ -483,8 +478,6 @@ class _Efenix:
 
 
 def template_costs(path: Path) -> dict[str, Decimal | None]:
-    """Koszt z wiersza 14 Wzorca pliku zbiorczego w każdej kolumnie przypisania kolumn; ``None``: komórka bez liczby."""
-
     try:
         content = workbook_files.template_content(path)
         with workbook_files.open_workbook(path, content, read_only=True) as workbook:
@@ -542,8 +535,6 @@ def _show(page: Page, html: str) -> None:
 
 
 def _text(efenix: _Efenix, answer: _Answer, what: str, part: Part, report: Report) -> str | None:
-    """Treść odpowiedzi 2xx; przekierowanie na stronę logowania kończy narzędzie, a inne i inny kod to różnica."""
-
     if efenix.to_login(answer):
         raise ToolError(LOGGED_OUT_MIDWAY)
     if answer.location is not None:
@@ -796,8 +787,6 @@ def _check_positions(page: Page, costs: Mapping[str, Decimal | None], report: Re
 
 
 def _position(card: _Card) -> tuple[str, str | None] | None:
-    """Kod i cena z tekstu karty; ``None`` jako cena to karta z ceną wpisywaną, a karta w innym kształcie to ``None``."""
-
     match card["quantity"], card["price"], card["shown"]:
         case [code], [], [shown]:
             position: tuple[str, str | None] = (code, shown)
