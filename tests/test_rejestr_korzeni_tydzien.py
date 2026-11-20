@@ -14,7 +14,7 @@ GraphQL (W1 r1 #1525: limit ``GITHUB_TOKEN`` workflowu).
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 import json
 from pathlib import Path
 import subprocess
