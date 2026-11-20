@@ -73,7 +73,9 @@ version.
 
 The check runs a hand-written TLA+ model, `model/KartaUruchomienia.tla`, not the code. It describes the code only
 while you keep the two in step. Each model action is one indivisible step: one task of the browser's event loop (a
-stream message, the continuation after an HTTP answer, a click) or one request the server handles under its lock.
+stream message, the continuation after an HTTP answer, a click) or one request the server handles under its lock. The
+server is only a source of events and answers here (`RunHost` in `runs.py`, `ToolUpdates` in `tool_updates.py`); its
+one Uruchomienie at a time is checked by `verify-jedno-uruchomienie-naraz`.
 
 | Model action | Code |
 | --- | --- |
@@ -82,15 +84,15 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `NoweUruchomienie` | `NewRunButton` on the result (`RunCard` on `"finished"`, `run-card.tsx`; `PastRunCard` on `"idle"` with `previous`): `newRun` = `setDismissed(run.id)` |
 | `WyborNaKarcieStartu` | `RunSetupCard` (`run-setup-card.tsx`): `onValueChange` of the process tiles and of the period: `setDraft` |
 | `WyborSpozaKarty` | `setDraft` outside the start card, at any time: `DraftButton` in the Tablica okresów (`prepare-actions.tsx`), `ReadyForSettlement` („Gotowe, rozlicz pracowników”, `ready-for-settlement.tsx`), `rerun` of a Wycena w efenix |
-| `OdpowiedzStartu` | `starting` after `await startOf(request)`: a refusal or a network error ends the action (toast, `draft` stays); an accepted start runs `setDraft(null)`, returns when `shownRun(latest.current) === accepted`, and otherwise awaits `streamShows((next) => shownRun(next) !== before \|\| next.state === "idle")` |
+| `OdpowiedzStartu` | `starting` after `await startOf(request)`: a refusal or a network error ends the action (toast, `draft` stays); an accepted start runs `setDraft(null)`, returns when `shownRun(latest.current) === accepted`, and otherwise awaits `streamShows((next) => shownRun(next) !== before \|\| next.state === "idle")`. It records the causes of known findings: an answer after the stream already showed an Uruchomienie other than `before` and the accepted one, or after a restart of Centrum |
 | `OdpowiedzDecyzji` | `deciding` after `await decideRun(...)`: an error ends it; otherwise it awaits `streamShows((next) => !awaitsDecision(next, runId))` only while `awaitsDecision(latest.current, runId)` |
 | `Odbierz` | `watchRunEvents` `message` (`centrum.ts`): `zRunEvent.safeParse`; a readable event is `onEvent` (`announce`, `latest.current`, `setView`, `setUnreadable(false)`, every `awaited` whose `shows` passes is resolved), an unreadable one only `onUnreadable` (`setUnreadable(true)`). The server sends the next view after the connection's `seen` (`_event_stream`, `RunHost.events_after`; after a start trimmed `_events`, the first one left) |
 | `Zerwij` | `EventSource` `error` (`onConnection(false)`) or the tab hidden (`followVisibility` closes the stream) |
-| `Polacz` | `EventSource` reconnects (`retry`) or the tab is visible again: `open`, and `_event_stream` sends the current view first |
+| `Polacz` | `EventSource` reconnects (`retry`) or the tab is visible again: `open`, and `_event_stream` sends the current view first, then each newer one |
 | `ObslugaStartu` | `RunHost.start` under its lock: `run_in_progress` refusal while an Uruchomienie runs; otherwise a new `Run`, `_events` trimmed to its last view and the start view published before the answer |
 | `ObslugaDecyzji` | `RunHost.decide` under its lock: `unknown_run`/`not_awaiting_decision` refusal, or `Run.answer` and the `running` view published before the answer |
 | `InnaKartaStart`, `InnaKartaDecyzja` | the same server steps for a request from a second tab or window; its own refused requests change nothing and are left out |
-| `PytanieODecyzje` | `Run.confirm`: the `awaiting_decision` view; today only Przygotowanie pliku zbiorczego asks, once per Uruchomienie (`collective_preparation`) |
+| `PytanieODecyzje` | `Run.confirm`: the `awaiting_decision` view, and the Uruchomienie waits; today only Przygotowanie pliku zbiorczego asks, once per Uruchomienie (`collective_preparation`, an incomplete period) |
 | `KoniecUruchomienia` | `RunHost.end`: the `"finished"` view (result or Zatrzymanie) and the end under one lock |
 | `Restart` | Centrum killed and started again: a new `RunHost` with `idle` (`previous` from the Logi), the tab's stream gets `error`, a request the old server did not handle fails |
 | `KlikAktualizuj` | `ToolUpdateButton` (`components/tool-update.tsx`, disabled only by `busy`, so also before the first read answers): `useAction` `starting`, `setClicked(true)`, `getHealth` |
@@ -102,9 +104,57 @@ stream message, the continuation after an HTTP answer, a click) or one request t
 | `OdbierzOdczyt` | `read`: `getToolUpdate().then(show, failRead)`; answers arrive in any order, and `failRead` leaves `update` as it is |
 | `Tik` | the effect on `update?.state === "running"`: after `POLL_MS` `getHealth`; the cleanup clears the timer, never a request already sent |
 | `ZdrowiePetli` | `getHealth().then`: `instance.current ??= health.instance`; another instance is `sessionStorage` and `window.location.reload()` (the new page reads again), the same one is `getToolUpdate()`; no answer is `.catch(() => show({state: "running", step: "restarting"}))` |
-| `OdbierzPetli` | `getToolUpdate().then(show)` in the poll, with no request number either; its failure goes to the same `.catch` |
+| `OdbierzPetli` | `getToolUpdate().then(show)` in the poll, with no request number either; its failure goes to the same `.catch`. A chain sent during the previous update also answers after the next one started, and the previous result then replaces `running` |
 | `AktPorazka` | `ToolUpdates._update`: a failure before the restart (`"failed"`, same Centrum) |
 | `AktZamkniecie`, `AktPonownyStart` | `ToolUpdates._restart`: Centrum closes, the restart guardian starts the new one (another `instance`), which reads the result once (`_after_restart`: `"updated"` or `"failed"`) |
+
+Definitions the actions share:
+
+| Model definition | Code |
+| --- | --- |
+| `Widok(s, r, p, k)`, `Bezczynny(p)`, `Pusty` | a view of the Uruchomienie (the union `RunView`): `"idle"` with `previous` (the last Uruchomienie before Centrum started), `"running"`, `"awaiting_decision"`, `"finished"` with the ending of its result; `null` is the tab before its first readable view |
+| `ShownRun(v)`, `AwaitsDecision(v, r)`, `IsActive(v)` | `runs.tsx` `shownRun` (the id of the view's Uruchomienie, none for no view and for `idle`), `awaitsDecision`, `isActive` |
+| `Run(v)`, `Panel` | the panel of Uruchomienia (`runs-page.tsx` `RunsContent` and `RunOrSetup`): what Dad sees in this tab |
+| `SrvWidok`, `Zajety`, `Publikuj(v, c)` | the current view of `RunHost` and its log; an Uruchomienie runs; `RunHost._publish_locked` appends a view to the log, and whether the tab can read it is the world's choice (an old version of the page) |
+| `WybierzNowe` | a choice that sets `draft`, in both `Wybor…` actions, and the helper variables `wybralPo` (after a result this tab shows) and `przedWynikiem` (before the result of an Uruchomienie the server already started and this tab has not read) |
+| `Busy` | `busy` of `ToolUpdateProvider`: a start sent or `update.state === "running"` |
+| `Pokaz(s)`, `Slad(s, nr, przyczyna)` | `show(result)`: the server's state replaces what the card showed; an answer of a request the server handled before the running update started (`nr < aNr`) is the cause of a known finding, one for the read at page entry and one for the poll, as each is fixed on its own |
+| `Zaladuj` | the page after a reload, in `ZdrowiePetli`: `ToolUpdateProvider` from the start, without any answer of the previous page, and the read at page entry |
+| `Historia`, `Zasloniety`, `Wrocil` | every action ends with `Historia`, which records the first event that breaks a promise, with the causes of known findings at that moment: the start card instead of the result of an Uruchomienie after whose result Dad chose nothing new in this tab (the moment between a start from this tab and its answer, before `setDraft(null)`, is left out); „Zaktualizuj narzędzie” back (`busy` false) while the update this page showed as running still runs on the server |
+| `CzytelnyWidok`, `Sprawiedliwosc` | the last view of the server can be read (PrzyciskWraca); the stream reads and answers by itself, the server handles requests and ends the Uruchomienie, and the tab reconnects |
+
+Each constant is a way to fail or a bound of a configuration (`stale` in `model/konfiguracje.json`):
+
+| Constant | Meaning |
+| --- | --- |
+| `Czesc` | which part of the card runs in the configuration: `uruchomienia` or `aktualizacja` |
+| `MaxStartow` | tries to start an Uruchomienie, from this tab and the second one together |
+| `DrugaKarta` | a second tab (or window) may start and answer the Decyzja |
+| `MozeDecyzja` | the Uruchomienie may ask Dad for a Decyzja once (Przygotowanie pliku zbiorczego, `RUN`) |
+| `MozeZatrzymac` | the Uruchomienie may end with a Zatrzymanie (an ending other than `"finished"`) |
+| `MaxRestartow` | restarts of Centrum (the process killed and started from the shortcut) |
+| `MaxNieczytelnych` | views the tab cannot read (`zRunEvent.safeParse` fails) |
+| `MaxZerwan` | breaks of the stream (`EventSource` `error`) or hidings of the tab |
+| `MaxWejsc` | entries to a page with the update button, each reads the state (`ToolUpdateStatus`: `read`) |
+| `MaxZaladowan` | reloads of the page after an update (`window.location.reload`) |
+| `MaxAktualizacji` | clicks of „Zaktualizuj narzędzie” the server accepts |
+| `Wybaczone…` | the causes of known findings that the `…PozaZnanymi` variant of each promise skips; the script sets them |
+
+| Variable | Meaning |
+| --- | --- |
+| `inst`, `dziala` | which start of Centrum (`health.instance`; a restart begins a new one); Centrum answers (false only between the close and the restart after an update) |
+| `srvRun`, `srvStan`, `srvKonc`, `srvPytal`, `prev` | `RunHost._run`: the id of the current Uruchomienie, none after Centrum started; its state (running, awaiting the Decyzja, result); the ending of the result (result or Zatrzymanie); the Uruchomienie already asked for the Decyzja; `previous` of the `idle` view after Centrum started |
+| `log`, `baza` | `RunHost._events`: the views, each with whether the tab can read it; the `sequence` of the first view in the log, as a start trims the log to its last view |
+| `widok`, `nieczytelny`, `rozlaczony`, `draft`, `odlozony` | `RunsProvider`: the view (`setView`) and `latest.current` (the last readable view), `unreadable`, `disconnected`, `draft !== null`, `dismissed` |
+| `polaczenie`, `widziane` | this tab's `EventSource` (open or none); `seen` of `_event_stream` for this connection: the number of the last view sent |
+| `startuje`, `decyduje` | `useAction` `starting`: its phase, `before`, the id the server accepted (`Run.info.id`), the result (the accepted Uruchomienie, none at a refusal or an error) and the start of Centrum that handled the request; `deciding`: phase, Uruchomienie, result |
+| `aSrv`, `aNr` | the state of the Aktualizacja narzędzia on the server, and which update it is, to tell an old answer |
+| `upd`, `instRef` | `update.state` of the card (`null` before the first read); `instance.current` (`-1` is `null`) |
+| `startA`, `odczyty`, `petla` | `useAction` `starting` of the update (phase, answer); the reads of `getToolUpdate` from `read()` and from a page entry (phase, answer, number); the poll every `POLL_MS` (phase, answer, number) |
+| `proby`, `nieczyt`, `zerwan`, `restartow`, `wejsc`, `zaladowan` | the counters of the `Max…` constants |
+| `kto`, `przedWynikiem`, `odczytane`, `wybralPo`, `widzialTrwa` | helper variables of the promises: who started the Uruchomienie (this tab or the other); the Uruchomienia before whose result Dad chose a new one in this tab (`draft`); the Uruchomienia whose `"finished"` view this tab read; the Uruchomienia after whose result Dad chose a new one in this tab; the card showed a running update that still runs on the server |
+| `slady` | the causes of known findings that already happened |
+| `zaslonietyWynik`, `wrocilPrzycisk` | the history variable of each promise: `{}` until an event breaks it, then the `slady` at that moment |
 
 The script compares the definitions in `model/definicje.json` with their digests (a name is a path from the module).
 Its TypeScript files are digested whole (`cały plik`): a TypeScript file has no digest per function, so any change in
@@ -228,9 +278,10 @@ are rare, but nothing in the code rules them out.
 When a definition from `model/definicje.json` or a guard in another file of `pilnuje:` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
-2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
-   Never weaken a promise or narrow a configuration to make the check pass. A new action of `Next` gets its words in
-   `_STEPS` of the script, or the check ends with `BŁĄD MODELU` before TLC.
+2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
+   the table above, not in a comment: the model has none, and a new action, definition, constant or variable gets its
+   own row. Never weaken a promise or narrow a configuration to make the check pass. A new action of `Next` gets its
+   words in `_STEPS` of the script, or the check ends with `BŁĄD MODELU` before TLC.
 3. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_karty_mutations.py` with the code counterpart in its name.
 4. Run the check. A new violation is a finding: replay it on the build (see Read a result) before you call it a bug,
