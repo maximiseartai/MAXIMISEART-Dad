@@ -1,9 +1,3 @@
-"""Klucz do Zgłoszeń i werdykt Skrzynki o nim (``KeyedBox``) na fałszywej skrzynce i zegarze testu.
-
-Seam z kilkoma wejściami (kolejka Skrzynki, Powiadomienia, Zgłoszenia, Konfiguracja, Diagnoza), więc macierz
-werdyktu jest sprawdzona tu raz; każde wejście ma swój test tłumaczenia przez HTTP.
-"""
-
 from __future__ import annotations
 
 import itertools
@@ -31,7 +25,7 @@ from rozliczenia.centrum.keyed_box import (
 )
 from rozliczenia.centrum.atomic_file import replace_atomically
 from rozliczenia.centrum.outbox import RETRY_S
-from rozliczenia.centrum.report_box import Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
+from rozliczenia.centrum.report_box import _TIMEOUT_S, Archive, Asset, Commented, Refused, Rejected, Sent, Unreachable
 
 from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import FakeReportBox
@@ -45,8 +39,6 @@ WAIT_S = 30.0
 
 @dataclass
 class Skrzynka:
-    """Skrzynka z kluczem taty: fałszywa skrzynka, plik klucza (``key``, ``None``: brak) i zegar Centrum."""
-
     box: FakeReportBox = field(default_factory=FakeReportBox)
     key: str | None = KEY
     clock: ManualClock = field(default_factory=ManualClock)
@@ -55,8 +47,6 @@ class Skrzynka:
         self.keyed = KeyedBox(self.box, lambda: self.key, clock=self.clock)
 
     def requests(self) -> int:
-        """Zapytania z kluczem, które doszły do skrzynki: listy, nowe issue, komentarze i kroki Archiwum."""
-
         return len(self.box.listed) + len(self.box.keys) + self.box.archive_requests
 
 
@@ -80,10 +70,32 @@ def test_bez_pliku_klucza_klucza_brak_a_skrzynki_nikt_nie_pyta() -> None:
         skrzynka.keyed.edit_comment(1, "treść"),
         skrzynka.keyed.labelled_issues("zgloszenie", include_closed=True),
         skrzynka.keyed.find_issue("zgloszenie", "- Odcisk problemu: 0", include_closed=False),
+        skrzynka.keyed.known_issue("zgloszenie", 1),
+        skrzynka.keyed.archive("logi-2026-10"),
+        skrzynka.keyed.open_archive("logi-2026-10", "tytuł", "opis"),
+        skrzynka.keyed.upload(1, "uruchomienie.log.gz", "etykieta", b"x"),
+        skrzynka.keyed.remove(1),
     )
 
-    assert answers == (NoKey(),) * 6
+    assert answers == (NoKey(),) * 11
     assert (skrzynka.keyed.judge(wait_s=WAIT_S), skrzynka.requests()) == ("missing", 0)
+
+
+@pytest.mark.parametrize(
+    ("key", "token"),
+    [
+        pytest.param(KEY, KEY, id="token-do-wyslania"),
+        pytest.param(None, None, id="bez-pliku-tokenu"),
+        pytest.param("github_pat_SYNTETYCZNY KLUCZ", None, id="token-ze-spacja-ktorej-naglowek-nie-przyjmie"),
+        pytest.param("github_pat_SYNTETYCZNY_KLUCZ\n", None, id="token-z-koncem-linii"),
+    ],
+)
+def test_token_do_pytan_o_wydania_to_tylko_token_do_wyslania_w_naglowku_bez_pytania_skrzynki(
+    key: str | None, token: str | None
+) -> None:
+    skrzynka = Skrzynka(key=key)
+
+    assert (skrzynka.keyed.github_key(), skrzynka.requests()) == (token, 0)
 
 
 REFUSALS: dict[str, Callable[[Skrzynka], object]] = {
@@ -147,6 +159,25 @@ ABOUT_DELETED: dict[str, Callable[[Skrzynka], object]] = {
 def test_odmowa_o_issue_ktore_maks_usunal_nie_odrzuca_klucza(ask: Callable[[Skrzynka], object]) -> None:
     skrzynka = Skrzynka()
     accepted(skrzynka)
+
+    assert ask(skrzynka) == Refused()
+
+    assert skrzynka.keyed.judge(wait_s=0) == "accepted"
+
+
+ARCHIVE_STEPS: dict[str, Callable[[Skrzynka], object]] = {
+    "lista-archiwum": lambda s: s.keyed.archive("logi-2026-10"),
+    "nowe-archiwum": lambda s: s.keyed.open_archive("logi-2026-10", "tytuł", "opis"),
+    "wyslanie-pliku": lambda s: s.keyed.upload(1, "uruchomienie.log.gz", "etykieta", b"x"),
+    "usuniecie-pliku": lambda s: s.keyed.remove(1),
+}
+
+
+@pytest.mark.parametrize("ask", ARCHIVE_STEPS.values(), ids=ARCHIVE_STEPS.keys())
+def test_odmowa_kroku_archiwum_okresu_bez_uprawnienia_do_tresci_nie_odrzuca_klucza(ask: Callable[[Skrzynka], object]) -> None:
+    skrzynka = Skrzynka()
+    accepted(skrzynka)
+    skrzynka.box.archive_failure = Refused()
 
     assert ask(skrzynka) == Refused()
 
@@ -266,22 +297,16 @@ def test_jedno_sprawdzenie_klucza_naraz_a_odczyt_czeka_najwyzej_podany_czas() ->
 
 
 def _numbers(listed: object) -> list[int]:
-    """Numery issue z listy ``KeyedBox``; inna odpowiedź (odmowa, brak sieci, brak klucza) psuje test."""
-
     assert isinstance(listed, tuple), listed
     return [issue.number for issue in listed]
 
 
 def _notes(pending: dict[str, list[object]]) -> str:
-    """Plik zapisów ``KeyedBox`` z zapisami bez odpowiedzi ``pending`` i bez skutków."""
-
     return json.dumps({"zapisy": pending, "issue": [], "archiwa": [], "pliki": [], "usuniete": []})
 
 
-# Plik zapisów, który nie wstrzymuje: chwila sprzed restartu komputera (zegar Centrum liczy od jego startu, więc jest
-# większa od dzisiejszych) i treść w innej postaci (następny zapis ją nadpisze).
 OPENINGS_FREE = {
-    "chwila-z-przyszlosci": _notes({"uwaga-taty": [1_000_000.0, "inny-zapis"]}),
+    "chwila-sprzed-restartu-komputera-wieksza-od-dzisiejszych": _notes({"uwaga-taty": [1_000_000.0, "inny-zapis"]}),
     "nie-json": "uwaga-taty 3.0",
     "nie-slownik": "[3.0]",
     "stara-postac": json.dumps({"uwaga-taty": [3.0, "inny-zapis"]}),
@@ -303,8 +328,6 @@ def test_plik_zapisow_bez_swiezego_zapisu_nie_wstrzymuje_zakladania_a_odpowiedz_
 
 
 def test_issue_ktore_maks_zamknal_zaraz_po_zalozeniu_nie_wraca_na_liste_otwartych() -> None:
-    """Lista otwartych nie ma ani issue, za którym nie nadążyła, ani zamkniętego; dołącza tylko to pierwsze (#879)."""
-
     box = FakeReportBox(list_lag=True)
     clock = ManualClock(seconds=100.0)
     keyed = KeyedBox(box, lambda: KEY, clock=clock)
@@ -323,9 +346,6 @@ def test_issue_ktore_maks_zamknal_zaraz_po_zalozeniu_nie_wraca_na_liste_otwartyc
 
 
 def test_lista_z_zamknietymi_dolacza_swieze_issue_ktorego_nie_pokazuje_bez_drugiego_pytania() -> None:
-    """Lista z zamkniętymi pokazuje też issue, które Maks zamknął, więc świeże issue, którego na niej nie ma, nie jest
-    zamknięte i dołącza od razu."""
-
     box = FakeReportBox(list_lag=True)
     keyed = KeyedBox(box, lambda: KEY, clock=ManualClock(seconds=100.0))
     assert keyed.open_issue("zgloszenie", "tytuł", "- Odcisk problemu: abc") == Sent(1)
@@ -335,9 +355,6 @@ def test_lista_z_zamknietymi_dolacza_swieze_issue_ktorego_nie_pokazuje_bez_drugi
 
 
 def test_archiwum_zaraz_po_zalozeniu_ma_wyslany_do_niego_plik_jako_doszly_w_calosci(tmp_path: Path) -> None:
-    """Lista Archiwów jeszcze nie pokazuje nowego Archiwum (#887), więc jego plik zna tylko plik zapisów; kolejka nie
-    usuwa go i nie wysyła drugi raz jak pliku urwanego w trakcie wysyłki (``Asset.uploaded``)."""
-
     clock = ManualClock(seconds=100.0)
     keyed = KeyedBox(
         FakeReportBox(list_lag=True), lambda: KEY, clock=clock, opening=NotesFile(tmp_path / OPENING_FILE, replace_atomically)
@@ -353,8 +370,6 @@ def test_archiwum_zaraz_po_zalozeniu_ma_wyslany_do_niego_plik_jako_doszly_w_calo
 
 
 def test_nowe_centrum_zaraz_po_zapisie_starego_zna_jego_issue_i_nie_czeka(tmp_path: Path) -> None:
-    """Ponowny start Centrum po wysyłce: skutek z odpowiedzią jest w pliku, więc nic nie wstrzymuje (#879)."""
-
     box = FakeReportBox(list_lag=True)
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
@@ -385,9 +400,6 @@ def test_nowe_centrum_po_zakladaniu_bez_odpowiedzi_czeka_na_liste_po_lag(tmp_pat
 
 
 def test_zakladanie_wstrzymane_po_zakladaniu_bez_odpowiedzi_mija_przed_budzeniem_kolejki(tmp_path: Path) -> None:
-    """Kolejka po porażce próbuje znowu po ``RETRY_S``: lista z tego budzenia zdejmuje wstrzymanie, więc ponowienie nie
-    czeka na następne budzenie."""
-
     box = FakeReportBox(list_lag=True, lost_answers=1)
     clock = ManualClock(seconds=100.0)
     keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(tmp_path / OPENING_FILE, replace_atomically))
@@ -399,9 +411,24 @@ def test_zakladanie_wstrzymane_po_zakladaniu_bez_odpowiedzi_mija_przed_budzeniem
     assert keyed.open_issue("zgloszenie", "drugie", "- Odcisk problemu: def") == Sent(2)
 
 
-def test_lista_innego_watku_nie_zdejmuje_wstrzymania_zakladania(tmp_path: Path) -> None:
-    """Liczy się lista, na której kolejka opiera zapis, nie późniejsza lista podglądu w innym wątku."""
+# ZEWNĘTRZNE: lista issue GitHuba pokazała nowe issue po 3,0–6,8 s, a lista Release'ów nowe Archiwum po 2,8 s (nagrania verify-github-skrzynki z 5.11.2026)
+LISTA_ISSUE_NADAZA_PO_S: Final = 6.8
 
+
+def test_zakladanie_po_zgubionej_odpowiedzi_czeka_przez_limit_zapytania_i_nadazanie_listy(tmp_path: Path) -> None:
+    box = FakeReportBox(list_lag=True, lost_answers=1)
+    clock = ManualClock(seconds=100.0)
+    keyed = KeyedBox(box, lambda: KEY, clock=clock, opening=NotesFile(tmp_path / OPENING_FILE, replace_atomically))
+    assert keyed.open_issue("zgloszenie", "pierwsze", "- Odcisk problemu: abc") == Unreachable()
+
+    clock.pause(_TIMEOUT_S + LISTA_ISSUE_NADAZA_PO_S)
+
+    assert keyed.labelled_issues("zgloszenie", include_closed=False) == ()
+    assert keyed.open_issue("zgloszenie", "pierwsze", "- Odcisk problemu: abc") == Unreachable()
+    assert len(box.issues) == 1
+
+
+def test_lista_innego_watku_nie_zdejmuje_wstrzymania_zakladania(tmp_path: Path) -> None:
     box = FakeReportBox()
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
@@ -437,9 +464,6 @@ def test_plik_zapisow_po_wielu_uruchomieniach_ma_tylko_swieze_wpisy(tmp_path: Pa
 
 
 def unreadable(monkeypatch: pytest.MonkeyPatch, opening: Path, times: int | None) -> None:
-    """``read_text`` pliku zapisów rzuca ``PermissionError`` ``times`` razy od teraz (``None``: zawsze), jak plik, który
-    trzyma antywirus bez współdzielenia odczytu; zapis by przeszedł."""
-
     read_text = Path.read_text
     failures = itertools.count(1)
 
@@ -457,9 +481,6 @@ REPORT_LINE = "- Odcisk problemu: abc"
 def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_nie_daje_drugiego_issue_tej_samej_wysylki(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Sonda rundy 2 #897 (#909): lista issue nie nadążyła za issue pierwszej wysyłki, a odczyt pliku zapisów w liście
-    drugiej pada raz. Kolejka zakłada issue tylko wtedy, gdy lista go nie ma, a takie zakładanie nie daje drugiego."""
-
     box = FakeReportBox(list_lag=True)
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
@@ -479,9 +500,6 @@ def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_nie_daje_drugiego_issue_t
 def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_archiwow_nie_zaklada_drugiego_archiwum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Jak przy issue (#909): lista Release'ów nie nadążyła za Archiwum, a odczyt pliku zapisów w ``archive`` pada raz;
-    zakładanie po niej nie dostaje odmowy drugiego Archiwum tego tagu (422)."""
-
     box = FakeReportBox(list_lag=True)
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
@@ -502,9 +520,6 @@ def test_chwilowo_nieczytelny_plik_zapisow_przy_liscie_archiwow_nie_zaklada_drug
 def test_lista_archiwum_bez_odczytu_pliku_zapisow_wstrzymuje_wyslanie_i_usuniecie_pliku_archiwum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Jak zakładanie Archiwum (#909): lista plików Archiwum, przy której odczyt pliku zapisów padł, mogła nie pokazać
-    pliku, który już poszedł, więc wysłanie i usunięcie pliku Archiwum czekają bez zapytania do listy z odczytem."""
-
     box = FakeReportBox()
     clock = ManualClock(seconds=100.0)
     opening = tmp_path / OPENING_FILE
@@ -527,8 +542,6 @@ def test_lista_archiwum_bez_odczytu_pliku_zapisow_wstrzymuje_wyslanie_i_usunieci
 
 
 def test_plik_zapisow_ktory_nie_jest_utf8_nie_wstrzymuje_zakladania_a_zapis_go_zastepuje(tmp_path: Path) -> None:
-    """Treść pliku zapisów, która nie jest UTF-8, to treść w innej postaci, nie plik nieczytelny na stałe (#909)."""
-
     opening = tmp_path / OPENING_FILE
     opening.write_bytes(b"\xff\xfe zapisy")
     box = FakeReportBox()
@@ -582,9 +595,6 @@ _ZAMKNIECIE_W_TRAKCIE_SPRAWDZENIA: Final = (
 
 
 def test_proces_konczy_sie_mimo_sprawdzenia_klucza_ktore_czeka_na_skrzynke() -> None:
-    """Skrzynka bez sieci odpowiada dopiero po limicie czasu, a sprawdzenie klucza w tle nie trzyma zamknięcia Centrum:
-    proces kończy się, gdy skończy się jego praca, a klucz zostaje niesprawdzony do następnego startu."""
-
     environment = {**os.environ, "PYTHONPATH": os.pathsep.join([str(ROOT / "src"), str(ROOT / "tools" / "lib")])}
     child = subprocess.Popen(
         [sys.executable, "-c", _ZAMKNIECIE_W_TRAKCIE_SPRAWDZENIA, KEY],

@@ -66,8 +66,6 @@ class Row:
         )
 
     def beyond(self) -> dict[str, TataValue]:
-        """Wpisy taty w ``N:AP`` poza kolumnami porównania."""
-
         return {letter: entry for letter, entry in self.order.quantities.items() if letter not in self.compared}
 
     def context(self) -> dict[str, str]:

@@ -24,8 +24,8 @@ Pętla ``for`` i ``while read`` czeka tylko z ``break``, ``exit``, ``return`` al
 ``&`` w grupie za pętlą (``done | (cat & wait)``) puszcza w tło tylko tę grupę.
 Ponowienie runu GitHub Actions odrzuca zawsze, także w tle, bo o ponowieniu decyduje ``tools/ponow_ci.py``: czeka
 na koniec runu, odróżnia awarię runnera od defektu i przy wspólnej awarii ponawia tylko kanarka. Hook czyta każde
-polecenie proste słowami ``shlex``: za słowem ``gh`` albo ``gh-axi`` w dowolnym miejscu (za ``env``, ``xargs``,
-``command``, ale też w ``echo gh run rerun``, bo hook nie wylicza programów, które uruchamiają ``gh``)
+polecenie proste słowami jak ``shlex.split``: za słowem ``gh`` albo ``gh-axi`` w dowolnym miejscu (za ``env``,
+``xargs``, ``command``, ale też w ``echo gh run rerun``, bo hook nie wylicza programów, które uruchamiają ``gh``)
 słowa pozycyjne ``run rerun`` z dowolnymi opcjami przed i między nimi (``-R``/``--repo`` z wartością w osobnym słowie)
 albo ``api`` z adresem ponowienia Actions (``ADRES_PONOWIENIA``).
 Wszystko inne, także czekanie z ``run_in_background``, przechodzi bez słowa (kod 0).
@@ -55,7 +55,6 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 import json
 import re
-import shlex
 import sys
 from typing import Optional
 
@@ -75,6 +74,11 @@ ADRES_PONOWIENIA = re.compile(r"actions/(?:runs/[^/\s]+(?:/attempts/[^/\s]+)?/re
 # Polecenia proste po ``_code``: między nimi stoją ``;``, ``&``, ``|``, nowa linia, nawiasy, ``$(`` i backtick.
 SIMPLE_COMMANDS = re.compile(r"[;&|\n()`]|\$\(")
 SIMPLE_COMMAND_END = re.compile(r"[;&|\n]")
+_PLAIN = r"[^ \t\r\n'\"\\]*"
+_QUOTED = r"\\([\s\S])|'([^']*)'|\"([^\"\\]*(?:\\[\s\S][^\"\\]*)*)\""
+WORD = re.compile(rf"[ \t\r\n]*({_PLAIN}(?:(?:{_QUOTED}){_PLAIN})*)")
+WORD_PART = re.compile(_QUOTED)
+ESCAPED_IN_DOUBLE_QUOTES = re.compile(r"\\([\\\"])")
 PGREP = re.compile(r"\bpgrep\s+(?:-\w+\s+)*-\w*f")
 TASK_OUTPUT = re.compile(r"\btasks/[^/\s]*\.output\b")
 ASSIGNMENT = re.compile(r"(?<![\w$])([A-Za-z_]\w*)=(\S*)")
@@ -388,10 +392,24 @@ def _first_from(positions: list[int], start: int, default: int) -> int:
 
 
 def _words(command: str) -> list[str]:
-    try:
-        return shlex.split(command)
-    except ValueError:  # cudzysłów przecięty granicą polecenia prostego (``"$r $(gh …)"``)
-        return command.split()
+    words = []
+    for match in WORD.finditer(command):
+        word = match.group(1)
+        unclosed = not word and match.end() < len(command)
+        if unclosed:
+            return command.split()
+        if word:
+            words.append(WORD_PART.sub(_unquoted, word))
+    return words
+
+
+def _unquoted(part: re.Match[str]) -> str:
+    escaped, single, double = part.groups()
+    if escaped is not None:
+        return escaped
+    if single is not None:
+        return single
+    return ESCAPED_IN_DOUBLE_QUOTES.sub(r"\1", double)
 
 
 def _reruns(shell: str) -> bool:

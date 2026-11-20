@@ -85,8 +85,6 @@ class PreparationSummary:
     routes: RouteCounts = field(default_factory=lambda: MappingProxyType({}))
 
     def labeled_orders_per_day(self) -> list[tuple[str, int]]:
-        """``Zlecenia na dzień`` z etykietami dni dla taty, np. ``("wt 08.09.2026", 1)``, w kolejności dat."""
-
         return [
             (day_label(day), count) for day, count in self.orders_per_day.items()
         ]

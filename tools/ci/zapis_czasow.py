@@ -48,8 +48,6 @@ KROKI = {"Run the planned units": jednostka.krok("praca")}
 
 
 def _tor(runner: str) -> str:
-    """``Windows-3.14.0`` → ``windows-3.14``."""
-
     system, _, wersja = runner.lower().partition("-")
     return f"{system}-{'.'.join(wersja.split('.')[:2])}"
 
@@ -94,8 +92,6 @@ def _zadanie_z_api(runner: str) -> dict[str, Any]:
 
 
 def _kroki(runner: str) -> tuple[str, float | None, list[Jednostka]]:
-    """Nazwa zadania, narzut i jednostki-kroki zadania na runnerze ``runner`` z API zadań tej próby runu."""
-
     for odczyt in range(ODCZYTY_API):
         zadanie = _zadanie_z_api(runner)
         bez_wyniku = [krok["name"] for krok in zadanie["steps"] if krok["name"] in KROKI and krok["conclusion"] is None]

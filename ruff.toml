@@ -108,7 +108,8 @@ extend-select = [
 # tests/test_granice_wyjatkow.py zamiast noqa z tym samym powodem w każdej kopii.
 "src/rozliczenia/centrum/**" = ["BLE001"]
 # Prawo właściciela: moduł, któremu komunikat zakazu banned-api kieruje resztę kodu, używa zakazanej nazwy bez noqa.
-# Ruff zwalnia plik z całego TID251, więc tests/test_zakazy_ruff.py (OWNERS) trzyma, które nazwy wolno mu użyć.
+# Ruff zwalnia plik z całego TID251, więc jego wiersz OWNERS w tests/test_zakazy_ruff.py trzyma, które nazwy wolno mu
+# użyć, a krok reguł chwastów zadania CI „Ruff, mypy” odrzuca w nim każdą inną zakazaną nazwę.
 "src/rozliczenia/wall_clock.py" = ["TID251"]
 "src/rozliczenia/centrum/catalog.py" = ["TID251"]
 "src/rozliczenia/dad_files.py" = ["TID251"]

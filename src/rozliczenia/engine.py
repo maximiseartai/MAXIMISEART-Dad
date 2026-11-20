@@ -78,7 +78,6 @@ class SavedWorkerResult:
 
 
 WorkerResult = PlannedWorkerResult | SavedWorkerResult
-"""Wynik Przetworzenia Szablonu pracownika."""
 
 
 @dataclass
@@ -98,7 +97,6 @@ class SettlementSummary:
     """Legenda czynności ze startu Przebiegu: Kontrola ilości po nim liczy tą samą."""
     results: list[WorkerResult] = field(default_factory=list)
     warnings: list[Message] = field(default_factory=list)
-    """Ostrzeżenia Podglądu bez zapisu z katalogu Przebiegu rozliczeń; Przebieg z zapisem zatrzymuje się na nich."""
     phase_durations_ms: Mapping[ProgressPhase, int] = field(default_factory=lambda: MappingProxyType({}))
 
     @property
@@ -153,7 +151,6 @@ def _read_source_rows(
 class _Plan:
     rows_by_target: dict[str, list[DataRow]]
     unmapped_workers: tuple[str, ...]
-    """Identyfikatory WYKONAWCA spoza Listy Wykonawców, każdy raz, w pisowni i kolejności Pliku zbiorczego."""
     rows_without_worker: tuple[int, ...]
 
 

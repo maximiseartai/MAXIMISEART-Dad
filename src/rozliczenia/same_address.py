@@ -41,13 +41,10 @@ _CITY_TOKENS: Final = re.compile(r"[^\W\d_]+|\d+|[-–—]")
 """Słowa, liczby i myślniki zapisu miasta; reszta (odstępy, nawiasy, kropki) ich nie oddziela."""
 
 _Key = tuple[str, str, str | None]
-"""Klucz indeksu: ostatnie słowo nazwy ulicy, numer budynku i numer mieszkania (``None``: bez mieszkania)."""
 
 
 @dataclass(frozen=True)
 class _Address:
-    """Adres: słowa nazwy ulicy (co najmniej jedno), numer budynku, numer mieszkania i miasto (``None``: bez)."""
-
     street: tuple[str, ...]
     building: str
     apartment: str | None
@@ -64,12 +61,7 @@ class _Address:
 
 
 class AddressIndex(Generic[_Row]):
-    """Wiersze Bazy zleceń pod kluczem adresu; ``matching`` oddaje wiersze z tym samym adresem co zlecenie."""
-
     def __init__(self, rows: Iterable[tuple[object, object, _Row]]) -> None:
-        """Indeks z trójek (adres z kolumny A Bazy, ``MIASTO`` wiersza albo ``None``, wiersz); wiersz, którego adres nie
-        jest adresem, nie trafia do indeksu."""
-
         self._rows: dict[_Key, list[tuple[_Address, _Row]]] = {}
         for address, city, row in rows:
             found = _address(address, city)
@@ -77,9 +69,6 @@ class AddressIndex(Generic[_Row]):
                 self._rows.setdefault(found.key, []).append((found, row))
 
     def matching(self, address: object, city: object) -> tuple[_Row, ...]:
-        """Wiersze z tym samym adresem co zlecenie z ``ADRES`` ``address`` i ``MIASTO`` ``city``, w kolejności z
-        indeksu."""
-
         order = _address(address, city)
         if order is None:
             return ()
