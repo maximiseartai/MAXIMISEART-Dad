@@ -303,62 +303,6 @@ def test_zakaz_ruff_dodany_w_pr_to_dowod_ruff_takze_przy_formacie_z_konfiguracji
     assert "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:5 TID251" in outcome.line, outcome.line
 
 
-@wymaga_ruff_i_mypy
-@pytest.mark.parametrize(
-    ("failed", "state"),
-    [
-        pytest.param(
-            "from os import system\n\n\nclass Powloka:\n    uruchom = staticmethod(system)\n",
-            "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:1 TID251 `os.system`",
-            id="nazwa-z-gdzie-z-importu",
-        ),
-        pytest.param(
-            "from os import system\nfrom kod.liczby import nastepna\n\n\nclass Powloka:\n    uruchom = staticmethod(nastepna)\n\n\nINNA = system\n",
-            "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:1 TID251",
-            id="import-nazwy-spoza-gdzie",
-        ),
-        pytest.param(
-            "from os import path, system\n\n\nclass Powloka:\n    uruchom = staticmethod(path.join)\n\n\nINNA = system\n",
-            "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:1 TID251",
-            id="nazwa-spoza-gdzie-w-imporcie-obok-nazwy-z-gdzie",
-        ),
-        pytest.param(
-            "from os import (\n    path,\n    system,\n)\n\n\nclass Powloka:\n    uruchom = staticmethod(path.join)\n\n\nINNA = system\n",
-            "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:3 TID251",
-            id="nazwa-spoza-gdzie-w-imporcie-w-nawiasach-obok-nazwy-z-gdzie",
-        ),
-        pytest.param(
-            "from os import (\n    path,\n    system,\n)\n\n\nclass Powloka:\n    uruchom = staticmethod(system)\n",
-            "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:3 TID251 `os.system`",
-            id="nazwa-z-gdzie-w-imporcie-w-nawiasach",
-        ),
-        pytest.param(
-            "from .liczby import podwojona\n\n\nclass Powloka:\n    uruchom = staticmethod(podwojona)\n",
-            "| WYKRYTA | z FAIL: kod/powloka.py | kod/powloka.py:1 TID251 `kod.liczby.podwojona`",
-            id="nazwa-z-gdzie-z-importu-względnego",
-        ),
-        pytest.param(
-            "from kod.liczby import nastepna\nfrom kod.liczby import nastepna\n\n\nclass Powloka:\n    uruchom = staticmethod(nastepna)\n",
-            "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:2 F811",
-            id="inna-reguła-na-imporcie-nazwy-z-gdzie",
-        ),
-    ],
-)
-def test_zakaz_ruff_na_imporcie_nazwy_uzytej_w_gdzie_to_dowod_ruff(tmp_path: Path, failed: str, state: str) -> None:
-    """``from os import system`` ruff zgłasza na linii importu, a ``Gdzie`` wskazuje użycie nazwy w ciele klasy (#1660 W2
-    r1: ``field(default_factory=empty_memory)``): zakaz na imporcie liczy się, gdy kod zakresu ``Gdzie`` używa właśnie
-    zakazanej nazwy (#2513 r1 W1: nie innej nazwy z tej samej instrukcji importu), a znalezisko innej reguły na takim
-    imporcie nie."""
-
-    banned = f'{BANNED}\n"kod.liczby.podwojona".msg = "podwojenie daje kod.liczby.nastepna"'
-    pull = _pull(tmp_path, {"kod/powloka.py": failed}, {"kod/powloka.py": SHELL_FIX, "pyproject.toml": PYPROJECT.format(mypy="", ruff="", banned=banned)})
-    where = failed.splitlines().index(next(line for line in failed.splitlines() if "staticmethod" in line)) + 1
-
-    outcome = pull.prove("ruff", (("kod/powloka.py", where, where),), scopes=(("kod/powloka.py", where, where),))
-
-    assert state in outcome.line, outcome.line
-
-
 OWNER_BANNED = '"os.system".msg = "użyj subprocess.run"\n"time.sleep".msg = "czekaj przez kod.czekanie"\n[tool.ruff.lint.per-file-ignores]\n"kod/powloka.py" = ["TID251", "F401"]'
 OWNER = "import os\n\n\ndef uruchom() -> int:\n    return os.system('true')\n"
 

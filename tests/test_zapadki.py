@@ -81,7 +81,6 @@ PARSERS = frozenset(
     tools/lib/kroki_skilli.py
     tools/lib/niestabilne_testy.py
     tools/lib/rozjazd_modelu.py
-    tools/lib/straznik.py
     tools/lib/wplyw_zmiany.py
     tools/lib/zmiany_z_wydania.py
     tools/mutacje_zmiany.py

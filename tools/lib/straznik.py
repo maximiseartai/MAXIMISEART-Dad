@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
-import ast
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from enum import Enum
@@ -31,8 +30,8 @@ checkoucie, do ostatniego kroku narzędzia strażnika (przy mypy także ruff), w
 jak sprawdzenia zakazów ruff w kroku reguł chwastów tego zadania: zakaz ``banned-api`` albo ``import *`` z tego biegu
 to znalezisko, gdy przywrócony plik nie używa tej nazwy na drzewie bez przywrócenia, czyli nazwa spoza prawa
 właściciela (wiersz ``OWNERS`` w ``tests/test_zakazy_ruff.py``) albo pod ``noqa``. Nazwę z ``from moduł import nazwa``
-ruff zgłasza na linii importu, więc zakaz ``TID251`` liczy się też na imporcie, gdy kod zakresu ``Gdzie`` używa właśnie
-zakazanej nazwy (``_imports_into``), a inne znalezisko na imporcie nie, bo w pliku z FAIL to zwykle dryf API. Krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
+ruff zgłasza na linii importu, więc jej użycie z ``Gdzie`` w funkcji albo w ciele klasy dowód łapie tylko wtedy, gdy
+kod tego miejsca stoi w drzewie bez zmian (cały plik). Krok, który zmienia pliki kopii (np. ruff z ``fix`` w konfiguracji drzewa, wtyczka mypy),
 to ``KROK PISZE PLIKI``, bo Required CI liczy dalsze kroki na zmienionych plikach, a zakres ``Gdzie`` z FAIL ich nie
 opisuje; kopia wraca do stanu sprzed biegu. Każdy krok mypy i ruff i każdy bieg pytest biegnie w piaskownicy systemu
 (``piaskownica.prefix``: Landlock na Linuksie, ``sandbox-exec`` na macOS), w której zapis poza kopią biegu, jej ``HOME``
@@ -394,7 +393,7 @@ def _restored(root: Path, guard: Guard, environment: Environment, case: Case, ow
             return Outcome(False, f"{case.label} | {case.failed[:8]} | {_writes(ran)}")
         where = _listed(changed)
         findings = list(dict.fromkeys((*ran.findings, *(finding for finding in ran.hidden if (finding[0], finding[2]) not in owned))))
-        inside = [finding for finding in findings if finding[0] in changed and _counted(root, guard, environment.tree, case, finding)]
+        inside = [finding for finding in findings if finding[0] in changed and finding[1] in _scope(root, environment.tree, case, finding[0])]
         if inside:
             return Outcome(True, f"{case.label} | {case.failed[:8]} | WYKRYTA | z FAIL: {where} | {_shown(inside)}")
         tried.append(f"{where}: {'znaleziska poza funkcją z Gdzie: ' + _shown(findings) if findings else f'bez znaleziska (kod {ran.code})'}")
@@ -429,39 +428,6 @@ def _scope(root: Path, tree: str, case: Case, path: str) -> set[int]:
             return set(range(1, len(lines) + 1))
         found.update(range(low, high + 1))
     return found
-
-
-def _counted(root: Path, guard: Guard, tree: str, case: Case, finding: tuple[str, int, str]) -> bool:
-    """Czy znalezisko z przywróconego pliku liczy się do dowodu: w zakresie ``_scope``, a zakaz ``TID251`` także na
-    linii nazwy z importu, gdy to zakazana nazwa i kod zakresu jej używa, bo ``from moduł import nazwa`` ruff zgłasza
-    na imporcie."""
-
-    path, line, message = finding
-    scope = _scope(root, tree, case, path)
-    if line in scope:
-        return True
-    banned = message.split("`")[1] if message.startswith("TID251 ") and message.count("`") >= 2 else None
-    return banned is not None and any(
-        first <= line <= last and (banned == name or banned.endswith(f".{name}")) for first, last, name in _imports_into(_text(root, case.failed, path) or "", scope)
-    )
-
-
-def _imports_into(text: str, lines: set[int]) -> list[tuple[int, int, str]]:
-    """Nazwy importów kodu Pythona ``text``, których kod linii ``lines`` używa: linie instrukcji importu i nazwa
-    z modułem (``moduł.nazwa``, przy imporcie względnym bez kropek); tekst spoza Pythona nie ma żadnej."""
-
-    try:
-        tree = ast.parse(text)
-    except SyntaxError:
-        return []
-    used = {node.id for node in ast.walk(tree) if isinstance(node, ast.Name) and node.lineno in lines}
-    return [
-        (node.lineno, node.end_lineno or node.lineno, f"{node.module}.{alias.name}" if isinstance(node, ast.ImportFrom) and node.module else alias.name)
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import | ast.ImportFrom)
-        for alias in node.names
-        if (alias.asname or alias.name.partition(".")[0]) in used
-    ]
 
 
 def _judged(build: Build, mutation: Mutation) -> tuple[Verdict, str]:
