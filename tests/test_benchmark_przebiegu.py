@@ -1,5 +1,3 @@
-"""Test dymny benchmarku Przebiegu rozliczeń przez jego CLI, na małym scenariuszu z syntetycznymi Wzorcami."""
-
 from __future__ import annotations
 
 import copy
@@ -52,6 +50,7 @@ RECORD_FIELDS = {
     "oracle",
 }
 PHASES = {"Sprawdzanie", "Odczyt danych", "Planowanie", "Zapisywanie"}
+WALL_ROUNDING_MS = 2
 SPREAD = {"mediana", "min", "max"}
 COMMENT_SECTIONS = ("Hipoteza", "Zmiana", "Pomiar", "Bramka poprawności", "Decyzja", "Następny krok")
 ORACLE_CATEGORIES = (
@@ -72,9 +71,7 @@ ORACLE_CATEGORIES = (
 
 
 @pytest.fixture(autouse=True)
-def maszyna_pomiarow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
-    """Folder blokad maszyny tego testu: benchmark nie czeka na testy ani pomiary innych agentów na tym komputerze."""
-
+def maszyna_pomiarow_bez_pomiarow_innych_agentow(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     directory = tmp_path / "maszyna"
     monkeypatch.setenv("QUIET_MACHINE_SCRATCH", str(directory))
     return directory
@@ -105,38 +102,38 @@ def test_benchmark_mierzy_przebieg_rozliczen_na_lustrze_i_opisuje_pomiar_bez_dan
 
     first = run_benchmark(*arguments)
     (collective_file,) = mirror.rglob(collective_file_name_with("*"))
-    built_at = collective_file.stat().st_mtime_ns
+    mirror_built_at = collective_file.stat().st_mtime_ns
     second = run_benchmark(*arguments)
 
     assert (first.returncode, second.returncode) == (0, 0), first.stderr + second.stderr
-    assert collective_file.stat().st_mtime_ns == built_at  # drugi pomiar używa istniejącego lustra
+    assert collective_file.stat().st_mtime_ns == mirror_built_at
     assert "Załączniki" in collective_file.parts
     assert collective_file.parent.parent.name == "INEA"
     assert protected_repository_files() == repository_before
     entries = data_row_entries(collective_file)
     assert len(entries) == 6
-    for quantities_and_charges in entries:  # tata wpisał ilości w N:AP przed Przebiegiem rozliczeń
-        assert any(isinstance(value, int) and value > 0 for value in quantities_and_charges[:29])
-    assert any(value is not None for row in entries for value in row[29:])
+    dad_quantities_n_to_ap, charges = [row[:29] for row in entries], [row[29:] for row in entries]
+    for quantities in dad_quantities_n_to_ap:
+        assert any(isinstance(value, int) and value > 0 for value in quantities)
+    assert any(value is not None for row in charges for value in row)
 
     records = [json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines()]
     assert len(records) == 2
     for record in records:
         assert set(record) == RECORD_FIELDS
         assert (record["scenario"], record["machine"], record["runs"]) == ("maly-tydzien", "test", 3)
-        assert record["oracle"] is None  # bez zamrożonego wyniku referencyjnego bramka nie jest sprawdzana
+        assert record["oracle"] is None
         assert len(record["git_sha"]) == 40
         assert isinstance(record["dirty"], bool)
-        parts = [record[name] for name in ("start_procesu_ms", "czas_uruchomienia_ms", "zakonczenie_procesu_ms")]
-        for spread in (record["wall_ms"], *parts, *record["phase_durations_ms"].values()):
+        wall_parts = [record[name] for name in ("start_procesu_ms", "czas_uruchomienia_ms", "zakonczenie_procesu_ms")]
+        for spread in (record["wall_ms"], *wall_parts, *record["phase_durations_ms"].values()):
             assert set(spread) == SPREAD
             assert spread["min"] <= spread["mediana"] <= spread["max"]
         assert set(record["phase_durations_ms"]) == PHASES
-        # Czas ściany każdego uruchomienia to start procesu + Czas uruchomienia + zakończenie procesu
-        # (z dokładnością do zaokrągleń), więc sumy skrajnych wartości obejmują skrajne czasy ściany.
-        assert sum(part["min"] for part in parts) <= record["wall_ms"]["max"] + 2
-        assert sum(part["max"] for part in parts) >= record["wall_ms"]["min"] - 2
-        assert record["start_procesu_ms"]["min"] > 0  # interpreter i importy przed silnikiem zawsze coś kosztują
+        assert sum(part["min"] for part in wall_parts) <= record["wall_ms"]["max"] + WALL_ROUNDING_MS
+        assert sum(part["max"] for part in wall_parts) >= record["wall_ms"]["min"] - WALL_ROUNDING_MS
+        interpreter_and_imports_before_engine = record["start_procesu_ms"]
+        assert interpreter_and_imports_before_engine["min"] > 0
         assert record["counters"] | {"templates_total": 3, "empty": 1, "rows": 6, "issues": 0} == record["counters"]
 
     comment = run_benchmark("comment", "--journal", str(journal))
@@ -191,8 +188,6 @@ def test_pomiar_bez_odpowiedzi_gita_zapisuje_commit_i_stan_checkoutu_jako_niezna
 
 
 def change_rate(worker_template: Path) -> None:
-    """Inny, nadal poprawny Wzorzec rozliczenia pracownika: zmieniona stawka w arkuszu ``Rates``."""
-
     workbook = load_workbook(worker_template)
     try:
         workbook["Rates"]["B1"] = 99.5
@@ -339,13 +334,13 @@ def test_pomiar_czeka_az_skonczy_sie_inny_pomiar_z_tymi_samymi_wynikami_referenc
         assert waiting.stderr is not None
         notice = waiting.stderr.readline()
         still_waiting = waiting.poll() is None
-        mirror_during_wait = mirror.exists()
+        heavy_work_started_during_wait = mirror.exists()
     stdout, stderr = waiting.communicate(timeout=100)
 
     assert waiting.returncode == 0, stdout + stderr
     assert "czeka" in notice
     assert still_waiting
-    assert not mirror_during_wait  # nic ciężkiego nie rusza, dopóki trwa inny pomiar
+    assert not heavy_work_started_during_wait
     assert mirror.is_dir()
     secrets = {*WORKERS, *WORKERS.values()}
     assert {secret for secret in secrets if secret in notice} == set()
@@ -354,7 +349,9 @@ def test_pomiar_czeka_az_skonczy_sie_inny_pomiar_z_tymi_samymi_wynikami_referenc
 @pytest.mark.parametrize(
     "command", [["measure", "--machine", "test"], ["freeze", "--commit", "HEAD"]], ids=["measure", "freeze"]
 )
-def test_pomiar_czeka_az_inny_pomiar_zwolni_maszyne(tmp_path: Path, maszyna_pomiarow: Path, command: list[str]) -> None:
+def test_pomiar_czeka_az_inny_pomiar_zwolni_maszyne(
+    tmp_path: Path, maszyna_pomiarow_bez_pomiarow_innych_agentow: Path, command: list[str]
+) -> None:
     journal = tmp_path / "dziennik.jsonl"
     references = tmp_path / "referencje"
     mirror = tmp_path / "lustro"
@@ -372,22 +369,22 @@ def test_pomiar_czeka_az_inny_pomiar_zwolni_maszyne(tmp_path: Path, maszyna_pomi
         str(references),
         *(["--journal", str(journal)] if command[0] == "measure" else []),
     ]
-    maszyna_pomiarow.mkdir()
-    other_measurement = maszyna_pomiarow / "pomiar.lock"
+    maszyna_pomiarow_bez_pomiarow_innych_agentow.mkdir()
+    other_measurement = maszyna_pomiarow_bez_pomiarow_innych_agentow / "pomiar.lock"
     other_measurement.write_text(str(os.getpid()), encoding="utf-8")
 
     waiting = start_benchmark(*arguments)
     assert waiting.stdout is not None
     notice = waiting.stdout.readline()
     still_waiting = waiting.poll() is None
-    mirror_during_wait = mirror.exists()
+    heavy_work_started_during_wait = mirror.exists()
     other_measurement.unlink()
     stdout, stderr = waiting.communicate(timeout=100)
 
     assert waiting.returncode == 0, stdout + stderr
     assert notice.startswith("MASZYNA ZAJĘTA"), notice
     assert still_waiting
-    assert not mirror_during_wait  # nic ciężkiego nie rusza, dopóki inny pomiar trzyma maszynę
+    assert not heavy_work_started_during_wait
     if command[0] == "measure":
         assert len(journal.read_text(encoding="utf-8").splitlines()) == 1
     else:
@@ -415,7 +412,15 @@ def measurement_sections(comment: str) -> dict[str, str]:
     return {section.splitlines()[0].strip(): section for section in measurement.split("### ")[1:]}
 
 
-@pytest.mark.parametrize("selection", [[], ["--before", "aaaa", "--after", "bbbb"]])
+@pytest.mark.parametrize(
+    "selection",
+    [
+        pytest.param([], id="bez-wyboru-kazda-maszyna-ma-swoja-sekcje"),
+        pytest.param(
+            ["--before", "aaaa", "--after", "bbbb"], id="po-wskazane-commitem-bez-pomiaru-taty-z-innego-commita"
+        ),
+    ],
+)
 def test_komentarz_porownuje_pomiary_tego_samego_scenariusza_na_tej_samej_maszynie(
     tmp_path: Path, selection: list[str]
 ) -> None:
@@ -436,7 +441,7 @@ def test_komentarz_porownuje_pomiary_tego_samego_scenariusza_na_tej_samej_maszyn
     assert "2026-10-03T08:00:00+00:00" in mac
     assert "2026-10-02T08:00:00+00:00" not in mac
     assert "mediana krótsza o 60000 ms" in mac
-    if selection:  # „po” wskazane commitem: pomiar taty z innego commita nie trafia do komentarza
+    if selection:
         assert set(sections) == {"typowy-tydzien (mac-m4max)"}
     else:
         assert set(sections) == {"typowy-tydzien (mac-m4max)", "typowy-tydzien (tata-i7)"}
@@ -570,7 +575,6 @@ def test_bramka_poprawnosci_liczy_rozne_liczniki_komunikaty_i_podsumowanie_kazde
     assert measured.returncode == 0, measured.stderr
     (record,) = (json.loads(line) for line in journal.read_text(encoding="utf-8").splitlines())
     assert record["oracle"]["wynik"] == "niezgodny"
-    # Różne liczby w kategoriach łapią też kategorię liczoną ze źródła innej.
     assert record["oracle"]["roznice"] == dict.fromkeys(ORACLE_CATEGORIES, 0) | {
         "liczniki": 3,
         "komunikaty": 2,
@@ -579,12 +583,12 @@ def test_bramka_poprawnosci_liczy_rozne_liczniki_komunikaty_i_podsumowanie_kazde
     assert "niezgodny" in measured.stdout
 
 
-@pytest.mark.parametrize("changed", [None, "liczniki", "komunikaty", "podsumowanie"])
+@pytest.mark.parametrize(
+    "changed", [None, "liczniki", "komunikaty", "podsumowanie"], ids=["bez-roznicy", "liczniki", "komunikaty", "podsumowanie"]
+)
 def test_bramka_poprawnosci_jest_niezgodna_przy_roznicy_tylko_w_jednej_kategorii(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changed: str | None
 ) -> None:
-    # Pomiar end-to-end wyżej zmienia naraz wszystkie trzy kategorie, więc sam nie łapie bramki, która werdykt bierze
-    # tylko z jednej z nich (#1422 r1); tu każda kategoria osobno, bez kolejnego Przebiegu.
     monkeypatch.setattr(referencja, "compare_worker_settlements", lambda *_: dict.fromkeys(CATEGORIES, 0))
     result: dict[str, Any] = {"warnings": [{"code": "komunikat"}], "stop": None, "summary": {"figures": [{"value": 1}]}}
     reference = referencja.Reference(tmp_path, {"rows": 1}, result)

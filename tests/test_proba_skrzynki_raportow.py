@@ -1,10 +1,3 @@
-"""Próba IMAP (#1234): narzędzie Maksa sprawdza port Skrzynki raportów na skrzynce taty tylko do odczytu.
-
-Narzędzie rozmawia prawdziwym ``imaplib`` portu z lokalną ``AtrapaImap`` (``tools/lib/atrapy/skrzynka_raportow.py``),
-bez sieci i bez Gmaila. Test czyta to, co widzi Maks: linie na stdout i kod wyjścia, oraz polecenia, które dostał
-serwer. Maile, adresy i numery są syntetyczne.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -35,8 +28,7 @@ OBCY = "obcy.nadawca@przyklad.invalid"
 DRUGI = "anna.probna@przyklad.invalid"
 TATA = timezone(timedelta(hours=1))
 WRITES = {"SELECT", "STORE", "COPY", "MOVE", "EXPUNGE", "APPEND"}
-# Wszystko, co mail niesie, a czego wynik próby nie może pokazać.
-TRESCI = [
+NIE_W_WYNIKU_PROBY = [
     SKRZYNKA,
     HASLO,
     WYKONAWCA,
@@ -80,19 +72,20 @@ def mail(
 
 
 def skrzynka_z_raportami() -> list[AtrapaMail]:
-    """Siedem maili z dni okna: dwa Raporty Wykonawcy z Wpisem (jeden tylko w folderze wszystkich maili), mail z tematem
-    Raportu bez Wpisu, Raport obcego nadawcy, odpowiedź na mail o czym innym i faktura, których port nie bierze, i mail z
-    tematem Raportu bez nadawcy."""
-
-    return [
-        mail(1, temat="Raport 08.11.2026", flagi=("\\Seen",)),
-        mail(2, temat="Raport 09.11.2026", tresc="40000003 tak", od=f"<{OBCY}>"),
-        mail(3, temat="Re: Zmiana w raportach 08.11.2026", tresc="40000001 tak"),
-        mail(4, temat="Faktura", tresc="do zapłaty", flagi=("\\Seen", "$Etykieta")),
-        mail(5, temat="Raport 09.11.2026", tresc="40000004 nie klient odmówił", charset="iso-8859-2", w_odebranych=False),
-        mail(6, temat="Raport 09.11.2026", od=None),
-        mail(7, temat="Raport 09.11.2026", tresc="dzień bez zleceń"),
-    ]
+    maile_z_dni_okna = {
+        "raport-wykonawcy-z-wpisem": mail(1, temat="Raport 08.11.2026", flagi=("\\Seen",)),
+        "raport-obcego-nadawcy": mail(2, temat="Raport 09.11.2026", tresc="40000003 tak", od=f"<{OBCY}>"),
+        "odpowiedz-na-mail-o-czym-innym-ktorej-port-nie-bierze": mail(
+            3, temat="Re: Zmiana w raportach 08.11.2026", tresc="40000001 tak"
+        ),
+        "faktura-ktorej-port-nie-bierze": mail(4, temat="Faktura", tresc="do zapłaty", flagi=("\\Seen", "$Etykieta")),
+        "raport-wykonawcy-z-wpisem-tylko-w-folderze-wszystkich-maili": mail(
+            5, temat="Raport 09.11.2026", tresc="40000004 nie klient odmówił", charset="iso-8859-2", w_odebranych=False
+        ),
+        "temat-raportu-bez-nadawcy": mail(6, temat="Raport 09.11.2026", od=None),
+        "temat-raportu-bez-wpisu": mail(7, temat="Raport 09.11.2026", tresc="dzień bez zleceń"),
+    }
+    return list(maile_z_dni_okna.values())
 
 
 def config(folder: Path, *, adresy: bool = True) -> Path:
@@ -114,7 +107,7 @@ def proba(
     out, err = capsys.readouterr()
     assert not err
     assert out.isascii()
-    for tresc in [*TRESCI, *opcje]:
+    for tresc in [*NIE_W_WYNIKU_PROBY, *opcje]:
         assert tresc not in out
     return code, out.splitlines()
 
@@ -179,8 +172,6 @@ def test_proba_nie_przechodzi_gdy_serwer_nie_oddal_samych_flag_kazdego_wyszukane
 
 
 class WyszukiwanieZPowtorzonymUid(imaplib.IMAP4):
-    """Serwer, który w wyniku ``UID SEARCH`` podaje pierwszy UID dwa razy: flagi ma wtedy mniej maili, niż wyszukano."""
-
     def uid(self, command: str, *args: str) -> tuple[str, list[Any]]:
         status, data = super().uid(command, *args)
         if command == "SEARCH" and data and isinstance(data[0], bytes) and data[0]:
@@ -202,8 +193,6 @@ def test_proba_nie_przechodzi_gdy_flagi_ma_mniej_maili_niz_wyszukano(
 
 
 class _PierwszaSesjaBezUid1(imaplib.IMAP4):
-    """Pierwsza sesja próby, która nie widzi maila UID 1 w ``UID SEARCH``, bo przyszedł tuż po niej."""
-
     def uid(self, command: str, *args: str) -> tuple[str, list[Any]]:
         status, data = super().uid(command, *args)
         if command == "SEARCH" and data and isinstance(data[0], bytes):
@@ -214,9 +203,6 @@ class _PierwszaSesjaBezUid1(imaplib.IMAP4):
 def test_proba_nie_przechodzi_gdy_raport_przyszedl_po_pierwszym_odczycie_flag(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Raport, którego pierwszy odczyt flag nie widział, port przeczytał i oznaczył: jego flag nikt nie porównał, więc
-    próba nie przechodzi, zamiast dać OK z flagami bez zmian."""
-
     sesje: list[imaplib.IMAP4] = []
 
     def connect(port: int) -> imaplib.IMAP4:
@@ -238,15 +224,16 @@ def test_proba_nie_przechodzi_gdy_raport_przyszedl_po_pierwszym_odczycie_flag(
 def test_proba_porownuje_flagi_maili_z_kazdej_paczki_odczytu_flag(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Flagi czyta się w paczkach po ``FETCH_BATCH`` maili: Raport w drugiej paczce, który port oznaczył jako
-    przeczytany, to zmiana flag, a każdy mail ma flagi z obu odczytów."""
-
-    ostatni = FETCH_BATCH + 50
-    maile = [*(mail(uid, temat="Faktura", tresc="do zapłaty") for uid in range(1, ostatni)), mail(ostatni, temat="Raport 08.11.2026")]
+    uidy_bez_sasiadow = [2 * numer for numer in range(1, FETCH_BATCH + 51)]
+    *faktury, raport_w_drugiej_paczce = uidy_bez_sasiadow
+    maile = [*(mail(uid, temat="Faktura", tresc="do zapłaty") for uid in faktury), mail(raport_w_drugiej_paczce, temat="Raport 08.11.2026")]
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=maile, marks_seen=True) as atrapa:
         code, lines = proba(capsys, config(tmp_path), lokalnie(atrapa.port))
 
-    assert lines[-2:] == [f"FLAGI | sprawdzone={ostatni} | zmienione=1", "PROBA IMAP FAIL | flagi zmienione w 1 mailach"]
+    assert lines[-2:] == [
+        f"FLAGI | sprawdzone={len(uidy_bez_sasiadow)} | zmienione=1",
+        "PROBA IMAP FAIL | flagi zmienione w 1 mailach",
+    ]
     assert code == 1
 
 
@@ -311,7 +298,6 @@ def test_proba_z_jednym_raportem_wykonawcy_z_wpisem_przechodzi(tmp_path: Path, c
 def test_proba_zglasza_polskie_litery_zepsute_przez_zly_zestaw_znakow(
     tmp_path: Path, capsys: pytest.CaptureFixture[str], tresc: str, zapisany: str, podany: str, znak: str
 ) -> None:
-    # Nadawca zapisał treść w jednym zestawie znaków, a w nagłówku podał inny: polska litera to wtedy ``znak``.
     assert tresc.encode(zapisany).decode(podany, errors="replace").count(znak) >= 1
     zapisany_mail = mail(1, temat="Raport 08.11.2026", tresc=f"40000001 tak {tresc}", charset=zapisany)
     raw = zapisany_mail.raw.replace(f'charset="{zapisany}"'.encode(), f'charset="{podany}"'.encode())
@@ -355,9 +341,6 @@ def test_proba_bez_adresow_na_liscie_wykonawcow_nie_laczy_sie_ze_skrzynka(
 def test_proba_przy_liscie_wykonawcow_bez_odczytu_nazywa_plik_i_nie_laczy_sie_ze_skrzynka(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Lista Wykonawców, której system nie daje teraz czytać (np. trzyma ją OneDrive), to nie zła lista: próba nazywa
-    plik, zanim połączy się ze skrzynką."""
-
     folder = config(tmp_path)
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=skrzynka_z_raportami()) as atrapa, without_reading(folder / WORKERS_FILE):
         code, lines = proba(capsys, folder, lokalnie(atrapa.port))
@@ -366,12 +349,7 @@ def test_proba_przy_liscie_wykonawcow_bez_odczytu_nazywa_plik_i_nie_laczy_sie_ze
     assert atrapa.commands == []
 
 
-# Przegląd Wpisów (``--przeglad``): plik z prawdziwymi mailami do przeglądu Maksa, a stdout bez zmian.
-
-
-def chwila(przyszedl: datetime) -> str:
-    """Chwila przyjścia w pliku przeglądu: tak, jak oddaje ją port, w strefie komputera."""
-
+def chwila_w_strefie_komputera(przyszedl: datetime) -> str:
     return f"{przyszedl.astimezone():%Y-%m-%d %H:%M %z}"
 
 
@@ -401,10 +379,6 @@ PRZEGLAD_SKRZYNKI = [
 def test_przeglad_zapisuje_kazdy_mail_wykonawcy_z_trescia_i_wpisami_rdzenia_a_stdout_zostaje_ten_sam(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Raport wykonawcy, mail Wykonawcy z nierozpoznanym tematem oraz Raport z dniem spoza okna i mail z dnia przed
-    ``--od``, które rdzeń pomija, trafiają do pliku po chwili przyjścia z aliasem Wykonawcy, a Raport obcego nadawcy i
-    mail bez słowa ``raport`` nie; numer z dwoma Wpisami jednego Wykonawcy z jednego dnia stoi na końcu."""
-
     folder = config(tmp_path)
     plik = tmp_path / "wpisy.txt"
     with AtrapaImap(address=SKRZYNKA, password=HASLO, mails=PRZEGLAD_SKRZYNKI) as atrapa:
@@ -417,20 +391,20 @@ def test_przeglad_zapisuje_kazdy_mail_wykonawcy_z_trescia_i_wpisami_rdzenia_a_st
     assert "zawiera prawdziwe maile" in naglowek
     assert "~/.t3/notes/" in naglowek
     assert wpisy == (
-        f"===== {chwila(datetime(2026, 10, 31, 12, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport z piątku'"
+        f"===== {chwila_w_strefie_komputera(datetime(2026, 10, 31, 12, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport z piątku'"
         " | temat nierozpoznany: NO_DATE | przyszedl przed oknem proby: rdzen go pomija\n"
         "----- TRESC\n"
         "40000008 tak\n"
         "----- WPISY: brak, bo temat nierozpoznany; numery dla poprawionego Raportu: 40000008\n"
         "\n"
-        f"===== {chwila(datetime(2026, 11, 9, 18, 5, tzinfo=TATA))} | Wykonawca A | temat: 'Raport 08.11.2026'"
+        f"===== {chwila_w_strefie_komputera(datetime(2026, 11, 9, 18, 5, tzinfo=TATA))} | Wykonawca A | temat: 'Raport 08.11.2026'"
         " | dzien 2026-11-08\n"
         "----- TRESC\n"
         "40000001 tak wymiana gniazdka, usunięto awarię\n"
         "----- WPISY (1)\n"
         "  40000001 | tak | 'wymiana gniazdka, usunięto awarię'\n"
         "\n"
-        f"===== {chwila(datetime(2026, 11, 9, 19, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport bez daty'"
+        f"===== {chwila_w_strefie_komputera(datetime(2026, 11, 9, 19, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport bez daty'"
         " | temat nierozpoznany: NO_DATE\n"
         "----- TRESC\n"
         "Dzień dobry,\n"
@@ -440,7 +414,7 @@ def test_przeglad_zapisuje_kazdy_mail_wykonawcy_z_trescia_i_wpisami_rdzenia_a_st
         "Jan\n"
         "----- WPISY: brak, bo temat nierozpoznany; numery dla poprawionego Raportu: 40000006\n"
         "\n"
-        f"===== {chwila(datetime(2026, 11, 9, 20, 0, tzinfo=TATA))} | Wykonawca B | temat: 'Raport 09.11.2026'"
+        f"===== {chwila_w_strefie_komputera(datetime(2026, 11, 9, 20, 0, tzinfo=TATA))} | Wykonawca B | temat: 'Raport 09.11.2026'"
         " | dzien 2026-11-09\n"
         "----- TRESC\n"
         "40000001 nie klient odmówił\n"
@@ -450,14 +424,14 @@ def test_przeglad_zapisuje_kazdy_mail_wykonawcy_z_trescia_i_wpisami_rdzenia_a_st
         "  40000001 | nie | 'klient odmówił'\n"
         "  40000005 | bez tak/nie: LETTER_YES | ''\n"
         "\n"
-        f"===== {chwila(datetime(2026, 11, 9, 21, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport 20.10.2026'"
+        f"===== {chwila_w_strefie_komputera(datetime(2026, 11, 9, 21, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport 20.10.2026'"
         " | dzien 2026-10-20 | dzien spoza okna proby: rdzen pomija ten Raport\n"
         "----- TRESC\n"
         "40000007 tak montaż\n"
         "----- WPISY (1)\n"
         "  40000007 | tak | 'montaż'\n"
         "\n"
-        f"===== {chwila(datetime(2026, 11, 10, 8, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport 08.11.2026'"
+        f"===== {chwila_w_strefie_komputera(datetime(2026, 11, 10, 8, 0, tzinfo=TATA))} | Wykonawca A | temat: 'Raport 08.11.2026'"
         " | dzien 2026-11-08\n"
         "----- TRESC\n"
         "40000001 nie brak dostępu\n"
@@ -466,8 +440,8 @@ def test_przeglad_zapisuje_kazdy_mail_wykonawcy_z_trescia_i_wpisami_rdzenia_a_st
         "\n"
         "===== NUMERY Z KILKOMA WPISAMI JEDNEGO WYKONAWCY Z JEDNEGO DNIA (1)\n"
         "Wykonawca A | dzien 2026-11-08 | 40000001\n"
-        f"  {chwila(datetime(2026, 11, 9, 18, 5, tzinfo=TATA))} | 40000001 | tak | 'wymiana gniazdka, usunięto awarię'\n"
-        f"  {chwila(datetime(2026, 11, 10, 8, 0, tzinfo=TATA))} | 40000001 | nie | 'brak dostępu'\n"
+        f"  {chwila_w_strefie_komputera(datetime(2026, 11, 9, 18, 5, tzinfo=TATA))} | 40000001 | tak | 'wymiana gniazdka, usunięto awarię'\n"
+        f"  {chwila_w_strefie_komputera(datetime(2026, 11, 10, 8, 0, tzinfo=TATA))} | 40000001 | nie | 'brak dostępu'\n"
     )
     for dana in [SKRZYNKA, HASLO, WYKONAWCA, DRUGI, OBCY, "jan.testowy", "anna.probna", "Jan Testowy", "Anna Próbna"]:
         assert dana not in naglowek + wpisy
