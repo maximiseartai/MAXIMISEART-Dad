@@ -28,7 +28,6 @@ EXPECTED: dict[rownowaznosc.Process, tuple[str, Path]] = {
     "preparation": ("Przygotowanie pliku zbiorczego", ROOT / "tests" / "expected" / "uruchomienia" / "przygotowanie-pliku-zbiorczego.txt"),
     "intermax": ("Uporządkowanie INTERMAX", ROOT / "tests" / "expected" / "uruchomienia" / "uporzadkowanie-intermax.txt"),
 }
-# Pola każdego obiektu wyniku skryptu dla maszyn po jego ścieżce (``[]``: element listy), które plik pokazuje.
 SHOWN = {
     "": {"result", "summary", "warnings", "stop", "progress", "technical_notes"},
     "progress": {"phases", "template_total", "templates_completed", "current_worker", "figures"},
@@ -118,8 +117,6 @@ def _files(outcome: rownowaznosc.Outcome, inputs: Path) -> list[str]:
 
 
 def _card(name: str, outcome: rownowaznosc.Outcome, inputs: Path) -> str:
-    """Karta Uruchomienia scenariusza ``name`` jako tekst."""
-
     result = outcome.result
     assert isinstance(result, dict), f"{name}: skrypt dla maszyn nie dał JSON (kod {outcome.code})"
     assert not (fields := _new_fields(result)), f"{name}: pola wyniku {fields} trafiają do SHOWN i pliku albo do HIDDEN"

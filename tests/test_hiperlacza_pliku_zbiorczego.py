@@ -1,5 +1,3 @@
-"""Hiperłącza Wierszy danych Pliku zbiorczego: które komórki je niosą i jaki mają adres (``read_data_rows``)."""
-
 from __future__ import annotations
 
 import zipfile
@@ -55,8 +53,6 @@ def with_hyperlinks(path: Path, links: str | None, relationships: str | None, *,
 
 
 def _collective_file(tmp_path: Path) -> Path:
-    """Plik zbiorczy z Wierszami danych 18–20, numerami zleceń w F i pustym C."""
-
     path = tmp_path / "Rozliczenie 08_14_09_2026 - zbiorcze.xlsx"
     write_source(path, include_unmapped=False)
     return path
