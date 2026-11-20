@@ -1,15 +1,18 @@
 """Slot Maca ciężkiego procesu: na Macu Maksa ciężki proces bierze przy starcie slot ``boatbox`` i bez wolnego czeka.
 
-Sloty to te same pliki co sloty ``boatbox auto`` i ``boatbox run --here`` (skill ``boat``, sekcja „Budżet”): ``flock``
+Sloty to te same pliki co sloty ``boatbox auto`` i ``boatbox run --here`` (skill ``boat``, sekcja „Sloty Maca”): ``flock``
 na jednym z ``BOATBOX_MAC_SLOTS`` plików w ``BOATBOX_SLOT_DIR``, a ich liczba to ta sama reguła co w ``boatbox``.
 ``take`` nic nie robi, gdy ``boatbox`` nie ma w ``PATH`` (CI, box boat, komputer taty), gdy proces biegnie już
 w slocie (``SLOT``, które ustawia ``boatbox`` i samo ``take`` dla potomków) albo w teście pytest
 (``PYTEST_CURRENT_TEST``). Inaczej bierze pierwszy wolny slot i trzyma go do końca procesu, a jądro zwalnia go także po
 zabiciu; bez wolnego slotu czeka w kolejce jak ``boatbox`` i co ``LINE_S`` s pisze linię ``CIĘŻKIE`` z gotowym
-poleceniem ``boatbox``, które pośle polecenie na box bez czekania. Kodu wyjścia bramka nie zmienia, więc narzędzie,
-które czyta wynik pytest (``tools/mutacje.py``, test scalenia ``tools/scal_pr.py``), nie weźmie jej za wynik testu,
-a na Macu nigdy nie biegnie naraz więcej ciężkich procesów niż slotów. Bramki nie omija składnia powłoki, bo stawia ją
-sam proces, a nie odczyt jego polecenia.
+poleceniem ``boatbox``, które pośle polecenie na box bez czekania. Woła ją tylko proces narzędzia, które agent
+uruchamia (``szybko.py``, ``mutacje.py --plik``, ``benchmark_przebiegu.py measure|freeze``, ``ci_lokalnie.py`` z zadaniem
+``pytest`` albo ``mutations``), zanim ruszy jakikolwiek jego limit czasu, a sam pytest bramki nie ma, więc potomek
+narzędzia nigdy nie czeka w limicie czasu, który liczy narzędzie (``tools/mutacje.py``, test scalenia
+``tools/scal_pr.py``). Bramki nie omija składnia powłoki, bo stawia ją sam proces, a nie odczyt jego polecenia;
+pytest uruchomiony wprost przez agenta (``pytest -n auto``) biega bez slotu, a skill ``boat`` każe pełny pytest
+uruchamiać przez ``boatbox job``.
 """
 
 from __future__ import annotations

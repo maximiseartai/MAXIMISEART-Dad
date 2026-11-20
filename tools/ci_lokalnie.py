@@ -16,6 +16,7 @@ from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import BASE, ROOT
 import repo
+import slot_maca
 
 OPIS = """Odtwarza lokalnie porażkę zadania CI z PR: ruff-mypy, frontend, pytest, mutations; nie plan runu (plan_ci) ani części nocnych mutacji (mutacje_zmiany).
 
@@ -198,6 +199,8 @@ def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
     if refusal := ciezkie_ci.refusal(jobs, args.odtwarzam, root=root):
         print(refusal)
         return 2
+    if jobs & {"pytest", "mutations"}:
+        slot_maca.take("ci_lokalnie.py " + ",".join(sorted(jobs & {"pytest", "mutations"})), "auto")
     if args.kazdy_commit:
         return _check_every_commit(root, args.kazdy_commit, jobs, fail_fast=args.do_pierwszego_bledu)
     complete = jobs == known

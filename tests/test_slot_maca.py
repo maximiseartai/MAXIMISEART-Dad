@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -45,11 +46,11 @@ HEAVY = [
         id="benchmark-freeze",
     ),
     pytest.param(
-        lambda tmp: [sys.executable, "-m", "pytest", "-q", "-n", "1", "-p", "no:cacheprovider", "--collect-only", str(ROOT / "tests" / "test_slot_maca.py")],
-        "pytest",
+        lambda tmp: [sys.executable, str(ROOT / "tools" / "ci_lokalnie.py"), "--tylko", "pytest", "--kazdy-commit", "nie/ma/takiej"],
+        "ci_lokalnie.py pytest",
         "auto",
-        0,
-        id="pytest-z-workerami",
+        1,
+        id="ci-lokalnie-pytest",
     ),
 ]
 
@@ -158,29 +159,33 @@ def test_wolny_slot_bierze_proces_do_konca_a_jadro_zwalnia_go_po_nim(tmp_path: P
     assert who.startswith("pid=") and f"\ndir={ROOT}\ncmd=" in who
 
 
-def test_pytest_bez_workerow_z_plikiem_testow_nie_bierze_slotu(tmp_path: Path) -> None:
-    command = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", "--collect-only", str(ROOT / "tests" / "test_slot_maca.py")]
+@pytest.mark.parametrize("workers", [pytest.param(["-n", "1"], id="z-workerami"), pytest.param([], id="w-jednym-procesie")])
+def test_pytest_nie_czeka_na_slot_bo_limit_czasu_potomka_liczy_narzedzie(workers: list[str], tmp_path: Path) -> None:
+    command = [sys.executable, "-m", "pytest", "-q", *workers, "-p", "no:cacheprovider", "--collect-only", str(ROOT / "tests" / "test_slot_maca.py")]
 
     with _busy(tmp_path / "sloty", range(1, 3)):
         done = _run(command, tmp_path)
 
-    assert done.returncode == 0, done.stdout + done.stderr
+    assert (done.returncode, "CIĘŻKIE" in done.stderr) == (0, False), done.stdout + done.stderr
 
 
-@pytest.mark.skipif("SLOT_MACA_PROBKA" not in os.environ, reason="próbka sesji pytest w slocie, którą uruchamia test niżej")
-def test_probka_worker_widzi_slot_rodzica_zajety() -> None:
+@pytest.mark.skipif("SLOT_MACA_PROBKA" not in os.environ, reason="próbka polecenia w slocie, którą uruchamia test niżej")
+def test_probka_potomek_widzi_slot_rodzica_zajety() -> None:
     with (Path(os.environ["BOATBOX_SLOT_DIR"]) / os.environ["BOATBOX_MAC_SLOT"]).open("a", encoding="utf-8") as slot:
         with pytest.raises(BlockingIOError):
             _lock(slot)
 
 
-def test_proces_trzyma_slot_przez_caly_bieg_a_potomkowie_dostaja_jego_numer(tmp_path: Path) -> None:
-    command = [sys.executable, "-m", "pytest", "-q", "-n", "1", "-p", "no:cacheprovider", str(ROOT / "tests" / "test_slot_maca.py"), "-k", "probka"]
+def test_narzedzie_trzyma_slot_przez_caly_bieg_a_potomkowie_dostaja_jego_numer(tmp_path: Path) -> None:
+    probe = ["-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_slot_maca.py", "-k", "probka"]
+    mutations = tmp_path / "mutacje.json"
+    change = [["tools/lib/slot_maca.py", "LINE_S = 30", "LINE_S = 31"]]
+    mutations.write_text(json.dumps([{"nazwa": "bez zmiany zachowania", "zmiany": change, "polecenie": probe}]), encoding="utf-8")
 
-    done = _run(command, tmp_path, extra={"SLOT_MACA_PROBKA": "1"})
+    done = _run([sys.executable, str(ROOT / "tools" / "mutacje.py"), "--plik", str(mutations)], tmp_path, extra={"SLOT_MACA_PROBKA": "1"})
 
-    assert done.returncode == 0, done.stdout + done.stderr
-    assert "1 passed" in done.stdout, done.stdout
+    assert done.returncode == 1, done.stdout + done.stderr
+    assert "NIEWYKRYTA: bez zmiany zachowania" in done.stdout + done.stderr
 
 
 def test_bez_wlasnej_liczby_slotow_jest_ich_tyle_co_w_boatbox_takze_przy_zerze(tmp_path: Path) -> None:

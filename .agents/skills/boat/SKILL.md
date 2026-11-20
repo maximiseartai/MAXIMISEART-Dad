@@ -16,7 +16,7 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 |---|---|---|
 | `mutacje.py --plik` z mutacjami o kilku różnych `polecenie` | kilka boxów naraz, bo razem są szybsze od Maca | `boatbox fan` (sekcja „Fan mutacji”) |
 | Pełny pytest | jeden box, bo na Macu zajmuje wszystkie rdzenie na kilka minut | `boatbox job pytest '.venv/bin/python -m pytest -n auto'`, potem `boatbox wait pytest` |
-| `szybko.py`, `mutacje.py --plik` z jednym `polecenie` | Mac w wolnym slocie, a bez wolnego slotu box (sekcja „Budżet”) | `boatbox auto '<polecenie>'`, a `szybko.py` jak niżej |
+| `szybko.py`, `mutacje.py --plik` z jednym `polecenie` | Mac w wolnym slocie, a bez wolnego slotu box (sekcja „Sloty Maca”) | `boatbox auto '<polecenie>'`, a `szybko.py` jak niżej |
 | Odtworzenie błędu na Linuksie, powtórzenia testu pod obciążeniem, pomiar, model TLC | box | `boatbox run` albo `boatbox job` |
 | Pojedynczy plik testów, `mutacje.py --zmiana`, ruff, mypy, budowa frontendu, git, `gh`, `tools/scal_pr.py` | Mac, bo to lekkie polecenia (`npm ci` z `npm run build` trwają kilka sekund) | bezpośrednio |
 | Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty, pomiar `benchmark_przebiegu.py measure` na Macu | Mac w slocie, a przy zajętych slotach kolejka na slot | `boatbox run --here '<polecenie>'` |
@@ -25,8 +25,16 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 `szybko.py` uruchamiaj tak: `boatbox auto --box-env PYTEST_XDIST_AUTO_NUM_WORKERS=8 '.venv/bin/python tools/szybko.py'`.
 Box `large` ma 8 vCPU, a Mac zostaje przy 4 workerach z `czasy_ci.WORKERY_LOKALNE`, więc liczbę workerów boxa podaje tylko `--box-env`.
 W pomiarze A/B obie strony biegną po kolei na tym samym boxie.
-`szybko.py`, `mutacje.py --plik`, `benchmark_przebiegu.py measure|freeze` i pytest z workerami albo bez pliku testów same biorą slot Maca przy starcie (`tools/lib/slot_maca.py`), gdy `boatbox` jest w `PATH`, a polecenie nie biegnie już w slocie `boatbox` (`BOATBOX_MAC_SLOT`).
+
+## Sloty Maca
+
+Mac ma sloty na ciężkie polecenia, wspólne dla wszystkich repozytoriów i wątków: `BOATBOX_MAC_SLOTS`, domyślnie liczba rdzeni / 4 − 1, bo ciężkie polecenie bierze około 4 rdzeni, a resztę potrzebują agenci, Chrome i T3.
+`boatbox auto` i `boatbox run --here` zajmują slot na cały bieg polecenia blokadą pliku w jądrze i dają mu jego numer w `BOATBOX_MAC_SLOT`, więc dwa równoczesne starty nie dostaną tego samego slotu, a slot zabitego polecenia zwalnia się sam.
+Decyzja zapada przy starcie, nie po obciążeniu z `uptime`, które nie nadąża za kilkoma startami naraz.
+Bez wolnego slotu `boatbox auto` od razu wysyła polecenie na box, a gdy box nie może wystartować, polecenie czeka w kolejce na slot i co 30 s pisze linię stanu, więc na Macu nigdy nie biegnie więcej ciężkich poleceń niż slotów.
+`szybko.py`, `mutacje.py --plik`, `benchmark_przebiegu.py measure|freeze` i `ci_lokalnie.py` z zadaniem `pytest` albo `mutations` same biorą slot Maca przy starcie (`tools/lib/slot_maca.py`), gdy `boatbox` jest w `PATH`, a polecenie nie biegnie już w slocie `boatbox` (`BOATBOX_MAC_SLOT`); sam pytest bramki nie ma, więc pełny pytest uruchamiaj przez `boatbox job` jak w tabeli wyżej.
 Bez wolnego slotu czekają w kolejce na slot jak `boatbox` i co 30 s piszą linię `CIĘŻKIE … Mac zajęty` z gotowym poleceniem `boatbox`, które pośle je na box bez czekania; kodu wyjścia bramka nie zmienia.
+Zajęte sloty, ich polecenia i czas pokazuje `boatbox status`.
 
 ## Base
 
@@ -53,17 +61,6 @@ rm mutacje-fan-*.json
 
 Mutacje bez klucza `polecenie` biorą polecenie po `--`, więc wtedy dopisz `-- <polecenie>` na końcu linii w `awk`.
 Pliki części leżą w korzeniu worktree, bo `boatbox` wysyła na box tylko pliki, które widzi git.
-
-## Budżet
-
-Plan boat liczy starty boxa w oknach minuty, godziny i doby (`boat limits --json`) oraz godziny maszyn, z których na każdy dzień przypada tylko część, a box `large` zużywa je podwójnie.
-Start to każde utworzenie i wznowienie boxa oraz każda część `fan` uruchomiona równolegle.
-Mac ma sloty na ciężkie polecenia, wspólne dla wszystkich repozytoriów i wątków: `BOATBOX_MAC_SLOTS`, domyślnie liczba rdzeni / 4 − 1, bo ciężkie polecenie bierze około 4 rdzeni, a resztę potrzebują agenci, Chrome i T3.
-`boatbox auto` i `boatbox run --here` zajmują slot na cały bieg polecenia blokadą pliku w jądrze i dają mu jego numer w `BOATBOX_MAC_SLOT`, więc dwa równoczesne starty nie dostaną tego samego slotu, a slot zabitego polecenia zwalnia się sam.
-Decyzja zapada przy starcie, nie po obciążeniu z `uptime`, które nie nadąża za kilkoma startami naraz.
-Bez wolnego slotu `boatbox auto` od razu wysyła polecenie na box, także po przekroczeniu tempa godzin (linia `over pace:` w `boatbox status`), bo zatkany Mac kosztuje wątki agentów więcej niż godziny planu (decyzja Maksa 16.11.2026).
-Bez wolnego slotu i bez startu boxa (budżet doby albo godziny, box nie wstaje) polecenie czeka w kolejce na slot i co 30 s pisze linię stanu, więc na Macu nigdy nie biegnie więcej ciężkich poleceń niż slotów.
-Zajęte sloty, ich polecenia i czas pokazuje `boatbox status`, a zachowanie `fan` przy małej liczbie startów opisuje `boatbox help`.
 
 ## Dane
 
