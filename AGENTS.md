@@ -43,7 +43,7 @@ Narzędzie uruchamiasz `.venv/bin/python tools/<nazwa>.py` (Windows: `py -3 tool
 - `tools/proba_skrzynki_raportow.py`: Sprawdza port IMAP na prawdziwej skrzynce raportów taty tylko do odczytu, wynik jedną linią; uruchom przy każdym Wydaniu.
 - `tools/przesun_model.py`: Przelicza skróty kodu w model/definicje.json skilla verify-*; użyj, gdy model albo eksplorator skilla znów opisuje zmieniony kod.
 - `tools/quiet_machine.py`: Pokazuje, co trzyma maszynę (--status), i pilnuje jednego pomiaru wydajności naraz na cichym procesorze; użyj, gdy pomiar czeka.
-- `tools/rejestr_korzeni_tydzien.py`: Pomiar ADR 0036, 0042 i 0046 w issue „Rejestr korzeni”: odpalenia strażników, poszerzenia reguł, czekanie, strażniki; w poniedziałek, ręcznie z --bez-zapisu.
+- `tools/rejestr_korzeni_tydzien.py`: Pomiar ADR 0036, 0042 i 0046 w issue „Rejestr korzeni”: odpalenia strażników, poszerzenia reguł, pary do audytu; w poniedziałek, ręcznie z --bez-zapisu.
 - `tools/rownowaznosc.py`: Sprawdza, że refaktor nie zmienia wyniku procesów (scenariusze syntetyczne na bazie i HEAD), a z --ast drzew składni src/; użyj przy refaktorze src/.
 - `tools/scal_pr.py`: Jedyna droga merge'a PR przez agenta: sprawdza gotowość (CI, werdykt PASS, opis) tuż przed gh pr merge; użyj zamiast gołego merge'a.
 - `tools/setup_worktree.py`: Tworzy własne .venv checkoutu albo worktree z dodatkami dev i workflowy; uruchom w nowym worktree przed pierwszym poleceniem Pythona.
