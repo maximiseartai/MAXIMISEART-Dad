@@ -1,40 +1,3 @@
-"""Kontrola ilości: Reguły ilości przeliczone na Wierszach danych z Przebiegu i porównane z Ilościami usług taty.
-
-Czysta funkcja (``check``) i jej tekst Markdown (``title``, ``blocks``). Nie zna Centrum, Skrzynki Zgłoszeń ani
-skoroszytów: dostaje tylko treść dozwoloną filtrem prywatności (``order_facts``) i Reguły ilości, z których liczył
-Przebieg. Kolumny (decyzja 9):
-
-- kolumny Reguł ilości (``QuantityRules.rule_columns``) są porównywane; te z nich, które są też kolumnami z opisu
-  technika (AK i AM), tylko w wierszu, w którym reguła daje w nich wartość różną od zera, a w pozostałych liczą się
-  jak kolumny z opisu technika;
-- kolumny z opisu technika (``DESCRIPTION_COLUMNS``): liczba wierszy wypełnionych przez tatę poza kolumnami narzędzia
-  wiersza (``ToolEntry.columns``), tak jak w Ilościach do uzupełnienia;
-- pozostałe kolumny N:AP, wyliczone jako reszta: liczba wypełnionych wierszy, osobno.
-
-Wiersze rozliczane z opisu nie dają różnic, a wiersze bez reguły tworzą grupę na dokładny tekst URZĄDZENIA:
-różnice tylko w kolumnach reguł dla składnika spoza listy (``QuantityRules.without_rule_columns``, z Wydania V, T i N)
-oraz wartości taty w pozostałych kolumnach N:AP (decyzja 10). Puste i 0 to to samo
-(decyzja 11). Grupy różnic pokazują dzień tygodnia i pełną godzinę, bo od godziny zależy dodatek za usterkę.
-
-Legenda czynności (ADR 0038) liczy się rachunkiem jednego wiersza ``legend_row_check``, tym samym w Kontroli, w
-podglądzie zmiany legendy i w bramie Legendy czynności (``tools/brama_legendy.py``). W wierszu z Kodami czynności bez
-Błędu opisu, także obok zwykłego opisu (``WithCodes``), porównuje z tatą:
-
-- kolumny, w które może wpisać którykolwiek kod legendy, z wartością Reguł ilości i legendy razem z Wpisu narzędzia
-  (``tool_entry``), tego samego, który wpisuje Przygotowanie; kolumnę, którą porównują Reguły ilości, tylko gdy
-  legenda wpisała w nią coś w tym wierszu, i wtedy ta kolumna nie jest różnicą Reguł ilości;
-- kwotę w ``AS`` z Wpisu narzędzia;
-- kolory kolumn, które może wypełnić którykolwiek kod legendy (zielony, czerwony albo brak; wypełnienie spoza palety
-  legendy, np. tło z Wzorca, to brak, zob. ``order_facts.legend_colour``).
-
-W wierszu bez żadnego kodu i w wierszu z Błędem opisu legenda nic nie wpisała, więc nie porównuje, tylko liczy wpis
-taty: kolumny z opisu technika poza porównywanymi przez Reguły ilości i ``AS``. W wierszu bez reguły wartości taty
-pokazuje poza kolumnami narzędzia wiersza, więc kolumna, w którą wpisała legenda, nie jest wartością taty. Błędy opisu liczy według powodu. Opis
-technika (``CZYNNOŚCI ZREALIZOWANE``) wiersz oddaje (``LegendRowCheck.description``) tylko przy różnicy legendy albo,
-gdy legenda nic nie wpisała, przy wpisie taty, więc tylko taki opis trafia do treści Kontroli, a w niej przez
-strażnika reguły danych.
-"""
-
 from __future__ import annotations
 
 from collections import Counter, defaultdict
@@ -72,8 +35,6 @@ from .tool_entry import compared_columns, tool_entry
 
 @dataclass(frozen=True)
 class Difference:
-    """Grupa różnic: kontekst, od którego zależą reguły, kolumna, wartość reguły i wartość taty."""
-
     devices: str
     activities: str
     contract: str
@@ -86,19 +47,14 @@ class Difference:
 
 @dataclass
 class Unruled:
-    """Wiersze bez reguły o jednym dokładnym tekście URZĄDZENIA (decyzja 10)."""
-
     rows: int = 0
     differences: Counter[Difference] = field(default_factory=Counter)
-    """Tylko V, T i N."""
     values: Counter[tuple[str, TataValue]] = field(default_factory=Counter)
-    """(kolumna, wartość taty) → wiersze, w pozostałych kolumnach N:AP."""
 
 
 @dataclass
 class QuantityCheck:
     other_columns: tuple[str, ...]
-    """Kolumny N:AP poza kolumnami Reguł ilości i kolumnami z opisu technika, w kolejności N:AP."""
     rows: int = 0
     compared: int = 0
     from_description: int = 0
@@ -108,24 +64,15 @@ class QuantityCheck:
     description_filled: Counter[str] = field(default_factory=Counter)
     other_filled: Counter[str] = field(default_factory=Counter)
     coded: int = 0
-    """Wiersze danych z Kodami czynności bez Błędu opisu."""
     coded_matching: int = 0
-    """Wiersze z Kodami czynności bez Błędu opisu i bez różnicy legendy."""
     legend_differences: dict[tuple[str, ...], LegendGroup] = field(default_factory=lambda: defaultdict(LegendGroup))
-    """Identyfikatory kodów wiersza → różnice legendy wierszy z tymi kodami."""
     uncoded_entries: Counter[tuple[str, Entry]] = field(default_factory=Counter)
-    """(opis technika, wpis taty) → wiersze bez kodów z tym wpisem."""
     description_error_rows: int = 0
-    """Wiersze z Błędem opisu."""
     description_errors: Counter[str] = field(default_factory=Counter)
-    """Powód Błędu opisu (``problem_text``, bez tekstu technika) → wiersze z tym powodem."""
     faulty_entries: Counter[tuple[tuple[str, ...], str, Entry]] = field(default_factory=Counter)
-    """(powody, opis technika, wpis taty) → wiersze z Błędem opisu z wpisem taty."""
 
     @property
     def legend_difference_count(self) -> int:
-        """Komórki różne od legendy (wartość albo kolor) w wierszach z Kodem czynności."""
-
         return sum(sum(group.rows.values()) for group in self.legend_differences.values())
 
     @property
@@ -134,23 +81,17 @@ class QuantityCheck:
 
     @property
     def difference_count(self) -> int:
-        """Komórki różne od reguły w kolumnach Reguł ilości, także V, T i N wierszy bez reguły."""
-
         return sum(self.differences.values()) + sum(sum(group.differences.values()) for group in self.unruled.values())
 
 
 @dataclass
 class LegendGroup:
-    """Różnice legendy wierszy o jednym zestawie Kodów czynności: różnica → wiersze i opisy technika tych wierszy."""
-
     rows: Counter[LegendDifference] = field(default_factory=Counter)
     descriptions: dict[LegendDifference, Counter[str]] = field(default_factory=lambda: defaultdict(Counter))
 
 
 @dataclass(frozen=True)
 class NotCompared:
-    """W wierszu 17 Pliku zbiorczego brakuje nagłówka kolumny wejścia, więc Kontrola nie porównuje."""
-
     missing_headers: tuple[str, ...]
 
 
@@ -159,18 +100,12 @@ CheckResult = QuantityCheck | NotCompared
 
 @dataclass(frozen=True)
 class RowCheck:
-    """Kontrola ilości jednego Wiersza danych: wynik reguł, kolumny porównania i te z nich, w których tata wpisał inaczej
-    niż reguła. Wiersz bez daty i godziny w ``DATA`` nie ma wyniku reguł ani kolumn porównania."""
-
     result: RuleResult | None
     compared: tuple[str, ...]
     differences: tuple[str, ...]
 
 
 def row_check(row: OrderFacts, rules: QuantityRules) -> RowCheck:
-    """Rachunek Kontroli ilości na jednym Wierszu danych według ``rules``; ten sam liczy ``check`` i podgląd zmiany
-    Reguł ilości w Ustawieniach (ADR 0033)."""
-
     content = row.content
     return _rule_check(row, None if content is None or content.started is None else evaluate(rules, content), rules)
 
@@ -186,8 +121,6 @@ def _rule_check(row: OrderFacts, result: RuleResult | None, rules: QuantityRules
 
 @dataclass(frozen=True)
 class ValueDifference:
-    """Wartość komórki (Ilość usług w kolumnie albo kwota w ``AS``) inna u taty niż według Reguł ilości i legendy."""
-
     column: str
     legend: int
     tata: TataValue
@@ -195,8 +128,6 @@ class ValueDifference:
 
 @dataclass(frozen=True)
 class FillDifference:
-    """Kolor wypełnienia kolumny inny u taty niż według legendy; ``None``: bez koloru legendy."""
-
     column: str
     legend: FillColour | None
     tata: FillColour | None
@@ -204,19 +135,10 @@ class FillDifference:
 
 LegendDifference = ValueDifference | FillDifference
 Entry = tuple[tuple[str, TataValue], ...]
-"""Wpis taty w wierszu, w którym legenda nic nie wpisała: kolumna → wartość różna od 0."""
 
 
 @dataclass(frozen=True)
 class LegendRowCheck:
-    """Legenda czynności w Kontroli ilości jednego Wiersza danych.
-
-    ``read``: wynik legendy dla opisu technika. ``rules``: rachunek Reguł ilości (``row_check``). ``differences``: różnice
-    legendy w wierszu z kodami bez Błędu opisu, w kolejności N:AP, ``AS``, potem kolory. ``entry``: wpis taty w wierszu
-    bez żadnego kodu albo z Błędem opisu. ``description``: opis technika, tylko w wierszu z różnicą legendy albo, bez kodów i z Błędem
-    opisu, z wpisem taty. ``columns``: kolumny narzędzia wiersza (``ToolEntry.columns``).
-    """
-
     read: DescriptionRead
     rules: RowCheck
     differences: tuple[LegendDifference, ...]
@@ -226,16 +148,11 @@ class LegendRowCheck:
 
     @property
     def rule_differences(self) -> tuple[str, ...]:
-        """Różnice Reguł ilości bez kolumn, które w tym wierszu wpisała też legenda: te porównuje legenda, z sumą."""
-
         written = self.read.quantities if isinstance(self.read, WithCodes) else {}
         return tuple(column for column in self.rules.differences if column not in written)
 
 
 def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRules) -> LegendRowCheck:
-    """Rachunek Legendy czynności ``legend`` w Kontroli ilości na jednym Wierszu danych, z Regułami ilości ``rules``; ten
-    sam liczy ``check``, podgląd zmiany legendy w Ustawieniach i brama Legendy czynności (zob. opis modułu)."""
-
     tool = tool_entry(row.content, row.completed, rules, legend)
     ruled = _rule_check(row, tool.rules, rules)
     codes = tool.read
@@ -258,8 +175,6 @@ def legend_row_check(row: OrderFacts, legend: ActivityLegend, rules: QuantityRul
 
 
 def legend_columns(legend: ActivityLegend) -> tuple[str, ...]:
-    """Kolumny N:AP, w które może wpisać którykolwiek kod legendy, w kolejności N:AP."""
-
     columns: set[str] = set()
     for code in legend.codes:
         match code.column:
@@ -273,15 +188,11 @@ def legend_columns(legend: ActivityLegend) -> tuple[str, ...]:
 
 
 def legend_fill_columns(legend: ActivityLegend) -> tuple[str, ...]:
-    """Kolumny, które może wypełnić którykolwiek kod legendy, w kolejności arkusza."""
-
     columns = {fill.column for code in legend.codes for fill in code.fills}
     return tuple(column for column in (*QUANTITY_LETTERS, AMOUNT_COLUMN) if column in columns)
 
 
 def check(orders: CollectiveOrders, rules: QuantityRules, legend: ActivityLegend) -> CheckResult:
-    """Kontrola ilości Zleceń Przebiegu według ``rules`` i ``legend``, Reguł ilości i Legendy czynności tego Przebiegu."""
-
     if isinstance(orders, MissingHeaders):
         return NotCompared(orders.headers)
     rule_columns = rules.rule_columns
@@ -337,8 +248,6 @@ def _add_legend(result: QuantityCheck, coded: LegendRowCheck) -> None:
 
 
 def week_hour(weekday: int, hour: int) -> str:
-    """Dzień tygodnia z pełną godziną, jak grupy różnic Kontroli ilości („pt 16”): od godziny zależy dodatek za usterkę."""
-
     return f"{WEEKDAY_LABELS[weekday]} {hour}"
 
 
@@ -362,8 +271,6 @@ def _add_unruled(
 def _differences(
     content: OrderContent, started: WeekTime, row: OrderFacts, quantities: Mapping[str, int], columns: Iterable[str]
 ) -> Iterable[Difference]:
-    """Grupy różnic w kolumnach ``columns``, w których tata wpisał inaczej niż reguła (``RowCheck.differences``)."""
-
     for column in columns:
         yield Difference(
             content.devices,
@@ -397,8 +304,6 @@ _COLUMN_ORDER: Final = {column: position for position, column in enumerate(QUANT
 
 
 def blocks(result: CheckResult, *, commit: str | None, run_id: str) -> tuple[str, ...]:
-    """Treść Markdown jako bloki (sekcje i wiersze tabel), które kolejka może rozdzielić na części."""
-
     tool = (
         "\n## Narzędzie\n\n"
         f"- Wersja narzędzia (commit): {commit or 'nieznana'}\n"
@@ -495,8 +400,6 @@ def _uncoded_blocks(entries: Counter[tuple[str, Entry]]) -> list[str]:
 
 
 def _description_error_blocks(reasons: Counter[str], entries: Counter[tuple[tuple[str, ...], str, Entry]]) -> list[str]:
-    """Błędy opisu według powodu, po tekście powodu, a wiersze z Błędem opisu z wpisem taty z opisem technika, po opisie."""
-
     if not reasons:
         return []
     found = [
@@ -530,8 +433,6 @@ def _legend_order(difference: LegendDifference) -> tuple[int, int, str, str]:
 
 
 def _descriptions(descriptions: Counter[str]) -> str:
-    """Opisy technika wierszy różnicy, każdy raz, z liczbą wierszy, gdy jest ich więcej niż jeden."""
-
     return "<br>".join(
         _code(description) + (f" ({count})" if count > 1 else "")
         for description, count in sorted(descriptions.items(), key=lambda item: _text_order(item[0]))
@@ -569,8 +470,6 @@ def _count_table(columns: Iterable[str], counts: Counter[str]) -> str:
 
 
 def _code(text: str) -> str:
-    """Dokładny tekst komórki jako kod w komórce tabeli Markdown; pusty to „(puste)”, nowy wiersz to „⏎”."""
-
     if not text:
         return "(puste)"
     shown = text.replace("\r\n", "\n").replace("\n", "⏎").replace("|", "\\|")
