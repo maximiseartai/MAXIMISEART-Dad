@@ -7,12 +7,17 @@ jego interfejsie. Żaden test nie łączy się z siecią.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import ast
+from collections.abc import Callable, Sequence
+import json
+import os
 from pathlib import Path
 import re
 import shutil
+import subprocess
 import sys
 import time
+from typing import Any
 
 import pytest
 
@@ -32,6 +37,7 @@ from rozliczenia.centrum.tool_update import (
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.git_config import computer_git_config
 from tests.fixtures.potomne import beating
+from tests.fixtures.proxy_systemu import system_proxy
 from tests.fixtures.fake_cli import fake_cli
 from tests.fixtures.tool_clone import (
     git_failing_on,
@@ -1230,3 +1236,192 @@ def test_klon_na_nowszym_commicie_main_niz_wydanie_jest_aktualny_takze_w_aktualn
     repository.publish({"src/narzedzie.py": "WERSJA = 3\n"})
 
     assert ToolFreshness.of_clone(repository.clone, repository.github_releases, repository.published).judge() == "newer"
+
+
+def test_git_z_katalogu_w_rejestrze_ma_pierwszenstwo_przed_znanymi_miejscami_instalacji(tmp_path: Path) -> None:
+    registered = installed_git(tmp_path / "Narzedzia" / "Git")
+    installed_git(tmp_path / "Program Files" / "Git")
+
+    found = find_git(
+        which=lambda name: None,
+        registry=lambda hive: str(registered.parents[1]) if hive == "HKLM" else None,
+        environ={"ProgramFiles": str(tmp_path / "Program Files")},
+    )
+
+    assert found == registered
+
+
+@pytest.mark.parametrize(
+    ("outcome", "installed"),
+    [
+        pytest.param(0, True, id="pip-przeszedl"),
+        pytest.param(1, False, id="pip-padl"),
+        pytest.param(subprocess.TimeoutExpired("pip", 1), False, id="pip-po-limicie-czasu"),
+        pytest.param(OSError("python nie ruszył"), False, id="python-nie-ruszyl"),
+    ],
+)
+def test_biblioteki_instaluje_python_centrum_a_kazda_porazka_pip_to_brak_instalacji(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, outcome: int | BaseException, installed: bool
+) -> None:
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(NEW_REQUIREMENTS, encoding="utf-8")
+    started: list[tuple[list[str], list[str], Path | None]] = []
+
+    def console_program(
+        command: Sequence[str], *, timeout_s: float, cwd: Path | None = None
+    ) -> subprocess.CompletedProcess[str]:
+        started.append((list(command[:3]), list(command[-2:]), cwd))
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return subprocess.CompletedProcess(list(command), outcome)
+
+    monkeypatch.setattr(tool_update, "run_console_program", console_program)
+
+    assert tool_update.pip_install(requirements) is installed
+    assert started == [([sys.executable, "-m", "pip"], ["-r", str(requirements)], tmp_path)]
+
+
+REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
+PINNED_ONLY_FOR_TESTS = {"hypothesis"}
+CAPPED_BUT_NOT_CHECKED_AT_START = {"playwright"}
+
+
+def imported_by_src() -> set[str]:
+    imported: set[str] = set()
+    for path in (REPOSITORY_ROOT / "src").rglob("*.py"):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Import):
+                imported.update(alias.name.split(".")[0] for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                imported.add(node.module.split(".")[0])
+    return imported
+
+
+def test_po_cofnieciu_aktualizacji_stara_wersja_startuje_z_bibliotekami_nowej_bo_wymagania_centrum_maja_dolne_granice() -> None:
+    specs = {}
+    for line in (REPOSITORY_ROOT / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        requirement = line.split(";")[0].replace(" ", "")
+        if requirement and not requirement.startswith("#"):
+            found = re.fullmatch(r"([A-Za-z0-9_.-]+)(.*)", requirement)
+            assert found is not None, line
+            specs[found[1].lower()] = found[2]
+    beyond_lower_bound = {name for name, spec in specs.items() if not re.fullmatch(r">=[0-9][0-9.]*", spec)}
+
+    assert beyond_lower_bound == PINNED_ONLY_FOR_TESTS | CAPPED_BUT_NOT_CHECKED_AT_START
+    assert PINNED_ONLY_FOR_TESTS.isdisjoint(imported_by_src())
+
+
+def test_dziennik_z_polem_innej_wersji_narzedzia_cofa_klon_jak_zwykle(repository: ToolRepository, tmp_path: Path) -> None:
+    before = repository.head()
+    moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+    assert clone.update().code == "ok"
+    state = json.loads(journal_state(repository).read_text(encoding="utf-8"))
+    journal_state(repository).write_text(json.dumps({**state, "pole_innej_wersji": True}), encoding="utf-8")
+
+    clone.roll_back()
+
+    assert_back_before_click(repository, before)
+
+
+def test_kopia_pliku_taty_przerwana_w_trakcie_nie_zostawia_dziennika_a_klon_bez_zmian(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = repository.head()
+    moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+
+    def copy_cut_off(source: Path, target: Path) -> None:
+        Path(target).write_text(Path(source).read_text(encoding="utf-8")[:5], encoding="utf-8")
+        raise OSError("dysk się zapełnił")
+
+    with monkeypatch.context() as disk:
+        disk.setattr(shutil, "copy2", copy_cut_off)
+        with pytest.raises(OSError, match="dysk się zapełnił"):
+            clone.update()
+
+    assert clone.interrupted_update() is None
+    assert repository.head() == before
+    assert repository.read("config/worker_mapping.yaml") == REAL_NAMES
+
+
+class SwitchedOff(BaseException):
+    pass
+
+
+def test_wylaczenie_komputera_w_trakcie_konca_dziennika_nie_cofa_potem_skonczonej_aktualizacji(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    newest = moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+    assert clone.update().code == "ok"
+
+    def switched_off(path: Path, *args: object, **kwargs: object) -> None:
+        raise SwitchedOff
+
+    with monkeypatch.context() as computer:
+        computer.setattr(shutil, "rmtree", switched_off)
+        with pytest.raises(SwitchedOff):
+            clone.confirm_update()
+
+    assert clone.interrupted_update() is None
+    assert repository.head() == newest
+
+
+def test_kopia_pliku_taty_ktorej_dysk_nie_pozwala_usunac_nie_zatrzymuje_konca_aktualizacji(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    moved_with_new_requirements(repository)
+    clone = ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller())
+    assert clone.update().code == "ok"
+    unlink = os.unlink
+
+    def refusing(path: str | os.PathLike[str], *args: Any, **kwargs: Any) -> None:
+        if os.path.basename(path) == "worker_mapping.yaml":
+            raise PermissionError(13, "Odmowa dostępu")
+        unlink(path, *args, **kwargs)
+
+    with monkeypatch.context() as disk:
+        disk.setattr(os, "unlink", refusing)
+        clone.confirm_update()
+
+    assert clone.interrupted_update() is None
+
+
+def test_cofniecie_bez_gita_na_komputerze_odmawia_a_dziennik_czeka_na_kolejna_probe(
+    repository: ToolRepository, tmp_path: Path
+) -> None:
+    newest = moved_with_new_requirements(repository)
+    assert ToolClone(repository.clone, origin=str(repository.origin), install=FakeInstaller()).update().code == "ok"
+    without_git = ToolClone(repository.clone, origin=str(repository.origin), find_git=lambda: None)
+
+    with pytest.raises(GitFailed):
+        without_git.roll_back()
+
+    assert repository.head() == newest
+    assert without_git.interrupted_update() is not None
+
+
+def test_bez_gita_na_komputerze_klon_zawiera_tylko_commit_na_ktorym_stoi(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = repository.head()
+    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    repository.in_clone("pull", "--quiet", "--ff-only", "origin", "main")
+    current = repository.head()
+    monkeypatch.setattr(tool_update, "find_git", lambda: None)
+
+    assert tool_update.contains_commit(repository.clone, current, current)
+    assert not tool_update.contains_commit(repository.clone, first, current)
+
+
+def test_pobranie_idzie_do_githuba_wprost_mimo_proxy_w_ustawieniach_systemu(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = repository.head()
+
+    with system_proxy(monkeypatch) as proxied, origin_asking_for_login() as origin:
+        result = ToolClone(repository.clone, origin=origin).update()
+
+    assert result == UpdateResult("LOGOWANIE", before=before, after=None)
+    assert proxied == []
