@@ -1,25 +1,3 @@
-"""Silnik Reguł ilości (ADR 0033): Ilości usług i Ilości tylko dla INEA z treści zlecenia według Reguł ilości jako danych.
-
-Jedyną operacją jest ``evaluate(rules, order)``, czysta funkcja bez plików i bez Centrum rozliczeń. Reguły ilości
-(``QuantityRules``) to reguły „jeśli … to …” i Lista Urządzeń; ich niezmienniki sprawdza sam typ przy tworzeniu, więc
-reguła z błędem nie powstaje (``QuantityRulesRefused`` z polem i zdaniem). Plik reguł ↔ typy: ``quantity_rules_file``.
-
-Rachunek jednego zlecenia:
-
-1. ``URZĄDZENIA`` dają słowa: małe litery, przecinki jak spacje, bez ``xg`` (także doklejonego), ``n *`` jako ``n*``.
-   Składniki Listy Urządzeń są dopasowane od lewej najdłuższym zapisem; ``n*`` przed pierwszym słowem zapisu to
-   krotność, a słowo bez dopasowania to składnik spoza listy.
-2. Reguła działa, gdy jej zakres zgadza się z tym, czy lista zna każdy składnik, i wszystkie warunki są prawdziwe
-   (warunek zaprzeczony odwrotnie). Warunek ``DATA`` przy zleceniu bez ``DATA`` nie działa ani zaprzeczony.
-3. „Zostaw pustą w Rozliczeniu pracownika” działa zawsze, obok każdego innego działania.
-4. Pierwszeństwo ma „nic nie wpisuj” (zlecenie z opisu), potem reguły „wpisz” z warunkiem „``URZĄDZENIA`` są
-   dokładnie tekstem” (tylko one, bez P, Q i S). W pozostałych zleceniach pasujące reguły „wpisz” się sumują.
-5. Gdy lista zna każdy składnik, dochodzą wbudowane P i Q (przy routerze pierwszy TV do P, następne do Q, bez routera
-   wszystkie do Q) i S, liczba urządzeń z grup router, TV i extender.
-
-Silnik nie zna dni świątecznych: reguła z ``DATA`` widzi tylko dzień tygodnia i godzinę (ADR 0033).
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -35,11 +13,7 @@ from .collective_layout import DEFECT_COLUMN, QUANTITY_LETTERS, letter
 from .text import normalize_text
 
 BUILT_IN_COLUMNS: Final = ("P", "Q", "S")
-"""Kolumny wbudowanych rachunków (P i Q z urządzeń TV, S z liczby urządzeń): reguła taty w nie nie wpisuje, może je
-tylko zostawić puste w Rozliczeniu pracownika."""
 DESCRIPTION_COLUMNS: Final = ("Y", "AB", "AD", "AJ", "AK", "AL", "AM")
-"""Kolumny Ilości usług z opisu technika (``CZYNNOŚCI ZREALIZOWANE``), poza słownikiem Reguł ilości (ADR 0033); reguła
-może wpisać w AK i AM tylko część z nich."""
 MAX_VALUE: Final = 999
 _DEFECT: Final = letter(DEFECT_COLUMN)
 
@@ -52,22 +26,16 @@ class DeviceGroup(StrEnum):
 
 @dataclass(frozen=True)
 class Component:
-    """Składnik Listy Urządzeń: stały identyfikator, zapisy tej samej rzeczy i grupa."""
-
     id: str
     spellings: tuple[str, ...]
-    """Zapisy w postaci słów ``URZĄDZENIA``: małe litery, pojedyncze spacje, bez ``xg``, gwiazdki i przecinków."""
     group: DeviceGroup | None = None
 
 
 @dataclass(frozen=True)
 class RulesProblem:
-    """Pierwsza rzecz, przez którą Reguły ilości albo Lista Urządzeń nie mogą powstać: pole pliku i zdanie dla taty."""
-
     field: str
     message: str
     component: str | None = None
-    """Składnik, do którego reguła się odwołuje, a którego Lista Urządzeń nie ma; ``None``: problem innego rodzaju."""
 
 
 class QuantityRulesRefused(ValueError):
@@ -78,16 +46,12 @@ class QuantityRulesRefused(ValueError):
 
 @dataclass(frozen=True)
 class _Unknown:
-    """Słowo ``URZĄDZENIA``, którego Lista Urządzeń nie zna, bez krotności ``n*``; ``counted``: miało krotność."""
-
     word: str
     counted: bool
 
 
 @dataclass(frozen=True)
 class DeviceList:
-    """Lista Urządzeń: identyfikatory składników są różne, a jeden zapis należy do jednego składnika."""
-
     components: tuple[Component, ...]
     _by_spelling: Mapping[str, Component] = field(init=False, repr=False, compare=False)
     _longest: int = field(init=False, repr=False, compare=False)
@@ -120,16 +84,10 @@ class DeviceList:
         return frozenset(component.id for component in self.components)
 
     def find(self, words: list[str]) -> tuple[list[tuple[Component, int]], bool]:
-        """Składniki słów ``URZĄDZENIA`` z krotnością, najdłuższy zapis od lewej, i czy lista zna każde słowo."""
-
         scanned = self._scan(words)
         return [item for item in scanned if not isinstance(item, _Unknown)], not any(isinstance(item, _Unknown) for item in scanned)
 
     def unknown_spellings(self, devices: str) -> tuple[str, ...]:
-        """Zapisy w ``URZĄDZENIA`` ``devices``, których lista nie zna: kolejne nieznane słowa to jeden zapis, bez krotności
-        ``n*``. Słowo z krotnością zaczyna nowy zapis, bo krotność stoi przed pierwszym słowem składnika, a słowo z
-        gwiazdką, które nie jest krotnością, nie może być zapisem, więc dzieli zapisy i nim nie jest."""
-
         found: list[str] = []
         run: list[str] = []
         for item in [*self._scan(_words(devices)), None]:
@@ -141,8 +99,6 @@ class DeviceList:
         return tuple(found)
 
     def _scan(self, words: list[str]) -> list[tuple[Component, int] | _Unknown]:
-        """Słowa ``URZĄDZENIA`` od lewej: składnik najdłuższego zapisu z krotnością albo słowo, którego lista nie zna."""
-
         scanned: list[tuple[Component, int] | _Unknown] = []
         position = 0
         while position < len(words):
@@ -164,21 +120,16 @@ class TextMode(StrEnum):
     EMPTY = "puste"
     EXACTLY = "dokladnie"
     CONTAINS = "zawieraja"
-    """Fragment tekstu ``URZĄDZENIA`` po ``normalize_text``, nie składnik (Ilości tylko dla INEA)."""
 
 
 @dataclass(frozen=True)
 class ContainsComponent:
-    """``URZĄDZENIA`` zawierają składnik, także obok składnika spoza listy."""
-
     component: str
     negated: bool = False
 
 
 @dataclass(frozen=True)
 class DevicesText:
-    """``URZĄDZENIA`` są puste, są dokładnie tekstem (słowa po normalizacji) albo zawierają tekst."""
-
     mode: TextMode
     text: str = ""
     negated: bool = False
@@ -186,24 +137,18 @@ class DevicesText:
 
 @dataclass(frozen=True)
 class ActivitiesContain:
-    """``CZYNNOŚCI`` zawierają tekst: fragment po małych literach i zwinięciu spacji."""
-
     text: str
     negated: bool = False
 
 
 @dataclass(frozen=True)
 class ContractFirstWord:
-    """Pierwsze słowo ``UMOWA`` (małe litery) jest tym słowem: ``u`` nie pasuje do ``U/123`` ani ``usługa``."""
-
     word: str
     negated: bool = False
 
 
 @dataclass(frozen=True)
 class StartedAt:
-    """``DATA`` przypada w jeden z dni tygodnia (0 to poniedziałek) od godziny do końca dnia."""
-
     days: frozenset[int]
     since: time
     negated: bool = False
@@ -211,8 +156,6 @@ class StartedAt:
 
 @dataclass(frozen=True)
 class HasGroup:
-    """Zlecenie ma urządzenie z grupy."""
-
     group: DeviceGroup
     negated: bool = False
 
@@ -221,8 +164,6 @@ Condition = ContainsComponent | DevicesText | ActivitiesContain | ContractFirstW
 
 
 class Scope(StrEnum):
-    """Dla których zleceń reguła działa: wszystkie składniki znane, jest składnik spoza listy, każde."""
-
     KNOWN = "znane"
     UNKNOWN = "nieznane"
     EVERY = "kazde"
@@ -230,39 +171,30 @@ class Scope(StrEnum):
 
 class Multiplier(StrEnum):
     ONCE = "raz"
-    """Wartość raz na zlecenie."""
     COMPONENT = "liczba"
-    """Wartość razy liczba składnika (suma krotności ``n*``)."""
     PIECES = "sztuki"
-    """Wartość razy „N szt” z ``CZYNNOŚCI`` (bez liczby 1) razy wystąpienia składnika; krotność ``n*`` się nie liczy."""
 
 
 @dataclass(frozen=True)
 class Write:
     column: str
-    """Litera kolumny ``N:AP`` bez P, Q i S."""
     value: int
     multiplier: Multiplier = Multiplier.ONCE
     component: str | None = None
-    """Składnik mnożnika ``liczba`` i ``sztuki``; przy ``raz`` brak."""
 
 
 @dataclass(frozen=True)
 class Fill:
-    """Wpisz w kolumny."""
-
     writes: tuple[Write, ...]
 
 
 @dataclass(frozen=True)
 class WriteNothing:
-    """Nic nie wpisuj w tym zleceniu: zlecenie rozliczane z opisu."""
+    ...
 
 
 @dataclass(frozen=True)
 class LeaveEmpty:
-    """Zostaw kolumny puste w Rozliczeniu pracownika (Ilości tylko dla INEA)."""
-
     columns: tuple[str, ...]
 
 
@@ -279,8 +211,6 @@ class QuantityRule:
 
 @dataclass(frozen=True)
 class QuantityRules:
-    """Reguły ilości z Listą Urządzeń, do których się odwołują; kolejność reguł nie zmienia ilości."""
-
     rules: tuple[QuantityRule, ...]
     devices: DeviceList
 
@@ -289,23 +219,17 @@ class QuantityRules:
 
     @property
     def rule_columns(self) -> tuple[str, ...]:
-        """Kolumny, w które Reguły ilości wpisują: kolumny reguł „wpisz” i wbudowane P, Q i S, w kolejności ``N:AP``."""
-
         written = {write.column for rule in self.rules if isinstance(rule.action, Fill) for write in rule.action.writes}
         return tuple(column for column in QUANTITY_LETTERS if column in written or column in BUILT_IN_COLUMNS)
 
     @property
     def leave_empty_columns(self) -> tuple[str, ...]:
-        """Kolumny reguł „zostaw pustą w Rozliczeniu pracownika” (Ilości tylko dla INEA), w kolejności reguł."""
-
         return tuple(
             dict.fromkeys(column for rule in self.rules if isinstance(rule.action, LeaveEmpty) for column in rule.action.columns)
         )
 
     @property
     def without_rule_columns(self) -> tuple[str, ...]:
-        """Kolumny, w które reguły mogą wpisać przy składniku spoza listy, w kolejności reguł."""
-
         return tuple(
             dict.fromkeys(
                 write.column
@@ -318,29 +242,19 @@ class QuantityRules:
 
 @dataclass(frozen=True, order=True)
 class WeekTime:
-    """Dzień tygodnia (0 to poniedziałek) i godzina z minutą z ``DATA``, bez daty dziennej."""
-
     weekday: int
     at: time
 
 
 @dataclass(frozen=True)
 class OrderContent:
-    """Treść zlecenia, z której Reguły ilości wyznaczają ilości: tekst komórek i pora zlecenia."""
-
     contract: str
-    """``UMOWA``; pusta komórka to ``""``."""
     devices: str
-    """``URZĄDZENIA``, dokładny tekst."""
     activities: str
-    """``CZYNNOŚCI`` (kolumna wejścia, nigdy ``CZYNNOŚCI ZREALIZOWANE``)."""
     started: WeekTime | None
-    """``DATA``; ``None`` tylko w Wierszu danych Przebiegu bez daty, w którym liczą się Ilości tylko dla INEA."""
 
     @classmethod
     def of(cls, contract: object, devices: object, activities: object, started: datetime | None) -> OrderContent:
-        """Treść zlecenia z wartości komórek Wiersza danych i daty z ``DATA``: komórka jako tekst, pusta to ``""``."""
-
         return cls(
             _cell_text(contract),
             _cell_text(devices),
@@ -351,21 +265,16 @@ class OrderContent:
 
 @dataclass(frozen=True)
 class Contribution:
-    """Skąd jest część ilości w kolumnie: identyfikator reguły, ``"P/Q"`` albo ``"S"``."""
-
     source: str
     column: str
     value: int
 
 
 Quantities = Mapping[str, int]
-"""Kolumna ``N:AP`` → ilość, tylko różne od zera, w kolejności kolumn."""
 
 
 @dataclass(frozen=True)
 class ServiceQuantities:
-    """Reguły ilości znają każdy składnik ``URZĄDZENIA`` albo zadziałała reguła „``URZĄDZENIA`` są dokładnie tekstem”."""
-
     quantities: Quantities
     leave_empty: frozenset[str]
     contributions: tuple[Contribution, ...]
@@ -374,8 +283,6 @@ class ServiceQuantities:
 
 @dataclass(frozen=True)
 class WithoutRule:
-    """``URZĄDZENIA`` mają składnik spoza Listy Urządzeń: tylko ilości reguł z zakresem „nieznane” i „każde”."""
-
     quantities: Quantities
     leave_empty: frozenset[str]
     contributions: tuple[Contribution, ...]
@@ -384,8 +291,6 @@ class WithoutRule:
 
 @dataclass(frozen=True)
 class FromDescription:
-    """Zadziałała reguła „nic nie wpisuj”: zlecenie rozliczane z opisu, bez żadnych ilości."""
-
     leave_empty: frozenset[str]
     fired: tuple[str, ...]
     quantities: Quantities = field(default_factory=lambda: MappingProxyType({}), init=False)
@@ -396,8 +301,6 @@ RuleResult = ServiceQuantities | WithoutRule | FromDescription
 
 
 def evaluate(rules: QuantityRules, order: OrderContent) -> RuleResult:
-    """Wynik Reguł ilości dla zlecenia: rodzaj, ilości, kolumny do zostawienia pustymi i źródło każdej ilości."""
-
     facts = _Facts.of(rules.devices, order)
     matching = [rule for rule in rules.rules if _matches(rule, facts)]
     leave_empty = frozenset(column for rule in matching if isinstance(rule.action, LeaveEmpty) for column in rule.action.columns)
@@ -425,16 +328,11 @@ def is_fault(result: RuleResult | None) -> bool:
 
 
 def device_spelling(text: str) -> str:
-    """Zapis składnika z tekstu taty tak, jak silnik czyta słowa ``URZĄDZENIA``; pusty, gdy tekst nie ma słów."""
-
     return _devices_words(text)
 
 
 @dataclass(frozen=True)
 class DevicesRead:
-    """``URZĄDZENIA`` zlecenia tak, jak je czytają Reguły ilości: składniki Listy Urządzeń w kolejności z tekstu, bez
-    powtórzeń, i czy lista zna każde słowo."""
-
     components: tuple[str, ...]
     all_known: bool
 
@@ -460,32 +358,22 @@ def _words(devices: str) -> list[str]:
 
 
 def _activities_phrase(text: str) -> str:
-    """Tekst ``CZYNNOŚCI`` tak, jak go czyta warunek „``CZYNNOŚCI`` zawierają”: małe litery, pojedyncze spacje."""
-
     return " ".join(text.casefold().split())
 
 
 def _devices_words(text: str) -> str:
-    """Tekst ``URZĄDZENIA`` tak, jak go czytają zapisy składników i warunek „są dokładnie tekstem”."""
-
     return " ".join(_words(text))
 
 
 @dataclass(frozen=True)
 class _Facts:
-    """Wszystko, co warunki i mnożniki czytają ze zlecenia, policzone raz."""
-
     words: tuple[str, ...]
     all_known: bool
     counts: Counter[str]
-    """Składnik → suma krotności ``n*``."""
     occurrences: Counter[str]
     groups: Counter[DeviceGroup]
-    """Grupa → suma krotności jej składników."""
     devices_words: str
-    """Słowa ``URZĄDZENIA`` złączone spacją, jak zapisy składników."""
     devices_text: str
-    """``URZĄDZENIA`` po ``normalize_text``."""
     activities: str
     pieces: int
     contract_word: str
@@ -531,8 +419,6 @@ def _matches(rule: QuantityRule, facts: _Facts) -> bool:
 
 
 def _holds(condition: Condition, facts: _Facts) -> bool | None:
-    """Czy warunek bez zaprzeczenia jest prawdziwy; ``None``, gdy zlecenie nie ma tego, o co pyta (``DATA``)."""
-
     match condition:
         case ContainsComponent(component=component):
             return facts.counts[component] > 0
@@ -613,8 +499,6 @@ def _is_id(text: str) -> bool:
 
 
 def _is_number(value: object) -> bool:
-    """Liczba całkowita, ale nie ``True`` ani ``False``, które Python liczy jako 1 i 0."""
-
     return isinstance(value, int) and not isinstance(value, bool)
 
 
@@ -624,9 +508,6 @@ def _require(holds: bool, path: str, message: str, *, component: str | None = No
 
 
 def rule_list_problem(rules: Iterable[QuantityRule]) -> RulesProblem | None:
-    """Pierwszy problem reguł bez Listy Urządzeń: każdy niezmiennik ``QuantityRules`` poza tym, czy składnik, do którego
-    reguła się odwołuje, jest na liście; ``None``: reguły są dobre same w sobie."""
-
     try:
         _check_rules(tuple(rules), None)
     except QuantityRulesRefused as refused:
@@ -635,12 +516,6 @@ def rule_list_problem(rules: Iterable[QuantityRule]) -> RulesProblem | None:
 
 
 def without_components(rules: tuple[QuantityRule, ...], absent: frozenset[str]) -> tuple[QuantityRule, ...]:
-    """Reguły ``rules`` tak, jakby żadne zlecenie nie miało składników ``absent``, bez odwołań do nich: reguła z warunkiem
-    „zawierają” taki składnik nie działa nigdy, więc odpada, warunek „nie zawierają” go zachodzi zawsze, więc odpada sam,
-    a wpis razy liczba albo sztuki takiego składnika jest zerem, więc odpada wpis. Reguła „wpisz”, której nie zostaje żaden
-    wpis, odpada; jedyna różnica od reguły z takim składnikiem nigdy nieznalezionym jest wtedy, gdy jej warunki go nie
-    wymagają: działałaby, wpisując zero (``fired``, a z warunkiem „dokładnie” brałaby zlecenie innym regułom)."""
-
     if not absent:
         return rules
     kept: list[QuantityRule] = []
@@ -661,8 +536,6 @@ def without_components(rules: tuple[QuantityRule, ...], absent: frozenset[str]) 
 
 
 def _check_rules(rules: tuple[QuantityRule, ...], components: frozenset[str] | None) -> None:
-    """Niezmienniki reguł; ``components``: identyfikatory składników Listy Urządzeń, ``None``: bez sprawdzania odwołań."""
-
     ids: set[str] = set()
     for rule in rules:
         path = f"reguly[{rule.id}]"

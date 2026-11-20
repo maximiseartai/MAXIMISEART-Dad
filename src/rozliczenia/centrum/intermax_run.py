@@ -27,7 +27,7 @@ from rozliczenia.message import Message, StopError
 from rozliczenia.text import short_day_label
 from rozliczenia.centrum.settings.folders import FolderSettings
 from rozliczenia.centrum.settings.files import Unreadable
-from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsReads, SettingsSnapshot
 
 _KIND: Final = declaration_of("intermax")
 _VIEW: Final = _KIND.view
@@ -48,7 +48,7 @@ class _LastDaysRead:
 
 @dataclass(frozen=True)
 class IntermaxEntry:
-    settings: CentrumSettings
+    settings: SettingsReads
     catalog: Catalog
     copies_directory: Path
     parts: HostParts

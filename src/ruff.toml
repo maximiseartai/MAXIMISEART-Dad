@@ -30,6 +30,7 @@ extend = "../ruff.toml"
 "rozliczenia.centrum.comment_versions._Versions".msg = "wysyłkę Logów Uruchomienia daje tylko post_of(wersja) z rozliczenia.centrum.comment_versions, a kolejka bierze ją bez zmian"
 "rozliczenia.efenix_window._CLASSIFIED".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
 "rozliczenia.efenix_window._Classified".msg = "wyjątek okna efenix daje tylko klasyfikator WindowStop.of(część, dowód) z rozliczenia.efenix_window; nowy przypadek dopisz do jego tabeli"
+"wplyw_zmiany.light_review".msg = "stawkę przeglądu PR (lekka runda) daje tools/lib/stawka_przegladu.py: light(pull), a to, czego bramka korzenia wtedy żąda, stake(pull, majors)"
 "importlib.import_module".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 "importlib.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
 "builtins.__import__".msg = "import modułu w trakcie działania poza tests/ daje tools/lib/import_dynamiczny.py (modul, modul_z_pliku, jest_modul), który odmawia kodu z tests/"
@@ -155,3 +156,5 @@ extend = "../ruff.toml"
 # pamięci Wpisania, więc drugie wejście daje drugi dzień. Prawo właściciela ma worker_reports/_memory.py, a typ pola
 # albo parametru biorą operacja Wpisania, odczyt okna i Przypomnienia rdzenia; inny moduł rdzenia raportów zatrzymuje ten zakaz.
 "rozliczenia.worker_reports._model.ReportInputs".msg = "wejście odczytu okna rdzenia raportów buduje w src/ tylko pamięć Wpisania za swoimi operacjami (worker_reports.EnteringMemory.enter i reminders): weź wynik operacji pamięci Wpisania (EnteringMemory z ReportState pracy, INTERMAX z register_window), bo własne ReportInputs, np. z OwnEntries.EMPTY, daje read_window inny dzień raportu niż Wpisanie raportów (#2059 W1)"
+"rozliczenia.centrum.keyed_box.read_report_key".msg = "Token do Zgłoszeń czyta z pliku tylko KeyedBox (rozliczenia.centrum.keyed_box): Skrzynkę pytaj przez KeyedBox, a token do pytań o Wydania bierz z KeyedBox.github_key"
+"rozliczenia.centrum.keyed_box.REPORT_KEY_FILE".msg = "Token do Zgłoszeń czyta z pliku tylko KeyedBox (rozliczenia.centrum.keyed_box): Skrzynkę pytaj przez KeyedBox, a token do pytań o Wydania bierz z KeyedBox.github_key"

@@ -4,7 +4,7 @@ severity: error
 message: >-
   odmowa obok zapisu Ustawień poza ich właścicielem to druga droga reguły, którą „Cofnij” w Historii omija: przenieś
   regułę do właściciela Ustawień (CentrumSettings._checked albo _dad_change w settings/owner.py) i odmawiaj tylko na
-  podstawie jego wyniku
+  podstawie jego wyniku; moduł, który Ustawienia tylko czyta, importuje z settings/reads.py (SettingsReads zamiast CentrumSettings)
 files:
   - src/rozliczenia/centrum/**/*.py
 # Prawo właściciela Ustawień: settings/owner.py sprawdza reguły przyjęcia zmiany, do niego komunikat kieruje resztę kodu.
@@ -32,14 +32,12 @@ rule:
   # Regułę przyjęcia zmiany ma tylko właściciel Ustawień (#1533, #1585 (a)); powroty z metadata.przypadki (_ensure_not_in_periods w
   # trasie DELETE i odmowa needed_by w trasie formularza). Zakres wynika z własności, nie ze składni trasy
   # (#1727 r1–r3: nazwa pliku, APIRouter(…), identyfikator APIRouter nie widziały FastAPI ani adnotacji napisem), ani z
-  # postaci wywołania (#1727 r4: getattr(settings, "change")(…), settings._dad_change(…)): każdy moduł Centrum poza
-  # właścicielem, który nazywa metodę zapisu właściciela gdziekolwiek, atrybutem albo literałem napisu, cały, bo trasy,
-  # middleware i funkcje pomocnicze sprawdzają regułę obok zapisu. Metody zapisu: publiczne CentrumSettings.change_<plik>
-  # (change_folders, change_workers, change_devices, …), rules_after, undo, apply_release_changes, dawne change i
-  # change_with_used_keys (nazywają je commity z werdyktów, na których biegnie dowód reguły) i prywatne, które zapisują
-  # albo sprawdzają regułę przyjęcia (_by_dad, każde _dad_*, _rules_after, _with_used_keys, _change, _checked,
-  # _apply, _apply_pending, _refuse, _put_back, _remember): wołanie prywatnej metody właściciela spoza niego to ten sam
-  # zapis.
+  # nazw metod zapisu (lista nazw rosła z każdym plikiem Ustawień w #1904, #1919, #1964 i zgubiła legend_after, #2457),
+  # ani z postaci importu (#2489 r1 i r2: wynik zapisu we własnym Protocol, moduł właściciela pod aliasem): każdy moduł
+  # Centrum poza właścicielem, który importuje cokolwiek z settings/owner.py (tekst instrukcji importu ma słowo owner,
+  # więc alias, kilka modułów, nawias i import względny też) albo nazywa typ CentrumSettings, cały. Moduł, który
+  # Ustawienia tylko czyta, importuje z settings/reads.py (SettingsReads bez metod zapisu, więc mypy odmawia zapisu,
+  # oraz SettingsSnapshot i WorkerListRead). Prywatne metody właściciela spoza niego zatrzymuje SLF001 ruff.
   # Zgłoszone jest każde wywołanie funkcji katalogu odmów (refusal.…) poza kształtami z listy not: niżej i każde wywołanie
   # sprawdzenia _ensure_*. Każdy dozwolony kształt to raise wprost w bloku gałęzi (inside bez stopBy sięga tylko do
   # rodzica), a dozwolony if stoi wprost w ciele funkcji albo w case wyniku właściciela, więc odmowa w innej gałęzi, pod
@@ -52,15 +50,12 @@ rule:
         has:
           stopBy: end
           any:
-            - kind: attribute
-              has:
-                field: attribute
-                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_[a-z_]+|_rules_after|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
-            # Treść literału daje parser (string_content), więc przedrostek r/b/f i potrójny cudzysłów jej nie zmieniają.
-            - kind: string
-              has:
-                kind: string_content
-                regex: '^(change|change_[a-z_]+|rules_after|undo|apply_release_changes|_by_dad|_dad_[a-z_]+|_rules_after|_with_used_keys|_change|_checked|_apply|_apply_pending|_refuse|_put_back|_remember)$'
+            - kind: identifier
+              regex: '^CentrumSettings$'
+            - kind: import_statement
+              regex: '\bowner\b'
+            - kind: import_from_statement
+              regex: '\bowner\b'
     - any:
         - kind: call
           has:

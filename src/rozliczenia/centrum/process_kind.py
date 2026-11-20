@@ -15,7 +15,7 @@ from rozliczenia.domain import RunMode
 from rozliczenia.centrum.run_logs import ProcessLogs
 from rozliczenia.centrum.run_view import PeriodProcessView, ProcessView, Shown, WarnedSummary
 from rozliczenia.centrum.settings.folders import FolderSettings, SettingState
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsSnapshot
 from rozliczenia.centrum.settings_at_start import SettingNeed, SettingsAtStart, unreadable
 from rozliczenia.client_data import WithoutSubclasses
 from rozliczenia.efenix_pace import Pace

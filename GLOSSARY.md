@@ -750,7 +750,7 @@ Gdy Maks je zamknie, a problem wraca, powstaje nowe z odnośnikiem do poprzednie
 Pełny, bezpieczny obraz jednego Uruchomienia procesu z Centrum rozliczeń: wynik, Komunikaty, podsumowanie, przebieg etapów i Szablonów pracownika z godziną każdego kroku, wersja narzędzia, Kopia wejścia, skrót każdego Wzorca procesu, Lista Wykonawców ze startu bez adresów oraz dziennik działań taty w Centrum i dziennik Centrum od poprzedniego Uruchomienia (widoki i przyciski z godzinami, bez treści Uwagi taty, i to, co Centrum zrobiło samo, np. Przypomnienia o raporcie i Wysyłka rozliczeń).
 Logi Wyceny w efenix mają też odczyt strony efenix po każdym szukaniu, otwarciu zlecenia i zapisie, a z danych adresowych tylko nazwy części adresu, którymi wynik szukania różni się od `ADRES`, bez ich wartości; zrzutów ekranu nie mają.
 Mówią wprost, czy był to podgląd, w którym nic nie zapisano, czy Uruchomienie z zapisem, a Logi Wyceny w efenix także jej tryb.
-Zostają na komputerze taty także po zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie Uruchomienia jednego okresu są w jednym miejscu; Uruchomienie Uporządkowania INTERMAX jest tam przy okresie dnia, w którym tata je uruchomił.
+Zostają na komputerze, na którym biegło Uruchomienie, także po zamknięciu Centrum i trafiają same do Skrzynki Zgłoszeń, gdzie wszystkie Uruchomienia jednego okresu z jednego Stanowiska są w jednym miejscu; Uruchomienie Uporządkowania INTERMAX jest tam przy okresie dnia, w którym tata albo Andrzej je uruchomił.
 Niosą tylko to, na co pozwala Reguła danych.
 Tata ich nie wysyła ani nie ogląda, ale z nich wraca karta Uruchomienia po starcie Centrum i w Historii.
 Wycena w efenix trwa u taty długo, a jej Logi powstają dopiero na jej końcu, więc w jej trakcie ten sam komentarz Uruchomienia w Skrzynce pokazuje co 5 minut jej postęp z dziennika Wyceny w efenix, a na końcu staje się podsumowaniem Logów, a gdy Centrum zamknęło się w jej trakcie, podsumowaniem Logów Urwanego Uruchomienia z następnego startu.
@@ -792,7 +792,7 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), feedback, komentarz
 ## Skrzynka Zgłoszeń
 
 Miejsce, do którego trafiają Zgłoszenia, Kontrole ilości, Logi Uruchomienia i Uwagi taty i w którym Maks je zamyka: prywatne repozytorium Zgłoszeń.
-Jedno dla obu Stanowisk: to, co przyszło ze Stanowiska Andrzeja, ma w tytule i w tagu Archiwum Logów okresu prefiks `ANDRZEJ`, więc ma własne issue i nie miesza się z tym, co przysłał tata.
+Jedno dla obu Stanowisk: to, co przyszło ze Stanowiska Andrzeja, ma w tytule prefiks `ANDRZEJ`, a jego Archiwum Logów okresu tag `andrzej-logi-<okres>`, więc ma własne issue i nie miesza się z tym, co przysłał tata.
 _Avoid_: issue tracker, publiczne issue
 
 ## Reguła danych
@@ -817,13 +817,13 @@ _Avoid_: niepewny wiersz, wiersz bez pewnego położenia
 Token, którym Centrum rozliczeń wysyła do Skrzynki Zgłoszeń.
 Wpisuje go Maks na komputerze taty, a tata go nie widzi.
 Andrzej ma na swoim komputerze własny Token do Zgłoszeń do tej samej Skrzynki, z własną datą ważności, którego też nie widzi; Maks unieważnia go bez szkody dla tokenu taty.
-Może go brakować albo Skrzynka może go odrzucić; wtedy nic nie wychodzi, dopóki Maks go nie naprawi, a tata widzi, że Token do Zgłoszeń nie działa i ma skontaktować się z Maksem.
+Może go brakować albo Skrzynka może go odrzucić; wtedy z tego komputera nic nie wychodzi, dopóki Maks go nie naprawi, a tata albo Andrzej widzi, że Token do Zgłoszeń nie działa i ma skontaktować się z Maksem.
 Tym samym tokenem Centrum pyta publiczne repozytorium narzędzia o Wydania (ADR 0014); gdy GitHub go tam nie przyjmie, Centrum pyta bez niego, a Token do Zgłoszeń dalej działa.
 _Avoid_: klucz, hasło
 
 ## Kolejka wysyłki
 
-Miejsce na komputerze taty, w którym Zgłoszenia, Uwagi taty, Logi Uruchomienia i Kontrole ilości czekają, aż przyjmie je Skrzynka Zgłoszeń.
+Miejsce na komputerze taty, a na komputerze Andrzeja drugie takie samo, w którym Zgłoszenia, Uwagi taty, Logi Uruchomienia i Kontrole ilości czekają, aż przyjmie je Skrzynka Zgłoszeń.
 Bez internetu wychodzą same, gdy sieć wróci, a bez działającego Tokenu do Zgłoszeń, gdy Maks go naprawi.
 Każda wysyłka trafia do Skrzynki dokładnie raz, także gdy Centrum zgaśnie albo połączenie się zerwie, zanim kolejka zapisze, że ją dostarczyła (ADR 0015, dopisek #840).
 Nowsza wersja tej samej wysyłki, jak Logi Uruchomienia po Diagnozie albo po postępie Wyceny w efenix, zmienia jej komentarz zamiast dokładać nowy, a gdy starsza jeszcze czeka, zastępuje ją w kolejce, więc bez internetu czeka tylko najnowsza.
@@ -838,7 +838,7 @@ _Avoid_: outbox, bufor
 ## Archiwum Logów okresu
 
 Pełne Logi Uruchomień jednego okresu w Skrzynce Zgłoszeń: GitHub Release z tagiem `logi-<okres>` (ze Stanowiska Andrzeja `andrzej-logi-<okres>`) w prywatnym repozytorium Zgłoszeń, który Centrum zakłada przy pierwszych Logach okresu.
-Każde Uruchomienie ma w nim jeden plik o nazwie pliku Logów z `.gz`, który po rozpakowaniu jest bajt w bajt plikiem Logów z komputera taty, a w issue Logów okresu jeden komentarz z podsumowaniem i odnośnikiem do tego pliku.
+Każde Uruchomienie ma w nim jeden plik o nazwie pliku Logów z `.gz`, który po rozpakowaniu jest bajt w bajt plikiem Logów z komputera, na którym biegło (taty albo Andrzeja), a w issue Logów okresu jeden komentarz z podsumowaniem i odnośnikiem do tego pliku.
 Obok leży raz każda wersja Wzorca, którym liczyły Uruchomienia okresu, jako `wzorzec-<SHA-256>.xlsx`, gdy przeszła sprawdzenie reguły danych (ADR 0025, „Wzorce w Archiwum Logów okresu”).
 Diagnoza podmienia plik swojego Uruchomienia.
 Nie jest Wydaniem: leży w innym repozytorium i pod innym tagiem, a Centrum i narzędzie Wydań patrzą tylko na Wydania publicznego repozytorium.
