@@ -15,6 +15,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/hooks"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "tools/lib"))
 
 from nakladka import NAKLADKI, ZMIENNA_SESJI
+import potomne
+import repo
 
 try:
     from czekanie import CI_ADDRESS, INSTEAD
@@ -23,7 +25,7 @@ except (ImportError, SyntaxError) as error:
 else:
     BROKEN = None
 
-REPO = NAKLADKI.parent.parent
+CHECKOUT = NAKLADKI.parent.parent
 QUERIES = Path(".cache") / "maximiseart" / "odpytywanie_gh"
 SAME_QUERIES_ALLOWED = 6
 WINDOW_S = 600
@@ -115,10 +117,8 @@ def working_folder(pid: int) -> Optional[Path]:
     if proc.is_dir():
         return proc.resolve()
     try:
-        shown = subprocess.run(
-            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, check=True
-        ).stdout.splitlines()
-    except (OSError, subprocess.CalledProcessError):
+        shown = potomne.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], cwd=CHECKOUT, timeout=10).stdout.splitlines()
+    except (OSError, potomne.TimeoutExpired):
         return None
     return next((Path(line[1:]) for line in shown if line.startswith("n/")), None)
 
@@ -131,19 +131,10 @@ def tracked(pid: int, script: str) -> bool:
             return False
         path = folder / path
     try:
-        inside = path.resolve().relative_to(REPO.resolve())
+        inside = path.resolve().relative_to(CHECKOUT.resolve())
     except ValueError:
         return False
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
-    return (
-        subprocess.run(
-            ["git", "-C", str(REPO), "ls-files", "--error-unmatch", "--", inside.as_posix()],
-            env=environment,
-            capture_output=True,
-            check=False,
-        ).returncode
-        == 0
-    )
+    return repo.succeeds(CHECKOUT, "ls-files", "--error-unmatch", "--", inside.as_posix())
 
 
 def from_repo_script(pid: int) -> bool:
