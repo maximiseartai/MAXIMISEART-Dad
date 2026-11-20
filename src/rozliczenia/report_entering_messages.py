@@ -162,8 +162,6 @@ def unsupported_shape(register: Path, sheet: str) -> Message:
 
 
 def memory_not_saved() -> Message:
-    """Ostrzeżenie: raporty są wpisane, ale pamięci wpisanych raportów nie udało się zapisać."""
-
     return Message(
         code="RAPORTY_PAMIEC_NIEZAPISANA",
         what="Raporty zostały wpisane, ale nie udało się zapisać pamięci wpisanych raportów.",
@@ -184,8 +182,6 @@ def unexpected_failure() -> Message:
 
 
 def summary_not_shown() -> Message:
-    """Raporty są wpisane, ale podsumowania nie dało się pokazać."""
-
     return Message.to_maintainer(
         code="BLAD_PODSUMOWANIA",
         what="Raporty zostały wpisane, ale nie udało się pokazać podsumowania.",

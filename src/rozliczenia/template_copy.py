@@ -290,9 +290,7 @@ class TemplateCopy:
         self._styles = styles
         self._sheet_rels = sheet_rels
         self.title = title
-        """Nazwa aktywnego arkusza."""
         self.header = header
-        """Wartości wiersza nagłówka w kolumnach danych wejściowych (od A), jak do sprawdzenia WYKONAWCA."""
         self.whole_header = whole_header
         """Wartości całego wiersza nagłówka (od A), w którym droga przez openpyxl szuka nagłówków docelowych."""
         self.has_input_data = has_input_data
@@ -759,8 +757,6 @@ class _Sheet:
         return _Part(name, flags, zipfile.ZIP_DEFLATED, dos_time, dos_date, crc, size, compressed)
 
     def _prefix(self, last_row: int | None, last_column: int) -> bytes:
-        """Arkusz do pierwszego Wiersza danych; ``dimension`` obejmuje wpisane komórki, jeśli wcześniej nie obejmował."""
-
         prefix = self._xml[: self._data_start]
         if self._dimension is None or last_row is None:
             return prefix
@@ -970,8 +966,6 @@ def _hyperlinks_place(xml: bytes, data_end: int) -> tuple[int, bytes, bytes]:
 
 
 def _cell_style(cell: bytes | None) -> int | None:
-    """Styl komórki z XML arkusza; ``None``: komórki nie ma albo nie ma atrybutu ``s``."""
-
     if cell is None:
         return None
     style = _STYLE.search(cell, 0, cell.index(b">"))
@@ -1243,8 +1237,6 @@ class _Styles:
         return self.custom_formats.get(number) or BUILTIN_FORMATS.get(number, "General")
 
     def font_over(self, font_id: int, highlights: Highlights) -> Font | None:
-        """Czcionka ``font_id`` z Wyróżnieniami; ``None``, gdy zostaje bez zmian."""
-
         key = (font_id, highlights)
         if key not in self._fonts_over:
             base = _item(self.fonts, font_id)
@@ -1253,8 +1245,6 @@ class _Styles:
         return self._fonts_over[key]
 
     def fill_over(self, fill_id: int, highlights: Highlights) -> Fill | None:
-        """Wypełnienie ``fill_id`` zastąpione Wyróżnieniami; ``None``, gdy zostaje bez zmian."""
-
         key = (fill_id, highlights)
         if key not in self._fills_over:
             base = _item(self.fills, fill_id)

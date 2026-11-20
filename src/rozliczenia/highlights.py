@@ -28,8 +28,6 @@ from openpyxl.styles.fonts import Font
 
 @dataclass(frozen=True)
 class Highlights:
-    """Wyróżnienia jednej komórki; porównywane po wartości."""
-
     fill: Fill | None = None
     """``None``: bez wypełnienia."""
     color: Color | None = None
@@ -48,8 +46,6 @@ class Highlights:
 
     @classmethod
     def of(cls, font: Font | None, fill: Fill | None) -> Highlights:
-        """Wyróżnienia komórki o czcionce ``font`` i wypełnieniu ``fill``; brakująca komórka ma oba ``None``."""
-
         return cls(
             fill=None if fill is None or _is_empty(fill) else fill,
             color=None if font is None else font.color,
@@ -78,7 +74,6 @@ class Highlights:
 
 
 PLAIN = Highlights()
-"""Komórka bez Wyróżnień."""
 
 
 def solid_fill(argb: str) -> PatternFill:

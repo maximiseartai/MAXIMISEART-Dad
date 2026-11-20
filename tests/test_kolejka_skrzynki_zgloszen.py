@@ -2597,11 +2597,11 @@ def test_wysylka_od_sluchacza_przechodzi_kontrole_typu_przed_skrzynka(opis: str,
         assert queue.files() == []
 
 
-def test_plik_kolejki_starszego_wydania_bez_stopnia_to_wlasne_logi_ktore_zastepuja_pozniejszy_postep_w_skrzynce(
+def test_plik_kolejki_starszego_wydania_bez_stopnia_to_wlasne_logi_ktore_zastepuja_pozniejsza_wersje_zastepcza_w_skrzynce(
     tmp_path: Path,
 ) -> None:
-    progress = f"postęp\n<!-- wysyłka {LOGS.label} {RUN_ID} część 1 wersja 0:20261023T101500000000Z-0002 -->"
-    issue = BoxIssue(7, LOGS.label, LOGS.title, f"{LOGS.line}\n\nLogi Uruchomień okresu.\n", [progress], [70])
+    stand_in = f"zastępcze\n<!-- wysyłka {LOGS.label} {RUN_ID} część 1 wersja 1:20261023T101500000000Z-0002 -->"
+    issue = BoxIssue(7, LOGS.label, LOGS.title, f"{LOGS.line}\n\nLogi Uruchomień okresu.\n", [stand_in], [70])
     queue = Queue(tmp_path, FakeReportBox(issues=[issue]))
     queue.directory.mkdir(parents=True)
     document = json.loads(run_logs("z wynikiem", 1).to_json())

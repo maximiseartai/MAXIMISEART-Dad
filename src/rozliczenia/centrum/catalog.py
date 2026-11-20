@@ -1,19 +1,3 @@
-"""Katalog procesów Centrum rozliczeń: jeden wpis na każdy proces, który Centrum uruchamia, i jedyny rejestr procesów
-w działaniu (``Catalog``).
-
-Wpis procesu (``process_kind.ProcessKind``) leży w ``centrum/processes/<proces>.py``, a ``KINDS`` to jedyna lista
-wpisów. ``Catalog`` trzyma wpisy z rdzeniami i plikiem metryk każdego procesu: Uruchomienia, Metryki, Tablica okresów
-i karty przed startem biorą rdzeń, historię metryk i silnik procesu tylko stąd, więc test podmienia je jednym obiektem
-(``with_metrics``, ``steered``, ``with_engine``), a Skrypt dla maszyn i odtworzenie podają własny plik metryk tak samo.
-
-Wejście procesu buduje tylko ``Catalog.prepared`` z wpisu procesu (``ProcessKind.inputs``), ten sam dla każdego
-gospodarza. Kartę przed startem procesu z okresem składa ``period_start.PeriodStarts`` z polityki wpisu
-(``PeriodStart``), a Uporządkowanie INTERMAX i Wpisanie raportów mają własne karty poza okresami (``intermax_run``,
-ADR 0019, i ``report_entering_run``, ADR 0028).
-
-Moduł nie robi I/O przy wczytaniu, a granicę jego importów opisuje i sprawdza ``tests/test_granice_importow.py``.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -36,7 +20,6 @@ KINDS: Final[tuple[ProcessKind[Any, Any], ...]] = (
     intermax.KIND,
     report_entering.KIND,
 )
-"""Kolejność statystyk w Metrykach."""
 
 _BY_KEY: Final[Mapping[common_contract.ProcessKey, ProcessKind[Any, Any]]] = {kind.key: kind for kind in KINDS}
 assert sum(kind.journaled for kind in KINDS) == 1, "dziennik Wyceny w efenix w katalogu Logów pisze jeden proces"
@@ -50,13 +33,9 @@ class Catalog:
 
     @classmethod
     def default(cls) -> Catalog:
-        """Prawdziwe rdzenie i pliki metryk w katalogu narzędzia, bez I/O."""
-
         return cls(KINDS, {kind.key: kind.default_metrics for kind in KINDS})
 
     def kind(self, key: common_contract.ProcessKey) -> ProcessKind[Any, Any]:
-        """Wpis procesu ``key`` z rdzeniem tego katalogu."""
-
         return next(kind for kind in self.kinds if kind.key == key)
 
     def period_kind(self, key: common_contract.PeriodProcessKey) -> PeriodProcessKind[Any, Any]:
@@ -78,22 +57,11 @@ class Catalog:
         return replace(self, kinds=tuple(replace(kind, core=steer(kind.core)) for kind in self.kinds))
 
     def with_engine(self, engine: Engine) -> Catalog:
-        """Ten katalog z silnikiem ``engine`` w miejscu ``run_process``: tylko wyrocznia
-        ``verify-jedno-uruchomienie-naraz``, której silnik to kroki modelu, a ``PreparedRun.conduct`` zostaje prawdziwe."""
-
         return replace(self, engine=engine)
 
     def prepared(
         self, key: common_contract.ProcessKey, start: Start, parts: HostParts, context: RunContext
     ) -> PreparedRun[Any, Any]:
-        """Uruchomienie procesu ``key`` gotowe do startu: rdzeń i historia metryk procesu z tego katalogu.
-
-        Okres Uruchomienia to ``start.period``, a bez niego okres z wejścia (Plik zbiorczy, dzień Uporządkowania
-        INTERMAX, ADR 0019). ``ValueError`` to błąd gospodarza, nie taty: start bez potrzeby procesu albo Podgląd bez
-        zapisu procesu bez niego; odmowy dla taty daje wcześniej karta startu (``period_start``, ``intermax_run``,
-        ``report_entering_run``).
-        """
-
         kind = self.kind(key)
         if set(start.paths) != set(kind.path_needs):
             raise ValueError(f"{kind.title} potrzebuje plików {sorted(kind.path_needs)}, a start ma {sorted(start.paths)}")
@@ -128,6 +96,4 @@ CATALOG: Final = Catalog.default()
 
 
 def declaration_of(key: common_contract.ProcessKey) -> ProcessKind[Any, Any]:
-    """Wpis procesu ``key`` z prawdziwym rdzeniem; klucz z dysku (Logi, plik ostatniego startu) zwalidował już kontrakt."""
-
     return _BY_KEY[key]

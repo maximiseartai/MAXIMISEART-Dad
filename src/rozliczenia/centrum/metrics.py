@@ -1,10 +1,3 @@
-"""Metryki: historia Uruchomień każdego procesu z katalogu procesów z plików metryk, z P50/P95 i rozkładem wyników.
-
-Pliki są czytane przy każdym odczycie, więc rekord dopisany spoza Centrum, np.
-przez skrypt dla maszyn, widać bez restartu serwera. Walidację rekordów, pomijanie
-niepoprawnych i reguły P50/P95 daje ``telemetry``; Centrum ich nie powtarza.
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -30,15 +23,11 @@ CentrumStarted = Mapping[tuple[str, str], str | None]
 
 
 class History:
-    """Jedyne źródło Historii dla kart Uruchomień, Uwag taty i Metryk."""
-
     def __init__(self, catalog: Catalog, centrum_runs: CentrumRuns) -> None:
         self._catalog = catalog
         self._centrum_runs = centrum_runs
 
     def runs(self) -> list[metrics_contract.ProcessRun]:
-        """Uruchomienia procesu od najnowszego; ``OSError``: plików metryk nie da się odczytać."""
-
         return _runs(self._catalog, _records(self._catalog), self._centrum_runs.started())
 
     def metrics(self, today: date) -> metrics_contract.Metrics:
@@ -89,10 +78,6 @@ def _runs(
 def _run(
     process: common_contract.ProcessKey, label: str, record: dict[str, Any], centrum_started: CentrumStarted
 ) -> metrics_contract.ProcessRun:
-    """Uruchomienie z rekordu metryk ``record``. Rekord nie mówi, skąd wystartował (schemat bez zmian), więc Centrum
-    pamięta swoje Uruchomienia samo (``centrum_started``), a rekord wersji 1 nie ma ``stop`` i rodzaju jego Zatrzymania
-    nie zgadujemy."""
-
     started = (process, record["started_at"])
     return metrics_contract.ProcessRun(
         process=process,
@@ -145,11 +130,6 @@ def _results(runs: Iterable[metrics_contract.ProcessRun]) -> metrics_contract.Re
 
 
 def previewed_periods(store: MetricsStore) -> frozenset[str]:
-    """Okresy, dla których historia metryk ma udany podgląd bez zapisu (DRY-RUN z wynikiem OK).
-
-    Nieczytelny plik metryk oznacza „nie było podglądu”.
-    """
-
     try:
         records = store.read()
     except OSError:
@@ -158,11 +138,6 @@ def previewed_periods(store: MetricsStore) -> frozenset[str]:
 
 
 def last_results(store: MetricsStore) -> dict[str, RunResult]:
-    """Wynik ostatniego Uruchomienia procesu (najpóźniejszy start) każdego okresu z historii metryk.
-
-    Nieczytelny plik metryk oznacza „nie było Uruchomień”.
-    """
-
     try:
         records = store.read()
     except OSError:

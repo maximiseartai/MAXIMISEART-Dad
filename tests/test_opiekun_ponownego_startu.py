@@ -832,3 +832,28 @@ def test_gdy_dysk_nie_przyjmie_wyniku_po_cofnieciu_startuje_stara_wersja_a_karta
     assert health["commit"] == before[:7]
     assert view == {"state": "idle"}
     assert ToolClone(clone).interrupted_update() is None
+
+
+def test_nowa_wersja_ktora_nie_odpowiedziala_opiekun_zatrzymuje_zeby_zwolnila_port_i_pliki_klonu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(restart_guardian, "START_TIMEOUT_S", 0.5)
+    started: list[subprocess.Popen[bytes]] = []
+
+    def silent(_restart: Restart) -> subprocess.Popen[bytes]:
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
+        started.append(process)
+        return process
+
+    work = tmp_path / "praca"
+    work.mkdir()
+    restart = Restart(free_port(), None, "b" * 40, tmp_path / "klon", tmp_path / RESULT_FILE, False, work)
+    try:
+        code = main(restart.arguments(), show_problem=lambda _title, _text: None, start=silent)
+        stopped = [process.poll() is not None for process in started]
+    finally:
+        for process in started:
+            process.kill()
+            process.wait()
+
+    assert (code, stopped) == (1, [True])

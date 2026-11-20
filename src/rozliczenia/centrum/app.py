@@ -1,10 +1,3 @@
-"""Aplikacja HTTP Centrum rozliczeń: API pod ``/api`` i zbudowany frontend pod ``/``.
-
-Każda grupa zasobów ma własny router; ``create_app`` składa je i zakłada straż HTTP (``http_guard``): nagłówki ``Host``
-i ``Origin`` (ADR 0004), odmowy (``Refusal``), folder okresów, którego nie da się odczytać, i nieoczekiwany wyjątek jako
-bezpieczne odpowiedzi ``Problem`` oraz czas obsługi każdej odpowiedzi API w ``Server-Timing`` (``timing``).
-"""
-
 from __future__ import annotations
 
 from collections.abc import AsyncIterator, Callable, MutableMapping
@@ -133,29 +126,6 @@ def create_app(
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
     update_threads: Threading = threading,
 ) -> FastAPI:
-    """Aplikacja jednej pracy Centrum (``CentrumWork``): części składa raz, a ich kolejność przy starcie daje ``lifespan``.
-
-    Start: najpierw zmiany Ustawień Centrum z Wydania, bo Przypomnienia o raporcie czytają Ustawienia; potem w tle
-    pierwsze pytania skrzynki o sprawy taty (Powiadomienia) i o klucz do Zgłoszeń, żeby Konfiguracja nie czekała na
-    Skrzynkę; potem kolejka wysyłek poprzedniej pracy, a dopiero po wpisie ``start`` wersje zastępcze z jej dzienników
-    Wyceny w efenix (``AFTER_START``), bo kolejka nie dostaje wysyłki przed swoim startem; na końcu Przypomnienia co
-    minutę do zamknięcia, poza Uruchomieniami (ADR 0030).
-
-    Części: Ustawienia Centrum są jedynym czytelnikiem i pisarzem swoich plików, Historii i pamięci (ADR 0032), a chwila
-    wiersza Historii to zegar ścienny, nie ``now``, które testy podają jako chwile Uruchomień. Skrzynka raportów bierze
-    dostęp od Ustawień przy każdej sesji, więc nowe hasło taty działa od następnej. Najnowsze Wydanie z GitHuba ma jedną
-    pamiętaną odpowiedź dla Konfiguracji, Powiadomień i Aktualizacji narzędzia (limit API); Diagnoza pyta za każdym
-    razem i też zapisuje odpowiedź w pamięci. Każdy start ma własny identyfikator w ``/api/health``, po którym karta
-    rozpozna nowe Centrum po Aktualizacji narzędzia.
-
-    Trasy: bez ``/docs``, ``/redoc`` i ``/openapi.json``, bo kontrakt eksportuje ``tools/ci/export_openapi.py``, a
-    Swagger ładowałby skrypty z sieci. Odmowy ``Host``/``Origin``, kolejność middleware i ``Server-Timing`` należą do
-    straży HTTP (``http_guard``). Uporządkowanie INTERMAX (ADR 0019) i Wpisanie raportów (ADR 0028) mają własne karty
-    i routery startu poza okresami; widok Raportów pokazuje też wynik ostatniego sprawdzenia Przypomnień. Wysyłka
-    rozliczeń (ADR 0040) wysyła Maile z rozliczeniem tą samą skrzynką raportów, z SMTP ``inbox_smtp`` (``None``: Gmail). Bez
-    zbudowanego frontendu działa samo API.
-    """
-
     work = CentrumWork(config=config, log=log, clock=clock, pause=pause, forbidden=empty_memory())
 
     @asynccontextmanager
@@ -174,6 +144,7 @@ def create_app(
     app = FastAPI(
         title="Centrum rozliczeń",
         version="kontrakt",
+        # ZEWNĘTRZNE: strony /docs i /redoc FastAPI ładują Swagger UI i ReDoc z sieci, z cdn.jsdelivr.net (FastAPI, fastapi/openapi/docs.py)
         docs_url=None,
         redoc_url=None,
         openapi_url=None,
@@ -193,8 +164,6 @@ def create_app(
     freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
 
     def release_origin() -> ReleaseOrigin:
-        """Wersja narzędzia tego Centrum dla wiersza Historii zmiany z Wydania: numer Wydania i skrót commitu."""
-
         commit = freshness.local()
         at_commit = None if commit is None else freshness.wydanie(commit)
         return ReleaseOrigin(
@@ -253,9 +222,6 @@ def create_app(
     )
 
     def at(start: SettingsSnapshot | None) -> SettingsSnapshot:
-        """Migawka Ustawień Centrum ze startu Uruchomienia, a bez niej (Urwane Uruchomienie) bieżąca: Logi i Diagnoza
-        wyjaśniają to Uruchomienie, nie późniejszą zmianę Ustawień (D9)."""
-
         return settings.snapshot() if start is None else start
 
     disk = LogsOnDisk(log, journaled=catalog.journaled)
@@ -359,14 +325,9 @@ def create_app(
 
 
 class _Frontend(StaticFiles):
-    """Zbudowany frontend: przeglądarka sprawdza każdy plik przy każdym użyciu (ETag), bo nazwy plików są stałe.
-
-    Bez ``Cache-Control`` przeglądarka mogłaby po Aktualizacji narzędzia brać stary ``assets/index.js`` z pamięci
-    bez pytania serwera (heurystyczna świeżość z ``Last-Modified``, RFC 9111 §4.2.2).
-    """
-
     async def get_response(self, path: str, scope: MutableMapping[str, Any]) -> Response:
         response = await super().get_response(path, scope)
+        # ZEWNĘTRZNE: plik bez Cache-Control przeglądarka bierze z pamięci bez pytania serwera, dopóki uznaje go za świeży heurystycznie z Last-Modified (RFC 9111 §4.2.2)
         response.headers["Cache-Control"] = "no-cache"
         return response
 
