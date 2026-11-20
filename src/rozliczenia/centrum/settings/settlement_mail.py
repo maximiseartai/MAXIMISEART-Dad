@@ -1,16 +1,3 @@
-"""Temat i treść Maila z rozliczeniem w pliku ``wysylka-rozliczen.yaml`` (schemat 1), Ustawienie Centrum taty (ADR 0040,
-zmienia ADR 0032).
-
-Kształt pliku sprawdza ``parse`` (mapa, schemat, znane pola, tekst), a reguły tematu i treści
-``SettlementMailSettings.of``, ta sama budowa co w Wysyłce rozliczeń. Brak pliku i pole, którego w pliku nie ma, to
-wartości domyślne (``DEFAULT_SETTLEMENT_MAIL``). Temat i treść pliku bez tych reguł (``written``) są tylko do pokazania
-w oknie Ustawień, gdy proces nie ma wartości taty, którą przyjmuje dzisiejsza reguła. Stopki ten plik nie ma: Mail z
-rozliczeniem kończy się stopką Przypomnień o raporcie, jednym podpisem taty.
-
-Klucz Historii to ``wysylka_rozliczen.<pole>``. Zgłoszenie nie podaje ich wartości, tylko że się zmieniły, bo temat i
-treść tata pisze do swoich Wykonawców (ADR 0040).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -24,8 +11,6 @@ from rozliczenia.centrum.settings.files import FieldName, FieldPath, FieldProble
 from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL, MailProblem, MailProblemKind, SettlementMailSettings
 
 SETTLEMENT_MAIL_FILE: Final = "wysylka-rozliczen.yaml"
-"""Plik tematu i treści Maila z rozliczeniem w ``config``; czyta go i pisze tylko ``rozliczenia.centrum.settings``."""
-
 SECTION: Final = "wysylka_rozliczen"
 _SCHEMA_VERSION: Final = 1
 SUBJECT: Final[FieldName] = "temat"
@@ -35,31 +20,21 @@ _KEYS: Final = (SUBJECT, TEXT)
 
 @dataclass(frozen=True)
 class WrittenMail:
-    """Temat i treść, jak stoją w pliku, bez reguł ``SettlementMailSettings.of``: tylko do pokazania w oknie Ustawień,
-    więc to inny typ niż wartość, którą liczy Wysyłka rozliczeń."""
-
     subject: str
     text: str
 
 
 def parse(data: bytes | None) -> SettlementMailSettings | FieldProblem:
-    """Temat i treść z bajtów pliku; ``None`` (brak pliku) to wartości domyślne, zła treść to pierwszy problem."""
-
     found = _written(data)
     return found if isinstance(found, FieldProblem) else settings_of(found.subject, found.text)
 
 
 def written(data: bytes | None) -> WrittenMail | None:
-    """Temat i treść pliku w stanie ``data`` bez reguł tematu i treści (brak pliku: wartości domyślne); ``None``: plik
-    nie ma kształtu pliku tematu i treści, więc nie ma czego pokazać."""
-
     found = _written(data)
     return None if isinstance(found, FieldProblem) else found
 
 
 def _written(data: bytes | None) -> WrittenMail | FieldProblem:
-    """Kształt pliku (mapa, schemat, znane pola, tekst): jedyny odczyt bajtów pliku dla ``parse`` i ``written``."""
-
     if data is None:
         return WrittenMail(DEFAULT_SETTLEMENT_MAIL.subject, DEFAULT_SETTLEMENT_MAIL.text)
     try:
@@ -85,9 +60,6 @@ def _written(data: bytes | None) -> WrittenMail | FieldProblem:
 
 
 def settings_of(subject: str, text: str) -> SettlementMailSettings | FieldProblem:
-    """``SettlementMailSettings.of`` z problemem jako polem pliku i zdaniem dla taty: ta sama reguła dla pliku i
-    formularza."""
-
     built = SettlementMailSettings.of(subject, text)
     if isinstance(built, MailProblem):
         place, sentence = _PROBLEMS[built.kind]
@@ -124,9 +96,6 @@ def diff(before: SettlementMailSettings, after: SettlementMailSettings) -> tuple
 
 
 def restore(settings: SettlementMailSettings, changes: tuple[KeyChange, ...]) -> SettlementMailSettings:
-    """``settings`` z każdym kluczem ``changes`` ustawionym na wartość sprzed zmiany; nieznany klucz zostaje bez zmian,
-    a całość sprawdza właściciel jak każdą zmianę."""
-
     restored = settings
     for change in changes:
         section, _, key = change.key.partition(".")
@@ -140,8 +109,6 @@ def restore(settings: SettlementMailSettings, changes: tuple[KeyChange, ...]) ->
 
 
 def reported(change: KeyChange) -> str:
-    """Zmiana w Zgłoszeniu samym znacznikiem zmiany: temat i treść tata pisze do Wykonawców (ADR 0040)."""
-
     return f"{change.key}: zmieniono"
 
 

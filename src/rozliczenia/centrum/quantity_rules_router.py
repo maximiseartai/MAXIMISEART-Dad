@@ -1,25 +1,3 @@
-"""Interfejs HTTP sekcji Reguły ilości i Urządzenia okna Ustawień (ADR 0033): odczyt reguł jako zdań i formularzy,
-Listy Urządzeń i kolumn, edytor reguły (dodaj, zmień, usuń), podgląd zmiany przed zapisem, edycja Listy Urządzeń (dodaj,
-zmień, usuń składnik; ``device_forms``) i jej podpowiedzi z ostatnich okresów (``device_suggestions``).
-
-Reguły i Listę Urządzeń daje właściciel Ustawień (``CentrumSettings.quantity_rules``), te same, którymi liczy następne
-Uruchomienie. Trasy tylko parsują żądanie, wołają właściciela i tłumaczą jego wynik na HTTP. Formularz odmawia z polem
-tylko tego, czego sam nie wyrazi (``rule_forms``, ``device_forms``), a każdy zapis edytora i sekcji Urządzenia idzie
-poleceniem formularza do właściciela (``CentrumSettings.change_rules``, ``change_devices``), który sam robi zmianę i
-sprawdza parę Reguł ilości i Listy Urządzeń jako zmianę, tym samym zdaniem co „Cofnij” w Historii; odmowę zapisu u dwóch
-składników trasa stawia przy polu formularza z tym zapisem. Podgląd pyta właściciela o to samo polecenie bez zapisu
-(``CentrumSettings.rules_after``).
-Zmiana albo usunięcie reguły albo składnika, którego już nie ma, to 404. Podgląd, zmiana i usunięcie reguły przy pliku
-reguł albo Folderów, którego system nie daje teraz czytać, to 409 o tym pliku (``refusal.settings_file_unreadable``,
-Foldery przez ``CentrumSettings.folders``), nie „tej reguły już nie ma” ani „brak folderu okresów”; zmiana i
-usunięcie składnika przy pliku pary bez odczytu to 409 o nim (``QuantityRulesView.rules``), nie „tego
-składnika już nie ma”.
-
-Nazwy kolumn to pozycje cennika z wiersza 17 Wzorca pliku zbiorczego z Konfiguracji, czytane tą samą drogą co jego
-Sprawdzanie; Wzorzec, którego nie da się przeczytać, daje same litery. Odczyt, podgląd i podpowiedzi niczego nie
-zapisują.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -68,9 +46,6 @@ _UNKNOWN_OR_REFUSED: dict[int | str, dict[str, object]] = {404: {"model": common
 
 
 class PriceList:
-    """Nazwy pozycji cennika z Wzorca pliku zbiorczego: jeden Wzorzec na pracę Centrum, który czyta plik od nowa tylko
-    po jego zmianie (``TemplateFile``); żądania z kilku wątków czytają go po kolei."""
-
     def __init__(self, template: Path) -> None:
         self._template = TemplateFile.collective_file(template)
         self._lock = threading.Lock()
@@ -84,14 +59,8 @@ class PriceList:
 
 
 RuleSentences = Callable[[str, str | None], list[SentencePart] | None]
-"""Zdanie reguły albo składnika z wartości klucza Historii Ustawień (``reguly.<id>``, ``urzadzenia.<id>``); ``None``: klucz
-innej sekcji albo wartość, z której nie da się odtworzyć reguły ani składnika."""
-
 
 def history_sentences(settings: CentrumSettings, price_list: PriceList) -> Callable[[], RuleSentences]:
-    """Zdania reguł i składników dla jednego odczytu Historii: składniki w regułach nazwane bieżącą Listą Urządzeń, kolumny
-    nazwami z cennika."""
-
     def reader() -> RuleSentences:
         devices = settings.quantity_rules().shown.devices
         names = price_list.names()
@@ -133,9 +102,6 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         )
 
     def proposed(edit: contract.RuleEdit) -> tuple[QuantityRules, QuantityRules, str | None]:
-        """Reguły teraz i po zmianie ``edit`` oraz id reguły, którą zmiana dodaje albo zmienia; reguły po zmianie i
-        odmowę daje właściciel tą samą drogą co zapis (``CentrumSettings.rules_after``), bez zapisu."""
-
         view = settings.quantity_rules()
         source_rules = _known_rule(edit, view)
         after = settings.rules_after(edit)
@@ -151,8 +117,6 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         return settings.quantity_rules().rules, after, rule_id
 
     def saved(edit: contract.RuleEdit) -> contract.QuantityRulesSaved:
-        """Zapis zmiany przez właściciela Ustawień: na bieżącej wartości pliku reguł, z jego sprawdzeniem pary."""
-
         _known_rule(edit, settings.quantity_rules())
         match settings.change_rules(edit):
             case Saved(change=change):
@@ -181,10 +145,6 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
         return saved(contract.RemoveRule(kind="remove", rule_id=rule_id))
 
     def device_saved(edit: DeviceEdit) -> contract.QuantityRulesSaved:
-        """Zmiana Listy Urządzeń zapisem taty właściciela Ustawień na bieżącej wartości pliku, z id nowego składnika spoza
-        kluczy Historii (jak reguła); formularz, parę z regułami i uzupełnienie listy sprawdza właściciel
-        (``CentrumSettings._dad_change``), a odmowę zapisu u dwóch składników trasa stawia przy polu z tym zapisem."""
-
         if isinstance(edit, ChangeComponent | RemoveComponent) and edit.component not in settings.quantity_rules().rules.devices.ids():
             raise refusal.device_component_unknown()
 
@@ -249,9 +209,6 @@ def quantity_rules_router(settings: CentrumSettings, price_list: PriceList, rece
 
 
 def _known_rule(edit: contract.RuleEdit, view: QuantityRulesView) -> tuple[QuantityRule, ...]:
-    """Reguły, z których liczy Centrum; 404, gdy zmiana albo usunięcie dotyczy reguły, której już w nich nie ma, a 409,
-    gdy system nie daje teraz czytać pliku reguł, więc nie wiadomo, czy ją ma."""
-
     source_rules = view.source_rules
     if isinstance(source_rules, Unreadable):
         raise refusal.settings_file_unreadable(RULES.name)
@@ -261,9 +218,6 @@ def _known_rule(edit: contract.RuleEdit, view: QuantityRulesView) -> tuple[Quant
 
 
 def _at_form_field(edit: contract.RuleEdit, problem: FieldProblem) -> FieldProblem:
-    """Odmowa właściciela zmiany reguły przy polu formularza: składnik spoza listy stoi przy polu z tym składnikiem,
-    a każda inna odmowa zostaje przy swoim miejscu."""
-
     if isinstance(problem, UnlistedComponent) and not isinstance(edit, contract.RemoveRule):
         return FieldProblem(component_field(edit.rule, problem.component), problem.sentence)
     return problem

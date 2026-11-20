@@ -1,21 +1,3 @@
-"""Podgląd zmiany Reguł ilości przed zapisem (ADR 0033): skutek na Wierszach danych ostatnich Plików zbiorczych po
-Przebiegu rozliczeń, tym samym rachunkiem co Kontrola ilości.
-
-Pliki to Pliki zbiorcze ostatnich ``RECENT`` Folderów okresu ze Statusem okresu „Rozliczenia pracowników gotowe”, od
-najnowszego okresu: te tata wypełnił i rozliczył, więc ich ilości to ilości taty. Czyta je ten sam odczyt co Uzupełnienie
-(``collective_file.read_numbered_orders`` uchwytem plików taty pracy Centrum), także gdy trzyma je Excel, a odczyt pliku
-zostaje w pamięci do zmiany jego znacznika zapisu, więc kolejne podglądy tej samej zmiany nie czytają skoroszytów od nowa.
-Plik, którego nie da się przeczytać, podgląd pomija i nazywa jego okres.
-
-Rachunek wiersza to ``quantity_check.row_check`` (ten sam liczy Kontrola ilości) dla reguł teraz i po zmianie, a liczby
-różnic to suma jego różnic na każdym pliku, więc ``differences_after`` to liczba różnic Kontroli ilości w kolumnach
-Reguł ilości, którą dałyby te pliki po zmianie; kolumnę, w którą w tym samym wierszu wpisała też Legenda czynności,
-Kontrola porównuje z sumą reguł i legendy wśród różnic legendy, a podgląd liczy ją jak różnicę reguł. Wiersz zmienia się, gdy reguły dają w nim inny rodzaj wyniku, inne ilości albo inne kolumny
-zostawione puste w Rozliczeniu pracownika. Odpowiedź ma tylko treść dozwoloną filtrem prywatności (``OrderFacts``) bez
-``UMOWA``: ``URZĄDZENIA``, ``CZYNNOŚCI``, dzień tygodnia z pełną godziną (jak grupy różnic Kontroli ilości) i ilości,
-nigdy adresu, numeru zlecenia ani daty dziennej.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
@@ -39,9 +21,7 @@ from rozliczenia.quantity_engine import QuantityRule, QuantityRules, RuleResult
 from rozliczenia.workbook_files import WorkbookError
 
 RECENT: Final = 4
-"""Tyle ostatnich Plików zbiorczych po Przebiegu rozliczeń bierze podgląd."""
 SHOWN_ROWS: Final = 50
-"""Najwyżej tyle wierszy z różnicą pokazuje podgląd; resztę tylko liczy."""
 _BUILT_IN: Final = frozenset({"P/Q", "S"})
 
 
@@ -53,15 +33,11 @@ class RecentFile:
 
 @dataclass(frozen=True)
 class Recent:
-    """Przeczytane Pliki zbiorcze od najnowszego okresu i okresy, których Pliku zbiorczego nie dało się przeczytać."""
-
     files: tuple[RecentFile, ...]
     unread: tuple[str, ...]
 
 
 class RecentCollectiveFiles:
-    """Ostatnie Pliki zbiorcze po Przebiegu rozliczeń; jeden na pracę Centrum, żądania z kilku wątków czytają po kolei."""
-
     def __init__(self, files: DadFiles) -> None:
         self._files = files
         self._lock = threading.Lock()
@@ -110,8 +86,6 @@ def _settled(periods_directory: Path) -> list[PeriodFolder]:
 
 
 Sentence = Callable[[QuantityRule], list[SentencePart]]
-"""Zdanie reguły dla taty, jak w sekcji Reguły ilości."""
-
 
 def preview(
     before: QuantityRules,
@@ -121,9 +95,6 @@ def preview(
     sentence: Sentence,
     edited: list[SentencePart] | None,
 ) -> contract.PreviewReady:
-    """Skutek zmiany reguł ``before`` → ``after`` na plikach ``recent``; ``names``: litera kolumny → nazwa pozycji
-    cennika, ``edited``: zdanie reguły po zmianie (``None`` przy usunięciu)."""
-
     changed = changed_as_tata = 0
     rows: list[contract.PreviewRow] = []
     shown_more = 0
@@ -155,8 +126,6 @@ def preview(
 
 
 def _outcome(result: RuleResult | None) -> object:
-    """Wynik reguł w wierszu tak, jak go widzi tata: rodzaj, ilości i kolumny zostawione puste."""
-
     if result is None:
         return None
     return (type(result), dict(result.quantities), result.leave_empty)
@@ -204,8 +173,6 @@ def _row(
 def _sums(
     result: RuleResult, names: Mapping[str, str], rules: Mapping[str, QuantityRule], sentence: Sentence
 ) -> list[contract.PreviewSum]:
-    """Kolumny, w które wpisało kilka reguł, z sumą i tymi regułami (US 61)."""
-
     by_column: dict[str, list[str]] = {}
     for contribution in result.contributions:
         if contribution.source not in _BUILT_IN:

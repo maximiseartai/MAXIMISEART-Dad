@@ -67,7 +67,7 @@ Urządzeń, with abstract values: `v0` (the content before the Wydanie), `r` (th
 (Dad's value), `x` (a value typed outside Centrum), `zly` (content `parse` refuses) and `d` (`file.default`). The file
 holds a content: one of these values, `brak` (no file, whose value is `d`) or `d` itself (`file.dump(file.default)`, the
 Wydanie's content written to Dad's file); `Wartosc` gives a content's value. The Zmiana
-z Wydania is declarative, as `release_changes.py` requires: it proposes „set `r`” on a good value and `Later` on bad
+z Wydania is declarative, as `tests/test_centrum_rozliczen.py::test_zmiana_z_wydania_po_utracie_pamieci_wlasciciela_biegnie_drugi_raz_bez_roznicy_i_bez_wiersza` requires of each entry of `RELEASE_CHANGES`: it proposes „set `r`” on a good value and `Later` on bad
 content, like `periods_directory_from_layout_root`. Because the owner works under one lock, its steps never interleave
 with each other; they interleave only with a hand edit of the file and with a switch-off. Each action is one read or
 write on disk; an action without disk (`Uzyj`, `Propozycja`, `Wylicz`, `NieZapisano`) changes nothing a hand edit or a
@@ -324,7 +324,7 @@ each kind; two „Cofnij” only in `brak-pliku` and in a wider run outside CI, 
 - **`replace_atomically` is atomic** and `History.append` either adds a whole line or a line `History.read` skips.
 - **The file is one value.** A file with several keys (a Lista Wykonawców with several Wykonawcy) behaves like one value
   per key; a „Cofnij” of one key while another changed is not checked.
-- **A Zmiana z Wydania is declarative**, as `release_changes.py` requires, and waits on bad content.
+- **A Zmiana z Wydania is declarative**, as `tests/test_centrum_rozliczen.py::test_zmiana_z_wydania_po_utracie_pamieci_wlasciciela_biegnie_drugi_raz_bez_roznicy_i_bez_wiersza` requires, and waits on bad content.
 - **`file.default` is one value** (`DOMYSLNA`): an Aktualizacja that changes the Wydanie's defaults between a change and
   its „Cofnij” is not modeled. `_restores_absence` does not compare with `file.default`, and the tests
   `test_cofniecie_zmiany_ktora_utworzyla_plik_po_aktualizacji_zmieniajacej_wartosci_z_wydania_usuwa_plik` and
