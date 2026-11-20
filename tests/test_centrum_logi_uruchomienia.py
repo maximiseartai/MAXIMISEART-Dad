@@ -2073,7 +2073,7 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
         finished_view(centrum.client)
     monkeypatch.delenv("PLAYWRIGHT_NODEJS_PATH", raising=False)
     if path.without_driver:
-        _close_event_loops_left_by_playwright_without_driver(loops_before)
+        _close_event_loops_playwright_without_driver_leaves_to_next_test(loops_before)
     [record] = records(centrum)
     stop, trace = record["efenix_stop"], record["trace"]
     cause = {key: value for key, value in stop["cause"].items() if value is not None}
@@ -2101,7 +2101,7 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
     assert f"; wyjątki {' ← '.join(chain)}" in shown and shown.endswith(f" w {path.window_error_raised_in}"), shown
 
 
-def _close_event_loops_left_by_playwright_without_driver(loops_before: set[asyncio.AbstractEventLoop]) -> None:
+def _close_event_loops_playwright_without_driver_leaves_to_next_test(loops_before: set[asyncio.AbstractEventLoop]) -> None:
     # ZEWNĘTRZNE: Playwright zamyka swoją pętlę zdarzeń tylko w __exit__, a błąd startu sterownika wychodzi z __enter__ (playwright/sync_api/_context_manager.py)
     for loop in _event_loops() - loops_before:
         if not loop.is_running():
