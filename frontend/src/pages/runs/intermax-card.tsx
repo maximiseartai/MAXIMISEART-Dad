@@ -8,10 +8,6 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useResource } from "@/lib/use-resource"
 import { OutsidePeriodCard } from "@/pages/runs/outside-period-card"
 
-/**
- * Karta „Uporządkuj INTERMAX” poza okresami: INTERMAX to Rejestr zleceń z Ustawień Centrum, tu pod nazwą, którą zna
- * tata.
- */
 export function IntermaxCard() {
   return (
     <OutsidePeriodCard

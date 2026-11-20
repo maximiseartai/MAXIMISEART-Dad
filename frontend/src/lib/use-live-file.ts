@@ -7,7 +7,6 @@ import { useResource, type Resource } from "@/lib/use-resource"
 // po zmianie biegnie tylko wtedy, gdy Autozapis zmienił plik.
 const POLL_MS = 3000
 
-/** Widok strony Uzupełnienia: odczyt Pliku zbiorczego z jego znacznikiem zapisu albo Komunikat ze znacznikiem. */
 export type LiveFileView =
   | { state: "ready"; read: { version: string | null; retrying: boolean } }
   | { state: "problem"; version: string | null }
@@ -64,11 +63,6 @@ async function shouldRead(token: string, watch: Watch): Promise<boolean> {
   }
 }
 
-/**
- * `useResource` dla widoku, który pokazuje Plik zbiorczy okresu na żywo (okres to pierwszy argument odczytu): gdy
- * karta jest widoczna, co POLL_MS pyta serwer o znacznik zapisu i czyta widok od nowa dopiero po jego zmianie albo
- * po nieudanym odczycie.
- */
 export function useLiveFile<Args extends readonly [string, ...ReadonlyArray<string>], T extends LiveFileView>(
   read: (...args: Args) => Promise<T>,
   args: Args,

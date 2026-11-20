@@ -8,24 +8,16 @@ export type Resource<T> =
   | { state: "ready"; data: T }
   | { state: "failed"; message: string }
 
-/** Argument odczytu: okres, rodzaj, identyfikator Uruchomienia. Razem z funkcją odczytu wyznacza, co jest „tym samym odczytem”. */
 type ReadArgument = string | null
 
 type LastRead = { data: unknown; read: number }
 
 type Read<Args extends ReadonlyArray<ReadArgument>, T> = (...args: Args) => Promise<T>
 
-/**
- * Numer plików taty, z których serwer czyta strony (folder okresów i Rejestr zleceń, bez motywu). Rośnie przy
- * wskazaniu innych plików (`SettingsProvider`); inny numer to inny odczyt każdej strony, która z nich czyta.
- */
 export const DadFilesVersion = React.createContext(0)
 
-// Kopia ostatniej odpowiedzi serwera w pamięci karty (odświeżenie karty ją czyści); źródłem Statusu okresu nadal jest
-// serwer (ADR 0004).
 const lastReads = new Map<Read<never, unknown>, Map<string, LastRead>>()
 
-// Numer każdego odczytu i każdej podmiany: kopię nadpisuje tylko nowszy, także z innej strony.
 let reads = 0
 
 function readsOf<Args extends ReadonlyArray<ReadArgument>, T>(read: Read<Args, T>): Map<string, LastRead> {
@@ -172,7 +164,6 @@ export function useResource<Args extends ReadonlyArray<ReadArgument>, T>(
     }
   }, [reload])
 
-  // Wynik akcji (np. wybór w oknie) zastępuje odczyt, który był jeszcze w drodze, także w kopii.
   const replace = React.useCallback(
     (next: Resource<T>) => {
       const request = ++reads

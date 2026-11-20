@@ -19,7 +19,6 @@ import {
 } from "@/pages/worker-reports/days"
 
 type Props = {
-  /** Dni okna z odpowiedzi serwera, od najstarszego. */
   days: ReadonlyArray<string>
   today: string
   range: DayRange
@@ -87,7 +86,6 @@ function dateOf(day: string): Date {
 
 const MONTH = new Intl.DateTimeFormat("pl-PL", { month: "long", year: "numeric" })
 
-/** Podpis miesiąca kalendarza: `Listopad 2026`. */
 function caption(month: Date): string {
   const text = MONTH.format(month)
 
@@ -98,10 +96,6 @@ function dayOf(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
 }
 
-/**
- * Kalendarz przedziału z dni okna (inne dni są wyłączone): pierwszy klik to początek, drugi koniec, a do drugiego
- * kliknięcia przedział podąża za wskaźnikiem. „Bieżące dwa tygodnie” wraca do zakresu domyślnego.
- */
 function RangeCalendar({ days, today, range, onRange }: Props) {
   const [start, setStart] = React.useState<string | null>(null)
   const [hovered, setHovered] = React.useState<string | null>(null)

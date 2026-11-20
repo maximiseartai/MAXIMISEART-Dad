@@ -10,16 +10,10 @@ const POLL_MS = 500
 const RELOADED_AFTER_UPDATE = "centrum-po-aktualizacji"
 
 type ToolUpdateContextValue = {
-  /** Aktualizacja narzędzia według serwera; `null`, dopóki nikt jej nie odczytał. */
   update: ToolUpdate | null
-  /** Komunikat ostatniego nieudanego odczytu Aktualizacji narzędzia; `null`, gdy serwer potem podał jej stan. */
   readFailure: string | null
   /** Start wysłany albo aktualizacja trwa: każdy przycisk aktualizacji jest wtedy wyłączony. */
   busy: boolean
-  /**
-   * Aktualizacja zawiodła przy ponownym starcie Centrum, a tata od wejścia na stronę nie kliknął aktualizacji.
-   * Komunikat porażki pokazuje wtedy `ToolUpdateAfterRestart`, nie przycisk.
-   */
   restarted: boolean
   start: () => void
   read: () => void
@@ -43,7 +37,6 @@ const ToolUpdateContext = React.createContext<ToolUpdateContextValue | null>(nul
 export function ToolUpdateProvider({ children }: { children: React.ReactNode }) {
   const [{ update, readFailure }, setShown] = React.useState<Shown>({ update: null, readFailure: null })
   const [clicked, setClicked] = React.useState(false)
-  // Identyfikator startu Centrum sprzed kliknięcia (`health`); inny znaczy, że działa już nowe Centrum.
   const instance = React.useRef<string | null>(null)
   const running = update?.state === "running"
   const restarted = update?.state === "failed" && update.after_restart && !clicked
