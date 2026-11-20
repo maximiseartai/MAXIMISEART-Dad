@@ -48,7 +48,7 @@
       {
         "obietnica": "WydanieNieNadpisuje",
         "przyczyna": "bez-zmian-bez-pamieci",
-        "znalezisko": "zmiana z Wydania z wynikiem „bez-zmian” (bez wiersza) i nieudanym Memory.remember_applied wraca przy następnym starcie i ustawia swoją wartość w miejsce tej, którą tata zapisał potem (granica z docstringu owner.py)"
+        "znalezisko": "zmiana z Wydania z wynikiem „bez-zmian” (bez wiersza) i nieudanym Memory.remember_applied wraca przy następnym starcie i ustawia swoją wartość w miejsce tej, którą tata zapisał potem (zamierzone: wynik bez wiersza zna tylko pamięć zmian z Wydań)"
       }
     ]
   },
@@ -105,7 +105,7 @@
       {
         "obietnica": "NieZapisanoZnaczyNie",
         "przyczyna": "przywrocenie-nieudane",
-        "znalezisko": "History.append i _put_back zawodzą przy zapisie taty: tata czyta „nie zapisano”, a plik ma jego wartość (granica z docstringu _put_back)"
+        "znalezisko": "History.append i _put_back zawodzą przy zapisie taty: tata czyta „nie zapisano”, a plik ma jego wartość (zamierzone: następny odczyt pokaże ją jako zmianę spoza Centrum)"
       }
     ]
   },
@@ -163,7 +163,7 @@
       {
         "obietnica": "LiczyZapisanym",
         "przyczyna": "pamiec-bez-odczytu",
-        "znalezisko": "Memory.read daje Unreadable, więc _compared nie porównuje: proces liczy zmianą spoza Centrum bez wiersza (zamierzone, docstring owner.py i test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pamiec_wroci)"
+        "znalezisko": "Memory.read daje Unreadable, więc _compared nie porównuje: proces liczy zmianą spoza Centrum bez wiersza (zamierzone, test_reczna_zmiana_przy_nieczytelnej_pamieci_ustawien_dostaje_wiersz_gdy_pamiec_wroci)"
       },
       {
         "obietnica": "LiczyZapisanym",
