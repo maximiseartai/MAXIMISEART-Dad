@@ -3266,6 +3266,23 @@ def test_nowy_kod_legendy_ma_id_z_pierwszego_zapisu_przed_miejscem_na_liczbe_a_z
     assert _added_code(code_form(*spellings, amount=20), used).id == identifier
 
 
+ZAPISY_BEZ_WSPOLNEJ_KOLEJNOSCI = ("murek#m", "ab#m", "Zwiazka Dluga#m")
+
+
+@pytest.mark.parametrize(
+    "spellings",
+    [
+        pytest.param(order, id="-".join(spelling.split("#")[0] for spelling in order))
+        for order in itertools.permutations(ZAPISY_BEZ_WSPOLNEJ_KOLEJNOSCI)
+    ],
+)
+def test_id_nowego_kodu_z_kilku_zapisow_to_id_samego_pierwszego_w_kazdej_kolejnosci_wpisania(spellings: tuple[str, ...]) -> None:
+    alone = {spelling: _added_code(code_form(spelling, amount=20), frozenset()).id for spelling in spellings}
+
+    assert len(set(alone.values())) == len(spellings), alone
+    assert _added_code(code_form(*spellings, amount=20), frozenset()).id == alone[spellings[0]]
+
+
 def test_powtorzony_i_pusty_zapis_formularza_kodu_odpadaja_a_kod_ma_jeden_zapis() -> None:
     added = _added_code(code_form("listwa#m", "", "Listwa #m", amount=20), frozenset())
 
