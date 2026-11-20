@@ -253,7 +253,7 @@ def _zapisy(
 PRZEZYLO = (1, "MUTACJE ZMIANY FAIL | przeżyło 2 | mutacje=4 | wyjątki=0 | innego systemu=0")
 OK = (0, "MUTACJE ZMIANY OK | mutacje=3 | wyjątki=0 | innego systemu=0")
 RADA_WASKIEGO_WEZLA = "sprawdź ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest w `polecenie` jej wpisu"
-BEZ_POMINIETYCH = "MUTACJE NOCNE BEZ ISSUE | poza src/ i frontend/ mutacje 0, pliki 0 | ponad limit 5 issues na noc mutacje 0, pliki 0"
+BEZ_POMINIETYCH = "MUTACJE NOCNE BEZ ISSUE | ponad limit 5 issues na noc mutacje 0, pliki 0"
 
 
 def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_drugi_przebieg_niczego_nie_dubluje(
@@ -326,7 +326,7 @@ def test_przezyta_mutacja_trafia_do_issue_pr_ktory_ostatni_zmienil_jej_linie_a_d
     assert drugie_wyjscie.splitlines() == ["MUTACJE NOCNE | nic nowego do zgłoszenia", BEZ_POMINIETYCH, "MUTACJE NOCNE OK | części 3 | przeżyło 8"]
 
 
-def test_issue_dostaja_tylko_mutacje_kodu_produktu_najwyzej_limit_pr_z_najwiecej_przezytymi_a_reszta_trafia_do_linii_bez_issue(
+def test_issue_dostaje_najwyzej_limit_pr_z_najwiecej_przezytymi_takze_w_tools_a_reszta_trafia_do_linii_bez_issue(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     repo = mutation_repository(tmp_path / "repo", {"src/a.py": "a = 1\nb = 2\nc = 3\n", "tools/b.py": "x = 1\n"})
@@ -347,10 +347,8 @@ def test_issue_dostaja_tylko_mutacje_kodu_produktu_najwyzej_limit_pr_z_najwiecej
 
     wyjscie = capsys.readouterr().out.splitlines()
     assert kod == 0, wyjscie
-    assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #13", "Przeżyte mutacje z #12"]
-    assert wyjscie[-2] == (
-        "MUTACJE NOCNE BEZ ISSUE | poza src/ i frontend/ mutacje 3, pliki 1: tools/b.py (3) | ponad limit 2 issues na noc mutacje 3, pliki 1: src/a.py (3)"
-    )
+    assert [issue["title"] for issue in github.issues] == ["Przeżyte mutacje z #14", "Przeżyte mutacje z #13"]
+    assert wyjscie[-2] == "MUTACJE NOCNE BEZ ISSUE | ponad limit 2 issues na noc mutacje 5, pliki 1: src/a.py (5)"
 
 
 def test_czesc_bez_zapisu_z_uszkodzonym_zapisem_albo_z_porazka_bez_przezytych_czerwieni_przebieg_po_zgloszeniu_reszty(

@@ -86,7 +86,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   ``WYSTĄPIENIE``), a na końcu liczbę issues z wystąpieniem i bez; linię nocy i odpowiedź rozpoznaje ``rdzen``, ten sam,
   po którym noc nie zgłasza linii drugi raz. Woła go krok 1 skilla polowania.
 - ``zglos`` czyta zapisy części. Każdą przeżytą mutację, mutację bez werdyktu po limicie czasu części i mutację, której
-  testy w ostatnim przebiegu przekroczyły limit czasu mutacji, w pliku kodu produktu (``PRODUKT``) przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
+  testy w ostatnim przebiegu przekroczyły limit czasu mutacji, przypisuje PR-owi, który ostatni zmienił jej linie: zmienione
   linie, które mutacja psuje, a nie linię jej nazwy, bo nazwę daje początek węzła, a w wielowierszowym ``if (`` zmienia
   się często tylko linia w środku. ``git blame`` tych linii daje commity nocy, bo to linie zmienione od bazy, a z nich
   liczy się ten, który linia pierwszych rodziców HEAD wniosła ostatni. Numer PR podaje temat commitu tej linii, który go wniósł
@@ -101,7 +101,7 @@ Workflow ``mutacje-nocne.yml`` biegnie raz na dobę na ``main`` i ręcznie (``wo
   Mutacji, której klucz issue już ma w treści albo komentarzu, nie dostaje drugi raz; nowe idą do istniejącego issue
   komentarzem, a zamknięte issue z nowymi wraca otwarte z ``ready-for-agent``. Noc zakłada albo komentuje issue
   najwyżej ``ISSUES_NA_NOC`` PR-ów, od PR-u z najwięcej nowymi przeżytymi mutacjami, a przy równej liczbie z najwięcej
-  nowymi mutacjami. Mutacje spoza ``PRODUKT`` (``tools/``) i nowe mutacje PR-ów ponad limit nie dostają issue, a linia
+  nowymi mutacjami. Nowe mutacje PR-ów ponad limit nie dostają issue, a linia
   ``MUTACJE NOCNE BEZ ISSUE`` podaje ich liczbę i pliki z liczbą mutacji każdego; noc ich nie powtarza, bo baza
   przechodzi za nie.
   Część bez zapisu albo z kodem wyjścia spoza ``mutacje_zmiany.KODY_Z_WYNIKIEM`` (testy padają albo nie kończą się
@@ -165,7 +165,6 @@ BEZ_CZASOW = czasy_ci.KosztyPlikow({})
 GITHUB = GhApi()
 OKNO = timedelta(hours=24)
 ETYKIETY = ("ready-for-agent", "przezyte-mutacje")
-PRODUKT = ("src/", "frontend/")
 ISSUES_NA_NOC = 5
 # Artefakt części k w mutacje-nocne.yml: ``mutacje-nocne-<k>`` z plikiem ``--zapis`` narzędzia mutacji.
 ARTEFAKT = "mutacje-nocne-"
@@ -899,8 +898,7 @@ def _uzupelnij(issue: dict[str, Any], tresc: str) -> Skomentuj:
 
 def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: str, plan_skilli: plan_runu.Plan | None = None) -> int:
     przezyte, problemy = zapisy(katalog, liczba)
-    poza_produktem = [mutacja for mutacja in przezyte if not mutacja.plik.startswith(PRODUKT)]
-    zgloszone, ponad_limit = akcje(github, przypisz(github, root, od, [mutacja for mutacja in przezyte if mutacja.plik.startswith(PRODUKT)]), run)
+    zgloszone, ponad_limit = akcje(github, przypisz(github, root, od, przezyte), run)
     linie = wykonaj_akcje(github, zgloszone, PREFIKS)
     padly: list[str] = []
     blisko: list[tuple[str, NearLimit]] = []
@@ -910,7 +908,7 @@ def zglos(github: GitHub, root: Path, od: str, katalog: Path, liczba: int, run: 
         problemy += problemy_skilli + bez_pr
         linie += wykonaj_akcje(github, akcje_skryptow(github, przypisane, run), PREFIKS)
     print("\n".join(linie) or "MUTACJE NOCNE | nic nowego do zgłoszenia")
-    print(f"MUTACJE NOCNE BEZ ISSUE | poza {' i '.join(PRODUKT)} {_bez_issue(poza_produktem)} | ponad limit {ISSUES_NA_NOC} issues na noc {_bez_issue(ponad_limit)}")
+    print(f"MUTACJE NOCNE BEZ ISSUE | ponad limit {ISSUES_NA_NOC} issues na noc {_bez_issue(ponad_limit)}")
     if problemy:
         print(f"MUTACJE NOCNE FAIL | {'; '.join(problemy)}")
         return 1

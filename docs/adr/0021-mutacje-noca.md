@@ -20,6 +20,7 @@ Zmieniona 16.11 (cel Maksa 16.11: noc ma zajmować mniej godzin runnera i kończ
 Zmieniona 16.11 (cel Maksa 16.11: noc ma zużywać godziny runnera na nową pracę, a nie powtarzać starej): noc po czerwonej z tą samą bazą nie mutuje drugi raz mutacji, którym części czerwonego runu dały werdykt bez issue (sekcje Decyzja, Konsekwencje i Odrzucone warianty).
 Zmieniona 19.11 (#2282, bieg retro 19.11 w trybie auto Maksa): odczyt każdej nocy liczy sam workflow nocy i zapisuje go w jednym issue z progiem zamiast zadań T3 (sekcja Decyzja).
 Zmieniona 20.11 (#2347, ticket zatwierdzony przez Maksa 20.11): issue dostają tylko mutacje w `src/` i `frontend/`, najwyżej 5 PR-ów na noc, a reszta przeżytych idzie tylko do logu zgłoszenia (sekcje Decyzja i Konsekwencje).
+Zmieniona znowu 20.11, na prośbę Maksa, który teraz celowo ulepsza proces i repo dla agentów: filtr ścieżek cofnięty, więc issue dostają znowu także mutacje w `tools/`, a limit 5 PR-ów na noc zostaje (sekcje Decyzja i Konsekwencje).
 
 ## Kontekst
 
@@ -81,9 +82,10 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
   Mutacja należy do zakresu, gdy którąś z jej linii ostatni zmienił (`git blame --first-parent`) commit, który `do` zawiera, a plan i części liczą listę mutacji od bazy, zakres do `do` i podział na części jedną klasą, `ZakresMutacji` w `tools/mutacje_zmiany.py`.
   Przebieg biegnie na HEAD `main`, więc mutuje dzisiejszy kod, a linie zmienione po `do` mutuje następna noc, której bazą jest `do`; linia zmieniona przed `do` i jeszcze raz po nim wchodzi do obu.
   Plan pisze, ile mutacji czeka na następne noce (`MUTACJE NOCNE | zaległość:`).
-- Przeżyta mutacja w `src/` albo `frontend/` (`PRODUKT` w `tools/mutacje_nocne.py`) trafia do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił zmienione linie, które ona psuje (`git blame` na `main`, commit scalenia, a bez numeru w jego temacie API GitHuba).
-  Noc zakłada albo komentuje takie issue najwyżej 5 PR-om (`ISSUES_NA_NOC`), od PR-u z najwięcej nowymi przeżytymi mutacjami; przeżyte mutacje w `tools/` i nowe mutacje PR-ów ponad limit idą tylko do linii `MUTACJE NOCNE BEZ ISSUE` logu zgłoszenia, z liczbą i plikami, i nie wracają w następnej nocy.
+- Przeżyta mutacja trafia do issue `Przeżyte mutacje z #N` z etykietą `ready-for-agent` PR-u, który ostatni zmienił zmienione linie, które ona psuje (`git blame` na `main`, commit scalenia, a bez numeru w jego temacie API GitHuba).
+  Noc zakłada albo komentuje takie issue najwyżej 5 PR-om (`ISSUES_NA_NOC`), od PR-u z najwięcej nowymi przeżytymi mutacjami; nowe mutacje PR-ów ponad limit idą tylko do linii `MUTACJE NOCNE BEZ ISSUE` logu zgłoszenia, z liczbą i plikami, i nie wracają w następnej nocy.
   W oknie 25.10–19.11 z issues nocy powstało 95 scalonych PR-ów (ok. 21 h agentów na tydzień), a tylko jedno z ok. 210 issues doprowadziło do naprawy błędu produktu (#786); w nocach 13–19.11 issues z mutacją w `src/` dostawało 1–18 PR-ów na noc (mediana 10).
+  Filtr ścieżek, który zostawiał bez issue mutacje w `tools/`, cofnięty tego samego dnia: w nocach 18–20.11 NIEWYKRYTA w `tools/` było 70, 28 i 33, a w `src/` i `frontend/` 53, 27 i 11, więc filtr odcinał ponad połowę prawdziwych luk w testach, a takie luki w narzędziach i skillach to praca, której Maks teraz chce; limit 5 PR-ów na noc wystarcza, by ograniczyć pracę agentów.
   Jedno issue na PR, a ta sama mutacja nie trafia do niego drugi raz, także gdy jej linie się przesuną: porównuje się klucz z pliku i zmienionego kodu, bez numerów linii.
   Issue naprawia agent testem, który zabija mutację, albo linią `MUTACJA <id> | nie warto, bo <powód>`.
 - Mutacja, której ostatni przebieg testów skończył się `PRZEKROCZONY CZAS` (`--limit-s`, 900 s), a której nie wykryła brama typów, trafia do issue PR-u z dopiskiem `przekroczony czas testów, bez werdyktu` i radą, by sprawdzić ją `tools/mutacje.py --plik` z jednym wąskim węzłem pytest na mutację (#1339).
@@ -161,7 +163,7 @@ Defekt produktu łapie podstawa `ci:`, którą skrypt mutacji uruchamia bez muta
 
 ## Konsekwencje
 
-- Luka w testach `src/` i `frontend/` PR wychodzi najpóźniej następnego dnia, w issue jego PR, a nie przed merge'em, gdy PR jest wśród 5 z najwięcej nowymi przeżytymi mutacjami nocy; lukę w `tools/` i lukę PR-u ponad limit widać tylko w logu zgłoszenia tej nocy.
+- Luka w testach PR wychodzi najpóźniej następnego dnia, w issue jego PR, a nie przed merge'em, gdy PR jest wśród 5 z najwięcej nowymi przeżytymi mutacjami nocy; lukę PR-u ponad limit widać tylko w logu zgłoszenia tej nocy.
   PR, który by ją zamknął, jest osobną pracą z kolejki `ready-for-agent`.
 - Recenzent nie omawia już mutacji w `PASS`, a przegląd PR kończy się razem z bramką.
 - PR, który osłabia sprawdzenie skilla tak, że jego mutacja przeżywa, pokaże dopiero noc, która przypisze porażkę do issue jego PR (od Z1, 13.11, pełne CI `main` już tego nie pokazuje).
