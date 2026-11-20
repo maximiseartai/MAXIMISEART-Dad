@@ -61,7 +61,13 @@ Polecenie tworzy skrót „Centrum rozliczeń” na pulpicie i w folderze Autost
 Windows, więc Centrum startuje samo po zalogowaniu taty, bez otwierania karty
 (zob. [Centrum rozliczeń](#centrum-rozliczeń-rozwój)). Powtórz je po
 przeniesieniu folderu narzędzia albo po instalacji nowego Pythona: nadpisuje
-oba skróty, nie dokłada nowych. Tata pracuje wyłącznie w
+oba skróty, nie dokłada nowych. Na laptopie Andrzeja, pracownika biura taty,
+Maks uruchamia raz `py -3 install_centrum_shortcut.py --stanowisko andrzej`:
+polecenie zapisuje Stanowisko Andrzeja w `config\stanowisko.txt` i tworzy sam
+skrót na pulpicie, bez Autostartu, a Centrum tego komputera ma tylko
+Uporządkowanie INTERMAX z Kopiami INTERMAX i startuje bez Wzorców w `config\`
+([ADR 0045](docs/adr/0045-stanowisko-andrzeja-w-tym-samym-centrum.md)).
+Ponowne polecenie bez `--stanowisko` zostawia zapisane Stanowisko. Tata pracuje wyłącznie w
 Centrum rozliczeń ([ADR 0010](docs/adr/0010-centrum-jedynym-wejsciem-taty.md)).
 Osoba utrzymująca narzędzie, testy E2E i pomiary czasu uruchamiają procesy
 [skryptem dla maszyn](#skrypt-dla-maszyn)

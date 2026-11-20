@@ -50,7 +50,7 @@ const AUTOSTART = "Uruchamiaj Centrum razem z Windows"
 function Autostart() {
   const { settings, switchAutostart, autostartPending } = useSettings()
 
-  if (settings.state !== "ready") {
+  if (settings.state !== "ready" || settings.data.autostart === null) {
     return null
   }
 
