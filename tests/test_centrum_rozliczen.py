@@ -92,7 +92,7 @@ from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL, SETTLE
 from rozliczenia.centrum.mailing_messages import mail_refused, mailbox_unreachable, sent_unread
 from rozliczenia.centrum.settings.workers import WORKERS, WORKERS_FILE
 from rozliczenia.centrum.tool_freshness import ToolFreshness
-from rozliczenia.worker_list import UnmatchedLogin, WorkerEntry, WorkerList
+from rozliczenia.worker_list import AddressesNotMoved, UnmatchedLogin, WorkerEntry, WorkerList
 from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE, ImapInbox, InboxUnreachable, MailRefused, SentAttachment
 from rozliczenia.worker_reports import Login, SenderAddress
 from rozliczenia.centrum.settings import quantity_rules as settings_quantity_rules
@@ -5245,6 +5245,18 @@ LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS = "kamil.wyciek", "Kamil Wyciek", "kam
             id="login-zamiast-listy",
         ),
         pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}, 7]}}\n",
+            "wykonawcy[0].loginy[1]",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "loginy", 1), settings_messages.MAKS_FIXES),
+            id="liczba-w-liscie-loginow",
+        ),
+        pytest.param(
+            f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], adresy: [{LEAKED_ADDRESS}, null]}}\n",
+            "wykonawcy[0].adresy[1]",
+            settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "adresy", 1), settings_messages.MAKS_FIXES),
+            id="pusta-wartosc-w-liscie-adresow",
+        ),
+        pytest.param(
             f"wykonawcy:\n  - {{nazwa: {LEAKED_NAME}, loginy: [{LEAKED_LOGIN}], aktywny: {LEAKED_NAME}}}\n",
             "wykonawcy[0].aktywny",
             settings_messages.bad_field(WORKERS_FILE, FieldPath("wykonawcy", 0, "aktywny"), settings_messages.MAKS_FIXES),
@@ -6142,6 +6154,109 @@ def test_kazda_zmiana_wykonawcy_ma_wiersz_historii_a_zgloszenie_nie_ma_loginu_na
     seen = {"Zgłoszenie": report, "Logi Centrum": centrum_.tool.log_path.read_text(encoding="utf-8")}
     leaks = [(where, secret) for where, text in seen.items() for secret in (LEAKED_LOGIN, LEAKED_NAME, LEAKED_ADDRESS) if secret in text]
     assert leaks == []
+
+def test_zmiana_listy_spoza_centrum_paruje_wpisy_po_wspolnym_loginie_w_kolejnosci_listy_a_usuniety_wpis_ma_klucz_na_koncu(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    write_worker_list(
+        app.tool.worker_list,
+        worker_list({"jan.testowy": "Jan Testowy", "anna.przyklad": "Anna Przykład", "piotr.usuniety": "Piotr Usunięty"}),
+    )
+    app.client.get("/api/settings")
+    changed = WorkerList.of(
+        [
+            WorkerEntry(["anna.nowa", "anna.przyklad"], "Anna Przykład", ()),
+            WorkerEntry(["jan.testowy", "jan.drugi"], "Jan Testowy", ()),
+        ]
+    )
+    assert isinstance(changed, WorkerList), changed
+    write_worker_list(app.tool.worker_list, changed)
+
+    [row] = [row for row in history_rows(app) if row["file"] == WORKERS_FILE]
+
+    assert [(change["key"], change["before"] is None, change["after"] is None) for change in row["changes"]] == [
+        ("wykonawcy[anna.przyklad]", False, False),
+        ("wykonawcy[jan.testowy]", False, False),
+        ("wykonawcy[piotr.usuniety]", False, True),
+    ]
+
+
+def test_dodany_wykonawca_staje_na_koncu_cofniety_wpis_wraca_na_miejsce_wpisu_ze_wspolnym_loginem_a_usuniety_na_koniec(
+    tmp_path: Path,
+) -> None:
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    start = list(listed_workers(client))
+    client.post(WORKERS_API, json=worker_form(["pierwszy.nowy"], "Pierwszy Nowy"))
+    client.post(WORKERS_API, json=worker_form(["drugi.nowy"], "Drugi Nowy"))
+    after_add = list(listed_workers(client))
+    second_login = client.put(f"{WORKERS_API}/pierwszy.nowy", json=worker_form(["pierwszy.nowy", "pierwszy.drugi"], "Pierwszy Nowy"))
+    after_second_login = list(listed_workers(client))
+    client.put(f"{WORKERS_API}/pierwszy.nowy", json=worker_form(["pierwszy.drugi"], "Pierwszy Nowy"))
+    second_login_undone = client.post(f"/api/settings/history/{second_login.json()['change']}/undo")
+    after_undo = listed_workers(client)
+    removed = client.delete(f"{WORKERS_API}/pierwszy.nowy")
+    removal_undone = client.post(f"/api/settings/history/{removed.json()['change']}/undo")
+
+    assert [answer.status_code for answer in (second_login, second_login_undone, removed, removal_undone)] == [200] * 4
+    assert after_add == after_second_login == [*start, "pierwszy.nowy", "drugi.nowy"]
+    assert list(after_undo) == after_add
+    assert after_undo["pierwszy.nowy"]["logins"] == ["pierwszy.nowy"]
+    assert list(listed_workers(client)) == [*start, "drugi.nowy", "pierwszy.nowy"]
+
+
+def test_zmiana_wczesniejszego_wykonawcy_na_adres_albo_plik_pozniejszego_to_odmowa_przy_polu_formularza(tmp_path: Path) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["pozniejszy.nowy"], "Późniejszy Nowy", [OBCY]))
+    client.post(WORKERS_API, json=worker_form(["ostatni.nowy"], "Ostatni Nowy"))
+    first, *_ = listed_workers(client).values()
+    saved = centrum_.tool.worker_list.read_bytes()
+
+    same_address = client.put(f"{WORKERS_API}/{first['logins'][0]}", json=worker_form(first["logins"], first["name"], [OBCY]))
+    same_file = client.put(f"{WORKERS_API}/{first['logins'][0]}", json=worker_form(first["logins"], "późniejszy  NOWY"))
+
+    assert (same_address.status_code, same_address.json()) == (
+        422,
+        {"message": settings_messages.worker_address_repeated(), "field": "adresy[0]"},
+    )
+    assert (same_file.status_code, same_file.json()) == (422, {"message": settings_messages.worker_same_file(), "field": "nazwa"})
+    assert centrum_.tool.worker_list.read_bytes() == saved
+
+
+def test_przelacznik_wykonawcy_zmienia_tylko_podany_przelacznik_a_login_w_adresie_ma_dowolna_wielkosc_liter(
+    tmp_path: Path,
+) -> None:
+    centrum_ = settling_centrum(tmp_path)
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["bartek.nowy"], "Bartek Nowy"))
+
+    switched = client.put(f"{WORKERS_API}/Bartek.Nowy/switches", json={"active": False})
+
+    assert switched.status_code == 200, switched.json()
+    assert {name: listed_workers(client)["bartek.nowy"][name] for name in ("active", "reminders")} == {
+        "active": False,
+        "reminders": True,
+    }
+
+
+def test_dodanie_wykonawcy_z_loginem_sprawy_login_bez_wykonawcy_zamyka_te_sprawe_a_inne_sprawy_zostaja(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+    not_moved = AddressesNotMoved(settings_messages.addresses_not_moved(OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy"))
+    address = SenderAddress.of(OBCY)
+    assert address is not None
+    waiting = WorkerList.of([], [UnmatchedLogin(Login("obcy.login"), (address,)), not_moved])
+    assert isinstance(waiting, WorkerList), waiting
+    write_worker_list(app.tool.worker_list, waiting)
+    app.client.get("/api/settings")
+
+    added = app.client.post(WORKERS_API, json=worker_form(["Obcy.Login"], "Obcy Nadawca", [OBCY]))
+
+    assert added.status_code == 200, added.json()
+    assert app.client.get("/api/settings").json()["workers"]["unresolved"] == [
+        {"reason": "adresy_nieprzeniesione", "message": not_moved.sentence}
+    ]
 
 
 def bad_periods_directory(_inputs: ReleaseInputs[FolderSettings]) -> Edit[FolderSettings]:
