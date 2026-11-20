@@ -205,8 +205,6 @@ def test_komorka_wpisana_w_luke_wiersza_staje_miedzy_sasiadami_w_kolejnosci_kolu
 
 
 def _cell_references(sheet: bytes, row: int) -> list[str]:
-    """Adresy komórek wiersza ``row`` w kolejności w XML arkusza."""
-
     [row_xml] = re.findall(rb'<row r="%d"[ >].*?</row>' % row, sheet, flags=re.S)
     return [reference.decode() for reference in re.findall(rb'<c r="([A-Z]+\d+)"', row_xml)]
 
@@ -535,8 +533,6 @@ def test_dowolne_przeniesienia_w_dniu_daja_uklad_uporzadkowania(day: tuple[tuple
 
 
 def _ordered_rows(ordered: Sequence[tuple[str, int]]) -> list[tuple[str, int | None]]:
-    """Wiersze uporządkowanego dnia atrapy od wiersza 2: zlecenia z pustym wierszem (numer ``None``) między Wykonawcami."""
-
     rows: list[tuple[str, int | None]] = []
     for index, (worker, number) in enumerate(ordered):
         if index and ordered[index - 1][0] != worker:
@@ -1043,8 +1039,6 @@ def test_inny_wiersz_dopisanego_zlecenia_w_odczycie_kontrolnym_nie_podmienia_int
 
 
 def _history_of(path: Path, number: int) -> tuple[str | None, tuple[object, ...]]:
-    """Wypełnienie kolumny A i wartości od kolumny za ``UWAGI`` wiersza zlecenia ``number`` (``NUMER ZL.``)."""
-
     sheet = load_workbook(path)[ORDER_SHEET]
     row = next(row for row in range(2, sheet.max_row + 1) if sheet.cell(row, NUMBER).value == number)
     mark = sheet.cell(row, 1).fill

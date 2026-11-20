@@ -12,10 +12,23 @@ import subprocess
 import sys
 
 from rozliczenia.call_trace import exception_type
+from rozliczenia.centrum import start_problems
 from rozliczenia.centrum.platform import NO_AUTOSTART, Autostart, AutostartState, ConsoleRun, run_console_program
+from rozliczenia.centrum.scope import (
+    ALWAYS,
+    CentrumFunction,
+    Part,
+    Scope,
+    SCOPES,
+    UnknownWorkstation,
+    WORKSTATION_FILE,
+    Workstation,
+    workstation_scope,
+    write_workstation,
+)
 from rozliczenia.file_state import file_state
 from rozliczenia.message import refer_if
-from rozliczenia.tool_files import NO_BROWSER_FLAG, TOOL_ROOT, centrum_script
+from rozliczenia.tool_files import CONFIG_DIR, NO_BROWSER_FLAG, TOOL_ROOT, centrum_script
 
 SHORTCUT_NAME = "Centrum rozliczeń"
 SHORTCUT_FILE = f"{SHORTCUT_NAME}.lnk"
@@ -43,11 +56,15 @@ def _written_file(folder: Path) -> Path:
 class Shortcut:
     folder: Folder
     arguments: tuple[str, ...]
+    part: Part
 
 
 def shortcuts(root: Path) -> tuple[Shortcut, ...]:
     script = str(centrum_script(root))
-    return (Shortcut(Folder.DESKTOP, (script,)), Shortcut(Folder.STARTUP, (script, NO_BROWSER_FLAG)))
+    return (
+        Shortcut(Folder.DESKTOP, (script,), ALWAYS),
+        Shortcut(Folder.STARTUP, (script, NO_BROWSER_FLAG), CentrumFunction.AUTOSTART),
+    )
 
 
 _WHERE = {Folder.DESKTOP: "pulpit tego komputera", Folder.STARTUP: "folder Autostart tego komputera"}
@@ -92,15 +109,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=Path,
         help="Folder skrótu z Autostartu; domyślnie folder Autostart Windows (shell:startup).",
     )
+    parser.add_argument(
+        "--stanowisko",
+        choices=[workstation.value for workstation in Workstation],
+        help=(
+            f"Stanowisko tego komputera, zapisane w config/{WORKSTATION_FILE}; bez parametru zostaje zapisane "
+            "wcześniej, a komputer bez zapisanego ma Stanowisko taty. Stanowisko bez autostartu nie dostaje skrótu w "
+            "Autostarcie."
+        ),
+    )
     args = parser.parse_args(argv)
     if sys.platform != "win32":
         print("Skrót „Centrum rozliczeń” powstaje tylko na Windows. Przy rozwoju uruchom: python run_centrum.py")
         return 1
     else:
-        return _create(args.folder, args.folder_autostartu)
+        workstation = None if args.stanowisko is None else Workstation(args.stanowisko)
+        return _create(args.folder, args.folder_autostartu, workstation)
 
 
-def _create(desktop: Path | None, startup: Path | None) -> int:
+def _create(desktop: Path | None, startup: Path | None, workstation: Workstation | None) -> int:
     windowless_python = _windowless_python()
     if file_state(windowless_python) != "file":
         print(
@@ -109,8 +136,12 @@ def _create(desktop: Path | None, startup: Path | None) -> int:
             "Co zrobić: Zainstaluj Python ze strony python.org i uruchom ten krok ponownie."
         )
         return 1
+    scope = _installed_scope(workstation)
+    if isinstance(scope, UnknownWorkstation):
+        print(start_problems.unknown_workstation(scope.file).text)
+        return 1
     chosen = {Folder.DESKTOP: desktop, Folder.STARTUP: startup}
-    for shortcut in shortcuts(TOOL_ROOT):
+    for shortcut in (shortcut for shortcut in shortcuts(TOOL_ROOT) if scope.covers(shortcut.part)):
         try:
             path = _write(shortcut, windowless_python, chosen[shortcut.folder], run_console_program)
         except OSError as failure:
@@ -123,6 +154,13 @@ def _create(desktop: Path | None, startup: Path | None) -> int:
             return 1
         print(f"{_CREATED[shortcut.folder]}: {path}")
     return 0
+
+
+def _installed_scope(workstation: Workstation | None) -> Scope | UnknownWorkstation:
+    if workstation is None:
+        return workstation_scope(CONFIG_DIR)
+    print(f"Zapisano Stanowisko tego komputera: {write_workstation(CONFIG_DIR, workstation)}")
+    return SCOPES[workstation]
 
 
 def _windowless_python() -> Path:

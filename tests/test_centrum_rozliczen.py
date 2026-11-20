@@ -60,7 +60,7 @@ from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.report_reminders import REMINDERS_THREAD, MinuteRhythm
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
-from rozliczenia.centrum.scope import CentrumFunction, Scope, Workstation
+from rozliczenia.centrum.scope import SCOPES, CentrumFunction, Scope, Workstation
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
@@ -70,7 +70,9 @@ from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem, settings_yaml
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
+from rozliczenia.centrum.settings.autostart import AUTOSTART
 from rozliczenia.centrum.settings.history import HISTORY_FILE, ByDad, History, HistoryRow, RowChange
+from rozliczenia.centrum.settings.inbox import INBOX
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Memory, Remembered, settings_bytes
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
@@ -161,6 +163,7 @@ from tests.fixtures.centrum_processes import (
     write_dad_quantity_rules,
 )
 from tests.fixtures.linie_watkow import new_line
+from tests.fixtures.slad_plikow import tracing
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.tool_clone import tool_repository
 from tests.fixtures.znane_luki import assert_znane_luki, modul, ruff_i_mypy, wymaga_ruff_i_mypy, zapisz
@@ -406,7 +409,40 @@ TRASY_FUNKCJI: Final[Mapping[str, frozenset[str]]] = {
 
 WSZYSTKIE_TRASY: Final = STALE_CZESCI.union(*TRASY_FUNKCJI.values())
 
-BEZ_TRASY: Final = ({"detail": "Not Found"}, {"detail": "Method Not Allowed"})
+NIE_MA_TRASY: Final = (404, {"detail": "Not Found"})
+
+ZAKRES_ANDRZEJA: Final = ("intermax", "intermax_copies")
+
+TRASY_ANDRZEJA: Final = STALE_CZESCI.union(*(TRASY_FUNKCJI[funkcja] for funkcja in ZAKRES_ANDRZEJA))
+
+ODCZYTY_ANDRZEJA: Final = (
+    "/api/health",
+    "/api/scope",
+    "/api/settings",
+    "/api/settings/history",
+    "/api/runs/current",
+    "/api/notifications",
+    "/api/dad-notes/runs",
+    "/api/configuration",
+    "/api/tool-update",
+    "/api/intermax",
+    "/api/intermax/days",
+    "/api/intermax/copies",
+)
+
+USTAWIENIA_SPOZA_ZAKRESU_ANDRZEJA: Final = ("workers", "inbox", "inbox_problem", "autostart", "reminders", "settlement_mail")
+
+PLIKI_USTAWIEN_SPOZA_ZAKRESU_ANDRZEJA: Final = (
+    WORKERS_FILE,
+    REMINDERS_FILE,
+    SETTLEMENT_MAIL_FILE,
+    AUTOSTART.name,
+    DEVICES_FILE,
+    RULES_FILE,
+    EXCEPTIONS_FILE,
+    LEGEND_FILE,
+    INBOX.name,
+)
 
 
 def _trasy(app: FastAPI) -> frozenset[str]:
@@ -427,6 +463,11 @@ def _adres(trasa: str) -> tuple[str, str]:
     return method, re.sub(r"\{[^}]+\}", "x", path)
 
 
+def _odpowiedz(client: TestClient, trasa: str) -> tuple[int, Any]:
+    response = client.request(*_adres(trasa))
+    return response.status_code, response.json()
+
+
 def test_centrum_taty_ma_kazda_funkcje_a_jego_trasy_to_trasy_wszystkich_funkcji_i_stalych_czesci(tmp_path: Path) -> None:
     app = centrum_app(ToolDirectory(tmp_path))
     client = CentrumClient(app)
@@ -443,10 +484,10 @@ def test_centrum_bez_funkcji_nie_ma_zadnej_jej_trasy_a_ma_trasy_pozostalych_funk
     client = CentrumClient(app)
 
     functions = client.get("/api/scope").json()["functions"]
-    answered = {trasa: client.request(*_adres(trasa)).json() for trasa in TRASY_FUNKCJI[funkcja]}
+    answered = {trasa: _odpowiedz(client, trasa) for trasa in TRASY_FUNKCJI[funkcja]}
 
     assert (sorted(functions), _trasy(app)) == (sorted(others), WSZYSTKIE_TRASY - TRASY_FUNKCJI[funkcja])
-    assert {trasa: answer for trasa, answer in answered.items() if answer not in BEZ_TRASY} == {}
+    assert {trasa: answer for trasa, answer in answered.items() if answer != NIE_MA_TRASY} == {}
 
 
 def test_centrum_bez_zadnej_funkcji_ma_tylko_stale_czesci_i_nie_sprawdza_przypomnien(tmp_path: Path) -> None:
@@ -476,6 +517,110 @@ def test_przypomnienia_co_minute_ruszaja_tylko_w_zakresie_z_funkcja_przypomnien(
     client.start()
 
     assert (rhythm.check is not None) is sprawdza
+
+
+def test_centrum_andrzeja_ma_tylko_trasy_uporzadkowania_kopii_intermax_i_stalych_czesci_a_kazda_inna_daje_404(
+    tmp_path: Path,
+) -> None:
+    app = centrum_app(ToolDirectory(tmp_path), scope=SCOPES[Workstation.ANDRZEJ])
+    client = CentrumClient(app)
+
+    functions = client.get("/api/scope").json()["functions"]
+    answered = {trasa: _odpowiedz(client, trasa) for trasa in sorted(WSZYSTKIE_TRASY - TRASY_ANDRZEJA)}
+
+    assert (functions, _trasy(app)) == (list(ZAKRES_ANDRZEJA), TRASY_ANDRZEJA)
+    assert {trasa: answer for trasa, answer in answered.items() if answer != NIE_MA_TRASY} == {}
+
+
+@dataclass
+class _ObservedAutostart:
+    asked: list[str] = field(default_factory=list)
+
+    def state(self) -> Literal["on", "off", "unsupported"]:
+        self.asked.append("state")
+        return "off"
+
+    def enable(self) -> None:
+        self.asked.append("enable")
+
+    def disable(self) -> None:
+        self.asked.append("disable")
+
+
+@pytest.mark.parametrize(
+    ("workstation", "ruszaja"),
+    [pytest.param(Workstation.DAD, True, id="stanowisko-taty"), pytest.param(Workstation.ANDRZEJ, False, id="stanowisko-andrzeja")],
+)
+def test_przypomnienia_i_autostart_ruszaja_tylko_w_centrum_ze_stanowiskiem_ktore_je_ma(
+    tmp_path: Path, workstation: Workstation, ruszaja: bool
+) -> None:
+    rhythm = HandRhythm()
+    autostart = _ObservedAutostart()
+    client = CentrumClient(
+        centrum_app(ToolDirectory(tmp_path), scope=SCOPES[workstation], reminder_rhythm=rhythm, autostart=autostart)
+    )
+    client.start()
+
+    read = [client.get(path).status_code for path in ("/api/settings", "/api/settings/history", "/api/configuration")]
+
+    assert read == [200, 200, 200]
+    assert (rhythm.check is not None, bool(autostart.asked)) == (ruszaja, ruszaja)
+
+
+def test_ustawienia_centrum_andrzeja_nie_oddaja_i_nie_dotykaja_plikow_funkcji_spoza_jego_zakresu(tmp_path: Path) -> None:
+    tool = ToolDirectory(tmp_path)
+    register = tmp_path / "OneDrive" / REGISTER_NAME
+    register.parent.mkdir()
+    register.write_bytes(b"")
+    client = CentrumClient(
+        centrum_app(
+            tool,
+            scope=SCOPES[Workstation.ANDRZEJ],
+            release_changes=RELEASE_CHANGES,
+            platform=FakePlatform(chosen_files=[register]),
+        )
+    )
+    client.start()
+
+    chosen = client.post("/api/settings/register/choose")
+    settings = client.get("/api/settings").json()
+    history = client.get("/api/settings/history").json()
+    written = sorted(path.relative_to(tool.config).as_posix() for path in tool.config.rglob("*") if path.is_file())
+
+    assert chosen.status_code == 200
+    assert settings["order_register"] == {"state": "ready", "path": str(register), "name": REGISTER_NAME}
+    assert {key: settings[key] for key in USTAWIENIA_SPOZA_ZAKRESU_ANDRZEJA} == dict.fromkeys(
+        USTAWIENIA_SPOZA_ZAKRESU_ANDRZEJA
+    )
+    assert {row["file"] for row in history["rows"]} == {SETTINGS_FILE}
+    assert [path for path in written if any(name in path for name in PLIKI_USTAWIEN_SPOZA_ZAKRESU_ANDRZEJA)] == []
+
+
+@pytest.mark.parametrize(
+    ("workstation", "wzorce", "siega"),
+    [
+        pytest.param(Workstation.DAD, ["missing"] * 3, True, id="stanowisko-taty"),
+        pytest.param(Workstation.ANDRZEJ, [], False, id="stanowisko-andrzeja"),
+    ],
+)
+def test_centrum_bez_wzorcow_w_config_startuje_a_siega_po_wzorce_tylko_ze_stanowiskiem_ktore_je_ma(
+    tmp_path: Path, workstation: Workstation, wzorce: list[str], siega: bool
+) -> None:
+    tool = ToolDirectory(tmp_path)
+    paths = [template.path for template in tool.configuration.templates()]
+    looked_for = {os.path.abspath(name) for path in paths for name in (path, path.resolve(), excel_lock_file(path))}
+
+    with tracing() as trace:
+        client = CentrumClient(centrum_app(tool, scope=SCOPES[workstation]))
+        client.start()
+        answered = {path: client.get(path).status_code for path in ODCZYTY_ANDRZEJA}
+        templates = client.get("/api/configuration").json()["templates"]
+        client.stop()
+
+    assert not any(path.exists() for path in paths)
+    assert {path: status for path, status in answered.items() if status != 200} == {}
+    assert [template.get("problem") for template in templates] == wzorce
+    assert any(os.path.abspath(reach.path) in looked_for for reach in trace) is siega
 
 
 def test_zadanie_z_obcym_naglowkiem_host_jest_odrzucone(tmp_path: Path) -> None:

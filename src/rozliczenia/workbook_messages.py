@@ -22,12 +22,6 @@ from .workbook_files import LayoutFault, Problem, WorkbookError, excel_lock_file
 
 @dataclass(frozen=True)
 class WorkbookMessages:
-    """Komunikaty jednego skoroszytu w jednym katalogu, po jednym na ``Problem``.
-
-    ``layout`` dostaje też miejsce złego układu (``WorkbookError.fault``); ``layout`` i ``has_data`` ``None``: jak
-    ``unreadable``.
-    """
-
     missing: Callable[[Path], Message]
     open_in_excel: Callable[[Path], Message]
     inaccessible: Callable[[Path], Message]
@@ -57,13 +51,6 @@ def unusable(error: WorkbookError, messages: WorkbookMessages) -> Message:
 
 @dataclass(frozen=True)
 class DadWorkbook:
-    """Plik taty w zdaniach wspólnych: nazwa w mianowniku i dopełniaczu, ogon „Co się stało” i zwrot ponowienia.
-
-    Np. ``DadWorkbook("Rejestr zleceń", "Rejestru zleceń", "order_register", "Nie utworzono żadnego pliku.",
-    "uruchom ponownie")``. ``closing``: zdanie „Co zrobić” o pliku otwartym w Excelu, gdy proces ma własne (puste:
-    „Zapisz i zamknij … w Excelu, potem …”).
-    """
-
     name: str
     genitive: str
     dad_file: DadFile
@@ -93,8 +80,6 @@ def open_in_excel(code: str, path: Path, workbook: DadWorkbook) -> Message:
 
 
 def not_synced(code: str, path: Path, workbook: DadWorkbook) -> Message:
-    """System nie oddał bajtów pliku taty ``path`` (np. zajęty przez inny program albo OneDrive bez sieci)."""
-
     return Message(
         code=code,
         dad_file=workbook.dad_file,

@@ -190,8 +190,9 @@ class Major:
     """Ważne ``heading`` (``W1 r2``) werdyktu ``FAIL`` rundy ``round`` z kodem z ostatniego werdyktu, który go dotyczy
     (``None``, gdy żaden nie podał kodu w szablonie), i chwilą Ważnego ``since``, czyli utworzenia werdyktu ``FAIL``
     rundy ``round`` (``None`` bez chwili); rozstrzygnięcie innym kodem (Q25) zmienia kod, a nie chwilę, a ``mechanism``
-    to szczebel z pola ``Mechanizm:`` Ważnego tego werdyktu ``FAIL`` (``None`` bez pola), a ``files`` pliki miejsc jego
-    pola ``Gdzie:`` (``Root.files``)."""
+    to szczebel z ostatniego werdyktu, który go dotyczy: z pola ``Mechanizm:`` Ważnego tego werdyktu ``FAIL`` albo
+    z późniejszego punktu ``Mechanizm W<n> r<k>: …`` (``None`` bez obu), a ``files`` pliki miejsc jego pola ``Gdzie:``
+    (``Root.files``)."""
 
     heading: str
     round: int
@@ -227,6 +228,9 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
                 found[key] = replace(found[key], code=resolution.code)
             else:
                 strays.append((current.number, resolution))
+        for point in current.findings.mechanisms:
+            if (key := f"{point.label} r{point.round}") in found:
+                found[key] = replace(found[key], mechanism=point.mechanism)
     return found, strays
 
 

@@ -240,7 +240,7 @@ def test_pliki_okresu_z_kopii_wzorca_sa_takie_jak_z_openpyxl(
 
 
 
-_QUANTITY_LETTERS = [get_column_letter(column) for column in range(14, 43)]  # N:AP
+_QUANTITY_LETTERS = [get_column_letter(column) for column in range(14, 43)]
 
 
 def _date_style(path: Path) -> int:

@@ -17,6 +17,7 @@ from typing import Any
 from rozliczenia import intermax_copies
 from rozliczenia.order_base import ORDER_BASE_NAME
 from rozliczenia.centrum.outbox import QUEUE_THREAD
+from rozliczenia.centrum.scope import Scope
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from fastapi import FastAPI
 
@@ -73,6 +74,7 @@ class OrderingCentrum:
     clock: Clock
     tool_copies: bool = False
     disk: FaultyDisk = field(default_factory=FaultyDisk)
+    scope: Scope | None = None
     """Usterki kroków podmiany INTERMAX dla Uporządkowania i przywrócenia Kopii; test wkłada je w każdej chwili."""
 
     @property
@@ -126,6 +128,7 @@ class OrderingCentrum:
             None if self.tool_copies else self.copies,
             self.disk,
             since=self.client.since,
+            scope=self.scope,
         )
 
 
@@ -139,6 +142,7 @@ def _client(
     disk: FaultyDisk,
     *,
     since: int | None = None,
+    scope: Scope | None = None,
 ) -> CentrumClient:
     """Centrum na plikach ``tmp_path``; ``copies``: folder Kopii INTERMAX, ``None``: domyślny folder narzędzia."""
 
@@ -158,6 +162,7 @@ def _client(
         intermax_copies=copies,
         intermax_disk=disk.disk(),
         now=clock,
+        scope=scope,
     )
     return CentrumClient(app, since=since)
 
@@ -172,6 +177,7 @@ def ordering_centrum(
     periods_directory: Path | None = None,
     tool_copies: bool = False,
     order_base: Sequence[BaseSheet] | None = WITHOUT_HITS,
+    scope: Scope | None = None,
 ) -> OrderingCentrum:
     """Centrum z syntetycznym INTERMAX (domyślnie z Surowymi zleceniami 26.10.2026) i własnymi metrykami.
 
@@ -179,6 +185,7 @@ def ordering_centrum(
     aktualne, a każdy plik ma kopię na tym komputerze. ``periods_directory``: tata wskazał też folder okresów.
     ``tool_copies``: Centrum nie dostaje folderu Kopii INTERMAX i kładzie je w domyślnym folderze narzędzia.
     ``order_base``: arkusze Bazy zleceń obok INTERMAX, jak u taty (domyślnie bez trafień); ``None``: bez Bazy.
+    ``scope``: Zakres Stanowiska tego Centrum; ``None``: domyślny Zakres ``create_app``.
     """
 
     register = tmp_path / "OneDrive" / REGISTER_NAME
@@ -190,12 +197,14 @@ def ordering_centrum(
     platform = FakePlatform(chosen_files=[register], chosen_folders=[periods_directory])
     copies = intermax_copies.default_directory() if tool_copies else tmp_path / "Kopie INTERMAX"
     disk = FaultyDisk()
-    client = _client(tmp_path, surroundings, engines, clock, platform, None if tool_copies else copies, disk)
+    client = _client(tmp_path, surroundings, engines, clock, platform, None if tool_copies else copies, disk, scope=scope)
     if chosen:
         assert client.post("/api/settings/register/choose").status_code == 200
     if periods_directory is not None:
         assert client.post("/api/settings/periods-directory/choose").status_code == 200
-    return OrderingCentrum(client, register, layout, copies, tmp_path, surroundings, engines, clock, tool_copies, disk)
+    return OrderingCentrum(
+        client, register, layout, copies, tmp_path, surroundings, engines, clock, tool_copies, disk, scope
+    )
 
 
 def copies(centrum: OrderingCentrum) -> list[str]:

@@ -18,8 +18,6 @@ from rozliczenia.run_context import RunContext
 PERIOD = "08_14_09_2026"
 METRICS_WARNING = "Ostrzeżenie: Nie zapisano metryk; Proces testowy zakończył się niezależnie."
 SECRET = "sekret klienta SYN-001"
-# Komunikaty zakończeń sztucznego procesu z Podglądem bez zapisu: każde zatrzymanie bez własnego Komunikatu procesu
-# dostaje jeden z nich.
 ENDINGS = {
     "unexpected_failure": Message("BLAD_NIEOCZEKIWANY", "Wystąpił nieoczekiwany błąd.", "Proces testowy", "Uruchom ponownie."),
     "plan_not_shown": Message("BLAD_PLANU", "Nie udało się pokazać planu.", "Proces testowy", "Zgłoś to."),

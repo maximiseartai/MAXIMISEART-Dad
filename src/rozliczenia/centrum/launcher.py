@@ -12,6 +12,7 @@ import webbrowser
 from rozliczenia.centrum import start_problems
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import has_console, show_start_problem
+from rozliczenia.centrum.scope import UnknownWorkstation, workstation_scope
 from rozliczenia.centrum.tool_update import (
     RESULT_FILE,
     UNEXPECTED,
@@ -124,13 +125,23 @@ def _start(
         listener.close()
         return refuse(start_problems.missing_library(missing.name or "?"))
 
+    scope = workstation_scope(CONFIG_DIR)
+    if isinstance(scope, UnknownWorkstation):
+        listener.close()
+        return refuse(start_problems.unknown_workstation(scope.file))
+
     def announce(address: str) -> None:
         _say(f"Centrum rozliczeń działa: {address}")
         open_tab(address)
 
     shutdown = Shutdown(log)
     app = create_app(
-        config=CONFIG_DIR, platform=system_platform(), autostart=system_autostart(), log=log, shutdown=shutdown
+        config=CONFIG_DIR,
+        platform=system_platform(),
+        autostart=system_autostart(),
+        log=log,
+        shutdown=shutdown,
+        scope=scope,
     )
     return serve(app, listener=listener, on_ready=announce, shutdown=shutdown, log=log)
 

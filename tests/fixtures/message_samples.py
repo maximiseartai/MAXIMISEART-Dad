@@ -32,6 +32,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum.dad_cases import DAD_CASES_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
+from rozliczenia.centrum.scope import WORKSTATION_FILE
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.efenix_checks import DateRefused, OrderProblem
@@ -251,6 +252,7 @@ START_SAMPLES: Samples = {
     "other_version_running": [lambda: start_problems.other_version_running(47811, "3c1d0a9")],
     "missing_library": [lambda: start_problems.missing_library("fastapi")],
     "unexpected_start_failure": [start_problems.unexpected_start_failure],
+    "unknown_workstation": [lambda: start_problems.unknown_workstation(tool_files.CONFIG_DIR / WORKSTATION_FILE)],
     "not_started_after_update": [start_problems.not_started_after_update],
     "update_finishing": [start_problems.update_finishing],
 }

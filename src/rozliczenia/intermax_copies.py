@@ -36,16 +36,12 @@ _MOMENT: Final = "%Y-%m-%d %H-%M-%S"
 
 @dataclass(frozen=True)
 class Copy:
-    """Kopia INTERMAX w folderze Kopii: plik, chwila z nazwy w czasie komputera i to, przed czym powstała."""
-
     path: Path
     moment: datetime
     before: Before
 
     @property
     def before_label(self) -> str:
-        """To, przed czym powstała, słowami z nazwy Kopii."""
-
         return _BEFORE[self.before]
 
 
@@ -68,8 +64,6 @@ def _copy(path: Path) -> Copy | None:
 
 
 def listed(directory: Path) -> list[Copy]:
-    """Kopie INTERMAX w ``directory`` od najnowszej; brak folderu to brak Kopii, inny błąd odczytu to ``OSError``."""
-
     try:
         paths = list(directory.iterdir())
     except FileNotFoundError:
@@ -79,15 +73,10 @@ def listed(directory: Path) -> list[Copy]:
 
 
 def named(directory: Path, before: Before, moment: datetime) -> Copy:
-    """Kopia INTERMAX w ``directory``, którą podmiana zrobi przed ``before`` w chwili ``moment``, tak jak ją wymieni
-    ``listed``."""
-
     copy = _copy(directory / f"INTERMAX {_BEFORE[before]} {moment:{_MOMENT}}.xlsx")
     assert copy is not None, "nazwa z _BEFORE i _MOMENT pasuje do _NAME"
     return copy
 
 
 def outdated(directory: Path) -> list[Copy]:
-    """Kopie INTERMAX obu nazw starsze niż ``KEPT`` najnowszych według chwili z nazwy; ``OSError`` jak ``listed``."""
-
     return listed(directory)[KEPT:]

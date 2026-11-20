@@ -49,8 +49,6 @@ def moment(index: int) -> datetime:
 
 
 def ticking() -> Callable[[], datetime]:
-    """Zegar ścienny, który przy każdym odczycie idzie o sekundę od ``START``."""
-
     seconds = itertools.count()
     return lambda: moment(next(seconds))
 
@@ -135,8 +133,6 @@ def test_projection_reduces_complete_przebieg_rozliczen_to_one_snapshot() -> Non
 
 
 def test_projection_marks_failed_faza_przebiegu() -> None:
-    """Przerwana Faza przebiegu ma stan, czas i chwilę końca: chwilę zdarzenia, które ją przerwało."""
-
     projection = project([PhaseStarted(ProgressPhase.CHECKING, elapsed_ms=1)], ticking())
 
     snapshot = projection.update(PhaseFailed(ProgressPhase.CHECKING, elapsed_ms=3, phase_elapsed_ms=2))

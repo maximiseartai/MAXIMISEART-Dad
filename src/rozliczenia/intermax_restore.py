@@ -26,8 +26,6 @@ from .workbook_parts import office_document, package_parts
 
 @dataclass(frozen=True)
 class Restored:
-    """Przywrócona Kopia i ostrzeżenia (starsze Kopie zostały)."""
-
     restored: Copy
     warnings: list[Message]
 

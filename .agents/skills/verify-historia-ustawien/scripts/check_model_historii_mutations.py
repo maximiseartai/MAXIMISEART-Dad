@@ -114,8 +114,7 @@ GRANICE: Final[Mapping[str, tuple[Mutation, ...]]] = {
     ),
 }
 """For each cause of a known finding, its configuration without that one known finding: the same harm must then be a
-new violation, because no other cause of that configuration forgives that path (#1341 round 1: a cause too wide
-forgave a different path under the name of another)."""
+new violation, because no other cause of that configuration forgives that path."""
 
 MUTATIONS = (
     Mutation(
