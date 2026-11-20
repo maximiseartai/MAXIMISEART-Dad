@@ -66,10 +66,8 @@ const MULTIPLIERS: ReadonlyArray<Option<RuleWrite["multiplier"]>> = [
   { value: "pieces", label: "razy „N szt” z CZYNNOŚCI" },
 ]
 
-/** Miejsce zdania odmowy w formularzu: warunek, kolumna działania, samo działanie albo nad formularzem. */
 type Place = { kind: "condition"; index: number } | { kind: "write"; index: number } | { kind: "action" } | { kind: "form" }
 
-/** Miejsce pola odmowy serwera (`jesli[0].tekst`, `to.wpisy[1].kolumna`, `to`); bez pola zdanie stoi nad formularzem. */
 function placeOf(field: string | null): Place {
   const condition = field?.match(/^jesli\[(\d+)\]/)
   const write = field?.match(/^to\.wpisy\[(\d+)\]/)
@@ -85,12 +83,6 @@ function placeOf(field: string | null): Place {
   return field?.startsWith("to") === true ? { kind: "action" } : { kind: "form" }
 }
 
-/**
- * Edytor jednej Reguły ilości w miejscu listy: zakres, warunki („Gdy” albo „Ale nie gdy”), działanie z kolumną po
- * nazwie z cennika i podgląd skutku na ostatnich Plikach zbiorczych. Zapisuje się dopiero przyciskiem „Zapisz”, także
- * przy różnicach z tatą; zła reguła to jedno zdanie przy polu. Okno pyta przed zamknięciem z niezapisaną zmianą, a
- * formularz z różnicy (`prefilled`) jest niezapisany od początku.
- */
 export function RuleEditor({
   id,
   initial,
@@ -486,7 +478,6 @@ function TextField({ label, value, change }: { label: string; value: string; cha
   return <Input aria-label={label} className="h-8 w-48 min-w-0 flex-1 basis-40" value={value} onChange={(event) => change(event.target.value)} />
 }
 
-/** Wybór z listy: jedna wartość z opcji, a bez wartości napis zachęty. */
 export function Choice<T extends string>({
   label,
   value,

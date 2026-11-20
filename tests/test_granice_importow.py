@@ -355,6 +355,7 @@ IMPORT_CONTRACTS: typing.Final = (
     "Silnik nie importuje Centrum rozliczeń",
     "Pakiet silnika (rozliczenia/__init__.py) nie importuje Centrum rozliczeń",
     "imaplib i smtplib importuje tylko port Skrzynki raportów",
+    "Przeglądarkę okna efenix importuje tylko centrum/efenix_chrome.py",
 )
 wymaga_import_linter = pytest.mark.skipif(
     importlib.util.find_spec("importlinter") is None,
@@ -510,20 +511,27 @@ def skrzynka() -> ssl.SSLSocket:
     ),
     "czyta tylko pliki .py: Centrum z modułu bez źródła .pyc": "from rozliczenia.centrum import runs\n\nGOSPODARZ = runs\n",
     "czyta tylko pliki .py: imaplib z modułu bez źródła .pyc": "import imaplib\n\nSKRZYNKA = imaplib.IMAP4_SSL\n",
+    "czyta tylko instrukcje importu: przeglądarka okna efenix przez wbudowane __import__": (
+        'OKNO = __import__("rozliczenia.efenix_browser")\n'
+    ),
+    "czyta tylko pliki .py: przeglądarka okna efenix z modułu, który Python na Windows importuje z .pyw": (
+        "from rozliczenia import efenix_browser\n\nOKNO = efenix_browser\n"
+    ),
+    "czyta tylko pliki .py: przeglądarka okna efenix z modułu bez źródła .pyc": (
+        "from rozliczenia import efenix_browser\n\nOKNO = efenix_browser\n"
+    ),
 }
 
 
 def _contract_tree(src: Path) -> None:
-    """Najmniejszy pakiet ``rozliczenia`` w ``src`` z modułami, które nazywają kontrakty z ``IMPORT_LINTER_CONFIG``, i
-    moduł ``kontrola``, który łamie oba kontrakty importem wprost: jego zgłoszenie dowodzi, że ``lint-imports`` czytał
-    to drzewo."""
-
     for name, code in {
         "__init__.py": "",
         "centrum/__init__.py": "",
         "centrum/runs.py": "",
+        "centrum/efenix_chrome.py": "from rozliczenia import efenix_browser\n",
+        "efenix_browser.py": "",
         "worker_report_inbox.py": "import imaplib\nimport smtplib\n",
-        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\n",
+        "kontrola.py": "import imaplib\nimport rozliczenia.centrum.runs\nimport rozliczenia.efenix_browser\n",
     }.items():
         (src / "rozliczenia" / name).parent.mkdir(parents=True, exist_ok=True)
         (src / "rozliczenia" / name).write_text(code, encoding="utf-8")
@@ -551,6 +559,7 @@ def test_znane_luki_kontraktow_importow_przechodza_przez_ruff_i_import_linter(tm
 
     assert "rozliczenia.kontrola is not allowed to import rozliczenia.centrum:" in wynik, wynik
     assert "rozliczenia.kontrola -> imaplib" in wynik, wynik
+    assert "rozliczenia.kontrola -> rozliczenia.efenix_browser" in wynik, wynik
     assert_znane_luki(zgloszenia, "tests/test_granice_importow.py (ZNANE_LUKI_KONTRAKTOW)")
 
 
@@ -749,6 +758,20 @@ def test_format_logow_uruchomienia_nie_wczytuje_gospodarza_uruchomien_ani_diagno
             "Schemat Logów Uruchomienia, strażnik reguły danych i postęp Wyceny (RUN_LOGS_FORMAT w "
             "tests/test_granice_importow.py) nie wczytują gospodarza Uruchomień (runs) ani Diagnozy (diagnosis), także "
             "przez inne moduły src i importem w funkcji: Logi z nich składa src/rozliczenia/centrum/logs_of_run.py.",
+        ]
+    )
+
+
+def test_kopia_wejscia_w_logach_nie_wczytuje_modulow_centrum() -> None:
+    found = _chains("rozliczenia/centrum/logged_input_copy.py", lambda module: module.startswith("rozliczenia.centrum."))
+
+    assert not found, "\n".join(
+        [
+            *sorted(found),
+            "Schemat Kopii wejścia w Logach (src/rozliczenia/centrum/logged_input_copy.py) nie wczytuje modułów Centrum "
+            "rozliczeń (reszty schematu Logów, kontraktu Centrum), także przez inne moduły src i importem w funkcji: "
+            "brama Legendy czynności czyta z pliku Logów samą Kopię wejścia, więc jej schemat zależy tylko od typów Kopii "
+            "wejścia silnika (rozliczenia.input_copy). Typ, którego potrzebuje, weź z modułu silnika.",
         ]
     )
 

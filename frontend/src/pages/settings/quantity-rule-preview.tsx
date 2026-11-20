@@ -18,26 +18,16 @@ const PAUSE_MS = 400
 
 type Answer<R> = { state: "refused"; message: string } | { state: "ready"; preview: R }
 
-/** Ostatnia odpowiedź podglądu; `refreshing`: formularz zmienił się od niej, a nowa jeszcze nie przyszła. */
 type Shown<R> = { state: "waiting" } | (Answer<R> & { refreshing: boolean })
 
 const ROWS = { one: "wiersz", few: "wiersze", many: "wierszy" }
 
-/**
- * Skutek zmiany reguły na ostatnich Plikach zbiorczych po Przebiegu rozliczeń, liczony przez serwer tym samym
- * rachunkiem co Kontrola ilości: ile wierszy się zmieni, w ilu będzie tak, jak wpisał tata, i wiersze z różnicą, bez
- * adresu i numerów. Liczy się od nowa chwilę po każdej zmianie formularza; do odpowiedzi stoi poprzedni wynik.
- */
 export function RulePreview({ edit }: { edit: Edit }) {
   const shown = usePreview(edit, previewQuantityRules)
 
   return <PreviewPanel shown={shown}>{shown.state === "ready" ? <Preview preview={shown.preview} /> : null}</PreviewPanel>
 }
 
-/**
- * Podgląd zmiany pod formularzem: nagłówek z kręciołkiem, gdy liczy się nowa odpowiedź, i panel z jej treścią; gotową
- * odpowiedź pokazuje `children`.
- */
 export function PreviewPanel<R>({ shown, children }: { shown: Shown<R>; children: React.ReactNode }) {
   return (
     <section aria-label="Podgląd" className="flex flex-col gap-2">
@@ -52,10 +42,6 @@ export function PreviewPanel<R>({ shown, children }: { shown: Shown<R>; children
   )
 }
 
-/**
- * Odpowiedź serwera `ask` na zmianę `edit`, pytana chwilę po ostatniej zmianie formularza; odpowiedź na starsze pytanie
- * nie zastępuje nowszej.
- */
 export function usePreview<E, R>(edit: E, ask: (edit: E) => Promise<R>): Shown<R> {
   const key = JSON.stringify(edit)
   const latestEdit = React.useRef(edit)
@@ -145,7 +131,6 @@ function Preview({ preview }: { preview: PreviewQuantityRulesResponse }) {
   )
 }
 
-/** Podgląd bez plików, na których da się policzyć skutek zmiany. */
 export function WithoutFiles({ state }: { state: "no_periods_directory" | "no_settled_periods" }) {
   return (
     <Note>
@@ -156,7 +141,6 @@ export function WithoutFiles({ state }: { state: "no_periods_directory" | "no_se
   )
 }
 
-/** Wiersze z różnicą, których podgląd już nie pokazuje. */
 export function MoreRows({ more }: { more: number }) {
   return more === 0 ? null : (
     <Note>
@@ -173,13 +157,8 @@ function Note({ children }: { children: React.ReactNode }) {
   )
 }
 
-/** Liczby podglądu zmiany: ile wierszy się zmieni, w ilu będzie tak, jak wpisał tata, i różnice Kontroli ilości. */
 type Counted = Pick<PreviewReady, "files" | "unread" | "changed" | "changed_as_tata" | "differences_before" | "differences_after">
 
-/**
- * Skutek zmiany na ostatnich Plikach zbiorczych; `differences`: czyje różnice Kontroli ilości liczy podgląd, a `also`:
- * dalsza liczba tego podglądu w tej samej linii.
- */
 export function Summary({
   preview,
   differences = "różnice z Kontroli ilości",
@@ -209,10 +188,6 @@ export function Summary({
   )
 }
 
-/**
- * Okresy po Przebiegu rozliczeń, których Pliku zbiorczego nie dało się przeczytać: jedno zdanie, bez okresów nic. Mówi
- * je podgląd zmiany reguły i podpowiedzi sekcji Urządzenia, bo oba czytają ostatnie Pliki zbiorcze.
- */
 export function UnreadPeriods({ periods, className }: { periods: ReadonlyArray<string>; className?: string }) {
   if (periods.length === 0) {
     return null

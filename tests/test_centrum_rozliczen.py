@@ -2808,7 +2808,7 @@ def test_zmiana_albo_usuniecie_reguly_ktorej_juz_nie_ma_to_odmowa_bez_zapisu(tmp
     assert history_rows(app) == []
 
 
-def test_kolumny_edytora_to_n_ap_z_nazwa_cennika_a_p_q_i_s_regula_tylko_zostawia_puste(tmp_path: Path) -> None:
+def test_kolumny_edytora_to_n_ap_a_p_q_i_s_regula_tylko_zostawia_puste(tmp_path: Path) -> None:
     columns = centrum(tmp_path).client.get(QUANTITY_RULES_URL).json()["columns"]
 
     n_to_ap = range(column_index_from_string("N"), column_index_from_string("AP") + 1)

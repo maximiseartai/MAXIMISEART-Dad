@@ -32,7 +32,6 @@ import { useViewTiming } from "@/lib/view-timing"
 import { ConfigurationProvider } from "@/pages/settings/configuration"
 import { sectionOf, SETTINGS_SECTIONS, SHOWN_GROUPS, type SettingsSection } from "@/pages/settings/sections"
 
-/** Okno Ustawień mierzy się jak strona (pomiar u taty), pod identyfikatorem z kontraktu. */
 const SETTINGS_VIEW = { id: "ustawienia" } as const
 
 const SIDEBAR = { "--sidebar-width": "15rem" } satisfies React.CSSProperties
@@ -56,7 +55,6 @@ export function SettingsDialog() {
     setShown(section)
   }
 
-  // Zamknięcie albo inna sekcja, które czekają na „Zamknij bez zapisu”, bo formularz ma niezapisaną zmianę.
   const [leaving, setLeaving] = React.useState<(() => void) | null>(null)
 
   function leave(then: () => void) {
@@ -175,7 +173,6 @@ export function SettingsDialog() {
   )
 }
 
-/** Wybór sekcji na wąskim oknie przeglądarki, w tych samych grupach co lista po lewej. */
 function SectionSelect({ section, choose }: { section: SettingsSection; choose: (id: string) => void }) {
   return (
     <Select items={SECTION_ITEMS} value={section.id} onValueChange={(value) => (value === null ? null : choose(value))}>
@@ -198,7 +195,6 @@ function SectionSelect({ section, choose }: { section: SettingsSection; choose: 
   )
 }
 
-/** Jeden pomiar na otwarcie okna: zimny start na adresie okna albo przejście z otwartej strony. */
 function SettingsTiming() {
   useViewTiming(SETTINGS_VIEW)
 

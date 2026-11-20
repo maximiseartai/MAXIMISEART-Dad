@@ -1,9 +1,3 @@
-"""Katalog Komunikatów Uzupełnienia pliku zbiorczego: Plik zbiorczy, którego Centrum nie odczytało.
-
-Strona Uzupełnienia tylko czyta Plik zbiorczy, więc każdy Komunikat kończy się odświeżeniem strony, a nie
-ponownym Uruchomieniem procesu. Plik otwarty w Excelu nie jest tu problemem (ADR 0016).
-"""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,8 +38,6 @@ def _missing(source: Path) -> Message:
 
 
 def _inaccessible(source: Path) -> Message:
-    """System nie oddał bajtów Pliku zbiorczego (np. zajęty przez inny program albo OneDrive bez sieci)."""
-
     return Message(
         code="NIEDOSTEPNY_PLIK_ZBIORCZY",
         what=(
@@ -73,14 +65,10 @@ def _damaged(source: Path) -> Message:
 
 
 def _without_worker_header(source: Path) -> Message:
-    """Plik zbiorczy nie ma nagłówka WYKONAWCA w H17, po którym odczyt rozpoznaje układ arkusza."""
-
     return headers_missing(source, ("WYKONAWCA",), cell=str(WORKER_HEADER))
 
 
 def headers_missing(source: Path, headers: tuple[str, ...], *, cell: str | None = None) -> Message:
-    """W wierszu nagłówków Pliku zbiorczego brakuje nagłówków ``headers``; ``cell`` to komórka jedynego nagłówka."""
-
     place = f"w komórce {cell}" if cell else f"w wierszu {HEADER_ROW}"
     return Message(
         code="BRAK_NAGLOWKA_PLIKU_ZBIORCZEGO",
@@ -91,8 +79,6 @@ def headers_missing(source: Path, headers: tuple[str, ...], *, cell: str | None 
 
 
 def only_in_cloud(source: Path) -> Message:
-    """Plik zbiorczy jest w OneDrive tylko w chmurze (atrybut „tylko online”), bez kopii na komputerze taty."""
-
     return Message(
         code="PLIK_ZBIORCZY_W_CHMURZE",
         what="Plik zbiorczy jest tylko w OneDrive w chmurze, bez kopii na tym komputerze.",
