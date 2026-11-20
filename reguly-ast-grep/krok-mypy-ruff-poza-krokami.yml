@@ -22,9 +22,10 @@ rule:
       - kind: tuple
   not:
     precedes:
-      stopBy: end
-      kind: string
-      regex: '^["'']format["'']$'
+      pattern: ','
+      precedes:
+        kind: string
+        regex: '^["'']format["'']$'
   follows:
     pattern: ','
     follows:

@@ -2202,6 +2202,7 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("krok-mypy-ruff-poza-krokami", f"{_SYS}POLECENIE = (sys.executable, '-m', 'ruff', 'check')\n", [3]),
     ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "pytest", "-q"]\n', []),
     ("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', []),
+    ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--strict", "format"]\n', [3]),
     ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', []),
     ("naglowek-toml-podlancuchem", f'{_TOML}"[tool.uv" in plik.read_text(encoding="utf-8")\n', [5]),
     ("naglowek-toml-podlancuchem", f'{_TOML}"[project]" not in plik.read_text()\n', [5]),
@@ -2250,6 +2251,9 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
         pytest.param('"[tool.uv"', id="nawias-na-poczatku"),
         pytest.param('"\\n[tool.uv]"', id="nawias-po-nowej-linii"),
         pytest.param('"\\n\\n[project]"', id="nawias-po-dwoch-nowych-liniach"),
+        pytest.param('"uv = 1\\n[tool.uv]"', id="nawias-w-srodku-napisu"),
+        pytest.param('"\\n  [tool.uv]"', id="nawias-po-wcieciu"),
+        pytest.param('r"\\n[tool.uv]"', id="napis-surowy"),
     ],
 )
 def test_naglowek_toml_podlancuchem_zglasza_naglowek_od_poczatku_linii(tmp_path: Path, naglowek: str) -> None:
@@ -2257,6 +2261,26 @@ def test_naglowek_toml_podlancuchem_zglasza_naglowek_od_poczatku_linii(tmp_path:
     _probki_w_zakresie(tmp_path, "naglowek-toml-podlancuchem", {"probka": f"{_TOML}{naglowek} in plik.read_text()\n"})
 
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(5, "naglowek-toml-podlancuchem")]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    ("szukanie", "linie"),
+    [
+        pytest.param(f'{_TOML}"""[tool.uv]\nmanaged = true""" in plik.read_text()\n', [5], id="potrojny-cudzyslow"),
+        pytest.param(f'{_TOML}"""\n[tool.uv]\n""" in plik.read_text()\n', [5], id="potrojny-cudzyslow-od-nowej-linii"),
+        pytest.param(f'{_TOML}plik.read_text().find("\\n[tool.uv]") >= 0\n', [5], id="find-na-tekscie-pliku"),
+        pytest.param(f'{_TOML}plik.read_text(encoding="utf-8").count("[project]") > 0\n', [5], id="count-na-tekscie-pliku"),
+        pytest.param(f'{_TOML}"[" in plik.name\n', [], id="nawias-poza-tekstem-pliku"),
+        pytest.param(f'{_TOML}"a[0]" in plik.read_text()\n', [], id="nawias-w-srodku-linii"),
+        pytest.param(f'{_TOML}plik.read_text().find("tool.uv") >= 0\n', [], id="find-bez-nawiasu"),
+    ],
+)
+def test_naglowek_toml_podlancuchem_w_kazdym_zapisie_literalu(tmp_path: Path, szukanie: str, linie: list[int]) -> None:
+    base = _empty_base(tmp_path)
+    _probki_w_zakresie(tmp_path, "naglowek-toml-podlancuchem", {"probka": szukanie})
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "naglowek-toml-podlancuchem") for line in linie]
 
 
 # Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie

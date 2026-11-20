@@ -12,18 +12,31 @@ metadata:
   przypadki:
     - 2161/W1/r1
 rule:
-  kind: comparison_operator
-  all:
-    - has:
-        field: operators
-        regex: '^(not )?in$'
-    - has:
-        nthChild: 1
-        kind: string
-        regex: '^[rbf]?["''](\\n)*\['
-    - has:
-        stopBy: end
-        kind: call
-        has:
-          field: function
-          regex: '\.read_text$'
+  any:
+    - kind: comparison_operator
+      all:
+        - has:
+            field: operators
+            regex: '^(not )?in$'
+        - has:
+            nthChild: 1
+            matches: naglowek-tabeli
+        - has:
+            stopBy: end
+            kind: call
+            has:
+              field: function
+              regex: '\.read_text$'
+    - kind: call
+      all:
+        - has:
+            field: function
+            regex: '\.read_text\([^)]*\)\.(find|rfind|index|rindex|count)$'
+        - has:
+            field: arguments
+            has:
+              matches: naglowek-tabeli
+utils:
+  naglowek-tabeli:
+    kind: string
+    regex: '(^[rbfRBF]*("""|''''''|"|'')|\\n|\n)[ \t]*\['
