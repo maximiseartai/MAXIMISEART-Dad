@@ -98,6 +98,11 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # Ładowacz z importlib.abc (przegląd #1705 r1, W1), postacie jego importu i importlib.metadata.
     "from importlib.abc import SourceLoader\nclass Ladowacz(SourceLoader): ...": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     "from importlib import abc": (DRIVE_CONFIG, (), "importlib.abc"),
+    "import shlex\nwords = list(shlex.shlex(command, posix=True))": (ROOT_CONFIG, ("tools", "hooks"), "shlex.shlex"),
+    "from shlex import shlex as lexer\nwords = list(lexer(command))": (ROOT_CONFIG, ("tools", "hooks"), "shlex.shlex"),
+    "import shlex as s\nwords = list(s.shlex(command))": (SRC_CONFIG, (), "shlex.shlex"),
+    "import shlex\nwords = list(shlex.shlex(command))": (TESTS_CONFIG, (), "shlex.shlex"),
+    "from shlex import shlex": (DRIVE_CONFIG, (), "shlex.shlex"),
     "import importlib.abc as ladowacze": (ROOT_CONFIG, TOOLS_PROBE, "importlib.abc"),
     'from importlib.metadata import EntryPoint\nEntryPoint("x", "tests.fixtures.znane_luki:zapisz", "g").load()': (
         ROOT_CONFIG,
@@ -381,6 +386,21 @@ ZNANE_LUKI_SNU = {
     "nazwa w napisie: getattr": 'import time\n\ngetattr(time, "sleep")(0.3)\n',
     "inne API z limitem czasu: threading.Event.wait": "import threading\n\nthreading.Event().wait(0.3)\n",
 }
+
+
+ZNANE_LUKI_LEKSERA_SHLEX = {
+    "nazwa w napisie: getattr": 'import shlex\n\nwords = list(getattr(shlex, "shlex")("a b"))\n',
+    "słownik modułu": 'import shlex\n\nwords = list(vars(shlex)["shlex"]("a b"))\n',
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_leksera_shlex_w_hookach_przechodza_przez_ruff(tmp_path: Path) -> None:
+    pliki = zapisz(ZNANE_LUKI_LEKSERA_SHLEX, tmp_path)
+
+    zgloszenia = ruff(pliki, sonda=ROOT.joinpath("tools", "hooks", "sonda_luki.py"))
+
+    assert_znane_luki(zgloszenia, "tests/test_zakazy_ruff.py (ZNANE_LUKI_LEKSERA_SHLEX)")
 
 
 @wymaga_ruff
