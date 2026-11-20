@@ -13,6 +13,8 @@ import pytest
 
 from rozliczenia import preparation_messages
 from rozliczenia.centrum.outbox import QUEUE_DIRECTORY
+from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
+from rozliczenia.centrum.settings.autostart import AUTOSTART_SETTING
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
 from rozliczenia.centrum.settings.settlement_mail import SETTLEMENT_MAIL_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
@@ -397,6 +399,25 @@ def test_zgloszenie_podaje_zmiane_regul_ilosci_i_listy_urzadzen_wprost_z_wpisem_
 
     rows = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["file"] in (DEVICES_FILE, RULES_FILE)]
     assert sorted(row["file"] for row in rows) == sorted([DEVICES_FILE, RULES_FILE])
+    for row in rows:
+        [change] = row["changes"]
+        before, after = (change[side] or "nie ustawiono" for side in ("before", "after"))
+        assert any(line.endswith(f"· tata · {row['file']} · {change['key']}: {before} → {after}") for line in lines), lines
+
+
+def test_zgloszenie_podaje_zmiane_kodu_legendy_czynnosci_i_autostartu_wprost_z_wpisem_przed_i_po_jak_historia_ustawien(
+    tmp_path: Path,
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    removed = centrum.client.delete("/api/settings/activity-legend/rt2")
+    enabled = centrum.client.put("/api/settings/autostart", json={"enabled": True})
+    assert (removed.status_code, enabled.status_code) == (200, 200), (removed.text, enabled.text)
+    run_id = stopped_for_maks(centrum)
+
+    lines = diagnose(centrum, run_id)["report"]["body"].splitlines()
+
+    rows = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["file"] in (LEGEND_FILE, AUTOSTART_SETTING)]
+    assert sorted(row["file"] for row in rows) == sorted([LEGEND_FILE, AUTOSTART_SETTING])
     for row in rows:
         [change] = row["changes"]
         before, after = (change[side] or "nie ustawiono" for side in ("before", "after"))

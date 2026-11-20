@@ -1,19 +1,3 @@
-"""Wyjątki Kontroli ilości w pliku ``wyjatki-ilosci.yaml`` (ADR 0033): różnice z Kontroli ilości, które tata oznaczył
-w sekcji Reguły ilości „To był wyjątek”, więc lista „Tu wpisałeś inaczej niż reguła” ich już nie pokazuje.
-
-Wyjątek to jedna komórka jednego Wiersza danych: okres, numer wiersza Pliku zbiorczego, kolumna i wpis taty, a do tego
-odcisk (``fingerprint``) tych pól razem z treścią wiersza, którą czytają Reguły ilości (``UMOWA``, ``URZĄDZENIA``,
-``CZYNNOŚCI``, dzień tygodnia i godzina z ``DATA``). Odcisk jest id wyjątku: ta sama różnica po kolejnym Przebiegu,
-po restarcie i po zmianie reguły (wartość reguły do odcisku nie wchodzi) daje to samo id, a inny wpis taty, zmieniona
-treść wiersza albo wiersz przesunięty w pliku dają inne, więc taka różnica wraca na listę. Id nie bierze się z licznika,
-więc nigdy nie przechodzi na inny wyjątek: „Cofnij” starego wiersza Historii rusza tylko swój wyjątek, a zapis nie
-potrzebuje kluczy Historii.
-
-Plik ma tylko okres, numer wiersza, literę, liczbę taty i odcisk SHA-256, więc Historia Ustawień, Logi Centrum i
-Zgłoszenie nie dostają treści wiersza, adresu ani numerów. Brak pliku to brak wyjątków. Klucz Historii to
-``wyjatki.<odcisk>``, a wartość to wpis jako JSON (``EntriesById``).
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,8 +16,6 @@ from rozliczenia.quantity_engine import OrderContent
 from rozliczenia.settlement_period import PERIOD_TOKEN_PATTERN
 
 EXCEPTIONS_FILE: Final = "wyjatki-ilosci.yaml"
-"""Plik wyjątków Kontroli ilości w ``config``; czyta go i pisze tylko ``rozliczenia.centrum.settings``."""
-
 SECTION: Final[FieldName] = "wyjatki"
 _SCHEMA_VERSION: Final = 1
 PERIOD: Final[FieldName] = "okres"
@@ -47,8 +29,6 @@ _FINGERPRINT: Final = re.compile(r"[0-9a-f]{16}")
 
 @dataclass(frozen=True)
 class QuantityException:
-    """Różnica Kontroli ilości w jednej komórce, którą tata oznaczył „To był wyjątek”."""
-
     period: str
     row: int
     column: str
@@ -61,9 +41,6 @@ class QuantityException:
 
 
 def exception_of(period: str, row: int, column: str, tata: TataValue, order: OrderContent) -> QuantityException:
-    """Wyjątek różnicy w kolumnie ``column`` Wiersza danych ``row`` okresu ``period``, w którym tata wpisał ``tata``, a
-    Reguły ilości czytają ``order`` (zawsze z porą z ``DATA``: wiersz bez niej nie ma różnic)."""
-
     assert order.started is not None, "wiersz bez daty i godziny w DATA nie ma różnic Kontroli ilości"
     fields = [
         period,
@@ -81,8 +58,6 @@ def exception_of(period: str, row: int, column: str, tata: TataValue, order: Ord
 
 
 def parse(data: bytes | None) -> tuple[QuantityException, ...] | FieldProblem:
-    """Wyjątki z bajtów pliku; ``None`` (brak pliku) to brak wyjątków, zła treść to pierwszy problem."""
-
     if data is None:
         return ()
     try:
@@ -144,8 +119,6 @@ def _entry(exception: QuantityException) -> dict[str, object]:
 
 
 def entry_of(entry: object) -> QuantityException | None:
-    """Wyjątek z wpisu pliku (także z wartości klucza Historii); ``None``: wpisu nie da się odczytać."""
-
     found = _exception(entry, 0)
     return None if isinstance(found, FieldProblem) else found
 
@@ -155,21 +128,14 @@ def dump(exceptions: tuple[QuantityException, ...]) -> bytes:
 
 
 def with_exception(current: tuple[QuantityException, ...], exception: QuantityException) -> tuple[QuantityException, ...]:
-    """Wyjątki z wyjątkiem ``exception`` („To był wyjątek”) na końcu; wyjątek o tym id, który już jest, niczego nie zmienia."""
-
     return current if any(known.id == exception.id for known in current) else (*current, exception)
 
 
 def described(exception: QuantityException) -> str:
-    """Wyjątek w Zgłoszeniu i Logach: okres, wiersz, kolumna i wpis taty, bez treści wiersza."""
-
     return f"okres {exception.period}, wiersz {exception.row}, {exception.column}, wpis taty {exception.tata}"
 
 
 def reported(change: KeyChange) -> str:
-    """Zmiana w Zgłoszeniu: dodany albo usunięty wyjątek opisem z samego wpisu, a wartość, której nie da się odczytać,
-    samym kluczem."""
-
     before, after = _from_json(change.before), _from_json(change.after)
     if change.before is None and after is not None:
         return f"dodano wyjątek: {described(after)}"

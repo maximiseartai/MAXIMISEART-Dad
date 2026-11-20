@@ -65,7 +65,7 @@ from rozliczenia.wall_clock import local_now
 from rozliczenia.workbook_files import file_bytes
 from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
-from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
+from rozliczenia.centrum.settings.files import FieldPath, FieldProblem, settings_yaml
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE, ByDad, History, HistoryRow, RowChange
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Memory, Remembered, settings_bytes
@@ -897,7 +897,7 @@ RULE_SENTENCES = {
 }
 
 
-def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego(tmp_path: Path) -> None:
+def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego_w_zdaniu_edytorze_i_historii(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     template = write_collective_template(app.tool.configuration.collective_template)
@@ -914,6 +914,11 @@ def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_plik
         "i Technicolor (opis) (AK)."
     )
     assert sentences["inea-gniazdo"] == "Jeśli URZĄDZENIA zawierają tekst „gniazdo”, to zostaw demontaż (AP) pustą w Rozliczeniu pracownika."
+    columns = {column["letter"]: column["name"] for column in app.client.get(QUANTITY_RULES_URL).json()["columns"]}
+    assert (columns["Z"], columns["AK"]) == ("ONT Nokia z montażem", "Technicolor (opis)")
+    assert app.client.delete("/api/settings/quantity-rules/technicolor").status_code == 200
+    [row] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
+    assert [(plain(change["before"]), change["after"]) for change in row["rules"]] == [(sentences["technicolor"], None)]
 
 
 def test_lista_urzadzen_w_ustawieniach_ma_kazdy_skladnik_z_innymi_zapisami_i_grupa(tmp_path: Path) -> None:
@@ -2935,6 +2940,7 @@ def test_jawna_zmiana_legendy_w_wydaniu_wchodzi_raz_jest_w_historii_z_cofnij_i_p
     again.stop()
 
     assert applied["rt2"] == "rt2: 1 w AK, AM na czerwono, AF na zielono."
+    assert list(applied) == [code.id for code in DEFAULT_ACTIVITY_LEGEND.codes], "kod z Wydania zastępuje kod taty na jego miejscu"
     assert (row["source"], row["file"], row["undoable"]) == ("release", LEGEND_FILE, True)
     assert [(plain(change["before"]), plain(change["after"])) for change in row["rules"]] == [
         ("rt2: 1 w AM, AM na czerwono, AF na zielono.", "rt2: 1 w AK, AM na czerwono, AF na zielono.")
@@ -4604,6 +4610,16 @@ def test_kazda_zmiana_z_wydania_ma_swiat_do_proby_pliku_bez_odczytu() -> None:
     )
 
 
+RELEASE_CHANGE_ID: Final = re.compile(r"\d{4}-(0[1-9]|1[0-2])-[a-z0-9]+(-[a-z0-9]+)*")
+
+
+def test_id_kazdej_zmiany_z_wydania_to_rok_miesiac_i_nazwa_i_zadne_sie_nie_powtarza() -> None:
+    ids = [change.id for change in RELEASE_CHANGES]
+
+    assert [found for found in ids if RELEASE_CHANGE_ID.fullmatch(found) is None] == []
+    assert len(set(ids)) == len(ids), "id jest pamięcią zmiany u taty, więc drugi wpis z tym samym id nigdy nie pobiegnie"
+
+
 @dataclass(frozen=True)
 class ReleaseEffect:
     """Ślad jednej zmiany z Wydania: jej wiersze Historii, wynik w pamięci zmian z Wydań i treść jej pliku."""
@@ -4918,6 +4934,26 @@ def test_zmiana_z_wydania_nie_nadpisuje_zlego_pliku_taty(tmp_path: Path, change:
     assert not any('"wynik":"zapisano"' in row.replace(" ", "") for row in _release_effect(tool, change).rows)
 
 
+@pytest.mark.parametrize("change", RELEASE_CHANGES, ids=[change.id for change in RELEASE_CHANGES])
+def test_zmiana_z_wydania_po_utracie_pamieci_wlasciciela_biegnie_drugi_raz_bez_roznicy_i_bez_wiersza(
+    tmp_path: Path, change: ReleaseChange[Any]
+) -> None:
+    tool = _release_world(tmp_path, change)
+    started(tool, (change,)).stop()
+    applied = _release_effect(tool, change)
+    shutil.rmtree(tool.config / MEMORY_DIRECTORY)
+    (tool.config / HISTORY_FILE).unlink()
+
+    started(tool, (change,)).stop()
+    again = _release_effect(tool, change)
+
+    assert applied.rows != ()
+    assert (again.rows, again.file) == ((), applied.file), (
+        "po utracie pamięci właściciela zmiana z Wydania biegnie jeszcze raz, więc jej edycja ustawia wartość („ustaw”, "
+        "„dodaj, jeśli nie ma”), a nie zmienia jej względem bieżącej"
+    )
+
+
 # --- Lista Wykonawców (#1473, ADR 0032): przeniesienie starych plików i reguły pliku ------------------------------------
 
 JAN = "jan.testowy@przyklad.invalid"
@@ -4987,7 +5023,7 @@ def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_sp
         "wykonawcy",
         False,
         False,
-    )
+    ), "przeniesienie Listy Wykonawców nie ma „Cofnij”, bo cofnięcie zostawiłoby Centrum bez Wykonawców"
     assert {name: (tool.config / name).read_bytes() for name in old} == old
 
 
@@ -4997,6 +5033,7 @@ def test_przeniesienie_laczy_konfiguracje_i_adresy_w_liste_wykonawcow_a_adres_sp
         pytest.param("wykonawcy: [", "plik nie jest poprawnym YAML", id="zly-yaml"),
         pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: [{JAN}, {JAN}]\n", "ten sam adres stoi dwa razy", id="adres-dwa-razy"),
         pytest.param(b"\xff\xfe nie UTF-8", "plik nie jest zapisany w UTF-8", id="spoza-utf-8"),
+        pytest.param(f"schema_version: 1\nwykonawcy:\n  jan.testowy: ['Jan Testowy <{JAN}>']\n", "któryś wpis nie jest adresem", id="nazwa-przed-adresem"),
     ],
 )
 def test_zly_plik_adresow_przenosi_wykonawcow_bez_adresow_i_mowi_tacie_dlaczego(
@@ -6221,6 +6258,42 @@ def test_dodany_wykonawca_staje_na_koncu_cofniety_wpis_wraca_na_miejsce_wpisu_ze
     assert list(listed_workers(client)) == [*start, "drugi.nowy", "pierwszy.nowy"]
 
 
+@pytest.mark.parametrize(
+    ("added", "rule"),
+    [
+        pytest.param(
+            [worker_form(["drugi.nowy"], "Pierwszy Nowy")], settings_messages.worker_same_file(), id="ta-sama-nazwa"
+        ),
+        pytest.param(
+            [worker_form(["drugi.nowy"], "Drugi Nowy", [OBCY])],
+            settings_messages.worker_address_repeated(),
+            id="wspolny-adres",
+        ),
+        pytest.param(
+            [worker_form(["pierwszy.nowy"], "Drugi Nowy"), worker_form(["pierwszy.drugi"], "Trzeci Nowy")],
+            settings_messages.worker_login_repeated(),
+            id="wspolny-login",
+        ),
+    ],
+)
+def test_cofniecie_usuniecia_wykonawcy_po_ktorym_lista_lamalaby_regule_to_odmowa_ze_zdaniem_a_lista_i_historia_bez_zmian(
+    tmp_path: Path, added: list[dict[str, object]], rule: str
+) -> None:
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["pierwszy.nowy", "pierwszy.drugi"], "Pierwszy Nowy", [OBCY]))
+    removed = client.delete(f"{WORKERS_API}/pierwszy.nowy")
+    saved = [client.post(WORKERS_API, json=form) for form in added]
+    workers, rows = centrum_.tool.worker_list.read_bytes(), history_rows_of(client)
+
+    undone = client.post(f"/api/settings/history/{removed.json()['change']}/undo")
+
+    assert [answer.status_code for answer in (removed, *saved)] == [200] * (1 + len(added))
+    assert (undone.status_code, undone.json()) == (422, {"message": settings_messages.worker_undo_breaks_list(rule)})
+    assert centrum_.tool.worker_list.read_bytes() == workers
+    assert history_rows_of(client) == rows
+
+
 def test_zmiana_wczesniejszego_wykonawcy_na_adres_albo_plik_pozniejszego_to_odmowa_przy_polu_formularza(tmp_path: Path) -> None:
     centrum_ = settling_centrum(tmp_path)
     client = centrum_.client
@@ -6797,7 +6870,9 @@ def test_przeniesienie_przypomnien_z_plikow_maksa_daje_dzien_wdrozenia_i_stopke_
     _, again = migrated_reminders(tool)
 
     assert reminders == {**ADR_0030_REMINDERS, "footer": kept, "state": "good", "enabled": enabled, "since": since, "problem": None}
-    assert (row["source"], row["release"]["change"], row["undoable"], row["refused"]) == ("release", "2026-11-przypomnienia", False, False)
+    assert (row["source"], row["release"]["change"], row["undoable"], row["refused"]) == ("release", "2026-11-przypomnienia", False, False), (
+        "przeniesienie przypomnień nie ma „Cofnij”, bo cofnięcie wyłączyłoby przypomnienia i zgubiło stopkę taty"
+    )
     assert len(again) == 1, "przeniesienie wchodzi raz"
     assert {name: (tool.config / name).read_bytes() for name in old} == old
 
@@ -9475,6 +9550,27 @@ def test_zly_temat_albo_tresc_jest_odrzucony_zdaniem_przy_polu_bez_zapisu_i_bez_
     assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
 
 
+def test_plik_tematu_i_tresci_bez_pola_tresci_ma_tresc_z_wydania(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path)
+    (app.tool.config / SETTLEMENT_MAIL_FILE).write_bytes(settings_yaml({"schema_version": 1, "temat": "Plik taty za {okres}"}))
+
+    setting = app.client.get("/api/settings").json()["settlement_mail"]
+
+    assert setting == {**DEFAULT_SETTLEMENT_MAIL, "subject": "Plik taty za {okres}"}
+
+
+def test_cofniecie_drugiej_zmiany_tematu_i_tresci_przywraca_temat_i_tresc_sprzed_niej(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path)
+    first = {"subject": "Rozliczenie {wykonawca}, {okres}", "text": "Dzień dobry {wykonawca}"}
+    assert app.client.put("/api/settings/settlement-mail", json=first).status_code == 200
+    assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik za {okres}", "text": "Cześć"}).status_code == 200
+    latest = next(row for row in app.client.get("/api/settings/history").json()["rows"] if row["file"] == SETTLEMENT_MAIL_FILE)
+
+    undone = app.client.post(f"/api/settings/history/{latest['id']}/undo")
+
+    assert undone.json()["settings"]["settlement_mail"] == {**first, "state": "good", "problem": None}
+
+
 def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tmp_path: Path) -> None:
     """Zapis idzie do ``wysylka-rozliczen.yaml`` z wierszem Historii Ustawień; „Cofnij” przywraca poprzedni temat, a
     podgląd pokazuje mail pierwszego Wykonawcy z Listy za ostatni pełny okres."""
@@ -9495,6 +9591,18 @@ def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tm
     ]
     assert undone.json()["settings"]["settlement_mail"]["subject"] == "Rozliczenie za {okres}"
     assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
+
+
+@pytest.mark.parametrize("pusta_lista", [pytest.param(True, id="lista-bez-wykonawcow"), pytest.param(False, id="bez-pliku-listy")])
+def test_podglad_maila_z_rozliczeniem_bez_wykonawcow_na_liscie_wstawia_przykladowa_nazwe(tmp_path: Path, pusta_lista: bool) -> None:
+    app = centrum(tmp_path)
+    if pusta_lista:
+        write_worker_list(app.tool.worker_list, worker_list({}))
+    form = {"subject": "Rozliczenie {wykonawca}, {okres}", "text": "Dzień dobry {wykonawca}"}
+
+    preview = app.client.post("/api/settings/settlement-mail/preview", json=form)
+
+    assert preview.json() == {"subject": "Rozliczenie Jan Kowalski, 6–12 października 2026", "text": "Dzień dobry Jan Kowalski\n"}
 
 
 DIFFERENCES_URL = f"{QUANTITY_RULES_URL}/differences"
