@@ -16,7 +16,6 @@ import re
 from tests.fixtures.git_repo import git
 
 ROOT = Path(__file__).resolve().parents[1]
-# Wzorzec składa słowo z klasy znaków, żeby ten plik sam go nie zawierał.
 SPOLSZCZONE = re.compile(r"fl[a]k(?!y|e8(?:_|\b))\w*", re.IGNORECASE)
 # Dane historyczne: tekst, którego nie piszemy, tylko przechowujemy taki, jaki był.
 HISTORIA = {

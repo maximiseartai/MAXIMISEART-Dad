@@ -44,7 +44,6 @@ IN_PROCESS_EXPLORERS = {
         "a limit pytest przerywa go jak każdy wiszący test (werdykt #660 r3, punkt 4)"
     ),
 }
-# Pliki eksploratorów, których kod hook zatrzymał, w kolejności; krok testu zgłasza te, które doszły w jego czasie.
 _stopped: list[str] = []
 
 

@@ -186,6 +186,7 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "settlement_mail_unusable": [partial(settings_messages.settlement_mail_unusable, settings_messages.settlement_mail_reads_as_report())],
             "settlement_mail_unknown_field": [settings_messages.settlement_mail_unknown_field],
             "settlement_mail_empty_text": [settings_messages.settlement_mail_empty_text],
+            "outside_scope": [settings_messages.outside_scope],
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
             "inbox_not_text": [settings_messages.inbox_not_text],
@@ -900,6 +901,7 @@ from pathlib import Path
 
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import Autostart
+from rozliczenia.centrum.scope import SCOPES, Workstation
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.settings.proposal import Edit, Proposal, ReleaseChange, ReleaseInputs
@@ -915,6 +917,7 @@ def zapisz(config: Path, log: CentrumLog, autostart: Autostart, periods: WorkerP
 
     CentrumSettings(
         config,
+        scope=SCOPES[Workstation.DAD],
         log=log,
         now=local_now,
         pause=lambda _: None,

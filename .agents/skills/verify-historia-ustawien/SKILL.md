@@ -149,7 +149,9 @@ that keeps a cut line apart), `replace_atomically` (old or new file, never a tor
 shapes of a Zmiana z Wydania). `_restores_absence` keeps a file whose Zmiana z Wydania gives no file a meaning
 (`refused_absent`, `waiting`: Lista Wykonawców); the model has no such change, so that branch is not checked. Left out
 on purpose: the pair check of Reguły ilości and Lista Urządzeń (`_paired`,
-`_checked`), the secret of the inbox file (`_with_secret_value`, the hash in `_seen`), the autostart place, the periods check of
+`_checked`), the secret of the inbox file (`_with_secret_value`, the hash in `_seen`), the autostart place, a settings file
+outside the Zakres of the Stanowisko (`_OutsideScope`: `_observed` gives `file.default` without the file, the memory or
+the Historia, and the constructor drops its Zmiany z Wydania), the periods check of
 removed logins (`_by_dad` before the lock), `keep_rejected`, the first read after the Wydanie that introduced the owner
 (no memory at all) and `_absent`. Two changes move the model without changing a definition, so look for them in the
 diff: a new caller that writes a settings file, the memory or the Historia outside `_change`, `_compared` and

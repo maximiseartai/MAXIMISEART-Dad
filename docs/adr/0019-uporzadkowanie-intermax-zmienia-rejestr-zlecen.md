@@ -16,6 +16,10 @@ raportów zmieniać też dzień i `WYKONAWCA` zlecenia, przenosić jego wiersz i
 dopisywać nowe wiersze do Dnia uporządkowanego.
 Aneks z 2026-11-17 (polecenie taty, spec #2079) stawia za `UWAGI` Historię
 adresu z Bazy zleceń.
+[ADR 0045](0045-stanowisko-andrzeja-w-tym-samym-centrum.md) daje Uporządkowanie
+także Andrzejowi na jego laptopie: Kopie INTERMAX leżą osobno na każdym
+komputerze, a przed Kopią i zapisem Uporządkowanie sprawdza, czy obok INTERMAX
+nie leży kopia konfliktu OneDrive.
 
 ## Kontekst
 

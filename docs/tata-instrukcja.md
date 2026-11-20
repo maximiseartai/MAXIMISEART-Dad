@@ -329,6 +329,7 @@ fragmentem pierwszej części.
 | „nie wystartowało z nieoczekiwanego powodu” | Kliknij skrót ponownie. Jeśli komunikat wraca, przekaż osobie utrzymującej narzędzie plik `logs\centrum-rozliczen.log` z folderu narzędzia. |
 | „nie wystartowało po aktualizacji narzędzia” | Nie wystartowała ani nowa, ani poprzednia wersja. Przekaż komunikat Maksowi. |
 | „Aktualizacja narzędzia jeszcze się kończy” | Centrum właśnie startuje w nowej wersji albo wraca do poprzedniej. Poczekaj 10 minut i kliknij skrót ponownie. |
+| „nie rozpoznaje Stanowiska tego komputera” | Plik `stanowisko.txt` w folderze `config` narzędzia ustawia Maks przy instalacji. Nie zmieniaj go, przekaż komunikat Maksowi. |
 
 Plik `logs\centrum-rozliczen.log` to dziennik Centrum: zapisuje tylko start,
 zamknięcie, port, rodzaj błędu, aktualizacje narzędzia i czas otwierania

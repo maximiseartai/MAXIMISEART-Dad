@@ -23,8 +23,6 @@ Remove = Callable[[Path], None]
 
 @dataclass
 class FaultyDisk:
-    """Usterki kroków podmiany INTERMAX; ``None``: krok prawdziwy (``LOCAL_DISK``)."""
-
     write: Write | None = None
     read: Read | None = None
     exists: Exists | None = None
@@ -46,11 +44,6 @@ class FaultyDisk:
 def failing_replace(
     error: Callable[[], OSError], *, times: int | None = None, before: Callable[[], object] = lambda: None
 ) -> tuple[Replace, list[int]]:
-    """Podmiana INTERMAX kończy się ``error()`` ``times`` razy (``None``: zawsze), a potem udaje się naprawdę.
-
-    ``before`` dzieje się tuż przed każdą próbą. Zwraca krok i listę, do której trafia każda próba.
-    """
-
     attempts: list[int] = []
 
     def replace(source: Path, target: Path) -> None:
@@ -75,8 +68,6 @@ def no_space() -> OSError:
 
 
 def writing(change: Callable[[bytes], bytes]) -> Write:
-    """Zapis pliku tymczasowego, który kładzie na dysku bajty zmienione przez ``change``, jak zepsuty zapis."""
-
     def write(path: Path, content: bytes) -> None:
         LOCAL_DISK.write(path, change(content))
 

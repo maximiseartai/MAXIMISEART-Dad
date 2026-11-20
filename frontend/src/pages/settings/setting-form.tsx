@@ -26,7 +26,7 @@ export function SettingFormSection<Setting extends { problem: SettingProblem | n
   above: Above,
   children,
 }: {
-  setting: (settings: Settings) => Setting
+  setting: (settings: Settings) => Setting | null
   rows: readonly string[]
   formOf: (setting: Setting) => Form
   above?: React.ComponentType<{ setting: Setting }>
@@ -41,6 +41,11 @@ export function SettingFormSection<Setting extends { problem: SettingProblem | n
       return <LoadFailure what="ustawień" message={settings.message} reload={reload} />
     case "ready": {
       const setting = select(settings.data)
+
+      if (setting === null) {
+        return null
+      }
+
       const saved = formOf(setting)
 
       return (

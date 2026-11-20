@@ -34,6 +34,10 @@ export function InboxSection() {
     case "ready": {
       const { inbox, inbox_problem: problem } = settings.data
 
+      if (inbox === null) {
+        return null
+      }
+
       return (
         <SettingsPanel label="Skrzynka raportów">
           <SettingRow

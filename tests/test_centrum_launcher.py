@@ -21,6 +21,7 @@ import pytest
 
 from rozliczenia.centrum import launcher, restart_guardian, shortcut
 from rozliczenia.centrum.platform import ConsoleRun
+from rozliczenia.centrum.scope import WORKSTATION_FILE, CentrumFunction
 from rozliczenia.centrum.platform import run_console_program
 from rozliczenia.centrum.shortcut import (
     SHORTCUT_FILE,
@@ -245,6 +246,64 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
     assert not opened.exists()
     assert _log_events(runtime) == ["blad-startu"]
     assert "kod=PORT_ZAJETY" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
+
+
+def _scope(port: int) -> list[str]:
+    with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/scope", timeout=10) as response:
+        functions = json.load(response)["functions"]
+    assert isinstance(functions, list)
+    return functions
+
+
+@pytest.mark.parametrize(
+    ("written", "functions"),
+    [
+        pytest.param(None, sorted(CentrumFunction), id="bez-pliku-stanowisko-taty"),
+        pytest.param("andrzej\n", ["intermax", "intermax_copies"], id="stanowisko-andrzeja"),
+        pytest.param("\ufefftata\r\n", sorted(CentrumFunction), id="stanowisko-taty-z-notatnika"),
+    ],
+)
+def test_centrum_ze_skrotu_ma_zakres_stanowiska_z_config_a_komputer_bez_pliku_stanowisko_taty(
+    tmp_path: Path, written: str | None, functions: list[str]
+) -> None:
+    runtime = copy_centrum_runtime(tmp_path / "narzedzie")
+    if written is not None:
+        (ToolDirectory(runtime).config / WORKSTATION_FILE).write_bytes(written.encode("utf-8"))
+    browser, _opened = _browser_recorder(tmp_path)
+    port = free_port()
+
+    with _started(_run_centrum(runtime, port), runtime, _environment(browser)):
+        centrum_health(port)
+        scope = _scope(port)
+        _close(port)
+
+    assert sorted(scope) == functions
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        pytest.param("ANDRZEJ\n", id="wielkie-litery"),
+        pytest.param("andrzej tata\n", id="dwa-stanowiska"),
+        pytest.param("", id="pusty-plik"),
+        pytest.param("\xff\xfe", id="nie-tekst"),
+    ],
+)
+def test_nieznane_stanowisko_w_config_daje_komunikat_startu_zamiast_stanowiska_taty(tmp_path: Path, written: str) -> None:
+    runtime = copy_centrum_runtime(tmp_path / "narzedzie")
+    (ToolDirectory(runtime).config / WORKSTATION_FILE).write_bytes(written.encode("latin-1"))
+    browser, opened = _browser_recorder(tmp_path)
+
+    launched = _launch_again(runtime, free_port(), _environment(browser))
+
+    assert launched.returncode == 1, launched.stdout + launched.stderr
+    assert launched.stdout.splitlines() == [
+        "Co się stało: Centrum rozliczeń nie wystartowało, bo nie rozpoznaje Stanowiska tego komputera.",
+        "Gdzie: plik stanowisko.txt w folderze config narzędzia",
+        "Co zrobić: Przekaż ten komunikat Maksowi.",
+    ]
+    assert not opened.exists()
+    assert "kod=NIEZNANE_STANOWISKO" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
 def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health(
@@ -587,6 +646,60 @@ def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchami
     assert health["service"] == "centrum-rozliczen"
     assert address == f"http://127.0.0.1:{port}/"
     assert exit_code == 0
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="The desktop shortcut and pythonw.exe are Windows-only.")
+def test_krok_instalacji_ze_stanowiskiem_andrzeja_zapisuje_je_i_daje_skrot_tylko_na_pulpicie_do_centrum_andrzeja(
+    tmp_path: Path,
+) -> None:
+    runtime = copy_centrum_runtime(tmp_path / "narzedzie")
+    desktop = tmp_path / "pulpit"
+    startup = tmp_path / "autostart"
+    desktop.mkdir()
+    startup.mkdir()
+    browser, _opened = _browser_recorder(tmp_path)
+
+    def install(*workstation: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(
+            [
+                sys.executable,
+                str(runtime / "install_centrum_shortcut.py"),
+                "--folder",
+                str(desktop),
+                "--folder-autostartu",
+                str(startup),
+                *workstation,
+            ],
+            cwd=runtime,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=_environment(browser),
+            timeout=120,
+            check=False,
+        )
+
+    installed, installed_again = install("--stanowisko", "andrzej"), install()
+    written = (ToolDirectory(runtime).config / WORKSTATION_FILE).read_text(encoding="utf-8")
+    shortcut = _read_shortcut(desktop / SHORTCUT_FILE)
+    port = free_port()
+    with _started(
+        [shortcut["TargetPath"], shortcut["Arguments"].strip('"'), "--port", str(port)], runtime, _environment(browser)
+    ):
+        centrum_health(port)
+        scope = _scope(port)
+        _close(port)
+
+    assert (installed.returncode, installed_again.returncode) == (0, 0), (
+        installed.stdout + installed.stderr + installed_again.stdout + installed_again.stderr
+    )
+    assert installed.stdout.splitlines()[0] == (
+        f"Zapisano Stanowisko tego komputera: {ToolDirectory(runtime).config / WORKSTATION_FILE}"
+    )
+    assert written == "andrzej\n"
+    assert ([path.name for path in desktop.iterdir()], list(startup.iterdir())) == ([SHORTCUT_FILE], [])
+    assert scope == ["intermax", "intermax_copies"]
 
 
 # ZEWNĘTRZNE: flaga CREATE_NO_WINDOW ma wartość 0x08000000 (Microsoft Learn: Process Creation Flags)
