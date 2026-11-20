@@ -22,9 +22,7 @@ Ta sama reguła obowiązuje przy poprawce operatora.
 
 Reguły szczebla i dowodu:
 
-- Autor wyrywa korzeń na najwyższym szczeblu, który działa, a przy każdym wyższym pisze jedno zdanie, czemu nie działa.
-  Gdy recenzent pokaże działający wyższy szczebel, to Ważne.
-  „Bez mechanizmu” nie jest szczeblem.
+- „Bez mechanizmu” nie jest szczeblem.
 - Dowód wyrwania: mechanizm pada na pierwotnym błędzie, a liczy go bramka strażnika (niżej).
   Recenzent następnej rundy jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
   Przy Ważnym z korzeniem R-PROZA-KOPIA regułę „Fix the class, not the instance” z `CODING_STANDARDS.md` autor stosuje do prozy: klasą jest każde zdanie diffu od merge-base na temat zdania z werdyktu, które przed kolejną rundą czyta z kodem (#2069: trzy `FAIL` za kolejne zdania o tym, skąd gospodarze biorą Ustawienia ze startu, `PASS` dopiero po przeczesaniu wszystkich).
