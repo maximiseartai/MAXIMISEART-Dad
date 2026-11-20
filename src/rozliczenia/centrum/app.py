@@ -17,7 +17,7 @@ import threading
 import time
 import uuid
 
-from fastapi import Depends, FastAPI, Response
+from fastapi import APIRouter, Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
 
 from rozliczenia.centrum.activity_legend_router import activity_legend_router, with_legend_sentences
@@ -27,7 +27,7 @@ from rozliczenia.centrum.cloud_files import CloudFiles
 from rozliczenia.centrum.configuration import ConfigurationFiles
 from rozliczenia.centrum.configuration_router import CONFIGURATION_WAIT_S, configuration_router
 from rozliczenia.centrum.case_delivery import case_outbox
-from rozliczenia.centrum.contract.centrum import Health
+from rozliczenia.centrum.contract import centrum as centrum_contract
 from rozliczenia.centrum.dad_action_journal import DadActionJournal
 from rozliczenia.centrum.dad_cases import DadCases
 from rozliczenia.centrum.dad_notes import dad_notes_router
@@ -56,13 +56,21 @@ from rozliczenia.centrum.process_kind import HostParts
 from rozliczenia.centrum.report_entering_run import ReportEnteringEntry, report_entering_router
 from rozliczenia.centrum.report_entering_state import FileReportState
 from rozliczenia.centrum.report_reminders import MinuteRhythm, ReminderRhythm, ReportReminders
-from rozliczenia.centrum.runs import RunHost, runs_router
+from rozliczenia.centrum.runs import RunHost, period_runs_router, runs_router
+from rozliczenia.centrum.scope import ALWAYS, SCOPES, CentrumFunction, Part, Scope, Workstation
 from rozliczenia.centrum.server import AFTER_START
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings, SettingsSnapshot
 from rozliczenia.centrum.settings.proposal import ReleaseChange
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
-from rozliczenia.centrum.settings_router import settings_router
+from rozliczenia.centrum.settings_router import (
+    autostart_router,
+    inbox_password_router,
+    periods_directory_router,
+    reminders_router,
+    settings_router,
+    settlement_mail_router,
+)
 from rozliczenia.centrum.settlement_mailing import SettlementMailing, settlement_mailing_router
 from rozliczenia.centrum.workers_router import workers_router
 from rozliczenia.centrum.quantity_differences import quantity_differences_router, with_exception_sentences
@@ -132,6 +140,7 @@ def create_app(
     settlement_mailbox: SettlementMailbox | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = RELEASE_CHANGES,
     update_threads: Threading = threading,
+    scope: Scope = SCOPES[Workstation.DAD],
 ) -> FastAPI:
     """Aplikacja jednej pracy Centrum (``CentrumWork``): części składa raz, a ich kolejność przy starcie daje ``lifespan``.
 
@@ -164,7 +173,8 @@ def create_app(
         notifications.check_in_background()
         box.check_in_background()
         outbox.resume()
-        rhythm.start(reminders.check)
+        if scope.covers(CentrumFunction.REMINDERS):
+            rhythm.start(reminders.check)
         try:
             yield {AFTER_START: comments.send_left_behind}
         finally:
@@ -183,11 +193,24 @@ def create_app(
 
     guard(app, log)
 
-    instance = uuid.uuid4().hex
+    def include(part: Part, router: APIRouter) -> None:
+        if scope.covers(part):
+            app.include_router(router)
 
-    @app.get("/api/health", operation_id="getHealth")
-    def health() -> Health:
-        return Health(service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance)
+    instance = uuid.uuid4().hex
+    centrum = APIRouter(prefix="/api")
+
+    @centrum.get("/health", operation_id="getHealth")
+    def health() -> centrum_contract.Health:
+        return centrum_contract.Health(
+            service=SERVICE, commit=_short(surroundings.tool_freshness.local()), instance=instance
+        )
+
+    @centrum.get("/scope", operation_id="getScope", tags=["centrum"])
+    def functions() -> centrum_contract.Scope:
+        return centrum_contract.Scope(functions=scope.listed())
+
+    include(ALWAYS, centrum)
 
     box = KeyedBox.of_work(report_box or GitHubReportBox(), work)
     freshness = tool_freshness or ToolFreshness.of_system(box.github_key)
@@ -221,9 +244,14 @@ def create_app(
         else ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect, smtp=inbox_smtp)
     )
     sentences = with_legend_sentences(with_exception_sentences(history_sentences(settings, price_list), price_list), price_list)
-    app.include_router(settings_router(settings, platform, inbox.try_login, today, sentences))
-    app.include_router(order_register_router(settings, platform))
-    app.include_router(periods_router(settings, platform, today, catalog))
+    include(ALWAYS, settings_router(settings, platform, sentences))
+    include(CentrumFunction.PERIODS, periods_directory_router(settings, platform))
+    include(CentrumFunction.AUTOSTART, autostart_router(settings))
+    include(CentrumFunction.REPORT_INBOX, inbox_password_router(settings, inbox.try_login))
+    include(CentrumFunction.REMINDERS, reminders_router(settings, today))
+    include(CentrumFunction.SETTLEMENT_MAILING, settlement_mail_router(settings, today))
+    include(ALWAYS, order_register_router(settings, platform))
+    include(CentrumFunction.PERIODS, periods_router(settings, platform, today, catalog))
     centrum_runs = CentrumRuns(work.config)
     history = History(catalog, centrum_runs)
     cases = DadCases(work)
@@ -234,13 +262,13 @@ def create_app(
         cloud_files or CloudFiles.of_system(),
         lambda: box.judge(wait_s=report_search_deadline_s),
     )
-    app.include_router(workers_router(settings, files, today))
+    include(CentrumFunction.WORKERS, workers_router(settings, files, today))
     recent = RecentCollectiveFiles(files)
-    app.include_router(quantity_rules_router(settings, price_list, recent))
-    app.include_router(activity_legend_router(settings, price_list, recent, work.forbidden))
-    app.include_router(quantity_differences_router(settings, price_list, recent))
+    include(CentrumFunction.QUANTITIES, quantity_rules_router(settings, price_list, recent))
+    include(CentrumFunction.QUANTITIES, activity_legend_router(settings, price_list, recent, work.forbidden))
+    include(CentrumFunction.QUANTITIES, quantity_differences_router(settings, price_list, recent))
     filling = FillingReads(work, files)
-    app.include_router(filling_router(settings, log, surroundings.cloud_files, filling))
+    include(CentrumFunction.FILLING, filling_router(settings, log, surroundings.cloud_files, filling))
     outbox = case_outbox(work, box, cases)
     reports = Reports(
         work,
@@ -305,7 +333,7 @@ def create_app(
     )
     reminders = ReportReminders(work, settings, reminder_mailbox or inbox, files, reports, now, report_files)
     mailing = SettlementMailing(work, settings, settlement_mailbox or inbox, files, now)
-    app.include_router(settlement_mailing_router(mailing))
+    include(CentrumFunction.SETTLEMENT_MAILING, settlement_mailing_router(mailing))
     report_entering = ReportEnteringEntry(settings, catalog, parts, contexts, report_files, reminders.shown)
     rhythm = reminder_rhythm or MinuteRhythm()
     cards = RunCards(disk, history.runs)
@@ -331,28 +359,33 @@ def create_app(
         release=release,
         threads=update_threads,
     )
-    app.include_router(runs_router(runs, starts))
-    app.include_router(intermax_router(runs, intermax, lambda: cards.latest(intermax.key)))
-    app.include_router(intermax_copies_router(runs, intermax))
-    app.include_router(report_entering_router(runs, report_entering, lambda: cards.latest(report_entering.key)))
-    app.include_router(run_cards_router(cards))
-    app.include_router(notifications_router(notifications))
-    app.include_router(
-        dad_notes_router(work, cases, outbox, box, surroundings.tool_freshness.local, history.runs, comments.link)
+    include(CentrumFunction.PERIODS, period_runs_router(runs, starts))
+    include(ALWAYS, runs_router(runs))
+    include(CentrumFunction.INTERMAX, intermax_router(runs, intermax, lambda: cards.latest(intermax.key)))
+    include(CentrumFunction.INTERMAX_COPIES, intermax_copies_router(runs, intermax))
+    include(
+        CentrumFunction.REPORT_ENTERING,
+        report_entering_router(runs, report_entering, lambda: cards.latest(report_entering.key)),
     )
-    app.include_router(metrics_router(history, today))
-    app.include_router(
+    include(ALWAYS, run_cards_router(cards))
+    include(ALWAYS, notifications_router(notifications))
+    include(
+        ALWAYS, dad_notes_router(work, cases, outbox, box, surroundings.tool_freshness.local, history.runs, comments.link)
+    )
+    include(CentrumFunction.METRICS, metrics_router(history, today))
+    include(
+        ALWAYS,
         configuration_router(
             configuration,
             surroundings.tool_freshness,
             release,
             lambda: box.judge(wait_s=CONFIGURATION_WAIT_S),
             template_check,
-        )
+        ),
     )
-    app.include_router(tool_update_router(updates))
-    app.include_router(shutdown_router(shutdown))
-    app.include_router(timing_router(log))
+    include(ALWAYS, tool_update_router(updates))
+    include(ALWAYS, shutdown_router(shutdown))
+    include(ALWAYS, timing_router(log))
     if path_state(STATIC_DIRECTORY) == "folder":
         app.mount("/", _Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
     return app

@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChangeEntrance, useContentEntrance } from "@/lib/content-entrance"
 import { isActive, useRuns } from "@/lib/runs"
+import { useInScope, type Declared } from "@/lib/scope"
 import { useSettings } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { RunHistoryCard } from "@/pages/metrics/run-history-card"
@@ -19,6 +20,16 @@ import { DecisionDialog } from "@/pages/runs/run-dialogs"
 import { IntermaxCard } from "@/pages/runs/intermax-card"
 import { RunSetupCard } from "@/pages/runs/run-setup-card"
 import { UnreadableStream } from "@/pages/runs/unreadable-stream"
+
+type NewRunCard = Declared & {
+  id: string
+  Shown: React.ComponentType<{ processes: ReadonlyArray<ProcessSetup> }>
+}
+
+const NEW_RUN_CARDS: ReadonlyArray<NewRunCard> = [
+  { id: "okres", function: "periods", Shown: RunSetupCard },
+  { id: "intermax", function: "intermax", Shown: IntermaxCard },
+]
 
 /** Stan Uruchomienia pochodzi wyłącznie ze strumienia serwera, więc przetrwa odświeżenie i ponowne otwarcie karty. */
 export function RunsPage() {
@@ -127,6 +138,7 @@ function RunOrSetup({
   entrance: string | undefined
 }) {
   const { dismissed, draft, deciding, decide, newRun } = useRuns()
+  const cards = useInScope(NEW_RUN_CARDS)
 
   const run = view.state === "idle" ? view.previous?.run : view.run
   const ended = view.state === "idle" || view.state === "finished"
@@ -137,8 +149,9 @@ function RunOrSetup({
   if (setupInstead) {
     return (
       <div key="nowe" className={cn(shown, "flex flex-col gap-6")}>
-        <RunSetupCard processes={processes} />
-        <IntermaxCard />
+        {cards.map(({ id, Shown }) => (
+          <Shown key={id} processes={processes} />
+        ))}
       </div>
     )
   }

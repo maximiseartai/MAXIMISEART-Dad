@@ -104,6 +104,10 @@ export type PastRun = NonNullable<Extract<RunView, { state: "idle" }>["previous"
 /** Akcja, którą Centrum proponuje po wyniku Uruchomienia. */
 export type NextAction = RunOutcome["next_action"]
 
+export function getScope() {
+  return call("getScope")
+}
+
 export function getSettings() {
   return call("getSettings")
 }
