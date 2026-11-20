@@ -737,7 +737,6 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "krok-mypy-ruff-poza-krokami": "weź krok z kroki_lokalne.static_steps",
     "lokator-tytulu-okna": "użyj settings_title(page)",
-    "naglowek-toml-podlancuchem": "czytaj plik tomllib",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
@@ -807,7 +806,6 @@ REGULY_CALEGO_DRZEWA: Final = (
     "kotwica-konca-linii",
     "krok-mypy-ruff-poza-krokami",
     "lokator-tytulu-okna",
-    "naglowek-toml-podlancuchem",
     "odczyt-docstringu",
     "regula-w-trasie",
     "stan-pliku-poza-file-state",
@@ -2176,12 +2174,10 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
     "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
-    "naglowek-toml-podlancuchem": (("tools",), ".py"),
     "komunikat-boxa-podlancuchem": (("tools",), ".py"),
     "stosunek-czasow-sciany": (("tests",), ".py"),
 }
 _SYS = "import sys\n\n"
-_TOML = "from pathlib import Path\n\n\ndef uv(plik: Path) -> bool:\n    return "
 _BOX = "import box_boat\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
 _ZEGAR = "import time\n\n\ndef test_stosunek() -> None:\n    start = time.perf_counter()\n    srodek = time.perf_counter()\n"
 _PATTERN = "import re\n\nLINE = "
@@ -2204,10 +2200,6 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("krok-mypy-ruff-poza-krokami", 'NARZEDZIA = ["mypy", "ruff"]\n', []),
     ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "mypy", "--strict", "format"]\n', [3]),
     ("krok-mypy-ruff-poza-krokami", f'{_SYS}POLECENIE = [sys.executable, "-m", "ruff", "format", "--check"]\n', []),
-    ("naglowek-toml-podlancuchem", f'{_TOML}"[tool.uv" in plik.read_text(encoding="utf-8")\n', [5]),
-    ("naglowek-toml-podlancuchem", f'{_TOML}"[project]" not in plik.read_text()\n', [5]),
-    ("naglowek-toml-podlancuchem", f'import tomllib\n\n{_TOML}"uv" in tomllib.loads(plik.read_text())["tool"]\n', []),
-    ("naglowek-toml-podlancuchem", f'{_TOML}"[tool.uv" in str(plik)\n', []),
     ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT in wyjscie\n", [5]),
     ("komunikat-boxa-podlancuchem", f"{_BOX}box_boat.KOMUNIKAT not in wyjscie\n", [5]),
     ("komunikat-boxa-podlancuchem", "from box_boat import KOMUNIKAT\n\n\ndef infra(wyjscie: str) -> bool:\n    return KOMUNIKAT in wyjscie\n", [5]),
@@ -2244,45 +2236,6 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
 
 
-@needs_ast_grep
-@pytest.mark.parametrize(
-    "naglowek",
-    [
-        pytest.param('"[tool.uv"', id="nawias-na-poczatku"),
-        pytest.param('"\\n[tool.uv]"', id="nawias-po-nowej-linii"),
-        pytest.param('"\\n\\n[project]"', id="nawias-po-dwoch-nowych-liniach"),
-        pytest.param('"uv = 1\\n[tool.uv]"', id="nawias-w-srodku-napisu"),
-        pytest.param('"\\n  [tool.uv]"', id="nawias-po-wcieciu"),
-        pytest.param('r"\\n[tool.uv]"', id="napis-surowy"),
-    ],
-)
-def test_naglowek_toml_podlancuchem_zglasza_naglowek_od_poczatku_linii(tmp_path: Path, naglowek: str) -> None:
-    base = _empty_base(tmp_path)
-    _probki_w_zakresie(tmp_path, "naglowek-toml-podlancuchem", {"probka": f"{_TOML}{naglowek} in plik.read_text()\n"})
-
-    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(5, "naglowek-toml-podlancuchem")]
-
-
-@needs_ast_grep
-@pytest.mark.parametrize(
-    ("szukanie", "linie"),
-    [
-        pytest.param(f'{_TOML}"""[tool.uv]\nmanaged = true""" in plik.read_text()\n', [5], id="potrojny-cudzyslow"),
-        pytest.param(f'{_TOML}"""\n[tool.uv]\n""" in plik.read_text()\n', [5], id="potrojny-cudzyslow-od-nowej-linii"),
-        pytest.param(f'{_TOML}plik.read_text().find("\\n[tool.uv]") >= 0\n', [5], id="find-na-tekscie-pliku"),
-        pytest.param(f'{_TOML}plik.read_text(encoding="utf-8").count("[project]") > 0\n', [5], id="count-na-tekscie-pliku"),
-        pytest.param(f'{_TOML}"[" in plik.name\n', [], id="nawias-poza-tekstem-pliku"),
-        pytest.param(f'{_TOML}"a[0]" in plik.read_text()\n', [], id="nawias-w-srodku-linii"),
-        pytest.param(f'{_TOML}plik.read_text().find("tool.uv") >= 0\n', [], id="find-bez-nawiasu"),
-    ],
-)
-def test_naglowek_toml_podlancuchem_w_kazdym_zapisie_literalu(tmp_path: Path, szukanie: str, linie: list[int]) -> None:
-    base = _empty_base(tmp_path)
-    _probki_w_zakresie(tmp_path, "naglowek-toml-podlancuchem", {"probka": szukanie})
-
-    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, "naglowek-toml-podlancuchem") for line in linie]
-
-
 # Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie
 # ``files:`` reguły z postacią tego samego chwastu, który mimo to przechodzi przez wszystkie reguły ast-grep i ruff z
 # konfiguracją swojego katalogu.
@@ -2297,10 +2250,6 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "program bez -m": 'POLECENIE = ["mypy", "--no-incremental"]\n',
         "narzędzie w zmiennej": f'{_SYS}NARZEDZIE = "mypy"\nPOLECENIE = [sys.executable, "-m", NARZEDZIE]\n',
         "polecenie w jednym napisie": 'POLECENIE = "python -m mypy --no-incremental"\n',
-    },
-    "naglowek-toml-podlancuchem": {
-        "tekst pliku w zmiennej": 'from pathlib import Path\n\n\ndef uv(plik: Path) -> bool:\n    tekst = plik.read_text()\n    return "[tool.uv" in tekst\n',
-        "klucz bez nawiasu": f'{_TOML}"tool.uv" in plik.read_text()\n',
     },
     "komunikat-boxa-podlancuchem": {
         "tekst komunikatu w literale": 'def infra(wyjscie: str) -> bool:\n    return "BOX: boat przeniósł katalog repo" in wyjscie\n',
