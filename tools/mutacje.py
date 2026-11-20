@@ -21,6 +21,7 @@ import czasy_ci
 import github
 from jednostka import ZMIENNA_CZESCI
 from kroki_lokalne import environment
+import na_boxie
 import plan_runu
 from ostatnie_linie import MUTACJE_OK
 import potomne
@@ -343,6 +344,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.zasady:
         print(silnik_mutacji.ZASADY.strip())
         return 0
+    na_boxie.przenies(args.plik)
     if not args.juz_lapie and (limits := [flag for flag, value in (("--juz-lapie-s", args.juz_lapie_s), ("--podstawa-s", args.podstawa_s)) if value is not None]):
         parser.error(f"{' i '.join(limits)} to limity sprawdzenia {ALREADY}, które biegnie tylko z --juz-lapie: dopisz --juz-lapie albo usuń limit")
     args.juz_lapie_s = ALREADY_S if args.juz_lapie_s is None else args.juz_lapie_s

@@ -29,6 +29,8 @@ node_modules/
 .ci-czasy/
 .ci-plan/
 .ci-niestabilne/
+# Junit testu scalenia tools/scal_pr.py na boxie boat (tools/lib/testy_scalenia.py): plik w drzewie repo boxa, którego nie widzi git, więc sprawdzenie drzewa repo w sesji pytest go nie liczy.
+.junit-testu-scalenia.xml
 
 # Kopie INTERMAX i metryki Uporządkowania INTERMAX na komputerze taty.
 Kopie INTERMAX/

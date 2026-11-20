@@ -28,6 +28,7 @@ from tests.fixtures.linie_watkow import shared_test_loop, stopped_after_test
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import api_actions
+import na_boxie
 import niestabilne_testy
 from repo import IMPORT_ROOTS, ROOT
 from tests.fixtures.drzewo_repo import files_with_added_lines, left_behind, opening
@@ -46,9 +47,14 @@ pytest_plugins = ["tests.fixtures.eksplorator_w_procesie", "tests.fixtures.stan_
 
 
 def pytest_configure(config: pytest.Config) -> None:
+    """Sesja z więcej niż jednym workerem xdist na Macu przenosi się na box boat (``tools/lib/na_boxie.py``); worker
+    xdist dziedziczy decyzję kontrolera."""
+
     from tests.fixtures.potomne import ctrl_c_reaches_children
 
     ctrl_c_reaches_children()
+    if not hasattr(config, "workerinput"):
+        na_boxie.przenies_pytest(config)
 
 
 def pytest_itemcollected(item: pytest.Item) -> None:

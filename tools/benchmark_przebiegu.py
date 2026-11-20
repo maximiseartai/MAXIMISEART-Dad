@@ -23,6 +23,7 @@ from benchmark.dziennik import (
 from benchmark.lustro import SCENARIOS, default_templates_directory, default_worker_list, ensure_mirror, template_paths
 from benchmark.pomiar import RUNS, exclusive_measurement, measure, measurement_lock
 from benchmark.referencja import find_reference, freeze_reference, reference_folder
+import na_boxie
 from quiet_machine import MachineBusy, QuietMachine
 
 OPIS = """Mierzy czas Przebiegu rozliczeń (measure) na lustrze folderów taty, bez danych klientów; użyj przed i po zmianie wydajności silnika.
@@ -181,6 +182,7 @@ def _measure_or_freeze(args: argparse.Namespace, references: Path) -> dict[str, 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
+    na_boxie.przenies()
     try:
         if args.command == "comment":
             print(render_comment(read_journal(args.journal), args.before, args.after), end="")

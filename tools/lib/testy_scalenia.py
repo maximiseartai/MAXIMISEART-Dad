@@ -10,6 +10,7 @@ import time
 
 import czasy_ci
 import github
+import na_boxie
 import potomne
 from repo import ROOT
 import repo
@@ -43,6 +44,9 @@ MERGE_TEST_DISTANCE = 1
 # Suma czasów CI plików testu scalenia; Mac agenta liczy je ~5 razy szybciej (6.11.2026: 507 s w CI, 94 s na Macu).
 MERGE_TEST_BUDGET_S = 180.0
 MERGE_TEST_TIMEOUT_S = 300
+# Junit testu scalenia na boxie boat, względny do kopii, który ``na_boxie.uruchom`` zabiera z boxa; ``.gitignore`` go
+# ignoruje, bo plik w drzewie repo, który widzi git, wywraca sesję pytest sprawdzeniem drzewa repo (``DRZEWO REPO``).
+JUNIT = ".junit-testu-scalenia.xml"
 
 
 class Refused(Exception):
@@ -110,20 +114,23 @@ def _model_drift(copy: Path, base: str) -> list[str]:
 def failed_tests(copy: Path, tests: Sequence[str], what: str) -> list[str]:
     """Testy z ``tests``, które padły pytestem w ``copy``, po kolei z junit: id testu, a błąd kolekcji plikiem. Rzuca
     ``Refused``, gdy pytest nie daje wyniku w limicie czasu albo pada, nie nazywając testu (wtedy z przyczyną ze stderr,
-    np. nieznana opcja)."""
+    np. nieznana opcja). Na Macu Maksa pytest biegnie na boxie boat kopii (``na_boxie.uruchom``), bo narzędzie zostaje
+    na Macu, a ciężki pytest nie, a box, który nie wstał, to odmowa."""
 
     workers = str(czasy_ci.workery_lokalne())
     with tempfile.TemporaryDirectory() as folder:
-        junit = Path(folder, "junit.xml")
+        on_box = na_boxie.przeniesc()
+        junit, limit = (Path(folder, JUNIT), MERGE_TEST_TIMEOUT_S + na_boxie.START_S) if on_box else (Path(folder, "junit.xml"), MERGE_TEST_TIMEOUT_S)
+        command = [sys.executable, "-m", "pytest", "-q", "-rfE", "-n", "auto", *wyniki_testow.zapis(Path(JUNIT) if on_box else junit), *tests]
         try:
-            done = potomne.run(
-                [sys.executable, "-m", "pytest", "-q", "-rfE", "-n", "auto", *wyniki_testow.zapis(junit), *tests],
-                cwd=copy,
-                env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": workers},
-                timeout=MERGE_TEST_TIMEOUT_S,
-            )
+            if on_box:
+                done = na_boxie.uruchom(command, copy, timeout=MERGE_TEST_TIMEOUT_S, result=JUNIT, into=Path(folder))
+            else:
+                done = potomne.run(command, cwd=copy, env={**os.environ, "PYTEST_XDIST_AUTO_NUM_WORKERS": workers}, timeout=limit)
         except subprocess.TimeoutExpired:
-            raise Refused(f"{what} bez wyniku po {MERGE_TEST_TIMEOUT_S} s: {', '.join(tests)}") from None
+            raise Refused(f"{what} bez wyniku po {limit} s: {', '.join(tests)}") from None
+        if on_box and done.returncode == na_boxie.NIE_WSTAL:
+            raise Refused(f"{what} nie ruszył: box boat nie wstał, a ciężki pytest nie biegnie na Macu; powtórz scal_pr")
         if not done.returncode:
             return []
         print(done.stdout.rstrip(), done.stderr.rstrip(), sep="\n", flush=True)

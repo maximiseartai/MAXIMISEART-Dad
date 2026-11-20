@@ -13,6 +13,7 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 ## Gdzie biegnie polecenie
 
 Każde ciężkie polecenie i każdą jego część, którą da się rozdzielić, puszczaj przez `boatbox`, także wiele razy i równolegle.
+Ciężkie narzędzia repo (`szybko.py`, `mutacje.py`, `mutacje_zmiany.py`, `benchmark_przebiegu.py`, `ci_lokalnie.py` z zadaniem `pytest` albo `mutations` i pytest z więcej niż jednym workerem xdist) uruchomione na Macu same przechodzą przy starcie na box (`boatbox run` z tym samym poleceniem, `tools/lib/na_boxie.py`), a gdy box nie wstanie, kończą się kodem 75 bez biegu na Macu; na Macu zostają tylko przez `boatbox run --here '<polecenie>'`.
 
 | Praca | Gdzie | Jak |
 |---|---|---|

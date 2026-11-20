@@ -79,6 +79,7 @@ przepuszcza."tools/ci/wykonaj_zadanie.py" = ["tests/fixtures/granice_ksztaltow.p
 "tools/lib/github.py" = ["tests/fixtures/fake_cli.py"]
 przepuszcza."tools/lib/jednostka.py" = []
 przepuszcza."tools/lib/kroki_skilli.py" = ["tests/test_podstawa_w_czesciach.py"]
+"tools/lib/na_boxie.py" = ["tests/test_na_boxie.py"]
 przepuszcza."tools/lib/niestabilne_testy.py" = ["tests/fixtures/kwarantanna.py", "tests/test_kwarantanna.py"]
 przepuszcza."tools/lib/plan_runu.py" = []
 przepuszcza."tools/lib/pokrycie_procesu.py" = []

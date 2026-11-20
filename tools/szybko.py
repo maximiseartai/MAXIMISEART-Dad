@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 import box_boat
 import czasy_ci
 from kroki_lokalne import OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
+import na_boxie
 import potomne
 from repo import BASE, ROOT
 import repo
@@ -403,6 +404,7 @@ def main(argv: list[str] | None = None) -> int:
         "--napraw", action="store_true", help="Gdy padł tylko rozjazd modelu, przelicza skróty skilli, których modelu zmiana nie dotyka (opis wyżej)."
     )
     args = parser.parse_args(argv)
+    na_boxie.przenies()
     try:
         changed = changed_since(ROOT, args.baza)
     except subprocess.CalledProcessError:

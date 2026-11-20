@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 import ciezkie_ci
 from kroki_lokalne import MYPY_PLATFORMS, OUTPUT_ON_FAILURE, Step, environment, pytest_step, static_steps, workflow_steps
+import na_boxie
 from ostatnie_linie import CI_LOKALNIE_FAIL, CI_LOKALNIE_OK
 import potomne
 from repo import BASE, ROOT
@@ -195,6 +196,8 @@ def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
     jobs = set(args.tylko.split(",")) if args.tylko else set(EVERY_COMMIT_JOBS if args.kazdy_commit else known)
     if unknown := jobs - known:
         parser.error(f"nieznane zadania: {', '.join(sorted(unknown))}; znane: {', '.join(sorted(known))}")
+    if jobs & {"pytest", "mutations"}:
+        na_boxie.przenies()
     if refusal := ciezkie_ci.refusal(jobs, args.odtwarzam, root=root):
         print(refusal)
         return 2
