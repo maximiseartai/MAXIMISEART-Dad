@@ -1432,7 +1432,7 @@ def test_pobranie_idzie_do_githuba_wprost_mimo_proxy_w_konfiguracji_gita_kompute
     with system_proxy(monkeypatch) as proxied, origin_asking_for_login() as origin:
         address = os.environ["http_proxy"]
         for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
-            monkeypatch.delenv(name)
+            monkeypatch.delenv(name, raising=False)
         monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(computer_git_config(tmp_path / "gitconfig", f"[http]\n\tproxy = {address}\n")))
         result = ToolClone(repository.clone, origin=origin).update()
 
