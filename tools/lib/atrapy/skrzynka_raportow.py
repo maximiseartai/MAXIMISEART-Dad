@@ -430,8 +430,6 @@ class _Session(socketserver.StreamRequestHandler):
 
 
 def _uid_set(text: str) -> set[int]:
-    """UID ze zbioru sekwencji IMAP: liczby i zakresy ``a:b`` po przecinku."""
-
     found: set[int] = set()
     for item in text.split(","):
         first, _, last = item.partition(":")
@@ -460,8 +458,6 @@ def _since(mails: Sequence[AtrapaMail], arguments: str) -> list[AtrapaMail]:
 
 @dataclass(frozen=True)
 class _Mime:
-    """Część maila w bajtach: nagłówek z pustą linią, treść i, dla ``multipart``, części między granicami."""
-
     header: bytes
     body: bytes
     parts: tuple[_Mime, ...]
@@ -472,8 +468,6 @@ class _Mime:
 
 
 def _mime(raw: bytes) -> _Mime:
-    """Drzewo części maila po granicach ``boundary`` z nagłówków, z bajtami każdej części jak w mailu."""
-
     found = re.search(rb"\r?\n\r?\n", raw)
     split = len(raw) if found is None else found.end()
     header, body = raw[:split], raw[split:]

@@ -23,9 +23,6 @@ from atrapy.intermax import like_excel
 
 @dataclass(frozen=True)
 class Layout:
-    """Układ kolumn arkusza Bazy: nagłówki od kolumny A i kolumny (od 1) daty realizacji, numeru zlecenia i ``MIASTO``
-    (``None``: arkusz bez niej)."""
-
     headers: tuple[str, ...]
     date: int
     number: int
@@ -100,8 +97,6 @@ class Visit:
 
 @dataclass(frozen=True)
 class BaseSheet:
-    """Arkusz Bazy: nazwa, układ kolumn i wiersze od 2, po kolei."""
-
     name: str
     layout: Layout
     visits: Sequence[Visit]

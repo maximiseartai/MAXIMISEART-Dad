@@ -124,8 +124,6 @@ def write_source(path: Path, *, include_unmapped: bool) -> None:
 
 
 def write_source_rows(path: Path, rows: Sequence[SourceRow]) -> None:
-    """Plik zbiorczy z nagłówkiem WYKONAWCA i ``rows`` od pierwszego Wiersza danych; ilość w N to numer w kolejności."""
-
     workbook = Workbook()
     sheet = active_worksheet(workbook)
     sheet.title = "Sheet1"

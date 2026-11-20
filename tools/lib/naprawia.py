@@ -153,9 +153,6 @@ def listed_issues(html: str, repository: str, words: tuple[str, ...]) -> tuple[i
 
 
 def close_fixed(pull: Pull, *, merged: bool, merge_commit: str | None) -> str:
-    """Zamyka otwarte issues z linii „Naprawia” i issues chwastów z linii „Korzeń z #N: R-KOD” z komentarzem o merge'u,
-    a przed merge'em tylko je podaje."""
-
     words = [word for word, present in ((f"„{FIXES}”", FIXES in pull.body), (f"„{rejestr_korzeni.ROOT_WORDS}”", rejestr_korzeni.ROOT_WORDS in pull.body)) if present]
     if not words:
         return ""

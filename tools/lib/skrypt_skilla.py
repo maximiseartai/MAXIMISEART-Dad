@@ -88,8 +88,6 @@ class Parser(argparse.ArgumentParser):
         )
 
     def add_variants(self, known: Iterable[str], *, default: str, every: Iterable[str]) -> None:
-        """``args.variant`` to krotka wariantów w podanej kolejności; ``all`` to ``every``."""
-
         variants = self._variants = _Variants(tuple(known), default, tuple(every))
         self.add_argument(
             "--variant",
@@ -183,9 +181,6 @@ def _writable_then_retry(function: Callable[..., Any], path: str, _: object) -> 
 
 
 def part(units: Sequence[T], environment: Mapping[str, str] = os.environ) -> tuple[T, ...]:
-    """Jednostki części ``K/N`` z ``MUTACJE_CZESC`` w ``environment``: K-ty z N kolejnych kawałków ``units`` (bez
-    zmiennej wszystkie). Zła postać albo N większe od liczby jednostek, przy którym część byłaby pusta, to ``ValueError``."""
-
     value = environment.get(ZMIENNA_CZESCI)
     if not value:
         return tuple(units)
