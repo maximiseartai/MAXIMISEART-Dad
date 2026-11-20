@@ -27,7 +27,6 @@ export function PeriodBoardTable({
   periods: ReadonlyArray<PeriodRow>
   onStale: () => void
 }) {
-  // Rozwinięcie trwa do przeładowania strony; okresy, które się nie zaczęły, nie pokazują się nigdy.
   const [showAll, setShowAll] = React.useState(false)
   const hasOlder = periods.some((period) => period.board_place === "older")
 
@@ -130,7 +129,6 @@ const FILE_ICONS: Record<OpenTarget, React.ReactNode> = {
   worker_settlements_folder: <UsersIcon data-icon="inline-start" />,
 }
 
-/** Przyciski plików okresu w kolejności i z nazwami z serwera. */
 function PeriodFiles({ period, onStale }: { period: PeriodRow; onStale: () => void }) {
   return (
     <div className="flex items-center gap-0.5">

@@ -19,10 +19,6 @@ export type RunDraft = Pick<RunRequest, "process" | "period">
 /** Proces bez okresu, który bierze tylko Ustawienia Centrum i startuje własną operacją kontraktu. */
 type ProcessWithoutPeriod = "intermax" | "report_entering"
 
-/**
- * Start Uruchomienia: proces z okresem, proces bez okresu (Uporządkowanie INTERMAX, Wpisanie raportów) albo Wpis na
- * życzenie, czyli Wpisanie raportów z decyzją taty przy Wpisie `request`.
- */
 export type RunStart = RunRequest | { process: ProcessWithoutPeriod } | { process: "report_entering"; request: RequestedCell }
 
 export function rerunOf(run: RunInfo, mode: RunMode): RunStart {
@@ -48,7 +44,6 @@ function startOf(request: RunStart) {
 }
 
 type RunsContextValue = {
-  /** Bieżące Uruchomienie procesu ze strumienia; `null`, dopóki nie przyjdzie pierwszy widok. */
   view: RunView | null
   /** Połączenie ze strumieniem zerwane; przeglądarka łączy się ponownie sama. */
   disconnected: boolean
@@ -56,18 +51,11 @@ type RunsContextValue = {
   unreadable: boolean
   draft: RunDraft | null
   setDraft: (draft: RunDraft | null) => void
-  /** Zakończone Uruchomienie, którego wynik tata odłożył przyciskiem „Nowe Uruchomienie procesu”. */
   dismissed: string | null
   newRun: (finishedRunId: string) => void
-  /** Start wysłany, a strumień nie pokazał jeszcze nowego Uruchomienia; do tej pory kolejny start nic nie wysyła. */
   starting: boolean
   start: (request: RunStart) => Promise<boolean>
-  /**
-   * „Uruchom ponownie”: ten sam proces i okres w tym samym trybie podglądu. Wycena w efenix nie startuje od razu, tylko
-   * wraca do karty startu z tym okresem, bo tryb Wyceny tata wybiera przy każdym starcie (ADR 0027).
-   */
   rerun: (run: RunInfo) => void
-  /** Uruchomienie, którego decyzja jest wysłana, a strumień nadal pokazuje, że na nią czeka. */
   deciding: string | null
   decide: (runId: string, answer: DecisionAnswer["answer"]) => void
 }

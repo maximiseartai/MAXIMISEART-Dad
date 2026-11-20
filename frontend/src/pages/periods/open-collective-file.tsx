@@ -4,7 +4,6 @@ import { FileSpreadsheetIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { openAndConfirm } from "@/pages/periods/open-period-path"
 
-/** „Otwórz Plik zbiorczy” okresu `period` w Excelu, w wyglądzie przycisku miejsca, w którym stoi. */
 export function OpenCollectiveFileButton({
   period,
   ...button

@@ -85,7 +85,6 @@ const PHASE_VALUES: Record<PhaseProgress["state"], number | null> = {
   failed: 100,
 }
 
-/** Podgląd na żywo bieżącego Uruchomienia procesu i jego wynik; wszystko z widoku serwera. */
 export function RunCard({
   view,
   reminder,
@@ -148,11 +147,6 @@ export function RunCard({
   )
 }
 
-/**
- * Ostatnie Uruchomienie sprzed startu Centrum, z dysku: karta z Logów Uruchomienia, wynik z Historii, gdy Centrum
- * zamknęło się przed zapisem Logów, albo Uruchomienie, w którego trakcie Centrum się zamknęło. Wygląda jak wynik na
- * żywo, z dopiskiem, skąd jest.
- */
 export function PastRunCard({ past, reminder, onNewRun }: { past: PastRun; reminder: string; onNewRun: () => void }) {
   switch (past.state) {
     case "restored":
@@ -183,7 +177,6 @@ function RestoredRunCard({ past, reminder, onNewRun }: { past: RunRestored; remi
   )
 }
 
-/** Wynik z Historii bez szczegółów: Centrum zamknęło się tuż po wyniku, zanim zapisało resztę karty. */
 function RecordedRunCard({ past, reminder, onNewRun }: { past: RunRecorded; reminder: string; onNewRun: () => void }) {
   const { run } = past
   const next = useNextAction(run, past.next_action, reminder)
@@ -199,7 +192,6 @@ function RecordedRunCard({ past, reminder, onNewRun }: { past: RunRecorded; remi
   )
 }
 
-/** Karta skończonego Uruchomienia sprzed startu Centrum: można zacząć nowe albo napisać o nim do Maksa. */
 function FinishedPastCard({ run, onNewRun, children }: { run: RunInfo; onNewRun: () => void; children: React.ReactNode }) {
   return (
     <Card role="region" aria-label="Ostatnie Uruchomienie">
@@ -256,7 +248,6 @@ export function HistoryRunCard({ card }: { card: RunRestored }) {
   )
 }
 
-/** Okres, proces, tryb i akcje karty Uruchomienia. */
 function RunHeader({ run, actions }: { run: RunInfo; actions: React.ReactNode }) {
   return (
     <CardHeader>
@@ -338,7 +329,6 @@ function PhaseList({ phases }: { phases: ReadonlyArray<PhaseProgress> }) {
   )
 }
 
-/** Ikona stanu etapu. Ikona stanu, który zmienił się na oczach taty, wchodzi `podmiana`; zastana stoi. */
 function PhaseIcon({ state }: { state: PhaseProgress["state"] }) {
   const entrance = useChangeEntrance(state, "podmiana")
 
@@ -352,7 +342,6 @@ function PhaseIcon({ state }: { state: PhaseProgress["state"] }) {
 function RunOutcomeSection({ run, result, reminder }: { run: RunInfo; result: RunOutcome; reminder: string }) {
   const { rerun } = useRuns()
   const next = useNextAction(run, result.next_action, reminder)
-  // Czy i jak proponować Diagnozę, mówi serwer: przy niej przycisk „Diagnoza” zastępuje następną akcję.
   const offersDiagnosis = result.diagnosis !== null
 
   const diagnosis = useStopDiagnosis(run.id, result.diagnosis, result.report, () => rerun(run))
@@ -377,13 +366,8 @@ type StopKind = NonNullable<RunOutcome["stop_kind"]>
 
 type DadFile = NonNullable<RunOutcome["opens"]>
 
-/** To, co przy Zatrzymaniu wie tylko bieżące Uruchomienie, a Logi Uruchomienia nie: notka o plikach i plik taty. */
 type LiveStop = { filesUnchanged: boolean; opens: DadFile | null; openFirst: boolean }
 
-/**
- * Wynik: liczby, tytuł albo Zatrzymanie z akcją, ostrzeżenia, uwagi techniczne i szczegóły podsumowania.
- * Z `filling` przygotowany Plik zbiorczy ma pod wynikiem podsumowanie Uzupełnienia pliku zbiorczego, w stanie z pliku.
- */
 function OutcomeBody({
   run,
   result,
@@ -398,7 +382,6 @@ function OutcomeBody({
   action: React.ReactNode
   live?: LiveStop | null
   below?: React.ReactNode
-  /** Zlecenia, które zostały tacie, Zlecenia przekazane i rozliczone, z numerami i Wykonawcami: zastępują ostrzeżenia w trzech częściach. */
   notes?: ReadonlyArray<OrderNotes> | null
   filling?: boolean
 }) {
@@ -444,7 +427,6 @@ function OutcomeBody({
   )
 }
 
-/** Wynik bez Zatrzymania: ikona wyniku, tytuł i akcja po nim. */
 function ResultAlert({
   result,
   headline,
@@ -463,7 +445,6 @@ function ResultAlert({
   )
 }
 
-/** Akcja po wyniku, którą proponuje serwer, z potwierdzeniem zapisu przy „Uruchom”. */
 function useNextAction(run: RunInfo, action: NextAction, reminder: string) {
   const { start, rerun } = useRuns()
   const [confirming, setConfirming] = React.useState(false)
@@ -497,7 +478,6 @@ const FILES_UNCHANGED = "Nic nie zapisano, Twoje pliki są bez zmian."
 
 type StopLook = "stop" | "to_fix" | "declined"
 
-/** Baner Zatrzymania: czerwony przy błędzie (ton wyniku z serwera), własny po odmowie w Decyzji taty, inaczej do poprawy. */
 function stopLook(tone: LoggedOutcome["tone"], kind: StopKind): StopLook {
   if (tone === "failed") {
     return "stop"
@@ -508,8 +488,6 @@ function stopLook(tone: LoggedOutcome["tone"], kind: StopKind): StopLook {
 
 type DadFileLook = "default" | "outline"
 
-// Przycisk pliku taty przy Zatrzymaniu i po wyniku. Rejestr zleceń nosi nazwę z Komunikatów procesu (`register_name`),
-// np. „INTERMAX” w Uporządkowaniu INTERMAX.
 const DAD_FILES: Record<DadFile, (run: RunInfo, look: DadFileLook) => React.ReactNode> = {
   order_register: (run, look) => (
     <Button size="sm" variant={look} onClick={openOrderRegisterAndConfirm}>
@@ -520,7 +498,6 @@ const DAD_FILES: Record<DadFile, (run: RunInfo, look: DadFileLook) => React.Reac
   collective_file: (run, look) => <OpenCollectiveFileButton period={run.period} size="sm" variant={look} />,
 }
 
-/** Zatrzymanie na karcie wyniku: obok akcji z serwera przycisk pliku taty, w którym jest poprawka. */
 function RunStop({
   stop,
   look,
@@ -557,7 +534,6 @@ function RunStop({
   )
 }
 
-/** Jedyna akcja przy wyniku; którą pokazać, mówi serwer. */
 function NextActionButton({
   action,
   run,
@@ -609,7 +585,6 @@ function RerunButton({ onRerun }: { onRerun: () => void }) {
   )
 }
 
-/** Postęp Szablonów pracowników z projekcji: bieżący Wykonawca i „x z y”. */
 function TemplateProgress({ progress }: { progress: RunProgress }) {
   const counted = `${progress.templates_completed} z ${progress.template_total}`
 
@@ -630,10 +605,6 @@ function TemplateProgress({ progress }: { progress: RunProgress }) {
   )
 }
 
-/**
- * Krok Zapisywania procesu bez Szablonów pracowników: z liczeniem pasek „n z m” z bieżącym Wykonawcą, bez niego
- * jedno zdanie, co teraz trwa (np. „Zaloguj się w oknie efenix”).
- */
 function StepProgress({ step }: { step: ProgressStep }) {
   if (step.total === 0) {
     return (
@@ -657,7 +628,6 @@ function StepProgress({ step }: { step: ProgressStep }) {
   )
 }
 
-/** Zlecenia Wyceny w efenix: wiersz Pliku zbiorczego, numer zlecenia, Wykonawca i co się stało (gdy zostały tacie); puste znika. */
 function OrderNoteList({
   title,
   notes,
@@ -699,7 +669,6 @@ function OrderNoteList({
   )
 }
 
-/** Szczegóły wyniku z serwera: kafelki liczb (np. Zlecenia na dzień), pliki okresu i Rozliczenia pracowników. */
 function SummaryDetails({ summary, run }: { summary: RunSummary; run: RunInfo }) {
   // Po podglądzie bez zapisu pliki są tylko planem: jeszcze ich nie ma, więc nie ma czego otwierać.
   const open = run.mode === "DRY-RUN" ? undefined : (what: OpenedInPeriod) => openAndConfirm(run.period, what)
@@ -758,7 +727,6 @@ function PeriodFiles({
   )
 }
 
-/** Plan plików po podglądzie: każdy Wykonawca, nazwa jego pliku i liczba zleceń; rozwinięty od razu. */
 function FilePlan({ settlements }: { settlements: ReadonlyArray<WorkerSettlement> }) {
   return (
     <Disclosure label={`Plan plików (${settlements.length})`} defaultOpen>
@@ -779,7 +747,6 @@ function FilePlan({ settlements }: { settlements: ReadonlyArray<WorkerSettlement
   )
 }
 
-/** Zapisane Rozliczenia pracowników: Wykonawca, liczba zleceń i otwarcie jego pliku jednym kliknięciem. */
 function WorkerSettlements({
   settlements,
   onOpen,
@@ -826,7 +793,6 @@ function WorkerSettlements({
   )
 }
 
-/** „1 zlecenie”, „2 zlecenia”, „5 zleceń”, „22 zlecenia”; pusty szablon ma oznaczenie, nie tylko zero. */
 function OrderCount({ settlement }: { settlement: WorkerSettlement }) {
   if (settlement.empty) {
     return (

@@ -4,10 +4,6 @@ import type { RunRestored } from "@/api/generated"
 import { dateTime } from "@/lib/format"
 import { RestoredCardButton } from "@/pages/runs/run-card-sheet"
 
-/**
- * Linia „Ostatnio …” procesu bez okresu: chwila i nagłówek wyniku ostatniego Uruchomienia z jego Logów, opcjonalny
- * dopisek (np. liczba uporządkowanych zleceń) i przycisk jego karty.
- */
 export function LastRun({ last, detail }: { last: RunRestored; detail?: string | undefined }) {
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground tabular-nums">

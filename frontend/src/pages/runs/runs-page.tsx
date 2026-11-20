@@ -117,10 +117,6 @@ function RunsContent() {
   return <RunOrSetup view={view} processes={setup.data.processes} entrance={entrance} />
 }
 
-/**
- * Zamiana karty nowego Uruchomienia, podglądu na żywo i ostatniego Uruchomienia sprzed startu Centrum na oczach taty
- * (start, „Nowe Uruchomienie procesu”) wchodzi `wejscie`; karta zastana po wejściu na stronę nie.
- */
 function RunOrSetup({
   view,
   processes,
@@ -132,7 +128,6 @@ function RunOrSetup({
 }) {
   const { dismissed, draft, deciding, decide, newRun } = useRuns()
 
-  // Ostatnie Uruchomienie sprzed startu Centrum stoi jak zakończone: „Nowe Uruchomienie procesu” je odkłada.
   const run = view.state === "idle" ? view.previous?.run : view.run
   const ended = view.state === "idle" || view.state === "finished"
   const setupInstead = run === undefined || (ended && (run.id === dismissed || draft !== null))
