@@ -33,7 +33,7 @@ from tests.fixtures.centrum import (
     TOOL_COMMIT,
     FakeReportBox,
     ToolDirectory,
-    config_files,
+    config_files_after_queue,
     finished_view,
     without_times,
     write_report_key,
@@ -718,7 +718,7 @@ def test_odczyt_podglad_i_podpowiedzi_regul_ilosci_niczego_nie_zapisuja(tmp_path
     run_to_end(centrum, dry_run=False)
     rules = centrum.client.get(RULES_URL).json()
     history = centrum.client.get("/api/settings/history").json()["rows"]
-    config = config_files(centrum.tool.config)
+    config = config_files_after_queue(centrum.client, centrum.tool.config)
 
     previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
     previewed(centrum, {"kind": "remove", "rule_id": rules["rules"][0]["id"]})
@@ -726,7 +726,7 @@ def test_odczyt_podglad_i_podpowiedzi_regul_ilosci_niczego_nie_zapisuja(tmp_path
 
     assert centrum.client.get(RULES_URL).json() == rules
     assert centrum.client.get("/api/settings/history").json()["rows"] == history
-    assert config_files(centrum.tool.config) == config
+    assert config_files_after_queue(centrum.client, centrum.tool.config) == config
 
 
 def test_podglad_pokazuje_wiersze_z_roznica_od_taty_z_suma_dwoch_regul_w_jednej_kolumnie(tmp_path: Path) -> None:
