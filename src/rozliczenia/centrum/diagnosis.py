@@ -31,7 +31,7 @@ from rozliczenia.period_folder import (
 )
 from rozliczenia.centrum.settings.files import Unreadable
 from rozliczenia.centrum.settings.folders import FolderSettings
-from rozliczenia.centrum.settings.owner import WorkerListRead
+from rozliczenia.centrum.settings.reads import WorkerListRead
 from rozliczenia.run_context import TemplateCheck
 from rozliczenia.settlement_period import SettlementPeriod, parse_period_token
 

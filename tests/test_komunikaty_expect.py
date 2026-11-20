@@ -860,6 +860,18 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         "ruff SLF001",
     ),
+    "funkcja modułu, który Ustawienia tylko czyta, do zapisu przez SettingsReads": DrogaDoZapisu(
+        """\
+from rozliczenia.centrum.settings.folders import FoldersEdit
+from rozliczenia.centrum.settings.owner import KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.reads import SettingsReads
+
+
+def zapisz(settings: SettingsReads, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change_folders(edit)
+""",
+        '"SettingsReads" has no attribute "change_folders"',
+    ),
 }
 
 ZNANE_LUKI_POLECENIA_USTAWIEN: Final = {

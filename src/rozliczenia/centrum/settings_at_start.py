@@ -9,7 +9,7 @@ from rozliczenia.centrum import diagnosis_messages, refusal
 from rozliczenia.centrum.refusal import Refusal
 from rozliczenia.centrum.run_logs import LoggedActivityLegend, LoggedQuantityRules, LoggedWorker
 from rozliczenia.centrum.settings.files import Unreadable
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsSnapshot
 from rozliczenia.message import Message
 from rozliczenia.quantity_engine import QuantityRules
 from rozliczenia.worker_list import WorkerList
