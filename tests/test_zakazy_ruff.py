@@ -16,6 +16,7 @@ zwolnieniem dokładnie nazwy, których jest właścicielem; to drugie sprawdza t
 from __future__ import annotations
 
 from collections.abc import Mapping
+import importlib.metadata
 import importlib.util
 import inspect
 import json
@@ -24,6 +25,7 @@ import pkgutil
 import subprocess
 import sys
 import tomllib
+import warnings
 from typing import Any, Final
 
 import pytest
@@ -219,6 +221,7 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     "from yaml.emitter import Emitter": (DRIVE_CONFIG, (), "yaml.emitter"),
     "import yaml\nZapis = yaml.YAMLObject.yaml_dumper": (ROOT_CONFIG, TOOLS_PROBE, "yaml.YAMLObject"),
     "from yaml import add_representer": (SRC_CONFIG, ("rozliczenia",), "yaml.add_representer"),
+    "import _yaml\nzapis = _yaml.CEmitter(plik)": (ROOT_CONFIG, TOOLS_PROBE, "_yaml"),
     # Treść z Wydania w miejscu pliku Ustawień bez odczytu: postacie z tabeli przypadków przy ZNANE_LUKI_TRESCI_Z_WYDANIA,
     # pierwsza to mail z treścią z Wydania z przeglądu #2029 (r1, W1).
     "from rozliczenia.settlement_mailing import DEFAULT_SETTLEMENT_MAIL": (
@@ -395,37 +398,54 @@ def _drogi_zapisu_pyyaml() -> set[str]:
     def klasa_pisze(wartosc: object) -> bool:
         return isinstance(wartosc, type) and issubclass(wartosc, piszace)
 
-    publiczne = {nazwa: wartosc for nazwa, wartosc in vars(yaml).items() if not nazwa.startswith("_")}
-    funkcje = {nazwa for nazwa, wartosc in publiczne.items() if inspect.isfunction(wartosc) and "Dumper" in inspect.signature(wartosc).parameters}
-    funkcje |= {
-        nazwa
-        for nazwa, wartosc in publiczne.items()
-        if inspect.isfunction(wartosc) and set(wartosc.__code__.co_names) & (funkcje | {n for n, w in publiczne.items() if klasa_pisze(w)})
-    }
-    klasy = {nazwa for nazwa, wartosc in publiczne.items() if klasa_pisze(wartosc)}
-    atrybuty = {
-        f"{nazwa}.{atrybut}"
-        for nazwa, wartosc in publiczne.items()
-        if isinstance(wartosc, type) and not klasa_pisze(wartosc)
-        for atrybut in dir(wartosc)
-        if not atrybut.startswith("__") and klasa_pisze(getattr(wartosc, atrybut, None))
-    }
-    moduly = {
-        modul.name.removeprefix("yaml.")
-        for modul in pkgutil.iter_modules(yaml.__path__, "yaml.")
-        if any(
-            getattr(wartosc, "__module__", None) == modul.name
-            and (klasa_pisze(wartosc) or (inspect.isfunction(wartosc) and "Dumper" in inspect.signature(wartosc).parameters))
-            for wartosc in vars(importlib.import_module(modul.name)).values()
+    def funkcja_pisze(wartosc: object) -> bool:
+        return inspect.isfunction(wartosc) and "Dumper" in inspect.signature(wartosc).parameters
+
+    def drogi_modulu(nazwa_modulu: str) -> set[str]:
+        publiczne = {nazwa: wartosc for nazwa, wartosc in vars(importlib.import_module(nazwa_modulu)).items() if not nazwa.startswith("_")}
+        drogi = {nazwa for nazwa, wartosc in publiczne.items() if klasa_pisze(wartosc) or funkcja_pisze(wartosc)}
+        drogi |= {
+            nazwa
+            for nazwa, wartosc in publiczne.items()
+            if inspect.isfunction(wartosc) and set(wartosc.__code__.co_names) & drogi
+        }
+        drogi |= {
+            f"{nazwa}.{atrybut}"
+            for nazwa, wartosc in publiczne.items()
+            if isinstance(wartosc, type) and not klasa_pisze(wartosc)
+            for atrybut in dir(wartosc)
+            if not atrybut.startswith("__") and klasa_pisze(getattr(wartosc, atrybut, None))
+        }
+        return {f"{nazwa_modulu}.{droga}" for droga in drogi}
+
+    najwyzsze = importlib.metadata.distribution("PyYAML").read_text("top_level.txt") or ""
+    moduly = [nazwa for nazwa in najwyzsze.split() if importlib.util.find_spec(nazwa) is not None]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        moduly += [
+            modul.name
+            for nazwa in moduly
+            if hasattr(importlib.import_module(nazwa), "__path__")
+            for modul in pkgutil.walk_packages(importlib.import_module(nazwa).__path__, f"{nazwa}.")
+        ]
+    drogi: set[str] = set()
+    for nazwa_modulu in moduly:
+        drogi |= drogi_modulu(nazwa_modulu)
+        definiuje = any(
+            getattr(wartosc, "__module__", None) == nazwa_modulu and (klasa_pisze(wartosc) or funkcja_pisze(wartosc))
+            for wartosc in vars(importlib.import_module(nazwa_modulu)).values()
         )
-    }
-    return {f"yaml.{droga}" for droga in funkcje | klasy | atrybuty | moduly}
+        if definiuje and nazwa_modulu != yaml.__name__:
+            drogi.add(nazwa_modulu)
+    return drogi
 
 
 def test_kazda_droga_zapisu_pyyaml_ma_zakaz_poza_tests() -> None:
-    """Drogi zapisu wynikają z wartości w zainstalowanym PyYAML, nie z nazw: klasa pisząca to podklasa ``Emitter``,
-    ``Serializer``, ``BaseRepresenter`` albo ``CEmitter``, a drogą jest publiczna nazwa ``yaml``, atrybut publicznej klasy
-    i podmoduł, które wskazują taką klasę, oraz funkcja z parametrem ``Dumper`` albo wołająca inną drogę."""
+    """Drogi zapisu wynikają z wartości w zainstalowanej dystrybucji PyYAML, nie z nazw: klasa pisząca to podklasa
+    ``Emitter``, ``Serializer``, ``BaseRepresenter`` albo ``CEmitter``, a drogą jest moduł dystrybucji (każdy moduł
+    z ``top_level.txt``, także ``_yaml``, i jego podmoduły), który taką klasę albo funkcję definiuje, jego publiczna
+    nazwa i atrybut publicznej klasy, które ją wskazują, oraz funkcja z parametrem ``Dumper`` albo wołająca inną drogę.
+    Pakiet ``yaml`` sam nie jest drogą, bo odczyt (``yaml.safe_load``) zostaje dozwolony: jego drogi stoją nazwa po nazwie."""
 
     zakazane = set(ZAPIS_YAML)
     bez_zakazu = [droga for droga in sorted(_drogi_zapisu_pyyaml()) if not any(droga == z or droga.startswith(f"{z}.") for z in zakazane)]

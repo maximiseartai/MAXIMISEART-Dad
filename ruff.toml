@@ -218,6 +218,7 @@ extend-select = [
 "yaml.add_multi_representer".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
 "yaml.add_implicit_resolver".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
 "yaml.add_path_resolver".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
+"_yaml".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
 "yaml.YAMLObject".msg = "nie przepisuj YAML przez PyYAML, bo czyta YAML 1.1 (off i no to False): narzędziu podaj plik z commitu bez zmian, a plik Ustawień zapisuje rozliczenia.centrum.settings.files"
 # Pliki Ustawień Centrum zna tylko rozliczenia.centrum.settings (ADR 0032): ścieżka obok niego omija Historię
 # Ustawień, pamięć właściciela i wykrycie zmiany spoza Centrum.
