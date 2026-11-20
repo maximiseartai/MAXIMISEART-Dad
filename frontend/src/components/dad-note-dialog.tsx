@@ -35,10 +35,6 @@ const SCOPES: ReadonlyArray<FilterOption<Scope>> = [
   { value: "run", label: "Do Uruchomienia" },
 ]
 
-/**
- * Jedna Uwaga taty; okno montuje formularz od nowa przy każdym otwarciu. `openedFrom` to Uruchomienie, z którego
- * karty albo wiersza Historii tata otworzył okno: Uwaga jest wtedy od razu „Do Uruchomienia” z nim zaznaczonym.
- */
 export function DadNoteForm({ openedFrom, close }: { openedFrom: string | null; close: () => void }) {
   const [title, setTitle] = React.useState("")
   const [body, setBody] = React.useState("")
@@ -124,7 +120,6 @@ export function DadNoteForm({ openedFrom, close }: { openedFrom: string | null; 
   )
 }
 
-/** Uwaga do szkicu i do wysłania; `null`, gdy przy „Do Uruchomienia” nie jest zaznaczone Uruchomienie z listy. */
 function noteFor(
   title: string,
   body: string,
@@ -201,9 +196,6 @@ function useDraft(note: DadNoteRequest | null) {
   return { shown: drafted.shown, sendable: current ? note : null }
 }
 
-/**
- * „Maks dostanie”: tytuł i treść issue tak, jak złożył i pokazuje je serwer, albo powód, dla którego ich nie ma.
- */
 function Preview({ shown }: { shown: Shown | null }) {
   const title = shown?.kind === "draft" ? shown.draft.title : ""
 
