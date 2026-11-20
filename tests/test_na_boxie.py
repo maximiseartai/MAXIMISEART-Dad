@@ -112,6 +112,23 @@ def test_ciezkie_wejscie_na_macu_nie_rusza_tylko_odmawia_z_tym_samym_poleceniem_
     assert done.stderr.splitlines()[-1].startswith(_refusal(shlex.join([".venv/bin/python", *command[1:]]))), done.stderr
 
 
+SILNIK = """import sys
+from pathlib import Path
+
+sys.path.insert(0, "tools/lib")
+from silnik_mutacji import Edit, Mutation, verdicts
+
+print(list(verdicts([Mutation("x", (Edit(Path("README.md"), "nie ma takiej kotwicy", "y"),), ("-c", ""))], workers=1)))
+"""
+"""Wołający silnika mutacji wprost przez ``verdicts``, bez ``check_all``, ``review`` i odmowy na wejściu narzędzia."""
+
+
+def test_silnik_mutacji_wolany_wprost_przez_verdicts_na_macu_odmawia_przed_pierwsza_mutacja(tmp_path: Path) -> None:
+    done = _run([PYTHON, "-c", SILNIK], tmp_path)
+
+    assert (done.returncode, _called(tmp_path), "NIEAKTUALNA" in done.stdout) == (na_boxie.ODMOWA, [], False), done.stdout + done.stderr
+
+
 def test_pelny_pytest_z_workerami_dostaje_tez_polecenie_w_tle(tmp_path: Path) -> None:
     done = _run([*PYTEST, "-n", "2"], tmp_path)
 

@@ -4840,7 +4840,12 @@ def _explorer_env_on_mac(tmp_path: Path) -> dict[str, str]:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="boatbox biegnie tylko na Macu")
 def test_eksplorator_z_kilkoma_przegladarkami_na_macu_nie_rusza_tylko_odmawia_z_poleceniem_boatbox(tmp_path: Path) -> None:
-    code, lines = _explorer_in_own_process("--run-dir", str(tmp_path / "run"), "--rownolegle", "2", environment=_explorer_env_on_mac(tmp_path))
+    """Katalog biegu pod zwykłym plikiem: eksplorator, który nie odmówi, pada od razu na jego założeniu, zamiast puszczać
+    przeglądarki do limitu testu."""
+
+    blocked = tmp_path / "plik"
+    blocked.write_text("", encoding="utf-8")
+    code, lines = _explorer_in_own_process("--run-dir", str(blocked / "run"), "--rownolegle", "2", environment=_explorer_env_on_mac(tmp_path))
 
     assert (code, lines[-1].startswith("CIĘŻKIE NA MACU ODMOWA | uruchom: boatbox run ")) == (na_boxie.ODMOWA, True), lines
 
