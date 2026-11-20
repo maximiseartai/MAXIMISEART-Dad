@@ -80,16 +80,12 @@ class Case:
 
 @dataclass(frozen=True)
 class Outcome:
-    # Wynik narzędzia Bash, który Claude Code oddał modelowi, i czy host zamknął wejście, zanim go oddał.
     result: str | None
     host_gave_up: bool
-    # Czy fałszywe API dostało choć jedno zapytanie.
     contacted: bool
 
 
 class _Api:
-    """Stan fałszywego Messages API: polecenie przypadku i wynik narzędzia, który Claude Code oddał modelowi."""
-
     command = ""
     result: str | None = None
     answered = threading.Event()

@@ -354,9 +354,6 @@ def test_pliki_taty_sa_bez_zmian_tylko_w_podgladzie_albo_gdy_zapisywanie_sie_nie
 def test_slad_wywolan_zatrzymania_ucina_lancuch_przyczyn_na_dziesieciu_takze_lancuch_ktory_wraca_do_siebie(
     tmp_path: Path,
 ) -> None:
-    """Ślad wywołań własnego zatrzymania z przyczyną w wyjątku niesie łańcuch ``__cause__`` (#976), najwyżej 10
-    przyczyn, więc przyczyna, której przyczyną jest ona sama, nie zatrzymuje Uruchomienia w nieskończonej pętli."""
-
     looped = ValueError(SECRET)
     looped.__cause__ = looped
 
@@ -372,10 +369,6 @@ def test_slad_wywolan_zatrzymania_ucina_lancuch_przyczyn_na_dziesieciu_takze_lan
 def test_slad_wywolan_pomija_ramke_kodu_bez_pliku_takze_gdy_katalog_biezacy_to_katalog_narzedzia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Ramka kodu bez pliku na dysku (moduł zamrożony jak „<frozen runpy>”, kod z „<string>”) nie jest kodem narzędzia,
-    więc ślad wywołań nieoczekiwanego wyjątku jej nie niesie, także gdy katalog bieżący to katalog narzędzia, w którym
-    jej nazwa wyglądałaby jak plik narzędzia."""
-
     def without_file() -> NoReturn:
         raise RuntimeError(SECRET)
 
@@ -393,9 +386,6 @@ def test_slad_wywolan_pomija_ramke_kodu_bez_pliku_takze_gdy_katalog_biezacy_to_k
 
 
 def test_podsumowanie_i_widok_rozmowcy_po_silniku_nie_licza_sie_do_czasu_uruchomienia(tmp_path: Path) -> None:
-    """Podsumowanie i widok rozmówcy powstają dopiero po pomiarze Czasu uruchomienia, więc ich czas nie liczy się do
-    niego ani w wyniku, ani w rekordzie metryk."""
-
     clock = ManualClock()
 
     def working_250_ms(inputs: Inputs, context: RunContext) -> Summary:

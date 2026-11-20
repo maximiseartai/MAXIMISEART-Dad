@@ -31,7 +31,6 @@ ACTIONS = ".github/actions"
 # Reguły, które actionlint wyłącza dla skryptów kroków, bo nie pasują do skryptu wyciętego z YAML.
 EXCLUDED = "SC1091,SC2194,SC2050,SC2154,SC2157"
 EXPRESSION = re.compile(r"\$\{\{.*?\}\}", re.DOTALL)
-# Pierwsze słowo ``shell:`` kroku i dialekt, którym shellcheck go czyta.
 SHELLS = {"bash": "bash", "sh": "sh"}
 SCRIPT = "skrypt.sh"
 FINDING = re.compile(rf"^.*{re.escape(SCRIPT)}:(\d+):(\d+): (.*)\r?$")
@@ -44,9 +43,6 @@ def mapping_value(node: yaml.Node, key: str) -> yaml.Node | None:
 
 
 def shell_scripts(action: Path) -> list[tuple[int, str, str]]:
-    """Skrypty kroków ``run:`` z powłoką z ``SHELLS``, każdy z numerem linii pliku, na której stoi jego pierwsza linia,
-    i dialektem shellchecka."""
-
     root = yaml.compose(action.read_text(encoding="utf-8"))
     steps = mapping_value(mapping_value(root, "runs") or yaml.MappingNode("", []), "steps")
     scripts = []
@@ -62,8 +58,6 @@ def shell_scripts(action: Path) -> list[tuple[int, str, str]]:
 
 
 def findings(shellcheck: Sequence[str], root: Path = ROOT) -> list[str]:
-    """Uwagi shellchecka (polecenie ``shellcheck``) o skryptach powłoki akcji złożonych w ``root``, linie ``<plik>:<linia>: …``."""
-
     lines = []
     with tempfile.TemporaryDirectory() as folder:
         written = Path(folder) / SCRIPT
@@ -79,8 +73,6 @@ def findings(shellcheck: Sequence[str], root: Path = ROOT) -> list[str]:
 
 
 def _lines(relative: str, first: int, answer: subprocess.CompletedProcess[str]) -> list[str]:
-    """Uwagi jednego skryptu z liniami pliku akcji; shellcheck, który padł bez uwag, to też uwaga."""
-
     lines = []
     for line in answer.stdout.splitlines():
         found = FINDING.match(line)

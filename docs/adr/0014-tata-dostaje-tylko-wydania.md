@@ -66,10 +66,11 @@ zamiast każdej naprawy z osobna.
   leży na `main`, kończy aktualizację z nieoczekiwanego powodu, a nie
   pominięciem.
 - **Aktualność narzędzia.** Diagnoza i Konfiguracja pytają API GitHuba o listę
-  tagów (`tags?per_page=100`, wszystkie strony, najwyżej 10) i o to, czy commit
+  tagów (`tags?per_page=100`, wszystkie strony, najwyżej 10, czyli 1000 tagów:
+  przy Wydaniu co tydzień to lata) i o to, czy commit
   najwyższego Wydania leży na linii pierwszych rodziców `main` (najwyżej 5
-  Wydań po kolei). Pytanie to porównanie z `<czubek>~k` (`compare` ze stroną
-  bez commitów i plików, kilkanaście kB) dla czubka `main` ustalonego raz na
+  Wydań po kolei). Pytanie to porównanie z `<czubek>~k` (druga strona `compare`
+  po jednym commicie: najwyżej jeden commit i żadnego pliku, kilkanaście kB) dla czubka `main` ustalonego raz na
   sprawdzenie (`git/ref/heads/main`) i k wybranego wyszukiwaniem binarnym:
   Wydanie leży na linii, gdy jest jednym z `<czubek>~k`. Wyszukiwanie zaczyna
   się dopiero wtedy, gdy commit Wydania, przodek czubka, nie jest commitem
@@ -88,7 +89,10 @@ zamiast każdej naprawy z osobna.
   coś w jego sieci go wyczerpało i tata nie widział v0.6.1. Od tego dnia
   Centrum pyta z Tokenem do Zgłoszeń, gdy jest (5000 na godzinę dla konta,
   ADR 0007), a odmowa z powodu limitu to w Diagnozie „GitHub chwilowo nie
-  odpowiada na pytania o nową wersję” z godziną odnowienia limitu.
+  odpowiada na pytania o nową wersję” z godziną odnowienia limitu. Brak
+  odpowiedzi, także odmowę z powodu limitu, Centrum pamięta krócej niż
+  odpowiedź, bo sieć może zaraz wrócić, a bez tej pamięci każde pytanie bez
+  sieci czekałoby do limitu czasu.
 
   Koszt: nowe Wydanie to raz na działanie Centrum cztery pytania (lista tagów,
   czubek, porównanie z nim, PR-y commitu), jak daleko by `main` od niego nie

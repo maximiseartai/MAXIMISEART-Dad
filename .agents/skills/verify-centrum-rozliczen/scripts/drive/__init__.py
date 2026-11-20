@@ -613,6 +613,14 @@ FEATURES = (
             "270-efenix-uruchom-ponownie",
         ),
     ),
+    Feature(
+        "stanowisko-andrzeja",
+        (
+            "510-andrzej-uruchomienia",
+            "511-andrzej-ustawienia-foldery",
+            "512-andrzej-ustawienia-narzedzie",
+        ),
+    ),
     # Closes Centrum, so it stays last; numbered 9x, so its screenshots are always the last ones.
     Feature(
         "start-i-zamykanie",

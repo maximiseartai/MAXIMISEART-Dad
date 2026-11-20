@@ -30,14 +30,12 @@ const REMINDERS_ON = new Map([
   ["nie", "Wyłączone"],
 ])
 
-/** Nazwa ścieżki: ostatni człon, pełna ścieżka w podpowiedzi. */
 function pathName(value: string): string {
   return value.split(/[\\/]/).findLast((part) => part !== "") ?? value
 }
 
 type Key = { label: string; shown: (value: string) => string }
 
-/** Klucze Historii (`sekcja.pole`) z nazwą dla taty i zapisem wartości; nieznany klucz pokazuje się wprost. */
 const KEYS = new Map<string, Key>([
   ["foldery.rejestr_zlecen", { label: "Rejestr zleceń", shown: pathName }],
   ["foldery.folder_okresow", { label: "Folder okresów", shown: pathName }],
@@ -58,7 +56,6 @@ function keyOf(change: HistoryChange): Key {
   return KEYS.get(change.key) ?? { label: change.key, shown: (value) => value }
 }
 
-/** Nazwa zmiany ze zdaniem przed i po po kluczu Historii: składnik, Kod czynności, wyjątek Kontroli ilości albo reguła. */
 function ruleLabel(key: string): string {
   if (key.startsWith("urzadzenia.")) return "Lista Urządzeń"
 
@@ -67,10 +64,6 @@ function ruleLabel(key: string): string {
   return key.startsWith("wyjatki.") ? "Wyjątek Kontroli ilości" : "Reguła ilości"
 }
 
-/**
- * Historia Ustawień: każda zmiana od najnowszej, z wartością przed i po, kiedy i skąd, i „Cofnij” przy zmianie, którą
- * da się cofnąć. Cofnięcie jest nową zmianą na górze listy, a jego odmowa to jedno zdanie pod wierszem.
- */
 export function HistorySection() {
   const { resource: history, reload } = useResource(getSettingsHistory, [], { fromDadFiles: false })
 
@@ -121,7 +114,6 @@ function Row({ row }: { row: HistoryRow }) {
     await undoSettingsChange(row.id).then(undone, (failure: Error) => setRefusal(failureMessage(failure)))
   })
 
-  // Reguła ilości, składnik Listy Urządzeń, Kod czynności i wyjątek Kontroli ilości mają w wierszu zdanie przed i po zamiast zapisu z pliku.
   const rules = new Map(row.rules.map((rule) => [rule.key, rule]))
 
   const label = (change: HistoryChange) => (rules.has(change.key) ? ruleLabel(change.key) : keyOf(change).label)
@@ -170,7 +162,6 @@ function Row({ row }: { row: HistoryRow }) {
   )
 }
 
-/** Kiedy i skąd: zapis taty bez znacznika, cofnięcie, zmiana spoza Centrum albo z Wydania, usunięty plik. */
 function meta(row: HistoryRow): string[] {
   return [
     dateTime(row.at),
@@ -196,10 +187,6 @@ function sourceOf(row: HistoryRow): string[] {
   }
 }
 
-/**
- * Reguła ilości, składnik albo wyjątek Kontroli ilości przed i po jako zdania; nowy ma tylko „Dodano”, usunięty tylko
- * „Usunięto”.
- */
 function RuleValues({ rule }: { rule: HistoryRuleChange }) {
   const lines: ReadonlyArray<[string, HistoryRuleChange["before"]]> =
     rule.before === null
@@ -219,7 +206,6 @@ function RuleValues({ rule }: { rule: HistoryRuleChange }) {
   ))
 }
 
-/** Przed → po; sekret tylko „zmieniono”, ścieżka nazwą z pełną ścieżką w podpowiedzi. */
 function Values({ change, secret }: { change: HistoryChange; secret: boolean }) {
   if (secret) {
     return <>zmieniono</>

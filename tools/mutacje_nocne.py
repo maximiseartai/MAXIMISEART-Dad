@@ -133,7 +133,6 @@ Bazę, koniec zakresu i liczbę części nocy drukuje lokalnie bez testów, a od
 WORKFLOW = "mutacje-nocne.yml"
 # Doba nocy zaczyna się o godzinie crona ``30 1 * * *`` w mutacje-nocne.yml; od niej noc startuje z pierwszego pushu na main.
 POCZATEK_NOCY = time(1, 30)
-# Wejście ``start`` runu, który uruchomił start z pushu; ``plan`` traktuje taki run jak run crona.
 START_AUTO = "auto"
 PREFIKS = "MUTACJE NOCNE"
 # Część to 6 pełnych kolejek po WORKERS mutacji naraz. W nocach 31.10–3.11 (runy 41179652907, 41285996039, 41408995300,
@@ -154,26 +153,17 @@ CZESCI_NA_NOC = 60
 # Zadania pokrycia nocy (``mutacje_zmiany.py --pokrycie-czesc``): każde liczy pokrycie ok. czwartej części plików testów
 # nocy, a części nocy czekają na najwolniejsze. Każde płaci też checkout, instalację i listę mutacji nocy (ADR 0021).
 CZESCI_POKRYCIA = 4
-# Plan bez czasów CI waży każdą część zerem, więc części zostają w kolejności numerów.
 BEZ_CZASOW = czasy_ci.KosztyPlikow({})
 GITHUB = GhApi()
 OKNO = timedelta(hours=24)
 ETYKIETY = ("ready-for-agent", "przezyte-mutacje")
-# Artefakt części k w mutacje-nocne.yml: ``mutacje-nocne-<k>`` z plikiem ``--zapis`` narzędzia mutacji.
 ARTEFAKT = "mutacje-nocne-"
 ZAPIS = "czesc.json"
-# Artefakt zadania skryptów mutacji skilli: ``mutacje-skilli-<id zadania planu>`` z zapisem ``plan_runu.WYKONANIE``.
 ARTEFAKT_SKILLI = "mutacje-skilli-"
-# Artefakt planu z plikiem ``--zakres``: baza i koniec zakresu nocy, od którego zaczyna następna noc.
 ARTEFAKT_ZAKRESU = "zakres-nocy"
 ZAKRES = "zakres.json"
-# Artefakt planu z plikiem ``--osadzone`` (``mutacje_zmiany.zapisz_osadzone``): tożsamości mutacji, którym części
-# czerwonych runów tej samej bazy dały werdykt bez issue. Zadania pokrycia i części pobierają go i pomijają je jak plan.
 ARTEFAKT_OSADZONYCH = "osadzone-nocy"
-# Klucz z linii ``MUTACJA`` w treści issue; długość klucza daje ``mutacje_zmiany.fingerprint``.
 _KLUCZ = re.compile(r"\| klucz (?P<klucz>[0-9a-f]+)\b")
-# Początki linii ``SKRYPT`` i ``CZAS BLISKO LIMITU`` issue skryptów skilli oraz środek czasu ostrzeżenia, który ``rdzen``
-# odcina, bo czas zmienia się co noc.
 _SKRYPT = "SKRYPT "
 _BLISKO = "CZAS BLISKO LIMITU "
 _Z_LIMITU = " s z limitu --limit-s "
@@ -195,10 +185,6 @@ _BEZ_WERDYKTU_W_LOGU = re.compile(rf"{_STEMPEL}{Verdict.NO_VERDICT}: ")
 
 
 class Rodzaj(Enum):
-    """Mutacja z zapisu części, którą noc liczy: lista zapisu (``tools/mutacje_zmiany.py --zapis``), z której przychodzi,
-    i jej nazwa w ostatniej linii ``zglos``. Issue dostaje tylko ``PRZEZYTA``, a pozostałe, bez werdyktu, linia
-    ``MUTACJE NOCNE BEZ ISSUE``."""
-
     PRZEZYTA = (mutacje_zmiany.PRZEZYTE, "przeżyło")
     BEZ_WERDYKTU = (mutacje_zmiany.BEZ_WERDYKTU, "bez werdyktu")
     # Limit ``--limit-s`` dotyczy całego zbioru testów przebiegu, który bez mutacji trwa blisko niego, więc mutacja, po
@@ -210,22 +196,14 @@ class Rodzaj(Enum):
         self.nazwa = nazwa
 
 
-# --- start z pushu ---
-
-
 @dataclass(frozen=True)
 class Wyzwolenie:
-    """Co uruchomiło run planu: zdarzenie GitHub Actions (``github.event_name``), wejście ``start`` i id runu
-    (``GITHUB_RUN_ID``)."""
-
     zdarzenie: str = ""
     start: str = ""
     run: int = 0
 
     @property
     def noc_doby(self) -> bool:
-        """Run, który ma być nocą doby: cron albo start z pushu; ręczny run człowieka (z ``od``) biegnie zawsze."""
-
         return self.zdarzenie == "schedule" or self.start == START_AUTO
 
 
@@ -242,9 +220,6 @@ def _runy_doby(github: GitHub, teraz: datetime) -> list[dict[str, Any]]:
 
 
 def start(github: GitHub, teraz: datetime) -> int:
-    """Uruchamia noc doby ``teraz`` z pushu na ``main``: przed ``POCZATEK_NOCY`` UTC i po runie nocy utworzonym od tej
-    godziny nic, a inaczej ``workflow_dispatch`` tego workflow na ``main`` z wejściem ``start: auto``."""
-
     if teraz.time() < POCZATEK_NOCY:
         print(f"MUTACJE NOCNE START | {teraz:%H:%M} UTC, przed {POCZATEK_NOCY:%H:%M} UTC: noc startuje z pierwszego pushu po tej godzinie")
         return 0
@@ -264,9 +239,6 @@ def _wczesniejsza_noc(github: GitHub, wyzwolenie: Wyzwolenie, teraz: datetime) -
         return None
     wczesniejsze = [run["id"] for run in _runy_doby(github, teraz) if run["id"] < wyzwolenie.run and run.get("conclusion") != "cancelled"]
     return min(wczesniejsze, default=None)
-
-
-# --- plan ---
 
 
 def baza(github: GitHub, root: Path, od: str, teraz: datetime) -> tuple[str, str]:
@@ -291,9 +263,6 @@ def baza(github: GitHub, root: Path, od: str, teraz: datetime) -> tuple[str, str
 
 
 def _koniec_runu(github: GitHub, run: dict[str, Any]) -> str:
-    """Commit, do którego udany ``run`` zmutował zmiany: ``do`` z jego artefaktu ``zakres-nocy``, a bez artefaktu (run
-    sprzed limitu nocy) jego ``head_sha``. Wygasły artefakt to błąd, bo ``head_sha`` pominąłby zaległość tego runu."""
-
     artefakty = github.json(f"{REPO}/actions/runs/{run['id']}/artifacts?name={ARTEFAKT_ZAKRESU}")["artifacts"]
     if not artefakty:
         return str(run["head_sha"])
@@ -389,13 +358,6 @@ def zaplanuj(
     czesci_na_noc: int = CZESCI_NA_NOC,
     koszty: czasy_ci.KosztyPlikow = BEZ_CZASOW,
 ) -> int:
-    """Plan nocy w ``root``: baza, koniec jej zakresu i macierz części po najwyżej ``na_czesc`` mutacji, najwyżej
-    ``czesci_na_noc`` części, od najdroższej według ``koszty`` plików testów, w ``GITHUB_OUTPUT``, a z ``zakres`` plik
-    artefaktu ``zakres-nocy``. Mutacji, którym czerwone runy tej bazy dały werdykt bez issue (``osadzone``), plan nie
-    liczy, a ich tożsamości zapisuje w ``osadzone_plik`` (artefakt ``osadzone-nocy``) dla zadań pokrycia i części. Noc doby (``wyzwolenie``),
-    przed którą doba ``teraz`` miała już run nocy, nic nie mutuje: ``do`` to baza, a ``GITHUB_OUTPUT`` ma
-    ``pominieta=true``."""
-
     teraz = teraz or datetime.now(UTC)
     od_sha, skad = baza(github, root, od, teraz)
     if (wczesniejsza := _wczesniejsza_noc(github, wyzwolenie, teraz)) is not None:
@@ -448,14 +410,8 @@ def _zapisz_plan(
     return 0
 
 
-# --- zgłoszenie ---
-
-
 @dataclass(frozen=True)
 class Przezyta:
-    """Mutacja z zapisu części, którą noc zgłasza, z ``rodzaj`` swojej listy: plik, linia i opis jej nazwy, zmienione
-    linie, które psuje, i jej klucz."""
-
     plik: str
     linia: int
     opis: str
@@ -465,8 +421,6 @@ class Przezyta:
 
     @classmethod
     def z_zapisu(cls, wpis: dict[str, Any], rodzaj: Rodzaj = Rodzaj.PRZEZYTA) -> Przezyta:
-        """Wpis ``mutacje_zmiany.entry``; wpis bez któregoś pola, z polem ``null`` albo z polem innego typu to ``ValueError``."""
-
         if not isinstance(wpis, dict):
             raise ValueError(f"wpis mutacji to nie obiekt JSON: {wpis}")
         if brak := next((pole for pole in ("plik", "linia", "opis", "linie", "klucz") if wpis.get(pole) is None), None):
@@ -478,23 +432,15 @@ class Przezyta:
 
     @property
     def w_issue(self) -> str:
-        """Linia ``MUTACJA`` issue: nazwa jak w ``NIEWYKRYTA`` i klucz, po którym noc nie zgłasza jej drugi raz."""
-
         return f"MUTACJA {self.plik}:{self.linia} {self.opis} | klucz {self.klucz}"
 
 
 def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
-    """Mutacje każdego ``Rodzaj`` wszystkich części oraz przyczyny porażki części, które nie dały wyniku.
-
-    Część, której limit czasu minął po pokryciu (kod 3 ``tools/mutacje_zmiany.py``), dała wynik: jej mutacje bez werdyktu
-    idą do linii ``MUTACJE NOCNE BEZ ISSUE``, więc nie zatrzymują bazy nocy."""
-
     przezyte: list[Przezyta] = []
     problemy: list[str] = []
     for numer in range(1, liczba + 1):
         try:
             zapis = json.loads((katalog / f"{ARTEFAKT}{numer}" / ZAPIS).read_text(encoding="utf-8"))
-            # Część, której limit czasu minął przed werdyktem części mutacji, też zapisuje przeżyte z reszty.
             czesci = [Przezyta.z_zapisu(wpis, rodzaj) for rodzaj in Rodzaj for wpis in zapis[rodzaj.lista]]
         except (OSError, ValueError) as blad:
             problemy.append(f"część {numer}/{liczba} bez zapisu: {blad}")
@@ -509,8 +455,6 @@ def zapisy(katalog: Path, liczba: int) -> tuple[list[Przezyta], list[str]]:
 
 @dataclass(frozen=True)
 class Autor:
-    """PR (``numer``) albo, bez PR, commit, który ostatni zmienił linię mutacji: commity jednego PR to jeden autor."""
-
     numer: int | None
     commit: str | None = None
 
@@ -533,22 +477,16 @@ def _pr_z_tematu(temat: str) -> int | None:
 
 
 def _wniesienie(root: Path, linia_main: Sequence[str], commit: str) -> int:
-    """Pozycja na ``linia_main`` commitu, który wniósł ``commit`` na linię pierwszych rodziców HEAD."""
-
     potomkowie = {commit, *repo.git(root, "rev-list", "--ancestry-path", f"{commit}..HEAD").split()}
     return next(numer for numer, kandydat in enumerate(linia_main) if kandydat in potomkowie)
 
 
 def _commity_linii(root: Path, plik: str, linie: Sequence[int]) -> set[str]:
-    """Commity, które ostatnie zmieniły ``linie`` pliku na HEAD; wiersz ``blame -l -s`` zaczyna pełny SHA commitu."""
-
     zakresy = [argument for linia in linie for argument in ("-L", f"{linia},{linia}")]
     return {wiersz.split(maxsplit=1)[0] for wiersz in repo.git(root, "blame", "-l", "-s", *zakresy, "HEAD", "--", plik, timeout=None).splitlines()}
 
 
 def przypisz(github: GitHub, root: Path, od: str, przezyte: Sequence[Przezyta]) -> dict[Autor, list[Przezyta]]:
-    """Przeżyte mutacje według PR-u, który ostatni zmienił ich zmienione linie."""
-
     linia_main = repo.git(root, "rev-list", "--first-parent", "--reverse", f"{od}..HEAD").split()
     wniesione: dict[str, int] = {}
     autorzy: dict[str, Autor] = {}
@@ -566,8 +504,6 @@ def przypisz(github: GitHub, root: Path, od: str, przezyte: Sequence[Przezyta]) 
 
 
 def autor(github: GitHub, root: Path, scalenie: str, commit: str) -> Autor:
-    """PR, który wniósł ``commit`` commitem ``scalenie`` linii pierwszych rodziców HEAD."""
-
     if numer := _pr_z_tematu(repo.git(root, "log", "-1", "--format=%s", scalenie).strip()):
         return Autor(numer)
     scalone = [pr for pr in github.json(f"{REPO}/commits/{commit}/pulls") if pr.get("merged_at")]
@@ -575,9 +511,6 @@ def autor(github: GitHub, root: Path, scalenie: str, commit: str) -> Autor:
 
 
 def wyniki_skilli(plan: plan_runu.Plan, katalog: Path) -> tuple[list[str], list[tuple[str, NearLimit]], list[str]]:
-    """Kroki skilli (``skill:<skill>/<skrypt>``), które padły w zadaniach ``plan``, ostrzeżenia ``CZAS BLISKO LIMITU``
-    z kluczem kroku i przyczyny zadań bez wyniku."""
-
     padly, blisko, problemy = set(), [], []
     for zadanie in plan.zadania:
         try:
@@ -588,7 +521,6 @@ def wyniki_skilli(plan: plan_runu.Plan, katalog: Path) -> tuple[list[str], list[
         if zapis.get("plan") != plan.digest:
             problemy.append(f"{zadanie.nazwa}: zapis innego planu niż {plan.digest[:12]}")
             continue
-        # Części jednego kroku w zadaniu zgłaszają się pod jego kluczem: krok padł, gdy padła którakolwiek.
         zaplanowane = {str(klucz.zgloszony) for klucz in zadanie.klucze}
         if brak := sorted(zaplanowane - {jednostka["klucz"] for jednostka in zapis["jednostki"]}):
             problemy.append(f"{zadanie.nazwa}: jednostki bez wyniku: {', '.join(brak)}")
@@ -599,8 +531,6 @@ def wyniki_skilli(plan: plan_runu.Plan, katalog: Path) -> tuple[list[str], list[
 
 @dataclass
 class Skrypty:
-    """Co z nocnych kroków skilli trafia do issue jednego PR-u: skrypty, które padły, i ostrzeżenia ``CZAS BLISKO LIMITU``."""
-
     padly: list[str] = field(default_factory=list)
     blisko: list[NearLimit] = field(default_factory=list)
 
@@ -608,10 +538,6 @@ class Skrypty:
 def przypisz_skrypty(
     github: GitHub, root: Path, od: str, padly: Sequence[str], blisko: Sequence[tuple[str, NearLimit]] = ()
 ) -> tuple[dict[Autor, Skrypty], list[str]]:
-    """Skrypty mutacji skilli, które padły, i ostrzeżenia ``CZAS BLISKO LIMITU`` ich mutacji według PR-u, którego zmiana
-    od ``od`` uruchomiła krok (``_autor_kroku``), i przyczyny porażki tych, których nie ma komu przypisać, bo ``main``
-    nie ma commitu od ``od``."""
-
     katalog = Katalog.skanuj(root)
     # Ten sam wybór co plan nocy (``tools/plan_ci.py``). Nieśledzone zapisy artefaktów w checkoucie zgłoszenia nie mają
     # historii, więc ``_autor_kroku`` ich nie znajduje w ``git log``.
@@ -650,7 +576,6 @@ def _autor_kroku(
     pliki = wybrany.pliki if wybrany else frozenset()
     w_folderze = sorted(plik for plik in pliki if plik.startswith(folder))
     grupy = [grupa for grupa in (w_folderze, sorted(pliki.difference(w_folderze))) if grupa]
-    # Grupa bez ścieżek daje ostatni commit nocy.
     for grupa in (*grupy, []):
         if commit := repo.git(root, "log", "-1", "--format=%H", f"{od}..HEAD", "--", *grupa).strip():
             return autor(github, root, linia_main[_wniesienie(root, linia_main, commit)], commit)
@@ -658,9 +583,6 @@ def _autor_kroku(
 
 
 def akcje(github: GitHub, przypisane: dict[Autor, list[Przezyta]], run: str) -> list[Akcja]:
-    """Nowe issue dla PR bez issue, komentarz z nowymi mutacjami dla PR, którego issue nie ma jeszcze ich kluczy, a
-    zamknięte issue z nowymi wraca otwarte."""
-
     istniejace: dict[str, dict[str, Any]] = {}
     for znalezione in issues(github, ETYKIETY[1], "all"):
         istniejace.setdefault(znalezione["title"], znalezione)
@@ -710,9 +632,6 @@ def _ma(tekst: str, linia: str) -> bool:
 
 
 def akcje_skryptow(github: GitHub, przypisane: dict[Autor, Skrypty], run: str) -> list[Akcja]:
-    """Issue ``Przeżyte mutacje skilli z #N`` dla PR bez niego, a komentarz z liniami ``SKRYPT`` i ``CZAS BLISKO LIMITU``,
-    których jego issue nie ma. Ostrzeżenie porównuje bez czasu, który zmienia się co noc, więc mutacja trafia do issue raz."""
-
     istniejace: dict[str, dict[str, Any]] = {}
     for znalezione in issues(github, ETYKIETY[1], "all"):
         istniejace.setdefault(znalezione["title"], znalezione)
@@ -767,8 +686,6 @@ RADA_BLISKO = (
 
 
 def _klucz_blisko(ostrzezenie: NearLimit) -> str:
-    """Początek linii ostrzeżenia w issue: bez czasu, który zmienia się co noc, więc po nim noc nie zgłasza go drugi raz."""
-
     return f"{_BLISKO}{ostrzezenie.script} | {ostrzezenie.name}"
 
 
@@ -778,10 +695,6 @@ def _linia_blisko(ostrzezenie: NearLimit) -> str:
 
 
 def rdzen(linia: str) -> str | None:
-    """Rdzeń linii, którą noc pisze w issue: linia ``MUTACJA`` do klucza (``Przezyta.w_issue``), linia ``SKRYPT`` cała,
-    a linia ``CZAS BLISKO LIMITU`` bez czasu (``_klucz_blisko``). Po rdzeniu noc nie zgłasza linii drugi raz (``_ma``),
-    a agent na nią odpowiada (``rdzeń | <odpowiedź>``). Każda inna linia, także odpowiedź agenta, daje ``None``."""
-
     linia = linia.strip()
     if linia.startswith("MUTACJA ") and (klucz := _KLUCZ.search(linia)):
         return linia[: klucz.start()].rstrip()
@@ -801,22 +714,12 @@ _NOC = ("github-actions", "github-actions[bot]")
 
 @dataclass(frozen=True)
 class Wystapienie:
-    """Issue przeżytych mutacji z liniami nocy (``rdzen``), na które ostatnia odpowiedź agenta nie jest ``BEZ_LUKI``."""
-
     numer: int
     tytul: str
     linie: tuple[str, ...]
 
 
 def wystapienia(issues_json: Sequence[Any]) -> tuple[list[Wystapienie], int]:
-    """Wystąpienia z wyniku ``gh issue list --json number,title,body,comments`` i liczba issues bez wystąpienia.
-
-    Linie nocy to linie treści issue i komentarzy ``_NOC``, którym ``rdzen`` daje rdzeń. Odpowiedź na linię to reszta
-    linii komentarza agenta po ``rdzeń |`` (postać z rady nocy) albo po całej linii nocy i ``|``; liczy się ostatnia,
-    więc późniejsza odpowiedź odwołuje wcześniejszą, a sam cytat linii nocy niczego nie odpowiada. Issue bez żadnej linii
-    nocy to ``ValueError``: noc pisze je w postaci, której ``rdzen`` nie zna.
-    """
-
     wynik: list[Wystapienie] = []
     bez = 0
     for issue in issues_json:
@@ -840,8 +743,6 @@ def wystapienia(issues_json: Sequence[Any]) -> tuple[list[Wystapienie], int]:
 
 
 def _ostatnia_odpowiedz(linie: Sequence[str], przedrostki: Sequence[str]) -> str:
-    """Ostatnia niepusta reszta linii po pierwszym z ``przedrostki``, od którego zaczyna się linia; ``""`` bez odpowiedzi."""
-
     ostatnia = ""
     for linia in linie:
         reszta = next((reszty[0] for przedrostek in przedrostki if (reszty := _po_rdzeniu(linia, przedrostek))), "")
@@ -850,8 +751,6 @@ def _ostatnia_odpowiedz(linie: Sequence[str], przedrostki: Sequence[str]) -> str
 
 
 def _uzupelnij(issue: dict[str, Any], tresc: str) -> Skomentuj:
-    """Komentarz z nowymi liniami; zamknięte issue wraca otwarte z etykietą pracy dla agenta."""
-
     return Skomentuj(issue["number"], tresc, ETYKIETY[:1] if issue["state"] == "closed" else ())
 
 

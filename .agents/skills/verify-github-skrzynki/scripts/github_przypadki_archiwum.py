@@ -64,7 +64,7 @@ def portable_gzip(content: bytes) -> bytes:
     Bajty ``gzip.compress(..., mtime=0)`` zależą od maszyny: Python 3.12 wpisuje do nagłówka system, dla którego
     zbudowano zlib (19 na macOS, 3 na Linuksie), Python 3.13 i nowszy zawsze 255, a zlib-ng, z którym Python 3.14 na
     Windows pakuje, koduje deflate po swojemu. Nagranie trzyma skrót ciała wysyłki, więc nagranie z Maca nie
-    odtwarzało się na Windows w CI (run 41959078147, Mutation checks). Bloki bez kompresji (RFC 1951, 3.2.4) i CRC-32
+    odtwarzało się na Windows w CI. Bloki bez kompresji (RFC 1951, 3.2.4) i CRC-32
     nie zależą od biblioteki.
     """
 
@@ -208,9 +208,6 @@ def _base(live: ArchiwumLive) -> Facts:
     }
 
 
-# --- Archiwum ------------------------------------------------------------------------------------------------------
-
-
 def _prepare_absent(live: ArchiwumLive, earlier: Facts) -> Facts:
     status, releases = live.admin.request("GET", f"/repos/{TRIAL_ARCHIVE}/releases?per_page=100")
     if status != 200 or releases != []:
@@ -296,9 +293,6 @@ def _judge_find(facts: Facts, outcome: object) -> list[str]:
             Archive(int(cast(int, facts["drugie"])), ()),
         ),
     )
-
-
-# --- pliki ---------------------------------------------------------------------------------------------------------
 
 
 def _prepare_upload(live: ArchiwumLive, earlier: Facts) -> Facts:

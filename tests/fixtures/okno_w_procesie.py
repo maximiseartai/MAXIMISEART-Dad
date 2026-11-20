@@ -77,8 +77,6 @@ def _action(action: Callable[Concatenate[OknoWProcesie[_O], _P], _R]) -> Callabl
 
 
 class OknoWProcesie(Generic[_O]):
-    """Okno efenix na stanie ``stan``; implementuje ``efenix_window.Efenix``."""
-
     def __init__(self, stan: StanEfenix[_O]) -> None:
         self._stan = stan
         self._sent = SentChanges()

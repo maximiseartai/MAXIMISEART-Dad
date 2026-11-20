@@ -186,6 +186,7 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "settlement_mail_unusable": [partial(settings_messages.settlement_mail_unusable, settings_messages.settlement_mail_reads_as_report())],
             "settlement_mail_unknown_field": [settings_messages.settlement_mail_unknown_field],
             "settlement_mail_empty_text": [settings_messages.settlement_mail_empty_text],
+            "outside_scope": [settings_messages.outside_scope],
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
             "inbox_not_text": [settings_messages.inbox_not_text],
@@ -860,6 +861,18 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
 """,
         "ruff SLF001",
     ),
+    "funkcja modułu, który Ustawienia tylko czyta, do zapisu przez SettingsReads": DrogaDoZapisu(
+        """\
+from rozliczenia.centrum.settings.folders import FoldersEdit
+from rozliczenia.centrum.settings.owner import KeptInPeriods, NotSaved, Refused, Saved
+from rozliczenia.centrum.settings.reads import SettingsReads
+
+
+def zapisz(settings: SettingsReads, edit: FoldersEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
+    return settings.change_folders(edit)
+""",
+        '"SettingsReads" has no attribute "change_folders"',
+    ),
 }
 
 ZNANE_LUKI_POLECENIA_USTAWIEN: Final = {
@@ -888,6 +901,7 @@ from pathlib import Path
 
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import Autostart
+from rozliczenia.centrum.scope import SCOPES, Workstation
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
 from rozliczenia.centrum.settings.proposal import Edit, Proposal, ReleaseChange, ReleaseInputs
@@ -903,6 +917,7 @@ def zapisz(config: Path, log: CentrumLog, autostart: Autostart, periods: WorkerP
 
     CentrumSettings(
         config,
+        scope=SCOPES[Workstation.DAD],
         log=log,
         now=local_now,
         pause=lambda _: None,
@@ -931,6 +946,46 @@ def test_funkcja_trasy_do_zapisu_ustawien_nie_przechodzi_mypy_a_znane_luki_przec
     assert_znane_luki(
         {opis: zgloszenia[opis] for opis in ZNANE_LUKI_POLECENIA_USTAWIEN},
         "tests/test_komunikaty_expect.py (ZNANE_LUKI_POLECENIA_USTAWIEN)",
+    )
+
+
+DROGI_HISTORII_JAK_PUSTEJ: Final = {
+    "zmiany z Wydania z wierszy Historii bez sprawdzenia odczytu (#1499 r2 W1)": (
+        """\
+from rozliczenia.centrum.settings.history import FromRelease, History
+
+
+def zmiany_z_wydania(history: History) -> set[str]:
+    return {row.source.change for row in history.read().rows if isinstance(row.source, FromRelease)}
+""",
+        'Item "Unreadable" of "HistoryRead | Unreadable" has no attribute "rows"',
+    ),
+}
+
+ZNANE_LUKI_HISTORII_JAK_PUSTEJ: Final = {
+    "nieczytelna Historia zamieniona wprost na pustą (typ widzi gałąź, nie jej skutek)": """\
+from rozliczenia.centrum.settings.files import Unreadable
+from rozliczenia.centrum.settings.history import FromRelease, History
+
+
+def zmiany_z_wydania(history: History) -> set[str]:
+    read = history.read()
+    rows = () if isinstance(read, Unreadable) else read.rows
+    return {row.source.change for row in rows if isinstance(row.source, FromRelease)}
+""",
+}
+
+
+@wymaga_ruff_i_mypy
+def test_historia_ustawien_bez_odczytu_liczona_jak_pusta_nie_przechodzi_mypy_a_znane_luki_przechodza(tmp_path: Path) -> None:
+    probki = {opis: kod for opis, (kod, _) in DROGI_HISTORII_JAK_PUSTEJ.items()} | ZNANE_LUKI_HISTORII_JAK_PUSTEJ
+
+    zgloszenia = ruff_i_mypy(zapisz(probki, tmp_path), sonda=ROOT / "src" / "rozliczenia" / "centrum" / "sonda_luki.py")
+
+    assert {opis: zgloszenia[opis] for opis, (_, odrzucenie) in DROGI_HISTORII_JAK_PUSTEJ.items() if not any(odrzucenie in z for z in zgloszenia[opis])} == {}
+    assert_znane_luki(
+        {opis: zgloszenia[opis] for opis in ZNANE_LUKI_HISTORII_JAK_PUSTEJ},
+        "tests/test_komunikaty_expect.py (ZNANE_LUKI_HISTORII_JAK_PUSTEJ)",
     )
 
 

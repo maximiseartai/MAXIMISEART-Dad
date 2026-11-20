@@ -4579,7 +4579,8 @@ export type SettingProblem = {
  * dobre wartości, a bez nich nie ustawiono i motyw domyślny. Przy pliku Folderów bez odczytu ``theme`` to ``None``:
  * strona zostaje przy motywie, który pamięta. Przy złym pliku skrzynki (``inbox_problem``) skrzynka
  * jest bez adresu i hasła. ``periods_all_years``: folder okresów to korzeń układu folderów taty, z którego Centrum
- * widzi Foldery okresu wszystkich lat (``Załączniki``).
+ * widzi Foldery okresu wszystkich lat (``Załączniki``). Pole Funkcji spoza Zakresu tego Centrum (``workers``,
+ * ``inbox`` z ``inbox_problem``, ``autostart``, ``reminders``, ``settlement_mail``) to ``None``.
  */
 export type Settings = {
     /**
@@ -4619,12 +4620,12 @@ export type Settings = {
      */
     theme: 'dark' | 'light' | null;
     folders_problem: SettingProblem | null;
-    workers: WorkerListSetting;
-    inbox: InboxSetting;
+    workers: WorkerListSetting | null;
+    inbox: InboxSetting | null;
     inbox_problem: SettingProblem | null;
-    autostart: AutostartSetting;
-    reminders: RemindersSetting;
-    settlement_mail: SettlementMailSetting;
+    autostart: AutostartSetting | null;
+    reminders: RemindersSetting | null;
+    settlement_mail: SettlementMailSetting | null;
 };
 
 /**

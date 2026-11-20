@@ -734,11 +734,15 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komunikat-boxa-podlancuchem": "bierz własność box_boat.WLASNOSC z junit",
+    "dyrektywa-mypy-recznie": "użyj mypy.util.get_mypy_comments",
+    "follow-symlinks-tylko-posix": "pomiń argument albo sprawdź os.supports_follow_symlinks",
+    "komentarz-przez-startswith": "komentarz w źródle Pythona rozpoznaje tokenize",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
     "krok-mypy-ruff-poza-krokami": "weź krok z kroki_lokalne.static_steps",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
+    "pytest-current-test-poza-testami": "sesję pytest rozpoznaje PYTEST_VERSION",
     "regula-w-trasie": "przenieś regułę do właściciela Ustawień",
     "stan-pliku-poza-file-state": "zapytaj src/rozliczenia/file_state.py",
     "stosunek-czasow-sciany": "licz kroki budżetu (węzły, wywołania), nie zegar",
@@ -794,19 +798,24 @@ def test_reguly_ast_grep_nie_zglaszaja_linii_dodanych_w_repo() -> None:
     base = _base()
     if base is None:
         pytest.skip(f"brak bazy zmiany: ustaw MAXIMISEART_ZAPADKA_BAZA albo pobierz {BASE}")
-    assert syntax_rule_findings(ROOT, base) == []
+    found = syntax_rules(ROOT, base)
+    assert not found, odpalenia_ast_grep.refusal(found)
 
 
 # Reguły ast-grep z ``AST_GREP_RULES``, które obowiązują każdą linię swoich plików (pole ``files:`` reguły), a nie tylko
 # linie dodane przez zmianę, i folder, od którego liczy je ``whole_tree_rules``.
 REGULY_CALEGO_DRZEWA: Final = (
+    "dyrektywa-mypy-recznie",
+    "follow-symlinks-tylko-posix",
     "historia-w-docstringu",
+    "komentarz-przez-startswith",
     "komentarz-w-src",
     "komunikat-boxa-podlancuchem",
     "kotwica-konca-linii",
     "krok-mypy-ruff-poza-krokami",
     "lokator-tytulu-okna",
     "odczyt-docstringu",
+    "pytest-current-test-poza-testami",
     "regula-w-trasie",
     "stan-pliku-poza-file-state",
     "stosunek-czasow-sciany",
@@ -830,7 +839,8 @@ def whole_tree_rules(
 
 @windows_without_ast_grep
 def test_reguly_calego_drzewa_nie_zglaszaja_zadnej_linii() -> None:
-    assert [f"{finding.path}:{finding.line}: {finding.rule}: {finding.message}" for finding in whole_tree_rules(ROOT)] == []
+    found = whole_tree_rules(ROOT)
+    assert not found, odpalenia_ast_grep.refusal(found)
 
 
 def test_kazda_regula_calego_drzewa_jest_w_katalogu_regul() -> None:
@@ -1737,13 +1747,12 @@ def test_dyrektywa_ast_grep_ignore_przechodzi_tylko_z_nazwa_reguly_ktora_wylacza
 # testu jest zależnością testu w grafie wpływu zmiany (``tools/lib/wplyw_zmiany.py``).
 _CENTRUM: Final = ("src", "rozliczenia", "centrum")
 _ODMOWA = "from rozliczenia.centrum import refusal\n\n\ndef changed(problem: object) -> None:\n"
-# Moduł w zakresie reguły: woła metodę zapisu właściciela Ustawień, bez żadnej trasy.
-_ZAPIS_USTAWIEN = "\n\ndef apply(settings: object) -> None:\n    settings.change()\n"
 _WLASCICIEL = "from rozliczenia.centrum.settings.owner import CentrumSettings\n"
+_ZAPIS_USTAWIEN = "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change_folders()\n"
 
 
 def _modul_zapisu(text: str) -> str:
-    return f"{text}{_ZAPIS_USTAWIEN}"
+    return f"{_WLASCICIEL}{text}{_ZAPIS_USTAWIEN}"
 
 
 def _moduly_centrum(root: Path, probki: dict[str, str]) -> dict[str, Path]:
@@ -1757,57 +1766,225 @@ def _moduly_centrum(root: Path, probki: dict[str, str]) -> dict[str, Path]:
     return pliki
 
 
+_METODY_ZAPISU_USTAWIEN: Final = (
+    "change",
+    "change_with_used_keys",
+    "change_folders",
+    "change_autostart",
+    "change_inbox_password",
+    "change_reminders",
+    "change_settlement_mail",
+    "change_workers",
+    "change_exceptions",
+    "change_devices",
+    "change_rules",
+    "change_legend",
+    "rules_after",
+    "legend_after",
+    "undo",
+    "apply_release_changes",
+    "_by_dad",
+    "_dad_change",
+    "_dad_legend",
+    "_dad_devices",
+    "_dad_rules",
+    "_rules_after",
+    "_with_used_keys",
+    "_change",
+    "_checked",
+    "_apply",
+    "_apply_pending",
+    "_refuse",
+    "_put_back",
+    "_remember",
+    "preview_after_new_file",
+)
+
+
+@needs_ast_grep
+@pytest.mark.parametrize("metoda", _METODY_ZAPISU_USTAWIEN)
+def test_regula_w_trasie_obejmuje_modul_z_kazda_metoda_zapisu_wlasciciela_bez_listy_nazw(tmp_path: Path, metoda: str) -> None:
+    """Moduł Centrum, który nazywa ``CentrumSettings`` i woła którąkolwiek metodę zapisu właściciela, jest w zakresie
+    reguły bez listy nazw (#2457): każda metoda z dawnej listy reguły (``change`` i ``change_with_used_keys`` z commitów
+    werdyktów, ``change_<plik>``, podgląd ``rules_after``, prywatne ``_by_dad``, ``_dad_*`` i reszta), ``legend_after``
+    z #1983, którego lista nie miała, i metoda, której właściciel jeszcze nie ma."""
+
+    base = _empty_base(tmp_path)
+    _moduly_centrum(
+        tmp_path,
+        {
+            "probka": f"{_WLASCICIEL}{_ODMOWA}    _ensure_not_in_periods(problem)\n"
+            f"\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.{metoda}()\n"
+        },
+    )
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(6, "regula-w-trasie")]
+
+
+_ODCZYT = "from rozliczenia.centrum.settings.reads import SettingsReads, SettingsSnapshot\n"
+
+
 @needs_ast_grep
 @pytest.mark.parametrize(
     ("modul", "naglowek", "zapis", "lines"),
     [
-        (
+        pytest.param(
             "quantity_differences.py",
-            "from fastapi import APIRouter\n",
-            "\n\ndef add_worker_routes(router: APIRouter, settings: object) -> None:\n    settings.change()\n",
-            [6, 8],
+            f"from fastapi import APIRouter\n{_WLASCICIEL}",
+            "\n\ndef add_worker_routes(router: APIRouter, settings: CentrumSettings) -> None:\n    settings.change_exceptions()\n",
+            [7, 9],
+            id="modul-bez-router-w-nazwie",
         ),
-        (
+        pytest.param(
             "app.py",
-            "from fastapi import FastAPI\n",
-            '\n\ndef add_delete(app: FastAPI, settings: object) -> None:\n    @app.delete("/api/settings/workers/{name}")\n'
-            "    def delete_worker(name: str) -> None:\n        settings.change(name)\n",
-            [6, 8],
+            f"from fastapi import FastAPI\n{_WLASCICIEL}",
+            '\n\ndef add_delete(app: FastAPI, settings: CentrumSettings) -> None:\n    @app.delete("/api/settings/workers/{name}")\n'
+            "    def delete_worker(name: str) -> None:\n        settings.change_workers(name)\n",
+            [7, 9],
+            id="trasa-na-fastapi-w-app",
         ),
-        (
+        pytest.param(
             "probka.py",
-            "import fastapi\n",
-            '\n\ndef add_worker_routes(router: "fastapi.APIRouter", settings: object) -> None:\n    settings.change_with_used_keys()\n',
+            "from rozliczenia.centrum.settings import owner\n",
+            '\n\ndef apply(settings: "owner.CentrumSettings") -> None:\n    settings.legend_after()\n',
             [6, 8],
+            id="adnotacja-napisem-przez-modul-wlasciciela",
         ),
-        ("probka.py", _WLASCICIEL, '\n\ndef undo(settings: CentrumSettings) -> None:\n    settings.undo("row")\n', [6, 8]),
-        ("probka.py", _WLASCICIEL, "\n\ndef release(settings: CentrumSettings) -> None:\n    settings.apply_release_changes()\n", [6, 8]),
-        ("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, "change")()\n', [6, 8]),
-        ("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, r"change")()\n', [6, 8]),
-        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, '''change''')()\n", [6, 8]),
-        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings._dad_change()\n", [6, 8]),
-        ("probka.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    write = settings._checked\n", [6, 8]),
-        (
+        pytest.param(
             "probka.py",
-            "from collections.abc import Callable\n",
-            "\n\ndef apply(settings: object, run: Callable[[object], None]) -> None:\n    run(settings.change)\n",
+            "from rozliczenia.centrum.settings import owner\n",
+            "\n\ndef apply(settings: owner.CentrumSettings) -> None:\n    settings.legend_after()\n",
             [6, 8],
+            id="typ-przez-atrybut-modulu-wlasciciela",
         ),
-        ("settings/history.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", [6, 8]),
-        ("settings/owner.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.change()\n", []),
-        ("probka.py", "from fastapi import APIRouter\n", "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", []),
-        ("probka.py", "", '\n\ndef apply(settings: object) -> None:\n    """Zapis: settings.change w trasie."""\n', []),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.settings.owner import CentrumSettings as Ustawienia\n",
+            "\n\ndef apply(settings: Ustawienia) -> None:\n    settings.legend_after()\n",
+            [6, 8],
+            id="typ-pod-alias",
+        ),
+        pytest.param("probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, "change")()\n', [6, 8], id="getattr-z-literalem"),
+        pytest.param(
+            "probka.py", _WLASCICIEL, '\n\ndef apply(settings: CentrumSettings) -> None:\n    getattr(settings, "chan" "ge")()\n', [6, 8], id="getattr-z-literalem-sklejonym"
+        ),
+        pytest.param(
+            "probka.py",
+            _WLASCICIEL,
+            "\n\ndef apply(settings: CentrumSettings, operation: str) -> None:\n    getattr(settings, operation)()\n",
+            [6, 8],
+            id="getattr-ze-zmienna",
+        ),
+        pytest.param(
+            "probka.py",
+            f"from collections.abc import Callable\n{_WLASCICIEL}",
+            "\n\ndef apply(settings: CentrumSettings, run: Callable[[object], None]) -> None:\n    run(settings.change_rules)\n",
+            [7, 9],
+            id="metoda-przekazana-bez-wywolania",
+        ),
+        pytest.param("settings/history.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.undo()\n", [6, 8], id="modul-pakietu-ustawien"),
+        pytest.param(
+            "probka.py",
+            "from typing import Protocol\n\nfrom rozliczenia.centrum.settings.owner import NotSaved, Refused, Saved\n",
+            "\n\nclass _Zapis(Protocol):\n    def change_folders(self) -> Saved | Refused | NotSaved: ...\n",
+            [8, 10],
+            id="wlasny-protocol-z-wynikiem-wlasciciela",
+        ),
+        pytest.param(
+            "probka.py", "from rozliczenia.centrum.settings.owner import Saved as Zapisane\n", "\n\ndef apply(saved: Zapisane) -> None:\n    print(saved)\n", [6, 8], id="wynik-wlasciciela-pod-alias"
+        ),
+        pytest.param(
+            "settings/history.py", "from .owner import Refused\n", "\n\ndef apply(refused: Refused) -> None:\n    print(refused)\n", [6, 8], id="wynik-wlasciciela-importem-wzglednym"
+        ),
+        pytest.param(
+            "probka.py", "from rozliczenia.centrum.settings import owner\n", "\n\ndef apply(saved: owner.Saved) -> None:\n    print(saved)\n", [6, 8], id="modul-wlasciciela-w-calosci"
+        ),
+        pytest.param(
+            "probka.py", "import rozliczenia.centrum.settings.owner\n", "\n\ndef apply(saved: object) -> None:\n    print(saved)\n", [6, 8], id="modul-wlasciciela-importem"
+        ),
+        pytest.param(
+            "probka.py",
+            "import rozliczenia.centrum.settings.owner as wlasciciel\n",
+            "\n\ndef apply(saved: wlasciciel.Saved) -> None:\n    print(saved)\n",
+            [6, 8],
+            id="modul-wlasciciela-importem-pod-alias",
+        ),
+        pytest.param(
+            "probka.py",
+            "import json, rozliczenia.centrum.settings.owner as wlasciciel\n",
+            "\n\ndef apply(saved: wlasciciel.Saved) -> None:\n    print(json, saved)\n",
+            [6, 8],
+            id="modul-wlasciciela-obok-innego-w-jednym-imporcie",
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.settings import folders, owner as wlasciciel\n",
+            "\n\ndef apply(saved: wlasciciel.Saved) -> None:\n    print(folders, saved)\n",
+            [6, 8],
+            id="modul-wlasciciela-z-pakietu-pod-alias-obok-innego",
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.settings.owner import (\n    NotSaved,\n    Saved,\n)\n",
+            "\n\ndef apply(saved: Saved | NotSaved) -> None:\n    print(saved)\n",
+            [9, 11],
+            id="wynik-wlasciciela-w-nawiasie-na-kilku-liniach",
+        ),
+        pytest.param(
+            "probka.py",
+            "from typing import TYPE_CHECKING\n\nif TYPE_CHECKING:\n    from rozliczenia.centrum.settings.owner import Saved\n",
+            '\n\ndef apply(saved: "Saved") -> None:\n    print(saved)\n',
+            [9, 11],
+            id="wynik-wlasciciela-pod-type-checking",
+        ),
+        pytest.param(
+            "settings/history.py", "from . import owner\n", "\n\ndef apply(saved: owner.Saved) -> None:\n    print(saved)\n", [6, 8], id="modul-wlasciciela-z-kropki"
+        ),
+        pytest.param(
+            "probka.py", _ODCZYT, "\n\ndef read(snapshot: SettingsSnapshot) -> None:\n    print(snapshot.folders)\n", [], id="migawka-z-modulu-odczytu"
+        ),
+        pytest.param(
+            "probka.py",
+            "import rozliczenia.centrum.settings as ustawienia\n",
+            "\n\ndef apply(settings: ustawienia.owner.CentrumSettings) -> None:\n    settings.undo()\n",
+            [6, 8],
+            id="typ-przez-atrybut-pakietu",
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.run_logs_guard import owner_text\n",
+            "\n\ndef apply(text: str) -> None:\n    print(owner_text(text))\n",
+            [],
+            id="import-nazwy-zaczynajacej-sie-od-owner",
+        ),
+        pytest.param(
+            "probka.py",
+            "from rozliczenia.centrum.logs_disk import Refused\n",
+            "\n\ndef apply(refused: Refused) -> None:\n    print(refused)\n",
+            [],
+            id="klasa-o-nazwie-wyniku-z-innego-modulu",
+        ),
+        pytest.param("settings/owner.py", _WLASCICIEL, "\n\ndef apply(settings: CentrumSettings) -> None:\n    settings.undo()\n", [], id="wlasciciel"),
+        pytest.param("probka.py", _ODCZYT, "\n\ndef read(settings: SettingsReads) -> None:\n    settings.folders()\n", [], id="modul-tylko-czyta"),
+        pytest.param("probka.py", "from fastapi import APIRouter\n", "\n\ndef runs_router() -> APIRouter:\n    return APIRouter()\n", [], id="trasa-bez-ustawien"),
+        pytest.param(
+            "probka.py", "", '\n\ndef apply(settings: object) -> None:\n    """Zapis: CentrumSettings.change_folders w trasie."""\n', [], id="napis-tylko-wspomina-typ"
+        ),
     ],
 )
-def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poza_wlascicielem(
+def test_regula_w_trasie_obejmuje_kazdy_modul_z_typem_wlasciciela_ustawien_poza_wlascicielem(
     tmp_path: Path, modul: str, naglowek: str, zapis: str, lines: list[int]
 ) -> None:
-    """Zakres reguły wynika z własności, nie ze składni trasy: sondy #1727 r1 W1 (``quantity_differences.py`` bez
-    ``router`` w nazwie), r2 W1 (router z parametru) i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``, adnotacja
-    napisem ``"fastapi.APIRouter"``), sondy r4 W1 (``getattr`` z nazwą metody zapisu w literale, prywatna metoda
-    właściciela), sondy r5 W2 (literał z przedrostkiem ``r`` i w potrójnym cudzysłowie) i moduł bez trasy, który nazywa którąkolwiek metodę zapisu właściciela, także przekazaną bez
-    wywołania, są zgłoszone; ten sam kod w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``),
-    w module bez zapisu Ustawień i w module, którego napis tylko wspomina metodę zapisu, nie."""
+    """Zakres reguły wynika z własności, nie ze składni trasy ani z nazw metod zapisu: sondy #1727 r1 W1
+    (``quantity_differences.py`` bez ``router`` w nazwie), r2 W1 i r3 W1 (``@app.delete`` na ``FastAPI`` w ``app.py``,
+    adnotacja napisem), r4 W1 i r5 W2 (``getattr`` z nazwą metody zapisu) i moduł bez trasy, który nazywa typ
+    ``CentrumSettings`` przez import, alias, atrybut modułu właściciela albo adnotację napisem, i moduł, który importuje
+    cokolwiek z ``settings/owner.py`` w każdej postaci instrukcji importu (własny ``Protocol`` z wynikiem zapisu,
+    #2489 r1 W1, moduł właściciela pod aliasem i obok innego, r2 W1, nawias, ``TYPE_CHECKING``, import względny), są
+    zgłoszone; ten sam kod
+    w module właściciela ``settings/owner.py`` (prawo właściciela w ``ignores:``), w module, który Ustawienia tylko czyta
+    przez ``settings/reads.py``, w module bez Ustawień, w module z klasą o nazwie wyniku z innego modułu i w module, którego
+    napis tylko wspomina typ, nie."""
 
     base = _empty_base(tmp_path)
     plik = tmp_path.joinpath(*_CENTRUM, *modul.split("/"))
@@ -1824,36 +2001,36 @@ def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poz
 @pytest.mark.parametrize(
     ("text", "lines"),
     [
-        (f"{_ODMOWA}    _ensure_not_in_periods(problem)\n", [5]),
-        (f"{_ODMOWA}    checks._ensure_not_in_periods(problem)\n", [5]),
-        (f"{_ODMOWA}    needed = needed_by(problem)\n    if needed is not None:\n        raise refusal.setting_refused(needed)\n", [7]),
+        (f"{_ODMOWA}    _ensure_not_in_periods(problem)\n", [6]),
+        (f"{_ODMOWA}    checks._ensure_not_in_periods(problem)\n", [6]),
+        (f"{_ODMOWA}    needed = needed_by(problem)\n    if needed is not None:\n        raise refusal.setting_refused(needed)\n", [8]),
         (
             f'{_ODMOWA}    match problem:\n        case "delete":\n            if problem:\n'
             '                raise refusal.worker_kept(problem, "worker")\n',
-            [8],
+            [9],
         ),
-        (f'{_ODMOWA}    match problem:\n        case "delete" if problem:\n            raise refusal.worker_kept(problem, "worker")\n', [7]),
-        (f'{_ODMOWA}    if problem:\n        return\n    else:\n        raise refusal.worker_kept(problem, "worker")\n', [8]),
-        (f"{_ODMOWA}    match problem:\n        case Refused(problem=refused) if refused:\n            raise refusal.setting_refused(refused)\n", [7]),
-        (f"{_ODMOWA}    match problem:\n        case Saved() | InPeriods():\n            raise refusal.setting_refused(problem)\n", [7]),
-        (f'{_ODMOWA}    match problem:\n        case InPeriods():\n            raise refusal.worker_kept(problem, "worker")\n', [7]),
+        (f'{_ODMOWA}    match problem:\n        case "delete" if problem:\n            raise refusal.worker_kept(problem, "worker")\n', [8]),
+        (f'{_ODMOWA}    if problem:\n        return\n    else:\n        raise refusal.worker_kept(problem, "worker")\n', [9]),
+        (f"{_ODMOWA}    match problem:\n        case Refused(problem=refused) if refused:\n            raise refusal.setting_refused(refused)\n", [8]),
+        (f"{_ODMOWA}    match problem:\n        case Saved() | InPeriods():\n            raise refusal.setting_refused(problem)\n", [8]),
+        (f'{_ODMOWA}    match problem:\n        case InPeriods():\n            raise refusal.worker_kept(problem, "worker")\n', [8]),
         (
             f"{_ODMOWA}    match problem:\n        case Refused(problem=refused):\n            if refused:\n"
             "                raise refusal.setting_refused(refused)\n",
-            [8],
+            [9],
         ),
-        (f'{_ODMOWA}    if isinstance(problem, InPeriods):\n        raise refusal.worker_kept(problem, "worker")\n', [6]),
-        (f"{_ODMOWA}    if isinstance(problem, FieldProblem) and problem:\n        raise refusal.setting_refused(problem)\n", [6]),
-        (f"{_ODMOWA}    if isinstance(problem, FieldProblem):\n        return\n    else:\n        raise refusal.setting_refused(problem)\n", [8]),
-        (f"{_ODMOWA}    if problem is None:\n        for part in str(problem):\n            raise refusal.setting_refused(part)\n", [7]),
+        (f'{_ODMOWA}    if isinstance(problem, InPeriods):\n        raise refusal.worker_kept(problem, "worker")\n', [7]),
+        (f"{_ODMOWA}    if isinstance(problem, FieldProblem) and problem:\n        raise refusal.setting_refused(problem)\n", [7]),
+        (f"{_ODMOWA}    if isinstance(problem, FieldProblem):\n        return\n    else:\n        raise refusal.setting_refused(problem)\n", [9]),
+        (f"{_ODMOWA}    if problem is None:\n        for part in str(problem):\n            raise refusal.setting_refused(part)\n", [8]),
         (
             f"{_ODMOWA}    if isinstance(problem, NotUndoable):\n"
             "        raise refusal.settings_change_not_undoable() if problem else refusal.settings_not_saved()\n",
-            [6, 6],
+            [7, 7],
         ),
-        (f"{_ODMOWA}    try:\n        str(problem)\n    except ValueError as error:\n        raise refusal.setting_refused(problem) from error\n", [8]),
-        (f"{_ODMOWA}    raise refusal.setting_refused(problem)\n", [5]),
-        (f"{_ODMOWA}    return refusal.setting_refused(problem)\n", [5]),
+        (f"{_ODMOWA}    try:\n        str(problem)\n    except ValueError as error:\n        raise refusal.setting_refused(problem) from error\n", [9]),
+        (f"{_ODMOWA}    raise refusal.setting_refused(problem)\n", [6]),
+        (f"{_ODMOWA}    return refusal.setting_refused(problem)\n", [6]),
         (f"{_ODMOWA}    match problem:\n        case Refused(problem=refused):\n            raise refusal.setting_refused(refused)\n", []),
         (
             f"{_ODMOWA}    match problem:\n        case owner.KeptInPeriods(presence=presence, what=what):\n"
@@ -1862,12 +2039,12 @@ def test_regula_w_trasie_obejmuje_kazdy_modul_z_zapisem_wlasciciela_ustawien_poz
         ),
         (f"{_ODMOWA}    if isinstance(problem, FieldProblem):\n        raise refusal.setting_refused(problem)\n", []),
         (f"{_ODMOWA}    if isinstance(problem, NotSaved):\n        raise refusal.settings_not_saved()\n", []),
-        (f'{_ODMOWA}    if problem:\n        if problem.found is None:\n            raise refusal.worker_kept(problem, "worker")\n', [7]),
-        (f"{_ODMOWA}    with problem:\n        if problem is None:\n            raise refusal.register_not_chosen()\n", [7]),
+        (f'{_ODMOWA}    if problem:\n        if problem.found is None:\n            raise refusal.worker_kept(problem, "worker")\n', [8]),
+        (f"{_ODMOWA}    with problem:\n        if problem is None:\n            raise refusal.register_not_chosen()\n", [8]),
         (
             f'{_ODMOWA}    match problem:\n        case "delete":\n            if isinstance(problem, FieldProblem):\n'
             "                raise refusal.setting_refused(problem)\n",
-            [8],
+            [9],
         ),
         (f"{_ODMOWA}    if problem is None:\n        raise refusal.register_not_chosen()\n", []),
         (
@@ -1926,15 +2103,31 @@ ZNANE_LUKI_REGULY_W_TRASIE: Final = {
         'def apply(settings: object, problem: object) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
         "    settings_writes.save(settings)\n"
     ),
-    "zakres: nazwa metody zapisu właściciela sklejona z dwóch literałów": (
+    "zakres: właściciel Ustawień pod typem object, a zapis przez getattr, który mypy na object przepuszcza": (
         "from rozliczenia.centrum import refusal\n\n\n"
         "def apply(settings: object, problem: object) -> None:\n    if problem:\n"
-        '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, "chan" "ge")(problem)\n'
+        '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, "change_folders")(problem)\n'
     ),
-    "zakres: nazwa metody zapisu właściciela nie jest literałem, np. getattr ze zmienną": (
-        "from rozliczenia.centrum import refusal\n\n\n"
-        "def apply(settings: object, problem: object, operation: str) -> None:\n    if problem:\n"
-        '        raise refusal.worker_kept(problem, "worker")\n    getattr(settings, operation)(problem)\n'
+    "zakres: własny Protocol z metodą zapisu, który nic nie importuje z settings/owner.py (wynik object albo None)": (
+        "from typing import Protocol\n\nfrom rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.settings.folders import FoldersEdit\n\n\n"
+        "class _Zapis(Protocol):\n    def change_folders(self, edit: FoldersEdit) -> object: ...\n\n\n"
+        "def apply(settings: _Zapis, edit: FoldersEdit, problem: object) -> None:\n    if problem:\n"
+        "        raise refusal.settings_not_saved()\n    settings.change_folders(edit)\n"
+    ),
+    "zakres: moduł właściciela jako atrybut pakietu settings, bez słowa owner w imporcie": (
+        "import rozliczenia.centrum.settings as ustawienia\nfrom rozliczenia.centrum import refusal\n\n\n"
+        "def apply(saved: object, problem: object) -> bool:\n    if problem:\n"
+        "        raise refusal.settings_not_saved()\n    return isinstance(saved, ustawienia.owner.Saved)\n"
+    ),
+    "zakres: wynik zapisu właściciela przez moduł pośredni, który go ponownie eksportuje": (
+        "from rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.settings_writes import Saved\n\n\n"
+        "def apply(saved: Saved, problem: object) -> Saved:\n    if problem:\n"
+        "        raise refusal.settings_not_saved()\n    return saved\n"
+    ),
+    "zakres: właściciel Ustawień z pola obiektu, którego klasa nazywa CentrumSettings w innym module": (
+        "from rozliczenia.centrum import refusal\nfrom rozliczenia.centrum.route_context import RouteContext\n\n\n"
+        "def apply(context: RouteContext, problem: object) -> None:\n    if problem:\n"
+        '        raise refusal.worker_kept(problem, "worker")\n    context.settings.change_folders(problem)\n'
     ),
 }
 
@@ -2176,10 +2369,17 @@ _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "krok-mypy-ruff-poza-krokami": (("tools",), ".py"),
     "komunikat-boxa-podlancuchem": (("tools",), ".py"),
     "stosunek-czasow-sciany": (("tests",), ".py"),
+    "dyrektywa-mypy-recznie": (("tests",), ".py"),
+    "follow-symlinks-tylko-posix": (("tests",), ".py"),
+    "komentarz-przez-startswith": (("tools",), ".py"),
+    "pytest-current-test-poza-testami": (("tools",), ".py"),
 }
 _SYS = "import sys\n\n"
 _BOX = "import box_boat\n\n\ndef infra(wyjscie: str) -> bool:\n    return "
 _ZEGAR = "import time\n\n\ndef test_stosunek() -> None:\n    start = time.perf_counter()\n    srodek = time.perf_counter()\n"
+_DYREKTYWA = "import re\n\n\ndef dyrektywa(linia: str) -> bool:\n    return "
+_OS = "import os\n\n"
+_LINIA = "def komentarz(linia: str) -> bool:\n    return "
 _PATTERN = "import re\n\nLINE = "
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
 # (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
@@ -2209,6 +2409,34 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.monotonic() - start) / (time.monotonic() - srodek) < 2\n", [7]),
     ("stosunek-czasow-sciany", f"{_ZEGAR}    assert time.perf_counter() - srodek < start\n", []),
     ("stosunek-czasow-sciany", f"{_ZEGAR}    assert (time.perf_counter() - srodek) / 2 < start\n", []),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# mypy:")\n', [5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}re.match(r"#\\s*mypy:", linia) is not None\n', [5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia[:7] == "# mypy:"\n', [5]),
+    ("dyrektywa-mypy-recznie", 'PROBKI = {"w kolumnie 0": "# mypy: ignore-errors\\n"}\n', []),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith(("# mypy:", "#mypy:"))\n', [5, 5]),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# noqa:")\n', []),
+    ("dyrektywa-mypy-recznie", 'def test_probka(tekst: str) -> None:\n    assert "# mypy: ignore-errors" in tekst\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.chown("plik", 0, 0, follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.link("a", "b", follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.access("plik", os.R_OK, follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1))\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=True)\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.chmod("plik", 0o644, follow_symlinks=False)\n', []),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.stat("plik", follow_symlinks=False)\n', []),
+    ("follow-symlinks-tylko-posix", 'import shutil\n\nshutil.copy2("a", "b", follow_symlinks=False)\n', []),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("#")\n', [2]),
+    ("komentarz-przez-startswith", f"{_LINIA}linia.lstrip().startswith('#')\n", [2]),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.startswith("#")\n', []),
+    ("komentarz-przez-startswith", f'{_LINIA}linia.strip().startswith("##")\n', []),
+    (
+        "komentarz-przez-startswith",
+        "import tokenize\n\n\ndef komentarz(token: tokenize.TokenInfo) -> bool:\n    return token.type == tokenize.COMMENT\n",
+        [],
+    ),
+    ("pytest-current-test-poza-testami", f'{_OS}W_TESCIE = "PYTEST_CURRENT_TEST" in os.environ\n', [3]),
+    ("pytest-current-test-poza-testami", f"{_OS}W_TESCIE = os.environ.get('PYTEST_CURRENT_TEST') is not None\n", [3]),
+    ("pytest-current-test-poza-testami", f'{_OS}W_SESJI = "PYTEST_VERSION" in os.environ\n', []),
 ]
 
 
@@ -2258,6 +2486,22 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
     "stosunek-czasow-sciany": {
         "stosunek zapisany mnożeniem": f"{_ZEGAR}    assert time.perf_counter() - srodek < 2 * (srodek - start)\n",
         "czasy w nazwanych zmiennych": f"{_ZEGAR}    pierwszy = srodek - start\n    drugi = time.perf_counter() - srodek\n    assert drugi / pierwszy < 2\n",
+    },
+    "dyrektywa-mypy-recznie": {
+        "wzorzec w stałej poza wywołaniem": 'DYREKTYWA = "# mypy:"\n\n\ndef dyrektywa(linia: str) -> bool:\n    return linia.startswith(DYREKTYWA)\n',
+        "dyrektywa bez #": 'def dyrektywa(linia: str) -> bool:\n    return "mypy:" in linia\n',
+    },
+    "follow-symlinks-tylko-posix": {
+        "funkcja pod samą nazwą z from-importu": 'from os import utime\n\nutime("plik", (1, 1), follow_symlinks=False)\n',
+        "os pod inną nazwą": 'import os as system\n\nsystem.utime("plik", (1, 1), follow_symlinks=False)\n',
+        "argument ze słownika": f'{_OS}os.utime("plik", (1, 1), **{{"follow_symlinks": False}})\n',
+    },
+    "komentarz-przez-startswith": {
+        "linia po strip w zmiennej": 'def komentarz(linia: str) -> bool:\n    tekst = linia.strip()\n    return tekst.startswith("#")\n',
+        "znak w krotce": f'{_LINIA}linia.strip().startswith(("#", "!"))\n',
+    },
+    "pytest-current-test-poza-testami": {
+        "nazwa zmiennej sklejona z części": f'{_OS}W_TESCIE = "PYTEST_" + "CURRENT_TEST" in os.environ\n',
     },
 }
 

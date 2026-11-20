@@ -298,8 +298,6 @@ def _few(names: list[str]) -> str:
 
 
 def _in_base(root: Path, head: str) -> bool:
-    """HEAD jest przodkiem ``origin/main`` albo jego scalenie z ``origin/main`` daje drzewo ``origin/main`` (squash)."""
-
     if repo.is_ancestor(root, head, BASE):
         return True
     try:
@@ -320,8 +318,6 @@ def _fresh_without_own_work(cwd: Path, ref: str, head: str) -> bool:
 
 
 def _remove(root: Path, verdict: _Verdict, here: Path, threads: _Threads | None) -> str | None:
-    """Usuwa po ponownej ocenie tuż przed usunięciem; zwraca powód, gdy coś zostaje."""
-
     tree = verdict.worktree
     if tree is not None:
         again = _judge_tree(root, replace(tree, head=_head(tree)), here, _busy(), threads)

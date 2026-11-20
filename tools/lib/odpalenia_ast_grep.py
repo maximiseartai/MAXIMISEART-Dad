@@ -72,6 +72,8 @@ BUILTIN_MESSAGES: Final = {
     " komunikatu reguły, którą wyłączała",
     "unused-suppression": f"dyrektywa {SUPPRESSION} niczego nie wyłącza: usuń ją",
 }
+FIRED: Final = "ODPALENIE REGUŁY"
+FIRED_LINE: Final = re.compile(rf"{FIRED} ([\w.-]+) \| ")
 INSTALL = "brak ast-grep z dodatku dev: uruchom python3 tools/setup_worktree.py (Windows: py -3 tools/setup_worktree.py)"
 # Pusty obiekt drzewa gita: atrybuty z niego (``attr.tree``) to brak atrybutów.
 EMPTY_TREE: Final = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -81,9 +83,13 @@ _HUNK = re.compile(r"@@ -\d+(?:,(?P<old_count>\d+))? \+(?P<new>\d+)(?:,(?P<new_c
 
 class Finding(NamedTuple):
     path: str
-    line: int  # pierwsza dodana linia węzła, od 1
+    line: int
     rule: str
     message: str
+
+
+def refusal(findings: Sequence[Finding]) -> str:
+    return "\n".join(f"{FIRED} {finding.rule} | {finding.path}:{finding.line}: {finding.message}" for finding in findings)
 
 
 class ScanFailed(ValueError):
@@ -122,9 +128,6 @@ _DIFF_OPTIONS: Final = (
 
 
 class Changes:
-    """Zmiana checkoutu ``root`` od ``base`` w plikach ``pathspec`` (ścieżka gita): jej linie dodane, a pliku
-    nieśledzonego każda linia."""
-
     def __init__(self, root: Path, base: str, pathspec: str = ".") -> None:
         self._root = root
         # Konfiguracja checkoutu, której ``isolated`` nie wyłącza, a która zmienia pliki albo linie różnicy.
@@ -161,8 +164,6 @@ class Changes:
                 path = line.removeprefix("+++ b/").removesuffix("\t") if line != "+++ /dev/null" else None
 
     def added(self) -> Iterator[tuple[str, int, str]]:
-        """Linie dodane: ścieżka, numer linii od 1 i treść; plik nieśledzony cały."""
-
         yield from self._added
         for path in self._untracked:
             if (self._root / path).is_file():
@@ -183,9 +184,6 @@ def json_stream(stdout: str) -> list[Any]:
 
 
 def added_lines(root: Path, base: str, folder: str, pattern: str = "*.py") -> Iterator[tuple[str, int, str]]:
-    """Linie plików ``pattern`` w ``folder`` checkoutu ``root``, które zmiana od ``base`` dodaje: ścieżka, numer linii
-    od 1 i treść."""
-
     return Changes(root, base, f"{folder}/{pattern}").added()
 
 

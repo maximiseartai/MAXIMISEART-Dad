@@ -1,0 +1,16 @@
+id: pytest-current-test-poza-testami
+language: python
+severity: error
+message: >-
+  sesję pytest rozpoznaje PYTEST_VERSION; PYTEST_CURRENT_TEST istnieje tylko w fazie testu i nie ma go w migawce
+  os.environ z importu modułu ani w procesie potomnym ze środowiskiem z takiej migawki
+files:
+  - tools/**/*.py
+  - src/**/*.py
+  - .agents/skills/*/scripts/**/*.py
+metadata:
+  przypadki:
+    - 2327/W1/r3
+rule:
+  kind: string
+  regex: '^[rbf]?["'']PYTEST_CURRENT_TEST["'']$'

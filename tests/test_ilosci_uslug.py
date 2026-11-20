@@ -160,7 +160,6 @@ class Case:
     quantities: dict[str, int]
     activities: str = "instalacja"
     started: datetime | None = None
-    """``DATA``; bez niej wtorek rano."""
 
 
 CASES: list[Case] = [

@@ -4,14 +4,15 @@ from collections.abc import AsyncIterator, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import date, datetime
-from pathlib import Path
-from typing import Any
+from pathlib import Path, PurePosixPath
+from typing import Any, Final
 import threading
 import time
 import uuid
 
 from fastapi import APIRouter, Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Match, Mount
 
 from rozliczenia.centrum.activity_legend_router import activity_legend_router, with_legend_sentences
 from rozliczenia.centrum.catalog import CATALOG, Catalog
@@ -68,7 +69,12 @@ from rozliczenia.centrum.settlement_mailing import SettlementMailing, settlement
 from rozliczenia.centrum.workers_router import workers_router
 from rozliczenia.centrum.quantity_differences import quantity_differences_router, with_exception_sentences
 from rozliczenia.centrum.quantity_rules_preview import RecentCollectiveFiles
-from rozliczenia.centrum.quantity_rules_router import PriceList, history_sentences, quantity_rules_router
+from rozliczenia.centrum.quantity_rules_router import (
+    PriceList,
+    history_sentences,
+    quantity_rules_router,
+    without_rule_sentences,
+)
 from rozliczenia.centrum.shutdown import Shutdown, shutdown_router
 from rozliczenia.centrum.threads import Threading
 from rozliczenia.centrum.stops import Stops
@@ -99,6 +105,7 @@ from rozliczenia.worker_report_inbox import (
 from rozliczenia.wall_clock import dad_today, local_now
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
+_API: Final = PurePosixPath("/api")
 
 
 def create_app(
@@ -198,6 +205,7 @@ def create_app(
     price_list = PriceList(configuration.collective_template)
     settings = CentrumSettings(
         config,
+        scope=scope,
         log=log,
         now=local_now,
         pause=pause,
@@ -212,7 +220,11 @@ def create_app(
         if inbox_smtp is None
         else ImapInbox(lambda: settings.snapshot().inbox, connect=inbox_connect, smtp=inbox_smtp)
     )
-    sentences = with_legend_sentences(with_exception_sentences(history_sentences(settings, price_list), price_list), price_list)
+    sentences = (
+        with_legend_sentences(with_exception_sentences(history_sentences(settings, price_list), price_list), price_list)
+        if scope.covers(CentrumFunction.QUANTITIES)
+        else without_rule_sentences
+    )
     include(ALWAYS, settings_router(settings, platform, sentences))
     include(CentrumFunction.PERIODS, periods_directory_router(settings, platform))
     include(CentrumFunction.AUTOSTART, autostart_router(settings))
@@ -342,7 +354,7 @@ def create_app(
     include(
         ALWAYS,
         configuration_router(
-            configuration,
+            configuration.templates if scope.covers(CentrumFunction.TEMPLATES) else tuple,
             surroundings.tool_freshness,
             release,
             lambda: box.judge(wait_s=CONFIGURATION_WAIT_S),
@@ -353,8 +365,18 @@ def create_app(
     include(ALWAYS, shutdown_router(shutdown))
     include(ALWAYS, timing_router(log))
     if path_state(STATIC_DIRECTORY) == "folder":
-        app.mount("/", _Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
+        app.router.routes.append(_FrontendMount())
     return app
+
+
+class _FrontendMount(Mount):
+    def __init__(self) -> None:
+        super().__init__("/", app=_Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
+
+    def matches(self, scope: MutableMapping[str, Any]) -> tuple[Match, MutableMapping[str, Any]]:
+        if PurePosixPath(scope["path"]).is_relative_to(_API):
+            return Match.NONE, {}
+        return super().matches(scope)
 
 
 class _Frontend(StaticFiles):

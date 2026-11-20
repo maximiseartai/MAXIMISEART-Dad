@@ -130,8 +130,6 @@ class Commits:
         return cls(parents, files, times, issues)
 
     def own(self, *tips: str | None) -> frozenset[str]:
-        """Commity osiągalne z któregoś z ``tips`` spoza ``origin/main``."""
-
         seen: set[str] = set()
         stack = [tip for tip in tips if tip is not None and tip in self.parents]
         while stack:
@@ -458,8 +456,6 @@ def render(
     everything: bool,
     nakladania: bool,
 ) -> list[str]:
-    """Szczegóły, potem odpowiedzi ``ZGŁOSZENIE`` i ``NAKŁADANIA`` (bez ``AKTUALIZACJA``, którą drukuje ``main``)."""
-
     details: list[str] = []
     answers: list[str] = []
     if not nakladania:
@@ -607,8 +603,6 @@ def _issue_body(root: Path, issue: int) -> str:
 
 
 def _update_verdict(root: Path, branch: str | None) -> str:
-    """Q9: gałąź aktualizuje się z ``origin/main`` tylko przy konflikcie albo pliku zmienionym po obu stronach."""
-
     ref = f"refs/heads/{branch}" if branch is not None else _before_rebase(root) or "HEAD"
     try:
         merged = repo.merge_tree(root, ref, BASE)
@@ -637,8 +631,6 @@ def _before_rebase(root: Path) -> str | None:
 
 
 def _base_note(root: Path) -> str:
-    """Commit ``origin/main``, z którym werdykt porównał, i wiek fetch, gdy żaden nie potwierdził go w ostatniej godzinie."""
-
     seen, short = repo.git(root, "log", "-1", "--format=%H%n%h", BASE).split()
     main_branch = f"\tbranch '{BASE.partition('/')[2]}' of "
     common = repo.common_dir(root)

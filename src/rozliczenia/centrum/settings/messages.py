@@ -214,6 +214,10 @@ def settlement_mail_empty_text() -> str:
     return "Wpisz treść maila z rozliczeniem."
 
 
+def outside_scope() -> str:
+    return "Tej części Ustawień nie ma w tym Centrum rozliczeń."
+
+
 def autostart_unsupported() -> str:
     return "Start razem z Windows działa tylko na komputerze z Windows."
 
