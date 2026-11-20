@@ -6289,7 +6289,7 @@ def test_cofniecie_usuniecia_wykonawcy_po_ktorym_lista_lamalaby_regule_to_odmowa
     undone = client.post(f"/api/settings/history/{removed.json()['change']}/undo")
 
     assert [answer.status_code for answer in (removed, *saved)] == [200] * (1 + len(added))
-    assert (undone.status_code, undone.json()) == (422, {"message": settings_messages.worker_undo_breaks_list(rule)})
+    assert (undone.status_code, rule in undone.json()["message"]) == (422, True)
     assert centrum_.tool.worker_list.read_bytes() == workers
     assert history_rows_of(client) == rows
 
@@ -9893,3 +9893,35 @@ def test_okresy_przy_usuwaniu_wykonawcy_sprawdzaja_sie_poza_blokada_ustawien_wie
 
     assert removed.status_code == 200, removed.text
     assert read_while_checking == [True]
+
+
+@pytest.mark.parametrize(
+    ("added", "rule", "colliding"),
+    [
+        pytest.param(
+            [worker_form(["pierwszy.nowy"], "Drugi Nowy"), worker_form(["pierwszy.drugi"], "Trzeci Nowy")],
+            settings_messages.worker_login_repeated(),
+            ("Trzeci Nowy",),
+            id="login-u-dwoch-a-wpis-wraca-na-miejsce-pierwszego",
+        ),
+        pytest.param(
+            [worker_form(["drugi.nowy"], "Pierwszy Nowy"), worker_form(["trzeci.nowy"], "Trzeci Nowy", [OBCY])],
+            settings_messages.worker_same_file(),
+            ("Pierwszy Nowy", "Trzeci Nowy"),
+            id="nazwa-u-jednego-adres-u-drugiego",
+        ),
+    ],
+)
+def test_odmowa_cofniecia_usuniecia_nazywa_kazdego_wykonawce_z_ktorym_koliduje_wracajacy_wpis(
+    tmp_path: Path, added: list[dict[str, object]], rule: str, colliding: tuple[str, ...]
+) -> None:
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["pierwszy.nowy", "pierwszy.drugi"], "Pierwszy Nowy", [OBCY]))
+    removed = client.delete(f"{WORKERS_API}/pierwszy.nowy")
+    for form in added:
+        client.post(WORKERS_API, json=form)
+
+    undone = client.post(f"/api/settings/history/{removed.json()['change']}/undo")
+
+    assert (undone.status_code, undone.json()) == (422, {"message": settings_messages.worker_undo_breaks_list(rule, colliding)})

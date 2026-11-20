@@ -147,7 +147,15 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "worker_address_repeated": [settings_messages.worker_address_repeated],
             "worker_unknown": [settings_messages.worker_unknown],
             "worker_list_changed": [settings_messages.worker_list_changed],
-            "worker_undo_breaks_list": [partial(settings_messages.worker_undo_breaks_list, settings_messages.worker_same_file())],
+            "worker_undo_breaks_list": [
+                partial(settings_messages.worker_undo_breaks_list, settings_messages.worker_same_file(), ("Anna Przykład",)),
+                partial(
+                    settings_messages.worker_undo_breaks_list,
+                    settings_messages.worker_login_repeated(),
+                    ("Anna Przykład", "Jan Testowy", "Adam Próbny"),
+                ),
+                partial(settings_messages.worker_undo_breaks_list, settings_messages.worker_name_empty(), ()),
+            ],
             "worker_suggestions_not_set": [settings_messages.worker_suggestions_not_set],
             "worker_suggestions_unreadable": [settings_messages.worker_suggestions_unreadable],
             "worker_rename_old_files": [
@@ -1266,6 +1274,9 @@ QUOTES_OUTSIDE_UI: Final = {
     "raport": "słowo tematu Raportu wykonawcy (SUBJECT_WORD), nie napis UI",
     "2*wizja": "zapis składnika z gwiazdką w próbce, dana pliku, nie napis UI",
     "schema_version": "nazwa pola pliku legendy czynności w próbce, nie napis UI",
+    "Anna Przykład": "nazwa Wykonawcy z Listy Wykonawców w próbce, dana pliku, nie napis UI",
+    "Jan Testowy": "nazwa Wykonawcy z Listy Wykonawców w próbce, dana pliku, nie napis UI",
+    "Adam Próbny": "nazwa Wykonawcy z Listy Wykonawców w próbce, dana pliku, nie napis UI",
 }
 
 
