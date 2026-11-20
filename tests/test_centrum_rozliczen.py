@@ -7585,6 +7585,21 @@ def test_w_ukladzie_folderow_taty_tydzien_w_dwoch_miesiacach_nie_jest_otwierany(
     assert app.platform.opened == []
 
 
+def test_karta_startu_pokazuje_status_tygodnia_w_dwoch_miesiacach_z_tego_samego_folderu_co_tablica_okresow(
+    tmp_path: Path,
+) -> None:
+    app, root = with_dad_layout(tmp_path)
+    write_period_files(inea(root, "09_Wrzesień_2026"), "29_05_10_2026")
+    settled = write_period_files(inea(root, "10_Październik_2026"), "29_05_10_2026")
+    write_worker_settlements(settled, "29_05_10_2026", ["Anna Testowa"])
+
+    [row] = [row for row in board_rows(app) if row["token"] == "29_05_10_2026"]
+    tiles = {tile["process"]: tile for tile in app.client.get("/api/runs/setup").json()["processes"]}
+    [choice] = [choice for choice in tiles["preparation"]["periods"] if choice["token"] == "29_05_10_2026"]
+
+    assert choice["status_label"] == row["status_label"]
+
+
 # Folder wskazany w środku układu folderów taty, względem ``Załączniki`` (#1472).
 INSIDE_DAD_LAYOUT = [
     pytest.param(("Rozliczenia 2026", "11_Listopad_2026", "INEA", "27_02_11_2026"), id="tydzien"),
