@@ -21,8 +21,9 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
 
-Wpis z ``{a,b}`` daje każdą ścieżkę z nawiasu, a wpis z ``*``, ``?``, ``[`` albo ``!`` to zasięg reguły, nie właściciel,
-tak jak katalog. Ścieżka, której w drzewie nie ma, i konfiguracja, której narzędzie nie wczyta, nie dają właściciela.
+Wpis z ``{a,b}`` daje każdą ścieżkę z nawiasu. Właścicielem jest tylko plik drzewa nazwany wpisem wprost, więc wpis
+ze wzorcem (``src/**``) albo katalog to zasięg reguły, nie właściciel, a konfiguracja, której narzędzie nie wczyta, nie
+daje właściciela.
 """
 
 RUFF = "ruff.toml"
@@ -37,7 +38,6 @@ SOURCES = (
     f"albo ignores: reguły ast-grep z ruleDirs {AST_GREP}"
 )
 _BRACES = re.compile(r"\{([^{}]*)\}")
-_WILDCARD = re.compile(r"[*?\[!]")
 _UNREADABLE = (tomllib.TOMLDecodeError, configparser.Error, yaml.YAMLError, UnicodeDecodeError)
 
 
@@ -91,12 +91,7 @@ def _importers(tree: _Tree) -> set[str]:
     modules = {
         line.strip() for section in parser.sections() if section.startswith(CONTRACT) for line in parser.get(section, ALLOWED, fallback="").splitlines() if line.strip()
     }
-    return {
-        path
-        for module in modules
-        if not _WILDCARD.search(module)
-        for path in (f"{PACKAGES}/{module.replace('.', '/')}.py", f"{PACKAGES}/{module.replace('.', '/')}/__init__.py")
-    }
+    return {path for module in modules for path in (f"{PACKAGES}/{module.replace('.', '/')}.py", f"{PACKAGES}/{module.replace('.', '/')}/__init__.py")}
 
 
 def _ignored(tree: _Tree) -> set[str]:
@@ -128,5 +123,5 @@ def _paths(pattern: str) -> Iterator[str]:
     if found := _BRACES.search(pattern):
         for choice in found[1].split(","):
             yield from _paths(pattern[: found.start()] + choice + pattern[found.end() :])
-    elif not _WILDCARD.search(pattern):
+    else:
         yield pattern
