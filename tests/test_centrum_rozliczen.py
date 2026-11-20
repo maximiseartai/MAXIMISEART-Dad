@@ -63,7 +63,7 @@ from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, m
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
-from rozliczenia.centrum.settings.files import FieldPath, FieldProblem
+from rozliczenia.centrum.settings.files import FieldPath, FieldProblem, settings_yaml
 from rozliczenia.centrum.settings.folders import FOLDERS, SETTINGS_FILE, FolderSettings
 from rozliczenia.centrum.settings.history import HISTORY_FILE
 from rozliczenia.centrum.settings.memory import APPLIED_FILE, MEMORY_DIRECTORY, Remembered, settings_bytes
@@ -894,7 +894,7 @@ RULE_SENTENCES = {
 }
 
 
-def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego(tmp_path: Path) -> None:
+def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_pliku_zbiorczego_w_sekcji_i_w_historii(tmp_path: Path) -> None:
     app = centrum(tmp_path)
     app.tool.config.mkdir(parents=True)
     template = write_collective_template(app.tool.configuration.collective_template)
@@ -911,6 +911,9 @@ def test_kolumna_reguly_ilosci_ma_nazwe_pozycji_cennika_z_wiersza_17_wzorca_plik
         "i Technicolor (opis) (AK)."
     )
     assert sentences["inea-gniazdo"] == "Jeśli URZĄDZENIA zawierają tekst „gniazdo”, to zostaw demontaż (AP) pustą w Rozliczeniu pracownika."
+    assert app.client.delete("/api/settings/quantity-rules/technicolor").status_code == 200
+    [row] = [row for row in history_rows(app) if row["file"] == RULES_FILE]
+    assert [(plain(change["before"]), change["after"]) for change in row["rules"]] == [(sentences["technicolor"], None)]
 
 
 def test_lista_urzadzen_w_ustawieniach_ma_kazdy_skladnik_z_innymi_zapisami_i_grupa(tmp_path: Path) -> None:
@@ -2932,6 +2935,7 @@ def test_jawna_zmiana_legendy_w_wydaniu_wchodzi_raz_jest_w_historii_z_cofnij_i_p
     again.stop()
 
     assert applied["rt2"] == "rt2: 1 w AK, AM na czerwono, AF na zielono."
+    assert list(applied) == [code.id for code in DEFAULT_ACTIVITY_LEGEND.codes], "kod z Wydania zastępuje kod taty na jego miejscu"
     assert (row["source"], row["file"], row["undoable"]) == ("release", LEGEND_FILE, True)
     assert [(plain(change["before"]), plain(change["after"])) for change in row["rules"]] == [
         ("rt2: 1 w AM, AM na czerwono, AF na zielono.", "rt2: 1 w AK, AM na czerwono, AF na zielono.")
@@ -9329,6 +9333,27 @@ def test_zly_temat_albo_tresc_jest_odrzucony_zdaniem_przy_polu_bez_zapisu_i_bez_
         (422, {"message": sentence, "field": field})
     ] * 2
     assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
+
+
+def test_plik_tematu_i_tresci_bez_pola_tresci_ma_tresc_z_wydania(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path)
+    (app.tool.config / SETTLEMENT_MAIL_FILE).write_bytes(settings_yaml({"schema_version": 1, "temat": "Plik taty za {okres}"}))
+
+    setting = app.client.get("/api/settings").json()["settlement_mail"]
+
+    assert setting == {**DEFAULT_SETTLEMENT_MAIL, "subject": "Plik taty za {okres}"}
+
+
+def test_cofniecie_drugiej_zmiany_tematu_i_tresci_przywraca_temat_i_tresc_sprzed_niej(tmp_path: Path) -> None:
+    app = wysylka_centrum(tmp_path)
+    first = {"subject": "Rozliczenie {wykonawca}, {okres}", "text": "Dzień dobry {wykonawca}"}
+    assert app.client.put("/api/settings/settlement-mail", json=first).status_code == 200
+    assert app.client.put("/api/settings/settlement-mail", json={"subject": "Plik za {okres}", "text": "Cześć"}).status_code == 200
+    latest = next(row for row in app.client.get("/api/settings/history").json()["rows"] if row["file"] == SETTLEMENT_MAIL_FILE)
+
+    undone = app.client.post(f"/api/settings/history/{latest['id']}/undo")
+
+    assert undone.json()["settings"]["settlement_mail"] == {**first, "state": "good", "problem": None}
 
 
 def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tmp_path: Path) -> None:
