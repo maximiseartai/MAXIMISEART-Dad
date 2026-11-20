@@ -209,7 +209,7 @@ None. The two earlier ones (a „Uruchom” between the refusal check and the
 accepted shutdown, and a „Uruchom” after it) went away when `shutdown_refusal`
 started closing `RunHost` to new Uruchomienia and Aktualizacje under its lock.
 A finding the user accepts goes into `KNOWN_FINDINGS` in `explore_runs.py` and
-here, as an `Excuse` of `tools/lib/eksplorator.py` (its docstring names each field)
+here, as an `Excuse` of `tools/lib/eksplorator.py`
 whose `shape` is a dataclass of the parts of its story. The mutation script then
 needs `BOUNDARIES` with a broken variant just outside each part
 (`tests/test_mutacje_skilli.py`, #920).

@@ -1381,6 +1381,11 @@ _interrupted_advice #2 [bez kodu]
   Gdzie: Przygotowanie pliku zbiorczego, okres 08_14_09_2026
   Co zrobić: Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić.
 
+=== Plik taty (zdania) (src/rozliczenia/workbook_messages.py) ===
+
+lock_hint [zdanie]
+  Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i uruchom ponownie.
+
 === Wynik Uruchomienia (zdania) (src/rozliczenia/centrum/runs.py) ===
 
 stop_note [zdanie]

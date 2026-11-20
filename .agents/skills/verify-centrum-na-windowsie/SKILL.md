@@ -78,7 +78,7 @@ Success prints `VERIFY OK | features=… | przygotowanie=… | evidence=… | sc
 The runner refuses to start (`VERIFY FAIL | preflight`) off Windows, without the built frontend (`src/rozliczenia/centrum/static/index.html`), with a Python that has no `pythonw.exe` beside it (uv and venv Pythons are not Dad's), or while anything listens on Dad's port `47811`.
 The port is fixed in the shortcut, so **one run per machine**, and never on a computer whose own Centrum is running.
 
-It creates `<run dir>/runs/windows-<id>` with `windows_tool.prepare`, whose docstring lists the run's world (what the features rely on: `features/README.md`, Baseline preconditions); the feature `instalacja` installs the tool in it as Maks does.
+It creates `<run dir>/runs/windows-<id>` with `windows_tool.prepare`, which builds the run's world (what the features rely on: `features/README.md`, Baseline preconditions); the feature `instalacja` installs the tool in it as Maks does.
 Ready means the doctor's `DOCTOR OK` after `start-skrotem`.
 
 Centrum inherits the run's boundaries from the drive's environment (`windows_tool.boundaries`), because the drive opens the `.lnk` with `os.startfile` like Explorer does for Dad:

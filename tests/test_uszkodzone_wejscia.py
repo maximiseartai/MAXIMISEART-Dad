@@ -11,6 +11,7 @@ from pathlib import Path, PurePath
 import random
 import shutil
 import sys
+import threading
 import zipfile
 from typing import Any, Final, NamedTuple
 
@@ -27,7 +28,7 @@ from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, OLD_NOTES_FILE, OLD_RE
 from rozliczenia.domain import RunMode
 from rozliczenia.centrum.github import HttpRequest, HttpResponse
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
-from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_THREAD
+from rozliczenia.centrum.outbox import ADDRESSES_FILE, QUEUE_THREAD, Outbox
 from rozliczenia.centrum.keyed_box import OPENING_FILE
 from rozliczenia.centrum.report_box import GitHubReportBox
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
@@ -40,6 +41,7 @@ from rozliczenia.worker_report_inbox import INBOX_ACCESS_FILE
 
 from tests.fixtures.centrum import (
     QUEUED_FOR_INTERNET,
+    STOP_S,
     CentrumClient,
     FakePlatform,
     ToolDirectory,
@@ -743,6 +745,34 @@ def test_uszkodzony_plik_nie_konczy_sie_ogolnym_komunikatem(
 
 def _queue_passes_done(client: CentrumClient) -> None:
     join_threads_since(client.since, named=QUEUE_THREAD)
+
+
+def test_czekanie_na_kolejke_wraca_dopiero_po_przejsciu_kolejki_ze_startu_centrum(
+    world_template: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    started, released = threading.Event(), threading.Event()
+    drain = Outbox._drain
+
+    def held(outbox: Outbox) -> None:
+        started.set()
+        released.wait(STOP_S)
+        drain(outbox)
+
+    monkeypatch.setattr(Outbox, "_drain", held)
+    client = world.client()
+    client.start()
+    assert started.wait(STOP_S)
+    waiting = threading.Thread(target=_queue_passes_done, args=(client,))
+    waiting.start()
+    waiting.join(0.5)
+    waits_while_held = waiting.is_alive()
+    released.set()
+    waiting.join(STOP_S)
+
+    assert waits_while_held
+    assert not waiting.is_alive()
 
 
 @pytest.mark.parametrize("entry", ENTRIES)
