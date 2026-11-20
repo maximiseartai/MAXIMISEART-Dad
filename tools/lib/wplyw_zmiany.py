@@ -40,8 +40,8 @@ szybko biegnie przed testami bez drogi w grafie; każdy taki plik wchodzi też d
 
 Lekką rundę przeglądu (``light_review``) dostaje zmiana od ``merge-base`` HEAD PR z bazą, w której każda ścieżka
 to plik pod ``tools/`` poza ``tools/wydanie.py``, plik pod ``.github/`` albo test narzędzi: plik ``.py`` pod ``tests/``,
-który na HEAD (usunięty: na ``merge-base``) dochodzi importem, wprost albo przez inny moduł, do modułu z ``tools/``,
-a do żadnego z ``src/``; nazwy modułów w napisach, które graf wyboru testów liczy, się tu nie liczą. Pliki Wydania
+który na HEAD (usunięty: na ``merge-base``) sam importuje moduł z ``tools/``, a importem, wprost albo przez inny moduł,
+nie dochodzi do żadnego z ``src/``; nazwy modułów w napisach, które graf wyboru testów liczy, się tu nie liczą. Pliki Wydania
 (``DAD_FILES`` w ``tools/wydanie.py``, ``config/`` z ``src/rozliczenia/tool_files.py``) leżą poza ``tools/``.
 
 Testy, które sięgają pliku (``Repository.reaching``), to inna reguła niż wybór: krawędź katalogu, globu i danych
@@ -249,8 +249,7 @@ def _tools_test(path: str, imports: Callable[[str], set[str]]) -> bool:
             reached.add(target)
             if target.endswith(".py"):
                 pending.append(target)
-    reached.discard(path)
-    return any(target.startswith("tools/") for target in reached) and not any(target.startswith("src/") for target in reached)
+    return any(target.startswith("tools/") for target in imports(path)) and not any(target.startswith("src/") for target in reached)
 
 
 @dataclass(frozen=True)

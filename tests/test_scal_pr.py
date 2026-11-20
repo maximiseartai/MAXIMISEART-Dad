@@ -3268,7 +3268,13 @@ def test_brak_testu_w_watku_sprzed_wdrozenia_dowodu_testu_przechodzi_jak_przed_n
     assert _proofs(github) == [["--straznik", "brak - test", "--z-commita", head, "--wazne", "1/W1/r1", *(["--przed-dowodem-testu"] if before else [])]]
 
 
-LIGHT_BASE = {"src/rozliczenia/__init__.py": "", "tools/narzedzie.py": "X: int = 1\n", "tools/atrapa.py": "import rozliczenia\n"}
+LIGHT_BASE = {
+    "src/rozliczenia/__init__.py": "",
+    "tools/narzedzie.py": "X: int = 1\n",
+    "tools/atrapa.py": "import rozliczenia\n",
+    "tests/fixtures/produkt.py": "import rozliczenia\n",
+    "tests/fixtures/luka.py": "import narzedzie\n",
+}
 
 
 @pytest.mark.parametrize(
@@ -3281,11 +3287,12 @@ LIGHT_BASE = {"src/rozliczenia/__init__.py": "", "tools/narzedzie.py": "X: int =
         ({"run_centrum.py": "X: int = 1\n"}, False),
         ({".agents/skills/proba/scripts/skrypt.py": "import narzedzie\n"}, False),
         ({"tests/fixtures/produkt.py": "import narzedzie\nimport rozliczenia\n"}, False),
-        ({"tests/fixtures/produkt.py": "import rozliczenia\n", "tests/fixtures/proba_produktu.py": "import narzedzie\nfrom tests.fixtures import produkt\n"}, False),
+        ({"tests/fixtures/proba_produktu.py": "import narzedzie\nfrom tests.fixtures import produkt\n"}, False),
+        ({"tests/fixtures/proba_luki.py": "from tests.fixtures import luka\n"}, False),
         ({"tests/fixtures/proba_atrapy.py": "import atrapa\n"}, False),
         ({"tests/fixtures/zegar.py": "import time\n"}, False),
     ],
-    ids=["same-narzedzia", "workflow-i-test-narzedzi", "narzedzie-wydan", "narzedzia-i-src", "plik-wydania", "skrypt-skilla-z-importem-narzedzia", "test-z-importem-src", "test-przez-fiksture-z-importem-src", "test-narzedzia-z-importem-src", "test-bez-importu-narzedzia"],
+    ids=["same-narzedzia", "workflow-i-test-narzedzi", "narzedzie-wydan", "narzedzia-i-src", "plik-wydania", "skrypt-skilla-z-importem-narzedzia", "test-z-importem-src", "test-przez-fiksture-z-importem-src", "test-z-narzedziem-tylko-przez-fiksture", "test-narzedzia-z-importem-src", "test-bez-importu-narzedzia"],
 )
 def test_wazne_pr_samych_narzedzi_scala_sie_bez_bloku_korzen_i_straznika_a_reszta_dalej_ich_wymaga(
     tmp_path: Path, changed: dict[str, str], light: bool
