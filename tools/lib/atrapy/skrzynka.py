@@ -77,8 +77,6 @@ class BoxIssue:
 
 @dataclass
 class Issues:
-    """Issue Skrzynki z regułami GitHuba (opis modułu)."""
-
     issues: list[BoxIssue] = field(default_factory=list)
     first_number: int = 1
     comment_base: int | None = None
@@ -86,8 +84,6 @@ class Issues:
     unlisted: set[int] = field(default_factory=set)
 
     def open(self, label: Label, title: str, text: str, number: int | None = None) -> BoxIssue:
-        """Nowe issue z kolejnym numerem albo z numerem ``number``, który dała odpowiedź GitHuba."""
-
         opened = BoxIssue(self.first_number + len(self.issues) if number is None else number, label, title, text)
         self.issues.append(opened)
         if self.lag:
@@ -98,8 +94,6 @@ class Issues:
         return next((issue for issue in self.issues if issue.number == number), None)
 
     def comment(self, number: int, text: str) -> tuple[BoxIssue, int] | Refused:
-        """Nowy komentarz issue ``number``: issue i identyfikator komentarza."""
-
         issue = self.find(number)
         if issue is None:
             return Refused()
@@ -135,8 +129,6 @@ class Issues:
         )
 
     def caught_up(self) -> None:
-        """Lista issue nadąża: widzi każde założone issue."""
-
         self.unlisted.clear()
 
 
@@ -169,8 +161,6 @@ class ArchivedFile:
 
 @dataclass
 class BoxArchive:
-    """Archiwum okresu (GitHub Release): identyfikator, tag, tytuł, opis i pliki po kolei."""
-
     id: int
     tag: str
     title: str
@@ -213,8 +203,6 @@ class Archives:
         return Asset(self.last_file_id, name, label, True)
 
     def file(self, file_id: int) -> tuple[BoxArchive, ArchivedFile] | None:
-        """Archiwum i plik o identyfikatorze ``file_id``."""
-
         return next(
             ((each, asset) for each in self.archives for asset in each.assets if asset.id == file_id),
             None,
@@ -229,6 +217,4 @@ class Archives:
         return Removed()
 
     def caught_up(self) -> None:
-        """Lista Archiwów nadąża: widzi każde założone Archiwum."""
-
         self.unlisted.clear()

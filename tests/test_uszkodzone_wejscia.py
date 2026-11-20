@@ -968,3 +968,26 @@ def test_folder_miesiaca_znikajacy_w_trakcie_listowania_jest_pominiety(tmp_path:
     scanned = period_folder.scan_period_folders(periods)
 
     assert [path for paths in scanned.locations.values() for path in paths] == [kept]
+
+
+def _legend_columns(client: CentrumClient) -> dict[str, str | None]:
+    legend = client.get("/api/settings/activity-legend").json()
+    return {column["letter"]: column["name"] for column in [legend["amount_column"], *legend["columns"], *legend["fill_columns"]]}
+
+
+def test_legenda_przy_wzorcu_pliku_zbiorczego_bez_odczytu_ma_kolumny_same_litery_a_kwota_swoja_nazwe(
+    world_template: Path, tmp_path: Path
+) -> None:
+    world = World(tmp_path / "swiat")
+    shutil.copytree(world_template, world.root)
+    client = world.client()
+    named = _legend_columns(client)
+    template = world.path("wzorzec_zbiorczy")
+    deny_reading(template)
+    try:
+        unread = _legend_columns(client)
+    finally:
+        allow_reading(template)
+
+    assert [letter for letter, name in named.items() if letter != "AS" and name is not None], "Wzorzec świata nie ma nazw pozycji cennika"
+    assert unread == {letter: named["AS"] if letter == "AS" else None for letter in named}

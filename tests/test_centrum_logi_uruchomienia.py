@@ -39,7 +39,7 @@ from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.process_run import RunResult
 from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE, DadActionJournal
 from rozliczenia.centrum.dad_actions import DadActions, ViewOpened
-from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow
+from rozliczenia.centrum.efenix_chrome import EFENIX_URL, EfenixWindow, atrapa_opening
 from rozliczenia.centrum.comment_versions import ProgressVersion, post_of, progress_markdown
 from rozliczenia.centrum.log import MAX_FOR_LOGS, CentrumLog
 from rozliczenia.centrum.outbox import RETRY_S, Outbox, Post
@@ -1325,6 +1325,10 @@ def test_okno_efenix_taty_to_widoczny_chrome_w_tempie_ludzkim_z_prawdziwym_efeni
 
     assert (window.pace, window.url) == (Pace(sleep=time.sleep, clock=time.monotonic), EFENIX_URL)
     assert (window.channel, window.headless, window.arguments) == ("chrome", False, ())
+
+
+def test_okno_atrapy_efenix_z_narzedzi_pracuje_bez_tempa_ludzkiego() -> None:
+    assert atrapa_opening("http://127.0.0.1:9/index.php").pace is None
 
 
 def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path: Path) -> None:

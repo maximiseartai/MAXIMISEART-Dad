@@ -1,12 +1,3 @@
-"""Zamknięcie Centrum rozliczeń przyciskiem „Zamknij Centrum rozliczeń”.
-
-Zamknięcie karty przeglądarki nie wyłącza serwera; robi to tylko ta prośba
-(albo wylogowanie z Windows). ``serve`` czeka na prośbę i kończy pracę po
-wysłaniu odpowiedzi. Trwające Uruchomienie procesu odmawia zamknięcia przez
-``refuse_while``. Po udanej Aktualizacji narzędzia Centrum zamyka się samo
-(``close_for_update``), a nową wersję startuje opiekun ponownego startu.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -21,21 +12,15 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.threads import Threading
 
 ShutdownBlocker = Callable[[], Refusal | None]
-"""Odmowa z tym, dlaczego teraz nie można zamknąć Centrum, albo ``None``, gdy można."""
 
 
 class Shutdown:
     def __init__(self, log: CentrumLog, *, threads: Threading = threading) -> None:
-        """``threads`` daje Event prośby o zamknięcie; inny niż moduł ``threading`` daje tylko wyrocznia
-        ``verify-jedno-uruchomienie-naraz`` (``threads.Threading``)."""
-
         self._log = log
         self._requested = threads.Event()
         self._blocker: ShutdownBlocker = lambda: None
 
     def refuse_while(self, blocker: ShutdownBlocker) -> None:
-        """Warunek odmowy, sprawdzany przy każdej prośbie o zamknięcie (``Shutdown`` powstaje przed serwerem)."""
-
         self._blocker = blocker
 
     def request(self) -> None:
@@ -46,8 +31,6 @@ class Shutdown:
         self._requested.set()
 
     def close_for_update(self) -> None:
-        """Zamknięcie po udanej Aktualizacji narzędzia, bez warunku odmowy: miejsce „jedno naraz” trzyma ona sama."""
-
         self._log.shutdown_for_update()
         self._requested.set()
 

@@ -31,9 +31,6 @@ __all__ = [
 
 @dataclass(frozen=True)
 class Worker:
-    """Wykonawca z Listy Wykonawców; ``active=False``: Nieaktywny Wykonawca, ``reminders``: dostaje Przypomnienia o
-    raporcie, gdy jest aktywny."""
-
     logins: tuple[Login, ...]
     name: str
     addresses: tuple[SenderAddress, ...]
@@ -94,8 +91,6 @@ Part = Literal["loginy", "nazwa", "adresy"]
 
 @dataclass(frozen=True)
 class WorkerListProblem:
-    """Pierwsza złamana reguła: numer wpisu (od 0), pole wpisu, pozycja w nim (``None`` dla nazwy) i rodzaj."""
-
     worker: int
     part: Part
     item: int | None
@@ -158,8 +153,6 @@ class WorkerList:
         return cls(tuple(workers), tuple(unresolved))
 
     def names(self) -> Mapping[str, str]:
-        """Login → nazwa w Rozliczeniu pracownika, każdy login każdego Wykonawcy, w kolejności z listy."""
-
         return {login: worker.name for worker in self.workers for login in worker.logins}
 
     def name_of(self, login: str) -> str | None:

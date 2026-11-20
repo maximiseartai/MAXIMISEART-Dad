@@ -80,8 +80,6 @@ class _Rules:
 
     @property
     def last_header_column(self) -> int | None:
-        """Ostatnia kolumna nagłówka; ``None``: cały wiersz nagłówka."""
-
         return self.sheet.input_columns if self.worker_header else None
 
 
@@ -150,7 +148,6 @@ class _Outline:
     merged_ranges: tuple[CellRange, ...]
     """Scalenia aktywnego arkusza w kolejności, w jakiej daje je openpyxl."""
     zero_row_count: int
-    """Liczba kolejnych Wierszy danych z zerami w kolumnach Ilości usług (``SheetLayout.quantity_columns``)."""
 
 
 def _zero_row_count(sheet: Worksheet, layout: SheetLayout) -> int:
@@ -171,9 +168,6 @@ def _zero_row_count(sheet: Worksheet, layout: SheetLayout) -> int:
 
 @dataclass(frozen=True)
 class TemplatePlan:
-    """Planowanie Wierszy danych we Wzorcu: wiersze, do których trafią, ile kolejnych Wierszy danych ma zera w N:AP
-    i który wiersz jest za nimi."""
-
     data_rows: range
     zero_row_count: int
     first_row_without_zeros: int
@@ -212,8 +206,6 @@ class TemplateFile:
 
     @classmethod
     def internal_settlement(cls, path: Path) -> TemplateFile:
-        """Wzorzec rozliczenia wewnętrznego z nagłówkami docelowymi w wierszu 1."""
-
         return cls(path, _INTERNAL_SETTLEMENT)
 
     @property
@@ -377,8 +369,6 @@ class TemplateFile:
         return [sheet.cell(self._rules.sheet.header_row, column).value for column in range(1, last_column + 1)]
 
     def _has_input_data(self, sheet: Worksheet) -> bool:
-        """Wiersze danych mają wartość w A:K; formuły Wzorca nie są danymi."""
-
         for row in range(self._rules.sheet.first_data_row, sheet.max_row + 1):
             if any(_is_value(sheet.cell(row, column)) for column in INPUT_COLUMNS):
                 return True
@@ -414,9 +404,6 @@ class TemplateFile:
 def _ensure_unmerged(
     path: Path, sheet: str, merged_ranges: Sequence[CellRange], layout: SheetLayout, columns: Collection[int], row_count: int
 ) -> None:
-    """Zły układ z ``MergedCells``, gdy komórki ``row_count`` zapisanych Wierszy danych są scalone, także w kolumnach
-    liczb i wypełnień (``SheetLayout.written_columns``)."""
-
     if row_count == 0:
         return
     first_row, last_row = layout.first_data_row, layout.first_data_row + row_count - 1

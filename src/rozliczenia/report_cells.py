@@ -24,8 +24,6 @@ class ReportColumn(Enum):
 
 @dataclass(frozen=True)
 class OrderRow:
-    """Wiersz zlecenia w arkuszu zleceń INTERMAX: nazwa arkusza i numer wiersza (od 1)."""
-
     sheet: str
     row: int
 
