@@ -147,7 +147,7 @@ def read_window(inputs: ReportInputs) -> WindowRead:
     entering = tuple(sorted((*reports, *requested), key=_mail_order))
     entered = board.match(entering, inputs.requested)
     additions = _corrections.uncorrected(entered.added, entering, board)
-    described = _descriptions.entered(inputs.legend, entered.entered, additions)
+    described = _descriptions.entered(inputs.legend, inputs.rules, entered.entered, additions)
     newest = {found.number: (found.arrived, found.mail) for found in additions}
     standing = _corrections.standing([*strangers, *entered.problems, *described], entering, faulty, board, newest)
     found_mails = _mails.WindowMails(mails)

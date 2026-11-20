@@ -72,20 +72,20 @@ class Matched:
     zlecenie każdego zwycięskiego Wpisu z nadawcą, dniem po kliknięciu i chwilą przyjścia maila (``accepted``; zlecenie
     w innym miejscu przechodzi do nadawcy i na ten dzień), Zlecenia dopisane z raportu (``added``, po numerze), problemy
     Wpisów bez jednego zlecenia, informacje o przegranym temacie zwycięskich Wpisów (``lost``) i każdy zwycięski Wpis z
-    ``targets`` z nadawcą i dniem, w którym tata widzi jego problem, jak przy ``MissingVerdict`` (``entered``), a mail
-    zwycięskiego Wpisu każdego zlecenia z ``targets`` po jego wierszu (``mails``), a ``taken`` każdy Wpis (mail,
-    Wykonawca i numer), którego wiersz zlecenia wziął Wpis maila, który przyszedł później, z Wykonawcą tego maila.
-    Wiersz ma Wpis, który stawia zlecenie, i Wpis bez problemu, który niczego nie zmienia (Przeniesienie, którego
-    ``may_move`` nie przyjmuje, np. po Wpisie późniejszego maila): wiersz jedynego zlecenia numeru; Wpis z problemem (np.
-    ``RepeatedNumber``) wiersza nie ma, bo tata ma przy nim coś do zrobienia. Mail z tą samą chwilą przyjścia nie jest
-    późniejszy, choć wygrywa remis."""
+    ``targets`` z jego zleceniem, nadawcą i dniem, w którym tata widzi jego problem, jak przy ``MissingVerdict``
+    (``entered``), a mail zwycięskiego Wpisu każdego zlecenia z ``targets`` po jego wierszu (``mails``), a ``taken``
+    każdy Wpis (mail, Wykonawca i numer), którego wiersz zlecenia wziął Wpis maila, który przyszedł później, z Wykonawcą
+    tego maila. Wiersz ma Wpis, który stawia zlecenie, i Wpis bez problemu, który niczego nie zmienia (Przeniesienie,
+    którego ``may_move`` nie przyjmuje, np. po Wpisie późniejszego maila): wiersz jedynego zlecenia numeru; Wpis z
+    problemem (np. ``RepeatedNumber``) wiersza nie ma, bo tata ma przy nim coś do zrobienia. Mail z tą samą chwilą
+    przyjścia nie jest późniejszy, choć wygrywa remis."""
 
     targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]]
     accepted: tuple[tuple[RegisterOrder, Login, date, datetime], ...]
     problems: list[ReportProblem]
     lost: tuple[SubjectLost, ...]
     added: tuple[Addition, ...]
-    entered: tuple[tuple[Login, date, ReportEntry], ...]
+    entered: tuple[tuple[RegisterOrder, Login, date, ReportEntry], ...]
     mails: Mapping[OrderRow, MailId]
     taken: Mapping[MailEntryKey, Login]
 
@@ -256,7 +256,7 @@ class Board:
         targets: dict[OrderKey, tuple[RegisterOrder, ReportEntry]] = {}
         accepted: list[tuple[RegisterOrder, Login, date, datetime]] = []
         lost: list[SubjectLost] = []
-        entered: list[tuple[Login, date, ReportEntry]] = []
+        entered: list[tuple[RegisterOrder, Login, date, ReportEntry]] = []
         mails: dict[OrderRow, MailId] = {}
         for claim in latest.values():
             order, report = claim.order, claim.report
@@ -270,7 +270,7 @@ class Board:
                 case (ReportEntry(fault=None) as entry,):
                     targets[OrderKey(order.key.number, claim.day, report.worker)] = (order, entry)
                     accepted.append((order, report.worker, claim.day, report.arrived))
-                    entered.append((report.worker, shown, entry))
+                    entered.append((order, report.worker, shown, entry))
                     mails[order.row] = report.mail
                     if claim.lost is not None:
                         lost.append(claim.lost)

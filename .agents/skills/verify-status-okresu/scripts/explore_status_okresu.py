@@ -72,6 +72,7 @@ from rozliczenia.centrum.shutdown import Shutdown
 from rozliczenia.dad_files import DadFiles
 from rozliczenia.input_checks import check_preparation, check_settlement
 from rozliczenia.message import StopError
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.report_entering import EnteringInputs, ReportEnteringParts, ReportStateInMemory, enter_from_mail
 from rozliczenia.run_context import RunContext, check_on_disk
 from rozliczenia.settlement_period import parse_period_token
@@ -637,6 +638,7 @@ def ask_entering(inputs: Inputs, periods: Path) -> Answer:
         inputs.workers,
         ReportEnteringParts(inbox, ReportStateInMemory(SavedState(PERIOD.tuesday, OwnEntries.EMPTY))),
         DEFAULT_ACTIVITY_LEGEND,
+        DEFAULT_QUANTITY_RULES,
         now=lambda: CLICKED_AT,
     )
     try:

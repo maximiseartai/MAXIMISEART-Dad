@@ -77,6 +77,9 @@ def _order(worker: str = "Jan.Testowy", day: date = DAY, number: int = 40000001,
         successful=None,
         completed=None,
         address=None,
+        contract=None,
+        devices=None,
+        activities=None,
     )
     assert order is not None
     return order

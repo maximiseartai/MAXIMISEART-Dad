@@ -37,6 +37,7 @@ def _inputs(start: Start, parts: HostParts) -> EnteringInputs:
         start.settings.worker_list(),
         parts.report_entering(),
         start.settings.counted_legend(),
+        start.settings.counted_rules(),
         now=parts.now,
         waiting=parts.waiting,
         disk=parts.disk,
@@ -58,7 +59,7 @@ KIND: Final[ProcessKind[EnteringInputs, EnteringSummary]] = ProcessKind(
     view=_VIEW,
     core=report_entering_process.PROCESS,
     default_metrics=REPORT_ENTERING_METRICS,
-    needs=("register", "periods_directory", "workers", "worker_report_inbox", "activity_legend"),
+    needs=("register", "periods_directory", "workers", "worker_report_inbox", "quantity_rules", "activity_legend"),
     inputs=_inputs,
     settings=(
         NeededSetting(
