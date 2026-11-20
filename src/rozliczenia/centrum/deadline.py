@@ -1,10 +1,3 @@
-"""Pytanie o GitHuba w Diagnozie z łącznym limitem czasu, żeby bez sieci Diagnoza została krótka.
-
-Limit gniazda nie obejmuje rozwiązywania nazwy, a skrzynka Zgłoszeń może pytać
-kilka razy (strony otwartych Zgłoszeń), więc pytanie biegnie w osobnym wątku,
-a Diagnoza czeka na nie najwyżej ``seconds``. Spóźniona odpowiedź przepada.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -15,9 +8,8 @@ T = TypeVar("T")
 
 
 def within(seconds: float, call: Callable[[], T], *, name: str) -> T | None:
-    """Wynik ``call()``, gdy przyjdzie w ``seconds`` sekund; inaczej ``None``."""
-
     answer: list[T] = []
+    # ZEWNĘTRZNE: limit czasu gniazda nie obejmuje rozwiązywania nazwy, bo socket.create_connection woła getaddrinfo, zanim ustawi limit gniazda (CPython Lib/socket.py)
     worker = threading.Thread(target=lambda: answer.append(call()), name=name, daemon=True)
     worker.start()
     worker.join(seconds)

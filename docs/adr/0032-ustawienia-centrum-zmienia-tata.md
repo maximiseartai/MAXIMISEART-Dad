@@ -50,7 +50,10 @@ w `config/` prowadzone przez Maksa, Wzorce w Excelu albo stałe w kodzie.
   czyta tylko ich przeniesienie z Wydania (`centrum/settings/migrations`), a nic ich nie usuwa. Wykonawca może mieć świadomie
   dodany drugi login. Dwa różne wpisy z tą samą nazwą dalej są odrzucane. Wykonawcy z identyfikatorem w
   którymkolwiek okresie nie da się usunąć, tylko oznaczyć jako Nieaktywnego. Zmiana nazwy ostrzega, gdy w okresie
-  leży już Rozliczenie pracownika ze starą nazwą; plików taty nic nie przemianowuje.
+  leży już Rozliczenie pracownika ze starą nazwą; plików taty nic nie przemianowuje. Podpowiedzi loginów spoza
+  Listy Wykonawców biorą tylko zlecenia okresów, które Tablica okresów pokazuje od razu: nowy pracownik taty pojawia
+  się w nich w pierwszym tygodniu pracy, a login, którego dawno nie ma w zleceniach (pracownik sprzed narzędzia albo
+  literówka sprzed miesięcy), nie wraca przy każdym otwarciu sekcji.
 - **Zmiana pór nie daje drugiego maila tej samej pory** (decyzja Maksa przy przeglądzie #1568). „Najwyżej jedno w
   porze” z ADR 0030 liczy się według nazwanej pory, porannej albo wieczornej, przy porach z chwili wysyłki:
   poranne przypomnienie wysłane o 8:05 zamyka poranną porę tego dnia także po przesunięciu jej na 9:00–17:00.

@@ -62,7 +62,7 @@ from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.wall_clock import local_now
-from rozliczenia.workbook_files import file_bytes
+from rozliczenia.workbook_files import excel_lock_file, file_bytes
 from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem, settings_yaml
@@ -5614,6 +5614,18 @@ def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_z
     assert listed_after_read == listed_before, "podpowiedzi niczego nie zapisują"
     assert added.status_code == 200, added.json()
     assert second.json()["suggestions"] == [{"login": "brzeg.okna", "orders": 1}]
+
+
+def test_podpowiedzi_czytaja_rejestr_otwarty_w_excelu_z_jego_ostatniej_zapisanej_wersji(tmp_path: Path) -> None:
+    centrum_ = settling_with_register(tmp_path, ["nowy.login"])
+    excel_lock_file(register_of(tmp_path)).write_bytes(b"\x00" * 165)
+
+    answer = centrum_.client.get(WORKER_SUGGESTIONS_API)
+
+    assert (answer.status_code, answer.json()) == (
+        200,
+        {"state": "read", "suggestions": [{"login": "nowy.login", "orders": 1}], "message": None},
+    )
 
 
 # Zdanie „Co się stało” Komunikatu procesów wklejania o Rejestrze bez obszaru wklejania; nie zależy od ścieżki Rejestru.
