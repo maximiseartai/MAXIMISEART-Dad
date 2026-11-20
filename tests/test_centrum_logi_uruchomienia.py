@@ -2400,6 +2400,9 @@ def test_dzialania_taty_miedzy_dwoma_uruchomieniami_sa_w_logach_drugiego_z_godzi
 def test_logi_maja_najnowsze_dzialania_taty_do_limitu_a_liczbe_starszych_obok(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Tata długo przegląda Centrum przed Uruchomieniem: Logi mają ``MAX_ENTRIES`` najnowszych działań, ze startem tego
+    Uruchomienia na końcu, a start Centrum, wybór folderu okresów i najstarszy widok liczy ``omitted``."""
+
     limit = 5
     monkeypatch.setattr("rozliczenia.centrum.dad_action_journal.MAX_ENTRIES", limit)
     centrum = settling_centrum(tmp_path)
@@ -2412,7 +2415,7 @@ def test_logi_maja_najnowsze_dzialania_taty_do_limitu_a_liczbe_starszych_obok(
         *[("widok", "okresy", "navigation")] * (limit - 1),
         ("przycisk", "startRun", "settlement", "DRY-RUN"),
     ]
-    assert record["dad_actions"]["omitted"] == 3, "start Centrum, wybór folderu okresów i najstarszy widok"
+    assert record["dad_actions"]["omitted"] == 3
 
 
 def test_logi_maja_najwyzej_1000_najnowszych_dzialan_taty(tmp_path: Path) -> None:
@@ -4013,6 +4016,11 @@ def test_dziennik_ktorego_start_centrum_nie_moze_wylistowac_ani_odczytac_zostaje
 def test_wpis_konca_dziennika_z_pierwsza_linia_niesie_wynik_a_dziennik_bez_niej_znika(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, confirmed: bool
 ) -> None:
+    """Dziennik z pierwszą linią na dysku dostaje wpis końca z wynikiem, który start Centrum z niego czyta. Gdy żaden zapis
+    nie potwierdził pierwszej linii (dysk zgłasza błąd przy ``fsync`` po ``write``), cała linia może być na dysku, a
+    postępu nie było, więc koniec Uruchomienia usuwa dziennik zamiast wpisu końca: start nie zrobi z niego Urwanego
+    Uruchomienia."""
+
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
     opened = Path.open
