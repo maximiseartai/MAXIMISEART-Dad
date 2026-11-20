@@ -238,8 +238,7 @@ def _open_paths_quietly() -> list[str]:
 def pid() -> int | None:
     """Process id of Excel, or ``None`` when no Excel runs; raises ``ExcelError`` unless ``pgrep`` names one process.
 
-    ``pgrep`` prints one id per line. ``lsappinfo`` changed its output in macOS 27.2 (``pid = 733 !cgsConnection …``),
-    and its old parser found no id, so every cold start waited out the limit of ``launch`` (#780).
+    ``pgrep`` prints one id per line. ``lsappinfo`` changed its output in macOS 27.2 (``pid = 733 !cgsConnection …``).
     """
 
     completed = subprocess.run(["pgrep", "-x", APP], capture_output=True, text=True, check=False)

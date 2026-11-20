@@ -1,14 +1,3 @@
-"""Uruchamia TLC na każdej konfiguracji z ``model/konfiguracje.json``: każda kolejność zdarzeń strumienia Uruchomień,
-odpowiedzi HTTP, kliknięć taty w tej karcie i w drugiej karcie, ponownych startów Centrum i odczytów stanu
-Aktualizacji. Porównuje wynik ze znanymi znaleziskami i opowiada każdy kontrprzykład krokami kodu. Konfiguracje,
-TLC, werdykt, znane znaleziska, narzędzia TLC i rozjazd modelu z kodem z ``model/definicje.json`` ma
-``tools/lib/model_tlc.py``: rozjazd skrypt tylko ostrzega linią ``UWAGA:`` nad werdyktem, a w CI krok z rozjazdem nie
-biegnie (``tools/ci/wykonaj_zadanie.py``).
-
-    .venv/bin/python .agents/skills/verify-karta-uruchomienia/scripts/sprawdz_karte_uruchomienia.py
-    py -3 .agents\\skills\\verify-karta-uruchomienia\\scripts\\sprawdz_karte_uruchomienia.py
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
