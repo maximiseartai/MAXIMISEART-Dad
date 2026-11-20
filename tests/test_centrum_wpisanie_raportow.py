@@ -22,6 +22,7 @@ from pathlib import Path
 import shutil
 import smtplib
 import threading
+from importlib import resources
 from typing import Any, Final
 
 from hypothesis import HealthCheck, Phase, given, settings
@@ -50,6 +51,7 @@ from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, O
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.owner import read_snapshot
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
+from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.centrum.settings.release_changes import RELEASE_CHANGES
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.worker_list import WorkerEntry, WorkerList
@@ -117,6 +119,11 @@ from tests.fixtures.znane_luki import assert_znane_luki, ruff_i_mypy, wymaga_ruf
 SUCCESSFUL = FIRST + HEADERS.index("SKUTECZNE")
 COMPLETED = FIRST + HEADERS.index("CZYNNOŚCI ZREALIZOWANE")
 SUBJECT = "Raport 09.11.2026"
+_DEFAULT_SETTINGS: Final = {
+    LEGEND_FILE: resources.files("rozliczenia") / "legenda_czynnosci_domyslna.yaml",
+    RULES_FILE: resources.files("rozliczenia") / "reguly_ilosci_domyslne.yaml",
+    DEVICES_FILE: resources.files("rozliczenia") / "lista_urzadzen_domyslna.yaml",
+}
 JAN = SENDERS["jan.testowy"]
 
 
@@ -5331,7 +5338,7 @@ def test_porazka_odczytu_przypomnien_naprawiona_w_tej_samej_porze_daje_przypomni
     assert sorted(reminder.worker for reminder, _ in mailbox.sends) == ["anna.kowalska", "jan.testowy"]
 
 
-@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE, WORKERS_FILE])
+@pytest.mark.parametrize("file", [SETTINGS_FILE, REMINDERS_FILE, WORKERS_FILE, LEGEND_FILE, RULES_FILE, DEVICES_FILE])
 @pytest.mark.parametrize("back", [True, False], ids=["wraca-w-porze", "nie-wraca-do-konca-pory"])
 def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia_wpis_z_nazwa_pliku(
     tmp_path: Path, file: str, back: bool
@@ -5345,6 +5352,8 @@ def test_plik_ustawien_bez_odczytu_ponawia_w_tej_samej_porze_a_po_porze_zostawia
     centrum = entering_centrum(tmp_path, INTERMAX, reminder_mailbox=mailbox)
     _reminders_set_up(centrum)
     centrum.client.start()
+    if not (centrum.tool.config / file).exists():
+        (centrum.tool.config / file).write_bytes(_DEFAULT_SETTINGS[file].read_bytes())
 
     with without_reading(centrum.tool.config / file):
         for moment in (REMINDER_MORNING, datetime(2026, 11, 10, 8, 31)):
@@ -5845,14 +5854,15 @@ def _pamiec_wpisania(importy: str, cialo: str) -> str:
         "from collections.abc import Sequence\nfrom datetime import date\n\n"
         f"{importy}\n"
         "from rozliczenia.activity_legend import ActivityLegend\n"
+        "from rozliczenia.quantity_engine import QuantityRules\n"
         "from rozliczenia.report_entering import ReportState\n"
         "from rozliczenia.worker_reports import EnteringMemory, RegisterWindow, ReportMail, Window, WorkerAddresses\n\n\n"
         "def wejscie(\n"
         "    state: ReportState, today: date, window: Window, intermax: RegisterWindow, mails: Sequence[ReportMail],\n"
-        "    addresses: WorkerAddresses, legend: ActivityLegend,\n"
+        "    addresses: WorkerAddresses, legend: ActivityLegend, rules: QuantityRules,\n"
         ") -> object:\n"
         f"{cialo}"
-        "    return memory.enter(window, intermax, mails, addresses, legend)\n"
+        "    return memory.enter(window, intermax, mails, addresses, legend, rules)\n"
     )
 
 

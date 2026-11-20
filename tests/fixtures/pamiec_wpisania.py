@@ -13,6 +13,8 @@ from dataclasses import dataclass
 from datetime import date, datetime
 
 from rozliczenia.activity_legend import ActivityLegend
+from rozliczenia.quantity_engine import QuantityRules
+from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES
 from rozliczenia.worker_reports import (
     EnteringMemory,
     Kept,
@@ -48,7 +50,7 @@ class Saved:
 @dataclass(frozen=True)
 class Given:
     """Pamięć Wpisania i to, co proces przeczytał: maile, adresy Wykonawców, INTERMAX okna (zlecenia, numery wierszy
-    ``present``, Dni uporządkowane), okno dni, Legenda czynności oraz własne wpisy, decyzje „Zostaw moją” i Wpisu na
+    ``present``, Dni uporządkowane), okno dni, Legenda czynności i Reguły ilości (``rules``) oraz własne wpisy, decyzje „Zostaw moją” i Wpisu na
     życzenie z pamięci, z dniem wdrożenia Wpisania ``rollout`` (``None``: ``window.rollout``)."""
 
     mails: Sequence[ReportMail]
@@ -62,6 +64,7 @@ class Given:
     ordered_days: frozenset[OrderedDay] = frozenset()
     requested: frozenset[RequestedEntry] = frozenset()
     rollout: date | None = None
+    rules: QuantityRules = DEFAULT_QUANTITY_RULES
 
     def entering_memory(self) -> EnteringMemory:
         rollout = self.window.rollout if self.rollout is None else self.rollout
@@ -74,7 +77,9 @@ class Given:
 def enter_reports(given: Given) -> ReportsOutcome:
     """Operacja Wpisania raportów na pamięci i odczycie ``given``."""
 
-    return given.entering_memory().enter(given.window, given.intermax(), given.mails, given.addresses, given.legend)
+    return given.entering_memory().enter(
+        given.window, given.intermax(), given.mails, given.addresses, given.legend, given.rules
+    )
 
 
 def reminders_due(
@@ -96,6 +101,7 @@ def reminders_due(
         given.mails,
         given.addresses,
         given.legend,
+        given.rules,
         sent=sent,
         reminded=reminded,
         settings=settings,

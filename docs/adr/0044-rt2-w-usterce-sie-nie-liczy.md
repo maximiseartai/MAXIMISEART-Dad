@@ -10,6 +10,10 @@ legendy z Wydania”:
   usterek”, a gdy tata miał na myśli, że w usterce `rt2` się nie liczy, zmieni to Wydanie)”: tata miał to na myśli, więc
   `rt2` daje `AM` tylko poza usterką.
 
+Zmieniona 20.11.2026 (decyzja Maksa: „trzeba zrobić tak, żeby Widok Raporty wiedział, że zlecenie to usterka”): widok
+Raporty czyta opis Wpisu `tak` w usterce tak jak Przygotowanie pliku zbiorczego, z tą samą definicją usterki (sekcje
+Decyzja i Odrzucone warianty). Jak to zrobić, rozstrzyga autor zmiany, nazwany przy każdym punkcie.
+
 ## Kontekst
 
 ADR 0039 przeczytał odpowiedź taty „każde `rt2`, nie uwzględniamy usterek” jako brak osobnej reguły dla usterek i
@@ -35,10 +39,22 @@ znaczenia (ADR 0039).
   [`GLOSSARY.md`](../../GLOSSARY.md) („Usterka (ilość w `AI`)”), a Przygotowanie pliku zbiorczego, Kontrola ilości,
   Ilości do uzupełnienia i podgląd zmiany legendy liczą ją z tego samego Wpisu narzędzia (`tool_entry`), więc wszystkie
   widzą tę samą usterkę. Wiersz bez wyniku Reguł ilości (`DATA` nie jest datą) nie jest usterką.
-- **Widok Raporty czyta opis jak poza usterką** (decyzja koordynatora). Wpis raportu nie ma Ilości usług w `AI`, a
-  zgadywanie usterki z innych kolumn byłoby drugą definicją. Kody czynności przy zleceniu są te same w usterce i poza
-  nią; różnica jest tylko w Błędzie opisu z udziałem `rt2` (np. `rt2 bypas5m`), który tata zobaczy też przy usterce, choć
-  Przygotowanie go tam nie liczy. Wolimy taki nadmiarowy błąd niż ukryty błąd poza usterką.
+- **Widok Raporty wie, że zlecenie to usterka** (decyzja Maksa 20.11.2026, cytat w Statusie). Opis Wpisu `tak` z
+  `rt2 bypas5m` w usterce nie ma w widoku Raporty Błędu opisu, tak jak w Przygotowaniu pliku zbiorczego.
+- **Jedna definicja usterki dla Pliku zbiorczego i widoku Raporty** (decyzja autora zmiany 20.11.2026). Wynik Reguł
+  ilości dla treści zlecenia (`quantity_engine.evaluated`) i usterkę z niego (`quantity_engine.is_fault`: Ilość usług w
+  `AI`) liczą Wpis narzędzia i rdzeń raportów tą samą funkcją, a rdzeń raportów dostaje treść zlecenia (`UMOWA`,
+  `URZĄDZENIA`, `CZYNNOŚCI`, `DATA`) z wiersza INTERMAX i Reguły ilości ze startu Uruchomienia, jak Legendę czynności.
+  Powód: druga definicja (np. słowo `usterka` w `URZĄDZENIA`) rozjechałaby się z Regułami ilości taty, np. przy
+  `usterka` obok składnika spoza Listy Urządzeń, który Reguły ilości liczą bez `AI`.
+- **Zlecenie dopisane z raportu nie jest usterką** (decyzja autora zmiany 20.11.2026). INTERMAX nie ma jego wiersza, więc
+  nie ma treści, z której Reguły ilości wyznaczą `AI`, tak jak wiersz bez wyniku Reguł ilości w Pliku zbiorczym.
+- **Wpisanie raportów i Przypomnienia o raporcie liczą Regułami ilości ze startu** (decyzja autora zmiany 20.11.2026).
+  Wpisanie raportów potrzebuje Reguł ilości jak Legendy czynności: start przy pliku Reguł ilości albo Listy Urządzeń bez
+  odczytu odmawia, a praca przypomnień go pomija z powodem w dzienniku Centrum, bo obie operacje czytają okno z jednego
+  wejścia rdzenia.
+  Logi Wpisania raportów mają odtąd Reguły ilości, a odtworzenie Logów sprzed tej zmiany liczy Regułami ilości z Wydania
+  z zastrzeżeniem.
 - **Zmiana z Wydania ustawia znacznik tylko przy `rt2` taty** (decyzja koordynatora). Wpis
   `2026-11-rt2-bez-usterek` w `RELEASE_CHANGES` zmienia w legendzie taty tylko znacznik kodu o id `rt2`, z wierszem
   Historii Ustawień i „Cofnij”. Kolumnę, kwotę i kolory, które tata ustawił sam, zostawia, a gdy tata `rt2` usunął,
@@ -47,6 +63,8 @@ znaczenia (ADR 0039).
 
 ## Odrzucone warianty
 
+- **Widok Raporty czyta opis jak poza usterką** (decyzja koordynatora z 16.11.2026, zmieniona decyzją Maksa
+  20.11.2026). Tata widziałby przy usterce Błąd opisu z udziałem `rt2`, którego Przygotowanie tam nie liczy.
 - **Stały identyfikator `rt2` w kodzie.** Działałby od razu, ale tata nie mógłby go zmienić ani dodać innego kodu, który
   w usterce się nie liczy, bez Wydania.
 - **W usterce `rt2` jak słowo spoza legendy.** Opis usterki z samym `rt2` miałby wtedy „BRAK KODU” i czekałby na tatę w

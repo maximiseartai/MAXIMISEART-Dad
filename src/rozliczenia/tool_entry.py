@@ -29,7 +29,7 @@ from typing import Final
 
 from .activity_legend import AMOUNT_COLUMN, ActivityLegend, DescriptionRead, FillColour, WithCodes
 from .client_data import shown
-from .collective_layout import DEFECT_COLUMN, QUANTITY_LETTERS, letter
+from .collective_layout import QUANTITY_LETTERS
 from .quantity_engine import (
     DESCRIPTION_COLUMNS,
     FromDescription,
@@ -38,7 +38,8 @@ from .quantity_engine import (
     QuantityRules,
     RuleResult,
     WithoutRule,
-    evaluate,
+    evaluated,
+    is_fault,
 )
 from .workbook_files import is_blank
 
@@ -91,7 +92,6 @@ class ToolEntry:
 
 
 _NONE: Final[Mapping[str, FillColour]] = MappingProxyType({})
-_DEFECT: Final = letter(DEFECT_COLUMN)
 
 
 def description(cell: object) -> str:
@@ -105,8 +105,8 @@ def tool_entry(content: OrderContent | None, completed: str, rules: QuantityRule
     """Wpis narzędzia dla treści ``content`` (``None`` albo bez pory: bez Reguł ilości) i opisu technika ``completed``
     (``description`` komórki)."""
 
-    result = None if content is None or content.started is None else evaluate(rules, content)
-    read = legend.read(completed, fault=result is not None and result.quantities.get(_DEFECT, 0) != 0)
+    result = evaluated(rules, content)
+    read = legend.read(completed, fault=is_fault(result))
     by_rules: Quantities = {} if result is None else result.quantities
     compared = () if result is None else compared_columns(result, rules)
     by_legend: Quantities = {}

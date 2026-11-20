@@ -9,13 +9,13 @@ taty o problemie daje ``reasons.reason``, o informacji ``reasons.note``, a mail,
 sam odczyt (odtworzenie z Logów), ``WindowMails.canonical``.
 Druga operacja, ``EnteringMemory.reminders``, mówi, które Przypomnienia o raporcie należą się teraz (ADR 0030, ADR 0041,
 ``_reminders.py``). Obie biorą Raporty wykonawców i ich dni z jednego odczytu okna (``_reading.py``) na wejściu z tej
-samej pamięci, którego pakiet nie wystawia, a Wpisanie czyta opis Wpisu ``tak`` Legendą czynności z wejścia
-(``_descriptions.py``, ADR 0039). Odczyty maili okna wychodzą z pakietu tylko w kapsule ``WindowMails`` (``_mails.py``):
+samej pamięci, którego pakiet nie wystawia, a Wpisanie czyta opis Wpisu ``tak`` Legendą czynności z wejścia, w usterce
+z Reguł ilości z wejścia (``_descriptions.py``, ADR 0039, ADR 0044). Odczyty maili okna wychodzą z pakietu tylko w kapsule ``WindowMails`` (``_mails.py``):
 fakty, postać kanoniczna i zapis do Logów oraz odczyt z nich jako JSON, bez wariantu odczytu maila.
 Typy są w ``_model.py``, a rozpoznanie tematu i Wpisów, dopasowanie do zleceń, reguły komórek i postać kanoniczna maila
 w pozostałych modułach ``_*.py``; moduły prywatne importuje tylko ten pakiet. Pakiet bierze tylko bibliotekę standardową
-oraz ``report_cells``, ``settlement_period``, ``text`` i ``activity_legend``, bo przejdzie bez zmian do Centrum w
-chmurze.
+oraz ``report_cells``, ``settlement_period``, ``text``, ``activity_legend`` i ``quantity_engine``, bo przejdzie bez
+zmian do Centrum w chmurze.
 """
 
 from __future__ import annotations

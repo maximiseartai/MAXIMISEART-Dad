@@ -15,7 +15,7 @@ An open decision that only Maks can make lives as an issue labelled `decyzja-mak
 Only a decision of one of these kinds is Maks's:
 
 - **Dad's data:** a risk that Dad's or his clients' data leave Dad's computer, or a new way of processing them ([ADR 0007](../adr/0007-zgloszenia-do-maksa-w-prywatnym-repo.md), [ADR 0025](../adr/0025-regula-danych-wysylki-do-skrzynki.md)).
-- **Maks's account or money:** a step that needs Maks's own login (a token, a GitHub App, a ruleset setting), or a cost beyond the usual budget of model tokens and boat hours.
+- **Maks's account or money:** a step that needs Maks's own login (a token, a GitHub App, a ruleset setting), or a cost beyond the usual budget of model tokens.
 - **What Dad sees or does**, when no ADR or issue records Dad's or Maks's choice, and a question only Dad can answer.
 - **Reversing Maks:** a change to a decision Maks recorded in an ADR or an issue comment.
 

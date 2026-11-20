@@ -15,12 +15,12 @@
     "enter_reports": "558f52ae39ac8d45"
   },
   "src/rozliczenia/report_entering.py": {
-    "enter_from_mail": "85a0e8c9d766ce58",
+    "enter_from_mail": "64c50cec131470c1",
     "closed_periods": "b75123255310df0b"
   },
   "src/rozliczenia/worker_reports/_memory.py": {
     "SavedState": "314a0ff628016189",
-    "EnteringMemory": "f9742c0f4fa5ac1a"
+    "EnteringMemory": "6fa7902055d011fd"
   },
   "src/rozliczenia/intermax_cells.py": {
     "write_cells": "46fce0bc4f0aa999"
