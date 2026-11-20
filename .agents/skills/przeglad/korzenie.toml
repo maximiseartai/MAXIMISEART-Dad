@@ -186,3 +186,7 @@ przyklad = 2296
 [R-ODMOWA-ZE-SKROTU]
 opis = "Odmowa porównuje same skróty i podaje dwa skróty bez elementu, który się różni, więc jej polecenie naprawy zakłada jedną przyczynę różnicy i nie da się go wykonać, gdy przyczyna leży poza tym, co polecenie każe przywrócić."
 przyklad = 2304
+
+[R-ENV-PRZENIESIENIA]
+opis = "Przeniesienie procesu na inną maszynę (exec przez boatbox na box) niesie argumenty i pliki wołającego, a gubi zmienne środowiska, kopię i ścieżki, które ustawił wołający i z których przeniesione narzędzie czyta decyzję, bo autor wyliczył wejścia narzędzia z jego argumentów."
+przyklad = 2403
