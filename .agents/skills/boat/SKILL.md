@@ -14,6 +14,7 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 
 Polecenie jest **ciężkie**, gdy na Macu trwałoby ponad minutę albo zajmuje kilka rdzeni naraz, oraz gdy uruchamia kod z zewnątrz.
 Ciężkie polecenie biegnie zawsze na boxie, także wiele naraz i równolegle, każda część, którą da się rozdzielić, na własnym boxie; Mac zostaje dla edycji, gita i agentów.
+Hook `tools/hooks/ciezkie.py` odmawia zwykłej postaci `szybko.py`, pytesta z `-n` od 2 albo `auto`, `mutacje.py --plik`, pomiaru `benchmark_przebiegu.py` i skryptu `check_*_mutations.py` skilla wpisanych bez `boatbox` i podaje w odmowie gotowe polecenie `boatbox`.
 
 | Praca | Jak |
 |---|---|
@@ -21,7 +22,7 @@ Ciężkie polecenie biegnie zawsze na boxie, także wiele naraz i równolegle, k
 | Pełny pytest | `boatbox job pytest '.venv/bin/python -m pytest -n auto'`, potem `boatbox wait pytest` |
 | `mutacje.py --plik` z mutacjami o kilku różnych `polecenie` | `boatbox fan` (sekcja „Fan mutacji”) |
 | `mutacje.py --plik` z jednym `polecenie`, odtworzenie błędu na Linuksie, powtórzenia testu pod obciążeniem, pomiar, model TLC, kod z zewnątrz (nowa zależność, cudzy PR) | `boatbox run '<polecenie>'`, a przy biegu ponad 5 minut `boatbox job` i `boatbox wait` |
-| Lekkie: pojedynczy plik testów, `mutacje.py --zmiana`, ruff, mypy, budowa frontendu, git, `gh`, `tools/scal_pr.py` | na Macu, bezpośrednio |
+| Lekkie: pojedynczy plik testów bez `-n` albo z `-n 0`/`1`, `mutacje.py --zmiana`, ruff, mypy, budowa frontendu, git, `gh`, `tools/scal_pr.py` | na Macu, bezpośrednio |
 | Excel, napęd Centrum z oknem przeglądarki, prawdziwe pliki taty, test, który działa tylko na macOS | na Macu: `boatbox run --here '<polecenie>'` |
 | Nocne mutacje (`mutacje_nocne.py`, `mutacje_zmiany.py`) | GitHub Actions, workflow `mutacje-nocne.yml` |
 
@@ -29,7 +30,7 @@ W pomiarze A/B obie strony biegną po kolei na tym samym boxie.
 
 ## Gdy box nie wstaje
 
-- `missing command: boat`: zgłoś to Maksowi, bo instalacja i logowanie boat to jego krok.
+- `missing command: boat`: polecenie zostaje do uruchomienia na boxie, nie na Macu, a brak `boat` zgłoś Maksowi, bo instalacja i logowanie boat to jego krok.
 - `no_ready_machine` albo inny brak maszyn: ponów raz po minucie, potem z `BOATBOX_TYPE=default`; gdy i to nie wstaje, zgłoś polecenie i błąd, a polecenie zostaw na boxie.
 - Wynik wygląda na stary kod: porównaj `head` boxa z `boatbox status` z `git rev-parse HEAD`.
 
