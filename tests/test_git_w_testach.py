@@ -1,15 +1,3 @@
-"""Git w testach ma jedną konfigurację: sesyjna fixture ``git_bez_konfiguracji_komputera`` z ``tests/conftest.py``.
-
-Git uruchomiony z procesu testów ze środowiskiem bez konfiguracji testów wywraca test, gdy idzie przez ``subprocess``
-(lista, krotka, pełna ścieżka, ``env``, ``env -i``, ``env -u``, ``sh -c`` i ``shell=True``, także z ``unset`` albo
-przypisaniem przed gitem, ``executable=``), ``os.system``, ``os.posix_spawn`` albo ``os.posix_spawnp``, a ``git commit``
-z ``src/`` pada z „Author identity unknown”. Ten moduł pada, gdy fixture albo któraś z tych dróg zniknie.
-
-Granica: git w osobnym procesie (skrypt ``tools/``, ``python -c``) dziedziczy zmienne, ale straży tam nie ma; git po
-``if``/``then``, w ``{ …; }``, po ``!``, ``time`` albo ``exec`` w powłoce oraz przez ``os.exec*`` i ``os.spawn*`` łapie
-tylko przegląd.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -21,6 +9,7 @@ import subprocess
 import sys
 
 import pytest
+import repo
 
 from rozliczenia.centrum import tool_update
 
@@ -149,9 +138,6 @@ def test_git_ze_srodowiskiem_bez_konfiguracji_testow_wywraca_test() -> None:
 def test_git_bez_zadnej_konfiguracji_przechodzi_tylko_z_pustym_home_bez_xdg_config_home(
     tmp_path: Path, home_files: list[str], xdg: bool, refused: bool
 ) -> None:
-    """Git bez konfiguracji komputera, jak ``repo.git(isolated=True)``: ``GIT_CONFIG_GLOBAL`` to ``os.devnull``, a
-    ``HOME`` pusty katalog; plik w ``HOME`` albo ``XDG_CONFIG_HOME`` to znów pliki gita komputera."""
-
     home = tmp_path / "home"
     home.mkdir()
     for name in home_files:
@@ -176,6 +162,10 @@ def test_git_bez_zadnej_konfiguracji_przechodzi_tylko_z_pustym_home_bez_xdg_conf
         subprocess.run(
             ["git", "--version"], env=environment, capture_output=True, check=True
         )
+
+
+def test_git_bez_konfiguracji_komputera_z_narzedzi_maksa_przechodzi_przez_straz(tmp_path: Path) -> None:
+    assert repo.git(tmp_path, "--version", isolated=True).startswith("git version")
 
 
 LAUNCHES: dict[str, Callable[[], object]] = {
@@ -233,7 +223,7 @@ def test_git_z_posix_spawn_ze_srodowiskiem_bez_konfiguracji_testow_wywraca_test(
 def test_posix_spawn_bez_env_sprawdza_srodowisko_procesu(
     spawn: str, command: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Python 3.14 na Linuksie uruchamia tak ``subprocess.run([bash, "-c", …])``; brak env to środowisko procesu.
+    # ZEWNĘTRZNE: subprocess na Linuksie uruchamia program podany ścieżką przez os.posix_spawn z env z Popen, także None, gdy Python ma os.POSIX_SPAWN_CLOSEFROM albo Popen dostał close_fds=False (Lib/subprocess.py: Popen._execute_child)
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
     program = shutil.which(command[0])
     assert program is not None
@@ -257,6 +247,59 @@ def test_polecenie_ktore_zdejmuje_konfiguracje_testow_przed_gitem_wywraca_test(
 ) -> None:
     with pytest.raises(AssertionError, match="GIT_CONFIG_NOSYSTEM nie jest 1"):
         subprocess.run(command, shell=shell, check=True)
+
+
+ZNANE_LUKI: dict[str, Callable[[Path], object]] = {
+    "powłoka: straż czyta tylko proste polecenia, git po then": lambda _: subprocess.run(
+        ["bash", "-c", "if true; then git --version; fi"], capture_output=True, check=True
+    ),
+    "powłoka: straż czyta tylko proste polecenia, git w klamrach": lambda _: subprocess.run(
+        ["bash", "-c", "{ git --version; }"], capture_output=True, check=True
+    ),
+    "powłoka: straż czyta tylko proste polecenia, git po wykrzykniku": lambda _: subprocess.run(
+        ["bash", "-c", "! git --version || true"], capture_output=True, check=True
+    ),
+    "powłoka: straż czyta tylko proste polecenia, git po time": lambda _: subprocess.run(
+        ["bash", "-c", "time git --version"], capture_output=True, check=True
+    ),
+    "powłoka: straż czyta tylko proste polecenia, git po exec": lambda _: subprocess.run(
+        ["bash", "-c", "exec git --version"], capture_output=True, check=True
+    ),
+    "straż żyje tylko w procesie testów: git w osobnym procesie Pythona": lambda _: subprocess.run(
+        [sys.executable, "-c", "import subprocess; subprocess.run(['git', '--version'], capture_output=True, check=True)"],
+        check=True,
+    ),
+    "straż nie patrzy na os.exec*": lambda directory: _exec_missing(directory / "brak" / "git"),
+    "straż nie patrzy na os.spawn*: os.spawnv dochodzi do fork": lambda directory: _spawn_until_fork(directory / "git"),
+}
+
+
+def _exec_missing(program: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        os.execv(program, [str(program), "--version"])
+
+
+def _spawn_until_fork(program: Path) -> None:
+    def fork() -> int:
+        raise ChildProcessError("próbka nie rozwidla procesu testów")
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(os, "fork", fork)
+        with pytest.raises(ChildProcessError):
+            os.spawnv(os.P_WAIT, program, [str(program), "--version"])
+
+
+@POSIX_ONLY
+@pytest.mark.parametrize("launch", ZNANE_LUKI.values(), ids=ZNANE_LUKI.keys())
+def test_znane_luki_strazy_gita_przepuszczaja_git_ze_srodowiskiem_bez_konfiguracji_testow(
+    launch: Callable[[Path], object], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", "/dev/null")
+
+    try:
+        launch(tmp_path)
+    except AssertionError as refused:
+        pytest.fail(f"straż łapie już tę drogę, więc nie jest luką: usuń ją ze ZNANE_LUKI i dopisz do LAUNCHES ({refused})")
 
 
 @POSIX_ONLY
