@@ -18,7 +18,7 @@ Plik werdyktu leży w katalogu ze zlecenia, a bez niego w `~/.t3/notes/recenzje/
 2. Przejrzyj diff według sekcji „Co jest porażką” w [`SKILL.md`](SKILL.md) i sekcji „Dowody” niżej, a skille z linii `SKILLE VERIFY` wykonaj według sekcji `What CI runs and what stays local` każdego z nich.
    Linia `CI` z kroku 1 mówi, czy polecenia z linii `LICZY CI` przeszły: przy `success` logów zadań CI nie przeszukuj, a przy `failure` czytaj tylko logi padłych zadań, które podaje.
    Każde potwierdzone znalezisko od razu dopisz do pliku `runda-<k>.md` w katalogu werdyktu blokiem szablonu z sekcji „Postać werdyktu” w [`SKILL.md`](SKILL.md), żeby przerwany przegląd zostawił znaleziska.
-   Ważne ma kod korzenia z [`korzenie.toml`](korzenie.toml), szczebel z [`korzen.md`](korzen.md) i `Gdzie` z liniami złego kodu, a gdy powtarza wcześniejsze Ważne albo ucieka strażnikowi, pole `Idiom:` z tego pliku, więc oba pliki czytasz przy pierwszym Ważnym.
+   Ważne ma kod korzenia z [`korzenie.toml`](korzenie.toml), szczebel i mechanizm z [`korzen.md`](korzen.md) i `Gdzie` z liniami złego kodu, więc oba pliki czytasz przy pierwszym Ważnym.
    Krok kończy się, gdy przejrzałeś cały diff, a każde znalezisko jest w pliku, Ważne z korzeniem i szczeblem.
 3. Dopisz na górę pliku dwie linie z sekcji „Postać werdyktu” w [`SKILL.md`](SKILL.md), a na koniec `## Sprawdzone` z 1–5 punktami.
    Krok kończy się, gdy liczby w drugiej linii zgadzają się ze znaleziskami w pliku.

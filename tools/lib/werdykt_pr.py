@@ -32,7 +32,8 @@ co zgoda przy merge'u: pierwsza niepusta linia
 to ``WERDYKT: PASS <SHA>`` albo ``WERDYKT: FAIL <SHA>`` z pełnym SHA bieżącego HEAD PR, druga to ``Znaleziska: N
 (Ważne a, Drobne b)`` z ``N = a + b``, ``PASS`` ma zero Ważnych, ``FAIL`` co najmniej jedno, a Drobnych jest
 najwyżej trzy, a w wątku z szablonem treść pod nimi idzie za szablonem ze skilla ``przeglad`` (``szablon_werdyktu``:
-Ważne z polami ``Gdzie``, ``Dowód``, ``Korzeń`` i ``Szczebel``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``,
+Ważne z polami ``Gdzie``, ``Dowód``, ``Korzeń``, ``Szczebel`` i, w wątku z pierwszym werdyktem po
+``szablon_werdyktu.MECHANISM_ADR``, ``Mechanizm``, Drobne z polem ``Gdzie``, na końcu ``## Sprawdzone``,
 a kod korzenia z zamkniętej listy albo ``NOWY`` spoza niej), a werdykt HEAD, który ma już werdykt, także punkt
 ``Ponowny przegląd:`` (``ponowny_przeglad``). Czy reguła wątku obowiązuje w PR, rozstrzyga jedna
 funkcja, ``rule_applies``, dla szablonu przy publikacji i przy zgodzie na merge i dla bramki korzenia przy merge'u
@@ -242,7 +243,8 @@ def _html(rest: str, pull: Pull) -> str:
 
 def _template_problems(text: str, pull: Pull, *, repeat: bool) -> list[str]:
     """Przyczyny ``szablon_werdyktu`` dla treści pod dwiema pierwszymi niepustymi liniami ``text``, którą renderuje
-    GitHub, a z ``repeat`` (``_repeats``) także przyczyna ``ponowny_przeglad``."""
+    GitHub, z polem Mechanizm, gdy obowiązuje w wątku (``szablon_werdyktu.MECHANISM_ADR``), a z ``repeat``
+    (``_repeats``) także przyczyna ``ponowny_przeglad``."""
 
     rest, declared = _content(text)
     try:
@@ -250,7 +252,8 @@ def _template_problems(text: str, pull: Pull, *, repeat: bool) -> list[str]:
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera (gh z błędem albo po czasie, pusty HTML) to odmowa z przyczyną
         return [f"GitHub nie wyrenderował treści werdyktu ({error}), uruchom ponownie"]
     missing = ponowny_przeglad.problem(szablon_werdyktu.items(html)) if repeat else None
-    found = szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull))
+    mechanism = rule_applies(pull, deployment(pull.base, szablon_werdyktu.MECHANISM_ADR))
+    found = szablon_werdyktu.problems(html, declared, lambda: szablon_werdyktu.pull_codes(pull), mechanism=mechanism)
     return [missing, *found] if missing else found
 
 

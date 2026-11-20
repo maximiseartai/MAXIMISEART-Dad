@@ -54,4 +54,25 @@ Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md))
 - `Strażnik: brak - test` przechodzi tylko w wątku z pierwszym werdyktem sprzed wdrożenia dowodu testu (`bramka_straznika.TEST_MARKER`), więc tam dowód testu jest osądem recenzenta jak przed ADR 0042.
   Recenzent następnej rundy uruchamia test, który nazywa `Szczebel:` bloku, na drzewie SHA werdyktu `FAIL` (przy próbce testu: mutację złej implementacji z Dowodu Ważnego) i daje Ważne, gdy test przechodzi, pada tylko z braku czegoś, co poprawka dodała obok kodu z `Gdzie` (moduł, metoda, nazwa, opcja), albo gdy Ważne zamknąłby wyższy szczebel z dowodem narzędzia (`mypy`, `ruff`, `ast-grep <id>`, `pytest <węzeł>`).
 - Kod z `Gdzie` usunięty z PR (szczebel (a)) to `Strażnik: brak - usunięte`; recenzent następnej rundy sprawdza, że ten kod zniknął z HEAD i nie wrócił inną drogą, a gdy stoi albo wrócił, to Ważne.
-- Pole `Idiom:` po `Szczebel:` jest opcjonalne i niczego przy merge'u nie wymaga: `Idiom: <id> jak #N W<n> r<k>`, gdy Ważne powtarza wcześniejsze, albo `Idiom: <id>`, gdy to ucieczka istniejącego strażnika `<id>`; raport tygodniowy liczy z niego powroty i ucieczki.
+
+## Mechanizm
+
+Recenzent wpisuje w każdym Ważnym pole `Mechanizm:` z jednym szczeblem piramidy [ADR 0031](../../../docs/adr/0031-korzen-po-fail-i-chwasty.md), od najwyższego, i wybiera najwyższy, który działa, czyli odmówi nowej kopii tego błędu napisanej przez innego agenta w innym pliku albo funkcji repo, bez recenzenta ([ADR 0046](../../../docs/adr/0046-szczebel-straznika-wybiera-recenzent.md)).
+Autor szczebla nie wybiera, a recenzent następnej rundy daje Ważne, gdy pokaże działający szczebel wyższy niż wpisany, jak przy `Szczebel:`.
+Oceniasz klasę błędu, nie jedną linię: reguła, która pasuje tylko do tej linii z tą nazwą zmiennej, nie jest szczeblem `lint`.
+
+- **architektura**: jeden właściciel, usunięta druga droga albo typ, z którym zły stan jest niewyrażalny, i strażnik obejścia, który odmawia kodu omijającego nową strukturę: typ, zakaz `TID251` właściciela albo reguła ast-grep.
+  Przykład: #1553 dał tytułowi okna Ustawień jeden lokator `settings_title`, a nic nie odmówiło nowej kopii, która przyszła z #1533, więc dziś pilnuje go reguła `reguly-ast-grep/lokator-tytulu-okna.yml`; #2125 buduje wejście odczytu okna tylko w `report_inputs`, a drugi konstruktor zatrzymuje ruff.
+- **refaktor**: zmiana postaci kodu w miejscu błędu bez nowego właściciela, którą trzyma typ, zakaz ruff albo reguła ast-grep: gotowy parser zamiast ręcznego, kształt, który kod przyjmuje, zamiast rosnącej listy wyjątków, `zip(strict=True)` pod `B905`.
+  Przykład: #2161 zastąpił w `srodowisko_ci.mismatch` listy dozwolonych postaci równością z jedną postacią zadania.
+- **lint**: zakaz nazwy (`banned-api` z `msg` „użyj X”) albo reguła ast-grep na kształcie złego kodu, bez zmiany samego kodu poza poprawką.
+  Przykład: #1719 zakazał `time.sleep` w `drive/` poza `drive/waiting.py`.
+- **test**: błąd logiki (warunek, liczba, kolejność kroków, stan po kroku), którego składnia nie zdradza, w jedynym właścicielu, którego jedyność już pilnuje typ, zakaz `TID251` albo reguła ast-grep z jego prawem właściciela; strażnikiem jest test zachowania na właścicielu.
+  Przykład: zły dzień raportu w `worker_reports.EnteringMemory`, którego jedyność trzyma mypy (wiersz tabeli w „Design” `CODING_STANDARDS.md`).
+  Jedyny właściciel bez takiej ochrony to szczebel `architektura`: PR dopisuje zakaz albo regułę, która kieruje do niego resztę kodu.
+- **weryfikacja**: błąd jednorazowy w treści, którego nowa kopia nie ma rozpoznawalnej postaci ani właściciela (zdanie prozy, zła liczba w jednym teście, zachowanie widoczne tylko w napędzie frontendu); strażnikiem jest test, `brak - proza` albo `brak - napęd`.
+  Przykład: #2069 dostał trzy `FAIL` za kolejne zdania o tym, skąd gospodarze biorą Ustawienia ze startu.
+
+Szczebel nie działa, gdy jego reguła daje fałszywy alarm w ponad 10% PR-ów dowodu `tools/na_scalonych_pr.py --regula` albo wymaga listy nazw, która rośnie z każdym nowym kodem (#1904, #1919 i #1964 trzy razy poszerzały `regula-w-trasie` o nowe metody zapisu); wtedy recenzent schodzi szczebel niżej bez osobnej zgody.
+Kod z `Gdzie` usunięty z PR to `architektura`, gdy zakaz usuniętej nazwy albo reguła na złej postaci z drzewa `FAIL` łapie jego powrót, a gdy się nie da, recenzent wpisuje niższy szczebel.
+Którego selektora `Strażnik:` szczebel żąda, sprawdza dziś recenzent następnej rundy, a bramka strażnika liczy dowód selektora, który wpisał autor.

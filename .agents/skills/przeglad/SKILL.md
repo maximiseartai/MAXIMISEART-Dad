@@ -61,7 +61,7 @@ Gdzie: <plik:linia>
 Dowód: <polecenie i wynik, najwyżej 5 linii po 300 znaków; cytat z polem w bloku kodu>
 Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
-Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>; opcjonalne, tylko gdy Ważne powtarza wcześniejsze albo ucieka strażnikowi)
+Mechanizm: <architektura|refaktor|lint|test|weryfikacja>
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>
 ### Mutacja W<n> r<k>
@@ -72,6 +72,7 @@ Gdzie: <plik:linia>
 - <co sprawdzone i z jakim wynikiem, 1–5 punktów>
 ```
 
+Wartość pola `Mechanizm:` wybierasz według sekcji „Mechanizm” w [`korzen.md`](korzen.md), a listę wartości trzyma `Mechanism` w [`tools/lib/szablon_werdyktu.py`](../../../tools/lib/szablon_werdyktu.py), więc wartość spoza niej i Ważne bez tego pola to odmowa `--werdykt`; wątek, którego pierwszy werdykt powstał przed [ADR 0046](../../../docs/adr/0046-szczebel-straznika-wybiera-recenzent.md), kończy bez niego, jak dotąd z opcjonalnym polem `Idiom:` w tym miejscu.
 Postać bloku `### Mutacja W<n> r<k>` i punktu `## Sprawdzone` zaczętego od `Korzeń ` podaje [`korzen.md`](korzen.md).
 `PASS` bez znalezisk ma tylko linie `WERDYKT: PASS <pełny SHA HEAD>`, `Znaleziska: 0 (Ważne 0, Drobne 0)`, bloki `### Mutacja` i `## Sprawdzone`.
 Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.
