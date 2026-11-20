@@ -50,7 +50,7 @@ Dwa sprawdzenia niżej łapią błąd kodu, który zapomniał strażnika reguły
 (Logi Urwanego Uruchomienia przed 2ff78b6b3, ``replace`` w przeglądzie #1038).
 
 - Wysyłkę Logów Uruchomienia daje tylko ``comment_versions.post_of`` jako ``LogsPost``. Jej ``replace`` i podklasę
-  odrzuca typ (docstring ``comment_versions._VERSIONS``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
+  odrzuca typ (próbki ``DROGI_DO_LOGOW`` i ``ZNANE_LUKI_WYSYLKI``), ale nową ``Post`` złożoną z jej pól typ przepuszcza, bo
   ``Outbox.post`` bierze też gołą ``Post`` (przegląd #1371 r1). Dlatego wynik ``post_of`` idzie od razu do kolejki
   (``<kolejka>.post(post_of(wersja))``), a nazwę ``post_of`` test rozpoznaje po niej samej, z dowolną bazą i także
   jako napis, a nie po imporcie. Etykietę Logów (``comment_versions.LABEL``) kod poza ``post_of`` tylko podaje kolejce
@@ -1454,7 +1454,7 @@ def test_znane_luki_straznika_logow_przechodza_przez_ruff_mypy_i_straznika(tmp_p
 def _logs_post_breaks(tree: ast.Module, file: str) -> list[tuple[int, str]]:
     """Miejsca pliku ``file``, które mogą zbudować albo przerobić wysyłkę Logów Uruchomienia obok ``post_of``.
 
-    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca też typ (docstring ``comment_versions._VERSIONS``),
+    ``replace`` i podklasę gotowej wysyłki (``LogsPost``) odrzuca też typ (próbki ``DROGI_DO_LOGOW`` i ``ZNANE_LUKI_WYSYLKI``),
     ale nie z ``# type: ignore[…]``. Typ przepuszcza też nową ``Post`` złożoną z pól gotowej wysyłki, bo ``Outbox.post``
     bierze też gołą ``Post`` (``Post(sent.target, …, Rank.OWN)`` i ``parts=(record.text,)``, przegląd #1371 r1).
     Dlatego sprawdzenie łapie tylko dwie rzeczy.
