@@ -2,7 +2,7 @@
 repozytorium próbnym z commitem (``TRIAL_ARCHIVE``).
 
 Oczekiwany wynik każdego przypadku pochodzi z domeny (``GLOSSARY.md``: Archiwum Logów okresu, ADR 0015 z dopiskiem
-#844, testy ``tests/test_skrzynka_zgloszen_github.py`` i docstring ``outbox._deliver_archive``), nie z przebiegu kodu. Przypadki biegną po kolei:
+#844, testy ``tests/test_skrzynka_zgloszen_github.py`` i ``tests/test_centrum_logi_w_skrzynce.py``), nie z przebiegu kodu. Przypadki biegną po kolei:
 późniejszy bierze identyfikatory Archiwów i plików z wcześniejszych (``earlier``), a w odtwarzaniu z faktów swojego
 nagrania. Plik leży w Archiwum pod nazwą ``packed_name`` z etykietą ``<nazwa> (wersja <wersja>)`` jak u Kolejki
 wysyłki, a jego bajty to treść ``ArchiveFile.packed`` po rozpakowaniu w gzipie o tych samych bajtach na każdej maszynie
@@ -580,8 +580,8 @@ CASES: Final[tuple[Case[ArchiwumLive, Client], ...]] = (
     Case(
         "podmiana-pliku",
         "remove: Removed i zostaje tylko inny plik; potem nowsza wersja pod tą samą nazwą obok niego",
-        "outbox._deliver_archive: „plik starszej wersji … ustępuje (remove), a potem idzie ten (upload)”; GLOSSARY: "
-        "„plik nowszej wersji podmienia plik starszej”",
+        "test_centrum_logi_w_skrzynce: test_diagnoza_po_zatrzymaniu_do_maksa_dopisuje_sie_do_pliku_logow_i_zmienia_komentarz_"
+        "uruchomienia_w_issue_okresu; GLOSSARY: „plik nowszej wersji podmienia plik starszej”",
         _prepare_replace,
         _replace,
         _judge_replace,
