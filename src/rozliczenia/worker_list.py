@@ -31,9 +31,6 @@ __all__ = [
 
 @dataclass(frozen=True)
 class Worker:
-    """Wykonawca z Listy Wykonawców; ``active=False``: Nieaktywny Wykonawca, ``reminders``: dostaje Przypomnienia o
-    raporcie, gdy jest aktywny."""
-
     logins: tuple[Login, ...]
     name: str
     addresses: tuple[SenderAddress, ...]
@@ -83,19 +80,12 @@ ProblemKind = Literal[
     "not_address",
     "repeated_address",
 ]
-"""Wpis bez loginu (``no_login``), login pusty (``empty_login``) albo już użyty, także u innego Wykonawcy
-(``repeated_login``), nazwa pusta (``empty_name``) albo taka, która nie może być nazwą pliku Rozliczenia pracownika
-(``invalid_name``, ``too_long_name`` według ``check_worker_name``), nazwa, która daje ten sam plik co nazwa wcześniejszego
-Wykonawcy (``same_file``), wartość, która nie jest jednym adresem ``lokalna@domena`` (``not_address``), i adres już użyty,
-także u innego Wykonawcy (``repeated_address``)."""
 
 Part = Literal["loginy", "nazwa", "adresy"]
 
 
 @dataclass(frozen=True)
 class WorkerListProblem:
-    """Pierwsza złamana reguła: numer wpisu (od 0), pole wpisu, pozycja w nim (``None`` dla nazwy) i rodzaj."""
-
     worker: int
     part: Part
     item: int | None
@@ -158,8 +148,6 @@ class WorkerList:
         return cls(tuple(workers), tuple(unresolved))
 
     def names(self) -> Mapping[str, str]:
-        """Login → nazwa w Rozliczeniu pracownika, każdy login każdego Wykonawcy, w kolejności z listy."""
-
         return {login: worker.name for worker in self.workers for login in worker.logins}
 
     def name_of(self, login: str) -> str | None:
