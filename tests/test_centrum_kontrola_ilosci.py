@@ -1078,6 +1078,33 @@ def test_podglad_legendy_przy_pliku_pary_regul_ilosci_bez_odczytu_to_409_o_tym_p
     assert (response.status_code, response.json()) == (409, {"message": refusal.settings_file_unreadable(unreadable).message})
 
 
+def legend_columns(centrum: SettlingCentrum) -> dict[str, str | None]:
+    legend = centrum.client.get(LEGEND_URL).json()
+    return {column["letter"]: column["name"] for column in [legend["amount_column"], *legend["columns"], *legend["fill_columns"]]}
+
+
+def test_kolumny_legendy_maja_nazwy_pozycji_cennika_a_przy_wzorcu_bez_odczytu_same_litery_poza_kwota(tmp_path: Path) -> None:
+    centrum = settling_centrum(tmp_path)
+    write_collective_template(centrum.configuration.collective_template)
+    named = legend_columns(centrum)
+
+    with without_reading(centrum.configuration.collective_template):
+        unread = legend_columns(centrum)
+
+    assert [letter for letter, name in named.items() if letter != "AS" and name is not None], "Wzorzec testu nie ma nazw pozycji cennika"
+    assert unread == {letter: named["AS"] if letter == "AS" else None for letter in named}
+
+
+def test_kod_czynnosci_z_ukosnikiem_w_id_da_sie_usunac(tmp_path: Path) -> None:
+    centrum = settling_centrum(tmp_path)
+    assert "dzielnik1/2" in {code["id"] for code in centrum.client.get(LEGEND_URL).json()["codes"]}
+
+    removed = centrum.client.delete(f"{LEGEND_URL}/dzielnik1/2")
+
+    assert removed.status_code == 200, removed.text
+    assert "dzielnik1/2" not in {code["id"] for code in removed.json()["activity_legend"]["codes"]}
+
+
 @pytest.mark.parametrize(
     ("settled", "expected"),
     [

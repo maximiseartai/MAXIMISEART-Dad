@@ -183,7 +183,7 @@ def _detached(command: list[str], cwd: Path) -> subprocess.Popen[bytes]:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=_DETACHED,
-        # ZEWNĘTRZNE: poza Windows proces w nowej sesji nie dostaje sygnałów grupy procesów, która go uruchomiła, np. Ctrl+C w konsoli albo SIGHUP po zamknięciu terminala (POSIX setsid)
+        # ZEWNĘTRZNE: poza Windows proces w nowej sesji nie dostaje sygnałów grupy procesów, która go uruchomiła, np. Ctrl+C albo SIGHUP po zamknięciu okna konsoli (POSIX setsid)
         start_new_session=sys.platform != "win32",
     )
 
