@@ -11,6 +11,8 @@ from drive.common import (
     Run,
     close_centrum,
     close_settings,
+    current_run,
+    ended_run_shown,
     move,
     open_settings,
     remove,
@@ -19,6 +21,7 @@ from drive.common import (
     start_centrum,
 )
 from drive.uporzadkowanie_intermax import CARD
+from atrapy.pliki_taty import LAST_STARTED_FILE, RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.scope import WORKSTATION_FILE, CentrumFunction
 
 FEATURE = "stanowisko-andrzeja"
@@ -30,7 +33,8 @@ SETTINGS_SECTIONS = ["Foldery", "Kopie INTERMAX", "Zgłoszenia", "Narzędzie", "
 AUTOSTART = "Uruchamiaj Centrum razem z Windows"
 LOAD_FAILURE = "Nie udało się odczytać"
 WORKSTATION_WORDS = ("Stanowisk", "Andrzej")
-TEMPLATES_ASIDE = "Wzorce poza config"
+DAD_COMPUTER_ASIDE = "Pliki komputera taty"
+DAD_RUNS = (LAST_STARTED_FILE, RUN_LOGS_DIRECTORY)
 
 
 def _config(run: Run) -> Path:
@@ -39,6 +43,10 @@ def _config(run: Run) -> Path:
 
 def _templates(run: Run) -> list[Path]:
     return [Path(path) for path in run.fixture["configuration"].values() if Path(path).suffix == ".xlsx"]
+
+
+def _dad_runs(run: Run) -> list[Path]:
+    return [run.log_path.parent / name for name in DAD_RUNS]
 
 
 def _functions(run: Run, name: str) -> object:
@@ -66,12 +74,17 @@ def drive(run: Run, page: Page) -> None:
     run.step(FEATURE, "start-bez-wzorcow")
     close_centrum(run, page)
     (_config(run) / WORKSTATION_FILE).write_text(f"{ANDRZEJ}\n", encoding="utf-8")
-    aside = run.root / TEMPLATES_ASIDE
+    aside = run.root / DAD_COMPUTER_ASIDE
     aside.mkdir()
     for template in _templates(run):
         move(template, aside / template.name)
+    print("  harness: Dad's last Uruchomienie and his Logi Uruchomień are moved aside, as on Andrzej's new laptop", flush=True)
+    for path in _dad_runs(run):
+        if path.exists():
+            move(path, aside / path.name)
     start_centrum(run, "andrzej-start")
     run.check(not any(template.exists() for template in _templates(run)), "Andrzej's Centrum starts without the Wzorce")
+    run.check(not ended_run_shown(current_run(run, "andrzej-uruchomienie")), "it has no Uruchomienie from before its start")
     functions = _functions(run, "andrzej-zakres")
     run.check(functions == ANDRZEJ_FUNCTIONS, f"its Zakres has only Uporządkowanie and Kopie INTERMAX ({functions})")
 
@@ -121,6 +134,9 @@ def drive(run: Run, page: Page) -> None:
     remove(_config(run) / WORKSTATION_FILE)
     for template in _templates(run):
         move(aside / template.name, template)
+    for path in _dad_runs(run):
+        if (aside / path.name).exists():
+            move(aside / path.name, path)
     remove_empty_folder(aside)
     start_centrum(run, "tata-start")
     functions = _functions(run, "tata-zakres")
