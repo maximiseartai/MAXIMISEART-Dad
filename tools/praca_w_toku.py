@@ -51,28 +51,21 @@ odcięte od reszty nazwy przez ``/``, ``-``, ``_`` albo jej brzeg, jak w ``feat/
 spoza ``origin/main`` albo tytuł lub opis PR odwołuje się do #N, albo której PR wskazuje treść zgłoszenia #N. Aktywność
 nie zmienia tej odpowiedzi: nieaktywną linię pracy odpowiedź nazywa z wiekiem jej ruchu, liczonym jak w nakładaniach.
 
-PR samego procesu to otwarty PR autora, który nie jest botem, ze zmienionymi plikami wyłącznie z ``PROCESS_DIRS`` albo
-``PROCESS_FILES`` (narzędzia, skille, CI, hooki, dokumenty agentów, ADR-y, reguły i testy). Koordynator ma naraz
-najwyżej ``PROCESS_LIMIT`` takich PR-ów (#2348, decyzja agenta), więc przy pełnym limicie nowa jednostka samego procesu
-czeka, aż któryś się scali albo zamknie; pracy produktu limit nie dotyczy.
-
-Raport kończy się liniami odpowiedzi w tej kolejności, więc ``tail -3`` (z ``--issue`` ``tail -4``) daje same
-odpowiedzi. Nad nimi stoją szczegóły, jedna linia na linię pracy, od najświeższego ruchu: najpierw każda linia, która
-zajmuje zgłoszenie (z jego powodem), potem aktywne linie, które nakładają się z checkoutem (z plikami, najwyżej
-``SHOWN_FILES``), z ``--wszystkie`` także nieaktywne:
+Raport kończy się liniami odpowiedzi w tej kolejności, więc ``tail -3`` daje same odpowiedzi. Nad nimi stoją
+szczegóły, jedna linia na linię pracy, od najświeższego ruchu: najpierw każda linia, która zajmuje zgłoszenie (z jego
+powodem), potem aktywne linie, które nakładają się z checkoutem (z plikami, najwyżej ``SHOWN_FILES``), z
+``--wszystkie`` także nieaktywne:
 
     - <gałąź albo odłączony HEAD>[ (PR #M)] | <worktree> | bez worktree | tylko na GitHubie | ruch <wiek> temu | <powód albo pliki>
-    PROCES W TOKU | <n> z <limit>[ (PR #A, #B)]; nowa jednostka samego procesu może ruszyć | czeka, aż któryś się scali albo zamknie
     ZGŁOSZENIE #N | zajęte: <linia pracy>[ (<wiek>, nieaktywna)], …; poprawka należy do właściciela tej gałęzi
     ZGŁOSZENIE #N | wolne
     NAKŁADANIA | brak | aktywne prace na twoich plikach: <k> (wyżej)[; nieaktywne: <m>, pokaż: --wszystkie]
     AKTUALIZACJA: potrzebna (…) | niepotrzebna (…) | nieznana (…) | origin/main <sha>[ uwaga o fetch]
 
-Linię ``PROCES W TOKU`` raport ma tylko z ``--issue`` (bez GitHuba: ``nieznane``). Bez ``--issue`` linia
-``ZGŁOSZENIE`` mówi, jak zapytać, a bez plików checkoutu ``NAKŁADANIA`` mówi, że checkout nic nie zmienia. Liczba
-nieaktywnych nakładań liczy tylko commity, bo niezacommitowanych plików nieaktywnych worktree narzędzie nie czyta. Gdy
-GitHub nie odpowiedział, linia odpowiedzi, która go potrzebowała, kończy się ``| bez GitHuba: <powód>``.
-Raport informuje i nie blokuje: kod wyjścia 0, inny tylko przy błędnym użyciu.
+Bez ``--issue`` linia ``ZGŁOSZENIE`` mówi, jak zapytać, a bez plików checkoutu ``NAKŁADANIA`` mówi, że checkout nic
+nie zmienia. Liczba nieaktywnych nakładań liczy tylko commity, bo niezacommitowanych plików nieaktywnych worktree
+narzędzie nie czyta. Gdy GitHub nie odpowiedział, linia odpowiedzi, która go potrzebowała, kończy się
+``| bez GitHuba: <powód>``. Raport informuje i nie blokuje: kod wyjścia 0, inny tylko przy błędnym użyciu.
 
 ``AKTUALIZACJA``: gałąź bieżącego checkoutu aktualizuje się z ``origin/main`` (rebase albo merge), gdy
 ``git merge-tree`` widzi konflikt albo gałąź i ``origin/main`` zmieniają od bazy scalenia ten sam plik. Liczą się
@@ -103,9 +96,6 @@ ISSUE_REFERENCE = re.compile(r"#(\d+)\b")
 PR_REFERENCE = re.compile(r"(?:#|/pull/)(\d+)\b")
 BRANCH_NUMBER = re.compile(r"(?:^|[/_-])(\d{1,5})(?=$|[/_-])")
 ASK_ISSUE = "nie podano; przed startem zgłoszenia N: tools/praca_w_toku.py --issue N"
-PROCESS_LIMIT = 2
-PROCESS_DIRS = ("tools/", ".agents/", ".github/", ".claude/", "docs/agents/", "docs/adr/", "reguly-ast-grep/", "tests/")
-PROCESS_FILES = frozenset({"AGENTS.md", "CODING_STANDARDS.md", "ruff.toml", "sgconfig.yml", ".importlinter"})
 
 
 @dataclass(frozen=True)
@@ -228,10 +218,6 @@ class PullRequest:
     branch: str
     issues: frozenset[int]
     files: frozenset[str]
-    bot: bool
-
-    def process_only(self) -> bool:
-        return not self.bot and bool(self.files) and all(name in PROCESS_FILES or name.startswith(PROCESS_DIRS) for name in self.files)
 
 
 @dataclass(frozen=True)
@@ -472,7 +458,7 @@ def render(
     everything: bool,
     nakladania: bool,
 ) -> list[str]:
-    """Szczegóły, potem odpowiedzi ``PROCES W TOKU`` (z ``issue``), ``ZGŁOSZENIE`` i ``NAKŁADANIA`` (bez ``AKTUALIZACJA``, którą drukuje ``main``)."""
+    """Szczegóły, potem odpowiedzi ``ZGŁOSZENIE`` i ``NAKŁADANIA`` (bez ``AKTUALIZACJA``, którą drukuje ``main``)."""
 
     details: list[str] = []
     answers: list[str] = []
@@ -480,7 +466,6 @@ def render(
         if claimed is None:
             answers.append(f"{_issue_title(issue)} | {ASK_ISSUE}")
         else:
-            answers.append(_process_in_progress(gh))
             ordered = sorted(claimed, key=lambda claim: -claim.line.seen)
             details += [claim.line.detail(now, ", ".join(claim.reasons)) for claim in ordered]
             claimants = ", ".join(claim.line.claimant(now) for claim in ordered)
@@ -498,15 +483,6 @@ def render(
             answer += f"; nieaktywne: {inactive} (wyżej)" if everything else f"; nieaktywne: {inactive}, pokaż: --wszystkie"
         answers.append(f"NAKŁADANIA | {answer}{_without(gh.pulls_skipped)}")
     return details + answers
-
-
-def _process_in_progress(gh: GitHub) -> str:
-    if gh.pulls_skipped is not None:
-        return f"PROCES W TOKU | nieznane{_without(gh.pulls_skipped)}"
-    numbers = sorted(pr.number for pr in gh.pulls if pr.process_only())
-    listed = f" (PR {', '.join(f'#{number}' for number in numbers)})" if numbers else ""
-    verdict = "czeka, aż któryś się scali albo zamknie" if len(numbers) >= PROCESS_LIMIT else "może ruszyć"
-    return f"PROCES W TOKU | {len(numbers)} z {PROCESS_LIMIT}{listed}; nowa jednostka samego procesu {verdict}"
 
 
 def _issue_title(issue: int | None) -> str:
@@ -606,7 +582,7 @@ def _github(root: Path, issue: int | None) -> GitHub:
 
 
 def _pull_requests(root: Path) -> tuple[PullRequest, ...]:
-    fields = "number,headRefName,title,body,files,author"
+    fields = "number,headRefName,title,body,files"
     answer = _gh(root, "pr", "list", "--state", "open", "--limit", "200", "--json", fields)
     try:
         return tuple(
@@ -615,7 +591,6 @@ def _pull_requests(root: Path) -> tuple[PullRequest, ...]:
                 branch=str(pr["headRefName"]),
                 issues=_issues(f"{pr['title']}\n{pr['body'] or ''}"),
                 files=frozenset(str(file["path"]) for file in pr["files"] or ()),
-                bot=bool(pr["author"]["is_bot"]),
             )
             for pr in answer
         )
