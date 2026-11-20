@@ -42,6 +42,7 @@ from rozliczenia.centrum.contract import common as common_contract
 from rozliczenia.centrum.settings.files import FieldPath
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings import messages as settings_messages
+from rozliczenia.centrum.settings.activity_legend import LEGEND_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
@@ -177,6 +178,11 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "settlement_mail_empty_text": [settings_messages.settlement_mail_empty_text],
             "autostart_unsupported": [settings_messages.autostart_unsupported],
             "autostart_unreadable": [settings_messages.autostart_unreadable],
+            "inbox_not_text": [settings_messages.inbox_not_text],
+            "inbox_address": [settings_messages.inbox_address],
+            "inbox_no_address": [settings_messages.inbox_no_address],
+            "inbox_password_text": [settings_messages.inbox_password_text],
+            "inbox_password_empty": [settings_messages.inbox_password_empty],
             "unavailable": [partial(settings_messages.unavailable, RULES_FILE)],
             "unreadable": [partial(settings_messages.unreadable, RULES_FILE)],
             "rule_without_action": [settings_messages.rule_without_action],
@@ -196,6 +202,8 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
                 )
                 for how in get_args(settings_messages.TakenAction)
             ],
+            "component_name_empty": [settings_messages.component_name_empty],
+            "spelling_with_star": [partial(settings_messages.spelling_with_star, "2*wizja")],
             "spelling_taken": [partial(settings_messages.spelling_taken, "wizja", "instalacja ręczna")],
             "component_used_by_rule": [
                 partial(
@@ -213,6 +221,9 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             ],
             "quantity_rules_problem": [
                 partial(settings_messages.quantity_rules_problem, RULES_FILE, "Wartość musi być liczbą całkowitą od 1 do 999.")
+            ],
+            "activity_legend_problem": [
+                partial(settings_messages.activity_legend_problem, LEGEND_FILE, "Brakuje pola „schema_version”.")
             ],
         },
     ),
@@ -500,6 +511,18 @@ def test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu(catalog: str) -> None
     }
 
     assert set(samples) == public, "każda publiczna funkcja katalogu ma próbkę: dopisz ją w message_samples albo zrób funkcję prywatną"
+
+
+@pytest.mark.parametrize("catalog", [catalog for catalog, (module, _) in SENTENCES.items() if module.__name__.endswith("messages")])
+def test_probki_pokrywaja_kazda_publiczna_funkcje_modulu_zdan(catalog: str) -> None:
+    module, sentences = SENTENCES[catalog]
+    public = {
+        name
+        for name, function in inspect.getmembers(module, inspect.isfunction)
+        if function.__module__ == module.__name__ and not name.startswith("_")
+    }
+
+    assert set(sentences) == public, "każde publiczne zdanie modułu zdań ma próbkę: dopisz ją w SENTENCES albo zrób funkcję prywatną"
 
 
 def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
@@ -1233,6 +1256,8 @@ QUOTES_OUTSIDE_UI: Final = {
     "instalacja ręczna": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
     "wizja": "nazwa składnika z Listy Urządzeń w próbce, dana pliku, nie napis UI",
     "raport": "słowo tematu Raportu wykonawcy (SUBJECT_WORD), nie napis UI",
+    "2*wizja": "zapis składnika z gwiazdką w próbce, dana pliku, nie napis UI",
+    "schema_version": "nazwa pola pliku legendy czynności w próbce, nie napis UI",
 }
 
 

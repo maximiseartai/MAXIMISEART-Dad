@@ -9497,6 +9497,18 @@ def test_zapis_tematu_i_tresci_ma_wiersz_historii_a_cofniecie_przywraca_temat(tm
     assert not (app.tool.config / SETTLEMENT_MAIL_FILE).exists()
 
 
+@pytest.mark.parametrize("pusta_lista", [pytest.param(True, id="lista-bez-wykonawcow"), pytest.param(False, id="bez-pliku-listy")])
+def test_podglad_maila_z_rozliczeniem_bez_wykonawcow_na_liscie_wstawia_przykladowa_nazwe(tmp_path: Path, pusta_lista: bool) -> None:
+    app = centrum(tmp_path)
+    if pusta_lista:
+        write_worker_list(app.tool.worker_list, worker_list({}))
+    form = {"subject": "Rozliczenie {wykonawca}, {okres}", "text": "Dzień dobry {wykonawca}"}
+
+    preview = app.client.post("/api/settings/settlement-mail/preview", json=form)
+
+    assert preview.json() == {"subject": "Rozliczenie Jan Kowalski, 6–12 października 2026", "text": "Dzień dobry Jan Kowalski\n"}
+
+
 DIFFERENCES_URL = f"{QUANTITY_RULES_URL}/differences"
 WORKERS_URL = "/api/settings/workers"
 CONTRACT_RULE = "  - {id: t-umowa-u, zakres: kazde, jesli: [{rodzaj: umowa, slowo: u}], to: {rodzaj: wpisz, wpisy: [{kolumna: T, wartosc: 1, razy: raz}]}}\n"

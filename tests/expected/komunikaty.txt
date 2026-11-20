@@ -1531,6 +1531,21 @@ autostart_unsupported [zdanie]
 autostart_unreadable [zdanie]
   Nie da się teraz sprawdzić folderu Autostart. Odśwież okno za chwilę.
 
+inbox_not_text [zdanie]
+  Plik skrzynka-raportow.txt w folderze config nie jest tekstem. Poproś Maksa o nowy plik.
+
+inbox_address [zdanie]
+  Adres skrzynki raportów w pliku skrzynka-raportow.txt jest zły. Poprawia go Maks.
+
+inbox_no_address [zdanie]
+  Skrzynka raportów nie ma jeszcze adresu. Adres wpisuje Maks.
+
+inbox_password_text [zdanie]
+  Hasło aplikacji ma tylko litery i cyfry, bez polskich znaków.
+
+inbox_password_empty [zdanie]
+  Wpisz nowe hasło aplikacji.
+
 unavailable [zdanie]
   Pliku reguly-ilosci.yaml w folderze config nie da się teraz przeczytać. Do tego czasu Centrum bierze jego treść z Wydania.
 
@@ -1567,6 +1582,12 @@ rules_wait_for_release_component #2 [zdanie]
 rules_wait_for_release_component #3 [zdanie]
   Reguły ilości z Wydania mają składnik „instalacja ręczna”, ale ten zapis ma już składnik „instalacja ręczna” z listy, więc Centrum liczy bez niego, a zmiana reguł zapisze się dopiero, gdy go zwolnisz: w sekcji Urządzenia zmień nazwę składnika „instalacja ręczna”: ołówek przy nim, potem „Zapisz”.
 
+component_name_empty [zdanie]
+  Wpisz nazwę składnika tak, jak stoi w URZĄDZENIA.
+
+spelling_with_star [zdanie]
+  Zapis „2*wizja” nie może mieć gwiazdki: w URZĄDZENIA gwiazdka to liczba sztuk, np. 2*fut.
+
 spelling_taken [zdanie]
   Zapis „wizja” ma już składnik „instalacja ręczna”. Jeden zapis należy do jednego składnika.
 
@@ -1578,6 +1599,9 @@ rule_needs_component [zdanie]
 
 quantity_rules_problem [zdanie]
   Plik reguly-ilosci.yaml w folderze config: Wartość musi być liczbą całkowitą od 1 do 999.
+
+activity_legend_problem [zdanie]
+  Plik legenda-czynnosci.yaml w folderze config: Brakuje pola „schema_version”.
 
 === Wysyłka rozliczeń (zdania) (src/rozliczenia/centrum/mailing_messages.py) ===
 
