@@ -320,12 +320,12 @@ def test_zakaz_ruff_dodany_w_pr_to_dowod_ruff_takze_przy_formacie_z_konfiguracji
         pytest.param(
             "from os import path, system\n\n\nclass Powloka:\n    uruchom = staticmethod(path.join)\n\n\nINNA = system\n",
             "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:1 TID251",
-            id="nazwa-spoza-gdzie-w-imporcie-z-nazwą-z-gdzie",
+            id="nazwa-spoza-gdzie-w-imporcie-obok-nazwy-z-gdzie",
         ),
         pytest.param(
             "from os import (\n    path,\n    system,\n)\n\n\nclass Powloka:\n    uruchom = staticmethod(path.join)\n\n\nINNA = system\n",
             "| NIEWYKRYTA | kod/powloka.py: znaleziska poza funkcją z Gdzie: kod/powloka.py:3 TID251",
-            id="nazwa-spoza-gdzie-w-imporcie-w-nawiasach-z-nazwą-z-gdzie",
+            id="nazwa-spoza-gdzie-w-imporcie-w-nawiasach-obok-nazwy-z-gdzie",
         ),
         pytest.param(
             "from os import (\n    path,\n    system,\n)\n\n\nclass Powloka:\n    uruchom = staticmethod(system)\n",
