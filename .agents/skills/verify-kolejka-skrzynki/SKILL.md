@@ -5,6 +5,7 @@ pilnuje:
   - src/rozliczenia/centrum/outbox.py
   - src/rozliczenia/centrum/keyed_box.py
   - src/rozliczenia/centrum/report_box.py
+  - src/rozliczenia/centrum/box_prefix.py
   - src/rozliczenia/centrum/atomic_file.py
   - src/rozliczenia/centrum/app.py
   - src/rozliczenia/centrum/launcher.py
