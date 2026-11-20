@@ -6161,13 +6161,13 @@ def test_zmiana_listy_spoza_centrum_paruje_wpisy_po_wspolnym_loginie_w_kolejnosc
     app = centrum(tmp_path)
     write_worker_list(
         app.tool.worker_list,
-        worker_list({"jan.testowy": "Jan Testowy", "anna.przyklad": "Anna Przykład", "piotr.usuniety": "Piotr Usunięty"}),
+        worker_list({"jan.testowy": "Jan Testowy", "anna.przyklad": "Anna Przykład", "adam.usuniety": "Adam Usunięty"}),
     )
     app.client.get("/api/settings")
     changed = WorkerList.of(
         [
-            WorkerEntry(["anna.nowa", "anna.przyklad"], "Anna Przykład", ()),
             WorkerEntry(["jan.testowy", "jan.drugi"], "Jan Testowy", ()),
+            WorkerEntry(["anna.nowa", "anna.przyklad"], "Anna Przykład", ()),
         ]
     )
     assert isinstance(changed, WorkerList), changed
@@ -6176,9 +6176,9 @@ def test_zmiana_listy_spoza_centrum_paruje_wpisy_po_wspolnym_loginie_w_kolejnosc
     [row] = [row for row in history_rows(app) if row["file"] == WORKERS_FILE]
 
     assert [(change["key"], change["before"] is None, change["after"] is None) for change in row["changes"]] == [
-        ("wykonawcy[anna.przyklad]", False, False),
         ("wykonawcy[jan.testowy]", False, False),
-        ("wykonawcy[piotr.usuniety]", False, True),
+        ("wykonawcy[anna.przyklad]", False, False),
+        ("wykonawcy[adam.usuniety]", False, True),
     ]
 
 
@@ -6246,7 +6246,8 @@ def test_dodanie_wykonawcy_z_loginem_sprawy_login_bez_wykonawcy_zamyka_te_sprawe
     not_moved = AddressesNotMoved(settings_messages.addresses_not_moved(OLD_ADDRESSES_FILE, "ten sam adres stoi dwa razy"))
     address = SenderAddress.of(OBCY)
     assert address is not None
-    waiting = WorkerList.of([], [UnmatchedLogin(Login("obcy.login"), (address,)), not_moved])
+    other = UnmatchedLogin(Login("inny.login"), ())
+    waiting = WorkerList.of([], [UnmatchedLogin(Login("obcy.login"), (address,)), other, not_moved])
     assert isinstance(waiting, WorkerList), waiting
     write_worker_list(app.tool.worker_list, waiting)
     app.client.get("/api/settings")
@@ -6255,7 +6256,8 @@ def test_dodanie_wykonawcy_z_loginem_sprawy_login_bez_wykonawcy_zamyka_te_sprawe
 
     assert added.status_code == 200, added.json()
     assert app.client.get("/api/settings").json()["workers"]["unresolved"] == [
-        {"reason": "adresy_nieprzeniesione", "message": not_moved.sentence}
+        {"reason": "login_bez_wykonawcy", "login": "inny.login", "addresses": []},
+        {"reason": "adresy_nieprzeniesione", "message": not_moved.sentence},
     ]
 
 
@@ -7096,7 +7098,7 @@ def test_haslo_skrzynki_nie_wychodzi_w_odpowiedzi_historii_logach_ani_pamieci_a_
     assert (base64.urlsafe_b64decode(remembered["widziany"]), remembered["dobry"]) == (hashlib.sha256(access).digest(), None)
 
 
-def test_wiersz_hasla_skrzynki_z_cofnieciem_wpisanym_w_historie_recznie_dalej_sie_nie_cofa(tmp_path: Path) -> None:
+def test_wiersz_hasla_skrzynki_z_cofnieciem_wpisanym_w_historie_recznie_nie_ma_cofnij_i_dalej_sie_nie_cofa(tmp_path: Path) -> None:
     client, tool = _inbox_centrum(tmp_path)
     client.get("/api/settings")
     change = client.put("/api/settings/inbox-password", json={"password": NOWE_HASLO}).json()["change"]
@@ -7110,7 +7112,7 @@ def test_wiersz_hasla_skrzynki_z_cofnieciem_wpisanym_w_historie_recznie_dalej_si
     client.stop()
 
     assert (undo.status_code, undo.json()["message"]) == (404, "Tej zmiany nie da się cofnąć.")
-    assert [row["id"] for row in after] == [change]
+    assert [(row["id"], row["undoable"]) for row in after] == [(change, False)]
     assert (tool.config / INBOX_ACCESS_FILE).read_bytes() == access
 
 
