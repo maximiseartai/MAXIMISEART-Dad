@@ -6,11 +6,12 @@ from typing import TYPE_CHECKING, Final, Literal, assert_never, final, get_args
 
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.process_run import RunResult
-from rozliczenia.centrum.box_prefix import BoxPrefix, tagged, titled
+from rozliczenia.centrum.box_prefix import tagged, titled
 from rozliczenia.centrum.catalog import declaration_of
 from rozliczenia.centrum.logs_disk import Found, JournalRead, LeftJournal, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.outbox import ArchiveFile, PeriodThread, Post, Rank, Target
 from rozliczenia.centrum.report_box import Label
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.run_logs_guard import GuardedLogs, GuardedText, exact_logs, exact_text, guard_logs, guard_text, tool_text
 from rozliczenia.centrum.version import short_commit
 from rozliczenia.client_data import WithoutSubclasses, tool

@@ -24,8 +24,9 @@ from typing import cast
 import pytest
 import yaml
 
-from rozliczenia.centrum.box_prefix import BoxPrefix, prefix_of
+from rozliczenia.centrum.box_prefix import prefix_of
 from rozliczenia.centrum.report_box import REPOSITORY as REPORT_BOX
+from rozliczenia.centrum.scope import BoxPrefix
 from tests.fixtures import chwasty, korzenie_pr, opisy_pr, werdykty_szablonu
 from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub, fake_cli

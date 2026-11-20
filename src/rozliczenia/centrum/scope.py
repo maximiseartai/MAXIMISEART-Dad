@@ -7,8 +7,6 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Final
 
-from rozliczenia.centrum.box_prefix import BoxPrefix
-
 
 class CentrumFunction(enum.StrEnum):
     PERIODS = "periods"
@@ -33,6 +31,10 @@ class Always(enum.Enum):
 ALWAYS: Final = Always.PART
 
 Part = CentrumFunction | Always
+
+
+class BoxPrefix(enum.StrEnum):
+    ANDRZEJ = "ANDRZEJ"
 
 
 class Workstation(enum.StrEnum):

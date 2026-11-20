@@ -19,7 +19,7 @@ from typing import Final, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[4] / "src"))
 
-from rozliczenia.centrum.box_prefix import BoxPrefix
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.report_issue import fingerprint_line
 from rozliczenia.centrum.report_box import (

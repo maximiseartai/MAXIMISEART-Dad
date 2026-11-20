@@ -1,12 +1,7 @@
 from __future__ import annotations
 
-import enum
-
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.client_data import Outgoing, tool
-
-
-class BoxPrefix(enum.StrEnum):
-    ANDRZEJ = "ANDRZEJ"
 
 
 def titled(prefix: BoxPrefix | None, title: Outgoing) -> Outgoing:

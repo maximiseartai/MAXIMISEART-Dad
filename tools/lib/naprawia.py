@@ -45,7 +45,7 @@ kodu, przekreślenia (także takich, które zaczęły się przed końcem poprzed
 Odwołania do Skrzynki Zgłoszeń na tej samej liście (``Naprawia MAXIMISEART-AI/MAXIMISEART-Dad-zgloszenia#12``, według
 tych samych reguł, ale z linkami do repozytorium Zgłoszeń zamiast tego) nic nie zamykają, tylko linia podaje, z którego
 Stanowiska przyszła każda sprawa: ``Skrzynka Zgłoszeń zostaje otwarta: #12 ze Stanowiska Andrzeja``, z prefiksu jej
-tytułu (``BOX_PREFIXES``, te same co ``rozliczenia.centrum.box_prefix.BoxPrefix``), bez samego tytułu, bo to dane taty. Sprawa, której ``gh`` nie poda, daje
+tytułu (``BOX_PREFIXES``, te same co ``rozliczenia.centrum.scope.BoxPrefix``), bez samego tytułu, bo to dane taty. Sprawa, której ``gh`` nie poda, daje
 ``UWAGA: nie odczytano #N ze Skrzynki Zgłoszeń``.
 
 Tą samą drogą zamyka issues chwastów (ADR 0031, Q15): linia akapitu albo punkt listy ``Korzeń z #N: R-KOD``

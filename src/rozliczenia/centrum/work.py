@@ -4,9 +4,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from rozliczenia.centrum.box_prefix import BoxPrefix
 from rozliczenia.centrum.clock import Clock
 from rozliczenia.centrum.log import CentrumLog
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.client_data import ForbiddenValues
 
 

@@ -52,8 +52,7 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
 )
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
-from rozliczenia.centrum.box_prefix import BoxPrefix
-from rozliczenia.centrum.scope import SCOPES, Scope, Workstation
+from rozliczenia.centrum.scope import SCOPES, BoxPrefix, Scope, Workstation
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE

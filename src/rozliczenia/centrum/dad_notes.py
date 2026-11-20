@@ -13,11 +13,12 @@ from rozliczenia.centrum.contract import dad_notes as dad_notes_contract
 from rozliczenia.centrum.contract import metrics as metrics_contract
 from rozliczenia.centrum.contract import runs as runs_contract
 from rozliczenia.centrum import refusal
-from rozliczenia.centrum.box_prefix import BoxPrefix, titled
+from rozliczenia.centrum.box_prefix import titled
 from rozliczenia.centrum.case_delivery import logs_line, note_post, shown_logs_line
 from rozliczenia.centrum.dad_cases import NOTE, Case, DadCases
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, Outbox
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.tool_freshness import CommitSource
 from rozliczenia.centrum.version import version_label
 from rozliczenia.centrum.work import CentrumWork

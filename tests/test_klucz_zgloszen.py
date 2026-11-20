@@ -13,8 +13,8 @@ from typing import Any, Final
 
 import pytest
 
-from rozliczenia.centrum.box_prefix import BoxPrefix
 from rozliczenia.centrum.github import NO_ANSWER_KEPT_S
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.keyed_box import (
     ACCEPTED_KEPT_S,
     LIST_LAG_S,

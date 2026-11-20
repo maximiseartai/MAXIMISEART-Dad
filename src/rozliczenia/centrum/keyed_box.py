@@ -62,7 +62,7 @@ from pathlib import Path
 from typing import Final, Literal, TypeVar
 
 from rozliczenia.centrum.atomic_file import replace_atomically
-from rozliczenia.centrum.box_prefix import BoxPrefix, owns
+from rozliczenia.centrum.box_prefix import owns
 from rozliczenia.centrum.github import ANSWER_KEPT_S, NO_ANSWER_KEPT_S, sendable
 from rozliczenia.centrum.report_box import (
     Archive,
@@ -89,6 +89,7 @@ from rozliczenia.centrum.report_box import (
     newest_with_line,
 )
 from rozliczenia.centrum.report_issue import LABEL as REPORT_LABEL
+from rozliczenia.centrum.scope import BoxPrefix
 from rozliczenia.centrum.work import CentrumWork
 
 REPORT_KEY_FILE: Final = "zgloszenia-klucz.txt"
