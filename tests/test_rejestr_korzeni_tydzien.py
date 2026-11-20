@@ -294,10 +294,16 @@ FIRING_PULLS = [
     ("runs", "expected"),
     [
         pytest.param([(1, "a", "2026-10-20T10:00:00Z", [_pytest_job(11, "tests/test_x.py::test_y[parametr]")])], ["| #40 | pytest tests/test_x.py::test_y | #30 W1 r1 |"], id="test-strażnika-z-parametrem-odpalił-w-pr-u-najnowszym-na-gałęzi"),
-        pytest.param([(1, "a", "2026-10-20T10:00:00Z", [_pytest_job(11, "tests/test_x.py::test_inny")])], [], id="inny-test-nie-jest-strażnikiem"),
+        pytest.param([(1, "a", "2026-10-20T10:00:00Z", [_pytest_job(11, "tests/test_x.py::test_inny", "tests/test_x.py::test_y_drugi")])], [], id="inny-test-nie-jest-strażnikiem"),
+        pytest.param(
+            [(1, "a", "2026-10-20T10:00:00Z", [_job(11, "pytest (Python 3.14, Linux, 1/12)", [("Run the planned units", "success", "FAILED tests/test_x.py::test_y - AssertionError")])])],
+            [],
+            id="zielone-zadanie-po-ponowieniu-testu-nie-odpala",
+        ),
         pytest.param([(1, "b", "2026-10-20T10:00:00Z", [_pytest_job(11, "tests/test_z.py::test_z")])], [], id="test-strażnika-scalonego-po-runie-nie-odpalił"),
         pytest.param([(1, "b", "2026-10-23T10:00:00Z", [_pytest_job(11, "tests/test_z.py::test_z")])], ["| #41 | pytest tests/test_z.py::test_z | #32 W1 r1 |"], id="test-strażnika-scalonego-przed-runem-odpalił"),
         pytest.param([(1, "a", "2026-10-26T10:00:00Z", [_pytest_job(11, "tests/test_x.py::test_y")])], [], id="run-spoza-tygodnia"),
+        pytest.param([(1, "a", "2026-10-25T23:00:00Z", [_pytest_job(11, "tests/test_x.py::test_y")])], [], id="run-w-chwili-konca-tygodnia-nalezy-do-nastepnego"),
         pytest.param(
             [(1, "a", "2026-10-20T10:00:00Z", [_pytest_job(11, "tests/test_x.py::test_y")]), (2, "a", "2026-10-21T10:00:00Z", [_pytest_job(21, "tests/test_x.py::test_y")])],
             ["| #40 | pytest tests/test_x.py::test_y | #30 W1 r1 |"],
@@ -314,6 +320,7 @@ FIRING_PULLS = [
             id="kroki-ruff-mypy-i-reguł-bez-id-reguły",
         ),
         pytest.param([(1, "nowa", "2026-10-20T10:00:00Z", [_ruff_mypy_job(11, {"Lint Python code": ""})])], ["| gałąź nowa | ruff | - |"], id="run-gałęzi-bez-pr-u-w-skanie"),
+        pytest.param([(1, "c", "2026-10-18T23:00:00Z", [_ruff_mypy_job(11, {"Lint Python code": ""})])], ["| gałąź c | ruff | - |"], id="run-sprzed-zalozenia-pr-u-gałęzi"),
     ],
 )
 def test_odpalenia_straznikow_to_porazki_ich_krokow_i_testow_w_runach_ci_pr_ow_tygodnia(runs: list[tuple[int, str, str, list[tuple[dict[str, object], str]]]], expected: list[str]) -> None:
@@ -322,7 +329,7 @@ def test_odpalenia_straznikow_to_porazki_ich_krokow_i_testow_w_runach_ci_pr_ow_t
 
 def test_kroki_straznikow_odpalen_to_kroki_ruff_mypy_i_regul_chwastow_zadania_ruff_mypy_w_ci() -> None:
     job = yaml.safe_load(CI.read_text(encoding="utf-8"))["jobs"]["ruff-mypy"]
-    markers = {straznik.Kind.RUFF: "-m ruff check", straznik.Kind.MYPY: "-m mypy", straznik.Kind.AST_GREP: "tests/test_zapadki.py"}
+    markers = {straznik.Kind.RUFF: "-m ruff check", straznik.Kind.MYPY: "-m mypy", straznik.Kind.AST_GREP: "-m pytest"}
     found = {step["name"]: kind for step in job["steps"] for kind, marker in markers.items() if marker in str(step.get("run", ""))}
 
     assert (job["name"], found) == (tydzien.RUFF_MYPY, tydzien.STEP_GUARDS)
@@ -862,13 +869,14 @@ def test_odpalenia_regul_z_checkoutu_licza_pr_y_ktorych_merge_dodaje_linie_z_odp
     assert _rows(text, "Reguły") == ["| zakazane-wywolanie | 1 |", "| Każda reguła | 1 (50%) |"], text
 
 
+RUFF = f"kod/{tydzien.RUFF_CONFIG}"
 BANS = '[lint.flake8-tidy-imports.banned-api]\n"a.b".msg = "nie a.b"\n"a.c".msg = "nie a.b"\n"x.y".msg = "nie x.y"\n\n[lint.per-file-ignores]\n"kod/wlasciciel.py" = ["TID251"]\n'
 
 
 @ONLY_FOUND_BY_NAME_ON_POSIX
 def test_poszerzenie_reguly_to_zmiana_zasiegu_reguly_z_bazy_merge_a_bez_zmiany_komunikatu_i_nowej_reguly(tmp_path: Path) -> None:
     rule = "reguly-ast-grep/zakazane.yml"
-    files = {"sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n", rule: RULE, "ruff.toml": BANS}
+    files = {"sgconfig.yml": "ruleDirs:\n  - reguly-ast-grep\n", rule: RULE, RUFF: BANS}
     github = RegistryGitHub(tmp_path / "gh", [], pulls=[], files=files)
     scoped = RULE.replace('  - "**/*.py"', '  - "kod/**/*.py"')
     worded = scoped.replace("message: bez zakazane()", "message: bez zakazane(), weź dozwolone()")
@@ -882,9 +890,9 @@ def test_poszerzenie_reguly_to_zmiana_zasiegu_reguly_z_bazy_merge_a_bez_zmiany_k
         (8, {rule: widened}, "2026-10-20T11:00:00+00:00"),
         (9, {"reguly-ast-grep/nowa.yml": RULE.replace("zakazane-wywolanie", "nowa-regula")}, "2026-10-20T12:00:00+00:00"),
         (10, {rule: owned}, "2026-10-20T13:00:00+00:00"),
-        (11, {"ruff.toml": named}, "2026-10-21T10:00:00+00:00"),
-        (12, {"ruff.toml": reworded}, "2026-10-21T11:00:00+00:00"),
-        (13, {"ruff.toml": f'{reworded}"kod/drugi.py" = ["TID251"]\n'}, "2026-10-21T12:00:00+00:00"),
+        (11, {RUFF: named}, "2026-10-21T10:00:00+00:00"),
+        (12, {RUFF: reworded}, "2026-10-21T11:00:00+00:00"),
+        (13, {RUFF: f'{reworded}"kod/drugi.py" = ["TID251"]\n'}, "2026-10-21T12:00:00+00:00"),
         (14, {rule: RULE}, "2026-10-27T10:00:00+00:00"),
     ]:
         with pytest.MonkeyPatch.context() as patch:
@@ -904,7 +912,7 @@ def test_poszerzenie_reguly_to_zmiana_zasiegu_reguly_z_bazy_merge_a_bez_zmiany_k
         "| #8 | zakazane-wywolanie | rule |",
         "| #10 | zakazane-wywolanie | ignores |",
         "| #11 | banned-api a.b | nazwy |",
-        "| #13 | banned-api ruff.toml | per-file-ignores |",
+        f"| #13 | banned-api {RUFF} | per-file-ignores |",
     ], text
     assert _rows(text, "Pomiar") == ["| Tydzień 2026-10-19 | 0 | 4 |", "| Od wdrożenia 2026-10-01 | 0 | 5 |"], text
     assert _rows(text, "Historia")[-2:] == ["| 2026-10-12 | 0 | 1 |", "| 2026-10-19 | 0 | 4 |"], text
