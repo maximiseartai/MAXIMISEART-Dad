@@ -897,7 +897,8 @@ class CentrumSettings:
         for row in reversed(rows[: position + 1]):
             for change in row.key_changes():
                 first.setdefault(change.key, change)
-        return not file.diff(file.restore(value, tuple(first.values())), value)
+        restored = file.restore(value, tuple(first.values()))
+        return not isinstance(restored, FieldProblem) and not file.diff(restored, value)
 
     def _row(
         self,

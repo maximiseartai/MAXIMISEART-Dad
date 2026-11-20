@@ -1456,6 +1456,9 @@ worker_unknown [zdanie]
 worker_list_changed [zdanie]
   Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz.
 
+worker_undo_breaks_list [zdanie]
+  Tej zmiany nie da się cofnąć: Wykonawca sprzed zmiany nie pasuje do Listy Wykonawców. Dwóch Wykonawców ma nazwę, która daje ten sam plik Rozliczenia pracownika. Nazwy muszą się różnić. Najpierw zmień albo usuń na liście drugiego Wykonawcę i cofnij jeszcze raz.
+
 worker_suggestions_not_set [zdanie]
   Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń.
 

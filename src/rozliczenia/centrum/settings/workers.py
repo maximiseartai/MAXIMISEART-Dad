@@ -229,7 +229,7 @@ def _unresolved_text(workers: WorkerList) -> str | None:
     return json.dumps([_unresolved_entry(item) for item in workers.unresolved], ensure_ascii=False)
 
 
-def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList:
+def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList | FieldProblem:
     entries = [_entry(worker) for worker in workers.workers]
     unresolved = [_unresolved_entry(item) for item in workers.unresolved]
     for change in changes:
@@ -246,7 +246,9 @@ def restore(workers: WorkerList, changes: tuple[KeyChange, ...]) -> WorkerList:
         if before:
             entries.insert(len(entries) if at is None else at, before[0])
     restored = parse(_dump(entries, unresolved))
-    return workers if isinstance(restored, FieldProblem) else restored
+    if isinstance(restored, FieldProblem):
+        return FieldProblem(None, messages.worker_undo_breaks_list(restored.sentence))
+    return restored
 
 
 def _dump(entries: list[Document], unresolved: list[Document]) -> bytes:
