@@ -163,24 +163,18 @@ class _Unattended:
 _REGISTER: Final = "Rejestr zleceń"
 _CONFIGURATION: Final = ConfigurationFiles.default()
 _PRICING_FLAG: Final = "--z-przekazaniem"
-"""Przełącznik trybu Wyceny w efenix procesu z trybami: z nim „z Przekazaniem”, bez niego tryb domyślny wpisu."""
 
 
 @dataclass(frozen=True)
 class _Flag:
-    """Flaga potrzeby wejścia procesu; ``default`` ``None``: flaga wymagana, ``path``: wartość to ścieżka."""
-
     option: str
     help: str
     default: Path | None = None
     path: bool = True
     optional: bool = False
-    """Flaga bez wartości domyślnej, której można nie podać: wejście jest wtedy bez tej potrzeby."""
 
 
 def _flag(need: Need, kind: ProcessKind[Any, Any]) -> _Flag | None:
-    """Flaga potrzeby ``need``; ``None``: potrzeba bez flagi, bo Skrypt dla maszyn liczy nią z Wydania (``_start``)."""
-
     match need:
         case "quantity_rules" | "activity_legend":
             return None
@@ -263,14 +257,10 @@ def _start(kind: ProcessKind[Any, Any], args: argparse.Namespace, parser: argpar
 
 
 def ustawienia_z_wydania(workers: WorkerList | None) -> SettingsAtStart:
-    """Ustawienia ze startu z Wydania z Listą Wykonawców ``workers``; biorą je też wyrocznia i testy."""
-
     return SettingsAtStart(snapshot=None, workers=workers, quantity_rules=DEFAULT_QUANTITY_RULES, activity_legend=DEFAULT_ACTIVITY_LEGEND, warnings=())
 
 
 def _workers(path: Path, parser: argparse.ArgumentParser) -> WorkerList:
-    """Lista Wykonawców z pliku ``path`` regułą właściciela Ustawień Centrum; zły plik kończy Skrypt kodem 1."""
-
     data = settings_bytes(path)
     if isinstance(data, OSError):
         parser.error(f"--wykonawcy: nie można teraz odczytać pliku {path.name}")
@@ -289,7 +279,6 @@ def _parts(kind: ProcessKind[Any, Any], args: argparse.Namespace) -> HostParts:
         # Bez tempa ludzkiego: Skrypt dla maszyn biegnie tylko na Atrapie efenix (ADR 0024), w nowym Chromium bez
         # sesji taty.
         efenix = atrapa_opening(args.efenix_window)
-    # Maile z folderu .eml, nigdy z Gmaila, i pamięć własnych wpisów tylko na czas tego Uruchomienia.
     inbox = "worker_report_inbox" in kind.needs
     reports = ReportEnteringParts(FolderInbox(args.worker_report_inbox), ReportStateInMemory()) if inbox else None
     return HostParts(efenix=efenix, reports=reports)
