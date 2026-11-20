@@ -47,14 +47,14 @@ pytest_plugins = ["tests.fixtures.eksplorator_w_procesie", "tests.fixtures.stan_
 
 
 def pytest_configure(config: pytest.Config) -> None:
-    """Sesja z więcej niż jednym workerem xdist na Macu przenosi się na box boat (``tools/lib/na_boxie.py``); worker
-    xdist dziedziczy decyzję kontrolera."""
+    """Sesja z więcej niż jednym workerem xdist na Macu nie rusza, tylko odmawia z poleceniem ``boatbox``
+    (``tools/lib/na_boxie.py``); worker xdist ma decyzję kontrolera."""
 
     from tests.fixtures.potomne import ctrl_c_reaches_children
 
     ctrl_c_reaches_children()
     if not hasattr(config, "workerinput"):
-        na_boxie.przenies_pytest(config)
+        na_boxie.odmowa_pytest(config)
 
 
 def pytest_itemcollected(item: pytest.Item) -> None:

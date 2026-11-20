@@ -200,7 +200,7 @@ def main(argv: list[str] | None = None, *, root: Path = ROOT) -> int:
         print(refusal)
         return 2
     if jobs & {"pytest", "mutations"}:
-        na_boxie.przenies()
+        na_boxie.odmowa()
     if args.kazdy_commit:
         return _check_every_commit(root, args.kazdy_commit, jobs, fail_fast=args.do_pierwszego_bledu)
     complete = jobs == known

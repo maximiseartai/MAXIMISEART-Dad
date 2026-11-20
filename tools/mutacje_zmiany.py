@@ -1220,7 +1220,7 @@ def main(argv: list[str] | None = None, *, gate: silnik_mutacji.Gate = silnik_mu
     if refusal := ciezkie_ci.refusal({"change-mutations"}, args.odtwarzam, root=ROOT):
         print(refusal)
         return 2
-    na_boxie.przenies()
+    na_boxie.odmowa()
     if args.pokrycie_czesc is not None:
         return _shard(args)
     outcome = Outcome()

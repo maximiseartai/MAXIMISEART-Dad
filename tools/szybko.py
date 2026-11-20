@@ -404,7 +404,7 @@ def main(argv: list[str] | None = None) -> int:
         "--napraw", action="store_true", help="Gdy padł tylko rozjazd modelu, przelicza skróty skilli, których modelu zmiana nie dotyka (opis wyżej)."
     )
     args = parser.parse_args(argv)
-    na_boxie.przenies()
+    na_boxie.odmowa()
     try:
         changed = changed_since(ROOT, args.baza)
     except subprocess.CalledProcessError:

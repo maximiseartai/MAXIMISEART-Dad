@@ -119,7 +119,7 @@ def failed_tests(copy: Path, tests: Sequence[str], what: str) -> list[str]:
 
     workers = str(czasy_ci.workery_lokalne())
     with tempfile.TemporaryDirectory() as folder:
-        on_box = na_boxie.przeniesc()
+        on_box = na_boxie.na_macu()
         junit, limit = (Path(folder, JUNIT), MERGE_TEST_TIMEOUT_S + na_boxie.START_S) if on_box else (Path(folder, "junit.xml"), MERGE_TEST_TIMEOUT_S)
         command = [sys.executable, "-m", "pytest", "-q", "-rfE", "-n", "auto", *wyniki_testow.zapis(Path(JUNIT) if on_box else junit), *tests]
         try:

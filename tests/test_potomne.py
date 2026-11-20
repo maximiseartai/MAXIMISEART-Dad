@@ -630,7 +630,6 @@ FAST_GIT = frozenset(
         "blame",
         "branch",
         "cat-file",
-        "check-ignore",
         "commit-tree",
         "config",
         "diff",

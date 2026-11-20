@@ -72,9 +72,9 @@ NARZEDZIE = "MAXIMISEART_NARZEDZIE"
 dostaje go każdy jego potomek z dziedziczonym środowiskiem, także z jawnym ``env`` zbudowanym z ``os.environ``, a jawna
 lista dozwolonych zmiennych (wyrocznia Claude, #956) go nie ma, bo ``run`` nie zmienia ``env`` wołającego."""
 POTOMEK_NARZEDZIA = os.environ.get(NARZEDZIE, str(os.getpid())) != str(os.getpid())
-"""Czy ten proces uruchomiło, wprost albo przez inne procesy, inne narzędzie repo (``NARZEDZIE`` z cudzym PID-em).
-``tools/lib/na_boxie.py`` nie przenosi wtedy procesu na box, bo przeniesienie zgubiłoby środowisko, kopię i pliki
-wołającego (W1 r2 #2403)."""
+"""Czy ten proces uruchomiło, wprost albo przez inne procesy, inne narzędzie repo (``NARZEDZIE`` z cudzym PID-em):
+ciężkie wejście z ``tools/lib/na_boxie.py`` nie odmawia wtedy na Macu, bo jest częścią pracy wołającego (testu w sesji
+pytest albo narzędzia), które samo biegnie tam, gdzie powinno."""
 os.environ[NARZEDZIE] = str(os.getpid())
 
 
