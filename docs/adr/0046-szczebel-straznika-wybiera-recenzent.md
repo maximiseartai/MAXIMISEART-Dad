@@ -65,7 +65,7 @@ Decyzje autora tego PR:
 
 ## Zmienia te zdania ADR 0031
 
-- „Szczebel i dowód”, zdanie „Zapadka (d) stoi między (c) a (e) […]: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają”: pierwszeństwo szczebli daje piramida pola `Mechanizm:`, w której reguła ast-grep (szczebel `lint`) stoi przed testem, więc działająca reguła (d) idzie przed testem (c); (e) zostaje dozwolone tylko wtedy, gdy (a)–(d) nie działają. Litery (a)–(e) pola `Szczebel:` i linie „Wyżej nie, bo:” zostają, jak dziś.
+- „Szczebel i dowód”, zdanie „Zapadka (d) stoi między (c) a (e) […]: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają”: pierwszeństwo szczebli daje piramida pola `Mechanizm:`, w której reguła ast-grep (szczebel `lint`) stoi przed testem, więc działająca reguła (d) idzie przed testem (c); (e) zostaje dozwolone tylko wtedy, gdy (a)–(d) nie działają. Litery (a)–(e) pola `Szczebel:` zostają, a „Wyżej nie, bo:” ma linię na każdy szczebel przed wpisanym w tym pierwszeństwie, w kolejności liter, więc blok (c) mówi też, czemu nie (d), a blok (d) nie mówi o (c) (bramka korzenia od #2460).
 
 ## Zmienia te zdania ADR 0036
 
