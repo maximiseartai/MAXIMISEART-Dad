@@ -13,8 +13,6 @@ import yaml
 
 from rozliczenia import collective_file, quantity_check, tool_files
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
-from rozliczenia.centrum.outbox import PeriodThread, Post
-from rozliczenia.client_data import Outgoing, tool
 from rozliczenia.collective_layout import QUANTITY_COLUMNS, QUANTITY_LETTERS
 from rozliczenia.collective_preparation import PreparationInputs, prepare_collective_file
 from rozliczenia.dad_files import DadFiles
@@ -772,16 +770,12 @@ def test_tekst_komorki_w_tresci_kontroli_to_kod_z_koncem_linii_jako_znakiem_i_kr
         assert f"\n### URZĄDZENIA {shown} (wiersze: 1)\n" in text, shown
 
 
-def _unframed(_number: int, _count: int, text: Outgoing) -> Outgoing:
-    return text
+def test_kazdy_wiersz_tabeli_roznic_kontroli_ilosci_to_osobny_blok_ktory_kolejka_moze_przeniesc_do_nastepnej_czesci() -> None:
+    rows = (OrderFacts(OrderContent.of("pr", "obcy", "", WEDNESDAY_NOON.replace(hour=hour)), {}) for hour in (12, 15))
 
+    blocks = quantity_check.blocks(_checked(*rows), commit=None, run_id="r")
 
-def test_dluga_kontrola_ilosci_idzie_do_kolejki_w_czesciach_bez_przecietej_linii() -> None:
-    blocks = quantity_check.blocks(_checked(*(_row(f"obcy{number}") for number in range(600))), commit=None, run_id="r")
-    thread = PeriodThread(label="kontrola-ilosci", line=tool("- Kontrola ilości okresu"), closed="new_issue", title=tool("Kontrola ilości"))
-
-    post = Post.of(thread, period=None, run_id=tool("r"), blocks=[tool(block) for block in blocks], frame=_unframed)
-
-    assert len(post.parts) > 1
-    assert "".join(post.parts) == "".join(blocks)
-    assert all(part.endswith("\n") for part in post.parts)
+    assert [block for block in blocks if block.startswith("| V |")] == [
+        "| V | 1 | 0 | (puste) | `pr` | śr 12 | 1 |\n",
+        "| V | 1 | 0 | (puste) | `pr` | śr 15 | 1 |\n",
+    ]
