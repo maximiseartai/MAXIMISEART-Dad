@@ -2215,10 +2215,13 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}re.match(r"#\\s*mypy:", linia) is not None\n', [5]),
     ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia[:7] == "# mypy:"\n', [5]),
     ("dyrektywa-mypy-recznie", 'PROBKI = {"w kolumnie 0": "# mypy: ignore-errors\\n"}\n', []),
+    ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith(("# mypy:", "#mypy:"))\n', [5, 5]),
     ("dyrektywa-mypy-recznie", f'{_DYREKTYWA}linia.startswith("# noqa:")\n', []),
+    ("dyrektywa-mypy-recznie", 'def test_probka(tekst: str) -> None:\n    assert "# mypy: ignore-errors" in tekst\n', []),
     ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=False)\n', [3]),
     ("follow-symlinks-tylko-posix", f'{_OS}os.chown("plik", 0, 0, follow_symlinks=False)\n', [3]),
     ("follow-symlinks-tylko-posix", f'{_OS}os.link("a", "b", follow_symlinks=False)\n', [3]),
+    ("follow-symlinks-tylko-posix", f'{_OS}os.access("plik", os.R_OK, follow_symlinks=False)\n', [3]),
     ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1))\n', []),
     ("follow-symlinks-tylko-posix", f'{_OS}os.utime("plik", (1, 1), follow_symlinks=True)\n', []),
     ("follow-symlinks-tylko-posix", f'{_OS}os.chmod("plik", 0o644, follow_symlinks=False)\n', []),
@@ -2261,6 +2264,23 @@ def test_regula_powrotu_zglasza_postac_z_powrotu_a_nie_postac_po_poprawce(
     _probki_w_zakresie(tmp_path, rule, {"probka": text})
 
     assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(line, rule) for line in lines]
+
+
+@needs_ast_grep
+@pytest.mark.parametrize(
+    "porzadek",
+    [
+        pytest.param("{field: UPDATED_AT, direction: DESC}", id="field-przed-direction"),
+        pytest.param("{direction: DESC, field: UPDATED_AT}", id="direction-przed-field"),
+        pytest.param("{\n  direction: DESC\n  field: UPDATED_AT\n}", id="pola-w-osobnych-liniach"),
+    ],
+)
+def test_kursor_po_zmiennym_porzadku_nie_zalezy_od_kolejnosci_pol_porzadku(tmp_path: Path, porzadek: str) -> None:
+    base = _empty_base(tmp_path)
+    zapytanie = f'{_KURSOR}"""\npullRequests(first: 20, after: $cursor, orderBy: {porzadek}) {{ nodes {{ number }} }}\n"""\n'
+    _probki_w_zakresie(tmp_path, "kursor-po-zmiennym-porzadku", {"probka": zapytanie})
+
+    assert [(finding.line, finding.rule) for finding in syntax_rules(tmp_path, base)] == [(1, "kursor-po-zmiennym-porzadku")]
 
 
 # Znane luki reguł powrotów (tests/fixtures/znane_luki.py): reguła → „klasa: postać” → dodany plik w zakresie

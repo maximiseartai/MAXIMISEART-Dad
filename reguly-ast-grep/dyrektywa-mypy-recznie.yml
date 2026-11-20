@@ -21,6 +21,22 @@ rule:
           kind: call
           has:
             field: function
-            regex: '(startswith|endswith|match|search|fullmatch|compile|findall|finditer|split|sub|find|index)$'
+            matches: dopasowanie-tekstu
+    - inside:
+        kind: tuple
+        inside:
+          kind: argument_list
+          inside:
+            kind: call
+            has:
+              field: function
+              matches: dopasowanie-tekstu
     - inside:
         kind: comparison_operator
+        not:
+          inside:
+            kind: assert_statement
+            stopBy: end
+utils:
+  dopasowanie-tekstu:
+    regex: '(startswith|endswith|match|search|fullmatch|compile|findall|finditer|split|sub|find|index)$'

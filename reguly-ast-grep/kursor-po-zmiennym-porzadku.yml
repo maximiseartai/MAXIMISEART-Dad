@@ -15,4 +15,4 @@ rule:
   kind: string
   all:
     - regex: 'after:\s*\$'
-    - regex: '(orderBy:\s*\{\s*field:\s*UPDATED_AT|sort:updated)'
+    - regex: '(orderBy:\s*\{[^}]*\bfield:\s*UPDATED_AT|sort:updated)'

@@ -2,7 +2,7 @@ id: follow-symlinks-tylko-posix
 language: python
 severity: error
 message: >-
-  follow_symlinks=False w os.utime/os.chown/os.chflags/os.link nie istnieje na Windows (NotImplementedError); pomiń
+  follow_symlinks=False w os.access/os.utime/os.chown/os.chflags/os.link nie istnieje na Windows (NotImplementedError); pomiń
   argument albo sprawdź os.supports_follow_symlinks
 files:
   - "**/*.py"
@@ -14,7 +14,7 @@ rule:
   all:
     - has:
         field: function
-        regex: '^os\.(utime|chown|chflags|link|setxattr|getxattr|listxattr|removexattr)$'
+        regex: '^os\.(access|utime|chown|chflags|link|setxattr|getxattr|listxattr|removexattr)$'
     - has:
         field: arguments
         has:

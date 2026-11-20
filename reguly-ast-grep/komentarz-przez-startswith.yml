@@ -3,7 +3,7 @@ language: python
 severity: error
 message: >-
   linia zaczynająca się od # po strip() nie musi być komentarzem (linia napisu wielowierszowego); komentarz w źródle
-  Pythona rozpoznaje tokenize (tokenize.COMMENT)
+  Pythona rozpoznaje tokenize (tokenize.COMMENT), a linię pliku innego formatu jego parser
 files:
   - tools/**/*.py
   - .agents/skills/*/scripts/**/*.py
