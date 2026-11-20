@@ -13,19 +13,13 @@ WARSAW = ZoneInfo("Europe/Warsaw")
 
 
 def week_of(moment: datetime) -> date:
-    """Poniedziałek tygodnia czasu polskiego, do którego należy chwila ``moment``."""
-
     day = moment.astimezone(WARSAW).date()
     return day - timedelta(days=day.weekday())
 
 
 def last_full_week(now: datetime) -> date:
-    """Poniedziałek ostatniego pełnego tygodnia czasu polskiego przed chwilą ``now``."""
-
     return week_of(now) - timedelta(days=7)
 
 
 def midnight(day: date) -> datetime:
-    """Początek dnia ``day`` czasu polskiego, a dla poniedziałku początek jego tygodnia."""
-
     return datetime.combine(day, time(), WARSAW)

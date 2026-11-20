@@ -36,7 +36,6 @@ KROKI = "Bring the model in line"
 ROZJAZD = "ROZJAZD MODELU Z KODEM"
 # Nagłówek sekcji ``SKILL.md`` skilla z tabelą, która wiąże model z kodem.
 TABELA = "## Does the change touch it?"
-# Katalogi kodu, w których ``bez_klucza`` szuka nazwy z tabeli z klasą albo modułem z przodu.
 KOD = ("src", "tools")
 # Długość skrótu w znakach szesnastkowych SHA-256: dość, by przypadkiem nie trafić tego samego skrótu.
 DLUGOSC = 16
@@ -49,9 +48,6 @@ def skille(root: Path) -> list[Path]:
 
 
 def rozjazd(skill: Path, root: Path) -> str | None:
-    """Czym kod opisany modelem skilla ``skill`` różni się od skrótów z jego ``DEFINICJE``, z krokami naprawy; ``None``,
-    gdy niczym."""
-
     found = _found(skill, root)
     if found is None:
         return None
@@ -118,9 +114,6 @@ def _whole_file(source: str | None, tree: ast.Module | None) -> str | None:
 
 
 def przesun(skill: Path, root: Path) -> list[str]:
-    """Zapisuje w ``DEFINICJE`` skilla skróty kodu z ``root`` i zwraca zmienione definicje; definicja, której nie ma, albo
-    plik definicji w innej postaci to ``ValueError`` bez zapisu."""
-
     recorded = definicje(skill)
     now = skroty(recorded, root)
     missing = [f"{path} {name}" for path, names in now.items() for name, digest in names.items() if digest is None]
@@ -230,8 +223,6 @@ def bez_klucza(skill: Path, root: Path) -> list[str]:
 
 
 def _keyed(names: dict[str, str], name: str) -> bool:
-    """Czy ``name`` albo zakres, w którym stoi (klasa metody), ma klucz w ``names``: skrót zakresu obejmuje ``name``."""
-
     parts = name.split(".")
     return any(".".join(parts[:end]) in names for end in range(1, len(parts) + 1))
 
@@ -258,8 +249,6 @@ def _table_spans(text: str) -> list[str]:
 
 
 def _in_module(path: str, name: str) -> list[str]:
-    """Ścieżki od modułu, które ``name`` może znaczyć w pliku ``path``: sama nazwa i bez członu modułu z przodu."""
-
     head, _, rest = name.partition(".")
     return [name, rest] if head == _module(path) and rest else [name]
 
@@ -293,15 +282,11 @@ def _tree(source: str | None) -> ast.Module | None:
 
 
 def _definition(tree: ast.Module | None, name: str) -> str | None:
-    """Skrót definicji ``name`` (ścieżka po kropkach od modułu) w ``tree``; ``None``, gdy jej nie ma."""
-
     nodes = _nodes(tree, name)
     return _digest("\n".join(_canonical(node) for node in nodes)) if nodes else None
 
 
 def _nodes(tree: ast.Module | None, name: str) -> list[ast.stmt]:
-    """Wiązania definicji ``name`` (ścieżka po kropkach od modułu) w ``tree``; pusta lista, gdy jej nie ma."""
-
     if tree is None:
         return []
     scopes: list[ast.AST] = [tree]
@@ -313,8 +298,6 @@ def _nodes(tree: ast.Module | None, name: str) -> list[ast.stmt]:
 
 
 def _bindings(scope: ast.AST, name: str) -> list[ast.stmt]:
-    """Funkcje, klasy i przypisania ``name`` w zakresie ``scope``, w kolejności kodu."""
-
     return [node for node in _statements(scope) if _binds(node, name)]
 
 

@@ -33,8 +33,6 @@ class Test:
 
 
 def zapis(plik: Path) -> tuple[str, ...]:
-    """Argumenty pytest, z którymi zapisuje junit ``plik`` w postaci, którą czyta ``testy``."""
-
     return (f"--junitxml={plik}", "-o", "junit_family=xunit1")
 
 

@@ -70,8 +70,6 @@ def refusal(
     env: Mapping[str, str] = os.environ,
     gh: Gh = _gh,
 ) -> str | None:
-    """Powód odmowy startu ciężkich zadań z ``jobs`` albo ``None``, gdy mogą biec."""
-
     heavy = sorted(set(jobs) & HEAVY.keys())
     if not heavy or env.get("GITHUB_ACTIONS") == "true" or env.get(FROM_MERGED_PRS) == "1":
         return None
@@ -103,8 +101,6 @@ def mutations_refusal(
     env: Mapping[str, str] = os.environ,
     gh: Gh = _gh,
 ) -> str | None:
-    """Powód odmowy startu ``count`` mutacji ``tools/mutacje.py`` albo ``None``, gdy mogą biec."""
-
     if count <= TARGETED:
         return None
     refused = refusal({"change-mutations"}, reproduces, root=root, env=env, gh=gh)
