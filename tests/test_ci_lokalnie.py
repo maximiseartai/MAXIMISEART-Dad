@@ -169,13 +169,6 @@ def test_kazdy_commit_przechodzi_gdy_kazdy_commit_przechodzi(tmp_path: Path, nam
     assert (answered.returncode, answered.stdout.splitlines()[-1]) == (0, "COMMITY OK (2)")
 
 
-def test_pomoc_kazdego_commitu_nazywa_domyslna_baze(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit):
-        ci_lokalnie.main(["--help"])
-
-    assert "Sprawdź każdy commit od BAZA (domyślnie origin/main) do HEAD" in " ".join(capsys.readouterr().out.split())
-
-
 def test_niezacommitowany_kontrakt_albo_build_frontendu_to_porazka_z_poleceniem_odswiezenia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

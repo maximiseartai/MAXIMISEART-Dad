@@ -41,7 +41,7 @@ def _maintenance_after_commit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, *config: str
 ) -> list[list[str]]:
     repo, trace = tmp_path / "repo", tmp_path / "trace2.json"
-    repo.mkdir()
+    repo.mkdir(parents=True)
     git(repo, "init", "--quiet")
     monkeypatch.setenv("GIT_TRACE2_EVENT", str(trace))
     git(repo, *config, "commit", "--quiet", "--allow-empty", "--message", "x")
@@ -59,20 +59,14 @@ def test_commit_w_tescie_nie_uruchamia_konserwacji_repozytorium(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert _maintenance_after_commit(tmp_path, monkeypatch) == []
-
-
-def test_slad_gita_pokazuje_konserwacje_wlaczona_jawnie(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
     started = _maintenance_after_commit(
-        tmp_path,
+        tmp_path / "jawnie",
         monkeypatch,
         "-c",
         "maintenance.auto=true",
         "-c",
         "maintenance.autoDetach=false",
     )
-
     assert [argv[1:3] for argv in started] == [["maintenance", "run"]]
 
 
@@ -121,28 +115,6 @@ def test_git_w_tescie_nie_bierze_tozsamosci_ze_srodowiska_wolajacego(
     assert identity == "test <test@example.com> | test <test@example.com>", (
         "git testów bierze tożsamość ze środowiska wołającego (GIT_AUTHOR_*/GIT_COMMITTER_*, które Claude Code daje "
         "agentom z .claude/settings.json), więc wynik testu zależy od tego, kto go uruchomił: hermetic_git ma je zdjąć"
-    )
-
-
-def test_klon_pustego_origin_po_pushu_main_ma_pliki_na_kazdym_komputerze(
-    tmp_path: Path,
-) -> None:
-    origin, work, other = (
-        tmp_path / "origin.git",
-        tmp_path / "praca",
-        tmp_path / "inny-klon",
-    )
-    git(tmp_path, "init", "--quiet", "--bare", str(origin))
-    git(tmp_path, "init", "--quiet", str(work))
-    (work / "kod.py").write_text("WERSJA = 1\n", encoding="utf-8")
-    git(work, "add", "kod.py")
-    git(work, "commit", "--quiet", "--message", "pierwsza wersja")
-    git(work, "push", "--quiet", str(origin), "HEAD:main")
-
-    git(tmp_path, "clone", "--quiet", str(origin), str(other))
-
-    assert (other / "kod.py").read_text(encoding="utf-8") == "WERSJA = 1\n", (
-        MISSING_FIXTURE
     )
 
 

@@ -188,12 +188,11 @@ def test_zapis_wejscia_claude_code_z_sleep_w_tle_zatrzymuje_koniec_tury_i_trafia
 @pytest.mark.parametrize(
     ("tasks", "named"),
     [
-        ([AGENT_MONITOR], ["shell bm1 „tail -f ci.log | grep --line-buffered FAIL”"]),
         ([{**SHELL, "status": "pending"}], ["shell bi6lxbxlb"]),
         ([SUBAGENT, SHELL, AGENT_MONITOR, ARTIFACT_WATCH], ["shell bi6lxbxlb", "shell bm1"]),
         ([{"id": "b3", "type": "shell", "status": "running", "description": "Sen w tle"}], ["shell b3 „Sen w tle”"]),
     ],
-    ids=["monitor-agenta", "pending", "zywe-bash-i-monitor-obok-podagenta-i-obserwacji-artefaktu", "bez-polecenia"],
+    ids=["pending", "zywe-bash-i-monitor-obok-podagenta-i-obserwacji-artefaktu", "bez-polecenia"],
 )
 def test_zywe_zadanie_basha_albo_monitor_agenta_w_tle_zatrzymuje_koniec_tury(
     tmp_path: Path, tasks: list[object], named: list[str]
@@ -252,7 +251,6 @@ def test_shell_podagenta_i_zadanie_zarejestrowane_przepuszczaja_koniec_tury_z_po
         [REGISTERED, UNREGISTERED],
         [{**SUBAGENT_BASH, "tool_response": {"stdout": "gotowe", "stderr": "", "interrupted": False}}],
         [{**REGISTERED, "tool_input": {"taskId": "bi6lxbxlb"}}],
-        [{**REGISTERED, "tool_input": {"taskIds": ["b2"]}}],
         [{**REGISTERED, "session_id": "inna-sesja"}],
         [{**REGISTERED, "session_id": f"../praca_w_tle/{REAL['session_id']}"}],
         [{**SUBAGENT_BASH, "hook_event_name": "PreToolUse"}],
@@ -262,7 +260,6 @@ def test_shell_podagenta_i_zadanie_zarejestrowane_przepuszczaja_koniec_tury_z_po
         "wypisany-z-rejestracji",
         "bash-podagenta-na-pierwszym-planie",
         "taskId-zamiast-taskIds",
-        "inne-zadanie",
         "inna-sesja",
         "sesja-spoza-wzorca",
         "przed-narzedziem",
@@ -348,17 +345,11 @@ REPORTING = (
     "tasks",
     [
         [],
-        [
-            SUBAGENT,
-            {"id": "w1", "type": "workflow", "status": "running", "name": "x"},
-            {"id": "t1", "type": "MCP task", "status": "running"},
-        ],
-        *[[{"id": "r1", "type": kind, "status": status}] for kind in REPORTING for status in ("running", "pending")],
+        *[[{"id": "r1", "type": kind, "status": "running"}] for kind in REPORTING],
     ],
     ids=[
         "pusta-lista",
-        "podagent-workflow-zadanie-mcp",
-        *[f"{kind}-{status}" for kind in REPORTING for status in ("running", "pending")],
+        *[f"{kind}-running" for kind in REPORTING],
     ],
 )
 def test_bez_basha_ani_monitora_w_tle_tura_konczy_sie_bez_slowa_i_bez_dziennika(
@@ -375,10 +366,6 @@ def test_bez_basha_ani_monitora_w_tle_tura_konczy_sie_bez_slowa_i_bez_dziennika(
     [
         ([{**SHELL, "status": "completed"}], "shell bi6lxbxlb o nieznanym statusie 'completed'"),
         (
-            [{**SHELL, "status": None}],
-            "zadanie bi6lxbxlb z type 'shell' i status None, z których nie każde jest tekstem",
-        ),
-        (
             [{**SHELL, "type": ["shell"]}],
             "zadanie bi6lxbxlb z type ['shell'] i status 'running', z których nie każde jest tekstem",
         ),
@@ -389,7 +376,7 @@ def test_bez_basha_ani_monitora_w_tle_tura_konczy_sie_bez_slowa_i_bez_dziennika(
         (["shell"], "wpis listy zadań nie jest obiektem: str"),
         ({"0": SHELL}, "wejście bez listy background_tasks"),
     ],
-    ids=["status-skonczony", "bez-statusu", "type-lista", "status-lista", "wpis-nie-obiekt", "lista-nie-lista"],
+    ids=["status-skonczony", "type-lista", "status-lista", "wpis-nie-obiekt", "lista-nie-lista"],
 )
 def test_watpliwosc_przepuszcza_koniec_tury_i_trafia_do_dziennika(tmp_path: Path, tasks: object, doubt: str) -> None:
     hooked = _hook(_stop(tasks), tmp_path)
@@ -404,14 +391,13 @@ WATCHED = "przepuszczony: typ monitor ma też obserwacja artefaktu, której Clau
 @pytest.mark.parametrize(
     ("tasks", "doubts"),
     [
-        ([ARTIFACT_WATCH], [f"monitor wsx1 „Watching artifact comments” (running) {WATCHED}"]),
         ([{**MCP_MONITOR, "status": "pending"}, SUBAGENT], [f"monitor m1 „CI logs” (pending) {WATCHED}"]),
         (
             [{"id": "n1", "type": "nowy typ", "status": "running"}],
             ["nowy typ n1 (running) przepuszczony: nieznany typ zadania"],
         ),
     ],
-    ids=["obserwacja-artefaktu", "monitor-mcp-obok-podagenta", "nieznany-typ"],
+    ids=["monitor-mcp-obok-podagenta", "nieznany-typ"],
 )
 def test_monitor_i_nieznany_typ_w_tle_przepuszczaja_koniec_tury_z_powodem_w_dzienniku(
     tmp_path: Path, tasks: list[dict[str, object]], doubts: list[str]

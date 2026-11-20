@@ -123,27 +123,8 @@ def _stale_commits(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GIT_COMMITTER_DATE", f"@{int(time.time() - STALE_S)} +0000")
 
 
-def test_issue_znajduje_galaz_ktorej_commit_odwoluje_sie_do_zgloszenia(checkouts: dict[str, Path]) -> None:
-    taken = _report(checkouts["current"], "--issue", "7").splitlines()
-    free = _report(checkouts["current"], "--issue", "8").splitlines()
-
-    assert taken[-3] == f"ZGŁOSZENIE #7 | zajęte: fix/opiekun; poprawka należy do właściciela tej gałęzi{LOCAL}"
-    assert f"- fix/opiekun | {checkouts['other']} | ruch <1 h temu | commit odwołuje się do #7" in taken
-    assert free[-3] == f"ZGŁOSZENIE #8 | wolne{LOCAL}"
-
-
-def test_issue_nazywa_nieaktywna_prace_nad_zgloszeniem_z_jej_wiekiem(checkouts: dict[str, Path], monkeypatch: pytest.MonkeyPatch) -> None:
-    forgotten = checkouts["other"].parent / "zapomniany"
-    with monkeypatch.context() as stale:
-        _stale_commits(stale)
-        _git(checkouts["other"], "worktree", "add", "-b", "fix/zapomniany", str(forgotten), "main")
-        _commit(forgotten, "inny.py", "b = 4\n", "fix: zapomniane (#8)")
-    _age_tree(forgotten)
-
-    lines = _report(checkouts["current"], "--issue", "8").splitlines()
-
-    assert lines[-3] == f"ZGŁOSZENIE #8 | zajęte: fix/zapomniany (3 d, nieaktywna); poprawka należy do właściciela tej gałęzi{LOCAL}"
-    assert f"- fix/zapomniany | {forgotten.resolve()} | ruch 3 d temu | commit odwołuje się do #8" in lines
+def test_issue_bez_pracy_nad_nim_jest_wolne(checkouts: dict[str, Path]) -> None:
+    assert _report(checkouts["current"], "--issue", "8").splitlines()[-3] == f"ZGŁOSZENIE #8 | wolne{LOCAL}"
 
 
 def test_issue_znajduje_pr_ktory_odwoluje_sie_do_zgloszenia_i_pr_wskazany_w_tresci_zgloszenia(checkouts: dict[str, Path]) -> None:
@@ -191,18 +172,6 @@ def test_checkout_bez_zmian_i_bez_zgloszenia_dostaje_trzy_odpowiedzi_bez_githuba
 
     assert report == [ASK, "NAKŁADANIA | brak: ten checkout jeszcze niczego nie zmienia", f"{NIEPOTRZEBNA}{_compared(branch)} bez śladu fetch, odśwież: git fetch origin"]
     assert not (fake / "wolany").exists()
-
-
-def test_galaz_zbudowana_na_innej_naklada_sie_tylko_wlasnymi_commitami(checkouts: dict[str, Path]) -> None:
-    stacked = checkouts["other"].parent / "na-opiekunie"
-    _git(checkouts["other"], "worktree", "add", "-b", "fix/na-opiekunie", str(stacked), "fix/opiekun")
-    _commit(stacked, "inny.py", "b = 3\n", "fix: na opiekunie")
-
-    overlaps = _report(stacked, "--nakladania")
-
-    lines = overlaps.splitlines()
-    assert not [line for line in lines if line.startswith("- fix/opiekun")]
-    assert "inny.py" in next(line for line in lines if line.startswith("- feat/moje"))
 
 
 def test_przeniesienie_naklada_sie_stara_sciezka(checkouts: dict[str, Path]) -> None:

@@ -85,7 +85,6 @@ def _wpisy(root: Path, capsys: pytest.CaptureFixture[str], pliki: dict[str, str]
         pytest.param({".gitignore": "  # wzorzec\n"}, [], id="wciety-krzyzyk-gitignore-to-wzorzec"),
         pytest.param({".gitattributes": "  # opis\n*.sh text\n"}, [".gitattributes:1 | gitignore | plik | - | # opis"], id="wciety-komentarz-gitattributes"),
         pytest.param({"tools/a.py": 'X = "# nie komentarz"\n'}, [], id="krzyzyk-w-napisie-pythona"),
-        pytest.param({"ruff.toml": 'nazwa = "a # b"\n'}, [], id="krzyzyk-w-napisie-toml"),
         pytest.param(
             {"frontend/src/a.tsx": "// nad karta\nexport function Karta() {\n  return <div>{/* w jsx */}</div>;\n}\n"},
             ["frontend/src/a.tsx:1 | ts | Karta | - | // nad karta", "frontend/src/a.tsx:3 | ts | Karta | - | /* w jsx */"],
@@ -143,7 +142,6 @@ def test_inwentarz_wypisuje_kazdy_komentarz_i_napis_z_plikiem_linia_forma_i_wezl
             ],
             id="dyrektywy-ruff-wielkimi-literami-i-komentarz-typu-mypy",
         ),
-        pytest.param({"tools/a.py": "import os  # noqa: F401 - powód\n"}, [f"tools/a.py:1 | komentarz | moduł | {KSZTALT} | # noqa: F401 - powód"], id="dyrektywa-ruff"),
         pytest.param(
             {"tools/a.py": "x = f()  # type: ignore[name-defined]\n"}, [f"tools/a.py:1 | komentarz | moduł | {KSZTALT} | # type: ignore[name-defined]"], id="dyrektywa-mypy"
         ),

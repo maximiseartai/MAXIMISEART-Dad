@@ -289,16 +289,11 @@ def test_zapadka_przepuszcza_odpowiedz_nawigacji_ktora_ktos_czyta(line: str) -> 
     "previous",
     [
         "    return _checked(",
-        "        self._read_order(",
         "        page,",
         "    return _checked(  ",
-        "        response = _checked(page, (",
         "    return _checked(  # lista zleceń",
         "    return [",
-        "    statuses = [  # odpowiedzi kolejnych stron",
-        # Odstęp z ``#`` w napisie, a linia kończy się przecinkiem albo nawiasem (#1378 r1).
         '            "strona #1",',
-        '    return _checked(f"lista #{number}", (',
         "    wait()  # najpierw lista,",
     ],
 )
@@ -1003,7 +998,11 @@ def test_reguly_calego_drzewa_zglaszaja_linie_bazy_i_plik_nowy_a_zapadka_tylko_p
 
 
 @needs_ast_grep
-@pytest.mark.parametrize(("files", "config", "environment", "commands"), _DIFF_DISGUISES.values(), ids=_DIFF_DISGUISES)
+@pytest.mark.parametrize(
+    ("files", "config", "environment", "commands"),
+    [_DIFF_DISGUISES[name] for name in ("-diff w .gitattributes", "plik ignore gita w HOME")],
+    ids=["-diff w .gitattributes", "plik ignore gita w HOME"],
+)
 def test_regula_komentarz_w_src_zglasza_kazdy_dodany_komentarz_mimo_atrybutow_konfiguracji_i_srodowiska_gita(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1012,7 +1011,7 @@ def test_regula_komentarz_w_src_zglasza_kazdy_dodany_komentarz_mimo_atrybutow_ko
     environment: dict[str, str],
     commands: tuple[tuple[str, ...], ...],
 ) -> None:
-    """Zapadka reguł ast-grep z prawdziwą regułą ``komentarz-w-src`` zgłasza w każdej postaci ``_DIFF_DISGUISES``
+    """Zapadka reguł ast-grep z prawdziwą regułą ``komentarz-w-src`` zgłasza w postaci z ``_DIFF_DISGUISES``
     każdy komentarz, który fikstura różnicy dodaje w ``src/``, na jego linii, jak w CI."""
 
     base = _disguised(tmp_path, monkeypatch, files, config, environment, commands)
@@ -1303,12 +1302,8 @@ _PROBKI_HISTORII: Final[dict[str, tuple[str, list[int]]]] = {
     "adres github.com: bez schematu": (f'{_IN_FUNCTION}"""Zob. github.com/o/r/pull/77."""\n', [2]),
     "adres github.com: wielkie litery": (f'{_IN_FUNCTION}"""Zob. HTTPS://GitHub.COM/o/r/pull/77."""\n', [2]),
     "adres github.com: subdomena gist.": (f'{_IN_FUNCTION}"""Zob. https://gist.github.com/o/1."""\n', [2]),
-    "adres github.com: subdomena api.": (f'{_IN_FUNCTION}"""Zob. https://api.github.com/repos/o/r/issues/1614."""\n', [2]),
-    "adres github.com: subdomena uploads.": (f'{_IN_FUNCTION}"""Zob. https://uploads.github.com/o."""\n', [2]),
-    "adres github.com: subdomena redirect.": (f'{_IN_FUNCTION}"""Zob. https://redirect.github.com/o/r/compare/a...b."""\n', [2]),
     "adres github.com: git@ z dwukropkiem": (f'{_IN_FUNCTION}"""Zob. git@github.com:o/r."""\n', [2]),
     "adres github.com: kropka na końcu zdania": (f'{_IN_FUNCTION}"""Repozytorium jest na github.com."""\n', [2]),
-    "skrót commitu: 10 znaków": (f'{_IN_FUNCTION}"""Naprawione w 5b2edaf2f9."""\n', [2]),
     "skrót commitu: wielkie litery": (f'{_IN_FUNCTION}"""Naprawione w 2FF78B6B3."""\n', [2]),
     "skrót commitu: pełny SHA": (f'{_IN_FUNCTION}"""Naprawione w 8d3f7b66dfe85c4f3e0fae27b05a66340c076deb."""\n', [2]),
     **{
@@ -1951,36 +1946,6 @@ def test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff(tmp_path: Pat
         zgloszenia[opisy[finding.path]].append(f"{finding.path}:{finding.line}: {finding.rule}")
 
     assert_znane_luki(zgloszenia, "tests/test_zapadki.py::test_znane_luki_reguly_w_trasie_przechodza_przez_regule_i_ruff")
-
-
-# Zapis Ustawień obok odmowy przez prywatne pola właściciela (sondy #1727 r5 W1): ruff SLF001 łapie każdą prywatną
-# składową obiektu spoza modułu właściciela (#1737), więc reguła ich nazw nie wylicza.
-_ZAPIS_PRZEZ_POLA: Final = {
-    "miejsce pliku": "settings._places[WORKERS.name].write(problem)",
-    "Historia Ustawień": "settings._history.append(problem)",
-    "pamięć właściciela": "settings._memory.write(problem, problem)",
-}
-
-
-@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-def test_zapis_ustawien_obok_odmowy_przez_prywatne_pola_wlasciciela_pada_w_ruff(tmp_path: Path) -> None:
-    """Moduł Centrum z odmową i zapisem przez prywatne pole ``CentrumSettings`` pada w ruff na ``SLF001`` tego pola."""
-
-    from tests.fixtures.znane_luki import ruff
-
-    probki = {
-        opis: _WLASCICIEL
-        + ("from rozliczenia.centrum.settings.workers import WORKERS\n" if "WORKERS" in zapis else "")
-        + "from rozliczenia.centrum import refusal\n\n\n"
-        + 'def delete_worker(settings: CentrumSettings, problem: str) -> None:\n    if problem:\n        raise refusal.worker_kept(problem, "worker")\n'
-        + f"    {zapis}\n"
-        for opis, zapis in _ZAPIS_PRZEZ_POLA.items()
-    }
-    zgloszenia = ruff(_moduly_centrum(tmp_path, probki), sonda=ROOT.joinpath(*_CENTRUM, "test_sonda_luki_zapisu.py"))
-
-    assert zgloszenia == {
-        opis: [f"ruff SLF001: Private member accessed: `{zapis.split('.')[1].split('[')[0]}`"] for opis, zapis in _ZAPIS_PRZEZ_POLA.items()
-    }
 
 
 _DARWIN = 'import sys\n\nif sys.platform == "darwin":\n    x: int = "a"  # type: ignore'

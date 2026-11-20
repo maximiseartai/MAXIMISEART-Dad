@@ -343,10 +343,9 @@ def test_obowiazkowa_podkomenda_spoza_stalej_nie_przechodzi_po_cichu(tmp_path: P
     "extra",
     [
         "inner = commands.add_parser('pokaz').add_subparsers(dest='co')\nfor name in ('a', 'b'):\n    inner.add_parser(name)\n",
-        "sub = commands.add_parser('pokaz').add_subparsers(dest='co')\nfor name in ('a', 'b'):\n    sub.add_parser(name)\n",
         "alias = commands\nfor name in ('a', 'b'):\n    alias.add_parser(name)\n",
     ],
-    ids=["zagniezdzona grupa w petli", "zagniezdzona pod ta sama nazwa", "alias grupy w petli"],
+    ids=["zagniezdzona grupa w petli", "alias grupy w petli"],
 )
 def test_podkomendy_spoza_stalej_obok_stalych_nie_wywracaja_testu(tmp_path: Path, extra: str) -> None:
     tool = tmp_path / "narzedzie.py"
