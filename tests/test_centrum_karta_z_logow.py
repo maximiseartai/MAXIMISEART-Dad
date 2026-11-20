@@ -17,7 +17,10 @@ from rozliczenia.centrum import diagnosis_messages
 from rozliczenia.centrum.contract.common import Message, ProcessKey
 from rozliczenia.centrum.contract.metrics import ProcessRun
 from rozliczenia.domain import RunMode
-from rozliczenia.efenix_pricing import OrderKind
+from rozliczenia.efenix_checks import Settled
+from rozliczenia.efenix_orders import CollectiveOrder
+from rozliczenia.efenix_pricing import OrderKind, OrderResult
+from rozliczenia.efenix_window import ListedOrder
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, EndEntry, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
@@ -32,6 +35,7 @@ from rozliczenia.centrum.run_logs import (
     StartFacts,
     Tool,
 )
+from rozliczenia.centrum.pricing_progress import OrderDone, PricingProgress
 from rozliczenia.centrum.run_origins import CentrumRuns
 from tests.fixtures.schemat_logow import Fakty, fakty, niezapisane, wczytaj, zwezenia
 from rozliczenia.centrum.settings import messages as settings_messages
@@ -678,6 +682,28 @@ def test_postep_z_dziennika_ma_tylko_uruchomienie_ktore_go_pisze(tmp_path: Path)
     disk.started(start())
 
     assert (disk.journal.progress("f" * 32), disk.journal.progress(RUN_ID) is not None) == (None, True)
+
+
+def _settled(row: int) -> OrderResult:
+    order = CollectiveOrder(row, f"99{row}", "adrian.testowy", "UL. TESTOWA 1", None, {}, Decimal(0))
+    return OrderResult(order, Settled(ListedOrder(f"99{row}", "Rozliczone", "adrian.testowy", "UL. TESTOWA 1", "1")), (), None, None)
+
+
+def test_postep_wyceny_ma_zlecenia_skonczone_po_kolei_a_miedzy_zleceniami_zadnego_w_trakcie(tmp_path: Path) -> None:
+    disk = on_disk(tmp_path)
+    disk.started(start())
+    journal = disk.journal
+
+    journal.begun(18, 1, 2)
+    journal.ended(_settled(18))
+    between = journal.progress(RUN_ID)
+    journal.begun(19, 2, 2)
+    journal.ended(_settled(19))
+
+    assert (between, journal.progress(RUN_ID)) == (
+        PricingProgress(start(), (OrderDone(18, OrderKind.SETTLED, None),), 2, None),
+        PricingProgress(start(), (OrderDone(18, OrderKind.SETTLED, None), OrderDone(19, OrderKind.SETTLED, None)), 2, None),
+    )
 
 
 def test_wpis_konca_z_wersji_ktora_nie_zapisywala_wyniku_jest_dalej_wpisem_konca(tmp_path: Path) -> None:
