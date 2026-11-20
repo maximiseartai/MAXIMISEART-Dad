@@ -1869,6 +1869,61 @@ def _lock(tmp_path: Path) -> Callable[[], object]:
     return lambda: (tmp_path / "OneDrive" / f"~${REGISTER_NAME}").write_bytes(b"")
 
 
+CONFLICT_ACTION: Final = (
+    "Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię."
+)
+
+
+@pytest.mark.parametrize("excel", [False, True], ids=["intermax-zamkniety", "intermax-otwarty-w-excelu"])
+def test_kopia_konfliktu_onedrive_obok_intermax_to_zatrzymanie_dla_taty_z_jej_nazwa_bez_kopii_intermax_i_zapisu(
+    tmp_path: Path, excel: bool
+) -> None:
+    path, layout = _register(tmp_path)
+    conflict = path.with_name(f"{path.stem}-LAPTOP-ANDRZEJA{path.suffix}")
+    conflict.write_bytes(path.read_bytes())
+    older = tmp_path / "Kopie INTERMAX" / "INTERMAX przed uporządkowaniem 2026-10-24 20-00-00.xlsx"
+    older.parent.mkdir()
+    older.write_bytes(b"starsza kopia")
+    if excel:
+        _lock(tmp_path)()
+
+    with _nothing_written(tmp_path, path):
+        outcome = _run(tmp_path)
+
+    stop = _stop(outcome)
+    assert (stop.message.code, stop.stop_kind) == ("KOPIA_KONFLIKTU_INTERMAX", "for_tata")
+    assert stop.message.what == (
+        "Obok INTERMAX leży kopia konfliktu OneDrive: OneDrive ma dwie wersje INTERMAX. INTERMAX nie został zmieniony."
+    )
+    assert stop.message.where == f"plik {conflict.name}, folder OneDrive"
+    assert stop.message.action == f"{CONFLICT_ACTION} Potem uruchom ponownie."
+    assert conflict.read_bytes() == path.read_bytes()
+    assert (_copies(tmp_path), older.read_bytes()) == ({older.name}, b"starsza kopia")
+    _without_order_data(stop.message, layout.raw)
+
+
+@pytest.mark.parametrize(
+    ("name", "code"),
+    [
+        pytest.param("{stem} - Kopia{suffix}", None, id="kopia-z-eksploratora"),
+        pytest.param(".{stem}.k2x9{suffix}", None, id="plik-tymczasowy-zapisu"),
+        pytest.param("~${stem}{suffix}", "INTERMAX_OTWARTY", id="plik-blokady-excela"),
+    ],
+)
+def test_kopia_z_eksploratora_plik_tymczasowy_i_plik_blokady_obok_intermax_nie_sa_kopia_konfliktu(
+    tmp_path: Path, name: str, code: str | None
+) -> None:
+    path, _ = _register(tmp_path)
+    path.with_name(name.format(stem=path.stem, suffix=path.suffix)).write_bytes(b"syntetyczny")
+
+    outcome = _run(tmp_path)
+
+    if code is None:
+        assert _ordered(outcome).copy_name == COPY_NAME
+    else:
+        assert _stop(outcome).message.code == code
+
+
 def test_odmowa_podmiany_bez_excela_po_krotkiej_ponownej_probie_to_onedrive_dla_taty(tmp_path: Path) -> None:
     path, layout = _register(tmp_path)
     replace, attempts = failing_replace(denied)

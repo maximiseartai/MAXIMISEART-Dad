@@ -553,7 +553,7 @@ _NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "wyslane_z
 _RUN = _OWNER | {"rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}
 _PREPARATION = _RUN | _FOLDERS | {"metryki_przygotowania", "wzorzec_wewnetrzny", "wzorzec_zbiorczy"}
 _SETTLEMENT = _RUN | _FOLDERS | {"metryki_przebiegu", "plik_zbiorczy", "wzorzec_pracownika"}
-_ORDERING = _RUN | {"metryki_uporzadkowania"}
+_ORDERING = _RUN | _METRICS | {"folder_okresow", "folder_kopii_intermax"}
 READS: dict[str, set[str]] = {
     "getSettings": _SETTINGS,
     "chooseRegister": _SETTINGS,
