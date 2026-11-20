@@ -28,7 +28,6 @@ const CHIPS: Record<RowState, { look: string; spoken: boolean }> = {
   without_quantity: { look: "border border-dashed text-muted-foreground", spoken: true },
 }
 
-/** Podsumowanie Uzupełnienia pliku zbiorczego okresu z adresu `#/uzupelnienie/<okres>`. */
 export function FillingPage() {
   const [token = "", part] = usePagePath()
   const kind = zFillKind.safeParse(part)
@@ -103,7 +102,6 @@ function FillingState({
   }
 }
 
-/** Podsumowanie: rodzaje z listą i kolumny z opisu technika; pokazuje je też karta wyniku Przygotowania. */
 export function FillingSummary({ token, found }: { token: string; found: QuantitiesToFillReady }) {
   return (
     <Card className="py-0">

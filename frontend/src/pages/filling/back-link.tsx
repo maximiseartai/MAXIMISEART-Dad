@@ -3,7 +3,6 @@ import { ArrowLeftIcon } from "lucide-react"
 
 import type { Href } from "@/lib/address"
 
-/** Cichy powrót nad tytułem strony Uzupełnienia: na Okresy z podsumowania, na podsumowanie z tabeli rodzaju. */
 export function BackLink({ to, children }: { to: Href; children: React.ReactNode }) {
   return (
     <a

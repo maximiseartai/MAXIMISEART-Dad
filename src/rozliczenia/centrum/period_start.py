@@ -1,11 +1,3 @@
-"""Karta przed startem i start procesu z okresem w Centrum rozliczeń: jedna mechanika, polityka z wpisu procesu.
-
-Każdy proces z okresem (``process_kind.PeriodProcessKind``) ma na karcie Uruchomień kafelek z okresami do wyboru, a
-start z okresem przechodzi przez te same odmowy dla taty w tej samej kolejności. Co różni procesy (co powstaje, jak
-wybrać okresy, odmowa podglądu), mówi ``PeriodStart`` wpisu. Pliki wejścia biorą się z Ustawień Centrum, Folderu okresu i
-Konfiguracji, a Lista Wykonawców z migawki Ustawień Centrum; tata nie wskazuje ich przy starcie.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -40,8 +32,7 @@ from rozliczenia.period_folder import PeriodFolders, collective_file_name, perio
 from rozliczenia.run_context import RunContexts
 from rozliczenia.settlement_period import SettlementPeriod, last_complete_period
 
-_TILES: Final[tuple[common_contract.PeriodProcessKey, ...]] = ("preparation", "efenix", "settlement")
-"""Kafelek Wyceny w efenix stoi przed Przebiegiem rozliczeń, bo w tej kolejności tata pracuje."""
+_TILES_IN_PERIOD_PATH_ORDER: Final[tuple[common_contract.PeriodProcessKey, ...]] = ("preparation", "efenix", "settlement")
 
 
 @dataclass(frozen=True)
@@ -59,12 +50,10 @@ class PeriodStarts:
         periods_directory = folders.periods_directory if isinstance(folders, FolderSettings) else None
         read = _PeriodsDirectoryRead(periods_directory, self.today(), self.catalog)
         return runs_contract.RunSetup(
-            processes=[self._setup(self.catalog.period_kind(key), snapshot, read) for key in _TILES]
+            processes=[self._setup(self.catalog.period_kind(key), snapshot, read) for key in _TILES_IN_PERIOD_PATH_ORDER]
         )
 
     def prepare(self, request: runs_contract.RunRequest) -> PreparedRun[Any, Any]:
-        """Uruchomienie z karty: ``Refusal``, gdy tata czegoś jeszcze nie wskazał albo wybrał coś, czego nie ma."""
-
         kind = self.catalog.period_kind(request.process)
         if request.pricing not in (kind.view.pricing_modes or (runs_contract.DEFAULT_PRICING,)):
             raise refusal.no_forwarding(kind.title)
@@ -96,9 +85,6 @@ class PeriodStarts:
     def _setup(
         self, kind: PeriodProcessKind[Any, Any], snapshot: SettingsSnapshot, read: _PeriodsDirectoryRead
     ) -> runs_contract.ProcessSetup:
-        """Kafelek procesu; bez okresów do wyboru, gdy pliku Folderów nie da się teraz przeczytać, bo nikt nie zna
-        folderu okresów, a kartę blokuje zdanie o tym pliku (``settings_blocker``)."""
-
         view = kind.view
         open_templates = open_in_excel(self.configuration.template_inputs(kind.templates))
         choices: tuple[list[runs_contract.PeriodChoice], str, str | None]
@@ -129,8 +115,6 @@ class PeriodStarts:
         open_templates: list[str],
         read: _PeriodsDirectoryRead,
     ) -> tuple[list[runs_contract.PeriodChoice], str, str | None]:
-        """Okresy do wyboru na kafelku, okres zaznaczony i czego brakuje w folderze okresów."""
-
         view = kind.view
         previewed = previewed_periods(self.catalog.metrics(kind.key)) if kind.preview_hint is not None else frozenset()
         chooser = kind.start.chooser
@@ -186,8 +170,6 @@ class _PeriodsDirectoryRead:
 
 
 def _collective_files(folders: PeriodFolders | None, rows: list[periods_contract.PeriodRow]) -> dict[str, Path]:
-    """Plik zbiorczy każdego okresu do wyboru, w tym Folderze okresu, który pokazuje Tablica okresów."""
-
     if folders is None:
         return {}
     return {row.token: observed_period_folder(folders, SettlementPeriod(row.tuesday)).collective_file for row in rows}
@@ -215,8 +197,6 @@ def _board_choice(
 
 
 def _board_blocker(board: periods_contract.PeriodBoard, rows: list[periods_contract.PeriodRow], chooser: ByStatus) -> str | None:
-    """Czego brakuje w folderze okresów, który Ustawienia Centrum już wskazują."""
-
     if board.state == "missing":
         return f"Nie ma już folderu okresów {board.name}. Wskaż go ponownie."
     if not rows:

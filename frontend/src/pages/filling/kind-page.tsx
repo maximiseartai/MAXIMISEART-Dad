@@ -36,10 +36,8 @@ const NUMBER: Pinned = { title: "Nr", width: 3.5, left: 0 }
 
 const TEXT_WIDTHS: ReadonlyArray<number> = [4.25, 4.5, 4.25, 5.5]
 
-// Szerokość kolumny tekstu, której miejsce nie ma szerokości w `TEXT_WIDTHS`.
 const TEXT_WIDTH = 4.5
 
-/** Przypięte kolumny tekstów wiersza za numerem: `left` to suma szerokości kolumn przed nią. */
 function pinnedTexts(textColumns: ReadonlyArray<string>): ReadonlyArray<Pinned> {
   const texts: Array<Pinned> = []
   let left = NUMBER.width
@@ -62,10 +60,6 @@ function pinnedStyle({ width, left }: Pinned): React.CSSProperties {
   return { width: `${width}rem`, minWidth: `${width}rem`, maxWidth: `${width}rem`, left: `${left}rem` }
 }
 
-/**
- * Nagłówek stron Uzupełnienia: okres obok tytułu, a „Otwórz Plik zbiorczy”, gdy Plik zbiorczy jest w Folderze okresu:
- * odczytany albo z Komunikatem, który go nazywa (uszkodzony, bez nagłówka).
- */
 export function FillingHeader({ token, resource }: { token: string; resource: Resource<QuantitiesToFill | KindTable> }) {
   const exists = resource.state === "ready" && (resource.data.state === "ready" || resource.data.collective_file_exists)
 
@@ -156,7 +150,6 @@ function KindState({
   }
 }
 
-/** Tabela jak w Excelu: numer wiersza i teksty przypięte z lewej, wszystkie kolumny N:AP przewijane w bok. */
 function QuantitiesTable({
   textColumns,
   columns,
@@ -270,7 +263,6 @@ function Row({ row, texts }: { row: KindTableRow; texts: ReadonlyArray<Pinned> }
         )}
       </th>
       {texts.map((column, index) => (
-        // Teksty wiersza idą po kolei jak kolumny tekstów nagłówka (`text_columns`).
         <td
           key={column.title}
           style={pinnedStyle(column)}

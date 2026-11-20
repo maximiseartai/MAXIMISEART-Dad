@@ -90,7 +90,6 @@ export function ReportToMaks({
   )
 }
 
-/** Dokładna treść Zgłoszenia, zwinięta: tata widzi przed wysłaniem, co dostanie Maks. */
 function Preview({ draft }: { draft: ReportDraft }) {
   return (
     <Disclosure label="Co zostanie wysłane" className="w-full">

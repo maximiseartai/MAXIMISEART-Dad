@@ -3,10 +3,6 @@ import { cn } from "cn"
 
 import type { PeriodRow } from "@/api/generated"
 
-/**
- * Droga okresu w krokach i stanach z serwera: ikona stanu zamiast zdań. Krok, którego okres zamknięty nie zrobił
- * (`not_done`), ma kreskę zamiast numeru.
- */
 export function PeriodPath({ path }: { path: PeriodRow["path"] }) {
   return (
     <ol className="flex flex-wrap items-center gap-2" aria-label="Droga okresu">

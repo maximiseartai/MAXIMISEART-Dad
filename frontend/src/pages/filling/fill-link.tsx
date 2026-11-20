@@ -4,10 +4,6 @@ import { ArrowRightIcon, ClipboardPenLineIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { href } from "@/lib/address"
 
-/**
- * „Uzupełnij”: link na podsumowanie Uzupełnienia pliku zbiorczego okresu `token` w wyglądzie przycisku miejsca, w którym
- * stoi.
- */
 export function FillLink({
   token,
   arrow = false,

@@ -19,9 +19,7 @@ import { useAction } from "@/lib/action"
 import { ReportToMaks } from "@/components/report-to-maks"
 
 type StopDiagnosis = {
-  /** Akcja przy banerze Zatrzymania. */
   action: React.ReactNode
-  /** Wynik Diagnozy i Zgłoszenie do Maksa pod banerem. */
   result: React.ReactNode
 }
 
@@ -133,7 +131,6 @@ const CHECK_ICONS: Record<DiagnosisCheck["state"], React.ReactNode> = {
   not_checked: <CircleDashedIcon className="text-muted-foreground" aria-label="nie sprawdzono" />,
 }
 
-/** Sprawdzenia Diagnozy po kolei, zwinięte: kto chce, zobaczy, co sprawdzono i z jakim wynikiem. */
 function Checks({ checks }: { checks: ReadonlyArray<DiagnosisCheck> }) {
   return (
     <Disclosure label={`Sprawdzono (${checks.length})`}>

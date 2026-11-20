@@ -25,7 +25,6 @@ import { showFailure } from "@/lib/action"
 
 const BACK_WITH_SHORTCUT = "Wrócisz skrótem „Centrum rozliczeń” na pulpicie."
 
-/** Okno potwierdzenia: zamknięte, otwarte albo czekające na odpowiedź serwera (wtedy nie da się go zamknąć). */
 type Dialog = "closed" | "confirming" | "closing"
 
 /**
