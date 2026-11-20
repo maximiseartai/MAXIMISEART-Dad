@@ -711,3 +711,65 @@ def test_dwa_zgloszenia_w_kolejce_to_dwa_powiadomienia_o_roznych_id(tmp_path: Pa
         ("Nie znaleziono wzorca.", QUEUED_FOR_KEY),
     ]
     assert len({item["id"] for item in items}) == 2
+
+
+def test_powiadomienie_o_wycenie_w_efenix_zakonczonej_zatrzymaniem_ma_co_sie_stalo_zatrzymania(tmp_path: Path) -> None:
+    centrum = settling_centrum(tmp_path)
+    centrum.engines.fail_engine = True
+    period = centrum.period_directory.name
+    assert centrum.client.post("/api/runs", json={"process": "efenix", "period": period, "mode": "RUN"}).status_code == 200
+    [stop] = finished_view(centrum.client)["result"]["stops"]
+
+    answer = centrum.client.get("/api/notifications").json()
+
+    [pricing] = [item for item in answer["items"] if item["kind"] == "wycena_w_efenix"]
+    assert stop["what"]
+    assert pricing["stopped"] == stop["what"]
+
+
+@pytest.mark.parametrize(
+    ("schema_version", "unread"),
+    [
+        pytest.param(notifications_module.SCHEMA_VERSION, False, id="znany-schemat-to-przeczytane"),
+        pytest.param(notifications_module.SCHEMA_VERSION + 1, True, id="schemat-nowszego-wydania-to-brak-przeczytanych"),
+    ],
+)
+def test_plik_przeczytanych_powiadomien_w_nieznanym_schemacie_to_brak_przeczytanych(
+    tmp_path: Path, schema_version: int, unread: bool
+) -> None:
+    centrum = preparing_centrum(tmp_path)
+    write_report_key(centrum.tool)
+    sent_note(centrum)
+    centrum.surroundings.report_box.close(number_of(centrum, NOTE_TITLE), "completed", CLOSED_AT)
+    centrum.surroundings.clock.advance(minutes=10)
+    [resolved] = notifications(centrum)["items"]
+    assert resolved["unread"]
+    (centrum.tool.config / NOTIFICATIONS_FILE).write_text(
+        json.dumps({"schema_version": schema_version, "przeczytane": [resolved["id"]]}) + "\n", encoding="utf-8"
+    )
+
+    centrum.restart()
+
+    assert [(item["id"], item["unread"]) for item in notifications(centrum)["items"]] == [(resolved["id"], unread)]
+
+
+def test_odczyt_powiadomien_w_trakcie_pytania_skrzynki_nie_pyta_jej_drugi_raz(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(notifications_module, "CHECK_WAIT_S", 0.2)
+    centrum = preparing_centrum(tmp_path)
+    write_report_key(centrum.tool)
+    sent_report(centrum)
+    box = centrum.surroundings.report_box
+    box.search_hold = threading.Event()
+    asked = polls(centrum)
+    since = new_line()
+
+    try:
+        first, second = notifications(centrum), notifications(centrum)
+    finally:
+        box.search_hold.set()
+    join_threads_since(since)
+
+    assert [item["kind"] for item in first["items"]] == [item["kind"] for item in second["items"]] == ["zgloszenie"]
+    assert polls(centrum) == asked + 1
