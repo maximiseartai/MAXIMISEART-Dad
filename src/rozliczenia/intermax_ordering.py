@@ -94,8 +94,6 @@ class OrderingInputs:
 
 @dataclass(frozen=True)
 class HistoryCounts:
-    """Historia adresu dnia w liczbach: zlecenia z choć jednym blokiem, skopiowane wiersze Bazy i arkusze Bazy."""
-
     orders: int
     rows: int
     sheets: int
@@ -243,9 +241,6 @@ def order_register(inputs: OrderingInputs, context: RunContext) -> OrderingSumma
 def _history(
     base: OrderBase | None, orders: Sequence[RawOrder], warnings: list[Message]
 ) -> dict[int, tuple[HistoryBlock, ...]] | None:
-    """Wiersz Surowego zlecenia → jego Historia adresu z Bazy zleceń ``base``; ``None`` bez Bazy, a także z ostrzeżeniem
-    w ``warnings``, gdy komórki trafienia nie da się odczytać: wtedy żadne zlecenie nie ma Historii adresu."""
-
     if base is None:
         return None
     try:
@@ -256,8 +251,6 @@ def _history(
 
 
 def _order_base(path: Path, files: DadFiles, warnings: list[Message]) -> OrderBase | None:
-    """Baza zleceń ``path`` albo ``None`` z ostrzeżeniem w ``warnings``, gdy jej nie da się przeczytać."""
-
     try:
         found = order_base.read(path, files)
     except WorkbookError as error:
@@ -323,8 +316,6 @@ def register_problem(register_path: Path, files: DadFiles) -> Message | None:
 
 @dataclass(frozen=True)
 class RegisterDay:
-    """Dzień INTERMAX na karcie Uporządkowania INTERMAX: data i to, czy jest Dniem uporządkowanym."""
-
     day: date
     ordered: bool
 

@@ -47,15 +47,10 @@ _NOT_IN_XML: Final = re.compile("[^\t\n\r\x20-퟿-�\U00010000-\U0010ffff]")
 
 
 class CellProblem(Enum):
-    """Powód, przez który zmiana komórki nie trafia do INTERMAX."""
-
     NOT_ORDERED = "wiersz nie jest uporządkowanym wierszem zlecenia"
-    """Arkusz nie jest arkuszem zleceń z obszarem wklejania albo wiersza w nim nie ma, jest pusty, jest wierszem
-    nagłówków albo Surowym zleceniem."""
     NOT_REPORT_COLUMN = "kolumna spoza SKUTECZNE i CZYNNOŚCI ZREALIZOWANE"
     REPEATED = "ta sama komórka więcej niż raz"
     UNWRITABLE_TEXT = "tekst, którego komórka nie przyjmie"
-    """Znak spoza XML albo więcej niż 32767 znaków."""
     MOVE_NOT_ORDERED = "Przeniesienie spoza uporządkowanego wiersza zlecenia"
     """Przeniesienie z wiersza, który nie jest uporządkowanym wierszem zlecenia z datą, albo drugi raz z tego samego
     wiersza."""
@@ -67,17 +62,11 @@ class CellProblem(Enum):
 
 @dataclass(frozen=True)
 class Rejected:
-    """Zmiany, Przeniesienia i dopisania, których INTERMAX nie dostał, każde z powodem; żadna inna zmiana też nie trafiła
-    do INTERMAX."""
-
     problems: tuple[tuple[CellChange | OrderMove | OrderAdded, CellProblem], ...]
 
 
 @dataclass(frozen=True)
 class CellsWritten:
-    """INTERMAX ma wszystkie zmiany; ``count``: ile komórek, ``moved``: ile Przeniesień zleceń, ``added``: ile Zleceń
-    dopisanych z raportu (wszystkie 0: INTERMAX nietknięty)."""
-
     count: int
     moved: int = 0
     added: int = 0
@@ -126,9 +115,6 @@ def write_cells(
 def _plans(
     register: RegisterFile, moves: Sequence[OrderMove], added: Sequence[OrderAdded]
 ) -> tuple[dict[PasteArea, MovePlan], tuple[tuple[OrderMove | OrderAdded, CellProblem], ...]]:
-    """Plan Przeniesień i dopisań każdego obszaru wklejania z nimi oraz Przeniesienia i dopisania odrzucone z
-    powodem."""
-
     sheets = register.order_sheets.sheets if isinstance(register.order_sheets, OrderSheets) else ()
     areas = {sheet.name: sheet.paste for sheet in sheets if sheet.paste is not None}
     wanted: dict[PasteArea, dict[int, tuple[str, date]]] = {}
@@ -199,8 +185,6 @@ def _ordered_row(area: PasteArea, number: int) -> raw_orders.RowFacts | None:
 def _cells(
     register: RegisterFile, changes: Sequence[CellChange]
 ) -> tuple[intermax_file.Cells, tuple[tuple[CellChange, CellProblem], ...]]:
-    """Komórki do zapisu po obszarach wklejania i zmiany odrzucone z powodem."""
-
     sheets = register.order_sheets.sheets if isinstance(register.order_sheets, OrderSheets) else ()
     areas = {sheet.name: (sheet.paste, sheet.positions) for sheet in sheets if sheet.paste is not None}
     ordered = {name: _ordered_rows(area, changes) for name, (area, _) in areas.items()}
@@ -226,8 +210,6 @@ def _cells(
 
 
 def _ordered_rows(area: PasteArea, changes: Sequence[CellChange]) -> frozenset[int]:
-    """Uporządkowane wiersze obszaru ``area`` od dołu do najwyższego wiersza, który ``changes`` w nim zmieniają."""
-
     wanted = [change.order.row for change in changes if change.order.sheet == area.sheet]
     if not wanted:
         return frozenset()

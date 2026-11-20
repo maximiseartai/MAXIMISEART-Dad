@@ -26,20 +26,12 @@ _WORKBOOK_FILE_ERRORS = (OSError, InvalidFileException, ValueError, zipfile.BadZ
 
 
 class SaveProblem(Enum):
-    """Krok zapisu skoroszytu, który się nie udał."""
-
     TEMPORARY_FILE = "plik tymczasowy"
-    """Obok celu nie da się utworzyć pliku tymczasowego, np. folder celu nie istnieje."""
     INVALID_VALUE = "wartość niedozwolona w XML"
-    """Wpisywana wartość ma znak, którego skoroszyt nie przyjmuje."""
     CONTENT = "zapis treści"
-    """Treści skoroszytu nie da się zapisać do pliku tymczasowego."""
     REPLACE = "podmiana"
-    """System odmówił podmiany celu plikiem tymczasowym."""
     EXTERNAL_LINKS_UNREADABLE = "nieczytelne odwołania zewnętrzne"
-    """Nie da się odczytać ``xl/externalLinks/*`` skoroszytu, z którego są kopiowane (celu albo Wzorca)."""
     EXTERNAL_LINKS_NOT_RESTORED = "nieprzywrócone odwołania zewnętrzne"
-    """Nie da się przywrócić ``xl/externalLinks/*`` w pliku tymczasowym."""
 
 
 class WorkbookSaveError(Exception):
@@ -62,12 +54,6 @@ class ExternalLinksError(WorkbookSaveError):
 def write_atomically(
     target: Path, write: Callable[[Path], None], *, replace: Callable[[Path, Path], None] | None = None
 ) -> None:
-    """``write`` zapisuje skoroszyt do pliku tymczasowego obok ``target``; dopiero potem ``target`` jest podmieniany.
-
-    Nieudany zapis to ``WorkbookSaveError`` (albo błąd zapisu zgłoszony przez ``write`` albo inny niż ``OSError``
-    błąd ``replace``); plik tymczasowy nigdy nie zostaje, a ``target`` zmienia się tylko po udanym zapisie całości.
-    """
-
     try:
         file_descriptor, temporary_name = tempfile.mkstemp(
             prefix=f".{target.stem}.", suffix=".xlsx", dir=target.parent
@@ -87,14 +73,10 @@ def write_atomically(
 
 
 def save_workbook(workbook: Workbook, target: Path) -> None:
-    """Atomowo zapisuje skoroszyt pod istniejący ``target``, zachowując 1:1 jego odwołania zewnętrzne."""
-
     _save_atomically(workbook, target, _read_external_link_parts(target, target))
 
 
 def save_from_template(workbook: Workbook, target: Path, template: bytes) -> None:
-    """Atomowo zapisuje pod ``target`` skoroszyt wczytany z bajtów Wzorca ``template`` z jego ``xl/externalLinks/*``."""
-
     _save_atomically(workbook, target, _read_external_link_parts(BytesIO(template), target))
 
 
