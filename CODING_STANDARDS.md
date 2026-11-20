@@ -96,8 +96,8 @@ When a fix of a rule keeps growing a list of exceptions, replace the list with t
 - Before a change runs on real files, run the Przygotowanie pliku zbiorczego and the Przebieg rozliczeń as `Podgląd bez zapisu`; Uporządkowanie INTERMAX has no preview and saves a Kopia INTERMAX before it replaces the file.
 - Keep tests free of client addresses, order numbers, and row contents in output or logs.
   The one exception is the Zatrzymanie about gaps in `SKUTECZNE` (`ZLE_SKUTECZNE`, ADR 0004): its tests use synthetic `SKUTECZNE` values, because the Komunikat shows the exact cell content.
-- Name a file that a test reads or runs with a literal path (`ROOT / "docs" / "adr"`), not a path built from a variable, and import in the test file each module that a script of the test runs in a subprocess (`from {KeyedBox.__module__} import KeyedBox` in `tests/test_zegar_centrum.py`).
-  `tools/szybko.py` and `tools/mutacje_zmiany.py` select tests from imports and such literals, so a path built at run time or a module named only inside the script hides the dependency.
+- Name a file that a test reads or runs with a literal path (`ROOT / "docs" / "adr"`), not a path built from a variable, and import in the test file each module its subprocess script runs.
+  `tools/szybko.py` selects tests from imports and such literals, so a path built at run time hides the dependency.
 - Test a rule that matches text from Dad's files (a word or phrase in `URZĄDZENIA` or `CZYNNOŚCI`, an operator name, a period token) with a Hypothesis property, not only with examples: the text anywhere in the cell, glued to punctuation, in any letter case and with Polish letters, two words of the rule in one cell, and the word inside a longer word.
   Take the expected result from `GLOSSARY.md` or the ADR, and keep the examples deterministic with `derandomize=True` and `database=None`, as `tests/test_wlasnosci_dopasowania_tekstu.py` does.
 - A test leaves no thread, process, lock or open file behind, and passes alone and in any order, because the xdist shards on the Mac and in CI hold different neighbours.
