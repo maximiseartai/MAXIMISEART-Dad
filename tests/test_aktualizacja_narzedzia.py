@@ -10,6 +10,7 @@ import subprocess
 import sys
 import time
 from typing import Any
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -25,6 +26,8 @@ from rozliczenia.centrum.tool_update import (
     find_git,
     read_result,
 )
+
+from rozliczenia.tool_files import REPOSITORY_URL
 
 from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.git_config import computer_git_config
@@ -226,6 +229,31 @@ def test_bez_gita_na_komputerze_aktualizacja_konczy_sie_brakiem_gita_a_klon_zost
 
     assert result == UpdateResult("BRAK_GITA", before=None, after=None)
     assert repository.state() == unchanged
+
+
+LOCAL_ADDRESS_OF_EVERY_NETWORK_TRANSPORT = {
+    "https": "https://127.0.0.1:9/narzedzie.git",
+    "ssh": "ssh://127.0.0.1:9/narzedzie.git",
+    "git": "git://127.0.0.1:9/narzedzie.git",
+    "adres-narzedzia": urlsplit(REPOSITORY_URL)._replace(netloc="127.0.0.1:9").geturl(),
+}
+
+
+@pytest.mark.parametrize("address", LOCAL_ADDRESS_OF_EVERY_NETWORK_TRANSPORT.values(), ids=LOCAL_ADDRESS_OF_EVERY_NETWORK_TRANSPORT)
+def test_git_w_testach_odmawia_kazdego_transportu_sieci_takze_adresu_narzedzia_wiec_zaden_test_nie_laczy_sie_z_githubem(
+    tmp_path: Path, address: str
+) -> None:
+    refused = subprocess.run(
+        ["git", "ls-remote", address],
+        cwd=tmp_path,
+        env=os.environ | {"LC_ALL": "C"},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert (refused.returncode, refused.stderr.strip()) == (128, f"fatal: transport '{urlsplit(address).scheme}' not allowed")
 
 
 def test_bez_polaczenia_z_githubem_aktualizacja_konczy_sie_brakiem_polaczenia_a_klon_zostaje_bez_zmian(
@@ -680,6 +708,7 @@ def git_whose_helper_holds_its_output(tmp_path: Path, commit: str) -> Path:
         f"COMMIT = {commit!r}\n"
         "args = [arg for index, arg in enumerate(sys.argv[1:]) if arg != '-c' and sys.argv[index] != '-c']\n"
         "command = args[2] if args[:1] == ['-C'] else args[0]\n"
+        # ZEWNĘTRZNE: git fetch po https uruchamia pomocnika git-remote-https jako proces potomny z wyjściem Gita, więc to wyjście zamyka się dopiero z końcem pomocnika (https://git-scm.com/docs/gitremote-helpers)
         "if command == 'fetch':\n"
         "    subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)'])\n"
         "print({'symbolic-ref': 'main', 'for-each-ref': f'v0.1.0 commit {COMMIT}'}.get(command, COMMIT))\n",

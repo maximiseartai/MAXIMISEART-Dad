@@ -67,11 +67,14 @@ def _close(port: int) -> None:
         assert response.status == 202
 
 
+CLOSE_WAITS_FOR_PORT_S = 30
+
+
 def _close_if_running(port: int) -> None:
     with contextlib.suppress(OSError):
         _close(port)
     # ZEWNĘTRZNE: na przeciążonym runnerze Windows GitHub Actions /api/health Centrum przestaje odpowiadać w limicie czasu, zanim Centrum zapisze stop w dzienniku i zwolni port (czasy zadań pytest na windows-latest)
-    wait_for(lambda: tool_files.port_free(port), 30, every=0.1)
+    wait_for(lambda: tool_files.port_free(port), CLOSE_WAITS_FOR_PORT_S, every=0.1)
 
 
 def _log_lines(clone: Path) -> list[str]:
@@ -486,6 +489,12 @@ def test_gdy_po_cofnieciu_stara_wersja_ze_skrotu_juz_trzyma_port_opiekun_konczy_
 
 
 OLD_VERSION_FROM_GUARDIAN_ENDS_WITHIN_S = 30
+
+
+def test_czekanie_na_koniec_starej_wersji_od_opiekuna_i_sprzatanie_mieszcza_sie_w_limicie_pytest_timeout(
+    pytestconfig: pytest.Config,
+) -> None:
+    assert OLD_VERSION_FROM_GUARDIAN_ENDS_WITHIN_S + CLOSE_WAITS_FOR_PORT_S < float(pytestconfig.getini("timeout"))
 
 
 def test_gdy_skrot_zajmie_port_tuz_po_cofnieciu_opiekun_konczy_bez_okienka(tmp_path: Path) -> None:
