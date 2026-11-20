@@ -502,6 +502,7 @@ ENTRIES: dict[str, Entry] = {
 DIAGNOSIS_ENTRIES = ("diagnoza[przygotowanie]", "diagnoza[przebieg]", "diagnoza[uporzadkowanie]")
 NOT_SWEPT: dict[str, str] = {
     "getHealth": "tożsamość Centrum, nie czyta plików taty",
+    "getScope": "Funkcje Stanowiska z Zakresu tego startu Centrum, nie czyta plików taty",
     "decideRun": "Decyzja taty tylko wznawia Uruchomienie, którego odczyty sprawdzają podglądy",
     "getRunCard": "czyta tylko Logi Uruchomienia, pliki Centrum, nie pliki taty; zepsute Logi: test_centrum_karta_z_logow",
     "startToolUpdate": "aktualizacja zmienia katalog narzędzia, nie pliki taty (test_centrum_aktualizacja)",
