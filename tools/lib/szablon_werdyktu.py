@@ -72,7 +72,6 @@ HEADING = re.compile(r"([WD])(\d+)\. (\S.*)")
 ROOT_FIELD = re.compile(rf"Korzeń: (NOWY )?({CODE.pattern}) - (\S.*)")
 RUNG_FIELD = re.compile(r"Szczebel: \(([a-e])\) - (\S.*)")
 MECHANISM_FIELD = "Mechanizm:"
-# Postacie pola ``Idiom:`` Ważnego w wątku bez pola Mechanizm (ADR 0036, „Pole werdyktu”).
 CLASSES = ("brak-testu", "stan-kroku", "typ", "test-klasy")
 RULE_ID = r"[\w.-]+"
 _EARLIER = r" jak #\d+ W\d+ r\d+"
