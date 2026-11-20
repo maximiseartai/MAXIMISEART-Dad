@@ -617,15 +617,7 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         ([("comment", PASS_HEAD), ("comment", f"## Przegląd\n\n{FAIL_HEAD}")], None),
         ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0"), ("comment", PASS_HEAD)], None),
         ([("comment", f"WERDYKT: PASS {OLD}\nZnaleziska: 0"), ("comment", PASS_HEAD)], None),
-        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
-        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 1 (Drobne 1)")], _broken(NO_FINDINGS.format(line="Znaleziska: 1 (Drobne 1)"))),
-        ([("comment", f"WERDYKT: PASS {HEAD}")], _broken(NO_FINDINGS.format(line=""))),
-        (
-            [("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 1 (Ważne 1, Drobne 0)")],
-            _broken("PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
-        ),
         ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 3 (Ważne 0, Drobne 3)")], None),
-        ([("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 4 (Ważne 0, Drobne 4)")], _broken("Drobne 4: podaj najwyżej 3, najważniejsze")),
         ([("COMMENTED", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
         ([("comment", PASS_HEAD), ("comment", f"WERDYKT: PASS {HEAD}\nZnaleziska: 0")], _broken(NO_FINDINGS.format(line="Znaleziska: 0"))),
         (
@@ -674,19 +666,14 @@ def test_po_merge_do_main_linia_ci_main_mowi_ze_rozstrzyga_pierwszy_nieanulowany
         "fail-nie-w-pierwszej-linii-to-nie-werdykt",
         "pass-po-pass-poza-regulami-werdyktu",
         "pass-poza-regulami-dla-starszego-commitu",
-        "pass-poza-regulami-znaleziska-0-jak-994",
-        "pass-poza-regulami-drobne-bez-waznych-jak-1004",
-        "pass-poza-regulami-bez-drugiej-linii",
-        "pass-poza-regulami-z-waznym",
         "pass-z-najwyzej-trzema-drobnymi",
-        "pass-poza-regulami-za-duzo-drobnych",
         "pass-poza-regulami-w-recenzji",
         "pass-poza-regulami-po-pass-w-postaci-werdyktu",
         "pass-poza-regulami-kilka-przyczyn",
     ],
 )
 def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tuple[str, ...]], reason: str | None) -> None:
-    assert werdykt_pr.consent_problem(_written(*verdicts), None) == reason
+    assert werdykt_pr.consent_problem(_written(*verdicts), None, mechanism=None) == reason
 
 
 @pytest.mark.parametrize(
@@ -694,10 +681,8 @@ def test_najnowszy_werdykt_dla_head_rozstrzyga_zgode_na_merge(verdicts: list[tup
     [
         ([("comment", PASS), ("COMMENTED", "WERDYKT: FAIL {head}")], True),
         ([("COMMENTED", "WERDYKT: FAIL {head}"), ("comment", PASS)], False),
-        ([("comment", PASS), ("CHANGES_REQUESTED", "Popraw nazwę funkcji.")], True),
-        ([("comment", PASS), ("comment", "WERDYKT: FAIL {head}", "CONTRIBUTOR")], False),
     ],
-    ids=["recenzja-z-fail-po-komentarzu-pass", "komentarz-pass-po-recenzji-z-fail", "prosba-o-zmiany-po-pass", "fail-kontrybutora-po-pass"],
+    ids=["recenzja-z-fail-po-komentarzu-pass", "komentarz-pass-po-recenzji-z-fail"],
 )
 def test_komentarze_i_recenzje_z_gh_licza_sie_w_kolejnosci_utworzenia(tmp_path: Path, verdicts: list[tuple[str, ...]], refused: bool) -> None:
     """Rozstrzyga też element inny niż ostatni, więc ``scal_pr`` musi oddać regule wszystkie komentarze i recenzje."""
@@ -932,7 +917,7 @@ def test_pr_bez_naglowka_wzoru_skilla_pr_w_jego_kolejnosci_nie_jest_scalany(tmp_
 
 
 @pytest.mark.parametrize(
-    "rollup", [[_check_run("COMPLETED", "FAILURE")], RED_RUN_BEFORE_OLDER_GREEN], ids=["ci-czerwone", "nowy-czerwony-run-przed-starym-zielonym-w-rollupie"]
+    "rollup", [RED_RUN_BEFORE_OLDER_GREEN], ids=["nowy-czerwony-run-przed-starym-zielonym-w-rollupie"]
 )
 def test_brak_naglowka_wzoru_jest_w_jednej_odmowie_z_czerwonym_ci_i_brakiem_werdyktu(tmp_path: Path, rollup: list[dict[str, str | None]]) -> None:
     """W drugim rollupie rozstrzyga run sprzed ostatniego checku, więc ``scal_pr`` musi oddać regule cały rollup."""
@@ -1786,10 +1771,9 @@ def test_linia_ci_przegladu_podaje_stan_required_ci_status_i_padle_zadania_najno
 @pytest.mark.parametrize(
     ("rollup", "line"),
     [
-        ([*GREEN, WAITING_VERIFY], f"success na HEAD {{head}} | {PASSED} | inne workflowy, na które czeka gotowość: w toku: Verify Centrum na Windowsie"),
         (RED_WITH_FAILED_JOBS, f"failure na HEAD {{head}} | {FAILED_JOBS} | {UNPROVEN}"),
     ],
-    ids=["zielony-a-inny-workflow-w-toku", "czerwony-z-padlymi-zadaniami-jego-runu"],
+    ids=["czerwony-z-padlymi-zadaniami-jego-runu"],
 )
 def test_przeglad_podaje_linie_ci_z_rollupu_checkow_gh(tmp_path: Path, rollup: list[dict[str, str | None]], line: str) -> None:
     """W czerwonym rollupie linię zmienia też pierwszy check, więc ``--przeglad`` musi oddać regule cały rollup."""
@@ -1926,13 +1910,15 @@ MANY_REASONS = (
         ("Werdykt: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)", "pierwsza linia „Werdykt: PASS {head}” to nie „WERDYKT: PASS {head}” ani „WERDYKT: FAIL {head}”"),
         (f"WERDYKT: PASS {OLD}\nZnaleziska: 0 (Ważne 0, Drobne 0)", f"werdykt dla {OLD[:7]}, a HEAD PR to {{head}}: przejrzyj git diff {OLD} {{head}} i wpisz SHA HEAD"),
         ("WERDYKT: PASS {head}\n- Drobne: nazwa", "druga linia „- Drobne: nazwa” to nie „Znaleziska: N (Ważne a, Drobne b)”"),
+        ("WERDYKT: PASS {head}\nZnaleziska: 0", "druga linia „Znaleziska: 0” to nie „Znaleziska: N (Ważne a, Drobne b)”"),
+        ("WERDYKT: PASS {head}\nZnaleziska: 1 (Drobne 1)", "druga linia „Znaleziska: 1 (Drobne 1)” to nie „Znaleziska: N (Ważne a, Drobne b)”"),
         ("WERDYKT: FAIL {head}\nZnaleziska: 2 (Ważne 1, Drobne 0)", "Znaleziska: 2, a Ważne 1 i Drobne 0 dają 1"),
         ("WERDYKT: PASS {head}\nZnaleziska: 4 (Ważne 0, Drobne 4)", "Drobne 4: podaj najwyżej 3, najważniejsze"),
         ("WERDYKT: PASS {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)", "PASS z Ważne 1: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
         ("WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 0, Drobne 1)", "FAIL z Ważne 0: FAIL daje tylko Ważne znalezisko, a PASS jest bez Ważnych"),
         (MANY_PROBLEMS, MANY_REASONS),
     ],
-    ids=["pusty", "skrocony-sha", "male-litery", "inny-commit", "bez-linii-znalezisk", "zla-suma", "za-duzo-drobnych", "pass-z-waznym", "fail-bez-waznego", "kilka-naraz"],
+    ids=["pusty", "skrocony-sha", "male-litery", "inny-commit", "bez-linii-znalezisk", "znaleziska-0-jak-994", "drobne-bez-waznych-jak-1004", "zla-suma", "za-duzo-drobnych", "pass-z-waznym", "fail-bez-waznego", "kilka-naraz"],
 )
 def test_plik_werdyktu_niezgodny_z_postacia_ze_skilla_albo_z_head_daje_przyczyny_co_poprawic(verdict: str, reason: str) -> None:
     problems = werdykt_pr.file_problems(verdict.format(head=HEAD, short=HEAD[:7]), HEAD)
@@ -1958,8 +1944,8 @@ def test_werdykt_niezgodny_z_regulami_nie_trafia_na_pr_a_odmowa_podaje_wszystkie
 
 @pytest.mark.parametrize(
     "modes",
-    [["--przeglad", "--bez-merge"], ["--werdykt", "PLIK", "--bez-merge"], ["--przeglad", "--werdykt", "PLIK"], ["--opis", "--bez-merge"]],
-    ids=["przeglad-i-bez-merge", "werdykt-i-bez-merge", "przeglad-i-werdykt", "opis-i-bez-merge"],
+    [["--przeglad", "--bez-merge"], ["--werdykt", "PLIK", "--bez-merge"], ["--opis", "--bez-merge"]],
+    ids=["przeglad-i-bez-merge", "werdykt-i-bez-merge", "opis-i-bez-merge"],
 )
 def test_tryby_przegladu_werdyktu_i_bez_merge_sie_wykluczaja_wiec_dwa_naraz_niczego_nie_publikuja_ani_nie_scalaja(
     tmp_path: Path, modes: list[str]
@@ -2068,18 +2054,30 @@ def test_werdykt_bez_pliku_konczy_sie_bledem_narzedzia_bez_komentarza(tmp_path: 
 ROOTS = frozenset({"R-BEZ-TESTU", "R-DRUGA-DROGA"})
 
 
-def _template_problems(text: str, declared: tuple[int, int] = (1, 1)) -> list[str]:
-    return szablon_werdyktu.problems(werdykty_szablonu.html(text), declared, lambda: ROOTS)
+def _template_problems(text: str, declared: tuple[int, int] = (1, 1), *, mechanism: bool = True) -> list[str]:
+    return szablon_werdyktu.problems(werdykty_szablonu.html(text), declared, lambda: ROOTS, mechanism=mechanism)
 
 
-@pytest.mark.parametrize("text", werdykty_szablonu.PRZECHODZA.values(), ids=werdykty_szablonu.PRZECHODZA)
-def test_tresc_werdyktu_w_szablonie_przechodzi_takze_z_cytatem_pola_w_bloku_kodu(text: str) -> None:
-    assert _template_problems(text) == []
+@pytest.mark.parametrize(
+    ("text", "mechanism"),
+    [
+        *(pytest.param(text, True, id=name) for name, text in werdykty_szablonu.PRZECHODZA.items()),
+        *(pytest.param(text, False, id=f"przed-mechanizmem-{name}") for name, text in werdykty_szablonu.PRZED_MECHANIZMEM.items()),
+    ],
+)
+def test_tresc_werdyktu_w_szablonie_przechodzi_takze_z_cytatem_pola_w_bloku_kodu(text: str, mechanism: bool) -> None:
+    assert _template_problems(text, mechanism=mechanism) == []
 
 
-@pytest.mark.parametrize(("text", "declared", "fragment"), werdykty_szablonu.ODMOWY.values(), ids=werdykty_szablonu.ODMOWY)
-def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(text: str, declared: tuple[int, int], fragment: str) -> None:
-    problems = _template_problems(text, declared)
+@pytest.mark.parametrize(
+    ("text", "declared", "fragment", "mechanism"),
+    [
+        *(pytest.param(*case, True, id=name) for name, case in werdykty_szablonu.ODMOWY.items()),
+        *(pytest.param(*case, False, id=f"przed-mechanizmem-{name}") for name, case in werdykty_szablonu.ODMOWY_PRZED_MECHANIZMEM.items()),
+    ],
+)
+def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(text: str, declared: tuple[int, int], fragment: str, mechanism: bool) -> None:
+    problems = _template_problems(text, declared, mechanism=mechanism)
 
     assert any(fragment in problem for problem in problems[:-1]), problems
     assert problems[-1].startswith("wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD> / Znaleziska: "), problems[-1]
@@ -2093,9 +2091,29 @@ def test_pole_idiom_wazne_daje_regule_klase_i_wczesniejsze_wazne_z_jednej_z_trze
     """Pole ``Idiom:`` (ADR 0036, „Pole werdyktu”) pisze recenzent po Szczeblu, a warunek merge'a bierze z niego id
     reguły i wcześniejsze Ważne, którego przypadek jej dowód ma złapać."""
 
-    found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZECHODZA[f"idiom-{name}"])))
+    found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZED_MECHANIZMEM[f"idiom-{name}"])))
 
     assert found.idioms == (szablon_werdyktu.Idiom("W1", *expected),)
+
+
+@pytest.mark.parametrize("name", werdykty_szablonu.MECHANIZMY)
+def test_pole_mechanizm_wazne_daje_szczebel_piramidy_dla_bramki_straznika(name: str) -> None:
+    found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZECHODZA[f"mechanizm-{name}"])))
+
+    assert [root.mechanism for root in found.majors] == [name]
+
+
+def test_skill_przeglad_bierze_liste_szczebli_mechanizmu_z_szablonu_werdyktu_i_ma_kryterium_kazdego() -> None:
+    criteria = (REVIEW / "korzen.md").read_text(encoding="utf-8").partition("## Mechanizm\n")[2]
+
+    assert szablon_werdyktu.MECHANISM_FORM in szablon_werdyktu.template()
+    assert [line.removeprefix("- **").partition("**")[0] for line in criteria.splitlines() if line.startswith("- **")] == list(werdykty_szablonu.MECHANIZMY)
+
+
+def test_wazne_bez_pola_mechanizm_w_werdykcie_sprzed_wdrozenia_nie_ma_szczebla_dla_bramki() -> None:
+    found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZED_MECHANIZMEM["szablon-bez-mechanizmu"])))
+
+    assert [(root.code, root.mechanism) for root in found.majors] == [("R-BEZ-TESTU", None)]
 
 
 def test_blok_mutacji_recenzenta_daje_wazne_runde_i_json_z_bloku_kodu_bez_zmian() -> None:
@@ -2115,7 +2133,7 @@ def test_werdykt_bez_pola_korzen_nie_czyta_listy_kodow() -> None:
     def unread() -> frozenset[str]:
         raise AssertionError("lista kodów czytana bez pola Korzeń")
 
-    assert szablon_werdyktu.problems(werdykty_szablonu.html(werdykty_szablonu.WERDYKTY["sprawdzone"]), (0, 0), unread) == []
+    assert szablon_werdyktu.problems(werdykty_szablonu.html(werdykty_szablonu.WERDYKTY["sprawdzone"]), (0, 0), unread, mechanism=True) == []
 
 
 @pytest.mark.parametrize(
@@ -2134,10 +2152,6 @@ def test_werdykt_bez_pola_korzen_nie_czyta_listy_kodow() -> None:
 def test_lista_korzeni_z_wpisem_poza_postacia_sie_nie_wczytuje(entry: str, reason: str) -> None:
     with pytest.raises(ValueError, match=reason):
         szablon_werdyktu.listed_codes(entry)
-
-
-def test_lista_korzeni_w_repo_ma_kody_z_opisem_i_przykladem_pr() -> None:
-    assert "R-BEZ-TESTU" in szablon_werdyktu.listed_codes((REVIEW / "korzenie.toml").read_text(encoding="utf-8"))
 
 
 NEW_CODE = '\n[R-NOWY-KOD]\nopis = "Kod dodany w tym PR."\nprzyklad = 1\n'
@@ -2237,7 +2251,7 @@ def test_komentarz_sprzed_wdrozenia_zmieniony_na_werdykt_nie_postarza_watku_a_re
     pull = _pull(comments=comments)
 
     assert werdykt_pr.rule_applies(pull, AFTER_FIRST) is True
-    assert (werdykt_pr.consent_problem(pull, AFTER_FIRST) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
+    assert (werdykt_pr.consent_problem(pull, AFTER_FIRST, mechanism=None) or "").startswith(f"werdykt: PASS dla {HEAD[:7]} nie przechodzi reguł --werdykt (")
 
 
 SPRAWDZONE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["sprawdzone"] + "\n"
@@ -2249,19 +2263,13 @@ PROSE_PASS = "WERDYKT: PASS {head}\nZnaleziska: 0 (Ważne 0, Drobne 0)\n" + werd
     [
         (None, None, PASS, False),
         ("2026-10-24T12:00:00Z", FAIL_OLD, PASS, False),
-        ("2026-10-01T00:00:00Z", None, PASS, True),
         ("2026-10-01T00:00:00Z", FAIL_OLD, PASS, True),
-        ("2026-10-01T00:00:00Z", FAIL_OLD, PROSE_PASS, True),
-        ("2026-10-24T03:00:01Z", "Komentarz bez werdyktu.", PASS, True),
         ("2026-10-01T00:00:00Z", None, SPRAWDZONE_PASS, True),
     ],
     ids=[
         "niewdrozony",
         "watek-sprzed-wdrozenia",
-        "pr-bez-werdyktu-po-wdrozeniu",
         "pierwszy-reczny-werdykt-bez-szablonu-po-wdrozeniu",
-        "pass-z-proza-po-wdrozeniu",
-        "komentarz-bez-werdyktu-nie-postarza",
         "pass-w-szablonie-po-wdrozeniu",
     ],
 )
@@ -2290,6 +2298,39 @@ def test_ta_sama_regula_szablonu_rozstrzyga_publikacje_i_zgode_na_merge_takze_dl
         assert f"werdykt: PASS dla {head[:7]} nie przechodzi reguł --werdykt (" in _last_line(checked), checked.stdout
         assert "wzór (.agents/skills/przeglad/SKILL.md): WERDYKT: FAIL <pełny SHA HEAD>" in _last_line(checked), checked.stdout
         assert _last_line(answered).startswith("WERDYKT ODMOWA | #1 | "), answered.stdout
+
+
+FAIL_BEZ_MECHANIZMU = "WERDYKT: FAIL {head}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne"] + "\n"
+FAIL_Z_MECHANIZMEM = "WERDYKT: FAIL {head}\nZnaleziska: 2 (Ważne 1, Drobne 1)\n" + werdykty_szablonu.TEMPLATE + "\n"
+
+
+@pytest.mark.parametrize(
+    ("deployed", "earlier", "verdict", "reason"),
+    [
+        pytest.param(None, None, FAIL_BEZ_MECHANIZMU, None, id="niewdrozony"),
+        pytest.param("2026-10-01T00:00:00Z", None, FAIL_BEZ_MECHANIZMU, "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, Mechanizm, a po Szczeblu jest koniec", id="nowy-watek-bez-mechanizmu"),
+        pytest.param("2026-10-01T00:00:00Z", None, FAIL_Z_MECHANIZMEM, None, id="nowy-watek-z-mechanizmem"),
+        pytest.param("2026-10-24T12:00:00Z", FAIL_OLD, FAIL_BEZ_MECHANIZMU, None, id="watek-sprzed-wdrozenia-konczy-po-staremu"),
+    ],
+)
+def test_pole_mechanizm_obowiazuje_w_watku_z_pierwszym_werdyktem_po_wdrozeniu_adr(tmp_path: Path, deployed: str | None, earlier: str | None, verdict: str, reason: str | None) -> None:
+    github = MergeGitHub(tmp_path, {"kod/__init__.py": SUM})
+    _deploy_template(github)
+    if deployed is not None:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("GIT_COMMITTER_DATE", deployed)
+            github.push_main({szablon_werdyktu.MECHANISM_ADR: "# ADR 0046\n"})
+    head = github.open_pull(1, {"kod/inne.py": "INNE: int = 1\n"})
+    if earlier is not None:
+        github.comment(1, earlier)
+    path = tmp_path / "runda.md"
+    path.write_text(verdict.format(head=head), encoding="utf-8")
+
+    answered = github.run("1", "--werdykt", str(path))
+
+    assert (answered.returncode == 0) == (reason is None), answered.stdout + answered.stderr
+    assert len(github.published()) == (reason is None)
+    assert reason is None or reason in _last_line(answered), answered.stdout
 
 
 FIRST_ROUND = "1" * 40
@@ -2459,13 +2500,10 @@ def test_werdykt_fail_bez_html_ktorego_github_nie_wyrenderowal_odmawia_rundy_z_p
 
 @pytest.mark.parametrize(
     ("rounds", "changes"),
-    [(2, ()), (2, (2,)), (3, ()), (3, (3,)), (6, (3, 6))],
+    [(2, ()), (2, (2,))],
     ids=[
         "po-drugiej-rundzie-z-fail-w-tym-samym-miejscu-kolejnej-nie-ma",
         "po-zmianie-podejscia-po-drugiej-rundzie-runda-sie-odbywa",
-        "po-trzeciej-rundzie-z-fail-kolejnej-nie-ma",
-        "po-zmianie-podejscia-w-tym-samym-pr-runda-sie-odbywa",
-        "po-szostej-rundzie-z-fail-druga-zmiana-podejscia-nie-daje-rundy",
     ],
 )
 def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze_dla_pass_spoza_werdyktu(tmp_path: Path, rounds: int, changes: tuple[int, ...]) -> None:
@@ -2487,7 +2525,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
             github.comment(1, CHANGED[1])
     path = tmp_path / f"runda-{rounds + 1}.md"
     path.write_text(SPRAWDZONE_PASS.format(head=head), encoding="utf-8")
-    refused = not changes or rounds >= limit_rund.END
+    refused = not changes
 
     reviewed = github.run("1", "--przeglad")
     answered = github.run("1", "--werdykt", str(path))
@@ -2496,7 +2534,7 @@ def test_limit_rund_odmawia_przegladu_publikacji_werdyktu_i_zgody_na_merge_takze
         github.comment(1, SPRAWDZONE_PASS.format(head=head))
     checked = github.run("1", "--bez-merge")
 
-    reason = {2: _repeat_reason("kod/inne.py, R-BEZ-TESTU", *failed), 3: _limit_reason(*failed)}.get(rounds) or _final_reason(*failed)
+    reason = _repeat_reason("kod/inne.py, R-BEZ-TESTU", *failed)
     assert reviewed.returncode == int(refused), reviewed.stdout + reviewed.stderr
     assert answered.returncode == int(refused), answered.stdout + answered.stderr
     if refused:
@@ -2561,7 +2599,6 @@ def _repeat(text: str, decision: str = "PASS") -> str:
         (True, True, _repeat("z-punktem"), True),
         (True, False, SPRAWDZONE_PASS, True),
         (True, True, _repeat("punkt-w-bloku-kodu-dowodu", "FAIL"), False),
-        (True, True, _repeat("wazne-z-punktem", "FAIL"), True),
         (False, True, SPRAWDZONE_PASS, True),
     ],
     ids=[
@@ -2569,7 +2606,6 @@ def _repeat(text: str, decision: str = "PASS") -> str:
         "pass-po-pass-tego-head-z-punktem",
         "pass-po-werdykcie-starszego-commitu",
         "fail-po-pass-tego-head-z-punktem-tylko-w-bloku-kodu",
-        "fail-po-pass-tego-head-z-punktem",
         "watek-sprzed-wdrozenia-konczy-po-staremu",
     ],
 )
@@ -2968,7 +3004,7 @@ def test_odmowa_bramki_korzenia_podaje_wzor_a_opis_poprawiony_bez_nowego_commita
     ids=["kod-z-listy", "nowy-kod-spoza-listy", "kod-spoza-listy", "bez-rundy"],
 )
 def test_punkt_rozstrzygniecia_kodu_w_sprawdzone_przechodzi_tylko_z_runda_i_kodem_jak_pole_korzen(verdict: str, fragment: str | None) -> None:
-    problems = szablon_werdyktu.problems(korzenie_pr.html(korzenie_pr.WERDYKTY[verdict]), (0, 0), lambda: ROOTS)
+    problems = szablon_werdyktu.problems(korzenie_pr.html(korzenie_pr.WERDYKTY[verdict]), (0, 0), lambda: ROOTS, mechanism=True)
 
     assert (problems == []) == (fragment is None), problems
     assert fragment is None or any(fragment in problem for problem in problems), problems

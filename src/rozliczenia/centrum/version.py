@@ -1,15 +1,3 @@
-"""Wersja narzędzia i tożsamość Centrum w ``health``.
-
-Wersją narzędzia jest commit ``HEAD`` klonu Gita, w którym leży narzędzie, a
-obok niej dzień, od którego klon jest na tym commicie. Oba fakty pochodzą z
-plików ``.git``, bez uruchamiania ``git`` (Centrum działa bez konsoli, a
-``git`` nie musi być w ``PATH``). Launcher i opiekun ponownego startu pytają
-``health`` działającego Centrum o jego commit (``running_centrum``) i tak samo
-rozstrzygają, czy to ta sama wersja (``RunningCentrum.runs``). Moduł używa tylko
-biblioteki standardowej: launcher korzysta z niego, zanim wczyta FastAPI, a
-opiekun działa z jego kopii.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -29,33 +17,22 @@ _COMMIT = re.compile(r"[0-9a-f]{40}")
 
 
 def short_commit(commit: str) -> str:
-    """Pierwsze 7 znaków commitu: tak commit narzędzia widzi tata (Konfiguracja, Diagnoza, ``health``)."""
-
     return commit[:7]
 
 
 def version_label(commit: str | None) -> str:
-    """Wersja narzędzia w komunikacie startu i dzienniku Centrum: skrót commitu albo „nieznana” poza klonem Gita."""
-
     return "nieznana" if commit is None else short_commit(commit)
 
 
 @dataclass(frozen=True)
 class RunningCentrum:
-    """Centrum rozliczeń, które odpowiada na porcie: skrót commitu z jego ``health`` (``None`` poza klonem Gita)."""
-
     commit: str | None
 
     def runs(self, commit: str | None) -> bool:
-        """Czy to Centrum działa z commitu ``commit``, czyli w tej samej wersji narzędzia."""
-
         return self.commit == (None if commit is None else short_commit(commit))
 
 
 def running_centrum(port: int, *, timeout_s: float) -> RunningCentrum | None:
-    """Centrum na ``HOST:port`` według jego ``health``; ``None``, gdy odpowiada coś innego albo nic. Pytanie idzie
-    z pominięciem serwera proxy, bo ten nie widzi ``127.0.0.1`` taty."""
-
     direct = opener(urllib.request.ProxyHandler({}))
     try:
         with direct.open(f"http://{HOST}:{port}/api/health", timeout=timeout_s) as response:
@@ -73,12 +50,6 @@ def is_commit(text: str) -> bool:
 
 
 def tool_commit(root: Path = TOOL_ROOT) -> str | None:
-    """Pełny commit ``HEAD`` narzędzia w ``root``; ``None``, gdy narzędzie nie leży w klonie Gita.
-
-    Obsługuje zwykły klon, katalog roboczy ``git worktree`` (plik ``.git``),
-    odłączony ``HEAD`` i gałąź spakowaną w ``packed-refs``.
-    """
-
     try:
         git_directory = _git_directory(root)
         if git_directory is None:
@@ -92,12 +63,6 @@ def tool_commit(root: Path = TOOL_ROOT) -> str | None:
 
 
 def commit_since(commit: str, root: Path = TOOL_ROOT) -> date | None:
-    """Dzień, od którego narzędzie w ``root`` jest na ``commit``: data ostatniego wpisu reflogu ``HEAD``.
-
-    Wpis reflogu przed tabulatorem to ``<stary> <nowy> <kto> <sekundy> <strefa>``. ``None``, gdy reflogu nie ma, jest
-    pusty albo jego ostatni wpis prowadzi do innego commitu.
-    """
-
     try:
         git_directory = _git_directory(root)
         if git_directory is None:
@@ -117,9 +82,6 @@ def commit_since(commit: str, root: Path = TOOL_ROOT) -> date | None:
 
 
 def _git_directory(root: Path) -> Path | None:
-    """Katalog Gita klonu ``root``: folder ``.git`` albo, w katalogu roboczym ``git worktree``, ścieżka z pliku
-    ``.git`` w postaci „gitdir: <ścieżka>”."""
-
     dot_git = root / ".git"
     state = path_state(dot_git)
     if state == "folder":
@@ -132,9 +94,6 @@ def _git_directory(root: Path) -> Path | None:
 
 
 def _resolved(ref: str, git_directory: Path) -> str | None:
-    """Commit odniesienia ``ref`` z pliku albo z ``packed-refs``, ``None`` bez niego; gałęzie katalogu roboczego
-    ``git worktree`` leżą we wspólnym katalogu Gita (``commondir``)."""
-
     common = git_directory
     commondir = git_directory / "commondir"
     if file_state(commondir) == "file":

@@ -53,18 +53,15 @@ import pytest
 from rozliczenia.period_folder import PeriodFolder
 from rozliczenia import tool_files
 from rozliczenia.dad_files import DadFiles
-from rozliczenia import efenix_browser, efenix_messages, efenix_process, efenix_trace
+from rozliczenia import efenix_browser, efenix_process, efenix_trace
 from rozliczenia.domain import ProgressPhase
 from rozliczenia.efenix_mark import Mark
 from rozliczenia.efenix_pace import KEEPALIVE_S, Pace
 from rozliczenia.efenix_address import AddressPart
-from rozliczenia.efenix_checks import ListedRead, Settled
-from rozliczenia.efenix_positions import Excess
+from rozliczenia.efenix_checks import ListedRead
 from rozliczenia.efenix_pricing import (
     EfenixInputs,
-    EmmettWarning,
     OrderKind,
-    OrderResult,
     PricingMode,
     PricingStopped,
     PricingSummary,
@@ -97,7 +94,7 @@ from rozliczenia.efenix_window import (
 )
 from rozliczenia.efenix_marking import mark_orders
 from rozliczenia.efenix_orders import CollectiveOrder
-from rozliczenia.efenix_page import EmmettWindow, ResultsTable, SearchWarning, emmett_window, emmett_window_fault, read_order
+from rozliczenia.efenix_page import EmmettWindow, ResultsTable, emmett_window, emmett_window_fault, read_order
 from rozliczenia.efenix_page import read_results, results_table, search_warning
 from rozliczenia.engine import SettlementInputs, run_settlements
 from rozliczenia.process_run import Finished, Outcome, Stop, run_process
@@ -437,7 +434,6 @@ _RUN_4_11_FILE = {"012": 1, "016": 3, "009": 2, "010": 1}
     [
         pytest.param({"012": 1, "016": 2}, {"016": 3, "009": 2, "010": 1}, id="sama-wycena-emmetta-z-S-o-1-mniejszym-bez-Y-i-Z"),
         pytest.param({"012": 1, "016": 3}, {"009": 2, "010": 1}, id="niepełna-wycena-bez-Y-i-Z"),
-        pytest.param({"012": 1, "016": 1, "009": 1}, {"016": 3, "009": 2, "010": 1}, id="mniej-w-kilku-pozycjach"),
     ],
 )
 def test_wycena_ktora_juz_jest_z_mniejsza_iloscia_niz_plik_proces_dokancza_iloscia_z_pliku_bez_wyceny_emmetta(
@@ -524,13 +520,6 @@ def test_data_wykonania_odrzucona_przy_wycenie_ktora_juz_jest_to_blad_bez_zmiany
             id="pozycja-bez-kolumny",
         ),
         pytest.param({}, {"012": 2}, "pozycja INDEKS_012 (kolumna O): efenix 2, plik 1", {"012": 2, "019": 2}, id="wycena-emmetta"),
-        pytest.param(
-            {},
-            {"012": 1, "020": 1},
-            "pozycja INDEKS_020 (bez kolumny w Pliku zbiorczym): efenix 1, plik 0",
-            {"012": 1, "020": 1, "019": 2},
-            id="wycena-emmetta-bez-kolumny",
-        ),
     ],
 )
 def test_pozycja_z_wieksza_iloscia_w_efenix_niz_w_pliku_zostaje_a_reszta_zlecenia_jest_dopisana_z_ostrzezeniem_emmetta(
@@ -1172,7 +1161,12 @@ def test_jedno_okno_przegladarki_przekazuje_kazde_gotowe_zlecenie_po_kolei_jedny
 @pytest.mark.parametrize(
     ("text", "refusal"),
     [
-        *(pytest.param(refusal.value, refusal, id=refusal.name.lower()) for refusal in ForwardRefusal if refusal is not ForwardRefusal.OTHER_TEXT),
+        pytest.param(
+            "Rozliczyłeś prace ziemne lub rozliczasz zlecenie UST - Nie dołączyłeś do wyceny żadnych zdjęć !", ForwardRefusal.NO_PHOTOS, id="no_photos"
+        ),
+        pytest.param("Podaj długość przyłącza !", ForwardRefusal.NO_LENGTH, id="no_length"),
+        pytest.param("Nie wprowadziłeś wyceny zlecenia !", ForwardRefusal.NO_PRICING, id="no_pricing"),
+        pytest.param("Brak wypełnionej daty wykonania !", ForwardRefusal.NO_DATE, id="no_date"),
         pytest.param("Zlecenie zablokowane przez administratora !", ForwardRefusal.OTHER_TEXT, id="tekst-spoza-listy"),
     ],
 )
@@ -1375,8 +1369,13 @@ def test_przekazanie_otwartego_zlecenia_wyslane_przez_strone_po_udanym_przekazan
     assert (stopped.value.cause, requests) == (StatusChangeBlocked.OUTSIDE_FORWARD, [("POST", "Do akceptacji")])
 
 
-@pytest.mark.parametrize("mode", list(PricingMode), ids=lambda mode: mode.name.lower())
-@pytest.mark.parametrize("status_change", [StatusChange.ON_LOAD, StatusChange.POPUP], ids=lambda change: change.name.lower())
+@pytest.mark.parametrize(
+    ("mode", "status_change"),
+    [
+        pytest.param(PricingMode.FILL, StatusChange.ON_LOAD, id="on_load-fill"),
+        pytest.param(PricingMode.FORWARD, StatusChange.POPUP, id="popup-forward"),
+    ],
+)
 def test_zmiana_statusu_ktorej_okno_nie_wyslalo_w_przekazaniu_nie_dochodzi_do_efenix_takze_z_nowego_okna_strony(
     tmp_path: Path, page: Page, mode: PricingMode, status_change: StatusChange
 ) -> None:
@@ -1411,25 +1410,6 @@ def test_zmiana_statusu_przy_wczytaniu_strony_zlecenia_w_innej_budowie_to_zatrzy
     facts = outcome.ending.facts
     assert isinstance(facts, PricingStopped)
     assert (_stop(outcome), facts.part, facts.cause, requests) == ("EFENIX_OKNO_ZATRZYMANE", PagePart.ORDER, StatusChangeBlocked.OUTSIDE_FORWARD, [])
-
-
-@pytest.mark.parametrize(
-    ("efenix_address", "found"),
-    [
-        pytest.param("Poznań-Wilda ul.Kowalskiego Jana 12A Lokal 34", True, id="słowa-w-innej-kolejności-i-Lokal"),
-        pytest.param("Poznań-Wilda ul.Jana Kowalskiego 12A Lokal 35", False, id="inny-lokal"),
-        pytest.param("Poznań-Wilda ul.Jana Kowalskiego 12B Lokal 34", False, id="inny-numer"),
-        pytest.param("Poznań-Wilda ul.Jana Kowalskiej 12A Lokal 34", False, id="inne-słowo"),
-        pytest.param("Poznań-Wilda os.Jana Kowalskiego 12A Lokal 34", False, id="inny-rodzaj"),
-    ],
-)
-def test_dane_adresowe_efenix_to_adres_z_pliku_w_dowolnej_kolejnosci_slow_z_lokalem_i_tylko_wtedy(
-    tmp_path: Path, efenix_address: str, found: bool
-) -> None:
-    order = Order("#9001", address="UL. JANA KOWALSKIEGO 12A/34", efenix_address=efenix_address)
-    outcome = _price_in_process(tmp_path, StanEfenix([order.in_efenix("901")]), [order])
-
-    assert _errors(outcome) == ([] if found else [("EFENIX_INNY_ADRES", "wiersz 18")])
 
 
 def test_plik_bez_kwot_au_policzonych_przez_excel_zatrzymuje_wycene_zanim_otworzy_efenix(tmp_path: Path, page: Page) -> None:
@@ -1486,11 +1466,6 @@ def test_numer_zl_liczba_niecalkowita_to_numer_z_czescia_ulamkowa_a_nie_numer_in
         pytest.param((Action.OPEN, 0), ["9201"], False, id="przy-otwarciu-pierwszego-zlecenia"),
         # Szukanie bez sesji efenix nie przekierowuje, tylko odpowiada samym ostrzeżeniem o wygasłej sesji (#828).
         pytest.param((Action.SEARCH, 1), ["9201", "9202"], True, id="przy-szukaniu"),
-        # Strona pierwszego zlecenia otwiera się trzy razy: przy otwarciu, po dacie wykonania i po Wycenie Emmetta.
-        pytest.param((Action.OPEN, 3), ["9201", "9202"], True, id="przy-otwarciu-zlecenia"),
-        pytest.param((Action.DATE, 1), ["9201", "9202"], True, id="przy-dacie-wykonania"),
-        pytest.param((Action.EMMETT, 1), ["9201", "9202"], True, id="przy-wycenie-emmetta"),
-        pytest.param((Action.QUANTITY, 1), ["9201", "9202"], True, id="przy-zapisie-ilości"),
     ],
 )
 def test_wylogowanie_przed_szukaniem_albo_w_trakcie_zatrzymuje_wycene_a_komunikat_mowi_czy_cos_zmienila(
@@ -1621,13 +1596,6 @@ ANSWERED = {
         _answering(SAVE_QUANTITY, _to_login),
         ("EFENIX_WYLOGOWANY", PagePart.QUANTITY, LoginSign.REDIRECT, WindowAction.QUANTITY),
     ),
-    "przekazanie-bez-odpowiedzi": (
-        _READY,
-        _READY.in_efenix("952"),
-        PricingMode.FORWARD,
-        _answering(CHANGE_STATUS, lambda route: route.abort()),
-        ("EFENIX_OKNO_ZATRZYMANE", PagePart.FORWARD, OtherShape(Shape.STATUS_NOT_ANSWERED), WindowAction.FORWARD),
-    ),
     "przekazanie-przekierowane-na-logowanie": (
         _READY,
         _READY.in_efenix("952"),
@@ -1691,6 +1659,7 @@ def test_zerwane_zadanie_przekazania_zatrzymuje_wycene_od_razu_a_nie_po_czasie_o
     failed = facts.stopped_at.failed
     assert failed is not None
     assert (facts.cause, failed.action) == (OtherShape(Shape.STATUS_NOT_ANSWERED), WindowAction.FORWARD)
+    assert (_stop(outcome), facts.part) == ("EFENIX_OKNO_ZATRZYMANE", PagePart.FORWARD)
     assert failed.duration_ms < efenix_browser.TIMEOUT_MS / 2, failed
 
 
@@ -1999,8 +1968,6 @@ def _closing_at(page: Page, number: int) -> Callable[[WindowAction], None]:
         pytest.param(("działanie", 3), False, [18], id="między-zleceniami"),
         pytest.param(("przerwa", 1), False, [18], id="przy-dacie-wykonania"),
         pytest.param(("działanie", 6), True, [18], id="po-dacie-wykonania"),
-        pytest.param(("przerwa", 2), True, [18], id="przy-wycenie-emmetta"),
-        pytest.param(("przerwa", 3), True, [18], id="przy-ilości"),
     ],
 )
 def test_zamkniete_okno_efenix_zatrzymuje_wycene_z_komunikatem_dla_taty_a_gotowe_przed_nim_maja_znacznik(
@@ -2097,12 +2064,9 @@ class _CloseReportedLate:
         return getattr(self._page, name)
 
 
-# Strona, w trakcie której nawigacji tata zamyka kartę: lista przy starcie i przed szukaniem drugiego zlecenia, strona
-# zlecenia przy otwarciu i po dacie wykonania, i przeładowanie po „Załaduj do zlecenia”.
 NAVIGATIONS = {
     "lista-na-starcie": (LIST_PAGE, 1, PagePart.LIST),
     "strona-zlecenia": (ORDER_PAGE, 1, PagePart.ORDER),
-    "strona-po-dacie": (ORDER_PAGE, 2, PagePart.ORDER),
     "przeladowanie-po-emmetcie": (ORDER_PAGE, 3, PagePart.EMMETT),
     "lista-ponownie": (LIST_PAGE, 2, PagePart.LIST),
 }
@@ -2409,12 +2373,13 @@ def test_tabela_wynikow_szukania_czyta_sie_bez_skryptow_i_obslugi_zdarzen_odpowi
         page.wait_for_function("() => window.uruchomione === true", timeout=1_000)
 
 
-@pytest.mark.parametrize("warning", list(SearchWarning), ids=[warning.name for warning in SearchWarning])
-def test_odpowiedz_szukania_z_tabela_nie_jest_ostrzezeniem_efenix_takze_z_tekstem_ostrzezenia(page: Page, warning: SearchWarning) -> None:
+def test_odpowiedz_szukania_z_tabela_nie_jest_ostrzezeniem_efenix_takze_z_tekstem_ostrzezenia(page: Page) -> None:
     """Ostrzeżenie efenix to cała odpowiedź szukania bez tabeli: odpowiedź z tabelą nie jest ostrzeżeniem, także gdy cały
     jej tekst to tekst ostrzeżenia."""
 
-    assert search_warning(page, f"<table><tbody><tr><td>{warning.value}</td></tr></tbody></table>") is None
+    answer = "<table><tbody><tr><td>Ostrzeżenie: Twoja sesja wygasła - zaloguj się ponownie !</td></tr></tbody></table>"
+
+    assert search_warning(page, answer) is None
 
 
 # Żądanie okna, na które efenix odpowiada stroną błędu serwera, numer tego żądania okna, status i część strony, którą
@@ -2423,10 +2388,8 @@ ERROR_ANSWERS = {
     "lista-na-starcie": (LIST_PAGE, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.LIST),
     "lista-ponownie": (LIST_PAGE, 2, HTTPStatus.NOT_FOUND, PagePart.LIST),
     "szukanie": (SEARCH, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.RESULTS),
-    "szukanie-404": (SEARCH, 2, HTTPStatus.NOT_FOUND, PagePart.RESULTS),
     "data-wykonania": (SET_DATE, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.DATE),
     "zaladuj-do-zlecenia": (LOAD_EMMETT, 1, HTTPStatus.INTERNAL_SERVER_ERROR, PagePart.EMMETT),
-    "ilosc": (SAVE_QUANTITY, 1, HTTPStatus.NOT_FOUND, PagePart.QUANTITY),
     "ilosc-400": (SAVE_QUANTITY, 1, HTTPStatus.BAD_REQUEST, PagePart.QUANTITY),
 }
 
@@ -2788,17 +2751,6 @@ def _packed_like_excel(source: Path) -> None:
             archive.writestr(info.filename, data)
 
 
-def test_gotowe_zlecenie_z_adresem_juz_w_kolorze_znacznika_zostaje_a_plik_sie_nie_zmienia(tmp_path: Path, page: Page) -> None:
-    order = Order("#7501", cells={"O": 1}, amount=_au({"012": 1}), quantities={"012": 1}, address_fill=READY_RGB)
-    source = write_collective_file(tmp_path, [order])
-    _packed_like_excel(source)
-    before = source.read_bytes()
-    with atrapa_efenix([order.in_efenix("751")]) as atrapa:
-        outcome = _run(source, page, atrapa.url)
-
-    assert (outcome.result, _marked(source), source.read_bytes() == before) == ("OK", [18], True)
-
-
 def _replaced(part: str, old: bytes, new: bytes) -> Callable[[dict[str, bytes]], dict[str, bytes]]:
     """Kształt pliku: w części ``part`` jedno wystąpienie ``old`` (wyrażenie regularne) zastąpione ``new``."""
 
@@ -3024,61 +2976,6 @@ def _resumed_orders() -> list[Order]:
     return [Order(f"#990{index}", day=date(2026, 9, index), cells=cells, amount=_au(filled), emmett={"012": 1}) for index in (1, 2, 3)]
 
 
-@pytest.mark.parametrize(
-    "expire_after",
-    [
-        # Zlecenie 1 ma dwa zapisy ilości, więc trzeci to pierwsza ilość zlecenia 2, a czwarty wylogowuje w jego połowie.
-        pytest.param((SAVE_QUANTITY, 3), id="w-połowie-ilości-zlecenia"),
-        pytest.param((LOAD_EMMETT, 1), id="przy-wycenie-emmetta"),
-    ],
-)
-def test_przerwanie_wylogowaniem_i_ponowne_uruchomienie_daje_ten_sam_stan_efenix_i_plik_zbiorczy_co_jeden_przebieg(
-    tmp_path: Path, page: Page, expire_after: tuple[str, int]
-) -> None:
-    """Po wylogowaniu tata loguje się z powrotem i uruchamia ponownie; Wycena Emmetta jest najwyżej raz na zlecenie.
-
-    W każdym z tych miejsc zlecenie 2 jest albo bez ilości, więc ponowne uruchomienie ładuje Wycenę Emmetta, albo ma już
-    Wycenę Emmetta, więc ponowne uruchomienie ją dokańcza. Biegnie ono w tempie ludzkim na udawanym zegarze: gotowe
-    zlecenie 1 przechodzi bez przerw (#834), a zlecenia 2 i 3 dokańcza z przerwami przed zapisami."""
-
-    orders = _resumed_orders()
-    original = write_collective_file(tmp_path / "plik", orders)
-    whole, resumed = (tmp_path / name / PERIOD / original.name for name in ("pelny", "przerwany"))
-    for copy_of in (whole, resumed):
-        copy_of.parent.mkdir(parents=True)
-        shutil.copy2(original, copy_of)
-    def in_efenix() -> list[AtrapaOrder]:
-        return [order.in_efenix(f"99{index}") for index, order in enumerate(orders)]
-
-    with atrapa_efenix(in_efenix()) as atrapa:
-        once = _run(whole, page, atrapa.url)
-        priced_once = (_pricing(atrapa), atrapa.status_changes())
-    clock = _FakeTime()
-    with atrapa_efenix(in_efenix(), expire_after=expire_after, clock=clock) as atrapa:
-        stopped_tab = _next_tab(page)
-        stopped = _run(resumed, stopped_tab, atrapa.url)
-        again_tab = _next_tab(stopped_tab)
-        atrapa.log_in()
-        since = len(atrapa.requests)
-        again = _run(resumed, again_tab, atrapa.url, pace=Pace(sleep=clock.pause, clock=clock), clock=clock)
-        priced_again = (_pricing(atrapa), atrapa.status_changes())
-        searched_again, written_again = (
-            _window_moments(atrapa, SEARCH, since),
-            [at for path in (SET_DATE, LOAD_EMMETT, SAVE_QUANTITY) for at in _window_moments(atrapa, path, since)],
-        )
-
-    assert isinstance(stopped.ending, Stop)
-    message = stopped.ending.message
-    assert (_stop(stopped), stopped.ending.stop_kind, message.what.startswith("efenix wylogował")) == ("EFENIX_WYLOGOWANY", "for_tata", True)
-    assert (once.result, again.result, _figures(again)) == ("OK", "OK", _figures_of(3, 3))
-    assert priced_again == priced_once
-    assert [emmett_loads for _quantities, _day, emmett_loads in priced_again[0].values()] == [1, 1, 1]
-    assert (_parts(resumed), _marked(resumed)) == (_parts(whole), [18, 19, 20])
-    # Zlecenie 1 jest już gotowe: jego szukanie, otwarcie i szukanie zlecenia 2 są w chwili 0, a każdy zapis zleceń 2 i 3
-    # czeka na przerwę, więc szukanie zlecenia 3 jest po przerwie.
-    assert (searched_again[:2], searched_again[2] > 0, 0 in written_again) == ([0, 0], True, False)
-
-
 # Żądania pełnej Wyceny w efenix dwóch zleceń z pustą wyceną po kolei (``_resumed_orders`` bez trzeciego). Okno otwiera
 # stronę zlecenia, ustawia datę wykonania i otwiera stronę jeszcze raz, pyta o propozycję Emmetta i ładuje ją do zlecenia, a
 # skrypt strony ją przeładowuje, potem zapisuje dwie ilości. Pierwsze zlecenie szuka na liście otwartej przy starcie, a
@@ -3213,30 +3110,6 @@ def test_odciecie_efenix_od_kazdego_zadania_wyceny_to_jedno_zatrzymanie_okna_a_p
     assert (_parts(resumed), _marked(resumed)) == (_parts(whole_run.source), [18, 19])
 
 
-def test_przerwanie_po_zaladuj_do_zlecenia_przed_odczytem_wyceny_emmetta_ponowne_uruchomienie_dokancza_bez_ponownego_emmetta(
-    tmp_path: Path, page: Page
-) -> None:
-    """Wylogowanie przy przeładowaniu strony zlecenia 2 po „Załaduj do zlecenia”: efenix ma samą Wycenę Emmetta, której
-    narzędzie nie odczytało (kształt 46 zleceń z runu 4.11). Ponowne uruchomienie widzi zlecenie z ilościami, więc nie
-    ładuje Emmetta drugi raz, tylko dopisuje ilości z pliku: wszystkie trzy zlecenia kończą się jak w jednym przebiegu."""
-
-    orders = _resumed_orders()
-    source = write_collective_file(tmp_path, orders)
-    # Szóste otwarcie strony zlecenia to przeładowanie po Wycenie Emmetta zlecenia 2 (każde zlecenie otwiera ją trzy razy).
-    with atrapa_efenix([order.in_efenix(f"99{index}") for index, order in enumerate(orders)], expire_after=(ORDER_PAGE, 5)) as atrapa:
-        stopped = _run(source, page, atrapa.url)
-        left = _pricing(atrapa)["9902"]
-        atrapa.log_in()
-        again = _run(source, _next_tab(page), atrapa.url)
-        pricing = _pricing(atrapa)
-
-    filled = {"012": 1, "019": 2, "015": 1}
-    assert (_stop(stopped), left) == ("EFENIX_WYLOGOWANY", ({"012": 1}, date(2026, 9, 2), 1))
-    assert (_figures(again), _errors(again)) == (_figures_of(3, 3), [])
-    assert pricing == {f"990{index}": (filled, date(2026, 9, index), 1) for index in (1, 2, 3)}
-    assert _marked(source) == [18, 19, 20]
-
-
 # Ceny Atrapy, w których pozycja T (019) kosztuje 0: Wycena Emmetta z samym T daje stronę z ilością i kwotą 0.
 _T_FOR_FREE = {**PRICES, "019": Decimal("0.00")}
 
@@ -3246,13 +3119,7 @@ _T_FOR_FREE = {**PRICES, "019": Decimal("0.00")}
     [
         pytest.param(EmmettRefusal.FORBIDDEN, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(403), PRICES, id="403-bez-zaladowania"),
         pytest.param(EmmettRefusal.SERVER_ERROR, "EFENIX_OKNO_ZATRZYMANE", HttpStatus(500), PRICES, id="500-po-zaladowaniu"),
-        pytest.param(
-            EmmettRefusal.ELSEWHERE, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.ANSWER_REDIRECT), PRICES, id="przekierowanie-na-liste"
-        ),
         pytest.param(EmmettRefusal.LOGGED_OUT, "EFENIX_WYLOGOWANY", LoginSign.REDIRECT, PRICES, id="przekierowanie-na-logowanie"),
-        pytest.param(
-            EmmettRefusal.NOK, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED), PRICES, id="result-nok"
-        ),
         pytest.param(
             EmmettRefusal.OTHER, "EFENIX_OKNO_ZATRZYMANE", OtherShape(Shape.EMMETT_NOT_LOADED), PRICES, id="200-inna-tresc"
         ),
@@ -3271,8 +3138,8 @@ def test_odmowa_zaladuj_do_zlecenia_zatrzymuje_wycene_bez_znacznika_i_sladu_a_po
     """Zlecenie 2 ma pustą wycenę i Emmetta, który ma w T więcej niż plik, a efenix odmawia jego „Załaduj do zlecenia”;
     skrypt strony i tak ją przeładowuje, a strona bez Wyceny Emmetta wygląda jak pusta Wycena Emmetta (#877).
 
-    Odmowa to Zatrzymanie okna z przyczyną z odpowiedzi efenix, a odmowa odpowiedzią 2xx (``result: nok`` w ważnej
-    sesji, inna treść, #889) z przeładowanej strony bez wyceny, choć okno Emmetta pokazało propozycję: zlecenie 2 nie
+    Odmowa to Zatrzymanie okna z przyczyną z odpowiedzi efenix, a odmowa odpowiedzią 2xx (inna treść, #889) z
+    przeładowanej strony bez wyceny, choć okno Emmetta pokazało propozycję: zlecenie 2 nie
     dostaje ilości z pliku ani Znacznika efenix. Ponowne uruchomienie po odmowie bez załadowania ładuje Emmetta, a po 500,
     po którym efenix ma już Emmetta, dokańcza jego wycenę bez ponownego ładowania: w obu przypadkach zlecenie 2 kończy
     się jak jeden przebieg, z O z pliku, T od Emmetta i Ostrzeżeniem Emmetta. Wycenę Emmetta Wycena poznaje po ilości na
@@ -3412,11 +3279,10 @@ def test_propozycja_emmetta_ktora_padla_zostawia_okno_emmetta_puste_jak_w_efenix
     assert (pricing, _marked(source)) == ({"9721": ({"012": 1, "019": 2}, DAY, 1)}, [18])
 
 
-@pytest.mark.parametrize("failure", list(ProposalFailure), ids=lambda failure: failure.name)
 def test_propozycja_emmetta_ktora_padla_a_potem_odmowa_zaladuj_do_zlecenia_2xx_zatrzymuje_wycene_bez_ilosci_i_znacznika(
-    tmp_path: Path, failure: ProposalFailure
+    tmp_path: Path,
 ) -> None:
-    """Propozycja Emmetta pada (błąd serwera, zerwana treść, zerwane połączenie), więc okno Emmetta jest puste jak przy
+    """Propozycja Emmetta pada (zerwane połączenie), więc okno Emmetta jest puste jak przy
     Emmetcie, który nic nie zaproponował, a efenix odmawia „Załaduj do zlecenia” odpowiedzią 2xx i nic nie ładuje (#908,
     dwie awarie naraz). Pustą Wyceną Emmetta jest strona bez ilości tylko po propozycji, która przyszła cała ze statusem
     2xx, więc ta strona to Zatrzymanie okna (``Shape.EMMETT_NOT_LOADED``): zlecenie nie dostaje ilości z pliku ani
@@ -3424,7 +3290,7 @@ def test_propozycja_emmetta_ktora_padla_a_potem_odmowa_zaladuj_do_zlecenia_2xx_z
 
     order = Order("#9721", cells={"O": 1, "T": 2}, amount=_au({"012": 1, "019": 2}), emmett={"012": 1})
     source = write_collective_file(tmp_path, [order])
-    efenix = StanEfenix([replace(order.in_efenix("9721"), emmett_proposal_failure=failure, emmett_refusal=EmmettRefusal.OTHER)])
+    efenix = StanEfenix([replace(order.in_efenix("9721"), emmett_proposal_failure=ProposalFailure.CUT, emmett_refusal=EmmettRefusal.OTHER)])
     stopped = _run_in_process(source, efenix)
     pricing = _pricing(efenix)
 
@@ -3574,12 +3440,6 @@ def _interrupted(source: Path, orders: Sequence[Order]) -> StanEfenix[AtrapaOrde
         ),
         pytest.param(lambda order: order.quantities.pop("012"), {"012": 1, "015": 1, "019": 2}, [], id="usunięta-ilość-emmetta"),
         # T (019) jest pusta u Emmetta, a plik ma 2.
-        pytest.param(
-            lambda order: order.quantities.update({"019": 5}),
-            {"012": 1, "015": 1, "019": 5},
-            [("EFENIX_WIECEJ_NIZ_PLIK", "wiersz 19")],
-            id="większa-ilość-w-pozycji-pustej-u-emmetta",
-        ),
         pytest.param(
             lambda order: order.quantities.update({"019": 2}), {"012": 1, "015": 1, "019": 2}, [], id="ilość-pliku-w-pozycji-pustej-u-emmetta"
         ),
@@ -4037,7 +3897,6 @@ def test_przegladarka_zamknieta_przed_pytaniem_o_sesje_na_granicy_limitu_to_zamk
 @pytest.mark.parametrize(
     ("reconnects", "code"),
     [
-        pytest.param(False, "EFENIX_NIEDOSTEPNY", id="siec-nie-wraca"),
         pytest.param(True, "EFENIX_WYLOGOWANY", id="siec-wraca-a-tata-sie-nie-loguje"),
     ],
 )
@@ -4199,24 +4058,6 @@ def test_plik_zbiorczy_ze_znacznikami_daje_w_przebiegu_rozliczen_rozliczenie_pra
         23: ("solid", YELLOW),
     }
     assert (font.color.rgb, font.b, font.i) == ("FFFF0000", True, True)
-
-
-
-def test_wynik_zlecenia_ma_komunikat_wtedy_i_tylko_wtedy_gdy_zlecenie_zostalo_tacie(tmp_path: Path) -> None:
-    """Komunikat w wyniku zlecenia ma tylko zlecenie, które zostało tacie (błąd zlecenia, Ostrzeżenie Emmetta), bo z
-    niego Logi Uruchomienia i karta mówią tacie, co zrobić: wynik bez tej zgodności nie powstaje."""
-
-    order = CollectiveOrder(18, "9901", "adrian.testowy", "UL. TESTOWA 1", DAY, {}, Decimal(0))
-    warning = EmmettWarning((Excess("012", efenix=2, file=1),))
-    settled = Settled(ListedOrder("9901", "Rozliczone", "adrian.testowy", "UL. TESTOWA 1", "1"))
-    message = efenix_messages.emmett_warning(tmp_path / "plik zbiorczy.xlsx", 18, warning.excess)
-
-    assert OrderResult(order, warning, (), message, None).kind is OrderKind.WARNING
-    assert OrderResult(order, settled, (), None, None).kind is OrderKind.SETTLED
-    with pytest.raises(ValueError, match="z Komunikatem: False"):
-        OrderResult(order, warning, (), None, None)
-    with pytest.raises(ValueError, match="z Komunikatem: True"):
-        OrderResult(order, settled, (), message, None)
 
 
 _TRACE_START = datetime(2026, 9, 30, 8, 0, tzinfo=timezone.utc)

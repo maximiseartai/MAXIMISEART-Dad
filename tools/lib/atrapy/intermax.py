@@ -32,16 +32,16 @@ from atrapy.workbooks import rewrite_parts
 
 ORDER_SHEET = "ZLECENIA OD 06_2025"
 HEADERS = REGISTER_HEADERS
-FIRST = 2  # B: AKCJE
-DATE = 3  # C
-CITY = 4  # D: MIASTO
-ADDRESS = 5  # E: ADRES
-DEVICES = 7  # G: URZĄDZENIA
-ACTIVITIES = 8  # H: CZYNNOŚCI
-NUMBER = 9  # I: NUMER ZL.
-WORKER = 10  # J
-CONTRACT_NUMBER = 11  # K: NUMER UMOWY
-LAST = 15  # O: UWAGI
+FIRST = 2
+DATE = 3
+CITY = 4
+ADDRESS = 5
+DEVICES = 7
+ACTIVITIES = 8
+NUMBER = 9
+WORKER = 10
+CONTRACT_NUMBER = 11
+LAST = 15
 APP_LAST = 37  # AK: ostatnia kolumna z aplikacji
 DATE_FORMAT = "m/d/yy h:mm"
 APP_DATE_FORMAT = "yyyy-mm-dd hh:mm"
@@ -54,7 +54,6 @@ _WHITE = PatternFill("solid", fgColor="FFFFFFFF")
 ORDER_HEIGHT = 12.0
 """Wysokość wiersza zlecenia i pustego wiersza między segmentami w uporządkowanych dniach."""
 BLANK_HEIGHT = 11.25
-"""Wysokość przygotowanego pustego wiersza pod dniem."""
 
 
 @dataclass(frozen=True)
@@ -104,9 +103,6 @@ class Order:
 
 @dataclass(frozen=True)
 class Layout:
-    """Gdzie fixture postawiła wiersze: ostatni uporządkowany, żółty i pierwszy Surowy, a ``raw_rows`` i
-    ``older_raw_rows`` wiersz każdego zlecenia ``Intermax.raw`` i ``Intermax.older_raw``."""
-
     last_ordered: int
     yellow: int | None
     first_raw: int
@@ -138,29 +134,19 @@ class Intermax:
     """Żółty wiersz taty: styl całego wiersza bez komórek, żółte komórki od B (``yellow_cells``) albo brak."""
     yellow_cells: int = LAST - FIRST
     above_yellow: int = 1
-    """Puste wiersze między ostatnim uporządkowanym wierszem a żółtym."""
     shifted: bool = True
     gap: int = 3
-    """Puste wiersze między ostatnim uporządkowanym (albo żółtym) wierszem a wklejeniem."""
     grid: bool = True
-    """Przygotowane puste wiersze taty z ramką pod dniem, do końca wklejenia i 5 wierszy niżej."""
     older_sheet: bool = False
-    """Starszy arkusz zleceń z samymi uporządkowanymi dniami przed arkuszem z wklejeniem."""
     older_ordered: Sequence[Order] | None = None
-    """Uporządkowane zlecenia starszego arkusza zleceń; bez nich te same co ``ordered``."""
     older_raw: Sequence[Order] = ()
     """Wklejenie na dole starszego arkusza zleceń, ``gap`` pustych wierszy pod jego uporządkowanymi zleceniami."""
     blank_in_paste: frozenset[int] = frozenset()
-    """Indeksy zleceń ``raw``, nad którymi w wklejeniu stoi pusty wiersz taty."""
     epoch_1904: bool = False
     excel: bool = True
-    """Zapis jak w Excelu (teksty wspólne, liczby bez ``t``); bez tego teksty wbudowane z openpyxl."""
     raw_date_format: str = APP_DATE_FORMAT
-    """Format daty Surowych zleceń: własny format aplikacji albo wbudowany format Excela."""
     active_sheet: str = ORDER_SHEET
-    """Arkusz, który tata zostawił aktywny i zaznaczony przy ostatnim zapisie."""
     frozen: bool = True
-    """Zamrożony nagłówek arkusza zleceń, jak u taty; bez niego widok bez panelu."""
 
     def write(self, path: Path) -> Layout:
         workbook = Workbook()
@@ -300,8 +286,6 @@ def _grid_row(sheet: Worksheet, number: int) -> None:
 
 
 def _ordered_days(sheet: Worksheet, ordered: Sequence[Order]) -> int:
-    """Uporządkowane zlecenia od wiersza 2 z pustym wierszem między Wykonawcami; ostatni uporządkowany wiersz."""
-
     row = 2
     for index, order in enumerate(ordered):
         if index and ordered[index - 1].worker != order.worker:
@@ -331,8 +315,6 @@ def parts(path: Path) -> dict[str, bytes]:
 
 
 def order_rows(path: Path, first: int, last: int) -> list[tuple[object, ...] | None]:
-    """Wiersze arkusza zleceń od ``first`` do ``last``: wartości B:AK albo ``None`` dla pustego wiersza."""
-
     sheet = load_workbook(path).worksheets[1]
     rows: list[tuple[object, ...] | None] = []
     for number in range(first, last + 1):

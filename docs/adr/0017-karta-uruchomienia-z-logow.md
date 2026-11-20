@@ -191,8 +191,9 @@ Centrum bez identyfikatora Uruchomienia.
 - Logi ostatniego startu, których system nie daje przeczytać, i katalog Logów,
   którego nie daje wylistować, to odmowa (`logs_disk.Refused`): po starcie
   Centrum nie ma wtedy karty ostatniego Uruchomienia, a nie karta Urwanego
-  Uruchomienia, bo przy pliku Logi są, więc Uruchomienie miało wynik, a przy
-  katalogu nie wiadomo, czy są. Dziennik Wyceny w efenix zostaje wtedy następnemu startowi.
+  Uruchomienia, bo przy pliku Logi są (z wynikiem albo Logi Urwanego
+  Uruchomienia, które zapisał wcześniejszy start), a przy katalogu nie wiadomo,
+  czy są. Dziennik Wyceny w efenix zostaje wtedy następnemu startowi.
   Plik w miejscu katalogu Logów to brak Logów, jak brak katalogu: sam się nie
   zmieni, więc odmowa zostawiłaby dziennik na zawsze, a tak start zamyka go
   wersją zastępczą.

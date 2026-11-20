@@ -3,8 +3,10 @@
 When INTERMAX breaks, Dad opens the section `Kopie INTERMAX` of Ustawienia:
 the 10 newest Kopie INTERMAX from before an Uporządkowanie or a restore (each write
 removes older ones of both names, `intermax_copies.KEPT`), newest first, each with its date and time from the file name and a quiet note of what
-it was made before. `Przywróć` on a row asks one sentence: the changes made in
-INTERMAX after that time disappear. `Przywróć tę kopię` first saves the current
+it was made before. `Przywróć` on a row warns that the changes made in
+INTERMAX after that time disappear, also those made on the other computer
+(Dad's or Andrzej's), and that the current INTERMAX is saved as a Kopia
+first. `Przywróć tę kopię` first saves the current
 INTERMAX as a Kopia `INTERMAX przed przywróceniem RRRR-MM-DD GG-MM-SS.xlsx`,
 then replaces INTERMAX with the Kopia byte for byte (ADR 0019, #472). With
 INTERMAX open in Excel it refuses with a Komunikat and changes nothing.
@@ -14,7 +16,7 @@ INTERMAX open in Excel it refuses with a Komunikat and changes nothing.
 Printed by `scripts/sub_features.py --feature kopie-intermax` from the drive's steps and checks; refresh the section with it.
 
 - `lista`: INTERMAX of this feature is in the settings; the folder of Kopie reads without a Komunikat; the list has the Kopie of both names, the newest first, by the moment in their name; each Kopia says before what it was made; the card lists the Kopie in the same order with Dad's date and time from the name.
-- `ostrzezenie`: one sentence warns that the changes after the Kopia's time disappear; „Anuluj” leaves INTERMAX and the Kopie as they were.
+- `ostrzezenie`: the warning says that the changes after the Kopia's time disappear, also those made on the other computer, and that a Kopia of the current INTERMAX comes first; „Anuluj” leaves INTERMAX and the Kopie as they were.
 - `otwarty`: with INTERMAX open in Excel the restore refuses and changes neither INTERMAX nor the Kopie.
 - `przywrocenie-dotykiem`: INTERMAX is the chosen Kopia byte for byte; the state before the restore lies as a new Kopia „przed przywróceniem” named after Centrum's clock; the new Kopia is the newest on the list; the card reads the list again and shows the new Kopia first.
 

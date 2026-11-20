@@ -1,19 +1,3 @@
-"""Edytor Legendy czynności (ADR 0038): formularz kodu z kontraktu ↔ Kod czynności silnika ``ActivityCode`` i zmiana
-legendy.
-
-Zapis z formularza Centrum zapisuje tak, jak legenda go czyta: małymi literami, bez spacji, a ``#`` to miejsce na liczbę
-(``inst 20 #m`` → ``inst20{n}m``); pusty i powtórzony zapis odpada. Kod bez kolumny ma wartość 1, bo jej nie liczy.
-Niczego innego formularz nie sprawdza: legendę po zmianie sprawdza silnik (``ActivityLegend``), a ``dad_legend``
-stawia jego problem przy polu formularza (``zapisy[1]``, ``przedzialy[0].kolumna``, ``wypelnienia[1]``), problem całego
-kodu (kod bez działania) nad formularzem. Silnik sprawdza tu kod zmieniony na końcu legendy, więc zapis, który ma już
-inny kod, to zawsze problem pola zmienianego kodu, a legenda zapisuje się z kodem na jego miejscu.
-
-Nowy kod dostaje id z pierwszego zapisu: część przed miejscem na liczbę (``instrg6{n}m`` → ``instrg6``, jak ``inst`` w
-legendzie z Wydania), a przy zajętym id z kolejnym numerem. Zajęte jest id kodu z legendy i każde id z wierszy Historii
-Ustawień legendy (``used``), więc „Cofnij” starszego wiersza nie rusza kodu dodanego później. Zmieniony kod zostaje na
-swoim miejscu z tym samym id, a kolejność kodów rozstrzyga zapisy równej długości (``activity_legend``).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -43,7 +27,6 @@ _CODE_FIELD: Final = re.compile(
     r"(?P<list>zapisy|przedzialy|wypelnienia)(?:\[(?P<index>\d+)\](?:\.(?P<range_field>kolumna))?)?"
     r"|(?P<field>kolumna|wartosc|kwota)"
 )
-"""Miejsca problemu jednego kodu w silniku, które formularz ma jako pole; inne (cały kod, ``id``) nie mają pola."""
 _NAMES: Final[Mapping[str, FieldName]] = {
     "zapisy": "zapisy",
     "przedzialy": "przedzialy",
@@ -56,12 +39,10 @@ _NAMES: Final[Mapping[str, FieldName]] = {
 
 @dataclass(frozen=True)
 class UnknownCode:
-    """Kodu o tym id nie ma w legendzie, którą liczy Centrum."""
+    ...
 
 
 def form_of(code: ActivityCode) -> contract.ActivityCodeForm:
-    """Kod czynności jako formularz edytora."""
-
     return contract.ActivityCodeForm(
         spellings=[shown_spelling(spelling) for spelling in code.spellings],
         column=_column_form(code.column),
@@ -75,10 +56,6 @@ def form_of(code: ActivityCode) -> contract.ActivityCodeForm:
 def edited(
     codes: tuple[ActivityCode, ...], edit: contract.ActivityCodeEdit, used: frozenset[str]
 ) -> tuple[ActivityCode, ...] | FieldProblem | UnknownCode:
-    """Legenda ``codes`` po zmianie ``edit``, sprawdzona przez silnik; ``used``: id kodów z kluczy Historii Ustawień,
-    których nowy kod nie dostanie. ``FieldProblem``: problem silnika przy polu formularza, ``UnknownCode``: zmiana albo
-    usunięcie kodu, którego nie ma."""
-
     match edit:
         case contract.AddActivityCode(code=form):
             built, places = _code(form, _new_id(codes, form, used))
@@ -100,9 +77,6 @@ def edited(
 def dad_legend(
     codes: tuple[ActivityCode, ...], edit: contract.ActivityCodeEdit, used: frozenset[str]
 ) -> tuple[ActivityCode, ...] | FieldProblem:
-    """Zmiana taty z formularza kodu, którą zapisuje właściciel Ustawień: legenda po zmianie ``edit`` albo odmowa z polem;
-    kodu, którego już nie ma, nie rusza (404 daje trasa przed zapisem)."""
-
     changed = edited(codes, edit, used)
     return codes if isinstance(changed, UnknownCode) else changed
 
@@ -110,9 +84,6 @@ def dad_legend(
 def _checked(
     after: tuple[ActivityCode, ...], others: tuple[ActivityCode, ...], built: ActivityCode, places: tuple[int, ...]
 ) -> tuple[ActivityCode, ...] | FieldProblem:
-    """``after``, gdy silnik przyjmuje legendę ``others`` z kodem ``built`` na końcu, a inaczej jego problem przy polu
-    formularza; ``places``: pole formularza każdego zapisu kodu."""
-
     try:
         ActivityLegend((*others, built))
     except LegendRefused as refused:
@@ -138,8 +109,6 @@ def _field(place: str, places: tuple[int, ...]) -> FieldPath | None:
 
 
 def _code(form: contract.ActivityCodeForm, identifier: str) -> tuple[ActivityCode, tuple[int, ...]]:
-    """Kod z formularza i pole formularza każdego jego zapisu."""
-
     spellings: dict[str, int] = {}
     for index, typed in enumerate(form.spellings):
         spelling = _spelling(typed)
@@ -189,8 +158,6 @@ def _column_form(choice: ColumnChoice | None) -> contract.FixedColumnForm | cont
 
 
 def colour_name(colour: FillColour) -> contract.FillColourName:
-    """Kolor wypełnienia tak, jak go nazywa kontrakt."""
-
     return _COLOURS[colour]
 
 
@@ -199,9 +166,6 @@ def _colour(name: contract.FillColourName) -> FillColour:
 
 
 def _new_id(codes: tuple[ActivityCode, ...], form: contract.ActivityCodeForm, used: frozenset[str]) -> str:
-    """Id nowego kodu z pierwszego zapisu: część przed miejscem na liczbę, zajęte w legendzie albo w Historii z kolejnym
-    numerem (``inst-2``); kod bez zapisu i tak odpada."""
-
     first = next((spelling for spelling in map(_spelling, form.spellings) if spelling), "")
     base = first.partition(NUMBER)[0] or "kod"
     taken = {code.id for code in codes} | used

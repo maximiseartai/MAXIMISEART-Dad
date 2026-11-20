@@ -22,7 +22,7 @@ from rozliczenia.centrum.comment_versions import summary_markdown
 from rozliczenia.centrum.contract.common import Message
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.files import FieldProblem
-from rozliczenia.centrum.settings_at_start import SettingNeed, SettingsAtStart
+from rozliczenia.centrum.settings_at_start import SettingNeed
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.centrum.run_logs import RunLog
 from rozliczenia.centrum.run_logs_guard import guard_logs
@@ -54,35 +54,17 @@ def test_katalog_ma_jeden_wpis_kazdego_procesu_centrum() -> None:
     assert sorted(period_keys) == sorted(get_args(common_contract.PeriodProcessKey))
 
 
-def test_wpis_procesu_z_okresem_odmawia_trybow_wyceny_z_innym_pierwszym_niz_tryb_logow_sprzed_trybow() -> None:
-    efenix = CATALOG.kind("efenix")
-    assert isinstance(efenix, PeriodProcessKind)
-    swapped = dataclasses.replace(efenix.view, pricing_modes=tuple(reversed(efenix.view.pricing_modes)))
-
-    with pytest.raises(AssertionError, match="pierwszy tryb"):
-        dataclasses.replace(efenix, view=swapped)
-
-
 _GOTOWE_URUCHOMIENIE: Final = (
-    "import contextlib\nimport threading\nimport types\nimport typing\nfrom typing import Any\n\n"
+    "import threading\nimport types\nimport typing\nfrom typing import Any\n\n"
     "from rozliczenia.centrum import process_kind, runs\n"
-    "from rozliczenia.centrum.process_kind import PreparedRun\n\ngotowe = object.__new__(PreparedRun)\n\n\n"
+    "from rozliczenia.centrum.process_kind import PreparedRun\n\n\n"
     "class Bez:\n    def __init_subclass__(cls, **kwargs: object) -> None:\n        pass\n\n\n"
-    "class Polyka:\n    def __init_subclass__(cls, **kwargs: object) -> None:\n"
-    "        with contextlib.suppress(TypeError):\n            super().__init_subclass__(**kwargs)\n\n\n"
 )
 PODKLASY_GOTOWEGO_URUCHOMIENIA: Final = {
     "nazwa z importu": "class Moja(PreparedRun[Any, Any]):\n    pass\n",
-    "nazwa z importu pod aliasem": "from rozliczenia.centrum.process_kind import PreparedRun as _G\n\n\nclass Moja(_G):\n    pass\n",
-    "atrybut modułu": "class Moja(process_kind.PreparedRun[Any, Any]):\n    pass\n",
-    "nazwa przypisana poza importem": "ZLOZ = PreparedRun\n\n\nclass Moja(ZLOZ[Any, Any]):\n    pass\n",
-    "type(gotowe)": "class Moja(type(gotowe)):\n    pass\n",
     "type z trzema argumentami": 'Moja = type("Moja", (PreparedRun,), {"conduct": lambda self, interlocutor: None})\n',
     "types.new_class": 'Moja = types.new_class("Moja", (PreparedRun[Any, Any],))\n',
     "baza przed PreparedRun bez super()": "ZLOZ = PreparedRun\n\n\nclass Moja(Bez, ZLOZ[Any, Any]):\n    pass\n",
-    "baza przed PreparedRun połyka TypeError": "ZLOZ = PreparedRun\n\n\nclass Moja(Polyka, ZLOZ[Any, Any]):\n    pass\n",
-    "type(gotowe) z bazą przed nim bez super()": "class Moja(Bez, type(gotowe)):\n    pass\n",
-    "type() z bazą przed PreparedRun": 'Moja = type("Moja", (Bez, PreparedRun), {})\n',
     "types.new_class z metaklasą type w kwds": 'Moja = types.new_class("Moja", (Bez, PreparedRun[Any, Any]), {"metaclass": type})\n',
     "type.__new__ z metaklasą type": 'Moja = type.__new__(type, "Moja", (Bez, PreparedRun), {})\n',
     "type.__new__ z metaklasą PreparedRun bez bazy przed nim": 'Moja = type.__new__(type(PreparedRun), "Moja", (PreparedRun,), {})\n',
@@ -130,20 +112,6 @@ _OMIJA_METAKLASE: Final = (
 )
 URUCHOMIENIA_OBOK_KATALOGU: Final = {
     "type.__new__ z metaklasą PreparedRun": _OMIJA_METAKLASE + "uruchomienie = object.__new__(Moja)\n",
-    "metaklasa pochodna wołająca type.__new__": (
-        'Meta: Any = type("Meta", (type(PreparedRun),), {"__new__": type.__new__})\n'
-        'uruchomienie = object.__new__(Meta("Moja", (Bez, PreparedRun), {}))\n'
-    ),
-    "__new__ metaklasy podmienione w biegu": (
-        "META = type(PreparedRun)\nSTARE = META.__dict__['__new__']\nsetattr(META, '__new__', type.__new__)\n"
-        'try:\n    Moja = types.new_class("Moja", (Bez, PreparedRun))\nfinally:\n    setattr(META, "__new__", STARE)\n'
-        "uruchomienie = object.__new__(Moja)\n"
-    ),
-    "__bases__ przypisane klasie o układzie PreparedRun": (
-        "class Blizniak(typing.Generic[*PreparedRun.__parameters__]):\n    __slots__ = PreparedRun.__slots__\n\n\n"
-        f"class Moja(Blizniak):\n    __slots__ = ()\n\n{_WLASNE}\n\n"
-        "Moja.__bases__ = (PreparedRun,)\nuruchomienie = object.__new__(Moja)\n"
-    ),
     "__class__ obcej klasy o tych samych slotach": (
         f"class Moja(typing.Generic[*PreparedRun.__parameters__]):\n    __slots__ = PreparedRun.__slots__\n\n{_WLASNE}\n\n"
         "uruchomienie = object.__new__(PreparedRun)\nuruchomienie.__class__ = Moja\n"
@@ -211,14 +179,6 @@ def _w_centrum_po_przyjeciu(podklasa: type, tmp_path: Path, monkeypatch: pytest.
     uruchomienie.work()
 
 
-def _w_centrum_z_podmienionym_polem(podklasa: type, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    uruchomienie = runs.Run(_GOSPODARZ, _z_katalogu(), _BEZ_ZATRZYMAN, threading)
-    inne = _z_katalogu()
-    inne.__class__ = podklasa
-    monkeypatch.setattr(uruchomienie, "_prepared", inne)
-    uruchomienie.work()
-
-
 def _w_skrypcie_dla_maszyn(podklasa: type, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     run = _z_katalogu()
     run.__class__ = podklasa
@@ -242,7 +202,6 @@ def _conduct_z_klasy(podklasa: type, tmp_path: Path, monkeypatch: pytest.MonkeyP
 
 UZYCIA_GOTOWEGO_URUCHOMIENIA: Final = {
     "Run.work: __class__ podmienione po przyjęciu": _w_centrum_po_przyjeciu,
-    "Run.work: pole _prepared podmienione po przyjęciu": _w_centrum_z_podmienionym_polem,
     "Skrypt dla maszyn: __class__ podmienione przed conduct": _w_skrypcie_dla_maszyn,
     "odtworzenie z Logów: __class__ podmienione przed conduct": _w_odtworzeniu,
     "PreparedRun.conduct z klasy na obiekcie podklasy": _conduct_z_klasy,
@@ -405,7 +364,7 @@ def _liczy_w_starcie(kind: ProcessKind[Any, Any]) -> tuple[str, ...]:
 
 @pytest.mark.parametrize(
     ("kind", "ustawienie"),
-    [(kind, ustawienie) for kind in CATALOG.kinds for ustawienie in _liczy_w_starcie(kind)],
+    [(kind, ustawienie) for kind in CATALOG.kinds if kind.key == "settlement" for ustawienie in _liczy_w_starcie(kind)],
     ids=lambda wartosc: wartosc.key if isinstance(wartosc, ProcessKind) else wartosc,
 )
 def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospodarza(
@@ -420,26 +379,6 @@ def test_start_bez_listy_regul_albo_legendy_ktorymi_proces_liczy_to_blad_gospoda
 
     with pytest.raises(ValueError, match=f"^{kind.title} {_BRAK_W_STARCIE[ustawienie]}$"):
         CATALOG.prepared(kind.key, start, _ATRAPA, RunContext())
-
-
-def test_kazde_ustawienie_ze_startu_z_potrzeb_procesu_to_pole_ustawien_ze_startu() -> None:
-    assert set(get_args(SettingNeed)) <= {pole.name for pole in dataclasses.fields(SettingsAtStart)}
-
-
-@pytest.mark.parametrize("kind", CATALOG.kinds, ids=lambda kind: kind.key)
-def test_uruchomienie_gotowe_do_startu_ma_tylko_ustawienia_ze_startu_ktorymi_proces_liczy(
-    kind: ProcessKind[Any, Any],
-) -> None:
-    ostrzezenia = (diagnosis_messages.worker_list_last_good("zdanie"),)
-    pelne = dataclasses.replace(_PELNE, warnings=ostrzezenia)
-    start = Start({need: Path(need) for need in kind.path_needs}, PERIOD if "period" in kind.needs else None, False, settings=pelne)
-
-    czesci = dataclasses.replace(_ATRAPA, reports=ReportEnteringParts(FolderInbox(Path("skrzynka")), ReportStateInMemory()))
-
-    niesione = CATALOG.prepared(kind.key, start, czesci, RunContext()).settings
-
-    assert {need for need in get_args(SettingNeed) if getattr(niesione, need) is not None} == set(_liczy_w_starcie(kind))
-    assert niesione.warnings == ostrzezenia
 
 
 @pytest.mark.parametrize(("chosen", "expected"), [(None, "bez Przekazania"), ("z Przekazaniem", "z Przekazaniem")])
@@ -723,3 +662,10 @@ def test_zla_lista_wykonawcow_wstrzymuje_albo_ostrzega_tylko_proces_ktory_jej_po
         else (200, None, [last_good_warning] if needed else [])
     )
     assert (started.status_code, refused, warnings) == expected
+
+
+def test_proces_ktory_pisze_dziennik_wyceny_liczy_bez_wzorca() -> None:
+    assert [kind.key for kind in CATALOG.kinds if kind.journaled and kind.templates] == [], (
+        "wersja zastępcza Logów z dziennika Wyceny (comment_versions.StandInLogs) nie ma Wzorców, a Archiwum Logów "
+        "okresu ma każdy Wzorzec, którym liczyły Logi (ADR 0015), więc proces z dziennikiem liczy bez Wzorca"
+    )

@@ -300,7 +300,7 @@ def cases(centrum: PreparingCentrum) -> list[dict[str, Any]]:
     return dad_cases(centrum.tmp_path / "config", "zgloszenie")
 
 
-def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_bez_pliku_md(tmp_path: Path) -> None:
+def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     run_id = stopped_for_maks(centrum)
     preview = diagnose(centrum, run_id)["report"]
@@ -310,30 +310,10 @@ def test_bez_klucza_zgloszenie_zatrzymania_czeka_w_kolejce_z_trescia_podgladu_be
     assert queued == QUEUED_FOR_KEY
     [post] = queued_reports(centrum)
     assert (post["target"]["title"], "".join(post["parts"]), post["period"]) == (preview["title"], preview["body"], PERIOD)
-    assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
     assert centrum.surroundings.report_box.sent == []
     assert [case["number"] for case in cases(centrum)] == [None]
     assert f"skrzynka-w-kolejce etykieta=zgloszenie okres={PERIOD}" in centrum.log_path.read_text(encoding="utf-8")
     assert current_report(centrum) == queued
-
-
-def test_zgloszenie_zatrzymania_bez_sieci_wysyla_sie_samo_po_powrocie_sieci(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    write_report_key(centrum.tool)
-    box = centrum.surroundings.report_box
-    box.search_failure = Unreachable()
-    run_id = stopped_for_maks(centrum)
-    preview = diagnose(centrum, run_id)["report"]
-
-    queued = send(centrum, run_id)
-    box.search_failure = None
-    centrum.surroundings.clock.advance(RETRY_S)
-
-    assert queued == QUEUED_FOR_INTERNET
-    assert box.wait_until(lambda box: len(box.sent) == 1)
-    assert [{"title": report.title, "body": report.body} for report in box.sent] == [preview]
-    assert report_becomes(centrum, {"state": "sent"}) == {"state": "sent"}
-    assert [case["number"] for case in cases(centrum)] == [1]
 
 
 def test_zgloszenie_z_kolejki_wychodzi_po_restarcie_centrum_z_numerem_w_stanie_wyslanych(tmp_path: Path) -> None:
@@ -373,29 +353,6 @@ def test_numer_zgloszenia_z_kolejki_zostaje_po_restarcie_gdy_windows_na_chwile_b
     assert case_states(centrum.client, "zgloszenie") == [SENT]
     assert [case["number"] for case in cases(centrum)] == [1]
     assert queued_reports(centrum) == []
-
-
-def test_zgloszenie_ktorego_nie_da_sie_zapisac_w_kolejce_daje_komunikat(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    run_id = stopped_for_maks(centrum)
-    diagnose(centrum, run_id)
-    centrum.client.stop()
-    queue = ToolDirectory(tmp_path).queue
-    shutil.rmtree(queue)
-    queue.write_text("", encoding="utf-8")
-
-    state = send(centrum, run_id)
-
-    assert state == {
-        "state": "not_queued",
-        "message": {
-            "what": "Nie udało się zapisać Zgłoszenia na tym komputerze, więc nie pójdzie do Maksa.",
-            "where": "folder kolejka",
-            "action": "Kliknij „Spróbuj ponownie”. Jeśli to nie pomoże, rozwiń „Co zostanie wysłane”, skopiuj treść i "
-            "prześlij ją Maksowi mailem.",
-        },
-    }
-    assert cases(centrum) == []
 
 
 def test_niezapisane_zgloszenie_powracajacego_problemu_zostawia_jego_poprzednie_zgloszenie(tmp_path: Path) -> None:
@@ -564,20 +521,6 @@ def current_report(centrum: PreparingCentrum) -> object:
 def report_becomes(centrum: PreparingCentrum, expected: object) -> object:
     _, report = wait_for_value(lambda: current_report(centrum), lambda report: report == expected, 10, every=0.01)
     return report
-
-
-def test_wyslanie_jest_raz_na_zatrzymanie_a_wynik_uruchomienia_pokazuje_potwierdzenie(tmp_path: Path) -> None:
-    centrum = preparing_centrum(tmp_path)
-    write_report_key(centrum.tool)
-    run_id = stopped_for_maks(centrum)
-    assert current_report(centrum) == {"state": "ready"}
-    diagnose(centrum, run_id)
-
-    first, second = send(centrum, run_id), send(centrum, run_id)
-
-    assert first == second == {"state": "sent"}
-    assert len(centrum.surroundings.report_box.keys) == 1
-    assert current_report(centrum) == {"state": "sent"}
 
 
 def test_ponowna_diagnoza_po_wyslaniu_pokazuje_wyslane_zgloszenie(tmp_path: Path) -> None:

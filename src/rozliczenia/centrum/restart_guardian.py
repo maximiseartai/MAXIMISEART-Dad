@@ -1,24 +1,3 @@
-"""Opiekun ponownego startu: po udanej Aktualizacji narzędzia uruchamia Centrum rozliczeń w nowej wersji (ADR 0009).
-
-Centrum kopiuje ten moduł razem z ``tool_update`` do swojego katalogu
-tymczasowego, zanim zmieni klon (``prepare``). Po sukcesie uruchamia opiekuna
-odłączonym procesem bez konsoli (``launch``) i samo się zamyka. Opiekun działa
-z kopii sprzed aktualizacji i używa tylko biblioteki standardowej (``main``):
-zapisuje wynik aktualizacji obok Ustawień Centrum, czeka na zwolnienie portu,
-startuje nową wersję jak skrót, tylko bez karty i bez okienek, i czeka, aż
-odpowie w nowym commicie. Wtedy aktualizacja jest skończona, a jej dziennik
-„Aktualizacja w toku” znika (``ToolClone.confirm_update``). Gdy nie odpowie
-(albo stare Centrum nie zwolni portu), opiekun ją zatrzymuje, cofa klon z
-dziennika do commitu sprzed aktualizacji razem z plikami taty
-(``ToolClone.roll_back``), zapisuje wynik „Nowa wersja nie wystartowała” i tak
-samo startuje starą wersję, która pokaże go w karcie. Gdy cofnięcie się nie
-uda, wynik mówi to wprost, a dziennik czeka na następny start skrótu. Gdy nie
-wystartuje żadna wersja, opiekun pokazuje jedno natywne okienko z Komunikatem
-startu, chyba że port trzyma już stara wersja, którą tata uruchomił skrótem,
-także po cofnięciu bez zwolnionego portu.
-Na końcu usuwa katalog tymczasowy aktualizacji.
-"""
-
 from __future__ import annotations
 
 import argparse
@@ -48,9 +27,7 @@ from rozliczenia.file_state import file_state
 from rozliczenia.tool_files import TOOL_ROOT, port_free, start_command
 
 PORT_TIMEOUT_S: Final = 60.0
-"""Tyle opiekun czeka, aż stare Centrum się zamknie i zwolni port (otwarte połączenia karty do 5 s)."""
 START_TIMEOUT_S: Final = 60.0
-"""Tyle opiekun czeka na pierwszą odpowiedź nowej wersji."""
 _POLL_S: Final = 0.2
 _STOP_TIMEOUT_S: Final = 10.0
 _SOURCE: Final = TOOL_ROOT / "src"
@@ -68,23 +45,16 @@ _COPIED: Final = (
     "rozliczenia/centrum/version.py",
     "rozliczenia/centrum/restart_guardian.py",
 )
-"""Pakiet-szkielet kopii: tylko moduły bez bibliotek narzędzia, które opiekun importuje."""
 _BOOT: Final = (
     "import sys; sys.path.insert(0, sys.argv[1]); "
     "from rozliczenia.centrum.restart_guardian import main; raise SystemExit(main(sys.argv[2:]))"
 )
+# ZEWNĘTRZNE: proces Windows z DETACHED_PROCESS i CREATE_NEW_PROCESS_GROUP nie ma konsoli i przeżywa zamknięcie procesu, który go uruchomił, a subprocess ma te flagi tylko w Windows (Microsoft Learn, Process Creation Flags)
 _DETACHED: Final = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-"""Windows: proces bez konsoli, który przeżyje zamknięcie Centrum; gdzie indziej robi to osobna sesja."""
 
 
 @dataclass(frozen=True)
 class Restart:
-    """Ponowny start po udanej aktualizacji.
-
-    ``root`` to katalog narzędzia, ``result`` plik wyniku obok Ustawień Centrum,
-    ``work`` katalog tymczasowy aktualizacji z kopią opiekuna.
-    """
-
     port: int
     before: str | None
     after: str
@@ -125,8 +95,6 @@ class Restart:
 
 
 def prepare(work: Path) -> Path:
-    """Kopiuje opiekuna z tej wersji narzędzia do ``work``, zanim aktualizacja zmieni klon; zwraca katalog kopii."""
-
     copy = work / "opiekun"
     for name in _COPIED:
         (copy / name).parent.mkdir(parents=True, exist_ok=True)
@@ -135,12 +103,6 @@ def prepare(work: Path) -> Path:
 
 
 def launch(copy: Path, restart: Restart) -> subprocess.Popen[bytes]:
-    """Uruchamia opiekuna z kopii ``copy`` odłączonym procesem bez konsoli, który przeżyje zamknięcie Centrum.
-
-    Python dostaje ``-I``, więc ani katalog roboczy, ani ``PYTHONPATH`` nie podsuną modułów spoza kopii, i ``-B``,
-    więc kopia zostaje bez ``__pycache__``.
-    """
-
     return _detached([_windowless_python(), "-I", "-B", "-c", _BOOT, str(copy), *restart.arguments()], restart.root)
 
 
@@ -150,25 +112,6 @@ def main(
     show_problem: Callable[[str, str], None] = show_start_problem,
     start: Callable[[Restart], subprocess.Popen[bytes]] | None = None,
 ) -> int:
-    """Ponowny start po aktualizacji: 0, gdy Centrum odpowiada (nowe albo cofnięte stare), inaczej 1.
-
-    Wszystko albo nic: gdy nowa wersja nie odpowie (albo stare Centrum nie
-    zwolni portu), klon wraca do commitu sprzed aktualizacji, a plik wyniku
-    mówi, co się stało naprawdę, albo go nie ma, gdy dysk go nie przyjmie.
-    ``show_problem`` pokazuje natywne okienko (tytuł, treść), a ``start`` uruchamia Centrum z klonu (domyślnie jak
-    skrót, bez karty i bez okienek).
-
-    Wynik „ok” stoi w pliku, zanim nowe Centrum wystartuje, bo czyta go raz przy
-    starcie; gdy nowa wersja nie odpowie, „ok” znika przed cofnięciem, bo
-    Centrum ze skrótu w trakcie cofania nie może go przeczytać. Po nieudanym
-    cofnięciu nie ma starej wersji. Po udanym opiekun startuje starą wersję,
-    gdy port jest wolny, także wtedy, gdy przed cofnięciem nie był: stare
-    Centrum mogło go oddać w trakcie cofania. Gdy port trzyma już stara
-    wersja, którą tata po cofnięciu uruchomił skrótem, opiekun kończy bez
-    okienka. Inaczej karta nie ma już z kim rozmawiać, więc tata widzi jedno
-    okienko zamiast ciszy.
-    """
-
     restart = Restart.of_arguments(argv)
     start_centrum = start or _start_centrum
     released = _port_released(restart.port)
@@ -196,21 +139,15 @@ def main(
 
 
 def _record(restart: Restart, code: str) -> None:
-    """Wynik dla karty; gdy dysk go nie przyjmie, karta nic nie powie, a opiekun i tak startuje Centrum albo okienko."""
-
     with suppress(OSError):
         write_result(restart.result, UpdateResult(code, restart.before, restart.after, restart.installed))
 
 
 def _start_centrum(restart: Restart) -> subprocess.Popen[bytes]:
-    """Centrum z klonu jak skrót, tylko bez karty i bez okienek: tata ma widzieć jeden Komunikat."""
-
     return _detached(start_command(restart.root, restart.port), restart.root)
 
 
 def _stop(centrum: subprocess.Popen[bytes]) -> None:
-    """Zatrzymuje wersję, która nie odpowiedziała, żeby zwolniła port i pliki klonu."""
-
     if centrum.poll() is not None:
         return
     centrum.terminate()
@@ -222,8 +159,6 @@ def _stop(centrum: subprocess.Popen[bytes]) -> None:
 
 
 def _rolled_back(restart: Restart) -> bool:
-    """Cofa klon z dziennika „Aktualizacja w toku”; po porażce dziennik z kopią plików taty czeka na następny start skrótu."""
-
     try:
         ToolClone(restart.root).roll_back()
     except Exception:
@@ -234,8 +169,6 @@ def _rolled_back(restart: Restart) -> bool:
 
 
 def _windowless_python() -> str:
-    """``pythonw.exe`` obok tego Pythona w Windows (bez okna konsoli, jak skrót); gdzie indziej ten sam Python."""
-
     windowless = Path(sys.executable).with_name("pythonw.exe")
     return str(windowless) if sys.platform == "win32" and file_state(windowless) == "file" else sys.executable
 
@@ -250,6 +183,7 @@ def _detached(command: list[str], cwd: Path) -> subprocess.Popen[bytes]:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
         creationflags=_DETACHED,
+        # ZEWNĘTRZNE: poza Windows proces w nowej sesji nie dostaje sygnałów grupy procesów, która go uruchomiła, np. Ctrl+C albo SIGHUP po zamknięciu okna konsoli (POSIX setsid)
         start_new_session=sys.platform != "win32",
     )
 

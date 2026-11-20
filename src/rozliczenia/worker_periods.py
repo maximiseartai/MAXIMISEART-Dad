@@ -49,8 +49,6 @@ class InRegister:
 
 @dataclass(frozen=True)
 class InPeriod:
-    """Login stoi w ``WYKONAWCA`` Pliku zbiorczego okresu ``token``."""
-
     token: str
 
 
@@ -67,8 +65,6 @@ okresu (``collective_file``)."""
 
 @dataclass(frozen=True)
 class Unchecked:
-    """Nie wiadomo, czy login występuje w okresie; ``token``: okres Pliku zbiorczego przy ``collective_file``."""
-
     place: UncheckedPlace
     token: str | None = None
 

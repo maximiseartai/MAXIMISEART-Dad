@@ -53,16 +53,18 @@ after a rollback when the port was never released (#726).
 
 **TataNieZostajeBezOdpowiedzi**: when nothing runs any more (no update, no
 guardian, no Centrum), Dad sees a native dialog with a Komunikat or a computer
-that switched off, never only a card that no longer answers. The docstring of
-`restart_guardian.py` and the docstring of `main` promise it: „karta nie ma już
-z kim rozmawiać, więc tata widzi jedno okienko zamiast ciszy”.
+that switched off, never only a card that no longer answers: the card has
+nobody left to talk to, so Dad sees one dialog instead of silence
+(`test_gdy_nie_startuje_zadna_wersja_opiekun_pokazuje_jedno_okienko_a_klon_stoi_na_starym_commicie`
+in `tests/test_opiekun_ponownego_startu.py`).
 
 **KartaNieKlamie**: the card says „Narzędzie zaktualizowane” only while
 Centrum runs in the new version. Every Centrum reads the result file
 (`config/centrum-aktualizacja.json`) once at start
-(`ToolUpdates._after_restart`), and the docstring of `launcher._roll_back`
-says the card of a rolled-back version must show the failure even when the
-file already said „ok”.
+(`ToolUpdates._after_restart`), and the card of a rolled-back version
+(`launcher._roll_back`) shows the failure even when the file already said „ok”
+(`test_wynik_ok_przy_dzialajacej_poprzedniej_wersji_to_porazka_nieoczekiwana_z_rada_i_zgloszeniem`
+in `tests/test_centrum_aktualizacja.py`).
 
 **KartaNieStraszy**: the card of the new version, while it runs, shows no
 failure of the update. A failure in the result file comes from the guardian or

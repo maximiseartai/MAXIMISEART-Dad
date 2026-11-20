@@ -17,7 +17,7 @@
     "rank_of": "29dce38c5ecbe640",
     "journal_after": "3c8e8c1a646d1c0f",
     "post_of": "2562b6b465b4823e",
-    "Drop": "328a4018ab11f915",
+    "Drop": "df188a16b91dac80",
     "close": "0e60c13a15f8bad8"
   },
   "src/rozliczenia/centrum/run_comments.py": {
@@ -40,7 +40,7 @@
     "LogsRead": "2dfbc7e2c338f6b7",
     "Journal": "63217561f9bcd3e2",
     "_first_line": "f9a16b6e76575975",
-    "_RunEnded": "00468202fdcb6ba4",
+    "_RunEnded": "704bad0046d9c028",
     "JournalRead": "d75325c67a4bff9e",
     "_read_journal": "433ad332eea3ae3a",
     "_remove": "42fcd391806ee656",

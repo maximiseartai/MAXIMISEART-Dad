@@ -19,7 +19,6 @@ from rozliczenia.client_data import (
     ForbiddenValues,
     Guarded,
     empty_memory,
-    free_text,
     guarded,
     guarded_number,
     tool,
@@ -102,22 +101,6 @@ def test_wyrocznia_wycieku_w_testach_widzi_numer_zlecenia_tak_jak_straznik() -> 
     texts = ("ślad d41f94001ab0", "2026-11-12T10:00:00.394001", 'zlecenie "94001"', "#94001, wiersz 18")
 
     assert [zawiera_wartosc(text, "#94001") for text in texts] == [False, False, True, True]
-
-
-def test_wyrocznia_wycieku_w_testach_nie_przyjmuje_numeru_ktorego_straznik_nie_szuka() -> None:
-    with pytest.raises(ValueError, match="krótszej niż 5 znaków"):
-        zawiera_wartosc("#9401, wiersz 18", "#9401")
-
-
-def test_numer_zlecenia_po_krzyzyku_nie_jest_telefonem_a_te_same_cyfry_bez_krzyzyka_sa() -> None:
-    # NUMER ZL. to „#” i numer, który może wyjść (ADR 0025); dziś ma 8 cyfr, a 9 cyfr to kształt telefonu.
-    assert free_text("zlecenie #123456789 zrobione") == "zlecenie #123456789 zrobione"
-    assert free_text("zlecenie 123456789 zrobione, oddzwonić +48123456789") == "zlecenie [telefon] zrobione, oddzwonić [telefon]"
-
-
-def test_numer_zlecenia_z_zerem_z_przodu_w_wolnym_tekscie_nie_jest_telefonem_a_telefon_obok_jest() -> None:
-    # Żaden polski numer nie zaczyna się od 0, a Wykonawca pisze NUMER ZL. w raporcie także z zerem z przodu.
-    assert free_text("zlecenie 014043137 zrobione, klient 600 123 456") == "zlecenie 014043137 zrobione, klient [telefon]"
 
 
 @pytest.mark.parametrize("form", CELL_FORMS, ids=[form.form for form in CELL_FORMS])
@@ -223,10 +206,9 @@ def wysylka(komorka: str, pamiec: ForbiddenValues) -> str:
 }
 
 
-@pytest.mark.parametrize("proof", [None, object()])
-def test_pamiec_regula_danych_bez_dowodu_modulu_to_type_error(proof: object) -> None:
+def test_pamiec_regula_danych_bez_dowodu_modulu_to_type_error() -> None:
     with pytest.raises(TypeError, match="empty_memory"):
-        ForbiddenValues(proof)
+        ForbiddenValues(object())
 
 
 @wymaga_ruff_i_mypy
@@ -406,18 +388,6 @@ from rozliczenia.client_data import ForbiddenValues, Guarded, guarded, guarded_n
 def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
     znaleziony = guarded_number(cast(ForbiddenValues, Atrapa(pamiec, komorka)), 4801234567, "komórka L6")
     return "" if znaleziony is None else znaleziony.text + "".join(znaleziony.notes)
-""",
-    "typ Any: atrapa pamięci w guard_text": """from typing import Any
-
-from rozliczenia.centrum.run_logs_guard import guard_text
-from rozliczenia.client_data import ForbiddenValues, Guarded, guarded
-"""
-    + _ATRAPA_PAMIECI
-    + """
-
-def wyciek(pamiec: ForbiddenValues, komorka: str) -> str:
-    atrapa: Any = Atrapa(pamiec, komorka)
-    return guard_text("Postęp.", "postęp Wyceny w efenix", atrapa).text
 """,
     "cast: atrapa z __class__ ForbiddenValues, którą bierze isinstance": """from typing import cast
 

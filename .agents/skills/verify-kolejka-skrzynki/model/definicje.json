@@ -1,6 +1,6 @@
 {
   "src/rozliczenia/centrum/outbox.py": {
-    "cały plik": "1a1c64f06d6468b7"
+    "cały plik": "ac48ffcda936f0d1"
   },
   "src/rozliczenia/centrum/keyed_box.py": {
     "cały plik": "aff4a7d4508cb79c"
@@ -9,7 +9,7 @@
     "cały plik": "f661b97fb1765d97"
   },
   "src/rozliczenia/centrum/atomic_file.py": {
-    "cały plik": "7bd2c1eff4c21407"
+    "cały plik": "3f6c449f36c0031d"
   },
   "src/rozliczenia/centrum/app.py": {
     "create_app.lifespan": "ec80548a442b02bf"

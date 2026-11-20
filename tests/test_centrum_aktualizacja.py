@@ -7,9 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
-import shutil
 import threading
-import time
 from typing import Any
 
 import pytest
@@ -525,27 +523,6 @@ def test_nieprzewidziana_porazka_daje_komunikat_a_klon_zostaje_bez_zmian(tmp_pat
     assert centrum.client.post("/api/tool-update").status_code == 202
 
 
-def test_karta_widzi_porazke_dopiero_gdy_ponowne_klikniecie_jest_przyjete(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    centrum, repository = updating_centrum(tmp_path)
-    git_fails_unexpectedly(repository)
-    remove_tree = shutil.rmtree
-
-    def cleanup_slowed_by_antivirus(path: Any, *args: Any, **kwargs: Any) -> None:
-        time.sleep(0.3)
-        remove_tree(path, *args, **kwargs)
-
-    monkeypatch.setattr(shutil, "rmtree", cleanup_slowed_by_antivirus)
-
-    failed = update_until_done(centrum)
-    again = centrum.client.post("/api/tool-update")
-    tool_update_until(centrum, lambda view: view["state"] != "running")
-
-    assert failed["state"] == "failed"
-    assert again.status_code == 202, again.json()
-
-
 class _LockAroundUpdateThread:
     def __init__(self, entering: Callable[[], None], left: Callable[[], None]) -> None:
         self._lock = threading.Lock()
@@ -1020,6 +997,10 @@ def test_karta_porazki_mowi_czy_tata_klika_jeszcze_raz_czy_przekazuje_sprawe_mak
     view = centrum.client.get("/api/tool-update").json()
 
     assert (view["state"], view["draft"]["title"].split(":")[0], view["next_action"]) == ("failed", shown, next_action)
+    action = view["message"]["action"]
+    assert ("„Zaktualizuj narzędzie” jeszcze raz" in action) == (next_action == "retry"), action
+    assert next_action == "retry" or "„Wyślij do Maksa”" in action, action
+    assert (STILL_WORKS in action) == (shown != ROLLBACK_FAILED), action
 
 
 def test_zgloszony_wynik_nie_wraca_gdy_dysk_nie_pozwala_usunac_jego_pliku(

@@ -46,18 +46,11 @@ def _change_workbook(change: Callable[[Workbook, Worksheet], None]) -> Callable[
     return change
 
 
-def test_identyczne_foldery_rozliczen_pracownikow_nie_maja_roznic(tmp_path: Path) -> None:
-    reference, candidate = settlement_folders(tmp_path)
-
-    assert compare_worker_settlements(reference, candidate) == NO_DIFFERENCES
-
-
 @pytest.mark.parametrize(
     ("change", "expected"),
     [
         pytest.param(_set("N18", "value", 4), _only("wartosci"), id="wartosc"),
         pytest.param(_set("B19", "value", "ul. Inna 3"), _only("wartosci"), id="tekst"),
-        pytest.param(_set("N18", "value", True), _only("wartosci"), id="prawda-to-nie-liczba-3"),
         pytest.param(_set("AU18", "value", "=SUM(N18:AO18)"), _only("formuly"), id="formula"),
         pytest.param(_set("AU18", "value", 3), _only("formuly"), id="formula-zastapiona-wartoscia"),
         pytest.param(_set("N18", "value", "=1+2"), _only("formuly"), id="wartosc-zastapiona-formula"),

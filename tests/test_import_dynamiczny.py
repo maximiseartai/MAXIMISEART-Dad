@@ -15,16 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 FIXTURES = ROOT / "tests" / "fixtures"
 
 
-def test_modul_testow_po_nazwie_pakietu_tests_jest_odmowiony() -> None:
-    with pytest.raises(OdmowaImportuTestow, match="kod spoza tests/ nie importuje kodu testów"):
-        import_dynamiczny.modul("tests.fixtures.znane_luki")
-
-
 def test_modul_testow_pod_inna_nazwa_jest_odmowiony_zanim_wykona_kod(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.syspath_prepend(str(FIXTURES))
     monkeypatch.delitem(sys.modules, "znane_luki", raising=False)
 
-    with pytest.raises(OdmowaImportuTestow):
+    with pytest.raises(OdmowaImportuTestow, match="kod spoza tests/ nie importuje kodu testów"):
         import_dynamiczny.modul("znane_luki")
     assert "znane_luki" not in sys.modules
 

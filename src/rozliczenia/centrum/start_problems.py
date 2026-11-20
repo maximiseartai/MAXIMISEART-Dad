@@ -1,12 +1,3 @@
-"""Katalog Komunikatów startu Centrum rozliczeń dla taty: co się stało, gdzie, co zrobić.
-
-Bez konsoli (skrót ``pythonw``) Komunikat pokazuje natywne okienko, z konsolą
-(``py -3 run_centrum.py``) trzy linie w konsoli. Treść nie zawiera tekstu wyjątku.
-Instrukcja taty cytuje „Co się stało” każdego Komunikatu
-(``tests/test_instrukcja_taty.py``). Moduł używa tylko biblioteki standardowej,
-bo jeden z Komunikatów mówi o brakujących zależnościach.
-"""
-
 from __future__ import annotations
 
 from rozliczenia.centrum.tool_update import GUARDIAN_LEASE_S
@@ -15,8 +6,7 @@ from rozliczenia.tool_files import HOST, LOG_PATH, TOOL_ROOT
 
 TITLE = "Centrum rozliczeń"
 _SHORTCUT = "skrót „Centrum rozliczeń”"
-_LOG = "\\".join(LOG_PATH.relative_to(TOOL_ROOT).parts)
-"""Ścieżka dziennika w folderze narzędzia tak, jak ją widzi tata w Eksploratorze plików Windows."""
+_LOG_IN_EXPLORER = "\\".join(LOG_PATH.relative_to(TOOL_ROOT).parts)
 
 
 def _address(port: int) -> str:
@@ -24,8 +14,6 @@ def _address(port: int) -> str:
 
 
 def port_taken(port: int) -> Message:
-    """Port Centrum zajmuje program, który nie odpowiada jak Centrum rozliczeń."""
-
     return Message(
         code="PORT_ZAJETY",
         what=f"Centrum rozliczeń nie wystartowało, bo port {port} zajmuje inny program.",
@@ -38,8 +26,6 @@ def port_taken(port: int) -> Message:
 
 
 def other_version_running(port: int, version: str) -> Message:
-    """Na porcie działa Centrum rozliczeń innej wersji, np. sprzed aktualizacji narzędzia."""
-
     return Message(
         code="INNA_WERSJA_CENTRUM",
         what=f"Działa już Centrum rozliczeń w innej wersji ({version}).",
@@ -49,8 +35,6 @@ def other_version_running(port: int, version: str) -> Message:
 
 
 def missing_library(name: str) -> Message:
-    """Python na komputerze taty nie ma biblioteki z ``requirements.txt``."""
-
     return Message(
         code="BRAK_BIBLIOTEKI",
         what=f"Brakuje biblioteki potrzebnej Centrum rozliczeń ({name}).",
@@ -66,7 +50,7 @@ def unexpected_start_failure() -> Message:
     return Message(
         code="NIEOCZEKIWANY_BLAD_STARTU",
         what="Centrum rozliczeń nie wystartowało z nieoczekiwanego powodu.",
-        where=f"dziennik Centrum {_LOG} w folderze narzędzia",
+        where=f"dziennik Centrum {_LOG_IN_EXPLORER} w folderze narzędzia",
         action=(
             f"Kliknij {_SHORTCUT} ponownie. {refer_if('Jeśli komunikat wraca', request='przekaż dziennik')}"
         ),
@@ -74,8 +58,6 @@ def unexpected_start_failure() -> Message:
 
 
 def not_started_after_update() -> Message:
-    """Po Aktualizacji narzędzia nie wystartowała ani nowa wersja, ani stara, do której opiekun cofnął klon."""
-
     return Message(
         code="NIE_WYSTARTOWALO_PO_AKTUALIZACJI",
         what="Centrum rozliczeń nie wystartowało po aktualizacji narzędzia.",
@@ -85,8 +67,6 @@ def not_started_after_update() -> Message:
 
 
 def update_finishing() -> Message:
-    """Skrót w trakcie ponownego startu po Aktualizacji narzędzia: opiekun może jeszcze cofać albo startować wersję."""
-
     return Message(
         code="AKTUALIZACJA_SIE_KONCZY",
         what="Aktualizacja narzędzia jeszcze się kończy.",

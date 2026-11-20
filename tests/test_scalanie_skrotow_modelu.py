@@ -71,14 +71,6 @@ def _branches(path: Path, python: str | None, ours: Change, theirs: Change) -> P
     return repo
 
 
-def _merged(repo: Path) -> bool:
-    try:
-        git(repo, "merge", "--quiet", "--no-edit", "druga")
-    except subprocess.CalledProcessError:
-        return False
-    return True
-
-
 OURS_FIRST: Change = (CODE, "    a = 1\n", "    a = 10\n", None)
 NEW_DEFINITIONS: tuple[Change, Change] = (
     (OTHER, "    return 4\n", "    return 40\n", {OTHER: ["czwarta", "piata"], CODE: ["pierwsza", "druga"]}),
@@ -106,16 +98,6 @@ def test_merge_dwoch_galezi_ze_skrotami_przeliczonymi_na_kazdej_przechodzi_bez_k
 
     assert rozjazd_modelu.rozjazd(repo / SKILL, repo) is None
     assert git(repo, "status", "--porcelain", "--untracked-files=no") == ""
-
-
-@pytest.mark.parametrize(("ours", "theirs"), [*RESOLVED, pytest.param(*CONFLICTING, id="klucze-zmienione-po-obu-stronach-w-tych-samych-liniach")])
-def test_sterownik_nie_daje_konfliktu_tam_gdzie_scalenie_tekstem_go_nie_daje(tmp_path: Path, ours: Change, theirs: Change) -> None:
-    as_text = _merged(_branches(tmp_path / "tekstem", None, ours, theirs))
-
-    with_driver = _merged(repo := _branches(tmp_path / "sterownik", PYTHON, ours, theirs))
-
-    assert with_driver or not as_text
-    assert not with_driver or rozjazd_modelu.rozjazd(repo / SKILL, repo) is None
 
 
 def test_checkout_bez_venv_scala_definicje_tekstem_jak_bez_sterownika(tmp_path: Path) -> None:

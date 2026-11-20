@@ -5,6 +5,7 @@
 Przyjęta na decyzję Maksa z 18.11.2026 w wątku koordynatora programu chwastów, jego słowami: „tak bramka ma przejmowac” (bramka przyjmuje strażnika każdego rodzaju z dowodem, który liczy narzędzie, a nie recenzent).
 Zmienia jego wybór z 15.11.2026 („recenzent jako bramka”, [#1912](https://github.com/maximiseartai/MAXIMISEART-Dad/pull/1912#issuecomment-6902436281)) w punkcie „Idiom bez reguły” [ADR 0036](0036-chwast-to-regula.md) i decyzje tego ADR z listy „Zmienia te zdania”; odwracalna przez revert.
 Wchodzi razem z kodem, który ją wdraża, a ten plik wyznacza chwilę wdrożenia (`bramka_straznika.MARKER`).
+[ADR 0046](0046-szczebel-straznika-wybiera-recenzent.md) na decyzje Maksa z 20.11.2026 zmienia decyzje „Strażnik przy każdym Ważnym”, „Kod usunięty z PR” i „Pole `Idiom:`” oraz punkt „Lekka runda” aneksu lekkiej rundy.
 Wdraża ją dla typu, zakazu ruff i reguły ast-grep, a dla testu aneks „Test jako strażnik z mutacją recenzenta” (jednostki G3–G3c programu chwastów), który zmienia decyzję „Test jako strażnik” i obowiązuje od dodania `bramka_straznika.TEST_MARKER` do bazy.
 
 ## Kontekst

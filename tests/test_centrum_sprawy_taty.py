@@ -16,7 +16,6 @@ from rozliczenia.client_data import tool
 from rozliczenia.centrum.dad_cases import (
     DAD_CASES_FILE,
     NOTE,
-    OLD_NOTES_FILE,
     OLD_REPORTS_FILE,
     REPORT,
     Case,
@@ -61,10 +60,9 @@ from tests.fixtures.praca_centrum import centrum_work
 from tests.fixtures.locked_file import lock_file
 
 FIXTURES = Path(__file__).parent / "fixtures"
-REPORTS_SAMPLE = "zgloszenia-wyslane-z-powiadomieniami.json"
-NOTES_SAMPLE = "uwagi-taty-z-powiadomieniami.json"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 QUEUED_NOTE = "ffeeddccbbaa49988776655443322110"
+V0_1_0_REPORT = {"fingerprint": "3f0c1b2a9d8e7f60", "number": 4, "commit": COMMIT, "state": "open"}
 
 
 def at(day: int, hour: int, minute: int = 0) -> datetime:
@@ -119,11 +117,25 @@ def log(tmp_path: Path) -> CentrumLog:
     return CentrumLog(tmp_path / "logs" / "centrum-rozliczen.log")
 
 
-def old_files(tmp_path: Path, reports: str = REPORTS_SAMPLE, notes: str = NOTES_SAMPLE) -> Path:
+def case_entry(case: Case) -> dict[str, object]:
+    closure = case.closure
+    return {
+        "kind": case.kind.key,
+        "id": case.id,
+        "title": case.title,
+        "commit": case.commit,
+        "sent_at": None if case.sent_at is None else case.sent_at.isoformat(),
+        "number": case.number,
+        "closure": None if closure is None else {"reason": closure.reason, "at": None if closure.at is None else closure.at.isoformat()},
+        "run_id": case.run_id,
+    }
+
+
+def with_cases(tmp_path: Path) -> Path:
     config = tmp_path / "config"
     config.mkdir()
-    shutil.copy(FIXTURES / reports, config / OLD_REPORTS_FILE)
-    shutil.copy(FIXTURES / notes, config / OLD_NOTES_FILE)
+    document = {"schema_version": 1, "sprawy": [case_entry(case) for case in OLD_CASES]}
+    (config / DAD_CASES_FILE).write_text(json.dumps(document, ensure_ascii=False), encoding="utf-8")
     return config
 
 
@@ -137,36 +149,29 @@ def with_document(tmp_path: Path, name: str, document: object) -> None:
     (config / name).write_text(json.dumps(document), encoding="utf-8")
 
 
-def test_stare_pliki_zgloszen_i_uwag_wczytuja_sie_jako_sprawy_taty(tmp_path: Path) -> None:
-    old_files(tmp_path)
+def test_zgloszenie_z_pliku_wydania_v0_1_0_wczytuje_sie_bez_tytulu_ani_czasu(tmp_path: Path) -> None:
+    with_document(tmp_path, OLD_REPORTS_FILE, [V0_1_0_REPORT])
 
-    assert cases(tmp_path) == OLD_CASES
-
-
-def test_wpisy_sprzed_powiadomien_wczytuja_sie_a_zgloszenie_nie_ma_tytulu_ani_czasu(tmp_path: Path) -> None:
-    old_files(tmp_path, "zgloszenia-wyslane-sprzed-powiadomien.json", "uwagi-taty-sprzed-powiadomien.json")
-
-    assert cases(tmp_path) == [
-        Case(REPORT, "3f0c1b2a9d8e7f60", None, COMMIT, None, 4),
-        Case(NOTE, "c0ffee00c0ffee00c0ffee00c0ffee00", "Uwaga sprzed Powiadomień", None, at(23, 12), 5),
-    ]
+    assert cases(tmp_path) == [Case(REPORT, "3f0c1b2a9d8e7f60", None, COMMIT, None, 4)]
 
 
-def test_pierwszy_zapis_przenosi_stare_sprawy_do_pliku_spraw_taty_a_stare_pliki_zostaja(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
-    old = {name: (config / name).read_bytes() for name in (OLD_REPORTS_FILE, OLD_NOTES_FILE)}
+def test_pierwszy_zapis_przenosi_stare_zgloszenia_do_pliku_spraw_taty_a_stary_plik_zostaje(tmp_path: Path) -> None:
+    with_document(tmp_path, OLD_REPORTS_FILE, [V0_1_0_REPORT])
+    config = tmp_path / "config"
+    old = (config / OLD_REPORTS_FILE).read_bytes()
 
     DadCases(centrum_work(config, log(tmp_path))).add(NEW)
     restarted = cases(tmp_path)
-    for name in old:
-        (config / name).unlink()
+    kept = (config / OLD_REPORTS_FILE).read_bytes()
+    (config / OLD_REPORTS_FILE).unlink()
 
-    assert {OLD_REPORTS_FILE: (FIXTURES / REPORTS_SAMPLE).read_bytes(), OLD_NOTES_FILE: (FIXTURES / NOTES_SAMPLE).read_bytes()} == old
-    assert restarted == cases(tmp_path) == [*OLD_CASES, NEW]
+    assert kept == old
+    assert restarted == cases(tmp_path) == [Case(REPORT, "3f0c1b2a9d8e7f60", None, COMMIT, None, 4), NEW]
 
 
-def test_uszkodzony_plik_spraw_taty_to_brak_spraw_takze_przy_starych_plikach(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
+def test_uszkodzony_plik_spraw_taty_to_brak_spraw_takze_przy_starym_pliku(tmp_path: Path) -> None:
+    with_document(tmp_path, OLD_REPORTS_FILE, [V0_1_0_REPORT])
+    config = tmp_path / "config"
     (config / DAD_CASES_FILE).write_text('{"schema_version": 1, "sprawy": [', encoding="utf-8")
 
     assert cases(tmp_path) == []
@@ -179,26 +184,15 @@ def test_plik_spraw_taty_w_nieznanym_schemacie_to_brak_spraw(tmp_path: Path, doc
     assert cases(tmp_path) == []
 
 
-@pytest.mark.parametrize("damaged", [OLD_REPORTS_FILE, OLD_NOTES_FILE])
-def test_uszkodzony_stary_plik_nie_zabiera_spraw_z_drugiego(tmp_path: Path, damaged: str) -> None:
-    config = old_files(tmp_path)
-    (config / damaged).write_bytes(b"\xff\xfe uszkodzony")
-
-    kept = REPORT if damaged == OLD_NOTES_FILE else NOTE
-    assert cases(tmp_path) == [case for case in OLD_CASES if case.kind == kept]
-
-
 @pytest.mark.parametrize(
-    "document",
-    [
-        {"schema_version": 1},
-        {"schema_version": 2, "uwagi": json.loads((FIXTURES / NOTES_SAMPLE).read_text(encoding="utf-8"))["uwagi"]},
-        [],
-    ],
-    ids=["bez-uwag", "nieznany-schemat", "lista"],
+    "damaged",
+    [b"\xff\xfe uszkodzony", json.dumps([V0_1_0_REPORT]).encode("utf-8")[:20]],
+    ids=["bajty-spoza-utf8", "urwany-json"],
 )
-def test_stary_plik_uwag_w_nieznanym_ksztalcie_to_brak_uwag(tmp_path: Path, document: object) -> None:
-    with_document(tmp_path, OLD_NOTES_FILE, document)
+def test_uszkodzony_stary_plik_zgloszen_to_brak_spraw(tmp_path: Path, damaged: bytes) -> None:
+    config = tmp_path / "config"
+    config.mkdir()
+    (config / OLD_REPORTS_FILE).write_bytes(damaged)
 
     assert cases(tmp_path) == []
 
@@ -209,53 +203,22 @@ def test_stary_plik_zgloszen_w_nieznanym_ksztalcie_to_brak_zgloszen(tmp_path: Pa
     assert cases(tmp_path) == []
 
 
-OLD_REPORT = {"fingerprint": "3f0c1b2a9d8e7f60", "number": 4, "commit": None}
-OLD_NOTE = {"id": "c0ffee00", "title": "Uwaga", "commit": None, "written_at": "2026-10-23T12:00:00+00:00", "number": 5}
-
-
 @pytest.mark.parametrize(
-    ("name", "entry"),
+    "entry",
     [
-        (OLD_REPORTS_FILE, "nie wpis"),
-        (OLD_REPORTS_FILE, {**OLD_REPORT, "number": None}),
-        (OLD_REPORTS_FILE, {**OLD_REPORT, "number": True}),
-        (OLD_REPORTS_FILE, {**OLD_REPORT, "fingerprint": None}),
-        (OLD_NOTES_FILE, "nie wpis"),
-        (OLD_NOTES_FILE, {**OLD_NOTE, "title": 7}),
-        (OLD_NOTES_FILE, {**OLD_NOTE, "written_at": "2026-10-23T12:00:00"}),
-        (OLD_NOTES_FILE, {**OLD_NOTE, "id": None}),
+        "nie wpis",
+        {**V0_1_0_REPORT, "number": None},
+        {**V0_1_0_REPORT, "number": True},
+        {**V0_1_0_REPORT, "fingerprint": None},
     ],
-    ids=[
-        "zgloszenie-nie-obiekt",
-        "zgloszenie-bez-numeru",
-        "zgloszenie-numer-bool",
-        "zgloszenie-bez-odcisku",
-        "uwaga-nie-obiekt",
-        "uwaga-tytul-liczba",
-        "uwaga-czas-bez-strefy",
-        "uwaga-bez-identyfikatora",
-    ],
+    ids=["zgloszenie-nie-obiekt", "zgloszenie-bez-numeru", "zgloszenie-numer-bool", "zgloszenie-bez-odcisku"],
 )
-def test_wpis_starego_pliku_ktorego_nie_da_sie_odczytac_jest_pominiety(
-    tmp_path: Path, name: str, entry: object
-) -> None:
-    if name == OLD_REPORTS_FILE:
-        with_document(tmp_path, name, [entry, OLD_REPORT])
-    else:
-        with_document(tmp_path, name, {"schema_version": 1, "uwagi": [entry, OLD_NOTE]})
+def test_wpis_starego_pliku_ktorego_nie_da_sie_odczytac_jest_pominiety(tmp_path: Path, entry: object) -> None:
+    with_document(tmp_path, OLD_REPORTS_FILE, [entry, V0_1_0_REPORT])
 
     [case] = cases(tmp_path)
 
-    assert case.number == (4 if name == OLD_REPORTS_FILE else 5)
-
-
-@pytest.mark.parametrize("run_id", [3, "b4c3d2e1f0a94b8c"])
-def test_zgloszenie_ze_starego_pliku_nie_bierze_uruchomienia_z_wpisu(tmp_path: Path, run_id: object) -> None:
-    with_document(tmp_path, OLD_REPORTS_FILE, [{**OLD_REPORT, "run_id": run_id}])
-
-    [case] = cases(tmp_path)
-
-    assert (case.kind, case.number, case.run_id) == (REPORT, 4, None)
+    assert case.number == 4
 
 
 @pytest.mark.parametrize(
@@ -295,7 +258,7 @@ def test_tytul_nie_tekst_i_nieczytelny_czas_zostawiaja_sprawe_bez_nich(tmp_path:
 
 
 def test_numer_issue_dostaje_tylko_sprawa_z_wysylki_o_jej_etykiecie_i_identyfikatorze(tmp_path: Path) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(outcomes=[Sent(20)], issues=[ZGLOSZENIE_3], background=LOGS))
 
     skrzynka.sent(
@@ -428,7 +391,7 @@ class SlowBox(AnsweringBox):
 
 
 def test_zmiana_spraw_nie_czeka_na_odpowiedz_skrzynki_o_ich_zamkniecie(tmp_path: Path) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     box = SlowBox({"zgloszenie": (), "uwaga-taty": ()})
     asking = threading.Thread(target=stored.ask_box, args=(keyed(box),), daemon=True)
     asking.start()
@@ -458,7 +421,7 @@ def test_obserwator_slyszy_numer_poza_blokada_spraw_wiec_moze_je_czytac(tmp_path
 
 
 def test_skrzynka_jest_pytana_o_rodzaj_z_otwartymi_sprawami_a_jej_zamkniecia_trafiaja_do_spraw(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
+    config = with_cases(tmp_path)
     closed = Closure("completed", at(24, 15))
     box = AnsweringBox({"uwaga-taty": (Issue(12, "", closed), Issue(11, "", None), Issue(40, "", closed))})
     stored = DadCases(centrum_work(config, log(tmp_path)))
@@ -471,7 +434,7 @@ def test_skrzynka_jest_pytana_o_rodzaj_z_otwartymi_sprawami_a_jej_zamkniecia_tra
 
 
 def test_uwaga_w_kolejce_i_zamkniete_sprawy_nie_pytaja_skrzynki(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
+    config = with_cases(tmp_path)
     stored = DadCases(centrum_work(config, log(tmp_path)))
     stored.forget(REPORT, "a1b2c3d4e5f60718")
     stored.forget(NOTE, "0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d")
@@ -483,7 +446,7 @@ def test_uwaga_w_kolejce_i_zamkniete_sprawy_nie_pytaja_skrzynki(tmp_path: Path) 
 
 
 def test_bez_odpowiedzi_skrzynki_zostaje_ostatni_znany_stan(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
+    config = with_cases(tmp_path)
     closed = Closure("completed", at(24, 15))
     box = AnsweringBox({"zgloszenie": Unreachable(), "uwaga-taty": (Issue(12, "", closed),)})
 
@@ -500,7 +463,7 @@ def test_bez_odpowiedzi_skrzynki_zostaje_ostatni_znany_stan(tmp_path: Path) -> N
 
 
 def test_po_odmowie_klucza_skrzynka_nie_jest_pytana_o_drugi_rodzaj_a_stan_zostaje(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
+    config = with_cases(tmp_path)
     box = AnsweringBox({"zgloszenie": Refused(), "uwaga-taty": (Issue(12, "", Closure("completed", at(24, 15))),)})
 
     DadCases(centrum_work(config, log(tmp_path))).ask_box(keyed(box))
@@ -526,13 +489,14 @@ def test_sprawa_niedostepnego_pliku_czeka_w_pamieci_az_zapisze_ja_zmiana_ktora_n
 
 
 def test_sprawa_bez_zmian_nie_zapisuje_pliku(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
+    config = with_cases(tmp_path)
+    before = (config / DAD_CASES_FILE).read_bytes()
     stored = DadCases(centrum_work(config, log(tmp_path)))
 
     stored.forget(NOTE, "nieznana")
     stored.numbered(NOTE, "nieznana", 3)
 
-    assert not (config / DAD_CASES_FILE).exists()
+    assert (config / DAD_CASES_FILE).read_bytes() == before
 
 
 def test_sprawy_zmieniane_naraz_z_kilku_watkow_trafiaja_wszystkie_do_pamieci_i_pliku(tmp_path: Path) -> None:
@@ -576,54 +540,18 @@ def notifications(tmp_path: Path) -> list[tuple[str, str, bool, str]]:
     ]
 
 
-def test_sprawy_ze_starych_plikow_daja_te_same_powiadomienia(tmp_path: Path) -> None:
-    old_files(tmp_path)
+def test_zgloszenie_z_pliku_wydania_v0_1_0_bez_co_sie_stalo_i_czasu_nie_daje_powiadomienia(tmp_path: Path) -> None:
+    with_document(tmp_path, OLD_REPORTS_FILE, [V0_1_0_REPORT])
 
-    assert notifications(tmp_path) == [
-        ("uwaga", "uwaga-5e1f0c2d3b4a49e8b7c6d5e4f3a2b1c0-przeczytana", True, "Plik zbiorczy otwiera się długo"),
-        ("uwaga", f"uwaga-{QUEUED_NOTE}-czeka_na_token", False, "Wiersz zniknął"),
-        ("uwaga", "uwaga-0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d-wyslana", False, "Brakuje ilości przy montażu"),
-        ("zgloszenie", "zgloszenie-7-rozwiazana", True, "Nie znaleziono Wzorca pliku zbiorczego."),
-        ("zgloszenie", "zgloszenie-9-wyslana", False, "Brak połączenia z GitHubem."),
-    ]
-
-
-def test_zgloszenie_bez_co_sie_stalo_albo_czytelnego_czasu_nie_daje_powiadomienia(tmp_path: Path) -> None:
-    old_files(tmp_path, "zgloszenia-wyslane-sprzed-powiadomien.json", "uwagi-taty-sprzed-powiadomien.json")
-    with_document(
-        tmp_path,
-        OLD_REPORTS_FILE,
-        [
-            *json.loads((FIXTURES / "zgloszenia-wyslane-sprzed-powiadomien.json").read_text(encoding="utf-8")),
-            {
-                "fingerprint": "a1b2c3d4e5f60718",
-                "number": 9,
-                "commit": None,
-                "what": "Brak sieci",
-                "sent_at": "wczoraj",
-            },
-            {"fingerprint": "b2c3d4e5f6071829", "number": 10, "commit": None, "sent_at": "2026-10-21T09:30:00+00:00"},
-        ],
-    )
-
-    assert notifications(tmp_path) == [
-        ("uwaga", "uwaga-c0ffee00c0ffee00c0ffee00c0ffee00-wyslana", False, "Uwaga sprzed Powiadomień")
-    ]
+    assert notifications(tmp_path) == []
 
 
 def test_uszkodzony_plik_spraw_taty_w_innym_kodowaniu_to_brak_spraw(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
+    with_document(tmp_path, OLD_REPORTS_FILE, [V0_1_0_REPORT])
+    config = tmp_path / "config"
     (config / DAD_CASES_FILE).write_bytes(json.dumps({"schema_version": 1, "sprawy": []}).encode("utf-16"))
 
     assert cases(tmp_path) == []
-
-
-def test_stary_plik_z_urwanym_json_nie_zabiera_spraw_z_drugiego(tmp_path: Path) -> None:
-    config = old_files(tmp_path)
-    text = (config / OLD_REPORTS_FILE).read_text(encoding="utf-8")
-    (config / OLD_REPORTS_FILE).write_text(text[: len(text) // 2], encoding="utf-8")
-
-    assert cases(tmp_path) == [case for case in OLD_CASES if case.kind == NOTE]
 
 
 def test_sprawa_bez_czasow_i_z_polskimi_literami_wraca_z_pliku_bez_zmian(tmp_path: Path) -> None:
@@ -696,7 +624,7 @@ OTHER_TARGETS = {
 def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian_choc_logi_o_tym_identyfikatorze_doszly(
     tmp_path: Path, target: PeriodThread | KnownIssue | NewIssue
 ) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[ZGLOSZENIE_3], background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN, PINNED_ID)
 
@@ -707,7 +635,7 @@ def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian_choc_log
 
 @pytest.mark.parametrize("tail", ["", "\nwersja narzędzia abc1234"], ids=["linia-logow-na-koncu", "linia-logow-przed-wersja"])
 def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz_ze_nie_dotra_gdy_znikna_z_kolejki(tmp_path: Path, tail: str) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     box = FakeReportBox(background=LOGS)
     box.background_comment_outcomes.append(Rejected())
     skrzynka = Skrzynka(tmp_path, stored, box)
@@ -726,7 +654,7 @@ def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz_ze_nie_dotra_gdy_zni
 
 
 def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi(tmp_path: Path) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
 
@@ -738,7 +666,7 @@ def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi
 
 
 def test_uwaga_ze_stanem_logow_w_drodze_bez_ich_linii_w_tekscie_idzie_bez_zmian(tmp_path: Path) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
 
@@ -749,7 +677,7 @@ def test_uwaga_ze_stanem_logow_w_drodze_bez_ich_linii_w_tekscie_idzie_bez_zmian(
 
 
 def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zgloszenia(tmp_path: Path) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     stored.add(Case(REPORT, "3f0c1b2a9d8e7f60", "Nie znaleziono wzorca.", None, at(25, 8), None))
     open_report = BoxIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[open_report]))
@@ -768,7 +696,7 @@ def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zg
 
 def test_uwaga_z_logami_w_drodze_z_kolejki_wydania_sprzed_stanu_wysylki_dostaje_odnosnik(tmp_path: Path) -> None:
     run_id, note_id = "5d4c3b2a19087f6e5d4c3b2a19087f6e", "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b"
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     stored.add(Case(NOTE, note_id, "Brakuje ilości przy montażu", "6a797a55f42a", at(25, 8), None, run_id=run_id))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(run_id)
@@ -789,7 +717,7 @@ def test_uwaga_z_logami_w_drodze_z_kolejki_wydania_sprzed_stanu_wysylki_dostaje_
 
 
 def test_wysylka_uwagi_nieznanej_temu_komputerowi_idzie_bez_zmian(tmp_path: Path) -> None:
-    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    stored = DadCases(centrum_work(with_cases(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
 
@@ -803,7 +731,7 @@ def test_sprawdzanie_powiadomien_w_tle_nie_wstrzymuje_zamkniecia_centrum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("rozliczenia.centrum.notifications.CHECK_WAIT_S", 0.05)
-    old_files(tmp_path)
+    with_cases(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
     since = new_line()
     started = centrum(tmp_path)

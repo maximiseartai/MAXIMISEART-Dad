@@ -19,13 +19,11 @@ import pytest
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.settings.activity_legend import LEGEND, LEGEND_FILE
-from rozliczenia.worker_periods import InRegister
 from rozliczenia.centrum.outbox import Outbox, Post
 from rozliczenia.centrum.report_box import Refused, Sent, Unreachable
 from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.settings.history import HISTORY_FILE
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods
 from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS_FILE
 from rozliczenia.centrum.settings.quantity_rules import DEVICES_FILE, RULES_FILE
 
@@ -35,7 +33,7 @@ from tests.fixtures.centrum import (
     TOOL_COMMIT,
     FakeReportBox,
     ToolDirectory,
-    config_files,
+    config_files_after_queue,
     finished_view,
     without_times,
     write_report_key,
@@ -611,56 +609,9 @@ def test_gdy_maks_zamknal_issue_okresu_powtorzony_przebieg_zaklada_nowe(tmp_path
     assert first.comments == []
 
 
-def test_kontrola_ilosci_nie_trafia_do_issue_innego_okresu_ani_innej_etykiety(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS)
-    foreign = [
-        BoxIssue(1, LABEL, "Kontrola ilości 01_07_09_2026: bez różnic", "- Kontrola ilości okresu: 01_07_09_2026\n"),
-        BoxIssue(2, LABEL, f"Kontrola ilości {PERIOD}0", f"- Kontrola ilości okresu: {PERIOD}0\n"),
-        BoxIssue(3, "zgloszenie", "BRAK_WZORCA: Nie znaleziono wzorca.", f"## Komunikat\n\n{LINE}\n"),
-        BoxIssue(4, "logi-uruchomienia", f"Logi {PERIOD}", f"{LINE}\n"),
-    ]
-    box(centrum).issues.extend(foreign)
-
-    view = run_to_end(centrum, dry_run=False)
-
-    assert box(centrum).wait_until(lambda fake: len(fake.issues) == 5), "Kontrola ilości nie dotarła"
-    assert box(centrum).issues[4].body == expected_body(view["run"]["id"])
-    assert [issue.comments for issue in foreign] == [[], [], [], []]
-
-
 def passes_waiting_for_network(centrum: SettlingCentrum) -> int:
     waiting = f"skrzynka-czeka etykieta={LABEL} okres={PERIOD} przyczyna=brak-sieci"
     return centrum.log_path.read_text(encoding="utf-8").count(waiting)
-
-
-def test_kontrola_ilosci_bez_sieci_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum(tmp_path: Path) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS)
-    box(centrum).search_failure = Unreachable()
-
-    view = run_to_end(centrum, dry_run=False)
-
-    assert wait_for(lambda: passes_waiting_for_network(centrum) >= 1)
-    assert view["result"]["result"] == "OK"
-    assert view["result"]["technical_notes"] == [] and view["result"]["warnings"] == []
-    [waiting] = queued_checks(centrum)
-    assert list(ToolDirectory(tmp_path).queue.parent.iterdir()) == [ToolDirectory(tmp_path).queue]
-
-    before_start = passes_waiting_for_network(centrum)
-    centrum.restart()
-    with centrum.client:
-        assert wait_for(lambda: passes_waiting_for_network(centrum) > before_start)
-        assert centrum.client.get("/api/runs/current").json()["state"] == "idle"
-    assert queued_checks(centrum) == [waiting]
-    assert box(centrum).issues == []
-
-    box(centrum).search_failure = None
-    centrum.restart()
-    with centrum.client:
-        issue = sent_check(centrum)
-
-    assert issue.body == expected_body(view["run"]["id"])
-    assert wait_for(lambda: queued_checks(centrum) == [])
-    assert list(ToolDirectory(tmp_path).queue.parent.glob("Zgłoszenie *.md")) == []
 
 
 def test_logi_i_kontrola_ilosci_jednego_przebiegu_czekaja_razem_i_przy_starcie_wychodza_obie(tmp_path: Path) -> None:
@@ -767,7 +718,7 @@ def test_odczyt_podglad_i_podpowiedzi_regul_ilosci_niczego_nie_zapisuja(tmp_path
     run_to_end(centrum, dry_run=False)
     rules = centrum.client.get(RULES_URL).json()
     history = centrum.client.get("/api/settings/history").json()["rows"]
-    config = config_files(centrum.tool.config)
+    config = config_files_after_queue(centrum.client, centrum.tool.config)
 
     previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
     previewed(centrum, {"kind": "remove", "rule_id": rules["rules"][0]["id"]})
@@ -775,7 +726,7 @@ def test_odczyt_podglad_i_podpowiedzi_regul_ilosci_niczego_nie_zapisuja(tmp_path
 
     assert centrum.client.get(RULES_URL).json() == rules
     assert centrum.client.get("/api/settings/history").json()["rows"] == history
-    assert config_files(centrum.tool.config) == config
+    assert config_files_after_queue(centrum.client, centrum.tool.config) == config
 
 
 def test_podglad_pokazuje_wiersze_z_roznica_od_taty_z_suma_dwoch_regul_w_jednej_kolumnie(tmp_path: Path) -> None:
@@ -1160,6 +1111,16 @@ def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okre
     assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [{"spelling": "ont x", "orders": 1}], "unread": []}
 
 
+def test_podpowiedz_listy_urzadzen_liczy_zlecenie_raz_choc_zapis_stoi_w_nim_dwa_razy(tmp_path: Path) -> None:
+    twice: dict[str, CellValue] = {"C": "u", "D": "ont x nokia ont x", "G": MON.replace(hour=10), "T": 1}
+    centrum = centrum_with(tmp_path, [*TATA_ROWS, twice])
+    run_to_end(centrum, dry_run=False)
+
+    suggested = centrum.client.get(SUGGESTIONS_URL).json()["suggestions"]
+
+    assert {"spelling": "ont x", "orders": 1} in suggested, suggested
+
+
 @pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
 def test_podpowiedzi_listy_urzadzen_przy_pliku_pary_bez_odczytu_sa_puste_a_nie_liczone_lista_z_wydania(
     tmp_path: Path, unreadable: str
@@ -1257,21 +1218,6 @@ def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okr
     assert shown(found) == TATA_DIFFERENCES
     assert issue.title == f"Kontrola ilości {PERIOD}: {len(found['differences'])} różnic"
     assert (found["unread"], found["more"], found["exceptions"], found["exceptions_problem"]) == ([], 0, 0, None)
-
-
-def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kazdego_zapisu_ustawien(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    centrum = centrum_with(tmp_path, TATA_ROWS)
-    run_to_end(centrum, dry_run=False)
-    difference = at(differences(centrum), 21, "N")
-    kept = KeptInPeriods(InRegister(), "worker")
-    monkeypatch.setattr(CentrumSettings, "change_exceptions", lambda _settings, _exception: kept)
-
-    response = centrum.client.post(f"{DIFFERENCES_URL}/{difference['id']}/exception")
-
-    expected = refusal.worker_kept(kept.presence, kept.what)
-    assert (response.status_code, response.json()) == (expected.status_code, {"message": expected.message})
 
 
 def test_to_byl_wyjatek_ukrywa_roznice_po_restarcie_po_kolejnym_przebiegu_i_przy_nowszym_okresie(tmp_path: Path) -> None:

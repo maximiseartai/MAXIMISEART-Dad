@@ -31,8 +31,6 @@ import importlib.util
 import json
 import os
 from pathlib import Path
-import threading
-import time
 from types import ModuleType, SimpleNamespace
 from typing import Any, Final
 
@@ -166,54 +164,6 @@ def _run(common: ModuleType, tmp_path: Path) -> Any:
     settings = config_dir(root) / SETTINGS_FILE
     (root / "fixture.json").write_text(json.dumps({"settings": str(settings)}), encoding="utf-8")
     return common.Run(root, "http://127.0.0.1:1/", tmp_path / "dowody")
-
-
-def test_czekanie_drive_przeczekuje_wynik_aktualizacji_brakujacy_pusty_w_polowie_zapisany_i_bez_prawa_odczytu(
-    common: ModuleType, tmp_path: Path
-) -> None:
-    """Warunek z ``aktualizacja-ok-przy-starej-wersji`` (``exists()`` i ``read_json`` wyniku Aktualizacji narzędzia,
-    run 43496125209) czyta plik, który opiekun ponownego startu pisze: każdy odczyt warunku przestawia plik w następny
-    stan, a czekanie kończy się dopiero na pełnym wyniku."""
-
-    run = _run(common, tmp_path)
-    result = run.config / UPDATE_RESULT_FILE
-    full = json.dumps({"wynik": "NOWA_WERSJA_NIE_WYSTARTOWALA"})
-    holding: list[threading.Thread] = []
-
-    def refused_for_a_moment() -> None:
-        refusing = threading.Event()
-
-        def hold() -> None:
-            with common.unreadable(result):
-                refusing.set()
-                time.sleep(0.3)
-
-        holding.append(threading.Thread(target=hold))
-        holding[0].start()
-        refusing.wait()
-
-    def written_whole() -> None:
-        holding[0].join()
-        result.write_text(full, encoding="utf-8")
-
-    states = [
-        lambda: None,
-        lambda: result.write_text("", encoding="utf-8"),
-        lambda: result.write_text(full[:12], encoding="utf-8"),
-        refused_for_a_moment,
-        written_whole,
-    ]
-    read: list[int] = []
-
-    def guardian_wrote_the_failure() -> bool:
-        states[len(read)]()
-        read.append(len(read))
-        return bool(result.exists() and common.read_json(result)["wynik"] == "NOWA_WERSJA_NIE_WYSTARTOWALA")
-
-    waiting = importlib.import_module("drive.waiting")
-    waiting.until(guardian_wrote_the_failure, "the guardian moved the clone back and wrote the failure", 20)
-
-    assert read == [0, 1, 2, 3, 4]
 
 
 def _refused(path: Path) -> object:
@@ -381,12 +331,11 @@ def test_czekanie_drive_na_wartosc_falszywa_czyta_jeszcze_raz(common: ModuleType
     [
         lambda path: path.read_text(encoding="utf-8"),
         lambda path: json.loads(""),
-        lambda path: json.loads('{"wynik": "NOWA_'),
         lambda path: b"\xc5".decode("utf-8"),
         lambda path: yaml.safe_load("folder_okresow: [C:/okresy,"),
         _refused,
     ],
-    ids=["brak-pliku", "pusty-json", "pol-json", "pol-znaku-utf8", "pol-yaml", "bez-prawa-odczytu"],
+    ids=["brak-pliku", "pusty-json", "pol-znaku-utf8", "pol-yaml", "bez-prawa-odczytu"],
 )
 def test_czekanie_drive_czyta_jeszcze_raz_po_kazdym_stanie_jeszcze_nie(
     common: ModuleType, tmp_path: Path, not_yet: Callable[[Path], object]

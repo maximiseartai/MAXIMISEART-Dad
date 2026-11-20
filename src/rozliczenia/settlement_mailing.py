@@ -60,9 +60,7 @@ __all__ = [
 ]
 
 PERIOD_FIELD: Final = "{okres}"
-"""Pole tematu i treści: dni okresu słowami (``period_words``)."""
 WORKER_FIELD: Final = "{wykonawca}"
-"""Pole tematu i treści: nazwa Wykonawcy z Listy Wykonawców."""
 _FIELDS: Final = (PERIOD_FIELD, WORKER_FIELD)
 _MONTHS: Final = (
     "stycznia",
@@ -174,9 +172,6 @@ def mail_subject(settings: SettlementMailSettings, period: SettlementPeriod, wor
 
 
 def mail_text(settings: SettlementMailSettings, period: SettlementPeriod, worker: str, footer: str) -> str:
-    """Treść Maila z rozliczeniem: treść taty z polami, a na końcu stopka taty z Przypomnień o raporcie, gdy nie jest
-    pusta."""
-
     lines = [_filled(settings.text, period, worker).rstrip("\r\n")]
     if footer.strip():
         lines += ["", footer.strip("\r\n")]
@@ -198,22 +193,16 @@ class ToSend:
 
 @dataclass(frozen=True)
 class Sent:
-    """Centrum wysłało Mail z rozliczeniem w chwili ``at`` i plik się od tego czasu nie zmienił."""
-
     at: datetime
 
 
 @dataclass(frozen=True)
 class SentByHand:
-    """Tata wysłał ten plik Wykonawcy sam ze skrzynki raportów w chwili ``at`` i plik się od tego czasu nie zmienił."""
-
     at: datetime
 
 
 @dataclass(frozen=True)
 class ChangedAfterSending:
-    """Plik zmienił się po ostatnim mailu z nim (``at``): można go wysłać jeszcze raz."""
-
     at: datetime
 
 
@@ -248,8 +237,6 @@ def resend(state: MailingState) -> bool:
 
 
 def sendable(state: MailingState) -> bool:
-    """Czy tata może wysłać plik w stanie ``state``: jeszcze nie poszedł, zmienił się po wysłaniu albo nie wyszedł."""
-
     return isinstance(state, ToSend | ChangedAfterSending | NotSent)
 
 

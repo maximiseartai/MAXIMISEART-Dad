@@ -247,6 +247,21 @@ def _day(day: date) -> str:
     return day.strftime("%d.%m.%Y")
 
 
+CONFLICT_ACTION: Final = (
+    "Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię."
+)
+
+
+def conflict_copy(copy: Path) -> Message:
+    return Message(
+        code="KOPIA_KONFLIKTU_INTERMAX",
+        dad_file="order_register",
+        what=f"Obok INTERMAX leży kopia konfliktu OneDrive: OneDrive ma dwie wersje INTERMAX. {_UNCHANGED}",
+        where=file_label(copy),
+        action=f"{CONFLICT_ACTION} Potem uruchom ponownie.",
+    )
+
+
 def unsupported_shape(register: Path, sheet: str) -> Message:
     return Message.to_maintainer(
         code="NIEOBSLUGIWANY_UKLAD_INTERMAX",

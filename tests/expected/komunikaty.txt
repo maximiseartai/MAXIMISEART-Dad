@@ -844,6 +844,11 @@ day_already_ordered #2 [DZIEN_JUZ_UPORZADKOWANY]
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA, wklejony wiersz 816
   Co zrobić: Nowe zlecenia na ten dzień dopisz ręcznie, a wklejone usuń.
 
+conflict_copy [KOPIA_KONFLIKTU_INTERMAX]
+  Co się stało: Obok INTERMAX leży kopia konfliktu OneDrive: OneDrive ma dwie wersje INTERMAX. INTERMAX nie został zmieniony.
+  Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021-LAPTOP-TATY.xlsx, folder Dane
+  Co zrobić: Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię. Potem uruchom ponownie.
+
 unsupported_shape [NIEOBSLUGIWANY_UKLAD_INTERMAX]
   Co się stało: Wklejone zlecenia mają układ, którego narzędzie nie porządkuje. INTERMAX nie został zmieniony.
   Gdzie: plik ZLECENIA INTERMAX OD 08_11_2021.xlsx, folder Dane, arkusz ZLECENIA
@@ -1381,6 +1386,11 @@ _interrupted_advice #2 [bez kodu]
   Gdzie: Przygotowanie pliku zbiorczego, okres 08_14_09_2026
   Co zrobić: Uruchom ponownie. Pliki okresu, które zdążyły powstać, Centrum zostawi i powie, co z nimi zrobić.
 
+=== Plik taty (zdania) (src/rozliczenia/workbook_messages.py) ===
+
+lock_hint [zdanie]
+  Jeśli Excel jest zamknięty, a komunikat wraca, usuń z tego samego folderu pozostawiony plik ~$ZLECENIA INTERMAX OD 08_11_2021.xlsx i uruchom ponownie.
+
 === Wynik Uruchomienia (zdania) (src/rozliczenia/centrum/runs.py) ===
 
 stop_note [zdanie]
@@ -1456,8 +1466,14 @@ worker_unknown [zdanie]
 worker_list_changed [zdanie]
   Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz.
 
-worker_undo_breaks_list [zdanie]
-  Tej zmiany nie da się cofnąć: Wykonawca sprzed zmiany nie pasuje do Listy Wykonawców. Dwóch Wykonawców ma nazwę, która daje ten sam plik Rozliczenia pracownika. Nazwy muszą się różnić. Najpierw zmień albo usuń na liście drugiego Wykonawcę i cofnij jeszcze raz.
+worker_undo_breaks_list #1 [zdanie]
+  Tej zmiany nie da się cofnąć: Wykonawca sprzed zmiany nie pasuje do Listy Wykonawców. Dwóch Wykonawców ma nazwę, która daje ten sam plik Rozliczenia pracownika. Nazwy muszą się różnić. Najpierw zmień albo usuń na liście Wykonawcę „Anna Przykład”, potem cofnij jeszcze raz.
+
+worker_undo_breaks_list #2 [zdanie]
+  Tej zmiany nie da się cofnąć: Wykonawca sprzed zmiany nie pasuje do Listy Wykonawców. Ten login jest już na Liście Wykonawców. Jeden login należy do jednego Wykonawcy. Najpierw zmień albo usuń na liście Wykonawców „Anna Przykład”, „Jan Testowy” i „Adam Próbny”, potem cofnij jeszcze raz.
+
+worker_undo_breaks_list #3 [zdanie]
+  Tej zmiany nie da się cofnąć: Wykonawca sprzed zmiany nie pasuje do Listy Wykonawców. Wpisz nazwę Wykonawcy, taką jak w nazwie jego Rozliczenia pracownika.
 
 worker_suggestions_not_set [zdanie]
   Wskaż Rejestr zleceń w sekcji Foldery, a Centrum podpowie loginy nowych Wykonawców z ostatnich zleceń.

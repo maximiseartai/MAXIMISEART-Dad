@@ -1,10 +1,3 @@
-"""Blokady, Eventy i wątki Uruchomień i zamknięcia Centrum rozliczeń jako szew konstruktora.
-
-``RunHost``, jego ``Run`` i ``Shutdown`` biorą je z ``Threading`` podanego w konstruktorze, domyślnie z modułu
-``threading``. Inne niż domyślne daje tylko wyrocznia ``verify-jedno-uruchomienie-naraz``: każde wejście w blokadę,
-sygnał i start wątku jest u niej krokiem, o którego kolejności decyduje.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -13,8 +6,6 @@ from typing import Any, Protocol
 
 
 class Signal(Protocol):
-    """``threading.Event`` w tym, czego używa Centrum."""
-
     def set(self) -> None: ...
 
     def clear(self) -> None: ...
@@ -27,8 +18,6 @@ class Startable(Protocol):
 
 
 class Threading(Protocol):
-    """Moduł ``threading`` w tym, czego używają ``RunHost``, ``Run`` i ``Shutdown``; sam moduł go spełnia."""
-
     def Lock(self) -> AbstractContextManager[Any]: ...  # noqa: N802 - nazwa z threading
 
     def Event(self) -> Signal: ...  # noqa: N802 - nazwa z threading

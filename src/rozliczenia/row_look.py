@@ -100,13 +100,9 @@ class RowLook:
 
     @property
     def columns(self) -> int:
-        """Liczba kolumn wyglądu od A."""
-
         return len(self._faces)
 
     def cell(self, column: int, highlights: Highlights, number_format: str, *, wrapped: bool) -> CellLook:
-        """Wygląd komórki kolumny ``column`` (od 1) z Wyróżnieniami i formatem liczby komórki źródłowej."""
-
         key = (column, highlights, number_format, wrapped)
         look = self._looks.get(key)
         if look is None:

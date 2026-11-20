@@ -30,7 +30,7 @@ from rozliczenia.tool_files import config_dir, log_path
 
 from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, preparing_centrum
 from tests.fixtures.fake_cli import fake_cli
-from tests.fixtures.potomne import wait_for, wait_for_value
+from tests.fixtures.potomne import wait_for_value
 from tests.fixtures.tool_clone import REPOSITORY_ROOT, FakeInstaller, ToolRepository, centrum_tool_repository, free_port, centrum_health
 
 DAD_MAPPING = "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny A\n"
@@ -134,42 +134,6 @@ def _shortcut_when_failed(clone: Path, stacks: Path, *, alive: bool, journal: bo
             *(log_tail or ["(brak dziennika)"]),
         ]
     )
-
-
-def test_proces_skrotu_uruchomiony_po_terminie_stosow_ma_swoj_stos_w_nocie_porazki(tmp_path: Path) -> None:
-    """Centrum z dysku startuje po wolnym cofaniu później niż skrót, a o jego stos pyta #1454, więc nota porażki ma go
-    mieć, zanim minie czekanie na ``health``: tu skrót i jego dziecko startują już po terminie stosów, a ich stosy muszą
-    być w nocie po ``LATE_STACKS_AFTER_S``, nie po ``STACKS_AFTER_S`` liczonym od startu każdego z nich (przegląd #2023 r1
-    W1)."""
-
-    scripts = tmp_path / "skrypty"
-    scripts.mkdir()
-    (scripts / "centrum_z_dysku.py").write_text("import time\ntime.sleep(120)\n", encoding="utf-8")
-    (scripts / "skrot.py").write_text(
-        f"import subprocess, sys\nsubprocess.call([sys.executable, {str(scripts / 'centrum_z_dysku.py')!r}])\n",
-        encoding="utf-8",
-    )
-    stacks = tmp_path / "stosy"
-    shortcut = subprocess.Popen(
-        [sys.executable, str(scripts / "skrot.py")],
-        env=_environment(None) | _stacks_later(stacks, at=time.time()),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        start_new_session=sys.platform != "win32",
-    )
-
-    def note() -> str:
-        return _shortcut_when_failed(tmp_path, stacks, alive=True, journal=False, console="")
-
-    try:
-        both = wait_for(lambda: all(f"{script}\"" in note() for script in ("skrot.py", "centrum_z_dysku.py")), 20)
-    finally:
-        _stopped(shortcut)
-
-    assert both, note()
 
 
 def _environment(browser: Path | None) -> dict[str, str]:

@@ -1,14 +1,3 @@
-"""Straż HTTP Centrum rozliczeń: middleware i zamiana wyjątków tras na bezpieczne odpowiedzi ``Problem``.
-
-``guard`` zakłada na aplikację trzy middleware, od wewnętrznego: straż nagłówków ``Host`` i ``Origin`` (ADR 0004),
-nieoczekiwany wyjątek jako wpis w dzienniku Centrum i odpowiedź bez treści wyjątku, a na zewnątrz czas obsługi
-w ``Server-Timing`` (``timing``), który obejmuje też odmowy Host/Origin i nieoczekiwane wyjątki, bo ostatni dodany
-middleware jest zewnętrzny. Odmowa (``Refusal``) i folder okresów, którego nie da się odczytać, rzucone w trasie, stają
-się odpowiedzią ``Problem``.
-
-Odmowy straży dotyczą żądania (adres, karta, wyjątek), nie zmiany Ustawień Centrum, więc moduł nie woła ich właściciela.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
@@ -30,8 +19,6 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
 def guard(app: FastAPI, log: CentrumLog) -> None:
-    """Zakłada straż na ``app`` przed pierwszym zapytaniem; ``log`` to dziennik Centrum nieoczekiwanych wyjątków."""
-
     @app.middleware("http")
     async def only_local_browser(
         request: Request, call_next: Callable[[Request], Awaitable[Response]]

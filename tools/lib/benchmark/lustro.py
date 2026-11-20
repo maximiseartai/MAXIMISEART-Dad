@@ -39,8 +39,6 @@ from atrapy.pliki_taty import COLLECTIVE_TEMPLATE_NAME, INTERNAL_TEMPLATE_NAME, 
 
 @dataclass(frozen=True)
 class Scenario:
-    """Tydzień lustra: Zlecenia skuteczne, nieskuteczne i Wykonawcy z Konfiguracji bez wierszy."""
-
     successful_orders: int
     unsuccessful_orders: int
     workers_without_rows: int

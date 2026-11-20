@@ -29,8 +29,6 @@ _FROM_EASTER: tuple[tuple[int, str], ...] = (
 
 
 def public_holidays(year: int) -> dict[date, str]:
-    """Dni ustawowo wolne od pracy roku ``year``: dzień → nazwa święta."""
-
     holidays = {date(year, month, day): name for month, day, name in _FIXED}
     if year >= _CHRISTMAS_EVE_SINCE:
         holidays[date(year, 12, 24)] = "Wigilia"

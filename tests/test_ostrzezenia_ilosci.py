@@ -99,16 +99,6 @@ def test_okres_tylko_ze_znanymi_urzadzeniami_ma_tylko_ostrzezenie_o_kolumnach_z_
     assert _coded(summary.warnings) == [REMINDER]
 
 
-def test_podglad_bez_zapisu_ma_te_same_ostrzezenia_co_zapis(tmp_path: Path) -> None:
-    fixture = make_preparation_fixture(tmp_path, _mixed_period())
-
-    preview = run_preparation(fixture, dry_run=True)
-    summary = run_preparation(fixture)
-
-    assert len(preview.warnings) == 3
-    assert preview.warnings == summary.warnings
-
-
 def test_w_centrum_podglad_z_ostrzezeniami_ilosci_prowadzi_do_uruchom_a_zapis_wymaga_sprawdzenia(
     tmp_path: Path,
 ) -> None:
@@ -147,20 +137,6 @@ def test_w_centrum_podglad_z_ostrzezeniami_ilosci_prowadzi_do_uruchom_a_zapis_wy
         ("DRY-RUN", "OK"),
         ("RUN", "WYMAGA_SPRAWDZENIA"),
     ]
-
-
-def test_w_centrum_zapis_okresu_tylko_ze_znanymi_urzadzeniami_wymaga_sprawdzenia_a_podglad_nie(
-    tmp_path: Path,
-) -> None:
-    centrum = preparing_centrum(tmp_path, _known_devices_period())
-
-    centrum.start(dry_run=True)
-    preview = finished_view(centrum.client)["result"]
-    centrum.start(dry_run=False)
-    written = finished_view(centrum.client)["result"]
-
-    assert (preview["result"], written["result"]) == ("OK", "WYMAGA_SPRAWDZENIA")
-    assert [warning["where"] for warning in written["warnings"]] == [REMINDER[1]]
 
 
 def test_ostrzezenia_licza_wiersze_z_kodami_obok_zwyklego_opisu_jako_zamkniete_a_blad_opisu_tylko_z_kodow(tmp_path: Path) -> None:

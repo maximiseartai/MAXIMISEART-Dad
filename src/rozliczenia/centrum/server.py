@@ -1,5 +1,3 @@
-"""Serwer Centrum rozliczeń: uvicorn na ``127.0.0.1`` do zamknięcia z karty Centrum albo Ctrl+C."""
-
 from __future__ import annotations
 
 import asyncio
@@ -19,11 +17,8 @@ from rozliczenia.centrum.version import tool_commit, version_label
 from rozliczenia.tool_files import HOST
 
 _GRACEFUL_SHUTDOWN_S = 5
-"""Otwarte połączenia (np. strumień postępu) nie wstrzymują zamknięcia dłużej."""
 _LOOP_LISTENING_AFTER_FAILED_ACCEPT = asyncio.SelectorEventLoop
 AFTER_START = "po_starcie"
-"""Klucz stanu ``lifespan`` aplikacji (ASGI ``state``): krok, który serwer robi zaraz po wpisie ``start``, przed pierwszym
-zapytaniem, więc jego wpisy w dzienniku należą do tej pracy Centrum (``CentrumLog.recent`` liczy je od ``start``)."""
 
 
 def serve(
@@ -34,8 +29,6 @@ def serve(
     shutdown: Shutdown,
     log: CentrumLog,
 ) -> int:
-    """Obsługuje żądania do zamknięcia; ``on_ready`` dostaje adres, gdy serwer już odpowiada."""
-
     port = int(listener.getsockname()[1])
     url = f"http://{HOST}:{port}/"
     console = has_console()
@@ -80,13 +73,6 @@ def after_start(state: Mapping[str, object]) -> None:
 
 
 class _Server(uvicorn.Server):
-    """Uvicorn, który zgłasza start zaraz po zajęciu portu, a zamykanie, zanim go zwolni.
-
-    ``shutdown`` uvicorn zamyka gniazdo, a po nim opiekun ponownego startu od razu startuje nowe Centrum,
-    więc ``stop`` po ``shutdown`` trafiłby do dziennika po ``start`` nowego. Uvicorn woła ``shutdown``
-    tylko po udanym starcie.
-    """
-
     def __init__(
         self,
         config: uvicorn.Config,
@@ -109,12 +95,6 @@ class _Server(uvicorn.Server):
 
 
 def _silence_uvicorn() -> None:
-    """Pod ``pythonw`` nie ma ``sys.stdout`` ani ``sys.stderr``: logi uvicorn nie mają dokąd trafić.
-
-    Domyślna konfiguracja logów uvicorn pyta ``sys.stdout.isatty()`` i bez konsoli
-    przerywa start. Bezpieczne fakty i tak trafiają do dziennika Centrum.
-    """
-
     uvicorn_logger = logging.getLogger("uvicorn")
     uvicorn_logger.addHandler(logging.NullHandler())
     uvicorn_logger.propagate = False

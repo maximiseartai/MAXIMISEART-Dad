@@ -24,8 +24,6 @@ __all__ = ["LOCAL_DISK", "Disk", "publish_staged", "staging_prefix"]
 
 
 def staging_prefix(name: str) -> str:
-    """Początek nazwy folderu tymczasowego publikacji ``name``."""
-
     return f".{name}.staging-"
 
 
@@ -62,13 +60,6 @@ def publish_staged(
     left: Callable[[Message, str], Message],
     disk: Disk = LOCAL_DISK,
 ) -> ResultT:
-    """Wynik ``publish``, które zapisuje i publikuje pliki z nowego folderu tymczasowego w folderze ``directory``.
-
-    ``OSError`` przy zakładaniu folderu tymczasowego albo w ``publish`` zatrzymuje Uruchomienie Komunikatem ``failed``.
-    Zatrzymanie, po którym folder tymczasowy został albo nie da się sprawdzić, czy został, dostaje zamiast swojego
-    Komunikatu ``left`` z jego Komunikatem i początkiem nazwy folderu tymczasowego.
-    """
-
     prefix = staging_prefix(name)
     try:
         staging = disk.make_staging(prefix, directory)

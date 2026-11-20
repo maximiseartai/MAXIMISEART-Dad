@@ -1,12 +1,3 @@
-"""Kody czynności jako zdania dla taty (ADR 0038), z typów silnika ``activity_legend``.
-
-Zdanie ma postać „zapis (też inne zapisy): co wyznacza.”, np. „spawpg: 1 w Spawanie w mufie (AB), 70 w Uwagi - kwota
-(AS), AS na czerwono.”. Miejsce na liczbę w zapisie (``{n}``) to ``#``. Kolumna Ilości usług to osobna część zdania z
-literą i nazwą pozycji cennika z wiersza 17 Wzorca pliku zbiorczego, którą pokazuje okno; kwota stoi zawsze w ``AS``
-nazwanej „Uwagi - kwota” (nie jest pozycją cennika), a kolumna wypełnienia to sama litera. Kod z przedziałami mówi każdy
-przedział: „# od 1 do 15 → 1 w … (AL)”. Kod, który w usterce się nie liczy, kończy zdanie „; w usterce się nie liczy.”.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -16,27 +7,18 @@ from rozliczenia.activity_legend import AMOUNT_COLUMN, SHOWN_NUMBER, ActivityCod
 from rozliczenia.centrum.contract.quantity_rules import SentenceColumn, SentencePart, SentenceText
 
 AMOUNT_NAME: Final = "Uwagi - kwota"
-"""Nazwa kolumny ``AS`` w zdaniu kodu."""
 
 
 def code_sentence(code: ActivityCode, names: Mapping[str, str]) -> list[SentencePart]:
-    """Zdanie kodu ``code`` (np. w Historii Ustawień): jego zapisy (``code_spellings``) i to, co wyznacza
-    (``code_effects``)."""
-
     return _merged([_text(f"{code_spellings(code)}: "), *code_effects(code, names)])
 
 
 def code_spellings(code: ActivityCode) -> str:
-    """Zapisy kodu dla taty: pierwszy, a inne w nawiasie po „też”."""
-
     first, *others = (shown_spelling(spelling) for spelling in code.spellings)
     return f"{first} (też {', '.join(others)})" if others else first
 
 
 def code_effects(code: ActivityCode, names: Mapping[str, str]) -> list[SentencePart]:
-    """Co kod wyznacza, od małej litery z kropką na końcu; ``names``: litera kolumny → nazwa pozycji cennika (brak albo
-    ``""``: sama litera)."""
-
     effects: list[list[SentencePart]] = []
     match code.column:
         case FixedColumn(column=column):
@@ -79,8 +61,6 @@ def _column(letter: str, names: Mapping[str, str]) -> SentenceColumn:
 
 
 def _merged(parts: list[SentencePart]) -> list[SentencePart]:
-    """Sąsiednie teksty sklejone w jeden."""
-
     merged: list[SentencePart] = []
     for part in parts:
         last = merged[-1] if merged else None

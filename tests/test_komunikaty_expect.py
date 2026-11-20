@@ -114,6 +114,7 @@ OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[],
 
 
 SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]] = {
+    "Plik taty (zdania)": (workbook_messages, {"lock_hint": [partial(workbook_messages.lock_hint, REGISTER, "uruchom ponownie")]}),
     "Wynik Uruchomienia (zdania)": (runs, {"stop_note": [lambda: runs.stop_note("for_maks")]}),
     "Karta Wpisania raportów (zdania)": (
         report_entering_run,
@@ -147,7 +148,15 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "worker_address_repeated": [settings_messages.worker_address_repeated],
             "worker_unknown": [settings_messages.worker_unknown],
             "worker_list_changed": [settings_messages.worker_list_changed],
-            "worker_undo_breaks_list": [partial(settings_messages.worker_undo_breaks_list, settings_messages.worker_same_file())],
+            "worker_undo_breaks_list": [
+                partial(settings_messages.worker_undo_breaks_list, settings_messages.worker_same_file(), ("Anna Przykład",)),
+                partial(
+                    settings_messages.worker_undo_breaks_list,
+                    settings_messages.worker_login_repeated(),
+                    ("Anna Przykład", "Jan Testowy", "Adam Próbny"),
+                ),
+                partial(settings_messages.worker_undo_breaks_list, settings_messages.worker_name_empty(), ()),
+            ],
             "worker_suggestions_not_set": [settings_messages.worker_suggestions_not_set],
             "worker_suggestions_unreadable": [settings_messages.worker_suggestions_unreadable],
             "worker_rename_old_files": [
@@ -514,8 +523,11 @@ def test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu(catalog: str) -> None
     assert set(samples) == public, "każda publiczna funkcja katalogu ma próbkę: dopisz ją w message_samples albo zrób funkcję prywatną"
 
 
+NOT_SENTENCES: Final = {workbook_messages.unusable: "wybiera Komunikat katalogu (WorkbookMessages) po Problem, sam zdania nie składa"}
+
+
 def _sentence_modules() -> list[str]:
-    catalogs = {module.__name__ for module, _ in (*CATALOGS.values(), *OUTSIDE_CATALOGS.values())}
+    catalogs = {module.__name__ for module, _ in CATALOGS.values()}
     names = (".".join(path.relative_to(ROOT / "src").with_suffix("").parts) for path in sorted((ROOT / "src").rglob("*messages.py")))
     return [name for name in names if name not in catalogs]
 
@@ -523,14 +535,19 @@ def _sentence_modules() -> list[str]:
 @pytest.mark.parametrize("module_name", _sentence_modules())
 def test_probki_pokrywaja_kazda_publiczna_funkcje_modulu_zdan(module_name: str) -> None:
     module = importlib.import_module(module_name)
-    sampled = {sentence for owner, sentences in SENTENCES.values() if owner is module for sentence in sentences}
+    sampled = {
+        sentence for owner, sentences in (*SENTENCES.values(), *OUTSIDE_CATALOGS.values()) if owner is module for sentence in sentences
+    }
     public = {
         name
         for name, function in inspect.getmembers(module, inspect.isfunction)
-        if function.__module__ == module.__name__ and not name.startswith("_")
+        if function.__module__ == module.__name__ and not name.startswith("_") and function not in NOT_SENTENCES
     }
 
-    assert sampled == public, "każde publiczne zdanie modułu zdań ma próbkę: dopisz ją w SENTENCES albo zrób funkcję prywatną"
+    assert sampled == public, (
+        "każde publiczne zdanie modułu zdań ma próbkę: dopisz ją w SENTENCES albo OUTSIDE_CATALOGS, zrób funkcję prywatną "
+        "albo, gdy funkcja sama zdania nie składa, dopisz ją z powodem do NOT_SENTENCES"
+    )
 
 
 def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
@@ -792,30 +809,6 @@ class DrogaDoZapisu(NamedTuple):
 
 
 DROGI_DO_ZAPISU_USTAWIEN: Final = {
-    "domknięcie trasy z uzupełnieniem listy do change(DEVICES, …)": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum import device_forms
-from rozliczenia.centrum.device_forms import DeviceEdit
-from rozliczenia.centrum.settings.files import FieldProblem
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES, devices_for_dad_rules
-from rozliczenia.quantity_engine import Component
-
-
-def zapisz(settings: CentrumSettings, edit: DeviceEdit) -> Saved | Refused | NotSaved | KeptInPeriods:
-    view = settings.quantity_rules()
-
-    def applied(current: tuple[Component, ...]) -> tuple[Component, ...] | FieldProblem:
-        completed = devices_for_dad_rules(current, view.source_rules, view.source_rules)
-        if isinstance(completed, FieldProblem):
-            return completed
-        changed = device_forms.edited(completed, edit, frozenset())
-        return changed if isinstance(changed, tuple | FieldProblem) else current
-
-    return settings.change(DEVICES, applied)
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
     "funkcja trasy do change(RULES, …)": DrogaDoZapisu(
         """\
 from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
@@ -826,28 +819,6 @@ def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeri
     return settings.change(RULES, lambda current: current[1:])
 """,
         '"CentrumSettings" has no attribute "change"',
-    ),
-    "funkcja trasy z kluczami Historii do dawnego change_with_used_keys": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
-    return settings.change_with_used_keys(DEVICES, lambda current, keys: current)
-""",
-        '"CentrumSettings" has no attribute "change_with_used_keys"',
-    ),
-    "funkcja trasy przez prywatne _with_used_keys": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings.owner import CentrumSettings, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved:
-    return settings._with_used_keys(DEVICES, lambda current, keys: current)
-""",
-        "ruff SLF001",
     ),
     "funkcja trasy do zapisu Listy Urządzeń przez zmianę z Wydania": DrogaDoZapisu(
         """\
@@ -867,83 +838,6 @@ def zapisz(settings: CentrumSettings) -> None:
     )
 """,
         'Too many arguments for "apply_release_changes" of "CentrumSettings"',
-    ),
-    "funkcja trasy do change(FOLDERS, …) (Ustawienia)": DrogaDoZapisu(
-        """\
-from dataclasses import replace
-
-from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(FOLDERS, lambda current: replace(current, theme="light"))
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "funkcja trasy do change(EXCEPTIONS, …) (Kontrola ilości)": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_exceptions import EXCEPTIONS
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(EXCEPTIONS, lambda current: current[1:])
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "funkcja trasy do change(WORKERS, …) (Wykonawcy)": DrogaDoZapisu(
-        """\
-from dataclasses import replace
-
-from rozliczenia.centrum.settings import workers
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.workers import WORKERS, WorkerForm
-
-
-def dodaj(settings: CentrumSettings, form: WorkerForm) -> Saved | Refused | NotSaved | KeptInPeriods:
-    uzupelniony = replace(form, addresses=[*form.addresses, "biuro@example.com"])
-    return settings.change(WORKERS, lambda current: workers.added(current, uzupelniony))
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "plik pary jako Any przez cast do dawnego change": DrogaDoZapisu(
-        """\
-from typing import Any, cast
-
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(cast(Any, DEVICES), lambda current: current)
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "plik pary jako Any przez getattr modułu do dawnego change": DrogaDoZapisu(
-        """\
-from rozliczenia.centrum.settings import quantity_rules
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(getattr(quantity_rules, "DEVICES"), lambda current: current[1:])
-""",
-        '"CentrumSettings" has no attribute "change"',
-    ),
-    "plik Folderów z nazwą pliku pary do dawnego change (właściciel rozpoznaje parę po nazwie pliku)": DrogaDoZapisu(
-        """\
-from dataclasses import replace
-
-from rozliczenia.centrum.settings.folders import FOLDERS
-from rozliczenia.centrum.settings.owner import CentrumSettings, KeptInPeriods, NotSaved, Refused, Saved
-from rozliczenia.centrum.settings.quantity_rules import DEVICES
-
-
-def zapisz(settings: CentrumSettings) -> Saved | Refused | NotSaved | KeptInPeriods:
-    return settings.change(replace(FOLDERS, name=DEVICES.name), lambda current: current)
-""",
-        '"CentrumSettings" has no attribute "change"',
     ),
     "funkcja trasy w miejscu polecenia Wykonawców": DrogaDoZapisu(
         """\
@@ -1266,6 +1160,9 @@ QUOTES_OUTSIDE_UI: Final = {
     "raport": "słowo tematu Raportu wykonawcy (SUBJECT_WORD), nie napis UI",
     "2*wizja": "zapis składnika z gwiazdką w próbce, dana pliku, nie napis UI",
     "schema_version": "nazwa pola pliku legendy czynności w próbce, nie napis UI",
+    "Anna Przykład": "nazwa Wykonawcy z Listy Wykonawców w próbce, dana pliku, nie napis UI",
+    "Jan Testowy": "nazwa Wykonawcy z Listy Wykonawców w próbce, dana pliku, nie napis UI",
+    "Adam Próbny": "nazwa Wykonawcy z Listy Wykonawców w próbce, dana pliku, nie napis UI",
 }
 
 

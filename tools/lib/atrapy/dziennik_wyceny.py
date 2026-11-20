@@ -41,7 +41,7 @@ def ended_line(at: datetime, order: LoggedOrder) -> Line:
 
 
 def end_line(at: datetime) -> Line:
-    return {"at": at.isoformat(), "entry": "koniec Uruchomienia"}
+    return {"at": at.isoformat(), "entry": "koniec Uruchomienia", "result": None}
 
 
 def _text(*lines: Line) -> str:

@@ -1,23 +1,3 @@
-"""Podgląd zmiany Legendy czynności przed zapisem (ADR 0038, US 45–46): skutek na Wierszach danych ostatnich Plików
-zbiorczych po Przebiegu rozliczeń, tym samym rachunkiem wiersza co Kontrola ilości.
-
-Pliki to te same ostatnie Pliki zbiorcze co w podglądzie zmiany Reguł ilości (``quantity_rules_preview.Recent``),
-przeczytane jego odczytem; plik, którego nie da się przeczytać, podgląd pomija i nazywa jego okres. Jedyny rachunek
-wiersza to ``quantity_check.legend_row_check`` na treści wiersza po filtrze prywatności (``OrderFacts``), dla legendy
-teraz i po zmianie, z Regułami ilości, którymi liczy następne Uruchomienie. ``differences_after`` to suma jego różnic na
-każdym pliku, więc liczba różnic legendy, którą Kontrola ilości dałaby tym plikom po zmianie; ``errors_before`` i
-``errors_after`` liczą osobno wiersze z Błędem opisu. Wiersz zmienia się, gdy legenda wpisze w nim co innego: inne
-Ilości usług, kwotę w ``AS`` albo kolory (``WithCodes`` rachunku; wiersz bez kodów i z Błędem opisu nie dostaje nic).
-Będzie tak, jak wpisał tata, gdy rachunek po zmianie nie oddaje opisu technika: wiersz nie ma różnicy legendy ani
-Błędu opisu, a bez kodów wpisu taty w kolumnie z opisu technika albo w ``AS``. Wiersz bez kodów albo z Błędem opisu
-pokazuje wpis taty jako komórki, w które legenda nic nie wpisze, a wiersz z Błędem opisu także jego powody.
-
-Odpowiedź idzie do przeglądarki taty, więc ma tylko numer wiersza, Kody czynności, komórki, powody Błędu opisu
-(``problem_text``) i opis technika, który rachunek oddaje tylko w wierszu z różnicą albo z Błędem opisu;
-opis przechodzi przez strażnika reguły danych (ADR 0025) z pamięcią pracy Centrum, która zna każdą wartość ``ADRES`` i
-numer Orange przeczytanych plików. Nigdy adresu, numeru zlecenia ani daty dziennej.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -44,9 +24,6 @@ def legend_preview(
     names: Mapping[str, str],
     forbidden: ForbiddenValues,
 ) -> contract.LegendPreviewReady:
-    """Skutek zmiany legendy ``before`` → ``after`` na plikach ``recent`` z Regułami ilości ``rules``; ``names``: litera
-    kolumny → nazwa pozycji cennika."""
-
     changed = changed_as_tata = differences_before = differences_after = errors_before = errors_after = more = 0
     rows: list[contract.LegendPreviewRow] = []
     for file in recent.files:
@@ -81,8 +58,6 @@ def legend_preview(
 
 
 def _written(read: DescriptionRead) -> object:
-    """To, co legenda wpisze w wierszu Pliku zbiorczego: Ilości usług, kwota w ``AS`` i kolory."""
-
     if not isinstance(read, WithCodes):
         return ({}, 0, {})
     return (dict(read.quantities), read.amount, dict(read.fills))

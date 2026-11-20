@@ -7,6 +7,7 @@ Zmienia [ADR 0031](0031-korzen-po-fail-i-chwasty.md) w decyzjach Q1 (miara), Q11
 Zmienia [ADR 0034](0034-kod-jest-pamiecia.md) w decyzjach „Rejestr liczy zgody i obejścia”, „Autor wyrywa swój chwast”, „Kolejka” i „Ogrodnik”, bo ich przedmiotem jest issue „Chwast”, oraz w mierze odczytu 11.12.2026; „Cztery źródła” zostają źródłami wystąpień, ale żadne z nich nie zakłada już issue.
 Zastępuje propozycję z PR #1678, zamkniętego bez merge'u, więc numer 0035 zostaje wolny.
 [ADR 0042](0042-straznik-przy-pierwszym-waznym.md) na decyzję Maksa z 18.11.2026 zmienia decyzje „Pole werdyktu”, „Warunek merge'a”, „Dowód reguły”, „Idiom bez reguły” i „Status w Actions”.
+[ADR 0046](0046-szczebel-straznika-wybiera-recenzent.md) na decyzje Maksa z 20.11.2026 zmienia decyzję „Pole werdyktu”.
 
 Ten ADR wchodzi bez zmiany kodu, skilli i bramki. Każdą decyzję wdraża wykonawca z tabeli w sekcji „Wdrożenie”, a do jego merge'a obowiązuje dotychczasowe zdanie [`AGENTS.md`](../../AGENTS.md), skilli [`przeglad`](../../.agents/skills/przeglad/SKILL.md) i [`pr`](../../.agents/skills/pr/SKILL.md) oraz `tools/scal_pr.py`, z regułą przejściową pod tą tabelą.
 

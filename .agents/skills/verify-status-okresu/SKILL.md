@@ -65,8 +65,8 @@ says.
   should not happen (Rozliczenia pracowników without a Plik zbiorczy, the Rozliczenie wewnętrzne left by ADR 0005).
   Harm: two screens of Centrum tell Dad two different stages of the same period.
 
-The reference Status okresu is the checker's own (`reference` in `explore_status_okresu.py`; its module docstring
-states it), from what it built and `GLOSSARY.md`. `GLOSSARY.md` names Rozliczenia pracowników
+The reference Status okresu is the checker's own (`reference` in `explore_status_okresu.py`), from what it built and
+`GLOSSARY.md`. `GLOSSARY.md` names Rozliczenia pracowników
 without a Plik zbiorczy twice in „Status okresu” (no Plik zbiorczy, and a Folder rozliczeń pracowników); „Droga okresu”
 settles it („Okres z Rozliczeniami pracowników jest zamknięty”), and `PeriodFolderObservation.status` decides the same.
 
@@ -215,7 +215,7 @@ A known finding is a real defect in the current code.
    known is Maks's decision.
 
 An entry lives in `KNOWN_FINDINGS` of `explore_status_okresu.py` as an `Excuse` of `tools/lib/eksplorator.py` with its
-shape (`StateShape`, whose docstring names its parts and their `BOUNDARIES`); `acts` and `systems` narrow only the
+shape (`StateShape`, with its parts and their `BOUNDARIES`); `acts` and `systems` narrow only the
 Windows entries.
 An entry that shows only on Windows names its scope with the system in `after` (`niedostepne na Windows`), so it does
 not give `ZNALEZISKO ZNIKNĘŁO` on macOS or Linux.

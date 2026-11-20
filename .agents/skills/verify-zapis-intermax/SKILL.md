@@ -52,8 +52,8 @@ in the Kopia. A rule holds for each process unless it names its processes;
 - **ZATRZYMANIE_BEZ_SLADU**: a run that stops, or ends in any other
   exception before the replace, leaves INTERMAX as it was, no temporary file next to it, and the
   same Kopie, names and bytes, as before
-  (docstring of `intermax_replace`: „Po każdej `Refusal` i po każdym innym
-  wyjątku INTERMAX, folder obok niego i folder Kopii są takie, jak były”). Harm: a stray file in Dad's OneDrive, a
+  (`tests/test_podmiana_intermax.py`: after every `Refusal` and every other
+  exception INTERMAX, the folder next to it and the folder of Kopie are as they were). Harm: a stray file in Dad's OneDrive, a
   Kopia of a change that never happened, or Dad's earlier Kopie gone.
 - **SUKCES**: a run that returns a summary has replaced INTERMAX and left no
   temporary file.

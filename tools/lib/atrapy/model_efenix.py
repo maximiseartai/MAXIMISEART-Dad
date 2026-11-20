@@ -364,15 +364,6 @@ class SerwerEfenix(Generic[OrderT]):
                 order.quantities.pop(code, None)
             return Saved(self._state.prices[code] * quantity, amount_of(order.quantities, self._state.prices))
 
-    def date_of(self, order_id: str) -> date | None | NoOrder | NoSession:
-        """Zapisana data wykonania zlecenia (``None``: bez daty); okno jej nie czyta, więc ``expire_after`` jej nie liczy."""
-
-        with self._state.lock:
-            if not self._state.session_after(None):
-                return NoSession.NO_SESSION
-            order = self._state.order(order_id)
-            return order if isinstance(order, NoOrder) else order.execution_date
-
     def change_status(self, order_id: str, status: str) -> NoOrder | NoSession | None:
         """Zmiana statusu zlecenia na ``status`` (Przekazanie do akceptacji, anulowanie); zlecenie z ``keeps_status``
         zostaje przy swoim statusie."""
