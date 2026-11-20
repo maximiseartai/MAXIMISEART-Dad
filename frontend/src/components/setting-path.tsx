@@ -8,10 +8,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { settingsHref } from "@/lib/address"
 import { useSettings, type PickedPath } from "@/lib/settings"
 
-/** Sekcja okna Ustawień, w której tata wskazuje Rejestr zleceń i folder okresów (ADR 0032: jedyne miejsce wyboru). */
 export const FOLDERS_SECTION = "foldery"
 
-/** Link do sekcji Foldery okna Ustawień, w miejscu dawnego wyboru pliku na stronie; `primary` w pustym stanie strony. */
 export function SetInSettings({ className, primary = false }: { className?: string; primary?: boolean }) {
   return (
     <a
@@ -40,10 +38,6 @@ function PathName({ className, hint, children }: { className?: string; hint: Rea
   )
 }
 
-/**
- * Plik taty w jednym wierszu z ikoną: nazwa z pełną ścieżką w podpowiedzi. Wybór jest tylko w oknie Ustawień, więc
- * plik, którego nie da się użyć (niewskazany, nie ma go, niedostępny), ma tu link „Ustaw w Ustawieniach”.
- */
 export function SettingPath({ label, icon, path }: { label: string; icon: React.ReactNode; path: PickedPath }) {
   const { settings } = useSettings()
   const setting = settings.state === "ready" ? settings.data[path] : null
@@ -89,7 +83,6 @@ function pathText(setting: ChosenPath) {
   }
 }
 
-/** Stan pliku taty pod jego nazwą w sekcji Foldery: nazwa, a brakujący albo niedostępny z ostrzeżeniem. */
 export function PathDescription({ setting }: { setting: PathSetting }) {
   switch (setting.state) {
     case "not_set":

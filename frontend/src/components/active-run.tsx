@@ -29,7 +29,6 @@ function useActiveSign() {
   return isActive(view) ? SIGNS[view.state] : null
 }
 
-/** Znak przy pozycji „Uruchomienia” w menu, widoczny na każdej stronie. */
 export function ActiveRunMark({ className }: { className?: string }) {
   const sign = useActiveSign()
 
@@ -44,7 +43,6 @@ export function ActiveRunMark({ className }: { className?: string }) {
   )
 }
 
-/** Krótki link w nagłówku do trwającego Uruchomienia, gdy tata jest na innej stronie. */
 export function ActiveRunLink({ current }: { current: Page["id"] }) {
   const sign = useActiveSign()
 

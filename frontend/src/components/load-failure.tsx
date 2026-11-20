@@ -12,7 +12,6 @@ export function LoadFailure({
   reload,
   className,
 }: {
-  /** Dopełniacz po „Nie udało się odczytać”, np. „okresów”. */
   what: string
   message: string
   reload: () => Promise<void>

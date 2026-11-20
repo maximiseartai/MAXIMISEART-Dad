@@ -43,7 +43,6 @@ export function RunResultBadge({ run }: { run: Pick<ProcessRun, "tone"> }) {
   }
 }
 
-/** `3 do sprawdzenia · 2 zatrzymane · 1 błąd`: dopisek pod liczbą wyników OK. */
 export function otherResults(results: ResultCounts): string {
   const failed = plural(results.failed, { one: "błąd", few: "błędy", many: "błędów" })
 

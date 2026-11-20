@@ -17,7 +17,6 @@ import { dateTime, seconds } from "@/lib/format"
 import { isStopped, measuredPhases, phaseDuration } from "@/pages/metrics/process-runs"
 import { StageTimesChart } from "@/pages/metrics/stage-times-chart"
 
-// Ostatnie Uruchomienia procesu na wykresie; starsze są w historii.
 const CHART_RUNS = 12
 
 export function StageTimesCard({

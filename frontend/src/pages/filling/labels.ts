@@ -1,6 +1,5 @@
 import type { FillKind, RowState } from "@/api/generated"
 
-/** Tytuł rodzaju Ilości do uzupełnienia, ten sam w podsumowaniu i w tabeli rodzaju; podpowiedź daje serwer. */
 export const KIND_TITLES: Record<FillKind, string> = {
   without_rule: "Wiersze bez reguły",
   from_description: "Wiersze z opisu",
