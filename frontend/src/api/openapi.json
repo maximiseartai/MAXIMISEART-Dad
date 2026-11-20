@@ -1789,6 +1789,27 @@
         }
       }
     },
+    "/api/scope": {
+      "get": {
+        "tags": [
+          "centrum"
+        ],
+        "summary": "Functions",
+        "operationId": "getScope",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Scope"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/settings": {
       "get": {
         "tags": [
@@ -4195,6 +4216,7 @@
             "type": "string",
             "enum": [
               "getHealth",
+              "getScope",
               "getSettings",
               "addWorker",
               "changeWorker",
@@ -4473,6 +4495,25 @@
         ],
         "title": "CellSource",
         "description": "Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia."
+      },
+      "CentrumFunction": {
+        "type": "string",
+        "enum": [
+          "periods",
+          "filling",
+          "intermax",
+          "intermax_copies",
+          "report_entering",
+          "reminders",
+          "settlement_mailing",
+          "metrics",
+          "quantities",
+          "workers",
+          "templates",
+          "report_inbox",
+          "autostart"
+        ],
+        "title": "CentrumFunction"
       },
       "ChangeActivityCode": {
         "properties": {
@@ -11388,6 +11429,23 @@
         ],
         "title": "RunSummary",
         "description": "Podsumowanie albo plan (DRY-RUN) procesu tak, jak pokazuje je karta Uruchomienia, bez danych klientów.\n\nLiczby wyniku, potem szczegóły: kafelki liczb (np. Zlecenia na dzień), pliki okresu i Rozliczenia\npracowników: plan po podglądzie, zapisane po uruchomieniu (``None``, gdy proces ich nie tworzy)."
+      },
+      "Scope": {
+        "properties": {
+          "functions": {
+            "items": {
+              "$ref": "#/components/schemas/CentrumFunction"
+            },
+            "type": "array",
+            "title": "Functions"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "functions"
+        ],
+        "title": "Scope"
       },
       "SentByHand": {
         "properties": {

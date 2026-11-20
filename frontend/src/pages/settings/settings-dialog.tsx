@@ -30,13 +30,11 @@ import { SettingsToasts } from "@/lib/settings"
 import { hasUnsavedForm } from "@/lib/unsaved"
 import { useViewTiming } from "@/lib/view-timing"
 import { ConfigurationProvider } from "@/pages/settings/configuration"
-import { sectionOf, SETTINGS_SECTIONS, SHOWN_GROUPS, type SettingsSection } from "@/pages/settings/sections"
+import { useShownSections, type SettingsSection, type ShownSections } from "@/pages/settings/sections"
 
 const SETTINGS_VIEW = { id: "ustawienia" } as const
 
 const SIDEBAR = { "--sidebar-width": "15rem" } satisfies React.CSSProperties
-
-const SECTION_ITEMS = SETTINGS_SECTIONS.map((section) => ({ value: section.id, label: section.title }))
 
 /**
  * Okno Ustawień nad rozmytym Centrum (ADR 0032, wzór: ustawienia T3 Code). Otwiera je adres `#/ustawienia/<sekcja>`,
@@ -47,6 +45,8 @@ const SECTION_ITEMS = SETTINGS_SECTIONS.map((section) => ({ value: section.id, l
 export function SettingsDialog() {
   const address = useSettingsAddress()
   const open = address !== null
+  const shownSections = useShownSections()
+  const { groups, sectionOf } = shownSections
   // Okno zamyka się z animacją, więc do jej końca pokazuje ostatnią sekcję, zamiast znikać z pustą treścią.
   const [shown, setShown] = React.useState<SettingsSection>(() => sectionOf(address ?? ""))
   const section = open ? sectionOf(address) : shown
@@ -83,7 +83,7 @@ export function SettingsDialog() {
           <SidebarProvider className="h-full min-h-0 items-stretch" style={SIDEBAR}>
             <Sidebar collapsible="none" className="hidden border-r md:flex">
               <SidebarContent className="py-2">
-                {SHOWN_GROUPS.map(({ group, sections }) => (
+                {groups.map(({ group, sections }) => (
                   <SidebarGroup key={group} className="py-1">
                     <SidebarGroupLabel id={`ustawienia-${group}`}>{group}</SidebarGroupLabel>
                     <SidebarGroupContent>
@@ -135,7 +135,11 @@ export function SettingsDialog() {
                 </Button>
               </div>
               <div className="border-b px-4 py-3 md:hidden">
-                <SectionSelect section={section} choose={(id) => leave(() => showSection(id))} />
+                <SectionSelect
+                  available={shownSections}
+                  section={section}
+                  choose={(id) => leave(() => showSection(id))}
+                />
               </div>
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-6 md:px-10">
                 <div data-slot="settings-section" className="mx-auto flex w-full max-w-2xl flex-col gap-4">
@@ -173,14 +177,27 @@ export function SettingsDialog() {
   )
 }
 
-function SectionSelect({ section, choose }: { section: SettingsSection; choose: (id: string) => void }) {
+function SectionSelect({
+  available,
+  section,
+  choose,
+}: {
+  available: ShownSections
+  section: SettingsSection
+  choose: (id: string) => void
+}) {
+  const items = React.useMemo(
+    () => available.sections.map((item) => ({ value: item.id, label: item.title })),
+    [available.sections]
+  )
+
   return (
-    <Select items={SECTION_ITEMS} value={section.id} onValueChange={(value) => (value === null ? null : choose(value))}>
+    <Select items={items} value={section.id} onValueChange={(value) => (value === null ? null : choose(value))}>
       <SelectTrigger className="w-full" aria-label="Sekcja Ustawień">
         <SelectValue />
       </SelectTrigger>
       <SelectContent>
-        {SHOWN_GROUPS.map(({ group, sections }) => (
+        {available.groups.map(({ group, sections }) => (
           <SelectGroup key={group}>
             <SelectLabel>{group}</SelectLabel>
             {sections.map((item) => (

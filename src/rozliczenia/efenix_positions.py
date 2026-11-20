@@ -72,7 +72,6 @@ POSITION_OF_COLUMN: Final[Mapping[str, str]] = MappingProxyType(
 """Pary pewne ze specyfikacji Wyceny w efenix (zgadzają się ceny); tata potwierdza je raz przed pierwszym
 przebiegiem."""
 UNPAIRED_COLUMNS: Final = tuple(column for column in PRICED_COLUMNS if column not in POSITION_OF_COLUMN)
-"""Kolumny Ilości usług bez pewnej pozycji efenix; ilość w nich to błąd zlecenia."""
 _COLUMN_OF_POSITION: Final = {position: column for column, position in POSITION_OF_COLUMN.items()}
 
 
@@ -85,8 +84,6 @@ class UnpairedColumns:
 
 @dataclass(frozen=True)
 class NotWholeQuantities:
-    """Zlecenie ma w kolumnach z pozycją efenix ilość, która nie jest liczbą całkowitą większą od 0."""
-
     columns: tuple[str, ...]
 
 
@@ -116,7 +113,6 @@ class OtherAmount:
 
 
 FileQuantities = Mapping[str, int] | UnpairedColumns | NotWholeQuantities
-"""Ilości zlecenia z Pliku zbiorczego po kodach pozycji efenix albo kolumny, których nie da się przepisać."""
 
 OrderFault = OrderProblem | DateRefused | UnpairedColumns | NotWholeQuantities | MissingPositions | OtherAmount | ForwardRefusal
 """Powód, dla którego zlecenie zostaje tacie jako błąd; ``ForwardRefusal`` to gotowe zlecenie, któremu efenix odmówił
@@ -144,8 +140,6 @@ class Completion:
 
 
 def column_of(position: str) -> str | None:
-    """Kolumna Pliku zbiorczego pozycji efenix ``position``; ``None`` dla pozycji bez kolumny."""
-
     return _COLUMN_OF_POSITION.get(position)
 
 

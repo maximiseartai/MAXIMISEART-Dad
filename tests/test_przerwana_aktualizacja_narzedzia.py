@@ -1,15 +1,6 @@
-"""Aktualizacja narzędzia przerwana wyłączeniem komputera, a potem skrót „Centrum rozliczeń”.
-
-Klon narzędzia to prawdziwe Centrum rozliczeń w klonie Gita z lokalnym
-„origin” zamiast GitHuba. Aktualizację prowadzi Centrum w procesie testu.
-Wyłączenie komputera to Centrum, które w danym kroku przestaje cokolwiek robić:
-na dysku zostaje dokładnie to, co zdążyło zapisać. Skrót to prawdziwy proces
-``run_centrum.py`` z klonu.
-"""
-
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 import json
 import os
@@ -37,17 +28,11 @@ DAD_MAPPING = "schema_version: 1\nworkers:\n  wykonawca.a: Wykonawca Syntetyczny
 SAMPLE_MAPPING = "schema_version: 1\nworkers:\n  przyklad: Przykładowy Wykonawca\n"
 GITIGNORE = (REPOSITORY_ROOT / ".gitignore").read_text(encoding="utf-8")
 MAPPING = "config/worker_mapping.yaml"
-STACKS_AFTER_S = 45.0
-"""Po tylu sekundach od startu skrótu on i każdy proces Pythona, który on uruchomi, także później, zapisuje stosy swoich
-wątków: przed końcem 60 s ``centrum_health``, więc nota porażki mówi, gdzie stał każdy z nich."""
-LATE_STACKS_AFTER_S = 1.0
-"""Proces skrótu uruchomiony po terminie stosów (Centrum z dysku po wolnym cofaniu) zapisuje je po tylu sekundach od
-swojego startu, żeby jego stos pokazał, gdzie stanął, a nie sam start."""
+STACKS_BEFORE_HEALTH_GIVES_UP_S = 45.0
+LATE_PROCESS_STACKS_AFTER_ITS_START_S = 1.0
 
 
 def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
-    """Jeden odczyt API Centrum ze skrótu; karta też nie ma limitu 1 s, a przeciążony runner Windows stoi dłużej (#584)."""
-
     with urllib.request.urlopen(f"http://127.0.0.1:{port}{path}", timeout=timeout_s) as response:
         body = json.load(response)
         assert isinstance(body, dict)
@@ -56,16 +41,11 @@ def _get(port: int, path: str, *, timeout_s: float = 30) -> dict[str, Any]:
 
 @contextmanager
 def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterator[subprocess.Popen[str]]:
-    """Tata klika skrót: ``run_centrum.py`` z klonu; po bloku Centrum zamyka się razem z każdym procesem potomnym.
-    ``browser``: program podstawiony jako przeglądarka (zmienna ``BROWSER``). Gdy blok rzuci, wyjątek dostaje notę
-    ``_shortcut_when_failed``."""
-
-    # Własny katalog każdego skrótu, bo test z dwoma skrótami pokazałby w nocie drugiego stosy procesów pierwszego.
-    stacks = Path(tempfile.mkdtemp(prefix="stosy-skrotu-", dir=clone.parent))
+    this_shortcut_stacks = Path(tempfile.mkdtemp(prefix="stosy-skrotu-", dir=clone.parent))
     process = subprocess.Popen(
         [sys.executable, str(clone / "run_centrum.py"), "--port", str(port), "--no-browser"],
         cwd=clone,
-        env=_environment(browser) | _stacks_later(stacks, at=time.time() + STACKS_AFTER_S),
+        env=_environment(browser) | _stacks_later(this_shortcut_stacks, everyone_at=time.time() + STACKS_BEFORE_HEALTH_GIVES_UP_S),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -78,32 +58,24 @@ def _shortcut(clone: Path, port: int, *, browser: Path | None = None) -> Iterato
     except BaseException as failure:
         alive, journal = process.poll() is None, (config_dir(clone) / tool_update.JOURNAL).exists()
         console = _stopped(process)
-        failure.add_note(_shortcut_when_failed(clone, stacks, alive=alive, journal=journal, console=console))
+        failure.add_note(_shortcut_when_failed(clone, this_shortcut_stacks, alive=alive, journal=journal, console=console))
         raise
     _stopped(process)
 
 
-def _stacks_later(directory: Path, *, at: float) -> dict[str, str]:
-    """Środowisko, w którym każdy proces Pythona zapisuje stosy swoich wątków do pliku ``stosy-<pid>.txt`` w
-    ``directory`` o jednej chwili ``at`` (``time.time()``), a uruchomiony po niej ``LATE_STACKS_AFTER_S`` po swoim
-    starcie: ``sitecustomize`` z ``directory`` na początku ``PYTHONPATH``. Jedna chwila dla wszystkich, bo proces
-    uruchomiony później niż skrót z opóźnieniem liczonym od własnego startu zapisałby stosy po końcu czekania (przegląd
-    #2023 r1 W1). Plik, nie konsola, bo konsoli skrótu nikt nie czyta do końca bloku, a pełna rura zatrzymałaby Centrum
-    na jego własnym wypisie."""
-
+def _stacks_later(directory: Path, *, everyone_at: float) -> dict[str, str]:
     directory.mkdir(parents=True, exist_ok=True)
+    # ZEWNĘTRZNE: proces, który pisze do pełnej rury, czeka, aż ktoś z niej przeczyta (man 7 pipe, Microsoft Learn: CreatePipe)
     (directory / "sitecustomize.py").write_text(
         "import faulthandler, os, time\n"
         f"_stacks = open(os.path.join({str(directory)!r}, f'stosy-{{os.getpid()}}.txt'), 'w', encoding='utf-8')\n"
-        f"faulthandler.dump_traceback_later(max({at!r} - time.time(), {LATE_STACKS_AFTER_S}), file=_stacks)\n",
+        f"faulthandler.dump_traceback_later(max({everyone_at!r} - time.time(), {LATE_PROCESS_STACKS_AFTER_ITS_START_S}), file=_stacks)\n",
         encoding="utf-8",
     )
     return {"PYTHONPATH": os.pathsep.join([str(directory), *filter(None, [os.environ.get("PYTHONPATH")])])}
 
 
 def _stopped(process: subprocess.Popen[str]) -> str:
-    """Zamyka skrót razem z każdym procesem potomnym i oddaje jego konsolę, także Centrum uruchomionego od nowa z dysku."""
-
     if sys.platform == "win32":
         subprocess.run(["taskkill", "/T", "/F", "/PID", str(process.pid)], capture_output=True, check=False)
     elif process.poll() is None:
@@ -113,10 +85,6 @@ def _stopped(process: subprocess.Popen[str]) -> str:
 
 
 def _shortcut_when_failed(clone: Path, stacks: Path, *, alive: bool, journal: bool, console: str) -> str:
-    """Gdzie był skrót, gdy test padł: czy żył, czy skończył cofanie (dziennik „Aktualizacja w toku” znika po nim), jego
-    konsola, stosy każdego jego procesu Pythona, który dożył swojej chwili z ``_stacks_later``, i koniec dziennika
-    Centrum klonu, do którego piszą skrót i Centrum, które on uruchomił."""
-
     centrum_log = log_path(clone)
     log_tail = centrum_log.read_text(encoding="utf-8", errors="replace").splitlines()[-30:] if centrum_log.exists() else []
     return "\n".join(
@@ -141,16 +109,12 @@ def _environment(browser: Path | None) -> dict[str, str]:
 
 
 def _browser_recorder(directory: Path) -> tuple[Path, Path]:
-    """Program podstawiony jako przeglądarka, który dopisuje otwierany adres do pliku, i ten plik."""
-
     record = directory / "otwarte-adresy.txt"
     script = f"import sys\nwith open({str(record)!r}, 'a', encoding='utf-8') as record:\n    record.write(sys.argv[1] + '\\n')\n"
     return fake_cli(directory, "przegladarka", script), record
 
 
 def _refusal(process: subprocess.Popen[str], port: int) -> tuple[int, str]:
-    """Kod wyjścia i konsola skrótu, który miał odmówić startu; ``AssertionError``, gdy Centrum jednak odpowiada."""
-
     try:
         output, _ = process.communicate(timeout=30)
     except subprocess.TimeoutExpired:
@@ -159,8 +123,6 @@ def _refusal(process: subprocess.Popen[str], port: int) -> tuple[int, str]:
 
 
 def _repository_with_dad_file(directory: Path) -> ToolRepository:
-    """Prawdziwe Centrum, którego pierwsza wersja śledzi Konfigurację wykonawców, a tata ma w niej swoje nazwiska."""
-
     repository = centrum_tool_repository(
         directory, {".gitignore": f"{GITIGNORE}!{MAPPING}\n", MAPPING: SAMPLE_MAPPING}
     )
@@ -169,8 +131,6 @@ def _repository_with_dad_file(directory: Path) -> ToolRepository:
 
 
 def _version_without_its_library(repository: ToolRepository) -> str:
-    """Nowa wersja przestaje śledzić plik taty, dodaje bibliotekę do wymagań i bez niej nie wystartuje."""
-
     app = (repository.publisher / "src/rozliczenia/centrum/app.py").read_text(encoding="utf-8")
     return repository.publish(
         {
@@ -186,11 +146,21 @@ def _version_without_its_library(repository: ToolRepository) -> str:
     )
 
 
-def _update_until(centrum: PreparingCentrum, reached: Callable[[dict[str, Any]], bool]) -> dict[str, Any]:
+def _update_stopping_at(centrum: PreparingCentrum, step: str) -> None:
     assert centrum.client.post("/api/tool-update").status_code == 202
-    done, view = wait_for_value(lambda: dict(centrum.client.get("/api/tool-update").json()), reached, 30, every=0.02)
+    done, view = wait_for_value(
+        lambda: dict(centrum.client.get("/api/tool-update").json()), lambda view: view.get("step") == step, 30, every=0.02
+    )
     assert done, f"Aktualizacja narzędzia utknęła w {view}."
-    return view
+
+
+def _end_install_of_switched_off_computer_with_failure(installer: FakeInstaller, installing: threading.Event) -> None:
+    installer.succeeds = False
+    installing.set()
+
+
+def _disk_refuses_replacing(path: Path) -> None:
+    path.with_name(path.name + ".tmp").mkdir()
 
 
 def test_po_wylaczeniu_komputera_w_trakcie_instalacji_bibliotek_skrot_wraca_do_poprzedniej_wersji_z_plikiem_taty(
@@ -202,7 +172,7 @@ def test_po_wylaczeniu_komputera_w_trakcie_instalacji_bibliotek_skrot_wraca_do_p
     installing = threading.Event()
     pip_never_finishes = FakeInstaller(hold=installing)
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository, installer=pip_never_finishes))
-    _update_until(centrum, lambda view: view.get("step") == "installing")
+    _update_stopping_at(centrum, "installing")
     switched_off = repository.head()
     port = free_port()
 
@@ -210,10 +180,7 @@ def test_po_wylaczeniu_komputera_w_trakcie_instalacji_bibliotek_skrot_wraca_do_p
         health = centrum_health(port, process=shortcut)
         view = _get(port, "/api/tool-update")
     clone = (repository.head(), repository.read(MAPPING), repository.in_clone("status", "--porcelain", "--untracked-files=no"))
-    # Wyłączony komputer nie kończy instalacji; Centrum testu, które ją zaczęło, kończy ją porażką dopiero po odczycie
-    # klonu, żeby zatrzymało się przed końcem testu.
-    pip_never_finishes.succeeds = False
-    installing.set()
+    _end_install_of_switched_off_computer_with_failure(pip_never_finishes, installing)
 
     assert switched_off == newest
     assert health["commit"] == before[:7]
@@ -231,7 +198,7 @@ def test_skrot_w_trakcie_ponownego_startu_po_aktualizacji_nie_rusza_klonu_i_pros
     repository = centrum_tool_repository(tmp_path / "repozytoria")
     newest = repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository))
-    _update_until(centrum, lambda view: view.get("step") == "restarting")
+    _update_stopping_at(centrum, "restarting")
     port = free_port()
 
     with _shortcut(repository.clone, port) as shortcut:
@@ -250,7 +217,7 @@ def test_gdy_opiekun_nie_skonczyl_aktualizacji_przed_wylaczeniem_skrot_po_jego_t
     before = repository.head()
     newest = repository.publish({".gitignore": GITIGNORE}, untrack=(MAPPING,))
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository))
-    _update_until(centrum, lambda view: view.get("step") == "restarting")
+    _update_stopping_at(centrum, "restarting")
     switched_off = repository.head()
     port = free_port()
 
@@ -271,12 +238,11 @@ def test_gdy_dysk_odmowi_skrotowi_zapisu_porazki_po_cofnieciu_nastepny_start_pok
     before = repository.head()
     newest = repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository))
-    _update_until(centrum, lambda view: view.get("step") == "restarting")
+    _update_stopping_at(centrum, "restarting")
     result = repository.clone / "config" / tool_update.RESULT_FILE
-    # Opiekun zapisał „ok”, a komputer zgasł, zanim nowe Centrum je przeczytało.
-    tool_update.write_result(result, tool_update.UpdateResult(tool_update.UPDATED, before, newest))
-    # Dysk odmawia zapisu nowego wyniku: write_result w launcher._roll_back rzuca OSError po cofnięciu klonu.
-    result.with_name(result.name + ".tmp").mkdir()
+    ok_unread_by_new_centrum = tool_update.UpdateResult(tool_update.UPDATED, before, newest)
+    tool_update.write_result(result, ok_unread_by_new_centrum)
+    _disk_refuses_replacing(result)
     port = free_port()
 
     with _shortcut(repository.clone, port) as shortcut:
@@ -299,16 +265,12 @@ def test_gdy_dysk_odmowi_skrotowi_zapisu_porazki_po_cofnieciu_nastepny_start_pok
 def test_skrot_z_autostartu_po_cofnieciu_przerwanej_aktualizacji_startuje_centrum_dalej_bez_karty(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """ADR 0030 „Centrum w Autostarcie, bez karty”: skrót z Autostartu (``--no-browser``) trafia na Aktualizację
-    narzędzia przerwaną wyłączeniem komputera, cofa ją i startuje Centrum od nowa z dysku z tymi samymi argumentami, więc
-    karta się nie otwiera; skrót z pulpitu kliknięty potem otwiera kartę działającego Centrum (przegląd #1355 r1)."""
-
     monkeypatch.setattr(tool_update, "GUARDIAN_LEASE_S", 0.0)
     repository = centrum_tool_repository(tmp_path / "repozytoria")
     before = repository.head()
     repository.publish({"NOWA_WERSJA.txt": "druga wersja narzędzia\n"})
     centrum = preparing_centrum(tmp_path, surroundings=Surroundings(tool=repository))
-    _update_until(centrum, lambda view: view.get("step") == "restarting")
+    _update_stopping_at(centrum, "restarting")
     browser, opened = _browser_recorder(tmp_path / "przegladarka")
     port = free_port()
 

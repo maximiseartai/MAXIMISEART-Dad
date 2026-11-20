@@ -9,13 +9,13 @@ Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmo
 - Ważne to nagłówek ``### W<n>. <zdanie>`` i linie akapitu z polami w tej kolejności: ``Gdzie: <plik:linia>``,
   ``Dowód: <tekst>`` z najwyżej 5 liniami treści po najwyżej 300 znaków (tekst pola ``Dowód:``, linie akapitu po nim
   i niepuste linie bloków kodu, do pola ``Korzeń:``), ``Korzeń: R-KOD - <zdanie>`` albo ``Korzeń: NOWY R-KOD -
-  <opis>`` oraz ``Szczebel: (a) - <zdanie>`` ze szczeblem od ``(a)`` do ``(e)``; dłuższy dowód recenzent zapisuje
-  w pliku obok werdyktu i podaje w Dowodzie jego ścieżkę; po Szczeblu może stać jeszcze pole ``Idiom:``, które
-  niczego przy merge'u nie wymaga, bo strażnika każdego Ważnego wymaga ``bramka_straznika``, a czyta je raport
-  tygodniowy ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)): ``Idiom: <id> jak #N W<n>
-  r<k>`` (Ważne powtarza wcześniejsze), ``Idiom: <id>`` (ucieczka istniejącego strażnika ``<id>``) albo, w werdyktach
-  sprzed ADR 0042, ``Idiom: bez reguły <klasa> jak #N W<n> r<k>`` z klasą z zamkniętej listy ``CLASSES``; ``<id>`` to
-  pole ``id`` reguły ast-grep, klucz ``banned-api`` albo ``id`` kontraktu import-linter, bez spacji (``RULE_ID``);
+  <opis>``, ``Szczebel: (a) - <zdanie>`` ze szczeblem od ``(a)`` do ``(e)`` oraz ``Mechanizm: <szczebel>`` z jedną
+  wartością ``Mechanism`` ([ADR 0046](../../docs/adr/0046-szczebel-straznika-wybiera-recenzent.md)); dłuższy dowód
+  recenzent zapisuje w pliku obok werdyktu i podaje w Dowodzie jego ścieżkę; w wątku, w którym Mechanizm nie
+  obowiązuje (``problems`` bez ``mechanism``), po Szczeblu może stać zamiast niego pole ``Idiom:``, które ``findings``
+  czyta w każdym werdykcie dla raportu tygodniowego: ``Idiom: <id> jak #N W<n> r<k>``, ``Idiom: <id>`` albo ``Idiom:
+  bez reguły <klasa> jak #N W<n> r<k>`` z klasą z zamkniętej listy ``CLASSES``; ``<id>`` to pole ``id`` reguły
+  ast-grep, klucz ``banned-api`` albo ``id`` kontraktu import-linter, bez spacji (``RULE_ID``);
 - Drobne to nagłówek ``### D<n>. <zdanie>`` i jedna linia ``Gdzie: <plik:linia>``;
 - Ważne stoją przed Drobnymi, numery idą od 1 bez przerw, a ich liczby zgadzają się z linią ``Znaleziska:``;
 - blok mutacji recenzenta (``mutacja_recenzenta``) to nagłówek ``### Mutacja W<n> r<k>`` przed ``## Sprawdzone``
@@ -37,14 +37,16 @@ z Gita (HEAD pobiera wywołujący), i tylko wtedy, gdy werdykt ma pole ``Korzeń
 wczytuje, to odmowa z przyczyną. Odmowa kończy się wzorem szablonu, który narzędzie bierze z bloku ``markdown``
 sekcji „Postać werdyktu” skilla.
 
-Szablon jest wdrożony od chwili, w której ADR 0031 (``ADR``) wszedł do bazy PR, a czy obowiązuje w wątku,
-rozstrzyga ``werdykt_pr.rule_applies`` z chwilą ``werdykt_pr.deployment`` (decyzja Q20).
+Szablon jest wdrożony od chwili, w której ADR 0031 (``ADR``) wszedł do bazy PR, a pole Mechanizm od chwili, w której
+wszedł ADR 0046 (``MECHANISM_ADR``); czy każde obowiązuje w wątku, rozstrzyga ``werdykt_pr.rule_applies`` z chwilą
+``werdykt_pr.deployment`` (decyzja Q20).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
+from enum import StrEnum
 from html.parser import HTMLParser
 from pathlib import Path
 import re
@@ -58,6 +60,7 @@ from stan_pr import Pull
 
 LIST = ".agents/skills/przeglad/korzenie.toml"
 ADR = "docs/adr/0031-korzen-po-fail-i-chwasty.md"
+MECHANISM_ADR = "docs/adr/0046-szczebel-straznika-wybiera-recenzent.md"
 SKILL = ROOT / ".agents" / "skills" / "przeglad" / "SKILL.md"
 CHECKED = "Sprawdzone"
 MAX_CHECKED = 5
@@ -67,6 +70,7 @@ CODE = re.compile(r"R-[A-Z0-9]+(?:-[A-Z0-9]+)*")
 HEADING = re.compile(r"([WD])(\d+)\. (\S.*)")
 ROOT_FIELD = re.compile(rf"Korzeń: (NOWY )?({CODE.pattern}) - (\S.*)")
 RUNG_FIELD = re.compile(r"Szczebel: \(([a-e])\) - (\S.*)")
+MECHANISM_FIELD = "Mechanizm:"
 # Pole ``Idiom:`` Ważnego (ADR 0036, „Pole werdyktu”): id reguły, klasa idiomu bez reguły i wcześniejsze Ważne ``jak``.
 CLASSES = ("brak-testu", "stan-kroku", "typ", "test-klasy")
 RULE_ID = r"[\w.-]+"
@@ -77,7 +81,7 @@ IDIOM_NO_RULE = re.compile(rf"Idiom: bez reguły ({'|'.join(CLASSES)}){_EARLIER}
 # Punkt „## Sprawdzone”, którym recenzent rozstrzyga kod Ważnego z wcześniejszej rundy (decyzja Q25).
 RESOLUTION = re.compile(rf"Korzeń (W\d+) r(\d+): (NOWY )?({CODE.pattern}) - (\S.*)")
 RESOLUTION_START = "Korzeń "
-FIELDS = ("Gdzie:", "Dowód:", "Korzeń:", "Szczebel:", "Idiom:")
+FIELDS = ("Gdzie:", "Dowód:", "Korzeń:", "Szczebel:", MECHANISM_FIELD, "Idiom:")
 # ``plik:linia`` albo ``plik:linia-linia`` pola ``Gdzie:`` (``places``).
 PLACE = re.compile(r"(?<![\w./:-])((?:[\w.-]+/)+[\w.-]*\w|[\w-][\w.-]*\.[A-Za-z]\w*):(\d+)(?:[-–](\d+))?(?!\d)")
 ENTRY_KEYS = frozenset({"opis", "przyklad"})
@@ -96,6 +100,17 @@ class CodesUnavailable(Exception):
     pass
 
 
+class Mechanism(StrEnum):
+    ARCHITEKTURA = "architektura"
+    REFAKTOR = "refaktor"
+    LINT = "lint"
+    TEST = "test"
+    WERYFIKACJA = "weryfikacja"
+
+
+MECHANISM_FORM = f"{MECHANISM_FIELD} <{'|'.join(Mechanism)}>"
+
+
 @dataclass(frozen=True)
 class Root:
     """Kod korzenia Ważnego ``label`` (``W1``) z pola ``Korzeń:`` albo, z ``round``, z punktu rozstrzygnięcia
@@ -107,6 +122,7 @@ class Root:
     code: str | None
     round: int | None = None
     files: frozenset[str] = frozenset()
+    mechanism: Mechanism | None = None
 
 
 @dataclass(frozen=True)
@@ -326,8 +342,8 @@ def idiom(label: str, text: str) -> Idiom | None:
     return None
 
 
-def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Idiom]) -> list[str]:
-    order = f"{label}: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel"
+def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Idiom], *, mechanism: bool) -> list[str]:
+    order = f"{label}: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel{', Mechanizm' if mechanism else ''}"
     where = _value(block[0], "Gdzie:") if block else None
     if where is None:
         return [f"{order}, a po nagłówku jest {block[0].shown() if block else 'koniec'}"]
@@ -350,12 +366,23 @@ def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Id
     if rest[1].kind != "line" or RUNG_FIELD.fullmatch(rest[1].text) is None:
         problems.append(f"{label}: {rest[1].shown()} to nie „Szczebel: (a) - zdanie” ze szczeblem od (a) do (e)")
     after = list(rest[2:])
-    if after and _value(after[0], "Idiom:") is not None:
-        if (found_idiom := idiom(label, after.pop(0).text)) is None:
-            problems.append(f"{label}: „{rest[2].text}” to nie „{IDIOM_FORMS}”")
+    if after and (value := _value(after[0], MECHANISM_FIELD)) is not None:
+        after.pop(0)
+        if value in Mechanism:
+            roots[-1] = replace(roots[-1], mechanism=Mechanism(value))
         else:
+            problems.append(f"{label}: „{rest[2].text}” to nie „{MECHANISM_FORM}” z jednym szczeblem strażnika (.agents/skills/przeglad/korzen.md)")
+    elif after and _value(after[0], "Idiom:") is not None:
+        if (found_idiom := idiom(label, after.pop(0).text)) is not None:
             idioms.append(found_idiom)
-    return [*problems, *(f"{label}: po Szczeblu tylko pole Idiom:, a jest {item.shown()}" for item in after)]
+        if mechanism:
+            problems.append(f"{label}: pole Idiom: zniknęło z szablonu, a po Szczeblu stoi „{MECHANISM_FORM}”")
+        elif found_idiom is None:
+            problems.append(f"{label}: „{rest[2].text}” to nie „{IDIOM_FORMS}”")
+    elif mechanism:
+        return [*problems, f"{order}, a po Szczeblu jest {after[0].shown() if after else 'koniec'}"]
+    last = "po Mechanizmie nic" if mechanism else "po Szczeblu tylko pole Mechanizm: albo Idiom:"
+    return [*problems, *(f"{label}: {last}, a jest {item.shown()}" for item in after)]
 
 
 def _minor(label: str, block: Sequence[Item]) -> list[str]:
@@ -401,12 +428,13 @@ def _root_problems(roots: Sequence[Root], codes: Callable[[], frozenset[str]]) -
     return problems
 
 
-def problems(html: str, declared: tuple[int, int] | None, codes: Callable[[], frozenset[str]]) -> list[str]:
+def problems(html: str, declared: tuple[int, int] | None, codes: Callable[[], frozenset[str]], *, mechanism: bool) -> list[str]:
     """Co poprawić w treści werdyktu: ``html`` to HTML renderera GitHuba dla linii pod dwiema pierwszymi (pusty, gdy
-    ich nie ma), ``declared`` liczby Ważnych i Drobnych z linii ``Znaleziska:`` (``None``, gdy jej nie ma), a
-    ``codes`` czyta kody listy na HEAD PR, gdy jest pole Korzeń albo punkt rozstrzygnięcia."""
+    ich nie ma), ``declared`` liczby Ważnych i Drobnych z linii ``Znaleziska:`` (``None``, gdy jej nie ma),
+    ``codes`` czyta kody listy na HEAD PR, gdy jest pole Korzeń albo punkt rozstrzygnięcia, a ``mechanism`` mówi, czy
+    w wątku obowiązuje pole Mechanizm (``MECHANISM_ADR``)."""
 
-    found, findings = _read(items(html), declared)
+    found, findings = _read(items(html), declared, mechanism=mechanism)
     found.extend(_root_problems([*findings.majors, *findings.resolutions], codes))
     return [*found, f"wzór ({SKILL.relative_to(ROOT).as_posix()}): {template()}"] if found else []
 
@@ -414,10 +442,10 @@ def problems(html: str, declared: tuple[int, int] | None, codes: Callable[[], fr
 def findings(units: Sequence[Item]) -> Findings:
     """Kody korzeni treści werdyktu z jej jednostek (``items``), czytane tak samo jak przy ``problems``."""
 
-    return _read(units, None)[1]
+    return _read(units, None, mechanism=False)[1]
 
 
-def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list[str], Findings]:
+def _read(units: Sequence[Item], declared: tuple[int, int] | None, *, mechanism: bool) -> tuple[list[str], Findings]:
     found: list[str] = []
     roots: list[Root] = []
     idioms: list[Idiom] = []
@@ -446,7 +474,7 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None) -> tuple[list
         block = units[index + 1 : after]
         if kind == "W":
             roots.append(Root(label, False, None))
-            found.extend(_major(label, block, roots, idioms))
+            found.extend(_major(label, block, roots, idioms, mechanism=mechanism))
         else:
             found.extend(_minor(label, block))
         index = after

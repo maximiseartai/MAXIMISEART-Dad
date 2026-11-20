@@ -207,7 +207,7 @@ def _problems(pull: Pull) -> list[str]:
     if pull.from_fork:
         problems.append("PR z forka")
     template = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
-    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body, TEMPLATE.read_text(encoding="utf-8")), werdykt_pr.consent_problem(pull, template), limit_rund.deployed_problem(pull)]
+    consent = [stan_pr.ci_problem(pull), _body_problem(pull.body, TEMPLATE.read_text(encoding="utf-8")), werdykt_pr.consent_problem(pull, template, mechanism=werdykt_pr.deployment(pull.base, szablon_werdyktu.MECHANISM_ADR)), limit_rund.deployed_problem(pull)]
     guarded = bramka_straznika.applies(pull)
     return [*problems, *filter(None, consent), *bramka_korzenia.problems(pull, werdykt_pr.deployment(pull.base, bramka_korzenia.MARKER), guarded=guarded)]
 
@@ -310,7 +310,7 @@ def _publish_verdict(pull: Pull, path: Path) -> int:
         print(f"WERDYKT ODMOWA | #{pull.number} | {limit}")
         return 1
     deployed = werdykt_pr.deployment(pull.base, szablon_werdyktu.ADR)
-    if problems := werdykt_pr.publish_problems(text, pull, deployed):
+    if problems := werdykt_pr.publish_problems(text, pull, deployed, mechanism=werdykt_pr.deployment(pull.base, szablon_werdyktu.MECHANISM_ADR)):
         print(f"WERDYKT ODMOWA | #{pull.number} | {'; '.join(problems)}; popraw {path} i uruchom ponownie")
         return 1
     url = github.gh("pr", "comment", str(pull.number), "--body-file", str(path)).strip()

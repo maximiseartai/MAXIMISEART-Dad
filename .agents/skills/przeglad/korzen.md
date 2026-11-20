@@ -15,9 +15,8 @@ Ta sama reguła obowiązuje przy poprawce operatora.
   - (d) reguła deklaratywna gotowego narzędzia, czyli reguła ast-grep w `reguly-ast-grep/` na liniach dodanych albo na całym drzewie (warunki w [`CODING_STANDARDS.md`](../../../CODING_STANDARDS.md));
   - (e) nowy punkt z linkiem do PR, który go dopisuje, w sekcji „Co jest porażką” pliku [`SKILL.md`](SKILL.md), a punkt o ADR, specyfikacji albo issue `decyzja-maksa` w tej sekcji pliku [`porazka-adr.md`](porazka-adr.md).
 
-  Reguła (d) stoi między (c) a (e), bo jest deterministyczna, a (e) to proza: (d) jest dozwolona tylko wtedy, gdy (a)–(c) nie działają, a (e) tylko wtedy, gdy (a)–(d) nie działają.
+  Pierwszeństwo daje piramida sekcji „Mechanizm” niżej, więc działająca reguła (d) idzie przed testem (c), a (e) tylko wtedy, gdy (a)–(d) nie działają.
   Reguła struktury, której nie wyraża typ, zakaz ruff, kontrakt import-linter ani reguła ast-grep, dostaje test zachowania (c) albo punkt w „Co jest porażką” (e), a nie nowy matcher w Pythonie.
-  To rozwinięcie decyzji Q7 i Q26 przez koordynatora (13.11.2026), do potwierdzenia przez Maksa.
 
   Zakaz ruff albo mypy z (b) nie zastępuje testu, który szuka nazwy w kodzie, dopóki dla tej reguły wolno `noqa` albo `type: ignore`, więc test usuń dopiero, gdy zamiennik łapie każdą formę, którą test łapał (#1371).
 
@@ -47,11 +46,22 @@ Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md))
 - Test jako strażnik to `Strażnik: pytest tests/<plik>.py::<test>` (jeden test albo jego parametr), a złą postać pisze recenzent, nie autor: blok `### Mutacja W<n> r<k>` w werdykcie (szablon w sekcji „Postać werdyktu” pliku [`SKILL.md`](SKILL.md)) z mutacją, która na HEAD przywraca zachowanie z Dowodu Ważnego najmniejszą zmianą kodu, konfiguracji albo reguły, nie testu.
   Dowód przechodzi, gdy test na HEAD scalonym z bazą bez mutacji przechodzi, z każdą mutacją najnowszego bloku tego Ważnego w werdyktach PR biegnie i pada, a po nich bez mutacji przechodzi znowu (ADR 0042, aneks „Test jako strażnik z mutacją recenzenta”).
 - Recenzent rundy, która sprawdza poprawkę Ważnego ze `Strażnik: pytest …`, czyta najnowszy blok tego Ważnego i pisze w swoim werdykcie, także w `PASS`, nowy blok `### Mutacja W<n> r<k>`, gdy bloku nie ma, gdy jego kotwicy nie ma na HEAD dokładnie raz albo gdy mutacja nie przywraca błędu z Ważnego (jest słabsza od niego albo psuje więcej), a gdy test łapie wierną mutację inną drogą niż błąd (np. na wejściu, którego błąd nie dotyczy), dopisuje do bloku formę siostrzaną błędu, której ta droga nie łapie.
-  Blok sprawdza przed publikacją: `tools/mutacje.py --plik <blok.json> -- -m pytest -q -n 0 <węzeł>`, a `NIEWYKRYTA` to Ważne, bo strażnik nie łapie błędu; narzędzie i dowód liczą werdykt tą samą funkcją `silnik_mutacji.judged`, także gdy węzła z mutacją nie ma (`tools/mutacje.py --zasady`).
+  Blok sprawdza przed publikacją: `tools/mutacje.py --plik <blok.json> -- -m pytest -q -n 0 <węzeł>`, a `NIEWYKRYTA` to Ważne, bo strażnik nie łapie błędu; dowód liczy werdykt tak samo (`tools/mutacje.py --zasady`).
   Gdy test czyta stan modułu, który w sesji Required CI może ustawić inny plik testów (rejestr wypełniany przy imporcie) albo wcześniejszy test, sprawdza blok też z plikami testów, które ten moduł importują, w jednym poleceniu pytest, a `NIEWYKRYTA` tam to Ważne, bo dowód uruchamia węzeł sam (aneks ADR 0042, „Granica: sąsiedzi w sesji Required CI”).
-  Blok stoi przed `## Sprawdzone` w `FAIL` albo w `PASS`, najwyżej jeden na Ważne w werdykcie, a pod nagłówkiem ma tylko blok kodu ``` albo ~~~ bez nazwy języka (```json GitHub renderuje inaczej, więc to odmowa) z JSON pliku `tools/mutacje.py --plik` z kluczami `nazwa` i `zmiany`, bez zmian w `tests/`.
   Recenzent `FAIL` daje blok od razu, gdy wie, jaki kod po poprawce przywróci błąd; wierność bloku ocenia recenzent następnej rundy, bo dowód gwarantuje tylko, że test pada przez tę mutację.
-- `Strażnik: brak - test` przechodzi tylko w wątku z pierwszym werdyktem sprzed wdrożenia dowodu testu (`bramka_straznika.TEST_MARKER`), więc tam dowód testu jest osądem recenzenta jak przed ADR 0042.
+- `Strażnik: brak - test` przechodzi tylko w wątku z pierwszym werdyktem sprzed wdrożenia dowodu testu (`bramka_straznika.TEST_MARKER`).
   Recenzent następnej rundy uruchamia test, który nazywa `Szczebel:` bloku, na drzewie SHA werdyktu `FAIL` (przy próbce testu: mutację złej implementacji z Dowodu Ważnego) i daje Ważne, gdy test przechodzi, pada tylko z braku czegoś, co poprawka dodała obok kodu z `Gdzie` (moduł, metoda, nazwa, opcja), albo gdy Ważne zamknąłby wyższy szczebel z dowodem narzędzia (`mypy`, `ruff`, `ast-grep <id>`, `pytest <węzeł>`).
 - Kod z `Gdzie` usunięty z PR (szczebel (a)) to `Strażnik: brak - usunięte`; recenzent następnej rundy sprawdza, że ten kod zniknął z HEAD i nie wrócił inną drogą, a gdy stoi albo wrócił, to Ważne.
-- Pole `Idiom:` po `Szczebel:` jest opcjonalne i niczego przy merge'u nie wymaga: `Idiom: <id> jak #N W<n> r<k>`, gdy Ważne powtarza wcześniejsze, albo `Idiom: <id>`, gdy to ucieczka istniejącego strażnika `<id>`; raport tygodniowy liczy z niego powroty i ucieczki.
+
+## Mechanizm
+
+`Mechanizm:` Ważnego to najwyższy szczebel piramidy, który odmówi nowej kopii błędu w innym pliku bez recenzenta ([ADR 0046](../../../docs/adr/0046-szczebel-straznika-wybiera-recenzent.md)); działający wyższy szczebel w następnej rundzie to Ważne.
+
+- **architektura**: jeden właściciel, usunięta druga droga albo typ, z którym zły stan jest niewyrażalny, ze strażnikiem obejścia (typ, zakaz `TID251`, reguła ast-grep); bez niego wrócił lokator z #1553.
+- **refaktor**: inna postać kodu bez nowego właściciela, trzymana typem, ruff albo ast-grep (#2161: równość zamiast listy postaci).
+- **lint**: zakaz nazwy albo reguła ast-grep na złej postaci (#1719: `time.sleep` w `drive/`).
+- **test**: błąd logiki w jedynym właścicielu, którego jedyność pilnuje już typ, zakaz albo reguła (`worker_reports.EnteringMemory`); właściciel bez tej ochrony to `architektura`.
+- **weryfikacja**: błąd jednorazowy w treści, bez postaci i właściciela: proza, liczba w jednym teście, napęd frontendu (#2069).
+
+Szczebel nie działa przy fałszywym alarmie w ponad 10% PR-ów `tools/na_scalonych_pr.py --regula` albo przy liście nazw rosnącej z kodem (`regula-w-trasie` w #1904, #1919, #1964); wtedy schodzisz niżej.
+Usunięty kod to `architektura` tylko z zakazem jego powrotu.

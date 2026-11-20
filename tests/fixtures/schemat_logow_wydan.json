@@ -194,6 +194,7 @@
    "\"getReportsView\"",
    "\"getRunCard\"",
    "\"getRunSetup\"",
+   "\"getScope\"",
    "\"getSettings\"",
    "\"getSettingsHistory\"",
    "\"getSettlementMailing\"",

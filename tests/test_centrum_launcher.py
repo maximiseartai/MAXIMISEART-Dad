@@ -1,5 +1,3 @@
-"""Start Centrum rozliczeń jako prawdziwy proces w odizolowanym runtime na wolnym porcie."""
-
 from __future__ import annotations
 
 import json
@@ -45,15 +43,11 @@ UPDATED_COMMIT = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
 
 
 def _check_out(runtime: Path, commit: str) -> None:
-    """Klon narzędzia na ``commit`` (odłączony ``HEAD``), jak po pobraniu albo aktualizacji narzędzia."""
-
     (runtime / ".git").mkdir(exist_ok=True)
     (runtime / ".git" / "HEAD").write_text(commit + "\n", encoding="utf-8")
 
 
 def _browser_recorder(directory: Path) -> tuple[Path, Path]:
-    """Program podstawiony jako przeglądarka (zmienna ``BROWSER``), który zapisuje otwierany adres."""
-
     record = directory / "otwarte-adresy.txt"
     recorder = fake_cli(
         directory,
@@ -77,8 +71,6 @@ class _Console:
 
 @contextmanager
 def _started(command: list[str], runtime: Path, environment: dict[str, str]) -> Iterator[_Console]:
-    """Uruchamia Centrum i po bloku zamyka dokładnie ten proces (z potomkami); konsola jest dostępna po bloku."""
-
     console = _Console()
     process = subprocess.Popen(
         command,
@@ -126,8 +118,6 @@ def _launch_again(runtime: Path, port: int, environment: dict[str, str]) -> subp
 
 
 def _opened_addresses(path: Path, count: int) -> list[str]:
-    """Adresy otwarte w przeglądarce, gdy jest ich już ``count``."""
-
     done, addresses = wait_for_value(
         lambda: path.read_text(encoding="utf-8").split() if path.exists() else [],
         lambda addresses: len(addresses) >= count,
@@ -137,18 +127,16 @@ def _opened_addresses(path: Path, count: int) -> list[str]:
     assert done, "Przeglądarka nie dostała adresu Centrum."
     return addresses
 
-# Najniższy początek zakresu, z którego system sam daje porty (bind na port 0, port źródłowy połączenia): Linux 32768,
-# Windows i macOS 49152.
 SYSTEM_PORTS_START = 32768
 
 
 def test_wolny_port_dla_centrum_lezy_ponizej_zakresu_portow_ktore_system_daje_sam_i_da_sie_go_zbindowac() -> None:
-    """Port, który test daje Centrum przez ``--port``, nie trafi do serwera sąsiedniego workera pytest, który bierze port
-    od systemu (Atrapa efenix), zanim Centrum go zbinduje (#1917, #1918)."""
-
     ports = [free_port() for _ in range(20)]
+    with socket.create_server(("127.0.0.1", 0)) as listening, socket.create_connection(listening.getsockname()) as client:
+        given_by_system = {"bind na port 0": listening.getsockname()[1], "port źródłowy połączenia": client.getsockname()[1]}
 
     assert [port for port in ports if not 1024 <= port < SYSTEM_PORTS_START] == []
+    assert {way: port for way, port in given_by_system.items() if port < SYSTEM_PORTS_START} == {}
     with socket.socket() as server:
         server.bind(("127.0.0.1", ports[-1]))
 
@@ -205,16 +193,17 @@ def test_ponowne_uruchomienie_po_przesunieciu_klonu_rozpoznaje_centrum_innej_wer
 
     assert {key: health[key] for key in ("service", "commit")} == {"service": "centrum-rozliczen", "commit": COMMIT[:7]}
     assert again.returncode == 1, again.stdout + again.stderr
-    assert again.stdout.splitlines()[0] == "Co się stało: Działa już Centrum rozliczeń w innej wersji (3c1d0a9)."
-    # Karta działającej wersji ma przycisk „Zamknij Centrum rozliczeń”, którym tata zwalnia port dla tej wersji.
+    assert again.stdout.splitlines() == [
+        "Co się stało: Działa już Centrum rozliczeń w innej wersji (3c1d0a9).",
+        f"Gdzie: adres http://127.0.0.1:{port}/ na tym komputerze",
+        "Co zrobić: W karcie Centrum kliknij „Zamknij Centrum rozliczeń”, potem kliknij skrót „Centrum rozliczeń” ponownie.",
+    ]
     assert addresses == [f"http://127.0.0.1:{port}/"] * 2
     assert still_serving == health
     assert "kod=INNA_WERSJA_CENTRUM" in ToolDirectory(runtime).log_path.read_text(encoding="utf-8")
 
 
 def _log_events(runtime: Path) -> list[str]:
-    """Nazwy zdarzeń z dziennika Centrum w kolejności wpisów."""
-
     log = ToolDirectory(runtime).log_path
     return [line.split(" ")[1] for line in log.read_text(encoding="utf-8").splitlines()]
 
@@ -239,7 +228,6 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
             errors="replace",
         ) as launch:
             try:
-                # Milczący obcy program sprawdza test w procesie, na skróconym limicie czekania.
                 foreign_program.accept()[0].close()
                 stdout, stderr = launch.communicate(timeout=60)
             except BaseException:
@@ -262,7 +250,6 @@ def test_obcy_program_na_porcie_daje_bezpieczny_komunikat_w_trzech_czesciach(tmp
 def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekania_na_health(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Cały narzut startu na runnerze Windows w #1782 to 1,34 s ponad limit: zapas granic niżej jest od niego większy.
     wait_s = 2.5
     monkeypatch.setattr(launcher, "_HEALTH_TIMEOUT_S", wait_s)
     monkeypatch.setattr(launcher, "LOG_PATH", tmp_path / "centrum-rozliczen.log")
@@ -278,7 +265,6 @@ def test_obcy_program_ktory_milczy_nie_wstrzymuje_startu_dluzej_niz_limit_czekan
         )
         started = time.monotonic()
         start.start()
-        # Obcy program przyjmuje pytanie o health i milczy, aż launcher sam zamknie połączenie (pusty odczyt).
         asked, _ = foreign_program.accept()
         with asked:
             asked.settimeout(30)
@@ -316,17 +302,11 @@ def _close(port: int) -> dict[str, object]:
 
 
 def _windowless(runtime: Path, port: int, *, arguments: tuple[str, ...] | None = None) -> list[str]:
-    """Polecenie skrótu: na Windows prawdziwy ``pythonw.exe``, gdzie indziej Python bez ``sys.stdout`` i ``sys.stderr``.
-
-    ``arguments`` to argumenty ``pythonw.exe`` ze skrótu (skrypt i flagi); domyślnie sam ``run_centrum.py`` klonu.
-    """
-
     script, *flags = arguments or (str(runtime / "run_centrum.py"),)
     if sys.platform == "win32":
         return [str(Path(sys.executable).with_name("pythonw.exe")), script, *flags, "--port", str(port)]
-    # Tak widzi świat kod pod pythonw: strumienie konsoli to None.
-    simulated = f"import runpy, sys; sys.stdout = sys.stderr = None; runpy.run_path({script!r}, run_name='__main__')"
-    return [sys.executable, "-c", simulated, *flags, "--port", str(port)]
+    like_pythonw = f"import runpy, sys; sys.stdout = sys.stderr = None; runpy.run_path({script!r}, run_name='__main__')"
+    return [sys.executable, "-c", like_pythonw, *flags, "--port", str(port)]
 
 
 def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) -> None:
@@ -355,8 +335,6 @@ def test_centrum_bez_konsoli_startuje_rozpoznaje_sie_i_zamyka(tmp_path: Path) ->
 
 
 def _shortcut(runtime: Path, folder: Folder) -> Shortcut:
-    """Skrót kroku instalacji z ``folder`` dla klonu ``runtime``; test pada, gdy kroku nie ma takiego skrótu."""
-
     found = [shortcut for shortcut in shortcuts(runtime) if shortcut.folder is folder]
     assert len(found) == 1, f"Krok instalacji zakłada {len(found)} skrótów w folderze {folder}."
     return found[0]
@@ -400,8 +378,6 @@ _CONSOLE_PROBE = (
 
 
 def _in_terminal(command: list[str]) -> int:
-    """Kod wyjścia ``command`` w prawdziwej konsoli: nowe okno konsoli w Windows, pseudoterminal gdzie indziej."""
-
     if sys.platform == "win32":
         return subprocess.run(command, creationflags=subprocess.CREATE_NEW_CONSOLE, timeout=60, check=False).returncode
     import pty
@@ -428,21 +404,19 @@ def test_centrum_od_opiekuna_ponownego_startu_nie_ma_konsoli_a_w_terminalu_i_z_p
 
 def test_program_konsolowy_z_centrum_ktory_sie_nie_konczy_jest_przerwany_po_limicie_czasu(tmp_path: Path) -> None:
     alive = tmp_path / "zyje.txt"
-    # Kończy się sam po 15 s, więc bez limitu czasu test pada na braku TimeoutExpired, a nie wisi.
-    hanging = f"import pathlib, time\nfor _ in range(300):\n    pathlib.Path({str(alive)!r}).write_text('tak')\n    time.sleep(0.05)\n"
+    hangs_then_ends_after_15_s = (
+        f"import pathlib, time\nfor _ in range(300):\n    pathlib.Path({str(alive)!r}).write_text('tak')\n    time.sleep(0.05)\n"
+    )
 
     with pytest.raises(subprocess.TimeoutExpired):
-        run_console_program([sys.executable, "-c", hanging], timeout_s=2)
+        run_console_program([sys.executable, "-c", hangs_then_ends_after_15_s], timeout_s=2)
     alive.unlink(missing_ok=True)
 
     assert not wait_for(alive.exists, 1, every=0.05), "Program konsolowy żyje po limicie czasu."
 
 
 @contextmanager
-def _input_nobody_writes() -> Iterator[None]:
-    """Wejście tego procesu (deskryptor 0) to potok otwarty do zapisu, do którego nikt nie pisze: program, który je
-    odziedziczy i czyta, czeka bez końca (pytest daje mu zwykle pusty ``/dev/null``)."""
-
+def _stdin_pipe_nobody_writes_to() -> Iterator[None]:
     read_end, write_end = os.pipe()
     saved = os.dup(0)
     os.dup2(read_end, 0)
@@ -455,17 +429,18 @@ def _input_nobody_writes() -> Iterator[None]:
 
 
 def test_program_konsolowy_z_centrum_ktory_czyta_wejscie_dostaje_jego_koniec_zamiast_czekac() -> None:
-    """Pip, Git albo PowerShell pytający o coś w konsoli nie wiesza Centrum: dostaje koniec wejścia."""
+    reads_stdin = [sys.executable, "-c", "import sys; print(repr(sys.stdin.read()))"]
 
-    with _input_nobody_writes():
-        result = run_console_program([sys.executable, "-c", "import sys; print(repr(sys.stdin.read()))"], timeout_s=5)
+    with _stdin_pipe_nobody_writes_to():
+        with pytest.raises(subprocess.TimeoutExpired):
+            subprocess.run(reads_stdin, stdin=0, capture_output=True, timeout=1, check=False)
+        result = run_console_program(reads_stdin, timeout_s=5)
 
     assert (result.returncode, result.stdout.strip()) == (0, "''")
 
 
+# ZEWNĘTRZNE: WScript.Shell czyta ścieżkę skrótu w stronie kodowej ANSI systemu, a strona angielskiego Windows (1252) nie ma „ń” (GetACP na runnerze GitHuba)
 def _read_shortcut(link: Path) -> dict[str, str]:
-    """Pola skrótu z WScript.Shell, który czyta ścieżkę w stronie kodowej ANSI: czyta kopię pod nazwą ASCII."""
-
     with tempfile.TemporaryDirectory() as directory:
         copy = Path(directory) / "skrot.lnk"
         shutil.copyfile(link, copy)
@@ -514,9 +489,6 @@ def _powershell_without_file(command: Sequence[str], *, timeout_s: float, cwd: P
     ids=["limit-powershella", "kod-powershella", "przeniesienie"],
 )
 def test_kazda_galaz_porazki_zapisu_skrotu_ma_wlasny_typ_przyczyny(tmp_path: Path, run: ConsoleRun, kind: type[OSError], cause: type) -> None:
-    """Komunikat dla taty jest jeden dla każdej porażki zapisu skrótu, więc gałąź (limit PowerShella, jego kod, przeniesienie
-    pliku) niesie typ wyjątku, a błąd przeniesienia stoi w łańcuchu (#1883)."""
-
     program = tmp_path / "pythonw.exe"
     program.write_bytes(b"")
 
@@ -526,23 +498,24 @@ def test_kazda_galaz_porazki_zapisu_skrotu_ma_wlasny_typ_przyczyny(tmp_path: Pat
     assert (type(raised.value), type(raised.value.__cause__)) == (kind, cause)
 
 
+@pytest.mark.parametrize("kind", [PowerShellTimedOut, PowerShellFailed, ShortcutNotMoved], ids=lambda kind: kind.__name__)
 def test_krok_instalacji_po_porazce_podaje_tacie_komunikat_a_na_stderr_sam_typ_przyczyny(
-    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], tmp_path: Path, kind: type[OSError]
 ) -> None:
     program = tmp_path / "pythonw.exe"
     program.write_bytes(b"")
 
-    def timed_out(*_: object) -> Path:
-        raise PowerShellTimedOut("PowerShell nie zapisał skrótu w 30 s.")
+    def failed(*_: object) -> Path:
+        raise kind("PowerShell nie zapisał skrótu.")
 
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(shortcut, "_windowless_python", lambda: program)
-    monkeypatch.setattr(shortcut, "_write", timed_out)
+    monkeypatch.setattr(shortcut, "_write", failed)
 
     assert shortcut.main(["--folder", str(tmp_path)]) == 1
     printed = capsys.readouterr()
-    assert printed.out.startswith("Co się stało: Nie udało się utworzyć skrótu „Centrum rozliczeń”.\n")
-    assert printed.err == "Przyczyna techniczna: rozliczenia.centrum.shortcut.PowerShellTimedOut\n"
+    assert printed.out.splitlines()[0] == "Co się stało: Nie udało się utworzyć skrótu „Centrum rozliczeń”."
+    assert printed.err == f"Przyczyna techniczna: rozliczenia.centrum.shortcut.{kind.__name__}\n"
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="The desktop shortcut and pythonw.exe are Windows-only.")
@@ -580,10 +553,11 @@ def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchami
     assert (installed.returncode, installed_again.returncode) == (0, 0), (
         installed.stdout + installed.stderr + installed_again.stdout + installed_again.stderr
     )
-    # Jeden skrót w każdym folderze, o tej samej nazwie: ponowny krok nadpisuje, a nie dokłada.
     on_desktop, in_startup = list(desktop.iterdir()), list(startup.iterdir())
-    # Nazwa, którą tata widzi na pulpicie, w każdej stronie kodowej Windows (runner CI ma 1252 bez „ń”).
-    assert [path.name for path in on_desktop + in_startup] == ["Centrum rozliczeń.lnk"] * 2
+    assert [path.name for path in on_desktop + in_startup] == ["Centrum rozliczeń.lnk"] * 2, (
+        "ponowny krok instalacji ma nadpisać jeden skrót w każdym folderze pod nazwą z „ń”, także w stronie kodowej "
+        "bez tej litery"
+    )
     shortcut = _read_shortcut(on_desktop[0])
     from_startup = _read_shortcut(in_startup[0])
     target = Path(shortcut["TargetPath"])
@@ -615,14 +589,12 @@ def test_krok_instalacji_tworzy_skrot_na_pulpicie_i_w_autostarcie_ktore_uruchami
     assert exit_code == 0
 
 
-# Flaga CREATE_NO_WINDOW z dokumentacji Windows (Process Creation Flags), wpisana tu, a nie wzięta z kodu Centrum.
+# ZEWNĘTRZNE: flaga CREATE_NO_WINDOW ma wartość 0x08000000 (Microsoft Learn: Process Creation Flags)
 _CREATE_NO_WINDOW = 0x08000000
 
 
 @contextmanager
 def _started_programs(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[int]]:
-    """Flagi ``creationflags`` każdego programu, który ten proces uruchomi w bloku."""
-
     flags: list[int] = []
     real_popen = subprocess.Popen
 
@@ -682,13 +654,12 @@ def test_przelacznik_autostartu_w_ustawieniach_zaklada_ten_sam_skrot_co_krok_ins
 
     assert installed.returncode == 0, installed.stdout
     assert switched == ["on", "on", "on", "off"]
-    # Centrum ze skrótu działa pod pythonw: każdy PowerShell startuje bez okna konsoli, które mignęłoby tacie.
     started = [flag for flags in launched for flag in flags]
-    assert started and set(started) == {_CREATE_NO_WINDOW}, launched
-    # Włączenie przy skrócie, który już jest, niczego nie zapisuje, więc nie uruchamia PowerShella wcale.
-    assert launched[1] == [], launched
-    # Dwa włączenia dają jeden skrót o nazwie skrótu z instalacji, a nie dokładają drugiego.
-    assert [path.name for path in created] == [SHORTCUT_FILE]
+    assert started and set(started) == {_CREATE_NO_WINDOW}, (
+        f"Centrum ze skrótu działa pod pythonw, więc PowerShell bez CREATE_NO_WINDOW mignąłby tacie oknem konsoli: {launched}"
+    )
+    assert launched[1] == [], f"włączenie przy skrócie, który już jest, nie ma czego zapisać, a uruchomiło PowerShell: {launched}"
+    assert [path.name for path in created] == [SHORTCUT_FILE], "dwa włączenia mają dać jeden skrót o nazwie skrótu z instalacji"
     assert shortcut == _read_shortcut(from_install / SHORTCUT_FILE)
     assert (removed, outside["source"], outside["changes"]) == (
         "off",
