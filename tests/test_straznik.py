@@ -337,8 +337,6 @@ def test_zakaz_ruff_na_imporcie_nazwy_uzytej_w_gdzie_to_dowod_ruff(tmp_path: Pat
     assert state in outcome.line, outcome.line
 
 
-# Właściciel ``os.system`` (prawo w ``per-file-ignores``, obok zwolnienia z innej reguły) i zakaz ``time.sleep``, którego
-# właścicielem nie jest.
 OWNER_BANNED = '"os.system".msg = "użyj subprocess.run"\n"time.sleep".msg = "czekaj przez kod.czekanie"\n[tool.ruff.lint.per-file-ignores]\n"kod/powloka.py" = ["TID251", "F401"]'
 OWNER = "import os\n\n\ndef uruchom() -> int:\n    return os.system('true')\n"
 
@@ -382,7 +380,10 @@ OWNER = "import os\n\n\ndef uruchom() -> int:\n    return os.system('true')\n"
     ],
 )
 def test_dowod_ruff_lapie_zakaz_ktory_odrzuca_krok_regul_chwastow(tmp_path: Path, path: str, failed: str, head: str, where: int, state: str) -> None:
-    """Ruff zwalnia plik właściciela z całego ``TID251`` i nie zgłasza nazwy pod ``noqa``, a krok reguł chwastów
+    """Plik ``kod/powloka.py`` jest właścicielem ``os.system`` (``OWNER_BANNED``: prawo w ``per-file-ignores`` obok
+    zwolnienia z ``F401``), a nie ``time.sleep``.
+
+    Ruff zwalnia plik właściciela z całego ``TID251`` i nie zgłasza nazwy pod ``noqa``, a krok reguł chwastów
     zadania Required CI „Ruff, mypy” odrzuca w nim cudzą nazwę i każdą nazwę pod ``noqa`` (#1719 W1 r1); własna nazwa
     właściciela, której plik używa na HEAD, w nowym miejscu ani reguła spoza zakazów, z której plik zwalnia konfiguracja,
     nie jest dowodem."""
