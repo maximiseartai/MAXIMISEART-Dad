@@ -1422,3 +1422,32 @@ def test_pobranie_idzie_do_githuba_wprost_mimo_proxy_w_ustawieniach_systemu(
 
     assert result == UpdateResult("LOGOWANIE", before=before, after=None)
     assert proxied == []
+
+
+def test_pobranie_idzie_do_githuba_wprost_mimo_proxy_w_konfiguracji_gita_komputera(
+    repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    before = repository.head()
+
+    with system_proxy(monkeypatch) as proxied, origin_asking_for_login() as origin:
+        address = os.environ["http_proxy"]
+        for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY"):
+            monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(computer_git_config(tmp_path / "gitconfig", f"[http]\n\tproxy = {address}\n")))
+        result = ToolClone(repository.clone, origin=origin).update()
+
+    assert result == UpdateResult("LOGOWANIE", before=before, after=None)
+    assert proxied == []
+
+
+def test_lokalny_commit_przy_pominietym_wydaniu_spoza_main_daje_odmowe_z_tym_wydaniem(repository: ToolRepository) -> None:
+    repository.publish({"src/narzedzie.py": "WERSJA = 2\n"})
+    repository.release(off_main_commit(repository), tag="v0.3.0")
+    local_commit(repository)
+    before = repository.head()
+    unchanged = repository.state()
+
+    result = update(repository)
+
+    assert result == UpdateResult("ZMIANY_NA_KOMPUTERZE", before=before, after=None, skipped=("v0.3.0",))
+    assert repository.state() == unchanged

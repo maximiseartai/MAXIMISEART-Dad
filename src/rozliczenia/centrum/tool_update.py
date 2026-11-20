@@ -702,9 +702,5 @@ else:
 
 
 def _quiet_environment() -> dict[str, str]:
-    environment = {
-        name: value
-        for name, value in os.environ.items()
-        if name not in _FOREIGN_VARIABLES and not name.lower().endswith("_proxy")
-    }
+    environment = {name: value for name, value in os.environ.items() if name not in _FOREIGN_VARIABLES}
     return {**environment, "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "never", **_GIT_IN_ENGLISH}

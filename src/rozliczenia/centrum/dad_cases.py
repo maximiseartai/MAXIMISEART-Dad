@@ -46,7 +46,7 @@ _BY_KEY: Final[Mapping[str, CaseKind]] = {kind.key: kind for kind in KINDS}
 
 _ANSWERS: Final[Mapping[CloseReason | None, notifications_contract.Resolved | notifications_contract.ReadByMaks]] = {
     "completed": notifications_contract.Resolved(state="resolved"),
-    # ZEWNĘTRZNE: GitHub zamyka issue bez podanego powodu jako „completed” (GitHub REST API, Issues, pole state_reason)
+    # ZEWNĘTRZNE: GitHub zamyka issue bez podanego powodu jako „completed” (changelog GitHuba z 19.05.2022, akapit Issue closed reasons: complete to domyślny powód zamknięcia, https://github.blog/changelog/2022-05-19-the-new-github-issues-may-19th-update/)
     None: notifications_contract.Resolved(state="resolved"),
     "not_planned": notifications_contract.ReadByMaks(state="read"),
     "duplicate": notifications_contract.ReadByMaks(state="read"),
