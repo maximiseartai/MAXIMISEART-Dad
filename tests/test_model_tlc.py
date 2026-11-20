@@ -66,6 +66,10 @@ def _skrypty_modeli() -> list[Path]:
 
 
 SPEC = """---- MODULE M ----
+Pisz == TRUE
+Czytaj == TRUE
+Tata(x) == x = 1
+
 Next ==
     \\/ Pisz \\/ Czytaj
     \\/ \\E x \\in 1..2 : Tata(x)
