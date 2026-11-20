@@ -66,7 +66,6 @@ export function AppSidebar({
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter className="gap-0">
-        {/* Nad „Zamknij Centrum rozliczeń”: okno Ustawień otwiera się nad bieżącą stroną (ADR 0032). */}
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton tooltip="Ustawienia" render={<a href={settingsHref()} />}>
