@@ -533,6 +533,7 @@ _Avoid_: scenariusze rozliczeń, instrukcja
 
 Kody czynności, które tata ustala dla Wykonawców, każdy z tym, co wyznacza w Pliku zbiorczym.
 Jest Ustawieniem Centrum, które tata zmienia sam, i wyznacza Ilości usług z Kodów czynności w opisie technika (`CZYNNOŚCI ZREALIZOWANE`), gdy opis nie ma Błędu opisu; zwykły opis obok kodów niczego nie wyznacza.
+Nie ma danych osobowych: nazywa czynności, kolumny, kwoty i kolory, nie ludzi ani adresy, więc Zgłoszenie podaje zmianę kodu wprost, wpisem przed i po.
 _Avoid_: skróty, słownik czynności, legenda (bez dopowiedzenia)
 
 ## Kod czynności
@@ -644,7 +645,7 @@ _Avoid_: ustawienia Uruchomienia, środowisko
 
 Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, w chwili jego startu: Lista Wykonawców, Reguły ilości i Legenda czynności.
 Proces mówi, którymi z nich liczy, w swoich potrzebach, a Uruchomienie procesu, który danym Ustawieniem nie liczy, nie ma go ani w wejściu, ani w Logach Uruchomienia.
-Skąd bierze je każdy gospodarz Uruchomienia (Centrum rozliczeń, Skrypt dla maszyn, odtworzenie z Logów), mówi jeden opis: `settings_at_start.SettingsAtStart`.
+Każdy gospodarz Uruchomienia buduje je (`settings_at_start.SettingsAtStart`) w jednym miejscu: Centrum rozliczeń z migawki Ustawień Centrum (`SettingsAtStart.of_snapshot`), Skrypt dla maszyn z Wydania (`uruchom_proces.ustawienia_z_wydania`), a odtworzenie z Logów Uruchomienia (`odtworzenie._prepared`).
 Zmiana Ustawień w trakcie Uruchomienia ich nie zmienia (ADR 0032).
 _Avoid_: fakty startu (to fakty o tym, jak wystartowało Uruchomienie), ustawienia Uruchomienia
 
@@ -839,7 +840,7 @@ _Avoid_: Zgłoszenie (to Zatrzymanie z Diagnozą), raport różnic
 
 Różnica Kontroli ilości w jednej komórce jednego Wiersza danych, przy której tata kliknął w podpowiedziach przy Regułach ilości „To był wyjątek”: jego wpis jest dobry dla tego zlecenia.
 Ta różnica nie wraca w podpowiedziach, także po zmianie reguły, dopóki tata nie zmieni wpisu ani treści wiersza; cofa ją „Cofnij” w Historii Ustawień.
-Nie zmienia Reguł ilości ani Kontroli ilości w Skrzynce Zgłoszeń.
+Nie zmienia Reguł ilości, podglądu ich zmiany ani Kontroli ilości w Skrzynce Zgłoszeń: te liczą każdą różnicę.
 _Avoid_: wyjątek od reguły (reguła zostaje bez zmian), pominięcie różnicy
 
 ## Powiadomienie

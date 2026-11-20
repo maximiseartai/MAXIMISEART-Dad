@@ -781,6 +781,30 @@ def test_diagnoza_nie_czeka_na_skrzynke_a_jej_odpowiedz_o_otwartym_zgloszeniu_tr
     assert len(box.sent) == 1
 
 
+def test_diagnoza_czeka_na_sprawdzenie_tokenu_najwyzej_tyle_co_na_pytanie_o_otwarte_zgloszenie(tmp_path: Path) -> None:
+    centrum = preparing_centrum(tmp_path)
+    run_id = stopped_for_maks(centrum)
+    write_report_key(centrum.tool)
+    box = centrum.surroundings.report_box
+    box.search_hold = threading.Event()
+    release = threading.Timer(10, box.search_hold.set)
+    release.start()
+
+    try:
+        diagnosis = diagnose(centrum, run_id)
+        box_answered = box.search_hold.is_set()
+    finally:
+        box.search_hold.set()
+        release.cancel()
+
+    token = next(check for check in diagnosis["checks"] if check["label"] == "Token do Zgłoszeń")
+    assert (box_answered, token["state"], token["detail"]) == (
+        False,
+        "not_checked",
+        "Nie sprawdzono: brak połączenia ze Skrzynką Zgłoszeń.",
+    )
+
+
 def test_zgloszenie_zamkniete_wedlug_powiadomien_nie_czeka_juz_po_restarcie(tmp_path: Path) -> None:
     centrum = preparing_centrum(tmp_path)
     write_report_key(centrum.tool)

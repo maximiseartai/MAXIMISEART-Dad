@@ -505,3 +505,68 @@ def test_skill_bez_sekcji_tabeli_modelu_odmawia(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match=re.escape(f"SKILL.md nie ma sekcji „{rozjazd_modelu.TABELA}”")):
         rozjazd_modelu.bez_klucza(skill, tmp_path)
+
+
+def _model_bez_wiersza(tla: str, skill_md: str) -> list[str]:
+    text = re.sub(r"\(\*.*?\*\)|\\\*[^\n]*", "", tla, flags=re.DOTALL)
+    blocks = {
+        keyword: [found.group(1) for found in re.finditer(rf"^{keyword}S?\b(.*?)(?=^\S|\Z)", text, re.MULTILINE | re.DOTALL)]
+        for keyword in ("CONSTANT", "VARIABLE")
+    }
+    definitions = re.findall(r"^(\w+)\s*(?:\([^)]*\))?\s*==", text, re.MULTILINE)
+    [steps] = re.findall(r"^Next\s*==(.*?)(?=^\S|\Z)", text, re.MULTILINE | re.DOTALL) or [""]
+    actions = [name for name in re.findall(r"\w+", re.sub(r"\\[EA]\s[^:]*:", "", steps)) if name in definitions]
+    names = [name for keyword in blocks for block in blocks[keyword] for name in re.findall(r"\w+", block)] + actions
+    named = {span.split("(", 1)[0] for row in rozjazd_modelu.wiersze_tabeli(skill_md) for span in row.split("|")[1].split("`")[1::2]}
+    prefixes = tuple(name.removesuffix("…") for name in named if name.endswith("…"))
+    return [name for name in dict.fromkeys(names) if name not in named and not name.startswith(prefixes or ("\0",))]
+
+
+def _model(*, stale: str = "Max", zmienne: str = "x", next_: str = "Krok") -> str:
+    return (
+        "---- MODULE M ----\n"
+        f"CONSTANTS\n    {stale}, WybaczoneA\n\nVARIABLES\n    {zmienne}\n\n"
+        "Q == {1, 2}\nKrok == x' = x\nRuch(q) == x' = q\nPomocnik == 1\n\n"
+        f"Next ==\n    \\/ {next_}\n\nSpec == [][Next]_x\n====\n"
+    )
+
+
+def _skill_modelu(*nazwy: str) -> str:
+    rows = "".join(f"| {nazwa} | kod |\n" for nazwa in nazwy)
+    return f"# Skill\n\n{rozjazd_modelu.TABELA}\n\n| Model | Code |\n| --- | --- |\n{rows}\n## Run\n\n| `Inna` | poza sekcją |\n"
+
+
+WIERSZE = ("`Krok`", "`Ruch(q)`", "`Max`", "`Wybaczone…`", "`x`")
+
+
+@pytest.mark.parametrize(
+    ("tla", "wiersze", "missing"),
+    [
+        pytest.param(_model(), WIERSZE, [], id="kazda-nazwa-ma-wiersz-a-pomocnik-i-zbior-nie-musza"),
+        pytest.param(_model(next_="Krok \\/ Nowa"), WIERSZE, [], id="nazwa-spoza-definicji-to-nie-akcja"),
+        pytest.param(_model().replace("Pomocnik ==", "Nowa ==").replace("\\/ Krok", "\\/ Krok \\/ Nowa"), WIERSZE, ["Nowa"], id="nowa-akcja-next"),
+        pytest.param(_model(next_="\\E q \\in Q : Ruch(q)"), WIERSZE[:1] + WIERSZE[2:], ["Ruch"], id="akcja-pod-kwantyfikatorem-bez-zbioru"),
+        pytest.param(_model(stale="Max, MaxNowa"), WIERSZE, ["MaxNowa"], id="stala-w-linii-z-inna"),
+        pytest.param(_model(zmienne="x,\n    y"), WIERSZE, ["y"], id="zmienna"),
+        pytest.param(_model(), ("`Krok`", "`Ruch(q)`", "`Max`", "`x`"), ["WybaczoneA"], id="bez-wiersza-z-przedrostkiem"),
+        pytest.param(_model(next_="Krok \\/ Inna").replace("Pomocnik ==", "Inna =="), WIERSZE, ["Inna"], id="wiersz-innej-sekcji-sie-nie-liczy"),
+        pytest.param(_model(zmienne="x \\* y"), WIERSZE, [], id="komentarz-to-nie-zmienna"),
+        pytest.param(_model(), ("`Krok`, `Ruch(q)`", "`Max`, `Wybaczone…`", "`x` (`dysk`)"), [], id="kilka-nazw-w-wierszu"),
+        pytest.param(_model(), ("`Krok`, `Ruch(q)`", "`Wybaczone…`, `x` | `Max`"), ["Max"], id="nazwa-w-kolumnie-kodu-to-nie-wiersz"),
+    ],
+)
+def test_akcja_next_stala_i_zmienna_modelu_bez_wiersza_tabeli_jest_zgloszona(tla: str, wiersze: tuple[str, ...], missing: list[str]) -> None:
+    assert _model_bez_wiersza(tla, _skill_modelu(*wiersze)) == missing
+
+
+def test_kazda_akcja_next_stala_i_zmienna_modelu_skilla_ma_wiersz_tabeli() -> None:
+    found = {
+        tla.parents[1].name: missing
+        for tla in sorted(ROOT.glob(".agents/skills/*/model/*.tla"))
+        if (missing := _model_bez_wiersza(tla.read_text(encoding="utf-8"), (tla.parents[1] / "SKILL.md").read_text(encoding="utf-8")))
+    }
+
+    assert found == {}, (
+        f"Akcja z Next, stała albo zmienna modelu TLA+ nie ma wiersza w tabelach sekcji „{rozjazd_modelu.TABELA}” SKILL.md "
+        "skilla, więc nic nie mówi, który kod opisuje: dopisz wiersz z kodem, który modeluje."
+    )

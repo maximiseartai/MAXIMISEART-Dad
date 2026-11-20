@@ -75,7 +75,7 @@ def _notes() -> tuple[Note, ...]:
 def _decide(pushed: set[str]) -> Decision:
     if not any(os.environ.get(marker) for marker in AGENT_MARKERS):
         return HUMAN
-    import repo  # push człowieka nie zależy od narzędzi agenta, także od zepsutego repo.py
+    import repo
 
     if repo.git(repo.ROOT, "rev-parse", "HEAD").strip() not in pushed:
         return NOT_HEAD
@@ -104,7 +104,7 @@ def main() -> int:
     agent = any(os.environ.get(marker) for marker in AGENT_MARKERS)
     tags = [remote_ref for _, _, remote_ref, _ in refs if remote_ref.startswith(RELEASE_TAGS)]
     if agent and tags:
-        import repo  # tylko push agenta zależy od narzędzi agenta
+        import repo
 
         if os.environ.get(repo.RELEASE_OVERRIDE) != "1":
             print(f"pre-push: agent nie wypycha tagów Wydania ({', '.join(tags)}); robi to tylko narzędzie Wydań.", flush=True)

@@ -1,5 +1,3 @@
-"""Syntetyczne skoroszyty: aktywny arkusz, odwołania zewnętrzne i celowo zepsute pliki."""
-
 from __future__ import annotations
 
 import os
@@ -69,9 +67,6 @@ def set_view(sheet: Worksheet, view: View) -> None:
 
 
 def opening_view(path: Path) -> SheetView:
-    """Cały widok aktywnego arkusza, z którym Excel otwiera plik: górna lewa komórka, blokada, zaznaczenie i
-    powiększenie."""
-
     workbook = load_workbook(path)
     try:
         return active_worksheet(workbook).sheet_view

@@ -44,8 +44,9 @@ checks over every order of steps:
   the Kolejka wysyłki, except during the one request between `DadCases.add` and the write of its file or its
   withdrawal. Source: the `finally` of `Reports._queue` and the docstring of the class `Reports` („Sprawa, której
   wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby wiecznie, a tata nie mógłby kliknąć jeszcze raz”)
-  and the docstring of `dad_cases.py` (an Uwaga „bez numeru czeka w kolejce Skrzynki, dopóki `numbered` nie dopisze
-  numeru”). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
+  and `test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum` in
+  `tests/test_centrum_uwaga_taty.py` (an Uwaga without a number waits with its file in the queue until `numbered` gives
+  it the number of its issue). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
   forever, and `_pending` turns every later click and every return of the problem into that same answer, without a
   new file.
 - **OdrzuconaNieCzeka**: once the Sprawy taty know that the Skrzynka rejected the text of the waiting Zgłoszenie in this
@@ -108,7 +109,8 @@ Definitions the actions share:
 | `Ostatnia(s)`, `CzekaZgl(s)` | `DadCases.find(REPORT, F)`: the index of the last case of the problem (0 without one); `Reports._pending`: that case has no issue number |
 | `Czekajaca(odrz)`, `StanZgl(s, otw, odrz)` | `DadCases.queued(F)`: a rejected text waits for nothing, otherwise the case waits in the queue (for the internet or the Token); `Reports._state_of`: a case in the queue, then the Skrzynka's answer of this Centrum work, without one the last case |
 | `Wycofana(s, sid)`, `Zapomniana(s, id)` | `DadCases.withdraw(case)`: without that one case; `DadCases.forget(NOTE, id)`: without every Uwaga of that id |
-| `Nasze(s, rodzaj, id)`, `NumerowaneSidy(s, rodzaj, id)` | `DadCases.numbered`: the cases that get the number (a Zgłoszenie: the last waiting one; an Uwaga: each of that id), and a waiting case disappears when another case already has the number (the wysyłka went to an open Zgłoszenie) |
+| `Nasze(s, rodzaj, id)`, `NumerowaneSidy(s, rodzaj, id)` | `DadCases.numbered`: the cases of that kind and id, and the identities of the cases that get the number (a Zgłoszenie: the last waiting one; an Uwaga: each of that id) |
+| `Numerowane(s, rodzaj, id, n)` | `DadCases.numbered` with its `_change`: an Uwaga gets the number in each of its cases, also in one that already has a number; a Zgłoszenie gives it only to its last waiting case, and without one nothing changes; when another case already has the number (the wysyłka went to an open Zgłoszenie known on this computer, and issue numbers are shared by the whole Skrzynka), the waiting case disappears, because one issue is one case and one Powiadomienie |
 | `Zapisz(nowe)` | `DadCases._change`: the cases in memory, and the state file gets them unless the write fails (`StateFile` keeps the content in memory, and the next `_change`, also without a change, or the retry of the Powiadomienia writes it or a newer one) |
 | `Odrzucane` | whether the Skrzynka rejects the text of a new queue file: the same text every time, also after a start |
 | `KoniecQueue(wynik)` | the end of `Reports._queue`: `send` shows the result (`Pokaz`), a return in `_ask` only clears `_sending`; it records whether the Sprawy taty already knew that the Skrzynka rejected the text |

@@ -8,11 +8,8 @@ import { showFailure } from "@/lib/action"
 // trzyma jeden przycisk do odpowiedzi.
 const REPEAT_IGNORED_MS = 1500
 
-/** Plik albo folder okresu z jego rodzaju albo Rozliczenie pracownika jednego Wykonawcy: treść żądania do serwera. */
 export type OpenedInPeriod = OpenRequest | WorkerSettlementRequest
 
-// Plik albo folder taty (`token/target`, `token/pracownik/worker` albo Rejestr zleceń), który właśnie się otwiera,
-// i kiedy kończy się ignorowanie powtórzeń; `Infinity`, dopóki serwer nie odpowie.
 const opening = new Map<string, number>()
 
 /** Otwiera plik okresu w Excelu albo folder; Excel startuje kilka sekund, więc powiadomienie potwierdza kliknięcie. */
@@ -26,7 +23,6 @@ export function openAndConfirm(token: string, what: OpenedInPeriod, onFailure: (
   )
 }
 
-/** Otwiera Rejestr zleceń z Ustawień Centrum, z tym samym potwierdzeniem co pliki okresu. */
 export function openOrderRegisterAndConfirm() {
   confirmOpening("rejestr-zlecen", openOrderRegister, () => undefined)
 }

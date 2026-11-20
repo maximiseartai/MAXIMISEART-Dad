@@ -15,17 +15,14 @@ function isoOf(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10)
 }
 
-/** `2026-11-11`, `-1` → `2026-11-10` */
 export function addDays(day: string, count: number): string {
   return isoOf(utc(day) + count * DAY_MS)
 }
 
-/** Dzień tygodnia od poniedziałku: `0` poniedziałek … `6` niedziela. */
 export function weekdayIndex(day: string): number {
   return (new Date(utc(day)).getUTCDay() + 6) % 7
 }
 
-/** Dni okna w zakresie, od najstarszego: kolumny Mapy cieplnej. */
 export function daysIn(days: ReadonlyArray<string>, range: DayRange): ReadonlyArray<string> {
   return days.filter((day) => day >= range.from && day <= range.to)
 }
@@ -40,10 +37,6 @@ export function defaultRange(days: ReadonlyArray<string>, today: string): DayRan
   return edges(daysIn(days, { from, to: addDays(from, 13) })) ?? { from: today, to: today }
 }
 
-/**
- * Zakres z adresu `#/raporty/<od>/<do>` (sam `<dzień>`: ten jeden dzień), przycięty do dni okna; adres bez zakresu,
- * z zakresem poza oknem albo nie do odczytania daje zakres domyślny.
- */
 export function rangeFromPath(path: ReadonlyArray<string>, days: ReadonlyArray<string>, today: string): DayRange {
   const [from, to = from] = path
 
@@ -54,12 +47,10 @@ export function rangeFromPath(path: ReadonlyArray<string>, days: ReadonlyArray<s
   return edges(daysIn(days, { from, to })) ?? defaultRange(days, today)
 }
 
-/** Czy strzałka w stronę `direction` ma jeszcze dni okna przed sobą. */
 export function canShift(days: ReadonlyArray<string>, range: DayRange, direction: -1 | 1): boolean {
   return direction === -1 ? days[0] !== range.from : days.at(-1) !== range.to
 }
 
-/** Strzałka zakresu: tyle samo dni okna wcześniej (`-1`) albo później (`1`), zatrzymane na krańcu okna. */
 export function shifted(days: ReadonlyArray<string>, range: DayRange, direction: -1 | 1): DayRange {
   const first = days.indexOf(range.from)
   const last = days.indexOf(range.to)
@@ -71,7 +62,6 @@ export function shifted(days: ReadonlyArray<string>, range: DayRange, direction:
   return edges(days.slice(start, start + length)) ?? range
 }
 
-/** Zakres od `one` do `other` (dni okna, w dowolnej kolejności), przycięty do dni okna. */
 export function rangeOf(days: ReadonlyArray<string>, one: string, other: string): DayRange {
   const [from, to] = one < other ? [one, other] : [other, one]
 
@@ -105,7 +95,6 @@ function weekday(day: string): string {
   return WEEKDAYS[weekdayIndex(day)] ?? ""
 }
 
-/** Napis zakresu: `2–15 lis`, `28 paź – 3 lis`, jeden dzień `11 lis`. */
 export function rangeLabel(from: string, to: string): string {
   if (from === to) {
     return `${dayOfMonth(from)} ${month(from)}`
@@ -118,17 +107,14 @@ export function rangeLabel(from: string, to: string): string {
   return `${dayOfMonth(from)} ${month(from)} – ${dayOfMonth(to)} ${month(to)}`
 }
 
-/** Nagłówek kolumny dnia: numer dnia miesiąca i skrót dnia tygodnia (`11`, `śr`). */
 export function columnLabel(day: string) {
   return { number: dayOfMonth(day), weekday: weekday(day) }
 }
 
-/** Skrót dnia tygodnia dnia kalendarza (lokalnej daty): `pn` … `nd`. */
 export function weekdayOfDate(date: Date): string {
   return WEEKDAYS[(date.getDay() + 6) % 7] ?? ""
 }
 
-/** `2026-11-05` → `cz. 05.11` */
 export function shortDay(day: string): string {
   return `${weekday(day)}. ${day.slice(8, 10)}.${day.slice(5, 7)}`
 }

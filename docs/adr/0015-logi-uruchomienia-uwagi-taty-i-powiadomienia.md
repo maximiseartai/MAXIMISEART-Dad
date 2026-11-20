@@ -123,6 +123,14 @@ w trakcie zostawia tylko `uruchomienie-start`” w decyzji niżej Wycena w efeni
 zmienia dalej tylko o dziennik z dopisku #845: krótkie procesy nie wysyłają
 nic w trakcie.
 
+**Dopisek (#2236, 2026-11-20).** Dopóki w `config/` nie ma pliku Spraw taty
+(`sprawy-taty.json`), Sprawy taty czytają pliki sprzed niego, które mogą leżeć
+u taty: `zgloszenia-wyslane.json` i `uwagi-taty.json` (`dad_cases.OLD_REPORTS_FILE`,
+`dad_cases.OLD_NOTES_FILE`). Pierwszy zapis przenosi ich wpisy do pliku Spraw
+taty, a stare pliki zostają nietknięte. Każde Wydanie z plikiem Spraw taty pisze
+już tylko jego, więc ten odczyt znika dopiero wtedy, gdy Maks sprawdzi, że u
+taty jest `config/sprawy-taty.json` albo nie ma żadnego ze starych plików.
+
 [ADR 0032](0032-ustawienia-centrum-zmienia-tata.md) zastępuje stary plik
 Wykonawców (`worker_mapping.yaml`) Listą Wykonawców.
 

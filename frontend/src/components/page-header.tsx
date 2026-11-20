@@ -3,7 +3,6 @@ import * as React from "react"
 import { ToolUpdateAfterRestart } from "@/components/tool-update"
 import type { Page } from "@/pages"
 
-/** Bieżąca strona z adresu; daje ją `App`, a tytuł strony bierze się z jej wpisu w `PAGES`. */
 export const CurrentPage = React.createContext<Page | null>(null)
 
 // Duży tytuł strony, obok najwyżej jedna odznaka, po prawej najwyżej jedna akcja, na wąskim ekranie pod tytułem. Bez akapitu pod spodem poza

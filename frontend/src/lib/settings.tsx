@@ -21,43 +21,26 @@ import { DadFilesVersion, useResource, type Resource } from "@/lib/use-resource"
 /** Plik taty wskazywany natywnym oknem wyboru: pole Ustawień Centrum, które jest ścieżką. */
 export type PickedPath = { [Key in keyof Settings]: Settings[Key] extends PathSetting ? Key : never }[keyof Settings]
 
-/** Odmowa zapisu z polem pliku Ustawień (`rejestr_zlecen`, `folder_okresow`) i jednym zdaniem dla taty. */
 export type FieldRefusal = { field: string; message: string }
 
 type SettingsContextValue = {
   settings: Resource<Settings>
   reload: () => Promise<void>
   theme: Theme
-  /** Plik, którego okno wyboru jest teraz otwarte; dopóki jest, żaden przycisk nie otwiera drugiego. */
   picker: PickedPath | null
   choose: (path: PickedPath) => void
   chooseTheme: (theme: Theme) => void
-  /** Przełącznik startu razem z Windows: zapisuje się od razu, a do odpowiedzi serwera stoi w wybranym położeniu. */
   switchAutostart: (enabled: boolean) => void
-  /** Położenie przełącznika startu razem z Windows, które czeka na odpowiedź serwera; `null`: nic nie czeka. */
   autostartPending: boolean | null
-  /**
-   * Zapis ścieżki wpisanej przez tatę: `true`, gdy się zapisała. Pusta czyści ustawienie, a druga ścieżka sekcji
-   * Foldery zostaje bez zmiany.
-   */
   typePath: (path: PickedPath, value: string) => Promise<boolean>
-  /** Ostatnia odmowa zapisu Folderów z polem; jej zdanie stoi przy tym polu do następnego zapisu albo `dismiss`. */
   refusal: FieldRefusal | null
   dismiss: () => void
-  /** Ustawienia po cofnięciu zmiany z Historii Ustawień. */
   undone: (choice: Choice) => void
   /** Ustawienia po zapisie sekretu (hasło skrzynki): bez „Zapisano · Cofnij”, bo sekretu nie da się cofnąć. */
   secretSaved: (choice: Choice) => void
-  /**
-   * Zapis sekcji, której odpowiedź nie niesie Ustawień (Reguły ilości): „Zapisano · Cofnij” i Historia od nowa, gdy
-   * zapis ma wiersz Historii (`change`).
-   */
   changed: (change: string | null) => void
-  /** Ustawienia po zapisie sekcji z własnym formularzem albo przełącznikiem: „Zapisano · Cofnij”, gdy coś się zmieniło. */
   sectionSaved: (choice: Choice) => void
-  /** Porażka zapisu sekcji bez pola (np. plik, którego nie da się zapisać) jako powiadomienie w oknie Ustawień. */
   saveFailed: (failure: Error) => void
-  /** Numer przyjętych zmian Ustawień: Historia Ustawień czyta się od nowa przy każdej. */
   changes: number
 }
 
@@ -91,7 +74,6 @@ function failed(failure: Error, title = "Nie udało się") {
   settingsToasts.add({ title, description: failureMessage(failure), type: "error" })
 }
 
-/** Miejsce powiadomień zmian Ustawień w oknie Ustawień. */
 export function SettingsToasts() {
   React.useEffect(() => {
     settingsToastsShown += 1
@@ -128,12 +110,10 @@ function applyTheme(theme: Theme) {
   requestAnimationFrame(() => requestAnimationFrame(() => freeze.remove()))
 }
 
-/** Tożsamość plików taty, z których serwer czyta strony; inna tożsamość to nowy odczyt stron (`DadFilesVersion`). */
 function files(settings: Resource<Settings>): string | null {
   return settings.state === "ready" ? JSON.stringify([settings.data.periods_directory, settings.data.order_register]) : null
 }
 
-/** Zapamiętana ścieżka pola; niewskazana i nieczytelna to `null`. */
 function remembered(setting: PathSetting): string | null {
   return "path" in setting ? setting.path : null
 }
@@ -166,7 +146,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     }
   }, [theme])
 
-  // Jedno miejsce przyjęcia Ustawień z serwera po zapisie albo cofnięciu.
   const take = React.useCallback(
     (choice: Choice) => {
       const next: Resource<Settings> = { state: "ready", data: choice.settings }
@@ -217,8 +196,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     [undone]
   )
 
-  // Zła wartość zapisu Folderów (422 z polem) staje przy polu, a nie w powiadomieniu; inna porażka idzie dalej.
-  // `true`: zapis się udał.
   const folders = React.useCallback(
     (save: () => Promise<Choice>) => {
       setRefusal(null)
@@ -292,7 +269,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       chooseTheme: (next) => {
         setChosenTheme(next)
         changeTheme(next).then(saved, (failure: Error) => {
-          // Niezapisany motyw wraca do motywu z pliku, chyba że tata wybrał już następny.
           setChosenTheme((chosen) => (chosen === next ? null : chosen))
           failed(failure)
         })
@@ -322,10 +298,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-/**
- * Zasób okna Ustawień, który czyta się od nowa, bez szkieletu, po każdej przyjętej zmianie Ustawień (także „Cofnij” w
- * powiadomieniu i w Historii): Historia i Reguły ilości.
- */
 export function useReloadOnChange(reload: () => Promise<void>) {
   const { changes } = useSettings()
   const seen = React.useRef(changes)
@@ -341,10 +313,6 @@ export function useReloadOnChange(reload: () => Promise<void>) {
 // Powiadomienie „Zapisano” ostatniej zmiany: następna zmiana je zastępuje, zamiast układać stos przy kilku kliknięciach.
 let lastSaved: string | null = null
 
-/**
- * „Zapisano · Cofnij” na chwilę po każdej zmianie Ustawień: „Cofnij” cofa ją jak wiersz Historii, a odmowa cofnięcia
- * to powiadomienie z jej zdaniem.
- */
 function announce(change: string, undone: (choice: Choice) => void) {
   if (lastSaved !== null) {
     settingsToasts.close(lastSaved)

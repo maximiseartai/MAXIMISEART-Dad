@@ -27,7 +27,6 @@ TOOL = Path(__file__).resolve().parents[1] / "tools" / "praca_w_toku.py"
 STALE_S = 3 * 24 * 3600 + 60
 LOCAL = " | bez GitHuba: --lokalnie"
 ASK = "ZGŁOSZENIE | nie podano; przed startem zgłoszenia N: tools/praca_w_toku.py --issue N"
-AGENT = {"login": "MAXIMISEART-AI", "is_bot": False}
 
 
 def _git(cwd: Path, *args: str) -> None:
@@ -149,9 +148,9 @@ def test_issue_nazywa_nieaktywna_prace_nad_zgloszeniem_z_jej_wiekiem(checkouts: 
 
 def test_issue_znajduje_pr_ktory_odwoluje_sie_do_zgloszenia_i_pr_wskazany_w_tresci_zgloszenia(checkouts: dict[str, Path]) -> None:
     pulls = [
-        {"number": 5, "headRefName": "fix/opiekun", "title": "fix: opiekun", "body": "Część #42", "files": [], "author": AGENT},
-        {"number": 6, "headRefName": "fix/zdalna", "title": "", "body": "", "files": [], "author": AGENT},
-        {"number": 11, "headRefName": "fix/obok", "title": "", "body": "Część #420", "files": [], "author": AGENT},
+        {"number": 5, "headRefName": "fix/opiekun", "title": "fix: opiekun", "body": "Część #42", "files": []},
+        {"number": 6, "headRefName": "fix/zdalna", "title": "", "body": "", "files": []},
+        {"number": 11, "headRefName": "fix/obok", "title": "", "body": "Część #420", "files": []},
     ]
     path = _fake_gh(checkouts["current"].parent, json.dumps(pulls), issue=json.dumps({"body": "Robi to PR #6."}))
 
@@ -160,46 +159,6 @@ def test_issue_znajduje_pr_ktory_odwoluje_sie_do_zgloszenia_i_pr_wskazany_w_tres
     assert lines[-3] == "ZGŁOSZENIE #42 | zajęte: fix/opiekun (PR #5), fix/zdalna (PR #6); poprawka należy do właściciela tej gałęzi"
     assert f"- fix/opiekun (PR #5) | {checkouts['other']} | ruch <1 h temu | PR odwołuje się do #42" in lines
     assert "- fix/zdalna (PR #6) | tylko na GitHubie | ruch nieznany | #42 wskazuje PR #6" in lines
-
-
-CZEKA = "nowa jednostka samego procesu czeka, aż któryś się scali albo zamknie"
-MOZE = "nowa jednostka samego procesu może ruszyć"
-
-
-@pytest.mark.parametrize(
-    ("files", "author", "expected"),
-    [
-        pytest.param(["tools/narzedzie.py", "tests/test_narzedzia.py"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="narzedzie-z-testem"),
-        pytest.param([".agents/skills/skill/SKILL.md"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="skill"),
-        pytest.param([".github/workflows/przeplyw.yml"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="ci"),
-        pytest.param([".claude/hooks/hook.py"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="hooki-claude"),
-        pytest.param(["docs/agents/dokument.md", "docs/adr/0001-decyzja.md"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="dokumenty-agentow-i-adr"),
-        pytest.param(["AGENTS.md", "CODING_STANDARDS.md", "ruff.toml", "sgconfig.yml", ".importlinter"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="reguly-w-korzeniu"),
-        pytest.param(["reguly-ast-grep/regula.yml"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="regula-ast-grep"),
-        pytest.param(["tests/test_produktu.py"], AGENT, f"2 z 2 (PR #1, #2); {CZEKA}", id="same-testy"),
-        pytest.param(["tools/narzedzie.py", "src/rozliczenia/modul.py"], AGENT, f"1 z 2 (PR #1); {MOZE}", id="proces-z-src-to-produkt"),
-        pytest.param(["frontend/src/strona.tsx"], AGENT, f"1 z 2 (PR #1); {MOZE}", id="frontend"),
-        pytest.param(["tools/narzedzie.py", "uruchom.py"], AGENT, f"1 z 2 (PR #1); {MOZE}", id="uruchamiacz-taty"),
-        pytest.param(["docs/agents/dokument.md", "docs/instrukcja.md"], AGENT, f"1 z 2 (PR #1); {MOZE}", id="instrukcja-dla-ludzi"),
-        pytest.param(["GLOSSARY.md"], AGENT, f"1 z 2 (PR #1); {MOZE}", id="slownik"),
-        pytest.param(["docs/agentsy.md"], AGENT, f"1 z 2 (PR #1); {MOZE}", id="podobny-poczatek-sciezki"),
-        pytest.param([".github/workflows/przeplyw.yml"], {"login": "app/dependabot", "is_bot": True}, f"1 z 2 (PR #1); {MOZE}", id="bot"),
-        pytest.param([], AGENT, f"1 z 2 (PR #1); {MOZE}", id="bez-plikow"),
-    ],
-)
-def test_proces_w_toku_liczy_otwarte_pr_samego_procesu_wobec_limitu_dwoch(
-    checkouts: dict[str, Path], files: list[str], author: dict[str, object], expected: str
-) -> None:
-    pulls = [
-        {"number": 2, "headRefName": "feat/druga", "title": "", "body": "", "files": [{"path": name} for name in files], "author": author},
-        {"number": 1, "headRefName": "feat/pierwsza", "title": "", "body": "", "files": [{"path": "tools/inne.py"}], "author": AGENT},
-    ]
-    path = _fake_gh(checkouts["current"].parent, json.dumps(pulls), issue=json.dumps({"body": ""}))
-
-    lines = _report(checkouts["current"], "--issue", "8", path=path).splitlines()
-
-    assert lines[-4] == f"PROCES W TOKU | {expected}"
-    assert _report(checkouts["current"], "--issue", "8").splitlines()[-4] == f"PROCES W TOKU | nieznane{LOCAL}"
 
 
 def test_issue_znajduje_galaz_z_numerem_zgloszenia_jako_osobnym_czlonem_nazwy(checkouts: dict[str, Path]) -> None:
@@ -253,7 +212,7 @@ def test_przeniesienie_naklada_sie_stara_sciezka(checkouts: dict[str, Path]) -> 
     _git(moving, "commit", "-m", "refactor: przenoszę wspolny.py")
     _git(moving, "mv", "inny.py", "inny2.py")
 
-    github_only = json.dumps([{"number": 9, "headRefName": "fix/zdalna", "title": "", "body": "", "files": [{"path": "wspolny.py"}], "author": AGENT}])
+    github_only = '[{"number": 9, "headRefName": "fix/zdalna", "title": "", "body": "", "files": [{"path": "wspolny.py"}]}]'
 
     lines = _report(moving, "--nakladania", path=_fake_gh(moving.parent, github_only)).splitlines()
 
@@ -521,7 +480,7 @@ _PULL_REQUESTS = {
 
 
 def _expected_report(me: _Checkout, world: list[_Checkout], github: bool, compared: str, everything: bool) -> tuple[list[str], list[str]]:
-    """Szczegóły (posortowane) i cztery odpowiedzi ze specyfikacji w docstringu narzędzia, z modelu świata, nie z Gita."""
+    """Szczegóły (posortowane) i trzy odpowiedzi ze specyfikacji w docstringu narzędzia, z modelu świata, nie z Gita."""
 
     on_branches = {commit for side in world if side.branch is not None for commit in side.commits}
 
@@ -573,7 +532,6 @@ def _expected_report(me: _Checkout, world: list[_Checkout], github: bool, compar
     clash = sorted(frozenset().union(*(commit.files for commit in me.commits)) & _MAIN_LATER.files)
     verdict = f"potrzebna (konflikt w: {', '.join(clash)})" if clash else "niepotrzebna (bez konfliktu, bez wspólnych plików)"
     answers = [
-        "PROCES W TOKU | 0 z 2; nowa jednostka samego procesu może ruszyć" if github else f"PROCES W TOKU | nieznane{LOCAL}",
         f"ZGŁOSZENIE #{_ISSUE} | {claim}{'' if github else LOCAL}",
         f"NAKŁADANIA | {overlaps}{'' if github else LOCAL}",
         f"AKTUALIZACJA: {verdict}{compared} bez śladu fetch, odśwież: git fetch origin",
@@ -584,10 +542,10 @@ def _expected_report(me: _Checkout, world: list[_Checkout], github: bool, compar
 def _in_any_order(answers: list[str]) -> list[object]:
     """Odpowiedzi z liniami pracy ``zajęte:`` jako zbiorem: narzędzie szereguje je po ruchu, którego model nie zna."""
 
-    head, taken, rest = answers[1].partition("zajęte: ")
+    head, taken, rest = answers[0].partition("zajęte: ")
     names, _, tail = rest.partition("; poprawka")
     claimants = sorted(re.split(r", (?![^(]*\))", names)) if taken else []
-    return [answers[0], head, claimants, tail, *answers[2:]]
+    return [head, claimants, tail, *answers[1:]]
 
 
 def _world(tmp_path: Path) -> list[_Checkout]:
@@ -782,14 +740,7 @@ def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Pa
     world = _world(tmp_path)
     answer = json.dumps(
         [
-            {
-                "number": pr,
-                "headRefName": branch,
-                "title": "",
-                "body": _PR_BODIES.get(branch, ""),
-                "files": [{"path": p} for p in sorted(files)],
-                "author": AGENT,
-            }
+            {"number": pr, "headRefName": branch, "title": "", "body": _PR_BODIES.get(branch, ""), "files": [{"path": p} for p in sorted(files)]}
             for branch, (pr, files) in _PULL_REQUESTS.items()
         ]
     )
@@ -815,7 +766,7 @@ def test_raport_zgodny_ze_specyfikacja_w_kazdym_stanie_repozytorium(tmp_path: Pa
         [me] = [side for side in world if side.path == (tmp_path / name).resolve()]
         details, answers = _expected_report(me, world, github=github, compared=compared, everything=everything)
         run = f"{name}{' --wszystkie' if everything else ''}"
-        mismatches += [f"{run}: brak {line}" for line in details if line not in actual[:-4]]
-        mismatches += [f"{run}: nadmiar {line}" for line in actual[:-4] if line not in details]
-        mismatches += [f"{run}: odpowiedzi {actual[-4:]} zamiast {answers}"] if _in_any_order(actual[-4:]) != _in_any_order(answers) else []
+        mismatches += [f"{run}: brak {line}" for line in details if line not in actual[:-3]]
+        mismatches += [f"{run}: nadmiar {line}" for line in actual[:-3] if line not in details]
+        mismatches += [f"{run}: odpowiedzi {actual[-3:]} zamiast {answers}"] if _in_any_order(actual[-3:]) != _in_any_order(answers) else []
     assert not mismatches, "\n".join(mismatches)

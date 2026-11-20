@@ -143,8 +143,6 @@ def stalled(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
 
 
 def decide(parent: Seen, children: dict[str, Seen | None], now: float, memory: Memory) -> list[str]:
-    """Powody, z którymi budzić wątek teraz (pusta lista: nie budzić); zapamiętuje to pytanie i budzenie w ``memory``."""
-
     observe(children, now, memory)
     fresh = {key: text for key, text in stalled(parent, children, now, memory).items() if key not in memory.told}
     if parent.status not in FINISHED or not fresh or now - memory.last_nudge < PAUSE_S:
@@ -155,9 +153,6 @@ def decide(parent: Seen, children: dict[str, Seen | None], now: float, memory: M
 
 
 def pending(parent: Seen, children: dict[str, Seen | None], now: float, memory: Memory) -> bool:
-    """Czy po ``decide`` zostało coś do pilnowania: dziecko trwa, dziecka nie widać krócej niż ``LOST_S`` albo po końcu
-    dziecka wątek nie ruszył i nie dostał budzenia."""
-
     for child, state in children.items():
         if state is None:
             if now - memory.unseen.get(child, now) <= LOST_S:
@@ -170,8 +165,6 @@ def pending(parent: Seen, children: dict[str, Seen | None], now: float, memory: 
 
 
 def alive(newest: float | None, now: float, life: float) -> bool:
-    """Czy strażnik może jeszcze żyć: od najmłodszego wpisu ``.dzieci`` (``None``: brak wpisu) minęło najwyżej ``life``."""
-
     return newest is not None and now - newest <= life
 
 
@@ -202,8 +195,6 @@ def message(reasons: list[str]) -> str:
 
 
 def children_in(response: object) -> list[str]:
-    """Identyfikatory wątków z pól ``CHILD_KEY`` w odpowiedzi narzędzia, także w tekście JSON wewnątrz niej."""
-
     found: list[str] = []
     stack = [response]
     while stack:
@@ -293,9 +284,6 @@ def _send(cli: str, thread: str, text: str) -> int:
 
 
 def serve(thread: str, cli: str) -> int:
-    """Proces strażnika: kolejka bez czekania, potem życie z czekaniem, oddanie kolejki i dopiero wtedy pętla ``watch``
-    (kolejność kroków i czemu, mówi docstring modułu)."""
-
     files = _files(thread)
     files.kids.parent.mkdir(parents=True, exist_ok=True)
     with files.life.open("a") as life:

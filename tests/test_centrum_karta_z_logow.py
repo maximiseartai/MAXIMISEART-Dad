@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 import shutil
+import sys
 import threading
 from collections.abc import Callable
 from typing import Annotated, Any, Literal
@@ -25,7 +26,7 @@ from rozliczenia.domain import RunMode
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.centrum.dad_actions import DadActions
 from rozliczenia.centrum.log import CentrumLog
-from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
+from rozliczenia.centrum.logs_disk import LAST_STARTED_FILE, EndEntry, Found, LogsOnDisk, Missing, Refused, Unreadable, name_of
 from rozliczenia.centrum.run_cards import RunCards
 from rozliczenia.centrum.run_comments import LeftBehindClosed, RunComments
 from rozliczenia.centrum.run_logs import (
@@ -43,6 +44,7 @@ from rozliczenia.centrum.settings import messages as settings_messages
 from rozliczenia.centrum.settings.workers import WORKERS_FILE
 from rozliczenia.settlement_messages import unmapped_worker_warning
 from rozliczenia.telemetry import MetricsStore
+from tests.fixtures.bez_dostepu import NO_ACCESS_ON_WINDOWS, without_access
 from tests.fixtures.centrum import finished_view, without_times
 from tests.fixtures.centrum_processes import (
     HeldRegister,
@@ -54,7 +56,7 @@ from tests.fixtures.centrum_processes import (
     settling_centrum,
     stopped_for_maks,
 )
-from atrapy.dziennik_wyceny import journal_path, left_journal, start_line
+from atrapy.dziennik_wyceny import begun_line, end_line, journal_path, left_journal, start_line
 from tests.fixtures.potomne import wait_for
 from atrapy.preparation import PERIOD
 from tests.fixtures.run_cards import first_view, restored, unlisted
@@ -641,6 +643,24 @@ def test_najnowsze_logi_z_tej_samej_sekundy_to_logi_z_pozniejszym_startem(tmp_pa
     assert on_disk(tmp_path).newest("efenix") == second
 
 
+def test_najnowsze_logi_procesu_sa_z_najpozniejszej_sekundy_startu_choc_identyfikator_starszych_jest_dalej_w_alfabecie(
+    tmp_path: Path,
+) -> None:
+    older = interrupted_logs(start("f" * 32, started_at=SECOND - timedelta(days=1)))
+    newer = interrupted_logs(start("0" * 32, started_at=SECOND))
+    for record in (older, newer):
+        written(tmp_path, record)
+
+    assert on_disk(tmp_path).newest("efenix") == newer
+
+
+def test_nieczytelne_najnowsze_logi_procesu_nie_ustepuja_miejsca_starszym(tmp_path: Path) -> None:
+    written(tmp_path, interrupted_logs(start("0" * 32, started_at=SECOND - timedelta(days=1))))
+    written(tmp_path, interrupted_logs(start("f" * 32, started_at=SECOND))).write_text("{", encoding="utf-8")
+
+    assert on_disk(tmp_path).newest("efenix") is None
+
+
 def test_widok_logow_liczy_sie_raz_na_wersje_pliku(tmp_path: Path) -> None:
     """Diagnoza nadpisuje plik Logów, więc widok tego pliku liczy się znowu, a pliku bez zmian nie."""
 
@@ -671,6 +691,79 @@ def test_widoki_logow_procesu_ida_od_najnowszego_startu(tmp_path: Path) -> None:
         written(tmp_path, record)
 
     assert on_disk(tmp_path).viewed(lambda logs: logs.run_id).of("efenix") == ["0" * 32, "f" * 32]
+
+
+def test_widok_ktory_pomija_logi_liczy_sie_raz_na_wersje_pliku_jak_kazdy_inny(tmp_path: Path) -> None:
+    written(tmp_path, interrupted_logs(start()))
+    written(tmp_path, interrupted_logs(start("f" * 32, started_at=SECOND + timedelta(hours=1)))).write_text("{", encoding="utf-8")
+    seen: list[str] = []
+
+    def skipping(logs: RunLog) -> str | None:
+        seen.append(logs.run_id)
+        return None
+
+    viewed = on_disk(tmp_path).viewed(skipping)
+
+    assert (viewed.of("efenix"), viewed.of("efenix"), seen) == ([], [], [RUN_ID])
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="dowiązanie w Windows wymaga uprawnień administratora")
+def test_widoki_logow_pomijaja_plik_ktorego_nie_ma_juz_po_wylistowaniu_katalogu(tmp_path: Path) -> None:
+    written(tmp_path, interrupted_logs(start()))
+    gone = tmp_path / RUN_LOGS_DIRECTORY / name_of(start("f" * 32, started_at=SECOND + timedelta(hours=1)))
+    gone.symlink_to(tmp_path / "usuniety-plik-logow.json")
+
+    assert on_disk(tmp_path).viewed(lambda logs: logs.run_id).of("efenix") == [RUN_ID]
+
+
+def test_start_centrum_czyta_pozostawione_dzienniki_od_najwczesniejszego_startu(tmp_path: Path) -> None:
+    later = start("0" * 32, started_at=SECOND + timedelta(hours=1))
+    earlier = start("f" * 32, started_at=SECOND)
+    for started in (later, earlier):
+        left_journal(tmp_path, started)
+
+    read = [left.journal.started for left in on_disk(tmp_path).left_behind() if left.journal is not None]
+
+    assert read == [earlier, later]
+
+
+def test_dziennik_zostawiony_przez_poprzednia_prace_ma_liczbe_zlecen_z_wpisu_zaczynam_zlecenie(tmp_path: Path) -> None:
+    left_journal(tmp_path, start(), begun_line(SECOND + timedelta(minutes=1), row=7, place=1, total=3))
+
+    [left] = on_disk(tmp_path).left_behind()
+
+    assert left.journal is not None and (left.journal.total, left.journal.progress.total) == (3, 3)
+
+
+def test_postep_z_dziennika_ma_tylko_uruchomienie_ktore_go_pisze(tmp_path: Path) -> None:
+    disk = on_disk(tmp_path)
+    disk.started(start())
+
+    assert (disk.journal.progress("f" * 32), disk.journal.progress(RUN_ID) is not None) == (None, True)
+
+
+def test_wpis_konca_z_wersji_ktora_nie_zapisywala_wyniku_jest_dalej_wpisem_konca(tmp_path: Path) -> None:
+    left_journal(tmp_path, start(), end_line(SECOND + timedelta(minutes=9)))
+
+    [left] = on_disk(tmp_path).left_behind()
+
+    assert left.journal is not None and left.journal.end == EndEntry(None)
+
+
+@NO_ACCESS_ON_WINDOWS
+def test_dziennik_ktorego_start_centrum_nie_moze_usunac_zostaje_na_dysku_z_linia_dziennika_centrum(tmp_path: Path) -> None:
+    path = left_journal(tmp_path, start())
+    disk = on_disk(tmp_path)
+    [left] = disk.left_behind()
+
+    with without_access(path.parent):
+        disk.remove_journal(left.key)
+
+    lines = (tmp_path / "centrum.log").read_text(encoding="utf-8").splitlines()
+    assert (path.exists(), [line.split(" ", 1)[1] for line in lines]) == (
+        True,
+        ["dziennik-wyceny-niedostepny typ=PermissionError miejsce=start"],
+    )
 
 
 def test_plik_ostatniego_startu_z_trescia_ktora_nie_jest_startem_daje_start_bez_ostatniego_uruchomienia(

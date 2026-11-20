@@ -134,6 +134,7 @@ Each constant is a way to fail or a bound of a configuration (`stale` in `model/
 | `status` | the order's status in efenix: „Do wyceny” or „Do akceptacji” |
 | `tryb` | the mode of this Uruchomienie (`PricingMode`) |
 | `tataZmienial` | Dad changed something in the order by hand |
+| `uruchomienia`, `zmian` | the counters of the `MaxUruchomien` and `MaxZmianTaty` constants |
 | `slady` | the causes of known findings that already happened, one set per order |
 | `czysciTate`, `obniza`, `zlyWynikPoTacie`, `zlyZnacznik`, `bladBezPowodu`, `zlePrzekazanie`, `zmianaPrzekazanego` | the history variable of each promise: `{}` until an event breaks it, then the `slady` of the order at that moment |
 

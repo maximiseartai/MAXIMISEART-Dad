@@ -49,7 +49,6 @@ export function NextStepCard({ period }: { period: PeriodRow }) {
   )
 }
 
-/** Akcja główna kroku i druga pod nią: pod „Uzupełnij” Wycena w efenix, a później „Uzupełnij” pod akcją kroku. */
 function StepActions({ period, step }: { period: PeriodRow; step: ProcessStep | FillStep }) {
   if (step.action === "fill_collective_file") {
     return (

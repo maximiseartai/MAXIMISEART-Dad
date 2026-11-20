@@ -61,6 +61,10 @@ rozliczeń. Centrum robi to samo, co Maks zrobiłby ręcznie, i niczego więcej:
   albo usuwa, a który tata ma u siebie (dziś `worker_mapping.yaml`), Centrum
   zachowuje i przywraca po przesunięciu klonu. Wzorce, Ustawienia taty, klucz
   do Zgłoszeń, dziennik, metryki i pliki okresów nie są dotykane.
+  Pliki stanu Centrum mają w każdej wersji to samo miejsce w katalogu narzędzia,
+  bo cofnięcie startuje starą wersję na plikach, które zostawiła nowa, a kolejkę
+  Skrzynki wysyła następna wersja; miejsca przypina literałem
+  `tests/test_uszkodzone_wejscia.py::test_pliki_stanu_centrum_maja_w_kazdej_wersji_te_same_miejsca`.
 - **Biblioteki.** Gdy nowa wersja zmienia `requirements.txt`, Centrum instaluje
   je tym samym Pythonem, w którym działa.
 - **Wszystko albo nic.** Porażka po przesunięciu klonu (instalacja bibliotek,

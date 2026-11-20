@@ -4,7 +4,6 @@ import type { FilterOption } from "@/components/segmented-filter"
 
 export type Mode = ProcessRun["mode"]
 
-/** Filtr procesu: procesy z serwera, w jego kolejności. */
 export function processOptions(processes: Metrics["processes"]): Array<FilterOption<Process>> {
   return processes.map(({ process, label }) => ({ value: process, label }))
 }
@@ -25,7 +24,6 @@ export function phaseDuration(run: ProcessRun, phase: string): number {
   return run.phase_durations.find((entry) => entry.phase === phase)?.duration_ms ?? 0
 }
 
-/** Uruchomienie zatrzymane (przerwane): w metrykach ma wynik `BLAD_KRYTYCZNY`, z czasami etapów do zatrzymania. */
 export function isStopped(run: ProcessRun): boolean {
   return run.result === "BLAD_KRYTYCZNY"
 }

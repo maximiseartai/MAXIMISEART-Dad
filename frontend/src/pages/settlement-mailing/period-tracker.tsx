@@ -17,7 +17,6 @@ import type { PeriodMailing } from "@/pages/settlement-mailing/use-period-mailin
 import { settlements } from "@/pages/settlement-mailing/words"
 import { cn } from "cn"
 
-/** Co mówi przycisk karty: wysyłka trwa, wszystko poszło, część nie wyszła, albo czeka na wybór taty. */
 type Action =
   | { kind: "sending"; at: number; of: number }
   | { kind: "complete" }
@@ -168,10 +167,8 @@ function Kicker({ period, complete, failed }: { period: MailingPeriod; complete:
   )
 }
 
-/** Słowa i pierścień wiersza Wykonawcy. */
 type Look = { words: string; ring: Ring }
 
-/** Słowa i pierścień wiersza: stan pliku, a dla pliku, który może iść, także to, czy tata go zaznaczył. */
 function look(state: ShownState, ticked: boolean): Look {
   switch (state.state) {
     case "sending":

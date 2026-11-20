@@ -26,9 +26,11 @@ import stat
 import sys
 import threading
 import time
+from types import SimpleNamespace
 from typing import Any, Final, NoReturn, cast
 import warnings
 
+from fastapi import Request
 from openpyxl import load_workbook
 from openpyxl.worksheet.formula import ArrayFormula
 from playwright.sync_api import Browser, sync_playwright
@@ -2749,6 +2751,37 @@ def test_logi_maja_najwyzej_1000_najnowszych_dzialan_taty(tmp_path: Path) -> Non
     taken = DadActionJournal(centrum_work(tmp_path, CentrumLog(tmp_path / "centrum.log"))).take()
 
     assert ([entry.at for entry in taken.entries], taken.omitted) == (moments[1:], 1)
+
+
+def test_start_centrum_w_dzienniku_dzialan_taty_ma_chwile_startu_a_nie_pierwszego_dzialania(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    started_at = datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc)
+    pressed_at = started_at + timedelta(minutes=30)
+    moments = iter([started_at, pressed_at])
+    monkeypatch.setattr("rozliczenia.centrum.dad_action_journal.utc_now", lambda: next(moments))
+    journal = DadActionJournal(centrum_work(tmp_path, CentrumLog(tmp_path / "centrum.log")))
+
+    async def receive() -> dict[str, object]:
+        return {"type": "http.request", "body": b"", "more_body": False}
+
+    scope = {"type": "http", "method": "PUT", "headers": [], "route": SimpleNamespace(operation_id="changeTheme")}
+    asyncio.run(journal.observe(Request(scope, receive)))
+
+    assert [(entry.action, entry.at) for entry in journal.take().entries] == [
+        ("start Centrum", started_at),
+        ("przycisk", pressed_at),
+    ]
+
+
+def test_nieczytelne_linie_dziennika_dzialan_taty_logi_licza_w_pominietych(tmp_path: Path) -> None:
+    entry = ViewOpened(at=datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc), action="widok", page="okresy", kind="navigation")
+    line = entry.model_dump_json()
+    tmp_path.joinpath(DAD_ACTIONS_FILE).write_text(f"{line}\nto nie jest wpis\n{line[: len(line) // 2]}", encoding="utf-8")
+
+    taken = DadActionJournal(centrum_work(tmp_path, CentrumLog(tmp_path / "centrum.log"))).take()
+
+    assert (taken.entries, taken.omitted) == ([entry], 2)
 
 
 def test_dziennik_dzialan_taty_ktorego_nie_da_sie_odczytac_daje_logom_pusty_dziennik_a_wpisy_czekaja_na_nastepne(
