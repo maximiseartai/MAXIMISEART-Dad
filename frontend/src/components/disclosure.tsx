@@ -4,7 +4,6 @@ import { ChevronDownIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 
-/** Zwinięta sekcja szczegółów: cichy przycisk z etykietą i strzałką, treść rozwija się płynnie. */
 export function Disclosure({
   label,
   defaultOpen = false,

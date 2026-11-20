@@ -33,7 +33,6 @@ const ALL = { value: "all", label: "Wszystkie" } as const
 
 const MODE_FILTER: ReadonlyArray<FilterOption<Mode | "all">> = [ALL, ...MODE_OPTIONS]
 
-/** Historia Uruchomień procesu wszystkich procesów, także z launcherów `.cmd`. */
 export function RunHistoryCard({ runs, processes }: { runs: ReadonlyArray<ProcessRun>; processes: Metrics["processes"] }) {
   const processFilter: ReadonlyArray<FilterOption<Process | "all">> = [ALL, ...processOptions(processes)]
   const [process, setProcess] = React.useState<Process | "all">("all")

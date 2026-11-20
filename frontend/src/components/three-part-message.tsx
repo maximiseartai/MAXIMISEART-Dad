@@ -112,7 +112,6 @@ function Banner({ kind, children }: { kind: MessageKind; children: React.ReactNo
   )
 }
 
-/** Gdzie i Co zrobić; poprawka w oknie Ustawień (`setting`) ma przy „Co zrobić” link do swojej sekcji. */
 export function WhereAndAction({ message }: { message: Message }) {
   return (
     <>
