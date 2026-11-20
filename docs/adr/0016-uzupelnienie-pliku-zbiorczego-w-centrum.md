@@ -74,6 +74,12 @@ godzinami, z Plikiem zbiorczym otwartym w Excelu, więc strona, która wymaga za
   przy następnej wizycie od razu daje Komunikat bez nowego wpisu. Znika on przy następnej zmianie znacznika,
   zwykle po sekundach.
 
+**Dopisek (#2236, 2026-11-20).** Uruchomienie, które zmieniło pliki okresu, mogło podmienić jego Plik zbiorczy,
+więc ostatni dobry odczyt sprzed niego nie zastępuje już porażki: zanim karta dostanie wynik, Centrum zapomina
+ostatnie dobre odczyty Plików zbiorczych wszystkich okresów, nie tylko okresu Uruchomienia
+(`FillingReads.run_ended`). Plik zbiorczy innego okresu traci przez to tylko minutę pokazywania ostatniego dobrego
+odczytu podczas porażki.
+
 ## Odrzucone warianty
 
 - **Kopia stanu w Centrum.** Lista wierszy zapisana przy Przygotowaniu przestaje być prawdziwa po usunięciu
