@@ -44,8 +44,9 @@ checks over every order of steps:
   the Kolejka wysyłki, except during the one request between `DadCases.add` and the write of its file or its
   withdrawal. Source: the `finally` of `Reports._queue` and the docstring of the class `Reports` („Sprawa, której
   wysyłka nie trafiła do pliku kolejki, znika od razu, bo czekałaby wiecznie, a tata nie mógłby kliknąć jeszcze raz”)
-  and the docstring of `dad_cases.py` (an Uwaga „bez numeru czeka w kolejce Skrzynki, dopóki `numbered` nie dopisze
-  numeru”). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
+  and `test_uwaga_bez_skrzynki_czeka_w_kolejce_i_wychodzi_przy_nastepnym_starcie_centrum` in
+  `tests/test_centrum_uwaga_taty.py` (an Uwaga without a number waits with its file in the queue until `numbered` gives
+  it the number of its issue). Harm: the Zgłoszenie never reaches Maks, the card says „czeka w kolejce”
   forever, and `_pending` turns every later click and every return of the problem into that same answer, without a
   new file.
 - **OdrzuconaNieCzeka**: once the Sprawy taty know that the Skrzynka rejected the text of the waiting Zgłoszenie in this

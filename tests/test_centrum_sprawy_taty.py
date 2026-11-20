@@ -1,9 +1,3 @@
-"""Sprawy taty (ADR 0015): jeden plik stanu Uwag taty i wysłanych Zgłoszeń oraz pliki sprzed niego u taty.
-
-Pliki w ``tests/fixtures`` zapisał kod sprzed jednego magazynu (``SentReports`` i ``DadNotes``): z `main` przed
-zmianą oraz z pierwszych wersji Zgłoszeń (2026-10-20) i Uwag taty (2026-10-23).
-"""
-
 from __future__ import annotations
 
 from dataclasses import replace
@@ -11,6 +5,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
+import sys
 import threading
 from typing import Any
 
@@ -18,7 +13,17 @@ import pytest
 
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY, case_outbox, note_post
 from rozliczenia.client_data import tool
-from rozliczenia.centrum.dad_cases import DAD_CASES_FILE, NOTE, OLD_NOTES_FILE, OLD_REPORTS_FILE, REPORT, Case, DadCases
+from rozliczenia.centrum.dad_cases import (
+    DAD_CASES_FILE,
+    NOTE,
+    OLD_NOTES_FILE,
+    OLD_REPORTS_FILE,
+    REPORT,
+    Case,
+    CaseNumbered,
+    CaseRejected,
+    DadCases,
+)
 from rozliczenia.centrum.keyed_box import KeyedBox
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.notifications import CHECK_THREAD
@@ -56,7 +61,6 @@ from tests.fixtures.praca_centrum import centrum_work
 from tests.fixtures.locked_file import lock_file
 
 FIXTURES = Path(__file__).parent / "fixtures"
-# Stare pliki Zgłoszeń i Uwag taty z wpisami po Powiadomieniach; obok nich leżą wersje sprzed Powiadomień.
 REPORTS_SAMPLE = "zgloszenia-wyslane-z-powiadomieniami.json"
 NOTES_SAMPLE = "uwagi-taty-z-powiadomieniami.json"
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
@@ -346,9 +350,34 @@ def test_numer_zgloszenia_dostaje_tylko_czekajace_zgloszenie_a_bez_niego_nic_sie
     assert cases(tmp_path) == [Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(22, 8), 15), note]
 
 
-class AnsweringBox:
-    """Skrzynka, która na pytanie o issue z etykietą odpowiada z góry ustaloną odpowiedzią i zapisuje pytania."""
+def test_numer_zgloszenia_dostaje_ostatnia_z_czekajacych_spraw_tego_odcisku(tmp_path: Path) -> None:
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
+    earlier = Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(21, 8), None)
+    later = Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(22, 8), None)
+    stored.add(earlier)
+    stored.add(later)
 
+    stored.numbered(REPORT, "3f0c1b2a9d8e7f60", 15)
+
+    assert cases(tmp_path) == [earlier, replace(later, number=15)]
+
+
+def test_obserwator_rodzaju_slyszy_numer_tylko_gdy_dostala_go_sprawa_a_odrzucenie_zawsze(tmp_path: Path) -> None:
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
+    stored.add(Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(22, 8), None))
+    heard: dict[str, list[object]] = {"zgloszenie": [], "uwaga": []}
+    stored.watch(REPORT, heard["zgloszenie"].append)
+    stored.watch(NOTE, heard["uwaga"].append)
+
+    stored.numbered(REPORT, "nieznany", 14)
+    stored.numbered(REPORT, "3f0c1b2a9d8e7f60", 15)
+    stored.numbered(REPORT, "3f0c1b2a9d8e7f60", 16)
+    stored.rejected(REPORT, "nieznany")
+
+    assert heard == {"zgloszenie": [CaseNumbered("3f0c1b2a9d8e7f60", 15), CaseRejected("nieznany")], "uwaga": []}
+
+
+class AnsweringBox:
     def __init__(self, answers: dict[Label, IssuesOutcome]) -> None:
         self.answers = answers
         self.asked: list[tuple[Label, bool, str]] = []
@@ -384,6 +413,48 @@ class AnsweringBox:
 
 def keyed(box: AnsweringBox) -> KeyedBox:
     return KeyedBox(box, lambda: REPORT_KEY, clock=ManualClock())
+
+
+class SlowBox(AnsweringBox):
+    def __init__(self, answers: dict[Label, IssuesOutcome]) -> None:
+        super().__init__(answers)
+        self.answering = threading.Event()
+        self.answer = threading.Event()
+
+    def labelled_issues(self, label: Label, *, include_closed: bool, key: str) -> IssuesOutcome:
+        self.answering.set()
+        self.answer.wait(5)
+        return super().labelled_issues(label, include_closed=include_closed, key=key)
+
+
+def test_zmiana_spraw_nie_czeka_na_odpowiedz_skrzynki_o_ich_zamkniecie(tmp_path: Path) -> None:
+    stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
+    box = SlowBox({"zgloszenie": (), "uwaga-taty": ()})
+    asking = threading.Thread(target=stored.ask_box, args=(keyed(box),), daemon=True)
+    asking.start()
+    assert box.answering.wait(5)
+
+    adding = threading.Thread(target=stored.add, args=(NEW,), daemon=True)
+    adding.start()
+    adding.join(2)
+    waited_for_box = adding.is_alive()
+    box.answer.set()
+    asking.join(5)
+
+    assert (waited_for_box, stored.find(NOTE, NEW.id)) == (False, NEW)
+
+
+def test_obserwator_slyszy_numer_poza_blokada_spraw_wiec_moze_je_czytac(tmp_path: Path) -> None:
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
+    stored.add(Case(REPORT, "3f0c1b2a9d8e7f60", "Brak Wzorca", None, at(22, 8), None))
+    read: list[int | None] = []
+    stored.watch(REPORT, lambda news: read.append(stored.all()[0].number))
+
+    numbering = threading.Thread(target=stored.numbered, args=(REPORT, "3f0c1b2a9d8e7f60", 15), daemon=True)
+    numbering.start()
+    numbering.join(5)
+
+    assert (numbering.is_alive(), read) == (False, [15])
 
 
 def test_skrzynka_jest_pytana_o_rodzaj_z_otwartymi_sprawami_a_jej_zamkniecia_trafiaja_do_spraw(tmp_path: Path) -> None:
@@ -462,6 +533,38 @@ def test_sprawa_bez_zmian_nie_zapisuje_pliku(tmp_path: Path) -> None:
     stored.numbered(NOTE, "nieznana", 3)
 
     assert not (config / DAD_CASES_FILE).exists()
+
+
+def test_sprawy_zmieniane_naraz_z_kilku_watkow_trafiaja_wszystkie_do_pamieci_i_pliku(tmp_path: Path) -> None:
+    stored = DadCases(centrum_work(tmp_path / "config", log(tmp_path)))
+    writers = [
+        [replace(NEW, id=f"{writer:02d}{index:030d}", number=writer * 100 + index) for index in range(30)]
+        for writer in range(6)
+    ]
+    start = threading.Barrier(len(writers))
+
+    def write(own: list[Case]) -> None:
+        start.wait()
+        for case in own:
+            stored.add(replace(case, number=None))
+            assert case.number is not None
+            stored.numbered(NOTE, case.id, case.number)
+            stored.forget(NOTE, "nieznana")
+
+    switch_interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=write, args=(own,)) for own in writers]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(switch_interval)
+
+    expected = sorted((case.id, case.number) for own in writers for case in own)
+    assert sorted((case.id, case.number) for case in stored.all()) == expected
+    assert sorted((case.id, case.number) for case in cases(tmp_path)) == expected
 
 
 def notifications(tmp_path: Path) -> list[tuple[str, str, bool, str]]:
@@ -547,8 +650,6 @@ ZGLOSZENIE_3 = BoxIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c
 
 
 class Skrzynka:
-    """Kolejka Skrzynki Zgłoszeń Centrum ze Sprawami taty ``stored`` (``case_outbox``) na fałszywej skrzynce."""
-
     def __init__(self, tmp_path: Path, stored: DadCases, box: FakeReportBox) -> None:
         self._tmp_path, self._stored = tmp_path, stored
         self.box = box
@@ -561,24 +662,21 @@ class Skrzynka:
         return case_outbox(work, KeyedBox(self.box, lambda: REPORT_KEY, clock=work.clock), self._stored)
 
     def sent(self, *posts: Post, left: int = 0) -> None:
-        """Kładzie ``posts`` w kolejce i czeka na koniec przejścia, także wysyłek następczych z tego przejścia, po którym
-        w kolejce zostaje ``left`` plików."""
-
         for post in posts:
             assert self.outbox.post(post)
-        assert not self.outbox.wait_delivered("", "kontrola-ilosci", timeout_s=30)
+        self.until_pass_with_follow_ups_ends()
         assert len(sorted(self.directory.glob("*.json"))) == left
 
     def restarted(self) -> None:
-        """Nowa kolejka tego folderu, jak po ponownym starcie Centrum, i jej pierwsze przejście do końca."""
-
         self.outbox = self._outbox()
         self.outbox.resume()
-        assert not self.outbox.wait_delivered("", "kontrola-ilosci", timeout_s=30)
+        self.until_pass_with_follow_ups_ends()
+
+    def until_pass_with_follow_ups_ends(self) -> None:
+        never_posted = ""
+        assert not self.outbox.wait_delivered(never_posted, "kontrola-ilosci", timeout_s=30)
 
     def logs_delivered(self, *run_ids: str) -> None:
-        """Logi Uruchomień ``run_ids`` doszły do Skrzynki z adresem komentarza."""
-
         logs = PeriodThread(label="logi-uruchomienia", line=tool("- Logi"), closed="reuse", title=tool("Logi"))
         self.sent(*(Post(logs, period=None, run_id=tool(run_id), header=tool("Logi okresu"), parts=(tool("Logi"),)) for run_id in run_ids))
         assert all(self.outbox.delivered(run_id, "logi-uruchomienia") is not None for run_id in run_ids)
@@ -595,12 +693,11 @@ OTHER_TARGETS = {
 
 
 @pytest.mark.parametrize("target", OTHER_TARGETS.values(), ids=OTHER_TARGETS.keys())
-def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian(
+def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian_choc_logi_o_tym_identyfikatorze_doszly(
     tmp_path: Path, target: PeriodThread | KnownIssue | NewIssue
 ) -> None:
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(issues=[ZGLOSZENIE_3], background=LOGS))
-    # Logi także pod identyfikatorem Uwagi: wysyłka innej etykiety nie dostaje odnośnika, choć Logi o nim są.
     skrzynka.logs_delivered(PINNED_RUN, PINNED_ID)
 
     skrzynka.sent(Post(target, period=None, run_id=tool(PINNED_ID), header=None, parts=(tool(f"Treść\n{WAITING_LOGS}"),)))
@@ -609,9 +706,7 @@ def test_wysylka_innej_etykiety_o_identyfikatorze_uwagi_idzie_bez_zmian(
 
 
 @pytest.mark.parametrize("tail", ["", "\nwersja narzędzia abc1234"], ids=["linia-logow-na-koncu", "linia-logow-przed-wersja"])
-def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path, tail: str) -> None:
-    """Komentarz idzie po stanie wysyłki Uwagi, nie po końcówce jej tekstu, więc kolejność stopki nie ma znaczenia."""
-
+def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz_ze_nie_dotra_gdy_znikna_z_kolejki(tmp_path: Path, tail: str) -> None:
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     box = FakeReportBox(background=LOGS)
     box.background_comment_outcomes.append(Rejected())
@@ -624,7 +719,6 @@ def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path, tail
     [issue] = skrzynka.box.issues_with("uwaga-taty")
     assert (issue.body, issue.comments) == (f"Treść\n{REJECTED_LOGS}{tail}", [])
     assert stored.find(NOTE, PINNED_ID) == replace(OLD_CASES[3], number=issue.number)
-    # Komentarz z odnośnikiem czeka na Logi; gdy znikną z kolejki, następny start mówi, że nie dotrą.
     for path in skrzynka.directory.glob("*-logi-uruchomienia-*.json"):
         path.unlink()
     skrzynka.restarted()
@@ -632,8 +726,6 @@ def test_nowa_uwaga_po_odrzuconych_logach_dostaje_komentarz(tmp_path: Path, tail
 
 
 def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi(tmp_path: Path) -> None:
-    """Słuchacz wymienia linię Logów po stanie wysyłki, nie po końcówce tekstu, więc kolejność stopki nie ma znaczenia."""
-
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
@@ -646,9 +738,6 @@ def test_linia_logow_w_drodze_dostaje_odnosnik_takze_gdy_nie_konczy_tresci_uwagi
 
 
 def test_uwaga_ze_stanem_logow_w_drodze_bez_ich_linii_w_tekscie_idzie_bez_zmian(tmp_path: Path) -> None:
-    """Słuchacz wymienia tylko linię Logów Uruchomienia Uwagi; plik kolejki, którego stan mówi o Logach w drodze, a
-    tekst tej linii nie ma, wychodzi z tekstem z kolejki, zamiast w niej stanąć."""
-
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     skrzynka = Skrzynka(tmp_path, stored, FakeReportBox(background=LOGS))
     skrzynka.logs_delivered(PINNED_RUN)
@@ -660,9 +749,6 @@ def test_uwaga_ze_stanem_logow_w_drodze_bez_ich_linii_w_tekscie_idzie_bez_zmian(
 
 
 def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zgloszenia(tmp_path: Path) -> None:
-    """Plik kolejki, który zapisało Wydanie v0.5.1 (cel bez nagłówka ``again``), idzie jak wtedy: komentarzem
-    „Zgłoszenie wróciło” do otwartego Zgłoszenia tego odcisku, a czekająca sprawa dostaje jego numer."""
-
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     stored.add(Case(REPORT, "3f0c1b2a9d8e7f60", "Nie znaleziono wzorca.", None, at(25, 8), None))
     open_report = BoxIssue(3, "zgloszenie", "Zgłoszenie", "- Odcisk problemu: 3f0c1b2a9d8e7f60")
@@ -681,9 +767,6 @@ def test_zgloszenie_z_kolejki_wydania_sprzed_naglowka_celu_wraca_do_otwartego_zg
 
 
 def test_uwaga_z_logami_w_drodze_z_kolejki_wydania_sprzed_stanu_wysylki_dostaje_odnosnik(tmp_path: Path) -> None:
-    """Plik kolejki, który zapisało Wydanie v0.5.1 (Uwaga bez ``state``, Logi w drodze w ostatniej linii stopki),
-    dostaje odnośnik do Logów, które doszły przed nią."""
-
     run_id, note_id = "5d4c3b2a19087f6e5d4c3b2a19087f6e", "9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b"
     stored = DadCases(centrum_work(old_files(tmp_path), log(tmp_path)))
     stored.add(Case(NOTE, note_id, "Brakuje ilości przy montażu", "6a797a55f42a", at(25, 8), None, run_id=run_id))
@@ -693,7 +776,7 @@ def test_uwaga_z_logami_w_drodze_z_kolejki_wydania_sprzed_stanu_wysylki_dostaje_
     shutil.copy(queued, skrzynka.directory / "20261107T101500000000Z-0001-uwaga-taty-9e8d7c6b.json")
 
     skrzynka.outbox.resume()
-    assert not skrzynka.outbox.wait_delivered("", "kontrola-ilosci", timeout_s=30)
+    skrzynka.until_pass_with_follow_ups_ends()
 
     [issue] = skrzynka.box.issues_with("uwaga-taty")
     [body] = json.loads(queued.read_text(encoding="utf-8"))["parts"]

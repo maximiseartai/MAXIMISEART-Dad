@@ -1,14 +1,3 @@
-"""Tablica okresów: Foldery okresu z folderu okresów, ich Status okresu i Droga okresu, wyliczane przy każdym odczycie.
-
-Nie ma bazy ani pamięci podręcznej. Foldery okresu, ścieżki ich plików,
-obserwację plików i Status okresu z nazwą zna silnik (``period_folder``);
-treści skoroszytów Centrum nie czyta. Wycena w efenix okresu jest zaliczona, gdy
-ostatnie jej Uruchomienie w Historii (plik metryk procesu) skończyło się wynikiem
-OK; Statusu okresu nie zmienia. Tu są Droga okresu, następny krok i krok obok
-niego (podpowiedź podglądu deklaruje wpis procesu w katalogu procesów), etykiety i wybór plików do otwarcia oraz
-miejsce okresu na tablicy: bieżący okres i 4 poprzednie od razu, starsze po „Pokaż wszystkie”, niezaczęte nigdy.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -89,7 +78,6 @@ _CLOSED: Final = periods_contract.ClosedStep(
 _PATH: Final = ("Plik zbiorczy", "Uzupełnienie w Excelu", "Wycena w efenix", "Rozliczenia pracowników")
 
 Pricing = Literal["not_run", "unfinished", "ok"]
-"""Wycena w efenix okresu: bez Uruchomienia, ostatnie bez wyniku OK (Wymaga sprawdzenia, Zatrzymanie) albo zaliczona."""
 
 
 def _pricing(result: RunResult | None) -> Pricing:
@@ -99,9 +87,6 @@ def _pricing(result: RunResult | None) -> Pricing:
 
 
 def _path(status: PeriodStatus, pricing: Pricing) -> list[periods_contract.PathStep]:
-    """Krok jest zrobiony po kolei; Uzupełnienie w Excelu kończy Gotowość, którą potwierdza skończone Uruchomienie
-    Wyceny w efenix okresu w Historii albo Rozliczenia pracowników."""
-
     settled = status == "worker_settlements_ready"
     done = (
         status != "no_period_files",
@@ -118,9 +103,6 @@ def _path(status: PeriodStatus, pricing: Pricing) -> list[periods_contract.PathS
 
 
 def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[periods_contract.NextStep, periods_contract.ProcessStep | None]:
-    """Następny krok okresu, czyli bieżący krok Drogi okresu, i krok obok niego: Przebieg rozliczeń nie czeka na Wycenę
-    w efenix, tylko po niej stoi."""
-
     match status:
         case "no_period_files":
             return _PREPARE, None
@@ -137,13 +119,9 @@ def _steps(status: PeriodStatus, pricing: Pricing) -> tuple[periods_contract.Nex
 
 
 RECENT_PERIODS: Final = 5
-"""Ile zaczętych okresów Tablica okresów pokazuje od razu: bieżący okres i 4 poprzednie."""
 
 
 def _board_places(newest_first: Sequence[SettlementPeriod], today: date) -> list[periods_contract.BoardPlace]:
-    """Okres, którego wtorek jest po ``today``, jeszcze się nie zaczął; z zaczętych, od najnowszego, pierwsze
-    ``RECENT_PERIODS`` widać od razu, a resztę po „Pokaż wszystkie”."""
-
     places: list[periods_contract.BoardPlace] = []
     started = 0
     for period in newest_first:
@@ -194,9 +172,6 @@ def _has_collective_file(row: periods_contract.PeriodRow) -> bool:
 
 
 def read_board(periods_directory: Path | None, today: date, catalog: Catalog) -> periods_contract.PeriodBoard:
-    """Tablica okresów z folderu okresów w dniu taty ``today``; ``catalog`` daje Historię Wyceny w efenix (jej plik
-    metryk)."""
-
     return board_of(None if periods_directory is None else scan_period_folders(periods_directory), today, catalog)
 
 
@@ -229,13 +204,6 @@ def board_of(scanned: PeriodFolders | None, today: date, catalog: Catalog) -> pe
 
 
 def observed_period_folder(folders: PeriodFolders, period: SettlementPeriod) -> PeriodFolder:
-    """Folder okresu do pokazania Statusu okresu; brak albo kilka miejsc nie jest tu zatrzymaniem.
-
-    Gdy Folderu okresu nie ma, obserwacja dotyczy nieistniejącego folderu w
-    samym folderze okresów; gdy jest w kilku miejscach, pierwszego z nich.
-    Zatrzymuje dopiero akcja, która potrzebuje jednego Folderu okresu.
-    """
-
     try:
         return folders.locate(period)
     except PeriodFolderLookupError as error:
@@ -243,8 +211,6 @@ def observed_period_folder(folders: PeriodFolders, period: SettlementPeriod) -> 
 
 
 def requested_period(token: str) -> SettlementPeriod:
-    """Okres z tokenu żądania przeglądarki; zły token to odmowa 404."""
-
     try:
         return parse_period_token(token)
     except ValueError:
@@ -252,8 +218,6 @@ def requested_period(token: str) -> SettlementPeriod:
 
 
 def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> PeriodFolder:
-    """Jeden Folder okresu dla akcji Centrum; brak albo kilka miejsc to odmowa ze wskazówką dla taty."""
-
     try:
         return locate_period_folder(periods_directory, period)
     except PeriodFolderLookupError as error:
@@ -261,10 +225,6 @@ def located_period_folder(periods_directory: Path, period: SettlementPeriod) -> 
 
 
 def requested_folder(settings: CentrumSettings, token: str) -> PeriodFolder:
-    """Folder okresu z tokenu żądania przeglądarki; bez folderu okresów na miejscu odmowa „Najpierw wskaż …”, plik
-    Folderów bez odczytu odmowa o nim (``CentrumSettings.folders``), a folder okresów, którego nie da się odczytać, to
-    ``PeriodFolderInaccessible`` z jego odszukania."""
-
     periods_directory = settings.folders().periods_directory_to_read
     if periods_directory is None:
         raise refusal.first_choose((PERIODS_DIRECTORY.name,))
@@ -274,9 +234,6 @@ def requested_folder(settings: CentrumSettings, token: str) -> PeriodFolder:
 def periods_router(
     settings: CentrumSettings, platform: Platform, today: Callable[[], date], catalog: Catalog
 ) -> APIRouter:
-    """Trasy Tablicy okresów. Otwarcie Rozliczenia pracownika sprawdza, że plik leży wprost w Folderze rozliczeń
-    pracowników, bo nazwa Wykonawcy z „/”, „\\” albo „..” wyprowadziłaby ścieżkę poza niego."""
-
     router = APIRouter(prefix="/api/periods", tags=["okresy"])
 
     @router.get("", operation_id="getPeriodBoard", responses={409: {"model": common_contract.Problem}})

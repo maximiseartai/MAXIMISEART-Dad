@@ -1,5 +1,3 @@
-"""Powiadomienia (ADR 0015, #323) przez HTTP API Centrum z fałszywą Skrzynką Zgłoszeń i podstawionym zegarem."""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -13,6 +11,7 @@ from typing import Any
 import pytest
 
 from rozliczenia.centrum import notifications as notifications_module, tool_freshness
+from rozliczenia.centrum.github import ANSWER_KEPT_S
 from rozliczenia.centrum.notifications import NOTIFICATIONS_FILE
 from rozliczenia.centrum.outbox import RETRY_S
 from rozliczenia.centrum.release_notes import DadCase, ReleaseNotes, render
@@ -55,17 +54,11 @@ CLOSED_AT = datetime(2026, 10, 20, 9, 15, tzinfo=timezone.utc)
 
 
 def sent_report(centrum: PreparingCentrum) -> str:
-    """Zgłoszenie „do Maksa” wysłane z tego komputera; zwraca jego „Co się stało”.
-
-    Czeka też na pytania skrzynki, które wysyłka zostawia w tle (Diagnoza szuka otwartego Zgłoszenia i nikt na to nie
-    czeka): spóźniona odmowa po zmianie skrzynki w teście byłaby werdyktem „klucz odrzucony” sprzed jego pytania.
-    """
-
-    since = new_line()
+    box_questions_left_in_background = new_line()
     run_id = stopped_for_maks(centrum)
     assert centrum.client.post(f"/api/runs/{run_id}/diagnosis").status_code == 200
     assert centrum.client.post(f"/api/runs/{run_id}/report").json() == {"state": "sent"}
-    join_threads_since(since)
+    join_threads_since(box_questions_left_in_background)
     return centrum.surroundings.report_box.sent[-1].title.split(": ", 1)[1]
 
 
@@ -95,8 +88,6 @@ def rows(centrum: PreparingCentrum) -> list[tuple[str, str, dict[str, str], bool
 
 
 def polls(centrum: PreparingCentrum) -> int:
-    """Ile razy Centrum pytało skrzynkę o stan spraw taty (issue z etykietą, także zamknięte)."""
-
     return sum(include_closed for _, include_closed in centrum.surroundings.report_box.listed)
 
 
@@ -179,9 +170,6 @@ def test_oznacz_przeczytane_gasi_kropke_takze_po_restarcie_a_nowy_stan_znow_jest
 
 
 def test_powiadomienie_o_wycenie_w_efenix_przeczytane_przez_tate_zostaje_na_liscie_bez_kropki(tmp_path: Path) -> None:
-    """Zakończona Wycena w efenix (tu Zatrzymaniem) to nowe Powiadomienie; po oznaczeniu przeczytanych zostaje na liście
-    przy każdym następnym odczycie, już bez kropki."""
-
     centrum = settling_centrum(tmp_path)
     centrum.engines.fail_engine = True
     period = centrum.period_directory.name
@@ -363,7 +351,7 @@ def test_przy_starcie_centrum_skrzynka_jest_pytana_w_tle_przed_odczytem_powiadom
     centrum.restart()
     asked = polls(centrum)
 
-    with centrum.client:  # start Centrum, jak po kliknięciu skrótu
+    with centrum.client:
         wait_for(lambda: polls(centrum) != asked, 5, every=0.01)
         asked_at_start = polls(centrum)
 
@@ -400,8 +388,7 @@ SUMMARY = "Plik zbiorczy ma kolumnę z kilometrami."
 POINTS = ["Rozliczenia pracowników są dwa razy szybsze.", "Plik zbiorczy sam wpisuje ilości usług."]
 NEW_COMMIT = "b7e4c1a2d3f5e6a7b8c9d0e1f2a3b4c5d6e7f8a9"
 PUBLISHED_AT = datetime(2026, 10, 22, 8, 0, tzinfo=timezone.utc)
-# Sprawa z notki, której ten komputer nie wysłał: Uwaga taty z innego komputera.
-FOREIGN = DadCase(999, "Uwaga z innego komputera", NOTE.label)
+NOTE_FROM_ANOTHER_COMPUTER = DadCase(999, "Uwaga z innego komputera", NOTE.label)
 
 
 def published(tag: str, notes: str = SUMMARY, at: datetime = PUBLISHED_AT) -> PublishedRelease:
@@ -411,8 +398,6 @@ def published(tag: str, notes: str = SUMMARY, at: datetime = PUBLISHED_AT) -> Pu
 
 
 def release_on_main(centrum: PreparingCentrum, tag: str, commit: str, *listed: PublishedRelease) -> None:
-    """GitHub: najnowsze Wydanie na `main` to ``tag`` na ``commit``, a lista GitHub Releases to ``listed``."""
-
     github = centrum.surroundings.github
     github.release, github.tag, github.published = commit, tag, list(listed)
 
@@ -429,12 +414,11 @@ def test_nowsze_wydanie_daje_powiadomienie_z_notka_sprawami_taty_i_przyciskiem(t
     cases = (
         DadCase(number_of(centrum, NOTE_TITLE), "Tytuł z Release", NOTE.label),
         DadCase(centrum.surroundings.report_box.sent[0].number, "Tytuł z Release", REPORT.label),
-        FOREIGN,
+        NOTE_FROM_ANOTHER_COMPUTER,
     )
     notes = render(ReleaseNotes("\n".join([SUMMARY, "", *(f"- {point}" for point in POINTS)]), cases))
     release_on_main(centrum, "v0.2.0", NEW_COMMIT, published("v0.2.0", notes))
-    # Odpowiedź GitHuba z Diagnozy przed Zgłoszeniem Centrum pamięta przez 10 minut.
-    centrum.surroundings.clock.advance(minutes=10)
+    centrum.surroundings.clock.advance(ANSWER_KEPT_S)
 
     answer = notifications(centrum)
 
@@ -495,7 +479,7 @@ def test_po_przejsciu_na_wydanie_przycisk_znika_a_karta_zostaje_przeczytana(tmp_
     release_on_main(centrum, "v0.2.0", NEW_COMMIT, published("v0.2.0"))
     read(centrum, [item["id"] for item in new_versions(centrum)])
 
-    centrum.surroundings.github.tool_commit = NEW_COMMIT  # Aktualizacja narzędzia i ponowny start Centrum
+    centrum.surroundings.github.tool_commit = NEW_COMMIT
     centrum.restart()
 
     assert [(item["id"], item["unread"], item["update_offered"]) for item in new_versions(centrum)] == [
@@ -547,7 +531,7 @@ def test_github_jest_pytany_o_wydania_przy_starcie_i_najwyzej_raz_na_10_minut_ws
     release_on_main(centrum, "v0.2.0", NEW_COMMIT, published("v0.2.0"))
     github, clock = centrum.surroundings.github, centrum.surroundings.clock
 
-    with centrum.client:  # start Centrum, jak po kliknięciu skrótu
+    with centrum.client:
         wait_for(lambda: github.asked_published != 0, 5, every=0.01)
         assert (github.asked, github.asked_published) == (1, 1)
 
@@ -587,7 +571,7 @@ def test_powiadomienia_pytaja_github_o_liste_wydan_z_tokenem_do_zgloszen_tylko_g
     with github_api(newest_on_main(TOOL_REPOSITORY, "v9.0.0", NEW_COMMIT)) as api:
         monkeypatch.setattr(tool_freshness, "TOOL_API", f"{api.url}{TOOL_REPOSITORY}")
         client = CentrumClient(centrum_app(tool, tool_freshness=None))
-        client.start()  # start Centrum pyta GitHub o Wydania w tle
+        client.start()
         wait_for(lambda: any(asked.path == listed for asked in api.asked), 5, every=0.01)
         client.stop()
 
@@ -595,8 +579,6 @@ def test_powiadomienia_pytaja_github_o_liste_wydan_z_tokenem_do_zgloszen_tylko_g
 
 
 def queued_report(centrum: PreparingCentrum) -> str:
-    """Zgłoszenie „do Maksa”, które czeka w kolejce Skrzynki (bez Tokenu do Zgłoszeń); zwraca jego „Co się stało”."""
-
     run_id = stopped_for_maks(centrum)
     diagnosis = centrum.client.post(f"/api/runs/{run_id}/diagnosis").json()
     assert centrum.client.post(f"/api/runs/{run_id}/report").json() == {"state": "queued", "waits_for": "key"}
@@ -605,8 +587,6 @@ def queued_report(centrum: PreparingCentrum) -> str:
 
 
 def delivered_from_queue(centrum: PreparingCentrum) -> int:
-    """Maks wpisuje klucz, kolejka budzi się po minucie i dostarcza Zgłoszenie; zwraca numer jego issue."""
-
     write_report_key(centrum.tool)
     box = centrum.surroundings.report_box
     centrum.surroundings.clock.advance(RETRY_S)
@@ -685,8 +665,6 @@ def test_zgloszenie_wyslane_przed_kolejka_zostaje_przeczytane(tmp_path: Path) ->
 
 
 def queued_case(fingerprint: str, what: str) -> dict[str, object]:
-    """Zgłoszenie w pliku Spraw taty, które czeka w kolejce Skrzynki."""
-
     return {
         "kind": "zgloszenie",
         "id": fingerprint,
