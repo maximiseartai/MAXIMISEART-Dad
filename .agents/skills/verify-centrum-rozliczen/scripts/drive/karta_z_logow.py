@@ -1,5 +1,3 @@
-"""Drive features/karta-z-logow.md."""
-
 from __future__ import annotations
 
 from pathlib import Path

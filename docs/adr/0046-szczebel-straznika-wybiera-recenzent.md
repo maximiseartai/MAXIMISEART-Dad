@@ -41,7 +41,7 @@ Decyzje autora tego PR:
 
 - **Numer 0046**, bo 0045 rezerwuje specyfikacja #2439.
 - **Pole `Mechanizm:` stoi po `Szczebel:`**, który zostaje: `Szczebel:` mówi, jak autor wyrwał korzeń, a `Mechanizm:`, jakiego strażnika żąda Ważne.
-- **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` czyta `szablon_werdyktu.findings` jak dotąd, więc raport tygodniowy liczy je do czasu ticketu #2463.
+- **Przejście.** Wątek, którego pierwszy werdykt powstał przed wejściem tego pliku do bazy PR, kończy po staremu, bez pola `Mechanizm:` i z opcjonalnym `Idiom:` (`werdykt_pr.rule_applies`, jak decyzja Q20 ADR 0031); stare werdykty z `Idiom:` szablon przyjmuje jak dotąd, ale od ticketu #2463 żadne narzędzie pola nie czyta, a raport tygodniowy liczy odpalenia strażników w Required CI i poszerzenia reguł z historii gita.
 
 ## Wdrożenie
 

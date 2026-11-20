@@ -1,15 +1,3 @@
-"""Pliki Reguł ilości i Listy Urządzeń (ADR 0033) ↔ typy silnika ``quantity_engine``.
-
-Dwa dokumenty YAML ze ``schema_version: 1``: ``reguly-ilosci.yaml`` (klucz ``reguly``) i ``lista-urzadzen.yaml``
-(klucz ``urzadzenia``). ``parse_device_list`` i ``parse_quantity_rules`` biorą dokument po ``yaml.safe_load`` i dają typ
-albo pierwszy problem z polem (``RulesProblem``): nieznany klucz, brak klucza, zły rodzaj wartości i każdy niezmiennik
-typów silnika. Reguły sprawdzają się z Listą Urządzeń, do której się odwołują. ``dump_*`` daje dokument, który
-``parse_*`` czyta z powrotem w ten sam typ.
-
-``DEFAULT_QUANTITY_RULES`` to Reguły ilości z Wydania: pliki ``reguly_ilosci_domyslne.yaml`` i
-``lista_urzadzen_domyslna.yaml`` obok tego modułu, czytane tym samym parserem.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -58,8 +46,6 @@ class _Malformed(Exception):
 
 
 def parse_device_list(document: object) -> DeviceList | RulesProblem:
-    """Lista Urządzeń z dokumentu pliku ``lista-urzadzen.yaml`` albo pierwszy problem."""
-
     try:
         body = _document(document, "urzadzenia")
         return DeviceList(tuple(_component(entry, f"urzadzenia[{index}]") for index, entry in enumerate(_list(body, "urzadzenia"))))
@@ -70,8 +56,6 @@ def parse_device_list(document: object) -> DeviceList | RulesProblem:
 
 
 def parse_quantity_rules(document: object, devices: DeviceList) -> QuantityRules | RulesProblem:
-    """Reguły ilości z dokumentu pliku ``reguly-ilosci.yaml`` z Listą Urządzeń ``devices`` albo pierwszy problem."""
-
     rules = parse_rule_list(document)
     if isinstance(rules, RulesProblem):
         return rules
@@ -82,9 +66,6 @@ def parse_quantity_rules(document: object, devices: DeviceList) -> QuantityRules
 
 
 def parse_rule_list(document: object) -> tuple[QuantityRule, ...] | RulesProblem:
-    """Reguły z dokumentu pliku ``reguly-ilosci.yaml`` bez Listy Urządzeń albo pierwszy problem: każdy niezmiennik
-    reguł poza tym, czy składnik, do którego reguła się odwołuje, jest na liście (``rule_list_problem``)."""
-
     try:
         body = _document(document, "reguly")
         rules = tuple(_rule(entry, f"reguly[{index}]") for index, entry in enumerate(_list(body, "reguly")))
@@ -110,8 +91,6 @@ def dump_rule_list(rules: tuple[QuantityRule, ...]) -> dict[str, object]:
 
 
 def parse_component(entry: object) -> Component | RulesProblem:
-    """Jeden składnik w postaci wpisu pliku (``dump_component``) albo problem jego pól."""
-
     try:
         return _component(entry, "urzadzenia[0]")
     except _Malformed as malformed:
@@ -119,8 +98,6 @@ def parse_component(entry: object) -> Component | RulesProblem:
 
 
 def parse_rule(entry: object) -> QuantityRule | RulesProblem:
-    """Jedna reguła w postaci wpisu pliku (``dump_rule``) albo problem jej pól."""
-
     try:
         return _rule(entry, "reguly[0]")
     except _Malformed as malformed:
@@ -342,4 +319,3 @@ def _default() -> QuantityRules:
 
 
 DEFAULT_QUANTITY_RULES: Final = _default()
-"""Reguły ilości z Wydania: dzisiejsze reguły z kodu jako dane (ADR 0033, „Start bez zmiany wyniku”)."""

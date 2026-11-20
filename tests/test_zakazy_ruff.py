@@ -256,6 +256,18 @@ SAMPLES: dict[str, tuple[Path, tuple[str, ...], str]] = {
     # właściciela; postacie spoza pakietu, w tym Przypomnienia o raporcie z przeglądu #2059 (r1, W1), odrzuca mypy
     # (DROGI_WEJSCIA_ODCZYTU).
     "from ._model import ReportInputs": (SRC_CONFIG, ("rozliczenia", "worker_reports"), "rozliczenia.worker_reports._model.ReportInputs"),
+    "from rozliczenia.centrum.keyed_box import read_report_key": (SRC_CONFIG, ("rozliczenia",), "rozliczenia.centrum.keyed_box.read_report_key"),
+    "import rozliczenia.centrum.keyed_box as klucz\nklucz.read_report_key(p)": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.centrum.keyed_box.read_report_key",
+    ),
+    "from .keyed_box import REPORT_KEY_FILE": (SRC_CONFIG, ("rozliczenia", "centrum"), "rozliczenia.centrum.keyed_box.REPORT_KEY_FILE"),
+    "from rozliczenia.centrum import keyed_box\np / keyed_box.REPORT_KEY_FILE": (
+        SRC_CONFIG,
+        ("rozliczenia", "centrum"),
+        "rozliczenia.centrum.keyed_box.REPORT_KEY_FILE",
+    ),
 }
 
 
@@ -427,6 +439,33 @@ def test_znane_luki_zakazu_nazwy_komputera_w_src_przechodza_przez_ruff(tmp_path:
     w_src = ruff(zapisz(ZNANE_LUKI_NAZWY_KOMPUTERA, tmp_path), sonda=SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py")
 
     assert_znane_luki(w_src, "tests/test_zakazy_ruff.py (ZNANE_LUKI_NAZWY_KOMPUTERA)")
+
+
+ZNANE_LUKI_TOKENU_DO_ZGLOSZEN = {
+    "zakaz zna tylko nazwę z importu: plik tokenu po nazwie w napisie": (
+        'from pathlib import Path\n\ntoken = (Path("config") / "zgloszenia-klucz.txt").read_text(encoding="utf-8")\n'
+    ),
+    "zakaz zna tylko nazwę z importu: getattr(keyed_box, \"read_report_key\")": (
+        'from pathlib import Path\n\nfrom rozliczenia.centrum import keyed_box\n\ntoken = getattr(keyed_box, "read_report_key")(Path("config"))\n'
+    ),
+    "zakaz zna tylko źródło tokenu: token z KeyedBox.github_key do własnego adaptera Skrzynki": (
+        "from rozliczenia.centrum.keyed_box import KeyedBox\nfrom rozliczenia.centrum.report_box import GitHubReportBox\n\n\n"
+        "def lista(box: KeyedBox) -> object:\n"
+        '    return GitHubReportBox().labelled_issues("zgloszenie", include_closed=False, key=box.github_key() or "")\n'
+    ),
+    "zakaz zna tylko źródło tokenu: token z KeyedBox.github_key do Skrzynki z parametru": (
+        "from rozliczenia.centrum.keyed_box import KeyedBox\nfrom rozliczenia.centrum.report_box import ReportBox\n\n\n"
+        "def lista(box: KeyedBox, skrzynka: ReportBox) -> object:\n"
+        '    return skrzynka.labelled_issues("zgloszenie", include_closed=False, key=box.github_key() or "")\n'
+    ),
+}
+
+
+@wymaga_ruff
+def test_znane_luki_zakazu_tokenu_do_zgloszen_poza_keyed_box_w_src_przechodza_przez_ruff(tmp_path: Path) -> None:
+    w_src = ruff(zapisz(ZNANE_LUKI_TOKENU_DO_ZGLOSZEN, tmp_path), sonda=SRC_CONFIG.parent / "rozliczenia" / "centrum" / "sonda_luki.py")
+
+    assert_znane_luki(w_src, "tests/test_zakazy_ruff.py (ZNANE_LUKI_TOKENU_DO_ZGLOSZEN)")
 
 
 _GLOWA_WIDOKU: Final = "from rozliczenia.centrum.settings.owner import CentrumSettings\n{importy}\n\n\n"
@@ -944,6 +983,7 @@ OWNERS: dict[str, frozenset[str]] = {
     "src/rozliczenia/worker_reports/_canonical.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "src/rozliczenia/worker_reports/_mails.py": frozenset({"rozliczenia.worker_reports._model.ReadReport"}),
     "tools/lib/import_dynamiczny.py": frozenset({"importlib.import_module", "importlib.machinery", "importlib.util"}),
+    "tools/lib/stawka_przegladu.py": frozenset({"wplyw_zmiany.light_review"}),
     "tests/conftest.py": frozenset({"sys.path"}),
     "tests/fixtures/linie_watkow.py": frozenset({"threading.Thread.start"}),
     ".agents/skills/verify-centrum-rozliczen/scripts/drive/common.py": frozenset({"os.replace", "shutil.rmtree"}),

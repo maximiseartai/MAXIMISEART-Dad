@@ -1,5 +1,3 @@
-"""Drive features/start-i-zamykanie.md."""
-
 from __future__ import annotations
 
 import os

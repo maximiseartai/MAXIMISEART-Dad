@@ -33,10 +33,6 @@ def explorer(variant: str, *roles: str) -> tuple[str, ...]:
 
 
 BOUNDARIES: Final[Mapping[str, Mapping[str, tuple[Mutation, ...]]]] = {}
-"""Broken variants just outside each part of the shape of each accepted risk and known finding of the explorer
-(``RiskShape``), by its name and part: the same harm as the risk's, but with that one part other than its story says,
-so each must give a new violation (#920). ``tests/test_mutacje_skilli.py`` reds an entry of ``ACCEPTED_RISKS`` or
-``KNOWN_FINDINGS`` with a part without one here; a part that admits every member of its enum has none."""
 
 
 MUTATIONS = (

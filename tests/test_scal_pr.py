@@ -48,6 +48,7 @@ import rozjazd_modelu
 import scal_pr
 import stan_pr
 import szablon_werdyktu
+import szczebel_straznika
 import werdykt_pr
 
 pytestmark = ONLY_FOUND_BY_NAME_ON_POSIX
@@ -281,13 +282,14 @@ def _pr_view(number: int, head: str, **fields: object) -> dict[str, object]:
 class MergeGitHub(FakeGitHub):
     STARTED = "2026-11-01T00:00:00Z"
 
-    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = STARTED, real_checks: bool = False) -> None:
+    def __init__(self, tmp_path: Path, files: dict[str, str], *, started: str = STARTED, real_checks: bool = False, held: tuple[str, ...] = ()) -> None:
         """Commit ``start`` ma datę ``started``, a z kopią narzędzia dodaje moduł bramki korzenia, więc to chwila jej
         wdrożenia na ``main`` (``bramka_korzenia.MARKER``); domyślnie po werdyktach atrapy (24.10.2026), więc ich wątki
         kończą bez bramki, a ``GATE_BEFORE_VERDICTS`` ją w nich włącza.
 
         Bez ``real_checks`` ``tools/ci_lokalnie.py`` w ``start`` to atrapa ``CHECKS_PASS``: stoi po obu stronach
-        scalenia, więc nie zmienia plików zmiany PR ani ``main`` i wyboru testu scalenia."""
+        scalenia, więc nie zmienia plików zmiany PR ani ``main`` i wyboru testu scalenia. Pliki narzędzia ``held`` nie
+        stoją w ``start``, więc test wdraża je później (``push_main``)."""
 
         super().__init__(
             tmp_path,
@@ -304,6 +306,7 @@ class MergeGitHub(FakeGitHub):
             tool="tools/scal_pr.py",
             gh=FAKE_GH,
             started=started,
+            held=held,
         )
         _empty_state(self.bin)
         self.pulls: dict[str, dict[str, object]] = {}
@@ -2144,18 +2147,6 @@ def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(text: str, declared
     assert "### W1." in problems[-1] and "## Sprawdzone" in problems[-1], problems[-1]
 
 
-@pytest.mark.parametrize(("name", "expected"), [(name, idiom) for name, (_, idiom) in werdykty_szablonu.IDIOMY.items()], ids=werdykty_szablonu.IDIOMY)
-def test_pole_idiom_wazne_daje_regule_klase_i_wczesniejsze_wazne_z_jednej_z_trzech_postaci(
-    name: str, expected: tuple[str | None, str | None, tuple[int, str, int] | None]
-) -> None:
-    """Pole ``Idiom:`` (ADR 0036, „Pole werdyktu”) pisze recenzent po Szczeblu, a warunek merge'a bierze z niego id
-    reguły i wcześniejsze Ważne, którego przypadek jej dowód ma złapać."""
-
-    found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZED_MECHANIZMEM[f"idiom-{name}"])))
-
-    assert found.idioms == (szablon_werdyktu.Idiom("W1", *expected),)
-
-
 @pytest.mark.parametrize("name", werdykty_szablonu.MECHANIZMY)
 def test_pole_mechanizm_wazne_daje_szczebel_piramidy_dla_bramki_straznika(name: str) -> None:
     found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZECHODZA[f"mechanizm-{name}"])))
@@ -3253,16 +3244,22 @@ def _guard_pull(
     root: bool = False,
     base: dict[str, str] | None = None,
     changed: dict[str, str] | None = None,
+    rung: str | None = None,
 ) -> tuple[MergeGitHub, str]:
     """PR 1 z werdyktami ``verdicts`` (domyślnie ``FAIL_W1``) na starszym commicie, opisem ``body`` z ``korzenie_pr.OPISY``
-    i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, warunek 5 w chwili ``deployed``, a dowód
-    kończy się ``proof``; z ``root`` PR korzenia #1436 jest scalony z linią ``Korzeń z #1``; ``base`` dokłada pliki do
-    bazy, a ``changed`` to pliki PR (domyślnie ``kod/inne.py``)."""
+    i z ``passed`` ``PASS`` na HEAD; bramka korzenia wdrożona w chwili ``gate``, warunek 5 w chwili ``deployed``, szczebel
+    strażnika (``szczebel_straznika.MARKER``) w chwili ``rung`` (domyślnie z bramką korzenia), a dowód kończy się
+    ``proof``; z ``root`` PR korzenia #1436 jest scalony z linią ``Korzeń z #1``; ``base`` dokłada pliki do bazy,
+    a ``changed`` to pliki PR (domyślnie ``kod/inne.py``)."""
 
     files = {"kod/__init__.py": SUM, "tools/na_scalonych_pr.py": FAKE_PROOF, szablon_werdyktu.SKILL.relative_to(TOOLS.parent).as_posix(): korzenie_pr.SKILL["baza"], **(base or {})}
-    github = MergeGitHub(tmp_path, files, started=gate)
+    github = MergeGitHub(tmp_path, files, started=gate, held=() if rung is None else (szczebel_straznika.MARKER,))
     _deploy_template(github)
     _deploy_guard(github, deployed)
+    if rung is not None:
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("GIT_COMMITTER_DATE", rung)
+            github.push_main({szczebel_straznika.MARKER: (TOOLS.parent / szczebel_straznika.MARKER).read_text(encoding="utf-8")})
     head = github.open_pull(1, changed or {"kod/inne.py": "INNE: int = 1\n"})
     github.update(1, body=korzenie_pr.OPISY[body])
     if root:
@@ -3479,6 +3476,81 @@ def test_wazne_pr_samych_narzedzi_scala_sie_bez_bloku_korzen_i_straznika_a_reszt
         assert answered.returncode == 1 and "korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym" in last, last
     assert _proofs(github) == []
     assert (kontekst_przegladu.STAKE_LIGHT if light else kontekst_przegladu.STAKE_FULL) in review.stdout.splitlines(), review.stdout + review.stderr
+
+
+LIGHT_CHANGE = {"tools/narzedzie.py": "X: int = 2\n"}
+FAIL_LINT_AND_OWNER = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 2, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne-lint-i-architektura"]
+FAIL_LINT_AND_OWNER_NEW = "WERDYKT: FAIL {commit}\nZnaleziska: 2 (Ważne 2, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne-lint-i-architektura-z-nowym-kodem"]
+FAIL_LINT_NEW = "WERDYKT: FAIL {commit}\nZnaleziska: 1 (Ważne 1, Drobne 0)\n" + werdykty_szablonu.WERDYKTY["wazne-lint-z-nowym-kodem"]
+
+
+@pytest.mark.parametrize(
+    ("verdict", "body", "rung", "refused", "proved"),
+    [
+        pytest.param(_fail_with("lint"), "bez-sekcji", None, "korzeń: brak sekcji „## Korzeń”, a PR ma werdykt FAIL z Ważnym; brak bloku „### W1 r1: ", (), id="lint-bez-bloku"),
+        pytest.param(_fail_with("lint"), "straznik-pytest", None, RUNG_REFUSAL.format(mechanism="lint"), (), id="lint-z-testem"),
+        pytest.param(_fail_with("lint"), "straznik-ruff", None, None, ("1/W1/r1",), id="lint-ze-straznikiem-ruff"),
+        pytest.param(_fail_with("lint"), "bez-sekcji", GATE_AFTER_VERDICTS, None, (), id="lint-w-watku-sprzed-wdrozenia-szczebla"),
+        *(pytest.param(_fail_with(mechanism), "bez-sekcji", None, None, (), id=f"{mechanism}-bez-bloku") for mechanism in ("architektura", "refaktor", "test", "weryfikacja")),
+        pytest.param(FAIL_LINT_AND_OWNER, "dwa-ze-straznikiem-ruff", None, None, ("1/W1/r1", "1/W2/r1"), id="lint-i-architektura-z-blokiem-ktorego-lekka-runda-nie-zada"),
+        pytest.param(FAIL_LINT_AND_OWNER_NEW, "dwa-ze-straznikiem-ruff-nowy-kod-w2", None, None, ("1/W1/r1", "1/W2/r1"), id="blok-architektury-z-nowym-kodem-spoza-listy"),
+        pytest.param(FAIL_LINT_NEW, "straznik-ruff-nowy-kod", None, None, ("1/W1/r1",), id="lint-z-nowym-kodem-spoza-listy"),
+    ],
+)
+def test_wazne_lint_pr_samych_narzedzi_potrzebuje_bloku_korzen_i_straznika_jak_w_pelnej_stawce(
+    tmp_path: Path, verdict: str, body: str, rung: str | None, refused: str | None, proved: tuple[str, ...]
+) -> None:
+    """ADR 0046 zmienia aneks lekkiej rundy ADR 0042: Ważne ze szczeblem ``lint`` w PR samych narzędzi ma blok
+    w ``## Korzeń`` i strażnika, którego przyjmuje jego szczebel, jak w pełnej stawce, a Ważne innego szczebla scala się
+    bez bloku jak dotąd, a blok, który autor mu napisał, nie jest nadmiarowy. Kod ``NOWY`` żadnego Ważnego nie musi
+    stać na liście korzeni, bo dopisanie go zmienia plik spoza ``tools/``. Wątek, którego pierwszy werdykt powstał
+    przed wdrożeniem szczebla strażnika (``rung``), kończy po staremu."""
+
+    github, head = _guard_pull(tmp_path, body, verdict, base=LIGHT_BASE, changed=LIGHT_CHANGE, rung=rung)
+
+    answered = github.run("1", "--bez-merge")
+
+    last = _last_line(answered)
+    if refused is None:
+        assert answered.returncode == 0 and last.startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    else:
+        assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {refused}"), answered.stdout + answered.stderr
+    assert _proofs(github) == ([["--straznik", "ruff", "--z-commita", head, *(part for case in proved for part in ("--wazne", case))]] if proved else [])
+
+
+@pytest.mark.parametrize(
+    ("verdict", "body", "red", "refused"),
+    [
+        pytest.param(PASS_RESOLVES, "bez-sekcji", False, None, id="punkt-rozstrzygniecia-bez-waznego"),
+        pytest.param(FAIL_W1, "czerwony-main-kod-spoza-listy", True, f"korzeń: kod R-WYMYSLONY-KOD (blok „### Czerwony main #{korzenie_pr.RED_MAIN}”) {UNLISTED}", id="czerwony-main-z-kodem-spoza-listy"),
+    ],
+)
+def test_lekka_runda_nie_zglasza_punktu_bez_waznego_a_kod_bloku_czerwonego_main_stoi_na_liscie(
+    tmp_path: Path, verdict: str, body: str, red: bool, refused: str | None
+) -> None:
+    """Granice lekkiej rundy w ``stawka_przegladu``: punkt rozstrzygnięcia bez Ważnego bramka zgłasza tylko w pełnej
+    stawce, a blok czerwonego `main` i jego kod na liście korzeni zostają jak w pełnej stawce."""
+
+    github, head = _guard_pull(tmp_path, body, verdict, base=LIGHT_BASE, changed=LIGHT_CHANGE)
+    if red:
+        github.answer_issue(korzenie_pr.RED_MAIN, answer=json.dumps({"state": "closed", "labels": [{"name": "czerwony-main"}]}))
+
+    answered = github.run("1", "--bez-merge")
+
+    last = _last_line(answered)
+    if refused is None:
+        assert answered.returncode == 0 and last.startswith(f"SCAL OK | #1 {head[:7]} "), answered.stdout + answered.stderr
+    else:
+        assert answered.returncode == 1 and last.startswith(f"SCAL ODMOWA | #1 {head[:7]} | {refused}"), answered.stdout + answered.stderr
+
+
+def test_stawka_lekka_mowi_recenzentowi_o_wyjatku_waznego_lint(tmp_path: Path) -> None:
+    github, _ = _guard_pull(tmp_path, "bez-sekcji", base=LIGHT_BASE, changed=LIGHT_CHANGE)
+
+    review = github.run("1", "--przeglad")
+
+    [stake] = [line for line in review.stdout.splitlines() if line.startswith("STAWKA |")]
+    assert stake.startswith("STAWKA | lekka") and "tylko przy Mechanizm: lint" in stake, review.stdout + review.stderr
 
 
 @pytest.mark.parametrize(

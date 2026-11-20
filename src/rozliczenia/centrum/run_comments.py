@@ -37,7 +37,7 @@ from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.run_logs import CentrumLogLines, Environment, LoggedFile, RunLog, StartFacts, Tool
 from rozliczenia.centrum.run_logs_guard import guard_logs, guard_text
 from rozliczenia.centrum.settings.files import Unreadable
-from rozliczenia.centrum.settings.owner import SettingsSnapshot
+from rozliczenia.centrum.settings.reads import SettingsSnapshot
 from rozliczenia.centrum.runs import EndedRun
 from rozliczenia.centrum.template_archive import ArchivedTemplate, TemplateChecks, TemplateRefused
 from rozliczenia.centrum.tool_freshness import CommitSource

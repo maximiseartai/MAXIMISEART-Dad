@@ -12,10 +12,11 @@ Każdy blok i każda linia akapitu ma miejsce w szablonie, a każda inna to odmo
   <opis>``, ``Szczebel: (a) - <zdanie>`` ze szczeblem od ``(a)`` do ``(e)`` oraz ``Mechanizm: <szczebel>`` z jedną
   wartością ``Mechanism`` ([ADR 0046](../../docs/adr/0046-szczebel-straznika-wybiera-recenzent.md)); dłuższy dowód
   recenzent zapisuje w pliku obok werdyktu i podaje w Dowodzie jego ścieżkę; w wątku, w którym Mechanizm nie
-  obowiązuje (``problems`` bez ``mechanism``), po Szczeblu może stać zamiast niego pole ``Idiom:``, które ``findings``
-  czyta w każdym werdykcie dla raportu tygodniowego: ``Idiom: <id> jak #N W<n> r<k>``, ``Idiom: <id>`` albo ``Idiom:
-  bez reguły <klasa> jak #N W<n> r<k>`` z klasą z zamkniętej listy ``CLASSES``; ``<id>`` to pole ``id`` reguły
-  ast-grep, klucz ``banned-api`` albo ``id`` kontraktu import-linter, bez spacji (``RULE_ID``);
+  obowiązuje (``problems`` bez ``mechanism``), po Szczeblu może stać zamiast niego pole ``Idiom:`` w jednej z trzech
+  postaci, których żadne narzędzie już nie czyta (raport tygodniowy liczy odpalenia strażników, ADR 0046): ``Idiom:
+  <id> jak #N W<n> r<k>``, ``Idiom: <id>`` albo ``Idiom: bez reguły <klasa> jak #N W<n> r<k>`` z klasą z zamkniętej
+  listy ``CLASSES``; ``<id>`` to pole ``id`` reguły ast-grep, klucz ``banned-api`` albo ``id`` kontraktu
+  import-linter, bez spacji (``RULE_ID``);
 - Drobne to nagłówek ``### D<n>. <zdanie>`` i jedna linia ``Gdzie: <plik:linia>``;
 - Ważne stoją przed Drobnymi, numery idą od 1 bez przerw, a ich liczby zgadzają się z linią ``Znaleziska:``;
 - blok mutacji recenzenta (``mutacja_recenzenta``) to nagłówek ``### Mutacja W<n> r<k>`` przed ``## Sprawdzone``
@@ -71,13 +72,10 @@ HEADING = re.compile(r"([WD])(\d+)\. (\S.*)")
 ROOT_FIELD = re.compile(rf"Korzeń: (NOWY )?({CODE.pattern}) - (\S.*)")
 RUNG_FIELD = re.compile(r"Szczebel: \(([a-e])\) - (\S.*)")
 MECHANISM_FIELD = "Mechanizm:"
-# Pole ``Idiom:`` Ważnego (ADR 0036, „Pole werdyktu”): id reguły, klasa idiomu bez reguły i wcześniejsze Ważne ``jak``.
 CLASSES = ("brak-testu", "stan-kroku", "typ", "test-klasy")
 RULE_ID = r"[\w.-]+"
-_EARLIER = r" jak #(\d+) (W\d+) r(\d+)"
-IDIOM_LIKE = re.compile(rf"Idiom: ({RULE_ID}){_EARLIER}")
-IDIOM_ESCAPE = re.compile(rf"Idiom: ({RULE_ID})")
-IDIOM_NO_RULE = re.compile(rf"Idiom: bez reguły ({'|'.join(CLASSES)}){_EARLIER}")
+_EARLIER = r" jak #\d+ W\d+ r\d+"
+IDIOM = re.compile(rf"Idiom: (?:{RULE_ID}(?:{_EARLIER})?|bez reguły (?:{'|'.join(CLASSES)}){_EARLIER})")
 # Punkt „## Sprawdzone”, którym recenzent rozstrzyga kod Ważnego z wcześniejszej rundy (decyzja Q25).
 RESOLUTION = re.compile(rf"Korzeń (W\d+) r(\d+): (NOWY )?({CODE.pattern}) - (\S.*)")
 RESOLUTION_START = "Korzeń "
@@ -126,26 +124,12 @@ class Root:
 
 
 @dataclass(frozen=True)
-class Idiom:
-    """Pole ``Idiom:`` Ważnego ``label``: ``rule`` to id reguły (``None`` w postaci ``bez reguły``), ``klass`` klasa
-    idiomu bez reguły (``None`` z regułą), a ``like`` wcześniejsze Ważne z ``jak #N W<n> r<k>``: PR, Ważne i runda
-    (``None`` w postaci ``Idiom: <id>``, czyli przy ucieczce istniejącej reguły)."""
-
-    label: str
-    rule: str | None
-    klass: str | None
-    like: tuple[int, str, int] | None
-
-
-@dataclass(frozen=True)
 class Findings:
     """Kody korzeni z treści werdyktu: ``majors`` po jednym na Ważne w kolejności, ``resolutions`` z punktów
-    rozstrzygnięcia w „## Sprawdzone”, ``idioms`` z pól ``Idiom:`` Ważnych, które je mają, a ``mutations`` bloki
-    mutacji recenzenta w postaci szablonu."""
+    rozstrzygnięcia w „## Sprawdzone”, a ``mutations`` bloki mutacji recenzenta w postaci szablonu."""
 
     majors: tuple[Root, ...]
     resolutions: tuple[Root, ...]
-    idioms: tuple[Idiom, ...] = ()
     mutations: tuple[mutacja_recenzenta.Block, ...] = ()
 
 
@@ -330,19 +314,7 @@ def evidence_problems(label: str, evidence: str, items: Sequence[Item]) -> list[
     return problems
 
 
-def idiom(label: str, text: str) -> Idiom | None:
-    """Pole ``Idiom:`` Ważnego ``label`` z linii ``text`` w jednej z trzech postaci; ``None`` w każdej innej."""
-
-    if found := IDIOM_NO_RULE.fullmatch(text):
-        return Idiom(label, None, found[1], (int(found[2]), found[3], int(found[4])))
-    if found := IDIOM_LIKE.fullmatch(text):
-        return Idiom(label, found[1], None, (int(found[2]), found[3], int(found[4])))
-    if found := IDIOM_ESCAPE.fullmatch(text):
-        return Idiom(label, found[1], None, None)
-    return None
-
-
-def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Idiom], *, mechanism: bool) -> list[str]:
+def _major(label: str, block: Sequence[Item], roots: list[Root], *, mechanism: bool) -> list[str]:
     order = f"{label}: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel{', Mechanizm' if mechanism else ''}"
     where = _value(block[0], "Gdzie:") if block else None
     if where is None:
@@ -373,11 +345,10 @@ def _major(label: str, block: Sequence[Item], roots: list[Root], idioms: list[Id
         else:
             problems.append(f"{label}: „{rest[2].text}” to nie „{MECHANISM_FORM}” z jednym szczeblem strażnika (.agents/skills/przeglad/korzen.md)")
     elif after and _value(after[0], "Idiom:") is not None:
-        if (found_idiom := idiom(label, after.pop(0).text)) is not None:
-            idioms.append(found_idiom)
+        text = after.pop(0).text
         if mechanism:
             problems.append(f"{label}: pole Idiom: zniknęło z szablonu, a po Szczeblu stoi „{MECHANISM_FORM}”")
-        elif found_idiom is None:
+        elif IDIOM.fullmatch(text) is None:
             problems.append(f"{label}: „{rest[2].text}” to nie „{IDIOM_FORMS}”")
     elif mechanism:
         return [*problems, f"{order}, a po Szczeblu jest {after[0].shown() if after else 'koniec'}"]
@@ -448,7 +419,6 @@ def findings(units: Sequence[Item]) -> Findings:
 def _read(units: Sequence[Item], declared: tuple[int, int] | None, *, mechanism: bool) -> tuple[list[str], Findings]:
     found: list[str] = []
     roots: list[Root] = []
-    idioms: list[Idiom] = []
     mutations: list[mutacja_recenzenta.Block] = []
     counts = {"W": 0, "D": 0}
     end = next((index for index, item in enumerate(units) if item.kind == "h2" and item.text == CHECKED), len(units))
@@ -474,7 +444,7 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None, *, mechanism:
         block = units[index + 1 : after]
         if kind == "W":
             roots.append(Root(label, False, None))
-            found.extend(_major(label, block, roots, idioms, mechanism=mechanism))
+            found.extend(_major(label, block, roots, mechanism=mechanism))
         else:
             found.extend(_minor(label, block))
         index = after
@@ -495,4 +465,4 @@ def _read(units: Sequence[Item], declared: tuple[int, int] | None, *, mechanism:
             found.append(f"punkt „{point.text}” to nie rozstrzygnięcie „Korzeń W<n> r<runda>: R-KOD - zdanie” (punkt „## {CHECKED}” nie zaczyna się od „{RESOLUTION_START.strip()}”, gdy nim nie jest)")
         else:
             resolutions.append(Root(resolved[1], bool(resolved[3]), resolved[4], int(resolved[2])))
-    return found, Findings(tuple(roots), tuple(resolutions), tuple(idioms), tuple(mutations))
+    return found, Findings(tuple(roots), tuple(resolutions), tuple(mutations))

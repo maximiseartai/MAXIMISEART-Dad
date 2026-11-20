@@ -69,8 +69,6 @@ def _later_in_status(adr: Path) -> set[str]:
 
 
 def _history_of(retiring: str, links: dict[str, set[str]]) -> set[str]:
-    """ADR, który wycofał pojęcie, i ADR-y, których Status prowadzi do niego."""
-
     reaching = {retiring}
     while grown := {number for number, later in links.items() if later & reaching} - reaching:
         reaching |= grown
@@ -90,8 +88,6 @@ def _scanned_files() -> list[Path]:
 
 
 def _history() -> set[tuple[str, str]]:
-    """Plik i cała linia (bez wcięcia) z każdego wiersza pliku historii."""
-
     entries = set()
     for row in HISTORY.read_text(encoding="utf-8").splitlines():
         if row and not row.startswith("#"):

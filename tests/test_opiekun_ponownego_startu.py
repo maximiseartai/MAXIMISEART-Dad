@@ -36,6 +36,7 @@ from rozliczenia.centrum.tool_update import (
     read_result,
 )
 from rozliczenia import tool_files
+from rozliczenia.centrum.scope import WORKSTATION_FILE
 from rozliczenia.centrum.settings.migrations.reminders import OLD_FOOTER_FILE, OLD_ROLLOUT_FILE
 from rozliczenia.centrum.settings.migrations.workers import OLD_ADDRESSES_FILE, OLD_MAPPING_FILE
 from rozliczenia.centrum.settings.reminders import REMINDERS_FILE
@@ -173,6 +174,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "SETTINGS_HISTORY": tool_files.CONFIG_DIR / HISTORY_FILE,
         "SETTINGS_MEMORY": tool_files.CONFIG_DIR / MEMORY_DIRECTORY,
         "SETTINGS_RELEASE_CHANGES": tool_files.CONFIG_DIR / MEMORY_DIRECTORY / APPLIED_FILE,
+        "WORKSTATION": tool_files.CONFIG_DIR / WORKSTATION_FILE,
         "SETTLEMENT_METRICS": tool_files.SETTLEMENT_METRICS,
         "PREPARATION_METRICS": tool_files.PREPARATION_METRICS,
         "INTERMAX_METRICS": tool_files.INTERMAX_METRICS,
@@ -196,6 +198,7 @@ def test_pliki_narzedzia_na_dysku_taty_maja_w_kazdej_wersji_te_same_nazwy() -> N
         "SETTINGS_HISTORY": "config/historia-ustawien.jsonl",
         "SETTINGS_MEMORY": "config/ustawienia-pamiec",
         "SETTINGS_RELEASE_CHANGES": "config/ustawienia-pamiec/zmiany-z-wydan.json",
+        "WORKSTATION": "config/stanowisko.txt",
         "SETTLEMENT_METRICS": ".rozliczenia-metrics.jsonl",
         "PREPARATION_METRICS": ".przygotowanie-pliku-zbiorczego-metrics.jsonl",
         "INTERMAX_METRICS": ".uporzadkowanie-intermax-metrics.jsonl",

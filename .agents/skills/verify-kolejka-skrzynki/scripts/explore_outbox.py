@@ -15,7 +15,7 @@ passes, at a moment the schedule picks. Then it checks:
 - DOKLADNIE_RAZ: every part of the newest version of every wysyłka is in the Skrzynka exactly once, in an issue of
   its target, and no text of an older version of it is left there (ADR 0015 after #840: „Wysyłka jest dokładnie
   raz”); a part the newest version no longer has is ``_RETIRED``. A wysyłka with a file for the Archiwum okresu
-  (#844) has exactly one whole file of its name in the Archiwum of its tag, with the text of the newest version, and
+  has exactly one whole file of its name in the Archiwum of its tag, with the text of the newest version, and
   its file never went twice: the queue never removed a whole file of its version or a newer one to upload it again.
   Each Wzorzec beside that file (``ArchiveFile.templates``, in the scope ``archiwum``) is in the Archiwum exactly once,
   whole and with its bytes, and the queue never removed a whole Wzorzec to upload it again.
@@ -25,7 +25,7 @@ passes, at a moment the schedule picks. Then it checks:
 - JEDNO_ISSUE: one problem has one open Zgłoszenie and one period has one issue okresu; a wysyłka to a new issue
   (Uwaga taty) opens one issue.
 - NAJNOWSZA_WERSJA: once a newer version of a wysyłka is in the queue, the Skrzynka gets no text of an older one: a
-  pass removes the file of the older version unsent (``_superseded``, #846: without the network only the newest progress
+  pass removes the file of the older version unsent (``_superseded``: without the network only the newest progress
   of a Wycena w efenix waits). Judged only in schedules in which no read of a queue file failed, because a pass that
   cannot read the newer file sends the older one, and the newer then changes its comment.
 - KOLEJKA_PUSTA: no queue file without its delivery marker is left when the schedule ends; a delivered file whose
@@ -38,7 +38,7 @@ real ``send_in_background`` decides whether a pass starts at all. The Skrzynka b
 the in-memory ``MemoryBox`` (GitHub's issues and comments, and its Releases with their files for the Archiwum okresu),
 the clock moves only when the ``RETRY_S`` wake fires and keeps the wakes ``after`` arms, and the key is always there and
 accepted. In a scope with ``list_lag`` GitHub's issue list does not show an issue until ``LIST_LAG_S`` after it was
-opened, the longest lag ``KeyedBox`` allows for (#879), so only the wake lets it catch up: a restart of Centrum takes no
+opened, the longest lag ``KeyedBox`` allows for, so only the wake lets it catch up: a restart of Centrum takes no
 time. ``KeyedBox`` keeps the moments of its openings in the file ``OPENING_FILE``, which a restart keeps, as Dad's
 ``config`` folder does; the checker keeps that file in memory (``_NotesInMemory``), because it never fails it. Only a
 step of the
@@ -144,8 +144,8 @@ class _NotesInMemory:
     ``KeyedBox.of_work`` hands ``KeyedBox`` the file through ``NotesFile`` with ``replace_atomically``; the checker hands it
     this object as both, so every Centrum of a schedule reads what the last one wrote, as from Dad's ``config``
     folder, and the file is missing (``FileNotFoundError``) until the first write. The checker never fails the read or
-    the write of this file (SKILL.md), so the disk added nothing but time: since #897 the file took about 40% of a scope
-    (#911), and on Windows CI ``archiwum-diagnoza`` ran past the 600 s limit of the mutation engine (``tools/lib/silnik_mutacji.py``).
+    the write of this file (SKILL.md), so the disk added nothing but time: the file took about 40% of a scope,
+    and on Windows CI ``archiwum-diagnoza`` ran past the 600 s limit of the mutation engine (``tools/lib/silnik_mutacji.py``).
     """
 
     def __init__(self) -> None:
@@ -199,7 +199,7 @@ class MemoryBox:
 
     With ``list_lag`` ``labelled_issues`` leaves out each issue opened less than ``LIST_LAG_S`` ago on ``clock``
     (``opened_at``), also one whose answer was lost, as GitHub's list does for a few seconds, and ``archive`` leaves out
-    a Release opened so recently (``release_opened_at``), as GitHub's list of Releases does (#887). The list of a
+    a Release opened so recently (``release_opened_at``), as GitHub's list of Releases does. The list of a
     Release's files does not lag here: its lag was not measured.
     """
 
@@ -788,7 +788,7 @@ def _dropped(line: str) -> None:
 
 class _Log(CentrumLog):
     """The Centrum log of the queue without a file: the checker judges only the exceptions of a pass (BEZ_WYJATKU), and
-    a line written to disk added only time, as ``_NotesInMemory`` says (#911)."""
+    a line written to disk added only time, as ``_NotesInMemory`` says."""
 
     def __init__(self, failures: list[str]) -> None:
         super().__init__(Path("centrum.log"), append=_dropped)
@@ -1065,7 +1065,7 @@ def _state(
     ``archive_refused`` is in the state although ``_send_all`` sets it anew in every pass, as the wake it arms is.
     Also how many later wysyłki of the scope the code has not posted yet (``pending``), which decides which versions are
     superseded, and whether the Skrzynka got a text of a superseded one (NAJNOWSZA_WERSJA).
-    Time counts only as what it decides (#879): which issues and Releases GitHub's lists do not show yet, and what
+    Time counts only as what it decides: which issues and Releases GitHub's lists do not show yet, and what
     ``KeyedBox`` adds to its answers from ``opening`` and which writes it holds (``KeyedBox.state``); a wake moves time
     past all of them. The checker runs every
     pass in its own thread, so the last list of a pass is still there in the next one; in Centrum each pass has a new
@@ -1133,7 +1133,7 @@ def _emptied(work: Path) -> None:
     """Every file the last schedule left in ``work`` removed, its folders kept: the queue folder, ``config`` and
     ``zgloszenia`` hold no state of their own (the queue folder appears with the first ``Outbox.post`` of every scope
     anyway, and the folder lock opens ``PASS_LOCK`` with ``"ab"``), and deleting and creating them again for every
-    schedule only cost time, most of it on Windows CI (#911)."""
+    schedule only cost time, most of it on Windows CI."""
 
     for folder, _, names in os.walk(work):
         for name in names:
@@ -1297,7 +1297,7 @@ def explore(name: str, *, stop_at_new: bool = False) -> ScopeReport:
     A mutation of ``check_outbox_mutations.py`` needs only the verdict, and a new violation makes it
     ``KOLEJKA: NOWE NARUSZENIE`` whatever the schedules after it show. Without the stop, the mutation of
     ``archiwum-diagnoza`` explored all 23 787 schedules (51 s on Maks's Mac on 2026-11-05) after it saw its violation in the
-    first one, and with eight mutations at once on the four vCPU of Windows CI it ran over the 600 s limit (#963).
+    first one, and with eight mutations at once on the four vCPU of Windows CI it ran over the 600 s limit.
     """
 
     report = ScopeReport(name)
