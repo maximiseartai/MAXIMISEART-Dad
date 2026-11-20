@@ -6221,6 +6221,42 @@ def test_dodany_wykonawca_staje_na_koncu_cofniety_wpis_wraca_na_miejsce_wpisu_ze
     assert list(listed_workers(client)) == [*start, "drugi.nowy", "pierwszy.nowy"]
 
 
+@pytest.mark.parametrize(
+    ("added", "rule"),
+    [
+        pytest.param(
+            [worker_form(["drugi.nowy"], "Pierwszy Nowy")], settings_messages.worker_same_file(), id="ta-sama-nazwa"
+        ),
+        pytest.param(
+            [worker_form(["drugi.nowy"], "Drugi Nowy", [OBCY])],
+            settings_messages.worker_address_repeated(),
+            id="wspolny-adres",
+        ),
+        pytest.param(
+            [worker_form(["pierwszy.nowy"], "Drugi Nowy"), worker_form(["pierwszy.drugi"], "Trzeci Nowy")],
+            settings_messages.worker_login_repeated(),
+            id="wspolny-login",
+        ),
+    ],
+)
+def test_cofniecie_usuniecia_wykonawcy_po_ktorym_lista_lamalaby_regule_to_odmowa_ze_zdaniem_a_lista_i_historia_bez_zmian(
+    tmp_path: Path, added: list[dict[str, object]], rule: str
+) -> None:
+    centrum_ = settling_with_register(tmp_path, ["adrian.testowy"])
+    client = centrum_.client
+    client.post(WORKERS_API, json=worker_form(["pierwszy.nowy", "pierwszy.drugi"], "Pierwszy Nowy", [OBCY]))
+    removed = client.delete(f"{WORKERS_API}/pierwszy.nowy")
+    saved = [client.post(WORKERS_API, json=form) for form in added]
+    workers, rows = centrum_.tool.worker_list.read_bytes(), history_rows_of(client)
+
+    undone = client.post(f"/api/settings/history/{removed.json()['change']}/undo")
+
+    assert [answer.status_code for answer in (removed, *saved)] == [200] * (1 + len(added))
+    assert (undone.status_code, undone.json()) == (422, {"message": settings_messages.worker_undo_breaks_list(rule)})
+    assert centrum_.tool.worker_list.read_bytes() == workers
+    assert history_rows_of(client) == rows
+
+
 def test_zmiana_wczesniejszego_wykonawcy_na_adres_albo_plik_pozniejszego_to_odmowa_przy_polu_formularza(tmp_path: Path) -> None:
     centrum_ = settling_centrum(tmp_path)
     client = centrum_.client

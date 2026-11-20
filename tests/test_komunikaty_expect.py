@@ -146,6 +146,7 @@ SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | 
             "worker_address_repeated": [settings_messages.worker_address_repeated],
             "worker_unknown": [settings_messages.worker_unknown],
             "worker_list_changed": [settings_messages.worker_list_changed],
+            "worker_undo_breaks_list": [partial(settings_messages.worker_undo_breaks_list, settings_messages.worker_same_file())],
             "worker_suggestions_not_set": [settings_messages.worker_suggestions_not_set],
             "worker_suggestions_unreadable": [settings_messages.worker_suggestions_unreadable],
             "worker_rename_old_files": [
