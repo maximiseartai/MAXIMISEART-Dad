@@ -874,6 +874,34 @@ def test_czas_werdyktu_rosnie_najwyzej_liniowo_z_dlugoscia_polecenia(prefix: str
     assert ratio <= LINEAR_LIMIT, (ratio, len(commands[1]))
 
 
+DOUBLING = 2
+DOUBLING_LIMIT = 1.5
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        pytest.param("", id="slowo"),
+        pytest.param("gh run ", id="slowo-za-gh"),
+        pytest.param('echo "', id="slowo-w-cudzyslowie"),
+    ],
+)
+def test_werdykt_jednego_slowa_rosnie_liniowo_do_1_mb(prefix: str) -> None:
+    commands = [prefix + "x" * (1_000_000 // DOUBLING), prefix + "x" * 1_000_000]
+
+    timed = subprocess.run(
+        [sys.executable, "-c", TIMER, str(CZEKANIE), str(DOUBLING), str(ROUNDS), str(MIN_HALF_S)],
+        input=json.dumps(commands),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=HANG_S,
+    )
+    ratio = float(timed.stdout)
+
+    assert ratio <= DOUBLING_LIMIT, ratio
+
+
 MODES = st.one_of(
     st.none(),
     st.sampled_from(("default", "acceptEdits", "plan", "dontAsk", "auto", "bypassPermissions")),
