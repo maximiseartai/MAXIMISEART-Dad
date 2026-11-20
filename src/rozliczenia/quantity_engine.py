@@ -31,7 +31,7 @@ import re
 from types import MappingProxyType
 from typing import Final
 
-from .collective_layout import QUANTITY_LETTERS
+from .collective_layout import DEFECT_COLUMN, QUANTITY_LETTERS, letter
 from .text import normalize_text
 
 BUILT_IN_COLUMNS: Final = ("P", "Q", "S")
@@ -41,6 +41,7 @@ DESCRIPTION_COLUMNS: Final = ("Y", "AB", "AD", "AJ", "AK", "AL", "AM")
 """Kolumny Ilości usług z opisu technika (``CZYNNOŚCI ZREALIZOWANE``), poza słownikiem Reguł ilości (ADR 0033); reguła
 może wpisać w AK i AM tylko część z nich."""
 MAX_VALUE: Final = 999
+_DEFECT: Final = letter(DEFECT_COLUMN)
 
 
 class DeviceGroup(StrEnum):
@@ -413,6 +414,14 @@ def evaluate(rules: QuantityRules, order: OrderContent) -> RuleResult:
         return WithoutRule(_sum(contributions), leave_empty, contributions, fired)
     contributions += _built_in(facts)
     return ServiceQuantities(_sum(contributions), leave_empty, contributions, fired)
+
+
+def evaluated(rules: QuantityRules, order: OrderContent | None) -> RuleResult | None:
+    return None if order is None or order.started is None else evaluate(rules, order)
+
+
+def is_fault(result: RuleResult | None) -> bool:
+    return result is not None and result.quantities.get(_DEFECT, 0) != 0
 
 
 def device_spelling(text: str) -> str:
