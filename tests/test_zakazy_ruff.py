@@ -10,11 +10,12 @@ Próbka biegnie przez ``ruff check --stdin-filename <katalog zakazu>/sonda_zakaz
 tego katalogu, a usunięcie albo literówka w linii zakazu wywraca jego próbkę.
 
 Z ``TID251`` konfiguracja ruff zwalnia tylko pliki z prawem właściciela (``OWNERS``), a kod każdego z nich zgłasza poza
-zwolnieniem dokładnie nazwy, których jest właścicielem.
+zwolnieniem dokładnie nazwy, których jest właścicielem; to drugie sprawdza też krok reguł chwastów zadania CI „Ruff, mypy”.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import importlib.util
 import json
 from pathlib import Path
@@ -1009,24 +1010,83 @@ def test_konfiguracja_ruff_zwalnia_z_tid251_tylko_wlascicieli(tmp_path: Path) ->
     )
 
 
+def _outside_owner_right(owners: Mapping[str, frozenset[str]], cwd: Path = ROOT) -> list[str]:
+    """Pliki ``owners`` w ``cwd`` w jednym biegu ruff bez ``per-file-ignores`` i z ``--ignore-noqa``: każda zakazana nazwa
+    spoza prawa pliku i każde ``import *`` z komunikatem zakazu, a potem każda nazwa prawa, której plik już nie używa."""
+
+    found: dict[str, dict[str, str]] = {owner: {} for owner in owners}
+    unexempted = ("--config", "lint.per-file-ignores = {}", "--config", "lint.extend-per-file-ignores = {}")
+    for path, banned, message in _banned_names(*unexempted, *owners, cwd=cwd):
+        found[path].setdefault(banned, message)
+    return [
+        *(f"{owner}: {found[owner][banned]}" for owner in owners for banned in sorted(found[owner].keys() - owners[owner])),
+        *(f"{owner}: {banned} bez użycia" for owner in owners for banned in sorted(owners[owner] - found[owner].keys())),
+    ]
+
+
 @pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
-@pytest.mark.parametrize("owner", list(OWNERS))
-def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw(owner: str) -> None:
-    """Kod właściciela biegnie przez ruff jako sonda obok niego, poza jego zwolnieniem i z ``--ignore-noqa``: zgłasza
-    dokładnie nazwy z ``OWNERS``. Inna zakazana nazwa (np. zegar w ``dad_files.py``) albo ``import *`` to droga obok
-    właściciela tej nazwy, a nazwa, której właściciel już nie używa, to prawo do usunięcia."""
-    path = ROOT / owner
-    probe = path.with_name("sonda_zakazu.py")
+def test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw() -> None:
+    """Ruff zwalnia plik właściciela z całego ``TID251``, więc reszta zakazów w nim to ten krok reguł chwastów (zadanie
+    CI „Ruff, mypy”): inna zakazana nazwa (np. zegar w ``dad_files.py``) albo ``import *`` to droga obok właściciela tej
+    nazwy, a nazwa, której właściciel już nie używa, to prawo do usunięcia."""
 
-    found = {banned: message for _, banned, message in _banned_names("--stdin-filename", str(probe), "-", code=path.read_text(encoding="utf-8"))}
+    outside = _outside_owner_right(OWNERS)
 
-    assert sorted(found) == sorted(OWNERS[owner]), "\n".join(
+    assert outside == [], "\n".join(
         [
-            f"{owner} używa zakazanych nazw {sorted(found)}, a jego prawo w OWNERS to {sorted(OWNERS[owner])}: inną nazwę "
-            "bierz przez jej właściciela, a nazwę, której plik już nie używa, usuń z OWNERS",
-            *(f"- {found[banned]}" for banned in sorted(found.keys() - OWNERS[owner])),
+            "plik z prawem właściciela używa zakazanej nazwy spoza swojego wiersza OWNERS w tests/test_zakazy_ruff.py: inną "
+            "nazwę bierz przez jej właściciela, a nazwę bez użycia usuń z OWNERS",
+            *(f"- {line}" for line in outside),
         ]
     )
+
+
+_OWNER_CONFIG = """[lint]
+select = ["TID251", "F403"]
+[lint.per-file-ignores]
+"wlasciciel.py" = ["TID251"]
+[lint.flake8-tidy-imports.banned-api]
+"os.name".msg = "system"
+"time.sleep".msg = "czekanie"
+"""
+
+
+@pytest.mark.skipif(importlib.util.find_spec("ruff") is None, reason="zadania pytest na Windows instalują tylko requirements.txt, bez ruff")
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        pytest.param("import os\nSYSTEM = os.name\n", [], id="własna-nazwa-przechodzi"),
+        pytest.param(
+            "import os\nimport time\nSYSTEM = os.name\ntime.sleep(1)\n",
+            ["wlasciciel.py: `time.sleep` is banned: czekanie"],
+            id="cudza-nazwa-obok-własnej-pada",
+        ),
+        pytest.param(
+            "import os\nimport time as czas\nSYSTEM = os.name\nczas.sleep(1)\n",
+            ["wlasciciel.py: `time.sleep` is banned: czekanie"],
+            id="cudza-nazwa-pod-aliasem-pada",
+        ),
+        pytest.param(
+            "import os\nfrom time import sleep  # noqa: TID251 - próbka\nSYSTEM = os.name\n",
+            ["wlasciciel.py: `time.sleep` is banned: czekanie"],
+            id="cudza-nazwa-pod-noqa-pada",
+        ),
+        pytest.param(
+            "import os\nfrom time import *\nSYSTEM = os.name\n",
+            ["wlasciciel.py: `from time import *` used; unable to detect undefined names"],
+            id="import-gwiazdki-pada",
+        ),
+        pytest.param("import time\ntime.sleep(1)\n", ["wlasciciel.py: `time.sleep` is banned: czekanie", "wlasciciel.py: os.name bez użycia"], id="prawo-bez-użycia-pada"),
+    ],
+)
+def test_zakazana_nazwa_spoza_prawa_wlasciciela_pada_w_pliku_wlasciciela(tmp_path: Path, code: str, expected: list[str]) -> None:
+    """Plik z prawem właściciela ``os.name`` w konfiguracji z dwoma zakazami: ``_outside_owner_right`` przepuszcza tylko
+    jego nazwę."""
+
+    (tmp_path / "ruff.toml").write_text(_OWNER_CONFIG, encoding="utf-8")
+    (tmp_path / "wlasciciel.py").write_text(code, encoding="utf-8")
+
+    assert _outside_owner_right({"wlasciciel.py": frozenset({"os.name"})}, cwd=tmp_path) == expected
 
 
 # Zakazy treści z Wydania pliku Ustawień w src/ruff.toml, które testy niżej uruchamiają z --ignore-noqa: każda zakazana

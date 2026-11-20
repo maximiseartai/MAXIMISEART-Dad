@@ -177,6 +177,8 @@ jobs:
 
       # The rules of REGULY_CALEGO_DRZEWA in tests/test_zapadki.py report every line of their files, not only the added
       # ones, and a weed rule has no owner right in a comment (ADR 0036): no ast-grep-ignore and no noqa of a banned name.
+      # Ruff exempts an owner file from all of TID251, so the last test reports there every banned name outside its row
+      # of OWNERS in tests/test_zakazy_ruff.py.
       # The step runs after ruff and mypy, so before them no code of the PR runs but its install, as in the guard proof
       # (tools/lib/srodowisko_ci.py).
       - name: Weed rules of the whole tree
@@ -187,6 +189,7 @@ jobs:
           tests/test_zapadki.py::test_kazda_regula_calego_drzewa_jest_w_katalogu_regul
           tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_reguly_ast_grep
           tests/test_zapadki.py::test_zadna_linia_repo_nie_tlumi_zakazu_ruff
+          tests/test_zakazy_ruff.py::test_wlasciciel_uzywa_tylko_swoich_zakazanych_nazw
 
       # On a pull request HEAD^1 is the base the merge commit merges into, on a push to main the previous main.
       - name: ast-grep rules on the added lines of the repository
