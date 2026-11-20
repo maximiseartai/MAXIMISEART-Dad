@@ -12,6 +12,8 @@ Bez `boatbox` w `PATH` (inna maszyna niż Mac Maksa) uruchamiaj wszystko lokalni
 
 ## Gdzie biegnie polecenie
 
+Każde ciężkie polecenie i każdą jego część, którą da się rozdzielić, puszczaj przez `boatbox`, także wiele razy i równolegle.
+
 | Praca | Gdzie | Jak |
 |---|---|---|
 | `mutacje.py --plik` z mutacjami o kilku różnych `polecenie` | kilka boxów naraz, bo razem są szybsze od Maca | `boatbox fan` (sekcja „Fan mutacji”) |
@@ -40,7 +42,7 @@ Gdy ta zmiana jest już na `origin/main`, uruchom `boatbox base` bez `--setup`, 
 
 ## Fan mutacji
 
-Zestaw mutacji dziel na najwyżej 12 części, bo plan boat daje 12 startów boxa na minutę, a mutacje o tym samym `polecenie` trzymaj w jednej części:
+Zestaw mutacji dziel na części (w przykładzie 12), a mutacje o tym samym `polecenie` trzymaj w jednej części:
 
 ```bash
 jq -c '[group_by(.polecenie | tostring) | to_entries[] | {k: (.key % 12), v: .value}] | group_by(.k)[] | map(.v[])' mutacje.json \
@@ -51,13 +53,6 @@ rm mutacje-fan-*.json
 
 Mutacje bez klucza `polecenie` biorą polecenie po `--`, więc wtedy dopisz `-- <polecenie>` na końcu linii w `awk`.
 Pliki części leżą w korzeniu worktree, bo `boatbox` wysyła na box tylko pliki, które widzi git.
-
-## Budżet
-
-Plan boat liczy starty boxa w oknach minuty, godziny i doby (`boat limits --json`) oraz godziny maszyn, z których na każdy dzień przypada tylko część, a box `large` zużywa je podwójnie.
-Start to każde utworzenie i wznowienie boxa oraz każda część `fan` uruchomiona równolegle.
-Gdy Mac jest wąskim gardłem (obciążenie z ostatniej minuty w `uptime` co najmniej 16, liczba jego rdzeni), ciężkie polecenie biegnie na boxie także po przekroczeniu tempa godzin (linia `over pace:` w `boatbox status`), bo zatkany Mac kosztuje wątki agentów więcej niż godziny planu (decyzja Maksa 16.11.2026).
-`boatbox auto` wybiera wtedy box sam, a na Macu zostawia polecenie tylko przy wolnych rdzeniach albo gdy żaden box nie wystartuje; te przypadki i zachowanie `fan` przy małej liczbie startów opisuje `boatbox help`.
 
 ## Dane
 

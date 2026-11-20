@@ -32,7 +32,7 @@ import szybko
 import wplyw_zmiany
 import wyniki_testow
 
-OPIS = """Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz dla każdego testu dodanego albo zmienionego w zmianie.
+OPIS = """Dowodzi, że test albo sprawdzenie pada na zepsutym kodzie (mutacji); użyj raz przed pushem, ze wszystkimi mutacjami zmiany w jednym --plik.
 
 Przepis z korzenia checkoutu; po ``--`` stoją argumenty Pythona, który uruchomił narzędzie:
 
