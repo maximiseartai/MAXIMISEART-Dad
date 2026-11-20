@@ -84,7 +84,7 @@ def _env(tmp_path: Path, *, boatbox: bool = True, extra: Mapping[str, str] | Non
     fake.mkdir(exist_ok=True)
     (fake / "boatbox").write_text("exit 0\n", encoding="utf-8")
     (fake / "boatbox").chmod(0o755)
-    hidden = ("PYTEST_CURRENT_TEST", "PYTEST_XDIST_WORKER", "BOATBOX_MAC_SLOT", "BOATBOX_MAC_SLOTS", "BOATBOX_SLOT_DIR")
+    hidden = ("PYTEST_VERSION", "PYTEST_CURRENT_TEST", "PYTEST_XDIST_WORKER", "BOATBOX_MAC_SLOT", "BOATBOX_MAC_SLOTS", "BOATBOX_SLOT_DIR")
     env = {name: value for name, value in os.environ.items() if name not in hidden}
     env |= {"PATH": os.pathsep.join([*[str(fake)] * boatbox, "/usr/bin", "/bin"]), "BOATBOX_SLOT_DIR": str(tmp_path / "sloty")}
     return env | {"BOATBOX_MAC_SLOTS": "2", "QUIET_MACHINE_SCRATCH": str(tmp_path / "maszyna"), **(extra or {})}
@@ -137,11 +137,10 @@ def test_ciezki_proces_bez_wolnego_slotu_czeka_w_kolejce_i_rusza_po_zwolnieniu_z
     ("boatbox", "extra"),
     [
         pytest.param(True, {"BOATBOX_MAC_SLOT": "1"}, id="w-slocie-boatbox"),
-        pytest.param(True, {"PYTEST_CURRENT_TEST": "tests/test_x.py::test_x (call)"}, id="w-tescie-pytest"),
         pytest.param(False, {}, id="bez-boatbox-w-path"),
     ],
 )
-def test_proces_w_slocie_w_tescie_albo_bez_boatbox_nie_czeka_na_slot(boatbox: bool, extra: dict[str, str], tmp_path: Path) -> None:
+def test_proces_w_slocie_albo_bez_boatbox_nie_czeka_na_slot(boatbox: bool, extra: dict[str, str], tmp_path: Path) -> None:
     with _busy(tmp_path / "sloty", range(1, 3)):
         done = _run(MUTACJE, tmp_path, boatbox=boatbox, extra=extra)
 
@@ -177,7 +176,7 @@ def test_probka_potomek_widzi_slot_rodzica_zajety() -> None:
 
 
 def test_narzedzie_trzyma_slot_przez_caly_bieg_a_potomkowie_dostaja_jego_numer(tmp_path: Path) -> None:
-    probe = ["-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_slot_maca.py", "-k", "probka"]
+    probe = ["-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_slot_maca.py", "-k", "probka_potomek"]
     mutations = tmp_path / "mutacje.json"
     change = [["tools/lib/slot_maca.py", "LINE_S = 30", "LINE_S = 31"]]
     mutations.write_text(json.dumps([{"nazwa": "bez zmiany zachowania", "zmiany": change, "polecenie": probe}]), encoding="utf-8")
@@ -186,6 +185,27 @@ def test_narzedzie_trzyma_slot_przez_caly_bieg_a_potomkowie_dostaja_jego_numer(t
 
     assert done.returncode == 1, done.stdout + done.stderr
     assert "NIEWYKRYTA: bez zmiany zachowania" in done.stdout + done.stderr
+
+
+IMPORT_ENV = dict(os.environ)
+"""Środowisko z chwili importu modułu, takie jak ``WITHOUT_XDIST_WORKERS`` w ``tests/test_mutacje.py``: bez
+``PYTEST_CURRENT_TEST``, które pytest ustawia dopiero w fazie testu."""
+
+
+@pytest.mark.skipif("SLOT_MACA_PROBKA_TESTU" not in os.environ, reason="próbka testu w sesji pytest, którą uruchamia test niżej")
+def test_probka_test_uruchamia_narzedzie_ze_srodowiskiem_z_importu() -> None:
+    done = subprocess.run(MUTACJE, cwd=ROOT, env=IMPORT_ENV, capture_output=True, text=True, encoding="utf-8", timeout=10, check=False)
+
+    assert (done.returncode, "CIĘŻKIE" in done.stderr) == (1, False), done.stderr
+
+
+def test_narzedzie_uruchomione_przez_test_ze_srodowiskiem_z_importu_nie_czeka_na_slot(tmp_path: Path) -> None:
+    probe = [sys.executable, "-m", "pytest", "-q", "-n", "0", "-p", "no:cacheprovider", "tests/test_slot_maca.py", "-k", "probka_test"]
+
+    with _busy(tmp_path / "sloty", range(1, 3)):
+        done = _run(probe, tmp_path, extra={"SLOT_MACA_PROBKA_TESTU": "1"})
+
+    assert (done.returncode, "1 passed" in done.stdout) == (0, True), done.stdout + done.stderr
 
 
 def test_bez_wlasnej_liczby_slotow_jest_ich_tyle_co_w_boatbox_takze_przy_zerze(tmp_path: Path) -> None:

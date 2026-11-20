@@ -34,7 +34,7 @@ Mac ma sloty na ciężkie polecenia, wspólne dla wszystkich repozytoriów i wą
 `boatbox auto` i `boatbox run --here` zajmują slot na cały bieg polecenia blokadą pliku w jądrze i dają mu jego numer w `BOATBOX_MAC_SLOT`, więc dwa równoczesne starty nie dostaną tego samego slotu, a slot zabitego polecenia zwalnia się sam.
 Decyzja zapada przy starcie, nie po obciążeniu z `uptime`, które nie nadąża za kilkoma startami naraz.
 Bez wolnego slotu `boatbox auto` od razu wysyła polecenie na box, a gdy box nie może wystartować, polecenie czeka w kolejce na slot i co 30 s pisze linię stanu, więc na Macu nigdy nie biegnie więcej ciężkich poleceń niż slotów.
-`szybko.py`, `mutacje.py --plik`, `benchmark_przebiegu.py measure|freeze` i `ci_lokalnie.py` z zadaniem `pytest` albo `mutations` same biorą slot Maca przy starcie (`tools/lib/slot_maca.py`), gdy `boatbox` jest w `PATH`, a polecenie nie biegnie już w slocie `boatbox` (`BOATBOX_MAC_SLOT`); sam pytest bramki nie ma, więc pełny pytest uruchamiaj przez `boatbox job` jak w tabeli wyżej.
+`szybko.py`, `mutacje.py --plik`, `benchmark_przebiegu.py measure|freeze` i `ci_lokalnie.py` z zadaniem `pytest` albo `mutations` same biorą slot Maca przy starcie (`tools/lib/slot_maca.py`), gdy `boatbox` jest w `PATH`, a polecenie nie biegnie już w slocie `boatbox` (`BOATBOX_MAC_SLOT`) ani w sesji pytest (`PYTEST_VERSION`, więc narzędzie uruchomione przez test nie czeka); sam pytest bramki nie ma, więc pełny pytest uruchamiaj przez `boatbox job` jak w tabeli wyżej.
 Bez wolnego slotu czekają w kolejce na slot jak `boatbox` i co 30 s piszą linię `CIĘŻKIE … Mac zajęty` z gotowym poleceniem `boatbox`, które pośle je na box bez czekania; kodu wyjścia bramka nie zmienia.
 Zajęte sloty, ich polecenia i czas pokazuje `boatbox status`.
 
