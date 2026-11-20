@@ -4,8 +4,9 @@ Sloty to te same pliki co sloty ``boatbox auto`` i ``boatbox run --here`` (skill
 na jednym z ``BOATBOX_MAC_SLOTS`` plików w ``BOATBOX_SLOT_DIR``, a ich liczba to ta sama reguła co w ``boatbox``.
 ``take`` nic nie robi, gdy ``boatbox`` nie ma w ``PATH`` (CI, box boat, komputer taty), gdy proces biegnie już
 w slocie (``SLOT``, które ustawia ``boatbox`` i samo ``take`` dla potomków) albo w sesji pytest (``SESSION``, które
-pytest wpisuje do ``os.environ`` przed kolekcją na całą sesję, więc ma je każdy potomek testu, także uruchomiony ze
-środowiskiem skopiowanym przy imporcie modułu, a ``PYTEST_CURRENT_TEST`` istnieje tylko w fazie testu). Inaczej bierze
+pytest wpisuje do ``os.environ`` przed kolekcją na całą sesję, więc ma je potomek testu, który dziedziczy jego
+środowisko, także skopiowane przy imporcie modułu, a ``PYTEST_CURRENT_TEST`` istnieje tylko w fazie testu; środowisko
+``srodowisko_ci.variables()`` ukrywa ``PYTEST_*``, ale żadne narzędzie ze slotem w nim nie biegnie). Inaczej bierze
 pierwszy wolny slot i trzyma go do końca procesu, a jądro zwalnia go także po zabiciu; bez wolnego slotu czeka
 w kolejce jak ``boatbox`` i co ``LINE_S`` s pisze linię ``CIĘŻKIE`` z gotowym poleceniem ``boatbox``, które pośle
 polecenie na box bez czekania. Woła ją tylko proces narzędzia (``szybko.py``, ``mutacje.py --plik``,
