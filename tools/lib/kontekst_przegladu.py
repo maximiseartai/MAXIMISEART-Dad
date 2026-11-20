@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess
 import sys
 
+import bramka_korzenia
 import github
 import limit_rund
 from ostatnie_linie import SKILLE_VERIFY
@@ -15,6 +16,7 @@ import werdykt_pr
 
 ZASADY = """Dwa tryby służą recenzentowi (skill ``przeglad``, ``recenzent.md``) i niczego nie scalają. ``--przeglad`` drukuje
 kontekst przeglądu: pełny SHA HEAD PR, bazę i merge-base z nią, ``git diff --stat`` i zmienione pliki od merge-base,
+stawkę przeglądu (linia ``STAWKA``: ``lekka`` z ``bramka_korzenia.light`` albo ``pełna``),
 wynik ``tools/skille_dla_zmiany.py`` z HEAD PR liczony od merge-base (w kopii commitu HEAD, więc ``pilnuje:`` skilli
 jest z PR) i poprzednie werdykty PR w kolejności utworzenia, każdy z datą, autorem, dwiema pierwszymi liniami i tym,
 czy dotyczy HEAD (``PASS`` poza regułami ``--werdykt`` z dopiskiem). Gdy ostatni werdykt jest dla innego commitu,
@@ -32,6 +34,11 @@ a PR, któremu limit rund (``limit_rund``) nie daje kolejnej rundy, tylko linią
 
 SKILLS_FOR_CHANGE = Path("tools") / "skille_dla_zmiany.py"
 SKILLS_TIMEOUT_S = 300
+STAKE_LIGHT = (
+    "STAWKA | lekka: PR zmienia tylko tools/ bez tools/wydanie.py, .github/ i testy narzędzi, więc Ważne jest tylko zepsucie main, "
+    "Wydania albo danych taty, a scal_pr nie wymaga do niego bloku ## Korzeń ani strażnika (aneks ADR 0042)"
+)
+STAKE_FULL = "STAWKA | pełna"
 
 
 def _skills_for_change(head: str, fork: str) -> list[str]:
@@ -65,6 +72,7 @@ def print_context(pull: stan_pr.Pull, base: str) -> int:
     print(f"ZMIANA | git diff --stat {fork} {pull.head}")
     print(repo.git(ROOT, "diff", "--stat", fork, pull.head, timeout=limit).rstrip())
     print(f"PLIKI | {len(files)}", *files, sep="\n")
+    print(STAKE_LIGHT if bramka_korzenia.light(pull) else STAKE_FULL)
     print(f"SKILLE | {SKILLS_FOR_CHANGE.as_posix()} {fork} na HEAD PR", *_skills_for_change(pull.head, fork), sep="\n")
     print(stan_pr.ci_line(pull))
     print(*werdykt_pr.history(pull.verdicts, pull.head), sep="\n")

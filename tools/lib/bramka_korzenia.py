@@ -16,6 +16,7 @@ import straznik
 import szablon_werdyktu
 from szablon_werdyktu import Item
 import werdykt_pr
+import wplyw_zmiany
 
 ZASADY = """Bramka korzenia przed merge'em (ADR 0031, decyzje Q8, Q10, Q14, Q17, Q18, Q20, Q25, Q26): opis PR ma sekcję
 ``## Korzeń`` z blokiem na każde Ważne i każdy czerwony `main`, który PR naprawia, a każdy kod ``NOWY`` z werdyktów PR
@@ -38,6 +39,10 @@ linię i listę czyta ``naprawia.listed_issues`` według tych samych reguł co �
 Granica: PR naprawy, który wskazuje issue inaczej (np. „Część: #N” albo „Naprawia czerwony main #N”), bramka liczy jak
 PR bez naprawy czerwonego `main`; linię „Część #N” każe pisać ``docs/agents/pr-i-ci.md`` i skill ``pr``, a jej brak
 łapie recenzent.
+Ważne PR, który dostaje lekką rundę przeglądu (``light``: ``wplyw_zmiany.light_review`` od ``origin/<baza PR>``, aneks
+„Lekka runda przeglądu PR samych narzędzi” ADR 0042, decyzja Maksa z 20.11.2026), bloku nie potrzebuje, więc warunek 5
+nie ma dla niego strażnika do dowodu, a jego kod ``NOWY`` nie musi stać na liście; blok czerwonego `main` nadal tak.
+Stawkę drukuje recenzentowi ``--przeglad`` (``kontekst_przegladu``).
 Flaky test ma własne issue z etykietą ``flaky-test``, więc PR, który wskazuje tylko je, sekcji nie potrzebuje (Q10).
 Opis bez słów „Część” i „Naprawia” i bez werdyktu ``FAIL`` bramka pomija bez pytania GitHuba.
 
@@ -102,6 +107,10 @@ EVIDENCE = "Dowód:"
 PULL_REQUEST = "pull_request"
 
 
+def light(pull: Pull) -> bool:
+    return wplyw_zmiany.light_review(ROOT, f"refs/remotes/{REMOTE}/{pull.base}", pull.head)
+
+
 def problems(pull: Pull, deployed: datetime | None, *, guarded: bool = False) -> list[str]:
     """Przyczyny odmowy merge'a ``pull`` z bramki korzenia; ``deployed`` to chwila wdrożenia bramki na bazie PR
     (``werdykt_pr.deployment`` z ``MARKER``), ``guarded``, czy blok Ważnego kończy ``Strażnik:`` zamiast ``Dowód:``,
@@ -114,8 +123,9 @@ def problems(pull: Pull, deployed: datetime | None, *, guarded: bool = False) ->
     except Exception as error:  # noqa: BLE001 - każdy błąd renderera to odmowa z przyczyną
         return [f"korzeń: GitHub nie wyrenderował treści werdyktów ({error}), uruchom ponownie"]
     found: list[str] = []
-    expected = {heading: major.code for heading, major in _expected(rounds, found).items()}
-    codes = {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)}
+    lightly = light(pull)
+    expected = {} if lightly else {heading: major.code for heading, major in _expected(rounds, found).items()}
+    codes = {} if lightly else {code: ["NOWY z werdyktu"] for code in _new_codes(rounds)}
     if expected or any(word in pull.body for word in RED_MAIN_WORDS):
         found.extend(_described(pull, expected, codes, guarded))
     found.extend(_unlisted(codes, pull))

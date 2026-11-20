@@ -21,6 +21,7 @@ Ten plik czyta każdy, a dalej każdy tryb czyta tylko swoje pliki, każdy w chw
 
 Ważne znalezisko to defekt zachowania z dowodem, który da się powtórzyć: polecenie, jego wynik i plik:linia.
 Tylko Ważne daje `FAIL`.
+PR, któremu `--przeglad` drukuje `STAWKA | lekka`, ma Ważne tylko za zepsucie `main`, Wydania albo danych taty, a `tools/scal_pr.py` nie wymaga do niego bloku `## Korzeń` ani strażnika (aneks „Lekka runda” [ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)).
 W tym repo Ważne były zwykle:
 
 - mechanizm (reguła, narzędzie, krok skilla albo opcja issue `decyzja-maksa`), w którym krok powtarzany przy każdym wpisie, merge'u, wyjątku albo biegu czeka na zgodę albo czynność Maksa, choć nie należy do rodzajów decyzji Maksa z [`issue-tracker.md`](../../../docs/agents/issue-tracker.md), „Decisions for Maks”, i to samo sprawdzi reguła, recenzent albo narzędzie (#2008; `ZGODA KORZEŃ` zdjęta w [ADR 0036](../../../docs/adr/0036-chwast-to-regula.md), `ZGODA SZOPA` w #1622, opcja A #1888), oraz issue `decyzja-maksa` z decyzją spoza tych rodzajów;
