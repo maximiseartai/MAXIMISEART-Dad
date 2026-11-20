@@ -1,8 +1,3 @@
-"""Uporządkowanie INTERMAX dla Uruchomienia procesu: silnik i fakty zakończenia.
-
-Proces nie należy do okresu; jego Uruchomienie ma okres dzisiejszej daty z zegara procesu (ADR 0019).
-"""
-
 from __future__ import annotations
 
 
