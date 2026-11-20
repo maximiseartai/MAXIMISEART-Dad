@@ -61,7 +61,7 @@ Gdzie: <plik:linia>
 Dowód: <polecenie i wynik, najwyżej 5 linii po 300 znaków; cytat z polem w bloku kodu>
 Korzeń: <R-KOD z korzenie.toml> - <zdanie> (albo NOWY R-KOD - <opis> z kodem spoza listy)
 Szczebel: <(a)–(e)> - <zdanie, czemu ten>
-Idiom: <id> jak #N W<n> r<k> (albo Idiom: <id>; opcjonalne, tylko gdy Ważne powtarza wcześniejsze albo ucieka strażnikowi)
+Mechanizm: <architektura|refaktor|lint|test|weryfikacja>
 ### D1. <luka jednym zdaniem>
 Gdzie: <plik:linia>
 ### Mutacja W<n> r<k>
@@ -72,8 +72,7 @@ Gdzie: <plik:linia>
 - <co sprawdzone i z jakim wynikiem, 1–5 punktów>
 ```
 
-Postać bloku `### Mutacja W<n> r<k>` i punktu `## Sprawdzone` zaczętego od `Korzeń ` podaje [`korzen.md`](korzen.md).
+`Mechanizm:` wybierasz według sekcji „Mechanizm” w [`korzen.md`](korzen.md), a wątek z pierwszym werdyktem sprzed ADR 0046 kończy bez niego.
+Kiedy piszesz blok `### Mutacja W<n> r<k>` i punkt `## Sprawdzone` zaczęty od `Korzeń `, podaje [`korzen.md`](korzen.md).
 `PASS` bez znalezisk ma tylko linie `WERDYKT: PASS <pełny SHA HEAD>`, `Znaleziska: 0 (Ważne 0, Drobne 0)`, bloki `### Mutacja` i `## Sprawdzone`.
-Treść czyta renderer GitHuba, więc pole albo nagłówek liczy się tylko poza blokiem kodu: wynik, który cytuje linię `Korzeń:`, `Gdzie:` albo `### W…`, ujmij w blok ``` albo ~~~.
-Dowód dłuższy niż 5 linii albo z linią ponad 300 znaków zapisz w pliku obok werdyktu i podaj w Dowodzie jego ścieżkę.
 Merge liczy `PASS` jako zgodę tylko w postaci, którą sprawdza `tools/scal_pr.py <PR> --werdykt <plik>`, także gdy ktoś opublikował go inaczej, więc werdykt publikuj tylko tym poleceniem.

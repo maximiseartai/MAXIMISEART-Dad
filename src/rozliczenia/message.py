@@ -121,6 +121,4 @@ def file_label(path: Path) -> str:
 
 
 def folder_label(directory: Path) -> str:
-    """Folder z folderem nadrzędnym, bez pełnej ścieżki, np. ``folder INEA\\08_14_09_2026``."""
-
     return f"folder {directory.parent.name}\\{directory.name}" if directory.parent.name else f"folder {directory.name}"

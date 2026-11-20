@@ -1,8 +1,3 @@
-"""Interfejs HTTP Konfiguracji: Wzorce, wersja narzędzia z Aktualnością i stan klucza do Zgłoszeń.
-
-Pliki Konfiguracji i ich Sprawdzania należą do ``configuration``; tu jest tylko odpowiedź dla przeglądarki.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -45,13 +40,6 @@ def configuration_router(
     key_judgement: Callable[[], KeyJudgement],
     template_check: TemplateCheck,
 ) -> APIRouter:
-    """Konfiguracja; ``key_judgement`` mówi, co wiadomo o kluczu do Zgłoszeń (bez jego wartości) i czeka na Skrzynkę
-    najwyżej ``CONFIGURATION_WAIT_S``.
-
-    Aktualność narzędzia porównuje commit narzędzia z najnowszym Wydaniem na GitHubie według ``release``: odpowiedzi
-    GitHuba pamiętanej wspólnie z Powiadomieniami (``RememberedRelease``).
-    """
-
     router = APIRouter(prefix="/api/configuration", tags=["konfiguracja"])
     checked = _CheckedTemplates(template_check)
 
@@ -77,7 +65,6 @@ _STATE: Final[Mapping[Judgement, configuration_contract.ToolFreshnessState]] = {
     "no_answer": "not_checked",
     "no_commit": "not_checked",
 }
-"""Konfiguracja nie odróżnia powodu, dla którego nie sprawdzono; Diagnoza go nazywa."""
 
 
 _KEY_STATE: Final[Mapping[KeyJudgement, configuration_contract.ReportKeyState]] = {
@@ -86,25 +73,13 @@ _KEY_STATE: Final[Mapping[KeyJudgement, configuration_contract.ReportKeyState]] 
     "refused": "refused_key",
     "missing": "missing_key",
 }
-"""Konfiguracja nie odróżnia klucza przyjętego od jeszcze niesprawdzonego (np. bez sieci); Diagnoza je nazywa."""
 CONFIGURATION_WAIT_S: Final = 1.0
-"""Tyle Konfiguracja czeka na trwające sprawdzenie klucza; sprawdzenie rusza już przy starcie Centrum, więc zwykle
-jest gotowe i odczyt nie czeka wcale."""
 
 
 _CONTENT_PROBLEMS: Final = frozenset({Problem.UNREADABLE, Problem.LAYOUT, Problem.HAS_DATA})
 
 
 class _CheckedTemplates:
-    """Wynik Sprawdzania każdego wzorca, ważny do zmiany pliku albo jego blokady.
-
-    Prawdziwe Wzorce otwierają się sekundami, a Konfiguracja jest odczytywana
-    przy każdym powrocie do karty. Pamięta tylko wynik zależny od treści pliku:
-    Wzorzec gotowy albo problem z treści. Brak pliku, plik otwarty w Excelu
-    i plik niedostępny (zmiana uprawnień albo zwolnienie przez inny program nie
-    zmieniają daty ani rozmiaru) są sprawdzane zawsze od nowa.
-    """
-
     def __init__(self, check: TemplateCheck) -> None:
         self._check = check
         self._results: dict[Path, tuple[tuple[int, int, bool], _Problem | None]] = {}

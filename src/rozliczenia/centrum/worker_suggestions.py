@@ -1,18 +1,3 @@
-"""Podpowiedzi sekcji Wykonawcy (ADR 0032, US 24): loginy z ``WYKONAWCA`` ostatnich zleceń Rejestru zleceń, których nie
-ma na Liście Wykonawców, do dodania przyciskiem „Dodaj Wykonawcę”.
-
-Ostatnie zlecenia to uporządkowane zlecenia bieżącego okresu i okresów, które Tablica okresów pokazuje razem z nim od
-razu (``RECENT_PERIODS``): nowy pracownik taty pojawia się w nich w pierwszym tygodniu pracy, a login, którego dawno nie
-ma w zleceniach (pracownik sprzed narzędzia albo literówka sprzed miesięcy), nie wraca przy każdym otwarciu sekcji.
-
-Login, który ma Wykonawca (także Nieaktywny), albo login sprawy „login bez Wykonawcy” po przeniesieniu starych plików,
-który ma już swój przycisk z adresami, nie jest podpowiedzią. Po dodaniu Wykonawcy z loginem podpowiedź znika. Odczyt
-niczego nie zapisuje, a odpowiedź ma tylko loginy i liczby zleceń: bez numerów, adresów, umów i dat (ADR 0028).
-Niewskazany Rejestr, Rejestr, którego nie da się przeczytać, i Rejestr bez obszaru wklejania to zdanie dla taty, a nie
-pusta lista. Obszary wklejania rozpoznaje ta sama reguła co procesy (``intermax_ordering.paste_areas``), więc Rejestr bez
-nich (np. arkusz zleceń w starszym układzie bez AKCJE i UWAGI) ma w sekcji zdanie „Co się stało” tego samego Komunikatu.
-"""
-
 from __future__ import annotations
 
 from datetime import date, timedelta
@@ -32,9 +17,6 @@ from rozliczenia.worker_list import UnmatchedLogin, WorkerList
 
 
 def worker_suggestions(workers: WorkerList, register: Path | None, files: DadFiles, today: date) -> contract.WorkerSuggestions:
-    """Loginy ostatnich zleceń Rejestru zleceń ``register`` spoza Listy Wykonawców ``workers`` z liczbą tych zleceń, od
-    najczęstszego; Rejestr czyta uchwyt plików taty ``files``, także otwarty w Excelu (jego ostatnią zapisaną wersję)."""
-
     if register is None:
         return contract.WorkerSuggestions(state="not_set", suggestions=[], message=messages.worker_suggestions_not_set())
     since = period_of(today).tuesday - timedelta(weeks=RECENT_PERIODS - 1)

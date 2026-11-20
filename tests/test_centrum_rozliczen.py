@@ -32,6 +32,8 @@ from typing import Any, Final, Literal, get_args
 import imaplib
 import smtplib
 
+from fastapi import FastAPI
+from fastapi.routing import APIRoute, iter_route_contexts
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 from openpyxl.utils import column_index_from_string, get_column_letter
@@ -58,11 +60,12 @@ from rozliczenia.centrum.keyed_box import REPORT_KEY_FILE
 from rozliczenia.centrum.report_reminders import REMINDERS_THREAD, MinuteRhythm
 from rozliczenia.centrum.case_delivery import UNSENT_DIRECTORY
 from rozliczenia.centrum.run_origins import CENTRUM_RUNS_FILE
+from rozliczenia.centrum.scope import CentrumFunction, Scope, Workstation
 from rozliczenia.centrum.shortcut import SHORTCUT_FILE, StartupShortcut, system_autostart
 from rozliczenia.telemetry import CompletedResult, MetricsStore, RecordedStop, metric_record
 from rozliczenia.tool_files import CONFIG_DIR, LOG_PATH
 from rozliczenia.wall_clock import local_now
-from rozliczenia.workbook_files import file_bytes
+from rozliczenia.workbook_files import excel_lock_file, file_bytes
 from rozliczenia.centrum.settings import folders as folders_module
 from rozliczenia.centrum.settings import history as history_module
 from rozliczenia.centrum.settings.files import FieldPath, FieldProblem, settings_yaml
@@ -111,6 +114,12 @@ from rozliczenia.quantity_engine import (
 from rozliczenia.activity_legend import ActivityCode, FixedColumn
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
 from rozliczenia.quantity_rules_file import DEFAULT_QUANTITY_RULES, parse_rule
+from rozliczenia.activity_legend import NUMBER, CellFill, FillColour
+from rozliczenia.centrum import legend_forms, rule_forms
+from rozliczenia.centrum.contract import activity_legend as legend_contract
+from rozliczenia.centrum.contract import quantity_rules as rules_contract
+from rozliczenia.centrum.legend_sentences import code_sentence
+from rozliczenia.centrum.rule_sentences import plain_sentence, rule_sentence
 from tests.fixtures.bez_dostepu import (
     NO_ACCESS_ON_WINDOWS,
     PATH_CHECKS,
@@ -129,6 +138,7 @@ from tests.fixtures.centrum import (
     Centrum,
     CentrumClient,
     FakePlatform,
+    HandRhythm,
     ROOT,
     TODAY,
     ToolDirectory,
@@ -279,6 +289,193 @@ def test_kazda_trasa_api_jest_operacja_pomiaru_widoku_albo_ma_powod_poza_pomiare
     assert len(set(listed)) == len(listed)
     assert OUTSIDE_TIMING.keys() <= methods.keys()
     assert {name for name in OUTSIDE_TIMING if methods[name] != "get"} == {"recordViewTiming"}
+
+
+STALE_CZESCI: Final = frozenset(
+    {
+        "GET /api/health",
+        "GET /api/scope",
+        "GET /api/settings",
+        "PUT /api/settings/folders",
+        "POST /api/settings/register/choose",
+        "POST /api/settings/register/open",
+        "PUT /api/settings/theme",
+        "GET /api/settings/history",
+        "POST /api/settings/history/{change_id}/undo",
+        "GET /api/runs/current",
+        "GET /api/runs/events",
+        "GET /api/runs/{run_id}/card",
+        "POST /api/runs/{run_id}/decision",
+        "POST /api/runs/{run_id}/diagnosis",
+        "POST /api/runs/{run_id}/report",
+        "GET /api/notifications",
+        "POST /api/notifications/read",
+        "GET /api/dad-notes/runs",
+        "POST /api/dad-notes",
+        "POST /api/dad-notes/draft",
+        "GET /api/configuration",
+        "GET /api/tool-update",
+        "POST /api/tool-update",
+        "POST /api/tool-update/report",
+        "POST /api/shutdown",
+        "POST /api/view-timings",
+    }
+)
+
+TRASY_FUNKCJI: Final[Mapping[str, frozenset[str]]] = {
+    "periods": frozenset(
+        {
+            "GET /api/periods",
+            "POST /api/periods/{token}/open",
+            "POST /api/periods/{token}/worker-settlements/open",
+            "POST /api/settings/periods-directory/choose",
+            "GET /api/runs/setup",
+            "POST /api/runs",
+        }
+    ),
+    "filling": frozenset(
+        {
+            "GET /api/periods/{token}/collective-file-version",
+            "GET /api/periods/{token}/quantities-to-fill",
+            "GET /api/periods/{token}/quantities-to-fill/{kind}",
+            "GET /api/periods/{token}/without-quantity",
+        }
+    ),
+    "intermax": frozenset({"GET /api/intermax", "GET /api/intermax/days", "POST /api/intermax/run"}),
+    "intermax_copies": frozenset({"GET /api/intermax/copies", "POST /api/intermax/copies/restore"}),
+    "report_entering": frozenset(
+        {
+            "GET /api/report-entering",
+            "GET /api/report-entering/view",
+            "POST /api/report-entering/keep",
+            "POST /api/report-entering/request",
+            "POST /api/report-entering/run",
+        }
+    ),
+    "reminders": frozenset(
+        {
+            "PUT /api/settings/reminders",
+            "PUT /api/settings/reminders/enabled",
+            "POST /api/settings/reminders/preview",
+        }
+    ),
+    "settlement_mailing": frozenset(
+        {
+            "GET /api/settlement-mailing",
+            "POST /api/settlement-mailing/{token}/preview",
+            "POST /api/settlement-mailing/{token}/send",
+            "PUT /api/settings/settlement-mail",
+            "POST /api/settings/settlement-mail/preview",
+        }
+    ),
+    "metrics": frozenset({"GET /api/metrics"}),
+    "quantities": frozenset(
+        {
+            "GET /api/settings/quantity-rules",
+            "POST /api/settings/quantity-rules",
+            "PUT /api/settings/quantity-rules/{rule_id}",
+            "DELETE /api/settings/quantity-rules/{rule_id}",
+            "POST /api/settings/quantity-rules/preview",
+            "GET /api/settings/quantity-rules/differences",
+            "POST /api/settings/quantity-rules/differences/{difference_id}/exception",
+            "POST /api/settings/devices",
+            "PUT /api/settings/devices/{device_id}",
+            "DELETE /api/settings/devices/{device_id}",
+            "GET /api/settings/devices/suggestions",
+            "GET /api/settings/activity-legend",
+            "POST /api/settings/activity-legend",
+            "PUT /api/settings/activity-legend/{code_id}",
+            "DELETE /api/settings/activity-legend/{code_id}",
+            "POST /api/settings/activity-legend/preview",
+        }
+    ),
+    "workers": frozenset(
+        {
+            "POST /api/settings/workers",
+            "PUT /api/settings/workers/{login}",
+            "DELETE /api/settings/workers/{login}",
+            "GET /api/settings/workers/suggestions",
+            "POST /api/settings/workers/{login}/addresses",
+            "PUT /api/settings/workers/{login}/switches",
+        }
+    ),
+    "templates": frozenset(),
+    "report_inbox": frozenset({"PUT /api/settings/inbox-password"}),
+    "autostart": frozenset({"PUT /api/settings/autostart"}),
+}
+
+WSZYSTKIE_TRASY: Final = STALE_CZESCI.union(*TRASY_FUNKCJI.values())
+
+BEZ_TRASY: Final = ({"detail": "Not Found"}, {"detail": "Method Not Allowed"})
+
+
+def _trasy(app: FastAPI) -> frozenset[str]:
+    return frozenset(
+        f"{method} {context.route.path_format}"
+        for context in iter_route_contexts(app.routes)
+        if isinstance(context.route, APIRoute)
+        for method in context.route.methods or ()
+    )
+
+
+def _zakres(functions: Iterable[str]) -> Scope:
+    return Scope(Workstation.DAD, frozenset(CentrumFunction(function) for function in functions))
+
+
+def _adres(trasa: str) -> tuple[str, str]:
+    method, path = trasa.split(" ")
+    return method, re.sub(r"\{[^}]+\}", "x", path)
+
+
+def test_centrum_taty_ma_kazda_funkcje_a_jego_trasy_to_trasy_wszystkich_funkcji_i_stalych_czesci(tmp_path: Path) -> None:
+    app = centrum_app(ToolDirectory(tmp_path))
+    client = CentrumClient(app)
+
+    functions = client.get("/api/scope").json()["functions"]
+
+    assert (sorted(functions), _trasy(app)) == (sorted(TRASY_FUNKCJI), WSZYSTKIE_TRASY)
+
+
+@pytest.mark.parametrize("funkcja", list(TRASY_FUNKCJI), ids=list(TRASY_FUNKCJI))
+def test_centrum_bez_funkcji_nie_ma_zadnej_jej_trasy_a_ma_trasy_pozostalych_funkcji(tmp_path: Path, funkcja: str) -> None:
+    others = [function for function in TRASY_FUNKCJI if function != funkcja]
+    app = centrum_app(ToolDirectory(tmp_path), scope=_zakres(others))
+    client = CentrumClient(app)
+
+    functions = client.get("/api/scope").json()["functions"]
+    answered = {trasa: client.request(*_adres(trasa)).json() for trasa in TRASY_FUNKCJI[funkcja]}
+
+    assert (sorted(functions), _trasy(app)) == (sorted(others), WSZYSTKIE_TRASY - TRASY_FUNKCJI[funkcja])
+    assert {trasa: answer for trasa, answer in answered.items() if answer not in BEZ_TRASY} == {}
+
+
+def test_centrum_bez_zadnej_funkcji_ma_tylko_stale_czesci_i_nie_sprawdza_przypomnien(tmp_path: Path) -> None:
+    rhythm = HandRhythm()
+    app = centrum_app(ToolDirectory(tmp_path), scope=_zakres(()), reminder_rhythm=rhythm)
+    client = CentrumClient(app)
+    client.start()
+
+    functions = client.get("/api/scope").json()["functions"]
+
+    assert (functions, _trasy(app), rhythm.check) == ([], STALE_CZESCI, None)
+
+
+@pytest.mark.parametrize(
+    ("funkcje", "sprawdza"),
+    [
+        pytest.param(None, True, id="zakres-taty"),
+        pytest.param([function for function in TRASY_FUNKCJI if function != "reminders"], False, id="bez-przypomnien"),
+    ],
+)
+def test_przypomnienia_co_minute_ruszaja_tylko_w_zakresie_z_funkcja_przypomnien(
+    tmp_path: Path, funkcje: list[str] | None, sprawdza: bool
+) -> None:
+    rhythm = HandRhythm()
+    scope = None if funkcje is None else _zakres(funkcje)
+    client = CentrumClient(centrum_app(ToolDirectory(tmp_path), scope=scope, reminder_rhythm=rhythm))
+    client.start()
+
+    assert (rhythm.check is not None) is sprawdza
 
 
 def test_zadanie_z_obcym_naglowkiem_host_jest_odrzucone(tmp_path: Path) -> None:
@@ -1032,6 +1229,15 @@ def test_nowy_skladnik_z_grupa_staje_na_koncu_listy_urzadzen_a_historia_mowi_dod
         ("urzadzenia.ont-x", None, "Składnik „ont x”, też „ont-x2”, grupa extender.")
     ]
     assert "ont-x" in [component.id for component in _tools_rules(app.tool.config).devices.components]
+
+
+def test_zapis_powtorzony_w_formularzu_skladnika_zapisuje_sie_raz(tmp_path: Path) -> None:
+    app = centrum(tmp_path)
+
+    saved = app.client.post(DEVICES_URL, json={"name": "ONT X", "other_spellings": ["ont x", "ONT-X2", "ont-x2"], "group": None})
+
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["quantity_rules"]["devices"][-1]["other_spellings"] == ["ont-x2"]
 
 
 @pytest.mark.parametrize(
@@ -3235,6 +3441,116 @@ def test_zmiana_albo_usuniecie_kodu_ktorego_juz_nie_ma_to_404_bez_zapisu(tmp_pat
 
     assert (response.status_code, response.json()) == (404, {"message": refusal.activity_code_unknown().message})
     assert not (app.tool.config / LEGEND_FILE).exists()
+
+
+def _added_code(form: dict[str, Any], used: frozenset[str]) -> ActivityCode:
+    edit = legend_contract.AddActivityCode(kind="add", code=legend_contract.ActivityCodeForm.model_validate(form))
+    added = legend_forms.edited(DEFAULT_ACTIVITY_LEGEND.codes, edit, used)
+    assert isinstance(added, tuple), added
+    return added[-1]
+
+
+@pytest.mark.parametrize(
+    ("spellings", "used", "identifier"),
+    [
+        pytest.param(("Listwa #m",), frozenset(), "listwa", id="czesc-przed-miejscem-na-liczbe"),
+        pytest.param(("Listwa #m", "slupek#m"), frozenset(), "listwa", id="pierwszy-z-dwoch-zapisow"),
+        pytest.param(("slupek#m", "Listwa #m"), frozenset(), "slupek", id="pierwszy-z-dwoch-zapisow-nie-alfabetycznie"),
+        pytest.param(("listwa#m",), frozenset({"listwa"}), "listwa-2", id="zajete-w-historii-z-numerem-2"),
+        pytest.param(("listwa#m",), frozenset({"listwa", "listwa-2"}), "listwa-3", id="kolejny-wolny-numer"),
+    ],
+)
+def test_nowy_kod_legendy_ma_id_z_pierwszego_zapisu_przed_miejscem_na_liczbe_a_zajete_z_kolejnym_numerem(
+    spellings: tuple[str, ...], used: frozenset[str], identifier: str
+) -> None:
+    assert _added_code(code_form(*spellings, amount=20), used).id == identifier
+
+
+ZAPISY_BEZ_WSPOLNEJ_KOLEJNOSCI = ("murek#m", "ab#m", "Zwiazka Dluga#m")
+
+
+@pytest.mark.parametrize(
+    "spellings",
+    [
+        pytest.param(order, id="-".join(spelling.split("#")[0] for spelling in order))
+        for order in itertools.permutations(ZAPISY_BEZ_WSPOLNEJ_KOLEJNOSCI)
+    ],
+)
+def test_id_nowego_kodu_z_kilku_zapisow_to_id_samego_pierwszego_w_kazdej_kolejnosci_wpisania(spellings: tuple[str, ...]) -> None:
+    alone = {spelling: _added_code(code_form(spelling, amount=20), frozenset()).id for spelling in spellings}
+
+    assert len(set(alone.values())) == len(spellings), alone
+    assert _added_code(code_form(*spellings, amount=20), frozenset()).id == alone[spellings[0]]
+
+
+def test_powtorzony_i_pusty_zapis_formularza_kodu_odpadaja_a_kod_ma_jeden_zapis() -> None:
+    added = _added_code(code_form("listwa#m", "", "Listwa #m", amount=20), frozenset())
+
+    assert added.spellings == (f"listwa{NUMBER}m",)
+
+
+def test_kolumna_wypelnienia_w_zdaniu_kodu_to_sama_litera_takze_gdy_ma_nazwe_pozycji_cennika() -> None:
+    code = ActivityCode("rt9", ("rt9",), FixedColumn("AM"), fills=(CellFill("AM", FillColour.RED),))
+
+    assert plain_sentence(code_sentence(code, {"AM": "Router"})) == "rt9: 1 w Router (AM), AM na czerwono."
+
+
+def _rule_form(condition: dict[str, Any]) -> rules_contract.RuleForm:
+    return rules_contract.RuleForm.model_validate(
+        {
+            "scope": "every",
+            "conditions": [condition],
+            "action": {"kind": "fill", "writes": [{"column": "N", "value": 45, "multiplier": "once", "component": None}]},
+        }
+    )
+
+
+def _date(days: list[int], since: str = "17:00") -> dict[str, Any]:
+    return {"kind": "date", "days": days, "since": since, "negated": False}
+
+
+def _added_rules(
+    form: rules_contract.RuleForm, rules: tuple[QuantityRule, ...] = (), used: frozenset[str] = frozenset()
+) -> tuple[QuantityRule, ...]:
+    added = rule_forms.edited(rules, rules_contract.AddRule(kind="add", rule=form), used)
+    assert isinstance(added, tuple), added
+    return added
+
+
+@pytest.mark.parametrize("since", ["24:00", "12:60"])
+def test_godzina_warunku_daty_spoza_zegara_to_odmowa_formularza_przy_polu_od(since: str) -> None:
+    edit = rules_contract.AddRule(kind="add", rule=_rule_form(_date([0], since)))
+
+    assert rule_forms.edited((), edit, frozenset()) == FieldProblem(FieldPath("jesli", 0, "od"), settings_messages.rule_hour())
+
+
+def test_nowa_regula_dostaje_najmniejszy_numer_ktorego_nie_ma_zadna_regula_ani_historia_i_staje_na_koncu() -> None:
+    [built] = _added_rules(_rule_form(_date([0])))
+    existing = (replace(built, id="regula-3"),)
+
+    added = _added_rules(_rule_form(_date([1])), existing, frozenset({"regula-1"}))
+
+    assert [rule.id for rule in added] == ["regula-3", "regula-2"]
+
+
+@pytest.mark.parametrize(
+    ("days", "shown"),
+    [
+        pytest.param([5, 6], "sobota, niedziela", id="dwa-dni-z-rzedu-po-przecinku"),
+        pytest.param([0, 1, 2], "poniedziałek–środa", id="trzy-dni-z-rzedu-jako-przedzial"),
+        pytest.param([0, 1, 3, 4, 5], "poniedziałek, wtorek, czwartek–sobota", id="przedzial-obok-dwoch-dni"),
+    ],
+)
+def test_dni_warunku_daty_w_zdaniu_reguly_po_kolei_a_trzy_i_wiecej_z_rzedu_jako_przedzial(days: list[int], shown: str) -> None:
+    [rule] = _added_rules(_rule_form(_date(days)))
+
+    assert plain_sentence(rule_sentence(rule, DeviceList(()), {})) == f"Jeśli DATA to {shown} od 17:00, to wpisz 45 w N."
+
+
+def test_skladnik_spoza_listy_bez_nazwy_od_wolajacego_ma_w_zdaniu_reguly_swoj_identyfikator() -> None:
+    [rule] = _added_rules(_rule_form({"kind": "component", "component": "modem-x", "negated": False}))
+
+    assert plain_sentence(rule_sentence(rule, DeviceList(()), {})) == "Jeśli URZĄDZENIA zawierają „modem-x”, to wpisz 45 w N."
 
 
 @pytest.mark.parametrize(
@@ -5614,6 +5930,18 @@ def test_login_ze_zlecen_ostatnich_okresow_spoza_listy_jest_podpowiedzia_ktora_z
     assert listed_after_read == listed_before, "podpowiedzi niczego nie zapisują"
     assert added.status_code == 200, added.json()
     assert second.json()["suggestions"] == [{"login": "brzeg.okna", "orders": 1}]
+
+
+def test_podpowiedzi_czytaja_rejestr_otwarty_w_excelu_z_jego_ostatniej_zapisanej_wersji(tmp_path: Path) -> None:
+    centrum_ = settling_with_register(tmp_path, ["nowy.login"])
+    excel_lock_file(register_of(tmp_path)).write_bytes(b"\x00" * 165)
+
+    answer = centrum_.client.get(WORKER_SUGGESTIONS_API)
+
+    assert (answer.status_code, answer.json()) == (
+        200,
+        {"state": "read", "suggestions": [{"login": "nowy.login", "orders": 1}], "message": None},
+    )
 
 
 # Zdanie „Co się stało” Komunikatu procesów wklejania o Rejestrze bez obszaru wklejania; nie zależy od ścieżki Rejestru.

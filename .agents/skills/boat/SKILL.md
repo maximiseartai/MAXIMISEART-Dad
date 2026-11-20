@@ -74,3 +74,4 @@ Przyczynę i granice tego rozpoznania opisuje [`przeniesienie.md`](przeniesienie
 Uruchom go lokalnie, zanim cokolwiek poprawisz.
 Pada też lokalnie: to błąd zmiany.
 Przechodzi lokalnie: sprawdź, czy box ma twój HEAD (`boatbox status` pokazuje `head` boxa), a potem szukaj różnicy środowiska (Linux zamiast macOS, 8 vCPU, sygnały, base starszy niż `pyproject.toml`) i zapisz ją w tym skillu.
+Zmiana we `frontend/` daje na boxie `ScanFailed: brak oxlint z zależności frontendu` w `tests/test_komentarze_frontendu.py`, bo `node_modules` na box nie trafia: poprzedź polecenie przez `(cd frontend && npm ci --no-audit --no-fund) && `.

@@ -70,9 +70,6 @@ _SUMMARY_HEADERS = (
 _SERVICE_HEADERS = tuple(f"Usługa syntetyczna {number:02d}" for number in range(1, _AP - _N + 2))
 
 
-# --- style ------------------------------------------------------------------------------------
-
-
 class _Styles:
     """``xl/styles.xml`` z kilkudziesięcioma stylami komórek, jak Wzorzec taty (74 style)."""
 
@@ -163,9 +160,6 @@ class _SharedStrings:
         return f'{_XML}<sst xmlns="{_MAIN_NS}" count="{self._uses}" uniqueCount="{len(self._strings)}">{items}</sst>'
 
 
-# --- arkusz Wzorca z wierszem 17 --------------------------------------------------------------
-
-
 @dataclass(frozen=True)
 class _Bands:
     """Pasy stylów Wierszy danych w proporcjach Wzorca taty (u taty 18–31, 32–608, 609, 610+)."""
@@ -189,8 +183,6 @@ class _Bands:
 
 
 class _TemplateSheet:
-    """XML arkusza ``Sheet1`` i ``calcChain`` z każdą komórką z formułą tego arkusza."""
-
     def __init__(self, first_header: str, data_rows: int, styles: _Styles, strings: _SharedStrings) -> None:
         self._bands = _Bands.for_rows(data_rows)
         self._first_header = first_header
@@ -332,8 +324,6 @@ class _TemplateSheet:
         rows.append(self._row(HEADER_ROW, header, ' spans="1:51" s="1" customFormat="1" ht="41.25" customHeight="1"'))
         return rows
 
-    # Wiersze danych
-
     def _band(self, row: int) -> str:
         if row <= 31:
             return "top"
@@ -423,8 +413,6 @@ class _TemplateSheet:
         return rows
 
     def parts(self, *, comments: bool) -> tuple[str, str]:
-        """XML arkusza i ``calcChain``: łańcuch powstaje z formuł zapisanych w arkuszu."""
-
         last = self._bands.last_row
         widths = [6.7, 36.6, 5.6, 17.4, 18.6, 12.1, 10.4, 18.7, 9, 8.4, 56.1, 3.7, 6.3]
         columns = "".join(
@@ -456,9 +444,6 @@ class _TemplateSheet:
         # Jak w ``calcChain`` Excela: ``i`` (arkusz) podany raz, kolejne komórki go dziedziczą.
         chain = [f'<c r="{self._formula_cells[0]}" i="1"/>'] + [f'<c r="{cell}"/>' for cell in self._formula_cells[1:]]
         return sheet_xml, f'{_XML}<calcChain xmlns="{_MAIN_NS}">{"".join(chain)}</calcChain>'
-
-
-# --- części pakietu ---------------------------------------------------------------------------
 
 
 def _content_types(*, linked: bool, comments: bool = False) -> str:

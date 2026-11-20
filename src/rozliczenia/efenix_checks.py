@@ -42,7 +42,6 @@ __all__ = [
 PRICING_STATUS: Final = "Do wyceny"
 SETTLED_STATUS: Final = "Rozliczone"
 DATE_TOLERANCE: Final = timedelta(days=3)
-"""Największa różnica między datą wykonania w efenix a dniem z ``DATA``, w obie strony, która nie jest niezgodnością."""
 
 
 class OrderProblem(enum.Enum):
@@ -110,9 +109,6 @@ class Forwarded:
 
 
 def searched_number(order: CollectiveOrder) -> tuple[str, date] | OrderProblem:
-    """Numer, po którym proces szuka zlecenia, i dzień z ``DATA`` albo niezgodność, którą widać bez efenix: wiersz bez
-    ``NUMER ZL.`` albo bez daty w ``DATA``."""
-
     if order.number is None:
         return OrderProblem.NO_NUMBER
     if order.day is None:
@@ -152,9 +148,6 @@ def _is_status(hit: ListedOrder, status: str) -> bool:
 
 
 def date_problem(order: CollectiveOrder, executed: date | None) -> OrderProblem | None:
-    """Data wykonania z efenix różni się od dnia z ``DATA`` o więcej niż ``DATE_TOLERANCE``; pusta data wykonania nie jest
-    niezgodnością."""
-
     if executed is None:
         return None
     return OrderProblem.OTHER_DATE if order.day is None or abs(executed - order.day) > DATE_TOLERANCE else None

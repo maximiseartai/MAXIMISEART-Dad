@@ -310,10 +310,10 @@ def test_aktualnosc_laczy_sie_z_githubem_wprost_mimo_proxy_w_ustawieniach_system
     assert proxied == []
 
 
-def test_health_centrum_na_tym_komputerze_idzie_wprost_mimo_proxy_w_ustawieniach_systemu(monkeypatch: pytest.MonkeyPatch) -> None:
+def _health(answer: dict[str, str]) -> type[BaseHTTPRequestHandler]:
     class _Health(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            body = json.dumps({"service": SERVICE, "commit": "a" * 40}).encode()
+            body = json.dumps(answer).encode()
             self.send_response(200 if self.path == "/api/health" else 404)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
@@ -323,10 +323,23 @@ def test_health_centrum_na_tym_komputerze_idzie_wprost_mimo_proxy_w_ustawieniach
         def log_message(self, format: str, *args: object) -> None:
             pass
 
-    with serwer_http(_Health, name="atrapa-health-centrum") as server, system_proxy(monkeypatch) as proxied:
+    return _Health
+
+
+def test_health_centrum_na_tym_komputerze_idzie_wprost_mimo_proxy_w_ustawieniach_systemu(monkeypatch: pytest.MonkeyPatch) -> None:
+    health = _health({"service": SERVICE, "commit": "a" * 40})
+
+    with serwer_http(health, name="atrapa-health-centrum") as server, system_proxy(monkeypatch) as proxied:
         running = running_centrum(server.server_address[1], timeout_s=30)
 
     assert (running, proxied) == (RunningCentrum("a" * 40), [])
+
+
+def test_health_innej_uslugi_na_porcie_centrum_to_nie_centrum_rozliczen() -> None:
+    with serwer_http(_health({"service": "inna-usluga", "commit": "a" * 40}), name="atrapa-health-innej-uslugi") as server:
+        running = running_centrum(server.server_address[1], timeout_s=30)
+
+    assert running is None
 
 
 def _client_hello(server: socket.socket) -> bytes:

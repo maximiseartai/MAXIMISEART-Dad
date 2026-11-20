@@ -64,8 +64,6 @@ class TraceStep:
 
 @dataclass
 class OrderTrace:
-    """Udane działania okna efenix przy jednym zleceniu, po kolei, i działanie, które się nie udało (``None``: żadne)."""
-
     steps: list[TraceStep] = field(default_factory=list)
     failed: TraceStep | None = None
 
@@ -149,7 +147,4 @@ def traced(
     clock: Callable[[], float],
     now: Callable[[], datetime] = utc_now,
 ) -> Efenix:
-    """Okno ``efenix`` przy zleceniu ``order`` Pliku zbiorczego, które zapisuje w ``trace`` każde swoje udane działanie z
-    odczytem strony, czasem z ``clock`` (sekundy) i chwilą rozpoczęcia z ``now`` (UTC)."""
-
     return _Traced(efenix, order, trace, clock, now)

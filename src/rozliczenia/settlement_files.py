@@ -21,9 +21,6 @@ __all__ = ["ensure_worker_settlements_absent", "write_worker_settlements"]
 
 
 def ensure_worker_settlements_absent(target_directory: Path) -> None:
-    """Nienadpisywanie: zatrzymuje Przebieg rozliczeń, jeśli Folder rozliczeń pracowników już istnieje albo nie da się
-    tego sprawdzić."""
-
     try:
         if path_taken(target_directory):
             raise StopError(settlement_messages.worker_settlements_exist(target_directory))

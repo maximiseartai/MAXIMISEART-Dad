@@ -502,6 +502,7 @@ ENTRIES: dict[str, Entry] = {
 DIAGNOSIS_ENTRIES = ("diagnoza[przygotowanie]", "diagnoza[przebieg]", "diagnoza[uporzadkowanie]")
 NOT_SWEPT: dict[str, str] = {
     "getHealth": "tożsamość Centrum, nie czyta plików taty",
+    "getScope": "Funkcje Stanowiska z Zakresu tego startu Centrum, nie czyta plików taty",
     "decideRun": "Decyzja taty tylko wznawia Uruchomienie, którego odczyty sprawdzają podglądy",
     "getRunCard": "czyta tylko Logi Uruchomienia, pliki Centrum, nie pliki taty; zepsute Logi: test_centrum_karta_z_logow",
     "startToolUpdate": "aktualizacja zmienia katalog narzędzia, nie pliki taty (test_centrum_aktualizacja)",
@@ -552,7 +553,7 @@ _NOTIFICATIONS = {"klucz_zgloszen", "logi_uruchomien", "sprawy_taty", "wyslane_z
 _RUN = _OWNER | {"rejestr", "dziennik_centrum", "uruchomienia_centrum", "logi_uruchomien", "folder_zgloszen", "klucz_zgloszen"}
 _PREPARATION = _RUN | _FOLDERS | {"metryki_przygotowania", "wzorzec_wewnetrzny", "wzorzec_zbiorczy"}
 _SETTLEMENT = _RUN | _FOLDERS | {"metryki_przebiegu", "plik_zbiorczy", "wzorzec_pracownika"}
-_ORDERING = _RUN | {"metryki_uporzadkowania"}
+_ORDERING = _RUN | _METRICS | {"folder_okresow", "folder_kopii_intermax"}
 READS: dict[str, set[str]] = {
     "getSettings": _SETTINGS,
     "chooseRegister": _SETTINGS,

@@ -589,8 +589,8 @@ _STREAM_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 
-def runs_router(host: RunHost, starts: PeriodStarts) -> APIRouter:
-    router = APIRouter(prefix="/api/runs", tags=["uruchomienia"])
+def period_runs_router(host: RunHost, starts: PeriodStarts) -> APIRouter:
+    router = _runs()
 
     @router.get("/setup", operation_id="getRunSetup")
     def setup() -> runs_contract.RunSetup:
@@ -599,6 +599,12 @@ def runs_router(host: RunHost, starts: PeriodStarts) -> APIRouter:
     @router.post("", operation_id="startRun", responses=NOT_FOUND_OR_CONFLICT)
     def start(request: runs_contract.RunRequest) -> runs_contract.RunView:
         return host.start(starts.prepare(request))
+
+    return router
+
+
+def runs_router(host: RunHost) -> APIRouter:
+    router = _runs()
 
     @router.get("/current", operation_id="getCurrentRun")
     def current() -> runs_contract.RunView:
@@ -625,4 +631,8 @@ def runs_router(host: RunHost, starts: PeriodStarts) -> APIRouter:
         return host.send_report(run_id)
 
     return router
+
+
+def _runs() -> APIRouter:
+    return APIRouter(prefix="/api/runs", tags=["uruchomienia"])
 

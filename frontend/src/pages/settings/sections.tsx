@@ -1,4 +1,4 @@
-import type * as React from "react"
+import * as React from "react"
 import {
   ArchiveRestoreIcon,
   BellIcon,
@@ -17,7 +17,9 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
+import type { CentrumFunction } from "@/api/generated"
 import { FOLDERS_SECTION } from "@/components/setting-path"
+import { useInScope } from "@/lib/scope"
 import { ActivityLegendSection } from "@/pages/settings/activity-legend-section"
 import { AppearanceSection } from "@/pages/settings/appearance-section"
 import { DevicesSection } from "@/pages/settings/devices-section"
@@ -42,39 +44,98 @@ type SettingsGroup = (typeof SETTINGS_GROUPS)[number]
  * Sekcje okna Ustawień. Nowa sekcja to nowy wpis: lista po lewej, rozwijany wybór na wąskim oknie, adres
  * `#/ustawienia/<id>` i ścieżka „Ustawienia / <title>” biorą się stąd. W grupie sekcje stoją w kolejności wpisów.
  */
-export const SETTINGS_SECTIONS = [
-  { id: FOLDERS_SECTION, title: "Foldery", group: "Praca", icon: FolderIcon, Content: FoldersSection },
-  { id: WORKERS_SECTION, title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection },
-  { id: REMINDERS_SECTION, title: "Przypomnienia", group: "Praca", icon: BellIcon, Content: RemindersSection },
-  { id: SETTLEMENT_MAIL_SECTION, title: "Wysyłka rozliczeń", group: "Praca", icon: SendIcon, Content: SettlementMailSection },
-  { id: "reguly-ilosci", title: "Reguły ilości", group: "Ilości", icon: ListChecksIcon, Content: QuantityRulesSection },
-  { id: "urzadzenia", title: "Urządzenia", group: "Ilości", icon: RouterIcon, Content: DevicesSection },
-  { id: "legenda-czynnosci", title: "Legenda czynności", group: "Ilości", icon: BookTextIcon, Content: ActivityLegendSection },
-  { id: "wzorce", title: "Wzorce", group: "Pliki", icon: FileSpreadsheetIcon, Content: TemplatesSection },
-  { id: "kopie-intermax", title: "Kopie INTERMAX", group: "Pliki", icon: ArchiveRestoreIcon, Content: IntermaxCopiesSection },
-  { id: "skrzynka-raportow", title: "Skrzynka raportów", group: "Połączenia", icon: MailIcon, Content: InboxSection },
-  { id: "zgloszenia", title: "Zgłoszenia", group: "Połączenia", icon: InboxIcon, Content: ReportsSection },
-  { id: "narzedzie", title: "Narzędzie", group: "Narzędzie", icon: WrenchIcon, Content: ToolSection },
-  { id: "wyglad", title: "Wygląd", group: "Narzędzie", icon: PaletteIcon, Content: AppearanceSection },
-  { id: "historia", title: "Historia", group: "Historia", icon: HistoryIcon, Content: HistorySection },
+const SETTINGS_SECTIONS = [
+  { id: FOLDERS_SECTION, title: "Foldery", group: "Praca", icon: FolderIcon, Content: FoldersSection, function: null },
+  { id: WORKERS_SECTION, title: "Wykonawcy", group: "Praca", icon: UsersIcon, Content: WorkersSection, function: "workers" },
+  {
+    id: REMINDERS_SECTION,
+    title: "Przypomnienia",
+    group: "Praca",
+    icon: BellIcon,
+    Content: RemindersSection,
+    function: "reminders",
+  },
+  {
+    id: SETTLEMENT_MAIL_SECTION,
+    title: "Wysyłka rozliczeń",
+    group: "Praca",
+    icon: SendIcon,
+    Content: SettlementMailSection,
+    function: "settlement_mailing",
+  },
+  {
+    id: "reguly-ilosci",
+    title: "Reguły ilości",
+    group: "Ilości",
+    icon: ListChecksIcon,
+    Content: QuantityRulesSection,
+    function: "quantities",
+  },
+  { id: "urzadzenia", title: "Urządzenia", group: "Ilości", icon: RouterIcon, Content: DevicesSection, function: "quantities" },
+  {
+    id: "legenda-czynnosci",
+    title: "Legenda czynności",
+    group: "Ilości",
+    icon: BookTextIcon,
+    Content: ActivityLegendSection,
+    function: "quantities",
+  },
+  { id: "wzorce", title: "Wzorce", group: "Pliki", icon: FileSpreadsheetIcon, Content: TemplatesSection, function: "templates" },
+  {
+    id: "kopie-intermax",
+    title: "Kopie INTERMAX",
+    group: "Pliki",
+    icon: ArchiveRestoreIcon,
+    Content: IntermaxCopiesSection,
+    function: "intermax_copies",
+  },
+  {
+    id: "skrzynka-raportow",
+    title: "Skrzynka raportów",
+    group: "Połączenia",
+    icon: MailIcon,
+    Content: InboxSection,
+    function: "report_inbox",
+  },
+  { id: "zgloszenia", title: "Zgłoszenia", group: "Połączenia", icon: InboxIcon, Content: ReportsSection, function: null },
+  { id: "narzedzie", title: "Narzędzie", group: "Narzędzie", icon: WrenchIcon, Content: ToolSection, function: null },
+  { id: "wyglad", title: "Wygląd", group: "Narzędzie", icon: PaletteIcon, Content: AppearanceSection, function: null },
+  { id: "historia", title: "Historia", group: "Historia", icon: HistoryIcon, Content: HistorySection, function: null },
 ] as const satisfies ReadonlyArray<{
   id: string
   title: string
   group: SettingsGroup
   icon: LucideIcon
   Content: React.ComponentType
+  function: CentrumFunction | null
 }>
 
 export type SettingsSection = (typeof SETTINGS_SECTIONS)[number]
 
-/** Grupy, które mają co najmniej jedną sekcję, każda ze swoimi sekcjami. */
-export const SHOWN_GROUPS = SETTINGS_GROUPS.flatMap((group) => {
-  const sections = SETTINGS_SECTIONS.filter((section) => section.group === group)
+export type ShownSections = {
+  sections: ReadonlyArray<SettingsSection>
+  groups: ReadonlyArray<{ group: SettingsGroup; sections: ReadonlyArray<SettingsSection> }>
+  sectionOf: (id: string) => SettingsSection
+}
 
-  return sections.length === 0 ? [] : [{ group, sections }]
-})
+export function useShownSections(): ShownSections {
+  const sections = useInScope(SETTINGS_SECTIONS)
 
-/** Sekcja z członu adresu; nieznany albo pusty człon otwiera pierwszą sekcję. */
-export function sectionOf(id: string): SettingsSection {
-  return SETTINGS_SECTIONS.find((section) => section.id === id) ?? SETTINGS_SECTIONS[0]
+  return React.useMemo(() => {
+    const [first] = sections
+
+    if (first === undefined) {
+      throw new Error("Okno Ustawień nie ma żadnej sekcji w Zakresie.")
+    }
+
+    return {
+      sections,
+      groups: SETTINGS_GROUPS.flatMap((group) => {
+        const inGroup = sections.filter((section) => section.group === group)
+
+        return inGroup.length === 0 ? [] : [{ group, sections: inGroup }]
+      }),
+      sectionOf: (id) => sections.find((section) => section.id === id) ?? first,
+    }
+  }, [sections])
 }

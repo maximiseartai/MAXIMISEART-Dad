@@ -29,6 +29,7 @@ export const zAddressesNotMoved = z.object({
 export const zApiTiming = z.object({
     operation: z.enum([
         'getHealth',
+        'getScope',
         'getSettings',
         'addWorker',
         'changeWorker',
@@ -176,6 +177,25 @@ export const zCellSource = z.enum([
     'tool',
     'tata',
     'empty'
+]);
+
+/**
+ * CentrumFunction
+ */
+export const zCentrumFunction = z.enum([
+    'periods',
+    'filling',
+    'intermax',
+    'intermax_copies',
+    'report_entering',
+    'reminders',
+    'settlement_mailing',
+    'metrics',
+    'quantities',
+    'workers',
+    'templates',
+    'report_inbox',
+    'autostart'
 ]);
 
 /**
@@ -2161,6 +2181,13 @@ export const zRunSetup = z.object({
 });
 
 /**
+ * Scope
+ */
+export const zScope = z.object({
+    functions: z.array(zCentrumFunction)
+});
+
+/**
  * SentByHand
  *
  * Tata wysłał ten plik sam ze skrzynki raportów w chwili ``at`` i plik się od tego czasu nie zmienił.
@@ -4026,6 +4053,11 @@ export const zReportRunResponse = z.discriminatedUnion('state', [
     zQueued,
     zRejected
 ]);
+
+/**
+ * Successful Response
+ */
+export const zGetScopeResponse = zScope;
 
 /**
  * Successful Response

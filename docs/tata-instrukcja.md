@@ -411,7 +411,8 @@ Jeśli Uporządkowanie zrobiło coś nie tak, otwórz okno `Ustawienia`, sekcję
 `Kopie INTERMAX`. Lista ma 10 najnowszych Kopii INTERMAX z datą i godziną.
 Kliknij `Przywróć` przy kopii sprzed uporządkowania i potwierdź przyciskiem
 `Przywróć tę kopię`. Wszystkie zmiany w INTERMAX późniejsze od tej kopii
-znikną, także te, które wpisaliście ręcznie. Przed przywróceniem narzędzie
+znikną, także te, które wpisaliście ręcznie, i te zrobione na drugim
+komputerze. Przed przywróceniem narzędzie
 robi Kopię obecnego INTERMAX, więc przywrócenie też da się cofnąć tak samo.
 
 ### Uporządkowanie INTERMAX → co zrobić
@@ -427,6 +428,7 @@ adresu i o niepokazanym podsumowaniu: wtedy INTERMAX jest już uporządkowany.
 | „Nie można teraz odczytać INTERMAX” | Nie poprawiaj INTERMAX. Poczekaj, aż OneDrive skończy synchronizację, i sprawdź, czy INTERMAX otwiera się w Excelu. Zamknij go i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „Nie można odczytać INTERMAX jako skoroszytu Excela” | Otwórz INTERMAX w Excelu. Jeśli się otwiera, zapisz go, zamknij i uruchom ponownie. Jeśli błąd wraca, przekaż komunikat osobie utrzymującej narzędzie. |
 | „OneDrive jeszcze synchronizuje INTERMAX” | Poczekaj, aż OneDrive skończy synchronizację, potem uruchom ponownie. |
+| „OneDrive ma dwie wersje INTERMAX” | Ktoś zapisał INTERMAX na drugim komputerze w tym samym czasie, więc OneDrive zostawił obok kopię z nazwą komputera, wskazaną w `Gdzie`. Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię. Potem uruchom ponownie. |
 | „W INTERMAX nie ma arkusza zleceń” | Sprawdź, czy w `Ustawieniach` wskazano INTERMAX i czy wiersz 1 arkusza zleceń ma nagłówki od `AKCJE` do `UWAGI`. Uruchom ponownie. |
 | „więcej niż raz, więc nie wiadomo, z której kolumny brać dane” | Zostaw wymieniony nagłówek tylko w jednej kolumnie: zmień nazwę drugiej kolumny albo ją usuń. Zapisz i zamknij INTERMAX, uruchom ponownie. |
 | „nie ma wklejonych zleceń do uporządkowania” | Wklej zlecenia dnia z aplikacji firmowej na dół arkusza zleceń, zapisz i zamknij INTERMAX i uruchom ponownie. |

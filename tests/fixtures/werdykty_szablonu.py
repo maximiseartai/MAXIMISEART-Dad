@@ -1,7 +1,8 @@
 """Treści werdyktów pod dwiema pierwszymi liniami i ich HTML z renderera GitHuba dla testów szablonu werdyktu (ADR 0031).
 
 ``PRZECHODZA`` to treści w szablonie, ``ODMOWY`` treści poza nim z liczbami z linii ``Znaleziska:`` i fragmentem
-przyczyny odmowy, ``WERDYKTY`` treści testów przepływu ``tools/scal_pr.py``, a ``PONOWNE`` treści werdyktu ponownego
+przyczyny odmowy, ``PRZED_MECHANIZMEM`` i ``ODMOWY_PRZED_MECHANIZMEM`` to samo w wątku, w którym pole Mechanizm nie
+obowiązuje, ``WERDYKTY`` treści testów przepływu ``tools/scal_pr.py``, a ``PONOWNE`` treści werdyktu ponownego
 przeglądu z punktem ``Ponowny przegląd:`` i bez niego. Wymagania bierzemy z docstringu
 ``szablon_werdyktu`` i ze skilla ``przeglad``: pola liczą się tylko poza blokami kodu, które wyznacza GitHub
 (ogrodzone ``` i ~~~ oraz wcięte o cztery spacje), Dowód ma najwyżej 5 linii po najwyżej 300 znaków.
@@ -28,12 +29,16 @@ LINES = (
     "Dowód: tools/mutacje.py --plik tools/scal_pr.py: NIEWYKRYTA",
     "Korzeń: R-BEZ-TESTU - nowa gałąź bez testu zachowania.",
     "Szczebel: (c) - test zachowania łapie klasę.",
+    "Mechanizm: test",
     "### D1. Nieaktualne zdanie.",
     "Gdzie: AGENTS.md:60",
     "## Sprawdzone",
     "- szybko: SZYBKO OK",
 )
-HEADING, WHERE, EVIDENCE, ROOT, RUNG, MINOR, MINOR_WHERE, CHECKED, POINT = LINES
+HEADING, WHERE, EVIDENCE, ROOT, RUNG, MECHANISM, MINOR, MINOR_WHERE, CHECKED, POINT = LINES
+MAJOR_LINES = LINES[: LINES.index(MINOR)]
+MINOR_LINES = (MINOR, MINOR_WHERE)
+END_LINES = (CHECKED, POINT)
 QUOTE = "cytat z polem albo nagłówkiem w Dowodzie ujmij w blok kodu ```"
 
 
@@ -63,8 +68,7 @@ def _with_mutation(*block: str) -> str:
     return _replaced(CHECKED, *block, CHECKED)
 
 
-# Pole ``Idiom:`` po Szczeblu w trzech postaciach z ADR 0036 i Idiom, który ``szablon_werdyktu.findings`` z niego czyta:
-# id reguły, klasa idiomu bez reguły i wcześniejsze Ważne (PR, Ważne, runda).
+MECHANIZMY = ("architektura", "refaktor", "lint", "test", "weryfikacja")
 IDIOMY: dict[str, tuple[str, tuple[str | None, str | None, tuple[int, str, int] | None]]] = {
     "drugie-wystapienie": ("Idiom: komentarz-w-src jak #1553 W1 r2", ("komentarz-w-src", None, (1553, "W1", 2))),
     "ucieczka-reguly": ("Idiom: os.name", ("os.name", None, None)),
@@ -84,19 +88,30 @@ PRZECHODZA = {
     "cytat-pola-w-bloku-tyld": _replaced(EVIDENCE, "Dowód: grep:", "~~~text", "Gdzie: tools/x.py:3", "Szczebel: (a) - cytat", "~~~"),
     "cytat-pola-we-wcietym-bloku-kodu": _replaced(EVIDENCE, "Dowód: grep:", "", "    Gdzie: tools/x.py:3", "    Korzeń: R-NIE-MA - cytat", ""),
     "linia-dowodu-300-znakow-w-bloku-kodu": _replaced(EVIDENCE, "Dowód:", "```", "x" * 300, "```"),
-    **{f"idiom-{name}": _replaced(RUNG, RUNG, line) for name, (line, _) in IDIOMY.items()},
+    **{f"mechanizm-{name}": _replaced(MECHANISM, f"Mechanizm: {name}") for name in MECHANIZMY},
     "mutacja-recenzenta": _with_mutation(*_mutation()),
     "mutacja-recenzenta-dwoch-waznych-z-roznych-rund": _with_mutation(*_mutation(), *_mutation(label="W2 r1"), *_mutation(label="W1 r2")),
 }
 ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
-    "brak-pola-gdzie": (_replaced(WHERE), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po nagłówku"),
+    "brak-pola-gdzie": (_replaced(WHERE), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, Mechanizm, a po nagłówku"),
     "puste-pole-gdzie": (_replaced(WHERE, "Gdzie:"), (1, 1), "W1: puste pole Gdzie"),
     "puste-pole-dowod": (_replaced(EVIDENCE, "Dowód:"), (1, 1), "W1: puste pole Dowód"),
     "drobne-z-pustym-gdzie": (_replaced(MINOR_WHERE, "Gdzie:"), (1, 1), "D1: puste pole Gdzie"),
-    "dowod-przed-gdzie": (_text(HEADING, EVIDENCE, WHERE, *LINES[3:]), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po nagłówku"),
+    "dowod-przed-gdzie": (_text(HEADING, EVIDENCE, WHERE, *LINES[3:]), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, Mechanizm, a po nagłówku"),
     "szczebel-przed-korzeniem": (_text(*LINES[:3], RUNG, ROOT, *LINES[5:]), (1, 1), f"a po Dowodzie jest linia „{RUNG}” ({QUOTE})"),
     "wazne-bez-korzenia": (_replaced(ROOT), (1, 1), f"a po Dowodzie jest linia „{RUNG}”"),
-    "wazne-bez-szczebla": (_replaced(RUNG), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, a po Korzeniu jest koniec"),
+    "wazne-bez-szczebla": (_replaced(RUNG), (1, 1), f"W1: linia „{MECHANISM}” to nie „Szczebel: (a) - zdanie”"),
+    "wazne-bez-szczebla-i-mechanizmu": (_text(*LINES[:4], *MINOR_LINES, *END_LINES), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, Mechanizm, a po Korzeniu jest koniec"),
+    "wazne-bez-mechanizmu": (_replaced(MECHANISM), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, Mechanizm, a po Szczeblu jest koniec"),
+    "mechanizm-spoza-piramidy": (_replaced(MECHANISM, "Mechanizm: typ"), (1, 1), "W1: „Mechanizm: typ” to nie „Mechanizm: <architektura|refaktor|lint|test|weryfikacja>”"),
+    "puste-pole-mechanizm": (_replaced(MECHANISM, "Mechanizm:"), (1, 1), "W1: „Mechanizm:” to nie „Mechanizm: <"),
+    "mechanizm-ze-zdaniem": (_replaced(MECHANISM, "Mechanizm: lint - reguła ast-grep"), (1, 1), "W1: „Mechanizm: lint - reguła ast-grep” to nie"),
+    "mechanizm-wielka-litera": (_replaced(MECHANISM, "Mechanizm: Lint"), (1, 1), "W1: „Mechanizm: Lint” to nie"),
+    "dwa-mechanizmy": (_replaced(MECHANISM, "Mechanizm: lint", "Mechanizm: test"), (1, 1), "W1: po Mechanizmie nic, a jest linia „Mechanizm: test”"),
+    "mechanizm-przed-szczeblem": (_text(*LINES[:4], MECHANISM, RUNG, *MINOR_LINES, *END_LINES), (1, 1), f"W1: linia „{MECHANISM}” to nie „Szczebel:"),
+    "mechanizm-w-dowodzie": (_replaced(EVIDENCE, EVIDENCE, "Mechanizm: lint"), (1, 1), f"a po Dowodzie jest linia „Mechanizm: lint” ({QUOTE})"),
+    "idiom-zamiast-mechanizmu": (_replaced(MECHANISM, "Idiom: os.name"), (1, 1), "W1: pole Idiom: zniknęło z szablonu, a po Szczeblu stoi „Mechanizm: <"),
+    "idiom-po-mechanizmie": (_replaced(MECHANISM, MECHANISM, "Idiom: os.name"), (1, 1), "W1: po Mechanizmie nic, a jest linia „Idiom: os.name”"),
     "kod-spoza-listy": (_replaced(ROOT, "Korzeń: R-NIE-MA - kod spoza listy."), (1, 1), "W1: kod R-NIE-MA spoza listy"),
     "nowy-kod-z-listy": (_replaced(ROOT, "Korzeń: NOWY R-BEZ-TESTU - kod, który już jest."), (1, 1), "W1: NOWY R-BEZ-TESTU: ten kod jest już na liście"),
     "nowy-bez-opisu": (_replaced(ROOT, "Korzeń: NOWY R-NOWY-KOD -"), (1, 1), "W1: „Korzeń: NOWY R-NOWY-KOD -” to nie"),
@@ -121,29 +136,25 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     ),
     "lista-w-dowodzie": (_replaced(EVIDENCE, "Dowód: wyniki:", "", "- wynik", ""), (1, 1), "W1: w Dowodzie tylko linie tekstu i bloki kodu, a jest punkt listy „wynik”"),
     "wiecej-waznych-niz-w-linii-znalezisk": (TEMPLATE, (0, 1), "w treści Ważne 1"),
-    "mniej-drobnych-niz-w-linii-znalezisk": (_text(*LINES[:5], *LINES[7:]), (1, 1), "w treści Ważne 1 i Drobne 0"),
-    "wazne-po-drobnych": (_text(*LINES[5:7], *LINES[:5], *LINES[7:]), (1, 1), "W1: Ważne stoją przed Drobnymi"),
+    "mniej-drobnych-niz-w-linii-znalezisk": (_text(*MAJOR_LINES, *END_LINES), (1, 1), "w treści Ważne 1 i Drobne 0"),
+    "wazne-po-drobnych": (_text(*MINOR_LINES, *MAJOR_LINES, *END_LINES), (1, 1), "W1: Ważne stoją przed Drobnymi"),
     "numer-nie-po-kolei": (_text(HEADING.replace("W1", "W2"), *LINES[1:]), (1, 1), "W2: to 1. Ważne"),
     "naglowek-czwartego-stopnia": (_text("#" + HEADING, *LINES[1:]), (1, 1), "blok <h4> „W1. Odmowa gubi przyczynę.”"),
     "drobne-z-drugim-polem": (_replaced(MINOR_WHERE, MINOR_WHERE, "Dowód: zdanie"), (1, 1), "D1: Drobne ma tylko pole Gdzie"),
     "proza-poza-szablonem": (_text("Recenzent pisze prozą.", "", *LINES), (1, 1), "linia „Recenzent pisze prozą.” to nie nagłówek"),
-    "bez-sprawdzone": (_text(*LINES[:7]), (1, 1), "brak „## Sprawdzone”"),
-    "sprawdzone-bez-punktow": (_text(*LINES[:8]), (1, 1), "„## Sprawdzone” ma 0 punktów"),
+    "bez-sprawdzone": (_text(*MAJOR_LINES, *MINOR_LINES), (1, 1), "brak „## Sprawdzone”"),
+    "sprawdzone-bez-punktow": (_text(*MAJOR_LINES, *MINOR_LINES, CHECKED), (1, 1), "„## Sprawdzone” ma 0 punktów"),
     "sprawdzone-6-punktow": (_text(*LINES, *(f"- punkt {number}" for number in range(2, 7))), (1, 1), "„## Sprawdzone” ma 6 punktów"),
     "sprawdzone-pusty-punkt": (_text(*LINES, "-"), (1, 1), "po „## Sprawdzone” pusty punkt listy"),
     "sprawdzone-lista-w-liscie": (_text(*LINES, "  - podpunkt"), (1, 1), "po „## Sprawdzone” tylko punkty „- …”, a jest blok <ul>"),
     "proza-po-sprawdzone": (_text(*LINES, "", "Wszystko dobrze."), (1, 1), "a jest linia „Wszystko dobrze.”"),
     "cytat-po-sprawdzone": (_text(*LINES, "", "> cytat"), (1, 1), "a jest blok <blockquote> „cytat”"),
-    "proza-po-szczeblu": (_replaced(RUNG, RUNG, "Dalsza proza."), (1, 1), "W1: po Szczeblu tylko pole Idiom:, a jest linia „Dalsza proza.”"),
-    "proza-po-idiomie": (_replaced(RUNG, RUNG, "Idiom: os.name", "Dalsza proza."), (1, 1), "W1: po Szczeblu tylko pole Idiom:, a jest linia „Dalsza proza.”"),
+    "proza-po-szczeblu": (_replaced(RUNG, RUNG, "Dalsza proza."), (1, 1), "W1: pola w kolejności Gdzie, Dowód, Korzeń, Szczebel, Mechanizm, a po Szczeblu jest linia „Dalsza proza.”"),
+    "proza-po-mechanizmie": (_replaced(MECHANISM, MECHANISM, "Dalsza proza."), (1, 1), "W1: po Mechanizmie nic, a jest linia „Dalsza proza.”"),
     "idiom-w-dowodzie": (_replaced(EVIDENCE, EVIDENCE, "Idiom: os.name"), (1, 1), f"a po Dowodzie jest linia „Idiom: os.name” ({QUOTE})"),
     "idiom-przed-szczeblem": (_replaced(RUNG, "Idiom: os.name", RUNG), (1, 1), "W1: linia „Idiom: os.name” to nie „Szczebel:"),
-    "idiom-bez-reguly-z-klasa-spoza-listy": (_replaced(RUNG, RUNG, "Idiom: bez reguły inna-klasa jak #1553 W1 r2"), (1, 1), "W1: „Idiom: bez reguły inna-klasa jak #1553 W1 r2” to nie „Idiom: <id> jak #N W<n> r<k>”"),
-    "idiom-bez-reguly-bez-wczesniejszego-waznego": (_replaced(RUNG, RUNG, "Idiom: bez reguły brak-testu"), (1, 1), "W1: „Idiom: bez reguły brak-testu” to nie"),
-    "idiom-jak-bez-rundy": (_replaced(RUNG, RUNG, "Idiom: komentarz-w-src jak #1553 W1"), (1, 1), "W1: „Idiom: komentarz-w-src jak #1553 W1” to nie"),
-    "puste-pole-idiom": (_replaced(RUNG, RUNG, "Idiom:"), (1, 1), "W1: „Idiom:” to nie"),
     "proza-zamiast-szczebla": (_replaced(RUNG, "Dalsza proza.", RUNG), (1, 1), "W1: linia „Dalsza proza.” to nie „Szczebel:"),
-    "pass-z-waznym": (_text(*LINES[:5], *LINES[7:]), (0, 0), "w treści Ważne 1"),
+    "pass-z-waznym": (_text(*MAJOR_LINES, *END_LINES), (0, 0), "w treści Ważne 1"),
     "mutacja-z-nazwa-jezyka": (_with_mutation(*_mutation(fence="```json")), (1, 1), "Mutacja W1 r1: pod nagłówkiem tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji, a jest blok <div>"),
     "mutacja-bez-bloku-kodu": (_with_mutation("### Mutacja W1 r1", MUTATION), (1, 1), "Mutacja W1 r1: pod nagłówkiem tylko blok kodu ``` bez nazwy języka z JSON pliku mutacji, a jest linia"),
     "mutacja-sam-naglowek": (_with_mutation("### Mutacja W1 r1"), (1, 1), "a jest koniec"),
@@ -157,6 +168,19 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
     ),
     "mutacja-dwa-bloki-tego-samego-waznego": (_with_mutation(*_mutation(), *_mutation()), (1, 1), "Mutacja W1 r1: drugi blok tego Ważnego w werdykcie"),
     "mutacja-bez-rundy": (_with_mutation("### Mutacja W1", "```", MUTATION, "```"), (1, 1), "„### Mutacja W<n> r<k>”"),
+}
+PRZED_MECHANIZMEM = {
+    "szablon-bez-mechanizmu": _replaced(MECHANISM),
+    "szablon-z-mechanizmem": TEMPLATE,
+    **{f"idiom-{name}": _replaced(MECHANISM, line) for name, (line, _) in IDIOMY.items()},
+}
+ODMOWY_PRZED_MECHANIZMEM: dict[str, tuple[str, tuple[int, int], str]] = {
+    "proza-po-idiomie": (_replaced(MECHANISM, "Idiom: os.name", "Dalsza proza."), (1, 1), "W1: po Szczeblu tylko pole Mechanizm: albo Idiom:, a jest linia „Dalsza proza.”"),
+    "mechanizm-spoza-piramidy": (_replaced(MECHANISM, "Mechanizm: typ"), (1, 1), "W1: „Mechanizm: typ” to nie „Mechanizm: <"),
+    "idiom-bez-reguly-z-klasa-spoza-listy": (_replaced(MECHANISM, "Idiom: bez reguły inna-klasa jak #1553 W1 r2"), (1, 1), "W1: „Idiom: bez reguły inna-klasa jak #1553 W1 r2” to nie „Idiom: <id> jak #N W<n> r<k>”"),
+    "idiom-bez-reguly-bez-wczesniejszego-waznego": (_replaced(MECHANISM, "Idiom: bez reguły brak-testu"), (1, 1), "W1: „Idiom: bez reguły brak-testu” to nie"),
+    "idiom-jak-bez-rundy": (_replaced(MECHANISM, "Idiom: komentarz-w-src jak #1553 W1"), (1, 1), "W1: „Idiom: komentarz-w-src jak #1553 W1” to nie"),
+    "puste-pole-idiom": (_replaced(MECHANISM, "Idiom:"), (1, 1), "W1: „Idiom:” to nie"),
 }
 _MAJOR = (
     "### W1. Brak testu.",
@@ -240,7 +264,14 @@ def html(text: str) -> str:
 def bodies() -> list[str]:
     """Treści, których HTML muszą mieć testy."""
 
-    return [*PRZECHODZA.values(), *(text for text, _, _ in ODMOWY.values()), *WERDYKTY.values(), *(text for text, _ in PONOWNE.values())]
+    return [
+        *PRZECHODZA.values(),
+        *(text for text, _, _ in ODMOWY.values()),
+        *PRZED_MECHANIZMEM.values(),
+        *(text for text, _, _ in ODMOWY_PRZED_MECHANIZMEM.values()),
+        *WERDYKTY.values(),
+        *(text for text, _ in PONOWNE.values()),
+    ]
 
 
 def _refresh() -> None:

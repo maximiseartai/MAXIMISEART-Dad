@@ -20,14 +20,10 @@ Diagnoza i Konfiguracja, więc usterka, którą podstawia test albo weryfikacja,
 
 
 def check_on_disk(template: TemplateFile) -> None:
-    """Sprawdzanie Wzorca na dysku taty (``TemplateFile.check``)."""
-
     template.check()
 
 
 class _Unasked:
-    """Silnik bez rozmówcy (test silnika, skrypt weryfikacji): o nic nie pyta, więc idzie dalej jak po zgodzie."""
-
     continue_hint = ""
 
     def confirm(self, decision: Decision) -> bool:

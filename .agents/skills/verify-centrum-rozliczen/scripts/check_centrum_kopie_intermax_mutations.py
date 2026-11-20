@@ -48,8 +48,26 @@ MUTATIONS = (
         "tata nie wie, od której godziny jego zmiany znikną",
     ),
     Mutation(
+        "ostrzeżenie bez zmian z drugiego komputera",
+        (Edit(BUILD, " znikną, także te zrobione na drugim komputerze. ", " znikną. "),),
+        KOPIE,
+        "Andrzej nie wie, że cofa też zmiany zrobione później na komputerze taty",
+    ),
+    Mutation(
+        "ostrzeżenie bez Kopii obecnego INTERMAX",
+        (
+            Edit(
+                BUILD,
+                " Przed przywróceniem narzędzie zrobi Kopię obecnego INTERMAX, więc przywrócenie też da się cofnąć.`",
+                "`",
+            ),
+        ),
+        KOPIE,
+        "tata nie wie, że przywrócenie da się cofnąć",
+    ),
+    Mutation(
         "lista nie czyta się po przywróceniu",
-        (Edit(BUILD, "message:Pv(e)})).finally(()=>{a(!1),t()})}", "message:Pv(e)})).finally(()=>{a(!1)})}"),),
+        (Edit(BUILD, "message:Lv(e)})).finally(()=>{a(!1),t()})}", "message:Lv(e)})).finally(()=>{a(!1)})}"),),
         KOPIE,
         "po przywróceniu lista nie ma nowej Kopii stanu sprzed przywrócenia",
     ),

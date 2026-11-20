@@ -82,14 +82,9 @@ _NOT_UNDOABLE: dict[int | str, dict[str, object]] = {
 def settings_router(
     settings: CentrumSettings,
     platform: Platform,
-    inbox_login: Callable[[], LoginResult],
-    today: Callable[[], date],
     rule_sentences: Callable[[], Callable[[str, str | None], list[SentencePart] | None]],
 ) -> APIRouter:
-    router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
-
-    def saved(edit: FoldersEdit) -> settings_contract.Choice:
-        return choice(settings, settings.change_folders(edit))
+    router = _router()
 
     @router.get("", operation_id="getSettings")
     def read() -> settings_contract.Settings:
@@ -97,25 +92,54 @@ def settings_router(
 
     @router.put("/folders", operation_id="changeFolders", responses=_REFUSED)
     def change_folders(change: settings_contract.FoldersChange) -> settings_contract.Choice:
-        return saved(ChangeFolders(_path(change.order_register), _path(change.periods_directory)))
+        return _saved(settings, ChangeFolders(_path(change.order_register), _path(change.periods_directory)))
 
     @router.post("/register/choose", operation_id="chooseRegister")
     def choose_register() -> settings_contract.Choice:
         chosen = platform.choose_file(_REGISTER_DIALOG, _REGISTER_FILETYPES)
         if chosen is None:
             return settings_contract.Choice(settings=describe(settings.view()))
-        return saved(ChooseRegister(chosen))
+        return _saved(settings, ChooseRegister(chosen))
+
+    @router.put("/theme", operation_id="changeTheme")
+    def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
+        return _saved(settings, ChangeTheme(change.theme))
+
+    @router.get("/history", operation_id="getSettingsHistory")
+    def history() -> settings_contract.SettingsHistory:
+        read = settings.history()
+        if isinstance(read, Unreadable):
+            raise refusal.settings_history_unreadable()
+        sentence = rule_sentences()
+        return settings_contract.SettingsHistory(rows=[_row(row, sentence) for row in read.rows], skipped=read.skipped)
+
+    @router.post("/history/{change_id}/undo", operation_id="undoSettingsChange", responses=_NOT_UNDOABLE)
+    def undo(change_id: str) -> settings_contract.Choice:
+        undone = settings.undo(change_id)
+        if isinstance(undone, NotUndoable):
+            if not undone.known:
+                raise refusal.settings_change_unknown()
+            raise refusal.settings_change_not_undoable()
+        return choice(settings, undone)
+
+    return router
+
+
+def periods_directory_router(settings: CentrumSettings, platform: Platform) -> APIRouter:
+    router = _router()
 
     @router.post("/periods-directory/choose", operation_id="choosePeriodsDirectory")
     def choose_periods_directory() -> settings_contract.Choice:
         chosen = platform.choose_folder(_PERIODS_DIALOG)
         if chosen is None:
             return settings_contract.Choice(settings=describe(settings.view()))
-        return saved(ChoosePeriodsDirectory(chosen))
+        return _saved(settings, ChoosePeriodsDirectory(chosen))
 
-    @router.put("/theme", operation_id="changeTheme")
-    def change_theme(change: settings_contract.ThemeChange) -> settings_contract.Choice:
-        return saved(ChangeTheme(change.theme))
+    return router
+
+
+def autostart_router(settings: CentrumSettings) -> APIRouter:
+    router = _router()
 
     @router.put("/autostart", operation_id="changeAutostart", responses=_REFUSED)
     def change_autostart(change: settings_contract.AutostartChange) -> settings_contract.Choice:
@@ -124,6 +148,12 @@ def settings_router(
             raise refusal.autostart_not_changed()
         return choice(settings, result)
 
+    return router
+
+
+def inbox_password_router(settings: CentrumSettings, inbox_login: Callable[[], LoginResult]) -> APIRouter:
+    router = _router()
+
     @router.put("/inbox-password", operation_id="changeInboxPassword", responses=_REFUSED)
     def change_inbox_password(change: settings_contract.InboxPasswordChange) -> settings_contract.InboxPasswordSaved:
         """Nowe hasło zastępuje tylko linię hasła pliku; po każdym udanym zapisie jedna próba logowania mówi, czy
@@ -131,6 +161,12 @@ def settings_router(
 
         saved = choice(settings, settings.change_inbox_password(change.password))
         return settings_contract.InboxPasswordSaved(settings=saved.settings, change=saved.change, login=inbox_login())
+
+    return router
+
+
+def reminders_router(settings: CentrumSettings, today: Callable[[], date]) -> APIRouter:
+    router = _router()
 
     @router.put("/reminders/enabled", operation_id="changeRemindersEnabled", responses=_REFUSED)
     def change_reminders_enabled(change: reminders_contract.RemindersEnabledChange) -> settings_contract.Choice:
@@ -158,6 +194,12 @@ def settings_router(
             raise refusal.setting_refused(read)
         day = today() - timedelta(days=1)
         return reminders_contract.ReminderPreview(subject=reminder_subject(day), text=reminder_text(day, read.text, read.footer))
+
+    return router
+
+
+def settlement_mail_router(settings: CentrumSettings, today: Callable[[], date]) -> APIRouter:
+    router = _router()
 
     @router.put("/settlement-mail", operation_id="changeSettlementMail", responses=_REFUSED)
     def change_settlement_mail(form: mailing_contract.SettlementMailForm) -> settings_contract.Choice:
@@ -192,24 +234,15 @@ def settings_router(
             subject=mail_subject(read, period, worker), text=mail_text(read, period, worker, footer)
         )
 
-    @router.get("/history", operation_id="getSettingsHistory")
-    def history() -> settings_contract.SettingsHistory:
-        read = settings.history()
-        if isinstance(read, Unreadable):
-            raise refusal.settings_history_unreadable()
-        sentence = rule_sentences()
-        return settings_contract.SettingsHistory(rows=[_row(row, sentence) for row in read.rows], skipped=read.skipped)
-
-    @router.post("/history/{change_id}/undo", operation_id="undoSettingsChange", responses=_NOT_UNDOABLE)
-    def undo(change_id: str) -> settings_contract.Choice:
-        undone = settings.undo(change_id)
-        if isinstance(undone, NotUndoable):
-            if not undone.known:
-                raise refusal.settings_change_unknown()
-            raise refusal.settings_change_not_undoable()
-        return choice(settings, undone)
-
     return router
+
+
+def _router() -> APIRouter:
+    return APIRouter(prefix="/api/settings", tags=["ustawienia"])
+
+
+def _saved(settings: CentrumSettings, edit: FoldersEdit) -> settings_contract.Choice:
+    return choice(settings, settings.change_folders(edit))
 
 
 def choice(settings: CentrumSettings, result: Saved | Refused | NotSaved | KeptInPeriods) -> settings_contract.Choice:

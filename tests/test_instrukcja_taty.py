@@ -1,15 +1,3 @@
-"""Instrukcja dla taty a katalogi Komunikatów.
-
-Każdy katalog (Przygotowanie pliku zbiorczego, Przebieg rozliczeń, start
-Centrum rozliczeń, Diagnoza, Zgłoszenie, Powiadomienia, Aktualizacja narzędzia, Uzupełnienie pliku zbiorczego,
-Uporządkowanie INTERMAX, Wycena w efenix) ma w ``docs/tata-instrukcja.md`` swoją sekcję z tabelą,
-której wiersze cytują faktyczną treść „Co się stało”. Jeden zestaw sprawdzeń
-obejmuje każdy katalog: nowy katalog dostaje wszystkie sprawdzenia, gdy tylko
-trafi do ``CATALOGS``. Zmiana treści Komunikatu bez poprawki instrukcji psuje
-test. Cytaty z punktów sekcji „Gdy pojawi się problem” Przebiegu rozliczeń
-też muszą odpowiadać „Co się stało” Komunikatu.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -53,20 +41,14 @@ from tests.fixtures.message_samples import (
 
 INSTRUCTION = Path(__file__).resolve().parents[1] / "docs" / "tata-instrukcja.md"
 QUOTED = re.compile(r"„([^”]+)”")
-# Pełna ścieżka zaczyna się literą dysku (C:\Dane, C:/Dane) albo jest ścieżką sieciową
-# (\\nas\Wspolne, //nas/Wspolne); „//” po dwukropku to adres, nie ścieżka.
 FULL_PATH = re.compile(r"(?<![A-Za-z])[A-Za-z]:[\\/]|(?<![:\\/])(?:\\\\|//)[^\\/\s]")
+ABOVE_PERIOD_FOLDER = ABOVE_CONFIG | {"Dane", "INEA"}
+ABOVE_REPORT_QUEUE = ABOVE_CONFIG | {"config", "zgloszenia"}
+ABOVE_TOOL_FOLDER = ABOVE_CONFIG - {"Narzedzie"}
+RESTORING_INTERMAX_COPY = frozenset({"copies_unreadable", "copy_missing", "copy_unusable", "copy_damaged"})
 
 @dataclass(frozen=True)
 class Catalog:
-    """Katalog Komunikatów, jego sekcja w instrukcji i próbki każdej fabryki.
-
-    ``outside_centrum`` to fabryki, których Komunikatu Centrum rozliczeń nie
-    pokazuje w procesie sekcji, więc sekcja ich nie cytuje. ``hidden_folders`` to foldery
-    ze ścieżek próbek leżące wyżej niż folder nadrzędny wskazywanego pliku albo
-    folderu; trzy części Komunikatu ich nie pokazują.
-    """
-
     module: ModuleType
     section: str
     samples: Samples
@@ -81,8 +63,6 @@ class Catalog:
         }
 
     def case_factories(self) -> dict[str, Callable[..., Message]]:
-        """Prywatne fabryki przypadków, do których prowadzi publiczna funkcja katalogu (np. ``template_unusable``)."""
-
         return {
             name: function
             for name, function in inspect.getmembers(self.module, inspect.isfunction)
@@ -100,64 +80,53 @@ class Catalog:
 
 
 CATALOGS = {
-    # Folder Dane i folder okresów INEA legalnie widać jako folder nadrzędny Rejestru zleceń i folderu okresu.
     "przygotowanie-pliku-zbiorczego": Catalog(
         messages,
         "### Komunikat → co zrobić",
         PREPARATION_SAMPLES,
-        # Centrum przyjmuje tylko okres z kalendarza okresów; zły token zgłasza silnik tylko skryptowi dla maszyn.
         outside_centrum=frozenset({"invalid_period_token"}),
     ),
     "przebieg-rozliczen": Catalog(
         settlement_messages,
         "### Komunikat w Centrum rozliczeń → co zrobić",
         SETTLEMENT_SAMPLES,
-        # Przebieg wskazuje najwyżej folder okresu, więc folderów nad nim nie widać.
-        hidden_folders=ABOVE_CONFIG | {"Dane", "INEA"},
+        hidden_folders=ABOVE_PERIOD_FOLDER,
     ),
     "start-centrum-rozliczen": Catalog(start_problems, "### Komunikaty startu Centrum rozliczeń", START_SAMPLES),
-    # Diagnoza wskazuje najwyżej Folder okresu, więc folderów nad nim nie widać.
     "diagnoza": Catalog(
         diagnosis_messages,
         "### Wyjaśnienie Diagnozy → co zrobić",
         DIAGNOSIS_SAMPLES,
-        hidden_folders=ABOVE_CONFIG | {"Dane", "INEA"},
+        hidden_folders=ABOVE_PERIOD_FOLDER,
     ),
-    # Zgłoszenie wskazuje folder kolejki, więc folderów config i zgloszenia nad nim nie widać.
     "zgloszenie": Catalog(
         report_messages,
         "### Zgłoszenie → co zrobić",
         REPORT_SAMPLES,
-        hidden_folders=ABOVE_CONFIG | {"config", "zgloszenia"},
+        hidden_folders=ABOVE_REPORT_QUEUE,
     ),
     "powiadomienia": Catalog(notification_messages, "### Powiadomienia", NOTIFICATION_SAMPLES),
     "aktualizacja-narzedzia": Catalog(
         update_messages, "### Aktualizacja narzędzia → co zrobić", UPDATE_SAMPLES
     ),
-    # Uzupełnienie wskazuje Plik zbiorczy w Folderze okresu, więc folderów nad nim nie widać.
     "uzupelnienie-pliku-zbiorczego": Catalog(
         fill_messages,
         "### Uzupełnienie → co zrobić",
         FILL_SAMPLES,
-        hidden_folders=ABOVE_CONFIG | {"Dane", "INEA"},
+        hidden_folders=ABOVE_PERIOD_FOLDER,
     ),
-    # Katalog INTERMAX służy też przywróceniu Kopii INTERMAX (okno Ustawień) i Wpisaniu raportów (ekran Raporty), więc
-    # próbki mają Komunikaty o INTERMAX tylko w wariancie Uporządkowania. Kopie INTERMAX leżą w folderze narzędzia,
-    # więc jego nazwę legalnie widać jako folder nadrzędny folderu Kopii.
     "uporzadkowanie-intermax": Catalog(
         intermax_messages,
         "### Uporządkowanie INTERMAX → co zrobić",
         INTERMAX_ORDERING_ONLY,
-        outside_centrum=frozenset({"copies_unreadable", "copy_missing", "copy_unusable", "copy_damaged"}),
-        hidden_folders=ABOVE_CONFIG - {"Narzedzie"},
+        outside_centrum=RESTORING_INTERMAX_COPY,
+        hidden_folders=ABOVE_TOOL_FOLDER,
     ),
-    # Wycena wskazuje Plik zbiorczy w Folderze okresu, więc folderów nad nim nie widać. Folderu Dane próbek nie ma na
-    # liście, bo jego nazwa zaczyna zdanie „Dane adresowe zlecenia” w Komunikacie; pełną ścieżkę łapie i tak FULL_PATH.
     "wycena-w-efenix": Catalog(
         efenix_messages,
         "### Wycena w efenix → co zrobić",
         EFENIX_SAMPLES,
-        hidden_folders=ABOVE_CONFIG | {"INEA"},
+        hidden_folders=ABOVE_PERIOD_FOLDER - {"Dane"},
     ),
 }
 
@@ -165,8 +134,6 @@ each_catalog = pytest.mark.parametrize("catalog", CATALOGS.values(), ids=CATALOG
 
 
 def _settlement_problem_quotes() -> list[str]:
-    """Cytaty „…” z punktów sekcji „Gdy pojawi się problem” w części Przebiegu rozliczeń."""
-
     lines = INSTRUCTION.read_text(encoding="utf-8").splitlines()
     start = lines.index("### Gdy pojawi się problem", lines.index("## Przebieg rozliczeń"))
     quotes: list[str] = []
@@ -179,8 +146,6 @@ def _settlement_problem_quotes() -> list[str]:
 
 
 def _instruction_fragments(section: str) -> list[str]:
-    """Cytaty „…” z pierwszej kolumny tabel w sekcji instrukcji, razem z jej podsekcjami."""
-
     lines = INSTRUCTION.read_text(encoding="utf-8").splitlines()
     start = lines.index(section)
     level = section.split(" ", 1)[0]
@@ -202,9 +167,6 @@ def test_probki_pokrywaja_kazda_fabryke_katalogu(catalog: Catalog) -> None:
 
 @each_catalog
 def test_probki_docieraja_do_kazdej_fabryki_przypadku_katalogu(catalog: Catalog) -> None:
-    """Fabryka przypadku jest osiągnięta, gdy jej kod wykonał się przy próbkach, także wołany przez referencję z
-    ``WorkbookMessages`` katalogu, a nie po nazwie z modułu."""
-
     names = {factory.__code__: name for name, factory in catalog.case_factories().items()}
     reached: set[str] = set()
 
@@ -243,12 +205,6 @@ def test_kazdy_cytat_instrukcji_wskazuje_dokladnie_jeden_kod(catalog: Catalog) -
 
 @each_catalog
 def test_kazdy_kod_katalogu_ma_dokladnie_jeden_cytat_instrukcji(catalog: Catalog) -> None:
-    """Jeden kod to jeden Komunikat: jego warianty objaśnia ten sam, jedyny cytat instrukcji.
-
-    Razem z ``test_kazdy_cytat_instrukcji_wskazuje_dokladnie_jeden_kod`` pilnuje,
-    że dwie fabryki o różnej treści nie dzielą kodu w obrębie katalogu.
-    """
-
     fragments = _instruction_fragments(catalog.section)
     fragments_per_code: dict[str, set[str]] = {}
     for message in catalog.shown_messages():
@@ -275,3 +231,18 @@ def test_komunikaty_katalogu_nie_maja_pelnych_sciezek(catalog: Catalog) -> None:
     }
 
     assert shown == {}
+
+
+@pytest.mark.parametrize(
+    ("text", "full_path"),
+    [
+        pytest.param("plik C:\\Dane\\Rejestr.xlsx", True, id="litera-dysku-z-ukosnikiem-wstecznym"),
+        pytest.param("plik C:/Dane/Rejestr.xlsx", True, id="litera-dysku-z-ukosnikiem"),
+        pytest.param("folder \\\\nas\\Wspolne", True, id="sciezka-sieciowa-z-ukosnikami-wstecznymi"),
+        pytest.param("folder //nas/Wspolne", True, id="sciezka-sieciowa-z-ukosnikami"),
+        pytest.param("adres http://127.0.0.1:8765/ na tym komputerze", False, id="adres-po-dwukropku"),
+        pytest.param("folder Dane, arkusz ZLECENIA", False, id="nazwa-folderu-bez-sciezki"),
+    ],
+)
+def test_pelna_sciezka_to_litera_dysku_albo_sciezka_sieciowa_a_nie_adres(text: str, full_path: bool) -> None:
+    assert bool(FULL_PATH.search(text)) is full_path

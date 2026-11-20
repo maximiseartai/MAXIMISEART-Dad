@@ -1,22 +1,3 @@
-"""Akcje systemowe komputera taty za jednym adapterem: otwarcie pliku albo folderu i okna wyboru.
-
-U taty (Windows) plik otwiera skojarzony program, czyli Excel, a okna wyboru
-to okna tkinter. Przy rozwoju na macOS działają odpowiedniki
-systemu: ``open`` i ``osascript``, bo tkinter na macOS działa tylko w wątku
-głównym, a serwer obsługuje żądania w wątkach roboczych. Testy API podają
-własny adapter do ``create_app``; serwer dostaje ``system_platform()``.
-
-Przed startem serwera (``launcher``) są jeszcze dwie akcje systemowe:
-``has_console()`` i ``show_start_problem()``, czyli natywne okienko z
-komunikatem startu, gdy Centrum uruchomiono skrótem bez konsoli. Moduł używa
-tylko biblioteki standardowej.
-
-Autostart Windows to osobny port (``Autostart``): skrót „Centrum rozliczeń” w
-folderze Autostart taty, który przełącznik w Ustawieniach zakłada albo usuwa.
-Na Windows obsługuje go ``shortcut.StartupShortcut`` (``shortcut.system_autostart``),
-a komputer bez Windows go nie ma (``NO_AUTOSTART``).
-"""
-
 from __future__ import annotations
 
 import os
@@ -29,39 +10,34 @@ from types import ModuleType
 from typing import Any, Final, Literal, Protocol, TextIO
 
 FileTypes = Sequence[tuple[str, str]]
-"""Typy plików okna wyboru pliku: pary (opis, wzorzec nazwy)."""
 
 
 class Platform(Protocol):
     def open_path(self, path: Path) -> None:
-        """Otwiera plik w domyślnym programie (Excel) albo folder w menedżerze plików."""
+        ...
 
     def choose_file(self, title: str, filetypes: FileTypes) -> Path | None:
-        """Natywne okno wyboru pliku; ``None``, gdy tata anulował."""
+        ...
 
     def choose_folder(self, title: str) -> Path | None:
-        """Natywne okno wyboru folderu; ``None``, gdy tata anulował."""
+        ...
 
 
 AutostartState = Literal["on", "off", "unsupported"]
-"""Skrót Centrum w folderze Autostart jest, nie ma go albo komputer nie ma Autostartu Windows."""
 
 
 class Autostart(Protocol):
     def state(self) -> AutostartState:
-        """Czy skrót Centrum jest w folderze Autostart; ``OSError``, gdy folderu nie da się teraz sprawdzić."""
+        ...
 
     def enable(self) -> None:
-        """Zakłada albo nadpisuje skrót Centrum w folderze Autostart; ``OSError``, gdy się nie udało."""
+        ...
 
     def disable(self) -> None:
-        """Usuwa skrót Centrum z folderu Autostart (brak skrótu to nie błąd); ``OSError``, gdy się nie udało."""
+        ...
 
 
 class _NoAutostart:
-    """Komputer bez Autostartu Windows: stan ``unsupported``, a zmiany nie dochodzą tu, bo odmawia ich właściciel
-    Ustawień."""
-
     def state(self) -> AutostartState:
         return "unsupported"
 
@@ -74,30 +50,20 @@ class _NoAutostart:
 
 NO_AUTOSTART: Final[Autostart] = _NoAutostart()
 
+# ZEWNĘTRZNE: program konsolowy uruchomiony przez proces bez konsoli, jak Centrum ze skrótu pod pythonw, dostaje od Windows własne okno konsoli, chyba że ma flagę CREATE_NO_WINDOW (Microsoft Learn: Creation of a Console, Process Creation Flags)
 NO_CONSOLE_WINDOW: Final = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-"""Flaga Windows, z którą program konsolowy uruchomiony z Centrum nie otwiera tacie okna konsoli; poza Windows 0.
-
-Centrum ze skrótu działa pod ``pythonw``, bez konsoli, więc każdy program konsolowy (PowerShell, pip, Git) dostałby
-od Windows własne okno, które mignie tacie i zabierze fokus przeglądarce. Programy czekające na wynik Centrum
-uruchamia przez ``run_console_program``, a ``Popen`` z innymi flagami dokłada do nich tę."""
 
 
 class ConsoleRun(Protocol):
     def __call__(
         self, command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
     ) -> subprocess.CompletedProcess[str]:
-        """Uruchamia program konsolowy i czeka na niego; ``subprocess.TimeoutExpired`` po ``timeout_s``."""
+        ...
 
 
 def run_console_program(
     command: Sequence[str], *, timeout_s: float, cwd: Path | None = None, env: Mapping[str, str] | None = None
 ) -> subprocess.CompletedProcess[str]:
-    """Program konsolowy bez okna konsoli i bez wejścia, z wyjściem jako tekst UTF-8; wynik czyta wołający po kodzie.
-
-    Po ``timeout_s`` zabija program i rzuca ``subprocess.TimeoutExpired``, więc zawieszony program nie trzyma
-    wołającego (np. blokady Ustawień) bez końca.
-    """
-
     return subprocess.run(
         command,
         cwd=cwd,
@@ -114,20 +80,11 @@ def run_console_program(
 
 
 def has_console() -> bool:
-    """Czy ktoś zobaczy, co Centrum wypisze: konsola, potok albo plik.
-
-    ``pythonw`` ze skrótu „Centrum rozliczeń” nie daje procesowi ``sys.stdout`` ani ``sys.stderr``, a opiekun
-    ponownego startu daje je, ale na urządzenie puste.
-    """
-
+    # ZEWNĘTRZNE: proces uruchomiony przez pythonw ma sys.stdout i sys.stderr równe None (dokumentacja Pythona, sys.__stdout__)
     return not any(stream is None or _null_device(stream) for stream in (sys.stdout, sys.stderr))
 
 
 def _null_device(stream: TextIO) -> bool:
-    """Czy ``stream`` pisze na urządzenie puste. Strumień bez deskryptora (np. przechwycony w testach) ktoś czyta, więc
-    nie jest pusty. Na Windows NUL to urządzenie znakowe jak konsola, ale bez trybu konsoli, a ``os.fstat`` ich nie
-    odróżnia."""
-
     try:
         descriptor = stream.fileno()
     except (OSError, ValueError):
@@ -137,6 +94,7 @@ def _null_device(stream: TextIO) -> bool:
         from ctypes import wintypes
         import msvcrt
 
+        # ZEWNĘTRZNE: NUL to w Windows urządzenie znakowe jak konsola, więc os.fstat ich nie odróżnia, a tryb konsoli ma tylko konsola (Microsoft Learn: GetFileType, GetConsoleMode)
         handle = wintypes.HANDLE(msvcrt.get_osfhandle(descriptor))
         file_type_char = 0x0002
         kernel32 = ctypes.windll.kernel32
@@ -149,8 +107,6 @@ def _null_device(stream: TextIO) -> bool:
 
 
 def show_start_problem(title: str, text: str) -> None:
-    """Natywne okienko błędu nad innymi oknami; wraca, gdy tata je zamknie."""
-
     if sys.platform == "win32":
         import ctypes
 
@@ -176,14 +132,13 @@ def show_start_problem(title: str, text: str) -> None:
 
 def system_platform() -> Platform:
     if sys.platform == "darwin":
+        # ZEWNĘTRZNE: tkinter na macOS otwiera okna tylko w wątku głównym, a serwer Centrum obsługuje żądania w wątkach roboczych (Apple, Threading Programming Guide: Thread Safety Summary)
         return _MacPlatform()
     else:
         return _TkPlatform()
 
 
 class _TkPlatform:
-    """Windows u taty (Linux przy rozwoju): okna tkinter w wątku żądania, jedno naraz, nad przeglądarką."""
-
     def __init__(self) -> None:
         self._dialog_lock = threading.Lock()
 

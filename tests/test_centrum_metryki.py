@@ -407,8 +407,8 @@ def _annotation_changes(call: Callable[..., Any]) -> Iterator[tuple[str, int, st
 
 def test_filtr_zachowuje_adnotacje_kazdej_funkcji_ktora_czyta_fastapi_centrum(tmp_path: Path) -> None:
     app = centrum_app(ToolDirectory(tmp_path))
-    routes = [context.route for context in iter_route_contexts(app.routes)]
-    calls = {call for route in routes if isinstance(route, APIRoute) for call in _fastapi_calls(route.dependant)}
+    routes = [context for context in iter_route_contexts(app.routes) if isinstance(context.route, APIRoute)]
+    calls = {call for context in routes for call in _fastapi_calls(context.dependant)}
     lines = {change for call in calls for change in _annotation_changes(call)}
 
     lost = [

@@ -133,8 +133,6 @@ def write() -> None:
 
 
 def in_child() -> None:
-    """Proces Pythona uruchomiony przez test: zapisuje swoje zmienione linie pod tym testem przy wyjściu."""
-
     test = os.environ.get(TEST)
     if test is None or VARIABLE not in os.environ:
         return

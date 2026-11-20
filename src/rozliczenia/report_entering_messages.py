@@ -11,6 +11,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final
 
+from .intermax_messages import CONFLICT_ACTION
 from .message import IF_ERROR_RETURNS, Message, explorer_check, file_label, folder_label
 from .tool_files import REPORT_ENTERING_DECISIONS, REPORT_ENTERING_STATE
 from .worker_report_inbox import INBOX_ACCESS_FILE
@@ -62,12 +63,6 @@ def inbox_unreachable() -> Message:
         where=_INBOX,
         action=f"Spróbuj za chwilę: sprawdź połączenie z internetem i kliknij jeszcze raz. {IF_ERROR_RETURNS}",
     )
-
-
-CONFLICT_ACTION: Final = (
-    "Otwórz w Excelu INTERMAX i tę kopię, przepisz do INTERMAX zmiany, których w nim brakuje, zapisz go i usuń kopię."
-)
-"""Co tata robi z kopią konfliktu OneDrive obok INTERMAX: w Komunikacie i na ekranie Raporty."""
 
 
 def conflict_copy(copy: Path) -> Message:

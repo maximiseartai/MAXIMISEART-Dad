@@ -21,6 +21,7 @@ from typing import Any
 from xml.etree import ElementTree as ET
 
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
 import pytest
 
@@ -321,6 +322,36 @@ def test_zamkniete_centrum_zwalnia_port_od_razu_takze_gdy_kolejka_czeka_na_skrzy
 
     assert closed, "Centrum czekało z zamknięciem na wysyłkę kolejki"
     assert port_free
+
+
+async def _progress_without_end() -> AsyncIterator[bytes]:
+    yield b"postep\n"
+    await asyncio.Event().wait()
+
+
+def test_otwarty_strumien_postepu_nie_wstrzymuje_zamkniecia_centrum_bez_konca(tmp_path: Path) -> None:
+    app = FastAPI()
+
+    @app.get("/postep")
+    async def progress() -> StreamingResponse:
+        return StreamingResponse(_progress_without_end())
+
+    log = CentrumLog(ToolDirectory(tmp_path).log_path)
+    shutdown = Shutdown(log)
+    since = new_line()
+    served, port = _serving(app, shutdown, log)
+    connection = http.client.HTTPConnection(HOST, port, timeout=30)
+    try:
+        connection.request("GET", "/postep")
+        first = connection.getresponse().readline()
+        shutdown.request()
+        served.join(30)
+        closed = not served.is_alive()
+    finally:
+        connection.close()
+        join_threads_since(since)
+
+    assert (first, closed) == (b"postep\n", True)
 
 
 class _EndingThread(threading.Thread):
