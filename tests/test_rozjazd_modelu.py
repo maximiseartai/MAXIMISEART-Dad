@@ -19,7 +19,6 @@ import pytest
 
 from tests.fixtures.git_repo import commit, git
 
-import model_tlc
 import przesun_model
 import rozjazd_modelu
 
@@ -515,7 +514,8 @@ def _model_bez_wiersza(tla: str, skill_md: str) -> list[str]:
         for keyword in ("CONSTANT", "VARIABLE")
     }
     definitions = re.findall(r"^(\w+)\s*(?:\([^)]*\))?\s*==", text, re.MULTILINE)
-    actions = sorted(model_tlc.akcje_next(text) & set(definitions))
+    [steps] = re.findall(r"^Next\s*==(.*?)(?=^\S|\Z)", text, re.MULTILINE | re.DOTALL) or [""]
+    actions = [name for name in re.findall(r"\w+", re.sub(r"\\[EA]\s[^:]*:", "", steps)) if name in definitions]
     names = [name for keyword in blocks for block in blocks[keyword] for name in re.findall(r"\w+", block)] + actions
     named = {span.split("(", 1)[0] for row in rozjazd_modelu.wiersze_tabeli(skill_md) for span in row.split("|")[1].split("`")[1::2]}
     prefixes = tuple(name.removesuffix("…") for name in named if name.endswith("…"))
