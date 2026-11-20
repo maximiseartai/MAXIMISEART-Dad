@@ -18,6 +18,8 @@ from openpyxl.utils.cell import column_index_from_string
 from openpyxl.worksheet.dimensions import Dimension
 from openpyxl.worksheet.worksheet import Worksheet
 
+import na_boxie
+
 ZASADY = """Jedna operacja, ``compare_worker_settlements``: dla dwóch Folderów rozliczeń
 pracowników zwraca liczbę różnic w każdej kategorii (``CATEGORIES``). Wynik to
 same liczby: bez treści komórek, adresów komórek, nazw plików i numerów zleceń.
@@ -77,11 +79,13 @@ def _file_names(folder: Path) -> set[str]:
 
 
 def _compare_all(pairs: Sequence[tuple[Path, Path]]) -> Iterator[dict[str, int]]:
-    """Pary skoroszytów porównywane równolegle: pełne wczytanie skoroszytu trwa sekundy."""
+    """Pary skoroszytów porównywane równolegle: pełne wczytanie skoroszytu trwa sekundy, a pula procesów na wszystkie
+    rdzenie to ciężka praca, która na Macu odmawia z poleceniem ``boatbox`` (``na_boxie.odmowa``)."""
 
     if len(pairs) < 2:
         yield from (_compare_workbooks(*pair) for pair in pairs)
         return
+    na_boxie.odmowa()
     with ProcessPoolExecutor(max_workers=min(len(pairs), os.cpu_count() or 1)) as pool:
         yield from pool.map(_compare_workbooks, *zip(*pairs, strict=True))
 

@@ -33,8 +33,24 @@ SZYBKO = [PYTHON, "tools/szybko.py", "--baza", "nie/ma/takiej"]
 PLAN = '[{"nazwa": "x", "zmiany": [["README.md", "nie ma takiej kotwicy", "y"]], "polecenie": ["-c", ""]}]'
 """Plan jednej mutacji, której kotwicy nie ma: przechodzi sprawdzenia ``mutacje.py`` przed decyzją, a bez odmowy kończy
 się zaraz linią ``NIEAKTUALNA``."""
+EXPLORER = ".agents/skills/verify-wycena-efenix/scripts/explore_wycena_efenix.py"
+
+
+def _folders(tmp: Path, pairs: int) -> list[str]:
+    """Dwa Foldery rozliczeń z ``pairs`` parami skoroszytów o tych samych nazwach (treść nie ma znaczenia przed decyzją)."""
+
+    for side in ("a", "b"):
+        (tmp / side).mkdir(exist_ok=True)
+        for number in range(pairs):
+            (tmp / side / f"Rozliczenie_{number}.xlsx").write_text("x", encoding="utf-8")
+    return [str(tmp / "a"), str(tmp / "b")]
+
+
 HEAVY = [
     pytest.param(lambda tmp: SZYBKO, {}, id="szybko"),
+    pytest.param(lambda tmp: [PYTHON, "tools/porownanie_rozliczen.py", *_folders(tmp, 2)], {}, id="porownanie-rozliczen-rownolegle"),
+    pytest.param(lambda tmp: [PYTHON, "tools/inwentarz_komentarzy.py", "--dowod-fali"], {}, id="dowod-fali"),
+    pytest.param(lambda tmp: [PYTHON, EXPLORER, "--rownolegle", "2"], {}, id="eksplorator-efenix-rownolegle"),
     pytest.param(lambda tmp: [PYTHON, "tools/mutacje.py", "--plik", str(tmp / "plan.json")], {}, id="mutacje-plik"),
     pytest.param(lambda tmp: [PYTHON, "tools/mutacje_zmiany.py"], CI, id="mutacje-zmiany"),
     pytest.param(lambda tmp: [PYTHON, "tools/benchmark_przebiegu.py", "freeze", "--commit", "0"], {}, id="benchmark-freeze"),
@@ -142,10 +158,18 @@ def test_pytest_bez_workerow_albo_z_jednym_biegnie_na_macu(workers: list[str], t
         pytest.param([PYTHON, "tools/mutacje_zmiany.py"], id="mutacje-zmiany-odmowa-ciezkiego-ci"),
         pytest.param([PYTHON, "tools/benchmark_przebiegu.py", "comment", "--journal", "brak.jsonl"], id="benchmark-comment"),
         pytest.param([PYTHON, "tools/benchmark_przebiegu.py", "guard", "--journal", "brak.jsonl", "--budget-ms", "1"], id="benchmark-guard"),
+        pytest.param([PYTHON, "tools/inwentarz_komentarzy.py", "tools/lib/na_boxie.py"], id="inwentarz-bez-dowodu-fali"),
+        pytest.param([PYTHON, EXPLORER, "--lista"], id="eksplorator-efenix-lista"),
     ],
 )
 def test_lekki_tryb_albo_szybka_odmowa_ciezkiego_narzedzia_biegnie_na_macu(command: list[str], tmp_path: Path) -> None:
     done = _run(command, tmp_path)
+
+    assert (done.returncode != na_boxie.ODMOWA, "CIĘŻKIE NA MACU ODMOWA" in done.stderr) == (True, False), done.stdout + done.stderr
+
+
+def test_porownanie_jednej_pary_skoroszytow_bez_puli_procesow_biegnie_na_macu(tmp_path: Path) -> None:
+    done = _run([PYTHON, "tools/porownanie_rozliczen.py", *_folders(tmp_path, 1)], tmp_path)
 
     assert (done.returncode != na_boxie.ODMOWA, "CIĘŻKIE NA MACU ODMOWA" in done.stderr) == (True, False), done.stdout + done.stderr
 

@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools/lib"))
 
 from kroki_lokalne import OUTPUT_ON_FAILURE, environment, pytest_step
 from kroki_skilli import Step
+import na_boxie
 import odpalenia_ast_grep
 import potomne
 import repo
@@ -221,6 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.dowod_fali is not None:
         if args.sciezki:
             parser.error("--dowod-fali bierze zmianę od bazy z gita, bez ścieżek")
+        na_boxie.odmowa()
         return dowod_fali(root, args.dowod_fali)
     wybrane = pliki(root, args.sciezki)
     try:

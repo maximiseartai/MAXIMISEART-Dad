@@ -71,6 +71,7 @@ from playwright.sync_api import Browser, Page, Request, Route, sync_playwright
 from playwright.sync_api import Error as PlaywrightError
 
 from eksplorator import Excuse, Kind, excuse_line, excused, gone_lines, verdict
+import na_boxie
 from awarie_efenix import (
     DAD,
     DAD_LOGINS,
@@ -1757,6 +1758,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         problems = doctor()
         print("\n".join(problems) or "DOCTOR OK: Chromium Playwrighta, Atrapa efenix i pośrednik działają")
         return 1 if problems else 0
+    if args.rownolegle > 1:
+        na_boxie.odmowa()
     name = f"wycena-efenix-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{os.getpid()}"
     run = new_run(args.run_dir, name)
     create_run_root(run.root)
