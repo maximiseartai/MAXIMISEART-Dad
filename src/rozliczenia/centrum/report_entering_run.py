@@ -10,7 +10,7 @@ from typing import Any, Final
 from fastapi import APIRouter
 
 from rozliczenia import onedrive_conflicts, workbook_files
-from rozliczenia import report_entering_messages as messages
+from rozliczenia.intermax_messages import CONFLICT_ACTION
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.catalog import Catalog, declaration_of
 from rozliczenia.centrum.configuration import InputWorkbook, open_in_excel
@@ -353,7 +353,7 @@ def _requested_cell(offer: Offer) -> report_entering_contract.RequestedCell:
 
 
 def conflict_note(copy: Path) -> str:
-    return f"Obok INTERMAX leży kopia konfliktu OneDrive {copy.name}. {messages.CONFLICT_ACTION} Potem odśwież kartę."
+    return f"Obok INTERMAX leży kopia konfliktu OneDrive {copy.name}. {CONFLICT_ACTION} Potem odśwież kartę."
 
 
 def report_entering_router(

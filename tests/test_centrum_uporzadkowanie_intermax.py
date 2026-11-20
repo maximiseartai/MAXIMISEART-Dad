@@ -496,7 +496,7 @@ def test_zatrzymanie_do_maksa_prowadzi_do_diagnozy_intermax_i_zgloszenia(tmp_pat
     ]
     assert checks["Ustawienia Centrum"] == ("passed", "INTERMAX jest na miejscu.")
     assert checks["Pliki w OneDrive"] == ("passed", "Sprawdzone pliki są na tym komputerze: 1.")
-    assert checks["INTERMAX"] == ("passed", "Nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")
+    assert checks["INTERMAX"] == ("passed", "Obok nie leży kopia konfliktu OneDrive, nie jest otwarty w Excelu, otwiera się i ma arkusz zleceń.")
     assert diagnosis.json()["next_action"] == "report"
     assert "- Proces: Uporządkowanie INTERMAX" in diagnosis.json()["report"]["body"]
     assert report.status_code == 200
@@ -516,6 +516,37 @@ def test_powtorzone_zatrzymanie_intermax_wyjasnia_diagnoza_intermax(tmp_path: Pa
     assert diagnosis["explanation"] == repeated["result"]["stops"][0]
     assert diagnosis["next_action"] == "rerun"
     assert {check["label"]: check["state"] for check in diagnosis["checks"]}["INTERMAX"] == "failed"
+
+
+def test_kopia_konfliktu_onedrive_obok_intermax_zatrzymuje_dla_taty_z_jej_nazwa_a_diagnoza_ja_wskazuje(
+    tmp_path: Path,
+) -> None:
+    centrum = ordering_centrum(tmp_path)
+    original = centrum.register.read_bytes()
+    conflict = centrum.register.with_name(f"{centrum.register.stem}-LAPTOP-ANDRZEJA{centrum.register.suffix}")
+    conflict.write_bytes(original)
+
+    first = _stopped(centrum)
+    repeated = _stopped(centrum)
+    diagnosis = centrum.client.post(f"/api/runs/{repeated['run']['id']}/diagnosis").json()
+    conflict.unlink()
+    after = centrum.run_to_end()
+
+    result = first["result"]
+    assert (result["stop_kind"], result["files_unchanged"], phase_states(first)["Sprawdzanie"]) == (
+        "for_tata",
+        True,
+        "failed",
+    )
+    assert result["stops"][0]["where"] == f"plik {conflict.name}, folder OneDrive"
+    assert result["stops"][0]["what"].startswith("Obok INTERMAX leży kopia konfliktu OneDrive")
+    assert [record["stop"]["code"] for record in centrum.metric_records()[:2]] == ["KOPIA_KONFLIKTU_INTERMAX"] * 2
+    assert (diagnosis["confirms_stop"], diagnosis["explanation"]) == (True, repeated["result"]["stops"][0])
+    [intermax] = [check for check in diagnosis["checks"] if check["label"] == "INTERMAX"]
+    assert (intermax["state"], intermax["detail"]) == ("failed", result["stops"][0]["what"])
+    assert after["result"]["headline"] == "INTERMAX uporządkowany"
+    assert copies(centrum) == [COPY]
+    assert (centrum.copies / COPY).read_bytes() == original
 
 
 def test_diagnoza_mowi_ktorego_intermax_z_ustawien_taty_nie_ma(tmp_path: Path) -> None:
