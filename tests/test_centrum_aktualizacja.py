@@ -520,6 +520,7 @@ def test_nieprzewidziana_porazka_daje_komunikat_a_klon_zostaje_bez_zmian(tmp_pat
     assert log_entries(centrum, "aktualizacja-koniec") == [
         f"wynik=NIEOCZEKIWANY_BLAD przed={running} po=- biblioteki=nie"
     ]
+    assert log_entries(centrum, "nieoczekiwany-wyjatek") == ['typ=GitFailed miejsce="aktualizacja narzędzia"']
     assert centrum.client.post("/api/tool-update").status_code == 202
 
 
@@ -551,7 +552,7 @@ def test_wynik_klikniecia_karta_widzi_dopiero_z_wolnym_miejscem_a_nastepne_klikn
 ) -> None:
     hold = threading.Event()
     hold.set()
-    result_seen_while_again_refused: list[tuple[str, int]] = []
+    clicks_before_lock_entry: list[tuple[str, int]] = []
     again_after_first_result_seen: list[int] = []
     first: list[threading.Thread] = []
     box: list[PreparingCentrum] = []
@@ -559,8 +560,7 @@ def test_wynik_klikniecia_karta_widzi_dopiero_z_wolnym_miejscem_a_nastepne_klikn
     def before_each_lock_entry() -> None:
         first[:] = first or [threading.current_thread()]
         state = box[0].client.get("/api/tool-update").json()["state"]
-        if state != "running":
-            result_seen_while_again_refused.append((state, box[0].client.post("/api/tool-update").status_code))
+        clicks_before_lock_entry.append((state, box[0].client.post("/api/tool-update").status_code))
 
     def after_each_lock_exit() -> None:
         if again_after_first_result_seen or box[0].client.get("/api/tool-update").json()["state"] == "running":
@@ -582,7 +582,7 @@ def test_wynik_klikniecia_karta_widzi_dopiero_z_wolnym_miejscem_a_nastepne_klikn
         hold.set()
     tool_update_until(centrum, lambda view: view["state"] != "running")
 
-    assert result_seen_while_again_refused == []
+    assert set(clicks_before_lock_entry) == {("running", 409)}
     assert (again_after_first_result_seen, view_after_first_thread_ended) == ([202], "running")
 
 

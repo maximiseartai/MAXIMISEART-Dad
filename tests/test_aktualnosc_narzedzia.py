@@ -1,18 +1,12 @@
-"""Źródła Aktualności narzędzia i Powiadomienia o nowej wersji, których HTTP API Centrum nie dosięga, bo w testach są
-podstawione.
-
-Lista tagów Wydań i lista GitHub Releases pochodzą z lokalnego serwera HTTP na 127.0.0.1, nigdy z GitHuba, a Token do
-Zgłoszeń w tych pytaniach jest wymyślonym napisem.
-Commit narzędzia pochodzi z syntetycznych katalogów ``.git``.
-"""
-
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from datetime import datetime, timezone
 from email.message import Message
 from http.server import BaseHTTPRequestHandler
+import itertools
 import json
+import math
 from pathlib import Path
 import re
 import socket
@@ -26,10 +20,12 @@ import urllib.parse
 import pytest
 
 from atrapy.serwer_http import serwer_http
-from rozliczenia.centrum import tool_update
+from rozliczenia.centrum import tool_freshness, tool_update
 from rozliczenia.centrum.github import TOOL_API
 from rozliczenia.centrum.opener import opener
 from rozliczenia.centrum.tool_freshness import (
+    RELEASE_NOTES_THREAD,
+    RELEASES_THREAD,
     AnswerSource,
     GitHubReleases,
     KeySource,
@@ -44,7 +40,7 @@ from rozliczenia.centrum.tool_freshness import (
 from rozliczenia.centrum.tool_update import Release
 from rozliczenia.centrum.version import SERVICE, RunningCentrum, running_centrum, tool_commit
 from tests.fixtures.github_api import Answer, github_api, newest_on_main
-
+from tests.fixtures.linie_watkow import new_line, threads_since
 from tests.fixtures.proxy_systemu import system_proxy
 
 pytestmark = pytest.mark.filterwarnings("error::pytest.PytestUnhandledThreadExceptionWarning")
@@ -64,38 +60,27 @@ REFUSED_MIDWAY = "8888888888888888888888888888888888888888"
 FIRST_COMMIT = "9999999999999999999999999999999999999999"
 FAR_ON_LINE = "abababababababababababababababababababab"
 MERGED_LATE = "cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd"
-# Commit scalenia PR do `main` tak daleko na linii jak ``FAR_ON_LINE``.
 MERGED_FAR = "efefefefefefefefefefefefefefefefefefefef"
 NOT_A_COMMIT = "nie-commit"
-# Odpowiedź porównania commitu tagu z czubkiem `main` ``MAIN`` albo jego pierwszym rodzicem (``compare``); brak wpisu
-# to odmowa GitHuba. ``OLDER`` jest pierwszym rodzicem ``MAIN``.
 _STATUS = {
     (OLDER, MAIN): "ahead",
     (OLDER, f"{MAIN}~1"): "identical",
     (NEWEST, MAIN): "identical",
     (OTHER, MAIN): "diverged",
     (OFF_MAIN, MAIN): "behind",
-    # Commit gałęzi wciągniętej merge'em: przodek `main`, ale nie jego pierwszego rodzica. Przy ``REFUSED_MIDWAY``
-    # GitHub odmawia dopiero porównania z pierwszym rodzicem, czyli w połowie wyszukiwania.
     (MERGED_BRANCH, MAIN): "ahead",
     (MERGED_BRANCH, f"{MAIN}~1"): "behind",
     (REFUSED_MIDWAY, MAIN): "ahead",
-    # Porównanie bez liczby commitów i porównanie z czubkiem `main`, który nie jest commitem: GitHub, który by je
-    # dał, nie daje pełnej odpowiedzi.
     (UNCOUNTED, MAIN): "identical",
     (NEWEST, NOT_A_COMMIT): "identical",
-    # Pierwszy commit repozytorium jest pierwszym rodzicem `main`, a `main` ma jeszcze dwa commity z wciągniętej
-    # gałęzi (``ahead_by`` 3): ``MAIN~2`` i dalej nie istnieją (404).
     (FAR_ON_LINE, MAIN): "ahead",
     (MERGED_FAR, MAIN): "ahead",
-    # Gałąź wciągnięta merge'em, gdy `main` poszedł już dalej: jego pierwsi rodzice od niej odchodzą („diverged”).
     (MERGED_LATE, MAIN): "ahead",
     (MERGED_LATE, f"{MAIN}~1"): "diverged",
     (MERGED_LATE, f"{MAIN}~2"): "diverged",
     (FIRST_COMMIT, MAIN): "ahead",
     (FIRST_COMMIT, f"{MAIN}~1"): "identical",
 }
-# Odpowiedzi GitHuba w innym kształcie niż w API: czubek `main` i porównanie (``None``: zerwane połączenie).
 _ODD_REFS = {
     "czubek-lista": json.dumps([]),
     "czubek-nie-obiektem": json.dumps({"object": "main"}),
@@ -108,7 +93,6 @@ _ODD_COMPARES: dict[str, str | None] = {
     "porownanie-zerwane": None,
 }
 _AHEAD_BY = {FIRST_COMMIT: 3, FAR_ON_LINE: 1000, MERGED_LATE: 3, MERGED_FAR: 1000}
-# ``FAR_ON_LINE`` to ``MAIN~700``, a `main` ma 1000 commitów spoza niego: tydzień zmian z wciągniętymi gałęziami.
 _FAR_DEPTH = 700
 
 
@@ -124,8 +108,6 @@ def _tags(*named: tuple[str, str]) -> str:
     return json.dumps([{"name": name, "commit": {"sha": sha, "url": "https://api.github.com/x"}} for name, sha in named])
 
 
-# Repozytorium (pierwszy człon ścieżki) wybiera listę tagów i jej strony; kolejność jak u GitHuba nie jest
-# kolejnością Wydań.
 _PAGES = {
     "/tagi/tags?per_page=100": (
         _tags(("v0.9.0", OLDER), ("v0.10.0", NEWEST), ("proba", OTHER), ("v0.10", OTHER), ("v1.0.0-rc1", OTHER)),
@@ -153,6 +135,14 @@ _PAGES = {
     "/porownanie-bez-napisu/tags?per_page=100": (_tags(("v0.1.0", NEWEST)), None),
     "/porownanie-nie-json/tags?per_page=100": (_tags(("v0.1.0", NEWEST)), None),
     "/porownanie-zerwane/tags?per_page=100": (_tags(("v0.1.0", NEWEST)), None),
+    "/piec-wyzszych-spoza-main/tags?per_page=100": (
+        _tags(*((f"v0.{minor}.0", OFF_MAIN) for minor in range(2, 7)), ("v0.1.0", OLDER)),
+        None,
+    ),
+    "/cztery-wyzsze-spoza-main/tags?per_page=100": (
+        _tags(*((f"v0.{minor}.0", OFF_MAIN) for minor in range(2, 6)), ("v0.1.0", OLDER)),
+        None,
+    ),
 }
 
 NOTES = "Plik zbiorczy ma kolumnę z kilometrami.\n\n## Rozwiązane sprawy taty\n\n- Uwaga taty #12: Kilometry\n"
@@ -162,8 +152,8 @@ def _release(tag: object, *, body: object = "", published_at: object = "2026-10-
     return {"tag_name": tag, "body": body, "published_at": published_at, "draft": False, "prerelease": False} | flags
 
 
-# Lista GitHub Releases: od najnowszego, z szkicem, wersją przedpremierową, tagiem, który nie jest Wydaniem, i
-# wpisami w innym kształcie.
+_PAGES["/obiekt/releases?per_page=30"] = (json.dumps({"message": "Moved Permanently"}), None)
+_PAGES["/bez-opublikowanych/releases?per_page=30"] = (json.dumps([]), None)
 _PAGES["/wydania/releases?per_page=30"] = (
     json.dumps(
         [
@@ -187,9 +177,6 @@ def _pull(merge_commit_sha: str, **fields: object) -> object:
     return merged | {"base": {"ref": "main"}, "head": {"sha": BRANCH}} | fields
 
 
-# PR-y commitu (``commits/<sha>/pulls``). ``MERGED_FAR`` scalił drugi PR na liście. Uśpiony tag z gałęzi wciągniętej
-# merge'em stoi na czubku PR (``head.sha``), który scalił inny commit; commit ``MERGED_BRANCH`` ma też PR, który nie
-# czyni go czubkiem `main`, albo odpowiedź w innym kształcie.
 _PAGES["/daleko-scalone/tags?per_page=100"] = (_tags(("v0.1.0", MERGED_FAR)), None)
 _PAGES[f"/daleko-scalone/commits/{MERGED_FAR}/pulls"] = (json.dumps([_pull(BRANCH), _pull(MERGED_FAR)]), None)
 _PAGES[f"/z-galezi/commits/{MERGED_BRANCH}/pulls"] = (json.dumps([_pull(MAIN, head={"sha": MERGED_BRANCH})]), None)
@@ -203,15 +190,12 @@ _PULLS_NOT_MERGING = {
 for _repository, _pulls in _PULLS_NOT_MERGING.items():
     _PAGES[f"/{_repository}/tags?per_page=100"] = (_tags(("v0.1.0", MERGED_BRANCH)), None)
     _PAGES[f"/{_repository}/commits/{MERGED_BRANCH}/pulls"] = (json.dumps(_pulls), None)
-# Commit scalenia PR do `main`, który nie jest przodkiem czubka `main` (po force-pushu `main` od niego odszedł albo
-# się przed niego cofnął).
 _MERGED_NOT_IN_MAIN = {"scalony-poza-main": OTHER, "scalony-przed-czubkiem": OFF_MAIN}
 for _repository, _commit in _MERGED_NOT_IN_MAIN.items():
     _PAGES[f"/{_repository}/tags?per_page=100"] = (_tags(("v0.1.0", _commit)), None)
     _PAGES[f"/{_repository}/commits/{_commit}/pulls"] = (json.dumps([_pull(_commit)]), None)
 
 
-# Ścieżki i nagłówki pytań do atrapy GitHuba, w kolejności; ``github`` czyści listy przed testem.
 _ASKED: list[str] = []
 _ASKED_HEADERS: list[Message] = []
 
@@ -237,7 +221,7 @@ class _GitHub(BaseHTTPRequestHandler):
             self._answer(200, _ODD_REFS[repository])
         elif rest.startswith("compare/") and repository in _ODD_COMPARES:
             answer = _ODD_COMPARES[repository]
-            if answer is None:  # połączenie zerwane w trakcie odpowiedzi
+            if answer is None:
                 self.close_connection = True
                 self.connection.shutdown(socket.SHUT_RDWR)
             else:
@@ -285,7 +269,7 @@ def test_najnowsze_wydanie_ze_wszystkich_stron_listy_tagow(github: str) -> None:
 
 
 def test_aktualnosc_pyta_github_naglowkami_api_rest_z_wersja_api(github: str) -> None:
-    # Nagłówki z dokumentacji REST API GitHuba: typ odpowiedzi, wersja API i obowiązkowy User-Agent (bez niego 403).
+    # ZEWNĘTRZNE: REST API GitHuba odmawia pytania bez nagłówka User-Agent kodem 403 (docs.github.com, Getting started with the REST API, User agent)
     expected = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
@@ -343,8 +327,6 @@ def test_health_innej_uslugi_na_porcie_centrum_to_nie_centrum_rozliczen() -> Non
 
 
 def _client_hello(server: socket.socket) -> bytes:
-    """Pierwszy rekord TLS (ClientHello), który klient przysyła serwerowi ``server``, w całości według długości rekordu."""
-
     connection, _ = server.accept()
     with connection:
         data = b""
@@ -356,21 +338,22 @@ def _client_hello(server: socket.socket) -> bytes:
     return data
 
 
+# ZEWNĘTRZNE: ClientHello to nagłówek rekordu, nagłówek wiadomości, wersja, losowe bajty, potem identyfikator sesji, szyfry i kompresje z długością, a po nich rozszerzenia z długością (RFC 8446, 4.1.2 i 5.1; ALPN: RFC 7301, 3.1)
+_RECORD_HEADER, _HANDSHAKE_HEADER, _LEGACY_VERSION, _RANDOM = 5, 4, 2, 32
+_SESSION_ID_LENGTH, _CIPHER_SUITES_LENGTH, _COMPRESSION_METHODS_LENGTH, _EXTENSIONS_LENGTH = 1, 2, 1, 2
 _ALPN_EXTENSION = 16
 
 
+def _length_prefixed_end(hello: bytes, position: int, length_bytes: int) -> int:
+    return position + length_bytes + int.from_bytes(hello[position : position + length_bytes], "big")
+
+
 def _alpn_protocols(hello: bytes) -> list[bytes] | None:
-    """Protokoły rozszerzenia ALPN z rekordu ClientHello ``hello`` w kolejności klienta; ``None`` bez tego rozszerzenia.
-
-    Układ ClientHello (RFC 8446, 4.1.2): nagłówek rekordu (5 bajtów), nagłówek wiadomości (4), wersja (2), losowe (32),
-    identyfikator sesji, szyfry i kompresje z długością, a po nich rozszerzenia z długością."""
-
-    position = 5 + 4 + 2 + 32
-    position += 1 + hello[position]
-    position += 2 + int.from_bytes(hello[position : position + 2], "big")
-    position += 1 + hello[position]
-    end = position + 2 + int.from_bytes(hello[position : position + 2], "big")
-    position += 2
+    position = _RECORD_HEADER + _HANDSHAKE_HEADER + _LEGACY_VERSION + _RANDOM
+    for length_bytes in (_SESSION_ID_LENGTH, _CIPHER_SUITES_LENGTH, _COMPRESSION_METHODS_LENGTH):
+        position = _length_prefixed_end(hello, position, length_bytes)
+    end = _length_prefixed_end(hello, position, _EXTENSIONS_LENGTH)
+    position += _EXTENSIONS_LENGTH
     while position < end:
         kind = int.from_bytes(hello[position : position + 2], "big")
         length = int.from_bytes(hello[position + 2 : position + 4], "big")
@@ -388,9 +371,6 @@ def _alpn_protocols(hello: bytes) -> list[bytes] | None:
 def test_kontekst_tls_centrum_proponuje_serwerowi_tylko_http_1_1_jak_kontekst_ktory_urllib_tworzy_sam(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Własny kontekst TLS procesu (``opener``) nie dostaje ALPN od ``urllib``, więc sam mówi ``http/1.1``: serwer na tym
-    komputerze widzi tę nazwę w ClientHello pytania o adres HTTPS."""
-
     for name in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy", "ALL_PROXY"):
         monkeypatch.delenv(name, raising=False)
     with socket.create_server(("127.0.0.1", 0)) as server:
@@ -405,8 +385,6 @@ def test_kontekst_tls_centrum_proponuje_serwerowi_tylko_http_1_1_jak_kontekst_kt
 
 
 def test_sprawdzenia_wydan_i_health_wczytuja_certyfikaty_systemu_najwyzej_raz_na_proces(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Na Windows jedno wczytanie to 42–75 ms (sonda #1673): przy każdym pytaniu zjadało limit Diagnozy (#1580), a przy
-    # każdym sprawdzeniu health limit czekania launchera na Centrum.
     loads: list[ssl.SSLContext] = []
     load_default_certs = ssl.SSLContext.load_default_certs
 
@@ -420,7 +398,6 @@ def test_sprawdzenia_wydan_i_health_wczytuja_certyfikaty_systemu_najwyzej_raz_na
         assert port is not None
         for _ in range(2):
             assert releases_from(f"{api.url}/repos/tata/narzedzie", timeout_s=30) == GitHubReleases(NEWEST, "v9.0.0")
-            # Atrapa GitHuba odpowiada na /api/health 404, więc Centrum tam nie ma.
             assert running_centrum(port, timeout_s=30) is None
 
     assert (len(api.asked), len(loads) <= 1) == (8, True)
@@ -459,7 +436,7 @@ def test_wydanie_z_galezi_wciagnietej_po_dalszych_zmianach_main_nie_jest_na_main
 
 def test_wydanie_daleko_na_linii_main_kosztuje_tylko_logarytm_porownan(github: str) -> None:
     assert releases_from(f"{github}/daleko", timeout_s=30) == GitHubReleases(FAR_ON_LINE, "v0.1.0")
-    assert _comparisons() <= 12  # log2(1001) + 2
+    assert _comparisons() <= math.log2(_AHEAD_BY[FAR_ON_LINE]) + 2
 
 
 def test_aktualnosc_w_centrum_pamieta_linie_main_miedzy_sprawdzeniami(
@@ -477,7 +454,15 @@ def test_wydanie_ze_scalenia_pr_daleko_na_linii_main_to_cztery_pytania_bez_wzgle
     known: dict[str, bool] = {}
 
     assert releases_from(f"{github}/daleko-scalone", timeout_s=30, known=known) == GitHubReleases(MERGED_FAR, "v0.1.0")
-    assert (len(_ASKED), known) == (4, {MERGED_FAR: True})  # tagi, czubek `main`, porównanie z czubkiem, PR-y commitu
+    assert (_ASKED, known) == (
+        [
+            "/daleko-scalone/tags?per_page=100",
+            "/daleko-scalone/git/ref/heads/main",
+            f"/daleko-scalone/compare/{MERGED_FAR}...{MAIN}?per_page=1&page=2",
+            f"/daleko-scalone/commits/{MERGED_FAR}/pulls",
+        ],
+        {MERGED_FAR: True},
+    )
 
 
 @pytest.mark.parametrize("repository", _PULLS_NOT_MERGING)
@@ -512,8 +497,78 @@ def test_wyzsze_wydanie_spoza_main_jest_pominiete_a_nizsze_na_main_wybrane_po_je
     assert sum(path.endswith("/git/ref/heads/main") for path in _ASKED) == 1
 
 
+@pytest.mark.parametrize(
+    ("repository", "newest"),
+    [("cztery-wyzsze-spoza-main", GitHubReleases(OLDER, "v0.1.0")), ("piec-wyzszych-spoza-main", None)],
+    ids=["piate-wydanie-na-main", "szoste-wydanie-na-main"],
+)
+def test_aktualnosc_sprawdza_po_kolei_najwyzej_piec_najwyzszych_wydan_a_dalej_nie_wiadomo(
+    github: str, repository: str, newest: GitHubReleases | None
+) -> None:
+    assert releases_from(f"{github}/{repository}", timeout_s=30) == newest
+
+
+def test_wydanie_przed_czubkiem_main_nie_zostaje_w_pamieci_a_gdy_main_do_niego_dojdzie_jest_najnowsze() -> None:
+    ahead_of_main = {
+        f"{REPOSITORY}/tags?per_page=100": Answer(body=[{"name": "v0.2.0", "commit": {"sha": NEWEST}}]),
+        f"{REPOSITORY}/git/ref/heads/main": Answer(body={"object": {"sha": MAIN}}),
+        f"{REPOSITORY}/compare/{NEWEST}...{MAIN}?per_page=1&page=2": Answer(body={"status": "behind", "ahead_by": 0}),
+    }
+    known: dict[str, bool] = {}
+    with github_api(ahead_of_main) as api:
+        before = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, known=known)
+        api.answers = newest_on_main(REPOSITORY, "v0.2.0", NEWEST)
+        after = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, known=known)
+
+    assert (before, after, known) == (GitHubReleases(None, None), GitHubReleases(NEWEST, "v0.2.0"), {NEWEST: True})
+
+
+_TOTAL_LIMIT_S = 0.4
+_PIECES = 10
+_PIECE_PAUSE_S = _TOTAL_LIMIT_S / 5
+
+
+def _answering_in_pieces(answers: Mapping[str, Answer]) -> type[BaseHTTPRequestHandler]:
+    class _InPieces(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            body = json.dumps(answers[self.path].body).encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            bounds = [len(body) * piece // _PIECES for piece in range(_PIECES + 1)]
+            for start, end in itertools.pairwise(bounds):
+                time.sleep(_PIECE_PAUSE_S)
+                self.wfile.write(body[start:end])
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    return _InPieces
+
+
+def test_wydania_z_odpowiedziami_wolniejszymi_niz_limit_to_nie_wiadomo_a_linia_main_i_tak_trafia_do_pamieci() -> None:
+    known: dict[str, bool] = {}
+    line = new_line()
+    with serwer_http(_answering_in_pieces(newest_on_main(REPOSITORY, "v0.2.0", NEWEST)), name="atrapa-api-github") as server:
+        newest = releases_from(f"{server.url}{REPOSITORY}", timeout_s=_TOTAL_LIMIT_S, known=known)
+        for late in threads_since(line, named=RELEASES_THREAD):
+            late.join(30)
+
+    assert (newest, known) == (None, {NEWEST: True})
+
+
+def test_lista_wydan_wolniejsza_niz_limit_to_nie_wiadomo() -> None:
+    line = new_line()
+    with serwer_http(_answering_in_pieces(newest_on_main(REPOSITORY, "v0.2.0", NEWEST)), name="atrapa-api-github") as server:
+        published = published_from(f"{server.url}{REPOSITORY}", timeout_s=_TOTAL_LIMIT_S)
+        for late in threads_since(line, named=RELEASE_NOTES_THREAD):
+            late.join(30)
+
+    assert published is None
+
+
 def test_milczacy_serwer_nie_wydluza_diagnozy_ponad_limit_czasu() -> None:
-    with socket.socket() as silent:  # przyjmuje połączenie i nigdy nie odpowiada
+    with socket.socket() as silent:
         silent.bind(("127.0.0.1", 0))
         silent.listen()
         started = time.monotonic()
@@ -523,17 +578,17 @@ def test_milczacy_serwer_nie_wydluza_diagnozy_ponad_limit_czasu() -> None:
         assert (answer, time.monotonic() - started < 1.5) == (None, True)
 
 
-def test_brak_sieci_to_nie_wiadomo() -> None:
+def _released_port() -> int:
     with socket.socket() as closed:
         closed.bind(("127.0.0.1", 0))
-        port = closed.getsockname()[1]  # port zwolniony po wyjściu: połączenie zostaje odrzucone
+        return int(closed.getsockname()[1])
 
-    assert releases_from(f"http://127.0.0.1:{port}/tagi", timeout_s=30) is None
+
+def test_brak_sieci_to_nie_wiadomo() -> None:
+    assert releases_from(f"http://127.0.0.1:{_released_port()}/tagi", timeout_s=30) is None
 
 
 def test_aktualnosc_i_aktualizacja_pytaja_repozytorium_tego_checkoutu_bez_przekierowania() -> None:
-    # Pod starym adresem GitHub przekierowuje każde pytanie: 8 zapytań zamiast 4 i „Nie sprawdzono” po 3 s (#536).
-    # Aktualizacja przez przekierowanie działa, więc bez tej asercji powrót do starego adresu niczego nie psuje w testach (#540).
     origin = subprocess.run(
         ["git", "remote", "get-url", "origin"], cwd=Path(__file__).parent, capture_output=True, text=True, check=True
     ).stdout.strip()
@@ -550,17 +605,17 @@ def test_lista_wydan_ma_tylko_opublikowane_wydania_z_notka_i_czasem_publikacji(g
     )
 
 
-@pytest.mark.parametrize("repository", ["limit", "strona"], ids=["odmowa", "nie-lista"])
+@pytest.mark.parametrize("repository", ["limit", "strona", "obiekt"], ids=["odmowa", "nie-json", "obiekt-zamiast-listy"])
 def test_lista_wydan_bez_odpowiedzi_api_to_nie_wiadomo(github: str, repository: str) -> None:
     assert published_from(f"{github}/{repository}", timeout_s=30) is None
 
 
-def test_lista_wydan_bez_sieci_to_nie_wiadomo() -> None:
-    with socket.socket() as closed:
-        closed.bind(("127.0.0.1", 0))
-        port = closed.getsockname()[1]
+def test_bez_opublikowanych_wydan_lista_wydan_jest_pusta_a_nie_brak_odpowiedzi(github: str) -> None:
+    assert published_from(f"{github}/bez-opublikowanych", timeout_s=30) == ()
 
-    assert published_from(f"http://127.0.0.1:{port}/wydania", timeout_s=30) is None
+
+def test_lista_wydan_bez_sieci_to_nie_wiadomo() -> None:
+    assert published_from(f"http://127.0.0.1:{_released_port()}/wydania", timeout_s=30) is None
 
 
 REPOSITORY = "/repos/tata/narzedzie"
@@ -575,7 +630,9 @@ def test_z_tokenem_kazde_pytanie_o_wydania_do_hosta_api_idzie_z_tokenem_a_strona
             published = published_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
 
     assert (newest, published is not None) == (GitHubReleases(NEWEST, "v0.2.0"), True)
-    assert [asked.authorization for asked in api.asked] == [WITH_TOKEN] * 4  # tagi, czubek `main`, porównanie, Releases
+    assert [(asked.path, asked.authorization) for asked in api.asked] == [
+        (path, WITH_TOKEN) for path in newest_on_main(REPOSITORY, "v0.2.0", NEWEST)
+    ]
     assert [asked.authorization for asked in elsewhere.asked] == [None]
 
 
@@ -592,8 +649,6 @@ def test_przekierowanie_pytania_z_tokenem_na_inny_host_idzie_tam_bez_tokenu() ->
 
 
 def test_przekierowanie_pytania_z_tokenem_na_ten_sam_host_idzie_tam_bez_tokenu() -> None:
-    """Publiczne repozytorium narzędzia odpowiada także bez tokenu, więc token nie idzie za żadnym przekierowaniem."""
-
     answers = newest_on_main(REPOSITORY, "v0.2.0", NEWEST)
     moved = {path: path.replace(REPOSITORY, "/repositories/1") for path in answers}
     with github_api({}) as api:
@@ -610,7 +665,6 @@ def test_przekierowanie_pytania_z_tokenem_na_ten_sam_host_idzie_tam_bez_tokenu()
     [
         (401, [WITH_TOKEN, None, None, None, WITH_TOKEN, None]),
         (403, [WITH_TOKEN, None, None, None, WITH_TOKEN, None]),
-        # 404 bywa prawdziwą odpowiedzią wyszukiwania, więc token zostaje dla następnych pytań.
         (404, [WITH_TOKEN, None, WITH_TOKEN, None, WITH_TOKEN, None, WITH_TOKEN, None]),
     ],
     ids=["401", "403", "404"],
@@ -632,7 +686,6 @@ def test_odmowa_pytania_z_tokenem_daje_odpowiedz_bez_tokenu_i_propozycje_aktuali
     assert published == (
         PublishedRelease(Release((0, 2, 0), "v0.2.0"), "", datetime(2026, 11, 8, 6, tzinfo=timezone.utc)),
     )
-    # Każde sprawdzenie pyta z tokenem, a po odmowie ponawia to pytanie bez tokenu.
     assert [asked.authorization for asked in api.asked] == authorizations
 
 
@@ -655,6 +708,16 @@ def test_odmowa_z_powodu_limitu_githuba_mowi_kiedy_limit_sie_odnowi_a_bez_tokenu
     assert [asked.authorization for asked in api.asked] == authorizations
 
 
+@pytest.mark.parametrize("status", [403, 429])
+def test_po_odmowie_z_powodu_limitu_pytania_z_tokenem_reszta_sprawdzenia_idzie_bez_tokenu(status: int) -> None:
+    refused = Answer(status, {"message": "API rate limit exceeded"}, LIMIT)
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=refused) as api:
+        newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
+
+    assert newest == GitHubReleases(NEWEST, "v0.2.0")
+    assert [asked.authorization for asked in api.asked] == [WITH_TOKEN, None, None, None]
+
+
 def test_odmowa_z_tokenem_z_nieczytelna_chwila_odnowienia_limitu_to_odmowa_tokenu_ponowiona_bez_niego() -> None:
     unreadable = Answer(403, {"message": "API rate limit exceeded"}, {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "jutro"})
     with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=unreadable) as api:
@@ -665,8 +728,6 @@ def test_odmowa_z_tokenem_z_nieczytelna_chwila_odnowienia_limitu_to_odmowa_token
 
 
 def test_awaria_githuba_na_pytanie_z_tokenem_to_brak_odpowiedzi_bez_ponowienia_bez_tokenu() -> None:
-    """Bez tokenu ponawia się tylko odmowę tokenu (401, 403, limit konta) i 404, a awaria GitHuba nią nie jest."""
-
     failure = Answer(500, {"message": "Server Error"})
     with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST), refused_token=failure) as api:
         newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30, token=TOKEN)
@@ -694,10 +755,7 @@ def test_odmowa_z_trescia_bez_konca_czytana_do_1_mb_a_pytanie_ponowione_bez_toke
     assert [asked.authorization for asked in api.asked] == [WITH_TOKEN, None]
 
 
-def test_odpowiedz_urwana_w_trakcie_tresci_to_brak_odpowiedzi_a_nie_wyjatek() -> None:
-    """Odmowa listy PR-ów commitu (``commits/<sha>/pulls``) to brak odpowiedzi, po którym decyduje wyszukiwanie
-    binarne; urwana treść tej odmowy też."""
-
+def test_urwana_odmowa_listy_pr_commitu_to_brak_odpowiedzi_po_ktorym_decyduje_wyszukiwanie_binarne() -> None:
     answers = {
         f"{REPOSITORY}/tags?per_page=100": Answer(body=[{"name": "v0.2.0", "commit": {"sha": NEWEST}}]),
         f"{REPOSITORY}/git/ref/heads/main": Answer(body={"object": {"sha": MAIN}}),
@@ -726,6 +784,34 @@ def test_lista_tagow_dluzsza_niz_dziesiec_stron_to_brak_odpowiedzi(pages: int, c
         newest = releases_from(f"{api.url}{REPOSITORY}", timeout_s=30)
 
     assert newest == (GitHubReleases(NEWEST, "v0.2.0") if complete else None)
+
+
+def test_token_do_zgloszen_dopisany_po_starcie_idzie_z_nastepnym_pytaniem_o_wydania_i_ich_notki(
+    monkeypatch: pytest.MonkeyPatch, prawdziwe_wydania_githuba: Callable[[KeySource, str], AnswerSource]
+) -> None:
+    monkeypatch.setattr(tool_freshness, "github_releases", prawdziwe_wydania_githuba)
+    keys: list[str | None] = [None]
+    with github_api(newest_on_main(REPOSITORY, "v0.2.0", NEWEST)) as api:
+        monkeypatch.setattr(tool_freshness, "TOOL_API", f"{api.url}{REPOSITORY}")
+        freshness = ToolFreshness.of_system(lambda: keys[-1])
+        checks = [(freshness.release(), freshness.published() is not None)]
+        keys.append(TOKEN)
+        checks.append((freshness.release(), freshness.published() is not None))
+
+    assert checks == [(GitHubReleases(NEWEST, "v0.2.0"), True)] * 2
+    assert [asked.authorization for asked in api.asked] == [None] * 4 + [WITH_TOKEN] * 2
+
+
+def test_narzedzie_bez_commitu_nie_pyta_githuba() -> None:
+    asked: list[str] = []
+
+    def release() -> RateLimited:
+        asked.append("wydania")
+        return RateLimited(LIMIT_RESET)
+
+    freshness = ToolFreshness(local=lambda: None, since=lambda: None, release=release, published=lambda: ())
+
+    assert (freshness.assess(), asked) == (("no_commit", None), [])
 
 
 def test_odpowiedz_githuba_pamietana_dziesiec_minut_a_brak_odpowiedzi_minute() -> None:
