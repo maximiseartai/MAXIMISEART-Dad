@@ -168,7 +168,7 @@ export type ApiTiming = {
     /**
      * Operation
      */
-    operation: 'getHealth' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'changeSettlementMail' | 'previewSettlementMail' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'previewActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'enterOnRequest' | 'getSettlementMailing' | 'previewSettlementMails' | 'sendSettlementMail' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
+    operation: 'getHealth' | 'getScope' | 'getSettings' | 'addWorker' | 'changeWorker' | 'switchWorker' | 'removeWorker' | 'getWorkerSuggestions' | 'assignWorkerAddress' | 'chooseRegister' | 'openRegister' | 'choosePeriodsDirectory' | 'changeTheme' | 'changeInboxPassword' | 'changeFolders' | 'changeAutostart' | 'changeRemindersEnabled' | 'changeReminders' | 'previewReminder' | 'changeSettlementMail' | 'previewSettlementMail' | 'getSettingsHistory' | 'getQuantityDifferences' | 'markQuantityException' | 'getQuantityRules' | 'addQuantityRule' | 'changeQuantityRule' | 'removeQuantityRule' | 'previewQuantityRules' | 'addDevice' | 'changeDevice' | 'removeDevice' | 'getDeviceSuggestions' | 'getActivityLegend' | 'addActivityCode' | 'changeActivityCode' | 'removeActivityCode' | 'previewActivityLegend' | 'undoSettingsChange' | 'getPeriodBoard' | 'openPeriodPath' | 'getQuantitiesToFill' | 'getCollectiveFileVersion' | 'getWithoutQuantity' | 'getKindTable' | 'openWorkerSettlement' | 'getRunSetup' | 'startRun' | 'getIntermaxSetup' | 'getIntermaxDays' | 'startIntermax' | 'getIntermaxCopies' | 'restoreIntermaxCopy' | 'getReportEnteringSetup' | 'startReportEntering' | 'getReportsView' | 'keepManualValue' | 'enterOnRequest' | 'getSettlementMailing' | 'previewSettlementMails' | 'sendSettlementMail' | 'decideRun' | 'diagnoseRun' | 'reportRun' | 'getRunCard' | 'getNotifications' | 'markNotificationsRead' | 'getMetrics' | 'getConfiguration' | 'startToolUpdate' | 'getToolUpdate' | 'reportToolUpdate' | 'getDadNoteRuns' | 'draftDadNote' | 'sendDadNote' | 'closeCentrum';
     /**
      * Browser Ms
      */
@@ -284,6 +284,11 @@ export type BoardReady = {
  * Czyją wartość pokazuje komórka N:AP wiersza do uzupełnienia.
  */
 export type CellSource = 'tool' | 'tata' | 'empty';
+
+/**
+ * CentrumFunction
+ */
+export type CentrumFunction = 'periods' | 'filling' | 'intermax' | 'intermax_copies' | 'report_entering' | 'reminders' | 'settlement_mailing' | 'metrics' | 'quantities' | 'workers' | 'templates' | 'report_inbox' | 'autostart';
 
 /**
  * ChangeActivityCode
@@ -4490,6 +4495,16 @@ export type RunSummary = {
 };
 
 /**
+ * Scope
+ */
+export type Scope = {
+    /**
+     * Functions
+     */
+    functions: Array<CentrumFunction>;
+};
+
+/**
  * SentByHand
  *
  * Tata wysłał ten plik sam ze skrzynki raportów w chwili ``at`` i plik się od tego czasu nie zmienił.
@@ -6806,6 +6821,22 @@ export type ReportRunResponses = {
 };
 
 export type ReportRunResponse = ReportRunResponses[keyof ReportRunResponses];
+
+export type GetScopeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/scope';
+};
+
+export type GetScopeResponses = {
+    /**
+     * Successful Response
+     */
+    200: Scope;
+};
+
+export type GetScopeResponse = GetScopeResponses[keyof GetScopeResponses];
 
 export type GetSettingsData = {
     body?: never;

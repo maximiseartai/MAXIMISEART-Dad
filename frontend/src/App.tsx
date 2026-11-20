@@ -10,6 +10,7 @@ import { TooltipProvider } from "@/components/ui/tooltip"
 import { useHash, useSettingsAddress } from "@/lib/address"
 import { DadNoteProvider } from "@/lib/dad-note"
 import { RunsProvider } from "@/lib/runs"
+import { ScopeProvider } from "@/lib/scope"
 import { NotificationsProvider } from "@/lib/notifications"
 import { SettingsProvider } from "@/lib/settings"
 import { ToolUpdateProvider } from "@/lib/tool-update"
@@ -23,6 +24,14 @@ const LAYOUT = {
 } satisfies React.CSSProperties
 
 export function App() {
+  return (
+    <ScopeProvider>
+      <Centrum />
+    </ScopeProvider>
+  )
+}
+
+function Centrum() {
   const page = useCurrentPage()
   const address = useHash()
   const settings = useSettingsAddress()

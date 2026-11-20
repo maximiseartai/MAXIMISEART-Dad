@@ -6,6 +6,7 @@ from typing import Literal
 
 
 from rozliczenia.centrum.contract.common import Model
+from rozliczenia.centrum.scope import CentrumFunction
 
 
 class Health(Model):
@@ -26,3 +27,7 @@ class Closing(Model):
     """Centrum przyjęło prośbę o zamknięcie i kończy pracę po tej odpowiedzi."""
 
     state: Literal["closing"]
+
+
+class Scope(Model):
+    functions: list[CentrumFunction]

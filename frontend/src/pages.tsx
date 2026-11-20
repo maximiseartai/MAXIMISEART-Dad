@@ -1,4 +1,4 @@
-import type * as React from "react"
+import * as React from "react"
 import {
   BellIcon,
   CalendarRangeIcon,
@@ -10,8 +10,9 @@ import {
   type LucideIcon,
 } from "lucide-react"
 
-import type { ViewTiming } from "@/api/generated"
+import type { CentrumFunction, ViewTiming } from "@/api/generated"
 import { hashParts, useHash } from "@/lib/address"
+import { useInScope } from "@/lib/scope"
 import { FillingPage } from "@/pages/filling/filling-page"
 import { MetricsPage } from "@/pages/metrics/metrics-page"
 import { NotificationsPage } from "@/pages/notifications/notifications-page"
@@ -26,14 +27,22 @@ export const NOTIFICATIONS_PAGE = {
   icon: BellIcon,
   Content: NotificationsPage,
   menu: false,
+  function: null,
 } as const
 
-export const PAGES = [
-  { id: "okresy", title: "Okresy", icon: CalendarRangeIcon, Content: PeriodsPage, menu: true },
-  { id: "uruchomienia", title: "Uruchomienia", icon: PlayIcon, Content: RunsPage, menu: true },
-  { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: true },
-  { id: "wysylka", title: "Wysyłka rozliczeń", icon: SendIcon, Content: MailingPage, menu: true },
-  { id: "metryki", title: "Metryki", icon: ChartColumnIcon, Content: MetricsPage, menu: true },
+const PAGES = [
+  { id: "okresy", title: "Okresy", icon: CalendarRangeIcon, Content: PeriodsPage, menu: true, function: "periods" },
+  { id: "uruchomienia", title: "Uruchomienia", icon: PlayIcon, Content: RunsPage, menu: true, function: null },
+  { id: "raporty", title: "Raporty", icon: MailCheckIcon, Content: ReportsPage, menu: true, function: "report_entering" },
+  {
+    id: "wysylka",
+    title: "Wysyłka rozliczeń",
+    icon: SendIcon,
+    Content: MailingPage,
+    menu: true,
+    function: "settlement_mailing",
+  },
+  { id: "metryki", title: "Metryki", icon: ChartColumnIcon, Content: MetricsPage, menu: true, function: "metrics" },
   NOTIFICATIONS_PAGE,
   {
     id: "uzupelnienie",
@@ -42,6 +51,7 @@ export const PAGES = [
     Content: FillingPage,
     menu: false,
     inMenu: "okresy",
+    function: "filling",
   },
 ] as const satisfies ReadonlyArray<{
   id: ViewTiming["page"]
@@ -50,14 +60,25 @@ export const PAGES = [
   Content: React.ComponentType
   menu: boolean
   inMenu?: ViewTiming["page"]
+  function: CentrumFunction | null
 }>
 
 export type Page = (typeof PAGES)[number]
 
-function pageOf(hash: string): Page {
-  const [id] = hashParts(hash)
+export function useMenuPages(): ReadonlyArray<Page> {
+  const pages = useInScope(PAGES)
 
-  return PAGES.find((page) => page.id === id) ?? PAGES[0]
+  return React.useMemo(() => pages.filter((page) => page.menu), [pages])
+}
+
+export function useStartPage(): Page {
+  const [start] = useMenuPages()
+
+  if (start === undefined) {
+    throw new Error("Menu Centrum rozliczeń nie ma żadnej strony w Zakresie.")
+  }
+
+  return start
 }
 
 export function menuPageId(page: Page): Page["id"] {
@@ -66,5 +87,9 @@ export function menuPageId(page: Page): Page["id"] {
 
 /** Bieżąca strona z adresu (`#/okresy`, `#/uzupelnienie/<okres>`), więc działa Wstecz w przeglądarce i odświeżenie karty. */
 export function useCurrentPage(): Page {
-  return pageOf(useHash())
+  const [id] = hashParts(useHash())
+  const pages = useInScope(PAGES)
+  const start = useStartPage()
+
+  return pages.find((page) => page.id === id) ?? start
 }

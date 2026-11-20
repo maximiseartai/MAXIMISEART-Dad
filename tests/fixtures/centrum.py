@@ -52,6 +52,7 @@ from rozliczenia.centrum.report_box import (
     UploadOutcome,
 )
 from rozliczenia.centrum.reports import SEARCH_DEADLINE_S
+from rozliczenia.centrum.scope import Scope
 from rozliczenia.centrum.run_logs import RUN_LOGS_DIRECTORY
 from rozliczenia.centrum.server import after_start
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
@@ -647,10 +648,12 @@ def centrum_app(
     inbox_smtp: SmtpConnect | None = None,
     release_changes: tuple[ReleaseChange[Any], ...] = (),
     update_threads: Threading = threading,
+    scope: Scope | None = None,
 ) -> FastAPI:
     """Jedyna aplikacja Centrum w testach: na plikach katalogu narzędzia ``tool`` i z podróbkami świata taty.
 
-    Parametr pominięty daje podróbkę testu, nigdy domyślną wartość produkcyjną ``create_app``: komputer taty
+    Parametr pominięty daje podróbkę testu, nigdy domyślną wartość produkcyjną ``create_app``, poza Zakresem
+    (``scope``), który pominięty daje domyślny Zakres ``create_app``: komputer taty
     (``FakePlatform``) z Autostartem w folderze ``autostart`` katalogu narzędzia (``FakeAutostart``), metryki i Konfiguracja w ``tool``, GitHub (``FakeGitHub``), OneDrive (``FakeOneDrive``),
     skrzynka Zgłoszeń z Logami Uruchomienia w tle, zegar, który stoi (``ManualClock``, a jego ``pause`` tylko
     przesuwa czas), dzień ``TODAY`` i chwila ``NOW``, Kopie INTERMAX w ``tool``, okno efenix pod martwym adresem i
@@ -701,6 +704,7 @@ def centrum_app(
         inbox_smtp=inbox_smtp,
         release_changes=release_changes,
         update_threads=update_threads,
+        **({} if scope is None else {"scope": scope}),
     )
 
 

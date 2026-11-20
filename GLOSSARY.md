@@ -82,7 +82,7 @@ Nowy kod nazywa pojęcie tym identyfikatorem, a nowe hasło dostaje wiersz w tej
 | Ustawienia ze startu | `SettingsAtStart` |
 | Decyzja taty | `Decision` |
 | Centrum rozliczeń | `centrum` |
-| Stanowisko | – |
+| Stanowisko | `Workstation` |
 | Katalog procesów | `Catalog` |
 | Skrypt dla maszyn | `uruchom_proces` |
 | Zdarzenie przebiegu | `ProgressEvent` |

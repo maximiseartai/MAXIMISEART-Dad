@@ -15,19 +15,22 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 import { href, settingsHref } from "@/lib/address"
-import { menuPageId, PAGES, type Page } from "@/pages"
+import { menuPageId, useMenuPages, useStartPage, type Page } from "@/pages"
 
 export function AppSidebar({
   current,
   onClosed,
   ...props
 }: React.ComponentProps<typeof Sidebar> & { current: Page; onClosed: () => void }) {
+  const menu = useMenuPages()
+  const start = useStartPage()
+
   return (
     <Sidebar collapsible="offcanvas" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" render={<a href={href(PAGES[0].id)} />}>
+            <SidebarMenuButton size="lg" render={<a href={href(start.id)} />}>
               <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
                 <ReceiptTextIcon className="size-4" />
               </span>
@@ -40,7 +43,7 @@ export function AppSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu aria-label="Sekcje Centrum rozliczeń">
-              {PAGES.filter((page) => page.menu).map((page) => (
+              {menu.map((page) => (
                 <SidebarMenuItem key={page.id}>
                   <SidebarMenuButton
                     isActive={page.id === menuPageId(current)}
