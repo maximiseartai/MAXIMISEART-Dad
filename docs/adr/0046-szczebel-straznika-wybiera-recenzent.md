@@ -50,6 +50,11 @@ Decyzje autora PR ticketu #2461:
 - **Szczebel w następnej rundzie.** Recenzent następnej rundy zmienia szczebel, który nie działa, punktem `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, jak kod korzenia punktem `Korzeń W<n> r<k>:` (decyzja Q25 ADR 0031), a bramka bierze szczebel z ostatniego werdyktu, który dotyczy tego Ważnego; inaczej Ważne ze szczeblem, który nie działa, nie miałoby jak się scalić.
 - **Przejście.** Warunek chronionego właściciela ma własną chwilę wdrożenia (`szczebel_straznika.OWNER_MARKER`), więc wątek z pierwszym werdyktem sprzed niej kończy jak po #2460.
 
+Decyzje autora PR poprawek po #2461 (spec #2448):
+
+- **Luka w samej regule lint to `test`.** Ważne, którego `Gdzie` to plik reguły ast-grep albo `ruff.toml` z `banned-api` (luka we wzorcu albo w zasięgu zakazu), ma szczebel `test`, bo `mypy`, `ruff` ani `ast-grep <id>` nie udowodni luki w regule: dowód przywraca plik reguły z drzewa `FAIL` i nie ma złego kodu, który by odpalił. Plik reguły i `ruff.toml` z zakazami są więc chronionymi właścicielami: test ich próbek (`tests/test_zapadki.py`, `tests/test_zakazy_ruff.py`) pada na mutacji recenzenta, a słabszą regułę odrzuca warunek 6 `tools/scal_pr.py`. Wątek, który już ma `lint`, zmienia szczebel punktem `Mechanizm W<n> r<k>:`.
+- **Moduł nazwy zakazanej.** Moduł, który definiuje nazwę z `banned-api`, jest chronionym właścicielem, bo zakaz kieruje do niego resztę kodu (`refusal._refused`), a zwolnienia w `per-file-ignores` nie potrzebuje ani nie może mieć.
+
 ## Wdrożenie
 
 | Decyzja | Ticket |

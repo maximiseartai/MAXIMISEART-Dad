@@ -13,7 +13,7 @@ import stan_pr
 from stan_pr import Pull
 import straznik
 import szablon_werdyktu
-from szablon_werdyktu import CODE, Item, Mechanism, Root
+from szablon_werdyktu import CODE, Item, Mechanism
 import werdykt_pr
 
 ZASADY = """Rejestr korzeni (ADR 0031, decyzje Q13, Q22, Q25): wystąpienia kodów korzeni czytane z GitHuba dla bramki korzenia
@@ -200,13 +200,14 @@ class Major:
     mechanism: Mechanism | None = None
 
 
-def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[tuple[int, Root]]]:
-    """Ważne werdyktów ``FAIL`` po nagłówku i punkty rozstrzygnięcia, które nie wskazują Ważnego werdyktu ``FAIL`` tej
-    albo wcześniejszej rundy (z rundą ich werdyktu). Ważne werdyktu to ``W1`` … ``W<a>`` z linii ``Znaleziska:`` (co
-    najmniej ``W1``, bo ``FAIL`` daje tylko Ważne) i każde ``### W<n>.`` jego treści."""
+def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[tuple[int, str]]]:
+    """Ważne werdyktów ``FAIL`` po nagłówku i punkty rozstrzygnięcia kodu albo szczebla, które nie wskazują Ważnego
+    werdyktu ``FAIL`` tej albo wcześniejszej rundy (runda ich werdyktu i początek punktu, ``Korzeń W1 r2: R-KOD`` albo
+    ``Mechanizm W1 r2: test``). Ważne werdyktu to ``W1`` … ``W<a>`` z linii ``Znaleziska:`` (co najmniej ``W1``, bo
+    ``FAIL`` daje tylko Ważne) i każde ``### W<n>.`` jego treści."""
 
     found: dict[str, Major] = {}
-    strays: list[tuple[int, Root]] = []
+    strays: list[tuple[int, str]] = []
     for current in rounds:
         if current.verdict.decision == "FAIL":
             labels = [*(f"W{index}" for index in range(1, max(current.declared_majors or 0, 1) + 1)), *(root.label for root in current.findings.majors)]
@@ -223,10 +224,12 @@ def majors(rounds: Sequence[werdykt_pr.Round]) -> tuple[dict[str, Major], list[t
             if key in found:
                 found[key] = replace(found[key], code=resolution.code)
             else:
-                strays.append((current.number, resolution))
+                strays.append((current.number, f"Korzeń {key}: {resolution.code}"))
         for point in current.findings.mechanisms:
             if (key := f"{point.label} r{point.round}") in found:
                 found[key] = replace(found[key], mechanism=point.mechanism)
+            else:
+                strays.append((current.number, f"Mechanizm {key}: {point.mechanism}"))
     return found, strays
 
 

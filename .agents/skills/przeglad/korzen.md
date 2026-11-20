@@ -25,7 +25,7 @@ Reguły szczebla i dowodu:
 - „Bez mechanizmu” nie jest szczeblem.
 - Dowód wyrwania: mechanizm pada na pierwotnym błędzie, a liczy go bramka strażnika (niżej).
   Recenzent następnej rundy jedną sondą sprawdza siostrzaną formę błędu, której poprawka nie nazwała; forma, która przechodzi, to Ważne.
-  Przy Ważnym z korzeniem R-PROZA-KOPIA regułę „Fix the class, not the instance” z `CODING_STANDARDS.md` autor stosuje do prozy: klasą jest każde zdanie diffu od merge-base na temat zdania z werdyktu, które przed kolejną rundą czyta z kodem (#2069: trzy `FAIL` za kolejne zdania o tym, skąd gospodarze biorą Ustawienia ze startu, `PASS` dopiero po przeczesaniu wszystkich).
+  Przy Ważnym z korzeniem R-PROZA-KOPIA regułę „Fix the class, not the instance” z `CODING_STANDARDS.md` autor stosuje do prozy: klasą jest każde zdanie diffu od merge-base na temat zdania z werdyktu, które przed kolejną rundą czyta z kodem (#2069: trzy `FAIL` za kolejne zdania o jednym fakcie, `PASS` po przeczesaniu wszystkich).
 - Autor może zakwestionować kod korzenia albo szczebel `Mechanizm:` z powodem w odpowiedzi na werdykt, a rozstrzyga recenzent następnej rundy punktem `Korzeń W<n> r<k>: R-KOD - zdanie` albo `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, gdzie `r<k>` to `k`-ty werdykt PR.
   Bramki biorą kod i szczebel z ostatniego werdyktu, który dotyczy tego Ważnego, a kod w tym punkcie sprawdza się jak w polu `Korzeń:`.
 - Autor opisuje wyrwanie każdego Ważnego w sekcji `## Korzeń` opisu PR według wzoru sekcji „Root section” skilla [`pr`](../pr/SKILL.md), a `tools/scal_pr.py` odmawia merge'a, dopóki sekcji czegoś brakuje.
@@ -57,7 +57,7 @@ Strażnik ([ADR 0042](../../../docs/adr/0042-straznik-przy-pierwszym-waznym.md))
 - **architektura**: jeden właściciel, usunięta druga droga albo typ, z którym zły stan jest niewyrażalny, ze strażnikiem obejścia (typ, zakaz `TID251`, reguła ast-grep); bez niego wrócił lokator z #1553.
 - **refaktor**: inna postać kodu bez nowego właściciela, trzymana typem, ruff albo ast-grep (#2161: równość zamiast listy postaci).
 - **lint**: zakaz nazwy albo reguła ast-grep na złej postaci (#1719: `time.sleep` w `drive/`).
-- **test**: błąd logiki w jedynym właścicielu, którego jedyność pilnuje już typ, zakaz albo reguła (`worker_reports.EnteringMemory`); właściciel bez tej ochrony (bramka czyta konfigurację reguł) to `architektura`.
+- **test**: błąd logiki w jedynym właścicielu, którego jedyność pilnuje już typ, zakaz albo reguła (`worker_reports.EnteringMemory`), też luka w samej regule lint (`Gdzie` w jej pliku, #2506: zakaz w `ruff.toml`), bo strażnikiem jest test jej próbek; właściciel bez tej ochrony (bramka czyta konfigurację reguł) to `architektura`.
 - **weryfikacja**: błąd jednorazowy w treści, bez postaci i właściciela: proza, liczba w jednym teście, napęd frontendu (#2069).
 
 Szczebel nie działa przy fałszywym alarmie w ponad 10% PR-ów `tools/na_scalonych_pr.py --regula` albo przy liście nazw rosnącej z kodem (`regula-w-trasie` w #1904, #1919, #1964); wtedy schodzisz niżej, w następnej rundzie punktem `Mechanizm W<n> r<k>:`.

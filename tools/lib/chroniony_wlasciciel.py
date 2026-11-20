@@ -18,6 +18,8 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 | Źródło | Właściciel |
 |---|---|
 | zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia; że ma wiersz ``OWNERS`` z nazwami, których jest właścicielem, pilnuje ``tests/test_zakazy_ruff.py`` w Required CI tego drzewa |
+| nazwa w ``banned-api`` | moduł, który ją definiuje (``def``, ``class`` albo przypisanie na początku linii), jako ``<katalog importu>/<moduł>.py`` albo ``…/__init__.py`` z katalogów ``src`` i ``repo.IMPORT_ROOTS``: zakaz kieruje do niego resztę kodu |
+| sama reguła | ``ruff.toml`` korzenia z ``banned-api`` i każdy plik reguły ast-grep z ``ruleDirs``, który ma ``id``: lukę we wzorcu albo zasięgu zamyka test jego próbek (``tests/test_zakazy_ruff.py``, ``tests/test_zapadki.py``), a słabszą regułę odrzuca warunek 6 ``tools/scal_pr.py`` |
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
 
@@ -33,9 +35,10 @@ CONTRACT = "importlinter:contract:"
 ALLOWED = "allowed_importers"
 PACKAGES = "src"
 AST_GREP = "sgconfig.yml"
+IMPORT_ROOTS = (PACKAGES, *repo.IMPORT_ROOTS)
 SOURCES = (
-    f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, {ALLOWED} kontraktu w {IMPORT_CONTRACTS} "
-    f"albo ignores: reguły ast-grep z ruleDirs {AST_GREP}"
+    f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, moduł nazwy z banned-api, {ALLOWED} kontraktu w {IMPORT_CONTRACTS}, "
+    f"ignores: reguły ast-grep z ruleDirs {AST_GREP}, sam plik takiej reguły albo {RUFF} z banned-api"
 )
 _BRACES = re.compile(r"\{([^{}]*)\}")
 _UNREADABLE = (tomllib.TOMLDecodeError, configparser.Error, yaml.YAMLError, UnicodeDecodeError)
@@ -73,10 +76,21 @@ def _banned(tree: _Tree) -> set[str]:
     if (config := tree.read(RUFF)) is None:
         return set()
     try:
-        ignores = tomllib.loads(config).get("lint", {}).get("per-file-ignores", {})
+        lint = tomllib.loads(config).get("lint", {})
     except _UNREADABLE:
         return set()
-    return {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
+    ignores = lint.get("per-file-ignores", {})
+    names = lint.get("flake8-tidy-imports", {}).get("banned-api", {})
+    exempt = {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
+    return exempt | {path for name in names for path in _defining(tree, name)} | ({RUFF} if names else set())
+
+
+def _defining(tree: _Tree, banned: str) -> Iterator[str]:
+    module, _, name = banned.rpartition(".")
+    defined = re.compile(rf"^(?:(?:async +)?def +|class +)?{re.escape(name)}\b", re.MULTILINE)
+    stem = module.replace(".", "/")
+    candidates = (f"{root}/{stem}{suffix}".removeprefix("./") for root in IMPORT_ROOTS for suffix in (".py", "/__init__.py"))
+    yield from (path for path in candidates if defined.search(tree.read(path) or ""))
 
 
 def _importers(tree: _Tree) -> set[str]:
@@ -100,8 +114,9 @@ def _ignored(tree: _Tree) -> set[str]:
         directories = [str(directory).rstrip("/") for directory in (yaml.safe_load(text) or {}).get("ruleDirs") or []]
     except (*_UNREADABLE, AttributeError):
         return set()
-    rules = sorted(path for path in tree.files if path.endswith((".yml", ".yaml")) and any(path.startswith(f"{directory}/") for directory in directories))
-    return {path for rule in rules for document in _documents(tree.read(rule) or "") for path in _rule_ignores(document)}
+    rules = {path: _documents(tree.read(path) or "") for path in tree.files if path.endswith((".yml", ".yaml")) and any(path.startswith(f"{directory}/") for directory in directories)}
+    ignored = {path for documents in rules.values() for document in documents for path in _rule_ignores(document)}
+    return ignored | {rule for rule, documents in rules.items() if any(isinstance(document, dict) and "id" in document for document in documents)}
 
 
 def _documents(text: str) -> list[Any]:
