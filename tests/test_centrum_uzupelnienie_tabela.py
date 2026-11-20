@@ -16,8 +16,9 @@ from typing import Any
 from openpyxl import load_workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
+from rozliczenia import workbook_files
 from tests.fixtures.centrum import view_timing
-from tests.fixtures.centrum_processes import PreparingCentrum, filling_centrum, run_logs_handled, run_to_end
+from tests.fixtures.centrum_processes import PreparingCentrum, Surroundings, filling_centrum, run_logs_handled, run_to_end
 from atrapy.preparation import PERIOD
 
 URL = f"/api/periods/{PERIOD}/quantities-to-fill"
@@ -147,6 +148,20 @@ def test_plik_bez_odczytu_daje_komunikat_na_stronie_rodzaju(tmp_path: Path) -> N
 
     assert table["state"] == "problem"
     assert table["message"]["what"]
+
+
+def test_strona_rodzaju_otwiera_plik_zbiorczy_jednym_odczytem(tmp_path: Path) -> None:
+    opened: list[Path] = []
+
+    def counted(path: Path) -> bytes:
+        opened.append(path)
+        return workbook_files.file_bytes(path)
+
+    centrum = filling_centrum(tmp_path, surroundings=Surroundings(source=counted))
+    opened.clear()
+
+    assert _table(centrum, "without_rule")["state"] == "ready"
+    assert opened == [centrum.fixture.collective_file_path]
 
 
 def test_nieznany_rodzaj_jest_odrzucony(tmp_path: Path) -> None:
