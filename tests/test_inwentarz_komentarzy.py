@@ -397,6 +397,17 @@ def _jednostki(wynik: subprocess.CompletedProcess[str], poczatek: str) -> list[s
             [PRZECHODZI, *KROKI_CI, BEZ_ROZJAZDU, "NOC | skrypt mutacji | verify-a/check_a_mutations.py | po merge'u", f"DOWÓD FALI OK | {OK_FALI}, noc 1"], 0,
             id="skrypt-mutacji-nocy-wymieniony-bez-biegu",
         ),
+        pytest.param(
+            {f"{SKILL}/SKILL.md": f"---\nname: verify-a\npilnuje:\n  - frontend/src/karta.ts\nci: {SKILL}/scripts/sprawdz_a.py\nci-czesci: zero\n---\n"},
+            False,
+            {"skrypty/opis.py": "# nagłówek opisu\nX = 1\n"},
+            [
+                PRZECHODZI, *KROKI_CI,
+                f"MAIN | krok skilla | PODSTAWA verify-a | FAIL znalezienia: ci-czesci w {SKILL}/SKILL.md nie jest liczbą części od 1",
+                "DOWÓD FALI FAIL | krok skilla PODSTAWA verify-a",
+            ], 1,
+            id="krok-skilla-ktorego-ci-nie-da-sie-znalezc",
+        ),
     ],
 )
 def test_dowod_fali_uruchamia_prace_pushu_spoza_pull_requestu_a_noc_i_podstawy_wymienia(

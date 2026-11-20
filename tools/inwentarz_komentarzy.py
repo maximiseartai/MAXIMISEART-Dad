@@ -36,8 +36,9 @@ OPIS = """Wypisuje komentarze i docstringi z plikiem, linią, formą i węzłem,
 
 Inwentarz czyta pliki śledzone przez gita (całe repozytorium albo podane ścieżki) i wypisuje każdy komentarz i każdą
 instrukcję z samego napisu w formach z listy niżej. Nie mówi, kto wpis czyta, i nie dzieli wpisów na czytane przez
-program i przez człowieka: czy fala może wpis usunąć, pokazuje bieg programów, które CI uruchamia dla jej zmiany
-(``--dowod-fali``, niżej), a czytelnika, którego CI nie uruchamia, nie widać ani w inwentarzu, ani w dowodzie fali.
+program i przez człowieka. Program, który czyta wpis, widać dopiero w jego biegu: bieg tych, które CI uruchamia dla
+zmiany fali, pokazują Required CI jej PR, ``--dowod-fali`` (niżej) i CI ``main`` po merge'u, a czytelnika, którego CI
+nie uruchamia, nie widać ani w inwentarzu, ani w dowodzie fali.
 
 Formy wpisu:
 
@@ -56,12 +57,13 @@ linia liczy je z przyczyną. Kolejne komentarze całych linii o tym samym wcięc
 Węzeł to definicja albo klucz, który komentarz opisuje: ta, która zaczyna się w pierwszej linii kodu pod komentarzem
 (w linii komentarza na jej końcu), a bez niej najwęższa, która tę linię obejmuje; ``moduł`` albo ``plik`` poza nimi.
 
-Znacznik mówi o kształcie tekstu komentarza, nie o jego czytelniku: ``shebang`` (pierwsza linia ``#!``), ``kodowanie``
-(linia kodowania Pythona z PEP 263) albo ``kształt dyrektywy``: linia treści zaczyna się słowem z dwukropkiem albo
-``@słowem`` (``# noqa:``, ``# type:``, ``// SAFETY:``, ``# ZEWNĘTRZNE:``, ale też ``# Uwaga:``) albo tekst ma słowo
-``noqa`` w dowolnej wielkości liter. Tak wyglądają dyrektywy narzędzi i postacie z listy wyjątków ADR 0043, więc wpis ze
-znacznikiem fala rozstrzyga sama, a dyrektywa bez tego kształtu (``# shellcheck disable=``, ``// eslint-disable``,
-``/// <reference``) znacznika nie ma.
+Znacznik komentarza mówi o kształcie jego tekstu: ``shebang`` (pierwsza linia ``#!`` pliku Pythona albo powłoki),
+``kodowanie`` (linia kodowania Pythona z PEP 263 w pierwszej albo drugiej linii) albo ``kształt dyrektywy``: linia treści
+zaczyna się słowem z dwukropkiem albo ``@słowem`` (``# noqa: KOD - powód``, ``# type: ignore[kod]``, ``// SAFETY:
+powód``, ``// @ts-expect-error``, ``# ZEWNĘTRZNE: fakt (źródło)``, ale też proza ``# Uwaga: …``) albo tekst ma słowo
+``noqa`` w dowolnej wielkości liter. Dyrektywa bez tego kształtu (``// oxlint-disable-next-line reguła -- powód``,
+``// eslint-disable``, ``# shellcheck disable=``, ``/// <reference``) znacznika nie ma. Znacznik to tylko kształt: ani nie
+dowodzi, że wpis czyta program, ani jego brak, że nie czyta.
 
 Linia wpisu: ``plik:linia[-koniec] | forma | węzeł | znacznik | pierwsza linia tekstu``, ze znacznikiem ``-``, gdy go nie
 ma; z ``--json`` linia JSON z pełnym tekstem. Ostatnia linia: ``INWENTARZ OK | plików N | wpisów W (linii L) | ze
@@ -77,10 +79,11 @@ do pull requestu, tryb uruchamia na tym checkoucie, Pythonem narzędzia, pliki t
 (``pytest -n auto``, jak ``tools/ci_lokalnie.py``), a przed każdą podstawą ``ci:`` skilla z modelem kodu
 (``model/definicje.json``) zadaje pytanie, które zadaje przed nią wykonanie zadania na ``main``:
 ``rozjazd_modelu.rozjazd``. Rozjazd skilla, którego plików modelu ani pliku definicji zmiana nie dotyka, jest już na bazie,
-więc tryb go wypisuje, ale nie liczy jako porażki fali. Kroków CI spoza pytest (E2E, straż czasu), samych podstaw
-(``LICZY MAIN``) i pracy nocy (``LICZY NOC``) tryb nie uruchamia, bo lokalnie nie uruchamia ich też
-``tools/ci_lokalnie.py`` ani agent (``tools/skille_dla_zmiany.py``), tylko wymienia każdą jednostkę z powodem ``po
-merge'u``; FAIL znalezienia kroku skilla z zakresu to porażka. Linia jednostki: ``MAIN|NOC | rodzaj | nazwa | wynik``.
+więc tryb go wypisuje, ale nie liczy jako porażki fali. Kroków CI spoza pytest (E2E, straż czasu), samych podstaw i
+pracy nocy tryb nie uruchamia, tylko wymienia każdą ich jednostkę z wynikiem ``po merge'u``: E2E i straży czasu nie
+uruchamia lokalnie ``tools/ci_lokalnie.py``, a podstaw spoza pull requestu i kroków nocy agent
+(``tools/skille_dla_zmiany.py``, linie ``LICZY MAIN`` i ``LICZY NOC``). FAIL znalezienia kroku skilla z zakresu to
+porażka. Linia jednostki: ``MAIN|NOC | rodzaj | nazwa | wynik``.
 Ostatnia linia: ``DOWÓD FALI OK|FAIL | baza SHA | zmiana N plików | lokalnie: pytest P plików, rozjazd modelu R skilli |
 po merge'u: kroki CI C, podstawy B, noc Q``, z porażkami po ``FAIL |``; kod 1 to porażka, brak zmiany albo nieznana baza.
 
