@@ -105,7 +105,6 @@ END, count(*), max(created_at)
 FROM orchestration_v2_projection_messages GROUP BY 1
 """
 PROJECTS = "SELECT project_id, workspace_root FROM projection_projects"
-# Zapis scp origin gita: ``[użytkownik@]host:ścieżka``.
 SCP = re.compile(r"(?:[^@/:]+@)?(?P<host>[^@/:]+):(?P<path>[^/].*)")
 
 EXAMPLES = """\
@@ -133,8 +132,6 @@ class Message:
 
 
 def sender(message_id: str, payload: dict[str, object]) -> str:
-    """Nadawca wiadomości ``user`` z bazy T3: ``OPERATOR``, ``COMPACT`` albo ``<createdBy>/<creationSource>``."""
-
     actor, source = payload.get("createdBy"), payload.get("creationSource")
     if actor not in ACTORS or source not in SOURCES:
         raise ShapeError(
@@ -148,8 +145,6 @@ def sender(message_id: str, payload: dict[str, object]) -> str:
 
 
 class Doubt(StrEnum):
-    """Czemu narzędzie nie liczy projektu T3 do repo; linia wyniku pokazuje powód przy liczbie jego wiadomości."""
-
     FOREIGN = "inny origin"
     NO_ORIGIN = "bez origin"
     MISSING = "brak katalogu"
@@ -207,15 +202,11 @@ def doubt(root: str) -> Doubt | None:
 
 @dataclass(frozen=True)
 class Project:
-    """Projekt T3 z bazy: ``doubt`` ``None`` liczy go do repo."""
-
     label: str
     doubt: Doubt | None
 
 
 def _projects(db: sqlite3.Connection, forced: frozenset[str]) -> dict[str, Project]:
-    """Każdy projekt T3 bazy po identyfikatorze; projekt z ``forced`` (``--projekt``) jest repo bez pytania dysku."""
-
     found = {
         project_id: Project(
             f"{PurePath(root).name} [{project_id}]",
@@ -229,8 +220,6 @@ def _projects(db: sqlite3.Connection, forced: frozenset[str]) -> dict[str, Proje
 
 
 def _others(counts: Counter[Project]) -> str:
-    """Część ``inne projekty:`` linii wyniku: liczba wiadomości operatora i powód każdego projektu spoza repo."""
-
     listed = ", ".join(
         f"{project.label} {counts[project]} ({project.doubt})"
         for project in sorted(counts, key=lambda project: project.label)
@@ -249,9 +238,6 @@ def _iso(moment: datetime) -> str:
 def alive(
     db: sqlite3.Connection, fresh: datetime, projects: dict[str, Project]
 ) -> None:
-    """Rzuca ``DeadInput``, gdy baza nie da wiadomości okna: ``created_at`` w innym zapisie niż ``toISOString``
-    (``_iso``), brak projektu pewnie repo wśród ``projects`` albo baza, której T3 nie pisał do chwili ``fresh``."""
-
     shapes = {shape: (count, newest) for shape, count, newest in db.execute(SHAPES)}
     if foreign := {
         shape: count for shape, (count, _) in shapes.items() if shape != ISO
@@ -276,8 +262,6 @@ def alive(
 
 
 def _operator_elsewhere(message_id: str, payload: dict[str, object]) -> bool:
-    """Czy wiadomość projektu spoza repo napisał operator; nadawca spoza kontraktu tam tylko jej nie liczy."""
-
     try:
         return sender(message_id, payload) == OPERATOR
     except ShapeError:
@@ -291,10 +275,6 @@ def messages(
     now: datetime,
     forced: frozenset[str] = frozenset(),
 ) -> tuple[list[tuple[str, Message]], Counter[Project]]:
-    """Nadawca i wiadomość każdej wiadomości ``user`` wątku repo z chwilą w ``[since, until)`` z bazy, którą T3 pisał do
-    ``min(until, now - QUIET_H godzin)`` (``alive``), oraz liczba wiadomości operatora w tym czasie w każdym projekcie
-    T3, który nie jest pewnie repo (``_projects``)."""
-
     with closing(sqlite3.connect(f"{base.resolve().as_uri()}?mode=ro", uri=True)) as db:
         projects = _projects(db, forced)
         alive(db, min(until, now - timedelta(hours=QUIET_H)), projects)
@@ -329,8 +309,6 @@ def _line(message: Message, chars: int) -> str:
 
 
 def _moment(text: str) -> datetime:
-    """Chwila czasu polskiego z ``RRRR-MM-DD`` (początek dnia) albo ``RRRR-MM-DD GG:MM``."""
-
     shape = "%Y-%m-%d %H:%M" if " " in text else "%Y-%m-%d"
     try:
         return datetime.strptime(text, shape).replace(tzinfo=WARSAW)
@@ -342,8 +320,6 @@ def _moment(text: str) -> datetime:
 
 @dataclass(frozen=True)
 class Window:
-    """Okno ``[since, until)`` i jego nazwa w linii wyniku."""
-
     since: datetime
     until: datetime
     label: str

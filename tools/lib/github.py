@@ -37,9 +37,7 @@ CI_WORKFLOW = "CI"
 # Który run CI rozstrzyga o merge'u do `main`. Nowszy push na `main` anuluje run, który czeka za trwającym (concurrency
 # w ci.yml, ADR 0020), a run commitu merge'a tak anulowany nie ma checku ``REQUIRED`` (``rozstrzygniety``).
 ROZSTRZYGA = "o merge'u rozstrzyga pierwszy nieanulowany run CI pushu na main, którego commit zawiera merge"
-# Etykieta issue czerwonego `main`, które zakłada ``tools/ci/zgloszenia_ci.py``.
 CZERWONY_MAIN = "czerwony-main"
-# Temat commitu scalenia PR na GitHubie: merge commit albo squash.
 MERGE = re.compile(r"Merge pull request #(?P<numer>[1-9][0-9]*) from \S+")
 SQUASH = re.compile(r"(?P<tytul>.+) \(#(?P<numer>[1-9][0-9]*)\)")
 # Status commita, który ``tools/scal_pr.py --status`` ustawia na HEAD otwartego PR do `main` (workflow
@@ -156,8 +154,6 @@ class GitHub(Protocol):
 
 
 class BladApi(RuntimeError):
-    """Porażka ``gh api``: komunikat z poleceniem i błędem ``gh``, a ``stderr`` to sam błąd ``gh``."""
-
     def __init__(self, polecenie: str, stderr: str) -> None:
         super().__init__(f"{polecenie}: {stderr}")
         self.stderr = stderr
@@ -165,9 +161,6 @@ class BladApi(RuntimeError):
 
 @dataclass(frozen=True)
 class GhApi:
-    """``gh api`` z ``{owner}/{repo}`` repozytorium checkoutu i limitem czasu ``limit_s`` jednego zapytania; porażka to
-    ``BladApi`` z błędem ``gh``, a limit ``subprocess.TimeoutExpired``."""
-
     limit_s: float = 120
 
     def _api(self, *argumenty: str, wejscie: bytes | None = None) -> bytes:
@@ -184,15 +177,11 @@ class GhApi:
         return self._api(sciezka, "--allow-escape-sequences")
 
     def wyslij(self, metoda: str, sciezka: str, tresc: Mapping[str, object]) -> Any:
-        """Treść odpowiedzi JSON, a None przy odpowiedzi bez treści (204, np. dispatch workflow)."""
-
         odpowiedz = self._api("--method", metoda, sciezka, "--input", "-", wejscie=json.dumps(tresc).encode("utf-8"))
         return json.loads(odpowiedz) if odpowiedz.strip() else None
 
 
 def strony(github: GitHub, sciezka: str, pole: str | None = None) -> Iterator[dict[str, Any]]:
-    """Elementy listy z każdej strony odpowiedzi; ``pole`` to klucz listy, gdy API zwraca obiekt (``artifacts``)."""
-
     laczenie = "&" if "?" in sciezka else "?"
     for strona in itertools.count(1):
         odpowiedz = github.json(f"{sciezka}{laczenie}per_page={STRONA}&page={strona}")
@@ -203,8 +192,6 @@ def strony(github: GitHub, sciezka: str, pole: str | None = None) -> Iterator[di
 
 
 def issues(github: GitHub, etykieta: str, stan: str, od: datetime | None = None) -> list[dict[str, Any]]:
-    """Issue (bez PR-ów) z etykietą w stanie ``open``, ``closed`` albo ``all``, z ``od`` zmienione od tej chwili."""
-
     zapytanie = {"labels": etykieta, "state": stan, **({"since": od.strftime("%Y-%m-%dT%H:%M:%SZ")} if od else {})}
     return [issue for issue in strony(github, f"{REPO}/issues?{urllib.parse.urlencode(zapytanie)}") if "pull_request" not in issue]
 
@@ -241,18 +228,12 @@ def rozstrzygniety(github: GitHub, commit: str) -> dict[str, Any] | None:
 
 
 def blok_kodu(linie: Sequence[str]) -> list[str]:
-    """Blok kodu z ``linie``: płot dłuższy od każdego ciągu backticków w nich, więc treść nie wyjdzie z bloku."""
-
     plot = "`" * max([3, *(len(ciag) + 1 for linia in linie for ciag in re.findall("`+", linia))])
     return [plot, *linie, plot]
 
 
 @dataclass(frozen=True)
 class Powiadom:
-    """Komentarz ``tresc`` w każdym z PR-ów ``pr`` po założeniu albo skomentowaniu issue; ``wykonaj`` zaczyna go linkiem
-    do tego issue, a komentarz, który się nie udał albo przekroczył czas, zapisuje linią i idzie do następnego PR, bo
-    issue już jest."""
-
     pr: tuple[int, ...] = ()
     tresc: str = ""
 
@@ -277,7 +258,7 @@ class Skomentuj:
 class Zamknij:
     issue: int
     tresc: str
-    zdejmij: tuple[str, ...] = ()  # etykiety, które zamknięcie zdejmuje z issue
+    zdejmij: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -292,8 +273,6 @@ Akcja = Zaloz | Skomentuj | Zamknij | Edytuj
 
 
 def wykonaj(github: GitHub, akcje: Sequence[Akcja], prefiks: str) -> list[str]:
-    """Wykonuje akcje po kolei; linia ``<prefiks> | <co zrobione>`` na każdą."""
-
     linie = []
     for akcja in akcje:
         match akcja:
@@ -337,8 +316,6 @@ def _opis_powiadom(powiadom: Powiadom) -> str:
 
 
 def opis(akcja: Akcja) -> str:
-    """Co akcja zrobi, bez wykonania (podgląd ``--bez-zapisu``)."""
-
     match akcja:
         case Zaloz(tytul, _, etykiety, powiadom):
             return f"załóż issue „{tytul}” z etykietami {', '.join(etykiety)}" + _opis_powiadom(powiadom)
