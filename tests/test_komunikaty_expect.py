@@ -114,6 +114,7 @@ OUTSIDE_CATALOGS: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[],
 
 
 SENTENCES: dict[str, tuple[ModuleType, Mapping[str, Sequence[Callable[[], str | None]]]]] = {
+    "Plik taty (zdania)": (workbook_messages, {"lock_hint": [partial(workbook_messages.lock_hint, REGISTER, "uruchom ponownie")]}),
     "Wynik Uruchomienia (zdania)": (runs, {"stop_note": [lambda: runs.stop_note("for_maks")]}),
     "Karta Wpisania raportów (zdania)": (
         report_entering_run,
@@ -522,8 +523,11 @@ def test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu(catalog: str) -> None
     assert set(samples) == public, "każda publiczna funkcja katalogu ma próbkę: dopisz ją w message_samples albo zrób funkcję prywatną"
 
 
+NOT_SENTENCES: Final = {workbook_messages.unusable: "wybiera Komunikat katalogu (WorkbookMessages) po Problem, sam zdania nie składa"}
+
+
 def _sentence_modules() -> list[str]:
-    catalogs = {module.__name__ for module, _ in (*CATALOGS.values(), *OUTSIDE_CATALOGS.values())}
+    catalogs = {module.__name__ for module, _ in CATALOGS.values()}
     names = (".".join(path.relative_to(ROOT / "src").with_suffix("").parts) for path in sorted((ROOT / "src").rglob("*messages.py")))
     return [name for name in names if name not in catalogs]
 
@@ -531,14 +535,19 @@ def _sentence_modules() -> list[str]:
 @pytest.mark.parametrize("module_name", _sentence_modules())
 def test_probki_pokrywaja_kazda_publiczna_funkcje_modulu_zdan(module_name: str) -> None:
     module = importlib.import_module(module_name)
-    sampled = {sentence for owner, sentences in SENTENCES.values() if owner is module for sentence in sentences}
+    sampled = {
+        sentence for owner, sentences in (*SENTENCES.values(), *OUTSIDE_CATALOGS.values()) if owner is module for sentence in sentences
+    }
     public = {
         name
         for name, function in inspect.getmembers(module, inspect.isfunction)
-        if function.__module__ == module.__name__ and not name.startswith("_")
+        if function.__module__ == module.__name__ and not name.startswith("_") and function not in NOT_SENTENCES
     }
 
-    assert sampled == public, "każde publiczne zdanie modułu zdań ma próbkę: dopisz ją w SENTENCES albo zrób funkcję prywatną"
+    assert sampled == public, (
+        "każde publiczne zdanie modułu zdań ma próbkę: dopisz ją w SENTENCES albo OUTSIDE_CATALOGS, zrób funkcję prywatną "
+        "albo, gdy funkcja sama zdania nie składa, dopisz ją z powodem do NOT_SENTENCES"
+    )
 
 
 def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:
