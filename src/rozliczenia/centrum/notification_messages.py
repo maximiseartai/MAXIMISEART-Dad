@@ -1,9 +1,3 @@
-"""Katalog Komunikatów Powiadomień: plik stanu Spraw taty albo przeczytanych Powiadomień jest niedostępny.
-
-Centrum pamięta zmiany do zamknięcia i zapisuje je samo, gdy plik znów da się zapisać, więc Komunikat znika po
-udanym zapisie. Instrukcja taty cytuje „Co się stało” każdego Komunikatu (``tests/test_instrukcja_taty.py``).
-"""
-
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -13,8 +7,6 @@ from rozliczenia.message import Message
 
 
 def unavailable(files: Sequence[Path]) -> Message:
-    """Plików ``files`` z folderu config nie da się teraz zapisać."""
-
     names = " i ".join(file.name for file in files)
     one = len(files) == 1
     return Message(
