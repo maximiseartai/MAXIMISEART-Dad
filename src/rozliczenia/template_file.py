@@ -392,6 +392,8 @@ class TemplateFile:
         return columns
 
     def _written_columns(self, target_columns: Mapping[str, int]) -> Collection[int]:
+        """Kolumny, do których trafiają komórki wiersza: pod nagłówkami docelowymi, a w Rozliczeniu pracownika A:AT."""
+
         return target_columns.values() if self._rules.headers else DATA_ROW_COLUMNS
 
     def _loaded(self) -> bytes:

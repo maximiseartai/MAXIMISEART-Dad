@@ -646,6 +646,8 @@ class _Sheet:
         return count
 
     def header_styles(self) -> list[int | None]:
+        """Style komórek nagłówka w kolumnach wyglądu (od A); ``None``: komórki nie ma w XML."""
+
         styles: list[int | None] = [None] * self._layout.look_columns
         position = bisect_left(self._numbers, self._layout.header_row)
         if position == len(self._rows) or self._rows[position].number != self._layout.header_row:
@@ -675,6 +677,8 @@ class _Sheet:
         self._filter_columns = (min(columns), max(columns))
 
     def filter_ref(self, row_count: int) -> str | None:
+        """Zakres autofiltra pliku okresu: nagłówek i wpisane wiersze; ``None``: autofiltr zostaje z Wzorca."""
+
         if self._filter is None:
             return None
         first, last = self._filter_columns
@@ -682,6 +686,8 @@ class _Sheet:
         return f"{get_column_letter(first)}{header_row}:{get_column_letter(last)}{header_row + row_count}"
 
     def links(self, rows: Sequence[Row]) -> list[tuple[bytes, Hyperlink]]:
+        """Hiperłącza wpisywanych komórek kolumn Wiersza danych: adres komórki → Hiperłącze, wierszami."""
+
         first_row = self._layout.first_data_row
         return [
             (self._letters[column - 1] + b"%d" % (first_row + index), link)
