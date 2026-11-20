@@ -13,32 +13,57 @@ from collections.abc import Iterable
 from datetime import date
 
 from ..activity_legend import ActivityLegend, DescriptionError
+from ..quantity_engine import QuantityRules, evaluated, is_fault
 from ..text import normalize_text
 from ._matching import Addition
-from ._model import FaultyDescription, Login, OrderNumber, ReportEntry, Verdict
+from ._model import FaultyDescription, Login, OrderNumber, RegisterOrder, ReportEntry, Verdict
 
 
 def faulty(
-    legend: ActivityLegend, worker: Login, day: date, number: OrderNumber, verdict: Verdict | None, activities: str
+    legend: ActivityLegend,
+    worker: Login,
+    day: date,
+    number: OrderNumber,
+    verdict: Verdict | None,
+    activities: str,
+    *,
+    fault: bool,
 ) -> FaultyDescription | None:
-    """Błąd opisu Wpisu ``tak`` zlecenia ``number`` od ``worker`` z dnia ``day`` z czynnościami ``activities``; ``None``
-    przy opisie bez Błędu opisu i przy Wpisie bez ``tak``."""
+    """Błąd opisu Wpisu ``tak`` zlecenia ``number`` od ``worker`` z dnia ``day`` z czynnościami ``activities`` w
+    zleceniu, które jest usterką (``fault``) albo nie; ``None`` przy opisie bez Błędu opisu i przy Wpisie bez ``tak``."""
 
     if verdict is not Verdict.YES:
         return None
-    read = legend.read(activities, fault=False)
+    read = legend.read(activities, fault=fault)
     return FaultyDescription(worker, day, number, read.problems) if isinstance(read, DescriptionError) else None
 
 
 def entered(
-    legend: ActivityLegend, targets: Iterable[tuple[Login, date, ReportEntry]], additions: Iterable[Addition]
+    legend: ActivityLegend,
+    rules: QuantityRules,
+    targets: Iterable[tuple[RegisterOrder, Login, date, ReportEntry]],
+    additions: Iterable[Addition],
 ) -> tuple[FaultyDescription, ...]:
     """Problemy wpisanych Wpisów ``tak`` z Błędem opisu: zwycięskich Wpisów zleceń z nadawcą i dniem, w którym tata
     widzi ich problem (``_matching.Matched.entered``), i Zleceń dopisanych z raportu po poprawionych mailach."""
 
     found = [
-        *(faulty(legend, worker, day, entry.number, entry.verdict, entry.activities) for worker, day, entry in targets),
-        *(faulty(legend, added.worker, added.day, added.number, added.verdict, added.activities) for added in additions),
+        *(
+            faulty(
+                legend,
+                worker,
+                day,
+                entry.number,
+                entry.verdict,
+                entry.activities,
+                fault=is_fault(evaluated(rules, order.content)),
+            )
+            for order, worker, day, entry in targets
+        ),
+        *(
+            faulty(legend, added.worker, added.day, added.number, added.verdict, added.activities, fault=False)
+            for added in additions
+        ),
     ]
     return tuple(fault for fault in found if fault is not None)
 
