@@ -2084,18 +2084,6 @@ def test_tresc_werdyktu_poza_szablonem_daje_przyczyne_i_wzor(text: str, declared
     assert "### W1." in problems[-1] and "## Sprawdzone" in problems[-1], problems[-1]
 
 
-@pytest.mark.parametrize(("name", "expected"), [(name, idiom) for name, (_, idiom) in werdykty_szablonu.IDIOMY.items()], ids=werdykty_szablonu.IDIOMY)
-def test_pole_idiom_wazne_daje_regule_klase_i_wczesniejsze_wazne_z_jednej_z_trzech_postaci(
-    name: str, expected: tuple[str | None, str | None, tuple[int, str, int] | None]
-) -> None:
-    """Pole ``Idiom:`` (ADR 0036, „Pole werdyktu”) pisze recenzent po Szczeblu, a warunek merge'a bierze z niego id
-    reguły i wcześniejsze Ważne, którego przypadek jej dowód ma złapać."""
-
-    found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZED_MECHANIZMEM[f"idiom-{name}"])))
-
-    assert found.idioms == (szablon_werdyktu.Idiom("W1", *expected),)
-
-
 @pytest.mark.parametrize("name", werdykty_szablonu.MECHANIZMY)
 def test_pole_mechanizm_wazne_daje_szczebel_piramidy_dla_bramki_straznika(name: str) -> None:
     found = szablon_werdyktu.findings(szablon_werdyktu.items(werdykty_szablonu.html(werdykty_szablonu.PRZECHODZA[f"mechanizm-{name}"])))

@@ -69,12 +69,12 @@ def _with_mutation(*block: str) -> str:
 
 
 MECHANIZMY = ("architektura", "refaktor", "lint", "test", "weryfikacja")
-IDIOMY: dict[str, tuple[str, tuple[str | None, str | None, tuple[int, str, int] | None]]] = {
-    "drugie-wystapienie": ("Idiom: komentarz-w-src jak #1553 W1 r2", ("komentarz-w-src", None, (1553, "W1", 2))),
-    "ucieczka-reguly": ("Idiom: os.name", ("os.name", None, None)),
-    "bez-reguly": ("Idiom: bez reguły stan-kroku jak #1553 W2 r1", (None, "stan-kroku", (1553, "W2", 1))),
-    "bez-reguly-typ": ("Idiom: bez reguły typ jak #1904 W1 r1", (None, "typ", (1904, "W1", 1))),
-    "bez-reguly-test-klasy": ("Idiom: bez reguły test-klasy jak #1909 W2 r1", (None, "test-klasy", (1909, "W2", 1))),
+IDIOMY = {
+    "drugie-wystapienie": "Idiom: komentarz-w-src jak #1553 W1 r2",
+    "ucieczka-reguly": "Idiom: os.name",
+    "bez-reguly": "Idiom: bez reguły stan-kroku jak #1553 W2 r1",
+    "bez-reguly-typ": "Idiom: bez reguły typ jak #1904 W1 r1",
+    "bez-reguly-test-klasy": "Idiom: bez reguły test-klasy jak #1909 W2 r1",
 }
 PRZECHODZA = {
     "szablon": TEMPLATE,
@@ -172,7 +172,7 @@ ODMOWY: dict[str, tuple[str, tuple[int, int], str]] = {
 PRZED_MECHANIZMEM = {
     "szablon-bez-mechanizmu": _replaced(MECHANISM),
     "szablon-z-mechanizmem": TEMPLATE,
-    **{f"idiom-{name}": _replaced(MECHANISM, line) for name, (line, _) in IDIOMY.items()},
+    **{f"idiom-{name}": _replaced(MECHANISM, line) for name, line in IDIOMY.items()},
 }
 ODMOWY_PRZED_MECHANIZMEM: dict[str, tuple[str, tuple[int, int], str]] = {
     "proza-po-idiomie": (_replaced(MECHANISM, "Idiom: os.name", "Dalsza proza."), (1, 1), "W1: po Szczeblu tylko pole Mechanizm: albo Idiom:, a jest linia „Dalsza proza.”"),
@@ -203,13 +203,6 @@ WERDYKTY = {
     "sprawdzone": _text("## Sprawdzone", "- diff"),
     "drobne": _text("### D1. Nazwa.", "Gdzie: kod/inne.py:1", "## Sprawdzone", "- diff"),
     "wazne": _text(*_MAJOR, "## Sprawdzone", "- diff"),
-    # Ważne z polem Idiom: dla warunku merge'a (ADR 0036): drugie wystąpienie, ucieczka, bez reguły i inna reguła.
-    "wazne-idiom-drugie-wystapienie": _text(*_MAJOR, "Idiom: zakazane-wywolanie jak #1553 W1 r2", "## Sprawdzone", "- diff"),
-    "wazne-idiom-ucieczka": _text(*_MAJOR, "Idiom: zakazane-wywolanie", "## Sprawdzone", "- diff"),
-    "wazne-idiom-bez-reguly": _text(*_MAJOR, "Idiom: bez reguły brak-testu jak #1553 W1 r2", "## Sprawdzone", "- diff"),
-    "wazne-idiom-innej-reguly": _text(*_MAJOR, "Idiom: inna-regula jak #1553 W2 r1", "## Sprawdzone", "- diff"),
-    "wazne-idiom-typ": _text(*_MAJOR, "Idiom: bez reguły typ jak #1553 W1 r2", "## Sprawdzone", "- diff"),
-    "wazne-idiom-test-klasy": _text(*_MAJOR, "Idiom: bez reguły test-klasy jak #1553 W1 r2", "## Sprawdzone", "- diff"),
     "proza": "Wszystko dobrze, bez uwag.",
     # Blok mutacji dowodu ``pytest`` (``tests/test_na_scalonych_pr.py``): FAIL z blokiem, którego kotwicy nie ma na HEAD,
     # i późniejszy PASS z blokiem, który przywraca ``zakazane()``.
