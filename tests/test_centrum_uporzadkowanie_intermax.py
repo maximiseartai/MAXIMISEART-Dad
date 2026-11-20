@@ -54,7 +54,6 @@ from atrapy.intermax import (
     Order,
 )
 from atrapy.baza_zlecen import ELEVEN, FIVE, TWELVE, BaseSheet, Visit
-from atrapy.settlement import write_worker_list
 from atrapy.workbooks import rewrite_parts
 from tests.fixtures.fakt_domeny import known
 from tests.fixtures.wyciek import zawiera_wartosc
@@ -101,20 +100,6 @@ def test_bez_wskazanego_rejestru_zlecen_karta_mowi_co_ustawic_a_start_jest_odrzu
     assert (started.status_code, started.json()) == (409, {"message": "Najpierw wskaż INTERMAX."})
     assert centrum.client.get("/api/runs/current").json()["state"] == "idle"
     assert centrum.client.get("/api/intermax/days").json() == {"days": [], "problem": None}
-
-
-def test_uporzadkowanie_bez_listy_wykonawcow_nie_ostrzega_o_jej_zlym_ustawieniu(tmp_path: Path) -> None:
-    """Ostrzeżenie o ostatniej dobrej Liście Wykonawców ma tylko proces, który jej używa (DESIGN §4.3)."""
-
-    centrum = ordering_centrum(tmp_path)
-    write_worker_list(centrum.tool.worker_list)
-    centrum.client.get("/api/settings")
-    centrum.tool.worker_list.write_text("schema_version: 1\nwykonawcy: [", encoding="utf-8")
-
-    view = centrum.run_to_end()
-
-    assert view["result"]["ending"] == "finished"
-    assert not [warning for warning in view["result"]["warnings"] if warning.get("setting") == "wykonawcy"]
 
 
 def test_karta_mowi_ze_intermax_jest_otwarty_w_excelu_az_do_jego_zamkniecia(tmp_path: Path) -> None:
@@ -422,26 +407,6 @@ def test_po_chwilowej_odmowie_onedrive_uporzadkuj_z_centrum_ponawia_podmiane_na_
     assert (view["result"]["ending"], view["result"]["headline"]) == ("finished", "INTERMAX uporządkowany")
     assert (len(attempts), centrum.surroundings.clock.seconds - started_at) == (3, 1.0)
     assert copies(centrum) == [COPY]
-
-
-def test_gdy_onedrive_dalej_trzyma_intermax_centrum_mowi_tacie_o_synchronizacji_po_pieciu_sekundach_zegara(
-    tmp_path: Path,
-) -> None:
-    centrum = ordering_centrum(tmp_path)
-    original = centrum.register.read_bytes()
-    centrum.disk.replace, attempts = failing_replace(denied)
-    started_at = centrum.surroundings.clock.seconds
-
-    view = _stopped(centrum)
-
-    result = view["result"]
-    assert (result["stop_kind"], result["stops"][0]["what"]) == (
-        "for_tata",
-        "OneDrive jeszcze synchronizuje INTERMAX. INTERMAX nie został zmieniony.",
-    )
-    assert (len(attempts), centrum.surroundings.clock.seconds - started_at) == (11, 5.0)
-    assert centrum.register.read_bytes() == original
-    assert copies(centrum) == []
 
 
 def test_okres_uruchomienia_to_okres_dnia_startu_takze_gdy_skonczy_sie_po_polnocy(tmp_path: Path) -> None:

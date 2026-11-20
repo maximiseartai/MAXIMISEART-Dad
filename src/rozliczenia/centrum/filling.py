@@ -122,7 +122,7 @@ def filling_router(settings: CentrumSettings, log: CentrumLog, cloud_files: Clou
     return router
 
 
-def without_quantity_sentence(rows: Sequence[int]) -> str | None:
+def _without_quantity_sentence(rows: Sequence[int]) -> str | None:
     if not rows:
         return None
     count = len(rows)
@@ -139,7 +139,7 @@ def _without_quantity(
     if isinstance(found, MissingHeaders):
         return filling_contract.WithoutQuantityUnread(state="unread")
     rows = list(quantities_to_fill(found.rows, rules, legend, settled=folder.observe().settled).without_quantity)
-    return filling_contract.WithoutQuantityRead(state="read", sentence=without_quantity_sentence(rows))
+    return filling_contract.WithoutQuantityRead(state="read", sentence=_without_quantity_sentence(rows))
 
 
 def _ready(

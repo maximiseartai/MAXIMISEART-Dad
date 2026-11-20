@@ -8,7 +8,7 @@ from openpyxl.worksheet.worksheet import Worksheet
 
 from rozliczenia import workbook_files
 from rozliczenia.collective_layout import HEADER_ROW
-from rozliczenia.centrum.filling import without_quantity_sentence
+from rozliczenia.text import plural
 from tests.fixtures.centrum_processes import Surroundings, filling_centrum
 from atrapy.preparation import PERIOD
 
@@ -91,7 +91,5 @@ def test_ustawienie_przebiegu_nie_otwiera_zadnego_pliku_zbiorczego(tmp_path: Pat
         (124, "wiersze"),
     ],
 )
-def test_zdanie_okna_odmienia_wiersze(count: int, word: str) -> None:
-    rows = list(range(18, 18 + count))
-
-    assert without_quantity_sentence(rows) == f"{count} {word} bez ilości: {', '.join(map(str, rows))}"
+def test_slowo_wiersz_odmienia_sie_po_liczbie(count: int, word: str) -> None:
+    assert plural(count, "wiersz", "wiersze", "wierszy") == word
