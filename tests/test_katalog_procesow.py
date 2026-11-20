@@ -723,3 +723,10 @@ def test_zla_lista_wykonawcow_wstrzymuje_albo_ostrzega_tylko_proces_ktory_jej_po
         else (200, None, [last_good_warning] if needed else [])
     )
     assert (started.status_code, refused, warnings) == expected
+
+
+def test_proces_ktory_pisze_dziennik_wyceny_liczy_bez_wzorca() -> None:
+    assert [kind.key for kind in CATALOG.kinds if kind.journaled and kind.templates] == [], (
+        "wersja zastępcza Logów z dziennika Wyceny (comment_versions.StandInLogs) nie ma Wzorców, a Archiwum Logów "
+        "okresu ma każdy Wzorzec, którym liczyły Logi (ADR 0015), więc proces z dziennikiem liczy bez Wzorca"
+    )

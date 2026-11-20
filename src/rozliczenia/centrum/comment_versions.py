@@ -1,34 +1,3 @@
-"""Wersje komentarza Uruchomienia w issue Logów okresu: która wersja idzie do Kolejki wysyłki, w jakim stopniu i co
-dalej z dziennikiem Wyceny w efenix. Moduł niczego nie czyta ani nie zapisuje.
-
-Każde Uruchomienie ma jeden komentarz w issue Logów okresu z etykietą ``logi-uruchomienia`` (``LABEL``), a każda jego
-wersja to ta sama wysyłka (Uruchomienie i etykieta), więc kolejka zmienia ten sam komentarz zamiast dokładać nowy. Wersje
-(``CommentVersion``) i ich stopień (``rank_of``, ``outbox.Rank``), który wybiera nadawca, a nie zegar:
-
-- postęp Wyceny w efenix w trakcie (``ProgressVersion``, ``DRAFT``): bez pliku w Archiwum Logów okresu, bo pełne Logi
-  powstają dopiero na końcu;
-- wersja zastępcza, którą start Centrum odtwarza z dziennika Wyceny (``STAND_IN``): Logi z pliku albo Logi Urwanego
-  Uruchomienia (``StandInLogs``) i wynik bez Logów (``WithoutLogsVersion``), gdy pliku Logów nie ma albo nie da się go
-  odczytać;
-- Logi z pracy Centrum Uruchomienia (``OwnLogs``, ``OWN``): z wynikiem, z Diagnozą, a obok pliku Logów w Archiwum Wzorce
-  Uruchomienia po sprawdzeniu reguły danych (``template_archive.ArchivedTemplate``); wersja zastępcza Wzorców nie ma,
-  bo dziennik pisze tylko Wycena w efenix, która Wzorcem nie liczy.
-
-Wersja końcowa zamienia więc postęp w podsumowanie także po cofnięciu zegara komputera, a wersja zastępcza nie zastępuje
-Logów z wynikiem, które kolejka już przyjęła. Każda wersja niesie tylko tekst po strażniku reguły danych pracy Centrum
-(``run_logs_guard.GuardedLogs``, ``run_logs_guard.GuardedText``, ADR 0025), więc wysyłka (``post_of``) strażnika nie
-potrzebuje, a wersja z tekstem sprzed strażnika to błąd typu, a gdy typ go nie widzi (``Any``, podklasa), ``TypeError``
-w konstruktorze wersji i w ``post_of``. Wysyłkę daje tylko ``post_of`` jako ``LogsPost``, której nikt nie zmieni przed kolejką
-(docstring ``_VERSIONS``). Dziennik Wyceny znika tylko po wersji końcowej, którą kolejka przyjęła (``journal_after``).
-
-Wersję zastępczą z dziennika, który zostawiła poprzednia praca Centrum, wybiera ``close``: cała macierz startu w jednym
-``match``, ze strażnikiem w środku, więc start Centrum (``run_comments.RunComments``) dostaje tylko wersję po strażniku.
-
-Strażnika i typy po nim bierze z ``run_logs_guard``, typy schematu Logów (``run_logs``) i postępu Wyceny tylko do
-adnotacji, a z ``logs_disk`` tylko typy wyniku odczytu dysku i nazwę pliku Logów (``name_of``), bez metod, które czytają
-pliki (``tests/test_granice_importow.py``).
-"""
-
 from __future__ import annotations
 
 from collections import Counter
@@ -56,7 +25,6 @@ if TYPE_CHECKING:
 LABEL: Final[Label] = "logi-uruchomienia"
 
 LogsMissing = Literal["niezapisane", "nieczytelne"]
-"""Dlaczego start Centrum nie ma Logów Wyceny, która doszła do wyniku: pliku nie ma albo nie da się go odczytać."""
 
 _LOGS_MISSING: Final[dict[LogsMissing, str]] = {
     "niezapisane": "nie ma, Centrum nie zapisało ich po wyniku (np. zamknęło się tuż po nim)",
@@ -66,19 +34,12 @@ _LOGS_MISSING: Final[dict[LogsMissing, str]] = {
 
 @dataclass(frozen=True)
 class ResultWithoutLogs:
-    """Wynik Wyceny w efenix, której Logów start Centrum nie ma (``logs``): wynik z wpisu końca dziennika Wyceny
-    (``result``; ``None``: dziennik go nie ma) i zlecenia z dziennika (``journal``)."""
-
     journal: PricingProgress
     result: RunResult | None
     logs: LogsMissing
 
 
 _NO_VERSION_SUBCLASSES: Final = "Wersja komentarza Uruchomienia nie ma podklas: post_of bierze tylko cztery klasy wersji."
-"""Odmowa podklasy wersji przy jej tworzeniu: metaklasa ``WithoutSubclasses`` przy ``class`` i ``type()`` (``class`` z
-własną metaklasą, która woła ``type.__new__`` wprost, ją omija), a ``__init_subclass__`` przy ``type.__new__`` z jej
-pominięciem, chyba że przesłania go baza bez ``super()`` stojąca przed wersją. To wcześniejszy błąd; podklasę z każdej
-drogi (także ``__bases__``) odrzuca ``post_of`` dokładnym typem przy użyciu."""
 
 
 @final
@@ -97,9 +58,6 @@ class ProgressVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSE
 @final
 @dataclass(frozen=True)
 class OwnLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
-    """Logi z pracy Centrum Uruchomienia (z wynikiem albo z Diagnozą): podsumowanie z odnośnikiem, plik w Archiwum i
-    obok niego Wzorce Uruchomienia (``templates``), które przeszły sprawdzenie reguły danych."""
-
     logs: GuardedLogs
     templates: tuple[ArchivedTemplate, ...] = ()
 
@@ -113,8 +71,6 @@ class OwnLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
 @final
 @dataclass(frozen=True)
 class StandInLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
-    """Logi, które start Centrum wysyła z dziennika Wyceny: z pliku albo Logi Urwanego Uruchomienia."""
-
     logs: GuardedLogs
 
     def __post_init__(self) -> None:
@@ -127,8 +83,6 @@ class StandInLogs(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
 @final
 @dataclass(frozen=True)
 class WithoutLogsVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLASSES):
-    """Wynik bez Logów ``final`` z tekstem komentarza po strażniku (``text``), bez pliku w Archiwum."""
-
     final: ResultWithoutLogs
     text: GuardedText
 
@@ -140,13 +94,10 @@ class WithoutLogsVersion(metaclass=WithoutSubclasses, refusal=_NO_VERSION_SUBCLA
 
 
 StandInVersion = StandInLogs | WithoutLogsVersion
-"""Wersja zastępcza: to, co start Centrum wysyła z dziennika Wyceny."""
 
 CommentVersion = ProgressVersion | OwnLogs | StandInLogs | WithoutLogsVersion
-"""Każda wersja jednego komentarza Uruchomienia."""
 
 JournalAction = Literal["zostaw", "usuń"]
-"""Co dalej z dziennikiem Wyceny w efenix, gdy wersja jego komentarza poszła do Kolejki wysyłki."""
 
 
 def rank_of(version: CommentVersion) -> Rank:
@@ -162,10 +113,6 @@ def rank_of(version: CommentVersion) -> Rank:
 
 
 def journal_after(version: CommentVersion, *, accepted: bool) -> JournalAction:
-    """Dziennik Wyceny znika tylko wtedy, gdy kolejka przyjęła (``accepted``) wersję końcową jego komentarza: Logi albo
-    wynik bez Logów. Postęp dziennika nie usuwa, bo komentarz mówiłby wtedy, że Uruchomienie trwa, a nikt by go nie
-    skończył."""
-
     match version:
         case ProgressVersion():
             return "zostaw"
@@ -177,30 +124,13 @@ def journal_after(version: CommentVersion, *, accepted: bool) -> JournalAction:
 
 @dataclass(frozen=True)
 class Drop:
-    """Dziennik bez pierwszej linii (urwany pierwszy zapis): przed nim nic się w efenix nie zmieniło i żaden postęp do
-    niego nie poszedł, więc start Centrum go usuwa."""
+    ...
 
 
 Closing = Drop | StandInLogs | WithoutLogsVersion
-"""Co start Centrum robi z jednym dziennikiem Wyceny, który zostawiła poprzednia praca Centrum."""
 
 
 def close(left: LeftJournal, forbidden: ForbiddenValues, interrupted: Callable[[JournalRead], RunLog]) -> Closing:
-    """Wersja zastępcza komentarza Uruchomienia z dziennika ``left`` po strażniku reguły danych ``forbidden`` (ADR 0025):
-
-    - dziennik bez pierwszej linii: ``Drop``;
-    - czytelny plik Logów: te Logi (``StandInLogs``), czyli Logi z wynikiem, których przyjęcia przez kolejkę nikt nie
-      zapisał, albo Logi Urwanego Uruchomienia, które poprzedni start zapisał, a nie wysłał, także sprzed strażnika;
-    - plik Logów, którego nie da się odczytać: wynik bez Logów ``nieczytelne`` (Logi są, więc Uruchomienie miało wynik);
-    - bez pliku Logów, z wpisem końca: wynik bez Logów ``niezapisane`` z wynikiem z wpisu końca;
-    - bez pliku Logów i bez wpisu końca, czyli Urwane Uruchomienie (ADR 0017): Logi Urwanego Uruchomienia z
-      ``interrupted``, które bierze działania taty czekające na Logi, więc woła je tylko ta gałąź.
-
-    Strażnik jest w środku: plik Logów i Skrzynka mają te same znaki także po Logach, które zapisała praca Centrum sprzed
-    strażnika, a żadna gałąź nie daje Logów ani tekstu sprzed niego. Plik Logów, którego system nie daje odczytać
-    (``logs_disk.Refused``), rzuca jego ``OSError``: nie wiadomo, czy Logi są, więc dziennik zostaje następnemu startowi.
-    """
-
     read = left.journal
     if read is None:
         return Drop()
@@ -222,30 +152,14 @@ def close(left: LeftJournal, forbidden: ForbiddenValues, interrupted: Callable[[
 
 
 _WITHOUT_LOGS_PLACE: Final = "wynik Wyceny w efenix bez Logów"
-"""Miejsce zamaskowanej wartości w uwadze technicznej wyniku bez Logów."""
 
 
 @final
 class _Versions:
-    """Typ dowodu, że wysyłkę Logów zbudował ``post_of`` (``_VERSIONS``)."""
-
     __slots__ = ()
 
 
 _VERSIONS: Final = _Versions()
-"""Dowód wersji komentarza: ``LogsPost`` bez niego to błąd mypy (brak argumentu albo zły typ). Bierze go tylko
-``post_of``, bez pomocnika, który wkładałby go za wywołującego. Poza tym modułem ruff (``TID251`` w ``ruff.toml``)
-odrzuca ``from … import _VERSIONS`` (także z aliasem) i atrybut modułu (``comment_versions._VERSIONS``, także przez
-alias albo pełną ścieżkę), tak samo ``_Versions``.
-
-``LogsPost`` nie jest dataclassą i nie oddaje swojej ``Post``, więc mypy odrzuca ``dataclasses.replace`` gotowej
-wysyłki, np. w innym stopniu albo z innymi częściami (``type-var``), a ``replace`` wartości ``Any`` rzuca
-``TypeError``. Podklasę odrzuca mypy (``final``), przy tworzeniu metaklasa ``WithoutSubclasses``, a przy użyciu ``Outbox.post``
-(dokładny typ w ``outbox._queue_text``). Nową ``Post`` złożoną z pól gotowej wysyłki typ przepuszcza, bo
-``Outbox.post`` bierze też gołą ``Post``, a łapie ją ``tests/test_granice_importow.py``: wynik ``post_of`` stoi tylko w
-``<kolejka>.post(post_of(…))``, więc nikt nie czyta jego pól, a etykietę Logów (``LABEL``) kod poza ``post_of`` tylko
-podaje kolejce w pytaniu (``delivered``, ``rejected``). Granice tych mechanizmów pokazują tam próbki
-``ZNANE_LUKI_WYSYLKI``, każda za klasą nazwaną w swojej nazwie."""
 
 
 _NO_POST_SUBCLASSES: Final = "Wysyłka Logów nie ma podklas: daje ją tylko post_of."
@@ -253,9 +167,6 @@ _NO_POST_SUBCLASSES: Final = "Wysyłka Logów nie ma podklas: daje ją tylko pos
 
 @final
 class LogsPost(metaclass=WithoutSubclasses, refusal=_NO_POST_SUBCLASSES):
-    """Wysyłka Logów Uruchomienia, którą ``Outbox.post`` bierze tak, jak zbudował ją ``post_of`` (``_VERSIONS``): pola
-    tylko do odczytu, bez ``Post`` do skopiowania."""
-
     __slots__ = ("__post",)
 
     def __init__(self, post: Post, proof: _Versions) -> None:
@@ -306,17 +217,6 @@ class LogsPost(metaclass=WithoutSubclasses, refusal=_NO_POST_SUBCLASSES):
 
 
 def post_of(version: CommentVersion) -> LogsPost:
-    """Wysyłka wersji ``version``: jeden komentarz Uruchomienia w issue Logów okresu, a przy Logach także ich pełny plik w
-    Archiwum Logów okresu, w stopniu ``rank_of``.
-
-    Wersję i jej tekst albo Logi sprawdza tu, w chwili użycia, a nie tylko przy przyjęciu (``__post_init__``): typ wersji
-    to dokładnie jedna z klas ``CommentVersion`` (porównanie ``is``, więc ani podklasa, jakkolwiek powstała, ani metaklasa
-    z własnym ``__eq__``), a tekst i Logi czytane raz i sprawdzone przez ``exact_text`` i ``exact_logs``, więc wartość
-    podmieniona po przyjęciu przez ``object.__setattr__`` też odpada. Nie zamyka zmiany w chwili działania samej klasy
-    dokładnego typu, modułu ani pól typu-dowodu (przypisanie ``__class__``, slot ``object.__setattr__``). Okres i
-    identyfikator z faktów startu (postęp i wynik bez Logów biorą je z dziennika Wyceny, poza strażnikiem) bierze przez
-    ``run_logs_guard.tool_text``: poza gramatyką pola stają się maską."""
-
     if not any(type(version) is kind for kind in get_args(CommentVersion)):
         raise TypeError(f"Wysyłkę Logów daje post_of tylko z wersji komentarza Uruchomienia, nie {type(version).__name__}.")
     start: StartFacts
@@ -396,8 +296,6 @@ def _run_line(run: StartFacts | RunLog) -> str:
 
 
 def _orders_done(progress: PricingProgress) -> str | None:
-    """``None`` przed pierwszym wpisem „zaczynam zlecenie”."""
-
     if progress.total is None:
         return None
     outcomes = ", ".join(f"{outcome.value} {count}" for outcome, count in progress.outcomes())
@@ -488,8 +386,6 @@ def _duration(milliseconds: int | None) -> str:
 
 
 def _codes(messages: Sequence[LoggedMessage]) -> str:
-    """Kody w kolejności karty, każdy raz, z liczbą powtórzeń i rodzajem."""
-
     counted = Counter((message.kind, message.code) for message in messages)
     if not counted:
         return "brak"
