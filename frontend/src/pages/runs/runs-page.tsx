@@ -3,7 +3,7 @@ import { cn } from "cn"
 import { HistoryIcon, PlayIcon } from "lucide-react"
 
 import { getMetrics, getRunSetup, type RunView } from "@/api/centrum"
-import type { ProcessSetup } from "@/api/generated"
+import type { ProcessSetup, RunSetup } from "@/api/generated"
 import { PageHeader } from "@/components/page-header"
 import { LoadFailure } from "@/components/load-failure"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useChangeEntrance, useContentEntrance } from "@/lib/content-entrance"
 import { isActive, useRuns } from "@/lib/runs"
-import { useInScope, type Declared } from "@/lib/scope"
+import { useCovers, useInScope, type Declared } from "@/lib/scope"
 import { useSettings } from "@/lib/settings"
 import { useResource } from "@/lib/use-resource"
 import { RunHistoryCard } from "@/pages/metrics/run-history-card"
@@ -31,35 +31,45 @@ const NEW_RUN_CARDS: ReadonlyArray<NewRunCard> = [
   { id: "intermax", function: "intermax", Shown: IntermaxCard },
 ]
 
+const WITHOUT_PERIOD_PROCESSES: RunSetup = { processes: [] }
+
+function withoutPeriodProcesses(): Promise<RunSetup> {
+  return Promise.resolve(WITHOUT_PERIOD_PROCESSES)
+}
+
 /** Stan Uruchomienia pochodzi wyłącznie ze strumienia serwera, więc przetrwa odświeżenie i ponowne otwarcie karty. */
 export function RunsPage() {
   const { settings } = useSettings()
   const { view } = useRuns()
+  const history = useCovers("metrics")
 
   return (
     <Tabs defaultValue="uruchomienie" className="gap-6">
       <PageHeader
         action={
-          <TabsList>
-            <TabsTrigger value="uruchomienie">
-              <PlayIcon data-icon="inline-start" />
-              Uruchomienie
-            </TabsTrigger>
-            <TabsTrigger value="historia">
-              <HistoryIcon data-icon="inline-start" />
-              Historia
-            </TabsTrigger>
-          </TabsList>
+          history ? (
+            <TabsList>
+              <TabsTrigger value="uruchomienie">
+                <PlayIcon data-icon="inline-start" />
+                Uruchomienie
+              </TabsTrigger>
+              <TabsTrigger value="historia">
+                <HistoryIcon data-icon="inline-start" />
+                Historia
+              </TabsTrigger>
+            </TabsList>
+          ) : undefined
         }
       />
       <TabsContent value="uruchomienie">
         {/* Treść montuje się przy gotowych Ustawieniach Centrum, więc start czyta raz. */}
         {settings.state === "loading" ? <RunsSkeleton /> : <RunsContent />}
       </TabsContent>
-      <TabsContent value="historia">
-        {/* Każde zakończone Uruchomienie to nowy odczyt historii z plików metryk. */}
-        <RunHistory key={view === null || view.state === "idle" || isActive(view) ? "trwa" : view.run.id} />
-      </TabsContent>
+      {history ? (
+        <TabsContent value="historia">
+          <RunHistory key={view === null || view.state === "idle" || isActive(view) ? "trwa" : view.run.id} />
+        </TabsContent>
+      ) : null}
     </Tabs>
   )
 }
@@ -88,7 +98,8 @@ function RunHistory() {
 }
 
 function RunsContent() {
-  const { resource: setup, reload } = useResource(getRunSetup, [])
+  const periods = useCovers("periods")
+  const { resource: setup, reload } = useResource(periods ? getRunSetup : withoutPeriodProcesses, [])
   const { view, dismissed, unreadable } = useRuns()
   const finishedRun = view?.state === "finished" ? view.run.id : null
   const entrance = useContentEntrance(view === null || setup.state === "loading")

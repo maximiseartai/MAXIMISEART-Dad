@@ -72,6 +72,8 @@ BUILTIN_MESSAGES: Final = {
     " komunikatu reguły, którą wyłączała",
     "unused-suppression": f"dyrektywa {SUPPRESSION} niczego nie wyłącza: usuń ją",
 }
+FIRED: Final = "ODPALENIE REGUŁY"
+FIRED_LINE: Final = re.compile(rf"{FIRED} ([\w.-]+) \| ")
 INSTALL = "brak ast-grep z dodatku dev: uruchom python3 tools/setup_worktree.py (Windows: py -3 tools/setup_worktree.py)"
 # Pusty obiekt drzewa gita: atrybuty z niego (``attr.tree``) to brak atrybutów.
 EMPTY_TREE: Final = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
@@ -84,6 +86,10 @@ class Finding(NamedTuple):
     line: int
     rule: str
     message: str
+
+
+def refusal(findings: Sequence[Finding]) -> str:
+    return "\n".join(f"{FIRED} {finding.rule} | {finding.path}:{finding.line}: {finding.message}" for finding in findings)
 
 
 class ScanFailed(ValueError):

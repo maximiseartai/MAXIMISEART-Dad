@@ -84,7 +84,6 @@ KROK_CELU_S = 5.0
 ZADANIA_RUNU = 40
 ZADANIA_RUNU_MAIN = 25
 ZADANIA_RUNU_NOCY = 20
-# Zadania ci.yml o stałej liczbie (plan, Frontend, Ruff i mypy, Required).
 STALE_ZADANIA = 4
 
 
@@ -112,27 +111,21 @@ POMIARY_ZASTEPCZE = {"windows-3.13": "windows-3.11"}
 
 @dataclass(frozen=True)
 class Jednostka:
-    """Praca, którą plan daje zadaniu, pod napisem swojego ``jednostka.Klucz``."""
-
     klucz: str
-    s: float  # ściana, którą dodaje do zadania
+    s: float
 
 
 @dataclass(frozen=True)
 class Wycena:
-    """Koszty jednego toru: jednostki przed podziałem, narzut i start pracy zadania."""
-
     tor: Tor
     podzielne: Mapping[str, float]  # plik testów albo skrypt mutacji -> ściana całości
-    niepodzielne: Mapping[str, float]  # węzeł testu, krok CI albo podstawa skilla
+    niepodzielne: Mapping[str, float]
     narzut_s: float
     start_s: float
-    czesci: Mapping[str, int] = field(default_factory=dict)  # najwięcej części jednostki podzielnej (plik: testy, skrypt: mutacje)
-    przegladarka: frozenset[str] = frozenset()  # jednostki, które potrzebują Chromium
+    czesci: Mapping[str, int] = field(default_factory=dict)
+    przegladarka: frozenset[str] = frozenset()
 
     def jednostki(self, pojemnosc_s: float) -> list[Jednostka]:
-        """Jednostki podzielne dłuższe niż ``pojemnosc_s`` w częściach, które się w niej mieszczą, i niepodzielne."""
-
         wynik = [Jednostka(klucz, s) for klucz, s in self.niepodzielne.items()]
         for klucz, s in self.podzielne.items():
             k = max(1, math.ceil(s / pojemnosc_s)) if pojemnosc_s > 0 else 1
@@ -142,12 +135,6 @@ class Wycena:
 
 
 def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: frozenset[str] = frozenset()) -> Wycena:
-    """Plik testów jest podzielny na najwyżej tyle udziałów, ile testów policzyły mu runy main (bez tej liczby tylko po
-    czasie), a węzeł ``plik::test`` nie i waży najwyżej tyle, co typowy plik.
-
-    ``przegladarka``: pliki testów, które potrzebują Chromium; ich jednostki (udziały, węzły) dostają je w zadaniu.
-    """
-
     pomiary = tor.pomiary if czasy.tory.get(tor.pomiary) else POMIARY_ZASTEPCZE.get(tor.pomiary, tor.pomiary)
     koszty = czasy.koszty(pomiary)
     testy = {klucz: czasy.testy(pomiary, klucz) for klucz in (jednostka.pytest(plik) for plik in pliki if "::" not in plik)}
@@ -171,10 +158,6 @@ def wycen(tor: Tor, pliki: Sequence[str], czasy: czasy_ci.Czasy, przegladarka: f
 
 
 def wycen_mutacje(kroki: Sequence[KrokSkilla], czasy: czasy_ci.Czasy) -> Wycena:
-    """Kroki skilli na torze ``MUTACJE``: skrypt mutacji podzielny na najwyżej tyle części, ile ma mutacji, podstawa na
-    tyle, ile mówi jej ``ci-czesci``, a bez niego wcale. Krok z częściami ustalonymi przez zakres (``KrokSkilla.czesci``)
-    biegnie dokładnie nimi, każda osobną jednostką."""
-
     tor = MUTACJE
     pomiary = czasy.tory.get(tor.pomiary, {})
     zmierzone = {klucz: s for klucz in pomiary if jednostka.rodzaj(klucz) is Rodzaj.SKILL and (s := czasy.praca(tor.pomiary, klucz)) is not None}
@@ -213,8 +196,6 @@ def _pojemnosc(wycena: Wycena, cel_s: float) -> float:
 
 
 def _upakuj(wycena: Wycena, cel_s: float) -> list[list[Jednostka]]:
-    """Najmniej zadań toru, z których każde mieści się w ``cel_s``; jednostka dłuższa od celu stoi sama."""
-
     pojemnosc = _pojemnosc(wycena, cel_s)
     jednostki = wycena.jednostki(pojemnosc)
     n = max(1, math.ceil(sum(j.s for j in jednostki) / pojemnosc)) if pojemnosc > 0 else len(jednostki)
@@ -243,10 +224,6 @@ def _limit_runu(zdarzenie: Zdarzenie) -> int:
 def rozplanuj(
     wyceny: Sequence[Wycena], zdarzenie: Zdarzenie, runy: tuple[int, ...] = (), bledy: tuple[str, ...] = (), zmienione_pliki_testow: tuple[str, ...] = ()
 ) -> Plan:
-    """Najmniej zadań na tor przy celu ``CEL_S``; gdy run przekroczyłby limit zadań zdarzenia (``ZADANIA_RUNU``,
-    ``ZADANIA_RUNU_MAIN`` albo ``ZADANIA_RUNU_NOCY``), cel wszystkich torów rośnie o ``KROK_CELU_S``. Tor bez pracy nie
-    ma zadań."""
-
     limit = _limit_runu(zdarzenie) - STALE_ZADANIA
     if limit < sum(bool(wycena.podzielne or wycena.niepodzielne) for wycena in wyceny):
         raise ValueError(f"limit {_limit_runu(zdarzenie)} zadań runu nie mieści po jednym zadaniu na tor z pracą")
@@ -272,9 +249,6 @@ def rozplanuj(
 
 
 def w_cieniu(plan: Plan, kroki: Mapping[Podstawy, Sequence[KrokSkilla]], pytest: Sequence[Wycena], czasy: czasy_ci.Czasy) -> tuple[Cien, ...]:
-    """Cień planu ``plan``: dla każdego wariantu z ``kroki`` (``ZakresRunu.cien``) jego kroki skilli i plan z nimi obok
-    wycen pytest ``pytest``; wariant ``NA_ZYWO`` to sam ``plan``, więc jego cień zgadza się z wykonaniem."""
-
     cien = []
     for wariant, wybrane in kroki.items():
         wyceniony = plan if wariant is NA_ZYWO else rozplanuj([*pytest, wycen_mutacje(wybrane, czasy)], plan.zdarzenie, plan.runy)
@@ -336,8 +310,6 @@ def _plan(args: argparse.Namespace, root: Path, github: GitHub) -> int:
 
 
 def main(argv: Sequence[str] | None = None, *, root: Path = ROOT, github: GitHub = czasy_ci.GITHUB) -> int:
-    """``root`` to checkout, którego zmianę i skille plan wycenia, a ``github`` daje czasy z runów main."""
-
     parser = argparse.ArgumentParser(description=OPIS, formatter_class=argparse.RawDescriptionHelpFormatter)
     polecenia = parser.add_subparsers(dest="polecenie", required=True)
     plan = polecenia.add_parser("plan", help="Plan runu: zadania pytest i Mutation checks (zadanie plan albo lokalnie).")

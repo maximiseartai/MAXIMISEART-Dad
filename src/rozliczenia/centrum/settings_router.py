@@ -15,6 +15,7 @@ from rozliczenia.centrum.contract import settlement_mailing as mailing_contract
 from rozliczenia.centrum.contract import settings_workers as settings_workers_contract
 from rozliczenia.centrum import refusal
 from rozliczenia.centrum.platform import Platform
+from rozliczenia.centrum.scope import CentrumFunction
 from rozliczenia.centrum.settings import messages
 from rozliczenia.centrum.settings.autostart import Unsupported
 from rozliczenia.centrum.settings.files import Bad, FieldPath, FieldProblem, Good, Read, Unreadable, usable
@@ -277,11 +278,12 @@ def _path(value: str | None) -> Path | None:
 
 
 def describe(view: SettingsView) -> settings_contract.Settings:
-    workers = _workers(view.workers.shown())
-    inbox_setting, inbox_problem = _describe_inbox(view.inbox)
-    autostart = _describe_autostart(view.autostart)
-    reminders = _reminders(view.reminders)
-    settlement_mail = _settlement_mail(view.settlement_mail)
+    covers = view.scope.covers
+    workers = _workers(view.workers.shown()) if covers(CentrumFunction.WORKERS) else None
+    inbox_setting, inbox_problem = _describe_inbox(view.inbox) if covers(CentrumFunction.REPORT_INBOX) else (None, None)
+    autostart = _describe_autostart(view.autostart) if covers(CentrumFunction.AUTOSTART) else None
+    reminders = _reminders(view.reminders) if covers(CentrumFunction.REMINDERS) else None
+    settlement_mail = _settlement_mail(view.settlement_mail) if covers(CentrumFunction.SETTLEMENT_MAILING) else None
     match view.folders:
         case Unreadable():
             unreadable = settings_contract.UnreadablePath(state="unreadable")

@@ -74,9 +74,6 @@ def test_regula_z_bazy_zglasza_wywolanie_dodane_przez_pr_takze_gdy_pr_ja_oslabia
 
 
 def test_wywolanie_z_merge_base_nie_jest_linia_pr_a_regula_dodana_w_bazie_po_rozgalezieniu_obowiazuje(tmp_path: Path) -> None:
-    """Linie liczą się od ``merge-base``: stare wywołanie z ``src/stary.py`` nie jest linią PR, a reguła, którą baza
-    dodała po rozgałęzieniu PR, zgłasza linię, którą PR dodał, bo obowiązuje go baza z chwili merge'a."""
-
     fork = _repository(tmp_path, {**BASE, "src/stary.py": CALL})
     git(tmp_path, "switch", "--quiet", "--create", "pr")
     _write(tmp_path, {"src/nowy.py": "inne()\n"})

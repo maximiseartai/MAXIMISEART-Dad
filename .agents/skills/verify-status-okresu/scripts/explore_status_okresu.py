@@ -64,6 +64,7 @@ from rozliczenia.centrum.catalog import CATALOG
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import NO_AUTOSTART
 from rozliczenia.centrum.report_reminders import NotRead, due_reminders
+from rozliczenia.centrum import scope as centrum_scope
 from rozliczenia.centrum.settings.folders import ChangeFolders, ChoosePeriodsDirectory
 from rozliczenia.centrum.settings.history import ReleaseOrigin
 from rozliczenia.centrum.settings.owner import CentrumSettings
@@ -488,6 +489,7 @@ def _centrum(case: Path, periods: Path) -> TestClient:
 def _settings(config: Path, log: CentrumLog) -> CentrumSettings:
     return CentrumSettings(
         config,
+        scope=centrum_scope.SCOPES[centrum_scope.Workstation.DAD],
         log=log,
         now=local_now,
         pause=lambda _: None,

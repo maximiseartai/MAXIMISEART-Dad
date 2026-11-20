@@ -80,7 +80,7 @@ SINCE = " created:>={created}"
 # Pola PR z HTML treści (``bodyHTML``) opisu, komentarzy i recenzji, wspólne dla wyszukiwania i zapytania o jeden PR.
 FIELDS = """
 fragment Pull on PullRequest {
-  number title state isDraft isCrossRepository baseRefName headRefOid url body bodyHTML createdAt updatedAt mergedAt
+  number title state isDraft isCrossRepository baseRefName headRefName headRefOid url body bodyHTML createdAt updatedAt mergedAt
   files(first: 100) { nodes { path } }
   comments(first: 100, after: $comments) { pageInfo { hasNextPage endCursor } nodes { body bodyHTML authorAssociation createdAt includesCreatedEdit author { login } } }
   reviews(first: 100, after: $reviews) { pageInfo { hasNextPage endCursor } nodes { body bodyHTML authorAssociation state submittedAt includesCreatedEdit author { login } } }
@@ -245,28 +245,6 @@ def read(repository: str, deployed: datetime | None) -> list[Occurrence]:
 
 
 @dataclass(frozen=True)
-class IdiomCase:
-    """Pole ``Idiom:`` Ważnego ``idiom.label`` werdyktu ``FAIL`` rundy ``round`` PR ``pull``, utworzonego w chwili
-    ``when`` (``None`` bez chwili)."""
-
-    pull: int
-    round: int
-    idiom: szablon_werdyktu.Idiom
-    when: datetime | None = None
-
-
-def idiom_cases(number: int, rounds: Sequence[werdykt_pr.Round]) -> list[IdiomCase]:
-    """Pola ``Idiom:`` Ważnych werdyktów ``FAIL`` rund ``rounds`` PR ``number``."""
-
-    return [
-        IdiomCase(number, current.number, idiom, _moment(current.verdict.when))
-        for current in rounds
-        if current.verdict.decision == "FAIL"
-        for idiom in current.findings.idioms
-    ]
-
-
-@dataclass(frozen=True)
 class GuardCase:
     """Ważne ``major`` (``W1 r2``) PR ``pull`` scalonego w chwili ``when`` w wątku, w którym obowiązuje warunek strażnika
     ([ADR 0042](../../docs/adr/0042-straznik-przy-pierwszym-waznym.md)), z selektorem z linii ``Strażnik:`` jego bloku
@@ -281,21 +259,22 @@ class GuardCase:
 
 @dataclass(frozen=True)
 class Reviewed:
-    """PR ze skanu rejestru: jego wystąpienia kodów (``occurrences``), pola ``Idiom:`` werdyktów ``FAIL`` utworzonych
-    nie przed wdrożeniem, chwila merge'a i chwila ostatniego werdyktu ``PASS`` na HEAD PR (``None`` bez nich), chwila
-    założenia, pierwsze 100 plików diffu (więcej strona skanu nie podaje), ``limited``: chwila ostatniego werdyktu
-    ``FAIL`` PR zamkniętego bez merge'a, któremu limit rund (``limit_rund.problem``) odmawia kolejnej rundy, a ``None``
-    dla każdego innego PR, i ``guards``: strażnik każdego Ważnego PR scalonego w wątku z warunkiem strażnika."""
+    """PR ze skanu rejestru: jego wystąpienia kodów (``occurrences``), chwila merge'a i chwila ostatniego werdyktu
+    ``PASS`` na HEAD PR (``None`` bez nich), chwila założenia, pierwsze 100 plików diffu (więcej strona skanu nie
+    podaje), ``limited``: chwila ostatniego werdyktu ``FAIL`` PR zamkniętego bez merge'a, któremu limit rund
+    (``limit_rund.problem``) odmawia kolejnej rundy, a ``None`` dla każdego innego PR, ``guards``: strażnik każdego
+    Ważnego PR scalonego w wątku z warunkiem strażnika, i ``branch``: gałąź PR, po której raport tygodniowy przypisuje
+    PR-owi run CI."""
 
     pull: int
     merged: datetime | None
     passed: datetime | None
     occurrences: tuple[Occurrence, ...]
-    idioms: tuple[IdiomCase, ...]
     created: datetime | None = None
     files: frozenset[str] = frozenset()
     limited: datetime | None = None
     guards: tuple[GuardCase, ...] = ()
+    branch: str | None = None
 
 
 def reviewed(repository: str, deployed: datetime | None, limit: datetime | None, guarded: datetime | None) -> list[Reviewed]:
@@ -312,8 +291,7 @@ def reviewed(repository: str, deployed: datetime | None, limit: datetime | None,
 
 def _reviewed(node: dict[str, Any], deployed: datetime, limit: datetime | None, guarded: datetime | None) -> Reviewed:
     """PR z węzła GraphQL ``node`` (``FIELDS``, każdy komentarz i każda recenzja): werdykty, rundy i chwilę merge'a
-    liczy raz, a wszystko, co zwraca, jest po chwili wdrożenia ``deployed``: Ważne i pola ``Idiom:`` werdyktów
-    utworzonych nie przed nią, merge nie przed nią, a blok czerwonego `main` tylko w PR scalonym po niej; ``limit``
+    liczy raz, a wszystko, co zwraca, jest po chwili wdrożenia ``deployed``: Ważne werdyktów utworzonych nie przed nią, merge nie przed nią, a blok czerwonego `main` tylko w PR scalonym po niej; ``limit``
     to chwila wdrożenia limitu rund dla ``Reviewed.limited``, a ``guarded`` warunku strażnika dla ``Reviewed.guards``:
     strażnik każdego Ważnego (``majors``, jak bramka strażnika) PR scalonego, w którego wątku warunek obowiązuje
     (``werdykt_pr.rule_applies``, jak ``bramka_straznika.applies``)."""
@@ -324,13 +302,11 @@ def _reviewed(node: dict[str, Any], deployed: datetime, limit: datetime | None, 
     merged = merged if merged is not None and merged >= deployed else None
     blocks = _blocks(pull, str(node["bodyHTML"])) if merged is not None else {}
     found: list[Occurrence] = []
-    idioms: tuple[IdiomCase, ...] = ()
     guards: tuple[GuardCase, ...] = ()
     if werdykt_pr.rule_applies(pull, deployed) and any(verdict.decision == "FAIL" for verdict in verdicts):
         rounds = werdykt_pr.rounds(pull, werdykt_pr.from_graphql)
         known = majors(rounds)[0]
         found += [Occurrence(major.code, pull.number, major.heading, major.since) for major in known.values() if major.code is not None and major.since is not None and major.since >= deployed]
-        idioms = tuple(case for case in idiom_cases(pull.number, rounds) if case.when is not None and case.when >= deployed)
         if merged is not None and werdykt_pr.rule_applies(pull, guarded):
             guards = tuple(GuardCase(pull.number, heading, merged, blocks[heading].selector() if heading in blocks else None) for heading in sorted(known, key=_natural))
     if merged is not None:
@@ -339,7 +315,8 @@ def _reviewed(node: dict[str, Any], deployed: datetime, limit: datetime | None, 
     fails = [moment for verdict in verdicts if verdict.decision == "FAIL" and (moment := _moment(verdict.when)) is not None]
     limited = max(fails, default=None) if pull.state == "CLOSED" and limit_rund.problem(pull, limit) is not None else None
     files = frozenset(str(file["path"]) for file in node["files"]["nodes"])
-    return Reviewed(pull.number, merged, max(passes, default=None), tuple(sorted(found, key=_order)), idioms, _moment(node["createdAt"]), files, limited, guards)
+    branch = str(node["headRefName"]) if node.get("headRefName") else None
+    return Reviewed(pull.number, merged, max(passes, default=None), tuple(sorted(found, key=_order)), _moment(node["createdAt"]), files, limited, guards, branch)
 
 
 def _pulls(repository: str, deployed: datetime) -> Iterator[dict[str, Any]]:

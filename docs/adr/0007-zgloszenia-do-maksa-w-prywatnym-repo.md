@@ -34,7 +34,10 @@ wysyła też Przypomnienia o raporcie przez SMTP Gmaila tym samym hasłem
 aplikacji, a odrzucone przy nich hasło zakłada Zgłoszenie bez kliknięcia i
 podglądu taty, wyjątek od zdania Decyzji o jednym kliknięciu z decyzji Maksa
 20.11.2026 w
-[#2329](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2329)).
+[#2329](https://github.com/maximiseartai/MAXIMISEART-Dad/issues/2329)) i
+[ADR 0045](0045-stanowisko-andrzeja-w-tym-samym-centrum.md) (jedna Skrzynka
+Zgłoszeń z prefiksem `ANDRZEJ` dla spraw ze Stanowiska Andrzeja, a pliki
+repozytorium nazywają Andrzeja z imienia zamiast „pracownik taty”).
 
 ## Decyzja
 

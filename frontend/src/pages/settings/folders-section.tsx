@@ -7,11 +7,20 @@ import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Spinner } from "@/components/ui/spinner"
 import { LoadFailure } from "@/components/load-failure"
+import { useInScope, type Declared } from "@/lib/scope"
 import { PATH_FIELDS, THEME_FIELD, useSettings, type PickedPath } from "@/lib/settings"
 import { openOrderRegisterAndConfirm } from "@/pages/periods/open-period-path"
 import { FieldSentence, SettingRow, SettingsPanel } from "@/pages/settings/setting-row"
 
-const ROW_FIELDS = new Set([...Object.values(PATH_FIELDS), THEME_FIELD])
+const PATH_ROWS: ReadonlyArray<Declared & { path: PickedPath; title: string; description: string }> = [
+  { path: "order_register", title: "Rejestr zleceń", description: "Plik INTERMAX, z którego czytają procesy.", function: null },
+  {
+    path: "periods_directory",
+    title: "Folder okresów",
+    description: "Folder, w którym Centrum szuka Folderów okresu.",
+    function: "periods",
+  },
+]
 
 /**
  * Rejestr zleceń i folder okresów: jedyne miejsce, w którym tata je wskazuje (ADR 0032). „Wskaż”/„Zmień” otwiera okno
@@ -20,6 +29,8 @@ const ROW_FIELDS = new Set([...Object.values(PATH_FIELDS), THEME_FIELD])
  */
 export function FoldersSection() {
   const { settings, reload } = useSettings()
+  const rows = useInScope(PATH_ROWS)
+  const rowFields = React.useMemo(() => new Set([...rows.map(({ path }) => PATH_FIELDS[path]), THEME_FIELD]), [rows])
 
   switch (settings.state) {
     case "loading":
@@ -28,14 +39,15 @@ export function FoldersSection() {
       return <LoadFailure what="ustawień" message={settings.message} reload={reload} />
     case "ready": {
       const problem = settings.data.folders_problem
-      const general = problem !== null && !ROW_FIELDS.has(problem.field ?? "") ? problem.message : null
+      const general = problem !== null && !rowFields.has(problem.field ?? "") ? problem.message : null
 
       return (
         <>
           {general === null ? null : <FieldSentence>{general}</FieldSentence>}
           <SettingsPanel label="Foldery">
-            <PathRow path="order_register" title="Rejestr zleceń" description="Plik INTERMAX, z którego czytają procesy." />
-            <PathRow path="periods_directory" title="Folder okresów" description="Folder, w którym Centrum szuka Folderów okresu." />
+            {rows.map(({ path, title, description }) => (
+              <PathRow key={path} path={path} title={title} description={description} />
+            ))}
           </SettingsPanel>
         </>
       )

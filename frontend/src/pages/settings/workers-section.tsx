@@ -74,7 +74,7 @@ export function WorkersSection() {
     case "failed":
       return <LoadFailure what="ustawień" message={settings.message} reload={reload} />
     case "ready":
-      return <WorkerList setting={settings.data.workers} reload={reload} />
+      return settings.data.workers === null ? null : <WorkerList setting={settings.data.workers} reload={reload} />
     default: {
       const unhandled: never = settings
 

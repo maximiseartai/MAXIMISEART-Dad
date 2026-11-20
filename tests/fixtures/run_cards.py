@@ -20,8 +20,6 @@ LIVE_ONLY = ("diagnosis", "report", "files_unchanged", "opens", "order_notes")
 
 
 def restored(live: dict[str, Any], started_at: str) -> dict[str, Any]:
-    """Karta z Logów zakończonego Uruchomienia: karta na żywo bez pól, których Logi nie niosą, i bez liczb postępu."""
-
     result = {key: value for key, value in live["result"].items() if key not in LIVE_ONLY}
     return copy.deepcopy(
         {"state": "restored", "run": live["run"], "started_at": started_at, "phases": live["progress"]["phases"], "result": result}

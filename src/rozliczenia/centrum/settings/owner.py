@@ -17,6 +17,7 @@ from rozliczenia.centrum.contract.quantity_rules import RuleEdit
 from rozliczenia.centrum.device_forms import DeviceEdit
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.centrum.platform import Autostart
+from rozliczenia.centrum.scope import ALWAYS, CentrumFunction, Part, Scope
 from rozliczenia.centrum.settings.activity_legend import LEGEND, Codes, activity_legend, code_ids, legend_refusal
 from rozliczenia.centrum.settings.autostart import AUTOSTART, AutostartPlace, Unsupported
 from rozliczenia.centrum.settings.files import (
@@ -218,6 +219,7 @@ class SettlementMailView:
 
 @dataclass(frozen=True)
 class SettingsView:
+    scope: Scope
     folders: Read[FolderSettings] | Unreadable
     workers: WorkerListRead
     inbox: Read[InboxFile] | Unreadable
@@ -281,11 +283,27 @@ class _ConfigFile:
             replace_atomically(self.path, data, pause=self.pause)
 
 
+@dataclass(frozen=True)
+class _OutsideScope:
+    def unsupported(self) -> FieldProblem | None:
+        return FieldProblem(None, messages.outside_scope())
+
+    def read(self) -> bytes | None | OSError:
+        return None
+
+    def write(self, data: bytes | None) -> None:
+        raise PermissionError(messages.outside_scope())
+
+
+_OUTSIDE: Final = _OutsideScope()
+
+
 class CentrumSettings:
     def __init__(
         self,
         config: Path,
         *,
+        scope: Scope,
         log: CentrumLog,
         now: Callable[[], datetime],
         pause: Callable[[float], None],
@@ -301,13 +319,14 @@ class CentrumSettings:
         self._pause = pause
         self._periods = periods
         self._column_names = column_names
-        self._release_changes = release_changes
+        self._scope = scope
+        self._release_changes = tuple(change for change in release_changes if scope.covers(_PARTS[change.file.name]))
         self._release_origin = release_origin
         self._memory = Memory(config, pause)
         self._history = History(config, pause)
         self._lock = threading.Lock()
         self._absent: dict[str, str] = {}
-        self._places: Mapping[str, _Place] = {
+        places: Mapping[str, _Place] = {
             FOLDERS.name: _ConfigFile(config / FOLDERS.name, pause),
             WORKERS.name: _ConfigFile(config / WORKERS.name, pause),
             REMINDERS.name: _ConfigFile(config / REMINDERS.name, pause),
@@ -319,6 +338,7 @@ class CentrumSettings:
             EXCEPTIONS.name: _ConfigFile(config / EXCEPTIONS.name, pause),
             LEGEND.name: _ConfigFile(config / LEGEND.name, pause),
         }
+        self._places = {name: place if scope.covers(_PARTS[name]) else _OUTSIDE for name, place in places.items()}
 
     def snapshot(self) -> SettingsSnapshot:
         with self._lock:
@@ -368,6 +388,7 @@ class CentrumSettings:
         with self._lock:
             autostart = self._places[AUTOSTART.name].unsupported()
             return SettingsView(
+                scope=self._scope,
                 folders=self._observe(FOLDERS),
                 workers=WorkerListRead(self._observe(WORKERS)),
                 inbox=self._observe(INBOX),
@@ -834,6 +855,8 @@ class CentrumSettings:
         return data if isinstance(data, Unreadable) else self._observed(file, data)
 
     def _observed(self, file: SettingsFile[T], data: bytes | None) -> Read[T]:
+        if self._places[file.name] is _OUTSIDE:
+            return Good(file.default)
         compared = self._compared(file, data)
         absent = self._absent.get(file.name)
         if data is None and absent is not None:
@@ -942,6 +965,18 @@ _FILES: Final[Mapping[str, SettingsFile[Any]]] = {
     INBOX.name: INBOX,
 }
 _UNDOABLE: Final[Mapping[str, SettingsFile[Any]]] = {name: file for name, file in _FILES.items() if not file.secret}
+_PARTS: Final[Mapping[str, Part]] = {
+    FOLDERS.name: ALWAYS,
+    WORKERS.name: CentrumFunction.WORKERS,
+    REMINDERS.name: CentrumFunction.REMINDERS,
+    SETTLEMENT_MAIL.name: CentrumFunction.SETTLEMENT_MAILING,
+    AUTOSTART.name: CentrumFunction.AUTOSTART,
+    DEVICES.name: CentrumFunction.QUANTITIES,
+    RULES.name: CentrumFunction.QUANTITIES,
+    EXCEPTIONS.name: CentrumFunction.QUANTITIES,
+    LEGEND.name: CentrumFunction.QUANTITIES,
+    INBOX.name: CentrumFunction.REPORT_INBOX,
+}
 _SECTION: Final = re.compile(r"[.\[]")
 
 
