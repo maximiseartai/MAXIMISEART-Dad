@@ -7,10 +7,11 @@ from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, NoReturn
+import os
 
 import pytest
 
-from rozliczenia import tool_files
+from rozliczenia import tool_files, workbook_files
 from rozliczenia.centrum import tool_freshness
 
 from rozliczenia.centrum.configuration import ConfigurationFiles
@@ -113,6 +114,40 @@ def test_niezmieniony_wzorzec_z_problemem_tresci_jest_sprawdzany_raz(tmp_path: P
 
     assert sorted(checked) == sorted([INTERNAL, COLLECTIVE, WORKER])
     assert second["templates"] == first["templates"]
+
+
+def _saved_again_with_same_size(path: Path) -> None:
+    moment = path.stat().st_mtime_ns + 1_000_000_000
+    os.utime(path, ns=(moment, moment))
+
+
+def _opened_in_excel(path: Path) -> None:
+    workbook_files.excel_lock_file(path).write_bytes(b"")
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        pytest.param(_saved_again_with_same_size, id="nowa-chwila-zapisu-ten-sam-rozmiar"),
+        pytest.param(_opened_in_excel, id="plik-blokady-excela"),
+    ],
+)
+def test_gotowy_wzorzec_jest_sprawdzany_znowu_po_zapisie_albo_otwarciu_w_excelu(
+    tmp_path: Path, change: Callable[[Path], None]
+) -> None:
+    checked: list[str] = []
+
+    def counting(template: TemplateFile) -> None:
+        checked.append(template.path.name)
+        template.check()
+
+    app = configured(tmp_path, template_check=counting)
+    read_configuration(app)
+    change(app.files.worker_template)
+
+    read_configuration(app)
+
+    assert checked.count(WORKER) == 2
 
 
 INACCESSIBLE_TEMPLATE = (

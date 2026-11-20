@@ -1,25 +1,3 @@
-"""Wysyłka rozliczeń w Centrum (ADR 0040): strona z Rozliczeniami pracowników ostatnich okresów i stanem każdego,
-podgląd Maili z rozliczeniem i wysyłka jednego maila na żądanie taty.
-
-Odczyt strony bierze migawkę Ustawień (folder okresów, Lista Wykonawców, temat i treść, stopka Przypomnień o raporcie),
-listuje Foldery rozliczeń pracowników ostatnich ``MAILING_PERIODS`` okresów, które je mają, i czyta „Wysłane” skrzynki
-raportów od wtorku najstarszego z nich (``SettlementMailbox.sent_attachments``). Stan każdego pliku liczy
-``settlement_mailing.mailing_state``; Szablon pracownika czyta tylko plik, który jeszcze nie poszedł, i tylko kolumnę
-``WYKONAWCA`` z XML (``workbook_files.collective_workers``), z pamięcią po chwili zmiany pliku. Skrzynki, której nie da
-się przeczytać, strona nie zgaduje: mówi o niej jednym zdaniem, plik do wysłania ma stan nieznany i wysyłka jest
-wyłączona. Pliku Ustawień, którego system nie daje teraz czytać (Foldery, temat i treść, Przypomnienia o raporcie),
-strona, podgląd i wysyłka też nie zgadują: każde odmawia o tym pliku (``_inputs``), a temat i treść bez wartości taty,
-którą przyjmuje dzisiejsza reguła, zdaniem złej treści, co poprawić w Ustawieniach.
-
-Wysyłka idzie po jednym mailu pod jedną blokadą: przed każdym mailem znowu czyta „Wysłane” od wtorku okresu, więc
-plik już wysłany i niezmieniony nie idzie drugi raz (podwójne kliknięcie, ponowienie, druga karta), a zmieniony idzie
-tylko z ``resend``. Maile wysłane w tej pracy Centrum pamięta też w pamięci procesu, bo Gmail kładzie mail w „Wysłanych”
-z opóźnieniem; porażkę ostatniej wysyłki pliku tak samo. Nie ma pliku stanu w ``config``. Plik Wykonawcy X idzie
-tylko na adresy Wykonawcy X z Listy Wykonawców, także Nieaktywnego.
-
-Dziennik Centrum dostaje token okresu i przyczynę porażki, bez adresów, nazw Wykonawców, nazw plików, tematu i treści.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -77,10 +55,8 @@ from rozliczenia.worker_report_inbox import (
 )
 
 MAILING_PERIODS: Final = 12
-"""Ile ostatnich okresów z Rozliczeniami pracowników pokazuje strona Wysyłka rozliczeń."""
 
 _Key = tuple[str, str]
-"""Okres (token) i nazwa pliku po NFC i ``casefold``."""
 
 
 def _key(token: str, name: str) -> _Key:
@@ -89,16 +65,12 @@ def _key(token: str, name: str) -> _Key:
 
 @dataclass(frozen=True)
 class _Inputs:
-    """Ustawienia, z których liczy się strona i mail: Wykonawcy, temat i treść, stopka Przypomnień o raporcie."""
-
     workers: tuple[Worker, ...]
     mail: SettlementMailSettings
     footer: str
 
 
 class SettlementMailing:
-    """Wysyłka rozliczeń jednej pracy Centrum; ``now`` daje chwilę maila ze strefą taty."""
-
     def __init__(
         self,
         work: CentrumWork,
@@ -119,8 +91,6 @@ class SettlementMailing:
         self._orders: dict[tuple[Path, datetime | None], bool] = {}
 
     def view(self) -> contract.SettlementMailing:
-        """Okresy z Rozliczeniami pracowników od najnowszego i stan każdego pliku."""
-
         snapshot = self._settings.snapshot()
         directory = snapshot.folders.periods_directory
         if directory is None:
@@ -152,9 +122,6 @@ class SettlementMailing:
         )
 
     def previews(self, token: str, choice: contract.MailingChoice) -> contract.MailPreviews:
-        """Maile z rozliczeniem zaznaczonych plików okresu ``token`` w kolejności zaznaczenia; plik, który nie ma
-        Wykonawcy z adresem, nie ma maila."""
-
         folder = requested_folder(self._settings, token)
         inputs = self._usable_inputs()
         entries = folder.worker_settlement_entries()
@@ -167,8 +134,6 @@ class SettlementMailing:
         return contract.MailPreviews(mails=mails)
 
     def send(self, token: str, request: contract.MailingSend) -> contract.MailingSent:
-        """Jeden Mail z rozliczeniem; plik, którego nie można teraz wysłać, wraca z wierszem bez wysyłki."""
-
         folder = requested_folder(self._settings, token)
         with self._send_lock:
             inputs = self._usable_inputs()
@@ -276,8 +241,6 @@ class SettlementMailing:
         return _row(folder, entry, worker, self._state(folder, entry, worker, sent))
 
     def _unknown_row(self, folder: PeriodFolder, entry: WorkerSettlementFile, inputs: _Inputs) -> contract.MailingRow:
-        """Wiersz bez „Wysłanych”: stan, który zależy od skrzynki, jest nieznany i nie da się go wysłać."""
-
         worker = listed_worker(entry.worker, inputs.workers)
         if worker is None or not worker.addresses:
             return _row(folder, entry, worker, NotListed() if worker is None else NoAddress())
@@ -308,9 +271,6 @@ class SettlementMailing:
         )
 
     def _has_orders(self, entry: WorkerSettlementFile) -> bool:
-        """Czy Rozliczenie pracownika ma Wiersze danych: Wykonawca w ``WYKONAWCA`` od pierwszego Wiersza danych. Plik,
-        którego nie da się przeczytać, liczy się jako plik ze zleceniami: lepiej go pokazać, niż ukryć."""
-
         stamp = (entry.path, entry.modified_at)
         with self._lock:
             known = self._orders.get(stamp)
@@ -327,13 +287,6 @@ class SettlementMailing:
 
 
 def _inputs(snapshot: SettingsSnapshot) -> _Inputs | None:
-    """Jedyna droga od migawki Ustawień do wejść strony, podglądu i wysyłki, więc mail z podglądu jest mailem, który
-    pójdzie. Plik tematu i treści, Przypomnień o raporcie albo Listy Wykonawców, którego system nie daje teraz czytać,
-    to odmowa o tym pliku (``refusal.settings_file_unreadable``) jak przy Folderach, a nie mail z treścią z Wydania bez stopki taty, a
-    temat i treść bez wartości taty, którą przyjmuje dzisiejsza reguła, to odmowa zdaniem złej treści
-    (``refusal.settlement_mail_unusable``), a nie mail z tematem i treścią z Wydania; ``None``: zła Lista Wykonawców
-    bez ostatniej dobrej."""
-
     mail, reminders = snapshot.settlement_mail, snapshot.reminders
     workers = snapshot.workers.counted_or_unreadable()
     if isinstance(workers, Unreadable):
@@ -395,8 +348,6 @@ def _shown(state: MailingState) -> contract.MailingState:
 
 
 def _utc(moment: datetime) -> datetime:
-    """Chwila dla przeglądarki w UTC, jak każda chwila kontraktu: przeglądarka przyjmuje tylko zapis z „Z”."""
-
     return moment.astimezone(timezone.utc)
 
 
@@ -415,8 +366,6 @@ def _cause(outcome: PasswordRejected | InboxUnreachable) -> str | None:
 
 
 def settlement_mailing_router(mailing: SettlementMailing) -> APIRouter:
-    """Trasy strony Wysyłka rozliczeń: odczyt, podgląd zaznaczonych maili i wysyłka jednego."""
-
     router = APIRouter(prefix="/api/settlement-mailing", tags=["wysylka-rozliczen"])
 
     @router.get("", operation_id="getSettlementMailing", responses={409: {"model": common_contract.Problem}})

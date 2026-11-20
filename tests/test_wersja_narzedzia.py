@@ -1,5 +1,3 @@
-"""Wersja narzędzia z prawdziwego klonu Gita: dzień przejścia na commit z reflogu i wersja z chwili startu Centrum."""
-
 from __future__ import annotations
 
 from datetime import date
@@ -12,12 +10,11 @@ import pytest
 from rozliczenia.centrum.tool_freshness import ToolFreshness
 from rozliczenia.centrum.version import commit_since, tool_commit
 
-# Kwadrans po północy czasu polskiego to jeszcze poprzedni dzień w UTC: liczy się dzień na komputerze taty.
-SWITCHED = "2026-10-13T00:15:00+02:00"
+SWITCHED_AFTER_MIDNIGHT_IN_POLAND = "2026-10-13T00:15:00+02:00"
 OTHER = "9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c4d3e2f1a0b"
 
 
-def _git(directory: Path, *arguments: str, when: str = SWITCHED) -> None:
+def _git(directory: Path, *arguments: str, when: str = SWITCHED_AFTER_MIDNIGHT_IN_POLAND) -> None:
     try:
         subprocess.run(
             ["git", "-c", "user.name=Maks", "-c", "user.email=maks@example.invalid", *arguments],
@@ -46,7 +43,22 @@ def test_klon_jest_na_commicie_od_dnia_ostatniego_przejscia(tmp_path: Path) -> N
     clone = tmp_path / "narzedzie"
     commit = _clone(clone)
 
-    assert commit_since(commit, clone) == date(2026, 10, 13)
+    assert commit_since(commit, clone) == date(2026, 10, 13), "w UTC to 12.10: dzień liczy się w strefie komputera taty"
+
+
+def test_wersja_i_dzien_przejscia_pochodza_z_plikow_gita_bez_uruchamiania_gita(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clone = tmp_path / "narzedzie"
+    commit = _clone(clone)
+
+    def started(*arguments: object, **options: object) -> None:
+        raise AssertionError(f"wersja narzędzia uruchomiła {arguments[:1]}: Centrum działa bez konsoli, a Git nie musi być w PATH")
+
+    monkeypatch.setattr(subprocess, "Popen", started)
+    monkeypatch.setenv("PATH", "")
+
+    assert (tool_commit(clone), commit_since(commit, clone)) == (commit, date(2026, 10, 13))
 
 
 def test_katalog_roboczy_worktree_ma_wlasny_dzien(tmp_path: Path) -> None:

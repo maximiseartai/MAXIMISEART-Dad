@@ -1111,6 +1111,16 @@ def test_podpowiedzi_listy_urzadzen_to_zapisy_zlecen_bez_reguly_z_ostatnich_okre
     assert centrum.client.get(SUGGESTIONS_URL).json() == {"suggestions": [{"spelling": "ont x", "orders": 1}], "unread": []}
 
 
+def test_podpowiedz_listy_urzadzen_liczy_zlecenie_raz_choc_zapis_stoi_w_nim_dwa_razy(tmp_path: Path) -> None:
+    twice: dict[str, CellValue] = {"C": "u", "D": "ont x nokia ont x", "G": MON.replace(hour=10), "T": 1}
+    centrum = centrum_with(tmp_path, [*TATA_ROWS, twice])
+    run_to_end(centrum, dry_run=False)
+
+    suggested = centrum.client.get(SUGGESTIONS_URL).json()["suggestions"]
+
+    assert {"spelling": "ont x", "orders": 1} in suggested, suggested
+
+
 @pytest.mark.parametrize("unreadable", [RULES_FILE, DEVICES_FILE])
 def test_podpowiedzi_listy_urzadzen_przy_pliku_pary_bez_odczytu_sa_puste_a_nie_liczone_lista_z_wydania(
     tmp_path: Path, unreadable: str
