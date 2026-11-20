@@ -419,6 +419,7 @@ Wartość w tej kolumnie jest identyfikatorem źródłowym, który nie musi być
 
 Część Ustawień Centrum: każdy Wykonawca z identyfikatorem z kolumny `WYKONAWCA` (H), nazwą w Rozliczeniu pracownika i adresami, z których wysyła Raporty wykonawcy.
 Wspólna dla Przebiegu rozliczeń, Przygotowania pliku zbiorczego, Wpisania raportów, Przypomnień o raporcie i Wysyłki rozliczeń.
+Złą treść jej pliku daje tylko ręczna zmiana Maksa w `config`, więc poprawia ją Maks: zmiana taty w sekcji Wykonawcy zapisałaby plik od nowa z ostatniej dobrej listy, a treść Maksa odłożyła do `odrzucone`.
 _Avoid_: Konfiguracja wykonawców, lista adresów Wykonawców, pracownicy
 
 ## Nieaktywny Wykonawca
@@ -430,7 +431,7 @@ _Avoid_: usunięty Wykonawca, były pracownik
 ## Historia Ustawień
 
 Każda zmiana Ustawień Centrum: kiedy, co i jaka była wartość przed i po, bez wartości sekretów.
-Z niej tata cofa zmianę, a Zgłoszenie podaje zmiany z ostatnich 30 dni.
+Z niej tata cofa zmianę, a Zgłoszenie podaje zmiany z ostatnich 30 dni; wierszy Historii nikt nie usuwa ani nie przycina.
 _Avoid_: log ustawień, dziennik konfiguracji
 
 ## Szablon pracownika

@@ -22,8 +22,6 @@ ENDED = "zlecenie skończone"
 
 
 def start_line(start: StartFacts) -> Line:
-    """Pierwsza linia dziennika: start Uruchomienia."""
-
     return {
         "entry": "start Uruchomienia",
         "run_id": start.run_id,
@@ -35,8 +33,6 @@ def start_line(start: StartFacts) -> Line:
 
 
 def begun_line(at: datetime, *, row: int, place: int, total: int) -> Line:
-    """„Zaczynam zlecenie” z wiersza ``row``, ``place`` z ``total`` w przebiegu."""
-
     return {"at": at.isoformat(), "entry": BEGUN, "row": row, "place": place, "total": total}
 
 
@@ -45,8 +41,6 @@ def ended_line(at: datetime, order: LoggedOrder) -> Line:
 
 
 def end_line(at: datetime) -> Line:
-    """„Koniec Uruchomienia” sprzed #910, bez wyniku."""
-
     return {"at": at.isoformat(), "entry": "koniec Uruchomienia"}
 
 

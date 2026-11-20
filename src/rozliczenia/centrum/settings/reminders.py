@@ -1,15 +1,3 @@
-"""Przypomnienia o raporcie w pliku ``przypomnienia.yaml`` (schemat 1): czy idą, od którego dnia, pory, godzina
-pierwszego przypomnienia, pierwsze zdanie treści i stopka taty (ADR 0032, zmienia ADR 0030).
-
-Kształt pliku sprawdza ``parse`` (mapa, schemat, znane pola, typy, godziny ``GG:MM``), a reguły ustawień przypomnień
-``ReminderSettings.of``, ta sama budowa co w rdzeniu raportów. Brak pliku i pole, którego w pliku nie ma, to wartości
-domyślne z ADR 0030 (``DEFAULT_REMINDERS``): bez pliku przypomnienia są wyłączone, tak jak przed Wydaniem bez dnia
-wdrożenia. Godziny stoją w pliku jako tekst w cudzysłowie, bo YAML czyta ``08:00`` bez cudzysłowu jako liczbę.
-
-Klucz Historii to ``przypomnienia.<pole>``, a pora ma wartość ``08:00–17:00``. Zgłoszenie podaje wartości wszystkich pól
-oprócz stopki, która ma imię i telefon taty: przy niej tylko, że się zmieniła.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -32,7 +20,6 @@ from rozliczenia.worker_reports import (
 )
 
 REMINDERS_FILE: Final = "przypomnienia.yaml"
-"""Plik Przypomnień o raporcie w ``config``; czyta go i pisze tylko ``rozliczenia.centrum.settings``."""
 
 SECTION: Final = "przypomnienia"
 _SCHEMA_VERSION: Final = 1
@@ -47,14 +34,10 @@ START: Final[FieldName] = "od"
 END: Final[FieldName] = "do"
 _KEYS: Final = (ENABLED, SINCE, MORNING, EVENING, FIRST, TEXT, FOOTER)
 _TIME: Final = re.compile(r"(?P<hour>[01]?[0-9]|2[0-3]):(?P<minute>[0-5][0-9])")
-"""Godzina z pliku albo formularza: ``08:00`` i ``8:00`` (tata pisze godzinę bez zera), w pliku zawsze ``GG:MM``."""
 _RANGE: Final = " – "
-"""Między początkiem a końcem pory w wartości klucza Historii (``08:00 – 17:00``)."""
 
 
 def parse(data: bytes | None) -> ReminderSettings | FieldProblem:
-    """Przypomnienia z bajtów pliku; ``None`` (brak pliku) to wartości domyślne, zła treść to pierwszy problem."""
-
     if data is None:
         return DEFAULT_REMINDERS
     try:
@@ -101,8 +84,6 @@ def _settings(document: Mapping[object, object]) -> ReminderSettings | FieldProb
 def settings_of(
     enabled: bool, since: date | None, schedule: ReminderSchedule, text: str, footer: str
 ) -> ReminderSettings | FieldProblem:
-    """``ReminderSettings.of`` z problemem jako polem pliku i zdaniem dla taty: ta sama reguła dla pliku i formularza."""
-
     built = ReminderSettings.of(enabled, since, schedule, text, footer)
     if isinstance(built, ReminderProblem):
         place, sentence = _PROBLEMS[built.kind]
@@ -112,28 +93,19 @@ def settings_of(
 
 @dataclass(frozen=True)
 class SwitchReminders:
-    """Przełącznik Przypomnień o raporcie; ``today``: dzień taty, który pierwsze włączenie zapisuje jako dzień
-    wdrożenia."""
-
     enabled: bool
     today: date
 
 
 @dataclass(frozen=True)
 class ChangeReminders:
-    """Formularz Przypomnień przeczytany regułą pliku (``settings_of``); zapis bierze z niego tylko pola formularza."""
-
     form: ReminderSettings
 
 
 RemindersEdit = SwitchReminders | ChangeReminders
-"""Zmiana taty Przypomnień o raporcie, którą zapisuje właściciel Ustawień (``dad_reminders``)."""
 
 
 def dad_reminders(current: ReminderSettings, edit: RemindersEdit) -> ReminderSettings:
-    """Przypomnienia po zmianie taty ``edit``. Pierwsze włączenie ustawia dzień wdrożenia na dziś, a ponowne zostawia
-    dawny, bo okno dni i tak kończy się na okresach z Plikiem zbiorczym; formularz zostawia przełącznik."""
-
     match edit:
         case SwitchReminders(enabled=enabled, today=today):
             since = current.since or today if enabled else current.since
@@ -155,8 +127,6 @@ _PROBLEMS: Final[Mapping[ReminderProblemKind, tuple[FieldPath, Callable[[], str]
 
 
 def parse_time(value: object, place: FieldPath) -> time | FieldProblem:
-    """Godzina ``GG:MM`` (także ``G:MM``) z pliku albo formularza; inna wartość to zdanie przy polu ``place``."""
-
     found = _TIME.fullmatch(value.strip()) if isinstance(value, str) else None
     if found is None:
         return FieldProblem(place, messages.reminders_time())
@@ -164,8 +134,6 @@ def parse_time(value: object, place: FieldPath) -> time | FieldProblem:
 
 
 def parse_range(start: object, end: object, key: FieldName) -> TimeRange | FieldProblem:
-    """Pora z godzin początku i końca; godzina, która nie jest ``GG:MM``, to zdanie przy jej polu."""
-
     found_start = parse_time(start, FieldPath(key, START))
     if isinstance(found_start, FieldProblem):
         return found_start
@@ -231,9 +199,6 @@ def diff(before: ReminderSettings, after: ReminderSettings) -> tuple[KeyChange, 
 
 
 def restore(settings: ReminderSettings, changes: tuple[KeyChange, ...]) -> ReminderSettings:
-    """``settings`` z każdym kluczem ``changes`` ustawionym na wartość sprzed zmiany; nieznany klucz i wartość, której
-    nie da się przeczytać, zostają bez zmian, a całość sprawdza właściciel jak każdą zmianę."""
-
     restored = settings
     for change in changes:
         section, _, key = change.key.partition(".")
@@ -271,8 +236,6 @@ def _restored(settings: ReminderSettings, key: str, value: str | None) -> Remind
 
 
 def reported(change: KeyChange) -> str:
-    """Zmiana w Zgłoszeniu: wartości wprost, a stopka, która ma dane taty, samym znacznikiem zmiany."""
-
     if change.key == f"{SECTION}.{FOOTER}":
         return f"{change.key}: zmieniono"
     return f"{change.key}: {_reported_value(change.before)} → {_reported_value(change.after)}"

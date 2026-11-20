@@ -1,14 +1,3 @@
-"""Interfejs HTTP Ustawień Centrum: odczyt wszystkich sekcji, zapis sekcji Foldery, wybór Rejestru zleceń i folderu
-okresów oknem wyboru, zmiana motywu, zmiana hasła skrzynki raportów z próbą logowania, przełącznik startu razem
-z Windows, Przypomnienia o raporcie i temat z treścią Maila z rozliczeniem z podglądem maila, Historia Ustawień i cofnięcie jej wiersza. Hasła skrzynki nie ma
-w żadnej odpowiedzi. Otwarcie Rejestru zleceń niczego w Ustawieniach nie zapisuje, więc ma własny router
-(``order_register_router``).
-
-Pliki Ustawień, ich Historia i reguły zapisu należą do ``settings``; tu są tylko żądania przeglądarki i ich odmowy:
-zła wartość to 422 z polem, plik albo Historia, których nie da się przeczytać albo zapisać, to 500, a wiersz Historii
-bez „Cofnij” to 404.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -77,21 +66,17 @@ from rozliczenia.worker_reports import (
 )
 
 _SAMPLE_WORKER = "Jan Kowalski"
-"""Wykonawca podglądu Maila z rozliczeniem, gdy Lista Wykonawców jest pusta."""
 _REGISTER_DIALOG = "Wybierz plik Rejestru zleceń"
 _REGISTER_FILETYPES = (("Rejestr zleceń Excel", "ZLECENIA*.xlsx"), ("Excel", "*.xlsx"))
 _PERIODS_DIALOG = "Wybierz folder okresów (np. Załączniki albo INEA)"
 _REFUSED: dict[int | str, dict[str, object]] = {
     422: {"model": common_contract.Problem, "description": "Zła wartość Ustawień Centrum z polem i zdaniem"}
 }
-"""Odmowa w OpenAPI: zła wartość (422) jako ``Problem``."""
 _NOT_UNDOABLE: dict[int | str, dict[str, object]] = {
     404: {"model": common_contract.Problem},
     409: {"model": common_contract.Problem},
     **_REFUSED,
 }
-"""Odmowy „Cofnij” w OpenAPI, wszystkie jako ``Problem``: zła wartość (422), wiersz Historii bez „Cofnij” (404) i „Cofnij”,
-które usunęłoby z Listy Wykonawców login z okresu (409)."""
 
 
 def settings_router(
@@ -101,11 +86,6 @@ def settings_router(
     today: Callable[[], date],
     rule_sentences: Callable[[], Callable[[str, str | None], list[SentencePart] | None]],
 ) -> APIRouter:
-    """``inbox_login`` to jedna próba logowania do skrzynki raportów z bieżącym plikiem dostępu, ``today`` dzień taty:
-    pierwsze włączenie Przypomnień o raporcie zapisuje go jako dzień wdrożenia, a podgląd pokazuje przypomnienie za dzień
-    przed nim, a ``rule_sentences`` daje na jeden odczyt Historii zdanie reguły ilości z wartości jej klucza
-    (``quantity_rules_router.history_sentences``)."""
-
     router = APIRouter(prefix="/api/settings", tags=["ustawienia"])
 
     def saved(edit: FoldersEdit) -> settings_contract.Choice:
@@ -233,10 +213,6 @@ def settings_router(
 
 
 def choice(settings: CentrumSettings, result: Saved | Refused | NotSaved | KeptInPeriods) -> settings_contract.Choice:
-    """Ustawienia po zapisie z id wiersza Historii; zła wartość to odmowa z polem, plik, którego nie da się przeczytać
-    albo zapisać, to odmowa z własnym tekstem, a usunięcie loginu z okresu z Listy Wykonawców to 409 z propozycją
-    Nieaktywnego."""
-
     match result:
         case Saved(change=change):
             return settings_contract.Choice(settings=describe(settings.view()), change=change)
@@ -251,9 +227,6 @@ def choice(settings: CentrumSettings, result: Saved | Refused | NotSaved | KeptI
 
 
 def _form(form: reminders_contract.RemindersForm) -> ReminderSettings | FieldProblem:
-    """Formularz Przypomnień tą samą regułą co plik: godziny ``GG:MM``, potem reguły ustawień przypomnień. Przełącznik
-    ma osobny zapis, więc formularz sprawdza się jako wyłączony; zapis bierze z niego tylko pola formularza."""
-
     morning = parse_range(form.morning.start, form.morning.end, MORNING)
     if isinstance(morning, FieldProblem):
         return morning
@@ -271,8 +244,6 @@ def _path(value: str | None) -> Path | None:
 
 
 def describe(view: SettingsView) -> settings_contract.Settings:
-    """Ustawienia Centrum dla przeglądarki: przy złym pliku ostatnie dobre wartości i zdanie o problemie."""
-
     workers = _workers(view.workers.shown())
     inbox_setting, inbox_problem = _describe_inbox(view.inbox)
     autostart = _describe_autostart(view.autostart)
@@ -317,9 +288,6 @@ def describe(view: SettingsView) -> settings_contract.Settings:
 def _describe_inbox(
     read: Read[InboxFile] | Unreadable,
 ) -> tuple[settings_contract.InboxSetting, settings_workers_contract.SettingProblem | None]:
-    """Adres skrzynki i to, czy jest hasło, bez wartości hasła; zła treść ma zdanie o problemie i dobry adres z niej
-    (przy złym starym haśle tata wpisuje nowe), a nieczytelna to skrzynka bez nich."""
-
     match read:
         case Good(value=found):
             return _inbox_setting(found), None
@@ -338,8 +306,6 @@ def _inbox_setting(found: InboxFile | None) -> settings_contract.InboxSetting:
 
 
 def _workers(shown: ShownWorkers) -> settings_workers_contract.WorkerListSetting:
-    """Lista Wykonawców w kolejności z pliku; przy złym pliku ostatnia dobra (bez niej pusta) i zdanie o problemie."""
-
     bad = shown.problem
     return settings_workers_contract.WorkerListSetting(
         state=shown.state,
@@ -369,8 +335,6 @@ def _unresolved(item: Unresolved) -> settings_workers_contract.UnmatchedLogin | 
 
 
 def _reminders(read: Read[ReminderSettings] | Unreadable) -> reminders_contract.RemindersSetting:
-    """Przypomnienia o raporcie; przy złym pliku ostatnie dobre (bez nich domyślne) i zdanie o problemie."""
-
     match read:
         case Good(value=found):
             state: Literal["good", "bad", "unreadable"] = "good"
@@ -395,9 +359,6 @@ def _reminders(read: Read[ReminderSettings] | Unreadable) -> reminders_contract.
 
 
 def _settlement_mail(view: SettlementMailView) -> mailing_contract.SettlementMailSetting:
-    """Temat i treść Maila z rozliczeniem w polach, jak je daje właściciel (``SettlementMailView.shown``), i przy złym
-    pliku zdanie o problemie."""
-
     match view.read:
         case Good():
             state: Literal["good", "bad", "unreadable"] = "good"
@@ -441,9 +402,6 @@ def _describe_path(path: Path | None, state: SettingState) -> settings_contract.
 
 
 def _row(row: HistoryRow, sentence: Callable[[str, str | None], list[SentencePart] | None]) -> settings_contract.HistoryRow:
-    """Wiersz Historii dla przeglądarki; chwila taty idzie w UTC, jak każda chwila kontraktu, bo przeglądarka przyjmuje
-    tylko zapis z „Z”."""
-
     return settings_contract.HistoryRow(
         id=row.id,
         at=row.at.astimezone(timezone.utc),
@@ -467,8 +425,6 @@ def _row(row: HistoryRow, sentence: Callable[[str, str | None], list[SentencePar
 def _rule_changes(
     row: HistoryRow, sentence: Callable[[str, str | None], list[SentencePart] | None]
 ) -> list[settings_contract.HistoryRuleChange]:
-    """Zmienione reguły ilości wiersza jako zdania przed i po; klucz, którego wartości nie są regułą, się nie pokazuje."""
-
     found: list[settings_contract.HistoryRuleChange] = []
     for change in row.changes:
         before, after = sentence(change.key, change.before), sentence(change.key, change.after)

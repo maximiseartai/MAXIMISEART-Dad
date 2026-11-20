@@ -1,12 +1,3 @@
-"""Foldery i motyw: Rejestr zleceń, folder okresów i motyw w pliku ``centrum-ustawienia.yaml`` (schemat 1).
-
-Zapisana ścieżka jest pełna (Rejestr zleceń to plik ``.xlsx``), a motyw jest ciemny albo jasny. Klucz, którego w pliku
-nie ma, ma wartość domyślną, a klucz spoza schematu to zła treść, tak jak inny schemat albo uszkodzony YAML.
-
-Folder okresów wskazany przez tatę zapisuje się od folderu, od którego Centrum liczy układ folderów taty
-(``periods_directory_root``, ADR 0032), więc ustawienie nie zależy od jednego tygodnia, ``INEA`` ani miesiąca.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
@@ -22,7 +13,6 @@ from rozliczenia.file_state import PathState, path_state
 from rozliczenia.period_folder import PeriodFolderInaccessible, layout_root
 
 SETTINGS_FILE: Final = "centrum-ustawienia.yaml"
-"""Plik Rejestru zleceń, folderu okresów i motywu w ``config``; czyta go i pisze tylko ``rozliczenia.centrum.settings``."""
 
 Theme = Literal["dark", "light"]
 THEMES: Final[tuple[Theme, ...]] = ("dark", "light")
@@ -30,13 +20,11 @@ DEFAULT_THEME: Final[Theme] = "dark"
 _SCHEMA_VERSION: Final = 1
 
 SettingState = Literal["not_set", "present", "missing", "inaccessible"]
-"""Ścieżka z Ustawień Centrum: niewskazana, jest, nie ma jej albo jest niedostępna (np. folder bez dostępu)."""
 
 REGISTER: Final = "rejestr_zlecen"
 PERIODS_DIRECTORY: Final = "folder_okresow"
 THEME: Final = "motyw"
 _SECTIONS: Final[Mapping[str, str]] = {REGISTER: "foldery", PERIODS_DIRECTORY: "foldery", THEME: "wyglad"}
-"""Sekcja okna Ustawień każdego klucza pliku; klucz Historii to ``sekcja.klucz``."""
 
 
 @dataclass(frozen=True)
@@ -55,21 +43,14 @@ class FolderSettings:
 
     @property
     def register_to_read(self) -> Path | None:
-        """Wskazany Rejestr zleceń, którego nie brakuje; niedostępny też, bo o niedostępności mówi dopiero jego odczyt."""
-
         return self.register if self.register_state in _TO_READ else None
 
     @property
     def periods_directory_to_read(self) -> Path | None:
-        """Wskazany folder okresów, którego nie brakuje; niedostępny też, bo o niedostępności mówi dopiero jego odczyt."""
-
         return self.periods_directory if self.periods_directory_state in _TO_READ else None
 
     @property
     def periods_directory_all_years(self) -> bool:
-        """Folder okresów jest i jest korzeniem układu folderów taty, czyli Centrum widzi z niego Foldery okresu
-        wszystkich lat w ``Rozliczenia {rok}``."""
-
         if self.periods_directory is None or self.periods_directory_state != "present":
             return False
         try:
@@ -80,9 +61,6 @@ class FolderSettings:
 
 
 def periods_directory_root(path: Path) -> Path:
-    """Folder okresów, który zapisuje się, gdy tata wskaże ``path``: korzeń układu folderów taty (``layout_root``), w
-    układzie płaskim i w folderze bez dostępu sam ``path``."""
-
     try:
         return layout_root(path).directory
     except PeriodFolderInaccessible:
@@ -91,8 +69,6 @@ def periods_directory_root(path: Path) -> Path:
 
 @dataclass(frozen=True)
 class ChangeFolders:
-    """Sekcja Foldery odsyła obie ścieżki naraz (``None``: niewskazana)."""
-
     register: Path | None
     periods_directory: Path | None
 
@@ -113,17 +89,9 @@ class ChangeTheme:
 
 
 FoldersEdit = ChangeFolders | ChooseRegister | ChoosePeriodsDirectory | ChangeTheme
-"""Zmiana taty pliku Folderów i motywu, którą zapisuje właściciel Ustawień (``dad_folders``)."""
 
 
 def dad_folders(edit: FoldersEdit, before: Path | None) -> Callable[[FolderSettings], FolderSettings]:
-    """Zmiana taty ``edit`` jako Foldery po niej z bieżących. Wskazany na nowo folder okresów zapisuje się od korzenia
-    układu (``periods_directory_root``), który listuje folder okresów, każdy rok i miesiąc w OneDrive taty, więc liczy
-    się tu, w wywołaniu, a nie w zwróconej zmianie, którą właściciel woła pod blokadą. Folder, który sekcja odesłała bez
-    zmiany, zostaje, jaki jest (np. tydzień, do którego tata cofnął zmianę z Wydania), i nie listuje się, gdy jest taki
-    jak ``before`` (folder okresów przeczytany przed blokadą); Foldery zmienione między tym odczytem a blokadą liczą
-    korzeń dopiero pod nią."""
-
     match edit:
         case ChangeFolders(register=register, periods_directory=periods_directory):
             listed = None if periods_directory is None or periods_directory == before else periods_directory_root(periods_directory)
@@ -159,8 +127,6 @@ def _setting_state(path: Path | None, kind: Literal["file", "folder"]) -> Settin
 
 
 def parse(data: bytes | None) -> FolderSettings | FieldProblem:
-    """Foldery i motyw z bajtów pliku; ``None`` (brak pliku) to wartości domyślne, zła treść to pierwszy problem."""
-
     if data is None:
         return FolderSettings()
     try:
@@ -219,8 +185,6 @@ def diff(before: FolderSettings, after: FolderSettings) -> tuple[KeyChange, ...]
 
 
 def restore(settings: FolderSettings, changes: tuple[KeyChange, ...]) -> FolderSettings:
-    """``settings`` z każdym kluczem ``changes`` ustawionym na wartość sprzed zmiany; nieznany klucz zostaje bez zmian."""
-
     values = _values(settings)
     for change in changes:
         section, _, key = change.key.partition(".")
@@ -240,9 +204,6 @@ def _theme(value: object) -> Theme | None:
 
 
 def reported(change: KeyChange) -> str:
-    """Zmiana klucza w Zgłoszeniu: ścieżka tylko nazwą pliku albo ostatniego folderu (jak w Komunikatach), bo pełna
-    ścieżka ma nazwę konta taty; motyw wprost."""
-
     return f"{change.key}: {_shown(change.key, change.before)} → {_shown(change.key, change.after)}"
 
 

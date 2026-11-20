@@ -1,12 +1,3 @@
-"""Historia Ustawień w ``config/historia-ustawien.jsonl``: jeden wiersz JSON na jeden zapis, dopisywany linia po linii.
-
-Wiersz mówi, kiedy, skąd (tata, zmiana z Wydania albo zmiana spoza Centrum), który plik i które klucze się zmieniły,
-z wartością przed i po (sekret bez wartości), czy da się go cofnąć, czy zmiana utworzyła albo usunęła plik i czy zmiana weszła (``zapisano``)
-albo została odrzucona z powodem.
-Linia, której nie da się przeczytać (np. urwana zgaśnięciem Centrum), jest pomijana i liczona; Historii się nie przycina.
-Plik, którego system nie daje teraz czytać, to ``Unreadable``, a nie pusta Historia: nie wiadomo wtedy, co już weszło.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -27,40 +18,28 @@ RowResult = Literal["zapisano", "odrzucono"]
 
 
 class _Model(BaseModel):
-    """Model pliku Historii: pola po angielsku w kodzie, a w pliku pod polskimi nazwami (``validation_alias``)."""
-
     model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
 
 class ByDad(_Model):
-    """Zapis taty w Centrum, także cofnięcie."""
-
     kind: Literal["tata"] = Field(default="tata", validation_alias="rodzaj", serialization_alias="rodzaj")
 
 
 class Outside(_Model):
-    """Plik w ``config`` zmieniony poza Centrum."""
-
     kind: Literal["spoza"] = Field(default="spoza", validation_alias="rodzaj", serialization_alias="rodzaj")
 
 
 class ReleaseOrigin(_Model):
-    """Wersja narzędzia, której Wydanie niesie zmianę: numer Wydania (``0.9.0``) i skrót commitu; ``None``: nie wiadomo
-    (commit bez tagu Wydania albo narzędzie bez Gita)."""
-
     release: str | None = Field(validation_alias="wydanie", serialization_alias="wydanie")
     commit: str | None
 
 
 class FromRelease(ReleaseOrigin):
-    """Zmiana Ustawień z Wydania (``release_changes``): wersja narzędzia i id zmiany."""
-
     kind: Literal["wydanie"] = Field(default="wydanie", validation_alias="rodzaj", serialization_alias="rodzaj")
     change: str = Field(validation_alias="zmiana", serialization_alias="zmiana")
 
 
 RowSource = Annotated[ByDad | Outside | FromRelease, Field(discriminator="kind")]
-"""Skąd zmiana: zapis taty, zmiana z Wydania albo plik zmieniony poza Centrum."""
 
 
 class RowChange(_Model):
@@ -77,10 +56,6 @@ class RowChange(_Model):
 
 
 class HistoryRow(_Model):
-    """Wiersz Historii Ustawień. ``created``: przed zmianą pliku nie było, więc jej „Cofnij” przywraca brak pliku, gdy
-    późniejsze zmiany pliku nic w nim nie zostawiły (``CentrumSettings._restores_absence``). ``removed``: po zmianie
-    pliku nie ma (usunięty poza Centrum albo przez to „Cofnij”), więc jego klucze wróciły do wartości domyślnych."""
-
     version: Literal[1] = Field(default=_VERSION, validation_alias="v", serialization_alias="v")
     id: str
     at: datetime = Field(validation_alias="kiedy", serialization_alias="kiedy")
@@ -101,8 +76,6 @@ class HistoryRow(_Model):
 
 
 class HistoryRead(_Model):
-    """Wiersze Historii od najnowszego i liczba linii, których nie dało się przeczytać."""
-
     rows: tuple[HistoryRow, ...]
     skipped: int
 
@@ -113,11 +86,6 @@ class History:
         self._pause = pause
 
     def append(self, row: HistoryRow) -> None:
-        """Dopisuje wiersz, ponawiając po przerwach ``RETRY_PAUSES_S``; ``OSError``, gdy mimo to się nie udało.
-
-        Linię urwaną zgaśnięciem Centrum wiersz zaczyna od nowej linii, więc nie skleja się z nią.
-        """
-
         line = row.model_dump_json(by_alias=True).encode("utf-8") + b"\n"
         for seconds in (*RETRY_PAUSES_S, None):
             try:
@@ -138,9 +106,6 @@ class History:
             history.write(line)
 
     def read(self) -> HistoryRead | Unreadable:
-        """Wiersze od najnowszego; brak pliku to pusta Historia, a ``Unreadable``: plik jest, ale system nie daje go
-        teraz czytać."""
-
         data = settings_bytes(self._path)
         if isinstance(data, OSError):
             return Unreadable(self._path.name)
