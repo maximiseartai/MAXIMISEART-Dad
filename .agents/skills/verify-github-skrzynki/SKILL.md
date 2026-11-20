@@ -85,8 +85,8 @@ Each feature is a table of cases (`CASES` in `github_przypadki_skrzynki.py`, `gi
 `github_przypadki_aktualnosci.py`). A
 case prepares the trial repository through the harness or the client without recording (labels, closing an issue as
 Maks does, deleting one, the 101 issues), calls the client once with recording, and judges the outcome. The expected
-outcome comes from `GLOSSARY.md`, ADR 0007, 0014 and 0015, the tests of `tests/test_skrzynka_zgloszen_github.py`, the content limit test of
-`tests/test_github_skrzynki.py` and the docstrings of `keyed_box`, `outbox._deliver_archive` and `tool_freshness`, never from a run; Aktualność takes its truth from Git (`git ls-remote` and `git log --first-parent`).
+outcome comes from `GLOSSARY.md`, ADR 0007, 0014 and 0015, the tests of `tests/test_skrzynka_zgloszen_github.py` and `tests/test_centrum_logi_w_skrzynce.py`, the content limit test of
+`tests/test_github_skrzynki.py` and the docstrings of `keyed_box` and `tool_freshness`, never from a run; Aktualność takes its truth from Git (`git ls-remote` and `git log --first-parent`).
 The recipes and the expected outcome of each case are in `features/<feature>.md`.
 
 ## Replay

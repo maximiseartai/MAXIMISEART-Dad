@@ -19,12 +19,10 @@ import type { DayState, Status } from "@/pages/worker-reports/day-state"
 import { shortDay, weekdayOfDate } from "@/pages/worker-reports/days"
 import { look, StatusBadge } from "@/pages/worker-reports/status"
 
-/** Komórka różnicy z ręczną wartością, przy której tata klika „Zostaw moją”. */
 export type Keep = KeptCell
 
 type Keeping = { keeping: Keep | null; onKeep: (cell: Keep) => void }
 
-/** Inicjały Wykonawcy do kółka przy nazwie: `Marcin Górski` → `MG`, `wykonawca.a` → `WA`. */
 function initials(worker: string): string {
   return worker
     .split(/[\s._-]+/)
@@ -89,11 +87,6 @@ export function DayDetails({
   )
 }
 
-/**
- * Przebieg Przypomnień o raporcie za ten dzień do tego Wykonawcy: zlecenia dnia w INTERMAX, każde wysłane
- * przypomnienie z chwilą w czasie komputera taty („cz. 06.11, 08:00”) i, gdy Wykonawca przysłał Raport wykonawcy,
- * „Raport przyszedł”. Bez przypomnień nic.
- */
 function Reminders({ day }: { day: ReportsWorkerDay }) {
   if (day.reminders.length === 0) {
     return null
@@ -128,7 +121,6 @@ function Reminders({ day }: { day: ReportsWorkerDay }) {
   )
 }
 
-/** Krok przebiegu: kółko z ikoną na pionowej linii, napis i chwila po prawej. */
 function Step({ icon: Icon, tone, label, moment }: { icon: LucideIcon; tone: string; label: string; moment: string }) {
   return (
     <li className="relative grid grid-cols-[1.375rem_minmax(0,1fr)_auto] items-center gap-2.5 pb-3 not-last:before:absolute not-last:before:top-5.5 not-last:before:bottom-0 not-last:before:left-[0.65rem] not-last:before:w-px not-last:before:bg-border">
@@ -154,11 +146,6 @@ const LIST = "flex flex-col border-t py-1 [&>li+li]:border-t [&>li+li]:border-bo
 
 const ROW = "grid grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-x-2.5 gap-y-1 px-3.5 py-2"
 
-/**
- * Zlecenia dnia w kolejności z INTERMAX, a po nich problemy bez zlecenia tego dnia (np. numer spoza zleceń albo raport
- * z błędem tematu), informacje o zleceniach, których dzień już nie ma (np. „przekazane …”), o raportach z pomylonym
- * tematem, których Wpisy poszły do zleceń tego dnia, i o raportach z błędem tematu, z których nie ma już czego wpisać.
- */
 function Orders({
   orders,
   worker,
@@ -224,7 +211,6 @@ function Orders({
   )
 }
 
-/** Napis znaczka zlecenia, gdy różni się od nazwy stanu kafelka. */
 const ORDER_LABELS: Readonly<Record<ReportsOrder["state"], string | undefined>> = {
   entered: "Wpisane",
   faulty_subject: "Błąd tematu",
@@ -270,10 +256,6 @@ function OrderLine({ order }: { order: ReportsOrder }) {
   )
 }
 
-/**
- * Kody czynności, które legenda wzięła z opisu zlecenia `tak`, albo informacja „BRAK KODU”: spokojna, bez znaczka
- * problemu, bo Ilości z opisu tata wpisze sam w Pliku zbiorczym.
- */
 function CodesLine({ order }: { order: ReportsOrder }) {
   if (order.no_code) {
     return (
@@ -302,7 +284,6 @@ function CodesLine({ order }: { order: ReportsOrder }) {
   )
 }
 
-/** Wynik kliknięcia sprzed listy zleceń: numery bez raportu i problemy, bez treści zleceń. */
 function Fallback({ state, keeping, onKeep }: { state: Extract<DayState, { kind: Status }> } & Keeping) {
   const { day } = state
 
@@ -327,7 +308,6 @@ function Fallback({ state, keeping, onKeep }: { state: Extract<DayState, { kind:
   )
 }
 
-/** Informacja o zmianie, którą Centrum zrobiło w INTERMAX: spokojna, wyciszona, bez znaczka problemu. */
 function NoteLine({ note }: { note: ReportsNote }) {
   return (
     <span className="col-start-2 col-end-4 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -337,7 +317,6 @@ function NoteLine({ note }: { note: ReportsNote }) {
   )
 }
 
-/** Informacja o raporcie z pomylonym tematem: dzień z tematu i to, że Wpisy poszły do zleceń tego dnia. */
 function MistakenLine({ subjectDay }: { subjectDay: string }) {
   return (
     <span className="col-start-2 col-end-4 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -357,10 +336,6 @@ function OvertakenLine({ text }: { text: string }) {
   )
 }
 
-/**
- * Temat raportu po strażniku reguły danych, rodzaj błędu tematu, dzień, za który Centrum liczy raport, i chwila przyjścia
- * maila, nad zdaniem problemu.
- */
 function FaultyFacts({ faulty }: { faulty: ReportsFaultySubject }) {
   return (
     <dl className="col-start-2 col-end-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-2 gap-y-0.5 text-xs" aria-label="Błąd tematu">
@@ -422,17 +397,14 @@ function ProblemReason({
   )
 }
 
-/** Wpis na życzenie zlecenia raportu z błędem tematu przy jego problemie: numer zlecenia nad podglądem i przyciskiem. */
 function FaultyOffer({ offer }: { offer: ReportsFaultyOffer }) {
   return <OnRequest request={offer.request} worker={offer.worker} day={offer.day} number={offer.request.number} />
 }
 
-/** Klucz komórki Wpisu na życzenie: ta sama decyzja ma ten sam klucz przy zleceniu i przy problemie. */
 function requestKey(request: RequestedCell): string {
   return JSON.stringify([request.mail, request.number, request.worker, request.day, request.order_day])
 }
 
-/** Zdanie nad podglądem: gdzie zlecenie, które dziś ma `worker` w dniu `day`, stoi po Wpisie `request`. */
 function whereTo(request: RequestedCell, worker: string, day: string): string {
   if (request.worker !== worker) {
     return `Wpisze się do INTERMAX, zlecenie przejdzie od ${worker} do ${request.worker} na ${shortDay(request.order_day)}:`

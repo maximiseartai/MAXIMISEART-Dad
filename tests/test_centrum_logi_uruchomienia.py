@@ -1,8 +1,3 @@
-"""Logi Uruchomienia (ADR 0015, #317) przez HTTP API Centrum: plik JSON na komputerze taty po każdym Uruchomieniu.
-
-Testy czytają pliki z katalogu Logów obok dziennika Centrum, tak jak Maks dostanie je z komputera taty.
-"""
-
 from __future__ import annotations
 
 import asyncio
@@ -56,6 +51,7 @@ from rozliczenia.centrum.run_logs_guard import guard_text
 from rozliczenia.centrum.settings.folders import SETTINGS_FILE
 from rozliczenia.centrum.report_box import Unreachable
 from rozliczenia.centrum.tool_update import Release
+from rozliczenia.efenix_browser import LOGIN_TIMEOUT_MS
 from rozliczenia.efenix_pace import ACTION_PAUSE_S, KEEPALIVE_S, Pace
 from rozliczenia.efenix_pricing import OrderKind
 from rozliczenia.efenix_window import ForwardRefusal, StatusChangeBlocked, WindowAction
@@ -156,21 +152,15 @@ def log_files(centrum: AnyCentrum) -> list[Path]:
 
 
 def records(centrum: AnyCentrum) -> list[dict[str, Any]]:
-    """Logi po kolei od startu; nazwy plików mają start z dokładnością do sekundy."""
-
     loaded = [json.loads(path.read_text(encoding="utf-8")) for path in log_files(centrum)]
     return sorted(loaded, key=lambda record: datetime.fromisoformat(record["started_at"]))
 
 
 def in_json(path: Path) -> str:
-    """Ścieżka tak, jak stoi w tekście pliku JSON (w Windows z podwojonym ``\\``)."""
-
     return json.dumps(str(path))[1:-1]
 
 
 def utc(moment: str | None) -> datetime:
-    """Godzina kroku z Logów; każda jest w UTC."""
-
     assert moment is not None, "krok bez godziny"
     parsed = datetime.fromisoformat(moment)
     assert parsed.utcoffset() == timedelta(0), moment
@@ -182,8 +172,6 @@ def card_messages(view: dict[str, Any]) -> list[dict[str, str]]:
 
 
 def three_parts(record: dict[str, Any]) -> list[dict[str, str]]:
-    """Komunikaty z Logów tak, jak je pokazuje karta: trzy części i link do sekcji Ustawień, gdy go mają."""
-
     return [{part: message[part] for part in ("what", "where", "action", "setting") if part in message} for message in record["messages"]]
 
 
@@ -263,8 +251,6 @@ def _adapter_net(
 def _core_failed(
     centrum: Callable[[Path], AnyCentrum], *, dry_run: bool
 ) -> Callable[[Path, pytest.MonkeyPatch], Ran]:
-    """Sam rdzeń Uruchomienia procesu rzuca wyjątkiem, więc nie oddaje wyniku: ostatnia siatka adaptera bez rdzenia."""
-
     def run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ran:
         steered = centrum(tmp_path)
         steered.engines.fail_core = True
@@ -282,16 +268,10 @@ class Ending:
     run: Callable[[Path, pytest.MonkeyPatch], Ran]
     mode: str
     result: tuple[str, str, str | None]
-    """Wynik, sposób zakończenia i Rodzaj Zatrzymania."""
     messages: list[tuple[str, str]]
-    """Rodzaj i kod każdego Komunikatu, w kolejności karty."""
     trace: str | None = None
-    """Typ wyjątku w śladzie wywołań."""
     files_unchanged: bool = field(kw_only=True)
-    """Karta mówi, że pliki taty są bez zmian: podgląd albo koniec przed Zapisywaniem."""
     collective_file_prepared: bool = field(default=False, kw_only=True)
-    """Wynik przygotował Plik zbiorczy okresu (Przygotowanie z zapisem bez Zatrzymania): karta pokazuje pod nim
-    Uzupełnienie pliku zbiorczego."""
 
 
 ENDINGS = {
@@ -331,12 +311,11 @@ ENDINGS = {
         [("stop", "FOLDER_ROZLICZEN_ISTNIEJE")],
         files_unchanged=True,
     ),
-    "dla-taty-podglad": Ending(
+    "dla-taty-z-przyczyna-w-wyjatku-podglad": Ending(
         _missing_collective_file,
         "DRY-RUN",
         ("BLAD_KRYTYCZNY", "stop", "for_tata"),
         [("stop", "BRAK_PLIKU_ZBIORCZEGO")],
-        # Zatrzymanie dla taty z przyczyną w wyjątku (``WorkbookError``) też ma ślad wywołań (#976).
         "rozliczenia.message.StopError",
         files_unchanged=True,
     ),
@@ -409,9 +388,6 @@ ENDINGS = {
 def test_kazda_droga_zakonczenia_w_obu_trybach_daje_jeden_plik_logow_a_po_ponownym_starcie_z_niego_karte_ostatniego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ending: Ending
 ) -> None:
-    """Logi każdej drogi końca mają wynik, sposób końca, Rodzaj Zatrzymania i Komunikaty karty, bez adresu i ścieżek, a
-    Centrum po ponownym starcie pokazuje z nich kartę tego Uruchomienia taką, jaka była na żywo."""
-
     centrum, view = ending.run(tmp_path, monkeypatch)
 
     [path] = log_files(centrum)
@@ -495,9 +471,6 @@ def test_logi_przebiegu_rozliczen_maja_liczbe_ilosci_tylko_dla_inea_w_kazdej_kol
 
 
 def test_logi_przygotowania_nie_maja_dodatkow_innych_procesow(tmp_path: Path) -> None:
-    """Przygotowanie nie ma własnych dodatków Logów, więc każde pole dodatku innego procesu to ``null``: puste
-    ``efenix_orders`` karta z Logów liczyłaby jako zlecenia Uruchomienia (przegląd #1164 r1)."""
-
     centrum, _ = _preparation(tmp_path, dry_run=True)
 
     [record] = records(centrum)
@@ -552,8 +525,6 @@ COLUMN_WORDS: Final = {"SKUTECZNE": ReportColumn.SUCCESSFUL, "CZYNNOŚCI ZREALIZ
 
 
 def _entering_words(entering: dict[str, Any]) -> list[object]:
-    """Powody i kolumny Logów Wpisania raportów po kolei: Wpisy maila, maile z nieczytelnym tematem, problemy, zmiany."""
-
     [report, *unreadable] = entering["mails"]
     return [
         *(entry["fault"] for entry in report["entries"]),
@@ -564,12 +535,6 @@ def _entering_words(entering: dict[str, Any]) -> list[object]:
 
 
 def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszych_wydan_czytaja_sie_dalej() -> None:
-    """Plik Logów Wpisania raportów z każdym słowem powodu i kolumny, które zapisały wcześniejsze Wydania, czyta się do
-    tego samego powodu i tej samej kolumny, a zapisuje z powrotem tymi samymi słowami: te pliki czytają karta z Logów,
-    Historia i odtworzenie. ``not_ordered`` przy ``unknown_number`` to powód, dla którego Centrum nie dopisało
-    zlecenia, a przy ``refused_move`` powód odmowy Przeniesienia. Słowo spoza powodów odmowy Przeniesienia przy
-    ``refused_move`` (``form``) się nie czyta, bo żadne Wydanie go tam nie zapisało."""
-
     day, arrived, worker = "2026-11-09", "2026-11-09T18:00:00Z", "jan.testowy"
     entering = {
         "today": day,
@@ -636,10 +601,10 @@ def test_logi_wpisania_raportow_z_kazdym_slowem_powodu_i_kolumny_z_wczesniejszyc
         *COLUMN_WORDS.values(),
     ]
     assert _entering_words(json.loads(record.text)["report_entering"]) == _entering_words(entering)
-    refused_form = {"kind": "refused_move", "worker": worker, "day": day, "number": "40000001", "bar": "form"}
+    form_no_release_wrote_for_refused_move = {"kind": "refused_move", "worker": worker, "day": day, "number": "40000001", "bar": "form"}
     with pytest.raises(ValidationError, match=r"refused_move\.bar"):
         RunLog.model_validate_json(
-            json.dumps({**logs, "report_entering": {**entering, "problems": [refused_form]}}, ensure_ascii=False)
+            json.dumps({**logs, "report_entering": {**entering, "problems": [form_no_release_wrote_for_refused_move]}}, ensure_ascii=False)
         )
 
 
@@ -672,9 +637,6 @@ def test_powtorka_zatrzymania_dla_taty_ma_w_logach_rodzaj_powtorka(tmp_path: Pat
 
 
 def test_srodowisko_ma_system_python_i_pliki_procesu_z_rozmiarem_i_onedrive(tmp_path: Path) -> None:
-    """Środowisko w Logach ma pliki procesu z rozmiarem i atrybutem OneDrive, a Wzorzec z ``config`` także SHA-256
-    swoich bajtów; pliku z Folderu okresu narzędzie nie haszuje, bo odczyt pliku „tylko online” pobrałby go z OneDrive."""
-
     centrum = settling_centrum(tmp_path)
     onedrive = centrum.surroundings.onedrive
     assert onedrive is not None
@@ -703,9 +665,6 @@ def test_srodowisko_ma_system_python_i_pliki_procesu_z_rozmiarem_i_onedrive(tmp_
 
 
 def test_zmiana_folderow_w_trakcie_uruchomienia_zostawia_w_wyniku_i_logach_pliki_z_jego_startu(tmp_path: Path) -> None:
-    """Uruchomienie kończy na Ustawieniach Centrum ze swojego startu (ADR 0032): Rejestr zleceń i folder okresów
-    zmienione w trakcie nie zmieniają ani jego wyniku, ani plików procesu w jego Logach."""
-
     centrum = preparing_centrum(tmp_path)
     register = centrum.fixture.register_path
     elsewhere = tmp_path / "Inny folder"
@@ -791,7 +750,6 @@ def test_diagnoza_w_logach_nie_ma_adresu_numeru_orange_ani_pelnych_sciezek(tmp_p
     assert [marker for marker in forbidden if any(marker in text for text in texts)] == []
 
 
-# Syntetyczne wartości kolumn, które nigdy nie wychodzą z komputera taty (ADR 0025), i wolny tekst z telefonem i ulicą.
 ADDRESS_VALUE = "Syntetyczna Bursztynowa 14/2 Poznań"
 ORANGE_VALUE = "4801234567"
 PHONE = "600 123 456"
@@ -816,9 +774,9 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
     assert [view["result"]["stop_kind"] for view in (first, second)] == ["for_tata", "repeated"]
     assert (diagnosis.status_code, sent.json()) == (200, {"state": "sent"})
     box = centrum.surroundings.report_box
-    # Logi obu Uruchomień, a tekst drugich to Logi po Diagnozie: Diagnoza zmienia ich komentarz (#849) albo, gdy przyszła
-    # przed wysyłką, zastępuje je w kolejce, więc idą od razu z nią.
-    assert box.wait_until(lambda fake: logs_arrived(fake, 2) and "- Diagnoza: " in logs_comments(fake)[1])
+    assert box.wait_until(lambda fake: logs_arrived(fake, 2) and "- Diagnoza: " in logs_comments(fake)[1]), (
+        "Logi obu Uruchomień, a drugie już z Diagnozą"
+    )
     assert ADDRESS_VALUE.upper() in json.dumps(card_messages(second), ensure_ascii=False), "karta taty cytuje komórkę"
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     texts += [part for issue in [*box.issues, *box.background_issues] for part in (issue.title, issue.body, *issue.comments)]
@@ -835,30 +793,16 @@ def test_adres_i_numer_orange_cytowane_przez_komunikat_nie_wychodza_w_logach_ani
             "Reguła danych: zamaskowano wartość kolumny ADRES w: messages[0].where.",
             "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: messages[0].where.",
         ]
-        # SKUTECZNE z adresem i numerem Orange to także komórka czwartego przeczytanego wiersza Rejestru w Kopii wejścia.
         assert record["input_copy_notes"] == [
             "Reguła danych: zamaskowano wartość kolumny ADRES w: input_copy[0].sheets[0].rows[3].cells.[…].",
             "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: input_copy[0].sheets[0].rows[3].cells.[…].",
         ]
 
 
-# --- Położenia wklejonego wiersza w Rejestrze zleceń (#918) ----------------------------------------------------------
-# Przygotowanie czyta Rejestr po nagłówkach, a wiersz wklejony z aplikacji firmowej może stać przesunięty o dwie
-# kolumny w lewo (ADR 0019), w całości albo poza częścią, którą tata postawił z powrotem na miejsce. Wiersz próbny niesie
-# syntetyczny adres i numer Orange w swoich kolumnach ``ADRES`` i ``NUMER UMOWY``, gdziekolwiek stoją w pliku, a tata
-# cytuje je potem w Uwadze. Każdy wiersz ma jedno położenie (decyzja Maksa z 5.11.2026, ADR 0025): pierwszy wiersz bloku
-# wklejenia przesunięty o dwie kolumny w lewo, każdy inny pod nagłówkiem. W obu jest pierwszy wiersz bloku, którego
-# przesunięcia nie widać (bez daty z godziną dwie kolumny przed DATA albo z nią także pod DATA), bez uwagi, i inny wiersz
-# z datą z godziną dwie kolumny przed DATA (ślad przesunięcia), z uwagą w Logach. ``NUMER ZL.`` uporządkowanych wierszy,
-# który w przesuniętym wierszu stałby tam, gdzie numer Orange, wychodzi bez maski. Pierwszy wiersz bloku z widocznym
-# przesunięciem, który nie jest przesunięty w całości, i wiersz na miejscu z datą z godziną w kolumnie A pod wpisem taty
-# to ryzyko przyjęte przez Maksa (``KNOWN``).
 PROBE_ADDRESS = "Przemiatana Wrzosowa 12 Kórnik"
 PROBE_ORANGE = "4809876543"
-ABOVE_ORDERED = 8
-"""Pusty wiersz Rejestru między zleceniami z 9 i 12 września: wklejony tu wiersz stoi nad uporządkowanymi w okresie."""
-ORDER_NUMBERS = {2: "ZL-SYN-001", 4: "ZL-SYN-002", 6: "ZL-SYN-003", 9: "ZL-SYN-004", 11: "ZL-SYN-005", 13: "ZL-SYN-006"}
-"""``NUMER ZL.`` (kolumna I) uporządkowanych wierszy Rejestru, które Przygotowanie okresu czyta."""
+EMPTY_ROW_ABOVE_ORDERED = 8
+ORDER_NUMBERS_OF_ORDERED_ROWS = {2: "ZL-SYN-001", 4: "ZL-SYN-002", 6: "ZL-SYN-003", 9: "ZL-SYN-004", 11: "ZL-SYN-005", 13: "ZL-SYN-006"}
 
 
 def _register_probe(when: object = datetime(2026, 9, 10, 11), orange: object = PROBE_ORANGE) -> dict[str, object]:
@@ -868,41 +812,29 @@ def _register_probe(when: object = datetime(2026, 9, 10, 11), orange: object = P
 
 def _above_ordered(probe: dict[str, object] | None = None, in_place_from: str | None = None) -> Callable[[Path], object]:
     row = _register_probe() if probe is None else probe
-    return lambda register: paste_raw_orders(register, [row], first=ABOVE_ORDERED, in_place_from=in_place_from)
+    return lambda register: paste_raw_orders(register, [row], first=EMPTY_ROW_ABOVE_ORDERED, in_place_from=in_place_from)
 
 
 def _worker_typed_by_tata(register: Path) -> None:
-    """Przesunięty wiersz bez Wykonawcy z aplikacji, a tata wpisał Wykonawcę pod nagłówkiem ``WYKONAWCA`` czcionką
-    Rejestru (Calibri 8): ta komórka nie czyni wiersza uporządkowanym, tak jak w Uporządkowaniu."""
-
-    paste_raw_orders(register, [{**_register_probe(), "WYKONAWCA": None}], first=ABOVE_ORDERED)
-    type_into_register(register, ABOVE_ORDERED, "WYKONAWCA", "adrian.testowy")
+    paste_raw_orders(register, [{**_register_probe(), "WYKONAWCA": None}], first=EMPTY_ROW_ABOVE_ORDERED)
+    type_into_register(register, EMPTY_ROW_ABOVE_ORDERED, "WYKONAWCA", "adrian.testowy")
 
 
 def _after_period(in_place_from: str | None = None) -> Callable[[Path], object]:
-    """Wklejenie na dole Rejestru z dnia po okresie: Przygotowanie go nie zatrzymuje, ale czyta, bo leży w zakresie
-    dat okresu z dniem zapasu."""
-
     later = [register_order(90 + hour, datetime(2026, 9, 15, 12 + hour)) for hour in range(2)]
     pasted = [_register_probe(datetime(2026, 9, 15, 10)), *later]
     return lambda register: paste_raw_orders(register, pasted, in_place_from=in_place_from)
 
 
 def _second_paste(when: object = datetime(2026, 9, 10, 11)) -> Callable[[Path], object]:
-    """Dwa wklejenia nad uporządkowanymi w okresie bez wiersza między nimi: pierwszy wiersz drugiego wklejenia (wiersz
-    próbny) stoi przesunięty w środku bloku, a dwie kolumny przed ``DATA GODZ. POCZ.`` ma swoją datę ``when``."""
-
     def paste(register: Path) -> None:
-        paste_raw_orders(register, [register_order(90, datetime(2026, 9, 10, 9))], first=ABOVE_ORDERED - 1)
-        paste_raw_orders(register, [_register_probe(when)], first=ABOVE_ORDERED)
+        paste_raw_orders(register, [register_order(90, datetime(2026, 9, 10, 9))], first=EMPTY_ROW_ABOVE_ORDERED - 1)
+        paste_raw_orders(register, [_register_probe(when)], first=EMPTY_ROW_ABOVE_ORDERED)
 
     return paste
 
 
 def _date_in_column_a(register: Path, row: int, when: datetime | None) -> None:
-    """Data z godziną ``when`` w kolumnie A (bez nagłówka, dwie kolumny przed ``DATA GODZ. POCZ.``) wiersza ``row``,
-    np. wpisana ręcznie; ``None``: kolumna A bez zmian."""
-
     if when is None:
         return
     workbook = load_workbook(register)
@@ -914,15 +846,11 @@ def _date_in_column_a(register: Path, row: int, when: datetime | None) -> None:
 
 
 def _typed_into_first(when: object = datetime(2026, 9, 10, 11), column_a: datetime | None = None) -> Callable[[Path], object]:
-    """Przesunięty pierwszy wiersz wklejenia nad uporządkowanymi z ``SKUTECZNE`` wpisanym przez tatę w Calibri 8, a pod
-    nim wiersz próbny na miejscu z ``when`` pod ``DATA GODZ. POCZ.`` i ``column_a`` w kolumnie A (sondy R1 z przeglądu
-    #984 r1, RN1 i RN2 z r2, RC1 i RC2 z r3)."""
-
     def paste(register: Path) -> None:
         rows = [register_order(90, datetime(2026, 9, 10, 9)), _register_probe(when)]
-        paste_raw_orders(register, rows, first=ABOVE_ORDERED - 1)
-        _date_in_column_a(register, ABOVE_ORDERED, column_a)
-        type_into_register(register, ABOVE_ORDERED - 1, "SKUTECZNE", "tak")
+        paste_raw_orders(register, rows, first=EMPTY_ROW_ABOVE_ORDERED - 1)
+        _date_in_column_a(register, EMPTY_ROW_ABOVE_ORDERED, column_a)
+        type_into_register(register, EMPTY_ROW_ABOVE_ORDERED - 1, "SKUTECZNE", "tak")
 
     return paste
 
@@ -930,10 +858,6 @@ def _typed_into_first(when: object = datetime(2026, 9, 10, 11), column_a: dateti
 def _typed_into_middle(
     when: object = datetime(2026, 9, 15, 12), column_a: datetime | None = None, header: str = "MIASTO", typed: str = "POZNAŃ"
 ) -> Callable[[Path], object]:
-    """Cztery wklejone wiersze na dole po okresie, tata wpisuje ``typed`` pod ``header`` drugiego w Calibri 8, a trzeci,
-    wiersz próbny z ``when`` pod ``DATA GODZ. POCZ.`` i ``column_a`` w kolumnie A, cytuje w ``CZYNNOŚCI ZREALIZOWANE``
-    swój adres i numer Orange (sonda R3 z przeglądu #984 r1, RN3 z r2, RC3 i RC4 z r3)."""
-
     def paste(register: Path) -> None:
         quoted = {"CZYNNOŚCI ZREALIZOWANE": f"montaż {PROBE_ADDRESS} umowa {PROBE_ORANGE}"}
         rows = [
@@ -965,9 +889,6 @@ REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
     "pierwszy_wiersz_wklejenia_po_okresie_na_miejscu_od_skuteczne": (_after_period(in_place_from="SKUTECZNE"), None),
     "przesuniety_pierwszy_wiersz_drugiego_wklejenia": (_second_paste(), "WIERSZ_BEZ_DATY"),
     "przesuniety_pierwszy_wiersz_drugiego_wklejenia_z_data_jako_tekst": (_second_paste("10.09.2026 11:00"), "WIERSZ_BEZ_DATY"),
-    # wiersz z wyglądem z aplikacji na miejscu w wierszu 2: odczyt okresu zaczyna się tu od góry arkusza, więc wiersz
-    # zaczyna blok, a z datą z godziną pod DATA jego przesunięcia nie widać, więc pamięć zna go w obu położeniach (bez
-    # uwagi)
     "nieprzesuniety_na_gorze_odczytu": (
         lambda register: paste_raw_orders(
             register,
@@ -977,9 +898,6 @@ REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
         ),
         None,
     ),
-    # wpis taty w Calibri 8 w wierszu wklejenia nad wierszem próbnym: pierwszy wiersz bloku z kroju (bez zmian) stoi na
-    # miejscu bez daty z godziną w kolumnie A, z datą z godziną pod DATA, z datą tekstem albo bez daty, więc jego
-    # przesunięcia nie widać, a pamięć zna go w obu położeniach
     "wpis_taty_w_przesunietym_pierwszym_wierszu": (_typed_into_first(), "WIERSZ_BEZ_DATY"),
     "wpis_taty_w_przesunietym_pierwszym_wierszu_wiersz_probny_z_data_jako_tekst": (
         _typed_into_first("10.09.2026 11:00"),
@@ -987,7 +905,6 @@ REGISTER_POSITIONS: dict[str, tuple[Callable[[Path], object], str | None]] = {
     ),
     "wpis_taty_w_przesunietym_pierwszym_wierszu_wiersz_probny_bez_daty": (_typed_into_first(None), "WIERSZ_BEZ_DATY"),
     "wpis_taty_w_drugim_wierszu_wklejenia_po_okresie": (_typed_into_middle(), None),
-    # wiersz próbny na miejscu z datą z godziną w kolumnie A, a bez niej pod DATA: przesunięcie widać (klasa C)
     "wpis_taty_w_przesunietym_pierwszym_wierszu_wiersz_probny_z_data_jako_tekst_i_w_kolumnie_a": (
         _typed_into_first("10.09.2026 11:00", datetime(2026, 9, 10, 11)),
         "WIERSZ_BEZ_DATY",
@@ -1015,11 +932,6 @@ REGISTER_KNOWN = {
     "wpis_taty_w_przesunietym_pierwszym_wierszu_wiersz_probny_bez_daty_z_data_w_kolumnie_a": "na_miejscu_z_data_w_a",
     "wpis_taty_w_drugim_wierszu_wklejenia_po_okresie_wiersz_probny_z_data_jako_tekst_i_w_kolumnie_a": "na_miejscu_z_data_w_a",
 }
-"""Położenia poza faktem domeny bez śladu przesunięcia: pierwszy wiersz bloku z widocznym przesunięciem (data z godziną
-dwie kolumny przed ``DATA GODZ. POCZ.``, pod nią nie) nie jest przesunięty w całości (od ``ADRES``, ``CZYNNOŚCI`` albo
-``NUMER ZL.`` na miejscu) albo przesunięty jest inny wiersz, z datą tekstem; ryzyko przyjęte przez Maksa
-(``tests/fixtures/fakt_domeny.py``). Do tego klasa C: fakt zachodzi, a wiersz próbny na miejscu pod wpisem taty ma datę z
-godziną w kolumnie A i bez niej pod ``DATA GODZ. POCZ.``."""
 REGISTER_TRACED = {
     "przesuniety_pierwszy_wiersz_drugiego_wklejenia",
     "wpis_taty_w_przesunietym_pierwszym_wierszu",
@@ -1028,11 +940,7 @@ REGISTER_TRACED = {
     "wpis_taty_w_przesunietym_pierwszym_wierszu_wiersz_probny_z_data_jako_tekst_i_w_kolumnie_a",
     "wpis_taty_w_przesunietym_pierwszym_wierszu_wiersz_probny_bez_daty_z_data_w_kolumnie_a",
 }
-"""Położenia z wierszem ze śladem przesunięcia, który nie jest pierwszym wierszem bloku: Logi mają o nim uwagę. Przy wpisie
-taty w Calibri 8 w przesuniętym pierwszym wierszu to fałszywa uwaga o nim (znana granica sygnału, ADR 0025)."""
-REGISTER_IN_PLACE_FIRST = {"nieprzesuniety_na_gorze_odczytu": 2}
-"""Położenia, w których wiersz próbny w miejscu wiersza uporządkowanego zaczyna blok, a stoi na miejscu: pamięć zna go w
-obu położeniach, bez uwagi, więc jego ``NUMER ZL.`` jest możliwym numerem Orange."""
+ORDER_NUMBER_MASKED_AS_POSSIBLE_ORANGE = {"nieprzesuniety_na_gorze_odczytu": 2}
 
 
 @pytest.mark.parametrize(
@@ -1045,11 +953,6 @@ obu położeniach, bez uwagi, więc jego ``NUMER ZL.`` jest możliwym numerem Or
 def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygotowania_w_zadnym_polozeniu(
     tmp_path: Path, name: str, position: tuple[Callable[[Path], object], str | None]
 ) -> None:
-    """Podgląd Przygotowania na Rejestrze z wierszem próbnym w każdym położeniu: adres i numer Orange nie wychodzą do
-    pliku Logów, do Skrzynki Zgłoszeń ani w Uwadze taty, a ``NUMER ZL.`` uporządkowanych wierszy jest w Kopii wejścia
-    bez maski. Wiersz ze śladem przesunięcia poza pierwszym wierszem bloku ma uwagę w Logach, że fakt domeny jest
-    złamany. Podgląd kończy się Zatrzymaniem na wierszu bez daty pod ``DATA GODZ. POCZ.`` albo bez Zatrzymania."""
-
     paste, stop = position
     centrum = preparing_centrum(tmp_path)
     paste(centrum.fixture.register_path)
@@ -1068,35 +971,26 @@ def test_adres_i_numer_orange_wklejonego_wiersza_rejestru_nie_wychodza_z_przygot
     assert [value for value in (PROBE_ADDRESS, PROBE_ORANGE) if any(value in text for text in texts)] == []
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
-    ordered = {row: number for row, number in ORDER_NUMBERS.items() if row != REGISTER_IN_PLACE_FIRST.get(name)}
+    ordered = {row: number for row, number in ORDER_NUMBERS_OF_ORDERED_ROWS.items() if row != ORDER_NUMBER_MASKED_AS_POSSIBLE_ORANGE.get(name)}
     assert {row["row"]: row["cells"]["I"] for row in sheet["rows"] if row["row"] in ordered} == ordered
     broken = [note for note in record["input_copy_notes"] if note.startswith("Fakt domeny złamany: wiersz ")]
     assert len(broken) == (name in REGISTER_TRACED), record["input_copy_notes"]
 
 
 REGISTER_COPY_POSITIONS: dict[str, tuple[Callable[[Path], object], int, bool]] = {
-    # przesunięcie widać: pamięć zna wiersz tylko przesuniętego, więc C i I to jego ADRES i NUMER UMOWY
-    "przesuniety_pierwszy_wiersz_nad_uporzadkowanymi": (_above_ordered(), ABOVE_ORDERED, False),
-    # na miejscu na górze odczytu okresu z datą z godziną pod DATA: pierwszy wiersz bloku z siatki, w obu położeniach
+    "przesuniety_pierwszy_wiersz_nad_uporzadkowanymi": (_above_ordered(), EMPTY_ROW_ABOVE_ORDERED, False),
     "pierwszy_wiersz_na_miejscu_na_gorze_odczytu": (
         lambda register: paste_raw_orders(register, [_register_probe(datetime(2026, 9, 8, 9))], first=2, in_place_from="DATA GODZ. POCZ."),
         2,
         True,
     ),
 }
-"""Pierwszy wiersz bloku w Odczycie danych Przygotowania: wklejenie, numer wiersza próbnego i czy jest z siatki."""
 
 
 @pytest.mark.parametrize(("paste", "row", "uncertain"), REGISTER_COPY_POSITIONS.values(), ids=REGISTER_COPY_POSITIONS.keys())
 def test_kopia_przygotowania_nie_ma_komorek_pierwszego_wiersza_bloku_ktore_w_jego_polozeniu_stoja_pod_zakazana_kolumna(
     tmp_path: Path, paste: Callable[[Path], object], row: int, uncertain: bool
 ) -> None:
-    """Kopia wejścia Przygotowania ma wiersz Rejestru według reguły komórki z ADR 0025, tej samej co w Uporządkowaniu
-    INTERMAX: komórka, która w którymś położeniu wiersza stoi pod ``ADRES`` albo ``NUMER UMOWY``, nie jest w Kopii, a
-    wiersz z siatki jest w ``uncertain_rows`` z datą z godziną spod ``DATA GODZ. POCZ.``. Kolumny C i I stoją dwie
-    kolumny przed ``ADRES`` (E) i ``NUMER UMOWY`` (K). ``SKUTECZNE`` (L) wiersza z siatki w położeniu przesuniętym
-    stoi pod ``ZWROT`` (N), kolumną wklejenia, więc zostaje."""
-
     centrum = preparing_centrum(tmp_path)
     paste(centrum.fixture.register_path)
 
@@ -1113,11 +1007,6 @@ def test_kopia_przygotowania_nie_ma_komorek_pierwszego_wiersza_bloku_ktore_w_jeg
 
 
 def test_wiersz_starszego_ukladu_rejestru_z_wykonawca_w_calibri_8_zaczyna_blok_pod_uporzadkowanymi(tmp_path: Path) -> None:
-    """Starszy układ Rejestru (bez ``AKCJE`` i ``UWAGI``) bierze wygląd wiersza z kolumn ``COLUMNS`` bez ``WYKONAWCA``:
-    wiersz okresu z krojem z aplikacji, w którym tata wpisał tylko Wykonawcę w Calibri 8, zaczyna blok pod
-    uporządkowanymi, a stoi na miejscu z datą z godziną pod ``DATA GODZ. POCZ.``, więc jedynym wierszem Kopii w obu
-    położeniach jest on."""
-
     register = write_register(tmp_path / "Rejestr.xlsx", in_old_layout(default_register_rows()), headers=OLD_REGISTER_HEADERS)
     app_row = 9
     workbook = load_workbook(register)
@@ -1147,10 +1036,6 @@ def test_wiersz_starszego_ukladu_rejestru_z_wykonawca_w_calibri_8_zaczyna_blok_p
 def test_logi_przygotowania_zatrzymanego_na_rejestrze_maja_jego_odcisk(
     tmp_path: Path, damage: Callable[[Path], object], stop: str
 ) -> None:
-    """Przygotowanie zatrzymane na Rejestrze zleceń, w Sprawdzaniu na Surowych zleceniach albo w Odczycie danych na
-    nagłówkach: Kopia wejścia ma odcisk Rejestru, na którym się zatrzymało, bez arkuszy, więc zatrzymanie da się
-    powiązać z wersją pliku."""
-
     centrum = preparing_centrum(tmp_path)
     register = centrum.fixture.register_path
     damage(register)
@@ -1167,11 +1052,6 @@ def test_logi_przygotowania_zatrzymanego_na_rejestrze_maja_jego_odcisk(
 def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_gorze_rejestru_z_data_jako_tekstem(
     tmp_path: Path,
 ) -> None:
-    """Diagnoza czyta cały Rejestr zleceń od wiersza 2 (``preparation_register.register_problem``, jak ``centrum/diagnosis.py``).
-    Wklejenie stoi pod nagłówkami bez uporządkowanych wierszy, a jego pierwszy wiersz jest przesunięty z datą jako tekstem,
-    więc bez śladu przesunięcia: na górze arkusza zaczyna blok, a pamięć reguły danych zna jego adres i numer Orange
-    (przegląd #984 r1, D1)."""
-
     register = write_register(tmp_path / "Rejestr.xlsx", [])
     probe = {**register_order(77, datetime(2026, 9, 10, 11)), "DATA GODZ. POCZ.": "10.09.2026 11:00"}
     probe |= {"ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
@@ -1184,9 +1064,6 @@ def test_diagnoza_zna_adres_i_numer_orange_przesunietego_pierwszego_wiersza_na_g
 
 
 def _typed_at_top(register: Path) -> None:
-    """Wklejenie od wiersza 2, tata wpisał ``SKUTECZNE`` w Calibri 8 w jego przesunięty pierwszy wiersz, a pod nim stoi
-    wiersz próbny na miejscu z datą jako tekstem (sonda D10 z przeglądu #984 r2)."""
-
     rows = [register_order(76, datetime(2026, 9, 10, 10)), _register_probe("10.09.2026 11:00")]
     paste_raw_orders(register, rows, first=2)
     type_into_register(register, 2, "SKUTECZNE", "tak")
@@ -1194,27 +1071,18 @@ def _typed_at_top(register: Path) -> None:
 
 TYPED_IN_DIAGNOSIS: dict[str, tuple[bool, Callable[[Path], object]]] = {
     "na_gorze_rejestru": (False, _typed_at_top),
-    # sonda RN3 z przeglądu #984 r2: Przygotowanie okresu zatrzymuje się na takim wklejeniu przed Kopią wejścia
     "na_dole_rejestru": (True, _typed_into_middle("15.09.2026 12:00")),
-    # sonda RC4 z r3: wiersz próbny z datą z godziną pod DATA i w kolumnie A
     "na_dole_rejestru_wiersz_probny_z_data_z_godzina_takze_w_kolumnie_a": (
         True,
         _typed_into_middle(column_a=datetime(2026, 9, 15, 12)),
     ),
 }
-"""Wpis taty w Calibri 8 nad wierszem próbnym na miejscu bez widocznego przesunięcia: czy Rejestr ma uporządkowane
-wiersze (``default_register_rows``) i wklejenie."""
 
 
 @pytest.mark.parametrize("case", TYPED_IN_DIAGNOSIS.values(), ids=TYPED_IN_DIAGNOSIS.keys())
 def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_calibri_8(
     tmp_path: Path, case: tuple[bool, Callable[[Path], object]]
 ) -> None:
-    """Diagnoza czyta cały Rejestr zleceń (``preparation_register.register_problem``, jak ``centrum/diagnosis.py``). Tata wpisał
-    coś w Calibri 8 w wiersz wklejenia, więc za pierwszy wiersz bloku uchodzi wiersz próbny pod nim, który stoi na
-    miejscu z datą jako tekstem albo z datą z godziną pod ``DATA GODZ. POCZ.`` i w kolumnie A: jego przesunięcia nie
-    widać, więc pamięć reguły danych zna jego adres i numer Orange pod nagłówkami (przegląd #984 r2, W1, i r3, D1)."""
-
     ordered, paste = case
     register = write_register(tmp_path / "Rejestr.xlsx", default_register_rows() if ordered else [])
     paste(register)
@@ -1228,22 +1096,14 @@ def test_diagnoza_zna_adres_i_numer_orange_wiersza_na_miejscu_pod_wpisem_taty_w_
 TYPED_INTO_REMARKS: dict[str, tuple[str, datetime | None]] = {
     "wpis_bez_daty_w_kolumnie_a": ("POZNAŃ", None),
     "wpis_z_data_w_kolumnie_a": ("POZNAŃ", datetime(2026, 9, 15, 12)),
-    # same spacje to komórka bez wartości także w Uporządkowaniu, więc wiersz pod nią nie zaczyna bloku
     "same_spacje_z_data_w_kolumnie_a": ("  ", datetime(2026, 9, 15, 12)),
 }
-"""Wpis taty w Calibri 8 w ``UWAGI`` drugiego wiersza wklejenia i data z godziną w kolumnie A wiersza próbnego pod nim."""
 
 
 @pytest.mark.parametrize(("typed", "column_a"), TYPED_INTO_REMARKS.values(), ids=TYPED_INTO_REMARKS.keys())
 def test_wpis_taty_w_calibri_8_tylko_w_uwagi_konczy_blok_w_przygotowaniu_tak_jak_w_uporzadkowaniu_tego_rejestru(
     tmp_path: Path, typed: str, column_a: datetime | None
 ) -> None:
-    """Tata wpisał coś w Calibri 8 tylko w ``UWAGI`` drugiego wiersza wklejenia, a trzeci, wiersz próbny, stoi na miejscu
-    z datą z godziną pod ``DATA GODZ. POCZ.`` (i w kolumnie A albo bez niej). Wiersz uporządkowany ma jedną definicję
-    (``raw_orders.look`` na ``OrderColumns.look_columns``, od ``AKCJE`` do ``UWAGI`` bez ``WYKONAWCA``), więc Podgląd
-    Przygotowania zna granice bloku tak jak Uporządkowanie INTERMAX tego samego pliku: wiersze z uwagą „Fakt domeny
-    złamany” i wiersze w obu położeniach są w Logach Przygotowania te same co w Kopii Uporządkowania."""
-
     centrum = preparing_centrum(tmp_path)
     register = centrum.fixture.register_path
     _typed_into_middle(column_a=column_a, header="UWAGI", typed=typed)(register)
@@ -1263,11 +1123,6 @@ def test_wpis_taty_w_calibri_8_tylko_w_uwagi_konczy_blok_w_przygotowaniu_tak_jak
 
 
 def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczytu_pod_naglowkiem(tmp_path: Path) -> None:
-    """Odczyt okresu zaczyna się w środku arkusza (nad nim wiersze z sierpnia), a pierwszy jego wiersz to wiersz z
-    wyglądem z aplikacji, który stoi na miejscu: zawężenie zaczyna się od daty z godziną pod ``DATA GODZ. POCZ.``, więc
-    taki wiersz zaczyna blok z tą datą, a pamięć reguły danych zna go w obu położeniach, także jego adres i numer Orange
-    pod nagłówkiem (ADR 0025)."""
-
     earlier = [register_order(80, datetime(2026, 8, 3, 9)), None, register_order(81, datetime(2026, 8, 4, 9)), None]
     register = write_register(tmp_path / "Rejestr.xlsx", [*earlier, *default_register_rows()])
     probe = {**register_order(1, datetime(2026, 9, 7, 15)), "ADRES": PROBE_ADDRESS, "NUMER UMOWY": PROBE_ORANGE}
@@ -1281,10 +1136,6 @@ def test_odczyt_okresu_ze_srodka_rejestru_zna_wiersz_z_aplikacji_na_gorze_odczyt
 
 
 def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_okresu(tmp_path: Path) -> None:
-    """Strażnik porównuje słowa, a nie pochodzenie wartości (#936): Rejestr zleceń z ``ADRES`` równym trybowi, który
-    stoi w pliku Logów (``DRY-RUN``), i tokenowi okresu daje Logi w pliku i w Skrzynce z trybem i okresem, które dało
-    narzędzie, w issue Logów tego okresu."""
-
     rows = default_register_rows()
     rows[2] = {**(rows[2] or {}), "ADRES": "DRY-RUN"}
     rows[4] = {**(rows[4] or {}), "ADRES": PERIOD}
@@ -1304,8 +1155,6 @@ def test_adres_rowny_slowu_trybu_i_tokenowi_okresu_nie_gubi_logow_ani_ich_issue_
 def test_dzialanie_po_wyniku_ktore_rzuca_nie_zmienia_wyniku_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Wyjątek działania po wyniku (tu Kontroli ilości) trafia do dziennika Centrum, a karta dostaje ten sam wynik."""
-
     expected = run_to_end(settling_centrum(tmp_path / "bez-wyjatku"), dry_run=False)
 
     def failing(self: QuantityCheckAfterRun, run: EndedRun) -> None:
@@ -1362,8 +1211,6 @@ def test_logi_przezywaja_zamkniecie_i_ponowny_start_centrum(tmp_path: Path) -> N
 
 
 def installed_at(repository: ToolRepository, target: str) -> None:
-    """Klon taty jak po instalacji z README: tagi z „origin” i ``main`` na ``target`` (tag Wydania albo commit)."""
-
     repository.in_clone("fetch", "--quiet", "--tags", "origin")
     repository.in_clone("reset", "--quiet", "--hard", target)
 
@@ -1417,12 +1264,11 @@ def _git_failing_on_tags(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Pat
 
 
 def _git_not_answering(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path | None:
-    """Git, który na każde polecenie milczy dłużej, niż Centrum czeka na Wydanie, a potem podaje tag Wydania."""
-
     wait_s = 0.5
+    answer_s = 1.2 * wait_s
+    assert wait_s < answer_s < 2 * wait_s, "Centrum, które czeka dwa razy dłużej, zapisałoby Wydanie z tej odpowiedzi"
     monkeypatch.setattr("rozliczenia.centrum.tool_update._TAGS_TIMEOUT_S", wait_s)
-    # Odpowiedź przed dwoma limitami: Centrum, które czeka dwa razy dłużej, zapisze Wydanie z tej odpowiedzi.
-    return fake_cli(tmp_path, "git", f"import time\ntime.sleep({wait_s * 1.2})\nprint('v9.9.9')\n")
+    return fake_cli(tmp_path, "git", f"import time\ntime.sleep({answer_s})\nprint('v9.9.9')\n")
 
 
 GITS = {
@@ -1473,11 +1319,7 @@ def test_narzedzie_poza_klonem_gita_ma_logi_bez_commitu_i_bez_wydania(tmp_path: 
     assert record["tool"] == {"wydanie": None, "commit": None}
 
 
-# --- Wycena w efenix z Centrum (#750) -----------------------------------------------------------------------------------
-
 LOGIN = "Zaloguj się w oknie efenix"
-# Zlecenia sześciu Wykonawców (wiersze 18–23): jedno gotowe, dwa nieznane w efenix i trzy z Ostrzeżeniem Emmetta (Emmett
-# ma O większe niż plik), więc każdy wynik ma inną liczbę zleceń.
 PRICED = [
     Order("#ZLQX01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
     Order("#ZLQX02", worker="beata.testowa", address="UL. PRYWATNA 7/1", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
@@ -1486,20 +1328,12 @@ PRICED = [
     Order("#ZLQX05", worker="ewa.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 3}),
     Order("#ZLQX06", worker="filip.testowy", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 2}),
 ]
-# Zlecenia z ``PRICED``, które zna Atrapa efenix: gotowe i z Ostrzeżeniem Emmetta.
 IN_EFENIX = [PRICED[0].in_efenix("611"), PRICED[2].in_efenix("613"), PRICED[4].in_efenix("615"), PRICED[5].in_efenix("616")]
-# Najkrótszy początek ``PRICED``, który w Wycenie przez Centrum wykonuje te same linie src co całe ``PRICED`` (każdy
-# rodzaj zlecenia i szukanie po zleceniu z zapisem): dla testów, których kontrakt nie liczy zleceń, bo każde zlecenie to
-# czas Chromium.
-FEW_PRICED = PRICED[:4]
-FEW_IN_EFENIX = IN_EFENIX[:2]
+PRICED_WITH_EVERY_STEP = PRICED[:4]
+IN_EFENIX_WITH_EVERY_STEP = IN_EFENIX[:2]
 
 
 def test_okno_efenix_taty_to_widoczny_chrome_w_tempie_ludzkim_z_prawdziwym_efenix() -> None:
-    """Centrum taty daje Wycenie w efenix widoczne okno zainstalowanego Google Chrome, w którym tata się loguje, tempo
-    ludzkie na prawdziwym zegarze i adres prawdziwego efenix. Testy i weryfikacja na Atrapie efenix mają okno bez tempa,
-    a okna taty nie otwierają, bo prowadzi do prawdziwego efenix (ADR 0024)."""
-
     window = EfenixWindow.of_tata()
 
     assert (window.pace, window.url) == (Pace(sleep=time.sleep, clock=time.monotonic), EFENIX_URL)
@@ -1507,14 +1341,11 @@ def test_okno_efenix_taty_to_widoczny_chrome_w_tempie_ludzkim_z_prawdziwym_efeni
 
 
 def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path: Path) -> None:
-    """Centrum daje procesowi tempo swojego okna efenix: przerwę przed każdym zapisem w efenix. Na zegarze, który stoi,
-    przerwa przed zapisem to ``ACTION_PAUSE_S``, a przed szukaniem zlecenia po zleceniu z zapisem próg podtrzymania sesji."""
-
     pauses: list[float] = []
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
         pace = Pace(sleep=pauses.append, clock=lambda: 0.0)
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, efenix_pace=pace))
-        write_collective_file(centrum.period_parent, FEW_PRICED)
+        write_collective_file(centrum.period_parent, PRICED_WITH_EVERY_STEP)
         assert _start_pricing(centrum).status_code == 200
         finished = finished_view(centrum.client)
 
@@ -1522,17 +1353,12 @@ def test_wycena_w_efenix_z_centrum_pracuje_w_tempie_ludzkim_okna_efenix(tmp_path
 
 
 def _pricing_centrum(tmp_path: Path, atrapa: AtrapaEfenix, *arguments: str, orders: Sequence[Order] = PRICED) -> SettlingCentrum:
-    """Centrum, którego okno efenix to Chromium na Atrapie z argumentami ``arguments``; Folder okresu ma Plik zbiorczy
-    z ``orders``."""
-
     centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, efenix_arguments=arguments))
     write_collective_file(centrum.period_parent, orders)
     return centrum
 
 
 def _start_pricing(centrum: SettlingCentrum, *, dry_run: bool = False, pricing: str | None = None) -> Any:
-    """Start Wyceny w efenix jak przycisk karty startu; bez ``pricing`` żądanie nie ma trybu (domyślny)."""
-
     request: dict[str, Any] = {"process": "efenix", "period": PERIOD, "mode": RunMode.of(dry_run=dry_run)}
     if pricing is not None:
         request["pricing"] = pricing
@@ -1566,10 +1392,6 @@ def _with_collective_file(centrum: SettlingCentrum, token: str) -> str:
 def test_karta_startu_wyceny_w_efenix_to_okresy_z_plikiem_zbiorczym_bez_podgladu_i_bez_potwierdzenia_gotowosci(
     tmp_path: Path,
 ) -> None:
-    """Wycena w efenix wybiera okresy z Plikiem zbiorczym i proponuje ostatni pełny okres. Nie ma Podglądu bez zapisu,
-    więc żaden okres nie ma udanego podglądu, a tata nie potwierdza gotowości plików; karta okresu nazywa jego Plik
-    zbiorczy i przypomina, żeby go zapisać i zamknąć w Excelu."""
-
     centrum = settling_centrum(tmp_path)
     older = _with_collective_file(centrum, "01_07_09_2026")
 
@@ -1620,11 +1442,6 @@ def test_karta_startu_wyceny_w_efenix_mowi_czego_brakuje_bez_pliku_zbiorczego_i_
 def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomienie_a_karta_i_powiadomienie_maja_wynik(
     tmp_path: Path,
 ) -> None:
-    """Okres z Plikiem zbiorczym ma przycisk Wyceny w efenix bez Podglądu bez zapisu. W trakcie czekania na logowanie
-    inne Uruchomienie nie startuje, a karta po wyniku ma błędy i ostrzeżenia Emmetta z numerem zlecenia i Wykonawcą
-    oraz liczby pominiętych. Nowe Powiadomienie (kropka na dzwonku) ma tytuł wyniku, okres i liczby zleceń, a prowadzi
-    do karty tego Uruchomienia z jego Logów."""
-
     with atrapa_efenix(IN_EFENIX) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa)
         atrapa.expire_session()
@@ -1699,9 +1516,6 @@ def test_wycena_w_efenix_z_centrum_czeka_na_logowanie_taty_jako_jedyne_uruchomie
 
 
 def test_zlecenie_rozliczone_w_efenix_ma_na_karcie_w_logach_i_w_powiadomieniu_wlasny_wynik_a_nie_blad(tmp_path: Path) -> None:
-    """Zlecenie o statusie „Rozliczone” (#821) to na karcie Uruchomienia osobna liczba i lista z numerem zlecenia i
-    Wykonawcą, w Logach Uruchomienia wynik „rozliczone” bez kodu Komunikatu, a w Powiadomieniu osobna liczba; wynik to OK."""
-
     orders = [
         Order("#ZLQR01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
         Order("#ZLQR02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
@@ -1727,13 +1541,7 @@ def test_zlecenie_rozliczone_w_efenix_ma_na_karcie_w_logach_i_w_powiadomieniu_wl
     assert _priced(notification) == [("Gotowe do przekazania", 1), ("Przekazane do akceptacji", 0), ("Rozliczone", 1), ("Błędy zleceń", 0), ("Ostrzeżenia Emmetta", 0)]
 
 
-
 def test_zlecenie_do_akceptacji_w_efenix_ma_na_karcie_i_w_logach_wynik_przekazane_a_nie_blad(tmp_path: Path) -> None:
-    """Start bez trybu to Wycena bez Przekazania (ADR 0027), z tym trybem na karcie i w faktach startu Logów, a zlecenie,
-    które tata już przekazał do akceptacji, to na karcie liczba i lista „Przekazane do akceptacji”, a w Logach
-    Uruchomienia wynik „przekazane” bez kodu Komunikatu i bez otwarcia strony zlecenia; wynik to OK, a efenix nie
-    dostaje żadnej zmiany statusu."""
-
     orders = [
         Order("#ZLQP01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
         Order("#ZLQP02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
@@ -1764,7 +1572,6 @@ def _priced(notification: dict[str, Any]) -> list[tuple[str, int]]:
     return [(count["label"], count["count"]) for count in notification["orders"]]
 
 
-# Zlecenie gotowe do przekazania i zlecenie, które tata już przekazał do akceptacji, każde z jedną pozycją jak w pliku.
 FORWARDED: Final = [
     Order("#ZLQF01", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
     Order("#ZLQF02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
@@ -1778,11 +1585,6 @@ FORWARDED_IN_EFENIX: Final = [
 def test_wycena_w_efenix_z_zapisem_przekazuje_gotowe_zlecenie_a_karta_logi_i_powiadomienie_maja_tryb_i_przekazane(
     tmp_path: Path,
 ) -> None:
-    """Przycisk „Uzupełnij i zapisz” startuje Wycenę z Przekazaniem (ADR 0027): gotowe zlecenie dostaje zielony „Zapisz”
-    w efenix, jedno żądanie zmiany statusu na „Do akceptacji”, i razem ze zleceniem przekazanym wcześniej przez tatę
-    jest na karcie liczbą i listą „Przekazane do akceptacji”, a nie gotowym. Tryb mają karta na żywo, fakty startu Logów
-    Uruchomienia, karta z Logów i Powiadomienie, które liczy też przekazane."""
-
     with atrapa_efenix(FORWARDED_IN_EFENIX) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, FORWARDED)
@@ -1810,10 +1612,6 @@ def test_wycena_w_efenix_z_zapisem_przekazuje_gotowe_zlecenie_a_karta_logi_i_pow
 def test_odmowa_przekazania_przez_efenix_jest_na_karcie_w_powiadomieniu_i_w_logach_bledem_zlecenia_z_przyczyna_bez_tekstu_efenix(
     tmp_path: Path,
 ) -> None:
-    """Gotowe zlecenie, któremu efenix po zielonym „Zapisz” odmawia Przekazania (brak zdjęć), jest na karcie (lista błędów
-    z Komunikatem), na karcie z Logów (liczba błędów) i w Powiadomieniu błędem zlecenia jak inne, z Komunikatem, czego efenix brakuje, a do efenix nie dochodzi żadna
-    zmiana statusu. Logi Uruchomienia mają odmowę z zamkniętej listy, a nie tekst okna informacji efenix."""
-
     in_efenix = [replace(FORWARDED_IN_EFENIX[0], forward_refusal=ForwardRefusal.NO_PHOTOS.value), FORWARDED_IN_EFENIX[1]]
     with atrapa_efenix(in_efenix) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
@@ -1846,11 +1644,6 @@ def test_odmowa_przekazania_przez_efenix_jest_na_karcie_w_powiadomieniu_i_w_loga
 def _previous_after_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str, *, pricing: str | None, before_modes: bool = False
 ) -> tuple[dict[str, Any], str, list[dict[str, Any]]]:
-    """Karta ostatniego Uruchomienia po ponownym starcie Centrum po Wycenie w trybie ``pricing``, której zostały tylko
-    Logi Uruchomienia (``kept`` „logi”), wiersz Historii i plik ostatniego startu („historia”) albo dziennik i plik
-    ostatniego startu („dziennik”); ``before_modes``: każdy z tych plików bez pola ``pricing``, jak zapisało go Centrum
-    sprzed trybów. Daje kartę, identyfikator Uruchomienia i Logi po starcie."""
-
     with atrapa_efenix(FORWARDED_IN_EFENIX) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, FORWARDED)
@@ -1887,10 +1680,6 @@ def _without_pricing(fields: dict[str, Any]) -> dict[str, Any]:
 def test_karta_wyceny_z_zapisem_po_ponownym_starcie_centrum_ma_jej_tryb_z_logow_historii_albo_dziennika(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str
 ) -> None:
-    """Karta ostatniego Uruchomienia po ponownym starcie Centrum mówi, że Wycena była z zapisem, skądkolwiek ją wzięła: z
-    Logów Uruchomienia, z wiersza Historii i pliku ostatniego startu, gdy Logów nie ma, albo z dziennika Urwanego
-    Uruchomienia, którego Logi mają ten tryb w faktach startu."""
-
     previous, run_id, logged = _previous_after_restart(tmp_path, monkeypatch, kept, pricing="z Przekazaniem")
 
     state = {"logi": "restored", "historia": "recorded", "dziennik": "interrupted"}[kept]
@@ -1903,9 +1692,6 @@ def test_karta_wyceny_z_zapisem_po_ponownym_starcie_centrum_ma_jej_tryb_z_logow_
 def test_karta_wyceny_z_plikow_sprzed_trybow_ma_tryb_bez_przekazania(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kept: str
 ) -> None:
-    """Logi, plik ostatniego startu i pierwsza linia dziennika sprzed trybów nie mają pola ``pricing``, a Wycena biegła
-    wtedy bez Przekazania (ADR 0027), więc karta ostatniego Uruchomienia mówi „bez Przekazania”, a nie „z Przekazaniem”."""
-
     previous, run_id, logged = _previous_after_restart(tmp_path, monkeypatch, kept, pricing=None, before_modes=True)
 
     state = {"logi": "restored", "historia": "recorded", "dziennik": "interrupted"}[kept]
@@ -1915,9 +1701,6 @@ def test_karta_wyceny_z_plikow_sprzed_trybow_ma_tryb_bez_przekazania(
 
 
 def test_tryb_z_przekazaniem_ma_tylko_wycena_w_efenix_a_inny_proces_z_nim_dostaje_odmowe(tmp_path: Path) -> None:
-    """Przebieg rozliczeń nie ma trybów, więc jego karta startu nie ma przycisków trybu, a start z Przekazaniem do
-    akceptacji dostaje odmowę 409 i nic nie startuje."""
-
     centrum = settling_centrum(tmp_path)
     processes = centrum.client.get("/api/runs/setup").json()["processes"]
     refused = centrum.client.post(
@@ -1937,20 +1720,16 @@ def test_tryb_z_przekazaniem_ma_tylko_wycena_w_efenix_a_inny_proces_z_nim_dostaj
 
 
 def _close_window(profile: Path) -> None:
-    """Tata zamyka krzyżykiem okno efenix, które Centrum otworzyło (przez port debugowania z profilu przeglądarki)."""
-
     with _devtools(profile) as browser:
         browser.contexts[0].pages[0].close()
 
 
 def _kill_browser(profile: Path) -> None:
-    """Przeglądarka okna efenix znika cała naraz, jak Chrome zamknięty z paska zadań albo zabity przez system."""
-
     with _devtools(profile) as browser:
         processes = browser.new_browser_cdp_session().send("SystemInfo.getProcessInfo")["processInfo"]
     [pid] = [process["id"] for process in processes if process["type"] == "browser"]
     if sys.platform == "win32":
-        os.kill(pid, signal.SIGTERM)  # na Windows to TerminateProcess: proces znika bez sprzątania, jak po SIGKILL
+        os.kill(pid, signal.SIGTERM)  # ZEWNĘTRZNE: os.kill na Windows z sygnałem innym niż CTRL_C_EVENT i CTRL_BREAK_EVENT woła TerminateProcess, więc proces znika jak po SIGKILL (https://docs.python.org/3/library/os.html#os.kill)
     else:
         os.kill(pid, signal.SIGKILL)
 
@@ -1963,22 +1742,12 @@ def _devtools(profile: Path) -> Iterator[Browser]:
 
 
 def _disabled_features(browser: Browser) -> list[set[str]]:
-    """Funkcje każdego ``--disable-features`` z linii poleceń przeglądarki uruchomionej z ``--enable-automation``."""
-
     line = browser.new_browser_cdp_session().send("Browser.getBrowserCommandLine")["arguments"]
     return [set(argument.removeprefix("--disable-features=").split(",")) for argument in line if argument.startswith("--disable-features=")]
 
 
-# Sprawdzenie skilla verify-wycena-efenix: przyczynę Zatrzymania okna efenix, którą dostają Logi, przy każdej awarii każdego
-# żądania prawdziwej Wyceny w efenix sprawdza jego skrypt (explore_wycena_efenix.py) z tabelą oczekiwań z domeny. Cały
-# zakres biegnie w CI jako podstawa skilla w częściach, a tu we własnym procesie z limitem (#651) zakres, który przechodzi
-# przez każdą fazę sprawdzenia: przebieg bez awarii, awarie, stan, który zostawia zabity proces, i ponowne uruchomienia
-# po nich ze zmianami taty w efenix.
 EXPLORER = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "scripts" / "explore_wycena_efenix.py"
 EXPLORER_SKILL = Path(__file__).resolve().parents[1] / ".agents" / "skills" / "verify-wycena-efenix" / "SKILL.md"
-# Poniżej limitu pytest testu, który je uruchamia, żeby sprawdzenie, które się nie kończy, padło z tym, co zdążyło
-# wypisać. Zakres testu z ponownymi uruchomieniami trwał 26 s na Macu przy 4 przeglądarkach, a na Windows w CI całe
-# zadania pytest z tym plikiem trwały 50 i 71 s (run 41985714991).
 EXPLORER_LIMIT_S = 200
 
 
@@ -2006,28 +1775,20 @@ def _explorer_in_own_process(
 def test_odmowa_zaladuj_do_zlecenia_zabity_proces_przy_niej_i_wznowienie_po_nich_trzymaja_niezmienniki_bez_znanych_ustalen(
     tmp_path: Path,
 ) -> None:
-    """Bez żadnego wybaczonego naruszenia: błąd serwera po wykonaniu „Załaduj do zlecenia” i zabity proces po nim
-    zostawiają zlecenie z samą Wyceną Emmetta, a ponowne uruchomienie dokańcza je do pliku jak jeden przebieg (ADR 0026;
-    dawniej przyjęte ryzyko #774)."""
-
     code, lines = _explorer_in_own_process(
         "--run-dir", str(tmp_path), "--variant", "odpowiedzi", "zabity-proces", "--rola", "zaladuj-do-zlecenia", "--rownolegle", "4"
     )
 
-    # Werdykt z wybaczonym naruszeniem ma ich liczbę („WYCENA EFENIX OK, ZNANE USTALENIA: n”).
     assert (code, lines[-1:]) == (0, ["WYCENA EFENIX OK"]), "\n".join(lines)
     assert any(" ponownych uruchomień " in line for line in lines), "\n".join(lines)
     [silence] = [found for line in lines if (found := re.fullmatch(r"CISZA OKNA \| najdłużej (\d+\.\d) s .+ od 26 s \| .+", line))]
     assert float(silence[1]) < 26
     [evidence] = (tmp_path / "evidence").iterdir()
     assert (evidence / "raport.txt").read_text(encoding="utf-8").splitlines()[-1] == "WYCENA EFENIX OK"
-    # Kontrprzykład ma tylko przypadek z naruszeniem, znanym ustaleniem albo przyjętym ryzykiem, a tu nie ma żadnego.
-    assert not (evidence / "kontrprzyklady").exists()
+    assert not (evidence / "kontrprzyklady").exists(), "kontrprzykład ma tylko przypadek z naruszeniem, znanym ustaleniem albo przyjętym ryzykiem"
     assert list((tmp_path / "runs").iterdir()) == []
 
 
-# Sprawdzenie na zajętej maszynie: Atrapa przeładowuje stronę po „Załaduj do zlecenia” później niż limit okna przypadków,
-# które go mierzą (LIMIT_MS), jak runner Windows w CI pod obciążeniem.
 SLOW_RELOAD = (
     "import sys\n"
     "sys.path.insert(0, sys.argv[1])\n"
@@ -2042,11 +1803,6 @@ SLOW_RELOAD = (
 def test_przeladowanie_po_zaladuj_do_zlecenia_dluzsze_niz_limit_okna_nie_daje_naruszenia_a_awaria_przed_ktora_okno_stanelo_jest_luka(
     tmp_path: Path,
 ) -> None:
-    """Przebieg bez awarii, ponowne uruchomienia i awarie, przy których okno nie czeka do limitu (odmowa „Załaduj do
-    zlecenia” z ``result: nok``), kończą się jak w domenie także przy przeładowaniu dłuższym niż 4 s. Awaria zawieszonej
-    odpowiedzi przy drugim zleceniu mierzy limit 4 s, więc okno staje już na przeładowaniu pierwszego zlecenia, zanim
-    awaria zadziała: to luka modelu (``Run.injected``), nie naruszenie przyczyny ani przejście."""
-
     code, lines = _explorer_in_own_process(
         "--run-dir",
         str(tmp_path),
@@ -2060,7 +1816,6 @@ def test_przeladowanie_po_zaladuj_do_zlecenia_dluzsze_niz_limit_okna_nie_daje_na
     )
 
     output = "\n".join(lines)
-    # Werdykt luki modelu kończy sprawdzenie kodem 2, a nowego naruszenia kodem 1 (``eksplorator.verdict``).
     assert code == 2, output
     assert [line for line in lines if line.startswith(("NOWE NARUSZENIE", "LUKA MODELU"))] == [
         "LUKA MODELU: awaria nie zadziałała w 4 próbach: HUNG przy POST action_load_emmett.php #2 [zaladuj-do-zlecenia]"
@@ -2069,9 +1824,6 @@ def test_przeladowanie_po_zaladuj_do_zlecenia_dluzsze_niz_limit_okna_nie_daje_na
 
 
 def test_czesci_przegladu_z_ci_czesci_skladaja_sie_na_caly_zakres_kazdy_przypadek_raz() -> None:
-    """Każda część ``ci-czesci`` z ``SKILL.md`` skilla ma swoje przypadki, a razem, w kolejności, cały zakres; mniejsze
-    liczby części daje ten sam ``part`` (``tests/test_podstawa_w_czesciach.py``)."""
-
     [count] = [int(line.split(":")[1]) for line in EXPLORER_SKILL.read_text(encoding="utf-8").splitlines() if line.startswith("ci-czesci:")]
     code, whole = _explorer_in_own_process("--lista")
     parts = []
@@ -2086,11 +1838,6 @@ def test_czesci_przegladu_z_ci_czesci_skladaja_sie_na_caly_zakres_kazdy_przypade
 
 
 def test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcje_playwrighta(tmp_path: Path) -> None:
-    """Chromium 156 na Windows 11 22H2 i nowszym losuje port lokalny każdego połączenia (``TcpPortRandomizationWin``), a
-    Windows odmawia wtedy czasem połączenia z efenix (``net::ERR_NO_BUFFER_SPACE``), choć porty są wolne (#767). Przeglądarka
-    okna efenix, które otwiera Centrum, ma tę funkcję wyłączoną w jedynym ``--disable-features``, bo Chromium bierze tylko
-    ostatni, razem z każdą funkcją, którą wyłącza Playwright w Chromium bez tych argumentów."""
-
     with atrapa_efenix([PRICED[0].in_efenix("611")]) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa, "--remote-debugging-port=0", "--enable-automation")
         atrapa.expire_session()
@@ -2110,19 +1857,15 @@ def test_okno_efenix_z_centrum_nie_losuje_portu_polaczenia_i_ma_wylaczone_funkcj
 def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_centrum_przyjmuje_nastepne_uruchomienie(
     tmp_path: Path, close: Callable[[Path], None]
 ) -> None:
-    """Tata zamyka okno efenix albo całą przeglądarkę, zanim się zalogował: Wycena zatrzymuje się po kilku sekundach, nie
-    po 15 minutach limitu logowania, z Komunikatem o zamkniętym oknie, Powiadomienie to mówi, a Centrum od razu przyjmuje
-    następne Uruchomienie. Logi tej Wyceny nazywają w śladzie wywołań drogę startu, która zawiodła (zamknięte okno), choć
-    to Zatrzymanie dla taty (#976)."""
-
     with atrapa_efenix([PRICED[0].in_efenix("611")]) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa, "--remote-debugging-port=0")
         atrapa.expire_session()
         assert _start_pricing(centrum).status_code == 200
         _view_where(centrum, lambda view: (view.get("progress", {}).get("step") or {}).get("label") == LOGIN)
         close(tmp_path / "przegladarka-efenix")
-        # Bez wykrycia zamknięcia Wycena czekałaby do końca limitu logowania, 15 minut.
-        assert wait_for(lambda: centrum.client.get("/api/runs/current").json()["state"] == "finished", 20)
+        assert wait_for(lambda: centrum.client.get("/api/runs/current").json()["state"] == "finished", 20), (
+            f"bez wykrycia zamknięcia Wycena czeka do końca limitu logowania, {LOGIN_TIMEOUT_MS // 60_000} min"
+        )
         result = finished_view(centrum.client)["result"]
         following = centrum.start(dry_run=True)
         finished_view(centrum.client)
@@ -2143,9 +1886,6 @@ def test_okno_efenix_zamkniete_w_trakcie_logowania_zatrzymuje_wycene_od_razu_a_c
     )
 
 
-# Zatrzymanie okna efenix przy wierszu 19, gdy wiersz 18 jest już gotowy (Zgłoszenia #19 i #20 z
-# MAXIMISEART-Dad-zgloszenia): zlecenie Atrapy w wierszu 19 i przyczyna, którą Logi mają podać. Hipotezy B, D i E z
-# tabeli decyzji (``tests/test_tabela_zatrzyman_efenix.py``); hipoteza A od #819 nie jest Zatrzymaniem.
 STOPPED_AT_SECOND = [PRICED[0], Order("#ZLQX07", worker="gosia.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})))]
 HYPOTHESES = {
     "B-ilosc-niecalkowita": (
@@ -2206,12 +1946,6 @@ HYPOTHESES = {
 def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_i_slad_zlecen_sprzed_niego(
     tmp_path: Path, second: AtrapaOrder, cause: dict[str, Any], steps: list[str], failed: str
 ) -> None:
-    """Okno efenix staje przy zleceniu w wierszu 19, a Logi Uruchomienia, które idą do Maksa same, bez Diagnozy, mówią
-    dlaczego: przyczynę z zamkniętej listy (kody pozycji, budowę strony albo typ błędu Playwrighta z działaniem
-    przeglądarki), wiersz, miejsce „2 z 2”, udane działania przy nim i działanie, które się nie udało, oraz ślad gotowego
-    zlecenia z wiersza 18. Ślad wywołań ma łańcuch przyczyn do wyjątku okna. Komunikat taty jest ten sam co bez przyczyny,
-    a ślad zleceń nie ma numeru zlecenia, a Logi adresu."""
-
     with atrapa_efenix([PRICED[0].in_efenix("611"), second]) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, STOPPED_AT_SECOND)
@@ -2241,9 +1975,6 @@ def test_logi_zatrzymania_okna_efenix_maja_przyczyne_wiersz_miejsce_w_przebiegu_
 
 
 def test_logi_zatrzymania_okna_efenix_na_elemencie_strony_nie_dokladnie_raz_maja_jego_selektor_i_liczbe(tmp_path: Path) -> None:
-    """Strona zlecenia nie ma przycisku Emmetta, gdy okno ładuje Wycenę Emmetta zlecenia z wiersza 19: Logi
-    Uruchomienia mówią Maksowi, który element strony okno znalazło ile razy (tu 0), a nie tylko, że budowa się zmieniła."""
-
     orders = [PRICED[0], Order("#ZLQX08", worker="gosia.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), emmett={"012": 1})]
     with atrapa_efenix([orders[0].in_efenix("611"), orders[1].in_efenix("618")], changed=Changed.EMMETT_BUTTON) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
@@ -2263,9 +1994,6 @@ def test_logi_zatrzymania_okna_efenix_na_elemencie_strony_nie_dokladnie_raz_maja
 
 
 def test_logi_zatrzymania_okna_efenix_na_zmianie_statusu_przerwanej_przez_straznika_nazywaja_te_przyczyne(tmp_path: Path) -> None:
-    """Strona zlecenia sama wysyła zmianę statusu, a strażnik okna ją przerywa: Logi Uruchomienia mówią Maksowi, że
-    Wycena stanęła na przerwanej zmianie statusu i przy której części strony."""
-
     with atrapa_efenix([PRICED[0].in_efenix("611")], status_change=StatusChange.ON_LOAD) as atrapa:
         centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED[:1])
         assert _start_pricing(centrum).status_code == 200
@@ -2278,55 +2006,44 @@ def test_logi_zatrzymania_okna_efenix_na_zmianie_statusu_przerwanej_przez_strazn
 
 @dataclass(frozen=True)
 class StartPath:
-    """Droga startu okna efenix, która kończy Wycenę Zatrzymaniem (tabela w ``tests/test_tabela_zatrzyman_efenix.py``):
-    jak test ją wywołuje i co mówią o niej Logi Uruchomienia.
-
-    ``driver``: sterownik Playwrighta pod adresem, pod którym go nie ma; ``profile_file``: folder profilu przeglądarki
-    okna jest plikiem, więc przeglądarka nie startuje; ``outage``, ``error_answer``: Atrapa przy pierwszym żądaniu.
-    ``cause``: przyczyna techniczna ``efenix_stop.cause`` bez pól ``None`` (``error_type`` ``None``: dowolny błąd
-    Playwrighta, którego typ zależy od systemu), ``chain``: wyjątek Zatrzymania, wyjątek okna (nazwa drogi startu) i
-    jego źródło w śladzie wywołań, ``raised``: funkcja kodu narzędzia, w której wyjątek okna powstał.
-    """
-
     stop_kind: str
     code: str
     cause: dict[str, Any]
-    chain: list[str | None]
-    raised: str
-    driver: bool = False
-    profile_file: bool = False
+    chain: tuple[str, str, str | None]
+    window_error_raised_in: str
+    without_driver: bool = False
+    profile_folder_is_file: bool = False
     outage: tuple[Outage, int] | None = None
     error_answer: tuple[str, int, HTTPStatus] | None = None
 
 
 _BROWSER_FAILURE = "błąd przeglądarki w działaniu okna"
 _PLAYWRIGHT_ERROR = "playwright._impl._errors.Error"
+_ANY_PLAYWRIGHT_ERROR: Final = None
 _STOP_ERROR = "rozliczenia.message.StopError"
 _DRIVER_MISSING = _PLAYWRIGHT_ERROR if tuple(map(int, version("playwright").split(".")[:2])) >= (1, 65) else "FileNotFoundError"
-"""Typ błędu startu sterownika Playwrighta bez programu sterownika: od 1.65 klient Pythona zgłasza go jako błąd
-Playwrighta (``Cannot launch Node.js executable``), a wcześniej jako ``FileNotFoundError``; tata dostaje ten sam Komunikat."""
 START_PATHS = {
     "sterownik-playwrighta-nie-wystartowal": StartPath(
         "for_tata",
         "EFENIX_BRAK_PRZEGLADARKI",
         {"what": _BROWSER_FAILURE, "error_type": _DRIVER_MISSING, "operation": "start sterownika Playwrighta"},
-        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", _DRIVER_MISSING],
+        (_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", _DRIVER_MISSING),
         "_playwright",
-        driver=True,
+        without_driver=True,
     ),
     "przegladarka-nie-wystartowala": StartPath(
         "for_tata",
         "EFENIX_BRAK_PRZEGLADARKI",
-        {"what": _BROWSER_FAILURE, "error_type": None, "operation": "start przeglądarki"},
-        [_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", None],
+        {"what": _BROWSER_FAILURE, "error_type": _ANY_PLAYWRIGHT_ERROR, "operation": "start przeglądarki"},
+        (_STOP_ERROR, "rozliczenia.efenix_window.BrowserNotStarted", _ANY_PLAYWRIGHT_ERROR),
         "chrome",
-        profile_file=True,
+        profile_folder_is_file=True,
     ),
     "efenix-nie-odpowiada": StartPath(
         "for_tata",
         "EFENIX_NIEDOSTEPNY",
         {"part": "LIST", "what": _BROWSER_FAILURE, "error_type": _PLAYWRIGHT_ERROR, "operation": "otwarcie strony"},
-        [_STOP_ERROR, "rozliczenia.efenix_window.EfenixUnreachable", _PLAYWRIGHT_ERROR],
+        (_STOP_ERROR, "rozliczenia.efenix_window.EfenixUnreachable", _PLAYWRIGHT_ERROR),
         "open_list",
         outage=(Outage.CUT, 0),
     ),
@@ -2334,7 +2051,7 @@ START_PATHS = {
         "for_maks",
         "EFENIX_OKNO_ZATRZYMANE",
         {"part": "LIST", "what": "strona błędu HTTP serwera efenix zamiast strony albo odpowiedzi, na którą czekało okno", "status": 500},
-        [_STOP_ERROR, "rozliczenia.efenix_window.UnexpectedPage", "rozliczenia.efenix_window.UnexpectedPage"],
+        (_STOP_ERROR, "rozliczenia.efenix_window.UnexpectedPage", "rozliczenia.efenix_window.UnexpectedPage"),
         "open_list",
         error_answer=(LIST_PAGE, 1, HTTPStatus.INTERNAL_SERVER_ERROR),
     ),
@@ -2345,15 +2062,9 @@ START_PATHS = {
 def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_typ_wyjatku_i_ramki_kodu_narzedzia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], path: StartPath
 ) -> None:
-    """Okno efenix nie otwiera listy zleceń przy starcie (#976): Logi Uruchomienia, które idą do Maksa same, także przy
-    Zatrzymaniu dla taty, mówią, która droga startu zawiodła: przyczynę techniczną bez zlecenia (``row`` ``None``) i
-    ślad wywołań z nazwą wyjątku okna (``BrowserNotStarted``, ``EfenixUnreachable``, ``UnexpectedPage``), typem jego
-    źródła i ramką kodu narzędzia, w której powstał, bez treści wyjątku. Narzędzie odtwarzania pokazuje tę przyczynę, a
-    Logi nie mają adresu z Pliku zbiorczego."""
-
-    if path.driver:
+    if path.without_driver:
         monkeypatch.setenv("PLAYWRIGHT_NODEJS_PATH", str(tmp_path / "bez-sterownika" / "node"))
-    if path.profile_file:
+    if path.profile_folder_is_file:
         (tmp_path / "przegladarka-efenix").write_text("", encoding="utf-8")
     loops_before = _event_loops()
     with atrapa_efenix([PRICED[0].in_efenix("611")], outage_from=path.outage, error_answer=path.error_answer) as atrapa:
@@ -2361,17 +2072,8 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
         assert _start_pricing(centrum).status_code == 200
         finished_view(centrum.client)
     monkeypatch.delenv("PLAYWRIGHT_NODEJS_PATH", raising=False)
-    if path.driver:
-        # Playwright, którego sterownik nie wystartował, nie zamyka swojej pętli zdarzeń (błąd startu sterownika wychodzi
-        # z PlaywrightContextManager.__enter__ przed jego __exit__), a na Linuksie trzyma ją jeszcze greenlet wątku
-        # Uruchomienia, który już się skończył. Test zamyka więc pętle, które powstały w nim, zamiast zostawić ich
-        # deskryptory sąsiadowi (tests/fixtures/stan_procesu.py).
-        for loop in _event_loops() - loops_before:
-            if not loop.is_running():
-                loop.close()
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore", ResourceWarning)
-            gc.collect()
+    if path.without_driver:
+        _close_event_loops_left_by_playwright_without_driver(loops_before)
     [record] = records(centrum)
     stop, trace = record["efenix_stop"], record["trace"]
     cause = {key: value for key, value in stop["cause"].items() if value is not None}
@@ -2379,14 +2081,14 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
     window_frames = trace["causes"][0]["frames"]
 
     assert ([message["code"] for message in record["messages"]], record["stop_kind"]) == ([path.code], path.stop_kind)
-    if path.cause.get("error_type", "") is None:
+    if path.cause.get("error_type", "") is _ANY_PLAYWRIGHT_ERROR:
         assert cause.pop("error_type").startswith("playwright._impl._errors."), cause
     assert cause == {key: value for key, value in path.cause.items() if value is not None}
     assert (stop["row"], stop["order"], stop["steps"], stop["failed"]) == (None, None, [], None)
-    if path.chain[2] is None:
+    if path.chain[2] is _ANY_PLAYWRIGHT_ERROR:
         assert chain[2].startswith("playwright._impl._errors."), chain
     assert chain == [path.chain[0], path.chain[1], path.chain[2] or chain[2]]
-    assert (window_frames[-1]["file"], window_frames[-1]["function"]) == ("src/rozliczenia/efenix_browser.py", path.raised)
+    assert (window_frames[-1]["file"], window_frames[-1]["function"]) == ("src/rozliczenia/efenix_browser.py", path.window_error_raised_in)
     text = log_files(centrum)[0].read_text(encoding="utf-8")
     assert [marker for marker in ("TESTOWA", "Testowa", "Miasto-Dzielnica") if marker in text] == [], "ADRES"
 
@@ -2396,18 +2098,24 @@ def test_logi_wyceny_zatrzymanej_przy_starcie_okna_efenix_nazywaja_droge_startu_
     details = [str(logged[key]) for key in ("operation", "error_type") if logged[key] is not None]
     details += [] if logged["status"] is None else [f"HTTP {logged['status']}"]
     assert shown.split("; wyjątki ")[0] == f"Przyczyna w Logach: okno efenix przy starcie okna: {logged['what']} ({', '.join(details)})"
-    assert f"; wyjątki {' ← '.join(chain)}" in shown and shown.endswith(f" w {path.raised}"), shown
+    assert f"; wyjątki {' ← '.join(chain)}" in shown and shown.endswith(f" w {path.window_error_raised_in}"), shown
+
+
+def _close_event_loops_left_by_playwright_without_driver(loops_before: set[asyncio.AbstractEventLoop]) -> None:
+    # ZEWNĘTRZNE: Playwright zamyka swoją pętlę zdarzeń tylko w __exit__, a błąd startu sterownika wychodzi z __enter__ (playwright/sync_api/_context_manager.py)
+    for loop in _event_loops() - loops_before:
+        if not loop.is_running():
+            loop.close()
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ResourceWarning)
+        gc.collect()
 
 
 def _event_loops() -> set[asyncio.AbstractEventLoop]:
-    """Pętle zdarzeń procesu, które jeszcze nie są zamknięte, także te w śmieciach."""
-
     return {obj for obj in gc.get_objects() if isinstance(obj, asyncio.AbstractEventLoop) and not obj.is_closed()}
 
 
 def _replay_report(capsys: pytest.CaptureFixture[str], logs: Path) -> list[str]:
-    """Linie raportu narzędzia odtwarzania (``tools/odtworz_uruchomienie.py``) z pliku Logów ``logs`` na tym drzewie."""
-
     capsys.readouterr()
     odtworz_uruchomienie.main([str(logs), "--na-tym-drzewie", "--efenix-dzis", TODAY.isoformat()])
     return capsys.readouterr().out.splitlines()
@@ -2446,9 +2154,6 @@ def test_logi_wyceny_w_efenix_maja_slad_kazdego_zlecenia_bez_numeru_zlecenia_i_b
     assert [marker for marker in private if any(marker in text for text in texts)] == []
 
 
-# Każdy odczyt strony efenix w Logach (#843), wiersze 18–23 po Wykonawcach: zlecenie, które proces wycenia (data wykonania,
-# Wycena Emmetta, ilość), zlecenie z innym statusem, z innym lokalem, z inną ulicą i numerem domu, numer, pod którym
-# efenix pokazuje tylko inne zlecenie, i numer, którego efenix nie zna wcale. Adresy i numery są wymyślone.
 _FILE_ADDRESS = "UL. ZAWILCOWA 12/3"
 _EFENIX_ADDRESS = "Miastowo-Centrum ul.Zawilcowa 12 Lokal 3"
 
@@ -2482,13 +2187,6 @@ def _listed(same_number: bool, status: str, realizator: str, address: list[str])
 def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_realizatorem_i_czesciami_adresu_bez_danych_adresowych(
     tmp_path: Path,
 ) -> None:
-    """Logi Wyceny w efenix mówią, co narzędzie zobaczyło w efenix (#843): po szukaniu liczbę wyników i przy każdym
-    status, login realizatora, czy to numer z pliku i które części adresu (ulica, numer domu, lokal) różnią się od ``ADRES``,
-    po otwarciu zlecenia jego status i realizatora, a ze strony zlecenia datę wykonania, kwotę i ilość każdej pozycji, także
-    po zapisie daty, Wyceny Emmetta i ilości. Zlecenie z innym statusem ma ten status, zlecenie z innym adresem tylko nazwy
-    różniących się części, a nieznany numer to, co zwróciło szukanie. Dane adresowe pliku i Atrapy nie wychodzą ani do
-    pliku Logów, ani do Skrzynki Zgłoszeń."""
-
     with atrapa_efenix(READ_IN_EFENIX) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, READ)
@@ -2538,10 +2236,9 @@ def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_reali
         (22, "EFENIX_NIEZNANY_NUMER", [("szukanie", 1, [_listed(False, "Rozliczone", "gustaw.testowy", [])])]),
         (23, "EFENIX_NIEZNANY_NUMER", [("szukanie", 0, [])]),
     ]
-    # Numer zlecenia może wyjść (ADR 0025) i stoi w Kopii wejścia, ale nie w śladzie zleceń; adresu nie ma nigdzie.
     traced_text = json.dumps(record["efenix_orders"], ensure_ascii=False)
     numbers = [*(order.number for order in READ), "ZLQS050"]
-    assert [number for number in numbers if zawiera_wartosc(traced_text, number)] == []
+    assert [number for number in numbers if zawiera_wartosc(traced_text, number)] == [], "numer zlecenia tylko w Kopii wejścia"
     private = [_FILE_ADDRESS, "ZAWILCOWA", "Zawilcowa", "Rumiankowa", "Miastowo"]
     assert [marker for marker in private if any(marker in text for text in texts + in_box(box))] == []
     assert record["technical_notes"] == []
@@ -2550,8 +2247,8 @@ def test_logi_wyceny_w_efenix_maja_odczyt_kazdej_strony_efenix_ze_statusem_reali
 def test_uwaga_taty_po_wycenie_w_efenix_nie_wynosi_adresu_z_pliku_zbiorczego_ani_danych_adresowych_efenix(
     tmp_path: Path,
 ) -> None:
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         assert finished_view(centrum.client)["result"]["result"] == "WYMAGA_SPRAWDZENIA"
@@ -2567,8 +2264,6 @@ def test_uwaga_taty_po_wycenie_w_efenix_nie_wynosi_adresu_z_pliku_zbiorczego_ani
         "Reguła danych: zamaskowano wartość kolumny ADRES w: treść Uwagi taty.",
     ]
 
-
-# Dziennik działań taty (#839): co tata robił w Centrum od poprzedniego Uruchomienia, z godzinami, bez treści Uwagi taty.
 
 NOTE_TITLE = "Tytuł Uwagi SYNTETYCZNY-TYTUŁ"
 NOTE_BODY = "Treść Uwagi SYNTETYCZNA-TREŚĆ"
@@ -2596,24 +2291,16 @@ def logs_comments(fake: FakeReportBox) -> list[str]:
     return [comment for issue in fake.background_issues if issue.label == "logi-uruchomienia" for comment in issue.comments]
 
 
-# Odnośnik komentarza Logów do pliku w Archiwum Logów okresu (#844): nazwa pliku i tag Archiwum z adresu pobrania.
 ARCHIVE_LINK = re.compile(r"\[(?P<name>[^\]]+)\]\(https://github\.com/[^/]+/[^/]+/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
 
 
 def logs_arrived(fake: FakeReportBox, count: int) -> bool:
-    """Skrzynka ma ``count`` komentarzy Logów i każdy prowadzi już do pełnych Logów w Archiwum Logów okresu.
-
-    Komentarz Wyceny w efenix powstaje przy jej starcie jako komentarz postępu bez odnośnika (#846), a Logi zmieniają go
-    dopiero później, więc sama liczba komentarzy przychodzi przed Logami (#923).
-    """
-
     comments = logs_comments(fake)
-    return len(comments) == count and all(ARCHIVE_LINK.search(comment) is not None for comment in comments)
+    none_is_progress_without_archive_link = all(ARCHIVE_LINK.search(comment) is not None for comment in comments)
+    return len(comments) == count and none_is_progress_without_archive_link
 
 
 def logs_file(fake: FakeReportBox, comment: str) -> bytes:
-    """Pełne Logi z pliku w Archiwum Logów okresu, do którego prowadzi komentarz Logów, rozpakowane bajt w bajt."""
-
     found = ARCHIVE_LINK.search(comment)
     assert found is not None, comment
     return fake.archived(found["tag"])[found["name"]]
@@ -2624,16 +2311,11 @@ def logs_text(fake: FakeReportBox, comment: str) -> str:
 
 
 def in_box(fake: FakeReportBox) -> list[str]:
-    """Wszystko, co Maks dostaje w Skrzynce: tytuły, treści i komentarze issue oraz rozpakowane pliki w Archiwach."""
-
     issues = [part for issue in fake.background_issues for part in (issue.title, issue.body, *issue.comments)]
     return issues + [asset.text for archive in fake.archives for asset in archive.assets]
 
 
 def test_logi_maja_najnowsze_wpisy_dziennika_centrum_ponad_limit_i_liczbe_starszych(tmp_path: Path) -> None:
-    """Ponad ``MAX_FOR_LOGS`` wpisów od poprzednich Logów (Centrum długo bez Uruchomienia) Logi biorą najnowsze, a
-    liczba starszych stoi obok, jak w dzienniku działań taty."""
-
     log = CentrumLog(tmp_path / "centrum-rozliczen.log")
     for index in range(MAX_FOR_LOGS + 3):
         log.settlement_mailed(period=f"wpis-{index}")
@@ -2646,10 +2328,6 @@ def test_logi_maja_najnowsze_wpisy_dziennika_centrum_ponad_limit_i_liczbe_starsz
 
 
 def test_co_centrum_zrobilo_miedzy_dwoma_uruchomieniami_jest_w_logach_drugiego_bez_pomiarow_widoku(tmp_path: Path) -> None:
-    """Dziennik Centrum od Logów pierwszego Uruchomienia do powstania Logów drugiego (zmiana Ustawień, zamknięcie
-    Centrum, wysyłki Kolejki) jest w Logach drugiego i w Archiwum Logów okresu, każdy wpis raz, a pomiaru widoku tam nie ma: z Logów
-    Maks wie, co Centrum zrobiło samo także poza Uruchomieniami."""
-
     centrum = settling_centrum(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
     first = run_to_end(centrum, dry_run=True)["run"]["id"]
@@ -2787,9 +2465,6 @@ def test_nieczytelne_linie_dziennika_dzialan_taty_logi_licza_w_pominietych(tmp_p
 def test_dziennik_dzialan_taty_ktorego_nie_da_sie_odczytac_daje_logom_pusty_dziennik_a_wpisy_czekaja_na_nastepne(
     tmp_path: Path,
 ) -> None:
-    """Plik dziennika działań taty bez prawa odczytu: Logi tego Uruchomienia mają pusty dziennik, dziennik Centrum mówi,
-    że dziennika działań taty nie da się odczytać, a wpisy czekają w pliku na Logi następnego Uruchomienia."""
-
     entry = ViewOpened(at=datetime(2026, 9, 1, 8, 0, tzinfo=timezone.utc), action="widok", page="okresy", kind="navigation")
     path = tmp_path / DAD_ACTIONS_FILE
     path.write_text(entry.model_dump_json() + "\n", encoding="utf-8")
@@ -2804,9 +2479,6 @@ def test_dziennik_dzialan_taty_ktorego_nie_da_sie_odczytac_daje_logom_pusty_dzie
 
 
 def test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_takze_nastepnym_logom(tmp_path: Path) -> None:
-    """Katalog Logów przyjmuje dopisanie, ale nie założenie pliku, więc podmiana pliku pada: dziennik działań taty po
-    pierwszym Uruchomieniu zostaje pełny, a Logi drugiego Uruchomienia mają też jego wpisy, bo lepiej dwa razy niż wcale."""
-
     centrum = settling_centrum(tmp_path)
     logs = centrum.log_path.parent
     centrum.tool.run_logs.mkdir(parents=True, exist_ok=True)
@@ -2825,9 +2497,6 @@ def test_dziennik_dzialan_taty_ktorego_nie_da_sie_oproznic_oddaje_te_same_wpisy_
 def test_dziennik_dzialan_taty_ktorego_nie_da_sie_zapisac_jest_linia_dziennika_centrum_a_nie_bledem_przycisku(
     tmp_path: Path,
 ) -> None:
-    """Na miejscu pliku dziennika działań taty stoi katalog: przyciski i Uruchomienie działają jak zawsze, Logi mają
-    pusty dziennik, a dziennik Centrum mówi już przy przycisku, że dziennika działań taty nie da się zapisać."""
-
     centrum = settling_centrum(tmp_path)
     journal = centrum.log_path.parent / DAD_ACTIONS_FILE
     journal.unlink(missing_ok=True)
@@ -2843,11 +2512,6 @@ def test_dziennik_dzialan_taty_ktorego_nie_da_sie_zapisac_jest_linia_dziennika_c
     assert "dzialania-taty-niedostepne typ=" in centrum.log_path.read_text(encoding="utf-8")
 
 
-# Dziennik Wyceny w efenix (#845): ślad Wyceny na dysku taty w trakcie i Logi Urwanego Uruchomienia po starcie Centrum.
-
-# Wiersze 18–22: gotowe po zapisach w efenix (data wykonania, Wycena Emmetta, ilość), gotowe bez zapisu (wycena już jest),
-# sprzeczne z Emmettem, zlecenie, przy którym efenix staje po zapisie daty wykonania, i zlecenie, do którego przebieg
-# nie dochodzi.
 CUT = [
     Order("#ZLQZ01", cells={"O": 1}, amount=float(amount_of({"012": 1}))),
     Order("#ZLQZ02", worker="beata.testowa", cells={"O": 1}, amount=float(amount_of({"012": 1})), quantities={"012": 1}),
@@ -2862,7 +2526,6 @@ CUT_IN_EFENIX = [
     replace(CUT[3].in_efenix("634"), hung=True, after_date=True),
     CUT[4].in_efenix("635"),
 ]
-# Wpis dziennika, który prąd urwał w trakcie zapisu.
 TORN = '{"at": "2026-09-16T10:'
 
 
@@ -2879,10 +2542,6 @@ def journal_entries_of(text: str) -> list[dict[str, Any]]:
 
 
 def journals_at_result(monkeypatch: pytest.MonkeyPatch, directory: Path) -> dict[Path, str]:
-    """Każdy dziennik z katalogu ``directory`` tak, jak jest na dysku w chwili wyniku Wyceny, zanim działanie po wyniku
-    dopisze do niego wpis końca albo go usunie (``Journal.end``): test, który udaje zgaśnięcie Centrum przed wynikiem,
-    odkłada go na dysk."""
-
     kept: dict[Path, str] = {}
     ended = Journal.end
 
@@ -2902,16 +2561,6 @@ def logs_json(fake: FakeReportBox, comment: str) -> dict[str, Any]:
 def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwanego_uruchomienia_ze_zleceniami_sprzed_zgasniecia(
     tmp_path: Path,
 ) -> None:
-    """Centrum gaśnie nagle, cały proces razem z oknem efenix, przy czwartym zleceniu, po zapisie jego daty wykonania w
-    efenix, a prąd urywa wpis dziennika w trakcie zapisu. Dziennik Wyceny w efenix ma wpis „zaczynam zlecenie” każdego
-    zlecenia, które Atrapa ma zmienione. Następny start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia: trzy
-    zlecenia skończone z wynikiem, kodem Komunikatu zlecenia sprzecznego z Emmettem i śladem, zlecenie zaczęte bez
-    wyniku, jeden wpis nie do odczytania i działania taty sprzed zgaśnięcia, bez wyniku Uruchomienia. Te Logi idą do
-    Skrzynki Zgłoszeń jak zwykłe Logi, karta po starcie pokazuje zlecenia sprzed zgaśnięcia, a Urwane Uruchomienie nie
-    ma karty wiersza Historii ani Powiadomienia o zakończonej Wycenie. Skrzynka Zgłoszeń dostaje klucz dopiero od
-    następnego startu, więc komentarz postępu tej Wyceny (#846) czeka w Kolejce wysyłki, a Logi Urwanego Uruchomienia
-    zastępują go w jednym komentarzu."""
-
     with atrapa_efenix(CUT_IN_EFENIX) as atrapa:
         centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url))
         write_collective_file(centrum.period_parent, CUT)
@@ -2987,12 +2636,8 @@ def test_centrum_zgaszone_w_trakcie_wyceny_w_efenix_po_starcie_wysyla_logi_urwan
 
 
 def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_start_uznalby_za_urwany(tmp_path: Path) -> None:
-    """Wycena w efenix doszła do wyniku, a Kolejka wysyłki przyjęła jej Logi, więc dziennik znika. Następny start Centrum
-    nie ma czego zamknąć jako Urwane Uruchomienie: Skrzynka nie dostaje drugich Logów, a karta po starcie ma wynik z
-    Logów."""
-
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         assert _start_pricing(centrum).status_code == 200
         run_id = finished_view(centrum.client)["run"]["id"]
@@ -3010,11 +2655,6 @@ def test_wycena_w_efenix_ktora_doszla_do_konca_nie_zostawia_dziennika_ktory_star
 
 
 def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Path]:
-    """Wycena w efenix, którą Centrum zgasło w trakcie zlecenia: dysk Centrum ma jej start (plik ostatniego startu i
-    dziennik) i „zaczynam zlecenie” bez wpisu końca, a nie ma Logów, wiersza Historii ani wysyłki w kolejce, czyli to
-    Urwane Uruchomienie (ADR 0017). Skrzynka Zgłoszeń ma klucz dopiero od następnego startu, więc nic z tej Wyceny do
-    niej nie poszło. Zwraca też folder kolejki wysyłki."""
-
     centrum = settling_centrum(tmp_path)
     disk = LogsOnDisk(CentrumLog(centrum.log_path), journaled="efenix")
     disk.started(PRICING_START)
@@ -3026,10 +2666,6 @@ def _pricing_cut_before_result(tmp_path: Path) -> tuple[SettlingCentrum, str, Pa
 def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka_ida_przy_nastepnym_starcie_raz(
     tmp_path: Path,
 ) -> None:
-    """Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, ale Centrum gaśnie znowu przed startem serwera,
-    więc przed wysyłką: dziennik zostaje obok pliku Logów. Następny start wysyła te Logi do Skrzynki raz, karta ma Urwane
-    Uruchomienie, a dziennik znika."""
-
     centrum, run_id, _ = _pricing_cut_before_result(tmp_path)
     box = centrum.surroundings.report_box
     centrum.restart()
@@ -3050,10 +2686,6 @@ def test_logi_urwanego_uruchomienia_po_ponownym_zgasnieciu_centrum_przed_wysylka
 def test_start_serwera_wysyla_logi_urwanego_uruchomienia_raz_po_wznowieniu_kolejki_wysylki(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Budowa aplikacji zamyka dziennik Urwanej Wyceny i niczego nie wysyła. Start serwera wznawia Kolejkę wysyłki i
-    dopiero po tym kładzie w niej Logi Urwanego Uruchomienia, przed pierwszym zapytaniem karty, więc kolejka nie dostaje
-    wysyłki przed swoim startem; zapytania karty po starcie nie wysyłają ich drugi raz."""
-
     centrum, run_id, _ = _pricing_cut_before_result(tmp_path)
     box = centrum.surroundings.report_box
     steps: list[str] = []
@@ -3085,13 +2717,10 @@ def test_start_serwera_wysyla_logi_urwanego_uruchomienia_raz_po_wznowieniu_kolej
 def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zostaje_do_nastepnego_startu(
     tmp_path: Path,
 ) -> None:
-    """Kolejka wysyłki nie przyjmuje Logów Urwanego Uruchomienia (na miejscu jej folderu stoi plik): dziennik zostaje, a
-    start po naprawie folderu wysyła te Logi do Skrzynki i dopiero wtedy dziennik znika."""
-
     centrum, run_id, queue = _pricing_cut_before_result(tmp_path)
     box = centrum.surroundings.report_box
     queue.parent.mkdir(parents=True, exist_ok=True)
-    queue.write_text("", encoding="utf-8")  # plik zamiast folderu: zapis się nie uda
+    queue.write_text("", encoding="utf-8")
     centrum.restart()
     centrum.client.start()
     assert centrum.client.get("/api/runs/current").status_code == 200
@@ -3109,8 +2738,6 @@ def test_dziennik_urwanej_wyceny_ktorego_logow_kolejka_wysylki_nie_przyjela_zost
 
 
 def test_krotki_proces_nie_pisze_dziennika_wyceny_w_efenix(tmp_path: Path) -> None:
-    """Przebieg rozliczeń zbiera Logi po wyniku, jak przed dziennikiem Wyceny w efenix: w trakcie nic nie trafia na dysk."""
-
     centrum = settling_centrum(tmp_path)
     run_to_end(centrum, dry_run=False)
     centrum.client.stop()
@@ -3121,10 +2748,6 @@ def test_krotki_proces_nie_pisze_dziennika_wyceny_w_efenix(tmp_path: Path) -> No
 def test_dziennik_wyceny_w_efenix_ktorego_nie_da_sie_zapisac_nie_zatrzymuje_wyceny_i_ma_jedna_linie_na_wycene_w_dzienniku_centrum(
     tmp_path: Path,
 ) -> None:
-    """Katalog dzienników zajęty przez plik, a tata uruchamia Wycenę w efenix dwa razy w jednej pracy Centrum: każda
-    kończy się tym samym wynikiem co z dziennikiem, a dziennik Centrum ma jedną linię o dzienniku Wyceny, bez treści
-    błędu, na każdą Wycenę, nie jedną na każdy wpis."""
-
     blocked = tmp_path / "logs" / "dzienniki-wyceny"
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
@@ -3145,12 +2768,6 @@ def test_dziennik_wyceny_w_efenix_ktorego_nie_da_sie_zapisac_nie_zatrzymuje_wyce
 def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_straznika_reguly_danych(
     tmp_path: Path, unsent: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Zlecenie skończone przed zgaśnięciem Centrum ma w śladzie pozycje odczytane ze strony efenix, a wśród nich ulicę i
-    telefon (wolny tekst, ADR 0025). Start Centrum zamyka dziennik jako Logi Urwanego Uruchomienia, także gdy Logi zapisała
-    już poprzednia praca Centrum sprzed strażnika, która zgasła przed ich wysyłką: plik Logów i plik w Archiwum Logów
-    okresu, do którego prowadzi jedyny komentarz w Skrzynce, mają te same bajty, także z zapisem tekstowym Windows, z
-    zamaskowaną ulicą i telefonem."""
-
     windows_text_writes(monkeypatch)
     centrum = settling_centrum(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
@@ -3210,11 +2827,6 @@ def test_logi_urwanego_uruchomienia_w_pliku_i_w_skrzynce_przechodza_przez_strazn
 def test_logi_urwanego_uruchomienia_przy_pliku_folderow_bez_odczytu_maja_jego_nazwe_zamiast_plikow_procesu(
     tmp_path: Path,
 ) -> None:
-    """Decyzja 3A Maksa: Logi Urwanego Uruchomienia nie mają migawki Ustawień ze startu, więc pliki procesu liczą z
-    bieżącego pliku Folderów. Gdy system nie daje go przeczytać (np. trzyma go OneDrive), Logi mówią, którego pliku nie
-    dało się przeczytać, i nie mają listy plików, zamiast listy jak przy Rejestrze zleceń i folderze okresów
-    niewskazanych. Przy czytelnym pliku Logi mają pliki procesu i nie mają tej nazwy."""
-
     centrum = settling_centrum(tmp_path)
     readable, unreadable = (
         StartFacts(run_id=letter * 32, process="efenix", mode=RunMode.RUN, period=PERIOD, started_at=utc(at))
@@ -3238,9 +2850,6 @@ def test_logi_urwanego_uruchomienia_przy_pliku_folderow_bez_odczytu_maja_jego_na
 
 
 def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: Path) -> None:
-    """Prąd zgasł w trakcie pierwszego zapisu dziennika, zanim Wycena cokolwiek zmieniła w efenix: dziennik bez linii
-    startu nie mówi, czyje to Uruchomienie, więc start Centrum go usuwa i nie robi z niego Logów."""
-
     centrum = settling_centrum(tmp_path)
     directory = centrum.log_path.parent / "dzienniki-wyceny"
     directory.mkdir(parents=True)
@@ -3254,10 +2863,6 @@ def test_dziennik_urwany_przy_pierwszym_wpisie_start_usuwa_bez_logow(tmp_path: P
 
 
 def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_do_nastepnego_startu(tmp_path: Path) -> None:
-    """System odmawia odczytu pliku Logów Uruchomienia z dziennikiem Wyceny (tu w jego miejscu stoi katalog), więc start
-    Centrum nie wie, czy Logi są i jakie: niczego za to Uruchomienie nie wysyła i zostawia dziennik następnemu startowi, z
-    linią dziennika Centrum."""
-
     centrum = settling_centrum(tmp_path)
     started = StartFacts(
         run_id="d" * 32,
@@ -3282,11 +2887,6 @@ def test_plik_logow_ktorego_system_nie_daje_odczytac_zostawia_dziennik_do_nastep
 def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_bez_wersji_zastepczej(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, ended: bool
 ) -> None:
-    """Dziennik Wyceny w efenix ma obok czytelny plik Logów, których przyjęcia przez kolejkę nikt nie zapisał, a start
-    Centrum nie może wylistować katalogu Logów. Start nie bierze tego za brak pliku: nie nadpisuje Logów Logami Urwanego
-    Uruchomienia ani nie wysyła wyniku bez Logów, a Logi z pliku, bajt w bajt, trafiają do Skrzynki najpóźniej po
-    następnym starcie, kiedy dziennik znika."""
-
     centrum = settling_centrum(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
     started = StartFacts(
@@ -3329,15 +2929,8 @@ def test_logi_z_pliku_w_katalogu_ktorego_nie_da_sie_wylistowac_ida_do_skrzynki_b
     assert [logs_file(box, comment) for comment in logs_comments(box)] == [written]
 
 
-# --- Komentarz postępu Wyceny w efenix (#846) ----------------------------------------------------------------------------
-# Wycena w efenix trwa u taty do półtorej godziny, a Maks chce widzieć jej postęp, zanim się skończy. Testy dają jej czas
-# na udawanym zegarze Centrum: każde żądanie do Atrapy efenix trwa na nim minutę (``EfenixMinutes``), więc Wycena sześciu
-# zleceń ``PRICED`` trwa kilkadziesiąt minut, a postęp odświeża się w jej trakcie. Maks czyta w Skrzynce jeden komentarz
-# Uruchomienia: w trakcie postęp z dziennika Wyceny, na końcu podsumowanie z odnośnikiem do pełnych Logów w Archiwum.
-
 PROGRESS_LABEL: Final = "logi-uruchomienia"
 PROGRESS_ARCHIVE = f"logi-{PERIOD}"
-# Ostatnia linia podsumowania: odnośnik do pliku w Archiwum Logów okresu (adres pobrania pliku GitHub Release).
 SUMMARY_LINK = re.compile(r"- Pełne Logi: \[(?P<name>[^\]]+)\]\(https://github\.com/(?P<repo>[^/]+/[^/]+)/releases/download/(?P<tag>[^/]+)/(?P=name)\)")
 MINUTES = re.compile(r"^- Czas: (?P<minutes>[0-9]+) min do tej pory$", re.MULTILINE)
 DONE = re.compile(r"^- Zlecenia: (?P<done>[0-9]+) z 6 skończone", re.MULTILINE)
@@ -3346,34 +2939,28 @@ NO_ORDERS = "- Zlecenia: dziennik Wyceny nie ma jeszcze żadnego zlecenia"
 
 @dataclass
 class EfenixMinutes:
-    """Zegar Atrapy efenix: każde żądanie okna efenix przesuwa zegar Centrum o minutę, a budziki Centrum, których
-    chwila minęła, dzwonią w tym żądaniu (``ManualClock.advance``).
-
-    Z działającą siecią żądanie czeka, aż Kolejka wysyłki odda Skrzynce wszystko, co budzik do niej włożył, więc
-    Skrzynka dostaje każdy postęp. ``offline_until`` to minuta zegara Centrum, do której Skrzynka nie odpowiada (brak
-    sieci); w pierwszym żądaniu po niej ``queued_at_return`` dostaje liczbę plików Logów w kolejce.
-    """
-
     surroundings: Surroundings
     queue: Path
-    offline_until: int | None = None
-    queued_at_return: list[int] = field(default_factory=list)
+    offline_until_minute: int | None = None
+    queued_when_back_online: list[int] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if self.offline_until is not None:
+        if self.offline_until_minute is not None:
             self.surroundings.report_box.search_failure = Unreachable()
 
     def __call__(self) -> float:
         clock, box = self.surroundings.clock, self.surroundings.report_box
-        if self.offline_until is not None and clock() >= self.offline_until * 60:
-            # Postęp ostatniego budzika mógł przyjść do kolejki tuż przed tym żądaniem: jego przejście jeszcze trwa.
-            wait_for(lambda: len(queued_logs(self.queue)) == 1, 5)
-            self.queued_at_return.append(len(queued_logs(self.queue)))
-            self.offline_until, box.search_failure = None, None
+        if self.offline_until_minute is not None and clock() >= self.offline_until_minute * 60:
+            wait_for(self._progress_of_last_alarm_queued, 5)
+            self.queued_when_back_online.append(len(queued_logs(self.queue)))
+            self.offline_until_minute, box.search_failure = None, None
         clock.advance(60)
-        if self.offline_until is None:
+        if self.offline_until_minute is None:
             wait_for(lambda: queued_logs(self.queue) == [], 10)
         return clock()
+
+    def _progress_of_last_alarm_queued(self) -> bool:
+        return len(queued_logs(self.queue)) == 1
 
 
 def queued_logs(queue: Path) -> list[Path]:
@@ -3382,15 +2969,11 @@ def queued_logs(queue: Path) -> list[Path]:
 
 @contextmanager
 def pricing(
-    tmp_path: Path, *, offline_until: int | None = None, logged_in: bool = True
+    tmp_path: Path, *, offline_until_minute: int | None = None, logged_in: bool = True
 ) -> Iterator[tuple[SettlingCentrum, EfenixMinutes, AtrapaEfenix]]:
-    """Centrum z Tokenem do Zgłoszeń, którego Skrzynka pokazuje Logi Uruchomienia w ``issues``, i Folder okresu z Plikiem
-    zbiorczym ``PRICED``; okno efenix to Atrapa, na której każde żądanie trwa minutę (``EfenixMinutes``). Bez
-    ``logged_in`` okno efenix czeka na logowanie taty (``AtrapaEfenix.log_in``)."""
-
     surroundings = Surroundings()
     surroundings.report_box.background = frozenset()
-    minutes = EfenixMinutes(surroundings, ToolDirectory(tmp_path).queue, offline_until)
+    minutes = EfenixMinutes(surroundings, ToolDirectory(tmp_path).queue, offline_until_minute)
     with atrapa_efenix(IN_EFENIX, clock=minutes) as atrapa:
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
@@ -3402,8 +2985,6 @@ def pricing(
 
 
 def summarized(fake: FakeReportBox) -> int:
-    """Ile komentarzy issue Logów okresu ma podsumowanie: ich ostatnia linia to odnośnik do pełnych Logów."""
-
     return sum(
         SUMMARY_LINK.fullmatch(comment.splitlines()[-1]) is not None
         for issue in fake.issues_with(PROGRESS_LABEL)
@@ -3412,9 +2993,6 @@ def summarized(fake: FakeReportBox) -> int:
 
 
 def comment_histories(centrum: SettlingCentrum, count: int) -> list[tuple[int, list[str]]]:
-    """Każdy z ``count`` komentarzy issue Logów okresu po kolei, gdy każdy ma już podsumowanie, a kolejka jest pusta: jego
-    identyfikator i każdy jego tekst po kolei, jak go widział Maks (nowy komentarz, potem każda poprawka)."""
-
     box = centrum.surroundings.report_box
     assert box.wait_until(lambda fake: summarized(fake) == count), box.issues
     assert wait_for(lambda: queued_logs(centrum.tool.queue) == [])
@@ -3433,10 +3011,11 @@ def minutes_of(texts: list[str]) -> list[int]:
 
 
 def done_of(text: str) -> int | None:
-    """Zlecenia skończone w postępie; ``None``: dziennik nie ma jeszcze żadnego zlecenia."""
-
+    if NO_ORDERS in text.splitlines():
+        return None
     found = DONE.search(text)
-    return None if found is None else int(found["done"])
+    assert found is not None, text
+    return int(found["done"])
 
 
 def archived_logs(centrum: SettlingCentrum, comment: str) -> dict[str, Any]:
@@ -3448,8 +3027,6 @@ def archived_logs(centrum: SettlingCentrum, comment: str) -> dict[str, Any]:
 
 
 def started_text(run_id: str, started_at: str, mode: str = "zapis") -> str:
-    """Komentarz postępu przy starcie Wyceny w trybie ``mode``, zanim dziennik ma pierwsze zlecenie."""
-
     return (
         f"**Logi Uruchomienia**: Wycena w efenix, {mode}, okres {PERIOD}\n"
         "\n"
@@ -3464,10 +3041,6 @@ def started_text(run_id: str, started_at: str, mode: str = "zapis") -> str:
 def test_wycena_w_efenix_ma_w_issue_okresu_jeden_komentarz_z_rosnacym_postepem_co_5_minut_a_na_koncu_z_podsumowaniem(
     tmp_path: Path,
 ) -> None:
-    """Wycena zakłada komentarz Uruchomienia przy starcie, odświeża go co 5 minut na zegarze Centrum stanem dziennika
-    (zlecenia skończone z sześciu, wyniki, ostatnie zlecenie), a na końcu ten sam komentarz staje się podsumowaniem z
-    odnośnikiem do pliku w Archiwum Logów okresu. Po końcu żaden postęp już nie przychodzi, choć czas biegnie dalej."""
-
     with pricing(tmp_path) as (centrum, _, _):
         started = _start_pricing(centrum)
         assert started.status_code == 200, started.json()
@@ -3498,17 +3071,13 @@ def test_wycena_w_efenix_ma_w_issue_okresu_jeden_komentarz_z_rosnacym_postepem_c
 def test_bez_sieci_w_kolejce_czeka_tylko_najnowszy_postep_a_po_powrocie_sieci_issue_ma_jeden_komentarz_uruchomienia(
     tmp_path: Path,
 ) -> None:
-    """Przez pierwsze 12 minut Wyceny Skrzynka nie odpowiada: postęp z minut 0, 5 i 10 czeka w Kolejce wysyłki, a
-    najnowszy zastępuje starszy, więc po powrocie sieci w kolejce jest jeden plik Logów, a Skrzynka dostaje od razu postęp
-    z 10. minuty, potem następne i podsumowanie, wszystko w jednym komentarzu Uruchomienia."""
-
-    with pricing(tmp_path, offline_until=12) as (centrum, minutes, _):
+    with pricing(tmp_path, offline_until_minute=12) as (centrum, minutes, _):
         assert _start_pricing(centrum).status_code == 200
         finished_view(centrum.client)
     _, texts = comment_history(centrum)
     *progress, summary = texts
 
-    assert minutes.queued_at_return == [1]
+    assert minutes.queued_when_back_online == [1]
     assert minutes_of(progress) == list(range(10, 10 + 5 * len(progress), 5))
     assert archived_logs(centrum, summary)["ending"] == "finished"
 
@@ -3516,10 +3085,6 @@ def test_bez_sieci_w_kolejce_czeka_tylko_najnowszy_postep_a_po_powrocie_sieci_is
 def test_wpis_dziennika_wyceny_ktorego_nie_da_sie_zapisac_nie_zmienia_postepu(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Start dziennika Wyceny jest już na dysku, a zanim tata zaloguje się w efenix, plik dziennika przestaje przyjmować
-    wpisy (tylko do odczytu). Wycena przechodzi wszystkie zlecenia, ale żaden ich wpis nie trafia na dysk, więc postęp
-    nie wyprzedza dziennika: każdy mówi, że dziennik nie ma jeszcze żadnego zlecenia, a podsumowanie ma sześć zleceń."""
-
     with pricing(tmp_path, logged_in=False) as (centrum, _, atrapa):
         kept = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
         assert _start_pricing(centrum).status_code == 200
@@ -3529,7 +3094,7 @@ def test_wpis_dziennika_wyceny_ktorego_nie_da_sie_zapisac_nie_zmienia_postepu(
         finished_view(centrum.client)
     _, texts = comment_history(centrum)
     centrum.client.stop()
-    with suppress(FileNotFoundError):  # Windows nie usuwa pliku tylko do odczytu: dziennik zostaje do następnego startu
+    with suppress(FileNotFoundError):  # ZEWNĘTRZNE: Windows nie usuwa pliku tylko do odczytu, więc dziennik zostaje tam do następnego startu (https://learn.microsoft.com/windows/win32/api/fileapi/nf-fileapi-deletefilea)
         journal.chmod(stat.S_IREAD | stat.S_IWRITE)
     *progress, summary = texts
 
@@ -3542,12 +3107,6 @@ def test_wpis_dziennika_wyceny_ktorego_nie_da_sie_zapisac_nie_zmienia_postepu(
 def test_start_dziennika_wyceny_ktorego_nie_dalo_sie_zapisac_idzie_z_pierwszym_wpisem_a_postep_rusza_z_nim(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Katalog dzienników Wyceny zajęty przez plik, gdy tata uruchamia Wycenę w efenix, a okno efenix czeka na jego
-    logowanie: start dziennika nie trafia na dysk, więc postępu nie ma. Zanim tata się zaloguje, katalog wraca (np.
-    antywirus puścił plik): pierwszy wpis zapisuje przed sobą pierwszą linię, więc dziennik ma start i każde zlecenie, a
-    komentarz Uruchomienia dostaje postęp ze zleceniami i na końcu podsumowanie. Kolejka przyjęła Logi z wynikiem, więc
-    dziennik znika z końcem Wyceny."""
-
     blocked = tmp_path / "logs" / "dzienniki-wyceny"
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
@@ -3576,18 +3135,13 @@ def test_start_dziennika_wyceny_ktorego_nie_dalo_sie_zapisac_idzie_z_pierwszym_w
 def test_komentarz_postepu_urwanej_wyceny_w_efenix_zamienia_w_podsumowanie_nastepny_start_centrum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Okno efenix czeka na logowanie taty, aż komentarz postępu ze startu Wyceny jest w Skrzynce, a potem sieć znika.
-    Wycena przechodzi wszystkie zlecenia, ale Centrum gaśnie przed wynikiem (bez Logów, wiersza Historii i wysyłki w
-    kolejce, jak po braku prądu). Następny start zamyka dziennik jako Logi Urwanego Uruchomienia, a komentarz, który Maks
-    już widzi, zmienia się (poprawka, nie nowy komentarz) w ich podsumowanie z odnośnikiem do Archiwum."""
-
     surroundings = Surroundings()
     box = surroundings.report_box
     box.background = frozenset()
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
-        write_collective_file(centrum.period_parent, FEW_PRICED)
+        write_collective_file(centrum.period_parent, PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         kept = journals_at_result(monkeypatch, centrum.log_path.parent / "dzienniki-wyceny")
         atrapa.expire_session()
@@ -3622,12 +3176,6 @@ def test_komentarz_postepu_urwanej_wyceny_w_efenix_zamienia_w_podsumowanie_naste
 def test_centrum_zgaszone_w_trakcie_logowania_taty_w_efenix_zamienia_komentarz_postepu_w_logi_urwanego_uruchomienia(
     tmp_path: Path,
 ) -> None:
-    """Okno efenix czeka na logowanie taty, a postęp ze startu Wyceny czeka w Kolejce wysyłki (Skrzynka Zgłoszeń dostaje
-    klucz dopiero od następnego startu), gdy Centrum gaśnie nagle, cały proces razem z oknem efenix, przed pierwszym
-    zleceniem. Dziennik Wyceny ma już na dysku jej start, więc następny start Centrum zamyka go jako Logi Urwanego
-    Uruchomienia bez zleceń: jedyny komentarz Uruchomienia w issue okresu kończy się ich podsumowaniem, a nie postępem,
-    który mówi, że Uruchomienie trwa, a karta po starcie pokazuje zero zleceń przed zamknięciem Centrum."""
-
     queue = ToolDirectory(tmp_path).queue
     surroundings = Surroundings()
     surroundings.report_box.background = frozenset()
@@ -3643,7 +3191,7 @@ def test_centrum_zgaszone_w_trakcie_logowania_taty_w_efenix_zamienia_komentarz_p
     on_disk = [entry["entry"] for journal in journals(centrum) for entry in journal_entries(journal)]
     write_report_key(ToolDirectory(tmp_path))
     centrum.restart()
-    with centrum.client:  # start Centrum jak u taty: ``lifespan`` wznawia Kolejkę wysyłki z postępem
+    with centrum.client:
         previous = centrum.client.get("/api/runs/current").json()["previous"]
         _, texts = comment_history(centrum)
     centrum.client.stop()
@@ -3660,11 +3208,6 @@ def test_centrum_zgaszone_w_trakcie_logowania_taty_w_efenix_zamienia_komentarz_p
 
 
 def test_druga_wycena_w_efenix_w_tej_samej_pracy_centrum_ma_swoj_komentarz_z_postepem_od_swojego_startu(tmp_path: Path) -> None:
-    """Tata puszcza w jednej pracy Centrum Wycenę w efenix, a po jej wyniku drugą, na tym samym Pliku zbiorczym. Każda ma
-    w issue okresu swój komentarz Uruchomienia: postęp drugiej zaczyna się od jej startu, bez zleceń i bez czasu
-    pierwszej, a nie od sześciu zleceń pierwszej, i każdy komentarz kończy się podsumowaniem swojej Wyceny. Po obu końcach
-    żaden postęp już nie przychodzi i Centrum go nie budzi, choć czas biegnie dalej."""
-
     with pricing(tmp_path) as (centrum, _, _):
         runs: list[str] = []
         for _ in range(2):
@@ -3689,19 +3232,14 @@ def test_druga_wycena_w_efenix_w_tej_samej_pracy_centrum_ma_swoj_komentarz_z_pos
 def test_postep_wyceny_w_efenix_ktorego_budzik_dzwoni_gdy_jej_logi_sa_juz_w_kolejce_nie_cofa_podsumowania(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Budzik postępu dzwoni dokładnie w chwili, gdy Kolejka wysyłki przyjęła Logi z wynikiem Wyceny (zegar Centrum
-    przesuwa się o 5 minut przy pierwszej wysyłce po wierszu Historii). Postęp skończył się już z działaniami po wyniku,
-    więc ten budzik nic nie wysyła i się nie powtarza: postęp nowszy od Logów zastąpiłby je w kolejce, a jedyny komentarz
-    Uruchomienia zostałby na zawsze postępem, który mówi, że Uruchomienie trwa."""
-
     queued = CentrumLog.box_post_queued
     rung: list[str] = []
     with pricing(tmp_path) as (centrum, _, _):
-        clock, metrics = centrum.surroundings.clock, centrum.engines.metrics.efenix
+        clock, history_row = centrum.surroundings.clock, centrum.engines.metrics.efenix
 
         def ringing(log: CentrumLog, *, label: str, period: str | None) -> None:
             queued(log, label=label, period=period)
-            if metrics.exists() and not rung:  # wiersz Historii jest, więc to już działania po wyniku
+            if history_row.exists() and not rung:
                 rung.append(label)
                 clock.advance(PROGRESS_S)
 
@@ -3714,10 +3252,6 @@ def test_postep_wyceny_w_efenix_ktorego_budzik_dzwoni_gdy_jej_logi_sa_juz_w_kole
     assert archived_logs(centrum, texts[-1])["ending"] == "finished"
 
 
-# --- Kopia wejścia (#841) ------------------------------------------------------------------------------------------------
-# Przygotowanie, Przebieg i Wycena w efenix dają Logi z Wierszami danych, które przeczytały, bez kolumn ``ADRES`` i
-# ``NUMER UMOWY/ZLECENIA ORANGE``, z odciskiem każdego pliku zgodnym z plikiem na dysku (reguła danych, ADR 0025).
-
 FREE_TEXT = f"montaż {ADDRESS_VALUE} umowa {ORANGE_VALUE} tel. {PHONE}, {STREET}"
 MASKED = "montaż [adres] umowa [numer Orange] tel. [telefon], [ulica]"
 
@@ -3726,12 +3260,9 @@ COLLECTIVE_COLUMNS = {
     for letter, header in zip("ABCDEFGHIJK", COLLECTIVE_HEADERS, strict=True)
     if header not in ("ADRES", "NUMER UMOWY/ZLECENIA ORANGE")
 }
-"""Nagłówki A17:K17 Pliku zbiorczego w Kopii wejścia: bez ``ADRES`` (B) i numeru Orange (I)."""
 
 
 def fingerprint(content: bytes, path: Path) -> dict[str, object]:
-    """Odcisk pliku taty tak, jak go liczy Maks na swojej kopii: rozmiar, chwila zmiany (UTC) i SHA-256 treści."""
-
     modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
     return {"size": len(content), "modified_at": modified, "sha256": hashlib.sha256(content).hexdigest()}
 
@@ -3743,19 +3274,12 @@ def logged_fingerprint(copied: dict[str, Any]) -> dict[str, object]:
 
 
 def moment(text: str) -> dict[str, str]:
-    """Data z godziną w Kopii wejścia: rodzaj, bo JSON nie odróżnia jej od tekstu."""
-
     return {"type": "datetime", "text": text}
 
 
 def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_orange_oraz_odcisk_rejestru(
     tmp_path: Path,
 ) -> None:
-    """Kopia wejścia Przygotowania to arkusz zleceń Rejestru: nagłówki Rejestru (wiersz 1) kolumn wklejenia od A do
-    ``UWAGI`` w ich kolumnach arkusza, bez ``ADRES`` (E) i ``NUMER UMOWY`` (K), i każde zlecenie okresu z komórkami
-    kolumn, które proces przenosi. Arkusz bez nagłówków zleceń („lista”) w Kopii nie stoi, a kolumny, których proces nie
-    przenosi (AKCJE, ZWROT, UWAGI), mają w niej nagłówek bez komórek: z nich odtworzenie zna granicę wklejenia."""
-
     centrum = preparing_centrum(tmp_path)
     register = centrum.fixture.register_path
     content = register.read_bytes()
@@ -3781,7 +3305,7 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
         "M": "CZYNNOŚCI ZREALIZOWANE",
         "N": "ZWROT",
         "O": "UWAGI",
-    }
+    }, "kolumny wklejenia bez komórek (AKCJE, ZWROT, UWAGI) mają w Kopii nagłówek: z nich odtworzenie zna granicę wklejenia"
     rows = {row["row"]: row["cells"] for row in sheet["rows"]}
     in_period = {
         4: ("2026-09-08T00:00:00", 2, "adrian.testowy", "tak"),
@@ -3807,11 +3331,6 @@ def test_logi_przygotowania_maja_wiersze_rejestru_z_okresu_bez_adresu_i_numeru_o
 def test_logi_przebiegu_rozliczen_maja_wiersze_pliku_zbiorczego_bez_adresu_i_numeru_orange_oraz_odcisk_pliku(
     tmp_path: Path,
 ) -> None:
-    """Kopia wejścia Przebiegu to arkusz Pliku zbiorczego z nagłówkami z wiersza 17 i każdym Wierszem danych z jego
-    komórkami A:AT, bez ``ADRES`` i numeru Orange. Godzina i czas trwania mają rodzaj, bo JSON nie odróżnia ich od
-    tekstu, a formuła tablicowa to jej tekst, jak każda formuła. Plik zbiorczy nie ma bloku wklejenia, więc Logi nie
-    mają przy nim uwagi o złamanym fakcie domeny."""
-
     centrum = settling_centrum(tmp_path)
     typed: dict[str, CellValue] = {"AQ": time_of_day(8, 30), "AR": timedelta(hours=1, minutes=30), "AS": True, "AT": ArrayFormula("AT19", "=SUM(N19:N19)")}
     write_quantity_source(centrum.collective_file, [MARKED, {"H": "kamil.syntetyczny", "N": 2, **typed}])
@@ -3848,9 +3367,6 @@ def test_logi_przebiegu_rozliczen_maja_wiersze_pliku_zbiorczego_bez_adresu_i_num
 
 
 def test_kolumna_pliku_zbiorczego_z_naglowkiem_z_samych_spacji_nie_jest_kolumna_kopii_wejscia(tmp_path: Path) -> None:
-    """Spacje, które tata zostawił w nagłówku pustej kolumny Pliku zbiorczego, nie czynią z niej kolumny Kopii wejścia:
-    Kopia nazywa tylko kolumny z nagłówkiem."""
-
     centrum = settling_centrum(tmp_path)
     write_quantity_source(centrum.collective_file, [MARKED])
     workbook = load_workbook(centrum.collective_file)
@@ -3871,10 +3387,6 @@ def test_kolumna_pliku_zbiorczego_z_naglowkiem_z_samych_spacji_nie_jest_kolumna_
 def test_logi_wyceny_w_efenix_maja_wiersze_pliku_zbiorczego_z_kwota_i_odcisk_przeczytanej_wersji_pliku(
     tmp_path: Path,
 ) -> None:
-    """Kopia wejścia Wyceny w efenix to Wiersze danych Pliku zbiorczego z wartościami, które policzył Excel, także
-    ``Kwota`` (AU). Wycena zapisuje Znaczniki efenix w tym samym pliku, więc odcisk to wersja, którą przeczytała, a nie
-    plik po Uruchomieniu."""
-
     amount = float(amount_of({"012": 1}))
     ready = Order("#ZLKW01", cells={"O": 1}, amount=amount, quantities={"012": 1})
     unknown = Order("#ZLKW02", worker="beata.testowa", cells={"O": 1, "AQ": "uwaga taty"}, amount=amount)
@@ -3928,8 +3440,6 @@ def _copy_settlement(tmp_path: Path, _: ExitStack) -> PreparingCentrum | Settlin
 def _copy_pricing(
     tmp_path: Path, stack: ExitStack, source: ByteSource = workbook_files.file_bytes
 ) -> PreparingCentrum | SettlingCentrum:
-    """Zlecenie, którego efenix nie zna: Wycena czyta cały wiersz i kończy się wynikiem bez zapisu w efenix."""
-
     atrapa = stack.enter_context(atrapa_efenix([]))
     centrum = settling_centrum(tmp_path, surroundings=Surroundings(efenix_url=atrapa.url, source=source))
     order = Order("#ZLKW03", address=ADDRESS_VALUE, cells={"I": ORANGE_VALUE, "K": FREE_TEXT}, amount=0.0)
@@ -3948,11 +3458,6 @@ COPY_PROCESSES: dict[str, Callable[[Path, ExitStack], PreparingCentrum | Settlin
 def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki_takze_wpisane_w_wolny_tekst(
     tmp_path: Path, process: str
 ) -> None:
-    """Komórki ``ADRES`` i numeru Orange nie stoją w Kopii wejścia, a ich wartości wpisane w wolny tekst innej komórki
-    strażnik maskuje razem z telefonem i ulicą, z uwagą techniczną o miejscu w Kopii osobno od uwag technicznych karty,
-    więc karta z Logów ma te same uwagi co karta na żywo (ADR 0017); nic z tego nie wychodzi do pliku Logów ani do
-    Skrzynki Zgłoszeń."""
-
     with ExitStack() as stack:
         centrum = COPY_PROCESSES[process](tmp_path, stack)
         write_report_key(ToolDirectory(tmp_path))
@@ -3984,10 +3489,6 @@ def test_adres_i_numer_orange_z_kopii_wejscia_nie_wychodza_do_logow_ani_skrzynki
 
 
 def test_kolumny_adresu_i_numeru_orange_pliku_zbiorczego_nie_wychodza_takze_pod_innym_naglowkiem(tmp_path: Path) -> None:
-    """Kolumny B i I Pliku zbiorczego to ``ADRES`` i numer Orange z układu Wzorca bez względu na nagłówek, który tata
-    w nich zmienił: Kopia wejścia Przebiegu ich nie ma, a ich wartości wpisane w wolny tekst innej komórki strażnik
-    maskuje, więc nie wychodzą do pliku Logów ani do Skrzynki Zgłoszeń."""
-
     centrum = settling_centrum(tmp_path)
     write_report_key(ToolDirectory(tmp_path))
     write_quantity_source(centrum.collective_file, [{"B": ADDRESS_VALUE, "I": ORANGE_VALUE, "K": FREE_TEXT}])
@@ -4012,7 +3513,6 @@ def test_kolumny_adresu_i_numeru_orange_pliku_zbiorczego_nie_wychodza_takze_pod_
 
 
 READ_AT = datetime(2023, 11, 14, 22, 13, 20, tzinfo=timezone.utc)
-"""Chwila zmiany pliku taty przed Uruchomieniem, a ``SAVED_AGAIN_AT`` po zapisie zaraz po odczycie."""
 SAVED_AGAIN_AT = datetime(2027, 1, 15, 8, 0, tzinfo=timezone.utc)
 
 
@@ -4033,11 +3533,6 @@ def _register_gone(path: Path) -> None:
 def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy_plik_zmienil_sie_zaraz_po_odczycie(
     tmp_path: Path, after_reading: Callable[[Path], None]
 ) -> None:
-    """Rejestr zapisany znowu (Autozapis Excela, OneDrive) albo przeniesiony zaraz po odczycie: Przygotowanie czyta jego
-    bajty raz, więc strażnik Surowych zleceń i Odczyt danych decydują na tej samej wersji, a odcisk w Kopii wejścia to
-    rozmiar i skrót tych bajtów i chwila zmiany tej wersji, sprzed odczytu. Kopia nie czyta pliku drugi raz, więc nie
-    zatrzymuje Przygotowania."""
-
     content: list[bytes] = []
 
     def read_then_changed(path: Path) -> bytes:
@@ -4063,9 +3558,6 @@ def test_odcisk_rejestru_jest_z_bajtow_ktore_przeczytalo_przygotowanie_takze_gdy
 def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_plik_zapisano_zaraz_po_nim(
     tmp_path: Path, process: str
 ) -> None:
-    """Plik zbiorczy zapisany znowu (Autozapis Excela, OneDrive) zaraz po tym, jak Przebieg rozliczeń albo Wycena w
-    efenix przeczytały jego bajty: odcisk w Kopii wejścia ma chwilę zmiany przeczytanej wersji, sprzed odczytu."""
-
     saved_again: list[Path] = []
 
     def read_then_saved(path: Path) -> bytes:
@@ -4094,7 +3586,6 @@ def test_chwila_zmiany_w_odcisku_pliku_zbiorczego_jest_sprzed_odczytu_takze_gdy_
 
 
 MOVED_WORKER: Final = "KTO"
-"""Nagłówek H17 Pliku zbiorczego, w którym tata nadpisał ``WYKONAWCA``."""
 
 
 def _no_worker_settlement(tmp_path: Path, _: ExitStack) -> SettlingCentrum:
@@ -4123,10 +3614,6 @@ NO_WORKER = {
 def test_logi_uruchomienia_zatrzymanego_na_braku_wykonawcy_w_h17_maja_odcisk_i_naglowek_pliku_zbiorczego(
     tmp_path: Path, process: str
 ) -> None:
-    """Przebieg rozliczeń i Wycena w efenix czytają Plik zbiorczy jednym potokiem: arkusz wchodzi do Kopii wejścia przed
-    sprawdzeniem ``WYKONAWCA`` w H17, więc Logi Uruchomienia zatrzymanego na złym układzie mają odcisk pliku i jego
-    nagłówek, z których da się to Zatrzymanie odtworzyć."""
-
     setup, code = NO_WORKER[process]
     with ExitStack() as stack:
         centrum = setup(tmp_path, stack)
@@ -4152,19 +3639,13 @@ def cells_row(copied: dict[str, Any]) -> int:
 ORANGE_NUMBER = int(ORANGE_VALUE)
 PHONE_NUMBER = int(PHONE.replace(" ", ""))
 PHONE_WITH_PREFIX_NUMBER = int(f"48{PHONE_NUMBER}")
-"""Numer Orange i telefon, które tata wpisał w komórkę bez innego tekstu, więc Excel trzyma je jako liczby; telefon
-wpisany z ``+48`` albo ``0048`` format General trzyma bez ``+`` i zer (``PHONE_WITH_PREFIX_NUMBER``)."""
 
 
 @dataclass(frozen=True)
 class NumbersInCells:
-    """Uruchomienie z liczbami w komórkach: Centrum gotowe do startu i komórki Kopii wejścia z numerem Orange albo
-    telefonem po strażniku (wiersz arkusza → litera → maska), a ``elsewhere``: pola Logów poza Kopią z numerem Orange
-    (ilości przy zleceniu Wyceny w efenix; ``steps[…]``: którekolwiek działanie okna)."""
-
     centrum: PreparingCentrum | SettlingCentrum
-    masked: dict[int, dict[str, str]]
-    elsewhere: frozenset[str] = frozenset()
+    masks_by_row_and_letter: dict[int, dict[str, str]]
+    orange_outside_copy: frozenset[str] = frozenset()
 
 
 def _numbers_preparation(tmp_path: Path, _: ExitStack) -> NumbersInCells:
@@ -4174,9 +3655,6 @@ def _numbers_preparation(tmp_path: Path, _: ExitStack) -> NumbersInCells:
 
 
 def _numbers_settlement(tmp_path: Path, _: ExitStack) -> NumbersInCells:
-    """Excel zapisał numer Orange w I18 jako ułamek (``4.801234567E9``), a ten sam numer w AT18 jako liczbę całkowitą;
-    telefon wpisany z ``+48`` w AQ18 to liczba ``48600123456``."""
-
     centrum = settling_centrum(tmp_path)
     cells: dict[str, CellValue] = {"I": ORANGE_NUMBER, "AT": ORANGE_NUMBER, "AS": PHONE_NUMBER, "AQ": PHONE_WITH_PREFIX_NUMBER}
     write_quantity_source(centrum.collective_file, [cells])
@@ -4194,9 +3672,6 @@ def _numbers_settlement(tmp_path: Path, _: ExitStack) -> NumbersInCells:
 
 
 def _numbers_pricing(tmp_path: Path, stack: ExitStack) -> NumbersInCells:
-    """Numer Orange także w kolumnie ilości (O) dwóch zleceń: wiersz 18 ma tę wycenę już w efenix (okno czyta ilości ze
-    strony zlecenia), a wiersz 19 nie ma żadnej (okno wpisuje ilość)."""
-
     amount = float(amount_of({"012": ORANGE_NUMBER}))
     cells: dict[str, CellValue] = {"I": ORANGE_NUMBER, "O": ORANGE_NUMBER, "AQ": ORANGE_NUMBER, "AT": PHONE_NUMBER}
     priced = Order("#ZLKW04", cells=cells, amount=amount, quantities={"012": ORANGE_NUMBER})
@@ -4221,12 +3696,6 @@ NUMBER_PROCESSES = {"preparation": _numbers_preparation, "settlement": _numbers_
 def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do_logow_ani_skrzynki(
     tmp_path: Path, process: str
 ) -> None:
-    """Numer Orange i telefon, które Excel trzyma jako liczbę, strażnik porównuje w tekście, który pokazuje Excel (numer
-    zapisany jako ułamek to jego cyfry), więc liczba w innej komórce Kopii wejścia i w ilości przy zleceniu Wyceny w
-    efenix (z pliku, ze strony zlecenia i wpisana w oknie) staje się w całości maską z uwagą techniczną o jej miejscu,
-    a telefon, także z ``+48`` zgubionym przez format General, maską ``[telefon]``; nic z tego nie wychodzi do pliku
-    Logów ani do Skrzynki Zgłoszeń."""
-
     with ExitStack() as stack:
         setup = NUMBER_PROCESSES[process](tmp_path, stack)
         centrum = setup.centrum
@@ -4242,17 +3711,17 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
     [copied] = record["input_copy"]
     [sheet] = copied["sheets"]
     rows = {row["row"]: (index, row["cells"]) for index, row in enumerate(sheet["rows"])}
-    assert {number: {letter: rows[number][1].get(letter) for letter in cells} for number, cells in setup.masked.items()} == setup.masked
+    assert {number: {letter: rows[number][1].get(letter) for letter in cells} for number, cells in setup.masks_by_row_and_letter.items()} == setup.masks_by_row_and_letter
     orange = "Reguła danych: zamaskowano wartość kolumny NUMER UMOWY/ZLECENIA ORANGE w: {}."
     assert record["input_copy_notes"] == [
         orange.format(f"input_copy[0].sheets[0].rows[{rows[number][0]}].cells.[…]")
-        for number, cells in sorted(setup.masked.items())
+        for number, cells in sorted(setup.masks_by_row_and_letter.items())
         if "[numer Orange]" in cells.values()
     ]
     card = len(result["technical_notes"])
     assert record["technical_notes"][:card] == result["technical_notes"], "uwagi techniczne karty"
     assert {re.sub(r"steps\[\d+\]", "steps[…]", note) for note in record["technical_notes"][card:]} == {
-        orange.format(place) for place in setup.elsewhere
+        orange.format(place) for place in setup.orange_outside_copy
     }
     texts = [path.read_text(encoding="utf-8") for path in log_files(centrum)]
     sent = in_box(box) + [part for issue in box.issues for part in (issue.title, issue.body, *issue.comments)]
@@ -4263,9 +3732,6 @@ def test_numer_orange_i_telefon_zapisane_przez_excel_jako_liczba_nie_wychodza_do
 
 @contextmanager
 def _refused(monkeypatch: pytest.MonkeyPatch, method: str, refuses: Callable[[Path, str], bool]) -> Iterator[None]:
-    """``Path.<method>`` rzuca PermissionError (plik trzyma antywirus albo inny program), gdy ``refuses`` mówi tak o
-    ścieżce i trybie otwarcia."""
-
     original = getattr(Path, method)
 
     def refusing(self: Path, *arguments: Any, **keywords: Any) -> Any:
@@ -4282,14 +3748,9 @@ def _refused(monkeypatch: pytest.MonkeyPatch, method: str, refuses: Callable[[Pa
 def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego_uruchomienia_takze_po_nastepnej_wycenie_z_wynikiem(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#870: Wycena 1 urwana po „zaczynam zlecenie”, a start Centrum nie może przeczytać jej dziennika, więc zostawia go
-    następnemu. W tej pracy Centrum Wycena 2 dochodzi do wyniku i ma wiersz Historii ze startem późniejszym niż Wycena 1.
-    Następny start zamyka dziennik Wyceny 1 jako jej Logi Urwanego Uruchomienia ze zleceniem zaczętym bez wyniku i wysyła
-    je do Skrzynki obok Logów Wyceny 2, a dopiero potem dziennik znika."""
-
     run_1 = "a" * 32
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         started_at = datetime.now(timezone.utc) - timedelta(hours=1)
@@ -4322,20 +3783,16 @@ def test_dziennik_urwanej_wyceny_nieodczytany_przy_starcie_dostaje_logi_urwanego
 def test_wycena_z_wynikiem_bez_pliku_logow_i_bez_rekordu_metryk_ma_logi_z_wynikiem_w_skrzynce_a_dziennik_znika(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """#871: Wycena doszła do wyniku, ale pliku jej Logów nie ma (katalog Logów zajęty przez plik), a rekord metryk się
-    nie zapisał (pełny dysk). Logi z wynikiem idą do Skrzynki z kolejki, a dziennik znika za nimi, więc następny start
-    nie ma czego zamknąć jako Urwane Uruchomienie."""
-
     blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
-    blocked.write_text("", encoding="utf-8")  # plik zamiast katalogu Logów: LogsOnDisk.write rzuca OSError
+    blocked.write_text("", encoding="utf-8")
 
     def full_disk(_store: MetricsStore, _record: object) -> None:
         raise OSError(28, "No space left on device")
 
     monkeypatch.setattr(MetricsStore, "append", full_disk)
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         assert _start_pricing(centrum).status_code == 200
@@ -4352,16 +3809,11 @@ def test_wycena_z_wynikiem_bez_pliku_logow_i_bez_rekordu_metryk_ma_logi_z_wyniki
 def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z_wynikiem_a_start_nie_robi_z_wyceny_urwanego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Każdy wpis Wyceny w efenix się zapisuje oprócz wpisu końca, bo po rekordzie metryk antywirus trzyma dziennik, a
-    pliku Logów nie ma (katalog Logów zajęty przez plik). Kolejka wysyłki przyjmuje Logi z wynikiem, więc dziennik bez
-    wpisu końca znika za nimi (``RunComments.run_ended``), z jedną linią dziennika Centrum, a następny start nie robi z Wyceny
-    Urwanego Uruchomienia i w Skrzynce zostają Logi z wynikiem."""
-
     blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         metrics = centrum.engines.metrics.efenix
@@ -4386,9 +3838,6 @@ def test_wpis_konca_ktory_sie_nie_zapisal_zostawia_dziennik_do_przyjecia_logow_z
 
 
 class _Unconfirmed:
-    """Plik dziennika, którego zapis dysk przyjął (``write`` i ``flush``), ale nie potwierdził: ``fsync`` na jego deskryptorze
-    zgłasza błąd wejścia-wyjścia."""
-
     def __init__(self, file: Any) -> None:
         self._file = file
 
@@ -4412,13 +3861,6 @@ class _Unconfirmed:
 def test_wycena_z_wynikiem_ktorej_jedyny_wpis_dziennika_zawiodl_po_zapisie_pierwszej_linii_nie_dostaje_logow_urwanego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Pierwsza linia dziennika Wyceny w efenix (przy jej starcie, #846) i jej pierwszy wpis, „zaczynam zlecenie”, razem z
-    nią są już na dysku, gdy dysk przy każdym z tych zapisów zgłasza błąd wejścia-wyjścia, więc żaden zapis nie
-    potwierdził pierwszej linii, a okno efenix staje przy tym samym zleceniu (strona błędu HTTP), więc Wycena dochodzi do
-    wyniku z Zatrzymaniem bez następnego wpisu. Pliku Logów nie ma (katalog Logów zajęty przez plik), więc jej Logi z
-    wynikiem idą do Skrzynki tylko z kolejki. Wycena usuwa dziennik sama, z jedną linią dziennika Centrum, więc następny
-    start nie robi z niej Urwanego Uruchomienia, a w Skrzynce zostają Logi z wynikiem."""
-
     blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
@@ -4467,11 +3909,6 @@ def journal_log_lines(log: CentrumLog) -> list[str]:
 def test_dziennik_ktorego_pierwsza_linia_sie_nie_zapisala_dostaje_ja_z_pierwszym_zapisanym_wpisem_a_postep_tylko_z_dysku(
     tmp_path: Path,
 ) -> None:
-    """Start Wyceny nie zapisał pierwszej linii dziennika (w miejscu katalogu dzienników stoi plik), a pierwszy wpis też
-    nie, więc postępu nie ma. Następny wpis, który się zapisał, niesie pierwszą linię przed sobą: od niego postęp jest z
-    tego, co dziennik ma na dysku, a start Centrum czyta z dziennika start Uruchomienia i zlecenie zaczęte bez wyniku.
-    Nieudane zapisy jednego Uruchomienia to jedna linia dziennika Centrum."""
-
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
     blocked = tmp_path / "dzienniki-wyceny"
@@ -4506,9 +3943,6 @@ def test_uruchomienie_innego_procesu_nie_ma_dziennika_ani_postepu(tmp_path: Path
 
 
 def test_koniec_innego_uruchomienia_nie_konczy_dziennika_wyceny(tmp_path: Path) -> None:
-    """Wpis końca należy do Uruchomienia, którego wynik niesie: koniec innego Uruchomienia zostawia dziennik Wyceny bez
-    wpisu końca, więc start Centrum dalej widzi w nim Wycenę, która nie doszła do wyniku."""
-
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
 
@@ -4522,10 +3956,6 @@ def test_koniec_innego_uruchomienia_nie_konczy_dziennika_wyceny(tmp_path: Path) 
 
 
 def test_plik_ostatniego_startu_ktorego_nie_da_sie_zapisac_nie_zabiera_wycenie_dziennika(tmp_path: Path) -> None:
-    """Start Wyceny pisze pierwszą linię dziennika, zanim zapisze plik ostatniego startu, więc plik ostatniego startu,
-    którego nie da się zapisać (w miejscu jego pliku tymczasowego stoi katalog), zatrzymuje start Uruchomienia dopiero wtedy, gdy dziennik
-    ma już start na dysku, a postęp jest z niego."""
-
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
     (tmp_path / f"{LAST_STARTED_FILE}.tmp").mkdir()
@@ -4544,9 +3974,6 @@ def test_plik_ostatniego_startu_ktorego_nie_da_sie_zapisac_nie_zabiera_wycenie_d
 def test_kazdy_wpis_dziennika_wyceny_jest_w_pliku_zanim_dysk_potwierdzi_zapis(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Każdy wpis dziennika jest na dysku (``fsync``), zanim silnik zrobi następny krok, więc brak prądu urywa najwyżej
-    wpis w trakcie zapisu: w chwili potwierdzenia plik dziennika ma już cały wpis, a nie tylko wpisy przed nim."""
-
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
     synced: list[int] = []
@@ -4569,10 +3996,6 @@ def test_kazdy_wpis_dziennika_wyceny_jest_w_pliku_zanim_dysk_potwierdzi_zapis(
 def test_dziennik_ktorego_start_centrum_nie_moze_wylistowac_ani_odczytac_zostaje_z_linia_dziennika_centrum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, refused: str
 ) -> None:
-    """Start Centrum nie może wylistować katalogu dzienników Wyceny albo odczytać dziennika (plik trzyma inny program):
-    dziennik zostaje do następnego startu, a dziennik Centrum ma o tym linię z typem błędu, bo inaczej Maks nie wie,
-    czemu komentarz Uruchomienia wciąż mówi, że trwa."""
-
     log = CentrumLog(tmp_path / "centrum.log")
     disk = LogsOnDisk(log, journaled="efenix")
     disk.started(PRICING_START)
@@ -4584,7 +4007,9 @@ def test_dziennik_ktorego_start_centrum_nie_moze_wylistowac_ani_odczytac_zostaje
     [after] = disk.left_behind()
 
     assert (left, after.journal is not None) == ([], True)
-    assert journal_log_lines(log) == ["dziennik-wyceny-niedostepny typ=PermissionError miejsce=start"]
+    assert journal_log_lines(log) == ["dziennik-wyceny-niedostepny typ=PermissionError miejsce=start"], (
+        "bez tej linii Maks nie wie, czemu komentarz Uruchomienia wciąż mówi, że trwa"
+    )
 
 
 @pytest.mark.parametrize("confirmed", [True, False], ids=["z-pierwsza-linia", "bez-potwierdzonej-pierwszej-linii"])
@@ -4616,10 +4041,6 @@ def test_wpis_konca_dziennika_z_pierwsza_linia_niesie_wynik_a_dziennik_bez_niej_
 
 
 def held_before_removal(monkeypatch: pytest.MonkeyPatch) -> tuple[threading.Event, threading.Event]:
-    """Usunięcie dziennika Wyceny za Logami z wynikiem (``Journal.remove``, ostatni krok ``RunComments.run_ended``) czeka,
-    aż test je puści: ponowny start Centrum w tym czasie to Centrum zgaszone zaraz po wysyłce Logów z wynikiem do
-    kolejki, przed usunięciem dziennika. Daje parę (doszło, puść)."""
-
     reached, released = threading.Event(), threading.Event()
     remove = Journal.remove
 
@@ -4633,24 +4054,18 @@ def held_before_removal(monkeypatch: pytest.MonkeyPatch) -> tuple[threading.Even
 
 
 class SwitchedOffAfterRelease(Exception):
-    """Wątek Uruchomienia w Centrum, które test uznał za zgaszone: po puszczeniu kończy się bez Logów z wynikiem."""
+    ...
 
 
 def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie_zastepuje_ich_logami_urwanego_uruchomienia(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Centrum gaśnie zaraz po tym, jak Logi z wynikiem Wyceny w efenix poszły do Kolejki wysyłki, a pliku Logów nie ma
-    (katalog Logów zajęty przez plik), zanim dziennik zniknął za nimi. Wycena dopisała wpis końca do dziennika przed
-    swoimi Logami, więc następny start nie robi z niej Urwanego Uruchomienia, tylko wysyła wynik bez Logów, a ten ma
-    niższy stopień wersji niż Logi z wynikiem: jedyny komentarz Uruchomienia w Skrzynce zostaje Logami z wynikiem z
-    odnośnikiem do ich pliku w Archiwum, bez żadnej zmiany, a dziennik znika (#871, #910)."""
-
     blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
     reached, released = held_before_removal(monkeypatch)
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
-        centrum = _pricing_centrum(tmp_path, atrapa, orders=FEW_PRICED)
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
+        centrum = _pricing_centrum(tmp_path, atrapa, orders=PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         box = centrum.surroundings.report_box
         assert _start_pricing(centrum).status_code == 200
@@ -4677,12 +4092,6 @@ def test_centrum_zgaszone_zaraz_po_wyslaniu_logow_z_wynikiem_wyceny_w_efenix_nie
 def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_po_starcie_i_dochodza_z_plikiem_do_archiwum(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Jak wyżej, ale bez sieci: Skrzynka nie odpowiada od startu Wyceny do chwili po następnym starcie Centrum, więc Logi
-    z wynikiem czekają w Kolejce wysyłki, a pliku Logów na dysku taty nie ma. Start wysyła z dziennika z wpisem końca
-    wynik bez Logów, który czeka w kolejce obok nich, a dziennik znika. Kolejka bierze wersję wyższego stopnia, więc po
-    powrocie sieci wynik bez Logów znika bez wysłania, a jedyny komentarz Uruchomienia w issue okresu to Logi z wynikiem z
-    odnośnikiem do ich pliku w Archiwum Logów okresu (#871, #910)."""
-
     blocked = ToolDirectory(tmp_path).run_logs
     blocked.parent.mkdir(parents=True)
     blocked.write_text("", encoding="utf-8")
@@ -4692,10 +4101,10 @@ def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_p
     box = surroundings.report_box
     box.background = frozenset()
     box.search_failure = Unreachable()
-    with atrapa_efenix(FEW_IN_EFENIX) as atrapa:
+    with atrapa_efenix(IN_EFENIX_WITH_EVERY_STEP) as atrapa:
         surroundings.efenix_url = atrapa.url
         centrum = settling_centrum(tmp_path, surroundings=surroundings)
-        write_collective_file(centrum.period_parent, FEW_PRICED)
+        write_collective_file(centrum.period_parent, PRICED_WITH_EVERY_STEP)
         write_report_key(ToolDirectory(tmp_path))
         started = _start_pricing(centrum)
         assert started.status_code == 200, started.json()
@@ -4704,7 +4113,7 @@ def test_bez_sieci_logi_z_wynikiem_zgaszonej_wyceny_w_efenix_czekaja_w_kolejce_p
         closed = centrum.client
         blocked.unlink()
         centrum.restart()
-        with centrum.client:  # start Centrum jak u taty: ``lifespan`` wznawia Kolejkę wysyłki, która nie ma sieci
+        with centrum.client:
             assert centrum.client.get("/api/runs/current").status_code == 200
             after = (len(queued_logs(queue)), journals(centrum), log_files(centrum))
             box.search_failure = None
@@ -4726,15 +4135,9 @@ WITHOUT_LOGS = "- Pełne Logi: nie ma, Centrum nie zapisało ich po wyniku (np. 
 def test_centrum_zgaszone_po_wpisie_konca_a_przed_logami_z_wynikiem_konczy_komentarz_postepu_wynikiem_bez_logow(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Centrum gaśnie po wpisie końca dziennika Wyceny w efenix, a przed jej Logami z wynikiem: działania po wyniku nie
-    dochodzą do pliku Logów ani do Kolejki wysyłki, a komentarz Uruchomienia w issue okresu ma postęp, który mówi, że
-    Uruchomienie trwa. Następny start ma dziennik z wpisem końca bez pliku Logów, więc ten sam komentarz zmienia się w
-    wynik bez Logów: wynik Wyceny z wpisu końca, wszystkie zlecenia z dziennika i linię, że pełnych Logów nie ma, a
-    dziennik znika (#910)."""
-
     reached, released = threading.Event(), threading.Event()
 
-    def switched_off(records: RecordMaker, run: Any) -> NoReturn:  # Centrum gaśnie: Logi z wynikiem nie powstają
+    def switched_off(records: RecordMaker, run: Any) -> NoReturn:
         reached.set()
         released.wait()
         raise SwitchedOffAfterRelease
@@ -4770,12 +4173,6 @@ def test_centrum_zgaszone_po_wpisie_konca_a_przed_logami_z_wynikiem_konczy_komen
 def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_przed_logami_urwanego_uruchomienia(
     tmp_path: Path,
 ) -> None:
-    """Zegar komputera taty cofnął się, gdy Centrum było zamknięte (np. bateria CMOS po braku prądu, a bez sieci Windows
-    go nie poprawi), więc postęp Urwanej Wyceny w efenix czeka w Kolejce wysyłki z chwilą w nazwie pliku późniejszą niż
-    każda wysyłka następnej pracy Centrum. Start bez sieci zamyka dziennik Logami Urwanego Uruchomienia, które mają wyższy
-    stopień wersji niż postęp, i usuwa dziennik. Po powrocie sieci postęp znika z kolejki bez wysłania, jedyny komentarz
-    Uruchomienia to podsumowanie Logów Urwanego Uruchomienia, a ich plik jest w Archiwum Logów okresu (#910)."""
-
     centrum = settling_centrum(tmp_path)
     box = centrum.surroundings.report_box
     box.background = frozenset()
@@ -4795,19 +4192,19 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
     text = guard_text(progress_markdown(progress, elapsed_s=600), "postęp Wyceny w efenix", empty_memory())
     queue = ToolDirectory(tmp_path).queue
     queue.mkdir(parents=True)
-    # Poprzednia praca Centrum zapisała postęp, zanim zegar się cofnął: chwila w nazwie jest „w przyszłości”.
-    (queue / f"20991231T235959000000Z-0007-{PROGRESS_LABEL}-{started.run_id[:8]}.json").write_text(
-        post_of(ProgressVersion(progress, text)).to_json(), encoding="utf-8"
-    )
+    queued_before_the_clock_went_back = queue / f"20991231T235959000000Z-0007-{PROGRESS_LABEL}-{started.run_id[:8]}.json"
+    queued_before_the_clock_went_back.write_text(post_of(ProgressVersion(progress, text)).to_json(), encoding="utf-8")
 
     box.search_failure = Unreachable()
     centrum.restart()
-    with centrum.client:  # start Centrum jak u taty: ``lifespan`` wznawia Kolejkę wysyłki, która nie ma sieci
+    with centrum.client:
         assert centrum.client.get("/api/runs/current").status_code == 200
-        # Przejście kolejki ze startu (``lifespan``) mogło przeczytać kolejkę przed Logami z pierwszego zapytania, więc
-        # widzi tylko postęp: sieć wraca dopiero, gdy każde przejście bez sieci stanęło i nastawiło ponowienie (noc 7.11).
         clock = centrum.surroundings.clock
-        waiting = wait_for(lambda: len(queued_logs(queue)) == 2 and clock.wakes == 1, 10)
+
+        def every_offline_pass_waits_for_a_retry() -> bool:
+            return len(queued_logs(queue)) == 2 and clock.wakes == 1
+
+        waiting = wait_for(every_offline_pass_waits_for_a_retry, 10)
         after = journals(centrum)
         box.search_failure = None
         clock.advance(RETRY_S)

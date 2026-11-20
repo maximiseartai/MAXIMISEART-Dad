@@ -73,6 +73,15 @@ wynikiem, a pliku Logów nie ma, karta po starcie pokazuje Urwane Uruchomienie
 zamiast wyniku, a komentarz ma Logi Urwanego Uruchomienia zamiast napisu, że
 Uruchomienie trwa.
 
+Dopisek #2236 (decyzja Maksa 3A w #1928): Urwane Uruchomienie nie zapisało
+Ustawień Centrum ze startu, więc Środowisko jego Logów liczy pliki procesu z
+bieżącego pliku Folderów. Gdy tego pliku nie da się przeczytać (np. trzyma go
+OneDrive albo inny program), Środowisko nazywa go (`unreadable_settings`) i nie
+ma listy plików, zamiast listy jak przy niewskazanym Rejestrze zleceń i
+folderze okresów, a start nie odkłada tych Logów do chwili, w której plik da się
+przeczytać: odłożenie mogłoby je zgubić, gdy plik długo zostaje zablokowany
+(`tests/test_centrum_logi_uruchomienia.py::test_logi_urwanego_uruchomienia_przy_pliku_folderow_bez_odczytu_maja_jego_nazwe_zamiast_plikow_procesu`).
+
 Dopisek z przeglądu architektury z 6.11.2026 (kandydaci 1 i 8): reguły tego
 ADR mieszkają w trzech modułach Centrum, a decyzja nie zmienia się.
 `logs_disk.py` jako jedyny zna pliki w katalogu Logów: ich układ, nazwę pliku

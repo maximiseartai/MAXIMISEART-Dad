@@ -1,6 +1,3 @@
-// Odtwarza kontrakt: OpenAPI z modeli Pydantic (tools/ci/export_openapi.py), potem typy i schematy zod
-// i tablicę operacji dla `call` (scripts/operations.mjs).
-// Python: zmienna PYTHON albo `python` (Windows) / `python3`; potrzebne zależności z requirements.txt.
 import { spawnSync } from "node:child_process"
 import { resolve } from "node:path"
 

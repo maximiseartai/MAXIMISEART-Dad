@@ -287,6 +287,13 @@ same 19 874 schedules (#911). A Wzorzec before the file of the Logi in `archiwum
 okresu”) gives 29 677 schedules in 62 s (2026-11-18); the other scopes of the Archiwum carry no Wzorzec, because each
 box call doubles the schedules of a scope, and the model's `Wzorzec` runs in `archiwum` and `archiwum-lista`.
 
+At a pass boundary the checker takes from the queue only `Outbox.state` (`QueueState`), because the rest of the queue's
+memory reaches nothing a scope runs: no scope has a `Listener`, which reads `delivered` and `rejected` (`_first_comments`,
+`_rejected_posts`), or content the Skrzynka rejects (`_rejected`); every pass sets `_read_failed` and `_locked_out`
+anew, and the wake they arm is `retry_armed`; `_unreadable` and `_archive_logged` only spare the log lines; and
+`_sequence` and `_last_moment` only give the name of the next wysyłka, whose version the checker counts as its place
+among the scope's wysyłki (`versions`).
+
 Not covered: a key that is missing or refused (`NoKey`, `Refused`: the pass stops, nothing is sent, and `KeyedBox`
 keeps a refusal for `REFUSED_KEPT_S`), a step of the Archiwum `Rejected` for its content (it is `ArchiveWaits` like a
 refusal, which the scopes of the Archiwum check), the Archiwum of another period, Maks deleting the Archiwum or a file
@@ -370,9 +377,10 @@ Kontrola ilości or an Uwaga taty in several parts that does not read in order:
 
 1. Read the diff of the covered files since their digests (the `git diff` above; the drift line names each changed
    file and definition) and find each hunk's step in the checker's table and in the tables of the model.
-2. Change the matching action so that one action stays one indivisible step of the code, and write the code's names
-   in its row of the model's table, not in a comment: the model has none, and a new action, branch, definition,
-   constant or variable gets its own row or its place in one. TLA+ strings must be ASCII.
+2. Change the matching action so that one action stays one indivisible step of the code, and write the code's names in
+   its row of the model's table, not in a comment: the model has none, and a new action of `Next`, constant or variable
+   gets its own row or its place in one, and a new branch or definition gets one when it models code. TLA+ strings must
+   be ASCII.
 3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration in
    `model/konfiguracje.json`.
 4. Before you trust a pass on a new path, break that path in the model and see the check fail; add the break to

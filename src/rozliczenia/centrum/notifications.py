@@ -1,35 +1,3 @@
-"""Powiadomienia (ADR 0015): co stało się z Uwagami taty i Zgłoszeniami wysłanymi z tego komputera, nowe Wydania i
-zakończone Wyceny w efenix.
-
-Sprawa taty to Uwaga taty albo Zgłoszenie (``DadCases``); bez numeru issue czeka w kolejce Skrzynki, a jej stan w
-Powiadomieniu to ``DadCases.state``, przy sprawie w kolejce z tym, na co czeka. Powiadomienie to sprawa w jednym
-stanie, więc nowy stan to nowe Powiadomienie. Nowe są tylko stany, które dał Maks (rozwiązana, przeczytana); wysłanie i
-czekanie w kolejce to czynność taty i kropki na dzwonku nie zapala.
-
-Powiadomienie o nowej wersji to opublikowane Wydanie (GitHub Release) o numerze nie wyższym od najnowszego Wydania na
-`main`, które wybiera Aktualność narzędzia (ADR 0014): wyższe spoza `main` się nie liczy. Niższego Centrum nie
-sprawdza osobno (każde to pytanie do API); Release z notką zakłada tylko narzędzie Wydań, które sprawdza `main`.
-Powiadomienie ma notkę „Co nowego” jako wstęp i punkty (``release_notes.whats_new``), sprawy wysłane z tego
-komputera, które rozwiązuje (``release_notes.parse``), a najnowsze także przycisk Aktualizacji narzędzia, gdy pozwala
-na to ``offers_update``. Nowe (kropka na dzwonku) jest
-tylko Wydanie z przyciskiem, czyli nowsze od wersji taty; starsze Wydania to historia i kropki nie zapalają.
-
-Centrum pyta przy starcie, w tle, i przy odczycie Powiadomień, gdy od ostatniego pytania minęło ``CHECK_INTERVAL_S``:
-GitHub o Wydania zawsze, Skrzynkę Zgłoszeń o zamknięcie otwartych spraw tylko przy otwartych sprawach i kluczu.
-Najnowsze Wydanie na `main` daje ta sama pamiętana odpowiedź GitHuba co w Konfiguracji, więc obie nie pytają o nie dwa
-razy; ta odpowiedź może mieć do 10 minut, więc nowe Wydanie pojawia się najpóźniej po 20 minutach. Odczyt czeka na
-trwające pytanie najwyżej ``CHECK_WAIT_S`` i odpowiada ostatnim znanym stanem, a spóźniona odpowiedź i tak zapisuje
-stan. Brak sieci albo odmowa przechodzą po cichu, bez Komunikatu, z ostatnią znaną
-odpowiedzią. Przeczytane Powiadomienia (ich ``id``) leżą w ``config/powiadomienia.json`` poza Gitem i przetrwają
-restart Centrum. Gdy ten plik albo plik Spraw taty jest niedostępny, każdy odczyt Powiadomień próbuje zapisać je
-znowu, a dopóki się nie da, Powiadomienia mają Komunikat, który nazywa te pliki.
-
-Powiadomienie o Wycenie w efenix to każda zakończona Wycena w efenix z Logów Uruchomienia (``RunCards.ended``), także
-zakończona Zatrzymaniem: tata w trakcie patrzy na okno efenix albo odchodzi od komputera, więc wynik czeka na niego pod
-dzwonkiem. Ma tytuł wyniku z karty, okres, tryb, liczby gotowych, przekazanych, rozliczonych, błędów i ostrzeżeń
-Emmetta, „Co się stało” Zatrzymania i kartę Uruchomienia; jest nowe (kropka na dzwonku), dopóki tata go nie zobaczy.
-"""
-
 from __future__ import annotations
 
 import json
@@ -64,12 +32,6 @@ CHECK_THREAD: Final = "powiadomienia-sprawdzanie"
 
 
 class ReadNotifications:
-    """Przeczytane Powiadomienia w ``config/`` poza Gitem, czytane raz przy starcie Centrum.
-
-    Brak, uszkodzenie albo nieznany schemat pliku to brak przeczytanych. Plik, którego nie da się zapisać, jest
-    niedostępny (``StateFile``): przeczytane czekają w pamięci na następne oznaczenie albo odczyt Powiadomień.
-    """
-
     def __init__(self, work: CentrumWork) -> None:
         self.file = StateFile(
             work.config / NOTIFICATIONS_FILE, work.log, where="stan przeczytanych Powiadomień", pause=work.pause
@@ -104,21 +66,12 @@ class ReadNotifications:
 
 @dataclass(frozen=True)
 class _Releases:
-    """Ostatnia odpowiedź GitHuba o Wydaniach: najnowsze Wydanie na `main`, czy Centrum proponuje aktualizację do
-    niego, i opublikowane Wydania; brak odpowiedzi zostawia poprzednią."""
-
     newest: Release | None = None
     offered: bool = False
     published: tuple[PublishedRelease, ...] = ()
 
 
 class Notifications:
-    """Powiadomienia z Uwag taty, wysłanych Zgłoszeń i Wydań, sprawdzanie ich stanu i przeczytane.
-
-    ``release`` to odpowiedź GitHuba o najnowszym Wydaniu, pamiętana wspólnie z Konfiguracją, a ``pricings`` zakończone
-    Wyceny w efenix z Logów Uruchomienia.
-    """
-
     def __init__(
         self,
         work: CentrumWork,
@@ -128,8 +81,6 @@ class Notifications:
         release: ReleaseSource,
         pricings: Callable[[], Iterable[LoggedRun]],
     ) -> None:
-        """``_asked_at``: chwila ostatniego pytania skrzynki i GitHuba; ``None``: od startu Centrum nie było pytania."""
-
         self._cases = cases
         self._pricings = pricings
         self._read = ReadNotifications(work)
@@ -153,22 +104,13 @@ class Notifications:
         return self._notifications()
 
     def mark_read(self, ids: Iterable[str]) -> notifications_contract.Notifications:
-        """Zapamiętuje Powiadomienia, które tata zobaczył; nie pyta skrzynki."""
-
         self._read.add(ids)
         return self._notifications()
 
     def check_in_background(self) -> None:
-        """Przy starcie Centrum pierwsze pytanie o Wydania i stan spraw taty, w tle, żeby start nie czekał na sieć."""
-
         self._start_check_if_due()
 
     def _start_check_if_due(self) -> threading.Thread | None:
-        """Pytanie skrzynki i GitHuba w tle, gdy pora (trwające też się liczy); ``None``, gdy nie ma na co czekać.
-
-        Chwila pytania stoi w ``_asked_at`` od razu przy jego starcie, więc równoległy odczyt nie pyta drugi raz.
-        """
-
         with self._lock:
             now = self._clock()
             if self._asked_at is None or now - self._asked_at >= CHECK_INTERVAL_S:
@@ -185,11 +127,6 @@ class Notifications:
             self._log.unexpected_failure(failure, where="Wydania w Powiadomieniach")
 
     def _ask_github(self) -> None:
-        """Najnowsze Wydanie na `main` i opublikowane Wydania; to, na co GitHub nie odpowiedział, zostaje bez zmian.
-
-        Commit narzędzia nie zmienia się do końca pracy Centrum, więc ocena Aktualizacji zależy tylko od tej odpowiedzi.
-        """
-
         answer = self._release()
         published = self._freshness.published()
         known = self._releases
@@ -228,11 +165,6 @@ class Notifications:
         )
 
     def _new_versions(self, cases: list[Case]) -> list[notifications_contract.ReleaseNotification]:
-        """Opublikowane Wydania nie wyższe od najnowszego na `main`; przycisk ma tylko najnowsze.
-
-        Sprawę z notki Wydania Powiadomienie nazywa tak, jak zna ją tata; sprawy wysłanej z innego komputera nie ma.
-        """
-
         sent: dict[tuple[str, int | None], notifications_contract.SolvedCase] = {
             (case.kind.label, case.number): notifications_contract.SolvedCase(kind=case.kind.key, title=case.title)
             for case in cases
@@ -267,12 +199,6 @@ class Notifications:
         return versions
 
     def _case(self, case: Case) -> notifications_contract.DadNoteNotification | notifications_contract.ReportNotification | None:
-        """Powiadomienie o sprawie; wpis Zgłoszenia sprzed Powiadomień (bez „Co się stało”) go nie daje.
-
-        Zgłoszenie w kolejce nie ma jeszcze numeru; jego identyfikator Powiadomienia bierze odcisk, bo problem czeka w
-        kolejce najwyżej raz.
-        """
-
         if case.title is None or case.sent_at is None:
             return None
         state, at = self._cases.state(case, self._box), _moment(case.closure, case.sent_at)
@@ -311,9 +237,6 @@ class Notifications:
 
 
 def _id_word(state: notifications_contract.CaseState) -> str:
-    """Stan sprawy w ``id`` jej Powiadomienia. Przeczytane ``id`` leżą w ``config/powiadomienia.json`` u taty, więc
-    słowo stanu się nie zmienia: inne słowo zrobiłoby z przeczytanego Powiadomienia nowe."""
-
     match state:
         case common_contract.Sent():
             return "wyslana"
@@ -332,8 +255,6 @@ def _id_word(state: notifications_contract.CaseState) -> str:
 
 
 def _moment(closure: Closure | None, sent_at: datetime) -> datetime:
-    """Czas stanu sprawy: zamknięcie przez Maksa, a bez niego wysłanie przez tatę."""
-
     return closure.at if closure is not None and closure.at is not None else sent_at
 
 

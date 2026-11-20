@@ -645,7 +645,7 @@ _Avoid_: ustawienia Uruchomienia, środowisko
 
 Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, w chwili jego startu: Lista Wykonawców, Reguły ilości i Legenda czynności.
 Proces mówi, którymi z nich liczy, w swoich potrzebach, a Uruchomienie procesu, który danym Ustawieniem nie liczy, nie ma go ani w wejściu, ani w Logach Uruchomienia.
-Każdy gospodarz Uruchomienia buduje je (`settings_at_start.SettingsAtStart`) w jednym miejscu: Centrum rozliczeń z migawki Ustawień Centrum (`SettingsAtStart.of_snapshot`), Skrypt dla maszyn z Wydania (`uruchom_proces.ustawienia_z_wydania`), a odtworzenie z Logów Uruchomienia (`odtworzenie._prepared`).
+Każdy gospodarz Uruchomienia buduje je (`settings_at_start.SettingsAtStart`) w jednym miejscu: Centrum rozliczeń z migawki Ustawień Centrum (`SettingsAtStart.of_snapshot`), Skrypt dla maszyn Reguły ilości i Legendę czynności z Wydania, a Listę Wykonawców z pliku `--wykonawcy` (`uruchom_proces.ustawienia_z_wydania`), a odtworzenie z Logów Uruchomienia (`odtworzenie._prepared`).
 Zmiana Ustawień w trakcie Uruchomienia ich nie zmienia (ADR 0032).
 _Avoid_: fakty startu (to fakty o tym, jak wystartowało Uruchomienie), ustawienia Uruchomienia
 
@@ -817,6 +817,8 @@ Starsza, która dojdzie po nowszej, niczego w Skrzynce nie zmienia.
 Która wersja jest nowsza, mówi najpierw jej stopień, który wybiera nadawca, a nie zegar komputera (ADR 0015, dopisek #910).
 Treść, którą Skrzynka odrzuciła, zostaje w niej do następnego startu Centrum rozliczeń; tata ma wtedy skontaktować się z Maksem.
 Plik w Archiwum Logów okresu też idzie dokładnie raz, a plik nowszej wersji podmienia plik starszej; Wzorzec idzie tylko wtedy, gdy Archiwum nie ma pliku o jego nazwie.
+Plik, który starsze Wydanie zostawiło w kolejce (bez Tokenu do Zgłoszeń, bez sieci albo z treścią odrzuconą przez Skrzynkę), wysyła każde nowsze, więc jego odczyt zostaje, dopóki Maks nie sprawdzi, że w kolejce taty nie ma pliku sprzed Wydania, które tata ma.
+Plik z czymś, czego starsze Wydanie nie zna (jak plik do Archiwum Logów okresu), ma nowszy schemat, więc starsze Centrum po cofniętej Aktualizacji narzędzia zostawia go w kolejce, zamiast wysłać go bez tego.
 _Avoid_: outbox, bufor
 
 ## Archiwum Logów okresu

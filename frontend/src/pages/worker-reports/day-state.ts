@@ -1,7 +1,6 @@
 import type { ReportsDay, ReportsWorkerDay } from "@/api/generated"
 import { addDays, weekdayIndex } from "@/pages/worker-reports/days"
 
-/** Stan dnia, który tata wybiera filtrem Status: dzień z wynikiem ostatniego kliknięcia. */
 export type Status = "problem" | "without_report" | "waiting" | "complete"
 
 /**
@@ -22,10 +21,6 @@ export type DayState =
   | { kind: "future"; orders: number }
   | { kind: "holiday" | "sunday" | "empty" }
 
-/**
- * Stan dnia `column` Wykonawcy, którego dzień z odpowiedzi serwera to `found` (`undefined`: Wykonawca nie ma tego
- * dnia), przy dzisiejszym dniu `today` z zegara Centrum.
- */
 export function dayState(found: ReportsWorkerDay | undefined, column: ReportsDay, today: string): DayState {
   if (found !== undefined && column.day > today && found.orders > 0) {
     return { kind: "future", orders: found.orders }
@@ -56,7 +51,6 @@ function status(found: ReportsWorkerDay, day: string, today: string): Status {
   return recent && found.mails === 0 ? "waiting" : "without_report"
 }
 
-/** Stan z wynikiem kliknięcia, czyli dzień, który ma kafelek z popoverem. */
 export function hasStatus(state: DayState): state is Extract<DayState, { kind: Status }> {
   return state.kind === "problem" || state.kind === "without_report" || state.kind === "waiting" || state.kind === "complete"
 }
@@ -67,7 +61,6 @@ export function hasStatus(state: DayState): state is Extract<DayState, { kind: S
  */
 export type Choice = Status | "reminded"
 
-/** Dzień z wynikiem kliknięcia pasuje do filtra: ma wybrany stan albo, przy Przypomnianych, przypomnienie. */
 export function isChosen(state: DayState, chosen: ReadonlySet<Choice>): boolean {
   return hasStatus(state) && (chosen.has(state.kind) || (chosen.has("reminded") && state.day.reminders.length > 0))
 }

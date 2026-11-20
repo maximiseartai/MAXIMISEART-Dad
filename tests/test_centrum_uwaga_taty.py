@@ -14,11 +14,12 @@ from fastapi.testclient import TestClient
 
 from rozliczenia.centrum.keyed_box import LIST_LAG_S, OPENING_FILE
 from rozliczenia.centrum.outbox import DELIVERY_WAIT_S, RETRY_S
-from rozliczenia.centrum.report_box import Refused, SendOutcome, Unreachable
+from rozliczenia.centrum.report_box import Refused, Rejected, SendOutcome, Unreachable
 
 from atrapy.skrzynka import BoxIssue
 from tests.fixtures.centrum import (
     QUEUED_FOR_INTERNET,
+    REJECTED,
     SENT,
     TOOL_COMMIT,
     Centrum,
@@ -369,3 +370,16 @@ def test_uwaga_bez_sieci_wysyla_sie_sama_minute_po_powrocie_sieci_bez_restartu(t
     assert wait_for(lambda: case_states(started.client, "uwaga") == [SENT])
     assert notes(tmp_path)[0]["number"] == dad_note_issues(started)[0].number
     assert wait_for(lambda: queued(tmp_path) == [])
+
+
+def test_uwaga_ktorej_tresc_skrzynka_odrzucila_ma_powiadomienie_bez_kropki(tmp_path: Path) -> None:
+    started = centrum_with_key(tmp_path)
+    started.report_box.outcomes.append(Rejected())
+
+    assert started.client.post("/api/dad-notes", json={"title": TITLE, "body": BODY}).json() == REJECTED
+
+    answer = started.client.get("/api/notifications").json()
+    assert [(item["kind"], item["title"], item["state"], item["unread"]) for item in answer["items"]] == [
+        ("uwaga", TITLE, REJECTED, False)
+    ]
+    assert answer["unread"] == 0

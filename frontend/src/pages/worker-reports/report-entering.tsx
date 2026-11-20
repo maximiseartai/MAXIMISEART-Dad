@@ -22,7 +22,6 @@ const LABEL = "Wpisz raporty z maili"
 type ReportEntering = {
   setup: Resource<ReportEnteringSetup>
   reload: () => Promise<void>
-  /** Wpisanie raportów ze strumienia, trwające albo zakończone w tej pracy Centrum. */
   run: Exclude<RunView, { state: "idle" }> | null
 }
 
@@ -101,11 +100,6 @@ function blocked(setup: ReportEnteringSetup): boolean {
   return setup.blocker !== null || setup.open_in_excel.length > 0
 }
 
-/**
- * Zdania pod nagłówkiem: czemu przycisk jest wyłączony (z serwera), linia „Ostatnio …” ostatniego Wpisania raportów
- * z jego Logów (jak przy Uporządkowaniu INTERMAX) i Zatrzymanie Wpisania raportów z tej pracy Centrum, którego
- * Komunikat stoi w Uruchomieniach. Bez blokady, bez Wpisania w Logach i bez Zatrzymania nic tu nie stoi.
- */
 export function EnteringNotes({ entering }: { entering: ReportEntering }) {
   const { setup, reload, run } = entering
 

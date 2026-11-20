@@ -10,10 +10,6 @@ type ConfigurationRead = { configuration: Resource<Configuration>; reload: () =>
 
 const ConfigurationContext = React.createContext<ConfigurationRead | null>(null)
 
-/**
- * Jeden odczyt Konfiguracji (Wzorce, Wykonawcy, wersja narzędzia, stan Zgłoszeń) na otwarte okno Ustawień, wspólny dla
- * jego sekcji: przejście między sekcjami nie czyta jej od nowa, a powrót do karty tak, jak każda strona.
- */
 export function ConfigurationProvider({ children }: { children: React.ReactNode }) {
   const { resource: configuration, reload } = useResource(getConfiguration, [])
   const value = React.useMemo(() => ({ configuration, reload }), [configuration, reload])
@@ -21,7 +17,6 @@ export function ConfigurationProvider({ children }: { children: React.ReactNode 
   return <ConfigurationContext.Provider value={value}>{children}</ConfigurationContext.Provider>
 }
 
-/** Sekcja z danymi Konfiguracji: szkielet w czasie odczytu, Komunikat z „Spróbuj ponownie” po nieudanym, potem treść. */
 export function WithConfiguration({
   children,
 }: {

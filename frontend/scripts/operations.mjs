@@ -1,7 +1,3 @@
-// Tablica operacji kontraktu dla `call` (src/api/client.ts): `writeOperations` z src/api/openapi.json pisze
-// src/api/generated/operations.gen.ts, gdzie każda operacja (`operationId`) ma metodę, adres `…Data["url"]`
-// i schemat odpowiedzi `z…Response`, które wygenerował @hey-api/openapi-ts. Nazwę, której hey-api nie
-// wygenerował, generator odrzuca, a adres sprawdza typecheck (`satisfies`) z typem `…Data` operacji.
 import { readFileSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 
