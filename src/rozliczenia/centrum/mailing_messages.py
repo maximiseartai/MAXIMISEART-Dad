@@ -1,6 +1,3 @@
-"""Zdania Wysyłki rozliczeń dla taty (ADR 0040): dlaczego Mail z rozliczeniem nie wyszedł albo dlaczego strona nie zna
-stanu Rozliczeń pracowników. Bez adresu, nazwy Wykonawcy i nazwy pliku: strona pokazuje je obok zdania."""
-
 from __future__ import annotations
 
 from typing import Final

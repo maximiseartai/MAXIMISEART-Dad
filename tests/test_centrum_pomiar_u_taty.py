@@ -15,8 +15,16 @@ from tests.fixtures.centrum import Centrum, centrum, view_timing
 SERVER_TIMING = re.compile(r"centrum;dur=\d+(\.\d+)?")
 
 
-def test_kazda_odpowiedz_api_podaje_sam_czas_obslugi_w_server_timing(tmp_path: Path) -> None:
-    client = centrum(tmp_path).client
+def test_kazda_odpowiedz_api_takze_odmowa_i_nieoczekiwany_wyjatek_podaje_sam_czas_obslugi_w_server_timing(
+    tmp_path: Path,
+) -> None:
+    app = centrum(tmp_path)
+    client = app.client
+    register = tmp_path / "ZLECENIA INTERMAX.xlsx"
+    register.touch()
+    app.platform.chosen_files.append(register)
+    assert client.post("/api/settings/register/choose").status_code == 200
+    app.platform.failure = RuntimeError("system nie otworzył pliku")
 
     responses = [
         client.get("/api/health"),
@@ -26,9 +34,10 @@ def test_kazda_odpowiedz_api_podaje_sam_czas_obslugi_w_server_timing(tmp_path: P
         client.put("/api/settings/theme", json={"theme": "light"}, headers={"Origin": "http://zly.example"}),
         client.get("/api/health", headers={"Host": "zly.example:47811"}),
         client.post("/api/periods/22_28_09_2026/open", json={"target": "period_folder"}),
+        client.post("/api/settings/register/open"),
     ]
 
-    assert [response.status_code for response in responses] == [200, 200, 200, 200, 403, 403, 409]
+    assert [response.status_code for response in responses] == [200, 200, 200, 200, 403, 403, 409, 500]
     timings = [response.headers.get("server-timing", "") for response in responses]
     assert [timing for timing in timings if not SERVER_TIMING.fullmatch(timing)] == []
 

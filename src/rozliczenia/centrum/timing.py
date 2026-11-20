@@ -1,14 +1,3 @@
-"""Pomiar u taty: czas obsługi zapytań API i pomiary widoków z przeglądarki w dzienniku Centrum.
-
-Każda odpowiedź API ma nagłówek ``Server-Timing`` z samym czasem obsługi
-zapytania. Przeglądarka czyta go przy każdym zapytaniu i po gotowym widoku
-(zimny start strony, przejście w menu) wysyła pomiar, który serwer dopisuje do
-dziennika Centrum. Pomiar to same liczby i nazwy z kontraktu (strona z menu,
-operacja API), więc do dziennika nie trafia adres zapytania, token okresu ani
-ścieżka (ADR 0004). Dzięki temu Maks widzi u taty, czy wolny jest odczyt plików
-z OneDrive (czas serwera), czy przeglądarka.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
