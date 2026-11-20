@@ -45,7 +45,7 @@ Decyzje autora tego PR:
 
 Decyzje autora PR ticketu #2461:
 
-- **Chroniony właściciel to wpis wprost.** Plik jest właścicielem, gdy konfiguracja reguł drzewa HEAD PR scalonego z bazą nazywa go wprost (`chroniony_wlasciciel.ZASADY`): wpis ze wzorcem (`src/**`) albo katalog to zasięg reguły, a nie jedyność, a zwolnienie z `TID251` liczy się tylko razem z wierszem `OWNERS`, bo dopiero ten wiersz mówi, której nazwy plik jest właścicielem.
+- **Chroniony właściciel to wpis wprost.** Plik jest właścicielem, gdy konfiguracja reguł drzewa HEAD PR scalonego z bazą nazywa go wprost (`chroniony_wlasciciel.ZASADY`): wpis ze wzorcem (`src/**`) albo katalog to zasięg reguły, a nie jedyność. Zakaz `TID251` liczy się ze zwolnienia w `per-file-ignores`, bo to, że każde zwolnienie ma wiersz `OWNERS` z nazwami właściciela, pilnuje już `tests/test_zakazy_ruff.py` w Required CI tego samego drzewa.
 - **Każdy plik z `Gdzie`.** Test przechodzi tylko, gdy każdy plik z `Gdzie` jest chronionym właścicielem, bo Ważne z drugim plikiem poza właścicielem ma drugie miejsce, w którym błąd wróci.
 - **Szczebel w następnej rundzie.** Recenzent następnej rundy zmienia szczebel, który nie działa, punktem `Mechanizm W<n> r<k>: <szczebel> - zdanie` w `## Sprawdzone`, jak kod korzenia punktem `Korzeń W<n> r<k>:` (decyzja Q25 ADR 0031), a bramka bierze szczebel z ostatniego werdyktu, który dotyczy tego Ważnego; inaczej Ważne ze szczeblem, który nie działa, nie miałoby jak się scalić.
 - **Przejście.** Warunek chronionego właściciela ma własną chwilę wdrożenia (`szczebel_straznika.OWNER_MARKER`), więc wątek z pierwszym werdyktem sprzed niej kończy jak po #2460.

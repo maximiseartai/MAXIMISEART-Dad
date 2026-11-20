@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import ast
 from collections.abc import Iterator, Sequence
 import configparser
 from dataclasses import dataclass
@@ -18,7 +17,7 @@ wskazuje jako właściciela, więc jego jedyność pilnuje zakaz albo reguła, a
 
 | Źródło | Właściciel |
 |---|---|
-| zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia i z wierszem ``OWNERS`` w ``tests/test_zakazy_ruff.py`` naraz |
+| zakaz ``TID251`` | plik z ``TID251`` w ``[lint.per-file-ignores]`` ``ruff.toml`` korzenia; że ma wiersz ``OWNERS`` z nazwami, których jest właścicielem, pilnuje ``tests/test_zakazy_ruff.py`` w Required CI tego drzewa |
 | kontrakt importów | moduł z ``allowed_importers`` kontraktu ``.importlinter`` jako plik ``src/<moduł>.py`` albo ``src/<moduł>/__init__.py`` |
 | reguła ast-grep | plik z ``ignores:`` reguły z katalogu ``ruleDirs`` ``sgconfig.yml`` |
 
@@ -27,8 +26,6 @@ tak jak katalog. Ścieżka, której w drzewie nie ma, i konfiguracja, której na
 """
 
 RUFF = "ruff.toml"
-OWNERS_TEST = "tests/test_zakazy_ruff.py"
-OWNERS = "OWNERS"
 BAN = "TID251"
 IMPORT_CONTRACTS = ".importlinter"
 CONTRACT = "importlinter:contract:"
@@ -36,12 +33,12 @@ ALLOWED = "allowed_importers"
 PACKAGES = "src"
 AST_GREP = "sgconfig.yml"
 SOURCES = (
-    f"{BAN} w per-file-ignores {RUFF} razem z wierszem {OWNERS} w {OWNERS_TEST}, {ALLOWED} kontraktu w {IMPORT_CONTRACTS} "
+    f"{BAN} w per-file-ignores {RUFF} z wierszem OWNERS w tests/test_zakazy_ruff.py, {ALLOWED} kontraktu w {IMPORT_CONTRACTS} "
     f"albo ignores: reguły ast-grep z ruleDirs {AST_GREP}"
 )
 _BRACES = re.compile(r"\{([^{}]*)\}")
 _WILDCARD = re.compile(r"[*?\[!]")
-_UNREADABLE = (tomllib.TOMLDecodeError, SyntaxError, configparser.Error, yaml.YAMLError, UnicodeDecodeError)
+_UNREADABLE = (tomllib.TOMLDecodeError, configparser.Error, yaml.YAMLError, UnicodeDecodeError)
 
 
 @dataclass(frozen=True)
@@ -74,25 +71,13 @@ def refusal(files: Sequence[str], protected: frozenset[str]) -> str | None:
 
 
 def _banned(tree: _Tree) -> set[str]:
-    config, test = tree.read(RUFF), tree.read(OWNERS_TEST)
-    if config is None or test is None:
+    if (config := tree.read(RUFF)) is None:
         return set()
     try:
         ignores = tomllib.loads(config).get("lint", {}).get("per-file-ignores", {})
-        rows = _owner_rows(ast.parse(test))
     except _UNREADABLE:
         return set()
-    exempt = {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
-    return exempt & rows
-
-
-def _owner_rows(module: ast.Module) -> set[str]:
-    for node in module.body:
-        targets: list[ast.expr] = node.targets if isinstance(node, ast.Assign) else [node.target] if isinstance(node, ast.AnnAssign) else []
-        value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
-        if any(isinstance(target, ast.Name) and target.id == OWNERS for target in targets) and isinstance(value, ast.Dict):
-            return {key.value for key in value.keys if isinstance(key, ast.Constant) and isinstance(key.value, str)}
-    return set()
+    return {path for pattern, codes in ignores.items() if isinstance(codes, list) and BAN in codes for path in _paths(pattern)}
 
 
 def _importers(tree: _Tree) -> set[str]:

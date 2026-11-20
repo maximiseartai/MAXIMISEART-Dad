@@ -10,11 +10,12 @@ import sys
 
 import pytest
 
+import chroniony_wlasciciel
 import na_scalonych_pr
 from tests.fixtures import werdykty_szablonu
 from tests.fixtures.body_html import body_html
 from tests.fixtures.fake_cli import ONLY_FOUND_BY_NAME_ON_POSIX, FakeGitHub
-from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, with_imports
+from tests.fixtures.git_repo import commit, copy_files, git, mutation_repository, repository, with_imports
 from tests.fixtures.srodowisko import DEV, PINS, project, wymaga_uv
 
 # Mutacje zmian z modułami, które importują, i pluginem pokrycia, który ładują w pytest po nazwie.
@@ -540,6 +541,49 @@ OUTSIDE_OWNER = f"DOWÓD ODMOWA | {GUARD_NODE} | #5 W1 r1: Mechanizm: test przyj
 
 def _owner(owner: str) -> dict[str, str]:
     return {"sgconfig.yml": SGCONFIG, "reguly-ast-grep/przez-wlasciciela.yml": OWNER_RULE.format(owner=owner)}
+
+
+OWNER = "src/pakiet/modul.py"
+RUFF_EXEMPT = '[lint.per-file-ignores]\n"{pattern}" = ["{code}"]\n'
+CONTRACT = "[importlinter]\nroot_package = pakiet\n\n[importlinter:contract:jedno-wejscie]\nname = x\ntype = protected\nprotected_modules =\n    os\n{field} =\n    {module}\n"
+IGNORING_RULE = "id: regula\nlanguage: python\nmessage: użyj właściciela\nfiles:\n  - '**/*.py'\nignores:\n  - {pattern}\nrule:\n  pattern: zle()\n"
+
+
+def _exempt(pattern: str = OWNER, code: str = "TID251") -> dict[str, str]:
+    return {"ruff.toml": RUFF_EXEMPT.format(pattern=pattern, code=code)}
+
+
+def _ignoring(pattern: str, directory: str = "reguly-ast-grep") -> dict[str, str]:
+    return {"sgconfig.yml": SGCONFIG, f"{directory}/regula.yml": IGNORING_RULE.format(pattern=pattern)}
+
+
+@pytest.mark.parametrize(
+    ("config", "owned"),
+    [
+        pytest.param(_exempt(), True, id="zwolnienie-z-zakazu-tid251"),
+        pytest.param(_exempt(pattern="src/pakiet/{modul,inny}.py"), True, id="zwolnienie-tid251-z-plikiem-w-nawiasie"),
+        pytest.param(_exempt(code="BLE001"), False, id="zwolnienie-z-innej-reguly-niz-tid251"),
+        pytest.param(_exempt(pattern="src/pakiet/*.py"), False, id="zwolnienie-tid251-na-wzorcu-zasiegu"),
+        pytest.param({"ruff.toml": "[lint.per-file-ignores\n"}, False, id="ruff-toml-ktorego-toml-nie-wczyta"),
+        pytest.param({".importlinter": CONTRACT.format(field="allowed_importers", module="pakiet.modul")}, True, id="allowed-importers-kontraktu-importow"),
+        pytest.param({".importlinter": CONTRACT.format(field="allowed_importers", module="pakiet.*")}, False, id="allowed-importers-ze-wzorcem"),
+        pytest.param({".importlinter": CONTRACT.format(field="ignore_imports", module="pakiet.modul")}, False, id="modul-w-innym-polu-kontraktu"),
+        pytest.param(_ignoring(OWNER), True, id="ignores-reguly-ast-grep"),
+        pytest.param(_ignoring(OWNER, directory="poza"), False, id="ignores-reguly-spoza-rule-dirs"),
+        pytest.param(_ignoring("src/**"), False, id="ignores-ze-wzorcem-zasiegu"),
+        pytest.param(_ignoring("src/pakiet"), False, id="ignores-katalogu-wlasciciela"),
+        pytest.param(_ignoring("src/pakiet/modul"), False, id="ignores-z-przedrostkiem-sciezki-wlasciciela"),
+        pytest.param({}, False, id="plik-spoza-konfiguracji-regul"),
+    ],
+)
+def test_chroniony_wlasciciel_to_plik_wskazany_wprost_przez_konfiguracje_regul_drzewa(tmp_path: Path, config: dict[str, str], owned: bool) -> None:
+    root = repository(tmp_path / "repo", {OWNER: "WARTOSC = 1\n", "src/pakiet/__init__.py": "", **config}, tools=())
+    commit(root, "drzewo")
+
+    protected = chroniony_wlasciciel.owners(root, git(root, "rev-parse", "HEAD^{tree}"))
+
+    assert (OWNER in protected) is owned, sorted(protected)
+    assert (chroniony_wlasciciel.refusal([OWNER], protected) is None) is owned
 
 
 @pytest.mark.parametrize(
