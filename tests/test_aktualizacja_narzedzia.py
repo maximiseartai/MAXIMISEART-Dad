@@ -1,10 +1,3 @@
-"""Aktualizacja narzędzia na prawdziwym Gicie: klon taty i lokalne repozytorium „origin” zamiast GitHuba.
-
-Moduł ``tool_update`` ma jedną operację, którą widzą dwa wejścia (akcja API
-Centrum i opiekun ponownego startu), więc jego macierz reguł jest tutaj, na
-jego interfejsie. Żaden test nie łączy się z siecią.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
@@ -129,8 +122,6 @@ def test_wydanie_na_starszym_commicie_niz_klon_nie_cofa_wersji(repository: ToolR
 
 
 def off_main_commit(repository: ToolRepository) -> str:
-    """Commit, który zna tylko tag: ktoś założył go z gałęzi od pierwszego Wydania, która nie weszła do `main`."""
-
     git(repository.publisher, "checkout", "--quiet", "-b", "agent", "v0.1.0")
     (repository.publisher / "src" / "narzedzie.py").write_text("WERSJA = 666\n", encoding="utf-8")
     git(repository.publisher, "commit", "--quiet", "--all", "--message", "Zmiana spoza main")
@@ -249,9 +240,7 @@ def test_bez_polaczenia_z_githubem_aktualizacja_konczy_sie_brakiem_polaczenia_a_
     assert repository.state() == unchanged
 
 
-def credential_helper_that_waits(tmp_path: Path) -> Path:
-    """Konfiguracja Gita komputera z pomocnikiem logowania, który zapisuje ślad i czeka na odpowiedź taty."""
-
+def git_config_with_credential_helper_waiting_for_dad(tmp_path: Path) -> Path:
     asked = tmp_path / "pomocnik-logowania-zapytany"
     helper = tmp_path / "pomocnik_logowania.py"
     helper.write_text(
@@ -264,8 +253,8 @@ def credential_helper_that_waits(tmp_path: Path) -> Path:
 def test_github_proszacy_o_logowanie_konczy_sie_od_razu_bez_pytania_a_klon_zostaje_bez_zmian(
     repository: ToolRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Na komputerze taty Git for Windows ma pomocnika logowania z oknem; tu pomocnik czekałby minutę.
-    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(credential_helper_that_waits(tmp_path)))
+    # ZEWNĘTRZNE: Git for Windows instaluje domyślnie pomocnika logowania Git Credential Manager, który pyta o logowanie w oknie (instalator Git for Windows, krok „Choose a credential helper”)
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(git_config_with_credential_helper_waiting_for_dad(tmp_path)))
     before = repository.head()
     unchanged = repository.state()
 
@@ -378,8 +367,6 @@ def test_zmiany_na_komputerze_daja_odmowe_a_klon_zostaje_bez_zmian(
 
 
 def installed_git(directory: Path) -> Path:
-    """Git for Windows zainstalowany w ``directory``: polecenie ``cmd\\git.exe``."""
-
     git = directory / "cmd" / "git.exe"
     git.parent.mkdir(parents=True)
     git.touch()
@@ -482,9 +469,6 @@ def test_plik_konfiguracji_usuniety_w_nowej_wersji_zostaje_u_taty(
 
 @NO_ACCESS_ON_WINDOWS
 def test_plik_konfiguracji_bez_dostepu_usuniety_w_nowej_wersji_zatrzymuje_aktualizacje_na_kopii(tmp_path: Path) -> None:
-    """Plik taty, którego nie da się sprawdzić (folder bez dostępu), idzie do kopii jak plik, który jest, więc kopia
-    pada, a klon zostaje przy poprzedniej wersji, zamiast żeby przesunięcie usunęło plik jak brakujący (#1369)."""
-
     name = "config/bez-dostepu/stawki.yaml"
     repository = tool_repository(tmp_path / "repozytoria", {**FIRST_VERSION, name: RATES})
     before = repository.head()
@@ -497,7 +481,6 @@ def test_plik_konfiguracji_bez_dostepu_usuniety_w_nowej_wersji_zatrzymuje_aktual
     assert repository.read(name) == RATES
 
 
-# Pliki taty, których Git nie śledzi: Wzorce, Ustawienia taty, klucz do Zgłoszeń, metryki i dziennik.
 UNTRACKED_DAD_FILES = {
     "config/Wzorzec rozliczenia pracownika.xlsx": "wzorzec pracownika",
     "config/Wzorzec pliku zbiorczego.xlsx": "wzorzec zbiorczy",
@@ -584,8 +567,6 @@ DAD_SETTINGS = "config/centrum-ustawienia.yaml"
 
 
 def moved_with_new_requirements(repository: ToolRepository) -> str:
-    """Nowa wersja zmienia wymagania, przestaje śledzić zmienioną u taty Konfigurację wykonawców i usuwa jej przykład."""
-
     (repository.clone / "config" / "worker_mapping.yaml").write_text(REAL_NAMES, encoding="utf-8")
     (repository.clone / DAD_SETTINGS).write_text("folder_okresow: Załączniki\n", encoding="utf-8")
     return repository.publish(
@@ -692,11 +673,6 @@ def test_kolejne_klikniecie_przy_aktualizacji_w_toku_nie_gubi_pliku_taty(
 
 
 def git_whose_helper_holds_its_output(tmp_path: Path, commit: str) -> Path:
-    """Git, którego pomocnik (jak ``git-remote-https`` przy pobraniu) zostaje po nim z jego wyjściem otwartym na minutę.
-
-    Odpowiada jak klon na `main` już na commicie ``commit`` najnowszego Wydania.
-    """
-
     return fake_cli(
         tmp_path,
         "git",
@@ -723,8 +699,6 @@ def test_pomocnik_gita_trzymajacy_jego_wyjscie_nie_wstrzymuje_aktualizacji(tmp_p
 
 
 def failed_rollback_with_index_locked(repository: ToolRepository) -> Path:
-    """Aktualizacja, której biblioteki się nie instalują, a cofnięcie zatrzymuje blokada indeksu Gita."""
-
     lock = repository.clone / ".git" / "index.lock"
 
     def install(requirements: Path) -> bool:
@@ -802,9 +776,10 @@ def test_gdy_plik_taty_nie_wroci_po_przesunieciu_klon_wraca_do_poprzedniej_wersj
     before = repository.head()
     (repository.clone / "config" / "worker_mapping.yaml").write_text(REAL_NAMES, encoding="utf-8")
     newest = repository.publish({".gitignore": "config/worker_mapping.yaml\n"}, untrack=("config/worker_mapping.yaml",))
-    # Folder config/ zablokowany, gdy kopia pliku taty ma do niego wrócić po przesunięciu klonu.
-    git = git_locking_after_merge(tmp_path, repository.clone / "config")
-    clone = ToolClone(repository.clone, origin=str(repository.origin), find_git=lambda: git)
+    git_locking_config_for_dad_file_return = git_locking_after_merge(tmp_path, repository.clone / "config")
+    clone = ToolClone(
+        repository.clone, origin=str(repository.origin), find_git=lambda: git_locking_config_for_dad_file_return
+    )
 
     result = clone.update()
 
@@ -814,13 +789,6 @@ def test_gdy_plik_taty_nie_wroci_po_przesunieciu_klon_wraca_do_poprzedniej_wersj
 
 
 def git_locking_after_merge(tmp_path: Path, locked: Path) -> Path:
-    """Prawdziwy Git, po którego ``merge`` ``locked`` jest tylko do odczytu aż do następnego polecenia Gita.
-
-    Tak na chwilę blokuje plik albo folder antywirus czy OneDrive. Windows nie
-    zważa na atrybut tylko do odczytu folderu, więc tam folder blokuje wpis
-    uprawnień, który odmawia tworzenia w nim plików.
-    """
-
     real = shutil.which("git")
     assert real is not None
     return fake_cli(
@@ -828,6 +796,7 @@ def git_locking_after_merge(tmp_path: Path, locked: Path) -> Path:
         "git",
         "import os, stat, subprocess, sys\n"
         f"locked = {str(locked)!r}\n"
+        # ZEWNĘTRZNE: atrybut tylko do odczytu folderu nie zabrania w Windows tworzenia w nim plików, zabrania go dopiero wpis ACL odmawiający WD/AD (Microsoft Learn, „You cannot view or change the Read-only or the System attributes of folders”)
         "acl = os.name == 'nt' and os.path.isdir(locked)\n"
         "def lock(on):\n"
         "    if acl:\n"
@@ -958,14 +927,10 @@ def test_gdy_git_nie_porowna_wymagan_klon_wraca_sprzed_klikniecia_bez_instalacji
 
 
 def git_whose_fetch_stalls(tmp_path: Path, commit: str, heartbeat: Path) -> Path:
-    """Git, którego pobranie stoi, a jego pomocnik dopisuje do ``heartbeat``, dopóki żyje (najwyżej pół minuty).
-
-    Pomocnika uruchamia proces, który zaraz się kończy, więc pomocnik nie ma żywego rodzica.
-    Poza pobraniem odpowiada jak klon na `main` na commicie ``commit``.
-    """
-
-    helper = f"import time\nfor _ in range(600):\n    open({str(heartbeat)!r}, 'a').write('.')\n    time.sleep(0.05)\n"
-    middle = f"import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', {helper!r}])\n"
+    orphan_helper_beating_for_30_s = (
+        f"import time\nfor _ in range(600):\n    open({str(heartbeat)!r}, 'a').write('.')\n    time.sleep(0.05)\n"
+    )
+    parent_ending_at_once = f"import subprocess, sys\nsubprocess.Popen([sys.executable, '-c', {orphan_helper_beating_for_30_s!r}])\n"
     return fake_cli(
         tmp_path,
         "git",
@@ -974,7 +939,7 @@ def git_whose_fetch_stalls(tmp_path: Path, commit: str, heartbeat: Path) -> Path
         "args = [arg for index, arg in enumerate(sys.argv[1:]) if arg != '-c' and sys.argv[index] != '-c']\n"
         "command = args[2] if args[:1] == ['-C'] else args[0]\n"
         "if command == 'fetch':\n"
-        f"    subprocess.run([sys.executable, '-c', {middle!r}])\n"
+        f"    subprocess.run([sys.executable, '-c', {parent_ending_at_once!r}])\n"
         "    time.sleep(60)\n"
         "print('main' if command == 'symbolic-ref' else COMMIT)\n",
     )
@@ -1048,8 +1013,6 @@ def layout_release_deep_on_main(repository: ToolRepository) -> None:
 
 
 def layout_dormant_tag_merged(repository: ToolRepository) -> None:
-    """Uśpiony tag na pierwszym z trzech commitów gałęzi agenta, którą `main` wciągnął merge'em."""
-
     repository.release(off_main_commit(repository), tag="v0.9.0")
     git(repository.publisher, "checkout", "--quiet", "agent")
     for version in (667, 668):
@@ -1061,8 +1024,6 @@ def layout_dormant_tag_merged(repository: ToolRepository) -> None:
 
 
 def layout_release_on_merge(repository: ToolRepository) -> None:
-    """Wydanie na commicie `--no-ff` merge'a, jak Wydanie na scaleniu PR-a na GitHubie."""
-
     off_main_commit(repository)
     git(repository.publisher, "merge", "--quiet", "--no-ff", "--no-edit", "agent")
     git(repository.publisher, "push", "--quiet", "origin", "main")
@@ -1132,8 +1093,6 @@ README = Path(__file__).resolve().parents[1] / "README.md"
 
 
 def readme_installation_release(repository: ToolRepository, directory: Path) -> str | None:
-    """Commit, na którym stanęłaby nowa instalacja według README: jego ``git rev-list``, ``git tag`` i ``-cmatch``."""
-
     text = README.read_text(encoding="utf-8")
     tips_command = re.search(r"\$czubki = git (.+)$", text, re.MULTILINE)
     listing = re.search(r"\$wydanie = git (tag [^|]+)\|", text)
