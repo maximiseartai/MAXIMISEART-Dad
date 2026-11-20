@@ -6161,7 +6161,7 @@ def test_zmiana_listy_spoza_centrum_paruje_wpisy_po_wspolnym_loginie_w_kolejnosc
     app = centrum(tmp_path)
     write_worker_list(
         app.tool.worker_list,
-        worker_list({"jan.testowy": "Jan Testowy", "anna.przyklad": "Anna Przykład", "adam.usuniety": "Adam Usunięty"}),
+        worker_list({"anna.przyklad": "Anna Przykład", "jan.testowy": "Jan Testowy", "adam.usuniety": "Adam Usunięty"}),
     )
     app.client.get("/api/settings")
     changed = WorkerList.of(
