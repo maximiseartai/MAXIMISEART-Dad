@@ -1,0 +1,2 @@
+#!/bin/sh
+exec python3 "$(dirname "$0")/../hooks/odpytywanie_gh.py" "$@"

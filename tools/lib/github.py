@@ -27,6 +27,7 @@ import subprocess
 from typing import Any, Protocol
 import urllib.parse
 
+from nakladka import POMIJA
 from repo import ROOT
 
 REPO = "repos/{owner}/{repo}"
@@ -60,6 +61,7 @@ def _run(argumenty: Sequence[str], wejscie: str | bytes | None, limit_s: float |
             # Bez wejścia ``gh`` nie czyta wejścia wołającego: w bramie pre-push to lista wypychanych refów.
             stdin=None if wejscie is not None else subprocess.DEVNULL,
             cwd=cwd,
+            env={**os.environ, POMIJA: "1"},
             capture_output=True,
             timeout=limit_s,
             check=True,
