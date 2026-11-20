@@ -734,6 +734,11 @@ AST_GREP_INSTRUCTIONS: Final[dict[str, str]] = {
     "komentarz-poza-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "komentarz-w-src": "wyraź nazwą albo testem, który pada bez tego kodu, decyzję zapisz w ADR, motywację domenową w GLOSSARY.md, a historię zmiany w opisie PR",
     "kotwica-konca-linii": "użyj \\r?$ zamiast $",
+    "break-skryptu-pythona-to-czekanie": "pętle oceniaj tylko w tekście polecenia powłoki",
+    "program-wzorcem-ze-sciezka": "rozpoznaj program po słowie",
+    "reszta-tekstu-od-kazdego-trafienia": "czytaj tekst raz od początku do końca",
+    "shlex-czyta-polecenie-agenta": "słowa polecenia czytaj czytnikiem hooka w czasie liniowym",
+    "znak-powloki-jako-test-literalu": "sprawdzaj pełnym dopasowaniem postaci literału",
     "lokator-tytulu-okna": "użyj settings_title(page)",
     "odczyt-docstringu": "trzymaj w nazwanej stałej modułu",
     "przegladarka-bez-launch-options": "podaj w tym samym wywołaniu **launch_options(playwright)",
@@ -2167,8 +2172,18 @@ def test_znane_luki_reguly_komentarz_w_src_przechodza_przez_regule_ruff_i_mypy(t
 # konfigurację.
 _ZAKRES_REGUL_POWROTOW: Final[dict[str, tuple[tuple[str, ...], str]]] = {
     "kotwica-konca-linii": (("tools",), ".py"),
+    "znak-powloki-jako-test-literalu": (("tools", "hooks"), ".py"),
+    "shlex-czyta-polecenie-agenta": (("tools", "hooks"), ".py"),
+    "program-wzorcem-ze-sciezka": (("tools", "hooks"), ".py"),
+    "break-skryptu-pythona-to-czekanie": (("tools", "hooks"), ".py"),
+    "reszta-tekstu-od-kazdego-trafienia": (("tools",), ".py"),
 }
 _PATTERN = "import re\n\nLINE = "
+_LITERAL = "def literal(word: str) -> bool:\n"
+_SHLEX = "import shlex\n\n\ndef words(command: str) -> list[str]:\n"
+_PROGRAM = "def python(word: str) -> bool:\n"
+_AST_STOP = "import ast\n\n\ndef stops(tree: ast.AST) -> bool:\n"
+_WORDS = "import re\n\nWORD = re.compile(r'[a-z]+')\n\n\ndef rests(text: str) -> list[str]:\n"
 # Reguła powrotu → (tekst dodanego pliku w jej zakresie, linie, które zgłasza): postać z powrotu, którą reguła łapie
 # (#1584 W1 r1), i postać po poprawce, którą przepuszcza.
 _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
@@ -2182,6 +2197,24 @@ _PROBKI_REGUL_POWROTOW: Final[list[tuple[str, str, list[int]]]] = [
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"PONOWIENIE\\n$")\n', [3]),
     ("kotwica-konca-linii", f'{_PATTERN}re.compile(r"cena w \\$")\n', []),
     ("kotwica-konca-linii", f'{_PATTERN}"PONOWIENIE$"\n', []),
+    ("znak-powloki-jako-test-literalu", _LITERAL + '    return "$" not in word\n', [2]),
+    ("znak-powloki-jako-test-literalu", _LITERAL + "    return '{' in word or \"%\" in word\n", [2, 2]),
+    ("znak-powloki-jako-test-literalu", f"import re\n\nPID = re.compile(r'[0-9]+')\n\n\n{_LITERAL}    return PID.fullmatch(word) is not None\n", []),
+    ("znak-powloki-jako-test-literalu", _LITERAL + '    return "ab" in word\n', []),
+    ("shlex-czyta-polecenie-agenta", f"{_SHLEX}    return shlex.split(command)\n", [5]),
+    ("shlex-czyta-polecenie-agenta", f"{_SHLEX}    return list(shlex.shlex(command, posix=True, punctuation_chars=True))\n", [5]),
+    ("shlex-czyta-polecenie-agenta", f"{_SHLEX}    return [shlex.quote(command)]\n", []),
+    ("program-wzorcem-ze-sciezka", "import re\n\nPYTHON = re.compile(r'(?:[\\w.~/-]*/)?python3?(?![\\w.-])')\n", [3]),
+    ("program-wzorcem-ze-sciezka", "import re\n\nPYTHON = re.compile(r'(?:[a-z/]+/)?python')\n", [3]),
+    ("program-wzorcem-ze-sciezka", _PROGRAM + '    return word.rsplit("/", 1)[-1] in {"python", "python3"}\n', []),
+    ("program-wzorcem-ze-sciezka", "import re\n\nOPTION = re.compile(r'[a-z/]+')\n", []),
+    ("break-skryptu-pythona-to-czekanie", f"{_AST_STOP}    return any(isinstance(node, ast.Break) for node in ast.walk(tree))\n", [5]),
+    ("break-skryptu-pythona-to-czekanie", f"{_AST_STOP}    return any(isinstance(node, ast.Return) for node in ast.walk(tree))\n", [5]),
+    ("break-skryptu-pythona-to-czekanie", f"{_AST_STOP}    return any(isinstance(node, ast.Call) for node in ast.walk(tree))\n", []),
+    ("reszta-tekstu-od-kazdego-trafienia", f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.end() :])\n    return rests\n", [9]),
+    ("reszta-tekstu-od-kazdego-trafienia", f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(text[found.start() : found.end()])\n    return rests\n", []),
+    ("reszta-tekstu-od-kazdego-trafienia", f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        rests.append(found.group())\n    return rests\n", []),
+    ("reszta-tekstu-od-kazdego-trafienia", f"{_WORDS}    found = WORD.search(text)\n    return [text[found.end() :]] if found else []\n", []),
 ]
 
 
@@ -2218,6 +2251,29 @@ ZNANE_LUKI_REGUL_POWROTOW: Final[dict[str, dict[str, str]]] = {
         "kotwica w środku wzorca": f'{_PATTERN}re.compile(r"PONOWIENIE$|ZNANY")\n',
         "re pod inną nazwą": 'import re as wzorce\n\nLINE = wzorce.compile(r"PONOWIENIE$")\n',
         "kotwica po ukośniku literału": f'{_PATTERN}re.compile(r"C:\\\\$")\n',
+    },
+    "znak-powloki-jako-test-literalu": {
+        "znaki powłoki wyliczone w napisie przeglądanym w pętli": _LITERAL + '    return not any(char in word for char in "$`{}%")\n',
+        "znak powłoki w nazwanej stałej": f'SUBSTITUTION = "$"\n\n\n{_LITERAL}    return SUBSTITUTION not in word\n',
+        "metoda napisu zamiast operatora in": _LITERAL + '    return word.find("$") < 0\n',
+    },
+    "shlex-czyta-polecenie-agenta": {
+        "funkcja zaimportowana z modułu shlex": "from shlex import split\n\n\ndef words(command: str) -> list[str]:\n    return split(command)\n",
+        "moduł shlex pod inną nazwą": "import shlex as lekser\n\n\ndef words(command: str) -> list[str]:\n    return lekser.split(command)\n",
+    },
+    "program-wzorcem-ze-sciezka": {
+        "prefiks ścieżki bez klasy znaków": "import re\n\nPYTHON = re.compile(r'(?:\\S*/)?python3?')\n",
+        "prefiks ścieżki w klasie zanegowanej": "import re\n\nPYTHON = re.compile(r'(?:[^ ]*/)?python3?')\n",
+        "wzorzec sklejony z kilku literałów": "import re\n\nPYTHON = re.compile(r'(?:[a-z/]*' + r'/)?python')\n",
+    },
+    "break-skryptu-pythona-to-czekanie": {
+        "klasa węzła zaimportowana z modułu ast": "import ast\nfrom ast import Break\n\n\ndef stops(tree: ast.AST) -> bool:\n    return any(isinstance(node, Break) for node in ast.walk(tree))\n",
+        "rodzaj węzła po nazwie klasy": f'{_AST_STOP}    return any(type(node).__name__ == "Break" for node in ast.walk(tree))\n',
+    },
+    "reszta-tekstu-od-kazdego-trafienia": {
+        "pętla w wyrażeniu listowym": f"{_WORDS}    return [text[found.end() :] for found in WORD.finditer(text)]\n",
+        "funkcja re.finditer z wzorcem w argumencie": f"{_WORDS}    rests = []\n    for found in re.finditer(WORD, text):\n        rests.append(text[found.end() :])\n    return rests\n",
+        "koniec trafienia w zmiennej": f"{_WORDS}    rests = []\n    for found in WORD.finditer(text):\n        end = found.end()\n        rests.append(text[end:])\n    return rests\n",
     },
 }
 

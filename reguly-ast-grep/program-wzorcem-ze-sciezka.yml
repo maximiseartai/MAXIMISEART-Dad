@@ -1,0 +1,17 @@
+id: program-wzorcem-ze-sciezka
+language: python
+severity: error
+message: >-
+  program rozpoznawany wzorcem z opcjonalną ścieżką przed nazwą ([...]*/ albo [...]+/ z / w klasie) szukanym w tekście
+  polecenia: re.search cofa się po każdym / (czas kwadratowy w długości słowa) i trafia w katalog o nazwie programu
+  (/tmp/python/x.py); rozpoznaj program po słowie: rsplit("/", 1)[-1] i porównanie z nazwą albo fullmatch, jak
+  GH_NAMES w _reruns
+files:
+  - tools/hooks/**/*.py
+metadata:
+  przypadki:
+    - 2295/W1/r3
+rule:
+  # Klasa znaków bez ^ na początku, która zawiera /, z * albo + i zaraz potem / (prefiks ścieżki przed nazwą programu).
+  kind: string
+  regex: '\[[^\]^][^\]]*/[^\]]*\][*+]/'

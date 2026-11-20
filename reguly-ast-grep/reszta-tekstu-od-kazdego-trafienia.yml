@@ -1,0 +1,19 @@
+id: reszta-tekstu-od-kazdego-trafienia
+language: python
+severity: error
+message: >-
+  pętla po trafieniach wzorca (finditer) czyta od nowa resztę tekstu od każdego trafienia (tekst[m.end():]), więc czas
+  rośnie z kwadratem liczby trafień; czytaj tekst raz od początku do końca i rozpoznawaj trafienia po drodze
+files:
+  - tools/**/*.py
+  - src/**/*.py
+metadata:
+  przypadki:
+    - 2295/W1/r1
+rule:
+  pattern: $S[$M.end():]
+  inside:
+    stopBy: end
+    pattern: |
+      for $M in $R.finditer($S):
+          $$$BODY
