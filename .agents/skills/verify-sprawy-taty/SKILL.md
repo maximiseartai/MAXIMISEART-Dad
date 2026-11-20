@@ -81,22 +81,68 @@ keep the two in step. Each model action is one indivisible step of this code (`s
 | `Podglad` | `ReportHandle.prepare`: `_preview`, and the thread `zgloszenie-skrzynka` (`REPORT_THREAD`) starts `_ask` with the current `_sends` |
 | `Pytanie` | `Reports._ask_box`: `within(search_deadline_s, _find_open)`; no answer (`Unreachable`, `NoKey`, `Refused`, the deadline) changes nothing, and an answer is dropped when `_numbered` changed meanwhile; otherwise `_open[F]` |
 | `Decyzja` | `ReportHandle._ask` under `_changed`: an answer to a question from before a send is dropped (`sends != self._sends`); `_show(self._state if self._done else _state_of)`; a `StopReport` preview whose problem waits for a fix (`ReportWaiting`) goes to `Reports._queue` as a return of the problem, once (`_returned`, `_sending`) |
-| `Klik` | `ReportHandle.send`: waits while `_sending`; `_done` (Sent, Queued) returns the card without a send; otherwise `_sending`, `_sends += 1` |
-| `Sprawdz` | `Reports._queue`: `_pending` → `DadCases.queued`; otherwise `DadCases.add` of a `Case` without a number (`_change`: memory, then `StateFile.write`) |
+| `Klik` | `ReportHandle.send`: waits while `_sending`; `_done` (Sent, Queued) returns the card without a send; otherwise `_sending`, `_sends += 1` and `Reports._queue(preview)` |
+| `Sprawdz` | `Reports._queue`: `_pending` → `DadCases.queued`; otherwise `DadCases.add` of a `Case` without a number (`_change`: memory, then `StateFile.write`), before the queue file exists |
 | `Post` | `Reports._queue`: `self._outbox.post(post)`: True (the queue file is written), False (`OSError` in `Outbox.post`) or an exception |
 | `Wycofaj` | `Reports._queue`, `finally: if not queued: self._cases.withdraw(case)`; then `ReportNotQueued`, or the exception goes up and `send` clears `_sending` without a new state |
-| `Czekaj` | `Reports._queue`: `Outbox.wait_delivered(... DELIVERY_WAIT_S)` → Sent, else `DadCases.queued` (checks `_rejected` under the lock, then `KeyedBox.judge`) |
+| `Czekaj` | `Reports._queue`: `Outbox.wait_delivered(... DELIVERY_WAIT_S)` (steps of the queue may come before it ends) → Sent, else `DadCases.queued` (checks `_rejected` under the lock, then `KeyedBox.judge`) |
 | `Pokaz` | `ReportHandle.send` under `_changed`: `_sending = False`; Queued with `not _pending` → Sent; `_show(state)` |
-| `UwagaWyslij` | `dad_notes.send`: `cases.add(note)` |
+| `UwagaWyslij` | `dad_notes.send`: `cases.add(note)` of a case without a number, before the queue file exists |
 | `UwagaPost` | `dad_notes.send`: `outbox.post(note_post(...))`; after True `wait_delivered` and `queued` give the state only to Dad's request |
 | `UwagaZapomnij` | `dad_notes.send`: `cases.forget(NOTE, note.id)` after False, then `refusal.note_not_queued` |
-| `Doreczenie` | `Outbox._send_all` for the oldest file not in `_rejected`: `_deliver` (with `_settle`); a failure that stops the pass (`_stop`, `RETRY_S`); a rejected text (`_rejected`, `_rejected_posts`, `Listener.rejected` → `_CaseDelivery.rejected` → `DadCases.rejected`: `_rejected` under the lock); a delivery (`Listener.delivered` → `_CaseDelivery.delivered` → `_case` → `DadCases.numbered` with its `_change`) |
-| `Uslyszane` | `DadCases._tell` in the queue thread, outside the lock of the cases: `Reports._heard` (`_open`, `_numbered`) and every live handle of the problem: `ReportHandle._delivered` or `_rejected` |
+| `Doreczenie` | `Outbox._send_all` for the oldest file not in `_rejected`: `_deliver` (with `_settle`); no network or Token stops the pass (`_stop`, `RETRY_S`); a rejected text (`_rejected`, `_rejected_posts`, `Listener.rejected` → `_CaseDelivery.rejected` → `DadCases.rejected`: `_rejected` under the lock); a delivery (`Listener.delivered` → `_CaseDelivery.delivered` → `_case` → `DadCases.numbered` with its `_change`): a Zgłoszenie (`OpenIssue`) goes to the open Zgłoszenie of the problem or opens a new one, an Uwaga (`NewIssue`) opens a new one |
+| `Uslyszane` | `DadCases._tell` in the queue thread, outside the lock of the cases: `Reports._heard` (`_open`, `_numbered`) and every live handle of the problem: `ReportHandle._delivered` („czeka w kolejce” becomes „wysłane”) or `_rejected` („odrzucone”) |
 | `Oznacz` | `_send_all` after `delivered`: `_first_comments` (wakes `wait_delivered`), `_mark_delivered`, `_remove` |
-| `Powiadomienia` | `Notifications.view`: `StateFile.retry`, and the thread of the check (`_start_check_if_due`) runs `Notifications._ask_box` → `DadCases.ask_box` → `_close` through `_change` |
+| `Powiadomienia` | `Notifications.view`: `StateFile.retry`, and the thread of the check (`_start_check_if_due`) runs `Notifications._ask_box` → `DadCases.ask_box` → `_close` through `_change` of each case with a number whose issue the Skrzynka lists as closed; without an answer of the Skrzynka only the retry |
 | `MaksZamyka` | Maks closes an issue in the Skrzynka |
-| `Zgasniecie` | none: Centrum switches off at any step and Dad opens it again: memory is gone (`DadCases._rejected`, `Outbox._rejected`, `_first_comments` of this work, the handle), `dad_cases._load` reads `config/sprawy-taty.json`, `Outbox.resume`, and the card of a Zatrzymanie of this problem gets a new handle with `Reports._state_of`. No code reconciles the cases with the queue files after a start |
+| `Zgasniecie` | none: Centrum switches off at any step (a power cut, the console window closed, the process killed) and Dad opens it again: memory is gone (`DadCases._rejected`, `Outbox._rejected`, `_first_comments` of this work, the handle), `dad_cases._load` reads `config/sprawy-taty.json`, `Outbox.resume`, and the card of a Zatrzymanie of this problem gets a new handle with `Reports._state_of`. No code reconciles the cases with the queue files after a start |
 | `NowyUchwytPrzypomnien` | `ReportReminders._failed` on `PasswordRejected`: the next check of the Przypomnienia o raporcie in the same Centrum work makes a new handle of the problem (`Reports.handle`, its state from `Reports._state_of`), then `prepare` of a `ReminderReport` (`Podglad`, with no return of the problem) and `send` without a click (`Klik`); the memory of `Reports` and `DadCases` stays. The previous `send` has returned: `_failed` calls it in the check, and checks run one after another (`ReportReminders._lock`, one `MinuteRhythm` thread). The previous `_ask` has ended: `MinuteRhythm` waits `CHECK_EVERY_S` (60 s) after a check, and `_ask_box` waits at most `SEARCH_DEADLINE_S` (3 s) |
+
+Definitions the actions share:
+
+| Model definition | Code |
+| --- | --- |
+| `F`, `Uwagi`, `Rodzaje` | the id of the case of the Zgłoszenie, the problem's fingerprint (`Case.id`, the digest of its `ProblemFingerprint`); the ids of the cases of the Uwagi taty, the id of their wysyłka (`uuid4().hex`); `CaseKind`: `REPORT` (which recurs) and `NOTE` |
+| `Sidy`, `Numery`, `MaxSpraw` | the identity of one case (a `Case` with its `sent_at`; `withdraw` removes only it); an issue number, `0` for a case without one, which waits in the Kolejka wysyłki; each `_queue` that found no waiting case adds one: a click (for the Przypomnienia, the `send` of `_failed`) or a return of the problem (once per handle of a Zatrzymanie card) |
+| `Karty`, `UchwytPrzypomnien` | the state of the handle on the card (`diagnosis_contract.ReportState`); a handle of the Przypomnienia: `ReportHandle._ask` with `comeback` `None` never puts a return, as after `_returned` |
+| `Ostatnia(s)`, `CzekaZgl(s)` | `DadCases.find(REPORT, F)`: the index of the last case of the problem (0 without one); `Reports._pending`: that case has no issue number |
+| `Czekajaca(odrz)`, `StanZgl(s, otw, odrz)` | `DadCases.queued(F)`: a rejected text waits for nothing, otherwise the case waits in the queue (for the internet or the Token); `Reports._state_of`: a case in the queue, then the Skrzynka's answer of this Centrum work, without one the last case |
+| `Wycofana(s, sid)`, `Zapomniana(s, id)` | `DadCases.withdraw(case)`: without that one case; `DadCases.forget(NOTE, id)`: without every Uwaga of that id |
+| `Nasze(s, rodzaj, id)`, `NumerowaneSidy(s, rodzaj, id)` | `DadCases.numbered`: the cases that get the number (a Zgłoszenie: the last waiting one; an Uwaga: each of that id), and a waiting case disappears when another case already has the number (the wysyłka went to an open Zgłoszenie) |
+| `Zapisz(nowe)` | `DadCases._change`: the cases in memory, and the state file gets them unless the write fails (`StateFile` keeps the content in memory, and the next `_change`, also without a change, or the retry of the Powiadomienia writes it or a newer one) |
+| `Odrzucane` | whether the Skrzynka rejects the text of a new queue file: the same text every time, also after a start |
+| `KoniecQueue(wynik)` | the end of `Reports._queue`: `send` shows the result (`Pokaz`), a return in `_ask` only clears `_sending`; it records whether the Sprawy taty already knew that the Skrzynka rejected the text |
+| `Wlasne(r, u)`, `Osierocone(s, kol, wlasne)`, `OdrzuconaWKolejce(s, k, odrz, kpc)` | the events of the promises: the case of a request that added it and has neither written its queue file nor withdrawn it; cases without an issue number (Powiadomienie and card: „czeka”) with no queue file and no request that will write one; the card says „czeka w kolejce” although the Sprawy taty know the Skrzynka rejected the text and the handle heard it |
+| `PrzyczynaZgasniecia(sid)`, `RodzajWPliku(sid)` | the cause with which a case waits without a file after a switch-off, one code path per cause (Known findings): a switch-off in the request of the case after `DadCases.add`, before its file or before `withdraw` or `forget`; a state file that did not get the `DadCases.numbered` of the case (`StateFile` kept it in memory); a state file that did not get its `withdraw` (`Reports._queue`, `finally`) or `forget` (`dad_notes.send`), by the kind of the case in the state file. A case outside these paths has no cause, so no known finding forgives it |
+| `Historia(zgasniecie, przyczynyKarty)` | the last conjunct of each action: the events of the promises in this step, each new case without a file with the cause the switch-off knows (other actions know none), and the card with the causes the action knows |
+| `Init` | the first start of Centrum on a computer without cases: the card of the Zatrzymanie of the problem is ready to send |
+| `KartaZgodna`, `KolejkaRozstrzygnieta`, `KartaZnana` | Zbieganie: the card says what the Sprawy taty and the Skrzynka know (a rejected text may be shown about a Zgłoszenie whose case `DadCases.numbered` took when the queue delivered an older file of the problem to the same issue again after a switch-off); only files whose text the Skrzynka rejected in this work stay in the queue; a card whose only difference is the forgiven known finding of OdrzuconaNieCzeka |
+| `Sprawiedliwosc` | every step of the code that started happens at some point; Dad clicks, writes Uwagi, opens the Powiadomienia and the Diagnoza when he likes, and Maks closes issues when he likes |
+
+Each constant is a way to fail or a bound of a configuration (`stale` in `model/konfiguracje.json`):
+
+| Constant | Meaning |
+| --- | --- |
+| `MaxKlikniec` | Dad's clicks of „Wyślij do Maksa” (`ReportHandle.send`) |
+| `MaxUwag` | Uwagi taty Dad sends („Wyślij”, `dad_notes.send`) |
+| `MaxZgasniec` | switch-offs of Centrum at any step, after which Dad opens it again |
+| `MaxAwariiSieci` | the Skrzynka does not answer (no network, no Token or a refused one, a late answer) |
+| `MaxAwariiPlikuStanu` | failed writes of `config/sprawy-taty.json` (`StateFile._save`: `OSError`) |
+| `MaxAwariiKolejki` | `Outbox.post` returns False (the write of the queue file: `OSError`) |
+| `MaxWyjatkowKolejki` | `Outbox.post` raises an exception other than `OSError` (`Reports._queue`: `finally`) |
+| `MaxOdrzucen` | wysyłki whose text the Skrzynka rejects (`Rejected` of the queue, `odmowa-tresci`) |
+| `MaxZamkniec` | issues Maks closes |
+| `MaxUchwytowPrzypomnien` | checks of the Przypomnienia o raporcie with a rejected password that make a second or later handle of the problem in one Centrum work (`ReportReminders._failed`: `Reports.handle`, `prepare`, `send`); above 0 the problem `F` is that rejected password, and each of its handles has no Zatrzymanie card and no return (a `ReminderReport` is no `StopReport`); otherwise the problem has one handle per Centrum work, the card of its Zatrzymanie |
+| `Wybaczone…` | the causes of known findings that the `…PozaZnanymi` variant of each promise skips; the script sets them |
+
+| Variable | Meaning |
+| --- | --- |
+| `plikStanu`, `kolejka`, `skrzynka`, `znaczniki` | Dad's disk and the Skrzynka Zgłoszeń, which outlive a switch-off: the cases the last successful write of `StateFile` put in `config/sprawy-taty.json`; the files `config/zgloszenia/kolejka/*.json`, the wysyłki of the cases (a `Post` with its `run_id` and target); the issues of the Skrzynka labelled `zgloszenie` or `uwaga-taty`; the parts of a wysyłka whose mark is already in issue `nr` (`_settle` finds them again) |
+| `sprawy`, `odrzuconeSprawy`, `odrzuconePliki`, `dostarczoneWPracy` | the memory of one Centrum work, gone with a switch-off: `DadCases._cases`; `DadCases._rejected`, the cases whose text the Skrzynka rejected in this work; `Outbox._rejected`, the files the queue does not try until the next start; `Outbox._first_comments` of this work, which `wait_delivered` waits for |
+| `kolejkaPc`, `req`, `uwaga`, `uchwyt`, `pyt`, `otwarte`, `karta` | where the thread `skrzynka-kolejka` is in the delivery of one file (`_send_all`); `Reports._queue` of the handle, called from `ReportHandle.send` (a click) or from `_ask` (a return); `dad_notes.send` of one Uwaga; `ReportHandle`: `_preview` set, `_sending`, `_returned`; the thread `zgloszenie-skrzynka` of `ReportHandle.prepare` (`_ask`): its step, the number and the wysyłka during it; `Reports._open[F]`: no answer in this work, open or not; `ReportHandle._state`, what Dad sees on the card |
+| `nastepnaSprawa`, `nastepnyPlik`, `klikniecia`, `uwagi`, `zgasniecia`, `uchwytyPrzypomnien`, `awarieSieci`, `awariePlikuStanu`, `awarieKolejki`, `wyjatkiKolejki`, `odrzucenia`, `zamkniecia` | the next case and file id, and the counters of the `Max…` constants |
+| `bezPliku`, `odrzuconaCzeka` | the history variable of each promise: the set of causes at the moment of each event that breaks it |
+| `wycofane`, `numerowane` | the history of the cases, from which a switch-off takes the cause of each case without a file: the cases `DadCases.withdraw` (`Reports._queue`, `finally`) or `forget` (`dad_notes.send`) removed; the cases `DadCases.numbered` gave a number or removed because another has that number |
 
 `model/definicje.json` holds the digests of the definitions the table names. Left out on purpose: the text of a
 Zgłoszenie and of an Uwaga (`ReportSource.report`, which `_preview` calls, `note_issue`, the guard), the Komunikat of
@@ -236,11 +282,11 @@ Skrzynka, so `KartaZgodna` allows „odrzucone” while such a file is in the qu
 When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
-2. Change the model so each action is again one indivisible step of the code, with the code's names in its comment.
-   TLA+ strings must be ASCII; comments may use Polish letters. Never weaken a promise or narrow a configuration to make
-   the check pass.
-3. A new way to fail gets a constant, a branch guarded by it, and a value in `stale` of every configuration in
-   `model/konfiguracje.json`. A new change of the cases that a failed write can leave unsaved gets its own history
+2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
+   the table above, not in a comment: the model has none, and a new action, definition, constant or variable gets its
+   own row. TLA+ strings must be ASCII. Never weaken a promise or narrow a configuration to make the check pass.
+3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration
+   in `model/konfiguracje.json`. A new change of the cases that a failed write can leave unsaved gets its own history
    variable and cause in `PrzyczynaZgasniecia`, never a cause as wide as „the file differs from memory”. A new action of `Next` gets its words in `_STEPS` of the script.
 4. Break the new path in the model on purpose (remove the guard you just added) and see the check fail; add that break
    to `scripts/check_model_spraw_mutations.py` with the code counterpart in its name.

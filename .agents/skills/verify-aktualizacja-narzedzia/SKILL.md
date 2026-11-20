@@ -90,31 +90,32 @@ and „Opiekun … gdy nowa wersja nie wystartuje, cofa klon i uruchamia starą�
 
 The check runs a hand-written TLA+ model, `model/AktualizacjaNarzedzia.tla`,
 not the code. It describes the code only while you keep the two in step. Each
-model action is one indivisible step of this code:
+model action is one step of this code that ends before the next begins (one Git
+command, one `shutil.copy2`, one run of pip, one guardian process):
 
 | Model action | Code (`src/rozliczenia/centrum/`) |
 | --- | --- |
-| `Klik` | `tool_updates.py` `ToolUpdates.start`, `_result` (`restart_guardian.prepare`); the card shows the progress. A click while a journal is in progress does not count toward `MaxKlikniec` (see Scope). The route `start` in `tool_update_router` refuses (`refusal.update_without_port`) before `ToolUpdates.start` when the server gives no TCP port of this Centrum, so nothing changes, as without a click |
-| `Pobranie` | `tool_update.py` `ToolClone.update`: `_Journal.read`, and when no guardian may run (`guardian_may_run`) `_moved_back` before anything else (`cofa = "klik"`, `ROLLBACK_FAILED` when it fails); otherwise `_Git.fetch` of `main` and the Wydanie tags, `MainLine.newest()`, which is `newest_on_main` over `_main_tips`, the first-parent line of `main` (Wydania not on it are skipped; none left is `AKTUALNA`), `_Git.is_ancestor` (a clone that already contains the newest Wydanie is `AKTUALNA`), then up to `_DadFiles.leaving`, `_has_local_commits`, `_changed_tracked_files` |
-| `KopiaPlikow` | `tool_update.py` `_Journal.begin`: `JournalKept` when a journal is in progress (only with a guardian's lease, since `Pobranie` rolls back any other), else copy and `fsync` of Dad's files into `pliki-taty`, then `stan.json` (`_write`) |
-| `CheckoutHead` | `tool_update.py` `_DadFiles.set_aside` before `yield`: a non-zero exit is `_NotSetAside`; past its time limit `_Git.run` raises `TimeoutExpired` instead, and on Windows `_run_tree` can raise `OSError` (no Job Object, `_join` failed, or the tree outlived `_KILL_TIMEOUT_S`) |
+| `Klik` | `tool_updates.py` `ToolUpdates.start` after `RunHost.begin_update` took the place of the one Uruchomienie at a time (its refusals are left out, see Scope), `_result` (`restart_guardian.prepare` copies the guardian into a new temporary folder before the clone changes); the card shows the progress. A click while a journal is in progress does not count toward `MaxKlikniec` (see Scope). The route `start` in `tool_update_router` refuses (`refusal.update_without_port`) before `ToolUpdates.start` when the server gives no TCP port of this Centrum, so nothing changes, as without a click |
+| `Pobranie` | `tool_update.py` `ToolClone.update`: `_Journal.read`, and when no guardian may run (`guardian_may_run`) `_moved_back` before anything else (`cofa = "klik"`, `ROLLBACK_FAILED` when it fails); otherwise `_Git.fetch` of `main` and the Wydanie tags, `MainLine.newest()`, which is `newest_on_main` over `_main_tips`, the first-parent line of `main` (Wydania not on it are skipped; none left is `AKTUALNA`), `_Git.is_ancestor` (a clone that already contains the newest Wydanie is `AKTUALNA`), then up to `_DadFiles.leaving`, `_has_local_commits`, `_changed_tracked_files`; these refusals change nothing in the clone, like a failed fetch, so the model does not tell them apart |
+| `KopiaPlikow` | `tool_update.py` `_Journal.begin`: `JournalKept` when a journal is in progress (only with a guardian's lease, since `Pobranie` rolls back any other), else copy and `fsync` of Dad's files into `pliki-taty`, then `stan.json` (`_write`: a temporary file, `fsync`, `os.replace`); `JournalKept` is `NIEOCZEKIWANY_BLAD` before anything changes |
+| `CheckoutHead` | `tool_update.py` `_DadFiles.set_aside` before `yield`, `git checkout HEAD --` of Dad's file in `try`: a non-zero exit is `_NotSetAside`; past its time limit `_Git.run` raises `TimeoutExpired` instead, and on Windows `_run_tree` can raise `OSError` (no Job Object, `_join` failed, or the tree outlived `_KILL_TIMEOUT_S`) |
 | `Scalanie` | `tool_update.py` `ToolClone.update`, `git merge --ff-only`, and `if not moved` (`journal.end()`) when Git refuses. `TimeoutExpired` or `OSError` from `_Git.run` (`_run_tree`) leaves `moved = False` and passes both `except` with the journal kept; the clone stays on `before` (Git never ran or was killed first) or on `after` (killed after the merge, e.g. in its `gc --auto`) |
 | `PrzywroceniePoOdmowie`, `PrzywroceniePoScaleniu` | `tool_update.py` `_DadFiles.set_aside` `finally` (`_put_back`; its `OSError` becomes `_NotPutBack`) and `except _NotPutBack` in `ToolClone.update`: after the merge it calls `_moved_back`, before it returns `ROLLBACK_FAILED` and keeps the journal. After a refused merge or `except _NotSetAside` (`git checkout HEAD --` failed), `journal.end()`. |
 | `PrzywroceniePoWyjatku` | `tool_update.py` `_DadFiles.set_aside` `finally` after `TimeoutExpired` or `OSError` from `git checkout HEAD --` or `git merge --ff-only`: `_put_back`, then the exception passes both `except` in `ToolClone.update` to `ToolUpdates._result` (`NIEOCZEKIWANY_BLAD`), and the journal stays; an `OSError` from `_put_back` is `_NotPutBack` and, with `moved = False`, `ROLLBACK_FAILED`, also with the journal kept |
 | `Instalacja`, `InstalacjaKoniec` | `tool_update.py` `ToolClone._install_libraries` (`_Git.changed`, `pip_install`), the `try`/`except Exception` around it, and the `if installed is False` branch after it (both through `_moved_back`) |
-| `CofanieUsun`, `CofanieReset`, `CofaniePrzywroc` | `tool_update.py` `_roll_back` (`_Journal.read` and `rev-parse HEAD` first; when `rev-parse` raises, or the `unlink` of Dad's file before the `try` raises `OSError`, nothing changes and the rollback fails; a `reset --keep` that raises fails the rollback after `finally` puts Dad's file back, also when the clone already stood on `before`), called by `ToolClone.update` through `_moved_back` or by `tool_updates.py` `ToolUpdates._moved_back` through `ToolClone.roll_back` (`cofa = "centrum"`), by `restart_guardian._rolled_back` through `ToolClone.roll_back` (`cofa = "opiekun"`, or `"opiekun_bez_portu"` when the port was never released), by `launcher._roll_back` through `ToolClone.roll_back` (`cofa = "skrot"`), or by `ToolClone.update` before fetching through `_moved_back` (`cofa = "klik"`) |
-| `KoniecDziennika` | `tool_update.py` `_Journal.end` at the end of `_roll_back` and in `ToolClone.update` after a refusal; then the guardian goes on to `OpiekunWynik`, the shortcut to `SkrotWynik`, and for `cofa = "klik"` `ToolClone.update` goes on to `rev-parse HEAD` and the fetch |
+| `CofanieUsun`, `CofanieReset`, `CofaniePrzywroc` | `tool_update.py` `_roll_back` (`_Journal.read` and `rev-parse HEAD` first, the clone on `przed` or `po`; when `rev-parse` raises, or the `unlink` of Dad's file before the `try` raises `OSError`, nothing changes and the rollback fails, while `unlink(missing_ok=True)` of a missing file does not raise; the old version tracks Dad's file, so `reset --keep` writes its content from the repository (`wzor`), and the libraries stay; a `reset --keep` that raises fails the rollback after `finally` puts Dad's file back, also when the clone already stood on `before`), called by `ToolClone.update` through `_moved_back` or by `tool_updates.py` `ToolUpdates._moved_back` through `ToolClone.roll_back` (`cofa = "centrum"`), by `restart_guardian._rolled_back` through `ToolClone.roll_back` (`cofa = "opiekun"`, or `"opiekun_bez_portu"` when the port was never released), by `launcher._roll_back` through `ToolClone.roll_back` (`cofa = "skrot"`), or by `ToolClone.update` before fetching through `_moved_back` (`cofa = "klik"`) |
+| `KoniecDziennika` | `tool_update.py` `_Journal.end` (`stan.json` first, then the folder with the copy) at the end of `_roll_back` and in `ToolClone.update` after a refusal; then the guardian goes on to `OpiekunWynik`, the shortcut to `SkrotWynik`, and for `cofa = "klik"` `ToolClone.update` goes on to `rev-parse HEAD` and the fetch |
 | `SkrotWynik` | `launcher.py` `_roll_back` after `ToolClone.roll_back`: `write_result` (`NIEOCZEKIWANY_BLAD`), then `subprocess.call(restart_from_disk)` in `launcher._start`, whose Centrum reads that result. An `OSError` from the write goes to `launcher.main`: the dialog `unexpected_start_failure`, nothing starts, and the old result file stays |
 | `Restart` | `tool_updates.py` `ToolUpdates._update` (restarts only on `UPDATED`), `_restart` (`ToolClone.leased_to_guardian` around `restart_guardian.launch`: it writes the lease, and an `OSError` from that write leaves `stan.json` without it; it removes the lease when `launch` raises, and that removal can fail too), and `_moved_back` when either raises |
-| `OpiekunPort`, `OpiekunStart` | `restart_guardian.py` `main`: `_port_released` (waits while a shortcut holds the port), `_record(restart, UPDATED)` (`write_result` in `suppress(OSError)`: a refused write leaves the file as it was, and the guardian goes on), `start_centrum` (the `start` of `main`, by default `_start_centrum`: `run_centrum.py --bez-okienek`, which skips the journal), `_answers(new, …, after)`, then `_stop`; without the port straight to `_rolled_back`, with no „ok” written. `OpiekunStart` is the moment the new Centrum takes the port in `launcher._listen_when_released` and reads the result file: with `--bez-okienek` it retries `listen_locally` for `_SHORTCUT_HOLDS_PORT_S`, so it waits while a shortcut holds the port (#246) |
-| `OpiekunKoniec` | `restart_guardian.py` `main`: `ToolClone.confirm_update` after `_answers(new, …, after)` |
+| `OpiekunPort`, `OpiekunStart` | `restart_guardian.py` `main`: `_port_released` (waits while a shortcut holds the port), `_record(restart, UPDATED)` (`write_result` in `suppress(OSError)`: a refused write leaves the file as it was, and the guardian goes on), `start_centrum` (the `start` of `main`, by default `_start_centrum`: `run_centrum.py --bez-okienek`, which skips the journal), `_answers(new, …, after)`, then `_stop`; without the port straight to `_rolled_back`, with no „ok” written. `OpiekunPort` takes `_port_released` and `_record` as one step, because only a starting Centrum reads the result file. `OpiekunStart` is the moment the new Centrum takes the port in `launcher._listen_when_released` and reads the result file: with `--bez-okienek` it retries `listen_locally` for `_SHORTCUT_HOLDS_PORT_S`, so it waits while a shortcut holds the port (#246) |
+| `OpiekunKoniec` | `restart_guardian.py` `main`: `ToolClone.confirm_update` after `_answers(new, …, after)`; the journal disappears (`_Journal.end`) |
 | `OpiekunWycofanie` | `restart_guardian.py` `main` after `_stop(new)`: `restart.result.unlink(missing_ok=True)` in `suppress(OSError)`, then `_rolled_back`. A refused removal leaves „ok”, which the old version's card shows as a failure (`StartCentrumZ`) |
 | `OpiekunWynik` | `restart_guardian.py` `main` after `_rolled_back`: `_record` with `NEW_VERSION_FAILED` or `ROLLBACK_FAILED` (a refused write leaves the file, and the guardian goes on), then the old version when the rollback succeeded (`if rolled_back`), also after a port that was never released (#726), otherwise `OpiekunOkienko` |
 | `OpiekunPortStara`, `OpiekunStartStara` | `restart_guardian.py` `main` after a successful rollback of a version that did not answer or of a port that was never released: `_port_released` (fails also while the old Centrum that did not close holds the port, which the model treats like another program) (fails while a Centrum started from the shortcut holds the port), `start_centrum` (with `--bez-okienek`, so the old version waits for the shortcut's port like the new one), `_answers(…, before)` (also answered by that Centrum), then `_runs(…, before)`, which ends without a dialog when that Centrum holds the port. Every guardian path that ends in the dialog goes through `OpiekunOkienko` |
 | `OpiekunOkienko` | `restart_guardian.py` `main`: `show_problem` with `not_started_after_update`, then `return 1`. It follows `OpiekunWynik` after a failed rollback, a port held by another program after a rollback (`OpiekunPortStara`), and an old version that does not answer (`OpiekunStartStara`) |
 | `Wylacz` | none: the computer switches off; the journal, its copy and the result file stay on disk |
 | `DzierzawaMija` | none: `GUARDIAN_LEASE_S` passes after `lease_to_guardian` (`InterruptedUpdate.guardian_may_run`) |
-| `Skrot` | `launcher.py` `_start` from the shortcut while nothing runs, as one step: `listen_locally`, `ToolClone.interrupted_update`, then the dialog `update_finishing` while `guardian_may_run` (`_refuse`), `launcher._roll_back`, or the normal start (only "does it start") |
+| `Skrot` | `launcher.py` `_start` from the shortcut while nothing runs, as one step, since nothing else contends for the port: `listen_locally`, `ToolClone.interrupted_update` before the libraries load, then the dialog `update_finishing` while `guardian_may_run` (`_refuse`), `launcher._roll_back`, or the normal start (only "does it start") |
 | `SkrotWTrakcie` | `launcher.py` `_start` from the shortcut while the guardian runs and no Centrum holds the port: `listen_locally` succeeds and the shortcut holds the port. When a Centrum holds it, `listen_locally` raises and the shortcut only asks `running_centrum`; nothing on disk changes, so the model leaves that case out |
 | `SkrotOddajePort` | `launcher.py` `_start` after `listen_locally`: `ToolClone.interrupted_update`, `guardian_may_run`, then `listener.close()` and `update_finishing`; with no journal left (the guardian already rolled back) the normal start, which keeps the port |
 
@@ -140,6 +141,48 @@ an older Aktualizacja) is skipped and its file removed in
 the next start skips it), and the card from `_view_of`. The model does not
 hold the Centrum log, so it lets every start skip the result: the card then
 says nothing, never „updated”.
+
+Definitions the actions share:
+
+| Model definition | Code |
+| --- | --- |
+| `Program` | the steps of the code: Centrum, the guardian, and the shortcut that rolls back or gives back the port |
+| `Startuje(wersja)` | whether `run_centrum.py` of the clone starts from Dad's shortcut: the new version only with its libraries and `nowaStartuje`, the old one with any libraries (Scope) |
+| `NieudaneCofniecie(opis)` | a `_roll_back` that raised: the journal stays. In Centrum `_moved_back` returns False and the result is `COFNIECIE_NIEUDANE`; the guardian (`_rolled_back` returns False) writes it (`OpiekunWynik`), shows the dialog and ends; the shortcut ends with the dialog `NIEOCZEKIWANY_BLAD_STARTU` (the exception of `launcher._roll_back` reaches `launcher.main`, `_refuse`) and starts nothing |
+| `Cofaj(kto, opis)` | entering `_roll_back`; `cofa` decides what follows it |
+| `PoOdmowie(opis)` | the clone did not move and Dad's files are back: `ToolClone.update` removes the journal |
+| `KartaZ(w)`, `StartCentrumZ(w)` | `ToolUpdates._after_restart` (`read_result`, `_view_of`) of a Centrum that starts on `head` with the result file `w`, as the paragraph after the table says |
+| `DzialaOpiekun` | the guardian runs (from `Restart` to its last step) and the port is free: the old Centrum closed, the new one has not taken it yet |
+| `Idz`, `Slad` | a step of the update or the guardian, which leaves a shortcut clicked meanwhile (`skrot`) alone; `Slad` also adds the cause of a known finding to `slady` |
+| `TrescTatyNaDysku`, `Po(wybaczone)` | Dad's content is on disk, in the clone or in the journal's copy (without a copy the rollback does not touch the clone's file); a run in which a cause of `Wybaczone…` happened, and since `slady` only grows, `<>Po(…)` in `PostepPozaZnanymi` |
+
+Each constant is a way to fail or a bound of a configuration (`stale` in `model/konfiguracje.json`):
+
+| Constant | Meaning |
+| --- | --- |
+| `MaxKlikniec` | Dad's clicks of „Zaktualizuj narzędzie” |
+| `OdmowaScalenia` | `merge --ff-only` refuses before anything changes: `ZMIANY_NA_KOMPUTERZE` |
+| `AwariaPobrania` | `_Git.fetch` fails (no network, login): `BRAK_POLACZENIA`, `LOGOWANIE` |
+| `AwariaBibliotek` | `pip_install` returns False (pip error, time limit): `INSTALACJA_BIBLIOTEK` |
+| `AwariaOpiekuna` | `restart_guardian.launch` raises, or the old Centrum does not release the port within `PORT_TIMEOUT_S` |
+| `AwariaGita` | `git checkout HEAD --` (`set_aside`) exits non-zero (`_NotSetAside`); `git diff` (`changed`), `rev-parse HEAD` and `git reset --keep` (`_roll_back`) raise `GitFailed`; and each of `git checkout HEAD --`, `git merge --ff-only`, `git diff`, `rev-parse HEAD` and `git reset --keep` raises `TimeoutExpired` past its time limit or `OSError` from `_run_tree` (no Windows job, or a tree that outlives `_KILL_TIMEOUT_S`) |
+| `AwariaKopiowania` | `OSError` from the disk (disk, antivirus, OneDrive): `shutil.copy2` of Dad's file, a write of `stan.json` (also of the lease), a write (`write_result`) or removal of the result file, the removal of Dad's file from the clone in `_roll_back` |
+| `NieudanyStart` | the new version does not answer within `START_TIMEOUT_S`, although it has its libraries |
+| `Wylaczenie` | the computer switches off or a process dies at any step |
+| `MaxSkrotowWTrakcie` | Dad's clicks of the desktop shortcut while the restart guardian runs |
+| `Wybaczone…` | the causes of known findings that the `…PozaZnanymi` variant of each promise skips; the script sets them |
+
+| Variable | Meaning |
+| --- | --- |
+| `head`, `plikTaty`, `kopia`, `biblioteki`, `dziennik`, `dzierzawa` (`dysk`) | Dad's disk, which outlives Centrum and a switch-off: the clone's commit (`stara` before the click, `nowa` the newest Wydanie); `config/worker_mapping.yaml` in the clone (Dad's, `wzor` from the repository's HEAD, or none); the copy of Dad's file in the journal (`centrum-aktualizacja-w-toku/pliki-taty`); Dad's Python libraries (old, partial after a killed or failed pip, new); the journal „Aktualizacja w toku” (`stan.json`); its `opiekun_do`, valid while the restart guardian may run |
+| `nowaUsuwaPlikTaty`, `nowaZmieniaWymagania`, `nowaStartuje` | the new version, chosen once: it removes or stops tracking Dad's file (`_DadFiles.leaving` finds it), it changes `requirements.txt` (`_Git.changed`), it answers `/api/health` with its libraries |
+| `centrum`, `pc`, `krok` | the version of the running Centrum (or none), the step of the update (`spoczynek` while none runs), and the last step in the code's words, from which the counterexample is told |
+| `slady` | the causes of known findings that already happened |
+| `skrot`, `skrotyWTrakcie` | a shortcut clicked while the guardian runs holds the port from `listen_locally` to `listener.close()`; how many such clicks Dad made |
+| `cofa` | who calls `_roll_back`: `centrum` (`ToolClone.update`, `ToolUpdates._moved_back`, also after a refused merge), `klik` (`ToolClone.update` before the fetch, on a journal without a guardian's lease), `opiekun` (`restart_guardian._rolled_back` after a new version that does not answer), `opiekun_bez_portu` (the same when the port was never released) or `skrot` (`launcher._roll_back` at start) |
+| `wynik` | `config/centrum-aktualizacja.json` (`write_result`): none, „ok” (`UPDATED`) or a failure (any other code) |
+| `karta` | what the card of the running Centrum says from the result file (`ToolUpdates._after_restart`): nothing, „zaktualizowano” or a failure; results Centrum has on its own are left out |
+| `widzi` | what Dad has in front of him: Centrum, nothing (Centrum closed, nothing started), the native dialog with a Komunikat startu, or a switched-off computer |
 
 Covered files, each as a whole file (`model/definicje.json`): `src/rozliczenia/centrum/tool_update.py`,
 `src/rozliczenia/centrum/tool_updates.py`,
@@ -173,9 +216,11 @@ no longer describes.
    above; the drift line names each changed file and definition). For each
    hunk, find its row in the table.
 2. Change the matching actions so that one action stays one indivisible step
-   of the code. Keep the comment that names the code. TLA+ strings must be
-   ASCII (no Polish letters inside `"…"`), but comments may use them.
-3. A new way to fail gets a `CONSTANT`, a branch guarded by it, and a value in
+   of the code, and write the code's names in its row of the table, not in a
+   comment: the model has none, and a new action, definition, constant or
+   variable gets its own row. TLA+ strings must be ASCII (no Polish letters
+   inside `"…"`).
+3. A new way to fail gets a `CONSTANT` with its row, a branch guarded by it, and a value in
    `stale` of every configuration in `model/konfiguracje.json`. Turn it on in the
    configuration whose theme fits, or give it its own configuration there.
 4. Run the check (next section).
