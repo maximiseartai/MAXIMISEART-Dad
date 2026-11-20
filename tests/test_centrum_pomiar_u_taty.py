@@ -7,6 +7,7 @@ import re
 
 import pytest
 
+from rozliczenia.centrum.dad_action_journal import DAD_ACTIONS_FILE
 from rozliczenia.centrum.log import CentrumLog
 from rozliczenia.settlement_period import parse_period_token
 from rozliczenia.period_folder import PeriodFolder
@@ -135,7 +136,7 @@ def test_dziennik_przyjmuje_najwyzej_200_pomiarow_na_jedno_uruchomienie_centrum(
         ),
     ],
 )
-def test_pomiar_z_nieznana_nazwa_albo_wartoscia_poza_zakresem_jest_odrzucony(
+def test_pomiar_z_nieznana_nazwa_albo_wartoscia_poza_zakresem_jest_odrzucony_bez_wpisu_w_dzienniku_dzialan_taty(
     tmp_path: Path, changes: dict[str, object]
 ) -> None:
     app = centrum(tmp_path)
@@ -144,6 +145,7 @@ def test_pomiar_z_nieznana_nazwa_albo_wartoscia_poza_zakresem_jest_odrzucony(
 
     assert response.status_code == 422
     assert log_entries(app) == []
+    assert not (app.log_path.parent / DAD_ACTIONS_FILE).exists()
 
 
 def test_token_okresu_ani_sciezka_przyslane_przez_przegladarke_nie_trafiaja_do_dziennika(tmp_path: Path) -> None:
