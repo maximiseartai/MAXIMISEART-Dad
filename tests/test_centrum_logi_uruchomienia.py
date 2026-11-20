@@ -138,7 +138,9 @@ from tests.fixtures.wyciek import zawiera_wartosc
 from atrapy.widok_skrzynki import shown
 from atrapy.workbooks import active_worksheet, rewrite_parts
 
+import na_boxie
 import odtworz_uruchomienie
+import potomne
 
 AnyCentrum = PreparingCentrum | SettlingCentrum
 KEYS = {
@@ -4822,3 +4824,29 @@ def test_cofniety_zegar_komputera_nie_daje_postepowi_w_kolejce_pierwszenstwa_prz
         "interrupted",
         [18],
     )
+
+
+def _explorer_env_on_mac(tmp_path: Path) -> dict[str, str]:
+    """Środowisko agenta w powłoce Maca dla eksploratora: atrapa ``boatbox`` w ``PATH``, bez zmiennych boxa,
+    ``boatbox run --here``, znacznika narzędzia repo i sesji pytest (``tools/lib/na_boxie.py``)."""
+
+    fake = tmp_path / "bin"
+    fake.mkdir()
+    (fake / "boatbox").write_text("#!/bin/bash\nexit 7\n", encoding="utf-8")
+    (fake / "boatbox").chmod(0o755)
+    hidden = {na_boxie.BOX, na_boxie.TUTAJ, potomne.NARZEDZIE, "PYTEST_VERSION", "PYTEST_CURRENT_TEST"}
+    return {name: value for name, value in os.environ.items() if name not in hidden} | {"PATH": f"{fake}{os.pathsep}/usr/bin{os.pathsep}/bin"}
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="boatbox biegnie tylko na Macu")
+def test_eksplorator_z_kilkoma_przegladarkami_na_macu_nie_rusza_tylko_odmawia_z_poleceniem_boatbox(tmp_path: Path) -> None:
+    code, lines = _explorer_in_own_process("--run-dir", str(tmp_path / "run"), "--rownolegle", "2", environment=_explorer_env_on_mac(tmp_path))
+
+    assert (code, lines[-1].startswith("CIĘŻKIE NA MACU ODMOWA | uruchom: boatbox run ")) == (na_boxie.ODMOWA, True), lines
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="boatbox biegnie tylko na Macu")
+def test_lista_przypadkow_eksploratora_na_macu_biegnie_bez_odmowy(tmp_path: Path) -> None:
+    code, lines = _explorer_in_own_process("--lista", environment=_explorer_env_on_mac(tmp_path))
+
+    assert (code, any("ODMOWA" in line for line in lines)) == (0, False), lines
