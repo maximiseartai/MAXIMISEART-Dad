@@ -4,14 +4,15 @@ from collections.abc import AsyncIterator, Callable, MutableMapping
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import date, datetime
-from pathlib import Path, PurePath
+from pathlib import Path, PurePosixPath
 from typing import Any, Final
 import threading
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Response
+from fastapi import APIRouter, Depends, FastAPI, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.routing import Match, Mount
 
 from rozliczenia.centrum.activity_legend_router import activity_legend_router, with_legend_sentences
 from rozliczenia.centrum.catalog import CATALOG, Catalog
@@ -104,7 +105,7 @@ from rozliczenia.worker_report_inbox import (
 from rozliczenia.wall_clock import dad_today, local_now
 
 STATIC_DIRECTORY = Path(__file__).resolve().parent / "static"
-_API: Final = "api"
+_API: Final = PurePosixPath("/api")
 
 
 def create_app(
@@ -364,14 +365,22 @@ def create_app(
     include(ALWAYS, shutdown_router(shutdown))
     include(ALWAYS, timing_router(log))
     if path_state(STATIC_DIRECTORY) == "folder":
-        app.mount("/", _Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
+        app.router.routes.append(_FrontendMount())
     return app
+
+
+class _FrontendMount(Mount):
+    def __init__(self) -> None:
+        super().__init__("/", app=_Frontend(directory=STATIC_DIRECTORY, html=True), name="frontend")
+
+    def matches(self, scope: MutableMapping[str, Any]) -> tuple[Match, MutableMapping[str, Any]]:
+        if PurePosixPath(scope["path"]).is_relative_to(_API):
+            return Match.NONE, {}
+        return super().matches(scope)
 
 
 class _Frontend(StaticFiles):
     async def get_response(self, path: str, scope: MutableMapping[str, Any]) -> Response:
-        if PurePath(path).parts[:1] == (_API,):
-            raise HTTPException(status_code=404)
         response = await super().get_response(path, scope)
         # ZEWNĘTRZNE: plik bez Cache-Control przeglądarka bierze z pamięci bez pytania serwera, dopóki uznaje go za świeży heurystycznie z Last-Modified (RFC 9111 §4.2.2)
         response.headers["Cache-Control"] = "no-cache"
