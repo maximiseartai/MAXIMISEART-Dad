@@ -1,5 +1,3 @@
-"""Macierz reguł porównania znaczeniowego dwóch Folderów rozliczeń pracowników (bramka poprawności, #144)."""
-
 from __future__ import annotations
 
 import json

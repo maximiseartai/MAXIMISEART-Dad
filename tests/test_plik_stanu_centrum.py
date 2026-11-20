@@ -1,5 +1,3 @@
-"""Zapis pliku stanu Centrum, gdy Windows na chwilę albo na dłużej blokuje plik (#459)."""
-
 from __future__ import annotations
 
 import os

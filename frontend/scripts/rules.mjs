@@ -95,6 +95,42 @@ function calledOperation(node) {
   return operation !== undefined && ts.isStringLiteralLike(operation) ? operation.text : null
 }
 
+function tableFieldsOfCall(path) {
+  const file = ts.createSourceFile(path, readFileSync(path, "utf8"), ts.ScriptTarget.Latest, true)
+  const call = file.statements.find((statement) => ts.isFunctionDeclaration(statement) && statement.name?.text === "call")
+  const operation = call?.parameters[0]?.name.getText(file)
+  const read = new Set()
+
+  function isOperationEntry(node) {
+    return (
+      ts.isElementAccessExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "operations" &&
+      node.argumentExpression.getText(file) === operation
+    )
+  }
+
+  function visit(node) {
+    if (ts.isPropertyAccessExpression(node) && isOperationEntry(node.expression)) {
+      read.add(node.name.text)
+    }
+
+    if (ts.isVariableDeclaration(node) && ts.isObjectBindingPattern(node.name) && node.initializer !== undefined && isOperationEntry(node.initializer)) {
+      for (const element of node.name.elements) {
+        read.add((element.propertyName ?? element.name).getText(file))
+      }
+    }
+
+    ts.forEachChild(node, visit)
+  }
+
+  if (call !== undefined) {
+    visit(call)
+  }
+
+  return call === undefined ? null : read
+}
+
 function processNames(contract) {
   return new Set(contract.components.schemas.RunInfo.properties.process.enum)
 }
@@ -615,6 +651,10 @@ const timed = timedOperations(contract)
 
 const called = new Set(operationCalls.map(({ operation }) => operation))
 
+const CALL_TABLE_FIELDS = ["method", "url", "response"]
+
+const callTableFields = tableFieldsOfCall(join(source, "api", "client.ts"))
+
 const problems = [
   ...unused.map((key) =>
     answered.has(key)
@@ -641,6 +681,15 @@ const problems = [
   ),
   ...operationCalls.flatMap(({ place, operation }) =>
     operation === null ? [`\`call\` bez literału nazwy operacji w pierwszym argumencie: ${place}`] : [],
+  ),
+  ...(callTableFields === null ? ["src/api/client.ts nie ma funkcji `call`, przez którą przeglądarka woła operacje."] : []),
+  ...CALL_TABLE_FIELDS.flatMap((field) =>
+    callTableFields === null || callTableFields.has(field)
+      ? []
+      : [
+          `\`call\` (src/api/client.ts) nie bierze ${field} z tablicy operacji: weź go z operations[operation] ` +
+            `(src/api/generated/operations.gen.ts), żeby metoda, adres i schemat odpowiedzi szły za kontraktem.`,
+        ],
   ),
   ...busyOutsideSkeleton.map(
     (place) =>

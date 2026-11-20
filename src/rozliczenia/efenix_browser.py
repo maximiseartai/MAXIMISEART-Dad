@@ -189,14 +189,10 @@ PROFILE_DIRECTORY: Final = "przegladarka-efenix"
 """Folder profilu przeglądarki narzędzia w katalogu narzędzia: na dysku lokalnym taty, poza OneDrive, w ``.gitignore``."""
 
 TIMEOUT_MS: Final = 30_000
-"""Tyle okno czeka na stronę, odpowiedź albo element efenix; narzędzie zgodności czeka tyle samo."""
 _ABORTED: Final = "net::ERR_ABORTED"
-"""Błąd żądania, które przerwała sama strona albo nawigacja, a nie sieć: czekania na odpowiedź nie kończy."""
 LOGIN_TIMEOUT_MS: Final = 15 * 60_000
-"""Tyle okno czeka na logowanie taty, zanim proces zatrzyma się jak po wylogowaniu."""
 LOGIN_POLL_MS: Final = 2_000
 _POLL_MS: Final = 50
-"""Co tyle okno sprawdza, czy żądanie, na które czeka, skończyło się albo padło, albo czy strażnik przerwał zmianę statusu."""
 
 _PICK_DAY: Final = """(field, [year, month, day]) => {
     const jquery = window.jQuery;
@@ -778,16 +774,12 @@ class BrowserEfenix:
 
 
 class _Failed(Exception):
-    """Błąd Playwrighta w działaniu przeglądarki, które nazwał ``_doing``; ``__cause__`` to ten błąd."""
-
     def __init__(self, failure: BrowserFailure) -> None:
         super().__init__(failure.error_type)
         self.failure = failure
 
 
 class _ErrorAnswer(Exception):
-    """Odpowiedź efenix ze statusem błędu na żądanie, na które okno czeka (``_finished``); część strony daje ``_within``."""
-
     def __init__(self, status: HttpStatus) -> None:
         super().__init__(status.status)
         self.status = status
@@ -795,8 +787,6 @@ class _ErrorAnswer(Exception):
 
 @contextmanager
 def _doing(operation: Operation) -> Iterator[None]:
-    """Działanie przeglądarki ``operation`` w działaniu okna: błąd Playwrighta w nim to ``_Failed`` z typem błędu."""
-
     try:
         yield
     except PlaywrightError as error:
@@ -814,10 +804,6 @@ def _error_page(response: Response | None) -> HttpStatus | None:
 
 @contextmanager
 def _within(part: PagePart) -> Iterator[None]:
-    """Działanie na części ``part`` strony, które skończyło się błędem Playwrighta, to ``UnexpectedPage(part)`` z typem
-    błędu i działaniem przeglądarki (``None``, gdy ``_doing`` go nie nazwał), a odpowiedzią efenix ze statusem błędu
-    (``_ErrorAnswer``) to ``UnexpectedPage(part)`` z tym statusem."""
-
     try:
         yield
     except _ErrorAnswer as answer:
