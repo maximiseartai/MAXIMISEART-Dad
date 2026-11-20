@@ -94,6 +94,13 @@ def worker_list_changed() -> str:
     return "Lista Wykonawców zmieniła się w trakcie sprawdzania okresów. Spróbuj jeszcze raz."
 
 
+def worker_undo_breaks_list(rule: str) -> str:
+    return (
+        f"Tej zmiany nie da się cofnąć: Wykonawca sprzed zmiany nie pasuje do Listy Wykonawców. {rule} Najpierw zmień "
+        "albo usuń na liście drugiego Wykonawcę i cofnij jeszcze raz."
+    )
+
+
 def worker_rename_old_files(periods: tuple[str, ...]) -> str:
     count = len(periods)
     where = f"w okresie {periods[0]}" if count == 1 else f"w {count} okresach, ostatnio {periods[0]}"

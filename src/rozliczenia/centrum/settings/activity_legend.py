@@ -1,16 +1,3 @@
-"""Legenda czynności (ADR 0038): plik ``legenda-czynnosci.yaml`` w ``config``.
-
-Format pliku i niezmienniki należą do silnika i jego parsera (``activity_legend``, ``activity_legend_file``); tu jest ich
-opis dla właściciela Ustawień. Brak pliku to Legenda czynności z Wydania (``DEFAULT_ACTIVITY_LEGEND``). Wartością pliku
-są same kody, bo cofnięcie (``restore``) może złożyć wartość, której ``parse`` nie przyjmie, a właściciel sprawdza ją
-dopiero przez ``dump`` i ``parse``; legendę, którą liczą procesy, daje z dobrej wartości ``activity_legend``. Klucz
-Historii to ``kody.<id>``, a wartość to wpis pliku jako JSON, z którego cofnięcie odtwarza kod.
-
-Legendę taty Wydanie zmienia tylko jawną zmianą (furtka ADR 0032): wpis ``ReleaseChange(<id>, LEGEND, set_codes(...))``
-w ``release_changes.RELEASE_CHANGES``, a jedno pole kodu taty ``not_counted_in_fault(<id>)``. Plik ``legenda_czynnosci_domyslna.yaml`` po pierwszym Wydaniu z legendą się nie
-zmienia: tata bez własnego pliku liczy nim, więc jego zmiana weszłaby bez wiersza Historii i bez „Cofnij”.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -32,9 +19,6 @@ LEGEND_SECTION: Final = "kody"
 
 @lru_cache(maxsize=4)
 def _parse(data: bytes | None) -> tuple[ActivityCode, ...] | FieldProblem:
-    """Kody z bajtów pliku; ``None`` (brak pliku) to legenda z Wydania. Te same bajty dają ten sam wynik, więc odczyt
-    przy każdej migawce nie parsuje pliku od nowa."""
-
     if data is None:
         return DEFAULT_ACTIVITY_LEGEND.codes
     try:
@@ -58,8 +42,6 @@ _ENTRIES: Final = EntriesById[ActivityCode](LEGEND_SECTION, dump_code, _code)
 
 
 def _reported(change: KeyChange) -> str:
-    """Zmiana w Zgłoszeniu: kod nie ma danych osobowych, więc wprost."""
-
     return f"{change.key}: {'nie ustawiono' if change.before is None else change.before} → {'nie ustawiono' if change.after is None else change.after}"
 
 
@@ -75,9 +57,6 @@ LEGEND: Final = SettingsFile[tuple[ActivityCode, ...]](
 
 
 def activity_legend(codes: tuple[ActivityCode, ...]) -> ActivityLegend:
-    """Legenda czynności, którą liczą procesy, z dobrej wartości pliku (dobrej albo ostatniej dobrej); wartość, której
-    legenda nie przyjmuje (tylko spoza ``parse``), to legenda z Wydania."""
-
     try:
         return ActivityLegend(codes)
     except LegendRefused:
@@ -88,15 +67,10 @@ Codes = tuple[ActivityCode, ...]
 
 
 def code_ids(keys: frozenset[str]) -> frozenset[str]:
-    """Id kodów z kluczy Historii Ustawień legendy (``kody.<id>``)."""
-
     return _ENTRIES.ids(keys)
 
 
 def legend_refusal(codes: Codes | FieldProblem) -> Codes | FieldProblem:
-    """Zmiana taty legendy (formularz kodu albo „Cofnij”) z odmową zdaniem silnika o legendzie po zmianie, bez pola i bez
-    zdania o złym pliku, które da ``parse``: cofnięty kod może mieć zapis, który ma już kod dodany później."""
-
     if isinstance(codes, FieldProblem):
         return codes
     try:
@@ -107,11 +81,6 @@ def legend_refusal(codes: Codes | FieldProblem) -> Codes | FieldProblem:
 
 
 def set_codes(*codes: ActivityCode) -> Callable[[ReleaseInputs[Codes]], Proposal[Codes]]:
-    """Zmiana Legendy czynności z Wydania: każdy kod z ``codes`` zastępuje w legendzie taty kod o tym samym ``id`` na jego
-    miejscu, a kod, którego tata nie ma, dochodzi na koniec. Edycja jest deklaratywna („ustaw”), więc powtórzona po
-    utracie pamięci właściciela nie daje różnicy. Plik ze złą treścią albo bez odczytu to ``Later``: zmiana nie nadpisuje
-    pliku taty ostatnią dobrą legendą."""
-
     def propose(inputs: ReleaseInputs[Codes]) -> Proposal[Codes]:
         if not isinstance(inputs.current, Good):
             return Later("plik Legendy czynności ma złą treść albo nie da się go teraz przeczytać")

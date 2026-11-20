@@ -178,6 +178,7 @@ Each constant is a way to fail or a bound of a configuration (`stale` in `model/
 | `nowaUsuwaPlikTaty`, `nowaZmieniaWymagania`, `nowaStartuje` | the new version, chosen once: it removes or stops tracking Dad's file (`_DadFiles.leaving` finds it), it changes `requirements.txt` (`_Git.changed`), it answers `/api/health` with its libraries |
 | `centrum`, `pc`, `krok` | the version of the running Centrum (or none), the step of the update (`spoczynek` while none runs), and the last step in the code's words, from which the counterexample is told |
 | `slady` | the causes of known findings that already happened |
+| `klikniecia` | the counter of the `MaxKlikniec` constant |
 | `skrot`, `skrotyWTrakcie` | a shortcut clicked while the guardian runs holds the port from `listen_locally` to `listener.close()`; how many such clicks Dad made |
 | `cofa` | who calls `_roll_back`: `centrum` (`ToolClone.update`, `ToolUpdates._moved_back`, also after a refused merge), `klik` (`ToolClone.update` before the fetch, on a journal without a guardian's lease), `opiekun` (`restart_guardian._rolled_back` after a new version that does not answer), `opiekun_bez_portu` (the same when the port was never released) or `skrot` (`launcher._roll_back` at start) |
 | `wynik` | `config/centrum-aktualizacja.json` (`write_result`): none, „ok” (`UPDATED`) or a failure (any other code) |

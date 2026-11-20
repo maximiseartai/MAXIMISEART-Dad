@@ -4,6 +4,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from datetime import datetime, time, timedelta, timezone
 import json
+import os
 from pathlib import Path
 import shutil
 import threading
@@ -12,6 +13,7 @@ from typing import Any, Final, NamedTuple
 
 from openpyxl import load_workbook
 from openpyxl.styles import PatternFill
+from openpyxl.worksheet.worksheet import Worksheet
 import pytest
 
 from rozliczenia.activity_legend_file import DEFAULT_ACTIVITY_LEGEND
@@ -46,9 +48,11 @@ from tests.fixtures.centrum_processes import (
     write_dad_quantity_rules,
 )
 from tests.fixtures.bez_dostepu import without_reading
+from tests.fixtures.odczyt_bez_dostepu import reading
 from tests.fixtures.potomne import wait_for
 from tests.fixtures.zegar_scienny import MOMENTS, STEP, wall_clock_from
 from atrapy import pliki_taty
+from atrapy.preparation import write_collective_template
 from atrapy.settlement import MARKED, CellValue, PERIOD, write_quantity_source
 
 LABEL: Final = "kontrola-ilosci"
@@ -477,12 +481,16 @@ def test_kontrola_ilosci_liczy_legenda_czynnosci_z_ustawien_ktora_liczyl_jej_prz
     assert "| AS | 80 | 70 | 1 | `spawpg` |\n" in body
 
 
-def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy(tmp_path: Path) -> None:
+def test_kolumne_regul_ilosci_w_ktora_wpisala_tez_legenda_kontrola_porownuje_z_suma_regul_i_legendy_a_podglad_jak_roznice_regul(
+    tmp_path: Path,
+) -> None:
     technicolor: dict[str, CellValue] = {"C": "pr", "D": "technicolor", "G": WED.replace(hour=12), "V": 1, "O": 1, "Z": 1, "S": 1, "K": "instwewrg65m"}
     centrum = centrum_with(tmp_path, [{**technicolor, "AK": 2}, {**technicolor, "AK": 1}])
 
     run_to_end(centrum, dry_run=False)
+    preview = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
 
+    assert (preview["differences_before"], preview["differences_after"]) == (1, 1)
     body = sent_check(centrum).body
     assert "- Różnice w kolumnach Reguł ilości: 0\n" in body
     assert "- Wiersze z Kodami czynności: 2 (zgodne z legendą 1), różnice legendy: 1, wiersze z Błędem opisu: 0\n" in body
@@ -753,6 +761,22 @@ def test_podglad_reguly_liczy_roznice_tym_samym_rachunkiem_co_kontrola_ilosci_pr
     )
 
 
+def test_odczyt_podglad_i_podpowiedzi_regul_ilosci_niczego_nie_zapisuja(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    rules = centrum.client.get(RULES_URL).json()
+    history = centrum.client.get("/api/settings/history").json()["rows"]
+    config = sorted(path.name for path in centrum.tool.config.iterdir())
+
+    previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+    previewed(centrum, {"kind": "remove", "rule_id": rules["rules"][0]["id"]})
+    assert centrum.client.get("/api/settings/devices/suggestions").status_code == 200
+
+    assert centrum.client.get(RULES_URL).json() == rules
+    assert centrum.client.get("/api/settings/history").json()["rows"] == history
+    assert sorted(path.name for path in centrum.tool.config.iterdir()) == config
+
+
 def test_podglad_pokazuje_wiersze_z_roznica_od_taty_z_suma_dwoch_regul_w_jednej_kolumnie(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
@@ -826,6 +850,22 @@ def test_podglad_nie_ma_adresu_numeru_zlecenia_umowy_wykonawcy_ani_daty_dziennej
 
     assert [marker for marker in (*FORBIDDEN, "ZNACZNIK-UMOWA") if marker in response] == []
     assert all(marker in response for marker in ("ZNACZNIK-URZADZENIA", "ZNACZNIK-CZYNNOSCI"))
+
+
+def test_kolejny_podglad_nie_czyta_pliku_zbiorczego_od_nowa_dopoki_jego_znacznik_zapisu_sie_nie_zmieni(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, TATA_ROWS)
+    run_to_end(centrum, dry_run=False)
+    first = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    with reading(centrum.collective_file) as unchanged:
+        again = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+    saved = centrum.collective_file.stat()
+    os.utime(centrum.collective_file, ns=(saved.st_atime_ns, saved.st_mtime_ns + 1_000_000_000))
+    with reading(centrum.collective_file) as touched:
+        after_save = previewed(centrum, {"kind": "add", "rule": NOKIA_Z_ONCE})
+
+    assert (again, unchanged.seen) == (first, set())
+    assert (after_save, touched.seen != set()) == (first, True)
 
 
 def test_podglad_bierze_cztery_najnowsze_okresy_po_przebiegu_rozliczen_od_najnowszego(tmp_path: Path) -> None:
@@ -1215,7 +1255,7 @@ def test_roznice_przy_regulach_ilosci_to_roznice_kontroli_ilosci_tego_samego_okr
 
     assert shown(found) == TATA_DIFFERENCES
     assert issue.title == f"Kontrola ilości {PERIOD}: {len(found['differences'])} różnic"
-    assert (found["unread"], found["more"], found["exceptions"]) == ([], 0, 0)
+    assert (found["unread"], found["more"], found["exceptions"], found["exceptions_problem"]) == ([], 0, 0, None)
 
 
 def test_to_byl_wyjatek_odmowiony_jak_usuniecie_loginu_z_okresu_ma_odpowiedz_kazdego_zapisu_ustawien(
@@ -1343,6 +1383,12 @@ def test_wyjatek_jednego_z_dwoch_takich_samych_zlecen_nie_ukrywa_drugiego(tmp_pa
 def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp_path: Path) -> None:
     centrum = centrum_with(tmp_path, TATA_ROWS)
     run_to_end(centrum, dry_run=False)
+    template = write_collective_template(centrum.tool.configuration.collective_template)
+    workbook = load_workbook(template)
+    sheet = workbook.active
+    assert isinstance(sheet, Worksheet)
+    sheet["N17"] = "Montaż ONT"
+    workbook.save(template)
     saved = marked_as_exception(centrum, at(differences(centrum), 21, "N"))
     [row] = [row for row in centrum.client.get("/api/settings/history").json()["rows"] if row["id"] == saved["change"]]
 
@@ -1355,6 +1401,7 @@ def test_cofnij_wyjatku_w_historii_przywraca_roznice_a_historia_mowi_zdaniem(tmp
     [change] = row["rules"]
     sentence = "".join(part.get("text", part.get("letter", "")) for part in change["after"])
     assert (change["before"], sentence) == (None, f"To był wyjątek: okres {PERIOD}, wiersz 21, N: wpisałeś 45.")
+    assert [part for part in change["after"] if part["kind"] == "column"] == [{"kind": "column", "letter": "N", "name": "Montaż ONT"}]
     assert undone.status_code == 200, undone.text
     assert (shown(restored), restored["exceptions"]) == (TATA_DIFFERENCES, 0)
     assert again.status_code == 200, again.text
@@ -1407,6 +1454,19 @@ def test_popraw_regule_daje_formularz_nowej_reguly_z_warunkami_z_urzadzen_roznic
 
     assert (preview["changed"], preview["changed_as_tata"]) == (1, 1)
     assert shown(differences(centrum)) == without((21, "N"))
+
+
+def test_popraw_regule_wpisuje_raz_na_zlecenie_tylko_ilosc_brakujaca_do_wpisu_taty_bo_reguly_sie_sumuja(tmp_path: Path) -> None:
+    centrum = centrum_with(tmp_path, tata_rows_with("ak-1-z-reguly-porownane-a-tata-0", AK=3))
+    run_to_end(centrum, dry_run=False)
+
+    difference = next(found for found in differences(centrum)["differences"] if found["column"] == "AK")
+
+    assert (difference["rule"], difference["tata"]) == (1, 3)
+    assert difference["draft"]["action"] == {
+        "kind": "fill",
+        "writes": [{"column": "AK", "value": 2, "multiplier": "once", "component": None}],
+    }
 
 
 def test_popraw_regule_nie_wpisuje_brakujacej_ilosci_w_p_q_i_s_ktore_narzedzie_liczy_samo(tmp_path: Path) -> None:

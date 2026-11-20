@@ -1,15 +1,3 @@
-"""Kontrola ilości po Przebiegu rozliczeń z Centrum: kiedy powstaje i do którego issue okresu idzie (ADR 0013).
-
-Działanie po wyniku Uruchomienia (``runs.AfterRun``). Kontrola powstaje tylko po procesie, którego wpis w katalogu ma
-Kontrolę ilości (``ProcessKind.quantity_check``: Przebieg rozliczeń, Regułami ilości swojego Uruchomienia), z zapisem,
-którego wynik karta pokazuje jako zakończony (OK albo wymagający sprawdzenia, decyzja 7); podgląd, Zatrzymanie i
-nieoczekiwany wyjątek jej nie dają, a Skrypt dla maszyn nie ma działań po wyniku. Na wątku Uruchomienia tylko
-przelicza i zapisuje wysyłkę w kolejce; sieć zostaje w wątku kolejki. Tytuł i treść przechodzą przez strażnika
-reguły danych pracy Centrum (ADR 0025): ``URZĄDZENIA``, ``CZYNNOŚCI`` i ``UMOWA`` to tekst taty, w którym może stać
-adres albo telefon. Strażnik dostaje gotowe bloki Markdown, bo zapis komórki w tabeli (``⏎``, ``\\|``) zmienia tylko
-znaki między słowami, a strażnik szuka słów wartości bez względu na znaki między nimi.
-"""
-
 from __future__ import annotations
 
 from typing import Final
