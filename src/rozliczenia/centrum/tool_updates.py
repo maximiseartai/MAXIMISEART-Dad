@@ -1,30 +1,3 @@
-"""Aktualizacja narzędzia z Centrum rozliczeń: akcja karty, krok i wynik dla przeglądarki (ADR 0009).
-
-Samą aktualizację robi ``tool_update.ToolClone.update``, a nową wersję
-uruchamia opiekun (zob. ``restart_guardian``); ten moduł prowadzi ją w Centrum.
-Zajmuje miejsce „jedno naraz” w ``RunHost`` (odmowy 409 w trakcie Uruchomienia
-procesu albo innej aktualizacji) i odpowiada od razu, a karta odczytuje krok i
-wynik. Dziennik Centrum dostaje start i koniec z commitem przed i po, bez
-ścieżek i bez wyjścia Gita.
-Każdą porażkę, której ``tool_update`` nie przewidział, karta widzi jako Komunikat
-nieoczekiwanej porażki, a dziennik tylko nazwę typu wyjątku. Przy każdej
-porażce karta dostaje też Zgłoszenie do Maksa z faktami dziennika, a jego stan
-czyta z uchwytu Zgłoszenia (``reports.ReportHandle``) przy każdym odczycie.
-Porażkę kliknięcia karta widzi dopiero ze stanem po odpowiedzi skrzynki
-Zgłoszeń (najwyżej termin szukania), bo po pierwszym „failed” nie czyta już
-stanu, a porażkę od opiekuna od razu. Każdy wynik kliknięcia karta widzi
-dopiero z wolnym miejscem „jedno naraz”, żeby „jeszcze raz” nie dostało 409, a
-widok zmienia się pod tą samą blokadą co zwolnienie miejsca, żeby następne
-kliknięcie nie zobaczyło po swoim starcie wyniku poprzedniego.
-
-Bez Gita commit sprzed aktualizacji zna tylko Centrum. Pominięte Wydania
-dziennik dostaje przed ponownym startem, bo wynik w pliku opiekuna ich nie
-niesie. Plik wyniku od opiekuna, którego dysk nie dał usunąć, następny start
-zastaje znowu i pomija: stary wynik jak za pierwszym razem, wynik, o którym
-dziennik już wie, dzięki dziennikowi, a wynik, który właśnie trafił do karty,
-dzięki wpisowi ``update_result_kept``, jeśli nie było nowego kliknięcia.
-"""
-
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -63,30 +36,11 @@ from rozliczenia.centrum.tool_update import (
 from rozliczenia.centrum.work import CentrumWork
 
 UPDATE_THREAD: Final = "aktualizacja-narzedzia"
-"""Wątek Aktualizacji narzędzia; po udanej kończy się, gdy opiekun wystartował i Centrum się zamknęło."""
 
 GuardianLauncher = Callable[[Path, Restart], object]
-"""Uruchamia opiekuna ponownego startu z kopii (``restart_guardian.launch``)."""
 
 
 class ToolUpdates:
-    """Aktualizacja narzędzia tego Centrum: najwyżej jedna naraz, a po niej jej wynik.
-
-    ``clone`` daje klon narzędzia przy każdym kliknięciu, nie przy starcie
-    Centrum (test bez podstawionego klonu kończy się dopiero na akcji), a
-    ``commit`` to commit narzędzia przed aktualizacją, tak jak widzi go Diagnoza.
-
-    Wynik ``AKTUALNA`` dotyczy najnowszego Wydania, które Centrum znało w jego
-    chwili (``release``, ta sama pamięć co w Konfiguracji); gdy Centrum zna już
-    inne, wynik znika, żeby przy przycisku nowego Wydania nie było starego „Masz
-    najnowszą wersję.”
-
-    Po udanej aktualizacji Centrum uruchamia opiekuna ponownego startu
-    (``guardian``) i zamyka się (``shutdown``); miejsca „jedno naraz” już nie
-    zwalnia. Opiekun zostawia wynik w pliku wyniku, a nowe Centrum odczytuje go
-    raz przy starcie (``_after_restart``).
-    """
-
     def __init__(
         self,
         work: CentrumWork,
@@ -100,9 +54,6 @@ class ToolUpdates:
         release: ReleaseSource,
         threads: Threading = threading,
     ) -> None:
-        """``threads`` daje blokadę widoku (``threads.Threading``); inną niż moduł ``threading`` daje tylko test, który
-        zatrzymuje wątek aktualizacji przy niej."""
-
         self._clone = clone
         self._runs = runs
         self._log = work.log
@@ -129,11 +80,6 @@ class ToolUpdates:
         return view.view if isinstance(view, _Failed) else view
 
     def start(self, port: int) -> tool_update_contract.ToolUpdate:
-        """Zaczyna aktualizację w tle i od razu zwraca jej pierwszy krok; ``Refusal``, gdy coś trwa.
-
-        ``port`` to port tego Centrum: na nim opiekun startuje nową wersję.
-        """
-
         clone = self._clone()
         self._runs.begin_update()
         before = self._commit()
@@ -145,16 +91,6 @@ class ToolUpdates:
         return first
 
     def _after_restart(self) -> None:
-        """Wynik od opiekuna ponownego startu: do dziennika i do karty, raz, bez czekania na sieć.
-
-        „ok” przy działającym commicie innym niż „po” to porażka nieoczekiwana: nowa wersja nie działa. Porażkę
-        z pliku zapisał opiekun albo skrót po cofnięciu klonu do „przed”, więc przy działającym commicie innym niż
-        „przed” jest stara: dziennik ją zapisuje, a karta jej nie pokazuje. Wynik, który dziennik już zgłosił,
-        albo wynik starszej Aktualizacji (``CentrumLog.update_awaits``) Centrum pomija, bo dysk mógł nie dać usunąć jego
-        pliku. Po porażce (np. cofnięcie nowej wersji) skrzynkę Zgłoszeń pyta w tle uchwyt Zgłoszenia: start
-        Centrum na nią nie czeka.
-        """
-
         result = read_result(self._result_file)
         if result is None:
             return
@@ -213,11 +149,6 @@ class ToolUpdates:
                         self._view, self._up_to_date_with = view, newest
 
     def _result(self, clone: ToolClone, before: str | None, work: Path) -> tuple[UpdateResult, Path | None]:
-        """Wynik ``clone.update`` i kopia opiekuna w ``work``; porażka, której nikt nie przewidział, to ``UNEXPECTED``.
-
-        Opiekun działa z kopii sprzed aktualizacji, więc kopia powstaje, zanim klon się zmieni.
-        """
-
         try:
             guardian = restart_guardian.prepare(work)
             return clone.update(self._show_step), guardian
@@ -238,8 +169,6 @@ class ToolUpdates:
         return True
 
     def _moved_back(self, clone: ToolClone, result: UpdateResult) -> UpdateResult:
-        """Bez opiekuna nowa wersja nie wystartuje, a stary kod działałby na nowych plikach: klon wraca sprzed kliknięcia."""
-
         try:
             clone.roll_back()
         except Exception as failure:
@@ -253,8 +182,6 @@ class ToolUpdates:
         )
 
     def _failed(self, result: UpdateResult, *, after_restart: bool) -> _Failed:
-        """Komunikat porażki z podglądem Zgłoszenia; ``aktualizacja-koniec`` jest już w dzienniku, więc podgląd go ma."""
-
         failure = update_messages.UpdateFailure.of(result.code)
         source = UpdateReport.of(result, failure.message, self._log)
         report = self._reports.handle(source.fingerprint)
@@ -267,8 +194,6 @@ class ToolUpdates:
         )
 
     def send_report(self) -> diagnosis_contract.ReportState:
-        """„Wyślij do Maksa” przy nieudanej aktualizacji."""
-
         with self._lock:
             failed = self._view
         if not isinstance(failed, _Failed):
@@ -282,8 +207,6 @@ class ToolUpdates:
 
 @dataclass(frozen=True)
 class _Failed:
-    """Nieudana Aktualizacja narzędzia; ``draft`` to podgląd jej Zgłoszenia zamrożony w chwili porażki."""
-
     message: common_contract.Message
     next_action: update_messages.NextAction
     report: ReportHandle
@@ -311,12 +234,6 @@ def _view_of(result: UpdateResult) -> tool_update_contract.ToolUpdate | None:
 
 
 def tool_update_router(updates: ToolUpdates) -> APIRouter:
-    """Trasy Aktualizacji narzędzia.
-
-    Start bierze port Centrum z ``server`` w ASGI, który daje go opcjonalnie, a gniazdo bez portu TCP jako
-    ``(ścieżka, None)``: bez portu aktualizacja się nie zaczyna (``refusal.update_without_port``).
-    """
-
     router = APIRouter(prefix="/api/tool-update", tags=["aktualizacja"])
 
     @router.post(
@@ -326,6 +243,7 @@ def tool_update_router(updates: ToolUpdates) -> APIRouter:
         responses={409: {"model": common_contract.Problem}, 500: {"model": common_contract.Problem}},
     )
     def start(request: Request) -> tool_update_contract.ToolUpdate:
+        # ZEWNĘTRZNE: ASGI podaje `server` zakresu HTTP opcjonalnie, a dla gniazda bez portu TCP jako `[ścieżka, None]` (specyfikacja ASGI, HTTP Connection Scope, klucz server)
         match request.scope.get("server"):
             case (str(), int(port)):
                 return updates.start(port)
