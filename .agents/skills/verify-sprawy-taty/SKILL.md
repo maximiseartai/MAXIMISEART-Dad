@@ -284,8 +284,9 @@ When a definition from `model/definicje.json` changes:
 
 1. Read the diff against the table above. Find each action whose code changed, or the new step that has none.
 2. Change the model so each action is again one indivisible step of the code, and write the code's names in its row of
-   the table above, not in a comment: the model has none, and a new action, definition, constant or variable gets its
-   own row. TLA+ strings must be ASCII. Never weaken a promise or narrow a configuration to make the check pass.
+   the table above, not in a comment: the model has none, and a new action of `Next`, constant or variable gets its own
+   row, and a new definition gets one when it models code. TLA+ strings must be ASCII. Never weaken a promise or narrow
+   a configuration to make the check pass.
 3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration
    in `model/konfiguracje.json`. A new change of the cases that a failed write can leave unsaved gets its own history
    variable and cause in `PrzyczynaZgasniecia`, never a cause as wide as „the file differs from memory”. A new action of `Next` gets its words in `_STEPS` of the script.

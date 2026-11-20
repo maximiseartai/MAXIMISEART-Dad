@@ -370,9 +370,10 @@ Kontrola ilości or an Uwaga taty in several parts that does not read in order:
 
 1. Read the diff of the covered files since their digests (the `git diff` above; the drift line names each changed
    file and definition) and find each hunk's step in the checker's table and in the tables of the model.
-2. Change the matching action so that one action stays one indivisible step of the code, and write the code's names
-   in its row of the model's table, not in a comment: the model has none, and a new action, branch, definition,
-   constant or variable gets its own row or its place in one. TLA+ strings must be ASCII.
+2. Change the matching action so that one action stays one indivisible step of the code, and write the code's names in
+   its row of the model's table, not in a comment: the model has none, and a new action of `Next`, constant or variable
+   gets its own row or its place in one, and a new branch or definition gets one when it models code. TLA+ strings must
+   be ASCII.
 3. A new way to fail gets a constant with its row, a branch guarded by it, and a value in `stale` of every configuration in
    `model/konfiguracje.json`.
 4. Before you trust a pass on a new path, break that path in the model and see the check fail; add the break to

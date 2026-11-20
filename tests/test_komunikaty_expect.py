@@ -513,16 +513,23 @@ def test_probki_pokrywaja_kazda_publiczna_funkcje_katalogu(catalog: str) -> None
     assert set(samples) == public, "każda publiczna funkcja katalogu ma próbkę: dopisz ją w message_samples albo zrób funkcję prywatną"
 
 
-@pytest.mark.parametrize("catalog", [catalog for catalog, (module, _) in SENTENCES.items() if module.__name__.endswith("messages")])
-def test_probki_pokrywaja_kazda_publiczna_funkcje_modulu_zdan(catalog: str) -> None:
-    module, sentences = SENTENCES[catalog]
+def _sentence_modules() -> list[str]:
+    catalogs = {module.__name__ for module, _ in (*CATALOGS.values(), *OUTSIDE_CATALOGS.values())}
+    names = (".".join(path.relative_to(ROOT / "src").with_suffix("").parts) for path in sorted((ROOT / "src").rglob("*messages.py")))
+    return [name for name in names if name not in catalogs]
+
+
+@pytest.mark.parametrize("module_name", _sentence_modules())
+def test_probki_pokrywaja_kazda_publiczna_funkcje_modulu_zdan(module_name: str) -> None:
+    module = importlib.import_module(module_name)
+    sampled = {sentence for owner, sentences in SENTENCES.values() if owner is module for sentence in sentences}
     public = {
         name
         for name, function in inspect.getmembers(module, inspect.isfunction)
         if function.__module__ == module.__name__ and not name.startswith("_")
     }
 
-    assert set(sentences) == public, "każde publiczne zdanie modułu zdań ma próbkę: dopisz ją w SENTENCES albo zrób funkcję prywatną"
+    assert sampled == public, "każde publiczne zdanie modułu zdań ma próbkę: dopisz ją w SENTENCES albo zrób funkcję prywatną"
 
 
 def test_kazdy_katalog_probek_trafia_do_pliku_expect() -> None:

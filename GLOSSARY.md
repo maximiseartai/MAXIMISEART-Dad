@@ -645,7 +645,7 @@ _Avoid_: ustawienia Uruchomienia, środowisko
 
 Ustawienia Centrum, którymi liczy jedno Uruchomienie procesu, w chwili jego startu: Lista Wykonawców, Reguły ilości i Legenda czynności.
 Proces mówi, którymi z nich liczy, w swoich potrzebach, a Uruchomienie procesu, który danym Ustawieniem nie liczy, nie ma go ani w wejściu, ani w Logach Uruchomienia.
-Każdy gospodarz Uruchomienia buduje je (`settings_at_start.SettingsAtStart`) w jednym miejscu: Centrum rozliczeń z migawki Ustawień Centrum (`SettingsAtStart.of_snapshot`), Skrypt dla maszyn z Wydania (`uruchom_proces.ustawienia_z_wydania`), a odtworzenie z Logów Uruchomienia (`odtworzenie._prepared`).
+Każdy gospodarz Uruchomienia buduje je (`settings_at_start.SettingsAtStart`) w jednym miejscu: Centrum rozliczeń z migawki Ustawień Centrum (`SettingsAtStart.of_snapshot`), Skrypt dla maszyn Reguły ilości i Legendę czynności z Wydania, a Listę Wykonawców z pliku `--wykonawcy` (`uruchom_proces.ustawienia_z_wydania`), a odtworzenie z Logów Uruchomienia (`odtworzenie._prepared`).
 Zmiana Ustawień w trakcie Uruchomienia ich nie zmienia (ADR 0032).
 _Avoid_: fakty startu (to fakty o tym, jak wystartowało Uruchomienie), ustawienia Uruchomienia
 

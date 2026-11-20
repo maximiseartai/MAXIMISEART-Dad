@@ -444,12 +444,13 @@ def _check_actions(model: Model) -> None:
 
 
 def akcje_next(spec: str) -> frozenset[str]:
-    """Nazwy akcji, które ``Next ==`` specyfikacji łączy przez ``\\/`` (także pod ``\\E … :``)."""
+    """Nazwy akcji, które ``Next ==`` specyfikacji, w jednej linii albo we wciętych liniach pod nią, łączy przez ``\\/``
+    (także pod ``\\E … :``)."""
 
-    found = re.search(r"^Next ==\n(.*?)(?:\n\s*\n|\Z)", spec, re.DOTALL | re.MULTILINE)
+    found = re.search(r"^Next\s*==(.*?)(?=^\S|\Z)", spec, re.DOTALL | re.MULTILINE)
     if found is None:
-        raise ValueError("specyfikacja nie ma definicji „Next ==” w osobnej linii")
-    return frozenset(re.findall(r"\\/\s*(?:\\E[^:]*:\s*)?(\w+)", found[1]))
+        raise ValueError("specyfikacja nie ma definicji „Next ==”")
+    return frozenset(re.findall(r"(?:^|\\/)\s*(?:\\E[^:]*:\s*)?(\w+)", found[1].strip()))
 
 
 def tlc(
